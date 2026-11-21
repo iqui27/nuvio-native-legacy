@@ -2772,11 +2772,15 @@ static int ajIptvLinhaVisivel(int op) {
     return !iptvForm.tipo;
   return 1;
 }
+static void previaAplicar(void);
 static void ajEpgMemoriaAplicar(void) {
   long ram = 0;
   tex_orcamento_info(NULL, &ram, NULL, NULL);
   if (ram <= 0) ram = SDL_GetSystemRAM();
   epg_memoria_definir(valor[AJ_EPG_MEMORIA], ram);
+  // "No aparelho" depends on this same rule (previaLocalCapaz): Baixa desliga
+  // o provedor local na hora — nao espera o heartbeat do worker expirar.
+  previaAplicar();
 }
 static char faAddonEditar[FONTEFALHA_CHAVE];
 static char faAddonTitulo[FR_NOME_MAX + 48];

@@ -8,7 +8,14 @@ cd "$(dirname "$0")/.."
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-miniatura-tv.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 flags=(-std=c11 -D_GNU_SOURCE -O1 -g -Wall -Isrc -I/usr/include/SDL2)
-if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
+if [ "${TSAN:-0}" = 1 ]; then
+  # The fixture shares the worker's globals across threads — GCC TSan is
+  # broken here, always Clang.
+  flags+=(-fsanitize=thread)
+  cc() { clang "$@"; }
+elif [ "${SANITIZE:-0}" = 1 ]; then
+  flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer)
+fi
 
 # The full provider under the .tpk 6+ flag set (TPK + the DTS FFmpeg).
 cc "${flags[@]}" -DNV_TPK -DNV_DTS_FFMPEG tests/miniatura_tv.c -lpthread -lm -o "$work/miniatura_tv"

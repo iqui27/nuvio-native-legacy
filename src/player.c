@@ -5367,7 +5367,9 @@ void player_atualizar(float dt, Uint32 agora) {
                          (long)(d * 1000.0), video_url_atual(), video_cabecalhos(),
                          st ? st->tamanhoBytes : 0, st ? st->videoHash : "",
                          st ? st->arquivo : "", (long)(posSeg * 1000.0f),
-                         (long)(video_pos() * 1000.0), scrubbing };
+                         (long)(video_pos() * 1000.0), scrubbing,
+                         video_pronto(), video_tocando(), video_bufferando_ms(),
+                         video_dts_estado(), ajustes_miniatura_largura() };
         if (cs) openseekAltPasso(cs->imdb, serie ? epT : 0, serie ? epE : 0, (long)(d * 1000.0), posSeg);
         { double bf2 = video_buffer_fim(); long bm = bf2 > 0.5 ? (long)((bf2 - (double)posSeg) * 1000.0) : -1;
           if (bm < 0 && bf2 > 0.5) bm = 0;

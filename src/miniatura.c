@@ -124,6 +124,29 @@ static MiniProgress progresso;   // the player pill milestones (mini_progress)
 
 static long alvoScrub = -1; static Uint32 alvoTick;
 
+// VIDEO STATE PUBLISHED BY THE PLAYER THREAD (NV_MINIATURA_SNAP marks this
+// revision for the white-box fixture). prov_pedir copies the fields of the
+// SeekrFonte the player already builds every tick; the worker reads ONLY this
+// copy — it never calls video_* / ajustes_* itself: off the player thread
+// some of those calls mutate shared state (video_pos() on the TPK can clear
+// posReconLeg, which the reconnect logic owns) and the ajustes reads are
+// unsynchronized. Guarded by mu; the worker takes it through estCopia().
+typedef struct {
+  long playheadMs;          // SeekrFonte.playheadMs (video_pos on the player thread)
+  int pronto;               // video_pronto()
+  int tocando;              // video_tocando()
+  unsigned bufferandoMs;    // video_bufferando_ms()
+  int dts;                  // video_dts_estado()
+  int largura;              // ajustes_miniatura_largura()
+} MiniEst;
+static MiniEst videoEst;
+#define NV_MINIATURA_SNAP 1
+static MiniEst estCopia(void) {
+  MiniEst e;
+  pthread_mutex_lock(&mu); e = videoEst; pthread_mutex_unlock(&mu);
+  return e;
+}
+
 // Caller holds mu.
 static void soltarJob(Job *j) {
   if (!j || --j->refs > 0) return;
@@ -321,7 +344,7 @@ static void *trabalhar(void *u) {
   snprintf(l->cab, sizeof l->cab, "%s", w->cab);
 
   // Let the player settle first.
-  for (int k = 0; k < 30 && !jobParar(j) && !video_pronto(); k++) dormirJ(j, 500);
+  for (int k = 0; k < 30 && !jobParar(j) && !estCopia().pronto; k++) dormirJ(j, 500);
   dormirJ(j, 500);
   if (jobParar(j)) goto fim;
 
@@ -351,7 +374,7 @@ static void *trabalhar(void *u) {
     // default; the bigger tiles cost more decode and memory per slot.
     MiniConfig cfg;
     mini_motor_config_padrao(&cfg);
-    cfg.larguraSaida = ajustes_miniatura_largura();
+    cfg.larguraSaida = estCopia().largura;
     mini_motor_config(m, &cfg);
   }
   {
@@ -372,18 +395,30 @@ static void *trabalhar(void *u) {
     // (batida is written by pedir on the calling thread: atomic edge, the field
     // itself stays a plain Uint32.)
     if ((Sint32)(SDL_GetTicks() - __atomic_load_n(&batida, __ATOMIC_ACQUIRE)) > 6000) { mini_motor_soltar_decoder(m); dormirJ(j, 500); continue; }
-    if (video_bufferando_ms() > 0 || !video_pronto()) { mini_motor_soltar_decoder(m); dormirJ(j, 700); continue; }
+    // Pauses: not ready yet, buffering/opening, or paused by the control —
+    // the worker yields the decoder exactly like it does while buffering.
+    MiniEst e = estCopia();
+    if (!e.pronto || e.bufferandoMs > 0 || !e.tocando) { mini_motor_soltar_decoder(m); dormirJ(j, 700); continue; }
     // Memory before every frame.
     long disp = memDisponivelKB();
-    long precisa = custoEstimadoKB(mini_motor_info(m), medidas, nMedidas,
-                                   (long)(mini_motor_memoria(m, threads) / 1024));
-    if (disp >= 0 && disp < PISO_KB + precisa) {
-      int dts = video_dts_estado() == VIDEO_DTS_PREPARANDO || video_dts_estado() == VIDEO_DTS_CONVERTIDO;
+    long motorKB = (long)(mini_motor_memoria(m, threads) / 1024);
+    long precisa = custoEstimadoKB(mini_motor_info(m), medidas, nMedidas, motorKB);
+    // Decoder released (pause, buffering, low memory): the next frame pays to
+    // reopen it — every measured delta was taken with it open and does not
+    // cover that, so the gate falls back to the engine's cold estimate.
+    if (!mini_motor_decoder_aberto(m) && precisa < motorKB) precisa = motorKB;
+    // Unreadable MemAvailable blocks the frame too: never decode blind.
+    if (disp < 0 || disp < PISO_KB + precisa) {
+      int dts = e.dts == VIDEO_DTS_PREPARANDO || e.dts == VIDEO_DTS_CONVERTIDO;
       mini_motor_soltar_decoder(m);
       // One line when it starts, then at most one every 30 s.
       if (!ultimaPausaLog || SDL_GetTicks() - ultimaPausaLog > 30000) {
-        printf("[miniatura] paused: low memory (free %ld MB, needs %ld MB + floor %ld MB%s)%s\n",
-               disp / 1024, precisa / 1024, PISO_KB / 1024, dts ? ", DTS converting" : "", pausasCaladas ? ", still waiting" : "");
+        if (disp < 0)
+          printf("[miniatura] paused: free memory unreadable (needs %ld MB + floor %ld MB%s)\n",
+                 precisa / 1024, PISO_KB / 1024, dts ? ", DTS converting" : "");
+        else
+          printf("[miniatura] paused: low memory (free %ld MB, needs %ld MB + floor %ld MB%s)%s\n",
+                 disp / 1024, precisa / 1024, PISO_KB / 1024, dts ? ", DTS converting" : "", pausasCaladas ? ", still waiting" : "");
         fflush(stdout);
         ultimaPausaLog = SDL_GetTicks(); pausasCaladas = 0;
       } else pausasCaladas++;
@@ -393,7 +428,7 @@ static void *trabalhar(void *u) {
     ultimaPausaLog = 0; pausasCaladas = 0;
 
     int classe = 0, k, k2 = -1, c2 = 0;
-    long ph = (long)(video_pos() * 1000.0);
+    long ph = e.playheadMs;
     pthread_mutex_lock(&mu);
     k = proximo(j, ph, &classe);
     if (k >= 0) {
@@ -493,6 +528,7 @@ fim:
 }
 
 // ------------------------------------------------------------------ title lifecycle
+static void texSoltar(void);
 static void prov_desligar(void);
 static void prov_pedir(const SeekrFonte *f) {
   Trabalho *w;
@@ -501,6 +537,11 @@ static void prov_pedir(const SeekrFonte *f) {
   if (!f || !f->url || !*f->url) return;
   pthread_mutex_lock(&mu);
   __atomic_store_n(&batida, SDL_GetTicks(), __ATOMIC_RELEASE);
+  // Every heartbeat republishes what the worker may use (player thread read).
+  videoEst.playheadMs = f->playheadMs;
+  videoEst.pronto = f->pronto; videoEst.tocando = f->tocando;
+  videoEst.bufferandoMs = f->bufferandoMs; videoEst.dts = f->dts;
+  videoEst.largura = f->larguraMiniatura;
   // Same title still on screen: only the heartbeat.
   if (urlAtual[0] && !strcmp(urlAtual, f->url) && labs(durAtual - f->durMs) < 3000) { pthread_mutex_unlock(&mu); return; }
   pthread_mutex_unlock(&mu);
@@ -564,6 +605,9 @@ static void prov_desligar(void) {
   urlAtual[0] = 0; durAtual = 0;
   estado = SEEKR_DESLIGADO;
   pthread_mutex_unlock(&mu);
+  // The texture names die with the provider, not on the next title (draw
+  // thread: the GL context is current wherever desligar is invoked from).
+  texSoltar();
 }
 
 // ------------------------------------------------------------------ SeekrProvedor
@@ -582,11 +626,22 @@ static const char *provRotulo(int est) {
 }
 
 // Display side (draw thread only): a few textures keyed by slot.
-typedef struct { GLuint tex; int slot; unsigned g; Uint32 uso; } Slot;
+typedef struct { GLuint tex; int slot; unsigned g; Uint32 uso; long pts; } Slot;
 static Slot slots[SLOTS];
 static Uint32 relogioUso;
 static int quadroVelho;
 static int provVelho(void) { return quadroVelho; }
+
+// Releases every uploaded tile name. Draw thread only (the GL context must be
+// current): prov_desligar runs wherever the provider is switched off.
+static void texSoltar(void) {
+  for (int i = 0; i < SLOTS; i++) if (slots[i].tex) {
+    gfx_tex_esquecer(slots[i].tex);
+    glDeleteTextures(1, &slots[i].tex);
+    slots[i].tex = 0;
+  }
+  quadroVelho = 0;
+}
 
 static int slotTex(int k, unsigned g) {
   for (int i = 0; i < SLOTS; i++) if (slots[i].tex && slots[i].slot == k && slots[i].g == g) return i;
@@ -595,10 +650,11 @@ static int slotTex(int k, unsigned g) {
 
 // Uploads tile k (JPEG -> texture), keeping the slots in `proteger`. Draw thread.
 static void subir(int k, unsigned g, const int *proteger, int np) {
-  unsigned char *copia = NULL; int n = 0;
+  unsigned char *copia = NULL; int n = 0; long pts = 0;
   pthread_mutex_lock(&mu);
   if (job && job->g == g && pronto(job, k) && (copia = malloc((size_t)job->tiles[k].n)) != NULL) {
-    memcpy(copia, job->tiles[k].jpg, (size_t)job->tiles[k].n); n = job->tiles[k].n;
+    memcpy(copia, job->tiles[k].jpg, (size_t)job->tiles[k].n);
+    n = job->tiles[k].n; pts = job->tiles[k].pts;
   }
   pthread_mutex_unlock(&mu);
   if (!copia) return;
@@ -634,6 +690,7 @@ static void subir(int k, unsigned g, const int *proteger, int np) {
   gfx_tex_esquecer(0);
   SDL_FreeSurface(s);
   slots[alvo].slot = k; slots[alvo].g = g; slots[alvo].uso = ++relogioUso;
+  slots[alvo].pts = pts;
 }
 
 // Nearest slot with a tile within `raio` slots of k (-1 none). Caller holds mu.
@@ -695,7 +752,9 @@ static int provQuadros(double posSeg, int n, GLuint *texs, double *cueSeg) {
     // Not made yet (or still uploading): the last one shown, marked as old.
     int m = -1, c = n == 1 ? 0 : 1;
     for (i = 0; i < SLOTS; i++) if (slots[i].tex && slots[i].g == g && (m < 0 || slots[i].uso > slots[m].uso)) m = i;
-    if (m >= 0) { texs[c] = slots[m].tex; achou = 1; quadroVelho = 1; }
+    // The label is the SHOWN tile's own time, not the target's (the player
+    // prints "still loading" under what is really on screen).
+    if (m >= 0) { texs[c] = slots[m].tex; if (cueSeg) cueSeg[c] = slots[m].pts / 1000.0; achou = 1; quadroVelho = 1; }
   }
   return achou;
 }

@@ -39,10 +39,12 @@ static int motorQuadros, motorSoltadas, motorFechado, motorAberto;
 static size_t motorMemoriaBytes = 40L << 20;   // the "next frame" estimate
 static long quadroCustoKB;                     // MemAvailable each fake tile eats
 static int motorFalhar;
-static int fakePronto = 1;
+static int motorDecAberto;                     // decoder open? (mini_motor_decoder_aberto)
+static int fakePronto = 1, fakeTocando = 1, fakeDts, fakeLargura;
+static unsigned fakeBufferando;
 static double fakePos;
 static int redePedidos, redeFalhar;
-static int texUploads, texGeradas;
+static int texUploads, texGeradas, texDeletadas;
 
 // ----- stub implementations (linked instead of the real ones) -----------------
 int perftv_enabled, perftv_uploads, perftv_blur, perftv_glass;
@@ -58,6 +60,7 @@ void glTexImage2D(GLenum t, GLint l, GLint i, GLsizei w, GLsizei h, GLint b, GLe
   (void)t; (void)l; (void)i; (void)w; (void)h; (void)b; (void)f; (void)ty; (void)p; texUploads++;
 }
 void glGenTextures(GLsizei n, GLuint *t) { for (int i = 0; i < n; i++) t[i] = ++texGeradas; }
+void glDeleteTextures(GLsizei n, const GLuint *t) { for (int i = 0; i < n; i++) if (t[i]) texDeletadas++; }
 void glBindTexture(GLenum t, GLuint x) { (void)t; (void)x; }
 void glPixelStorei(GLenum p, GLint v) { (void)p; (void)v; }
 void glTexParameteri(GLenum t, GLenum p, GLint v) { (void)t; (void)p; (void)v; }
@@ -95,16 +98,35 @@ char *rede_baixar_trecho64_final(const char *url, const char *headers,
   return b;
 }
 int video_pronto(void) { return fakePronto; }
-unsigned video_bufferando_ms(void) { return 0; }
+int video_tocando(void) { return fakeTocando; }
+unsigned video_bufferando_ms(void) { return __atomic_load_n(&fakeBufferando, __ATOMIC_RELAXED); }
 double video_pos(void) { return fakePos; }
-int video_dts_estado(void) { return 0; }
-int ajustes_miniatura_largura(void) { return 0; }
+int video_dts_estado(void) { return fakeDts; }
+int ajustes_miniatura_largura(void) { return fakeLargura; }
+
+// The video/ajustes state the player publishes on every pedir (SeekrFonte).
+// With the snapshot (NV_MINIATURA_SNAP) this writes the copy the worker
+// reads; on the old revision the worker polled the stubs above from its own
+// thread — the same globals make both paths say the same thing.
+static void publicar(int pronto, int tocando, unsigned bufferandoMs, int dts, long playheadMs, int largura) {
+  fakePronto = pronto; fakeTocando = tocando; fakeDts = dts; fakeLargura = largura;
+  __atomic_store_n(&fakeBufferando, bufferandoMs, __ATOMIC_RELAXED);
+  fakePos = playheadMs / 1000.0;
+#ifdef NV_MINIATURA_SNAP
+  pthread_mutex_lock(&mu);
+  videoEst.pronto = pronto; videoEst.tocando = tocando;
+  videoEst.bufferandoMs = bufferandoMs; videoEst.dts = dts;
+  videoEst.playheadMs = playheadMs; videoEst.largura = largura;
+  pthread_mutex_unlock(&mu);
+#endif
+}
 
 MiniMotor *mini_motor_abrir(MiniLer ler, void *usuario, int64_t tamanho,
                             char *erro, size_t nerro) {
   (void)usuario; (void)tamanho;
   if (motorFalhar > 1) { snprintf(erro, nerro, "fake: container refused"); return NULL; }
   motorAberto++;
+  motorDecAberto = 0;                        // a fresh motor has no decoder yet
   return (MiniMotor *)ler;   // the pointer only needs to be non-NULL and stable
 }
 const MiniInfo *mini_motor_info(const MiniMotor *m) { (void)m; return &fakeInfo; }
@@ -115,6 +137,7 @@ int mini_motor_quadro(MiniMotor *m, long alvoMs, long tolMs, int threads,
                       MiniQuadro *q, char *erro, size_t nerro) {
   (void)m; (void)tolMs; (void)threads; (void)cancelar;
   if (motorFalhar) { snprintf(erro, nerro, "fake: decode failed"); return -1; }
+  motorDecAberto = 1;                       // the real motor opens it in here
   __atomic_fetch_add(&motorQuadros, 1, __ATOMIC_ACQ_REL);
   __atomic_fetch_sub(&memFakeKB, quadroCustoKB, __ATOMIC_ACQ_REL);   // what the frame really cost
   if (NV_MINIATURA_MEM_KB < 0) memFake(0);
@@ -124,7 +147,8 @@ int mini_motor_quadro(MiniMotor *m, long alvoMs, long tolMs, int threads,
                      .bytesLidos = 60000, .bytesPacote = 50000, .threads = 1, .pedidos = 2 };
   return 0;
 }
-void mini_motor_soltar_decoder(MiniMotor *m) { (void)m; __atomic_fetch_add(&motorSoltadas, 1, __ATOMIC_ACQ_REL); }
+void mini_motor_soltar_decoder(MiniMotor *m) { (void)m; motorDecAberto = 0; __atomic_fetch_add(&motorSoltadas, 1, __ATOMIC_ACQ_REL); }
+int mini_motor_decoder_aberto(const MiniMotor *m) { (void)m; return motorDecAberto; }
 void mini_motor_config_padrao(MiniConfig *c) { memset(c, 0, sizeof *c); c->lerBlocos = 4; c->tsBlocos = 7; c->prefetch = 1; }
 void mini_motor_config(MiniMotor *m, const MiniConfig *c) { (void)m; (void)c; }
 void mini_motor_proximo(MiniMotor *m, long alvoMs, long tolMs) { (void)m; (void)alvoMs; (void)tolMs; }
@@ -284,6 +308,7 @@ int main(void) {
     Trabalho *w = novoTrabalho(j);
     pthread_t ft;
     quadroCustoKB = 0;
+    publicar(1, 1, 0, 0, 0, 0);            // ready and playing, playhead at 0
     pthread_mutex_lock(&mu);
     job = j; estado = SEEKR_BUSCANDO; __atomic_store_n(&batida, tickFake, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&mu);
@@ -318,6 +343,7 @@ int main(void) {
     pthread_t ft;
     int antes = __atomic_load_n(&motorQuadros, __ATOMIC_ACQUIRE), soltaram = __atomic_load_n(&motorSoltadas, __ATOMIC_ACQUIRE);
     memFake(100 * 1024);                 // 100 MB free: below the 150 MB floor
+    publicar(1, 1, 0, 0, 0, 0);
     pthread_mutex_lock(&mu);
     job = j; estado = SEEKR_BUSCANDO; __atomic_store_n(&batida, tickFake, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&mu);
@@ -344,6 +370,7 @@ int main(void) {
     quadroCustoKB = 40000;                  // ~39 MB per frame -> measured x1.25 = ~48.8 MB
     __atomic_store_n(&motorQuadros, 0, __ATOMIC_RELEASE);
     memFake(1000L * 1024);
+    publicar(1, 1, 0, 0, 0, 0);
     pthread_mutex_lock(&mu);
     job = j; estado = SEEKR_BUSCANDO; __atomic_store_n(&batida, tickFake, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&mu);
@@ -362,6 +389,100 @@ int main(void) {
     if (!jGet(j, 0)) __atomic_store_n(&j->parar, 1, __ATOMIC_RELEASE);
     pthread_join(ft, NULL);
     CHECK(jGet(j, 0), "com memoria de volta a grade termina");
+    pthread_mutex_lock(&mu); job = NULL; pthread_mutex_unlock(&mu);
+    soltarJob(j);
+  }
+
+  // ---- J. paused by the control: no decode, decoder released -------------------
+  {
+    Job *j = novoJob(24, 24 * BASE_MS);
+    Trabalho *w = novoTrabalho(j);
+    pthread_t ft;
+    quadroCustoKB = 0;
+    memFake(900L * 1024);
+    int q0 = __atomic_load_n(&motorQuadros, __ATOMIC_ACQUIRE);
+    int s0 = __atomic_load_n(&motorSoltadas, __ATOMIC_ACQUIRE);
+    publicar(1, 0, 0, 0, 0, 0);             // ready BUT paused by the control
+    pthread_mutex_lock(&mu);
+    job = j; estado = SEEKR_BUSCANDO; __atomic_store_n(&batida, tickFake, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&mu);
+    assert(!pthread_create(&ft, NULL, trabalhar, w));
+    usleep(1200000);                         // the heartbeat stays fresh the whole time
+    CHECK(__atomic_load_n(&motorQuadros, __ATOMIC_ACQUIRE) == q0,
+          "pronto e pausado: nenhum quadro decodificado (quadros=%d)",
+          __atomic_load_n(&motorQuadros, __ATOMIC_ACQUIRE) - q0);
+    CHECK(__atomic_load_n(&motorSoltadas, __ATOMIC_ACQUIRE) > s0, "pausado: o decoder e solto");
+    CHECK(!jGet(j, 0) && jGet(j, 1), "pausado, nao morto");
+    publicar(1, 1, 0, 0, 0, 0);             // playing again: the grid finishes
+    esperar(completoF, j, 15000);
+    if (!jGet(j, 0)) __atomic_store_n(&j->parar, 1, __ATOMIC_RELEASE);
+    pthread_join(ft, NULL);
+    CHECK(jGet(j, 0) && jGet(j, 2) == 12, "retomada: a grade termina (feitos=%d)", jGet(j, 2));
+    pthread_mutex_lock(&mu); job = NULL; pthread_mutex_unlock(&mu);
+    soltarJob(j);
+  }
+
+  // ---- K. decoder released: the gate charges the cold estimate -----------------
+  {
+    Job *j = novoJob(24, 24 * BASE_MS);
+    Trabalho *w = novoTrabalho(j);
+    pthread_t ft;
+    quadroCustoKB = 1024;                    // each tile eats 1 MB of MemAvailable
+    memFake(900L * 1024);
+    publicar(1, 1, 0, 0, 0, 0);
+    pthread_mutex_lock(&mu);
+    job = j; estado = SEEKR_BUSCANDO; __atomic_store_n(&batida, tickFake, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&mu);
+    assert(!pthread_create(&ft, NULL, trabalhar, w));
+    for (int i = 0; i < 600 && !jGet(j, 2); i++) usleep(5000);
+    CHECK(jGet(j, 2) >= 1, "primeiro tile feito com a estimativa fria");
+    // Buffering releases the decoder; the measured delta is ~1 MB x1.25 = 20 MB.
+    int s1n = __atomic_load_n(&motorSoltadas, __ATOMIC_ACQUIRE);
+    publicar(1, 1, 2000, 0, 0, 0);
+    for (int i = 0; i < 400 && __atomic_load_n(&motorSoltadas, __ATOMIC_ACQUIRE) <= s1n; i++) usleep(5000);
+    CHECK(__atomic_load_n(&motorSoltadas, __ATOMIC_ACQUIRE) > s1n, "buffering: decoder solto");
+    int q1 = __atomic_load_n(&motorQuadros, __ATOMIC_ACQUIRE);   // soltar vem depois do quadro no fio
+    // Resume with 175 MB free: above floor + measured 20 MB (170), below floor
+    // + cold estimate 40 MB (190) — the frame that reopens the decoder must wait.
+    memFake(175L * 1024);
+    publicar(1, 1, 0, 0, 0, 0);
+    usleep(1200000);
+    CHECK(__atomic_load_n(&motorQuadros, __ATOMIC_ACQUIRE) == q1,
+          "reabrir o decoder cobra a estimativa fria: 175 MB nao bastam (quadros=%d)",
+          __atomic_load_n(&motorQuadros, __ATOMIC_ACQUIRE) - q1);
+    memFake(900L * 1024);
+    esperar(completoF, j, 15000);
+    if (!jGet(j, 0)) __atomic_store_n(&j->parar, 1, __ATOMIC_RELEASE);
+    pthread_join(ft, NULL);
+    CHECK(jGet(j, 0), "com memoria de volta a grade termina");
+    pthread_mutex_lock(&mu); job = NULL; pthread_mutex_unlock(&mu);
+    soltarJob(j);
+  }
+
+  // ---- L. unreadable MemAvailable blocks, never frees --------------------------
+  {
+    Job *j = novoJob(24, 24 * BASE_MS);
+    Trabalho *w = novoTrabalho(j);
+    pthread_t ft;
+    quadroCustoKB = 0;
+    int q0 = __atomic_load_n(&motorQuadros, __ATOMIC_ACQUIRE);
+    int s0 = __atomic_load_n(&motorSoltadas, __ATOMIC_ACQUIRE);
+    memFake(-1);                             // MemAvailable unreadable
+    publicar(1, 1, 0, 0, 0, 0);
+    pthread_mutex_lock(&mu);
+    job = j; estado = SEEKR_BUSCANDO; __atomic_store_n(&batida, tickFake, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&mu);
+    assert(!pthread_create(&ft, NULL, trabalhar, w));
+    usleep(1200000);
+    CHECK(__atomic_load_n(&motorQuadros, __ATOMIC_ACQUIRE) == q0,
+          "MemAvailable ilegivel: nenhum quadro decodificado (quadros=%d)",
+          __atomic_load_n(&motorQuadros, __ATOMIC_ACQUIRE) - q0);
+    CHECK(__atomic_load_n(&motorSoltadas, __ATOMIC_ACQUIRE) > s0, "decoder solto com leitura ilegivel");
+    memFake(900L * 1024);
+    esperar(completoF, j, 15000);
+    if (!jGet(j, 0)) __atomic_store_n(&j->parar, 1, __ATOMIC_RELEASE);
+    pthread_join(ft, NULL);
+    CHECK(jGet(j, 0) && jGet(j, 2) == 12, "leitura de volta: a grade termina");
     pthread_mutex_lock(&mu); job = NULL; pthread_mutex_unlock(&mu);
     soltarJob(j);
   }
@@ -386,6 +507,7 @@ int main(void) {
     quadroVelho = 0;
     CHECK(provQuadros(560.0, 3, texs, cue) == 1, "a ultima textura segura a tela");
     CHECK(quadroVelho, "fora dos 5 min: qualquer coisa mostrada e velha");
+    CHECK(cue[1] == 200.0, "o fallback etiqueta o tempo do tile mostrado (cue=%.1f)", cue[1]);
     // The LRU: pushing more than SLOTS different tiles never grows the set.
     int antes = texGeradas;
     for (int s = 0; s <= 20; s += DEZ) marcarFeito(j, s);
@@ -393,8 +515,31 @@ int main(void) {
       for (int d = 0; d < 8; d++) provQuadros(s * BASE_MS / 1000.0, 1, texs, cue);
     }
     CHECK(texGeradas - antes <= SLOTS, "uploads limitados a %d texturas (foram %d)", SLOTS, texGeradas - antes);
-    pthread_mutex_lock(&mu); job = NULL; pthread_mutex_unlock(&mu);
-    soltarJob(j); soltarJob(j);
+    int del0 = texDeletadas;
+    PROVEDOR.desligar();                     // draw side: the GL context is current
+    CHECK(texDeletadas > del0, "desligar libera as texturas do provedor");
+    int vivos = 0;
+    for (int i = 0; i < SLOTS; i++) if (slots[i].tex) vivos++;
+    CHECK(vivos == 0, "nenhum nome GL sobrevive ao desligar (%d restantes)", vivos);
+    soltarJob(j);                            // desligar already dropped the job's ref
+  }
+
+  // ---- H2. the fallback texture carries its own timestamp -----------------------
+  {
+    Job *j = novoJob(200, 200 * BASE_MS);    // 1000 s: 510 s is outside the 5-min window
+    GLuint texs[3]; double cue[3];
+    j->passo = DEZ;
+    pthread_mutex_lock(&mu);
+    job = j; estado = SEEKR_PRONTO;
+    pthread_mutex_unlock(&mu);
+    marcarFeito(j, 40);                      // only 200 s has a tile
+    provQuadros(200.0, 3, texs, cue);        // its texture goes into a slot
+    quadroVelho = 0;
+    CHECK(provQuadros(510.0, 3, texs, cue) == 1, "longe de todo tile pronto: a ultima textura segura a tela");
+    CHECK(quadroVelho, "fora da janela o mostrado e velho");
+    CHECK(cue[1] == 200.0, "o fallback etiqueta o tempo do tile MOSTRADO (cue=%.1f)", cue[1]);
+    PROVEDOR.desligar();
+    soltarJob(j);
   }
 
   // ---- I. lifecycle via the provider vtable ------------------------------------
@@ -402,11 +547,17 @@ int main(void) {
     SeekrFonte f = { .imdb = "tt0000000", .t = 0, .e = 0, .durMs = 120L * 60000,
                      .url = "https://fonte.invalid/filme.mkv", .cabecalhos = "",
                      .tamanho = 0, .videoHash = "", .arquivo = "filme.mkv",
-                     .posMs = 0, .playheadMs = 0, .scrubbing = 0 };
+                     .posMs = 0, .playheadMs = 12345, .scrubbing = 0 };
     unsigned g0 = geracao;
     PROVEDOR.pedir(&f);
     CHECK(provEstado() == SEEKR_BUSCANDO, "pedir -> buscando");
     CHECK(geracao != g0, "novo titulo, nova geracao");
+#ifdef NV_MINIATURA_SNAP
+    {
+      MiniEst e = estCopia();
+      CHECK(e.playheadMs == 12345, "pedir republica o estado do video para o fio (playhead=%ld)", e.playheadMs);
+    }
+#endif
     unsigned g1 = geracao;
     PROVEDOR.pedir(&f);
     CHECK(geracao == g1, "o mesmo titulo so bate o heartbeat");
