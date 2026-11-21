@@ -373,7 +373,10 @@ static void montarLinhas(void) {
   }
   // FOCUS BY IDENTITY: find the row with the remembered key; if it vanished
   // (a list was replaced), stay at the same position and adopt that row.
-  for (i = 0; i < nLinhasV; i++) if (!strcmp(linhas[i].chave, focoChave)) break;
+  // Rows can share a key (two addons returning the same file): keep the focused
+  // copy, or DOWN past it snaps back to the first one every frame.
+  if (foco >= 0 && foco < nLinhasV && !strcmp(linhas[foco].chave, focoChave)) i = foco;
+  else for (i = 0; i < nLinhasV; i++) if (!strcmp(linhas[i].chave, focoChave)) break;
   if (i < nLinhasV) foco = i;
   else {
     if (foco >= nLinhasV) foco = nLinhasV - 1;
