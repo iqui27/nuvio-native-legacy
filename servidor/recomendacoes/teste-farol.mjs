@@ -768,3 +768,167 @@ test("ocorrencia apos 24 h gera registro novo e o 429 nunca toca o recibo anteri
   const antiga = q(sqlite, "SELECT criado FROM farol_registro WHERE id = ?", idOriginal);
   assert.equal(antiga[0].criado, t0);
 });
+
+// --- correcao farol5d ---------------------------------------------------------
+// Os quatro bloqueios da revisao r4: o schema.sql fundia janelas distintas e
+// apagava recibos, a 019 rebaixava a sequencia depois da limpeza, uma falha
+// transitoria na confirmacao prendia o reenvio em 409 e um POST atrasado
+// reabria a cota da hora nova.
+const aplicaSql = (sqlite, arquivo) => {
+  for (const cmd of readFileSync(new URL(arquivo, import.meta.url), "utf8").split(/;\s*\n/)) {
+    const c = cmd.replace(/^\s*--.*$/gm, "").trim();
+    if (c) sqlite.exec(c);
+  }
+};
+
+test("schema.sql no banco legado funde so a mesma janela: nenhum recibo perdido", (t) => {
+  const sqlite = new DatabaseSync(":memory:");
+  t.after(() => sqlite.close());
+  // A 018 de 705a519ac: sem `janela` e sem farol_dedup. As seis ocorrencias
+  // da revisao no MESMO par — 0h, 12h, 24h-1s, 24h, 36h e 48h — mais um
+  // segundo fingerprint e uma segunda pessoa que nao podem ser tocados. Na
+  // ordem de preparar-local.sh o schema roda ANTES das migracoes, e era o
+  // corte dele que apagava os recibos de 24 h e 48 h.
+  sqlite.exec(`CREATE TABLE farol_registro (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, criado INTEGER NOT NULL,
+      pessoa_h TEXT NOT NULL, versao TEXT NOT NULL, plataforma TEXT NOT NULL,
+      so_maior INTEGER NOT NULL DEFAULT 0, codigo TEXT NOT NULL,
+      fp TEXT NOT NULL, fingerprint TEXT NOT NULL,
+      vezes INTEGER NOT NULL DEFAULT 1, json TEXT NOT NULL);
+    CREATE INDEX farol_fp ON farol_registro (fp, criado);
+    CREATE INDEX farol_criado ON farol_registro (criado);
+    CREATE TABLE farol_conhecido (id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fp TEXT, codigo TEXT, plataforma TEXT, so_maior INTEGER,
+      estado TEXT NOT NULL, versao TEXT NOT NULL DEFAULT '',
+      nota_pt TEXT NOT NULL DEFAULT '', nota_en TEXT NOT NULL DEFAULT '');`);
+  sqlite.exec(`INSERT INTO farol_registro
+      (id,criado,pessoa_h,versao,plataforma,so_maior,codigo,fp,fingerprint,vezes,json) VALUES
+      (536870913,172800000,'p1','1-ipk','webos',4,'NENHUM','a','fp-a',2,'{"caso":"ancora"}'),
+      (536870914,172843200,'p1','1-ipk','webos',4,'NENHUM','a','fp-a',3,'{"caso":"reenvio12h"}'),
+      (536870915,172886399,'p1','1-ipk','webos',4,'NENHUM','a','fp-a',5,'{"caso":"reenvio24h-1"}'),
+      (536870916,172886400,'p1','1-ipk','webos',4,'NENHUM','a','fp-a',7,'{"caso":"novo24h"}'),
+      (536870917,172929600,'p1','1-ipk','webos',4,'NENHUM','a','fp-a',11,'{"caso":"reenvio36h"}'),
+      (536870918,172972800,'p1','1-ipk','webos',4,'NENHUM','a','fp-a',13,'{"caso":"novo48h"}'),
+      (536870919,172972800,'p1','1-ipk','webos',4,'NENHUM','b','fp-b',17,'{"caso":"outrofp"}'),
+      (536870920,172972800,'p2','1-ipk','webos',4,'NENHUM','a','fp-a',19,'{"caso":"outrapessoa"}');`);
+  aplicaSql(sqlite, "schema.sql");
+  // Ja no schema: a janela ancora em 0h, em 24h e em 48h — os recibos
+  // 536870916 e 536870918 NAO podem sumir nem perder o JSON.
+  const depoisSchema = q(sqlite, "SELECT id FROM farol_registro ORDER BY id").map((r) => r.id);
+  assert.deepEqual(depoisSchema, [536870913, 536870916, 536870918, 536870919, 536870920]);
+  aplicaSql(sqlite, "migracao-018-farol.sql");
+  aplicaSql(sqlite, "migracao-019-farol-janela.sql");
+  const linhas = q(sqlite, "SELECT id, vezes, json FROM farol_registro ORDER BY id");
+  assert.deepEqual(linhas.map((r) => [r.id, r.vezes]),
+    [[536870913, 10], [536870916, 18], [536870918, 13], [536870919, 17], [536870920, 19]]);
+  assert.equal(JSON.parse(linhas[0].json).caso, "ancora");
+  assert.equal(JSON.parse(linhas[2].json).caso, "novo48h");
+  const slot = q(sqlite, "SELECT registro FROM farol_dedup WHERE pessoa_h = 'p1' AND fp = 'a'")[0];
+  assert.equal(slot.registro, 536870918);
+});
+
+test("a 019 reaplicada apos a limpeza nao reemite id de recibo ja apagado", (t) => {
+  const { sqlite } = cenario(t);
+  // Como na retencao de 30 dias: o maior id emitido saiu do banco, mas a
+  // sequencia ainda lembra dele. A 019 antiga a refazia so do MAX(id)
+  // presente e o INSERT seguinte dava 536870924 para outra pessoa — mesmo
+  // codigo de recibo (50WAN3), JSON diferente.
+  sqlite.exec(`INSERT INTO farol_registro (id, criado, pessoa_h, versao, plataforma, codigo, fp, fingerprint, vezes, json)
+    VALUES (536870923, 172800000, 'p1', 'v', 'p', 'NENHUM', 'a', 'fp', 1, '{}'),
+           (536870924, 172972800, 'p2', 'v', 'p', 'NENHUM', 'b', 'fp', 1, '{}');
+    DELETE FROM farol_registro WHERE id = 536870924;`);
+  const antes = q(sqlite, "SELECT seq FROM sqlite_sequence WHERE name = 'farol_registro'")[0].seq;
+  assert.equal(antes, 536870924);
+  aplicaSql(sqlite, "migracao-019-farol-janela.sql");
+  aplicaSql(sqlite, "migracao-019-farol-janela.sql");
+  const seq = q(sqlite, "SELECT seq FROM sqlite_sequence WHERE name = 'farol_registro'")[0].seq;
+  assert.ok(seq >= antes, `sequencia ${seq} ficou atras de ${antes}`);
+  const novo = sqlite.prepare(
+    "INSERT INTO farol_registro (criado, pessoa_h, versao, plataforma, codigo, fp, fingerprint, vezes, json) " +
+    "VALUES (173000000, 'p3', 'v', 'p', 'NENHUM', 'c', 'fp', 1, '{}') RETURNING id").get();
+  assert.ok(novo.id > 536870924, `o id ${novo.id} ja tinha sido emitido`);
+});
+
+test("falha transitoria na confirmacao: reenvios adotam a linha e devolvem o mesmo codigo", async (t) => {
+  const { sqlite, env } = cenario(t);
+  const corpo = pacoteEmitido();
+  const t0 = 1700001000;
+  const fp16 = fpDe(corpo.erro.fingerprint);
+  // O gatilho reproduz a falha de escrita do D1: so o UPDATE de confirmacao
+  // morre, depois do INSERT da linha e dos tres debitos de cota.
+  sqlite.exec(`CREATE TRIGGER sonda_falha BEFORE UPDATE OF confirmado ON farol_dedup
+    WHEN NEW.confirmado = 1 AND NEW.fp = '${fp16}'
+    BEGIN SELECT RAISE(ABORT, 'sonda: confirmacao interrompida'); END;`);
+  let interrompido;
+  try {
+    interrompido = await chamadaFarol(env, corpo, t0);
+  } finally {
+    sqlite.exec("DROP TRIGGER sonda_falha");
+  }
+  assert.equal(interrompido.status, 503);
+  // O estado deixado e o da r4: linha gravada, slot pendente sem `registro`.
+  assert.equal(q(sqlite, "SELECT count(*) AS n FROM farol_registro")[0].n, 1);
+  const pendente = q(sqlite, "SELECT registro, confirmado FROM farol_dedup")[0];
+  assert.equal(pendente.registro, null);
+  assert.equal(pendente.confirmado, 0);
+  // Dois reenvios em paralelo: ambos adotam a linha orfa e saem com o MESMO
+  // recibo que o envio original devolveria — nenhum 409, nenhum debito novo.
+  const [r1, r2] = await Promise.all(
+    [chamadaFarol(env, corpo, t0 + 5), chamadaFarol(env, corpo, t0 + 6)]);
+  assert.equal(r1.status, 200);
+  assert.equal(r2.status, 200);
+  const linha = q(sqlite, "SELECT id, vezes FROM farol_registro")[0];
+  assert.equal(r1.body.codigo, codigoRegistro(linha.id));
+  assert.equal(r2.body.codigo, codigoRegistro(linha.id));
+  assert.equal(q(sqlite, "SELECT count(*) AS n FROM farol_registro")[0].n, 1);
+  const slot = q(sqlite, "SELECT registro, confirmado FROM farol_dedup")[0];
+  assert.equal(slot.registro, linha.id);
+  assert.equal(slot.confirmado, 1);
+  assert.deepEqual(
+    q(sqlite, "SELECT n FROM limite WHERE chave LIKE 'farol:%' ORDER BY chave").map((r) => r.n),
+    [1, 1, 1]);
+  // E um fingerprint diferente continua gravando normal (o D1 "voltou").
+  const outro = pacoteEmitido();
+  outro.erro.fingerprint = "webos-4-starfish-ums_299-mkv-hevc10-dv-eac3";
+  outro.erro.fp = fpDe(outro.erro.fingerprint);
+  assert.equal((await chamadaFarol(env, outro, t0 + 7)).status, 200);
+});
+
+test("pedido da hora anterior em voo nao reabre a cota da hora nova", async (t) => {
+  const { sqlite, env } = cenario(t);
+  const horaNova = 1700002800;
+  assert.equal(horaNova % 3600, 0);
+  const pacoteN = (i) => {
+    const p = pacoteEmitido();
+    p.erro.fingerprint = `webos-4-starfish-ums_${250 + i}-mkv-hevc10-dv-eac3`;
+    p.erro.fp = fpDe(p.erro.fingerprint);
+    return p;
+  };
+  // O primeiro pedido captura `t` um segundo ANTES da virada e fica segurado
+  // na reserva da cota ate os seis envios da hora nova completarem — a ordem
+  // real de um POST atrasado no Workers.
+  let soltar, chegou;
+  const trava = new Promise((r) => { soltar = r; });
+  const espera = new Promise((r) => { chegou = r; });
+  const limSegurado = async (e, chave, max, jan, tt) => {
+    if (String(chave).startsWith("farol:h:")) { chegou(); await trava; }
+    return limitar(e, chave, max, jan, tt);
+  };
+  const antigo = chamadaFarol(env, pacoteN(0), horaNova - 1, limSegurado);
+  await espera;
+  for (let i = 1; i <= 6; i++)
+    assert.equal((await chamadaFarol(env, pacoteN(i), horaNova)).status, 200, "envio " + i);
+  soltar();
+  const tardio = await antigo;
+  // O atrasado conta na janela VIGENTE: e o setimo debito da hora nova —
+  // recusado — e a janela nunca volta para a dele (na versao anterior ela
+  // voltava e o setimo da hora nova gravava a setima linha).
+  assert.equal(tardio.status, 429);
+  assert.equal(
+    q(sqlite, "SELECT janela FROM limite WHERE chave LIKE 'farol:h:%'")[0].janela,
+    Math.floor(horaNova / 3600));
+  const setimo = await chamadaFarol(env, pacoteN(7), horaNova + 1);
+  assert.equal(setimo.status, 429);
+  assert.equal(
+    q(sqlite, "SELECT count(*) AS n FROM farol_registro WHERE criado >= ?", horaNova)[0].n, 6);
+});

@@ -401,7 +401,26 @@ export async function rotaFarolRegistro(env, quem, corpo, h, limitar, codigoRegi
     // instrucoes — e devolve o MESMO recibo. Persistindo pendente, o envio
     // morreu no meio: 409 para a TV reenviar; o marcador velho e retomado
     // como ocorrencia nova. Pendente NUNCA vira 200.
+    //
+    // Excecao: o envio original gravou a LINHA mas morreu antes do UPDATE de
+    // confirmacao (uma falha ali devolvia 503 e deixava slot pendente sem
+    // `registro` — reenvios batiam em 409 ate o slot vencer). Esse orfao e
+    // ADOTADO: o slot conclui com a linha que ja existe desta rodada
+    // (criado >= o do slot; as mais antigas sao recibos de outra janela) e o
+    // reenvio devolve o MESMO codigo, sem novo debito de cota.
     for (let espera = 0; ded && ded.toques > 1 && !ded.confirmado && espera < 20; espera++) {
+      const orfao = await env.DB.prepare(
+        "SELECT id FROM farol_registro WHERE pessoa_h = ? AND fp = ? AND criado >= ? " +
+        "ORDER BY criado DESC, id DESC LIMIT 1"
+      ).bind(pessoa_h, fp, ded.criado).first().catch(() => null);
+      if (orfao?.id) {
+        await env.DB.prepare(
+          "UPDATE farol_dedup SET registro = ?, confirmado = 1 " +
+          "WHERE pessoa_h = ? AND fp = ? AND confirmado = 0 AND criado = ?"
+        ).bind(orfao.id, pessoa_h, fp, ded.criado).run().catch(() => {});
+        ded = { ...ded, registro: orfao.id, confirmado: 1 };
+        break;
+      }
       await new Promise((resolve) => setTimeout(resolve, 25));
       ded = await reclamar();
     }

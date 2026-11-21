@@ -114,13 +114,17 @@ const nomeDeVerdade = (s) => (typeof s === "string" && !/^Amigo #\d+$/.test(s) ?
 // Contador por (acao, pessoa) numa janela fixa. Um UPSERT so, atomico no D1: a
 // virada de janela zera o contador na mesma instrucao que incrementa, entao
 // duas requisicoes simultaneas nao passam do teto por corrida.
+// A janela SO AVANCA: um pedido atrasado (o instante foi capturado na hora
+// anterior e o processamento cruzou a virada) conta na janela VIGENTE — nunca
+// a faz voltar nem zera a contagem dela, ou um POST atrasado reabriria a cota.
 async function limitar(env, chave, max, janela, t) {
   const j = Math.floor(t / janela);
   const r = await env.DB.prepare(
     "INSERT INTO limite (chave, janela, n, expira) VALUES (?, ?, 1, ?) " +
     "ON CONFLICT(chave) DO UPDATE SET " +
-    "n = CASE WHEN limite.janela = excluded.janela THEN limite.n + 1 ELSE 1 END, " +
-    "janela = excluded.janela, expira = excluded.expira RETURNING n"
+    "n = CASE WHEN limite.janela >= excluded.janela THEN limite.n + 1 ELSE 1 END, " +
+    "janela = MAX(limite.janela, excluded.janela), " +
+    "expira = MAX(limite.expira, excluded.expira) RETURNING n"
   ).bind(chave, j, (j + 1) * janela).first();
   return (r?.n || 1) <= max;
 }
