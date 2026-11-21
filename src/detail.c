@@ -7108,7 +7108,11 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
     gfx_cor(d, .5f, .055f, .059f, .071f, .72f * a);
     gfx_icone((GfxRect){ d.x + 21.0f, d.y + 21.0f, 30.0f, 30.0f }, "aj_lock", .95f, .95f, .95f, a);
   }
-  desenhaMinhaNotaEpisodio(th, serie->imdb, ep->temporada, ep->episodio, a);
+  // A mesma janela de recarga de resumoTemporada: serie pode vir NULL aqui e
+  // desenhaMinhaNotaEpisodio monta a chave com snprintf("%s"). idxImdb ja
+  // guarda a identidade do item aberto, entao a nota nem pisca.
+  desenhaMinhaNotaEpisodio(th, serie ? serie->imdb : idxImdb,
+                           ep->temporada, ep->episodio, a);
   th = thLayout;   // o texto abaixo segue a caixa de repouso
 
   // NADA DE RESERVA INVENTADA. Aqui as quatro linhas caiam numa tabela de
@@ -7436,7 +7440,11 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
                      NV_DETP_EP_BARRA_H };
       // Anda do valor que esta tela mostrava ate o novo (revela.h): na volta
       // do player a barra do episodio cresce ate onde a pessoa parou.
-      float mostra = revela_progresso(ci->imdb, ep->temporada, ep->episodio,
+      // prog pode vir de extras_ep_progresso() com ci == NULL (item ausente na
+      // janela da recarga); revela_progresso aceita chave vazia e idxImdb ja
+      // guarda a identidade do item aberto.
+      float mostra = revela_progresso(ci ? ci->imdb : idxImdb,
+                                      ep->temporada, ep->episodio,
                                       (float)prog, SDL_GetTicks());
       GfxRect at = { tr.x, tr.y, tr.w * (mostra / 100.0f), tr.h };
       gfx_cor(tr, 0.5f, 0, 0, 0, 0.45f * a);
