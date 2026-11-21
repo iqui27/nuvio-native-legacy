@@ -89,6 +89,14 @@ typedef struct {
 // BLOQUEIA: chamar de um fio proprio.
 int mkv_faixas(const char *url, MkvFaixa *saida, int max);
 
+// Mesma leitura para um fio que pode sobreviver ao titulo que a pediu (o
+// fioMkv do TPK): `*geracao` e a geracao viva do chamador e `esperada` a que o
+// fio viu ao nascer. A geracao e relida sob a mesma trava da publicacao DTS ao
+// reservar a sequencia da sonda e ao publicar o resultado — um fio da geracao
+// anterior nao inicia a leitura nem sobrescreve a classificacao da sonda ativa.
+int mkv_faixas_geracao(const char *url, MkvFaixa *saida, int max,
+                       const unsigned *geracao, unsigned esperada);
+
 // Mesma leitura, UMA viagem so, devolvendo tambem os capitulos. `caps` pode ser
 // NULL. O numero de capitulos sai por `nCaps`.
 //

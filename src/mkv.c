@@ -1049,20 +1049,29 @@ typedef struct {
   long bytes;
 } MkvDts;
 static MkvDts dtsPub;
-static unsigned dtsSeq;
+static unsigned dtsSeq, dtsSondaPub;
 static pthread_mutex_t dtsLock = PTHREAD_MUTEX_INITIALIZER;
 /* Issues the probe's sequence at scan start; dtsPublicar only accepts a
  * context that is still the newest issued, so a detached worker of a previous
- * generation finishing late cannot overwrite the active probe's result. */
-static unsigned dtsSondaNova(void) {
+ * generation finishing late cannot overwrite the active probe's result.
+ * `geracao`/`esperada` extend that identity to the caller's own generation
+ * (video_tpk.c fioMkv): a worker already detached when its title changed is
+ * refused here (0 = do not even start the read), so it cannot reserve a
+ * sequence above the probe of the title that replaced it, and is refused
+ * again under this same lock when it would publish. */
+static unsigned dtsSondaNova(const unsigned *geracao, unsigned esperada) {
   pthread_mutex_lock(&dtsLock);
-  unsigned s = ++dtsSeq;
+  unsigned s = !geracao || *geracao == esperada ? ++dtsSeq : 0;
   pthread_mutex_unlock(&dtsLock);
   return s;
 }
-static void dtsPublicar(const MkvDts *c, unsigned sonda) {
+static void dtsPublicar(const MkvDts *c, unsigned sonda,
+                        const unsigned *geracao, unsigned esperada) {
   pthread_mutex_lock(&dtsLock);
-  if (sonda == dtsSeq) dtsPub = *c;
+  if (sonda == dtsSeq && (!geracao || *geracao == esperada)) {
+    dtsPub = *c;
+    dtsSondaPub = sonda;
+  }
   pthread_mutex_unlock(&dtsLock);
 }
 static void dtsLog(const MkvDts *c, const char *quando) {
@@ -1108,8 +1117,10 @@ int mkv_dts_kind(int numero) {
 int mkv_dts_alem(const char *url, const MkvFaixa *fx, int nf) {
   int j, left = 0;
   long n = 0, lidos;
+  unsigned pub;
   char *b;
   pthread_mutex_lock(&dtsLock);
+  pub = dtsSondaPub;
   dtsListar(&dtsPub, fx, nf);
   for (j = 0; j < dtsPub.n; j++) left += dtsPub.kind[j] == NV_DTS_KIND_UNKNOWN;
   lidos = dtsPub.bytes;
@@ -1125,11 +1136,19 @@ int mkv_dts_alem(const char *url, const MkvFaixa *fx, int nf) {
     return 0;
   }
   pthread_mutex_lock(&dtsLock);
-  if (n > dtsPub.bytes) {
-    dtsPub.bytes = n;
-    nv_mkv_dts_scan((const unsigned char *)b, n, dtsPub.num, dtsPub.kind, dtsPub.n);
+  if (pub != dtsSondaPub) {
+    // A newer probe published while the Range was in flight: the bytes in b
+    // belong to the header that started this call, and would mislabel the
+    // tracks the new probe just classified.
+    printf("[mkv] DTS tracks (longer read): discarded, a newer probe owns the list\n");
+    fflush(stdout);
+  } else {
+    if (n > dtsPub.bytes) {
+      dtsPub.bytes = n;
+      nv_mkv_dts_scan((const unsigned char *)b, n, dtsPub.num, dtsPub.kind, dtsPub.n);
+    }
+    dtsLog(&dtsPub, " (longer read)");
   }
-  dtsLog(&dtsPub, " (longer read)");
   pthread_mutex_unlock(&dtsLock);
   free(b);
   return 1;
@@ -1192,14 +1211,15 @@ const char *mkv_contentor_nome(int c) {
   }
 }
 
-int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
-                      MkvCap *caps, int maxCaps, int *nCaps) {
+static int mkvSonda(const char *url, MkvFaixa *saida, int max,
+                    MkvCap *caps, int maxCaps, int *nCaps,
+                    const unsigned *geracao, unsigned esperada) {
   char *buf;
   long n = 0;
   int achou;
-  const unsigned sonda = dtsSondaNova();
+  const unsigned sonda = dtsSondaNova(geracao, esperada);
   ultimoContentor = MKV_CONT_NADA;
-  if (!url || !url[0] || !saida || max < 1) return 0;
+  if (!sonda || !url || !url[0] || !saida || max < 1) return 0;
   buf = rede_baixar_trecho(url, 20, 0, MKV_TRECHO - 1, &n);
   if (!buf) return 0;
   ultimoContentor = mkv_contentor((const unsigned char *)buf, n);
@@ -1213,7 +1233,7 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
   achou = acharTracks((const unsigned char *)buf, n, saida, max,
                       caps, maxCaps, nCaps);
   diagTrecho((const unsigned char *)buf, n, saida, achou);
-  { MkvDts c; dtsTrecho(&c, (const unsigned char *)buf, n, saida, achou); dtsPublicar(&c, sonda); }
+  { MkvDts c; dtsTrecho(&c, (const unsigned char *)buf, n, saida, achou); dtsPublicar(&c, sonda, geracao, esperada); }
   // Tracks cortado pela janela: uma lista PELA METADE faria o casamento das
   // legendas dar "nenhum" e deixaria TODA faixa ASS com a TV (#483 so cobria o
   // caso de 0 faixas). O SeekHead diz onde o elemento inteiro mora. Sem ele (ou
@@ -1242,19 +1262,33 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
 int mkv_faixas_do_trecho(const unsigned char *buf, long n, MkvFaixa *saida, int max,
                          MkvCap *caps, int maxCaps, int *nCaps) {
   int achou;
-  const unsigned sonda = dtsSondaNova();
+  const unsigned sonda = dtsSondaNova(NULL, 0);
   if (nCaps) *nCaps = 0;
   if (!buf || n < 64 || !saida || max < 1 || buf[0] != 0x1A || buf[1] != 0x45 ||
       buf[2] != 0xDF || buf[3] != 0xA3) return 0;
   achou = acharTracks(buf, n, saida, max, caps, maxCaps, nCaps);
   diagTrecho(buf, n, saida, achou);
-  { MkvDts c; dtsTrecho(&c, buf, n, saida, achou); dtsPublicar(&c, sonda); }
+  { MkvDts c; dtsTrecho(&c, buf, n, saida, achou); dtsPublicar(&c, sonda, NULL, 0); }
   if (tracksCortado) return 0;
   return achou;
 }
 
+int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
+                      MkvCap *caps, int maxCaps, int *nCaps) {
+  return mkvSonda(url, saida, max, caps, maxCaps, nCaps, NULL, 0);
+}
+
 int mkv_faixas(const char *url, MkvFaixa *saida, int max) {
-  return mkv_faixas_e_caps(url, saida, max, NULL, 0, NULL);
+  return mkvSonda(url, saida, max, NULL, 0, NULL, NULL, 0);
+}
+
+/* Sonda disparada por um fio que pode sobreviver ao titulo que a pediu (o
+ * fioMkv do TPK): `geracao` e relida sob dtsLock ao reservar a sequencia e ao
+ * publicar, entao um worker da geracao anterior nao reserva sequencia acima da
+ * sonda do titulo novo nem sobrescreve o resultado dela. */
+int mkv_faixas_geracao(const char *url, MkvFaixa *saida, int max,
+                       const unsigned *geracao, unsigned esperada) {
+  return mkvSonda(url, saida, max, NULL, 0, NULL, geracao, esperada);
 }
 
 // Legenda de imagem (BD: PGS; DVD: VobSub; DVB). O mesmo criterio de faixasmkv.c.

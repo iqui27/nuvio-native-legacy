@@ -3988,7 +3988,13 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
 int dts_engine_seek(DtsEngine *e,double seconds) {
   if(!e || !e->fmt || !isfinite(seconds) || seconds<0 || seconds>INT64_MAX_SECONDS) return -1;
   if(cancelled(e)) return fail(e,"Cancelled",0);
-  __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
+#ifdef NV_DTS_WEBOS_RECOVERY
+  /* A live DV seek/audio change is not a new startup: keep the bounded
+   * range queue live so seek_range retains the slots it can still serve.
+   * Startup, non-DV and remux seeks keep clearing it here. */
+  if(!e->dv || e->remux)
+#endif
+    __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
   int64_t timestamp=(int64_t)(seconds*1000000.0);
   int r;
 #ifdef NV_MP4_BD_TEST

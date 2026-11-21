@@ -1028,7 +1028,10 @@ static void *fioMkv(void *arg) {
   // #385: a sonda e leitura LATERAL ao video. Host que acabou de recusar
   // conexao (pre-busca da legenda, capitulos) nao recebe outra daqui.
   rede_lateral(1);
-  n = fx ? mkv_faixas(p->url, fx, MKV_MAX_FAIXAS) : 0;
+  // A geracao viaja ate a publicacao DTS: se este fio ja e de um titulo
+  // anterior quando a sonda comeca ou termina, o resultado e descartado em
+  // mkv.c sob dtsLock — nao basta conferir aqui, depois da escrita.
+  n = fx ? mkv_faixas_geracao(p->url, fx, MKV_MAX_FAIXAS, &mkvGeracao, p->geracao) : 0;
   if (p->geracao == mkvGeracao) {
     printf("[mkv] sonda pela rede: %d faixa(s)\n", n);
     if (n > 0) guardarMkv(fx, n);
