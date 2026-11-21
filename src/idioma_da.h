@@ -8568,6 +8568,7 @@
   T("Usa esta conta de TV ao vivo", "Brug denne live-tv-konto"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Bruger Quick Connect, hvis serveren tillader det: godkend koden i en anden Jellyfin-app. Ellers bedes der om brugernavn og adgangskode."),
   T("Usa o TMDB para preencher os cartazes da fileira de retomada.", "Bruger TMDB til at udfylde plakaterne i fortsæt-rækken."),
+  T("Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.", "Bruger metadata-addOn’et som kilde til kortet og episoderne, når det svarer for titlen. Uden et add-on der svarer — eller med \"brug altid Cinemeta\" slået til — ændres intet."),
   T("Usa o fundo do add-on", "Bruger tilføjelsesbaggrunden"),
   T("Usa o logo do add-on", "Brug tilføjelseslogoet"),
   T("Usa o mesmo estilo da principal", "Brug samme stil som den primære"),

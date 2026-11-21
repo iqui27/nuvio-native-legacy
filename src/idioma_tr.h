@@ -8568,6 +8568,7 @@
   T("Usa esta conta de TV ao vivo", "Bu canlı TV hesabını kullanın"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Sunucu izin veriyorsa Quick Connect kullanır: kodu başka bir Jellyfin uygulamasında onaylayın. Aksi halde kullanıcı adı ve parola ister."),
   T("Usa o TMDB para preencher os cartazes da fileira de retomada.", "Devam satırının afişlerini doldurmak için TMDB'yi kullanır."),
+  T("Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.", "Başlık için yanıt verdiğinde meta veri eklentisini kartın ve bölümlerin kaynağı olarak kullanır. Yanıt veren eklenti yoksa — ya da \"her zaman Cinemeta kullan\" açıksa — hiçbir şey değişmez."),
   T("Usa o fundo do add-on", "Eklenti arka planını kullanır"),
   T("Usa o logo do add-on", "Eklenti logosunu kullanın"),
   T("Usa o mesmo estilo da principal", "Ana stil ile aynı stili kullanın"),

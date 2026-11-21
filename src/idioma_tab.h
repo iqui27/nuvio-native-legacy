@@ -8567,6 +8567,7 @@
   { "Usa esta conta de TV ao vivo", "Use this live TV account" },
   { "Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Uses Quick Connect if the server allows it: approve the code in another Jellyfin app. Otherwise asks for username and password." },
   { "Usa o TMDB para preencher os cartazes da fileira de retomada.", "Uses TMDB to fill in the posters of the resume row." },
+  { "Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.", "Uses the metadata add-on as the source of the details page and episodes when it answers for the title. With no add-on that answers — or with \"always use Cinemeta\" on — nothing changes." },
   { "Usa o fundo do add-on", "Uses the add-on background" },
   { "Usa o logo do add-on", "Use the add-on logo" },
   { "Usa o mesmo estilo da principal", "Use the same style as the main" },

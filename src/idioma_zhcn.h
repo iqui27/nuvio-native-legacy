@@ -8568,6 +8568,7 @@
   T("Usa esta conta de TV ao vivo", "使用此直播电视帐户"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "服务器允许时使用 Quick Connect：在另一个 Jellyfin 应用中批准代码。否则会询问用户名和密码。"),
   T("Usa o TMDB para preencher os cartazes da fileira de retomada.", "用 TMDB 补全继续观看行的海报。"),
+  T("Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.", "当元数据插件对该标题有响应时，将其作为详情页和剧集的来源。没有插件响应 — 或开启 \"始终使用 Cinemeta\" — 时不会有任何变化。"),
   T("Usa o fundo do add-on", "使用附加背景"),
   T("Usa o logo do add-on", "使用附加徽标"),
   T("Usa o mesmo estilo da principal", "使用与主体相同的风格"),

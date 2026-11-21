@@ -1196,6 +1196,39 @@ int main(void) {
     assert(!pediu("cinemeta") && !pediu("catalog.nuvio"));
     fakeMetaExterno = 0; addonMeta = 0; addonResp = NULL;
     puts("ok  addon responde: a lista e so a dele, sem Cinemeta nem Nuvio");
+    // CATALOGO DO ADDON + PREFERENCIA + FICHA SEM EPISODIOS (#794 r2): o addon
+    // que publicou o titulo responde so nome e sinopse ("videos": []). A
+    // preferencia nao pode pular o provedor geral — senao a ficha abre sem
+    // episodio nenhum. Com episodios de verdade ela continua exclusiva.
+    {
+      static const char vazio[] =
+        "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\",\"name\":\"Serie\","
+        "\"description\":\"So ficha.\",\"videos\":[]}}";
+      nFake = 1; nRotas = 0;
+      fake[0] = (FakeAddon){ "Meta", "https://mt.test/SEGREDO", "org.mt", "tt", 0 };
+      rota("mt.test/SEGREDO/meta/series/tt13293588.json", vazio);
+      fakeMetaExterno = 1; cineSerie = NULL;
+      limparCacheMeta();
+      catalogoDe("tt13293588", "series", "Serie", "org.mt");
+      abrir();
+      printf("catalogo vazio + preferencia: %d episodios, provedor geral %s\n",
+             cat_n_episodios(0),
+             (pediu("cinemeta") || pediu("catalog.nuvio")) ? "consultado" : "PULADO");
+      assert(cat_n_episodios(0) == 3);
+      assert(!strcmp(cat_episodio(0, 0)->vid, "tt13293588:1:1"));
+      assert(pediu("cinemeta") || pediu("catalog.nuvio"));
+      // Com episodios de verdade na ficha a preferencia segue exclusiva.
+      nRotas = 0;
+      rota("mt.test/SEGREDO/meta/series/tt13293588.json", META_SERIE_ADDON);
+      nPedidos = 0;
+      limparCacheMeta();
+      catalogoDe("tt13293588", "series", "Serie", "org.mt");
+      abrir();
+      assert(cat_n_episodios(0) == 5);
+      assert(!pediu("cinemeta") && !pediu("catalog.nuvio"));
+      fakeMetaExterno = 0; nFake = 0; nRotas = 0;
+      puts("ok  catalogo + preferencia: ficha sem episodios nao pula o provedor geral");
+    }
     // EMPATE ACIMA DO TETO: o Cinemeta e a lista de arquivos conhecem os
     // mesmos pares, mas so VIDEOS_MAX sao publicados. A contagem vem do corpo
     // inteiro, e a lista continua a do Cinemeta.

@@ -9113,7 +9113,19 @@ static int metaCatalogoResolver(const CatItem *orig, MetaFontes *mf, int indice)
   }
   if (!ehImdb) imdbLembrar(id, mf->tt);
   // c) o Cinemeta completa o que faltar (ou e a base, se nenhum addon serviu).
-  // #794: com addon preferido, episodios vêm só do addon — sem Cinemeta.
+  // #794: com addon preferido, episodios vêm só do addon — sem Cinemeta. Mas a
+  // preferencia so dispensa o provedor geral quando um addon respondeu com
+  // episodios DE VERDADE (a mesma regra de metaExternoDeAddon): ficha so com
+  // nome e sinopse ("videos": []) e lista de arquivos nao substituem a grade,
+  // senao a serie abre sem episodio nenhum.
+  if (prefAddon794) {
+    int tem = 0;
+    for (i = 0; i < mf->n && !tem; i++) {
+      int brutos = 0, n2 = metaContarEpisodios(mf->corpo[i], &brutos);
+      tem = n2 > 0 && !metaListaDeArquivos(n2, brutos);
+    }
+    prefAddon794 = tem;
+  }
   cid = mf->tt[0] ? mf->tt : (!strncmp(id, "tmdb:", 5) ? id : "");
   if (cid[0] && !prefAddon794) {
     int fil = 1;

@@ -8568,6 +8568,7 @@
   T("Usa esta conta de TV ao vivo", "Naudokite šią tiesioginės televizijos paskyrą"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Naudoja Quick Connect, jei serveris leidžia: patvirtinkite kodą kitoje Jellyfin programoje. Kitaip paprašo naudotojo vardo ir slaptažodžio."),
   T("Usa o TMDB para preencher os cartazes da fileira de retomada.", "Naudoja TMDB tęsimo eilutės plakatams užpildyti."),
+  T("Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.", "Naudoja metaduomenų priedą kaip kortelės ir epizodų šaltinį, kai jis atsako dėl pavadinimo. Be atsakančio priedo — arba įjungus \"visada naudoti Cinemeta\" — niekas nesikeičia."),
   T("Usa o fundo do add-on", "Naudoja priedo foną"),
   T("Usa o logo do add-on", "Naudokite priedo logotipą"),
   T("Usa o mesmo estilo da principal", "Naudokite tą patį stilių kaip ir pagrindinis"),

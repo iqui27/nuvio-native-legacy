@@ -8567,6 +8567,7 @@
   T("Usa esta conta de TV ao vivo", "Folosiți acest cont TV în direct"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Folosește Quick Connect dacă serverul permite: aprobă codul în altă aplicație Jellyfin. Altfel cere utilizator și parolă."),
   T("Usa o TMDB para preencher os cartazes da fileira de retomada.", "Folosește TMDB pentru a completa afișele din rândul de reluare."),
+  T("Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.", "Folosește add-on-ul de metadate ca sursă a fișei și a episoadelor atunci când răspunde pentru titlu. Fără un add-on care să răspundă — sau cu \"folosește întotdeauna Cinemeta\" pornit — nimic nu se schimbă."),
   T("Usa o fundo do add-on", "Utilizează fundalul suplimentului"),
   T("Usa o logo do add-on", "Utilizați sigla suplimentului"),
   T("Usa o mesmo estilo da principal", "Folosiți același stil ca principalul"),

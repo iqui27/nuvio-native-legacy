@@ -8568,6 +8568,7 @@
   T("Usa esta conta de TV ao vivo", "استخدم حساب البث التلفزيوني المباشر هذا"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "يستخدم Quick Connect إذا سمح الخادم: وافق على الرمز في تطبيق Jellyfin آخر. وإلا يطلب اسم المستخدم وكلمة المرور."),
   T("Usa o TMDB para preencher os cartazes da fileira de retomada.", "يستخدم TMDB لإكمال ملصقات صف الاستئناف."),
+  T("Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.", "يستخدم إضافة البيانات الوصفية مصدرًا للبطاقة والحلقات عندما تستجيب للعنوان. بدون إضافة تستجيب — أو مع تفعيل \"استخدم Cinemeta دائمًا\" — لا يتغير شيء."),
   T("Usa o fundo do add-on", "يستخدم الخلفية الإضافية"),
   T("Usa o logo do add-on", "استخدم شعار الوظيفة الإضافية"),
   T("Usa o mesmo estilo da principal", "استخدم نفس النمط الرئيسي"),
