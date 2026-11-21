@@ -14,9 +14,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <pthread.h>
-#if defined(__EMSCRIPTEN__)
-#include <sys/random.h>
-#elif defined(__linux__)
+#if defined(__linux__)
 #include <sys/syscall.h>
 #endif
 #if !defined(__EMSCRIPTEN__) && !defined(_WIN32)
@@ -650,14 +648,9 @@ int dados_apagar(const char *nome) {
 // (regressao apontada na revisao r3 do Farol 10). O rand_r da correcao r4
 // tinha defeito pior na glibc: rand_r(&s) so deriva 20 bits da semente de 32,
 // entao o espaco total de UUIDs despencava para 2^20 e processos distintos
-// repetiam IDs — os 122 bits agora vem de getentropy/getrandom//dev/urandom,
-// com splitmix64 de 64 bits so se toda fonte falhar.
-static pthread_once_t uuidUmaVez = PTHREAD_ONCE_INIT;
-static unsigned uuidSemente, uuidChamadas;
-static void uuidSemear(void) {
-  uuidSemente = (unsigned)time(NULL) ^ (unsigned)getpid() ^
-                (unsigned)(size_t)&uuidSemente;
-}
+// repetiam IDs — os 122 bits agora vem de crypto.getRandomValues via EM_JS
+// no WASM e de getrandom//dev/urandom no nativo, com splitmix64 de 64 bits
+// so se toda fonte falhar.
 
 // Um passo do finalizador do splitmix64 (plano B sem nenhuma fonte de
 // entropia): 64 bits embaralhados por iteracao.
@@ -668,14 +661,50 @@ static unsigned long long uuidMistura(unsigned long long x) {
   return x ^ (x >> 31);
 }
 
+static pthread_once_t uuidUmaVez = PTHREAD_ONCE_INIT;
+// Semente do plano B, fixa por processo (relogio, PID e endereco colhidos
+// UMA vez), e contador atomico. A entrada do splitmix64 e semente XOR
+// contador — nunca uma soma de valores que variam: o x+contador da r5
+// repetia a entrada quando o relogio recuava exatamente o passo do contador
+// entre chamadas (regressao apontada na revisao r5 do Farol 10).
+static unsigned long long uuidSemente;
+static unsigned uuidChamadas;
+static void uuidSemear(void) {
+  struct timespec ts = {0, 0};
+  unsigned long long s = 0x9e3779b97f4a7c15ULL;
+  if (clock_gettime(CLOCK_REALTIME, &ts) == 0)
+    s ^= (unsigned long long)ts.tv_sec * 1000000000ULL +
+         (unsigned long long)ts.tv_nsec;
+  s ^= (unsigned long long)time(NULL) * 0xbf58476d1ce4e5b9ULL;
+  s ^= (unsigned long long)(size_t)getpid() << 17;
+  s ^= (unsigned long long)(size_t)&uuidSemente;
+  uuidSemente = uuidMistura(s);
+}
+
+#if defined(__EMSCRIPTEN__)
+// crypto.getRandomValues com try/catch do lado do JS: se a API falta ou
+// lanca, devolve 0 e a reserva de dados_uuid assume — a excecao nao
+// atravessa a fronteira do WASM como atravessava pelo random_get sincrono
+// do getentropy do SDK (regressao apontada na revisao r5 do Farol 10).
+EM_JS(int, nv_uuid_crypto, (unsigned char *b, int n), {
+  try {
+    var c = globalThis.crypto;
+    if (!c || !c.getRandomValues) return 0;
+    c.getRandomValues(HEAPU8.subarray(b, b + n));
+    return 1;
+  } catch (e) {
+    return 0;
+  }
+});
+#endif
+
 // Enche b com n bytes de entropia do sistema; 0 se nenhuma fonte serviu.
 static int uuidEntropia(unsigned char *b, size_t n) {
-  size_t lidos = 0;
 #if defined(__EMSCRIPTEN__)
-  // getentropy do SDK cai no __wasi_random_get — crypto.getRandomValues do
-  // hospedeiro (getpid()=42 e enderecos estaticos do WASM nao entram aqui).
-  if (getentropy(b, n) == 0) return 1;
-#elif defined(SYS_getrandom)
+  return nv_uuid_crypto(b, (int)n);
+#else
+  size_t lidos = 0;
+#if defined(SYS_getrandom)
   // getrandom(2) cru, para nao depender da idade da libc nos alvos Tizen;
   // flag 1 (GRND_NONBLOCK): ENOSYS/EAGAIN em kernel velho ou arranque cedo
   // caem no /dev/urandom abaixo em vez de bloquear.
@@ -689,18 +718,34 @@ static int uuidEntropia(unsigned char *b, size_t n) {
   lidos = 0;
 #endif
   {
-    // O mesmo padrao de addons.c, admin.c, celular.c, jellyfin.c e plex.c.
-    int f = open("/dev/urandom", O_RDONLY);
-    if (f < 0) return 0;
+    // O mesmo padrao de addons.c, admin.c, celular.c, jellyfin.c e plex.c,
+    // mas com o fd mantido aberto entre chamadas: /dev/urandom e sem estado
+    // e leituras concorrentes sao seguras, entao o open/close sincrono nao
+    // volta a custar no fio de UI a cada UUID (ressalva da revisao r5 — so
+    // a primeira chamada paga o open).
+    static int fdUrandom = -1;
+    int f = __atomic_load_n(&fdUrandom, __ATOMIC_RELAXED);
+    if (f < 0) {
+      int esperado = -1;
+      int novo = open("/dev/urandom", O_RDONLY);
+      if (novo < 0) return 0;
+      if (__atomic_compare_exchange_n(&fdUrandom, &esperado, novo, 0,
+                                      __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+        f = novo;
+      } else {
+        close(novo);
+        f = esperado;
+      }
+    }
     while (lidos < n) {
       ssize_t r = read(f, b + lidos, n - lidos);
       if (r > 0) { lidos += (size_t)r; continue; }
       if (r < 0 && errno == EINTR) continue;
       break;
     }
-    close(f);
   }
   return lidos == n;
+#endif
 }
 
 void dados_uuid(char *dst, unsigned tam) {
@@ -711,20 +756,15 @@ void dados_uuid(char *dst, unsigned tam) {
   if (tam < 37) { if (tam) dst[0] = 0; return; }
   pthread_once(&uuidUmaVez, uuidSemear);
   if (!uuidEntropia(b, sizeof b)) {
-    // Plano B: relogio de alta resolucao, PID, semente da once, contador
-    // atomico e endereco, espalhados por splitmix64 — nunca rand_r de 32 bits.
-    struct timespec ts;
-    unsigned long long x;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    x = (unsigned long long)ts.tv_sec * 1000000000ULL +
-        (unsigned long long)ts.tv_nsec;
-    x ^= (unsigned long long)time(NULL) * 0x9e3779b97f4a7c15ULL;
-    x ^= (unsigned long long)getpid() << 17;
-    x ^= (unsigned long long)uuidSemente * 0xbf58476d1ce4e5b9ULL;
-    x ^= (unsigned long long)(size_t)b;
+    // Plano B: semente fixa do processo XOR contador atomico, espalhados por
+    // splitmix64 — nunca rand_r de 32 bits. O contador nunca repete a entrada
+    // do misturador em nenhuma das duas metades; o relogio so entra na
+    // semente, uma vez por processo e com retorno checado.
     for (i = 0; i < (int)sizeof b; i += 8) {
       unsigned long long v = uuidMistura(
-          x + __atomic_add_fetch(&uuidChamadas, 1, __ATOMIC_RELAXED));
+          uuidSemente ^
+          (unsigned long long)__atomic_add_fetch(&uuidChamadas, 1,
+                                                 __ATOMIC_RELAXED));
       memcpy(b + i, &v, sizeof v);
     }
   }
