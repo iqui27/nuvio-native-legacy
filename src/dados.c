@@ -701,17 +701,20 @@ const char *dados_aparelho_id(void) {
   return id;
 }
 
-const char *dados_cliente_id(void) {
-  char *lido;
-  if (clienteId[0]) return clienteId;
+// Inicializacao preguicosa e unica: o primeiro chamador le ou gera o ID e
+// grava cliente.txt; os demais esperam na once e leem o buffer ja publicado.
+// pthread_once nunca e impersonado pelo fio1 (ferramenta mantem nativo), entao
+// funciona igual no VIDAA de um fio e nos alvos com pthread de verdade.
+static pthread_once_t clienteIdUmaVez = PTHREAD_ONCE_INIT;
 
-  lido = dados_ler("cliente.txt");
+static void clienteIdIniciar(void) {
+  char *lido = dados_ler("cliente.txt");
   if (lido) {
     char *fim = lido + strlen(lido);
     while (fim > lido && (fim[-1] == '\n' || fim[-1] == '\r' || fim[-1] == ' ')) *--fim = 0;
     if (lido[0]) snprintf(clienteId, sizeof clienteId, "%s", lido);
     free(lido);
-    if (clienteId[0]) return clienteId;
+    if (clienteId[0]) return;
   }
 
   // Formato de UUID v4 porque e o que o servidor recebe do Android e do web; a
@@ -722,6 +725,10 @@ const char *dados_cliente_id(void) {
   { char linha[64];
     snprintf(linha, sizeof linha, "%s\n", clienteId);
     dados_gravar("cliente.txt", linha); }
+}
+
+const char *dados_cliente_id(void) {
+  pthread_once(&clienteIdUmaVez, clienteIdIniciar);
   return clienteId;
 }
 
