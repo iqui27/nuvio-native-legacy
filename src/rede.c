@@ -523,6 +523,69 @@ EM_ASYNC_JS(int, nv_http_fluxo, (const char *url, unsigned prazo, unsigned teto,
   } catch (e) { return expirou ? 5 : 4; }
   finally { clearTimeout(timer); controle.abort(); _free(bloco); }
 });
+#ifdef NV_UM_FIO
+// Mesma resposta do nv_http_fluxo, mas SEM Asyncify: no build cooperativo o
+// EM_ASYNC_JS suspende a pilha inteira pela duracao do fetch — chamado de uma
+// fibra fio1 (o "pthread" do fonteurl), congelava o laco de quadros junto.
+// Aqui o fetch roda no event loop do navegador e a espera cede ao escalonador
+// (nv_http_esperar). Os codigos sao os mesmos do fluxo: 2 sem reader, 3 sem
+// memoria no colher, 4 erro/aborto, 5 prazo, 8 acima do teto, 0 ok.
+EM_JS(int, nv_http_fluxo_iniciar, (const char *url, unsigned prazo, unsigned teto), {
+  if (typeof ReadableStream === 'undefined' || typeof AbortController === 'undefined') return 0;
+  if (!Module.nvFioReqs) { Module.nvFioReqs = {}; Module.nvFioProxId = 1; }
+  var id = Module.nvFioProxId++;
+  var controle = new AbortController(), expirou = false;
+  var reg = { pronto: false, codigo: 4, status: 0, n: 0, parts: null, pi: 0, pos: 0,
+              abortar: function () { controle.abort(); } };
+  Module.nvFioReqs[id] = reg;
+  var timer = setTimeout(function () { expirou = true; controle.abort(); }, prazo);
+  fetch(UTF8ToString(url), { redirect: 'error', credentials: 'omit', signal: controle.signal })
+    .then(async function (res) {
+      reg.status = res.status;
+      if (!res.body || !res.body.getReader) { reg.codigo = 2; return; }
+      var ok = res.status >= 200 && res.status < 300;
+      var leitor = res.body.getReader(), n = 0;
+      if (ok) reg.parts = [];
+      while (true) {
+        var parte = await leitor.read();
+        if (parte.done) break;
+        if (parte.value.length > teto - n) { reg.codigo = 8; controle.abort(); return; }
+        n += parte.value.length; reg.n = n;
+        if (ok) reg.parts.push(parte.value);
+      }
+      reg.codigo = 0;
+    })
+    .catch(function () { reg.codigo = expirou ? 5 : 4; })
+    .then(function () { clearTimeout(timer); reg.pronto = true; });
+  return id;
+});
+EM_JS(int, nv_http_fluxo_colher, (int id, int *status, unsigned *total), {
+  var reg = Module.nvFioReqs && Module.nvFioReqs[id];
+  if (!reg) return 4;
+  if (status) HEAP32[status >> 2] = reg.status;
+  if (total) HEAPU32[total >> 2] = reg.n;
+  return reg.codigo;
+});
+// Entrega as fatias ja lidas pelo fetch, na ordem em que chegaram (a fila
+// alta fica no lado JS; no C nao entra copia extra do corpo inteiro). O
+// rede_pedir drena isto DURANTE a espera cooperativa — nao so depois do EOF.
+// 0 = esgotado.
+EM_JS(int, nv_http_fluxo_pedaco, (int id, void *dst, unsigned cap), {
+  var reg = Module.nvFioReqs && Module.nvFioReqs[id];
+  if (!reg || !reg.parts) return 0;
+  while (reg.pi < reg.parts.length) {
+    var p = reg.parts[reg.pi], k = p.length - reg.pos;
+    if (k > cap) k = cap;
+    if (k > 0) { HEAPU8.set(p.subarray(reg.pos, reg.pos + k), dst); reg.pos += k; }
+    if (reg.pos >= p.length) { reg.parts[reg.pi] = null; reg.pi++; reg.pos = 0; }
+    if (k > 0) return k;
+  }
+  return 0;
+});
+EM_JS(void, nv_http_fluxo_soltar, (int id), {
+  if (Module.nvFioReqs) delete Module.nvFioReqs[id];
+});
+#endif
 int rede_pedir(const RedePedido *p, RedeResposta *r) {
   if (!r) return 0;
   memset(r, 0, sizeof *r);
@@ -533,11 +596,39 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
       !p->janela_corpo_ms && !p->ca_arquivo && !p->tls_pessoal && !p->pino_publico &&
       !p->max_cabecalhos && p->prazo_ms<=300000 && p->max_bytes<=REDE_CORPO_MAXIMO) {
     unsigned total=0;
+#ifdef NV_UM_FIO
+    int id = nv_http_fluxo_iniciar(p->url, p->prazo_ms?p->prazo_ms:15000,
+        p->max_bytes?p->max_bytes:REDE_CORPO_PADRAO);
+    if (id <= 0) { r->erro = REDE_INDISPONIVEL; return 0; }
+    // A espera cooperativa tambem DRENA o fluxo: cada fatia vai ao
+    // receber_corpo assim que o fetch a entrega (contrato de rede.h), e o
+    // retorno 0 aborta o fetch NA HORA — igual ao nv_http_fluxo do build com
+    // pthread. fio1_ceder entre fatias mantem o passo do escalonador curto
+    // mesmo drenando um corpo de 32 MiB.
+    unsigned char bloco[16384];
+    int k, recusou = 0;
+    for (;;) {
+      while ((k = nv_http_fluxo_pedaco(id, bloco, sizeof bloco)) > 0) {
+        if (!p->receber_corpo(bloco, (size_t)k, p->corpo_usuario)) { recusou = 1; break; }
+        fio1_ceder();
+      }
+      if (recusou) { nv_http_abortar(id); break; }
+      if (nv_http_pronto_assinc(id)) break;
+      if (redeParou()) { redeCancelouLocal = 1; nv_http_abortar(id); break; }
+      fio1_ceder();
+    }
+    r->erro = nv_http_fluxo_colher(id, &r->status, &total);
+    r->n_corpo = total;
+    if (recusou) r->erro = REDE_TRANSPORTE;
+    nv_http_fluxo_soltar(id);
+    return r->erro==REDE_OK;
+#else
     r->erro=nv_http_fluxo(p->url,p->prazo_ms?p->prazo_ms:15000,
         p->max_bytes?p->max_bytes:REDE_CORPO_PADRAO,
         (int)p->receber_corpo,p->corpo_usuario,&r->status,&total);
     r->n_corpo=total;
     return r->erro==REDE_OK;
+#endif
   }
   r->erro = REDE_INDISPONIVEL;
   return 0; /* nenhum XHR: nao prometer teto, timeout ou cancel inexistentes */

@@ -20,11 +20,11 @@ static int uxValorPadrao(int op) {
 static int uxValorAtual(int op) {
   if (op >= AJ_FONTE_OCULTAR_DV && op <= AJ_FONTE_OCULTAR_VIDEO) return !ajustes_fonte_ocultar(op - AJ_FONTE_OCULTAR_DV);
   if (op < 0 || op >= AJ_N) return 0;
-  if (ajFonte(op)) return ajFonteAtual(op);
   if (op == AJ_XTREAM_CONEXOES) return xtream_conexoes_modo();
   if (op == AJ_SALVOS_DEST) return ajustes_fonte_biblioteca();
   if(op==AJ_GUIA_CATEGORIAS || op==AJ_IPTV_ACOES || op==AJ_IPTV_EXCLUIR)return 0;
   if(ajIptvGerenciador(op))return ajIptvQuantos(ajIptvTipo(op))?ajIptvAtualTipo(ajIptvTipo(op)):1;
+  if (ajFonte(op)) return ajFonteAtual(op);
   if (ajLegendaPrincipal(op)) return ajLegendaValor(op);
   if (ajFalhaBackend(op)) return ajFalhaValor(op);
   if (op == AJ_SEEKR_LIGADO && !previaCredencial()) return 1;
