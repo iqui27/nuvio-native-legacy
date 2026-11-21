@@ -253,6 +253,7 @@ void assrender_limpar_fontes(void) {}
 int  assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanho) { (void)nome; (void)dados; (void)tamanho; return 1; }
 void assrender_geracao(unsigned g) { (void)g; }
 void assrender_preaquecer(void) {}
+int  assrender_ativo(void) { return 0; }
 const char *assrender_diagnostico(void) { return "duble"; }
 
 // Quantas vezes cada evento aparece no documento atual.
