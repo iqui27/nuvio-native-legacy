@@ -172,6 +172,11 @@ static AssCpuFrame assPronto, assAtual;
 static double assUltimoPedidoMs;
 static unsigned assUltimoPedidoGeracao;
 static int assTemUltimoPedido;
+/* Posicao do VIDEO da ultima chamada de assrender_posicao_video (#772): o
+ * salto e medido aqui, no numero cru do pipeline, e nao no relogio da
+ * legenda — a leitura dele e limitada (relogio_ler) e durante a reconexao
+ * ou a busca em voo nem anda. Sob assFilaTrava. */
+static double assPosVideoAnt = -1.0;
 static int assEventos, assFontes, assResolucaoFonte;
 static long long assCoberturaIni, assCoberturaFim;
 static ASS_Library *assLib;
@@ -1279,6 +1284,38 @@ static void ass_medir_locked(long long agora, int temTexto, long long inicioMax)
   }
 }
 
+/* Quadro e pedido sao de outro instante: saem e o epoch sobe, para o render
+ * ja em andamento no worker nao publicar resultado velho. Sob assFilaTrava. */
+static void ass_salto_locked(void) {
+  ass_frame_liberar(&assPronto); assProntoValido = 0;
+  ass_frame_liberar(&assAtual); assAtualValido = 0;
+  ++assEpoch;
+  ++assSerial;
+}
+
+void assrender_posicao_video(double posSeg) {
+  int salto;
+  pthread_mutex_lock(&assFilaTrava);
+  salto = assPosVideoAnt >= 0.0 && fabs(posSeg - assPosVideoAnt) > 1.5;
+  assPosVideoAnt = posSeg;
+  if (salto) {
+    /* O pedido ainda na fila e do instante velho: fora, e o proximo desenhar
+     * nao compara com ele (assTemUltimoPedido = 0 reabre a janela de 5 ms). */
+    assPedidoPendente = 0;
+    assTemUltimoPedido = 0;
+    ass_salto_locked();
+  }
+  pthread_mutex_unlock(&assFilaTrava);
+  if (salto) {
+    /* O conjunto de falas ativas do texto simples e reavaliado do zero na
+     * nova posicao (ele filtra por "t >= plainLastTime", que o salto para
+     * tras quebraria silenciosamente). */
+    pthread_mutex_lock(&assTrava);
+    plainTimingValid = 0;
+    pthread_mutex_unlock(&assTrava);
+  }
+}
+
 int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
                        float x, float y, float w, float h) {
   unsigned generation;
@@ -1294,14 +1331,13 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
    * ms — e o currentTime da C9 anda 197..247 ms por evento, 77 % acima de 200
    * (log de 23/09): a legenda era apagada a cada evento e piscava 2-4 vezes
    * por segundo. Com o relogio interpolado o passo e de um quadro; 1,5 s so
-   * pega salto. Fora disso o quadro atual fica ate o proximo estar pronto. */
+   * pega salto. Fora disso o quadro atual fica ate o proximo estar pronto.
+   * O salto do VIDEO (posSeg cru) e pego antes, em assrender_posicao_video —
+   * o relogio pode segurar a leitura enquanto o pipeline ja esta em outra
+   * cena (#772); este teste continua cobrindo o atraso/trecho da pessoa. */
   if (assTemUltimoPedido && assUltimoPedidoGeracao == generation &&
-      fabs((double)agora - assUltimoPedidoMs) > 1500.0) {
-    ass_frame_liberar(&assPronto); assProntoValido = 0;
-    ass_frame_liberar(&assAtual); assAtualValido = 0;
-    ++assEpoch;
-    ++assSerial;
-  }
+      fabs((double)agora - assUltimoPedidoMs) > 1500.0)
+    ass_salto_locked();
   if (!assTemUltimoPedido || assUltimoPedidoGeracao != generation ||
       fabs((double)agora - assUltimoPedidoMs) >= 5.0) {
     assUltimoPedidoMs = (double)agora;
@@ -1465,6 +1501,7 @@ void assrender_definir_layout(float x, float y, float w, float h,
   (void)x; (void)y; (void)w; (void)h; (void)videoW; (void)videoH; (void)escalaFonte;
 }
 void assrender_pixels_por_unidade(float f) { (void)f; }
+void assrender_posicao_video(double posSeg) { (void)posSeg; }
 int assrender_ativo(void) { return 0; }
 int assrender_quadro_cpu(double posSeg) { (void)posSeg; return -1; }
 const char *assrender_diagnostico(void) { return assDiag; }

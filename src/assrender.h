@@ -60,6 +60,13 @@ void assrender_pixels_por_unidade(float f);
 int  assrender_desenhar(double posSeg, int atrasoMs, float alpha,
                         float x, float y, float w, float h);
 
+/* #772: a posicao do VIDEO (numero cru do pipeline/alvo do seek), a cada
+ * quadro. Um salto >1,5 s (seek, reconexao, descontinuidade de PTS) limpa na
+ * hora o quadro e o pedido em voo e reavalia o conjunto de falas ativas — a
+ * detecao nao espera o relogio da legenda, cuja leitura e limitada e pode
+ * estar parada (reconexao, busca em voo). */
+void assrender_posicao_video(double posSeg);
+
 /* 1 quando libass aceitou o documento atual. Sem a biblioteca compilada, o
  * retorno e 0 e legenda.c continua sendo o fallback SRT/VTT/ASS reduzido. */
 int  assrender_ativo(void);

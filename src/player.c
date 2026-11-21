@@ -5170,6 +5170,12 @@ void player_atualizar(float dt, Uint32 agora) {
     // Move a janela de colheita da legenda ASS embutida (#92). Barato: so
     // acorda o fio quando a posicao andou meio segundo.
     mkvass_passo(posSeg);
+    // #772: o salto de posicao (seek, reconexao, descontinuidade de PTS) e
+    // medido no numero do VIDEO — posSeg aqui e o currentTime cru do pipeline
+    // (no TPK, o alvo do seek em voo). O relogio da legenda limita a leitura
+    // (relogio_ler) e para durante a reconexao: por ele o quadro ASS velho
+    // sobreviveria a troca de cena inteira.
+    assrender_posicao_video(posSeg);
     // Folga do buffer de video para a VARREDURA pausar (webOS informa o fim
     // do buffer; no Tizen video_buffer_fim e 0 = desconhecido, sem pausa).
     { double bf = video_buffer_fim();
@@ -5306,19 +5312,8 @@ void player_atualizar(float dt, Uint32 agora) {
         velmed_pedir(&velMed, VEL_NORMAL);
       } }
     // A legenda interpola na velocidade MEDIDA (relogio.h).
-    // #710: enquanto a reconexao espera/recarrega (ou um seek ainda nao
-    // pousou), a posicao que o pipeline devolve e a de ANTES da queda, nao a
-    // do quadro no ar. Amostrar isso como "tocando" congela a legenda na
-    // posicao da queda (ou recua ao zero do reopen) e ela volta fora de
-    // sincronia; tratado como parado, o relogio segura a ultima posicao boa e
-    // o primeiro valor real depois do seek dispara o salto.
-    { int legParada = !tocando || scrubbing || video_reconectando()
-#ifdef NV_TPK
-                      || video_busca_em_voo()
-#endif
-                      ;
-      relogio_taxa(&relLeg, velMed.efetiva / 100.0);
-      relogio_amostra(&relLeg, video_pos(), monoSeg(), !legParada); }
+    relogio_taxa(&relLeg, velMed.efetiva / 100.0);
+    relogio_amostra(&relLeg, video_pos(), monoSeg(), tocando && !scrubbing);
     // A cada 10 s: o numero cru do pipeline e o do relogio da legenda, no
     // mesmo instante. A diferenca e o que a interpolacao acrescenta (0..~250).
     { static double ultRel;

@@ -33,7 +33,5 @@ double relogio_ler(Relogio *r, double agora);
  * a punha ate o teto adiantada. Com a taxa, off = pos - agora*taxa. Mudar a
  * taxa zera o historico (as amostras velhas foram tiradas a outra taxa). */
 void   relogio_taxa(Relogio *r, double taxa);
-/* #772: apos relogio_amostra, detecta salto >1.5s na linha do tempo e realinha. */
-void   relogio_salto_ass_passo(Relogio *r, double agora);
 
 #endif
