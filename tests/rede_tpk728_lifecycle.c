@@ -113,6 +113,34 @@ static void prazoLegendaSemAck(void) {
   video_parar();
 }
 
+// A sonda late-ack do revisor (evidencias/sol-f65): o prazo das legendas limpa
+// a marca para -2, mas o host tem ate 15 s para confirmar (Video.cs publica
+// posMs e manda o EV_BUSCOU depois). O ack valido do alvo ATUAL que chega nessa
+// janela tem de liberar capa e busca mesmo com o host pausado.
+static void ackTardioAlvoAtual(void) {
+  puts("== ack valido do alvo atual apos o prazo das legendas");
+  prepararRetomadaPausada();
+  Uint32 iniciou = SDL_GetTicks();
+  video_buscar(300);
+  ok(ultBusca == 300000 && posMs == 12000, "seek enviado a 300 s com host ainda a 12 s");
+  bombear(3);
+  ok(video_tpk_capa() && video_busca_em_voo(), "seek em voo antes do prazo das legendas");
+  SDL_Delay(10100);
+  bombear(3);
+  ok(video_tpk_capa() && video_busca_em_voo(),
+     "capa e busca aguardam o seek enquanto a posicao ainda e 12 s");
+  Uint32 tempo = SDL_GetTicks() - iniciou;
+  ok(tempo > 10000 && tempo < 15000, "ack dentro do prazo de 15 s do host");
+  posMs = 300000;
+  nv_tpk_video_evento(11, 300000, 0);
+  bombear(3);
+  printf("ms=%u host=%d pos=%.3f tocando=%d capa=%d busca=%d ack=300000\n",
+         tempo, posMs, video_pos(), video_tocando(), video_tpk_capa(), video_busca_em_voo());
+  ok(!video_tocando() && !video_tpk_capa() && !video_busca_em_voo(),
+     "ack valido do seek atual libera capa e busca mantendo a pausa");
+  video_parar();
+}
+
 int main(int argc, char **argv) {
   static const CdnlinkGanchos g = { fOrigem, fRecente, fResolver, fValidade };
   SDL_Init(0);
@@ -122,6 +150,7 @@ int main(int argc, char **argv) {
   if (argc > 1 && !strcmp(argv[1], "ack")) ackAtrasado();
   else if (argc > 1 && !strcmp(argv[1], "zero")) zeroAntesDaReabertura();
   else if (argc > 1 && !strcmp(argv[1], "sem-ack")) prazoLegendaSemAck();
+  else if (argc > 1 && !strcmp(argv[1], "ack-tardio")) ackTardioAlvoAtual();
   else cdnDepoisDeSeek();
   return falhas != 0;
 }

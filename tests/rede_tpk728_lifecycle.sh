@@ -5,7 +5,9 @@
 # ATUAL — nem o ack de uma operacao descartada nem o prazo das legendas valem.
 #   cenarios: (padrao) renovacao de CDN no resume interrompendo seek do
 #   usuario; "ack" acks atrasados de alvos antigos; "sem-ack" prazo de 10 s
-#   das legendas sem EV_BUSCOU; "zero" seek enfileirado a 0 s na espera.
+#   das legendas sem EV_BUSCOU; "ack-tardio" ack valido do alvo atual que
+#   chega depois do prazo, dentro dos 15 s do host; "zero" seek enfileirado
+#   a 0 s na espera.
 #   SANITIZE=1 ASan+UBSan, SANITIZE=thread TSan, SANITIZE=0 nenhum.
 set -eu
 cd "$(dirname "$0")/.."
@@ -20,5 +22,6 @@ for flag in '' '-DNV_TPK40'; do
   "${TMPDIR:-/tmp}/nuvio-tpk728-lifecycle"          # renovacao do CDN no resume
   "${TMPDIR:-/tmp}/nuvio-tpk728-lifecycle" ack      # acks atrasados de alvos antigos
   "${TMPDIR:-/tmp}/nuvio-tpk728-lifecycle" sem-ack  # prazo das legendas sem ack
+  "${TMPDIR:-/tmp}/nuvio-tpk728-lifecycle" ack-tardio  # ack do alvo atual apos o prazo
   "${TMPDIR:-/tmp}/nuvio-tpk728-lifecycle" zero     # seek a 0 s enfileirado na espera
 done

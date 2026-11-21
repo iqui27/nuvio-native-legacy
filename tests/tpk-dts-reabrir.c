@@ -57,6 +57,17 @@ char *rede_baixar_trecho(const char *url, int segundos, long ini, long fim, long
   if (tam) *tam = 0;
   return 0;
 }
+// Neutral values, same as rede_tpk728_seek.c: the fake host only needs the
+// production code to link — these knobs never change the scenario.
+int ajustes_audio_offset_ms(void) { return 0; }
+int ajustes_audio_normalizar(void) { return 0; }
+int ajustes_hdr10p_strip(void) { return 0; }
+void dts_engine_set_normalize(int on) { (void)on; }
+void dts_remux_set_audio_offset_ms(int ms) { (void)ms; }
+void dts_remux_set_hdr10p_strip(int on) { (void)on; }
+int ling_prefere_original(void) { return 0; }
+const char *ling_audio_preferido(void) { return ""; }
+int video_taxa_efetiva(void) { return 100; }
 
 // --- the MKV header the "prefetch" hands over ---------------------------------
 static unsigned char cab[1024];
