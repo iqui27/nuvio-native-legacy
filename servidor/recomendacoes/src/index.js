@@ -28,6 +28,7 @@ import { rotaDiario, DIARIO_CORPO_MAX, DIARIO_CORPO_MAX_LB } from "./diario.js";
 import { rotaTrava, travaRev } from "./trava.js";
 import { resolverCanonica, canonizarEntrada, identidadesDe, rotaIdentidades, idSimkl,
          perfilExiste, RECURSO } from "./identidade.js";
+import { rotaFarolRegistro, limparFarol, FAROL_CORPO_MAX } from "./farol.js";
 
 const DIA = 86400;
 const RETENCAO = 90 * DIA;
@@ -811,10 +812,13 @@ const REGISTRO_MAX = 256 * 1024;
 const REGISTRO_CORPO_MAX = 2 * 1024 * 1024;   // corpo cru acima disto: 413
 const REGISTRO_DEDUP_JANELA = 24 * 3600;
 // codigoRegistro (o codigo de seis caracteres do recibo): ver src/codigo.js.
-// RETENCAO (#203): o D1 chegou a 6 GB de 10 GB com logs de 150 KB. Logs comuns
-// ficam 4 dias; so o registro de arranque (pessoa 'arranque:%', o vigia do APK
-// sem conta, poucos e pequenos) fica 30.
-const REGISTRO_RETENCAO = 4 * 24 * 3600;
+// RETENCAO (#203): o D1 chegou a 6 GB de 10 GB com logs de 150 KB. O envio
+// AUTOMATICO ("(auto)"/"(anterior)", que e o que enche) fica 4 dias; o manual
+// — a pessoa apertou "Enviar", poucos por dia — fica 30, que e o prazo que a
+// TV promete na tela de enviados (RES_GUARDA_S), alinhado pelo Farol. O
+// registro de arranque ('arranque:%', vigia do APK sem conta) tambem fica 30.
+const REGISTRO_RETENCAO = 4 * 24 * 3600;          // envio automatico
+const REGISTRO_RETENCAO_MANUAL = 30 * 24 * 3600;  // "Enviar registro" na TV
 const REGISTRO_RETENCAO_ARRANQUE = 30 * 24 * 3600;
 const REGISTRO_LOTE = 200;
 const REGISTRO_LOTES_MAX = 40;
@@ -911,8 +915,12 @@ async function rotaApagar(env, quem, corpo) {
 
 export async function limparRegistro(env, t) {
   const passos = [
-    ["DELETE FROM registro WHERE id IN (SELECT id FROM registro WHERE criado < ? AND pessoa NOT LIKE 'arranque:%' LIMIT ?)",
+    ["DELETE FROM registro WHERE id IN (SELECT id FROM registro WHERE criado < ? AND pessoa NOT LIKE 'arranque:%' " +
+     "AND (quando LIKE '%(auto)' OR quando LIKE '%(anterior)') LIMIT ?)",
       t - REGISTRO_RETENCAO],
+    ["DELETE FROM registro WHERE id IN (SELECT id FROM registro WHERE criado < ? AND pessoa NOT LIKE 'arranque:%' " +
+     "AND quando NOT LIKE '%(auto)' AND quando NOT LIKE '%(anterior)' LIMIT ?)",
+      t - REGISTRO_RETENCAO_MANUAL],
     ["DELETE FROM registro WHERE id IN (SELECT id FROM registro WHERE criado < ? AND pessoa LIKE 'arranque:%' LIMIT ?)",
       t - REGISTRO_RETENCAO_ARRANQUE],
   ];
@@ -1068,6 +1076,8 @@ export default {
     if (req.method === "POST") {
       const cru = (await req.text()).trim();
       if (rota === "/v1/registro" && cru.length > REGISTRO_CORPO_MAX) return erro("corpo grande", 413);
+      // Farol: o pacote estruturado nunca passa de 64 KB (secao 2.7 do PLANO).
+      if (rota === "/v1/farol/registro" && cru.length > FAROL_CORPO_MAX) return erro("corpo grande", 413);
       // Diario: corpo limitado (64 KB; 128 KB so na importacao do Letterboxd).
       if (rota.startsWith("/v1/diario") &&
           cru.length > (rota === "/v1/diario/letterboxd" ? DIARIO_CORPO_MAX_LB : DIARIO_CORPO_MAX))
@@ -1124,6 +1134,9 @@ export default {
     if (rota === "/v1/rec/resposta" && req.method === "POST")
       return rotaRecResposta(env, quem, corpo, h, limitar, limparTexto);
     if (rota === "/v1/registro" && req.method === "POST")   return rotaRegistro(env, quem, corpo);
+    // Farol: registro estruturado e redigido na TV (farol.js; exige migracao-018).
+    if (rota === "/v1/farol/registro" && req.method === "POST")
+      return rotaFarolRegistro(env, quem, corpo, h, limitar, codigoRegistro);
 
     // Enquete na ilha (enquete.js; exige migracao-009).
     const enq = await rotaEnquete(rota, req.method, env, quem, corpo, h);
@@ -1159,9 +1172,13 @@ export default {
       ...limpezaSocial(env, t),
     ]);
     // `registro` em pedacos (#203): um DELETE unico de milhares de linhas de
-    // 150 KB segura o unico escritor do D1. 4 dias para o comum, 30 para
-    // 'arranque:%'; cada passo apaga ate 200 por id, com teto de passos.
+    // 150 KB segura o unico escritor do D1. 4 dias para o automatico, 30 para
+    // o manual e para 'arranque:%'; cada passo apaga ate 200 por id, com teto
+    // de passos.
     await limparRegistro(env, t);
+    // Farol: 30 dias (o prazo da tela de enviados). Separado de proposito: sem
+    // a migracao 018 aplicada a tabela nao existe e nada mais pode falhar junto.
+    try { await limparFarol(env, t); } catch {}
     // Separado de proposito: sem a migracao 010 aplicada, a tabela `sala` nao
     // existe e o lote inteiro (90 dias de retencao) falharia junto.
     try { await env.DB.batch(limpezaSala(env, t)); } catch {}

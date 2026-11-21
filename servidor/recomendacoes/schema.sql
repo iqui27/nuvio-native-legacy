@@ -75,6 +75,33 @@ CREATE TABLE IF NOT EXISTS sessao (
 -- Letterboxd). `preparar-local.sh` aplica todo migracao-*.sql apos este esquema.
 
 -- Ver migracao-015-ident-hora.sql (contador de verificacao de identidade).
+-- Ver migracao-018-farol.sql (registro estruturado do Farol e correcoes
+-- conhecidas); ids da farol_registro comecam em 2^29 para o codigo de 6
+-- caracteres nao colidir com o de `registro`.
+CREATE TABLE IF NOT EXISTS farol_registro (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  criado     INTEGER NOT NULL,
+  pessoa_h   TEXT NOT NULL,
+  versao     TEXT NOT NULL,
+  plataforma TEXT NOT NULL,
+  so_maior   INTEGER NOT NULL DEFAULT 0,
+  codigo     TEXT NOT NULL,
+  fp         TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  vezes      INTEGER NOT NULL DEFAULT 1,
+  json       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS farol_fp ON farol_registro (fp, criado);
+CREATE INDEX IF NOT EXISTS farol_criado ON farol_registro (criado);
+
+CREATE TABLE IF NOT EXISTS farol_conhecido (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fp TEXT, codigo TEXT, plataforma TEXT, so_maior INTEGER,
+  estado TEXT NOT NULL,
+  versao TEXT NOT NULL DEFAULT '',
+  nota_pt TEXT NOT NULL DEFAULT '', nota_en TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS ident_hora (
   hora   INTEGER PRIMARY KEY,
   verif  INTEGER NOT NULL DEFAULT 0,
