@@ -1290,7 +1290,7 @@ static void *fioSimkl(void *u) {
   int n = 0, serie = !strcasecmp(t->midia, "TV");
   // The lists come from the shared library (simkl.c): a status-filtered copy
   // of the body it already fetched, no request of its own.
-  for (int part = 0; part < (serie ? 2 : 1); part++) {
+  for (int part = 0; part < 2; part++) {
     const char *tipo = part ? "anime" : serie ? "shows" : "movies";
     char *corpo = perfis_sessao_atual(t->sessao) ? simkl_lista_corpo(tipo, t->estado) : NULL;
     if (!corpo) { free(lote); lote = NULL; n = 0; break; }
@@ -1301,7 +1301,21 @@ static void *fioSimkl(void *u) {
     CatItem *grown = count ? realloc(lote, sizeof *lote * (size_t)(n + count)) : lote;
     if (count && !grown) { free(corpo); free(lote); lote = NULL; n = 0; break; }
     lote = grown;
-    if (count) n += lst_ler_simkl_itens(corpo, serie, lote + n, count);
+    if (count) {
+      int base = n;
+      n += lst_ler_simkl_itens(corpo, serie, lote + n, count);
+      // Simkl can return the same title in movies/shows and in anime; dedup
+      // so it does not appear twice (as simkl.c does for plantowatch/CW).
+      for (int i = base; i < n; i++) {
+        int j;
+        for (j = 0; j < base; j++)
+          if (lote[i].imdb[0] && !strcmp(lote[j].imdb, lote[i].imdb)) break;
+        if (j < base) {
+          memmove(lote + i, lote + i + 1, sizeof lote[0] * (size_t)(n - i - 1));
+          n--; i--;
+        }
+      }
+    }
     free(corpo);
   }
   // Enrichment may compact unsupported IDs. Enrich copies so metadata failure
