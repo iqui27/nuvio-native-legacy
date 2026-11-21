@@ -195,6 +195,10 @@ static int vooCaiu(void) { return video_busca_em_voo() == 0; }
 static void quedaEReabre(void) {
   resolveOk = 0; nAbriu = 0; nBuscas = 0; ultBusca = -1; posMs = 0;
   video_definir_reconexao(1);
+  // Fonte MP4: a sonda de cabecalho MKV nao dispara (sondaMkvCabe), entao o
+  // teste nao cria o fioMkv — a corrida pre-existente dele com video_tocar
+  // (mkvEstado, nao sincronizado) e ortogonal ao #728 e sujaria o TSan.
+  video_definir_mp4(1);
   video_tocar("http://addon.test/a.mp4");
   esperarAbrir(1);
   posMs = 1000; playerPronto(); bombear(3); posMs = 12000; bombear(20);
