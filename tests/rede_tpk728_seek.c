@@ -9,7 +9,8 @@
 // Roda src/video_tpk.c contra o host falso do tpk-cdn (mesmo esquema de
 // tests/tpk-cdn.c): queda aos 12 s, reabertura e seek da reconexao; depois
 // seek do usuario (a) logo apos o reopen, (b) ainda com o seek da reconexao
-// pendente.
+// pendente, (c) com o host PAUSADO — o ack do seek do usuario solta o
+// reabrindo mesmo sem tocar ("Assistir do comeco" preserva a pausa).
 #include <stdlib.h>
 #include <math.h>
 #include <stdio.h>
@@ -176,6 +177,7 @@ int debrid_tb_link(int usenet, int item, int file, char *dst, unsigned n) {
 #include "tpk-cdn-mkv.inc"
 static unsigned fValidade(void) { return (unsigned)validadeMs; }
 void video_tpk_cdn_arquivo(const char *url, int usenet, int item, int file);
+int video_tpk_capa(void);
 static void esperarAbrir(int n) { Uint32 t0 = SDL_GetTicks(); while (nAbriu < n && SDL_GetTicks() - t0 < 8000) bombear(1); }
 
 // Bombeia ate `ms` wall ou a condicao; devolve quantos ms levou (ou -1).
@@ -261,6 +263,34 @@ static void cenarioSeekPendente(double alvo) {
   video_parar();
 }
 
+// D: seek do usuario com o HOST PAUSADO durante a reabertura (a pausa chega
+// depois do ack da retomada; o "Assistir do comeco" preserva a pausa e chama
+// buscarUsuario, src/player.c). O ack do seek do usuario tem de soltar o
+// reabrindo mesmo com tocando=0 — antes, o vigia esperava o tocar e a capa e
+// busca_em_voo ficavam presas ate o prazo (toast "Seek failed" aos 20 s).
+static void cenarioSeekPausado(double alvo) {
+  printf("== D: seek do usuario para %.0f s com o host pausado\n", alvo);
+  quedaEReabre();
+  posMs = 0; playerPronto();
+  nv_tpk_video_evento(1, 720000, 0);
+  bombear(3);
+  ok(ultBusca == 12000, "seek da reconexao enviado para 12 s");
+  posMs = 12000;
+  nv_tpk_video_evento(11, 12000, 0);                  // ack do seek da retomada
+  video_pausar(1);
+  ok(!video_tocando(), "host confirma a pausa durante a reabertura");
+  video_buscar(alvo);
+  ok(ultBusca == (int)(alvo * 1000), "host recebe o seek pausado");
+  posMs = (int)(alvo * 1000);
+  nv_tpk_video_evento(11, (int)(alvo * 1000), 0);     // ack do seek do usuario
+  nv_tpk_video_evento(3, 0, 0);                        // segue pausado
+  bombear(3);
+  ok(fabs(video_pos() - alvo) < 0.5, "video_pos no alvo do seek pausado");
+  ok(!video_busca_em_voo() && !video_tpk_capa(),
+     "ack do seek libera reabrindo e capa mesmo com o host pausado");
+  video_parar();
+}
+
 int main(void) {
   static const CdnlinkGanchos g = { fOrigem, fRecente, fResolver, fValidade };
   SDL_Init(0);
@@ -271,6 +301,8 @@ int main(void) {
   cenarioSeekAposReabrir(0.0, 1.0);
   cenarioSeekAposReabrir(300.0, 2.0);
   cenarioSeekPendente(42.0);
+  cenarioSeekPausado(300.0);
+  cenarioSeekPausado(0.0);
   printf("\n%s\n", falhas ? "FALHOU" : "rede_tpk728_seek: ok");
   return falhas != 0;
 }

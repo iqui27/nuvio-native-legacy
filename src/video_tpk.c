@@ -255,6 +255,7 @@ static struct {
   // no alvo, senao o cartao "Abrindo fonte" e os prazos de abertura do app.c
   // (aberturaVencida, escolha manual) tratam a fonte como morta.
   int reabrindo; double posMantida; Uint32 reabriuEm, reabTocandoEm;
+  int reabSeekUsr;    // #728: um seek do usuario redirecionou o alvo do reabrindo
   int fonteTocou;       // esta fonte (original ou convertida) ja andou > 0,5 s
   double posConhecida;  // ultima posicao real do convertido (nunca 0 por falta de dado)
 } cv = { .buscarMs = -1 };
@@ -848,8 +849,10 @@ static void mfBombear(void) {
   if (e == MKVFIX_SONDANDO) return;
   if (mf.pend) {
     mf.pend = 0;
-    if (e == MKVFIX_PRECISA && !mf.ativo && !cv.ativo && ativo && !parado && SDL_GetTicks() - mf.pendEm < 20000u)
+    if (e == MKVFIX_PRECISA && !mf.ativo && !cv.ativo && ativo && !parado && SDL_GetTicks() - mf.pendEm < 20000u) {
       mfLigar(mf.pendAlvo, "seek asked during the check (the TV can't seek this file as served)");
+      cv.reabSeekUsr = 1;
+    }
   }
   // Cabecalho sem ASS conhecido antes de abrir: a sonda de depois do pronto
   // achou legenda a esconder. Reabre cedo, uma vez, no ponto atual.
@@ -1755,22 +1758,27 @@ static void reabrindoVigiar(void) {
   if (!cv.reabrindo) return;
   if (!ativo || falhou || agora - cv.reabriuEm > 60000u) {
     if (ativo && !falhou) { printf("[dts-tpk] reabrindo: sem quadro em 60 s, o app ve o estado real\n"); fflush(stdout); }
-    cv.reabrindo = 0; return;
+    cv.reabrindo = 0; cv.reabSeekUsr = 0; return;
   }
-  if (!pronto || !tocando || cv.buscarMs >= 0 || reconBuscarMs >= 0 || recon.pendente ||
-      atomic_load(&buscaAlvoMs) >= 0 || (cv.ativo && cv.seekPend) ||
+  // #728: com o host PAUSADO so o seek do usuario libera — e so depois do ack
+  // que casa (buscaAlvoMs < 0); na retomada normal a espera pelo tocar fica.
+  if (!pronto || (!tocando && !cv.reabSeekUsr) || cv.buscarMs >= 0 ||
+      reconBuscarMs >= 0 || recon.pendente || atomic_load(&buscaAlvoMs) >= 0 ||
+      (cv.ativo && cv.seekPend) ||
       (cv.ativo && cv.prog && !cv.deslocOk)) { cv.reabTocandoEm = 0; return; }
   if (!cv.reabTocandoEm) cv.reabTocandoEm = agora ? agora : 1u;   // "| 1" passava agora (par) e virava 4 G ms
   p = posReal();
   // Com sinal: no quadro em que foi marcado, `agora | 1` pode passar de agora
   // por 1 ms, e a conta sem sinal dava 4 bilhoes (soltava em posicao 0).
-  if (p < 0.3 && (int)(agora - cv.reabTocandoEm) < 10000) return;
+  // O corte de 0,3 s espera o player provar que andou; pausado com o ack do
+  // seek do usuario, p~0 ja e o pouso (o relogio nao anda para provar).
+  if (p < 0.3 && tocando && (int)(agora - cv.reabTocandoEm) < 10000) return;
   // #728: so aceita posicao do host perto do alvo ou depois de esperar o seek.
   if (fabs(p - cv.posMantida) > 2.5 && (int)(agora - cv.reabTocandoEm) < 30000) return;
   printf("%s reaberto em %u ms: posicao %.2f s (alvo %.1f s)\n", cv.ativo ? "[dts-tpk]" : "[fonte-cdn]",
          (unsigned)(agora - cv.reabriuEm), p, cv.posMantida);
   fflush(stdout);
-  cv.reabrindo = 0;
+  cv.reabrindo = 0; cv.reabSeekUsr = 0;
 }
 
 void video_bombear(void) {
@@ -1988,14 +1996,16 @@ void video_buscar(double s) {
     if (recon.pendente || reconErroPend || !pronto || reconBuscarMs >= 0) {
       reconBuscarMs = (int)(s * 1000.0);
       /* #728: o "reabrindo" aponta para o alvo NOVO do seek na hora — sem isto o
-       * vigia segurava a posicao da queda ate 30 s (barra, toast e capa presos). */
+       * vigia segurava a posicao da queda ate 30 s (barra, toast e capa presos).
+       * A marca vale ja: a reabertura que vem mira recon.alvo, o alvo do usuario. */
+      cv.reabSeekUsr = 1;
       if (cv.reabrindo) { cv.posMantida = s; cv.reabTocandoEm = 0; }
       return;
     }
   }
   progressoEm = SDL_GetTicks(); progressoPos = video_pos(); vigiaAtiva = 1;
   buscaAlvoMs = (int)(s * 1000.0);
-  if (cv.reabrindo) { cv.posMantida = s; cv.reabTocandoEm = 0; }
+  if (cv.reabrindo) { cv.posMantida = s; cv.reabTocandoEm = 0; cv.reabSeekUsr = 1; }
   legEsperaSeekEm = 0;
   if (legEscrito >= 0 && travaLeg) {
     Uint32 envEm;
@@ -2013,6 +2023,7 @@ void video_buscar(double s) {
       cv.deslocOk = 0;
       convReabrir(s, "seek");
       abrirSessao();
+      if (cv.reabrindo) cv.reabSeekUsr = 1;
     } else {
       // Nunca um seek cru no fluxo progressivo (o player nao sabe buscar nele).
       printf("[dts-tpk] seek progressivo para %.1f s: o servidor nao deu o fluxo novo; fica onde esta\n", s);
@@ -2023,13 +2034,13 @@ void video_buscar(double s) {
     return;
   }
   // Seek com o link do CDN vencido: o seek abriria uma conexao nova com ele.
-  if (pronto && cdnVelho()) { cdnRenovar(s, "seek"); terminou = 0; return; }
+  if (pronto && cdnVelho()) { cdnRenovar(s, "seek"); cv.reabSeekUsr = 1; terminou = 0; return; }
   // MKV com o indice so no segundo SeekHead (mkvfix.h): a TV recusaria.
   if (!cv.ativo && !mf.ativo && pronto) {
     if (!mf.sondou) mfSondar();
     if (mf.sondou) {
       int e = mkvfix_estado();
-      if (e == MKVFIX_PRECISA) { mfLigar(s, "seek (the TV can't seek this file as served)"); terminou = 0; return; }
+      if (e == MKVFIX_PRECISA) { mfLigar(s, "seek (the TV can't seek this file as served)"); cv.reabSeekUsr = 1; terminou = 0; return; }
       if (e == MKVFIX_SONDANDO) { mf.pend = 1; mf.pendAlvo = s; mf.pendEm = SDL_GetTicks(); }
     }
   }
