@@ -2306,21 +2306,36 @@ static void farolAbrir(void) {
   inicioImagem = 0; prontoAnel = 0;
   farol_ev(FM_PLAYER, FE_ABRIR, 0, tentativaN, tentativaM, NV_FAROL_BACKEND);
 }
+// FAROL (PLANO 2.2): o ponto unico de rearm do ciclo do anel para uma carga
+// nova da fonte — FE_ABRIR, primeiro quadro pendente e o relogio (loadEm)
+// que o campo `a` do FE_PRONTO mede. Usam-no a troca de fonte
+// (tocarFonteInterno) e a recarga manual do VOD (player_recarregar_vod), nas
+// quatro plataformas: o pedido do dono e o mesmo.
+// A REABERTURA INTERNA por seek (convReabrir/abrirSessao/cdnRenovar no TPK,
+// native-seek-reload do DTS no webOS) fica FORA do ciclo por decisao: e a
+// mesma fonte reabrindo por dentro do backend, nao uma abertura do usuario.
+// Ela nao toca no trio inicioImagem/prontoAnel/memQuadroPendente — se o
+// FE_PRONTO ainda estiver armado, a primeira amostra da sessao reaberta o
+// completa; se ja disparou, nada acontece. Nenhum dos dois estados bloqueia
+// a proxima abertura real, que sempre rearma aqui.
+static void farolRearmar(void) {
+  farolAbrir();
+  loadEm = SDL_GetTicks();   // #202: do pipeline ao primeiro quadro ("[player] load->1o quadro")
+  memlog_evento("load"); memQuadroPendente = 1;
+}
 static void tocarFonteInterno(const char *url);
 static void tocarFonteInterno(const char *url) {
   directcache_encerrar();
   if (!travaFonte(url)) return;
   marco("abrir: url ao pipeline");
-  farolAbrir();
+  farolRearmar();
   skipLiberado = 0;
-  loadEm = SDL_GetTicks();   // #202: do pipeline ao primeiro quadro ("[player] load->1o quadro")
   video_definir_reconexao(!ehCanal());
   // Nome do capitulo no idioma do app quando o arquivo traz varios (mkv.c).
   mkv_capitulos_idioma(idioma_iso(ajustes_idioma()));
   video_definir_modo_live(ehCanal() ? guia_modo_do_canal(player_id_canal(), ajustes_livetv_modo()) : 0);
   cacheboost_backend_cache(ehCanal() ? 0 : ajustes_cache_seek_mb());   // F07, ver player_abrir
   armarTituloGuardado();
-  memlog_evento("load"); memQuadroPendente = 1;
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));
   { char px[96], dc[NV_MEDIA_URL_MAX];
     const char *playUrl = url && *url ? directcache_preparar(url, video_cabecalhos(), dc, sizeof dc) : url;
@@ -2484,6 +2499,17 @@ void player_definir_fonte(const char *url) {
   if (comVideo && prebuscaCabe(url))
     mkvass_prebuscar(url, escolherLegendaPrebusca, retomarPct / 100.0);
 #endif
+}
+
+// FAROL: a recarga manual do VOD (o botao; app.c recarregarFonteVOD chama
+// aqui, nao mais o backend direto) e uma abertura da fonte corrente para o
+// ciclo do anel — o mesmo rearm da troca de fonte, em todas as plataformas.
+// O backend decide se a recarga cabe (video_recarregar devolve 0 e nada
+// muda); so uma carga aceita grava FE_ABRIR e espera um FE_PRONTO novo.
+int player_recarregar_vod(void) {
+  if (!video_recarregar()) return 0;
+  farolRearmar();
+  return 1;
 }
 
 void player_voltar_a_esperar(void) {
@@ -5109,17 +5135,25 @@ void player_atualizar(float dt, Uint32 agora) {
   // aparecer.
   // webOS: pronto ja sobe no loadCompleted. A posicao em reproducao e o
   // sinal de quadro usado pelo log do backend, nao apenas a preparacao.
-  if (memQuadroPendente && comVideo && video_pronto() && video_tocando() && video_pos() > 0.0) {
+  if (memQuadroPendente && comVideo && video_pronto() && video_tocando() &&
+      video_pos_amostra(NULL) > 0.0) {
     memQuadroPendente = 0;
     memlog_evento("primeiro-quadro");
     // FE_PRONTO e o primeiro quadro (PLANO 2.2), nao o loadCompleted: no webOS
     // o pronto sobe cedo e a imagem so chega quando o pipeline anda (tocando
     // com a posicao avancando, o mesmo sinal do "primeiro-quadro" do memlog).
+    // A posicao e a AMOSTRA nativa (currentTime/quadro do backend): o alvo
+    // que video_buscar escreve na posicao mostrada antes do seek acontecer —
+    // a retomada busca antes do primeiro currentTime — nao e prova de quadro.
     // Um por abertura: prontoAnel rearma junto do FE_ABRIR em farolAbrir.
     if (!prontoAnel) {
       prontoAnel = 1;
+      // `a` mede da abertura da fonte CORRENTE (loadEm, rearmado em toda
+      // carga nova), nao da sessao do player — a segunda fonte entregue
+      // minutos depois da primeira gravaria o tempo inteiro da sessao.
       farol_ev(FM_PLAYER, FE_PRONTO, 0,
-               (int32_t)(SDL_GetTicks() - abertoEm), retomarPct, NULL);
+               (int32_t)(SDL_GetTicks() - (loadEm ? loadEm : abertoEm)),
+               retomarPct, NULL);
     }
     if (medirAbertura && !ehCanal()) {
       printf("[player] play->first-frame %u ms (load->first-frame %u ms)\n",

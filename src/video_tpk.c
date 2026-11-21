@@ -2297,6 +2297,13 @@ double video_duracao(void) {
 }
 double video_pos_amostra(Uint64 *t) {
   if (t) *t = nv_ticks64();
+  // A AMOSTRA nativa, nao o alvo de um seek pendente: no progressivo sem
+  // deslocamento o posReal devolve cv.seekAlvo, e no TPK o posReconLeg cobre
+  // video_pos() com o alvo da reconexao ate a posicao de verdade voltar.
+  if (cv.ativo && cv.prog && !cv.deslocOk && cv.seekPend) return 0.0;
+#ifdef NV_TPK
+  if (posReconLeg >= 0.0) return 0.0;
+#endif
   return video_pos();
 }
 // Capitulos do MKV lidos por um fio lateral (capmkv.c, 203-capitulos).
