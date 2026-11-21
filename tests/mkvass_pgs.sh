@@ -20,9 +20,22 @@ for modo in plain zlib strip plain-scan zlib-scan strip-scan; do
   echo "== PGS $modo"
   NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/$modo.mkv"
 done
+# Variante "paced" do sparse: 5 SimpleBlocks de video de 128 KiB por Cluster —
+# leitura contigua longa o bastante para o ritmo serial mostrar Ranges de
+# 64 KiB consecutivos quando a varredura esta a frente do playhead.
+mkdir "$DIR/paced"
+python3 - "$DIR/paced" <<'PY'
+from pathlib import Path
+fixture = Path("tests/mkvass_pgs_fixture.py").read_text()
+block = "        body+=el(0xa3,b'\\x81\\0\\0\\0'+b'\\0'*(128*1024))"
+assert fixture.count(block) == 1
+fixture = fixture.replace(block, block + "*5")
+exec(compile(fixture, "fixture-pgs-paced", "exec"))
+PY
 cc ${flags[@]+"${flags[@]}"} -Isrc -O1 -g -Wall -Wextra -DMKVASS_RANGES_POR_SEG=1000 -DMKVASS_PGS_SCAN_MS=50 tests/mkvass_pgs_reliability.c $SRC -lz -lm -o "$DIR/reliability"
-for scenario in sparse empty malformed badzlib truncated nocues http; do
+for scenario in sparse empty malformed badzlib truncated nocues http paced; do
   file="$scenario"; [ "$scenario" != http ] || file=sparse
+  [ "$scenario" != paced ] || file=paced/sparse
   echo "== reliability $scenario"
   NUVIO_DADOS="$DIR/dados" "$DIR/reliability" "$DIR/$file.mkv" "$scenario"
 done
@@ -41,5 +54,28 @@ for route in redir/sparse norange/sparse missing; do
   NUVIO_DADOS="$DIR/dados" "$DIR/http" "http://127.0.0.1:$PORT/$route.mkv" "$expected"
 done
 kill "$SRV" 2>/dev/null; SRV=
+# Fixture do budget: a varredura no limite exato do Cluster (pos==varreTs)
+# nao estaciona mais — a PGS vigente pode estar nele. O budget e medido num
+# Cluster ADIANTE dentro da janela (660 s com o playhead em 600), com a PGS
+# logo apos os primeiros 512 KiB para so chegar no pedaco ritmado.
+mkdir "$DIR/budget-fixture"
+python3 - "$DIR/budget-fixture" <<'PY'
+from pathlib import Path
+fixture = Path("tests/mkvass_pgs_fixture.py").read_text()
+block = "        body+=el(0xa3,b'\\x81\\0\\0\\0'+b'\\0'*(128*1024))"
+assert fixture.count(block) == 1
+fixture = fixture.replace(block, block + "*4")
+secs = "for sec in (0,60,120,300,600):"
+assert fixture.count(secs) == 1
+fixture = fixture.replace(secs, "for sec in (0,60,120,300,600,660):")
+fixture = fixture.replace("zip((0,60,120,300,600),offsets)",
+                          "zip((0,60,120,300,600,660),offsets)")
+fixture = fixture.replace("if sec in (300,600) and kind != 'empty':",
+                          "if sec == 660:")
+fixture = fixture.replace(
+    "for kind in ('sparse','empty','malformed','badzlib','truncated'):",
+    "for kind in ('sparse',):")
+exec(compile(fixture, "fixture-pgs-budget", "exec"))
+PY
 cc ${flags[@]+"${flags[@]}"} -Isrc -O1 -g -Wall -Wextra tests/mkvass_pgs_budget.c $SRC -lz -lm -o "$DIR/budget"
-NUVIO_DADOS="$DIR/dados" "$DIR/budget" "$DIR/sparse.mkv"
+NUVIO_DADOS="$DIR/dados" "$DIR/budget" "$DIR/budget-fixture/sparse.mkv"

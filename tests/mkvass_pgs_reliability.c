@@ -58,13 +58,25 @@ int main(int argc, char **argv) {
     double t=now(); parar(); assert(now()-t<0.5);
     start(6,600,0); frame(600.5,600); // Zero headroom also has bounded progress.
     parar();
-    // Sustained request spacing is enforced at the actual Range boundary.
-    // Ignore discovery requests (large offsets include Cues; headers start at 0).
+  } else if (!strcmp(argv[2],"paced")) {
+    // Ritmo serial a frente do playhead: buffer de video baixo e a varredura
+    // num Cluster adiante (varreTs > pos) — os Ranges saem a 64 KiB por vez,
+    // espacados por MKVASS_PGS_SCAN_MS, verificado em pares consecutivos.
+    // A fixture "paced" tem ~640 KiB contiguos por Cluster para o trecho
+    // precisar de varios Ranges depois de varreTs ultrapassar o playhead.
+    start(6,0,3);
+    double deadline=now()+10;
     int paced=0;
-    for (int i=1;i<pedidos;i++)
-      if (request_lengths[i]==65536 && request_lengths[i-1]==65536 &&
-          request_times[i]-request_times[i-1]>=0.045) paced++;
+    while (now()<deadline && !paced) {
+      usleep(20000);
+      pthread_mutex_lock(&trava);
+      for (int i=1;i<pedidos;i++)
+        if (request_lengths[i]==65536 && request_lengths[i-1]==65536 &&
+            request_times[i]-request_times[i-1]>=0.045) paced++;
+      pthread_mutex_unlock(&trava);
+    }
     assert(paced>0);
+    parar();
   } else if (!strcmp(argv[2],"nocues")) {
     start(6,600,3); frame(600.5,600);
     MkvassDiagnostico d; mkvass_diagnostico(&d);

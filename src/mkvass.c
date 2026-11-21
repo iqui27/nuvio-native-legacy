@@ -529,6 +529,7 @@ typedef struct {
   // BlockDuration; sem ele o quadro fica na tela ate o proximo.
   MkvassDiagnostico diag;
   long     scanNext;
+  int      diagLog;        // copia de s->diagLog feita sob trava nesta geracao
   int      imagem, durCerta;
   Pgs     *pgs;
   // Matroska ContentEncodings of the PGS track. Blocks stay compressed in `pend`
@@ -631,7 +632,9 @@ static void publicarDiagnostico(Fio *f) {
   MkvassPreparo *s = estadoDoFio(f);
   // Coleta opt-in: sem NUVIO_PGS_DIAGNOSTICS=1 ninguem le o snapshot e o
   // mutex+copia a cada Range e a cada bloco e custo morto no caminho normal.
-  if (!s->diagLog) return;
+  // A flag e a copia do Fio: s->diagLog e reescrito sob s->trava a cada troca
+  // de faixa e ler solto aqui corria com a geracao nova.
+  if (!f->diagLog) return;
   f->diag.reader_seconds = f->varreTs;
   f->diag.scanning = f->varredura || f->semRel || f->relRuins;
   f->diag.buffered_bytes = f->jan.n;
@@ -873,7 +876,9 @@ static void publicarAprendido(Fio *f) {
 //     para e faixas.c recua 20-60 s (MKVASS_NOGO_RESTO).
 static void falhou(Fio *f, Off ini, long n, int st, int erro, int resto) {
   f->diag.scan_state = MKVASS_SCAN_RETRY;
-  f->diag.range_failures++;
+  // Contadores do leitor: so com a coleta ligada (NUVIO_PGS_DIAGNOSTICS=1) —
+  // desligada ninguem le f->diag e o incremento e custo morto no caminho quente.
+  if (f->diagLog) f->diag.range_failures++;
   publicarDiagnostico(f);
   int def;
   f->falhas++;
@@ -1262,9 +1267,11 @@ static void tempoAss(double s, char *dst, size_t tam) {
 // entrega, na ordem de chegada. Sem BlockDuration o fim fica -1.
 static int anexarImagem(Fio *f, const unsigned char *dados, long n, double ini, double fim) {
   struct PendImg *p;
-  f->diag.packets++;
-  if (n > 0) f->diag.payload_bytes += (uint64_t)n;
-  f->diag.pending_drops++;
+  if (f->diagLog) {
+    f->diag.packets++;
+    if (n > 0) f->diag.payload_bytes += (uint64_t)n;
+    f->diag.pending_drops++;
+  }
   if (n <= 0 || f->nPend >= MKVASS_PEND_MAX || f->bytesPend + (size_t)n > MKVASS_PEND_BYTES) return 0;
   if (f->nPend == f->capPend) {
     int c = f->capPend ? f->capPend * 2 : 32;
@@ -1278,7 +1285,7 @@ static int anexarImagem(Fio *f, const unsigned char *dados, long n, double ini, 
   memcpy(p->b, dados, (size_t)n);
   p->n = n; p->ini = ini; p->fim = f->durCerta ? fim : -1.0;
   f->nPend++; f->bytesPend += (size_t)n;
-  f->diag.pending_drops--;
+  if (f->diagLog) f->diag.pending_drops--;
   return 1;
 }
 
@@ -2456,7 +2463,7 @@ static long lerBloco(Fio *f, const unsigned char *p, long n, const ClCache *cl,
       const unsigned char *frames = bl + vt + 3;
       long framesN = blN - vt - 3, cab, *tams = NULL, off = 0;
       int nf = 0, fi;
-      if (!tamanhosLace(frames, framesN, flags, &tams, &nf, &cab)) { f->diag.parse_errors++; return total; }
+      if (!tamanhosLace(frames, framesN, flags, &tams, &nf, &cab)) { if (f->diagLog) f->diag.parse_errors++; return total; }
       for (fi = 0; fi < nf; fi++) {
         if (tams[fi] > 0 && anexarEvento(f, frames + cab + off, tams[fi], ini, fim)) {
           f->sujo = 1;
@@ -2647,7 +2654,9 @@ static int ritmoPgs(Fio *f, long *len, long precisa) {
     // O Cluster em que o playhead JA entrou pode trazer a PGS vigente:
     // adiar essa leitura a faz expirar antes de aparecer (a base terminava
     // o trecho iniciado). O ritmo so freia o que esta a frente do playhead.
-    if (f->varreTs >= 0.0 && f->varreTs < pos) f->diag.throttled = 0;
+    // varreTs == pos: retomada no instante exato do Cluster (o passo so
+    // publica de 0,5 em 0,5 s) — a PGS vigente esta nele, libera tambem.
+    if (f->varreTs >= 0.0 && f->varreTs <= pos) f->diag.throttled = 0;
     f->diag.scan_state = MKVASS_SCAN_BUDGET;
     publicarDiagnostico(f);
     if (!f->diag.throttled) return 1;
@@ -2689,7 +2698,7 @@ static int garantir(Fio *f, Janela *w, Off o, long precisa, Off fim,
   p = range(f, o, len, &n);
   if (!p) return 0;
   free(w->p); w->p = p; w->ini = o; w->n = n; w->eof = n < len;
-  if (n < precisa) { f->diag.parse_errors++; return fim > 0 ? -2 : 2; }
+  if (n < precisa) { if (f->diagLog) f->diag.parse_errors++; return fim > 0 ? -2 : 2; }
   *out = p; *disp = n;
   return 1;
 }
@@ -2863,9 +2872,9 @@ static int varrerTrecho(Fio *f, int i, double tLim) {
     if (g == 2) break;
     if (g != 1) { r = g; goto sair; }
     id = lerId(p, disp, &ui);
-    if (!id) { f->diag.parse_errors++; break; }
+    if (!id) { if (f->diagLog) f->diag.parse_errors++; break; }
     tam = lerTam(p + ui, disp - ui, &ut);
-    if (tam == -1) { f->diag.parse_errors++; break; }
+    if (tam == -1) { if (f->diagLog) f->diag.parse_errors++; break; }
     if (id != ID_CLUSTER) {
       // Pelo indice (colherCluster) o CueClusterPosition TEM de ser um
       // Cluster; outra coisa ali e indice errado, e andar dali ate achar um
@@ -2905,9 +2914,9 @@ static int varrerTrecho(Fio *f, int i, double tLim) {
       if (g == 2) { o = clFim > 0 ? clFim : o; if (clFim <= 0) fim = o; break; }
       if (g != 1) { r = g; goto sair; }
       cid = lerId(p, disp, &cui);
-      if (!cid) { f->diag.parse_errors++; o = clFim > 0 ? clFim : o; if (clFim <= 0) fim = o; break; }
+      if (!cid) { if (f->diagLog) f->diag.parse_errors++; o = clFim > 0 ? clFim : o; if (clFim <= 0) fim = o; break; }
       ctam = lerTam(p + cui, disp - cui, &cut);
-      if (ctam < 0) { f->diag.parse_errors++; o = clFim > 0 ? clFim : o; if (clFim <= 0) fim = o; break; }
+      if (ctam < 0) { if (f->diagLog) f->diag.parse_errors++; o = clFim > 0 ? clFim : o; if (clFim <= 0) fim = o; break; }
       cab = cui + cut; cfim = o + cab + ctam;
       if (cid == ID_TIMESTAMP && ctam > 0 && ctam <= 8) {
         g = garantir(f, wp, o, cab + ctam, lim, &p, &disp);
@@ -3358,31 +3367,31 @@ static void entregarImagens(Fio *f) {
     size_t tam = (size_t)f->pend[i].n;
     unsigned char *restaurado = NULL;
     double pos;
-    f->diag.decode_attempts++;
+    if (f->diagLog) f->diag.decode_attempts++;
     if (f->pgsCodif) {
       restaurado = pgsRestaurar(f, bloco, f->pend[i].n, &tam);
-      if (!restaurado) { f->diag.restore_errors++; continue; }
+      if (!restaurado) { if (f->diagLog) f->diag.restore_errors++; continue; }
       bloco = restaurado;
     }
     int decoded = pgs_decodificar(f->pgs, bloco, tam, &dec);
     free(restaurado);
-    if (!decoded) { f->diag.decode_errors++; continue; }
-    f->diag.decoded++;
+    if (!decoded) { if (f->diagLog) f->diag.decode_errors++; continue; }
+    if (f->diagLog) f->diag.decoded++;
     pthread_mutex_lock(&estadoDoFio(f)->trava);
     int publica = f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar;
     pos = estadoDoFio(f)->pos;
     pthread_mutex_unlock(&estadoDoFio(f)->trava);
     if (publica) {
-      if (pos > f->pend[i].ini) {
+      if (f->diagLog && pos > f->pend[i].ini) {
         double late = pos - f->pend[i].ini;
         f->diag.late++;
         if (late > f->diag.max_lateness) f->diag.max_lateness = late;
       }
-      f->diag.emitted++;
+      if (f->diagLog) f->diag.emitted++;
       imgsub_por(f->legG, f->pend[i].ini, f->pend[i].fim, &dec);
     } else pgs_quadro_liberar(&dec);
   }
-  f->diag.pending_drops += f->nPend - i;
+  if (f->diagLog) f->diag.pending_drops += f->nPend - i;
   soltarPendentes(f);
   publicarDiagnostico(f);
 }
@@ -4157,6 +4166,7 @@ static int iniciarFioDe(MkvassPreparo *s, const char *url, int numeroFaixa, int 
   s->diag.reader_byte = -1;
   s->diagLog = getenv("NUVIO_PGS_DIAGNOSTICS") && !strcmp(getenv("NUVIO_PGS_DIAGNOSTICS"), "1");
   s->diagLogMs = 0;
+  f->diagLog = s->diagLog;
   s->nPontos = s->nColhidos = 0; s->varredura = 0; s->folga = -1.0;
   s->prebusca = f->prebusca; s->prebuscaFase = f->prebusca ? 1 : 0;
   s->prebuscaOrdinal = -1; s->adotar = 0;

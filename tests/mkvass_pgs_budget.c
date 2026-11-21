@@ -16,10 +16,10 @@ static void start(void) {
   pthread_mutex_unlock(&trava);
 }
 static void waiting(void) {
-  double end=now()+2; MkvassDiagnostico d;
+  double end=now()+6; MkvassDiagnostico d;
   do {
     mkvass_diagnostico(&d);
-    if(d.scan_state==MKVASS_SCAN_BUDGET && d.reader_seconds==600) return;
+    if(d.scan_state==MKVASS_SCAN_BUDGET && d.reader_seconds==660) return;
     usleep(1000);
   } while(now()<end);
   assert(!"reader did not reach budget wait");
@@ -29,14 +29,19 @@ int main(int argc,char **argv) {
   mkvass_aceitar_imagem(1);legenda_desligar();
   double begin=now();start();waiting();
   ImgsubQuadro *q=NULL;
-  while(now()-begin<8) { q=imgsub_pegar(600.5);if(q)break;usleep(1000); }
+  while(now()-begin<8) { q=imgsub_pegar(660.5);if(q)break;usleep(1000); }
   assert(q && q->n==1);imgsub_soltar(q);
   double elapsed=now()-begin;
   assert(elapsed>=4.9 && elapsed<8);
   pthread_mutex_lock(&trava);
-  assert(pedidos==4); // Header + Cues + two serial scan ranges.
-  assert(request_lengths[2]<=65536 && request_lengths[3]<=65536);
-  assert(request_times[3]-request_times[2]>=4.9);
+  // Header + Cues + varredura de @600 (livre: o playhead ja entrou nele) +
+  // @660: primeiro pedaco livre, ultimo pedaco depois de um budget cheio —
+  // medido contra o pedido ritmado anterior (o que carregou a divida).
+  assert(pedidos==6);
+  int last=pedidos-1, prev=last-1;
+  while (prev>1 && request_lengths[prev]>65536) prev--;
+  assert(request_lengths[last]<=65536 && request_lengths[prev]<=65536);
+  assert(request_times[last]-request_times[prev]>=4.9);
   pthread_mutex_unlock(&trava);
   parar();
   start();waiting();
