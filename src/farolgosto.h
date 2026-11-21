@@ -132,7 +132,22 @@ typedef struct {
 // Capacidade do buffer de farolgosto_escrever. O texto normal fica em poucos
 // KB (o plano mira <= 8 KB); o teto cobre o pior caso com todos os vetores
 // cheios. Escrever sem caber devolve 0 e o chamador NAO grava o arquivo.
-#define FAROL_GOSTO_TXT_MAX 12288
+//
+// Pior caso medido campo a campo (ressalva herdada do lote, issue 38 — o
+// antigo 12288 nao fechava: o teto real e 12291):
+//   cabecalho "FG 2 p t d r\n"                                  <= 40 B
+//   afinidade "k -2147483648 -32768 65535 65535 255\n"          <= 37 B cada
+//   hora      "h 7 -32768 x5\n"                                 <= 39 B cada
+//   recusado  "r 4294967295 x16\n"                              <= 178 B por 16
+//   mostrado  "m 4294967295 255 255 x8\n"                       <= 154 B por 8
+// O _Static_assert abaixo amarra a formula: se uma linha engordar, o teto
+// quebra na compilacao, nao em disco.
+#define FAROL_GOSTO_TXT_MAX \
+  (40 + (FG_GENERO_N + FG_PESSOA_N + FG_TEMA_N + FG_DECADA_N + FG_IDIOMA_N + \
+         FG_DURACAO_N) * 37 + FG_HORA_F * 39 + \
+   ((FG_RECUS_N + 15) / 16) * 178 + ((FG_MOSTR_N + 7) / 8) * 154)
+_Static_assert(FAROL_GOSTO_TXT_MAX >= 12291,
+               "buffer do farol-gosto-p<n>.txt abaixo do pior caso medido");
 
 // Zera o modelo e marca versao/perfil. Tambem serve para "Zerar o gosto".
 void    farolgosto_iniciar(FarolGosto *g, uint16_t perfil);

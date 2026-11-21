@@ -33,6 +33,7 @@
 #include "diarionuvem.h"
 #include "diariotrakt.h"
 #include "dormiu.h"
+#include "farolsinal.h"
 #include "descanso.h"
 #include "iconeapp.h"
 #include "logoapp.h"
@@ -4201,6 +4202,7 @@ int app_iniciar(const char *dirArte) {
   diario_iniciar();      // o Diario por perfil (diario.h), carregado sob demanda
   travajuntos_iniciar(); // Juntos: o episodio do player vira marca nos outros membros
   dormiu_iniciar();      // a sessao que morreu tocando vira suspeita de sono
+  farolsinal_iniciar();  // os sinais da tabela 2.2 passam a alimentar o gosto
   travarede_iniciar();   // trava de serie: arquivo da conta, fila e ouvinte do visto
   // O envio da atividade segue o nivel de privacidade (alcance) do Social: a
   // funcao e chamada agora e a cada mudanca; "nao perguntado" chega como 0.
@@ -6130,6 +6132,7 @@ void app_atualizar(float dt, Uint32 agora) {
     diariotrakt_passo();
     if (ab && detail_assentado()) diariofontes_nome(ab);
     dormiu_passo();
+    farolsinal_passo();  // pendencias de ficha, varredura e gravacao do gosto
     travarede_passo(agora);
     // O "Reconectar" do Trakt (modal da ilha): Ajustes, na linha do Trakt.
     if (ilhasinais_pediu_trakt() && !player_aberto()) {
@@ -8600,6 +8603,7 @@ void app_encerrar(void) {
   esportes_cancelar();
   avisos_encerrar();   // saida limpa: apaga a marca de sessao viva
   diario_gravar_agora();
+  farolsinal_sair();     // modelo, estado e fichas do Farol vao para o disco
   preparoInvalidar();
   proximopreparo_encerrar();
   if (fioFonteVivo) {
