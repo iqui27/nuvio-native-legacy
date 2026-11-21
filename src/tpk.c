@@ -306,8 +306,7 @@ int nv_tpk_quadro(void) {
   int r, refazSup = 0;
   if (contextoFalhou) return -1;
   pthread_mutex_lock(&trava);
-  refazSup = revalidarSuperficie;
-  if (refazSup && vez != VEZ_APP) revalidarSuperficie = 0;
+  refazSup = revalidarSuperficie && vez != VEZ_APP;
   pthread_mutex_unlock(&trava);
   if (ctx == EGL_NO_CONTEXT) {
     dpy = eglGetCurrentDisplay();
@@ -366,13 +365,53 @@ int nv_tpk_quadro(void) {
         // 1x1 = janela do host ainda sem tamanho no primeiro quadro (Tizen 9,
         // 2.0.7: tela preta, reabrir as vezes resolve). Fica o tamanho do host.
         if (sw >= 640 && sh >= 360 && ((int)sw != telaW || (int)sh != telaH)) {
+          pthread_mutex_lock(&trava);
           telaW = (int)sw; telaH = (int)sh;
           revalidarSuperficie = 1;
+          pthread_mutex_unlock(&trava);
           printf("[tpk] tela adotada da superficie: %dx%d\n", telaW, telaH);
         }
       } else printf("[tpk] eglQuerySurface indisponivel\n");
     }
     fflush(stdout);
+  } else if (refazSup) {
+    // #754: de volta do segundo plano o GLWindow pode ter recriado a
+    // superficie (a 2a abertura do NU7100/Q8DNAT media a janela errada). O
+    // host chama o quadro com o contexto corrente: rele os handles vivos e
+    // remede a superficie SEM zerar o contexto — zerar ctx/dpy/sup era o
+    // EGL 0x3000 do arranque na volta F8. Sem superficie corrente ou com a
+    // consulta falhando, mantem os valores e a flag segue armada: o quadro
+    // seguinte tenta de novo.
+    EGLDisplay d2 = eglGetCurrentDisplay();
+    EGLSurface s2 = eglGetCurrentSurface(EGL_DRAW);
+    EGLContext c2 = eglGetCurrentContext();
+    EGLint sw = 0, sh = 0;
+    if (d2 != EGL_NO_DISPLAY && s2 != EGL_NO_SURFACE && tpkEgl.QuerySurface &&
+        eglQuerySurface(d2, s2, EGL_WIDTH, &sw) &&
+        eglQuerySurface(d2, s2, EGL_HEIGHT, &sh)) {
+      if (d2 != dpy || s2 != sup || (c2 != EGL_NO_CONTEXT && c2 != ctx))
+        printf("[tpk] EGL relido na retomada: dpy=%p sup=%p ctx=%p\n", d2, s2, c2);
+      pthread_mutex_lock(&trava);
+      dpy = d2; sup = s2; nuiCorrente = 1;
+      if (c2 != EGL_NO_CONTEXT) ctx = c2;
+      revalidarSuperficie = 0;
+      pthread_mutex_unlock(&trava);
+      if (sw >= 640 && sh >= 360 && ((int)sw != telaW || (int)sh != telaH)) {
+        pthread_mutex_lock(&trava);
+        telaW = (int)sw; telaH = (int)sh;
+        pthread_mutex_unlock(&trava);
+        glViewport(0, 0, sw, sh);
+        printf("[tpk] tela readotada da superficie: %dx%d\n", telaW, telaH);
+        // O app le o drawable por tpk_tamanho (SDL_GL_GetDrawableSize): o
+        // SIZE_CHANGED manda o laco dele refazer viewport/projecao.
+        { SDL_Event ev = {0};
+          ev.type = SDL_WINDOWEVENT;
+          ev.window.event = SDL_WINDOWEVENT_SIZE_CHANGED;
+          ev.window.data1 = (int)sw; ev.window.data2 = (int)sh;
+          SDL_PushEvent(&ev); }
+      }
+      fflush(stdout);
+    }
   }
   pthread_mutex_lock(&trava);
   if (vez == VEZ_APP) {                 // o app ainda desenha o quadro anterior
@@ -471,8 +510,10 @@ void *tpk_gl_corrente(void) {
 }
 
 void tpk_tamanho(int *w, int *h) {
+  pthread_mutex_lock(&trava);
   if (w) *w = telaW;
   if (h) *h = telaH;
+  pthread_mutex_unlock(&trava);
 }
 
 int tpk_gl_atributo(SDL_GLattr a, int *v) {
