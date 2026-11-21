@@ -89,7 +89,7 @@ static atomic_int hlsAudioRequest;   // source audio ordinal plus one, zero when
 enum { HLS_PROBING = 1, HLS_WAITING_FOR_READER };
 static struct {
   int enabled, pending, played, paused, dv7, external, externalTrack;
-  int ordinal, switchingAudio, resumeSent;
+  int ordinal, switchingAudio, resumeSent, ts;
   DtsHlsVideoEnd videoEnd;
   double pos, percent;
   Uint32 started;
@@ -3491,6 +3491,17 @@ static void montarCarga(char *dst, size_t tam, const char *url, int modo,
         "\"uri\":\"%s\",\"type\":\"media\"}",
         dolby, hh, modo == 3 ? "\"useSeekableRanges\":true," : "",
         strstr(url, ".m3u8") ? "HLS" : "URI", janela, url);
+  } else if (modo == 4) {
+    // Local MPEG-TS HLS, loaded as Stremio Origin loads its converted stream:
+    // no transport type and the TV's own buffering. With "HLS" named, the TV
+    // kept fetching segments and never completed the load.
+    snprintf(dst, tam,
+        "{\"payload\":{\"option\":{\"useSeekableRanges\":true,"
+        "\"appId\":\"" NV_APP_ID "\","
+        "%s\"bufferControl\":{\"userBufferCtrl\":false},"
+        "\"windowId\":\"%s\"}},"
+        "\"uri\":\"%s\",\"type\":\"media\"}",
+        dolby, janela, url);
   } else {
     snprintf(dst, tam,
         "{\"payload\":{\"option\":{\"useSeekableRanges\":true,"
@@ -3648,8 +3659,12 @@ static int carregarNativo(const char *url,const char *loadUrl,int ownBuffer,
   int modo = modoLoad;
   { char hh[768] = "";
 #ifdef NV_WEBOS_HLS_TEST
-    if (hlsAtivo()) modo = 3;    /* seekable HLS VOD, without live load behavior */
-    else
+    if (hlsAtivo()) {
+      modo = hls.ts ? 4 : 3;    /* seekable HLS VOD, without live load behavior */
+      printf("[webos-hls] load: %s\n", hls.ts ? "MPEG-TS playlist, no transport type (as Stremio Origin)"
+                                              : "fMP4 playlist as HLS");
+      fflush(stdout);
+    } else
 #endif
     montarHttpHeader(hh, sizeof hh);
     montarCarga(carga, sizeof carga, nv_media_url(loadUrl), modo, dolby, hh,
@@ -4082,6 +4097,7 @@ static int hlsAbrir(void) {
     }
   }
   if (dts_hls_webos_open(urlAtual, cabsHttp, hls.ordinal, &options, hls.url, sizeof hls.url)) {
+    hls.ts = options.ts;
     hls.pending = HLS_PROBING;
     hls.started = SDL_GetTicks();
     hls.externalTrack = options.external_stream;

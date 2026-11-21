@@ -52,6 +52,12 @@ int main(void) {
   assert(strstr(actual, "\"mediaTransportType\":\"HLS\""));
   assert(strstr(actual, "\"useSeekableRanges\":true"));
   assert(!strstr(actual, "\"bufferControl\""));
+  montarCarga(actual, sizeof actual, "http://127.0.0.1:8080/token/v.m3u8", 4,
+              "", "", "window_id_dummy", 3, 4096);
+  assert(!strstr(actual, "mediaTransportType"));
+  assert(strstr(actual, "\"useSeekableRanges\":true"));
+  assert(strstr(actual, "\"bufferControl\":{\"userBufferCtrl\":false}"));
+  assert(strstr(actual, "\"uri\":\"http://127.0.0.1:8080/token/v.m3u8\""));
   puts("video_http_buffer: ok");
 }
 ''')
