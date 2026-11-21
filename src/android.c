@@ -541,9 +541,9 @@ int android_abrir_loja(const char *pacote, const char *nome) {
 
 // Ver android.h. A resposta vem como byte[]: 4 bytes de status (big-endian) e
 // 4 bytes de Retry-After em segundos e o corpo; status 0 = falha de transporte.
-char *android_http(const char *verbo, const char *url, const char *cabs,
-                   const char *corpo, int prazoMs, int *status, int *retryAfter, long *n,
-                   char *erro, size_t nErro) {
+static char *httpJni(const char *metodoJni, const char *verbo, const char *url,
+                     const char *cabs, const char *corpo, int prazoMs, int *status,
+                     int *retryAfter, long *n, char *erro, size_t nErro) {
   JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
   jobject act = env ? (jobject)SDL_AndroidGetActivity() : NULL;
   jclass cls = NULL;
@@ -556,7 +556,7 @@ char *android_http(const char *verbo, const char *url, const char *cabs,
   if (retryAfter) *retryAfter = 0;
   if (erro && nErro) snprintf(erro, nErro, "jni indisponivel");
   if (!env || !act) return NULL;
-  m = metodo(env, act, &cls, "httpPedir", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[BI)[B");
+  m = metodo(env, act, &cls, metodoJni, "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[BI)[B");
   if (m && !(*env)->ExceptionCheck(env)) {
     jm = (*env)->NewStringUTF(env, verbo ? verbo : "GET");
     ju = (*env)->NewStringUTF(env, url ? url : "");
@@ -601,6 +601,22 @@ char *android_http(const char *verbo, const char *url, const char *cabs,
   if (cls) (*env)->DeleteLocalRef(env, cls);
   (*env)->DeleteLocalRef(env, act);
   return r;
+}
+char *android_http(const char *verbo, const char *url, const char *cabs,
+                   const char *corpo, int prazoMs, int *status, int *retryAfter, long *n,
+                   char *erro, size_t nErro) {
+  return httpJni("httpPedir", verbo, url, cabs, corpo, prazoMs, status, retryAfter, n,
+                 erro, nErro);
+}
+// RESERVA VERIFICADA (F94, android.h): NuvioActivity.httpPedirSeguro faz UM
+// salto por chamada — redirect desligado no Java e, num 3xx, o "corpo" e o
+// Location resolvido. O salto seguinte e decidido no C (viaAndroidSeguro,
+// rede.c) contra a lista oficial. Activity sem o metodo novo falha fechado.
+char *android_http_seguro(const char *verbo, const char *url, const char *cabs,
+                          const char *corpo, int prazoMs, int *status, int *retryAfter,
+                          long *n, char *erro, size_t nErro) {
+  return httpJni("httpPedirSeguro", verbo, url, cabs, corpo, prazoMs, status, retryAfter, n,
+                 erro, nErro);
 }
 
 // PILHA DOS FIOS. O bionic da ~1 MB a um pthread criado sem atributo; o glibc

@@ -596,13 +596,31 @@ class NuvioActivity : SDLActivity() {
     // para falhar. Chamado de fios de rede do C (nunca do fio de UI). Volta
     // [status 4 bytes big-endian][Retry-After seconds 4 bytes][body].
     fun httpPedir(metodo: String, url: String, cabs: String, corpo: ByteArray?, prazoMs: Int): ByteArray {
+        return httpPedirInterno(metodo, url, cabs, corpo, prazoMs, false)
+    }
+
+    // Variante VERIFICADA (F94, src/android.c android_http_seguro): reserva do
+    // download de artefato de release quando a libcurl nao sobe. Mesmo
+    // contrato, com duas diferencas: o redirect fica DESLIGADO e, numa resposta
+    // 3xx, o "corpo" devolvido e o Location ja resolvido contra a URL pedida
+    // (vazio quando nao ha Location ou ele e ilegivel). Quem decide o proximo
+    // salto — e aplica a lista oficial de anexos — e o C (viaAndroidSeguro,
+    // src/rede.c), um salto por chamada.
+    fun httpPedirSeguro(metodo: String, url: String, cabs: String, corpo: ByteArray?, prazoMs: Int): ByteArray {
+        return httpPedirInterno(metodo, url, cabs, corpo, prazoMs, true)
+    }
+
+    private fun httpPedirInterno(metodo: String, url: String, cabs: String, corpo: ByteArray?, prazoMs: Int, seguro: Boolean): ByteArray {
         var con: java.net.HttpURLConnection? = null
         return try {
+            if (seguro && !url.startsWith("https://")) {
+                throw java.io.IOException("url nao-https no modo seguro")
+            }
             con = java.net.URL(url).openConnection() as java.net.HttpURLConnection
             val prazo = if (prazoMs > 0) prazoMs else 20000
             con.connectTimeout = minOf(prazo, 10000)
             con.readTimeout = prazo
-            con.instanceFollowRedirects = true
+            con.instanceFollowRedirects = !seguro
             con.useCaches = false
             con.requestMethod = metodo
             con.setRequestProperty("User-Agent", "Nuvio/1.0 (webOS)")
@@ -616,8 +634,22 @@ class NuvioActivity : SDLActivity() {
                 con.outputStream.use { it.write(corpo) }
             }
             val st = con.responseCode
-            val ent = if (st >= 400) con.errorStream else con.inputStream
-            val dados = ent?.use { it.readBytes() } ?: ByteArray(0)
+            val dados = if (seguro && st in 300..399) {
+                // O corpo do 3xx NAO sai: no lugar vai o Location ABSOLUTO,
+                // resolvido contra a URL deste salto (o java trata /caminho,
+                // //host/caminho e ../x). Sem Location ou ilegivel: vazio, e o
+                // C recusa o salto.
+                try {
+                    val loc = con.getHeaderField("Location")
+                    if (loc == null) ByteArray(0)
+                    else java.net.URL(java.net.URL(url), loc).toExternalForm().toByteArray()
+                } catch (e: Exception) {
+                    ByteArray(0)
+                }
+            } else {
+                val ent = if (st >= 400) con.errorStream else con.inputStream
+                ent?.use { it.readBytes() } ?: ByteArray(0)
+            }
             val raw = con.getHeaderField("Retry-After")?.trim().orEmpty()
             val retry = if (raw.isNotEmpty() && raw.all { it in '0'..'9' }) {
                 (raw.toLongOrNull() ?: Long.MAX_VALUE).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()

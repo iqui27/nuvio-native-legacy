@@ -2625,6 +2625,96 @@ static char *viaAndroid(const char *verbo, const char *url, int segundos,
   redeBytesLocal = bytes;
   return r;
 }
+// RESERVA SEGURA do download verificado (F94, rede_baixar_bin_seguro). A
+// reserva comum nao serve para o artefato de release: o httpPedir liga
+// instanceFollowRedirects e um 302 levaria o binario para fora da lista. O
+// httpPedirSeguro faz UM salto por chamada — o redirect fica desligado no
+// Java e, num 3xx, o "corpo" devolvido e o Location ja resolvido contra a URL
+// do salto. Quem decide o proximo passo e aqui, com a MESMA regra do caminho
+// libcurl: a URL inicial e https, salto so quando ela esta no prefixo oficial
+// de anexos (e sem credencial no pedido), cada destino conferido por
+// destinoAnexoOk (so https, so host oficial) e no maximo 5 saltos. O TLS e
+// verificado pela pilha do proprio Android em cada salto.
+static char *viaAndroidSeguro(const char *url, int segundos, const char *const *cab,
+                              int *status, long *tam, int *retryAfter) {
+  redeBytesLocal = 0;
+  if (status) *status = 0;
+  if (retryAfter) *retryAfter = 0;
+#ifdef NV_ANDROID
+  { char *cabs, *r = NULL, erro[200] = "", h[96], alvo[2048];
+    size_t n = 1;
+    int k, st = 0, saltos = 0, segue;
+    long bytes = 0;
+    unsigned long t0 = redeAgoraMs();
+    static int logados;
+    if (strncmp(url, "https://", 8) || strlen(url) >= sizeof alvo) return NULL;
+    // A regra do segredo precede, como no caminho libcurl: com credencial no
+    // pedido nenhum salto e seguido (e o prefixo oficial so libera a URL
+    // inicial — cada Location continua conferida pela lista).
+    segue = urlAnexoOficial(url) && !pedidoComCredencial(url, cab);
+    for (k = 0; cab && cab[k]; k++) n += strlen(cab[k]) + 1;
+    cabs = (char *)malloc(n);
+    if (!cabs) return NULL;
+    cabs[0] = 0;
+    for (k = 0; cab && cab[k]; k++) { strcat(cabs, cab[k]); strcat(cabs, "\n"); }
+    snprintf(alvo, sizeof alvo, "%s", url);
+    for (;;) {
+      long nb = 0;
+      free(r); r = NULL;
+      if (redeCancelouLocal || redeParou()) break;
+      st = 0;
+      r = android_http_seguro("GET", alvo, cabs, NULL,
+                              (segundos > 0 ? segundos : 20) * 1000,
+                              &st, retryAfter, &nb, erro, sizeof erro);
+      if (!r) break;
+      bytes = nb;
+      if (st < 300 || st >= 400) break;
+      // Num 3xx o "corpo" e o Location ABSOLUTO resolvido pelo host — o unico
+      // dado de fora que ainda nao passou pela lista. Recusa: salto proibido
+      // (fora do prefixo ou com credencial), 3xx sem Location, mais de 5
+      // saltos, destino fora da lista ou comprido demais.
+      if (!segue || !nb || ++saltos > 5 || !destinoAnexoOk(r) ||
+          strlen(r) >= sizeof alvo) {
+        char seg[120];
+        printf("[rede] reserva segura: salto recusado%s%s\n",
+               nb ? " para " : " (3xx sem Location)",
+               nb ? rede_url_publica(r, seg, sizeof seg) : "");
+        fflush(stdout);
+        free(r); r = NULL; st = 0;
+        break;
+      }
+      snprintf(alvo, sizeof alvo, "%s", r);
+    }
+    free(cabs);
+    hostDaUrl(alvo, h, sizeof h);
+    if (__atomic_add_fetch(&logados, 1, __ATOMIC_RELAXED) <= 12 || !r) {
+      printf("[rede] via Android seguro GET %s: http=%d em %lu ms%s%s\n",
+             h[0] ? h : "?", st, redeAgoraMs() - t0, r ? "" : " FALHOU: ", r ? "" : erro);
+      fflush(stdout);
+    }
+    if (!r) { snprintf(redeErroTxt, sizeof redeErroTxt, "android: %.180s", erro); return NULL; }
+    redeErroTxt[0] = 0;
+    redeBytesLocal = bytes;
+    if (st == 401 && aviso401) aviso401(alvo);
+    if (status) *status = st;
+    else if (st < 200 || st > 299) { free(r); return NULL; }
+    if (tam) *tam = bytes;
+    return r;
+  }
+#else
+  // Host sem o modo salto-a-salto (iOS usa a mesma trilha): o caminho
+  // verificado falha de proposito em vez de cair na reserva comum, que
+  // seguiria redirect sem a lista. Nenhum chamador do download verificado
+  // existe nessas plataformas hoje.
+  { char seg[120];
+    printf("[rede] reserva segura indisponivel neste host: %s\n",
+           rede_url_publica(url, seg, sizeof seg));
+    fflush(stdout); }
+  snprintf(redeErroTxt, sizeof redeErroTxt, "curl %d", 5);
+  (void)segundos; (void)cab; (void)tam;
+  return NULL;
+#endif
+}
 // 1 = este pedido simples vai direto pelo Android (sem tocar na libcurl).
 static int androidPrimeiro(void) {
   if (__atomic_load_n(&curlRuim, __ATOMIC_ACQUIRE)) return 1;
@@ -2829,7 +2919,13 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
   if (!status && negcache_barra(url, (long)time(NULL))) return NULL;
 #ifdef NV_HTTP_HOST
   // libcurl nunca ficou pronta: GET simples (catalogo, imagem) pelo Android.
-  if (!abrir()) return viaAndroid("GET", url, segundos, cab, NULL, status, tam, retry, "libcurl fora");
+  if (!abrir()) {
+    // O DOWNLOAD VERIFICADO nao pode cair na reserva comum: o httpPedir segue o
+    // 302 sozinho e sairia da lista oficial. Salto a salto com a mesma regra
+    // do receberCab — ver viaAndroidSeguro.
+    if (bin) return viaAndroidSeguro(url, segundos, cab, status, tam, retry);
+    return viaAndroid("GET", url, segundos, cab, NULL, status, tam, retry, "libcurl fora");
+  }
 #else
   if (!abrir()) return NULL;
 #endif
@@ -3337,7 +3433,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
                           const char *corpo, int *status, int seguro, int *retryAfter,
                           const char *verbo) {
   Balde b = {0};
-  CacaCab respostaCab = { NULL, 0, retryAfter };
+  CacaCab respostaCab = { .retry = retryAfter };
   Vigia vigia;
   CancelVigia cv;
   if (retryAfter) *retryAfter = 0;

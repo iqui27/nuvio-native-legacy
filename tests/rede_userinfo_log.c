@@ -16,6 +16,10 @@ char *android_http(const char *v, const char *u, const char *c, const char *b, i
   if (androidErro) { snprintf(erro, ne, "falha de transporte"); *st = 0; return NULL; }
   *st = 200; return strdup("{}");
 }
+char *android_http_seguro(const char *v, const char *u, const char *c, const char *b, int p,
+                          int *st, int *retryAfter, long *n, char *erro, size_t ne) {
+  return android_http(v, u, c, b, p, st, retryAfter, n, erro, ne);
+}
 void android_etapa(const char *n) { (void)n; }
 void android_quadro(void) {}
 static int curlRc;
