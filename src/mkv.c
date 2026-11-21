@@ -10,6 +10,7 @@
 #include <strings.h>
 #include <stdlib.h>
 #include <regex.h>
+#include <pthread.h>
 
 // Quanto do arquivo baixar. O elemento Tracks fica logo apos o SeekHead e o
 // Info, antes do primeiro Cluster — na pratica dentro dos primeiros 200 KB.
@@ -1038,53 +1039,84 @@ static void diagTrecho(const unsigned char *p, long n, const MkvFaixa *fx, int n
 
 /* DTS kind of each DTS audio track of the last probe (mkv_dts.h), kept apart
  * from MkvFaixa: the Rust core fills that struct with its own layout.
- * dtsKind is what the frames showed; dtsNome what the track's name states,
- * used only while the frames are unknown. */
-static int dtsNum[MKV_MAX_FAIXAS], dtsKind[MKV_MAX_FAIXAS], dtsNome[MKV_MAX_FAIXAS], dtsN;
-static long dtsBytes;
-static void dtsLog(const char *quando) {
+ * kind is what the frames showed; nome what the track's name states, used
+ * only while the frames are unknown. The scan runs in the probe's own MkvDts
+ * and only the finished result is published under dtsLock: a detached worker
+ * of a previous generation (video_tpk.c fioMkv) can still be scanning while
+ * the current probe runs, and neither touches the other's fields. */
+typedef struct {
+  int num[MKV_MAX_FAIXAS], kind[MKV_MAX_FAIXAS], nome[MKV_MAX_FAIXAS], n;
+  long bytes;
+} MkvDts;
+static MkvDts dtsPub;
+static unsigned dtsSeq;
+static pthread_mutex_t dtsLock = PTHREAD_MUTEX_INITIALIZER;
+/* Issues the probe's sequence at scan start; dtsPublicar only accepts a
+ * context that is still the newest issued, so a detached worker of a previous
+ * generation finishing late cannot overwrite the active probe's result. */
+static unsigned dtsSondaNova(void) {
+  pthread_mutex_lock(&dtsLock);
+  unsigned s = ++dtsSeq;
+  pthread_mutex_unlock(&dtsLock);
+  return s;
+}
+static void dtsPublicar(const MkvDts *c, unsigned sonda) {
+  pthread_mutex_lock(&dtsLock);
+  if (sonda == dtsSeq) dtsPub = *c;
+  pthread_mutex_unlock(&dtsLock);
+}
+static void dtsLog(const MkvDts *c, const char *quando) {
   int j, hd = 0, ma = 0, core = 0, nome = 0;
-  for (j = 0; j < dtsN; j++) {
-    hd += dtsKind[j] == NV_DTS_KIND_HD; ma += dtsKind[j] == NV_DTS_KIND_MA; core += dtsKind[j] == NV_DTS_KIND_CORE;
-    nome += dtsKind[j] == NV_DTS_KIND_UNKNOWN && dtsNome[j] != NV_DTS_KIND_UNKNOWN;
+  for (j = 0; j < c->n; j++) {
+    hd += c->kind[j] == NV_DTS_KIND_HD; ma += c->kind[j] == NV_DTS_KIND_MA; core += c->kind[j] == NV_DTS_KIND_CORE;
+    nome += c->kind[j] == NV_DTS_KIND_UNKNOWN && c->nome[j] != NV_DTS_KIND_UNKNOWN;
   }
   printf("[mkv] DTS tracks%s: %d (Master Audio %d, DTS-HD %d, DTS %d, by name %d, not in the probe %d; %ld bytes)\n",
-         quando, dtsN, ma, hd, core, nome, dtsN - ma - hd - core, dtsBytes);
+         quando, c->n, ma, hd, core, nome, c->n - ma - hd - core, c->bytes);
   fflush(stdout);
 }
 /* Adds the DTS tracks of fx not listed yet (a Tracks read past the probe). */
-static void dtsListar(const MkvFaixa *fx, int nf) {
+static void dtsListar(MkvDts *c, const MkvFaixa *fx, int nf) {
   int j, k;
-  for (j = 0; fx && j < nf && dtsN < MKV_MAX_FAIXAS; j++) {
+  for (j = 0; fx && j < nf && c->n < MKV_MAX_FAIXAS; j++) {
     if (fx[j].tipo != 2 || strncmp(fx[j].codec, "A_DTS", 5)) continue;
-    for (k = 0; k < dtsN; k++) if (dtsNum[k] == fx[j].numero) break;
-    if (k < dtsN) { if (!dtsNome[k]) dtsNome[k] = nv_mkv_dts_nome(fx[j].nome); continue; }
-    dtsNum[dtsN] = fx[j].numero;
-    dtsKind[dtsN] = !strcmp(fx[j].codec, "A_DTS/LOSSLESS") ? NV_DTS_KIND_MA : NV_DTS_KIND_UNKNOWN;
-    dtsNome[dtsN++] = nv_mkv_dts_nome(fx[j].nome);
+    for (k = 0; k < c->n; k++) if (c->num[k] == fx[j].numero) break;
+    if (k < c->n) { if (!c->nome[k]) c->nome[k] = nv_mkv_dts_nome(fx[j].nome); continue; }
+    c->num[c->n] = fx[j].numero;
+    c->kind[c->n] = !strcmp(fx[j].codec, "A_DTS/LOSSLESS") ? NV_DTS_KIND_MA : NV_DTS_KIND_UNKNOWN;
+    c->nome[c->n++] = nv_mkv_dts_nome(fx[j].nome);
   }
 }
-static void dtsTrecho(const unsigned char *p, long n, const MkvFaixa *fx, int nf) {
-  dtsN = 0; dtsBytes = n;
-  dtsListar(fx, nf);
-  if (!dtsN) return;
-  nv_mkv_dts_scan(p, n, dtsNum, dtsKind, dtsN);
-  dtsLog("");
+static void dtsTrecho(MkvDts *c, const unsigned char *p, long n, const MkvFaixa *fx, int nf) {
+  memset(c, 0, sizeof *c); c->bytes = n;
+  dtsListar(c, fx, nf);
+  if (!c->n) return;
+  nv_mkv_dts_scan(p, n, c->num, c->kind, c->n);
+  dtsLog(c, "");
 }
 int mkv_dts_kind(int numero) {
-  for (int j = 0; j < dtsN; j++)
-    if (dtsNum[j] == numero) return dtsKind[j] != NV_DTS_KIND_UNKNOWN ? dtsKind[j] : dtsNome[j];
-  return NV_DTS_KIND_UNKNOWN;
+  int j, r = NV_DTS_KIND_UNKNOWN;
+  pthread_mutex_lock(&dtsLock);
+  for (j = 0; j < dtsPub.n; j++)
+    if (dtsPub.num[j] == numero) {
+      r = dtsPub.kind[j] != NV_DTS_KIND_UNKNOWN ? dtsPub.kind[j] : dtsPub.nome[j];
+      break;
+    }
+  pthread_mutex_unlock(&dtsLock);
+  return r;
 }
 int mkv_dts_alem(const char *url, const MkvFaixa *fx, int nf) {
   int j, left = 0;
-  long n = 0;
+  long n = 0, lidos;
   char *b;
-  dtsListar(fx, nf);
-  for (j = 0; j < dtsN; j++) left += dtsKind[j] == NV_DTS_KIND_UNKNOWN;
+  pthread_mutex_lock(&dtsLock);
+  dtsListar(&dtsPub, fx, nf);
+  for (j = 0; j < dtsPub.n; j++) left += dtsPub.kind[j] == NV_DTS_KIND_UNKNOWN;
+  lidos = dtsPub.bytes;
+  pthread_mutex_unlock(&dtsLock);
   // Only after a short probe (the prefetched head, 16-64 KB): the 320 KB one
   // already had every frame it could have.
-  if (!left || !url || !url[0] || dtsBytes >= MKV_TRECHO) return 0;
+  if (!left || !url || !url[0] || lidos >= MKV_TRECHO) return 0;
   // A short timeout: this only improves a label, the audio list waits for it.
   b = rede_baixar_trecho(url, 6, 0, MKV_TRECHO - 1, &n);
   if (!b) {
@@ -1092,12 +1124,14 @@ int mkv_dts_alem(const char *url, const MkvFaixa *fx, int nf) {
     fflush(stdout);
     return 0;
   }
-  if (n > dtsBytes) {
-    dtsBytes = n;
-    nv_mkv_dts_scan((const unsigned char *)b, n, dtsNum, dtsKind, dtsN);
+  pthread_mutex_lock(&dtsLock);
+  if (n > dtsPub.bytes) {
+    dtsPub.bytes = n;
+    nv_mkv_dts_scan((const unsigned char *)b, n, dtsPub.num, dtsPub.kind, dtsPub.n);
   }
+  dtsLog(&dtsPub, " (longer read)");
+  pthread_mutex_unlock(&dtsLock);
   free(b);
-  dtsLog(" (longer read)");
   return 1;
 }
 
@@ -1163,6 +1197,7 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
   char *buf;
   long n = 0;
   int achou;
+  const unsigned sonda = dtsSondaNova();
   ultimoContentor = MKV_CONT_NADA;
   if (!url || !url[0] || !saida || max < 1) return 0;
   buf = rede_baixar_trecho(url, 20, 0, MKV_TRECHO - 1, &n);
@@ -1178,7 +1213,7 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
   achou = acharTracks((const unsigned char *)buf, n, saida, max,
                       caps, maxCaps, nCaps);
   diagTrecho((const unsigned char *)buf, n, saida, achou);
-  dtsTrecho((const unsigned char *)buf, n, saida, achou);
+  { MkvDts c; dtsTrecho(&c, (const unsigned char *)buf, n, saida, achou); dtsPublicar(&c, sonda); }
   // Tracks cortado pela janela: uma lista PELA METADE faria o casamento das
   // legendas dar "nenhum" e deixaria TODA faixa ASS com a TV (#483 so cobria o
   // caso de 0 faixas). O SeekHead diz onde o elemento inteiro mora. Sem ele (ou
@@ -1207,12 +1242,13 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
 int mkv_faixas_do_trecho(const unsigned char *buf, long n, MkvFaixa *saida, int max,
                          MkvCap *caps, int maxCaps, int *nCaps) {
   int achou;
+  const unsigned sonda = dtsSondaNova();
   if (nCaps) *nCaps = 0;
   if (!buf || n < 64 || !saida || max < 1 || buf[0] != 0x1A || buf[1] != 0x45 ||
       buf[2] != 0xDF || buf[3] != 0xA3) return 0;
   achou = acharTracks(buf, n, saida, max, caps, maxCaps, nCaps);
   diagTrecho(buf, n, saida, achou);
-  dtsTrecho(buf, n, saida, achou);
+  { MkvDts c; dtsTrecho(&c, buf, n, saida, achou); dtsPublicar(&c, sonda); }
   if (tracksCortado) return 0;
   return achou;
 }

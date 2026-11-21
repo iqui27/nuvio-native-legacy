@@ -4,6 +4,7 @@
 #include <string.h>
 #include "plrilha.h"
 #include "mediaurl.h"
+#include "player_dts_notice.h"
 static unsigned dtsAvisoSessao = 1;
 enum { VIDEO_DTS_NENHUM, VIDEO_DTS_NATIVO, VIDEO_DTS_PREPARANDO,
        VIDEO_DTS_CONVERTIDO, VIDEO_DTS_FALHOU, VIDEO_DTS_SEM_SOM };
@@ -12,11 +13,23 @@ static Uint32 pgDesde;
 static int carregando, estado, pedidos;
 static const char *url = "fixture://a";
 static char ultimo[128];
+// Selected audio track identity (video_audio_numero_memoria): -1 = unknown.
+static int faixaMemoria = -1;
+typedef struct { int numero; } VideoFaixa;
+static VideoFaixa faixa;
 static int player_carregando(void) { return carregando; }
 static int ehCanal(void) { return 0; }
 static int video_dts_estado(void) { return estado; }
 static const char *video_url_atual(void) { return url; }
 static const char *i18n(const char *s) { return s; }
+static int video_audio_atual(void) { return 0; }
+static const VideoFaixa *video_audio(int i) {
+  (void)i;
+  if (faixaMemoria < 0) return NULL;
+  faixa.numero = faixaMemoria;
+  return &faixa;
+}
+static int video_audio_numero_memoria(const VideoFaixa *f) { return f ? f->numero : -1; }
 void plrilha_pedir(const PlrIlhaPedido *p) { pedidos++; snprintf(ultimo, sizeof ultimo, "%s", p->texto); }
 #include "dts-aviso.c"
 static Uint32 t;
@@ -77,5 +90,22 @@ int main(void) {
   assert(n > 250 && n <= 5000 / 16 + 1 && !strcmp(ultimo, "Áudio DTS nativo"));
   estado = VIDEO_DTS_NENHUM; assert(rodar(500) == 0); // seamless seek gap
   estado = VIDEO_DTS_NATIVO; assert(rodar(8000) == 0);
-  puts("PASS DTS notice: full window per frame, later failure, source/session reset, no repeat after seek/retry/track change");
+  // A manual audio track change on the same source owns a fresh notice: the
+  // conversion of the NEW track announces again after its own settle wait.
+  url = "fixture://f";
+  estado = VIDEO_DTS_CONVERTIDO;
+  faixaMemoria = 7;
+  assert(rodar(8000) > 250);
+  faixaMemoria = 9;
+  n = rodar(8000);
+  printf("track change frames=%d\n", n);
+  assert(n > 250 && n <= 5000 / 16 + 1);
+  assert(!strcmp(ultimo, "Áudio DTS convertido nesta TV"));
+  // Switching back to an already announced track is a new manual pick: the
+  // notice belongs to the track, so it announces once more.
+  faixaMemoria = 7;
+  assert(rodar(8000) > 250);
+  // And while the same track stays selected, nothing repeats.
+  assert(rodar(8000) == 0);
+  puts("PASS DTS notice: full window per frame, later failure, source/session reset, no repeat after seek/retry, per-track conversion notice");
 }

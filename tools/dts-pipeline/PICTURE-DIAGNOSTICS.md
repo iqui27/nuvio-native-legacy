@@ -1,7 +1,9 @@
 # HDR10 / DV8 picture comparison experiment
 
 The `dts-hdr10-dv8-test-2.0.8.6` build adds read-only numeric diagnostics under
-the existing `NV_HTTP_BUFFER_DIAG` compile flag. It does not change routing,
+the existing `NV_HTTP_BUFFER_DIAG` compile flag plus `NV_PICTURE_DIAG`
+(`NV_DTS_PICTURE_DIAG` derives from the two; buffer/HTTP logs stay on the first
+flag alone). It does not change routing,
 seeking, audio conversion, native Load/Feed arguments or the HDR10+ experiment.
 No source URL, raw video, thumbnails, decoded pictures or pointer addresses are
 added to the export.

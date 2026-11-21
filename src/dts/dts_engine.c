@@ -1192,6 +1192,7 @@ static int read_range_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   pthread_mutex_unlock(&e->range_lock);
   if (!e->cache || e->pos<e->cache_start || e->pos-e->cache_start>=e->cache_size) {
     uint64_t wait_started=clock_ns(CLOCK_MONOTONIC);
+retry_range:
     if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) return AVERROR_EXIT;
     if(!start_ranges(e)) return AVERROR(ENOMEM);
     pthread_mutex_lock(&e->range_lock);
@@ -1232,7 +1233,8 @@ static int read_range_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
     int optional=optional_p2p_tail(e);
     struct timespec deadline;
     if(optional) { clock_gettime(CLOCK_REALTIME,&deadline); deadline.tv_sec++; }
-    while(job->state!=3 && !cancelled(e) && !__atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) {
+    while(job->state!=3 && job->state!=0 && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED) &&
+          !cancelled(e) && !__atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) {
       if(pending_fd>=0) {
         struct pollfd pending={pending_fd,POLLIN,0};
         if(poll(&pending,1,0)>0) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
@@ -1253,6 +1255,11 @@ static int read_range_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
       } else pthread_cond_wait(&e->range_wake,&e->range_lock);
     }
     if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
+    if(job->state==0 || __atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) {
+      pthread_mutex_unlock(&e->range_lock);
+      clear_ranges(e,"cancelled-range");
+      goto retry_range;
+    }
     long count=job->count; int status=job->status; int64_t total=job->total, end=job->end, start=job->start;
     if(job->data && count>0 && e->pos-start>=count) {
       // A seek can enter a pending interval before the origin reveals its
@@ -1330,9 +1337,35 @@ static int64_t seek_range(void *opaque,int64_t offset,int whence) {
   int64_t base=whence==SEEK_SET?0:whence==SEEK_CUR?e->pos:whence==SEEK_END?e->total:-1;
   if (base<0 || (offset>0 && base>INT64_MAX-offset) || (offset<0 && offset<-base)) return AVERROR(EINVAL);
   e->pos=base+offset;
+#ifdef NV_DTS_WEBOS_RECOVERY
+  // Retention is only the live DV seek: reuse_missing_range recycles the
+  // speculative slots and read_range_pending resolves partial coverage there.
   // Positioning alone is not a cache miss. FFmpeg probes end/index offsets
   // and can return without reading; evicting here threw away useful read-ahead.
   // read_range replaces the same bounded queue only if bytes are really needed.
+  if(e->dv && !e->remux && __atomic_load_n(&e->range_live,__ATOMIC_RELAXED))
+    return e->pos;
+#endif
+  if(!e->cache || e->pos<e->cache_start || e->pos-e->cache_start>=e->cache_size) {
+    DtsRangeJob *target=NULL;
+    pthread_mutex_lock(&e->range_lock);
+    for(int i=0;i<RANGE_SLOTS_MAX;i++)
+      if(e->ranges[i].state && e->ranges[i].start==e->pos &&
+         !__atomic_load_n(&e->ranges[i].cancel,__ATOMIC_RELAXED) &&
+         (e->ranges[i].state!=3 || e->ranges[i].data)) { target=&e->ranges[i]; break; }
+    if(target) {
+      if(target->state==1) __atomic_store_n(&target->urgent,2,__ATOMIC_RELAXED);
+      for(int i=0;i<RANGE_SLOTS_MAX;i++) {
+        DtsRangeJob *j=&e->ranges[i];
+        if(!j->state || j==target || (j->start>e->pos && j->state!=2)) continue;
+        __atomic_store_n(&j->cancel,1,__ATOMIC_RELAXED);
+        if(j->state!=2) { free(j->data); j->data=NULL; j->state=0; }
+      }
+      pthread_cond_broadcast(&e->range_wake);
+    }
+    pthread_mutex_unlock(&e->range_lock);
+    if(!target) clear_ranges(e,"seek");
+  }
   return e->pos;
 }
 static int64_t ns(int64_t value,AVRational tb) {
