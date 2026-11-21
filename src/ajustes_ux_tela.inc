@@ -46,7 +46,6 @@ static const Item TELA[] = {
       OPC(AJ_DTS_AC3),
 #if defined(NV_WEBOS) && defined(NV_WEBOS_HLS_TEST)
       OPC(AJ_WEBOS_HLS_MODE),
-      OPC(AJ_WEBOS_HLS_TS),
 #endif
 #ifdef NV_ANDROID
       OPC(AJ_TUNNELING),

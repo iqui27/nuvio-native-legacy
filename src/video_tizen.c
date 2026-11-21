@@ -1638,6 +1638,7 @@ void video_estatisticas(VideoStats *s) {
 // O AVPlay nao expoe o par bufferingStart/End; sem sinal, nunca afirma travo.
 unsigned video_bufferando_ms(void) { return 0; }
 void video_definir_reconexao(int sim) { reconProxima = sim ? 1 : 0; }
+unsigned video_abertura_geracao(void) { return 0; }
 int  video_reconectando(void) {
   return nv_recon_ativa(&recon) && (recon.pendente || !pronto) ? recon.tentativa : 0;
 }

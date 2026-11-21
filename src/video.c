@@ -90,6 +90,10 @@ enum { HLS_PROBING = 1, HLS_WAITING_FOR_READER };
 static struct {
   int enabled, pending, played, paused, dv7, external, externalTrack;
   int ordinal, switchingAudio, resumeSent;
+  // FORMAT (owner 21/11, one HLS switch): the segments of this open (1 TS),
+  // a format forced for the rest of this video (0 none, 1 fMP4, 2 MPEG-TS)
+  // after the first one did not start, and whether that was remembered.
+  int ts, formatForced, formatSwitched, formatRemembered;
   DtsHlsVideoEnd videoEnd;
   double pos, percent;
   Uint32 started;
@@ -102,6 +106,16 @@ static struct {
 } hls;
 
 static int hlsAtivo(void) { return atomic_load(&hlsActive); }
+// A new start of the same open (the other HLS format): the app's deadlines
+// for a source that does not open count again from it.
+static unsigned aberturaGeracao;
+// The first format did not start within this, from the playlist load, while
+// the player kept fetching segments (the fMP4 that plays starts in under a
+// second on the C5; MPEG-TS there fetches segment after segment and never
+// starts): the other one. A source that sends nothing yet is not the format:
+// the usual 30 s startup timeout stays for it.
+#define HLS_FORMAT_WAIT_MS 15000u
+#define HLS_FORMAT_SEGMENTS 2u
 #endif
 static char dtsSaida[64];
 // Test: audio from another version of the title (audioext.h). extAtivo = the
@@ -508,6 +522,7 @@ void video_definir_mp4(int m) { (void)m; }
 void video_definir_reconexao(int sim) { (void)sim; }
 int  video_recarregar(void) { return 0; }
 int  video_reconectando(void) { return SIM.reconectando; }
+unsigned video_abertura_geracao(void) { return 0; }
 // No Mac quem toca e o pipeline do sistema por outro caminho; os cabecalhos do
 // addon so tem efeito no payload do load da webOS. Stub para o alvo linkar.
 void video_definir_cabecalhos(const char *cabs) { (void)cabs; }
@@ -2899,6 +2914,11 @@ int video_recarregar(void) {
 int  video_reconectando(void) {
   return nv_recon_ativa(&recon) && (recon.pendente || !pronto) ? recon.tentativa : 0;
 }
+#ifdef NV_WEBOS_HLS_TEST
+unsigned video_abertura_geracao(void) { return aberturaGeracao; }
+#else
+unsigned video_abertura_geracao(void) { return 0; }
+#endif
 
 #ifdef NV_NATIVE_SEEK_TEST
 static double converterResumeSeconds, converterResumePct;
@@ -4056,11 +4076,12 @@ static int hlsAbrir(void) {
     .buffer_mib = hlsBufferMib(),
     .resume_s = hls.switchingAudio ? hls.pos : 0,
     .video_end = hls.videoEnd,
-    .ts = ajustes_webos_hls_ts() && webosMaior() < 11,
+    .ts = webosMaior() < 11 && (hls.formatForced ? hls.formatForced == 2 : ajustes_webos_hls_ts()),
   };
+  hls.ts = options.ts;
   // webOS 11 (LG C5) never starts local HLS in MPEG-TS, neither here nor in
   // Stremio Origin: the player fetches the segments but never prerolls.
-  if (ajustes_webos_hls_ts() && !options.ts) {
+  if (ajustes_webos_hls_ts() && webosMaior() >= 11) {
     printf("[webos-hls] MPEG-TS does not start on webOS %d: using fMP4\n", webosMaior());
     fflush(stdout);
   }
@@ -4327,6 +4348,27 @@ static void hlsBombear(void) {
   int state = dts_tpk_estado();
   int failed = state == DTSTPK_FALHOU ||
                (hlsAtivo() && (falhou || reconErroPend || audioNaoSup || recuperando));
+  // ONE HLS SWITCH, TWO FORMATS (owner 21/11): webOS 10 and older start with
+  // the one this TV remembers (fMP4 at first); when the player does not
+  // start it, or fails before the first frame, the same video opens again in
+  // the other format, once. webOS 11 stays on fMP4 (MPEG-TS never starts there).
+  if (hlsAtivo() && !pronto && !hls.played && !hls.formatSwitched && webosMaior() < 11 && state != DTSTPK_FALHOU &&
+      (failed || (SDL_GetTicks() - hls.started >= HLS_FORMAT_WAIT_MS && dts_tpk_segmentos() >= HLS_FORMAT_SEGMENTS))) {
+    int ordinal = hls.ordinal, dv7 = hls.dv7, external = hls.external, paused = pausaPedida;
+    double pos = hls.pos;
+    hls.formatSwitched = 1;
+    hls.formatForced = hls.ts ? 1 : 2;
+    printf("[webos-hls] %s did not start (%s, %u ms, %u segments fetched): trying %s\n", hls.ts ? "MPEG-TS" : "fMP4",
+           failed ? "player error" : "no loadCompleted", (unsigned)(SDL_GetTicks() - hls.started),
+           dts_tpk_segmentos(), hls.ts ? "fMP4" : "MPEG-TS");
+    fflush(stdout);
+    aberturaGeracao++;
+    // A fresh open, not an audio switch: close this one first.
+    pararSessao();
+    nv_recon_zerar(&recon);
+    hlsIniciar(ordinal, dv7, external, pos, 0, paused);
+    return;
+  }
   if (failed || (timeout && (hls.pending || !pronto))) {
     const char *reason = state == DTSTPK_FALHOU ? dts_tpk_erro() : failed ? "native player error" : "startup timeout";
     hlsFalhar(reason);
@@ -4360,6 +4402,14 @@ static void hlsBombear(void) {
       }
     }
     if (pronto && tocando) hls.played = 1;
+    // The other format started where the first did not: this TV starts with
+    // it from now on, kept across restarts (Settings, this TV only).
+    if (pronto && hls.formatSwitched && !hls.formatRemembered) {
+      hls.formatRemembered = 1;
+      ajustes_webos_hls_ts_lembrar(hls.ts);
+      printf("[webos-hls] %s started: this TV starts HLS with it from now on\n", hls.ts ? "MPEG-TS" : "fMP4");
+      fflush(stdout);
+    }
 #ifdef NV_HTTP_BUFFER_DIAG
     Uint32 now = SDL_GetTicks(), interval = now - hls.bufferSample;
     if (!hls.buffer.capacity_bytes || interval >= 1000) {

@@ -29,6 +29,7 @@ void dts_tpk_fechar(void) {}
 int dts_tpk_estado(void) { return DTSTPK_NADA; }
 const char *dts_tpk_erro(void) { return ""; }
 double dts_tpk_duracao(void) { return 0; }
+unsigned dts_tpk_segmentos(void) { return 0; }
 int dts_tpk_modo(void) { return -1; }
 double dts_tpk_inicio_stream(void) { return -1; }
 const char *dts_tpk_caminho(void) { return ""; }
@@ -1266,6 +1267,7 @@ void dts_tpk_fechar(void) {
   pthread_mutex_unlock(&G); return v;
 int dts_tpk_estado(void) { LER_ATUAL(int, estado, DTSTPK_NADA) }
 double dts_tpk_duracao(void) { LER_ATUAL(double, duracao, 0.0) }
+unsigned dts_tpk_segmentos(void) { LER_ATUAL(unsigned, nSegs, 0u) }
 int dts_tpk_modo(void) { LER_ATUAL(int, modo, -1) }
 double dts_tpk_inicio_stream(void) { LER_ATUAL(double, inicioStream, -1.0) }
 const char *dts_tpk_erro(void) {

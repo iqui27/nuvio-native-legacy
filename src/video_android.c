@@ -970,6 +970,7 @@ int video_recarregar(void) {
   if (pausado) video_pausar(1);
   return 1;
 }
+unsigned video_abertura_geracao(void) { return 0; }
 int  video_reconectando(void) {
   return nv_recon_ativa(&recon) && (recon.pendente || !prontoLoad) ? recon.tentativa : 0;
 }

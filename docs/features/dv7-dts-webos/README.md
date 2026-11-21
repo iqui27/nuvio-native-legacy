@@ -68,14 +68,19 @@ HLS session: the next segments use that track and the player seeks to the
 current position, so the picture stops briefly, as for a seek. Other Dolby Vision sources (P5, P8, or P7
 without the P7 conversion) keep the existing converter when HLS is On.
 
-**HLS: MPEG-TS (Experimental)**, below the HLS switch, turns HLS on with MPEG-TS segments as on
-Tizen (and as Stremio Origin does on LG) instead of fMP4: the player loads the
-media playlist, without `init.mp4`. FFmpeg's TS writer has no Dolby Vision
-signalling, so each PMT gets the DOVI registration and the Dolby Vision video
-stream descriptor (profile 8, the source's level, compatibility 1) in its HEVC
-entry. Only one of the two switches can be on: the other one is dimmed and
-says why. webOS 11 and newer ignore MPEG-TS (the TV never starts it) and use
-fMP4.
+HLS picks its segment format by itself; there is one HLS switch. Besides
+fMP4 it can serve MPEG-TS segments as on Tizen (and as Stremio Origin does on
+LG): the player loads the media playlist, without `init.mp4`. FFmpeg's TS
+writer has no Dolby Vision signalling, so each PMT gets the DOVI registration
+and the Dolby Vision video stream descriptor (profile 8, the source's level,
+compatibility 1) in its HEVC entry. webOS 11 and newer always use fMP4 (the TV
+never starts MPEG-TS). On webOS 10 and older the first open uses fMP4; when the
+player has fetched segments for 15 s without starting, or fails before the
+first frame, the same video opens again at the same position in MPEG-TS. The
+format that starts is remembered on that TV (device-local, kept across
+restarts) and used first from then on; if it later fails the same way, the
+other one is tried and remembered. The former "HLS: MPEG-TS" switch is gone:
+a TV that had it on keeps HLS on and starts with MPEG-TS.
 
 HLS requires a seekable source with a keyframe index. If a webOS MKV's last
 indexed keyframe is far from the reported end, the probe checks a bounded

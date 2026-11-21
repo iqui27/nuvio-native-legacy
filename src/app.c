@@ -6483,6 +6483,18 @@ void app_atualizar(float dt, Uint32 agora) {
     }
   }
   renovarVodInterrompido();
+  // The player opens the same source again in another way (webOS HLS: the
+  // other segment format when the first did not start): the deadlines for a
+  // source that does not open count again from there.
+  { static unsigned aberturaVista;
+    unsigned g = video_abertura_geracao();
+    if (g != aberturaVista) {
+      Uint32 agora = SDL_GetTicks() | 1u;
+      aberturaVista = g;
+      if (fonteVODDesde) fonteVODDesde = agora;
+      if (fonteManualDesde) fonteManualDesde = agora;
+      if (voltaAtiva) voltaDesde = agora;
+    } }
   tentarProximaFonteVOD();
   lembrarAutomatica();
   bingeDaFonteAtual();

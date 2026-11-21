@@ -189,6 +189,9 @@ int  video_modo_live_consumir(void);
 // Numero da tentativa (1..3) enquanto uma queda esta em curso, esperando ou
 // recarregando; 0 fora disso. Enquanto nao e 0, video_falhou fica em 0.
 int    video_reconectando(void);
+// Changes when the same open starts again in another way (webOS HLS: the
+// other segment format): the app's opening deadlines count again from it.
+unsigned video_abertura_geracao(void);
 #ifdef NV_TPK
 // Seek sent and not yet confirmed by the TV (video_tpk.c), and a counter of
 // seeks the TV refused (EV_BUSCA_FALHOU). Used by player.c to hold the bar on
