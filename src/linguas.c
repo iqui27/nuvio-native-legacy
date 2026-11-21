@@ -581,11 +581,14 @@ const char *ling_do_nome(const char *nome) {
 
 // ------------------------------------------------------------ legenda automatica
 
+// A afinidade so reordena quando a preferencia TEM variante regional
+// (es-419, pt-pt...): sem ela, o empate mantem a ordem da lista, como na base
+// (F48-r2 — "en" com [eng,en] fica na primeira, nao pula para a "en").
 static int melhorLegenda(const char *const *ids, int n, const char *pref, int forca) {
-  int i, melhor = -1, nota = -1, a;
+  int i, melhor = -1, nota = -1, a, regional = ling_prefere_regional(pref);
   for (i = 0; i < n; i++) {
     if (!ids[i] || !ids[i][0] || ling_casa_forca(ids[i], pref) != forca) continue;
-    a = ling_afinidade(ids[i], pref);
+    a = regional ? ling_afinidade(ids[i], pref) : 1;
     if (a > nota) { nota = a; melhor = i; }
   }
   return melhor;
@@ -593,7 +596,7 @@ static int melhorLegenda(const char *const *ids, int n, const char *pref, int fo
 
 static int melhorLegendaEmbTipo(const char *const *emb, const int *tipoEmb, int nEmb,
                                 const char *pref, int forca, int tipo, int sdh, int evitaSdh) {
-  int i, melhor = -1, nota = -1, a;
+  int i, melhor = -1, nota = -1, a, regional = ling_prefere_regional(pref);
   for (i = 0; i < nEmb; i++) {
     int t = tipoEmb ? tipoEmb[i] : LING_LEG_COMUM;
     if (tipo >= 0) {
@@ -604,7 +607,7 @@ static int melhorLegendaEmbTipo(const char *const *emb, const int *tipoEmb, int 
       if (evitaSdh && t == LING_LEG_SDH) continue;
     }
     if (!emb[i] || !emb[i][0] || ling_casa_forca(emb[i], pref) != forca) continue;
-    a = ling_afinidade(emb[i], pref);
+    a = regional ? ling_afinidade(emb[i], pref) : 1;
     if (a > nota) { nota = a; melhor = i; }
   }
   return melhor;
