@@ -429,27 +429,92 @@ static char *baixarJsonSeguro(const char *url, int segundos) {
 #endif
 }
 
-// O sha256 hex do anexo cuja browser_download_url comeca em `ini`. O campo
-// `digest` vem ANTES do browser_download_url dentro do mesmo anexo (ordem do
-// JSON do GitHub: ... size, digest, download_count, ..., browser_download_url),
-// entao a busca e PARA TRAS a partir da url — ir para frente pegaria o digest do
-// anexo SEGUINTE. Escreve "" quando o anexo nao tem digest.
+// O sha256 hex do anexo cuja browser_download_url comeca em `ini`. O digest
+// tem de ser do PROPRIO OBJETO JSON do anexo — a busca antiga pegava a ultima
+// ocorrência de "digest": desde o comeco do corpo ate a URL, e um anexo sem
+// digest herdava o do anexo ANTERIOR (o .ipk ficava com o sha256 do .wgt e o
+// instalador conferia contra o hash errado). A delimitacao rastreia `{`/`}`
+// fora de string: no `ini` o objeto aberto mais interno e o do anexo que tem
+// a URL, e so a chave "digest" DO NIVEL DELE conta — uma dentro de objeto
+// aninhado (uploader) ou dentro de string nao e o digest do arquivo. Escreve
+// "" quando o anexo nao tem digest proprio ou quando nao da para delimitar.
 static void hashAntesDe(const char *corpo, const char *ini, char *hash, size_t tamHash) {
-  const char *d = NULL, *q = corpo;
-  if (!hash || !tamHash) return;
+  const char *pilha[32], *p, *d = NULL, *obj, *fim = NULL;
+  char tipos[32];
+  int topo = 0, extra = 0, emStr = 0, iObj, prof;
+  if (!hash || !tamHash || !corpo || !ini || ini <= corpo) return;
   hash[0] = 0;
-  while (q < ini) {
-    const char *r = strstr(q, "\"digest\":");
-    if (!r || r > ini) break;
-    d = r; q = r + 8;
+  // ATE `ini`: sobe a pilha de `{`/`[` fora de string. `extra` conta o que nao
+  // coube na pilha: com estouro nao ha como saber onde o objeto termina.
+  for (p = corpo; p < ini && *p; p++) {
+    char c = *p;
+    if (emStr) {
+      if (c == '\\' && p + 1 < ini) p++;
+      else if (c == '"') emStr = 0;
+      continue;
+    }
+    if (c == '"') emStr = 1;
+    else if (c == '{' || c == '[') {
+      if (topo < 32) { pilha[topo] = p; tipos[topo] = c; topo++; }
+      else extra++;
+    } else if (c == '}' || c == ']') {
+      if (extra) extra--;
+      else if (topo) topo--;
+    }
+  }
+  if (extra) return;
+  // O objeto do anexo e o `{` mais interno aberto na URL.
+  for (iObj = topo - 1; iObj >= 0 && tipos[iObj] != '{'; iObj--) {}
+  if (iObj < 0) return;
+  obj = pilha[iObj];
+  // DE `ini` ATE O `}` QUE FECHA ESSE OBJETO (emStr continua 1: o ini esta
+  // dentro da string da URL). Fechamento com topo == iObj+1 fecha o proprio.
+  for (; *p; p++) {
+    char c = *p;
+    if (emStr) {
+      if (c == '\\' && p[1]) p++;
+      else if (c == '"') emStr = 0;
+      continue;
+    }
+    if (c == '"') emStr = 1;
+    else if (c == '{' || c == '[') {
+      if (topo < 32) { pilha[topo] = p; tipos[topo] = c; topo++; }
+      else extra++;
+    } else if (c == '}' || c == ']') {
+      if (extra) extra--;
+      else if (topo > iObj + 1) topo--;
+      else { fim = p; break; }
+    }
+  }
+  if (!fim) return;
+  // A ultima chave "digest" de nivel 1 dentro de [obj, fim), fora de string.
+  prof = 0;
+  for (p = obj; p < fim; p++) {
+    char c = *p;
+    if (emStr) {
+      if (c == '\\' && p + 1 < fim) p++;
+      else if (c == '"') emStr = 0;
+      continue;
+    }
+    if (c == '"') {
+      emStr = 1;
+      if (prof == 1 && fim - p > 8 && !memcmp(p + 1, "digest\"", 7)) {
+        const char *t = p + 8;
+        while (t < fim && (*t == ' ' || *t == '\t' || *t == '\r' || *t == '\n')) t++;
+        if (t < fim && *t == ':') d = t + 1;
+      }
+      continue;
+    }
+    if (c == '{' || c == '[') prof++;
+    else if (c == '}' || c == ']') prof--;
   }
   if (!d) return;
-  d = strchr(d + 8, '"');
-  if (!d) return;
+  while (d < fim && (*d == ' ' || *d == '\t' || *d == '\r' || *d == '\n')) d++;
+  if (d >= fim || *d != '"') return;
   d++;
   if (!strncmp(d, "sha256:", 7)) d += 7;   // so o hex interessa
   { const char *e = strchr(d, '"');
-    if (e && (size_t)(e - d) < tamHash) { memcpy(hash, d, (size_t)(e - d)); hash[e - d] = 0; }
+    if (e && e < fim && (size_t)(e - d) < tamHash) { memcpy(hash, d, (size_t)(e - d)); hash[e - d] = 0; }
     // Um digest que nao seja sha256 hex de 64 caracteres nao e hash: descarta.
     if (hash[0] && !hashHexValido(hash)) hash[0] = 0; }
 }

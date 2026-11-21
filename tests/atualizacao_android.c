@@ -56,6 +56,12 @@ int main(void) {
                     url, sizeof url, hash, sizeof hash), "sem digest nao casa");
   CONFERE(!acharApk("{\"assets\":[{\"digest\":\"sha256:" EXPECTED_HASH "\",\"browser_download_url\":\"https://evil.example/" EXPECTED_APK "\"}]}",
                     url, sizeof url, hash, sizeof hash), "fora do repositorio nao casa");
+  // F89: o digest tem de ser DO PROPRIO ANEXO — um .apk sem digest atras de um
+  // anexo com digest nao pode herdar o do vizinho.
+  CONFERE(!acharApk("{\"assets\":[{\"digest\":\"sha256:" EXPECTED_HASH "\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/x.wgt\"},"
+                    "{\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/" EXPECTED_APK "\"}]}",
+                    url, sizeof url, hash, sizeof hash), "apk sem digest proprio nao herda o do vizinho");
+  CONFERE(url[0] == 0 && hash[0] == 0, "e saem vazios");
 #ifdef NV_APK_LITE
   CONFERE(!acharApk("{\"assets\":[" ASSET("Nuvio-1.7.0-android.apk", "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd") ","
                     ASSET("Nuvio-1.7.0-android-lite.apk", "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff") "]}",

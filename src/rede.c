@@ -1328,6 +1328,11 @@ static _Thread_local int redeParcialOk;
 #define OPT_CAINFO 10065
 #define OPT_ERRORBUFFER 10010
 #define OPT_POSTFIELDSIZE 60
+// CURLOPT_REDIR_PROTOCOLS em bitmask (7.19.4+): o *_STR da libcurl 7.85 nao
+// existe nas libcurl antigas das TVs. CURLPROTO_HTTPS = 2.
+#define OPT_REDIR_PROTOCOLS 182
+// CURLOPT_MAXREDIRS: teto de saltos de uma cadeia de redirects.
+#define OPT_MAXREDIRS        68
 #define OPT_PROTOCOLS 181
 
 // Ouvinte unico dos 401 — ver rede_avisar_401 no cabecalho. (O ramo
@@ -1904,7 +1909,11 @@ static int credencialNaQuery(const char *url) {
     "key", "access_token", "auth_token", "refresh_token", "id_token",
     "client_secret", "secret", "password", "passwd", "auth", NULL };
   const char *q = url ? strchr(url, '?') : NULL;
-  if (!q) return 0;
+  const char *frag = url ? strchr(url, '#') : NULL;
+  // O `?` tem de ser da QUERY DE VERDADE: um `#` antes dele o deixa dentro do
+  // fragmento, e o fragmento nao sai no pedido — ?token= ali nao e credencial
+  // (media de addon com #help?token= perdia o redirect e o TLS aberto).
+  if (!q || (frag && frag < q)) return 0;
   for (q++; *q && *q != '#';) {
     const char *e, *f = q;
     size_t n;
@@ -1932,6 +1941,32 @@ static int urlAnexoOficial(const char *url) {
   static const char prefixo[] =
     "https://github.com/iqui27/nuvio-native-legacy/releases/download/";
   return !strncmp(url, prefixo, sizeof prefixo - 1);
+}
+// DESTINO permitido de um redirect do download verificado. O prefixo so
+// controla a URL INICIAL; sem esta lista um 302 levava o artefato para onde o
+// transporte quisesse. So https:// e so os hosts que o GitHub usa para servir
+// os anexos: o proprio github.com (o releases/download que responde o 302) e
+// os CDNs de assets. Host EXATO com porta opcional — comparacao de prefixo
+// deixaria passar github.com.evil.test; URL relativa ou com credencial
+// (user@host) nao casa e o salto e recusado.
+static int destinoAnexoOk(const char *url) {
+  static const char *const hosts[] = {
+    "github.com",
+    "release-assets.githubusercontent.com",
+    "objects.githubusercontent.com", NULL };
+  const char *h, *f, *r;
+  int i;
+  if (!url || strncasecmp(url, "https://", 8)) return 0;
+  h = url + 8;
+  f = h + strcspn(h, "/?#");
+  for (i = 0; hosts[i]; i++) {
+    size_t n = strlen(hosts[i]);
+    if (strncasecmp(h, hosts[i], n)) continue;
+    r = h + n;
+    if (r == f) return 1;
+    if (*r == ':' && r + 1 < f && r + 1 + strspn(r + 1, "0123456789") == f) return 1;
+  }
+  return 0;
 }
 static void opcoesComuns(void *c, unsigned long prazoMs) {
 #ifdef NV_TPK
@@ -2121,12 +2156,14 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
                                   const char *const *cab, int *status,
                                   char *etag, unsigned tamEtag, int *retry, int bin);
 
-// Onde o ETag da resposta e anotado, quando alguem o pediu.
-typedef struct { char *dst; unsigned tam; int *retry; } CacaCab;
+// Onde o ETag da resposta e anotado, quando alguem o pediu. `confereDestino`
+// liga o filtro de Location do download verificado (rede_baixar_interno3).
+typedef struct { char *dst; unsigned tam; int *retry; int confereDestino; } CacaCab;
 
 // A libcurl entrega UMA linha de cabecalho por chamada, com o CRLF no fim. So
 // o ETag interessa; devolver menos bytes do que recebeu abortaria a
-// transferencia, entao o retorno e sempre o tamanho inteiro.
+// transferencia, entao o retorno e sempre o tamanho inteiro — EXCETO o
+// Location recusado do download verificado, que e justamente o aborto.
 static size_t receberCab(void *dados, size_t tam, size_t qtd, void *u) {
   CacaCab *c = (CacaCab *)u;
   const char *s = (const char *)dados;
@@ -2134,6 +2171,25 @@ static size_t receberCab(void *dados, size_t tam, size_t qtd, void *u) {
   if (bytes >= 5 && !strncasecmp(s, "HTTP/", 5)) {
     if (c && c->retry) *c->retry = 0;
     if (c && c->dst && c->tam) c->dst[0] = 0;
+  }
+  if (c && c->confereDestino && bytes > 9 && !strncasecmp(s, "location:", 9)) {
+    // Cada salto do download verificado e conferido ANTES de ser seguido: so
+    // https:// e so host oficial (destinoAnexoOk). Fora da lista a linha
+    // volta curta, a libcurl aborta com write-error e o 302 nao e seguido —
+    // e o que impede a cadeia de levar o artefato a http:// ou a outro CDN.
+    char loc[1024];
+    s += 9; bytes -= 9;
+    while (bytes && (*s == ' ' || *s == '\t')) { s++; bytes--; }
+    while (bytes && (s[bytes - 1] == '\r' || s[bytes - 1] == '\n' ||
+                     s[bytes - 1] == ' ')) bytes--;
+    n = bytes < sizeof loc - 1 ? bytes : sizeof loc - 1;
+    memcpy(loc, s, n); loc[n] = 0;
+    if (!destinoAnexoOk(loc)) {
+      char seg[120];
+      printf("[rede] redirect recusado: %s\n", rede_url_publica(loc, seg, sizeof seg));
+      fflush(stdout);
+      return 0;
+    }
   }
   if (c && c->retry && bytes > 12 && !strncasecmp(s, "retry-after:", 12)) {
     *c->retry = retrySegundos(s + 12, bytes - 12);
@@ -2794,7 +2850,13 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
     // curl_easy_reset limpa as opcoes entre pedidos, entao deixar o recebedor
     // instalado aqui nao respinga no pedido seguinte do mesmo fio — mas tambem
     // nao ha por que pagar uma chamada por cabecalho em todo download de imagem.
-    if (caca.dst || caca.retry) {
+    // A EXCECAO e o download verificado do anexo oficial: a resposta pode
+    // trazer um Location para o CDN e cada salto precisa ser conferido
+    // (ver receberCab). Pedido com credencial fica de fora: o redirect dele
+    // esta desligado no ramo abaixo, entao nao ha salto a conferir.
+    caca.confereDestino = bin && !strncmp(url, "https://", 8) &&
+                          !pedidoComCredencial(url, cab) && urlAnexoOficial(url);
+    if (caca.dst || caca.retry || caca.confereDestino) {
       curl_setopt(c, OPT_HEADERFUNCTION, receberCab);
       curl_setopt(c, OPT_HEADERDATA, &caca);
     }
@@ -2825,6 +2887,14 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
       curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
       if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
       if (!urlAnexoOficial(url)) curl_setopt(c, OPT_FOLLOWLOCATION, (long)0);
+      else {
+        // O prefixo so libera a URL INICIAL; a cadeia tem regra propria:
+        // saltos so em https (bitmask — a *_STR da 7.85 nao existe nas
+        // libcurl das TVs), teto de saltos, e cada Location conferida pelo
+        // receberCab contra a lista oficial de hosts (destinoAnexoOk).
+        curl_setopt(c, OPT_REDIR_PROTOCOLS, (long)2 /* CURLPROTO_HTTPS */);
+        curl_setopt(c, OPT_MAXREDIRS, (long)5);
+      }
     }
     ligarVigia(c, &vigia, prazoMs);
     cvOn = cancelVigiaLigar(c, &cv);

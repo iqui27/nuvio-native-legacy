@@ -87,6 +87,42 @@ int main(int argc, char **argv) {
       CONFERE(!strcmp(hash, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), "digest do MESMO anexo, sem o prefixo: [%s]", hash); }
   }
 
+  // O digest tem de ser DO PROPRIO ANEXO (F89). Um .ipk sem digest depois de
+  // um anexo COM digest nao pode herdar o do vizinho — era o que a busca
+  // "ultimo digest desde o comeco do JSON ate a URL" fazia: o .ipk ia ao
+  // instalador com o sha256 do .wgt e a atualizacao legitima virava erro de
+  // checksum no Homebrew Channel.
+  { char url[512], hash[80];
+    const char *j =
+      "{\"assets\":["
+      "{\"digest\":\"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/nuvio.wgt\"},"
+      "{\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/nuvio_arm.ipk\"}]}";
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO),
+            ".ipk sem digest proprio apos anexo com digest: recusado");
+    CONFERE(url[0] == 0 && hash[0] == 0, "e saem vazios: [%s] [%s]", url, hash); }
+
+  // A delimitacao e do objeto JSON do anexo: "digest" dentro de objeto
+  // aninhado (uploader) ou dentro de STRING do proprio anexo nao conta; um
+  // "}" em string nao fecha o anexo; e o digest vale em qualquer posicao do
+  // objeto — inclusive DEPOIS da browser_download_url, como o GitHub ja fez.
+  { char url[512], hash[80];
+    const char *H = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+    const char *j =
+      "{\"assets\":[{\"name\":\"a_arm.ipk\",\"label\":\"fechou } aqui\","
+      "\"uploader\":{\"login\":\"x\",\"digest\":\"sha256:9999999999999999999999999999999999999999999999999999999999999999\"},"
+      "\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/a_arm.ipk\","
+      "\"digest\":\"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}]}";
+    CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO) && !strcmp(hash, H),
+            "digest depois da URL, ignorando o do uploader e o } em string: [%s]", hash); }
+
+  // "digest" dentro de uma string do anexo NAO e o campo.
+  { char url[512], hash[80];
+    const char *j =
+      "{\"assets\":[{\"label\":\"sem \\\"digest\\\":sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa aqui\","
+      "\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/a_arm.ipk\"}]}";
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO),
+            "digest dentro de string nao e campo: recusado"); }
+
   // A VARIANTE CERTA ENTRE OS TRES ANEXOS, NA ORDEM REAL DO GITHUB.
   //
   // Este caso e o defeito de 18/09: acharIpk devolvia o primeiro ".ipk", e o
