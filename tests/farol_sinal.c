@@ -23,8 +23,10 @@
 #define OK(cond, msg) do { if (!(cond)) FALHA(msg); } while (0)
 
 // ------------------------------------------------------------------- tempo --
-static long long T_now;          // epoch s (o relogio injetado)
-static uint32_t  T_ms;           // ms para o anel
+// T_now/T_ms sao _Atomic: o fio de tras le o relogio enquanto o main avanca
+// (FAROL38C — TSan conta corrida de leitura solta).
+static _Atomic long long T_now;  // epoch s (o relogio injetado)
+static _Atomic uint32_t  T_ms;   // ms para o anel
 static long long fakeS(void) { return T_now; }
 static uint32_t  fakeMs(void) { return T_ms; }
 static int diaNow(void) { return (int)((T_now - 1767225600LL) / 86400); }
@@ -39,7 +41,7 @@ static char T_dir[512];
 const char *dados_dir(void) { return T_dir; }
 
 // ------------------------------------------------------------------ dormiu --
-static int T_sono;
+static _Atomic int T_sono;
 int dormiu_suspeita(const char *id, DiarioEntrada *saida) {
   if (!T_sono) return 0;
   if (saida) {
@@ -52,7 +54,11 @@ int dormiu_suspeita(const char *id, DiarioEntrada *saida) {
 }
 
 // ------------------------------------------------------------------ diario --
+// T_dmtx/T_cmtx/T_pmtx fecham os arrays falsos: o fio de tras do passo le
+// Diario/catalogo/progresso enquanto o main escreve (FAROL38C — TSan). A
+// ordem e a da producao: T_dmtx -> trava -> T_cmtx.
 static DiarioEntrada D[700]; static int D_n, D_pf[700];
+static pthread_mutex_t T_dmtx = PTHREAD_MUTEX_INITIALIZER;
 static DiarioOuvinte D_fn; static void *D_ctx;
 int diario_ouvir(DiarioOuvinte fn, void *ctx) { D_fn = fn; D_ctx = ctx; return 1; }
 void diario_parar_de_ouvir(DiarioOuvinte fn, void *ctx) {
@@ -62,14 +68,25 @@ static void dEv(int ev, const DiarioEntrada *e) {
   if (D_fn) D_fn(T_perfil, ev, e, D_ctx);
 }
 static void dAdd(const DiarioEntrada *e) {
+  pthread_mutex_lock(&T_dmtx);
   OK(D_n < 700, "diario fake cheio");
   D[D_n] = *e; D_pf[D_n] = T_perfil; D_n++;
   dEv(DIARIO_EV_NOVA, &D[D_n - 1]);
+  pthread_mutex_unlock(&T_dmtx);
+}
+// Carga antiga "sem evento": a mesma escrita de sempre, sob a trava do
+// Diario fake (o fio de tras pode estar no meio de uma leitura).
+static void dPoe(const DiarioEntrada *e) {
+  pthread_mutex_lock(&T_dmtx);
+  OK(D_n < 700, "diario fake cheio");
+  D[D_n] = *e; D_pf[D_n] = T_perfil; D_n++;
+  pthread_mutex_unlock(&T_dmtx);
 }
 static void dRecarrega(void) { dEv(DIARIO_EV_RECARREGADO, NULL); }
-static int D_visita;    // entradas entregues ao cb (prova da varredura)
+static _Atomic int D_visita;   // entradas entregues ao cb (prova da varredura)
 int diario_percorrer(int perfil, const DiarioFiltro *f, DiarioVisita cb, void *ctx) {
-  int ord[700], n = 0, i, j, k = 0;
+  int ord[700], n = 0, i, j, k = 0, saltei = 0;
+  pthread_mutex_lock(&T_dmtx);
   for (i = 0; i < D_n; i++) if (D_pf[i] == perfil) ord[n++] = i;
   if (f && f->decrescente)
     for (i = 0; i < n; i++)
@@ -86,10 +103,12 @@ int diario_percorrer(int perfil, const DiarioFiltro *f, DiarioVisita cb, void *c
       if ((e->flags & f->comFlags) != f->comFlags) continue;
       if (e->flags & f->semFlags) continue;
       if (f->origem && f->origem != e->origem) continue;
+      if (saltei < f->saltar) { saltei++; continue; }
     }
     k++; D_visita++;
     if (!cb(e, ctx)) break;
   }
+  pthread_mutex_unlock(&T_dmtx);
   return k;
 }
 void diario_separar_id(const char *src, char *id, size_t tam, int *t, int *e) {
@@ -119,55 +138,66 @@ void diario_separar_id(const char *src, char *id, size_t tam, int *t, int *e) {
 }
 int diario_por_titulo(int perfil, const char *id, DiarioEntrada *saida, int max) {
   int i, n = 0;
+  pthread_mutex_lock(&T_dmtx);
   for (i = 0; i < D_n; i++)
     if (D_pf[i] == perfil && !strcmp(D[i].id, id)) { n++; if (saida && n <= max) saida[n - 1] = D[i]; }
+  pthread_mutex_unlock(&T_dmtx);
   return n;
 }
 int diario_apagar(int perfil, const char *id, int t, int e, long long quando) {
   int i, ach = -1;
+  pthread_mutex_lock(&T_dmtx);
   for (i = 0; i < D_n; i++)
     if (D_pf[i] == perfil && !strcmp(D[i].id, id) && D[i].temporada == t && D[i].episodio == e &&
         (quando ? D[i].quando == quando : (ach < 0 || D[i].quando > D[ach].quando)))
       ach = i;
-  if (ach < 0) return 0;
+  if (ach < 0) { pthread_mutex_unlock(&T_dmtx); return 0; }
   {
     DiarioEntrada copia = D[ach];
     memmove(&D[ach], &D[ach + 1], sizeof *D * (size_t)(D_n - ach - 1));
     D_n--;
     dEv(DIARIO_EV_APAGADA, &copia);
   }
+  pthread_mutex_unlock(&T_dmtx);
   return 1;
 }
 int diario_episodio(int perfil, const char *id, int t, int e, long long *quando) {
   int i, n = 0;
+  pthread_mutex_lock(&T_dmtx);
   for (i = 0; i < D_n; i++)
     if (D_pf[i] == perfil && !strcmp(D[i].id, id) && D[i].temporada == t && D[i].episodio == e) {
       n++;
       if (quando && D[i].quando > *quando) *quando = D[i].quando;
     }
+  pthread_mutex_unlock(&T_dmtx);
   return n;
 }
 int diario_ultimo_episodio(int perfil, const char *id, int *t, int *e,
                            long long *quando) {
   int i, ach = -1;
+  pthread_mutex_lock(&T_dmtx);
   for (i = 0; i < D_n; i++)
     if (D_pf[i] == perfil && !strcmp(D[i].id, id) && D[i].temporada > 0 &&
         (ach < 0 || D[i].temporada > D[ach].temporada ||
          (D[i].temporada == D[ach].temporada && D[i].episodio > D[ach].episodio)))
       ach = i;
-  if (ach < 0) return 0;
+  if (ach < 0) { pthread_mutex_unlock(&T_dmtx); return 0; }
   if (t) *t = D[ach].temporada;
   if (e) *e = D[ach].episodio;
   if (quando) *quando = D[ach].quando;
+  pthread_mutex_unlock(&T_dmtx);
   return 1;
 }
 
 // ---------------------------------------------------------------- catalogo --
+static pthread_mutex_t T_cmtx = PTHREAD_MUTEX_INITIALIZER;
 static CatItem C_it[32]; static int C_n;
 static CatEp   C_eps[32][24]; static int C_en[32];
 static int cat_add(const char *imdb, const char *tipo, long tmdb,
                    const char *genero, const char *titulo) {
-  int i = C_n++;
+  int i;
+  pthread_mutex_lock(&T_cmtx);
+  i = C_n++;
   memset(&C_it[i], 0, sizeof C_it[i]);
   snprintf(C_it[i].imdb, sizeof C_it[i].imdb, "%s", imdb);
   snprintf(C_it[i].tipo, sizeof C_it[i].tipo, "%s", tipo);
@@ -175,20 +205,43 @@ static int cat_add(const char *imdb, const char *tipo, long tmdb,
   snprintf(C_it[i].genero, sizeof C_it[i].genero, "%s", genero);
   snprintf(C_it[i].meta, sizeof C_it[i].meta, "2010 · 2h");
   C_it[i].tmdb = tmdb;
+  pthread_mutex_unlock(&T_cmtx);
   return i;
 }
 static void cat_ep(int i, int t, int e) {
+  pthread_mutex_lock(&T_cmtx);
   C_eps[i][C_en[i]].temporada = t; C_eps[i][C_en[i]].episodio = e; C_en[i]++;
+  pthread_mutex_unlock(&T_cmtx);
 }
-const CatItem *cat_item(int i) { return i >= 0 && i < C_n ? &C_it[i] : NULL; }
+// Retorna ponteiro para a vaga: o lock ja dá a aresta HB com quem escreveu;
+// itens sao imutaveis depois de cat_add (padrao do falso de sempre).
+const CatItem *cat_item(int i) {
+  const CatItem *r;
+  pthread_mutex_lock(&T_cmtx);
+  r = i >= 0 && i < C_n ? &C_it[i] : NULL;
+  pthread_mutex_unlock(&T_cmtx);
+  return r;
+}
 int cat_indice_por_imdb(const char *imdb) {
-  int i;
-  for (i = 0; i < C_n; i++) if (!strcmp(C_it[i].imdb, imdb)) return i;
-  return -1;
+  int i, r = -1;
+  pthread_mutex_lock(&T_cmtx);
+  for (i = 0; i < C_n; i++) if (!strcmp(C_it[i].imdb, imdb)) { r = i; break; }
+  pthread_mutex_unlock(&T_cmtx);
+  return r;
 }
-int cat_n_episodios(int i) { return i >= 0 && i < C_n ? C_en[i] : 0; }
+int cat_n_episodios(int i) {
+  int r;
+  pthread_mutex_lock(&T_cmtx);
+  r = i >= 0 && i < C_n ? C_en[i] : 0;
+  pthread_mutex_unlock(&T_cmtx);
+  return r;
+}
 const CatEp *cat_episodio(int i, int k) {
-  return i >= 0 && i < C_n && k >= 0 && k < C_en[i] ? &C_eps[i][k] : NULL;
+  const CatEp *r;
+  pthread_mutex_lock(&T_cmtx);
+  r = i >= 0 && i < C_n && k >= 0 && k < C_en[i] ? &C_eps[i][k] : NULL;
+  pthread_mutex_unlock(&T_cmtx);
+  return r;
 }
 
 // ------------------------------------------------------- salvos/visto/prog --
@@ -198,10 +251,14 @@ static VistoOuvinte V_fn;
 void visto_ao_marcar(VistoOuvinte fn) { V_fn = fn; }
 static void (*Prog_fn)(const char *);
 void prog_ao_retirar(void (*fn)(const char *)) { Prog_fn = fn; }
+static pthread_mutex_t T_pmtx = PTHREAD_MUTEX_INITIALIZER;
 static ProgRegistro P_regs[32]; static int P_n;
 int prog_ler(ProgRegistro *saida, int max) {
-  int n = P_n < max ? P_n : max;
+  int n;
+  pthread_mutex_lock(&T_pmtx);
+  n = P_n < max ? P_n : max;
   memcpy(saida, P_regs, sizeof *P_regs * (size_t)n);
+  pthread_mutex_unlock(&T_pmtx);
   return n;
 }
 
@@ -280,16 +337,31 @@ static void entrada(DiarioEntrada *e, const char *id, char tipo, int t, int ep,
   e->quando = T_now; e->hora = 34; e->flags = (unsigned short)flags;
   e->nota10 = (unsigned char)nota; e->seg = 3600; e->durSeg = 3600;
 }
+// Espera o fio de tras acabar o que o passo delegou — conferidas de
+// temporada, serie-largada e gravacoes (FAROL38C). O laco bombeia passos,
+// que tambem dirigem as fatias da varredura, ate nao sobrar trabalho.
+static void drenaTrab(void) {
+  int i;
+  for (i = 0; i < 400 && farolsinal_teste_trabalho(); i++) {
+    farolsinal_passo();
+    usleep(2000);
+  }
+  OK(!farolsinal_teste_trabalho(), "fio de tras drenou");
+}
 static void zeraTudo(void) {
   char cam[640];
   int p;
+  drenaTrab();                    // nada em voo no fio de tras antes de zerar
   farolsinal_teste_zera();
   for (p = 1; p <= 3; p++) {
     snprintf(cam, sizeof cam, "%s/farol-gosto-p%d.txt", T_dir, p); unlink(cam);
     snprintf(cam, sizeof cam, "%s/farol-sinal-p%d.txt", T_dir, p); unlink(cam);
   }
   snprintf(cam, sizeof cam, "%s/farol-fichas.bin", T_dir); unlink(cam);
-  D_n = 0; T_sono = 0; P_n = 0; T_perfil = 1;
+  pthread_mutex_lock(&T_dmtx); D_n = 0; pthread_mutex_unlock(&T_dmtx);
+  T_sono = 0;
+  pthread_mutex_lock(&T_pmtx); P_n = 0; pthread_mutex_unlock(&T_pmtx);
+  T_perfil = 1;
   farolanel_zerar();
   farolsinal_definir_recomendar(1);
 }
@@ -367,11 +439,11 @@ int main(void) {
   entrada(&e, "tt_ser", DIARIO_SERIE, 1, 2, 0, 0);
   avanca(3600); e.quando = T_now;
   dAdd(&e);
-  farolsinal_passo();
+  drenaTrab();                     // a conferida da temporada rola no fio de tras
   OK(peso(FG_DIM_GENERO, genAcao) ==
      esp(esp(esp(0, 0, 26), 1, 26), 2, FG_D_TERMINOU),
      "temporada completa +1.0 unica");
-  farolsinal_passo();
+  drenaTrab();
   OK(peso(FG_DIM_GENERO, genAcao) ==
      esp(esp(esp(0, 0, 26), 1, 26), 2, FG_D_TERMINOU),
      "temporada nao credita de novo");
@@ -479,51 +551,60 @@ int main(void) {
   // catalogo => -1,0 uma vez por titulo
   zeraTudo();
   {
-    ProgRegistro *r = &P_regs[P_n++];
+    ProgRegistro *r;
+    pthread_mutex_lock(&T_pmtx);
+    r = &P_regs[P_n++];
     memset(r, 0, sizeof *r);
     snprintf(r->contentId, sizeof r->contentId, "tt_ser");
     snprintf(r->tipo, sizeof r->tipo, "series");
     r->lastWatchedMs = (T_now - 30LL * 86400) * 1000;
     r->perfil = 1;
+    pthread_mutex_unlock(&T_pmtx);
   }
   entrada(&e, "tt_ser", DIARIO_SERIE, 1, 1, 0, 0);
   // §1.3 exige a data: episodios vistos ha 21+ dias tambem no diario
   e.quando = T_now - 25LL * 86400; dAdd(&e);
   e.episodio = 2; e.quando += 3600; dAdd(&e);
-  farolsinal_passo();   // fecha a temporada 1 E marca a largada
+  drenaTrab();   // fecha a temporada 1 E marca a largada (tudo no fio de tras)
   {
     int antes = peso(FG_DIM_GENERO, genAcao);
     // largada -1.0 subtraiu: sem ela ficaria ~decayed(eps) + bonus de
     // temporada (~300); com ela sobra bem menos.
     OK(antes < 200, "largada subtraiu do somatorio");
-    farolsinal_passo();
+    drenaTrab();
     OK(peso(FG_DIM_GENERO, genAcao) == antes, "largada nao repete");
   }
   // serie RECENTE (ultima vez ha < 21 d) nao e largada
   zeraTudo();
   {
-    ProgRegistro *r = &P_regs[P_n++];
+    ProgRegistro *r;
+    pthread_mutex_lock(&T_pmtx);
+    r = &P_regs[P_n++];
     memset(r, 0, sizeof *r);
     snprintf(r->contentId, sizeof r->contentId, "tt_ser2");
     snprintf(r->tipo, sizeof r->tipo, "series");
     r->lastWatchedMs = (T_now - 30LL * 86400) * 1000;
     r->perfil = 1;
+    pthread_mutex_unlock(&T_pmtx);
     cat_add("tt_ser2", "series", 0, "Acao", "Serie T");
     cat_ep(2, 1, 1); cat_ep(2, 1, 2);
   }
   entrada(&e, "tt_ser2", DIARIO_SERIE, 1, 1, 0, 0);
   e.quando = T_now - 3600; dAdd(&e);   // episodio RECENTE: sem largada
-  farolsinal_passo();
+  drenaTrab();
   OK(peso(FG_DIM_GENERO, genAcao) == 26, "episodio recente nao larga");
   // serie com 4+ episodios vistos nao e largada (§1.3: so 1-3)
   zeraTudo();
   {
-    ProgRegistro *r = &P_regs[P_n++];
+    ProgRegistro *r;
+    pthread_mutex_lock(&T_pmtx);
+    r = &P_regs[P_n++];
     memset(r, 0, sizeof *r);
     snprintf(r->contentId, sizeof r->contentId, "tt_ser3");
     snprintf(r->tipo, sizeof r->tipo, "series");
     r->lastWatchedMs = (T_now - 30LL * 86400) * 1000;
     r->perfil = 1;
+    pthread_mutex_unlock(&T_pmtx);
     cat_add("tt_ser3", "series", 0, "Acao", "Serie U");
     cat_ep(3, 1, 1); cat_ep(3, 1, 2); cat_ep(3, 1, 3); cat_ep(3, 1, 4);
     cat_ep(3, 1, 5);
@@ -532,7 +613,7 @@ int main(void) {
     entrada(&e, "tt_ser3", DIARIO_SERIE, 1, i, 0, 0);
     e.quando = T_now - 25LL * 86400 + i * 60; dAdd(&e);
   }
-  farolsinal_passo();
+  drenaTrab();
   {
     int p4 = peso(FG_DIM_GENERO, genAcao);
     OK(p4 > 0 && p4 < esp(esp(esp(esp(esp(0,0,26),1,26),2,26),3,26),4,FG_D_TERMINOU) + 100,
@@ -790,7 +871,7 @@ int main(void) {
   for (i = 0; i < 600; i++) {
     entrada(&e, i % 40 ? "tt_big" : "tt_aaa", DIARIO_FILME, 0, 0, 0, 0);
     e.quando = T_now - 40000 + i;          // quandos distintos, todos velhos
-    D[D_n] = e; D_pf[D_n] = T_perfil; D_n++;   // carga antiga, sem evento
+    dPoe(&e);                              // carga antiga, sem evento
   }
   dRecarrega();
   D_visita = 0;
@@ -865,8 +946,8 @@ int main(void) {
   // ---------- RECARREGADO / varredura ----------
   zeraTudo();
   entrada(&e, "tt_aaa", DIARIO_FILME, 0, 0, 0, 0);
-  D[D_n] = e; D_pf[D_n] = T_perfil; D_n++;  // carga antiga, sem evento
-  e.nota10 = 8; e.quando += 10; D[D_n] = e; D_pf[D_n] = T_perfil; D_n++;
+  dPoe(&e);                               // carga antiga, sem evento
+  e.nota10 = 8; e.quando += 10; dPoe(&e);
   dRecarrega();
   farolsinal_passo();
   // a varredura desce do mais novo para o mais velho: a versao rica (nota 8)

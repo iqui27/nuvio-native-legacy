@@ -23,10 +23,12 @@
 // farol-fichas.bin (o leitor da 36 apaga duplicata corrompida: leitura e
 // escrita nunca cruzam sem a trava — ressalva do lote). Ouvintes e sinais
 // chegam no fio principal; a fila lenta roda num fio proprio que so entra
-// aqui por farolsinal_ficha_ok/falhou. Nada dentro da trava chama o diario:
-// leituras de diario/progresso acontecem antes ou depois do bloco fechado,
-// senao o fio dos ouvintes do diario (diario->sinal) cruzava com
-// sinal->diario e travava os dois.
+// aqui por farolsinal_ficha_ok/falhou, e as conferidas de temporada, a
+// varredura de serie-largada e as gravacoes rolam no fio de tras que o
+// passo acorda. Nada dentro da trava chama o diario: leituras de
+// diario/progresso acontecem antes ou depois do bloco fechado, senao o fio
+// dos ouvintes do diario (diario->sinal) cruzava com sinal->diario e
+// travava os dois.
 //
 // PRIVACIDADE (ALMA.md): nenhum titulo, nome de perfil ou gosto em log ou
 // arquivo — so ids, chaves e numeros. O arquivo por perfil e texto curto
@@ -57,9 +59,11 @@ enum {
 // mesmo jeito no primeiro sinal (o estado carrega sob demanda).
 void farolsinal_iniciar(void);
 // Laco principal, uma vez por quadro (ou por segundo): reconcilia troca de
-// perfil, varre o diario depois de RECARREGADO, procura serie largada uma
-// vez por sessao, drene pendencias cuja ficha chegou e grava o modelo com
-// folga de 60 s. Custo ocioso: comparacoes e nada mais.
+// perfil e varre o diario depois de RECARREGADO em FATIAS de teto rigido
+// (cursor composto, nunca uma leva inteira de mesmo instante no quadro).
+// Serie largada, conferidas de temporada e gravacao do modelo com folga de
+// 60 s rolam num fio de tras que o passo so acorda — disco e conferidas
+// nao voltam ao fio chamador. Custo ocioso: comparacoes e nada mais.
 void farolsinal_passo(void);
 // Saida do app: grava modelo, estado e cache de fichas.
 void farolsinal_sair(void);
@@ -130,5 +134,8 @@ void farolsinal_relogio(long long (*s)(void), uint32_t (*ms)(void));
 void farolsinal_pasta(const char *dir);
 // Esquece tudo em memoria como num reboot (sem tocar arquivos nem ouvintes).
 void farolsinal_teste_zera(void);
+// 1 enquanto houver trabalho de fundo pendente ou em curso (varredura,
+// conferida, largada ou gravacao delegada). Para testes esperarem o fio.
+int  farolsinal_teste_trabalho(void);
 
 #endif // NV_FAROLSINAL_H

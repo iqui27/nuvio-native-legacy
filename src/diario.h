@@ -111,6 +111,7 @@ typedef struct {
   unsigned short semFlags;  // e com NENHUMA destas
   char origem;              // 0 = qualquer
   int  decrescente;         // 1 = mais novas primeiro
+  int  saltar;              // pula as N primeiras que casam (retomar varredura)
 } DiarioFiltro;
 
 // Eventos para os ouvintes.

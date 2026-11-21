@@ -927,7 +927,7 @@ static int juntar(const DiarioEntrada *e, void *c) {
 }
 
 int diario_percorrer(int perfil, const DiarioFiltro *f, DiarioVisita cb, void *ctx) {
-  int p = perfilReal(perfil), i, n = 0, ti = -2, ini, fim, passo;
+  int p = perfilReal(perfil), i, n = 0, ti = -2, ini, fim, passo, saltei = 0;
   char id[DIARIO_ID_MAX];
   Loja *L;
   DiarioFiltro z;
@@ -951,6 +951,7 @@ int diario_percorrer(int perfil, const DiarioFiltro *f, DiarioVisita cb, void *c
     if ((x->flags & f->comFlags) != f->comFlags) continue;
     if (x->flags & f->semFlags) continue;
     if (f->origem && x->origem != (unsigned char)f->origem) continue;
+    if (saltei < f->saltar) { saltei++; continue; }
     n++;
     if (cb) {
       paraPublica(L, x, &d);
