@@ -4659,6 +4659,7 @@
   T("Menos ajustes.\nMais diversão.", "Lebih sedikit\npenyesuaian. Lebih menyenangkan."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "Prafetch lebih sedikit, sumber lebih ringan, dan resolusi lebih rendah bila ada keuntungan yang terbukti."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "Lebih sedikit hari menggunakan lebih sedikit memori. Dalam mode Otomatis pada perangkat dengan RAM rendah, panduan hanya menampilkan 24 jam ke depan."),
   T("Menos espera, menos surpresa", "Lebih sedikit menunggu, lebih sedikit kejutan"),
   T("Menos recursos sem ganho claro no reteste", "Sumber daya lebih sedikit tanpa keuntungan jelas pada uji ulang"),
   T("Menos tempo restante", "Waktu tersisa paling sedikit"),

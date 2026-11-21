@@ -4659,6 +4659,7 @@
   T("Menos ajustes.\nMais diversão.", "Daha az\nayarlama. Daha eğlenceli."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "Kanıtlanmış bir kazanç olduğunda daha az ön yükleme, daha hafif kaynaklar ve daha düşük çözünürlük."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "Daha az gün daha az bellek kullanır. Düşük RAM'li cihazlarda Otomatik modda rehber yalnızca sonraki 24 saati gösterir."),
   T("Menos espera, menos surpresa", "Daha az bekleme, daha az sürpriz"),
   T("Menos recursos sem ganho claro no reteste", "Yeniden testte net kazanç olmadan daha az kaynak"),
   T("Menos tempo restante", "En az kalan süre"),

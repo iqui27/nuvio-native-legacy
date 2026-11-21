@@ -131,7 +131,20 @@ static void nomesFonte(const char *arq, char *url, size_t nu, char *xml, char *g
 // teto para cache velho), e o que comeca depois de 7 dias tambem: grade de
 // provedor com um mes inteiro nao cabe numa TV e ninguem rola tanto.
 #define EPG_JANELA_PASSADO (48 * 3600)
-#define EPG_JANELA_FUTURO  (7 * 86400)
+#define EPG_JANELA_FUTURO  (7 * 86400)   /* teto; ajustes_guia_dias() afina */
+// Sinopse tem orcamento proprio, separado da arena dos titulos (#776): um
+// provedor verboso nao pode derrubar programas da grade — na pior hipotese
+// fica sem descricao. Cresce por realloc ate o teto; depois trunca/descarta
+// a sinopse, nunca o programa.
+#define EPG_DESC_MAX    383            // bytes por sinopse
+#if defined(__EMSCRIPTEN__)
+#define EPG_DARENA_MAX  (2L << 20)
+#elif defined(NV_TPK)
+#define EPG_DARENA_MAX  (4L << 20)
+#else
+#define EPG_DARENA_MAX  (6L << 20)
+#endif
+#define EPG_DARENA_INI  (64L << 10)
 // Prazo da grade por URL: 5 min no total, e o vigia da rede corta corpo parado.
 #define EPG_PRAZO_FLUXO_S 300
 
@@ -146,7 +159,7 @@ typedef struct {
 } EpgCanal;
 
 // 16 bytes em toda plataforma. `tit` e deslocamento na arena de titulos.
-typedef struct { int canal; int ini, fim; unsigned tit; } EpgEv;
+typedef struct { int canal; int ini, fim; unsigned tit, desc; } EpgEv;
 
 // Indice de chave normalizada -> canal, para o casamento exato (M5): ordenado
 // por chave, busca binaria. Montado em wFechar.
@@ -157,6 +170,7 @@ typedef struct {
   int      *hash;  int capHash;        // (fonte, id sem caixa) -> canal; -1 vazio
   EpgEv   *evs;    int nEvs, capEvs;
   char    *arena;  long arenaN, arenaCap;   // titulos
+  char    *darena; long darenaN, darenaCap; // sinopses (orcamento separado)
   char    *k;      long kN, kCap;           // ids, nomes e chaves
   EpgIdx  *idx;    int nIdx;
   int      descartados;
@@ -176,6 +190,7 @@ static struct {
   NvPerfilSessao sessao;
   volatile int cancelada;
   int perfil, memoriaBaixa, soProvedores, forcarRede;
+  int dias;                              // alcance do guia (instantaneo sob trava)
   time_t agora;
 } carga;
 static int epgMemoriaBaixa, soProvedores, forcarRede;
@@ -196,11 +211,27 @@ void epg_memoria_definir(int modo, long ramMB) {
   pthread_mutex_unlock(&trava);
 }
 
+int epg_memoria_baixa(void) {
+  pthread_mutex_lock(&trava);
+  int baixa = epgMemoriaBaixa;
+  pthread_mutex_unlock(&trava);
+  return baixa;
+}
+
 static int aceitaHorario(long long ini, long long fim, time_t agora) {
-  if (carga.memoriaBaixa) return (fim ? fim : ini + 1800) > (long long)agora &&
-                                      ini < (long long)agora + 24 * 3600;
+  // O instantaneo `carga.dias` vem de epg_iniciar() sob a trava: o worker nao
+  // le `valor[AJ_GUIA_DIAS]` (escrito pelo fio da UI) durante o parse.
+  // Em aparelho de pouca RAM o perfil de memoria limita a janela a 24 h,
+  // qualquer que seja o alcance pedido (#776, decisao registrada em
+  // CORRECAO-F39.md: o perfil vence a escolha e a UI avisa na ajuda).
+  if (carga.memoriaBaixa)
+    return (fim ? fim : ini + 1800) > (long long)agora &&
+           ini < (long long)agora + 24 * 3600;
+  // O "Alcance do guia" dos Ajustes governa a carga e o cache (#776): menos
+  // dias, menos programas guardados (carga.dias = instantaneo de
+  // ajustes_guia_dias() * 86400, lido uma vez sob a trava; 0 = teto).
   return (fim ? fim : ini + 1800) >= (long long)agora - EPG_JANELA_PASSADO &&
-         ini <= (long long)agora + EPG_JANELA_FUTURO;
+         ini <= (long long)agora + (long long)(carga.dias > 0 ? carga.dias : 7) * 86400;
 }
 
 static int cargaAtual(void) {
@@ -208,7 +239,7 @@ static int cargaAtual(void) {
 }
 
 static void gradeSoltar(EpgGrade *g) {
-  free(g->canais); free(g->hash); free(g->evs); free(g->arena); free(g->k); free(g->idx);
+  free(g->canais); free(g->hash); free(g->evs); free(g->arena); free(g->darena); free(g->k); free(g->idx);
   memset(g, 0, sizeof *g);
 }
 #define KS(g, off) ((g)->k + (off))
@@ -395,10 +426,16 @@ static int wAbrir(EpgGrade *g) {
   g->evs = malloc(sizeof(EpgEv) * (size_t)g->capEvs);
   g->arenaCap = EPG_ARENA_INI;
   g->arena = malloc((size_t)g->arenaCap);
+  g->darenaCap = EPG_DARENA_INI;
+  g->darena = malloc((size_t)g->darenaCap);
   g->kCap = 256 * 1024;
   g->k = malloc((size_t)g->kCap);
+  // A arena de sinopses e opcional: se nao couber no aparelho, a grade sobe
+  // sem descricao — nunca derruba os programas por falta dela.
   if (!g->evs || !g->arena || !g->k) { gradeSoltar(g); return 0; }
   g->k[0] = 0; g->kN = 1;              // deslocamento 0 = ""
+  if (g->darena) { g->darena[0] = 0; g->darenaN = 1; }
+  else { g->darenaCap = 0; }           // idem: deslocamento 0 = sem sinopse
   return 1;
 }
 
@@ -552,13 +589,45 @@ static long wTitulo(EpgGrade *g, const char *s) {
   return d;
 }
 
-static int wAddEv(EpgGrade *g, int canal, long long ini, long long fim, const char *titulo) {
-  long copia;
+static int wAddEv(EpgGrade *g, int canal, long long ini, long long fim,
+                    const char *titulo, const char *desc) {
+  long copia, d = 0;
   if (!wReservarEv(g) || (copia = wTitulo(g, titulo)) < 0) { g->descartados++; return 0; }
+  if (desc && desc[0]) {
+    long n = (long)strnlen(desc, EPG_DESC_MAX) + 1;
+    // O corte em EPG_DESC_MAX nao pode partir um caractere: recua ate a
+    // fronteira para a sinopse guardada continuar UTF-8 valido.
+    if (n - 1 == EPG_DESC_MAX && desc[n - 1]) {
+      long corte = n - 1;                        // primeiro byte fora do corte
+      while (corte > 0 && (desc[corte] & 0xC0) == 0x80) corte--;
+      if ((unsigned char)desc[corte] >= 0x80) {
+        int esperado = ((desc[corte] & 0xE0) == 0xC0) ? 2 :
+                       ((desc[corte] & 0xF0) == 0xE0) ? 3 :
+                       ((desc[corte] & 0xF8) == 0xF0) ? 4 : 1;
+        if (corte + esperado > n - 1) n = corte + 1;
+      }
+    }
+    if (g->darenaN + n > g->darenaCap) {
+      long cap = g->darenaCap ? g->darenaCap : EPG_DARENA_INI;
+      while (cap < g->darenaN + n && cap < EPG_DARENA_MAX) cap *= 2;
+      if (cap > EPG_DARENA_MAX) cap = EPG_DARENA_MAX;
+      if (cap >= g->darenaN + n) {
+        char *no = realloc(g->darena, (size_t)cap);
+        if (no) { g->darena = no; g->darenaCap = cap; }
+      }
+    }
+    if (g->darenaN + n <= g->darenaCap) {
+      d = g->darenaN;
+      memcpy(g->darena + d, desc, (size_t)(n - 1));
+      g->darena[d + n - 1] = 0;
+      g->darenaN += n;
+    }
+  }
   g->evs[g->nEvs].canal = canal;
   g->evs[g->nEvs].ini = (int)ini;
   g->evs[g->nEvs].fim = (int)fim;
   g->evs[g->nEvs].tit = (unsigned)copia;
+  g->evs[g->nEvs].desc = (unsigned)d;
   g->nEvs++;
   return 1;
 }
@@ -665,7 +734,7 @@ static void cbIcone(const char *id, const char *src, void *u) {
 }
 
 static void cbPrograma(const char *canal, const char *ini, const char *fim,
-                       const char *titulo, void *u) {
+                       const char *titulo, const char *desc, const char *icon, void *u) {
   EpgProc *p = u;
   long long a, b;
   int ci = wCanalPorId(p->g, p->fonte, canal);
@@ -674,7 +743,8 @@ static void cbPrograma(const char *canal, const char *ini, const char *fim,
   b = fim[0] ? xmltv_tempo(fim) : 0;
   if (!a || (b && b <= a)) return;
   if (!aceitaHorario(a, b, p->agora)) { p->foraJanela++; return; }
-  if (wAddEv(p->g, ci, a, b, titulo)) p->programas++;
+  (void)icon;   /* fanart do programa: sem consumidor na UI, fora do escopo */
+  if (wAddEv(p->g, ci, a, b, titulo, desc)) p->programas++;
 }
 
 // Alimenta uma grade inteira que ja esta na memoria (gz ou XML), em pedacos.
@@ -959,7 +1029,7 @@ void epg_fonte_extra(const char *url) {
 // milissegundos e sem reabrir XML. Cabecalho com o hash da URL e do filtro:
 // trocou o provedor ou a lista, o cache nao vale.
 #define EPGX_MAGIA 0x3245564eu   /* "NVE2" */
-#define EPGX_VERSAO 2u   /* 2: <icon src> por canal */
+#define EPGX_VERSAO 3u   /* 3: <desc> por programa (2: icon por canal) */
 static void nomeCacheX(const char *chave, char *d, size_t n) { snprintf(d, n, "epg-x-%s-p%d.bin", chave[0] ? chave : "geral", carga.perfil > 0 ? carga.perfil : 1); }
 
 static int escreveStr(FILE *f, const char *s) {
@@ -998,7 +1068,8 @@ static void cacheXGravar(const EpgExtraInt *e, const EpgGrade *g, int c0, int e0
   for (i = e0; ok && i < g->nEvs; i++) {
     int loc[3];
     loc[0] = g->evs[i].canal - c0; loc[1] = g->evs[i].ini; loc[2] = g->evs[i].fim;
-    ok = fwrite(loc, sizeof loc, 1, f) == 1 && escreveStr(f, g->arena + g->evs[i].tit);
+    ok = fwrite(loc, sizeof loc, 1, f) == 1 && escreveStr(f, g->arena + g->evs[i].tit) &&
+         escreveStr(f, g->evs[i].desc ? g->darena + g->evs[i].desc : "");
   }
   ok = (fclose(f) == 0) && ok;
   if (!ok || rename(tmp, cam) != 0) remove(tmp);
@@ -1032,7 +1103,7 @@ static int cacheXLer(const EpgExtraInt *e, EpgGrade *g, int fonte, int fresco, l
   *idade = (long)((long long)time(NULL) - ts);
   if (fresco && (carga.forcarRede || hf != e->hFiltro || *idade >= EPG_CACHE_SEG || *idade < 0)) { free(b); return -1; }
   if (u[2] > EPG_MAX_CANAL || u[3] > EPG_EVS_MAX ||
-      (unsigned long long)u[2] * 4 + (unsigned long long)u[3] * 14 > (unsigned long long)(fim-p)) {
+      (unsigned long long)u[2] * 4 + (unsigned long long)u[3] * 16 > (unsigned long long)(fim-p)) {
     free(b); return -1;
   }
   mapa = malloc(sizeof(int) * (u[2] ? u[2] : 1));
@@ -1051,13 +1122,13 @@ static int cacheXLer(const EpgExtraInt *e, EpgGrade *g, int fonte, int fresco, l
   if (i == (int)u[2]) {
     time_t agora = time(NULL);
     for (i = 0; i < (int)u[3]; i++) {
-      int loc[3]; char t[240];
+      int loc[3]; char t[240], dc[384];
       if (p + sizeof loc > fim) break;
       memcpy(loc, p, sizeof loc); p += sizeof loc;
-      if (!leStr(&p, fim, t, sizeof t)) break;
+      if (!leStr(&p, fim, t, sizeof t) || !leStr(&p, fim, dc, sizeof dc)) break;
       if (loc[0] < 0 || loc[0] >= (int)u[2] || mapa[loc[0]] < 0) continue;
       if (!aceitaHorario(loc[1], loc[2], agora)) continue;
-      if (wAddEv(g, mapa[loc[0]], loc[1], loc[2], t)) prog++;
+      if (wAddEv(g, mapa[loc[0]], loc[1], loc[2], t, dc)) prog++;
     }
   }
   free(mapa); free(b);
@@ -1168,8 +1239,17 @@ static void *fioEpg(void *u) {
   }
   if (legadoM3uUrl[0] && nx < EPG_MAX_EXTRAS)
     extraMontar(&copia[nx++], "ma00000000", legadoM3uUrl, NULL, 0, NULL, 0);
-  for (i = 0; i < nx; i++)
-    copia[i].hFiltro = hashTexto(copia[i].hFiltro, carga.memoriaBaixa ? "24h" : "full");
+  for (i = 0; i < nx; i++) {
+    char janela[16];
+    // O hash cobre a janela efetiva completa (passado + futuro) e o perfil:
+    // baixa guarda so as proximas 24 h; completa mantem EPG_JANELA_PASSADO
+    // atras ate o alcance pedido. Trocar de perfil ou de dias tem de
+    // invalidar o cache — o Completo recupera o passado que o baixo omite.
+    snprintf(janela, sizeof janela, "%s:%dh",
+             carga.memoriaBaixa ? "24h" : "48h",
+             (carga.memoriaBaixa ? 1 : (carga.dias > 0 ? carga.dias : 7)) * 24);
+    copia[i].hFiltro = hashTexto(copia[i].hFiltro, janela);
+  }
   if (carga.soProvedores) nArq = 0;
   pthread_mutex_unlock(&trava);
   if (!cargaAtual() || !wAbrir(&W)) { for (i = 0; i < nx; i++) extraSoltar(&copia[i]); goto fim; }
@@ -1217,6 +1297,7 @@ fim:
 }
 // --- API ---------------------------------------------------------------------------
 void epg_iniciar(void) {
+  extern int ajustes_guia_dias(void);   /* declarado sem ajustes.h (SDL pesado) */
   pthread_t t;
   if (fioVivo) {
     if (!cargaAtual()) reiniciarPend = 1;
@@ -1227,6 +1308,7 @@ void epg_iniciar(void) {
   pthread_mutex_lock(&trava);
   carga.memoriaBaixa = epgMemoriaBaixa; carga.soProvedores = soProvedores;
   carga.forcarRede = forcarRede; forcarRede = 0; carga.agora = time(NULL);
+  carga.dias = ajustes_guia_dias();     // instantaneo: o worker nao le a UI
   pthread_mutex_unlock(&trava);
   fioVivo = 1;
   estado = EPG_BAIXANDO;
@@ -1614,7 +1696,9 @@ time_t epg_fim_url(const char *url) {
 }
 
 static void pubProg(long m, EpgProg *p) {
-  p->ini = (time_t)P.evs[m].ini; p->fim = (time_t)P.evs[m].fim; p->titulo = P.arena + P.evs[m].tit;
+  p->ini = (time_t)P.evs[m].ini; p->fim = (time_t)P.evs[m].fim;
+  p->titulo = P.arena + P.evs[m].tit;
+  p->desc = P.evs[m].desc ? P.darena + P.evs[m].desc : "";
 }
 
 static long pubPrimeiroVivo(int epg, time_t t) {

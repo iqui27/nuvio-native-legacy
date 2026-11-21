@@ -4659,6 +4659,7 @@
   T("Menos ajustes.\nMais diversão.", "Λιγότερες προσαρμογές.\nΠερισσότερη διασκέδαση."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "Λιγότερη προφόρτωση, ελαφρύτερες πηγές και χαμηλότερη ανάλυση όταν υπάρχει αποδεδειγμένο όφελος."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "Λιγότερες ημέρες χρησιμοποιούν λιγότερη μνήμη. Σε Αυτόματη λειτουργία σε συσκευές με χαμηλή RAM, ο οδηγός δείχνει μόνο τις επόμενες 24 ώρες."),
   T("Menos espera, menos surpresa", "Λιγότερη αναμονή, λιγότερες εκπλήξεις"),
   T("Menos recursos sem ganho claro no reteste", "Λιγότεροι πόροι χωρίς σαφές όφελος στη νέα δοκιμή"),
   T("Menos tempo restante", "Λιγότερος χρόνος που απομένει"),

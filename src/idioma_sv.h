@@ -4659,6 +4659,7 @@
   T("Menos ajustes.\nMais diversão.", "Färre\njusteringar. Roligare."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "Mindre förhandsladdning, lättare källor och lägre upplösning när vinsten är styrkt."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "Färre dagar använder mindre minne. I Automatiskt läge på enheter med lite RAM visar guiden bara de kommande 24 timmarna."),
   T("Menos espera, menos surpresa", "Mindre väntan, färre överraskningar"),
   T("Menos recursos sem ganho claro no reteste", "Färre resurser utan tydlig vinst i omtestet"),
   T("Menos tempo restante", "Minst tid kvar"),

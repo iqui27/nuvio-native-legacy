@@ -4659,6 +4659,7 @@
   T("Menos ajustes.\nMais diversão.", "تعديلات أقل.\nالمزيد من المرح."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "جلب مسبق أقل، ومصادر أخف ودقة أدنى عندما يكون هناك مكسب مثبت."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "أيام أقل تعني ذاكرة أقل. في الوضع التلقائي على الأجهزة ذات ذاكرة RAM المنخفضة، يعرض الدليل الـ 24 ساعة القادمة فقط."),
   T("Menos espera, menos surpresa", "انتظار أقل، ومفاجآت أقل"),
   T("Menos recursos sem ganho claro no reteste", "موارد أقل بلا مكسب واضح في إعادة الاختبار"),
   T("Menos tempo restante", "الأقل وقتًا متبقيًا"),

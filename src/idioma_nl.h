@@ -4659,6 +4659,7 @@
   T("Menos ajustes.\nMais diversão.", "Minder aanpassingen.\nMeer plezier."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "Minder prefetch, lichtere bronnen en lagere resolutie bij bewezen winst."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "Minder dagen gebruiken minder geheugen. In Automatisch op apparaten met weinig RAM toont de gids alleen de komende 24 uur."),
   T("Menos espera, menos surpresa", "Minder wachten, minder verrassingen"),
   T("Menos recursos sem ganho claro no reteste", "Minder middelen zonder duidelijke winst bij de hertest"),
   T("Menos tempo restante", "Minste tijd over"),

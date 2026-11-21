@@ -4658,6 +4658,7 @@
   T("Menos ajustes.\nMais diversão.", "Weniger Anpassungen.\nMehr Spaß."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "Weniger Vorabladen, leichtere Quellen und niedrigere Auflösung, wenn ein Gewinn belegt ist."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "Weniger Tage verbrauchen weniger Speicher. Im Automatisch-Modus zeigt der Guide auf Geräten mit wenig RAM nur die nächsten 24 Stunden."),
   T("Menos espera, menos surpresa", "Weniger Warten, weniger Überraschungen"),
   T("Menos recursos sem ganho claro no reteste", "Weniger Ressourcen ohne klaren Gewinn im Neutest"),
   T("Menos tempo restante", "Wenigste Restzeit"),

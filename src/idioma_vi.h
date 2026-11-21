@@ -4659,6 +4659,7 @@
   T("Menos ajustes.\nMais diversão.", "Ít điều chỉnh\nhơn. Vui hơn."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "Ít tải trước hơn, nguồn nhẹ hơn và độ phân giải thấp hơn khi có lợi ích đã được chứng minh."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "Ít ngày hơn dùng ít bộ nhớ hơn. Ở chế độ Tự động trên thiết bị có RAM thấp, hướng dẫn chỉ hiển thị 24 giờ tiếp theo."),
   T("Menos espera, menos surpresa", "Ít chờ đợi hơn, ít bất ngờ hơn"),
   T("Menos recursos sem ganho claro no reteste", "Ít tài nguyên hơn mà không có lợi ích rõ ràng khi kiểm tra lại"),
   T("Menos tempo restante", "Còn ít thời gian nhất"),

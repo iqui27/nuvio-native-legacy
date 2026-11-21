@@ -4659,6 +4659,7 @@
   T("Menos ajustes.\nMais diversão.", "調整が少なくなります。もっと楽しく。\n"),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "先読みを減らし、ソースを軽くし、効果が確かな場合は解像度を下げます。"),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "日数を減らすとメモリ使用量も減ります。RAMの少ないデバイスで自動モードの場合、ガイドは次の24時間のみを表示します。"),
   T("Menos espera, menos surpresa", "待ち時間も驚きも少なく"),
   T("Menos recursos sem ganho claro no reteste", "再テストで明確な効果がなく、リソースを減らした設定"),
   T("Menos tempo restante", "残り時間が短い順"),

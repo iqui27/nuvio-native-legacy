@@ -33,6 +33,7 @@
 typedef struct {
   time_t ini, fim;
   const char *titulo;
+  const char *desc;
 } EpgProg;
 
 // Estado da carga. PARADO nunca tentou; BAIXANDO tem fio em voo; PRONTO tem
@@ -45,6 +46,9 @@ int epg_estado(void);
 // refresh a shortened binary cache to recover later programmes.
 enum { EPG_MEMORIA_AUTO, EPG_MEMORIA_BAIXA, EPG_MEMORIA_COMPLETA };
 void epg_memoria_definir(int modo, long ramMB);
+// 1 quando a politica efetiva limita a grade ao atual + 24 h: a folha do
+// Guia avisa na linha do "Alcance do guia" que os dias pedidos nao valem.
+int  epg_memoria_baixa(void);
 
 // Native account schedules never match another account's IDs or names.
 // Configure on the drawing thread; the worker captures each URL and profile.

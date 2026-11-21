@@ -4658,6 +4658,7 @@
   { "Menos ajustes.\nMais diversão.", "Fewer adjustments.\nMore fun." },
   { "Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "Less prefetch, lighter sources and lower resolution when there is a proven gain." },
   { "Menos dias usam menos memória.", "Fewer days use less memory." },
+  { "Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "Fewer days use less memory. In Automatic on low-RAM devices, the guide shows only the next 24 hours." },
   { "Menos espera, menos surpresa", "Less waiting, fewer surprises" },
   { "Menos recursos sem ganho claro no reteste", "Fewer resources with no clear gain in the retest" },
   { "Menos tempo restante", "Least time left" },

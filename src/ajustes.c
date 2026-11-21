@@ -899,7 +899,7 @@ static const char *V_EXT_MODO[] = { "Arquivo inteiro", "Só áudio" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
 static const char *V_SOURCE_BADGE_POSITION[] = { "No topo", "Embaixo" };
 static const char *V_GUIA_INICIO[] = { "Ao destacar", "Ao selecionar" };
-static const char *V_GUIA_DIAS[] = { "Um dia", "Três dias" };
+static const char *V_GUIA_DIAS[] = { "Um dia", "Três dias", "Sete dias" };
 static const char *V_LIGA_AUTO[] = { "Ligado", "Desligado", "Automático" };
 // Estilo da fileira de formato do player; o indice e o PLR_FMT_* de ajustes.h
 // e o gravado em "plrFormatoLocal".
@@ -2032,7 +2032,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Mostrar detalhes da pasta no destaque", V_LIGA, 2),
   ESC("Quando iniciar a prévia", V_GUIA_INICIO, 2),
   ESC("Prévia sem som", V_LIGA, 2),
-  ESC("Alcance do guia", V_GUIA_DIAS, 2),
+  ESC("Alcance do guia", V_GUIA_DIAS, 3),
   ESC("Ocultar Dolby Vision incompatível", V_AUTO_LIGA, 3),
   ESC("Ocultar áudio incompatível", V_AUTO_LIGA, 3),
   ESC("Ocultar vídeo incompatível", V_AUTO_LIGA, 3),
@@ -4188,8 +4188,14 @@ void ajustes_definir_guia_previa_destacar(int l) { valor[AJ_GUIA_PREVIA_DESTACAR
 int ajustes_guia_previa_sem_som(void) { return valor[AJ_GUIA_PREVIA_SOM] == 0; }
 void ajustes_definir_guia_previa_sem_som(int l) { valor[AJ_GUIA_PREVIA_SOM] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 int ajustes_livetv_agrupar(void) { return lig(AJ_LIVETV_AGRUPAR); }
-int ajustes_guia_dias(void) { return valor[AJ_GUIA_DIAS] ? 3 : 1; }
-void ajustes_definir_guia_dias(int dias) { valor[AJ_GUIA_DIAS] = dias == 3; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
+int ajustes_guia_dias(void) {
+  if (valor[AJ_GUIA_DIAS] >= 2) return 7;
+  return valor[AJ_GUIA_DIAS] ? 3 : 1;
+}
+void ajustes_definir_guia_dias(int dias) {
+  valor[AJ_GUIA_DIAS] = dias >= 7 ? 2 : dias == 3 ? 1 : 0;
+  AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar());
+}
 void  ajustes_livetv_aplicar_proxy(int l) { valor[AJ_LIVETV_PROXY] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 void  ajustes_livetv_aplicar_modo(int m) { if (m >= 0 && m < 3) { valor[AJ_LIVETV_MODO] = m; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); } }
 unsigned ajustes_livetv_espera_ms(void) {
@@ -9041,7 +9047,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_GUIA_PREVIA_DESTACAR: return "Quando a prévia do canal começa no Guia de TV: ao destacar ou só ao selecionar. Ao destacar é mais rápido; ao selecionar poupa rede e evita a prévia enquanto você só passa pela lista.";
     case AJ_GUIA_PREVIA_SOM: return "A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.";
     case AJ_LIVETV_AGRUPAR: return "Mostra um canal por linha e reúne as qualidades e codecs na lista de fontes. Desligue para mostrar cada variante separadamente.";
-    case AJ_GUIA_DIAS: return "Quantos dias de programação o Guia de TV carrega e guarda. Um dia é mais leve e abre mais rápido; três dias deixam ver o que vem nos próximos dias.";
+    case AJ_GUIA_DIAS: return "Quantos dias de programação o Guia de TV carrega e guarda. Um dia é mais leve e abre mais rápido; três ou sete dias deixam ver o que vem nos próximos dias. Em TVs com pouca memória, o Guia pode limitar a grade a 24 horas para não faltar espaço.";
     default: return "Use as setas laterais para escolher. A preferência é aplicada ao alterar o valor.";
   }
 }

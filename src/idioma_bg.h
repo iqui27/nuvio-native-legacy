@@ -4659,6 +4659,7 @@
   T("Menos ajustes.\nMais diversão.", "По-малко корекции.\nПовече забавление."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "По-малко предварително зареждане, по-леки източници и по-ниска резолюция, когато има доказана полза."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "По-малко дни използват по-малко памет. В автоматичен режим на устройства с малко RAM справочникът показва само следващите 24 часа."),
   T("Menos espera, menos surpresa", "По-малко чакане, по-малко изненади"),
   T("Menos recursos sem ganho claro no reteste", "По-малко ресурси без ясна полза при повторния тест"),
   T("Menos tempo restante", "Най-малко оставащо време"),
