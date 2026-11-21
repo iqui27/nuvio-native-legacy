@@ -8581,6 +8581,7 @@
   T("Usa esta conta de TV ao vivo", "Utilice esta cuenta de TV en vivo"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Usa Quick Connect si el servidor lo permite: aprueba el código en otra app de Jellyfin. Si no, pide usuario y contraseña."),
   T("Usa o TMDB para preencher os cartazes da fileira de retomada.", "Usa TMDB para completar los pósteres de la fila de reanudación."),
+  T("Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.", "Usa el add-on de metadatos como fuente de la ficha y de los episodios cuando responde para el título. Sin add-on que responda — o con \"usar siempre Cinemeta\" activado — nada cambia."),
   T("Usa o fundo do add-on", "Utiliza el fondo complementario"),
   T("Usa o logo do add-on", "Utilice el logotipo complementario"),
   T("Usa o mesmo estilo da principal", "Utilice el mismo estilo que el principal."),

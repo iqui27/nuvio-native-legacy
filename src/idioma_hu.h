@@ -8582,6 +8582,7 @@
   T("Usa esta conta de TV ao vivo", "Használja ezt az élő TV-fiókot"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Quick Connectet használ, ha a szerver engedi: hagyd jóvá a kódot egy másik Jellyfin-alkalmazásban. Különben felhasználónevet és jelszót kér."),
   T("Usa o TMDB para preencher os cartazes da fileira de retomada.", "A TMDB-vel tölti ki a folytatás sor posztereit."),
+  T("Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.", "A metaadat-addont használja a kártya és az epizódok forrásaként, amikor válaszol a címre. Válaszoló addon nélkül — vagy bekapcsolt \"mindig a Cinemeta-t használja\" mellett — semmi sem változik."),
   T("Usa o fundo do add-on", "A kiegészítő hátterét használja"),
   T("Usa o logo do add-on", "Használja a kiegészítő logóját"),
   T("Usa o mesmo estilo da principal", "Használja ugyanazt a stílust, mint a fő"),

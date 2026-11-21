@@ -8582,6 +8582,7 @@
   T("Usa esta conta de TV ao vivo", "Použite tento živý televízny účet"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Použije Quick Connect, ak to server dovolí: schváľte kód v inej aplikácii Jellyfin. Inak sa opýta na používateľa a heslo."),
   T("Usa o TMDB para preencher os cartazes da fileira de retomada.", "Použije TMDB na doplnenie plagátov v riadku pre pokračovanie."),
+  T("Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.", "Používa addon metadát ako zdroj karty a epizód, keď pre titul odpovedá. Bez odpovedajúceho addonu — alebo so zapnutým \"vždy používať Cinemeta\" — sa nič nemení."),
   T("Usa o fundo do add-on", "Používa pozadie doplnku"),
   T("Usa o logo do add-on", "Použite logo doplnku"),
   T("Usa o mesmo estilo da principal", "Použite rovnaký štýl ako hlavný"),

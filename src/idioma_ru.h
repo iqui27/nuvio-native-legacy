@@ -8581,6 +8581,7 @@
   T("Usa esta conta de TV ao vivo", "Используйте этот аккаунт в прямом эфире"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Использует Quick Connect, если сервер разрешает: подтвердите код в другом приложении Jellyfin. Иначе запрашивает имя пользователя и пароль."),
   T("Usa o TMDB para preencher os cartazes da fileira de retomada.", "Использует TMDB, чтобы дополнить постеры в ряду продолжения."),
+  T("Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.", "Использует аддон метаданных как источник карточки и эпизодов, когда он отвечает для этого названия. Без отвечающего аддона — или с включённым \"всегда использовать Cinemeta\" — ничего не меняется."),
   T("Usa o fundo do add-on", "Использует дополнительный фон"),
   T("Usa o logo do add-on", "Используйте дополнительный логотип"),
   T("Usa o mesmo estilo da principal", "Используйте тот же стиль, что и основной"),

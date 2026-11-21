@@ -67,7 +67,7 @@
 
   1,                /* desfocar nao assistidos: desligado */
   0,                /* botao de trailer: ligado */
-  0,                /* metadados externos: ligado */
+  1,                /* metadados externos: desligado */
   0,                /* data completa: ligada */
   100,              /* escurecimento do fundo do titulo: vinheta inteira */
   0,                /* trailer automatico na pagina de titulo: ligado */

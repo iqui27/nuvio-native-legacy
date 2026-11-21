@@ -8559,6 +8559,28 @@ static int publicarEpisodiosPendentes(const char *corpo, int alvoItem,
                                      0, 0, 1);
 }
 
+// #794: a preferencia por metadados externos so pula o provedor geral quando um
+// addon responde para o titulo com uma lista de episodios DE VERDADE. Lista de
+// arquivos nao conta: ela so vale contra a do provedor, e sem esse corpo nao ha
+// com o que arbitrar — ai, como quando nenhum addon responde, o caminho e o da
+// base (provedor geral, com a arbitragem de sempre). Devolve o melhor corpo
+// /meta de addon ou NULL. Cada resposta fica no metaCache de metaDoAddon, entao
+// a consulta seguinte do fluxo nao repete pedido.
+static char *metaExternoDeAddon(const char *serie) {
+  char *melhor = NULL;
+  int melhorN = 0, i, n = addons_n();
+  for (i = 0; i < n; i++) {
+    char *c2 = metaDoAddon(i, "series", serie);
+    int n2, brutos = 0;
+    if (!c2) continue;
+    n2 = metaContarEpisodios(c2, &brutos);
+    if (n2 <= 0 || metaListaDeArquivos(n2, brutos)) { free(c2); continue; }
+    if (n2 > melhorN) { free(melhor); melhor = c2; melhorN = n2; }
+    else free(c2);
+  }
+  return melhor;
+}
+
 // O Cinemeta as vezes conhece MENOS episodios que o addon de metadados do
 // usuario (#174: "Mis muertos tristes" tinha 1 de 4; #175: a serie so estava
 // completa noutra fonte). Pergunta o /meta/series de cada addon ativo que
@@ -9075,7 +9097,8 @@ static int metaCatalogoResolver(const CatItem *orig, MetaFontes *mf, int indice)
   const char *cid;
   EpCine cedo = { orig, indice, 1, epPedidoAtual(), NULL };
   pthread_t cineFio;
-  int paralelo = ehImdb && strcmp(orig->tipo, "movie") &&
+  int prefAddon794 = ajustes_meta_externo();
+  int paralelo = ehImdb && strcmp(orig->tipo, "movie") && !prefAddon794 &&
                  pthread_create(&cineFio, NULL, epCineBuscar, &cedo) == 0;
   memset(mf, 0, sizeof *mf);
   idbase_copiar(orig->imdb, id, sizeof id);
@@ -9131,9 +9154,21 @@ static int metaCatalogoResolver(const CatItem *orig, MetaFontes *mf, int indice)
   }
   if (!ehImdb) imdbLembrar(id, mf->tt);
   // c) o Cinemeta completa o que faltar (ou e a base, se nenhum addon serviu).
-  // "tmdb:" sem IMDb na ficha: o catalogo do Nuvio resolve o proprio id (#555).
+  // #794: com addon preferido, episodios vêm só do addon — sem Cinemeta. Mas a
+  // preferencia so dispensa o provedor geral quando um addon respondeu com
+  // episodios DE VERDADE (a mesma regra de metaExternoDeAddon): ficha so com
+  // nome e sinopse ("videos": []) e lista de arquivos nao substituem a grade,
+  // senao a serie abre sem episodio nenhum.
+  if (prefAddon794) {
+    int tem = 0;
+    for (i = 0; i < mf->n && !tem; i++) {
+      int brutos = 0, n2 = metaContarEpisodios(mf->corpo[i], &brutos);
+      tem = n2 > 0 && !metaListaDeArquivos(n2, brutos);
+    }
+    prefAddon794 = tem;
+  }
   cid = mf->tt[0] ? mf->tt : (!strncmp(id, "tmdb:", 5) ? id : "");
-  if (cid[0]) {
+  if (cid[0] && !prefAddon794) {
     int fil = 1;
     char tp[16] = "";
     char *cm;
@@ -9157,7 +9192,7 @@ static int metaCatalogoResolver(const CatItem *orig, MetaFontes *mf, int indice)
     else mf->ehFilme = !desc_meta_tem_temporadas(mf->corpo[0]);
   }
   // Id do IMDb so com Cinemeta na base nao muda o caminho antigo.
-  if (ehImdb && mf->cine[0]) return 0;
+  if (ehImdb && mf->cine[0] && !prefAddon794) return 0;
   return 1;
 }
 
@@ -9240,12 +9275,14 @@ static int episodiosDoCatalogo(int alvoItem, const char *titulo, const char *ser
   // sentido quando o item tambem e do IMDb. Procura o Cinemeta entre TODAS as
   // outras fontes: parar na primeira com episodios deixava a lista sem
   // complemento quando havia outro addon no meio.
-  for (i = 0; mesmoId && i < mf->n && outro < 0; i++)
-    if (i != fonte && nEp[i] > 0 && mf->cine[i]) outro = i;
+  if (!ajustes_meta_externo()) {
+    for (i = 0; mesmoId && i < mf->n && outro < 0; i++)
+      if (i != fonte && nEp[i] > 0 && mf->cine[i]) outro = i;
+  }
   // Uma lista real menor do addon conserva os pares do Cinemeta e aplica
   // o texto localizado, como episodiosDoAddon.
   int modo = arq[fonte] ? DESC_MESCLA_TEXTO : DESC_MESCLA_VAZIOS;
-  if (outro >= 0 && !arq[fonte] && nEp[outro] > nEp[fonte]) {
+  if (!ajustes_meta_externo() && outro >= 0 && !arq[fonte] && nEp[outro] > nEp[fonte]) {
     int addon = fonte; fonte = outro; outro = addon;
     modo = DESC_MESCLA_TEXTO;
   }
@@ -9361,11 +9398,19 @@ static void *buscarEps(void *u) {
   // "kitsu"); para o IMDb e o mesmo corte de sempre.
   idbase_copiar(it->imdb, serie, sizeof serie);
 
+  // #794: "usar sempre o Cinemeta" desliga a preferencia pelo addon, e a
+  // preferencia so pula o provedor geral quando um addon de metadados responde
+  // para o titulo com episodios de verdade. Sem addon — ou com o addon
+  // falhando, vazio ou so com lista de arquivos — o caminho e o da base.
+  char *corpoExt = NULL;
+  int externo = ajustes_meta_externo() && !ajustes_meta_so_cinemeta();
   if (viaCatalogo) {
     corpo = strdup(mf.corpo[0]);   // o resto do fio libera `corpo` como sempre
     ehFilme = mf.ehFilme;
-  } else
-  for (ti = 0; ti < nTipos; ti++) {
+  } else {
+  if (externo && !strcmp(tipos[0], "series"))
+    corpoExt = metaExternoDeAddon(serie);
+  for (ti = 0; ti < nTipos && !corpoExt; ti++) {
     char chave[96];
     int ultimo = ti == nTipos - 1;
     // A CHAVE DO CACHE LEVA O TIPO. Era so o id, e /meta/movie/tt13293588 e
@@ -9384,6 +9429,10 @@ static void *buscarEps(void *u) {
     ehFilme = strcmp(tipos[ti], "series") != 0;
     if (ultimo || desc_meta_tem_temporadas(corpo)) break;
   }
+  // A ficha do addon que respondeu substitui a do provedor geral de ponta a
+  // ponta: elenco, generos, nota, pais e a lista de episodios saem todos dele.
+  if (corpoExt) { corpo = corpoExt; ehFilme = 0; }
+  }
   if (!corpo || preCede(meuId)) { metaFontesLiberar(&mf); free(corpo); epConcluir(); return NULL; }
   if (nTipos > 1) {
     const char *resolvido = ehFilme ? "movie" : "series";
@@ -9399,7 +9448,6 @@ static void *buscarEps(void *u) {
   // idioma que nao e o ingles e sem o TMDB para traduzir, o addon localizado
   // tambem e a unica fonte que tem o texto na lingua da pessoa. Com o TMDB
   // ligado e sem a preferencia, e ele quem traduz (mais abaixo).
-  int externo = ajustes_meta_externo();
   int tmdbTraduz = desc_chave_tmdb()[0] && ajustes_tmdb_basico();
   // Na ficha do catalogo o texto JA e o do addon; a preferencia nao tem o que trocar.
   int aplicar = !viaCatalogo && (externo || (idiomaNaoIngles() && !tmdbTraduz));
@@ -9408,6 +9456,14 @@ static void *buscarEps(void *u) {
   if (!ehFilme && viaCatalogo)
     epsDoAddon = episodiosDoCatalogo(alvoItem, it->titulo, serie, &mf, &tp);
   else if (!ehFilme) {
+    // #794: com a preferencia E um addon que respondeu, a lista e a dele,
+    // inteira — nada do provedor geral para publicar antes nem para arbitrar.
+    if (corpoExt) {
+      publicarEpisodiosSubstituir(corpo, alvoItem, it->titulo, NULL,
+                                  DESC_MESCLA_VAZIOS, &tp);
+      arte_reserva_episodios(serie, corpo);
+      epsDoAddon = aplicar;
+    } else {
     int nCine = publicarEpisodiosPendentes(corpo, alvoItem, it->titulo, &tp);
     // Temporada e data de cada episodio para a reserva do still: quando o
     // TMDB divide a serie em outras temporadas (One Piece), e por elas que o
@@ -9418,6 +9474,7 @@ static void *buscarEps(void *u) {
     // episodios acima do teto "sabia mais" so por nao estar cortada.
     if (nCine >= VIDEOS_MAX) nCine = desc_meta_n_episodios(corpo);
     epsDoAddon = episodiosDoAddon(alvoItem, serie, it->titulo, corpo, nCine, aplicar, &tp);
+    }
   }
   // O MAPA DE EPISODIOS VISTOS NAO E PEDIDO AQUI, e essa linha existe para dizer
   // por que: extras.c JA baixa /shows/<id>/progress/watched ao abrir o titulo,

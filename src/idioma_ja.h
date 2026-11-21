@@ -8582,6 +8582,7 @@
   T("Usa esta conta de TV ao vivo", "このライブ TV アカウントを使用してください"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "サーバーが許可していれば Quick Connect を使います。別の Jellyfin アプリでコードを承認してください。使えない場合はユーザー名とパスワードを入力します。"),
   T("Usa o TMDB para preencher os cartazes da fileira de retomada.", "TMDB を使って、再開の行のポスターを補完します。"),
+  T("Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.", "タイトルに応答したとき、メタデータアドオンを詳細ページとエピソードのソースとして使います。応答するアドオンがない場合 — または \"常に Cinemeta を使う\" がオンの場合 — 何も変わりません。"),
   T("Usa o fundo do add-on", "アドオンの背景を使用します"),
   T("Usa o logo do add-on", "アドオンのロゴを使用する"),
   T("Usa o mesmo estilo da principal", "メインと同じスタイルを使用する"),

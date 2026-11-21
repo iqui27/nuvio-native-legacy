@@ -8582,6 +8582,7 @@
   T("Usa esta conta de TV ao vivo", "Sử dụng tài khoản truyền hình trực tiếp này"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Dùng Quick Connect nếu máy chủ cho phép: duyệt mã trong ứng dụng Jellyfin khác. Nếu không, sẽ hỏi tên người dùng và mật khẩu."),
   T("Usa o TMDB para preencher os cartazes da fileira de retomada.", "Dùng TMDB để bổ sung poster cho hàng xem tiếp."),
+  T("Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.", "Dùng addon siêu dữ liệu làm nguồn của thẻ và các tập khi nó phản hồi cho tiêu đề. Không có addon nào phản hồi — hoặc khi bật \"luôn dùng Cinemeta\" — không có gì thay đổi."),
   T("Usa o fundo do add-on", "Sử dụng nền bổ trợ"),
   T("Usa o logo do add-on", "Sử dụng logo tiện ích bổ sung"),
   T("Usa o mesmo estilo da principal", "Sử dụng phong cách tương tự như chính"),
