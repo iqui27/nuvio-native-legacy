@@ -1286,6 +1286,8 @@ namespace NuvioTpk
             }
             catch (Exception e) { Console.Error.WriteLine("Startup trace unavailable: " + e.Message); }
             AppDomain.CurrentDomain.UnhandledException += (s, e) => Etapa("note unhandled " + e.ExceptionObject);
+            // .NET errors into the app log too, with the session time of the native fault records (NetLog.cs).
+            try { NetLog.Registrar(); } catch (Exception e) { Etapa("note netlog " + e.GetType().Name); }
             Etapa("note entry host=" + Host + " process=" + RuntimeInformation.ProcessArchitecture + " os=" + RuntimeInformation.OSArchitecture);
             try
             {

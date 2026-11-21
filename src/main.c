@@ -98,6 +98,7 @@
 #include "desempenho.h"
 #include "atualizacao.h"
 #include "avisos.h"
+#include "queda.h"
 #include "seguro.h"
 #include "video.h"
 #include "addons.h"
@@ -2350,6 +2351,9 @@ int main(int argc, char **argv) {
     Uint64 t0 = NV_T0();
     tex_upl_n = 0; tex_upl_bytes = 0;
     gputempo_quadro_inicio();   // the GPU clock brackets uploads + draw
+#ifdef NV_TPK
+    queda_vigiar();             // .tpk: our SIGSEGV handler stays on top (one syscall; queda.h)
+#endif
     tex_bombear(3);
     fBomb = NV_DT(t0);
     fUplN = tex_upl_n; fUplB = tex_upl_bytes;

@@ -19,6 +19,7 @@
   <ItemGroup>
     <Compile Include="../Program.cs" />
     <Compile Include="../Apps.cs" />
+    <Compile Include="../NetLog.cs" />
     <Compile Include="../Video.cs" />
     <Compile Include="../VideoWindowMetrics.cs" />
     <Compile Include="../Carga.cs" />

@@ -198,6 +198,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "salto.h"
 #include "seekgesto.h"    // .tpk: seek gesture (owner-tuned values, SEEKG_PADRAO)
 #include "video_seekretry.h"
+#include "queda.h"
 // Sem tecla por este tempo, o avanco termina: manda a posicao ao pipeline e
 // retoma. 420 ms e maior que o intervalo de repeticao do controle (que na C9
 // fica perto de 100 ms) e menor que o tempo de reacao de quem soltou de
@@ -2698,6 +2699,12 @@ static void lembrarFonte(void) {
 }
 
 static void fecharSessao(int manter, int trocaFonte) {
+#ifdef NV_TPK
+  // The crash after Back (27-28/10) came with no report: before the teardown,
+  // make sure our SIGSEGV handler is the one on top (the main loop also checks
+  // every frame; queda.h).
+  queda_conferir("Back");
+#endif
   directcache_encerrar();
   juntos_ao_voltar();
   saiuVisto = 0;
