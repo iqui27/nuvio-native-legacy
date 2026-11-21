@@ -82,6 +82,7 @@ static int info(void *c, int o, ...) {
   va_start(ap, o);
   if (o == INFO_RESPONSE_CODE) *va_arg(ap, long *) = http;
   if (o == INFO_NUM_CONNECTS) *va_arg(ap, long *) = 0;
+  if (o == INFO_TEMPO_TCP) *va_arg(ap, double *) = rajada ? 0.05 : 0;
   va_end(ap); return 0;
 }
 static void nota(int codigo, const char *url, unsigned primeiraMs) {

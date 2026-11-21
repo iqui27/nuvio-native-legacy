@@ -46,6 +46,7 @@
 #ifndef NV_VERSAO
 #define NV_VERSAO "dev"
 #endif
+#include "nvbackend.h"
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif

@@ -6,7 +6,7 @@
 
 int xmltv_iniciar(Xmltv *x) {
   void (*c)(const char *, const char *const *, int, void *) = x->canal;
-  void (*p)(const char *, const char *, const char *, const char *, void *) = x->programa;
+  void (*p)(const char *, const char *, const char *, const char *, const char *, const char *, void *) = x->programa;
   void (*ic)(const char *, const char *, void *) = x->icone;
   void *u = x->u;
   memset(x, 0, sizeof *x);
@@ -165,13 +165,17 @@ static void elemento(Xmltv *x) {
       if (fi && atr(ic, fi, "src", src, sizeof src) && src[0]) x->icone(id, src, x->u);
     }
   } else {
-    char canal[160], ini[40], fim[40], titulo[240];
+    char canal[160], ini[40], fim[40], titulo[240], desc[512], icon[600];
     x->nProgramas++;
     if (!atr(b, fimTag, "channel", canal, sizeof canal) ||
         !atr(b, fimTag, "start", ini, sizeof ini)) return;
     atr(b, fimTag, "stop", fim, sizeof fim);
     texto(fimTag, "title", titulo, sizeof titulo);
-    if (x->programa) x->programa(canal, ini, fim, titulo, x->u);
+    desc[0] = icon[0] = 0;
+    texto(fimTag, "desc", desc, sizeof desc);
+    { const char *ic = strstr(fimTag, "<icon"), *fi = ic ? strchr(ic, '>') : NULL;
+      if (!(fi && atr(ic, fi, "src", icon, sizeof icon))) icon[0] = 0; }
+    if (x->programa) x->programa(canal, ini, fim, titulo, desc, icon, x->u);
   }
 }
 

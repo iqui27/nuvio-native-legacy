@@ -139,6 +139,15 @@ int main(void) {
   ling_local_audio2("");
   ling_local_audio("");
   ok(!strcmp(ling_audio2(), ""), "account sentinel ORIGINAL: no second language");
+  { AudioCand es[] = {
+      {"es-ES", "eac3", "Castellano 5.1", 6, 0, 1, 0},
+      {"es-419", "eac3", "Latino 5.1", 6, 0, 1, 1},
+    };
+    ok(audioesc_escolher_com(es, 2, NULL, "es-419", NULL, NULL, &o) == 1,
+       "#777 es-419 preference picks Latin American track");
+    ok(audioesc_escolher_com(es, 2, NULL, "es-es", NULL, NULL, &o) == 0,
+       "#777 es-ES preference picks Castilian track");
+  }
   printf(falhas ? "audioescolha: %d FAIL(S)\n" : "audioescolha: ok\n", falhas);
   // Converter rows carry the full file title (112 bytes); memory keeps 48.
   { AudioCand g[] = {

@@ -25,7 +25,7 @@ done
 # src/recomenda.c e INCLUIDO pelo teste, como em tests/recomenda.c: a lista de
 # contatos e estatica do modulo e semea-la por dentro e o unico jeito de
 # fotografar as telas de envio sem um servidor no ar.
-cc "${sources[@]}" tests/social_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-social-shot \
+cc "${sources[@]}" tests/social_shot.c -Isrc -DNV_REC_URL='"http://127.0.0.1:8799"' -o ${TMPDIR:-/tmp}/nuvio-social-shot \
   -O1 -g \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \

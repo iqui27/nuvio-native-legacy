@@ -17,7 +17,7 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/recomenda.c) continue;; esac
   sources+=("$source")
 done
-if ! cc "${sources[@]}" tests/socialui_shot.c -Isrc -o "$NUVIO_DADOS/shot" \
+if ! cc "${sources[@]}" tests/socialui_shot.c -Isrc -DNV_REC_URL='"http://127.0.0.1:8799"' -o "$NUVIO_DADOS/shot" \
   -O1 -g -DNV_SOCIALVIS_DEMO -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined >"$NUVIO_DADOS/build.log" 2>&1; then

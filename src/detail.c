@@ -1083,6 +1083,9 @@ static void irParaTemporada(int c, int moverFoco) {
   epAncora = 0;
   foco.colunaLembrada[SEC_EPISODIOS] = 0;
   if (moverFoco && epVisiveis() > 0) { foco.fileira = SEC_EPISODIOS; foco.coluna = 0; }
+  // A ABA PEDE A TEMPORADA (#787): ausente ou truncada pelo teto da lista,
+  // desc_episodios a completa do /meta guardado; inteira, ele sai na hora.
+  if (ehSerie()) desc_episodios(idx, temporadaEm(temporada));
 }
 
 // OK NUMA COLUNA DO GRAFICO "Seu progresso": a pagina passa para aquela
@@ -9822,7 +9825,11 @@ static void ultimoEpisodio(int *t, int *e) {
   }
 }
 
-int detail_indice(void) { return idx; }
+// Revalidated on every read, not only in detail_atualizar: app.c reads the
+// index for the source search and Play earlier in the same frame, and a
+// catalogue rebuild in between left it on whoever took the old slot for that
+// frame (another title's sources, then Play started that title).
+int detail_indice(void) { if (aberto) revalidarIdx(); return idx; }
 int detail_tem_servidores(void) { return aberto && servidoresDisponiveis; }
 int detail_pediu_reproduzir(void) { int v = pedReproduzir; pedReproduzir = 0; return v; }
 // Pedido de reproducao vindo de FORA da tela (OK no card de "Continuar

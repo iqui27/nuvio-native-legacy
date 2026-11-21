@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runner OBRIGATORIO de sanitizadores (fase 0 do docs/plans/rust-mapa.md).
-# Roda a suite existente de tests/ com ASan+UBSan e, SEPARADAMENTE, os 28
+# Roda a suite existente de tests/ com ASan+UBSan e, SEPARADAMENTE, os 29
 # testes de fio com ThreadSanitizer. Nunca os dois no mesmo build: TSan e
 # address sao mutuamente exclusivos e o compilador aborta a mistura.
 #
@@ -21,12 +21,12 @@ LOGS=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-sanitiza.XXXXXX") || exit 1
 RES="$LOGS/resultados"; : > "$RES"
 mkdir -p "$LOGS/asan" "$LOGS/thread"
 
-# Os 28 scripts com -fsanitize=thread fora de comentario. Lista estatica de
+# Os 29 scripts com -fsanitize=thread fora de comentario. Lista estatica de
 # proposito: e o contrato do job TSan e nao deve depender de grep no proprio
 # runner (o runner e a unica fonte de "quem roda com TSan").
 TSAN_TESTS="audsync autosync cacheboost capmkv capmkv_url_longa cateps_corrida
-colhash_corrida credfio desc_iniciar_corrida emby fontecache jellyfin legenda2
-legref legsync p2pmotor p2pmotor_real plex pluginjs plugins_fontes rede_pedido
+colhash_corrida credfio desc_iniciar_corrida emby farol_anel fontecache jellyfin legenda2
+legref legsync nvbackend_escrita p2pmotor p2pmotor_real plex pluginjs plugins_fontes rede_pedido
 sessao_corrida streamfit streamfit_diagnostico streamfit_passiva
 sync_resumo_corrida trakt_play_corrida vistoep_corrida"
 
@@ -96,7 +96,7 @@ if [ "$modo" != thread ]; then
 fi
 
 if [ "$modo" != asan ]; then
-  echo "== ThreadSanitizer (28 testes de fio, serial) =="
+  echo "== ThreadSanitizer (29 testes de fio, serial) =="
   for t in $TSAN_TESTS; do rodar "$t.sh" thread; done
 fi
 

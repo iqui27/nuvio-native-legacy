@@ -118,6 +118,60 @@ static int lerObra(const char *oi, const char *of, CatItem *d, char *imdb,
   return 1;
 }
 
+// Anime CW may ship `show` instead of nested `anime`, or ids at activity root (#714).
+static int idNumOk(double v, long *out) {
+  if (v <= 0.0 || v >= 2147483647.0) return 0;
+  *out = (long)v;
+  if (*out <= 0) return 0;
+  return 1;
+}
+
+static int lerIdsSimkl(const char *oi, const char *of, char *imdb, size_t nImdb,
+                       long *tmdb) {
+  const char *ii, *ifim;
+  long id;
+  double v;
+  if (tmdb) *tmdb = 0;
+  imdb[0] = 0;
+  if (!objetoRaiz(oi, of, "ids", &ii, &ifim)) return 0;
+  js_texto(ii, ifim, "imdb", imdb, nImdb);
+  if (imdb[0] == 't' && imdb[1] == 't') return 1;
+  imdb[0] = 0;
+  v = js_num(ii, ifim, "tmdb", 0);
+  if (idNumOk(v, &id)) {
+    snprintf(imdb, nImdb, "tmdb:%ld", id);
+    if (tmdb) *tmdb = id;
+    return 1;
+  }
+  v = js_num(ii, ifim, "simkl", 0);
+  if (idNumOk(v, &id)) { snprintf(imdb, nImdb, "simkl:%ld", id); return 1; }
+  return 0;
+}
+
+static int obraDeAssistindo(const char *p, const char *f, int anime,
+                            const char *chave, const char **oi, const char **of) {
+  char imdb[24];
+  CatItem d;
+  if (objetoRaiz(p, f, chave, oi, of)) {
+    if (!anime) return 1;
+    imdb[0] = 0;
+    if (lerObra(*oi, *of, &d, imdb, sizeof imdb)) return 1;
+    if (lerIdsSimkl(*oi, *of, imdb, sizeof imdb, NULL)) return 1;
+  } else if (!anime) return 0;
+  if (anime && objetoRaiz(p, f, "show", oi, of)) {
+    imdb[0] = 0;
+    if (lerObra(*oi, *of, &d, imdb, sizeof imdb)) return 1;
+    if (lerIdsSimkl(*oi, *of, imdb, sizeof imdb, NULL)) return 1;
+    return 0;
+  }
+  if (anime && lerIdsSimkl(p, f, imdb, sizeof imdb, NULL)) {
+    *oi = p;
+    *of = f;
+    return 1;
+  }
+  return 0;
+}
+
 // ------------------------------------------------------------ leitores puros
 
 int simkl_ler_playback(const char *json, CatItem *dst, long long *ids, int max) {
@@ -241,24 +295,20 @@ int simkl_ler_assistindo(const char *json, CatItem *dst, int max) {
     }
     if (t < 0 || e <= 0) goto watchingDropped;
     reason = "missing title object";
-    if (!objetoRaiz(p, f, chaves[k], &oi, &of) &&
-        (k != 1 || !objetoRaiz(p, f, "show", &oi, &of))) goto watchingDropped;
+    if (!obraDeAssistindo(p, f, k == 1, chaves[k], &oi, &of)) goto watchingDropped;
     if (!lerObra(oi, of, d, imdb, sizeof imdb)) {
-      const char *ii, *ifim;
-      long id;
       reason = "missing supported id";
-      if (k != 1 || !objetoRaiz(oi, of, "ids", &ii, &ifim)) goto watchingDropped;
-      id = (long)js_num(ii, ifim, "tmdb", 0);
-      if (id > 0) snprintf(imdb, sizeof imdb, "tmdb:%ld", id);
-      else {
-        id = (long)js_num(ii, ifim, "simkl", 0);
-        if (id <= 0) goto watchingDropped;
-        snprintf(imdb, sizeof imdb, "simkl:%ld", id);
-      }
-    }
-    { const char *ii, *ifim;
-      if (objetoRaiz(oi, of, "ids", &ii, &ifim))
-        d->tmdb = (long)js_num(ii, ifim, "tmdb", 0);
+      if (k != 1) goto watchingDropped;
+      if (!lerIdsSimkl(oi, of, imdb, sizeof imdb, &d->tmdb) &&
+          (oi != p || !lerIdsSimkl(p, f, imdb, sizeof imdb, &d->tmdb)))
+        goto watchingDropped;
+      if (oi == p) js_texto_raiz_em(p, f, "title", d->titulo, sizeof d->titulo);
+    } else {
+      const char *ii, *ifim;
+      long tid;
+      if (objetoRaiz(oi, of, "ids", &ii, &ifim) &&
+          idNumOk(js_num(ii, ifim, "tmdb", 0), &tid))
+        d->tmdb = tid;
     }
     if (absoluto) animeAbsoluto(imdb, absoluto, &t, &e);
     d->temporada = t;

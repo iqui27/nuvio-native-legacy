@@ -5574,6 +5574,8 @@ static void recuperarErroFonte(void) {
 }
 
 void app_atualizar(float dt, Uint32 agora) {
+  static int tbPlayU, tbPlayItem, tbPlayArq;
+  static const char *tbPlayTit;
 #ifdef NV_ANDROID
   android_tv_home(tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL);
 #endif
@@ -6553,6 +6555,28 @@ void app_atualizar(float dt, Uint32 agora) {
       abrirPessoa(&pedPessoa);
     } else if (tela == TELA_BUSCA && busca_pediu_abrir(&idx)) {
       if (busca_item_focado(&it) && it.indice == idx) abrirTitulo(&it, 1, 1); else abrirPorIndice(idx);
+    } else if (tela == TELA_BIBLIOTECA && biblioteca_pediu_torbox_play(&tbPlayU, &tbPlayItem, &tbPlayArq, &tbPlayTit)) {
+      int titulo = 0;
+      { CatItem z = {0};
+        // Titulo do ITEM escolhido na aba, nao um indice fixo do catalogo:
+        // um item valido sempre vira um titulo proprio no fim do catalogo.
+        snprintf(z.titulo, sizeof z.titulo, "%s", tbPlayTit && tbPlayTit[0] ? tbPlayTit : "TorBox");
+        snprintf(z.tipo, sizeof z.tipo, "movie");
+        snprintf(z.imdb, sizeof z.imdb, "torbox:bib:%d", tbPlayItem);
+        titulo = cat_acrescentar(&z);
+        if (titulo < 0) titulo = 0; }
+      stream_definir_atual(-1);
+      limparFonteVOD();
+      // Ordem importa: parteZerar cancela qualquer pedido de link em voo, entao
+      // o pedido do item sai DEPOIS da limpeza — senao ele morre antes de nascer.
+      parteZerar();
+      parteDesde = SDL_GetTicks();
+      parteFase = PF_LINK;
+      partePos = -1;
+      partes_link_pedir(tbPlayU, tbPlayItem, tbPlayArq, 1);
+      reabrirTitulo(titulo);
+      player_abrir(titulo, NULL);
+      trocarTela(TELA_PLAYER);
     } else if (tela == TELA_BIBLIOTECA && biblioteca_pediu_abrir(&idx)) {
       abrirPorIndice(idx);
     } else if (tela == TELA_PERFIL) {

@@ -146,6 +146,8 @@ typedef struct {
   char *finalDst;
   unsigned finalTam;
   int parcialOk;
+  unsigned long prazoAtualMs;
+  int semRecuoV4;
   UsoHost usoHost[REDE_HOSTS_POR_FIO];
   long teto;
   int restoRecusado;
@@ -185,6 +187,8 @@ long *rede_teto_ptr(void) { return &redeFio()->teto; }
 #define redeFinalDst      (redeFio()->finalDst)
 #define redeFinalTam      (redeFio()->finalTam)
 #define redeParcialOk     (redeFio()->parcialOk)
+#define redePrazoAtualMs  (redeFio()->prazoAtualMs)
+#define redeSemRecuoV4    (redeFio()->semRecuoV4)
 #define usoHost           (redeFio()->usoHost)
 #define redeRestoRecusado (redeFio()->restoRecusado)
 #define redeLateral       (redeFio()->lateral)
@@ -570,6 +574,7 @@ void rede_avisar_host(void (*f)(const char *url, int codigo, int http, unsigned 
 // recomenda.c, xtream.c, avisos.c, noticias.c, tex_cache.c): tools/env.sh so
 // emite o -D quando o servico de recomendacoes esta configurado, e uma build
 // sem ele nao pode falhar a compilar por causa disto.
+#include "nvbackend.h"
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif
@@ -602,7 +607,8 @@ void rede_avisar_host(void (*f)(const char *url, int codigo, int http, unsigned 
 //     desta distincao aqui: aquela funcao NUNCA tenta o proxy (ver embaixo)
 //     e devolve "desconhecido" em vez de "morta" quando o bloqueio acontece.
 static int vidaaNuncaProxiar(const char *url) {
-  if (NV_REC_URL[0] && !strncmp(url, NV_REC_URL, strlen(NV_REC_URL))) return 1;
+  char rec[400];
+  if (nv_rec_url_copiar(rec, sizeof rec) && !strncmp(url, rec, strlen(rec))) return 1;
   if (!strncmp(url, NV_VIDAA_PROXY_URL, strlen(NV_VIDAA_PROXY_URL))) return 1;
 #ifdef NV_SUPABASE_URL
   if (NV_SUPABASE_URL[0] && !strncmp(url, NV_SUPABASE_URL, strlen(NV_SUPABASE_URL))) return 1;
@@ -794,8 +800,10 @@ static char *pedir2(const char *metodo, const char *url, int segundos, const cha
       char *cabs2 = juntarCabs(cab, extraCab);
       int n2 = 0, http2 = 0;
       char fim2[512];
+      char rec[400];
       char *r2;
       fim2[0] = 0;
+      nv_rec_url_copiar(rec, sizeof rec);
       unsigned long gastoPedido = redeAgoraMs() - inicioPedido;
       int resta = nvPrazo(segundos) - (int)gastoPedido;
       r2 = resta > 0 ? nv_http(metodo, urlP, cabs2, corpo, &n2, &http2, fim2, (int)sizeof fim2, etag, (int)tamEtag, NULL, resta) : NULL;
@@ -814,7 +822,7 @@ static char *pedir2(const char *metodo, const char *url, int segundos, const cha
       // proxy quebrado do mesmo jeito. Agora so anota quando o proxy entregou,
       // e o erro do worker sai com o nome certo no log.
       if (r2 && !strncmp(fim2, "http", 4) &&
-          !(NV_REC_URL[0] && !strncmp(fim2, NV_REC_URL, strlen(NV_REC_URL))) &&
+          !(rec[0] && !strncmp(fim2, rec, strlen(rec))) &&
           strncmp(fim2, NV_VIDAA_PROXY_URL, strlen(NV_VIDAA_PROXY_URL))) {
         char host[128];
         corpoResp = r2; n = n2; http = http2;
@@ -1261,6 +1269,10 @@ static _Thread_local unsigned redeFinalTam;
 // so trechoUmaVez liga. Ver a nota la.
 static _Thread_local int redeParcialOk;
 #endif
+#if !defined(NV_TPK40) && !defined(NV_UM_FIO)
+static _Thread_local unsigned long redePrazoAtualMs;
+static _Thread_local int redeSemRecuoV4;
+#endif
 
 // Constantes da libcurl escritas a mao: nao ha curl.h no SDK do aparelho, e
 // puxar o header inteiro so por meia duzia de numeros nao se paga. Os valores
@@ -1292,6 +1304,8 @@ static _Thread_local int redeParcialOk;
 #define INFO_TEMPO_DNS       3145732
 #define INFO_TEMPO_TCP       3145733
 #define INFO_TEMPO_TLS       3145761
+// CURLINFO_PRIMARY_IP = CURLINFO_STRING (0x100000) + 32: IP do socket conectado.
+#define INFO_IP_PRIMARIO     1048608
 // Cabecalhos de RESPOSTA. So rede_baixar_etag os pede; ver a nota la.
 #define OPT_HEADERFUNCTION  20079
 #define OPT_HEADERDATA      10029
@@ -1324,6 +1338,9 @@ static _Thread_local int redeParcialOk;
 #define OPT_ERRORBUFFER 10010
 #define OPT_POSTFIELDSIZE 60
 #define OPT_PROTOCOLS 181
+// CURLOPT_IPRESOLVE (7.10.8+): 0 = qualquer familia, 1 = so IPv4, 2 = so IPv6.
+// Ver o "v6 ruim" por host junto de performV4.
+#define OPT_IPRESOLVE        113
 
 // Ouvinte unico dos 401 — ver rede_avisar_401 no cabecalho. (O ramo
 // Emscripten tem a sua propria definicao, porque os dois lados do #ifdef
@@ -1382,6 +1399,9 @@ static int urlSetopt(void *c, const char *url) {
 #define curl_setopt(c, op, v) ((op) == 10002 ? urlSetopt((c), (const char *)(uintptr_t)(v)) \
                                               : curl_setopt_f((c), (op), (v)))
 static int   (*curl_perform)(void *);
+// ROTA IPv6 QUEBRADA POR HOST (#707): a declaracao completa (com a vigia)
+// fica junto das do cancelVigia, logo depois das funcoes multi.
+static unsigned long conexaoMs(unsigned long prazoMs);
 static void  (*curl_cleanup)(void *);
 static int   (*curl_global)(long);
 static void *(*curl_multi_init)(void);
@@ -1405,6 +1425,9 @@ typedef struct { void *multi; int ligado; } CancelVigia;
 static int cancelVigiaPerform(CancelVigia *v, void *c);
 static int cancelVigiaLigar(void *c, CancelVigia *v);
 static void cancelVigiaSoltar(CancelVigia *v, int ligado, void *c);
+// O recuo IPv4 do #707 roda cada tentativa por cancelVigiaPerform — ver
+// performV4 logo depois de hostDaUrl. v->multi NULL cai no easy perform.
+static int performV4(void *c, const char *url, CancelVigia *v);
 
 #ifdef NV_TPK
 static void *dnsShare;
@@ -1454,6 +1477,11 @@ static int tmdbFallback(void *c, int r, const char *pedido, void *cv) {
   long http = 0;
   if (!(r == 35 || r == 7 || r == 56 || r == 52) ||
       redeCancelouLocal || !curl_getinfo) return r;
+  // ESCRITA que pode ja ter sido aplicada nao repete no alias: resposta
+  // perdida (52: o servidor recebeu e calou) ou corpo cortado no retorno (56)
+  // deixam o POST no servidor — reenviar duplicaria a acao (#707 r2). O flag
+  // e o mesmo que ja barra o recuo IPv4 no caminho do POST.
+  if (redeSemRecuoV4 && (r == 52 || r == 56)) return r;
   // Um redirect de outro host ao TMDB nao autoriza reenviar seus cabecalhos.
   origem = tmdbUrl(pedido);
   if (!origem) return r;
@@ -1461,7 +1489,9 @@ static int tmdbFallback(void *c, int r, const char *pedido, void *cv) {
   if (curl_getinfo(c, INFO_RESPONSE_CODE, &http) || http ||
       curl_getinfo(c, INFO_URL_FINAL, &url) || !(alias = tmdbUrl(url))) return r;
   if (!curl_setopt_f(c, OPT_URL, alias)) {
-    r = cancelVigiaPerform((CancelVigia *)cv, c); /* uma unica tentativa, sem recursao */
+    /* Uma unica tentativa no alias, sem recursao: com o recuo IPv4 ela tambem
+       pode ter duas performs, cada uma cancelavel pela vigia ja armada. */
+    r = performV4(c, alias, (CancelVigia *)cv);
     if (!r) tmdbLigou();
   }
   free(alias);
@@ -1469,7 +1499,7 @@ static int tmdbFallback(void *c, int r, const char *pedido, void *cv) {
 }
 static int performTmdbCv(void *c, const char *url, void *cv) {
   return tmdbFallback(c,
-           cv ? cancelVigiaPerform((CancelVigia *)cv, c) : curl_perform(c),
+           cv ? performV4(c, url, (CancelVigia *)cv) : performV4(c, url, NULL),
            url, cv);
 }
 // TODA perform sem vigia propria vai pelo multi do fio quando a interface
@@ -1477,12 +1507,12 @@ static int performTmdbCv(void *c, const char *url, void *cv) {
 // no multi, que o fio guarda e que viaja no estacionamento JUNTO com a easy.
 // Com curl_easy_perform a conexao ficaria na easy de um fio e o fio consumidor
 // a associaria ao proprio multi — o HEAD aquecido nunca seria reusado. Sem a
-// interface multi (libcurl antiga), cancelVigiaPerform cai no easy perform.
+// interface multi (libcurl antiga), performV4 cai no easy perform.
 static int performTmdb(void *c, const char *url) {
   CancelVigia cv;
   int on, r;
   on = cancelVigiaLigar(c, &cv);
-  r = tmdbFallback(c, cancelVigiaPerform(&cv, c), url, on ? &cv : NULL);
+  r = tmdbFallback(c, performV4(c, url, &cv), url, on ? &cv : NULL);
   cancelVigiaSoltar(&cv, on, c);
   return r;
 }
@@ -1663,6 +1693,146 @@ static int hostOcioso(const char *url, unsigned long agora) {
     if (usoHost[i].ms && !strcmp(usoHost[i].h, h))
       return agora - usoHost[i].ms > ociosoMaxMs;
   return 0;
+}
+
+// "V6 RUIM" POR HOST (#707). O relato: o roteador do aparelho anunciava uma
+// rota IPv6 MORTA (Tizen 10, MediaFusion + TorBox). O connect de um host com
+// AAAA+A ia pelo v6 e nunca chegava — e a libcurl 7.53.1 da TV nao refaz em
+// IPv4 sozinha em todo caminho. Na interface virava N falhas de transporte
+// seguidas em hosts diferentes (a sonda de cada fonte), que e exatamente o
+// criterio do "sem internet" da redesaude: a pessoa lia "sem internet" com a
+// casa online — e o Stremio, que recua para v4, tocava o mesmo titulo.
+//
+// Mecanismo, irmao do calmaHost (#385): a tentativa em familia QUALQUER que
+// falhou ANTES de abrir a conexao (o nome nao resolveu, o connect caiu ou o
+// prazo morreu sem resposta) refaz o pedido UMA vez com IPRESOLVE=V4 no MESMO
+// handle, e o host (esquema+host+porta) fica marcado: os pedidos seguintes ja
+// saem direto em v4, sem pagar a tentativa v6. A marca caduca — a rota pode
+// voltar — e cai fora do vetor por rodizio, como os demais caches por host.
+//
+// O QUE NAO DISPARA: cancelamento (42), corpo parado (o pedido ja tinha
+// conexao aberta), resposta HTTP de erro (o servidor respondeu) e TLS (35):
+// o aperto de mao so comeca DEPOIS do connect, entao a familia ja deu certo.
+#define REDE_V4_HOSTS 8
+#define REDE_V4_MARCA_MS (10UL * 60UL * 1000UL)
+typedef struct { char h[96]; unsigned long ate; } V4Host;
+static V4Host v4Host[REDE_V4_HOSTS];
+static int v4Prox;
+static pthread_mutex_t v4Trava = PTHREAD_MUTEX_INITIALIZER;
+
+static int v4Marcado(const char *url, unsigned long agora) {
+  char h[96];
+  int i, achou = 0;
+  hostDaUrl(url, h, sizeof h);
+  if (!h[0]) return 0;
+  pthread_mutex_lock(&v4Trava);
+  for (i = 0; i < REDE_V4_HOSTS; i++)
+    if (v4Host[i].h[0] && !strcmp(v4Host[i].h, h)) {
+      if (v4Host[i].ate > agora) achou = 1;
+      else v4Host[i].h[0] = 0;   // caducou: a rota v6 pode ter voltado
+      break;
+    }
+  pthread_mutex_unlock(&v4Trava);
+  return achou;
+}
+static void v4Marcar(const char *url, unsigned long agora) {
+  char h[96];
+  int i, achou = -1;
+  hostDaUrl(url, h, sizeof h);
+  if (!h[0]) return;
+  pthread_mutex_lock(&v4Trava);
+  for (i = 0; i < REDE_V4_HOSTS; i++)
+    if (v4Host[i].h[0] && !strcmp(v4Host[i].h, h)) { achou = i; break; }
+  if (achou < 0) {
+    achou = v4Prox; v4Prox = (v4Prox + 1) % REDE_V4_HOSTS;
+    snprintf(v4Host[achou].h, sizeof v4Host[achou].h, "%s", h);
+  }
+  v4Host[achou].ate = agora + REDE_V4_MARCA_MS;
+  pthread_mutex_unlock(&v4Trava);
+}
+
+// A conexao TCP abriu? Sinal da libcurl, nunca limiar de tempo: loopback e
+// LAN conectam em dezenas de us, e um 28 com o TLS parado nao e rota v6.
+// CONNECT_TIME > 0 = connect fechado nesta tentativa; IP primario preenchido =
+// havia socket conectado (a 8.x zera o CONNECT_TIME de conexao REUSADA que
+// estoura, mas mantem o IP). Sem conexao (6, 7, connect engolido) as duas
+// vem zeradas. Getinfo que falha conta como "abriu": na duvida nao recua.
+static int v4TcpAbriu(void *c) {
+  double tcp = 0;
+  char *ip = NULL;
+  if (curl_getinfo(c, INFO_TEMPO_TCP, &tcp) || tcp != 0.0) return 1;
+  if (curl_getinfo(c, INFO_IP_PRIMARIO, &ip)) return 1;
+  return ip && ip[0];
+}
+// Conexao que nem abriu e a rota v6 pode ser a culpada: o nome nao resolveu
+// (6, o AAAA que morre no caminho v6 quebrado), o connect caiu (7: sem rota,
+// recusa, blackhole que responde RST tarde) ou o prazo morreu sem nenhuma
+// resposta HTTP (28 com http=0: o connect v6 engolido em silencio). Cancelado
+// e codigo sem libcurl/getinfo ficam de fora.
+static int v4Vale(int r, void *c) {
+  long http = 0;
+  if (redeCancelouLocal || redeParou()) return 0;
+  if (r == 6 || r == 7) return 1;
+  if (r != 28) return 0;
+  if (!curl_getinfo) return 0;
+  curl_getinfo(c, INFO_RESPONSE_CODE, &http);
+  if (http != 0) return 0;
+  return !v4TcpAbriu(c);
+}
+// A easy do pedido cancelavel esta associada ao multi do FIO (pool); uma
+// vigia temporaria em cima dele deixa cada tentativa cancelavel sem mexer no
+// fluxo de cancelVigiaLigar/Soltar de quem chamou — o multi volta para o pool
+// por la, com o cache de conexoes junto.
+static void v4VigiaPegar(void *c, CancelVigia *v) {
+  HandlePool *p;
+  v->multi = NULL;
+  v->ligado = 0;
+  if (!curl_reset || !curl_multi_init || !curl_multi_add || !curl_multi_remove ||
+      !curl_multi_perform || !curl_multi_cleanup || !curl_multi_info_read ||
+      !(curl_multi_poll || curl_multi_wait)) return;
+  pthread_once(&handleUma, handleCriarChave);
+  p = (HandlePool *)pthread_getspecific(handleChave);
+  if (p && p->c == c && p->multi) v->multi = p->multi;
+}
+
+// curl_easy_perform com o recuo IPv6->IPv4 do #707 e a vigia de cancelamento
+// do #775 por tentativa: cada tentativa (dual-stack e, se valer, so IPv4) e um
+// cancelVigiaPerform no mesmo multi — a 1a usa a easy ja associada por
+// cancelVigiaLigar, a 2a a reassocia; redeParou() vale nas duas. Sem multi
+// (v NULL sem pool, libcurl antiga) cai no curl_easy_perform de sempre. Vale para TODO caminho que passa por aqui: sonda de
+// fonte, GET/POST, aquecimento, Range lateral — todos o chamam direto ou pelo
+// performTmdb/performTmdbCv. A marca e do host DO URL DO PEDIDO: um
+// redirecionamento que a libcurl segue internamente herda a familia desta
+// tentativa, como sempre.
+static int performV4(void *c, const char *url, CancelVigia *v) {
+  CancelVigia local;
+  unsigned long t0 = redeAgoraMs();
+  unsigned long agora, prazoMs = redePrazoAtualMs;
+  int r, marcado = v4Marcado(url, t0);
+  long restMs;
+  if (!v) { v4VigiaPegar(c, &local); v = &local; }
+  curl_setopt(c, OPT_IPRESOLVE, (long)marcado);
+  r = cancelVigiaPerform(v, c);
+  if (marcado || redeSemRecuoV4 || !v4Vale(r, c)) return r;
+  agora = redeAgoraMs();
+  if (prazoMs > 0) {
+    restMs = (long)(t0 + prazoMs > agora ? t0 + prazoMs - agora : 0UL);
+    if (restMs < 500) return r;
+    curl_setopt(c, OPT_TIMEOUT_MS, restMs);
+    curl_setopt(c, OPT_CONNECTTIMEOUT_MS, (long)conexaoMs((unsigned long)restMs));
+  }
+  { char seg[120];
+    printf("[rede] conexao falhou (curl %d) em %s: de novo so em IPv4\n",
+           r, rede_url_publica(url, seg, sizeof seg));
+    fflush(stdout); }
+  curl_setopt(c, OPT_IPRESOLVE, (long)1);
+  r = cancelVigiaPerform(v, c);
+  { char seg[120];
+    if (r) printf("[rede] IPv4 tambem falhou (curl %d) em %s\n",
+                  r, rede_url_publica(url, seg, sizeof seg));
+    else v4Marcar(url, redeAgoraMs());
+    fflush(stdout); }
+  return r;
 }
 
 // HANDLES AQUECIDOS (2.0.2). O handle e do FIO, e o fio que confere a fonte
@@ -1876,6 +2046,7 @@ static unsigned long conexaoMs(unsigned long prazoMs) {
   return m < prazoMs ? m : prazoMs;
 }
 static void opcoesComuns(void *c, unsigned long prazoMs) {
+  redePrazoAtualMs = prazoMs;
 #ifdef NV_TPK
   if (dnsShare) curl_setopt(c, 10100 /* CURLOPT_SHARE */, dnsShare);
 #endif
@@ -2755,13 +2926,13 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
         primeira = 0;
         snprintf(m, sizeof m, "begin https-1 %s", rede_url_publica(url, seg, sizeof seg));
         nv_tpk40_etapa(m);
-        r = cancelVigiaPerform(&cv, c);
+        r = performV4(c, url, &cv);
         { long http = 0; if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
           snprintf(m, sizeof m, "ok https-1 curl=%d http=%ld", r, http); }
         nv_tpk40_etapa(m);
-      } else r = cancelVigiaPerform(&cv, c); }
+      } else r = performV4(c, url, &cv); }
 #else
-    r = cancelVigiaPerform(&cv, c);
+    r = performV4(c, url, &cv);
 #endif
     { long novas = -1;
       if (curl_getinfo) curl_getinfo(c, INFO_NUM_CONNECTS, &novas);
@@ -3135,7 +3306,7 @@ int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
     for (k = 0; cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = cancelVigiaPerform(&cv, c);
+  r = performV4(c, url, &cv);
   cancelVigiaSoltar(&cv, cvOn, c);
   if (r == 42 && vigia.parou) r = 28;
   if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
@@ -3213,7 +3384,9 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
     for (k = 0; cab && cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
+  redeSemRecuoV4 = 1;
   r = performTmdbCv(c, url, cvOn ? &cv : NULL);
+  redeSemRecuoV4 = 0;
   cancelVigiaSoltar(&cv, cvOn, c);
   redeCurlLocal = r;
   anotarErro(r);
@@ -3943,7 +4116,9 @@ static char *range64(const char *url, const char *headers,
     uint64_t hop_ms = pedidoAgoraMs();
     unsigned active = __atomic_add_fetch(&rangeDiagActive, 1, __ATOMIC_RELAXED);
 #endif
-    result = performTmdb(c, url);
+    // O hop manual segue `current` (o redirect ja aplicado): marcar a familia
+    // pelo host realmente alcancado, nao pela URL original (#707 r2).
+    result = performTmdb(c, current);
 #ifdef NV_HTTP_BUFFER_DIAG
     __atomic_sub_fetch(&rangeDiagActive, 1, __ATOMIC_RELAXED);
 #endif
@@ -4126,6 +4301,10 @@ static int fluxo64(const char *url, const char *headers, int64_t start,
     if (!c) return -1;
     opcoesComuns(c, 15000);                 /* connect deadline from here...      */
     curl_setopt(c, OPT_TIMEOUT_MS, (long)0); /* ...but no limit on the whole body */
+    /* O recuo IPv4 do #707 le redePrazoAtualMs como prazo total do pedido: um
+     * stream longo com dados chegando nao pode ganhar os 15 s de opcoesComuns
+     * (regressao da r2). 0 = sem teto, igual ao OPT_TIMEOUT_MS acima. */
+    redePrazoAtualMs = 0;
     curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
     curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
     if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
@@ -4145,7 +4324,9 @@ static int fluxo64(const char *url, const char *headers, int64_t start,
     uint64_t hop_ms = pedidoAgoraMs();
     unsigned active = __atomic_add_fetch(&rangeDiagActive, 1, __ATOMIC_RELAXED);
 #endif
-    result = performTmdb(c, url);
+    // O hop manual segue `current` (o redirect ja aplicado): marcar a familia
+    // pelo host realmente alcancado, nao pela URL original (#707 r2).
+    result = performTmdb(c, current);
 #ifdef NV_HTTP_BUFFER_DIAG
     __atomic_sub_fetch(&rangeDiagActive, 1, __ATOMIC_RELAXED);
 #endif
