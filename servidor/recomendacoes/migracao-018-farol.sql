@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS farol_registro (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   criado     INTEGER NOT NULL,
-  janela     INTEGER NOT NULL DEFAULT 0,  -- dia (criado/86400): dedupe atomico
+  janela     INTEGER NOT NULL DEFAULT 0,  -- dia (criado/86400), informativo
   pessoa_h   TEXT NOT NULL,
   versao     TEXT NOT NULL,
   plataforma TEXT NOT NULL,
@@ -17,9 +17,21 @@ CREATE TABLE IF NOT EXISTS farol_registro (
 );
 CREATE INDEX IF NOT EXISTS farol_fp ON farol_registro (fp, criado);
 CREATE INDEX IF NOT EXISTS farol_criado ON farol_registro (criado);
--- Dedupe atomico (issue 5): duas gravacoes concorrentes da mesma conta com o
--- mesmo fp na mesma janela viram UMA linha via INSERT ... ON CONFLICT.
-CREATE UNIQUE INDEX IF NOT EXISTS farol_dedup ON farol_registro (pessoa_h, fp, janela);
+-- Dedupe atomico (issue 5): a chave e (pessoa_h, fp) SEM o dia UTC — a janela
+-- movel de 24 h e decidida no ON CONFLICT da gravacao (src/farol.js), entao
+-- dois envios atravessando 00:00 UTC continuam um recibo so. Num banco que ja
+-- tinha linhas repetidas (a 018 sem dedupe nao impedia), a fusao soma `vezes`
+-- na linha mais antiga, que guarda o recibo original.
+UPDATE farol_registro AS r SET vezes = r.vezes + COALESCE((
+  SELECT SUM(o.vezes) FROM farol_registro AS o
+  WHERE o.pessoa_h = r.pessoa_h AND o.fp = r.fp AND o.id > r.id), 0)
+WHERE EXISTS (
+  SELECT 1 FROM farol_registro AS o
+  WHERE o.pessoa_h = r.pessoa_h AND o.fp = r.fp AND o.id > r.id);
+DELETE FROM farol_registro WHERE id NOT IN (
+  SELECT MIN(id) FROM farol_registro GROUP BY pessoa_h, fp);
+DROP INDEX IF EXISTS farol_dedup;
+CREATE UNIQUE INDEX farol_dedup ON farol_registro (pessoa_h, fp);
 -- O codigo de 6 caracteres e a MESMA bijecao de `registro` (src/codigo.js).
 -- Para os dois espacos nao colidirem, os ids do Farol comecam em 2^29.
 -- Repetivel: sqlite_sequence.name admite duplicata (INSERT OR IGNORE nao basta)

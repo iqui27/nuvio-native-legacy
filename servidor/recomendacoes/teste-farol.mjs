@@ -12,12 +12,14 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import worker from "./src/index.js";
 import { limparRegistro } from "./src/index.js";
-import { limparFarol } from "./src/farol.js";
+import { limparFarol, rotaFarolRegistro } from "./src/farol.js";
+import { limitar } from "./src/amigos.js";
+import { codigoRegistro } from "./src/codigo.js";
 
 const MIGRACOES = ["schema.sql", "migracao-001-avatar-nota.sql", "migracao-002-descobrivel.sql",
   "migracao-003-registro.sql", "migracao-004-triagem.sql", "migracao-005-amigos.sql",
   "migracao-006-social.sql", "migracao-007-resposta.sql", "migracao-008-identidade.sql",
-  "migracao-018-farol.sql"];
+  "migracao-018-farol.sql", "migracao-019-farol-janela.sql"];
 
 const agora = () => Math.floor(Date.now() / 1000);
 const fpDe = (s) => createHash("sha256").update(s).digest("hex").slice(0, 16);
@@ -76,14 +78,16 @@ function pacote() {
                { acao: "reconexao", ok: false, ms: 13000 }],
     },
     aparelho: {
-      plataforma: "webos", so: "4.9", so_maior: 4, modelo: "OLED55C9PSA",
+      // Versao sempre etiquetada, como o coletor manda (farolredator.c: a
+      // numerica pura parseia como IPv4 WHATWG e o redator a recusa).
+      plataforma: "webos", so: "4.9-webos", so_maior: 4, modelo: "OLED55C9PSA",
       ram_total_mb: 1870, ram_livre_mb: 212,
       tela: { w: 3840, h: 2160, hdr: 1, dv: 1, hevc: 1, av1: -1 },
       audio: { dts: 1, truehd: -1, eac3: 1, ac3: 1 },
       rede: { offline: false, hosts_com_falha: 0, vazao_mbps: 0 },
     },
     cliente: {
-      versao: "2.1.0", commit: "c18c21756", build: "webos-ipk", backend: "starfish",
+      versao: "2.1.0-ipk", commit: "c18c21756", build: "webos-ipk", backend: "starfish",
       idioma: "pt-BR", aberto_s: 1842, gpu: "auto:alto",
       ajustes: { glass_ui: 1, qualidade_max: "4k", tamanho_max_gb: 40, dts: "ac3", dv_mkv: 0, legenda_auto_sync: 1 },
       addons: { total: 12, ativos: 11, isolados: 1, tipos: ["catalogo", "fontes", "legendas"] },
@@ -128,7 +132,7 @@ test("pacote aninhado da secao 2.6 grava e devolve codigo de 6 com id >= 2^29; p
   // O codigo do PLAYBOOK sai de erro.codigo, e o fp gravado e o da formula.
   assert.equal(linha.codigo, "TV_FORMATO_REPETE");
   assert.equal(linha.fp, fpDe(pacote().erro.fingerprint));
-  assert.equal(linha.versao, "2.1.0");
+  assert.equal(linha.versao, "2.1.0-ipk");
   assert.equal(linha.plataforma, "webos");
   assert.equal(linha.so_maior, 4);
   assert.equal(linha.vezes, 1);
@@ -234,10 +238,10 @@ test("cota e dedupe sao por CONTA: o sufixo de perfil nao abre cota nova", async
   // Seis fingerprints distintos esgotam a hora da CONTA (o envio acima ja
   // contou um); no OUTRO perfil da mesma conta o setimo continua recusado.
   for (let i = 0; i < 5; i++) {
-    const p = pacote(); p.erro.fingerprint = "fp-" + i;
+    const p = pacote(); p.erro.fingerprint = `webos-4-starfish-ums_${210 + i}-mkv-hevc10-dv-eac3`;
     assert.equal((await post(p, { perfil: 1 })).status, 200, "envio " + i);
   }
-  const setimo = pacote(); setimo.erro.fingerprint = "fp-setimo";
+  const setimo = pacote(); setimo.erro.fingerprint = "webos-4-starfish-ums_299-mkv-hevc10-dv-eac3";
   assert.equal((await post(setimo, { perfil: 1 })).status, 429);
   assert.equal((await post(setimo, { perfil: 2 })).status, 429);
 });
@@ -266,7 +270,7 @@ test("mesmo fp da mesma conta em 24 h devolve o mesmo codigo; fp diferente, regi
   const a = await post(pacote());
   const b = await post(pacote());
   assert.equal(a.body.codigo, b.body.codigo);
-  const c = pacote(); c.erro.fingerprint = "webos-4-starfish-ums_200-mkv-hevc-dts-ac3";
+  const c = pacote(); c.erro.fingerprint = "webos-4-starfish-ums_200-mkv-hevc-hlg-ac3";
   const r = await post(c);
   assert.notEqual(r.body.codigo, a.body.codigo);
   assert.equal(q(sqlite, "SELECT count(*) AS n FROM farol_registro")[0].n, 2);
@@ -274,19 +278,20 @@ test("mesmo fp da mesma conta em 24 h devolve o mesmo codigo; fp diferente, regi
 
 test("setimo envio na hora da 429 e o diario tambem tem teto", async (t) => {
   const { sqlite, post } = cenario(t);
+  const fpN = (i) => `webos-4-starfish-ums_${200 + i}-mkv-hevc10-dv-eac3`;
   for (let i = 0; i < 6; i++) {
-    const p = pacote(); p.erro.fingerprint = "fp-" + i;
+    const p = pacote(); p.erro.fingerprint = fpN(i);
     assert.equal((await post(p)).status, 200, "envio " + i);
   }
-  const setimo = pacote(); setimo.erro.fingerprint = "fp-setimo";
+  const setimo = pacote(); setimo.erro.fingerprint = fpN(90);
   assert.equal((await post(setimo)).status, 429);
   sqlite.exec("DELETE FROM limite WHERE chave LIKE 'farol:h:%'");
   sqlite.exec("UPDATE limite SET n = 20 WHERE chave LIKE 'farol:d:%'");
-  const dia = pacote(); dia.erro.fingerprint = "fp-dia";
+  const dia = pacote(); dia.erro.fingerprint = fpN(91);
   assert.equal((await post(dia)).status, 429);
   sqlite.exec("DELETE FROM limite WHERE chave LIKE 'farol:d:%'");
   sqlite.exec("UPDATE limite SET n = 500 WHERE chave = 'farol:dia'");
-  const glob = pacote(); glob.erro.fingerprint = "fp-global";
+  const glob = pacote(); glob.erro.fingerprint = fpN(92);
   assert.equal((await post(glob)).status, 429);
 });
 
@@ -364,4 +369,231 @@ test("retencao do registro de texto: manual 30 dias, automatico 4", async (t) =>
   await limparRegistro(env, ag);
   const resto = q(sqlite, "SELECT pessoa FROM registro ORDER BY pessoa").map((r) => r.pessoa);
   assert.deepEqual(resto, ["arranque:tv", "nuvio:a", "nuvio:d"]);
+});
+
+// --- correcao farol5b ---------------------------------------------------------
+// O contrato de texto e o do REDATOR (src/farolredator.c, src/farolnativo.h da
+// issue 4): gramaticas fechadas por campo, nao um alfabeto generico. A fixture
+// e o pacote que o redator C emite de verdade (versoes etiquetadas, enums
+// fechados); o erro.fp e recalculado pela formula do indice.
+const pacoteEmitido = () => {
+  const p = JSON.parse(readFileSync(new URL("teste-farol-fixture-c.json", import.meta.url), "utf8"));
+  p.erro.fp = fpDe(p.erro.fingerprint);
+  return p;
+};
+// Chamada direta da rota com relogio e limitar injetaveis — e assim que a
+// janela de dedupe e a concorrencia ficam deterministicas (padrao das sondas).
+const chamadaFarol = (env, corpo, t, lim = limitar) =>
+  rotaFarolRegistro(env, { id: "nuvio:qa" }, corpo,
+    { json: (body) => ({ status: 200, body }), erro: (_, status) => ({ status }), agora: () => t },
+    lim, codigoRegistro);
+
+// Barreira de duas requisicoes sobre o D1 falso: segura a segunda consulta que
+// casa `escolher` ate as duas terem lido — o cenario em que uma leitura
+// separada da gravacao corria. No codigo corrigido nao ha consulta de dedupe
+// nem de cota antes do UPSERT, entao a barreira nunca dispara: a atomicidade
+// e estrutural. No codigo anterior ela forca a corrida real.
+function barreira() {
+  let liberar;
+  let chamadas = 0;
+  const espera = new Promise((resolve) => { liberar = resolve; });
+  return async () => { if (++chamadas === 2) liberar(); await espera; };
+}
+function d1EmPar(DB, escolher, passo) {
+  const original = DB.prepare.bind(DB);
+  DB.prepare = (sql) => {
+    const stm = original(sql);
+    if (!escolher(sql)) return stm;
+    const bind = stm.bind.bind(stm);
+    stm.bind = (...args) => {
+      const bound = bind(...args);
+      const first = bound.first.bind(bound);
+      bound.first = async () => { const result = await first(); await passo(args); return result; };
+      return bound;
+    };
+    return stm;
+  };
+}
+
+test("o pacote emitido pelo redator C grava; os formatos privados dao 422 sem gravar", async (t) => {
+  const { sqlite, post } = cenario(t);
+  assert.equal((await post(pacoteEmitido())).status, 200);
+  let n = 0;
+  const base = () => {
+    const p = pacoteEmitido();
+    p.erro.fingerprint = `webos-4-starfish-ums_${210 + (n++)}-mkv-hevc10-dv-eac3`;
+    p.erro.fp = fpDe(p.erro.fingerprint);
+    return p;
+  };
+  const casos = [
+    ["h: com comprimento errado", (p) => { p.linha[0].k = "h:0123abc"; }],
+    ["av_* fora dos 11 nomes AVPlay", (p) => { p.erro.nativo = "av_canario_sintetico"; }],
+    ["tag de versao fora da lista", (p) => { p.aparelho.so = "4.9-7362194"; }],
+    ["tag de versao-patch fora da lista", (p) => { p.cliente.versao = "2.1.0-canario"; }],
+    ["versao numerica pura vira IPv4 WHATWG", (p) => { p.aparelho.so = "4.9"; }],
+    ["IPv4 abreviado em token", (p) => { p.linha[0].k = "127.0.1"; }],
+    ["IPv4 hexadecimal em token", (p) => { p.linha[0].k = "0xc633642a"; }],
+    ["IPv4 octal em modelo", (p) => { p.aparelho.modelo = "0300.0063.052"; }],
+    ["IPv4 decimal em token", (p) => { p.linha[0].k = "3325256746"; }],
+    ["IPv4 em campo de versao", (p) => { p.aparelho.so = "127.0.1"; }],
+    ["IPv6 em token", (p) => { p.linha[0].k = "2001:db8::1"; }],
+    ["IPv6 mapeado em token", (p) => { p.linha[0].k = "::ffff:198.51.100.42"; }],
+    ["PIN em token", (p) => { p.linha[0].k = "7362194"; }],
+    ["PIN em modelo", (p) => { p.aparelho.modelo = "7362194"; }],
+    ["PIN em commit", (p) => { p.cliente.commit = "7362194"; }],
+    ["hex longo em token", (p) => { p.linha[0].k = "abcde0123456789abcdef0123"; }],
+    ["URL em token", (p) => { p.linha[0].k = "https://example.test/qa"; }],
+    ["arroba em token", (p) => { p.linha[0].k = "qa@example.test"; }],
+    ["modelo fora da gramatica", (p) => { p.aparelho.modelo = "Canario Modelo"; }],
+    ["fingerprint com sete componentes", (p) => {
+      p.erro.fingerprint = "webos-4-starfish-ums_204-mkv-hevc10-eac3"; p.erro.fp = fpDe(p.erro.fingerprint); }],
+    ["fingerprint com nativo livre", (p) => {
+      p.erro.fingerprint = "webos-4-starfish-texto_livre-mkv-hevc10-dv-eac3"; p.erro.fp = fpDe(p.erro.fingerprint); }],
+  ];
+  for (const [nome, mudar] of casos) {
+    const p = base();
+    mudar(p);
+    assert.equal((await post(p)).status, 422, nome);
+  }
+  // Os aceites da gramatica fechada seguem aceites — cada um com fp proprio.
+  const positivos = [
+    ["h:<8hex>", (p) => { p.linha[0].k = "h:0123abcd"; }],
+    ["enum AVPlay publico", (p) => { p.erro.nativo = "av_invalid_uri"; }],
+    ["codigo nativo m3_ na faixa", (p) => { p.linha[0].k = "m3_2004"; }],
+    ["token de fonte composto", (p) => { p.linha[0].k = "720p_sdr_nodv_ac3"; }],
+  ];
+  for (const [nome, mudar] of positivos) {
+    const p = base();
+    mudar(p);
+    assert.equal((await post(p)).status, 200, nome);
+  }
+  // 1 da fixture + 4 positivos; nenhum 422 gravou linha.
+  assert.equal(q(sqlite, "SELECT count(*) AS n FROM farol_registro")[0].n, 5);
+});
+
+test("o fingerprint longo emitido pelo redator C (72 bytes) e aceito", async (t) => {
+  const { sqlite, post } = cenario(t);
+  const emitido = JSON.parse(readFileSync(new URL("teste-farol-fixture-longo.json", import.meta.url), "utf8"));
+  emitido.erro.fp = fpDe(emitido.erro.fingerprint);
+  // O contrato de tamanho e o do emissor (ate 159 bytes), nao o 48 generico.
+  assert.ok(emitido.erro.fingerprint.length > 48);
+  const r = await post(emitido);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(q(sqlite, "SELECT count(*) AS n FROM farol_registro")[0].n, 1);
+});
+
+test("dedupe atomico cobre a janela inteira de 24 h, inclusive a virada UTC", async (t) => {
+  const { sqlite, env } = cenario(t);
+  const corpo = pacoteEmitido();
+  const dia = 86400;
+  // Dois envios a um segundo de distancia, um de cada lado de 00:00 UTC: a
+  // chave (pessoa_h, fp) sem dia faz o ON CONFLICT decidir — um recibo so.
+  const [a, b] = await Promise.all([chamadaFarol(env, corpo, dia - 1), chamadaFarol(env, corpo, dia)]);
+  assert.equal(a.status, 200);
+  assert.equal(b.status, 200);
+  assert.equal(a.body.codigo, b.body.codigo);
+  const linhas = q(sqlite, "SELECT id, criado, vezes FROM farol_registro");
+  assert.equal(linhas.length, 1);
+  assert.equal(linhas[0].vezes, 2);
+  // Reenvio fora da janela reinicia o registro na mesma linha: criado e vezes
+  // novos, e o codigo (id) se mantem para a mesma falha da mesma conta.
+  const c = await chamadaFarol(env, corpo, dia + 86401);
+  assert.equal(c.status, 200);
+  const depois = q(sqlite, "SELECT criado, vezes FROM farol_registro");
+  assert.equal(depois.length, 1);
+  assert.equal(depois[0].criado, dia + 86401);
+  assert.equal(depois[0].vezes, 1);
+  assert.equal(c.body.codigo, a.body.codigo);
+});
+
+test("a cota de 6/h e atomica: o setimo envio simultaneo le o contador incrementado", async (t) => {
+  const { sqlite, env } = cenario(t);
+  const t0 = 86400100;
+  const pacoteN = (i) => {
+    const p = pacoteEmitido();
+    p.erro.fingerprint = `webos-4-starfish-ums_${200 + i}-mkv-hevc10-dv-eac3`;
+    p.erro.fp = fpDe(p.erro.fingerprint);
+    return p;
+  };
+  for (let i = 0; i < 5; i++)
+    assert.equal((await chamadaFarol(env, pacoteN(i), t0)).status, 200, "envio " + i);
+  // No codigo antigo a leitura da cota era um SELECT separado da gravacao: a
+  // barreira faz os dois envios lerem o mesmo contador. No corrigido a cota e
+  // um UPSERT atomico — nao ha o que segurar.
+  const leituras = barreira();
+  d1EmPar(env.DB, (sql) => sql.startsWith("SELECT n FROM limite"), async ([chave]) => {
+    if (String(chave).startsWith("farol:h:")) await leituras();
+  });
+  const res = (await Promise.all([chamadaFarol(env, pacoteN(5), t0), chamadaFarol(env, pacoteN(6), t0)]))
+    .map((r) => r.status).sort();
+  assert.deepEqual(res, [200, 429]);
+  assert.equal(q(sqlite, "SELECT count(*) AS n FROM farol_registro")[0].n, 6);
+});
+
+test("reenvio deduplicado devolve o mesmo codigo sem debitar cota", async (t) => {
+  const { sqlite, env } = cenario(t);
+  const debitos = [];
+  const limConta = async (e, chave, max, jan, tt) => { debitos.push(chave); return limitar(e, chave, max, jan, tt); };
+  const corpo = pacoteEmitido();
+  const t0 = 90000;
+  // A barreira so dispara na consulta de dedupe que o codigo antigo fazia
+  // antes de gravar; no corrigido o UPSERT e a primeira instrucao.
+  const leituras = barreira();
+  d1EmPar(env.DB, (sql) => sql.startsWith("SELECT id, criado FROM farol_registro"), leituras);
+  const [a, b] = await Promise.all([chamadaFarol(env, corpo, t0, limConta), chamadaFarol(env, corpo, t0, limConta)]);
+  assert.equal(a.status, 200);
+  assert.equal(b.status, 200);
+  assert.equal(a.body.codigo, b.body.codigo);
+  const linhas = q(sqlite, "SELECT vezes FROM farol_registro");
+  assert.equal(linhas.length, 1);
+  assert.equal(linhas[0].vezes, 2);
+  // Um registro novo debita os tres contadores uma vez; o dedupe, zero.
+  assert.equal(debitos.length, 3);
+});
+
+test("migracao sobre a 018 antiga: aplica sem perder dados e e reaplicavel", (t) => {
+  const sqlite = new DatabaseSync(":memory:");
+  t.after(() => sqlite.close());
+  // A 018 de 705a519ac: tabela SEM `janela` e sem indice de dedupe, com uma
+  // pessoa e DUAS linhas do mesmo (pessoa_h, fp) — a 018 sem dedupe deixava.
+  sqlite.exec(`CREATE TABLE pessoa (id TEXT PRIMARY KEY, criado INTEGER NOT NULL, visto INTEGER NOT NULL);
+    CREATE TABLE farol_registro (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, criado INTEGER NOT NULL,
+      pessoa_h TEXT NOT NULL, versao TEXT NOT NULL, plataforma TEXT NOT NULL,
+      so_maior INTEGER NOT NULL DEFAULT 0, codigo TEXT NOT NULL,
+      fp TEXT NOT NULL, fingerprint TEXT NOT NULL,
+      vezes INTEGER NOT NULL DEFAULT 1, json TEXT NOT NULL);
+    CREATE INDEX farol_fp ON farol_registro (fp, criado);
+    CREATE INDEX farol_criado ON farol_registro (criado);`);
+  sqlite.exec(`INSERT INTO pessoa VALUES ('nuvio:qa-legado', 1700000000, 1700000000);
+    INSERT INTO farol_registro (criado, pessoa_h, versao, plataforma, codigo, fp, fingerprint, json)
+      VALUES (1700000000, 'h', '2.1.0-ipk', 'webos', 'TV_FORMATO', '0123456789abcdef', 'fp-a', '{}');
+    INSERT INTO farol_registro (criado, pessoa_h, versao, plataforma, codigo, fp, fingerprint, vezes, json)
+      VALUES (1700000100, 'h', '2.1.0-ipk', 'webos', 'TV_FORMATO', '0123456789abcdef', 'fp-a', 3, '{}');`);
+  const aplica = (arquivo) => {
+    for (const cmd of readFileSync(new URL(arquivo, import.meta.url), "utf8").split(/;\s*\n/)) {
+      const c = cmd.replace(/^\s*--.*$/gm, "").trim();
+      if (c) sqlite.exec(c);
+    }
+  };
+  aplica("migracao-018-farol.sql");
+  aplica("migracao-019-farol-janela.sql");
+  const colunas = sqlite.prepare("SELECT name FROM pragma_table_info('farol_registro')").all().map((r) => r.name);
+  assert.ok(colunas.includes("janela"), "a 019 cria a coluna que faltava");
+  const dedup = sqlite.prepare("SELECT sql FROM sqlite_schema WHERE name = 'farol_dedup'").get();
+  assert.ok(dedup, "indice de dedupe existe");
+  assert.match(dedup.sql, /\(pessoa_h, fp\)/);
+  // Dados preservados: a fusao somou os vezes na linha mais antiga (o recibo
+  // original), repovoou a janela e nao tocou na pessoa.
+  const linhas = sqlite.prepare("SELECT criado, janela, vezes FROM farol_registro").all();
+  assert.equal(linhas.length, 1);
+  assert.equal(linhas[0].criado, 1700000000);
+  assert.equal(linhas[0].janela, Math.floor(1700000000 / 86400));
+  assert.equal(linhas[0].vezes, 4);
+  assert.equal(sqlite.prepare("SELECT count(*) AS n FROM pessoa").get().n, 1);
+  // Reaplicavel: a 018 roda limpa de novo; a 019 so repete o "duplicate
+  // column" que o preparar-local.sh trata como "ja aplicada".
+  aplica("migracao-018-farol.sql");
+  assert.throws(() => aplica("migracao-019-farol-janela.sql"), /duplicate column/);
+  assert.equal(sqlite.prepare("SELECT count(*) AS n FROM farol_registro").get().n, 1);
 });

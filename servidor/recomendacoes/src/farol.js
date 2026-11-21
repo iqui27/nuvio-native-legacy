@@ -1,11 +1,13 @@
 // FAROL — RECEPCAO DO REGISTRO ESTRUTURADO (PLANO.md secao 2.7, issue 5).
 // O pacote `FarolRegistro v1` e MONTADO na TV por lista branca (farolpacote.c),
 // ANINHADO como na secao 2.6 do PLANO e declarado pelo redator da issue 4
-// (src/farolredator.c:18): so enums, numeros e tokens do alfabeto de
-// `farolanel_token`. Aqui a defesa e a mesma: chave fora do esquema ou valor
-// com sinal de vazamento ("://", "@", IPv4/IPv6, hash cru) e 422 e nada e
-// gravado. O servidor nao sabe quem mandou: `pessoa_h` e HMAC(FAROL_SAL, conta)
-// so para os tetos de abuso, nunca o id cru (DECISOES.md item 4).
+// (src/farolredator.c). Aqui a defesa e a MESMA do emissor: cada campo de
+// texto tem gramatica fechada — a do redator, nao um alfabeto generico — e o
+// que nao casa e texto livre, que e o que o pacote nao pode ter (PLANO 2.5).
+// Chave fora do esquema, enum fora da lista ou valor fora da gramatica e 422
+// e nada e gravado. O servidor nao sabe quem mandou: `pessoa_h` e
+// HMAC(FAROL_SAL, conta) so para os tetos de abuso, nunca o id cru
+// (DECISOES.md item 4).
 //
 // O codigo de 6 caracteres do recibo e a MESMA bijecao de `registro`
 // (codigo.js); para os dois espacos nao colidirem os ids do Farol comecam em
@@ -24,31 +26,185 @@ const FAROL_DEDUP_JANELA = 24 * 3600;
 const LINHA_MAX = 256;
 const LISTA_MAX = 64;
 
-// O alfabeto seguro: o que o redator da TV ja produz, mais espaco e maiusculas
-// (modelo "OLED55C9PSA", versao "2.1.0"). Um valor que nao cabe aqui e texto
-// livre — e texto livre e o que o pacote nao pode ter.
-const STR_RX = /^[A-Za-z0-9_.:+ \-]*$/;
-const IPV4_RX = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/;
-// Sinais de dado proibido em claro: IPv6 (grupos de ate 4 hex separados por
-// ":"), uma cadeia hex longa (SHA/segredo colado no lugar de um token) e o
-// PIN de 4-8 digitos que `cliente.commit` poderia carregar (ver "commit").
-const HEXLONGO_RX = /^[0-9a-f]{17,}$/i;
-const MOD_RX = /^[A-Za-z0-9_.\- ]{1,32}$/;   // modelo: sem ":" nem "+" (secao 2.7)
-const COMMIT_RX = /^[0-9a-f]{7,12}$/;        // mesmo criterio do redator (farolredator.c)
-const FP_RX = /^[0-9a-f]{16}$/;              // erro.fp: 16 hex do SHA-256
-const VER_RX = /^\d{1,4}(\.\d{1,4}){0,2}(-[a-z0-9]{1,12})?$/;
-
-const pareceIPv6 = (s) => {
-  if (!s.includes(":")) return false;
-  const p = s.split(":");
-  return p.length >= 3 && p.every((g) => g === "" || /^[0-9a-fA-F]{1,4}$/.test(g));
-};
-const vazamento = (v) =>
-  v.includes("://") || v.includes("@") || IPV4_RX.test(v) || pareceIPv6(v) || HEXLONGO_RX.test(v);
-
-function strOk(v, max) {
-  return typeof v === "string" && v.length <= max && STR_RX.test(v) && !vazamento(v);
+// --- gramaticas do redator (src/farolredator.c, src/farolnativo.h @ farol-4) --
+//
+// Um "numero" de IPv4 para o parser WHATWG: "0x"/"0X" abre hexadecimal ("0x"
+// sozinho vale 0), "0" seguido de digitos abre octal, o resto e decimal. Zeros
+// a esquerda sao livres; valor acima de 32 bits satura, mas um digito invalido
+// invalida o pedaco inteiro. null = nao e numero.
+function ipv4Numero(p) {
+  if (!p.length) return null;
+  let base = 10, i = 0;
+  if (p[0] === "0" && p.length > 1) {
+    if (p[1] === "x" || p[1] === "X") { base = 16; i = 2; }
+    else { base = 8; i = 1; }
+  }
+  let v = 0;
+  for (; i < p.length; i++) {
+    const c = p[i];
+    let d = -1;
+    if (c >= "0" && c <= "9") d = c.charCodeAt(0) - 48;
+    else if (base === 16 && c >= "a" && c <= "f") d = c.charCodeAt(0) - 87;
+    else if (base === 16 && c >= "A" && c <= "F") d = c.charCodeAt(0) - 55;
+    if (d < 0 || d >= base) return null;
+    if (v <= 0xffffffff) { v = v * base + d; if (v > 0xffffffff) v = 0x100000000; }
+  }
+  return v;
 }
+
+// 1 quando s nao e um dominio valido para um parser de URL WHATWG: ou o parser
+// le como IPv4 — 1-4 partes decimais/octais/hex, a ultima expandindo para os
+// octetos que faltam ("127.0.1" = 127.0.0.1, "0xc633642a" = 198.51.100.42,
+// "0300.0063.052" = 192.0.2.42, "3325256746" = 198.51.100.42) — ou a ultima
+// parte e um "numero" e o parse falha, o que o WHATWG marca como host
+// invalido, nao dominio. Nas duas saidas o trecho nao sai, nem com hash.
+function ipv4Whatwg(s) {
+  let n = s.length;
+  if (!n) return false;
+  if (s[n - 1] === ".") n--;                       // ponto final nao conta
+  if (!n) return false;
+  const str = s.slice(0, n);
+  const ultimo = str.slice(str.lastIndexOf(".") + 1);
+  // "Termina em numero": so a ultima parte decide se o WHATWG tenta IPv4.
+  if (!ultimo.length || (ipv4Numero(ultimo) === null && !/^\d+$/.test(ultimo)))
+    return false;
+  const partes = str.split(".");
+  if (partes.length > 4) return true;
+  for (let i = 0; i < partes.length; i++) {
+    const v = ipv4Numero(partes[i]);
+    if (!partes[i].length || v === null) return true;
+    if (i < partes.length - 1 && v > 255) return true;
+  }
+  return true;
+}
+
+// "2.1.0-ipk", "4.9-webos": parte numerica (1-3 partes de ate 4 digitos) mais
+// rotulo opcional "-tag" da lista fechada de origens — um sufixo livre
+// deixaria passar PIN ("4.9-7362194") e titulo ("2.1.0-segreditulo"). A
+// numerica pura que um parser de URL le como IPv4 ("4.9", "127.0.1") tambem e
+// recusada: o coletor sempre manda a versao com o rotulo.
+const VER_TAGS = new Set(
+  "ipk webos tizen wgt tpk tpk40 tpk60 tpk65 apk android dev debug".split(" "));
+function versaoOk(v) {
+  if (typeof v !== "string" || !v.length || v.length > 23) return false;
+  const h = v.indexOf("-");
+  const num = h < 0 ? v : v.slice(0, h);
+  if (h >= 0 && !VER_TAGS.has(v.slice(h + 1))) return false;
+  if (!num.length || num.length >= 24) return false;
+  if (!num.includes(".") && num.length > 2) return false;
+  const partes = num.split(".");
+  if (partes.length > 3) return false;
+  for (const p of partes) if (!/^\d{1,4}$/.test(p)) return false;
+  return !ipv4Whatwg(v);
+}
+
+// aparelho.modelo: "x" ou <prefixo do fabricante><2 digitos de tela><serie>
+// <numero><sufixo>, nos tetos do redator (OLED admite 1/2/3; os demais 2/4/6).
+const MODELO_PREFIXOS = ["OLED", "QN", "QE", "UE", "UN", "UA", "KD-", "XR-", "TCL"];
+function modeloOk(v) {
+  if (v === "x") return true;
+  if (typeof v !== "string") return false;
+  for (let i = 0; i < MODELO_PREFIXOS.length; i++) {
+    if (!v.startsWith(MODELO_PREFIXOS[i])) continue;
+    let p = v.slice(MODELO_PREFIXOS[i].length);
+    const tela = /^\d+/.exec(p);
+    if (!tela || tela[0].length !== 2) return false;
+    p = p.slice(tela[0].length);
+    const serie = /^[A-Z]+/.exec(p);
+    if (!serie || serie[0].length > (i ? 2 : 1)) return false;
+    p = p.slice(serie[0].length);
+    const numero = /^\d+/.exec(p);
+    if (!numero || numero[0].length > (i ? 4 : 2)) return false;
+    p = p.slice(numero[0].length);
+    const sufixo = /^[A-Z]+/.exec(p);
+    return !p.slice(sufixo ? sufixo[0].length : 0).length &&
+           (sufixo ? sufixo[0].length : 0) <= (i ? 6 : 3);
+  }
+  return false;
+}
+
+// Codigos nativos fechados (farolerro.c + farolnativo.h): os 28 fixos do
+// classificador, ums_<100-300|40000-49999>, m3_<2000-2008 exceto 2003,2007 |
+// 3000-4999> e av_<um dos 11 nomes do enum AVPlayError da Samsung>.
+const CODIGOS_NATIVOS = new Set([
+  "ums_pipeline", "ums_faixa_audio", "ls2_permissao",
+  "m3_parado", "m3_audio", "av_conexao",
+  "tpk_conexao", "tpk_audio", "tpk_conflito", "tpk_preso",
+  "ums_rede", "m3_rede", "gen_rede",
+  "ums_http", "av_http", "tpk_http", "m3_http", "gen_http",
+  "ums_formato", "av_formato", "tpk_formato", "m3_formato", "gen_formato",
+  "ums_outro", "av_outro", "tpk_outro", "m3_outro", "gen_outro",
+]);
+const AVPLAY_NOMES = new Set([
+  "none", "invalid_parameter", "no_such_file", "invalid_operation",
+  "seek_failed", "invalid_state", "not_supported_file", "not_supported_format",
+  "invalid_uri", "connection_failed", "genereic",
+]);
+const nativoNumerico = (s, prefixo, faixa) => {
+  const d = s.slice(prefixo.length);
+  if (!d.length || d.length > 5 || !/^\d+$/.test(d)) return false;
+  return faixa(Number(d));
+};
+function codNativoOk(s) {
+  if (s.length < 4 || s.length > 23) return false;
+  if (CODIGOS_NATIVOS.has(s)) return true;
+  if (s.startsWith("ums_"))
+    return nativoNumerico(s, "ums_", (v) => (v >= 100 && v <= 300) || (v >= 40000 && v <= 49999));
+  if (s.startsWith("m3_"))
+    return nativoNumerico(s, "m3_", (v) =>
+      (v >= 2000 && v <= 2008 && v !== 2003 && v !== 2007) || (v >= 3000 && v <= 4999));
+  if (s.startsWith("av_")) return AVPLAY_NOMES.has(s.slice(3));
+  return false;
+}
+
+// token_seguro: o que erro.nativo e linha[].k podem trazer — a lista de
+// rotulos, "h:" + 8 hex (pseudonimo com sal), codigo nativo ou o token de
+// fonte "<res>_<sdr|hdr>_<dv|nodv>_<ac3|eac3|dts|outro>" que o produtor monta
+// de enums (farol-10). Tudo fora disso e texto livre: recusado.
+const TOK_ROTULOS = new Set(
+  "x starfish avplay tpk media3 dns tls prazo recusa sem_plano fora_cache 2160p_hdr_dv_eac3".split(" "));
+const TOK_FONTE = ["sd|480p|720p|1080p|2160p", "sdr|hdr", "dv|nodv", "ac3|eac3|dts|outro"]
+  .map((l) => new Set(l.split("|")));
+function tokOk(v) {
+  if (typeof v !== "string") return false;
+  if (TOK_ROTULOS.has(v)) return true;
+  if (v.startsWith("h:")) return /^[0-9a-f]{8}$/.test(v.slice(2));
+  if (codNativoOk(v)) return true;
+  if (v.length >= 32) return false;
+  const p = v.split("_");
+  return p.length === 4 && p.every((x, i) => TOK_FONTE[i].has(x));
+}
+
+// erro.fingerprint: os oito componentes da secao 2.6 separados por "-" —
+// plataforma, so_maior (1-2 digitos), backend, codigo nativo (ou "x"),
+// container, video, hdr, audio. O redator escreve o proprio token sanitizado
+// no componente nativo, entao o alfabeto de farolanel_token tambem e exigido.
+// O CONTRATO DE TAMANHO e o do emissor (farolredator.c): ate 159 bytes — o
+// exemplo real tem 72. O limite generico de 48 do §2.7, que vale para token
+// solto, nao se aplica a este campo estruturado.
+const FP_PLATAFORMA = new Set("webos tizen_wgt tizen_tpk android outra".split(" "));
+const FP_BACKEND = new Set("starfish avplay tpk media3 outro".split(" "));
+const FP_CONTAINER = new Set("mkv mp4 ts hls dash avi webm outro x".split(" "));
+const FP_VIDEO = new Set("h264 hevc hevc10 av1 vp9 mpeg2 outro x".split(" "));
+const FP_HDR = new Set("sdr hdr10 hdr10plus hlg dv x".split(" "));
+const FP_AUDIO = new Set("aac ac3 eac3 dts truehd mp3 flac outro x".split(" "));
+const TOK_CHARSET = /^[a-z0-9_.:+-]+$/;
+function fingerprintOk(v) {
+  if (typeof v !== "string" || v.length >= 160) return false;
+  const p = v.split("-");
+  if (p.length !== 8) return false;
+  if (!FP_PLATAFORMA.has(p[0])) return false;
+  if (!/^\d{1,2}$/.test(p[1])) return false;
+  if (!FP_BACKEND.has(p[2])) return false;
+  if (p[3].length > 39 || !TOK_CHARSET.test(p[3])) return false;
+  if (p[3] !== "x" && !codNativoOk(p[3])) return false;
+  return FP_CONTAINER.has(p[4]) && FP_VIDEO.has(p[5]) &&
+         FP_HDR.has(p[6]) && FP_AUDIO.has(p[7]);
+}
+
+const FP_RX = /^[0-9a-f]{16}$/;              // erro.fp: 16 hex do SHA-256
+const COMMIT_RX = /^[0-9a-f]{7,12}$/;        // mesmo criterio do redator (farolredator.c)
+
 const numOk = (v) => typeof v === "number" && Number.isFinite(v);
 const intOk = (v) => Number.isInteger(v) && Math.abs(v) <= 0x7fffffff;
 // Booleano de verdade: a rede manda "offline": false, nao 0/1 (secao 2.6).
@@ -71,8 +227,8 @@ const ESQUEMA = {
               "TV_NEGOU_PLAYER|AUDIO_DTS_SEM_SAIDA|AUDIO_OUTRA_FAIXA|AUDIO_SEM_SAIDA|IMAGEM_DV|" +
               "TV_FORMATO|TV_FORMATO_REPETE|PLAYER_PAROU|NADA_ACHADO"),
     estagio: E("internet|addons|debrid|fonte|tv|audio"),
-    nativo: "s", nativo_num: "int", http: "int",
-    fingerprint: "s", fp: "hex16",
+    nativo: "tok", nativo_num: "int", http: "int",
+    fingerprint: "fpq", fp: "hex16",
     tentou: [{
       acao: E("proxima_fonte|reconexao|sem_dv|sem_dts|fonte_menor|converter_ac3|isolar_addon|" +
               "aliviar_memoria|reconectar_rede|limpar_cache|buffer_maior|desligar_hdr|" +
@@ -121,7 +277,7 @@ const ESQUEMA = {
     e: E("abrir|pronto|erro_fonte|recusa_sinc|parado|erro_nativo|audio_recusado|pipeline_morreu|" +
          "reconexao|rede_estado|addon_busca|addon_lento|debrid|fonte_escolhida|escolhida|" +
          "fonte_proxima|mem_baixa|farol_veredito|farol_acao|farol_resultado|farol_envio|farol_consertou"),
-    a: "int", b: "int", k: "s",
+    a: "int", b: "int", k: "tok",
   }],
   privacidade: { redator: "int", campos_recusados: "int" },
 };
@@ -130,9 +286,10 @@ const ESQUEMA = {
 function valido(v, spec) {
   if (typeof spec === "string") {
     switch (spec) {
-      case "s": return strOk(v, 48);
-      case "mod": return typeof v === "string" && MOD_RX.test(v) && !vazamento(v);
-      case "ver": return typeof v === "string" && VER_RX.test(v);
+      case "tok": return tokOk(v);
+      case "fpq": return fingerprintOk(v);
+      case "mod": return modeloOk(v);
+      case "ver": return versaoOk(v);
       case "commit": return typeof v === "string" && COMMIT_RX.test(v) && /[a-f]/.test(v);
       case "hex16": return typeof v === "string" && FP_RX.test(v);
       case "num": return numOk(v);
@@ -172,6 +329,27 @@ async function sha256Hex(s) {
   return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
+// Dedupe atomico na janela MOVEL inteira de 24 h (FAROL_DEDUP_JANELA): a chave
+// unica e (pessoa_h, fp) — SEM o dia UTC, que era o furo da virada — e o ON
+// CONFLICT decide na propria instrucao. A linha existente ainda dentro da
+// janela = reenvio da mesma falha: soma `vezes` e preserva o criado (o
+// vencimento e do recibo ORIGINAL, nao do reenvio). Fora da janela ou
+// inexistente = registro novo: criado e vezes novos. O RETURNING diz o que
+// aconteceu com ESTE pedido: vezes 1 = criou a linha (debita cota); vezes
+// maior = dedupe (mesmo codigo do primeiro envio, sem debitar).
+const DEDUP_COLS = ["criado", "janela", "versao", "plataforma", "so_maior", "codigo", "fingerprint", "json"];
+const DEDUP_CASO = (c) =>
+  `${c} = CASE WHEN farol_registro.criado > excluded.criado - ${FAROL_DEDUP_JANELA} ` +
+  `THEN farol_registro.${c} ELSE excluded.${c} END`;
+const FAROL_UPSERT =
+  "INSERT INTO farol_registro (criado, janela, pessoa_h, versao, plataforma, so_maior, codigo, fp, fingerprint, vezes, json) " +
+  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?) " +
+  "ON CONFLICT(pessoa_h, fp) DO UPDATE SET " +
+  `vezes = CASE WHEN farol_registro.criado > excluded.criado - ${FAROL_DEDUP_JANELA} ` +
+  "THEN farol_registro.vezes + 1 ELSE 1 END, " +
+  DEDUP_COLS.map(DEDUP_CASO).join(", ") +
+  " RETURNING id, criado, vezes";
+
 // `quem` e a conta ja verificada por quemE (a mesma autenticacao de
 // /v1/registro), NUNCA uma pessoa criada por `registrar`: a rota do Farol nao
 // faz cadastro social. `corpo` e o JSON lido pelo index.js com o teto medido
@@ -197,54 +375,36 @@ export async function rotaFarolRegistro(env, quem, corpo, h, limitar, codigoRegi
     const pessoa_h = await hmacHex(env.FAROL_SAL, conta);
     const fp = (await sha256Hex(fingerprint)).slice(0, 16);
 
-    // Reenvio da mesma falha em 24 h = o MESMO registro: devolve o codigo que
-    // ja existe e so soma `vezes`, sem gastar cota. `vence` nasce de `criado`,
-    // o mesmo relogio da limpeza — nao da hora do reenvio.
-    const ja = await env.DB.prepare(
-      "SELECT id, criado FROM farol_registro WHERE pessoa_h = ? AND fp = ? AND criado > ? ORDER BY criado LIMIT 1"
-    ).bind(pessoa_h, fp, t - FAROL_DEDUP_JANELA).first();
-    if (ja?.id) {
-      await env.DB.prepare("UPDATE farol_registro SET vezes = vezes + 1 WHERE id = ?").bind(ja.id).run();
-      return json({ ok: 1, codigo: codigoRegistro(ja.id), vence: ja.criado + FAROL_RETENCAO, dedup: 1 });
-    }
-
-    // Cotas: le primeiro SEM debitar — um 429 nao pode consumir contador, e um
-    // 5xx de gravacao idem. Os tres contadores so sobem DEPOIS de gravar.
-    const cotas = [["farol:h:" + pessoa_h, FAROL_HORA, 3600],
-                   ["farol:d:" + pessoa_h, FAROL_DIA, 86400],
-                   ["farol:dia", FAROL_DIA_GLOBAL, 86400]];
-    for (const [chave, max, jan] of cotas) {
-      const l = await env.DB.prepare("SELECT n FROM limite WHERE chave = ? AND janela = ?")
-        .bind(chave, Math.floor(t / jan)).first();
-      if ((l?.n || 0) >= max) return erro(max === FAROL_HORA ? "limite" : "limite diario", 429);
-    }
-
-    // Dedupe atomico: indice unico (pessoa_h, fp, janela) + INSERT ON CONFLICT.
-    // Duas gravacoes concorrentes da mesma falha na mesma janela viram UMA
-    // linha — a segunda cai no DO UPDATE e ganha o codigo da primeira.
     const janela = Math.floor(t / FAROL_DEDUP_JANELA);
-    await env.DB.prepare(
-      "INSERT INTO farol_registro (criado, janela, pessoa_h, versao, plataforma, so_maior, codigo, fp, fingerprint, vezes, json) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?) " +
-      "ON CONFLICT(pessoa_h, fp, janela) DO UPDATE SET vezes = vezes + 1"
-    ).bind(
+    const lin = await env.DB.prepare(FAROL_UPSERT).bind(
       t, janela, pessoa_h,
       String(corpo?.cliente?.versao || "").slice(0, 48),
       String(corpo?.aparelho?.plataforma || "").slice(0, 48),
       intOk(corpo?.aparelho?.so_maior) ? corpo.aparelho.so_maior : 0,
       codigo, fp, fingerprint,
       JSON.stringify(corpo)
-    ).run();
-
-    const lin = await env.DB.prepare(
-      "SELECT id, criado, vezes FROM farol_registro WHERE pessoa_h = ? AND fp = ? AND janela = ?"
-    ).bind(pessoa_h, fp, janela).first();
+    ).first();
     if (!lin?.id) return erro("falha ao gravar", 500);
-    // vezes > 1 = outra gravacao ganhou a corrida pelo ON CONFLICT: devolve o
-    // codigo dela (idempotente), nao cria segundo recibo.
+    // vezes > 1 = reenvio dentro da janela (este pedido ou um concorrente):
+    // devolve o codigo do primeiro envio, sem gastar cota — reenvio
+    // deduplicado nunca debita.
     if (lin.vezes > 1)
       return json({ ok: 1, codigo: codigoRegistro(lin.id), vence: lin.criado + FAROL_RETENCAO, dedup: 1 });
-    for (const [chave, max, jan] of cotas) await limitar(env, chave, max, jan, t);
+
+    // Cotas atomicas: `limitar` faz INSERT ON CONFLICT ... RETURNING n numa
+    // instrucao so, entao dois envios simultaneos nao passam do teto por
+    // corrida — um deles le o contador ja incrementado. O resultado e
+    // HONRADO: estourou, a linha recem-criada sai junto com o 429 (recusa nao
+    // deixa registro nem cobra recibo de ninguem; o AND vezes = 1 poupa a
+    // linha se um reenvio ja a deduplicou).
+    const cotas = [["farol:h:" + pessoa_h, FAROL_HORA, 3600],
+                   ["farol:d:" + pessoa_h, FAROL_DIA, 86400],
+                   ["farol:dia", FAROL_DIA_GLOBAL, 86400]];
+    for (const [chave, max, jan] of cotas) {
+      if (await limitar(env, chave, max, jan, t)) continue;
+      await env.DB.prepare("DELETE FROM farol_registro WHERE id = ? AND vezes = 1").bind(lin.id).run();
+      return erro(max === FAROL_HORA ? "limite" : "limite diario", 429);
+    }
     return json({ ok: 1, codigo: codigoRegistro(lin.id), vence: lin.criado + FAROL_RETENCAO });
   } catch (e) {
     // Falha de armazenamento/configuracao responde 5xx no MESMO envelope JSON

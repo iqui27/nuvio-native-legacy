@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS sessao (
 -- Ver migracao-015-ident-hora.sql (contador de verificacao de identidade).
 -- Ver migracao-018-farol.sql (registro estruturado do Farol e correcoes
 -- conhecidas); ids da farol_registro comecam em 2^29 para o codigo de 6
--- caracteres nao colidir com o de `registro`.
+-- caracteres nao colidir com o de `registro`. Em banco que ja tinha a 018
+-- sem a coluna `janela`, quem a cria e a migracao-019-farol-janela.sql.
 CREATE TABLE IF NOT EXISTS farol_registro (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   criado     INTEGER NOT NULL,
@@ -94,7 +95,20 @@ CREATE TABLE IF NOT EXISTS farol_registro (
 );
 CREATE INDEX IF NOT EXISTS farol_fp ON farol_registro (fp, criado);
 CREATE INDEX IF NOT EXISTS farol_criado ON farol_registro (criado);
-CREATE UNIQUE INDEX IF NOT EXISTS farol_dedup ON farol_registro (pessoa_h, fp, janela);
+-- Dedupe atomico por (pessoa_h, fp), sem dia UTC — a janela de 24 h entra no
+-- ON CONFLICT da gravacao. A fusao e a mesma da migracao-018: sobra a linha
+-- mais antiga com a soma dos `vezes`, entao o indice nunca esbarra em
+-- repeticao vinda da 018 sem dedupe.
+UPDATE farol_registro AS r SET vezes = r.vezes + COALESCE((
+  SELECT SUM(o.vezes) FROM farol_registro AS o
+  WHERE o.pessoa_h = r.pessoa_h AND o.fp = r.fp AND o.id > r.id), 0)
+WHERE EXISTS (
+  SELECT 1 FROM farol_registro AS o
+  WHERE o.pessoa_h = r.pessoa_h AND o.fp = r.fp AND o.id > r.id);
+DELETE FROM farol_registro WHERE id NOT IN (
+  SELECT MIN(id) FROM farol_registro GROUP BY pessoa_h, fp);
+DROP INDEX IF EXISTS farol_dedup;
+CREATE UNIQUE INDEX farol_dedup ON farol_registro (pessoa_h, fp);
 -- Ids a partir de 2^29, reservados ANTES da primeira gravacao.
 INSERT INTO sqlite_sequence (name, seq)
   SELECT 'farol_registro', MAX(536870912, COALESCE((SELECT MAX(id) FROM farol_registro), 0))
