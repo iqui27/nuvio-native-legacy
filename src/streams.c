@@ -1,4 +1,5 @@
 #include "streams.h"
+#include "farolanel.h"
 #include "aiostreamsui.h"
 #include "addonmodo.h"
 #include "vaitocarui.h"
@@ -2382,6 +2383,16 @@ static void faixaPontos(const Stream *s, char *dst, size_t tam) {
            !cabeNaAltura(s) ? " over-cap" : foraDaFaixaTamanho(s) == 1 ? " over-size"
            : foraDaFaixaTamanho(s) == 2 ? " under-size" : "");
 }
+static void farolFonteEscolhida(const Stream *w, long pontosFonte) {
+  char token[FAROL_TOKEN_N];
+  snprintf(token, sizeof token, "%s_%s_%s_%s",
+           w->altura >= 2160 ? "2160p" : w->altura >= 1080 ? "1080p" : w->altura >= 720 ? "720p" : "sd",
+           (w->badges & (badges_bit("v-hdr") | badges_bit("v-hdr10") | badges_bit("v-hdr10plus") | badges_bit("v-hlg"))) ? "hdr" : "sdr",
+           w->dolbyVision ? "dv" : "nodv",
+           (w->badges & badges_bit("a-ddp")) ? "eac3" : (w->badges & badges_bit("a-dts")) ? "dts" : "outro");
+  farol_ev(FM_FONTE, FE_FONTE_ESCOLHIDA, 0, pontosFonte, w->tamanhoMB / 102.4, token);
+}
+
 static void logarEscolha(int escolhida, int pref, int modoPrimeira) {
   char a[96], b[96] = "none", fit[96];
   int vice = -1, i, k;
@@ -2400,6 +2411,7 @@ static void logarEscolha(int escolhida, int pref, int modoPrimeira) {
              foraDaFaixaTamanho(w) ? " (winner outside: nothing inside)" : "");
   }
   pe = pontos(w);
+  farolFonteEscolhida(w, pe);
   for (k = 0; k < n; k++) {
     long p;
     i = ORD(k);
@@ -2631,6 +2643,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
     if (!s) { resultado = FONTEFALHA_FIM; break; }
     if (!fontefalha_tentar(sessao, &c[r.candidata], r.servico)) { resultado = FONTEFALHA_FIM; break; }
     if (falhaCancelada(geracao, cancelado, ctx)) { resultado = FONTEFALHA_FIM; break; }
+    farol_ev(FM_FONTE, FE_FONTE_PROXIMA, 0, fontefalha_tentativas(sessao), FONTEFALHA_MAX_LINKS, "proxima");
     conferenciaPublicar(r.indice, geracao, FA_CONFERINDO);
     if (r.servico >= 0) {
       ok = debrid_resolver_servico_cache(r.servico, s->infoHash, s->fileIdx,
@@ -2652,6 +2665,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
     snprintf(url, tam, "%s", resolvida);
     if (indice) *indice = r.indice;
     if (servico) *servico = r.servico;
+    farolFonteEscolhida(s, pontos(s));
     resultado = FONTEFALHA_PROXIMA;
     break;
   }

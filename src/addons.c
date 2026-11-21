@@ -1,4 +1,5 @@
 #include "addons.h"
+#include "farolanel.h"
 #include "plugins.h"
 #include "idbase.h"
 #include "armids.h"
@@ -995,7 +996,19 @@ int addons_faltam(char *nomes, unsigned tam) { return addons_faltam_tipo(nomes, 
 // esperar por ele so gasta o prazo inteiro. 0 = ninguem e ignorado (Instantaneo
 // nao espera ninguem; "Todos os add-ons" e a pessoa pedindo para esperar).
 // Ele segue sendo consultado e, quando responde, entra na lista como sempre.
-static unsigned espDecisaoMs;
+static atomic_uint espDecisaoMs;
+static void registrarLatencia(const char *chave, unsigned ms, int respondeu) {
+  unsigned limite = atomic_load(&espDecisaoMs);
+  addonstats_registrar(chave, ms, respondeu);
+  if (!respondeu || (limite && ms > limite)) {
+    unsigned hash = 2166136261u;
+    char token[24];
+    for (const unsigned char *p = (const unsigned char *)chave; *p; p++)
+      hash = (hash ^ *p) * 16777619u;
+    snprintf(token, sizeof token, "addon_%08x", hash);
+    farol_ev(FM_ADDON, FE_ADDON_LENTO, 1, ms, !respondeu, token);
+  }
+}
 void addons_definir_espera_decisao(int ms) { espDecisaoMs = ms > 0 ? (unsigned)ms : 0; }
 static int naoSegura(const char *nome) {
   return nome && nome[0] && addonstats_ignoravel(nome, espDecisaoMs);
@@ -3254,7 +3267,7 @@ static void avisoExtra(void *u, int k, const char *nome, const char *id,
   if ((estado == 2 || estado == 3) && nome && !(cancelaExtra(p)))
     if (nv_perfil_sessao_travar(p->sessao)) {
       char chave[32]; chaveEstatistica(nome, 1, chave);
-      addonstats_registrar(chave, (unsigned)(SDL_GetTicks() - progInicio), estado == 2);
+      registrarLatencia(chave, (unsigned)(SDL_GetTicks() - progInicio), estado == 2);
       nv_perfil_sessao_destravar();
     }
   if (nv_perfil_sessao_travar(p->sessao)) {
@@ -3319,7 +3332,7 @@ static void *fioExtra(void *u) {
     for (i = 0; i < ADD_EXTRA_MAX; i++)
       if (progEstadoEx[i] == 1 && progNomeEx[i][0]) {
         char chave[32]; chaveEstatistica(progNomeEx[i], 1, chave);
-        addonstats_registrar(chave, (unsigned)(SDL_GetTicks() - progInicio), 0);
+        registrarLatencia(chave, (unsigned)(SDL_GetTicks() - progInicio), 0);
       }
     pthread_mutex_unlock(&progTrava);
     nv_perfil_sessao_destravar();
@@ -3477,7 +3490,7 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
         const AddonPedido *a = &c.origens[idx];
         if (c.versao == versaoLista && idx < nAddon && !strcmp(addon[idx].base, a->base)) {
           if (c.progresso)
-            addonstats_registrar(a->estatistica,
+            registrarLatencia(a->estatistica,
                 c.baldes[q].respondeu ? c.baldes[q].ms : (unsigned)(SDL_GetTicks() - c.inicio),
                 c.baldes[q].respondeu);
           if (c.baldes[q].respondeu) addon[idx].mudoSeg = 0;
@@ -3518,6 +3531,9 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
   // Cancelada, a lista pode estar pela metade: nao e resposta, e lixo.
   if (!nv_perfil_sessao_atual(sessao) || (cancelado && cancelado(ctx))) { free(achados); return -1; }
   if (!progresso) stream_preparar_dica_p2p(achados, n);
+  if (progresso)
+    farol_ev(FM_ADDON, FE_ADDON_BUSCA, 0, SDL_GetTicks() - c.inicio,
+             (rs ? rs->semResposta : 0) + (rs && rs->extraIncompleta), "busca");
   *saida = achados;
   return n;
 }

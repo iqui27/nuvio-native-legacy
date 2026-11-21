@@ -1,4 +1,5 @@
 #include "debrid.h"
+#include "farolanel.h"
 #include "rede.h"
 #include "js.h"
 #include <stdio.h>
@@ -153,11 +154,12 @@ static int contextoVale(void) {
   pthread_mutex_unlock(&chaveTrava);
   return vale;
 }
-static int semPlanoMarcar(int q, int status) {
+static int semPlanoMarcar(int q, int status, int http) {
   int zero = 0, mudou;
   pthread_mutex_lock(&chaveTrava);
   mudou = contextoValeSemTrava(contextoDoFio()) &&
           atomic_compare_exchange_strong(&semPlano[q], &zero, status);
+  if (mudou) farol_ev(FM_DEBRID, FE_DEBRID, 1, http, q, status == 2 ? "recusa" : "sem_plano");
   pthread_mutex_unlock(&chaveTrava);
   return mudou;
 }
@@ -619,14 +621,14 @@ static int falha(int q, const char *rota, int st, const char *r) {
            nomeServ[q], rota, st, e[0] ? e : "-", d[0] ? d : "-");
   }
   if (debrid_eh_sem_plano(st, r)) {
-    if (semPlanoMarcar(q, 1))
+    if (semPlanoMarcar(q, 1, st))
       printf("[debrid] %s: conta sem plano para a API; fora pelo resto da sessao\n",
              nomeServ[q]);
   }
   if (q == SAD) {
     // chave recusada e diferente de plano (ver debrid_sem_plano_frase)
     if (r && (strstr(r, "AUTH_BAD_APIKEY") || strstr(r, "AUTH_MISSING_APIKEY"))) {
-      if (semPlanoMarcar(q, 2))
+      if (semPlanoMarcar(q, 2, st))
         printf("[debrid] AllDebrid: chave recusada; fora pelo resto da sessao\n");
     }
     if (st >= 200 && st < 300) st = adStatusSintetico(st, r);
@@ -1368,6 +1370,7 @@ static int volta(const char *infoHash, int fileIdx, char *url, unsigned n,
       pthread_mutex_lock(&chaveTrava);
       int recusou = contextoValeSemTrava(ctx) && atomic_load(&geracao) == g
           && atomic_compare_exchange_strong(&recusado[q], &zero, -deu);
+      if (recusou) farol_ev(FM_DEBRID, FE_DEBRID, 1, -deu, q, "recusa");
       pthread_mutex_unlock(&chaveTrava);
       if (recusou)
         printf("[debrid] %s: recusa da conta (HTTP %d), fora do resto desta busca\n",
@@ -1417,7 +1420,8 @@ int debrid_resolver_servico_cache(int servico, const char *infoHash, int fileIdx
   pthread_mutex_lock(&chaveTrava);
   if (!contextoValeSemTrava(contextoDoFio())) { r = 0; fora = 0; url[0] = 0; }
   if (r != 1 && (fora & (1 << servico))) {
-    atomic_fetch_add(&foraCache, 1);
+    if (!atomic_fetch_add(&foraCache, 1))
+      farol_ev(FM_DEBRID, FE_DEBRID, 1, 0, servico, "fora_cache");
     if (foraResultado) *foraResultado = 1;
   }
   pthread_mutex_unlock(&chaveTrava);
@@ -1435,7 +1439,11 @@ int debrid_resolver_cache(const char *infoHash, int fileIdx, char *url, unsigned
   r = volta(infoHash, fileIdx, url, n, 0, -1, NULL, NULL, &fora, NULL);
   pthread_mutex_lock(&chaveTrava);
   if (!contextoValeSemTrava(contextoDoFio())) { r = 0; fora = 0; url[0] = 0; }
-  if (r != 1 && fora) atomic_fetch_add(&foraCache, 1);
+  if (r != 1 && fora && !atomic_fetch_add(&foraCache, 1)) {
+    int q = 0;
+    while (q < SN - 1 && !(fora & (1 << q))) q++;
+    farol_ev(FM_DEBRID, FE_DEBRID, 1, 0, q, "fora_cache");
+  }
   pthread_mutex_unlock(&chaveTrava);
   if (foraResultado && r != 1 && fora) {
     int ativos = 0;

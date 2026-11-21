@@ -11,5 +11,5 @@ task_dir="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-debrid.XXXXXX")"
 trap 'rm -rf "$task_dir"' EXIT
 export NUVIO_DEBRID_TEST_LOG="$task_dir/saida.txt"
 cc ${flags[@]+"${flags[@]}"} -Dtime=debrid_test_time -pthread -O1 -g -Wall -Wextra -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wno-deprecated-declarations \
-  src/debrid.c src/stream_parse.c src/fontefiltro.c src/linguas.c src/js.c src/redeurl.c tests/debrid.c -o "$task_dir/teste"
+  src/debrid.c src/farolanel.c src/stream_parse.c src/fontefiltro.c src/linguas.c src/js.c src/redeurl.c tests/debrid.c -o "$task_dir/teste"
 "$task_dir/teste"
