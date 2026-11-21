@@ -35,7 +35,10 @@ farol="src/farolerro.c src/farolanel.c src/fontesonda.c"
 # de video_android_retomada.c. Os wraps (--wrap) fazem a entrega do Media3
 # acontecer dentro do classificador do fio do app — a janela da corrida do
 # erroTxt — e exigem o token da falha que disparou a decisao.
+# (-U_FORTIFY_SOURCE: com o fortify do gcc o snprintf vira __snprintf_chk e o
+#  --wrap nao pega — sem ele a barreira do erroTxt nao engrena.)
 "$ccbin" "${flags[@]}" -Isrc $sdl "${jni[@]}" "${gc[@]}" -DTEST_ANDROID -DNV_ANDROID \
+  -U_FORTIFY_SOURCE \
   -Wl,--wrap=snprintf -Wl,--wrap=farolerro_ler \
   tests/farol_produtores_tv.c src/capmkv.c src/mkv.c \
   tests/capmkv_stub.c $farol -lpthread -lm -o "$work/android"
