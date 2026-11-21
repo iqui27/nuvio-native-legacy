@@ -174,7 +174,13 @@ static int cicloTirar(Uint32 *tipo) {
 // 2 = armado pela pausa — um quadro valido AINDA na pausa, com a superficie
 // antiga corrente, nao pode consumir a flag antes de o host recriar a janela:
 // so limpa quando o handle troca ou depois que nv_tpk_retomou rearma em 1.
+// F62: a consulta EGL roda solta da trava. Um arme novo (pausa, retomada,
+// adocao do arranque, rearme por bind recusado) incrementa a geracao e
+// invalida a medida que um quadro em voo capturou antes dele: o quadro so
+// consome a flag e publica o cache se a geracao nao mudou — comparacao e
+// consumo na mesma secao critica.
 static int revalidarSuperficie;
+static unsigned geracaoSuperficie;
 static void appEsperaVez(int entregou) {
   pthread_mutex_lock(&trava);
   if (entregou) { vez = VEZ_NUI; pendente = 1; pthread_cond_broadcast(&mudou); }
@@ -309,9 +315,11 @@ void nv_tpk_config(int espera, int zero) { esperaMs = espera; swapZero = zero; }
 __attribute__((visibility("default")))
 int nv_tpk_quadro(void) {
   int r, refazSup = 0;
+  unsigned geracao0;
   if (contextoFalhou) return -1;
   pthread_mutex_lock(&trava);
   refazSup = revalidarSuperficie && vez != VEZ_APP;
+  geracao0 = geracaoSuperficie;
   pthread_mutex_unlock(&trava);
   if (ctx == EGL_NO_CONTEXT) {
     dpy = eglGetCurrentDisplay();
@@ -373,6 +381,7 @@ int nv_tpk_quadro(void) {
           pthread_mutex_lock(&trava);
           telaW = (int)sw; telaH = (int)sh;
           revalidarSuperficie = 1;
+          geracaoSuperficie++;
           pthread_mutex_unlock(&trava);
           printf("[tpk] tela adotada da superficie: %dx%d\n", telaW, telaH);
         }
@@ -396,15 +405,23 @@ int nv_tpk_quadro(void) {
         eglQuerySurface(d2, s2, EGL_HEIGHT, &sh)) {
       if (d2 != dpy || s2 != sup || (c2 != EGL_NO_CONTEXT && c2 != ctx))
         printf("[tpk] EGL relido na retomada: dpy=%p sup=%p ctx=%p\n", d2, s2, c2);
+      int medidaViva;
       pthread_mutex_lock(&trava);
-      // F59: com a flag no estado 2 (pausa) ela nao se consome aqui se a
-      // superficie ainda e a mesma — podemos estar num quadro da pausa, antes
-      // de o host recriar a janela.
-      if (revalidarSuperficie != 2 || s2 != sup) revalidarSuperficie = 0;
-      dpy = d2; sup = s2; nuiCorrente = 1;
-      if (c2 != EGL_NO_CONTEXT) ctx = c2;
+      // F62: se a geracao mudou durante a consulta (arme novo em outro fio),
+      // esta medida e da superficie anterior — nao consome o rearme novo nem
+      // publica o cache; a flag segue armada e o proximo quadro remede.
+      medidaViva = geracaoSuperficie == geracao0;
+      if (medidaViva) {
+        // F59: com a flag no estado 2 (pausa) ela nao se consome aqui se a
+        // superficie ainda e a mesma — podemos estar num quadro da pausa, antes
+        // de o host recriar a janela.
+        if (revalidarSuperficie != 2 || s2 != sup) revalidarSuperficie = 0;
+        dpy = d2; sup = s2;
+        if (c2 != EGL_NO_CONTEXT) ctx = c2;
+      }
+      nuiCorrente = 1;
       pthread_mutex_unlock(&trava);
-      if (sw >= 640 && sh >= 360 && ((int)sw != telaW || (int)sh != telaH)) {
+      if (medidaViva && sw >= 640 && sh >= 360 && ((int)sw != telaW || (int)sh != telaH)) {
         pthread_mutex_lock(&trava);
         telaW = (int)sw; telaH = (int)sh;
         pthread_mutex_unlock(&trava);
@@ -428,9 +445,6 @@ int nv_tpk_quadro(void) {
       r = terminou ? -1 : 0;
       nPulados++;
       pthread_mutex_unlock(&trava);
-#ifdef NV_TPK40
-      if (!r) r = 1; // OnUpdate para de chamar no false (TVGLApplication)
-#endif
       return r;
     }
   }
@@ -444,13 +458,10 @@ int nv_tpk_quadro(void) {
   // F59: o bind pode ser recusado porque a superficie em cache morreu — sem
   // conferir o retorno o quadro pendente trocaria numa superficie destruida.
   if (!nuiCorrente && !eglMakeCurrent(dpy, sup, sup, ctx)) {
-    if (!revalidarSuperficie) revalidarSuperficie = 1;
+    if (!revalidarSuperficie) { revalidarSuperficie = 1; geracaoSuperficie++; }
     r = terminou ? -1 : 0;
     nPulados++;
     pthread_mutex_unlock(&trava);
-#ifdef NV_TPK40
-    if (!r) r = 1;
-#endif
     return r;
   }
   nuiCorrente = 1;
@@ -470,7 +481,7 @@ int nv_tpk_quadro(void) {
       // segue visivel, e nunca lixo do buffer velho (o "chuvisco").
       glClearColor(0, 0, 0, 0);
       glClear(GL_COLOR_BUFFER_BIT);
-      return 1; // TVGLApplication stops callbacks on false (Tizen 4/5).
+      return 1; // r>0: o host apresenta o clear (OnUpdate com handles, F62).
 #else
       glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
 #endif
@@ -501,13 +512,10 @@ int nv_tpk_quadro(void) {
   // F59: idem — bind recusado nao autoriza o swap; o quadro pendente fica
   // para o proximo callback com a releitura rearmada.
   if (!eglMakeCurrent(dpy, sup, sup, ctx)) {
-    if (!revalidarSuperficie) revalidarSuperficie = 1;
+    if (!revalidarSuperficie) { revalidarSuperficie = 1; geracaoSuperficie++; }
     r = terminou ? -1 : 0;
     nPulados++;
     pthread_mutex_unlock(&trava);
-#ifdef NV_TPK40
-    if (!r) r = 1;
-#endif
     return r;
   }
   nuiCorrente = 1;
@@ -587,7 +595,7 @@ void nv_tpk_ciclo(int memoria) {
   cicloEmpurrar(memoria ? SDL_APP_LOWMEMORY : SDL_APP_WILLENTERBACKGROUND);
   // #754/F59: voltar do 2o plano remede o EGL; o 2 so se consome com a
   // superficie trocada ou depois da retomada, nunca num quadro da pausa.
-  if (!memoria) revalidarSuperficie = 2;
+  if (!memoria) { revalidarSuperficie = 2; geracaoSuperficie++; }
   pthread_cond_broadcast(&mudou);
   pthread_mutex_unlock(&trava);
 }
@@ -600,7 +608,10 @@ void nv_tpk_retomou(void) {
   cicloEmpurrar(SDL_APP_DIDENTERFOREGROUND);
   // F59: a retomada (re)arma a releitura — se um quadro da pausa consumiu a
   // flag na superficie antiga, o primeiro quadro da volta ainda readota.
+  // F62: a geracao sobe junto — um quadro em voo que mediu antes deste arme
+  // nao pode consumi-lo com a medida da superficie anterior.
   revalidarSuperficie = 1;
+  geracaoSuperficie++;
   pthread_cond_broadcast(&mudou);
   pthread_mutex_unlock(&trava);
 }

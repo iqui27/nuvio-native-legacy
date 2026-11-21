@@ -69,6 +69,8 @@ globals_text = globals_text.replace('static char erro[512];', '')
 # A flag #754 pode ficar fora deste recorte (perto da fila de ciclo): declara aqui.
 globals_text = re.sub(r'static int revalidarSuperficie;[^\n]*', '', globals_text)
 globals_text += '\nstatic int revalidarSuperficie;\n'
+# Idem para a geracao da superficie (#754/F62): mora junto da flag no fonte.
+globals_text += 'static unsigned geracaoSuperficie;\n'
 (w/'egl-test.c').write_text('''#include <assert.h>
 #include <stdio.h>
 #include <string.h>
