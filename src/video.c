@@ -4056,8 +4056,14 @@ static int hlsAbrir(void) {
     .buffer_mib = hlsBufferMib(),
     .resume_s = hls.switchingAudio ? hls.pos : 0,
     .video_end = hls.videoEnd,
-    .ts = ajustes_webos_hls_ts(),
+    .ts = ajustes_webos_hls_ts() && webosMaior() < 11,
   };
+  // webOS 11 (LG C5) never starts local HLS in MPEG-TS, neither here nor in
+  // Stremio Origin: the player fetches the segments but never prerolls.
+  if (ajustes_webos_hls_ts() && !options.ts) {
+    printf("[webos-hls] MPEG-TS does not start on webOS %d: using fMP4\n", webosMaior());
+    fflush(stdout);
+  }
   char langs[64];
   DtsTrack hint = {0};
   if (external) {
