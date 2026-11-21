@@ -1922,7 +1922,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("DTS via HLS (experimental)", V_LIGA, 2),
   ESC("Dolby Vision P7 via HLS (experimental)", V_LIGA, 2),
   ESC("HLS (experimental)", V_LIGA, 2),
-  ESC("HLS: MPEG-TS (test)", V_LIGA, 2),
+  ESC("HLS: MPEG-TS (Experimental)", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -7150,6 +7150,11 @@ static const char *rotuloOpcao(int op) {
     snprintf(hls, sizeof hls, "HLS (%s)", i18n("Experimental"));
     return hls;
   }
+  if (op == AJ_WEBOS_HLS_TS) {
+    static char ts[96];
+    snprintf(ts, sizeof ts, "HLS: MPEG-TS (%s)", i18n("Experimental"));
+    return ts;
+  }
   if(op==AJ_IPTV_ACOES)return iptvAlvo.nome;
   if(op==AJ_IPTV_CANCELAR && !iptvForm.nova)return "Voltar";
   if (op == AJ_FALHA_ADDON_LIMITE && faAddonEditar[0]) return faAddonTitulo;
@@ -8274,8 +8279,8 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
-    case AJ_WEBOS_HLS_TS: return "Test: with HLS On, send MPEG-TS segments (as on Tizen) instead of fMP4. Dolby Vision P8.1 is marked in the stream table. Ignored on webOS 11 and newer, where the TV player does not start MPEG-TS: fMP4 is used there. Reopen the video to apply.";
-    case AJ_WEBOS_HLS_MODE: return "Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas exige mais largura de banda. Use só se tiver problemas. Reabra o vídeo para aplicar.";
+    case AJ_WEBOS_HLS_TS: return "Use HLS MPEG-TS for the DTS and Dolby Vision P7 conversions (requires HLS on). For older LG TVs with webOS 6 and earlier. Reopen the video to apply.";
+    case AJ_WEBOS_HLS_MODE: return "Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on older devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.";
     case AJ_DV7: return "Converte MKV Dolby Vision perfil 7 para 8.1. Mantém o vídeo base e os metadados dinâmicos; descarta a camada de melhoria, incluindo FEL. Vale para o próximo vídeo.";
     case AJ_DV_AUDIO_FIXO: return "Original audio may reload video when switching formats. AAC stereo / Dolby Digital 5.1 converts supported tracks for smoother switching. Conversion does not preserve lossless audio or Atmos/DTS:X metadata. Reopen the video to apply.";
     case AJ_MP4_BD_TEST: return "Helps play compatible Dolby Vision MP4 files that fail to open normally. Off by default. Reopen the video to apply.";
