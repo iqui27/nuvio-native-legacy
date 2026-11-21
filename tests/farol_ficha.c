@@ -217,10 +217,10 @@ static void testarCatItem(void) {
   // Estavel: mesmo item, mesma ficha; nome diferente, id diferente.
   assert(farolficha_ler_item(&ci, &f2) == 1 && memcmp(&f, &f2, sizeof f) == 0);
   assert(mapa_hash_nome("Denis Villeneuve") != mapa_hash_nome("D. Villeneuve"));
-  // A chave e negativa e identifica o titulo (hash do imdb).
+  // A chave e negativa e identifica o item (hash do imdb, bit 30 ligado).
   assert(farolficha_chave(&f) < 0);
   assert(farolficha_chave(&f) == -(((int64_t)FF_FILME << 32) |
-        (uint32_t)(mapa_hash_titulo("tt1392214") & 0x7fffffff)));
+        (uint32_t)(0x40000000u | (mapa_hash_titulo("tt1392214") & 0x3fffffffu))));
 
   // Com id do TMDB resolvido no item, a chave volta a ser a positiva.
   ci.tmdb = 146233;
@@ -233,6 +233,84 @@ static void testarCatItem(void) {
   snprintf(ci.tipo, sizeof ci.tipo, "series");
   assert(farolficha_ler_item(&ci, &f2) == 1 && f2.tmdb == 70523);
   assert(f2.tipo == FF_SERIE && farolficha_chave(&f2) == chave(FF_SERIE, 70523));
+}
+
+// O campo `genero` do CatItem tem dois formatos (farolficha.c:ehRotuloTipo):
+// com o rotulo do tipo na frente (pacote/Trakt) e a lista crua, que e o que
+// Jellyfin, Emby e Plex gravam. Nenhum dos dois pode perder genero.
+static void testarGeneroDoisFormatos(void) {
+  static CatItem ci;
+  memset(&ci, 0, sizeof ci);
+  snprintf(ci.titulo, sizeof ci.titulo, "Item");
+  snprintf(ci.tipo, sizeof ci.tipo, "movie");
+  snprintf(ci.imdb, sizeof ci.imdb, "tt0000001");
+
+  // Lista crua, um genero so: "Drama" inteiro entra (era o 1o bug da r2).
+  snprintf(ci.genero, sizeof ci.genero, "Drama");
+  assert(farolficha_ler_item(&ci, &f) == 1);
+  assert(f.nGenero == 1 && f.genero[0] == (int32_t)mapa_hash_nome("Drama"));
+
+  // Lista crua com dois, no separador de espaco simples do Jellyfin/Plex.
+  snprintf(ci.genero, sizeof ci.genero, "Drama \xc2\xb7 Crime");
+  assert(farolficha_ler_item(&ci, &f) == 1);
+  assert(f.nGenero == 2 && f.genero[0] == (int32_t)mapa_hash_nome("Drama") &&
+         f.genero[1] == (int32_t)mapa_hash_nome("Crime"));
+
+  // Com rotulo, inclusive localizado ("TV Show", "Serie"): o tipo sai e os
+  // generos ficam — o formato que o pacote grava continua igual.
+  snprintf(ci.genero, sizeof ci.genero, "Filme  \xc2\xb7  Crime  \xc2\xb7  Drama");
+  assert(farolficha_ler_item(&ci, &f) == 1);
+  assert(f.nGenero == 2 && f.genero[0] == (int32_t)mapa_hash_nome("Crime"));
+  snprintf(ci.genero, sizeof ci.genero, "TV Show  \xc2\xb7  Drama");
+  assert(farolficha_ler_item(&ci, &f) == 1);
+  assert(f.nGenero == 1 && f.genero[0] == (int32_t)mapa_hash_nome("Drama"));
+
+  // Rotulo sozinho (o Trakt grava assim na watchlist): nenhum genero.
+  snprintf(ci.genero, sizeof ci.genero, "Programa de TV");
+  assert(farolficha_ler_item(&ci, &f) == 1);
+  assert(f.nGenero == 0);
+}
+
+// Ids distintos de servidor (jf:/em:/px:) geram chaves distintas, mesmo com
+// titulo e ano iguais — e nao colidem com o espaco titulo+ano nem com TMDB.
+static void testarChaveServidor(void) {
+  static CatItem a, b;
+  const char *ids[][2] = { { "jf:01234567.abcd", "jf:01234567.abce" },
+                           { "em:01234567.abcd", "em:01234567.abce" },
+                           { "px:01234567.20",   "px:01234567.21" } };
+  int i;
+  for (i = 0; i < 3; i++) {
+    memset(&a, 0, sizeof a); memset(&b, 0, sizeof b);
+    snprintf(a.titulo, sizeof a.titulo, "Mesmo Nome");
+    snprintf(b.titulo, sizeof b.titulo, "Mesmo Nome");
+    snprintf(a.tipo, sizeof a.tipo, "movie");
+    snprintf(b.tipo, sizeof b.tipo, "movie");
+    snprintf(a.meta, sizeof a.meta, "2020");
+    snprintf(b.meta, sizeof b.meta, "2020");
+    snprintf(a.imdb, sizeof a.imdb, "%s", ids[i][0]);
+    snprintf(b.imdb, sizeof b.imdb, "%s", ids[i][1]);
+    assert(farolficha_ler_item(&a, &f) == 1);
+    assert(farolficha_ler_item(&b, &f2) == 1);
+    assert(f.reserva > 0 && f2.reserva > 0 && f.reserva != f2.reserva);
+    assert(farolficha_chave(&f) != farolficha_chave(&f2));
+    // Id estavel: bit 30 ligado; titulo+ano usa o outro espaco.
+    assert((f.reserva & 0x40000000) != 0 && (f2.reserva & 0x40000000) != 0);
+    b.imdb[0] = 0;
+    assert(farolficha_ler_item(&b, &f2) == 1);
+    assert(!(f2.reserva & 0x40000000));
+    assert(farolficha_chave(&f) != farolficha_chave(&f2));
+  }
+  // O mesmo imdb nos dois caminhos (item e detalhe sem tmdb) reconcilia.
+  assert(farolficha_ler_tmdb(
+      "{\"imdb_id\":\"tt7654321\",\"original_language\":\"en\","
+      "\"genres\":[{\"id\":18,\"name\":\"Drama\"}]}", 0, &tmp, &f) == 1);
+  assert(f.tmdb == 0 && f.reserva == (int32_t)(0x40000000u |
+         (mapa_hash_titulo("tt7654321") & 0x3fffffffu)));
+  memset(&a, 0, sizeof a);
+  snprintf(a.titulo, sizeof a.titulo, "Qualquer");
+  snprintf(a.imdb, sizeof a.imdb, "tt7654321");
+  assert(farolficha_ler_item(&a, &f2) == 1);
+  assert(f.reserva == f2.reserva);
 }
 
 static FarolFichaCache c, c2;
@@ -344,6 +422,16 @@ static void testarCache(const char *dir) {
     fputc(0xAA, fp);
     fclose(fp);
     assert(farolficha_ler_arquivo(&c, ruim) == 0 && access(ruim, F_OK) != 0);
+    // Duas fichas com a mesma chave: o gravador nao produz; corrompido.
+    fp = fopen(ruim, "wb"); assert(fp);
+    memcpy(hdr, "FFICHA\x00\x01", 8);
+    hdr[8] = 2; hdr[9] = 0; hdr[10] = 96; hdr[11] = 0;
+    fwrite(hdr, 1, 12, fp);
+    f = ficha(1); f.nota = 80; fwrite(&f, 1, sizeof f, fp);
+    f.nota = 10;                 fwrite(&f, 1, sizeof f, fp);
+    fclose(fp);
+    assert(farolficha_ler_arquivo(&c, ruim) == 0 && c.n == 0);
+    assert(access(ruim, F_OK) != 0);
   }
 
   // Cache vazio grava um cabecalho valido que volta com n == 0.
@@ -366,6 +454,8 @@ int main(void) {
   testarAnime();
   testarTruncado();
   testarCatItem();
+  testarGeneroDoisFormatos();
+  testarChaveServidor();
   testarCache(dir);
 
   rmdir(dir);

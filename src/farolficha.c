@@ -36,6 +36,23 @@ int64_t farolficha_chave(const FarolFicha *f) {
   return 0;
 }
 
+// Reserva sem TMDB, em DOIS espacos que nao se tocam: o bit 30 ligado marca
+// "hash de identificador" — o imdb do item ("tt..."), que ja e a identidade
+// estavel que a reserva precisa, e tambem os ids dos servidores de midia
+// ("jf:<srv>.<id>", "em:...", "px:..."), que nunca sao vazios e distinguem
+// duas obras de mesmo titulo e ano. O bit 30 apagado e o hash de
+// titulo+ano, o ultimo recurso quando nao ha id nenhum. Nenhum dos dois
+// espacos encosta no das chaves POSITIVAS de TMDB (farolficha_chave).
+static int32_t reservaDeId(const char *id) {
+  return (int32_t)(0x40000000u | (mapa_hash_titulo(id) & 0x3fffffffu));
+}
+
+static int32_t reservaDeTitulo(const char *titulo, int ano) {
+  unsigned h = mapa_hash_titulo(titulo) ^ ((unsigned)ano * 2654435761u);
+  h &= 0x3fffffffu;
+  return (int32_t)(h ? h : 1);
+}
+
 // ---------------------------------------------------------------------------
 // LEITURA
 
@@ -59,16 +76,49 @@ int farolficha_ler_tmdb(const char *json, int serie, FarolFichaTmp *tmp, FarolFi
   f->fonte = FF_DE_TMDB;
   // Detalhe sem id do TMDB mas com imdb (raro, mas a reserva precisa de uma
   // identidade): a chave fica o hash do imdb, como no caminho do catalogo.
-  if (!f->tmdb && tmp->imdb[0]) {
-    f->reserva = (int32_t)(mapa_hash_titulo(tmp->imdb) & 0x7fffffff);
-    if (!f->reserva) f->reserva = 1;
-  }
+  if (!f->tmdb && tmp->imdb[0]) f->reserva = reservaDeId(tmp->imdb);
   return 1;
 }
 
+// O campo `genero` do CatItem tem DOIS formatos e o catalogo nao diz qual:
+//   "Filme  ·  Crime  ·  Drama" — pacote, Cinemeta/descoberta e Trakt: o
+//     PRIMEIRO trecho e o rotulo do tipo (ja com i18n() aplicado), que a
+//     telas descartam e mapa_generos_locais pula;
+//   "Drama" | "Drama · Crime" — Jellyfin, Emby e Plex: a lista crua, sem
+//     rotulo nenhum, onde o primeiro trecho JA e genero.
+// O rotulo so pode ser o primeiro trecho: ele sendo palavra de tipo o
+// formato e o do pacote e ele sai; nao sendo, a lista inteira e de generos
+// — "Drama" sozinho nao pode virar nGenero 0.
+static int igualSemCaixa(const char *a, const char *b) {
+  for (; *a && *b; a++, b++)
+    if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) return 0;
+  return !*a && !*b;
+}
+
+// Os rotulos possiveis: as fontes ("Filme", "Programa de TV", "Série") e o
+// que i18n() devolve nos idiomas distribuidos (idioma_*.h), mais os ingleses
+// que produtores e versoes antigas gravam (biblioteca.c:ehPalavraDeTipo). Se
+// entrar idioma novo o rotulo vira um genero A MAIS, nunca um a menos.
+static int ehRotuloTipo(const char *seg) {
+  static const char *T[] = {
+    "Filme", "Movie", "Film", "Filmas", "Película", "Phim", "Ταινία",
+    "Филм", "Фильм", "Фільм", "فيلم", "映画", "电影", "電影",
+    "Programa de TV", "TV Show", "Dizi", "Emisiune TV", "Phim bộ",
+    "Serial", "Serial TV", "Serialas", "Serie", "Serie TV", "Serija",
+    "Seriál", "Sorozat", "TV-Sendung", "TV-program", "Tv-program",
+    "Émission de TV", "Σειρά", "Сериал", "Телепередача", "Телепрограма",
+    "برنامج تلفزيوني", "テレビ番組", "电视节目", "電視節目",
+    "Série", "Series", "Show", "Серіал", "シリーズ", "剧集", "劇集"
+  };
+  size_t i;
+  for (i = 0; i < sizeof T / sizeof T[0]; i++)
+    if (igualSemCaixa(seg, T[i])) return 1;
+  return 0;
+}
+
 int farolficha_ler_item(const CatItem *ci, FarolFicha *f) {
-  MapaEtiqueta gen[FAROL_FICHA_GEN];
-  int i, n = 0;
+  char buf[160], *p;
+  int i, primeiro = 1;
   if (!ci || !f) return 0;
   memset(f, 0, sizeof *f);
   f->tipo = !strcmp(ci->tipo, "series") ? FF_SERIE : FF_FILME;
@@ -76,9 +126,22 @@ int farolficha_ler_item(const CatItem *ci, FarolFicha *f) {
   else if (!strncmp(ci->imdb, "tmdb:", 5)) f->tmdb = (int32_t)atol(ci->imdb + 5);
   f->ano  = clamp16(mapa_ano_meta(ci->meta));
   f->nota = clamp8(ci->nota);
-  mapa_generos_locais(ci->genero, gen, &n, FAROL_FICHA_GEN);
-  for (i = 0; i < n; i++) f->genero[i] = (int32_t)gen[i].id;
-  f->nGenero = (uint8_t)n;
+  // Dois formatos de `genero` (ver ehRotuloTipo): o primeiro trecho so sai
+  // quando e o rotulo do tipo; a lista crua do servidor entra inteira. Cada
+  // nome vira mapa_hash_nome — a convencao de id negativo da reserva local.
+  snprintf(buf, sizeof buf, "%s", ci->genero);
+  for (p = buf; p && *p && f->nGenero < FAROL_FICHA_GEN; ) {
+    char *sep = strstr(p, "\xc2\xb7"), *tok;
+    if (sep) *sep = 0;
+    tok = p;
+    while (*tok == ' ') tok++;
+    { size_t k = strlen(tok); while (k && tok[k - 1] == ' ') tok[--k] = 0; }
+    if (tok[0] && !(primeiro && ehRotuloTipo(tok)))
+      f->nGenero = (uint8_t)addId(f->genero, f->nGenero, FAROL_FICHA_GEN,
+                                  (int32_t)mapa_hash_nome(tok));
+    primeiro = 0;
+    p = sep ? sep + 2 : NULL;
+  }
   // direcao: nomes separados por virgula, como na reserva do mapa.
   if (ci->direcao[0]) {
     char buf[128], *p, *q;
@@ -99,15 +162,13 @@ int farolficha_ler_item(const CatItem *ci, FarolFicha *f) {
             (int32_t)(ci->elenco[i].tmdb > 0 ? ci->elenco[i].tmdb
                                             : mapa_hash_nome(ci->elenco[i].nome)));
   f->fonte = FF_DE_CAT;
-  // Identidade sem TMDB: o imdb quando existe (estavel entre rebuilds do
-  // catalogo); senao titulo + ano, para dois "Duna" nao dividirem a ficha.
-  if (!f->tmdb) {
-    unsigned h;
-    if (!strncmp(ci->imdb, "tt", 2)) h = mapa_hash_titulo(ci->imdb);
-    else h = mapa_hash_titulo(ci->titulo) ^ ((unsigned)f->ano * 2654435761u);
-    f->reserva = (int32_t)(h & 0x7fffffff);
-    if (!f->reserva) f->reserva = 1;
-  }
+  // Identidade sem TMDB: o id que o item ja traz — imdb ("tt...") ou o do
+  // servidor ("jf:"/"em:"/"px:"), estavel e unico por obra; senao titulo +
+  // ano, para dois "Duna" nao dividirem a ficha. reservaDeId e
+  // reservaDeTitulo mantem os dois espacos separados pelo bit 30.
+  if (!f->tmdb)
+    f->reserva = ci->imdb[0] ? reservaDeId(ci->imdb)
+                           : reservaDeTitulo(ci->titulo, f->ano);
   return farolficha_chave(f) != 0;
 }
 
@@ -183,8 +244,17 @@ int farolficha_ler_arquivo(FarolFichaCache *c, const char *caminho) {
     tam = (unsigned)hdr[10] | ((unsigned)hdr[11] << 8);
     if (n > FAROL_FICHA_MAX || tam != sizeof(FarolFicha)) break;
     for (i = 0; i < n; i++) {
+      int64_t ch;
+      int j;
       if (fread(&c->f[c->n], 1, sizeof(FarolFicha), fp) != sizeof(FarolFicha)) break;
-      if (farolficha_chave(&c->f[c->n])) c->n++;
+      ch = farolficha_chave(&c->f[c->n]);
+      if (!ch) continue;
+      // Duas fichas com a mesma chave: o gravador nao produz isso, entao o
+      // arquivo esta corrompido e vale o descarte como qualquer outro.
+      for (j = 0; j < c->n; j++)
+        if (farolficha_chave(&c->f[j]) == ch) break;
+      if (j < c->n) break;
+      c->n++;
     }
     if (i != n) break;
     // Lixo no fim tambem e corrupcao: o arquivo tem que terminar aqui.

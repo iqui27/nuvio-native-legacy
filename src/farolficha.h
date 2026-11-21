@@ -15,6 +15,8 @@
 //   CatItem   sem chave do TMDB (ou sem rede), genero/direcao/elenco do
 //             item do catalogo viram ids NEGATIVOS estaveis pelo
 //             mapa_hash_nome — a mesma convencao do MapaFio na reserva.
+//             `genero` aceita os dois formatos do catalogo: com o rotulo do
+//             tipo na frente (pacote/Trakt) e a lista crua (Jellyfin/Plex).
 //
 // MEMORIA. A ficha tem 96 bytes cravados (_Static_assert): cabe no vetor do
 // modelo sem malloc e sem fragmentar. O cache e um vetor fixo de 600 em
@@ -53,7 +55,7 @@ typedef struct {
   int32_t  genero[FAROL_FICHA_GEN];  // ids do TMDB; < 0 = hash do nome (CatItem)
   int32_t  pessoa[FAROL_FICHA_PESSOA]; // direcao/criacao primeiro; idem
   int32_t  tema[FAROL_FICHA_TEMA];   // ids das palavras-chave do TMDB
-  int32_t  reserva;                  // sem TMDB: hash estavel do titulo (chave)
+  int32_t  reserva;                  // sem TMDB: bit30=id do item | titulo+ano
 } FarolFicha;                        // 96 bytes, sem ponteiro nem texto
 
 _Static_assert(sizeof(FarolFicha) == 96, "FarolFicha fora dos 96 bytes da secao 2.1");
@@ -65,6 +67,8 @@ typedef MapaDetalhe FarolFichaTmp;
 // A chave do cache: identidade da ficha, nao do ponteiro.
 //   com TMDB     (tipo << 32) | tmdb            — positiva
 //   sem TMDB     -((tipo << 32) | reserva)      — negativa, como os ids de nome
+// A reserva tem dois espacos separados pelo bit 30: ligado = hash do id do
+// item (imdb ou jf:/em:/px: do servidor); apagado = hash de titulo+ano.
 // 0 = a ficha nao identifica titulo nenhum (nao vale guardar).
 int64_t farolficha_chave(const FarolFicha *f);
 

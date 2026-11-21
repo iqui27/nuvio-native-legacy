@@ -321,7 +321,7 @@ int mapa_ler_ids(const char *json, int serie, MapaDetalhe *d) {
     v = valorRaiz(json, NULL, "episode_run_time");
     if (v && *v == '[') {
       v++;
-      while (*v == ' ') v++;
+      while (*v == ' ' || *v == '\t' || *v == '\n' || *v == '\r') v++;
       if (*v == '-' || (*v >= '0' && *v <= '9')) d->minutos = atoi(v);
     }
   } else {
