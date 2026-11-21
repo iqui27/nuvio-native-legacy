@@ -102,6 +102,13 @@ int dados_apagar(const char *n) {
   if (strstr(n, "conta-pend-")) { free(journal); journal = NULL; }
   return 1;
 }
+int dados_gravar_leve(const char *n, const char *c) { return dados_gravar(n, c); }
+int simklauth_perfil(void) { return 1; }
+int simklauth_token_perfil(int p, char *dst, size_t tam) {
+  (void)p;
+  if (dst && tam) snprintf(dst, tam, "%s", tokenSimkl);
+  return tokenSimkl[0] != 0;
+}
 int cat_indice_por_imdb(const char *imdb) { (void)imdb; return -1; }
 void cat_aplicar_progresso(int i, double p, double d, int t, int e) { (void)i; (void)p; (void)d; (void)t; (void)e; }
 void cat_historico_definir_id(const char *i, const char *t, int v) { (void)i; (void)t; (void)v; }

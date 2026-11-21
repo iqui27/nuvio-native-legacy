@@ -4,6 +4,9 @@
 
 int desc_vertudo_n_bruto(void) { return 0; }
 int desc_vertudo_item_bruto(int i, CatItem *d) { (void)i; (void)d; return 0; }
+int caca_n_filmes(int i) { (void)i; return 0; }
+int caca_filme(int i, int j, CacaFilme *out) { (void)i; (void)j; (void)out; return 0; }
+int caca_info(int i, CacaInfo *out) { (void)i; (void)out; return 0; }
 void check_library_grid(int expected);
 static char *fixture;
 static const char *tab;
@@ -15,15 +18,17 @@ int trakt_enfeitar_lote_sessao(CatItem *v, int n, uint64_t s) {
   (void)v; (void)n; (void)s;
   return 0; // Metadata unavailable must never remove a library title.
 }
-char *rede_baixar_com(const char *url, int timeout, const char *const *headers) {
+// The Simkl lists come from the shared library (simkl_lista_corpo): a
+// status-filtered slice of the body it already downloaded, no request of
+// its own. The fake answers the slice from the fixture, like the library
+// would.
+char *simkl_lista_corpo(const char *tipo, const char *estado) {
   char response[600000];
-  const char *kind = strstr(url, "/anime/") ? "anime" : strstr(url, "/shows/") ? "shows" : "movies";
+  const char *kind = tipo;   // "shows", "anime" or "movies"
   const char *p = strstr(fixture, tab);
   const char *a = js_array(p + strlen(tab) + 3, NULL, kind);
   const char *end = js_fim(a - 1);
-  (void)timeout; (void)headers;
-  assert(!strstr(url, "date_from") && !strstr(url, "limit="));
-  assert(a && end);
+  assert(!strcmp(estado, tab) && a && end);
   snprintf(response, sizeof response, "{\"%s\":%.*s}", kind, (int)(end - (a - 1)), a - 1);
   requests++;
   return strdup(response);

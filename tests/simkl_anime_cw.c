@@ -111,19 +111,19 @@ int main(void) {
   assert(v[0].tmdb == 37854);
   assert(v[1].tmdb == 123 && v[2].tmdb == 456);
   // Simkl anime uses bare absolute numbers too. Prime bodies, then reuse them
-  // with unchanged activities; changed stub bodies must never be requested.
+  // with unchanged activities: the shared library is checked, not downloaded.
   simkl_esquecer();
-  WATCHING_ANIME = "{\"anime\":[{\"last_watched\":1122,\"next_to_watch\":1123,"
-    "\"status\":\"watching\",\"anime\":{\"title\":\"One Piece\","
-    "\"ids\":{\"imdb\":\"tt0388629\",\"tmdb\":37854}}}]}";
   (void)simkl_continuar(v, 16);
   int requests = totalBatidas();
-  WATCHING_ANIME = "{\"anime\":[]}";
   n = simkl_continuar(v, 16);
-  assert(totalBatidas() == requests + 1); // activities only, cached anime body
-  assert(n == 1 && !strcmp(v[0].imdb, "tt0388629"));
-  assert(v[0].tmdb == 37854 && simkl_e_a_seguir(v[0].imdb));
-  assert(v[0].temporada == 0 && v[0].episodio == 0); // unknown provider mapping
+  assert(totalBatidas() == requests + 1); // activities only, library is current
+  assert(n == 4);
+  for (int i = 0; i < n; i++) {
+    assert(!strcmp(v[i].imdb, expected[i]));
+    assert(simkl_e_a_seguir(v[i].imdb));
+    assert(v[i].temporada == 0 && v[i].episodio == 0); // unknown provider mapping
+  }
+  assert(v[0].tmdb == 37854);
   assert(simkl_ler_assistindo("{\"anime\":[{\"next_to_watch\":\"1123\","
     "\"anime\":{\"ids\":{\"imdb\":\"tt0388629\"}}}]}", mapped, 1) == 1);
   assert(simkl_ler_assistindo("{\"anime\":[{\"next_to_watch\":null,"

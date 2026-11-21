@@ -4096,6 +4096,7 @@ static void perfilAbrirSessao(int antes) {
   ilhasinais_perfil_trocado();
   enquete_perfil_trocado();
   juntos_perfil_trocado();
+  simkl_biblioteca_iniciar();   // biblioteca Simkl: copia guardada + rede em 2o plano
   perfilSessaoAplicada = sessao;
 }
 
