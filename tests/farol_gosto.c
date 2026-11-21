@@ -1,9 +1,11 @@
 // Modelo de gosto do Farol (issue 37, secoes 2.1-2.2 do PLANO-GOSTO). Sem SDL
 // nem rede: linka so src/farolgosto.c. O relogio e injetado por parametro —
 // o teste anda dias inteiros para frente e para tras. Cobre: aplicar delta,
-// decaimento (meia-vida 120/45), saturacao por n, despejo do mais fraco e
-// mais velho, aneis recusado/mostrado, serializar e ler com ida e volta
-// identica, versao desconhecida ignorada e 10 000 deltas aleatorios.
+// decaimento (meia-vida 120/45), sessoes diarias com gravar/ler entre elas
+// (invariante de persistencia, formato FG 2), saturacao por n, despejo do
+// mais fraco e mais velho, aneis recusado/mostrado, serializar e ler com ida
+// e volta identica, FG 1 antigo ainda valido, versao desconhecida ignorada e
+// 10 000 deltas aleatorios.
 //
 //   bash tests/farol_gosto.sh                  (ASan+UBSan, o padrao)
 //   SANITIZE=0 bash tests/farol_gosto.sh       (so os asserts)
@@ -191,6 +193,63 @@ static void sessoesDiarias(void) {
          farolgosto_peso(&g3, FG_DIM_DURACAO, 7, 45) <= 4178);
 }
 
+// Grava e rele o modelo no lugar — a saida e a reabertura do app entre
+// sessoes — e confere que a ida e a volta saem byte a byte identicas.
+static void recarrega(FarolGosto *g) {
+  static char a[FAROL_GOSTO_TXT_MAX], b[FAROL_GOSTO_TXT_MAX];
+  size_t n = farolgosto_escrever(g, a, sizeof a);
+  assert(n > 0);
+  assert(farolgosto_ler(g, a, n) == 0);
+  assert(farolgosto_escrever(g, b, sizeof b) == n);
+  assert(memcmp(a, b, n) == 0);
+}
+
+// Bug da revisao FAROL37 r2: o perfil e gravado na saida e relido na
+// abertura, e o formato FG 1 nao guardava o resto do decaimento — um
+// intervalo de um dia virava resto, a leitura restaurava o dia ja avancado
+// e o pedaco sumia a cada recarga, congelando o peso para sempre. Com o
+// resto no arquivo (FG 2), gravar/ler entre as sessoes tem de dar o MESMO
+// resultado que o cenario todo em memoria (invariante de persistencia).
+static void sessoesDiariasRecarga(void) {
+  FarolGosto gm, gd;
+  FarolGostoFicha f;
+  int d;
+  farolgosto_iniciar(&gm, 1);
+  memset(&f, 0, sizeof f);
+  f.tmdb = 7;
+  f.tipo = FG_TIPO_SERIE;
+  f.minutos = 45;                       // faixa 1 -> duracao id 7
+  f.genero[0] = 18;
+  // Celula de hora velha e afinidades no teto logico, com n alto para o
+  // incremento diario arredondar a zero e isolar o decaimento.
+  gm.hora[0][1] = 8192;
+  gm.diaBase = 0;
+  gm.duracao[0].id = 7;                 // slot 0: a leitura enche em ordem
+  gm.duracao[0].peso = 8192;
+  gm.duracao[0].n = 1000;
+  gm.genero[0].id = 18;
+  gm.genero[0].peso = 8192;
+  gm.genero[0].n = 1000;
+  gd = gm;
+  for (d = 1; d <= 120; d++) {
+    farolgosto_aplicar(&gm, &f, 8, (uint16_t)d, 3, 0);
+    farolgosto_aplicar(&gd, &f, 8, (uint16_t)d, 3, 0);
+    recarrega(&gd);
+    // A recarga nao pode mudar NADA do modelo.
+    assert(memcmp(&gd, &gm, sizeof gm) == 0);
+    if (d == 45) {
+      // 45 sessoes diarias com recarga: horario e duracao na metade.
+      assert(farolgosto_hora(&gd, 0, 1, 45) >= 4014 &&
+             farolgosto_hora(&gd, 0, 1, 45) <= 4178);  // 4096 +- 2%
+      assert(farolgosto_peso(&gd, FG_DIM_DURACAO, 7, 45) >= 4014 &&
+             farolgosto_peso(&gd, FG_DIM_DURACAO, 7, 45) <= 4178);
+    }
+  }
+  // 120 sessoes diarias com recarga: genero na metade.
+  assert(farolgosto_peso(&gd, FG_DIM_GENERO, 18, 120) >= 4014 &&
+         farolgosto_peso(&gd, FG_DIM_GENERO, 18, 120) <= 4178);
+}
+
 // Contador de frio (plano 3.4): obras distintas pela chave da ficha, nao
 // eventos. A 38 marca obraNova so no primeiro evento de cada chave.
 static void titulosObras(void) {
@@ -346,7 +405,8 @@ static void idaEVolta(void) {
   }
   // Sem cabecalho tambem e ignorado.
   assert(farolgosto_ler(&g, "g 18 256 1 10\n", 14) == -1);
-  // Linha torta e pulada, o resto carrega.
+  // Linha torta e pulada, o resto carrega. O formato antigo (FG 1) segue
+  // valido: sem 5o campo, os restos de decaimento entram em 0.
   {
     const char *txt = "FG 1 5 2 100\ng 18 256 3 90\n"
                       "g torta\np 7 -256 1 90\nh 2 1 2 3 4 5\n";
@@ -357,6 +417,30 @@ static void idaEVolta(void) {
     assert(farolgosto_peso(&g3, FG_DIM_PESSOA, 7, 100) <= -243 &&
            farolgosto_peso(&g3, FG_DIM_PESSOA, 7, 100) >= -247);
     assert(g3.hora[2][4] == 5 && g3.diaBase == 100);
+    assert(g3.horaResto == 0 && g3.restoGenero[0] == 0);
+  }
+  // FG 2: o 5o campo do cabecalho e das linhas de afinidade e o resto do
+  // decaimento (< meia-vida; fora de faixa, prende). Restaurado, ele mantem
+  // o decaimento em curso — e por isso a recarga diaria nao congela mais.
+  {
+    const char *txt = "FG 2 5 2 100 9\ng 18 256 1000 90 17\n"
+                      "u 7 8192 4 90 999\n";
+    assert(farolgosto_ler(&g3, txt, strlen(txt)) == 0);
+    assert(g3.horaResto == 9);
+    assert(g3.restoGenero[0] == 17);
+    assert(g3.restoDuracao[0] == FG_MEIA_HORA - 1);   // 999 prendeu
+    assert(g3.genero[0].peso == 256 && g3.genero[0].dia == 90);
+    // O resto restaurado conta no proximo toque: 17 + 16 = 33 avos ainda
+    // nao fecham 1/16 de 120 dias; n alto faz o incremento arredondar a 0.
+    memset(&f, 0, sizeof f);
+    f.genero[0] = 18;
+    farolgosto_aplicar(&g3, &f, 8, 91, -1, 0);
+    assert(g3.genero[0].peso == 256 && g3.restoGenero[0] == 33);
+    farolgosto_aplicar(&g3, &f, 8, 96, -1, 0);        // +80: fecha 113/120
+    assert(g3.restoGenero[0] == 113);
+    farolgosto_aplicar(&g3, &f, 8, 97, -1, 0);        // +16: 129 -> decai 1/16
+    assert(g3.restoGenero[0] == 9);
+    assert(g3.genero[0].peso < 256 && g3.genero[0].peso > 240);
   }
   // Nome do arquivo.
   {
@@ -425,6 +509,7 @@ int main(void) {
   printf("sizeof(FarolGosto) = %u\n", (unsigned)sizeof(FarolGosto));
   decaimento();
   sessoesDiarias();
+  sessoesDiariasRecarga();
   titulosObras();
   saturacao();
   saturacaoDepoisDeOito();

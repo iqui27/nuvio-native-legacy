@@ -298,9 +298,13 @@ int farolgosto_mostrado_dias(const FarolGosto *g, uint32_t h) {
 }
 
 // ---------------------------------------------------------------------------
-// Texto: "FG <v> <perfil> <titulos> <diaBase>", uma linha por afinidade
-// ("g <id> <peso> <n> <dia>"), "h <f> <v0..v4>" para o bloco de hora,
-// "r <h...>" (16 por linha) e "m <h> <vezes> <dia> ..." (8 triplas por linha).
+// Texto: "FG <v> <perfil> <titulos> <diaBase> [<horaResto>]", uma linha por
+// afinidade ("g <id> <peso> <n> <dia> [<resto>]"), "h <f> <v0..v4>" para o
+// bloco de hora, "r <h...>" (16 por linha) e "m <h> <vezes> <dia> ..." (8
+// triplas por linha). O 5o campo (resto do decaimento, em dezesseis-avos de
+// dia) entrou na versao 2: sem ele a recarga diaria jogava fora o intervalo
+// pendente e o decaimento congelava (revisao FAROL37 r2). A leitura aceita 1
+// e 2 — num arquivo FG 1 os restos simplesmente nao existem e ficam em 0.
 // recusado/mostrado saem do mais velho para o mais novo: a leitura enche os
 // slots em ordem e o cursor reconstruido aponta de novo para o mais velho —
 // e por isso escrever(ler(escrever(g))) sai byte a byte igual.
@@ -312,11 +316,12 @@ int farolgosto_mostrado_dias(const FarolGosto *g, uint32_t h) {
   } while (0)
 
 static size_t emiteAfin(char *dst, size_t cap, size_t pos, char k,
-                        const FarolAfin *a, int n) {
+                        const FarolAfin *a, const uint8_t *resto, int n) {
   int i;
   for (i = 0; i < n; i++)
     if (a[i].id || a[i].n || a[i].peso)
-      EMITE("%c %d %d %u %u\n", k, a[i].id, a[i].peso, a[i].n, a[i].dia);
+      EMITE("%c %d %d %u %u %u\n", k, a[i].id, a[i].peso, a[i].n, a[i].dia,
+            resto[i]);
   return pos;
 }
 
@@ -324,13 +329,14 @@ size_t farolgosto_escrever(const FarolGosto *g, char *dst, size_t cap) {
   size_t pos = 0;
   int i, j, n;
   if (!g || !dst || !cap) return 0;
-  EMITE("FG %u %u %u %u\n", g->versao, g->perfil, g->titulos, g->diaBase);
-  pos = emiteAfin(dst, cap, pos, 'g', g->genero, FG_GENERO_N);  if (!pos) return 0;
-  pos = emiteAfin(dst, cap, pos, 'p', g->pessoa, FG_PESSOA_N);  if (!pos) return 0;
-  pos = emiteAfin(dst, cap, pos, 't', g->tema, FG_TEMA_N);      if (!pos) return 0;
-  pos = emiteAfin(dst, cap, pos, 'e', g->decada, FG_DECADA_N);  if (!pos) return 0;
-  pos = emiteAfin(dst, cap, pos, 'i', g->idioma, FG_IDIOMA_N);  if (!pos) return 0;
-  pos = emiteAfin(dst, cap, pos, 'u', g->duracao, FG_DURACAO_N); if (!pos) return 0;
+  EMITE("FG %u %u %u %u %u\n", g->versao, g->perfil, g->titulos, g->diaBase,
+        g->horaResto);
+  pos = emiteAfin(dst, cap, pos, 'g', g->genero, g->restoGenero, FG_GENERO_N);  if (!pos) return 0;
+  pos = emiteAfin(dst, cap, pos, 'p', g->pessoa, g->restoPessoa, FG_PESSOA_N);  if (!pos) return 0;
+  pos = emiteAfin(dst, cap, pos, 't', g->tema, g->restoTema, FG_TEMA_N);        if (!pos) return 0;
+  pos = emiteAfin(dst, cap, pos, 'e', g->decada, g->restoDecada, FG_DECADA_N);  if (!pos) return 0;
+  pos = emiteAfin(dst, cap, pos, 'i', g->idioma, g->restoIdioma, FG_IDIOMA_N);  if (!pos) return 0;
+  pos = emiteAfin(dst, cap, pos, 'u', g->duracao, g->restoDuracao, FG_DURACAO_N); if (!pos) return 0;
   for (i = 0; i < FG_HORA_F; i++) {
     EMITE("h %d", i);
     for (j = 0; j < FG_HORA_D; j++) EMITE(" %d", g->hora[i][j]);
@@ -405,6 +411,13 @@ static void leAfin(FarolGosto *t, char k, const char *ls, const char *le) {
   arr[s].peso = (int16_t)peso;
   arr[s].n = (uint16_t)(n < 0 ? 0 : (n > 0xffff ? 0xffff : n));
   arr[s].dia = (uint16_t)(dia < 0 ? 0 : (dia > 0xffff ? 0xffff : dia));
+  // 5o campo (FG 2): resto do decaimento em avos de dia, sempre < meia-vida.
+  // Linha de FG 1 nao o tem e o resto fica em 0; fora de faixa, prende.
+  {
+    int64_t r;
+    if (!pegaInt(&ls, le, &r))
+      resto[s] = (uint8_t)(r < 0 ? 0 : (r >= meia ? meia - 1 : r));
+  }
 }
 
 int farolgosto_ler(FarolGosto *g, const char *txt, size_t len) {
@@ -427,17 +440,23 @@ int farolgosto_ler(FarolGosto *g, const char *txt, size_t len) {
     k = *ls++;
     if (!cab) {
       // A primeira linha nao vazia TEM de ser o cabecalho; versao
-      // desconhecida -> o arquivo e ignorado por inteiro.
-      int64_t v, perfil, titulos, diaBase;
+      // desconhecida -> o arquivo e ignorado por inteiro. Aceita 1 e 2:
+      // a 2 acrescenta o resto do decaimento (5o campo aqui e nas linhas
+      // de afinidade); num arquivo 1 os restos ficam em 0.
+      int64_t v, perfil, titulos, diaBase, horaResto;
       if (k != 'F' || ls >= le || *ls != 'G') return -1;
       ls++;
-      if (pegaInt(&ls, le, &v) || v != FAROL_GOSTO_VERSAO ||
+      if (pegaInt(&ls, le, &v) || v < 1 || v > FAROL_GOSTO_VERSAO ||
           pegaInt(&ls, le, &perfil) || pegaInt(&ls, le, &titulos) ||
           pegaInt(&ls, le, &diaBase)) return -1;
       t.perfil = (uint16_t)(perfil < 0 ? 0 : (perfil > 0xffff ? 0xffff : perfil));
       t.titulos = (uint32_t)(titulos < 0 || titulos > 0xffffffffLL
                              ? 0 : titulos);
       t.diaBase = (uint16_t)(diaBase < 0 ? 0 : (diaBase > 0xffff ? 0xffff : diaBase));
+      if (!pegaInt(&ls, le, &horaResto))
+        t.horaResto = (uint8_t)(horaResto < 0 ? 0 :
+                              (horaResto >= FG_MEIA_HORA
+                               ? FG_MEIA_HORA - 1 : horaResto));
       cab = 1;
       continue;
     }

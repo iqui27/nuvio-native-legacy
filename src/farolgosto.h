@@ -18,14 +18,18 @@
 // bloco pode virar um typedef sem mudar comportamento.
 //
 // Arquivo: farol-gosto-p<perfil>.txt em dados_dir() — uma linha por afinidade
-// ("g 18 512 14 320"), texto, para o backup por aparelho da issue 43. Quem
+// ("g 18 512 14 320 7"), texto, para o backup por aparelho da issue 43. Quem
 // escreve/le o arquivo e o chamador (a 38); aqui ficam so a serializacao para
 // um buffer e a leitura de volta, que tem de ser IDENTICA na ida e na volta.
+// Versao 2 do formato: o 5o campo de cada linha (e do cabecalho) e o resto
+// do decaimento — sem ele persistido, a recarga diaria congelava o peso
+// (revisao FAROL37 r2). A leitura aceita 1 e 2; num arquivo 1 os restos
+// ficam em 0.
 
 #include <stddef.h>
 #include <stdint.h>
 
-#define FAROL_GOSTO_VERSAO 1
+#define FAROL_GOSTO_VERSAO 2
 
 // Ponto fixo Q8.8 dos pesos e dos deltas: 1,0 = 256. Peso logico fica preso
 // em [-32, +32] (o intervalo documentado no plano), ou seja, +-8192 crus.
@@ -69,6 +73,11 @@ enum {
 };
 
 // tipo da ficha: decide a metade da tabela de duracao (filme 0-4, serie 5-9).
+// ATENCAO (issue 38): os valores NAO batem com os da FarolFicha da 36, onde
+// FF_FILME=1 e FF_SERIE=2. Ao montar a FarolGostoFicha converta pelo enum:
+// `tipo == FF_SERIE ? FG_TIPO_SERIE : FG_TIPO_FILME`. A copia direta do
+// valor cru grava filme no balde de serie e serie no de filme (com 45 min:
+// filme cai no id 7 em vez do 2 e vice-versa).
 enum { FG_TIPO_FILME, FG_TIPO_SERIE };
 
 // Espelho, para este modulo, dos campos que a FarolFicha (issue 36) tem e o
@@ -106,8 +115,10 @@ typedef struct {
   uint32_t  recusado[FG_RECUS_N];    // hash do titulo ("Nao e para mim"), anel
   struct { uint32_t h; uint8_t vezes, dia; } mostrado[FG_MOSTR_N];
   // Restos de decaimento, em dezesseis-avos de dia (< meia-vida cada): o que
-  // falta para fechar o proximo avo de meia-vida. Sao TRANSIENTES — nao saem
-  // no arquivo, a leitura zera e a perda e de menos de um avo por afinidade.
+  // falta para fechar o proximo avo de meia-vida. Saem no arquivo desde o
+  // formato FG 2 (5o campo); a leitura de FG 1 os deixa em 0 — sem eles,
+  // gravar/ler entre as sessoes diarias jogava fora o intervalo pendente
+  // e o peso congelava na meia-vida inteira (revisao FAROL37 r2).
   uint8_t   horaResto;               // resto do bloco hora[][] (ref: diaBase)
   uint8_t   restoGenero[FG_GENERO_N];
   uint8_t   restoPessoa[FG_PESSOA_N];
