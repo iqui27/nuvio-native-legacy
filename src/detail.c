@@ -1431,7 +1431,8 @@ static const NotasSecao *notasDados(void) {
   int i;
   for (i = 0; i < EX_NFONTES; i++) s.cru[i] = extras_nota(i);
   if (!s.cru[EX_IMDB] && ajustes_mdblist_fonte(EX_IMDB)) s.cru[EX_IMDB] = notaDe(idx);
-  s.notaPessoal = reacao_nota(cat_item(idx)->imdb);
+  const CatItem *ci = cat_item(idx);
+  s.notaPessoal = ci ? reacao_nota(ci->imdb) : 0;
   s.nTemp = ehSerie() && (extras_n_temporadas() || notasCatDisponiveis()) ? notasCatNTemp() : 0;
   s.tempNum = notasCatTemp; s.nEps = notasCatNEps;
   s.epNum = notasCatNumero; s.epNota = notasCatNota;
@@ -6532,7 +6533,8 @@ static void heroWeb(float a, float desloc) {
     // Sem nota dada a pessoa nao tem "Sua nota": o item some em vez de
     // mostrar um traco solto.
     { char mine[96], value[24];
-      int n = reacao_nota(cat_item(idx)->imdb);
+      const CatItem *item = cat_item(idx);
+      int n = item ? reacao_nota(item->imdb) : 0;
       if (n && !servidoresDisponiveis) {  // hide until rated; server titles show the card
         snprintf(value, sizeof value, "%d.%d", n / 2, n % 2 * 5); plrui_decimal(value);
         snprintf(mine, sizeof mine, "%s  %s", i18n("Sua nota"), value);
@@ -6613,8 +6615,9 @@ static int temLembreteTemporada(void) {
 static void rotuloTemporada(int c, char *dst, size_t n) {
   if (c>=colTemp(nTemporadasReais())) {
     if (temporadaLembrete(c)) {
-      const AgItem *ag=agenda_registro(cat_item(idx)->imdb);
-      snprintf(dst,n,i18n("Temporada %d"),ag->temporada);
+      const CatItem *ci=cat_item(idx);
+      const AgItem *ag=ci ? agenda_registro(ci->imdb) : NULL;
+      snprintf(dst,n,i18n("Temporada %d"),ag ? ag->temporada : temporadaEm(posTemp(c)));
     } else snprintf(dst,n,"%s",i18n("Sem spoilers"));
     return;
   }
@@ -6766,7 +6769,7 @@ static void resumoTemporada(float x, float yPilulas, float a) {
     // das duracoes dos episodios por ver (minutosDe le o mesmo texto do card).
     { int alvoNum = alvo, minRest = 0, i, nEp = cat_n_episodios(idx);
       const CatItem *ciC = cat_item(idx);
-      for (i = 0; i < nEp; i++) {
+      for (i = 0; ciC && i < nEp; i++) {
         const CatEp *e = cat_episodio(idx, i);
         if (!e || e->temporada != alvoNum || epNaoExibido(e)) continue;
         if (vistoep_estado(ciC->imdb, e->temporada, e->episodio) != 1)
@@ -6873,7 +6876,9 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
     return;
   }
   if (temporadaLembrete(c)) {
-    const AgItem *ag=agenda_registro(cat_item(idx)->imdb);
+    const CatItem *ci=cat_item(idx);
+    const AgItem *ag=ci ? agenda_registro(ci->imdb) : NULL;
+    if (!ag) return;
     char label[48]; snprintf(label,sizeof label,"T%d · %.4s",ag->temporada,ag->dataProx);
     gfx_icone((GfxRect){r.x+18,r.y+17,22,22},"aj_bell",ink/255.f,ink/255.f,ink/255.f,a);
     txt_desenhar_alpha(txt_linha(TXT_G22M,label,ink,ink,ink,255),r.x+52,r.y+16,a);
@@ -7106,7 +7111,11 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
     gfx_cor(d, .5f, .055f, .059f, .071f, .72f * a);
     gfx_icone((GfxRect){ d.x + 21.0f, d.y + 21.0f, 30.0f, 30.0f }, "aj_lock", .95f, .95f, .95f, a);
   }
-  desenhaMinhaNotaEpisodio(th, serie->imdb, ep->temporada, ep->episodio, a);
+  // A mesma janela de recarga de resumoTemporada: serie pode vir NULL aqui e
+  // desenhaMinhaNotaEpisodio monta a chave com snprintf("%s"). idxImdb ja
+  // guarda a identidade do item aberto, entao a nota nem pisca.
+  desenhaMinhaNotaEpisodio(th, serie ? serie->imdb : idxImdb,
+                           ep->temporada, ep->episodio, a);
   th = thLayout;   // o texto abaixo segue a caixa de repouso
 
   // NADA DE RESERVA INVENTADA. Aqui as quatro linhas caiam numa tabela de
@@ -7434,7 +7443,11 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
                      NV_DETP_EP_BARRA_H };
       // Anda do valor que esta tela mostrava ate o novo (revela.h): na volta
       // do player a barra do episodio cresce ate onde a pessoa parou.
-      float mostra = revela_progresso(ci->imdb, ep->temporada, ep->episodio,
+      // prog pode vir de extras_ep_progresso() com ci == NULL (item ausente na
+      // janela da recarga); revela_progresso aceita chave vazia e idxImdb ja
+      // guarda a identidade do item aberto.
+      float mostra = revela_progresso(ci ? ci->imdb : idxImdb,
+                                      ep->temporada, ep->episodio,
                                       (float)prog, SDL_GetTicks());
       GfxRect at = { tr.x, tr.y, tr.w * (mostra / 100.0f), tr.h };
       gfx_cor(tr, 0.5f, 0, 0, 0, 0.45f * a);
