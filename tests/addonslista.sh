@@ -21,7 +21,7 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 # parser, cache e i18n dublados no proprio teste — ver tests/addonslista.c.
 # js.c entra pelo caso do #112: o manifesto do addon de canal e lido de
 # verdade (capacidadesDoManifesto), porque e ele que decide o tipo pedido.
-cc "${flags[@]}" src/addons.c src/addonmodo.c src/watchstate.c src/fontefalha.c src/js.c src/jsw.c src/addonstats.c src/idcanal.c tests/addonslista.c -o ${TMPDIR:-/tmp}/nuvio-addonslista-tests
+cc "${flags[@]}" src/addons.c src/farolanel.c src/addonmodo.c src/watchstate.c src/fontefalha.c src/js.c src/jsw.c src/addonstats.c src/idcanal.c tests/addonslista.c -o ${TMPDIR:-/tmp}/nuvio-addonslista-tests
 saida=$(${TMPDIR:-/tmp}/nuvio-addonslista-tests) || { echo "$saida"; exit 1; }
 echo "$saida" | grep -v '^\[addons\]' || true
 echo "$saida" | grep -q 'addonslista: ok'

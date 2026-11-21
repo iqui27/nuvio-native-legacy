@@ -9,10 +9,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <pthread.h>
+#if defined(__linux__)
+#include <sys/syscall.h>
+#endif
 #if !defined(__EMSCRIPTEN__) && !defined(_WIN32)
 #include <ifaddrs.h>
 #include <sys/socket.h>
@@ -635,20 +639,197 @@ int dados_apagar(const char *nome) {
   return 1;
 }
 
+// Semeadura UMA vez por pthread_once — nativo ate sob NV_UM_FIO, igual a
+// clienteIdUmaVez — e bytes aleatorios por chamada vindos de ENTROPIA DO
+// SISTEMA, nao de PRNG semeado. Sem nenhum estatico mutavel fora da once e do
+// contador atomico, o primeiro UUID do worker de add-ons (clienteIdIniciar)
+// pode correr com a chamada direta da tela de Diagnostico: o estatico semeado
+// e o srand/rand globais corriam sem sincronizacao entre esses dois chamadores
+// (regressao apontada na revisao r3 do Farol 10). O rand_r da correcao r4
+// tinha defeito pior na glibc: rand_r(&s) so deriva 20 bits da semente de 32,
+// entao o espaco total de UUIDs despencava para 2^20 e processos distintos
+// repetiam IDs — os 122 bits agora vem de crypto.getRandomValues via EM_JS
+// no WASM e de getrandom//dev/urandom no nativo, com splitmix64 de 64 bits
+// so se toda fonte falhar.
+
+// Um passo do finalizador do splitmix64 (plano B sem nenhuma fonte de
+// entropia): 64 bits embaralhados por iteracao.
+static unsigned long long uuidMistura(unsigned long long x) {
+  x += 0x9e3779b97f4a7c15ULL;
+  x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+  return x ^ (x >> 31);
+}
+
+static pthread_once_t uuidUmaVez = PTHREAD_ONCE_INIT;
+// Semente do plano B, fixa por processo (relogio, PID e endereco colhidos
+// UMA vez), e contador atomico. A entrada do splitmix64 e semente XOR
+// contador — nunca uma soma de valores que variam: o x+contador da r5
+// repetia a entrada quando o relogio recuava exatamente o passo do contador
+// entre chamadas (regressao apontada na revisao r5 do Farol 10).
+static unsigned long long uuidSemente;
+static unsigned uuidChamadas;
+static void uuidSemear(void) {
+  struct timespec ts = {0, 0};
+  unsigned long long s = 0x9e3779b97f4a7c15ULL;
+  if (clock_gettime(CLOCK_REALTIME, &ts) == 0)
+    s ^= (unsigned long long)ts.tv_sec * 1000000000ULL +
+         (unsigned long long)ts.tv_nsec;
+  s ^= (unsigned long long)time(NULL) * 0xbf58476d1ce4e5b9ULL;
+  s ^= (unsigned long long)(size_t)getpid() << 17;
+  s ^= (unsigned long long)(size_t)&uuidSemente;
+  uuidSemente = uuidMistura(s);
+}
+
+#if !defined(__EMSCRIPTEN__) && !defined(_WIN32)
+// fork() herda a semente, o estado da once e o contador: com as fontes
+// nativas fora, pai e filho repetiam a mesma sequencia do plano B
+// (regressao apontada na revisao r6 do Farol 10). O handler do filho roda
+// quando so o fio do fork existe, entao a re-semeadura nao corre com
+// ninguem e nao reabre a corrida que a pthread_once fecha (TSan). O
+// contador segue: a semente nova mistura o PID do filho, entao nenhuma
+// entrada do splitmix64 se repete entre os dois processos.
+static void uuidSemearFilho(void) { uuidSemear(); }
+#endif
+
+static void uuidIniciar(void) {
+  uuidSemear();
+#if !defined(__EMSCRIPTEN__) && !defined(_WIN32)
+  pthread_atfork(NULL, NULL, uuidSemearFilho);
+#endif
+}
+
+#if defined(__EMSCRIPTEN__)
+// crypto.getRandomValues com try/catch do lado do JS: se a API falta ou
+// lanca, devolve 0 e a reserva de dados_uuid assume — a excecao nao
+// atravessa a fronteira do WASM como atravessava pelo random_get sincrono
+// do getentropy do SDK (regressao apontada na revisao r5 do Farol 10).
+// A vista tem de ser um Uint8Array local: sob -pthread o HEAPU8 e um
+// SharedArrayBuffer e o Chromium rejeita getRandomValues sobre ele com
+// TypeError, o que derrubava tudo para a reserva no fio principal e no
+// worker (regressao apontada na revisao r6 do Farol 10). Copia para o
+// heap DEPOIS do preenchimento.
+EM_JS(int, nv_uuid_crypto, (unsigned char *b, int n), {
+  try {
+    var c = globalThis.crypto;
+    if (!c || !c.getRandomValues) return 0;
+    var t = new Uint8Array(n);
+    c.getRandomValues(t);
+    HEAPU8.set(t, b);
+    return 1;
+  } catch (e) {
+    return 0;
+  }
+});
+#endif
+
+#ifndef O_CLOEXEC
+#define O_CLOEXEC 0
+#endif
+
+// Enche b com n bytes de entropia do sistema; 0 se nenhuma fonte serviu.
+static int uuidEntropia(unsigned char *b, size_t n) {
+#if defined(__EMSCRIPTEN__)
+  return nv_uuid_crypto(b, (int)n);
+#else
+  size_t lidos = 0;
+#if defined(SYS_getrandom)
+  // getrandom(2) cru, para nao depender da idade da libc nos alvos Tizen;
+  // flag 1 (GRND_NONBLOCK): ENOSYS/EAGAIN em kernel velho ou arranque cedo
+  // caem no /dev/urandom abaixo em vez de bloquear.
+  while (lidos < n) {
+    long r = syscall(SYS_getrandom, b + lidos, n - lidos, 1);
+    if (r > 0) { lidos += (size_t)r; continue; }
+    if (r < 0 && errno == EINTR) continue;
+    break;
+  }
+  if (lidos == n) return 1;
+  lidos = 0;
+#endif
+  {
+    // O mesmo padrao de addons.c, admin.c, celular.c, jellyfin.c e plex.c,
+    // mas com o fd mantido aberto entre chamadas: /dev/urandom e sem estado
+    // e leituras concorrentes sao seguras, entao o open/close sincrono nao
+    // volta a custar no fio de UI a cada UUID (ressalva da revisao r5 — so
+    // a primeira chamada paga o open).
+    // O_CLOEXEC: sem ele o fd sobrevivia a fork+exec e, se o numero fosse
+    // fechado e reaproveitado (outro dispositivo, arquivo regular), cada
+    // leitura devolia bytes que nao sao entropia e os UUIDs saiam repetidos
+    // (regressao apontada na revisao r6 do Farol 10). Antes de ler, o fstat
+    // confere que o fd continua sendo o char device que abrimos (st_rdev de
+    // /dev/urandom); se nao bater, reabre uma vez e depois cai na reserva.
+    // Nunca se fecha o fd cacheado: um numero invalido ja pode ser de outro.
+    static int fdUrandom = -1;
+    static dev_t fdUrandomRdev;
+    int tentativa;
+    for (tentativa = 0; tentativa < 2 && lidos < n; ++tentativa) {
+      int f = __atomic_load_n(&fdUrandom, __ATOMIC_ACQUIRE);
+      if (f < 0) {
+        struct stat st;
+        int esperado = -1;
+        int novo = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+        if (novo < 0) return 0;
+        if (fstat(novo, &st) != 0 || !S_ISCHR(st.st_mode)) {
+          close(novo);
+          return 0;
+        }
+        fdUrandomRdev = st.st_rdev;
+        if (__atomic_compare_exchange_n(&fdUrandom, &esperado, novo, 0,
+                                        __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+          f = novo;
+        } else {
+          close(novo);
+          f = esperado;
+        }
+      }
+      {
+        struct stat st;
+        if (fstat(f, &st) != 0 || !S_ISCHR(st.st_mode) ||
+            st.st_rdev != fdUrandomRdev) {
+          int esperado = f;
+          __atomic_compare_exchange_n(&fdUrandom, &esperado, -1, 0,
+                                      __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+          continue;
+        }
+      }
+      while (lidos < n) {
+        ssize_t r = read(f, b + lidos, n - lidos);
+        if (r > 0) { lidos += (size_t)r; continue; }
+        if (r < 0 && errno == EINTR) continue;
+        break;
+      }
+    }
+  }
+  return lidos == n;
+#endif
+}
+
 void dados_uuid(char *dst, unsigned tam) {
   static const char *hex = "0123456789abcdef";
-  static int semeado;
+  unsigned char b[16];
+  unsigned n = 0;
   int i;
   if (tam < 37) { if (tam) dst[0] = 0; return; }
-  if (!semeado) {
-    srand((unsigned)time(NULL) ^ (unsigned)getpid() ^ (unsigned)(size_t)dst);
-    semeado = 1;
+  pthread_once(&uuidUmaVez, uuidIniciar);
+  if (!uuidEntropia(b, sizeof b)) {
+    // Plano B: semente fixa do processo XOR contador atomico, espalhados por
+    // splitmix64 — nunca rand_r de 32 bits. O contador nunca repete a entrada
+    // do misturador em nenhuma das duas metades; o relogio so entra na
+    // semente, uma vez por processo e com retorno checado.
+    for (i = 0; i < (int)sizeof b; i += 8) {
+      unsigned long long v = uuidMistura(
+          uuidSemente ^
+          (unsigned long long)__atomic_add_fetch(&uuidChamadas, 1,
+                                                 __ATOMIC_RELAXED));
+      memcpy(b + i, &v, sizeof v);
+    }
   }
+  b[6] = (unsigned char)((b[6] & 0x0f) | 0x40);   // versao 4
+  b[8] = (unsigned char)((b[8] & 0x3f) | 0x80);   // variante 10xx
   for (i = 0; i < 36; i++) {
     if (i == 8 || i == 13 || i == 18 || i == 23) { dst[i] = '-'; continue; }
-    if (i == 14) { dst[i] = '4'; continue; }              // versao
-    if (i == 19) { dst[i] = hex[8 + (rand() & 3)]; continue; }  // variante
-    dst[i] = hex[rand() & 15];
+    dst[i] = hex[(n & 1) ? b[n >> 1] & 15 : b[n >> 1] >> 4];
+    n++;
   }
   dst[36] = 0;
 }
@@ -701,17 +882,20 @@ const char *dados_aparelho_id(void) {
   return id;
 }
 
-const char *dados_cliente_id(void) {
-  char *lido;
-  if (clienteId[0]) return clienteId;
+// Inicializacao preguicosa e unica: o primeiro chamador le ou gera o ID e
+// grava cliente.txt; os demais esperam na once e leem o buffer ja publicado.
+// pthread_once nunca e impersonado pelo fio1 (ferramenta mantem nativo), entao
+// funciona igual no VIDAA de um fio e nos alvos com pthread de verdade.
+static pthread_once_t clienteIdUmaVez = PTHREAD_ONCE_INIT;
 
-  lido = dados_ler("cliente.txt");
+static void clienteIdIniciar(void) {
+  char *lido = dados_ler("cliente.txt");
   if (lido) {
     char *fim = lido + strlen(lido);
     while (fim > lido && (fim[-1] == '\n' || fim[-1] == '\r' || fim[-1] == ' ')) *--fim = 0;
     if (lido[0]) snprintf(clienteId, sizeof clienteId, "%s", lido);
     free(lido);
-    if (clienteId[0]) return clienteId;
+    if (clienteId[0]) return;
   }
 
   // Formato de UUID v4 porque e o que o servidor recebe do Android e do web; a
@@ -722,6 +906,10 @@ const char *dados_cliente_id(void) {
   { char linha[64];
     snprintf(linha, sizeof linha, "%s\n", clienteId);
     dados_gravar("cliente.txt", linha); }
+}
+
+const char *dados_cliente_id(void) {
+  pthread_once(&clienteIdUmaVez, clienteIdIniciar);
   return clienteId;
 }
 

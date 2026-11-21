@@ -51,6 +51,7 @@ typedef struct {
   unsigned seq;             // sobe a cada troca de estado
   unsigned inicio;          // ms da primeira nota (0 = ainda nenhuma)
   int temInicio;
+  int codigo;
 } RedeSaude;
 
 // O nucleo: um pedido terminou. `ok` 1 = transporte ok, 0 = falha de

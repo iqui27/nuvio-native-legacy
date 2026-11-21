@@ -1,5 +1,6 @@
 // Saude da rede — ver redesaude.h.
 #include "redesaude.h"
+#include "farolanel.h"
 #include <pthread.h>
 #include <string.h>
 #include <time.h>
@@ -9,17 +10,24 @@
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static RedeSaude global;
 
+static void eventoEstado(const RedeSaude *s) {
+  const char *classe = s->codigo == 6 || s->codigo == REDE_CURL_DNS_LENTO ? "dns" :
+                       s->codigo == 35 ? "tls" : s->codigo == 28 ? "prazo" : "recusa";
+  farol_ev(FM_REDE, FE_REDE_ESTADO, s->offline, s->offline, s->falhas, classe);
+}
+
 static int avaliar(RedeSaude *s, unsigned agora) {
   if (!s->offline && s->falhas >= REDE_SAUDE_FALHAS && s->nHosts >= REDE_SAUDE_HOSTS &&
       agora - s->primeira >= REDE_SAUDE_JANELA &&
       !(s->voltouOk && agora - s->voltou < REDE_SAUDE_CARENCIA)) {
     s->offline = 1; s->seq++;
+    eventoEstado(s);
     return 1;
   }
   return 0;
 }
 
-static int passoDesde(RedeSaude *s, int ok, unsigned host, unsigned primeira, unsigned agora) {
+static int passoDesde(RedeSaude *s, int ok, unsigned host, unsigned primeira, unsigned agora, int codigo) {
   int i;
   if (!host) return 0;
   if (!s->temInicio) { s->inicio = agora; s->temInicio = 1; }
@@ -32,6 +40,7 @@ static int passoDesde(RedeSaude *s, int ok, unsigned host, unsigned primeira, un
     s->ultimoOk = agora; s->temOk = 1;
     if (s->offline) {
       s->offline = 0; s->voltou = agora; s->voltouOk = 1; s->seq++;
+      eventoEstado(s);
       return 1;
     }
     return 0;
@@ -41,17 +50,18 @@ static int passoDesde(RedeSaude *s, int ok, unsigned host, unsigned primeira, un
   if (s->temOk && (int)(primeira - s->ultimoOk) < 0) primeira = s->ultimoOk;
   if (!s->falhas || (int)(primeira - s->primeira) < 0) s->primeira = primeira;
   s->falhas++;
+  s->codigo = codigo;
   for (i = 0; i < s->nHosts; i++) if (s->hosts[i] == host) break;
   if (i == s->nHosts && s->nHosts < 4) s->hosts[s->nHosts++] = host;
   return avaliar(s, agora);
 }
 
 int rede_saude_passo(RedeSaude *s, int ok, unsigned host, unsigned agora) {
-  return passoDesde(s, ok, host, agora, agora);
+  return passoDesde(s, ok, host, agora, agora, 7);
 }
 
 int rede_saude_passo_dns(RedeSaude *s, unsigned host, unsigned agora) {
-  return passoDesde(s, -1, host, agora, agora);
+  return passoDesde(s, -1, host, agora, agora, REDE_CURL_DNS_LENTO);
 }
 
 // Chamado com trava; stdout faz parte do registro enviado.
@@ -103,7 +113,7 @@ void rede_saude_nota_desde(int codigo, const char *url, unsigned primeiraMs) {
   if (!h) return;
   pthread_mutex_lock(&trava);
   agora = agoraMs();
-  transicao(passoDesde(&global, ok, h, primeiraMs ? primeiraMs : agora, agora), agora);
+  transicao(passoDesde(&global, ok, h, primeiraMs ? primeiraMs : agora, agora, codigo), agora);
   pthread_mutex_unlock(&trava);
 }
 
