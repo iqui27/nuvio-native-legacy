@@ -614,9 +614,9 @@ int main(void) {
   if (getenv("NV_TEST_787")) {
     char *body = malloc(400000);
     assert(body);
-    for (int c = 0; c < 3; c++) {
-      int seasons = c == 0 ? 52 : c == 1 ? 31 : 50;
-      int per = c == 0 ? 20 : c == 1 ? 150 : 100;
+    for (int c = 0; c < 4; c++) {
+      int seasons = c == 0 ? 52 : c == 1 ? 31 : c == 2 ? 50 : 40;
+      int per = c == 0 ? 20 : c == 1 ? 150 : c == 2 ? 100 : 130;
       size_t k = (size_t)sprintf(body, "{\"videos\":[");
       TempsPub tp = {0};
       for (int t = 1; t <= seasons; t++)
@@ -626,12 +626,86 @@ int main(void) {
       sprintf(body + k, "]}");
       catalogoCom("tt787", "series", "Long series");
       snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt787");
+      int total = seasons * per;
       int n = publicarEpisodiosEx(body, 0, "Long series", NULL, 0, &tp, 0);
-      fprintf(stderr, "#787: %d x %d -> %d episodes, %d seasons\n", seasons, per, n, tp.n);
-      assert(n == seasons * per && tp.n == seasons);
+      int esperado = total > 5000 ? 5000 : total;
+      fprintf(stderr, "#787: %d x %d -> %d episodes, %d seasons (total %d)\n", seasons, per, n, tp.n, total);
+      assert(n == esperado && tp.n == seasons);
       assert(cat_n_episodios(0) == n);
-      const CatEp *last = cat_episodio(0, n - 1);
-      assert(last && last->temporada == seasons && last->episodio == per);
+      assert(cat_item(0)->nTemporadas == seasons);
+      if (n == total) {
+        const CatEp *last = cat_episodio(0, n - 1);
+        assert(last && last->temporada == seasons && last->episodio == per);
+      }
+      if (seasons == 40 && per == 130 && n < total) {
+        epCorpoLiberar();
+        epCorpoGuardar("tt787", body);
+        assert(cat_item(0)->epsParciais);
+        assert(appendTemporadaCorpo(0, 40));
+        assert(epTempResidente(0, 40) == per);
+      }
+    }
+    // CAMINHO DE PRODUCAO (#787 volta 3): /meta de 40x130 publica o teto, e a
+    // aba pedida por desc_episodios completa do corpo guardado — a truncada
+    // (39) e a ausente (40) — sem que um buscarEps posterior as apague.
+    {
+      char *meta = malloc(400000);
+      size_t kk = (size_t)snprintf(meta, 400000,
+        "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\",\"name\":\"Series\",\"videos\":[");
+      assert(meta);
+      for (int t = 1; t <= 40; t++)
+        for (int e = 1; e <= 130; e++)
+          kk += (size_t)(e == 1
+            ? snprintf(meta + kk, 400000 - kk,
+                "%s{\"id\":\"source:%d:1\",\"season\":%d,\"episode\":1,"
+                "\"overview\":\"Sinopse %d\",\"runtime\":\"25min\","
+                "\"thumbnail\":\"https://t.test/%d.jpg\"}",
+                t == 1 && e == 1 ? "" : ",", t, t, t, t)
+            : snprintf(meta + kk, 400000 - kk,
+                "%s{\"id\":\"source:%d:%d\",\"season\":%d,\"episode\":%d}",
+                ",", t, e, t, e));
+      snprintf(meta + kk, 400000 - kk, "]}}");
+      nFake = 0; nRotas = 0; addonMeta = 0; addonResp = NULL;
+      cineSerie = meta;
+      limparCacheMeta();
+      epCorpoLiberar();
+      catalogoCom("tt13293588", "series", "Series");
+      abrir();
+      assert(cat_n_episodios(0) == 5000);
+      assert(epTempResidente(0, 39) == 60 && epTempResidente(0, 40) == 0);
+      assert(cat_item(0)->nTemporadas == 40 && cat_item(0)->epsParciais);
+      fioEpVivo = 0;   // o fio da abertura terminou, como na pagina real
+      int pedidos0 = nPedidos;
+      desc_episodios(0, 39);
+      assert(epTempResidente(0, 39) == 130);
+      assert(nPedidos == pedidos0 && !fioEpVivo);
+      desc_episodios(0, 40);
+      assert(epTempResidente(0, 40) == 130 && epTempResidente(0, 39) == 130);
+      assert(nPedidos == pedidos0 && !fioEpVivo);
+      // ID DE VIDEO E CAMPOS PRESERVADOS (#787 r2): a temporada recomposta do
+      // corpo guardado tem de trazer vid ("source:T:E", que o addon de fontes
+      // recebe no /stream), sinopse, duracao e miniatura do /meta — a versao
+      // reduzida publicava so numero/nome e cat_id_stream voltava ao
+      // "tt13293588:T:E" montado na mao.
+      { char stream[64], esperado[64]; const CatEp *ep1;
+        int i2, n2 = cat_n_episodios(0), t;
+        for (t = 39; t <= 40; t++) {
+          ep1 = NULL;
+          for (i2 = 0; i2 < n2; i2++) {
+            const CatEp *c = cat_episodio(0, i2);
+            if (c && c->temporada == t && c->episodio == 1) { ep1 = c; break; }
+          }
+          assert(ep1);
+          assert(cat_id_stream(0, t, 1, stream, sizeof stream));
+          snprintf(esperado, sizeof esperado, "source:%d:1", t);
+          assert(!strcmp(stream, esperado) && !strcmp(ep1->vid, esperado));
+          snprintf(esperado, sizeof esperado, "Sinopse %d", t);
+          assert(!strcmp(ep1->sinopse, esperado));
+          snprintf(esperado, sizeof esperado, "https://t.test/%d.jpg", t);
+          assert(!strcmp(ep1->duracao, "25 min") && !strcmp(ep1->thumb, esperado));
+        } }
+      cineSerie = NULL; free(meta);
+      puts("ok  #787: aba truncada e aba ausente completam do corpo, sem rebuscar, com ids e campos");
     }
     free(body);
     return 0;
@@ -1162,6 +1236,73 @@ int main(void) {
     assert(!strcmp(cat_episodio(0, 0)->vid, "tt13293588:1:1"));
     fakeMetaExterno = 0;
     puts("ok  empate: a lista de arquivos nao ganha nem com a ficha do addon preferida");
+    // SEM ADDON DE METADADOS, a preferencia nao muda nada (#794 volta 3): a
+    // serie cai no provedor geral e publica os 3 episodios, como na base.
+    nFake = 0; nRotas = 0; addonMeta = 0; addonResp = NULL; cineSerie = NULL;
+    fakeMetaExterno = 1;
+    limparCacheMeta();
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    assert(cat_n_episodios(0) == 3);
+    assert(!strcmp(cat_episodio(0, 0)->vid, "tt13293588:1:1"));
+    assert(pediu("cinemeta"));
+    puts("ok  sem addon: a preferencia cai no provedor geral");
+    // "USAR SEMPRE O CINEMETA" desliga a preferencia: com addon instalado o
+    // caminho e o da base — provedor geral consultado e a arbitragem de
+    // sempre, que a lista maior do addon (5 contra 3) vence.
+    addonMeta = 1; addonResp = META_SERIE_ADDON; addonTipo = "/series/";
+    fakeSoCinemeta = 1;
+    limparCacheMeta();
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    assert(cat_n_episodios(0) == 5);
+    assert(pediu("cinemeta"));
+    fakeSoCinemeta = 0;
+    puts("ok  usar sempre o Cinemeta: a preferencia nao pula o provedor geral");
+    // COM UM ADDON QUE RESPONDE a lista e so a dele: nem o Cinemeta nem o
+    // catalogo do Nuvio sao consultados.
+    nPedidos = 0;
+    limparCacheMeta();
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    assert(cat_n_episodios(0) == 5);
+    assert(pediu("addon.test/SEGREDO/meta/series/tt13293588.json"));
+    assert(!pediu("cinemeta") && !pediu("catalog.nuvio"));
+    fakeMetaExterno = 0; addonMeta = 0; addonResp = NULL;
+    puts("ok  addon responde: a lista e so a dele, sem Cinemeta nem Nuvio");
+    // CATALOGO DO ADDON + PREFERENCIA + FICHA SEM EPISODIOS (#794 r2): o addon
+    // que publicou o titulo responde so nome e sinopse ("videos": []). A
+    // preferencia nao pode pular o provedor geral — senao a ficha abre sem
+    // episodio nenhum. Com episodios de verdade ela continua exclusiva.
+    {
+      static const char vazio[] =
+        "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\",\"name\":\"Serie\","
+        "\"description\":\"So ficha.\",\"videos\":[]}}";
+      nFake = 1; nRotas = 0;
+      fake[0] = (FakeAddon){ "Meta", "https://mt.test/SEGREDO", "org.mt", "tt", 0 };
+      rota("mt.test/SEGREDO/meta/series/tt13293588.json", vazio);
+      fakeMetaExterno = 1; cineSerie = NULL;
+      limparCacheMeta();
+      catalogoDe("tt13293588", "series", "Serie", "org.mt");
+      abrir();
+      printf("catalogo vazio + preferencia: %d episodios, provedor geral %s\n",
+             cat_n_episodios(0),
+             (pediu("cinemeta") || pediu("catalog.nuvio")) ? "consultado" : "PULADO");
+      assert(cat_n_episodios(0) == 3);
+      assert(!strcmp(cat_episodio(0, 0)->vid, "tt13293588:1:1"));
+      assert(pediu("cinemeta") || pediu("catalog.nuvio"));
+      // Com episodios de verdade na ficha a preferencia segue exclusiva.
+      nRotas = 0;
+      rota("mt.test/SEGREDO/meta/series/tt13293588.json", META_SERIE_ADDON);
+      nPedidos = 0;
+      limparCacheMeta();
+      catalogoDe("tt13293588", "series", "Serie", "org.mt");
+      abrir();
+      assert(cat_n_episodios(0) == 5);
+      assert(!pediu("cinemeta") && !pediu("catalog.nuvio"));
+      fakeMetaExterno = 0; nFake = 0; nRotas = 0;
+      puts("ok  catalogo + preferencia: ficha sem episodios nao pula o provedor geral");
+    }
     // EMPATE ACIMA DO TETO: o Cinemeta e a lista de arquivos conhecem os
     // mesmos pares, mas so VIDEOS_MAX sao publicados. A contagem vem do corpo
     // inteiro, e a lista continua a do Cinemeta.

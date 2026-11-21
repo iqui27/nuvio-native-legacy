@@ -38,6 +38,7 @@ void biblioteca_servidor_filtrar(int provider);
 // *indiceCatalogo o indice do item NO CATALOGO (nao a posicao na grade — a
 // grade e filtrada, e quem abre o detalhe precisa do item real).
 int  biblioteca_pediu_abrir(int *indiceCatalogo);
+int  biblioteca_pediu_torbox_play(int *usenet, int *item, int *arquivo, const char **titulo);
 
 // Estado de conta, em memoria. Exposto porque quem marca um titulo e a tela de
 // detalhe (o botao "+"), nao a biblioteca: sem isto a aba "Minha Lista" so

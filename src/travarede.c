@@ -29,6 +29,7 @@
 #endif
 #endif
 
+#include "nvbackend.h"
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif

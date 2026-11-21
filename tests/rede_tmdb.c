@@ -33,6 +33,7 @@ static int info(void *c, int o, ...) {
   else if (o == INFO_RESPONSE_CODE) *va_arg(ap, long *) = strstr(((Fake *)c)->url, "api.tmdb.org") && !falhaAlt ? 200 : http;
   else if (o == INFO_NUM_CONNECTS) *va_arg(ap, long *) = 1;
   else if (o == INFO_SIZE_DOWNLOAD) *va_arg(ap, double *) = 0;
+  else if (o == INFO_TEMPO_TCP) *va_arg(ap, double *) = 0;
   va_end(ap); return 0;
 }
 static void *append(void *l, const char *s) { (void)s; return l ? l : malloc(1); }
@@ -91,7 +92,12 @@ int main(void) {
     for (i = 0; i < 4; i++) {
       chamadas = alternativos = 0; erro = codigos[i];
       r = rede_postar_st(OLD, 5, NULL, "{}", &st); assert(!r);
-      assert(chamadas == 2 && alternativos == 1);
+      /* #707 r2: a resposta PERDIDA (52) ou o corpo cortado no retorno (56)
+       * podem ja ter aplicado o POST — so falha de conexao (35, 7) repete. */
+      if (codigos[i] == 52 || codigos[i] == 56)
+        assert(chamadas == 1 && alternativos == 0);
+      else
+        assert(chamadas == 2 && alternativos == 1);
     }
     /* Timeout (28) ja gastou o prazo do pedido: alias dobraria a espera. */
     chamadas = alternativos = 0; erro = 28;

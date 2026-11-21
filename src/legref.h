@@ -53,6 +53,7 @@ typedef struct {
   LegRefMotivo motivo;
   uint64_t pedido;
   int feitos, total, pedidos, faixa;
+  int alternativas;    // modo so indice: outras faixas que tambem dariam referencia
   long long bytes;
   char idioma[24], codec[24];
 } LegRefStatus;
@@ -65,8 +66,8 @@ typedef unsigned char *(*LegRefLer)(void *u, const char *url, long long ini, lon
                                     int (*parar)(void *), void *pu);
 
 typedef struct LegRef LegRef;
-// 1 quando a plataforma tem pedido HTTP cancelavel (rede_pedir). WGT/AVPlay e
-// os .tpk ficam de fora ate prova em aparelho.
+// 1 quando a plataforma tem pedido HTTP cancelavel (rede_pedir): .tpk 4/5 e 6+,
+// LG, Android. O WGT/AVPlay fica de fora.
 int legref_disponivel(void);
 // ler NULL = HTTP Range via rede_pedir. Cria o fio; nao faz rede.
 LegRef *legref_criar(LegRefLer ler, void *u);
@@ -90,9 +91,35 @@ LegRefStatus legref_status(LegRef *r);
 LegendaDocumento *legref_tomar(LegRef *r, uint64_t pedido);
 const char *legref_motivo(LegRefMotivo m);   // ingles estavel, para log
 
+// MODO SO INDICE (.tpk 6+, ligado por padrao so la; o mesmo desenho do
+// EmbeddedSubtitleTimelineLoader do NuvioTV). A referencia sai INTEIRA do
+// indice Cues do MKV, sem ler um bloco de legenda sequer: 2-4 Ranges no total,
+// nada correndo durante o filme. Serve SRT sem CueDuration (fim estimado pelo
+// proximo inicio, teto 4 s, documento marcado LEGENDA_DOC_FIM_ESTIMADO), ASS
+// (os tempos filtrados para o dialogo: sem rajada de karaoke, sem evento curto
+// ou longo demais) e PGS (exibe + limpa viram um intervalo, so quando a
+// contagem das faixas de texto confirma o par). Android/LG/web seguem lendo os
+// blocos como antes (modo desligado). Testes ligam/desligam por aqui.
+void legref_modo_indice(int ligado);
+int legref_modo_indice_ativo(void);
+
 // Parsers puros, expostos para o teste.
 typedef struct { long long pos; int rel; double inicio, dur; } LegRefPonto;
 int legref_cues(const unsigned char *p, long n, int faixa, double escalaSeg,
                 LegRefPonto **saida, int *semRel);
+// Todos os pontos da faixa no indice, com ou sem posicao de bloco (o modo so
+// indice nao busca blocos). dur <= 0 = ponto sem CueDuration. -1 = sem memoria
+// ou mais de `max` pontos.
+int legref_cues_tempos(const unsigned char *p, long n, int faixa, double escalaSeg,
+                       int max, LegRefPonto **saida);
+// A linha do tempo de UMA faixa a partir dos pontos do indice (em qualquer
+// ordem). tipo: LEGREF_IDX_*. pares = mediana das contagens das faixas de
+// texto do arquivo (0 = desconhecida), so para decidir o par do PGS.
+// *estimado = 1 quando algum fim saiu estimado. Devolve o numero de falas
+// (ordenadas) ou -1 sem memoria.
+enum { LEGREF_IDX_TEXTO = 0, LEGREF_IDX_ASS, LEGREF_IDX_PGS };
+typedef struct { double inicio, fim; } LegRefFala;
+int legref_indice_linha(const LegRefPonto *v, int n, int tipo, int pares,
+                        LegRefFala **saida, int *estimado, int *filtradas);
 
 #endif
