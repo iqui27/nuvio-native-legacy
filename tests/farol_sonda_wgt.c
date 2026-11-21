@@ -14,15 +14,21 @@ int main(void) {
   const char *cab[] = {"Range: bytes=0-1", "X-Probe: synthetic", NULL};
   RedePedido p = {0};
 
-  /* Sonda da fonte: GET https com cabecalhos, seguir, parar, teto. */
+  /* Sonda da fonte: GET https com cabecalhos, seguir, parar, teto,
+   * marcada explicitamente como sonda. */
   p.url = "https://fonte.invalid/video.mkv";
   p.cabecalhos = cab;
   p.seguir = 1;
+  p.sonda = 1;
   p.parar = parar;
   p.max_bytes = 2;
   p.max_cabecalhos = 8192;
   p.prazo_ms = 2000;
   assert(rede_pedido_wgt_sonda(&p));
+
+  /* O mesmo formato sem a marca de sonda e um GET comum: fica fora do
+   * transporte fetch (REDE_INDISPONIVEL, como no pai). */
+  { RedePedido q = p; q.sonda = 0; assert(!rede_pedido_wgt_sonda(&q)); }
 
   /* Sonda do Worker: mesmo formato, sem cabecalhos, http simples. */
   p.cabecalhos = NULL;

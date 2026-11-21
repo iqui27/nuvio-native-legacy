@@ -1,6 +1,7 @@
 #include "farolsonda.h"
 #include "rede.h"
 #include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -58,6 +59,7 @@ static void medir(Pedido *p, const char *url, int fonte, FarolSonda *s) {
   req.max_bytes = fonte ? 2 : 512;
   req.max_cabecalhos = 8192;
   req.seguir = 1;
+  req.sonda = 1;
   req.parar = parar;
   req.parar_usuario = p;
   rede_pedir(&req, &res);
@@ -74,7 +76,11 @@ static void medir(Pedido *p, const char *url, int fonte, FarolSonda *s) {
 static void *executar(void *u) {
   Pedido *p = u;
   FarolSonda s = {-1, -1, 0, -1, -1, 0, 0};
-  medir(p, FAROL_SONDA_WORKER, 0, &s);
+  /* A raiz do Worker responde 401 sem autenticacao; a rota de saude e a que
+   * prova alcance real do servico. */
+  char saude[sizeof FAROL_SONDA_WORKER + sizeof "/v1/saude"];
+  snprintf(saude, sizeof saude, "%s/v1/saude", FAROL_SONDA_WORKER);
+  medir(p, FAROL_SONDA_WORKER[0] ? saude : FAROL_SONDA_WORKER, 0, &s);
   medir(p, p->url, 1, &s);
   limpar(p);
   pthread_mutex_lock(&trava);

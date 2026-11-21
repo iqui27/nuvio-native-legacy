@@ -8,8 +8,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        if self.path == '/slow':
+        # A sonda do Worker bate em <origem>/v1/saude; /slow* cobre o caso
+        # lento e o /slow/v1/saude da sonda do Worker lento.
+        if self.path.startswith('/slow'):
             time.sleep(10)
+        if self.path == '/v1/saude':
+            self.send_response(200)
+            self.send_header('Content-Length', '2')
+            self.end_headers()
+            self.wfile.write(b'ok')
+            return
         status = 200
         location = None
         length = '10000000'

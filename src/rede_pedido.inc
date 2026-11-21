@@ -76,7 +76,7 @@ static size_t pedidoCab(void *b, size_t size, size_t count, void *u) {
   } else if (n > 12 && !strncasecmp(s, "Retry-After:", 12)) {
     c->r->retry_after_s = retrySegundos(s + 12, n - 12);
   } else if (!c->head && !c->p->janela_corpo_ms &&
-             !(c->p->seguir && pedidoEhRedirect(c->status)) &&
+             !(c->p->sonda && c->p->seguir && pedidoEhRedirect(c->status)) &&
              n > 15 && !strncasecmp(s, "Content-Length:", 15)) {
     size_t i = 15, valor = 0;
     while (i < n && (s[i] == ' ' || s[i] == '\t')) i++;
@@ -100,16 +100,17 @@ static size_t pedidoCorpo(void *b, size_t size, size_t count, void *u) {
   if (size && count > SIZE_MAX / size) { c->r->erro = REDE_LIMITE_CORPO; return 0; }
   n = size * count;
   if (pedidoParar(c)) return 0;
-  /* A body on a followed redirect is dropped at the hop: skimmed without
-   * being stored, so a padded 302 does not spend the body cap before
-   * Location is followed. Past the skim bound the hop fails like any
-   * overflow. */
-  if (c->p->seguir && pedidoEhRedirect(c->status)) {
+  /* Sonda ativa (p->sonda): a body on a followed redirect is dropped at the
+   * hop, skimmed without being stored, so a padded 302 does not spend the
+   * body cap before Location is followed. Past the skim bound the hop fails
+   * like any overflow. Pedidos comuns guardam o corpo do salto ate o teto e
+   * o soltam ao trocar de hop, como o pai fazia. */
+  if (c->p->sonda && c->p->seguir && pedidoEhRedirect(c->status)) {
     if (n > 16384 - c->descartado) { c->r->erro = REDE_LIMITE_CORPO; return 0; }
     c->descartado += n;
     return n;
   }
-  if (c->p->janela_corpo_ms) {
+  if (c->p->janela_corpo_ms && !(c->p->seguir && pedidoEhRedirect(c->status))) {
     uint64_t agora = pedidoAgoraMs();
     size_t prefixo;
     if (c->primeiro && agora - c->primeiro >= c->p->janela_corpo_ms) {
