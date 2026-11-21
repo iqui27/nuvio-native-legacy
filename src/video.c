@@ -4011,14 +4011,21 @@ static void hlsFalhar(const char *reason) {
 
 static int hlsAbrir(void);
 
-/* The input rings follow the Buffer size preset and its free-memory clamp.
- * HLS also keeps the remux queue (48 MiB) and one staged fMP4 fragment (up to
- * 48 MiB) outside the rings, so the clamp sees the memory left after them. */
+/* HLS input rings: a fixed 32 MiB, as on Tizen, whatever the Buffer size
+ * preset (that one stays for playback with HLS Off). The TV player keeps its
+ * own segments, about 30 s, which is what rides out a slow source. With little
+ * free memory after the remux queue (48 MiB), one staged fMP4 fragment (up to
+ * 48 MiB) and the usual floor, the rings drop to 16 MiB. */
+#define HLS_RING_MIB 32
 #define HLS_OUTPUT_RESERVE_MB 96
 static int hlsBufferMib(void) {
   long freeMb = memlog_livre_mb();
-  if (freeMb >= 0) freeMb = freeMb > HLS_OUTPUT_RESERVE_MB ? freeMb - HLS_OUTPUT_RESERVE_MB : 0;
-  return cacheboost_buffer_mb(ajustes_buffer_preset(), freeMb);
+  int mib = freeMb >= 0 && freeMb - HLS_OUTPUT_RESERVE_MB - HLS_RING_MIB - 4 >= CB_BUFFER_PISO_MB ? HLS_RING_MIB : 16;
+  if (mib != HLS_RING_MIB) {
+    printf("[buffer] HLS: %d MiB (free %ld MiB)\n", mib, freeMb);
+    fflush(stdout);
+  }
+  return mib;
 }
 
 static int hlsIniciar(int ordinal, int dv7, int external, double alvo, double resumePct, int paused) {
@@ -4968,10 +4975,18 @@ void video_buffer_test_text(char *out, size_t n) {
   DtsBufferInfo b = {0};
   const char *route = dtsSessao ? "DTS/DV" : "Native";
 #ifdef NV_WEBOS_HLS_TEST
+  // HLS: the app's input buffer (fixed 32 MiB), its readers and download rate.
   if (hlsAtivo() && hls.played) {
-    b = hls.buffer;
-    route = "HLS";
-  } else
+    if (!out || !n) return;
+    DtsBufferInfo h = hls.buffer;
+    if (h.ready_bytes > h.capacity_bytes) h.ready_bytes = h.capacity_bytes;
+    int used = snprintf(out, n, "HLS buffer: %.1f / %.0f MiB", h.ready_bytes / 1048576.0, h.capacity_bytes / 1048576.0);
+    if (used >= 0 && (size_t)used < n && h.http_workers >= 1 && h.http_workers <= 4)
+      used += snprintf(out + used, n - used, " · HTTP: %d", h.http_workers);
+    if (used >= 0 && (size_t)used < n && hls.downloadMbps >= 0.0)
+      snprintf(out + used, n - used, " · %.1f Mbps", hls.downloadMbps);
+    return;
+  }
 #endif
   if (dtsSessao) {
     DtsPlaybackStatus st={0};dts_playback_status(dtsSessao,&st);
@@ -4987,15 +5002,6 @@ void video_buffer_test_text(char *out, size_t n) {
   size_t used = strlen(out);
   if (b.http_workers >= 1 && b.http_workers <= 4)
     snprintf(out + used, n - used, " · HTTP: %d (%s)", b.http_workers, route);
-#ifdef NV_WEBOS_HLS_TEST
-  if (hlsAtivo() && hls.played) {
-    used = strlen(out);
-    if (!b.http_workers)
-      snprintf(out + used, n - used, " · HLS");
-    else if (hls.downloadMbps >= 0.0)
-      snprintf(out + used, n - used, " · %.1f Mbps", hls.downloadMbps);
-  }
-#endif
 }
 #endif
 // webOS: so o buffer em SEGUNDOS e real (bufferRange do uMS); bytes, conexoes

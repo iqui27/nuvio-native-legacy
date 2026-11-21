@@ -392,6 +392,12 @@ assert re.search(r'reader rings peak 2 = 256 MiB', log)
 check_input_buffer(log, 256, 2)
 assert 'input audio ordinal=1 stream=2 selected=1 codec=aac language=pol title=Polski lektor' in log
 
+with playback('dts.mkv', 0, buffer_mib=32) as base:
+    assert get(base, 'seg0.m4s')
+log = (work / 'dts.mkv.log').read_text()
+assert 'input ring: video=32 MiB' in log
+check_input_buffer(log, 32, 1)
+
 with playback('dts.mkv', 0, buffer_mib=256) as base:
     assert get(base, 'seg0.m4s')
 log = (work / 'dts.mkv.log').read_text()

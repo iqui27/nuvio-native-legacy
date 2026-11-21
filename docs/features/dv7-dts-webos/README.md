@@ -78,13 +78,14 @@ TV's Dolby Vision indicator, seek/resume and memory. **Show buffer data**
 shows the HLS source buffer, HTTP readers, and measured download rate once
 playback starts. The rate measures bytes received from the source readers.
 
-The follow-up HLS build uses the existing **Buffer size** presets (64, 128 or
-256 MiB), with the same free-memory clamp. Automatic uses a 16 MiB input
-budget. With **From another source**, the selected audio and video share that
-budget. The separate **Other version buffer** preference determines the audio
-reader's share, capped at half the budget. The player and segment generation
-use memory outside the input rings; the free-memory clamp reserves 96 MiB for
-the remux queue and one staged fMP4 fragment before it sizes the rings.
+With HLS On, the app's input buffer is a fixed 32 MiB, as on Tizen, whatever
+the **Buffer size** preset (which still applies with HLS Off). The TV player
+keeps its own segments, about 30 s, and that is what rides out a slow source.
+With little free memory (after 96 MiB for the remux queue and one staged fMP4
+fragment, and the usual floor) the input buffer drops to 16 MiB. With **From
+another source**, the selected audio and video share it; the **Other version
+buffer** preference sets the audio share, capped at half. **Show buffer data**
+reads `HLS buffer: <ready> / 32 MiB · HTTP: <readers> · <rate> Mbps`.
 
 For HLS with **From another source**, choose the audio source as usual.
 Enable DTS conversion and HLS for H.264/HEVC playback, or Dolby Vision P7

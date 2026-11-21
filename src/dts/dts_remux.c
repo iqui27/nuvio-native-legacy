@@ -482,7 +482,7 @@ void dts_remux_set_webos(DtsRemux *r, const DtsWebosHls *o) {
   r->preserveMapping = o->preserve_mapping;
   r->dv7 = o->dv7;
   r->allowDts = o->allow_dts;
-  int total = o->buffer_mib == 64 || o->buffer_mib == 128 || o->buffer_mib == 256 ? o->buffer_mib : 16;
+  int total = o->buffer_mib >= 16 && o->buffer_mib <= 256 ? o->buffer_mib : 16;
   if (o->external_url) {
     int requested = o->external_buffer_mib == 16 || o->external_buffer_mib == 32 ? o->external_buffer_mib : 8;
     r->audioMib = requested < total / 2 ? requested : total / 2;
