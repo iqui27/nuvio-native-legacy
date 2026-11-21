@@ -945,6 +945,14 @@ static Uint32 seekEm;
 // mesmo sinal indireto — se o tempo corre, a fonte esta entregando.
 static pthread_t fioMkv;
 static int       fioMkvVivo, mkvPendente;
+// Geracao do capmkv no DISPARO da sonda (video_sondar_mkv_agora), entregue ao
+// fio pelo argumento. Captura-la na primeira instrucao do fio abria uma
+// janela: o fio de a.mkv podia acordar depois de video_tocar("b.mp4") avancar
+// a geracao e antes de trocar urlAtual — lia a geracao nova com a URL antiga
+// e capmkv_aplicar_ger aceitava os capitulos do MKV dentro da reproducao do
+// MP4 (painel de creditos aos 950 s num video de 1200 s). Mesmo papel do
+// mkvFioCapGer da LG (src/video.c).
+static unsigned  mkvFioCapGer;
 
 // Fonte nova ou fim da reproducao: os marcadores do arquivo anterior nao
 // valem — nem os locais (video_creditos*) nem os publicados (a lista de
@@ -1264,8 +1272,9 @@ static void *lerMkv(void *arg) {
   MkvCap   caps[MKV_MAX_CAPS];
   char url[NV_MEDIA_URL_MAX];
   int n, nCaps = 0;
-  unsigned capGer = capmkv_geracao();
-  (void)arg;
+  // arg traz a geracao congelada no disparo; arg==NULL so em ensaio que chama
+  // o fio direto, onde vale a captura no inicio como antes.
+  unsigned capGer = arg ? *(const unsigned *)arg : capmkv_geracao();
   snprintf(url, sizeof url, "%s", urlAtual);
   n = mkv_faixas_e_caps(url, fx, MKV_MAX_FAIXAS, caps, MKV_MAX_CAPS, &nCaps);
   // A fonte pode ter trocado enquanto o fio lia: os capitulos e os idiomas do
@@ -1442,7 +1451,8 @@ void video_sondar_mkv_agora(void) {
   if (!mkvPendente || fioMkvVivo || !urlAtual[0]) return;
   mkvPendente = 0;
   fioMkvVivo = 1;
-  if (pthread_create(&fioMkv, NULL, lerMkv, NULL) != 0) fioMkvVivo = 0;
+  mkvFioCapGer = capmkv_geracao();   // depois do capmkv_zerar de video_tocar
+  if (pthread_create(&fioMkv, NULL, lerMkv, &mkvFioCapGer) != 0) fioMkvVivo = 0;
   else pthread_detach(fioMkv);
 }
 

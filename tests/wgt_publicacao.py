@@ -50,6 +50,8 @@ static int lerFixture(const char *url, MkvFaixa *faixas, int maxFaixas,
   return 1;
 }
 ''')
+# A geracao que video_sondar_mkv_agora congela no disparo e entrega ao fio.
+print("static unsigned mkvFioCapGer;")
 print(function("static void limparCreditosCapitulos(void) {"))
 print(function("int video_tocar(const char *url) {"))
 print(function("void video_parar(void) {"))
