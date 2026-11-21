@@ -5,6 +5,8 @@
 # PLAYER_ERROR_CONNECTION_FAILED (AVPlay via nv_av em C — nao ha emcc no VPS,
 # entao EM_JS vira declaracao), "erro ConnectionFailed",
 # "erro AudioCodecNotSupported" e o relogio congelado (host .tpk).
+# .tpk40: o mesmo harness com -DNV_TPK40 e o wrap do mkvfix_estado — o
+# ErroGeracao de preparo num VOD https aciona o relay TLS fora do EV_ERRO.
 #   bash tests/farol_produtores_tv.sh                  (ASan+UBSan, o padrao)
 #   SANITIZE=thread bash tests/farol_produtores_tv.sh  (TSan; o helper tem fios)
 #   SANITIZE=0 bash tests/farol_produtores_tv.sh       (sem sanitizador)
@@ -55,6 +57,16 @@ farol="src/farolerro.c src/farolanel.c src/fontesonda.c"
   src/video_modo.c src/faixasmkv.c src/audioinfo.c src/audioescolha.c \
   $farol -lpthread -lm $(sdl2-config --libs) -o "$work/tpk"
 "$work/tpk"
+
+# .tpk40 (Tizen 4/5): a mesma fixture sobre a lib do NV_TPK40, mais o wrap
+# do mkvfix_estado — a falha de preparo num VOD https aciona o relay TLS
+# (MKVFIX_SONDANDO) e o caso relay-falha-depois cobre a nao-duplicacao.
+"$ccbin" "${flags[@]}" -Isrc $sdl "${gc[@]}" -DTEST_TPK -DNV_TPK -DNV_TPK40 -DNV_MKVFIX_SEM_REDE \
+  -Wl,--wrap=mkvfix_estado -Wl,--allow-multiple-definition \
+  tests/farol_produtores_tv.c tests/dts_tpk_stub.c src/mkvfix.c src/velocidade.c \
+  src/video_modo.c src/faixasmkv.c src/audioinfo.c src/audioescolha.c \
+  $farol -lpthread -lm $(sdl2-config --libs) -o "$work/tpk40"
+"$work/tpk40"
 
 # .wgt: video_tizen.c inteiro com o stub de emscripten.h + nv_av em C no
 # contrato do webapis.avplay (disp/abrir/estado/erro).

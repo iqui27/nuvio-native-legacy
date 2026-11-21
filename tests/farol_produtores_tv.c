@@ -6,11 +6,13 @@
 //   TEST_ANDROID (cc -DTEST_ANDROID -DNV_ANDROID):
 //     Java_..._nativeEvento — o JNI que o Kotlin chama com EV_ERRO
 //     ("2004 player error:2") e EV_AUDIO_SEM_DECODER ("audio no decoder").
-//   TEST_TPK (cc -DTEST_TPK -DNV_TPK):
+//   TEST_TPK (cc -DTEST_TPK -DNV_TPK [ -DNV_TPK40 -Wl,--wrap=mkvfix_estado ]):
 //     video_tpk_log_host com as linhas do host .NET ("erro ConnectionFailed",
 //     "erro AudioCodecNotSupported", "interrompido: ResourceConflict"),
 //     nv_tpk_video_evento com o EV_ERRO nativo e recuperarPlayer (o ponto
-//     real do "relogio congelado", chamado por vigiarPlayer).
+//     real do "relogio congelado", chamado por vigiarPlayer). Com NV_TPK40:
+//     o ErroGeracao de preparo num VOD https aciona o relay TLS fora do
+//     EV_ERRO, e o caso relay-falha-depois cobre a nao-duplicacao.
 //   TEST_TIZEN (cc -DTEST_TIZEN -D__EMSCRIPTEN__ -Itests/farol_wgt_stub):
 //     video_tocar + video_bombear com nv_av implementado em C no lugar do
 //     EM_JS — o mesmo contrato do webapis.avplay: "disp", "abrir", "estado"
@@ -58,6 +60,7 @@ static void chk(const FarolEvento *e, int ev, int sev,
 #include <stdatomic.h>
 #include <sched.h>
 #include <stdarg.h>
+#include <time.h>
 #include "farolanel.h"
 
 const Stream *stream_fonte_reproducao(const char *url, const char *cab) {
@@ -72,6 +75,24 @@ static pthread_t fio_app;
 static atomic_int passo, escreveu, parserTerminou, armado;
 extern int __real_farolerro_ler(FarolPlat, const char *, int, FarolErro *);
 
+// A barreira tem prazo proprio: se a chamada do classificador da reconexao
+// for suprimida (mutacao ou regressao), nenhum dos lados sinaliza e a espera
+// morria no timeout externo (rc 124), mascarando a falha real. Estourado o
+// prazo, falha com mensagem e rc 1.
+static void barreira_esperar(atomic_int *flag, const char *lado) {
+  struct timespec t0, t;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  while (!atomic_load_explicit(flag, memory_order_acquire)) {
+    sched_yield();
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    if (t.tv_sec - t0.tv_sec >= 10) {
+      fprintf(stderr, "farol_produtores_tv [android]: barreira (%s) sem sinal em 10 s — "
+              "a chamada do classificador da reconexao foi suprimida?\n", lado);
+      exit(1);
+    }
+  }
+}
+
 int __wrap_snprintf(char *dst, size_t n, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
@@ -85,8 +106,8 @@ int __wrap_snprintf(char *dst, size_t n, const char *fmt, ...) {
       if (atomic_load_explicit(&armado, memory_order_relaxed) &&
           !pthread_equal(pthread_self(), fio_app)) {
         for (size_t i = 0; i < w; i++) ((volatile char *)dst)[i] = local[i];
-        atomic_store_explicit(&escreveu, 1, memory_order_relaxed);
-        while (!atomic_load_explicit(&parserTerminou, memory_order_relaxed)) sched_yield();
+        atomic_store_explicit(&escreveu, 1, memory_order_release);
+        barreira_esperar(&parserTerminou, "media3 aguarda o classificador");
       } else memcpy(dst, local, w);
     }
   } else {
@@ -101,7 +122,7 @@ int __wrap_farolerro_ler(FarolPlat plat, const char *texto, int codigo, FarolErr
       pthread_equal(pthread_self(), fio_app) &&
       atomic_exchange_explicit(&passo, 1, memory_order_acq_rel) == 0) {
     int rc;
-    while (!atomic_load_explicit(&escreveu, memory_order_relaxed)) sched_yield();
+    barreira_esperar(&escreveu, "fio do app aguarda a entrega do Media3");
     rc = __real_farolerro_ler(plat, texto, codigo, e);
     printf("reconexao: codigo da decisao=%d, tok=%s\n", codigo, e->cod);
     atomic_store_explicit(&parserTerminou, 1, memory_order_relaxed);
@@ -112,7 +133,7 @@ int __wrap_farolerro_ler(FarolPlat plat, const char *texto, int codigo, FarolErr
 
 static void *callbackMedia3(void *unused) {
   (void)unused;
-  while (atomic_load_explicit(&passo, memory_order_acquire) != 1) sched_yield();
+  barreira_esperar(&passo, "callback media3 aguarda o classificador");
   Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_ERRO, 2004, 2);
   return NULL;
 }
@@ -225,7 +246,18 @@ int ling_prefere_regional(const char *pref) { (void)pref; return 0; }
 int ling_afinidade(const char *cod, const char *pref) { (void)cod; (void)pref; return 0; }
 
 static unsigned geracao;
+#ifdef NV_TPK40
+// O estado da sonda mkvfix e falso nesta perna (--wrap): SONDANDO segura o
+// relay TLS "em curso"; FALHOU derruba o relay para o desfecho no EV_ERRO.
+static int mkvfixEstadoFake = MKVFIX_NADA;
+int __wrap_mkvfix_estado(void) { return mkvfixEstadoFake; }
+#endif
 static void abrir_geracao(const char *url, const char *cab, unsigned ger) {
+#ifdef NV_TPK40
+  // O prepare https falha sem o host chegar a tocar: a abertura conta, mas
+  // o player nao nasce — e o ErroGeracao de preparo que chega em seguida.
+  if (!strcmp(url, "https://example.invalid/movie.mp4")) { aberturas++; geracao = ger; return; }
+#endif
   abrir(url, cab);
   geracao = ger;
 }
@@ -305,8 +337,47 @@ int main(void) {
   chk(&ev[1], FE_ERRO_NATIVO, 2, -2, 0, "tpk_preso",    "tpk relogio congelado");
   video_parar();
 
+#ifdef NV_TPK40
+  // TPK40: o ErroGeracao de PREPARO num VOD https desvia do EV_ERRO para
+  // acionar o relay TLS (Video.cs:494 → video_tpk.c, ramo NV_TPK40). A falha
+  // conta uma vez mesmo fora do caminho normal.
+  video_definir_mp4(1); video_definir_reconexao(1);
+  if (!video_tocar("https://example.invalid/movie.mp4") || !geracao) return 2;
+  farolanel_zerar();
+  mkvfixEstadoFake = MKVFIX_SONDANDO;
+  video_tpk_log_host("erro ConnectionFailed");
+  nv_tpk_video_erro_geracao(geracao, (int)0xFE6C0026u, 1);
+  passo(1);
+  if (!mf.relayTentou || !mf.esperando) {
+    fprintf(stderr, "farol_produtores_tv [tpk40]: o relay TLS nao engatou "
+            "(relayTentou=%d, esperando=%d)\n", mf.relayTentou, mf.esperando);
+    return 2;
+  }
+  n = farolanel_ler(ev, (int)(sizeof ev / sizeof ev[0]), 0);
+  if (n != 1) { fprintf(stderr, "farol_produtores_tv [tpk40]: %d eventos na falha do preparo, esperava 1\n", n); return 1; }
+  chk(&ev[0], FE_ERRO_NATIVO, 2, (int32_t)0xFE6C0026, 0, "tpk_conexao", "tpk40 preparo https");
+
+  // O relay falha depois: o desfecho cai no EV_ERRO normal (-1) — a falha do
+  // preparo nao re-entra; o evento novo e o do relay, um por falha.
+  mkvfixEstadoFake = MKVFIX_FALHOU;
+  passo(1);
+  if (!video_falhou()) {
+    fprintf(stderr, "farol_produtores_tv [tpk40]: relay falhou e o video nao marcou falha\n");
+    return 2;
+  }
+  n = farolanel_ler(ev, (int)(sizeof ev / sizeof ev[0]), 0);
+  if (n != 2) { fprintf(stderr, "farol_produtores_tv [tpk40]: %d eventos apos o relay falhar, esperava 2\n", n); return 1; }
+  chk(&ev[0], FE_ERRO_NATIVO, 2, (int32_t)0xFE6C0026, 0, "tpk_conexao", "tpk40 preparo https (inalterado)");
+  chk(&ev[1], FE_ERRO_NATIVO, 2, -1, 0, "tpk_outro", "tpk40 relay indisponivel");
+  video_parar();
+#endif
+
   if (falhos) return 1;
+#ifdef NV_TPK40
+  puts("farol_produtores_tv: tpk40 ok");
+#else
   puts("farol_produtores_tv: tpk ok");
+#endif
   return 0;
 }
 

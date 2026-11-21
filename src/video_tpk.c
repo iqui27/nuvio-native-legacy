@@ -1805,6 +1805,9 @@ void video_bombear(void) {
     if (erroPreparo && ativo && !parado && reconPermitida && !cv.ativo && !emTrailer && !mf.ativo &&
         !mf.relayTentou && !strncmp(hostUrl, "https://", 8) &&
         !strstr(hostUrl, "://127.0.0.1") && !strstr(hostUrl, "://localhost")) {
+      // Este ramo desvia do EV_ERRO para tentar o relay TLS: a falha do
+      // prepare conta uma vez aqui, com o codigo nativo da ErroGeracao.
+      farolprod_erro(FP_TIZEN_TPK, NULL, erroCod, 0);
       mf.relayTentou = 1; mf.sondou = 1; mf.esperando = mf.esperaFallback = 1; mf.esperaDesde = SDL_GetTicks();
       snprintf(mfEspUrl, sizeof mfEspUrl, "%s", hostUrl);
       snprintf(mfEspCab, sizeof mfEspCab, "%s", hostCab);
