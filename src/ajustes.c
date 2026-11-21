@@ -18,6 +18,7 @@
 #include "legsync.h"
 #include "vertudo.h"
 #include "ajlog.h"
+#include "farolajustes.h"   // FAROL (#26): lista branca da diferenca de ajustes
 #include "horafmt.h"
 #include "ajustes_ux.h"
 #include "resolver.h"
@@ -12624,4 +12625,31 @@ int ajustes_rapido_cor_definir(int i) {
   r = definirValorDireto(AJ_TEMA, corTema(i));
   ajOrigemDireto = AJLOG_AJUSTES;
   return r;
+}
+
+// FAROL (#26): diferenca de ajustes por lista branca (farolajustes.h). A
+// resolucao `chave` -> op e por strcmp na CHAVE[]: a tabela nao depende das
+// posicoes do enum, que variam por #ifdef e por append-only. Entrada sem
+// CHAVE nesta build (opcao de plataforma) e so pulada.
+int ajustes_farol_diff(void (*cb)(const char *chave, int numero, const char *token, void *ctx), void *ctx) {
+  int i, pares = 0;
+  if (!cb) return 0;
+  for (i = 0; i < (int)(sizeof FAROL_AJ_LISTA / sizeof *FAROL_AJ_LISTA); i++) {
+    const FarolAjItem *it = &FAROL_AJ_LISTA[i];
+    int op, v;
+    for (op = 0; op < AJ_N; op++) if (CHAVE[op] && !strcmp(CHAVE[op], it->chave)) break;
+    if (op == AJ_N) continue;
+    v = valor[op];
+    if (v == valorPadrao[op]) continue;
+    if (it->tipo == FAROL_AJ_ENUM) {
+      const char *tok = it->rot && v >= 0 && v < it->n ? it->rot[v] : "outro";
+      cb(it->nome, v, tok, ctx);
+    } else if (it->tipo == FAROL_AJ_NUM) {
+      cb(it->nome, it->num && v >= 0 && v < it->n ? it->num[v] : v, NULL, ctx);
+    } else {
+      cb(it->nome, v == it->ligado ? 1 : 0, NULL, ctx);
+    }
+    pares++;
+  }
+  return pares;
 }
