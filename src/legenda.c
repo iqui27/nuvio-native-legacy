@@ -24,10 +24,13 @@ static double maiorDur;
 static int docAss;   // the current document is ASS/SSA (sob trava)
 
 /* libass off (.tpk, Subtitles > Style): an ASS/SSA track is drawn by the app
- * as plain text, dialogue only (assDialogoSo). */
+ * as plain text, dialogue only (assDialogoSo). A preferencia e do painel do
+ * motor NOVO: com o motor antigo (chave dos Ajustes) ela nao se aplica — o
+ * painel antigo nao oferece religar, e o letreiro posicionado sumia no texto
+ * simples sem caminho de volta. */
 static int libassDesligado(void) {
 #ifdef NV_TPK
-  return !assperf_get(AP_LIBASS);
+  return ass_novo_ligado() && !assperf_get(AP_LIBASS);
 #else
   return 0;
 #endif

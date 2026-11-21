@@ -243,6 +243,7 @@ static void montarBiblioteca(Fileira *f) {
       if (ordem == FIL_ORD_AZ) busca_normalizar(it->titulo, titulo, sizeof titulo);
       for (pos = 0; pos < f->n; pos++) {
         const CatItem *outro = cat_item(f->itens[pos]);
+        if (!outro) continue;   // cat_item pode dar NULL no meio de uma troca do catalogo
         if (ordem == FIL_ORD_AZ) {
           char outroTitulo[sizeof outro->titulo];
           busca_normalizar(outro->titulo, outroTitulo, sizeof outroTitulo);

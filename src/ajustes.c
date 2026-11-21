@@ -3643,7 +3643,15 @@ int ajustes_legenda_forcada_auto(void) { return lig(AJ_LEG_FORCADA); }   // #287
 int ajustes_legenda_evitar_sdh(void) { return lig(AJ_LEG_EVITAR_SDH); }   // #743, padrao Desligado
 // Motor novo de legendas ASS do .tpk (assperf.h): 1 = ligado (padrao), 0 = o
 // motor de antes de 23/10. Lido pelo ass_novo_ligado via ass_novo_registrar.
-int ajustes_ass_motor(void) { return lig(AJ_ASS_MOTOR); }
+// A thread de render NAO le valor[]: ela recebe este ESPELHO, publicado com
+// store/load atomicos pela thread principal em cada escrita da chave (a troca
+// em definirValorDireto e a releitura do arquivo em ajustes_dir). Ler valor[op]
+// direto aqui concorria com a gravacao da confirmacao (TSan).
+static int assMotorEspelho = 1;
+static void assMotorPublicar(void) {
+  __atomic_store_n(&assMotorEspelho, lig(AJ_ASS_MOTOR), __ATOMIC_RELEASE);
+}
+int ajustes_ass_motor(void) { return __atomic_load_n(&assMotorEspelho, __ATOMIC_ACQUIRE); }
 // #338: -1 = lembrar o ultimo tamanho; 0..2 = Completo, Compacto, Minimo.
 int ajustes_estat_tamanho(void) {
   int v = valor[AJ_ESTAT_TAMANHO];
@@ -5447,6 +5455,7 @@ void ajustes_dir(const char *dir) {
     ajEpgMemoriaAplicar();
     legenda2_atualizar_offset_manual(ajustes_leg2_atraso());
     ajSombraSync();
+    assMotorPublicar();
     return;
   }
   { int viuIdioma = 0, viuAuto = 0, idiomaGravado = IDIOMA_EN, autoGravado = 0;
@@ -5844,6 +5853,7 @@ void ajustes_dir(const char *dir) {
   ppReconciliar();
   previaAplicar();
   ajSombraSync();   // o que veio do disco nao e mudanca de ninguem
+  assMotorPublicar();   // o espelho do motor ASS reflete o arquivo inteiro lido
 }
 
 static int gravar(void) {
@@ -10686,9 +10696,12 @@ static int definirValorDireto(int op, int novo) {
   if (op == AJ_TEX_MB) memoriaEscolhida = 1;
   if (op == AJ_SALVOS_DEST) bibliotecaFonteEscolhida = 1;
   valor[op] = novo;
+  if (op == AJ_ASS_MOTOR) assMotorPublicar();
   if (novo == 0) notaLigarPar(op);
   { int ok; ajOrigem = ajOrigemDireto; ok = gravar(); ajOrigem = 0;
-    if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes; return 0; } }
+    if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes;
+      if (op == AJ_ASS_MOTOR) assMotorPublicar();
+      return 0; } }
   if ((op == AJ_DV_MKV || op == AJ_DV7 || op == AJ_DV7_MAPPING) && antes != 0 && novo == 0) video_dv_guard_reiniciar();
   if (op == AJ_LIVETV_SUGERIR) guia_sugestoes_mudaram();
   if (op == AJ_LIVETV_AGRUPAR) guia_reordenar();
@@ -10704,7 +10717,7 @@ static int definirValorDireto(int op, int novo) {
   if (op == AJ_IDIOMA) { idiomaEscolhido(); desc_repetir(); }
   if (op == AJ_PREVIA_PROVEDOR) previaAplicar();
   if (op == AJ_BARRAS_PRETAS) barraspretas_invalidar();
-  if (op == AJ_ASS_MOTOR) assrender_aplicar_invalidacao();   /* solta quadros/texturas do motor que saiu */
+  if (op == AJ_ASS_MOTOR) assrender_motor_invalidar();   /* epoca sobe, mesmo pts pede de novo, motor que saiu solta tudo */
   if (op == AJ_TAMANHO_UI) gfx_escala_ui_definir(ajustes_tamanho_ui());
   if (op == AJ_ESCALA_TEXTO) gfx_escala_txt_definir(ajustes_escala_texto());
   if (op == AJ_INTERFACE_MODO) {

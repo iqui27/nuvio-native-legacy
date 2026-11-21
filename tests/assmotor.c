@@ -31,8 +31,10 @@ int main(void) {
   assert(ajustes_ass_motor() == 1);
   assert(ass_novo_ligado() == 1);            // a chave alimenta o motor
 
-  // Desligado = volta ao motor antigo, em tempo de execucao.
+  // Desligado = volta ao motor antigo, em tempo de execucao. A escrita direta
+  // no teste publica o espelho atomico como a confirmacao dos Ajustes faz.
   valor[AJ_ASS_MOTOR] = 1;
+  assMotorPublicar();
   assert(ajustes_ass_motor() == 0);
   assert(ass_novo_ligado() == 0);
 
@@ -50,6 +52,7 @@ int main(void) {
 
   // Liga de novo e persiste do mesmo jeito.
   valor[AJ_ASS_MOTOR] = 0;
+  assMotorPublicar();
   assert(gravar());
   ajustes_dir(dir);
   assert(ajustes_ass_motor() == 1);

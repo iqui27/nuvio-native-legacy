@@ -51,6 +51,11 @@ void assrender_definir_layout(float x, float y, float w, float h,
  * faixa ou seek, mesmo quando a nova faixa nao e ASS. */
 void assrender_aplicar_invalidacao(void);
 
+/* Troca do motor ASS nos Ajustes (fio grafico): epoca sobe, o ultimo pedido
+ * zera (o mesmo pts volta a renderizar) e os recursos do motor que saiu sao
+ * liberados na hora, nos dois caminhos de desenho. */
+void assrender_motor_invalidar(void);
+
 /* Gera os quads do instante atual no contexto GL do player. Retorna o numero
  * de imagens libass desenhadas, inclusive zero quando a faixa esta carregada
  * mas nao ha evento vivo nesse instante. */

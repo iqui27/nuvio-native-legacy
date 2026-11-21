@@ -265,7 +265,9 @@ static struct {
 } assMed;
 static pthread_mutex_t assDiagTrava = PTHREAD_MUTEX_INITIALIZER;
 static char assDiag[160] = "libass pronto";
+#ifdef NV_TPK
 static int assGlifoMsgs;   // assperf: mensagens de glifo ausente desta faixa (sob assTrava)
+#endif
 
 static void ass_diag(const char *s) {
   pthread_mutex_lock(&assDiagTrava);
@@ -1729,9 +1731,11 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
 }
 
 int assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao) {
+#ifdef NV_TPK
   pthread_mutex_lock(&assTrava);
   assGlifoMsgs = 0;
   pthread_mutex_unlock(&assTrava);
+#endif
   return ass_carregar(corpo, tamanho, geracao, 0, 0);
 }
 
@@ -2029,6 +2033,27 @@ void assrender_aplicar_invalidacao(void) {
 #endif
   }
   pthread_mutex_unlock(&assFilaTrava);
+}
+
+/* Troca do motor ASS (Ajustes, fio principal = fio GL). Consumir um
+ * assTexResetar nao basta — aqui nem existe um pendente. A epoca sobe (o que
+ * o motor que saiu pediu ou produziu nao entra mais), o ultimo pedido zera
+ * (o proximo desenho pede de novo MESMO no mesmo pts — pausado, o "render so
+ * em mudanca" suprimia a legenda) e os recursos dos DOIS caminhos saem agora,
+ * sem esperar o desenho cair no ramo do motor que saiu. */
+void assrender_motor_invalidar(void) {
+  pthread_mutex_lock(&assFilaTrava);
+  ++assEpoch;
+  assTemUltimoPedido = 0;
+  assTexResetar = 0;
+  ass_apagar_texturas_locked();
+  ass_frame_liberar(&assAtual); assAtualValido = 0;
+  pthread_mutex_unlock(&assFilaTrava);
+#if ASS_NOVO
+  ass_main_soltar();
+  ass_tc_apagar();
+  assMainResetar = 0;
+#endif
 }
 
 static double ass_mono(void) {
@@ -2420,6 +2445,7 @@ void assrender_definir_cor(int enabled, int r, int g, int b) {
   (void)enabled; (void)r; (void)g; (void)b;
 }
 void assrender_aplicar_invalidacao(void) {}
+void assrender_motor_invalidar(void) {}
 int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
                        float x, float y, float w, float h) {
   (void)posSeg; (void)atrasoMs; (void)alpha; (void)x; (void)y; (void)w; (void)h; return 0;
