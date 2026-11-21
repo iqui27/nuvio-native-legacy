@@ -75,6 +75,9 @@ void amigosfil_focar(int coluna, int cartao) {
 #endif
 
 static int afNum(void);
+#ifdef NV_TOUCH_UI
+static GfxRect afRect(int i,float x0,float y);
+#endif
 int amigosfil_dentro(void) { return dentro; }
 int amigosfil_convite(void) { return socialvis_n_amigos() == 0; }
 int amigosfil_n_colunas(void) {
@@ -138,7 +141,11 @@ void amigosfil_retomar_foco(int *coluna) {
     float ponto = toque.regiao.x + toque.regiao.w * 0.35f, melhor = 1e9f;
     int n = amigosfil_n_colunas();
     for (int i = 0; i < n; i++) {
-      float d = fabsf(rostoX(i, ultX0, ultAlt) + AF_D * 0.5f - ponto);
+      float centro = rostoX(i, ultX0, ultAlt) + AF_D * 0.5f;
+      if (ajustes_amigos_estilo() != 5) {
+        GfxRect r = afRect(i, ultX0 - scroll, 0); centro = r.x + r.w * .5f;
+      }
+      float d = fabsf(centro - ponto);
       if (d < melhor) { melhor = d; *coluna = i; }
     }
     dentro = -1;
