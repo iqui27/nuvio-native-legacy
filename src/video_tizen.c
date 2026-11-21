@@ -1312,6 +1312,16 @@ int video_recarregar(void) {
   return 1;
 }
 
+// O retangulo do plano, em 1920x1080. O limite de tela e o mesmo do caminho da
+// LG e por precaucao equivalente: um plano de hardware nao recorta o excedente,
+// e nao ha razao para descobrir na TV Samsung se o comportamento e "recorta" ou
+// "apaga".
+// Aplica o retangulo COMO VEIO, sem grampear. E o ponto unico que fala com o
+// AVPlay e que lembra o que ja esta valendo — a lembranca importa porque quem
+// pede a janela antes de haver sessao (main.c faz isso) precisa que ela seja
+// reenviada no open.
+static int aplicarRect(int x, int y, int w, int h);
+
 void video_bombear(void) {
   video_recorte_reaplicar();
   double est[EST_N];
@@ -1395,6 +1405,15 @@ void video_bombear(void) {
                            (unsigned)(SDL_GetTicks() - aberturaEm));
     lerFaixas();
     lerInfoFluxo();
+    /* #703: abrir cedo com ativo=1 pode falhar o rect no JS; prepared e o
+     * ultimo ponto seguro antes do play visivel (audio sem video). */
+    if (janW > 0 && janH > 0) {
+      int jx = janX, jy = janY, jw = janW, jh = janH;
+      janX = janY = janW = janH = -1;
+      if (!aplicarRect(jx, jy, jw, jh))
+        printf("[video] #703: setDisplayRect ainda falhou apos prepared (%d,%d %dx%d)\n",
+               jx, jy, jw, jh);
+    }
   }
   if (pronto && !faixasLidas) lerFaixas();
   // A posicao da queda, depois das faixas (trocar faixa pode reiniciar o decode).

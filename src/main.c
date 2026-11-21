@@ -2070,7 +2070,9 @@ int main(int argc, char **argv) {
       // Teclado do sistema (entrada_texto.h): ve o texto ANTES de qualquer tela.
       texto_sistema_observar(&e);
       if (e.type == SDL_WINDOWEVENT) {
-#if defined(NV_DESKTOP_RELEASE) && !defined(NV_TOUCH_UI)
+        // No .tpk quem empurra o SIZE_CHANGED e o nv_tpk_quadro (tpk.c), ao
+        // readotar o tamanho da superficie EGL na volta do segundo plano.
+#if (defined(NV_DESKTOP_RELEASE) || defined(NV_TPK)) && !defined(NV_TOUCH_UI)
         if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
           SDL_GL_GetDrawableSize(win, &dw, &dh);
           if (dw > 0 && dh > 0) {

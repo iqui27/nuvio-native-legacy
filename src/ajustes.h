@@ -959,6 +959,15 @@ int ajustes_show_skip_intro(void);
 int ajustes_show_skip_recap(void);
 int ajustes_show_skip_credits(void);
 int ajustes_show_skip_cena(void);
+
+// FAROL (#26): diferenca de ajustes por lista branca (farolajustes.h). Para
+// cada ajuste da lista cujo valor difere do padrao de fabrica desta TV, cb
+// recebe o NOME estavel do pacote e o valor: enum como `token` ASCII (`numero`
+// e o indice gravado), numero/booleano em `numero` (token NULL). Devolve
+// quantos pares entregou; 0 com tudo no padrao ou cb NULL. Nunca texto livre
+// nem chave que ajlog_chave_sensivel marcaria — a lista e fechada e o teste
+// prova na compilacao. Pensado para a secao "ajustes" do registro tecnico.
+int ajustes_farol_diff(void (*cb)(const char *chave, int numero, const char *token, void *ctx), void *ctx);
 #endif
 
 // External audio uses the webOS converter; disabled by default.

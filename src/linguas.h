@@ -64,6 +64,7 @@ int ling_casa(const char *codigo, const char *pref);
 void ling_normalizar(const char *raw, char *out, unsigned tam);
 const char *ling_selo(const char *cod);
 int ling_afinidade(const char *cod, const char *pref);
+int ling_prefere_regional(const char *pref);
 
 // Preferencias em vigor. Devolvem "" quando nao ha preferencia (sem filtro) e
 // "none" quando a pessoa pediu explicitamente NENHUMA legenda.

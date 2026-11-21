@@ -48,7 +48,7 @@ static void sources_screen(void){
   gfx_cor((GfxRect){1176,306,1,658},0,1,1,1,.08f);
   plrui_kicker(i18n("Opções da grade"),1212,306,154,156,158,1);
   button(200,i18n("Alcance do guia"),"aj_calendar-days",1212,354,600,64,1);
-  label(TXT_ILHA_SUB,i18n(ajustes_guia_dias()==3?"Três dias":"Um dia"),1534,374,240,1);
+  label(TXT_ILHA_SUB,i18n(ajustes_guia_dias()==7?"Sete dias":ajustes_guia_dias()==3?"Três dias":"Um dia"),1534,374,240,1);
   button(201,i18n("URL XMLTV"),"aj_calendar",1212,424,600,56,1);
   button(204,i18n("Opções"),"aj_sliders-horizontal",1280,210,230,56,0);
   sources_switch(202,i18n("Agrupar variantes dos canais"),ajustes_livetv_agrupar(),1212,494,600);
@@ -84,7 +84,7 @@ static int sources_activate(int id){
   if(id==9||id==10){sources_category_offset+=id==9?-3:3;focus=300;return 1;}
   if(id>=300&&id<303){int i=sources_category_offset+id-300;if(i<sources_category_count&&guia_categoria_definir(&sources_categories[i],!sources_categories[i].oculta))sources_category_revision=~0u;gv_snap_force=1;return 1;}
   if(id==204){sources_options=1;gv_go("ajustes");return 1;}
-  if(id==200){ajustes_definir_guia_dias(ajustes_guia_dias()==3?1:3);gv_snap_force=1;return 1;}
+  if(id==200){int d=ajustes_guia_dias();ajustes_definir_guia_dias(d==1?3:d==3?7:1);gv_snap_force=1;epg_recarregar();return 1;}
   if(id==201){input(4,"URL XMLTV",draft.xmltv,1);return 1;}
   if(id==202||id==203){ajustes_rapido_passo(ajustes_rapido_op(id==202?"liveTvGroupVariantsLocal":"guiaOrdemLocal"),1);gv_snap_force=1;return 1;}
   if(id>=100&&id<116){

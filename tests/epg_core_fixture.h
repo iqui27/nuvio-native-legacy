@@ -39,6 +39,10 @@ int rede_baixar_fluxo(const char *url,int seg,const char *const *cab,
   return responder?responder(url,cb,u,status,bytes):0;
 }
 static void tempo(char *out,time_t t) {strftime(out,32,"%Y%m%d%H%M%S +0000",gmtime(&t));}
+// O "Alcance do guia" dos testes de nucleo: 7 dias (o maior), como o default do ajuste.
+int ajustes_guia_dias(void);
+static int teste_dias = 7;
+int ajustes_guia_dias(void) { return teste_dias; }
 static void esperar(void) {
   for(int i=0;i<10000;i++) {
     epg_passo();if(!fioVivo && (epg_estado()==EPG_PRONTO || epg_estado()==EPG_FALHOU))return;

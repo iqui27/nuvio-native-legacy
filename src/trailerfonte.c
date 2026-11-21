@@ -9,6 +9,7 @@
 // <video> sem Referer. Sem esse servico na build, o IMDb nao existe la.
 // YouTube: so ha player embutido onde ha pagina (Samsung); na LG o botao abre
 // o navegador do webOS (extras_trailer_abrir), que nao e trailer "no app".
+#include "nvbackend.h"
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif

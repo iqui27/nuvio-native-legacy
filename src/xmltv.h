@@ -25,7 +25,7 @@ typedef struct {
   void (*icone)(const char *id, const char *src, void *u);
   // <programme channel start stop><title>...</title></programme>
   void (*programa)(const char *canal, const char *ini, const char *fim,
-                   const char *titulo, void *u);
+                   const char *titulo, const char *desc, const char *icon, void *u);
   void *u;
   // estado
   int  gz, inicio, zOk, erroZ;

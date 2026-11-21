@@ -492,7 +492,7 @@ void gpun_descartar_cor(int padrao) {
 }
 
 void gpun_redimensionar(int w, int h) {
-#ifdef NV_TOUCH_UI
+#if defined(NV_TOUCH_UI) || defined(NV_TPK)
   if (w <= 0 || h <= 0) return;
   // Switching TV/Mobile can change the logical canvas without resizing the
   // drawable. A fixed logical target must be rebuilt in that case too.
