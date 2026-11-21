@@ -238,6 +238,36 @@ static int pedidoCabsValidos(const char *const *cab, size_t teto) {
   }
   return !cab || !cab[k];
 }
+static int pedidoPerform(PedidoCtx *ctx, void *easy) {
+  if (!ctx->p->parar) return curl_perform(easy);
+  if (!curl_multi_init || !curl_multi_add || !curl_multi_remove ||
+      !curl_multi_perform || !curl_multi_cleanup || !curl_multi_info_read ||
+      !(curl_multi_poll || curl_multi_wait)) {
+    ctx->r->erro = REDE_INDISPONIVEL;
+    return 2;
+  }
+  void *multi = curl_multi_init();
+  if (!multi) { ctx->r->erro = REDE_MEMORIA; return 2; }
+  if (curl_multi_add(multi, easy)) { curl_multi_cleanup(multi); return 2; }
+  int ativo = 1, erro = 56;
+  while (!curl_multi_perform(multi, &ativo)) {
+    if (pedidoParar(ctx)) { erro = 42; break; }
+    if (!ativo) {
+      typedef struct { int msg; void *easy; union { void *p; int result; } data; } Msg;
+      Msg *info;
+      int n;
+      while ((info = curl_multi_info_read(multi, &n)))
+        if (info->msg == 1 && info->easy == easy) erro = info->data.result;
+      break;
+    }
+    if (curl_multi_poll) curl_multi_poll(multi, NULL, 0, 20, NULL);
+    else curl_multi_wait(multi, NULL, 0, 20, NULL);
+  }
+  curl_multi_remove(multi, easy);
+  curl_multi_cleanup(multi);
+  return erro;
+}
+
 unsigned rede_pedido_capacidades(void) {
   return REDE_CAP_CORPO | REDE_CAP_JOB | REDE_CAP_REDIRECT | REDE_CAP_INTERVALO;
 }
@@ -392,7 +422,8 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
        multi de performTmdb tirava a associacao antes de getinfo/intervalo
        final — a geracao avancada no callback de intervalo nao era mais
        vista (tests/rede_pedido.c /late, REDE_GERACAO). */
-    r->curl_erro = tmdbFallback(curl, curl_perform(curl), url, NULL);
+    r->curl_erro = pedidoPerform(&c, curl);
+    if (!p->parar) r->curl_erro = tmdbFallback(curl, r->curl_erro, url, NULL);
     { char *final = NULL;
       if (!curl_getinfo(curl, INFO_URL_FINAL, &final) && final)
         snprintf(r->final, sizeof r->final, "%s", final);
