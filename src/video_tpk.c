@@ -118,7 +118,11 @@ static Uint32 legSemCueMs, legBombeouEm;
 
 static char urlAtual[NV_MEDIA_URL_MAX];
 static char cabecalhos[2048];
-static volatile int ativo, pronto, falhou, terminou, tocando, largura, altura;
+static volatile int ativo, pronto, falhou, tocando, largura, altura;
+// Atomico: o fim e publicado no fio "Nuvio video" do host (EV_FIM) e lido pelo
+// fio do app no video_bombear, no video_buscar e nas consultas (video_terminou,
+// video_tpk_capa, video_busca_em_voo) — volatile aqui corria com a publicacao.
+static atomic_int terminou;
 // video_parar ate o proximo video_tocar: nada abre o conversor (convIniciar).
 static int parado;
 static volatile int conflito;   // ver video_tpk_log_host
@@ -1822,23 +1826,24 @@ static void reabrindoVigiar(void) {
   cv.reabrindo = 0;
 }
 
+// Aposenta o estado de busca/reabertura da sessao que o EV_FIM encerrou. Fim
+// real com seek ou reabertura no ar: o alvo pendente e a posicao segurada nao
+// pousam mais. Sem soltar isto o app ficava em "busca em voo" para sempre — a
+// guarda de fim de parte nunca deixava passar nem um EOS confirmado (o retorno
+// cedo do video_bombear barrava ate o limite de 60 s do reabrindoVigiar). A
+// limpeza fica neste fio: o callback de EOF roda no "Nuvio video" do host e
+// escrever la corria com video_tpk_capa()/video_busca_em_voo().
+static void fimConsumir(void) {
+  nv_recon_zerar(&recon);
+  cv.reabrindo = 0; cv.seekPend = 0; mf.pend = 0;
+  reconErroPend = 0; reconBuscarMs = reconPausa = -1;
+  atomic_store(&buscaAlvoMs, -1);
+  atomic_store(&playerPreso, -2);
+}
+
 void video_bombear(void) {
   // EOS wins over late polling errors and pending network retries.
-  if (terminou) {
-    nv_recon_zerar(&recon);
-    // Fim real com seek ou reabertura no ar: o alvo pendente e a posicao
-    // segurada nao pousam mais. Sem soltar aqui o app ficava em "busca em
-    // voo" para sempre — a guarda de fim de parte nunca deixava passar nem
-    // um EOS confirmado (o retorno cedo do video_bombear barrava ate o
-    // limite de 60 s do reabrindoVigiar). A limpeza fica neste fio: o
-    // callback de EOF roda no "Nuvio video" do host e escrever la corria
-    // com video_tpk_capa()/video_busca_em_voo().
-    cv.reabrindo = 0; cv.seekPend = 0; mf.pend = 0;
-    reconErroPend = 0; reconBuscarMs = reconPausa = -1;
-    atomic_store(&buscaAlvoMs, -1);
-    atomic_store(&playerPreso, -2);
-    return;
-  }
+  if (terminou) { fimConsumir(); return; }
   cdnBombear();
   pthread_mutex_lock(&hostTrava);
   unsigned erroGer = hostErroGer;
@@ -2048,6 +2053,10 @@ void video_pausar(int p) {
 int video_pausa_confirmada(void) { return 0; } // host nao fornece ack por sessao
 void video_volume(int pct) { if (hVolume) hVolume(pct); }
 void video_buscar(double s) {
+  // Seek entre o EV_FIM e o bombeamento que o consumiria: o `terminou = 0`
+  // dos caminhos abaixo pularia a limpeza do fim e a reabertura velha (capa e
+  // posicao seguradas) sobreviveria ao seek novo, confirmado e tudo.
+  if (terminou) fimConsumir();
   if (nv_recon_ativa(&recon)) {
     recon.alvo = s;
     if (recon.pendente || reconErroPend || !pronto || reconBuscarMs >= 0) { reconBuscarMs = (int)(s * 1000.0); return; }
@@ -2341,6 +2350,10 @@ static double posReal(void) {
 // only moves when SetPlayPositionAsync finishes, so until then video_pos() is
 // the OLD position. The player keeps its target while this says 1.
 int video_busca_em_voo(void) {
+  // EOF publicado: a busca/reabertura no ar e da sessao que acabou — o proximo
+  // bombeamento (ou um seek novo) a aposenta. Reporta-la aqui segurava o fim
+  // de parte um quadro a mais e a capa sobre o video terminado.
+  if (terminou) return 0;
   return atomic_load(&buscaAlvoMs) >= 0 || reconBuscarMs >= 0 || cv.reabrindo ||
          (cv.ativo && cv.seekPend) || mf.pend;
 }
@@ -2408,7 +2421,7 @@ int video_tpk_convertendo(void) { return cv.ativo || cv.sondando; }
 // ja tocava (seek no TS, reconexao, troca): a tela cobre o preto com uma capa.
 // Ate o player estar no alvo, nao so no primeiro quadro: no HLS o player novo
 // toca um instante do seg0 (o comeco do filme) antes de o seek pousar.
-int video_tpk_capa(void) { return cv.reabrindo; }
+int video_tpk_capa(void) { return cv.reabrindo && !terminou; }
 // video.c (video_dts_estado): o selo/aviso do DTS enquanto este arquivo converte.
 // TrueHD nao tem selo de DTS: 0.
 int video_tpk_dts_estado(void) {
