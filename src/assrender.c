@@ -1319,7 +1319,7 @@ void assrender_posicao_video(double posSeg) {
 int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
                        float x, float y, float w, float h) {
   unsigned generation;
-  int i, n = 0, reset, corChave, reenviar;
+  int i, n = 0, reset, corChave, reenviar, parado;
   long long agora;
   (void)w; (void)h;
   if (alpha <= 0.001f) return 0;
@@ -1338,8 +1338,17 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
   if (assTemUltimoPedido && assUltimoPedidoGeracao == generation &&
       fabs((double)agora - assUltimoPedidoMs) > 1500.0)
     ass_salto_locked();
-  if (!assTemUltimoPedido || assUltimoPedidoGeracao != generation ||
-      fabs((double)agora - assUltimoPedidoMs) >= 5.0) {
+  /* #772: a leitura da legenda pode ficar PARADA na origem enquanto o video
+   * ja esta no destino (busca em voo, reconexao — posLeg nao anda). Pedir
+   * ou promover um render dessa posicao velha repoe a fala da cena de
+   * origem ate o relogio alcancar o destino. Enquanto a leitura divergir
+   * do numero do VIDEO, nao ha pedido nem promocao: o quadro fica limpo e
+   * a fala certa entra assim que o relogio chega. O atraso manual da
+   * pessoa nao conta — a divergencia e medida no posSeg, sem ele. */
+  parado = assPosVideoAnt >= 0.0 && fabs(posSeg - assPosVideoAnt) > 1.5;
+  if (!parado &&
+      (!assTemUltimoPedido || assUltimoPedidoGeracao != generation ||
+       fabs((double)agora - assUltimoPedidoMs) >= 5.0)) {
     assUltimoPedidoMs = (double)agora;
     assUltimoPedidoGeracao = generation;
     assTemUltimoPedido = 1;
@@ -1354,7 +1363,7 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
     ass_frame_liberar(&assAtual); assAtualValido = 0;
   }
   if (assProntoValido) {
-    if (assPronto.generation == generation) {
+    if (!parado && assPronto.generation == generation) {
       ass_frame_liberar(&assAtual);
       assAtual = assPronto; memset(&assPronto, 0, sizeof assPronto);
       assAtualValido = 1;

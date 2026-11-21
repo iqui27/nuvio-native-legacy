@@ -9,6 +9,9 @@ TMPDIR="${TMPDIR%/}"
 #   [B] src/assrender.c (com libass): o salto visto na posicao do VIDEO
 #       (assrender_posicao_video) derruba o quadro/pedido do instante velho
 #       mesmo com o relogio da legenda parado.
+#   [C] sonda sol-f64r2 incorporada: 24 quadros com o relogio parado na
+#       origem (1x/2x, ida e volta, ASS e SRT via plainass), zero fala
+#       antiga; passo comum mantem imagens.
 #   bash tests/ass_salto772.sh    SANITIZE=1 (ASan/UBSan) ou SANITIZE=thread
 set -eu
 cd "$(dirname "$0")/.."
@@ -19,9 +22,9 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 elif [ "${SANITIZE:-0}" = thread ]; then flags+=(-fsanitize=thread -fno-omit-frame-pointer); fi
 if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libass; then
   "${CC:-cc}" -DNV_ASS_LIBASS -include tests/ass_pisca_gl.h -Isrc \
-    tests/ass_salto772.c src/relogio.c src/assrender.c tests/ass_render_stub.c \
+    tests/ass_salto772.c src/relogio.c src/assrender.c src/plainass.c tests/ass_render_stub.c \
     -o "$D/test" -O1 -g -Wall -lm "${flags[@]}" \
-    $(pkg-config --cflags --libs libass) -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+    $(pkg-config --cflags --libs libass fribidi) -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
     -L/opt/homebrew/lib -lSDL2 -framework OpenGL \
     -Wno-deprecated-declarations -Wno-macro-redefined
   # Fontes/trilhas do libass e do fontconfig nao sao liberadas em atexit.

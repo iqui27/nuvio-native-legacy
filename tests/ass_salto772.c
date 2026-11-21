@@ -184,18 +184,124 @@ static void testar_salto_ass(void) {
   n = assrender_desenhar(21.0, 0, 1.0f, 0, 0, 1920, 1080);
   ok(n == 0, "quadro de 21 s some no salto do VIDEO mesmo com o relogio parado");
 
-  // Um passo comum (0,3 s) NAO e salto: quadro sobrevive.
+  // Um passo comum (0,3 s) NAO e salto: a fala segue visivel, sem apagar.
   { unsigned g2 = g + 1;
     assrender_geracao(g2); assrender_limpar_fontes(); assrender_carregar(DOC, strlen(DOC), g2);
-    assrender_posicao_video(20.0);
-    for (k = 0, n = 0; k < 60 && n <= 0; k++) { quadro(); n = assrender_desenhar(20.5 + k / 60.0, 0, 1.0f, 0, 0, 1920, 1080); }
+    for (k = 0, n = 0; k < 60 && n <= 0; k++) {
+      quadro();
+      assrender_posicao_video(20.0 + k / 60.0);
+      n = assrender_desenhar(20.5 + k / 60.0, 0, 1.0f, 0, 0, 1920, 1080); }
     assrender_posicao_video(20.3);
     n = assrender_desenhar(20.5, 0, 1.0f, 0, 0, 1920, 1080);
-    ok(n >= 0, "passo de 0,3 s no video nao e salto"); }
+    ok(n > 0, "passo de 0,3 s no video nao e salto (fala segue visivel)"); }
 
   // Na posicao nova a fala certa entra.
-  for (k = 0, n = 0; k < 60 && n <= 0; k++) { quadro(); n = assrender_desenhar(2.0 + k / 60.0, 0, 1.0f, 0, 0, 1920, 1080); }
+  for (k = 0, n = 0; k < 60 && n <= 0; k++) {
+    quadro();
+    assrender_posicao_video(2.0 + k / 60.0);
+    n = assrender_desenhar(2.0 + k / 60.0, 0, 1.0f, 0, 0, 1920, 1080); }
   ok(n > 0, "fala de 1-3 s aparece na posicao nova");
+}
+
+/* [C] A sonda do revisor (evidencias/sol-f64r2/probe-ass772.c): o video
+ * salta e o RELOGIO da legenda fica parado na origem por 24 quadros — a
+ * busca em voo do TPK segura posLeg. A fala da cena de origem NAO pode
+ * voltar em nenhum desses quadros; a do destino entra quando o relogio
+ * alcanca. 1x e 2x, ida e volta, ASS e SRT via plainass_document. */
+static int desenhar_rel(Relogio *r, double mono) {
+  return assrender_desenhar(relogio_ler(r, mono), 0, 1.0f, 0, 0, 1920, 1080);
+}
+static int esperar_fala_rel(Relogio *r, double mono) {
+  int q;
+  for (q = 0; q < 90; q++) {
+    int n = desenhar_rel(r, mono);
+    if (n > 0) return n;
+    quadro();
+  }
+  return 0;
+}
+static void verificar_salto_parado(double taxa, int sentido, unsigned g, int srt) {
+  const LegendaCue cues[2] = {
+    { .inicio = 1, .fim = 3, .texto = "كلام البداية" },
+    { .inicio = 20, .fim = 22, .texto = "كلام المشهد التالي" },
+  };
+  double anterior = sentido > 0 ? 2.0 : 21.0;
+  double destino = sentido > 0 ? 21.0 : 2.0;
+  double passo = 0.15 * taxa;
+  size_t tf; char *fonte;
+  Relogio relogio;
+  int antes, passoNormal, imediato, velhos = 0, novo, q;
+  char msg[224];
+  const char *rotulo = srt ? "SRT/plainass" : "ASS";
+  fonte = ler("deploy/app/fonts/InterDisplay-Regular.ttf", &tf);
+  if (!fonte) { printf("fonte ausente\n"); falhas++; return; }
+  assrender_geracao(g); assrender_limpar_fontes();
+  assrender_adicionar_fonte("InterDisplay-Regular.ttf", fonte, tf);
+  free(fonte);
+  if (srt) {
+    PlainAssStyle estilo; char *doc;
+    fonte = ler("deploy/app/fonts/NotoNaskhArabic-Regular.ttf", &tf);
+    if (!fonte) { printf("fonte ausente\n"); falhas++; return; }
+    assrender_adicionar_fonte("NotoNaskhArabic-Regular.ttf", fonte, tf);
+    free(fonte);
+    memset(&estilo, 0, sizeof estilo);
+    estilo.size = 28; estilo.rgb = 0xffffff; estilo.marginV = 20;
+    snprintf(estilo.font, sizeof estilo.font, "Noto Naskh Arabic");
+    doc = plainass_document(cues, 2);
+    if (!doc || !assrender_carregar_texto(doc, strlen(doc), g)) {
+      free(doc); ok(0, "documento SRT/plainass carregado"); return; }
+    free(doc);
+    assrender_definir_texto_estilo(&estilo);
+  } else if (!assrender_carregar(DOC, strlen(DOC), g)) {
+    ok(0, "documento ASS carregado"); return;
+  }
+
+  relogio_zerar(&relogio); relogio_taxa(&relogio, taxa);
+  relogio_amostra(&relogio, anterior - passo, 99.85, 1);
+  assrender_posicao_video(anterior - passo);
+  relogio_amostra(&relogio, anterior, 100, 1);
+  assrender_posicao_video(anterior);
+  antes = esperar_fala_rel(&relogio, 100);
+  snprintf(msg, sizeof msg, "%s %.1fx %+.0fs: fala visivel antes do salto",
+           rotulo, taxa, destino - anterior);
+  ok(antes > 0, msg);
+
+  // Passo comum: a fala tem de estar na tela (0,15 s a 1x, 0,30 s a 2x).
+  assrender_posicao_video(anterior + passo);
+  passoNormal = desenhar_rel(&relogio, 100);
+  snprintf(msg, sizeof msg, "%s %.1fx %+.0fs: passo comum de %.2f s mantem imagens",
+           rotulo, taxa, destino - anterior, passo);
+  ok(passoNormal > 0, msg);
+
+  // O video salta; o relogio da legenda segue PARADO na origem 24 quadros.
+  assrender_posicao_video(destino);
+  imediato = desenhar_rel(&relogio, 100);
+  snprintf(msg, sizeof msg, "%s %.1fx %+.0fs: fala da origem some no quadro do salto",
+           rotulo, taxa, destino - anterior);
+  ok(imediato == 0, msg);
+  for (q = 1; q <= 24; q++) {
+    quadro();
+    assrender_posicao_video(destino);
+    relogio_amostra(&relogio, anterior, 100 + q / 60.0, 0);
+    if (desenhar_rel(&relogio, 100 + q / 60.0) > 0) velhos++;
+  }
+  snprintf(msg, sizeof msg, "%s %.1fx %+.0fs: zero fala antiga em 24 quadros de relogio parado",
+           rotulo, taxa, destino - anterior);
+  ok(velhos == 0, msg);
+
+  relogio_amostra(&relogio, destino, 100.5, 0);
+  novo = esperar_fala_rel(&relogio, 100.5);
+  snprintf(msg, sizeof msg, "%s %.1fx %+.0fs: fala do destino entra quando o relogio alcanca",
+           rotulo, taxa, destino - anterior);
+  ok(novo > 0, msg);
+}
+static void testar_salto_parado(int srt) {
+  static const double taxas[2] = { 1.0, 2.0 };
+  static unsigned g = 100;
+  int t, s;
+  for (t = 0; t < 2; t++)
+    for (s = -1; s <= 1; s += 2)
+      verificar_salto_parado(taxas[t], s, ++g, srt);
 }
 #endif
 
@@ -212,8 +318,16 @@ int main(void) {
   }
   testar_dois_relogios();
 #ifdef NV_ASS_LIBASS
-  printf("[B] assrender: salto visto na posicao do video\n");
+  /* SRT/plainass PRIMEIRO: neste ambiente, renderizar uma faixa authored e
+   * DEPOIS uma plainass no mesmo renderer derruba o libass 0.17.1 em
+   * fribidi_get_bracket_types — reproduzido tambem na base c18c21756, fora
+   * do escopo do #772. Com a trilha simples primeiro a sequencia e limpa. */
+  printf("[B] assrender+plainass: 24 quadros com o relogio parado (SRT)\n");
+  testar_salto_parado(1);
+  printf("[C] assrender: salto visto na posicao do video\n");
   testar_salto_ass();
+  printf("[D] assrender: 24 quadros com o relogio parado (ASS)\n");
+  testar_salto_parado(0);
 #else
   printf("[B] sem libass: parte do renderer pulada\n");
 #endif
