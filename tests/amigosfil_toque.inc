@@ -51,5 +51,46 @@ static int amigosToqueAuditar(void) {
       }
     }
   }
+  contato(nContatos++,"nuvio:qa-amigo-quatro","Quarto","","nuvio");
+  contato(nContatos++,"nuvio:qa-amigo-cinco","Quinto","","nuvio");
+  socialvis_definir_feed(NULL,0);
+  assert(socialvis_n_amigos()==5);
+  for(int style=0;style<6;style++){
+    while(ajustes_amigos_estilo()!=style)assert(ajustes_rapido_passo(op,1));
+    for(int portrait=0;portrait<2;portrait++){
+      int w=portrait?1080:1920,h=portrait?2340:1080;
+      SDL_SetWindowSize(janela,w,h);glViewport(0,0,w,h);gfx_tamanho_alvo(w,h);layout_tela_definir(w,h);ponteiro_teste_janela(w,h);
+      for(int frame=0;frame<2;frame++){
+        tex_novo_quadro();txt_novo_quadro();gfx_novo_quadro();gfx_sem_recorte();ponteiro_quadro(SDL_GetTicks());
+        amigosfil_desenhar(72,220,112,200,0,0,SDL_GetTicks());ponteiro_desenhar();
+        if(!frame){
+          PonteiroRolagem drag={.fase=PONT_ROL_INICIO,.eixoY=0,.x=260,.y=276};
+          int started=amigosfil_rolagem(&drag);
+          if(style==3 && portrait)assert(started);
+          if(started){
+            drag.fase=PONT_ROL_MOVER;drag.delta=100000;amigosfil_rolagem(&drag);
+            drag.delta=-120;assert(amigosfil_rolagem(&drag));
+            drag.fase=PONT_ROL_FIM;assert(amigosfil_rolagem(&drag));
+          }
+        }
+      }
+      const PonteiroAlvo *lista=NULL;int n=ponteiro_teste_lista(&lista);
+      float left=style==3?204:72;
+      for(int i=0;i<n;i++)if(lista[i].focar==amigosToqueFocar && lista[i].x<left){
+        printf("FAIL: clipped friend style=%d portrait=%d target x=%.0f clip=%.0f\n",style,portrait,lista[i].x,left);falhas++;
+      }
+      if(style==3 && portrait){
+        GfxRect card;assert(amigosfil_teste_cartao(0,&card)>=0);
+        assert(fabsf(card.x-96)<1 && fabsf(card.x+card.w-192)<1);
+        toqueFocou=toqueRetornos=0;
+        SDL_Event e={0};e.type=SDL_FINGERDOWN;e.tfinger.touchId=3;e.tfinger.fingerId=7;e.tfinger.x=160.f/w;e.tfinger.y=276.f/h;
+        ponteiro_evento(&e,amigosToqueEntregar);e.type=SDL_FINGERUP;ponteiro_evento(&e,amigosToqueEntregar);
+        char id[96]="";int abriu=amigosfil_pediu_perfil(id,sizeof id);
+        if(toqueFocou || toqueRetornos || abriu){printf("FAIL: hidden friend activated focus=%d OK=%d profile=%s\n",toqueFocou,toqueRetornos,id);falhas++;}
+        else puts("PASS: header tap cannot focus or open the hidden friend after a 120-unit swipe");
+      }
+      printf("CHECK: clipped targets style=%d portrait=%d\n",style,portrait);
+    }
+  }
   fflush(stdout);return falhas?1:0;
 }

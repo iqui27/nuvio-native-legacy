@@ -35,7 +35,7 @@ def compile(s):
  if not r.returncode:stamp.write_text(digest())
  return obj,r
 objects=[]
-with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+with concurrent.futures.ThreadPoolExecutor(max_workers=int(os.environ.get('NVQ_CC_JOBS','1'))) as pool:
  for obj,r in pool.map(compile,sources):
   if r.returncode:print(r.stdout[-12000:]);raise SystemExit(r.returncode)
   objects.append(str(obj))

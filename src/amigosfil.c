@@ -160,7 +160,7 @@ static void desktopSocialContext(int coluna,int cartao) {
 }
 #endif
 static void alvoToque(GfxRect r, float corte, int coluna, int cartao) {
-  float x = fmaxf(r.x, ultX0), dir = fminf(r.x + r.w, toque.regiao.x + toque.regiao.w);
+  float x = fmaxf(r.x, toque.regiao.x), dir = fminf(r.x + r.w, toque.regiao.x + toque.regiao.w);
   if (toqueFocar && dir > x) {
     ponteiro_alvo_faixa(x, r.y, dir - x, r.h, corte, NV_TELA_H, toqueFocar, NULL, coluna, cartao);
 #ifdef NV_DESKTOP_UI
