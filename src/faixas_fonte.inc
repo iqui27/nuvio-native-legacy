@@ -36,6 +36,7 @@ static AudioExtFaixa exFx[AUDIOEXT_FAIXAS_MAX];
 // faixas.c; 0 = the one on screen). Asked of the add-ons a moment after the
 // last press (EX_EP_ESPERA_MS), not on every one.
 #define EX_EP_ESPERA_MS 700u
+#define EX_EP_H 100.0f   /* the episode card: still, "S01E03 · title", the note under it */
 #define EX_EP_MAX 199
 static int exEpEsta, exEpT;          // the episode on screen (0: not a series episode)
 static char exEpBase[24], exEpTela[64];
@@ -307,7 +308,7 @@ static float exConteudoH(void) {
 }
 static float alturaExt(void) {
   float h = IL_PAD_Y + IL_TIT_H + 14.0f;
-  if (exPag == EXP_LISTA && exEpVisivel()) h += EX_SEG_H + 12.0f;
+  if (exPag == EXP_LISTA && exEpVisivel()) h += EX_EP_H + 12.0f;
   if (exPag == EXP_LISTA && exBalN) h += EX_SEG_H + 12.0f;
   return h + exConteudoH() + 14.0f + IL_PE_H + IL_PAD_Y;
 }
@@ -345,15 +346,70 @@ static void exLinhaCand(const AudioExtCand *c, float x, float y, float w, int se
     gfx_icone((GfxRect){ x + w - 22.0f - 28.0f, y + (IL_LN_H - 28.0f) * 0.5f, 28.0f, 28.0f }, "pl_check", ar, ag, ab, a);
   }
 }
-// "‹  Audio of episode 3  ›": the episode whose versions are listed.
+// The episode (t, e) of the series playing, from its metadata: its title and
+// still. The titles follow the catalogue's numbering (IMDb), not the other
+// release's, so with episodes numbered differently the title may not be the
+// audio's (owner 21/11: the note under it says it is another episode).
+static const CatEp *exEpCat(int t, int e) {
+  int idx = player_indice(), n = idx >= 0 ? cat_n_episodios(idx) : 0;
+  for (int i = 0; i < n; i++) {
+    const CatEp *c = cat_episodio(idx, i);
+    if (c && c->temporada == t && c->episodio == e) return c;
+  }
+  return NULL;
+}
+static void exEpNome(int e, char *dst, unsigned tam) {
+  const CatEp *c = exEpCat(exEpT, e);
+  if (c && c->nome[0]) snprintf(dst, tam, "S%02dE%02d \xc2\xb7 %s", exEpT, e, c->nome);
+  else snprintf(dst, tam, "S%02dE%02d", exEpT, e);
+}
+// THE EPISODE CARD: the still, "‹ S01E03 · title ›", and under it either
+// "Audio of episode 2 (this one)" or, in amber, "Another episode than the
+// picture · picture: S01E02 · title".
 static void exLinhaEp(float x, float y, float w, float a) {
-  int sel = exFoco < 0, cc = sel ? 255 : 219;
-  char t[128], q[160];
-  if (sel) plrui_linha_foco((GfxRect){ x, y, w, EX_SEG_H }, 22.0f, a);
-  snprintf(t, sizeof t, i18n(exEpN > 0 ? "Audio of episode %d" : "Audio of episode %d (this one)"), exEpMostrado());
-  snprintf(q, sizeof q, "%s%s%s", exEpMostrado() > 1 ? "\xe2\x80\xb9  " : "", t, exEpMostrado() < EX_EP_MAX ? "  \xe2\x80\xba" : "");
-  { TxtLinha l = txt_linha_corta(TXT_ILHA_FORTE, q, cc, cc, cc - 2, 255, w - 44.0f);
-    txt_desenhar_alpha(l, x + 22.0f, y + (EX_SEG_H - (float)l.h) * 0.5f, exEpN > 0 || sel ? a : a * 0.8f); }
+  int sel = exFoco < 0, ep = exEpMostrado(), cc = sel ? 255 : 219, cs = 122;
+  char nome[200], q[240], sub[240];
+  GfxRect r = { x, y, w, EX_EP_H };
+  if (sel) plrui_linha_foco(r, 22.0f, a);
+  else gfx_cor(r, 22.0f / EX_EP_H, 1, 1, 1, 0.04f * a);
+  // The still of the episode listed; the series' backdrop without one.
+  { const CatEp *c = exEpCat(exEpT, ep);
+    const CatItem *ci = cat_item(player_indice());
+    const char *arte = c && c->thumb[0] ? c->thumb : ci ? ci->backdrop : "";
+    GLuint tex = arte[0] ? tex_obter_larg(arte, 120) : 0;
+    GfxRect tr = { x + 20.0f, y + (EX_EP_H - 68.0f) * 0.5f, 120.0f, 68.0f };
+    if (!tex && c && c->thumb[0] && tex_falhou(c->thumb) && ci && ci->backdrop[0]) {
+      arte = ci->backdrop; tex = tex_obter_larg(arte, 120);
+    }
+    gfx_cor(tr, 12.0f / 68.0f, 0.125f, 0.129f, 0.153f, a);
+    if (tex) { gfx_tex_aspect_atual = tex_aspecto(arte); gfx_rect(tr, tex, GFX_CARD, 0, 0, 0, 12.0f / 68.0f, 0, 0, 0, a); gfx_tex_aspect_atual = 0; } }
+  exEpNome(ep, nome, sizeof nome);
+  snprintf(q, sizeof q, "%s%s%s", ep > 1 ? "\xe2\x80\xb9  " : "", nome, ep < EX_EP_MAX ? "  \xe2\x80\xba" : "");
+  { float tx = x + 20.0f + 120.0f + 20.0f, tw = x + w - 22.0f - tx;
+    TxtLinha l1 = txt_linha_corta(TXT_ILHA_FORTE, q, cc, cc, cc - 2, 255, tw);
+    TxtLinha l2;
+    float th, ty;
+    if (exEpN > 0) {
+      char tela[200];
+      exEpNome(exEpEsta, tela, sizeof tela);
+      snprintf(sub, sizeof sub, i18n("picture: %s"), tela);
+      { TxtLinha av = txt_linha_corta(TXT_ILHA_GENERO, i18n("Another episode than the picture"), 255, 180, 84, 255, tw);
+        th = (float)l1.h + 6.0f + (float)av.h; ty = y + (EX_EP_H - th) * 0.5f;
+        txt_desenhar_alpha(l1, tx, ty, a);
+        txt_desenhar_alpha(av, tx, ty + (float)l1.h + 6.0f, a);
+        if (tw - (float)av.w > 60.0f) {
+          char resto[260];
+          snprintf(resto, sizeof resto, " \xc2\xb7 %s", sub);
+          l2 = txt_linha_corta(TXT_ILHA_GENERO, resto, cs, cs, cs - 2, 255, tw - (float)av.w);
+          txt_desenhar_alpha(l2, tx + (float)av.w, ty + (float)l1.h + 6.0f, a);
+        } }
+    } else {
+      snprintf(sub, sizeof sub, i18n("Audio of episode %d (this one)"), ep);
+      l2 = txt_linha_corta(TXT_ILHA_GENERO, sub, cs, cs, cs - 2, 255, tw);
+      th = (float)l1.h + 6.0f + (float)l2.h; ty = y + (EX_EP_H - th) * 0.5f;
+      txt_desenhar_alpha(l1, tx, ty, a);
+      txt_desenhar_alpha(l2, tx, ty + (float)l1.h + 6.0f, a);
+    } }
 }
 // The name of a language on the bar ("Unknown" for the versions without one).
 static const char *exNomeBalde(int b) {
@@ -398,7 +454,7 @@ static void corpoExt(GfxRect c, float a) {
   y += IL_TIT_H + 14.0f;
   if (exPag == EXP_LISTA && exEpVisivel()) {
     exLinhaEp(x0, y, w, a);
-    y += EX_SEG_H + 12.0f;
+    y += EX_EP_H + 12.0f;
   }
   if (exPag == EXP_LISTA && exBalN) {
     exBarraLinguas(x0 + 10.0f, y, w - 20.0f, a);

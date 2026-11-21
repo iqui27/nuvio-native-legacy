@@ -33,6 +33,7 @@
 #include "audioextlista.h"
 #include "audioextaddons.h"
 #include "audioextep.h"
+#include "tex_cache.h"
 #include "ctxlista.h"
 #include "streams.h"
 #include "idiomacod.h"
