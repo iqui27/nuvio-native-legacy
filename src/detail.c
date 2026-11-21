@@ -9825,7 +9825,11 @@ static void ultimoEpisodio(int *t, int *e) {
   }
 }
 
-int detail_indice(void) { return idx; }
+// Revalidated on every read, not only in detail_atualizar: app.c reads the
+// index for the source search and Play earlier in the same frame, and a
+// catalogue rebuild in between left it on whoever took the old slot for that
+// frame (another title's sources, then Play started that title).
+int detail_indice(void) { if (aberto) revalidarIdx(); return idx; }
 int detail_tem_servidores(void) { return aberto && servidoresDisponiveis; }
 int detail_pediu_reproduzir(void) { int v = pedReproduzir; pedReproduzir = 0; return v; }
 // Pedido de reproducao vindo de FORA da tela (OK no card de "Continuar
