@@ -5692,7 +5692,7 @@
   T("Usar sempre o catálogo do Nuvio", "常に Nuvio を使う"),
   T("Use", "使う"),
   T("Use Fonte ou Recarregar aqui embaixo, ou CH+ e CH− para trocar de canal.", "下のソースまたは再読み込みを使うか、CH+ と CH− でチャンネルを切り替えてください。"),
-  T("Use HLS MPEG-TS for the DTS and Dolby Vision P7 conversions. For older LG TVs with webOS 6 and earlier. Reopen the video to apply.", "DTS と Dolby Vision P7 の変換に HLS MPEG-TS を使用します。webOS 6 以前の古い LG テレビ向けです。適用するには動画を開き直してください。"),
+  T("Use HLS MPEG-TS for the DTS and Dolby Vision P7 conversions. For older LG TVs with webOS 6. Reopen the video to apply.", "DTS と Dolby Vision P7 の変換に HLS MPEG-TS を使用します。webOS 6 の古い LG テレビ向けです。適用するには動画を開き直してください。"),
   T("Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "DTS と Dolby Vision P7 の変換に HLS fMP4 を使用します。音声出力は Dolby Digital (AC-3) です。一部の機器で再生が改善する場合がありますが、より高い通信速度が必要です。問題がある場合のみ有効にしてください。適用するには動画を開き直してください。"),
   T("Use Recarregar para tentar novamente.", "「再読み込み」でもう一度お試しください。"),
   T("Use Reduzidas para movimentos mais discretos ao navegar pela interface.", "「縮小」にすると、インターフェースの操作時の動きがより控えめになります。"),

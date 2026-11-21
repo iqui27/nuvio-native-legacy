@@ -5692,7 +5692,7 @@
   T("Usar sempre o catálogo do Nuvio", "Bruk alltid Nuvio"),
   T("Use", "Bruk"),
   T("Use Fonte ou Recarregar aqui embaixo, ou CH+ e CH− para trocar de canal.", "Bruk Kilde eller Last på nytt nedenfor, eller CH+ og CH− for å bytte kanal."),
-  T("Use HLS MPEG-TS for the DTS and Dolby Vision P7 conversions. For older LG TVs with webOS 6 and earlier. Reopen the video to apply.", "Bruker HLS MPEG-TS til å konvertere DTS og Dolby Vision P7. For eldre LG-TV-er med webOS 6 og eldre. Åpne videoen på nytt for å bruke."),
+  T("Use HLS MPEG-TS for the DTS and Dolby Vision P7 conversions. For older LG TVs with webOS 6. Reopen the video to apply.", "Bruker HLS MPEG-TS til å konvertere DTS og Dolby Vision P7. For eldre LG-TV-er med webOS 6. Åpne videoen på nytt for å bruke."),
   T("Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "Bruker HLS fMP4 til å konvertere DTS og Dolby Vision P7. Lyden sendes som Dolby Digital (AC-3). Kan hjelpe på noen enheter, men krever mer båndbredde. Slå bare på ved problemer. Åpne videoen på nytt for å bruke."),
   T("Use Recarregar para tentar novamente.", "Bruk Last på nytt for å prøve igjen."),
   T("Use Reduzidas para movimentos mais discretos ao navegar pela interface.", "Bruk Reduserte for mer dempede bevegelser når du navigerer i grensesnittet."),
