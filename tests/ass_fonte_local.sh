@@ -21,7 +21,7 @@ fi
 # assrender.c is included verbatim by the fixture so internal cache invariants can be checked.
 # shellcheck disable=SC2046
 "${CC:-cc}" "${flags[@]}" $(pkg-config --cflags libass fribidi sdl2 SDL2_ttf) \
-  tests/ass_fonte_local.c src/legfontes.c src/bidi.c src/plainass.c \
+  tests/ass_fonte_local.c src/assperf.c src/legfontes.c src/bidi.c src/plainass.c \
   -o "$work/test" $(pkg-config --libs libass fribidi sdl2 SDL2_ttf) "${platform[@]}"
 ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}" "$work/test" "$font" "$bold" "$arabic"
 python3 tests/font_fixture.py "$work/fixture.otf"

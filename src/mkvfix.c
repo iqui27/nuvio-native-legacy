@@ -665,6 +665,17 @@ static int enviar(int sock, const void *b, size_t n, Sess *s) {
 // Nunca muda um byte do que vai ao player e nunca pede nada ao CDN.
 #ifdef NV_TPK
 #include "mkvass.h"
+/* Testes que linkam mkvfix.c sem mkvass.c (tpk-cdn, tpk-escolha): o tap do
+ * relay fica inerte, como se nao houvesse faixa colhida. O mkvass.o de
+ * verdade vence estas fracas quando esta junto. */
+int  mkvass_relay_faixa(void) __attribute__((weak));
+int  mkvass_relay_faixa(void) { return 0; }
+void mkvass_relay_bloco(long long clPos, int clHdr, unsigned long clTs, int temTs,
+                        long long blkPos, const unsigned char *b, long n) __attribute__((weak));
+void mkvass_relay_bloco(long long clPos, int clHdr, unsigned long clTs, int temTs,
+                        long long blkPos, const unsigned char *b, long n) {
+  (void)clPos; (void)clHdr; (void)clTs; (void)temTs; (void)blkPos; (void)b; (void)n;
+}
 #define MT_CLUSTER   0x1F43B675u
 #define MT_BLOCO_MAX (1L << 20)
 enum { MT_PROCURA, MT_TAMCLUSTER, MT_CAB, MT_PULA, MT_JUNTA };

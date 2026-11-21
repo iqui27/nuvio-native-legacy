@@ -24,14 +24,12 @@ for codec in ('UTF8','WEBVTT'):
     cues=el(0x1c53bb6b,b''.join(el(0xbb,u(0xb3,t)+el(0xb7,u(0xf7,6)+u(0xf1,len(sh)+len(tr))+u(0xf0,r))) for t,r in zip((1250,5000),rel)))
     p.joinpath(codec+'.mkv').write_bytes(el(0x1a45dfa3,el(0x4282,b'matroska'))+el(0x18538067,sh+tr+cluster+cues+el(0xec,b'\0'*1024)))
 PY
-cc -Isrc -O1 -g -Wall -Wextra -DMKVASS_RANGES_POR_SEG=1000 tests/mkvass_texto.c "${MKVASS_SRC:-src/mkvass.c}" src/pgs_mkv_restore.c src/imgsub.c src/pgs.c src/legenda.c tests/mkvass_i18n.c src/assrender.c src/dados.c -lz -lm -o "$DIR/test"
+cc -Isrc -O1 -g -Wall -Wextra -DMKVASS_RANGES_POR_SEG=1000 tests/mkvass_texto.c "${MKVASS_SRC:-src/mkvass.c}" src/pgs_mkv_restore.c src/imgsub.c src/pgs.c src/legenda.c tests/mkvass_i18n.c src/assrender.c src/assperf.c src/assfios.c src/dados.c -lz -lm -o "$DIR/test"
 mkdir "$DIR/dados"
 NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/UTF8.mkv" "$DIR/WEBVTT.mkv"
 for alvo in LG NV_TPK NV_ANDROID; do
   cc -D"$alvo" tests/faixas_texto.c src/faixasmkv.c -Isrc -O1 \
     -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-    -ffunction-sections -fdata-sections -Wl,-dead_strip -Wno-macro-redefined -lm -o "$DIR/escolha" || \
-  cc -D"$alvo" tests/faixas_texto.c src/faixasmkv.c -Isrc -O1 \
-    -ffunction-sections -fdata-sections -Wl,--gc-sections -lm -o "$DIR/escolha"
+    -ffunction-sections -fdata-sections -Wl,-dead_strip -Wno-macro-redefined -o "$DIR/escolha"
   "$DIR/escolha"
 done

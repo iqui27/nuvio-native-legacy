@@ -16,12 +16,13 @@ done
 cc "${flags[@]}" "${renomes[@]}" -c src/video.c -o "$dir/video.o"
 cc "${flags[@]}" -Dmkvass_prebuscar=nv_base_mkvass_prebuscar \
   -Dmkvass_prebusca_fase=nv_base_mkvass_prebusca_fase -c src/mkvass.c -o "$dir/mkvass.o"
+cc "${flags[@]}" -c src/assperf.c -o "$dir/assperf.o"
 cc "${flags[@]}" -c src/pgs_mkv_restore.c -o "$dir/pgs_mkv_restore.o"
 sources=()
 for source in src/*.c src/dts/*.c; do
-  case "$source" in src/main.c|src/video.c|src/mkvass.c|src/pgs_mkv_restore.c) continue;; esac
+  case "$source" in src/main.c|src/video.c|src/mkvass.c|src/assperf.c|src/pgs_mkv_restore.c) continue;; esac
   sources+=("$source")
 done
-cc "${flags[@]}" -DNV_SHOT_HOOKS "${sources[@]}" tests/plx_legenda_prefetch.c "$dir/video.o" "$dir/mkvass.o" "$dir/pgs_mkv_restore.o" \
+cc "${flags[@]}" -DNV_SHOT_HOOKS "${sources[@]}" tests/plx_legenda_prefetch.c "$dir/video.o" "$dir/mkvass.o" "$dir/assperf.o" "$dir/pgs_mkv_restore.o" \
   -o "$dir/test" -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
 "$dir/test"

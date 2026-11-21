@@ -13,7 +13,7 @@ cc "${sources[@]}" tests/subtitle_fallback_bold.c -Isrc -o "$work/text" \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined
 pkg-config --exists libass
-cc -DNV_ASS_LIBASS -include tests/ass_pisca_gl.h -Isrc tests/ass_fallback_bold.c \
+cc -DNV_ASS_LIBASS -include tests/ass_pisca_gl.h -Isrc tests/ass_fallback_bold.c src/assperf.c \
   src/plainass.c src/bidi.c -o "$work/ass" \
   $(pkg-config --cflags --libs libass fribidi) \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -L/opt/homebrew/lib \
