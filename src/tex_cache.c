@@ -1699,6 +1699,7 @@ void tex_cache_esperar_gravacoes(void) {
 #endif
 
 #ifdef __EMSCRIPTEN__
+#include "nvbackend.h"
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif

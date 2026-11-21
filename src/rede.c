@@ -574,6 +574,7 @@ void rede_avisar_host(void (*f)(const char *url, int codigo, int http, unsigned 
 // recomenda.c, xtream.c, avisos.c, noticias.c, tex_cache.c): tools/env.sh so
 // emite o -D quando o servico de recomendacoes esta configurado, e uma build
 // sem ele nao pode falhar a compilar por causa disto.
+#include "nvbackend.h"
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif
@@ -606,7 +607,8 @@ void rede_avisar_host(void (*f)(const char *url, int codigo, int http, unsigned 
 //     desta distincao aqui: aquela funcao NUNCA tenta o proxy (ver embaixo)
 //     e devolve "desconhecido" em vez de "morta" quando o bloqueio acontece.
 static int vidaaNuncaProxiar(const char *url) {
-  if (NV_REC_URL[0] && !strncmp(url, NV_REC_URL, strlen(NV_REC_URL))) return 1;
+  char rec[400];
+  if (nv_rec_url_copiar(rec, sizeof rec) && !strncmp(url, rec, strlen(rec))) return 1;
   if (!strncmp(url, NV_VIDAA_PROXY_URL, strlen(NV_VIDAA_PROXY_URL))) return 1;
 #ifdef NV_SUPABASE_URL
   if (NV_SUPABASE_URL[0] && !strncmp(url, NV_SUPABASE_URL, strlen(NV_SUPABASE_URL))) return 1;
@@ -798,8 +800,10 @@ static char *pedir2(const char *metodo, const char *url, int segundos, const cha
       char *cabs2 = juntarCabs(cab, extraCab);
       int n2 = 0, http2 = 0;
       char fim2[512];
+      char rec[400];
       char *r2;
       fim2[0] = 0;
+      nv_rec_url_copiar(rec, sizeof rec);
       unsigned long gastoPedido = redeAgoraMs() - inicioPedido;
       int resta = nvPrazo(segundos) - (int)gastoPedido;
       r2 = resta > 0 ? nv_http(metodo, urlP, cabs2, corpo, &n2, &http2, fim2, (int)sizeof fim2, etag, (int)tamEtag, NULL, resta) : NULL;
@@ -818,7 +822,7 @@ static char *pedir2(const char *metodo, const char *url, int segundos, const cha
       // proxy quebrado do mesmo jeito. Agora so anota quando o proxy entregou,
       // e o erro do worker sai com o nome certo no log.
       if (r2 && !strncmp(fim2, "http", 4) &&
-          !(NV_REC_URL[0] && !strncmp(fim2, NV_REC_URL, strlen(NV_REC_URL))) &&
+          !(rec[0] && !strncmp(fim2, rec, strlen(rec))) &&
           strncmp(fim2, NV_VIDAA_PROXY_URL, strlen(NV_VIDAA_PROXY_URL))) {
         char host[128];
         corpoResp = r2; n = n2; http = http2;

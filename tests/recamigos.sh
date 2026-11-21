@@ -26,7 +26,7 @@ for source in src/*.c src/dts/*.c; do
 done
 
 compila() { # binario, defines extras
-  cc "${sources[@]}" tests/recamigos.c -Isrc -o "$1" \
+  cc "${sources[@]}" tests/recamigos.c -Isrc ${3--DNV_REC_URL='"http://127.0.0.1:8799"'} -o "$1" \
     -O1 -g ${2:-} -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
     -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
     -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
@@ -34,5 +34,5 @@ compila() { # binario, defines extras
 
 compila ${TMPDIR:-/tmp}/nuvio-recamigos
 ${TMPDIR:-/tmp}/nuvio-recamigos
-compila ${TMPDIR:-/tmp}/nuvio-recamigos-sem-url -DREC_TESTE_SEM_URL
+compila ${TMPDIR:-/tmp}/nuvio-recamigos-sem-url -DREC_TESTE_SEM_URL ""
 ${TMPDIR:-/tmp}/nuvio-recamigos-sem-url
