@@ -17,8 +17,10 @@ int main(void) {
   assert(farolanel_ler(e, 4, 0) == 2);
   assert(e[0].ev == FE_ADDON_LENTO && e[0].a == 2100 && e[0].b == 0);
   assert(e[1].ev == FE_ADDON_LENTO && e[1].b == 1);
-  assert(!strncmp(e[0].tok, "addon_", 6) && strlen(e[0].tok) == 14);
-  assert(!strncmp(e[1].tok, "addon_", 6) && strcmp(e[0].tok, e[1].tok));
+  // "h:<8 hex>": o pseudonimo com sal que o redator do Farol 4 aceita.
+  assert(!strncmp(e[0].tok, "h:", 2) && strlen(e[0].tok) == 10);
+  assert(strspn(e[0].tok + 2, "0123456789abcdef") == 8);
+  assert(!strncmp(e[1].tok, "h:", 2) && strcmp(e[0].tok, e[1].tok));
   return 0;
 }
 #elif defined(TEST_FONTE)

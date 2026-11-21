@@ -1249,7 +1249,7 @@ int debrid_testar_alldebrid(char *msg, unsigned n, char *data, unsigned nd) {
 
 // RD e TorBox usam Bearer; Premiumize recebe apikey no formulario. Nenhum corpo de conta vai ao log (pode conter e-mail/token).
 int debrid_testar_conta(int q, char *msg, unsigned n, char *data, unsigned nd) {
-  int e = 0;
+  int e = 0, marca = 0, marcaSt = 0;
   time_t agora = time(NULL), ate = 0;
   if (msg && n) msg[0] = 0;
   if (data && nd) data[0] = 0;
@@ -1307,14 +1307,19 @@ int debrid_testar_conta(int q, char *msg, unsigned n, char *data, unsigned nd) {
     }
     contaConsultada[q] = agora; contaAte[q] = ate; contaEstado[q] = e;
     if (e) {
-      atomic_store(&semPlano[q], e == 1 ? 0 : e == 3 ? 2 : 1);
-      if (e == 1) atomic_store(&avisado[q], 0);
+      // O estado grava como sempre. O EVENTO sai depois de soltar as travas:
+      // ele precisa de chaveTrava, e chaveTrava->contaMutex ja e a ordem de
+      // quem consulta a conta com a trava da chave na mao (disponivel()).
+      int alvo = e == 1 ? 0 : e == 3 ? 2 : 1;
+      if (alvo && atomic_exchange(&semPlano[q], alvo) != alvo) { marca = alvo; marcaSt = st; }
+      if (e == 1) { atomic_store(&semPlano[q], 0); atomic_store(&avisado[q], 0); }
     }
   }
   e = contaEstado[q]; ate = contaAte[q];
   // Mesmo dentro do TTL, nao deixa passar um vencimento conhecido.
   if (e == 1 && ate && ate <= agora) {
-    e = contaEstado[q] = 2; atomic_store(&semPlano[q], 1);
+    e = contaEstado[q] = 2;
+    if (atomic_exchange(&semPlano[q], 1) != 1) marca = 1;
   }
   if (msg && n) snprintf(msg, n, "%s", e == 1 ? "premium" : e == 2 ? (ate > 0 ? "vencida" : "conta sem premium")
                                                : e == 3 ? "chave recusada" : "sem resposta válida");
@@ -1324,6 +1329,10 @@ int debrid_testar_conta(int q, char *msg, unsigned n, char *data, unsigned nd) {
   }
   pthread_mutex_unlock(&contaMutex);
   pthread_mutex_unlock(&consultaMutex);
+  // Um evento por TRANSICAO de estado da conta (a troca acima e quem detecta).
+  // O contexto deste fio tem de continuar valendo, como em semPlanoMarcar.
+  if (marca && contextoVale())
+    farol_ev(FM_DEBRID, FE_DEBRID, 1, marcaSt, q, marca == 2 ? "recusa" : "sem_plano");
   return e == 1;
 }
 
@@ -1370,7 +1379,9 @@ static int volta(const char *infoHash, int fileIdx, char *url, unsigned n,
       pthread_mutex_lock(&chaveTrava);
       int recusou = contextoValeSemTrava(ctx) && atomic_load(&geracao) == g
           && atomic_compare_exchange_strong(&recusado[q], &zero, -deu);
-      if (recusou) farol_ev(FM_DEBRID, FE_DEBRID, 1, -deu, q, "recusa");
+      // A recusa que falha() ja marcou em semPlano (plano/chave) saiu no anel
+      // ali: um evento por ocorrencia, nao um por quem observa.
+      if (recusou && !atomic_load(&semPlano[q])) farol_ev(FM_DEBRID, FE_DEBRID, 1, -deu, q, "recusa");
       pthread_mutex_unlock(&chaveTrava);
       if (recusou)
         printf("[debrid] %s: recusa da conta (HTTP %d), fora do resto desta busca\n",

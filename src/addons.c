@@ -39,6 +39,8 @@
 #include <pthread.h>
 #include <time.h>
 #include <stdatomic.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 // 16, e nao 12. O sync le ate SY_ADD_MAX (16) addons da conta e entregava a
 // lista inteira aqui; o laco de addons_definir_lista cortava no 12o EM SILENCIO
@@ -997,15 +999,56 @@ int addons_faltam(char *nomes, unsigned tam) { return addons_faltam_tipo(nomes, 
 // nao espera ninguem; "Todos os add-ons" e a pessoa pedindo para esperar).
 // Ele segue sendo consultado e, quando responde, entra na lista como sempre.
 static atomic_uint espDecisaoMs;
+// PSEUDONIMO COM SAL — a forma "h:<8 hex>" que o redator do Farol 4 exige
+// (o addon_<8 hex> sem sal e recusado). O catalogo de add-ons e publico e
+// curto: um hash sem sal do identificador e estavel entre instalacoes e
+// revertido por forca bruta por quem le o registro. O sal e a identidade
+// estavel da INSTALACAO (dados_cliente_id, a mesma que o sync ja usa); em
+// fixtures isolados sem dados.c a importacao fraca cai em NULL e o sal vira
+// aleatorio por processo — em ambos, imprevisivel para quem so ve o registro.
+// Convencao NV_PERFIL_OPCIONAL de perfisessao.h: importacao fraca conferida
+// antes da chamada, sem simbolo novo no link.
+#if defined(__APPLE__) && (defined(__GNUC__) || defined(__clang__))
+#define NV_DADOS_OPCIONAL __attribute__((weak_import))
+#elif defined(__GNUC__) || defined(__clang__)
+#define NV_DADOS_OPCIONAL __attribute__((weak))
+#else
+#define NV_DADOS_OPCIONAL
+#endif
+extern const char *dados_cliente_id(void) NV_DADOS_OPCIONAL;
+static pthread_once_t salUmaVez = PTHREAD_ONCE_INIT;
+static unsigned char salProcesso[16];
+static void salProcessoIniciar(void) {
+  int i, f = open("/dev/urandom", O_RDONLY);
+  if (f >= 0) {
+    if (read(f, salProcesso, 16) != 16) f = -1; else close(f);
+  }
+  if (f < 0) {   // sem urandom: relogio + endereco, o mesmo plano B de admin.c
+    unsigned long long t = (unsigned long long)time(NULL) * 2654435761u ^ (unsigned long long)(size_t)salProcesso;
+    for (i = 0; i < 16; i++) { t = t * 6364136223846793005ULL + 1442695040888963407ULL; salProcesso[i] = (unsigned char)(t >> 33); }
+  }
+}
+static void pseudonimoAddon(const char *chave, char dst[FAROL_TOKEN_N]) {
+  unsigned hash = 2166136261u;
+  const char *sal = dados_cliente_id ? dados_cliente_id() : NULL;
+  if (sal && *sal) {
+    for (const unsigned char *p = (const unsigned char *)sal; *p; p++)
+      hash = (hash ^ *p) * 16777619u;
+  } else {
+    pthread_once(&salUmaVez, salProcessoIniciar);
+    for (int i = 0; i < 16; i++)
+      hash = (hash ^ salProcesso[i]) * 16777619u;
+  }
+  for (const unsigned char *p = (const unsigned char *)chave; *p; p++)
+    hash = (hash ^ *p) * 16777619u;
+  snprintf(dst, FAROL_TOKEN_N, "h:%08x", hash);
+}
 static void registrarLatencia(const char *chave, unsigned ms, int respondeu) {
   unsigned limite = atomic_load(&espDecisaoMs);
   addonstats_registrar(chave, ms, respondeu);
   if (!respondeu || (limite && ms > limite)) {
-    unsigned hash = 2166136261u;
-    char token[24];
-    for (const unsigned char *p = (const unsigned char *)chave; *p; p++)
-      hash = (hash ^ *p) * 16777619u;
-    snprintf(token, sizeof token, "addon_%08x", hash);
+    char token[FAROL_TOKEN_N];
+    pseudonimoAddon(chave, token);
     farol_ev(FM_ADDON, FE_ADDON_LENTO, 1, ms, !respondeu, token);
   }
 }
@@ -3354,6 +3397,7 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
   if (!id || !*id || !tipo || !*tipo) return 0;
   if (!nv_perfil_sessao_atual(sessao)) return -1;
   memset(&c, 0, sizeof c); c.sessao = sessao;
+  c.inicio = SDL_GetTicks();
   c.origens = capturarPedidos(sessao, &c.nOrigens, &c.versao);
   // So na busca ampla: canal com origem conhecida pergunta a um addon so.
   memset(&extra, 0, sizeof extra);
@@ -3372,6 +3416,11 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
     if (rs) rs->extraIncompleta = extra.pendentes != 0 || extra.incompleta;
     free(c.origens);
     if (!nv_perfil_sessao_atual(sessao) || (cancelado && cancelado(ctx))) { free(extra.l); return -1; }
+    // Busca so com plugins tambem conclui: o mesmo evento do caminho com
+    // add-ons (sem origens consultadas, `b` fica so com o extra incompleto).
+    if (progresso)
+      farol_ev(FM_ADDON, FE_ADDON_BUSCA, 0, (int32_t)(SDL_GetTicks() - c.inicio),
+               (rs ? rs->semResposta : 0) + (rs && rs->extraIncompleta), "busca");
     if (extra.n > 0) { *saida = extra.l; return extra.n; }
     free(extra.l);
     return 0;
@@ -3395,7 +3444,6 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
   // o prazo longo nao segura quem ja respondeu, e a fonte automatica tem prazo
   // proprio (fonteauto). Canal ao vivo e prefetch continuam com 12 s.
   c.timeout = progresso ? ADD_PRAZO_VOD_S : 12;
-  c.inicio = SDL_GetTicks();
   pthread_mutex_init(&c.trava, NULL);
   c.baldes = calloc((size_t)c.nOrigens, sizeof(BaldeFonte));
   if (c.baldes) {

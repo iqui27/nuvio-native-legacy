@@ -2390,7 +2390,11 @@ static void farolFonteEscolhida(const Stream *w, long pontosFonte) {
            (w->badges & (badges_bit("v-hdr") | badges_bit("v-hdr10") | badges_bit("v-hdr10plus") | badges_bit("v-hlg"))) ? "hdr" : "sdr",
            w->dolbyVision ? "dv" : "nodv",
            (w->badges & badges_bit("a-ddp")) ? "eac3" : (w->badges & badges_bit("a-dts")) ? "dts" : "outro");
-  farol_ev(FM_FONTE, FE_FONTE_ESCOLHIDA, 0, pontosFonte, w->tamanhoMB / 102.4, token);
+  // O campo e int32: acima de ~200 EB o double nao cabe e a conversao seria
+  // indefinida (o parser aceita tamanhoMB nessa ordem em stream_parse.c).
+  { double gb10 = w->tamanhoMB / 102.4;
+    int32_t gb = gb10 <= 0 ? 0 : gb10 >= (double)INT32_MAX ? INT32_MAX : (int32_t)gb10;
+    farol_ev(FM_FONTE, FE_FONTE_ESCOLHIDA, 0, pontosFonte, gb, token); }
 }
 
 static void logarEscolha(int escolhida, int pref, int modoPrimeira) {
@@ -2549,6 +2553,7 @@ static int falhaCandidatas(unsigned geracao, int escolhida, int primeira, FonteF
     }
     stream_falha_identidade(s, id, (unsigned)tam);
     c[q].indice = i; c[q].nativa = s->infoHash[0] != 0;
+    c[q].pontos = pts[fila[q]];
     c[q].filtro = s->filtro;
     c[q].ordemAddon = s->addonOrdem;
     snprintf(c[q].addon, sizeof c[q].addon, "%s", s->addonChave);
@@ -2643,7 +2648,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
     if (!s) { resultado = FONTEFALHA_FIM; break; }
     if (!fontefalha_tentar(sessao, &c[r.candidata], r.servico)) { resultado = FONTEFALHA_FIM; break; }
     if (falhaCancelada(geracao, cancelado, ctx)) { resultado = FONTEFALHA_FIM; break; }
-    farol_ev(FM_FONTE, FE_FONTE_PROXIMA, 0, fontefalha_tentativas(sessao), FONTEFALHA_MAX_LINKS, "proxima");
+    farol_ev(FM_FONTE, FE_FONTE_PROXIMA, 0, fontefalha_tentativas(sessao), fontefalha_teto(sessao), "proxima");
     conferenciaPublicar(r.indice, geracao, FA_CONFERINDO);
     if (r.servico >= 0) {
       ok = debrid_resolver_servico_cache(r.servico, s->infoHash, s->fileIdx,
@@ -2665,7 +2670,11 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
     snprintf(url, tam, "%s", resolvida);
     if (indice) *indice = r.indice;
     if (servico) *servico = r.servico;
-    farolFonteEscolhida(s, pontos(s));
+    // A pontuacao vem da candidata (calculada sob verTrava em falhaCandidatas):
+    // reler a lista aqui, sem a trava, corria com stream_lista_acrescentar.
+    // Escolha manual nao e escolha automatica: o evento so vale para a fila.
+    if (!(escolhida >= 0 && r.indice == escolhida && ajustes_fonte_manual()))
+      farolFonteEscolhida(s, c[r.candidata].pontos);
     resultado = FONTEFALHA_PROXIMA;
     break;
   }
