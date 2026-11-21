@@ -11,6 +11,7 @@
 #include "visto.h"
 #include <assert.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,7 +31,7 @@ static int diaNow(void) { return (int)((T_now - 1767225600LL) / 86400); }
 static void avanca(long long s) { T_now += s; T_ms += (uint32_t)(s * 1000); }
 
 // ------------------------------------------------------------------ perfil --
-static int T_perfil = 1;
+static _Atomic int T_perfil = 1;   // o fio-perfil da secao de fios troca ele
 int perfis_ativo(void) { return T_perfil; }
 
 // ------------------------------------------------------------------- dados --
@@ -51,7 +52,7 @@ int dormiu_suspeita(const char *id, DiarioEntrada *saida) {
 }
 
 // ------------------------------------------------------------------ diario --
-static DiarioEntrada D[512]; static int D_n, D_pf[512];
+static DiarioEntrada D[700]; static int D_n, D_pf[700];
 static DiarioOuvinte D_fn; static void *D_ctx;
 int diario_ouvir(DiarioOuvinte fn, void *ctx) { D_fn = fn; D_ctx = ctx; return 1; }
 void diario_parar_de_ouvir(DiarioOuvinte fn, void *ctx) {
@@ -61,13 +62,14 @@ static void dEv(int ev, const DiarioEntrada *e) {
   if (D_fn) D_fn(T_perfil, ev, e, D_ctx);
 }
 static void dAdd(const DiarioEntrada *e) {
-  OK(D_n < 512, "diario fake cheio");
+  OK(D_n < 700, "diario fake cheio");
   D[D_n] = *e; D_pf[D_n] = T_perfil; D_n++;
   dEv(DIARIO_EV_NOVA, &D[D_n - 1]);
 }
 static void dRecarrega(void) { dEv(DIARIO_EV_RECARREGADO, NULL); }
+static int D_visita;    // entradas entregues ao cb (prova da varredura)
 int diario_percorrer(int perfil, const DiarioFiltro *f, DiarioVisita cb, void *ctx) {
-  int ord[512], n = 0, i, j, k = 0;
+  int ord[700], n = 0, i, j, k = 0;
   for (i = 0; i < D_n; i++) if (D_pf[i] == perfil) ord[n++] = i;
   if (f && f->decrescente)
     for (i = 0; i < n; i++)
@@ -85,10 +87,35 @@ int diario_percorrer(int perfil, const DiarioFiltro *f, DiarioVisita cb, void *c
       if (e->flags & f->semFlags) continue;
       if (f->origem && f->origem != e->origem) continue;
     }
-    k++;
+    k++; D_visita++;
     if (!cb(e, ctx)) break;
   }
   return k;
+}
+void diario_separar_id(const char *src, char *id, size_t tam, int *t, int *e) {
+  const char *c;                  // copia fiel de src/diario.c (o comporta-
+  size_t n;                       // mento "so os :T:E finais" e parte do teste)
+  int a = 0, b = 0;
+  if (!src) src = "";
+  c = strrchr(src, ':');
+  n = strlen(src);
+  if (c && c > src) {
+    const char *d = c - 1;
+    while (d > src && *d != ':') d--;
+    if (*d == ':' && d > src) {
+      char *f1, *f2;
+      long x = strtol(d + 1, &f1, 10), y = strtol(c + 1, &f2, 10);
+      if (f1 == c && *f2 == 0 && f1 != d + 1 && f2 != c + 1) {
+        a = (int)x; b = (int)y; n = (size_t)(d - src);
+      }
+    }
+  }
+  if (tam) {
+    if (n >= tam) n = tam - 1;
+    memcpy(id, src, n); id[n] = 0;
+  }
+  if (t) *t = a;
+  if (e) *e = b;
 }
 int diario_por_titulo(int perfil, const char *id, DiarioEntrada *saida, int max) {
   int i, n = 0;
@@ -180,6 +207,7 @@ int prog_ler(ProgRegistro *saida, int max) {
 
 // ------------------------------------------------------------------ busca --
 // Transporte da fila lenta: um detalhe TMDB minimo de resposta fixa.
+static _Atomic int B_chamadas;   // escrito pelo fio lento, lido no main
 static int fakeBusca(const char *id, long tmdb, int serie, char *dst, size_t cap) {
   static const char json[] =
     "{\"id\":901,\"title\":\"x\",\"vote_average\":7.0,\"vote_count\":10,"
@@ -190,6 +218,7 @@ static int fakeBusca(const char *id, long tmdb, int serie, char *dst, size_t cap
     "\"credits\":{\"cast\":[{\"id\":3,\"name\":\"n\"}],\"crew\":[]}}";
   size_t n = strlen(json);
   (void)id; (void)tmdb; (void)serie;
+  B_chamadas++;
   if (n + 1 > cap) return 0;
   memcpy(dst, json, n + 1);
   return (int)n;
@@ -210,6 +239,13 @@ static void *fioTeste(void *u) {
     farolsinal_ficha_ok(((int64_t)FF_FILME << 32) | (uint32_t)(7000 + (i & 7)), &f);
     farolsinal_pendencias();
   }
+  return NULL;
+}
+// Troca o perfil sem parar — o que a corrida do TSan 66 precisa que exista.
+static void *fioPerfil(void *u) {
+  int i; (void)u;
+  for (i = 0; i < 120; i++) { T_perfil = 1 + (i & 1); usleep(400); }
+  T_perfil = 1;
   return NULL;
 }
 
@@ -346,10 +382,9 @@ int main(void) {
   Salvos_fn(&C_it[0], 1);
   OK(peso(FG_DIM_GENERO, genAcao) == FG_D_SALVOU, "salvou +0.6");
   Salvos_fn(&C_it[0], 0);
-  // a devolucao e o -delta pelo mesmo modelo: a saturacao por n deixa um
-  // resíduo de ~11%% — e o preco honesto de um modelo com memoria de toque
-  OK(peso(FG_DIM_GENERO, genAcao) ==
-     esp(esp(0, 0, FG_D_SALVOU), 1, -FG_D_SALVOU), "tirou do salvos devolve");
+  // FAROL38B: a devolucao e EXATA — estorna a contribuicao gravada, nao um
+  // -delta recomputado com saturacao (sem o residuo de ~11%% nem n+1).
+  OK(peso(FG_DIM_GENERO, genAcao) == 0, "tirou do salvos devolve exato");
 
   // tirou do Continuar: -0,6
   zeraTudo();
@@ -379,9 +414,10 @@ int main(void) {
     OK(farolsinal_modelo(&g), "modelo");
     OK(farolgosto_recusado(&g, mapa_hash_titulo("tt_aaa")), "anel recusado");
     farolsinal_desfazer_recusa(&C_it[0]);
-    OK(peso(FG_DIM_GENERO, genAcao) ==
-       esp(esp(0, 0, FG_D_REPROVOU), 1, -FG_D_REPROVOU),
-       "desfazer recusa devolve");
+    OK(peso(FG_DIM_GENERO, genAcao) == 0, "desfazer recusa devolve exato");
+    OK(farolsinal_modelo(&g), "modelo");
+    OK(!farolgosto_recusado(&g, mapa_hash_titulo("tt_aaa")),
+       "desfazer recusa limpa o anel");
   }
 
   // mostrado: recusa passiva anotada, sem delta
@@ -451,16 +487,56 @@ int main(void) {
     r->perfil = 1;
   }
   entrada(&e, "tt_ser", DIARIO_SERIE, 1, 1, 0, 0);
-  e.quando = T_now - 3600; dAdd(&e);
+  // §1.3 exige a data: episodios vistos ha 21+ dias tambem no diario
+  e.quando = T_now - 25LL * 86400; dAdd(&e);
   e.episodio = 2; e.quando += 3600; dAdd(&e);
   farolsinal_passo();   // fecha a temporada 1 E marca a largada
-  OK(peso(FG_DIM_GENERO, genAcao) ==
-     esp(esp(esp(esp(0, 0, 26), 1, 26), 2, FG_D_TERMINOU), 3, FG_D_LARGOU),
-     "largada -1.0");
   {
     int antes = peso(FG_DIM_GENERO, genAcao);
+    // largada -1.0 subtraiu: sem ela ficaria ~decayed(eps) + bonus de
+    // temporada (~300); com ela sobra bem menos.
+    OK(antes < 200, "largada subtraiu do somatorio");
     farolsinal_passo();
     OK(peso(FG_DIM_GENERO, genAcao) == antes, "largada nao repete");
+  }
+  // serie RECENTE (ultima vez ha < 21 d) nao e largada
+  zeraTudo();
+  {
+    ProgRegistro *r = &P_regs[P_n++];
+    memset(r, 0, sizeof *r);
+    snprintf(r->contentId, sizeof r->contentId, "tt_ser2");
+    snprintf(r->tipo, sizeof r->tipo, "series");
+    r->lastWatchedMs = (T_now - 30LL * 86400) * 1000;
+    r->perfil = 1;
+    cat_add("tt_ser2", "series", 0, "Acao", "Serie T");
+    cat_ep(2, 1, 1); cat_ep(2, 1, 2);
+  }
+  entrada(&e, "tt_ser2", DIARIO_SERIE, 1, 1, 0, 0);
+  e.quando = T_now - 3600; dAdd(&e);   // episodio RECENTE: sem largada
+  farolsinal_passo();
+  OK(peso(FG_DIM_GENERO, genAcao) == 26, "episodio recente nao larga");
+  // serie com 4+ episodios vistos nao e largada (§1.3: so 1-3)
+  zeraTudo();
+  {
+    ProgRegistro *r = &P_regs[P_n++];
+    memset(r, 0, sizeof *r);
+    snprintf(r->contentId, sizeof r->contentId, "tt_ser3");
+    snprintf(r->tipo, sizeof r->tipo, "series");
+    r->lastWatchedMs = (T_now - 30LL * 86400) * 1000;
+    r->perfil = 1;
+    cat_add("tt_ser3", "series", 0, "Acao", "Serie U");
+    cat_ep(3, 1, 1); cat_ep(3, 1, 2); cat_ep(3, 1, 3); cat_ep(3, 1, 4);
+    cat_ep(3, 1, 5);
+  }
+  for (i = 1; i <= 4; i++) {
+    entrada(&e, "tt_ser3", DIARIO_SERIE, 1, i, 0, 0);
+    e.quando = T_now - 25LL * 86400 + i * 60; dAdd(&e);
+  }
+  farolsinal_passo();
+  {
+    int p4 = peso(FG_DIM_GENERO, genAcao);
+    OK(p4 > 0 && p4 < esp(esp(esp(esp(esp(0,0,26),1,26),2,26),3,26),4,FG_D_TERMINOU) + 100,
+       "4+ episodios: largada nao disparou");
   }
 
   // ---------- desmarcar visto desfaz ----------
@@ -470,10 +546,10 @@ int main(void) {
   OK(peso(FG_DIM_GENERO, genAcao) == FG_D_TERMINOU, "pre-desmarcar");
   OK(V_fn != NULL, "ouvinte de visto registrado");
   V_fn("tt_aaa", "movie", NULL, 0, 0);          // titulo inteiro desmarcado
-  OK(peso(FG_DIM_GENERO, genAcao) ==
-     esp(esp(0, 0, FG_D_TERMINOU), 1, -FG_D_TERMINOU),
-     "desmarcar desfaz o credito");
-  OK(D_n == 0, "entrada apagada do diario");
+  // FAROL38B: estorno exato (sem residuo, sem evidencia a mais) e o Diario
+  // fica INTOCAVEL — desmarcar nao apaga historico do usuario.
+  OK(peso(FG_DIM_GENERO, genAcao) == 0, "desmarcar desfaz o credito exato");
+  OK(D_n == 1, "entrada PRESERVADA no diario");
 
   // marcar assistido na mao: +1,0; o eco do diario nao dobra
   zeraTudo();
@@ -499,8 +575,7 @@ int main(void) {
   entrada(&e, "tt_aaa", DIARIO_FILME, 0, 0, 0, 0);
   dAdd(&e);
   diario_apagar(T_perfil, "tt_aaa", 0, 0, e.quando);
-  OK(peso(FG_DIM_GENERO, genAcao) ==
-     esp(esp(0, 0, FG_D_TERMINOU), 1, -FG_D_TERMINOU), "APAGADA desfaz");
+  OK(peso(FG_DIM_GENERO, genAcao) == 0, "APAGADA desfaz exato");
 
   // ALTERADA (nota chegou depois): so a diferenca anda
   zeraTudo();
@@ -579,6 +654,166 @@ int main(void) {
   OK(farolsinal_pendencias() == 1, "pendencia para apagar");
   diario_apagar(T_perfil, "tt_off3", 0, 0, e.quando);
   OK(farolsinal_pendencias() == 0, "pendencia cancelada com a vez");
+
+  // ---------- correcao FAROL38B: pendencias e estado ----------
+  // Salvo retirado ANTES da ficha chegar: a intencao morre junto — a ficha
+  // tardia nao credita um salvo que ja nao existe.
+  zeraTudo();
+  {
+    CatItem ci;
+    memset(&ci, 0, sizeof ci);
+    snprintf(ci.imdb, sizeof ci.imdb, "tt_slv");
+    snprintf(ci.tipo, sizeof ci.tipo, "movie");
+    Salvos_fn(&ci, 1);
+    OK(farolsinal_pendencias() == 1, "salvo sem ficha pendente");
+    Salvos_fn(&ci, 0);
+    OK(farolsinal_pendencias() == 0, "salvo retirado: intencao cancelada");
+    {
+      FarolFicha f;
+      int64_t chavePed = -(((int64_t)FF_FILME << 32) |
+          (int64_t)(0x40000000u | (mapa_hash_titulo("tt_slv") & 0x3fffffffu)));
+      memset(&f, 0, sizeof f);
+      f.tmdb = 77; f.tipo = FF_FILME; f.genero[0] = 28; f.nGenero = 1;
+      f.minutos = 90; f.ano = 2010; f.fonte = FF_DE_TMDB;
+      farolsinal_ficha_ok(chavePed, &f);
+    }
+    OK(peso(FG_DIM_GENERO, 28) == 0, "ficha tardia nao credita salvo morto");
+    OK(titulosModelo() == 0, "salvo morto nao conta titulo");
+  }
+
+  // coleta desligada: a ficha EM VOO nao credita quando chega
+  zeraTudo();
+  entrada(&e, "tt_off4", DIARIO_FILME, 0, 0, 0, 0);
+  dAdd(&e);
+  OK(farolsinal_pendencias() == 1, "pendencia criada p/ rec=0");
+  farolsinal_definir_recomendar(0);
+  {
+    FarolFicha f;
+    int64_t chavePed = -(((int64_t)FF_FILME << 32) |
+        (int64_t)(0x40000000u | (mapa_hash_titulo("tt_off4") & 0x3fffffffu)));
+    memset(&f, 0, sizeof f);
+    f.tmdb = 88; f.tipo = FF_FILME; f.genero[0] = 28; f.nGenero = 1;
+    f.minutos = 90; f.ano = 2010; f.fonte = FF_DE_TMDB;
+    farolsinal_ficha_ok(chavePed, &f);
+  }
+  OK(farolsinal_pendencias() == 0, "ficha em voo drenou sem creditar");
+  OK(peso(FG_DIM_GENERO, 28) == 0, "rec=0: resposta em voo nao credita");
+  OK(titulosModelo() == 0, "rec=0: nada contado");
+  farolsinal_definir_recomendar(1);
+
+  // ids compostos "tmdb:NNN" NAO se dividem no primeiro ':' — 321 e 654 sao
+  // obras distintas (o corte antigo fundia as duas em "tmdb").
+  zeraTudo();
+  Prog_fn("tmdb:321");
+  Prog_fn("tmdb:654");
+  OK(farolsinal_pendencias() == 2, "tmdb:321 e tmdb:654 = 2 pedidos");
+  {
+    FarolFicha f;
+    memset(&f, 0, sizeof f);
+    f.tmdb = 321; f.tipo = FF_FILME; f.genero[0] = 28; f.nGenero = 1;
+    f.minutos = 90; f.ano = 2010; f.fonte = FF_DE_TMDB;
+    farolsinal_ficha_ok(((int64_t)FF_FILME << 32) | 321, &f);
+    f.tmdb = 654;
+    farolsinal_ficha_ok(((int64_t)FF_FILME << 32) | 654, &f);
+    OK(farolsinal_pendencias() == 0, "os dois drenados");
+    OK(titulosModelo() == 2, "tmdb:321 e tmdb:654 contam 2 titulos");
+    OK(peso(FG_DIM_GENERO, 28) ==
+       esp(esp(0, 0, FG_D_TIROU), 1, FG_D_TIROU), "os dois tiraram");
+  }
+
+  // a ficha detalhada do cache nao e sobrescrita pela reconstrucao pobre
+  // do catalogo na MESMA chave
+  zeraTudo();
+  {
+    FarolFicha f;
+    memset(&f, 0, sizeof f);
+    f.tmdb = 900; f.tipo = FF_FILME; f.genero[0] = 28; f.nGenero = 1;
+    f.pessoa[0] = 4242; f.nPessoa = 1;       // so a ficha rica tem pessoa
+    f.minutos = 90; f.ano = 2010; f.fonte = FF_DE_TMDB;
+    farolsinal_ficha_ok(((int64_t)FF_FILME << 32) | 900, &f);
+  }
+  cat_add("tt_rico", "movie", 900, "Acao", "Filme Rico");
+  entrada(&e, "tt_rico", DIARIO_FILME, 0, 0, 0, 0);
+  e.tmdb = 900;
+  dAdd(&e);
+  OK(peso(FG_DIM_PESSOA, 4242) == FG_D_TERMINOU,
+     "ficha detalhada sobrevive a reconstrucao do catalogo");
+
+  // estado corrompido/truncado e recusado inteiro
+  zeraTudo();
+  {
+    char cam[640]; FILE *fp;
+    snprintf(cam, sizeof cam, "%s/farol-sinal-p1.txt", T_dir);
+    fp = fopen(cam, "w"); OK(fp != NULL, "cria estado ruim");
+    fprintf(fp, "FS 99 1 1 0\np 1 2 3\n");   // versao desconhecida + p torto
+    fclose(fp);
+    farolsinal_teste_zera(); farolsinal_iniciar();
+    OK(farolsinal_pendencias() == 0, "estado corrompido recusado");
+    fp = fopen(cam, "w"); OK(fp != NULL, "recria estado ruim");
+    fprintf(fp, "FS 1 2 1 0\n");             // cabecalho de OUTRO perfil
+    fclose(fp);
+    farolsinal_teste_zera(); farolsinal_iniciar();
+    OK(farolsinal_pendencias() == 0, "estado de outro perfil recusado");
+    fp = fopen(cam, "w"); OK(fp != NULL, "recria estado truncado");
+    fprintf(fp, "p 1 2 3 4 5\n");            // sem cabecalho, p cortado
+    fclose(fp);
+    farolsinal_teste_zera(); farolsinal_iniciar();
+    OK(farolsinal_pendencias() == 0, "arquivo sem cabecalho recusado");
+    unlink(cam);
+  }
+
+  // reinicio: pendencias gravadas voltam a fila de busca
+  zeraTudo();
+  entrada(&e, "tt_rst", DIARIO_FILME, 0, 0, 0, 0);
+  dAdd(&e);
+  OK(farolsinal_pendencias() == 1, "pendencia antes do sair");
+  farolsinal_sair();                        // grava estado com a pendencia
+  B_chamadas = 0;
+  farolsinal_teste_zera();
+  farolsinal_busca(fakeBusca);
+  farolsinal_iniciar();                     // recarrega + reagenda o pedido
+  OK(farolsinal_pendencias() == 1, "pendencia recarregada do disco");
+  for (i = 0; i < 200 && !B_chamadas; i++) {
+    farolsinal_passo(); usleep(2000);
+  }
+  OK(B_chamadas > 0, "reinicio reagendou a busca");
+  for (i = 0; i < 200 && farolsinal_pendencias() > 0; i++) {
+    farolsinal_passo(); usleep(2000);
+  }
+  OK(farolsinal_pendencias() == 0, "pendencia do disco drenou");
+  OK(peso(FG_DIM_GENERO, 28) == FG_D_TERMINOU, "ficha tardia pos-reinicio");
+  farolsinal_busca(NULL);
+
+  // varredura de 512+ entradas TERMINA (e nao repete o topo para sempre)
+  zeraTudo();
+  cat_add("tt_big", "movie", 0, "Acao", "Filme Grande");
+  for (i = 0; i < 600; i++) {
+    entrada(&e, i % 40 ? "tt_big" : "tt_aaa", DIARIO_FILME, 0, 0, 0, 0);
+    e.quando = T_now - 40000 + i;          // quandos distintos, todos velhos
+    D[D_n] = e; D_pf[D_n] = T_perfil; D_n++;   // carga antiga, sem evento
+  }
+  dRecarrega();
+  D_visita = 0;
+  farolsinal_passo();
+  // 512 aceitas + a 513a recusada pelo teto (o cb devolveu 0 e a varredura
+  // parou — sem ela o teto nao existiria)
+  OK(D_visita == 513, "primeira passada: teto de 512");
+  farolsinal_passo();
+  OK(D_visita == 601, "segunda passada: os 88 que faltavam");
+  farolsinal_passo();
+  OK(D_visita == 601, "varredura TERMINOU (sem terceira volta)");
+  OK(peso(FG_DIM_GENERO, genAcao) > 0, "historico grande creditou");
+
+  // entrada do player SEM nota e SEM conclusao nao e "terminou"
+  zeraTudo();
+  entrada(&e, "tt_aaa", DIARIO_FILME, 0, 0, 0, 0);
+  e.seg = 10; e.durSeg = 3600;             // viu 10 s de 1 h, sem marca alguma
+  dAdd(&e);
+  OK(peso(FG_DIM_GENERO, genAcao) == 0, "10s de 1h nao e terminou");
+  OK(titulosModelo() == 1, "a obra conta mesmo com sinal neutro");
+  e.seg = 3300;                          // 91%: concluiu
+  dEv(DIARIO_EV_ALTERADA, &e);
+  OK(peso(FG_DIM_GENERO, genAcao) == FG_D_TERMINOU, "91% e terminou");
 
   // a fila lenta de verdade (fio + busca injetada): a ficha vem do TMDB
   zeraTudo();
@@ -762,7 +997,7 @@ int main(void) {
   // ---------- fios (TSan exercita isto): ficha_ok + saida + passo juntos --
   {
     // drena o que sobrou dos testes anteriores e mede corrida de verdade
-    pthread_t ts[4];
+    pthread_t ts[4], tp;
     int k;
     farolsinal_teste_zera();
     zeraTudo();
@@ -770,7 +1005,12 @@ int main(void) {
     for (k = 0; k < 4; k++)
       OK(!pthread_create(&ts[k], NULL,
           (void *(*)(void *))fioTeste, (void *)(long)k), "thread");
+    // a corrida do perfil (TSan 66): troca enquanto os outros sinalizam
+    OK(!pthread_create(&tp, NULL,
+        (void *(*)(void *))fioPerfil, NULL), "thread perfil");
     for (k = 0; k < 4; k++) pthread_join(ts[k], NULL);
+    pthread_join(tp, NULL);
+    T_perfil = 1;
     // nada travou, nada corrompeu: o modelo le e o estado esta inteiro
     {
       FarolGosto g;

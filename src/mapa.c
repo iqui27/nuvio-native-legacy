@@ -1699,6 +1699,42 @@ static int lerDoTmdb(MapaSemente *s, const char *chaveTmdb, const char *idiomaTm
   return ok;
 }
 
+// Transporte da fila lenta do Farol (issue 38): devolve o corpo JSON do
+// detalhe TMDB do titulo — resolve imdb->tmdb quando preciso (mesmo
+// /find/ do cruzamento) — ou 0. Roda no fio do farolsinal, nunca no da UI;
+// chave e idioma sao os que o mapa ja usa (copiados sob a trava).
+int mapa_detalhe_json(const char *imdb, long tmdb, int serie, char *dst,
+                      size_t cap) {
+  char url[500], chave[96], idioma[12], *corpo;
+  size_t n;
+  if (!dst || cap < 2) return 0;
+  pthread_mutex_lock(&trava);
+  snprintf(chave, sizeof chave, "%s", chaveTmdb);
+  snprintf(idioma, sizeof idioma, "%s", idiomaTmdb);
+  pthread_mutex_unlock(&trava);
+  if (!chave[0]) return 0;
+  if (tmdb <= 0 && imdb && imdb[0]) {
+    if (!strncmp(imdb, "tmdb:", 5)) tmdb = strtol(imdb + 5, NULL, 10);
+    else {
+      char tipo[8] = "";
+      tmdb = resolverTmdb(imdb, tipo, sizeof tipo, chave, idioma);
+      if (tipo[0]) serie = !strcmp(tipo, "series");
+    }
+  }
+  if (tmdb <= 0) return 0;
+  snprintf(url, sizeof url,
+           "https://api.themoviedb.org/3/%s/%ld?api_key=%s&language=%s"
+           "&append_to_response=keywords,credits,external_ids",
+           serie ? "tv" : "movie", tmdb, chave, idioma);
+  corpo = rede_baixar(url, 20);
+  if (!corpo) return 0;
+  n = strlen(corpo);
+  if (n >= cap) n = cap - 1;
+  memcpy(dst, corpo, n);
+  free(corpo);
+  return (int)n;
+}
+
 static int lerCreditos(long pessoa, int direcao, MapaCreditos *c,
                        const char *chaveTmdb, const char *idiomaTmdb) {
   char url[400], *corpo;

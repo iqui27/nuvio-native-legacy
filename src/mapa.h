@@ -262,6 +262,12 @@ typedef struct MapaDetalhe {
 // recommendations. `serie` escolhe os nomes de campo de TV. Preserva o que ja
 // havia em `s->obra` quando a resposta nao traz o campo. 1 quando leu.
 int  mapa_ler_detalhe(const char *json, int serie, MapaSemente *s);
+// Transporte da fila lenta do farolsinal (issue 38): baixa o detalhe TMDB
+// do titulo (/movie|tv/<id> com keywords,credits,external_ids), resolvendo
+// imdb->tmdb quando so o imdb chega. Copia em `dst` (sem fechar a string),
+// devolve os bytes ou 0. Chamavel de um fio de trabalho — faz rede.
+int  mapa_detalhe_json(const char *imdb, long tmdb, int serie, char *dst,
+                       size_t cap);
 // O MESMO JSON de mapa_ler_detalhe, sem obra/poster/sinopse/recomendacoes:
 // o que o farolficha precisa para montar a ficha do titulo. Resposta
 // truncada devolve o que deu para ler. 1 = leu algo util (id do TMDB, imdb

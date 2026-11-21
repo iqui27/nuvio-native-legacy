@@ -77,6 +77,9 @@ typedef struct {
   char     id[DIARIO_ID_MAX];
   long     tmdb;
   uint8_t  serie, tent;   // tent = buscas ja feitas (teto 2; depois solta)
+  uint8_t  devolve;       // 1 = divida de estorno (o delta fica POSITIVO:
+                          // sinais de tabela ja nascem negativos — o sinal
+                          // nao pode ser o marcador)
 } Pend;
 
 typedef struct {
@@ -228,10 +231,24 @@ static void aliasPoe(int64_t de, int64_t para) {
   int i;
   if (!de || !para || de == para) return;
   for (i = 0; i < S.nAli; i++)
-    if (S.ali[i].de == de) { S.ali[i].para = para; S.sujo = 1; return; }
-  if (S.nAli < FSIN_ALIAS_N) S.ali[S.nAli].de = de, S.ali[S.nAli].para = para,
-                             S.nAli++;
-  else { S.ali[S.nAli - 1].de = de; S.ali[S.nAli - 1].para = para; }
+    if (S.ali[i].de == de) { S.ali[i].para = para; break; }
+  if (i >= S.nAli) {
+    if (S.nAli < FSIN_ALIAS_N) S.ali[S.nAli].de = de,
+                               S.ali[S.nAli].para = para, S.nAli++;
+    else { S.ali[S.nAli - 1].de = de; S.ali[S.nAli - 1].para = para; }
+  }
+  // A reserva ja contada migra para a chave real: sem isso a mesma obra
+  // contava duas vezes em `titulos` (correcao FAROL38B). Se as duas chaves
+  // ja estavam no anel a reserva sai — o real fica como a unica reserva.
+  for (i = 0; i < S.nObra; i++)
+    if (S.obra[i] == de) {
+      int j, dup = 0;
+      for (j = 0; j < S.nObra; j++)
+        if (j != i && S.obra[j] == para) { dup = 1; break; }
+      if (dup) { S.obra[i] = S.obra[S.nObra - 1]; S.nObra--; }
+      else S.obra[i] = para;
+      break;
+    }
   S.sujo = 1;
 }
 static int obraVista(int64_t chave) {
@@ -282,6 +299,14 @@ static void credPoe(const Cred *c) {
 static void credTira(int i) {
   if (i >= 0 && i < S.nCred) S.cred[i] = S.cred[--S.nCred];
 }
+// A vez (K_VEZ/K_GESTO) desta hb ja creditou? Sem janela — para conferir
+// "episodio visto" dentro da trava, sem perguntar ao diario.
+static int vezCredida(uint64_t hb) {
+  int i;
+  for (i = 0; i < S.nCred; i++)
+    if (S.cred[i].hb == hb && S.cred[i].kind <= K_GESTO) return 1;
+  return 0;
+}
 static void pendTira(int i) {
   if (i >= 0 && i < S.nPend) S.pend[i] = S.pend[--S.nPend];
 }
@@ -312,9 +337,15 @@ static int64_t pegaFicha(int64_t chave, const char *id, int serie,
     return farolficha_chave(f);
   if (id && id[0] && (idx = cat_indice_por_imdb(id)) >= 0 &&
       (ci = cat_item(idx)) != NULL && farolficha_ler_item(ci, f)) {
+    real = farolficha_chave(f);
+    // Cache ja tem ficha nesta chave (a detalhada do TMDB): NAO sobrescreve
+    // com a reconstrucao pobre do catalogo (correcao FAROL38B).
+    if (farolficha_obter(&S.fc, real, f)) {
+      if (real != chave) aliasPoe(chave, real);
+      return real;
+    }
     farolficha_guardar(&S.fc, f);
     S.fichaSujo = 1;
-    real = farolficha_chave(f);
     if (real != chave) aliasPoe(chave, real);
     return real;
   }
@@ -323,11 +354,15 @@ static int64_t pegaFicha(int64_t chave, const char *id, int serie,
 
 static void pedeFicha(int64_t chave, const char *id, int serie, long tmdb);
 
-// Credito esperando ficha (ou re-uso como "devolucao tardia", delta < 0).
-static void pendPoe(const Cred *c, const char *id, int serie, long tmdb) {
+// Credito esperando ficha; com `devolve` e a devolucao tardia (estorno que
+// faltou ficha) — dominio separado: uma intencao e uma divida do mesmo eh
+// nao se confundem.
+static void pendPoe(const Cred *c, const char *id, int serie, long tmdb,
+                    int devolve) {
   int i;
   for (i = 0; i < S.nPend; i++)      // a mesma entrega nao entra duas vezes
-    if (S.pend[i].c.eh == c->eh && S.pend[i].c.kind == c->kind) {
+    if (S.pend[i].c.eh == c->eh && S.pend[i].c.kind == c->kind &&
+        S.pend[i].devolve == !!devolve) {
       S.pend[i].c.delta = c->delta; S.sujo = 1; return;
     }
   if (S.nPend >= FSIN_PEND_N) {  // teto 32: sai a mais velha (secao 2.1)
@@ -341,8 +376,23 @@ static void pendPoe(const Cred *c, const char *id, int serie, long tmdb) {
   S.pend[i].c = *c;
   snprintf(S.pend[i].id, sizeof S.pend[i].id, "%s", id ? id : "");
   S.pend[i].tmdb = tmdb; S.pend[i].serie = (uint8_t)!!serie;
+  S.pend[i].devolve = (uint8_t)!!devolve;
   S.sujo = 1;
   pedeFicha(c->chave, id, serie, tmdb);
+}
+
+// Converte a ficha da 36 para a ficha do modelo (os mesmos campos que a
+// integracao de aplicar sempre montou).
+static void montaGf(const FarolFicha *f, FarolGostoFicha *g) {
+  memset(g, 0, sizeof *g);
+  g->tmdb = f->tmdb;
+  g->tipo = f->tipo == FF_SERIE ? FG_TIPO_SERIE : FG_TIPO_FILME;
+  g->ano = (int16_t)f->ano;
+  g->idioma = f->idioma;
+  g->minutos = (int16_t)f->minutos;
+  memcpy(g->genero, f->genero, sizeof g->genero);
+  memcpy(g->pessoa, f->pessoa, sizeof g->pessoa);
+  memcpy(g->tema, f->tema, sizeof g->tema);
 }
 
 // Converte e aplica; `obraNova` sai do anel de chaves (contrato do plano 3.4:
@@ -351,18 +401,40 @@ static void aplicar(const FarolFicha *f, int64_t real, int delta,
                     int dia, int faixa) {
   FarolGostoFicha g;
   int nova;
-  memset(&g, 0, sizeof g);
-  g.tmdb = f->tmdb;
-  g.tipo = f->tipo == FF_SERIE ? FG_TIPO_SERIE : FG_TIPO_FILME;
-  g.ano = (int16_t)f->ano;
-  g.idioma = f->idioma;
-  g.minutos = (int16_t)f->minutos;
-  memcpy(g.genero, f->genero, sizeof g.genero);
-  memcpy(g.pessoa, f->pessoa, sizeof g.pessoa);
-  memcpy(g.tema, f->tema, sizeof g.tema);
+  montaGf(f, &g);
   nova = !obraVista(real);
   if (nova) obraMarca(real);
   farolgosto_aplicar(&S.g, &g, delta, (uint16_t)dia, faixa, nova);
+}
+
+// Devolve EXATAMENTE o que esta vez somou (correcao FAROL38B): por celula,
+// depois[k] conta os creds vivos mais novos que ela na mesma celula — o
+// estorno acha a saturacao com que ela entrou mesmo com creds ja despejados.
+// So o cache fala: devolver nao remonta ficha do catalogo.
+static void estornaCred(const FarolFicha *f, const Cred *c) {
+  FarolGostoFicha g;
+  int dims[FG_CEL_N], depois[FG_CEL_N], n, i;
+  int32_t ids[FG_CEL_N];
+  montaGf(f, &g);
+  n = farolgosto_celulas(&g, dims, ids, FG_CEL_N);
+  memset(depois, 0, sizeof depois);
+  for (i = 0; i < S.nCred; i++) {
+    const Cred *o = &S.cred[i];
+    FarolFicha fo; FarolGostoFicha go;
+    int dm[FG_CEL_N], m, a, b;
+    int32_t ii[FG_CEL_N];
+    int64_t ro;
+    if (o->quando <= c->quando) continue;
+    ro = aliasPara(o->chave);
+    if (!ro || !farolficha_obter(&S.fc, ro, &fo)) continue;
+    montaGf(&fo, &go);
+    m = farolgosto_celulas(&go, dm, ii, FG_CEL_N);
+    for (a = 0; a < m; a++)
+      for (b = 0; b < n; b++)
+        if (dm[a] == dims[b] && ii[a] == ids[b]) { depois[b]++; break; }
+  }
+  farolgosto_estornar(&S.g, &g, c->delta, depois,
+                      (uint16_t)diaDe(c->quando), c->faixa);
 }
 
 // Solta as pendencias cuja chave (traduzida) e a ficha que acabou de entrar.
@@ -372,8 +444,20 @@ static void drenaPends(int64_t real) {
   for (i = S.nPend - 1; i >= 0; i--) {
     Pend p;
     if (aliasPara(S.pend[i].c.chave) != real) continue;
-    p = S.pend[i]; pendTira(i);
+    // Coleta desligada: a ficha em voo nao credita nada — a intencao cai;
+    // a DIVIDA de estorno espera a coleta voltar, porque ela e correcao,
+    // nao coleta (correcao FAROL38B).
+    if (!S.rec) {
+      if (!S.pend[i].devolve) { pendTira(i); S.sujo = 1; }
+      continue;
+    }
     if (!farolficha_obter(&S.fc, real, &f)) continue;
+    p = S.pend[i]; pendTira(i);
+    if (p.devolve) {   // devolucao tardia: estorno, nunca credito novo
+      estornaCred(&f, &p.c);
+      S.sujo = 1;
+      continue;          // a devolucao nao vira Cred: a vez ja saiu do anel
+    }
     aplicar(&f, real, p.c.delta, diaDe(p.c.quando), p.c.faixa);
     p.c.chave = real;
     credPoe(&p.c);
@@ -396,7 +480,7 @@ static void credita(const char *id, int serie, long tmdb, const Cred *c) {
   Cred cc = *c;
   if (!cc.chave) return;                 // id vazio: sem ficha nem fila
   real = pegaFicha(aliasPara(cc.chave), id, serie, &f);
-  if (!real) { pendPoe(&cc, id, serie, tmdb); return; }
+  if (!real) { pendPoe(&cc, id, serie, tmdb, 0); return; }
   if (real != cc.chave) aliasPoe(cc.chave, real);
   aplicar(&f, real, cc.delta, diaDe(cc.quando), cc.faixa);
   cc.chave = real;
@@ -406,19 +490,18 @@ static void credita(const char *id, int serie, long tmdb, const Cred *c) {
   S.sujo = 1;
 }
 
-// Devolve o delta de um Cred — o caminho unico de "desfazer": a chave
-// guardada busca a ficha pela mesma estrada do credito, e quando ela nao esta
-// mais por perto a devolucao vira pendencia NEGATIVA (o dia e a faixa
-// originais vao junto, para sair da mesma celula onde entrou).
+// Devolve a contribuicao gravada de um Cred — o caminho unico de "desfazer":
+// a chave guardada busca a ficha pela mesma estrada do credito e o estorno
+// sai celula a celula, sem residuo e sem evidencia a mais (correcao
+// FAROL38B). Sem ficha por perto a devolucao vira pendencia DEVOLVE (o dia
+// e a faixa originais vao junto, para sair da mesma celula onde entrou) —
+// e divida de estorno NAO e cancelada pelas varreduras de intencao.
 static void desfaz(Cred *c, const char *id, int serie, long tmdb) {
   int64_t real;
   FarolFicha f;
   real = pegaFicha(aliasPara(c->chave), id, serie, &f);
-  if (real) { aplicar(&f, real, -c->delta, diaDe(c->quando), c->faixa); S.sujo = 1; }
-  else {
-    Cred cc = *c; cc.delta = -cc.delta;
-    pendPoe(&cc, id, serie, tmdb);
-  }
+  if (real) { estornaCred(&f, c); S.sujo = 1; }
+  else pendPoe(c, id, serie, tmdb, 1);
 }
 
 // ----------------------------------------------------------------- estado --
@@ -434,12 +517,12 @@ static void gravaEstado(void) {  // com a trava tomada
   fprintf(f, "FS 1 %d %d %lld\n", S.perfil, S.rec, S.cur);
   for (i = 0; i < S.nPend; i++) {
     const Pend *p = &S.pend[i];
-    fprintf(f, "p %lld %llu %llu %llu %lld %d %d %u %u %u %ld %s\n",
+    fprintf(f, "p %lld %llu %llu %llu %lld %d %d %u %u %u %u %ld %s\n",
             (long long)p->c.chave, (unsigned long long)p->c.idh,
             (unsigned long long)p->c.hb, (unsigned long long)p->c.eh,
             p->c.quando, (int)p->c.delta, (int)p->c.faixa,
             (unsigned)p->c.kind, (unsigned)p->tent, (unsigned)p->serie,
-            p->tmdb, p->id);
+            (unsigned)p->devolve, p->tmdb, p->id);
   }
   for (i = 0; i < S.nCred; i++) {
     const Cred *c = &S.cred[i];
@@ -460,27 +543,39 @@ static void gravaEstado(void) {  // com a trava tomada
 static void leEstado(void) {     // com a trava tomada
   char cam[1100], nome[64], linha[640];
   FILE *f;
+  int i;
   nomeEstado(S.perfil, nome, sizeof nome);
   if (!caminho(nome, cam, sizeof cam)) return;
   f = fopen(cam, "r");
   if (!f) return;
+  // A primeira linha TEM de ser o cabecalho "FS <ver> <perfil> <rec> <cur>":
+  // versao desconhecida, perfil de outro ou arquivo truncado/corrompido —
+  // recusa o arquivo INTEIRO (correcao FAROL38B: meio-registro aplicava
+  // delta torto).
+  if (!fgets(linha, sizeof linha, f)) { fclose(f); return; }
+  {
+    int v = 0, p = 0, r = 0; long long c = 0; char resto[8] = "";
+    if (sscanf(linha, "FS %d %d %d %lld %7s", &v, &p, &r, &c, resto) != 4 ||
+        v != 1 || p != S.perfil) { fclose(f); return; }
+    S.rec = !!r; S.cur = c;
+  }
   while (fgets(linha, sizeof linha, f)) {
-    if (linha[0] == 'F') {
-      int p, r; long long c;
-      if (sscanf(linha, "FS %*d %d %d %lld", &p, &r, &c) == 3 && p == S.perfil)
-        { S.rec = !!r; S.cur = c; }
-    } else if (linha[0] == 'p' && S.nPend < FSIN_PEND_N) {
+    if (linha[0] == 'p' && S.nPend < FSIN_PEND_N) {
       Pend *p = &S.pend[S.nPend];
-      int d, fx, k, te, sr;
+      int d, fx, k, te, sr, dv;
       long long ch, q;
       unsigned long long ih, hb, eh;
       memset(p, 0, sizeof *p);
-      if (sscanf(linha + 1, "%lld %llu %llu %llu %lld %d %d %d %d %d %ld %31s",
-                 &ch, &ih, &hb, &eh, &q, &d, &fx, &k, &te, &sr, &p->tmdb,
-                 p->id) >= 11) {
+      // Registro de pendencia e TUDO ou nada: 13 campos e kind valido
+      // (correcao FAROL38B: a linha cortada entrava com campo de lixo).
+      if (sscanf(linha + 1,
+                 "%lld %llu %llu %llu %lld %d %d %d %d %d %d %ld %31s",
+                 &ch, &ih, &hb, &eh, &q, &d, &fx, &k, &te, &sr, &dv, &p->tmdb,
+                 p->id) == 13 && k >= 0 && k <= K_LARGADA) {
         p->c.chave = ch; p->c.idh = ih; p->c.hb = hb; p->c.eh = eh;
         p->c.quando = q; p->c.delta = d; p->c.faixa = (int16_t)fx;
         p->c.kind = (uint8_t)k; p->tent = (uint8_t)te; p->serie = (uint8_t)sr;
+        p->devolve = (uint8_t)!!dv;
         S.nPend++;
       }
     } else if (linha[0] == 'c' && S.nCred < FSIN_CRED_N) {
@@ -509,6 +604,12 @@ static void leEstado(void) {     // com a trava tomada
     }
   }
   fclose(f);
+  // Pendencia que veio do disco volta a fila de busca: o reinicio nao pode
+  // deixar ficha pedida para tras (correcao FAROL38B).
+  for (i = 0; i < S.nPend; i++)
+    if (S.pend[i].tent < 2)
+      pedeFicha(S.pend[i].c.chave, S.pend[i].id, S.pend[i].serie,
+                S.pend[i].tmdb);
 }
 
 // Troca o modelo carregado — a fronteira entre perfis: grava o que sai,
@@ -535,16 +636,26 @@ static void cbVisto(const char *imdb, const char *tipo, const VistoPar *pares,
 static void cbSalvos(const CatItem *ci, int salvo);
 static void cbTirou(const char *imdb);
 
-static int garante(void) {
-  TRAVA();
+// O registro dos ouvintes e UMA VEZ e FORA de qualquer trava: diario_ouvir
+// toma o mutex do diario e diario_percorrer chama cbVar com ele tomado —
+// registrar sob a nossa trava inverteria a ordem e trancaria os dois
+// (correcao FAROL38B). Chamado por pthread_once no iniciar.
+static void ligaOuvintes(void) {
+  diario_ouvir(cbDiario, NULL);
+  salvos_ao_definir(cbSalvos);
+  visto_ao_marcar(cbVisto);
+  prog_ao_retirar(cbTirou);
+}
+static pthread_once_t onceOuv = PTHREAD_ONCE_INIT;
+
+// COM A TRAVA TOMADA: o chamador faz a conferencia e o uso do perfil no
+// mesmo fecho — a corrida do TSan 66 era ler/decidir S.perfil fora do fecho
+// (correcao FAROL38B).
+static int garante_i(void) {
   if (!S.dir[0]) snprintf(S.dir, sizeof S.dir, "%s", dados_dir());
   if (!S.ligado) {
     char cam[1100];
     S.ligado = 1;
-    diario_ouvir(cbDiario, NULL);
-    salvos_ao_definir(cbSalvos);
-    visto_ao_marcar(cbVisto);
-    prog_ao_retirar(cbTirou);
     farolficha_cache_iniciar(&S.fc);
     // O arquivo das fichas so anda dentro da trava — leitura e escrita
     // serializadas aqui e na fila lenta (ressalva do lote).
@@ -554,8 +665,15 @@ static int garante(void) {
     }
   }
   trocaPerfil(perfis_ativo());
-  DTRAVA();
   return S.perfil > 0;
+}
+
+// "Terminou" so vale para quem viu ate o fim: registro do player com
+// posicao (seg/dur) pede 90% — 10 s de 1 h nao e fim (correcao FAROL38B).
+// Historico sem posicao (sync da conta, nota manual) continua valendo.
+static int concluiu(const DiarioEntrada *e) {
+  if (e->origem != DIARIO_ORIG_PLAYER || e->durSeg <= 0) return 1;
+  return (long long)e->seg * 10 >= (long long)e->durSeg * 9;
 }
 
 // ----------------------------------------------------------- delta da vez --
@@ -570,7 +688,7 @@ static int deltaDeEntrada(const DiarioEntrada *e) {
   else if ((e->flags & DIARIO_F_CORACAO) || e->nota10 >= 7) d = FG_D_GOSTOU;
   else if (e->flags & DIARIO_F_REVER) d = FG_D_REVIU;
   else if (e->nota10 >= 4 && e->nota10 <= 6) d = 0;
-  else d = FG_D_TERMINOU;
+  else d = concluiu(e) ? FG_D_TERMINOU : 0;
   // Serie pontua 0,1 por episodio; a temporada completa conta o valor cheio
   // uma vez — cobrado em confereTemporada.
   if (d > 0 && e->tipo == DIARIO_SERIE && (e->temporada > 0 || e->episodio > 0))
@@ -585,26 +703,29 @@ static void vezNova(const DiarioEntrada *e) {   // com a trava tomada
   Cred c;
   uint64_t hb = h3(e->id, e->temporada, e->episodio);
   uint64_t eh = hb ^ mix64((uint64_t)e->quando);
-  int i, delta = deltaDeEntrada(e);
+  int i, delta = deltaDeEntrada(e), viaVez = 0;
   int faixa = e->hora >= 0 ? faixaDeHora(e->hora) : faixaAgora(e->quando);
   int serie = e->tipo == DIARIO_SERIE;
   i = achaEh(eh);
-  if (i < 0) i = achaVez(hb, e->quando);
+  if (i < 0) { i = achaVez(hb, e->quando); viaVez = i >= 0; }
   // O player com REVER entregou uma vez NOVA (a fusao nao colou porque a
-  // segunda ida e de verdade): cai fora e credita cheio. Nos demais casos e
-  // o eco de um gesto ou a fusao re-entregue — so o que faltava, e so para
-  // cima: a versao que chega agora pode ser mais fraca (marca pela conta sem
-  // a nota local).
-  if (i >= 0 && !(e->origem == DIARIO_ORIG_PLAYER &&
+  // segunda ida e de verdade): cai fora e credita cheio — mas so quando o
+  // registro foi achado pela hb de vez; o achado pela eh exata e a MESMA
+  // entrega, nunca vez nova (correcao FAROL38B). Nos demais casos e o eco
+  // de um gesto ou a fusao re-entregue — so o que faltava, e so para cima.
+  if (i >= 0 && !(viaVez && e->origem == DIARIO_ORIG_PLAYER &&
                   (e->flags & DIARIO_F_REVER) && S.cred[i].kind == K_VEZ)) {
     int diff = delta - S.cred[i].delta;
     if (diff > 0) {
       int64_t real; FarolFicha f;
       if ((real = pegaFicha(aliasPara(S.cred[i].chave), e->id, serie, &f))) {
         aplicar(&f, real, diff, diaDe(e->quando), faixa);
-        S.sujo = 1;
+      } else {   // sem ficha: a diferenca espera como a vez esperou
+        Cred cc = S.cred[i]; cc.delta = diff; cc.eh = eh ^ 0xD1FF;
+        pendPoe(&cc, e->id, serie, e->tmdb, 0);
       }
       S.cred[i].delta += diff;
+      S.sujo = 1;
     }
     if (S.cred[i].kind == K_GESTO) {  // a entrada e a verdade do gesto
       S.cred[i].eh = eh; S.cred[i].quando = e->quando; S.cred[i].kind = K_VEZ;
@@ -629,6 +750,29 @@ static void vezNova(const DiarioEntrada *e) {   // com a trava tomada
   }
 }
 
+// A temporada que tinha o bonus K_TEMP ficou incompleta? O bonus volta —
+// a contagem e pelas vezes creditadas (a trava do diario nao se toma aqui
+// dentro). Com a trava tomada.
+static void temporadaDesfeita(const char *id, int t, long tmdb) {
+  int j = achaHb(hDom(id, K_TEMP, t));
+  int idx, ne, k, tot = 0, vist = 0;
+  if (t <= 0 || j < 0) return;
+  if ((idx = cat_indice_por_imdb(id)) < 0) return;
+  ne = cat_n_episodios(idx);
+  for (k = 0; k < ne; k++) {
+    const CatEp *ep = cat_episodio(idx, k);
+    if (ep && ep->temporada == t) {
+      tot++;
+      if (vezCredida(h3(id, t, ep->episodio))) vist++;
+    }
+  }
+  if (tot && vist < tot) {
+    Cred cc = S.cred[j];
+    credTira(j);
+    desfaz(&cc, id, 1, tmdb);
+  }
+}
+
 // A entrada apagada desfaz o que a vez somou — so pelo registro, nunca por
 // palpite: entrada que nunca creditou nao tira nada.
 static void vezApagada(const DiarioEntrada *e) {  // com a trava tomada
@@ -640,10 +784,15 @@ static void vezApagada(const DiarioEntrada *e) {  // com a trava tomada
     Cred c = S.cred[i];
     credTira(i);
     desfaz(&c, e->id, serie, e->tmdb);
+    // a temporada que esta entrada fechava nao fecha mais (correcao FAROL38B)
+    temporadaDesfeita(e->id, e->temporada, e->tmdb);
   }
-  // e se ainda era so pendencia, cancela antes da ficha chegar
+  // e se ainda era so pendencia, cancela antes da ficha chegar — mas NUNCA
+  // a pendencia DEVOLVE de estorno: ela e divida, nao intencao (correcao
+  // FAROL38B).
   for (i = S.nPend - 1; i >= 0; i--)
     if (S.pend[i].c.hb == hb && S.pend[i].c.kind <= K_GESTO &&
+        !S.pend[i].devolve &&
         (S.pend[i].c.eh == eh ||
          (S.pend[i].c.quando > e->quando - DIARIO_JANELA_S &&
           S.pend[i].c.quando < e->quando + DIARIO_JANELA_S)))
@@ -667,7 +816,7 @@ static void vezAlterada(const DiarioEntrada *e) {   // com a trava tomada
         S.sujo = 1;
       } else {
         Cred cc = S.cred[i]; cc.delta = diff;   // ajusta quando a ficha voltar
-        pendPoe(&cc, e->id, serie, e->tmdb);
+        pendPoe(&cc, e->id, serie, e->tmdb, 0);
       }
       S.cred[i].delta += diff;
     }
@@ -676,7 +825,8 @@ static void vezAlterada(const DiarioEntrada *e) {   // com a trava tomada
     return;
   }
   for (i = S.nPend - 1; i >= 0; i--)
-    if (S.pend[i].c.hb == hb && S.pend[i].c.kind == K_VEZ)
+    if (S.pend[i].c.hb == hb && S.pend[i].c.kind == K_VEZ &&
+        !S.pend[i].devolve)
       { S.pend[i].c.delta = delta; S.pend[i].c.eh = eh;
         S.pend[i].c.quando = e->quando; S.sujo = 1; return; }
   vezNova(e);   // registro desconhecido: e como se fosse nova
@@ -684,9 +834,9 @@ static void vezAlterada(const DiarioEntrada *e) {   // com a trava tomada
 
 static void cbDiario(int perfil, int ev, const DiarioEntrada *e, void *ctx) {
   (void)ctx;
-  if (!garante()) return;
   TRAVA();
-  if (ev == DIARIO_EV_RECARREGADO) S.varrer = 1;
+  if (!garante_i()) { DTRAVA(); return; }
+  if (ev == DIARIO_EV_RECARREGADO) { S.varrer = 1; S.cur = 0; }
   else if (e && perfil == S.perfil && S.rec) {
     if (ev == DIARIO_EV_NOVA) vezNova(e);
     else if (ev == DIARIO_EV_ALTERADA) vezAlterada(e);
@@ -700,11 +850,10 @@ static void cbDiario(int perfil, int ev, const DiarioEntrada *e, void *ctx) {
 // player) devolve depois casa pela hb e so completa o que faltava.
 static void cbVisto(const char *imdb, const char *tipo, const VistoPar *pares,
                     int n, int visto) {
-  int serie, i, idx, perfil;
+  int serie, i, idx;
   long tmdb = 0;
   const CatItem *ci;
-  DiarioEntrada lista[256];
-  if (!imdb || !imdb[0] || !garante()) return;
+  if (!imdb || !imdb[0]) return;
   serie = tipo && !strcmp(tipo, "series");
   if ((idx = cat_indice_por_imdb(imdb)) >= 0 &&
       (ci = cat_item(idx)) != NULL) tmdb = ci->tmdb;
@@ -712,7 +861,7 @@ static void cbVisto(const char *imdb, const char *tipo, const VistoPar *pares,
     long long agora = agoraS();
     int faixa = faixaAgora(agora);
     TRAVA();
-    if (S.rec) {
+    if (garante_i() && S.rec) {
       int total = n < 1 ? 1 : n;
       for (i = 0; i < total; i++) {
         int t = n < 1 ? 0 : pares[i].temporada;
@@ -723,22 +872,30 @@ static void cbVisto(const char *imdb, const char *tipo, const VistoPar *pares,
         memset(&c, 0, sizeof c);
         c.idh = h1(imdb); c.hb = hb; c.eh = hb ^ mix64((uint64_t)agora);
         c.quando = agora; c.chave = chaveObra(imdb, serie, tmdb);
-        c.delta = FG_D_TERMINOU; c.faixa = (int16_t)faixa; c.kind = K_GESTO;
+        // episodio de serie preve a entrada de 0,1 — nao a vez inteira
+        // (tabela 2.2; correcao FAROL38B).
+        c.delta = serie && (t > 0 || e > 0)
+                  ? (FG_D_TERMINOU * 26 + 128) / 256 : FG_D_TERMINOU;
+        c.faixa = (int16_t)faixa; c.kind = K_GESTO;
         credita(imdb, serie, tmdb, &c);
       }
     }
     DTRAVA();
     return;
   }
-  // DESMARCOU: devolve os creditos de vez/gesto do alvo e apaga as entradas
-  // (o APAGADA que elas disparam nao acha registro e nao cobra de novo).
+  // DESMARCOU: devolve os creditos de vez/gesto do alvo (e, no titulo
+  // inteiro, o bonus de temporada e o "largada"). O DIARIO NAO E TOCADO:
+  // desmarcar visto desfaz so o sinal do Farol — a entrada continua la
+  // (correcao FAROL38B: o gesto apagava o historico do usuario).
   TRAVA();
-  perfil = S.perfil;
-  if (S.rec) {
+  if (garante_i() && S.rec) {
     uint64_t idh = h1(imdb);
     for (i = S.nCred - 1; i >= 0; i--) {
       int alvo = 0, k;
-      if (S.cred[i].kind > K_GESTO || S.cred[i].idh != idh) continue;
+      if (S.cred[i].idh != idh) continue;
+      if (S.cred[i].kind > K_GESTO &&
+          !(n < 1 && (S.cred[i].kind == K_TEMP || S.cred[i].kind == K_LARGADA)))
+        continue;
       if (n < 1) alvo = 1;
       else for (k = 0; k < n; k++)
         if (S.cred[i].hb == h3(imdb, pares[k].temporada, pares[k].episodio))
@@ -751,41 +908,32 @@ static void cbVisto(const char *imdb, const char *tipo, const VistoPar *pares,
     }
     for (i = S.nPend - 1; i >= 0; i--) {
       int alvo = 0, k;
-      if (S.pend[i].c.kind > K_GESTO || S.pend[i].c.idh != idh) continue;
+      if (S.pend[i].devolve || S.pend[i].c.idh != idh) continue;
+      if (S.pend[i].c.kind > K_GESTO &&
+          !(n < 1 && (S.pend[i].c.kind == K_TEMP ||
+                      S.pend[i].c.kind == K_LARGADA)))
+        continue;
       if (n < 1) alvo = 1;
       else for (k = 0; k < n; k++)
         if (S.pend[i].c.hb == h3(imdb, pares[k].temporada, pares[k].episodio))
           alvo = 1;
       if (alvo) { pendTira(i); S.sujo = 1; }
     }
+    // episodio desmarcado pode ter deixado a temporada incompleta
+    if (serie && n >= 1)
+      for (i = 0; i < n; i++) temporadaDesfeita(imdb, pares[i].temporada, tmdb);
   }
   DTRAVA();
-  // As entradas saem do diario FORA da trava: a ordem de mutexes aqui e
-  // sempre diario -> sinal, nunca o contrario.
-  if (n < 1) {
-    int m = diario_por_titulo(perfil, imdb, lista, 256);
-    if (m > 256) m = 256;
-    for (i = 0; i < m; i++)
-      diario_apagar(perfil, imdb, lista[i].temporada, lista[i].episodio,
-                    lista[i].quando);
-  } else
-    for (i = 0; i < n; i++) {
-      int k;
-      for (k = 0; k < 64 &&
-                  diario_apagar(perfil, imdb, pares[i].temporada,
-                                pares[i].episodio, 0) == 1; k++)
-        ;
-    }
 }
 
 // Salvos ("+"): +0,6; tirar devolve. Nivel de titulo, dominio proprio.
 static void cbSalvos(const CatItem *ci, int salvo) {
   uint64_t hb;
   int i;
-  if (!ci || !ci->imdb[0] || !garante()) return;
+  if (!ci || !ci->imdb[0]) return;
   hb = hDom(ci->imdb, K_SALVO, 0);
   TRAVA();
-  if (S.rec) {
+  if (garante_i() && S.rec) {
     if (salvo) {
       if (achaHb(hb) < 0) {
         Cred c; long long agora = agoraS();
@@ -797,10 +945,18 @@ static void cbSalvos(const CatItem *ci, int salvo) {
         c.kind = K_SALVO;
         credita(ci->imdb, !strcmp(ci->tipo, "series"), ci->tmdb, &c);
       }
-    } else if ((i = achaHb(hb)) >= 0) {
-      Cred c = S.cred[i];
-      credTira(i);
-      desfaz(&c, ci->imdb, !strcmp(ci->tipo, "series"), ci->tmdb);
+    } else {
+      if ((i = achaHb(hb)) >= 0) {
+        Cred c = S.cred[i];
+        credTira(i);
+        desfaz(&c, ci->imdb, !strcmp(ci->tipo, "series"), ci->tmdb);
+      }
+      // Retirou antes da ficha chegar: a intencao pendente morre junto —
+      // a ficha tardia nao pode creditar um salvo que ja nao existe
+      // (correcao FAROL38B). Pendencia DEVOLVE (estorno) fica: e divida.
+      for (i = S.nPend - 1; i >= 0; i--)
+        if (S.pend[i].c.hb == hb && S.pend[i].c.kind == K_SALVO &&
+            !S.pend[i].devolve) { pendTira(i); S.sujo = 1; }
     }
   }
   DTRAVA();
@@ -814,14 +970,17 @@ static void cbTirou(const char *imdb) {
   int idx, serie = 0;
   long tmdb = 0;
   const CatItem *ci;
-  if (!imdb || !imdb[0] || !garante()) return;
-  snprintf(id, sizeof id, "%s", imdb);
-  if (strchr(id, ':')) *strchr(id, ':') = 0;      // id composto -> so a obra
+  if (!imdb || !imdb[0]) return;
+  // o id composto so se divide nos ":T:E" finais — "tmdb:321" inteiro e o
+  // proprio id (correcao FAROL38B: cortar no primeiro ':' juntava tmdb:321
+  // e tmdb:654 na mesma obra).
+  diario_separar_id(imdb, id, sizeof id, NULL, NULL);
   if ((idx = cat_indice_por_imdb(id)) >= 0 && (ci = cat_item(idx)) != NULL) {
     serie = !strcmp(ci->tipo, "series"); tmdb = ci->tmdb;
   }
   hb = hDom(id, K_TIROU, 0);
   TRAVA();
+  if (!garante_i()) { DTRAVA(); return; }
   if (S.rec && achaHb(hb) < 0) {
     Cred c; long long agora = agoraS();
     memset(&c, 0, sizeof c);
@@ -870,20 +1029,23 @@ void farolsinal_saida(const char *id, char tipo, int temporada, int episodio,
   (void)temporada; (void)episodio;   // o abandono e da obra inteira
   if (!id || !id[0] || concluiu || posSeg < FSIN_ABAND_MIN_S ||
       durSeg <= 0 || posSeg * 100.0 >= durSeg * FSIN_ABAND_PCT) return;
-  if (!garante()) return;
   // Sono confirmado ou suspeito recente neste titulo: a saida era descanso,
-  // nao desgosto (secao 1.3: "adormeceu nao e dislike").
-  if (dormiu_suspeita(id, &sus) && sus.quando > agoraS() - FSIN_SONO_JANELA)
+  // nao desgosto (secao 1.3: "adormeceu nao e dislike"). A suspeita precisa
+  // estar na janela DOS DOIS LADOS — nem velha demais nem no futuro
+  // (correcao FAROL38B: relogio torto dispensava abandono real).
+  if (dormiu_suspeita(id, &sus) && sus.quando > agoraS() - FSIN_SONO_JANELA &&
+      sus.quando <= agoraS() + 300)
     return;
   // Falha de fonte/video nos ultimos 5 min: o player morreu, nao o gosto.
   falha = farolanel_contar(FE_ERRO_FONTE, FSIN_JANELA_FALHA, agoraMs()) ||
           farolanel_contar(FE_ERRO_NATIVO, FSIN_JANELA_FALHA, agoraMs()) ||
-          farolanel_contar(FE_PIPELINE_MORREU, FSIN_JANELA_FALHA, agoraMs());
+          farolanel_contar(FE_PIPELINE_MORREU, FSIN_JANELA_FALHA, agoraMs()) ||
+          farolanel_contar(FE_PARADO, FSIN_JANELA_FALHA, agoraMs());
   if (falha) return;
   serie = tipo == DIARIO_SERIE;
   agora = agoraS();
   TRAVA();
-  if (S.rec) {
+  if (garante_i() && S.rec) {
     memset(&c, 0, sizeof c);
     c.idh = h1(id);
     c.hb = hDom(id, K_SAIDA, 0) ^ mix64((uint64_t)agora);
@@ -898,34 +1060,38 @@ void farolsinal_saida(const char *id, char tipo, int temporada, int episodio,
 
 // --------------------------------------------------------- sinais avulsos --
 void farolsinal_interesse(const CatItem *ci) {
-  if (!ci || !ci->imdb[0] || !garante()) return;
+  if (!ci || !ci->imdb[0]) return;
   TRAVA();
-  if (S.rec) avulso(ci, K_INTERESSE, diaDe(agoraS()), FG_D_INTERESSE);
+  if (garante_i() && S.rec)
+    avulso(ci, K_INTERESSE, diaDe(agoraS()), FG_D_INTERESSE);
   DTRAVA();
 }
 void farolsinal_mais_assim(const CatItem *ci) {
-  if (!ci || !ci->imdb[0] || !garante()) return;
+  if (!ci || !ci->imdb[0]) return;
   TRAVA();
-  if (S.rec) avulso(ci, K_MAIS, 0, FG_D_MAIS_ASSIM);
+  if (garante_i() && S.rec) avulso(ci, K_MAIS, 0, FG_D_MAIS_ASSIM);
   DTRAVA();
 }
 void farolsinal_recusar(const CatItem *ci) {
-  if (!ci || !ci->imdb[0] || !garante()) return;
+  if (!ci || !ci->imdb[0]) return;
   TRAVA();
-  if (S.rec && avulso(ci, K_RECUSA, 0, FG_D_REPROVOU))
+  if (garante_i() && S.rec && avulso(ci, K_RECUSA, 0, FG_D_REPROVOU))
     { farolgosto_recusar(&S.g, mapa_hash_titulo(ci->imdb)); S.sujo = 1; }
   DTRAVA();
 }
 void farolsinal_desfazer_recusa(const CatItem *ci) {
-  if (!ci || !ci->imdb[0] || !garante()) return;
+  if (!ci || !ci->imdb[0]) return;
   TRAVA();
-  desfazAvulso(ci, K_RECUSA, 0);
+  // a recusa sai tambem do anel — o titulo volta a aparecer nas fileiras
+  // (correcao FAROL38B: "desfazer" deixava o hash para sempre).
+  if (garante_i() && desfazAvulso(ci, K_RECUSA, 0))
+    farolgosto_desrecusar(&S.g, mapa_hash_titulo(ci->imdb));
   DTRAVA();
 }
 void farolsinal_mostrado(const CatItem *ci) {
-  if (!ci || !ci->imdb[0] || !garante()) return;
+  if (!ci || !ci->imdb[0]) return;
   TRAVA();
-  if (S.rec) {
+  if (garante_i() && S.rec) {
     farolgosto_mostrado(&S.g, mapa_hash_titulo(ci->imdb),
                         (uint8_t)(diaDe(agoraS()) & 0xff));
     S.sujo = 1;
@@ -934,9 +1100,10 @@ void farolsinal_mostrado(const CatItem *ci) {
 }
 void farolsinal_origem(const CatItem *ci, int origem) {
   int i;
-  if (!ci || !ci->imdb[0] || !garante() ||
+  if (!ci || !ci->imdb[0] ||
       origem <= FS_ORIGEM_NENHUMA || origem >= FS_ORIGEM_N) return;
   TRAVA();
+  if (!garante_i()) { DTRAVA(); return; }
   if (S.nOri < FSIN_ORI_N) i = S.nOri++;
   else { i = S.oriProx; S.oriProx = (S.oriProx + 1) % FSIN_ORI_N; }
   S.ori[i].h = mapa_hash_titulo(ci->imdb);
@@ -961,20 +1128,23 @@ static void pedeFicha(int64_t chave, const char *id, int serie, long tmdb) {
 
 static void *fioLenta(void *u) {
   FarolFichaTmp tmp;
-  static char corpo[128 * 1024];
-  (void)u;
+  char *corpo = malloc(128 * 1024);   // do fio, nao estatico: o fio solto
+  (void)u;                            // na saida nao divide buffer com outro
   memset(&tmp, 0, sizeof tmp);
+  if (!corpo) return NULL;
   for (;;) {
     Ped p;
+    FarolSinalBusca b;
     int n;
     TRAVA();
     while (!S.nPed && !fioMorre) pthread_cond_wait(&condPed, &trava);
     if (fioMorre) { DTRAVA(); break; }
     p = S.ped[0];
     memmove(&S.ped[0], &S.ped[1], sizeof(Ped) * (size_t)(--S.nPed));
+    b = busca;
     DTRAVA();
-    if (!busca) continue;
-    n = busca(p.id[0] ? p.id : NULL, p.tmdb, p.serie, corpo, sizeof corpo - 1);
+    if (!b) continue;
+    n = b(p.id[0] ? p.id : NULL, p.tmdb, p.serie, corpo, 128 * 1024 - 1);
     if (n > 0) {
       FarolFicha f;
       corpo[n] = 0;
@@ -983,15 +1153,16 @@ static void *fioLenta(void *u) {
     }
     farolsinal_ficha_falhou(p.chave);
   }
+  free(corpo);
   return NULL;
 }
 
 void farolsinal_ficha_ok(int64_t chavePed, const FarolFicha *f) {
   int64_t real;
-  if (!f || !garante()) return;
+  if (!f) return;
   real = farolficha_chave(f);
   TRAVA();
-  if (real) {
+  if (garante_i() && real) {
     farolficha_guardar(&S.fc, f);
     S.fichaSujo = 1;
     if (real != chavePed) aliasPoe(chavePed, real);
@@ -1001,8 +1172,8 @@ void farolsinal_ficha_ok(int64_t chavePed, const FarolFicha *f) {
 }
 void farolsinal_ficha_falhou(int64_t chavePed) {
   int i;
-  if (!garante()) return;
   TRAVA();
+  if (!garante_i()) { DTRAVA(); return; }
   for (i = S.nPend - 1; i >= 0; i--)
     if (S.pend[i].c.chave == chavePed) {
       if (++S.pend[i].tent < 2)
@@ -1011,29 +1182,36 @@ void farolsinal_ficha_falhou(int64_t chavePed) {
     }
   DTRAVA();
 }
-void farolsinal_busca(FarolSinalBusca fn) { busca = fn; }
+void farolsinal_busca(FarolSinalBusca fn) {
+  TRAVA(); busca = fn; pthread_cond_signal(&condPed); DTRAVA();
+}
 int  farolsinal_pendencias(void) {
   int n;
-  garante(); TRAVA(); n = S.nPend; DTRAVA(); return n;
+  TRAVA(); n = garante_i() ? S.nPend : 0; DTRAVA(); return n;
 }
 
 // ---------------------------------------------------------------- ciclo ----
 int  farolsinal_recomendar(void) {
-  int r; garante(); TRAVA(); r = S.rec; DTRAVA(); return r;
+  int r; TRAVA(); r = garante_i() ? S.rec : 0; DTRAVA(); return r;
 }
 void farolsinal_definir_recomendar(int ligado) {
-  garante(); TRAVA();
-  if (S.rec != !!ligado) { S.rec = !!ligado; S.sujo = 1; }
+  TRAVA();
+  if (garante_i() && S.rec != !!ligado) { S.rec = !!ligado; S.sujo = 1; }
   DTRAVA();
 }
 int farolsinal_modelo(FarolGosto *dst) {
-  if (!dst || !garante()) return 0;
-  TRAVA(); *dst = S.g; DTRAVA(); return 1;
+  int ok;
+  if (!dst) return 0;
+  TRAVA();
+  ok = garante_i();
+  if (ok) *dst = S.g;
+  DTRAVA();
+  return ok;
 }
 int farolsinal_origens(uint32_t *h, uint8_t *o, uint8_t *d, int max) {
-  int i, n;
-  if (!garante()) return 0;
+  int i, n = 0;
   TRAVA();
+  if (!garante_i()) { DTRAVA(); return 0; }
   n = S.nOri < max ? S.nOri : max;
   for (i = 0; i < n; i++) {
     if (h) h[i] = S.ori[i].h;
@@ -1044,7 +1222,11 @@ int farolsinal_origens(uint32_t *h, uint8_t *o, uint8_t *d, int max) {
   return n;
 }
 
-void farolsinal_iniciar(void) { garante(); }
+void farolsinal_iniciar(void) {
+  // ouvintes: uma vez, fora de toda trava (ver ligaOuvintes)
+  pthread_once(&onceOuv, ligaOuvintes);
+  TRAVA(); garante_i(); DTRAVA();
+}
 void farolsinal_pasta(const char *dir) {
   TRAVA();
   // pasta nova so faz sentido com o modelo ainda por carregar
@@ -1055,12 +1237,17 @@ void farolsinal_relogio(long long (*s)(void), uint32_t (*ms)(void)) {
   f_agora_s = s; f_agora_ms = ms;
 }
 
-// O passe da varredura: credita as entradas mais novas que o cursor, ate
-// FSIN_VEZ_MAX por chamada — o que sobrar espera o proximo passo.
-typedef struct { int n; long long menor; } VarCtx;
+// O passe da varredura: S.cur e o limite EXCLUSIVO superior — cada chamada
+// processa as entradas MAIS NOVAS ainda nao vistas (decrescente, ate 512),
+// e o cursor so anda para tras. Termina quando uma passada nao corta
+// (correcao FAROL38B: o cursor de regressao varria as mesmas 512 para
+// sempre).
+typedef struct { int n, cortou; long long menor; } VarCtx;
 static int cbVar(const DiarioEntrada *e, void *ctx) {
   VarCtx *c = (VarCtx *)ctx;
-  if (c->n >= FSIN_VEZ_MAX) return 0;
+  // O teto nao corta no meio de uma leva de mesmo `quando`: quem divide o
+  // instante entra junto, senao ficava atras do cursor para sempre.
+  if (c->n >= FSIN_VEZ_MAX && e->quando != c->menor) { c->cortou = 1; return 0; }
   TRAVA();
   if (S.rec) vezNova(e);
   DTRAVA();
@@ -1101,27 +1288,45 @@ static void confereTemporada(const char *id, int t) {
   DTRAVA();
 }
 
-// "Serie largada" (secao 1.3): progresso parado ha 21+ dias, episodio mais
-// adiante existe no catalogo e o titulo nunca tomou este sinal. Uma varredura
-// por carga do modelo, no passo.
+// Conta episodios vistos do titulo — a regra §1.3 e "1-3 episodios".
+static int contaEps(const DiarioEntrada *e, void *c) {
+  int *n = (int *)c;
+  if (e->temporada || e->episodio) (*n)++;
+  return *n < 4;                       // so interessa saber 1..3
+}
+
+// "Serie largada" (secao 1.3): progresso parado ha 21+ dias, 1-3 episodios
+// vistos, ultima vez ha 21+ dias, episodio mais adiante existe no catalogo
+// e o titulo nunca tomou este sinal. Uma varredura por carga do modelo, no
+// passo.
 static void varreLargada(void) {
   ProgRegistro regs[64];
   int n, i, perfil;
-  long long agoraMs = agoraS() * 1000LL;
+  long long agora = agoraS();
+  long long agoraMs = agora * 1000LL;
   TRAVA(); perfil = S.perfil; DTRAVA();
   n = prog_ler(regs, 64);
   for (i = 0; i < n; i++) {
-    int t = 0, e = 0, idx, ne, k, ha = 0;
+    int t = 0, e = 0, idx, ne, k, ha = 0, neps = 0;
     long long q = 0;
     uint64_t hb;
+    DiarioFiltro df;
     if (strcmp(regs[i].tipo, "series") || !regs[i].contentId[0] ||
+        regs[i].perfil != perfil ||
         regs[i].lastWatchedMs <= 0 ||
         agoraMs - regs[i].lastWatchedMs < FSIN_LARGADA_MS) continue;
     hb = hDom(regs[i].contentId, K_LARGADA, 0);
     TRAVA(); ha = achaHb(hb) >= 0; DTRAVA();
     if (ha) continue;
-    if (!diario_ultimo_episodio(perfil, regs[i].contentId, &t, &e, &q))
-      continue;
+    // §1.3: a data do ultimo episodio tambem tem de fazer os 21 dias — um
+    // episodio visto esta semana nao e serie largada (correcao FAROL38B).
+    if (!diario_ultimo_episodio(perfil, regs[i].contentId, &t, &e, &q) ||
+        q <= 0 || q > agora || agora - q < FSIN_LARGADA_MS / 1000) continue;
+    // e so com 1-3 episodios vistos: quem viu mais nao "largou", parou.
+    memset(&df, 0, sizeof df);
+    df.id = regs[i].contentId; df.tipo = DIARIO_SERIE;
+    diario_percorrer(perfil, &df, contaEps, &neps);
+    if (neps < 1 || neps > 3) continue;
     if ((idx = cat_indice_por_imdb(regs[i].contentId)) < 0) continue;
     ne = cat_n_episodios(idx);
     for (k = 0; k < ne && !ha; k++) {
@@ -1149,32 +1354,32 @@ static void varreLargada(void) {
 void farolsinal_passo(void) {
   int i, perfil;
   long long agora;
-  if (!garante()) return;
-  // a fila lenta so nasce quando ha transporte e pedido
-  if (busca && !fioVivo && !fioMorre) {
-    TRAVA();
-    if (S.nPed && !pthread_create(&fioId, NULL, fioLenta, NULL)) fioVivo = 1;
-    DTRAVA();
-  }
   TRAVA();
+  if (!garante_i()) { DTRAVA(); return; }
   perfil = S.perfil; agora = agoraS();
+  // a fila lenta so nasce quando ha transporte e pedido — leitura e
+  // criacao no mesmo fecho (correcao FAROL38B: busca/fioVivo liam soltos)
+  if (busca && !fioVivo && !fioMorre && S.nPed &&
+      !pthread_create(&fioId, NULL, fioLenta, NULL)) fioVivo = 1;
   // pendencias velhas demais morrem: a ficha nao veio em 30 dias
   for (i = S.nPend - 1; i >= 0; i--)
     if (S.pend[i].c.quando < agora - (long long)FSIN_PEND_DIAS * 86400)
       { pendTira(i); S.sujo = 1; }
+  i = S.varrer;
   DTRAVA();
-  // varredura do diario (pos-RECARREGADO ou primeira carga)
-  TRAVA(); i = S.varrer; DTRAVA();
+  // varredura do diario (pos-RECARREGADO ou primeira carga): janela mais
+  // velha a cada passada, cursor exclusivo — termina sempre (correcao
+  // FAROL38B).
   if (i) {
     VarCtx c;
     DiarioFiltro f;
     memset(&c, 0, sizeof c); memset(&f, 0, sizeof f);
-    TRAVA(); f.de = S.cur; DTRAVA();
+    TRAVA(); f.ate = S.cur; DTRAVA();
     f.decrescente = 1;
     diario_percorrer(perfil, &f, cbVar, &c);
     TRAVA();
     if (c.n) S.cur = c.menor;
-    S.varrer = c.n >= FSIN_VEZ_MAX;   // parou no teto: continua no proximo
+    S.varrer = c.cortou;              // so continua quando a janela cortou
     S.sujo = 1;
     DTRAVA();
   }
@@ -1206,22 +1411,27 @@ void farolsinal_passo(void) {
 
 void farolsinal_sair(void) {
   char cam[1100];
-  if (!garante()) return;
-  fioMorre = 1;
-  TRAVA(); pthread_cond_signal(&condPed); DTRAVA();
-  if (fioVivo) { pthread_join(fioId, NULL); fioVivo = 0; }
+  int vivo;
   TRAVA();
+  if (!garante_i()) { DTRAVA(); return; }
+  // NAO espera a busca em curso: o fio da UI nao pode pendurar na saida
+  // (correcao FAROL38B). O fio lento ve fioMorre e morre sozinho; o que
+  // ainda faltava grava do estado — a pendencia volta na proxima carga.
+  fioMorre = 1;
+  pthread_cond_signal(&condPed);
+  vivo = fioVivo; fioVivo = 0;
   gravaModelo(); gravaEstado();
   if (caminho("farol-fichas.bin", cam, sizeof cam) && (S.fc.sujo || S.fc.n))
     farolficha_gravar(&S.fc, cam);
   S.fc.sujo = 0; S.sujo = 0;
   DTRAVA();
+  if (vivo) pthread_detach(fioId);
 }
 
 void farolsinal_esquecer(void) {
   char cam[1100], nome[64];
-  if (!garante()) return;
   TRAVA();
+  if (!garante_i()) { DTRAVA(); return; }
   if (S.perfil > 0) {
     nomeGosto(S.perfil, nome, sizeof nome);
     if (caminho(nome, cam, sizeof cam)) remove(cam);
@@ -1245,5 +1455,6 @@ void farolsinal_teste_zera(void) {
   S.nCred = S.nPend = S.nObra = S.obraProx = S.nAli = 0;
   S.nPed = S.nTempChk = S.nOri = S.oriProx = 0;
   S.sujo = S.fichaSujo = 0; S.ultGrav = 0;
+  fioMorre = 0;                          // "reboot" tambem do fio lento
   DTRAVA();
 }

@@ -222,6 +222,106 @@ void farolgosto_aplicar(FarolGosto *g, const FarolGostoFicha *f, int delta,
   g->versao = FAROL_GOSTO_VERSAO;
 }
 
+// (dim,id) das celulas que aplicar toca, na mesma ordem — ver o contrato em
+// farolgosto.h. dedup dentro de cada vetor, como no aplicar.
+static int celulaPoe(const FarolGostoFicha *f, int *dims, int32_t *ids,
+                     int max, int n) {
+  int i, j;
+  for (i = 0; i < 4 && f->genero[i]; i++) {
+    for (j = 0; j < i; j++) if (f->genero[j] == f->genero[i]) break;
+    if (j < i || n >= max) continue;
+    dims[n] = FG_DIM_GENERO; ids[n++] = f->genero[i];
+  }
+  for (i = 0; i < 6 && f->pessoa[i]; i++) {
+    for (j = 0; j < i; j++) if (f->pessoa[j] == f->pessoa[i]) break;
+    if (j < i || n >= max) continue;
+    dims[n] = FG_DIM_PESSOA; ids[n++] = f->pessoa[i];
+  }
+  for (i = 0; i < 8 && f->tema[i]; i++) {
+    for (j = 0; j < i; j++) if (f->tema[j] == f->tema[i]) break;
+    if (j < i || n >= max) continue;
+    dims[n] = FG_DIM_TEMA; ids[n++] = f->tema[i];
+  }
+  if (f->ano > 0 && n < max) {
+    int idx = (f->ano - 1920) / 10;
+    if (idx < 0) idx = 0;
+    if (idx > FG_DECADA_N - 1) idx = FG_DECADA_N - 1;
+    dims[n] = FG_DIM_DECADA; ids[n++] = 1920 + idx * 10;
+  }
+  if (f->idioma && n < max) { dims[n] = FG_DIM_IDIOMA; ids[n++] = f->idioma; }
+  {
+    int fd = durFaixa(f->minutos);
+    if (fd >= 0 && n < max) {
+      dims[n] = FG_DIM_DURACAO;
+      ids[n++] = fd + (f->tipo == FG_TIPO_SERIE ? 5 : 0) + 1;
+    }
+  }
+  return n;
+}
+
+int farolgosto_celulas(const FarolGostoFicha *f, int *dims, int32_t *ids,
+                       int max) {
+  if (!f || !dims || !ids || max < 1) return 0;
+  return celulaPoe(f, dims, ids, max, 0);
+}
+
+// Vetor+meia-vida de uma dimensao, versao mutavel (estornar).
+static void dimArr(FarolGosto *g, int dim, FarolAfin **arr, int *cap,
+                   int *meia) {
+  switch (dim) {
+    case FG_DIM_GENERO:  *arr = g->genero;  *cap = FG_GENERO_N;  *meia = FG_MEIA_AFIN; return;
+    case FG_DIM_PESSOA:  *arr = g->pessoa;  *cap = FG_PESSOA_N;  *meia = FG_MEIA_AFIN; return;
+    case FG_DIM_TEMA:    *arr = g->tema;    *cap = FG_TEMA_N;    *meia = FG_MEIA_AFIN; return;
+    case FG_DIM_DECADA:  *arr = g->decada;  *cap = FG_DECADA_N;  *meia = FG_MEIA_AFIN; return;
+    case FG_DIM_IDIOMA:  *arr = g->idioma;  *cap = FG_IDIOMA_N;  *meia = FG_MEIA_AFIN; return;
+    default:             *arr = g->duracao; *cap = FG_DURACAO_N; *meia = FG_MEIA_HORA; return;
+  }
+}
+
+void farolgosto_estornar(FarolGosto *g, const FarolGostoFicha *f, int delta,
+                         const int *depois, uint16_t diaVez, int faixaHora) {
+  int dims[FG_CEL_N], n, k, fd;
+  int32_t ids[FG_CEL_N];
+  if (!g || !f || !depois || !delta) return;
+  n = farolgosto_celulas(f, dims, ids, FG_CEL_N);
+  for (k = 0; k < n; k++) {
+    FarolAfin *arr;
+    int cap, meia, i, antes;
+    int32_t num, den, contrib, ft;
+    int64_t v, p;
+    dimArr(g, dims[k], &arr, &cap, &meia);
+    for (i = 0; i < cap && arr[i].id != ids[k]; i++);
+    if (i >= cap) continue;          // a celula ja despejou: foi junto
+    antes = (int)arr[i].n - 1 - depois[k];
+    if (antes < 0) antes = 0;
+    num = delta * 8; den = antes + 8;
+    contrib = (num + (num >= 0 ? den / 2 : -den / 2)) / den;
+    // O slot decai o guardado ATE a sua referencia: a parte da vez que ainda
+    // mora ali e a contribuicao decaida de diaVez ate a->dia — tirar ela
+    // deixa as outras contribuicoes exatamente como estavam.
+    ft = fatorDec((int32_t)arr[i].dia - (int32_t)diaVez, meia);
+    v = (int64_t)contrib * ft;
+    v = v >= 0 ? (v + 32768) >> 16 : -(((-v) + 32768) >> 16);
+    p = (int64_t)arr[i].peso - v;
+    if (p > FAROL_GOSTO_PESOMAX) p = FAROL_GOSTO_PESOMAX;
+    if (p < -FAROL_GOSTO_PESOMAX) p = -FAROL_GOSTO_PESOMAX;
+    arr[i].peso = (int16_t)p;
+    if (arr[i].n) arr[i].n--;
+  }
+  fd = durFaixa(f->minutos);
+  if (fd >= 0 && faixaHora >= 0 && faixaHora < FG_HORA_F) {
+    int64_t v;
+    int32_t ft = fatorDec((int32_t)g->diaBase - (int32_t)diaVez, FG_MEIA_HORA);
+    v = (int64_t)delta * ft;
+    v = v >= 0 ? (v + 32768) >> 16 : -(((-v) + 32768) >> 16);
+    v = (int64_t)g->hora[faixaHora][fd] - v;
+    if (v > 32767) v = 32767;
+    if (v < -32768) v = -32768;
+    g->hora[faixaHora][fd] = (int16_t)v;
+  }
+  g->versao = FAROL_GOSTO_VERSAO;
+}
+
 int32_t farolgosto_peso(const FarolGosto *g, int dim, int32_t id, uint16_t dia) {
   const FarolAfin *arr;
   int cap, meia, i;
@@ -265,6 +365,14 @@ int farolgosto_recusado(const FarolGosto *g, uint32_t h) {
   for (i = 0; i < n; i++)
     if (g->recusado[i] == h) return 1;
   return 0;
+}
+
+void farolgosto_desrecusar(FarolGosto *g, uint32_t h) {
+  int i, n;
+  if (!g || !h) return;
+  n = g->recProx < FG_RECUS_N ? g->recProx : FG_RECUS_N;
+  for (i = 0; i < n; i++)
+    if (g->recusado[i] == h) { g->recusado[i] = 0; return; }
 }
 
 void farolgosto_mostrado(FarolGosto *g, uint32_t h, uint8_t dia) {

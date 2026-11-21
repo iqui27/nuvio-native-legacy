@@ -174,6 +174,26 @@ void    farolgosto_aplicar(FarolGosto *g, const FarolGostoFicha *f,
                            int delta, uint16_t dia, int faixaHora,
                            int obraNova);
 
+// As celulas de afinidade que farolgosto_aplicar toca para esta ficha, na
+// MESMA ordem (generos deduplicados, pessoas, temas, decada, idioma,
+// duracao): o estorno exato da 38 se alinha por esse indice. Devolve o n
+// (<= max; o teto e FG_CEL_N).
+#define FG_CEL_N 21
+int     farolgosto_celulas(const FarolGostoFicha *f, int *dims, int32_t *ids,
+                           int max);
+
+// Devolve a contribuicao de UMA vez, celula a celula — o inverso exato de
+// aplicar, para desmarcar/apagar sem residuo e sem subir evidencia
+// (correcao FAROL38B). Para cada celula ainda presente, o peso perde o
+// adendo saturado que a vez somou — delta*8/(antes+8), com
+// antes = n_atual-1-depois[k]: depois[k] conta as vezes POSTERIORES a esta
+// que tocaram a celula, entao creds ja despejados continuam contados — ja
+// decaido ate o dia de referencia do slot, e uma evidencia sai de n. A
+// celula de hora perde o delta cru, decaido ate o diaBase do bloco. Celula
+// despejada e pulada (devolver nao recria slot). delta == 0 nao toca nada.
+void    farolgosto_estornar(FarolGosto *g, const FarolGostoFicha *f, int delta,
+                            const int *depois, uint16_t diaVez, int faixaHora);
+
 // Peso projetado da afinidade (dim,id) no dia `dia`, em Q8.8 — o valor ja
 // decaido, sem mexer no guardado. 0 se a afinidade nao existe.
 int32_t farolgosto_peso(const FarolGosto *g, int dim, int32_t id, uint16_t dia);
@@ -186,6 +206,9 @@ int16_t farolgosto_hora(const FarolGosto *g, int faixaHora, int faixaDur,
 // duplicado). Recusado sai de todas as pecas (issue 41) e volta no arquivo.
 void    farolgosto_recusar(FarolGosto *g, uint32_t h);
 int     farolgosto_recusado(const FarolGosto *g, uint32_t h);
+// Tira o hash do anel (desfazer "nao e para mim" tambem limpa a recusa —
+// correcao FAROL38B). O slot volta a zero e entra de novo numa recusa futura.
+void    farolgosto_desrecusar(FarolGosto *g, uint32_t h);
 
 // Recusa passiva: o titulo apareceu na fileira do Farol no dia `dia` (0-255).
 // `vezes` so conta dias diferentes. Anel de 160, sai o mais antigo.

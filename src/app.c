@@ -4203,6 +4203,7 @@ int app_iniciar(const char *dirArte) {
   travajuntos_iniciar(); // Juntos: o episodio do player vira marca nos outros membros
   dormiu_iniciar();      // a sessao que morreu tocando vira suspeita de sono
   farolsinal_iniciar();  // os sinais da tabela 2.2 passam a alimentar o gosto
+  farolsinal_busca(mapa_detalhe_json);  // a fila de fichas usa o transporte do mapa (FAROL38B)
   travarede_iniciar();   // trava de serie: arquivo da conta, fila e ouvinte do visto
   // O envio da atividade segue o nivel de privacidade (alcance) do Social: a
   // funcao e chamada agora e a cada mudanca; "nao perguntado" chega como 0.
