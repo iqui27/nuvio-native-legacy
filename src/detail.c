@@ -1428,7 +1428,8 @@ static const NotasSecao *notasDados(void) {
   int i;
   for (i = 0; i < EX_NFONTES; i++) s.cru[i] = extras_nota(i);
   if (!s.cru[EX_IMDB] && ajustes_mdblist_fonte(EX_IMDB)) s.cru[EX_IMDB] = notaDe(idx);
-  s.notaPessoal = reacao_nota(cat_item(idx)->imdb);
+  const CatItem *ci = cat_item(idx);
+  s.notaPessoal = ci ? reacao_nota(ci->imdb) : 0;
   s.nTemp = ehSerie() && (extras_n_temporadas() || notasCatDisponiveis()) ? notasCatNTemp() : 0;
   s.tempNum = notasCatTemp; s.nEps = notasCatNEps;
   s.epNum = notasCatNumero; s.epNota = notasCatNota;
@@ -6529,7 +6530,8 @@ static void heroWeb(float a, float desloc) {
     // Sem nota dada a pessoa nao tem "Sua nota": o item some em vez de
     // mostrar um traco solto.
     { char mine[96], value[24];
-      int n = reacao_nota(cat_item(idx)->imdb);
+      const CatItem *item = cat_item(idx);
+      int n = item ? reacao_nota(item->imdb) : 0;
       if (n && !servidoresDisponiveis) {  // hide until rated; server titles show the card
         snprintf(value, sizeof value, "%d.%d", n / 2, n % 2 * 5); plrui_decimal(value);
         snprintf(mine, sizeof mine, "%s  %s", i18n("Sua nota"), value);
@@ -6610,8 +6612,9 @@ static int temLembreteTemporada(void) {
 static void rotuloTemporada(int c, char *dst, size_t n) {
   if (c>=colTemp(nTemporadasReais())) {
     if (temporadaLembrete(c)) {
-      const AgItem *ag=agenda_registro(cat_item(idx)->imdb);
-      snprintf(dst,n,i18n("Temporada %d"),ag->temporada);
+      const CatItem *ci=cat_item(idx);
+      const AgItem *ag=ci ? agenda_registro(ci->imdb) : NULL;
+      snprintf(dst,n,i18n("Temporada %d"),ag ? ag->temporada : temporadaEm(posTemp(c)));
     } else snprintf(dst,n,"%s",i18n("Sem spoilers"));
     return;
   }
@@ -6870,7 +6873,9 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
     return;
   }
   if (temporadaLembrete(c)) {
-    const AgItem *ag=agenda_registro(cat_item(idx)->imdb);
+    const CatItem *ci=cat_item(idx);
+    const AgItem *ag=ci ? agenda_registro(ci->imdb) : NULL;
+    if (!ag) return;
     char label[48]; snprintf(label,sizeof label,"T%d · %.4s",ag->temporada,ag->dataProx);
     gfx_icone((GfxRect){r.x+18,r.y+17,22,22},"aj_bell",ink/255.f,ink/255.f,ink/255.f,a);
     txt_desenhar_alpha(txt_linha(TXT_G22M,label,ink,ink,ink,255),r.x+52,r.y+16,a);
