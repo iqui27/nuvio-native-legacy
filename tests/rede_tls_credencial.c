@@ -61,6 +61,12 @@ int main(void) {
   b = rede_baixar("https://cdn.example.test/img.jpg", 5); free(b);
   assert(ultimo.pPeer && ultimo.peer == 0 && ultimo.follow == 1);
 
+  // DELETE autenticado (Trakt /sync/playback): TLS verificado, sem redirect.
+  memset(&ultimo, 0, sizeof ultimo);
+  b = rede_apagar("https://api.example.test/sync/playback/1", 5, cabAut, &st);
+  free(b);
+  assert(ultimo.peer == 1 && ultimo.host == 2 && ultimo.follow == 0);
+
   // Credencial em http:// nao muda nada aqui (nao ha TLS a verificar); segue como era.
   memset(&ultimo, 0, sizeof ultimo);
   b = rede_baixar_com("http://127.0.0.1/x", 5, cabAut); free(b);

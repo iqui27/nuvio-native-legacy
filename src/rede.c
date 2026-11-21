@@ -3083,6 +3083,15 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
   curl_setopt(c, OPT_WRITEFUNCTION, receber);
   curl_setopt(c, OPT_WRITEDATA, &b);
   opcoesComuns(c, (unsigned long)(segundos > 0 ? segundos : 20) * 1000UL);
+  // DELETE autenticado (Trakt /sync/playback leva Authorization): mesmo
+  // tratamento do GET com credencial — TLS verificado e sem redirect, que
+  // numa alca reusada do pool pode vir ligado de um GET anterior.
+  if (carregaCredencial(cab) && !strncmp(url, "https://", 8)) {
+    curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
+    curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
+    if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
+    curl_setopt(c, OPT_FOLLOWLOCATION, (long)0);
+  }
   curl_setopt(c, OPT_CUSTOMREQUEST, "DELETE");
   if (slist_append) {
     int k;
@@ -3217,6 +3226,8 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
     curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
     curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
     if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
+    if (carregaCredencial(cab))
+      curl_setopt(c, OPT_FOLLOWLOCATION, (long)0);
   }
   if (seguro) {
     // OAuth credentials require authenticated TLS and never follow redirects.
