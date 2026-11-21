@@ -375,8 +375,9 @@ def ts_video_nals(name, data):
 
 
 with playback('dts.mkv', 0, ordinal=0, ts=True) as base:
-    assert base.endswith('/v.m3u8'), base
-    playlist = get(base)
+    master = get(base)
+    assert b'v.m3u8' in master and re.search(rb'CODECS="avc1.[0-9a-f]{6},ac-3"', master), master
+    playlist = get(base, 'v.m3u8')
     assert b'#EXT-X-VERSION:3' in playlist and b'#EXT-X-MAP' not in playlist, playlist
     assert b'\nseg0.ts\n' in playlist and b'\nseg2.ts\n' in playlist, playlist
     seg = get(base, 'seg2.ts')
@@ -390,6 +391,9 @@ print('DTS -> AC-3 5.1 in MPEG-TS segments and an out-of-order seek passed.')
 
 for name in ('indexed.mkv', 'indexed-mel.mkv'):
     with playback(name, 1, mapping=True, ts=True) as base:
+        master = get(base)
+        assert b'SUPPLEMENTAL-CODECS="dvh1.08.' in master and b'VIDEO-RANGE=PQ' in master, master
+        assert b'#EXT-X-MAP' not in get(base, 'v.m3u8')
         for k in (1, 0, 2):
             seg = get(base, f'seg{k}.ts')
             assert seg[0] == 0x47 and len(seg) % 188 == 0

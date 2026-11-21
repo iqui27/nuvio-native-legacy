@@ -1080,8 +1080,10 @@ static int urlDe(Sessao *s, double t, char *out, size_t n) {
   int porta = portaLo;
   switch (s->modo) {
     case DTSTPK_HLS:
-      // webOS MPEG-TS: the media playlist itself, as Stremio Origin loads it.
-      snprintf(out, n, "http://%s:%d/%s/%s.m3u8", host, porta, s->token, s->webos && !s->webosMp4 ? "v" : "m"); break;
+      // webOS loads the master playlist in both formats: on a C5 (webOS 11)
+      // the TS media playlist alone never completed the load, with or without
+      // "HLS" named; the master's CODECS let the TV set up its decoders.
+      snprintf(out, n, "http://%s:%d/%s/m.m3u8", host, porta, s->token); break;
     default: {
       long ms = lround((t > 0 ? t : 0) * 1000.0);
       snprintf(out, n, "http://%s:%d/%s/prog.ts?t=%ld.%03ld", host, porta, s->token, ms / 1000, ms % 1000);
