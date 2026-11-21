@@ -2020,7 +2020,7 @@ static void desenhaFolhaFalha(void) {
 // this uses the same clipped rows and pointer dispatch as the source sheets.
 static void ffPont(int i, int categoria) {
   if (frAberta != 6 || teclado_aberto() || categoria != ffCategoria) return;
-  int n = ffCategoria >= 0 ? fontefiltro_opcoes_n(ffCategoria) : 9;
+  int n = ffCategoria >= 0 ? ffOpcoesN() : FF_LINHAS;
   if (i < 0 || i >= n) return;
   if (ffCategoria >= 0) ffValorFoco = i; else ffFoco = i;
 }
@@ -2030,7 +2030,7 @@ static void desenhaFolhaFiltros(void) {
   float topo, base, alvo, y, g0 = gfx_opacidade_grupo;
   float forma = ffForma < 0.0f ? 0.0f : ffForma > 1.0f ? 1.0f : ffForma;
   float cat = anim_suave(ffCatA);
-  int n = ffCategoria >= 0 ? fontefiltro_opcoes_n(ffCategoria) : 9;
+  int n = ffCategoria >= 0 ? ffOpcoesN() : FF_LINHAS;
   int foco = ffCategoria >= 0 ? ffValorFoco : ffFoco;
   int vivo = frAberta == 6, escala = ffForma != 1.0f, ptr;
   FonteFiltroConfig cfg; fontefalha_filtro(&cfg);
@@ -2042,10 +2042,12 @@ static void desenhaFolhaFiltros(void) {
   ptr = vivo && !escala;
   ajIlha(m, 36.0f, 1.0f, 1.0f);
   topo = ajCabecalhoFolha(m, ffCategoria >= 0 ? "Filtros das fontes" : "Fontes e addons",
-                         ffCategoria >= 0 ? fontefiltro_rotulo(ffCategoria) : "Filtros das fontes",
-                         i18n(ffCategoria >= 0
-                           ? "Marcado = filtrado. OK ou toque marca/desmarca e salva na hora."
-                           : "Selecione os valores que deseja filtrar. As alterações são salvas na hora e valem antes dos limites de links."),
+                         ffCategoria >= 0 ? ffCategoriaNome() : "Filtros das fontes",
+                         ffCategoria == FF_CACHE
+                           ? ffCacheAjuda()
+                           : i18n(ffCategoria >= 0
+                             ? "Marcado = filtrado. OK ou toque marca/desmarca e salva na hora."
+                             : "Selecione os valores que deseja filtrar. As alterações são salvas na hora e valem antes dos limites de links."),
                          0, 1);
   base = m.y + m.h - 96.0f;
   alvo = foco * 84.0f - (base - topo - 80.0f) * 0.5f;
@@ -2070,9 +2072,11 @@ static void desenhaFolhaFiltros(void) {
     if (ptr) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, ffPont, NULL, i, ffCategoria);
     ajFocoLinha(r, 22.0f, f, 1.0f);
     if (ffCategoria >= 0) {
-      int excluido = (cfg.excluir[ffCategoria] & fontefiltro_bit(ffCategoria, i)) != 0;
+      int excluido = ffCategoria == FF_CACHE
+                   ? (int)cfg.cache == i
+                   : (cfg.excluir[ffCategoria] & fontefiltro_bit(ffCategoria, i)) != 0;
       GfxRect caixa = {r.x + r.w - 66.0f, y + 20.0f, 40.0f, 40.0f};
-      TxtLinha nome = ajTxtC(TXT_AJ_ROTULO, fontefiltro_opcao(ffCategoria, i), r.w - 122.0f);
+      TxtLinha nome = ajTxtC(TXT_AJ_ROTULO, ffOpcao(i), r.w - 122.0f);
       txt_desenhar_alpha(nome, r.x + 36.0f, y + (r.h - nome.h) * 0.5f, 0.86f + 0.14f * f);
       if (excluido) {
         ajPilulaAcento(caixa, 12.0f, 1.0f);
@@ -2096,7 +2100,8 @@ static void desenhaFolhaFiltros(void) {
   txt_desenhar_alpha(fechar, botao.x + 20.0f, botao.y + (botao.h - fechar.h) * 0.5f, 0.9f);
   if (ptr) ponteiro_alvo(botao.x, botao.y, botao.w, botao.h, NULL, ffPontVoltar, 0, 0);
   if (!ajTelaCheia()) {
-    AjDica d[2] = {{"OK", ffCategoria >= 0 ? "Filtrar" : "Editar"}, {"Voltar", ffCategoria >= 0 ? "Voltar" : "Fechar"}};
+    AjDica d[2] = {{"OK", ffCategoria == FF_CACHE ? "Selecionar" : ffCategoria >= 0 ? "Filtrar" : "Editar"},
+                   {"Voltar", ffCategoria >= 0 ? "Voltar" : "Fechar"}};
     ajDicasLinha(d, 2, m.x + 44.0f, m.y + m.h - 66.0f, 1.0f);
   }
   if (escala) gfx_sem_transformar();
