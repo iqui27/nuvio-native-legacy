@@ -656,7 +656,7 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
     snprintf(cab, sizeof cab, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nCache-Control: no-cache\r\nConnection: %s\r\n\r\n",
              tipo, manter ? "keep-alive" : "close");
     enviarTudo(sock, cab, strlen(cab), &s->cancelar, NULL);
-    if (!s->webos) {
+    if (!s->webosMp4) {
       printf("[dts-tpk] #%u <- 200 HEAD (sem corpo)\n", nr);
       fflush(stdout);
     }
@@ -719,7 +719,7 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
   }
   if (s->webos && seg >= 0 && ok) s->lastSegment = seg;
 #endif
-  if (s->webos && (ok || rr == -2)) return ok && manter;
+  if (s->webosMp4 && (ok || rr == -2)) return ok && manter;
   uint64_t fim = agoraMs();
   char stTxt[8];                           // "-": nada saiu (o player fechou antes)
   if (status) snprintf(stTxt, sizeof stTxt, "%d", status); else snprintf(stTxt, sizeof stTxt, "-");
@@ -810,7 +810,9 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
   int logAgente = !s->agente[0] && pd->agente[0];
   if (logAgente) snprintf(s->agente, sizeof s->agente, "%s", pd->agente);
   pthread_mutex_unlock(&s->m);
-  if (!s->webos) {
+  // webOS MPEG-TS: one connection per request, as Stremio Origin serves it.
+  if (s->webos && !s->webosMp4) manter = 0;
+  if (!s->webosMp4) {   // TEMP-NETLOG: webOS TS requests are logged like the Samsung ones
     printf("[dts-tpk] #%u -> %s %s%s%s Range=%s Connection=%s (+%u ms desde a abertura)%s%s\n", nr, pd->metodo, resto,
            pd->query[0] ? "?" : "", pd->query, pd->range[0] ? pd->range : "-", pd->conexao[0] ? pd->conexao : "-",
            (unsigned)(agoraMs() - s->criadaMs), logAgente ? " UA=" : "", logAgente ? pd->agente : "");
@@ -837,7 +839,7 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
                    "Content-Length: %zu\r\nCache-Control: no-cache\r\nConnection: %s\r\n\r\n", strlen(b), manter ? "keep-alive" : "close");
           enviarTudo(sock, cab, strlen(cab), NULL, NULL);
         } else responderSimples(sock, 200, "OK", "application/vnd.apple.mpegurl", b, manter);
-        if (!s->webos) {
+        if (!s->webosMp4) {
           if (mestre) { const char *v = strstr(b, "BANDWIDTH"); v = v ? v : "";
                         printf("[dts-tpk] #%u <- 200 playlist mestre: %.*s\n", nr, (int)strcspn(v, "\n"), v); }
           else printf("[dts-tpk] #%u <- 200 playlist: %d segmento(s), %zu B\n", nr, dts_remux_info(s->rx)->n_segments, strlen(b));
