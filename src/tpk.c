@@ -169,7 +169,12 @@ static int cicloTirar(Uint32 *tipo) {
   cicloPendente = cicloN > 0;
   return 1;
 }
-static int revalidarSuperficie; // #754: 2o arranque EGL pode medir tela errada
+// #754: 2o arranque EGL pode medir tela errada. F59: 1 = remede e consome na
+// primeira releitura valida (retomada, remedida do arranque, bind recusado);
+// 2 = armado pela pausa — um quadro valido AINDA na pausa, com a superficie
+// antiga corrente, nao pode consumir a flag antes de o host recriar a janela:
+// so limpa quando o handle troca ou depois que nv_tpk_retomou rearma em 1.
+static int revalidarSuperficie;
 static void appEsperaVez(int entregou) {
   pthread_mutex_lock(&trava);
   if (entregou) { vez = VEZ_NUI; pendente = 1; pthread_cond_broadcast(&mudou); }
@@ -381,7 +386,7 @@ int nv_tpk_quadro(void) {
     // remede a superficie SEM zerar o contexto — zerar ctx/dpy/sup era o
     // EGL 0x3000 do arranque na volta F8. Sem superficie corrente ou com a
     // consulta falhando, mantem os valores e a flag segue armada: o quadro
-    // seguinte tenta de novo.
+    // pula sem trocar e o seguinte tenta de novo.
     EGLDisplay d2 = eglGetCurrentDisplay();
     EGLSurface s2 = eglGetCurrentSurface(EGL_DRAW);
     EGLContext c2 = eglGetCurrentContext();
@@ -392,9 +397,12 @@ int nv_tpk_quadro(void) {
       if (d2 != dpy || s2 != sup || (c2 != EGL_NO_CONTEXT && c2 != ctx))
         printf("[tpk] EGL relido na retomada: dpy=%p sup=%p ctx=%p\n", d2, s2, c2);
       pthread_mutex_lock(&trava);
+      // F59: com a flag no estado 2 (pausa) ela nao se consome aqui se a
+      // superficie ainda e a mesma — podemos estar num quadro da pausa, antes
+      // de o host recriar a janela.
+      if (revalidarSuperficie != 2 || s2 != sup) revalidarSuperficie = 0;
       dpy = d2; sup = s2; nuiCorrente = 1;
       if (c2 != EGL_NO_CONTEXT) ctx = c2;
-      revalidarSuperficie = 0;
       pthread_mutex_unlock(&trava);
       if (sw >= 640 && sh >= 360 && ((int)sw != telaW || (int)sh != telaH)) {
         pthread_mutex_lock(&trava);
@@ -411,6 +419,19 @@ int nv_tpk_quadro(void) {
           SDL_PushEvent(&ev); }
       }
       fflush(stdout);
+    } else if (tpkEgl.QuerySurface) {
+      // F59: sem superficie corrente ou com a consulta falhando a superficie
+      // em cache pode estar destruida — nao reativa os handles velhos nem
+      // autoriza o swap; a flag segue armada e o proximo quadro tenta de novo.
+      // Sem eglQuerySurface nao ha como conferir nada: cai no fluxo de sempre.
+      pthread_mutex_lock(&trava);
+      r = terminou ? -1 : 0;
+      nPulados++;
+      pthread_mutex_unlock(&trava);
+#ifdef NV_TPK40
+      if (!r) r = 1; // OnUpdate para de chamar no false (TVGLApplication)
+#endif
+      return r;
     }
   }
   pthread_mutex_lock(&trava);
@@ -420,7 +441,19 @@ int nv_tpk_quadro(void) {
     pthread_mutex_unlock(&trava);
     return r;
   }
-  if (!nuiCorrente) { eglMakeCurrent(dpy, sup, sup, ctx); nuiCorrente = 1; }
+  // F59: o bind pode ser recusado porque a superficie em cache morreu — sem
+  // conferir o retorno o quadro pendente trocaria numa superficie destruida.
+  if (!nuiCorrente && !eglMakeCurrent(dpy, sup, sup, ctx)) {
+    if (!revalidarSuperficie) revalidarSuperficie = 1;
+    r = terminou ? -1 : 0;
+    nPulados++;
+    pthread_mutex_unlock(&trava);
+#ifdef NV_TPK40
+    if (!r) r = 1;
+#endif
+    return r;
+  }
+  nuiCorrente = 1;
   if (pendente) { pendente = 0; pthread_mutex_unlock(&trava); nQuadros++; return 1; }
   if (terminou) { pthread_mutex_unlock(&trava); return -1; }
   if (!appEsperando) {
@@ -465,7 +498,18 @@ int nv_tpk_quadro(void) {
     pthread_mutex_unlock(&trava);
     return r;
   }
-  eglMakeCurrent(dpy, sup, sup, ctx);
+  // F59: idem — bind recusado nao autoriza o swap; o quadro pendente fica
+  // para o proximo callback com a releitura rearmada.
+  if (!eglMakeCurrent(dpy, sup, sup, ctx)) {
+    if (!revalidarSuperficie) revalidarSuperficie = 1;
+    r = terminou ? -1 : 0;
+    nPulados++;
+    pthread_mutex_unlock(&trava);
+#ifdef NV_TPK40
+    if (!r) r = 1;
+#endif
+    return r;
+  }
   nuiCorrente = 1;
   r = pendente ? 1 : (terminou ? -1 : 0);
   pendente = 0;
@@ -541,7 +585,9 @@ void nv_tpk_ciclo(int memoria) {
   // Rendering may already be suspended: wake the app thread without needing GL.
   pthread_mutex_lock(&trava);
   cicloEmpurrar(memoria ? SDL_APP_LOWMEMORY : SDL_APP_WILLENTERBACKGROUND);
-  if (!memoria) revalidarSuperficie = 1; /* #754: voltar do 2o plano remede o EGL */
+  // #754/F59: voltar do 2o plano remede o EGL; o 2 so se consome com a
+  // superficie trocada ou depois da retomada, nunca num quadro da pausa.
+  if (!memoria) revalidarSuperficie = 2;
   pthread_cond_broadcast(&mudou);
   pthread_mutex_unlock(&trava);
 }
@@ -552,6 +598,9 @@ __attribute__((visibility("default")))
 void nv_tpk_retomou(void) {
   pthread_mutex_lock(&trava);
   cicloEmpurrar(SDL_APP_DIDENTERFOREGROUND);
+  // F59: a retomada (re)arma a releitura — se um quadro da pausa consumiu a
+  // flag na superficie antiga, o primeiro quadro da volta ainda readota.
+  revalidarSuperficie = 1;
   pthread_cond_broadcast(&mudou);
   pthread_mutex_unlock(&trava);
 }

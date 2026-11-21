@@ -98,6 +98,7 @@ static EGLSurface stubSup = (EGLSurface)0x51;
 static EGLContext stubCtx = (EGLContext)0xC1;
 static int stubW = 1920, stubH = 1080, stubCorrente = 1, stubConsultaOk = 1;
 static int nQuerySurface, nQueryContext, nChooseConfig, nMakeSemCtx;
+static int nBindsToDeadSurface;
 static int nPushSizeChanged, nViewport, vpW, vpH;
 static EGLDisplay qGetCurrentDisplay(void) { return stubDpy; }
 static EGLSurface qGetCurrentSurface(EGLint r) { (void)r; return stubCorrente ? stubSup : EGL_NO_SURFACE; }
@@ -105,6 +106,10 @@ static EGLContext qGetCurrentContext(void) { return stubCorrente ? stubCtx : EGL
 static EGLBoolean qMakeCurrent(EGLDisplay d, EGLSurface dr, EGLSurface rd, EGLContext c) {
   (void)d; (void)rd; (void)dr;
   if (dr == EGL_NO_SURFACE && c == EGL_NO_CONTEXT) nMakeSemCtx++;
+  if (c != EGL_NO_CONTEXT && dr != stubSup) {
+    nBindsToDeadSurface++;
+    return 0;
+  }
   stubCorrente = c != EGL_NO_CONTEXT;
   return 1;
 }
@@ -237,6 +242,36 @@ int main(void) {
   tpk_tamanho(&w, &h);
   ok(w == 3840 && h == 2160, "flag armada: remede no quadro seguinte");
   ok(nPushSizeChanged == 2, "segunda mudanca tambem avisa o app");
+
+  // A new window surface can remain the same size as the old one.
+  nv_tpk_ciclo(0);
+  nv_tpk_quadro(); // last render callback of the old surface after OnPause
+  stubSup = (EGLSurface)0x53;
+  nv_tpk_retomou();
+  nv_tpk_quadro();
+  ok(sup == stubSup, "retomada readota apos ultimo quadro da pausa");
+
+  // Previous frame timed out and the app has since handed the turn back.
+  sup = stubSup; // establish a valid old cache independently of the previous assertion
+  nuiCorrente = 0;
+  pendente = 1;
+  nv_tpk_ciclo(0);
+  nv_tpk_retomou();
+  stubSup = (EGLSurface)0x54;
+  stubConsultaOk = 0;
+  r = nv_tpk_quadro();
+  ok(nBindsToDeadSurface == 0, "consulta falha: sem bind da superficie destruida");
+  ok(r == 0, "consulta falha: nao sinaliza swap de quadro da superficie destruida");
+  stubConsultaOk = 1;
+  nv_tpk_quadro();
+  ok(sup == stubSup, "quadro seguinte adota superficie nova");
+
+  // O host 4/5 nao chama nv_tpk_retomou: a troca do handle sozinha consome.
+  nv_tpk_ciclo(0);
+  nv_tpk_quadro(); // quadro da pausa na superficie antiga: flag segue armada
+  stubSup = (EGLSurface)0x55;
+  nv_tpk_quadro();
+  ok(sup == stubSup, "sem retomou: troca do handle readota (TPK40)");
 
   // Sem ciclo novo: nada de releitura.
   q0 = nQuerySurface;
