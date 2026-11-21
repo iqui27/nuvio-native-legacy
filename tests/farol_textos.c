@@ -13,7 +13,10 @@
 //   4. os argumentos das chaves formatadas caem no PAPEL certo: a duracao
 //      de FT_ACHA_L1 dentro da clausula de tempo em zh, e o formato de
 //      FT_FONTE_TROCADA sem preposicao temporal grudada — renderizado pelo
-//      caminho real (i18n de src/idioma.c + snprintf), nao por grep.
+//      caminho real (i18n de src/idioma.c + snprintf), nao por grep;
+//   5. toda fala da casa passa pelo MESMO filtro do texto livre do LLM,
+//      faroltexto_aceita() de src/faroltexto.c (issue 35) — se a frase da
+//      casa nao passasse, o filtro reprovaria o proprio Farol.
 // A varredura das 29 irmas (traducao nao vazia, mesmos marcadores e \n)
 // fica com tools/idiomas.py, chamado pelo farol_textos.sh junto com a
 // checagem de valor nao vazio para cada chave FT_*.
@@ -276,6 +279,14 @@ int main(void) {
     confere_linhas(pt, en);
     confere_proibidas(pt, pt);
     confere_proibidas(pt, en);
+    if (!faroltexto_aceita(pt)) {
+      printf("FALHOU: pt \"%s\" reprovada por faroltexto_aceita\n", pt);
+      falhas++;
+    }
+    if (en && !faroltexto_aceita(en)) {
+      printf("FALHOU: en \"%s\" reprovada por faroltexto_aceita\n", en);
+      falhas++;
+    }
   }
 
   // A chave antiga fica ate a issue 23 trocar o rotulo visivel.

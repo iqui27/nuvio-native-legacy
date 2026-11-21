@@ -1,0 +1,166 @@
+// Farol — faroltexto_aceita() filtra o texto livre "x" da cena (PLANO-GOSTO
+// 4.1, issue 35). Roda a funcao de producao de src/faroltexto.c sobre 60
+// frases boas e 60 ruins, uma de cada trava: largura, 3a linha, UTF-8
+// quebrado, controle, URL, emoji e cada palavra da lista "nunca diz" do
+// ALMA 2 — em pt e em en, com e sem acento.
+//
+//   cc tests/farol_aceita.c src/faroltexto.c -Isrc -o /tmp/t-aceita && /tmp/t-aceita
+#include "faroltexto.h"
+#include <stdio.h>
+#include <string.h>
+
+static int falhas;
+static void caso(const char *s, int espera, const char *porque) {
+  int deu = faroltexto_aceita(s);
+  if (deu != espera) {
+    printf("FALHOU (%s): aceita=%d esperado=%d :: %s\n",
+           porque, deu, espera, s ? s : "(null)");
+    falhas++;
+  }
+}
+
+int main(void) {
+  int boas = 0, ruins = 0;
+#define BOM(s)   do { caso((s), 1, "boa");   boas++; } while (0)
+#define RUIM(s)  do { caso((s), 0, "ruim");  ruins++; } while (0)
+
+  // ------------------------------- 60 boas -------------------------------
+  BOM("Separei alguns para você.");
+  BOM("Você parou em Dark, no T2E4.");
+  BOM("Vale rever.");
+  BOM("Do mesmo tema: viagem no tempo.");
+  BOM("Porque você terminou Fleabag.");
+  BOM("Um amigo seu gostou.");
+  BOM("Cabe hoje: 42 min.");
+  BOM("Tem áudio em português.");
+  BOM("Termina às 23:40.");
+  BOM("As temporadas seguem no mesmo nível.");
+  BOM("Comparar com…");
+  BOM("A dois · leve · até 45 minutos");
+  BOM("Tanto faz");
+  BOM("Clássico · Dublado · Legendado");
+  BOM("Açaí — o filme é ótimo? Não: é bom.");          // acentos e interrogacao
+  BOM("É o 2º de 4 — você viu 3.");
+  BOM("Foi a sua cara o tempo todo.");                 // "oi" dentro de "foi"
+  BOM("Coincidência feliz: a Ana e o Rafa terminaram.");// "oi" de novo
+  BOM("Oitavo episódio da temporada.");                // "oi" no inicio da palavra
+  BOM("A escolha é sua.");                             // "escolha" sem "otima"
+  BOM("O app achou a fonte certa.");                   // ".app" nao e URL aqui
+  BOM("A TV pediu atenção na última cena.");           // ".tv" idem
+  BOM("Veja em casa o que quiser, na sua hora.");     // dominio sem ponto nao e URL
+  BOM("O site ponto com ficou para depois.");        // "ponto com" falado nao e TLD
+  BOM("Duas linhas cabem aqui.\nA segunda fecha o pensamento.");
+  BOM("Primeira linha curta.\nSegunda igualmente curta.");
+  BOM("Você viu em março e deu 4 estrelas.");
+  BOM("Está nos seus salvos há 5 meses.");
+  BOM("Do diretor de Fleabag, que você viu 2 vezes.");
+  BOM("Parecido com Dark, que você terminou.");
+  BOM("No seu clima");
+  BOM("Para o fim de semana");
+  BOM("O que seus amigos gostaram");
+  BOM("Gosto zerado.");
+  BOM("Certo, não mostro mais.");
+  BOM("Fora do seu costume: drama bem avaliado.");
+  BOM("Três perguntas e eu acho o que ver.");
+  BOM("Faltam 3 episódios para fechar a T2 de Dark.");
+  BOM("Você já viu a maior parte.");
+  BOM("Temporada nova de Dark chegou.");
+  BOM("Curto para hoje: 22 min.");
+  BOM("Filme ou série?");
+  BOM("Quanto tempo você tem?");
+  BOM("Leve ou intenso?");
+  BOM("De que época?");
+  BOM("Que clima você quer?");
+  BOM("Para rir");
+  BOM("Para se emocionar");
+  BOM("A T2 sobe de nota. Faltam 4 episódios de 45 min.");
+  BOM("É o 1º de 3.");
+  BOM("Você parou no T1E3 há 7 semanas.");
+  BOM("Because you finished Dark.");                    // en tambem passa
+  BOM("Worth rewatching.");
+  BOM("Season 2 rates higher. 4 episodes left.");
+  BOM("Just me");
+  BOM("Dubbed or subtitled?");
+  BOM("Может, стоит пересмотреть.");                    // cirilico e texto
+  BOM("週末にぴったりの映画。");                          // japones idem
+  BOM("للمشاهدة الليلة.");                              // arabe idem
+  BOM("Duração · Nota · Amigos · Onde ver");
+
+  // ------------------------------- 60 ruins ------------------------------
+  RUIM(NULL);                                          // nada
+  RUIM("");                                            // vazio
+  // largura: 63+ caracteres numa linha
+  RUIM("Esta linha passa de sessenta e dois caracteres de proposito, veja.");
+  RUIM("Uma frase boa de verdade não pode mesmo passar dos sessenta e dois.");
+  RUIM("Linha ok.\nEsta segunda linha passa de sessenta e dois caracteres com folga.");
+  RUIM("Áéíóú Áéíóú Áéíóú Áéíóú Áéíóú Áéíóú Áéíóú Áéíóú Áéíóú Áéíóú Áéíó."); // acento conta 1
+  // terceira linha e linha vazia
+  RUIM("Uma.\nDuas.\nTrês linhas não entram.");
+  RUIM("Começa bem\nmas a terceira\nlinha estraga tudo");
+  RUIM("Texto.\n\nLinha vazia no meio não vale.");
+  RUIM("Termina em quebra\n");
+  RUIM("\nComeça com quebra.");
+  // UTF-8 quebrado
+  RUIM("Caf\xc3\x28");                                 // continuacao invalida
+  RUIM("Sozinho \x80 aqui");                           // continuacao solta
+  RUIM("Overlong \xC0\xAF");                           // '/' em 2 bytes
+  RUIM("Surrogate \xED\xA0\x80");                      // U+D800
+  RUIM("Fora \xF5\x80\x80\x80");                       // > U+10FFFF
+  RUIM("Truncado \xE2\x82");                           // 3 bytes incompleto
+  // controle
+  RUIM("Tab\tno meio");
+  RUIM("Escape\x1B[0m aqui");
+  // URL
+  RUIM("Veja em http://exemplo.com");
+  RUIM("Abre https://nuvio.tv agora");
+  RUIM("Entra em www.nuvio.com.br");
+  RUIM("Baixa em ftp://ftp.servidor.net/filme");
+  // emoji
+  RUIM("Vale a pena 😀");
+  RUIM("Nota alta ❤️");
+  RUIM("Cinco ⭐ de cinco");
+  RUIM("Emoção pura 😢");
+  RUIM("Confere ✓ aqui");
+  RUIM("Relógio ⌚ marcando");
+  RUIM("Acessa filmesonline.com e pronto");            // TLD como palavra
+  RUIM("Veja em casa.com o que quiser");               // dominio real
+  // palavras proibidas do ALMA 2 (acento, maiuscula e vizinhanca variadas)
+  RUIM("Desculpe pelo atraso.");
+  RUIM("Mil desculpas pelo transtorno.");
+  RUIM("Sorry about that.");
+  RUIM("I apologize for the wait.");
+  RUIM("My apologies.");
+  RUIM("Olá! Como vai você?");
+  RUIM("Oi, tudo bem?");
+  RUIM("Hello! What can I show you?");
+  RUIM("Hi there, friend.");
+  RUIM("Hey! Olha isso.");
+  RUIM("Prontinho, achei.");
+  RUIM("There you go!");
+  RUIM("All done — enjoy.");
+  RUIM("Ótima escolha, aliás.");
+  RUIM("Great choice!");
+  RUIM("Excellent choice indeed.");
+  RUIM("Uau, que filme.");
+  RUIM("Wow, amazing.");
+  RUIM("Parabéns pelo gosto.");
+  RUIM("Uso inteligência artificial para achar.");
+  RUIM("Powered by artificial intelligence.");
+  RUIM("Um erro inesperado ocorreu.");
+  RUIM("Falha inesperada na fonte.");
+  RUIM("An unexpected error occurred.");
+  RUIM("Estou aqui para ajudar você.");
+  RUIM("How can I help you today?");
+  RUIM("How may I help?");
+  RUIM("Ficou tudo certinho agora.");
+  RUIM("a palavra OI no meio");
+
+  printf("farol_aceita: %d boas aceitas, %d ruins recusadas", boas, ruins);
+  if (boas != 60 || ruins != 60) {
+    printf(" — ERRO: esperado 60+60\n");
+    return 1;
+  }
+  if (falhas) { printf(" — %d falha(s)\n", falhas); return 1; }
+  printf("\n");
+  return 0;
+}
