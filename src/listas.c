@@ -1306,7 +1306,10 @@ static void *fioSimkl(void *u) {
       n += lst_ler_simkl_itens(corpo, serie, lote + n, count);
       // Simkl can return the same title in movies/shows and in anime; dedup
       // so it does not appear twice (as simkl.c does for plantowatch/CW).
-      for (int i = base; i < n; i++) {
+      // Movies only: in Series the second slice is anime and distinct
+      // seasons of the same show share the IMDb id with different Simkl/MAL
+      // ids, so an IMDb match would drop a real season.
+      for (int i = base; !serie && i < n; i++) {
         int j;
         for (j = 0; j < base; j++)
           if (lote[i].imdb[0] && !strcmp(lote[j].imdb, lote[i].imdb)) break;
