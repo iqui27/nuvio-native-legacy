@@ -525,14 +525,9 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
     case EV_TOCANDO: tocando = 1; bufferando = 0; break;
     case EV_PAUSADO: tocando = 0; break;
     case EV_FIM:     terminou = 1; tocando = 0;
-                     // Fim real com seek ou reabertura no ar: o alvo pendente e
-                     // a posicao segurada nao pousam mais. Sem soltar aqui o
-                     // app ficava em "busca em voo" para sempre — a guarda de
-                     // fim de parte nunca deixava passar nem um EOS confirmado
-                     // (o retorno cedo do video_bombear barrava ate o limite
-                     // de 60 s do reabrindoVigiar).
-                     cv.reabrindo = 0; cv.seekPend = 0; mf.pend = 0;
-                     reconBuscarMs = -1; atomic_store(&buscaAlvoMs, -1);
+                     // O seek/reabertura solta no video_bombear: este callback
+                     // roda no fio "Nuvio video" do host e cv./mf./reconBuscarMs
+                     // sao do fio do app (video_tpk_capa, video_busca_em_voo).
                      break;
     // Sem `falhou` aqui: o video_bombear decide entre reconectar e desistir.
     case EV_ERRO:    atomic_store(&erroDetalhe, (unsigned)a);
@@ -1831,9 +1826,17 @@ void video_bombear(void) {
   // EOS wins over late polling errors and pending network retries.
   if (terminou) {
     nv_recon_zerar(&recon);
+    // Fim real com seek ou reabertura no ar: o alvo pendente e a posicao
+    // segurada nao pousam mais. Sem soltar aqui o app ficava em "busca em
+    // voo" para sempre — a guarda de fim de parte nunca deixava passar nem
+    // um EOS confirmado (o retorno cedo do video_bombear barrava ate o
+    // limite de 60 s do reabrindoVigiar). A limpeza fica neste fio: o
+    // callback de EOF roda no "Nuvio video" do host e escrever la corria
+    // com video_tpk_capa()/video_busca_em_voo().
+    cv.reabrindo = 0; cv.seekPend = 0; mf.pend = 0;
     reconErroPend = 0; reconBuscarMs = reconPausa = -1;
+    atomic_store(&buscaAlvoMs, -1);
     atomic_store(&playerPreso, -2);
-    reabrindoVigiar();   // o limite de 60 s corre tambem depois do EOS
     return;
   }
   cdnBombear();

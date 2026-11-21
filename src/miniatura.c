@@ -605,10 +605,13 @@ static void prov_pedir(const SeekrFonte *f) {
 // drops pronto/tocando and the pedir gate closes — without this the worker
 // kept the stale pronto=1/tocando=1 and decoded with the decoder open until
 // the 6 s heartbeat expired. Republishes the state to the job ALREADY on
-// screen; a title still starts exclusively through prov_pedir.
+// screen while its worker is alive; a title still starts exclusively through
+// prov_pedir. A finished job stays referenced to show the ready grid, but
+// with the worker gone nothing consumes videoEst/batida — publishing to it
+// only refreshed a dead heartbeat.
 void miniatura_tv_fonte_estado(const SeekrFonte *f) {
   pthread_mutex_lock(&mu);
-  if (f && f->url && job && urlAtual[0] && !strcmp(urlAtual, f->url))
+  if (f && f->url && job && job->vivo && urlAtual[0] && !strcmp(urlAtual, f->url))
     estadoPublicar(f);
   pthread_mutex_unlock(&mu);
 }
