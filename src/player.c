@@ -54,6 +54,7 @@
 #include "fontesonda.h"
 #include "farolanel.h"
 #include "farolerro.h"
+#include "farolcod.h"
 #include "posplay.h"
 #include "extras.h"
 #include "video.h"
@@ -414,6 +415,7 @@ static void corFocoPlayer(float *r, float *g, float *b) { ajustes_acento(r, g, b
 // A guia parental se apoia nisto para aparecer UMA vez, no comeco, e sumir.
 static Uint32 inicioImagem = 0;
 static int memQuadroPendente; // Um primeiro quadro por load, nao por volta da ilha.
+static int prontoAnel;        // FE_PRONTO: um por abertura; rearma no FE_ABRIR.
 // MEDIDA DO RETOMAR (05/10): desde player_abrir ate o pronto e ate o primeiro
 // "tocando" depois de aplicada a retomada. E o numero para comparar, na TV, o
 // Retomar sem reter (fonte guardada + posicao) com o retido ("retomada pronta").
@@ -1122,11 +1124,14 @@ void player_erro_fonte(void) {
   resolverregra_falha_registrar(RES_T_FONTE, i18n("Não foi possível abrir a fonte"), "", linhaEp, (long)time(NULL));
   erroCausaDoPlayer();
   // FAROL: a causa classificada e o codigo normalizado; nunca a URL nem o titulo.
+  // Ao anel so vai cod da lista fechada (farolcod_anel): um nome recortado de
+  // texto livre, ex. dentro de uma URL, chegaria como token valido.
   { int http = 0, causa = fontesonda_causa(video_erro_texto(), &http);
-    FarolErro fe;
+    FarolErro fe; char cs[24];
     farolerro_ler(NV_FAROL_PLAT, video_erro_texto(),
                   video_registro_negado() ? -1027 : 0, &fe);
-    farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, causa, http, fe.cod); }
+    farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, causa, http,
+             farolcod_anel(&fe, NV_FAROL_PLAT, cs, sizeof cs)); }
 }
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
   player_erro_fonte();
@@ -2048,7 +2053,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   pedFontes = erroFonte = pedFaixas = pedProxT = pedProxE = trocaEpisodio = 0; inicioImagem = 0;
   durFonteAvisada = durFontePulou = pedProximaFonte = durFonteCurta = durFonteForaCache = 0;
   durFonteAcaoAte = 0; durFonteSkipEm = 0; durFonteManter = 0;
-  abrindoExp = 0; abrindoT = 0.0f; abrindoDesde = 0;
+  abrindoExp = 0; abrindoT = 0.0f; abrindoDesde = 0; prontoAnel = 0;
   memset(&cine, 0, sizeof cine);
   cine.calado = 1;
   erroTitulo[0] = erroDica[0] = 0;
@@ -2292,12 +2297,21 @@ static int travaFonte(const char *url) {
   return 0;
 }
 
+// FAROL (PLANO 2.2): a abertura de fonte — tentativa/max e o backend. Toda
+// abertura que grava FE_ABRIR rearma o primeiro quadro: a troca direta de
+// fonte (player_definir_fonte, ex.: a renovacao do link Stalker em app.c)
+// chega a este ponto sem passar pelo reset da tela, e o FE_PRONTO da fonte
+// nova so sai se inicioImagem/prontoAnel zerarem aqui.
+static void farolAbrir(void) {
+  inicioImagem = 0; prontoAnel = 0;
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, tentativaN, tentativaM, NV_FAROL_BACKEND);
+}
 static void tocarFonteInterno(const char *url);
 static void tocarFonteInterno(const char *url) {
   directcache_encerrar();
   if (!travaFonte(url)) return;
   marco("abrir: url ao pipeline");
-  farol_ev(FM_PLAYER, FE_ABRIR, 0, tentativaN, tentativaM, NV_FAROL_BACKEND);
+  farolAbrir();
   skipLiberado = 0;
   loadEm = SDL_GetTicks();   // #202: do pipeline ao primeiro quadro ("[player] load->1o quadro")
   video_definir_reconexao(!ehCanal());
@@ -2339,10 +2353,11 @@ static void tocarFonteInterno(const char *url) {
   if (!comVideo) {
     // FAROL: recusa sincrona na abertura — causa e codigo, nunca a URL.
     { int http = 0, causa = fontesonda_causa(video_erro_texto(), &http);
-      FarolErro fe;
+      FarolErro fe; char cs[24];
       farolerro_ler(NV_FAROL_PLAT, video_erro_texto(),
                     video_registro_negado() ? -1027 : 0, &fe);
-      farol_ev(FM_FONTE, FE_RECUSA_SINC, 2, causa, http, fe.cod); }
+      farol_ev(FM_FONTE, FE_RECUSA_SINC, 2, causa, http,
+               farolcod_anel(&fe, NV_FAROL_PLAT, cs, sizeof cs)); }
     fontesonda_recusa(url, video_erro_texto(), 1);
     erroSemVideo();
   }
@@ -2483,7 +2498,7 @@ void player_voltar_a_esperar(void) {
   mkvass_video_aberto(0);
   esperandoFonte = 1; erroFonte = 0; tocando = 1; pausaPessoa = 0;
   erroTitulo[0] = erroDica[0] = 0;
-  retomadaAplicada = 0; inicioImagem = 0;
+  retomadaAplicada = 0; inicioImagem = 0; prontoAnel = 0;
 }
 
 // Consome o pedido de abrir a folha de faixas: quem le, zera.
@@ -3042,7 +3057,7 @@ static void fecharSessao(int manter, int trocaFonte) {
   // fechamento faria a proxima reproducao achar que a janela do aviso ja tinha
   // corrido — o aviso simplesmente nao entraria, sem nada no log dizendo por
   // que. Ver a nota no desenho da guia parental.
-  inicioImagem = 0; pgDesde = pgQuadro = 0;
+  inicioImagem = 0; prontoAnel = 0; pgDesde = pgQuadro = 0;
 }
 
 void player_encerrar(void) {
@@ -5097,6 +5112,15 @@ void player_atualizar(float dt, Uint32 agora) {
   if (memQuadroPendente && comVideo && video_pronto() && video_tocando() && video_pos() > 0.0) {
     memQuadroPendente = 0;
     memlog_evento("primeiro-quadro");
+    // FE_PRONTO e o primeiro quadro (PLANO 2.2), nao o loadCompleted: no webOS
+    // o pronto sobe cedo e a imagem so chega quando o pipeline anda (tocando
+    // com a posicao avancando, o mesmo sinal do "primeiro-quadro" do memlog).
+    // Um por abertura: prontoAnel rearma junto do FE_ABRIR em farolAbrir.
+    if (!prontoAnel) {
+      prontoAnel = 1;
+      farol_ev(FM_PLAYER, FE_PRONTO, 0,
+               (int32_t)(SDL_GetTicks() - abertoEm), retomarPct, NULL);
+    }
     if (medirAbertura && !ehCanal()) {
       printf("[player] play->first-frame %u ms (load->first-frame %u ms)\n",
              (unsigned)(SDL_GetTicks() - abertoEm), loadEm ? (unsigned)(SDL_GetTicks() - loadEm) : 0u);
@@ -5105,8 +5129,6 @@ void player_atualizar(float dt, Uint32 agora) {
   }
   if (!inicioImagem && comVideo && video_pronto()) {
     inicioImagem = agora; acordar();
-    farol_ev(FM_PLAYER, FE_PRONTO, 0,
-             (int32_t)(SDL_GetTicks() - abertoEm), retomarPct, NULL);
     if (medirAbertura && !ehCanal()) {
       printf("[player] pronto em %u ms desde a abertura (retomada %d%%)\n",
              (unsigned)(SDL_GetTicks() - abertoEm), retomarPct);

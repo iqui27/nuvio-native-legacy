@@ -1,19 +1,28 @@
 #!/bin/bash
-# Farol — produtores player/LG (issue 7; PLANO.md 2.2, 5). Duas provas:
+# Farol — produtores player/LG (issue 7; PLANO.md 2.2, 5). Tres provas:
 #  (a) estatica: cada ponto da tabela tem a chamada farol_ev em src/player.c /
 #      src/video.c e nenhum argumento e url, titulo, playUrl, c->titulo ou
-#      literal com %s — o anel so aceita tokens;
-#  (b) harness: o trecho de tratamento de erro do uMS (numeroDe, farolUmsErro)
-#      e o leitor do modelo (farolTvModeloLer) sao extraidos de src/video.c e
+#      literal com %s — o anel so aceita tokens; FE_PRONTO tem de estar sob a
+#      guarda do primeiro quadro e o rearm junto do FE_ABRIR; nenhum farol_ev
+#      pode receber fe.cod cru — so via farolcod_anel (lista fechada);
+#  (b) harness: o trecho de tratamento de erro do uMS (numeroDe, farolUmsErro),
+#      o leitor/publicador do modelo (farolTvModeloLer, edidResposta,
+#      video_tv_modelo), a abertura (farolAbrir) e os blocos de primeiro
+#      quadro e de erro do player sao extraidos de src/video.c/src/player.c e
 #      rodam contra respostas JSON reais — errorCode 200, 204, 40403 e
-#      "is not running" — conferindo os eventos no anel (tests/farol_produtores_lg.c).
+#      "is not running" — conferindo os eventos no anel, o FE_PRONTO so no
+#      primeiro quadro, o rearm na segunda abertura e, no alvo .wgt, o
+#      canario apos "player_error" fora do anel (tests/farol_produtores_lg.c);
+#  (c) corrida: o callback do EDID e o getter do modelo em fios concorrentes,
+#      sob TSan quando o compilador oferece.
 set -eu
 cd "$(dirname "$0")/.."
 
 falhou=0
 falha() { echo "farol_produtores_lg: FALHA - $1" >&2; falhou=1; }
 
-# (a) cada ponto listado tem a chamada; nenhum argumento proibido.
+# (a) cada ponto listado tem a chamada; nenhum argumento proibido; o cod que
+# vai ao anel passa pela lista fechada; FE_PRONTO so sob a guarda de quadro.
 python3 - <<'PYEOF' || falhou=1
 import re, sys
 pts = {
@@ -41,10 +50,68 @@ for arq, eventos in pts.items():
             print("farol_produtores_lg: argumento proibido em farol_ev(%s) de %s"
                   % (c.replace("\n", " "), arq), file=sys.stderr)
             ruim = 1
+        # cod nativo so chega ao anel filtrado pela lista fechada.
+        if re.search(r"\bfe\.cod\b", c):
+            print("farol_produtores_lg: fe.cod cru em farol_ev(%s) de %s"
+                  % (c.replace("\n", " "), arq), file=sys.stderr)
+            ruim = 1
+    if "farolcod_anel" not in src:
+        print("farol_produtores_lg: %s sem o filtro farolcod_anel" % arq,
+              file=sys.stderr)
+        ruim = 1
+
+player = open("src/player.c", encoding="utf-8").read()
+video = open("src/video.c", encoding="utf-8").read()
+
+# Toda abertura que grava FE_ABRIR rearma o primeiro quadro.
+abrir = re.search(r"^static void farolAbrir\(void\) \{(.*?)^\}",
+                  player, re.M | re.S)
+if not abrir or "FE_ABRIR" not in abrir.group(1) \
+        or "inicioImagem = 0" not in abrir.group(1) \
+        or "prontoAnel = 0" not in abrir.group(1):
+    print("farol_produtores_lg: farolAbrir sem FE_ABRIR + rearm", file=sys.stderr)
+    ruim = 1
+interno = re.search(r"^static void tocarFonteInterno\(const char \*url\) \{(.*?)^\}",
+                    player, re.M | re.S)
+if not interno or "farolAbrir();" not in interno.group(1):
+    print("farol_produtores_lg: tocarFonteInterno sem farolAbrir()", file=sys.stderr)
+    ruim = 1
+# player_definir_fonte (troca direta, ex.: renovacao Stalker) passa por
+# tocarFonte -> tocarFonteInterno: a abertura direta emite FE_ABRIR e rearma.
+definir = re.search(r"^void player_definir_fonte\(const char \*url\) \{(.*?)^\}",
+                    player, re.M | re.S)
+if not definir or "tocarFonte(url);" not in definir.group(1):
+    print("farol_produtores_lg: player_definir_fonte sem tocarFonte(url)",
+          file=sys.stderr)
+    ruim = 1
+
+# FE_PRONTO: dentro do bloco do primeiro quadro (tocando + posicao), nao no
+# bloco do pronto do backend.
+quadro = re.search(r"^  if \(memQuadroPendente && comVideo(.*?)^  \}",
+                   player, re.M | re.S)
+if not quadro or "FE_PRONTO" not in quadro.group(1) \
+        or not re.search(r"video_tocando\(\) && video_pos\(\) > 0\.0",
+                         quadro.group(0)):
+    print("farol_produtores_lg: FE_PRONTO fora da guarda do primeiro quadro",
+          file=sys.stderr)
+    ruim = 1
+pronto = re.search(r"^  if \(!inicioImagem && comVideo && video_pronto\(\)\) \{(.*?)^  \}",
+                   player, re.M | re.S)
+if pronto and "FE_PRONTO" in pronto.group(1):
+    print("farol_produtores_lg: FE_PRONTO ainda sai no pronto do backend",
+          file=sys.stderr)
+    ruim = 1
+
+# O modelo publica sob trava e o getter devolve copia do proprio fio —
+# ponteiro para o vetor compartilhado nao sai da funcao.
+if "tvModeloTrava" not in video or "_Thread_local" not in video:
+    print("farol_produtores_lg: video.c sem a publicacao sincronizada do modelo",
+          file=sys.stderr)
+    ruim = 1
 sys.exit(ruim)
 PYEOF
 
-# (b) harness: extrai o trecho de producao e roda contra os JSONs reais.
+# (b) harness: extrai os trechos de producao e roda contra os JSONs reais.
 awk '/^static double numeroDe\(const char \*p, const char \*chave\) \{/,/^}/' \
     src/video.c > tests/farol_ums.inc
 awk '/^static void farolUmsErro\(const char \*p, double posicaoS, char \*erroTxt, size_t nErro\) \{/,/^}/' \
@@ -53,10 +120,62 @@ awk '/^static void farolTvModeloLer\(const char \*json, char \*out, size_t nOut\
     src/video.c >> tests/farol_ums.inc
 grep -q "farolUmsErro" tests/farol_ums.inc || falha "extracao de video.c vazia"
 grep -q "farolTvModeloLer" tests/farol_ums.inc || falha "leitor de modelo nao extraido"
+
+# 7B: publicacao do modelo (buffer duplo + callback), a abertura com rearm, o
+# bloco do primeiro quadro com o FE_PRONTO e os dois produtores de erro com o
+# filtro de cod — tudo codigo de producao, extraido por nome.
+{
+  grep -E "^static .*tvModelo" src/video.c
+  awk '/^const char \*video_tv_modelo\(void\) \{$/,/^}$/' src/video.c
+  awk '/^static int edidResposta\(LSHandle \*h, LSMessage \*m, void \*u\) \{/,/^}/' \
+      src/video.c
+  python3 - <<'PYEOF2'
+import re
+player = open("src/player.c", encoding="utf-8").read()
+macros = re.search(r"^#if defined\(NV_ANDROID\)\n#  define NV_FAROL_PLAT.*?^#endif",
+                   player, re.M | re.S)[0]
+abrir = re.search(r"^static void farolAbrir\(void\) \{.*?^\}",
+                  player, re.M | re.S)[0]
+quadro = re.search(r"^  if \(memQuadroPendente && comVideo.*?^  \}",
+                   player, re.M | re.S)[0]
+pronto = re.search(r"^  if \(!inicioImagem && comVideo && video_pronto\(\)\) \{.*?^  \}",
+                   player, re.M | re.S)[0]
+erro = re.search(r"\{ int http = 0, causa = fontesonda_causa[^}]*FE_ERRO_FONTE[^}]*\}",
+                 player, re.S)[0]
+recusa = re.search(r"\{ int http = 0, causa = fontesonda_causa[^}]*FE_RECUSA_SINC[^}]*\}",
+                   player, re.S)[0]
+print(macros)
+print(abrir)
+print("static void quadro_atualizar(unsigned agora) {")
+print(quadro)
+print(pronto)
+print("  (void)agora;\n}")
+print("static void emitir_erro_fonte(void) {")
+print(erro)
+print("}")
+print("static void emitir_recusa(void) {")
+print(recusa)
+print("}")
+PYEOF2
+} >> tests/farol_ums.inc
+grep -q "tvModeloTrava" tests/farol_ums.inc || falha "publicacao do modelo nao extraida"
+grep -q "edidResposta" tests/farol_ums.inc || falha "callback do EDID nao extraido"
+grep -q "farolAbrir" tests/farol_ums.inc || falha "abertura com rearm nao extraida"
+grep -q "emitir_recusa" tests/farol_ums.inc || falha "produtores de erro nao extraidos"
+grep -q "video_tocando() && video_pos()" tests/farol_ums.inc || \
+  falha "guarda do primeiro quadro ausente"
 trap 'rm -f tests/farol_ums.inc' EXIT
 
 bin="${TMPDIR:-/tmp}/nuvio-farol-prod-lg-test"
-cc -Wall -Wextra -O1 -g -Itests -Isrc \
+cc -Wall -Wextra -O1 -g -Itests -Isrc -pthread \
+   tests/farol_produtores_lg.c src/farolanel.c src/farolerro.c src/fontesonda.c \
+   -o "$bin"
+"$bin"
+rm -f "$bin"
+
+# O produtor do .wgt: o MESMO harness compilado como __EMSCRIPTEN__ — o macro
+# NV_FAROL_PLAT vira FP_TIZEN_WGT e o bloco extraido roda o caminho do AVPlay.
+cc -Wall -Wextra -O1 -g -D__EMSCRIPTEN__ -Itests -Isrc -pthread \
    tests/farol_produtores_lg.c src/farolanel.c src/farolerro.c src/fontesonda.c \
    -o "$bin"
 "$bin"
@@ -66,13 +185,23 @@ rm -f "$bin"
 case "${SANITIZE:-1}" in
   1)
     cc -fsanitize=address,undefined -fno-omit-frame-pointer \
-       -Wall -Wextra -O1 -g -Itests -Isrc \
+       -Wall -Wextra -O1 -g -Itests -Isrc -pthread \
        tests/farol_produtores_lg.c src/farolanel.c src/farolerro.c src/fontesonda.c \
        -o "$bin"
     "$bin"
     rm -f "$bin"
     ;;
 esac
+
+# (c) corrida do callback do EDID com o getter do modelo, sob TSan.
+if command -v clang >/dev/null 2>&1; then
+  clang -fsanitize=thread -fno-omit-frame-pointer \
+        -Wall -Wextra -O1 -g -Itests -Isrc -pthread \
+        tests/farol_produtores_lg.c src/farolanel.c src/farolerro.c src/fontesonda.c \
+        -o "$bin"
+  "$bin" race
+  rm -f "$bin"
+fi
 
 [ "$falhou" = 0 ] || exit 1
 echo "farol_produtores_lg: tudo ok"

@@ -494,6 +494,7 @@ int  video_velocidade_bloqueada(void) { return cacheboost_ganho_estado() == CB_G
 #include <dlfcn.h>
 #include "farolanel.h"
 #include "farolerro.h"
+#include "farolcod.h"
 
 typedef struct LSHandle LSHandle;
 typedef struct LSMessage LSMessage;
@@ -752,7 +753,12 @@ static int edidEnviado;
 // Modelo da TV (ex.: "OLED55C9PSA"), do MESMO getConfigs do EDID — a chave
 // extra nao custa uma chamada. "" ate a resposta chegar; video_tv_modelo()
 // responde "?" nesse caso (convencao da linha [tv]).
+// Publicacao sob trava curta: o callback do LS2 grava segurando tvModeloTrava
+// e o getter copia para um buffer do PROPRIO fio (_Thread_local, o padrao dos
+// getters de discord.c) — cada leitor recebe uma copia estavel, nunca um
+// ponteiro para o vetor que a proxima resposta reescreve.
 static char tvModelo[33];
+static pthread_mutex_t tvModeloTrava = PTHREAD_MUTEX_INITIALIZER;
 // Le `"tv.model.modelname":"<v>"` de um JSON do configd e saneia para
 // [A-Za-z0-9._ -] com teto de 32 — a mesma faixa do filtro do farolperfil
 // (issue 8): o que nao e modelo de TV nunca chega ao pacote. Funcao pura,
@@ -774,14 +780,22 @@ static void farolTvModeloLer(const char *json, char *out, size_t nOut) {
   out[n] = 0;
   while (n && out[n - 1] == ' ') out[--n] = 0;
 }
-const char *video_tv_modelo(void) { return tvModelo[0] ? tvModelo : "?"; }
+const char *video_tv_modelo(void) {
+  static _Thread_local char copia[33];
+  pthread_mutex_lock(&tvModeloTrava);
+  memcpy(copia, tvModelo, sizeof copia);
+  pthread_mutex_unlock(&tvModeloTrava);
+  return copia[0] ? copia : "?";
+}
 static int edidResposta(LSHandle *h, LSMessage *m, void *u) {
   const char *r;
   (void)h;
   (void)u;
   r = lsPayload(m);
   __atomic_store_n(&edidDts, nv_dts_edid(r) ? 1 : 0, __ATOMIC_RELEASE);
+  pthread_mutex_lock(&tvModeloTrava);
   farolTvModeloLer(r, tvModelo, sizeof tvModelo);
+  pthread_mutex_unlock(&tvModeloTrava);
   printf("[dts] %.160s\n", r ? r : "");
   fflush(stdout);
   return 1;
@@ -1209,12 +1223,16 @@ static void farolUmsErro(const char *p, double posicaoS, char *erroTxt, size_t n
   }
   snprintf(erroTxt, nErro, "%.0f %s", cod >= 0 ? cod : 0.0, txt);
   farolerro_ler(FP_WEBOS, erroTxt, (int)(cod >= 0 ? cod : 0.0), &fe);
-  if (fe.classe == FC_AUDIO)
-    farol_ev(FM_AUDIO, FE_AUDIO_RECUSADO, 2, fe.nativo, 0, fe.cod);
-  else if (!strcmp(fe.cod, "ums_pipeline"))
-    farol_ev(FM_VIDEO, FE_PIPELINE_MORREU, 2, (int32_t)posicaoS, 0, fe.cod);
-  else
-    farol_ev(FM_VIDEO, FE_ERRO_NATIVO, 2, fe.nativo, 0, fe.cod);
+  // Ao anel so vai cod da lista fechada (farolcod_anel): um token montado de
+  // texto livre nao passa daqui.
+  { char cs[24];
+    const char *tok = farolcod_anel(&fe, FP_WEBOS, cs, sizeof cs);
+    if (fe.classe == FC_AUDIO)
+      farol_ev(FM_AUDIO, FE_AUDIO_RECUSADO, 2, fe.nativo, 0, tok);
+    else if (!strcmp(fe.cod, "ums_pipeline"))
+      farol_ev(FM_VIDEO, FE_PIPELINE_MORREU, 2, (int32_t)posicaoS, 0, tok);
+    else
+      farol_ev(FM_VIDEO, FE_ERRO_NATIVO, 2, fe.nativo, 0, tok); }
 }
 static int eventoPayload(const char *p, unsigned minhaSessao) {
   if (minhaSessao != sessao) return 1;
