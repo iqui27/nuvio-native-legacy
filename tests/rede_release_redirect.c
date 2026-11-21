@@ -102,7 +102,9 @@ int main(void) {
       "Location: https://release-assets.githubusercontent.com.evil.test/x\r\n",
       "Location: /releases/download/v9.9.9/x\r\n",
       "Location: https://user@github.com/x\r\n",
-      "Location: https://user:senha@github.com/x\r\n", NULL };
+      "Location: https://user:senha@github.com/x\r\n",
+      "Location: https://github.com@evil.test/x\r\n",   // oficial@evil
+      "Location: https://github.com:443@evil.test/x\r\n", NULL };
     int i;
     for (i = 0; ruins[i]; i++) {
       assert(baixa(oficial, 5, &nb, ruins[i]) == NULL);
@@ -124,6 +126,39 @@ int main(void) {
       free(baixa(oficial, 5, &nb, bons[i]));
       assert(ultimaLinha == strlen(bons[i]));
     }
+  }
+
+  // F101: a autoridade tem de ser conferida INTEIRA ou o salto e recusado.
+  // Esta linha e longa demais para a copia interna do receberCab: o prefixo
+  // cortado le "github.com + porta decimal" e passaria no filtro, mas a
+  // autoridade completa continua com '@' — userinfo que aponta a libcurl
+  // para outro host. Aceitar seria autorizar um destino diferente do lido.
+  { char grande[1400];
+    int i = snprintf(grande, sizeof grande, "Location: https://github.com:");
+    memset(grande + i, '4', 1100);
+    strcpy(grande + i + 1100, "@evil.test/x\r\n");
+    assert(baixa(oficial, 5, &nb, grande) == NULL);
+    assert(ultimaLinha == 0);
+  }
+
+  // Location longo que CABE inteiro na copia segue conferido e aceito — o
+  // limite so derruba o que nao pode ser lido por completo.
+  { char ok[1200];
+    size_t i = snprintf(ok, sizeof ok, "Location: https://github.com/iqui27/");
+    memset(ok + i, 'a', 1100);
+    strcpy(ok + i + 1100, "\r\n");
+    free(baixa(oficial, 5, &nb, ok));
+    assert(ultimaLinha == strlen(ok));
+  }
+
+  // E o que nao cabe nem na copia inteira e recusado por tamanho, sem
+  // validar um pedaco (mesmo teto da reserva segura, alvo[2048]).
+  { char enorme[2300];
+    int i = snprintf(enorme, sizeof enorme, "Location: https://github.com/");
+    memset(enorme + i, 'a', 2100);
+    strcpy(enorme + i + 2100, "x\r\n");
+    assert(baixa(oficial, 5, &nb, enorme) == NULL);
+    assert(ultimaLinha == 0);
   }
 
   // Fora do prefixo oficial: redirect desligado, sem regra de saltos e sem o

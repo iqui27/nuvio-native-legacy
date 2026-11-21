@@ -1959,6 +1959,9 @@ static int destinoAnexoOk(const char *url) {
   if (!url || strncasecmp(url, "https://", 8)) return 0;
   h = url + 8;
   f = h + strcspn(h, "/?#");
+  // userinfo nao entra: https://oficial@evil tem autoridade valida para a
+  // libcurl (host = evil) mesmo que o prefixo case num host oficial.
+  if (memchr(h, '@', (size_t)(f - h))) return 0;
   for (i = 0; hosts[i]; i++) {
     size_t n = strlen(hosts[i]);
     if (strncasecmp(h, hosts[i], n)) continue;
@@ -2177,14 +2180,19 @@ static size_t receberCab(void *dados, size_t tam, size_t qtd, void *u) {
     // https:// e so host oficial (destinoAnexoOk). Fora da lista a linha
     // volta curta, a libcurl aborta com write-error e o 302 nao e seguido —
     // e o que impede a cadeia de levar o artefato a http:// ou a outro CDN.
-    char loc[1024];
+    // A conferencia vale so para a linha INTEIRA (mesmo limite do alvo da
+    // reserva segura): um Location maior que a copia nao pode ser validado
+    // por pedaco — o corte pode ler "host oficial + porta decimal" de uma
+    // autoridade que continua (userinfo, outro host) e a libcurl segue a
+    // linha completa. Nao coube, o salto e recusado.
+    char loc[2048];
     s += 9; bytes -= 9;
     while (bytes && (*s == ' ' || *s == '\t')) { s++; bytes--; }
     while (bytes && (s[bytes - 1] == '\r' || s[bytes - 1] == '\n' ||
                      s[bytes - 1] == ' ')) bytes--;
-    n = bytes < sizeof loc - 1 ? bytes : sizeof loc - 1;
+    n = bytes < sizeof loc ? bytes : sizeof loc - 1;
     memcpy(loc, s, n); loc[n] = 0;
-    if (!destinoAnexoOk(loc)) {
+    if (n < bytes || !destinoAnexoOk(loc)) {
       char seg[120];
       printf("[rede] redirect recusado: %s\n", rede_url_publica(loc, seg, sizeof seg));
       fflush(stdout);
