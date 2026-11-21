@@ -7,15 +7,19 @@
 #include <unistd.h>
 
 int main(void) {
-  char dir[] = "/tmp/nuvio-assmotor-XXXXXX";
+  char dir[256];
+  snprintf(dir, sizeof dir, "%s/nuvio-assmotor-XXXXXX",
+           getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
   assert(mkdtemp(dir));
   setenv("NUVIO_DADOS", dir, 1);
   dados_iniciar(dir);
 
-  // Enum: a chave e a ULTIMA (append-only) e local desta TV.
+  // Enum: a chave e a ULTIMA (append-only) e fica nesta TV (escopo TV, nunca
+  // sobe para a conta nem muda com o perfil).
   assert(AJ_ASS_MOTOR == AJ_N - 1);
   assert(somenteDesteAparelho(AJ_ASS_MOTOR));
-  assert(ajustes_escopo(AJ_ASS_MOTOR) == 3);
+  assert(soNaTv(AJ_ASS_MOTOR));
+  assert(ajustes_escopo(AJ_ASS_MOTOR) == ESC_TV);
   // E a ultima linha visivel da lista de ajustes (etapa D: no FIM).
   { int k;
     for (k = AJ_N_TELA - 1; k >= 0 && TELA[k].tipo != IT_OPC; k--) ;
