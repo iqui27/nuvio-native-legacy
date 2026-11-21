@@ -7838,6 +7838,49 @@ static int metaArquivosCompativeis(const char *arquivos, const char *catalogo) {
   return ok;                             // sem memoria, conserva o catalogo
 }
 
+// Preenche UM CatEp a partir de um elemento de videos[] (p..f): id do video,
+// nome (com alternativo "title" e o "Episodio N" de lista de arquivos), sinopse,
+// miniatura, duracao, data e nota. Unico ponto de leitura, para a lista inteira
+// (parsearEpisodios) e a recomposicao de uma temporada (parsearUmaTemporada)
+// publicarem os mesmos campos — era o caminho reduzido que derrubava vid e o
+// resto ao completar uma aba (#787).
+static void epVideoPreencher(CatEp *e, const char *p, const char *f) {
+  char d[24] = "";
+  { double rating = js_num(p, f, "imdbRating", 0.0);
+    // Cinemeta videos use `rating`; other metadata providers use `imdbRating`.
+    if (rating<=0) rating=js_num(p,f,"rating",0.0);
+    if (rating > 0.0 && rating <= 10.0)
+      e->notaImdb = (int)(rating * 10.0 + 0.5); }
+  char nome[1024] = "";
+  js_texto_raiz_em(p, f, "name", nome, sizeof nome);
+  // O id do video (cat_id_stream): e ele que se manda aos addons de fonte
+  // quando o titulo nao e do IMDb. Addon que usa "title" no lugar de "name"
+  // (o Kitsu) tambem tem o nome lido.
+  js_texto_raiz_em(p, f, "id", e->vid, sizeof e->vid);
+  if (!nome[0]) js_texto_raiz_em(p, f, "title", nome, sizeof nome);
+  if(cat_nome_episodio_arquivo(nome)) {
+    char alternativo[1024] = "";
+    js_texto_raiz_em(p,f,"title",alternativo,sizeof alternativo);
+    if(alternativo[0] && !cat_nome_episodio_arquivo(alternativo))
+      snprintf(nome,sizeof nome,"%s",alternativo);
+    else snprintf(nome,sizeof nome,i18n("Episódio %d"),e->episodio);
+  }
+  snprintf(e->nome,sizeof e->nome,"%s",nome);
+  js_texto(p, f, "overview", e->sinopse, sizeof e->sinopse);
+  if (!e->sinopse[0]) js_texto(p, f, "description", e->sinopse, sizeof e->sinopse);
+  js_texto(p, f, "thumbnail", e->thumb, sizeof e->thumb);
+  js_texto(p, f, "runtime", e->duracao, sizeof e->duracao);
+  metaprov_duracao(e->duracao, sizeof e->duracao);   // "25min" -> "25 min"
+  if (!e->duracao[0]) {
+    int runtime = (int)js_num(p, f, "runtime", 0);
+    if (runtime > 0 && runtime < 1440)
+      snprintf(e->duracao, sizeof e->duracao, "%d min", runtime);
+  }
+  js_texto(p, f, "released", e->dataIso, sizeof e->dataIso);
+  js_texto(p, f, "released", d, sizeof d);
+  desc_data_extenso(d, e->data, sizeof e->data);
+}
+
 // videos[] de um /meta -> lista de CatEp ORDENADA por (temporada, episodio).
 // Inclui especiais (temporada 0) sem renumerar o par nem o id do video.
 static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
@@ -7871,44 +7914,11 @@ static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
     // episodio nao e repeticao.
     if (novo && n < max) {
       CatEp *e = &eps[n];
-      char d[24] = "";
       memset(e, 0, sizeof *e);
       e->temporada = t;
       e->episodio = ne;
       e->tvdbEp = tvdb;
-      { double rating = js_num(p, f, "imdbRating", 0.0);
-        // Cinemeta videos use `rating`; other metadata providers use `imdbRating`.
-        if (rating<=0) rating=js_num(p,f,"rating",0.0);
-        if (rating > 0.0 && rating <= 10.0)
-          e->notaImdb = (int)(rating * 10.0 + 0.5); }
-      char nome[1024] = "";
-      js_texto_raiz_em(p, f, "name", nome, sizeof nome);
-      // O id do video (cat_id_stream): e ele que se manda aos addons de fonte
-      // quando o titulo nao e do IMDb. Addon que usa "title" no lugar de "name"
-      // (o Kitsu) tambem tem o nome lido.
-      js_texto_raiz_em(p, f, "id", e->vid, sizeof e->vid);
-      if (!nome[0]) js_texto_raiz_em(p, f, "title", nome, sizeof nome);
-      if(cat_nome_episodio_arquivo(nome)) {
-        char alternativo[1024] = "";
-        js_texto_raiz_em(p,f,"title",alternativo,sizeof alternativo);
-        if(alternativo[0] && !cat_nome_episodio_arquivo(alternativo))
-          snprintf(nome,sizeof nome,"%s",alternativo);
-        else snprintf(nome,sizeof nome,i18n("Episódio %d"),ne);
-      }
-      snprintf(e->nome,sizeof e->nome,"%s",nome);
-      js_texto(p, f, "overview", e->sinopse, sizeof e->sinopse);
-      if (!e->sinopse[0]) js_texto(p, f, "description", e->sinopse, sizeof e->sinopse);
-      js_texto(p, f, "thumbnail", e->thumb, sizeof e->thumb);
-      js_texto(p, f, "runtime", e->duracao, sizeof e->duracao);
-      metaprov_duracao(e->duracao, sizeof e->duracao);   // "25min" -> "25 min"
-      if (!e->duracao[0]) {
-        int runtime = (int)js_num(p, f, "runtime", 0);
-        if (runtime > 0 && runtime < 1440)
-          snprintf(e->duracao, sizeof e->duracao, "%d min", runtime);
-      }
-      js_texto(p, f, "released", e->dataIso, sizeof e->dataIso);
-      js_texto(p, f, "released", d, sizeof d);
-      desc_data_extenso(d, e->data, sizeof e->data);
+      epVideoPreencher(e, p, f);
       n++;
     }
     p = js_prox(f);
@@ -8083,6 +8093,16 @@ static int epTempResidente(int item, int temporada) {
   return c;
 }
 
+static int epNumCmp(const void *a, const void *b) {
+  const CatEp *x = a, *y = b;
+  return x->episodio - y->episodio;
+}
+static int epParCmp(const void *a, const void *b) {
+  const CatEp *x = a, *y = b;
+  if (x->temporada != y->temporada) return x->temporada - y->temporada;
+  return x->episodio - y->episodio;
+}
+
 static int parsearUmaTemporada(const char *corpo, int temporada, CatEp *eps, int max) {
   const char *p;
   int n = 0;
@@ -8093,22 +8113,13 @@ static int parsearUmaTemporada(const char *corpo, int temporada, CatEp *eps, int
     int ne = t >= 0 ? (int)js_num(p, f, "episode", 0) : 0;
     if (t != temporada || ne <= 0) continue;
     CatEp *e = &eps[n++];
-    char d[24] = "";
     memset(e, 0, sizeof *e);
     e->temporada = t;
     e->episodio = ne;
     e->tvdbEp = metaep_tvdb_video(p, f);
-    js_texto_raiz_em(p, f, "name", e->nome, sizeof e->nome);
-    js_texto(p, f, "released", e->dataIso, sizeof e->dataIso);
-    js_texto(p, f, "released", d, sizeof d);
-    desc_data_extenso(d, e->data, sizeof e->data);
+    epVideoPreencher(e, p, f);
   }
-  for (int i = 1; i < n; i++) {
-    CatEp k = eps[i];
-    int j;
-    for (j = i - 1; j >= 0 && eps[j].episodio > k.episodio; j--) eps[j + 1] = eps[j];
-    eps[j + 1] = k;
-  }
+  qsort(eps, (size_t)n, sizeof *eps, epNumCmp);
   return n;
 }
 
@@ -8129,23 +8140,40 @@ static int epCorpoTempEpisodios(int item, int temporada) {
   return n;
 }
 
+// Distancia da temporada pedida, para o despejo por teto: sai primeiro quem
+// esta mais longe; no empate, quem aparece mais tarde na lista (a cauda, como
+// no corte antigo). Par pequeno para nao arrastar CatEp de ~1,2 KB no qsort.
+typedef struct { int dist, idx; } EpDist;
+static int epDistCmp(const void *a, const void *b) {
+  const EpDist *x = a, *y = b;
+  if (x->dist != y->dist) return y->dist - x->dist;
+  return y->idx - x->idx;
+}
+
 static int appendTemporadaCorpo(int item, int temporada) {
   CatEp *novos, *base;
-  int nNov, nAnt, i, j, k = 0;
+  int nNov, nAnt, nRes, cap, i, j, k = 0;
   if (temporada <= 0 || !epCorpoCache || epCorpoId[0] == 0) return 0;
   CatItem ci;
   if (!cat_copiar_item(item, &ci) || strcmp(ci.imdb, epCorpoId)) return 0;
   nAnt = cat_n_episodios(item);
-  novos = malloc(sizeof(CatEp) * (size_t)VIDEOS_MAX);
-  if (!novos) return 0;
-  nNov = parsearUmaTemporada(epCorpoCache, temporada, novos, VIDEOS_MAX);
-  if (nNov <= 0) { free(novos); return 0; }
+  // A temporada pedida, nao a lista inteira: nos 40x130 do relato sao ~160 KB
+  // em vez de ~6 MB, e a base so cresce ate o tamanho que vai publicar.
+  nNov = epCorpoTempEpisodios(item, temporada);
+  if (nNov <= 0) return 0;
+  nRes = epTempResidente(item, temporada);
   // Temporada ja inteira na tela: nada a completar. Abaixo disso a guarda
   // antiga recusava qualquer residente, e a truncada nunca completava.
-  if (epTempResidente(item, temporada) >= nNov) { free(novos); return 0; }
-  base = malloc(sizeof(CatEp) * (size_t)VIDEOS_MAX);
+  if (nRes >= nNov) return 0;
+  novos = malloc(sizeof(CatEp) * (size_t)nNov);
+  if (!novos) return 0;
+  nNov = parsearUmaTemporada(epCorpoCache, temporada, novos, nNov);
+  if (nNov <= 0) { free(novos); return 0; }
+  cap = nAnt - nRes + nNov;
+  if (cap > VIDEOS_MAX) cap = VIDEOS_MAX;
+  base = malloc(sizeof(CatEp) * (size_t)cap);
   if (!base) { free(novos); return 0; }
-  for (i = 0; i < nAnt && k < VIDEOS_MAX; i++) {
+  for (i = 0; i < nAnt && k < cap; i++) {
     const CatEp *ep = cat_episodio(item, i);
     if (!ep) continue;
     if (ep->temporada == temporada) continue;
@@ -8153,27 +8181,38 @@ static int appendTemporadaCorpo(int item, int temporada) {
   }
   // Sem lugar para a temporada inteira (a lista bateu no teto): sai quem esta
   // mais longe da pedida, nunca ela nem a vizinhanca que a pessoa percorre.
-  if (k + nNov > VIDEOS_MAX) {
-    for (i = 1; i < k; i++) {
-      CatEp t2 = base[i];
-      int d2 = t2.temporada - temporada; if (d2 < 0) d2 = -d2;
-      for (j = i - 1; j >= 0; j--) {
-        int d = base[j].temporada - temporada; if (d < 0) d = -d;
-        if (d <= d2) break;
-        base[j + 1] = base[j];
+  if (k + nNov > cap) {
+    int excesso = k + nNov - cap;
+    EpDist *d = malloc((size_t)k * sizeof *d);
+    if (d) {
+      for (i = 0; i < k; i++) {
+        int x = base[i].temporada - temporada;
+        d[i].dist = x < 0 ? -x : x;
+        d[i].idx = i;
       }
-      base[j + 1] = t2;
+      qsort(d, (size_t)k, sizeof *d, epDistCmp);
+      for (i = 0; i < excesso; i++) base[d[i].idx].temporada = -1;
+      free(d);
+      for (i = 0, j = 0; i < k; i++)
+        if (base[i].temporada != -1) base[j++] = base[i];
+      k = j;
+    } else {
+      for (i = 1; i < k; i++) {
+        CatEp t2 = base[i];
+        int d2 = t2.temporada - temporada; if (d2 < 0) d2 = -d2;
+        for (j = i - 1; j >= 0; j--) {
+          int dx = base[j].temporada - temporada; if (dx < 0) dx = -dx;
+          if (dx <= d2) break;
+          base[j + 1] = base[j];
+        }
+        base[j + 1] = t2;
+      }
+      while (k + nNov > cap && k > 0) k--;
     }
-    while (k + nNov > VIDEOS_MAX && k > 0) k--;
   }
-  if (k + nNov > VIDEOS_MAX) { free(base); free(novos); return 0; }
+  if (k + nNov > cap) { free(base); free(novos); return 0; }
   for (i = 0; i < nNov; i++) base[k++] = novos[i];
-  for (i = 0; i < k; i++)
-    for (j = i + 1; j < k; j++)
-      if (base[j].temporada < base[i].temporada ||
-          (base[j].temporada == base[i].temporada && base[j].episodio < base[i].episodio)) {
-        CatEp t = base[i]; base[i] = base[j]; base[j] = t;
-      }
+  qsort(base, (size_t)k, sizeof *base, epParCmp);
   descCatEpisodios(item, base, k);
   { CatItem edit;
     if (cat_copiar_item(item, &edit)) {

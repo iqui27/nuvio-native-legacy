@@ -655,9 +655,15 @@ int main(void) {
       assert(meta);
       for (int t = 1; t <= 40; t++)
         for (int e = 1; e <= 130; e++)
-          kk += (size_t)snprintf(meta + kk, 400000 - kk,
-                "%s{\"id\":\"tt13293588:%d:%d\",\"season\":%d,\"episode\":%d}",
-                t == 1 && e == 1 ? "" : ",", t, e, t, e);
+          kk += (size_t)(e == 1
+            ? snprintf(meta + kk, 400000 - kk,
+                "%s{\"id\":\"source:%d:1\",\"season\":%d,\"episode\":1,"
+                "\"overview\":\"Sinopse %d\",\"runtime\":\"25min\","
+                "\"thumbnail\":\"https://t.test/%d.jpg\"}",
+                t == 1 && e == 1 ? "" : ",", t, t, t, t)
+            : snprintf(meta + kk, 400000 - kk,
+                "%s{\"id\":\"source:%d:%d\",\"season\":%d,\"episode\":%d}",
+                ",", t, e, t, e));
       snprintf(meta + kk, 400000 - kk, "]}}");
       nFake = 0; nRotas = 0; addonMeta = 0; addonResp = NULL;
       cineSerie = meta;
@@ -676,8 +682,30 @@ int main(void) {
       desc_episodios(0, 40);
       assert(epTempResidente(0, 40) == 130 && epTempResidente(0, 39) == 130);
       assert(nPedidos == pedidos0 && !fioEpVivo);
+      // ID DE VIDEO E CAMPOS PRESERVADOS (#787 r2): a temporada recomposta do
+      // corpo guardado tem de trazer vid ("source:T:E", que o addon de fontes
+      // recebe no /stream), sinopse, duracao e miniatura do /meta — a versao
+      // reduzida publicava so numero/nome e cat_id_stream voltava ao
+      // "tt13293588:T:E" montado na mao.
+      { char stream[64], esperado[64]; const CatEp *ep1;
+        int i2, n2 = cat_n_episodios(0), t;
+        for (t = 39; t <= 40; t++) {
+          ep1 = NULL;
+          for (i2 = 0; i2 < n2; i2++) {
+            const CatEp *c = cat_episodio(0, i2);
+            if (c && c->temporada == t && c->episodio == 1) { ep1 = c; break; }
+          }
+          assert(ep1);
+          assert(cat_id_stream(0, t, 1, stream, sizeof stream));
+          snprintf(esperado, sizeof esperado, "source:%d:1", t);
+          assert(!strcmp(stream, esperado) && !strcmp(ep1->vid, esperado));
+          snprintf(esperado, sizeof esperado, "Sinopse %d", t);
+          assert(!strcmp(ep1->sinopse, esperado));
+          snprintf(esperado, sizeof esperado, "https://t.test/%d.jpg", t);
+          assert(!strcmp(ep1->duracao, "25 min") && !strcmp(ep1->thumb, esperado));
+        } }
       cineSerie = NULL; free(meta);
-      puts("ok  #787: aba truncada e aba ausente completam do corpo, sem rebuscar");
+      puts("ok  #787: aba truncada e aba ausente completam do corpo, sem rebuscar, com ids e campos");
     }
     free(body);
     return 0;
