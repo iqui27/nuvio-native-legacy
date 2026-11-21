@@ -473,13 +473,17 @@ static int acharIpk(const char *corpo, char *dst, size_t tam,
     while (*p && *p != '"') p++;
     n = (size_t)(p - ini);
     if (n > 4 && n < tam && terminaEm(ini, n, sufixo) && urlOficial(ini, n)) {
+      char h[80] = "";
+      // O SHA-256 DO MESMO ANEXO, e ele e OBRIGATORIO: sem ele o instalador
+      // do Homebrew Channel compara o hash calculado contra `undefined` e
+      // responde `returnValue: false` com "Invalid file checksum" — MEDIDO
+      // na C9, e o arquivo ate chegou a ser instalado, o que e pior: sucesso
+      // reportado como falha. Digest ausente ou invalido = anexo descartado,
+      // como no acharAnexo do .tpk/.apk, e o cartao fica sem o botao.
+      hashAntesDe(corpo, ini, h, sizeof h);
+      if (!h[0]) continue;
       memcpy(dst, ini, n); dst[n] = 0;
-      // O SHA-256 DO MESMO ANEXO, e ele e obrigatorio na pratica: sem ele o
-      // instalador do Homebrew Channel compara o hash calculado contra
-      // `undefined` e responde `returnValue: false` com "Invalid file
-      // checksum" — MEDIDO na C9, e o arquivo ate chegou a ser instalado, o
-      // que e pior: sucesso reportado como falha.
-      hashAntesDe(corpo, ini, hash, tamHash);
+      snprintf(hash, tamHash, "%s", h);
       return 1;
     }
   }
@@ -714,7 +718,7 @@ static int fioInstalar(void *arg) {
   // O URL e o hash vao dentro de um comando de shell entre aspas simples. Eles
   // vem do JSON da release: revalida aqui, na ponta, e nunca monta o comando com
   // algo que nao seja o endereco oficial e 64 hex (sem aspas, espaco, $, crase).
-  if (!urlOficial(ipkUrl, strlen(ipkUrl)) || (ipkHash[0] && !hashHexValido(ipkHash))) {
+  if (!urlOficial(ipkUrl, strlen(ipkUrl)) || !hashHexValido(ipkHash)) {
     SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx);
     printf("[atualizacao] endereco ou hash do .ipk fora do padrao: nao instalo\n"); fflush(stdout);
     return 0;
@@ -834,7 +838,7 @@ static int fioBaixarSo(void *arg) {
     return 0;
   }
   printf("[atualizacao] baixando libnuvio.so nova (%s)\n", soUrl); fflush(stdout);
-  buf = rede_baixar_bin(soUrl, 120, &n);
+  buf = rede_baixar_bin_seguro(soUrl, 120, &n);
   if (!buf || n <= 0) {
     printf("[atualizacao] download da .so falhou\n"); fflush(stdout);
     free(buf);
@@ -943,7 +947,7 @@ static int fioInstalarApk(void *arg) {
       for (tent = 0; tent < 3; tent++) {
         if (tent) { printf("[atualizacao] tentando de novo em %d s\n", 10 * tent); fflush(stdout); SDL_Delay(10000u * (unsigned)tent); }
         n = 0;
-        buf = rede_baixar_bin(apkUrl, 600, &n);
+        buf = rede_baixar_bin_seguro(apkUrl, 600, &n);
         if (buf && n > 0) break;
         free(buf); buf = NULL;
       } }

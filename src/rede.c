@@ -904,6 +904,11 @@ char *rede_baixar(const char *url, int segundos) {
 char *rede_baixar_bin(const char *url, int segundos, long *tam) {
   return pedir("GET", url, segundos, NULL, NULL, NULL, tam, NULL);
 }
+char *rede_baixar_bin_seguro(const char *url, int segundos, long *tam) {
+  // No navegador (.wgt) o TLS e sempre verificado pela plataforma — mesma
+  // funcao; so o nativo tem o caminho publico sem verificacao.
+  return rede_baixar_bin(url, segundos, tam);
+}
 
 char *rede_baixar_com(const char *url, int segundos, const char *const *cab) {
   return pedir("GET", url, segundos, cab, NULL, NULL, NULL, NULL);
@@ -1886,6 +1891,48 @@ static int carregaCredencial(const char *const *cab) {
       if (!strncasecmp(cab[k], nomes[i], strlen(nomes[i]))) return 1;
   return 0;
 }
+// 1 quando a QUERY da URL leva credencial do dono: ?token= no requestdl do
+// TorBox, ?api_key= do TMDB/fanart, ?apikey= do mdblist, ?password= dos
+// paineis Xtream, ?key= e nomes de token/segredo de outras APIs. O nome do
+// parametro casa INTEIRO (depois de ? ou &) e a comparacao ignora maiuscula
+// — "monkey=1" ou "tokenize=1" nao contam. Ficam de fora de proposito os
+// parametros de assinatura de conteudo (sig, signature, expires): protegem o
+// recurso, nao a conta, e alargar o freio ao GET publico quebra midia de
+// addon que redireciona.
+static int credencialNaQuery(const char *url) {
+  static const char *const nomes[] = { "token", "apikey", "api_key", "api-key",
+    "key", "access_token", "auth_token", "refresh_token", "id_token",
+    "client_secret", "secret", "password", "passwd", "auth", NULL };
+  const char *q = url ? strchr(url, '?') : NULL;
+  if (!q) return 0;
+  for (q++; *q && *q != '#';) {
+    const char *e, *f = q;
+    size_t n;
+    int i;
+    while (*f && *f != '&' && *f != '#') f++;
+    for (e = q; e < f && *e != '='; e++) {}
+    n = (size_t)(e - q);
+    for (i = 0; nomes[i]; i++)
+      if (strlen(nomes[i]) == n && !strncasecmp(q, nomes[i], n)) return 1;
+    if (*f != '&') break;
+    q = f + 1;
+  }
+  return 0;
+}
+// Pedido sensivel: credencial no cabecalho OU na query — nos dois casos o TLS
+// e verificado e o redirect fica desligado (ver rede_baixar_interno3).
+static int pedidoComCredencial(const char *url, const char *const *cab) {
+  return carregaCredencial(cab) || credencialNaQuery(url);
+}
+// Prefixo oficial de anexos de release — o MESMO de AT_DL_PREFIXO em
+// atualizacao.c. O GitHub responde 302 do releases/download ao CDN de assets,
+// entao no caminho binario verificado (rede_baixar_bin_seguro) o redirect so
+// vale para URL daqui.
+static int urlAnexoOficial(const char *url) {
+  static const char prefixo[] =
+    "https://github.com/iqui27/nuvio-native-legacy/releases/download/";
+  return !strncmp(url, prefixo, sizeof prefixo - 1);
+}
 static void opcoesComuns(void *c, unsigned long prazoMs) {
 #ifdef NV_TPK
   if (dnsShare) curl_setopt(c, 10100 /* CURLOPT_SHARE */, dnsShare);
@@ -2072,7 +2119,7 @@ static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
                                   char *etag, unsigned tamEtag);
 static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
                                   const char *const *cab, int *status,
-                                  char *etag, unsigned tamEtag, int *retry);
+                                  char *etag, unsigned tamEtag, int *retry, int bin);
 
 // Onde o ETag da resposta e anotado, quando alguem o pediu.
 typedef struct { char *dst; unsigned tam; int *retry; } CacaCab;
@@ -2576,6 +2623,12 @@ void rede_preparar(void) { abrir(); }
 char *rede_baixar_bin(const char *url, int segundos, long *tam) {
   return rede_baixar_interno(url, segundos, tam, NULL);
 }
+char *rede_baixar_bin_seguro(const char *url, int segundos, long *tam) {
+  // bin=1: download verificado so para artefato de release (.so do .tpk,
+  // .apk) — ver o bloco `bin` em rede_baixar_interno3. Legenda, cartaz e
+  // fonte seguem no caminho publico de rede_baixar_bin.
+  return rede_baixar_interno3(url, segundos, tam, NULL, NULL, NULL, 0, NULL, 1);
+}
 
 char *rede_baixar(const char *url, int segundos) {
   return rede_baixar_interno(url, segundos, NULL, NULL);
@@ -2655,7 +2708,7 @@ char *rede_baixar_st(const char *url, int segundos, const char *const *cab,
 }
 char *rede_baixar_st_retry(const char *url, int segundos, const char *const *cab,
                            int *status, int *retryAfter) {
-  return rede_baixar_interno3(url, segundos, NULL, cab, status, NULL, 0, retryAfter);
+  return rede_baixar_interno3(url, segundos, NULL, cab, status, NULL, 0, retryAfter, 0);
 }
 
 char *rede_baixar_etag(const char *url, int segundos, const char *const *cab,
@@ -2692,11 +2745,11 @@ static int valeRepetir(int r, const Vigia *v, size_t bytes) {
 static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
                                   const char *const *cab, int *status,
                                   char *etag, unsigned tamEtag) {
-  return rede_baixar_interno3(url, segundos, tam, cab, status, etag, tamEtag, NULL);
+  return rede_baixar_interno3(url, segundos, tam, cab, status, etag, tamEtag, NULL, 0);
 }
 static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
                                   const char *const *cab, int *status,
-                                  char *etag, unsigned tamEtag, int *retry) {
+                                  char *etag, unsigned tamEtag, int *retry, int bin) {
   Balde b = {0};
   CacaCab caca;
   Vigia vigia;
@@ -2749,15 +2802,29 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
     curl_setopt(c, OPT_WRITEDATA, &b);
     curl_setopt(c, OPT_FOLLOWLOCATION, (long)1);
     opcoesComuns(c, resta);
-    // Pedido que leva credencial (Authorization, apikey, token): TLS verificado
-    // e nenhum redirect — um 3xx reenviaria os cabecalhos do dono (apikey,
-    // trakt-api-key...) a outro host, e sem verificar qualquer um no caminho
-    // le a senha/token. As APIs (Supabase, Trakt, debrid) nao redirecionam.
-    if (carregaCredencial(cab) && !strncmp(url, "https://", 8)) {
+    // Pedido que leva credencial (Authorization, apikey, token) NO CABECALHO
+    // OU NA QUERY: TLS verificado e nenhum redirect — um 3xx reenviaria os
+    // cabecalhos do dono (apikey, trakt-api-key...) a outro host, e sem
+    // verificar qualquer um no caminho le a senha/token, em cabecalho ou na
+    // URL (?token= do requestdl do TorBox, ?api_key= do TMDB, ?password= dos
+    // paineis Xtream). As APIs (Supabase, Trakt, debrid) nao redirecionam.
+    if (pedidoComCredencial(url, cab) && !strncmp(url, "https://", 8)) {
       curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
       curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
       if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
       curl_setopt(c, OPT_FOLLOWLOCATION, (long)0);
+    } else if (bin && !strncmp(url, "https://", 8)) {
+      // DOWNLOAD BINARIO VERIFICADO (rede_baixar_bin_seguro): e o caminho dos
+      // artefatos da release (.so do .tpk, .apk), que viram codigo nativo —
+      // certificado e hostname conferidos pela CA do pacote, como no pedido
+      // com credencial. O redirect fica ligado SO no prefixo oficial de
+      // anexos: o GitHub responde 302 do releases/download ao CDN de assets,
+      // e sem credencial no pedido nada vaza ao host seguinte. Fora do
+      // prefixo um 3xx volta como esta, sem seguir.
+      curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
+      curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
+      if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
+      if (!urlAnexoOficial(url)) curl_setopt(c, OPT_FOLLOWLOCATION, (long)0);
     }
     ligarVigia(c, &vigia, prazoMs);
     cvOn = cancelVigiaLigar(c, &cv);
@@ -3085,8 +3152,9 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
   opcoesComuns(c, (unsigned long)(segundos > 0 ? segundos : 20) * 1000UL);
   // DELETE autenticado (Trakt /sync/playback leva Authorization): mesmo
   // tratamento do GET com credencial — TLS verificado e sem redirect, que
-  // numa alca reusada do pool pode vir ligado de um GET anterior.
-  if (carregaCredencial(cab) && !strncmp(url, "https://", 8)) {
+  // numa alca reusada do pool pode vir ligado de um GET anterior. A
+  // credencial na query vale igual (ex.: ?token=).
+  if (pedidoComCredencial(url, cab) && !strncmp(url, "https://", 8)) {
     curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
     curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
     if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
@@ -3226,7 +3294,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
     curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
     curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
     if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
-    if (carregaCredencial(cab))
+    if (pedidoComCredencial(url, cab))
       curl_setopt(c, OPT_FOLLOWLOCATION, (long)0);
   }
   if (seguro) {

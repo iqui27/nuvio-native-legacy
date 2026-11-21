@@ -147,8 +147,20 @@ int main(int argc, char **argv) {
     snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:%s\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/../../x/space.nuvio_1.0_arm.ipk\"}]}", H);
     CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "'..' na URL: recusado");
     snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:abc'; id; '\",\"browser_download_url\":\"%s\"}]}", OK);
-    CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO) && hash[0] == 0,
-            "digest que nao e sha256 hex: descartado (vazio): [%s]", hash); }
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO),
+            "digest que nao e sha256 hex: anexo descartado");
+    // Sem o campo digest vale o mesmo: sem hash nao ha candidato — o .ipk
+    // instalava sem ipkHash e o Homebrew Channel recusava o checksum.
+    snprintf(j, sizeof j, "{\"assets\":[{\"browser_download_url\":\"%s\"}]}", OK);
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO),
+            ".ipk sem digest: anexo descartado");
+    // Um SEGUNDO .ipk com digest continua valendo quando o primeiro nao tem.
+    snprintf(j, sizeof j, "{\"assets\":[{\"browser_download_url\":\"%s\"},"
+      "{\"digest\":\"sha256:%s\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/d_arm.ipk\"}]}",
+      OK, H);
+    CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO) &&
+            strstr(url, "d_arm.ipk") && !strcmp(hash, H),
+            "primeiro .ipk sem digest: passa ao proximo com digest"); }
 
   // JSON com escapes variados
   { char d[64];
