@@ -32,7 +32,7 @@ static int cancelado(void *u) {
 static void *trabalhar(void *u) {
   EpJob *j = u;
   Stream *fontes = NULL;
-  int n = addons_consulta_consultar(j->consulta, j->alvo, "series", 4, cancelado, j, &fontes);
+  int n = addons_consulta_consultar_parcial(j->consulta, j->alvo, "series", 4, cancelado, j, &fontes);
   pthread_mutex_lock(&trava);
   if (!cancelado(j)) {
     free(chegou);
