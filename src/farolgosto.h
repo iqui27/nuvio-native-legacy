@@ -92,7 +92,7 @@ typedef struct { int32_t id; int16_t peso; uint16_t n; uint16_t dia; } FarolAfin
 typedef struct {
   uint16_t versao;           // FAROL_GOSTO_VERSAO
   uint16_t perfil;
-  uint32_t titulos;          // eventos com ficha aplicados (aprox. "com ficha")
+  uint32_t titulos;          // obras distintas com ficha (ver obraNova)
   uint16_t diaBase;          // referencia do decaimento do bloco hora[][]
   uint16_t recProx;          // cursor do anel recusado (gravacoes totais)
   uint16_t mostProx;         // cursor do anel mostrado
@@ -105,6 +105,16 @@ typedef struct {
   int16_t   hora[FG_HORA_F][FG_HORA_D]; // Q8.8 acumulado, meia-vida 45 d
   uint32_t  recusado[FG_RECUS_N];    // hash do titulo ("Nao e para mim"), anel
   struct { uint32_t h; uint8_t vezes, dia; } mostrado[FG_MOSTR_N];
+  // Restos de decaimento, em dezesseis-avos de dia (< meia-vida cada): o que
+  // falta para fechar o proximo avo de meia-vida. Sao TRANSIENTES — nao saem
+  // no arquivo, a leitura zera e a perda e de menos de um avo por afinidade.
+  uint8_t   horaResto;               // resto do bloco hora[][] (ref: diaBase)
+  uint8_t   restoGenero[FG_GENERO_N];
+  uint8_t   restoPessoa[FG_PESSOA_N];
+  uint8_t   restoTema[FG_TEMA_N];
+  uint8_t   restoDecada[FG_DECADA_N];
+  uint8_t   restoIdioma[FG_IDIOMA_N];
+  uint8_t   restoDuracao[FG_DURACAO_N];
 } FarolGosto;
 #pragma pack(pop)
 
@@ -118,11 +128,25 @@ void    farolgosto_iniciar(FarolGosto *g, uint16_t perfil);
 
 // Aplica um delta do evento a todas as dimensoes da ficha, no dia `dia`
 // (dias desde 1/1/2026). Antes de somar, decai o peso guardado pela
-// meia-vida da dimensao; o incremento encolhe com n (delta/(1+n/8)).
+// meia-vida da dimensao sem perder intervalo: cada toque aplica so os
+// dezesseis-avos de meia-vida completos e guarda a fracao restante, entao
+// sessoes diarias acumulam decaimento normal em vez de congela-lo.
 // `faixaHora` 0-7 atualiza hora[faixaHora][faixa de duracao]; fora de faixa
-// (ou duracao desconhecida) nao toca o bloco. delta == 0 nao faz nada.
+// (ou duracao desconhecida) nao toca o bloco. delta == 0 nao toca as
+// dimensoes.
+//
+// `obraNova` e o contrato do contador `titulos` (plano 3.4: nivel frio < 3,
+// maduro >= 10 titulos com ficha) com a farolsinal (issue 38): quem chama
+// deduplica pela CHAVE DA FICHA — farolficha_chave, que cobre tmdb, tipo e
+// reserva e identifica tambem obra sem id do TMDB — e passa obraNova = 1
+// somente no primeiro evento de cada obra. Quarenta episodios da mesma
+// serie valem 1; tres fichas distintas, incluindo reserva, valem 3. A 38
+// guarda ou reconstroi o conjunto de chaves ja vistas (o contador persistido
+// no arquivo nao pode ser recomputado por aqui). Vale tambem com delta == 0:
+// a obra tem ficha, so o sinal do evento e neutro.
 void    farolgosto_aplicar(FarolGosto *g, const FarolGostoFicha *f,
-                           int delta, uint16_t dia, int faixaHora);
+                           int delta, uint16_t dia, int faixaHora,
+                           int obraNova);
 
 // Peso projetado da afinidade (dim,id) no dia `dia`, em Q8.8 — o valor ja
 // decaido, sem mexer no guardado. 0 se a afinidade nao existe.
@@ -144,7 +168,9 @@ int     farolgosto_mostrado_dias(const FarolGosto *g, uint32_t h);
 
 // Serializa o modelo inteiro para `dst` (texto, uma linha por afinidade).
 // Devolve o comprimento escrito, ou 0 se `cap` nao couber — o chamador nao
-// grava arquivo nesse caso. NUL no fim so se couber (dst[len] = '\0').
+// grava arquivo nesse caso. Cada emissao usa snprintf, entao na pratica e
+// preciso cap >= n+1: com cap == n a ultima linha nao cabe com o NUL e a
+// funcao devolve 0. Escreve texto puro, sem NUL; o chamador fecha a string.
 size_t  farolgosto_escrever(const FarolGosto *g, char *dst, size_t cap);
 
 // Le o texto de volta. rc 0 = ok; -1 = cabecalho ausente ou versao

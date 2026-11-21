@@ -65,7 +65,7 @@ static void decaimento(void) {
   FarolGostoFicha f = fichaBase();
   int32_t p;
   farolgosto_iniciar(&g, 2);
-  farolgosto_aplicar(&g, &f, FG_D_TERMINOU, 0, 3);
+  farolgosto_aplicar(&g, &f, FG_D_TERMINOU, 0, 3, 1);
   p = farolgosto_peso(&g, FG_DIM_GENERO, 18, 0);
   assert(p == FG_D_TERMINOU);
   // 120 dias: metade exata da meia-vida, com folga muito menor que os 2%.
@@ -82,13 +82,13 @@ static void decaimento(void) {
   // O guardado NAO muda na leitura (decaimento preguicoso).
   assert(g.genero[0].peso == FG_D_TERMINOU && g.genero[0].dia == 0);
   // Ao tocar de novo, o decaído vira base do novo incremento.
-  farolgosto_aplicar(&g, &f, FG_D_TERMINOU, 120, 3);
+  farolgosto_aplicar(&g, &f, FG_D_TERMINOU, 120, 3, 0);
   p = g.genero[0].peso;
   // 128 (metade) + 256*8/9 (saturado por n=1) = 128 + 227 = 355.
   assert(p >= 350 && p <= 360);
   assert(g.genero[0].dia == 120 && g.genero[0].n == 2);
   // dia andando para tras nao desdecai nem quebra.
-  farolgosto_aplicar(&g, &f, FG_D_TERMINOU, 60, 3);
+  farolgosto_aplicar(&g, &f, FG_D_TERMINOU, 60, 3, 0);
   p = farolgosto_peso(&g, FG_DIM_GENERO, 18, 120);
   assert(p > 500);
 }
@@ -102,7 +102,7 @@ static void saturacao(void) {
   f.tipo = FG_TIPO_SERIE;
   farolgosto_iniciar(&g40, 1);
   for (i = 0; i < 40; i++)
-    farolgosto_aplicar(&g40, &f, 26, (uint16_t)i, i % 8);
+    farolgosto_aplicar(&g40, &f, 26, (uint16_t)i, i % 8, i == 0);
   // 4 filmes terminados e gostados: +2,0 cada, fichas diferentes.
   farolgosto_iniciar(&g4, 1);
   for (i = 0; i < 4; i++) {
@@ -111,7 +111,7 @@ static void saturacao(void) {
     f2.genero[1] = 878;
     f2.pessoa[0] = 100 + i;
     f2.tema[0] = 7000 + i;
-    farolgosto_aplicar(&g4, &f2, FG_D_GOSTOU, (uint16_t)i, i % 8);
+    farolgosto_aplicar(&g4, &f2, FG_D_GOSTOU, (uint16_t)i, i % 8, 1);
   }
   s40 = pesoTotal(&g40, 40);
   s4 = pesoTotal(&g4, 40);
@@ -134,15 +134,149 @@ static void despejo(void) {
   // Enche os 32 slots: o slot 7 fica velho e fraco, os demais fortes.
   for (i = 0; i < FG_GENERO_N; i++) {
     f.genero[0] = 1000 + i;
-    farolgosto_aplicar(&g, &f, i == 7 ? 16 : 512, i == 7 ? 1 : 10, -1);
+    farolgosto_aplicar(&g, &f, i == 7 ? 16 : 512, i == 7 ? 1 : 10, -1, 0);
   }
   assert(g.genero[7].id == 1007);
   // Entra afinidade nova no dia 20: sai o mais fraco E mais velho.
   f.genero[0] = novo;
-  farolgosto_aplicar(&g, &f, 256, 20, -1);
+  farolgosto_aplicar(&g, &f, 256, 20, -1, 0);
   assert(farolgosto_peso(&g, FG_DIM_GENERO, novo, 20) == 256);
   assert(farolgosto_peso(&g, FG_DIM_GENERO, 1007, 20) == 0);   // despejado
   assert(farolgosto_peso(&g, FG_DIM_GENERO, 1000, 20) > 0);
+}
+
+// Bug da revisao FAROL37: sessoes diarias congelavam o decaimento — o toque
+// aplicava fator 1 (intervalo < 1/16 de meia-vida) e ainda avancava a
+// referencia, jogando o dia fora. Agora o resto se acumula: 45 sessoes
+// diarias em outra faixa deixam a celula antiga na metade (meia-vida 45).
+static void sessoesDiarias(void) {
+  FarolGosto g, g2, g3;
+  FarolGostoFicha f;
+  int d;
+  farolgosto_iniciar(&g, 1);
+  memset(&f, 0, sizeof f);
+  f.tmdb = 7;
+  f.tipo = FG_TIPO_SERIE;
+  f.minutos = 45;                       // faixa de duracao 1 -> duracao id 7
+  // Celula velha no teto logico, escrita no dia 0: 45 sessoes diarias na
+  // faixa 3 nao podem deixa-la congelada — meia-vida de hora e 45 dias.
+  g.hora[0][1] = 8192;
+  g.diaBase = 0;
+  for (d = 1; d <= 45; d++)
+    farolgosto_aplicar(&g, &f, 64, (uint16_t)d, 3, 0);
+  assert(farolgosto_hora(&g, 0, 1, 45) >= 4014 &&
+         farolgosto_hora(&g, 0, 1, 45) <= 4178);  // 4096 +- 2%
+  // Mesmo conserto nos caminhos por-obra: afinidade tocada todo dia decai
+  // como se o intervalo tivesse passado de uma vez (120 d -> metade).
+  farolgosto_iniciar(&g2, 1);
+  memset(&f, 0, sizeof f);
+  f.genero[0] = 18;
+  g2.genero[0].id = 18;
+  g2.genero[0].peso = 8192;
+  g2.genero[0].n = 1000;                // incremento diario arredonda a 0
+  for (d = 1; d <= 120; d++)
+    farolgosto_aplicar(&g2, &f, 8, (uint16_t)d, -1, 0);
+  assert(farolgosto_peso(&g2, FG_DIM_GENERO, 18, 120) >= 4014 &&
+         farolgosto_peso(&g2, FG_DIM_GENERO, 18, 120) <= 4178);
+  // E na meia-vida curta de duracao (45 d), idem.
+  farolgosto_iniciar(&g3, 1);
+  f.tipo = FG_TIPO_SERIE;
+  f.minutos = 45;
+  g3.duracao[6].id = 7;
+  g3.duracao[6].peso = 8192;
+  g3.duracao[6].n = 1000;
+  for (d = 1; d <= 45; d++)
+    farolgosto_aplicar(&g3, &f, 8, (uint16_t)d, -1, 0);
+  assert(farolgosto_peso(&g3, FG_DIM_DURACAO, 7, 45) >= 4014 &&
+         farolgosto_peso(&g3, FG_DIM_DURACAO, 7, 45) <= 4178);
+}
+
+// Contador de frio (plano 3.4): obras distintas pela chave da ficha, nao
+// eventos. A 38 marca obraNova so no primeiro evento de cada chave.
+static void titulosObras(void) {
+  FarolGosto g;
+  FarolGostoFicha f;
+  int i;
+  farolgosto_iniciar(&g, 1);
+  memset(&f, 0, sizeof f);
+  f.tmdb = 42;
+  f.tipo = FG_TIPO_SERIE;
+  f.minutos = 45;
+  // Uma serie com 40 episodios = UMA obra (antes: titulos = 40, maduro).
+  for (i = 0; i < 40; i++)
+    farolgosto_aplicar(&g, &f, 26, (uint16_t)i, i % 8, i == 0);
+  assert(g.titulos == 1);                        // nivel 0 (< 3 com ficha)
+  // Duas fichas distintas — uma sem TMDB, so de catalogo/reserva: contam.
+  f.tmdb = 500;
+  farolgosto_aplicar(&g, &f, FG_D_TERMINOU, 41, 2, 1);
+  f.tmdb = 0;                                    // ficha valida sem TMDB
+  farolgosto_aplicar(&g, &f, FG_D_SALVOU, 41, 2, 1);
+  assert(g.titulos == 3);                        // nivel 1 (3-9)
+  // Evento neutro (delta 0) de obra nova tambem conta: a ficha existe.
+  farolgosto_aplicar(&g, &f, 0, 42, 2, 1);
+  assert(g.titulos == 4);
+  // Mais 6 obras -> 10 = nivel maduro. Eventos repetidos nao somam.
+  for (i = 0; i < 8; i++)
+    farolgosto_aplicar(&g, &f, FG_D_INTERESSE, 43, 2, i < 6);
+  assert(g.titulos == 10);
+  // O contador volta identico da serializacao.
+  {
+    char buf[FAROL_GOSTO_TXT_MAX];
+    FarolGosto g2;
+    size_t n = farolgosto_escrever(&g, buf, sizeof buf);
+    assert(n > 0);
+    assert(farolgosto_ler(&g2, buf, n) == 0);
+    assert(g2.titulos == 10);
+  }
+}
+
+// Mutante que a revisao viu escapar: tirar a saturacao depois de 8
+// evidencias tem de falhar aqui — o 9o incremento de delta 26 e
+// 26*8/(8+8) = 13, nao 26.
+static void saturacaoDepoisDeOito(void) {
+  FarolGosto g;
+  FarolGostoFicha f = fichaBase();
+  int i;
+  int32_t p8, inc;
+  farolgosto_iniciar(&g, 1);
+  for (i = 0; i < 8; i++)
+    farolgosto_aplicar(&g, &f, 26, 0, -1, 0);
+  p8 = farolgosto_peso(&g, FG_DIM_GENERO, 18, 0);
+  farolgosto_aplicar(&g, &f, 26, 0, -1, 0);
+  inc = farolgosto_peso(&g, FG_DIM_GENERO, 18, 0) - p8;
+  assert(inc >= 12 && inc <= 14);
+  // E o 40o: 26*8/48 = 4,33 -> 4.
+  for (i = 9; i < 40; i++)
+    farolgosto_aplicar(&g, &f, 26, 0, -1, 0);
+  p8 = farolgosto_peso(&g, FG_DIM_GENERO, 18, 0);
+  farolgosto_aplicar(&g, &f, 26, 0, -1, 0);
+  inc = farolgosto_peso(&g, FG_DIM_GENERO, 18, 0) - p8;
+  assert(inc >= 3 && inc <= 5);
+}
+
+// Segundo mutante da revisao: inverter o desempate por idade no despejo.
+// Em empate de |peso projetado| sai o MAIS VELHO — aqui o slot 0 projeta
+// 100 como os demais (peso 104 decomposto por 1/16 de meia-vida) e e o
+// unico com dia 1.
+static void despejoIdade(void) {
+  FarolGosto g;
+  FarolGostoFicha f;
+  int i;
+  farolgosto_iniciar(&g, 1);
+  for (i = 0; i < FG_GENERO_N; i++) {
+    g.genero[i].id = 1000 + i;
+    g.genero[i].peso = i == 0 ? 104 : 100;
+    g.genero[i].n = 1;
+    g.genero[i].dia = i == 0 ? 1 : 6;
+  }
+  memset(&f, 0, sizeof f);
+  f.tmdb = 1;
+  f.genero[0] = 4242;
+  farolgosto_aplicar(&g, &f, 256, 10, -1, 0);
+  assert(farolgosto_peso(&g, FG_DIM_GENERO, 4242, 10) == 256);
+  assert(farolgosto_peso(&g, FG_DIM_GENERO, 1000, 10) == 0);   // despejado
+  assert(farolgosto_peso(&g, FG_DIM_GENERO, 1001, 10) > 0);    // resta
+  assert(farolgosto_peso(&g, FG_DIM_GENERO, 1031, 10) > 0);
 }
 
 static void aneis(void) {
@@ -180,7 +314,8 @@ static void idaEVolta(void) {
     f.pessoa[0] = 900 + i;
     f.tema[0] = 5000 + (i % 7);
     f.ano = 1950 + i;
-    farolgosto_aplicar(&g, &f, (i % 3) * 128 - 64, (uint16_t)(i % 30), i % 8);
+    farolgosto_aplicar(&g, &f, (i % 3) * 128 - 64, (uint16_t)(i % 30), i % 8,
+                       1);
     farolgosto_recusar(&g, (uint32_t)(i * 31 + 1));
     farolgosto_mostrado(&g, (uint32_t)(i * 17 + 3), (uint8_t)(i % 60));
   }
@@ -264,7 +399,7 @@ static void aleatorios(void) {
     {
       int delta = (int)(rnd() % 2049) - 1024;      // ate +-4,0
       int fh = (int)(rnd() % 12) - 2;              // fora de faixa inclusos
-      farolgosto_aplicar(&g, &f, delta, dia, fh);
+      farolgosto_aplicar(&g, &f, delta, dia, fh, rnd() % 5 == 0);
       if (rnd() % 9 == 0) farolgosto_recusar(&g, rnd() % 9000);
       if (rnd() % 9 == 0)
         farolgosto_mostrado(&g, rnd() % 7000, (uint8_t)rnd());
@@ -289,8 +424,12 @@ int main(void) {
   _Static_assert(sizeof(FarolGosto) <= 6144, "FarolGosto > 6144");
   printf("sizeof(FarolGosto) = %u\n", (unsigned)sizeof(FarolGosto));
   decaimento();
+  sessoesDiarias();
+  titulosObras();
   saturacao();
+  saturacaoDepoisDeOito();
   despejo();
+  despejoIdade();
   aneis();
   idaEVolta();
   aleatorios();

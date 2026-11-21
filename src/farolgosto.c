@@ -21,18 +21,39 @@ static const uint32_t FG_DEC[16] = {
   46341, 44376, 42495, 40693, 38968, 37316, 35734, 34219
 };
 
+// Fator Q16.16 de 2^(-q/16), com q em dezesseis-avos de meia-vida.
+// q <= 0 nao decai; 256+ avos (16+ meias-vidas) devolvem 0.
+static int32_t fatorAvos(int32_t q) {
+  int sh;
+  uint32_t t;
+  if (q <= 0) return 65536;
+  sh = (int)(q >> 4);
+  if (sh >= 16) return 0;
+  t = FG_DEC[q & 15];
+  return sh ? (int32_t)((t + ((uint32_t)1 << (sh - 1))) >> sh) : (int32_t)t;
+}
+
 // Fator Q16.16 de 2^(-dias/meia). dias <= 0 nao decai (relogio nao anda para
 // tras); 16+ meias-vidas devolvem 0.
 static int32_t fatorDec(int32_t dias, int meia) {
-  int64_t h;
-  int sh;
-  uint32_t t;
   if (dias <= 0) return 65536;
-  h = ((int64_t)dias << 4) / meia;          // 16 avos de meia-vida
-  sh = (int)(h >> 4);
-  if (sh >= 16) return 0;
-  t = FG_DEC[h & 15];
-  return sh ? (int32_t)((t + ((uint32_t)1 << (sh - 1))) >> sh) : (int32_t)t;
+  return fatorAvos((int32_t)(((int64_t)dias << 4) / meia));
+}
+
+// Versao para o TOQUE (escrita): os dias viram dezesseis-avos de dia e se
+// somam ao que ficou pendente em *resto; so os avos de meia-vida completos
+// decaem e o resto espera o proximo toque — nenhum pedaco de intervalo se
+// perde. Sem o resto, toques diarios com meia-vida de 45/120 dias aplicavam
+// fator 1 e ainda avancavam a referencia, congelando o peso para sempre
+// (bug da revisao: 45 sessoes diarias deixavam a celula antiga intacta).
+// Devolve os avos completos, ou -1 quando o gap nao e positivo (relogio
+// atrasado: nada decai e o resto fica como estava).
+static int32_t decaiAvos(int32_t gap, int meia, uint8_t *resto) {
+  int32_t p;
+  if (gap <= 0) return -1;
+  p = gap * 16 + *resto;
+  *resto = (uint8_t)(p % meia);
+  return p / meia;
 }
 
 // |peso| projetado em `dia` sem mexer no guardado (decaimento preguiçoso).
@@ -46,20 +67,16 @@ static int16_t afinProjetado(const FarolAfin *a, uint16_t dia, int meia) {
 
 // Slot de `id` em arr: acha, usa o primeiro livre ou, cheio, despeja o de
 // menor |peso| x frescor (= |peso projetado|); em empate, o mais velho.
-static FarolAfin *afinSlot(FarolAfin *arr, int cap, int32_t id, uint16_t dia,
-                           int meia) {
+// Devolve o indice; slot novo ou despejado zera o resto de decaimento.
+static int afinSlot(FarolAfin *arr, uint8_t *resto, int cap, int32_t id,
+                    uint16_t dia, int meia) {
   int i, livre = -1;
   for (i = 0; i < cap; i++) {
-    if (arr[i].id == id) return &arr[i];
+    if (arr[i].id == id) return i;
     if (livre < 0 && arr[i].id == 0 && arr[i].n == 0 && arr[i].peso == 0)
       livre = i;
   }
-  if (livre >= 0) {
-    arr[livre].id = id;
-    arr[livre].dia = dia;
-    return &arr[livre];
-  }
-  {
+  if (livre < 0) {
     int pior = 0;
     int64_t piorV = -1;
     for (i = 0; i < cap; i++) {
@@ -71,19 +88,31 @@ static FarolAfin *afinSlot(FarolAfin *arr, int cap, int32_t id, uint16_t dia,
         pior = i;
       }
     }
-    arr[pior].id = id;
-    arr[pior].peso = 0;
-    arr[pior].n = 0;
-    arr[pior].dia = dia;
-    return &arr[pior];
+    livre = pior;
+    arr[livre].peso = 0;
+    arr[livre].n = 0;
   }
+  arr[livre].id = id;
+  arr[livre].dia = dia;
+  resto[livre] = 0;
+  return livre;
 }
 
-// Toca a afinidade: decai ate `dia`, soma delta saturado por n e prende em
-// [-32, +32] (= +-8192 em Q8.8). n e dia so avancam.
-static void afinToca(FarolAfin *a, int delta, uint16_t dia, int meia) {
-  int32_t p = afinProjetado(a, dia, meia);
+// Toca a afinidade: decai ate `dia` (sem perda cumulativa, via *resto), soma
+// delta saturado por n e prende em [-32, +32] (= +-8192 em Q8.8).
+// n e dia so avancam.
+static void afinToca(FarolAfin *a, uint8_t *resto, int delta, uint16_t dia,
+                     int meia) {
+  int32_t p;
   int32_t num = delta * 8, den = (int32_t)a->n + 8;
+  {
+    int32_t q = decaiAvos((int32_t)dia - a->dia, meia, resto);
+    int64_t v;
+    int32_t f = q < 0 ? 65536 : fatorAvos(q);
+    v = (int64_t)a->peso * f;
+    v = v >= 0 ? (v + 32768) >> 16 : -(((-v) + 32768) >> 16);
+    p = (int32_t)v;
+  }
   p += (num + (num >= 0 ? den / 2 : -den / 2)) / den;
   if (p > FAROL_GOSTO_PESOMAX) p = FAROL_GOSTO_PESOMAX;
   if (p < -FAROL_GOSTO_PESOMAX) p = -FAROL_GOSTO_PESOMAX;
@@ -94,19 +123,24 @@ static void afinToca(FarolAfin *a, int delta, uint16_t dia, int meia) {
 
 // Toca uma celula de hora[][]: como o bloco nao tem dia por celula, o diaBase
 // do modelo e a referencia — ao tocar, TODAS as celulas decaem ate `dia`
-// (40 multiplicacoes) e o bloco inteiro fica com a mesma referencia.
+// (40 multiplicacoes) e o bloco inteiro fica com a mesma referencia. O resto
+// pendente mora em g->horaResto, entao toques diarios nao perdem o intervalo.
 static void horaToca(FarolGosto *g, int fh, int fd, int delta, uint16_t dia) {
   int32_t v;
-  if (dia > g->diaBase) {
-    int32_t f = fatorDec((int32_t)dia - g->diaBase, FG_MEIA_HORA);
-    int i, j;
-    for (i = 0; i < FG_HORA_F; i++)
-      for (j = 0; j < FG_HORA_D; j++) {
-        int64_t c = (int64_t)g->hora[i][j] * f;
-        c = c >= 0 ? (c + 32768) >> 16 : -(((-c) + 32768) >> 16);
-        g->hora[i][j] = (int16_t)c;
-      }
+  int32_t q = decaiAvos((int32_t)dia - g->diaBase, FG_MEIA_HORA,
+                        &g->horaResto);
+  if (q >= 0) {
     g->diaBase = dia;
+    if (q > 0) {
+      int32_t f = fatorAvos(q);
+      int i, j;
+      for (i = 0; i < FG_HORA_F; i++)
+        for (j = 0; j < FG_HORA_D; j++) {
+          int64_t c = (int64_t)g->hora[i][j] * f;
+          c = c >= 0 ? (c + 32768) >> 16 : -(((-c) + 32768) >> 16);
+          g->hora[i][j] = (int16_t)c;
+        }
+    }
   }
   v = (int32_t)g->hora[fh][fd] + delta;
   if (v > 32767) v = 32767;
@@ -130,49 +164,61 @@ void farolgosto_iniciar(FarolGosto *g, uint16_t perfil) {
 }
 
 void farolgosto_aplicar(FarolGosto *g, const FarolGostoFicha *f, int delta,
-                        uint16_t dia, int faixaHora) {
+                        uint16_t dia, int faixaHora, int obraNova) {
   int i, fd;
-  if (!g || !f || !delta) return;
+  if (!g || !f) return;
+  // Contador de frio (plano 3.4): quem chama marca obraNova so no primeiro
+  // evento de cada obra, pela chave da ficha — obras repetidas e fichas sem
+  // TMDB ou de reserva contam do jeito certo. Vale mesmo com delta 0: a obra
+  // tem ficha, so o sinal e neutro.
+  if (obraNova && g->titulos < 0xffffffffu) g->titulos++;
+  if (!delta) return;
   for (i = 0; i < 4 && f->genero[i]; i++) {
-    int j;
+    int j, s;
     for (j = 0; j < i; j++) if (f->genero[j] == f->genero[i]) break;
     if (j < i) continue;                       // id repetido na ficha: 1x so
-    afinToca(afinSlot(g->genero, FG_GENERO_N, f->genero[i], dia, FG_MEIA_AFIN),
-             delta, dia, FG_MEIA_AFIN);
+    s = afinSlot(g->genero, g->restoGenero, FG_GENERO_N, f->genero[i], dia,
+                 FG_MEIA_AFIN);
+    afinToca(&g->genero[s], &g->restoGenero[s], delta, dia, FG_MEIA_AFIN);
   }
   for (i = 0; i < 6 && f->pessoa[i]; i++) {
-    int j;
+    int j, s;
     for (j = 0; j < i; j++) if (f->pessoa[j] == f->pessoa[i]) break;
     if (j < i) continue;
-    afinToca(afinSlot(g->pessoa, FG_PESSOA_N, f->pessoa[i], dia, FG_MEIA_AFIN),
-             delta, dia, FG_MEIA_AFIN);
+    s = afinSlot(g->pessoa, g->restoPessoa, FG_PESSOA_N, f->pessoa[i], dia,
+                 FG_MEIA_AFIN);
+    afinToca(&g->pessoa[s], &g->restoPessoa[s], delta, dia, FG_MEIA_AFIN);
   }
   for (i = 0; i < 8 && f->tema[i]; i++) {
-    int j;
+    int j, s;
     for (j = 0; j < i; j++) if (f->tema[j] == f->tema[i]) break;
     if (j < i) continue;
-    afinToca(afinSlot(g->tema, FG_TEMA_N, f->tema[i], dia, FG_MEIA_AFIN),
-             delta, dia, FG_MEIA_AFIN);
+    s = afinSlot(g->tema, g->restoTema, FG_TEMA_N, f->tema[i], dia,
+                 FG_MEIA_AFIN);
+    afinToca(&g->tema[s], &g->restoTema[s], delta, dia, FG_MEIA_AFIN);
   }
   if (f->ano > 0) {
-    int idx = (f->ano - 1920) / 10;
+    int idx = (f->ano - 1920) / 10, s;
     if (idx < 0) idx = 0;
     if (idx > FG_DECADA_N - 1) idx = FG_DECADA_N - 1;
-    afinToca(afinSlot(g->decada, FG_DECADA_N, 1920 + idx * 10, dia,
-                      FG_MEIA_AFIN), delta, dia, FG_MEIA_AFIN);
+    s = afinSlot(g->decada, g->restoDecada, FG_DECADA_N, 1920 + idx * 10,
+                 dia, FG_MEIA_AFIN);
+    afinToca(&g->decada[s], &g->restoDecada[s], delta, dia, FG_MEIA_AFIN);
   }
-  if (f->idioma)
-    afinToca(afinSlot(g->idioma, FG_IDIOMA_N, f->idioma, dia, FG_MEIA_AFIN),
-             delta, dia, FG_MEIA_AFIN);
+  if (f->idioma) {
+    int s = afinSlot(g->idioma, g->restoIdioma, FG_IDIOMA_N, f->idioma, dia,
+                     FG_MEIA_AFIN);
+    afinToca(&g->idioma[s], &g->restoIdioma[s], delta, dia, FG_MEIA_AFIN);
+  }
   fd = durFaixa(f->minutos);
   if (fd >= 0) {
-    int idx = fd + (f->tipo == FG_TIPO_SERIE ? 5 : 0);
-    afinToca(afinSlot(g->duracao, FG_DURACAO_N, idx + 1, dia, FG_MEIA_HORA),
-             delta, dia, FG_MEIA_HORA);
+    int idx = fd + (f->tipo == FG_TIPO_SERIE ? 5 : 0), s;
+    s = afinSlot(g->duracao, g->restoDuracao, FG_DURACAO_N, idx + 1, dia,
+                 FG_MEIA_HORA);
+    afinToca(&g->duracao[s], &g->restoDuracao[s], delta, dia, FG_MEIA_HORA);
     if (faixaHora >= 0 && faixaHora < FG_HORA_F)
       horaToca(g, faixaHora, fd, delta, dia);
   }
-  if (f->tmdb) g->titulos++;
   g->versao = FAROL_GOSTO_VERSAO;
 }
 
@@ -337,23 +383,28 @@ static int16_t prende16(int64_t v) {
 
 static void leAfin(FarolGosto *t, char k, const char *ls, const char *le) {
   int64_t id, peso, n, dia;
-  FarolAfin *arr, *a;
-  int cap, meia;
+  FarolAfin *arr;
+  uint8_t *resto;
+  int cap, meia, s;
   switch (k) {
-    case 'g': arr = t->genero;  cap = FG_GENERO_N;  meia = FG_MEIA_AFIN; break;
-    case 'p': arr = t->pessoa;  cap = FG_PESSOA_N;  meia = FG_MEIA_AFIN; break;
-    case 't': arr = t->tema;    cap = FG_TEMA_N;    meia = FG_MEIA_AFIN; break;
-    case 'e': arr = t->decada;  cap = FG_DECADA_N;  meia = FG_MEIA_AFIN; break;
-    case 'i': arr = t->idioma;  cap = FG_IDIOMA_N;  meia = FG_MEIA_AFIN; break;
-    default:  arr = t->duracao; cap = FG_DURACAO_N; meia = FG_MEIA_HORA; break;
+    case 'g': arr = t->genero;  resto = t->restoGenero;  cap = FG_GENERO_N;  meia = FG_MEIA_AFIN; break;
+    case 'p': arr = t->pessoa;  resto = t->restoPessoa;  cap = FG_PESSOA_N;  meia = FG_MEIA_AFIN; break;
+    case 't': arr = t->tema;    resto = t->restoTema;    cap = FG_TEMA_N;    meia = FG_MEIA_AFIN; break;
+    case 'e': arr = t->decada;  resto = t->restoDecada;  cap = FG_DECADA_N;  meia = FG_MEIA_AFIN; break;
+    case 'i': arr = t->idioma;  resto = t->restoIdioma;  cap = FG_IDIOMA_N;  meia = FG_MEIA_AFIN; break;
+    default:  arr = t->duracao; resto = t->restoDuracao; cap = FG_DURACAO_N; meia = FG_MEIA_HORA; break;
   }
   if (pegaInt(&ls, le, &id) || !id || pegaInt(&ls, le, &peso) ||
       pegaInt(&ls, le, &n) || pegaInt(&ls, le, &dia)) return;
-  a = afinSlot(arr, cap, (int32_t)id,
+  s = afinSlot(arr, resto, cap, (int32_t)id,
                dia < 0 ? 0 : (dia > 0xffff ? 0xffff : (uint16_t)dia), meia);
-  a->peso = prende16(peso);
-  a->n = (uint16_t)(n < 0 ? 0 : (n > 0xffff ? 0xffff : n));
-  a->dia = (uint16_t)(dia < 0 ? 0 : (dia > 0xffff ? 0xffff : dia));
+  // O limite semantico do peso e +-8192 (32 em Q8.8); um arquivo corrompido
+  // pode trazer qualquer int16 — prende na faixa logica.
+  if (peso > FAROL_GOSTO_PESOMAX) peso = FAROL_GOSTO_PESOMAX;
+  if (peso < -FAROL_GOSTO_PESOMAX) peso = -FAROL_GOSTO_PESOMAX;
+  arr[s].peso = (int16_t)peso;
+  arr[s].n = (uint16_t)(n < 0 ? 0 : (n > 0xffff ? 0xffff : n));
+  arr[s].dia = (uint16_t)(dia < 0 ? 0 : (dia > 0xffff ? 0xffff : dia));
 }
 
 int farolgosto_ler(FarolGosto *g, const char *txt, size_t len) {
@@ -384,7 +435,8 @@ int farolgosto_ler(FarolGosto *g, const char *txt, size_t len) {
           pegaInt(&ls, le, &perfil) || pegaInt(&ls, le, &titulos) ||
           pegaInt(&ls, le, &diaBase)) return -1;
       t.perfil = (uint16_t)(perfil < 0 ? 0 : (perfil > 0xffff ? 0xffff : perfil));
-      t.titulos = (uint32_t)(titulos < 0 ? 0 : titulos);
+      t.titulos = (uint32_t)(titulos < 0 || titulos > 0xffffffffLL
+                             ? 0 : titulos);
       t.diaBase = (uint16_t)(diaBase < 0 ? 0 : (diaBase > 0xffff ? 0xffff : diaBase));
       cab = 1;
       continue;
