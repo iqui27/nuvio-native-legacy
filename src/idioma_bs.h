@@ -657,7 +657,7 @@
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Redoslijed dodataka i plugina pri automatskom izboru: pomjerajte svaki gore ili dolje. Ono što ostane izvan redoslijeda ide poslije svih. Vrijedi samo kad je uključena opcija Koristi redoslijed."),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Od kojeg dijela epizoda važi kao odgledana i nastavak prelazi na sljedeću."),
   T("A pessoa não é avisada.", "Osoba neće biti obaviještena."),
-  T("A primeira fonte falhou. Troquei para outra em %s.", "Prvi izvor je otkazao. Prebacio sam na drugi za %s."),
+  T("A primeira fonte falhou. Troquei para outra em %s.", "Prvi izvor je otkazao. Prebacio sam na drugi u %s."),
   T("A primeira fonte falhou. Troquei para outra fonte.", "Prvi izvor nije uspio. Prebacio sam na drugi izvor."),
   T("A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.", "Pregled kanala u TV vodiču ide bez zvuka. Isključeno: zvuk kanala dolazi zajedno s pregledom."),
   T("A prévia não muda o valor salvo", "Pregled ne mijenja sačuvanu vrijednost"),

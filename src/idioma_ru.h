@@ -656,7 +656,7 @@
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Порядок дополнений и плагинов при автовыборе: поднимайте и опускайте каждый. То, что вне порядка, идёт после всех. Действует, только если включён параметр «Использовать порядок»."),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Какая часть серии считается просмотренной, чтобы продолжение переходило к следующей."),
   T("A pessoa não é avisada.", "Человек не получит уведомления."),
-  T("A primeira fonte falhou. Troquei para outra em %s.", "Первый источник не сработал. Я перешёл на другой за %s."),
+  T("A primeira fonte falhou. Troquei para outra em %s.", "Первый источник не сработал. Я перешёл на другой в %s."),
   T("A primeira fonte falhou. Troquei para outra fonte.", "Первый источник не сработал. Переключился на другой."),
   T("A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.", "Предпросмотр канала в Телегиде идёт без звука. Выключено — звук канала включается вместе с просмотром."),
   T("A prévia não muda o valor salvo", "Предварительный просмотр не меняет сохраненное значение"),

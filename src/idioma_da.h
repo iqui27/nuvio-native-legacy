@@ -657,7 +657,7 @@
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Rækkefølgen af add-ons og plugins ved automatisk valg: flyt hver op eller ned. Det, der står uden for rækkefølgen, kommer efter alle andre. Gælder kun, når Brug rækkefølgen er slået til."),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Hvor meget af et afsnit der tæller som set, så genoptagelse går videre til det næste."),
   T("A pessoa não é avisada.", "Personen får ikke besked."),
-  T("A primeira fonte falhou. Troquei para outra em %s.", "Den første kilde fejlede. Jeg skiftede til en anden på %s."),
+  T("A primeira fonte falhou. Troquei para outra em %s.", "Den første kilde fejlede. Jeg skiftede til en anden i %s."),
   T("A primeira fonte falhou. Troquei para outra fonte.", "Den første kilde fejlede. Jeg skiftede til en anden kilde."),
   T("A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.", "Kanalens forhåndsvisning i tv-guiden afspilles uden lyd. Slået fra: kanalens lyd kommer med forhåndsvisningen."),
   T("A prévia não muda o valor salvo", "Forhåndsvisning ændrer ikke den gemte værdi"),

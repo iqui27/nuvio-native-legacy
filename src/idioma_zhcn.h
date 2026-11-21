@@ -30,7 +30,7 @@
   T("%.1f de %d MB · %d%%", "%.1f / %d MB · %d%%"),
   T("%.1f dias de programação", "%.1f 天节目表"),
   T("%.1f mi", "%.1fM"),
-  T("%d %s com menos de %s.", "%d 个短于 %s 的 %s"),
+  T("%d %s com menos de %s.", "%d 部%s（时长不到 %s）"),
   T("%d %s · OK para explorar", "%d %s · 按确定键浏览"),
   T("%d Mbps medido", "实测 %d Mbps"),
   T("%d add-ons ativos", "%d 个插件已启用"),

@@ -5545,7 +5545,7 @@
   T("O Xtream recusou o usuário e a senha.", "Xtream je zavrnil uporabniško ime in geslo."),
   T("O Xtream recusou o usuário e a senha. Confira o cadastro em Ajustes › Conta.", "Xtream je zavrnil uporabniško ime in geslo. Preverite ju v Nastavitve › Račun."),
   T("O Xtream respondeu com erro HTTP %d.", "Xtream je odgovoril z napako HTTP %d."),
-  T("O add-on %s demorou demais e segurou a lista.", "Dodatek %s je predolgo časal in zadržal seznam."),
+  T("O add-on %s demorou demais e segurou a lista.", "Dodatek %s je predolgo trajal in zadržal seznam."),
   T("O addon %s não respondeu", "Dodatek %s se ni odzval"),
   T("O addon demorou para responder. Vamos tentar outra fonte.", "Dodatek je potreboval nekaj časa, da se je odzval. Poskusimo drug vir."),
   T("O addon desta coleção não está instalado nesta TV.", "Dodatek te zbirke ni nameščen na tem televizorju."),

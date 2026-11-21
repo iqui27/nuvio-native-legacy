@@ -657,7 +657,7 @@
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Thứ tự add-on và plugin khi chọn tự động: đưa từng mục lên hoặc xuống. Mục còn lại ngoài thứ tự đứng sau tất cả. Chỉ có tác dụng khi bật tùy chọn Dùng thứ tự."),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Xem bao nhiêu phần tập thì tính là đã xem và phần xem tiếp chuyển sang tập sau."),
   T("A pessoa não é avisada.", "Người đó sẽ không được thông báo."),
-  T("A primeira fonte falhou. Troquei para outra em %s.", "Nguồn đầu tiên hỏng. Tôi đã chuyển sang nguồn khác trong %s."),
+  T("A primeira fonte falhou. Troquei para outra em %s.", "Nguồn đầu tiên hỏng. Tôi đã chuyển sang nguồn khác với %s."),
   T("A primeira fonte falhou. Troquei para outra fonte.", "Nguồn đầu tiên lỗi. Tôi đã chuyển sang nguồn khác."),
   T("A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.", "Bản xem trước kênh trong Hướng dẫn TV phát không có tiếng. Tắt, âm thanh của kênh sẽ phát cùng bản xem trước."),
   T("A prévia não muda o valor salvo", "Xem trước không thay đổi giá trị đã lưu"),

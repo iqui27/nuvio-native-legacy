@@ -657,7 +657,7 @@
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Pořadí doplňků a pluginů při automatickém výběru: posouvejte každý nahoru nebo dolů. Co zůstane mimo pořadí, jde po všech ostatních. Platí jen při zapnuté volbě Použít pořadí."),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Od jaké části se díl počítá jako zhlédnutý a pokračování přejde na další."),
   T("A pessoa não é avisada.", "Osoba nedostane upozornění."),
-  T("A primeira fonte falhou. Troquei para outra em %s.", "První zdroj selhal. Přepnul jsem na jiný za %s."),
+  T("A primeira fonte falhou. Troquei para outra em %s.", "První zdroj selhal. Přepnul jsem na jiný ve formátu %s."),
   T("A primeira fonte falhou. Troquei para outra fonte.", "První zdroj selhal. Přepnul jsem na jiný zdroj."),
   T("A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.", "Náhled kanálu v TV programu hraje bez zvuku. Vypnuto: zvuk kanálu přijde spolu s náhledem."),
   T("A prévia não muda o valor salvo", "Náhled nemění uloženou hodnotu"),

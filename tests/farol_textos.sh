@@ -5,7 +5,8 @@
 # idiomas.py cobre ordem, marcadores, escrita e cobertura de glifo.
 set -eu
 cd "$(dirname "$0")/.."
-cc -Wall -Wextra -O1 -g tests/farol_textos.c -Isrc -o /tmp/nuvio-farol-textos
+cc -Wall -Wextra -O1 -g tests/farol_textos.c src/idioma.c -Isrc \
+   -I/opt/homebrew/include -o /tmp/nuvio-farol-textos
 /tmp/nuvio-farol-textos
 rm -f /tmp/nuvio-farol-textos
 python3 - <<'PY'

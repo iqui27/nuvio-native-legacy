@@ -657,7 +657,7 @@
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Urutan add-on dan plugin pada pilihan otomatis: naikkan atau turunkan masing-masing. Yang tetap di luar urutan datang setelah semuanya. Hanya berlaku jika opsi Pakai urutan aktif."),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Mulai seberapa banyak episode dianggap ditonton, sehingga lanjutan pindah ke berikutnya."),
   T("A pessoa não é avisada.", "Orang itu tidak akan diberi tahu."),
-  T("A primeira fonte falhou. Troquei para outra em %s.", "Sumber pertama gagal. Saya beralih ke yang lain dalam %s."),
+  T("A primeira fonte falhou. Troquei para outra em %s.", "Sumber pertama gagal. Saya beralih ke yang lain dengan %s."),
   T("A primeira fonte falhou. Troquei para outra fonte.", "Sumber pertama gagal. Saya beralih ke sumber lain."),
   T("A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.", "Pratinjau saluran di Panduan TV diputar tanpa suara. Nonaktif, audio saluran masuk bersama pratinjau."),
   T("A prévia não muda o valor salvo", "Pratinjau tidak mengubah nilai yang disimpan"),

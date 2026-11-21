@@ -657,7 +657,7 @@
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "ترتيب الإضافات والإضافات البرمجية للاختيار التلقائي: حرّك كلًا منها لأعلى أو لأسفل. أي شيء خارج الترتيب يأتي بعدها جميعًا. ينطبق فقط عند تفعيل استخدام الترتيب."),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "كم من الحلقة يُحسب مشاهدًا، لتنتقل المتابعة إلى الحلقة التالية."),
   T("A pessoa não é avisada.", "لن يتم إشعارهم."),
-  T("A primeira fonte falhou. Troquei para outra em %s.", "فشل المصدر الأول. انتقلت إلى آخر خلال %s."),
+  T("A primeira fonte falhou. Troquei para outra em %s.", "فشل المصدر الأول. انتقلت إلى آخر بجودة %s."),
   T("A primeira fonte falhou. Troquei para outra fonte.", "فشل المصدر الأول. انتقلت إلى مصدر آخر."),
   T("A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.", "معاينة القناة في دليل التلفاز تعمل بدون صوت. عند الإيقاف، يأتي صوت القناة مع المعاينة."),
   T("A prévia não muda o valor salvo", "المعاينة لا تغير القيمة المحفوظة"),

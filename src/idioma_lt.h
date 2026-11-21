@@ -657,7 +657,7 @@
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Priedų ir įskiepių tvarka automatiniame pasirinkime: kiekvieną kelkite aukštyn ar žemyn. Kas lieka ne tvarkoje, eina po visų. Galioja tik įjungus parinktį Naudoti tvarką."),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Kiek serijos laikoma peržiūrėta, kad tęsiant būtų pereita prie kitos."),
   T("A pessoa não é avisada.", "Žmogui apie tai nepranešama."),
-  T("A primeira fonte falhou. Troquei para outra em %s.", "Pirmasis šaltinis nepavyko. Per %s perėjau prie kito."),
+  T("A primeira fonte falhou. Troquei para outra em %s.", "Pirmasis šaltinis nepavyko. Perėjau prie kito su %s."),
   T("A primeira fonte falhou. Troquei para outra fonte.", "Pirmasis šaltinis nepavyko. Perėjau prie kito šaltinio."),
   T("A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.", "Kanalo peržiūra TV gide groja be garso. Išjungus kanalo garsas įsijungia kartu su peržiūra."),
   T("A prévia não muda o valor salvo", "Peržiūra nekeičia išsaugotos vertės"),

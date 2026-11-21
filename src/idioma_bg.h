@@ -657,7 +657,7 @@
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Редът на добавките и плъгините при автоматичния избор: местете всяка нагоре или надолу. Каквото остане извън реда, е след всички. Важи само при включена опция Използвай реда."),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "От каква част епизодът се брои за гледан и продължението минава към следващия."),
   T("A pessoa não é avisada.", "Човекът няма да бъде уведомен."),
-  T("A primeira fonte falhou. Troquei para outra em %s.", "Първият източник се провали. Превключих на друг за %s."),
+  T("A primeira fonte falhou. Troquei para outra em %s.", "Първият източник се провали. Превключих на друг в %s."),
   T("A primeira fonte falhou. Troquei para outra fonte.", "Първият източник се провали. Превключих на друг източник."),
   T("A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.", "Прегледът на канала в ТВ справочника върви без звук. Изключено: звукът на канала идва заедно с прегледа."),
   T("A prévia não muda o valor salvo", "Визуализацията не променя записаната стойност"),

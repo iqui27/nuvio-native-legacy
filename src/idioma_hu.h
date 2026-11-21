@@ -657,7 +657,7 @@
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "A bővítmények és pluginek sorrendje az automatikus választásnál: mozgasd mindegyiket felfelé vagy lefelé. Ami a sorrenden kívül marad, mindenki után jön. Csak bekapcsolt Sorrend használata beállításnál érvényes."),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Egy epizód mekkora része számít megnézettnek, hogy a folytatás a következőre lépjen."),
   T("A pessoa não é avisada.", "Az illető nem kap értesítést."),
-  T("A primeira fonte falhou. Troquei para outra em %s.", "Az első forrás hibázott. %s alatt átváltottam egy másikra."),
+  T("A primeira fonte falhou. Troquei para outra em %s.", "Az első forrás hibázott. Átváltottam egy %s másikra."),
   T("A primeira fonte falhou. Troquei para outra fonte.", "Az első forrás hibázott. Átváltottam másik forrásra."),
   T("A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.", "A csatorna előnézete a TV-műsorban hang nélkül megy. Kikapcsolva a csatorna hangja az előnézettel együtt jön."),
   T("A prévia não muda o valor salvo", "Az előnézet nem módosítja a mentett értéket"),

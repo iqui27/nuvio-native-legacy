@@ -9,14 +9,26 @@
 //      caracteres em pt E em en (o teto que a Ilha comporta);
 //   3. nenhuma palavra da lista "o que o Farol NUNCA diz" (ALMA 2):
 //      saudacao de bot, desculpa corporativa, bajulacao, "inteligencia
-//      artificial" e "inesperado" — com ou sem acento, em pt ou en.
+//      artificial" e "inesperado" — com ou sem acento, em pt ou en;
+//   4. os argumentos das chaves formatadas caem no PAPEL certo: a duracao
+//      de FT_ACHA_L1 dentro da clausula de tempo em zh, e o formato de
+//      FT_FONTE_TROCADA sem preposicao temporal grudada — renderizado pelo
+//      caminho real (i18n de src/idioma.c + snprintf), nao por grep.
 // A varredura das 29 irmas (traducao nao vazia, mesmos marcadores e \n)
 // fica com tools/idiomas.py, chamado pelo farol_textos.sh junto com a
 // checagem de valor nao vazio para cada chave FT_*.
 #include "faroltexto.h"
+#include "idioma.h"
+#include "idiomacod.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+// Duple: o teste nao sobe ajustes.c inteiro so para saber o idioma —
+// i18n() pergunta por aqui e o teste troca antes de cada render.
+static int lg_teste = IDIOMA_EN;
+int ajustes_idioma(void) { return lg_teste; }
+int ajustes_idioma_ingles(void) { return lg_teste == IDIOMA_EN; }
 
 static const struct { const char *pt, *en; } TABELA[] = {
 #include "idioma_tab.h"
@@ -120,6 +132,111 @@ static void confere_proibidas(const char *nome, const char *s) {
     }
 }
 
+// ---- semantica dos argumentos, renderizada pela i18n de verdade ----
+//
+// FT_ACHA_L1 recebe (quantidade, genero, duracao). Em chines o limite de
+// tempo mora numa clausula marcada (短于/短於, 不到/未滿...), com o genero
+// fora dela. A sequencia %d %s %s e a mesma do portugues, entao os
+// validadores de marcador nao pegam a inversao que a revisao pegou:
+// "3 个短于 <genero> 的 <duracao>" lia "3 duracoes mais curtas que um
+// suspense". A regra: genero antes do marcador de tempo, duracao depois.
+static const char *const MARC_DUR_ZH[] = {
+  "短于", "短於", "不到", "未滿", "未满", "以內", "以内", "小於", "小于",
+};
+
+static void confere_acha_zh(int lg, const char *cod) {
+  char buf[256];
+  const char *pg, *pd, *pm = NULL;
+  size_t i;
+  lg_teste = lg;
+  snprintf(buf, sizeof buf, i18n(FT_ACHA_L1), 3, "SUSPQQ", "1H40QQ");
+  pg = strstr(buf, "SUSPQQ");
+  pd = strstr(buf, "1H40QQ");
+  if (!pg || !pd) {
+    printf("FALHOU: %s FT_ACHA_L1 nao recebeu os dois argumentos: \"%s\"\n",
+           cod, buf);
+    falhas++;
+    return;
+  }
+  for (i = 0; i < sizeof MARC_DUR_ZH / sizeof *MARC_DUR_ZH; i++) {
+    const char *p = strstr(buf, MARC_DUR_ZH[i]);
+    if (p && (!pm || p < pm)) pm = p;
+  }
+  if (!pm || pg > pm || pd < pm) {
+    printf("FALHOU: %s FT_ACHA_L1 com a duracao fora da clausula de tempo: "
+           "\"%s\"\n", cod, buf);
+    falhas++;
+  }
+}
+
+// FT_FONTE_TROCADA recebe o FORMATO da fonte nova no %s ("4K HDR10"). A
+// palavra encostada no dado nao pode ser marcador de TEMPO — em dezenas de
+// idiomas "em/no formato" e a mesma preposicao de "em/no tempo", e a
+// revisao pegou "za", "за", "خلال", "alatt", "içinde", "per", "dalam",
+// "trong" e "på" lendo "troquei durante 4K HDR10".
+static const char *const TEMPO[] = {
+  "za", "за", "خلال", "alatt", "içinde", "per", "dalam", "trong", "på",
+};
+
+// copia o token espaco-delimitado, dobra A-Z e corta pontuacao ASCII
+static void palavra(const char *a, const char *b, char *w, size_t cap) {
+  size_t n = 0;
+  for (; a < b && n + 1 < cap; a++) {
+    unsigned char c = (unsigned char)*a;
+    if (c < 0x80 && c != '_' && !(c >= 'a' && c <= 'z') &&
+        !(c >= '0' && c <= '9')) {
+      if (c >= 'A' && c <= 'Z') { w[n++] = (char)(c + 32); continue; }
+      if (n) break;          // pontuacao depois da palavra
+      continue;              // pontuacao antes: pula
+    }
+    w[n++] = (char)c;
+  }
+  w[n] = 0;
+}
+
+static int tempo_ao_lado(const char *buf, const char *sinal) {
+  const char *p = strstr(buf, sinal), *a, *b;
+  char w[96];
+  size_t i;
+  if (!p) return 0;
+  a = p;
+  while (a > buf && a[-1] == ' ') a--;
+  for (b = a; a > buf && a[-1] != ' '; a--) ;
+  palavra(a, b, w, sizeof w);
+  for (i = 0; i < sizeof TEMPO / sizeof *TEMPO; i++)
+    if (!strcmp(w, TEMPO[i])) return 1;
+  a = p + strlen(sinal);
+  while (*a == ' ') a++;
+  for (b = a; *b && *b != ' '; b++) ;
+  palavra(a, b, w, sizeof w);
+  for (i = 0; i < sizeof TEMPO / sizeof *TEMPO; i++)
+    if (!strcmp(w, TEMPO[i])) return 1;
+  return 0;
+}
+
+static void confere_fonte_trocada(void) {
+  static const char *const cod[IDIOMA_N] = {
+    "pt", "en", "ro", "uk", "ru", "fr", "de", "es", "it", "nl", "pl", "tr",
+    "ptpt", "sv", "da", "no", "cs", "sk", "sl", "hu", "lt", "bs", "sr",
+    "bg", "el", "id", "vi", "ja", "zhcn", "zhtw", "ar",
+  };
+  char buf[256];
+  int lg;
+  for (lg = 0; lg < IDIOMA_N; lg++) {
+    lg_teste = lg;
+    snprintf(buf, sizeof buf, i18n(FT_FONTE_TROCADA), "ZZFMTZZ");
+    if (!strstr(buf, "ZZFMTZZ")) {
+      printf("FALHOU: %s FT_FONTE_TROCADA sem o formato: \"%s\"\n",
+             cod[lg], buf);
+      falhas++;
+    } else if (tempo_ao_lado(buf, "ZZFMTZZ")) {
+      printf("FALHOU: %s FT_FONTE_TROCADA le o formato como tempo "
+             "decorrido: \"%s\"\n", cod[lg], buf);
+      falhas++;
+    }
+  }
+}
+
 // ---- cada FT_ tem de existir na mestra (ordem strcmp = busca binaria) ----
 static int cmp_pt(const void *a, const void *b) {
   return strcmp(*(const char *const *)a, *(const char *const *)b);
@@ -171,6 +288,10 @@ int main(void) {
     printf("FALHOU: FT_NOME nao responde \"Beacon\" (responde \"%s\")\n",
            en ? en : "(sem chave)"); falhas++;
   }
+
+  confere_acha_zh(IDIOMA_ZHCN, "zhcn");
+  confere_acha_zh(IDIOMA_ZHTW, "zhtw");
+  confere_fonte_trocada();
 
   if (falhas) { printf("farol_textos: %d falha(s)\n", falhas); return 1; }
   printf("farol_textos: %zu frases ok\n", n);

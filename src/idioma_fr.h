@@ -535,7 +535,7 @@
   T("A busca no guia não fecha mais o app.", "La recherche dans le guide TV ne ferme plus l’appli."),
   T("A busca olha o nome e a ajuda de cada ajuste.", "La recherche porte sur le nom et l'aide de chaque paramètre."),
   T("A busca por frase está fora — mostrei o mais perto daqui.", "La recherche par phrase est coupée — j'ai montré le plus proche d'ici."),
-  T("A busca por frase já encheu hoje — mostrei o mais perto daqui.", "La recherche par phrase est pleine pour aujourd'hui — j'ai montré le plus proche d'ici."),
+  T("A busca por frase já encheu hoje — mostrei o mais perto daqui.", "Recherche par phrase pleine aujourd'hui — voici le plus proche d'ici."),
   T("A busca por voz só liga com o botão", "La recherche vocale ne s'active qu'avec le bouton"),
   T("A busca também consulta o Cinemeta se o catálogo do Nuvio falhar.", "La recherche interroge aussi Cinemeta si le catalogue Nuvio échoue."),
   T("A capa da coleção no card do formato escolhido.", "La couverture de la collection sur une carte au format choisi."),

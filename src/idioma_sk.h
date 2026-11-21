@@ -657,7 +657,7 @@
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Poradie doplnkov a pluginov pri automatickom výbere: posúvajte každý nahor alebo nadol. Čo zostane mimo poradia, ide po všetkých ostatných. Platí len pri zapnutej voľbe Použiť poradie."),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Od akej časti sa diel počíta ako pozretý a pokračovanie prejde na ďalší."),
   T("A pessoa não é avisada.", "Osoba nedostane upozornenie."),
-  T("A primeira fonte falhou. Troquei para outra em %s.", "Prvý zdroj zlyhal. Prepnul som na iný za %s."),
+  T("A primeira fonte falhou. Troquei para outra em %s.", "Prvý zdroj zlyhal. Prepnul som na iný vo formáte %s."),
   T("A primeira fonte falhou. Troquei para outra fonte.", "Prvý zdroj zlyhal. Prepnul som na iný zdroj."),
   T("A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.", "Náhľad kanála v TV programe hrá bez zvuku. Vypnuté: zvuk kanála príde spolu s náhľadom."),
   T("A prévia não muda o valor salvo", "Náhľad nezmení uloženú hodnotu"),

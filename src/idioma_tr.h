@@ -657,7 +657,7 @@
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Otomatik seçimde eklenti ve eklenti paketlerinin sırası: her birini yukarı veya aşağı taşıyın. Sıranın dışında kalan hepsinden sonra gelir. Yalnızca Sırayı kullan seçeneği açıkken geçerlidir."),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Bir bölümün ne kadarı izlenince izlenmiş sayılır ve devam etme sonrakine geçer."),
   T("A pessoa não é avisada.", "Kişiye bildirilmez."),
-  T("A primeira fonte falhou. Troquei para outra em %s.", "İlk kaynak başarısız oldu. %s içinde başkasına geçtim."),
+  T("A primeira fonte falhou. Troquei para outra em %s.", "İlk kaynak başarısız oldu. %s kalitesinde başkasına geçtim."),
   T("A primeira fonte falhou. Troquei para outra fonte.", "İlk kaynak başarısız oldu. Başka bir kaynağa geçtim."),
   T("A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.", "TV Rehberi'ndeki kanal önizlemesi sessiz oynar. Kapalıyken kanalın sesi önizlemeyle birlikte gelir."),
   T("A prévia não muda o valor salvo", "Önizleme kaydedilen değeri değiştirmez"),
