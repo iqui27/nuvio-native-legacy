@@ -208,6 +208,15 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=green:size=32x32:rate=2
   -metadata:s:a:0 language=eng -metadata:s:a:1 language=pol -shortest "$TMP/pair_dub.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=24000/1001:duration=160' -i "$TMP/c_dub.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 24 -c:a eac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=pol -shortest "$TMP/cut_dub.mkv"
+# This film with two English tracks (owner's log 21/11, a 4K release): the
+# lightest, a stereo AC-3, is another mix that matches nothing (noise here);
+# the 5.1 E-AC-3 is the film's English. The second one is compared too.
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=24000/1001:duration=120' -i "$TMP/c_main.wav" \
+  -f lavfi -i 'anoisesrc=d=120:c=pink:r=48000:a=0.3' \
+  -filter_complex '[2:a]aformat=channel_layouts=stereo[st];[1:a]aresample=48000,aformat=channel_layouts=5.1[mc]' \
+  -map 0:v -map '[st]' -map '[mc]' -c:v libx264 -bf 0 -g 24 -c:a:0 ac3 -b:a:0 96k -c:a:1 eac3 -b:a:1 192k \
+  -metadata:s:a:0 language=eng -metadata:s:a:0 title=Stereo -metadata:s:a:1 language=eng -metadata:s:a:1 title="Surround 5.1" \
+  -shortest "$TMP/stereo_main.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=blue:size=32x32:rate=25:duration=116' -i "$TMP/c_pal.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=pol -shortest "$TMP/pal_dub.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=25:duration=120' -i "$TMP/f_ext.wav" \
@@ -246,4 +255,4 @@ ffmpeg -hide_banner -loglevel error -i "$TMP/follow_th.mkv" -map 0 -c copy -meta
   "$TMP/main60.mkv" "$TMP/long.mkv" "$TMP/long_nocues.mkv" "$TMP/match_main.mkv" "$TMP/match_dub.mkv" \
   "$TMP/main.avi" "$TMP/other.avi" "$TMP/other.ts" "$TMP/xvid.avi" "$TMP/film.mkv" \
   "$TMP/cut_main.mkv" "$TMP/cut_dub.mkv" "$TMP/pal_dub.mkv" "$TMP/pair_dub.mkv" \
-  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv" "$TMP/shift_main.mkv" "$TMP/shift_dub.mkv" "$TMP/gap_main.mkv" "$TMP/gap_dub.mkv" "$TMP/two_en.mkv" "$TMP/step_main.mkv" "$TMP/step_dub.mkv"
+  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv" "$TMP/shift_main.mkv" "$TMP/shift_dub.mkv" "$TMP/gap_main.mkv" "$TMP/gap_dub.mkv" "$TMP/two_en.mkv" "$TMP/step_main.mkv" "$TMP/step_dub.mkv" "$TMP/stereo_main.mkv"

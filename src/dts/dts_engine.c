@@ -2898,7 +2898,7 @@ typedef struct {
 } MatchSide;
 /* s[2]: a second track of this file captured with the first when the two
  * files share no language (alt_stream, -1 none); the better one is kept. */
-struct MatchCap { int main_stream, donor_stream, alt_stream, early; MatchSide s[3]; };
+struct MatchCap { int main_stream, donor_stream, alt_stream, alt_same, early; MatchSide s[3]; };
 struct MatchJob {
   pthread_t th; pthread_mutex_t lock; int started, done, cancel;
   DtsEngine *holder;                       /* the capture in progress, to cancel its reads */
@@ -3341,7 +3341,7 @@ static void match_feed(DtsEngine *e,int side,AVPacket *pkt,AVRational tb) {
   struct MatchCap *mc=e->mt;
   if(!mc || match_side_full(&mc->s[side])) return;
   if(match_side_feed(&mc->s[side],pkt,tb)<0) { mc->s[side].ev.max=mc->s[side].ev.n=1; }
-  if(!mc->early && !e->mt_check && mc->alt_stream<0 && abs(e->ext_cut_s)<=10 &&
+  if(!mc->early && !e->mt_check && (mc->alt_stream<0 || mc->alt_same) && abs(e->ext_cut_s)<=10 &&
      mc->s[0].ev.n>=MATCH_EARLY_S*DTS_MATCH_HZ && mc->s[1].ev.n>=MATCH_EARLY_S*DTS_MATCH_HZ &&
      !match_side_full(&mc->s[0]) && !match_side_full(&mc->s[1])) {
     mc->early=1;
@@ -3428,6 +3428,17 @@ static void match_pair(DtsEngine *e,int alt,int *mains,int *donor,int *shared) {
     if(k>=0) { m=(int)i; d=k; }
   }
   if(shared) *shared=m>=0;
+  /* A track of this file in the same language that already compared better
+   * (match_alt_same) is the one compared from then on. */
+  if(m>=0) {
+    int p=e->mt_main_pref-1;
+    char lp[16]="", lm2[16]="";
+    if(p>=0 && p!=m && (unsigned)p<mf->nb_streams && match_rank(mf->streams[p])) {
+      copy_metadata(lp,sizeof lp,mf->streams[p]->metadata,"language");
+      copy_metadata(lm2,sizeof lm2,mf->streams[m]->metadata,"language");
+      if(!strcasecmp(lp,lm2) || ext_lang_is(lp,lm2)) m=p;
+    }
+  }
   if(m<0) {   /* no shared language: the lightest track of the default one */
     char l[16]="";
     if(def>=0) copy_metadata(l,sizeof l,mf->streams[def]->metadata,"language");
@@ -3463,6 +3474,31 @@ static int match_alt(DtsEngine *e,int m) {
   }
   return best;
 }
+/* THE SAME LANGUAGE, ANOTHER TRACK (owner's log 21/11, Farscape 4K: its
+ * English "Stereo" AC-3, the lightest, scored 0.07 against the Blu-ray's
+ * English, as against a Polish voice-over, while the audio played in sync):
+ * a second track of this file in the language compared, another codec or
+ * channel count first, is captured too and the better one is kept. -1 none. */
+static int match_alt_same(DtsEngine *e,int m) {
+  AVFormatContext *mf=e->fmt;
+  char lm[16]="";
+  int best=-1, br=0;
+  if(m<0) return -1;
+  const AVCodecParameters *pm=mf->streams[m]->codecpar;
+  copy_metadata(lm,sizeof lm,mf->streams[m]->metadata,"language");
+  for(unsigned i=0;i<mf->nb_streams;i++) {
+    char l[16]="";
+    int r=match_rank(mf->streams[i]);
+    if(!r || (int)i==m) continue;
+    copy_metadata(l,sizeof l,mf->streams[i]->metadata,"language");
+    if(lm[0] ? (!l[0] || (strcasecmp(l,lm) && !ext_lang_is(l,lm))) : l[0]!=0) continue;
+    const AVCodecParameters *pi=mf->streams[i]->codecpar;
+    r+=pi->codec_id!=pm->codec_id?10:0;
+    r+=pi->ch_layout.nb_channels!=pm->ch_layout.nb_channels?5:0;
+    if(r>br) { br=r; best=(int)i; }
+  }
+  return best;
+}
 static int match_arm(DtsEngine *e,int check) {
   if(!e || !e->ext || !e->ext->fmt || !e->fmt || e->ext_stream<0) return -1;
   match_disarm(e);
@@ -3475,6 +3511,16 @@ static int match_arm(DtsEngine *e,int check) {
   if(match_side_open(&mc->s[0],e->fmt->streams[best],DTS_MATCH_MAX)<0 ||
      match_side_open(&mc->s[1],e->ext->fmt->streams[donor],DTS_MATCH_MAX)<0) { match_disarm(e); return -1; }
   e->fmt->streams[best]->discard=AVDISCARD_DEFAULT;
+  if(shared && !check && !e->mt_main_pref) {
+    int a=match_alt_same(e,best);
+    if(a>=0 && match_side_open(&mc->s[2],e->fmt->streams[a],DTS_MATCH_MAX)==0) {
+      char la[16]="";
+      mc->alt_stream=a; mc->alt_same=1; e->fmt->streams[a]->discard=AVDISCARD_DEFAULT;
+      copy_metadata(la,sizeof la,e->fmt->streams[a]->metadata,"language");
+      printf("[ext-audio] match: also trying this file's track %d (%s %s), the same language\n",a,
+             avcodec_get_name(e->fmt->streams[a]->codecpar->codec_id),la[0]?la:"-");
+    }
+  }
   if(!shared && !check && !e->mt_main_pref) {
     int a=match_alt(e,best);
     if(a>=0 && match_side_open(&mc->s[2],e->fmt->streams[a],DTS_MATCH_MAX)==0) {
