@@ -405,6 +405,47 @@ static void avplay(void) {
   memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
   assert(escrever_em(&j, "erro", "fingerprint", FT_TOKEN, fp));
 }
+// Os valores fixos de linha[].k que os produtores reais gravam no anel
+// (grep de farol_ev nas branches farol-10 e farol-7): FE_ADDON_BUSCA com
+// "busca" (addons.c), FE_FONTE_PROXIMA com "proxima" (streams.c),
+// FE_MEM_BAIXA com "mem_baixa" (memlog.c) e FE_ABRIR com "mpv"
+// (player.c sob NV_DESKTOP_MPV). Os quatro saem com "k" no JSON; um token
+// valido fora da lista fechada segue recusado.
+static void linha_k(void) {
+  FarolJson j; char buf[2048], esperado[64]; int i;
+  const char *casos[][3] = {
+    {"addon", "addon_busca", "busca"},
+    {"fonte", "fonte_proxima", "proxima"},
+    {"memoria", "mem_baixa", "mem_baixa"},
+    {"player", "abrir", "mpv"}};
+  for (size_t k = 0; k < sizeof casos / sizeof *casos; k++) {
+    memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+    assert(farolredator_abrir(&j, buf, sizeof buf));
+    assert(farolredator_array(&j, "linha"));
+    assert(farolredator_objeto(&j, NULL));
+    i = 0; assert(farolredator_campo(&j, "t", FT_INT, &i));
+    assert(farolredator_campo(&j, "m", FT_ENUM, casos[k][0]));
+    assert(farolredator_campo(&j, "e", FT_ENUM, casos[k][1]));
+    i = 1; assert(farolredator_campo(&j, "a", FT_INT, &i));
+    assert(farolredator_campo(&j, "k", FT_TOKEN, casos[k][2]));
+    while (j.prof) assert(farolredator_fechar(&j));
+    assert(j.campos_recusados == 0);
+    snprintf(esperado, sizeof esperado, "\"k\":\"%s\"", casos[k][2]);
+    assert(strstr(buf, esperado));
+    json_valido(buf); seguro(buf);
+  }
+  // Token com alfabeto valido mas fora da lista: recusado, nao vira "x".
+  memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+  assert(farolredator_abrir(&j, buf, sizeof buf));
+  assert(farolredator_array(&j, "linha"));
+  assert(farolredator_objeto(&j, NULL));
+  i = 0; assert(farolredator_campo(&j, "t", FT_INT, &i));
+  assert(farolredator_campo(&j, "m", FT_ENUM, "addon"));
+  assert(farolredator_campo(&j, "e", FT_ENUM, "addon_busca"));
+  assert(!farolredator_campo(&j, "k", FT_TOKEN, "titulo_livre"));
+  while (j.prof) assert(farolredator_fechar(&j));
+  assert(j.campos_recusados == 1 && !strstr(buf, "titulo_livre"));
+}
 static void pacote_dourado(void) {
   FarolJson j; char buf[FAROL_JSON_N], esperado[FAROL_JSON_N + 16];
   int i; double d; FILE *f; size_t n;
@@ -559,7 +600,7 @@ static void pacote_dourado(void) {
   assert(!strcmp(buf, esperado));
 }
 int main(void) {
-  pacote(); tokens(); hashes(); colisoes(); codigos(); avplay(); pacote_dourado(); limites();
-  puts("farol_redator: schema, canarios, tokens, hash, colisoes, codigos, avplay, dourado e limites ok");
+  pacote(); tokens(); hashes(); colisoes(); codigos(); avplay(); linha_k(); pacote_dourado(); limites();
+  puts("farol_redator: schema, canarios, tokens, hash, colisoes, codigos, avplay, linha_k, dourado e limites ok");
   return 0;
 }

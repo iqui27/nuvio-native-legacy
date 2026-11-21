@@ -257,7 +257,15 @@ static int token_fonte(const char *s) {
   return 1;
 }
 static int token_seguro(const char *s) {
-  if (lista(s, "x|starfish|avplay|tpk|media3|dns|tls|prazo|recusa|sem_plano|fora_cache|2160p_hdr_dv_eac3")) return 1;
+  // Alem dos codigos nativos, do pseudonimo h: e do token composto da fonte,
+  // a lista fechada tem os valores FIXOS de linha[].k que os produtores
+  // emitem (grep de farol_ev nas branches farol-10 e farol-7): busca
+  // (FE_ADDON_BUSCA, addons.c), proxima (FE_FONTE_PROXIMA, streams.c),
+  // mem_baixa (FE_MEM_BAIXA, memlog.c), mpv (FE_ABRIR sob NV_DESKTOP_MPV,
+  // player.c), dns/tls/prazo/recusa (FE_REDE_ESTADO, redesaude.c),
+  // recusa/sem_plano/fora_cache (FE_DEBRID, debrid.c) e os backends
+  // starfish/avplay/tpk/media3 (FE_ABRIR, player.c).
+  if (lista(s, "x|starfish|avplay|tpk|media3|mpv|dns|tls|prazo|recusa|sem_plano|fora_cache|busca|proxima|mem_baixa|2160p_hdr_dv_eac3")) return 1;
   if (!strncmp(s, "h:", 2)) return hexval(s + 2, 8, 8);
   if (farolnativo_cod_ok(s)) return 1;
   if (token_fonte(s)) return 1;
