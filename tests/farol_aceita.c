@@ -1,6 +1,6 @@
 // Farol — faroltexto_aceita() filtra o texto livre "x" da cena (PLANO-GOSTO
-// 4.1, issue 35). Roda a funcao de producao de src/faroltexto.c sobre 72
-// frases boas e 81 ruins, uma de cada trava: largura, 3a linha, UTF-8
+// 4.1, issue 35). Roda a funcao de producao de src/faroltexto.c sobre 74
+// frases boas e 89 ruins, uma de cada trava: largura, 3a linha, UTF-8
 // quebrado, controle, URL, emoji e cada palavra da lista "nunca diz" do
 // ALMA 2 — em pt e em en, com e sem acento.
 //
@@ -110,6 +110,8 @@ int main(void) {
   BOM("今夜の候補は○で印をつけました。");            // ○ textual, nao emoji (U+25CB)
   BOM("Marque ○ ou ● no quadro de hoje.");            // formas sem apresentacao emoji
   BOM("A resenha diz «imperdível».");                 // aspas angulares sao separador
+  BOM("O título é ⸯHello.");                          // U+2E2F e letra (Lm), nao separador
+  BOM("Use apenas o sinal 123://");                   // sem letra nao ha esquema
 
   // ------------------------------- 60 ruins ------------------------------
   RUIM(NULL);                                          // nada
@@ -210,10 +212,23 @@ int main(void) {
   RUIM("¡Hello! Uma sugestão para hoje.");
   RUIM("¿Hello! Uma sugestão para hoje.");
   RUIM("Veja rtsp2://servidor/filme.");                   // esquema que termina em digito
+  // pontuacao de abertura nao protege o esquema: a faixa [a-z0-9+.-]
+  // inteira conta — "...ftp://" e "-ftp://" sao URL do mesmo jeito
+  RUIM("Veja (...ftp://servidor/filme).");
+  RUIM("Veja (-ftp://servidor/filme).");
+  RUIM("Veja (...rtsp2://servidor/filme).");
+  // o circulo textual e separador, nao letra: nao esconde dominio,
+  // "www." nem saudacao entre os dois circulos
+  RUIM("候補はこちら：○exemplo.com○");
+  RUIM("候補はこちら：○www.exemplo.org○");
+  RUIM("候補はこちら：○Hello!○");
+  // pontuacao arabe tambem e separador
+  RUIM("شاهد هنا،www.exemplo.com، ثم اختر.");
+  RUIM("هل نجرب؟Hello! الفيلم جاهز.");
 
   printf("farol_aceita: %d boas aceitas, %d ruins recusadas", boas, ruins);
-  if (boas != 72 || ruins != 81) {
-    printf(" — ERRO: esperado 72+81\n");
+  if (boas != 74 || ruins != 89) {
+    printf(" — ERRO: esperado 74+89\n");
     return 1;
   }
   if (falhas) { printf(" — %d falha(s)\n", falhas); return 1; }

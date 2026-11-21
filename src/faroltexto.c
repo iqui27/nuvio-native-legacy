@@ -80,8 +80,38 @@ static int ft_pontuacao(long cp) {
   // reabririam URL e saudacao entre aspas. ª º µ ficam de fora: sao letras.
   if (cp >= 0xA1 && cp <= 0xBF)
     return cp != 0xAA && cp != 0xB5 && cp != 0xBA;
-  return (cp >= 0x2000 && cp <= 0x206F) ||    // pontuacao geral (— … ‐ ‹ › „ “” ZWSP)
-         (cp >= 0x2E00 && cp <= 0x2E7F) ||    // pontuacao suplementar
+  // As formas geometricas que ft_emoji libera (○ □ ● △ — ○ e ate marcador
+  // de opcao no japones) entram como texto, mas nao sao letra: valem como
+  // separador, senao "○exemplo.com○" escondia dominio, "www." e saudacao.
+  if (cp >= 0x25A0 && cp <= 0x25FF) return 1;
+  return (cp >= 0x055A && cp <= 0x055F) ||    // armenio: marcas e enfase
+         (cp >= 0x0589 && cp <= 0x058A) ||    // armenio: ponto e hifen
+         cp == 0x05BE || cp == 0x05C0 ||      // hebraico: maqaf, paseq e finais
+         cp == 0x05C3 || cp == 0x05C6 ||
+         (cp >= 0x0609 && cp <= 0x060A) ||    // arabe: sinais pequenos
+         (cp >= 0x060C && cp <= 0x060D) ||    // arabe: virgula e data
+         cp == 0x061B ||                      // arabe: ponto e virgula
+         (cp >= 0x061D && cp <= 0x061F) ||    // arabe: fim de texto e interrogacao
+         (cp >= 0x066A && cp <= 0x066C) ||    // arabe: %, decimal e milhares
+         cp == 0x06D4 ||                      // arabe: ponto final
+         (cp >= 0x0700 && cp <= 0x070D) ||    // siriaco
+         (cp >= 0x0964 && cp <= 0x0965) ||    // devanagari: dandas
+         cp == 0x0970 ||                      // devanagari: abreviacao
+         (cp >= 0x104A && cp <= 0x104F) ||    // myanmar
+         cp == 0x10FB ||                      // georgiano
+         (cp >= 0x1360 && cp <= 0x1368) ||    // etiopico
+         cp == 0x166E ||                      // silabario canadense
+         (cp >= 0x16EB && cp <= 0x16ED) ||    // runico
+         (cp >= 0x1735 && cp <= 0x1736) ||    // filipino
+         (cp >= 0x17D4 && cp <= 0x17D6) ||    // khmer
+         (cp >= 0x17D8 && cp <= 0x17DA) ||
+         (cp >= 0x1800 && cp <= 0x180A) ||    // mongol
+         (cp >= 0x1944 && cp <= 0x1945) ||    // limbu
+         (cp >= 0x2000 && cp <= 0x206F) ||    // pontuacao geral (— … ‐ ‹ › „ “” ZWSP)
+         // pontuacao suplementar; U+2E2F fica de fora: e letra (Lm, til
+         // vertical da lexicografia), se pesasse como separador abriria
+         // fronteira onde o pai nao abria
+         (cp >= 0x2E00 && cp <= 0x2E7F && cp != 0x2E2F) ||
          (cp >= 0x3001 && cp <= 0x303F) ||    // pontuacao CJK (、。〈〉「」『』)
          (cp >= 0xFE10 && cp <= 0xFE1F) ||    // pontuacao vertical
          (cp >= 0xFE30 && cp <= 0xFE6F) ||    // CJK de apresentacao + pequenas
@@ -199,13 +229,20 @@ static int ft_tem_url(const char *d) {
     ".dev", ".info", ".xyz", ".co", ".site", ".online", ".link",
   };
   for (const char *p = d; (p = ft_str(p, "://")); p += 3) {
-    // esquema = letra + letras/digitos/+-. : "rtsp2://" conta, "://" solto
-    // e "123://" nao (sem a letra de abertura nao e esquema — RFC 3986)
+    // esquema = a faixa [a-z0-9+.-] imediatamente antes de "://", desde
+    // que traga ao menos uma letra: "rtsp2://", "s3://" e "a+b.2-3://"
+    // contam, e "(...ftp://" ou "(-ftp://" tambem — os pontos e o hifen
+    // de abertura fazem parte da mesma faixa, nao protegem o esquema.
+    // "://" solto e "123://" nao caem: sem letra nao ha esquema (RFC 3986).
     const char *q = p;
+    int letra = 0;
     while (q != d && ((q[-1] >= 'a' && q[-1] <= 'z') ||
                       (q[-1] >= '0' && q[-1] <= '9') ||
-                      q[-1] == '+' || q[-1] == '-' || q[-1] == '.')) q--;
-    if (q != p && *q >= 'a' && *q <= 'z') return 1;
+                      q[-1] == '+' || q[-1] == '-' || q[-1] == '.')) {
+      letra |= q[-1] >= 'a' && q[-1] <= 'z';
+      q--;
+    }
+    if (letra) return 1;
   }
   for (const char *p = d; (p = ft_str(p, "www.")); p += 4)
     if (p == d || !ft_letra(p[-1])) return 1;

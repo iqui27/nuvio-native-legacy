@@ -102,7 +102,20 @@ static int ft_branco(long cp) {
 static int ft_pontuacao(long cp) {
   if (cp >= 0xA1 && cp <= 0xBF)
     return cp != 0xAA && cp != 0xB5 && cp != 0xBA;
-  return (cp >= 0x2000 && cp <= 0x206F) || (cp >= 0x2E00 && cp <= 0x2E7F) ||
+  if (cp >= 0x25A0 && cp <= 0x25FF) return 1;
+  return (cp >= 0x055A && cp <= 0x055F) || (cp >= 0x0589 && cp <= 0x058A) ||
+         cp == 0x05BE || cp == 0x05C0 || cp == 0x05C3 || cp == 0x05C6 ||
+         (cp >= 0x0609 && cp <= 0x060A) || (cp >= 0x060C && cp <= 0x060D) ||
+         cp == 0x061B || (cp >= 0x061D && cp <= 0x061F) ||
+         (cp >= 0x066A && cp <= 0x066C) || cp == 0x06D4 ||
+         (cp >= 0x0700 && cp <= 0x070D) || (cp >= 0x0964 && cp <= 0x0965) ||
+         cp == 0x0970 || (cp >= 0x104A && cp <= 0x104F) || cp == 0x10FB ||
+         (cp >= 0x1360 && cp <= 0x1368) || cp == 0x166E ||
+         (cp >= 0x16EB && cp <= 0x16ED) || (cp >= 0x1735 && cp <= 0x1736) ||
+         (cp >= 0x17D4 && cp <= 0x17D6) || (cp >= 0x17D8 && cp <= 0x17DA) ||
+         (cp >= 0x1800 && cp <= 0x180A) || (cp >= 0x1944 && cp <= 0x1945) ||
+         (cp >= 0x2000 && cp <= 0x206F) ||
+         (cp >= 0x2E00 && cp <= 0x2E7F && cp != 0x2E2F) ||
          (cp >= 0x3001 && cp <= 0x303F) || (cp >= 0xFE10 && cp <= 0xFE1F) ||
          (cp >= 0xFE30 && cp <= 0xFE6F) ||
          (cp >= 0xFF01 && cp <= 0xFF0F) || (cp >= 0xFF1A && cp <= 0xFF20) ||
@@ -343,8 +356,11 @@ static void confere_duas_noites_hu(void) {
 // As aspas e a pontuacao latina sao separador, nao letra: « » e ¡ ¿ nao
 // reabrem a fronteira de URL nem de palavra proibida; o circulo textual
 // U+25CB segue fora da lista de emoji (so os pontos com apresentacao emoji
-// do bloco geometrico sao vedados); e o esquema de URL admite digito depois
-// da letra de abertura (rtsp2://).
+// do bloco geometrico sao vedados), mas pesa como separador na dobra —
+// "○exemplo.com○" nao esconde dominio nem saudacao; o esquema de URL e a
+// faixa [a-z0-9+.-] com letra antes de "://" — "...ftp://" e "-ftp://"
+// contam, "://" solto e "123://" nao; a pontuacao arabe (، ؛ ؟) tambem e
+// separador; e U+2E2F (ⸯ, letra Lm) segue letra.
 static void confere_filtro_pontuacao(void) {
   static const struct { const char *s; int ok; } C[] = {
     { "Veja «exemplo.com» para saber mais.", 0 },
@@ -354,9 +370,19 @@ static void confere_filtro_pontuacao(void) {
     { "¿Hello! Uma sugestão para hoje.", 0 },
     { "Veja rtsp2://servidor/filme.", 0 },
     { "Curto para hoje ▪", 0 },
+    { "Veja (...ftp://servidor/filme).", 0 },
+    { "Veja (-ftp://servidor/filme).", 0 },
+    { "Veja (...rtsp2://servidor/filme).", 0 },
+    { "候補はこちら：○exemplo.com○", 0 },
+    { "候補はこちら：○www.exemplo.org○", 0 },
+    { "候補はこちら：○Hello!○", 0 },
+    { "شاهد هنا،www.exemplo.com، ثم اختر.", 0 },
+    { "هل نجرب؟Hello! الفيلم جاهز.", 0 },
     { "今夜の候補は○で印をつけました。", 1 },
     { "A resenha diz «imperdível».", 1 },
     { "O título é Łoi.", 1 },
+    { "O título é ⸯHello.", 1 },
+    { "Use apenas o sinal 123://", 1 },
   };
   for (size_t i = 0; i < sizeof C / sizeof *C; i++)
     if (!!faroltexto_aceita(C[i].s) != C[i].ok) {
