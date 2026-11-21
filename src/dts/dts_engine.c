@@ -3522,13 +3522,17 @@ static int match_arm(DtsEngine *e,int check) {
     }
   }
   if(!shared && !check && !e->mt_main_pref) {
-    int a=match_alt(e,best);
+    int a=match_alt(e,best), same=0;
+    /* No other language in this file (owner's log 21/11: a Polish AVI with
+     * no language tag against a 4K file with three English tracks): another
+     * track of the same one, as with a shared language. */
+    if(a<0) { a=match_alt_same(e,best); same=a>=0; }
     if(a>=0 && match_side_open(&mc->s[2],e->fmt->streams[a],DTS_MATCH_MAX)==0) {
       char la[16]="";
-      mc->alt_stream=a; e->fmt->streams[a]->discard=AVDISCARD_DEFAULT;
+      mc->alt_stream=a; mc->alt_same=same; e->fmt->streams[a]->discard=AVDISCARD_DEFAULT;
       copy_metadata(la,sizeof la,e->fmt->streams[a]->metadata,"language");
-      printf("[ext-audio] match: no shared language, also trying this file's track %d (%s %s)\n",a,
-             avcodec_get_name(e->fmt->streams[a]->codecpar->codec_id),la);
+      printf("[ext-audio] match: no shared language, also trying this file's track %d (%s %s)%s\n",a,
+             avcodec_get_name(e->fmt->streams[a]->codecpar->codec_id),la,same?", the same language":"");
     }
   }
   if(donor!=e->ext_stream) e->ext->fmt->streams[donor]->discard=AVDISCARD_DEFAULT;

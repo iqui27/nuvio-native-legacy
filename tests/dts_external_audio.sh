@@ -217,6 +217,10 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=24000/100
   -map 0:v -map '[st]' -map '[mc]' -c:v libx264 -bf 0 -g 24 -c:a:0 ac3 -b:a:0 96k -c:a:1 eac3 -b:a:1 192k \
   -metadata:s:a:0 language=eng -metadata:s:a:0 title=Stereo -metadata:s:a:1 language=eng -metadata:s:a:1 title="Surround 5.1" \
   -shortest "$TMP/stereo_main.mkv"
+# The other version's English with no language ("und", an AVI without tags):
+# no shared language, and this file has no other language either.
+ffmpeg -hide_banner -loglevel error -i "$TMP/pair_dub.mkv" -map 0:v -map 0:a:0 -c copy \
+  -metadata:s:a:0 language=und "$TMP/und_dub.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=blue:size=32x32:rate=25:duration=116' -i "$TMP/c_pal.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=pol -shortest "$TMP/pal_dub.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=25:duration=120' -i "$TMP/f_ext.wav" \
@@ -255,4 +259,4 @@ ffmpeg -hide_banner -loglevel error -i "$TMP/follow_th.mkv" -map 0 -c copy -meta
   "$TMP/main60.mkv" "$TMP/long.mkv" "$TMP/long_nocues.mkv" "$TMP/match_main.mkv" "$TMP/match_dub.mkv" \
   "$TMP/main.avi" "$TMP/other.avi" "$TMP/other.ts" "$TMP/xvid.avi" "$TMP/film.mkv" \
   "$TMP/cut_main.mkv" "$TMP/cut_dub.mkv" "$TMP/pal_dub.mkv" "$TMP/pair_dub.mkv" \
-  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv" "$TMP/shift_main.mkv" "$TMP/shift_dub.mkv" "$TMP/gap_main.mkv" "$TMP/gap_dub.mkv" "$TMP/two_en.mkv" "$TMP/step_main.mkv" "$TMP/step_dub.mkv" "$TMP/stereo_main.mkv"
+  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv" "$TMP/shift_main.mkv" "$TMP/shift_dub.mkv" "$TMP/gap_main.mkv" "$TMP/gap_dub.mkv" "$TMP/two_en.mkv" "$TMP/step_main.mkv" "$TMP/step_dub.mkv" "$TMP/stereo_main.mkv" "$TMP/und_dub.mkv"

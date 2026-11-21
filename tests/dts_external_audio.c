@@ -230,7 +230,7 @@ static void *wake_when_waiting(void *arg) {
   return NULL;
 }
 int main(int argc, char **argv) {
-  assert(argc == 37);
+  assert(argc == 38);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
@@ -240,7 +240,7 @@ int main(int argc, char **argv) {
   const char *dub_ru = argv[25], *dub_pl = argv[26], *follow_ext_ru = argv[27], *follow_th_pl = argv[28];
   const char *shift_main = argv[29], *shift_dub = argv[30], *gap_main = argv[31], *gap_dub = argv[32], *two_en = argv[33];
   const char *step_main = argv[34], *step_dub = argv[35];
-  const char *stereo_main = argv[36];
+  const char *stereo_main = argv[36], *und_dub = argv[37];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -732,6 +732,18 @@ int main(int argc, char **argv) {
     r = play(e, 0, 0);
     for (int i = 0; i < 200 && !(res = dts_engine_external_match_poll(e, &mi)); i++) usleep(50000);
     fprintf(stderr, "same language, another track: result %d offset %d ms how %d score %d\n", res, mi.offset_ms, mi.how, mi.score);
+    assert(res == 1 && mi.offset_ms > -3240 && mi.offset_ms < -3160 && mi.score >= 40); }
+  dts_engine_destroy(e);
+  /* The same with the other version's track untagged: no shared language,
+   * no other language here, the other English track is tried all the same. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, und_dub, HEADERS, "pl", 0);
+  assert(dts_engine_open(e, stereo_main, HEADERS, -1, 0, 0) == 0);
+  { DtsMatchInfo mi; int res = 0;
+    assert(dts_engine_external_match_arm(e) == 0);
+    r = play(e, 0, 0);
+    for (int i = 0; i < 200 && !(res = dts_engine_external_match_poll(e, &mi)); i++) usleep(50000);
+    fprintf(stderr, "untagged, another track: result %d offset %d ms how %d score %d\n", res, mi.offset_ms, mi.how, mi.score);
     assert(res == 1 && mi.offset_ms > -3240 && mi.offset_ms < -3160 && mi.score >= 40); }
   dts_engine_destroy(e);
   /* Following another cut: the extended picture has 25 s at 60 s the
