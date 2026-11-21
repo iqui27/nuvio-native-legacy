@@ -2969,13 +2969,19 @@ static int varrerTrecho(Fio *f, int i, double tLim) {
         g = garantir(f, wp, o, peek, lim, &p, &disp);
         if (g == 1 && ctam <= MKVASS_VARRE_BLOCO && blocoDaFaixa(f, p, disp) &&
             !relJaColhido(f, cl.pos, (long)(o - dados))) {
-          g = garantir(f, wp, o, cab + ctam, lim, &p, &disp);
-          if (g == 1) {
+          // O tamanho do bloco ja veio do cabecalho EBML: cfim e borda real
+          // DESTE Cluster, nao do seguinte — o teto de limIndefinido vale para
+          // sondar a borda, nao para um bloco identificado. Com lim aqui o
+          // garantir truncaria precisa a 64 KiB e lerBloco leria alem do
+          // Range devolvido. E sem o bloco inteiro na janela, pula sem ler.
+          Off limBloco = clFim > 0 ? clFim : (fim > 0 && cfim > fim ? fim : cfim);
+          g = garantir(f, wp, o, cab + ctam, limBloco, &p, &disp);
+          if (g == 1 && disp >= cab + ctam) {
             if (lerBloco(f, p, cab + ctam, &cl, cueTempo) > 0) blocos++;
             // A primeira fala vai ja; as seguintes no ritmo de MKVASS_ENTREGA_MS.
             if (f->sujo && (!f->primeiraFala || agoraMs() - f->ultEntrega >= MKVASS_ENTREGA_MS))
               entregar(f);
-          } else if (g != 2) { r = g; goto sair; }
+          } else if (g != 1 && g != 2) { r = g; goto sair; }
         } else if (g != 1 && g != 2) { r = g; goto sair; }
       }
       o = cfim;
