@@ -45,11 +45,14 @@ int visto_episodios_item(int indice, const char *imdb, const char *tipo,
 int visto_episodios_ja(const char *imdb, const char *tipo, const VistoPar *pares,
                        int n, int visto, int destinos);
 
-// QUEM QUER SABER de cada lote de episodios marcado/desmarcado na TV (player,
-// folha de episodios, agenda), no fio de quem chamou visto_episodios, antes da
-// rede. Um ouvinte so (a trava de serie, travarede.c); NULL desliga. Ponteiro
-// e nao chamada direta para visto.c continuar compilando sozinho nos testes.
-typedef void (*VistoOuvinte)(const char *imdb, const VistoPar *pares, int n, int visto);
+// QUEM QUER SABER de cada lote de episodios OU titulo marcado/desmarcado na
+// TV (player, folha de episodios, menu do cartaz), no fio de quem chamou,
+// antes da rede. Titulo inteiro chega com pares == NULL e n == 0. Ate 4
+// ouvintes (a trava de serie, travarede.c; os sinais do Farol, farolsinal.c);
+// NULL desliga. Ponteiro e nao chamada direta para visto.c continuar
+// compilando sozinho nos testes.
+typedef void (*VistoOuvinte)(const char *imdb, const char *tipo,
+                             const VistoPar *pares, int n, int visto);
 void visto_ao_marcar(VistoOuvinte fn);
 
 // Whole title (movie or series), persisted before dispatch to every destination.

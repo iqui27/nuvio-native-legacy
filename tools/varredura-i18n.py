@@ -287,6 +287,9 @@ IGNORAR = {
     "confirmada pelo relogio do pipeline", "enviado ao ExoPlayer",
     # mapa.c canonical genre aliases and legauto.c filename stopwords.
     "acción", "ação", "ciencia ficción", "com", "comédia", "fantasía",
+    # farolficha.c: rotulos de tipo que encabecam `genero` do CatItem —
+    # vocabulario de casamento (hash do nome), nunca texto desenhado.
+    "Película", "Seriál", "Émission de TV",
     # Remote schema enum, persistence names and trailer diagnostic gate.
     '"POSTER"', "conta-pend-%s.txt", "perfil-infantil.txt", "escolha-perfil",
     # Room protocol values and notice IDs; UI resolves these to translated text.
