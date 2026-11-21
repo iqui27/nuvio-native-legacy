@@ -2376,10 +2376,11 @@ int  video_conflito_recurso(void) { return conflito; }
 static volatile int janelaVisivel = 1;
 void video_tpk_log_host(const char *linha) {
   if (!linha) return;
-  // "erro ConnectionFailed" vem logo antes do evento 5 (Video.cs).
+  // "erro ConnectionFailed" vem logo antes do evento 5 (Video.cs). A mesma
+  // chamada do host ja entrega o erro por ErroGeracao com o codigo numerico:
+  // o evento do anel sai so por la, para a falha nao entrar duas vezes.
   if (!strncmp(linha, "erro ", 5) && nv_recon_rede_tpk(0, linha)) {
     reconLinhaRede = 1;
-    farolprod_erro(FP_TIZEN_TPK, linha, 0, 0);
   }
   // O player acusa o codec sem lista vazia: mesmo aviso, com a linha de prova.
   // Video.cs loga o nome do enum PlayerError do Tizen.Multimedia, que e
@@ -2387,7 +2388,6 @@ void video_tpk_log_host(const char *linha) {
   if (!strncmp(linha, "erro NotSupportedAudioCodec", 27) || !strncmp(linha, "erro AudioCodecNotSupported", 27)) {
     printf("[audio] TV recusou o audio da fonte: player acusou NotSupportedAudioCodec (faixas da TV=%d)\n", nAudio);
     fflush(stdout);
-    farolprod_erro(FP_TIZEN_TPK, linha, 0, 0);
     // Com a conversao possivel, o fio do app decide (convBombear); sem ela, o
     // aviso de sempre.
     if (!cv.ativo && convPossivel()) naoSupPend = 1;

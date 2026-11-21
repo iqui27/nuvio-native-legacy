@@ -47,26 +47,80 @@ static void chk(const FarolEvento *e, int ev, int sev,
 }
 
 // ======================================================================
-// Android (Media3): o JNI real, como em tests/video_android_retomada.c.
+// Android (Media3): o JNI real e o video_bombear real, sobre a fixture de
+// tests/video_android_retomada.c (JNI falso completo).
 // ======================================================================
 #if defined(TEST_ANDROID)
 
-#include <SDL2/SDL.h>
-// SDL_system.h declara estas so com __ANDROID__ (NDK); no VPS elas ficam sem
-// prototipo — os pontos dirigidos nao as usam, mas a declaracao e exigida.
-void *SDL_AndroidGetJNIEnv(void);
-void *SDL_AndroidGetActivity(void);
-#include "../src/video_android.c"
+#define main retomada_main
+#include "video_android_retomada.c"
+#undef main
+#include <stdatomic.h>
+#include <sched.h>
+#include <stdarg.h>
+#include "farolanel.h"
 
-static unsigned agora;
-Uint32 SDL_GetTicks(void) { return agora; }
-void marco(const char *nome) { (void)nome; }
-void *SDL_AndroidGetJNIEnv(void) { return NULL; }
-void *SDL_AndroidGetActivity(void) { return NULL; }
+const Stream *stream_fonte_reproducao(const char *url, const char *cab) {
+  (void)url; (void)cab; return NULL;
+}
+int stream_kbps(const Stream *s) { (void)s; return 0; }
+
+// Intercalacao deterministica JNI x fio do app (link -Wl,--wrap). O fio do
+// app para DENTRO do classificador ate o callback do Media3 publicar a falha
+// seguinte; o snprintf do JNI escreve erroTxt byte a byte para o TSan ver.
+static pthread_t fio_app;
+static atomic_int passo, escreveu, parserTerminou, armado;
+extern int __real_farolerro_ler(FarolPlat, const char *, int, FarolErro *);
+
+int __wrap_snprintf(char *dst, size_t n, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  int rc;
+  if (dst == erroTxt) {
+    char local[sizeof erroTxt];
+    rc = vsnprintf(local, sizeof local, fmt, ap);
+    if (rc >= 0) {
+      size_t w = (size_t)rc < n ? (size_t)rc + 1 : n;
+      if (w > sizeof local) w = sizeof local;
+      if (atomic_load_explicit(&armado, memory_order_relaxed) &&
+          !pthread_equal(pthread_self(), fio_app)) {
+        for (size_t i = 0; i < w; i++) ((volatile char *)dst)[i] = local[i];
+        atomic_store_explicit(&escreveu, 1, memory_order_relaxed);
+        while (!atomic_load_explicit(&parserTerminou, memory_order_relaxed)) sched_yield();
+      } else memcpy(dst, local, w);
+    }
+  } else {
+    rc = vsnprintf(dst, n, fmt, ap);
+  }
+  va_end(ap);
+  return rc;
+}
+
+int __wrap_farolerro_ler(FarolPlat plat, const char *texto, int codigo, FarolErro *e) {
+  if (atomic_load_explicit(&armado, memory_order_relaxed) &&
+      pthread_equal(pthread_self(), fio_app) &&
+      atomic_exchange_explicit(&passo, 1, memory_order_acq_rel) == 0) {
+    int rc;
+    while (!atomic_load_explicit(&escreveu, memory_order_relaxed)) sched_yield();
+    rc = __real_farolerro_ler(plat, texto, codigo, e);
+    printf("reconexao: codigo da decisao=%d, tok=%s\n", codigo, e->cod);
+    atomic_store_explicit(&parserTerminou, 1, memory_order_relaxed);
+    return rc;
+  }
+  return __real_farolerro_ler(plat, texto, codigo, e);
+}
+
+static void *callbackMedia3(void *unused) {
+  (void)unused;
+  while (atomic_load_explicit(&passo, memory_order_acquire) != 1) sched_yield();
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_ERRO, 2004, 2);
+  return NULL;
+}
 
 int main(void) {
   FarolEvento ev[8];
-  int n;
+  int n, i;
+  fio_app = pthread_self();
   farolanel_zerar();
 
   // "2004 player error:2" — EV_ERRO do Media3 com o renderer de video.
@@ -84,6 +138,72 @@ int main(void) {
   chk(&ev[1], FE_AUDIO_RECUSADO, 2, 0,    0, "m3_audio", "android audio sem decoder");
   chk(&ev[2], FE_ERRO_NATIVO,    2, 2000, 1, "m3_2000", "android erro 2000");
   chk(&ev[3], FE_ERRO_NATIVO,    2, 3001, 2, "m3_3001", "android erro 3001");
+
+  // Falha 2002 pendente e o JNI entregando 2004 no meio da classificacao:
+  // o token da retentativa tem de ser o da falha que disparou a decisao.
+  {
+    pthread_t media3;
+    farolanel_zerar();
+    nv_recon_zerar(&recon);
+    falhou = 0; bufferando = 0; pausaPedida = 0; prontoLoad = 0;
+    reconPermitida = 1; reconIniciou = 1;
+    snprintf(urlAtual, sizeof urlAtual, "%s", "http://example.invalid/test.mp4");
+    // Mesma publicacao do JNI, pelos campos compartilhados (serve nas duas
+    // versoes do backend: antes e depois da trava de erroTxt).
+    reconErroCod = 2002; snprintf(erroTxt, sizeof erroTxt, "2002 player error:2");
+    reconErroPend = 1;
+    atomic_store(&armado, 1);
+    if (pthread_create(&media3, NULL, callbackMedia3, NULL) != 0) return 2;
+    video_bombear();
+    pthread_join(media3, NULL);
+    atomic_store(&armado, 0);
+  }
+  n = farolanel_ler(ev, (int)(sizeof ev / sizeof ev[0]), 0);
+  {
+    int recon = 0, erro2004 = 0;
+    for (i = 0; i < n; i++) {
+      if (ev[i].ev == FE_RECONEXAO) {
+        recon++;
+        chk(&ev[i], FE_RECONEXAO, 1, 1, (int32_t)nv_recon_espera_ms(1),
+            "m3_2002", "android retentativa parada na falha certa");
+      }
+      if (ev[i].ev == FE_ERRO_NATIVO && !strcmp(ev[i].tok, "m3_2004")) {
+        erro2004++;
+        chk(&ev[i], FE_ERRO_NATIVO, 2, 2004, 2, "m3_2004", "android erro 2004 do JNI");
+      }
+    }
+    if (recon != 1 || erro2004 != 1) {
+      fprintf(stderr, "farol_produtores_tv [android]: %d recon / %d erro 2004 (esperava 1/1)\n",
+              recon, erro2004);
+      falhos++;
+    }
+  }
+
+  // O prazo da retentativa estoura dentro do video_bombear real:
+  // "2002 player error: recovery timeout" tem de sair uma vez, no ponto real.
+  farolanel_zerar();
+  falhou = 0; prontoLoad = 0; bufferando = 0;
+  recon.tentativa = 1; recon.pendente = 0; recon.esgotou = 0; recon.abriu = relogio;
+  relogio += NV_RECON_PRAZO_MS + 1;
+  video_bombear();
+  n = farolanel_ler(ev, (int)(sizeof ev / sizeof ev[0]), 0);
+  if (n != 2) { fprintf(stderr, "farol_produtores_tv [android]: %d eventos no recovery timeout, esperava 2\n", n); return 1; }
+  chk(&ev[0], FE_ERRO_NATIVO, 2, 2002, 0, "m3_parado", "android recovery timeout");
+  chk(&ev[1], FE_RECONEXAO,   1, 2, (int32_t)nv_recon_espera_ms(2), "m3_parado", "android retentativa do prazo");
+
+  // VOD parada em silencio (sem erro do Media3): "stalled download".
+  farolanel_zerar();
+  nv_recon_zerar(&recon);
+  falhou = 0; pausaPedida = 0;
+  reconPermitida = 1; reconIniciou = 1;
+  bufferando = 1; bufferDesde = relogio;
+  relogio += NV_RECON_PRAZO_MS + 1;
+  video_bombear();
+  n = farolanel_ler(ev, (int)(sizeof ev / sizeof ev[0]), 0);
+  if (n != 2) { fprintf(stderr, "farol_produtores_tv [android]: %d eventos no stalled, esperava 2\n", n); return 1; }
+  chk(&ev[0], FE_ERRO_NATIVO, 2, 2002, 0, "m3_parado", "android stalled download");
+  chk(&ev[1], FE_RECONEXAO,   1, 1, (int32_t)nv_recon_espera_ms(1), "m3_parado", "android retentativa do stalled");
+
   if (falhos) return 1;
   puts("farol_produtores_tv: android ok");
   return 0;
@@ -95,45 +215,96 @@ int main(void) {
 // ======================================================================
 #elif defined(TEST_TPK)
 
-#include "../src/video_tpk.c"
+#define main tpk_preso_main
+#include "tpk-preso.c"
+#undef main
+#include "farolanel.h"
 
-static unsigned agora;
-Uint32 SDL_GetTicks(void) { return agora; }
-void marco(const char *nome) { (void)nome; }
-void vel_log(int cent, const char *estado) { (void)cent; (void)estado; }
-int proxyts_e_url(const char *url) { (void)url; return 0; }
-int dts_tpk_e_url(const char *url) { (void)url; return 0; }
-int dts_tpk_disponivel(void) { return 0; }
-int ajustes_dts_tpk_modo(void) { return DTSTPK_DESLIGADO; }
-double dts_tpk_duracao(void) { return 0.0; }
-double dts_tpk_inicio_stream(void) { return 0.0; }
+// A arvore de integracao liga a escolha regional de audio (audioescolha.c).
+int ling_prefere_regional(const char *pref) { (void)pref; return 0; }
+int ling_afinidade(const char *cod, const char *pref) { (void)cod; (void)pref; return 0; }
+
+static unsigned geracao;
+static void abrir_geracao(const char *url, const char *cab, unsigned ger) {
+  abrir(url, cab);
+  geracao = ger;
+}
+
+// Um unico ErrorOccurred do Video.cs: a linha de log E o ErroGeracao da
+// mesma falha. O anel tem de guardar UM evento de erro — o que chega pelo
+// caminho da geracao, com o codigo numerico — nao um por canal.
+static int verificar(const char *linha, int codigo, int tipo, const char *token,
+                     int aEsperado, const char *onde) {
+  FarolEvento ev[8];
+  int n, i, erros = 0, recons = 0;
+  video_definir_mp4(1);
+  video_definir_reconexao(1);
+  if (!video_tocar("http://test/movie")) return 2;
+  prontoHost(); posicao = 12000; passo(1);
+  farolanel_zerar();
+  if (!geracao) return 2;
+  // A ordem real: Log("erro ...") antes de ErroGeracao(geracao, codigo, 0).
+  video_tpk_log_host(linha);
+  nv_tpk_video_erro_geracao(geracao, codigo, 0);
+  passo(1);
+  n = farolanel_ler(ev, (int)(sizeof ev / sizeof ev[0]), 0);
+  for (i = 0; i < n; i++) {
+    printf("  ev=%d a=%d b=%d tok=%s\n", ev[i].ev, (int)ev[i].a, (int)ev[i].b, ev[i].tok);
+    if (ev[i].ev == tipo && !strcmp(ev[i].tok, token)) {
+      erros++;
+      chk(&ev[i], tipo, 2, aEsperado, 0, token, onde);
+    }
+    if (ev[i].ev == FE_RECONEXAO) {
+      recons++;
+      chk(&ev[i], FE_RECONEXAO, 1, 1, (int32_t)nv_recon_espera_ms(1), token, onde);
+    }
+  }
+  if (erros != 1) {
+    fprintf(stderr, "farol_produtores_tv [tpk]: %s deu %d eventos da falha (esperava 1)\n",
+            onde, erros);
+    falhos++;
+  }
+  video_parar();
+  return recons;
+}
 
 int main(void) {
   FarolEvento ev[8];
   int n;
+  nv_tpk_video_registrar(abrir, parar, pausar, buscar, NULL, NULL, pos);
+  nv_tpk_video_registrar_geracao(abrir_geracao);
+
+  // Rede: "erro ConnectionFailed" + ErroGeracao 0xFE6C0026 — um evento de
+  // erro so, com o codigo nativo; a retentativa legitima continua saindo.
+  if (verificar("erro ConnectionFailed", (int)0xFE6C0026u,
+                FE_ERRO_NATIVO, "tpk_conexao", (int32_t)0xFE6C0026,
+                "tpk conexao") != 1) {
+    fprintf(stderr, "farol_produtores_tv [tpk]: reconexao legitima ausente\n");
+    falhos++;
+  }
+  // Audio: "erro AudioCodecNotSupported" + ErroGeracao 0xFE6C002E — um
+  // FE_AUDIO_RECUSADO so (nao e erro de rede: sem retentativa).
+  if (verificar("erro AudioCodecNotSupported", (int)0xFE6C002Eu,
+                FE_AUDIO_RECUSADO, "tpk_audio", (int32_t)0xFE6C002E,
+                "tpk audio") != 0) {
+    fprintf(stderr, "farol_produtores_tv [tpk]: retentativa indevida no audio\n");
+    falhos++;
+  }
+
+  // Conflito de recurso (so existe a linha de texto, sem geracao) e o
+  // relogio congelado seguem entrando uma vez cada.
+  video_definir_mp4(1); video_definir_reconexao(1);
+  if (!video_tocar("http://test/movie")) return 2;
+  prontoHost(); posicao = 12000; passo(1);
   farolanel_zerar();
-  ativo = 1;   // o host .NET so entrega eventos com a sessao aberta
-
-  // A linha de texto que o host loga ANTES do evento nativo (Video.cs).
-  video_tpk_log_host("erro ConnectionFailed");
-  // O EV_ERRO com o inteiro do Tizen.Multimedia.Player chega logo depois —
-  // sao duas observacoes reais do mesmo problema, e o anel guarda as duas.
-  nv_tpk_video_evento(EV_ERRO, (int)0xFE6C0026, 0);
-  reconErroPend = 0;   // o quadro consumiria o pendente; aqui mede-se so o anel
-  // A recusa do codec de audio: "erro AudioCodecNotSupported" do enum real.
-  video_tpk_log_host("erro AudioCodecNotSupported");
-  // Outro app toma o video da TV (so na janela visivel, e so uma vez).
   video_tpk_log_host("interrompido: ResourceConflict");
-  // O relogio congelado 15 s em Playing: vigiarPlayer chama recuperarPlayer.
   recuperarPlayer(-1);
-
   n = farolanel_ler(ev, (int)(sizeof ev / sizeof ev[0]), 0);
-  if (n != 5) { fprintf(stderr, "farol_produtores_tv [tpk]: %d eventos, esperava 5\n", n); return 1; }
-  chk(&ev[0], FE_ERRO_NATIVO,    2, 0,               0, "tpk_conexao", "tpk linha rede");
-  chk(&ev[1], FE_ERRO_NATIVO,    2, (int32_t)0xFE6C0026, 0, "tpk_conexao", "tpk EV_ERRO");
-  chk(&ev[2], FE_AUDIO_RECUSADO, 2, 0,               0, "tpk_audio",   "tpk audio recusado");
-  chk(&ev[3], FE_ERRO_NATIVO,    2, 0,               0, "tpk_conflito","tpk resource conflict");
-  chk(&ev[4], FE_ERRO_NATIVO,    2, -2,              0, "tpk_preso",   "tpk relogio congelado");
+  if (n != 2) { fprintf(stderr, "farol_produtores_tv [tpk]: %d eventos, esperava 2\n", n); return 1; }
+  chk(&ev[0], FE_ERRO_NATIVO, 2, 0,  0, "tpk_conflito", "tpk resource conflict");
+  chk(&ev[1], FE_ERRO_NATIVO, 2, -2, 0, "tpk_preso",    "tpk relogio congelado");
+  video_parar();
+
   if (falhos) return 1;
   puts("farol_produtores_tv: tpk ok");
   return 0;
@@ -171,6 +342,18 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
 double mkv_creditos_nomeados(const MkvCap *caps, int n) { (void)caps; (void)n; return 0.0; }
 double mkv_creditos_ultimo(const MkvCap *caps, int n) { (void)caps; (void)n; return 0.0; }
 void capmkv_aplicar(const MkvCap *caps, int n) { (void)caps; (void)n; }
+// A arvore de integracao liga o painel de informacoes (js.c/vazao.c): o teste
+// nao abre o painel, os simbolos so precisam existir.
+int js_texto(const char *ini, const char *fim, const char *chave,
+             char *dst, size_t tam) {
+  (void)ini; (void)fim; (void)chave; (void)dst; (void)tam; return 0;
+}
+double js_num(const char *ini, const char *fim, const char *chave, double padrao) {
+  (void)ini; (void)fim; (void)chave; return padrao;
+}
+int vazao_host_publico(const char *url, char *dst, size_t n) {
+  (void)url; if (dst && n) dst[0] = 0; return 0;
+}
 
 // O fio de teste E o fio principal: avChamar executa o pedido na hora.
 int emscripten_is_main_browser_thread(void) { return 1; }
@@ -207,7 +390,7 @@ double nv_av(const char *cmd, const char *txt, double a, double b,
 
 int main(void) {
   FarolEvento ev[8];
-  int n;
+  int n, i;
   farolanel_zerar();
   memset(estadoAv, 0, sizeof estadoAv);
 
@@ -251,6 +434,35 @@ int main(void) {
   if (n != 4) { fprintf(stderr, "farol_produtores_tv [tizen]: %d eventos na 2a queda, esperava 4\n", n); return 1; }
   chk(&ev[2], FE_ERRO_NATIVO, 2, 0, 0, "av_conexao", "tizen onerror 2");
   chk(&ev[3], FE_RECONEXAO,   1, 2, (int32_t)nv_recon_espera_ms(2), "av_conexao", "tizen retentativa 2");
+
+  // O prazo da recuperacao estoura dentro do video_bombear real: a sessao
+  // reaberta pela espera nunca fica pronta (a rede continua morta).
+  agora += nv_recon_espera_ms(2) + 1;   // vence a espera da 2a tentativa
+  estadoAv[EST_ERRO] = 0;               // a reabertura limpa o erro da sessao
+  estadoAv[EST_PRONTO] = 0; estadoAv[EST_TOCANDO] = 0; estadoAv[EST_BUFPCT] = 0;
+  video_bombear();                      // nv_recon_vencida -> reabrirMesmaFonte
+  farolanel_zerar();
+  agora += 30001;                       // NV_RECON_PRAZO_MS + 1 sem ficar pronto
+  video_bombear();
+  n = farolanel_ler(ev, (int)(sizeof ev / sizeof ev[0]), 0);
+  if (n != 2) { fprintf(stderr, "farol_produtores_tv [tizen]: %d eventos no timeout, esperava 2\n", n); return 1; }
+  chk(&ev[0], FE_ERRO_NATIVO, 2, 0, 0, "av_conexao", "tizen recovery timeout");
+  chk(&ev[1], FE_RECONEXAO,   1, 3, (int32_t)nv_recon_espera_ms(3), "av_conexao", "tizen retentativa do timeout");
+
+  // Mensagem livre do AVPlay com PLAYER_ERROR_ dentro de uma URL: o anel
+  // nao guarda fragmento de texto — so os 11 nomes do enum AVPlayError.
+  farolanel_zerar();
+  erroAvplay = "open: invalid source https://example.invalid/PLAYER_ERROR_CANARIO_CHAVE";
+  logarErro("abrir");
+  n = farolanel_ler(ev, (int)(sizeof ev / sizeof ev[0]), 0);
+  erroAvplay = NULL;
+  if (n != 1) { fprintf(stderr, "farol_produtores_tv [tizen]: %d eventos no canario, esperava 1\n", n); return 1; }
+  chk(&ev[0], FE_ERRO_NATIVO, 2, 0, 0, "av_outro", "tizen canario em URL");
+  for (i = 0; i < n; i++)
+    if (strstr(ev[i].tok, "canario")) {
+      fprintf(stderr, "farol_produtores_tv [tizen]: fragmento de texto livre no anel: \"%s\"\n", ev[i].tok);
+      falhos++;
+    }
 
   if (falhos) return 1;
   puts("farol_produtores_tv: tizen ok");

@@ -12,18 +12,23 @@
 #define NUVIO_FAROLPRODUTOR_H
 
 #include "farolanel.h"
+#include "farolcod.h"
 #include "farolerro.h"
 
 // Erro nativo do player. A TV recusar a faixa de audio vai para
 // FE_AUDIO_RECUSADO (o playbook de audio e outro caminho); todo o resto e
 // FE_ERRO_NATIVO. a = codigo nativo, b = renderer/backend (0 onde o backend
-// nao distingue). Sev 2 = erro.
+// nao distingue). Sev 2 = erro. O tok passa pela barreira do farolcod: a
+// gramatica fechada do farolnativo e a mesma que o redator aceita — um
+// fragmento de texto livre (ex.: pedaco de URL depois de "player_error" numa
+// excecao do AVPlay) vira "<plataforma>_outro", nunca trilha no anel.
 static inline void farolprod_erro(FarolPlat plat, const char *texto,
                                   int nativo, int renderer) {
   FarolErro e;
+  char cod[24];
   farolerro_ler(plat, texto, nativo, &e);
   farol_ev(FM_VIDEO, e.classe == FC_AUDIO ? FE_AUDIO_RECUSADO : FE_ERRO_NATIVO,
-           2, e.nativo, renderer, e.cod);
+           2, e.nativo, renderer, farolcod_anel(&e, plat, cod, sizeof cod));
 }
 
 // Retentativa agendada pelo nv_recon_erro (a = tentativa, b = espera em ms).
@@ -33,8 +38,10 @@ static inline void farolprod_recon(FarolPlat plat, const char *texto,
                                    int nativo, int tentativa,
                                    unsigned esperaMs) {
   FarolErro e;
+  char cod[24];
   farolerro_ler(plat, texto, nativo, &e);
-  farol_ev(FM_VIDEO, FE_RECONEXAO, 1, tentativa, (int32_t)esperaMs, e.cod);
+  farol_ev(FM_VIDEO, FE_RECONEXAO, 1, tentativa, (int32_t)esperaMs,
+           farolcod_anel(&e, plat, cod, sizeof cod));
 }
 
 #endif

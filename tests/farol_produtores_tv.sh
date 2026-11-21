@@ -31,14 +31,26 @@ jdk="${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}"
 jni=(-I"$jdk/include" -I"$jdk/include/linux")
 farol="src/farolerro.c src/farolanel.c src/fontesonda.c"
 
-# Android: o JNI real (nativeEvento) com as cadeias do Media3.
+# Android: o JNI real (nativeEvento) e o video_bombear real sobre a fixture
+# de video_android_retomada.c. Os wraps (--wrap) fazem a entrega do Media3
+# acontecer dentro do classificador do fio do app — a janela da corrida do
+# erroTxt — e exigem o token da falha que disparou a decisao.
 "$ccbin" "${flags[@]}" -Isrc $sdl "${jni[@]}" "${gc[@]}" -DTEST_ANDROID -DNV_ANDROID \
-  tests/farol_produtores_tv.c $farol -lpthread -lm -o "$work/android"
+  -Wl,--wrap=snprintf -Wl,--wrap=farolerro_ler \
+  tests/farol_produtores_tv.c src/capmkv.c src/mkv.c \
+  tests/capmkv_stub.c $farol -lpthread -lm -o "$work/android"
 "$work/android"
 
-# .tpk: as linhas do log do host, o EV_ERRO nativo e recuperarPlayer.
-"$ccbin" "${flags[@]}" -Isrc $sdl "${gc[@]}" -DTEST_TPK -DNV_TPK \
-  tests/farol_produtores_tv.c $farol -lpthread -lm -o "$work/tpk"
+# .tpk: a sequencia real do host (video_tpk_log_host + erro_geracao) dentro do
+# video_bombear real — mesmo harness do tpk-preso — mais recuperarPlayer.
+# (--allow-multiple-definition: os stubs de offset do dts-remux nascem em
+#  tpk-preso.c E em dts_tpk_stub.c — mesmos no-ops, qualquer uma das copias
+#  serve; o tpk-preso.sh ja convive com esse par.)
+"$ccbin" "${flags[@]}" -Isrc $sdl "${gc[@]}" -DTEST_TPK -DNV_TPK -DNV_MKVFIX_SEM_REDE \
+  -Wl,--allow-multiple-definition \
+  tests/farol_produtores_tv.c tests/dts_tpk_stub.c src/mkvfix.c src/velocidade.c \
+  src/video_modo.c src/faixasmkv.c src/audioinfo.c src/audioescolha.c \
+  $farol -lpthread -lm $(sdl2-config --libs) -o "$work/tpk"
 "$work/tpk"
 
 # .wgt: video_tizen.c inteiro com o stub de emscripten.h + nv_av em C no
@@ -66,7 +78,7 @@ test "$(grep -c 'farolprod_erro(' src/video_android.c)" -ge 4
 test "$(grep -c 'farolprod_recon(' src/video_android.c)" -ge 1
 test "$(grep -c 'farolprod_erro(' src/video_tizen.c)" -ge 2
 test "$(grep -c 'farolprod_recon(' src/video_tizen.c)" -ge 3
-test "$(grep -c 'farolprod_erro(' src/video_tpk.c)" -ge 6
+test "$(grep -c 'farolprod_erro(' src/video_tpk.c)" -ge 4
 test "$(grep -c 'farolprod_recon(' src/video_tpk.c)" -ge 1
 
 echo "farol_produtores_tv: tudo ok"
