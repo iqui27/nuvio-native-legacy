@@ -1162,6 +1162,40 @@ int main(void) {
     assert(!strcmp(cat_episodio(0, 0)->vid, "tt13293588:1:1"));
     fakeMetaExterno = 0;
     puts("ok  empate: a lista de arquivos nao ganha nem com a ficha do addon preferida");
+    // SEM ADDON DE METADADOS, a preferencia nao muda nada (#794 volta 3): a
+    // serie cai no provedor geral e publica os 3 episodios, como na base.
+    nFake = 0; nRotas = 0; addonMeta = 0; addonResp = NULL; cineSerie = NULL;
+    fakeMetaExterno = 1;
+    limparCacheMeta();
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    assert(cat_n_episodios(0) == 3);
+    assert(!strcmp(cat_episodio(0, 0)->vid, "tt13293588:1:1"));
+    assert(pediu("cinemeta"));
+    puts("ok  sem addon: a preferencia cai no provedor geral");
+    // "USAR SEMPRE O CINEMETA" desliga a preferencia: com addon instalado o
+    // caminho e o da base — provedor geral consultado e a arbitragem de
+    // sempre, que a lista maior do addon (5 contra 3) vence.
+    addonMeta = 1; addonResp = META_SERIE_ADDON; addonTipo = "/series/";
+    fakeSoCinemeta = 1;
+    limparCacheMeta();
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    assert(cat_n_episodios(0) == 5);
+    assert(pediu("cinemeta"));
+    fakeSoCinemeta = 0;
+    puts("ok  usar sempre o Cinemeta: a preferencia nao pula o provedor geral");
+    // COM UM ADDON QUE RESPONDE a lista e so a dele: nem o Cinemeta nem o
+    // catalogo do Nuvio sao consultados.
+    nPedidos = 0;
+    limparCacheMeta();
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    assert(cat_n_episodios(0) == 5);
+    assert(pediu("addon.test/SEGREDO/meta/series/tt13293588.json"));
+    assert(!pediu("cinemeta") && !pediu("catalog.nuvio"));
+    fakeMetaExterno = 0; addonMeta = 0; addonResp = NULL;
+    puts("ok  addon responde: a lista e so a dele, sem Cinemeta nem Nuvio");
     // EMPATE ACIMA DO TETO: o Cinemeta e a lista de arquivos conhecem os
     // mesmos pares, mas so VIDEOS_MAX sao publicados. A contagem vem do corpo
     // inteiro, e a lista continua a do Cinemeta.

@@ -8518,6 +8518,28 @@ static int publicarEpisodiosPendentes(const char *corpo, int alvoItem,
                                      0, 0, 1);
 }
 
+// #794: a preferencia por metadados externos so pula o provedor geral quando um
+// addon responde para o titulo com uma lista de episodios DE VERDADE. Lista de
+// arquivos nao conta: ela so vale contra a do provedor, e sem esse corpo nao ha
+// com o que arbitrar — ai, como quando nenhum addon responde, o caminho e o da
+// base (provedor geral, com a arbitragem de sempre). Devolve o melhor corpo
+// /meta de addon ou NULL. Cada resposta fica no metaCache de metaDoAddon, entao
+// a consulta seguinte do fluxo nao repete pedido.
+static char *metaExternoDeAddon(const char *serie) {
+  char *melhor = NULL;
+  int melhorN = 0, i, n = addons_n();
+  for (i = 0; i < n; i++) {
+    char *c2 = metaDoAddon(i, "series", serie);
+    int n2, brutos = 0;
+    if (!c2) continue;
+    n2 = metaContarEpisodios(c2, &brutos);
+    if (n2 <= 0 || metaListaDeArquivos(n2, brutos)) { free(c2); continue; }
+    if (n2 > melhorN) { free(melhor); melhor = c2; melhorN = n2; }
+    else free(c2);
+  }
+  return melhor;
+}
+
 // O Cinemeta as vezes conhece MENOS episodios que o addon de metadados do
 // usuario (#174: "Mis muertos tristes" tinha 1 de 4; #175: a serie so estava
 // completa noutra fonte). Pergunta o /meta/series de cada addon ativo que
@@ -9323,35 +9345,42 @@ static void *buscarEps(void *u) {
   // "kitsu"); para o IMDb e o mesmo corte de sempre.
   idbase_copiar(it->imdb, serie, sizeof serie);
 
+  // #794: "usar sempre o Cinemeta" desliga a preferencia pelo addon, e a
+  // preferencia so pula o provedor geral quando um addon de metadados responde
+  // para o titulo com episodios de verdade. Sem addon — ou com o addon
+  // falhando, vazio ou so com lista de arquivos — o caminho e o da base.
+  char *corpoExt = NULL;
+  int externo = ajustes_meta_externo() && !ajustes_meta_so_cinemeta();
   if (viaCatalogo) {
     corpo = strdup(mf.corpo[0]);   // o resto do fio libera `corpo` como sempre
     ehFilme = mf.ehFilme;
-  } else
-  for (ti = 0; ti < nTipos; ti++) {
+  } else {
+  if (externo && !strcmp(tipos[0], "series"))
+    corpoExt = metaExternoDeAddon(serie);
+  for (ti = 0; ti < nTipos && !corpoExt; ti++) {
     char chave[96];
     int ultimo = ti == nTipos - 1;
-    int prefAddon = ajustes_meta_externo();
-    if (prefAddon && !viaCatalogo) {
-      corpo = NULL;
-      ehFilme = strcmp(tipos[ti], "series") != 0;
-      if (ultimo || strcmp(tipos[ti], "series") == 0) break;
-      continue;
-    }
-    metaprov_chave_episodios(chave, sizeof chave, tipos[ti], serie, prefAddon);
+    // A CHAVE DO CACHE LEVA O TIPO. Era so o id, e /meta/movie/tt13293588 e
+    // /meta/series/tt13293588 sao titulos DIFERENTES no Cinemeta: aberto uma
+    // vez como filme, o corpo errado ficava no cache e a abertura seguinte,
+    // ja como serie, lia "meta do cache" com 0 episodios (log 2043).
+    desc_meta_chave(chave, sizeof chave, tipos[ti], serie);
     free(corpo);
     corpo = metaCacheObter(chave);
     marco(corpo ? "episodios: meta do cache" : "episodios: baixando meta");
     if (!corpo) {
-      corpo = metaprov_meta_ficha_episodios(tipos[ti], serie, 25, prefAddon, NULL);
+      corpo = metaprov_meta(tipos[ti], serie, 25, NULL);   // Nuvio, depois Cinemeta
       if (!corpo) { if (ultimo) break; continue; }
       metaCacheGuardar(chave, corpo);
     }
     ehFilme = strcmp(tipos[ti], "series") != 0;
     if (ultimo || desc_meta_tem_temporadas(corpo)) break;
   }
-  if (preCede(meuId)) { metaFontesLiberar(&mf); free(corpo); epConcluir(); return NULL; }
-  int externo = ajustes_meta_externo();
-  if (!corpo && !externo) { metaFontesLiberar(&mf); free(corpo); epConcluir(); return NULL; }
+  // A ficha do addon que respondeu substitui a do provedor geral de ponta a
+  // ponta: elenco, generos, nota, pais e a lista de episodios saem todos dele.
+  if (corpoExt) { corpo = corpoExt; ehFilme = 0; }
+  }
+  if (!corpo || preCede(meuId)) { metaFontesLiberar(&mf); free(corpo); epConcluir(); return NULL; }
   if (nTipos > 1) {
     const char *resolvido = ehFilme ? "movie" : "series";
     printf("[desc] %s: tipo '%s' do catalogo resolvido como '%s' pelo /meta\n",
@@ -9374,16 +9403,24 @@ static void *buscarEps(void *u) {
   if (!ehFilme && viaCatalogo)
     epsDoAddon = episodiosDoCatalogo(alvoItem, it->titulo, serie, &mf, &tp);
   else if (!ehFilme) {
-    int nCine = 0;
-    // #794: com preferencia pelo addon de metadados, nao publica a lista do Cinemeta.
-    if (!externo && corpo) {
-      nCine = publicarEpisodiosPendentes(corpo, alvoItem, it->titulo, &tp);
-      if (nCine >= VIDEOS_MAX) nCine = desc_meta_n_episodios(corpo);
-    }
-    if (corpo) arte_reserva_episodios(serie, corpo);
-    { const char *baseCine = externo ? "{\"meta\":{\"videos\":[]}}" : corpo;
-      if (!baseCine) baseCine = "{\"meta\":{\"videos\":[]}}";
-      epsDoAddon = episodiosDoAddon(alvoItem, serie, it->titulo, baseCine, nCine, aplicar, &tp);
+    // #794: com a preferencia E um addon que respondeu, a lista e a dele,
+    // inteira — nada do provedor geral para publicar antes nem para arbitrar.
+    if (corpoExt) {
+      publicarEpisodiosSubstituir(corpo, alvoItem, it->titulo, NULL,
+                                  DESC_MESCLA_VAZIOS, &tp);
+      arte_reserva_episodios(serie, corpo);
+      epsDoAddon = aplicar;
+    } else {
+    int nCine = publicarEpisodiosPendentes(corpo, alvoItem, it->titulo, &tp);
+    // Temporada e data de cada episodio para a reserva do still: quando o
+    // TMDB divide a serie em outras temporadas (One Piece), e por elas que o
+    // still do TMDB e achado (artereserva.h).
+    arte_reserva_episodios(serie, corpo);
+    // A disputa e de distintos contra distintos, os dois do corpo INTEIRO: o
+    // nCine publicado para em VIDEOS_MAX, e contra ele uma lista com os mesmos
+    // episodios acima do teto "sabia mais" so por nao estar cortada.
+    if (nCine >= VIDEOS_MAX) nCine = desc_meta_n_episodios(corpo);
+    epsDoAddon = episodiosDoAddon(alvoItem, serie, it->titulo, corpo, nCine, aplicar, &tp);
     }
   }
   // O MAPA DE EPISODIOS VISTOS NAO E PEDIDO AQUI, e essa linha existe para dizer

@@ -8574,7 +8574,7 @@ static const char *ajudaOpcaoTv(int op) {
       return "Mostra o botão de trailer na tela do título, quando existe um trailer conhecido.";
 #endif
     case AJ_DET_SO_CINEMETA: return "Desligado (padrão): a ficha do título vem primeiro do add-on em cujo catálogo ele apareceu, com episódios e ids próprios (Kitsu, Xperience, AIOMetadata…), e o catálogo do Nuvio completa o que faltar (o Cinemeta só entra se o catálogo do Nuvio falhar). Ligado: só o catálogo do Nuvio, sem os add-ons.";
-    case AJ_DET_META_EXT: return "Prefere a ficha do addon de metadados à do Cinemeta. Útil quando o seu addon tem sinopse e elenco melhores.";
+    case AJ_DET_META_EXT: return "Usa o addon de metadados como fonte da ficha e dos episódios quando ele responde para o título. Sem addon que responda — ou com \"usar sempre o Cinemeta\" ligado — nada muda.";
     case AJ_DET_DATA_CHEIA: return "Escreve a data de estreia por extenso em vez de só o ano.";
     case AJ_DET_VEU: return "Quanto a vinheta escura cobre a arte na tela do título. Cem por cento é o padrão; zero mostra a arte limpa — o texto pode ficar difícil de ler sobre cenas claras.";
     case AJ_DET_TRAILER_AUTO:
