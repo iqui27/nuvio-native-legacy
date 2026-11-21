@@ -45,6 +45,10 @@
  * fica ligado, o padrao. Fora do ASS_NOVO: sempre 0. */
 int  ass_novo_ligado(void);
 void ass_novo_registrar(int (*f)(void));
+/* Aviso de troca de motor: assrender_motor_invalidar chama _trocar no fim,
+ * sem travas; quem tem faixa aberta registra o redizer com _aviso. */
+void assperf_motor_aviso(void (*f)(void));
+void assperf_motor_trocar(void);
 
 // The person's options (Subtitles > Style on an ASS/SSA track, .tpk):
 enum {

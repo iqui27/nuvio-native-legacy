@@ -22,6 +22,15 @@ static unsigned geracao;
 // inteiro, a cada quadro.
 static double maiorDur;
 static int docAss;   // the current document is ASS/SSA (sob trava)
+/* Copia do documento ASS da faixa aberta (sob trava). A troca de motor ASS
+ * repensa a preferencia "libass" sobre ele: os cues sao re-extraidos (o
+ * letreiro entra ou sai) e o corpo volta ao libass — sem mexer na geracao,
+ * na posicao nem na pausa. */
+static char *corpoDoc;
+static void corpoGuardar(const char *corpo, int ass) {
+  char *c = (corpo && ass) ? strdup(corpo) : NULL;
+  free(corpoDoc); corpoDoc = c;
+}
 
 /* libass off (.tpk, Subtitles > Style): an ASS/SSA track is drawn by the app
  * as plain text, dialogue only (assDialogoSo). A preferencia e do painel do
@@ -34,6 +43,30 @@ static int libassDesligado(void) {
 #else
   return 0;
 #endif
+}
+/* Aviso registrado no assperf (assperf_motor_aviso): dispara no fim de
+ * assrender_motor_invalidar, ja sem as travas do render — pode chamar
+ * assrender_limpar/atualizar. Reextrai os cues e reentrega o documento
+ * guardado ao motor que entrou, sem mexer na geracao: posicao, pausa e o
+ * dono do mkvass ficam. */
+static void motorTrocou(void) {
+  LegendaCue *v=NULL; char *doc; unsigned g; int n, i; double dur=0;
+  pthread_mutex_lock(&trava);
+  doc = (ligada && docAss && corpoDoc) ? strdup(corpoDoc) : NULL;
+  g = geracao;
+  pthread_mutex_unlock(&trava);
+  if (!doc) return;
+  n = legenda_extrair(doc, &v);   // dialogoSo rele a chave do motor que entrou
+  for(i=0;i<n;i++){ double d=v[i].fim-v[i].inicio; if(d>dur)dur=d; }
+  pthread_mutex_lock(&trava);
+  if (ligada && docAss && geracao==g) {
+    free(cues); cues=v; nCues=n; maiorDur=dur; v=NULL;
+  }
+  pthread_mutex_unlock(&trava);
+  free(v);
+  if (libassDesligado()) assrender_limpar();
+  else assrender_atualizar(doc, strlen(doc), g);
+  free(doc);
 }
 /* A sign / typesetting line: positioned, moving, clipped, rotated around an
  * origin or a drawing. Without libass they would be text in the wrong place. */
@@ -862,6 +895,7 @@ static void *baixar(void *u) {
     free(cues);cues=v;nCues=n;maiorDur=dur;v=NULL;docAss=ass;
     aceitarAss=ass ? (libassDesligado() ? 0 : 1) : plain ? 2 : 0;
     assrender_geracao(geracao);
+    corpoGuardar(corpo, ass);
   }
   pthread_mutex_unlock(&trava);
   /* O parser legado continua preenchendo cues para SRT/VTT e para o
@@ -896,6 +930,7 @@ unsigned legenda_carregar_idioma(const char *url, const char *idioma, LegendaBai
   p=calloc(1,sizeof *p);if(!p){ if(pronto)pronto(NULL,0,0,u); return 0; }
   p->pronto=pronto;p->u=u;
   snprintf(p->idioma, sizeof p->idioma, "%s", idioma ? idioma : "");
+  assperf_motor_aviso(motorTrocou);
   pthread_mutex_lock(&trava);
   if (preDownload && !strcmp(preDownload->url, url)) {
     p->pre = preDownload; preDownload = NULL; // transfere a referencia ao pedido
@@ -904,6 +939,7 @@ unsigned legenda_carregar_idioma(const char *url, const char *idioma, LegendaBai
     p->pre = downloadSessao(url);
   }
   ligada=1;p->g=++geracao;free(cues);cues=NULL;nCues=0;maiorDur=0;docAss=0;
+  corpoGuardar(NULL, 0);
   pthread_mutex_unlock(&trava);
   assrender_geracao(p->g);
   assrender_limpar_fontes();
@@ -925,6 +961,7 @@ unsigned legenda_carregar_idioma(const char *url, const char *idioma, LegendaBai
 static unsigned definirCorpo(const char *corpo, int checar, unsigned dono) {
   LegendaCue *v=NULL; int n, i; double dur=0; int ass; unsigned g; char *plain;
   if(!corpo)return 0;
+  assperf_motor_aviso(motorTrocou);
   ass=legenda_eh_ass(corpo);
   n=legenda_extrair(corpo,&v);
   plain = !ass ? documentoTexto(v, n) : NULL;
@@ -932,6 +969,7 @@ static unsigned definirCorpo(const char *corpo, int checar, unsigned dono) {
   pthread_mutex_lock(&trava);
   if(checar && geracao!=dono){ pthread_mutex_unlock(&trava); free(v); free(plain); return 0; }
   ligada=1;geracao++;g=geracao;free(cues);cues=v;nCues=n;maiorDur=dur;docAss=ass;
+  corpoGuardar(corpo, ass);
   pthread_mutex_unlock(&trava);
   assrender_geracao(g);
   assrender_limpar();
@@ -988,12 +1026,18 @@ int legenda_atualizar_corpo_se(const char *corpo, unsigned dono) {
   LegendaCue *v=NULL; int n, i; double dur=0; int ass;
   if(!corpo||!legenda_ligada_em(dono))return 0;
   ass=legenda_eh_ass(corpo);
-  if (pularExtracao(ass, dono)) { assrender_atualizar(corpo, strlen(corpo), dono); return 1; }
+  if (pularExtracao(ass, dono)) {
+    pthread_mutex_lock(&trava);
+    if (ligada && geracao==dono) corpoGuardar(corpo, ass);
+    pthread_mutex_unlock(&trava);
+    assrender_atualizar(corpo, strlen(corpo), dono); return 1;
+  }
   n=legenda_extrair(corpo,&v);
   for(i=0;i<n;i++){ double d=v[i].fim-v[i].inicio; if(d>dur)dur=d; }
   pthread_mutex_lock(&trava);
   if(!ligada||geracao!=dono){ pthread_mutex_unlock(&trava); free(v); return 0; }
   free(cues);cues=v;nCues=n;maiorDur=dur;docAss=ass;
+  corpoGuardar(corpo, ass);
   pthread_mutex_unlock(&trava);
   if (ass && !libassDesligado()) assrender_atualizar(corpo, strlen(corpo), dono);
   return 1;
@@ -1009,12 +1053,18 @@ void legenda_atualizar_corpo(const char *corpo) {
   if(!corpo)return;
   ass=legenda_eh_ass(corpo);
   pthread_mutex_lock(&trava); ok=ligada; g=geracao; pthread_mutex_unlock(&trava);
-  if (ok && pularExtracao(ass, g)) { assrender_atualizar(corpo, strlen(corpo), g); return; }
+  if (ok && pularExtracao(ass, g)) {
+    pthread_mutex_lock(&trava);
+    if (ligada && geracao==g) corpoGuardar(corpo, ass);
+    pthread_mutex_unlock(&trava);
+    assrender_atualizar(corpo, strlen(corpo), g); return;
+  }
   n=legenda_extrair(corpo,&v);
   for(i=0;i<n;i++){ double d=v[i].fim-v[i].inicio; if(d>dur)dur=d; }
   pthread_mutex_lock(&trava);
   ok=ligada;
-  if(ok){ g=geracao; free(cues);cues=v;nCues=n;maiorDur=dur; v=NULL; docAss=ass; }
+  if(ok){ g=geracao; free(cues);cues=v;nCues=n;maiorDur=dur; v=NULL; docAss=ass;
+    corpoGuardar(corpo, ass); }
   pthread_mutex_unlock(&trava);
   if(!ok){ free(v); legenda_definir_corpo(corpo); return; }
   if (ass && !libassDesligado()) assrender_atualizar(corpo, strlen(corpo), g);
@@ -1024,6 +1074,7 @@ void legenda_desligar(void) {
   pthread_mutex_lock(&trava);
   preDescartar(i18n("legenda desligada"));
   ligada=0;geracao++;free(cues);cues=NULL;nCues=0;maiorDur=0;docAss=0;
+  corpoGuardar(NULL, 0);
   pthread_mutex_unlock(&trava);
   assrender_geracao(geracao);
   assrender_limpar_fontes();

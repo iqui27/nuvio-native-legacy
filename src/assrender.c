@@ -144,7 +144,7 @@ typedef struct {
 typedef struct {
   AssCpuImage *images;
   int count;
-  unsigned generation, serial;
+  unsigned generation, serial, epoch;
   size_t bytes;
   long long ms;          // instante (relogio do video) que este quadro mostra
   long long inicioMax;   // maior Start dos eventos vivos em ms; -1 sem evento
@@ -1026,7 +1026,7 @@ static void *ass_worker_loop(void *unused) {
     if (pronto && !assWorkerParar && epoch == assEpoch &&
         generation == __atomic_load_n(&assGeracao, __ATOMIC_ACQUIRE) &&
         generation == assPedidoGeracao) {
-      frame.generation = generation; frame.serial = serial;
+      frame.generation = generation; frame.serial = serial; frame.epoch = epoch;
       assBytesQuadro = frame.bytes;
       ass_fila_publicar_locked(&frame);
       assProduziu = 1; assProduzidoEpoch = epoch; assProduzidoGeracao = generation;
@@ -2045,6 +2045,11 @@ void assrender_motor_invalidar(void) {
   pthread_mutex_lock(&assFilaTrava);
   ++assEpoch;
   assTemUltimoPedido = 0;
+  /* O pedido pendente tambem sai: se o worker o pegasse agora, renderizaria o
+   * instante que o motor que saiu pediu (adiantado na pausa) e o publicaria
+   * com a epoca nova — a fila ganharia de novo a placa futura. Um render em
+   * curso morre sozinho na conferencia de epoca antes de publicar. */
+  assPedidoPendente = 0;
   assTexResetar = 0;
   ass_apagar_texturas_locked();
   ass_frame_liberar(&assAtual); assAtualValido = 0;
@@ -2054,6 +2059,9 @@ void assrender_motor_invalidar(void) {
   ass_tc_apagar();
   assMainResetar = 0;
 #endif
+  /* Fora das travas: o dono da faixa aberta (assperf_motor_aviso) redecide
+   * onde o documento vai — libass ou texto simples — no motor que entrou. */
+  assperf_motor_trocar();
 }
 
 static double ass_mono(void) {
@@ -2238,7 +2246,11 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
    * saem). Sem hold, qualquer um esta devido — o de sempre. */
   { int devido = -1;
     for (i = 0; i < assFilaN; i++) {
-      if (assFila[i].generation != generation) { ass_fila_tirar_locked(i, NULL); i--; continue; }
+      /* Epoca velha (o motor que saiu tinha publicado adiantado, ou um layout/
+       * estilo mudou): o quadro vale para o render de antes, nao para este. */
+      if (assFila[i].generation != generation || assFila[i].epoch != assEpoch) {
+        ass_fila_tirar_locked(i, NULL); i--; continue;
+      }
       if (!segurar || assFila[i].ms <= agora + 8) {
         devido = i;
       }

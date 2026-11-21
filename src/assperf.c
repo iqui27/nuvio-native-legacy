@@ -96,6 +96,20 @@ int ass_novo_ligado(void) {
 #endif
 }
 
+/* Um so aviso por troca de motor: a troca (Ajustes ou .tpk) passa por
+ * assrender_motor_invalidar, que chama assperf_motor_trocar NO FIM, ja sem as
+ * travas do render. legenda.c se registra aqui para redecidir o "libass" da
+ * faixa aberta sem reabri-la. Mora neste modulo porque ele e o elo entre
+ * legenda e assrender — os dois sempre o ligam. */
+static void (*motorAviso)(void);
+void assperf_motor_aviso(void (*f)(void)) {
+  __atomic_store_n(&motorAviso, f, __ATOMIC_RELEASE);
+}
+void assperf_motor_trocar(void) {
+  void (*f)(void) = __atomic_load_n(&motorAviso, __ATOMIC_ACQUIRE);
+  if (f) f();
+}
+
 int assperf_get(int id) {
 #ifdef NV_ASSPERF_TESTE
   return id >= 0 && id < AP_N ? __atomic_load_n(&val[id], __ATOMIC_RELAXED) : 0;
