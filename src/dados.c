@@ -681,21 +681,50 @@ static void uuidSemear(void) {
   uuidSemente = uuidMistura(s);
 }
 
+#if !defined(__EMSCRIPTEN__) && !defined(_WIN32)
+// fork() herda a semente, o estado da once e o contador: com as fontes
+// nativas fora, pai e filho repetiam a mesma sequencia do plano B
+// (regressao apontada na revisao r6 do Farol 10). O handler do filho roda
+// quando so o fio do fork existe, entao a re-semeadura nao corre com
+// ninguem e nao reabre a corrida que a pthread_once fecha (TSan). O
+// contador segue: a semente nova mistura o PID do filho, entao nenhuma
+// entrada do splitmix64 se repete entre os dois processos.
+static void uuidSemearFilho(void) { uuidSemear(); }
+#endif
+
+static void uuidIniciar(void) {
+  uuidSemear();
+#if !defined(__EMSCRIPTEN__) && !defined(_WIN32)
+  pthread_atfork(NULL, NULL, uuidSemearFilho);
+#endif
+}
+
 #if defined(__EMSCRIPTEN__)
 // crypto.getRandomValues com try/catch do lado do JS: se a API falta ou
 // lanca, devolve 0 e a reserva de dados_uuid assume — a excecao nao
 // atravessa a fronteira do WASM como atravessava pelo random_get sincrono
 // do getentropy do SDK (regressao apontada na revisao r5 do Farol 10).
+// A vista tem de ser um Uint8Array local: sob -pthread o HEAPU8 e um
+// SharedArrayBuffer e o Chromium rejeita getRandomValues sobre ele com
+// TypeError, o que derrubava tudo para a reserva no fio principal e no
+// worker (regressao apontada na revisao r6 do Farol 10). Copia para o
+// heap DEPOIS do preenchimento.
 EM_JS(int, nv_uuid_crypto, (unsigned char *b, int n), {
   try {
     var c = globalThis.crypto;
     if (!c || !c.getRandomValues) return 0;
-    c.getRandomValues(HEAPU8.subarray(b, b + n));
+    var t = new Uint8Array(n);
+    c.getRandomValues(t);
+    HEAPU8.set(t, b);
     return 1;
   } catch (e) {
     return 0;
   }
 });
+#endif
+
+#ifndef O_CLOEXEC
+#define O_CLOEXEC 0
 #endif
 
 // Enche b com n bytes de entropia do sistema; 0 se nenhuma fonte serviu.
@@ -723,25 +752,52 @@ static int uuidEntropia(unsigned char *b, size_t n) {
     // e leituras concorrentes sao seguras, entao o open/close sincrono nao
     // volta a custar no fio de UI a cada UUID (ressalva da revisao r5 — so
     // a primeira chamada paga o open).
+    // O_CLOEXEC: sem ele o fd sobrevivia a fork+exec e, se o numero fosse
+    // fechado e reaproveitado (outro dispositivo, arquivo regular), cada
+    // leitura devolia bytes que nao sao entropia e os UUIDs saiam repetidos
+    // (regressao apontada na revisao r6 do Farol 10). Antes de ler, o fstat
+    // confere que o fd continua sendo o char device que abrimos (st_rdev de
+    // /dev/urandom); se nao bater, reabre uma vez e depois cai na reserva.
+    // Nunca se fecha o fd cacheado: um numero invalido ja pode ser de outro.
     static int fdUrandom = -1;
-    int f = __atomic_load_n(&fdUrandom, __ATOMIC_RELAXED);
-    if (f < 0) {
-      int esperado = -1;
-      int novo = open("/dev/urandom", O_RDONLY);
-      if (novo < 0) return 0;
-      if (__atomic_compare_exchange_n(&fdUrandom, &esperado, novo, 0,
-                                      __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
-        f = novo;
-      } else {
-        close(novo);
-        f = esperado;
+    static dev_t fdUrandomRdev;
+    int tentativa;
+    for (tentativa = 0; tentativa < 2 && lidos < n; ++tentativa) {
+      int f = __atomic_load_n(&fdUrandom, __ATOMIC_ACQUIRE);
+      if (f < 0) {
+        struct stat st;
+        int esperado = -1;
+        int novo = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+        if (novo < 0) return 0;
+        if (fstat(novo, &st) != 0 || !S_ISCHR(st.st_mode)) {
+          close(novo);
+          return 0;
+        }
+        fdUrandomRdev = st.st_rdev;
+        if (__atomic_compare_exchange_n(&fdUrandom, &esperado, novo, 0,
+                                        __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+          f = novo;
+        } else {
+          close(novo);
+          f = esperado;
+        }
       }
-    }
-    while (lidos < n) {
-      ssize_t r = read(f, b + lidos, n - lidos);
-      if (r > 0) { lidos += (size_t)r; continue; }
-      if (r < 0 && errno == EINTR) continue;
-      break;
+      {
+        struct stat st;
+        if (fstat(f, &st) != 0 || !S_ISCHR(st.st_mode) ||
+            st.st_rdev != fdUrandomRdev) {
+          int esperado = f;
+          __atomic_compare_exchange_n(&fdUrandom, &esperado, -1, 0,
+                                      __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+          continue;
+        }
+      }
+      while (lidos < n) {
+        ssize_t r = read(f, b + lidos, n - lidos);
+        if (r > 0) { lidos += (size_t)r; continue; }
+        if (r < 0 && errno == EINTR) continue;
+        break;
+      }
     }
   }
   return lidos == n;
@@ -754,7 +810,7 @@ void dados_uuid(char *dst, unsigned tam) {
   unsigned n = 0;
   int i;
   if (tam < 37) { if (tam) dst[0] = 0; return; }
-  pthread_once(&uuidUmaVez, uuidSemear);
+  pthread_once(&uuidUmaVez, uuidIniciar);
   if (!uuidEntropia(b, sizeof b)) {
     // Plano B: semente fixa do processo XOR contador atomico, espalhados por
     // splitmix64 — nunca rand_r de 32 bits. O contador nunca repete a entrada
