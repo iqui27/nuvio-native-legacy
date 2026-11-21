@@ -13,8 +13,9 @@
 #include "partes.h"
 
 #define PC_PEDIDO_NENHUM (-1)
-#define PC_PEDIDO_AGORA  (-2)   // contagem: tocar a parte seguinte ja
+#define PC_PEDIDO_AGORA  (-2)   // contagem: a pessoa pediu a parte seguinte ja
 #define PC_PEDIDO_FICAR  (-3)   // contagem: continuar nesta parte
+#define PC_PEDIDO_VENCEU (-4)   // contagem venceu sozinha: troca quando assentar
 
 void partescartao_contagem(int parteN, int total, Uint32 agora, int contagemSeg);
 void partescartao_arquivos(const PartesLista *l, int atual);

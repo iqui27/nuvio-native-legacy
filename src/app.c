@@ -3082,7 +3082,7 @@ static double parteFimPos = -1;
 static Uint32 parteFimDesde;
 static Uint32 parteProxProntoEm;       // quando o link adiantado da seguinte chegou
 static int parteContagemFeita;         // a contagem desta parte ja subiu
-static int parteForcar;                // "Assistir agora" / fim da contagem: troca ja
+static int parteForcar;                // 1 "Assistir agora": troca ja; 2 contagem vencida: espera a busca
 static int parteSalto = -1, parteSaltoUsaProx;
 static double parteSaltoPos = -1;
 static Uint32 parteSaltoDesde;
@@ -3611,6 +3611,7 @@ static void vigiarPartes(void) {
     { double cred = parteCreditos(d);
       int resp = partescartao_pedido();
       if (resp == PC_PEDIDO_AGORA) { parteForcar = 1; parteFimComo = "countdown"; }
+      else if (resp == PC_PEDIDO_VENCEU) { parteForcar = 2; parteFimComo = "countdown"; }
       if (cred > 0 && pos < cred - 5.0) {
         // Voltou para antes dos creditos: a contagem pode voltar.
         if (partescartao_modo_contagem()) partescartao_fechar();
@@ -3627,6 +3628,16 @@ static void vigiarPartes(void) {
     // Fim de verdade: o fluxo acabou PERTO do fim do arquivo. Um fim de fluxo
     // no meio e queda de rede, que a reconexao do video cuida.
     if (!parteForcar && !parteNoFim(d, pos)) return;
+    // A troca disparada pela contagem (vencida sozinha) espera uma busca ou
+    // reconexao assentar: no .tpk a posicao segurada pela reabertura e a de
+    // antes do pedido, e trocar de arquivo no meio do seek perdia as duas
+    // coisas. O "Assistir agora" da pessoa (parteForcar 1) troca na hora.
+    if (parteForcar == 2 &&
+        (player_buscando() || video_reconectando()
+#ifdef NV_TPK
+         || video_busca_em_voo()
+#endif
+        )) return;
     if (parteProxFase == 0 || parteProxFase == 3) {
       // Fim sem o link (fluxo curto, ou o pedido falhou): pede agora, uma vez.
       if (parteProxFase == 3) {

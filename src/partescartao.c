@@ -71,7 +71,7 @@ void partescartao_atualizar(float dt, Uint32 agora) {
   anim = anim_mola(anim, visivel ? 1.0f : 0.0f, dt, visivel ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
   if (visivel && modo == PC_CONTAGEM && fimEm && (Sint32)(agora - fimEm) >= 0) {
     fimEm = 0;
-    pedido = PC_PEDIDO_AGORA;
+    pedido = PC_PEDIDO_VENCEU;
     visivel = 0;
   }
 }

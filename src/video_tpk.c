@@ -524,7 +524,16 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
     case EV_PRONTO:  durMs = a; pronto = 1; break;
     case EV_TOCANDO: tocando = 1; bufferando = 0; break;
     case EV_PAUSADO: tocando = 0; break;
-    case EV_FIM:     terminou = 1; tocando = 0; break;
+    case EV_FIM:     terminou = 1; tocando = 0;
+                     // Fim real com seek ou reabertura no ar: o alvo pendente e
+                     // a posicao segurada nao pousam mais. Sem soltar aqui o
+                     // app ficava em "busca em voo" para sempre — a guarda de
+                     // fim de parte nunca deixava passar nem um EOS confirmado
+                     // (o retorno cedo do video_bombear barrava ate o limite
+                     // de 60 s do reabrindoVigiar).
+                     cv.reabrindo = 0; cv.seekPend = 0; mf.pend = 0;
+                     reconBuscarMs = -1; atomic_store(&buscaAlvoMs, -1);
+                     break;
     // Sem `falhou` aqui: o video_bombear decide entre reconectar e desistir.
     case EV_ERRO:    atomic_store(&erroDetalhe, (unsigned)a);
                      atomic_store(&temErroDetalhe, 1);
@@ -1824,6 +1833,7 @@ void video_bombear(void) {
     nv_recon_zerar(&recon);
     reconErroPend = 0; reconBuscarMs = reconPausa = -1;
     atomic_store(&playerPreso, -2);
+    reabrindoVigiar();   // o limite de 60 s corre tambem depois do EOS
     return;
   }
   cdnBombear();

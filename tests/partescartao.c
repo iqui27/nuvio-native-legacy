@@ -111,12 +111,17 @@ int main(void) {
   ok(!partescartao_visivel(), "a single-file source shows no row");
   l.n = 4;
 
-  // Contagem da parte seguinte: ao zerar o tempo, pede AGORA (autoplay aqui e
-  // o desenho mesmo); Voltar nela pede FICAR.
+  // Contagem da parte seguinte: ao zerar o tempo, pede VENCEU (troca quando a
+  // busca assentar); o OK da pessoa pede AGORA na hora; Voltar pede FICAR.
   partescartao_contagem(2, 3, 1000, 0);   // seg < 3 -> 10 s
   ok(partescartao_visivel() && partescartao_modo_contagem(), "countdown shows between parts");
   partescartao_atualizar(0.5f, 11000 + 200);
-  ok(partescartao_pedido() == PC_PEDIDO_AGORA, "countdown at zero requests the next part now");
+  ok(partescartao_pedido() == PC_PEDIDO_VENCEU,
+     "countdown at zero asks to switch once the seek settles");
+  partescartao_contagem(2, 3, 1000, 5);
+  e = tecla(SDLK_RETURN);     // foco ja vem em "Assistir agora"
+  ok(partescartao_evento(&e) == 1 && partescartao_pedido() == PC_PEDIDO_AGORA,
+     "the person's OK on the countdown still requests the next part now");
   partescartao_contagem(2, 3, 1000, 5);
   e = tecla(SDLK_ESCAPE);
   ok(partescartao_evento(&e) == 1 && partescartao_pedido() == PC_PEDIDO_FICAR,
