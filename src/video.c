@@ -89,7 +89,7 @@ static atomic_int hlsAudioRequest;   // source audio ordinal plus one, zero when
 enum { HLS_PROBING = 1, HLS_WAITING_FOR_READER };
 static struct {
   int enabled, pending, played, paused, dv7, external, externalTrack;
-  int ordinal, switchingAudio;
+  int ordinal, switchingAudio, resumeSent;
   DtsHlsVideoEnd videoEnd;
   double pos, percent;
   Uint32 started;
@@ -1633,6 +1633,11 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
       posAoCarregar = 0.0;
       video_buscar(alvo);
       dvEntradaSeg = entrada;   // recarga interna: o ponto de partida nao muda
+#ifdef NV_WEBOS_HLS_TEST
+      // HLS starts at the first segment: seek now, before it starts playing
+      // there, and tell the player that the saved position was applied.
+      if (hlsAtivo()) { seekEm = 0; seekAgora(alvo); hls.resumeSent = 1; }
+#endif
       marco("retomado apos queda do pipeline");
     }
     // O pipeline e novo: o estilo da legenda nao sobrevive ao load anterior.
@@ -2899,6 +2904,10 @@ int  video_reconectando(void) {
 static double converterResumeSeconds, converterResumePct;
 static int converterResumeRequested, converterResumeUsed;
 int video_retomada_inicial_estado(void) {
+#ifdef NV_WEBOS_HLS_TEST
+  // The HLS load applies the saved position itself (see loadCompleted).
+  if(converterResumeRequested && converterResumeUsed && hlsAtivo()) return hls.resumeSent ? 1 : 0;
+#endif
   if(!converterResumeRequested || !converterResumeUsed || !dtsSessao) return -1;
   return dtsRevisao>0 ? 1 : 0;
 }
@@ -4350,6 +4359,7 @@ static void hlsBombear(void) {
   if (!tocarInternoRota(urlAtual, 0, 1)) { hlsFalhar("player could not open the playlist"); return; }
   // The native load callback applies these after the HLS seekable range exists.
   if (alvo > 0) posAoCarregar = alvo;
+  hls.resumeSent = !(alvo > 1.0);   // nothing to apply near the start
   if (hls.paused) recarregarPausa = pausaPedida = 1;
   snprintf(legUrlAoCarregar, sizeof legUrlAoCarregar, "%s", hls.subtitle);
   if (hls.external) audioext_carregando_definir(1);

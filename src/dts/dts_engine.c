@@ -830,7 +830,10 @@ static int fx_abortable(const DtsEngine *e) { return fx_long(e) || e->parent; }
  * started, at least 2 MiB. A probe that only needs the header and the Cues
  * then costs a few MiB, not a full ring, at each jump. */
 static int64_t fx_ahead(DtsEngine *e) {
-  if(fx_long(e)) return FX_CAP-FX_HIST;
+  /* webOS HLS grows like the short readers: the TV player holds its own
+   * segments, and the request before its first seek (segments from the start
+   * of the file) or a jump soon after must not fill the whole ring. */
+  if(fx_long(e) && !e->hls_read_ahead) return FX_CAP-FX_HIST;
   int64_t used=e->pos>e->fx_from?e->pos-e->fx_from:0, a=2*used;
   if(a<2*1024*1024) a=2*1024*1024;
   if(a>FX_CAP-FX_HIST) a=FX_CAP-FX_HIST;
