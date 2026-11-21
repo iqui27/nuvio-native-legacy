@@ -9,10 +9,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <pthread.h>
+#if defined(__EMSCRIPTEN__)
+#include <sys/random.h>
+#elif defined(__linux__)
+#include <sys/syscall.h>
+#endif
 #if !defined(__EMSCRIPTEN__) && !defined(_WIN32)
 #include <ifaddrs.h>
 #include <sys/socket.h>
@@ -636,12 +642,16 @@ int dados_apagar(const char *nome) {
 }
 
 // Semeadura UMA vez por pthread_once — nativo ate sob NV_UM_FIO, igual a
-// clienteIdUmaVez — e sorteio com estado LOCAL por chamada: uuidChamadas so e
-// tocada por __atomic e a semente do rand_r vive na pilha do chamador. Sem
-// nenhum estatico mutavel fora da once, o primeiro UUID do worker de add-ons
-// (clienteIdIniciar) pode correr com a chamada direta da tela de Diagnostico:
-// o estatico semeado e o srand/rand globais corriam sem sincronizacao entre
-// esses dois chamadores (regressao apontada na revisao r3 do Farol 10).
+// clienteIdUmaVez — e bytes aleatorios por chamada vindos de ENTROPIA DO
+// SISTEMA, nao de PRNG semeado. Sem nenhum estatico mutavel fora da once e do
+// contador atomico, o primeiro UUID do worker de add-ons (clienteIdIniciar)
+// pode correr com a chamada direta da tela de Diagnostico: o estatico semeado
+// e o srand/rand globais corriam sem sincronizacao entre esses dois chamadores
+// (regressao apontada na revisao r3 do Farol 10). O rand_r da correcao r4
+// tinha defeito pior na glibc: rand_r(&s) so deriva 20 bits da semente de 32,
+// entao o espaco total de UUIDs despencava para 2^20 e processos distintos
+// repetiam IDs — os 122 bits agora vem de getentropy/getrandom//dev/urandom,
+// com splitmix64 de 64 bits so se toda fonte falhar.
 static pthread_once_t uuidUmaVez = PTHREAD_ONCE_INIT;
 static unsigned uuidSemente, uuidChamadas;
 static void uuidSemear(void) {
@@ -649,19 +659,81 @@ static void uuidSemear(void) {
                 (unsigned)(size_t)&uuidSemente;
 }
 
+// Um passo do finalizador do splitmix64 (plano B sem nenhuma fonte de
+// entropia): 64 bits embaralhados por iteracao.
+static unsigned long long uuidMistura(unsigned long long x) {
+  x += 0x9e3779b97f4a7c15ULL;
+  x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+  return x ^ (x >> 31);
+}
+
+// Enche b com n bytes de entropia do sistema; 0 se nenhuma fonte serviu.
+static int uuidEntropia(unsigned char *b, size_t n) {
+  size_t lidos = 0;
+#if defined(__EMSCRIPTEN__)
+  // getentropy do SDK cai no __wasi_random_get — crypto.getRandomValues do
+  // hospedeiro (getpid()=42 e enderecos estaticos do WASM nao entram aqui).
+  if (getentropy(b, n) == 0) return 1;
+#elif defined(SYS_getrandom)
+  // getrandom(2) cru, para nao depender da idade da libc nos alvos Tizen;
+  // flag 1 (GRND_NONBLOCK): ENOSYS/EAGAIN em kernel velho ou arranque cedo
+  // caem no /dev/urandom abaixo em vez de bloquear.
+  while (lidos < n) {
+    long r = syscall(SYS_getrandom, b + lidos, n - lidos, 1);
+    if (r > 0) { lidos += (size_t)r; continue; }
+    if (r < 0 && errno == EINTR) continue;
+    break;
+  }
+  if (lidos == n) return 1;
+  lidos = 0;
+#endif
+  {
+    // O mesmo padrao de addons.c, admin.c, celular.c, jellyfin.c e plex.c.
+    int f = open("/dev/urandom", O_RDONLY);
+    if (f < 0) return 0;
+    while (lidos < n) {
+      ssize_t r = read(f, b + lidos, n - lidos);
+      if (r > 0) { lidos += (size_t)r; continue; }
+      if (r < 0 && errno == EINTR) continue;
+      break;
+    }
+    close(f);
+  }
+  return lidos == n;
+}
+
 void dados_uuid(char *dst, unsigned tam) {
   static const char *hex = "0123456789abcdef";
+  unsigned char b[16];
+  unsigned n = 0;
   int i;
-  unsigned s;
   if (tam < 37) { if (tam) dst[0] = 0; return; }
   pthread_once(&uuidUmaVez, uuidSemear);
-  s = uuidSemente ^
-      __atomic_add_fetch(&uuidChamadas, 1, __ATOMIC_RELAXED) * 2654435761u;
+  if (!uuidEntropia(b, sizeof b)) {
+    // Plano B: relogio de alta resolucao, PID, semente da once, contador
+    // atomico e endereco, espalhados por splitmix64 — nunca rand_r de 32 bits.
+    struct timespec ts;
+    unsigned long long x;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    x = (unsigned long long)ts.tv_sec * 1000000000ULL +
+        (unsigned long long)ts.tv_nsec;
+    x ^= (unsigned long long)time(NULL) * 0x9e3779b97f4a7c15ULL;
+    x ^= (unsigned long long)getpid() << 17;
+    x ^= (unsigned long long)uuidSemente * 0xbf58476d1ce4e5b9ULL;
+    x ^= (unsigned long long)(size_t)b;
+    for (i = 0; i < (int)sizeof b; i += 8) {
+      unsigned long long v = uuidMistura(
+          x + __atomic_add_fetch(&uuidChamadas, 1, __ATOMIC_RELAXED));
+      memcpy(b + i, &v, sizeof v);
+    }
+  }
+  b[6] = (unsigned char)((b[6] & 0x0f) | 0x40);   // versao 4
+  b[8] = (unsigned char)((b[8] & 0x3f) | 0x80);   // variante 10xx
   for (i = 0; i < 36; i++) {
     if (i == 8 || i == 13 || i == 18 || i == 23) { dst[i] = '-'; continue; }
-    if (i == 14) { dst[i] = '4'; continue; }              // versao
-    if (i == 19) { dst[i] = hex[8 + (rand_r(&s) & 3)]; continue; }  // variante
-    dst[i] = hex[rand_r(&s) & 15];
+    dst[i] = hex[(n & 1) ? b[n >> 1] & 15 : b[n >> 1] >> 4];
+    n++;
   }
   dst[36] = 0;
 }

@@ -22,8 +22,14 @@ case "${SANITIZE:-0}" in
     ;;
 esac
 linker=-Wl,--gc-sections
-[ "$(uname -s)" = Darwin ] && linker=-Wl,-dead_strip
-"$ccbin" "${flags[@]}" "$linker" -Wl,--wrap=srand \
+wrap=-Wl,--wrap=srand
+if [ "$(uname -s)" = Darwin ]; then
+  linker=-Wl,-dead_strip
+  # ld64 nao aceita --wrap; o uuid_concorrente.c interpoe srand direto no
+  # binario (simbolo srand + RTLD_NEXT) quando __APPLE__.
+  wrap=
+fi
+"$ccbin" "${flags[@]}" "$linker" $wrap \
   tests/uuid_concorrente.c src/addons.c src/addonmodo.c src/fontefalha.c \
   src/farolanel.c src/js.c src/idcanal.c src/watchstate.c src/dados.c \
   -o "$dir/teste"
