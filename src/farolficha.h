@@ -106,4 +106,14 @@ int  farolficha_ler_arquivo(FarolFichaCache *c, const char *caminho);
 // Grava atomico (arquivo .tmp + rename) so as `n` fichas. 1 = gravou.
 int  farolficha_gravar(FarolFichaCache *c, const char *caminho);
 
+// O mesmo formato "FFICHA01" em memoria, para quem serializa/grava a partir
+// de copia fora de trava (correcao FAROL38D). escrever devolve os bytes
+// escritos (0 = nao coube); o binario inteiro cabe em FICHA_BIN_MAX.
+#define FAROL_FICHA_BIN_MAX (12 + FAROL_FICHA_MAX * 96)
+size_t farolficha_escrever(const FarolFichaCache *c, unsigned char *dst,
+                           size_t cap);
+// Le o buffer no lugar do arquivo: mesma rejeicao total a corrupcao, sem
+// apagar nada (nao ha arquivo). 1 = cache substituido.
+int  farolficha_ler_mem(FarolFichaCache *c, const unsigned char *buf, size_t n);
+
 #endif

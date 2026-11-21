@@ -111,6 +111,8 @@ int diario_percorrer(int perfil, const DiarioFiltro *f, DiarioVisita cb, void *c
   pthread_mutex_unlock(&T_dmtx);
   return k;
 }
+static _Atomic int D_carregado = 1;   // loja "quente": consulta barata do passo
+int diario_carregado(int perfil) { (void)perfil; return D_carregado; }
 void diario_separar_id(const char *src, char *id, size_t tam, int *t, int *e) {
   const char *c;                  // copia fiel de src/diario.c (o comporta-
   size_t n;                       // mento "so os :T:E finais" e parte do teste)
@@ -359,6 +361,7 @@ static void zeraTudo(void) {
   }
   snprintf(cam, sizeof cam, "%s/farol-fichas.bin", T_dir); unlink(cam);
   pthread_mutex_lock(&T_dmtx); D_n = 0; pthread_mutex_unlock(&T_dmtx);
+  D_carregado = 1;
   T_sono = 0;
   pthread_mutex_lock(&T_pmtx); P_n = 0; pthread_mutex_unlock(&T_pmtx);
   T_perfil = 1;

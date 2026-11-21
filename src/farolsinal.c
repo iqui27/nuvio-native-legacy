@@ -27,6 +27,7 @@
 #include "visto.h"
 #include <limits.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -92,6 +93,7 @@ typedef struct {
   int64_t  chave;         // a chave que as pendencias usam
   char     id[DIARIO_ID_MAX];
   long     tmdb;
+  int      ger;           // esqGer na hora do pedido — esquecer invalida
   uint8_t  serie;
 } Ped;
 
@@ -118,22 +120,30 @@ static struct {
   int64_t obra[FSIN_OBRA_N];  int nObra, obraProx;
   Ali    ali[FSIN_ALIAS_N];   int nAli;
   Ped    ped[FSIN_PED_N];     int nPed;
-  struct { char id[DIARIO_ID_MAX]; short t; } tempChk[FSIN_TEMP_N];
+  struct { char id[DIARIO_ID_MAX]; short t; int perfil; int ger; }
+         tempChk[FSIN_TEMP_N];
   int    nTempChk;
   struct { uint32_t h; uint8_t o, dia; } ori[FSIN_ORI_N];
   int    nOri, oriProx;
   int    sujo;                      // modelo/estado com gravacao pendente
   int    fichaSujo;
   long long ultGrav;
+  int    trocando;                  // init/troca de perfil em andamento
+  int    pendTroca;                 // perfil que a troca em curso vai ativar
+  int    diaFrio;                   // varredura esperando a carga do diario
+  int    esqGer;                    // subiu no esquecer/zera: invalida gravacao
+  int    fcLido;                    // arquivo de fichas ja entrou nesta carga
   char   dir[768];
 } S;
 
 static FarolSinalBusca busca;
-static int      fioVivo, fioMorre;
+static int      fioVivo;
+static _Atomic int fioMorre;   // lido solto pelos fios antes de cada dep. externa
 static pthread_t fioId;
 // O fio de tras do passo: conferidas de temporada, varredura de largada e
 // gravacoes — tudo o que a r2 viu parar o quadro (correcao FAROL38C).
 static pthread_cond_t condTrab = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t condTroca = PTHREAD_COND_INITIALIZER;  // init/troca feita
 static int      fioTrabVivo, fioTrabOcup;
 static pthread_t fioTrabId;
 
@@ -201,38 +211,99 @@ static void nomeGosto(int perfil, char *dst, size_t cap) {
 }
 
 // ------------------------------------------------------------------ modelo --
-// Grava farol-gosto-p<n>.txt com o comprimento EXATO que escrever devolveu
-// (ressalva do lote: nada de strlen nem "%s" — o texto nao e fechado aqui).
-static void gravaModelo(void) {   // com a trava tomada
-  static char buf[FAROL_GOSTO_TXT_MAX + 1];
-  char cam[1100], tmp[1200], nome[64];
+// Toda E/S de arquivo segue a mesma regra (correcao FAROL38D): o CONTEUDO
+// sai do estado com a trava tomada (texto/serializacao = copia) e vai ao
+// disco SEM ela — o fio da UI nunca espera flash, nem no fio de tras nem
+// na troca de perfil; e a leitura chega em buffer, o parse e que entra na
+// trava. tmp por chamada (seq): escritores concorrentes nao se atropelam.
+static char *textoModelo(size_t *np) {        // com a trava tomada; malloc
+  char *b = malloc(FAROL_GOSTO_TXT_MAX + 1);
   size_t n;
-  FILE *f;
-  if (S.perfil < 1) return;
-  nomeGosto(S.perfil, nome, sizeof nome);
-  if (!caminho(nome, cam, sizeof cam)) return;
-  n = farolgosto_escrever(&S.g, buf, sizeof buf - 1);
-  if (!n) return;                      // nao coube: nao grava por cima
-  snprintf(tmp, sizeof tmp, "%s.tmp", cam);
-  f = fopen(tmp, "w");
-  if (!f) return;
-  if (fwrite(buf, 1, n, f) != n) { fclose(f); remove(tmp); return; }
-  fclose(f);
-  rename(tmp, cam);
+  if (!b) return NULL;
+  n = farolgosto_escrever(&S.g, b, FAROL_GOSTO_TXT_MAX);
+  if (!n) { free(b); return NULL; }           // nao coube: nao grava por cima
+  *np = n;
+  return b;
 }
-static void leModelo(void) {           // com a trava tomada
-  static char buf[FAROL_GOSTO_TXT_MAX + 8];
+static unsigned char *textoFichas(size_t *np) {  // com a trava tomada; malloc
+  unsigned char *b = malloc(FAROL_FICHA_BIN_MAX);
+  size_t n;
+  if (!b) return NULL;
+  n = farolficha_escrever(&S.fc, b, FAROL_FICHA_BIN_MAX);
+  if (!n) { free(b); return NULL; }
+  *np = n;
+  return b;
+}
+// Arquivo inteiro para memoria — chamado FORA da trava.
+static unsigned char *lerArq(const char *cam, size_t *np) {
+  FILE *f = fopen(cam, "rb");
+  unsigned char *b;
+  long n;
+  if (!f) return NULL;
+  if (fseek(f, 0, SEEK_END) || (n = ftell(f)) < 0 || fseek(f, 0, SEEK_SET))
+    { fclose(f); return NULL; }
+  b = malloc((size_t)n ? (size_t)n : 1);
+  if (b && fread(b, 1, (size_t)n, f) != (size_t)n) { free(b); b = NULL; }
+  fclose(f);
+  if (b) *np = (size_t)n;
+  return b;
+}
+// buf -> disco atomico (.tmp + rename), sem a trava na E/S. O rename final
+// entra na trava so para a fronteira de encerramento: depois do sair ou se
+// o esquecer/zera andou (geracao `ger` mudou), so o escritor `final`
+// instala — um flush atrasado nao pisa na saida nem ressuscita arquivo
+// apagado. 1 = ok.
+static int gravaBuf(const char *cam, const void *buf, size_t n, int final,
+                    int ger) {
+  static _Atomic int seq;
+  char tmp[1200];
+  FILE *f;
+  int ok;
+  snprintf(tmp, sizeof tmp, "%s.tmp.%d", cam,
+           atomic_fetch_add(&seq, 1) & 0xffff);
+  f = fopen(tmp, "w");
+  if (!f) return 0;
+  ok = fwrite(buf, 1, n, f) == n;
+  if (fclose(f)) ok = 0;
+  if (!ok) { remove(tmp); return 0; }
+  TRAVA();
+  if (final || (!fioMorre && S.esqGer == ger)) rename(tmp, cam);
+  else remove(tmp);
+  DTRAVA();
+  return 1;
+}
+
+// Ida e volta do modelo pela copia em memoria + o caminho de escrita real —
+// funcoes que so a sonda da r1 chama direto (correcao FAROL38D: a producao
+// grava por gravaBuf fora da trava; estas duas ficam para o teste do formato
+// persistido).
+__attribute__((unused)) static void gravaModelo(void) {   // com a trava tomada
+  char cam[1100], tmp[1200], nome[64];
+  size_t n; char *b; FILE *f;
+  if (S.perfil < 1) return;
+  b = textoModelo(&n);
+  if (!b) return;
+  nomeGosto(S.perfil, nome, sizeof nome);
+  if (caminho(nome, cam, sizeof cam)) {
+    snprintf(tmp, sizeof tmp, "%s.tmp", cam);
+    if ((f = fopen(tmp, "w"))) {
+      int ok = fwrite(b, 1, n, f) == n;
+      if (fclose(f)) ok = 0;
+      if (ok) rename(tmp, cam); else remove(tmp);
+    }
+  }
+  free(b);
+}
+__attribute__((unused)) static void leModelo(void) {   // com a trava tomada
   char cam[1100], nome[64];
-  FILE *f; size_t n;
+  size_t n = 0; unsigned char *b;
   farolgosto_iniciar(&S.g, (uint16_t)S.perfil);
   nomeGosto(S.perfil, nome, sizeof nome);
   if (!caminho(nome, cam, sizeof cam)) return;
-  f = fopen(cam, "r");
-  if (!f) return;
-  n = fread(buf, 1, sizeof buf - 1, f);
-  fclose(f);
-  if (n) farolgosto_ler(&S.g, buf, n); // tamanho explicito, arquivo nao tem NUL
+  b = lerArq(cam, &n);
+  if (b) { farolgosto_ler(&S.g, (char *)b, n); free(b); }
 }
+
 
 // ------------------------------------------------------------- conjuntos ----
 static int64_t aliasPara(int64_t c) {
@@ -366,6 +437,8 @@ static int64_t pegaFicha(int64_t chave, const char *id, int serie,
 }
 
 static void pedeFicha(int64_t chave, const char *id, int serie, long tmdb);
+static void fichaOk(int64_t chavePed, const FarolFicha *f, int ger);
+static void fichaFalhou(int64_t chavePed, int ger);
 
 // Credito esperando ficha; com `devolve` e a devolucao tardia (estorno que
 // faltou ficha) — dominio separado: uma intencao e uma divida do mesmo eh
@@ -518,125 +591,133 @@ static void desfaz(Cred *c, const char *id, int serie, long tmdb) {
 }
 
 // ----------------------------------------------------------------- estado --
-static void gravaEstado(void) {  // com a trava tomada
-  char cam[1100], tmp[1200], nome[64];
-  FILE *f; int i;
-  if (S.perfil < 1) return;
-  nomeEstado(S.perfil, nome, sizeof nome);
-  if (!caminho(nome, cam, sizeof cam)) return;
-  snprintf(tmp, sizeof tmp, "%s.tmp", cam);
-  f = fopen(tmp, "w");
-  if (!f) return;
-  fprintf(f, "FS 2 %d %d %lld %d\n", S.perfil, S.rec, S.cur, S.curSeq);
+// Serializa o estado inteiro para um buffer — mesmo texto do antigo
+// gravaEstado, so muda o destino (correcao FAROL38D: o flush sai da trava).
+static char *textoEstado(size_t *np) {   // com a trava tomada; malloc
+  size_t cap = 64 + (size_t)S.nPend * 240 + (size_t)S.nCred * 160 +
+               (size_t)S.nObra * 24 + (size_t)S.nAli * 48 +
+               (size_t)S.nOri * 24;
+  char *b = malloc(cap), *w = b, *fim;
+  int i;
+  if (!b) return NULL;
+  fim = b + cap;
+  w += snprintf(w, (size_t)(fim - w), "FS 2 %d %d %lld %d\n",
+                S.perfil, S.rec, S.cur, S.curSeq);
   for (i = 0; i < S.nPend; i++) {
     const Pend *p = &S.pend[i];
-    fprintf(f, "p %lld %llu %llu %llu %lld %d %d %u %u %u %u %ld %s\n",
-            (long long)p->c.chave, (unsigned long long)p->c.idh,
-            (unsigned long long)p->c.hb, (unsigned long long)p->c.eh,
-            p->c.quando, (int)p->c.delta, (int)p->c.faixa,
-            (unsigned)p->c.kind, (unsigned)p->tent, (unsigned)p->serie,
-            (unsigned)p->devolve, p->tmdb, p->id);
+    w += snprintf(w, (size_t)(fim - w),
+                  "p %lld %llu %llu %llu %lld %d %d %u %u %u %u %ld %s\n",
+                  (long long)p->c.chave, (unsigned long long)p->c.idh,
+                  (unsigned long long)p->c.hb, (unsigned long long)p->c.eh,
+                  p->c.quando, (int)p->c.delta, (int)p->c.faixa,
+                  (unsigned)p->c.kind, (unsigned)p->tent, (unsigned)p->serie,
+                  (unsigned)p->devolve, p->tmdb, p->id);
   }
   for (i = 0; i < S.nCred; i++) {
     const Cred *c = &S.cred[i];
-    fprintf(f, "c %llu %llu %llu %lld %lld %d %d %u\n",
-            (unsigned long long)c->idh, (unsigned long long)c->hb,
-            (unsigned long long)c->eh, c->quando, (long long)c->chave,
-            (int)c->delta, (int)c->faixa, (unsigned)c->kind);
+    w += snprintf(w, (size_t)(fim - w), "c %llu %llu %llu %lld %lld %d %d %u\n",
+                  (unsigned long long)c->idh, (unsigned long long)c->hb,
+                  (unsigned long long)c->eh, c->quando, (long long)c->chave,
+                  (int)c->delta, (int)c->faixa, (unsigned)c->kind);
   }
-  for (i = 0; i < S.nObra; i++) fprintf(f, "o %lld\n", (long long)S.obra[i]);
+  for (i = 0; i < S.nObra; i++)
+    w += snprintf(w, (size_t)(fim - w), "o %lld\n", (long long)S.obra[i]);
   for (i = 0; i < S.nAli; i++)
-    fprintf(f, "a %lld %lld\n", (long long)S.ali[i].de, (long long)S.ali[i].para);
+    w += snprintf(w, (size_t)(fim - w), "a %lld %lld\n",
+                  (long long)S.ali[i].de, (long long)S.ali[i].para);
   for (i = 0; i < S.nOri; i++)
-    fprintf(f, "i %u %u %u\n", (unsigned)S.ori[i].h, (unsigned)S.ori[i].o,
-            (unsigned)S.ori[i].dia);
-  fclose(f);
-  rename(tmp, cam);
+    w += snprintf(w, (size_t)(fim - w), "i %u %u %u\n",
+                  (unsigned)S.ori[i].h, (unsigned)S.ori[i].o,
+                  (unsigned)S.ori[i].dia);
+  *np = (size_t)(w - b);
+  return b;
 }
-static void leEstado(void) {     // com a trava tomada
-  char cam[1100], nome[64], linha[640];
-  FILE *f;
-  int i;
-  nomeEstado(S.perfil, nome, sizeof nome);
-  if (!caminho(nome, cam, sizeof cam)) return;
-  f = fopen(cam, "r");
-  if (!f) return;
+// Aplica o estado lido em buffer — o texto de gravaEstado, exigindo o
+// terminador de cada linha: registro cortado no fim (sem '\n') rejeita o
+// arquivo INTEIRO, igual a qualquer outro malformado (correcao FAROL38D —
+// ressalva da r3: um id mordido pelo %31s ainda entrava).
+static void aplicaEstado(char *b, size_t n) {   // com a trava tomada
+  char *s = b, *fim = b + n, *nl;
+  int i, mal = 0;
   // A primeira linha TEM de ser o cabecalho "FS <ver> <perfil> <rec> <cur>
   // [<curSeq>]": versao desconhecida, perfil de outro ou arquivo
-  // truncado/corrompido — recusa o arquivo INTEIRO (correcao FAROL38B: meio-
-  // registro aplicava delta torto). FS 1 nao guardava a posicao dentro do
-  // grupo de mesmo `quando`: o cursor exclusivo dele vale como "o grupo de
-  // S.cur ja entrou inteiro" (correcao FAROL38C).
-  if (!fgets(linha, sizeof linha, f)) { fclose(f); return; }
+  // truncado/corrompido — recusa o arquivo INTEIRO (correcao FAROL38B). FS 1
+  // nao guardava a posicao dentro do grupo de mesmo `quando`: o cursor
+  // exclusivo dele vale como "o grupo de S.cur ja entrou inteiro".
+  nl = memchr(s, '\n', (size_t)(fim - s));
+  if (!nl) return;
+  *nl = 0;
   {
     int p = 0, r = 0, sq = 0; long long c = 0; char resto[8] = "";
-    if (sscanf(linha, "FS 2 %d %d %lld %d %7s", &p, &r, &c, &sq, resto) == 4 &&
+    if (sscanf(s, "FS 2 %d %d %lld %d %7s", &p, &r, &c, &sq, resto) == 4 &&
         p == S.perfil && sq >= 0) {
       S.rec = !!r; S.cur = c; S.curSeq = sq;
-    } else if (sscanf(linha, "FS 1 %d %d %lld %7s", &p, &r, &c, resto) == 3 &&
+    } else if (sscanf(s, "FS 1 %d %d %lld %7s", &p, &r, &c, resto) == 3 &&
                p == S.perfil) {
       S.rec = !!r; S.cur = c; S.curSeq = FSIN_SEQ_TODA;
-    } else { fclose(f); return; }
+    } else return;
   }
-  {
-    // Qualquer registro malformado rejeita o arquivo INTEIRO, como o
-    // cabecalho: um "p" truncado depois de um valido nao pode deixar metade
-    // do estado de pe (correcao FAROL38C — ressalva da r2). Linha de tipo
-    // desconhecido, ou alem do teto da fila, nao e corte: ignora.
-    int mal = 0;
-    while (fgets(linha, sizeof linha, f)) {
-      if (linha[0] == 'p' && S.nPend < FSIN_PEND_N) {
-        Pend *p = &S.pend[S.nPend];
-        int d, fx, k, te, sr, dv;
-        long long ch, q;
-        unsigned long long ih, hb, eh;
-        memset(p, 0, sizeof *p);
-        // Registro de pendencia e TUDO ou nada: 13 campos e kind valido
-        // (correcao FAROL38B: a linha cortada entrava com campo de lixo).
-        if (sscanf(linha + 1,
-                   "%lld %llu %llu %llu %lld %d %d %d %d %d %d %ld %31s",
-                   &ch, &ih, &hb, &eh, &q, &d, &fx, &k, &te, &sr, &dv, &p->tmdb,
-                   p->id) == 13 && k >= 0 && k <= K_LARGADA) {
-          p->c.chave = ch; p->c.idh = ih; p->c.hb = hb; p->c.eh = eh;
-          p->c.quando = q; p->c.delta = d; p->c.faixa = (int16_t)fx;
-          p->c.kind = (uint8_t)k; p->tent = (uint8_t)te; p->serie = (uint8_t)sr;
-          p->devolve = (uint8_t)!!dv;
-          S.nPend++;
-        } else { mal = 1; break; }
-      } else if (linha[0] == 'c' && S.nCred < FSIN_CRED_N) {
-        Cred *c = &S.cred[S.nCred];
-        int d, fx, k; long long ch, q;
-        unsigned long long ih, hb, eh;
-        if (sscanf(linha + 1, "%llu %llu %llu %lld %lld %d %d %d",
-                   &ih, &hb, &eh, &q, &ch, &d, &fx, &k) == 8) {
-          c->idh = ih; c->hb = hb; c->eh = eh; c->quando = q; c->chave = ch;
-          c->delta = d; c->faixa = (int16_t)fx; c->kind = (uint8_t)k;
-          S.nCred++;
-        } else { mal = 1; break; }
-      } else if (linha[0] == 'o' && S.nObra < FSIN_OBRA_N) {
-        long long ch;
-        if (sscanf(linha + 1, "%lld", &ch) == 1) S.obra[S.nObra++] = ch;
-        else { mal = 1; break; }
-      } else if (linha[0] == 'a') {
-        long long de, para;
-        if (sscanf(linha + 1, "%lld %lld", &de, &para) == 2)
-          aliasPoe(de, para);
-        else { mal = 1; break; }
-      } else if (linha[0] == 'i' && S.nOri < FSIN_ORI_N) {
-        unsigned h, o, d;
-        if (sscanf(linha + 1, "%u %u %u", &h, &o, &d) == 3) {
-          S.ori[S.nOri].h = h; S.ori[S.nOri].o = (uint8_t)o;
-          S.ori[S.nOri].dia = (uint8_t)d; S.nOri++;
-        } else { mal = 1; break; }
-      }
+  for (s = nl + 1; s < fim; s = nl + 1) {
+    nl = memchr(s, '\n', (size_t)(fim - s));
+    if (!nl) { mal = 1; break; }            // ultimo registro sem LF: cortado
+    *nl = 0;
+    if (s[0] == 'p' && S.nPend < FSIN_PEND_N) {
+      Pend *p = &S.pend[S.nPend];
+      int d, fx, k, te, sr, dv, pos = -1;
+      long long ch, q;
+      unsigned long long ih, hb, eh;
+      memset(p, 0, sizeof *p);
+      // Registro de pendencia e TUDO ou nada: 13 campos e kind valido, sem
+      // sobra depois do id (o %n no fim pega o id mordido ou o campo a mais).
+      if (sscanf(s + 1,
+                 "%lld %llu %llu %llu %lld %d %d %d %d %d %d %ld %31s%n",
+                 &ch, &ih, &hb, &eh, &q, &d, &fx, &k, &te, &sr, &dv, &p->tmdb,
+                 p->id, &pos) == 13 && k >= 0 && k <= K_LARGADA &&
+          pos > 0 && !s[1 + pos]) {
+        p->c.chave = ch; p->c.idh = ih; p->c.hb = hb; p->c.eh = eh;
+        p->c.quando = q; p->c.delta = d; p->c.faixa = (int16_t)fx;
+        p->c.kind = (uint8_t)k; p->tent = (uint8_t)te; p->serie = (uint8_t)sr;
+        p->devolve = (uint8_t)!!dv;
+        S.nPend++;
+      } else { mal = 1; break; }
+    } else if (s[0] == 'c' && S.nCred < FSIN_CRED_N) {
+      Cred *c = &S.cred[S.nCred];
+      int d, fx, k, pos = -1; long long ch, q;
+      unsigned long long ih, hb, eh;
+      if (sscanf(s + 1, "%llu %llu %llu %lld %lld %d %d %d%n",
+                 &ih, &hb, &eh, &q, &ch, &d, &fx, &k, &pos) == 8 &&
+          pos > 0 && !s[1 + pos]) {
+        c->idh = ih; c->hb = hb; c->eh = eh; c->quando = q; c->chave = ch;
+        c->delta = d; c->faixa = (int16_t)fx; c->kind = (uint8_t)k;
+        S.nCred++;
+      } else { mal = 1; break; }
+    } else if (s[0] == 'o' && S.nObra < FSIN_OBRA_N) {
+      long long ch; int pos = -1;
+      if (sscanf(s + 1, "%lld%n", &ch, &pos) == 1 && pos > 0 && !s[1 + pos])
+        S.obra[S.nObra++] = ch;
+      else { mal = 1; break; }
+    } else if (s[0] == 'a') {
+      long long de, para; int pos = -1;
+      if (sscanf(s + 1, "%lld %lld%n", &de, &para, &pos) == 2 &&
+          pos > 0 && !s[1 + pos])
+        aliasPoe(de, para);
+      else { mal = 1; break; }
+    } else if (s[0] == 'i' && S.nOri < FSIN_ORI_N) {
+      unsigned h, o, d; int pos = -1;
+      if (sscanf(s + 1, "%u %u %u%n", &h, &o, &d, &pos) == 3 &&
+          pos > 0 && !s[1 + pos]) {
+        S.ori[S.nOri].h = h; S.ori[S.nOri].o = (uint8_t)o;
+        S.ori[S.nOri].dia = (uint8_t)d; S.nOri++;
+      } else { mal = 1; break; }
     }
-    fclose(f);
-    if (mal) {   // estado parcial nao sobe: recomeça do zero como o cabecalho
-      S.nPend = S.nCred = S.nObra = S.obraProx = S.nAli = 0;
-      S.nOri = S.oriProx = 0;
-      S.rec = 1; S.cur = 0; S.curSeq = 0;
-      return;
-    }
+    // Linha de tipo desconhecido, ou alem do teto da fila, nao e corte:
+    // ignora, como a leitura anterior fazia.
+  }
+  if (mal) {   // estado parcial nao sobe: recomeça do zero como o cabecalho
+    S.nPend = S.nCred = S.nObra = S.obraProx = S.nAli = 0;
+    S.nOri = S.oriProx = 0;
+    S.rec = 1; S.cur = 0; S.curSeq = 0;
+    return;
   }
   // Pendencia que veio do disco volta a fila de busca: o reinicio nao pode
   // deixar ficha pedida para tras (correcao FAROL38B).
@@ -646,22 +727,87 @@ static void leEstado(void) {     // com a trava tomada
                 S.pend[i].tmdb);
 }
 
+// Varredura vazia que so dispara a carga do diario neste fio (de impossivel
+// casa nada): a leitura fria fica no fio de tras, nunca no passo.
+static int cbNada(const DiarioEntrada *e, void *ctx) {
+  (void)e; (void)ctx; return 0;
+}
+static void aqueceDiario(int perfil) {
+  DiarioFiltro f;
+  memset(&f, 0, sizeof f);
+  f.de = LLONG_MAX;
+  diario_percorrer(perfil, &f, cbNada, NULL);
+}
+
 // Troca o modelo carregado — a fronteira entre perfis: grava o que sai,
 // zera tudo o que e do perfil e carrega o que entra. NENHUMA vaga de
 // cred/pend cruza a fronteira (ressalva: delta nao vaza para outro perfil).
-static void trocaPerfil(int p) {  // com a trava tomada
-  char cam[1100];
-  if (p == S.perfil) return;
-  if (S.perfil > 0) { gravaModelo(); gravaEstado(); }
-  if (S.fc.sujo && caminho("farol-fichas.bin", cam, sizeof cam))
-    { farolficha_gravar(&S.fc, cam); S.fc.sujo = 0; }
-  memset(&S.g, 0, sizeof S.g);
-  S.nCred = S.nPend = S.nObra = S.obraProx = 0;
-  S.nTempChk = S.nOri = S.oriProx = 0;
-  S.cur = 0; S.curSeq = 0; S.varrer = 1; S.varGer++;
-  S.largadaVarrida = 0;
-  S.rec = 1; S.sujo = 0; S.perfil = p;
-  if (p > 0) { leModelo(); leEstado(); }
+// Roda NO FIO DE TRAS (correcao FAROL38D): o conteudo que sai e serializado
+// sob a trava e os arquivos que entram sao lidos fora dela; a E/S nunca
+// segura a trava e a aplicacao so acontece se a troca ainda for a pedida —
+// perfil mudou de novo, esquecer ou sair descartam o resultado.
+static void fioTrocaPerfil(void) {
+  char cam[1100], nome[64];
+  char *gm = NULL, *ge = NULL, *bG = NULL, *bE = NULL;
+  unsigned char *gf = NULL, *bF = NULL;
+  size_t nGm = 0, nGe = 0, nGf = 0, nBG = 0, nBE = 0, nBF = 0;
+  int pAnt, pNovo, ger, eGer, leF;
+
+  TRAVA();
+  pAnt = S.perfil; pNovo = S.pendTroca;
+  ger = S.varGer; eGer = S.esqGer; leF = !S.fcLido;
+  if (pAnt > 0) { gm = textoModelo(&nGm); ge = textoEstado(&nGe); }
+  if (S.fc.sujo) gf = textoFichas(&nGf);
+  S.sujo = 0; S.fichaSujo = 0;
+  DTRAVA();
+
+  if (pAnt > 0) {
+    if (gm) { nomeGosto(pAnt, nome, sizeof nome);
+      if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, gm, nGm, 0, eGer); }
+    if (ge) { nomeEstado(pAnt, nome, sizeof nome);
+      if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, ge, nGe, 0, eGer); }
+  }
+  if (gf && caminho("farol-fichas.bin", cam, sizeof cam))
+    gravaBuf(cam, gf, nGf, 0, eGer);
+  free(gm); free(ge); free(gf);
+
+  if (!fioMorre && pNovo > 0) {
+    nomeGosto(pNovo, nome, sizeof nome);
+    if (caminho(nome, cam, sizeof cam)) bG = (char *)lerArq(cam, &nBG);
+    nomeEstado(pNovo, nome, sizeof nome);
+    if (caminho(nome, cam, sizeof cam)) bE = (char *)lerArq(cam, &nBE);
+    if (leF && caminho("farol-fichas.bin", cam, sizeof cam))
+      bF = lerArq(cam, &nBF);
+  } else if (!fioMorre && leF && caminho("farol-fichas.bin", cam, sizeof cam))
+    bF = lerArq(cam, &nBF);
+
+  TRAVA();
+  // So aplica se a troca ainda e a pedida e a fronteira nao andou: perfil
+  // mudou de novo, esquecer ou sair descartam tudo o que foi lido.
+  if (!fioMorre && S.trocando && S.pendTroca == pNovo &&
+      S.perfil == pAnt && S.varGer == ger && S.esqGer == eGer) {
+    memset(&S.g, 0, sizeof S.g);
+    S.nCred = S.nPend = S.nObra = S.obraProx = 0;
+    S.nTempChk = S.nOri = S.oriProx = 0;
+    S.cur = 0; S.curSeq = 0; S.varrer = 1; S.varGer++;
+    S.largadaVarrida = 0;
+    S.rec = 1; S.sujo = 0; S.perfil = pNovo;
+    if (pNovo > 0) {
+      farolgosto_iniciar(&S.g, (uint16_t)pNovo);
+      if (bG) farolgosto_ler(&S.g, bG, nBG);
+      if (bE) aplicaEstado(bE, nBE);
+      // a carga fria do diario e unidade separada do fio de tras — a troca
+      // nao toma a trava do diario e pode ser roubada por quem a pede
+      // (correcao FAROL38D; a r3 viu a leitura fria no passo).
+      S.diaFrio = 1;
+    }
+    if (bF) { farolficha_ler_mem(&S.fc, bF, nBF); S.fc.sujo = 0; }
+    S.fcLido = 1;
+    S.trocando = 0;
+  }
+  pthread_cond_broadcast(&condTroca);
+  DTRAVA();
+  free(bG); free(bE); free(bF);
 }
 
 // ---------------------------------------------------------------- garante --
@@ -686,21 +832,54 @@ static pthread_once_t onceOuv = PTHREAD_ONCE_INIT;
 // COM A TRAVA TOMADA: o chamador faz a conferencia e o uso do perfil no
 // mesmo fecho — a corrida do TSan 66 era ler/decidir S.perfil fora do fecho
 // (correcao FAROL38B).
+static void *fioTrab(void *);   // definido com o fio de tras, adiante
+
+// Acorda (ou cria) o fio de tras: so nasce com trabalho a fazer e leitura
+// e criacao ficam no mesmo fecho (correcao FAROL38B). Com a trava tomada.
+static void acordaTrab(void) {
+  if (fioMorre) return;
+  if (!fioTrabVivo) {
+    if (!pthread_create(&fioTrabId, NULL, fioTrab, NULL)) fioTrabVivo = 1;
+  } else pthread_cond_signal(&condTrab);
+}
+
+// O perfil pedido esta residindo? A troca de perfil saiu do fio da UI
+// (correcao FAROL38D): quem chama com a trava so MARCA a troca e acorda o
+// fio de tras; enquanto S.trocando valer, as funcoes devolvem o seguro —
+// nem visto, nem pendencia, nem varredura do perfil velho vaza no novo.
 static int garante_i(void) {
+  int p;
   if (!S.dir[0]) snprintf(S.dir, sizeof S.dir, "%s", dados_dir());
   if (!S.ligado) {
-    char cam[1100];
     S.ligado = 1;
     farolficha_cache_iniciar(&S.fc);
-    // O arquivo das fichas so anda dentro da trava — leitura e escrita
-    // serializadas aqui e na fila lenta (ressalva do lote).
-    if (caminho("farol-fichas.bin", cam, sizeof cam)) {
-      farolficha_ler_arquivo(&S.fc, cam);
-      S.fc.sujo = 0;
-    }
+    S.trocando = 1;
   }
-  trocaPerfil(perfis_ativo());
-  return S.perfil > 0;
+  p = perfis_ativo();
+  if (S.trocando ? S.pendTroca != p : S.perfil != p) {
+    S.trocando = 1;
+    S.pendTroca = p;
+  }
+  return !S.trocando && S.perfil > 0;
+}
+
+// travaPronta: como o antigo garante_i sincrono, so que a E/S que a troca
+// de perfil pede NAO segura a trava — quem chama ROUBA a unidade de troca
+// e a executa neste fio (fioTrocaPerfil nao toma a trava do diario, entao
+// e seguro rouba-la ate de dentro dos ouvintes). Devolve COM A TRAVA
+// TOMADA quando o perfil ativo ja esta residindo; 0 sem trava quando nao
+// ha perfil ou o app ja saiu. O passo e o sair NAO usam: la a troca so e
+// agendada, nunca executada no quadro (correcao FAROL38D).
+static int travaPronta(void) {
+  for (;;) {
+    int troca;
+    TRAVA();
+    if (garante_i()) return 1;
+    troca = S.trocando;
+    DTRAVA();
+    if (!troca || fioMorre) return 0;
+    fioTrocaPerfil();
+  }
 }
 
 // "Terminou" so vale para quem viu ate o fim: registro do player com
@@ -780,7 +959,11 @@ static void vezNova(const DiarioEntrada *e) {   // com a trava tomada
         break;
     if (k == S.nTempChk) {
       snprintf(S.tempChk[k].id, sizeof S.tempChk[k].id, "%s", e->id);
-      S.tempChk[k].t = e->temporada; S.nTempChk++;
+      S.tempChk[k].t = e->temporada;
+      // o fio de tras leva (perfil, geracao) junto: ao reentrar na trava
+      // descarta se houve troca/esquecer/sair (correcao FAROL38D).
+      S.tempChk[k].perfil = S.perfil; S.tempChk[k].ger = S.varGer;
+      S.nTempChk++;
     }
   }
 }
@@ -869,8 +1052,7 @@ static void vezAlterada(const DiarioEntrada *e) {   // com a trava tomada
 
 static void cbDiario(int perfil, int ev, const DiarioEntrada *e, void *ctx) {
   (void)ctx;
-  TRAVA();
-  if (!garante_i()) { DTRAVA(); return; }
+  if (!travaPronta()) return;
   if (ev == DIARIO_EV_RECARREGADO)
     { S.varrer = 1; S.cur = 0; S.curSeq = 0; S.varGer++; }
   else if (e && perfil == S.perfil && S.rec) {
@@ -896,8 +1078,8 @@ static void cbVisto(const char *imdb, const char *tipo, const VistoPar *pares,
   if (visto) {
     long long agora = agoraS();
     int faixa = faixaAgora(agora);
-    TRAVA();
-    if (garante_i() && S.rec) {
+    if (!travaPronta()) return;
+    if (S.rec) {
       int total = n < 1 ? 1 : n;
       for (i = 0; i < total; i++) {
         int t = n < 1 ? 0 : pares[i].temporada;
@@ -923,8 +1105,8 @@ static void cbVisto(const char *imdb, const char *tipo, const VistoPar *pares,
   // inteiro, o bonus de temporada e o "largada"). O DIARIO NAO E TOCADO:
   // desmarcar visto desfaz so o sinal do Farol — a entrada continua la
   // (correcao FAROL38B: o gesto apagava o historico do usuario).
-  TRAVA();
-  if (garante_i() && S.rec) {
+  if (!travaPronta()) return;
+  if (S.rec) {
     uint64_t idh = h1(imdb);
     for (i = S.nCred - 1; i >= 0; i--) {
       int alvo = 0, k;
@@ -968,8 +1150,8 @@ static void cbSalvos(const CatItem *ci, int salvo) {
   int i;
   if (!ci || !ci->imdb[0]) return;
   hb = hDom(ci->imdb, K_SALVO, 0);
-  TRAVA();
-  if (garante_i() && S.rec) {
+  if (!travaPronta()) return;
+  if (S.rec) {
     if (salvo) {
       if (achaHb(hb) < 0) {
         Cred c; long long agora = agoraS();
@@ -1015,8 +1197,7 @@ static void cbTirou(const char *imdb) {
     serie = !strcmp(ci->tipo, "series"); tmdb = ci->tmdb;
   }
   hb = hDom(id, K_TIROU, 0);
-  TRAVA();
-  if (!garante_i()) { DTRAVA(); return; }
+  if (!travaPronta()) return;
   if (S.rec && achaHb(hb) < 0) {
     Cred c; long long agora = agoraS();
     memset(&c, 0, sizeof c);
@@ -1080,8 +1261,8 @@ void farolsinal_saida(const char *id, char tipo, int temporada, int episodio,
   if (falha) return;
   serie = tipo == DIARIO_SERIE;
   agora = agoraS();
-  TRAVA();
-  if (garante_i() && S.rec) {
+  if (!travaPronta()) return;
+  if (S.rec) {
     memset(&c, 0, sizeof c);
     c.idh = h1(id);
     c.hb = hDom(id, K_SAIDA, 0) ^ mix64((uint64_t)agora);
@@ -1097,37 +1278,37 @@ void farolsinal_saida(const char *id, char tipo, int temporada, int episodio,
 // --------------------------------------------------------- sinais avulsos --
 void farolsinal_interesse(const CatItem *ci) {
   if (!ci || !ci->imdb[0]) return;
-  TRAVA();
-  if (garante_i() && S.rec)
+  if (!travaPronta()) return;
+  if (S.rec)
     avulso(ci, K_INTERESSE, diaDe(agoraS()), FG_D_INTERESSE);
   DTRAVA();
 }
 void farolsinal_mais_assim(const CatItem *ci) {
   if (!ci || !ci->imdb[0]) return;
-  TRAVA();
-  if (garante_i() && S.rec) avulso(ci, K_MAIS, 0, FG_D_MAIS_ASSIM);
+  if (!travaPronta()) return;
+  if (S.rec) avulso(ci, K_MAIS, 0, FG_D_MAIS_ASSIM);
   DTRAVA();
 }
 void farolsinal_recusar(const CatItem *ci) {
   if (!ci || !ci->imdb[0]) return;
-  TRAVA();
-  if (garante_i() && S.rec && avulso(ci, K_RECUSA, 0, FG_D_REPROVOU))
+  if (!travaPronta()) return;
+  if (S.rec && avulso(ci, K_RECUSA, 0, FG_D_REPROVOU))
     { farolgosto_recusar(&S.g, mapa_hash_titulo(ci->imdb)); S.sujo = 1; }
   DTRAVA();
 }
 void farolsinal_desfazer_recusa(const CatItem *ci) {
   if (!ci || !ci->imdb[0]) return;
-  TRAVA();
+  if (!travaPronta()) return;
   // a recusa sai tambem do anel — o titulo volta a aparecer nas fileiras
   // (correcao FAROL38B: "desfazer" deixava o hash para sempre).
-  if (garante_i() && desfazAvulso(ci, K_RECUSA, 0))
+  if (desfazAvulso(ci, K_RECUSA, 0))
     farolgosto_desrecusar(&S.g, mapa_hash_titulo(ci->imdb));
   DTRAVA();
 }
 void farolsinal_mostrado(const CatItem *ci) {
   if (!ci || !ci->imdb[0]) return;
-  TRAVA();
-  if (garante_i() && S.rec) {
+  if (!travaPronta()) return;
+  if (S.rec) {
     farolgosto_mostrado(&S.g, mapa_hash_titulo(ci->imdb),
                         (uint8_t)(diaDe(agoraS()) & 0xff));
     S.sujo = 1;
@@ -1138,8 +1319,7 @@ void farolsinal_origem(const CatItem *ci, int origem) {
   int i;
   if (!ci || !ci->imdb[0] ||
       origem <= FS_ORIGEM_NENHUMA || origem >= FS_ORIGEM_N) return;
-  TRAVA();
-  if (!garante_i()) { DTRAVA(); return; }
+  if (!travaPronta()) return;
   if (S.nOri < FSIN_ORI_N) i = S.nOri++;
   else { i = S.oriProx; S.oriProx = (S.oriProx + 1) % FSIN_ORI_N; }
   S.ori[i].h = mapa_hash_titulo(ci->imdb);
@@ -1158,6 +1338,7 @@ static void pedeFicha(int64_t chave, const char *id, int serie, long tmdb) {
   if (S.nPed >= FSIN_PED_N) return;
   i = S.nPed++;
   S.ped[i].chave = chave; S.ped[i].tmdb = tmdb; S.ped[i].serie = (uint8_t)!!serie;
+  S.ped[i].ger = S.esqGer;
   snprintf(S.ped[i].id, sizeof S.ped[i].id, "%s", id ? id : "");
   pthread_cond_signal(&condPed);
 }
@@ -1185,20 +1366,24 @@ static void *fioLenta(void *u) {
       FarolFicha f;
       corpo[n] = 0;
       if (farolficha_ler_tmdb(corpo, p.serie, &tmp, &f))
-        { farolsinal_ficha_ok(p.chave, &f); continue; }
+        { fichaOk(p.chave, &f, p.ger); continue; }
     }
-    farolsinal_ficha_falhou(p.chave);
+    fichaFalhou(p.chave, p.ger);
   }
   free(corpo);
   return NULL;
 }
 
-void farolsinal_ficha_ok(int64_t chavePed, const FarolFicha *f) {
+// ger < 0: chamada direta (teste/servico), sem fronteira a conferir. ger >=
+// 0: veio do fio de tras com a geracao do pedido — se houve esquecer no
+// meio do transporte, a ficha tardia nao ressuscita o cache (correcao
+// FAROL38D).
+static void fichaOk(int64_t chavePed, const FarolFicha *f, int ger) {
   int64_t real;
   if (!f) return;
   real = farolficha_chave(f);
-  TRAVA();
-  if (garante_i() && real) {
+  if (!travaPronta()) return;
+  if (real && (ger < 0 || S.esqGer == ger)) {
     farolficha_guardar(&S.fc, f);
     S.fichaSujo = 1;
     if (real != chavePed) aliasPoe(chavePed, real);
@@ -1206,10 +1391,13 @@ void farolsinal_ficha_ok(int64_t chavePed, const FarolFicha *f) {
   }
   DTRAVA();
 }
-void farolsinal_ficha_falhou(int64_t chavePed) {
+void farolsinal_ficha_ok(int64_t chavePed, const FarolFicha *f) {
+  fichaOk(chavePed, f, -1);
+}
+static void fichaFalhou(int64_t chavePed, int ger) {
   int i;
-  TRAVA();
-  if (!garante_i()) { DTRAVA(); return; }
+  if (!travaPronta()) return;
+  if (ger >= 0 && S.esqGer != ger) { DTRAVA(); return; }
   for (i = S.nPend - 1; i >= 0; i--)
     if (S.pend[i].c.chave == chavePed) {
       if (++S.pend[i].tent < 2)
@@ -1218,36 +1406,39 @@ void farolsinal_ficha_falhou(int64_t chavePed) {
     }
   DTRAVA();
 }
+void farolsinal_ficha_falhou(int64_t chavePed) {
+  fichaFalhou(chavePed, -1);
+}
 void farolsinal_busca(FarolSinalBusca fn) {
   TRAVA(); busca = fn; pthread_cond_signal(&condPed); DTRAVA();
 }
 int  farolsinal_pendencias(void) {
   int n;
-  TRAVA(); n = garante_i() ? S.nPend : 0; DTRAVA(); return n;
+  if (!travaPronta()) return 0;
+  n = S.nPend; DTRAVA(); return n;
 }
 
 // ---------------------------------------------------------------- ciclo ----
 int  farolsinal_recomendar(void) {
-  int r; TRAVA(); r = garante_i() ? S.rec : 0; DTRAVA(); return r;
+  int r; if (!travaPronta()) return 0; r = S.rec; DTRAVA(); return r;
 }
 void farolsinal_definir_recomendar(int ligado) {
-  TRAVA();
-  if (garante_i() && S.rec != !!ligado) { S.rec = !!ligado; S.sujo = 1; }
-  DTRAVA();
+  if (travaPronta()) {
+    if (S.rec != !!ligado) { S.rec = !!ligado; S.sujo = 1; }
+    DTRAVA();
+  }
 }
 int farolsinal_modelo(FarolGosto *dst) {
   int ok;
   if (!dst) return 0;
-  TRAVA();
-  ok = garante_i();
+  ok = travaPronta();
   if (ok) *dst = S.g;
-  DTRAVA();
+  if (ok) DTRAVA();
   return ok;
 }
 int farolsinal_origens(uint32_t *h, uint8_t *o, uint8_t *d, int max) {
   int i, n = 0;
-  TRAVA();
-  if (!garante_i()) { DTRAVA(); return 0; }
+  if (!travaPronta()) return 0;
   n = S.nOri < max ? S.nOri : max;
   for (i = 0; i < n; i++) {
     if (h) h[i] = S.ori[i].h;
@@ -1261,7 +1452,10 @@ int farolsinal_origens(uint32_t *h, uint8_t *o, uint8_t *d, int max) {
 void farolsinal_iniciar(void) {
   // ouvintes: uma vez, fora de toda trava (ver ligaOuvintes)
   pthread_once(&onceOuv, ligaOuvintes);
-  TRAVA(); garante_i(); DTRAVA();
+  // O iniciar espera a carga do perfil fechar: a volta do travaPronta rouba
+  // a unidade de troca e a executa aqui, com a E/S fora da trava — nem
+  // fopen nem leitura de arquivo sob o mutex (correcao FAROL38D).
+  if (travaPronta()) DTRAVA();
 }
 void farolsinal_pasta(const char *dir) {
   TRAVA();
@@ -1284,8 +1478,9 @@ void farolsinal_relogio(long long (*s)(void), uint32_t (*ms)(void)) {
 typedef struct {
   int n;              // processadas nesta fatia
   int cortou;         // 1 = bateu o teto, ha mais por varrer
-  int abortou;        // 1 = perfil trocou ou fio morreu no meio
+  int abortou;        // 1 = perfil/geracao trocou ou fio morreu no meio
   int perfil;
+  int ger;            // varGer capturado — esquecer/restart invalidam a vez
   long long qUlt;     // `quando` da ultima processada
   int nUlt;           // processadas nesse `quando` nesta fatia
 } VarCtx;
@@ -1293,7 +1488,8 @@ static int cbVar(const DiarioEntrada *e, void *ctx) {
   VarCtx *c = (VarCtx *)ctx;
   if (c->n >= FSIN_VEZ_MAX) { c->cortou = 1; return 0; }
   TRAVA();
-  if (S.perfil != c->perfil || fioMorre) c->abortou = 1;
+  if (S.perfil != c->perfil || S.varGer != c->ger || S.trocando || fioMorre)
+    c->abortou = 1;                                  // correcao FAROL38D
   else if (S.rec) vezNova(e);
   DTRAVA();
   if (c->abortou) return 0;
@@ -1315,8 +1511,8 @@ static void fatiaVarre(int perfil) {
   int seq0, ger;
   memset(&c, 0, sizeof c); memset(&f, 0, sizeof f);
   TRAVA();
-  c.perfil = perfil;
-  q0 = S.cur; seq0 = S.curSeq; ger = S.varGer;
+  c.perfil = perfil; c.ger = ger = S.varGer;
+  q0 = S.cur; seq0 = S.curSeq;
   if (q0) {
     if (seq0 >= FSIN_SEQ_TODA) f.ate = q0;         // grupo do cursor consumido
     else { f.ate = q0 + 1; f.saltar = seq0; }      // retoma dentro do grupo
@@ -1337,23 +1533,27 @@ static void fatiaVarre(int perfil) {
 
 // O episodio completou a temporada? Credita o valor cheio UMA vez por
 // temporada (regra da serie na tabela 2.2). Roda no fio de tras, fora do
-// diario.
-static void confereTemporada(const char *id, int t) {
-  int idx, ne, i, tot = 0, vistos = 0, perfil;
+// diario, com (perfil, geracao) capturados: o sinal de saida e conferido
+// antes de cada dependencia externa e a reentrada na trava descarta se o
+// perfil/geracao andou ou se houve sair (correcao FAROL38D — a r3 viu o
+// credito da temporada cair no perfil errado e desfazer um esquecer).
+static void confereTemporada(const char *id, int t, int perfil, int ger) {
+  int idx, ne, i, tot = 0, vistos = 0;
   const CatEp *ep;
   uint64_t hb;
-  TRAVA(); perfil = S.perfil; DTRAVA();
+  if (fioMorre) return;
   if ((idx = cat_indice_por_imdb(id)) < 0) return;
   ne = cat_n_episodios(idx);
-  for (i = 0; i < ne; i++) {
+  for (i = 0; i < ne && !fioMorre; i++) {
     if ((ep = cat_episodio(idx, i)) == NULL || ep->temporada != t) continue;
     tot++;
     if (diario_episodio(perfil, id, t, ep->episodio, NULL)) vistos++;
   }
-  if (!tot || vistos < tot) return;
+  if (fioMorre || !tot || vistos < tot) return;
   hb = hDom(id, K_TEMP, t);
   TRAVA();
-  if (achaHb(hb) < 0) {
+  if (!fioMorre && S.perfil == perfil && S.varGer == ger &&
+      achaHb(hb) < 0) {
     Cred c;
     const CatItem *ci = cat_item(idx);
     long tmdb = ci ? ci->tmdb : 0;
@@ -1379,15 +1579,15 @@ static int contaEps(const DiarioEntrada *e, void *c) {
 // vistos, ultima vez ha 21+ dias, episodio mais adiante existe no catalogo
 // e o titulo nunca tomou este sinal. Uma varredura por carga do modelo, no
 // fio de tras.
-static void varreLargada(void) {
+static void varreLargada(int perfil, int ger) {
   ProgRegistro regs[64];
-  int n, i, perfil;
+  int n, i;
   long long agora = agoraS();
   long long agoraMs = agora * 1000LL;
-  TRAVA(); perfil = S.perfil; DTRAVA();
+  if (fioMorre) return;
   n = prog_ler(regs, 64);
-  for (i = 0; i < n; i++) {
-    int t = 0, e = 0, idx, ne, k, ha = 0, neps = 0;
+  for (i = 0; i < n && !fioMorre; i++) {
+    int t = 0, e = 0, idx, ne, k, ha = 0, neps = 0, invalido = 0;
     long long q = 0;
     uint64_t hb;
     DiarioFiltro df;
@@ -1396,7 +1596,11 @@ static void varreLargada(void) {
         regs[i].lastWatchedMs <= 0 ||
         agoraMs - regs[i].lastWatchedMs < FSIN_LARGADA_MS) continue;
     hb = hDom(regs[i].contentId, K_LARGADA, 0);
-    TRAVA(); ha = achaHb(hb) >= 0; DTRAVA();
+    TRAVA();
+    if (fioMorre || S.perfil != perfil || S.varGer != ger) invalido = 1;
+    else ha = achaHb(hb) >= 0;
+    DTRAVA();
+    if (invalido) return;
     if (ha) continue;
     // §1.3: a data do ultimo episodio tambem tem de fazer os 21 dias — um
     // episodio visto esta semana nao e serie largada (correcao FAROL38B).
@@ -1406,17 +1610,19 @@ static void varreLargada(void) {
     memset(&df, 0, sizeof df);
     df.id = regs[i].contentId; df.tipo = DIARIO_SERIE;
     diario_percorrer(perfil, &df, contaEps, &neps);
+    if (fioMorre) return;
     if (neps < 1 || neps > 3) continue;
     if ((idx = cat_indice_por_imdb(regs[i].contentId)) < 0) continue;
     ne = cat_n_episodios(idx);
-    for (k = 0; k < ne && !ha; k++) {
+    for (k = 0; k < ne && !ha && !fioMorre; k++) {
       const CatEp *ep = cat_episodio(idx, k);
       if (ep && (ep->temporada > t || (ep->temporada == t && ep->episodio > e)))
         ha = 1;
     }
     if (!ha) continue;
     TRAVA();
-    if (achaHb(hb) < 0) {
+    if (!fioMorre && S.perfil == perfil && S.varGer == ger &&
+        achaHb(hb) < 0) {
       Cred c;
       long long agora = agoraS();
       memset(&c, 0, sizeof c);
@@ -1439,38 +1645,70 @@ static void varreLargada(void) {
 // Cada volta do fio executa UMA unidade e o NV_UM_FIO cede a fibra entre
 // elas — sem fio de verdade o trabalho continua fatiado por rodada.
 static int trabPendente(long long agora) {   // com a trava tomada
-  return S.perfil > 0 &&
-         (S.nTempChk > 0 || !S.largadaVarrida ||
-          ((S.sujo || S.fichaSujo) && agora - S.ultGrav >= FSIN_GRAVA_S));
+  return S.trocando || S.diaFrio ||
+         (S.perfil > 0 &&
+          (S.nTempChk > 0 || !S.largadaVarrida ||
+           ((S.sujo || S.fichaSujo) && agora - S.ultGrav >= FSIN_GRAVA_S)));
 }
 static void trabFatia(void) {
-  char id[DIARIO_ID_MAX]; int t;
+  char id[DIARIO_ID_MAX]; int t, p, ger;
   long long agora;
   TRAVA();
-  if (!garante_i()) { DTRAVA(); return; }
+  if (fioMorre) { DTRAVA(); return; }
+  // a troca de perfil vem primeiro: nada de conferida/gravacao na fronteira
+  if (S.trocando) { DTRAVA(); fioTrocaPerfil(); return; }
+  if (!S.ligado || S.perfil <= 0) { DTRAVA(); return; }
   agora = agoraS();
-  // temporada completa? (fila alimentada pelas vezes de episodio)
+  // temporada completa? (fila alimentada pelas vezes de episodio) — a unidade
+  // leva (perfil, geracao) junto: a conferida descarta se a fronteira andou.
   if (S.nTempChk) {
     S.nTempChk--;
     snprintf(id, sizeof id, "%s", S.tempChk[S.nTempChk].id);
     t = S.tempChk[S.nTempChk].t;
+    p = S.tempChk[S.nTempChk].perfil;
+    ger = S.tempChk[S.nTempChk].ger;
     DTRAVA();
-    confereTemporada(id, t);
+    confereTemporada(id, t, p, ger);
     return;
   }
   if (!S.largadaVarrida) {
     S.largadaVarrida = 1;
+    p = S.perfil; ger = S.varGer;
     DTRAVA();
-    varreLargada();
+    varreLargada(p, ger);
     return;
   }
-  // gravacoes juntas, com folga de 60 s — agora fora do fio da UI
+  // diario descarregado depois da troca (evicao)? a carga fria volta aqui,
+  // neste fio — nunca no passo (correcao FAROL38D).
+  if (S.diaFrio) {
+    p = S.perfil;
+    S.diaFrio = 0;
+    DTRAVA();
+    if (!fioMorre) aqueceDiario(p);
+    return;
+  }
+  // gravacoes juntas, com folga de 60 s — a serializacao sai sob a trava e
+  // a E/S vai sem ela (correcao FAROL38D: nem este fio segura a trava no
+  // disco; a fronteira do esquecer/sair e conferida no rename).
   if ((S.sujo || S.fichaSujo) && agora - S.ultGrav >= FSIN_GRAVA_S) {
-    char cam[1100];
+    char cam[1100], nome[64];
+    char *gm = NULL, *ge = NULL; unsigned char *gf = NULL;
+    size_t nGm = 0, nGe = 0, nGf = 0;
+    int pGrav = S.perfil, eGer = S.esqGer;
     S.ultGrav = agora;
-    if (S.sujo) { gravaModelo(); gravaEstado(); S.sujo = 0; }
-    if (S.fichaSujo && caminho("farol-fichas.bin", cam, sizeof cam))
-      { farolficha_gravar(&S.fc, cam); S.fichaSujo = 0; }
+    if (S.sujo) { gm = textoModelo(&nGm); ge = textoEstado(&nGe); S.sujo = 0; }
+    if (S.fichaSujo) { gf = textoFichas(&nGf); S.fichaSujo = 0; }
+    DTRAVA();
+    if (pGrav > 0) {
+      if (gm) { nomeGosto(pGrav, nome, sizeof nome);
+        if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, gm, nGm, 0, eGer); }
+      if (ge) { nomeEstado(pGrav, nome, sizeof nome);
+        if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, ge, nGe, 0, eGer); }
+    }
+    if (gf && caminho("farol-fichas.bin", cam, sizeof cam))
+      gravaBuf(cam, gf, nGf, 0, eGer);
+    free(gm); free(ge); free(gf);
+    return;
   }
   DTRAVA();
 }
@@ -1495,52 +1733,75 @@ static void *fioTrab(void *u) {
 }
 
 void farolsinal_passo(void) {
-  int i, perfil, varre;
+  int i, perfil, varre, pronto;
   long long agora;
   TRAVA();
-  if (!garante_i()) { DTRAVA(); return; }
+  pronto = garante_i();      // so agenda a troca; a E/S fica no fio de tras
   perfil = S.perfil; agora = agoraS();
   // a fila lenta so nasce quando ha transporte e pedido — leitura e
   // criacao no mesmo fecho (correcao FAROL38B: busca/fioVivo liam soltos)
-  if (busca && !fioVivo && !fioMorre && S.nPed &&
+  if (pronto && busca && !fioVivo && !fioMorre && S.nPed &&
       !pthread_create(&fioId, NULL, fioLenta, NULL)) fioVivo = 1;
-  // pendencias velhas demais morrem: a ficha nao veio em 30 dias
-  for (i = S.nPend - 1; i >= 0; i--)
-    if (S.pend[i].c.quando < agora - (long long)FSIN_PEND_DIAS * 86400)
-      { pendTira(i); S.sujo = 1; }
-  varre = S.varrer;
-  // conferidas e gravacoes vao para o fio de tras — o quadro so agenda
-  // (correcao FAROL38C: a UI nao espera diario, catalogo nem disco).
-  if (!fioTrabVivo && !fioMorre && trabPendente(agora) &&
-      !pthread_create(&fioTrabId, NULL, fioTrab, NULL)) fioTrabVivo = 1;
-  else if (fioTrabVivo && trabPendente(agora))
-    pthread_cond_signal(&condTrab);
+  if (pronto) {
+    // pendencias velhas demais morrem: a ficha nao veio em 30 dias
+    for (i = S.nPend - 1; i >= 0; i--)
+      if (S.pend[i].c.quando < agora - (long long)FSIN_PEND_DIAS * 86400)
+        { pendTira(i); S.sujo = 1; }
+    varre = S.varrer;
+  } else varre = 0;
+  // conferidas, trocas de perfil, cargas e gravacoes vao para o fio de
+  // tras — o quadro so agenda (correcao FAROL38C/D: a UI nao espera
+  // diario, catalogo nem disco, nem no init nem na troca de perfil).
+  if (trabPendente(agora)) acordaTrab();
   DTRAVA();
   // varredura do diario (pos-RECARREGADO ou primeira carga): UMA fatia por
   // passada com teto rigido de FSIN_VEZ_MAX entregas, cursor composto que
   // avanca ate em empate de `quando` — termina sempre (correcao FAROL38C).
+  // diario_carregado NAO dispara a carga: se a loja ainda esta fria, quem
+  // esquenta e o fio de tras e a varredura espera a proxima passada.
+  if (varre && !diario_carregado(perfil)) {
+    varre = 0;
+    TRAVA();
+    if (!S.trocando && S.perfil == perfil) { S.diaFrio = 1; acordaTrab(); }
+    DTRAVA();
+  }
   if (varre) fatiaVarre(perfil);
 }
 
 void farolsinal_sair(void) {
-  char cam[1100];
-  int vivo, tvivo;
+  char cam[1100], nome[64];
+  char *gm = NULL, *ge = NULL;
+  unsigned char *gf = NULL;
+  size_t nGm = 0, nGe = 0, nGf = 0;
+  int vivo, tvivo, p;
   TRAVA();
-  if (!garante_i()) { DTRAVA(); return; }
-  // NAO espera busca nem varredura em curso: o fio da UI nao pode pendurar
-  // na saida (correcao FAROL38B/C). Os fios veem fioMorre e morrem
-  // sozinhos; o que ainda faltava grava do estado — a pendencia volta na
-  // proxima carga.
+  garante_i();
+  // NAO espera busca, troca nem varredura em curso: o fio da UI nao pode
+  // pendurar na saida (correcao FAROL38B/C). Os fios veem fioMorre e
+  // morrem sozinhos; o que ainda faltava grava do estado — a pendencia
+  // volta na proxima carga. A copia sai sob a trava e a escrita vai SEM
+  // ela (correcao FAROL38D): escritor em voo atrasado nao instala nada —
+  // so estes buffers `final` pisam no disco depois do sinal.
+  p = S.perfil;
   fioMorre = 1;
   pthread_cond_signal(&condPed);
   pthread_cond_signal(&condTrab);
+  pthread_cond_broadcast(&condTroca);
   vivo = fioVivo; fioVivo = 0;
   tvivo = fioTrabVivo; fioTrabVivo = 0;
-  gravaModelo(); gravaEstado();
-  if (caminho("farol-fichas.bin", cam, sizeof cam) && (S.fc.sujo || S.fc.n))
-    farolficha_gravar(&S.fc, cam);
-  S.fc.sujo = 0; S.sujo = 0;
+  if (p > 0) { gm = textoModelo(&nGm); ge = textoEstado(&nGe); }
+  if (S.fc.sujo || S.fc.n) gf = textoFichas(&nGf);
+  S.fc.sujo = 0; S.sujo = 0; S.trocando = 0;
   DTRAVA();
+  if (p > 0) {
+    if (gm) { nomeGosto(p, nome, sizeof nome);
+      if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, gm, nGm, 1, 0); }
+    if (ge) { nomeEstado(p, nome, sizeof nome);
+      if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, ge, nGe, 1, 0); }
+  }
+  if (gf && caminho("farol-fichas.bin", cam, sizeof cam))
+    gravaBuf(cam, gf, nGf, 1, 0);
+  free(gm); free(ge); free(gf);
   if (vivo) pthread_detach(fioId);
   if (tvivo) pthread_detach(fioTrabId);
 }
@@ -1548,7 +1809,7 @@ void farolsinal_sair(void) {
 void farolsinal_esquecer(void) {
   char cam[1100], nome[64];
   TRAVA();
-  if (!garante_i()) { DTRAVA(); return; }
+  garante_i();   // se houver troca em voo, ela e cancelada no reset abaixo
   if (S.perfil > 0) {
     nomeGosto(S.perfil, nome, sizeof nome);
     if (caminho(nome, cam, sizeof cam)) remove(cam);
@@ -1564,6 +1825,9 @@ void farolsinal_esquecer(void) {
   S.largadaVarrida = 0; S.rec = 1;
   S.sujo = 0;
   S.fichaSujo = 0;
+  S.esqGer++;                 // invalida gravacao/varredura/conferida em voo
+  S.diaFrio = 0;
+  if (S.trocando) { S.trocando = 0; S.pendTroca = 0; }
   DTRAVA();
 }
 
@@ -1573,8 +1837,9 @@ void farolsinal_esquecer(void) {
 int farolsinal_teste_trabalho(void) {
   int r;
   TRAVA();
-  r = garante_i() &&
-      (S.varrer || fioTrabOcup || trabPendente(agoraS()));
+  garante_i();
+  r = S.trocando || S.diaFrio || S.varrer || fioTrabOcup ||
+      trabPendente(agoraS());
   DTRAVA();
   return r;
 }
@@ -1587,6 +1852,7 @@ void farolsinal_teste_zera(void) {
   S.nCred = S.nPend = S.nObra = S.obraProx = S.nAli = 0;
   S.nPed = S.nTempChk = S.nOri = S.oriProx = 0;
   S.sujo = S.fichaSujo = 0; S.ultGrav = 0;
+  S.trocando = S.pendTroca = S.diaFrio = 0; S.esqGer++;
   fioMorre = 0;                          // "reboot" tambem do fio lento
   DTRAVA();
 }

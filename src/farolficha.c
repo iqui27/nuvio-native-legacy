@@ -228,6 +228,52 @@ void farolficha_guardar(FarolFichaCache *c, const FarolFicha *f) {
 // ---------------------------------------------------------------------------
 // ARQUIVO — "FFICHA01": magic(8) + n u16 + tam u16 + n fichas de 96 bytes,
 // na ordem do cache. Sem cabecalho por ficha: a chave sai dos campos.
+// O formato mora no par escrever/ler_mem: arquivo e so um dos transportes —
+// quem grava a partir de copia (correcao FAROL38D) usa o par em memoria.
+
+size_t farolficha_escrever(const FarolFichaCache *c, unsigned char *dst,
+                           size_t cap) {
+  size_t n;
+  if (!c || !dst) return 0;
+  n = (size_t)FICHA_HDR + (size_t)c->n * sizeof(FarolFicha);
+  if (cap < n) return 0;
+  memcpy(dst, FICHA_MAGIC, 8);
+  dst[8] = (unsigned char)(c->n & 0xff);
+  dst[9] = (unsigned char)(c->n >> 8);
+  dst[10] = (unsigned char)(sizeof(FarolFicha) & 0xff);
+  dst[11] = (unsigned char)(sizeof(FarolFicha) >> 8);
+  if (c->n) memcpy(dst + FICHA_HDR, c->f, (size_t)c->n * sizeof(FarolFicha));
+  return n;
+}
+
+int farolficha_ler_mem(FarolFichaCache *c, const unsigned char *b, size_t n) {
+  unsigned qtd = 0, tam = 0, i;
+  const unsigned char *p;
+  if (!c || !b) return 0;
+  farolficha_cache_iniciar(c);
+  if (n < FICHA_HDR || memcmp(b, FICHA_MAGIC, 8)) return 0;
+  qtd = (unsigned)b[8] | ((unsigned)b[9] << 8);
+  tam = (unsigned)b[10] | ((unsigned)b[11] << 8);
+  // tamanho tem de fechar EXATO: lixo no fim e corte sao a mesma corrupcao.
+  if (qtd > FAROL_FICHA_MAX || tam != sizeof(FarolFicha) ||
+      n != (size_t)FICHA_HDR + (size_t)qtd * tam) return 0;
+  p = b + FICHA_HDR;
+  for (i = 0; i < qtd; i++, p += tam) {
+    int64_t ch;
+    int j;
+    memcpy(&c->f[c->n], p, sizeof(FarolFicha));
+    ch = farolficha_chave(&c->f[c->n]);
+    if (!ch) continue;
+    // Duas fichas com a mesma chave: o gravador nao produz isso, entao o
+    // arquivo esta corrompido e vale o descarte como qualquer outro.
+    for (j = 0; j < c->n; j++)
+      if (farolficha_chave(&c->f[j]) == ch) break;
+    if (j < c->n) break;
+    c->n++;
+  }
+  if (i != qtd) { c->n = 0; return 0; }
+  return 1;
+}
 
 int farolficha_ler_arquivo(FarolFichaCache *c, const char *caminho) {
   unsigned char hdr[FICHA_HDR];
