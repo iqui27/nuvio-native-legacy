@@ -2,6 +2,8 @@
 set -eu
 cd "$(dirname "$0")/.."
 DIR=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-mkvass-pgs.XXXXXX")
+# A coleta do diagnostico e opt-in: estes testes leem mkvass_diagnostico.
+export NUVIO_PGS_DIAGNOSTICS=1
 SRV=
 trap '[ -z "$SRV" ] || kill "$SRV" 2>/dev/null; rm -rf "$DIR"' EXIT
 flags=()

@@ -629,6 +629,9 @@ static MkvassPreparo *estadoDoFio(const Fio *f) {
 
 static void publicarDiagnostico(Fio *f) {
   MkvassPreparo *s = estadoDoFio(f);
+  // Coleta opt-in: sem NUVIO_PGS_DIAGNOSTICS=1 ninguem le o snapshot e o
+  // mutex+copia a cada Range e a cada bloco e custo morto no caminho normal.
+  if (!s->diagLog) return;
   f->diag.reader_seconds = f->varreTs;
   f->diag.scanning = f->varredura || f->semRel || f->relRuins;
   f->diag.buffered_bytes = f->jan.n;
@@ -2638,8 +2641,13 @@ static int ritmoPgs(Fio *f, long *len, long precisa) {
     pthread_mutex_lock(&estadoDoFio(f)->trava);
     folga = estadoDoFio(f)->folga; pos = estadoDoFio(f)->pos;
     pthread_mutex_unlock(&estadoDoFio(f)->trava);
-    if (fabs(pos - f->posRef) > MKVASS_VARRE_ATRAS_SEG) return 0;
+    // Seek: o ritmo recomeca — a divida de scanNext era da posicao velha.
+    if (fabs(pos - f->posRef) > MKVASS_VARRE_ATRAS_SEG) { f->scanNext = 0; return 0; }
     f->diag.throttled = folga >= 0 && folga < MKVASS_VARRE_FOLGA_SEG;
+    // O Cluster em que o playhead JA entrou pode trazer a PGS vigente:
+    // adiar essa leitura a faz expirar antes de aparecer (a base terminava
+    // o trecho iniciado). O ritmo so freia o que esta a frente do playhead.
+    if (f->varreTs >= 0.0 && f->varreTs < pos) f->diag.throttled = 0;
     f->diag.scan_state = MKVASS_SCAN_BUDGET;
     publicarDiagnostico(f);
     if (!f->diag.throttled) return 1;
@@ -2798,6 +2806,7 @@ static void posicionarVarredura(Fio *f, double pos) {
   else   { p->cursor = b; f->varreTs = ts; }
   p->cursorTs = -1.0;
   f->varreSaltou = 1;
+  f->scanNext = 0;   // a divida do ritmo era da posicao anterior
   printf("[mkvass] varredura saltou para %.0f s (byte %lld, alvo %.0f s, playhead %.0f s)\n",
          f->varreTs, p->cursor, alvo, pos);
   fflush(stdout);
