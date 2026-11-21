@@ -943,7 +943,6 @@ static Uint32 seekEm;
 // o bufferRange do uMS informa; o AVPlay nao informa instante nenhum de buffer,
 // so porcentagem. Aqui o gatilho e "a posicao ja andou 5 s de verdade", que e o
 // mesmo sinal indireto — se o tempo corre, a fonte esta entregando.
-static double creditosNomeado, creditosUltimo;
 static pthread_t fioMkv;
 static int       fioMkvVivo, mkvPendente;
 
@@ -952,7 +951,6 @@ static int       fioMkvVivo, mkvPendente;
 // capitulos da barra e os trechos de intro saem do capmkv). Mesma limpeza que
 // video_tocar/video_parar fazem na LG (capmkv_zerar, src/video.c).
 static void limparCreditosCapitulos(void) {
-  creditosNomeado = creditosUltimo = 0.0;
   capmkv_zerar();
 }
 
@@ -1266,6 +1264,7 @@ static void *lerMkv(void *arg) {
   MkvCap   caps[MKV_MAX_CAPS];
   char url[NV_MEDIA_URL_MAX];
   int n, nCaps = 0;
+  unsigned capGer = capmkv_geracao();
   (void)arg;
   snprintf(url, sizeof url, "%s", urlAtual);
   n = mkv_faixas_e_caps(url, fx, MKV_MAX_FAIXAS, caps, MKV_MAX_CAPS, &nCaps);
@@ -1273,12 +1272,12 @@ static void *lerMkv(void *arg) {
   // arquivo anterior nao valem para o que esta tocando agora. Mesma checagem
   // por strcmp que a LG faz junto da sessao (mkvFioSessao, src/video.c).
   if (nCaps > 0 && !strcmp(url, urlAtual)) {
-    creditosNomeado = mkv_creditos_nomeados(caps, nCaps);
-    creditosUltimo  = mkv_creditos_ultimo(caps, nCaps);
+    double creditosNomeado = mkv_creditos_nomeados(caps, nCaps);
+    double creditosUltimo  = mkv_creditos_ultimo(caps, nCaps);
     printf("[mkv] %d capitulos; creditos nomeados em %.0fs, ultimo em %.0fs\n",
            nCaps, creditosNomeado, creditosUltimo);
     fflush(stdout);
-    capmkv_aplicar(caps, nCaps);   // abertura/creditos/previa do arquivo -> modulo de intro
+    capmkv_aplicar_ger(caps, nCaps, capGer);   // abertura/creditos/previa do arquivo -> modulo de intro
   }
   if (n < 1) marco("mkv: nenhuma faixa lida (nao e MKV, ou Range falhou)");
   else if (!strcmp(url, urlAtual)) aplicarIdiomasDoMkv(fx, n);
@@ -1730,6 +1729,8 @@ int    video_terminou(void)   { return terminou; }
 int    video_conflito_recurso(void) { return 0; }
 
 double video_creditos(void) {
+  double creditosNomeado = capmkv_creditos_nomeado();
+  double creditosUltimo = capmkv_creditos_ultimo(video_duracao());
   double dur;
   if (creditosNomeado > 1.0) return creditosNomeado;
   dur = video_duracao();
@@ -1740,9 +1741,10 @@ double video_creditos(void) {
 }
 
 double video_creditos_nomeado(void) {
-  return creditosNomeado > 1.0 ? creditosNomeado : 0.0;
+  return capmkv_creditos_nomeado();
 }
 double video_creditos_ultimo(double dur) {
+  double creditosUltimo = capmkv_creditos_ultimo(dur);
   if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75 &&
       dur - creditosUltimo >= CAPMKV_ULTIMO_FOLGA_S)   // toco no fim nao e creditos
     return creditosUltimo;

@@ -57,10 +57,13 @@ double video_creditos_ultimo(double dur);
 print(function(tizen, "double video_creditos(void) {"))
 print(function(html5, "double video_creditos(void) {").replace(
     "double video_creditos(void)", "double video_creditos_html5(void)", 1))
+for signature in ("double video_creditos_nomeado(void) {", "double video_creditos_ultimo(double dur) {"):
+    print(function(tizen, signature))
+    print(function(html5, signature).replace("video_creditos_", "video_creditos_html5_"))
 effective = function(player, "static double credEfetivo(void) {")
 print(effective)
 print(effective.replace("credEfetivo(", "credEfetivoHtml5(")
-      .replace("video_creditos(", "video_creditos_html5("))
+      .replace("video_creditos", "video_creditos_html5"))
 print(film_half)
 print(function(posplay, "static int credAceito(double"))
 print(function(posplay, "int posplay_regra_filme(double"))
@@ -72,6 +75,7 @@ print(f"""
 // copiou no disparo; urlAtual e o que a tela toca AGORA.
 static void sondaPublica(const char *u, MkvCap *caps, int nCaps) {{
   char url[8192];
+  unsigned capGer = capmkv_geracao();
   snprintf(url, sizeof url, "%s", u);
   {pubblock}
 }}
@@ -97,6 +101,7 @@ int main(void) {{
          video_creditos(), credEfetivo(), creditoPainel());
   assert(credEfetivo() == 950.0 && creditoPainel() == 950.0);
   intro_desligar();
+  capmkv_zerar();
   creditosNomeado = creditosUltimo = 0.0;
   duracaoSeg = 1200;
   printf("MP4 seguinte: local %.0f, efetivo %.0f, painel %.0f; filme@950=%d, episodio@950=%d\\n",
@@ -127,10 +132,13 @@ int main(void) {{
 
   // 4) Painel do filme: o nomeado do arquivo ganha do marcador de provedor.
   {{ IntroTrecho prov[] = {{{{1100, 1200, INTRO_CREDITOS, 0, 0}}}};
+    sondaPublica("a.mkv", caps, 2);
+    intro_desligar();
     intro_definir_duracao(1200, 1);
     intro_shot_rede(prov, 1, NULL, 0);
     duracaoSeg = 1200;
     creditosNomeado = 950;
+    assert(intro_creditos_seg() == 1100);
     printf("painel: nomeado 950 vs provedor %.0f -> %.0f\\n",
            intro_creditos_seg(), creditoPainel());
     assert(creditoPainel() == 950.0); }}
