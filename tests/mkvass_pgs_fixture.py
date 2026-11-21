@@ -61,3 +61,28 @@ for kind in ('sparse', 'empty', 'malformed', 'badzlib', 'truncated'):
 
     if kind == 'sparse':
         p.joinpath('nocues.mkv').write_bytes(el(0x1a45dfa3,el(0x4282,b'matroska'))+el(0x18538067,tracks+b''.join(clusters)))
+
+# Cenario "strict-ahead" (PR763): o playhead fica no Cluster de 600 s (ou em
+# 599 s, no de 300), ambos pequenos (32 KiB) e com o futuro logo adiante. Os
+# demais Clusters levam 4 blocos de video de 700 KiB; a PGS so mora no de
+# 660 s. Com folga baixa, o primeiro Range do Cluster futuro tem de respeitar
+# o orcamento mesmo antes de o Timestamp dele ser lido.
+tracks = el(0x1654ae6b,
+    el(0xae,u(0xd7,1)+u(0x83,1)+el(0x86,b'V_MPEG4/ISO/AVC')) +
+    el(0xae,u(0xd7,6)+u(0x83,17)+el(0x86,b'S_HDMV/PGS')) +
+    el(0xae,u(0xd7,7)+u(0x83,17)+el(0x86,b'S_HDMV/PGS')))
+clusters=[]
+for sec in (0,60,120,300,600,660):
+    body=u(0xe7,sec*1000)
+    body+=el(0xa3,b'\x81\0\0\0'+b'\0'*((32 if sec in (300,600) else 700)*1024))*(1 if sec in (300,600) else 4)
+    if sec == 660:
+        body+=el(0xa0,el(0xa1,b'\x86\0\0\0'+mostra)+u(0x9b,0x7d0))
+        body+=el(0xa3,b'\x86'+(3000).to_bytes(2,'big')+b'\0'+limpa)
+    clusters.append(el(0x1f43b675,body))
+sh=el(0x114d9b74,el(0x4dbb,el(0x53ab,bytes.fromhex('1c53bb6b'))+u(0x53ac,0)))
+offset=len(sh)+len(tracks)
+offsets=[]
+for c in clusters: offsets.append(offset); offset+=len(c)
+sh=el(0x114d9b74,el(0x4dbb,el(0x53ab,bytes.fromhex('1c53bb6b'))+u(0x53ac,offset)))
+cues=el(0x1c53bb6b,b''.join(el(0xbb,u(0xb3,t*1000)+el(0xb7,u(0xf7,1)+u(0xf1,o))) for t,o in zip((0,60,120,300,600,660),offsets)))
+p.joinpath('ahead.mkv').write_bytes(el(0x1a45dfa3,el(0x4282,b'matroska'))+el(0x18538067,sh+tracks+b''.join(clusters)+cues))

@@ -57,7 +57,8 @@ kill "$SRV" 2>/dev/null; SRV=
 # Fixture do budget: a varredura no limite exato do Cluster (pos==varreTs)
 # nao estaciona mais — a PGS vigente pode estar nele. O budget e medido num
 # Cluster ADIANTE dentro da janela (660 s com o playhead em 600), com a PGS
-# logo apos os primeiros 512 KiB para so chegar no pedaco ritmado.
+# logo no inicio dele — o primeiro Range futuro ja e ritmado, entao ela
+# chega no pedaco de 64 KiB que abre o Cluster.
 mkdir "$DIR/budget-fixture"
 python3 - "$DIR/budget-fixture" <<'PY'
 from pathlib import Path
@@ -70,8 +71,17 @@ assert fixture.count(secs) == 1
 fixture = fixture.replace(secs, "for sec in (0,60,120,300,600,660):")
 fixture = fixture.replace("zip((0,60,120,300,600),offsets)",
                           "zip((0,60,120,300,600,660),offsets)")
-fixture = fixture.replace("if sec in (300,600) and kind != 'empty':",
-                          "if sec == 660:")
+alvo = ("        body+=el(0xa3,b'\\x81\\0\\0\\0'+b'\\0'*(128*1024))*4\n"
+        "        if sec in (300,600) and kind != 'empty':\n"
+        "            packet = mostra if kind not in ('malformed','badzlib') else b'\\x16\\xff\\xff'\n"
+        "            body+=el(0xa0,el(0xa1,b'\\x86\\0\\0\\0'+packet)+u(0x9b,2000))\n"
+        "            body+=el(0xa3,b'\\x86'+(3000).to_bytes(2,'big')+b'\\0'+limpa)")
+novo = ("        if sec == 660:\n"
+        "            body+=el(0xa0,el(0xa1,b'\\x86\\0\\0\\0'+mostra)+u(0x9b,2000))\n"
+        "            body+=el(0xa3,b'\\x86'+(3000).to_bytes(2,'big')+b'\\0'+limpa)\n"
+        "        body+=el(0xa3,b'\\x81\\0\\0\\0'+b'\\0'*(128*1024))*4")
+assert fixture.count(alvo) == 1
+fixture = fixture.replace(alvo, novo)
 fixture = fixture.replace(
     "for kind in ('sparse','empty','malformed','badzlib','truncated'):",
     "for kind in ('sparse',):")

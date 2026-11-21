@@ -513,6 +513,7 @@ typedef struct {
   int      varreInteira, varreSaltou;
   double   varreDur;       // Duration do Segment, em segundos (0 = nao veio)
   double   varreTs;        // tempo do ultimo Cluster visto pela varredura (-1 = nenhum)
+  Off      varreClFim;     // fim do Cluster dono de varreTs, exclusivo (<=0 = desconhecido)
   Cob      cob[MKVASS_COB];
   int      nCob;
   Janela   jan;            // janela da varredura, viva entre trechos
@@ -2163,7 +2164,7 @@ static int armarVarreduraInteira(Fio *f) {
   if (f->primeiroCluster < 0 && !acharPrimeiroCluster(f)) return 0;
   v.cluster = f->primeiroCluster; v.tempo = 0;
   if (!armarVarredura(f, &v, 1, 1)) return 0;
-  f->varreInteira = 1; f->varreTs = -1.0;
+  f->varreInteira = 1; f->varreTs = -1.0; f->varreClFim = -1;
   return 1;
 }
 
@@ -2640,7 +2641,7 @@ static Off varreFim(const Fio *f, int i) {
 // Called only on cache misses. Charge the requested size, including a full
 // subtitle block (at most 1 MiB), so large objects cannot bypass the budget.
 // A seek abandons this operation; stop/track change wake the condition wait.
-static int ritmoPgs(Fio *f, long *len, long precisa) {
+static int ritmoPgs(Fio *f, Off o, long *len, long precisa) {
   if (!f->imagem) return 1;
   while (minhaVez(f)) {
     double folga, pos;
@@ -2656,7 +2657,12 @@ static int ritmoPgs(Fio *f, long *len, long precisa) {
     // o trecho iniciado). O ritmo so freia o que esta a frente do playhead.
     // varreTs == pos: retomada no instante exato do Cluster (o passo so
     // publica de 0,5 em 0,5 s) — a PGS vigente esta nele, libera tambem.
-    if (f->varreTs >= 0.0 && f->varreTs <= pos) f->diag.throttled = 0;
+    // A excecao cobre so pedidos inteiros DENTRO do Cluster dono de varreTs:
+    // o cabecalho do Cluster seguinte e pedido antes de o Timestamp dele
+    // entrar em varreTs, entao o Range que comeca no fim ou cruza o fim fica
+    // no orcamento normal. Fim desconhecido (<=0) conta como futuro.
+    if (f->varreTs >= 0.0 && f->varreTs <= pos &&
+        o + *len <= f->varreClFim) f->diag.throttled = 0;
     f->diag.scan_state = MKVASS_SCAN_BUDGET;
     publicarDiagnostico(f);
     if (!f->diag.throttled) return 1;
@@ -2692,7 +2698,7 @@ static int garantir(Fio *f, Janela *w, Off o, long precisa, Off fim,
   }
   len = varreTam(f, o, fim, precisa);
   if (len <= 0) return 2;
-  if (!ritmoPgs(f, &len, precisa)) return 3;
+  if (!ritmoPgs(f, o, &len, precisa)) return 3;
   f->diag.scan_state = MKVASS_SCAN_READING;
   publicarDiagnostico(f);
   p = range(f, o, len, &n);
@@ -2756,7 +2762,7 @@ static Off ressincronizar(Fio *f, Off byte, double *ts) {
     long len = f->varreCh > 0 ? f->varreCh : MKVASS_VARRE_CH;
     if (f->segFim > 0 && byte + len > f->segFim) len = (long)(f->segFim - byte);
     if (len < 16) return -1;
-    if (!ritmoPgs(f, &len, 16)) return -1;
+    if (!ritmoPgs(f, byte, &len, 16)) return -1;
     p = range(f, byte, len, &n);
     if (!p) return -1;
     for (k = 0; k + 16 <= n; k++) {
@@ -2795,8 +2801,8 @@ static void posicionarVarredura(Fio *f, double pos) {
       f->varreTs <= pos + MKVASS_VARRE_JANELA_SEG) return;
   // Ja lemos o tempo do playhead: continua do fim daquele trecho.
   c = cobNoTempo(f, pos);
-  if (c) { p->cursor = c->b1; p->cursorTs = -1.0; f->varreTs = c->t1; return; }
-  if (alvo <= 0.0) { p->cursor = f->primeiroCluster; p->cursorTs = -1.0; f->varreTs = 0.0; return; }
+  if (c) { p->cursor = c->b1; p->cursorTs = -1.0; f->varreTs = c->t1; f->varreClFim = c->b1; return; }
+  if (alvo <= 0.0) { p->cursor = f->primeiroCluster; p->cursorTs = -1.0; f->varreTs = 0.0; f->varreClFim = -1; return; }
   if (f->varreDur <= 1.0 || f->segFim <= f->primeiroCluster) return;
   byte = f->primeiroCluster + (Off)((double)(f->segFim - f->primeiroCluster) * (alvo / f->varreDur));
   for (tent = 0; tent < 4; tent++) {
@@ -2811,8 +2817,8 @@ static void posicionarVarredura(Fio *f, double pos) {
   }
   if (b < 0) return;
   c = cobQueContem(f, b);
-  if (c) { p->cursor = c->b1; f->varreTs = c->t1; }
-  else   { p->cursor = b; f->varreTs = ts; }
+  if (c) { p->cursor = c->b1; f->varreTs = c->t1; f->varreClFim = c->b1; }
+  else   { p->cursor = b; f->varreTs = ts; f->varreClFim = -1; }
   p->cursorTs = -1.0;
   f->varreSaltou = 1;
   f->scanNext = 0;   // a divida do ritmo era da posicao anterior
@@ -2863,7 +2869,7 @@ static int varrerTrecho(Fio *f, int i, double tLim) {
       const Cob *c = cobQueContem(f, o);
       if (c) {
         if (tsIni >= 0.0) cobAdicionar(f, ini, o, tsIni, tsFim);
-        ini = o = c->b1; tsIni = tsFim = c->t1; f->varreTs = c->t1;
+        ini = o = c->b1; tsIni = tsFim = c->t1; f->varreTs = c->t1; f->varreClFim = c->b1;
         if (c->t1 > tLim) goto sair;
         continue;
       }
@@ -2899,7 +2905,7 @@ static int varrerTrecho(Fio *f, int i, double tLim) {
             f->pontos[i].cursor = cl.pos; f->pontos[i].cursorTs = ts;
             goto sair;
           }
-          f->varreTs = ts;
+          f->varreTs = ts; f->varreClFim = clFim;
           if (tsIni < 0.0) tsIni = ts;
           tsFim = ts;
         }
@@ -4162,7 +4168,7 @@ static int iniciarFioDe(MkvassPreparo *s, const char *url, int numeroFaixa, int 
   s->parar = 0;
   s->pedidos = s->bytes = 0;
   memset(&s->diag, 0, sizeof s->diag);
-  s->diag.reader_seconds = f->varreTs = -1.0;
+  s->diag.reader_seconds = f->varreTs = -1.0; f->varreClFim = -1;
   s->diag.reader_byte = -1;
   s->diagLog = getenv("NUVIO_PGS_DIAGNOSTICS") && !strcmp(getenv("NUVIO_PGS_DIAGNOSTICS"), "1");
   s->diagLogMs = 0;

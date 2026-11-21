@@ -31,3 +31,7 @@ echo "== ritmo drop (folga 30 -> 19.75 durante o Cluster, relogio 1x)"
 NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/drop/sparse.mkv" 30 drop
 echo "== ritmo seek (600 -> 300 s, folga 3)"
 NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/sparse.mkv" 3 seek
+echo "== ritmo ahead (playhead 600 s, Cluster de 32 KiB, futuro 660 s)"
+NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/ahead.mkv" 3 ahead
+echo "== ritmo behind (playhead 599 s, Cluster futuro 600 s)"
+NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/ahead.mkv" 3 behind
