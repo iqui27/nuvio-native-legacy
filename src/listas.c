@@ -1335,10 +1335,16 @@ static void *fioSimkl(void *u) {
                     : (lote[i].imdb[0] && !strcmp(lote[j].imdb, lote[i].imdb)))
             break;
         if (j < base) {
-          // The card that stays is the first slice's; merge into it the real
-          // IMDb and the provider ids the dropped half may carry alone.
+          // The card that stays is the first slice's; merge into it the
+          // provider ids the dropped half may carry alone. The merge cannot
+          // leave the card without a key the OK can open: when the kept half
+          // has no real IMDb, it inherits the dropped half's openable key
+          // ("tt…" or "tmdb:N") — a real tt is never traded for a synthetic
+          // id.
           if (serie) {
-            if (strncmp(lote[j].imdb, "tt", 2) && !strncmp(lote[i].imdb, "tt", 2))
+            if (strncmp(lote[j].imdb, "tt", 2) &&
+                (!strncmp(lote[i].imdb, "tt", 2) ||
+                 !strncmp(lote[i].imdb, "tmdb:", 5)))
               snprintf(lote[j].imdb, sizeof lote[j].imdb, "%s", lote[i].imdb);
             if (!lote[j].simkl) lote[j].simkl = lote[i].simkl;
             if (!lote[j].mal) lote[j].mal = lote[i].mal;
@@ -1377,7 +1383,10 @@ static void *fioSimkl(void *u) {
       snprintf(lote[j].imdb, sizeof lote[j].imdb, "%s", orig.imdb);
       snprintf(lote[j].tipo, sizeof lote[j].tipo, "%s", orig.tipo);
       snprintf(lote[j].titulo, sizeof lote[j].titulo, "%s", orig.titulo);
-      snprintf(lote[j].meta, sizeof lote[j].meta, "%s", orig.meta);
+      // O ano so e identidade da conta quando a conta o trouxe: meta vazia
+      // aqui nao pode apagar o "ano · duracao" que a ficha preencheu.
+      if (orig.meta[0])
+        snprintf(lote[j].meta, sizeof lote[j].meta, "%s", orig.meta);
       snprintf(lote[j].nomeEpisodio, sizeof lote[j].nomeEpisodio, "%s", orig.nomeEpisodio);
       lote[j].tmdb = orig.tmdb; lote[j].simkl = orig.simkl; lote[j].mal = orig.mal;
       lote[j].temporada = orig.temporada; lote[j].episodio = orig.episodio;
