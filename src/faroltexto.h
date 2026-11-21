@@ -179,7 +179,129 @@
   X(OUVINDO) \
   X(AVISOS_FAROL) \
   X(AVISOS_FAROL_DESC) \
-  X(CARTAO_FAROL)
+  X(CARTAO_FAROL) \
+  X(FIL_PORQUE_TERMINOU) \
+  X(FIL_PESSOA) \
+  X(FIL_TEMA) \
+  X(FIL_GENERO) \
+  X(FIL_HORA) \
+  X(FIL_FIMSEMANA) \
+  X(FIL_AMIGOS) \
+  X(FIL_SALVOS) \
+  X(FIL_REVER) \
+  X(FIL_FORA_CURVA) \
+  X(FIL_RECOMENDADOS) \
+  X(FIL_COMECAR) \
+  X(FIL_CLIMA) \
+  X(FIL_SUB_TEMA) \
+  X(MOT_TERMINOU) \
+  X(MOT_TERMINOU_TEMA) \
+  X(MOT_SEMELHANTE) \
+  X(MOT_GENERO) \
+  X(MOT_TEMA) \
+  X(MOT_PESSOA) \
+  X(MOT_DIRETOR) \
+  X(MOT_AMIGO) \
+  X(MOT_AMIGO_ANON) \
+  X(MOT_SALVO) \
+  X(MOT_CABE_HOJE) \
+  X(MOT_REVER) \
+  X(MOT_FORA_CURVA) \
+  X(MOT_RECOMENDADO) \
+  X(MOT_RECOM_ANON) \
+  X(MOT_ESTREIA) \
+  X(MOT_CONTRA) \
+  X(MOT_AMIGOS) \
+  X(DICA_PAROU_L1) \
+  X(DICA_PAROU_L2) \
+  X(DICA_SALVO_L1) \
+  X(DICA_SALVO_L2) \
+  X(DICA_ESTREIA) \
+  X(DICA_FALTA_L1) \
+  X(DICA_FALTA_L2) \
+  X(DICA_TEMPORADA) \
+  X(DICA_TRAKT) \
+  X(DICA_PERGUNTAS) \
+  X(DICA_REVER) \
+  X(DICA_CURTO) \
+  X(INFO_QUALI) \
+  X(INFO_QUALI_AUDIO) \
+  X(INFO_IDIOMA) \
+  X(INFO_LEGENDA) \
+  X(INFO_SOBE) \
+  X(INFO_CAI) \
+  X(INFO_FALTAM) \
+  X(INFO_MESMO_NIVEL) \
+  X(INFO_TERMINA) \
+  X(INFO_DUAS_NOITES) \
+  X(INFO_ONDE) \
+  X(INFO_AMIGOS_TERM) \
+  X(INFO_AMIGO_TERM) \
+  X(INFO_AMIGOS_GOST) \
+  X(INFO_SAGA) \
+  X(INFO_SAGA_VOCE_VIU) \
+  X(INFO_REVER) \
+  X(INFO_REVER_SIMPLES) \
+  X(INFO_RETOMADA) \
+  X(INFO_RETOMADA_SIMPLES) \
+  X(ESC_TEMPO) \
+  X(ESC_TEMPO_45) \
+  X(ESC_TEMPO_FILME) \
+  X(ESC_TEMPO_NOITE) \
+  X(ESC_PESO) \
+  X(ESC_PESO_LEVE) \
+  X(ESC_PESO_INTENSO) \
+  X(ESC_COMPANHIA) \
+  X(ESC_SO_EU) \
+  X(ESC_A_DOIS) \
+  X(ESC_CRIANCA) \
+  X(ESC_NOVIDADE) \
+  X(ESC_NOVO) \
+  X(ESC_CONHECIDO) \
+  X(ESC_FORMATO) \
+  X(ESC_FILME) \
+  X(ESC_SERIE) \
+  X(ESC_IDIOMA) \
+  X(ESC_DUBLADO) \
+  X(ESC_LEGENDADO) \
+  X(ESC_EPOCA) \
+  X(ESC_EPOCA_NOVA) \
+  X(ESC_EPOCA_ANTIGA) \
+  X(ESC_HUMOR) \
+  X(ESC_HUMOR_RIR) \
+  X(ESC_HUMOR_EMOCIONAR) \
+  X(ESC_HUMOR_TENSAO) \
+  X(ESC_CONTINUAR) \
+  X(ESC_CONT_SIM) \
+  X(ESC_COMECAR) \
+  X(ESC_TANTO_FAZ) \
+  X(ESC_PASSO) \
+  X(CMP_TITULO) \
+  X(CMP_DURACAO) \
+  X(CMP_NOTA) \
+  X(CMP_CLIMA) \
+  X(CMP_PORQUE) \
+  X(CMP_QUALIDADE) \
+  X(CMP_TERMINA) \
+  X(CMP_ONDE) \
+  X(CMP_AMIGOS) \
+  X(CMP_VEREDITO_CABE) \
+  X(CMP_VER_QUALIDADE) \
+  X(ACHA_CURTOS_L1) \
+  X(ACHA_NAO_VIU) \
+  X(GOSTO_APRENDEU) \
+  X(GOSTO_ZERAR) \
+  X(GOSTO_ZERAR_CONF) \
+  X(GOSTO_ZERADO) \
+  X(GOSTO_RECOMENDAR) \
+  X(GOSTO_LLM_SO_ESTA_TV) \
+  X(MAIS_ASSIM) \
+  X(NAO_E_PARA_MIM) \
+  X(COMPARAR_COM) \
+  X(NAO_MOSTRO_MAIS) \
+  X(ANOTADO) \
+  X(ESCOLHENDO) \
+  X(PORQUE_TITULO)
 
 // ---------------------------------------------------------- nome e entradas
 #define FT_NOME                "Farol"                 // en: "Beacon"
@@ -358,5 +480,161 @@
 #define FT_AVISOS_FAROL      "Avisos do Farol"
 #define FT_AVISOS_FAROL_DESC "O Farol avisa quando o vídeo falha e confirma o conserto."
 #define FT_CARTAO_FAROL      "Acha o que ver em segundos e destrava o vídeo."
+
+// ============================================ gosto (PLANO-GOSTO, issues 35+)
+// Frases das sete pecas da 4.2: FT_FIL_* titulos/sub de fileira (P1),
+// FT_DICA_* cartao de dica (P2), FT_MOT_* linhas de motivo (P3 e fileira),
+// FT_CMP_* comparar (P4), FT_ESC_* assistente de perguntas (P5), FT_INFO_*
+// linhas de informacao (P6) e FT_ACHA_* resultado em cartazes (P7).
+// Argumentos: %s nome/titulo/tema/duracao/tempo ("1h32", "5 meses", "23:40"),
+// %d numero puro (episodios, minutos, temporada, estrelas). Onde a gramatica
+// da lingua nao aceita encaixe (caso, artigo, genero), a irma usa a forma
+// neutra com dois-pontos da 5.1 ("Do mesmo tema: viagem no tempo.").
+
+// --------------------------------------------------------- fileiras (P1)
+#define FT_FIL_PORQUE_TERMINOU  "Porque você terminou %s"
+#define FT_FIL_PESSOA           "Com %s, de quem você gosta"
+#define FT_FIL_TEMA             "Do mesmo tema: %s"
+#define FT_FIL_GENERO           "Para quem gosta de %s"
+#define FT_FIL_HORA             "Para esta hora"
+#define FT_FIL_FIMSEMANA        "Para o fim de semana"
+#define FT_FIL_AMIGOS           "O que seus amigos gostaram"
+#define FT_FIL_SALVOS           "Dos seus salvos"
+#define FT_FIL_REVER            "Vale rever"
+#define FT_FIL_FORA_CURVA       "Fora do seu costume"
+#define FT_FIL_RECOMENDADOS     "Escolhidos para você"
+#define FT_FIL_COMECAR          "Para começar, pelo que você já viu"
+#define FT_FIL_CLIMA            "No seu clima"
+#define FT_FIL_SUB_TEMA         "Mais sobre %s"
+
+// --------------------------------------------------- motivos (3.5, P3 e P1)
+#define FT_MOT_TERMINOU         "Porque você terminou %s."
+#define FT_MOT_TERMINOU_TEMA    "Você terminou %s e gosta de %s."
+#define FT_MOT_SEMELHANTE       "Parecido com %s, que você terminou."
+#define FT_MOT_GENERO           "Você gosta de %s."
+#define FT_MOT_TEMA             "Do mesmo tema: %s."
+#define FT_MOT_PESSOA           "Com %s, que você acompanha."
+#define FT_MOT_DIRETOR          "Do diretor de %s, que você viu %d vezes."
+#define FT_MOT_AMIGO            "%s gostou. Vocês concordam em %d de cada 10."
+#define FT_MOT_AMIGO_ANON       "Um amigo seu gostou."
+#define FT_MOT_SALVO            "Está nos seus salvos há %s."
+#define FT_MOT_CABE_HOJE        "Cabe hoje: %d min."
+#define FT_MOT_REVER            "Você já viu — vale rever."
+#define FT_MOT_FORA_CURVA       "Fora do seu costume: %s bem avaliado."
+#define FT_MOT_RECOMENDADO      "Indicado por %s."
+#define FT_MOT_RECOM_ANON       "Indicado por um amigo."
+#define FT_MOT_ESTREIA          "Estreia de %s, que você acompanha."
+#define FT_MOT_CONTRA           "Mais lento do que você costuma ver."
+#define FT_MOT_AMIGOS           "%s e %s gostaram."
+
+// ----------------------------------------------------------- dicas (P2)
+#define FT_DICA_PAROU_L1        "Você parou em %s, no T%dE%d."
+#define FT_DICA_PAROU_L2        "Faz %d semanas que você parou."
+#define FT_DICA_SALVO_L1        "Salvo há %s."
+#define FT_DICA_SALVO_L2        "Tem %s."
+#define FT_DICA_ESTREIA         "Estreia nova de %s."
+#define FT_DICA_FALTA_L1        "Faltam %d episódios para fechar a T%d de %s."
+#define FT_DICA_FALTA_L2        "Você já viu a maior parte."
+#define FT_DICA_TEMPORADA       "Temporada nova de %s chegou."
+#define FT_DICA_TRAKT           "Ligar o Trakt traz seu gosto em 1 minuto."
+#define FT_DICA_PERGUNTAS       "Três perguntas e eu acho o que ver."
+#define FT_DICA_REVER           "Vale rever %s."
+#define FT_DICA_CURTO           "Curto para hoje: %s."
+
+// ------------------------------------------------------------ info (P6)
+#define FT_INFO_QUALI           "Tem em %s %s, com áudio em %s."
+#define FT_INFO_QUALI_AUDIO     "Tem em %s, com áudio em %s."
+#define FT_INFO_IDIOMA          "Tem áudio em %s."
+#define FT_INFO_LEGENDA         "Tem legenda em %s."
+#define FT_INFO_SOBE            "A T%d sobe de nota. Faltam %d episódios de %d min."
+#define FT_INFO_CAI             "A T%d cai bastante; muita gente para aqui."
+#define FT_INFO_FALTAM          "Faltam %d episódios de %d min."
+#define FT_INFO_MESMO_NIVEL     "As temporadas seguem no mesmo nível."
+#define FT_INFO_TERMINA         "Termina às %s."
+#define FT_INFO_DUAS_NOITES     "Dá em %d noites de %d min."
+#define FT_INFO_ONDE            "Também está na %s."
+#define FT_INFO_AMIGOS_TERM     "%s e %s terminaram."
+#define FT_INFO_AMIGO_TERM      "%s terminou."
+#define FT_INFO_AMIGOS_GOST     "%s e %s gostaram."   // mesmo literal de FT_MOT_AMIGOS
+#define FT_INFO_SAGA            "É o %dº de %d."
+#define FT_INFO_SAGA_VOCE_VIU   "É o %dº de %d — você viu %d."
+#define FT_INFO_REVER           "Você viu em %s e deu %d estrelas."
+#define FT_INFO_REVER_SIMPLES   "Você viu em %s."
+#define FT_INFO_RETOMADA        "Você parou no T%dE%d há %s."
+#define FT_INFO_RETOMADA_SIMPLES "Você parou no T%dE%d."
+
+// ------------------------------------------------------ assistente (P5)
+#define FT_ESC_TEMPO            "Quanto tempo você tem?"
+#define FT_ESC_TEMPO_45         "Até 45 minutos"
+#define FT_ESC_TEMPO_FILME      "Um filme inteiro"
+#define FT_ESC_TEMPO_NOITE      "A noite toda"
+#define FT_ESC_PESO             "Leve ou intenso?"
+#define FT_ESC_PESO_LEVE        "Suave"             // chave propria: filme leve, nao a severidade
+#define FT_ESC_PESO_INTENSO     "Intenso"
+#define FT_ESC_COMPANHIA        "Com quem você vai ver?"
+#define FT_ESC_SO_EU            "Só eu"
+#define FT_ESC_A_DOIS           "A dois"
+#define FT_ESC_CRIANCA          "Com criança"
+#define FT_ESC_NOVIDADE         "Novo ou conhecido?"
+#define FT_ESC_NOVO             "Novo"              // ja existe
+#define FT_ESC_CONHECIDO        "Conhecido"
+#define FT_ESC_FORMATO          "Filme ou série?"
+#define FT_ESC_FILME            "Filme"             // ja existe
+#define FT_ESC_SERIE            "Série"             // ja existe
+#define FT_ESC_IDIOMA           "Dublado ou legendado?"
+#define FT_ESC_DUBLADO          "Dublado"           // ja existe
+#define FT_ESC_LEGENDADO        "Legendado"         // ja existe
+#define FT_ESC_EPOCA            "De que época?"
+#define FT_ESC_EPOCA_NOVA       "Recente"
+#define FT_ESC_EPOCA_ANTIGA     "Clássico"          // ja existe
+#define FT_ESC_HUMOR            "Que clima você quer?"
+#define FT_ESC_HUMOR_RIR        "Para rir"
+#define FT_ESC_HUMOR_EMOCIONAR  "Para se emocionar"
+#define FT_ESC_HUMOR_TENSAO     "Com tensão"
+#define FT_ESC_CONTINUAR        "Continuar algo ou começar do zero?"
+#define FT_ESC_CONT_SIM         "Continuar algo"
+#define FT_ESC_COMECAR          "Começar do zero"
+#define FT_ESC_TANTO_FAZ        "Tanto faz"
+#define FT_ESC_PASSO            "%d de %d"
+
+// -------------------------------------------------------- comparar (P4)
+#define FT_CMP_TITULO           "Comparar"
+#define FT_CMP_DURACAO          "Duração"           // ja existe
+#define FT_CMP_NOTA             "Nota"              // ja existe
+#define FT_CMP_CLIMA            "Clima"
+#define FT_CMP_PORQUE           "Por que você vai gostar"
+#define FT_CMP_QUALIDADE        "Qualidade"
+#define FT_CMP_TERMINA          "Termina às"
+#define FT_CMP_ONDE             "Onde ver"          // ja existe
+#define FT_CMP_AMIGOS           "Amigos"            // ja existe
+#define FT_CMP_VEREDITO_CABE    "O %s cabe no seu tempo."
+#define FT_CMP_VER_QUALIDADE    "Ver qualidade"
+
+// -------------------------------------------------- resultado em cartazes (P7)
+#define FT_ACHA_CURTOS_L1       "%d curtos com menos de %d min."
+#define FT_ACHA_NAO_VIU         "Nenhum deles você viu ainda."   // ja existe
+
+// ---------------------------------- ajustes, acoes e confirmacoes do gosto
+#define FT_GOSTO_APRENDEU       "O que o Farol aprendeu"
+#define FT_GOSTO_ZERAR          "Zerar o gosto"
+#define FT_GOSTO_ZERAR_CONF     "Apagar o que o Farol aprendeu nesta TV?"
+#define FT_GOSTO_ZERADO         "Gosto zerado."
+#define FT_GOSTO_RECOMENDAR     "Recomendar nesta TV"
+#define FT_GOSTO_LLM_SO_ESTA_TV "Só nesta TV"
+#define FT_MAIS_ASSIM           "Mais assim"
+#define FT_NAO_E_PARA_MIM       "Não é para mim"
+#define FT_COMPARAR_COM         "Comparar com…"
+#define FT_NAO_MOSTRO_MAIS      "Certo, não mostro mais."
+#define FT_ANOTADO              "Anotado."
+#define FT_ESCOLHENDO           "Escolhendo…"
+#define FT_PORQUE_TITULO        "Por que você vai gostar"   // mesmo literal de FT_CMP_PORQUE
+
+// faroltexto_aceita (src/faroltexto.c): o filtro do texto livre "x" que o LLM
+// manda na cena (PLANO-GOSTO 4.1/5.1). Devolve 1 se a frase pode subir na
+// tela — valida UTF-8, no maximo 2 linhas de 62 caracteres, sem URL, sem
+// emoji e sem nenhuma palavra da lista "nunca diz" do ALMA 2 — e 0 se nao
+// pode; quem compoe cai no modelo "m" de reserva. Modulo puro: sem malloc,
+// sem rede, sem dados.h.
+int faroltexto_aceita(const char *s);
 
 #endif
