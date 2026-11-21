@@ -26,7 +26,7 @@ mkdir -p "$LOGS/asan" "$LOGS/thread"
 # runner (o runner e a unica fonte de "quem roda com TSan").
 TSAN_TESTS="audsync autosync cacheboost capmkv capmkv_url_longa cateps_corrida
 colhash_corrida credfio desc_iniciar_corrida emby fontecache jellyfin legenda2
-legref legsync p2pmotor p2pmotor_real plex pluginjs plugins_fontes rede_pedido
+legref legsync nvbackend_escrita p2pmotor p2pmotor_real plex pluginjs plugins_fontes rede_pedido
 sessao_corrida streamfit streamfit_diagnostico streamfit_passiva
 sync_resumo_corrida trakt_play_corrida vistoep_corrida"
 

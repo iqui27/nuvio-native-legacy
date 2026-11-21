@@ -66,13 +66,24 @@ static int normalizar(char *u, size_t n, const char *in) {
 // Estado proprio: o getter nao pode devolver ponteiro para um buffer global
 // mutavel enquanto o teclado e os workers leem ao mesmo tempo. A trava vale
 // para {url,urlLida,descGeracao}; quem precisa do texto copia para o proprio
-// buffer.
+// buffer. I/O de disco NUNCA fica sob `trava`: o getter e chamado a cada
+// quadro pela linha de Ajustes e a cada pedido em rede.c, e nao pode esperar
+// uma gravacao. Quem serializa a persistencia e travaGravar (abaixo).
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static char url[400];
 static int urlLida;
 // Geracao da descoberta: nvbackend_definir_url e cada iniciar incrementam;
 // o worker so adota a resposta se a dele ainda for a atual.
 static unsigned descGeracao;
+// Serializa conferencia de geracao -> persistencia -> adocao, nos caminhos da
+// descoberta e do usuario: uma gravacao de descoberta nao pode chegar ao disco
+// depois de uma gravacao do usuario iniciada mais tarde (achado sol-f31r2 —
+// a conferencia soltava a trava antes de dados_gravar e o worker atrasado
+// regravava a URL que o usuario tinha acabado de limpar/trocar; ela voltava
+// no arranque). Quem chega depois espera a gravacao em curso e grava por
+// ultimo. Todo bump de descGeracao acontece sob travaGravar, entao entre a
+// conferencia e a adocao a geracao nao pode ficar velha.
+static pthread_mutex_t travaGravar = PTHREAD_MUTEX_INITIALIZER;
 
 static void carregar_travado(void) {
   char *t = dados_ler("nuvio-backend.txt");
@@ -106,41 +117,42 @@ int nv_rec_url_ativo(void) {
 }
 
 // Gravacao com geracao: so adota `u` se `gen` ainda for a geracao de
-// descoberta atual (UINT_MAX = caminho do usuario, sempre vale). Chamada com
-// `trava` ja tomada pelo caminho da descoberta, por isso a trava e recursiva.
-// Devolve 1 adotou, 0 recusou (URL invalida ou falha no disco), -1 a geracao
-// ficou velha no caminho (o usuario mexeu no campo durante a descoberta).
+// descoberta atual (UINT_MAX = caminho do usuario, sempre vale).
+// travaGravar fica tomada da conferencia ate o fim da adocao — o I/O acontece
+// sob ela, nao sob `trava`, entao o getter nunca espera o disco. Devolve 1
+// adotou, 0 recusou (URL invalida ou falha no disco), -1 a geracao ja estava
+// velha na chegada (o usuario mexeu no campo durante a descoberta).
 static int definir_geracao(const char *u, unsigned gen) {
   char nova[sizeof url] = "";
-  int ok = 0;
   if (u && u[0] && !normalizar(nova, sizeof nova, u)) return 0;
+  pthread_mutex_lock(&travaGravar);
   pthread_mutex_lock(&trava);
-  if (gen != UINT_MAX && gen != descGeracao) { pthread_mutex_unlock(&trava); return -1; }
+  if (gen != UINT_MAX && gen != descGeracao) {
+    pthread_mutex_unlock(&trava);
+    pthread_mutex_unlock(&travaGravar);
+    return -1;
+  }
   pthread_mutex_unlock(&trava);
   // Memoria e disco tem de concordar: so adota a nova URL se a gravacao
   // persistiu; caso contrario quem reinicia veria outro valor.
   if (nova[0]) {
-    if (!dados_gravar("nuvio-backend.txt", nova)) return 0;
+    if (!dados_gravar("nuvio-backend.txt", nova)) { pthread_mutex_unlock(&travaGravar); return 0; }
   } else {
     char *velho = dados_ler("nuvio-backend.txt");
     free(velho);
     // So exige sucesso quando havia algo gravado: apagar o inexistente ja e
     // o estado desejado (dados_apagar devolve 0 no remove() falho).
-    if (velho && !dados_apagar("nuvio-backend.txt")) return 0;
+    if (velho && !dados_apagar("nuvio-backend.txt")) { pthread_mutex_unlock(&travaGravar); return 0; }
   }
   pthread_mutex_lock(&trava);
-  // Segunda conferencia, agora para adotar em memoria: se o usuario gravou
-  // entre a persistencia e aqui, o valor novo dele e que fica.
-  if (gen == descGeracao || gen == UINT_MAX) {
-    snprintf(url, sizeof url, "%s", nova);
-    urlLida = 1;
-    // Toda gravacao invalida a descoberta em curso: a resposta atrasada nao
-    // pode ressuscitar a URL que o usuario acabou de apagar/trocar.
-    descGeracao++;
-    ok = 1;
-  }
+  snprintf(url, sizeof url, "%s", nova);
+  urlLida = 1;
+  // Toda gravacao invalida a descoberta em curso: a resposta atrasada nao
+  // pode ressuscitar a URL que o usuario acabou de apagar/trocar.
+  descGeracao++;
   pthread_mutex_unlock(&trava);
-  return ok ? 1 : -1;
+  pthread_mutex_unlock(&travaGravar);
+  return 1;
 }
 
 int nvbackend_definir_url(const char *u) {
@@ -199,9 +211,13 @@ int nvbackend_descobrir_iniciar(const char *origin) {
   if (descFioVivo) { pthread_detach(descFio); descFioVivo = 0; }
   pd = malloc(sizeof *pd);
   if (!pd) return 0;
+  // O bump tambem vai sob travaGravar: uma descoberta nova nao pode invalidar
+  // a geracao de um worker que esta no meio da propria gravacao.
+  pthread_mutex_lock(&travaGravar);
   pthread_mutex_lock(&trava);
   gen = ++descGeracao;
   pthread_mutex_unlock(&trava);
+  pthread_mutex_unlock(&travaGravar);
   pd->gen = gen;
   snprintf(pd->origin, sizeof pd->origin, "%s", base);
   atomic_store_explicit(&descAtiva, gen, memory_order_release);
