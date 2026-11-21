@@ -116,6 +116,7 @@ int video_faixa_dts(const VideoFaixa *f) { return f && !strncmp(f->codec, "A_DTS
 void nv_tpk_video_registrar(void (*)(const char *, const char *), void (*)(void), void (*)(int),
                             void (*)(int), void (*)(int), void (*)(int, int, int, int), int (*)(void));
 void nv_tpk_video_registrar_geracao(void (*)(const char *, const char *, unsigned));
+void nv_tpk_video_registrar_busca_geracao(void (*)(int, unsigned));
 void nv_tpk_video_erro_geracao(unsigned, int, int);
 void nv_tpk_video_registrar_faixas(void (*)(int, int));
 void nv_tpk_video_faixa(int tipo, int idx, const char *lingua);
@@ -129,6 +130,27 @@ static void hSem(void) {}
 static void hInt(int v) { (void)v; }
 static int ultBusca = -1;
 static void hBuscarP(int ms) { nBuscas++; ultBusca = ms; }
+// Pedidos na ORDEM em que o host os recebe, com a geracao de cada um (#728
+// r4). O host devolve no ack a geracao da operacao que executou — ackPostada
+// reproduz isso pelo indice do pedido (negativo conta do fim: -1 = ultimo).
+static int postMs[16];
+static unsigned postGer[16];
+static int nPost;
+void hBuscarGerP(int ms, unsigned ger) {
+  nBuscas++; ultBusca = ms;
+  if (nPost < 16) { postMs[nPost] = ms; postGer[nPost] = ger; }
+  nPost++;
+}
+void ackPostada(int i) {
+  int k = i < 0 ? nPost + i : i;
+  if (k < 0 || k >= nPost || k >= 16) abort();
+  nv_tpk_video_evento(11, postMs[k], (int)postGer[k]);
+}
+void falhaPostada(int i) {
+  int k = i < 0 ? nPost + i : i;
+  if (k < 0 || k >= nPost || k >= 16) abort();
+  nv_tpk_video_evento(12, postMs[k], (int)postGer[k]);
+}
 static int pausas, retomadas, pausaRecusada;
 // Like Video.cs: a pause that takes reports EV_PAUSADO, a play EV_TOCANDO; a
 // pause during a seek is refused ("Failed to pause") and reports nothing.
@@ -197,7 +219,7 @@ static int vooCaiu(void) { return video_busca_em_voo() == 0; }
 // Sobe a fonte, derruba aos 12 s com o erro de rede do TPK e espera a
 // reabertura (nAbriu=2, cv.reabrindo=1, seek da reconexao pendente).
 static void quedaEReabre(void) {
-  resolveOk = 0; nAbriu = 0; nBuscas = 0; ultBusca = -1; posMs = 0;
+  resolveOk = 0; nAbriu = 0; nBuscas = 0; ultBusca = -1; posMs = 0; nPost = 0;
   video_definir_reconexao(1);
   // Fonte MP4: a sonda de cabecalho MKV nao dispara (sondaMkvCabe), entao o
   // teste nao cria o fioMkv — a corrida pre-existente dele com video_tocar

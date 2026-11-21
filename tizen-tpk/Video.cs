@@ -34,6 +34,7 @@ namespace NuvioTpk
                                                                               IntPtr buscar, IntPtr volume, IntPtr janela, IntPtr pos);
         [DllImport("libnuvio.so")] static extern void nv_tpk_video_evento(int tipo, int a, int b);
         [DllImport("libnuvio.so")] static extern void nv_tpk_video_registrar_geracao(IntPtr abrir);
+        [DllImport("libnuvio.so")] static extern void nv_tpk_video_registrar_busca_geracao(IntPtr buscar);
         [DllImport("libnuvio.so")] static extern void nv_tpk_video_erro_geracao(uint ger, int codigo, int preparo);
         [DllImport("libnuvio.so")] static extern void nv_tpk_video_registrar_aspecto(IntPtr janela);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void RegistrarAspectoDel(IntPtr janela);
@@ -48,6 +49,7 @@ namespace NuvioTpk
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void RegistrarDel(IntPtr abrir, IntPtr parar, IntPtr pausar, IntPtr buscar, IntPtr volume, IntPtr janela, IntPtr pos);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void EventoDel(int tipo, int a, int b);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void RegistrarGeracaoDel(IntPtr abrir);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void RegistrarBuscaGeracaoDel(IntPtr buscar);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void ErroGeracaoDel(uint ger, int codigo, int preparo);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void RegistrarFaixasDel(IntPtr escolher);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void FaixaDel(int tipo, int idx, string lingua);
@@ -60,6 +62,7 @@ namespace NuvioTpk
         public static RegistrarDel Registrar = nv_tpk_video_registrar;
         public static EventoDel Evento = nv_tpk_video_evento;
         public static RegistrarGeracaoDel RegistrarGeracao = nv_tpk_video_registrar_geracao;
+        public static RegistrarBuscaGeracaoDel RegistrarBuscaGeracao = nv_tpk_video_registrar_busca_geracao;
         public static ErroGeracaoDel ErroGeracao = nv_tpk_video_erro_geracao;
         public static RegistrarFaixasDel RegistrarFaixas = nv_tpk_video_registrar_faixas;
         public static FaixaDel Faixa = nv_tpk_video_faixa;
@@ -77,6 +80,7 @@ namespace NuvioTpk
             if ((p = resolve("nv_tpk_video_registrar")) != IntPtr.Zero) Registrar = Marshal.GetDelegateForFunctionPointer<RegistrarDel>(p);
             if ((p = resolve("nv_tpk_video_evento")) != IntPtr.Zero) Evento = Marshal.GetDelegateForFunctionPointer<EventoDel>(p);
             if ((p = resolve("nv_tpk_video_registrar_geracao")) != IntPtr.Zero) RegistrarGeracao = Marshal.GetDelegateForFunctionPointer<RegistrarGeracaoDel>(p);
+            if ((p = resolve("nv_tpk_video_registrar_busca_geracao")) != IntPtr.Zero) RegistrarBuscaGeracao = Marshal.GetDelegateForFunctionPointer<RegistrarBuscaGeracaoDel>(p);
             if ((p = resolve("nv_tpk_video_erro_geracao")) != IntPtr.Zero) ErroGeracao = Marshal.GetDelegateForFunctionPointer<ErroGeracaoDel>(p);
             if ((p = resolve("nv_tpk_video_registrar_faixas")) != IntPtr.Zero) RegistrarFaixas = Marshal.GetDelegateForFunctionPointer<RegistrarFaixasDel>(p);
             if ((p = resolve("nv_tpk_video_faixa")) != IntPtr.Zero) Faixa = Marshal.GetDelegateForFunctionPointer<FaixaDel>(p);
@@ -91,6 +95,8 @@ namespace NuvioTpk
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnAbrir(IntPtr url, IntPtr cabecalhos, uint geracao);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnSemArg();
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnInt(int v);
+        // #728: o seek leva a geracao do pedido e o host a devolve no EV_BUSCOU/EV_BUSCA_FALHOU.
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnBuscaGer(int ms, uint ger);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnRet(int x, int y, int w, int h);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnAspecto(int x, int y, int w, int h, int lx, int ly, int lw, int lh);
         [DllImport("libcapi-media-player.so.0")] static extern int player_set_display_mode(IntPtr p, PlayerDisplayMode mode);
@@ -111,6 +117,7 @@ namespace NuvioTpk
         readonly int telaW, telaH;
         // Referencias vivas: o C guarda os ponteiros, o GC nao pode recolher.
         FnAbrir fAbrir; FnSemArg fParar; FnInt fPausar, fBuscar, fVolume; FnRet fJanela; FnPos fPos; FnEscolher fEscolher;
+        FnBuscaGer fBuscarGer;
 
         VideoWindowMetrics windowMetrics = new VideoWindowMetrics();
         Player player;
@@ -170,6 +177,7 @@ namespace NuvioTpk
             fParar = Parar;
             fPausar = p => ComSessao(() => Pausar(p != 0));
             fBuscar = ms => ComSessao(() => Buscar(ms));
+            fBuscarGer = (ms, ger) => ComSessao(() => Buscar(ms, ger));
             fVolume = v => ComSessao(() => PedirVolume(v), false);
             fJanela = (x, y, w, h) => ComSessao(() => Janela(x, y, w, h));
             fAspecto = (x,y,w,h,lx,ly,lw,lh) => ComSessao(() => Janela(x,y,w,h,lx,ly,lw,lh));
@@ -182,6 +190,9 @@ namespace NuvioTpk
                                    Marshal.GetFunctionPointerForDelegate(fVolume), Marshal.GetFunctionPointerForDelegate(fJanela),
                                    Marshal.GetFunctionPointerForDelegate(fPos));
             NvVid.RegistrarGeracao(Marshal.GetFunctionPointerForDelegate(fAbrir));
+            // Lib antiga sem o export: o seek segue pelo fBuscar sem geracao.
+            try { NvVid.RegistrarBuscaGeracao(Marshal.GetFunctionPointerForDelegate(fBuscarGer)); }
+            catch (EntryPointNotFoundException) { }
             fEscolher = (tipo, idx) => ComSessao(() => Escolher(tipo, idx));
             NvVid.RegistrarFaixas(Marshal.GetFunctionPointerForDelegate(fEscolher));
         }
@@ -675,6 +686,7 @@ namespace NuvioTpk
 
         bool buscando, preparoPausado;
         int buscaPend = -1, pausaPend = -1;
+        uint buscaPendGer;
 
         void Pausar(bool pausa)
         {
@@ -696,11 +708,11 @@ namespace NuvioTpk
             catch (Exception e) { Log("pausar: " + e.Message); }
         }
 
-        async void Buscar(int ms)
+        async void Buscar(int ms, uint ger = 0)
         {
             if (player == null) return;
             windowMetrics.Invalidate();
-            if (buscando) { buscaPend = ms; return; }
+            if (buscando) { buscaPend = ms; buscaPendGer = ger; return; }
             var p = player;
             int minha = Volatile.Read(ref sessao);
             buscando = true;
@@ -718,10 +730,12 @@ namespace NuvioTpk
                 }
                 await busca;
                 // So depois do seek aceito: pausado, o Tique nao consulta.
+                // A geracao do pedido vai no b: e ela que nomeia a operacao
+                // para o C (dois seeks ao mesmo ponto tem EV_BUSCOU iguais).
                 lock (trocaTrava) {
                     if (minha == sessao && player == p) {
                         posMs = ms;
-                        NvVid.Evento(EV_BUSCOU, ms, 0);
+                        NvVid.Evento(EV_BUSCOU, ms, (int)ger);
                     }
                 }
                 if (minha != Volatile.Read(ref sessao)) return;
@@ -733,16 +747,16 @@ namespace NuvioTpk
                 Log("buscar: " + e.Message);
                 // The core decides (mkvfix.h): an MKV with a hidden index reopens
                 // through the local fix; with no index at all, it tells the user.
-                NvVid.Evento(EV_BUSCA_FALHOU, ms, 0);
+                NvVid.Evento(EV_BUSCA_FALHOU, ms, (int)ger);
                 Preso(minha, buscaPend >= 0 ? buscaPend : ms);
                 return;
             }
-            catch (Exception e) { Log("buscar: " + e.Message); NvVid.Evento(EV_BUSCA_FALHOU, ms, 0); return; }
+            catch (Exception e) { Log("buscar: " + e.Message); NvVid.Evento(EV_BUSCA_FALHOU, ms, (int)ger); return; }
             finally { if (!expirou && minha == Volatile.Read(ref sessao)) buscando = false; }
             if (minha != Volatile.Read(ref sessao)) return;
             // SetPlayPositionAsync terminou: nao disputar Pause/outro seek com
             // a transicao que produz evento 3; o cache ja recebeu o alvo aceito.
-            if (buscaPend >= 0) { int alvo = buscaPend; buscaPend = -1; Buscar(alvo); }
+            if (buscaPend >= 0) { int alvo = buscaPend; uint gerP = buscaPendGer; buscaPend = -1; Buscar(alvo, gerP); }
             else if (pausaPend >= 0) { bool pausa = pausaPend != 0; pausaPend = -1; Pausar(pausa); }
         }
 
