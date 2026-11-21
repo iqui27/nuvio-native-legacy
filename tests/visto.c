@@ -43,6 +43,11 @@ unsigned long long simklauth_credencial_copiar(char *dst, size_t tam) {
   return 1;
 }
 int simklauth_invalidar_se(unsigned long long cred) { (void)cred; tokenSimkl = ""; return 1; }
+int simklauth_credencial_travar(unsigned long long cred, int p, const char *aut) {
+  return cred == 1 && p == perfil && tokenSimkl[0] &&
+         !strcmp(aut + strlen("Authorization: Bearer "), tokenSimkl);
+}
+void simklauth_credencial_destravar(void) {}
 const char *nuvem_simkl_cliente(void) { return "cid-teste"; }
 const char *nuvem_simkl_app(void) { return "nuvio"; }
 const char *nuvem_trakt_cliente(void) { return "cli-trakt"; }

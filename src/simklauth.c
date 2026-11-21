@@ -158,6 +158,18 @@ int simklauth_carregar(void) {
 
 const char *simklauth_token(void) { return token; }
 
+int simklauth_credencial_travar(unsigned long long cred, int p, const char *aut) {
+  static const char pre[] = "Authorization: Bearer ";
+  pthread_mutex_lock(&trava);
+  if (cred != credGeracao || p != perfil || !token[0] || !aut ||
+      strncmp(aut, pre, sizeof pre - 1) || strcmp(aut + sizeof pre - 1, token)) {
+    pthread_mutex_unlock(&trava);
+    return 0;
+  }
+  return 1;
+}
+void simklauth_credencial_destravar(void) { pthread_mutex_unlock(&trava); }
+
 unsigned long long simklauth_credencial_copiar(char *dst, size_t tam) {
   unsigned long long g;
   pthread_mutex_lock(&trava);

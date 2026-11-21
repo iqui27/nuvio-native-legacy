@@ -101,6 +101,11 @@ unsigned long long simklauth_credencial_copiar(char *dst, size_t tam) {
   return credGeracao;
 }
 int simklauth_perfil(void) { return 2; }
+int simklauth_credencial_travar(unsigned long long cred, int perfil, const char *aut) {
+  return cred == credGeracao && perfil == 2 && tokenAtual[0] &&
+         !strcmp(aut + strlen("Authorization: Bearer "), tokenAtual);
+}
+void simklauth_credencial_destravar(void) {}
 const char *nuvem_simkl_cliente(void) { return "cid-teste"; }
 const char *nuvem_simkl_app(void) { return "nuvio"; }
 void nuvem_url_escapar(const char *v, char *dst, unsigned tam) { snprintf(dst, tam, "%s", v); }
@@ -309,6 +314,7 @@ static int pedidosSettings, pedidosMesPerfil;   // Profile & Stats requests
 // History pull: activities fail, Simkl forgotten mid-pull, activities count
 // when the library was asked.
 static int atividadesFalham, esquecerNoHistorico, atividadesAntes = -1;
+static int desconectarNoHistorico;
 static const char *perfilHistoryBody = "{\"movies\":[],\"shows\":[],\"anime\":[]}";
 // Simkl's max_items (api.simkl.org/guides/sync): `grandeTipo`'s whole list is
 // over the cap, and so is its `grandeEstado` list unless only the recorded
@@ -370,7 +376,10 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   }
   if (!strcmp(r, "/sync/activities")) {
     batidas[0]++;
-    if (atividadesFalham) { *st = 503; return strdup("<html>busy</html>"); }
+    if (atividadesFalham) {
+      *st = atividadesFalham == 2 ? 0 : atividadesFalham == 3 ? 429 : 503;
+      return *st ? strdup("<html>busy</html>") : NULL;
+    }
     if (atividadesInteiras) return strdup(atividadesInteiras);
     return atividadesFalsas();
   }
@@ -448,6 +457,11 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
       if (libraryFailure) { *st = 400; return strdup("{\"error\":\"bad_request\",\"code\":400}"); }
       tudo = historicoCorpo ? strdup(historicoCorpo) : bibliotecaFalsa();
       fatia = bibliotecaFatia(tudo, tipo, NULL);
+      if (desconectarNoHistorico && !strcmp(tipo, "movies")) {
+        tokenAtual = "";
+        credGeracao++;
+        simklbib_apagar(2);
+      }
       free(tudo);
       return fatia;
     }

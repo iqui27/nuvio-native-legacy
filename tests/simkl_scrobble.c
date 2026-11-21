@@ -85,6 +85,11 @@ int simklauth_invalidar_se(unsigned long long cred) {
   return 1;
 }
 int simklauth_perfil(void) { return 1; }
+int simklauth_credencial_travar(unsigned long long cred, int perfil, const char *aut) {
+  return cred == credGeracao && perfil == 1 && tokenAtual[0] &&
+         !strcmp(aut + strlen("Authorization: Bearer "), tokenAtual);
+}
+void simklauth_credencial_destravar(void) {}
 int simklauth_token_perfil(int perfil, char *dst, size_t tam) {
   (void)perfil;
   if (dst && tam) snprintf(dst, tam, "%s", tokenAtual);

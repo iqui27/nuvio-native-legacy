@@ -1122,6 +1122,8 @@ static uint64_t bibSessao, bibGeracao;
 static time_t bibConferida; // last activities check that reached Simkl
 static int bibFio;          // a loader is running for bibFioSessao/Geracao
 static int bibVivos;        // loader threads alive, of any session
+static time_t bibTentarApos;
+static unsigned bibFalhas;
 static uint64_t bibFioSessao, bibFioGeracao;
 static pthread_cond_t bibMudou = PTHREAD_COND_INITIALIZER;
 
@@ -1143,6 +1145,8 @@ void simkl_esquecer(void) {
   trocar(&bibCorpo, NULL); trocar(&bibAtiv, NULL);
   bibSessao = bibGeracao = 0;
   bibConferida = 0;
+  bibTentarApos = 0;
+  bibFalhas = 0;
   bibFio = 0;
   pthread_cond_broadcast(&bibMudou);
   pthread_mutex_unlock(&trava);
@@ -1284,6 +1288,22 @@ static int bibliotecaJuntarEstado(SmkTexto tipos[3], const char *resposta, const
   return 1;
 }
 
+#define SMK_BIB_ITENS_MAX 20000
+#define SMK_BIB_BYTES_MAX (8u * 1024u * 1024u)
+
+static int bibliotecaLimitada(const char *corpo) {
+  const char *fim = corpo ? js_fim(corpo) : NULL;
+  int n = 0;
+  if (!fim || strlen(corpo) > SMK_BIB_BYTES_MAX) return 0;
+  for (int i = 0; i < 3; i++) {
+    const char *a, *af;
+    if (!valorRaiz(corpo, fim, bibTipos[i], &a, &af) || *a != '[') continue;
+    for (const char *p = js_array(corpo, NULL, bibTipos[i]); p && *p == '{'; p = js_prox(js_fim(p)))
+      if (++n > SMK_BIB_ITENS_MAX) return 0;
+  }
+  return 1;
+}
+
 static char *bibliotecaMontar(const SmkTexto tipos[3]) {
   SmkTexto t = {0};
   int ok = textoPor(&t, "{", 1);
@@ -1294,7 +1314,7 @@ static char *bibliotecaMontar(const SmkTexto tipos[3]) {
          (!tipos[i].n || textoPor(&t, tipos[i].p, tipos[i].n)) && textoPor(&t, "]", 1);
   }
   if (ok) ok = textoPor(&t, "}", 1);
-  if (!ok) { free(t.p); return NULL; }
+  if (!ok || !bibliotecaLimitada(t.p)) { free(t.p); return NULL; }
   return t.p;
 }
 
@@ -1446,6 +1466,7 @@ static char *bibLista(const char *corpo, const char *lista, const char *estado) 
 
 // A copy of the library of this session, or NULL.
 static void bibPublicar(SmkPedido p, char *corpo, char *ativ, int conferida) {
+  if (corpo && !bibliotecaLimitada(corpo)) { free(corpo); free(ativ); return; }
   if (pedidoTravar(p)) {
     if (corpo) {
       trocar(&bibCorpo, corpo); corpo = NULL;
@@ -1713,7 +1734,7 @@ static char *bibliotecaFundir(const char *velho, const char *delta, const SmkIds
   if (ok) ok = textoPor(&t, "}", 1);
   free(ds);
   free(novos.v);
-  if (!ok) { free(t.p); return NULL; }
+  if (!ok || !bibliotecaLimitada(t.p)) { free(t.p); return NULL; }
   return t.p;
 }
 
@@ -1780,7 +1801,17 @@ static int bibliotecaAtualizar(SmkPedido pedido, const char *velho, const char *
   return 2;
 }
 
-typedef struct { SmkPedido pedido; int perfil; } BibCarga;
+typedef struct { SmkPedido pedido; int perfil; unsigned long long cred; } BibCarga;
+
+static void bibGravar(BibCarga c, char *ativ, char *corpo) {
+  if (pedidoTravar(c.pedido)) {
+    if (simklauth_credencial_travar(c.cred, c.perfil, c.pedido.aut)) {
+      simklbib_gravar(c.perfil, pedidoConta(c.pedido), &(SimklBib){ ativ, corpo });
+      simklauth_credencial_destravar();
+    }
+    pedidoDestravar();
+  }
+}
 
 static void *bibCarregarFio(void *arg) {
   BibCarga c = *(BibCarga *)arg;
@@ -1803,6 +1834,16 @@ static void *bibCarregarFio(void *arg) {
   // after this point flags the library again.
   __atomic_store_n(&bibSujo, 0, __ATOMIC_RELEASE);
   ativ = bibliotecaAtividades(pedido);
+  if (pedidoTravar(pedido)) {
+    if (ativ) {
+      bibFalhas = 0;
+      bibTentarApos = 0;
+    } else {
+      if (bibFalhas < 5) bibFalhas++;
+      bibTentarApos = time(NULL) + (30 << (bibFalhas - 1));
+    }
+    pedidoDestravar();
+  }
   pthread_mutex_lock(&trava);
   tem = bibDoPedido(pedido);
   igual = tem && bibMesmoAll(bibAtiv, ativ);
@@ -1829,10 +1870,7 @@ static void *bibCarregarFio(void *arg) {
   corpo = NULL;
   if (r == 2) {
     free(delta);
-    if (pedidoTravar(pedido)) {
-      simklbib_gravar(c.perfil, conta, &(SimklBib){ ativ, novo });
-      pedidoDestravar();
-    }
+    bibGravar(c, ativ, novo);
     bibPublicar(pedido, novo, ativ, 1);
   } else if (r == 1) {
     printf("[simkl] library: only playback/ratings/settings moved, nothing to download\n");
@@ -1845,10 +1883,7 @@ static void *bibCarregarFio(void *arg) {
   } else if (bibliotecaPuxar(pedido, NULL, &corpo, &st) > 0) {
     // Without activities the copy is used but not saved: a later delta would
     // have no date to start from.
-    if (ativ && pedidoTravar(pedido)) {
-      simklbib_gravar(c.perfil, conta, &(SimklBib){ ativ, corpo });
-      pedidoDestravar();
-    }
+    if (ativ) bibGravar(c, ativ, corpo);
     bibPublicar(pedido, corpo, ativ, ativ != NULL);
   } else {
     printf("[simkl] library: download failed (HTTP %d)\n", st);
@@ -1873,7 +1908,7 @@ static void bibIniciar(SmkPedido pedido, int perfil, int velha) {
   pthread_t fio;
   time_t agora = time(NULL);
   pthread_mutex_lock(&trava);
-  if (pedido.geracao != cacheGeracao || bibFio ||
+  if (pedido.geracao != cacheGeracao || bibFio || agora < bibTentarApos ||
       (velha && bibDoPedido(pedido) && agora >= bibConferida &&
        agora - bibConferida < SMK_BIB_IDADE)) {
     pthread_mutex_unlock(&trava);
@@ -1887,6 +1922,7 @@ static void bibIniciar(SmkPedido pedido, int perfil, int velha) {
   if ((c = malloc(sizeof *c))) {
     c->pedido = pedido;
     c->perfil = perfil;
+    c->cred = simklauth_credencial_copiar(NULL, 0);
     if (pthread_create(&fio, NULL, bibCarregarFio, c) == 0) {
       pthread_detach(fio);
       return;

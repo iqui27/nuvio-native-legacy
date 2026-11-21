@@ -1290,7 +1290,7 @@ static void *fioSimkl(void *u) {
   int n = 0, serie = !strcasecmp(t->midia, "TV");
   // The lists come from the shared library (simkl.c): a status-filtered copy
   // of the body it already fetched, no request of its own.
-  for (int part = 0; part < 2; part++) {
+  for (int part = 0; part < (serie ? 2 : 1); part++) {
     const char *tipo = part ? "anime" : serie ? "shows" : "movies";
     char *corpo = perfis_sessao_atual(t->sessao) ? simkl_lista_corpo(tipo, t->estado) : NULL;
     if (!corpo) { free(lote); lote = NULL; n = 0; break; }

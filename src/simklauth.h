@@ -59,6 +59,8 @@ const char *simklauth_token(void);
 // Copia sob trava + geracao: consultas com varios pedidos nao misturam contas.
 // dst NULL so le a geracao; zero nao e usado. Nunca guardar/logar a copia.
 unsigned long long simklauth_credencial_copiar(char *dst, size_t tam);
+int simklauth_credencial_travar(unsigned long long cred, int perfil, const char *aut);
+void simklauth_credencial_destravar(void);
 // Esquece o vinculo de TODOS os perfis (logout).
 void simklauth_esquecer(void);
 // Disconnect only the active profile.
