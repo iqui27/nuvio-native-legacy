@@ -68,6 +68,7 @@
 #include "idioma.h"
 #include "marco.h"
 #include "mkv.h"
+#include "capmkv.h"
 #include <SDL2/SDL.h>
 #include <emscripten.h>
 #if defined(__EMSCRIPTEN_PTHREADS__)
@@ -892,7 +893,8 @@ double video_creditos(void) {
   double dur;
   if (creditosNomeado > 1.0) return creditosNomeado;
   dur = video_duracao();
-  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75)
+  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75 &&
+      dur - creditosUltimo >= CAPMKV_ULTIMO_FOLGA_S)   // toco no fim nao e creditos
     return creditosUltimo;
   return 0.0;
 }

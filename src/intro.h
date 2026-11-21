@@ -79,10 +79,16 @@ int  intro_ativo(double posSeg,double *fim,int *tipo);
 // CENA DEPOIS DOS CREDITOS (feat/mkv-chapter-segments, followingPostCreditsScene
 // do Nuvio TV): 1 quando o ultimo trecho de creditos ACEITO e seguido por uma
 // cena — explicita (INTRO_POS_CREDITOS: capitulo "Post-Credits" ou IntroDB
-// post_credits) ou deduzida (mais de INTRO_CENA_FOLGA_S entre o fim explicito
-// dos creditos, ja emendado com a previa, e o fim da midia). `ini`/`fim` da
-// cena, `explicita` 1/0. Creditos "ate o fim" nunca tem cena. `dur` em s.
+// post_credits) ou deduzida (INTRO_CENA_DEDUZIDA_MIN_S ou mais entre o fim
+// explicito dos creditos, ja emendado com a previa, e o fim da midia).
+// `ini`/`fim` da cena, `explicita` 1/0. Creditos "ate o fim" nunca tem cena.
+// `dur` em s.
 #define INTRO_CENA_FOLGA_S 5.0
+// CENA DEDUZIDA (nada diz o que vem depois do encerramento): so com pelo menos
+// isto. Logo de estudio, preto, cartao de patrocinio ou um toco de capitulo
+// depois do ED nao sao cena (log da C9, 04/11: 11 s viravam "cena" e seguravam
+// o cartao); gag de verdade tem ~30 s (dono: 17 s).
+#define INTRO_CENA_DEDUZIDA_MIN_S 17.0
 // Uma PREVIA marcada depois da cena ("ED - Part C - Next time") fecha a cena:
 // `fim` = inicio da previa, e o cartao do proximo sobe nela, nao no fim do arquivo.
 int intro_cena_pos(double dur,double *ini,double *fim,int *explicita);

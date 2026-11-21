@@ -8,19 +8,21 @@
 //
 //   1. capitulo do Matroska chamado creditos/end credits (descreve ESTA copia);
 //   2. marcador do TheIntroDB para este episodio;
-//   3. marcador de um episodio VIZINHO da mesma temporada, convertido em
+//   3. "ultimo capitulo depois de 75%" (palpite sobre capitulos sem nome);
+//   4. marcador de um episodio VIZINHO da mesma temporada, convertido em
 //      "quanto falta para o fim" e aplicado a duracao real deste;
-//   4. o que o dono ensinou nesta serie (apertou Comecar agora: dur - pos);
-//   5. nada: o player usa a estimativa de sempre.
+//   5. o que o dono ensinou nesta serie (apertou Comecar agora: dur - pos);
+//   6. nada: o player usa a estimativa de sempre.
 #ifndef NV_CREDFONTE_H
 #define NV_CREDFONTE_H
 
 enum { CRED_FONTE_NENHUMA = 0, CRED_FONTE_CAPITULO, CRED_FONTE_INTRODB,
-       CRED_FONTE_VIZINHO, CRED_FONTE_APRENDIDO, CRED_FONTE_ANISKIP };
+       CRED_FONTE_VIZINHO, CRED_FONTE_APRENDIDO, CRED_FONTE_ANISKIP, CRED_FONTE_ULTIMO };
 
 typedef struct {
   double dur;                   // duracao REAL deste episodio, em s
-  double capitulo;              // inicio do capitulo de creditos (0 = nao ha)
+  double capitulo;              // capitulo que SE CHAMA creditos (0 = nao ha)
+  double capituloUltimo;        // "ultimo capitulo depois de 75%" (0 = nao vale); abaixo das fontes
   double introdb;               // inicio do marcador do TheIntroDB deste episodio (0 = nao ha)
   double aniskip;               // idem, vindo do AniSkip (mesma prioridade do introdb)
   double vizInicio, vizDur;     // marcador do vizinho e a duracao dele (0 = nao ha / desconhecida)
