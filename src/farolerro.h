@@ -76,4 +76,11 @@ const char *farolerro_prefixo(FarolPlat p);
 // "nenhuma", "rede", "http", "formato", "audio", "sistema" ou "parado".
 const char *farolerro_classe_nome(FarolClasse c);
 
+// Lista fechada dos `cod` fixos que farolerro_ler emite, em `cod` —
+// o redator do Farol 4 inclui este par em vez de manter copia. Alem destes
+// tokens ha tres familias geradas na hora: ums_<codigo do uMS>,
+// m3_<codigo do Media3> e av_<nome do enum AVPlay em minusculas>.
+extern const char *const farolerro_codigos[];
+extern const int farolerro_codigos_n;
+
 #endif

@@ -15,6 +15,23 @@ typedef struct {
   FarolClasse classe; int http; const char *cod;
 } Caso;
 
+// Todo cod emitido esta na lista fechada farolerro_codigos[] (farolerro.h)
+// ou nas familias geradas: ums_<digitos>, m3_<digitos>, av_<nome [a-z0-9_]>.
+static int cod_valido(const char *s) {
+  size_t n = strlen(s), np;
+  int i;
+  for (i = 0; i < farolerro_codigos_n; i++)
+    if (!strcmp(s, farolerro_codigos[i])) return 1;
+  if (!strncmp(s, "ums_", 4) || !strncmp(s, "m3_", 3)) {
+    np = s[0] == 'u' ? 4 : 3;
+    if (n > np && strspn(s + np, "0123456789") == n - np) return 1;
+  }
+  if (!strncmp(s, "av_", 3) && n > 3 &&
+      strspn(s + 3, "abcdefghijklmnopqrstuvwxyz0123456789_") == n - 3)
+    return 1;
+  return 0;
+}
+
 static void caso(const Caso *c) {
   FarolErro e;
   int r = farolerro_ler(c->p, c->texto, c->dec, &e);
@@ -26,6 +43,9 @@ static void caso(const Caso *c) {
            c->ret, c->classe, c->http, c->cod), falhas++;
   if (r && (!e.cod[0] || strlen(e.cod) > 23)) {
     printf("FALHOU: cod fora do teto: %s\n", e.cod); falhas++;
+  }
+  if (!cod_valido(e.cod)) {
+    printf("FALHOU: cod fora da lista fechada: %s\n", e.cod); falhas++;
   }
 }
 
@@ -83,6 +103,9 @@ int main(void) {
     {FP_TIZEN_TPK, "[host] erro ConnectionFailed", 0, 1, FC_REDE, 0, "tpk_conexao"},
     {FP_TIZEN_TPK, "Samsung player error 0xfe6c0026", 0, 1, FC_REDE, 0, "tpk_conexao"},
     {FP_TIZEN_TPK, "Samsung player error 0xfe6c002e", 0, 1, FC_AUDIO, 0, "tpk_audio"},
+    {FP_TIZEN_TPK, "Samsung player error 0XFE6C002E", 0, 1, FC_AUDIO, 0, "tpk_audio"},
+    {FP_TIZEN_TPK, "Samsung player error 0xfe6c002e", (int)0xFE6C002E,
+     1, FC_AUDIO, 0, "tpk_audio"},
     {FP_TIZEN_TPK, "erro NotSupportedAudioCodec", 0, 1, FC_AUDIO, 0, "tpk_audio"},
     {FP_TIZEN_TPK, "erro AudioCodecNotSupported", 0, 1, FC_AUDIO, 0, "tpk_audio"},
     {FP_TIZEN_TPK, "interrompido: ResourceConflict", 0, 1, FC_SISTEMA, 0, "tpk_conflito"},
@@ -125,13 +148,36 @@ int main(void) {
                entradas[i], p, e.http, hfs);
         falhas++;
       }
+      if (!cod_valido(e.cod)) {
+        printf("FALHOU cruzamento cod fora da lista: \"%s\" plat=%d -> %s\n",
+               entradas[i], p, e.cod);
+        falhas++;
+      }
     }
   }
-  // nativo sai do proprio texto; sem texto, fica o codigoDecoder
+  // nativo sai do proprio texto; sem texto, fica o codigoDecoder. No .tpk os
+  // hex CAPI 0xFE6C00xx tem o bit 31 ativo: em ILP32 (ARM32 do .tpk real)
+  // strtol saturaria em LONG_MAX — por isso o parse e strtoul/uint32_t.
   { FarolErro e;
     farolerro_ler(FP_WEBOS, "40403 server error:40403", 0, &e);
     OK(e.nativo == 40403);
+    farolerro_ler(FP_TIZEN_TPK, "Samsung player error 0xfe6c0026", 0, &e);
+    OK(e.nativo == (int)0xFE6C0026);
     farolerro_ler(FP_TIZEN_TPK, "Samsung player error 0xfe6c002e", 0, &e);
+    OK(e.nativo == (int)0xFE6C002E);
+    farolerro_ler(FP_TIZEN_TPK, "Samsung player error 0xfe6c00ff", 0, &e);
+    OK(e.nativo == (int)0xFE6C00FF);
+    farolerro_ler(FP_TIZEN_TPK, "Samsung player error 0XFE6C002E", 0, &e);
+    OK(e.nativo == (int)0xFE6C002E);
+    farolerro_ler(FP_TIZEN_TPK, "Samsung player error 0xfe6c002e",
+                  (int)0xFE6C002E, &e);
+    OK(e.nativo == (int)0xFE6C002E);
+    // "0x" sem digito nao toca no nativo; codigoDecoder valido nao e
+    // sobrescrito nem quando o texto traz outro hex.
+    farolerro_ler(FP_TIZEN_TPK, "erro 0x", (int)0xFE6C0026, &e);
+    OK(e.nativo == (int)0xFE6C0026);
+    farolerro_ler(FP_TIZEN_TPK, "Samsung player error 0xfe6c0026",
+                  (int)0xFE6C002E, &e);
     OK(e.nativo == (int)0xFE6C002E);
     farolerro_ler(FP_WEBOS, "700 seek Failure", 0, &e);
     OK(e.nativo == 700);
@@ -140,6 +186,11 @@ int main(void) {
     OK(farolerro_ler(FP_WEBOS, "40404 server error", 0, NULL) == 0);
     OK(!strcmp(farolerro_classe_nome(FC_AUDIO), "audio"));
     OK(!strcmp(farolerro_prefixo(FP_ANDROID), "m3"));
+    // Lista fechada exportada para o redator do Farol 4: n tokens validos.
+    OK(farolerro_codigos_n == 28);
+    for (i = 0; i < (unsigned)farolerro_codigos_n; i++)
+      OK(farolerro_codigos[i] && farolerro_codigos[i][0] &&
+         strlen(farolerro_codigos[i]) <= 23);
   }
   if (!falhas) puts("ok farol_erro");
   return falhas != 0;

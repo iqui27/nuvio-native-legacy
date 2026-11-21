@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <stdint.h>
 
 // Substring sem caso, igual a nv_recon_tem: nao depende de strcasestr
 // (_GNU_SOURCE), que nem toda toolchain da TV expoe.
@@ -48,6 +49,41 @@ static long digito(const char *t) {
   if (!t || !isdigit((unsigned char)*t)) return -1;
   return strtol(t, NULL, 10);
 }
+
+// Codigo CAPI do .tpk no texto: primeiro "0x"/"0X" seguido de digito hex
+// ("Samsung player error 0xfe6c002e"). Devolve 1 e o valor em *out; sem
+// digito apos o prefixo devolve 0. strtoul em uint32_t, nao strtol em long:
+// os codigos 0xFE6C00xx tem o bit 31 ativo e estouram long em ILP32 (ARM32,
+// a arquitetura real do .tpk), onde strtol satura em LONG_MAX.
+static int hexTpk(const char *t, uint32_t *out) {
+  const char *x = acha(t, "0x");
+  char *fim = NULL;
+  unsigned long h;
+  if (!x) return 0;
+  h = strtoul(x, &fim, 16);
+  if (!fim || fim <= x + 2) return 0;
+  // Em LP64 strtoul aceita mais de 8 digitos; o codigo CAPI e 32 bits —
+  // satura igual ao ULONG_MAX do ILP32, para as duas pontas concordarem.
+  *out = h > 0xFFFFFFFFUL ? 0xFFFFFFFFu : (uint32_t)h;
+  return 1;
+}
+
+// Lista fechada dos `cod` fixos que farolerro_ler emite (declarada em
+// farolerro.h; o redator do Farol 4 inclui isto em vez de manter copia).
+// Alem destes ha as familias geradas: ums_<codigo>, m3_<codigo> e
+// av_<nome do enum AVPlay em minusculas>.
+const char *const farolerro_codigos[] = {
+  "ums_pipeline", "ums_faixa_audio", "ls2_permissao",
+  "m3_parado", "m3_audio",
+  "av_conexao",
+  "tpk_conexao", "tpk_audio", "tpk_conflito", "tpk_preso",
+  "ums_rede", "m3_rede", "gen_rede",
+  "ums_http", "av_http", "tpk_http", "m3_http", "gen_http",
+  "ums_formato", "av_formato", "tpk_formato", "m3_formato", "gen_formato",
+  "ums_outro", "av_outro", "tpk_outro", "m3_outro", "gen_outro",
+};
+const int farolerro_codigos_n =
+    (int)(sizeof farolerro_codigos / sizeof farolerro_codigos[0]);
 
 static const char *prefixo(FarolPlat p) {
   static const char *const nomes[] = {"ums", "av", "tpk", "m3", "gen"};
@@ -190,14 +226,14 @@ static int lerWgt(const char *t, int dec, FarolErro *e) {
 
 // --- .tpk (Tizen.Multimedia.Player do host .NET). ----------------------------
 static int lerTpk(const char *t, int dec, FarolErro *e) {
-  const char *x = strstr(t, "0x");
-  long hex = x ? strtol(x, NULL, 16) : -1;  // positivo; `dec` ja chega wrapado
-  if (dec == (int)0xFE6C0026 || hex == 0xFE6C0026 ||
+  uint32_t hex = 0;
+  int temhex = hexTpk(t, &hex);
+  if (dec == (int)0xFE6C0026 || (temhex && hex == 0xFE6C0026UL) ||
       tem(t, "connectionfailed")) {
     e->classe = FC_REDE; snprintf(e->cod, sizeof e->cod, "tpk_conexao");
     return 1;
   }
-  if (dec == (int)0xFE6C002E || hex == 0xFE6C002E ||
+  if (dec == (int)0xFE6C002E || (temhex && hex == 0xFE6C002EUL) ||
       tem(t, "audiocodecnotsupported") || tem(t, "notsupportedaudiocodec")) {
     e->classe = FC_AUDIO; snprintf(e->cod, sizeof e->cod, "tpk_audio");
     return 1;
@@ -225,11 +261,12 @@ int farolerro_ler(FarolPlat p, const char *texto, int codigoDecoder, FarolErro *
   e->cod[0] = 0;
   if (p < FP_WEBOS || p > FP_OUTRA) p = FP_OUTRA;
   // O numero nativo sai do proprio texto quando ele o carrega: inteiro no
-  // inicio (uMS, Media3) ou "0x…" no .tpk.
+  // inicio (uMS, Media3) ou "0x…" no .tpk. No .tpk so quando o chamador nao
+  // passou codigoDecoder — um codigo valido nunca e sobrescrito.
   n = digito(t);
   if (p == FP_TIZEN_TPK) {
-    const char *x = strstr(t, "0x");
-    if (x) { long h = strtol(x, NULL, 16); if (h) e->nativo = (int)h; }
+    uint32_t h;
+    if (!codigoDecoder && hexTpk(t, &h)) e->nativo = (int)h;
   } else if (n >= 0) {
     e->nativo = (int)n;
   }
