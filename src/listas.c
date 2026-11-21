@@ -632,12 +632,12 @@ int lst_ler_simkl_itens(const char *json, int serie, CatItem *dst, int max) {
       if (brutoRaiz(oi, of, "ids", ids, sizeof ids)) {
         js_texto(ids, ids + strlen(ids), "imdb", imdb, sizeof imdb);
         d->tmdb = (long)js_num(ids, NULL, "tmdb", 0);
+        d->simkl = (long)js_num(ids, NULL, "simkl", 0);
+        d->mal = (long)js_num(ids, NULL, "mal", 0);
         if (!imdb[0] && d->tmdb > 0)
           snprintf(imdb, sizeof imdb, "tmdb:%ld", d->tmdb);
-        if (!imdb[0]) {
-          long id = (long)js_num(ids, NULL, "simkl", 0);
-          if (id > 0) snprintf(imdb, sizeof imdb, "simkl:%ld", id);
-        }
+        if (!imdb[0] && d->simkl > 0)
+          snprintf(imdb, sizeof imdb, "simkl:%ld", d->simkl);
       } }
     if (!d->titulo[0]) continue;
     snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
@@ -1306,13 +1306,20 @@ static void *fioSimkl(void *u) {
       n += lst_ler_simkl_itens(corpo, serie, lote + n, count);
       // Simkl can return the same title in movies/shows and in anime; dedup
       // so it does not appear twice (as simkl.c does for plantowatch/CW).
-      // Movies only: in Series the second slice is anime and distinct
-      // seasons of the same show share the IMDb id with different Simkl/MAL
-      // ids, so an IMDb match would drop a real season.
-      for (int i = base; !serie && i < n; i++) {
+      // Movies dedups by IMDb (F86). In Series the second slice is anime and
+      // distinct seasons of the same show share the IMDb id with different
+      // Simkl/MAL ids, so the dedup there asks for the COMPLETE identity:
+      // the IMDb match only counts when no provider id contradicts it — the
+      // same work repeats the Simkl (and MAL) id in both slices, another
+      // season changes at least one of them.
+      for (int i = base; i < n; i++) {
         int j;
         for (j = 0; j < base; j++)
-          if (lote[i].imdb[0] && !strcmp(lote[j].imdb, lote[i].imdb)) break;
+          if (lote[i].imdb[0] && !strcmp(lote[j].imdb, lote[i].imdb) &&
+              (!serie ||
+               ((lote[i].simkl == lote[j].simkl || !lote[i].simkl || !lote[j].simkl) &&
+                (lote[i].mal == lote[j].mal || !lote[i].mal || !lote[j].mal))))
+            break;
         if (j < base) {
           memmove(lote + i, lote + i + 1, sizeof lote[0] * (size_t)(n - i - 1));
           n--; i--;
@@ -1323,6 +1330,9 @@ static void *fioSimkl(void *u) {
   }
   // Enrichment may compact unsupported IDs. Enrich copies so metadata failure
   // cannot remove account entries or merge distinct Simkl titles by IMDb.
+  // Each copy is matched back by the COMPLETE account identity (IMDb plus
+  // the Simkl/MAL ids): an IMDb-only match would replace a second season
+  // with the enriched copy of the first one — they share the IMDb.
   CatItem *enriched = malloc(sizeof *enriched * 32);
   for (int i = 0; enriched && i < n && perfis_sessao_atual(t->sessao); i += 32) {
     int end = n - i < 32 ? n - i : 32, count = 0;
@@ -1331,7 +1341,9 @@ static void *fioSimkl(void *u) {
     if (count) count = trakt_enfeitar_lote_sessao(enriched, count, t->sessao);
     for (int j = 0; j < end; j++)
       for (int k = 0; k < count; k++)
-        if (!strcmp(lote[i + j].imdb, enriched[k].imdb)) { lote[i + j] = enriched[k]; break; }
+        if (!strcmp(lote[i + j].imdb, enriched[k].imdb) &&
+            lote[i + j].simkl == enriched[k].simkl &&
+            lote[i + j].mal == enriched[k].mal) { lote[i + j] = enriched[k]; break; }
   }
   free(enriched);
   if (perfis_sessao_travar(t->sessao)) {
