@@ -22,6 +22,8 @@ int main(int argc, char **argv) {
   DtsWebosHls options = { .dv7 = atoi(argv[2]), .allow_dts = !atoi(argv[2]) };
   const char *dts = getenv("NV_TEST_HLS_DTS");
   if (dts && atoi(dts)) options.allow_dts = 1;
+  const char *ts = getenv("NV_TEST_HLS_TS");
+  if (ts) options.ts = atoi(ts);
   const char *mapping = getenv("NV_TEST_P7_MAPPING");
   if (mapping) options.preserve_mapping = atoi(mapping);
   if (argc == 4 || argc == 5) options.buffer_mib = atoi(argv[3]);

@@ -198,7 +198,7 @@ struct DtsRemux {
   DtsEngine *probe;                 /* readers are handed to the first generator */
   DtsEngine *audioProbe;
   int vs, as, mov, stereo_aac;
-  int webos, dv7, preserveMapping, allowDts, videoMib, audioMib;
+  int webos, ts, dv7, preserveMapping, allowDts, videoMib, audioMib;
   int64_t donorBase48, donorStart48;
   double donorRatio;
   int audio_offset_ms;             /* stable across this source's segments and seeks */
@@ -255,6 +255,7 @@ struct DtsRemuxGen {
   /* muxer kept across consecutive segments (continuity counters run on) */
   AVFormatContext *oc; AVStream *ov, *oa;
   int mp4Hls, dropHeader, sawRpu, hlsHeaderPending;
+  uint8_t tsDesc[16]; int tsDescLen;   /* webOS TS: Dolby Vision descriptors for the video's PMT entry */
   size_t fragmentBytes;
   int hevcFix;                      /* this muxer is MPEG-TS and the video is HEVC with hvcC */
   DtsRemuxWrite w; void *wop; int wfail; int64_t bytes;
@@ -311,12 +312,14 @@ static uint32_t hevcTipos(const uint8_t *d, int n, int lenSize) {
  * Exported for the host check. Returns the size written to *out (allocated
  * here), 0 when the packet is left as is (already Annex B), -1 on a malformed
  * packet (also left as is: the muxer's filter takes it, as before). */
-static int dts_remux_hevc_annexb(const uint8_t *hvccB, int hvccBN, int lenSize,
+static int dts_remux_hevc_annexb(const uint8_t *hvccB, int hvccBN, int lenSize, int lengthsKnown,
                           const uint8_t *d, int n, uint8_t **out) {
   int i, have = 0, irap = -1, total = 0, k = 0;
   *out = NULL;
   if (lenSize < 1 || lenSize > 4 || n < lenSize) return 0;
-  if (n >= 4 && !d[0] && !d[1] && (d[2] == 1 || (!d[2] && d[3] == 1))) return 0;
+  /* A first NAL of 256-511 bytes with 4-byte lengths also starts 00 00 01:
+   * packets this file converted itself are never sniffed. */
+  if (!lengthsKnown && n >= 4 && !d[0] && !d[1] && (d[2] == 1 || (!d[2] && d[3] == 1))) return 0;
   for (i = 0; i < n;) {   /* pass 1: sizes, the first IRAP, the sets before it */
     uint32_t l = 0; int t;
     if (n - i < lenSize) return -1;
@@ -478,6 +481,7 @@ DtsRemux *dts_remux_new(volatile int *cancel) {
 #ifdef NV_WEBOS_HLS_TEST
 void dts_remux_set_webos(DtsRemux *r, const DtsWebosHls *o) {
   r->webos = 1;
+  r->ts = o->ts;
   r->hls = *o;
   r->preserveMapping = o->preserve_mapping;
   r->dv7 = o->dv7;
@@ -1118,11 +1122,61 @@ void dts_remux_gen_buffer_info(const DtsRemuxGen *g, DtsBufferInfo *b) {
 }
 #endif
 
+/* MPEG-TS for webOS: FFmpeg's TS writer has no Dolby Vision signalling, so
+ * each PMT gets the DOVI registration and the Dolby Vision video stream
+ * descriptor in its HEVC entry (section and CRC rewritten). */
+#define TS_PACKET 188
+#define TS_PMT_PID 0x1000              /* FFmpeg's first PMT */
+static uint32_t crcMpeg(const uint8_t *p, int n) {
+  uint32_t c = 0xFFFFFFFFu;
+  while (n--) {
+    c ^= (uint32_t)*p++ << 24;
+    for (int i = 0; i < 8; i++) c = c & 0x80000000u ? c << 1 ^ 0x04C11DB7u : c << 1;
+  }
+  return c;
+}
+static int pmtAddDovi(uint8_t *t, const uint8_t *desc, int len) {
+  if (t[0] != 0x47 || !(t[1] & 0x40) || (((t[1] & 0x1f) << 8) | t[2]) != TS_PMT_PID || (t[3] & 0x30) != 0x10) return 0;
+  uint8_t *sec = t + 5 + t[4];
+  if (sec + 12 > t + TS_PACKET || sec[0] != 0x02) return 0;
+  int sl = ((sec[1] & 0x0f) << 8) | sec[2], end = 3 + sl;
+  if (sl < 13 || sec + end + len > t + TS_PACKET) return 0;
+  int at = 12 + (((sec[10] & 0x0f) << 8) | sec[11]);
+  while (at + 5 <= end - 4) {
+    int type = sec[at], info = ((sec[at + 3] & 0x0f) << 8) | sec[at + 4], next = at + 5 + info;
+    if (next > end - 4) return 0;
+    if (type == 0x24) {   /* HEVC */
+      for (int i = at + 5; i + 1 < next; i += 2 + sec[i + 1]) if (sec[i] == 0xB0) return 0;
+      memmove(sec + next + len, sec + next, (size_t)(end - next));
+      memcpy(sec + next, desc, (size_t)len);
+      info += len; sl += len; end += len;
+      sec[at + 3] = (uint8_t)(0xf0 | info >> 8); sec[at + 4] = (uint8_t)info;
+      sec[1] = (uint8_t)((sec[1] & 0xf0) | sl >> 8); sec[2] = (uint8_t)sl;
+      AV_WB32(sec + end - 4, crcMpeg(sec, end - 4));
+      return 1;
+    }
+    at = next;
+  }
+  return 0;
+}
 static int sinkWrite(void *o, const uint8_t *b, int n) {
   DtsRemuxGen *g = o;
   if (g->wfail) return AVERROR(EPIPE);
   if (!g->w || g->dropHeader) return n;
-  if (g->w(g->wop, b, n) < 0) { g->wfail = 1; return AVERROR(EPIPE); }
+  int from = 0;
+  if (g->tsDescLen && n % TS_PACKET == 0) {   /* whole packets: the AVIO buffer is a multiple of 188 */
+    for (int at = 0; at < n; at += TS_PACKET) {
+      uint8_t pk[TS_PACKET];
+      if (b[at] != 0x47 || !(b[at + 1] & 0x40) || (((b[at + 1] & 0x1f) << 8) | b[at + 2]) != TS_PMT_PID) continue;
+      memcpy(pk, b + at, TS_PACKET);
+      if (!pmtAddDovi(pk, g->tsDesc, g->tsDescLen)) continue;
+      if ((at > from && g->w(g->wop, b + from, at - from) < 0) || g->w(g->wop, pk, TS_PACKET) < 0) {
+        g->wfail = 1; return AVERROR(EPIPE);
+      }
+      from = at + TS_PACKET;
+    }
+  }
+  if (n > from && g->w(g->wop, b + from, n - from) < 0) { g->wfail = 1; return AVERROR(EPIPE); }
   g->bytes += n;
   return n;
 }
@@ -1155,7 +1209,17 @@ static int openMux(DtsRemuxGen *g, const char *fmt, int seg, char *err, size_t e
   }
   g->ov->time_base = r->vtb;
   g->oa->time_base = (AVRational){1, 48000};
-  if (r->dv7) {
+  g->tsDescLen = 0;
+  if (r->dv7 && !g->mp4Hls && !strcmp(fmt, "mpegts")) {
+    /* DOVI registration, then the Dolby Vision video stream descriptor 1.0:
+     * profile 8, the source's level, RPU and base layer present, no
+     * enhancement layer, base layer compatibility 1 (HDR10). */
+    unsigned v = 8u << 9 | (unsigned)(r->info.dv_level & 0x3f) << 3 | 1u << 2 | 1u;
+    const uint8_t d[] = { 0x05, 4, 'D', 'O', 'V', 'I', 0xB0, 5, 1, 0, (uint8_t)(v >> 8), (uint8_t)v, 1u << 4 };
+    memcpy(g->tsDesc, d, sizeof d);
+    g->tsDescLen = (int)sizeof d;
+  }
+  if (r->dv7 && g->mp4Hls) {
     const AVPacketSideData *dv = av_packet_side_data_get(r->vpar->coded_side_data, r->vpar->nb_coded_side_data,
                                                         AV_PKT_DATA_DOVI_CONF);
     AVPacketSideData *out = av_packet_side_data_new(&g->ov->codecpar->coded_side_data,
@@ -1174,8 +1238,9 @@ static int openMux(DtsRemuxGen *g, const char *fmt, int seg, char *err, size_t e
   }
   if (r->info.audio_language[0]) av_dict_set(&g->oa->metadata, "language", r->info.audio_language, 0);
   if (r->webos && r->info.audio_title[0]) av_dict_set(&g->oa->metadata, "handler_name", r->info.audio_title, 0);
-  buf = av_malloc(65536);
-  g->oc->pb = buf ? avio_alloc_context(buf, 65536, 1, g, NULL, sinkWrite, NULL) : NULL;
+  { int size = g->tsDescLen ? TS_PACKET * 348 : 65536;   /* TS: writes of whole packets */
+    buf = av_malloc(size);
+    g->oc->pb = buf ? avio_alloc_context(buf, size, 1, g, NULL, sinkWrite, NULL) : NULL; }
   if (!g->oc->pb) { av_free(buf); fail(err, errn, "Out of memory", 0); return -1; }
   g->oc->avoid_negative_ts = AVFMT_AVOID_NEG_TS_DISABLED;
   g->oc->output_ts_offset = (int64_t)(g->mp4Hls ? 1 : TS_OFFSET_S) * AV_TIME_BASE;
@@ -1612,7 +1677,9 @@ static int emitVideo(DtsRemuxGen *g, int target, DtsRemuxStats *st, char *err, s
     g->logMedia += dur; g->mediaTotal += dur;
     if (g->hevcFix) {
       uint8_t *nb = NULL;
-      int nn = dts_remux_hevc_annexb(g->src->hvccB, g->src->hvccBN, g->src->hvccLen, p->data, p->size, &nb);
+      /* a converted P7 packet already has four-byte lengths (convertDv7) */
+      int nn = dts_remux_hevc_annexb(g->src->hvccB, g->src->hvccBN, g->src->dv7 ? 4 : g->src->hvccLen,
+                                     g->src->dv7, p->data, p->size, &nb);
       if (nn > 0) {
         AVBufferRef *b = av_buffer_create(nb, (size_t)nn + AV_INPUT_BUFFER_PADDING_SIZE, av_buffer_default_free, NULL, 0);
         if (!b) { av_free(nb); av_packet_free(&p); fail(err, errn, "Out of memory", 0); return -1; }
@@ -1830,7 +1897,7 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
   dts_engine_metrics(g->eng, &m0);
   if (g->logWall <= 0) rollingLog(g, 0);   /* starts the 30 s window */
   g->w = w; g->wop = opaque; g->wfail = 0; g->bytes = 0;
-  g->mp4Hls = r->webos && seg >= 0;
+  g->mp4Hls = r->webos && !r->ts && seg >= 0;
   g->fragmentBytes = 0;
   g->sawRpu = 0;
   g->dropHeader = 0;

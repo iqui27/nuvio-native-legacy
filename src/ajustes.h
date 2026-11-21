@@ -679,6 +679,7 @@ int   ajustes_social(void);              // 1 = friends/social features on (per 
 int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)
 int   ajustes_dv7(void);
 int   ajustes_webos_hls(void);
+int   ajustes_webos_hls_ts(void);   // HLS test: MPEG-TS segments instead of fMP4
 int   ajustes_dv7_mapping(void); // device-local P7 mapping test, default off
 int   ajustes_audio_externo(void);                     // audio from another version (webOS), default off
 int   ajustes_audio_externo_ocultar_fora_cache(void); // 1 = hide versions not in the debrid cache

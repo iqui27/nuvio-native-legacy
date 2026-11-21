@@ -86,6 +86,7 @@ typedef struct {
   int external_stream, external_only, external_offset_ms, external_speed_ppm;
   double resume_s;
   DtsHlsVideoEnd video_end;
+  int ts;                      /* MPEG-TS segments (as on Tizen) instead of fMP4 */
 } DtsWebosHls;
 #ifdef NV_WEBOS_HLS_TEST
 #include "dts_engine.h"

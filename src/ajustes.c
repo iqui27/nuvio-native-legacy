@@ -751,6 +751,7 @@ typedef enum {
   AJ_WEBOS_HLS_DTS,
   AJ_WEBOS_HLS_DV7,
   AJ_WEBOS_HLS_MODE,
+  AJ_WEBOS_HLS_TS,     // HLS test: MPEG-TS segments instead of fMP4 (device-local, Off)
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1921,6 +1922,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("DTS via HLS (experimental)", V_LIGA, 2),
   ESC("Dolby Vision P7 via HLS (experimental)", V_LIGA, 2),
   ESC("HLS (experimental)", V_LIGA, 2),
+  ESC("HLS: MPEG-TS (test)", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2277,6 +2279,7 @@ static const char *CHAVE[] = {
   "webosHlsDtsLocal",
   "webosHlsDv7Local",
   "webosHlsModeLocal",
+  "webosHlsTsLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3968,6 +3971,7 @@ int ajustes_dts_tpk_modo(void) {
 int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
 int ajustes_dv7(void) { return lig(AJ_DV7); }
 int ajustes_webos_hls(void) { return lig(AJ_WEBOS_HLS_MODE); }
+int ajustes_webos_hls_ts(void) { return lig(AJ_WEBOS_HLS_TS); }
 int ajustes_dv_audio_fixo(void) {
 #if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
   int v=valor[AJ_DV_AUDIO_FIXO];return v==1 || v==2 ? v : 0;
@@ -6236,7 +6240,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_PS_CONTINUAR:   /* o web nao tem este cartao; escolha desta TV */
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
-    case AJ_WEBOS_HLS_DTS: case AJ_WEBOS_HLS_DV7: case AJ_WEBOS_HLS_MODE:
+    case AJ_WEBOS_HLS_DTS: case AJ_WEBOS_HLS_DV7: case AJ_WEBOS_HLS_MODE: case AJ_WEBOS_HLS_TS:
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
     case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR:
@@ -6336,7 +6340,7 @@ static int soNaTv(int op) {
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
     case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR:
-    case AJ_WEBOS_HLS_DTS: case AJ_WEBOS_HLS_DV7: case AJ_WEBOS_HLS_MODE:
+    case AJ_WEBOS_HLS_DTS: case AJ_WEBOS_HLS_DV7: case AJ_WEBOS_HLS_MODE: case AJ_WEBOS_HLS_TS:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
@@ -6928,7 +6932,7 @@ static int foraDestaPlataforma(int op) {
 #endif
   if (op == AJ_WEBOS_HLS_DTS || op == AJ_WEBOS_HLS_DV7) return 1;
 #if !defined(NV_WEBOS_HLS_TEST) || !defined(NV_WEBOS)
-  if (op == AJ_WEBOS_HLS_MODE) return 1;
+  if (op == AJ_WEBOS_HLS_MODE || op == AJ_WEBOS_HLS_TS) return 1;
 #endif
 #if !defined(NV_DV_FIXED_AUDIO_TEST) || !defined(NV_WEBOS)
   if(op==AJ_DV_AUDIO_FIXO) return 1;
@@ -8270,6 +8274,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
+    case AJ_WEBOS_HLS_TS: return "Test: with HLS On, send MPEG-TS segments (as on Tizen) instead of fMP4. Dolby Vision P8.1 is marked in the stream table. Reopen the video to apply.";
     case AJ_WEBOS_HLS_MODE: return "Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas exige mais largura de banda. Use só se tiver problemas. Reabra o vídeo para aplicar.";
     case AJ_DV7: return "Converte MKV Dolby Vision perfil 7 para 8.1. Mantém o vídeo base e os metadados dinâmicos; descarta a camada de melhoria, incluindo FEL. Vale para o próximo vídeo.";
     case AJ_DV_AUDIO_FIXO: return "Original audio may reload video when switching formats. AAC stereo / Dolby Digital 5.1 converts supported tracks for smoother switching. Conversion does not preserve lossless audio or Atmos/DTS:X metadata. Reopen the video to apply.";
@@ -11021,7 +11026,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_LEG_CONTORNO_COR:
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
     case AJ_QUALIDADE: case AJ_DV: case AJ_ATMOS: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_ESTAT_TAMANHO: case AJ_ESTAT_LADO:
-    case AJ_DV_MKV: case AJ_WEBOS_HLS_MODE:
+    case AJ_DV_MKV: case AJ_WEBOS_HLS_MODE: case AJ_WEBOS_HLS_TS:
     case AJ_LEG_FORCADA:
     case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO:
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: case AJ_FONTE_MANUAL:

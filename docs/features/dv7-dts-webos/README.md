@@ -68,6 +68,13 @@ HLS session: the next segments use that track and the player seeks to the
 current position, so the picture stops briefly, as for a seek. Other Dolby Vision sources (P5, P8, or P7
 without the P7 conversion) keep the existing converter when HLS is On.
 
+**HLS: MPEG-TS (test)**, below the HLS switch, sends MPEG-TS segments as on
+Tizen (and as Stremio Origin does on LG) instead of fMP4: the player loads the
+media playlist, without `init.mp4`. FFmpeg's TS writer has no Dolby Vision
+signalling, so each PMT gets the DOVI registration and the Dolby Vision video
+stream descriptor (profile 8, the source's level, compatibility 1) in its HEVC
+entry. Off keeps fMP4.
+
 HLS requires a seekable source with a keyframe index. If a webOS MKV's last
 indexed keyframe is far from the reported end, the probe checks a bounded
 portion of the tail for later keyframes or video that reaches the end. A long

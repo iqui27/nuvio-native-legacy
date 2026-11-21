@@ -17,7 +17,7 @@ origin = f"http://127.0.0.1:{(work / 'port').read_text()}/"
 
 @contextlib.contextmanager
 def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, track=1,
-             ordinal=None, mapping=False, allow_dts=False, switch_to=None, inplace_to=None):
+             ordinal=None, mapping=False, allow_dts=False, switch_to=None, inplace_to=None, ts=False):
     cmd = [work / 'server', urljoin(origin, filename), str(dv7)]
     if donor:
         cmd += [urljoin(origin, donor), str(buffer_mib or 0), str(track), str(offset), str(speed)]
@@ -31,6 +31,8 @@ def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, trac
         env['NV_TEST_HLS_SWITCH_ORDINAL'] = str(switch_to)
     if inplace_to is not None:
         env['NV_TEST_HLS_INPLACE_ORDINAL'] = str(inplace_to)
+    if ts:
+        env['NV_TEST_HLS_TS'] = '1'
     process = subprocess.Popen(
         cmd, env=env,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
@@ -352,6 +354,68 @@ with playback('p7-dts-tail.mkv', 1, ordinal=0, mapping=True, allow_dts=True, inp
 log = (work / 'p7-dts-tail.mkv.log').read_text()
 assert 'audio switched in place: ordinal 1, stream 2, dts 6 ch' in log
 print('An audio track change in the same HLS session keeps the init segment and the picture.')
+
+def annexb_nals(raw):
+    starts = [m.end() for m in re.finditer(rb'\x00\x00\x01', raw)]
+    nals = []
+    for k, start in enumerate(starts):
+        end = starts[k + 1] - 3 if k + 1 < len(starts) else len(raw)
+        nal = raw[start:end].rstrip(b'\x00')
+        if nal:
+            nals.append(nal)
+    return nals
+
+
+def ts_video_nals(name, data):
+    media = work / name
+    media.write_bytes(data)
+    raw = subprocess.check_output(['ffmpeg', '-v', 'error', '-i', media, '-map', '0:v:0',
+                                   '-c', 'copy', '-f', 'hevc', '-'])
+    return annexb_nals(raw)
+
+
+with playback('dts.mkv', 0, ordinal=0, ts=True) as base:
+    assert base.endswith('/v.m3u8'), base
+    playlist = get(base)
+    assert b'#EXT-X-VERSION:3' in playlist and b'#EXT-X-MAP' not in playlist, playlist
+    assert b'\nseg0.ts\n' in playlist and b'\nseg2.ts\n' in playlist, playlist
+    seg = get(base, 'seg2.ts')
+    assert seg[0] == 0x47 and len(seg) % 188 == 0
+    streams = probe('ts-dts.ts', seg)['streams']
+    assert [s['codec_name'] for s in streams] == ['h264', 'ac3'] and streams[1]['channels'] == 6
+    assert abs(tone(decoded_audio('ts-dts.ts', seg), 0.5) - 440) < 20
+    assert get(base, 'seg0.ts')[0] == 0x47
+    assert b'DOVI' not in seg
+print('DTS -> AC-3 5.1 in MPEG-TS segments and an out-of-order seek passed.')
+
+for name in ('indexed.mkv', 'indexed-mel.mkv'):
+    with playback(name, 1, mapping=True, ts=True) as base:
+        for k in (1, 0, 2):
+            seg = get(base, f'seg{k}.ts')
+            assert seg[0] == 0x47 and len(seg) % 188 == 0
+            video, audio = probe(f'ts-{name}-{k}.ts', seg)['streams']
+            dovi = [sd for sd in video.get('side_data_list', []) if 'dv_profile' in sd]
+            assert dovi, video
+            assert (dovi[0]['dv_profile'], dovi[0]['dv_bl_signal_compatibility_id'], dovi[0]['rpu_present_flag'],
+                    dovi[0]['el_present_flag'], dovi[0]['bl_present_flag']) == (8, 1, 1, 0, 1), dovi
+            assert audio['codec_name'] == 'ac3' and audio['channels'] == 6
+            nals = ts_video_nals(f'ts-{name}-video-{k}.ts', seg)
+            types = [(n[0] >> 1) & 63 for n in nals]
+            assert 62 in types and 63 not in types, types
+            assert all(not (n[0] & 1 or n[1] >> 3) for n in nals), 'enhancement layer left in'
+print('P7 FEL and MEL -> P8.1 in MPEG-TS: PMT Dolby Vision descriptor, RPU, no EL, out-of-order seek passed.')
+
+with playback('p7-dts-tail.mkv', 1, ordinal=0, mapping=True, allow_dts=True, inplace_to=1, ts=True) as base:
+    assert abs(tone(decoded_audio('ts-p7-ac3.ts', get(base, 'seg1.ts')), 0.5) - 440) < 20
+    assert switch_in_place() == 1
+    after = get(base, 'seg1.ts')
+    video, audio = probe('ts-p7-dts.ts', after)['streams']
+    assert any(sd.get('dv_profile') == 8 for sd in video.get('side_data_list', []))
+    assert audio['codec_name'] == 'ac3' and audio['channels'] == 6
+    assert abs(tone(decoded_audio('ts-p7-dts.ts', after), 0.5) - 770) < 20
+log = (work / 'p7-dts-tail.mkv.log').read_text()
+assert 'audio switched in place: ordinal 1, stream 2, dts 6 ch' in log
+print('A DTS track change in place keeps Dolby Vision P8.1 in MPEG-TS.')
 
 with playback('dts.mkv', 0, 'donor.m4a', 64, 750) as base:
     init = get(base, 'init.mp4')

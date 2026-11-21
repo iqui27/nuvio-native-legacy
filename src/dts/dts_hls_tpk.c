@@ -338,6 +338,7 @@ typedef struct Sessao {
   char *url, *cabs;
   int track, stereo, modo;
   int webos, dv7;
+  int webosMp4;                   // webOS fMP4 (init.mp4 + .m4s); 0 = MPEG-TS like Tizen
 #ifdef NV_WEBOS_HLS_TEST
   DtsWebosHls hls;
   int retiring;
@@ -444,7 +445,7 @@ static void *fioSonda(void *u) {
   const DtsRemuxInfo *in = probed ? dts_remux_info(rx) : NULL;
   int noIndex = in && s->modo == DTSTPK_HLS && (in->n_segments < 1 || !in->index_complete);
   int ready = probed && !noIndex;
-  if (ready && s->webos) {
+  if (ready && s->webosMp4) {
     s->initMp4 = malloc(INIT_MP4_MAX);
     initGen = s->initMp4 ? dts_remux_gen_new(rx, err, sizeof err) : NULL;
     ready = initGen && dts_remux_gen_run(initGen, 0, 0, "hls-init", saveInit, s,
@@ -743,8 +744,8 @@ static void playlist(Sessao *s, char *b, size_t n) {
   if (alvo < 1) alvo = 1;
   p += (size_t)snprintf(b + p, n - p, "#EXTM3U\n#EXT-X-VERSION:%d\n#EXT-X-TARGETDURATION:%d\n#EXT-X-MEDIA-SEQUENCE:0\n"
                         "#EXT-X-PLAYLIST-TYPE:VOD\n",
-                        s->webos ? 7 : 3, alvo);
-  if (s->webos) p += (size_t)snprintf(b + p, n - p, "#EXT-X-MAP:URI=\"init.mp4\"\n");
+                        s->webosMp4 ? 7 : 3, alvo);
+  if (s->webosMp4) p += (size_t)snprintf(b + p, n - p, "#EXT-X-MAP:URI=\"init.mp4\"\n");
   else p += (size_t)snprintf(b + p, n - p, "#EXT-X-INDEPENDENT-SEGMENTS\n");
 #ifdef NV_WEBOS_HLS_TEST
   if (s->webos && s->hls.resume_s >= 0.001 && s->hls.resume_s < in->duration_s) {
@@ -756,7 +757,7 @@ static void playlist(Sessao *s, char *b, size_t n) {
     // Milissegundos inteiros: o LC_NUMERIC da TV nunca vira virgula aqui.
     long ms = lround(dts_remux_segment_duration(s->rx, k) * 1000.0);
     p += (size_t)snprintf(b + p, n - p, "#EXTINF:%ld.%03ld,\nseg%d.%s\n", ms / 1000, ms % 1000, k,
-                          s->webos ? "m4s" : "ts");
+                          s->webosMp4 ? "m4s" : "ts");
   }
   snprintf(b + p, n - p, "#EXT-X-ENDLIST\n");
 }
@@ -772,7 +773,7 @@ static void playlistMestre(Sessao *s, char *b, size_t n) {
   size_t p = 0;
   if (bw < 1000000L) bw = 1000000L;
   p += (size_t)snprintf(b + p, n - p, "#EXTM3U\n#EXT-X-VERSION:7\n");
-  if (!s->webos) p += (size_t)snprintf(b + p, n - p, "#EXT-X-INDEPENDENT-SEGMENTS\n");
+  if (!s->webosMp4) p += (size_t)snprintf(b + p, n - p, "#EXT-X-INDEPENDENT-SEGMENTS\n");
   p += (size_t)snprintf(b + p, n - p, "#EXT-X-STREAM-INF:BANDWIDTH=%ld", bw);
   if (in->width > 0 && in->height > 0) p += (size_t)snprintf(b + p, n - p, ",RESOLUTION=%dx%d", in->width, in->height);
   if (fps > 0) p += (size_t)snprintf(b + p, n - p, ",FRAME-RATE=%ld.%03ld", fps / 1000, fps % 1000);
@@ -846,7 +847,7 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
       }
     }
     fflush(stdout);
-  } else if (s->webos && !strcmp(resto, "init.mp4")) {
+  } else if (s->webosMp4 && !strcmp(resto, "init.mp4")) {
     char cab[256];
     snprintf(cab, sizeof cab, "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\n"
              "Content-Length: %zu\r\nCache-Control: no-cache\r\nConnection: %s\r\n\r\n",
@@ -861,8 +862,8 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
       printf("[dts-tpk] #%u <- 404 segmento %d fora da playlist\n", nr, k);
       fflush(stdout);
       r = manter;
-    } else r = servirFluxo(sock, s, pd, nr, k, 0, s->webos ? "mp4" : "mpegts",
-                           s->webos ? "video/mp4" : "video/mp2t", manter);
+    } else r = servirFluxo(sock, s, pd, nr, k, 0, s->webosMp4 ? "mp4" : "mpegts",
+                           s->webosMp4 ? "video/mp4" : "video/mp2t", manter);
   } else if (!s->webos && !strcmp(resto, "prog.ts")) {
     const char *q = strstr(pd->query, "t=");
     double t = q ? atof(q + 2) : 0.0;
@@ -1079,7 +1080,8 @@ static int urlDe(Sessao *s, double t, char *out, size_t n) {
   int porta = portaLo;
   switch (s->modo) {
     case DTSTPK_HLS:
-      snprintf(out, n, "http://%s:%d/%s/m.m3u8", host, porta, s->token); break;
+      // webOS MPEG-TS: the media playlist itself, as Stremio Origin loads it.
+      snprintf(out, n, "http://%s:%d/%s/%s.m3u8", host, porta, s->token, s->webos && !s->webosMp4 ? "v" : "m"); break;
     default: {
       long ms = lround((t > 0 ? t : 0) * 1000.0);
       snprintf(out, n, "http://%s:%d/%s/prog.ts?t=%ld.%03ld", host, porta, s->token, ms / 1000, ms % 1000);
@@ -1117,10 +1119,12 @@ static int openSession(const char *url, const char *headers, int track, int ster
   s->url = strdup(url); s->cabs = strdup(headers ? headers : "");
   s->track = track; s->stereo = stereo; s->modo = modo;
   s->webos = webos;
+  s->webosMp4 = webos;
 #ifdef NV_WEBOS_HLS_TEST
   if (hls) {
     s->dv7 = hls->dv7;
     s->hls = *hls;
+    s->webosMp4 = !hls->ts;
     s->lastSegment = -1;
     if (hls->external_url && *hls->external_url) {
       s->externalUrl = strdup(hls->external_url);

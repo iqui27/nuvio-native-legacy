@@ -830,7 +830,7 @@ static float ajCustoIcones(int op, float xDir, float yc, float a) {
 // "AVANCADO", que ganha do escopo ("ESTA TV" / "ESTE PERFIL", mockup v3 tela
 // 03). Acoes e leituras nao tem escopo para mostrar.
 static const char *ajSelo(int op) {
-  if (op == AJ_WEBOS_HLS_MODE) return NULL;
+  if (op == AJ_WEBOS_HLS_MODE || op == AJ_WEBOS_HLS_TS) return NULL;
 #if !defined(NV_TPK) && !defined(NV_ANDROID)
   if (op == AJ_DV_MKV) return "Só LG";
 #endif

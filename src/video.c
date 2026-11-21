@@ -4056,6 +4056,7 @@ static int hlsAbrir(void) {
     .buffer_mib = hlsBufferMib(),
     .resume_s = hls.switchingAudio ? hls.pos : 0,
     .video_end = hls.videoEnd,
+    .ts = ajustes_webos_hls_ts(),
   };
   char langs[64];
   DtsTrack hint = {0};
@@ -4096,6 +4097,8 @@ static int hlsAbrir(void) {
     }
     marco(external ? "HLS webOS: audio from another source / AC-3" :
           dv7 ? "HLS webOS: DV7 -> P8.1 / AC-3" : "HLS webOS: DTS -> AC-3");
+    printf("[webos-hls] segments: %s\n", options.ts ? "MPEG-TS" : "fMP4");
+    fflush(stdout);
     return 1;
   }
   hlsFalhar("session could not start");
