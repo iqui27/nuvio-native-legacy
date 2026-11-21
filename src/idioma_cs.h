@@ -5693,7 +5693,7 @@
   T("Use", "Použít"),
   T("Use Fonte ou Recarregar aqui embaixo, ou CH+ e CH− para trocar de canal.", "Použijte Zdroj nebo Načíst znovu níže, nebo CH+ a CH− pro změnu kanálu."),
   T("Use HLS MPEG-TS for the DTS and Dolby Vision P7 conversions. For older LG TVs with webOS 6 and earlier. Reopen the video to apply.", "Používá HLS MPEG-TS pro převod DTS a Dolby Vision P7. Pro starší televizory LG s webOS 6 a starším. Pro použití otevřete video znovu."),
-  T("Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "Používá HLS fMP4 pro převod DTS a Dolby Vision P7. Zvuk vystupuje ve formátu Dolby Digital (AC-3). Může pomoci u některých zařízení, ale vyžaduje vyšší propustnost připojení. Zapněte jen při potížích a video znovu otevřete."),
+  T("Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "Používá HLS fMP4 pro převod DTS a Dolby Vision P7. Zvuk vystupuje ve formátu Dolby Digital (AC-3). Může pomoci u některých zařízení, ale vyžaduje vyšší propustnost připojení. Zapněte jen při potížích. Pro použití otevřete video znovu."),
   T("Use Recarregar para tentar novamente.", "Zkuste to znovu tlačítkem Načíst znovu."),
   T("Use Reduzidas para movimentos mais discretos ao navegar pela interface.", "Použijte Sníženou pro jemnější pohyb při navigaci v rozhraní."),
   T("Use as audio", "Use as audio"),

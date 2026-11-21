@@ -5693,7 +5693,7 @@
   T("Use", "Naudoti"),
   T("Use Fonte ou Recarregar aqui embaixo, ou CH+ e CH− para trocar de canal.", "Naudokite Šaltinis arba Perkrauti žemiau, arba CH+ ir CH−, kad pakeistumėte kanalą."),
   T("Use HLS MPEG-TS for the DTS and Dolby Vision P7 conversions. For older LG TVs with webOS 6 and earlier. Reopen the video to apply.", "DTS ir „Dolby Vision P7“ konvertavimui naudojamas HLS MPEG-TS. Senesniems LG televizoriams su webOS 6 ir senesne. Kad pritaikytumėte, atidarykite vaizdo įrašą iš naujo."),
-  T("Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "DTS ir „Dolby Vision P7“ konvertavimui naudojamas HLS fMP4. Garsas perduodamas „Dolby Digital“ (AC-3) formatu. Gali padėti kai kuriuose įrenginiuose, bet reikia didesnio ryšio pralaidumo. Įjunkite tik kilus problemų ir atverkite vaizdo įrašą iš naujo."),
+  T("Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "DTS ir „Dolby Vision P7“ konvertavimui naudojamas HLS fMP4. Garsas perduodamas „Dolby Digital“ (AC-3) formatu. Gali padėti kai kuriuose įrenginiuose, bet reikia didesnio ryšio pralaidumo. Įjunkite tik kilus problemų. Kad pritaikytumėte, atidarykite vaizdo įrašą iš naujo."),
   T("Use Recarregar para tentar novamente.", "Naudokite Perkrauti, kad bandytumėte dar kartą."),
   T("Use Reduzidas para movimentos mais discretos ao navegar pela interface.", "Naudokite Sumažinta švelnesniam judėjimui naršant sąsają."),
   T("Use as audio", "Use as audio"),

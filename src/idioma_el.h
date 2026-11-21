@@ -5693,7 +5693,7 @@
   T("Use", "Χρήση"),
   T("Use Fonte ou Recarregar aqui embaixo, ou CH+ e CH− para trocar de canal.", "Χρησιμοποιήστε Πηγή ή Επαναφόρτωση παρακάτω, ή CH+ και CH− για αλλαγή καναλιού."),
   T("Use HLS MPEG-TS for the DTS and Dolby Vision P7 conversions. For older LG TVs with webOS 6 and earlier. Reopen the video to apply.", "Χρησιμοποιεί HLS MPEG-TS για τη μετατροπή DTS και Dolby Vision P7. Για παλαιότερες τηλεοράσεις LG με webOS 6 και παλαιότερο. Ανοίξτε ξανά το βίντεο για εφαρμογή."),
-  T("Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "Χρησιμοποιεί HLS fMP4 για τη μετατροπή DTS και Dolby Vision P7. Η έξοδος ήχου είναι σε Dolby Digital (AC-3). Μπορεί να βοηθήσει σε ορισμένες συσκευές, αλλά απαιτεί μεγαλύτερο εύρος ζώνης. Ενεργοποιήστε το μόνο αν υπάρχει πρόβλημα και ανοίξτε ξανά το βίντεο."),
+  T("Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "Χρησιμοποιεί HLS fMP4 για τη μετατροπή DTS και Dolby Vision P7. Η έξοδος ήχου είναι σε Dolby Digital (AC-3). Μπορεί να βοηθήσει σε ορισμένες συσκευές, αλλά απαιτεί μεγαλύτερο εύρος ζώνης. Ενεργοποιήστε το μόνο αν υπάρχει πρόβλημα. Ανοίξτε ξανά το βίντεο για εφαρμογή."),
   T("Use Recarregar para tentar novamente.", "Χρησιμοποίησε το Επαναφόρτωση για να δοκιμάσεις ξανά."),
   T("Use Reduzidas para movimentos mais discretos ao navegar pela interface.", "Χρησιμοποίησε το Μειωμένο για πιο ήπια κίνηση όταν πλοηγείσαι στη διεπαφή."),
   T("Use as audio", "Use as audio"),

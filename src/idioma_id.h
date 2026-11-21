@@ -5693,7 +5693,7 @@
   T("Use", "Gunakan"),
   T("Use Fonte ou Recarregar aqui embaixo, ou CH+ e CH− para trocar de canal.", "Gunakan Sumber atau Muat ulang di bawah, atau CH+ dan CH− untuk berpindah kanal."),
   T("Use HLS MPEG-TS for the DTS and Dolby Vision P7 conversions. For older LG TVs with webOS 6 and earlier. Reopen the video to apply.", "Gunakan HLS MPEG-TS untuk konversi DTS dan Dolby Vision P7. Untuk TV LG lama dengan webOS 6 dan sebelumnya. Buka ulang video untuk menerapkan."),
-  T("Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "Gunakan HLS fMP4 untuk konversi DTS dan Dolby Vision P7. Audio dikeluarkan dalam format Dolby Digital (AC-3). Dapat membantu di beberapa perangkat, tetapi membutuhkan bandwidth lebih besar. Aktifkan hanya jika ada masalah dan buka ulang video."),
+  T("Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "Gunakan HLS fMP4 untuk konversi DTS dan Dolby Vision P7. Audio dikeluarkan dalam format Dolby Digital (AC-3). Dapat membantu di beberapa perangkat, tetapi membutuhkan bandwidth lebih besar. Aktifkan hanya jika ada masalah. Buka ulang video untuk menerapkan."),
   T("Use Recarregar para tentar novamente.", "Gunakan Muat ulang untuk mencoba lagi."),
   T("Use Reduzidas para movimentos mais discretos ao navegar pela interface.", "Pakai Dikurangi untuk gerakan yang lebih lembut saat menavigasi antarmuka."),
   T("Use as audio", "Use as audio"),

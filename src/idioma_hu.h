@@ -5693,7 +5693,7 @@
   T("Use", "Használat"),
   T("Use Fonte ou Recarregar aqui embaixo, ou CH+ e CH− para trocar de canal.", "Használd lent a Forrás vagy az Újratöltés gombot, vagy a CH+ és CH− gombokat a csatornaváltáshoz."),
   T("Use HLS MPEG-TS for the DTS and Dolby Vision P7 conversions. For older LG TVs with webOS 6 and earlier. Reopen the video to apply.", "HLS MPEG-TS-t használ a DTS és a Dolby Vision P7 átalakításához. Régebbi, webOS 6 vagy korábbi rendszerű LG tévékhez. Az alkalmazáshoz nyissa meg újra a videót."),
-  T("Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "HLS fMP4-et használ a DTS és a Dolby Vision P7 átalakításához. A hangkimenet Dolby Digital (AC-3). Segíthet egyes eszközökön, de nagyobb sávszélességet igényel. Csak hiba esetén kapcsold be, majd nyisd meg újra a videót."),
+  T("Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "HLS fMP4-et használ a DTS és a Dolby Vision P7 átalakításához. A hangkimenet Dolby Digital (AC-3). Segíthet egyes eszközökön, de nagyobb sávszélességet igényel. Csak hiba esetén kapcsolja be. Az alkalmazáshoz nyissa meg újra a videót."),
   T("Use Recarregar para tentar novamente.", "Próbáld újra az Újratöltéssel."),
   T("Use Reduzidas para movimentos mais discretos ao navegar pela interface.", "Használd a Csökkentettet a finomabb mozgáshoz a felületen való navigáláskor."),
   T("Use as audio", "Use as audio"),
