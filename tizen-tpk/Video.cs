@@ -131,6 +131,11 @@ namespace NuvioTpk
         // depois do primeiro relogio de verdade, nunca no alvo da retomada.
         volatile int posLidoMs = -1;
         int posGer;
+        // Seek pedido ao firmware e ainda sem resposta: nenhuma amostra do
+        // intervalo entre o pedido e a confirmacao (ou a falha) vale como
+        // leitura real — nem a que comeca dentro dele e volta depois. So
+        // mexida sob a trocaTrava; o Tique confere junto da geracao.
+        bool buscaEmVoo;
         bool acabou;
         // #783: a Home para o player de proposito (#412); a volta na OnResume
         // da plataforma pede a reconexao nativa da MESMA sessao em vez de
@@ -387,7 +392,7 @@ namespace NuvioTpk
                 try {
                     if (p != null && playerSessao == minha && minha == Volatile.Read(ref sessao) && p.State == PlayerState.Playing) {
                         int ms = p.GetPlayPosition();
-                        lock (trocaTrava) { if (minha == sessao && player == p && ger == posGer) { posMs = ms; posLidoMs = ms; } }
+                        lock (trocaTrava) { if (minha == sessao && player == p && ger == posGer && !buscaEmVoo) { posMs = ms; posLidoMs = ms; } }
                     }
                 } catch (InvalidOperationException e) {
                     Log("posicao: " + e.Message);
@@ -482,7 +487,7 @@ namespace NuvioTpk
         async void Abrir(string url, string cabecalhos, int minha, uint geracao)
         {
             int preparando = 0, erroPreparoEnviado = 0;
-            lock (trocaTrava) { posMs = 0; posLidoMs = -1; acabou = false; Interlocked.Increment(ref posGer); }
+            lock (trocaTrava) { posMs = 0; posLidoMs = -1; acabou = false; buscaEmVoo = false; Interlocked.Increment(ref posGer); }
             buscando = false; buscaPend = pausaPend = -1; preparoPausado = false;
             aspectoRecusado = false;
             try
@@ -728,7 +733,10 @@ namespace NuvioTpk
             // Invalidacao atomica com a conferencia do Tique: a mesma trava
             // ordena o -1/posGer daqui contra o "ger == posGer" de la, entao
             // uma leitura validada antes do seek nunca publica depois dele.
-            lock (trocaTrava) { acabou = false; posLidoMs = -1; Interlocked.Increment(ref posGer); }
+            // buscaEmVoo fecha a janela ate a resposta do firmware: uma
+            // consulta que comece nela encontra o pendente e nao publica; a
+            // que volta depois encontra a geracao andada pelo ack/falha.
+            lock (trocaTrava) { acabou = false; posLidoMs = -1; buscaEmVoo = true; Interlocked.Increment(ref posGer); }
             bool expirou = false;
             try {
                 var busca = p.SetPlayPositionAsync(ms, false);
@@ -741,9 +749,13 @@ namespace NuvioTpk
                 }
                 await busca;
                 // So depois do seek aceito: pausado, o Tique nao consulta.
+                // O ack encerra a janela e anda a geracao: uma consulta que
+                // comecou dentro dela e volta agora e descartada na conferencia.
                 lock (trocaTrava) {
                     if (minha == sessao && player == p) {
                         posMs = ms;
+                        buscaEmVoo = false;
+                        Interlocked.Increment(ref posGer);
                         NvVid.Evento(EV_BUSCOU, ms, 0);
                     }
                 }
@@ -754,13 +766,32 @@ namespace NuvioTpk
             }
             catch (InvalidOperationException e) {
                 Log("buscar: " + e.Message);
+                // A falha tambem encerra a janela: a posicao nao mudou e a
+                // proxima leitura real volta a valer — consultas que comecaram
+                // dentro dela sao descartadas pela geracao.
+                lock (trocaTrava) {
+                    if (minha == sessao && player == p) {
+                        buscaEmVoo = false;
+                        Interlocked.Increment(ref posGer);
+                    }
+                }
                 // The core decides (mkvfix.h): an MKV with a hidden index reopens
                 // through the local fix; with no index at all, it tells the user.
                 NvVid.Evento(EV_BUSCA_FALHOU, ms, 0);
                 Preso(minha, buscaPend >= 0 ? buscaPend : ms);
                 return;
             }
-            catch (Exception e) { Log("buscar: " + e.Message); NvVid.Evento(EV_BUSCA_FALHOU, ms, 0); return; }
+            catch (Exception e) {
+                Log("buscar: " + e.Message);
+                lock (trocaTrava) {
+                    if (minha == sessao && player == p) {
+                        buscaEmVoo = false;
+                        Interlocked.Increment(ref posGer);
+                    }
+                }
+                NvVid.Evento(EV_BUSCA_FALHOU, ms, 0);
+                return;
+            }
             finally { if (!expirou && minha == Volatile.Read(ref sessao)) buscando = false; }
             if (minha != Volatile.Read(ref sessao)) return;
             // SetPlayPositionAsync terminou: nao disputar Pause/outro seek com

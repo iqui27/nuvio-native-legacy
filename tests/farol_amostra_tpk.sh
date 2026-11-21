@@ -49,6 +49,7 @@ else:
         ("posReconLeg >= 0.0) return 0.0", "alvo da reconexao nao excluido"),
         ("hPosLida", "amostra nao usa o marcador de leitura real"),
         ("ms < 0) return 0.0", "amostra nao barra 'sem leitura real'"),
+        ("buscaAlvoMs) >= 0) return 0.0", "amostra aceita marcador com alvo de seek em voo"),
     ]:
         if trecho not in corpo:
             print("farol_amostra_tpk: %s" % msg, file=sys.stderr); ruim = 1
@@ -69,6 +70,15 @@ if desl and "hPosLida" not in desl.group(1):
 # resolve do carregador ELF do TPK40.
 if "posLidoMs = -1" not in cs:
     print("farol_amostra_tpk: host sem posLidoMs", file=sys.stderr); ruim = 1
+# A janela do seek: o Buscar marca o pendente, o Tique o descarta e o
+# ack/falha o limpa andando a geracao — nenhuma amostra do intervalo vale.
+for trecho, msg in [
+    ("buscaEmVoo = true", "Buscar nao marca o seek pendente"),
+    ("&& !buscaEmVoo", "Tique nao descarta a amostra da janela do seek"),
+    ("buscaEmVoo = false", "ack/falha nao encerra o seek pendente"),
+]:
+    if trecho not in cs:
+        print("farol_amostra_tpk: %s" % msg, file=sys.stderr); ruim = 1
 if not re.search(r"posMs = ms; posLidoMs = ms;", cs):
     print("farol_amostra_tpk: GetPlayPosition nao marca posLidoMs", file=sys.stderr)
     ruim = 1
@@ -126,16 +136,20 @@ static void farol_ev(int m, int evt, int f, int32_t a, int b, const char *tok) {
 # do ack do seek; posLidoMs so recebe a leitura real do GetPlayPosition e
 # volta a -1 ao abrir e a cada seek pedido.
 print(r'''
+#include <stdatomic.h>
 typedef int (*FnPos)(void);
 static int raw = -1, lido = -1;
 static int getpos(void) { return raw; }
 static int getlido(void) { return lido; }
 static FnPos hPos = getpos;
 static FnPos hPosLida;
+// O alvo em voo do video_buscar: armado no pedido, desarmado no ack e na falha.
+static atomic_int buscaAlvoMs = -1;
 static void hostRegistrar(void) { hPosLida = getlido; }
-static void hostAbrir(void) { raw = 0; lido = -1; hostRegistrar(); }
-static void hostSeek(void) { lido = -1; }                 // pedido de seek: posicao desconhecida
-static void hostAckSeek(int ms) { raw = ms; }             // ack publica o ALVO, nao leu o firmware
+static void hostAbrir(void) { raw = 0; lido = -1; atomic_store(&buscaAlvoMs, -1); hostRegistrar(); }
+static void hostSeek(int ms) { atomic_store(&buscaAlvoMs, ms); lido = -1; }  // pedido: alvo em voo, marcador invalido
+static void hostAckSeek(int ms) { int a = ms; if (atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1)) raw = ms; }
+static void hostSeekFalha(void) { atomic_store(&buscaAlvoMs, -1); }          // EV_BUSCA_FALHOU
 static void hostLeituraReal(int ms) { raw = ms; lido = ms; }
 static int terminou, voo, durMs;
 static int video_busca_em_voo(void) { return voo; }
@@ -207,15 +221,28 @@ int main(void) {
   posReconLeg = 120; raw = 0;
   rc |= check("alvo de reconexao", 0);
 
-  convEstadoZera(); hostAbrir(); hostSeek(); hostAckSeek(120000);
+  convEstadoZera(); hostAbrir(); hostSeek(120000); hostAckSeek(120000);
   rc |= check("host publicou ms solicitado no ack, sem leitura GetPlayPosition", 0);
 
   hostLeituraReal(400);
   rc |= check("leitura real depois do ack", 0.4);
 
   convEstadoZera(); hostAbrir(); hostLeituraReal(400);
-  hostSeek(); hostAckSeek(120000);
+  hostSeek(120000); hostAckSeek(120000);
   rc |= check("ack depois de leitura real: alvo nao volta a valer", 0);
+
+  // Janela do seek: um marcador positivo com o alvo ainda em voo e a leitura
+  // de antes do pedido (host velho ou consulta na janela) — nao vale.
+  convEstadoZera(); hostAbrir(); hostLeituraReal(1234);
+  hostSeek(120000); lido = 1234;
+  rc |= check("marcador positivo com alvo em voo", 0);
+
+  hostAckSeek(120000); hostLeituraReal(120100);
+  rc |= check("leitura real depois do ack da janela", 120.1);
+
+  convEstadoZera(); hostAbrir(); hostSeek(120000); lido = 1234;
+  hostSeekFalha();
+  rc |= check("leitura real depois do seek recusado", 1.234);
 
   return rc;
 }

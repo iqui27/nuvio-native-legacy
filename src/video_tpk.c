@@ -546,7 +546,10 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
       if (a < 100 && !bufferando) { bufferando = 1; bufferDesde = SDL_GetTicks(); }
       else if (a >= 100) bufferando = 0;
       break;
-    case EV_BUSCA_FALHOU: atomic_fetch_add(&mfRecusas, 1); atomic_fetch_add(&buscaFalhas, 1u); break;
+    case EV_BUSCA_FALHOU: atomic_fetch_add(&mfRecusas, 1); atomic_fetch_add(&buscaFalhas, 1u);
+      // A falha tambem encerra o voo do alvo: sem o -1 o video_busca_em_voo e a
+      // amostra do farol ficavam presos num seek que a TV ja recusou.
+      atomic_store(&buscaAlvoMs, -1); break;
     case EV_VELOCIDADE:
       vel_log(a, b ? "plataforma ok" : "plataforma recusou");
       if (!b) { velRecusada = 1; velPedida = 100; }
@@ -870,6 +873,8 @@ static void mfBombear(void) {
     mf.pend = 0;
     if (e == MKVFIX_PRECISA && !mf.ativo && !cv.ativo && ativo && !parado && SDL_GetTicks() - mf.pendEm < 20000u)
       mfLigar(mf.pendAlvo, "seek asked during the check (the TV can't seek this file as served)");
+    else
+      atomic_store(&buscaAlvoMs, -1);   // o seek adiado foi descartado: alvo fora de voo
   }
   // Cabecalho sem ASS conhecido antes de abrir: a sonda de depois do pronto
   // achou legenda a esconder. Reabre cedo, uma vez, no ponto atual.
@@ -2027,6 +2032,7 @@ void video_buscar(double s) {
       printf("[dts-tpk] seek progressivo para %.1f s: o servidor nao deu o fluxo novo; fica onde esta\n", s);
       fflush(stdout);
       cv.seekPend = 0;
+      atomic_store(&buscaAlvoMs, -1);   // seek recusado sem sair: alvo fora de voo
     }
     terminou = 0;
     return;
@@ -2321,6 +2327,11 @@ double video_pos_amostra(Uint64 *t) {
   if (posReconLeg >= 0.0) return 0.0;
 #endif
   if (hPosLida) {
+    // Alvo em voo: nenhuma amostra entre o pedido do seek e a resposta da TV
+    // (EV_BUSCOU/EV_BUSCA_FALHOU em nv_tpk_video_evento) conta — um marcador
+    // positivo nessa janela pode ser a leitura de ANTES do seek. Defesa em
+    // profundidade: o host atual ja segura o marcador ate a leitura pos-ack.
+    if (atomic_load(&buscaAlvoMs) >= 0) return 0.0;
     int ms = pronto ? hPosLida() : -1;
     if (ms < 0) return 0.0;
     return ms / 1000.0 + (cv.ativo && cv.prog ? cv.desloc : 0);
