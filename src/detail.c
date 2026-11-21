@@ -6766,7 +6766,7 @@ static void resumoTemporada(float x, float yPilulas, float a) {
     // das duracoes dos episodios por ver (minutosDe le o mesmo texto do card).
     { int alvoNum = alvo, minRest = 0, i, nEp = cat_n_episodios(idx);
       const CatItem *ciC = cat_item(idx);
-      for (i = 0; i < nEp; i++) {
+      for (i = 0; ciC && i < nEp; i++) {
         const CatEp *e = cat_episodio(idx, i);
         if (!e || e->temporada != alvoNum || epNaoExibido(e)) continue;
         if (vistoep_estado(ciC->imdb, e->temporada, e->episodio) != 1)
