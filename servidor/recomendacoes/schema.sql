@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS sessao (
 CREATE TABLE IF NOT EXISTS farol_registro (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   criado     INTEGER NOT NULL,
+  janela     INTEGER NOT NULL DEFAULT 0,
   pessoa_h   TEXT NOT NULL,
   versao     TEXT NOT NULL,
   plataforma TEXT NOT NULL,
@@ -93,6 +94,11 @@ CREATE TABLE IF NOT EXISTS farol_registro (
 );
 CREATE INDEX IF NOT EXISTS farol_fp ON farol_registro (fp, criado);
 CREATE INDEX IF NOT EXISTS farol_criado ON farol_registro (criado);
+CREATE UNIQUE INDEX IF NOT EXISTS farol_dedup ON farol_registro (pessoa_h, fp, janela);
+-- Ids a partir de 2^29, reservados ANTES da primeira gravacao.
+INSERT INTO sqlite_sequence (name, seq)
+  SELECT 'farol_registro', MAX(536870912, COALESCE((SELECT MAX(id) FROM farol_registro), 0))
+  WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'farol_registro');
 
 CREATE TABLE IF NOT EXISTS farol_conhecido (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

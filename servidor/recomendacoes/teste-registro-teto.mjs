@@ -61,8 +61,10 @@ test("corpo acima de 2 MB: 413", async (t) => {
 
 test("texto identico da mesma pessoa nao cria linha e devolve o mesmo recibo", async (t) => {
   const { sqlite, post } = cenario(t);
+  // Mesma classe de origem: o dedupe vale so dentro dela — um "(manual)"
+  // identico a um "(auto)" NAO herda os 4 dias do automatico (issue farol-5).
   const a = await post({ quando: "2026-10-07 10:00 (anterior)", texto: "log igual" });
-  const b = await post({ quando: "2026-10-07 11:00", texto: "log igual" });
+  const b = await post({ quando: "2026-10-07 11:00 (anterior)", texto: "log igual" });
   const c = await post({ quando: "2026-10-07 11:00", texto: "log igual" }, "outra");
   assert.equal(b.body.registro_id, a.body.registro_id);
   assert.notEqual(c.body.registro_id, a.body.registro_id);
