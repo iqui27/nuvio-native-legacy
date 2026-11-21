@@ -1,4 +1,5 @@
 #include "farolredator.h"
+#include "farolnativo.h"
 #include "sha256.h"
 #include <assert.h>
 #include <ctype.h>
@@ -20,7 +21,10 @@ static const char *canarios[] = {
  "Authorization: Bearer CANARIO_11", "https://CANARIO_12:CANARIO_13@exemplo.invalid/a",
  "/home/CANARIO_14/arquivo", "PIN CANARIO_15", "1234", "CANARIO_16%2Fsegredo", "Bearer CANARIO_17",
  "0123456789abcdef0123456789abcdef", "nome.CANARIO_18", "usuario:senha@CANARIO_19", "CANARIO_20+token",
- "OLED55CANARIO1", "QN55CANARIO1", "webos-4-starfish-CANARIO21-mkv-hevc10-dv-eac3"
+ "OLED55CANARIO1", "QN55CANARIO1", "webos-4-starfish-CANARIO21-mkv-hevc10-dv-eac3",
+ "12345", "123456", "1234567", "12345678",
+ "127.0.1", "10.1", "127.0.0.1", "0xc633642a", "0xc6.0x33.0x64.0x2a",
+ "0300.0263.0100.0052", "3232235521", "m3_sol4_private"
 };
 static const FarolCampo *schema;
 static size_t n_schema;
@@ -63,7 +67,8 @@ static void preencher(FarolJson *j, const char *pai, const char *canario) {
       else if (canario) strcpy(valor, canario);
       else if (c->tipo == FT_ENUM) {
         size_t n = strcspn(c->valores, "|"); memcpy(valor, c->valores, n); valor[n] = 0;
-      } else if (c->tipo == FT_VERSAO) strcpy(valor, "2.1.0");
+      } else if (c->tipo == FT_VERSAO)
+        strcpy(valor, !strcmp(c->caminho, "aparelho.so") ? "4.9-webos" : "2.1.0-ipk");
       else if (c->tipo == FT_HASH) strcpy(valor, !strcmp(c->caminho, "cliente.commit") ? "c18c21756" : "9c1e77ab03f2d4e1");
       else if (!strcmp(c->caminho, "erro.fingerprint")) strcpy(valor, "webos-4-starfish-ums_204-mkv-hevc10-dv-eac3");
       else if (!strcmp(c->caminho, "aparelho.modelo")) strcpy(valor, "OLED55C9PSA");
@@ -179,6 +184,14 @@ static void hashes(void) {
   sal[15] = 1; farolredator_hash_host("exemplo.invalid", sal, c); assert(strcmp(a,c));
   farolredator_hash_host("192.0.2.1", sal, c); assert(!strcmp(c, "x"));
   farolredator_hash_host("2001:db8::1", sal, c); assert(!strcmp(c, "x"));
+  // IPv4 em hexadecimal, octal, misto e inteiro decimal: o parser WHATWG le
+  // todos como IP; nem com hash podem sair.
+  farolredator_hash_host("http://0xc633642a/", sal, c); assert(!strcmp(c, "x"));
+  farolredator_hash_host("http://0xc6.0x33.0x64.0x2a/", sal, c); assert(!strcmp(c, "x"));
+  farolredator_hash_host("http://0300.0263.0100.0052/", sal, c); assert(!strcmp(c, "x"));
+  farolredator_hash_host("http://0xc6.51.100.42/", sal, c); assert(!strcmp(c, "x"));
+  farolredator_hash_host("http://3232235521/", sal, c); assert(!strcmp(c, "x"));
+  farolredator_hash_host("http://127.0.1/", sal, c); assert(!strcmp(c, "x"));
   farolredator_hash_host(NULL, sal, c); assert(!strcmp(c, "x"));
   farolredator_hash_host("exemplo.invalid", NULL, c); assert(!strcmp(c, "x"));
   assert(farolredator_host_publico("API.TRAKT.TV"));
@@ -218,8 +231,257 @@ static void limites(void) {
   assert(!farolredator_objeto(&j, NULL));
   assert(farolredator_fechar(&j)); assert(farolredator_fechar(&j));
 }
+// Abre o objeto pai do caminho e escreve o campo; devolve o rc do campo.
+static int escrever_em(FarolJson *j, const char *pai, const char *chave,
+                       FarolTipo t, const void *v) {
+  int rc;
+  assert(farolredator_abrir(j, j->buf, j->tam));
+  if (pai) assert(farolredator_objeto(j, pai));
+  rc = farolredator_campo(j, chave, t, v);
+  while (j->prof) assert(farolredator_fechar(j));
+  return rc;
+}
+static void colisoes(void) {
+  FarolJson j; char buf[4096];
+  j.buf = buf; j.tam = sizeof buf;
+  // PIN de 4-8 digitos (admin.h) nunca cabe em cliente.commit.
+  const char *pins[] = {"1234", "12345", "123456", "1234567", "12345678"};
+  for (size_t i = 0; i < sizeof pins / sizeof *pins; i++) {
+    memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+    assert(!escrever_em(&j, "cliente", "commit", FT_HASH, pins[i]) && j.campos_recusados == 1);
+    assert(!strstr(buf, pins[i]));
+  }
+  // Nem o commit do build nem um SHA com letra colidem; o todo numerico e
+  // recusado porque um parser nao o distingue de PIN.
+  memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+  assert(escrever_em(&j, "cliente", "commit", FT_HASH, "c18c21756"));
+  memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+  assert(!escrever_em(&j, "cliente", "commit", FT_HASH, "123456789"));
+  // IPv4 que um parser de URL resolve (abreviado, hex, octal, inteiro) nao
+  // entra em nenhum campo de versao.
+  const char *ips[] = {"127.0.1", "10.1", "127.0.0.1", "0xc633642a",
+    "0xc6.0x33.0x64.0x2a", "0300.0263.0100.0052", "3232235521"};
+  const char *campos[][2] = {{"aparelho", "so"}, {"cliente", "versao"}};
+  for (size_t k = 0; k < sizeof campos / sizeof *campos; k++)
+    for (size_t i = 0; i < sizeof ips / sizeof *ips; i++) {
+      memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+      assert(!escrever_em(&j, campos[k][0], campos[k][1], FT_VERSAO, ips[i]) &&
+             j.campos_recusados == 1);
+      assert(!strstr(buf, ips[i]));
+    }
+  // A forma nao ambigua: numero com rotulo de origem.
+  memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+  assert(escrever_em(&j, "aparelho", "so", FT_VERSAO, "4.9-webos"));
+  memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+  assert(escrever_em(&j, "cliente", "versao", FT_VERSAO, "2.1.0-ipk"));
+}
+static void codigos(void) {
+  FarolJson j; char buf[4096], fp[160];
+  // Todo codigo que farolerro_ler (farol-3) emite entra em erro.nativo e no
+  // terceiro componente do fingerprint — os dois leem a mesma gramatica de
+  // farolnativo.h.
+  const char *todos[] = {
+    "ums_100", "ums_200", "ums_204", "ums_210", "ums_300", "ums_40000",
+    "ums_40403", "ums_49999", "m3_2000", "m3_2004", "m3_2008", "m3_3000",
+    "m3_4003", "m3_4999", "av_not_supported_format", "av_connection_failed",
+    "av_fatal2",
+  };
+  for (size_t i = 0; i < FAROLNATIVO_FIXOS_N; i++)
+    assert(farolnativo_cod_ok(farolnativo_fixos[i]));
+  for (size_t i = 0; i < sizeof todos / sizeof *todos; i++)
+    assert(farolnativo_cod_ok(todos[i]));
+  const char *fora[] = {"ums_99", "ums_301", "ums_39999", "ums_50000",
+    "m3_1999", "m3_2003", "m3_2007", "m3_5000", "m3_sol4", "gen_xyz",
+    "ls2_outro", "av_", "av_123456789012345678901"};
+  for (size_t i = 0; i < sizeof fora / sizeof *fora; i++)
+    assert(!farolnativo_cod_ok(fora[i]));
+  for (size_t i = 0; i < FAROLNATIVO_FIXOS_N; i++) {
+    memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+    assert(escrever_em(&j, "erro", "nativo", FT_TOKEN, farolnativo_fixos[i]));
+    snprintf(fp, sizeof fp, "webos-4-starfish-%s-mkv-hevc10-dv-eac3",
+             farolnativo_fixos[i]);
+    memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+    assert(escrever_em(&j, "erro", "fingerprint", FT_TOKEN, fp));
+  }
+  for (size_t i = 0; i < sizeof todos / sizeof *todos; i++) {
+    memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+    assert(escrever_em(&j, "erro", "nativo", FT_TOKEN, todos[i]));
+    snprintf(fp, sizeof fp, "webos-4-starfish-%s-mkv-hevc10-dv-eac3", todos[i]);
+    memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+    assert(escrever_em(&j, "erro", "fingerprint", FT_TOKEN, fp));
+  }
+  // Token composto do produtor de fonte e o pseudonimo de add-on com sal.
+  const char *ks[][2] = {{"1080p_sdr_nodv_outro", "1"}, {"addon_9c1e77ab", "1"},
+                         {"addon_canario00", "0"}, {"1080p_sol4_nodv_outro", "0"}};
+  for (size_t k = 0; k < sizeof ks / sizeof *ks; k++) {
+    int zero = 0;
+    memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+    assert(farolredator_abrir(&j, buf, sizeof buf));
+    assert(farolredator_array(&j, "linha"));
+    assert(farolredator_objeto(&j, NULL));
+    assert(farolredator_campo(&j, "t", FT_INT, &zero));
+    assert(farolredator_campo(&j, "m", FT_ENUM, "fonte"));
+    assert(farolredator_campo(&j, "e", FT_ENUM, "fonte_escolhida"));
+    assert(!!farolredator_campo(&j, "k", FT_TOKEN, ks[k][0]) == (ks[k][1][0] == '1'));
+    while (j.prof) assert(farolredator_fechar(&j));
+    assert(!strstr(buf, "canario") && !strstr(buf, "sol4"));
+  }
+}
+static void pacote_dourado(void) {
+  FarolJson j; char buf[FAROL_JSON_N], esperado[FAROL_JSON_N + 16];
+  int i; double d; FILE *f; size_t n;
+  // O exemplo do PLANO 2.6 escrito pela API, byte a byte igual a
+  // tests/farol_registro_v1.json — a fixture que o farol-5 valida.
+  assert(farolredator_abrir(&j, buf, sizeof buf));
+  i = 1; assert(farolredator_campo(&j, "v", FT_INT, &i));
+  assert(farolredator_campo(&j, "gatilho", FT_ENUM, "falha_sem_conserto"));
+  assert(farolredator_campo(&j, "sintoma", FT_ENUM, "nao_comeca"));
+  assert(farolredator_objeto(&j, "erro"));
+  assert(farolredator_campo(&j, "codigo", FT_ENUM, "TV_FORMATO_REPETE"));
+  assert(farolredator_campo(&j, "estagio", FT_ENUM, "tv"));
+  assert(farolredator_campo(&j, "nativo", FT_TOKEN, "ums_204"));
+  i = 204; assert(farolredator_campo(&j, "nativo_num", FT_INT, &i));
+  i = 0; assert(farolredator_campo(&j, "http", FT_INT, &i));
+  assert(farolredator_campo(&j, "fingerprint", FT_TOKEN,
+         "webos-4-starfish-ums_204-mkv-hevc10-dv-eac3"));
+  assert(farolredator_campo(&j, "fp", FT_HASH, "9c1e77ab03f2d4e1"));
+  assert(farolredator_array(&j, "tentou"));
+  assert(farolredator_objeto(&j, NULL));
+  assert(farolredator_campo(&j, "acao", FT_ENUM, "proxima_fonte"));
+  i = 0; assert(farolredator_campo(&j, "ok", FT_BOOL, &i));
+  i = 6400; assert(farolredator_campo(&j, "ms", FT_INT, &i));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_objeto(&j, NULL));
+  assert(farolredator_campo(&j, "acao", FT_ENUM, "reconexao"));
+  i = 0; assert(farolredator_campo(&j, "ok", FT_BOOL, &i));
+  i = 13000; assert(farolredator_campo(&j, "ms", FT_INT, &i));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_objeto(&j, "aparelho"));
+  assert(farolredator_campo(&j, "plataforma", FT_ENUM, "webos"));
+  assert(farolredator_campo(&j, "so", FT_VERSAO, "4.9-webos"));
+  i = 4; assert(farolredator_campo(&j, "so_maior", FT_INT, &i));
+  assert(farolredator_campo(&j, "modelo", FT_TOKEN, "OLED55C9PSA"));
+  i = 1870; assert(farolredator_campo(&j, "ram_total_mb", FT_INT, &i));
+  i = 212; assert(farolredator_campo(&j, "ram_livre_mb", FT_INT, &i));
+  assert(farolredator_objeto(&j, "tela"));
+  i = 3840; assert(farolredator_campo(&j, "w", FT_INT, &i));
+  i = 2160; assert(farolredator_campo(&j, "h", FT_INT, &i));
+  i = 1; assert(farolredator_campo(&j, "hdr", FT_INT, &i));
+  assert(farolredator_campo(&j, "dv", FT_INT, &i));
+  assert(farolredator_campo(&j, "hevc", FT_INT, &i));
+  i = -1; assert(farolredator_campo(&j, "av1", FT_INT, &i));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_objeto(&j, "audio"));
+  i = 1; assert(farolredator_campo(&j, "dts", FT_INT, &i));
+  i = -1; assert(farolredator_campo(&j, "truehd", FT_INT, &i));
+  i = 1; assert(farolredator_campo(&j, "eac3", FT_INT, &i));
+  assert(farolredator_campo(&j, "ac3", FT_INT, &i));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_objeto(&j, "rede"));
+  i = 0; assert(farolredator_campo(&j, "offline", FT_BOOL, &i));
+  assert(farolredator_campo(&j, "hosts_com_falha", FT_INT, &i));
+  d = 0; assert(farolredator_campo(&j, "vazao_mbps", FT_NUM1, &d));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_objeto(&j, "cliente"));
+  assert(farolredator_campo(&j, "versao", FT_VERSAO, "2.1.0-ipk"));
+  assert(farolredator_campo(&j, "commit", FT_HASH, "c18c21756"));
+  assert(farolredator_campo(&j, "build", FT_ENUM, "webos-ipk"));
+  assert(farolredator_campo(&j, "backend", FT_ENUM, "starfish"));
+  assert(farolredator_campo(&j, "idioma", FT_ENUM, "pt-BR"));
+  i = 1842; assert(farolredator_campo(&j, "aberto_s", FT_INT, &i));
+  assert(farolredator_campo(&j, "gpu", FT_ENUM, "auto:alto"));
+  assert(farolredator_objeto(&j, "ajustes"));
+  i = 1; assert(farolredator_campo(&j, "glass_ui", FT_INT, &i));
+  assert(farolredator_campo(&j, "qualidade_max", FT_ENUM, "4k"));
+  d = 40; assert(farolredator_campo(&j, "tamanho_max_gb", FT_NUM1, &d));
+  assert(farolredator_campo(&j, "dts", FT_ENUM, "ac3"));
+  i = 0; assert(farolredator_campo(&j, "dv_mkv", FT_INT, &i));
+  i = 1; assert(farolredator_campo(&j, "legenda_auto_sync", FT_INT, &i));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_objeto(&j, "addons"));
+  i = 12; assert(farolredator_campo(&j, "total", FT_INT, &i));
+  i = 11; assert(farolredator_campo(&j, "ativos", FT_INT, &i));
+  i = 1; assert(farolredator_campo(&j, "isolados", FT_INT, &i));
+  assert(farolredator_array(&j, "tipos"));
+  assert(farolredator_campo(&j, NULL, FT_ENUM, "catalogo"));
+  assert(farolredator_campo(&j, NULL, FT_ENUM, "fontes"));
+  assert(farolredator_campo(&j, NULL, FT_ENUM, "legendas"));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_array(&j, "debrid"));
+  assert(farolredator_campo(&j, NULL, FT_ENUM, "torbox"));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_array(&j, "contas"));
+  assert(farolredator_campo(&j, NULL, FT_ENUM, "trakt"));
+  assert(farolredator_campo(&j, NULL, FT_ENUM, "simkl"));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_objeto(&j, "midia"));
+  assert(farolredator_campo(&j, "container", FT_ENUM, "mkv"));
+  assert(farolredator_campo(&j, "video", FT_ENUM, "hevc10"));
+  assert(farolredator_campo(&j, "hdr", FT_ENUM, "dv"));
+  assert(farolredator_campo(&j, "res", FT_ENUM, "2160p"));
+  d = 23.976; assert(farolredator_campo(&j, "fps", FT_NUM1, &d));
+  d = 24.6; assert(farolredator_campo(&j, "mbps", FT_NUM1, &d));
+  d = 14.2; assert(farolredator_campo(&j, "gb", FT_NUM1, &d));
+  assert(farolredator_campo(&j, "audio", FT_ENUM, "eac3_51"));
+  assert(farolredator_campo(&j, "legenda", FT_ENUM, "srt_embutida"));
+  assert(farolredator_campo(&j, "entrega", FT_ENUM, "debrid_cache"));
+  i = 206; assert(farolredator_campo(&j, "http", FT_INT, &i));
+  i = 210; assert(farolredator_campo(&j, "ttfb_ms", FT_INT, &i));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_array(&j, "cadeia"));
+  const char *cadeia[][3] = {
+    {"internet", "ok", NULL}, {"addons", "ok", "1920"}, {"debrid", "ok", NULL},
+    {"fonte", "ok", "206"}, {"tv", "falhou", NULL}, {"audio", "nao_testado", NULL}};
+  for (size_t k = 0; k < sizeof cadeia / sizeof *cadeia; k++) {
+    assert(farolredator_objeto(&j, NULL));
+    assert(farolredator_campo(&j, "passo", FT_ENUM, cadeia[k][0]));
+    assert(farolredator_campo(&j, "estado", FT_ENUM, cadeia[k][1]));
+    if (cadeia[k][2]) {
+      i = atoi(cadeia[k][2]);
+      assert(farolredator_campo(&j, !strcmp(cadeia[k][0], "fonte") ? "http" : "ms",
+             FT_INT, &i));
+    }
+    assert(farolredator_fechar(&j));
+  }
+  assert(farolredator_fechar(&j));
+  assert(farolredator_array(&j, "linha"));
+  const char *linha[][5] = {
+    {"-4820", "fonte", "escolhida", "2160p_hdr_dv_eac3", "9120,142"},
+    {"-3610", "player", "abrir", "starfish", "1,3"},
+    {"-1950", "video", "erro_nativo", "ums_204", "204,0"}};
+  for (size_t k = 0; k < sizeof linha / sizeof *linha; k++) {
+    assert(farolredator_objeto(&j, NULL));
+    i = atoi(linha[k][0]); assert(farolredator_campo(&j, "t", FT_INT, &i));
+    assert(farolredator_campo(&j, "m", FT_ENUM, linha[k][1]));
+    assert(farolredator_campo(&j, "e", FT_ENUM, linha[k][2]));
+    i = atoi(linha[k][4]); assert(farolredator_campo(&j, "a", FT_INT, &i));
+    i = atoi(strchr(linha[k][4], ',') + 1);
+    assert(farolredator_campo(&j, "b", FT_INT, &i));
+    assert(farolredator_campo(&j, "k", FT_TOKEN, linha[k][3]));
+    assert(farolredator_fechar(&j));
+  }
+  assert(farolredator_fechar(&j));
+  assert(farolredator_objeto(&j, "privacidade"));
+  i = 1; assert(farolredator_campo(&j, "redator", FT_INT, &i));
+  i = 0; assert(farolredator_campo(&j, "campos_recusados", FT_INT, &i));
+  assert(farolredator_fechar(&j));
+  assert(farolredator_fechar(&j));
+  json_valido(buf); seguro(buf);
+  f = fopen("tests/farol_registro_v1.json", "rb");
+  assert(f);
+  n = fread(esperado, 1, sizeof esperado - 1, f);
+  fclose(f);
+  esperado[n] = 0;
+  while (n && (esperado[n-1] == '\n' || esperado[n-1] == '\r')) esperado[--n] = 0;
+  assert(!strcmp(buf, esperado));
+}
 int main(void) {
-  pacote(); tokens(); hashes(); limites();
-  puts("farol_redator: schema, canarios, 100000 tokens, hash e limites ok");
+  pacote(); tokens(); hashes(); colisoes(); codigos(); pacote_dourado(); limites();
+  puts("farol_redator: schema, canarios, tokens, hash, colisoes, codigos, dourado e limites ok");
   return 0;
 }

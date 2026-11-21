@@ -1,4 +1,5 @@
 #include "farolredator.h"
+#include "farolnativo.h"
 #include "sha256.h"
 #include <limits.h>
 #include <math.h>
@@ -95,15 +96,76 @@ static int hexval(const char *s, size_t min, size_t max) {
   size_t n = strlen(s);
   return n >= min && n <= max && strspn(s, "0123456789abcdef") == n;
 }
+// 1 quando um parser de URL WHATWG leria s como endereco IPv4: 1-4 partes
+// decimais, octais (0...) ou hex (0x...), a ultima expandindo para os octetos
+// que faltam ("127.0.1" = 127.0.0.1, "0xc633642a" = 198.51.100.42).
+static int ipv4_whatwg(const char *s) {
+  char copia[32];
+  size_t n = strlen(s);
+  const char *p;
+  int partes = 0;
+  unsigned long long ultimo = 0;
+  if (!n || n >= sizeof copia) return 0;
+  strcpy(copia, s);
+  if (copia[n-1] == '.') copia[--n] = 0;
+  if (!n) return 0;
+  for (p = copia; ; ) {
+    const char *fim = strchr(p, '.');
+    size_t len = fim ? (size_t)(fim - p) : strlen(p), i = 0;
+    int base = 10;
+    unsigned long long v = 0;
+    if (++partes > 4 || !len || len > 10) return 0;
+    if (len > 2 && p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) { base = 16; i = 2; }
+    else if (len > 1 && p[0] == '0') { base = 8; i = 1; }
+    if (i == len) return 0;
+    for (; i < len; i++) {
+      int d;
+      char c = p[i];
+      if (c >= '0' && c <= '9') d = c - '0';
+      else if (base == 16 && c >= 'a' && c <= 'f') d = c - 'a' + 10;
+      else if (base == 16 && c >= 'A' && c <= 'F') d = c - 'A' + 10;
+      else return 0;
+      if (d >= base) return 0;
+      v = v * (unsigned)base + (unsigned)d;
+      if (v > 0xffffffffULL) return 0;
+    }
+    if (!fim) { ultimo = v; break; }
+    if (v > 255) return 0;
+    p = fim + 1;
+  }
+  return ultimo < (1ULL << (8 * (5 - partes)));
+}
+// "2.1", "2.1.0-ipk", "4.9-webos": parte numerica (1-3 partes de ate 4
+// digitos) mais rotulo opcional "-<a-z0-9>". O rotulo e a forma nao ambigua:
+// a numerica pura que um parser de URL le como IPv4 ("4.9", "127.0.1",
+// "10.1") e recusada — o coletor envia a versao com o rotulo de origem.
 static int versao(const char *s) {
+  const char *tag = strchr(s, '-');
+  char num[24];
+  size_t n, i;
   int partes = 1, digitos = 0;
-  if (!*s || strlen(s) > 19 || (!strchr(s, '.') && strlen(s) > 2)) return 0;
-  for (; *s; s++) {
-    if (*s >= '0' && *s <= '9') { if (++digitos > 4) return 0; }
-    else if (*s == '.' && digitos && partes < 3) { partes++; digitos = 0; }
+  if (!*s || strlen(s) > 23) return 0;
+  n = tag ? (size_t)(tag - s) : strlen(s);
+  if (!n || n >= sizeof num) return 0;
+  if (tag && (strlen(tag + 1) > 12 ||
+              strspn(tag + 1, "abcdefghijklmnopqrstuvwxyz0123456789") != strlen(tag + 1)))
+    return 0;
+  memcpy(num, s, n); num[n] = 0;
+  if (!strchr(num, '.') && n > 2) return 0;
+  for (i = 0; i < n; i++) {
+    char c = num[i];
+    if (c >= '0' && c <= '9') { if (++digitos > 4) return 0; }
+    else if (c == '.' && digitos && partes < 3) { partes++; digitos = 0; }
     else return 0;
   }
-  return digitos && partes <= 3;
+  if (!digitos || partes > 3) return 0;
+  return !ipv4_whatwg(s);
+}
+// Commit do build: 7-12 hex com ao menos uma letra — um PIN de 4-8 digitos
+// (admin.h) e sempre so digitos e nunca passa; um SHA curto todo numerico e
+// recusado na direcao segura.
+static int commit(const char *s) {
+  return hexval(s, 7, 12) && strpbrk(s, "abcdef") != NULL;
 }
 static int modelo(const char *s) {
   const char *prefixos[] = {"OLED", "QN", "QE", "UE", "UN", "UA", "KD-", "XR-", "TCL"};
@@ -143,20 +205,39 @@ static int fingerprint(const char *s) {
     else if (i == 3) {
       char tok[FAROL_REDATOR_TOKEN_N];
       farolredator_token(p, tok);
-      if (strcmp(tok, p) || !(lista(p, "ums_100|ums_200|ums_202|ums_203|ums_204|ums_300|ums_404xx|ums_pipeline|m3_2000|m3_2001|m3_2002|m3_2004|m3_2005|m3_2006|m3_2008|m3_parado|tpk_conexao|tpk_audio|tpk_conflito|tpk_parado|av_conexao|av_formato|ls2_permissao|x"))) return 0;
+      if (strcmp(tok, p) || !(farolnativo_cod_ok(p) || !strcmp(p, "x"))) return 0;
     } else if (!lista(p, valores[i])) return 0;
     if (fim) p = fim+1;
+  }
+  return 1;
+}
+// "<res>_<sdr|hdr>_<dv|nodv>_<ac3|eac3|dts|outro>": o token composto de
+// partes fechadas que o produtor de fonte (farol-10) monta de enums.
+static int token_fonte(const char *s) {
+  static const char *const partes[] = {
+    "sd|480p|720p|1080p|2160p", "sdr|hdr", "dv|nodv", "ac3|eac3|dts|outro"};
+  char copia[32];
+  size_t n = strlen(s);
+  if (n >= sizeof copia) return 0;
+  strcpy(copia, s);
+  char *p = copia;
+  for (size_t i = 0; i < 4; i++) {
+    char *fim = strchr(p, '_');
+    if ((i < 3 && !fim) || (i == 3 && fim)) return 0;
+    if (fim) *fim = 0;
+    if (!lista(p, partes[i])) return 0;
+    if (fim) p = fim + 1;
   }
   return 1;
 }
 static int token_seguro(const char *s) {
   if (lista(s, "x|starfish|avplay|tpk|media3|dns|tls|prazo|recusa|sem_plano|fora_cache|2160p_hdr_dv_eac3")) return 1;
   if (!strncmp(s, "h:", 2)) return hexval(s + 2, 8, 8);
-  const char *prefixos[] = {"ums_", "m3_", "tpk_", "av_", "ls2_"};
-  for (size_t i = 0; i < sizeof prefixos / sizeof *prefixos; i++) {
-    size_t n = strlen(prefixos[i]);
-    if (!strncmp(s, prefixos[i], n) && lista(s+n, "100|200|202|203|204|300|404xx|2000|2001|2002|2004|2005|2006|2008|parado|conexao|audio|conflito|pipeline|permissao|formato|outro|timeout|network|connection_failed")) return 1;
-  }
+  if (farolnativo_cod_ok(s)) return 1;
+  if (token_fonte(s)) return 1;
+  // addon_<8 hex>: pseudonimo do add-on, hash do identificador com o sal da
+  // instalacao (a mesma funcao do host, farolredator_hash_host).
+  if (!strncmp(s, "addon_", 6)) return hexval(s + 6, 8, 8);
   return 0;
 }
 static int recusar(FarolJson *j) {
@@ -218,7 +299,7 @@ int farolredator_campo(FarolJson *j, const char *chave, FarolTipo t, const void 
     if (strlen(s) > 160) return recusar(j);
     if (t == FT_ENUM && !lista(s, schema[idx].valores)) return recusar(j);
     if (t == FT_VERSAO && !versao(s)) return recusar(j);
-    if (t == FT_HASH && !(!strcmp(caminho, "cliente.commit") ? hexval(s, 7, 12) : hexval(s, 16, 16))) return recusar(j);
+    if (t == FT_HASH && !(!strcmp(caminho, "cliente.commit") ? commit(s) : hexval(s, 16, 16))) return recusar(j);
     if (t == FT_TOKEN) {
       farolredator_token(s, tok);
       if (!strcmp(caminho, "aparelho.modelo")) {
@@ -273,7 +354,7 @@ static int host_ler(const char *entrada, char host[254]) {
     if (*p++ != ':' || p == fim) return 0;
     for (; p < fim; p++) if (*p < '0' || *p > '9') return 0;
   }
-  if (strspn(host, "0123456789.") == n) return 0;
+  if (strspn(host, "0123456789.") == n || ipv4_whatwg(host)) return 0;
   return 1;
 }
 int farolredator_host_publico(const char *entrada) {
