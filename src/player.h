@@ -68,8 +68,9 @@ Uint32 player_aberto_ha_ms(void);
 int player_pediu_proximo(int *temporada, int *episodio);
 // Filme em partes: -1 = Parte anterior, +1 = Proxima parte (botoes do OSD); 0 = nada.
 int player_pediu_parte(void);
-// A fonte que toca foi escolhida pela pessoa (ou e a lembrada): sem o aviso de duracao.
-void player_definir_fonte_escolhida(int sim);
+// 1 enquanto a posicao devolvida pelo pipeline nao reflete um pedido de busca
+// pendente (arrasto na barra ou seek sem confirmacao). app.c (parteNoFim).
+int player_buscando(void);
 // Barra do filme inteiro: o avanco caiu em outra parte (o indice na lista e o ponto nela).
 int player_pediu_salto_parte(int *k, double *pos);
 // Busca pedida pelo app (o ponto escolhido numa parte recem-aberta).

@@ -3267,6 +3267,17 @@ static void parteFalhou(const char *porque) {
 // devagar: 1,3 s num log), sem pausa da pessoa; bufferizando ali, 4 s.
 static int parteNoFim(double d, double pos) {
   Uint32 parado;
+  // Busca em curso, reconexao ou posicao segurada pela reabertura: o que o
+  // host devolve e a posicao de ANTES do pedido. Parada perto do fim, ela
+  // virava "fim parado" e trocava de arquivo no meio do seek (voltar de
+  // 1498/1500 s). video_busca_em_voo cobre o .tpk inteiro: seek enviado e
+  // nao confirmado, seek segurado pela sonda do mkvfix e a posMantida do
+  // reabrindo; player_buscando cobre o arrasto da barra em qualquer alvo.
+  if (player_buscando() || video_reconectando()
+#ifdef NV_TPK
+      || video_busca_em_voo()
+#endif
+      ) { parteFimPos = -1; return 0; }
   if (video_terminou()) {
     parteFimComo = "end of stream";
     return !(d > 120 && pos < d - 90);
@@ -7595,13 +7606,6 @@ void app_atualizar(float dt, Uint32 agora) {
 
   vigiarFonteGuardada();
   vigiarPartes();
-  // A FONTE QUE TOCA FOI ESCOLHA DA PESSOA: tocada a mao pela lista, a guardada
-  // (Retomar / voltafonte) ou a lembrada para o titulo (a de antes, o
-  // bingeGroup). O aviso "parece ser outra obra" e so do automatico sozinho
-  // (dono, 23/10).
-  if (player_aberto())
-    player_definir_fonte_escolhida(!fonteVODAutomatica || voltaAtiva ||
-                                   (stream_atual() >= 0 && stream_atual() == stream_preferida()));
   guardarPosicaoFonteFalha();
   registrarFonteVODTocando();
   fitDuracaoMidia();

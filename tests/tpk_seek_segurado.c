@@ -1,9 +1,10 @@
 // Seek segurado pela sonda do mkvfix (PR 680, item 6): enquanto a sonda do
 // cabecalho nao responde a TV nao recebe a busca — num arquivo de indice
 // escondido ela falhava e virava "conexao caiu". Ate 3 s; o alvo mais novo
-// vence; a reabertura pelo servidor local acontece NO alvo; e um erro do
-// player durante isso e "preparando o arquivo", nao rede. Host falso, sem
-// rede (o mesmo harness de tests/tpk-mp4-mkvfix-legendas.c).
+// vence; a reabertura pelo servidor local acontece NO alvo; e o rotulo da
+// reconexao separa queda de rede de verdade (com o arquivo original na TV)
+// do erro na janela da reabertura local ("preparando o arquivo"). Host falso,
+// sem rede (o mesmo harness de tests/tpk-mp4-mkvfix-legendas.c).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -132,7 +133,8 @@ int main(void) {
   ok(ultBuscarMs == 459000, "C the reopen seeks to the held target, not to 0");
   video_parar();
 
-  /* D: a player error during the probe is "preparing the file", not network. */
+  /* D: a network drop during the probe keeps the network label — the
+     original file is still on the TV; it retries all the same. */
   posMs = 6000; nBuscar = 0; ultBuscarMs = -1;
   video_definir_reconexao(1); video_definir_mp4(0);
   video_tocar("http://h/prep.mkv");
@@ -142,7 +144,24 @@ int main(void) {
   nv_tpk_video_evento(5, (int)0xFE6C0026u, 0);   /* EV_ERRO CONNECTION_FAILED com a sonda no ar */
   bombear(2);
   ok(video_reconectando() > 0, "D the player error starts a reconnect");
-  ok(video_tpk_reconexao_preparo() == 1, "D a reconnect during the probe is file preparation");
+  ok(video_tpk_reconexao_preparo() == 0, "D a network drop during the probe is not preparation");
+  video_parar();
+
+  /* E: the same error right after the reopen through the local fix IS the
+     file being prepared — the player talks to the app's 127.0.0.1. */
+  posMs = 6000; nBuscar = nAbrirMkv = 0; ultBuscarMs = -1;
+  video_definir_reconexao(1); video_definir_mp4(0);
+  video_tocar("http://h/reopen.mkv");
+  pronto(7200000, 1, 0);
+  bombear(1);
+  video_buscar(60.0);
+  mkvfix_mp4_stub_ocultas(1); mkvfix_mp4_stub_estado(MKVFIX_PRECISA);
+  bombear(4);
+  ok(nAbrirMkv > 0, "E the held seek reopens through the local server");
+  nv_tpk_video_evento(5, (int)0xFE6C0026u, 0);   /* erro na sessao nova, ainda na janela */
+  bombear(2);
+  ok(video_reconectando() > 0, "E the error on the fresh session reconnects");
+  ok(video_tpk_reconexao_preparo() == 1, "E an error just after the local reopen is preparation");
   video_parar();
 
   printf(falhas ? "tpk-seek-segurado: %d FAIL(S)\n" : "tpk-seek-segurado: ok\n", falhas);

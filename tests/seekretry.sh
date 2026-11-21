@@ -2,7 +2,8 @@
 # Seek recusado (webOS 700): tentativas com espera, sem derrubar a fonte.
 # E o seek segurado pela sonda do mkvfix no TPK (tests/tpk_seek_segurado.c):
 # sonda tardia/timeout, seeks sucessivos, retomar em alvo diferente de zero
-# com ocultacao de ASS e "preparando o arquivo" sem ser rede.
+# com ocultacao de ASS e o rotulo separando queda de rede de preparo do
+# arquivo na reabertura local.
 set -eu
 cd "$(dirname "$0")/.."
 cc -O1 -g -Wall -Wextra -Werror tests/seekretry.c -o "${TMPDIR:-/tmp}/nuvio-seekretry-tests"

@@ -1949,10 +1949,13 @@ void video_bombear(void) {
       if (alvoMs >= 0) recon.alvo = alvoMs / 1000.0;
       if (!antes) {
         reconAudio = audioAtual; reconLeg = legAtual;
-        // A sonda do mkvfix no ar, um seek segurado por ela, ou a reabertura
-        // pelo servidor local ha pouco: e o arquivo sendo preparado, nao rede.
-        reconPreparo = mf.pend || (mf.sondou && mkvfix_estado() == MKVFIX_SONDANDO) ||
-                       (mf.ligouEm && SDL_GetTicks() - mf.ligouEm < 8000u);
+        // So a reabertura pelo servidor local ha pouco (mkvfix) e "preparo":
+        // ali o player fala com o 127.0.0.1 do app, e a falha e do arquivo
+        // sendo preparado. Com o arquivo ORIGINAL na TV (sonda no ar ou seek
+        // segurado esperando ela) um erro de rede e a conexao de verdade
+        // caindo — o aviso tem de ser o de conexao, nao o de preparo.
+        reconPreparo = mf.ativo && mf.ligouEm &&
+                       SDL_GetTicks() - mf.ligouEm < 8000u;
       }
       if (recon.tentativa != antes) {
         if (reconPreparo)

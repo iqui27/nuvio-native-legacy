@@ -987,8 +987,16 @@ int player_pediu_parte(void) { int v = pedParte; pedParte = 0; return v; }
 // e sem sair sozinho enquanto a fileira esta no ar.
 static int fimProprio;
 void player_fim_proprio(int sim) { fimProprio = sim ? 1 : 0; }
-static int fonteEscolhida;
-void player_definir_fonte_escolhida(int sim) { fonteEscolhida = sim ? 1 : 0; }
+// A posicao que o pipeline devolve durante a busca da pessoa (arrasto na
+// barra) ou do seek ainda sem confirmacao (.tpk, vooAtivo) e a de ANTES do
+// pedido — quem vigia fim de arquivo nao pode decidir por ela (parteNoFim).
+int player_buscando(void) {
+  return scrubbing
+#ifdef NV_TPK
+         || vooAtivo
+#endif
+         ;
+}
 int player_pediu_proximo(int *t,int *e) {
   if(pedProxT<0||pedProxE<=0)return 0;
   if(t)*t=pedProxT;if(e)*e=pedProxE;pedProxT=pedProxE=0;return 1;
@@ -3837,21 +3845,6 @@ static void durFonteAtualizar(double real, Uint32 agora) {
   if (partesAtiva()) return;
   { char alvoA[64]; alvoStream(alvoA, sizeof alvoA);
     if (partes_arquivo_de(alvoA, NULL)) return; }
-  // Fonte escolhida pela pessoa ou a lembrada para o titulo: a duracao
-  // diferente nao vira aviso nem pulo (so o automatico sozinho avisa).
-  if (fonteEscolhida) {
-    double esp = duracaoFonteEsperada();
-    if (esp > 0 && fabs(real - esp) > 600 && (real > esp * 2 || real < esp * .5)) {
-      durFonteAvisada = 1;
-      // Bem mais curto: pode ser uma parte de um filme em partes
-      // (player_parece_parte pergunta ao TorBox pelas outras).
-      durFonteCurta = real < esp * .5;
-      printf("[fonte] duration %.0fs vs expected %.0fs: kept without a warning (a source you picked or the remembered one)\n",
-             real, esp);
-      fflush(stdout);
-    }
-    return;
-  }
   { unsigned ver = cat_versao_episodios(), rev = cat_revisao();
     if (!durFonteEsperadaOk || durFonteEsperadaVer != ver || durFonteEsperadaRev != rev) {
       durFonteEsperadaOk = 1; durFonteEsperadaVer = ver; durFonteEsperadaRev = rev;
@@ -8185,7 +8178,7 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
       plrui_tempo(dur, sizeof dur, filme ? (float)bTot : duracaoSeg); snprintf(total, sizeof total, "/ %s", dur);
       float reserva = txt_largura(TXT_G22M, atual) + txt_largura(TXT_G22M, total) + 32.0f;
       if (cw > reserva) {
-        TxtLinha l = txt_linha_corta(TXT_G21B, rotuloBotao(botao), 243, 242, 239, 235, cw - reserva);
+        TxtLinha l = txt_linha_corta(TXT_G21B, i18n(rotuloBotao(botao)), 243, 242, 239, 235, cw - reserva);
         txt_desenhar_alpha(l, cx, cyTempo - (float)l.h * 0.5f, af);
       }
     }
