@@ -5,6 +5,7 @@
 #include "musica.h"
 #include "trakt.h"
 #include "simklauth.h"
+#include "simkl.h"
 #include "nuvem.h"
 #include "descoberta.h"
 #include "colecoes.h"
@@ -631,12 +632,12 @@ int lst_ler_simkl_itens(const char *json, int serie, CatItem *dst, int max) {
       if (brutoRaiz(oi, of, "ids", ids, sizeof ids)) {
         js_texto(ids, ids + strlen(ids), "imdb", imdb, sizeof imdb);
         d->tmdb = (long)js_num(ids, NULL, "tmdb", 0);
+        d->simkl = (long)js_num(ids, NULL, "simkl", 0);
+        d->mal = (long)js_num(ids, NULL, "mal", 0);
         if (!imdb[0] && d->tmdb > 0)
           snprintf(imdb, sizeof imdb, "tmdb:%ld", d->tmdb);
-        if (!imdb[0]) {
-          long id = (long)js_num(ids, NULL, "simkl", 0);
-          if (id > 0) snprintf(imdb, sizeof imdb, "simkl:%ld", id);
-        }
+        if (!imdb[0] && d->simkl > 0)
+          snprintf(imdb, sizeof imdb, "simkl:%ld", d->simkl);
       } }
     if (!d->titulo[0]) continue;
     snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
@@ -1280,34 +1281,34 @@ static int mapear(int i) {
 typedef struct {
   unsigned geracao;
   uint64_t sessao;
-  char estado[16], midia[8], cid[200], nome[120], token[400];
+  char estado[16], midia[8];
 } SimklTarefa;
 
-static char *fioSimklBaixar(const char *caminho, const SimklTarefa *t,
-                            const char *const *cab) {
-  char url[500];
-  snprintf(url, sizeof url,
-           "https://api.simkl.com%s?client_id=%s&app-name=%s"
-           "&app-version=1.0.1&extended=full",
-           caminho, t->cid, t->nome);
-  return rede_baixar_com(url, 20, cab);
+// SERIES: a dedup entre as fatias shows/anime so fecha com confirmacao
+// POSITIVA de provedor — o mesmo Simkl (!=0) ou o mesmo MAL (!=0) — e sem
+// nenhum id em contradicao (Simkl, MAL, TMDB ou um IMDb real presente nos
+// dois lados). O IMDb igual sozinho nao basta: temporadas distintas da
+// mesma obra dividem o tt, e ids ausentes nao confirmam nem contradizem.
+// O campo `imdb` pode trazer um id sintetizado ("simkl:N", "tmdb:N"), por
+// isso a comparacao vai pelos campos numericos e nao pela string.
+static int mesmaObraSerie(const CatItem *a, const CatItem *b) {
+  if (a->simkl && b->simkl && a->simkl != b->simkl) return 0;
+  if (a->mal && b->mal && a->mal != b->mal) return 0;
+  if (a->tmdb && b->tmdb && a->tmdb != b->tmdb) return 0;
+  if (!strncmp(a->imdb, "tt", 2) && !strncmp(b->imdb, "tt", 2) &&
+      strcmp(a->imdb, b->imdb)) return 0;
+  return (a->simkl && a->simkl == b->simkl) || (a->mal && a->mal == b->mal);
 }
 
 static void *fioSimkl(void *u) {
   SimklTarefa *t = u;
-  char url[40], aut[430];
-  const char *cab[3];
   CatItem *lote = NULL;
   int n = 0, serie = !strcasecmp(t->midia, "TV");
-  snprintf(url, sizeof url, "/sync/all-items/%s/%s", serie ? "shows" : "movies",
-           t->estado);
-  snprintf(aut, sizeof aut, "Authorization: Bearer %s", t->token);
-  cab[0] = aut; cab[1] = "Accept: application/json"; cab[2] = NULL;
-  // All-items returns a complete snapshot. Size storage from the response,
-  // including anime's usual "show" envelope, rather than truncating at 120.
+  // The lists come from the shared library (simkl.c): a status-filtered copy
+  // of the body it already fetched, no request of its own.
   for (int part = 0; part < 2; part++) {
-    if (part) snprintf(url, sizeof url, "/sync/all-items/anime/%s", t->estado);
-    char *corpo = perfis_sessao_atual(t->sessao) ? fioSimklBaixar(url, t, cab) : NULL;
+    const char *tipo = part ? "anime" : serie ? "shows" : "movies";
+    char *corpo = perfis_sessao_atual(t->sessao) ? simkl_lista_corpo(tipo, t->estado) : NULL;
     if (!corpo) { free(lote); lote = NULL; n = 0; break; }
     int count = 0;
     static const char *keys[] = {"movies", "shows", "anime"};
@@ -1316,20 +1317,82 @@ static void *fioSimkl(void *u) {
     CatItem *grown = count ? realloc(lote, sizeof *lote * (size_t)(n + count)) : lote;
     if (count && !grown) { free(corpo); free(lote); lote = NULL; n = 0; break; }
     lote = grown;
-    if (count) n += lst_ler_simkl_itens(corpo, serie, lote + n, count);
+    if (count) {
+      int base = n;
+      n += lst_ler_simkl_itens(corpo, serie, lote + n, count);
+      // Simkl can return the same title in movies/shows and in anime; dedup
+      // so it does not appear twice (as simkl.c does for plantowatch/CW).
+      // Movies dedups by IMDb (F86). In Series the second slice is anime and
+      // distinct seasons of the same show share the IMDb id, so the dedup
+      // there asks for POSITIVE provider confirmation (mesmaObraSerie) —
+      // the same work repeats the Simkl or the MAL id in both slices,
+      // another season changes them and an absent id cannot stand in for
+      // the match.
+      for (int i = base; i < n; i++) {
+        int j;
+        for (j = 0; j < base; j++)
+          if (serie ? mesmaObraSerie(&lote[j], &lote[i])
+                    : (lote[i].imdb[0] && !strcmp(lote[j].imdb, lote[i].imdb)))
+            break;
+        if (j < base) {
+          // The card that stays is the first slice's; merge into it the
+          // provider ids the dropped half may carry alone. The merge cannot
+          // leave the card without a key the OK can open: when the kept half
+          // has no real IMDb, it inherits the dropped half's openable key
+          // ("tt…" or "tmdb:N") — a real tt is never traded for a synthetic
+          // id.
+          if (serie) {
+            if (strncmp(lote[j].imdb, "tt", 2) &&
+                (!strncmp(lote[i].imdb, "tt", 2) ||
+                 !strncmp(lote[i].imdb, "tmdb:", 5)))
+              snprintf(lote[j].imdb, sizeof lote[j].imdb, "%s", lote[i].imdb);
+            if (!lote[j].simkl) lote[j].simkl = lote[i].simkl;
+            if (!lote[j].mal) lote[j].mal = lote[i].mal;
+            if (!lote[j].tmdb) lote[j].tmdb = lote[i].tmdb;
+          }
+          memmove(lote + i, lote + i + 1, sizeof lote[0] * (size_t)(n - i - 1));
+          n--; i--;
+        }
+      }
+    }
     free(corpo);
   }
   // Enrichment may compact unsupported IDs. Enrich copies so metadata failure
   // cannot remove account entries or merge distinct Simkl titles by IMDb.
+  // Each copy goes back by its ORIGIN POSITION, stashed in `ranking` (unused
+  // in this list): compaction reorders the array and the id key cannot tell
+  // two entries of the same slice apart — two seasons can even share IMDb,
+  // Simkl and MAL. The account identity (provider ids, title/year, season)
+  // is then restored over the enriched metadata.
   CatItem *enriched = malloc(sizeof *enriched * 32);
   for (int i = 0; enriched && i < n && perfis_sessao_atual(t->sessao); i += 32) {
     int end = n - i < 32 ? n - i : 32, count = 0;
     for (int j = 0; j < end; j++)
-      if (!strncmp(lote[i + j].imdb, "tt", 2)) enriched[count++] = lote[i + j];
+      if (!strncmp(lote[i + j].imdb, "tt", 2)) {
+        enriched[count] = lote[i + j];
+        enriched[count].ranking = i + j;
+        count++;
+      }
     if (count) count = trakt_enfeitar_lote_sessao(enriched, count, t->sessao);
-    for (int j = 0; j < end; j++)
-      for (int k = 0; k < count; k++)
-        if (!strcmp(lote[i + j].imdb, enriched[k].imdb)) { lote[i + j] = enriched[k]; break; }
+    for (int k = 0; k < count; k++) {
+      int j = enriched[k].ranking;
+      CatItem orig;
+      if (j < i || j >= i + end) continue;
+      orig = lote[j];
+      lote[j] = enriched[k];
+      snprintf(lote[j].imdb, sizeof lote[j].imdb, "%s", orig.imdb);
+      snprintf(lote[j].tipo, sizeof lote[j].tipo, "%s", orig.tipo);
+      snprintf(lote[j].titulo, sizeof lote[j].titulo, "%s", orig.titulo);
+      // O ano so e identidade da conta quando a conta o trouxe: meta vazia
+      // aqui nao pode apagar o "ano · duracao" que a ficha preencheu.
+      if (orig.meta[0])
+        snprintf(lote[j].meta, sizeof lote[j].meta, "%s", orig.meta);
+      snprintf(lote[j].nomeEpisodio, sizeof lote[j].nomeEpisodio, "%s", orig.nomeEpisodio);
+      lote[j].tmdb = orig.tmdb; lote[j].simkl = orig.simkl; lote[j].mal = orig.mal;
+      lote[j].temporada = orig.temporada; lote[j].episodio = orig.episodio;
+      lote[j].tvdbEp = orig.tvdbEp; lote[j].progresso = orig.progresso;
+      lote[j].ranking = orig.ranking;
+    }
   }
   free(enriched);
   if (perfis_sessao_travar(t->sessao)) {
@@ -1383,10 +1446,6 @@ void lst_abrir(const LstLista *l, const char *midia) {
     uint64_t sessao = perfis_sessao_geracao();
     if (!t || !perfis_sessao_travar(sessao)) { free(t); return; }
     t->sessao = sessao;
-    nuvem_url_escapar(nuvem_simkl_cliente(), t->cid, sizeof t->cid);
-    nuvem_url_escapar(nuvem_simkl_app()[0] ? nuvem_simkl_app() : "nuvio",
-                      t->nome, sizeof t->nome);
-    snprintf(t->token, sizeof t->token, "%s", simklauth_token());
     pthread_mutex_lock(&itTrava);
     t->geracao = itGeracao;
     snprintf(t->estado, sizeof t->estado, "%s", itEstado);

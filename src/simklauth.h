@@ -59,6 +59,8 @@ const char *simklauth_token(void);
 // Copia sob trava + geracao: consultas com varios pedidos nao misturam contas.
 // dst NULL so le a geracao; zero nao e usado. Nunca guardar/logar a copia.
 unsigned long long simklauth_credencial_copiar(char *dst, size_t tam);
+int simklauth_credencial_travar(unsigned long long cred, int perfil, const char *aut);
+void simklauth_credencial_destravar(void);
 // Esquece o vinculo de TODOS os perfis (logout).
 void simklauth_esquecer(void);
 // Disconnect only the active profile.
@@ -75,6 +77,9 @@ int simklauth_invalidar_se(unsigned long long cred);
 // perfil ativo. 1 = ha vinculo; dst vazio caso contrario.
 int  simklauth_token_perfil(int perfil, char *dst, size_t tam);
 int  simklauth_carregar_perfil(int perfil);
+// Perfil do vinculo carregado. So muda na troca de perfil, que abre sessao
+// nova: lido sob a trava de sessao, e o perfil de quem fez o pedido.
+int  simklauth_perfil(void);
 int  simklauth_trocar_perfil(int perfil);
 
 #endif
