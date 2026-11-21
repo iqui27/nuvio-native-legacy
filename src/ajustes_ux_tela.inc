@@ -302,7 +302,7 @@ OPC(AJ_RESOLUCAO), OPC(AJ_GPU_EFEITOS), OPC(AJ_AMPLIAR_UI), OPC(AJ_AMPLIACAO_ALG
       OPC(AJ_BAIXAR_REGISTRO),
 #endif
 #if defined(NV_TPK) || defined(AJUSTES_TESTE)
-      OPC(AJ_ASS_MOTOR),   /* PR 734 etapa D: FIM da lista — volta ao motor antigo de legendas ASS */
+      { IT_OPC, AJ_ASS_MOTOR, NULL, NULL, NULL, 0 },   /* PR 734 etapa D: FIM da lista — motor antigo de ASS */
 #endif
 };
 #define AJ_N_TELA (int)(sizeof TELA / sizeof *TELA)
