@@ -197,9 +197,12 @@ namespace NuvioTpk
                                    Marshal.GetFunctionPointerForDelegate(fVolume), Marshal.GetFunctionPointerForDelegate(fJanela),
                                    Marshal.GetFunctionPointerForDelegate(fPos));
             // Lib encenada antiga nao tem o export: a amostra cai no caminho
-            // anterior (mesmo criterio do RegistrarAspecto logo acima).
+            // anterior (mesmo criterio do RegistrarAspecto logo acima). Sem a
+            // lib carregada de todo (testes com os demais delegates em stub) o
+            // registro tambem vira no-op.
             try { NvVid.RegistrarPosLida(Marshal.GetFunctionPointerForDelegate(fPosLida)); }
             catch (EntryPointNotFoundException) { }
+            catch (DllNotFoundException) { }
             NvVid.RegistrarGeracao(Marshal.GetFunctionPointerForDelegate(fAbrir));
             fEscolher = (tipo, idx) => ComSessao(() => Escolher(tipo, idx));
             NvVid.RegistrarFaixas(Marshal.GetFunctionPointerForDelegate(fEscolher));
@@ -479,7 +482,7 @@ namespace NuvioTpk
         async void Abrir(string url, string cabecalhos, int minha, uint geracao)
         {
             int preparando = 0, erroPreparoEnviado = 0;
-            posMs = 0; posLidoMs = -1; acabou = false; Interlocked.Increment(ref posGer);
+            lock (trocaTrava) { posMs = 0; posLidoMs = -1; acabou = false; Interlocked.Increment(ref posGer); }
             buscando = false; buscaPend = pausaPend = -1; preparoPausado = false;
             aspectoRecusado = false;
             try
@@ -722,9 +725,10 @@ namespace NuvioTpk
             var p = player;
             int minha = Volatile.Read(ref sessao);
             buscando = true;
-            acabou = false;
-            posLidoMs = -1;
-            Interlocked.Increment(ref posGer);
+            // Invalidacao atomica com a conferencia do Tique: a mesma trava
+            // ordena o -1/posGer daqui contra o "ger == posGer" de la, entao
+            // uma leitura validada antes do seek nunca publica depois dele.
+            lock (trocaTrava) { acabou = false; posLidoMs = -1; Interlocked.Increment(ref posGer); }
             bool expirou = false;
             try {
                 var busca = p.SetPlayPositionAsync(ms, false);

@@ -37,7 +37,7 @@ class Test {
     }
     static void OpenTocado() { Open(); Wait(() => Player.All.Count > 0 && Player.All[Player.All.Count - 1].Starts == 1); }
     static int Main() {
-        NvVid.Registrar = (a,b,c,d,e,f,g) => {}; NvVid.RegistrarFaixas = a => {}; NvVid.RegistrarAspecto = a => {};
+        NvVid.Registrar = (a,b,c,d,e,f,g) => {}; NvVid.RegistrarFaixas = a => {}; NvVid.RegistrarAspecto = a => {}; NvVid.RegistrarPosLida = _ => {};
         NvVid.RegistrarGeracao = a => {}; NvVid.ErroGeracao = (g,c,p) => { if (p == 1 && g == 1) Interlocked.Increment(ref prepareErrors); lock (erros) erros.Add(c); };
         NvVid.Evento = (t,a,b) => { if (t == 4) Interlocked.Increment(ref completed); if (t == 5) lock (erros) erros.Add(a); if (t == 9) { alvoPreso = a; Interlocked.Increment(ref presos); } };
         NvVid.LogNativo = Console.WriteLine;

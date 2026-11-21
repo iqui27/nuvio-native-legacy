@@ -52,7 +52,7 @@ class AspectoTest {
     }
     static int Main(string[] args) {
         NativeLibrary.SetDllImportResolver(typeof(Video).Assembly,(name,a,p)=>name=="libcapi-media-player.so.0" ? NativeLibrary.Load(args[0]) : IntPtr.Zero);
-        NvVid.Registrar=(a,b,c,d,e,f,g)=>{}; NvVid.RegistrarFaixas=a=>{}; NvVid.RegistrarAspecto=a=>{}; NvVid.Evento=(a,b,c)=>{};
+        NvVid.Registrar=(a,b,c,d,e,f,g)=>{}; NvVid.RegistrarFaixas=a=>{}; NvVid.RegistrarAspecto=a=>{}; NvVid.RegistrarPosLida=_=>{}; NvVid.Evento=(a,b,c)=>{};
         NvVid.Faixa=(a,b,c)=>{}; NvVid.FaixasFim=(a,b)=>{}; NvVid.LogNativo=log.Add;
         // Real bridge registration is covered by the C fixture; lifecycle stubs have no libnuvio.
         video=new Video(()=>new Display(),a=>queue.Enqueue(a),System.IO.Path.GetTempPath(),1920,1080);

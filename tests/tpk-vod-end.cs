@@ -13,7 +13,7 @@ class VodEndTest {
     static void Wait(Func<bool> ready) { var t = Stopwatch.StartNew(); while (!ready() && t.ElapsedMilliseconds < 3000) Thread.Sleep(1); Check(ready(), "host responded"); }
     static void Open() { var u = Marshal.StringToHGlobalAnsi("https://fixture.invalid/episode"); try { Entry("fAbrir", u, IntPtr.Zero); } finally { Marshal.FreeHGlobal(u); } }
     static int Main() {
-        NvVid.Registrar = (a,b,c,d,e,f,g) => {}; NvVid.RegistrarFaixas = a => {}; NvVid.RegistrarAspecto = a => {};
+        NvVid.Registrar = (a,b,c,d,e,f,g) => {}; NvVid.RegistrarFaixas = a => {}; NvVid.RegistrarAspecto = a => {}; NvVid.RegistrarPosLida = _ => {};
         NvVid.Evento = (t,a,b) => { if (t == 4) Interlocked.Increment(ref ends); if (t == 5) Interlocked.Increment(ref errors); };
         NvVid.Faixa = (a,b,c) => {}; NvVid.FaixasFim = (a,b) => {}; NvVid.LogNativo = Console.WriteLine;
         video = new Video(() => new Display(), a => a(), System.IO.Path.GetTempPath(), 1920, 1080);

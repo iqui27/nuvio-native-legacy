@@ -33,7 +33,7 @@ class TrailerAudioTest {
     }
     static int Main() {
         NvVid.Registrar = (a,b,c,d,e,f,g) => {};
-        NvVid.RegistrarFaixas = a => {}; NvVid.RegistrarAspecto = a => {};
+        NvVid.RegistrarFaixas = a => {}; NvVid.RegistrarAspecto = a => {}; NvVid.RegistrarPosLida = _ => {};
         NvVid.Evento = (a,b,c) => {}; NvVid.Faixa = (a,b,c) => {}; NvVid.FaixasFim = (a,b) => {};
         NvVid.LogNativo = Console.WriteLine;
         NvVid.RegistrarGeracao = a => {}; NvVid.ErroGeracao = (g,c,p) => Interlocked.Increment(ref erros);
