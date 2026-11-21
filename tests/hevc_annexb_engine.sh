@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 prefix=${NUVIO_DTS_ROOT:-/tmp/nuvio-dts-host}
-libs=(-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group)
+libs=(-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lz)
 if [[ $(uname -s) == Darwin ]];then
   prefix=${NUVIO_DTS_ROOT:-/opt/homebrew}
   libs=(-lavformat -lavcodec -lswresample -lavutil)

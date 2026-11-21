@@ -5,10 +5,10 @@ set -euo pipefail
 # and uses -Wl,-dead_strip instead of -Wl,--gc-sections.
 os_name=$(uname -s)
 if [[ $os_name == Darwin ]]; then
-  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil"
+  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil -lz"
   gc_flag="-Wl,-dead_strip"
 else
-  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
+  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lz"
   gc_flag="-Wl,--gc-sections"
 fi
 cd "$(dirname "$0")/.."

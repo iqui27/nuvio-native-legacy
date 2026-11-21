@@ -1,4 +1,5 @@
 #include "mkv.h"
+#include "mkv_dts.h"
 #include "rede.h"
 #ifdef NV_RUST_MKVCORE
 #include "mkvcore.h"
@@ -1035,6 +1036,71 @@ static void diagTrecho(const unsigned char *p, long n, const MkvFaixa *fx, int n
 }
 #endif  // NV_RUST_MKVCORE
 
+/* DTS kind of each DTS audio track of the last probe (mkv_dts.h), kept apart
+ * from MkvFaixa: the Rust core fills that struct with its own layout.
+ * dtsKind is what the frames showed; dtsNome what the track's name states,
+ * used only while the frames are unknown. */
+static int dtsNum[MKV_MAX_FAIXAS], dtsKind[MKV_MAX_FAIXAS], dtsNome[MKV_MAX_FAIXAS], dtsN;
+static long dtsBytes;
+static void dtsLog(const char *quando) {
+  int j, hd = 0, ma = 0, core = 0, nome = 0;
+  for (j = 0; j < dtsN; j++) {
+    hd += dtsKind[j] == NV_DTS_KIND_HD; ma += dtsKind[j] == NV_DTS_KIND_MA; core += dtsKind[j] == NV_DTS_KIND_CORE;
+    nome += dtsKind[j] == NV_DTS_KIND_UNKNOWN && dtsNome[j] != NV_DTS_KIND_UNKNOWN;
+  }
+  printf("[mkv] DTS tracks%s: %d (Master Audio %d, DTS-HD %d, DTS %d, by name %d, not in the probe %d; %ld bytes)\n",
+         quando, dtsN, ma, hd, core, nome, dtsN - ma - hd - core, dtsBytes);
+  fflush(stdout);
+}
+/* Adds the DTS tracks of fx not listed yet (a Tracks read past the probe). */
+static void dtsListar(const MkvFaixa *fx, int nf) {
+  int j, k;
+  for (j = 0; fx && j < nf && dtsN < MKV_MAX_FAIXAS; j++) {
+    if (fx[j].tipo != 2 || strncmp(fx[j].codec, "A_DTS", 5)) continue;
+    for (k = 0; k < dtsN; k++) if (dtsNum[k] == fx[j].numero) break;
+    if (k < dtsN) { if (!dtsNome[k]) dtsNome[k] = nv_mkv_dts_nome(fx[j].nome); continue; }
+    dtsNum[dtsN] = fx[j].numero;
+    dtsKind[dtsN] = !strcmp(fx[j].codec, "A_DTS/LOSSLESS") ? NV_DTS_KIND_MA : NV_DTS_KIND_UNKNOWN;
+    dtsNome[dtsN++] = nv_mkv_dts_nome(fx[j].nome);
+  }
+}
+static void dtsTrecho(const unsigned char *p, long n, const MkvFaixa *fx, int nf) {
+  dtsN = 0; dtsBytes = n;
+  dtsListar(fx, nf);
+  if (!dtsN) return;
+  nv_mkv_dts_scan(p, n, dtsNum, dtsKind, dtsN);
+  dtsLog("");
+}
+int mkv_dts_kind(int numero) {
+  for (int j = 0; j < dtsN; j++)
+    if (dtsNum[j] == numero) return dtsKind[j] != NV_DTS_KIND_UNKNOWN ? dtsKind[j] : dtsNome[j];
+  return NV_DTS_KIND_UNKNOWN;
+}
+int mkv_dts_alem(const char *url, const MkvFaixa *fx, int nf) {
+  int j, left = 0;
+  long n = 0;
+  char *b;
+  dtsListar(fx, nf);
+  for (j = 0; j < dtsN; j++) left += dtsKind[j] == NV_DTS_KIND_UNKNOWN;
+  // Only after a short probe (the prefetched head, 16-64 KB): the 320 KB one
+  // already had every frame it could have.
+  if (!left || !url || !url[0] || dtsBytes >= MKV_TRECHO) return 0;
+  // A short timeout: this only improves a label, the audio list waits for it.
+  b = rede_baixar_trecho(url, 6, 0, MKV_TRECHO - 1, &n);
+  if (!b) {
+    printf("[mkv] DTS tracks: the longer read failed, kinds stay as they are\n");
+    fflush(stdout);
+    return 0;
+  }
+  if (n > dtsBytes) {
+    dtsBytes = n;
+    nv_mkv_dts_scan((const unsigned char *)b, n, dtsNum, dtsKind, dtsN);
+  }
+  free(b);
+  dtsLog(" (longer read)");
+  return 1;
+}
+
 int mkv_rpu_alem(const char *url, int nalTam, long teto) {
   long n = 0, quer;
   char *b;
@@ -1112,6 +1178,7 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
   achou = acharTracks((const unsigned char *)buf, n, saida, max,
                       caps, maxCaps, nCaps);
   diagTrecho((const unsigned char *)buf, n, saida, achou);
+  dtsTrecho((const unsigned char *)buf, n, saida, achou);
   // Tracks cortado pela janela: uma lista PELA METADE faria o casamento das
   // legendas dar "nenhum" e deixaria TODA faixa ASS com a TV (#483 so cobria o
   // caso de 0 faixas). O SeekHead diz onde o elemento inteiro mora. Sem ele (ou
@@ -1145,6 +1212,7 @@ int mkv_faixas_do_trecho(const unsigned char *buf, long n, MkvFaixa *saida, int 
       buf[2] != 0xDF || buf[3] != 0xA3) return 0;
   achou = acharTracks(buf, n, saida, max, caps, maxCaps, nCaps);
   diagTrecho(buf, n, saida, achou);
+  dtsTrecho(buf, n, saida, achou);
   if (tracksCortado) return 0;
   return achou;
 }

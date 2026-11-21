@@ -4,6 +4,10 @@
 #include "dts_engine.h"
 #include "dts_audio_codec.h"
 #include "dts_pipeline.h"
+#include "dts_picture_diag.h"
+#ifdef NV_DTS_PICTURE_DIAG
+#include "dts_video_diag.h"
+#endif
 #include "../js.h"
 #include "../linguas.h"
 #include "../mediaurl.h"
@@ -25,6 +29,8 @@
 #define DTS_STALL_SEEK_SECONDS 2.0
 #define DTS_STALL_RETRIES 2
 #define DTS_REFILL_TV_FULL_SECONDS 4.0   /* external audio: TV full this long ends the wait */
+#define DTS_REFILL_FULL_SECONDS 0.10
+#define DTS_REFILL_MIN_SECONDS 0.25
 #define DTS_TIMESTAMP_RETRIES 2
 /* Reset only after real presentation progress, not time spent reloading. */
 #define DTS_TIMESTAMP_PROGRESS_SECONDS 30.0
@@ -34,6 +40,11 @@ struct DtsPlayback {
   int seamless, seamless_disabled, clock_guard;
   double clock_target, clock_anchor;
   int clock_advances;
+#ifdef NV_DTS_PICTURE_DIAG
+  unsigned picture_epoch,picture_samples;
+  int64_t picture_last_pts;
+  size_t picture_last_size;
+#endif
   int truehd, dts_off;       /* audio route snapshot (dts_audio_codec.h) */
   int allow_p7, dv, starved; /* Dolby Vision path: passthrough audio, starvation fallback. */
   pthread_t thread;
@@ -320,6 +331,9 @@ static int prepareMode(DtsPlayback *p, int stream, int core, double target,int r
              reused?"source-seeked":"source-opened",(opened - began) * 1000);
     nativeEvent(p, event);
   }
+#ifdef NV_DTS_PICTURE_DIAG
+  p->picture_epoch++;p->picture_samples=0;p->picture_last_pts=INT64_MIN;p->picture_last_size=0;
+#endif
   p->pipeline = dts_pipeline_create(NV_APP_ID, p->window,
                                     p->major, nativeEvent, p);
   if (!p->pipeline) { fail(p, "DTS native pipeline unavailable"); return 0; }
@@ -391,6 +405,9 @@ static int reposition(DtsPlayback *p,int stream,int core,double target) {
   }
   p->suppress_events=0;
   pthread_mutex_unlock(&p->lock);
+#ifdef NV_DTS_PICTURE_DIAG
+  if(ok){p->picture_epoch++;p->picture_samples=0;p->picture_last_pts=INT64_MIN;p->picture_last_size=0;}
+#endif
   if(format_changed) return REPOSITION_FORMAT_CHANGED; /* No duplicate demux seek. */
   if(!ok) return source_ready ? REPOSITION_RELOAD : REPOSITION_FAILED;
   int subtitle;
@@ -483,6 +500,13 @@ static void reportBuffer(DtsPlayback *p, double audio_pts, double video_pts) {
   }
   pthread_mutex_unlock(&p->lock);
 }
+#ifdef NV_DTS_WEBOS_RECOVERY
+static int refillFullReady(double since,double wall,int pending,int preroll,int complete,
+                           double audio,double video,double target) {
+  return since>=0 && wall-since>=DTS_REFILL_FULL_SECONDS && pending && !preroll && complete &&
+         audio>=target+DTS_REFILL_MIN_SECONDS && video>=target+DTS_REFILL_MIN_SECONDS;
+}
+#endif
 static void *run(void *user) {
   DtsPlayback *p = user;
   DtsFrame frame;
@@ -500,7 +524,7 @@ static void *run(void *user) {
   double fast_since=0, fast_target=0;
   int audio_format_reload=0;
 #ifdef NV_DTS_WEBOS_RECOVERY
-  double refill_since = 0, refill_target = 0;
+  double refill_since = 0, refill_target = 0, refill_full_since = -1;
   int refill_retried = 0;
   pthread_t watchdog;
   int watchdog_started = 0;
@@ -571,7 +595,7 @@ static void *run(void *user) {
     }
     double wall = clockSeconds(CLOCK_MONOTONIC);
 #ifdef NV_DTS_WEBOS_RECOVERY
-    if (refill && (seek || audio)) { refill = 0; resetStall(&stall, presented); }
+    if (refill && (seek || audio)) { refill = 0; refill_full_since = -1; resetStall(&stall, presented); }
     if (!refill && !seek && !audio && !pause && !eof && complete && clock_seen && !seek_preroll &&
         (fed_audio - presented < 0.5 || fed_video - presented < 0.5)) {
       DtsBufferInfo b; dts_engine_buffer_info(p->engine, &b);
@@ -592,7 +616,7 @@ static void *run(void *user) {
           pthread_mutex_unlock(&p->lock);
           continue;
         }
-        refill = 1; refill_since = wall; refill_target = presented; p->starved = 0;
+        refill = 1; refill_since = wall; refill_target = presented; refill_full_since = -1; p->starved = 0;
         p->refill_active = 1; p->refill_watch_since = wall;
         pthread_mutex_unlock(&p->lock);
         if (!watchdog_started) {
@@ -616,12 +640,18 @@ static void *run(void *user) {
        * the byte goal there only stood still until the fallback. */
       int tv_ready = p->external && fed_ready && stall.full_since >= 0 &&
                      wall - stall.full_since >= DTS_REFILL_TV_FULL_SECONDS;
+      /* Own DTS/DV too (PR aee8639fc): a native queue full below the 2 s fed
+       * goal is the stopped decoder not draining, not a missing network —
+       * resume once the preroll is complete, both streams carry >= 0.25 s
+       * and a packet sits refused. The contiguous goal still applies. */
+      int full_ready = refillFullReady(refill_full_since, wall, have_frame, seek_preroll,
+                                       complete, fed_audio, fed_video, refill_target);
       if (tv_ready && !bytes_ready) bytes_ready = 1;
-      if (!pause && fed_ready && bytes_ready) {
+      if (!pause && (fed_ready || full_ready) && bytes_ready) {
         printf("[dts-rebuffer] event=end ms=%.0f aheadA=%.2f aheadV=%.2f contiguousKiB=%lld reason=%s\n",
           (wall-refill_since)*1000,fed_audio-refill_target,fed_video-refill_target,
-          (long long)(b.contiguous_bytes/1024),tv_ready?"tv-full":"ready");fflush(stdout);
-        refill = 0; pause_dirty = 1; resetStall(&stall, presented); native_unhealthy = 0;
+          (long long)(b.contiguous_bytes/1024),tv_ready?"tv-full":full_ready?"native-full":"ready");fflush(stdout);
+        refill = 0; refill_full_since = -1; pause_dirty = 1; resetStall(&stall, presented); native_unhealthy = 0;
         refill_retried = 0;
         rate = (DtsRate){.start = wall};
       } else if (!pause && wall - refill_since >= 20 && p->external && !refill_retried) {
@@ -995,11 +1025,25 @@ static void *run(void *user) {
         rate.paced++; rest(p); continue;
       }
       double feed_started = clockSeconds(CLOCK_MONOTONIC);
+#ifdef NV_DTS_PICTURE_DIAG
+      if(frame.kind==DTS_VIDEO && nv_video_picture_sample(p->picture_samples+1) &&
+         (frame.pts_ns!=p->picture_last_pts || frame.size!=p->picture_last_size)) {
+        const DtsMediaInfo *mi=dts_engine_info(p->engine);
+        p->picture_last_pts=frame.pts_ns;p->picture_last_size=frame.size;
+        nv_video_picture_log("worker",p->picture_epoch,p->picture_samples+1,&frame,mi?mi->video_codec:"",-1,-1);
+      }
+#endif
       int r = dts_pipeline_feed(p->pipeline, &frame);
       double feed_ended = clockSeconds(CLOCK_MONOTONIC);
       if (feed_started >= 0 && feed_ended >= feed_started) rate.feed_wall += feed_ended-feed_started;
+#ifdef NV_DTS_PICTURE_DIAG
+      if(frame.kind==DTS_VIDEO && r>0 && p->picture_samples<120)p->picture_samples++;
+#endif
       if (r < 0) { fail(p, dts_pipeline_error(p->pipeline)); break; }
       if (r) {
+#ifdef NV_DTS_WEBOS_RECOVERY
+        refill_full_since = -1;
+#endif
         stall.full_since = -1;
         position = frame.pts_ns / 1e9;
         /* A paused seek still needs the keyframe preroll and both streams at
@@ -1014,6 +1058,10 @@ static void *run(void *user) {
         else { rate.video++; if (position > fed_video) fed_video = position; }
         have_frame = 0;
       } else {
+#ifdef NV_DTS_WEBOS_RECOVERY
+        if (refill && !seek_preroll && complete && refill_full_since < 0)
+          refill_full_since = feed_ended;
+#endif
         rate.full++;
         if (!pause && (recovery_waiting || (complete && clock_seen && !seek_preroll)) && stall.full_since < 0)
           stall.full_since = feed_ended;
