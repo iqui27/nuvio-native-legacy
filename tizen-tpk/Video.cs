@@ -39,6 +39,12 @@ namespace NuvioTpk
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void RegistrarAspectoDel(IntPtr janela);
         public static RegistrarAspectoDel RegistrarAspecto = nv_tpk_video_registrar_aspecto;
 
+        // Marcador da amostra do farol: o devolve so leitura real do firmware.
+        // Lib antiga nao exporta (try/catch no RegistrarPosLida / no-op aqui).
+        [DllImport("libnuvio.so")] static extern void nv_tpk_video_registrar_pos_lida(IntPtr pos_lida);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void RegistrarPosLidaDel(IntPtr pos_lida);
+        public static RegistrarPosLidaDel RegistrarPosLida = nv_tpk_video_registrar_pos_lida;
+
         [DllImport("libnuvio.so")] static extern void nv_tpk_video_registrar_faixas(IntPtr escolher);
         [DllImport("libnuvio.so")] static extern void nv_tpk_video_faixa(int tipo, int idx, string lingua);
         [DllImport("libnuvio.so")] static extern void nv_tpk_video_faixas_fim(int selAudio, int selLeg);
@@ -74,6 +80,8 @@ namespace NuvioTpk
             IntPtr p;
             p = resolve("nv_tpk_video_registrar_aspecto");
             RegistrarAspecto = p != IntPtr.Zero ? Marshal.GetDelegateForFunctionPointer<RegistrarAspectoDel>(p) : new RegistrarAspectoDel(_ => { });
+            p = resolve("nv_tpk_video_registrar_pos_lida");
+            RegistrarPosLida = p != IntPtr.Zero ? Marshal.GetDelegateForFunctionPointer<RegistrarPosLidaDel>(p) : new RegistrarPosLidaDel(_ => { });
             if ((p = resolve("nv_tpk_video_registrar")) != IntPtr.Zero) Registrar = Marshal.GetDelegateForFunctionPointer<RegistrarDel>(p);
             if ((p = resolve("nv_tpk_video_evento")) != IntPtr.Zero) Evento = Marshal.GetDelegateForFunctionPointer<EventoDel>(p);
             if ((p = resolve("nv_tpk_video_registrar_geracao")) != IntPtr.Zero) RegistrarGeracao = Marshal.GetDelegateForFunctionPointer<RegistrarGeracaoDel>(p);
@@ -110,12 +118,18 @@ namespace NuvioTpk
         readonly string logArq;
         readonly int telaW, telaH;
         // Referencias vivas: o C guarda os ponteiros, o GC nao pode recolher.
-        FnAbrir fAbrir; FnSemArg fParar; FnInt fPausar, fBuscar, fVolume; FnRet fJanela; FnPos fPos; FnEscolher fEscolher;
+        FnAbrir fAbrir; FnSemArg fParar; FnInt fPausar, fBuscar, fVolume; FnRet fJanela; FnPos fPos, fPosLida; FnEscolher fEscolher;
 
         VideoWindowMetrics windowMetrics = new VideoWindowMetrics();
         Player player;
         int sessao, playerSessao;
         volatile int posMs;
+        // So uma leitura real do firmware (GetPlayPosition) conta aqui: o alvo
+        // que o ack do SetPlayPositionAsync grava em posMs NAO e leitura. -1
+        // ate a primeira leitura desta abertura; zera ao abrir e a cada seek.
+        // O C usa isso na amostra do farol (video_pos_amostra): FE_PRONTO so
+        // depois do primeiro relogio de verdade, nunca no alvo da retomada.
+        volatile int posLidoMs = -1;
         int posGer;
         bool acabou;
         // #783: a Home para o player de proposito (#412); a volta na OnResume
@@ -177,10 +191,15 @@ namespace NuvioTpk
             try { NvVid.RegistrarAspecto(Marshal.GetFunctionPointerForDelegate(fAspecto)); }
             catch (EntryPointNotFoundException) { }
             fPos = () => posMs;
+            fPosLida = () => posLidoMs;
             NvVid.Registrar(Marshal.GetFunctionPointerForDelegate(fAbrir), Marshal.GetFunctionPointerForDelegate(fParar),
                                    Marshal.GetFunctionPointerForDelegate(fPausar), Marshal.GetFunctionPointerForDelegate(fBuscar),
                                    Marshal.GetFunctionPointerForDelegate(fVolume), Marshal.GetFunctionPointerForDelegate(fJanela),
                                    Marshal.GetFunctionPointerForDelegate(fPos));
+            // Lib encenada antiga nao tem o export: a amostra cai no caminho
+            // anterior (mesmo criterio do RegistrarAspecto logo acima).
+            try { NvVid.RegistrarPosLida(Marshal.GetFunctionPointerForDelegate(fPosLida)); }
+            catch (EntryPointNotFoundException) { }
             NvVid.RegistrarGeracao(Marshal.GetFunctionPointerForDelegate(fAbrir));
             fEscolher = (tipo, idx) => ComSessao(() => Escolher(tipo, idx));
             NvVid.RegistrarFaixas(Marshal.GetFunctionPointerForDelegate(fEscolher));
@@ -365,7 +384,7 @@ namespace NuvioTpk
                 try {
                     if (p != null && playerSessao == minha && minha == Volatile.Read(ref sessao) && p.State == PlayerState.Playing) {
                         int ms = p.GetPlayPosition();
-                        lock (trocaTrava) { if (minha == sessao && player == p && ger == posGer) posMs = ms; }
+                        lock (trocaTrava) { if (minha == sessao && player == p && ger == posGer) { posMs = ms; posLidoMs = ms; } }
                     }
                 } catch (InvalidOperationException e) {
                     Log("posicao: " + e.Message);
@@ -460,7 +479,7 @@ namespace NuvioTpk
         async void Abrir(string url, string cabecalhos, int minha, uint geracao)
         {
             int preparando = 0, erroPreparoEnviado = 0;
-            posMs = 0; acabou = false; Interlocked.Increment(ref posGer);
+            posMs = 0; posLidoMs = -1; acabou = false; Interlocked.Increment(ref posGer);
             buscando = false; buscaPend = pausaPend = -1; preparoPausado = false;
             aspectoRecusado = false;
             try
@@ -704,6 +723,7 @@ namespace NuvioTpk
             int minha = Volatile.Read(ref sessao);
             buscando = true;
             acabou = false;
+            posLidoMs = -1;
             Interlocked.Increment(ref posGer);
             bool expirou = false;
             try {
