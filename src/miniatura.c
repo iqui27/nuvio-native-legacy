@@ -530,18 +530,22 @@ fim:
 // ------------------------------------------------------------------ title lifecycle
 static void texSoltar(void);
 static void prov_desligar(void);
+// Caller holds mu. Every heartbeat republishes what the worker may use
+// (player thread read).
+static void estadoPublicar(const SeekrFonte *f) {
+  __atomic_store_n(&batida, SDL_GetTicks(), __ATOMIC_RELEASE);
+  videoEst.playheadMs = f->playheadMs;
+  videoEst.pronto = f->pronto; videoEst.tocando = f->tocando;
+  videoEst.bufferandoMs = f->bufferandoMs; videoEst.dts = f->dts;
+  videoEst.largura = f->larguraMiniatura;
+}
 static void prov_pedir(const SeekrFonte *f) {
   Trabalho *w;
   Job *j;
   pthread_t ft;
   if (!f || !f->url || !*f->url) return;
   pthread_mutex_lock(&mu);
-  __atomic_store_n(&batida, SDL_GetTicks(), __ATOMIC_RELEASE);
-  // Every heartbeat republishes what the worker may use (player thread read).
-  videoEst.playheadMs = f->playheadMs;
-  videoEst.pronto = f->pronto; videoEst.tocando = f->tocando;
-  videoEst.bufferandoMs = f->bufferandoMs; videoEst.dts = f->dts;
-  videoEst.largura = f->larguraMiniatura;
+  estadoPublicar(f);
   // Same title still on screen: only the heartbeat.
   if (urlAtual[0] && !strcmp(urlAtual, f->url) && labs(durAtual - f->durMs) < 3000) { pthread_mutex_unlock(&mu); return; }
   pthread_mutex_unlock(&mu);
@@ -595,6 +599,18 @@ static void prov_pedir(const SeekrFonte *f) {
     pthread_mutex_unlock(&mu);
     free(w);
   }
+}
+
+// Player thread only, on the reload path (player.c): the webOS load revision
+// drops pronto/tocando and the pedir gate closes — without this the worker
+// kept the stale pronto=1/tocando=1 and decoded with the decoder open until
+// the 6 s heartbeat expired. Republishes the state to the job ALREADY on
+// screen; a title still starts exclusively through prov_pedir.
+void miniatura_tv_fonte_estado(const SeekrFonte *f) {
+  pthread_mutex_lock(&mu);
+  if (f && f->url && job && urlAtual[0] && !strcmp(urlAtual, f->url))
+    estadoPublicar(f);
+  pthread_mutex_unlock(&mu);
 }
 
 static void prov_desligar(void) {
@@ -774,6 +790,10 @@ const SeekrProvedor *miniatura_tv_provedor(void) {
 #endif
 }
 
+#if !defined(NV_DTS_FFMPEG)
+void miniatura_tv_fonte_estado(const SeekrFonte *f) { (void)f; }
+#endif
+
 // The feature exists on this TV only with the real tools in the package AND
 // enough memory — the same rule as the TV guide (memoria.h): forced Baixa, or
 // Auto with unknown or <= 2048 MB, is "pouca" and keeps the provider off.
@@ -822,6 +842,7 @@ int miniatura_tv_prontas_agora(void) { return miniatura_tv_status_agora() == 3; 
 // stubs keep those links working; the provider stays NULL and "No aparelho"
 // never appears.
 const SeekrProvedor *miniatura_tv_provedor(void) { return NULL; }
+void miniatura_tv_fonte_estado(const SeekrFonte *f) { (void)f; }
 int miniatura_tv_capaz(int modoMemoria, long ramMB) { (void)modoMemoria; (void)ramMB; return 0; }
 int miniatura_tv_direto(void) { return 0; }
 int miniatura_tv_status_agora(void) { return 0; }

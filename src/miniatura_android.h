@@ -45,6 +45,10 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos);
 // guide (memoria.h: forced Baixa, or Auto with unknown or <= 2048 MB RAM).
 #if defined(NV_TPK) || defined(NV_WEBOS)
 const SeekrProvedor *miniatura_tv_provedor(void);
+// Reload path: the player republishes the fallen video state (pronto/tocando)
+// to the RUNNING job while the pedir gate is closed by !video_pronto(). Never
+// creates a job; inert without the DTS FFmpeg.
+void miniatura_tv_fonte_estado(const SeekrFonte *f);
 int miniatura_tv_capaz(int modoMemoria, long ramMB);
 int miniatura_tv_direto(void);
 int miniatura_tv_status_agora(void);

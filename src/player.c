@@ -5377,6 +5377,22 @@ void player_atualizar(float dt, Uint32 agora) {
         seekr_pedir_fonte(&f);
       }
     }
+#if defined(NV_TPK) || defined(NV_WEBOS)
+    // RECARGA webOS (PR 680 etapa B, r2): a revisao de carga zera pronto/
+    // tocando (video.c) e o gate acima para de publicar — o worker ficava com
+    // pronto=1/tocando=1 velhos e seguia decodificando com o decoder aberto
+    // ate o heartbeat de 6 s vencer. Republica o estado no job ATIVO: nunca
+    // cria outro, e na retomada o gate de cima reassume o fluxo de sempre.
+    if (d > 60.0 && !video_pronto() && !ehCanal() && ajustes_seekr_ligado() &&
+        seekr_provedor_e(miniatura_provedor())) {
+      SeekrFonte f = { "", 0, 0, (long)(d * 1000.0), video_url_atual(), video_cabecalhos(),
+                       0, "", "", (long)(posSeg * 1000.0f),
+                       (long)(video_pos() * 1000.0), scrubbing,
+                       video_pronto(), video_tocando(), video_bufferando_ms(),
+                       video_dts_estado(), ajustes_miniatura_largura() };
+      miniatura_tv_fonte_estado(&f);
+    }
+#endif
     // Retomada so com o pipeline ASSENTADO: pronto + tocando (ou 2,5 s depois
     // de pronto, para quem abre pausado). Seek logo no loadCompleted e o que o
     // uMS recusa com "seek Failure" (#246).
