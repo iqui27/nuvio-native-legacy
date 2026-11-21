@@ -83,6 +83,8 @@ int main(void) {
       "https://user@github.com/x",                    // userinfo
       "https://user:senha@github.com/x",
       "/releases/download/v9.9.9/x",                  // relativo cru
+      "https://github.com/final com espaco",          // F107: espaco resolvido
+      "https://github.com/final\tcontinuacao",        // F107: dobra costurada
       "", NULL };                                     // 3xx sem Location
     int i;
     for (i = 0; ruins[i]; i++) {

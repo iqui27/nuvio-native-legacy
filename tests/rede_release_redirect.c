@@ -77,6 +77,16 @@ static char *baixa(const char *url, int segundos, long *nb, const char *location
   scriptCab[0] = location; scriptCab[1] = NULL;
   return rede_baixar_bin_seguro(url, segundos, nb);
 }
+// Mesmo pedido, mas o roteiro tem VARIAS linhas de cabecalho — para o
+// Location dobrado (a 1a linha dele seguida da continuacao).
+static char *baixaSeq(const char *url, int segundos, long *nb,
+                      const char *const *linhas) {
+  int i;
+  memset(&ultimo, 0, sizeof ultimo);
+  for (i = 0; linhas[i] && i < 7; i++) scriptCab[i] = linhas[i];
+  scriptCab[i] = NULL;
+  return rede_baixar_bin_seguro(url, segundos, nb);
+}
 
 int main(void) {
   long nb = 0;
@@ -126,6 +136,46 @@ int main(void) {
       free(baixa(oficial, 5, &nb, bons[i]));
       assert(ultimaLinha == strlen(bons[i]));
     }
+  }
+
+  // F107: host oficial na autoridade nao basta — espaco, tab ou controle no
+  // VALOR faria a libcurl seguir mesmo assim (o caminho sai codificado no
+  // segundo GET). Recusado como qualquer destino fora da lista.
+  { static const char *const ruins[] = {
+      "Location: https://github.com/final com espaco\r\n",
+      "Location: https://github.com/final\tcom\ttab\r\n",
+      "Location: https://github.com/fin\x01" "al\r\n",
+      "Location: https://github.com/fin\x7f" "al\r\n", NULL };
+    int i;
+    for (i = 0; ruins[i]; i++) {
+      assert(baixa(oficial, 5, &nb, ruins[i]) == NULL);
+      assert(ultimaLinha == 0);
+    }
+  }
+
+  // E o Location DOBRADO (obs-fold): a 1a linha sozinha pareceria aceitavel,
+  // mas a continuacao estende o valor — a libcurl seguiria o destino dela ou
+  // a costura das duas. A resposta e recusada na linha de continuacao.
+  { static const char *const dobrados[][4] = {
+      { "Location: https://github.com/final\r\n", " continuacao\r\n", NULL },
+      { "Location: https://github.com/final\r\n", "\tcontinuacao\r\n", NULL },
+      { "Location: https://github.com/final\r\n",
+        " https://objects.githubusercontent.com/costura\r\n", NULL } };
+    int i;
+    for (i = 0; i < 3; i++) {
+      assert(baixaSeq(oficial, 5, &nb, dobrados[i]) == NULL);
+      assert(ultimaLinha == 0);
+    }
+  }
+
+  // A dobra nao se prova de qual cabecalho e — no caminho verificado
+  // QUALQUER continuacao recusa a resposta, mesmo aparentada a outro
+  // cabecalho inofensivo.
+  { static const char *const eTagDobrado[] = {
+      "ETag: \"abc\r\n", " def\"\r\n",
+      "Location: https://github.com/final\r\n", NULL };
+    assert(baixaSeq(oficial, 5, &nb, eTagDobrado) == NULL);
+    assert(ultimaLinha == 0);
   }
 
   // F101: a autoridade tem de ser conferida INTEIRA ou o salto e recusado.

@@ -1954,9 +1954,18 @@ static int destinoAnexoOk(const char *url) {
     "github.com",
     "release-assets.githubusercontent.com",
     "objects.githubusercontent.com", NULL };
-  const char *h, *f, *r;
+  const char *h, *f, *r, *p;
   int i;
   if (!url || strncasecmp(url, "https://", 8)) return 0;
+  // Espaco, CR/LF, tab e controles nao cabem num salto: a linha do cabecalho
+  // os traz crus (caminho com espaco) ou a reserva os resolve de um valor
+  // dobrado — e o transporte seguiria mesmo assim, com o caminho saindo
+  // codificado no segundo GET ou o destino costurado fora do lido. A recusa
+  // e ANTES de seguir e vale nos dois caminhos verificados (receberCab e
+  // viaAndroidSeguro), mesma politica dos dois lados.
+  for (p = url; *p; p++)
+    if (*(const unsigned char *)p <= 0x20 || *(const unsigned char *)p == 0x7f)
+      return 0;
   h = url + 8;
   f = h + strcspn(h, "/?#");
   // userinfo nao entra: https://oficial@evil tem autoridade valida para a
@@ -2175,28 +2184,37 @@ static size_t receberCab(void *dados, size_t tam, size_t qtd, void *u) {
     if (c && c->retry) *c->retry = 0;
     if (c && c->dst && c->tam) c->dst[0] = 0;
   }
-  if (c && c->confereDestino && bytes > 9 && !strncasecmp(s, "location:", 9)) {
-    // Cada salto do download verificado e conferido ANTES de ser seguido: so
-    // https:// e so host oficial (destinoAnexoOk). Fora da lista a linha
-    // volta curta, a libcurl aborta com write-error e o 302 nao e seguido —
-    // e o que impede a cadeia de levar o artefato a http:// ou a outro CDN.
-    // A conferencia vale so para a linha INTEIRA (mesmo limite do alvo da
-    // reserva segura): um Location maior que a copia nao pode ser validado
-    // por pedaco — o corte pode ler "host oficial + porta decimal" de uma
-    // autoridade que continua (userinfo, outro host) e a libcurl segue a
-    // linha completa. Nao coube, o salto e recusado.
-    char loc[2048];
-    s += 9; bytes -= 9;
-    while (bytes && (*s == ' ' || *s == '\t')) { s++; bytes--; }
-    while (bytes && (s[bytes - 1] == '\r' || s[bytes - 1] == '\n' ||
-                     s[bytes - 1] == ' ')) bytes--;
-    n = bytes < sizeof loc ? bytes : sizeof loc - 1;
-    memcpy(loc, s, n); loc[n] = 0;
-    if (n < bytes || !destinoAnexoOk(loc)) {
-      char seg[120];
-      printf("[rede] redirect recusado: %s\n", rede_url_publica(loc, seg, sizeof seg));
-      fflush(stdout);
-      return 0;
+  if (c && c->confereDestino) {
+    // CONTINUACAO DOBRADA (obs-fold): uma linha que COMECA com espaco ou tab
+    // estende o cabecalho anterior — e nao ha como provar qual era. Dobrado,
+    // um Location mau cabe em duas linhas: a 1a com a parte que passa no
+    // filtro e a continuacao com o resto, que a libcurl costura e segue.
+    // No caminho verificado QUALQUER dobra recusa a resposta (GitHub e os
+    // CDNs de anexo nao dobram; a RFC 7230 proibe obs-fold novo).
+    if (bytes && (*s == ' ' || *s == '\t')) return 0;
+    if (bytes > 9 && !strncasecmp(s, "location:", 9)) {
+      // Cada salto do download verificado e conferido ANTES de ser seguido:
+      // so https:// e so host oficial (destinoAnexoOk). Fora da lista a linha
+      // volta curta, a libcurl aborta com write-error e o 302 nao e seguido —
+      // e o que impede a cadeia de levar o artefato a http:// ou a outro CDN.
+      // A conferencia vale so para a linha INTEIRA (mesmo limite do alvo da
+      // reserva segura): um Location maior que a copia nao pode ser validado
+      // por pedaco — o corte pode ler "host oficial + porta decimal" de uma
+      // autoridade que continua (userinfo, outro host) e a libcurl segue a
+      // linha completa. Nao coube, o salto e recusado.
+      char loc[2048];
+      s += 9; bytes -= 9;
+      while (bytes && (*s == ' ' || *s == '\t')) { s++; bytes--; }
+      while (bytes && (s[bytes - 1] == '\r' || s[bytes - 1] == '\n' ||
+                       s[bytes - 1] == ' ')) bytes--;
+      n = bytes < sizeof loc ? bytes : sizeof loc - 1;
+      memcpy(loc, s, n); loc[n] = 0;
+      if (n < bytes || !destinoAnexoOk(loc)) {
+        char seg[120];
+        printf("[rede] redirect recusado: %s\n", rede_url_publica(loc, seg, sizeof seg));
+        fflush(stdout);
+        return 0;
+      }
     }
   }
   if (c && c->retry && bytes > 12 && !strncasecmp(s, "retry-after:", 12)) {
