@@ -103,6 +103,8 @@ int legenda_extrair_srt(const char *corpo, LegendaCue **saida);
 int legenda_extrair_ass(const char *corpo, LegendaCue **saida);
 /* 1 quando o corpo se parece com ASS/SSA. */
 int legenda_eh_ass(const char *corpo);
+/* 1 while the subtitle on (this generation) is an ASS/SSA document. */
+int legenda_ass_ativa(void);
 
 /* Immutable subtitle documents, independent of the currently drawn overlay.
  * Build once on a worker, retain while analysing/drawing, release when done.
