@@ -241,10 +241,41 @@ typedef struct {
   int n;
 } MapaCreditos;
 
+// O detalhe do TMDB no recorte que o modelo de gosto usa (farolficha):
+// id, numeros e as mesmas listas de mapa_ler_detalhe — duracao e idioma
+// original alem dos campos que a tela mostra. `gente` mantem a ordem de la:
+// direcao/criacao primeiro.
+typedef struct MapaDetalhe {
+  long tmdb;                       // id da raiz; 0 = resposta sem id
+  int  ano;
+  int  minutos;                    // runtime do filme; episode_run_time[0] da serie
+  int  nota;                       // vote_average * 10
+  int  votos;
+  char idioma[8];                  // original_language ("pt", "en", "ja")
+  char imdb[24];
+  MapaEtiqueta gen[MAPA_GEN_MAX];    int nGen;
+  MapaEtiqueta kw[MAPA_KW_MAX];      int nKw;
+  MapaPessoa   gente[MAPA_GENTE_MAX]; int nGente;
+} MapaDetalhe;
+
 // Le a resposta de /movie|tv/<id>?append_to_response=keywords,credits,
 // recommendations. `serie` escolhe os nomes de campo de TV. Preserva o que ja
 // havia em `s->obra` quando a resposta nao traz o campo. 1 quando leu.
 int  mapa_ler_detalhe(const char *json, int serie, MapaSemente *s);
+// O MESMO JSON de mapa_ler_detalhe, sem obra/poster/sinopse/recomendacoes:
+// o que o farolficha precisa para montar a ficha do titulo. Resposta
+// truncada devolve o que deu para ler. 1 = leu algo util (id do TMDB, imdb
+// ou alguma das listas).
+int  mapa_ler_ids(const char *json, int serie, MapaDetalhe *d);
+// Id estavel e negativo de um nome sem id do TMDB — a convencao de
+// MapaFio.id na reserva local (catalogo). Sempre < 0.
+long mapa_hash_nome(const char *nome);
+// "Filme · Acao · Drama" do CatItem: pula o primeiro pedaco (o tipo) e vira
+// etiquetas de id mapa_hash_nome, como a reserva do mapa sempre fez.
+void mapa_generos_locais(const char *genero, MapaEtiqueta *gen, int *nGen, int max);
+// Primeiro ano de 4 digitos de `meta` ("2022 · 3 temporadas" -> 2022).
+// 0 = nao tem.
+int  mapa_ano_meta(const char *meta);
 // /person/<id>/combined_credits: ate MAPA_CRED_MAX obras, as mais votadas,
 // do departamento certo (crew/Director quando `direcao`, senao cast).
 int  mapa_ler_creditos(const char *json, int direcao, MapaCreditos *c);
