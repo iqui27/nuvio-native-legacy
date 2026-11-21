@@ -2283,8 +2283,10 @@ typedef struct {
   char id[80], nome[140], logo[480], grupo[64], base[256];
   int num, fav, np;
   EpgProg p[GV_PROGS];
-  /* Own titles across the two-second cache: EPG publication frees the arena. */
+  /* Own titles and synopsis across the two-second cache: EPG publication
+   * frees the arenas. */
   char titulo[GV_PROGS][240];
+  char descr[GV_PROGS][384];
 } GVCh;
 /* gv_ch is a window of the filtered list starting at gv_off; gv_lin, gv_top
  * and gv_match count the whole filtered list, so every channel is reachable. */
@@ -2352,6 +2354,8 @@ static void gv_copia(GVCh *c,int i,const char *id,const char *nome,const char *l
   for(int k=0;k<c->np;k++){
     snprintf(c->titulo[k],sizeof c->titulo[k],"%s",c->p[k].titulo?c->p[k].titulo:"");
     c->p[k].titulo=c->titulo[k];
+    snprintf(c->descr[k],sizeof c->descr[k],"%s",c->p[k].desc?c->p[k].desc:"");
+    c->p[k].desc=c->descr[k];
   }
 }
 /* Recolhe os canais, contagens e categorias do guia publicado. Barato: o
@@ -2814,6 +2818,8 @@ static void gv_hero(float base){
   EpgProg next;
   if(guia_programa_proximo(c->id,p?p->ini:time(NULL),0,&next)){
     snprintf(buf,sizeof buf,i18n("A seguir: %s"),next.titulo);gv_label(TXT_ILHA_CORPO,buf,x,r.y+anim_mistura(126,180,k),iw,1);}
+  if(p&&p->desc&&p->desc[0])
+    gv_label(TXT_ILHA_CORPO,p->desc,x,r.y+anim_mistura(156,216,k),iw,1);
   if(player_mini_no_guia_ativo())player_mini_no_guia(pv.x,pv.y,pv.w,pv.h);
   if(gv_zone==2&&!gv_overlay()){
     focus=1314;plrui_linha_foco(pv,20,1);
@@ -2847,6 +2853,8 @@ static void gv_hero_compact(float base){
     snprintf(meta,sizeof meta,"%s · %s · %s",i18n("A SEGUIR"),hi,next.titulo);
     gv_label(TXT_ILHA_CORPO,meta,r.x+32,r.y+140,iw,1);
   }else gv_label(TXT_ILHA_CORPO,i18n("Sem descrição no guia."),r.x+32,r.y+140,iw,1);
+  if(p&&p->desc&&p->desc[0])
+    gv_label(TXT_ILHA_CORPO,p->desc,r.x+32,r.y+172,iw,1);
 }
 /* --- canais fixados (os favoritos, na ordem do guia) ---------------------- */
 static GVCh *gv_pin_ch(int i){return i>=0&&i<gv_npins?&gv_pins[i]:NULL;}
@@ -3224,7 +3232,7 @@ static const char *gv_aj_title(int sub){
   return i18n(sub==1942?"Tamanho da prévia":sub==1944?"Quando iniciar a prévia":sub==1947?"Alcance do guia":sub==1937?"Gerenciar fontes":sub==1949?"Saúde do EPG":"Opções da grade");
 }
 static int gv_aj_selected(int sub){
-  return sub==1942?(ajustes_guia_previa_grande()?1942:1941):sub==1944?(ajustes_guia_previa_destacar()?1943:1944):sub==1947?(ajustes_guia_dias()==3?1947:1946):sub==1937?1955:1975;
+  return sub==1942?(ajustes_guia_previa_grande()?1942:1941):sub==1944?(ajustes_guia_previa_destacar()?1943:1944):sub==1947?(ajustes_guia_dias()==7?1958:ajustes_guia_dias()==3?1947:1946):sub==1937?1955:1975;
 }
 static void gv_aj_back(void){
   focus=gv_aj_sub;gv_aj_sub=0;gv_gfolha.ok=0;
@@ -3313,9 +3321,11 @@ static void gv_ajustes_sheet(void){
     if(sub==1942||sub==1944||sub==1947){
       const char *a=sub==1942?"Cartão":sub==1944?"Ao destacar":"Um dia";
       const char *b=sub==1942?"Grande":sub==1944?"Ao selecionar":"Três dias";
+      const char *c=sub==1947?"Sete dias":NULL;
       int first=sub==1942?1941:sub==1944?1943:1946;
       gv_aj_row(first,"aj_monitor",i18n(a),NULL,NULL,-1,sel==first,x,y+194,w);
       gv_aj_row(first+1,"aj_monitor",i18n(b),NULL,NULL,-1,sel==first+1,x,y+270,w);
+      if(c) gv_aj_row(1958,"aj_monitor",i18n(c),NULL,NULL,-1,sel==1958,x,y+346,w);
       if(sub!=1942)gv_label(TXT_ILHA_SUB,i18n(sub==1947?"Menos dias usam menos memória.":"Escolha quando um vídeo começa."),x+18,y+374,w-36,1);
     }else{
       GuiaFonteSaude source;int n=0;
@@ -3339,7 +3349,7 @@ static void gv_ajustes_sheet(void){
   gv_aj_row(1945,"aj_volume-2",i18n("Prévia sem som"),NULL,NULL,ajustes_guia_previa_sem_som(),0,x,y+372,w);
   gfx_cor((GfxRect){x+18,y+454,w-36,1},0,1,1,1,.08f);
   plrui_kicker(i18n("Aparência"),x+18,y+474,154,156,158,1);
-  gv_aj_row(1947,"aj_calendar-days",i18n("Alcance do guia"),i18n("Menos dias usam menos memória."),i18n(ajustes_guia_dias()==3?"Três dias":"Um dia"),-1,0,x,y+504,w);
+  gv_aj_row(1947,"aj_calendar-days",i18n("Alcance do guia"),i18n(epg_memoria_baixa()?"Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.":"Menos dias usam menos memória."),i18n(ajustes_guia_dias()==7?"Sete dias":ajustes_guia_dias()==3?"Três dias":"Um dia"),-1,0,x,y+504,w);
   gv_aj_row(1948,"aj_palette",i18n("Material Glass"),NULL,NULL,ajustes_vidro(),0,x,y+574,w);
   gfx_cor((GfxRect){x+18,y+656,w-36,1},0,1,1,1,.08f);
   plrui_kicker(i18n("Guia"),x+18,y+676,154,156,158,1);
@@ -3677,7 +3687,7 @@ static int gv_activate(void){
       else if(focus==1941)ajustes_definir_guia_previa_grande(0);
       else if(focus==1943||focus==1944)ajustes_definir_guia_previa_destacar(focus==1943);
       else if(focus==1945)ajustes_definir_guia_previa_sem_som(!ajustes_guia_previa_sem_som());
-      else if(focus==1946||focus==1947){ajustes_definir_guia_dias(focus==1947?3:1);gv_tdesl=0;gv_tfoc=0;gv_snap_force=1;}
+      else if(focus==1946||focus==1947||focus==1958){ajustes_definir_guia_dias(focus==1958?7:focus==1947?3:1);gv_tdesl=0;gv_tfoc=0;gv_snap_force=1;epg_recarregar();}
       else if(focus==1948)ajustes_definir_vidro(!ajustes_vidro());
       else if(focus==1949)gv_go("epg-saude");
       else if(focus==1937){sources_options=0;g5ui_open("fontes-gerenciar");}
@@ -3816,6 +3826,7 @@ static void gv_ajustes_move(SDL_Keycode k){
     ids[n++]=1936;
     if(gv_aj_sub==1942||gv_aj_sub==1944||gv_aj_sub==1947){
       int first=gv_aj_sub==1942?1941:gv_aj_sub==1944?1943:1946;ids[n++]=first;ids[n++]=first+1;
+      if(gv_aj_sub==1947)ids[n++]=1958;
     }else{
       GuiaFonteSaude source;
       for(int i=0;i<6&&guia_fonte_saude(gv_aj_source_off+i,&source);i++)ids[n++]=1985+i;

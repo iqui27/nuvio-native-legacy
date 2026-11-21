@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "nvbackend.h"
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif
@@ -75,7 +76,8 @@ static int fioLaco(void *u) {
     printf("[juntos] http: op=%d requesting auth\n", op.tipo);
     if (recomenda_cabecalhos(cab, aut, sizeof aut, via, sizeof via, pf, sizeof pf)) {
       printf("[juntos] http: op=%d auth ready, request started\n", op.tipo);
-      snprintf(url, sizeof url, "%s%s", NV_REC_URL, op.rota);
+      nv_rec_url_copiar(url, sizeof url);
+        { size_t n_ = strlen(url); snprintf(url + n_, sizeof url - n_, "%s", op.rota); }
       r.txt = op.get ? rede_baixar_st(url, PRAZO_S, cab, &r.status)
                      : rede_postar_st(url, PRAZO_S, cab, op.corpo ? op.corpo : "{}", &r.status);
       if (r.status == 401 && !strcmp(via, "X-Nuvio-Auth: trakt"))
@@ -97,7 +99,7 @@ static int fioLaco(void *u) {
 
 static void pedir(OpTipo tipo, const char *rota, const char *corpo, int get) {
   Op op;
-  if (!NV_REC_URL[0]) { printf("[juntos] http: service not configured\n"); return; }
+  if (!nv_rec_url_ativo()) { printf("[juntos] http: service not configured\n"); return; }
   if (!mtx) { mtx = SDL_CreateMutex(); cond = SDL_CreateCond(); }
   if (!mtx || !cond) { printf("[juntos] http: queue initialization failed\n"); return; }
   memset(&op, 0, sizeof op);
@@ -166,7 +168,7 @@ static char urlCelular[200];
 static Uint32 entrouEm;   // primeiro "conectado" desta sala (para o feed)
 static int juntoMandado, maxMembros;
 
-int juntos_disponivel(void) { return NV_REC_URL[0] && recomenda_ativo() && recomenda_meu_id()[0]; }
+int juntos_disponivel(void) { return nv_rec_url_ativo() && recomenda_ativo() && recomenda_meu_id()[0]; }
 int juntos_ativo(void) { return fase != JF_OCIOSO; }
 int juntos_no_player(void) { return juntos_ativo() && !foraDoPlayer; }
 JuntosFase juntos_fase(void) { return fase; }
@@ -746,7 +748,7 @@ static void websocket(Uint32 agora) {
 }
 
 void juntos_passo(Uint32 agora) {
-  if (!NV_REC_URL[0]) return;
+  if (!nv_rec_url_ativo()) return;
   agoraPasso = agora;
   if (!iniciouEm) iniciouEm = agora ? agora : 1;
   if (mtx) {

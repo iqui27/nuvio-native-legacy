@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "nvbackend.h"
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif
@@ -178,7 +179,8 @@ static int fioEnviar(void *u) {
   const char *cab[4];
   static char corpo[sizeof fila[0]];   // so este fio usa; um fio vivo por vez
   (void)u;
-  snprintf(fioUrl, sizeof fioUrl, "%s/v1/atividade", NV_REC_URL);
+  nv_rec_url_copiar(fioUrl, sizeof fioUrl);
+  { size_t n_ = strlen(fioUrl); snprintf(fioUrl + n_, sizeof fioUrl - n_, "%s", "/v1/atividade"); }
   for (;;) {
     int st = 0, manter;
     unsigned geracao;

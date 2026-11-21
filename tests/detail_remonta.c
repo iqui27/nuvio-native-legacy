@@ -56,6 +56,14 @@ int main(void) {
     w[1] = v[0]; w[2] = v[1]; w[3] = v[2];
     cat_definir_tudo(w, 4, NULL, 0); }
   printf("--- remontou de verdade\n"); fflush(stdout);
+  // The router (app.c) reads detail_indice() for the source search and Play
+  // BEFORE detail_atualizar runs in the same frame. Read right after the
+  // rebuild, it must already follow the title, not whoever took its old slot:
+  // otherwise that frame asks the addons for another title's sources and Play
+  // can start the wrong one (a deep-linked title, appended at the end, then
+  // shifted by the start-up "Continue watching" rebuild).
+  assert(detail_indice() == 2);
+  assert(!strcmp(cat_item(detail_indice())->imdb, "tt0052520"));
   quadros(60);
   assert(detail_indice() == 2);
   assert(!strcmp(cat_item(detail_indice())->titulo, "Twilight Zone"));
@@ -77,6 +85,24 @@ int main(void) {
     quadros(60);
     assert(cat_n() == n0);
     assert(detail_indice() == 1); }
+
+  // 4) FICHA FECHADA: a guarda da revalidacao na leitura e `aberto`. Depois
+  //    do fechamento o catalogo pode remontar sob o indice guardado sem custo
+  //    nem efeito — nenhum quadro pede fonte ou Play por uma pagina fechada —
+  //    e a copia da abertura NAO pode ser reinserida por uma leitura. O canal
+  //    sai de 1 para 2 e o getter continua devolvendo o indice cru.
+  detail_fechar();
+  quadros(60);
+  assert(!detail_aberto());
+  { CatItem w[3]; int n0 = cat_n();
+    w[0] = item("tt0000001", "Outro", "movie");
+    w[1] = item("tt0000007", "Intruso", "movie");
+    w[2] = item("pp-live:binged~ev.p-pl-canal-longo-123", "Canal", "tv");
+    cat_definir_tudo(w, 3, NULL, 0);
+    assert(cat_n() == n0 + 1); }
+  assert(detail_indice() == 1);
+  quadros(60);
+  assert(detail_indice() == 1);
   printf("FIM\n");
   return 0;
 }

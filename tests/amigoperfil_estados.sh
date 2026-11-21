@@ -9,7 +9,7 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/recomenda.c|src/amigoperfil.c) continue;; esac
   sources+=("$source")
 done
-cc "${sources[@]}" tests/amigoperfil_estados.c -Isrc -o "$tmp/teste" -O1 -g \
+cc "${sources[@]}" tests/amigoperfil_estados.c -Isrc -DNV_REC_URL='"http://127.0.0.1:8799"' -o "$tmp/teste" -O1 -g \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -w

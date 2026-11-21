@@ -18,7 +18,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-juntos-flow.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 cc -std=gnu11 -O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -ffunction-sections -fdata-sections tests/juntos_fluxo.c src/juntosfonte.c \
-  src/juntosmotor.c src/juntosproto.c src/juntossync.c src/js.c \
+  src/juntosmotor.c src/juntosproto.c src/juntossync.c src/js.c tests/nvbackend_stub.c -DNV_REC_URL='"http://fixture.invalid"' \
   -L/opt/homebrew/lib -lSDL2 -Wl,-dead_strip -o "$work/flow"
 "$work/flow"
 node tests/juntos_fluxo.mjs

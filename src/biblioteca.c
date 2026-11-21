@@ -75,6 +75,10 @@
 #include "detail.h"
 #include "badges.h"
 #include "listas.h"
+#ifdef NV_TPK
+#include "torboxbib_ui.h"
+#include "torboxbib.h"
+#endif
 #include "listasescrita.h"
 #include "celbotao.h"
 #include "ilha.h"
@@ -388,7 +392,16 @@ static const char *generos[] = { "Todos", "Drama", "Comédia", "Ação", "Anima�
 static const char *generosEn[] = { "", "Drama", "Comedy", "Action", "Animation", "Documentary", "Horror" };
 static int fonte = FONTE_TRAKT;
 static int listaTab;
+#ifdef NV_TPK
+// TorBox so ocupa a aba 4 quando a conta responde (torboxbib_disponivel); sem
+// ela ha 4 abas e os controles Procurar/+Nova lista ficam nos indices 4 e 5.
+#define BIB_N_LISTA_TAB (torboxbib_disponivel() ? 5 : 4)
+static const char *ROT_LISTA_TAB[] = { "Minhas listas", "Seguindo", "Explorar", "Trilhas", "TorBox" };
+static int torboxAba(void) { return modo == MODO_LISTAS && listaTab == 4 && torboxbib_disponivel(); }
+#else
+#define BIB_N_LISTA_TAB 4
 static const char *ROT_LISTA_TAB[] = { "Minhas listas", "Seguindo", "Explorar", "Trilhas" };
+#endif
 static int fonteSalvos = -1;
 static int pickSel = 0;          // qual dos seletores esta em foco
 
@@ -474,7 +487,11 @@ static int toqueLivre;
 // cauda exponencial, a MESMA curva que a home mede. A de 1a ordem que estava
 // aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
 static float velY = 0.0f;
-static int sair = 0, pedido = -1;
+static int sair = 0, pedido = -1, pediuTorbox = 0;
+#ifdef NV_TPK
+static int torboxUsenet, torboxItem, torboxArquivo;
+static char torboxTitulo[160];
+#endif
 static int pediuRelogio;
 static int nCelulas = 0;         // celulas da grade do estado atual
 // Para que o teclado modal esta na tela; o resultado e lido em
@@ -905,6 +922,9 @@ static int ehSerie(const CatItem *ci) {
 // e aqui que elas se encontram, para o mapa de foco e a rolagem serem um so.
 static int contarCelulas(void) {
   int n;
+#ifdef NV_TPK
+  if (torboxAba()) return torboxbib_ui_n();
+#endif
   if (estado() == EST_TITULOS) return nFiltro;
   if (estado() == EST_LISTAS)  return lst_n();
   n = lst_itens_n();
@@ -1043,7 +1063,8 @@ static int emAndamento(const CatItem *c) {
 // Quantos seletores a faixa tem: "Para ver" ganha o quarto, "Origem".
 // "Listas" ganha o quarto na fonte Trakt: "Nova lista".
 static int bibNPicks(void) {
-  return modo == MODO_LISTAS ? 6 : modo == MODO_ASSISTIDOS ? 5 : 6;
+  // MODO_LISTAS: as abas (4 ou 5 com TorBox) + Procurar + "+ Nova lista".
+  return modo == MODO_LISTAS ? BIB_N_LISTA_TAB + 2 : modo == MODO_ASSISTIDOS ? 5 : 6;
 }
 // 6D keeps one chip: the Origens panel is the source, the rows are the view.
 // Trakt creates ("Nova lista"); other sources search public lists.
@@ -1290,6 +1311,9 @@ static void atualizarFonte(void) {
 // pedido de rede (ver listas.h).
 static void pedirFonte(void) {
   if (listaTab == 3) { lst_pedir_trilhas(); remapear(0); return; }
+#ifdef NV_TPK
+  if (listaTab == 4 && torboxbib_disponivel()) { torboxbib_ui_entrar(); remapear(0); return; }
+#endif
   if (fonte >= FONTE_PLEX) { lst_pedir_servidores(fonte - FONTE_PLEX, 0); remapear(0); return; }
   switch (fonte) {
     case FONTE_TRAKT:   lst_pedir(LST_TRAKT); break;
@@ -1372,6 +1396,23 @@ int biblioteca_pediu_abrir(int *indiceCatalogo) {
   if (indiceCatalogo) *indiceCatalogo = pedido;
   pedido = -1;
   return 1;
+}
+
+int biblioteca_pediu_torbox_play(int *usenet, int *item, int *arquivo, const char **titulo) {
+  int v = pediuTorbox;
+  pediuTorbox = 0;
+#ifdef NV_TPK
+  if (usenet) *usenet = torboxUsenet;
+  if (item) *item = torboxItem;
+  if (arquivo) *arquivo = torboxArquivo;
+  if (titulo) *titulo = torboxTitulo;
+#else
+  if (usenet) *usenet = 0;
+  if (item) *item = 0;
+  if (arquivo) *arquivo = 0;
+  if (titulo) *titulo = "";
+#endif
+  return v;
 }
 
 // ---------------------------------------------------------------- acoes
@@ -1662,6 +1703,16 @@ static void okNaCelula(int i) {
     teclado_abrir_com("Nota do título", "Vazio apaga a nota.", 190, ALFA_TEXTO, x.nota);
     return;
   }
+#ifdef NV_TPK
+  if (torboxAba()) {
+    if (torboxbib_ui_escolher(i, &torboxUsenet, &torboxItem, &torboxArquivo)) {
+      const char *nm = torboxbib_ui_nome(i);
+      snprintf(torboxTitulo, sizeof torboxTitulo, "%s", nm && nm[0] ? nm : "TorBox");
+      pediuTorbox = 1;
+    }
+    return;
+  }
+#endif
   if (estado() == EST_LISTAS) { abrirLista(i); return; }
   if (estado() == EST_ITENS) { abrirItemDaLista(i); return; }
   { int idx = indiceDaCelula(i);
@@ -1954,11 +2005,18 @@ static void biblioteca_evento_(const SDL_Event *e) {
     }
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
       if (modo == MODO_LISTAS) {
-        if (pickSel < 4) {
+        if (pickSel < BIB_N_LISTA_TAB) {
           listaTab = pickSel;
-          fonte = listaTab == 1 ? FONTE_FIXADAS : listaTab >= 2 ? FONTE_PUB : FONTE_TRAKT;
-          pedirFonte(); foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel;
-        } else if (pickSel == 4) {
+#ifdef NV_TPK
+          if (listaTab == 4) { pedirFonte(); }
+          else
+#endif
+          {
+            fonte = listaTab == 1 ? FONTE_FIXADAS : listaTab >= 2 ? FONTE_PUB : FONTE_TRAKT;
+            pedirFonte();
+          }
+          foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel;
+        } else if (pickSel == BIB_N_LISTA_TAB) {
           tecPara = TEC_BUSCA; fonte = FONTE_PUB; listaTab = 2;
           teclado_abrir("Procurar listas públicas", "Listas de qualquer pessoa no Trakt", TECLADO_MAX);
         } else if (!trakt_ativo()) dizer("Conecte sua conta do Trakt em Ajustes para editar listas");
@@ -2090,6 +2148,9 @@ static void biblioteca_atualizar_(float dt, Uint32 agora) {
   animEstado = anim_mola(animEstado, estadoFoco && estadoFalhou(), dt, NV_MOLA_FOCO);
   animListaTab = anim_mola(animListaTab, foco.fileira == BIB_FIL_PICK && !focoBotaoOrig ? pickSel : listaTab, dt, NV_MOLA_FOCO);
   if (modo == MODO_LISTAS && !temAberta && listaTab == 3) lst_pedir_trilhas();
+#ifdef NV_TPK
+  if (modo == MODO_LISTAS && !temAberta && listaTab == 4) torboxbib_ui_atualizar();
+#endif
   compartA = anim_mola(compartA, compartilha, dt, NV_MOLA_TELA);
   compartForma = mov_mola_assenta(&compartFormaV, compartForma, compartilha, dt, MOV_MODAL_W, MOV_MODAL_Z);
   // The tab focus pill slides from tab to tab; off the row it rests on the chosen one.
@@ -2543,7 +2604,7 @@ static void desenhaModos(void) {
 
 static void pickerTexto(int p, const char **rot, const char **val) {
   if (modo == MODO_LISTAS) {
-    *rot = p < 4 ? ROT_LISTA_TAB[p] : p == 4 ? "Procurar" : "+ Nova lista";
+    *rot = p < BIB_N_LISTA_TAB ? ROT_LISTA_TAB[p] : p == BIB_N_LISTA_TAB ? "Procurar" : "+ Nova lista";
     *val = "";
   } else if (modo == MODO_ASSISTIDOS) {
     *rot = p == 0 ? "Origem" : p == 1 ? "Tipo" : p == 2 ? "Ordem" : "";
@@ -2565,7 +2626,7 @@ static void pickerTexto(int p, const char **rot, const char **val) {
 // "Esconder assistidos" ligado: o ponto (7) e o vao (10) antes do rotulo.
 static int pickerPonto(int p) { return modo != MODO_LISTAS && modo != MODO_ASSISTIDOS && p == 3 && esconderVistos; }
 static float pickerLarguraNat(int p) {
-  if (modo == MODO_LISTAS) return txt_linha(TXT_AJ_SEG, p < 4 ? ROT_LISTA_TAB[p] : p == 4 ? "Procurar" : "+ Nova lista", 243, 242, 239, 255).w + 44;
+  if (modo == MODO_LISTAS) return txt_linha(TXT_AJ_SEG, p < BIB_N_LISTA_TAB ? ROT_LISTA_TAB[p] : p == BIB_N_LISTA_TAB ? "Procurar" : "+ Nova lista", 243, 242, 239, 255).w + 44;
   if (modo != MODO_LISTAS && p >= bibViewStart()) return BIB_VIS_W;
   const char *rot, *val;
   pickerTexto(p, &rot, &val);
@@ -2659,12 +2720,12 @@ static void desenhaPicker(int p, float f) {
   if (bibControlesSistema() && modo != MODO_LISTAS) return;
   ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroPicker, NULL, p, 0);
   if (modo == MODO_LISTAS) {
-    if (p < 4) return; // The shared segmented control owns labels and focus.
+    if (p < BIB_N_LISTA_TAB) return; // The shared segmented control owns labels and focus.
     plrui_botao_repouso(r, 1);
     if (listaTab == p) plrui_linha_foco(r, .5f, 1 - v);
-    if (p >= 4) plrui_pilula_foco(r, v);
+    if (p >= BIB_N_LISTA_TAB) plrui_pilula_foco(r, v);
     int t = v > .5f ? ajustes_tinta_foco() : listaTab == p ? 243 : 140;
-    TxtLinha label = txt_linha(TXT_AJ_SEG, p < 4 ? ROT_LISTA_TAB[p] : p == 4 ? "Procurar" : "+ Nova lista", t, t, t, 255);
+    TxtLinha label = txt_linha(TXT_AJ_SEG, p < BIB_N_LISTA_TAB ? ROT_LISTA_TAB[p] : p == BIB_N_LISTA_TAB ? "Procurar" : "+ Nova lista", t, t, t, 255);
     txt_desenhar(label, r.x + 22, r.y + (r.h - label.h) * .5f);
     return;
   }
@@ -2797,7 +2858,15 @@ static void desenhaVazio(void) {
       kind = T21_ERROR; l1 = "Não foi possível carregar. OK para tentar novamente."; l2 = NULL;
     } else { l1 = "Nada nesta lista";
            l2 = "Uma lista do Trakt vem por tipo: experimente trocar entre Filmes e Séries."; }
-  } else if (estado() == EST_LISTAS) {
+  }
+#ifdef NV_TPK
+  else if (torboxAba()) {
+    const char *av = torboxbib_ui_status();
+    if (av[0] && !torboxbib_ui_n()) { kind = T21_EMPTY; l1 = "TorBox"; l2 = av; }
+    else if (!torboxbib_ui_n()) { l1 = "Nada na conta TorBox"; l2 = "Envie torrents ou usenet para a sua conta."; }
+  }
+#endif
+  else if (estado() == EST_LISTAS) {
     // O AVISO DA FONTE VEM DO MODULO e diz o que falta (sem conta do Trakt, sem
     // vinculo do Simkl, nada fixado). Uma frase generica aqui esconderia
     // exatamente a informacao que resolve.
@@ -3431,6 +3500,20 @@ static float seloFonte(const LstLista *l, float x, float y, float h,
 // CARTAO DE LISTA. Ver a nota das medidas no topo para o que saiu e por que.
 // O que sobrou responde a unica pergunta que a grade faz — "e esta?": o NOME,
 // em ate duas linhas, e o tamanho da lista com o dono.
+#ifdef NV_TPK
+static void desenhaLinhaTorbox(int i, float y, float f, float a) {
+  const char *nome = torboxbib_ui_nome(i);
+  if (!nome || !nome[0]) return;
+  GfxRect r = { bibX(), y, bibW(), BIB_LL_H };
+  int cor = superficieLinha(r, raioPx(14.0f, r.w, r.h), f, a);
+  int sr, sg, sb;
+  tintaSecundaria(cor, &sr, &sg, &sb);
+  txt_desenhar_alpha(txt_linha(TXT_CAPTION2, nome, 243, 242, 239, 255), r.x + 24, y + (BIB_LL_H - 28) * 0.5f, a);
+  TxtLinha sub = txt_linha(TXT_CAPTION2, i18n("TorBox"), sr, sg, sb, 255);
+  txt_desenhar_alpha(sub, r.x + r.w - (float)sub.w - 24, y + (BIB_LL_H - (float)sub.h) * 0.5f, a * 0.9f);
+}
+#endif
+
 static void desenhaCartaoLista(const LstLista *l, GfxRect r, float f, float a) {
   if (!telefoneui_ativo()) {
     if (!l) return;
@@ -3850,7 +3933,11 @@ static void desenhaOrigens(void) {
 // onde esta, nao o nome do app.
 static void desenhaCabecalho(void) {
   char caminho[260];
-  const char *tit = !temAberta && bibCompacto() ? "Biblioteca" : modo == MODO_LISTAS ? (listaTab == 2 ? "Explorar listas" : listaTab == 3 ? "Trilhas" : listaTab == 1 ? "Seguindo" : "Minhas listas") : "Biblioteca";
+  const char *tit = !temAberta && bibCompacto() ? "Biblioteca" : modo == MODO_LISTAS ? (listaTab == 2 ? "Explorar listas" : listaTab == 3 ? "Trilhas"
+#ifdef NV_TPK
+      : listaTab == 4 ? "TorBox"
+#endif
+      : listaTab == 1 ? "Seguindo" : "Minhas listas") : "Biblioteca";
   if (temAberta) {
     snprintf(caminho, sizeof caminho, "%s  ›  %s", i18n("Listas"), aberta.titulo);
     tit = caminho;
@@ -4407,8 +4494,10 @@ static void biblioteca_desenhar_(Uint32 agora) {
     else {
       desenhaModos();
       if (modo == MODO_LISTAS) {
-        int counts[4] = {-1, -1, -1, -1};
-        plrui_seg_ex(ROT_LISTA_TAB, counts, 4, listaTab, animListaTab,
+        int counts[5];
+        int nt = BIB_N_LISTA_TAB;
+        for (int i = 0; i < nt; i++) counts[i] = -1;
+        plrui_seg_ex(ROT_LISTA_TAB, counts, nt, listaTab, animListaTab,
           anim_clamp(animPick[0] + animPick[1] + animPick[2] + animPick[3], 0, 1),
           pickerX(0) - 5, pickerY() - 1, 1, 1);
       }
@@ -4555,6 +4644,21 @@ static void biblioteca_desenhar_(Uint32 agora) {
         }
         if (ac <= 0.005f) continue;
 
+#ifdef NV_TPK
+        if (torboxAba()) {
+          if (modoLinha())
+            desenhaLinhaTorbox(i, ty, f, ac);
+          else {
+            GfxRect rc = { bibX() + c * passoC, ty, larguraCartaoLista(), BIB_LC_H };
+            int cor = superficieLinha(rc, raioPx(14.0f, rc.w, rc.h), f, ac);
+            txt_desenhar_alpha(txt_linha(TXT_CAPTION2, torboxbib_ui_nome(i), 243, 242, 239, 255),
+                               rc.x + 16, rc.y + (rc.h - 28) * 0.5f, ac);
+            (void)cor;
+            if (i == celulaEmFoco()) barraHold(rc, ac);
+          }
+          continue;
+        }
+#endif
         if (estado() == EST_LISTAS) {
           const LstLista *l = lst_lista(i);
           if (modoLinha()) {

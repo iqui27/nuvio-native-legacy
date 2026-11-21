@@ -7,11 +7,11 @@ trap 'rm -rf "$work"' EXIT
 cc -std=gnu11 -O1 -g -DNV_ANDROID -DJUNTOS_TCL -DJUNTOS_AUTH -Isrc \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -ffunction-sections -fdata-sections tests/juntos_fluxo.c src/juntosfonte.c \
-  src/juntosmotor.c src/juntosproto.c src/juntossync.c src/js.c \
+  src/juntosmotor.c src/juntosproto.c src/juntossync.c src/js.c tests/nvbackend_stub.c -DNV_REC_URL='"http://fixture.invalid"' \
   -L/opt/homebrew/lib -lSDL2 -Wl,-dead_strip -o "$work/flow"
 "$work/flow"
 cc -O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -ffunction-sections -fdata-sections tests/juntos_auth_headers.c \
+  -ffunction-sections -fdata-sections tests/juntos_auth_headers.c tests/nvbackend_stub.c -DNV_REC_URL='"http://fixture.invalid"' \
   -L/opt/homebrew/lib -lSDL2 -Wl,-dead_strip -o "$work/headers"
 "$work/headers"
 cc -O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
@@ -23,6 +23,6 @@ cc -O1 -g -DNV_ANDROID -DNV_REC_URL='"http://fixture.invalid"' -Isrc \
   -ffunction-sections -fdata-sections tests/juntos_auth_refresh.c \
   src/recomenda.c src/trakt.c src/traktauth.c src/credfio.c \
   src/juntosfonte.c src/juntosmotor.c src/juntosproto.c src/juntossync.c \
-  src/js.c src/jsw.c -L/opt/homebrew/lib -lSDL2 -lpthread -Wl,-dead_strip \
+  src/js.c src/jsw.c tests/nvbackend_stub.c -L/opt/homebrew/lib -lSDL2 -lpthread -Wl,-dead_strip \
   -o "$work/room-refresh"
 "$work/room-refresh"
