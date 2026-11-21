@@ -8136,6 +8136,10 @@ static int epCorpoTempEpisodios(int item, int temporada) {
     int t = videoTemporada(p, f);
     int e = t >= 0 ? (int)js_num(p, f, "episode", 0) : 0;
     if (t == temporada && e > 0) n++;
+    // O teto e o mesmo da lista publicada: acima dele a contagem so infla a
+    // alocacao e o excesso do despejo — lia alem de d[] e a aba ficava vazia
+    // (a temporada de 5.001+ episodios publica as 5.000 primeiras, como a F51).
+    if (n == VIDEOS_MAX) break;
   }
   return n;
 }
