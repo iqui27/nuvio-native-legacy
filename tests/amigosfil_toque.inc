@@ -92,5 +92,43 @@ static int amigosToqueAuditar(void) {
       printf("CHECK: clipped targets style=%d portrait=%d\n",style,portrait);
     }
   }
+  // Empty list: the "Adicione amigos" invite is a fixed target drawn from x0,
+  // OUTSIDE the scrollable strip that clips the cards (style 3 clips at
+  // x0+132). A tap in the middle of the drawn card must still focus it.
+  {
+    int guarda=nContatos;
+    nContatos=0;socialvis_definir_feed(NULL,0);
+    assert(socialvis_n_amigos()==0 && amigosfil_convite());
+    for(int style=0;style<6;style++){
+      while(ajustes_amigos_estilo()!=style)assert(ajustes_rapido_passo(op,1));
+      for(int portrait=0;portrait<2;portrait++){
+        int w=portrait?1080:1920,h=portrait?2340:1080;
+        SDL_SetWindowSize(janela,w,h);glViewport(0,0,w,h);gfx_tamanho_alvo(w,h);layout_tela_definir(w,h);ponteiro_teste_janela(w,h);
+        tex_novo_quadro();txt_novo_quadro();gfx_novo_quadro();gfx_sem_recorte();
+        ponteiro_quadro(SDL_GetTicks());
+        amigosfil_desenhar(72,220,400,200,0,0,SDL_GetTicks());ponteiro_desenhar();
+        const PonteiroAlvo *lista=NULL;int n=ponteiro_teste_lista(&lista),hit=-1;
+        for(int i=0;i<n;i++)if(lista[i].focar==amigosToqueFocar){hit=i;break;}
+        if(hit<0){printf("FAIL: empty invite style=%d portrait=%d has no touch target\n",style,portrait);falhas++;continue;}
+        // The drawn card, independent of the registered target: styles 0-4 use
+        // iw=min(640,(dir-x0)*.43) from x0; classic uses min(dir-x0,1180).
+        float margem=ajustes_rail_largura_fixa()>0?fmaxf(48.f,ajustes_conteudo_x()):48.f;
+        float dirR=h>w?NV_TELA_W-margem:NV_TELA_W-NV_HOME_SAFE_RIGHT;
+        float iw=style==5?fminf(dirR-72.f,1180.f):fminf(640.f,(dirR-72.f)*.43f);
+        float x=72.f+iw*.5f,y=lista[hit].y+lista[hit].h*.5f;
+        celb_fechar();(void)amigosfil_pediu_ajustes();
+        toqueFocou=toqueRetornos=0;
+        SDL_Event e={0};e.type=SDL_FINGERDOWN;e.tfinger.touchId=3;e.tfinger.fingerId=7;e.tfinger.x=x/w;e.tfinger.y=y/h;
+        int down=ponteiro_evento(&e,amigosToqueEntregar);e.type=SDL_FINGERUP;int up=ponteiro_evento(&e,amigosToqueEntregar);
+        int abriu=celb_dono()==CELB_AMIGO||amigosfil_pediu_ajustes();
+        if(!down||!up||toqueFocou!=1||toqueRetornos!=1||!abriu){
+          printf("FAIL: empty invite style=%d portrait=%d tap=(%.0f,%.0f) target=[%.0f,%.0f) down=%d up=%d focus=%d OK=%d opened=%d\n",
+                 style,portrait,x,y,lista[hit].x,lista[hit].x+lista[hit].w,down,up,toqueFocou,toqueRetornos,abriu);falhas++;
+        } else printf("PASS: empty invite style=%d portrait=%d answers a tap in the card middle\n",style,portrait);
+        celb_fechar();
+      }
+    }
+    nContatos=guarda;socialvis_definir_feed(NULL,0);
+  }
   fflush(stdout);return falhas?1:0;
 }

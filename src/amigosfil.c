@@ -159,14 +159,24 @@ static void desktopSocialContext(int coluna,int cartao) {
   if(index>=0) desktopSocialMenu(index,0);
 }
 #endif
-static void alvoToque(GfxRect r, float corte, int coluna, int cartao) {
-  float x = fmaxf(r.x, toque.regiao.x), dir = fminf(r.x + r.w, toque.regiao.x + toque.regiao.w);
-  if (toqueFocar && dir > x) {
-    ponteiro_alvo_faixa(x, r.y, dir - x, r.h, corte, NV_TELA_H, toqueFocar, NULL, coluna, cartao);
+static void alvoToqueRec(GfxRect r, float corte, int coluna, int cartao, float esq, float dir) {
+  float x = fmaxf(r.x, esq), d = fminf(r.x + r.w, dir);
+  if (toqueFocar && d > x) {
+    ponteiro_alvo_faixa(x, r.y, d - x, r.h, corte, NV_TELA_H, toqueFocar, NULL, coluna, cartao);
 #ifdef NV_DESKTOP_UI
     if(layout_desktop_ativo()) ponteiro_alvo_segurar(desktopSocialContext);
 #endif
   }
+}
+// Os cartoes da faixa sao recortados pela regiao da rolagem, como no desenho.
+static void alvoToque(GfxRect r, float corte, int coluna, int cartao) {
+  alvoToqueRec(r, corte, coluna, cartao, toque.regiao.x, toque.regiao.x + toque.regiao.w);
+}
+// Alvo fixo fora da faixa rolavel (o convite da lista vazia, que o estilo 3
+// desenha desde x0 enquanto a faixa so comeca em x0+132): fica com o retangulo
+// desenhado, sem o recorte da rolagem.
+static void alvoToqueFixo(GfxRect r, float corte, int coluna, int cartao) {
+  alvoToqueRec(r, corte, coluna, cartao, r.x, r.x + r.w);
 }
 #endif
 
@@ -411,7 +421,7 @@ void amigosfil_desenhar(float x0, float y, float alt, float corte, int focada,
 #endif
   if (n < 1) {
 #ifdef NV_TOUCH_UI
-    alvoToque((GfxRect){ x0, y, toque.regiao.w, alt }, corte, 0, -1);
+    alvoToqueFixo((GfxRect){ x0, y, toque.regiao.w, alt }, corte, 0, -1);
 #endif
     desenhaConvite(x0, y, alt, focada, agora); return;
   }

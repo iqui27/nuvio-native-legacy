@@ -348,7 +348,7 @@ static void afDesenhar(float x0, float y, float corte, int focada, int coluna, U
   toquerol_vincular(&toque, (GfxRect){toqueLeft, toqueTop, fmaxf(0,toqueDir-toqueLeft), fmaxf(0,toqueBase-toqueTop)},
                     gfx_escala(), 0, maxX, 0, &scroll);
   if (amigosfil_convite())
-    alvoToque((GfxRect){x0,y+8,fminf(640,(amigosfilDireita()-x0)*.43f),NV_DESTAQUE_H},corte,0,-1);
+    alvoToqueFixo((GfxRect){x0,y+8,fminf(640,(amigosfilDireita()-x0)*.43f),NV_DESTAQUE_H},corte,0,-1);
 #endif
   if (amigosfil_convite()) { afConvite(x0, y, focada); return; }
   float dir = amigosfilDireita();
