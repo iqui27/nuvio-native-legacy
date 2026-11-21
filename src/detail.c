@@ -1428,7 +1428,11 @@ static const NotasSecao *notasDados(void) {
   int i;
   for (i = 0; i < EX_NFONTES; i++) s.cru[i] = extras_nota(i);
   if (!s.cru[EX_IMDB] && ajustes_mdblist_fonte(EX_IMDB)) s.cru[EX_IMDB] = notaDe(idx);
-  s.notaPessoal = reacao_nota(cat_item(idx)->imdb);
+  // cat_item pode dar NULL: a refacao do "Continuar assistindo" publica n = 0
+  // por um instante, de outro fio, logo depois de sair do player (era a queda
+  // na tela de episodios, 27/10).
+  { const CatItem *ci = cat_item(idx);
+    s.notaPessoal = ci ? reacao_nota(ci->imdb) : 0; }
   s.nTemp = ehSerie() && (extras_n_temporadas() || notasCatDisponiveis()) ? notasCatNTemp() : 0;
   s.tempNum = notasCatTemp; s.nEps = notasCatNEps;
   s.epNum = notasCatNumero; s.epNota = notasCatNota;
@@ -6529,7 +6533,8 @@ static void heroWeb(float a, float desloc) {
     // Sem nota dada a pessoa nao tem "Sua nota": o item some em vez de
     // mostrar um traco solto.
     { char mine[96], value[24];
-      int n = reacao_nota(cat_item(idx)->imdb);
+      const CatItem *ciNota = cat_item(idx);   // NULL durante a troca do catalogo
+      int n = ciNota ? reacao_nota(ciNota->imdb) : 0;
       if (n && !servidoresDisponiveis) {  // hide until rated; server titles show the card
         snprintf(value, sizeof value, "%d.%d", n / 2, n % 2 * 5); plrui_decimal(value);
         snprintf(mine, sizeof mine, "%s  %s", i18n("Sua nota"), value);

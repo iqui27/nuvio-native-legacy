@@ -230,7 +230,11 @@ static void montarBiblioteca(Fileira *f) {
     if (!it || !it->naLista || !(it->listaFontes & (1u << fonte))) continue;
     disponivel = 1;
     if (ocultar && cat_visto(it)) continue;
-    while (c < f->n && strcmp(cat_item(f->itens[c])->imdb, it->imdb)) c++;
+    // cat_item pode dar NULL no meio de uma troca do catalogo (n = 0 por um instante).
+    for (; c < f->n; c++) {
+      const CatItem *o = cat_item(f->itens[c]);
+      if (o && !strcmp(o->imdb, it->imdb)) break;
+    }
     if (c < f->n) continue;
     pos = f->n;
     if (ordem == FIL_ORD_AZ || ordem == FIL_ORD_ANO) {
