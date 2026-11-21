@@ -757,6 +757,14 @@ int miniatura_tv_status_agora(void) {
 int miniatura_tv_prontas_agora(void) { return miniatura_tv_status_agora() == 3; }
 
 #else
-// .wgt, desktop, Android (own provider in miniatura_android.c): nothing here.
-typedef int miniatura_fora_daqui;   // ISO C: a translation unit must not be empty
+// .wgt, desktop, Android (own provider in miniatura_android.c): inert exports.
+// Some harnesses compile this file without the target macros while ajustes.c
+// is built WITH NV_TPK/NV_WEBOS and then references miniatura_tv_capaz — the
+// stubs keep those links working; the provider stays NULL and "No aparelho"
+// never appears.
+const SeekrProvedor *miniatura_tv_provedor(void) { return NULL; }
+int miniatura_tv_capaz(int modoMemoria, long ramMB) { (void)modoMemoria; (void)ramMB; return 0; }
+int miniatura_tv_direto(void) { return 0; }
+int miniatura_tv_status_agora(void) { return 0; }
+int miniatura_tv_prontas_agora(void) { return 0; }
 #endif // NV_MINIATURA_TV
