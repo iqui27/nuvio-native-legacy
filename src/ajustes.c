@@ -10603,7 +10603,7 @@ static int ajFonteAplicar(int op, int novo) {
 #else
     ajFonteUrlOp = op; ajFonteUrlSessao = nv_perfil_sessao_ler();
     teclado_abrir_com("Importar fonte TTF/OTF", "URL direta de uma fonte TTF ou OTF (https://…). Até 32 MB.",
-      4095, CUR_ALFA_URL, NULL);
+      TECLADO_LONGO, CUR_ALFA_URL, NULL);
     return 1;
 #endif
   }
