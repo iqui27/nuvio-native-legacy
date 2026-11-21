@@ -1499,8 +1499,11 @@ static const char *JF_ALFA_SENHA =
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-@!#$%&*+=?/ ";
 
 static const char *V_PREVIA_PROV[] = { "Seekr.tv", "OpenSeek (servidor próprio)", "No aparelho (teste)" };
-// "No aparelho" (miniatura_android.c) so existe no Android.
-#ifdef NV_ANDROID
+// "No aparelho" existe onde ha motor local: Android (miniatura_android.c) e
+// .tpk 6+ / webOS (miniatura.c). Num aparelho que nao passa no portao — pouca
+// memoria pela regra do guia ou pacote sem as ferramentas FFmpeg — nValores
+// esconde o valor e a linha gira so Seekr/OpenSeek.
+#if defined(NV_ANDROID) || defined(NV_TPK) || defined(NV_WEBOS)
 #define NV_PREVIA_N 3
 #else
 #define NV_PREVIA_N 2
@@ -3151,10 +3154,27 @@ static int previaOpenSeek(void) {
   return valor[AJ_PREVIA_PROVEDOR] == 1;
 #endif
 }
-// As miniaturas sao feitas neste aparelho (miniatura_android.c)?
-static int previaLocal(void) {
+// As miniaturas PODEM ser feitas neste aparelho? No Android sempre; no .tpk
+// 6+ / webOS (miniatura.c) so com as ferramentas FFmpeg no pacote E memoria
+// suficiente pela MESMA regra do guia (memoria.h: modo AJ_EPG_MEMORIA sobre a
+// RAM do tex_orcamento_info, fallback SDL_GetSystemRAM — como ajEpgMemoria-
+// Aplicar). Fora disso, "No aparelho" nem aparece na lista.
+static int previaLocalCapaz(void) {
 #ifdef NV_ANDROID
-  return valor[AJ_PREVIA_PROVEDOR] == 2;
+  return 1;
+#elif defined(NV_TPK) || defined(NV_WEBOS)
+  long ram = 0;
+  tex_orcamento_info(NULL, &ram, NULL, NULL);
+  if (ram <= 0) ram = SDL_GetSystemRAM();
+  return miniatura_tv_capaz(valor[AJ_EPG_MEMORIA], ram);
+#else
+  return 0;
+#endif
+}
+// As miniaturas sao feitas neste aparelho (miniatura_android.c / miniatura.c)?
+static int previaLocal(void) {
+#if defined(NV_ANDROID) || defined(NV_TPK) || defined(NV_WEBOS)
+  return valor[AJ_PREVIA_PROVEDOR] == 2 && previaLocalCapaz();
 #else
   return 0;
 #endif
@@ -9065,11 +9085,24 @@ static const char *ajudaOpcao(int op) {
     snprintf(b, sizeof b, "%s\n%s", i18n(base), atual);
     return b;
   }
-  // Copy-first (miniatura_android.c): a 4K title's previews come from a smaller copy in the source list, so the
-  // person's add-on filters decide how fast they are. Shown only when the previews are made on this device.
+  // Previews made on this device. Android copy-first (miniatura_android.c): a
+  // 4K title's previews come from a smaller copy in the source list, so the
+  // person's add-on filters decide how fast they are. .tpk 6+ / webOS
+  // (miniatura.c): the TV makes them from the playing file itself.
   if ((op == AJ_PREVIA_PROVEDOR || op == AJ_MINIATURA_RES) && previaLocal()) {
     snprintf(b, sizeof b, "%s\n%s", i18n(base),
-      i18n("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme."));
+#ifdef NV_ANDROID
+      i18n("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme.")
+#else
+      i18n("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.")
+#endif
+    );
+    return b;
+  }
+  // "No aparelho" appears in the list (this device can): what the choice does.
+  if (op == AJ_PREVIA_PROVEDOR && previaLocalCapaz()) {
+    snprintf(b, sizeof b, "%s\n%s", i18n(base),
+      i18n("No aparelho: a própria TV tira os quadros do vídeo que está tocando, sem chave nem envio."));
     return b;
   }
   if (op == AJ_AMPLIAR_UI && saidaLimitada && ampliarUiVale()) {
@@ -11378,6 +11411,11 @@ static int nValores(int op) {
   // ja gravado le como fora da faixa e fica o padrao, Automatico (limita).
   if (op == AJ_TRAILER_FONTE) return 3;
 #endif
+  // "No aparelho" (o 3o valor) so entra na lista quando ESTE aparelho pode:
+  // ferramentas FFmpeg no pacote e memoria suficiente pela regra do guia
+  // (previaLocalCapaz). Um 2 gravado numa TV que nao passa volta ao padrao
+  // pelo conferirPadroes — e o Seekr segue.
+  if (op == AJ_PREVIA_PROVEDOR && NV_PREVIA_N > 2 && !previaLocalCapaz()) return 2;
   return OPCOES[op].n;
 }
 

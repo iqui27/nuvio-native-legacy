@@ -985,6 +985,13 @@ void mini_impressao(uint64_t tamanho, const unsigned char *cabeca, size_t ncabec
   for (int i = 0; i < 32; i++) snprintf(saida + 2 * i, 3, "%02x", fim[i]);
 }
 
+int mini_motor_tem_ferramentas(void) {
+  return avcodec_find_decoder(AV_CODEC_ID_H264) != NULL &&
+         avcodec_find_decoder(AV_CODEC_ID_HEVC) != NULL &&
+         avcodec_find_encoder(AV_CODEC_ID_MJPEG) != NULL &&
+         av_find_input_format("mpegts") != NULL;
+}
+
 #else
 typedef int mini_motor_vazio;   // ISO C: a translation unit must not be empty
 #endif

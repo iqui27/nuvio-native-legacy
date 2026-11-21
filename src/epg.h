@@ -27,6 +27,7 @@
 #define NV_EPG_H
 
 #include <time.h>
+#include "memoria.h"
 
 // Um programa da grade. `titulo` aponta para memoria do modulo: vale ate a
 // proxima recarga (epg_passo com grade nova), nunca precisa de free.
@@ -42,8 +43,9 @@ int epg_estado(void);
 
 // Device-local memory policy, set on the drawing thread. Workers capture it;
 // low mode retains current programmes and the next 24 hours. Full mode may
-// refresh a shortened binary cache to recover later programmes.
-enum { EPG_MEMORIA_AUTO, EPG_MEMORIA_BAIXA, EPG_MEMORIA_COMPLETA };
+// refresh a shortened binary cache to recover later programmes. The enum and
+// the predicate (epg_memoria_eh_baixa) live in memoria.h: the on-device seek
+// thumbnails (miniatura.c) reuse this exact rule.
 void epg_memoria_definir(int modo, long ramMB);
 
 // Native account schedules never match another account's IDs or names.

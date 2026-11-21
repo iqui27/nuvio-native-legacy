@@ -99,6 +99,12 @@ int mini_motor_pacote(MiniMotor *m, const unsigned char *dados, int n, int threa
 long long mini_motor_lidos(const MiniMotor *m);
 void mini_motor_fechar(MiniMotor *m);
 
+// 1 = the FFmpeg linked in this package has the TV thumbnail tools: the h264
+// and hevc decoders, the mjpeg encoder and the mpegts demuxer (build-dts-
+// ffmpeg.sh). The seek-thumbnail provider checks this so a stale FFmpeg
+// quietly disables "No aparelho" instead of failing on every title.
+int mini_motor_tem_ferramentas(void);
+
 // Content fingerprint (same as OpenSeek): SHA-256("v1" || u64be(size) ||
 // SHA-256(first 64 KiB) || SHA-256(last 64 KiB)), lowercase hex (65 bytes).
 void mini_impressao(uint64_t tamanho, const unsigned char *cabeca, size_t ncabeca,

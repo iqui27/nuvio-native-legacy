@@ -3,10 +3,18 @@
 #include "miniatura_android.h"
 
 #ifndef NV_ANDROID
+#if defined(NV_TPK) || defined(NV_WEBOS)
+// .tpk 6+ / webOS: the device-local provider lives in src/miniatura.c.
+const SeekrProvedor *miniatura_provedor(void) { return miniatura_tv_provedor(); }
+int miniatura_prontas_agora(void) { return miniatura_tv_prontas_agora(); }
+int miniatura_status_agora(void) { return miniatura_tv_status_agora(); }
+int miniatura_direto(void) { return miniatura_tv_direto(); }
+#else
 const SeekrProvedor *miniatura_provedor(void) { return NULL; }
 int miniatura_prontas_agora(void) { return 0; }
 int miniatura_status_agora(void) { return 0; }
 int miniatura_direto(void) { return 0; }
+#endif
 void miniatura_preaquecer(const char *url, const char *cabecalhos) { (void)url; (void)cabecalhos; }
 #else
 #include "dados.h"
