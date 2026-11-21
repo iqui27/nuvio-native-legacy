@@ -2645,7 +2645,7 @@ static void *checarCopia(void *u) {
   snprintf(j->motivos + o, sizeof j->motivos - o, " | check:%s", r == 1 ? "ACCEPTED" : r == 0 ? "rejected" : "no-screen");
   pthread_mutex_unlock(&mu);
   fflush(stdout);
-  if (r != -1 || !parou(j)) fonteAnotar(j->dFonte, r == 1);   // a check cut short by the title ending decides nothing
+  if (!parou(j)) fonteAnotar(j->dFonte, r == 1);   // a check cut short by the title ending decides nothing
   free(c);
   return NULL;
 }
@@ -2721,8 +2721,9 @@ static void fonteAnotar(const char *chave, int aceita) {
     FILE *a = fopen(tmp, "w");                      // atomic: a crash mid-write never leaves half a history
     if (a) {
       for (int k = 0; k < n; k++) if (f[k].tentativas) fprintf(a, "%s\t%d\t%ld\n", f[k].chave, f[k].tentativas, f[k].quando);
-      int ok = !ferror(a) && fclose(a) == 0;
-      if (ok) rename(tmp, c); else remove(tmp);
+      int ok = !ferror(a);
+      if (fclose(a) != 0) ok = 0;                          // the FILE* always closes, even on a mid-write error
+      if (!ok || rename(tmp, c) != 0) remove(tmp);         // a failed write or rename drops the temp, keeps the original
     }
   }
   pthread_mutex_unlock(&muFontes);
@@ -2763,7 +2764,7 @@ static int escolherCopiaRapida(Job *j) {
     if (!hB) {
       printf("[miniatura] copy-first: copy %d (%dp) would not open\n", c + 1, j->copias[c].altura); fflush(stdout);
       snprintf(j->motivos + o, sizeof j->motivos - o, " | c%d:no-open", c + 1);
-      fonteAnotar(j->copias[c].fonte, 0);
+      if (!parou(j)) fonteAnotar(j->copias[c].fonte, 0);   // a refused open while the title ends decides nothing
       continue;
     }
     long long ib[6];
@@ -2801,16 +2802,16 @@ static int escolherCopiaRapida(Job *j) {
         return 1;
       }
       int tela = conferirTela(j, hB, (long)ib[0], &mapa);
-      if (tela != 1) por = tela == 0 ? "screen-rejected" : "no-screen-frames";
+      if (tela != 1) por = parou(j) ? "cancelled" : tela == 0 ? "screen-rejected" : "no-screen-frames";
     } else {
       int tela = conferirTela(j, hB, (long)ib[0], &mapa);
-      if (tela != 1) por = tela == 0 ? "screen-rejected" : "no-screen-frames";
+      if (tela != 1) por = parou(j) ? "cancelled" : tela == 0 ? "screen-rejected" : "no-screen-frames";
     }
     mFechar(hB);
     printf("[miniatura] copy-first: copy %d %s in %.1f s\n", c + 1, por ? por : "ACCEPTED", (SDL_GetTicks() - c0) / 1000.0);
     fflush(stdout);
     snprintf(j->motivos + o, sizeof j->motivos - o, " | c%d:%s", c + 1, por ? por : "ACCEPTED");
-    fonteAnotar(j->copias[c].fonte, !por);
+    if (!parou(j)) fonteAnotar(j->copias[c].fonte, !por);   // a check cut short by the title ending decides nothing
     if (por) continue;
     j->dCopia = 1; j->dA = mapa.a; j->dB = mapa.b; j->dAltura = j->copias[c].altura;
     snprintf(j->dUrl, sizeof j->dUrl, "%s", alvo[0] ? alvo : j->copias[c].url);
