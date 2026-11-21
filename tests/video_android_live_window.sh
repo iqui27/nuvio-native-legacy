@@ -14,6 +14,6 @@ else
   flags+=(-I"$jdk/include" -I"$jdk/include/linux" "${sdl_flags[@]}" -Wl,--gc-sections)
 fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
-cc "${flags[@]}" tests/video_android_retomada.c src/capmkv.c src/mkv.c tests/capmkv_stub.c -lpthread -lm -o "$work/test"
+cc "${flags[@]}" tests/video_android_retomada.c src/capmkv.c src/mkv.c tests/capmkv_stub.c src/farolerro.c src/farolanel.c src/fontesonda.c -lpthread -lm -o "$work/test"
 printf '3\n' > "$work/paused-ack"
 "$work/test" "$work/paused-ack"

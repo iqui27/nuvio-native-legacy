@@ -38,6 +38,7 @@
 #include "capmkv.h"
 #include "audioinfo.h"
 #include "video_reconexao.h"
+#include "farolprodutor.h"
 #include "idioma.h"
 #include "linguas.h"
 #include "audioescolha.h"
@@ -802,6 +803,7 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(JNIEn
     case EV_ERRO:    reconErroCod = a; reconErroVideo = b == 2; /* Media3 C.TRACK_TYPE_VIDEO */
                      reconErroPend = 1; tocando = 0;
                      snprintf(erroTxt, sizeof erroTxt, "%d player error:%d", a, b);
+                     farolprod_erro(FP_ANDROID, erroTxt, a, b);
                      printf("[video] android: erro do player %d (%d)\n", a, b); break;
     case EV_TAMANHO: largura = a; altura = b; break;
     case EV_BUFFER:
@@ -827,7 +829,8 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(JNIEn
       break;
     case EV_PRIMEIRO_QUADRO: marco("video: primeiro quadro (android)"); primeiroQuadro = 1; break;
     case EV_SUPERFICIE_ESTAVEL: superficieEstavel = 1; break;
-    case EV_AUDIO_SEM_DECODER: semDecoderAudio = 1; break;
+    case EV_AUDIO_SEM_DECODER: semDecoderAudio = 1;
+                     farolprod_erro(FP_ANDROID, "audio no decoder", 0, 0); break;
     case EV_LIVE_SEGMENT:
       pthread_mutex_lock(&travaRetomada);
       if (ativo && (unsigned)b == sessao) liveSegmentoMs = a > 60000 ? 60000u : a > 0 ? (unsigned)a : 0u;
@@ -1114,12 +1117,14 @@ void video_bombear(void) {
       nv_recon_expirou(&recon, SDL_GetTicks())) {
     reconErroCod = 2002; reconErroPend = 1;
     snprintf(erroTxt, sizeof erroTxt, "2002 player error: recovery timeout");
+    farolprod_erro(FP_ANDROID, erroTxt, 2002, 0);
   }
   // A silent VOD stall also needs recovery when Media3 never emits an error.
   if (!falhou && reconPermitida && reconIniciou && !pausaPedida && !nv_recon_ativa(&recon) &&
       bufferando && SDL_GetTicks() - bufferDesde >= NV_RECON_PRAZO_MS) {
     reconErroCod = 2002; reconErroPend = 1;
     snprintf(erroTxt, sizeof erroTxt, "2002 player error: stalled download");
+    farolprod_erro(FP_ANDROID, erroTxt, 2002, 0);
   }
   if (reconErroPend) {
     int antes = recon.tentativa;
@@ -1134,6 +1139,8 @@ void video_bombear(void) {
         reconPausado = pausaPedida;
       }
       if (recon.tentativa != antes) {
+        farolprod_recon(FP_ANDROID, erroTxt, reconErroCod, recon.tentativa,
+                        nv_recon_espera_ms(recon.tentativa));
         printf("[video] conexao caiu (%d): tentativa %d/%d, espera %us\n",
                reconErroCod, recon.tentativa, NV_RECON_MAX,
                nv_recon_espera_ms(recon.tentativa) / 1000u);
