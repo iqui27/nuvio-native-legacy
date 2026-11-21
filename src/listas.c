@@ -1284,6 +1284,22 @@ typedef struct {
   char estado[16], midia[8];
 } SimklTarefa;
 
+// SERIES: a dedup entre as fatias shows/anime so fecha com confirmacao
+// POSITIVA de provedor — o mesmo Simkl (!=0) ou o mesmo MAL (!=0) — e sem
+// nenhum id em contradicao (Simkl, MAL, TMDB ou um IMDb real presente nos
+// dois lados). O IMDb igual sozinho nao basta: temporadas distintas da
+// mesma obra dividem o tt, e ids ausentes nao confirmam nem contradizem.
+// O campo `imdb` pode trazer um id sintetizado ("simkl:N", "tmdb:N"), por
+// isso a comparacao vai pelos campos numericos e nao pela string.
+static int mesmaObraSerie(const CatItem *a, const CatItem *b) {
+  if (a->simkl && b->simkl && a->simkl != b->simkl) return 0;
+  if (a->mal && b->mal && a->mal != b->mal) return 0;
+  if (a->tmdb && b->tmdb && a->tmdb != b->tmdb) return 0;
+  if (!strncmp(a->imdb, "tt", 2) && !strncmp(b->imdb, "tt", 2) &&
+      strcmp(a->imdb, b->imdb)) return 0;
+  return (a->simkl && a->simkl == b->simkl) || (a->mal && a->mal == b->mal);
+}
+
 static void *fioSimkl(void *u) {
   SimklTarefa *t = u;
   CatItem *lote = NULL;
@@ -1307,20 +1323,27 @@ static void *fioSimkl(void *u) {
       // Simkl can return the same title in movies/shows and in anime; dedup
       // so it does not appear twice (as simkl.c does for plantowatch/CW).
       // Movies dedups by IMDb (F86). In Series the second slice is anime and
-      // distinct seasons of the same show share the IMDb id with different
-      // Simkl/MAL ids, so the dedup there asks for the COMPLETE identity:
-      // the IMDb match only counts when no provider id contradicts it — the
-      // same work repeats the Simkl (and MAL) id in both slices, another
-      // season changes at least one of them.
+      // distinct seasons of the same show share the IMDb id, so the dedup
+      // there asks for POSITIVE provider confirmation (mesmaObraSerie) —
+      // the same work repeats the Simkl or the MAL id in both slices,
+      // another season changes them and an absent id cannot stand in for
+      // the match.
       for (int i = base; i < n; i++) {
         int j;
         for (j = 0; j < base; j++)
-          if (lote[i].imdb[0] && !strcmp(lote[j].imdb, lote[i].imdb) &&
-              (!serie ||
-               ((lote[i].simkl == lote[j].simkl || !lote[i].simkl || !lote[j].simkl) &&
-                (lote[i].mal == lote[j].mal || !lote[i].mal || !lote[j].mal))))
+          if (serie ? mesmaObraSerie(&lote[j], &lote[i])
+                    : (lote[i].imdb[0] && !strcmp(lote[j].imdb, lote[i].imdb)))
             break;
         if (j < base) {
+          // The card that stays is the first slice's; merge into it the real
+          // IMDb and the provider ids the dropped half may carry alone.
+          if (serie) {
+            if (strncmp(lote[j].imdb, "tt", 2) && !strncmp(lote[i].imdb, "tt", 2))
+              snprintf(lote[j].imdb, sizeof lote[j].imdb, "%s", lote[i].imdb);
+            if (!lote[j].simkl) lote[j].simkl = lote[i].simkl;
+            if (!lote[j].mal) lote[j].mal = lote[i].mal;
+            if (!lote[j].tmdb) lote[j].tmdb = lote[i].tmdb;
+          }
           memmove(lote + i, lote + i + 1, sizeof lote[0] * (size_t)(n - i - 1));
           n--; i--;
         }
@@ -1330,20 +1353,37 @@ static void *fioSimkl(void *u) {
   }
   // Enrichment may compact unsupported IDs. Enrich copies so metadata failure
   // cannot remove account entries or merge distinct Simkl titles by IMDb.
-  // Each copy is matched back by the COMPLETE account identity (IMDb plus
-  // the Simkl/MAL ids): an IMDb-only match would replace a second season
-  // with the enriched copy of the first one — they share the IMDb.
+  // Each copy goes back by its ORIGIN POSITION, stashed in `ranking` (unused
+  // in this list): compaction reorders the array and the id key cannot tell
+  // two entries of the same slice apart — two seasons can even share IMDb,
+  // Simkl and MAL. The account identity (provider ids, title/year, season)
+  // is then restored over the enriched metadata.
   CatItem *enriched = malloc(sizeof *enriched * 32);
   for (int i = 0; enriched && i < n && perfis_sessao_atual(t->sessao); i += 32) {
     int end = n - i < 32 ? n - i : 32, count = 0;
     for (int j = 0; j < end; j++)
-      if (!strncmp(lote[i + j].imdb, "tt", 2)) enriched[count++] = lote[i + j];
+      if (!strncmp(lote[i + j].imdb, "tt", 2)) {
+        enriched[count] = lote[i + j];
+        enriched[count].ranking = i + j;
+        count++;
+      }
     if (count) count = trakt_enfeitar_lote_sessao(enriched, count, t->sessao);
-    for (int j = 0; j < end; j++)
-      for (int k = 0; k < count; k++)
-        if (!strcmp(lote[i + j].imdb, enriched[k].imdb) &&
-            lote[i + j].simkl == enriched[k].simkl &&
-            lote[i + j].mal == enriched[k].mal) { lote[i + j] = enriched[k]; break; }
+    for (int k = 0; k < count; k++) {
+      int j = enriched[k].ranking;
+      CatItem orig;
+      if (j < i || j >= i + end) continue;
+      orig = lote[j];
+      lote[j] = enriched[k];
+      snprintf(lote[j].imdb, sizeof lote[j].imdb, "%s", orig.imdb);
+      snprintf(lote[j].tipo, sizeof lote[j].tipo, "%s", orig.tipo);
+      snprintf(lote[j].titulo, sizeof lote[j].titulo, "%s", orig.titulo);
+      snprintf(lote[j].meta, sizeof lote[j].meta, "%s", orig.meta);
+      snprintf(lote[j].nomeEpisodio, sizeof lote[j].nomeEpisodio, "%s", orig.nomeEpisodio);
+      lote[j].tmdb = orig.tmdb; lote[j].simkl = orig.simkl; lote[j].mal = orig.mal;
+      lote[j].temporada = orig.temporada; lote[j].episodio = orig.episodio;
+      lote[j].tvdbEp = orig.tvdbEp; lote[j].progresso = orig.progresso;
+      lote[j].ranking = orig.ranking;
+    }
   }
   free(enriched);
   if (perfis_sessao_travar(t->sessao)) {
