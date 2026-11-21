@@ -1,52 +1,91 @@
 #!/bin/bash
 set -eu
 cd "$(dirname "$0")/.."
-DIR=$(mktemp -d /tmp/nuvio-mkvass-pgs.XXXXXX)
-trap 'rm -rf "$DIR"' EXIT
+DIR=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-mkvass-pgs.XXXXXX")
+# A coleta do diagnostico e opt-in: estes testes leem mkvass_diagnostico.
+export NUVIO_PGS_DIAGNOSTICS=1
+SRV=
+trap '[ -z "$SRV" ] || kill "$SRV" 2>/dev/null; rm -rf "$DIR"' EXIT
+flags=()
+if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all); fi
 # MKV minimo com uma faixa S_HDMV/PGS: um display set (objeto 6x2 em 1920x1080)
-# e outro que so limpa a tela. Sem video real.
-for MODE in ${PGS_MODES:-plain zlib strip longstrip malformed}; do
-python3 - "$DIR" "$MODE" <<'PY'
-import sys, pathlib, zlib
-p=pathlib.Path(sys.argv[1])
-def el(i,b):
-    return i.to_bytes((i.bit_length()+7)//8,'big') + (0x10000000|len(b)).to_bytes(4,'big') + b
-def u(i,n): return el(i,n.to_bytes(4,'big'))
-def seg(t,d): return bytes([t])+len(d).to_bytes(2,'big')+d
-RLE=bytes([0x01,0x00,0x83,0x02,0x00,0x02,0x00,0x00,0x00,0x40,0x03,0x00,0xC0,0x03,0x01,0x00,0x00])
-def pcs(estado,n):
-    d=(1920).to_bytes(2,'big')+(1080).to_bytes(2,'big')+b'\x10\x00\x01'+bytes([estado,0,0,n])
-    if n: d+=b'\x00\x07\x00\x00'+(100).to_bytes(2,'big')+(900).to_bytes(2,'big')
-    return seg(0x16,d)
-mostra=(pcs(0x80,1)+seg(0x14,bytes([0,0,1,235,128,128,255,2,16,128,128,128]))
-        +seg(0x15,b'\x00\x07\x00\xC0\x00'+(4+len(RLE)).to_bytes(2,'big')+b'\x00\x06\x00\x02'+RLE)+seg(0x80,b''))
-limpa=pcs(0x80,0)+seg(0x80,b'')
-mode=sys.argv[2] if len(sys.argv)>2 else 'plain'
-settings=b'\x16' if mode == 'strip' else b''
-if mode == 'longstrip':
-    settings=seg(0x81,b'\0'*80)
-    mostra,limpa=settings+mostra,settings+limpa
-comp=u(0x4254,3 if mode in ('strip','longstrip') else 0)+el(0x4255,settings)
-if mode == 'malformed': comp=u(0x4254,3)+b'\x42'
-encoding=(el(0x6d80,el(0x6240,el(0x5034,comp))) if mode != 'plain' else b'')
-tr=el(0x1654ae6b,el(0xae,u(0xd7,6)+u(0x83,17)+el(0x86,b'S_HDMV/PGS')+el(0x22b59c,b'eng')+encoding))
-if mode == 'zlib': mostra,limpa=zlib.compress(mostra),zlib.compress(limpa)
-if mode in ('strip','longstrip'):
-    assert mostra.startswith(settings) and limpa.startswith(settings)
-    mostra,limpa=mostra[len(settings):],limpa[len(settings):]
-body=u(0xe7,1000); rel=[]
-for t,d,dados in [(250,1750,mostra),(4000,None,limpa)]:
-    rel.append(len(body))
-    blk=el(0xa1,b'\x86'+t.to_bytes(2,'big',signed=True)+b'\x00'+dados)
-    body+=el(0xa0,blk+(u(0x9b,d) if d else b''))
-cluster=el(0x1f43b675,body)
-sh=el(0x114d9b74,el(0x4dbb,el(0x53ab,bytes.fromhex('1c53bb6b'))+u(0x53ac,0)))
-sh=el(0x114d9b74,el(0x4dbb,el(0x53ab,bytes.fromhex('1c53bb6b'))+u(0x53ac,len(sh)+len(tr)+len(cluster))))
-cues=el(0x1c53bb6b,b''.join(el(0xbb,u(0xb3,t)+el(0xb7,u(0xf7,6)+u(0xf1,len(sh)+len(tr))+u(0xf0,r))) for t,r in zip((1250,5000),rel)))
-p.joinpath('pgs.mkv').write_bytes(el(0x1a45dfa3,el(0x4282,b'matroska'))+el(0x18538067,sh+tr+cluster+cues+el(0xec,b'\0'*1024)))
-PY
-cc -Isrc -O1 -g -Wall -Wextra -DMKVASS_RANGES_POR_SEG=1000 tests/mkvass_pgs.c src/mkvass.c src/pgs_mkv_restore.c src/imgsub.c src/pgs.c src/legenda.c tests/mkvass_i18n.c src/assrender.c src/dados.c -lz -lm -o "$DIR/test"
+# e outro que so limpa a tela. Sem video real. Um arquivo por modo de
+# ContentEncoding: sem compressao, zlib (padrao em muitos remuxes) e cabecalho
+# removido.
+python3 tests/mkvass_pgs_fixture.py "$DIR"
+SRC="src/mkvass.c src/pgs_mkv_restore.c src/imgsub.c src/pgs.c src/legenda.c tests/mkvass_i18n.c src/assrender.c src/dados.c"
+cc ${flags[@]+"${flags[@]}"} -Isrc -O1 -g -Wall -Wextra -DMKVASS_RANGES_POR_SEG=1000 -DMKVASS_PGS_SCAN_MS=50 tests/mkvass_pgs.c $SRC -lz -lm -o "$DIR/test"
 mkdir "$DIR/dados"
-NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/pgs.mkv" "$MODE"
-rm -rf "$DIR/dados"
+for modo in plain zlib strip plain-scan zlib-scan strip-scan; do
+  echo "== PGS $modo"
+  NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/$modo.mkv"
 done
+# Variante "paced" do sparse: 5 SimpleBlocks de video de 128 KiB por Cluster —
+# leitura contigua longa o bastante para o ritmo serial mostrar Ranges de
+# 64 KiB consecutivos quando a varredura esta a frente do playhead.
+mkdir "$DIR/paced"
+python3 - "$DIR/paced" <<'PY'
+from pathlib import Path
+fixture = Path("tests/mkvass_pgs_fixture.py").read_text()
+block = "        body+=el(0xa3,b'\\x81\\0\\0\\0'+b'\\0'*(128*1024))"
+assert fixture.count(block) == 1
+fixture = fixture.replace(block, block + "*5")
+exec(compile(fixture, "fixture-pgs-paced", "exec"))
+PY
+cc ${flags[@]+"${flags[@]}"} -Isrc -O1 -g -Wall -Wextra -DMKVASS_RANGES_POR_SEG=1000 -DMKVASS_PGS_SCAN_MS=50 tests/mkvass_pgs_reliability.c $SRC -lz -lm -o "$DIR/reliability"
+for scenario in sparse empty malformed badzlib truncated nocues http paced; do
+  file="$scenario"; [ "$scenario" != http ] || file=sparse
+  [ "$scenario" != paced ] || file=paced/sparse
+  echo "== reliability $scenario"
+  NUVIO_DADOS="$DIR/dados" "$DIR/reliability" "$DIR/$file.mkv" "$scenario"
+done
+
+cc ${flags[@]+"${flags[@]}"} -Isrc -O1 -g -Wno-deprecated-declarations -DMKVASS_PGS_SCAN_MS=50 tests/mkvass_pgs_http.c $SRC src/rede.c src/redeurl.c -lz -lpthread -ldl -lm -o "$DIR/http"
+python3 tests/servidor_range.py "$DIR" > "$DIR/server.log" 2>&1 &
+SRV=$!
+for ((i=0; i<100; i++)); do
+  if rg -q '^porta ' "$DIR/server.log" 2>/dev/null; then break; fi
+  sleep 0.02
+done
+PORT=$(awk '/^porta /{print $2; exit}' "$DIR/server.log")
+test -n "$PORT"
+for route in redir/sparse norange/sparse missing; do
+  expected=0; [ "$route" != redir/sparse ] || expected=1
+  NUVIO_DADOS="$DIR/dados" "$DIR/http" "http://127.0.0.1:$PORT/$route.mkv" "$expected"
+done
+kill "$SRV" 2>/dev/null; SRV=
+# Fixture do budget: a varredura no limite exato do Cluster (pos==varreTs)
+# nao estaciona mais — a PGS vigente pode estar nele. O budget e medido num
+# Cluster ADIANTE dentro da janela (660 s com o playhead em 600), com a PGS
+# logo no inicio dele — o primeiro Range futuro ja e ritmado, entao ela
+# chega no pedaco de 64 KiB que abre o Cluster.
+mkdir "$DIR/budget-fixture"
+python3 - "$DIR/budget-fixture" <<'PY'
+from pathlib import Path
+fixture = Path("tests/mkvass_pgs_fixture.py").read_text()
+block = "        body+=el(0xa3,b'\\x81\\0\\0\\0'+b'\\0'*(128*1024))"
+assert fixture.count(block) == 1
+fixture = fixture.replace(block, block + "*4")
+secs = "for sec in (0,60,120,300,600):"
+assert fixture.count(secs) == 1
+fixture = fixture.replace(secs, "for sec in (0,60,120,300,600,660):")
+fixture = fixture.replace("zip((0,60,120,300,600),offsets)",
+                          "zip((0,60,120,300,600,660),offsets)")
+alvo = ("        body+=el(0xa3,b'\\x81\\0\\0\\0'+b'\\0'*(128*1024))*4\n"
+        "        if sec in (300,600) and kind != 'empty':\n"
+        "            packet = mostra if kind not in ('malformed','badzlib') else b'\\x16\\xff\\xff'\n"
+        "            body+=el(0xa0,el(0xa1,b'\\x86\\0\\0\\0'+packet)+u(0x9b,2000))\n"
+        "            body+=el(0xa3,b'\\x86'+(3000).to_bytes(2,'big')+b'\\0'+limpa)")
+novo = ("        if sec == 660:\n"
+        "            body+=el(0xa0,el(0xa1,b'\\x86\\0\\0\\0'+mostra)+u(0x9b,2000))\n"
+        "            body+=el(0xa3,b'\\x86'+(3000).to_bytes(2,'big')+b'\\0'+limpa)\n"
+        "        body+=el(0xa3,b'\\x81\\0\\0\\0'+b'\\0'*(128*1024))*4")
+assert fixture.count(alvo) == 1
+fixture = fixture.replace(alvo, novo)
+fixture = fixture.replace(
+    "for kind in ('sparse','empty','malformed','badzlib','truncated'):",
+    "for kind in ('sparse',):")
+exec(compile(fixture, "fixture-pgs-budget", "exec"))
+PY
+cc ${flags[@]+"${flags[@]}"} -Isrc -O1 -g -Wall -Wextra tests/mkvass_pgs_budget.c $SRC -lz -lm -o "$DIR/budget"
+NUVIO_DADOS="$DIR/dados" "$DIR/budget" "$DIR/budget-fixture/sparse.mkv"
