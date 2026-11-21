@@ -171,6 +171,22 @@ double capmkv_creditos_ultimo(double dur) {
   return 0.0;
 }
 
+// Implementacao FRACA de video_creditos_nomeado/ultimo (video.h): cobre alvo
+// sem versao propria e teste/ensaio que linka este arquivo sem backend — ali
+// `video_creditos` resolve para a versao local do ensaio (fraco-indefinido:
+// ausente, devolve 0 em vez de quebrar o link). O nomeado "cai" no composto
+// porque nao ha como separar sem o backend; o ultimo fica em 0 (conservador:
+// palpite nenhum em vez de palpite errado). webOS, .wgt, HTML5, .tpk e
+// Android tem a versao forte ao lado do proprio video_creditos.
+extern double video_creditos(void) __attribute__((weak));
+__attribute__((weak)) double video_creditos_nomeado(void) {
+  return video_creditos ? video_creditos() : 0.0;
+}
+__attribute__((weak)) double video_creditos_ultimo(double dur) {
+  (void)dur;
+  return 0.0;
+}
+
 // Uma leitura: cabecalho da pre-busca (sem rede) ou 320 KB; Chapters fora da
 // janela vai pelo SeekHead. `*recusa` = 1 quando o servidor recusou (recuar).
 static int lerUma(const char *url, MkvCap *caps, int max, int *recusa) {

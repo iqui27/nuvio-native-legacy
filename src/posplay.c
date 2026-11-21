@@ -436,7 +436,7 @@ void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
   // tem capitulo nenhum para ler.
   // Capitulo que se chama creditos > fontes (IntroDB, casadas com capitulo) >
   // "ultimo capitulo" (palpite sobre capitulos sem nome, 2.0.3).
-  double creditosSeg = capmkv_creditos_nomeado();
+  double creditosSeg = video_creditos_nomeado();
   if (creditosSeg <= 1.0) creditosSeg = intro_creditos_seg();
   if (creditosSeg <= 1.0) creditosSeg = video_creditos();
   anim = anim_mola(anim, visivel ? 1.0f : 0.0f, dt, NV_MOLA_TELA);

@@ -947,6 +947,15 @@ static double creditosNomeado, creditosUltimo;
 static pthread_t fioMkv;
 static int       fioMkvVivo, mkvPendente;
 
+// Fonte nova ou fim da reproducao: os marcadores do arquivo anterior nao
+// valem — nem os locais (video_creditos*) nem os publicados (a lista de
+// capitulos da barra e os trechos de intro saem do capmkv). Mesma limpeza que
+// video_tocar/video_parar fazem na LG (capmkv_zerar, src/video.c).
+static void limparCreditosCapitulos(void) {
+  creditosNomeado = creditosUltimo = 0.0;
+  capmkv_zerar();
+}
+
 static VideoLegendaEstilo estilo = { 120, 0, 0, 3, 1, 0, 0, 0 };
 static int temEstilo;
 
@@ -979,7 +988,7 @@ int video_tocar(const char *url) {
 
   // Titulo novo: o marcador do anterior nao vale. Sem isto um filme sem
   // capitulos herdaria os creditos do filme de antes.
-  creditosNomeado = creditosUltimo = 0.0;
+  limparCreditosCapitulos();
   roiResetTentativas = 0;
   roiAtivo = 1;   // o recorte do titulo anterior pode ter ficado no player
   snprintf(urlAtual, sizeof urlAtual, "%s", url);
@@ -1260,7 +1269,10 @@ static void *lerMkv(void *arg) {
   (void)arg;
   snprintf(url, sizeof url, "%s", urlAtual);
   n = mkv_faixas_e_caps(url, fx, MKV_MAX_FAIXAS, caps, MKV_MAX_CAPS, &nCaps);
-  if (nCaps > 0) {
+  // A fonte pode ter trocado enquanto o fio lia: os capitulos e os idiomas do
+  // arquivo anterior nao valem para o que esta tocando agora. Mesma checagem
+  // por strcmp que a LG faz junto da sessao (mkvFioSessao, src/video.c).
+  if (nCaps > 0 && !strcmp(url, urlAtual)) {
     creditosNomeado = mkv_creditos_nomeados(caps, nCaps);
     creditosUltimo  = mkv_creditos_ultimo(caps, nCaps);
     printf("[mkv] %d capitulos; creditos nomeados em %.0fs, ultimo em %.0fs\n",
@@ -1269,7 +1281,7 @@ static void *lerMkv(void *arg) {
     capmkv_aplicar(caps, nCaps);   // abertura/creditos/previa do arquivo -> modulo de intro
   }
   if (n < 1) marco("mkv: nenhuma faixa lida (nao e MKV, ou Range falhou)");
-  else aplicarIdiomasDoMkv(fx, n);
+  else if (!strcmp(url, urlAtual)) aplicarIdiomasDoMkv(fx, n);
   fioMkvVivo = 0;
   return NULL;
 }
@@ -1437,6 +1449,7 @@ void video_sondar_mkv_agora(void) {
 
 void video_parar(void) {
   nv_recon_zerar(&recon);
+  limparCreditosCapitulos();   // fio de capitulos em voo nao alimenta o proximo titulo
   reconFaixasPend = 0; reconBuscar = -1.0;
   recarregarPausa = -1; pausaPedida = 0;
   seekEm = 0; mkvPendente = 0;
@@ -1720,6 +1733,16 @@ double video_creditos(void) {
   double dur;
   if (creditosNomeado > 1.0) return creditosNomeado;
   dur = video_duracao();
+  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75 &&
+      dur - creditosUltimo >= CAPMKV_ULTIMO_FOLGA_S)   // toco no fim nao e creditos
+    return creditosUltimo;
+  return 0.0;
+}
+
+double video_creditos_nomeado(void) {
+  return creditosNomeado > 1.0 ? creditosNomeado : 0.0;
+}
+double video_creditos_ultimo(double dur) {
   if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75 &&
       dur - creditosUltimo >= CAPMKV_ULTIMO_FOLGA_S)   // toco no fim nao e creditos
     return creditosUltimo;

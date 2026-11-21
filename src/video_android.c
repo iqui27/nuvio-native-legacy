@@ -1293,6 +1293,8 @@ double video_pos_amostra(Uint64 *t) {
 double video_duracao(void) { return durMs / 1000.0; }
 // Capitulos do MKV lidos por um fio lateral (capmkv.c, 203-capitulos).
 double video_creditos(void) { return capmkv_creditos(video_duracao()); }
+double video_creditos_nomeado(void) { return capmkv_creditos_nomeado(); }
+double video_creditos_ultimo(double dur) { return capmkv_creditos_ultimo(dur); }
 int video_live_progresso(double *pos, double *fim) {
   int valido;
   pthread_mutex_lock(&travaRetomada);
