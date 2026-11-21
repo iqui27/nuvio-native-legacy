@@ -1059,18 +1059,32 @@ static pthread_mutex_t dtsLock = PTHREAD_MUTEX_INITIALIZER;
  * refused here (0 = do not even start the read), so it cannot reserve a
  * sequence above the probe of the title that replaced it, and is refused
  * again under this same lock when it would publish. */
-static unsigned dtsSondaNova(const unsigned *geracao, unsigned esperada) {
+static unsigned dtsSondaNova(const _Atomic unsigned *geracao, unsigned esperada) {
   pthread_mutex_lock(&dtsLock);
   unsigned s = !geracao || *geracao == esperada ? ++dtsSeq : 0;
   pthread_mutex_unlock(&dtsLock);
   return s;
 }
-static void dtsPublicar(const MkvDts *c, unsigned sonda,
-                        const unsigned *geracao, unsigned esperada) {
+/* Advances the caller's generation (video_tpk.c mkvGeracao) under the same
+ * lock as the sequence reservation and the publication: an advance cannot
+ * slip between the generation check and the write in dtsPublicar — either the
+ * whole publication linearizes before the title change (and the new title's
+ * probe overwrites it), or it already sees the new generation and is refused. */
+void mkv_geracao_avancar(_Atomic unsigned *geracao) {
   pthread_mutex_lock(&dtsLock);
-  if (sonda == dtsSeq && (!geracao || *geracao == esperada)) {
-    dtsPub = *c;
-    dtsSondaPub = sonda;
+  ++*geracao;
+  pthread_mutex_unlock(&dtsLock);
+}
+static void dtsPublicar(const MkvDts *c, unsigned sonda,
+                        const _Atomic unsigned *geracao, unsigned esperada) {
+  pthread_mutex_lock(&dtsLock);
+  if (sonda == dtsSeq) {
+    // The generation is the last gate, read right next to the write: the
+    // advance takes this same dtsLock, so it cannot come between the two.
+    if (!geracao || *geracao == esperada) {
+      dtsPub = *c;
+      dtsSondaPub = sonda;
+    }
   }
   pthread_mutex_unlock(&dtsLock);
 }
@@ -1213,7 +1227,7 @@ const char *mkv_contentor_nome(int c) {
 
 static int mkvSonda(const char *url, MkvFaixa *saida, int max,
                     MkvCap *caps, int maxCaps, int *nCaps,
-                    const unsigned *geracao, unsigned esperada) {
+                    const _Atomic unsigned *geracao, unsigned esperada) {
   char *buf;
   long n = 0;
   int achou;
@@ -1287,7 +1301,7 @@ int mkv_faixas(const char *url, MkvFaixa *saida, int max) {
  * publicar, entao um worker da geracao anterior nao reserva sequencia acima da
  * sonda do titulo novo nem sobrescreve o resultado dela. */
 int mkv_faixas_geracao(const char *url, MkvFaixa *saida, int max,
-                       const unsigned *geracao, unsigned esperada) {
+                       const _Atomic unsigned *geracao, unsigned esperada) {
   return mkvSonda(url, saida, max, NULL, 0, NULL, geracao, esperada);
 }
 

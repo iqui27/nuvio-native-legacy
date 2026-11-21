@@ -199,7 +199,9 @@ static volatile int mkvN, mkvEstado, faixasNovas;
 // #269: a folha pediu a sonda ja (video_sondar_mkv_agora); `mkvNaoMkv`: a
 // sonda pela rede voltou sem TrackEntry nenhuma (nao e MKV).
 static volatile int mkvSondarJa, mkvNaoMkv;
-static unsigned mkvGeracao;
+// Atomica: lida solta pelo fioMkv e pelo spawn, e so avanca por
+// mkv_geracao_avancar — sob a mesma dtsLock da reserva/publicacao da sonda.
+static atomic_uint mkvGeracao;
 static int legOcultas(void);
 static void legendasDoArquivo(void);
 static int mkvSondaUrl(char *out, size_t n);
@@ -969,7 +971,7 @@ int video_tocar(const char *u) {
   reconPermitida = reconProxima; reconProxima = 0;
   if (reconPermitida) capmkv_iniciar(urlAtual);
   else capmkv_zerar();
-  mkvGeracao++; mkvN = 0; faixasNovas = 0; mkvOlhou = 0; mkvSondarJa = 0; mkvNaoMkv = !reconPermitida;
+  mkv_geracao_avancar(&mkvGeracao); mkvN = 0; faixasNovas = 0; mkvOlhou = 0; mkvSondarJa = 0; mkvNaoMkv = !reconPermitida;
   // Um fio da fonte anterior ainda na rede ve a geracao mudada e descarta.
   mkvEstado = urlAtual[0] && reconPermitida ? 1 : 0;
   pausaPedida = 0; reconPausa = -1;

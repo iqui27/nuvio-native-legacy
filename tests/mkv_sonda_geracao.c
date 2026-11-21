@@ -27,7 +27,7 @@
 
 #define URL_MAX 128
 typedef struct { char url[URL_MAX]; unsigned geracao; } PedidoMkv;
-static unsigned mkvGeracao = 1;
+static _Atomic unsigned mkvGeracao = 1;
 static int mkvNaoMkv, mkvEstado, stored_tracks;
 static pthread_barrier_t worker_entered, release_worker;
 static int delay_at_network;
@@ -104,7 +104,7 @@ int main(int argc, char **argv) {
     assert(!pthread_create(&thread, NULL, fioMkv, request));
   }
   wait_at(&worker_entered);
-  mkvGeracao++;
+  mkv_geracao_avancar(&mkvGeracao);
   MkvFaixa tracks[MKV_MAX_FAIXAS];
   int count = mkv_faixas_do_trecho(active_header, active_size, tracks, MKV_MAX_FAIXAS, NULL, 0, NULL);
   int track = -1;

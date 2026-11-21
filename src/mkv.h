@@ -94,8 +94,18 @@ int mkv_faixas(const char *url, MkvFaixa *saida, int max);
 // fio viu ao nascer. A geracao e relida sob a mesma trava da publicacao DTS ao
 // reservar a sequencia da sonda e ao publicar o resultado — um fio da geracao
 // anterior nao inicia a leitura nem sobrescreve a classificacao da sonda ativa.
+// O contador e atomico (as leituras soltas do chamador ficam sem corrida) e so
+// avanca por mkv_geracao_avancar, sob a MESMA trava: comparacao e atribuicao
+// da publicacao sao atomicas em relacao a troca de titulo.
 int mkv_faixas_geracao(const char *url, MkvFaixa *saida, int max,
-                       const unsigned *geracao, unsigned esperada);
+                       const _Atomic unsigned *geracao, unsigned esperada);
+
+// Avanca a geracao viva do chamador sob a mesma trava da reserva e da
+// publicacao (dtsLock, em mkv.c): a virada de titulo nao pode entrar entre a
+// conferencia da geracao e a escrita do resultado — um worker que publica
+// antes lineariza antes da virada (e a sonda do titulo novo o sobrescreve);
+// um que chega depois ja ve a geracao nova e e recusado.
+void mkv_geracao_avancar(_Atomic unsigned *geracao);
 
 // Mesma leitura, UMA viagem so, devolvendo tambem os capitulos. `caps` pode ser
 // NULL. O numero de capitulos sai por `nCaps`.
