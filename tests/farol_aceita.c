@@ -1,6 +1,6 @@
 // Farol — faroltexto_aceita() filtra o texto livre "x" da cena (PLANO-GOSTO
-// 4.1, issue 35). Roda a funcao de producao de src/faroltexto.c sobre 60
-// frases boas e 60 ruins, uma de cada trava: largura, 3a linha, UTF-8
+// 4.1, issue 35). Roda a funcao de producao de src/faroltexto.c sobre 72
+// frases boas e 81 ruins, uma de cada trava: largura, 3a linha, UTF-8
 // quebrado, controle, URL, emoji e cada palavra da lista "nunca diz" do
 // ALMA 2 — em pt e em en, com e sem acento.
 //
@@ -107,6 +107,9 @@ int main(void) {
   BOM("അവന്‍");                                    // ZWJ e ortografia legitima (malayalam)
   BOM("Curto para hoje Ⓜ");                             // simbolo de apresentacao textual
   BOM("葛󠄀");                                          // seletor ideografico e CJK legitimo
+  BOM("今夜の候補は○で印をつけました。");            // ○ textual, nao emoji (U+25CB)
+  BOM("Marque ○ ou ● no quadro de hoje.");            // formas sem apresentacao emoji
+  BOM("A resenha diz «imperdível».");                 // aspas angulares sao separador
 
   // ------------------------------- 60 ruins ------------------------------
   RUIM(NULL);                                          // nada
@@ -198,10 +201,19 @@ int main(void) {
   RUIM("Uma\xE2\x80\xA8" "duas\xE2\x80\xA8" "três");      // U+2028 = quebra (3 linhas)
   RUIM(" \nCurto para hoje.");                            // linha so de espacos
   RUIM("Curto para hoje \xE2\x97\xBD");                   // ◽ emoji de apresentacao padrao
+  RUIM("Curto para hoje ▪");                              // U+25AA idem
+  // aspas angulares e pontuacao latina sao separador, nao letra: nao
+  // reabrem a fronteira de URL nem de palavra proibida
+  RUIM("Veja «exemplo.com» para saber mais.");
+  RUIM("Veja «www.exemplo.org» para saber mais.");
+  RUIM("«Hello!» Uma sugestão para hoje.");
+  RUIM("¡Hello! Uma sugestão para hoje.");
+  RUIM("¿Hello! Uma sugestão para hoje.");
+  RUIM("Veja rtsp2://servidor/filme.");                   // esquema que termina em digito
 
   printf("farol_aceita: %d boas aceitas, %d ruins recusadas", boas, ruins);
-  if (boas != 69 || ruins != 74) {
-    printf(" — ERRO: esperado 69+74\n");
+  if (boas != 72 || ruins != 81) {
+    printf(" — ERRO: esperado 72+81\n");
     return 1;
   }
   if (falhas) { printf(" — %d falha(s)\n", falhas); return 1; }

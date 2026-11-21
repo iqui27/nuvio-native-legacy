@@ -45,7 +45,11 @@ static int ft_emoji(long cp) {
   if (cp >= 0x1F000 && cp <= 0x1FAFF) return 1;   // pictograficos, emojis, bandeiras
   if (cp >= 0x2600 && cp <= 0x27BF) return 1;     // simbolos diversos + dingbats
   if (cp >= 0x2B00 && cp <= 0x2BFF) return 1;     // estrelas e setas ornamentais
-  if (cp >= 0x25A0 && cp <= 0x25FF) return 1;     // formas geometricas ("◽" e cia)
+  // Das formas geometricas so os pontos com apresentacao emoji padrao sao
+  // vedados (◽ e cia): o resto — ○ □ ● △ — e sinal textual legitimo, e o
+  // japones usa ○ (U+25CB) para marcar opcao.
+  if (cp == 0x25AA || cp == 0x25AB || cp == 0x25B6 || cp == 0x25C0 ||
+      (cp >= 0x25FB && cp <= 0x25FE)) return 1;
   if (cp >= 0x2300 && cp <= 0x23FF) return 1;     // tecnico diverso (relogio, midia)
   if (cp == 0x20E3) return 1;                     // tecla
   if (cp >= 0xFE00 && cp <= 0xFE0F) return 1;     // seletores de variacao
@@ -71,10 +75,20 @@ static int ft_branco(long cp) {
 }
 
 static int ft_pontuacao(long cp) {
-  return (cp >= 0x2000 && cp <= 0x206F) ||    // pontuacao geral (— … ‐ ZWSP)
-         (cp >= 0x3001 && cp <= 0x303F) ||    // pontuacao CJK (、。〈〉「」)
-         (cp >= 0xFE30 && cp <= 0xFE4F) ||    // pontuacao CJK de apresentacao
-         (cp >= 0xFF61 && cp <= 0xFF65);      // pontuacao halfwidth
+  // Latim-1 sem letra: ¡ ¢ £ ¤ ¥ ¦ § ¨ © « ¬ ­ ® ¯ ° ± ² ³ ´ ¶ · ¸ ¹ » ¼ ½ ¾ ¿
+  // nao podem fazer parte de palavra — se pesassem como letra, «» e ¡
+  // reabririam URL e saudacao entre aspas. ª º µ ficam de fora: sao letras.
+  if (cp >= 0xA1 && cp <= 0xBF)
+    return cp != 0xAA && cp != 0xB5 && cp != 0xBA;
+  return (cp >= 0x2000 && cp <= 0x206F) ||    // pontuacao geral (— … ‐ ‹ › „ “” ZWSP)
+         (cp >= 0x2E00 && cp <= 0x2E7F) ||    // pontuacao suplementar
+         (cp >= 0x3001 && cp <= 0x303F) ||    // pontuacao CJK (、。〈〉「」『』)
+         (cp >= 0xFE10 && cp <= 0xFE1F) ||    // pontuacao vertical
+         (cp >= 0xFE30 && cp <= 0xFE6F) ||    // CJK de apresentacao + pequenas
+         (cp >= 0xFF01 && cp <= 0xFF0F) ||    // pontuacao fullwidth (！＂… ／)
+         (cp >= 0xFF1A && cp <= 0xFF20) ||    // (：；＜＝＞？＠)
+         (cp >= 0xFF3B && cp <= 0xFF40) ||    // (［＼］＾＿｀)
+         (cp >= 0xFF5B && cp <= 0xFF65);      // (｛｜｝～｟｠ e halfwidth ｡｢｣､･)
 }
 
 // Base ascii de um latim-1 (U+00C0..U+00FF); 0 quando o ponto nao tem base
@@ -184,8 +198,15 @@ static int ft_tem_url(const char *d) {
     ".com", ".net", ".org", ".br", ".io", ".tv", ".me", ".app",
     ".dev", ".info", ".xyz", ".co", ".site", ".online", ".link",
   };
-  for (const char *p = d; (p = ft_str(p, "://")); p += 3)
-    if (p != d && p[-1] >= 'a' && p[-1] <= 'z') return 1;
+  for (const char *p = d; (p = ft_str(p, "://")); p += 3) {
+    // esquema = letra + letras/digitos/+-. : "rtsp2://" conta, "://" solto
+    // e "123://" nao (sem a letra de abertura nao e esquema — RFC 3986)
+    const char *q = p;
+    while (q != d && ((q[-1] >= 'a' && q[-1] <= 'z') ||
+                      (q[-1] >= '0' && q[-1] <= '9') ||
+                      q[-1] == '+' || q[-1] == '-' || q[-1] == '.')) q--;
+    if (q != p && *q >= 'a' && *q <= 'z') return 1;
+  }
   for (const char *p = d; (p = ft_str(p, "www.")); p += 4)
     if (p == d || !ft_letra(p[-1])) return 1;
   for (const char *p = d; (p = ft_str(p, ".")); p++) {

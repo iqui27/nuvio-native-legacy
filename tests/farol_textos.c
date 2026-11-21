@@ -100,8 +100,13 @@ static int ft_branco(long cp) {
          cp == 0x2028 || cp == 0x2029 || cp == 0x202F || cp == 0x3000;
 }
 static int ft_pontuacao(long cp) {
-  return (cp >= 0x2000 && cp <= 0x206F) || (cp >= 0x3001 && cp <= 0x303F) ||
-         (cp >= 0xFE30 && cp <= 0xFE4F) || (cp >= 0xFF61 && cp <= 0xFF65);
+  if (cp >= 0xA1 && cp <= 0xBF)
+    return cp != 0xAA && cp != 0xB5 && cp != 0xBA;
+  return (cp >= 0x2000 && cp <= 0x206F) || (cp >= 0x2E00 && cp <= 0x2E7F) ||
+         (cp >= 0x3001 && cp <= 0x303F) || (cp >= 0xFE10 && cp <= 0xFE1F) ||
+         (cp >= 0xFE30 && cp <= 0xFE6F) ||
+         (cp >= 0xFF01 && cp <= 0xFF0F) || (cp >= 0xFF1A && cp <= 0xFF20) ||
+         (cp >= 0xFF3B && cp <= 0xFF40) || (cp >= 0xFF5B && cp <= 0xFF65);
 }
 static char ft_base_latim(long cp) {
   static const char T[0x40] = {
@@ -334,6 +339,33 @@ static void confere_duas_noites_hu(void) {
   }
 }
 
+// ---- o filtro de producao sobre as regressoes da revisao -----------------
+// As aspas e a pontuacao latina sao separador, nao letra: « » e ¡ ¿ nao
+// reabrem a fronteira de URL nem de palavra proibida; o circulo textual
+// U+25CB segue fora da lista de emoji (so os pontos com apresentacao emoji
+// do bloco geometrico sao vedados); e o esquema de URL admite digito depois
+// da letra de abertura (rtsp2://).
+static void confere_filtro_pontuacao(void) {
+  static const struct { const char *s; int ok; } C[] = {
+    { "Veja «exemplo.com» para saber mais.", 0 },
+    { "Veja «www.exemplo.org» para saber mais.", 0 },
+    { "«Hello!» Uma sugestão para hoje.", 0 },
+    { "¡Hello! Uma sugestão para hoje.", 0 },
+    { "¿Hello! Uma sugestão para hoje.", 0 },
+    { "Veja rtsp2://servidor/filme.", 0 },
+    { "Curto para hoje ▪", 0 },
+    { "今夜の候補は○で印をつけました。", 1 },
+    { "A resenha diz «imperdível».", 1 },
+    { "O título é Łoi.", 1 },
+  };
+  for (size_t i = 0; i < sizeof C / sizeof *C; i++)
+    if (!!faroltexto_aceita(C[i].s) != C[i].ok) {
+      printf("FALHOU: filtro %s \"%s\"\n",
+             C[i].ok ? "recusou" : "aceitou", C[i].s);
+      falhas++;
+    }
+}
+
 // ---- largura e aceitacao dos modelos do gosto nas 31 linguas -------------
 //
 // A cauda de FAROL_FRASES (de FT_FIL_PORQUE_TERMINOU em diante) e o lote da
@@ -493,6 +525,7 @@ int main(void) {
   confere_acha_zh(IDIOMA_ZHTW, "zhtw");
   confere_acha_curtos_ja();
   confere_duas_noites_hu();
+  confere_filtro_pontuacao();
   // a cauda de FAROL_FRASES e o lote do gosto (issue 35)
   size_t gosto_ini = n;
   for (size_t i = 0; i < n; i++)
