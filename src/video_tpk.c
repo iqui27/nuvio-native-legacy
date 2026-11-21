@@ -539,6 +539,37 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
   if ((tipo == EV_TOCANDO && !tocando) || tipo == EV_PAUSADO ||
       (tipo == EV_BUFFER && bufferando != (a < 100)))
     atomic_store(&vigiaReiniciar, 1);
+  // #728: o prazo das legendas limpa a marca para -2, mas o host tem ate 15 s
+  // para confirmar — o rearme devolve o ack atrasado DA OPERACAO CORRENTE ao
+  // CAS do caso EV_BUSCOU, que confirma igual a um ack dentro do prazo. E o
+  // alvo em ms nao nomeia a operacao: o host serializa as buscas, guarda so
+  // o ultimo pedido pendente e emite o ack da operacao EM ANDAMENTO antes de
+  // o assumir (tizen-tpk/Video.cs:699-745). Dois seeks ao mesmo ponto recebem
+  // o mesmo EV_BUSCOU, entao a decisao e por geracao: o ack que casa
+  // buscaFioMs conclui a operacao registrada — da geracao corrente confirma,
+  // da superada so promove o ultimo pendente ao posto de operacao em
+  // andamento, mantendo o seek novo a espera do proprio ack mesmo com alvo
+  // igual. Ack fora da operacao registrada nao vale: o alvo vira -3, que
+  // nunca e alvo armado, e o CAS do caso nao confirma.
+  if (tipo == EV_BUSCOU && a >= 0) {
+#ifdef NV_TEST_TPK_ACK
+    tpk_teste_ack_ponto();
+#endif
+    int corrente = 0;
+    pthread_mutex_lock(&buscaGerTrava);
+    if (buscaGerFio && a == buscaFioMs) {
+      corrente = buscaGerFio == buscaGer;
+      if (corrente) {
+        buscaGerFio = 0;
+        int liberado = -2;
+        atomic_compare_exchange_strong(&buscaAlvoMs, &liberado, a);
+      } else {
+        buscaGerFio = buscaGer; buscaFioMs = atomic_load(&buscaUltimoMs);
+      }
+    }
+    pthread_mutex_unlock(&buscaGerTrava);
+    if (!corrente) { b = a; a = -3; }   // o alvo descartado fica no log, no b vazio
+  }
   switch (tipo) {
     case EV_PRESO: { // -1 = ultimo relogio; GetState nao apaga alvo de seek.
       int vazio = -2;
@@ -547,32 +578,8 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
       break;
     }
     case EV_BUSCOU:
-      // #728: o ack conclui a operacao EM ANDAMENTO do host (buscaFioMs), nao
-      // qualquer seek com o mesmo alvo. Da geracao corrente ele confirma —
-      // rearmando -2 -> alvo antes, pois o prazo das legendas pode ter limpo a
-      // marca (o host tem ate 15 s). De uma geracao superada ele so promove
-      // o ultimo pedido ao posto de operacao em andamento: o seek novo segue
-      // esperando o proprio ack, mesmo com alvo igual. Ack que nao casa com a
-      // operacao registrada nao vale para nada.
-      if (a >= 0) {
-#ifdef NV_TEST_TPK_ACK
-        tpk_teste_ack_ponto();
-#endif
-        int corrente = 0;
-        pthread_mutex_lock(&buscaGerTrava);
-        if (buscaGerFio && a == buscaFioMs) {
-          corrente = buscaGerFio == buscaGer;
-          if (corrente) buscaGerFio = 0;
-          else { buscaGerFio = buscaGer; buscaFioMs = atomic_load(&buscaUltimoMs); }
-        }
-        pthread_mutex_unlock(&buscaGerTrava);
-        if (corrente) {
-          int liberado = -2;
-          atomic_compare_exchange_strong(&buscaAlvoMs, &liberado, a);
-          if (atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1))
-            atomic_store(&legSeekChegou, 1);
-        }
-      }
+      if (atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1))
+        atomic_store(&legSeekChegou, 1);
       break;
     case EV_CONSULTA_LENTA: atomic_store(&consultaLentaEm, SDL_GetTicks() | 1u); break;
     case EV_PRONTO:  durMs = a; pronto = 1; break;
@@ -2092,12 +2099,11 @@ void video_parar(void) {
   legendaLimpar(1);
   nv_recon_zerar(&recon);
   reconErroPend = 0; reconFaixasPend = 0; reconBuscarMs = -1; reconPausa = -1; reconBuscaUsr = 0;
-  reconAlvoMs = -1;
+  reconAlvoMs = buscaAlvoMs = -1;
+  atomic_store(&playerPreso, -2); // aviso de antes da saida nao reabre o video
   pthread_mutex_lock(&buscaGerTrava);
-  buscaAlvoMs = -1;
   buscaGerFio = 0;   // o host parou: ack da sessao morta nao confirma nada
   pthread_mutex_unlock(&buscaGerTrava);
-  atomic_store(&playerPreso, -2); // aviso de antes da saida nao reabre o video
   if (ativo && hParar) hParar();
   ativo = pronto = tocando = 0;
 }

@@ -19,7 +19,9 @@ esac
 SDL="-I/opt/homebrew/include $(sdl2-config --cflags) $(sdl2-config --libs)"
 rc=0
 for flag in '' '-DNV_TPK40'; do
-  ${CC:-cc} -O1 -g -Wall -DNV_TPK $flag -DNV_TEST_DIRECT_CDN -DNV_TEST_TPK_ACK -Isrc ${flags[@]+"${flags[@]}"} tests/tpk728_ack.c src/video_tpk.c src/mkvfix.c src/vazao.c src/velocidade.c src/faixasmkv.c src/audioinfo.c src/audioescolha.c src/mkv.c src/capmkv.c -lpthread $SDL -o "${TMPDIR:-/tmp}/nuvio-tpk728-ack"
+  # NV_MKVFIX_SEM_REDE: a sonda do mkvfix roda em fio real e acabaria em tempo
+  # nao deterministico, segurando mf.pend (busca_em_voo) fora do cenario.
+  ${CC:-cc} -O1 -g -Wall -DNV_TPK $flag -DNV_TEST_DIRECT_CDN -DNV_TEST_TPK_ACK -DNV_MKVFIX_SEM_REDE -Isrc ${flags[@]+"${flags[@]}"} tests/tpk728_ack.c src/video_tpk.c src/mkvfix.c src/vazao.c src/velocidade.c src/faixasmkv.c src/audioinfo.c src/audioescolha.c src/mkv.c src/capmkv.c -lpthread $SDL -o "${TMPDIR:-/tmp}/nuvio-tpk728-ack"
   "${TMPDIR:-/tmp}/nuvio-tpk728-ack"                 || rc=1  # ack de alvo velho descartado
   "${TMPDIR:-/tmp}/nuvio-tpk728-ack" prazo           || rc=1  # ack na janela do -2 das legendas
   "${TMPDIR:-/tmp}/nuvio-tpk728-ack" repetido        || rc=1  # ack velho com o mesmo alvo
