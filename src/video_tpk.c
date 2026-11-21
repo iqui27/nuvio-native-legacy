@@ -1985,10 +1985,17 @@ void video_volume(int pct) { if (hVolume) hVolume(pct); }
 void video_buscar(double s) {
   if (nv_recon_ativa(&recon)) {
     recon.alvo = s;
-    if (recon.pendente || reconErroPend || !pronto || reconBuscarMs >= 0) { reconBuscarMs = (int)(s * 1000.0); return; }
+    if (recon.pendente || reconErroPend || !pronto || reconBuscarMs >= 0) {
+      reconBuscarMs = (int)(s * 1000.0);
+      /* #728: o "reabrindo" aponta para o alvo NOVO do seek na hora — sem isto o
+       * vigia segurava a posicao da queda ate 30 s (barra, toast e capa presos). */
+      if (cv.reabrindo) { cv.posMantida = s; cv.reabTocandoEm = 0; }
+      return;
+    }
   }
   progressoEm = SDL_GetTicks(); progressoPos = video_pos(); vigiaAtiva = 1;
   buscaAlvoMs = (int)(s * 1000.0);
+  if (cv.reabrindo) { cv.posMantida = s; cv.reabTocandoEm = 0; }
   legEsperaSeekEm = 0;
   if (legEscrito >= 0 && travaLeg) {
     Uint32 envEm;
