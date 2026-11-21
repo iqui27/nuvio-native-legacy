@@ -614,9 +614,9 @@ int main(void) {
   if (getenv("NV_TEST_787")) {
     char *body = malloc(400000);
     assert(body);
-    for (int c = 0; c < 3; c++) {
-      int seasons = c == 0 ? 52 : c == 1 ? 31 : 50;
-      int per = c == 0 ? 20 : c == 1 ? 150 : 100;
+    for (int c = 0; c < 4; c++) {
+      int seasons = c == 0 ? 52 : c == 1 ? 31 : c == 2 ? 50 : 40;
+      int per = c == 0 ? 20 : c == 1 ? 150 : c == 2 ? 100 : 130;
       size_t k = (size_t)sprintf(body, "{\"videos\":[");
       TempsPub tp = {0};
       for (int t = 1; t <= seasons; t++)
@@ -626,12 +626,86 @@ int main(void) {
       sprintf(body + k, "]}");
       catalogoCom("tt787", "series", "Long series");
       snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt787");
+      int total = seasons * per;
       int n = publicarEpisodiosEx(body, 0, "Long series", NULL, 0, &tp, 0);
-      fprintf(stderr, "#787: %d x %d -> %d episodes, %d seasons\n", seasons, per, n, tp.n);
-      assert(n == seasons * per && tp.n == seasons);
+      int esperado = total > 5000 ? 5000 : total;
+      fprintf(stderr, "#787: %d x %d -> %d episodes, %d seasons (total %d)\n", seasons, per, n, tp.n, total);
+      assert(n == esperado && tp.n == seasons);
       assert(cat_n_episodios(0) == n);
-      const CatEp *last = cat_episodio(0, n - 1);
-      assert(last && last->temporada == seasons && last->episodio == per);
+      assert(cat_item(0)->nTemporadas == seasons);
+      if (n == total) {
+        const CatEp *last = cat_episodio(0, n - 1);
+        assert(last && last->temporada == seasons && last->episodio == per);
+      }
+      if (seasons == 40 && per == 130 && n < total) {
+        epCorpoLiberar();
+        epCorpoGuardar("tt787", body);
+        assert(cat_item(0)->epsParciais);
+        assert(appendTemporadaCorpo(0, 40));
+        assert(epTempResidente(0, 40) == per);
+      }
+    }
+    // CAMINHO DE PRODUCAO (#787 volta 3): /meta de 40x130 publica o teto, e a
+    // aba pedida por desc_episodios completa do corpo guardado — a truncada
+    // (39) e a ausente (40) — sem que um buscarEps posterior as apague.
+    {
+      char *meta = malloc(400000);
+      size_t kk = (size_t)snprintf(meta, 400000,
+        "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\",\"name\":\"Series\",\"videos\":[");
+      assert(meta);
+      for (int t = 1; t <= 40; t++)
+        for (int e = 1; e <= 130; e++)
+          kk += (size_t)(e == 1
+            ? snprintf(meta + kk, 400000 - kk,
+                "%s{\"id\":\"source:%d:1\",\"season\":%d,\"episode\":1,"
+                "\"overview\":\"Sinopse %d\",\"runtime\":\"25min\","
+                "\"thumbnail\":\"https://t.test/%d.jpg\"}",
+                t == 1 && e == 1 ? "" : ",", t, t, t, t)
+            : snprintf(meta + kk, 400000 - kk,
+                "%s{\"id\":\"source:%d:%d\",\"season\":%d,\"episode\":%d}",
+                ",", t, e, t, e));
+      snprintf(meta + kk, 400000 - kk, "]}}");
+      nFake = 0; nRotas = 0; addonMeta = 0; addonResp = NULL;
+      cineSerie = meta;
+      limparCacheMeta();
+      epCorpoLiberar();
+      catalogoCom("tt13293588", "series", "Series");
+      abrir();
+      assert(cat_n_episodios(0) == 5000);
+      assert(epTempResidente(0, 39) == 60 && epTempResidente(0, 40) == 0);
+      assert(cat_item(0)->nTemporadas == 40 && cat_item(0)->epsParciais);
+      fioEpVivo = 0;   // o fio da abertura terminou, como na pagina real
+      int pedidos0 = nPedidos;
+      desc_episodios(0, 39);
+      assert(epTempResidente(0, 39) == 130);
+      assert(nPedidos == pedidos0 && !fioEpVivo);
+      desc_episodios(0, 40);
+      assert(epTempResidente(0, 40) == 130 && epTempResidente(0, 39) == 130);
+      assert(nPedidos == pedidos0 && !fioEpVivo);
+      // ID DE VIDEO E CAMPOS PRESERVADOS (#787 r2): a temporada recomposta do
+      // corpo guardado tem de trazer vid ("source:T:E", que o addon de fontes
+      // recebe no /stream), sinopse, duracao e miniatura do /meta — a versao
+      // reduzida publicava so numero/nome e cat_id_stream voltava ao
+      // "tt13293588:T:E" montado na mao.
+      { char stream[64], esperado[64]; const CatEp *ep1;
+        int i2, n2 = cat_n_episodios(0), t;
+        for (t = 39; t <= 40; t++) {
+          ep1 = NULL;
+          for (i2 = 0; i2 < n2; i2++) {
+            const CatEp *c = cat_episodio(0, i2);
+            if (c && c->temporada == t && c->episodio == 1) { ep1 = c; break; }
+          }
+          assert(ep1);
+          assert(cat_id_stream(0, t, 1, stream, sizeof stream));
+          snprintf(esperado, sizeof esperado, "source:%d:1", t);
+          assert(!strcmp(stream, esperado) && !strcmp(ep1->vid, esperado));
+          snprintf(esperado, sizeof esperado, "Sinopse %d", t);
+          assert(!strcmp(ep1->sinopse, esperado));
+          snprintf(esperado, sizeof esperado, "https://t.test/%d.jpg", t);
+          assert(!strcmp(ep1->duracao, "25 min") && !strcmp(ep1->thumb, esperado));
+        } }
+      cineSerie = NULL; free(meta);
+      puts("ok  #787: aba truncada e aba ausente completam do corpo, sem rebuscar, com ids e campos");
     }
     free(body);
     return 0;

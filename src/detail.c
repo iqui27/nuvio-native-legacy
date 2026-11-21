@@ -1083,6 +1083,9 @@ static void irParaTemporada(int c, int moverFoco) {
   epAncora = 0;
   foco.colunaLembrada[SEC_EPISODIOS] = 0;
   if (moverFoco && epVisiveis() > 0) { foco.fileira = SEC_EPISODIOS; foco.coluna = 0; }
+  // A ABA PEDE A TEMPORADA (#787): ausente ou truncada pelo teto da lista,
+  // desc_episodios a completa do /meta guardado; inteira, ele sai na hora.
+  if (ehSerie()) desc_episodios(idx, temporadaEm(temporada));
 }
 
 // OK NUMA COLUNA DO GRAFICO "Seu progresso": a pagina passa para aquela
