@@ -308,6 +308,24 @@ static void prazo_depois(void) {
      "prazo depois da classificacao nao descarta ack valido");
 }
 
+// F98: EV_BUSCA_FALHOU da geracao corrente na retomada pausada — o pouso
+// exige -1 e o -2 da falha nao confirma; a falha aposenta a reabertura que
+// esperava o ack (capa e busca soltam sem esperar o teto de 60 s).
+static void falha_isolada(void) {
+  prepararRetomadaPausada();
+  hostZerarFila();
+  video_buscar(12);
+  hostTick();
+  ok(hostAtivo.ms == posMs && !video_tocando(), "host pausado na posicao do seek repetido");
+  unsigned antes = video_busca_falhas();
+  nv_tpk_video_evento(12, hostAtivo.ms, (int)hostAtivo.ger);
+  bombear(3);
+  printf("isolated_failure: posMs=%d tocando=%d capa=%d busca=%d falhas=%u\n",
+         posMs, video_tocando(), video_tpk_capa(), video_busca_em_voo(), video_busca_falhas() - antes);
+  ok(video_busca_falhas() == antes + 1, "falha chegou ao app");
+  ok(!video_tpk_capa() && !video_busca_em_voo(), "falha corrente aposenta capa e busca com host pausado no alvo");
+}
+
 int main(int argc, char **argv) {
   static const CdnlinkGanchos g = { fOrigem, fRecente, fResolver, fValidade };
   SDL_Init(0);
@@ -326,6 +344,7 @@ int main(int argc, char **argv) {
   else if (argc > 1 && !strcmp(argv[1], "falha")) host_falha();
   else if (argc > 1 && !strcmp(argv[1], "mesmo-depois")) mesmo_depois();
   else if (argc > 1 && !strcmp(argv[1], "prazo-depois")) prazo_depois();
+  else if (argc > 1 && !strcmp(argv[1], "falha-isolada")) falha_isolada();
   else distinct();
   video_parar();
   return falhas != 0;

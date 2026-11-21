@@ -80,7 +80,12 @@ namespace NuvioTpk
             if ((p = resolve("nv_tpk_video_registrar")) != IntPtr.Zero) Registrar = Marshal.GetDelegateForFunctionPointer<RegistrarDel>(p);
             if ((p = resolve("nv_tpk_video_evento")) != IntPtr.Zero) Evento = Marshal.GetDelegateForFunctionPointer<EventoDel>(p);
             if ((p = resolve("nv_tpk_video_registrar_geracao")) != IntPtr.Zero) RegistrarGeracao = Marshal.GetDelegateForFunctionPointer<RegistrarGeracaoDel>(p);
-            if ((p = resolve("nv_tpk_video_registrar_busca_geracao")) != IntPtr.Zero) RegistrarBuscaGeracao = Marshal.GetDelegateForFunctionPointer<RegistrarBuscaGeracaoDel>(p);
+            // Registro opcional como o do aspecto: sem o export (lib antiga
+            // pela rota ELF) fica inerte — o seek segue pelo fBuscar legado.
+            // Deixar a thunk de soname aqui derrubava o inicio com
+            // DllNotFoundException (a lib nao esta no link map nesta rota).
+            p = resolve("nv_tpk_video_registrar_busca_geracao");
+            RegistrarBuscaGeracao = p != IntPtr.Zero ? Marshal.GetDelegateForFunctionPointer<RegistrarBuscaGeracaoDel>(p) : new RegistrarBuscaGeracaoDel(_ => { });
             if ((p = resolve("nv_tpk_video_erro_geracao")) != IntPtr.Zero) ErroGeracao = Marshal.GetDelegateForFunctionPointer<ErroGeracaoDel>(p);
             if ((p = resolve("nv_tpk_video_registrar_faixas")) != IntPtr.Zero) RegistrarFaixas = Marshal.GetDelegateForFunctionPointer<RegistrarFaixasDel>(p);
             if ((p = resolve("nv_tpk_video_faixa")) != IntPtr.Zero) Faixa = Marshal.GetDelegateForFunctionPointer<FaixaDel>(p);
@@ -751,7 +756,13 @@ namespace NuvioTpk
                 Preso(minha, buscaPend >= 0 ? buscaPend : ms);
                 return;
             }
-            catch (Exception e) { Log("buscar: " + e.Message); NvVid.Evento(EV_BUSCA_FALHOU, ms, (int)ger); return; }
+            catch (Exception e)
+            {
+                Log("buscar: " + e.Message); NvVid.Evento(EV_BUSCA_FALHOU, ms, (int)ger);
+                // Sem return: a falha nao pode segurar o pedido pendente —
+                // ele drena abaixo e mantem a ordem A,B (com o return um seek
+                // novo entrava antes dele: A,C,B).
+            }
             finally { if (!expirou && minha == Volatile.Read(ref sessao)) buscando = false; }
             if (minha != Volatile.Read(ref sessao)) return;
             // SetPlayPositionAsync terminou: nao disputar Pause/outro seek com
