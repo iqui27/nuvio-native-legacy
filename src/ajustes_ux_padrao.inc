@@ -401,3 +401,5 @@
 
   1, // legendaEvitarSdhLocal: Desligado (V_LIGA 1)
   1, /* barrasPretasLocal: Desligado */
+  0, /* oQuePerdiLocal: Ligado (sem chave do Gemini o botao nao aparece) */
+  0, /* chave do Gemini: acao (o valor mora em gemini.txt) */
