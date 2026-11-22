@@ -6971,19 +6971,12 @@ static float desenhaNotaEpisodio(float x, float y, int fonte, int nota, float a)
 }
 
 static void desenhaAssistidoEpisodio(GfxRect th, float a) {
-  const float h = 46, pad = 12, icone = 28, gap = 10;
-  TxtLinha texto = txt_linha_corta(TXT_CAPTION2, "Assistido", 255, 255, 255, 255,
-                                  th.w * .5f - pad * 2 - icone - gap);
-  float w = pad * 2 + icone + gap + texto.w;
-  GfxRect selo = {th.x + th.w - w - 18, th.y + 18, w, h};
-  gfx_cor(selo, .5f, .055f, .068f, .09f, .96f * a);
-  gfx_anel(selo, .5f, 1, .68f, .75f, .86f, .30f * a);
-  GfxRect disco = {selo.x + pad, selo.y + (h - icone) * .5f, icone, icone};
-  gfx_cor(disco, .5f, .451f, .839f, .694f, a);
-  gfx_icone((GfxRect){disco.x + 5, disco.y + 5, icone - 10, icone - 10},
-             "check", 1, 1, 1, a);
-  txt_desenhar_alpha(texto, disco.x + icone + gap,
-                     selo.y + (h - texto.h) * .5f, a);
+  // O VISTO DO 2.1 4A (tv.css .visto): disco escuro de 30 px no canto da
+  // miniatura com o check branco. Era uma pilula "Assistido" com disco verde,
+  // que cobria um terco da arte e trazia uma cor fora do tema.
+  GfxRect disco = {th.x + th.w - 30 - 10, th.y + 10, 30, 30};
+  gfx_cor(disco, .5f, .039f, .039f, .047f, .72f * a);
+  gfx_icone((GfxRect){disco.x + 6, disco.y + 6, 18, 18}, "check", 1, 1, 1, a);
 }
 
 // A NOTA DO USUARIO NO EPISODIO (reacao.h): estrela + "4,5", embaixo do selo

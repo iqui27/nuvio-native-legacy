@@ -183,17 +183,14 @@ static void triSupReportar(GfxRect r) {
   triSupAlvo[0] = r.x; triSupAlvo[1] = r.y; triSupAlvo[2] = r.w; triSupAlvo[3] = r.h;
   triSupTem = 1; triSupDonoAlvo = ajSupNivel;
 }
-// Superficie de FOCO de linha: um degrau mais clara (vidro 12%, solido #2B2D34).
+// Superficie de FOCO de linha: a mesma do resto do app (gfx_vidro_foco): um
+// degrau mais clara (vidro 14%, solido #2B2D34) com a sombra caida, sem aro.
 static void ajFocoLinha(GfxRect r, float raioPx, float f, float a) {
   if (f <= 0.01f || ajFocoCompart || ajFocoMudo) return;
   if (gfx_foco_placa(r, raioPx / r.h, f, a)) return;
-  if (ajVid()) {
-    gfx_cor(r, raioPx / r.h, 1, 1, 1, 0.12f * f * a);
-  }
-  else {
-    gfx_rect((GfxRect){ r.x - 10, r.y + 2, r.w + 20, r.h + 26 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.30f * f * a);
-    gfx_cor(r, raioPx / r.h, 0.169f, 0.176f, 0.204f, f * a);
-  }
+  gfx_vidro_elevacao(r, f, a);
+  if (ajVid()) gfx_cor(r, raioPx / r.h, 1, 1, 1, 0.14f * f * a);
+  else gfx_cor(r, raioPx / r.h, 0x2b / 255.0f, 0x2d / 255.0f, 0x34 / 255.0f, f * a);
 }
 // Neutro claro sobre a ilha: branco a `vidA` no vidro, o cinza opaco no solido.
 static void ajNeutro(GfxRect r, float raioPx, float vidA, float sr, float sg, float sb, float a) {
