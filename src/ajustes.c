@@ -7987,6 +7987,10 @@ static const char *ajudaOpcaoBase(int op) {
       // e COMPARTILHAR), o teto de disco e o risco legal.
       if (p2pmotor_disponivel())
         return "Experimental. Deixa escolher, na lista de fontes, torrents que o addon manda sem link (P2P). Sem endereço de servidor, a própria TV baixa o torrent e compartilha pedaços com outras pessoas enquanto toca, guardando o que baixa no armazenamento (nunca mais que metade do espaço livre) e apagando tudo ao fechar o player. O automático nunca escolhe P2P. Baixar ou compartilhar conteúdo sem autorização pode ser ilegal no seu país: a responsabilidade é sua.";
+      // Com a ajuda da casa valendo, "sem servidor, deixe desligado" manda o
+      // usuario desligar justamente o que faz a TV procurar um ajudante.
+      if (ajustes_casa_usar())
+        return "Experimental. Deixa escolher, na lista de fontes, torrents que o addon manda sem link (P2P). Esta TV não baixa nada: toca por um servidor de streaming do Stremio na sua rede (PC, NAS ou Docker) ou, sem endereço de servidor, por outro aparelho com Nuvio que esteja ajudando. O automático nunca escolhe P2P. Sem nenhum dos dois na rede, deixe desligado.";
       return "Experimental. Deixa escolher, na lista de fontes, torrents que o addon manda sem link (P2P), tocando-os por um servidor de streaming do Stremio que você roda na sua rede (PC, NAS ou Docker). A TV não baixa nada. O automático nunca escolhe P2P. Sem servidor na rede, deixe desligado.";
     case AJ_P2P_URL:
       if (p2pmotor_disponivel())
