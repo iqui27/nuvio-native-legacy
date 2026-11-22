@@ -73,5 +73,9 @@ int main(void) {
   assert(!strcmp(urlAberta, "http://127.0.0.1/fixture.mp4"));
   alarm(0);
   puts("PASS: manual P2P resolver, player handoff, failure without failover");
-  return 0;
+  // Os fios de infra do app (rede, addons) nao tem parada: fora do
+  // sandbox-exec um deles corria com o exit() e derrubava o processo
+  // DEPOIS do PASS. _exit encerra sem a demoliçao que nao esta em prova.
+  fflush(stdout);
+  _exit(0);
 }
