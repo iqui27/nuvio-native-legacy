@@ -16,12 +16,13 @@ sdl=()
 if command -v pkg-config >/dev/null && pkg-config --exists sdl2; then
   read -r -a sdl <<< "$(pkg-config --cflags sdl2)"
 fi
-# The source includes SDL2/...; Homebrew's parent include path is needed too.
-sdl+=(-I/opt/homebrew/include -I/opt/homebrew/include/SDL2)
 if [ "$(uname -s)" = Darwin ]; then
+  sdl+=(-I/opt/homebrew/include -I/opt/homebrew/include/SDL2)
   strip=(-Wl,-dead_strip)
+  libs=(-L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL)
 else
   strip=(-Wl,--gc-sections)
+  libs=($(pkg-config --libs sdl2 SDL2_image SDL2_ttf gl 2>/dev/null) -lz -lm)
 fi
 
 # (1) chave sensivel na lista branca -> "#error" no header gerado.
@@ -37,7 +38,7 @@ for source in src/*.c src/dts/*.c; do
 done
 "${CC:-cc}" "${sources[@]}" tests/farol_ajustes.c -Isrc -I"$dir" "${sdl[@]}" \
   -D_GNU_SOURCE -DAJUSTES_TESTE -O1 -g -ffunction-sections -fdata-sections "${strip[@]}" \
-  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
+  "${libs[@]}" \
   -Wno-deprecated-declarations -Wno-macro-redefined -o "$dir/teste"
 "$dir/teste" "$dir/data"
 echo "farol_ajustes: tudo ok"

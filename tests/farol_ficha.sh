@@ -15,7 +15,7 @@ case "${SANITIZE:-1}" in
 esac
 bin="${TMPDIR:-/tmp}/nuvio-farol-ficha-test"
 "$ccbin" ${flags[@]+"${flags[@]}"} -Wall -Wextra -O1 -g -DNV_MAPA_PURO \
-  -Isrc tests/farol_ficha.c src/farolficha.c src/mapa.c src/js.c -lm -o "$bin"
+  -Isrc tests/farol_ficha.c src/farolficha.c src/mapa.c src/farolgosto.c src/js.c -lm -o "$bin"
 "$bin"
 rm -f "$bin"
 # Contrato do modulo: sem malloc e sem log — muito menos com titulo.
