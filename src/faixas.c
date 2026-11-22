@@ -2278,7 +2278,7 @@ int faixas_legenda_temporaria(int ligar, const char *idiomaApp) {
   const VideoFaixa *fa;
   const CatItem *ci;
   char tit[64], addIdiomas[LEG_MAX][sizeof ((Legenda *)0)->idioma];
-  int tipos[NV_FAIXA_MAX], nEmb, nAdd = 0, nl, i, k, r = LING_AUTO_NADA, origem;
+  int tipos[NV_FAIXA_MAX], nEmb, nAdd = 0, nl, i, k, r = LING_AUTO_NADA, origem, evitaSdh;
   if (!ligar) {
     if (!legTempDona) return -1;
     legTempDona = 0;
@@ -2286,10 +2286,13 @@ int faixas_legenda_temporaria(int ligar, const char *idiomaApp) {
     escolherLegenda(-1);
     return 1;
   }
-  if (!player_aberto() || !player_com_video() || player_id_canal()[0]) return -1;
+  if (!player_aberto() || player_id_canal()[0]) return -1;
+  // Video ainda abrindo (ex.: comecou ja mudo) ou a automatica do comeco nao fechou: espera.
+  if (!player_com_video()) return 0;
   if (legTempDona || legendaAtiva() >= 0 || video_legenda_atual() >= 0) return -1;
   if (legAuto) return 0;
   ci = cat_item(player_indice());
+  evitaSdh = ajustes_legenda_evitar_sdh();
   tituloAtual(tit, sizeof tit);
   fa = video_audio(video_audio_atual());
   audio = fa ? fa->idioma : "";
@@ -2308,14 +2311,16 @@ int faixas_legenda_temporaria(int ligar, const char *idiomaApp) {
     if (nAdd > LEG_MAX) nAdd = LEG_MAX;
     for (i = 0; i < nAdd; i++) {
       const Legenda *l = addons_legenda(i);
-      snprintf(addIdiomas[i], sizeof addIdiomas[i], "%s", l ? l->idioma : "");
+      // #743 "Evitar SDH" vale aqui tambem: a de addon marcada SDH no nome fica fora.
+      int fora = !l || (evitaSdh && (ling_nome_sdh(l->arquivo) || ling_nome_sdh(l->rotulo)));
+      snprintf(addIdiomas[i], sizeof addIdiomas[i], "%s", fora ? "" : l->idioma);
       add[i] = addIdiomas[i];
     }
   }
   // A legenda INTEIRA do idioma (forcadaAuto 0: com o som mudo a pessoa nao
   // ouve o dialogo, a forcada nao serve), com as listas como estao agora.
   for (k = 0; k < nl && r < 0; k++)
-    r = ling_legenda_auto_tipo2(lista[k], "", 0, 0, emb, tipos, nEmb, 1, add, nAdd, 1);
+    r = ling_legenda_auto_tipo2(lista[k], "", 0, evitaSdh, emb, tipos, nEmb, 1, add, nAdd, 1);
   if (r < 0) {
     printf("[legenda] temporaria: nada a ligar (%d embutida(s), %d de addon)\n", nEmb, nAdd); fflush(stdout);
     return -1;

@@ -5,7 +5,8 @@
 #include <assert.h>
 
 static VideoFaixa emb[4];
-static int nEmb, ativa = -1, canal, trocas;
+static int nEmb, ativa = -1, canal, trocas, semVideo, evitaSdh;
+int ajustes_legenda_evitar_sdh(void) { return evitaSdh; }
 static const char *ultima = "";
 static CatItem titulo;
 static VideoFaixa audioEng = { .idioma = "eng" };
@@ -32,7 +33,7 @@ void legsync_primaria_outra(int e) { (void)e; }
 void mkvass_iniciar_ordinal(const char *u, int o) { (void)u; (void)o; }
 void mkvass_parar(void) {}
 int player_aberto(void) { return 1; }
-int player_com_video(void) { return 1; }
+int player_com_video(void) { return !semVideo; }
 const char *player_id_canal(void) { return canal ? "canal" : ""; }
 int player_indice(void) { return 0; }
 const VideoFaixa *video_audio(int i) { (void)i; return &audioEng; }
@@ -105,6 +106,19 @@ int main(void) {
   canal = 1;
   assert(faixas_legenda_temporaria(1, "pt") == -1 && ativa == -1);
   canal = 0;
+
+  // Video ainda abrindo (comecou ja mudo): espera em vez de desistir.
+  semVideo = 1;
+  assert(faixas_legenda_temporaria(1, "pt") == 0 && ativa == -1);
+  semVideo = 0;
+
+  // "Evitar SDH" (#743) ligado: a SDH nao liga sozinha; desligado, liga.
+  faixa(0, "eng", LING_LEG_SDH); faixa(1, "spa", LING_LEG_COMUM); nEmb = 2;
+  evitaSdh = 1;
+  assert(faixas_legenda_temporaria(1, "en") == -1 && ativa == -1);
+  evitaSdh = 0;
+  assert(faixas_legenda_temporaria(1, "en") == 1 && ativa == 0);
+  assert(faixas_legenda_temporaria(0, "") == 1 && ativa == -1);
 
   // Titulo novo (faixas_reiniciar) esquece a posse.
   faixa(0, "eng", LING_LEG_COMUM);
