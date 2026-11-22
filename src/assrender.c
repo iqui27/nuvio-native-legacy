@@ -775,7 +775,10 @@ static void *ass_worker_loop(void *unused) {
       if (us > assMed.renderMaxUs) assMed.renderMaxUs = us;
       if (igual) assMed.iguais++;
       assUltimoRenderUs = us;
-      if (generation == assPesoGeracao && div == asspeso_divisor(&assPeso) &&
+      /* Quadro igual ao publicado sai do cache do libass: nao mede a cena. Se
+       * contasse, a placa parada "ficava leve" e o render subia so para
+       * estourar de novo. */
+      if (!igual && generation == assPesoGeracao && div == asspeso_divisor(&assPeso) &&
           asspeso_amostra(&assPeso, pesoModo, us / 1000.0, pronto ? frame.bytes : 0, estouro)) {
         printf("[ass] peso: render em 1/%d (ultimo quadro %.1f ms, %zu KiB%s)\n",
                asspeso_divisor(&assPeso), us / 1000.0, (pronto ? frame.bytes : 0) / 1024,
