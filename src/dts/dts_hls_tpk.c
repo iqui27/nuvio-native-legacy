@@ -30,6 +30,8 @@ int dts_tpk_estado(void) { return DTSTPK_NADA; }
 const char *dts_tpk_erro(void) { return ""; }
 double dts_tpk_duracao(void) { return 0; }
 unsigned dts_tpk_segmentos(void) { return 0; }
+double dts_tpk_bytes_por_s(void) { return 0; }
+double dts_tpk_segmento_max(void) { return 0; }
 int dts_tpk_modo(void) { return -1; }
 double dts_tpk_inicio_stream(void) { return -1; }
 const char *dts_tpk_caminho(void) { return ""; }
@@ -355,6 +357,7 @@ typedef struct Sessao {
   int estado, semIndice;
   char erro[160], caminho[40];
   double duracao;
+  double bytesPorS, segMax;       // source size / length, longest segment (s)
   DtsRemux *rx;
   DtsRemux *rxSonda;              // while the probe runs: what a close cancels
   unsigned char *initMp4;
@@ -468,6 +471,8 @@ static void *fioSonda(void *u) {
   if (ready) {
     s->rx = rx; s->ger[0].g = initGen;
     s->duracao = in->duration_s;
+    s->bytesPorS = in->size_bytes > 0 && in->duration_s > 0 ? in->size_bytes / in->duration_s : 0;
+    s->segMax = in->max_segment_s;
     snprintf(s->caminho, sizeof s->caminho, "%s", in->decoder_path);
   }
   s->estado = ready ? DTSTPK_PRONTO : DTSTPK_FALHOU;
@@ -1268,6 +1273,8 @@ void dts_tpk_fechar(void) {
 int dts_tpk_estado(void) { LER_ATUAL(int, estado, DTSTPK_NADA) }
 double dts_tpk_duracao(void) { LER_ATUAL(double, duracao, 0.0) }
 unsigned dts_tpk_segmentos(void) { LER_ATUAL(unsigned, nSegs, 0u) }
+double dts_tpk_bytes_por_s(void) { LER_ATUAL(double, bytesPorS, 0.0) }
+double dts_tpk_segmento_max(void) { LER_ATUAL(double, segMax, 0.0) }
 int dts_tpk_modo(void) { LER_ATUAL(int, modo, -1) }
 double dts_tpk_inicio_stream(void) { LER_ATUAL(double, inicioStream, -1.0) }
 const char *dts_tpk_erro(void) {

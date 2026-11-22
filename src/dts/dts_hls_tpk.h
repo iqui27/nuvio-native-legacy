@@ -58,6 +58,8 @@ int  dts_tpk_estado(void);
 const char *dts_tpk_erro(void);          /* reason of DTSTPK_FALHOU, no URL */
 double dts_tpk_duracao(void);            /* seconds, once ready */
 unsigned dts_tpk_segmentos(void);       /* media segments the player fetched in full */
+double dts_tpk_bytes_por_s(void);       /* source size / length, 0 unknown */
+double dts_tpk_segmento_max(void);      /* longest segment, s */
 int  dts_tpk_modo(void);                 /* mode of the session, -1 none */
 /* Progressive: source time of the keyframe the CURRENT stream starts at (the
  * player counts from there). -1 until the stream's request has started. */
