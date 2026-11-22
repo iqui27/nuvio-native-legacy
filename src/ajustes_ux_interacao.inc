@@ -123,6 +123,9 @@ static int uxLigarRequisitos(int op, int aplicar) {
   uxNotificar("Ajuste salvo nesta TV.");
   return res;
 }
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+static void uxAplicar(void);
+#endif
 static void uxAbrirEditor(int op) {
   if (op < 0 || op >= AJ_N || !ajOpcaoDisponivel(op) || soLeitura(op)) return;
   uxCancelar();
@@ -141,6 +144,23 @@ static void uxAbrirEditor(int op) {
   if(op==AJ_IPTV_CONTA || ajIptvGerenciador(op))iptvListaSessao=nv_perfil_sessao_ler();
   if(ajIptvGerenciador(op))iptvTipoPagina=ajIptvTipo(op);
   uxEditor = inativa(op) ? 2 : 1;
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+  // Simple catalog choices use Cocoa tracking; complex editors retain their routes.
+  if (layout_desktop_ativo() && uxEditor == 1 && OPCOES[op].tipo == OP_ESCOLHA &&
+      OPCOES[op].valores && nValores(op) == OPCOES[op].n && nValores(op) <= 64 && !ajPaleta(op) && !ehInterruptor(op)) {
+    DesktopMenuItem items[64]; char labels[64][192];
+    int n = nValores(op), w = 1440, h = 900;
+    SDL_Window *window = SDL_GL_GetCurrentWindow();
+    if (window) SDL_GetWindowSize(window, &w, &h);
+    for (int i = 0; i < n; i++) {
+      uxValorTexto(op, i, labels[i], sizeof labels[i]);
+      items[i] = (DesktopMenuItem){labels[i], NULL, i + 1, i == uxOriginal, 0};
+    }
+    int selected = desktop_native_menu(items, n, ponteiro_x() * w / NV_VTELA_W, ponteiro_y() * h / NV_VTELA_H);
+    if (selected > 0) { uxPendente = selected - 1; uxAplicar(); }
+    else uxCancelar();
+  }
+#endif
 }
 // The generic choice page supplies the provider list, account actions and
 // delete confirmation. A new account uses the normal Settings field controls.
