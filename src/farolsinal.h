@@ -70,15 +70,24 @@ void farolsinal_iniciar(void);
 void farolsinal_passo(int momentoBom);
 // Saida do app: grava modelo, estado e cache de fichas.
 void farolsinal_sair(void);
-// Logout/reset do perfil: apaga modelo, estado e pendencias DO PERFIL ATIVO,
-// a marca "notas do Trakt ja lidas" da conta e o cache de fichas do aparelho.
-// A conta dona dos arquivos, como o diario. Chamada por sync_esquecer_usuario
-// junto de diario_esquecer/mapa_esquecer (issue 43, secao 2.3).
+// Logout/reset da CONTA: apaga modelo, estado e pendencias de TODOS os
+// perfis (a conta pode ter varios e o logout e dela, nao do perfil ativo),
+// TODA marca "notas do Trakt ja lidas" — o esquecer roda depois de
+// sessao_sair(), que ja apagou o usuario do nome — e o cache de fichas do
+// aparelho. A conta dona dos arquivos, como o diario. Chamada por
+// sync_esquecer_usuario junto de diario_esquecer/mapa_esquecer (issue 43,
+// secao 2.3).
 void farolsinal_esquecer(void);
 // O backup por aparelho restaurou os arquivos por baixo: agenda uma troca
 // para o proprio perfil que so LE o disco — o modelo em RAM nao grava por
 // cima do recem-restaurado antes (issue 43). Sem efeito com troca em curso.
 void farolsinal_recarregar(void);
+// O backup por aparelho vai regravar os arquivos por baixo: marca a
+// releitura ANTES da escrita para que nem a gravacao de folga nem o
+// instantaneo descarreguem a RAM velha por cima do recem-restaurado no
+// intervalo (issue 43). O aplica-restauracao chama antes de gravar cada
+// arquivo do Farol e farolsinal_recarregar() ao fim.
+void farolsinal_restaura_marcar(void);
 // Forca a gravacao do que a folga de 60 s ainda nao desceu — o instantaneo
 // de backup le os arquivos do disco e quer o estado de agora (issue 43).
 void farolsinal_gravar(void);

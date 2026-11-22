@@ -314,9 +314,12 @@ static void *fioPerfil(void *u) {
 }
 
 // ------------------------------------------------------------------ medida --
+static void drenaTrab(void);
+// A consulta nao rouba mais a troca de perfil para a thread chamadora (43):
+// se o perfil ainda nao residir, bombeia o fio de tras ate ele carregar.
 static int peso(int dim, int32_t id) {
   FarolGosto g;
-  OK(farolsinal_modelo(&g), "modelo");
+  if (!farolsinal_modelo(&g)) { drenaTrab(); OK(farolsinal_modelo(&g), "modelo"); }
   return farolgosto_peso(&g, dim, id, (uint16_t)diaNow());
 }
 // O modelo satura cada slot por n (afinToca: peso += delta*8/(n+8)) — entao a
@@ -331,7 +334,7 @@ static int esp(int peso, int n, int delta) {
 }
 static uint32_t titulosModelo(void) {
   FarolGosto g;
-  OK(farolsinal_modelo(&g), "modelo");
+  if (!farolsinal_modelo(&g)) { drenaTrab(); OK(farolsinal_modelo(&g), "modelo"); }
   return g.titulos;
 }
 static int32_t genAcao;   // id do genero "Acao" via mapa_hash_nome (CatItem)

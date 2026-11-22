@@ -313,7 +313,13 @@ static int ajustesDeviceAplicar(const char *json) {
       ajusteDeviceFile(i, name, sizeof name); if (!*name) continue;
       if (f - v == 4 && !strncmp(v, "null", 4)) {
         char *old = dados_ler(name);
-        if (i != 8 && old) { dados_apagar(name); changed++; if (i == 33) farolMudou = 1; }
+        // A releitura do Farol marca ANTES do arquivo restaurado mexer:
+        // a gravacao de folga nao pode descarregar a RAM velha por cima do
+        // novo no intervalo (ressalva R5 da r1).
+        if (i != 8 && old) {
+          if (i == 33) { farolsinal_restaura_marcar(); farolMudou = 1; }
+          dados_apagar(name); changed++;
+        }
         free(old); continue;
       }
       char *text = ajusteUnhex(v, f); if (!text) continue;
@@ -323,8 +329,10 @@ static int ajustesDeviceAplicar(const char *json) {
         if (!text) continue;
       }
       char *old = dados_ler(name);
-      if ((!old || strcmp(old, text)) && debGravarArquivo(name, text))
-        { changed++; if (i == 33) farolMudou = 1; }
+      if (!old || strcmp(old, text)) {
+        if (i == 33) { farolsinal_restaura_marcar(); farolMudou = 1; }
+        if (debGravarArquivo(name, text)) changed++;
+      }
       free(old);
       free(text);
     }

@@ -27,6 +27,7 @@
 #include "salvos.h"
 #include "sessao.h"
 #include "visto.h"
+#include <dirent.h>
 #include <limits.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -72,6 +73,10 @@ enum {
 #define FSIN_VEZ_MAX      512             // entregas por fatia de varredura
 #define FSIN_SEQ_TODA     INT_MAX         // curSeq sentinela: grupo do cursor
                                           // consumido inteiro (cursor FS 1)
+                                          // — e "diario inteiro dentro do
+                                          // modelo" no modelo restaurado
+#define FSIN_RESGATE_FATIA 128            // entradas por fatia do resgate
+                                          // incremental do diario
 #define FSIN_AQUECE_TITULOS 400           // titulos mais novos por varredura
 #define FSIN_NOTAS_MAX    512             // itens de /sync/ratings por entrega
 
@@ -115,6 +120,11 @@ static struct {
   int    rec;                       // "Recomendar nesta TV"
   long long cur;                    // cursor da varredura (epoch s)
   int    curSeq;                    // consumidas dentro do grupo `quando`==cur
+  long long curRest;                // marca do resgate: ate aqui o diario
+                                    // ja era do modelo restaurado (R1)
+  long long varDe;                  // so entradas mais novas que isto (resgate)
+  long long varCur;                 // cursor do resgate por lotes
+  int    varSeq;                    // consumidas do grupo `quando`==varCur
   int    varrer;                    // varredura de diario pendente
   int    varGer;                    // geracao do cursor (RECARREGADO/limpeza)
   uint64_t varId[FSIN_AQUECE_TITULOS];    // ids de titulo ja contados na varredura
@@ -402,6 +412,26 @@ static int pendTemIdh(uint64_t idh) {   // pendencia viva para o titulo?
     if (S.pend[i].c.idh == idh && !S.pend[i].devolve) return i;
   return -1;
 }
+// Quanto deste delta de vez/gesto ainda pode entrar: a nota antiga do
+// Trakt e a vez do diario sao o MESMO "gostou" do titulo — a tabela 2.2
+// da "terminou e gostou = +2,0", nao a soma dos dois sinais (ressalva R2
+// da r1: nota 8 + "terminou" somava +3,0 e o resultado mudava com a ordem
+// de chegada). Fica o excedente sobre a nota positiva; sinal negativo nao
+// e coberto (a reprova passa inteira). O `delta` gravado no Cred e sempre
+// a parcela que entrou no modelo; as diferencas de ajuste/apagada se medem
+// sobre o valor LIVRE dele — com a nota chegando depois, o excedente da
+// vez encolhe junto.
+static int deltaLivre(uint64_t idh, int delta) {
+  int j;
+  if (delta <= 0) return delta;
+  for (j = 0; j < S.nCred; j++)
+    if (S.cred[j].idh == idh && S.cred[j].kind == K_NOTA &&
+        S.cred[j].delta > 0) {
+      delta -= S.cred[j].delta;
+      return delta > 0 ? delta : 0;
+    }
+  return delta;
+}
 static void credPoe(const Cred *c) {
   int i;
   if (S.nCred < FSIN_CRED_N) i = S.nCred++;
@@ -660,6 +690,12 @@ static char *textoEstado(size_t *np) {   // com a trava tomada; malloc
     w += snprintf(w, (size_t)(fim - w), "i %u %u %u\n",
                   (unsigned)S.ori[i].h, (unsigned)S.ori[i].o,
                   (unsigned)S.ori[i].dia);
+  // "r <quando>": marca do resgate — entradas do diario ate esse instante
+  // ja constavam do modelo quando ele foi restaurado; so o que e mais novo
+  // volta a pesar (ressalva R1 da r1: o cursor sentinela deixava todo lote
+  // novo do diario de fora para sempre).
+  if (S.curRest > 0)
+    w += snprintf(w, (size_t)(fim - w), "r %lld\n", S.curRest);
   *np = (size_t)(w - b);
   return b;
 }
@@ -740,6 +776,12 @@ static void aplicaEstado(char *b, size_t n) {   // com a trava tomada
         S.ori[S.nOri].h = h; S.ori[S.nOri].o = (uint8_t)o;
         S.ori[S.nOri].dia = (uint8_t)d; S.nOri++;
       } else { mal = 1; break; }
+    } else if (s[0] == 'r') {
+      long long m; int pos = -1;
+      if (sscanf(s + 1, "%lld%n", &m, &pos) == 1 && pos > 0 && !s[1 + pos] &&
+          m > S.curRest)
+        S.curRest = m;
+      else { mal = 1; break; }
     }
     // Linha de tipo desconhecido, ou alem do teto da fila, nao e corte:
     // ignora, como a leitura anterior fazia.
@@ -747,7 +789,7 @@ static void aplicaEstado(char *b, size_t n) {   // com a trava tomada
   if (mal) {   // estado parcial nao sobe: recomeça do zero como o cabecalho
     S.nPend = S.nCred = S.nObra = S.obraProx = S.nAli = 0;
     S.nOri = S.oriProx = 0;
-    S.rec = 1; S.cur = 0; S.curSeq = 0;
+    S.rec = 1; S.cur = 0; S.curSeq = 0; S.curRest = 0;
     return;
   }
   // Pendencia que veio do disco volta a fila de busca: o reinicio nao pode
@@ -767,8 +809,19 @@ static void aplicaEstado(char *b, size_t n) {   // com a trava tomada
 // repassar dobraria cada peso restaurado, e entradas novas continuam
 // chegando pela NOVA de sempre.
 static void armaVarredura(void) {   // com a trava tomada
-  if (S.cur == LLONG_MIN && S.curSeq == FSIN_SEQ_TODA) return;
-  S.cur = 0; S.curSeq = 0; S.varrer = 1; S.varGer++; S.nVarId = 0;
+  if (S.cur == LLONG_MIN && S.curSeq == FSIN_SEQ_TODA) {
+    // Modelo restaurado (sentinela): a marca curRest diz onde o diario que
+    // ja era dele termina — o resgate em lotes cobre so o mais novo que
+    // ela (ressalva R1 da r1: antes a sentinela segurava o passe para
+    // sempre e o lote novo da conta nunca pesava). Sem marca ainda —
+    // diario frio, nao medido — nao ha fronteira segura: espera.
+    if (!S.curRest) return;
+    S.varDe = S.curRest; S.varCur = 0; S.varSeq = 0; S.nVarId = 0;
+    S.varrer = 1; S.varGer++;
+    return;
+  }
+  S.cur = 0; S.curSeq = 0; S.varDe = 0; S.varCur = 0; S.varSeq = 0;
+  S.varrer = 1; S.varGer++; S.nVarId = 0;
 }
 
 // Varredura vazia que so dispara a carga do diario neste fio (de impossivel
@@ -781,6 +834,20 @@ static void aqueceDiario(int perfil) {
   memset(&f, 0, sizeof f);
   f.de = LLONG_MAX;
   diario_percorrer(perfil, &f, cbNada, NULL);
+}
+// O `quando` da entrada mais nova do diario — a marca que separa "ja era do
+// modelo restaurado" de "chegou depois" (ressalva R1 da r1).
+static int cbMarca(const DiarioEntrada *e, void *ctx) {
+  *(long long *)ctx = e->quando;
+  return 0;
+}
+static long long marcaDiario(int perfil) {
+  DiarioFiltro f;
+  long long marca = 0;
+  memset(&f, 0, sizeof f);
+  f.decrescente = 1;
+  diario_percorrer(perfil, &f, cbMarca, &marca);
+  return marca;
 }
 
 // Troca o modelo carregado — a fronteira entre perfis: grava o que sai,
@@ -838,7 +905,9 @@ static void fioTrocaPerfil(void) {
     memset(&S.g, 0, sizeof S.g);
     S.nCred = S.nPend = S.nObra = S.obraProx = 0;
     S.nTempChk = S.nOri = S.oriProx = 0;
-    S.cur = 0; S.curSeq = 0; S.varrer = 1; S.varGer++; S.nVarId = 0;
+    S.cur = 0; S.curSeq = 0; S.curRest = 0; S.varDe = 0;
+    S.varCur = 0; S.varSeq = 0;
+    S.varrer = 1; S.varGer++; S.nVarId = 0;
     S.largadaVarrida = 0;
     S.rec = 1; S.sujo = 0; S.perfil = pNovo;
     if (pNovo > 0) {
@@ -848,7 +917,10 @@ static void fioTrocaPerfil(void) {
       // Modelo quente sem anel de creds (o backup so carrega o modelo —
       // secao 2.3): a dupla cursor-no-fundo + grupo-consumido persiste
       // como "o diario inteiro ja esta dentro dele" — repassar dobraria
-      // cada peso restaurado (issue 43; armaVarredura respeita).
+      // cada peso restaurado (issue 43). Nao e mais bloqueio permanente:
+      // quando a marca `curRest` do diario existir (gravada ou medida no
+      // aquecimento), o resgate por lotes corre o que for mais novo que
+      // ela — o lote de hoje volta a pesar (ressalva R1 da r1).
       if (!bE && S.g.titulos > 0) { S.cur = LLONG_MIN; S.curSeq = FSIN_SEQ_TODA; }
       // a carga fria do diario e unidade separada do fio de tras — a troca
       // nao toma a trava do diario e pode ser roubada por quem a pede
@@ -972,6 +1044,7 @@ static void vezNova(const DiarioEntrada *e) {   // com a trava tomada
   Cred c;
   uint64_t hb = h3(e->id, e->temporada, e->episodio);
   uint64_t eh = hb ^ mix64((uint64_t)e->quando);
+  uint64_t idh = h1(e->id);
   int i, delta = deltaDeEntrada(e), viaVez = 0;
   int faixa = e->hora >= 0 ? faixaDeHora(e->hora) : faixaAgora(e->quando);
   int serie = e->tipo == DIARIO_SERIE;
@@ -984,7 +1057,9 @@ static void vezNova(const DiarioEntrada *e) {   // com a trava tomada
   // de um gesto ou a fusao re-entregue — so o que faltava, e so para cima.
   if (i >= 0 && !(viaVez && e->origem == DIARIO_ORIG_PLAYER &&
                   (e->flags & DIARIO_F_REVER) && S.cred[i].kind == K_VEZ)) {
-    int diff = delta - S.cred[i].delta;
+    // A diferenca mede o LIVRE: o que a nota antiga do Trakt ja cobriu no
+    // titulo nao soma de novo (ressalva R2 da r1).
+    int diff = deltaLivre(idh, delta) - deltaLivre(idh, S.cred[i].delta);
     if (diff > 0) {
       int64_t real; FarolFicha f;
       if ((real = pegaFicha(aliasPara(S.cred[i].chave), e->id, serie, &f))) {
@@ -1002,10 +1077,13 @@ static void vezNova(const DiarioEntrada *e) {   // com a trava tomada
     return;
   }
   memset(&c, 0, sizeof c);
-  c.idh = h1(e->id); c.hb = hb; c.eh = eh; c.quando = e->quando;
+  c.idh = idh; c.hb = hb; c.eh = eh; c.quando = e->quando;
   c.chave = chaveObra(e->id, serie, e->tmdb);
-  c.delta = delta; c.faixa = (int16_t)faixa; c.kind = K_VEZ;
-  credita(e->id, serie, e->tmdb, &c);
+  c.delta = deltaLivre(idh, delta); c.faixa = (int16_t)faixa; c.kind = K_VEZ;
+  // Sinal neutro credita mesmo assim (a obra conta — regra antiga); so o
+  // delta positivo coberto pela nota do Trakt fica de fora — nada aplica
+  // e nem pendencia fica (R2).
+  if (c.delta || !delta) credita(e->id, serie, e->tmdb, &c);
   // Episodio de serie: talvez fechou a temporada.
   if (delta > 0 && serie && e->temporada > 0 && S.nTempChk < FSIN_TEMP_N) {
     int k;
@@ -1056,7 +1134,10 @@ static void vezApagada(const DiarioEntrada *e) {  // com a trava tomada
   if (i >= 0) {
     Cred c = S.cred[i];
     credTira(i);
-    desfaz(&c, e->id, serie, e->tmdb);
+    // Devolve so o que a vez somou de verdade: a parte que a nota antiga ja
+    // cobria nunca entrou — estorna-la tiraria peso que nao e dela (R2).
+    c.delta = deltaLivre(c.idh, c.delta);
+    if (c.delta) desfaz(&c, e->id, serie, e->tmdb);
     // a temporada que esta entrada fechava nao fecha mais (correcao FAROL38B)
     temporadaDesfeita(e->id, e->temporada, e->tmdb);
   }
@@ -1080,7 +1161,8 @@ static void vezAlterada(const DiarioEntrada *e) {   // com a trava tomada
   int delta = deltaDeEntrada(e);
   if (i < 0) i = achaVez(hb, e->quando);
   if (i >= 0) {
-    int diff = delta - S.cred[i].delta;
+    uint64_t idh = h1(e->id);
+    int diff = deltaLivre(idh, delta) - deltaLivre(idh, S.cred[i].delta);
     if (diff) {
       int64_t real; FarolFicha f;
       int fx = e->hora >= 0 ? faixaDeHora(e->hora) : S.cred[i].faixa;
@@ -1100,7 +1182,8 @@ static void vezAlterada(const DiarioEntrada *e) {   // com a trava tomada
   for (i = S.nPend - 1; i >= 0; i--)
     if (S.pend[i].c.hb == hb && S.pend[i].c.kind == K_VEZ &&
         !S.pend[i].devolve)
-      { S.pend[i].c.delta = delta; S.pend[i].c.eh = eh;
+      { S.pend[i].c.delta = deltaLivre(S.pend[i].c.idh, delta);
+        S.pend[i].c.eh = eh;
         S.pend[i].c.quando = e->quando; S.sujo = 1; return; }
   vezNova(e);   // registro desconhecido: e como se fosse nova
 }
@@ -1148,8 +1231,9 @@ static void cbVisto(const char *imdb, const char *tipo, const VistoPar *pares,
         // (tabela 2.2; correcao FAROL38B).
         c.delta = serie && (t > 0 || e > 0)
                   ? (FG_D_TERMINOU * 26 + 128) / 256 : FG_D_TERMINOU;
+        c.delta = deltaLivre(c.idh, c.delta);   // coberto pela nota? (R2)
         c.faixa = (int16_t)faixa; c.kind = K_GESTO;
-        credita(imdb, serie, tmdb, &c);
+        if (c.delta) credita(imdb, serie, tmdb, &c);
       }
     }
     DTRAVA();
@@ -1175,7 +1259,11 @@ static void cbVisto(const char *imdb, const char *tipo, const VistoPar *pares,
       if (alvo) {
         Cred cc = S.cred[i];
         credTira(i);
-        desfaz(&cc, imdb, serie, tmdb);
+        // So devolve o que entrou de verdade: vez/gesto coberto pela nota
+        // antiga nao estorna a parcela dela (R2). TEMP/LARGADA sao de outro
+        // dominio — deltaLivre nao as toca.
+        if (cc.kind <= K_GESTO) cc.delta = deltaLivre(cc.idh, cc.delta);
+        if (cc.delta) desfaz(&cc, imdb, serie, tmdb);
       }
     }
     for (i = S.nPend - 1; i >= 0; i--) {
@@ -1584,7 +1672,40 @@ void farolsinal_trakt_notas(int perfil, const char *json) {
       if (!delta || achaHb(hb) >= 0) continue;
       memset(&c, 0, sizeof c);
       c.idh = h1(itens[i].id);
-      if (achaIdh(c.idh) >= 0 || pendTemIdh(c.idh) >= 0) continue;
+      {
+        int j = achaIdh(c.idh);
+        if (j >= 0 || pendTemIdh(c.idh) >= 0) {
+          // O aparelho ja conhece o titulo — a nota nao aquece. MAS uma vez
+          // do diario e o MESMO "gostou" da nota: se a vez somou menos que
+          // ela, a nota so completa ate o maior sinal — nunca a soma dos
+          // dois (ressalva R2 da r1: "terminou" + nota 8 dava +3,0).
+          if (j >= 0 && delta > 0) {
+            int k;
+            for (k = 0; k < S.nCred; k++)
+              if (S.cred[k].idh == c.idh && S.cred[k].kind <= K_GESTO &&
+                  S.cred[k].delta > 0 && S.cred[k].delta < delta) {
+                int64_t real; FarolFicha f;
+                if ((real = pegaFicha(aliasPara(S.cred[k].chave),
+                                      itens[i].id, itens[i].serie, &f))) {
+                  aplicar(&f, real, delta - S.cred[k].delta,
+                          diaDe(itens[i].quando),
+                          (int16_t)faixaAgora(itens[i].quando));
+                  S.sujo = 1;
+                }
+                break;
+              }
+          }
+          // A nota fica registrada mesmo sem aplicar: ela limita as vezes
+          // futuras do titulo via deltaLivre e deduba reentregas pela hb.
+          c.hb = hb; c.eh = hb ^ mix64((uint64_t)itens[i].quando);
+          c.quando = itens[i].quando;
+          c.chave = chaveObra(itens[i].id, itens[i].serie, itens[i].tmdb);
+          c.delta = delta; c.faixa = (int16_t)faixaAgora(itens[i].quando);
+          c.kind = K_NOTA;
+          credPoe(&c); S.sujo = 1;
+          continue;
+        }
+      }
       c.hb = hb; c.eh = hb ^ mix64((uint64_t)itens[i].quando);
       c.quando = itens[i].quando;
       c.chave = chaveObra(itens[i].id, itens[i].serie, itens[i].tmdb);
@@ -1603,8 +1724,21 @@ void farolsinal_trakt_notas(int perfil, const char *json) {
 }
 
 // ---------------------------------------------------------------- ciclo ----
+// Leituras de quadro NAO roubam a unidade de troca: quem pergunta do fio da
+// UI (o clima do mapa e quem vier) nao pode pagar a releitura do perfil que
+// esta em curso no fio de tras — roubar aqui devolvia arquivo e serializacao
+// para o fio chamador (ressalva R6 da r1). Devolvem o seguro ate a troca
+// fechar; o passo acorda o fio de tras e a resposta certa vem no proximo
+// quadro.
+static int prontoLeve(void) {        // trava + agenda, sem executar E/S
+  int ok;
+  TRAVA();
+  ok = garante_i();
+  if (!ok) DTRAVA();
+  return ok;
+}
 int  farolsinal_recomendar(void) {
-  int r; if (!travaPronta()) return 0; r = S.rec; DTRAVA(); return r;
+  int r; if (!prontoLeve()) return 0; r = S.rec; DTRAVA(); return r;
 }
 void farolsinal_definir_recomendar(int ligado) {
   if (travaPronta()) {
@@ -1615,14 +1749,14 @@ void farolsinal_definir_recomendar(int ligado) {
 int farolsinal_modelo(FarolGosto *dst) {
   int ok;
   if (!dst) return 0;
-  ok = travaPronta();
+  ok = prontoLeve();
   if (ok) *dst = S.g;
   if (ok) DTRAVA();
   return ok;
 }
 int farolsinal_origens(uint32_t *h, uint8_t *o, uint8_t *d, int max) {
   int i, n = 0;
-  if (!travaPronta()) return 0;
+  if (!prontoLeve()) return 0;
   n = S.nOri < max ? S.nOri : max;
   for (i = 0; i < n; i++) {
     if (h) h[i] = S.ori[i].h;
@@ -1649,6 +1783,18 @@ void farolsinal_recarregar(void) {
   }
   DTRAVA();
 }
+// A restauracao do backup marca a releitura ANTES de o arquivo restaurado
+// pousar no disco: enquanto `recarrega` valer sem troca agendada, nem a
+// gravacao de folga nem o instantaneo serializam modelo/estado — uma
+// escrita da RAM velha nesse intervalo pisaria no arquivo que esta sendo
+// trocado (ressalva R5 da r1). farolsinal_recarregar() ao fim agenda a
+// unidade; se a aplicacao morrer antes, a marca some com ela.
+void farolsinal_restaura_marcar(void) {
+  TRAVA();
+  garante_i();
+  if (S.perfil > 0) S.recarrega = 1;
+  DTRAVA();
+}
 
 // Forca o descarrego do que ainda esta so na folga de FSIN_GRAVA_S — o
 // instantaneo do backup por aparelho (issue 43) le os arquivos do disco e
@@ -1662,7 +1808,13 @@ void farolsinal_gravar(void) {
   int p, eGer;
   if (!travaPronta()) return;
   p = S.perfil; eGer = S.esqGer;
-  if (p > 0 && S.sujo) { gm = textoModelo(&nGm); ge = textoEstado(&nGe); S.sujo = 0; }
+  // `recarrega` alto = uma restauracao trocando o arquivo embaixo da RAM:
+  // descarregar agora pisaria nele — modelo/estado ficam para a troca que
+  // so le (ressalva R5 da r1). O cache de fichas nao entra no backup e
+  // desce normal.
+  if (p > 0 && S.sujo && !S.recarrega) {
+    gm = textoModelo(&nGm); ge = textoEstado(&nGe); S.sujo = 0;
+  }
   if (S.fichaSujo) { gf = textoFichas(&nGf); S.fichaSujo = 0; }
   S.ultGrav = agoraS();
   DTRAVA();
@@ -1709,12 +1861,13 @@ typedef struct {
   int abortou;        // 1 = perfil/geracao trocou ou fio morreu no meio
   int perfil;
   int ger;            // varGer capturado — esquecer/restart invalidam a vez
+  int teto;           // entregas por fatia (o resgate anda em lotes menores)
   long long qUlt;     // `quando` da ultima processada
   int nUlt;           // processadas nesse `quando` nesta fatia
 } VarCtx;
 static int cbVar(const DiarioEntrada *e, void *ctx) {
   VarCtx *c = (VarCtx *)ctx;
-  if (c->n >= FSIN_VEZ_MAX) { c->cortou = 1; return 0; }
+  if (c->n >= c->teto) { c->cortou = 1; return 0; }
   TRAVA();
   if (S.perfil != c->perfil || S.varGer != c->ger || S.trocando || fioMorre)
     c->abortou = 1;                                  // correcao FAROL38D
@@ -1745,13 +1898,27 @@ static int cbVar(const DiarioEntrada *e, void *ctx) {
 static void fatiaVarre(int perfil) {
   VarCtx c;
   DiarioFiltro f;
-  long long q0;
-  int seq0, ger;
+  long long q0, de;
+  int seq0, ger, resg;
   memset(&c, 0, sizeof c); memset(&f, 0, sizeof f);
   TRAVA();
   c.perfil = perfil; c.ger = ger = S.varGer;
-  q0 = S.cur; seq0 = S.curSeq;
-  if (q0) {
+  c.teto = FSIN_VEZ_MAX;
+  q0 = S.cur; seq0 = S.curSeq; de = S.varDe;
+  resg = q0 == LLONG_MIN && seq0 == FSIN_SEQ_TODA && de > 0;
+  if (resg) {
+    // Cursor sentinela do modelo restaurado com a marca `curRest`: o
+    // resgate anda em lotes so nas entradas MAIS NOVAS que ela — o diario
+    // que ja era do modelo nao repassa (ressalva R1 da r1). O cursor
+    // principal nao anda: o resgate tem o seu proprio.
+    c.teto = FSIN_RESGATE_FATIA;
+    f.de = de + 1;                 // de e INCLUSIVO: na marca ja era dela
+    q0 = S.varCur; seq0 = S.varSeq;
+    if (q0) {
+      if (seq0 >= FSIN_SEQ_TODA) f.ate = q0;
+      else { f.ate = q0 + 1; f.saltar = seq0; }
+    }
+  } else if (q0) {
     if (seq0 >= FSIN_SEQ_TODA) f.ate = q0;         // grupo do cursor consumido
     else { f.ate = q0 + 1; f.saltar = seq0; }      // retoma dentro do grupo
   }
@@ -1760,7 +1927,12 @@ static void fatiaVarre(int perfil) {
   diario_percorrer(perfil, &f, cbVar, &c);
   TRAVA();
   if (!c.abortou && S.varGer == ger) {
-    if (c.cortou) {
+    if (resg) {
+      if (c.cortou) {
+        S.varCur = c.qUlt;
+        S.varSeq = c.nUlt + (c.qUlt == q0 && seq0 < FSIN_SEQ_TODA ? seq0 : 0);
+      } else { S.varDe = 0; S.varCur = 0; S.varSeq = 0; S.varrer = 0; }
+    } else if (c.cortou) {
       S.cur = c.qUlt;
       S.curSeq = c.nUlt + (c.qUlt == q0 && seq0 < FSIN_SEQ_TODA ? seq0 : 0);
     } else S.varrer = 0;
@@ -1923,6 +2095,20 @@ static void trabFatia(void) {
     S.diaFrio = 0;
     DTRAVA();
     if (!fioMorre) aqueceDiario(p);
+    // Diario quente: o modelo restaurado (cursor sentinela) ganha a marca
+    // `curRest` — a entrada mais nova que ja era dele. Sem arquivo de
+    // estado e sem marca gravada, a medida e do diario como esta; o lote
+    // que chegar depois dela volta a pesar (ressalva R1 da r1). A medida
+    // vai SEM a trava: diario_percorrer segura a trava do diario e cbVar,
+    // la dentro, pega m — medir sob m inverteria a ordem das travas.
+    {
+      long long marca = !fioMorre ? marcaDiario(p) : 0;
+      TRAVA();
+      if (!fioMorre && p == S.perfil && !S.curRest &&
+          S.cur == LLONG_MIN && S.curSeq == FSIN_SEQ_TODA)
+        S.curRest = marca;
+      DTRAVA();
+    }
     return;
   }
   // gravacoes juntas, com folga de 60 s — a serializacao sai sob a trava e
@@ -1934,7 +2120,11 @@ static void trabFatia(void) {
     size_t nGm = 0, nGe = 0, nGf = 0;
     int pGrav = S.perfil, eGer = S.esqGer;
     S.ultGrav = agora;
-    if (S.sujo) { gm = textoModelo(&nGm); ge = textoEstado(&nGe); S.sujo = 0; }
+    // `recarrega` alto = restauracao pisando o arquivo: a gravacao da RAM
+    // velha espera a troca que so le o disco (ressalva R5 da r1).
+    if (S.sujo && !S.recarrega) {
+      gm = textoModelo(&nGm); ge = textoEstado(&nGe); S.sujo = 0;
+    }
     if (S.fichaSujo) { gf = textoFichas(&nGf); S.fichaSujo = 0; }
     DTRAVA();
     if (pGrav > 0) {
@@ -2050,26 +2240,44 @@ void farolsinal_sair(void) {
 
 void farolsinal_esquecer(void) {
   char cam[1100], nome[64];
+  DIR *d;
+  struct dirent *de;
+  int p;
   // travaPronta no lugar do antigo TRAVA+garante_i (ressalva herdada da 38,
   // ligada ao logout na issue 43): com a troca de perfil pendente a rotina
   // cancelava a unidade e apagava o modelo do perfil ERRADO — roubar a
   // unidade e esperar a carga fechar apaga os arquivos certos. Sem perfil
   // residente (retorno 0) faz o reset do mesmo jeito, sob a trava.
   if (!travaPronta()) { TRAVA(); garante_i(); }
-  if (S.perfil > 0) {
-    nomeGosto(S.perfil, nome, sizeof nome);
+  // O logout esquece a CONTA: todos os perfis dela, nao so o residente —
+  // o gosto do perfil 2 ficava no disco e subia para a conta seguinte
+  // (revisao FAROL43-r1). Mesmo par de arquivos que sorg_esquecer e
+  // fontepref_esquecer varrem.
+  for (p = 1; p <= CONTA_PERFIL_MAX; p++) {
+    nomeGosto(p, nome, sizeof nome);
     if (caminho(nome, cam, sizeof cam)) remove(cam);
-    nomeEstado(S.perfil, nome, sizeof nome);
+    nomeEstado(p, nome, sizeof nome);
     if (caminho(nome, cam, sizeof cam)) remove(cam);
   }
-  nomeNotas(nome, sizeof nome);
-  if (caminho(nome, cam, sizeof cam)) remove(cam);
+  // A marca das notas e por CONTA (hash do usuario) — e o logout de verdade
+  // limpa a sessao ANTES do esquecer (ajustes.c), entao o nome nao pode
+  // mais ser calculado aqui: varre o que houver de farol-notas-* na pasta.
+  if (S.dir[0] && (d = opendir(S.dir)) != NULL) {
+    while ((de = readdir(d)) != NULL)
+      if (!strncmp(de->d_name, "farol-notas-", 12)) {
+        if (caminho(de->d_name, cam, sizeof cam)) remove(cam);
+      }
+    closedir(d);
+  }
+  // Legado da primeira versao, quando a marca era um nome fixo.
+  if (caminho("farol-notas.txt", cam, sizeof cam)) remove(cam);
   if (caminho("farol-fichas.bin", cam, sizeof cam)) remove(cam);
   farolgosto_iniciar(&S.g, (uint16_t)S.perfil);
   farolficha_cache_iniciar(&S.fc);
   S.nCred = S.nPend = S.nObra = S.obraProx = S.nAli = 0;
   S.nPed = S.nTempChk = S.nOri = S.oriProx = 0;
-  S.cur = 0; S.curSeq = 0; S.varrer = 1; S.varGer++; S.nVarId = 0;
+  S.cur = 0; S.curSeq = 0; S.curRest = 0; S.varDe = 0; S.varCur = 0;
+  S.varSeq = 0; S.varrer = 1; S.varGer++; S.nVarId = 0;
   S.largadaVarrida = 0; S.rec = 1;
   S.sujo = 0;
   S.fichaSujo = 0;
@@ -2097,6 +2305,7 @@ void farolsinal_teste_zera(void) {
   TRAVA();
   memset(&S.g, 0, sizeof S.g);
   S.perfil = 0; S.rec = 1; S.cur = 0; S.curSeq = 0;
+  S.curRest = 0; S.varDe = 0; S.varCur = 0; S.varSeq = 0;
   S.varrer = 0; S.varGer++; S.nVarId = 0; S.largadaVarrida = 0;
   S.momentoBom = 1;
   S.nCred = S.nPend = S.nObra = S.obraProx = S.nAli = 0;
