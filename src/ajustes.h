@@ -647,6 +647,7 @@ int ajustes_leg2_posicao(void); // -1 keeps the existing Top/Stacked placement
 int ajustes_leg2_atraso(void);
 int ajustes_leg2_definir_atraso(int ms);
 int   ajustes_legenda_forcada_auto(void);    // #287: 1 = audio in the subtitle language -> only the forced track (local, default on)
+int   ajustes_legenda_temporaria(void);      // legtemp.h: 1 = subtitles turn on by themselves on mute / short rewind (local, default on)
 int   ajustes_legenda_evitar_sdh(void);      // #743: 1 = auto-pick skips SDH/CC tracks (local, default off)
 int   ajustes_legenda_sync_auto(void);       // local, ligada por padrão
 int   ajustes_audio_original(void);

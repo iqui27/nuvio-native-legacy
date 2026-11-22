@@ -62,6 +62,7 @@
 static jclass    gCls;      // GlobalRef: FindClass de fio do SDL nao acha classe do app
 static jmethodID mAbrir, mParar, mPausar, mBuscar, mVolume, mJanela, mEscolher;
 static jmethodID mAbrirPosicao, mJanelaPronta, mLimitedConnections;
+static jmethodID mMudo;
 // 2.0.3 (opcional): abrirRetomada(url, cab, inicioMs, fracao, geracao). So o
 // percentual conhecido (retomada da conta, sem registro local): o Kotlin
 // aplica fracao/10000 da duracao do CONTAINER antes do primeiro quadro.
@@ -90,6 +91,9 @@ static int resolverMetodos(JNIEnv *env) {
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return 0; }
   mLimitedConnections = (*env)->GetStaticMethodID(env, gCls, "limitedConnections", "(I)V");
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mLimitedConnections = NULL; }
+  // Opcional (legenda temporaria): casca sem ele = mudo desconhecido.
+  mMudo = (*env)->GetStaticMethodID(env, gCls, "mudo", "()I");
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mMudo = NULL; }
   // Opcional: uma casca anterior ainda abre normalmente e recebe o seek
   // depois da duracao. A ausencia deste metodo nao derruba a ponte inteira.
   mAbrirPosicao = (*env)->GetStaticMethodID(env, gCls, "abrirPosicao", "(Ljava/lang/String;Ljava/lang/String;II)V");
@@ -1194,6 +1198,14 @@ int video_pausa_confirmada(void) {
 }
 
 void video_volume(int pct) { kInt(mVolume, pct); }
+int video_mudo(void) {
+  JNIEnv *env = ambiente();
+  int r;
+  if (!env || !mMudo) return -1;
+  r = (*env)->CallStaticIntMethod(env, gCls, mMudo);
+  fimChamada(env);
+  return r;
+}
 void video_buscar(double s) {
   posMs = (int)(s * 1000.0);   // a barra nao pode voltar enquanto o seek corre
   acaoMs = SDL_GetTicks();

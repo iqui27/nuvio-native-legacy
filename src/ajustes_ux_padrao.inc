@@ -401,3 +401,4 @@
 
   1, // legendaEvitarSdhLocal: Desligado (V_LIGA 1)
   1, /* barrasPretasLocal: Desligado */
+  0, /* legendaTemporariaLocal: Ligado */

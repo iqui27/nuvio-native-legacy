@@ -75,6 +75,11 @@ void video_pausar(int pausado);
 // Volume do pipeline, 0..100 (uMS setVolume). Existe para o trailer mudo no
 // fundo da pagina de titulo (trailer.h); a reproducao normal nao mexe nisto.
 void video_volume(int pct);
+#ifdef NV_ANDROID
+// Mudo do APARELHO (nao o video_volume acima): 1 mudo, 0 com som, -1 nao se
+// sabe. So o Android responde hoje; alimenta a legenda temporaria (legtemp.h).
+int video_mudo(void);
+#endif
 void video_buscar(double segundos);
 
 // Retangulo do plano de video, em coordenadas de tela 1920x1080. Fica preso a
