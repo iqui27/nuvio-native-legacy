@@ -165,6 +165,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "neste.h"
 #include "cacheboost.h"
 #include "directcache.h"
+#include "modonoite.h"
 #include "audioinfo.h"
 #include "playinfo.h"
 #include "central.h"
@@ -2062,6 +2063,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   // F07: seek cache for this open (live channels never; the backend also
   // refuses HLS/DASH). Arms only the next video_tocar: trailers stay uncached.
   cacheboost_backend_cache(ehCanal() ? 0 : ajustes_cache_seek_mb());
+  modonoite_armar(ajustes_modo_noite());   // 2.1: night mode for this open (modonoite.h)
   epT = itemFixo.temporada; epE = itemFixo.episodio;
   armarTituloGuardado();
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));
@@ -2278,6 +2280,7 @@ static void tocarFonteInterno(const char *url) {
   mkv_capitulos_idioma(idioma_iso(ajustes_idioma()));
   video_definir_modo_live(ehCanal() ? guia_modo_do_canal(player_id_canal(), ajustes_livetv_modo()) : 0);
   cacheboost_backend_cache(ehCanal() ? 0 : ajustes_cache_seek_mb());   // F07, ver player_abrir
+  modonoite_armar(ajustes_modo_noite());
   armarTituloGuardado();
   memlog_evento("load"); memQuadroPendente = 1;
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));

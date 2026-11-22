@@ -216,6 +216,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_LEG_ESTILO_LIGADO: return "aj_captions";
     case AJ_LEG_MOSTRAR: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_LEG_FORCADA: case AJ_LEG_EVITAR_SDH: return "aj_captions";
     case AJ_CACHE_SEEK: return "aj_database";
+    case AJ_MODO_NOITE: return "aj_moon";
     case AJ_TAM_MAX: case AJ_TAM_MIN: return "aj_database";
     case AJ_TMDB_IDIOMA: return "aj_file-text";
     case AJ_TEMA: return "aj_palette";

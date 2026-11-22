@@ -44,6 +44,7 @@
 #include "streamfitpassiva.h"
 #include "audsync.h"
 #include "cacheboost.h"
+#include "modonoite.h"
 #include "tex_cache.h"
 #include "velocidade.h"
 #include "redefit.h"
@@ -72,6 +73,8 @@ static unsigned preparoAdotar;
 // F07 (optional, like abrirPosicao): cache(mb) and ganho(pct). A shell without
 // them simply has no seek cache and no boost.
 static jmethodID mCache, mGanho, mBuffer, mKbps, mNormalizar;
+// 2.1 night mode (optional too): noite(nivel), modonoite.h.
+static jmethodID mNoite;
 // Warm resume (#492, optional too): titulo(id) and descartarGuardado().
 static jmethodID mTitulo, mDescartar, mMorno, mQuadro;
 // #202 (opcional, como os de cima): velocidade(centesimos). Casca sem ele =
@@ -114,6 +117,8 @@ static int resolverMetodos(JNIEnv *env) {
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mNormalizar = NULL; }
   mGanho = (*env)->GetStaticMethodID(env, gCls, "ganho", "(I)V");
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mGanho = NULL; }
+  mNoite = (*env)->GetStaticMethodID(env, gCls, "noite", "(I)V");
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mNoite = NULL; }
   mVelocidade = (*env)->GetStaticMethodID(env, gCls, "velocidade", "(I)V");
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mVelocidade = NULL; }
   mPreparar = (*env)->GetStaticMethodID(env, gCls, "preparar", "(Ljava/lang/String;Ljava/lang/String;IIIIILjava/lang/String;I)V");
@@ -1048,6 +1053,14 @@ int cacheboost_backend_quadro(int acao) {
   JNIEnv *env = ambiente(); int r = 0;
   if (env && mQuadro) { r = (*env)->CallStaticIntMethod(env, gCls, mQuadro, acao); fimChamada(env); }
   return r;
+}
+// The level lives in the Kotlin processor and is read per buffer; it needs no
+// open session (like cache(mb), it is armed before video_tocar).
+void modonoite_backend_nivel(int nivel) {
+  static int enviado = -1;
+  if (!mNoite || nivel == enviado) return;
+  enviado = nivel;
+  kInt(mNoite, nivel);
 }
 void cacheboost_backend_ganho(int pct) {
   if (pct < CB_VOL_MIN) pct = CB_VOL_MIN;

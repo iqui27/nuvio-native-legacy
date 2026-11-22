@@ -844,6 +844,9 @@ typedef enum {
   AJ_LEG_EVITAR_SDH,
   // Android-only: black letterbox bars on Surface margins (#768), local, off.
   AJ_BARRAS_PRETAS,
+  // 2.1: night mode / dialogue clarity (modonoite.h). LOCAL (the audio path is
+  // this TV's), append-only, default Desligado.
+  AJ_MODO_NOITE,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -999,6 +1002,7 @@ static const char *V_HTTP_CONEXOES[] = { "1", "2", "3", "4" };
 static const char *V_ESTAT_TAMANHO[] = { "Lembrar o último", "Completo", "Compacto", "Mínimo" };
 // 0 = Direita (como as outras laterais do player), 1 = Esquerda.
 static const char *V_ESTAT_LADO[] = { "Direita", "Esquerda" };
+static const char *V_MODO_NOITE[] = { "Desligado", "Leve", "Forte" };   // modonoite.h: MN_DESLIGADO, MN_SUAVE, MN_FORTE
 static const char *V_CACHE_SEEK[] = { "Desligado", "256 MB", "512 MB", "1 GB" };
 // #334: indice gravado em p2pLimiteLocal; ajustes_p2p_limite_mb devolve os MB.
 static const char *V_P2P_LIMITE[] = { "Automático", "2 GB", "4 GB", "8 GB", "16 GB" };
@@ -2086,6 +2090,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Personalização igual ao perfil principal", V_LIGA, 2),  // local: personalizacaoDoPerfilPrincipalLocal (#679)
   ESC("Evitar legendas SDH", V_LIGA, 2),                    // local: legendaEvitarSdhLocal (#743)
   ESC("Tarjas pretas no player", V_LIGA, 2),                 // local: barrasPretasLocal (#768)
+  ESC("Modo noite", V_MODO_NOITE, 3),                  // local: nightModeLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2475,6 +2480,7 @@ static const char *CHAVE[] = {
   "personalizacaoDoPerfilPrincipalLocal",
   "legendaEvitarSdhLocal",
   "barrasPretasLocal",
+  "nightModeLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3747,6 +3753,7 @@ int ajustes_ram_overlay_alternar(void) {
   valor[AJ_RAM_OVERLAY] = antes; return 0;
 }
 int ajustes_fonte_idioma_audio(void) { return valor[AJ_FONTE_IDIOMA_AUDIO] == 0; }
+int ajustes_modo_noite(void) { int v = valor[AJ_MODO_NOITE]; return v > 0 && v < 3 ? v : 0; }
 int ajustes_cache_seek_mb(void) {
   static const int MB[] = { 0, 256, 512, 1024 };
   int v = valor[AJ_CACHE_SEEK];
@@ -6838,6 +6845,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA: /* estilo da legenda e desta TV */
     case AJ_LEG_CONTORNO_COR: /* #475: idem */
     case AJ_CACHE_SEEK:     /* F07: o disco e o player sao desta TV */
+    case AJ_MODO_NOITE:     /* 2.1: o caminho do audio e desta TV */
     case AJ_BUFFER:         /* #338: o buffer e do player desta TV */
     case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: /* idem: rede desta TV */
     case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_BUFFER_RAM_REDUZ: /* telemetria e controle sao desta TV */
@@ -6893,7 +6901,7 @@ static int soNaTv(int op) {
     case AJ_FIL_LIMITE: case AJ_FIL_ORDEM:
     case AJ_ESMAECER: case AJ_BRILHO_PLAYER: case AJ_PROPORCAO_PADRAO: case AJ_MANTER_VIDEO:
     case AJ_DESCANSO_ESTILO: case AJ_DESCANSO_FONTE:
-    case AJ_CACHE_SEEK: case AJ_TRAILER_ZOOM_TPK: case AJ_LEG_SYNC_AUDIO:
+    case AJ_CACHE_SEEK: case AJ_TRAILER_ZOOM_TPK: case AJ_LEG_SYNC_AUDIO: case AJ_MODO_NOITE:
     case AJ_LIVETV_RES: case AJ_LIVETV_FORMATO: case AJ_LIVETV_ESPERA:
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY:
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
@@ -8980,6 +8988,11 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_RAM_VERDE: return "O botão verde do controle liga e desliga a memória na tela do player. Desligado, o botão não faz nada no player.";
     case AJ_BUFFER_RAM_REDUZ: return "Quando a TV fica com pouca memória, o tamanho do buffer escolhido é reduzido automaticamente (256 vira 128, depois 64) para o app não ser fechado. Desligado, o app tenta o tamanho escolhido e a proteção mínima da TV continua valendo.";
     case AJ_FONTE_IDIOMA_AUDIO: return "Na escolha automática, fontes com o seu Idioma do áudio ou áudio duplo passam na frente na mesma resolução. Não é filtro: sem elas, a melhor das outras toca.";
+#ifdef NV_ANDROID
+    case AJ_MODO_NOITE: return "Sobe as vozes e segura os sons altos. Não age com som em passthrough. Vale a partir do próximo vídeo.";
+#else
+    case AJ_MODO_NOITE: return "Nesta TV o app não altera o som: só prefere a faixa estéreo do mesmo idioma. Vale a partir do próximo vídeo.";
+#endif
     case AJ_CACHE_SEEK: return "Com retomada rápida, guarda só o último título por até 3 horas. Trocar de perfil ou pouco espaço apagam o trecho.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
     case AJ_RESOLUCAO: return "Resolução controla a nitidez; efeitos controlam a velocidade. Automática nunca baixa para 720p. Reinicie após mudar a resolução; o vídeo não muda.";
@@ -9296,6 +9309,7 @@ static const char *beneficioProprio(int op) {
     case AJ_FONTE_REGEX: return "Sobe ou exige fontes cujo nome casa com um padrão.";
     case AJ_DTS_AC3: return "Para TVs que não tocam DTS: o som é convertido na hora.";
     case AJ_CACHE_SEEK: return "Guarda o que já baixou para voltar no filme sem esperar.";
+    case AJ_MODO_NOITE: return "Diálogo mais claro e explosões mais baixas.";
     case AJ_MIC_BUSCA: return "Busque falando, pelo microfone do controle.";
 #ifdef NV_ANDROID
     case AJ_TECLADO_ANDROID: return "Escolha entre o teclado do app e o do Android.";
@@ -11962,7 +11976,7 @@ static AjPreview familiaPreviaOpcao(int op) {
   switch (op) {
     case AJ_LEG_CONTORNO_COR:
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
-    case AJ_QUALIDADE: case AJ_DV: case AJ_ATMOS: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_ESTAT_TAMANHO: case AJ_ESTAT_LADO:
+    case AJ_QUALIDADE: case AJ_DV: case AJ_ATMOS: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_CACHE_SEEK: case AJ_MODO_NOITE: case AJ_BUFFER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_ESTAT_TAMANHO: case AJ_ESTAT_LADO:
     case AJ_DV_MKV:
     case AJ_LEG_FORCADA:
     case AJ_LEG_EVITAR_SDH:

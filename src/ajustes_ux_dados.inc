@@ -288,6 +288,7 @@ static const char *uxSinonimos(int op) {
     case AJ_RAM_OVERLAY: return "ram overlay memoria tv uso pico livre system";
     case AJ_RAM_VERDE: return "botao verde green controle remoto buffer dados memoria";
     case AJ_BUFFER_RAM_REDUZ: return "reduzir buffer pouca memoria automatico seguranca tamanho";
+    case AJ_MODO_NOITE: return "modo noite noturno dialogo voz vozes clareza baixo alto explosao volume compressao drc estereo downmix night mode dialogue speech clarity loud quiet";
     case AJ_CACHE_SEEK: return "cache seek buffer disco armazenamento voltar avancar travando carregando";
     case AJ_TMDB_IDIOMA: return "idioma metadados titulo sinopse traducao tmdb";
     case AJ_HERO_GENERO: return "genero destaque hero logo titulo categoria esconder mostrar card genre";

@@ -677,6 +677,7 @@ int ajustes_ram_verde(void);
 int ajustes_buffer_ram_reduz(void);
 int ajustes_ram_overlay_alternar(void);
 int   ajustes_buffer_preset(void);           // #338: 0 Automatico, 1 = 64, 2 = 128, 3 = 256 MiB
+int   ajustes_modo_noite(void);              // 2.1: modonoite.h level (0 off, 1 Leve, 2 Forte) for the next video
 int   ajustes_cache_seek_mb(void);           // F07: seek cache limit in MB for the next video (0 = off / not on this TV)
 #ifdef AJUSTES_TESTE
 void  ajustes_teste_escala(int percentual); // fixture only; does not persist

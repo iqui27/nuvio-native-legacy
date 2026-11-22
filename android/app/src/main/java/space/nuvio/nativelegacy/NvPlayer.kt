@@ -703,6 +703,7 @@ object NvPlayer {
         @Volatile var audioFormato = AudioSyncTap.FMT_NENHUM
         @Volatile var velocidadePcm = false
         val proc = GanhoAudioProcessor().also { it.normalizar = normalizarVolume }
+        val noite = NoiteAudioProcessor()
         val tap = AudioSyncTap(
             { pcm, n, pts -> if (adotado) try { nativeAudioPcm(pcm, n, pts) } catch (_: UnsatisfiedLinkError) {} },
             { fmt ->
@@ -1327,6 +1328,8 @@ object NvPlayer {
     @JvmStatic fun cacheTitle(id: String) { tituloPedido = id }
     // Profile switch (C side): the kept cache belongs to the old profile.
     @JvmStatic fun descartarGuardado() { principal.post { CacheMidia.descartar("profile switch"); esquecerQuadro() } }
+    // 2.1 night mode (NoiteMath levels): read per buffer by every sink.
+    @JvmStatic fun noite(nivel: Int) { NoiteAudioProcessor.nivel = NoiteMath.nivel(nivel) }
     @JvmStatic fun ganho(pct: Int) {
         principal.post { ganhoPct = GanhoMath.pct(pct); aplicarGanho() }
     }
@@ -1610,7 +1613,7 @@ object NvPlayer {
                     // Sonic needs integer PCM; float output bypasses audio processors.
                     AudioSyncSink(DefaultAudioSink.Builder(context).setEnableFloatOutput(false)
                         .setEnableAudioTrackPlaybackParams(false)
-                        .setAudioProcessors(arrayOf(r.proc)).build(), r.tap, { r.velocidadePcm }, { r.adotado })
+                        .setAudioProcessors(arrayOf(r.noite, r.proc)).build(), r.tap, { r.velocidadePcm }, { r.adotado })
             }.setExtensionRendererMode(if (!preparando && preferirFfmpegAudio)
                 androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
                 else androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
