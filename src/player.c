@@ -4676,8 +4676,8 @@ void player_evento(const SDL_Event *e) {
   // No filme continua a proporcao.
   if ((k == SDLK_0 || k == SDLK_KP_0) && ehCanal()) { pedUltimo = 1; return; }
   if (k == SDLK_0 || k == SDLK_KP_0) { player_aspecto_ciclar(); return; }
-  // MARCAR CENA (cenas.h): amarela no controle, M no teclado. So em filme/episodio.
-  if (!ehCanal() && (k == SDLK_m || e->key.keysym.scancode == NV_SCANCODE_YELLOW) &&
+  // MARCAR CENA (cenas.h): amarela no controle (F5 no Android e na Samsung), M no teclado. So em filme/episodio.
+  if (!ehCanal() && (k == SDLK_m || k == SDLK_F5 || e->key.keysym.scancode == NV_SCANCODE_YELLOW) &&
       !(e->key.keysym.mod & (KMOD_GUI | KMOD_CTRL | KMOD_ALT)) && ajustes_marcar_cena()) {
     if (!e->key.repeat && !erroFonte && !player_carregando()) pedMarcarCena = 1;
     return;
