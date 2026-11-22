@@ -350,7 +350,6 @@ typedef struct Sessao {
   char externalLangs[64];
   int lastSegment;                // TEMP-NETLOG: last segment sent in full
   struct { int seg; int64_t bytes; } sent[64];   // pacing: sizes of the last segments sent
-  int pacedSeg;                   // pacing: the last segment held (a repeat goes at once)
 #endif
   volatile int cancelar;
   pthread_mutex_t m;
@@ -623,7 +622,13 @@ typedef struct {
   Gerador *ger;
   int64_t bytes;
   uint64_t t0, primeiroByte;
+  int seg;                        // segment of this run (-1 progressive)
+  uint64_t paceT0;                // webOS HLS pacing: start of the current rate
+  double paceB, paceF;            // bytes sent at it, its factor
 } Saida;
+#ifdef NV_WEBOS_HLS_TEST
+static void hlsCompasso(Saida *o, int n);
+#endif
 
 static int enviarCab(Saida *o) {
   char cab[400];
@@ -639,6 +644,9 @@ static int saidaEscrever(void *u, const unsigned char *d, int n) {
   int k;
   if (!o->primeiroByte) o->primeiroByte = agoraMs();
   if (!o->cabEnviado && !enviarCab(o)) return -1;
+#ifdef NV_WEBOS_HLS_TEST
+  if (o->s->webos && o->seg >= 0) hlsCompasso(o, n);
+#endif
   k = snprintf(tam, sizeof tam, "%x\r\n", (unsigned)n);
   if (!enviarTudo(o->sock, tam, (size_t)k, &o->s->cancelar, &o->ger->parar) ||
       !enviarTudo(o->sock, d, (size_t)n, &o->s->cancelar, &o->ger->parar) ||
@@ -653,18 +661,25 @@ static int saidaEscrever(void *u, const unsigned char *d, int n) {
 #ifdef NV_WEBOS_HLS_TEST
 /* PACING (owner 22/11): the LG player keeps ~30 s of HLS segments ahead and
  * ignores bufferControl for HLS; with HLS Off it holds ~2 s and Nuvio's own
- * buffer the rest, so HLS read ~90 MB more of a 90 Mb/s film at each start
- * and seek. The next segment in order waits while the player holds more than
- * HLS_AHEAD_S AND more than HLS_AHEAD_MIN_MB ahead of playback (the player
- * resumes from a rebuffer by bytes: 20 s of a ~25 Mb/s opening was not
- * enough, owner's log 22/11); never longer than HLS_WAIT_MAX_MS at a time.
- * No holding while the player rebuffers (position -1), for seeks and
- * restarts (any other segment), nor for a segment asked again. */
+ * buffer the rest. Holding a request back did not work well: the player gives
+ * up on a segment after ~3 s and asks again (restarting it), a held request
+ * outlived a seek and stopped the new one, and a held segment then left at
+ * full speed (1 s peaks near 350 Mb/s). Now every segment answers at once and
+ * its body goes out at a rate set by how far ahead the player is:
+ *   below HLS_FILL_S or HLS_FILL_MB ahead (start, seek, rebuffer): full speed;
+ *   below HLS_AHEAD_S or HLS_AHEAD_MIN_MB: 1.25x the recent content rate;
+ *   above both: 1.0x, so the player's lead stays where it is.
+ * The content rate comes from the last segments sent (bytes per second of
+ * film). The source reader only reads what the server uses, so the download
+ * from the internet follows the same steady rate. MB floors because the
+ * player resumes from a rebuffer by bytes (owner's log 22/11). */
+#define HLS_FILL_S 10.0
+#define HLS_FILL_MB 50.0
 #define HLS_AHEAD_S 20.0
 #define HLS_AHEAD_MIN_MB 100.0
-#define HLS_WAIT_MAX_MS 8000u
-static atomic_llong hlsPosMs = -1;     /* playback position, -1 unknown */
-static unsigned hlsRitmoN, hlsRitmoMs;
+static atomic_llong hlsPosMs = -1;     /* playback position, -1 unknown (rebuffer) */
+static double hlsPaceMB[3];            /* for the log: MB sent full / 1.25x / 1.0x */
+static unsigned hlsPaceSegs, hlsPaceSleptMs;
 void dts_hls_webos_position(double s) { atomic_store(&hlsPosMs, s >= 0 ? (long long)llround(s * 1000.0) : -1); }
 /* Bytes of the segments sent after the one at `pos`: what the player holds. */
 static double hlsBytesAhead(Sessao *s, double pos) {
@@ -676,27 +691,46 @@ static double hlsBytesAhead(Sessao *s, double pos) {
   pthread_mutex_unlock(&s->m);
   return b;
 }
-static void hlsRitmo(Sessao *s, int k) {
-  if (k <= s->lastSegment || k > s->lastSegment + 2) return;   /* in order (the player may fetch one ahead) */
-  if (k == s->pacedSeg) return;                                /* asked again: it gave up waiting */
-  double start = dts_remux_segment_start(s->rx, k), ahead = 0;
-  uint64_t t0 = agoraMs();
-  for (;;) {
-    long long p = atomic_load(&hlsPosMs);
-    if (p < 0 || s->cancelar) break;
-    ahead = start - p / 1000.0;
-    if (ahead <= HLS_AHEAD_S || ahead > 600 || agoraMs() - t0 >= HLS_WAIT_MAX_MS) break;
-    if (hlsBytesAhead(s, p / 1000.0) < HLS_AHEAD_MIN_MB * 1048576.0) break;
-    s->pacedSeg = k;
-    usleep(100000);
+/* Bytes per second of film over the last segments sent (0 unknown). */
+static double hlsContentRate(Sessao *s) {
+  int last = s->lastSegment;
+  double b = 0, d = 0;
+  pthread_mutex_lock(&s->m);
+  for (int i = last; i >= 0 && i > last - 8; i--)
+    if (s->sent[i & 63].seg == i && s->sent[i & 63].bytes > 0) {
+      b += (double)s->sent[i & 63].bytes;
+      d += dts_remux_segment_duration(s->rx, i);
+    }
+  pthread_mutex_unlock(&s->m);
+  return d > 0 ? b / d : 0;
+}
+static void hlsCompasso(Saida *o, int n) {
+  Sessao *s = o->s;
+  long long p = atomic_load(&hlsPosMs);
+  int last = s->lastSegment, mode = 0;
+  double f = 0, rate = 0;
+  if (p >= 0 && last >= 0 && o->seg > last && o->seg <= last + 2) {   /* in order, playing */
+    double pos = p / 1000.0;
+    double ahead = dts_remux_segment_start(s->rx, last) + dts_remux_segment_duration(s->rx, last) - pos;
+    double mb = hlsBytesAhead(s, pos) / 1048576.0;
+    rate = hlsContentRate(s);
+    if (rate <= 0 || ahead < HLS_FILL_S || mb < HLS_FILL_MB || ahead > 600) f = 0;
+    else if (ahead < HLS_AHEAD_S || mb < HLS_AHEAD_MIN_MB) { f = 1.25; mode = 1; }
+    else { f = 1.0; mode = 2; }
   }
-  unsigned ms = (unsigned)(agoraMs() - t0);
-  if (ms < 100) return;
-  hlsRitmoN++; hlsRitmoMs += ms;
-  if (hlsRitmoN % 10 == 1) {
-    printf("[webos-hls] TEMP-PACE: seg %d waited %u ms (%.1f s ahead of playback); %u waits, %.1f s in all\n",
-           k, ms, ahead, hlsRitmoN, hlsRitmoMs / 1000.0);
-    fflush(stdout);
+  hlsPaceMB[mode] += n / 1048576.0;
+  if (f <= 0) { o->paceT0 = 0; return; }
+  uint64_t now = agoraMs();
+  if (!o->paceT0 || o->paceF != f) { o->paceT0 = now; o->paceB = 0; o->paceF = f; }
+  o->paceB += n;
+  double due = o->paceB / (f * rate) * 1000.0;            /* ms these bytes may take */
+  while (!s->cancelar && !o->ger->parar) {
+    double el = (double)(agoraMs() - o->paceT0);
+    if (due <= el) break;
+    double w = due - el;
+    if (w > 200) w = 200;                                /* re-check stop/cancel often */
+    usleep((useconds_t)(w * 1000));
+    hlsPaceSleptMs += (unsigned)w;
   }
 }
 /* End of the last segment sent in full, for the log: what the player holds. */
@@ -741,7 +775,7 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
     pthread_mutex_lock(&s->m); s->inicioStream = dts_remux_keyframe_before(s->rx, t); pthread_mutex_unlock(&s->m);
   }
   memset(&o, 0, sizeof o);
-  o.sock = sock; o.manter = manter; o.tipo = tipo; o.s = s; o.ger = ger; o.t0 = t0;
+  o.sock = sock; o.manter = manter; o.tipo = tipo; o.s = s; o.ger = ger; o.t0 = t0; o.seg = seg;
   if (!s->webos && pd->range[0] && strncmp(pd->range, "bytes=0-", 8))
     printf("[dts-tpk] #%u: Range ignorado (gera do inicio, 200 inteiro)\n", nr);
   rr = dts_remux_gen_run(ger->g, seg, t, fmt, saidaEscrever, &o, &ger->parar, &st, err, sizeof err);
@@ -789,6 +823,11 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
     s->sent[seg & 63].seg = seg; s->sent[seg & 63].bytes = enviados;
     pthread_mutex_unlock(&s->m);
     s->lastSegment = seg;
+    if (++hlsPaceSegs % 10 == 0) {
+      printf("[webos-hls] TEMP-PACE: %u segments; MB sent at full speed %.0f, at 1.25x %.0f, at 1.0x %.0f; slowed %.1f s in all\n",
+             hlsPaceSegs, hlsPaceMB[0], hlsPaceMB[1], hlsPaceMB[2], hlsPaceSleptMs / 1000.0);
+      fflush(stdout);
+    }
   }
 #endif
   if (s->webosMp4 && (ok || rr == -2)) return ok && manter;
@@ -937,9 +976,6 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
       fflush(stdout);
       r = manter;
     } else {
-#ifdef NV_WEBOS_HLS_TEST
-      if (s->webos && !pd->head) hlsRitmo(s, k);
-#endif
       r = servirFluxo(sock, s, pd, nr, k, 0, s->webosMp4 ? "mp4" : "mpegts",
                            s->webosMp4 ? "video/mp4" : "video/mp2t", manter);
     }
@@ -1207,7 +1243,6 @@ static int openSession(const char *url, const char *headers, int track, int ster
     s->hls = *hls;
     s->webosMp4 = !hls->ts;
     s->lastSegment = -1;
-    s->pacedSeg = -1;
     if (hls->external_url && *hls->external_url) {
       s->externalUrl = strdup(hls->external_url);
       s->externalHeaders = strdup(hls->external_headers ? hls->external_headers : "");
