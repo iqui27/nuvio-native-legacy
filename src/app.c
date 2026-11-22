@@ -589,7 +589,7 @@ static unsigned long long perfilSimklCredencial;
 static _Atomic int perfilCarga; // 0=ocioso, 1=rede, 2=snapshot pronto
 static _Atomic unsigned perfilGeracao = 1;
 static pthread_mutex_t perfilTrava = PTHREAD_MUTEX_INITIALIZER;
-typedef struct { unsigned geracao; int perfil; char conta[96]; } PerfilPedido;
+typedef struct { unsigned geracao; int perfil; char conta[96]; int logado; } PerfilPedido;
 static void *carregarPerfil(void *u) {
   PerfilPedido *pedido=u;
   PerfilDados novo={0};
@@ -611,10 +611,15 @@ static void *carregarPerfil(void *u) {
     sucesso=1;
   }
   pthread_mutex_lock(&perfilTrava);
-  // A troca de conta/perfil invalida a resposta. O worker termina, mas nunca
-  // publica uma identidade antiga nem deixa um snapshot obsoleto na fila.
+  // A troca de conta/perfil invalida a resposta — entrar ou sair da conta
+  // tambem, pois muda o dono do Diario. O worker termina, mas nunca publica
+  // uma identidade antiga nem deixa um snapshot obsoleto na fila. Pedido
+  // feito deslogado continua valendo se a sessao seguir deslogada: a tela
+  // mostra o Diario local (ou o estado desconectado) em vez de carregar
+  // para sempre — exigir sessao_logada() aqui deixava perfilCarga presa.
   if(pedido->geracao==atomic_load_explicit(&perfilGeracao,memory_order_acquire) &&
-     atomic_load_explicit(&perfilCarga,memory_order_relaxed)==1 && sessao_logada() &&
+     atomic_load_explicit(&perfilCarga,memory_order_relaxed)==1 &&
+     sessao_logada()==pedido->logado &&
      perfis_ativo()==pedido->perfil && !strcmp(sessao_usuario(),pedido->conta)){
     perfilSucesso=sucesso;
     perfilSimklCredencial=skCredencial;
@@ -646,6 +651,7 @@ static void pedirPerfil(void) {
   if(!pedido){atomic_store(&perfilCarga,0);perfil_definir_erro("Nao foi possivel iniciar a consulta. Tente novamente.");return;}
   pedido->geracao=atomic_load_explicit(&perfilGeracao,memory_order_acquire);
   pedido->perfil=perfis_ativo();
+  pedido->logado=sessao_logada();
   snprintf(pedido->conta,sizeof pedido->conta,"%s",sessao_usuario());
   if (pthread_create(&t, NULL, carregarPerfil, pedido) == 0) pthread_detach(t);
   else { free(pedido); atomic_store(&perfilCarga,0); perfil_definir_erro("Nao foi possivel iniciar a consulta. Tente novamente."); }
