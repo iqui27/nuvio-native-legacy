@@ -46,7 +46,8 @@ static int jaTem(const char *imdb) {
 // num perfil infantil, de classificacao livre/10 anos.
 static void cartaDe(const CatItem *it, const char *tipo, int infantil) {
   Carta *c;
-  if (nCartas >= SU_CARTAS || !it || strncmp(it->imdb, "tt", 2) || strcmp(it->tipo, tipo) ||
+  // Id com ':' e episodio (Continuar assistindo): a serie ja entra pelo id dela.
+  if (nCartas >= SU_CARTAS || !it || strncmp(it->imdb, "tt", 2) || strchr(it->imdb, ':') || strcmp(it->tipo, tipo) ||
       !it->titulo[0] || jaTem(it->imdb)) return;
   if (infantil && !perfil_infantil_classif_ok(it->classificacao)) return;
   c = &cartas[nCartas++];
