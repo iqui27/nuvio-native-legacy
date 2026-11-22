@@ -28,7 +28,8 @@ class NoiteAudioProcessor : BaseAudioProcessor() {
             inputAudioFormat.channelCount in 1..NoiteMath.CANAIS_MAX) inputAudioFormat
         else AudioProcessor.AudioFormat.NOT_SET
 
-    override fun onFlush() { dsp?.reiniciar() }
+    // A new format (sample rate) arrives through a flush: rebuild, do not just reset.
+    override fun onFlush() { dsp = null }
     override fun onReset() { dsp = null }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
