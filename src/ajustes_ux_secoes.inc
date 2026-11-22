@@ -248,7 +248,7 @@ static int ajCenaSecao(int op) {
     case AJ_URL_LISTA: case AJ_URL_M3U_ADD: case AJ_URL_XMLTV_ADD: case AJ_URL_REM:
       return AJC_TV_PROVEDOR;
     case AJ_LIVETV_DIAG: case AJ_LIVETV_RES: case AJ_LIVETV_ESPERA: case AJ_LIVETV_FORMATO: case AJ_LIVETV_MODO:
-    case AJ_LIVETV_PROXY:
+    case AJ_LIVETV_PROXY: case AJ_TIMESHIFT_LOCAL:
       return AJC_TV_PROBLEMAS;
     case AJ_LIVETV_SUGERIR: case AJ_LIVETV_AGRUPAR:
       return AJC_TV_PROVEDOR;

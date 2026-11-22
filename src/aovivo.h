@@ -59,6 +59,7 @@ enum { AV_B_PAUSA, AV_B_GUIA, AV_B_ANT, AV_B_PROX, AV_B_FAV, AV_B_AUDIO,
        AV_B_AOVIVO,   // "Voltar ao vivo": so atras da transmissao (depois do Pausar)
        AV_B_ASPECTO,  // proporcao/zoom, os modos do player de filme
        AV_B_ULTIMO,   // ultimo canal (recall): o mesmo do "0" na Live TV
+       AV_B_VOLTAR30, // timeshift local: 30 s para tras na gravacao do pendrive
        AV_B_N };
 
 #define AV_INFO_LINHAS 7

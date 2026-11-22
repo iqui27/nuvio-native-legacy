@@ -161,7 +161,7 @@ static const Item TELA[] = {
       OPC(AJ_GUIA_PREVIA_DESTACAR), OPC(AJ_GUIA_PREVIA_SOM), OPC(AJ_GUIA_DIAS),
     ROT("Se o canal não abre"),
       OPC(AJ_LIVETV_DIAG), OPC(AJ_LIVETV_RES), OPC(AJ_LIVETV_ESPERA),
-      OPCA(AJ_LIVETV_FORMATO), OPCA(AJ_LIVETV_MODO), OPCA(AJ_LIVETV_PROXY),
+      OPCA(AJ_LIVETV_FORMATO), OPCA(AJ_LIVETV_MODO), OPCA(AJ_LIVETV_PROXY), OPCA(AJ_TIMESHIFT_LOCAL),
     MAIS(),
 
   // ---- TELAS ---------------------------------------------------------------------

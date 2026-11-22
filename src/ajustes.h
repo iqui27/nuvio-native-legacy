@@ -353,6 +353,7 @@ int   ajustes_pediu_livetv_diag(void);
 int   ajustes_livetv_modo(void);
 int   ajustes_livetv_proxy(void);
 int   ajustes_livetv_sugerir(void);   // Jev sugere categoria so para canal sem categoria (livecat.h)
+int   ajustes_timeshift_local(void);  // timeshift local da TV ao vivo no pendrive (timeshift_regras.h); padrao desligado
 // Guia TV v5: previa grande no heroi (800x450, como hoje) ou o cartao pequeno
 // do mock (560x315). Por perfil; padrao desligado.
 int   ajustes_guia_previa_grande(void);
