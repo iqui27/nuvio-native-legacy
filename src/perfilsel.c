@@ -1489,7 +1489,7 @@ static void desenhaPin(void) {
     // texto preto —, que e exatamente o padrao que a nota de NV_COR_FOCO em
     // layout.h descreve como o errado e manda nao repetir.
     if (f) {
-      gfx_cor(r, NV_RAIO_PILL, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, a);
+      gfx_cor(r, NV_RAIO_PILL, NV_COR_FOCO_RGB, a);
       float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
       gfx_anel_fora(r, NV_RAIO_PILL, 0.0f, NV_ANEL_FOCO, ar, ag, ab, a);
     } else {

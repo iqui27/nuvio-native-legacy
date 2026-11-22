@@ -732,23 +732,12 @@ void layout_insets_definir(float e, float t, float d, float b);
 #define NV_HOME_SAFE_RIGHT    NV_LEGACY_CONTENT_RIGHT
 #define NV_HOME_TEXT_GUTTER   24.0f
 
-// SUPERFICIE DE BOTAO EM REPOUSO (pilula, item de menu, chip, linha de
-// ajustes): #303030, o token --focus-bg da referencia, MEDIDO na TCL.
-//
-// O NOME FICOU VELHO. Ate 16/09/2026 esta era a cor do FOCO, com um anel na
-// cor de realce por fora, e a nota aqui chamava "pilula clara com texto
-// escuro" de padrao errado. O dono, olhando a TV, decidiu o contrario: "os
-// botoes quando selecionados ficar brancos com o texto preto, na sidebar
-// tambem, e pode tirar o contorno — fica mais bonito fill do que contorno".
-// Entao hoje: REPOUSO = esta cor; FOCO = preenchimento na COR DE REALCE
-// (ajustes_acento, branco por padrao) com texto escuro, SEM anel. O anel de
-// foco continua so onde nao da para preencher: cartaz, card com arte, campo
-// de texto.
-//
-// Quem ainda desenha anel em botao esta atrasado em relacao a esta decisao.
-#define NV_COR_FOCO_R     0.188f
-#define NV_COR_FOCO_G     0.188f
-#define NV_COR_FOCO_B     0.188f
+// Superficie neutra em foco no material solido (#2B2D34, tv.css --foco).
+// Botoes, chips e teclas usam o acento em vez desta superficie.
+#define NV_COR_FOCO_R     (0x2b / 255.0f)
+#define NV_COR_FOCO_G     (0x2d / 255.0f)
+#define NV_COR_FOCO_B     (0x34 / 255.0f)
+#define NV_COR_FOCO_RGB   NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B
 
 // Raios, em fracao do menor lado (o shader usa SDF normalizado)
 // ESCALA DE PAINEL (revisao de proporcao, 30/09). Toda folha lateral e todo
@@ -1166,4 +1155,3 @@ extern float nv_cor_fundo_viva[3];   // corviva.c
 #define NV_DET_ESTOURO   0.035f
 
 #endif
-
