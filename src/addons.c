@@ -1016,6 +1016,14 @@ static atomic_uint espDecisaoMs;
 #define NV_DADOS_OPCIONAL
 #endif
 extern const char *dados_cliente_id(void) NV_DADOS_OPCIONAL;
+// Mach-O: a importacao fraca INDEFINIDA ainda reprova o link estatico do
+// ld64 — a mesma regra dos NV_DUBLE_* de perfisessao.h — entao o modulo
+// emite um default fraco. dados.c (forte) sobrepoe no app completo; no
+// fixture isolado ele devolve NULL e cai no mesmo sal aleatorio por
+// processo que a importacao indefinida dava no ELF.
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((weak)) const char *dados_cliente_id(void) { return NULL; }
+#endif
 static pthread_once_t salUmaVez = PTHREAD_ONCE_INIT;
 static unsigned char salProcesso[16];
 static void salProcessoIniciar(void) {

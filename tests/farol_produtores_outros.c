@@ -24,6 +24,12 @@ int main(void) {
   return 0;
 }
 #elif defined(TEST_FONTE)
+// streams.c importa perfis_sessao_* por perfisessao.h; o ld64 reprova a
+// importacao fraca indefinida se alguma referencia sobreviver ao
+// -dead_strip, entao o fixture emite os defaults fracos do proprio
+// modulo (a convencao NV_DUBLE_SESSAO — sem stub forte aqui para
+// conflitar).
+#define NV_DUBLE_SESSAO
 #include "../src/streams.c"
 int main(void) {
   Stream s = {0};

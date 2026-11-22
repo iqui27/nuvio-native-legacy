@@ -32,13 +32,29 @@ static pthread_mutex_t V_mtx = PTHREAD_MUTEX_INITIALIZER;
 static char V_ids[1024][DIARIO_ID_MAX];
 static int V_nIds;             // ids que passaram por cat_indice (1 por entrada)
 
-FILE *__real_fopen(const char *c, const char *m);
-FILE *__wrap_fopen(const char *c, const char *m) {
+// fopen de escrita no fio chamador e contado. No ELF entra por
+// -Wl,--wrap,fopen; o ld64 do Mach-O nao tem --wrap, entao no __APPLE__ o
+// proprio binario define fopen (interposicao para as chamadas dos nossos
+// objetos) e o RTLD_NEXT alcanca o fopen de verdade da libc — a mesma
+// receita do srand interposto em tests/uuid_concorrente.c.
+static FILE *portaoFopen(FILE *(*real)(const char *, const char *),
+                       const char *c, const char *m) {
   if (m && (m[0] == 'w' || m[0] == 'a' || strchr(m, '+')) &&
       pthread_equal(pthread_self(), V_fioUi))
     V_fopenUi++;
-  return __real_fopen(c, m);
+  return real(c, m);
 }
+#if defined(__APPLE__)
+#include <dlfcn.h>
+FILE *fopen(const char *c, const char *m) {
+  FILE *(*real)(const char *, const char *);
+  real = (FILE *(*)(const char *, const char *))dlsym(RTLD_NEXT, "fopen");
+  return portaoFopen(real, c, m);
+}
+#else
+FILE *__real_fopen(const char *c, const char *m);
+FILE *__wrap_fopen(const char *c, const char *m) { return portaoFopen(__real_fopen, c, m); }
+#endif
 int diario_percorrer(int perfil, const DiarioFiltro *f, DiarioVisita cb,
                      void *ctx) {
   int k = sonda_percorrer_fake(perfil, f, cb, ctx);
@@ -64,7 +80,8 @@ int main(void) {
   struct stat st;
 
   V_fioUi = pthread_self();
-  strcpy(T_dir, "/tmp/nuvio-farol-varre-XXXXXX");
+  snprintf(T_dir, sizeof T_dir, "%s/nuvio-farol-varre-XXXXXX",
+           getenv("TMPDIR") && *getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
   OK(mkdtemp(T_dir) != NULL, "mkdtemp");
   T_now = 1767225600LL + 40LL * 86400LL;
   T_ms = 10u * 1000u * 1000u;

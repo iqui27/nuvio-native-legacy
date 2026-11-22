@@ -16,14 +16,20 @@ case "${SANITIZE:-1}" in
   1) flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer) ;;
   0) ;;
   thread) flags+=(-fsanitize=thread)
-          prefix="setarch -R" ;;
+          [ "$(uname -s)" = Linux ] && prefix="setarch -R" ;;
   *) flags+=(-fsanitize="$SANITIZE") ;;
 esac
 bin="${TMPDIR:-/tmp}/nuvio-farol-varre-test"
+wrap=-Wl,--wrap,fopen
+if [ "$(uname -s)" = Darwin ]; then
+  # ld64 nao aceita --wrap; o farol_varre.c interpoe fopen direto no
+  # binario (simbolo fopen + RTLD_NEXT) quando __APPLE__.
+  wrap=
+fi
 "$ccbin" ${flags[@]+"${flags[@]}"} -Wall -Wextra -O1 -g -DNV_MAPA_PURO \
   -Isrc -Itests tests/farol_varre.c src/farolsinal.c src/farolgosto.c \
   src/farolficha.c src/farolanel.c src/mapa.c src/js.c -lpthread -lm \
-  -Wl,--wrap,fopen -o "$bin"
+  $wrap -o "$bin"
 $prefix "$bin"
 rm -f "$bin"
 echo "farol_varre: tudo ok"

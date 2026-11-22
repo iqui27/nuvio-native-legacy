@@ -31,6 +31,21 @@ static FILE *portao(FILE *f, const char *path, const char *mode) {
   }
   return f;
 }
+// O portao entra por -Wl,--wrap=fopen/--wrap=fopen64 no ELF; o ld64 do
+// Mach-O nao tem --wrap, entao no __APPLE__ o proprio binario define fopen
+// (interposicao para as chamadas dos nossos objetos) e o RTLD_NEXT alcanca
+// o fopen de verdade da libc — a mesma receita do srand interposto em
+// tests/uuid_concorrente.c. fopen64 nao existe no Mach-O (e o
+// _FILE_OFFSET_BITS do dados.c nao renomeia nada la): o fopen dos nossos
+// objetos ja basta para o portao existir de verdade.
+#if defined(__APPLE__)
+#include <dlfcn.h>
+FILE *fopen(const char *path, const char *mode) {
+  FILE *(*real)(const char *, const char *);
+  real = (FILE *(*)(const char *, const char *))dlsym(RTLD_NEXT, "fopen");
+  return portao(real(path, mode), path, mode);
+}
+#else
 FILE *__real_fopen(const char *path, const char *mode);
 FILE *__real_fopen64(const char *path, const char *mode);
 FILE *__wrap_fopen(const char *path, const char *mode) {
@@ -39,6 +54,7 @@ FILE *__wrap_fopen(const char *path, const char *mode) {
 FILE *__wrap_fopen64(const char *path, const char *mode) {
   return portao(__real_fopen64(path, mode), path, mode);
 }
+#endif
 
 static void *syncInicial(void *unused) {
   const char *id;
