@@ -26,8 +26,10 @@ static void player_definir_fonte(const char *url) {
 int main(int argc, char **argv) {
   Stream s = {0};
   strcpy(s.url, "https://stream.example.invalid/video.mkv");
+  fonteVODAutomatica = 1; fonteVODDesde = 1;
   abrirFonteManualDireta(&s);
   assert(delivered == 1 && fonteManualDesde);
+  assert(!fonteVODAutomatica && !fonteVODDesde);
   rede_saude_nota(0, "https://metadata.example.invalid/meta");
   assert(argc > 1);
   for (int i = 1; i < argc; i++) {
