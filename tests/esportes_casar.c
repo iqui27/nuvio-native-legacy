@@ -13,7 +13,7 @@
 
 // --- guia de mentira ---------------------------------------------------------
 typedef struct { const char *id, *nome, *programa; int proibido; } Canal;
-static Canal canais[8]; static int nCanais, carregou, perfil = 1;
+static Canal canais[16]; static int nCanais, carregou, perfil = 1;
 static unsigned revGuia = 1, revEpg = 1, revEsp = 1;
 unsigned esportes_revisao(void) { return revEsp; }
 static time_t T0;
@@ -146,6 +146,19 @@ int main(void) {
   varrer(T0 - 30); assert(achou(lem("sport:basketball:nba:402"), "c-espn"));
   relogio += ESPCASAR_REVER_MS;
   varrer(T0 - 20); assert(achou(lem("sport:basketball:nba:402"), "c-espn2"));
+  // So umas poucas passadas extras: depois disso nao varre mais sozinho.
+  for (int i = 0; i < ESPCASAR_REVER_MAX; i++) { relogio += ESPCASAR_REVER_MS; varrer(T0 - 20); }
+  canais[2].programa = "Poker"; canais[3].nome = "ESPN 4";
+  relogio += ESPCASAR_REVER_MS; varrer(T0 - 20);
+  assert(achou(lem("sport:basketball:nba:402"), "c-espn2"));
+  // A agenda atualiza na hora do aviso: o canal ja achado vale ate a nova
+  // varredura terminar; terminada, vale o que ela achou.
+  for (int i = 0; i < 8; i++) canais[nCanais++] = (Canal){ "c-resto", "Variedades", NULL, 0 };
+  canais[3].nome = "ESPN"; revEsp++;
+  espcasar_passo(T0 - 19);
+  assert(achou(lem("sport:basketball:nba:402"), "c-espn2"));
+  varrer(T0 - 18);
+  assert(achou(lem("sport:basketball:nba:402"), "c-espn"));
   puts("esportes_casar ok");
   return 0;
 }

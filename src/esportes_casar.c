@@ -38,13 +38,15 @@ typedef struct {
   char      alvo[80];                // Lembrete.canal do jogo que se procura
   time_t    ini;
   EspEvento ev;
-  int       nota;
-  char      id[128], nome[200], base[600];
+  // `v` = a varredura em curso; `f` = a ultima que chegou ao fim. Enquanto uma
+  // nova nao termina, o cartao ainda pode usar o canal da anterior.
+  struct { int nota; char id[128], nome[200], base[600]; } v, f;
 } Alvo;
 static Alvo      alvos[ESPCASAR_ALVOS];
 static int       nAlvos, cursor;
 static unsigned  revGuia, revEpg, revEsp;
 static Uint32    fimVarredura;
+static int       revistas;
 
 static int esporte(const Lembrete *l) {
   return !strncmp(l->canal, "sport:", 6) || !strncmp(l->base, "sports|", 7);
@@ -106,7 +108,7 @@ void espcasar_passo(time_t agora) {
     }
     nAlvos = n; }
   if (novo) {
-    cursor = 0;
+    cursor = revistas = 0;
     revGuia = guia_busca_revisao(); revEpg = epg_revisao(); revEsp = esportes_revisao();
     guia_carregar(); epg_iniciar();
   }
@@ -114,21 +116,26 @@ void espcasar_passo(time_t agora) {
   // A agenda mudou (emissora nova, por exemplo): refaz os eventos.
   if (revEsp != esportes_revisao()) {
     revEsp = esportes_revisao();
-    for (int k = 0; k < nAlvos; k++) { preparar(ls[k], &alvos[k]); alvos[k].nota = 0; alvos[k].id[0] = 0; }
+    for (int k = 0; k < nAlvos; k++) { preparar(ls[k], &alvos[k]); alvos[k].v.nota = 0; alvos[k].v.id[0] = 0; }
     cursor = 0;
   }
   if (revGuia != guia_busca_revisao() || revEpg != epg_revisao()) {
     revGuia = guia_busca_revisao(); revEpg = epg_revisao(); cursor = 0;
-    for (int k = 0; k < nAlvos; k++) { alvos[k].nota = 0; alvos[k].id[0] = 0; }
+    for (int k = 0; k < nAlvos; k++) { alvos[k].v.nota = 0; alvos[k].v.id[0] = 0; }
   }
   Uint32 t0 = SDL_GetTicks();
   for (int lote = 0; lote < 8 && SDL_GetTicks() - t0 < 2; lote++) {
     const char *id, *nome, *grupo, *base;
     if (!guia_canal_regra_campos(cursor, NULL, NULL, NULL, NULL, NULL)) {
       // Fim da lista. A grade curta do Xtream chega sem mudar revisao nenhuma:
-      // de tempos em tempos olha de novo, guardando o melhor ja achado.
-      if (!fimVarredura) fimVarredura = t0 ? t0 : 1;
-      else if (cursor && t0 - fimVarredura >= ESPCASAR_REVER_MS) { cursor = 0; fimVarredura = 0; }
+      // olha de novo umas poucas vezes, guardando o melhor ja achado. Poucas
+      // porque cada passada pede a grade curta de quem saiu do cache (192).
+      if (!fimVarredura) {
+        fimVarredura = t0 ? t0 : 1;
+        for (int k = 0; k < nAlvos; k++) alvos[k].f = alvos[k].v;
+      } else if (cursor && revistas < ESPCASAR_REVER_MAX && t0 - fimVarredura >= ESPCASAR_REVER_MS) {
+        cursor = 0; fimVarredura = 0; revistas++;
+      }
       break;
     }
     fimVarredura = 0;
@@ -142,10 +149,10 @@ void espcasar_passo(time_t agora) {
       int np = guia_busca_programas(i, a->ev.inicio - 3 * 3600, ate, 0, ps, 16);
       for (int p = 0; p < np; p++) if (esportes_corresponde(&a->ev, ps[p].titulo, ps[p].ini, ps[p].fim)) confirma = 1;
       int v = esportes_canal_nota(&a->ev, nome, confirma);
-      if (v > a->nota) {
-        a->nota = v;
-        snprintf(a->id, sizeof a->id, "%s", id); snprintf(a->nome, sizeof a->nome, "%s", nome);
-        snprintf(a->base, sizeof a->base, "%s", base ? base : "");
+      if (v > a->v.nota) {
+        a->v.nota = v;
+        snprintf(a->v.id, sizeof a->v.id, "%s", id); snprintf(a->v.nome, sizeof a->v.nome, "%s", nome);
+        snprintf(a->v.base, sizeof a->v.base, "%s", base ? base : "");
       }
     }
   }
@@ -156,8 +163,12 @@ int espcasar_canal(const Lembrete *l, char *id, size_t nId, char *nome, size_t n
   const Alvo *a = NULL;
   if (!l || !espcasar_ligado()) return 0;
   for (int k = 0; k < nAlvos; k++) if (!strcmp(alvos[k].alvo, l->canal) && alvos[k].ini == l->ini) a = &alvos[k];
-  if (!a || a->nota < ESP_CANAL_CERTO || !a->id[0] || strlen(a->id) >= nId) return 0;
-  snprintf(id, nId, "%s", a->id); snprintf(nome, nNome, "%s", a->nome); snprintf(base, nBase, "%s", a->base);
-  printf("[esporte-canal] %s -> %s (nota %d)\n", l->titulo, a->nome, a->nota); fflush(stdout);
+  if (!a) return 0;
+  int f = a->f.nota > a->v.nota;
+  int nota = f ? a->f.nota : a->v.nota;
+  const char *aId = f ? a->f.id : a->v.id, *aNome = f ? a->f.nome : a->v.nome, *aBase = f ? a->f.base : a->v.base;
+  if (nota < ESP_CANAL_CERTO || !aId[0] || strlen(aId) >= nId) return 0;
+  snprintf(id, nId, "%s", aId); snprintf(nome, nNome, "%s", aNome); snprintf(base, nBase, "%s", aBase);
+  printf("[esporte-canal] %s -> %s (nota %d)\n", l->titulo, aNome, nota); fflush(stdout);
   return 1;
 }
