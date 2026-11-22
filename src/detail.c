@@ -7596,7 +7596,7 @@ static void desenhaElenco(float x, float y, int c, float f, float a) {
   // pula fileira vazia). Este `return` e a segunda tranca.
   if (!nome || !nome[0]) return;
 
-  if (epApple() && f > .005f && !layout_desktop_ativo()) {
+  if (epApple() && f > .005f) {
     float top = y + NV_DETP_EL_AVATAR + NV_DETP_EL_NOME_DY - 8;
     GfxRect info = {x-12,top,NV_DETP_EL_W+24,76};
     gfx_cor(info,18.0f/info.h,.19f,.21f,.23f,.6f*f*a);
