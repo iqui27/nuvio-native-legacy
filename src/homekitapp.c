@@ -122,8 +122,12 @@ static void *baixarFio(void *u) {
   // e esse byte a mais faz o hk_ler recusar pelo tamanho. Mesmo caminho do
   // rede_baixar (inclusive a reserva sem libcurl), so que com teto.
   RedeControle c = { (long)HK_CORPO_MAX + 1, NULL };
+  RedeMedida m;
   (void)u;
-  corpo = rede_baixar_medido_controle(urlPedida, 20, NULL, &c, NULL);
+  memset(&m, 0, sizeof m);
+  corpo = rede_baixar_medido_controle(urlPedida, 20, NULL, &c, &m);
+  // Pagina de erro que por acaso e um kit valido nao troca o kit em uso.
+  if (corpo && m.status >= 400) { free(corpo); corpo = NULL; }
   atomic_store_explicit(&estado, 3, memory_order_release);
   return NULL;
 }
