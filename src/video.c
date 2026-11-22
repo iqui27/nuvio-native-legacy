@@ -808,6 +808,7 @@ static void hlsParar(void) {
     if (dtsEstado != VIDEO_DTS_FALHOU) dtsEstado = 0;
   }
   hls.pending = hls.played = hls.external = 0;
+  dts_hls_webos_position(-1);
 #ifdef NV_HTTP_BUFFER_DIAG
   hls.buffer = (DtsBufferInfo){0};
   hls.downloadMbps = -1.0;
@@ -3487,9 +3488,6 @@ static void montarHttpHeader(char *dst, unsigned tam) {
   fflush(stdout);
 }
 
-// TEST (owner 22/11): bufferControl for the webOS HLS load, set just before
-// it and cleared after; empty = the player's default (about 30 s ahead).
-static char bufferHls[192];
 static void montarCarga(char *dst, size_t tam, const char *url, int modo,
                         const char *dolby, const char *hh, const char *janela,
                         int preset, long livreMb) {
@@ -3509,11 +3507,11 @@ static void montarCarga(char *dst, size_t tam, const char *url, int modo,
     snprintf(dst, tam,
         "{\"payload\":{\"option\":{"
         "\"appId\":\"" NV_APP_ID "\","
-        "%s%s%s%s"
+        "%s%s%s"
         "\"mediaTransportType\":\"%s\","
         "\"windowId\":\"%s\"}},"
         "\"uri\":\"%s\",\"type\":\"media\"}",
-        dolby, hh, modo == 3 ? "\"useSeekableRanges\":true," : "", modo == 3 ? bufferHls : "",
+        dolby, hh, modo == 3 ? "\"useSeekableRanges\":true," : "",
         strstr(url, ".m3u8") ? "HLS" : "URI", janela, url);
   } else {
     snprintf(dst, tam,
@@ -3666,54 +3664,19 @@ static void bufferLoadBombear(void) {
   carregarNativo(bufferLoad.source,ready>0?bufferLoad.proxy:bufferLoad.source,
                   ready>0,bufferLoad.dolby,session);
 }
-#ifdef NV_WEBOS_HLS_TEST
-// BUFFER TEST (owner 22/11): the LG player keeps about 30 s of HLS segments
-// ahead, which it downloads again after every seek. This asks it for about
-// 15 s (never under three of the longest segments), in bytes from the
-// source's average rate with a margin for peaks. A TV that refuses the
-// option gets the default load again (repetirBufferPadrao); one that ignores
-// it keeps showing ~30 s in the TEMP-BUFFER lines.
-#define HLS_PLAYER_AHEAD_S 15.0
-static void hlsBufferControl(char *out, size_t n) {
-  double bps = dts_tpk_bytes_por_s(), seg = dts_tpk_segmento_max();
-  out[0] = 0;
-  if (bps <= 0) {
-    printf("[webos-hls] bufferControl TEST: source rate unknown, player default\n");
-    fflush(stdout);
-    return;
-  }
-  if (seg <= 0) seg = 6;
-  double sMax = HLS_PLAYER_AHEAD_S > 3 * seg ? HLS_PLAYER_AHEAD_S : 3 * seg;
-  double sMin = 2 * seg > 8 ? 2 * seg : 8, sPre = seg > 4 ? seg : 4;
-  double k = bps * 1.25;    /* VBR peaks above the average */
-  double maxB = sMax * k, minB = sMin * k, preB = sPre * k;
-  if (maxB < 16.0 * 1048576) maxB = 16.0 * 1048576;
-  if (maxB > 512.0 * 1048576) maxB = 512.0 * 1048576;
-  if (minB > maxB * 0.75) minB = maxB * 0.75;
-  if (preB > minB) preB = minB;
-  snprintf(out, n, "\"bufferControl\":{\"userBufferCtrl\":true,\"preBufferByte\":%u,"
-           "\"bufferMinLevel\":%u,\"bufferMaxLevel\":%u},",
-           (unsigned)preB, (unsigned)minB, (unsigned)maxB);
-  printf("[webos-hls] bufferControl TEST: about %.0f s ahead (start %.0f s, refill below %.0f s; source %.1f Mb/s, "
-         "segments up to %.1f s): pre %.1f MB, min %.1f MB, max %.1f MB\n", sMax, sPre, sMin, bps * 8 / 1e6, seg,
-         preB / 1048576, minB / 1048576, maxB / 1048576);
-  fflush(stdout);
-}
-#endif
 static int carregarNativo(const char *url,const char *loadUrl,int ownBuffer,
                           const char *dolby,unsigned minhaSessao) {
   char carga[NV_MEDIA_URL_MAX + 4096];
   int modo = modoLoad;
   { char hh[768] = "";
 #ifdef NV_WEBOS_HLS_TEST
-    if (hlsAtivo()) { modo = 3; hlsBufferControl(bufferHls, sizeof bufferHls); }   /* seekable HLS VOD, without live load behavior */
+    if (hlsAtivo()) modo = 3;    /* seekable HLS VOD, without live load behavior */
     else
 #endif
     montarHttpHeader(hh, sizeof hh);
     montarCarga(carga, sizeof carga, nv_media_url(loadUrl), modo, dolby, hh,
                 expWin[0] ? expWin : "window_id_dummy",
                 ownBuffer ? 0 : ajustes_buffer_preset(), memlog_livre_mb());
-    bufferHls[0] = 0;
     bufferCustom = strstr(carga, "\"userBufferCtrl\":true") != NULL;
     if (bufferCustom)
       montarCarga(cargaBufferPadrao, sizeof cargaBufferPadrao, nv_media_url(loadUrl), modo,
@@ -4441,12 +4404,16 @@ static void hlsBombear(void) {
       }
     }
     if (pronto && tocando) hls.played = 1;
-    // TEMP-BUFFER (owner 22/11, bufferControl test): what the player keeps.
+    // Pacing of the local server (dts_hls_tpk.c): the playback position.
+    dts_hls_webos_position(pronto ? video_pos() : -1);
+    // TEMP-BUFFER (owner 22/11, pacing test): how far ahead the player is,
+    // from the segments it fetched (its bufferRange shows ~3 s under HLS).
     { static Uint32 lastBufferLog;
       if (pronto && SDL_GetTicks() - lastBufferLog >= 10000) {
+        double until = dts_hls_webos_served_until(), pos = video_pos();
         lastBufferLog = SDL_GetTicks();
-        printf("[webos-hls] TEMP-BUFFER: player %.1f s ahead at %.0f s, %u segments fetched\n",
-               bufferSeg > posSeg ? bufferSeg - posSeg : 0.0, posSeg, dts_tpk_segmentos());
+        printf("[webos-hls] TEMP-BUFFER: player %.1f s ahead at %.0f s (segments fetched up to %.0f s), %u segments\n",
+               until > pos ? until - pos : 0.0, pos, until, dts_tpk_segmentos());
         fflush(stdout);
       } }
     // The other format started where the first did not: this TV starts with

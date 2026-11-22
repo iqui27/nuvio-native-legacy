@@ -49,6 +49,11 @@ int dts_hls_webos_audio_tracks(DtsHlsAudioTrack *out, int max, int *selected);
  * the playlist, init segment and reader. The caller then seeks the player to
  * flush its segments. 0 = not possible here (reopen instead). */
 int dts_hls_webos_switch_audio(const char *url, const char *headers, int audio_ordinal);
+/* Playback position (s, -1 unknown): the next segment waits while the player
+ * would be more than ~20 s ahead of it. */
+void dts_hls_webos_position(double s);
+/* End of the last segment the player fetched in full (s, -1 none). */
+double dts_hls_webos_served_until(void);
 #endif
 /* Continuous TS: the URL that restarts the stream at s (same session). */
 int dts_tpk_url_em(double s, char *out, size_t n);

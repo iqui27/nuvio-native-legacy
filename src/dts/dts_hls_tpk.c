@@ -648,6 +648,49 @@ static int saidaEscrever(void *u, const unsigned char *d, int n) {
 
 // Um segmento (seg >= 0) ou o fluxo progressivo (seg < 0, a partir de `t`).
 // Devolve se a conexao pode seguir aberta.
+#ifdef NV_WEBOS_HLS_TEST
+/* PACING (owner 22/11): the LG player keeps ~30 s of HLS segments ahead and
+ * ignores bufferControl for HLS; with HLS Off it holds ~2 s and Nuvio's own
+ * buffer the rest, so HLS read ~90 MB more of a 90 Mb/s film at each start
+ * and seek. The next segment in order waits while it would put the player
+ * more than HLS_AHEAD_S ahead of playback; never longer than
+ * HLS_WAIT_MAX_MS at a time (a request held too long can time out in the
+ * player). Seeks and restarts (any other segment) are served at once. */
+#define HLS_AHEAD_S 20.0
+#define HLS_WAIT_MAX_MS 8000u
+static atomic_llong hlsPosMs = -1;     /* playback position, -1 unknown */
+static unsigned hlsRitmoN, hlsRitmoMs;
+void dts_hls_webos_position(double s) { atomic_store(&hlsPosMs, s >= 0 ? (long long)llround(s * 1000.0) : -1); }
+static void hlsRitmo(Sessao *s, int k) {
+  if (k <= s->lastSegment || k > s->lastSegment + 2) return;   /* in order (the player may fetch one ahead) */
+  double start = dts_remux_segment_start(s->rx, k), ahead = 0;
+  uint64_t t0 = agoraMs();
+  for (;;) {
+    long long p = atomic_load(&hlsPosMs);
+    if (p < 0 || s->cancelar) break;
+    ahead = start - p / 1000.0;
+    if (ahead <= HLS_AHEAD_S || ahead > 600 || agoraMs() - t0 >= HLS_WAIT_MAX_MS) break;
+    usleep(100000);
+  }
+  unsigned ms = (unsigned)(agoraMs() - t0);
+  if (ms < 100) return;
+  hlsRitmoN++; hlsRitmoMs += ms;
+  if (hlsRitmoN % 10 == 1) {
+    printf("[webos-hls] TEMP-PACE: seg %d waited %u ms (%.1f s ahead of playback); %u waits, %.1f s in all\n",
+           k, ms, ahead, hlsRitmoN, hlsRitmoMs / 1000.0);
+    fflush(stdout);
+  }
+}
+/* End of the last segment sent in full, for the log: what the player holds. */
+double dts_hls_webos_served_until(void) {
+  double v = -1;
+  pthread_mutex_lock(&G);
+  if (atual && atual->rx && atual->lastSegment >= 0)
+    v = dts_remux_segment_start(atual->rx, atual->lastSegment) + dts_remux_segment_duration(atual->rx, atual->lastSegment);
+  pthread_mutex_unlock(&G);
+  return v;
+}
+#endif
 static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int seg, double t, const char *fmt,
                        const char *tipo, int manter) {
   char err[160] = "";
@@ -870,8 +913,13 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
       printf("[dts-tpk] #%u <- 404 segmento %d fora da playlist\n", nr, k);
       fflush(stdout);
       r = manter;
-    } else r = servirFluxo(sock, s, pd, nr, k, 0, s->webosMp4 ? "mp4" : "mpegts",
+    } else {
+#ifdef NV_WEBOS_HLS_TEST
+      if (s->webos && !pd->head) hlsRitmo(s, k);
+#endif
+      r = servirFluxo(sock, s, pd, nr, k, 0, s->webosMp4 ? "mp4" : "mpegts",
                            s->webosMp4 ? "video/mp4" : "video/mp2t", manter);
+    }
   } else if (!s->webos && !strcmp(resto, "prog.ts")) {
     const char *q = strstr(pd->query, "t=");
     double t = q ? atof(q + 2) : 0.0;
