@@ -3,7 +3,7 @@
 // relogio — `dia`/`faixaHora` vem no contexto e o sorteio vem de
 // `ctx->semente`. Toda a memoria de trabalho fica na pilha da chamada:
 // tabelas hash do modelo (~4,3 KB) + vetores por posicao elegivel (~21 KB)
-// + tabela de dedup (~9 KB) — 37 KB medidos (gcc -fstack-usage), detalhado
+// + tabela de dedup (~10 KB) — 38 KB medidos (gcc -fstack-usage), detalhado
 // em farolrec_escolher.
 
 #include "farolrec.h"
@@ -89,8 +89,15 @@ static const FarolAfin *frVetor(const FarolGosto *g, int dim, int *cap) {
   }
 }
 
+// Espalhador dos ids nas tabelas: os bits ALTOS do produto de 64 bits
+// (Fibonacci hashing) — os bits baixos do produto de 32 so dependem dos
+// bits baixos do id, entao ids congruentes mod 64/128/256 se amontoavam no
+// mesmo balde (pior caso medido na r2: multiplos de 4096, 0,40-0,58 ms).
+// O bit usado no balde agora depende de todos os bits do id, por ~1
+// operacao a mais por consulta, e nao muda a saida: a tabela compara o id
+// inteiro e a sondagem sempre termina.
 static uint32_t frEspalha(int32_t id) {
-  return (uint32_t)id * 2654435761u;
+  return (uint32_t)(((uint64_t)(uint32_t)id * 0x9E3779B97F4A7C15ull) >> 32);
 }
 
 // Despeja as afinidades do modelo nas tabelas hash, com o peso ja projetado
@@ -447,10 +454,10 @@ static void frMotivos(const FarolRecCtx *ctx, const FarolRecCand *cand,
 int farolrec_escolher(const FarolRecCtx *ctx,
                       const FarolRecCand *cand, int nCand,
                       FarolRecItem *out, int maxOut) {
-  // Memoria de trabalho na pilha, 37 040 B medidos (-fstack-usage) no teto:
+  // Memoria de trabalho na pilha, 38 064 B medidos (-fstack-usage) no teto:
   // hsh 4,3 KB + vetores por posicao elegivel ~21,2 KB + ord/tmp/sl/st
-  // ~3,6 KB + dedup setV/setF 9 KB + escolhidos pSem/pGen ~0,9 KB. Nada
-  // estatico: chamadas aninhadas nao se pisam.
+  // ~3,6 KB + dedup setV/setF/emit 10 KB + escolhidos pSem/pGen ~0,9 KB.
+  // Nada estatico: chamadas aninhadas nao se pisam.
   FRW hsh[FR_HSH_N];
   int32_t pts[FAROL_REC_CAND_MAX];      // por posicao elegivel
   int32_t simM[FAROL_REC_CAND_MAX];     // simMax incremental por posicao
@@ -466,7 +473,11 @@ int farolrec_escolher(const FarolRecCtx *ctx,
   uint8_t nPes[FAROL_REC_CAND_MAX];
   uint8_t st[FAROL_REC_CAND_MAX];       // bit0 ja escolhido, bit1 banido
   int64_t setV[FR_SET_N];               // dedup por chave (enderecamento aberto)
-  uint8_t setF[FR_SET_N];               // flags unidas por chave; bit 7 = emitida
+  uint8_t setF[FR_SET_N];               // flags unidas por chave (byte inteiro
+                                        // do chamador — nenhum bit e' do motor)
+  uint8_t emit[FR_SET_N];               // marca "ja emitida" por slot de dedup
+                                        // — campo proprio: o bit 7 de `flags`
+                                        // e' do chamador, nao colide (r2 E1l)
   uint16_t pSem[FAROL_REC_CAND_MAX];    // semente de cada escolhido
   int32_t pGen[FR_JANELA_GEN];          // genero principal dos <= 6 primeiros
   int nivel, nEl = 0, nOut = 0, foraPronto, i, k;
@@ -484,6 +495,7 @@ int farolrec_escolher(const FarolRecCtx *ctx,
   // TEM_IMDB) viram uniao por chave.
   memset(setV, 0, sizeof setV);
   memset(setF, 0, sizeof setF);
+  memset(emit, 0, sizeof emit);
   for (i = 0; i < nCand; i++) {
     uint32_t p;
     sl[i] = 0xffff;
@@ -502,7 +514,7 @@ int farolrec_escolher(const FarolRecCtx *ctx,
     const FarolFicha *f = c->ficha;
     uint8_t fl = c->flags;
     int e = nEl, a2, b2;
-    if (sl[i] != 0xffff) fl |= setF[sl[i]] & 0x3f;
+    if (sl[i] != 0xffff) fl |= setF[sl[i]];
     if (!c->fontes) continue;
     if (fl & FRC_FL_VISTO) continue;
     if (fl & FRC_FL_FORA_CLASS) continue;
@@ -515,8 +527,8 @@ int farolrec_escolher(const FarolRecCtx *ctx,
     if (nivel == 1 && !(c->fontes & FRC_F_SEMENTE)) continue;
     if (sl[i] != 0xffff) {
       // A chave guarda a PRIMEIRA entrada que passou nos filtros.
-      if (setF[sl[i]] & 0x80) continue;
-      setF[sl[i]] |= 0x80;
+      if (emit[sl[i]]) continue;
+      emit[sl[i]] = 1;
     }
     // Achata por posicao elegivel tudo que as varreduras do MMR leem: o
     // resto do caminho nao volta a tocar o vetor de candidatos.

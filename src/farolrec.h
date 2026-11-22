@@ -74,6 +74,8 @@ enum {
 // escapam pela copia "limpa" — um titulo VISTO por uma via e VISTO em
 // todas (mesmo assim, quem chama deve fundir as duplicatas — inclusive
 // `fontes`, que aqui nao se mescla: o bonus sai da copia que ficou).
+// Bits fora do enum (0x40 e 0x80 hoje) sao do chamador: o motor os carrega
+// na uniao por chave mas nunca os interpreta — nao sao reservados.
 enum {
   FRC_FL_VISTO      = 0x01,  // cat_visto / Diario: nunca sai
   FRC_FL_FORA_CLASS = 0x02,  // fora da classificacao do perfil
