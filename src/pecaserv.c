@@ -224,6 +224,9 @@ static void *laco(void *arg) {
     c = accept(fd, NULL, NULL);
     if (c < 0) continue;
     if (calado) { close(c); continue; }
+#ifdef SO_NOSIGPIPE
+    { int um = 1; setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &um, sizeof um); }
+#endif
     atender(c);
     shutdown(c, SHUT_RDWR);
     close(c);
