@@ -272,6 +272,8 @@ def contexto(txt, i):
 # "nao sei o que e": sem esta lista a ferramenta nao pode virar teste, e sem
 # virar teste ela nao impede a proxima regressao.
 IGNORAR = {
+    # homekit.c: tileShape value written back to the kit JSON, not a label.
+    "POSTER",
     # mkv.c: chapter language code aliases used for matching, not labels.
     "pt,por,pob", "de,ger,deu", "da,dan",
     # Guide v5 internal screen routes, never rendered as labels.

@@ -401,3 +401,4 @@
 
   1, // legendaEvitarSdhLocal: Desligado (V_LIGA 1)
   1, /* barrasPretasLocal: Desligado */
+  0, /* Kit de Home: acao; o kit mora em kit-home-p<N>.json */
