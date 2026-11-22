@@ -4503,14 +4503,14 @@ void gfx_vidro_foco(GfxRect r, float raio, float foco, float a) {
   if (f <= 0.01f || a <= 0.001f) return;
   if (gfx_foco_placa(r, raio, f, a)) return;
   ajustes_acento(&cr, &cg, &cb);
-  // "Contorno do vidro" DESLIGADO (pedido do dono, 30/09: "o contorno que eu
-  // queria desligar e esse quando ta em foco, mais minimalista"): sem anel,
-  // o foco e so o fundo — um degrau claro e a lavagem do realce, fortes o
-  // bastante para ler a 3 m. Cartaz (gfx_vidro_cartao) nao passa por aqui:
-  // sem superficie propria, sem anel ele ficaria sem foco nenhum.
+  // "Contorno do vidro" DESLIGADO (dono, 30/09: "mais minimalista"): sem
+  // anel. Linha e cartao em foco sobem UM DEGRAU DE SUPERFICIE, sem lavagem do
+  // realce (Glass UI 02/10, design/glass-ilha; tv.css --foco): vidro branco 13%,
+  // solido #2B2D34. O realce fica para botao/chip/tecla (gfx_vidro_pilula_cheia).
+  // Cartaz (gfx_vidro_cartao) nao passa por aqui.
   if (!ajustes_vidro_contorno()) {
-    gfx_cor(r, raio, 1, 1, 1, 0.07f * f * a);
-    gfx_cor(r, raio, cr, cg, cb, 0.20f * f * a);
+    if (ajustes_vidro()) gfx_cor(r, raio, 1, 1, 1, 0.13f * f * a);
+    else gfx_cor(r, raio, 0x2b / 255.0f, 0x2d / 255.0f, 0x34 / 255.0f, f * a);
     return;
   }
   gfx_cor(r, raio, cr, cg, cb, 0.09f * f * a);
