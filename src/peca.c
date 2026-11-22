@@ -128,7 +128,12 @@ static void grupo(char *b, size_t tam, size_t *k, const char *rotulo, const char
   if (n <= 0) return;
   *k += (size_t)snprintf(b + *k, *k < tam ? tam - *k : 0, "%s:\n", rotulo);
   for (int i = 0; i < n && i < PECA_CTX_MAX && *k < tam; i++)
-    if (v[i] && v[i][0]) *k += (size_t)snprintf(b + *k, tam - *k, "- %.120s\n", v[i]);
+    if (v[i] && v[i][0]) {
+      char t[124];
+      snprintf(t, sizeof t, "%.120s", v[i]);
+      utf8Inteiro(t, strlen(t));   // o corte nao deixa meio caractere no JSON
+      *k += (size_t)snprintf(b + *k, tam - *k, "- %s\n", t);
+    }
   if (*k >= tam) *k = tam - 1;
 }
 

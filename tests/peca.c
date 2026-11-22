@@ -69,6 +69,15 @@ static void testaPedido(void) {
   OK(p && !strstr(p, "Viewer's history"));
   free(p);
   OK(peca_pedido("", "en", NULL) == NULL);
+  { // titulo do historico cortado no meio de um caractere: sem meio UTF-8 no JSON
+    char longo[160]; PecaContexto c2; char *q;
+    memset(&c2, 0, sizeof c2);
+    memset(longo, 'a', 119); strcpy(longo + 119, "\xc3\xa3\xc3\xa3");
+    c2.vistos[0] = longo; c2.nVistos = 1;
+    q = peca_pedido("algo", "pt-BR", &c2);
+    OK(q && !strstr(q, "\xc3\\n") && strstr(q, "aaaa\\n"));
+    free(q);
+  }
 }
 
 // Como o Gemini devolve: o JSON pedido e uma STRING dentro de parts[].text.
