@@ -47,6 +47,7 @@ int main(void) {
 }
 #else
 #include "../src/assrender.c"
+#include "../src/asspeso.c"
 int main(void) {
   ASS_Library *library = ass_library_init();
   assert(library);

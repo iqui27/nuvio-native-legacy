@@ -16,6 +16,7 @@ static void *checkedMalloc(size_t n) {
 }
 #define malloc checkedMalloc
 #include "../src/assrender.c"
+#include "../src/asspeso.c"
 #undef malloc
 #ifndef NV_ASS_LIBASS
 #error This test requires the real libass backend

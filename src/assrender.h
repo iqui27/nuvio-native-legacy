@@ -63,6 +63,13 @@ int  assrender_desenhar(double posSeg, int atrasoMs, float alpha,
 /* 1 quando libass aceitou o documento atual. Sem a biblioteca compilada, o
  * retorno e 0 e legenda.c continua sendo o fallback SRT/VTT/ASS reduzido. */
 int  assrender_ativo(void);
+/* Ajuste "Legenda ASS com estilo" (asspeso.h): ASSPESO_AUTO reduz a resolucao
+ * do render enquanto a cena pesa demais para a TV, ASSPESO_COMPLETO nunca
+ * reduz, ASSPESO_SIMPLES faz assrender_ativo() devolver 0 para o ASS do autor
+ * (a legenda sai como texto do app). Vale na hora, sem recarregar a faixa. */
+void assrender_definir_peso(int modo);
+/* Por quanto o render esta dividido agora (1 = 1:1). Diagnostico e teste. */
+int  assrender_peso_divisor(void);
 /* Teste/diagnostico: renderiza o instante no fio de quem chama, sem GL.
  * Devolve o numero de imagens, ou -1 sem faixa/sem libass. */
 int  assrender_quadro_cpu(double posSeg);

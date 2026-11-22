@@ -3,6 +3,7 @@
 #include "ass_area.c"
 #undef main
 #include "../src/assrender.c"
+#include "../src/asspeso.c"
 #include <assert.h>
 int perftv_enabled, perftv_uploads;
 

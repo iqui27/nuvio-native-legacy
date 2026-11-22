@@ -119,6 +119,7 @@ char *assrender_marcar_tailandes(const char *txt) {
 #include <ass/ass.h>
 #include "gfx.h"
 #include "bidi.h"
+#include "asspeso.h"
 
 #define ASS_TEX_INICIAL 64
 
@@ -142,6 +143,7 @@ typedef struct {
   long long inicioMax;   // maior Start dos eventos vivos em ms; -1 sem evento
   float ox, oy;          // canto da area do video na tela quando foi renderizado
   int k;                 // pixels do alvo por unidade de layout: o quadro foi renderizado k vezes maior (#335)
+  int div;               // asspeso: o render saiu `div` vezes menor e e esticado no desenho (1 = 1:1)
 } AssCpuFrame;
 
 static pthread_mutex_t assTrava = PTHREAD_MUTEX_INITIALIZER;
@@ -206,6 +208,12 @@ static size_t assBytesQuadro;
  * nem reenviado a GPU. */
 static unsigned assProduzidoEpoch, assProduzidoGeracao;
 static int assProduziu;
+/* Peso em TV fraca (asspeso.h), sob assFilaTrava: o modo vem do ajuste "Legenda
+ * ASS com estilo"; no Automatico o render perde resolucao enquanto a cena pesa. */
+static AssPeso assPeso;
+static int assPesoModo = ASSPESO_AUTO;
+static unsigned assPesoGeracao;
+static int assProduzidoDiv = 1;
 /* Textura: serial do quadro cujas imagens estao nas texturas e a cor usada.
  * Reenviar tudo a cada quadro (o que se fazia) custa a conversao RGBA de
  * todos os glifos 60 vezes por segundo. */
@@ -689,7 +697,7 @@ static void *ass_worker_loop(void *unused) {
     unsigned generation, serial, epoch;
     double ms, esc;
     float ox, oy;
-    int lw, lh, vw, vh, plainValid, k;
+    int lw, lh, vw, vh, plainValid, k, div, pesoModo, estouro = 0;
     PlainAssStyle plain;
     struct timespec a, b;
     ASS_Image *images = NULL;
@@ -701,7 +709,17 @@ static void *ass_worker_loop(void *unused) {
     if (assWorkerParar) { pthread_mutex_unlock(&assFilaTrava); break; }
     generation = assPedidoGeracao; serial = assPedidoSerial; epoch = assEpoch; ms = assPedidoMs;
     ox = layPedX; oy = layPedY; lw = layPedW; lh = layPedH; k = layPedK;
-    lw *= k; lh *= k;   /* libass renderiza em pixels do alvo, nao em unidades de layout */
+    if (generation != assPesoGeracao) { asspeso_zerar(&assPeso); assPesoGeracao = generation; }
+    /* O documento de texto simples (SRT/VTT) e leve e mede o estilo em pixels
+     * do quadro: fica sempre 1:1. */
+    pesoModo = __atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE) ? ASSPESO_COMPLETO : assPesoModo;
+    if (pesoModo != ASSPESO_AUTO) asspeso_amostra(&assPeso, pesoModo, 0.0, 0, 0);
+    div = asspeso_divisor(&assPeso);
+    /* libass renderiza em pixels do alvo, nao em unidades de layout; com a
+     * cena pesada demais para a TV, em 1/div deles (asspeso). */
+    lw = lw * k / div; lh = lh * k / div;
+    if (lw < 16) lw = 16;
+    if (lh < 16) lh = 16;
     vw = layPedVW; vh = layPedVH; esc = layPedEscala;
     plain = plainPed; plainValid = plainPedValido;
     assPedidoPendente = 0;
@@ -731,12 +749,14 @@ static void *ass_worker_loop(void *unused) {
       /* Igual ao publicado: nada a fazer, o quadro em tela continua certo. */
       pthread_mutex_lock(&assFilaTrava);
       igual = !changed && assProduziu && assProduzidoEpoch == epoch &&
-              assProduzidoGeracao == generation && epoch == assEpoch;
+              assProduzidoGeracao == generation && epoch == assEpoch &&
+              assProduzidoDiv == div;
       pthread_mutex_unlock(&assFilaTrava);
       if (!igual) {
         pronto = ass_frame_copiar(images, &frame);
+        estouro = !pronto && images;
         frame.ms = t; frame.inicioMax = -1;
-        frame.ox = ox; frame.oy = oy; frame.k = k;
+        frame.ox = ox; frame.oy = oy; frame.k = k; frame.div = div;
         { int i;
           for (i = 0; i < assTrack->n_events; i++) {
             long long ini = assTrack->events[i].Start;
@@ -754,7 +774,15 @@ static void *ass_worker_loop(void *unused) {
       assMed.renders++; assMed.renderSomaUs += us;
       if (us > assMed.renderMaxUs) assMed.renderMaxUs = us;
       if (igual) assMed.iguais++;
-      assUltimoRenderUs = us; }
+      assUltimoRenderUs = us;
+      if (generation == assPesoGeracao && div == asspeso_divisor(&assPeso) &&
+          asspeso_amostra(&assPeso, pesoModo, us / 1000.0, pronto ? frame.bytes : 0, estouro)) {
+        printf("[ass] peso: render em 1/%d (ultimo quadro %.1f ms, %zu KiB%s)\n",
+               asspeso_divisor(&assPeso), us / 1000.0, (pronto ? frame.bytes : 0) / 1024,
+               estouro ? ", passou do teto de copia" : "");
+        /* O quadro em tela fica; o proximo pedido ja sai no tamanho novo. */
+        assTemUltimoPedido = 0;
+      } }
     /* SEM o antigo "fabs(assPedidoMs - ms) <= 50": com o relogio interpolado o
      * pedido anda 16 ms por quadro, e um render de mais de 50 ms na C9 jogava
      * fora TODO quadro — a legenda nunca aparecia. Um quadro de 30 ms atras e
@@ -767,6 +795,7 @@ static void *ass_worker_loop(void *unused) {
       assPronto = frame; memset(&frame, 0, sizeof frame);
       assProntoValido = 1;
       assProduziu = 1; assProduzidoEpoch = epoch; assProduzidoGeracao = generation;
+      assProduzidoDiv = div;
       assBytesQuadro = assPronto.bytes;
     }
     ass_frame_liberar(&frame);
@@ -1343,7 +1372,7 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
      * (0,0) e o canto superior esquerdo. A textura contem somente a caixa do
      * glyph e pode ser composta diretamente pelo shader de texto. */
     gfx_tex_aspect_atual = 0.0f;
-    { float kk = assAtual.k > 1 ? (float)assAtual.k : 1.0f;
+    { float kk = (assAtual.k > 1 ? (float)assAtual.k : 1.0f) / (assAtual.div > 1 ? (float)assAtual.div : 1.0f);
       /* Origem arredondada ao pixel do alvo: 1:1, sem meio pixel de filtro. */
       float dx = roundf((x + assAtual.ox) * kk) / kk + (float)im->x / kk;
       float dy = roundf((y + assAtual.oy) * kk) / kk + (float)im->y / kk;
@@ -1377,7 +1406,29 @@ int assrender_ativo(void) {
   int ativo = __atomic_load_n(&assTrackAtivo, __ATOMIC_ACQUIRE) &&
               __atomic_load_n(&assTrackGeracao, __ATOMIC_ACQUIRE) == geracao &&
               __atomic_load_n(&assWorkerCriado, __ATOMIC_ACQUIRE);
+  /* "Texto simples": o ASS do autor sai pelo desenho de texto do app
+   * (legenda.c), como nas builds sem libass. O documento de texto simples
+   * (SRT/VTT em RTL) nao e do autor e continua no libass. */
+  if (ativo && asspeso_sem_estilo(__atomic_load_n(&assPesoModo, __ATOMIC_ACQUIRE)) &&
+      !__atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE)) return 0;
   return ativo;
+}
+
+void assrender_definir_peso(int modo) {
+  if (modo != ASSPESO_COMPLETO && modo != ASSPESO_SIMPLES) modo = ASSPESO_AUTO;
+  if (__atomic_load_n(&assPesoModo, __ATOMIC_ACQUIRE) == modo) return;
+  pthread_mutex_lock(&assFilaTrava);
+  __atomic_store_n(&assPesoModo, modo, __ATOMIC_RELEASE);
+  assTemUltimoPedido = 0;   /* o proximo desenhar pede um render no modo novo */
+  pthread_mutex_unlock(&assFilaTrava);
+}
+
+int assrender_peso_divisor(void) {
+  int d;
+  pthread_mutex_lock(&assFilaTrava);
+  d = asspeso_divisor(&assPeso);
+  pthread_mutex_unlock(&assFilaTrava);
+  return d;
 }
 
 const char *assrender_diagnostico(void) {
@@ -1466,6 +1517,8 @@ void assrender_definir_layout(float x, float y, float w, float h,
 }
 void assrender_pixels_por_unidade(float f) { (void)f; }
 int assrender_ativo(void) { return 0; }
+void assrender_definir_peso(int modo) { (void)modo; }
+int assrender_peso_divisor(void) { return 1; }
 int assrender_quadro_cpu(double posSeg) { (void)posSeg; return -1; }
 const char *assrender_diagnostico(void) { return assDiag; }
 void assrender_geracao(unsigned geracao) { assGeracao = geracao; }
