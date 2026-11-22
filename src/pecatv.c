@@ -193,6 +193,13 @@ void pecatv_atualizar(float dt, int podeMostrar) {
     if (res == PECA_SEM_CHAVE || res == PECA_CHAVE) { estado = "livre"; res = PECA_OK; if (tela == T_ERRO) pecatv_fechar(); }
     publicar();
   }
+  // Trocou para o perfil infantil com pedido ou resultado do adulto: some tudo.
+  if (perfil_infantil_ativo() && (!strcmp(estado, "pronto") || !strcmp(estado, "pensando"))) {
+    pecafio_cancelar();
+    nTit = 0; pedido[0] = 0; estado = "livre"; res = PECA_OK;
+    publicar();
+    if (tela == T_PRONTO || tela == T_PENSANDO) pecatv_fechar();
+  }
   if (pecaserv_pegar_pedido(txt, sizeof txt)) atender(txt, podeMostrar);
   {
     PecaResultado r; PecaSugestao v[PECA_N]; int n = 0, mg, mc;
