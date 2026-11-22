@@ -52,6 +52,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_MENU_ESPORTES: case AJ_MENU_PERFIL: return "aj_panel-left";
     case AJ_RAIL_BLUR: return "aj_panel-left";
     case AJ_MIC_BUSCA: return "aj_mic";
+    case AJ_PECA: case AJ_PECA_PAREAR: return "aj_smartphone";
     case AJ_DESCOBRIR: return "aj_panel-left";
     case AJ_PS_FUNDO: return "aj_users";
     case AJ_PS_CONTINUAR: case AJ_PS_TAMANHO: return "aj_users";

@@ -186,7 +186,7 @@ static int ajCenaSecao(int op) {
     case AJ_TITULO_FIL: case AJ_PALCO_FUNDO:
       return AJC_APA_FILEIRAS;
     case AJ_MENU_TOPO: case AJ_RAIL_MODERNA: case AJ_RAIL: case AJ_MENU_EXPLORAR: case AJ_MENU_GUIA: case AJ_MENU_AGENDA:
-    case AJ_MENU_ESPORTES: case AJ_MENU_PERFIL: case AJ_RAIL_BLUR: case AJ_DESCOBRIR: case AJ_MIC_BUSCA:
+    case AJ_MENU_ESPORTES: case AJ_MENU_PERFIL: case AJ_RAIL_BLUR: case AJ_DESCOBRIR: case AJ_MIC_BUSCA: case AJ_PECA: case AJ_PECA_PAREAR:
       return AJC_HOME_BARRA;
     case AJ_PS_FUNDO: case AJ_PS_CONTINUAR: return AJC_HOME_PERFIL;
     case AJ_DET_VEU: case AJ_DET_DATA_CHEIA: case AJ_DET_BLUR_NAO_VISTOS: case AJ_EP_TAMANHO: return AJC_TIT_APARECE;

@@ -1,0 +1,38 @@
+// A pagina do celular de "Peca como fala" (pecatv.c): HTML e JS, nao texto de
+// interface da TV. Os rotulos entram por L (i18n, em pecatv.c).
+static const char PAGINA_A[] =
+  "<!doctype html><html><head><meta charset=utf-8>"
+  "<meta name=viewport content='width=device-width,initial-scale=1'>"
+  "<meta name=color-scheme content=dark><title>Nuvio</title><style>"
+  "body{margin:0;padding:20px;background:#0e0f13;color:#eef0f5;font:17px/1.4 system-ui,sans-serif}"
+  "h1{font-size:22px;margin:4px 0 16px}p{color:#aab;margin:10px 0}"
+  "textarea,input{box-sizing:border-box;width:100%;padding:14px;border-radius:14px;border:1px solid #333845;"
+  "background:#181a21;color:#fff;font:inherit}textarea{height:110px;resize:none}"
+  "button{width:100%;margin-top:10px;padding:14px;border:0;border-radius:14px;background:#fff;color:#000;"
+  "font:600 17px system-ui}button:disabled{opacity:.4}"
+  ".c{background:#181a21;border-radius:16px;padding:14px;margin-top:12px}.c b{font-size:18px}"
+  ".c span{color:#99a;margin-left:6px}.c button{background:#2a2d38;color:#fff}"
+  "[hidden]{display:none}</style></head><body><h1 id=h></h1>"
+  "<div id=k hidden><p id=kt></p><input id=ki type=password autocomplete=off autocapitalize=off>"
+  "<button id=kb></button></div>"
+  "<div id=f><textarea id=q maxlength=400></textarea><button id=b></button></div>"
+  "<p id=st></p><div id=t></div><script>var L=";
+static const char PAGINA_B[] =
+  ";var $=function(i){return document.getElementById(i)},B=location.pathname.replace(/\\/$/,''),ult='',ocup=0;"
+  "$('h').textContent=L.h;$('kt').textContent=L.kt;$('kb').textContent=L.kb;$('b').textContent=L.b;"
+  "$('q').placeholder=L.ph;"
+  "function post(c,v){return fetch(B+c,{method:'POST',body:v,headers:{'Content-Type':'text/plain'}})}"
+  "function ver(s){$('k').hidden=!!s.chave;$('f').hidden=!s.chave;ocup=s.e=='pensando';$('b').disabled=ocup;"
+  "var j=JSON.stringify(s);if(j==ult)return;ult=j;var t=$('t');t.textContent='';"
+  "$('st').textContent=s.e=='pensando'?L.p+' '+s.pedido:s.e=='erro'?(L.err[s.r]||L.err[8]):s.e=='pronto'?s.pedido:'';"
+  "if(s.e!='pronto')return;s.t.forEach(function(x,i){var c=document.createElement('div');c.className='c';"
+  "var n=document.createElement('b');n.textContent=x.n;c.appendChild(n);"
+  "if(x.a){var a=document.createElement('span');a.textContent=x.a;c.appendChild(a)}"
+  "var m=document.createElement('p');m.textContent=x.m;c.appendChild(m);"
+  "var o=document.createElement('button');o.textContent=L.o;o.onclick=function(){post('/a',''+i)};c.appendChild(o);"
+  "t.appendChild(c)})}"
+  "function ler(){fetch(B+'/s',{cache:'no-store'}).then(function(r){return r.json()}).then(ver).catch(function(){})}"
+  "$('b').onclick=function(){var v=$('q').value.trim();if(!v||ocup)return;$('b').disabled=true;"
+  "post('/p',v).then(ler)};"
+  "$('kb').onclick=function(){var v=$('ki').value.trim();if(!v)return;$('ki').value='';post('/k',v).then(ler)};"
+  "setInterval(function(){if(!document.hidden)ler()},1500);ler();</script></body></html>";

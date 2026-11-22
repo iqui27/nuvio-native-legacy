@@ -13,7 +13,7 @@ static int ajustePortavel(int op) {
     case AJ_AMPLIAR_UI: case AJ_RESOLUCAO: case AJ_TEX_MB: case AJ_QUALIDADE_IMG:
     case AJ_GPU_EFEITOS: case AJ_ITENS_FILEIRA:
     case AJ_TAMANHO_UI: case AJ_TAMANHO_AJUSTES: case AJ_ESCALA_TEXTO:
-    case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
+    case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID: case AJ_PECA:
     case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_ESMAECER: case AJ_BRILHO_PLAYER:
     case AJ_PROPORCAO_PADRAO: case AJ_LOGO_TRAILER:
     case AJ_DV: case AJ_ATMOS:

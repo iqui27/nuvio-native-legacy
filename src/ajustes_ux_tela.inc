@@ -194,6 +194,9 @@ static const Item TELA[] = {
 #if (defined(NV_TPK) || defined(__EMSCRIPTEN__)) && !defined(NV_TPK40)
       OPCA(AJ_MIC_BUSCA),
 #endif
+#if !defined(__EMSCRIPTEN__) && !defined(_WIN32)
+      OPC(AJ_PECA), OPC(AJ_PECA_PAREAR),
+#endif
     ROT("Escolha de perfil"), OPC(AJ_PS_FUNDO), OPC(AJ_PS_CONTINUAR), OPC(AJ_PS_TAMANHO),
     MAIS(),
 
