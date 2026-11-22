@@ -23,6 +23,7 @@ int  proxyts_url(const char *f, char *s, size_t n) { (void)f; (void)s; (void)n; 
 void proxyts_parar(void) {}
 int  proxyts_e_url(const char *u) { (void)u; return 0; }
 void proxyts_definir_timeshift(const char *d) { (void)d; }
+void proxyts_timeshift_encerrar(void) {}
 void proxyts_timeshift_segurar(int s) { (void)s; }
 int  proxyts_timeshift_janela_s(void) { return 0; }
 int  proxyts_timeshift_url(int a, char *s, size_t n) { (void)a; (void)s; (void)n; return 0; }
@@ -881,6 +882,17 @@ void proxyts_definir_timeshift(const char *dir) {
   pthread_mutex_unlock(&trava);
 }
 
+// Sair do canal: a sessao que gravava termina ja, para o pendrive ficar limpo
+// (sem isto o fluxo, e os arquivos, esperam a proxima fonte).
+void proxyts_timeshift_encerrar(void) {
+  int gravava;
+  atomic_store(&tsSegurarAte, 0);
+  pthread_mutex_lock(&trava);
+  gravava = fluxoAtual && fluxoAtual->disco;
+  pthread_mutex_unlock(&trava);
+  if (gravava) proxyts_parar();
+}
+
 void proxyts_timeshift_segurar(int segundos) {
   atomic_store(&tsSegurarAte, segundos > 0 ? (long)time(NULL) + segundos : 0);
 }
@@ -898,7 +910,8 @@ int proxyts_timeshift_url(int atrasS, char *saida, size_t n) {
   int temFluxo;
   if (!saida || n < 56) return 0;
   pthread_mutex_lock(&trava);
-  temFluxo = fluxoAtual && fluxoAtual->disco && fonteAtual[0];
+  // Ao vivo (0) nao depende do disco: e a saida quando a gravacao falha.
+  temFluxo = fluxoAtual && fonteAtual[0] && (atrasS <= 0 || (fluxoAtual->disco && !fluxoAtual->disco->erro));
   pthread_mutex_unlock(&trava);
   if (!temFluxo) return 0;
   snprintf(saida, n, "http://127.0.0.1:%d/live.ts?s=%u&atras=%d", porta, s, atrasS > 0 ? atrasS : 0);

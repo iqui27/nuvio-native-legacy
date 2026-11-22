@@ -56,6 +56,8 @@ void proxyts_definir_timeshift(const char *dir);
 // Pausa: a ingestao segue sem leitor por ate `segundos` (0 = volta ao normal,
 // 3 s sem leitor encerram).
 void proxyts_timeshift_segurar(int segundos);
+// Sair do canal: encerra a sessao que gravava e apaga a gravacao.
+void proxyts_timeshift_encerrar(void);
 // Segundos que da para voltar agora no canal em curso; 0 = sem gravacao.
 int  proxyts_timeshift_janela_s(void);
 // URL da MESMA sessao, `atrasS` segundos atras (0 = ao vivo, do segmento mais

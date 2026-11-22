@@ -893,6 +893,9 @@ static Uint32 avPausaDesde;
 // gravado no pendrive, e o player REABRE a mesma sessao N segundos atras
 // (proxyts_timeshift_url). `avTsAtrasoS` e o atraso da conexao aberta agora.
 static int avTsAtrasoS;
+// A pessoa pausou ou voltou nesta sessao: se a gravacao falhar, o player
+// reabre o ao vivo em vez de ficar parado (avRelogioAoVivo).
+static int avTsUsado;
 // A pasta da gravacao: NUVIO_TIMESHIFT_DIR (teste no PC) ou o pendrive que o
 // cache USB ja achou (p2pmotor). 0 = sem disco gravavel.
 static int avTsPasta(char *out, size_t n) {
@@ -911,7 +914,7 @@ static int avTsPasta(char *out, size_t n) {
 // Antes de cada abertura: diz ao proxy onde gravar ("" = nao grava).
 static void avTsArmar(int canal) {
   char d[700] = "";
-  avTsAtrasoS = 0;
+  avTsAtrasoS = 0; avTsUsado = 0;
   proxyts_timeshift_segurar(0);
   if (!canal || !ajustes_timeshift_local() || !avTsPasta(d, sizeof d)) d[0] = 0;
   proxyts_definir_timeshift(d);
@@ -3012,7 +3015,7 @@ static void fecharSessao(int manter, int trocaFonte) {
       player_precarregar_cancelar(0);
 #endif
     if (comVideo && !manter) video_parar();
-    if (!manter) proxyts_timeshift_segurar(0);
+    if (!manter) proxyts_timeshift_encerrar();
     tv = SDL_GetTicks();
     pausao_fechar();
     reacao_fechar();
@@ -3392,7 +3395,7 @@ void player_fechar_mini(void) {
   // comVideo pode ja ser 0 (zap em transito: a fonte nova nao chegou) e o
   // stream velho continuaria no ar — parar e seguro mesmo sem pipeline ativo.
   video_parar();
-  proxyts_timeshift_segurar(0);
+  proxyts_timeshift_encerrar();
   player_encerrar();
 }
 
@@ -4025,6 +4028,7 @@ static void alternarTocando(void) {
   if (ehCanal() && avTsLocal()) {
     if (!tocando) { avTsAbrir(avAtrasoS(SDL_GetTicks())); return; }
     proxyts_timeshift_segurar(TSR_PAUSA_MAX_S);   // a gravacao segue com o player parado
+    avTsUsado = 1;
   }
   tocando = !tocando;
   pausaPessoa = !tocando;
@@ -4050,9 +4054,12 @@ static void avTsAbrir(int atrasS) {
   if (atrasS < 0) atrasS = 0;
   if (!proxyts_timeshift_url(atrasS, u, sizeof u)) return;
   proxyts_timeshift_segurar(20);   // ate a conexao nova chegar
+  // O modo do load e de uma abertura so (video_modo_live_consumir): repete o do canal.
+  video_definir_modo_live(guia_modo_do_canal(player_id_canal(), ajustes_livetv_modo()));
   comVideo = video_tocar(u);
   tocando = 1; pausaPessoa = 0;
   avTsAtrasoS = atrasS; avAtraso = atrasS; avPausaDesde = 0;
+  avTsUsado = atrasS > 0;
   botaoAV = 0;
 }
 
@@ -4069,6 +4076,12 @@ static int avAtrasoS(Uint32 agora) {
 // com os controles recolhidos.
 static void avRelogioAoVivo(Uint32 agora) {
   double d;
+  // A gravacao falhou (pendrive cheio, arrancado) com o canal pausado ou
+  // atrasado: sem ela nao ha de onde retomar, entao volta para o ao vivo.
+  if (ehCanal() && avTsUsado && proxyts_e_url(video_url_atual()) && proxyts_timeshift_janela_s() <= 0) {
+    avTsUsado = 0;
+    avTsAbrir(0);
+  }
   if (!ehCanal() || !avPodePausar()) { avLat0 = -1.0; avAtraso = 0.0; avPausaDesde = 0; return; }
   if (avTsLocal()) {   // o atraso e o da conexao aberta; pausado, soma o relogio
     avLat0 = -1.0; avAtraso = avTsAtrasoS;

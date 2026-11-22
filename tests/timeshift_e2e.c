@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
   d0 = noDisco(dir, &arqs); sleep(3); d1 = noDisco(dir, &arqs);
   OK(d1 == d0, "sem pausa pedida: sem leitor a ingestao para em segundos");
   // 6. sair do canal apaga tudo
-  proxyts_parar();
+  proxyts_timeshift_encerrar();
   for (k = 0; k < 30 && (noDisco(dir, &arqs), arqs); k++) usleep(200 * 1000);
   OK(!arqs, "sair do canal apaga a gravacao");
   printf(falhas ? "\n%d FALHA(S)\n" : "\ntimeshift_e2e: tudo certo\n", falhas);

@@ -49,6 +49,9 @@ substitui o pendrive.
   gravado; gravar exigiria o proxy ficar no meio desse caminho.
 - Samsung `.wgt` (WASM), Android e Windows: sem proxy nativo ou sem a sonda de
   pendrive, o ajuste não tem efeito. Decidir por plataforma.
+- O pendrive só é achado com o **P2P ligado**: a sonda é a do cache USB
+  (`p2pmotor_usb_presente`), que devolve 0 com o P2P desligado. Soltar essa
+  dependência mexe no `p2pmotor.c`, fora desta etapa.
 - O atraso é por arquivo (~6 s de grão), sem busca fina nem barra de tempo.
 - Sem aviso na tela quando falta pendrive ou espaço (hoje só no log).
 - A gravação não sobrevive à troca de canal (voltar ao canal anterior começa do zero).
