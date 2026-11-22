@@ -66,6 +66,17 @@ int  player_pediu_ajustes_fonte(void);
 // Ha quantos ms o player abriu (o Play); 0 fechado. Para o log do inicio (#202).
 Uint32 player_aberto_ha_ms(void);
 int player_pediu_proximo(int *temporada, int *episodio);
+// Filme em partes: -1 = Parte anterior, +1 = Proxima parte (botoes do OSD); 0 = nada.
+int player_pediu_parte(void);
+// 1 enquanto a posicao devolvida pelo pipeline nao reflete um pedido de busca
+// pendente (arrasto na barra ou seek sem confirmacao). app.c (parteNoFim).
+int player_buscando(void);
+// Barra do filme inteiro: o avanco caiu em outra parte (o indice na lista e o ponto nela).
+int player_pediu_salto_parte(int *k, double *pos);
+// Busca pedida pelo app (o ponto escolhido numa parte recem-aberta).
+void player_buscar_para(double s);
+// O fim do arquivo que toca e do app (a fileira de arquivos da fonte): sem pos-reproducao.
+void player_fim_proprio(int sim);
 int player_transporte_pedido_pendente(void);
 // Libera somente uma troca ja consumida que o roteador cancelou; preserva a fila.
 void player_episodio_pedido_liberar(void);

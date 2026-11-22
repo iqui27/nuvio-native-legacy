@@ -56,8 +56,6 @@ struct MiniMotor {
   // sharper with every tile (the bitrate of a remux varies a lot).
   struct { int64_t pos; long ms; } mapa[TS_MAPA];
   int nMapa;
-  unsigned char cabeca[16];         // first bytes of the file (logged when it can't be opened)
-  int ncabeca;
   MiniConfig cfg;
   int pedidos;                      // range requests made by the demuxer path
   // Prefetch: bytes of the NEXT frame's keyframe fetched by a helper thread
@@ -211,19 +209,6 @@ static int64_t seekIo(void *u, int64_t off, int whence) {
   return m->pos;
 }
 
-// First bytes as hex, for the log when the container is not recognised.
-static void anotarCabeca(MiniMotor *m, char *erro, size_t nerro, const char *motivo) {
-  char hex[16 * 3 + 1] = "";
-  unsigned char b[16];
-  int n = 0;
-  if (m->ler && m->tamanho > 0) {
-    long got = m->ler(m->usuario, 0, m->tamanho < 16 ? m->tamanho - 1 : 15, b);
-    n = got > 0 ? (int)got : 0;
-  }
-  for (int i = 0; i < n; i++) snprintf(hex + 3 * i, 4, "%02x%s", b[i], i + 1 < n ? " " : "");
-  if (erro && nerro) snprintf(erro, nerro, "%s (first bytes: %s)", motivo, n ? hex : "unreadable");
-}
-
 // ------------------------------------------------------------------ open
 static void erroDe(char *erro, size_t n, const char *s) { if (erro && n) snprintf(erro, n, "%s", s); }
 
@@ -309,7 +294,7 @@ static int chaveTs(MiniMotor *m, long alvoMs, long tolMs, volatile int *cancelar
     if (av_seek_frame(m->fc, -1, pos, AVSEEK_FLAG_BYTE) < 0) { erroDe(erro, nerro, "seek failed"); return -1; }
     long long lidos0 = m->lidos;
     for (;;) {
-      if (cancelar && *cancelar) { erroDe(erro, nerro, "cancelled"); return -1; }
+      if (cancelar && __atomic_load_n(cancelar, __ATOMIC_ACQUIRE)) { erroDe(erro, nerro, "cancelled"); return -1; }
       if (*pacotes >= MAX_PACOTES || m->lidos - lidos0 > TS_MAX_LER) { erroDe(erro, nerro, "no keyframe found near the target"); return -1; }
       int rr = av_read_frame(m->fc, m->pkt);
       if (rr < 0) { erroDe(erro, nerro, rr == AVERROR(EIO) ? "source read failed" : "end of file before the keyframe"); return -1; }
@@ -349,8 +334,10 @@ MiniMotor *mini_motor_abrir(MiniLer ler, void *usuario, int64_t tamanho, char *e
   av_dict_set(&op, "analyzeduration", "500000", 0);
   // The demuxer never opens anything itself (external references in a hostile file).
   av_dict_set(&op, "protocol_whitelist", "none", 0);
+  // Erro de formato: never raw body bytes in the log — an HTML error page can
+  // carry a URL tail or a credential.
   if (avformat_open_input(&m->fc, NULL, NULL, &op) < 0) {
-    av_dict_free(&op); m->fc = NULL; anotarCabeca(m, erro, nerro, "not a video container"); mini_motor_fechar(m); return NULL;
+    av_dict_free(&op); m->fc = NULL; erroDe(erro, nerro, "not a video container"); mini_motor_fechar(m); return NULL;
   }
   av_dict_free(&op);
   const char *nome = m->fc->iformat ? m->fc->iformat->name : "";
@@ -358,7 +345,7 @@ MiniMotor *mini_motor_abrir(MiniLer ler, void *usuario, int64_t tamanho, char *e
   if (!m->semIndice && !strstr(nome, "matroska") && !strstr(nome, "mp4") && !strstr(nome, "mov")) {
     char motivo[64];
     snprintf(motivo, sizeof motivo, "container not supported: %s", nome);
-    anotarCabeca(m, erro, nerro, motivo); mini_motor_fechar(m); return NULL;
+    erroDe(erro, nerro, motivo); mini_motor_fechar(m); return NULL;
   }
   snprintf(m->info.formato, sizeof m->info.formato, "%s",
            m->semIndice ? "mpegts" : strstr(nome, "matroska") ? "matroska" : "mp4");
@@ -540,6 +527,11 @@ void mini_motor_soltar_decoder(MiniMotor *m) {
   av_frame_unref(m->quadro);
   av_frame_unref(m->saida);
 }
+
+// 1 while the decoder context is open: the next frame decodes without paying
+// the reopening. After mini_motor_soltar_decoder (or before the first frame)
+// it is 0 — the caller's memory gate charges the cold estimate again.
+int mini_motor_decoder_aberto(const MiniMotor *m) { return m && m->cc != NULL; }
 
 static int abrirJpeg(MiniMotor *m) {
   if (m->jc) return 0;
@@ -830,7 +822,7 @@ int mini_motor_quadro(MiniMotor *m, long alvoMs, long tolMs, int threads, volati
   }
   avcodec_flush_buffers(m->cc);
   while (pacotes < MAX_PACOTES) {
-    if (cancelar && *cancelar) { erroDe(erro, nerro, "cancelled"); goto fim; }
+    if (cancelar && __atomic_load_n(cancelar, __ATOMIC_ACQUIRE)) { erroDe(erro, nerro, "cancelled"); goto fim; }
     if (!m->semIndice) {
       int rr = av_read_frame(m->fc, m->pkt);
       if (rr < 0) { erroDe(erro, nerro, rr == AVERROR(EIO) ? "source read failed" : "end of file before the keyframe"); goto fim; }
@@ -862,6 +854,9 @@ int mini_motor_quadro(MiniMotor *m, long alvoMs, long tolMs, int threads, volati
   if (codificar(m, jpg, njpg) < 0) { erroDe(erro, nerro, "jpeg encode failed"); goto fim; }
   r = 0;
 fim:
+  // chaveTs leaves the keyframe it found in m->pkt; on every exit that did
+  // not send it (cancelled, read error, oversized) it is still held here.
+  av_packet_unref(m->pkt);
   av_frame_unref(m->quadro);
   av_frame_unref(m->saida);
   if (m->cc) avcodec_flush_buffers(m->cc);       // leaves draining mode and drops every reference
@@ -983,6 +978,13 @@ void mini_impressao(uint64_t tamanho, const unsigned char *cabeca, size_t ncabec
   memcpy(buf + 10, h1, 32); memcpy(buf + 42, h2, 32);
   sha256(buf, sizeof buf, fim);
   for (int i = 0; i < 32; i++) snprintf(saida + 2 * i, 3, "%02x", fim[i]);
+}
+
+int mini_motor_tem_ferramentas(void) {
+  return avcodec_find_decoder(AV_CODEC_ID_H264) != NULL &&
+         avcodec_find_decoder(AV_CODEC_ID_HEVC) != NULL &&
+         avcodec_find_encoder(AV_CODEC_ID_MJPEG) != NULL &&
+         av_find_input_format("mpegts") != NULL;
 }
 
 #else

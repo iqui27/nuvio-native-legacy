@@ -33,3 +33,5 @@ int mkvfix_url(char *out, size_t n) {
 int mkvfix_e_url(const char *u) { return u && strstr(u, "127.0.0.1") != NULL; }
 void mkvfix_parar(void) { estado = MKVFIX_NADA; ocultas = 0; }
 void mkvfix_mp4_stub_ocultar(int n) { ocultas = n; estado = MKVFIX_NORMAL; }
+void mkvfix_mp4_stub_ocultas(int n) { ocultas = n; }
+void mkvfix_mp4_stub_estado(int e) { estado = e; }

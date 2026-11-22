@@ -37,4 +37,21 @@ int miniatura_direto(void);
 // The player is OPENING a title (link known, not ready yet): open the file and create the thumbnail hardware decoder
 // now, before the audio starts (creating it later causes an audible HDMI underrun). Cheap to call every frame.
 void miniatura_preaquecer(const char *url, const char *cabecalhos);
+
+// .tpk 6+ / webOS local provider (src/miniatura.c, under NV_MINIATURAS and not
+// Android): PR 680 stage B. miniatura_tv_provedor is NULL on packages without
+// the motor's FFmpeg, and "No aparelho" stays hidden unless
+// miniatura_tv_capaz says the device passes the SAME memory rule as the TV
+// guide (memoria.h: forced Baixa, or Auto with unknown or <= 2048 MB RAM).
+#if defined(NV_TPK) || defined(NV_WEBOS)
+const SeekrProvedor *miniatura_tv_provedor(void);
+// Reload path: the player republishes the fallen video state (pronto/tocando)
+// to the RUNNING job while the pedir gate is closed by !video_pronto(). Never
+// creates a job; inert without the DTS FFmpeg.
+void miniatura_tv_fonte_estado(const SeekrFonte *f);
+int miniatura_tv_capaz(int modoMemoria, long ramMB);
+int miniatura_tv_direto(void);
+int miniatura_tv_status_agora(void);
+int miniatura_tv_prontas_agora(void);
+#endif
 #endif
