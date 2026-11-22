@@ -7039,7 +7039,8 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
   GfxRect thLayout = th;
   // CARTAO DE EPISODIO EM BLOCO UNICO (Glass UI 2.0): no foco, miniatura e
   // texto sobem juntos num degrau de superficie so, desenhado antes da arte.
-  if (epApple() && f > .005f && !layout_desktop_ativo()) {
+  // So onde o cartao chega ao texto do epApple (o moderno e o desktop saem antes).
+  if (epApple() && f > .005f && !(epModerno() && !detalheRetrato()) && !layout_desktop_ativo()) {
     GfxRect bloco = { r.x, r.y, r.w, epCardH() - 8.0f };
     if (ajustes_vidro()) gfx_cor(bloco, 20.0f / bloco.h, 1, 1, 1, .13f * f * a);
     else gfx_cor(bloco, 20.0f / bloco.h, 0x2b / 255.0f, 0x2d / 255.0f, 0x34 / 255.0f, f * a);
