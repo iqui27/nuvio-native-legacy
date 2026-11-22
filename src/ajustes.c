@@ -12714,7 +12714,7 @@ float ajustes_rapido_cor(int i, float *r, float *g, float *b) {
 }
 int ajustes_rapido_cor_atual(void) {
   int i, v = valor[AJ_TEMA];
-  if (SEGURO && temaDinamico()) v = 0;
+  if (SEGURO && temaDinamico()) v = AJ_TEMA_RESERVA;
   for (i = 0; i < 18; i++) if (corTema(i) == v) return i;
   return -1;   // um dinamico: nenhum dos dezoito
 }
