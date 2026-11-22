@@ -59,6 +59,7 @@ static float difMatiz(float a, float b) {
 
 // O acento Branco (#f4f2ee): sem titulo, arte cinza ou modo desligado.
 static const float BRANCO[3] = { 0xf4 / 255.0f, 0xf2 / 255.0f, 0xee / 255.0f };
+static const float RESERVA[3] = { 0xc9 / 255.0f, 0x3c / 255.0f, 0x87 / 255.0f };   // AJ_TEMA_RESERVA (Rosa)
 static const float BRANCO_PURO[3] = { 1, 1, 1 }, FUNDO[3] = { 0.051f, 0.051f, 0.051f };
 static const float TINTA[3] = { 0x12 / 255.0f, 0x13 / 255.0f, 0x16 / 255.0f };
 
@@ -167,9 +168,9 @@ int main(void) {
   corviva_zerar();
   corviva_anotar("https://arte/azul", &azul);
   corviva_anotar("https://arte/laranja", &laranja);
-  quadros(1, 1 / 60.0f, CORVIVA_SIMPLES, 0, NULL, 0);          // arranque: Branco
+  quadros(1, 1 / 60.0f, CORVIVA_SIMPLES, 0, NULL, 0);          // arranque: Rosa (reserva)
   { float a[3]; corviva_acento(&a[0], &a[1], &a[2]);
-    ok(igual3(a, BRANCO, 0.001f), "sem titulo: destaque padrao (branco)"); }
+    ok(igual3(a, RESERVA, 0.001f), "sem titulo: destaque de reserva (rosa)"); }
   // alternando a cada 100 ms (rolagem rapida): nenhuma troca
   { int i;
     for (i = 0; i < 10; i++) quadros(6, 1 / 60.0f, CORVIVA_SIMPLES, 0,
@@ -179,7 +180,7 @@ int main(void) {
   quadros(9, 1 / 60.0f, CORVIVA_SIMPLES, 0, "https://arte/azul", CORVIVA_HOME);   // 150 ms
   ok(corviva_retargets() == 1, "150 ms parado: uma troca");
   { float a[3], lab0[3], labA[3], d0, d1;
-    corviva_srgb_para_oklab(BRANCO, lab0);
+    corviva_srgb_para_oklab(RESERVA, lab0);
     corviva_srgb_para_oklab(azul.acento, labA);
     quadros(13, 1 / 60.0f, CORVIVA_SIMPLES, 0, "https://arte/azul", CORVIVA_HOME);  // ~225 ms
     corviva_acento(&a[0], &a[1], &a[2]);
@@ -214,10 +215,10 @@ int main(void) {
     quadros(10, 1 / 60.0f, CORVIVA_SIMPLES, 1, "https://arte/laranja", CORVIVA_PLAYER);
     corviva_acento(&a[0], &a[1], &a[2]);
     ok(igual3(a, laranja.acento, 0.002f), "animacoes reduzidas: sem transicao"); }
-  // desligado: branco
+  // desligado: rosa de reserva
   { float a[3]; quadros(40, 1 / 60.0f, CORVIVA_DESLIGADA, 0, NULL, 0);
     corviva_acento(&a[0], &a[1], &a[2]);
-    ok(igual3(a, BRANCO, 0.002f), "desligado: branco"); }
+    ok(igual3(a, RESERVA, 0.002f), "desligado: rosa de reserva"); }
   // arte ainda sem paleta: espera, sem trocar
   { int r0 = corviva_retargets();
     quadros(60, 1 / 60.0f, CORVIVA_SIMPLES, 0, "https://arte/nao-decodificada", CORVIVA_HOME);

@@ -719,10 +719,12 @@ void layout_insets_definir(float e, float t, float d, float b);
 #define NV_LD_CAPTION    29
 #define NV_LD_CAPTION2   30
 
-// ANEL DE FOCO, em pixels, para o app INTEIRO. MEDIDO na referencia: 4 px
-// solidos de branco puro, sem rampa, por fora da caixa do elemento. Vale para
-// card de home, card de episodio, botao de detalhe e tecla de teclado — um
-// numero so. NV_DETW_ANEL ja era 4 e so era aplicado no detalhe.
+// ANEL DE FOCO, em pixels, para o app INTEIRO: 4 px solidos de branco puro,
+// sem rampa, por fora da caixa do elemento. NAO e o foco padrao: desde o Glass
+// UI (02/10, design/glass-ilha) o foco e sem aro — linha/cartao sobe um degrau
+// de superficie, botao/chip/tecla vira pilula no acento, cartaz sobe com
+// sombra. O anel so existe como opcao (Borda do foco, Contorno do vidro) e nas
+// miniaturas das telas de apresentacao; esta e a espessura dele onde existir.
 #define NV_ANEL_FOCO      4.0f
 
 // Area util explicita da home: a rail pode variar, mas o texto e o foco nunca
