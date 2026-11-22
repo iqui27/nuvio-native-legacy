@@ -14,16 +14,14 @@
       "accent": {
         "dynamic": true,
         "source": "ajustes_acento()",
-        "referenceTheme": "rose",
-        "referenceHex": "#EC407A",
         "rule": "Nunca fixar o tema da captura; tinta clara para acento colorido e tinta escura para branco/quase branco.",
         "defaultTheme": "Da arte",
         "defaultThemeIndex": 12,
         "fallbackTheme": "Rosa",
         "fallbackThemeIndex": 6,
         "fallbackHex": "#C93C87",
-        "fallbackRule": "When a dynamic theme cannot run (safe profile, title without art or grey art, index from another version) the accent is Rosa, not Branco (owner, 22/11/2026).",
-        "mockupHexNote": "Mockups draw rose as #EC407A; the TV Rosa is #C93C87, the contrast-checked value from tests/acentos.sh."
+        "fallbackRule": "When a dynamic theme cannot run (safe profile, title without art or grey art, index from another version) the accent is Rosa, not Branco (owner, 22/11/2026). The fallback paints controls only: the page background, the Frost light and the glass tint stay neutral.",
+        "mockupNote": "The only rose in the app is #C93C87 (contrast-checked by tests/acentos.sh). The mockups' --ac #EC407A is a drawing placeholder, never a native value."
       },
       "background": {
         "hex": "#0D0D0D",
@@ -78,7 +76,6 @@
     ],
     "referenceMockups": [
       "design/glass-ilha/glass-ilha.html",
-      "design/ilha/ilha-mockup.html",
       "design/2.1/index.html"
     ],
     "rule": "A build that does not match the mockup side by side, in both glass and solid, is wrong.",

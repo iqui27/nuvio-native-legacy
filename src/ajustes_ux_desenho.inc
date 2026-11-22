@@ -606,6 +606,12 @@ static void aj2CorDin(int v, const char *url, float c1[3], float c2[3]) {
   }
   memcpy(c1, nv_acento_viva, sizeof nv_acento_viva);
   memcpy(c2, v == AJ_TEMA_GRADIENTE ? nv_grad_viva[2] : nv_acento_viva, sizeof nv_acento_viva);
+  // Sem arte a cena esta na reserva rosa: a amostra fica neutra, senao as
+  // cinco dinamicas saem rosa cheio e parecem todas escolhidas, ao lado do Rosa.
+  { static const float N[3] = { 0.953f, 0.949f, 0.937f };
+    float k = nv_acento_reserva < 0 ? 0 : nv_acento_reserva > 1 ? 1 : nv_acento_reserva;
+    int i;
+    for (i = 0; i < 3; i++) { c1[i] += (N[i] - c1[i]) * k; c2[i] += (N[i] - c2[i]) * k; } }
 }
 static void aj2Regua(int op, GfxRect ln, float y, float a) {
   static const char *const KICK[4][2] = {

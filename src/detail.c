@@ -4891,8 +4891,13 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, float focado, fl
     // nao #222, foco realce + tinta + luz. O tamanho (escala no foco) e o
     // glifo continuam daqui.
     if (!detalheRetrato()) {
-      gfx_cor(r,.5f,1,1,1,(.12f + .84f * focado)*a);
-      ic=.953f - .886f * focado;
+      // 2.1 4A (.btn.foco): em foco a pilula cheia no realce com a tinta de
+      // contraste, e nao branca: com a reserva rosa o Assistir saia branco ao
+      // lado da pilula de temporada rosa. No tema Branco nada muda.
+      float ar, ag, ab, ti = focoAcento(&ar, &ag, &ab);
+      gfx_cor(r,.5f,1,1,1,.12f * (1.0f - focado)*a);
+      gfx_cor(r,.5f,ar,ag,ab,focado*a);
+      ic=.953f + (ti - .953f) * focado;
     } else if (ajustes_vidro()) {
       // Vidro: o mesmo disco de botao_disco (branco cheio em foco, glifo escuro).
       gfx_vidro_painel(r, NV_RAIO_PILL, 0.55f, a);
@@ -4972,8 +4977,13 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, float focado, fl
   // o mesmo botao em dois tamanhos, e o Play brigava com o botao em foco.
   { float tinta = 235.0f / 255.0f, fr = 0.14f, fg = 0.15f, fb = 0.17f;
     if (!detalheRetrato()) {
-      gfx_cor(r,.5f,1,1,1,(.12f + .84f * focado)*a);
-      tinta=.953f - .886f * focado;
+      // 2.1 4A (.btn.foco): em foco a pilula cheia no realce com a tinta de
+      // contraste, e nao branca: com a reserva rosa o Assistir saia branco ao
+      // lado da pilula de temporada rosa. No tema Branco nada muda.
+      float ar, ag, ab, ti = focoAcento(&ar, &ag, &ab);
+      gfx_cor(r,.5f,1,1,1,.12f * (1.0f - focado)*a);
+      gfx_cor(r,.5f,ar,ag,ab,focado*a);
+      tinta=.953f + (ti - .953f) * focado;
     } else if (ajustes_vidro()) {
       // Play: vidro com lavagem e aro do realce em repouso; em foco, a pilula
       // cheia na cor do realce (branca no tema padrao).
