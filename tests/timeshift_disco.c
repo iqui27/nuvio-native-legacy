@@ -98,6 +98,20 @@ int main(int argc, char **argv) {
   }
   tsd_fechar(d);
   OK(arquivos(dir) == 0, "fechar apaga os segmentos");
+  // Troca de canal: a sessao velha fecha DEPOIS de a nova abrir a mesma pasta.
+  { TsDisco *a = tsd_abrir(dir, 64 * MB), *n2;
+    TsLeitor l2 = { -1, 0 };
+    uint64_t p2 = 0;
+    int pl = 0;
+    long k;
+    encher(b, 0, BLOCO); tsd_gravar(a, b, BLOCO, 1, 0);
+    n2 = tsd_abrir(dir, 64 * MB);
+    encher(b, 0, BLOCO); tsd_gravar(n2, b, BLOCO, 1, 0);
+    tsd_fechar(a);
+    k = tsd_ler(n2, &l2, &p2, r, BLOCO, &pl);
+    OK(arquivos(dir) == 1 && k > 0 && !pl && conferir(r, 0, k), "a sessao velha fecha sem apagar a gravacao da nova");
+    tsd_leitor_fechar(&l2); tsd_fechar(n2);
+    OK(arquivos(dir) == 0, "e a nova apaga a dela"); }
   rmdir(dir);
   printf(falhas ? "\n%d FALHA(S)\n" : "\ntimeshift_disco: tudo certo\n", falhas);
   return falhas ? 1 : 0;

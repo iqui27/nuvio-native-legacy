@@ -27,21 +27,25 @@ typedef struct {
   char dir[700];
   int fd;          // segmento em escrita; -1 = nenhum
   int erro;        // errno da escrita que desligou a gravacao; 0 = gravando
+  unsigned marca;  // entra no nome: duas sessoes na mesma pasta nao se apagam
 } TsDisco;
 typedef struct { int fd; unsigned id; } TsLeitor;   // fd = -1 ao comecar
 
 static void tsd_nome(const TsDisco *d, unsigned id, char *out, size_t n) {
-  snprintf(out, n, "%s/ts-%08u.ts", d->dir, id);
+  snprintf(out, n, "%s/ts-%04x-%08u.ts", d->dir, d->marca & 0xffffu, id);
 }
-// Apaga os ts-*.ts de `dir` (sobra de uma sessao que morreu sem fechar).
-static void tsd_limpar_dir(const char *dir) {
+// Apaga os ts-*.ts de `dir` (sobra de uma sessao que morreu sem fechar);
+// com `marca`, so os da sessao ts-<marca>-.
+static void tsd_limpar_dir(const char *dir, const char *marca) {
   DIR *p = opendir(dir);
   struct dirent *e;
   char c[1024];
+  size_t nm = marca ? strlen(marca) : 0;
   if (!p) return;
   while ((e = readdir(p)) != NULL) {
     size_t n = strlen(e->d_name);
     if (n < 7 || strncmp(e->d_name, "ts-", 3) || strcmp(e->d_name + n - 3, ".ts")) continue;
+    if (nm && strncmp(e->d_name, marca, nm)) continue;
     snprintf(c, sizeof c, "%s/%s", dir, e->d_name);
     unlink(c);
   }
@@ -57,11 +61,12 @@ static uint64_t tsd_livre(const char *dir) {
 // gravavel ou sem espaco (tsr_teto_bytes); `teto` > 0 troca o orcamento medido
 // (testes).
 static TsDisco *tsd_abrir(const char *dir, uint64_t teto) {
+  static unsigned marcas;
   TsDisco *d;
   if (!dir || !dir[0] || strlen(dir) >= sizeof d->dir - 20) return NULL;
   if (mkdir(dir, 0755) && errno != EEXIST) return NULL;
   if (access(dir, W_OK)) return NULL;
-  tsd_limpar_dir(dir);
+  tsd_limpar_dir(dir, NULL);
   if (!teto) teto = tsr_teto_bytes(tsd_livre(dir));
   if (!teto) return NULL;
   d = calloc(1, sizeof *d);
@@ -70,6 +75,7 @@ static TsDisco *tsd_abrir(const char *dir, uint64_t teto) {
   tsr_iniciar(&d->ix, teto);
   snprintf(d->dir, sizeof d->dir, "%s", dir);
   d->fd = -1;
+  d->marca = __atomic_add_fetch(&marcas, 1, __ATOMIC_RELAXED);
   return d;
 }
 static void tsd_desligar(TsDisco *d, int e) {
@@ -165,11 +171,14 @@ static long tsd_ler(TsDisco *d, TsLeitor *l, uint64_t *pos, void *buf, size_t n,
   return -1;
 }
 static void tsd_leitor_fechar(TsLeitor *l) { if (l->fd >= 0) close(l->fd); l->fd = -1; }
-// Fecha e APAGA tudo: a gravacao e so da sessao do canal.
+// Fecha e APAGA o que esta sessao gravou. So o dela: a ingestao do canal
+// anterior pode fechar depois de a do canal novo ja ter aberto a mesma pasta.
 static void tsd_fechar(TsDisco *d) {
+  char marca[16];
   if (!d) return;
   if (d->fd >= 0) close(d->fd);
-  tsd_limpar_dir(d->dir);
+  snprintf(marca, sizeof marca, "ts-%04x-", d->marca & 0xffffu);
+  tsd_limpar_dir(d->dir, marca);
   pthread_mutex_destroy(&d->trava);
   free(d);
 }
