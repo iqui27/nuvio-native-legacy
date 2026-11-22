@@ -88,6 +88,15 @@ soa bem.
   ordem do reforço de volume, mas não foi medido lá).
 - O som em filme de verdade: bombeamento do compressor, sibilância, o `Forte`
   em música.
+- **LG (webOS): risco de cair no comentário.** Ali o rótulo da faixa é montado
+  só com idioma e canais; o título da faixa ("Commentary") não chega ao app.
+  Um filme com 5.1 + comentário estéreo no mesmo idioma faria o modo escolher o
+  comentário. Fica para o dono decidir: aceitar (o modo é opt-in e a escolha à
+  mão vence e é lembrada) ou desligar a regra na LG até o título estar
+  disponível.
+- **Samsung .wgt: pode não fazer nada.** A lista de faixas do .wgt não traz o
+  número de canais das faixas que não estão tocando; sem saber que uma faixa é
+  estéreo, a regra não a escolhe.
 - Em LG/Samsung, quantos arquivos reais têm uma segunda faixa estéreo do mesmo
   idioma (em release de cena é raro: o modo ali muitas vezes não terá o que
   fazer).
