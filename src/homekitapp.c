@@ -117,9 +117,31 @@ void homekit_remover(void) {
   ignorados = 0;
 }
 
+// O servidor do kit e um desconhecido: o corpo nunca passa de um byte alem do
+// teto, e esse byte a mais faz o hk_ler recusar pelo tamanho.
+typedef struct { char *p; size_t n; } Acum;
+static int acumular(const char *d, size_t n, void *u) {
+  Acum *a = u;
+  size_t cabe = (size_t)HK_CORPO_MAX + 1 - a->n;
+  if (n > cabe) n = cabe;
+  memcpy(a->p + a->n, d, n);
+  a->n += n;
+  return a->n <= (size_t)HK_CORPO_MAX;
+}
+
 static void *baixarFio(void *u) {
+  Acum a = { malloc((size_t)HK_CORPO_MAX + 2), 0 };
   (void)u;
-  corpo = rede_baixar(urlPedida, 20);
+  // Estourar o teto conta como corpo grande demais, nao como falha de rede.
+  if (a.p && (rede_baixar_fluxo(urlPedida, 20, NULL, acumular, &a,
+                                (long long)HK_CORPO_MAX + 1, NULL, NULL) ||
+              a.n > (size_t)HK_CORPO_MAX)) {
+    a.p[a.n] = 0;
+    corpo = a.p;
+  } else {
+    free(a.p);
+    corpo = NULL;
+  }
   atomic_store_explicit(&estado, 3, memory_order_release);
   return NULL;
 }
