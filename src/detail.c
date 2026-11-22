@@ -7039,7 +7039,7 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
   GfxRect thLayout = th;
   // CARTAO DE EPISODIO EM BLOCO UNICO (Glass UI 2.0): no foco, miniatura e
   // texto sobem juntos num degrau de superficie so, desenhado antes da arte.
-  if (epApple() && f > .005f) {
+  if (epApple() && f > .005f && !layout_desktop_ativo()) {
     GfxRect bloco = { r.x, r.y, r.w, epCardH() - 8.0f };
     if (ajustes_vidro()) gfx_cor(bloco, 20.0f / bloco.h, 1, 1, 1, .13f * f * a);
     else gfx_cor(bloco, 20.0f / bloco.h, 0x2b / 255.0f, 0x2d / 255.0f, 0x34 / 255.0f, f * a);
@@ -7596,7 +7596,7 @@ static void desenhaElenco(float x, float y, int c, float f, float a) {
   // pula fileira vazia). Este `return` e a segunda tranca.
   if (!nome || !nome[0]) return;
 
-  if (epApple() && f > .005f) {
+  if (epApple() && f > .005f && !layout_desktop_ativo()) {
     float top = y + NV_DETP_EL_AVATAR + NV_DETP_EL_NOME_DY - 8;
     GfxRect info = {x-12,top,NV_DETP_EL_W+24,76};
     gfx_cor(info,18.0f/info.h,.19f,.21f,.23f,.6f*f*a);
