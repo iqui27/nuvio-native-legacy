@@ -1042,10 +1042,20 @@ static double bufferandoPos;
 static unsigned bufferandoAvancos;
 static unsigned dtsRefillMs;
 static Uint32 dtsRefillEm;
+/* webOS HLS, right after a seek: the TV player ends one short buffering and
+ * starts the next within a second (it starts on the first segment and stalls
+ * for the next ones), so the loading ring blinked twice. The end of a
+ * buffering in that window is held for a moment; a new start continues the
+ * same one. */
+#define BUFFERANDO_SEEK_JANELA_MS 8000u
+#define BUFFERANDO_SEEK_FOLGA_MS 1200u
+static Uint32 bufferandoFimPend;
+static Uint32 seekFimEm;
 
 static void bufferandoFim(void) {
   bufferandoDesde=0;
   bufferandoAvancos=0;
+  bufferandoFimPend=0;
 }
 static int bufferandoSeekPendente(void) {
   return seekEm || seekEnvEm || seekRetryEm || seekView.active;
@@ -1056,6 +1066,7 @@ static int bufferandoSeekPendente(void) {
  * This retires only the native marker, never the converter's managed refill. */
 static void bufferandoClock(double actual) {
   if(!bufferandoDesde)return;
+  if(bufferandoFimPend)return;   // the held end after a seek decides
   double step=actual-bufferandoPos;
   bufferandoPos=actual;
   if(!pronto || !tocando || pausaPedida || falhou || terminou ||
@@ -1334,6 +1345,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
     printf("[video] seek to %ds done in %ums\n", seekEnvAlvo, (unsigned)(SDL_GetTicks() - seekEnvEm));
     fflush(stdout);
     seekEnvEm = 0;
+    seekFimEm = SDL_GetTicks() | 1u;
     nv_seek_ok(&seekRetry);
   }
   if (strstr(p, "sourceInfo")) {
@@ -1700,13 +1712,21 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
       bufferandoPos=posNativa;
       bufferandoAvancos=0;
     }
+    bufferandoFimPend = 0;   // a held end after a seek: the same buffering goes on
     snprintf(m, sizeof m, "buffering INICIO (buffer %+.1fs a frente)",
              bufferSeg - posSeg);
     marco(m);
   }
   if (strstr(p, "bufferingEnd")) {
     char m[64];
-    bufferandoFim();
+    int segurar = 0;
+#ifdef NV_WEBOS_HLS_TEST
+    { Uint32 agora = SDL_GetTicks();
+      segurar = hlsAtivo() && bufferandoDesde && seekFimEm &&
+                agora - seekFimEm < BUFFERANDO_SEEK_JANELA_MS;
+      if (segurar) bufferandoFimPend = agora | 1u; }
+#endif
+    if (!segurar) bufferandoFim();
     snprintf(m, sizeof m, "buffering FIM (buffer %+.1fs a frente)",
              bufferSeg - posSeg);
     marco(m);
@@ -1714,7 +1734,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   if (strstr(p, "playing")) {
     pausaConfirmada = 0;
     tocando = 1;
-    if(bufferandoDesde && !pausaPedida && !bufferandoSeekPendente()) {
+    if(bufferandoDesde && !bufferandoFimPend && !pausaPedida && !bufferandoSeekPendente()) {
       bufferandoFim();
       marco("buffering FIM (playing)");
     }
@@ -3164,6 +3184,11 @@ static void extReabrir(void) {
 }
 void video_bombear(void) {
   ack_publicar();
+  { Uint32 pend = bufferandoFimPend;
+    if (pend && SDL_GetTicks() - pend >= BUFFERANDO_SEEK_FOLGA_MS) {
+      bufferandoFim();
+      marco("buffering FIM (after the seek, no second stall)");
+    } }
   edidBombear();
   bufferLoadBombear();
   velBombear();
@@ -4033,16 +4058,21 @@ static void hlsFalhar(const char *reason) {
 
 static int hlsAbrir(void);
 
-/* HLS input rings: a fixed 32 MiB, as on Tizen, whatever the Buffer size
- * preset (that one stays for playback with HLS Off). The TV player keeps its
- * own segments, about 30 s, which is what rides out a slow source. With little
- * free memory after the remux queue (48 MiB), one staged fMP4 fragment (up to
- * 48 MiB) and the usual floor, the rings drop to 16 MiB. */
-#define HLS_RING_MIB 32
+/* HLS input rings: 64 MiB whatever the Buffer size preset (that one stays for
+ * playback with HLS Off). The TV player keeps its own segments, about 30 s,
+ * which is what rides out a slow source. With 32 MiB the reader held about one
+ * 4K segment: after a seek the player started on the first one and stalled
+ * again waiting for the next, which came from the network. 64 MiB keeps about
+ * two ahead. With little free memory after the remux queue (48 MiB), one
+ * staged fMP4 fragment (up to 48 MiB) and the usual floor, the rings drop to
+ * 32 and then 16 MiB. */
+#define HLS_RING_MIB 64
 #define HLS_OUTPUT_RESERVE_MB 96
 static int hlsBufferMib(void) {
   long freeMb = memlog_livre_mb();
-  int mib = freeMb >= 0 && freeMb - HLS_OUTPUT_RESERVE_MB - HLS_RING_MIB - 4 >= CB_BUFFER_PISO_MB ? HLS_RING_MIB : 16;
+  int mib = 16;
+  for (int m = HLS_RING_MIB; m > 16; m /= 2)
+    if (freeMb >= 0 && freeMb - HLS_OUTPUT_RESERVE_MB - m - 4 >= CB_BUFFER_PISO_MB) { mib = m; break; }
   if (mib != HLS_RING_MIB) {
     printf("[buffer] HLS: %d MiB (free %ld MiB)\n", mib, freeMb);
     fflush(stdout);
