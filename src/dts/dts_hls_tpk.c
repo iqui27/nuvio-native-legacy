@@ -349,6 +349,8 @@ typedef struct Sessao {
   char *externalUrl, *externalHeaders;
   char externalLangs[64];
   int lastSegment;                // TEMP-NETLOG: last segment sent in full
+  struct { int seg; int64_t bytes; } sent[64];   // pacing: sizes of the last segments sent
+  int pacedSeg;                   // pacing: the last segment held (a repeat goes at once)
 #endif
   volatile int cancelar;
   pthread_mutex_t m;
@@ -652,17 +654,31 @@ static int saidaEscrever(void *u, const unsigned char *d, int n) {
 /* PACING (owner 22/11): the LG player keeps ~30 s of HLS segments ahead and
  * ignores bufferControl for HLS; with HLS Off it holds ~2 s and Nuvio's own
  * buffer the rest, so HLS read ~90 MB more of a 90 Mb/s film at each start
- * and seek. The next segment in order waits while it would put the player
- * more than HLS_AHEAD_S ahead of playback; never longer than
- * HLS_WAIT_MAX_MS at a time (a request held too long can time out in the
- * player). Seeks and restarts (any other segment) are served at once. */
+ * and seek. The next segment in order waits while the player holds more than
+ * HLS_AHEAD_S AND more than HLS_AHEAD_MIN_MB ahead of playback (the player
+ * resumes from a rebuffer by bytes: 20 s of a ~25 Mb/s opening was not
+ * enough, owner's log 22/11); never longer than HLS_WAIT_MAX_MS at a time.
+ * No holding while the player rebuffers (position -1), for seeks and
+ * restarts (any other segment), nor for a segment asked again. */
 #define HLS_AHEAD_S 20.0
+#define HLS_AHEAD_MIN_MB 100.0
 #define HLS_WAIT_MAX_MS 8000u
 static atomic_llong hlsPosMs = -1;     /* playback position, -1 unknown */
 static unsigned hlsRitmoN, hlsRitmoMs;
 void dts_hls_webos_position(double s) { atomic_store(&hlsPosMs, s >= 0 ? (long long)llround(s * 1000.0) : -1); }
+/* Bytes of the segments sent after the one at `pos`: what the player holds. */
+static double hlsBytesAhead(Sessao *s, double pos) {
+  int from = dts_remux_segment_at(s->rx, pos), last = s->lastSegment;
+  double b = 0;
+  pthread_mutex_lock(&s->m);
+  for (int i = from + 1; i <= last; i++)
+    if (s->sent[i & 63].seg == i) b += (double)s->sent[i & 63].bytes;
+  pthread_mutex_unlock(&s->m);
+  return b;
+}
 static void hlsRitmo(Sessao *s, int k) {
   if (k <= s->lastSegment || k > s->lastSegment + 2) return;   /* in order (the player may fetch one ahead) */
+  if (k == s->pacedSeg) return;                                /* asked again: it gave up waiting */
   double start = dts_remux_segment_start(s->rx, k), ahead = 0;
   uint64_t t0 = agoraMs();
   for (;;) {
@@ -670,6 +686,8 @@ static void hlsRitmo(Sessao *s, int k) {
     if (p < 0 || s->cancelar) break;
     ahead = start - p / 1000.0;
     if (ahead <= HLS_AHEAD_S || ahead > 600 || agoraMs() - t0 >= HLS_WAIT_MAX_MS) break;
+    if (hlsBytesAhead(s, p / 1000.0) < HLS_AHEAD_MIN_MB * 1048576.0) break;
+    s->pacedSeg = k;
     usleep(100000);
   }
   unsigned ms = (unsigned)(agoraMs() - t0);
@@ -766,7 +784,12 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
            enviados / 1e6, (unsigned)(agoraMs() - t0));
     fflush(stdout);
   }
-  if (s->webos && seg >= 0 && ok) s->lastSegment = seg;
+  if (s->webos && seg >= 0 && ok) {
+    pthread_mutex_lock(&s->m);
+    s->sent[seg & 63].seg = seg; s->sent[seg & 63].bytes = enviados;
+    pthread_mutex_unlock(&s->m);
+    s->lastSegment = seg;
+  }
 #endif
   if (s->webosMp4 && (ok || rr == -2)) return ok && manter;
   uint64_t fim = agoraMs();
@@ -1184,6 +1207,7 @@ static int openSession(const char *url, const char *headers, int track, int ster
     s->hls = *hls;
     s->webosMp4 = !hls->ts;
     s->lastSegment = -1;
+    s->pacedSeg = -1;
     if (hls->external_url && *hls->external_url) {
       s->externalUrl = strdup(hls->external_url);
       s->externalHeaders = strdup(hls->external_headers ? hls->external_headers : "");

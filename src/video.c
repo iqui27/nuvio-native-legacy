@@ -4404,8 +4404,11 @@ static void hlsBombear(void) {
       }
     }
     if (pronto && tocando) hls.played = 1;
-    // Pacing of the local server (dts_hls_tpk.c): the playback position.
-    dts_hls_webos_position(pronto ? video_pos() : -1);
+    // Pacing of the local server (dts_hls_tpk.c): the playback position;
+    // none while the player rebuffers (owner's log 22/11: at 7 s of a
+    // low-bitrate opening the player waited for more than 20 s of data and
+    // the held segment never went out: server error 40000).
+    dts_hls_webos_position(pronto && !bufferandoDesde ? video_pos() : -1);
     // TEMP-BUFFER (owner 22/11, pacing test): how far ahead the player is,
     // from the segments it fetched (its bufferRange shows ~3 s under HLS).
     { static Uint32 lastBufferLog;
