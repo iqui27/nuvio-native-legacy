@@ -90,6 +90,11 @@ int main(void) {
   toast[0] = 0; cenas_atualizar(); assert(strstr(toast, "dura"));
   toast[0] = 0; cenas_atualizar(); assert(!toast[0]);
 
+  // The marked second is past the end of this version: same warning.
+  dur = 600.0; cenas_armar("tt12637874", 0, 0, 754, 620);
+  assert(cenas_aplicar_ao_abrir());
+  toast[0] = 0; cenas_atualizar(); assert(strstr(toast, "dura")); dur = 3600.0;
+
   // Another title, an expired arm and a cleared arm do nothing.
   retomada = -1.0;
   cenas_armar("tt0000001", 0, 0, 10, 0); assert(!cenas_aplicar_ao_abrir());

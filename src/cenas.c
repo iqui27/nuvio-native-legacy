@@ -125,7 +125,8 @@ void cenas_atualizar(void) {
   if (!conferirDur) return;
   if (!player_aberto()) { conferirDur = 0; return; }
   if (!player_duracao_midia(&local) || local <= 0.0) return;
-  marcacena_ancorar(conferirSeg, conferirDur, (int)local, &incerto);
+  // -1: the marked second is past the end of this version.
+  if (marcacena_ancorar(conferirSeg, conferirDur, (int)local, &incerto) < 0) incerto = 1;
   conferirDur = 0;
   if (incerto) player_toast(i18n("Esta versão tem outra duração: a cena pode estar um pouco antes ou depois"), 5000);
 }
