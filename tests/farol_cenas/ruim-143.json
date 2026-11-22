@@ -1,0 +1,1 @@
+{"v":1,"tela":"home","pecas":[{"t":"escolha","passo":1,"de":3,"pergunta":{"m":"FT_ESC_TEMPO"},"opcoes":[{"id":"a","r":{"m":"FT_ESC_TEMPO_45"}},{"id":"b","r":{"m":"FT_ESC_TEMPO_45"}},{"id":"c","r":{"m":"FT_ESC_TEMPO_45"}},{"id":"d","r":{"m":"FT_ESC_TEMPO_45"}},{"id":"e","r":{"m":"FT_ESC_TEMPO_45"}}]}]}

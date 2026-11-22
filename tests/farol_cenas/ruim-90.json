@@ -1,0 +1,1 @@
+{"v":1,"tela":"home","perfil":2,"feita":1795000000,"vale_s":86400,"origem":"regras","pecas":[{"t":"fileira","id":"f1","titulo":{"m":"FT_FIL_HORA"},"forma":"cartaz","itens":["c0","c1","c2","c3","c4","c5"]},{"t":"escolha","passo":1,"de":1,"pergunta":{"m":"FT_ESC_PESO"},"opcoes":[{"id":"a","r":{"m":"FT_ESC_PESO_LEVE"}}]}]}
