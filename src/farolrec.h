@@ -22,7 +22,8 @@
 //   + 0,10*hora[agora][duracao] + 0,05*qualidade(bayes 200) + bonus
 //   - 0,20*(mostrado em >= 3 dias).
 // Qualidade usa media bayesiana com prior 6,8 e 200 votos, normalizada para
-// [-1, +1]; sem nota e sem votos o termo vale 0.
+// [-1, +1]; sem nota e sem votos o termo vale 0. O bonus de F_AMIGO so e
+// aplicado com gostoPct >= 70, como manda a fonte da tabela 3.1.
 //
 // DIVERSIDADE (3.3). Selecao gulosa MMR com lambda = 0,7 sobre os pontos:
 // cada escolhido rebaixa quem divide semente, franquia, genero principal ou
@@ -60,14 +61,19 @@ enum {
   FRC_F_SEMENTE  = 0x02,   // recs do TMDB das sementes gostadas  — +0,10
   FRC_F_PESSOA   = 0x04,   // proxima obra de pessoa seguida      — +0,10
   FRC_F_SALVO    = 0x08,   // salvos / watchlist Trakt nao vistos — +0,15
-  FRC_F_AMIGO    = 0x10,   // amigo com gosto parecido (>= 70 %)  — +0,10
+  FRC_F_AMIGO    = 0x10,   // amigo com gosto parecido — +0,10 so se
+                           // gostoPct >= 70 (conferido pelo motor)
   FRC_F_REC      = 0x20,   // recomendacao recebida e nao vista   — +0,20
   FRC_F_CLIMA    = 0x40    // clima mais afim                     — sem bonus
 };
 
 // Estado que so o app conhece — mascara de FRC_FL_*. O que sai antes de
 // pontuar (3.1): VISTO, FORA_CLASS, CONTINUAR (so na Home), FORA_CAT sem
-// TEM_IMDB, recusado no anel do modelo e abandono ha < 90 dias.
+// TEM_IMDB, recusado no anel do modelo e abandono ha < 90 dias. As flags
+// sao UNIDAS por chave antes dos filtros: duplicatas divergentes nao
+// escapam pela copia "limpa" — um titulo VISTO por uma via e VISTO em
+// todas (mesmo assim, quem chama deve fundir as duplicatas — inclusive
+// `fontes`, que aqui nao se mescla: o bonus sai da copia que ficou).
 enum {
   FRC_FL_VISTO      = 0x01,  // cat_visto / Diario: nunca sai
   FRC_FL_FORA_CLASS = 0x02,  // fora da classificacao do perfil
@@ -116,6 +122,9 @@ typedef struct {
 
 // Motivos estruturados (3.5). a/b: indice de titulo (semente em ctx->sementes)
 // ou id de pessoa/tema/genero, conforme o tipo. A frase NAO mora aqui.
+// CABE_HOJE so sai quando o modelo de hora nao e contra aquela duracao na
+// faixa de agora (hora[agora][dur] >= 0): "cabe hoje" de um filme de 3 h
+// as 23h seria enganoso.
 typedef enum { FMO_TERMINOU, FMO_GENERO, FMO_PESSOA, FMO_TEMA, FMO_AMIGO,
                FMO_SALVO, FMO_CABE_HOJE, FMO_REVER, FMO_FORA_CURVA,
                FMO_RECOMENDADO } FarolMotivoTipo;

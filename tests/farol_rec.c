@@ -4,7 +4,11 @@
 // Continuar/aterramento), pontuacao e ordenacao (3.2), regras duras de
 // diversidade (3.3) em mesa e em 1 000 perfis sinteticos, frio (3.4), regras
 // de verdade dos motivos (3.5), determinismo por semente e a meta de tempo
-// (400 candidatos < 0,2 ms no host).
+// (400 candidatos < 0,2 ms no host). A volta 2 (FAROL41B) acrescenta: M13
+// com os valores exatos calculados a mao (Q15 14194, MMR A,C,B com 3440,
+// frio 1 = 11149, janela de genero ate o 6.o), M14 com o contrato das 44/45
+// (dedup unindo flags, F_AMIGO >= 70 %, CABE_HOJE com hora a favor) e a
+// bancada de tempo com fichas reais 4/6/8 sobre modelo cheio.
 //
 //   bash tests/farol_rec.sh                  (ASan+UBSan, o padrao)
 //   SANITIZE=0 bash tests/farol_rec.sh       (so os asserts)
@@ -96,6 +100,13 @@ static int posDe(const FarolRecItem *out, int n, int cand) {
   int i;
   for (i = 0; i < n; i++) if (out[i].cand == cand) return i;
   return -1;
+}
+
+static int temMotivo(const FarolRecItem *it, int tipo) {
+  int i;
+  for (i = 0; i < it->nMotivo; i++)
+    if (it->motivo[i].tipo == tipo) return 1;
+  return 0;
 }
 
 // Perfil maduro basico: 12 obras com ficha, gosto forte por genero 18.
@@ -484,6 +495,270 @@ static void m12_determinismo(void) {
 
 // ------------------------------------------------------- propriedades
 
+// Grava um slot do modelo direto (dia = hoje: o peso projetado e o proprio
+// peso, sem decaimento) — para conferir valores exatos calculados a mao.
+static void put(FarolAfin *a, int32_t id, int pesoQ88, int n) {
+  a->id = id;
+  a->peso = (int16_t)pesoQ88;
+  a->n = (uint16_t)n;
+  a->dia = DIA;
+}
+
+// Modelo maduro montado slot a slot (12 titulos -> nivel 2).
+static void modeloSlots(FarolGosto *g) {
+  farolgosto_iniciar(g, 1);
+  g->titulos = 12;
+  g->diaBase = DIA;
+}
+
+// M13: valores exatos calculados a mao contra a secao 3 — a pontuacao Q15
+// de uma ficha completa, a ordem MMR, o bruto do nivel 1 e as fronteiras
+// (89/90 dias, peso 0,50). Amarra a formula inteira: pesos, bonus, MMR e
+// os termos que o nivel 1 corta.
+static void m13_exatos(void) {
+  FarolGosto g;
+  FarolRecItem out[16];
+  FarolRecCtx x;
+  int n;
+
+  // (a) Q15 exato: gen18 +0,80 n5, tema9001 +0,60 n3, pessoa500 -0,40 n2,
+  // decada2020 +0,20 n4, pt +0,10 n9, hora[2][100-140... faixa 60-100]
+  // +0,50. Ficha {18,35}, tema 9001, pessoa 500, 2021, pt, 95 min, nota
+  // 8,0 com 800 votos, fonte SALVO. A mao:
+  //   9830*102 + 8192*154 - 6554*102 + 1638*51 + 1638*26 + 3277*128
+  //   + 1638*143 = 2375536 -> (2375536+128)>>8 = 9279 ; + SALVO 4915 = 14194.
+  modeloSlots(&g);
+  put(&g.genero[0], 18, 205, 5);
+  put(&g.tema[0], 9001, 154, 3);
+  put(&g.pessoa[0], 500, -102, 2);
+  put(&g.decada[0], 2020, 51, 4);
+  put(&g.idioma[0], ('p' << 8) | 't', 26, 9);
+  g.hora[2][2] = 128;
+  {
+    FarolFicha f = mkF(70, FF_FILME, 2021, 95, 80, 800, 18, 35, 500, 9001);
+    FarolRecCand c = mkC(&f, 1, FRC_F_SALVO);
+    int b0;
+    x = mkCtx(&g);
+    n = farolrec_escolher(&x, &c, 1, out, 12);
+    assert(n == 1 && out[0].bruto == 14194);
+    // Mostrado em 3 dias diferentes tira exatamente 0,20 (6554).
+    c.h = 0xFEED1u;
+    farolgosto_mostrado(&g, 0xFEED1u, 10);
+    farolgosto_mostrado(&g, 0xFEED1u, 11);
+    n = farolrec_escolher(&x, &c, 1, out, 12);
+    b0 = out[0].bruto;
+    farolgosto_mostrado(&g, 0xFEED1u, 12);
+    n = farolrec_escolher(&x, &c, 1, out, 12);
+    assert(b0 - out[0].bruto == 6554);
+  }
+
+  // (b) MMR lambda = 0,7 a mao: A REC+SALVO (0,35) e B REC+PESSOA (0,30)
+  // com semente 0; C SALVO (0,15) sem semente. Depois de A: B = 0,7*0,30 -
+  // 0,3*1,0 < 0 e C = 0,105 -> ordem A, C, B (sem MMR seria A, B, C). Os
+  // pontos de C sao 0,7*4915 em Q23 -> 3440 em Q15.
+  modeloSlots(&g);
+  {
+    FarolRecSemente sm[1] = { { 0, 1 } };
+    FarolRecCand c[3];
+    c[0] = mkC(0, 1, FRC_F_REC | FRC_F_SALVO);
+    c[1] = mkC(0, 2, FRC_F_REC | FRC_F_PESSOA);
+    c[2] = mkC(0, 3, FRC_F_SALVO);
+    c[0].semente = c[1].semente = 0;
+    x = mkCtx(&g);
+    x.sementes = sm;
+    x.nSementes = 1;
+    n = farolrec_escolher(&x, c, 3, out, 12);
+    assert(n == 3 && out[0].cand == 0 && out[1].cand == 2 &&
+           out[2].cand == 1);
+    assert(out[1].pontos == 3440);
+  }
+
+  // (c) Frio exato: gen18 +0,80 n9, tema9001 +0,90 n9. Ficha com genero E
+  // tema fortes: no nivel 1 entra so o genero (0,30*205 -> 7872) mais o
+  // bonus semente (3277) = 11149 — qualquer outro termo muda o valor.
+  farolgosto_iniciar(&g, 1);
+  g.diaBase = DIA;
+  put(&g.genero[0], 18, 205, 9);
+  put(&g.tema[0], 9001, 230, 9);
+  {
+    FarolFicha f = mkF(80, FF_FILME, 2020, 100, 70, 100, 18, 0, 0, 9001);
+    FarolRecCand c[2];
+    c[0] = mkC(&f, 1, FRC_F_SEMENTE | FRC_F_CATALOGO);
+    c[1] = mkC(&f, 2, FRC_F_CATALOGO);
+    x = mkCtx(&g);
+    g.titulos = 9;
+    assert(farolrec_nivel(&g) == 1);        // 9 ainda e nivel 1
+    n = farolrec_escolher(&x, c, 2, out, 12);
+    assert(n == 1 && out[0].cand == 0 && out[0].bruto == 11149);
+    g.titulos = 10;
+    assert(farolrec_nivel(&g) == 2);        // 10 abre o nivel 2
+    n = farolrec_escolher(&x, c, 2, out, 12);
+    assert(n == 2);
+  }
+
+  // (d) Peso exatamente 0,50 (128) nao sustenta motivo — a regra e > 0,5.
+  modeloSlots(&g);
+  put(&g.genero[0], 18, 128, 9);
+  {
+    FarolFicha f = mkF(90, FF_FILME, 2020, 0, 70, 100, 18, 0, 0, 0);
+    FarolRecCand c = mkC(&f, 3, FRC_F_CATALOGO);
+    x = mkCtx(&g);
+    n = farolrec_escolher(&x, &c, 1, out, 12);
+    assert(n == 1 && out[0].nMotivo == 0);
+  }
+
+  // (e) Janela de genero: a regra "3 nos 6 primeiros" vale so ate a
+  // posicao 6 — no 7.o lugar (idx 6) o 4.o titulo do genero entra de
+  // volta. 4 fichas de g18 (forte) + 4 de g35 (fraco), os dois generos
+  // com n = 5 no modelo (sem vaga fora da curva).
+  modeloSlots(&g);
+  put(&g.genero[0], 18, 205, 5);
+  put(&g.genero[1], 35, 26, 5);
+  {
+    static FarolFicha fb[8];
+    FarolRecCand c[8];
+    int i;
+    for (i = 0; i < 4; i++) {
+      fb[i] = mkF(200 + i, FF_FILME, 2021, 100, 70, 100, 18, 0, 0, 0);
+      c[i] = mkC(&fb[i], 200 + i, FRC_F_CATALOGO);
+    }
+    for (i = 4; i < 8; i++) {
+      fb[i] = mkF(200 + i, FF_FILME, 2021, 100, 70, 100, 35, 0, 0, 0);
+      c[i] = mkC(&fb[i], 200 + i, FRC_F_CATALOGO);
+    }
+    x = mkCtx(&g);
+    n = farolrec_escolher(&x, c, 8, out, 12);
+    // Fileira: 18, 35 (o MMR do 18 derrubado passa do neutro), 18, 18,
+    // 35, 35, 18, 35 — o 4.o g18 volta na posicao 7 (idx 6).
+    assert(n == 8);
+    assert(c[out[6].cand].ficha->genero[0] == 18);
+    for (i = 0; i < 6; i++) {
+      int nG = 0, j;
+      for (j = 0; j <= i; j++)
+        if (c[out[j].cand].ficha->genero[0] == 18) nG++;
+      assert(nG <= 3);
+    }
+  }
+}
+
+// M14: contrato com quem chama (issues 44/45) — dedup une as flags por
+// chave, F_AMIGO exige afinidade >= 70 %, CABE_HOJE respeita a hora.
+static void m14_contrato(void) {
+  FarolGosto g;
+  FarolFicha f = mkF(300, FF_FILME, 2021, 100, 80, 9000, 18, 0, 0, 0);
+  FarolRecCand c[4];
+  FarolRecItem out[8];
+  FarolRecCtx x;
+  int n;
+
+  // (a) Dedup une flags: a copia VISTO contamina a "limpa" da mesma chave,
+  // nas duas ordens. Chave diferente nao e afetada.
+  modeloSlots(&g);
+  c[0] = mkC(&f, 9, FRC_F_CATALOGO); c[0].flags = FRC_FL_VISTO;
+  c[1] = mkC(&f, 9, FRC_F_CATALOGO);                     // mesma chave, "limpa"
+  c[2] = mkC(&f, 10, FRC_F_CATALOGO);                    // outra chave
+  x = mkCtx(&g);
+  n = farolrec_escolher(&x, c, 3, out, 12);
+  assert(n == 1 && out[0].cand == 2);
+  c[0].flags = 0;
+  c[1].flags = FRC_FL_VISTO;                             // ordem inversa
+  n = farolrec_escolher(&x, c, 3, out, 12);
+  assert(n == 1 && out[0].cand == 2);
+  // FORA_CLASS tambem se une; CONTINUAR vale na Home (uniao) e nao fora.
+  c[0].flags = 0;
+  c[1].flags = FRC_FL_FORA_CLASS;
+  n = farolrec_escolher(&x, c, 3, out, 12);
+  assert(n == 1 && out[0].cand == 2);
+  c[1].flags = FRC_FL_CONTINUAR;
+  n = farolrec_escolher(&x, c, 3, out, 12);
+  assert(n == 1 && out[0].cand == 2);
+  x.naHome = 0;                                          // fora da Home a
+  n = farolrec_escolher(&x, c, 3, out, 12);              // uniao CONTINUAR
+  assert(contem(out, n, 0) && contem(out, n, 2));        // nao barra
+  // Aterramento: FORA_CAT de uma copia + TEM_IMDB de outra = pode abrir.
+  x.naHome = 1;
+  c[0].flags = FRC_FL_FORA_CAT;
+  c[1].flags = FRC_FL_TEM_IMDB;
+  n = farolrec_escolher(&x, c, 3, out, 12);
+  assert(contem(out, n, 0) || contem(out, n, 1));
+  c[0].flags = FRC_FL_FORA_CAT;
+  c[1].flags = FRC_FL_FORA_CAT;                          // nenhum imdb: fora
+  n = farolrec_escolher(&x, c, 3, out, 12);
+  assert(n == 1 && out[0].cand == 2);
+
+  // (b) F_AMIGO so da bonus e motivo com afinidade >= 70 % (tabela 3.1).
+  {
+    FarolRecCand a = mkC(&f, 20, FRC_F_AMIGO),
+                 b = mkC(&f, 21, FRC_F_CATALOGO),
+                 d = mkC(&f, 22, FRC_F_AMIGO);
+    int brutoBase;
+    a.quem = 42; a.gostoPct = 69;                        // 1 ponto abaixo
+    d.quem = 42; d.gostoPct = 70;                        // no limiar
+    n = farolrec_escolher(&x, &b, 1, out, 12);
+    brutoBase = out[0].bruto;
+    n = farolrec_escolher(&x, &a, 1, out, 12);
+    assert(n == 1 && out[0].bruto == brutoBase);         // sem bonus
+    assert(!temMotivo(&out[0], FMO_AMIGO));
+    n = farolrec_escolher(&x, &d, 1, out, 12);
+    assert(n == 1 && out[0].bruto == brutoBase + 3277);  // +0,10
+    assert(temMotivo(&out[0], FMO_AMIGO) &&
+           out[0].motivo[0].tipo == FMO_AMIGO &&
+           out[0].motivo[0].a == 42 && out[0].motivo[0].b == 70);
+  }
+
+  // (c) CABE_HOJE nao sai quando o modelo de hora e contra a duracao —
+  // filme de 3 h (faixa >140) com hora[agora][>140] = -1,0. Com o slot
+  // neutro (0) ou positivo, sai.
+  modeloSlots(&g);
+  g.hora[NH][4] = -256;
+  {
+    FarolFicha fl = mkF(310, FF_FILME, 2020, 180, 70, 100, 18, 0, 0, 0),
+               fc = mkF(311, FF_FILME, 2020, 100, 70, 100, 18, 0, 0, 0);
+    FarolRecCand cl = mkC(&fl, 30, FRC_F_CATALOGO),
+                 cc = mkC(&fc, 31, FRC_F_CATALOGO);
+    x = mkCtx(&g);
+    n = farolrec_escolher(&x, &cl, 1, out, 12);
+    assert(n == 1 && !temMotivo(&out[0], FMO_CABE_HOJE));
+    n = farolrec_escolher(&x, &cc, 1, out, 12);
+    assert(n == 1 && temMotivo(&out[0], FMO_CABE_HOJE));
+    g.hora[NH][4] = 1;                                   // virou a favor
+    n = farolrec_escolher(&x, &cl, 1, out, 12);
+    assert(n == 1 && temMotivo(&out[0], FMO_CABE_HOJE));
+    g.hora[NH][4] = -1;                                  // minimo contra
+    n = farolrec_escolher(&x, &cl, 1, out, 12);
+    assert(n == 1 && !temMotivo(&out[0], FMO_CABE_HOJE));
+    // Sem duracao conhecida, nao ha CABE_HOJE — nem com hora toda a favor.
+    {
+      FarolFicha f0 = mkF(312, FF_FILME, 2020, 0, 70, 100, 18, 0, 0, 0);
+      FarolRecCand c0 = mkC(&f0, 32, FRC_F_CATALOGO);
+      int i2, k2;
+      for (i2 = 0; i2 < FG_HORA_F; i2++)
+        for (k2 = 0; k2 < FG_HORA_D; k2++) g.hora[i2][k2] = 256;
+      n = farolrec_escolher(&x, &c0, 1, out, 12);
+      assert(n == 1 && !temMotivo(&out[0], FMO_CABE_HOJE));
+    }
+  }
+
+  // (d) Desempate deterministico por semente do sorteio: dois candidatos
+  // identicos (mesma ficha, mesmos pontos) saem na ordem de
+  // mistura(chave, ctx->semente) — semente 1 da a chave 40 na frente,
+  // semente 2 inverte. Ignorar a semente do sorteio mata o caso.
+  {
+    FarolFicha fe = mkF(320, FF_FILME, 2021, 100, 80, 9000, 18, 0, 0, 0);
+    FarolRecCand e[2];
+    e[0] = mkC(&fe, 40, FRC_F_CATALOGO);
+    e[1] = mkC(&fe, 41, FRC_F_CATALOGO);
+    modeloSlots(&g);
+    x = mkCtx(&g);
+    x.semente = 1;
+    n = farolrec_escolher(&x, e, 2, out, 12);
+    assert(n == 2 && out[0].cand == 0 && out[1].cand == 1);
+    x.semente = 2;
+    n = farolrec_escolher(&x, e, 2, out, 12);
+    assert(n == 2 && out[0].cand == 1 && out[1].cand == 0);
+  }
+}
+
 static uint64_t R;
 static uint32_t rnd(void) {                    // LCG deterministico do teste
   R = R * 6364136223846793005ull + 1442695040888963407ull;
@@ -522,8 +797,20 @@ static int comum(const FarolFicha *a, const FarolFicha *b) {
   return n;
 }
 
+// Mesma tabela de faixas de duracao do modulo (duplicada de proposito).
+static int durFaixa(int min) {
+  if (min <= 0) return -1;
+  if (min < 30) return 0;
+  if (min < 60) return 1;
+  if (min < 100) return 2;
+  if (min < 140) return 3;
+  return 4;
+}
+
 // As regras duras e os filtros valem para QUALQUER saida. Confere cada
-// item escolhido contra a entrada e o modelo.
+// item escolhido contra a entrada e o modelo. Os filtros de flag valem
+// sobre a UNIAO das flags por chave (contrato 44/45): uma duplicata com
+// VISTO contamina as copias "limpas" da mesma chave.
 static void confere(const FarolRecCtx *x, const FarolRecCand *c, int nCand,
                     const FarolRecItem *out, int n, int nivel,
                     FarolGosto *g, const FarolRecSemente *sm) {
@@ -532,12 +819,17 @@ static void confere(const FarolRecCtx *x, const FarolRecCand *c, int nCand,
   if (!nivel) { assert(n == 0); return; }
   for (i = 0; i < n; i++) {
     const FarolRecCand *ci;
+    uint8_t flu;
     assert(out[i].cand >= 0 && out[i].cand < nCand);
     ci = &c[out[i].cand];
-    assert(!(ci->flags & FRC_FL_VISTO));
-    assert(!(ci->flags & FRC_FL_FORA_CLASS));
-    if (x->naHome) assert(!(ci->flags & FRC_FL_CONTINUAR));
-    if (ci->flags & FRC_FL_FORA_CAT) assert(ci->flags & FRC_FL_TEM_IMDB);
+    flu = ci->flags;
+    if (ci->chave)
+      for (j = 0; j < nCand; j++)
+        if (c[j].chave == ci->chave) flu |= c[j].flags;
+    assert(!(flu & FRC_FL_VISTO));
+    assert(!(flu & FRC_FL_FORA_CLASS));
+    if (x->naHome) assert(!(flu & FRC_FL_CONTINUAR));
+    if (flu & FRC_FL_FORA_CAT) assert(flu & FRC_FL_TEM_IMDB);
     if (ci->h) assert(!farolgosto_recusado(g, ci->h));
     if (ci->abandonoDia)
       assert((int)x->dia - (int)ci->abandonoDia >= 90);
@@ -591,13 +883,16 @@ static void confere(const FarolRecCtx *x, const FarolRecCand *c, int nCand,
           break;
         }
         case FMO_AMIGO:
-          assert((ci->fontes & FRC_F_AMIGO) && ci->quem == m->a);
+          assert((ci->fontes & FRC_F_AMIGO) && ci->quem == m->a &&
+                 ci->gostoPct >= 70);
           break;
         case FMO_SALVO:
           assert(ci->fontes & FRC_F_SALVO);
           break;
         case FMO_CABE_HOJE:
           assert(ci->ficha && ci->ficha->minutos > 0);
+          assert(farolgosto_hora(g, x->faixaHora,
+                                 durFaixa(ci->ficha->minutos), x->dia) >= 0);
           break;
         case FMO_REVER:
           assert(0);                       // vistos nunca saem: nao emite
@@ -723,21 +1018,52 @@ static void desempenho(void) {
   static FarolFicha fb[FAROL_REC_CAND_MAX];
   static FarolRecCand c[FAROL_REC_CAND_MAX];
   static FarolRecItem out[16];
-  FarolFicha sem[12];
-  FarolGosto g;
+  static FarolGosto g;
   FarolRecCtx x;
   struct timespec a, b;
   int64_t melhor = 0;
-  int i, r;
-  perfilMaduro(&g, sem);
+  int i, k, r;
+  // Bancada realista, nao o caminho facil: modelo no teto do farolgosto
+  // (32/64/96/12/16 afinidades) e fichas "ricas" — 4 generos, 6 pessoas e
+  // 8 temas, o teto da farolficha e o caso comum com ficha do TMDB. A
+  // revisao r1 mediu 288-463 us nesse cenario com o motor antigo; a meta
+  // < 0,2 ms vale para esta entrada.
+  farolgosto_iniciar(&g, 1);
+  g.titulos = 400;
+  g.diaBase = DIA;
+  for (i = 0; i < FG_GENERO_N; i++)
+    put(&g.genero[i], 10 + i, (i % 7 - 3) * 60, 1 + i % 5);
+  for (i = 0; i < FG_PESSOA_N; i++)
+    put(&g.pessoa[i], 300 + i, (i % 9 - 4) * 50, 1 + i % 4);
+  for (i = 0; i < FG_TEMA_N; i++)
+    put(&g.tema[i], 8000 + i, (i % 11 - 5) * 40, 1 + i % 3);
+  for (i = 0; i < FG_DECADA_N; i++)
+    put(&g.decada[i], 1920 + 10 * i, 30, 3);
+  for (i = 0; i < FG_IDIOMA_N; i++)
+    put(&g.idioma[i], ('a' + i) << 8 | 'x', 30, 3);
+  for (i = 0; i < FG_DURACAO_N; i++)
+    put(&g.duracao[i], i + 1, 20, 3);
+  for (i = 0; i < FG_HORA_F; i++)
+    for (k = 0; k < FG_HORA_D; k++)
+      g.hora[i][k] = (int16_t)((i - k) * 20);
   for (i = 0; i < FAROL_REC_CAND_MAX; i++) {
-    fb[i] = mkF(20000 + i, FF_FILME, 1980 + i % 40, 70 + i % 120,
-                40 + i % 60, i * 37, 10 + i % 40, i % 5 ? 0 : 18,
-                300 + i % 60, 8000 + i % 80);
-    c[i] = mkC(&fb[i], 20000 + i,
-               (uint8_t)(FRC_F_CATALOGO | (i % 3 ? FRC_F_SEMENTE : 0)));
-    c[i].semente = (uint16_t)(i % 8 ? FRC_SEM_SEMENTE : 0);
-    c[i].franquia = i % 6 ? 0 : 777 + i;
+    memset(&fb[i], 0, sizeof fb[i]);
+    fb[i].tmdb = 20000 + i;
+    fb[i].tipo = FF_FILME;
+    fb[i].ano = (uint16_t)(1970 + i % 55);
+    fb[i].minutos = (uint16_t)(30 + i % 170);
+    fb[i].nota = (uint8_t)(i % 100);
+    fb[i].votos = (uint16_t)(i * 37 % 20000);
+    fb[i].idioma = ('a' + i % 16) << 8 | 'x';
+    for (k = 0; k < FAROL_FICHA_GEN; k++)
+      fb[i].genero[k] = 10 + (i + 7 * k) % 40;
+    for (k = 0; k < FAROL_FICHA_PESSOA; k++)
+      fb[i].pessoa[k] = 300 + (i * 3 + 11 * k) % 70;
+    for (k = 0; k < FAROL_FICHA_TEMA; k++)
+      fb[i].tema[k] = 8000 + (i * 5 + 13 * k) % 100;
+    c[i] = mkC(&fb[i], 20000 + i, (uint8_t)(1u << (i % 7)));
+    c[i].semente = (uint16_t)(i % 8 ? FRC_SEM_SEMENTE : i % 5);
+    c[i].franquia = i % 6 ? 0 : 777 + i % 40;
   }
   x = mkCtx(&g);
   for (r = 0; r < 30; r++) {
@@ -748,7 +1074,8 @@ static void desempenho(void) {
     ns = (b.tv_sec - a.tv_sec) * 1000000000LL + (b.tv_nsec - a.tv_nsec);
     if (!melhor || ns < melhor) melhor = ns;
   }
-  printf("farol_rec: 400 candidatos em %lld ns (meta < %lld)\n",
+  printf("farol_rec: 400 candidatos (fichas reais 4/6/8, modelo cheio) em "
+         "%lld ns (meta < %lld)\n",
          (long long)melhor, (long long)FR_META_NS);
   assert(melhor < FR_META_NS);
 }
@@ -767,6 +1094,8 @@ int main(void) {
   m10_motivos();
   m11_fora_curva();
   m12_determinismo();
+  m13_exatos();
+  m14_contrato();
   propriedades();
   desempenho();
   puts("farol_rec: ok");

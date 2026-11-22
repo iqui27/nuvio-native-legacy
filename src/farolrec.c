@@ -2,7 +2,9 @@
 // secao 3 do PLANO-GOSTO). Modulo puro: sem SDL, sem rede, sem malloc e sem
 // relogio — `dia`/`faixaHora` vem no contexto e o sorteio vem de
 // `ctx->semente`. Toda a memoria de trabalho fica na pilha da chamada:
-// tabela de pesos projetados (~4,6 KB) + vetores de 400 (~3 KB).
+// tabelas hash do modelo (~4,3 KB) + vetores por posicao elegivel (~21 KB)
+// + tabela de dedup (~9 KB) — 37 KB medidos (gcc -fstack-usage), detalhado
+// em farolrec_escolher.
 
 #include "farolrec.h"
 #include <string.h>
@@ -26,6 +28,7 @@ _Static_assert(FAROL_REC_CAND_MAX == 400, "teto de candidatos da secao 3.1");
 #define FR_B_AMIGO   3277   // +0,10 amigo com gosto parecido
 #define FR_B_REC     6554   // +0,20 recomendacao recebida
 #define FR_P_MOSTR   6554   // -0,20 mostrado em >= 3 dias
+#define FR_AMIGO_MIN 70     // afinidade minima do F_AMIGO (tabela 3.1)
 
 // MMR (3.3): nota' = 0,7*pontos - 0,3*simMax. Sim em Q15: 1,0 = mesma
 // semente ou franquia; 0,5 = mesmo genero principal ou pessoa em comum.
@@ -50,10 +53,30 @@ _Static_assert(FAROL_REC_CAND_MAX == 400, "teto de candidatos da secao 3.1");
 // mantem a sondagem em ~1 tentativa.
 #define FR_SET_N 1024
 
-// Peso projetado de uma afinidade, copiado a uma tabela por dimensao no
-// inicio da chamada: depois disso cada consulta e busca binaria, sem varrer
-// o vetor esparso do modelo por candidato (meta de tempo da 3.2).
+// Peso projetado de uma afinidade, guardado na tabela hash da dimensao no
+// inicio da chamada: depois disso cada consulta e ~1 sondagem, sem varrer o
+// vetor esparso do modelo por candidato (meta de tempo da 3.2).
 typedef struct { int32_t id; int16_t peso; uint16_t n; } FRW;
+
+// Uma tabela hash por dimensao, abertas num vetor so: cada uma e potencia
+// de 2 com ~2x o cap da dimensao, entao a carga fica abaixo de 60 % e a
+// sondagem termina em ~1 tentativa. Slot com id 0 = vazio (o modelo nunca
+// guarda id 0 — mesma convencao do farolgosto).
+#define FR_HSH_N 544
+static const struct { uint16_t off, mask; } FRHD[FG_DIM_N] = {
+  {   0,  63 },   // FG_DIM_GENERO   cap 32 -> 64
+  {  64, 127 },   // FG_DIM_PESSOA   cap 64 -> 128
+  { 192, 255 },   // FG_DIM_TEMA     cap 96 -> 256
+  { 448,  31 },   // FG_DIM_DECADA   cap 12 -> 32
+  { 480,  31 },   // FG_DIM_IDIOMA   cap 16 -> 32
+  { 512,  31 },   // FG_DIM_DURACAO  cap 10 -> 32
+};
+
+// O que o MMR recomputaria por par, pre-computado uma vez por candidato
+// elegivel e guardado em vetores planos por posicao: genero principal,
+// semente, franquia e a lista de pessoas ordenada/deduplicada — a
+// interseccao vira um merge-scan de <= 11 passos em vez do laco 6x6, e as
+// varreduras do MMR leem sequencial em vez de perseguir ponteiros.
 
 static const FarolAfin *frVetor(const FarolGosto *g, int dim, int *cap) {
   switch (dim) {
@@ -66,40 +89,42 @@ static const FarolAfin *frVetor(const FarolGosto *g, int dim, int *cap) {
   }
 }
 
-// Monta w[dim][0..n) ordenado por id, com o peso ja projetado em `dia`
-// (farolgosto_peso aplica o decaimento preguiçoso sem mexer no guardado).
-// Devolve wn[dim]; w tem de ter FG_TEMA_N (o maior cap) por dimensao.
-static void frMontaW(const FarolGosto *g, uint16_t dia,
-                     FRW w[FG_DIM_N][FG_TEMA_N], int wn[FG_DIM_N]) {
-  int d, i, j;
+static uint32_t frEspalha(int32_t id) {
+  return (uint32_t)id * 2654435761u;
+}
+
+// Despeja as afinidades do modelo nas tabelas hash, com o peso ja projetado
+// em `dia` (farolgosto_peso aplica o decaimento preguiçoso sem mexer no
+// guardado). Id repetido dentro da dimensao fica com a 1.a copia — a mesma
+// que a ordenacao estavel deixava primeiro na tabela antiga.
+static void frMontaW(const FarolGosto *g, uint16_t dia, FRW *h) {
+  int d, i;
+  memset(h, 0, (size_t)FR_HSH_N * sizeof *h);
   for (d = 0; d < FG_DIM_N; d++) {
     const FarolAfin *arr;
-    int cap, n = 0;
+    FRW *t = h + FRHD[d].off;
+    uint32_t mask = FRHD[d].mask;
+    int cap;
     arr = frVetor(g, d, &cap);
     for (i = 0; i < cap; i++) {
+      uint32_t p;
       if (!arr[i].id) continue;
-      w[d][n].id = arr[i].id;
-      w[d][n].n = arr[i].n;
-      w[d][n].peso = (int16_t)farolgosto_peso(g, d, arr[i].id, dia);
-      n++;
+      p = frEspalha(arr[i].id) & mask;
+      while (t[p].id && t[p].id != arr[i].id) p = (p + 1) & mask;
+      if (t[p].id) continue;
+      t[p].id = arr[i].id;
+      t[p].n = arr[i].n;
+      t[p].peso = (int16_t)farolgosto_peso(g, d, arr[i].id, dia);
     }
-    // Insertion sort: n <= 96 e quase ordenado na pratica.
-    for (i = 1; i < n; i++) {
-      FRW t = w[d][i];
-      for (j = i; j > 0 && w[d][j - 1].id > t.id; j--) w[d][j] = w[d][j - 1];
-      w[d][j] = t;
-    }
-    wn[d] = n;
   }
 }
 
-static const FRW *frAcha(const FRW *w, int n, int32_t id) {
-  int a = 0, b = n;
-  while (a < b) {
-    int m = a + ((b - a) >> 1);
-    if (w[m].id < id) a = m + 1; else b = m;
-  }
-  return (a < n && w[a].id == id) ? &w[a] : 0;
+static const FRW *frAcha(const FRW *h, int dim, int32_t id) {
+  const FRW *t = h + FRHD[dim].off;
+  uint32_t mask = FRHD[dim].mask;
+  uint32_t p = frEspalha(id) & mask;
+  while (t[p].id && t[p].id != id) p = (p + 1) & mask;
+  return t[p].id == id ? &t[p] : 0;
 }
 
 static int16_t frPrende(int32_t v) {
@@ -122,14 +147,14 @@ static int frDurFaixa(int min) {
 
 // Media dos pesos projetados (Q8.8) nas afinidades `ids` da ficha, ids
 // deduplicados; afinidade ausente do modelo conta 0. Cortada em [-1, +1].
-static int32_t frTermo(const FRW *w, int n, const int32_t *ids, int cap) {
+static int32_t frTermo(const FRW *h, int dim, const int32_t *ids, int cap) {
   int64_t s = 0;
   int i, j, m = 0;
   for (i = 0; i < cap && ids[i]; i++) {
     const FRW *e;
     for (j = 0; j < i; j++) if (ids[j] == ids[i]) break;
     if (j < i) continue;
-    e = frAcha(w, n, ids[i]);
+    e = frAcha(h, dim, ids[i]);
     if (e) s += e->peso;
     m++;
   }
@@ -157,38 +182,37 @@ static int32_t frQualidade(const FarolFicha *f) {
   return frPrende((int32_t)((m - 50) * 256 / 50));
 }
 
-// Bonus das fontes marcadas (tabela 3.1), em Q15.
-static int32_t frBonus(uint8_t fontes) {
+// Bonus das fontes marcadas (tabela 3.1), em Q15. F_AMIGO so conta com
+// afinidade >= 70 % — a regra da fonte, conferida aqui porque quem chama
+// pode mandar duplicatas sem fundir (correcao FAROL41B).
+static int32_t frBonus(const FarolRecCand *c) {
   int32_t b = 0;
-  if (fontes & FRC_F_SEMENTE) b += FR_B_SEMENTE;
-  if (fontes & FRC_F_PESSOA)  b += FR_B_PESSOA;
-  if (fontes & FRC_F_SALVO)   b += FR_B_SALVO;
-  if (fontes & FRC_F_AMIGO)   b += FR_B_AMIGO;
-  if (fontes & FRC_F_REC)     b += FR_B_REC;
+  if (c->fontes & FRC_F_SEMENTE) b += FR_B_SEMENTE;
+  if (c->fontes & FRC_F_PESSOA)  b += FR_B_PESSOA;
+  if (c->fontes & FRC_F_SALVO)   b += FR_B_SALVO;
+  if ((c->fontes & FRC_F_AMIGO) && c->gostoPct >= FR_AMIGO_MIN)
+    b += FR_B_AMIGO;
+  if (c->fontes & FRC_F_REC)     b += FR_B_REC;
   return b;
 }
 
 // Pontos brutos Q15 (3.2). Nivel 1 ("so genero e recs das sementes", 3.4)
 // zera os outros termos — o bonus das fontes continua.
 static int32_t frPontos(const FarolRecCtx *ctx, const FarolRecCand *c,
-                        int nivel, FRW w[FG_DIM_N][FG_TEMA_N],
-                        const int wn[FG_DIM_N]) {
+                        int nivel, const FRW *h) {
   const FarolFicha *f = c->ficha;
   int64_t acc;
   int32_t g1 = 0, tema = 0, pes = 0, dec = 0, idi = 0, hor = 0, qua = 0;
   if (f) {
     const FRW *e;
-    g1 = frTermo(w[FG_DIM_GENERO], wn[FG_DIM_GENERO], f->genero,
-                 FAROL_FICHA_GEN);
+    g1 = frTermo(h, FG_DIM_GENERO, f->genero, FAROL_FICHA_GEN);
     if (nivel >= 2) {
       int fd;
-      tema = frTermo(w[FG_DIM_TEMA], wn[FG_DIM_TEMA], f->tema,
-                     FAROL_FICHA_TEMA);
-      pes = frTermo(w[FG_DIM_PESSOA], wn[FG_DIM_PESSOA], f->pessoa,
-                    FAROL_FICHA_PESSOA);
-      e = frAcha(w[FG_DIM_DECADA], wn[FG_DIM_DECADA], frDecadaId(f->ano));
+      tema = frTermo(h, FG_DIM_TEMA, f->tema, FAROL_FICHA_TEMA);
+      pes = frTermo(h, FG_DIM_PESSOA, f->pessoa, FAROL_FICHA_PESSOA);
+      e = frAcha(h, FG_DIM_DECADA, frDecadaId(f->ano));
       dec = e ? e->peso : 0;
-      e = frAcha(w[FG_DIM_IDIOMA], wn[FG_DIM_IDIOMA], f->idioma);
+      e = frAcha(h, FG_DIM_IDIOMA, f->idioma);
       idi = e ? e->peso : 0;
       fd = frDurFaixa(f->minutos);
       if (fd >= 0)
@@ -201,7 +225,7 @@ static int32_t frPontos(const FarolRecCtx *ctx, const FarolRecCand *c,
         (int64_t)FR_W_IDIOMA * idi + (int64_t)FR_W_HORA * hor +
         (int64_t)FR_W_QUAL * qua;
   acc = (acc + (acc >= 0 ? 128 : -128)) >> 8;      // Q23 -> Q15, arredondado
-  acc += frBonus(c->fontes);
+  acc += frBonus(c);
   if (c->h && farolgosto_mostrado_dias(ctx->g, c->h) >= 3)
     acc -= FR_P_MOSTR;
   if (acc > 0x7fffffffLL) acc = 0x7fffffffLL;
@@ -220,56 +244,49 @@ static uint32_t frMistura(int64_t chave, uint32_t s) {
   return (uint32_t)x;
 }
 
-// Similaridade MMR entre dois candidatos (3.3), em Q15.
-static int32_t frSim(const FarolRecCand *a, const FarolRecCand *b) {
-  if (a->semente != FRC_SEM_SEMENTE && a->semente == b->semente)
-    return FR_SIM_MESMO;
-  if (a->franquia && a->franquia == b->franquia) return FR_SIM_MESMO;
-  if (a->ficha && b->ficha) {
-    int i, j;
-    if (a->ficha->genero[0] && a->ficha->genero[0] == b->ficha->genero[0])
-      return FR_SIM_MEIO;
-    for (i = 0; i < FAROL_FICHA_PESSOA && a->ficha->pessoa[i]; i++)
-      for (j = 0; j < FAROL_FICHA_PESSOA && b->ficha->pessoa[j]; j++)
-        if (a->ficha->pessoa[i] == b->ficha->pessoa[j]) return FR_SIM_MEIO;
+// As duas listas de pessoas (ordenadas, sem repeticao) se cruzam? — o
+// "pessoa em comum" da similaridade 3.3.
+static int frTemPessoa(const int32_t *a, int na, const int32_t *b, int nb) {
+  int i = 0, j = 0;
+  while (i < na && j < nb) {
+    if (a[i] == b[j]) return 1;
+    if (a[i] < b[j]) i++; else j++;
   }
   return 0;
 }
 
-// Regra dura da posicao `k` (0-based) para o candidato `c`, dado o que ja
-// saiu em out[0..k). Devolve 1 se `c` pode entrar agora. semente/franquia
-// estouradas tambem marcam *ban para nao recontar a cada rodada.
-static int frPode(const FarolRecCand *cand, const FarolRecCand *c,
-                  const FarolRecItem *out, int k, uint8_t *ban) {
-  int i, nSem = 0, nGen = 0;
-  if (*ban) return 0;
-  if (c->franquia)
-    for (i = 0; i < k; i++)
-      if (cand[out[i].cand].franquia == c->franquia) { *ban = 1; return 0; }
-  if (c->semente != FRC_SEM_SEMENTE) {
-    for (i = 0; i < k; i++)
-      if (cand[out[i].cand].semente == c->semente) nSem++;
-    if (nSem >= FR_MAX_SEMENTE) { *ban = 1; return 0; }
-  }
-  if (k < FR_JANELA_GEN && c->ficha && c->ficha->genero[0]) {
-    for (i = 0; i < k; i++) {
-      const FarolFicha *o = cand[out[i].cand].ficha;
-      if (o && o->genero[0] == c->ficha->genero[0]) nGen++;
-    }
-    if (nGen >= FR_MAX_GENERO6) return 0;   // so a janela: sem ban permanente
-  }
-  return 1;
+// A metade "0,5" da similaridade MMR (3.3): mesmo genero principal ou
+// pessoa em comum — o mesmo resultado do laco antigo, so que sobre os
+// auxiliares pre-computados.
+static int frSimMeio(int32_t genA, const int32_t *pa, int na,
+                     int32_t genB, const int32_t *pb, int nb) {
+  return (genA && genA == genB) || frTemPessoa(pa, na, pb, nb);
+}
+
+// Regra dura da posicao `k` (0-based) para o elegivel `e`: no maximo 3 do
+// mesmo genero principal entre os 6 primeiros, contados nos generos dos
+// escolhidos ja registrados. As regras de semente e franquia NAO moram
+// aqui: sao marcadas de uma vez na varredura que segue cada escolha (bit 1
+// de st[]), em vez de recontadas por candidato a cada rodada — contagem
+// identica, custo bem menor. A janela nao e ban permanente.
+static int frPodeGen(int e, const int32_t *gen0, const int32_t *pGen,
+                     int k) {
+  int i, nGen = 0;
+  if (k >= FR_JANELA_GEN || !gen0[e]) return 1;
+  for (i = 0; i < k; i++)
+    if (pGen[i] == gen0[e]) nGen++;
+  return nGen < FR_MAX_GENERO6;
 }
 
 // Nota ajustada MMR com o simMax incremental mantido pela selecao.
-static int64_t frAdj(int32_t pts, int32_t simMax) {
-  return (int64_t)FR_LAMBDA * pts - (int64_t)FR_UMENOSL * simMax;
+static int64_t frAdj(int32_t pts, int32_t simM) {
+  return (int64_t)FR_LAMBDA * pts - (int64_t)FR_UMENOSL * simM;
 }
 
 // n de evidencias do genero no modelo (0 se ausente) — o "n < 3" da vaga
 // fora da curva.
-static int frGenN(const FRW *w, int n, int32_t id) {
-  const FRW *e = frAcha(w, n, id);
+static int frGenN(const FRW *h, int32_t id) {
+  const FRW *e = frAcha(h, FG_DIM_GENERO, id);
   return e ? (int)e->n : 0;
 }
 
@@ -299,8 +316,7 @@ static int frComum(const FarolFicha *a, const FarolFicha *b) {
 // Afinidade (dim,id) que sustenta o motivo de afinidade: slot com n >= 2 e
 // peso projetado > 0,5 (regra de verdade 3.5). Devolve o mais forte; empate vai
 // para pessoa, depois tema, depois genero — do mais especifico ao mais vago.
-static int frMelhorDim(const FarolFicha *f, FRW w[FG_DIM_N][FG_TEMA_N],
-                       const int wn[FG_DIM_N], int32_t *idOut) {
+static int frMelhorDim(const FarolFicha *f, const FRW *h, int32_t *idOut) {
   static const struct { int dim, cap, tipo; } D[3] = {
     { FG_DIM_PESSOA, FAROL_FICHA_PESSOA, FMO_PESSOA },
     { FG_DIM_TEMA,   FAROL_FICHA_TEMA,   FMO_TEMA   },
@@ -312,7 +328,7 @@ static int frMelhorDim(const FarolFicha *f, FRW w[FG_DIM_N][FG_TEMA_N],
     const int32_t *ids = D[d].dim == FG_DIM_PESSOA ? f->pessoa :
                          D[d].dim == FG_DIM_TEMA   ? f->tema : f->genero;
     for (i = 0; i < D[d].cap && ids[i]; i++) {
-      const FRW *e = frAcha(w[D[d].dim], wn[D[d].dim], ids[i]);
+      const FRW *e = frAcha(h, D[d].dim, ids[i]);
       if (e && e->n >= 2 && e->peso > pesoM) {
         pesoM = e->peso;
         melhor = d;
@@ -326,8 +342,7 @@ static int frMelhorDim(const FarolFicha *f, FRW w[FG_DIM_N][FG_TEMA_N],
 // O id compartilhado mais forte (tema primeiro, depois genero) que tambem
 // sustenta afinidade — o segundo argumento do FMO_TERMINOU na forma _TEMA.
 static int32_t frComumForte(const FarolFicha *fc, const FarolFicha *fs,
-                            FRW w[FG_DIM_N][FG_TEMA_N],
-                            const int wn[FG_DIM_N]) {
+                            const FRW *h) {
   static const struct { int dim, cap; } D[2] = {
     { FG_DIM_TEMA, FAROL_FICHA_TEMA }, { FG_DIM_GENERO, FAROL_FICHA_GEN },
   };
@@ -336,7 +351,7 @@ static int32_t frComumForte(const FarolFicha *fc, const FarolFicha *fs,
     const int32_t *va = d == 0 ? fc->tema : fc->genero;
     const int32_t *vb = d == 0 ? fs->tema : fs->genero;
     for (i = 0; i < D[d].cap && va[i]; i++) {
-      const FRW *e = frAcha(w[D[d].dim], wn[D[d].dim], va[i]);
+      const FRW *e = frAcha(h, D[d].dim, va[i]);
       if (!e || e->n < 2 || e->peso <= 128) continue;
       for (j = 0; j < D[d].cap && vb[j]; j++)
         if (va[i] == vb[j]) return va[i];
@@ -350,8 +365,7 @@ static int32_t frComumForte(const FarolFicha *fc, const FarolFicha *fs,
 // social (amigo/indicado), a afinidade mais forte, intencao (salvo) e o
 // encaixe de duracao.
 static void frMotivos(const FarolRecCtx *ctx, const FarolRecCand *cand,
-                      FarolRecItem *it, int nivel,
-                      FRW w[FG_DIM_N][FG_TEMA_N], const int wn[FG_DIM_N]) {
+                      FarolRecItem *it, int nivel, const FRW *h) {
   const FarolRecCand *c = &cand[it->cand];
   const FarolFicha *f = c->ficha;
   int n = 0;
@@ -368,11 +382,12 @@ static void frMotivos(const FarolRecCtx *ctx, const FarolRecCand *cand,
       it->motivo[n].tipo = FMO_TERMINOU;
       it->motivo[n].a = c->semente;
       it->motivo[n].b = (nivel >= 2 && f && s->ficha)
-                        ? frComumForte(f, s->ficha, w, wn) : 0;
+                        ? frComumForte(f, s->ficha, h) : 0;
       n++;
     }
   }
-  if (n < FAROL_REC_MOTIVOS && (c->fontes & FRC_F_AMIGO) && c->quem) {
+  if (n < FAROL_REC_MOTIVOS && (c->fontes & FRC_F_AMIGO) && c->quem &&
+      c->gostoPct >= FR_AMIGO_MIN) {
     it->motivo[n].tipo = FMO_AMIGO;
     it->motivo[n].a = c->quem;
     it->motivo[n].b = c->gostoPct;
@@ -386,7 +401,7 @@ static void frMotivos(const FarolRecCtx *ctx, const FarolRecCand *cand,
   }
   if (n < FAROL_REC_MOTIVOS && nivel >= 2 && f) {
     int32_t id = 0;
-    int tipo = frMelhorDim(f, w, wn, &id);
+    int tipo = frMelhorDim(f, h, &id);
     if (tipo >= 0) {
       int32_t b = 0;
       // Segundo argumento: a semente apontada tambem tem a afinidade?
@@ -415,10 +430,16 @@ static void frMotivos(const FarolRecCtx *ctx, const FarolRecCand *cand,
     n++;
   }
   if (n < FAROL_REC_MOTIVOS && f && f->minutos > 0) {
-    it->motivo[n].tipo = FMO_CABE_HOJE;
-    it->motivo[n].a = f->minutos;
-    it->motivo[n].b = 0;
-    n++;
+    // "Cabe hoje" so se o modelo de hora nao e contra aquela duracao
+    // agora — filme de 3 h as 23h nao cabe (correcao FAROL41B).
+    int fd = frDurFaixa(f->minutos);
+    if (fd >= 0 &&
+        farolgosto_hora(ctx->g, ctx->faixaHora, fd, ctx->dia) >= 0) {
+      it->motivo[n].tipo = FMO_CABE_HOJE;
+      it->motivo[n].a = f->minutos;
+      it->motivo[n].b = 0;
+      n++;
+    }
   }
   it->nMotivo = (uint8_t)n;
 }
@@ -426,57 +447,99 @@ static void frMotivos(const FarolRecCtx *ctx, const FarolRecCand *cand,
 int farolrec_escolher(const FarolRecCtx *ctx,
                       const FarolRecCand *cand, int nCand,
                       FarolRecItem *out, int maxOut) {
-  // Memoria de trabalho na pilha: ~8 KB no teto (tabela de pesos + vetores
-  // de 400 candidatos). Nada estatico: chamadas aninhadas nao se pisam.
-  FRW w[FG_DIM_N][FG_TEMA_N];
-  int wn[FG_DIM_N];
-  int32_t pts[FAROL_REC_CAND_MAX];
-  int32_t simM[FAROL_REC_CAND_MAX];     // simMax incremental por candidato
-  uint16_t ord[FAROL_REC_CAND_MAX];
+  // Memoria de trabalho na pilha, 37 040 B medidos (-fstack-usage) no teto:
+  // hsh 4,3 KB + vetores por posicao elegivel ~21,2 KB + ord/tmp/sl/st
+  // ~3,6 KB + dedup setV/setF 9 KB + escolhidos pSem/pGen ~0,9 KB. Nada
+  // estatico: chamadas aninhadas nao se pisam.
+  FRW hsh[FR_HSH_N];
+  int32_t pts[FAROL_REC_CAND_MAX];      // por posicao elegivel
+  int32_t simM[FAROL_REC_CAND_MAX];     // simMax incremental por posicao
+  int32_t gen0[FAROL_REC_CAND_MAX];     // genero principal da ficha
+  int32_t fran[FAROL_REC_CAND_MAX];     // franquia do candidato
+  int32_t pes[FAROL_REC_CAND_MAX][FAROL_FICHA_PESSOA];  // pessoas ordenadas
+  uint32_t hh[FAROL_REC_CAND_MAX];      // mistura(chave,semente) pronta
+  uint16_t sem[FAROL_REC_CAND_MAX];     // semente do candidato
+  uint16_t cix[FAROL_REC_CAND_MAX];     // indice do candidato na entrada
+  uint16_t ord[FAROL_REC_CAND_MAX];     // permutacao de posicoes
   uint16_t tmp[FAROL_REC_CAND_MAX];
-  uint8_t ban[FAROL_REC_CAND_MAX];
-  uint8_t sai[FAROL_REC_CAND_MAX];
+  uint16_t sl[FAROL_REC_CAND_MAX];      // slot dedup por indice de candidato
+  uint8_t nPes[FAROL_REC_CAND_MAX];
+  uint8_t st[FAROL_REC_CAND_MAX];       // bit0 ja escolhido, bit1 banido
   int64_t setV[FR_SET_N];               // dedup por chave (enderecamento aberto)
-  uint8_t setU[FR_SET_N];
+  uint8_t setF[FR_SET_N];               // flags unidas por chave; bit 7 = emitida
+  uint16_t pSem[FAROL_REC_CAND_MAX];    // semente de cada escolhido
+  int32_t pGen[FR_JANELA_GEN];          // genero principal dos <= 6 primeiros
   int nivel, nEl = 0, nOut = 0, foraPronto, i, k;
 
   if (!ctx || !ctx->g || !cand || !out || maxOut < 1 || nCand < 1) return 0;
   nivel = farolrec_nivel(ctx->g);
   if (!nivel) return 0;                    // frio 0: nenhuma fileira (3.4)
   if (nCand > FAROL_REC_CAND_MAX) nCand = FAROL_REC_CAND_MAX;
-  frMontaW(ctx->g, ctx->dia, w, wn);
+  frMontaW(ctx->g, ctx->dia, hsh);
 
-  // --- o que sai antes de pontuar (3.1), com dedup pela chave -----------
-  memset(ban, 0, sizeof ban);
-  memset(sai, 0, sizeof sai);
-  memset(setU, 0, sizeof setU);
+  // --- dedup por chave ANTES dos filtros, unindo as flags das copias (3.1
+  // + contrato 44/45): um titulo VISTO/fora da classificacao por uma via
+  // nao volta pela copia "limpa". Quem chama continua fundindo `fontes` —
+  // aqui so as flags de saida (VISTO, FORA_CLASS, CONTINUAR, FORA_CAT/
+  // TEM_IMDB) viram uniao por chave.
+  memset(setV, 0, sizeof setV);
+  memset(setF, 0, sizeof setF);
+  for (i = 0; i < nCand; i++) {
+    uint32_t p;
+    sl[i] = 0xffff;
+    if (!cand[i].chave) continue;
+    p = (uint32_t)(frMistura(cand[i].chave, 0) & (FR_SET_N - 1));
+    while (setV[p] && setV[p] != cand[i].chave) p = (p + 1) & (FR_SET_N - 1);
+    setV[p] = cand[i].chave;
+    setF[p] |= cand[i].flags;
+    sl[i] = (uint16_t)p;
+  }
+
+  // --- o que sai antes de pontuar (3.1), sobre as flags unidas ----------
+  memset(st, 0, sizeof st);
   for (i = 0; i < nCand; i++) {
     const FarolRecCand *c = &cand[i];
+    const FarolFicha *f = c->ficha;
+    uint8_t fl = c->flags;
+    int e = nEl, a2, b2;
+    if (sl[i] != 0xffff) fl |= setF[sl[i]] & 0x3f;
     if (!c->fontes) continue;
-    if (c->flags & FRC_FL_VISTO) continue;
-    if (c->flags & FRC_FL_FORA_CLASS) continue;
-    if (ctx->naHome && (c->flags & FRC_FL_CONTINUAR)) continue;
-    if ((c->flags & FRC_FL_FORA_CAT) && !(c->flags & FRC_FL_TEM_IMDB))
+    if (fl & FRC_FL_VISTO) continue;
+    if (fl & FRC_FL_FORA_CLASS) continue;
+    if (ctx->naHome && (fl & FRC_FL_CONTINUAR)) continue;
+    if ((fl & FRC_FL_FORA_CAT) && !(fl & FRC_FL_TEM_IMDB))
       continue;                            // aterramento (ALMA 6, risco 3)
     if (c->h && farolgosto_recusado(ctx->g, c->h)) continue;
     if (c->abandonoDia &&
         (int)ctx->dia - (int)c->abandonoDia < 90) continue;
     if (nivel == 1 && !(c->fontes & FRC_F_SEMENTE)) continue;
-    if (c->chave) {
-      // Dedup por sondagem linear: a carga fica <= 400/1024, entao o laco
-      // sempre encontra um slot vazio. Duplicata guarda a PRIMEIRA entrada.
-      uint32_t p = (uint32_t)(frMistura(c->chave, 0) & (FR_SET_N - 1));
-      int achou = 0;
-      while (setU[p]) {
-        if (setV[p] == c->chave) { achou = 1; break; }
-        p = (p + 1) & (FR_SET_N - 1);
-      }
-      if (achou) continue;
-      setU[p] = 1;
-      setV[p] = c->chave;
+    if (sl[i] != 0xffff) {
+      // A chave guarda a PRIMEIRA entrada que passou nos filtros.
+      if (setF[sl[i]] & 0x80) continue;
+      setF[sl[i]] |= 0x80;
     }
-    ord[nEl] = (uint16_t)i;
-    pts[i] = frPontos(ctx, c, nivel, w, wn);   // pts por indice de candidato
+    // Achata por posicao elegivel tudo que as varreduras do MMR leem: o
+    // resto do caminho nao volta a tocar o vetor de candidatos.
+    ord[e] = (uint16_t)e;
+    cix[e] = (uint16_t)i;
+    pts[e] = frPontos(ctx, c, nivel, hsh);
+    hh[e] = frMistura(c->chave, ctx->semente);
+    sem[e] = c->semente;
+    fran[e] = c->franquia;
+    gen0[e] = f ? f->genero[0] : 0;
+    nPes[e] = 0;
+    if (f) {
+      for (a2 = 0; a2 < FAROL_FICHA_PESSOA && f->pessoa[a2]; a2++) {
+        for (b2 = 0; b2 < nPes[e] && pes[e][b2] != f->pessoa[a2]; b2++);
+        if (b2 == nPes[e]) pes[e][nPes[e]++] = f->pessoa[a2];
+      }
+      for (a2 = 1; a2 < nPes[e]; a2++) {
+        int32_t t = pes[e][a2];
+        for (b2 = a2; b2 > 0 && pes[e][b2 - 1] > t; b2--)
+          pes[e][b2] = pes[e][b2 - 1];
+        pes[e][b2] = t;
+      }
+    }
     nEl++;
   }
   if (!nEl) return 0;
@@ -491,10 +554,7 @@ int farolrec_escolher(const FarolRecCtx *ctx,
       if (e > nEl) e = nEl;
       while (p < b && q < e) {
         int x = ord[p], y = ord[q];
-        int antes = pts[x] > pts[y] ||
-                    (pts[x] == pts[y] &&
-                     frMistura(cand[x].chave, ctx->semente) <
-                     frMistura(cand[y].chave, ctx->semente));
+        int antes = pts[x] > pts[y] || (pts[x] == pts[y] && hh[x] < hh[y]);
         tmp[t++] = (uint16_t)(antes ? x : y);
         if (antes) p++; else q++;
       }
@@ -508,7 +568,8 @@ int farolrec_escolher(const FarolRecCtx *ctx,
 
   // --- selecao gulosa MMR com regras duras (3.3) ------------------------
   // simM guarda a maior similaridade ja vista contra os escolhidos; cada
-  // escolha so atualiza esse vetor — nao recalcula sim contra todo mundo.
+  // escolha so atualiza esse vetor — e quem ja esta em 1,0, ja saiu ou ja
+  // esta banido nem entra na varredura.
   while (nOut < maxOut) {
     int pick = -1, fc = 0;
     int64_t best = -1;
@@ -517,61 +578,82 @@ int farolrec_escolher(const FarolRecCtx *ctx,
     // melhor candidato de genero com n < 3 no modelo (3.3).
     if (!foraPronto && nOut >= FR_FC_INI && nOut <= FR_FC_FIM) {
       for (i = 0; i < nEl; i++) {
-        const FarolRecCand *c;
+        int e = ord[i];
         int64_t adj;
-        uint32_t hh;
-        if (sai[i]) continue;
-        c = &cand[ord[i]];
-        if (!c->ficha || !c->ficha->genero[0]) continue;
-        if (frGenN(w[FG_DIM_GENERO], wn[FG_DIM_GENERO],
-                   c->ficha->genero[0]) >= 3) continue;
-        if (!frPode(cand, c, out, nOut, &ban[i])) continue;
-        adj = frAdj(pts[ord[i]], simM[ord[i]]);
-        hh = frMistura(c->chave, ctx->semente);
-        if (pick < 0 || adj > best || (adj == best && hh < bestH)) {
-          pick = i; best = adj; bestH = hh;
+        if (st[e] & 3) continue;
+        if (!gen0[e] || frGenN(hsh, gen0[e]) >= 3) continue;
+        if (!frPodeGen(e, gen0, pGen, nOut)) continue;
+        adj = frAdj(pts[e], simM[e]);
+        if (pick < 0 || adj > best || (adj == best && hh[e] < bestH)) {
+          pick = e; best = adj; bestH = hh[e];
         }
       }
       if (pick >= 0) fc = 1;
     }
     if (pick < 0) {
       for (i = 0; i < nEl; i++) {
-        const FarolRecCand *c;
+        int e = ord[i];
         int64_t adj;
-        uint32_t hh;
-        if (sai[i]) continue;
-        c = &cand[ord[i]];
-        if (!frPode(cand, c, out, nOut, &ban[i])) continue;
-        adj = frAdj(pts[ord[i]], simM[ord[i]]);
-        hh = frMistura(c->chave, ctx->semente);
-        if (pick < 0 || adj > best || (adj == best && hh < bestH)) {
-          pick = i; best = adj; bestH = hh;
+        if (st[e] & 3) continue;
+        if (!frPodeGen(e, gen0, pGen, nOut)) continue;
+        adj = frAdj(pts[e], simM[e]);
+        if (pick < 0 || adj > best || (adj == best && hh[e] < bestH)) {
+          pick = e; best = adj; bestH = hh[e];
         }
       }
     }
     if (pick < 0) break;                   // nada elegivel: fileira mais curta
     {
+      int e = pick;
       FarolRecItem *it = &out[nOut];
-      const FarolRecCand *novo = &cand[ord[pick]];
+      int32_t gJ = gen0[e], fJ = fran[e];
+      uint16_t sJ = sem[e];
       memset(it, 0, sizeof *it);
-      it->cand = ord[pick];
-      it->bruto = pts[ord[pick]];
+      it->cand = cix[e];
+      it->bruto = pts[e];
       it->pontos = (int32_t)(best / 32768);   // Q23 -> Q15
       it->foraCurva = (uint8_t)fc;
-      sai[pick] = 1;
+      st[e] |= 1;
+      pSem[nOut] = sJ;
+      if (nOut < FR_JANELA_GEN) pGen[nOut] = gJ;
       nOut++;
       if (fc) foraPronto = 1;
-      for (i = 0; i < nEl; i++) {
-        int32_t s;
-        if (sai[i]) continue;
-        s = frSim(&cand[ord[i]], novo);
-        if (s > simM[ord[i]]) simM[ord[i]] = s;
+      {
+        const int32_t *pJ = pes[e];
+        int nJ = nPes[e], nSJ = 0;
+        // As regras duras de semente (2 por fileira) e franquia (1) viram
+        // marca de uma vez: quem divide franquia com o escolhido — ou a
+        // semente que acabou de completar o teto — esta banido (bit 1).
+        if (fJ || sJ != FRC_SEM_SEMENTE) {
+          if (sJ != FRC_SEM_SEMENTE)
+            for (i = 0; i < nOut; i++) if (pSem[i] == sJ) nSJ++;
+          for (i = 0; i < nEl; i++)
+            if ((fJ && fran[i] == fJ) ||
+                (nSJ >= FR_MAX_SEMENTE && sem[i] == sJ))
+              st[i] |= 2;
+        }
+        for (i = 0; i < nEl; i++) {
+          int32_t s;
+          if ((st[i] & 3) || simM[i] >= FR_SIM_MESMO) continue;
+          // 1,0 so por semente/franquia; com simM ja em 0,5 a varredura de
+          // genero e pessoas nao muda nada (0,5 nao sobe o que ja tem 0,5).
+          if (sem[i] != FRC_SEM_SEMENTE && sem[i] == sJ)
+            s = FR_SIM_MESMO;
+          else if (fran[i] && fran[i] == fJ)
+            s = FR_SIM_MESMO;
+          else if (simM[i] < FR_SIM_MEIO &&
+                   frSimMeio(gen0[i], pes[i], nPes[i], gJ, pJ, nJ))
+            s = FR_SIM_MEIO;
+          else
+            s = 0;
+          if (s > simM[i]) simM[i] = s;
+        }
       }
     }
   }
 
   // --- motivos (3.5), ja com a fileira fechada ---------------------------
   for (i = 0; i < nOut; i++)
-    frMotivos(ctx, cand, &out[i], nivel, w, wn);
+    frMotivos(ctx, cand, &out[i], nivel, hsh);
   return nOut;
 }
