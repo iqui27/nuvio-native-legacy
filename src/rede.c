@@ -2627,6 +2627,82 @@ static void prepararOpenSSL(void) {
   fflush(stdout);
 }
 
+// ------------------------------------------------- saida do processo (#F110)
+//
+// O processo pode terminar com fios SOLTOS dentro da libcurl/OpenSSL: o fio
+// de episodios e detachado por desenho (fechar a tela nao espera a busca), e
+// os fios de arte e noticia do arranque valem o mesmo. O que acontecia na
+// saida — destrinchado pelo TSan e pelos crashs de tests/detail_assistido,
+// ~3/4 das corridas (139/134):
+//
+//   1. o primeiro OPENSSL_init_ssl da libcurl registra OPENSSL_cleanup via
+//      atexit; no exit() do fio principal ele da free() no estado global da
+//      libcrypto;
+//   2. o fio solto seguia no CRYPTO_zalloc do MESMO heap — free() e zalloc()
+//      concorrentes corrompiam os freelists ("corrupted size vs. prev_size",
+//      "double free or corruption") ou o malloc do fio pisava num no ja
+//      liberado (SIGSEGV dentro da libcrypto). O relatorio do TSan e literal:
+//      OPENSSL_cleanup (fio principal) x CRYPTO_zalloc (fio de episodios)
+//      no mesmo endereco.
+//
+// O remedio e tirar o desmanche do caminho do fio — nao ha ponto onde todos
+// os fios de rede possam ser juntados antes do return do main (o app e os
+// testes saem direto) e a lista deles muda a cada versao. O conserto e
+// OPENSSL_init_crypto(OPENSSL_INIT_NO_ATEXIT) ANTES do curl_global_init:
+// a chamada consome o RUN_ONCE "register_atexit" com a variante que NAO
+// registra — a init seguinte da libcurl acha a vez gasta e o
+// OPENSSL_cleanup nunca entra na fila do exit(). E o mecanismo oficial
+// para quem nao pode garantir fio fora do OpenSSL na saida. No OpenSSL
+// 1.0 o simbolo nem existe — e ele tambem nao se desmonta sozinho.
+//
+// (A versao anterior tambem abria a libcurl com RTLD_NODELETE para "tirar
+// as libs do _dl_fini". A revisao provou o ramo inocuo — o destrutor de
+// uma .so NODELETE roda no exit() do mesmo jeito, e a glibc nao desmapeia
+// nada fora do dlclose, que nunca chamamos — e o mutante sem ele seguia
+// 0/25. Saiu: o conserto e so o NO_ATEXIT acima.)
+//
+// Nada e liberado, de proposito: o kernel recolhe tudo no _exit. O que nao
+// pode acontecer e teardown disputando heap e codigo com fio vivo.
+
+// Chamada com abrirTrava tomada, depois do dlopen da libcurl e ANTES do
+// curl_global_init — e esse init quem registra o OPENSSL_cleanup.
+//
+// O OPENSSL_init_crypto e procurado na libcrypto que a libcurl usa de fato,
+// nesta ordem: 1) no handle da propria libcurl — dlsym num handle de dlopen
+// busca nela e nas dependencias dela, o que acerta a libcrypto certa quando
+// DUAS estao residentes, cobre OpenSSL estatico exportado por ela e soname
+// fora da lista (ex.: libcrypto.3.dylib do Homebrew); 2) em RTLD_DEFAULT —
+// uma libcrypto do escopo global fora da arvore dela; 3) na lista de sonames
+// JA residentes (RTLD_NOLOAD, para nao carregar uma .so do nada so para
+// marcar; sem a flag o dlopen tenta pelo nome mesmo, como antes). Sem
+// simbolo — libcurl sem OpenSSL dinamico (mbedTLS, GnuTLS, SecureTransport)
+// ou OpenSSL 1.0 — retorna sem tocar em nada.
+static void segurarSaidaRede(void *curl) {
+  static const char *const crypto[] = {
+    "libcrypto.so.3", "libcrypto.so.1.1", "libcrypto.so.1.0.2",
+    "libcrypto.so.1.0.0", "libcrypto.so.10", "libcrypto.so.1",
+    "libcrypto.so", "libcrypto.dylib", NULL };
+  int (*initCrypto)(unsigned long long, const void *) = NULL;
+  int i;
+  *(void **)(&initCrypto) = dlsym(curl, "OPENSSL_init_crypto");
+#ifdef RTLD_DEFAULT
+  if (!initCrypto)
+    *(void **)(&initCrypto) = dlsym(RTLD_DEFAULT, "OPENSSL_init_crypto");
+#endif
+  for (i = 0; crypto[i] && !initCrypto; i++) {
+    void *hc;
+#ifdef RTLD_NOLOAD
+    hc = dlopen(crypto[i], RTLD_NOLOAD | RTLD_NOW);
+#else
+    hc = dlopen(crypto[i], RTLD_NOW);
+#endif
+    if (hc) *(void **)(&initCrypto) = dlsym(hc, "OPENSSL_init_crypto");
+  }
+  // 0x80000 = OPENSSL_INIT_NO_ATEXIT (openssl/crypto.h). Sem headers como o
+  // resto do arquivo: a constante e ABI e nao muda.
+  if (initCrypto) initCrypto(0x80000ULL, NULL);
+}
+
 #ifdef NV_HTTP_HOST
 #include <fcntl.h>
 #include <poll.h>
@@ -2748,6 +2824,7 @@ static int abrirReal(void) {
     pthread_mutex_unlock(&abrirTrava);
     return 0;
   }
+  segurarSaidaRede(h);   // antes do curl_global_init — ele registra o OPENSSL_cleanup
 #ifdef NV_ANDROID
   // #266: a Shield (Tegra) para em "rede_preparar" sem imprimir mais nada; a
   // libcurl 8 + mbedTLS 3.6 inicia o PSA/entropia aqui dentro. Marca cada lado.
