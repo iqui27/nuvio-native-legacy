@@ -387,6 +387,14 @@ static char  legUrlAoCarregar[1024];
 static char  legUrlAtual[1024];
 // Avanco pendente: alvo e quando manda-lo. Ver SEEK_REPOUSO_MS.
 static _Atomic int pausaPedida;   // 1 enquanto a pausa foi pedida por nos
+/* webOS HLS seek hold: after a seek the TV player started on the first
+ * segment, showed a few frames and stalled again for the next ones (a twitch
+ * of the picture and a second buffering). Nuvio holds it paused, as the
+ * converter does with HLS Off, until about 6 s past the target are fetched.
+ * Not the owner's pause: pausaPedida stays 0 and the player shows no pause. */
+static _Atomic int hlsSeguraPedido;   // seekDone asked for a hold (LS2 thread)
+static _Atomic int hlsSegura;         // the player is held paused by Nuvio
+static double hlsSeguraAlvoPedido;
 static int    pausaConfirmada;
 static int    recarregarPausa = -1;
 // Sonda de MKV pedida, esperando o buffer. Ver a nota no sourceInfo.
@@ -808,6 +816,7 @@ static void hlsParar(void) {
     if (dtsEstado != VIDEO_DTS_FALHOU) dtsEstado = 0;
   }
   hls.pending = hls.played = hls.external = 0;
+  atomic_store(&hlsSegura, 0); atomic_store(&hlsSeguraPedido, 0);
   dts_hls_webos_position(-1);
 #ifdef NV_HTTP_BUFFER_DIAG
   hls.buffer = (DtsBufferInfo){0};
@@ -1068,7 +1077,7 @@ static int bufferandoSeekPendente(void) {
  * This retires only the native marker, never the converter's managed refill. */
 static void bufferandoClock(double actual) {
   if(!bufferandoDesde)return;
-  if(bufferandoFimPend)return;   // the held end after a seek decides
+  if(bufferandoFimPend || atomic_load(&hlsSegura))return;   // the held end after a seek decides
   double step=actual-bufferandoPos;
   bufferandoPos=actual;
   if(!pronto || !tocando || pausaPedida || falhou || terminou ||
@@ -1346,6 +1355,17 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   if (strstr(p, "seekDone") && seekEnvEm) {
     printf("[video] seek to %ds done in %ums\n", seekEnvAlvo, (unsigned)(SDL_GetTicks() - seekEnvEm));
     fflush(stdout);
+#ifdef NV_WEBOS_HLS_TEST
+    if (hlsAtivo() && !pausaPedida) {
+      hlsSeguraAlvoPedido = seekEnvAlvo;
+      atomic_store(&hlsSeguraPedido, 1);
+      if (!bufferandoDesde) {   // the loading ring covers the hold
+        bufferandoDesde = SDL_GetTicks() | 1u;
+        bufferandoPos = posNativa;
+        bufferandoAvancos = 0;
+      }
+    }
+#endif
     seekEnvEm = 0;
     seekFimEm = SDL_GetTicks() | 1u;
     bufferandoUniu = 0;
@@ -1725,7 +1745,8 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
     char m[64];
     int segurar = 0;
 #ifdef NV_WEBOS_HLS_TEST
-    { Uint32 agora = SDL_GetTicks();
+    if (atomic_load(&hlsSegura) || atomic_load(&hlsSeguraPedido)) segurar = 2;   // held paused: the ring stays until the release
+    else { Uint32 agora = SDL_GetTicks();
       /* Only the first end after a seek is held: the TV player stalls once
        * after starting on the first segment, and once that second buffering
        * ends, playback is back and the ring goes at once. */
@@ -1741,7 +1762,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   if (strstr(p, "playing")) {
     pausaConfirmada = 0;
     tocando = 1;
-    if(bufferandoDesde && !bufferandoFimPend && !pausaPedida && !bufferandoSeekPendente()) {
+    if(bufferandoDesde && !bufferandoFimPend && !atomic_load(&hlsSegura) && !pausaPedida && !bufferandoSeekPendente()) {
       bufferandoFim();
       marco("buffering FIM (playing)");
     }
@@ -1769,7 +1790,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   if (strstr(p, "paused")) {
     // So carimba quando NAO fomos nos que pausamos: pausa do dono e esperada,
     // pausa vinda do pipeline e o defeito.
-    if (tocando && !pausaPedida) marco("pausado PELO PIPELINE");
+    if (tocando && !pausaPedida && !atomic_load(&hlsSegura)) marco("pausado PELO PIPELINE");
     tocando = 0;
     pausaConfirmada = pausaPedida;
   }
@@ -3808,6 +3829,7 @@ static void pararSessaoRota(int keepHls) {
   (void)keepHls;
 #endif
   bufferLoad.session=0;
+  atomic_store(&hlsSegura, 0); atomic_store(&hlsSeguraPedido, 0);
   bufferandoFim();
   dtsRefillMs=0;
   dtsRefillEm=0;
@@ -4372,6 +4394,56 @@ static int iniciarDts(int stream) {
   return 1;
 }
 #ifdef NV_WEBOS_HLS_TEST
+/* Seek hold (see hlsSegura): released once the player fetched HLS_SEGURA_S
+ * past the target, or when it fetches nothing while paused, or at a ceiling,
+ * so a TV whose player does not fetch while paused only waits a moment. */
+#define HLS_SEGURA_S 6.0
+#define HLS_SEGURA_PARADO_MS 4000u
+#define HLS_SEGURA_TETO_MS 10000u
+static Uint32 hlsSeguraEm, hlsSeguraMudou;
+static double hlsSeguraAlvo, hlsSeguraU0, hlsSeguraUlt;
+
+static void hlsSeguraSoltar(const char *motivo, double prontoS) {
+  char b[128];
+  atomic_store(&hlsSegura, 0);
+  printf("[webos-hls] seek hold: %.1f s ready after %u ms (%s), playing\n",
+         prontoS, (unsigned)(SDL_GetTicks() - hlsSeguraEm), motivo);
+  fflush(stdout);
+  if (pausaPedida || !midia[0]) return;
+  snprintf(b, sizeof b, "{\"mediaId\":\"%s\"}", midia);
+  chamar("play", b, soLog);
+  bufferandoFim();
+  marco("buffering FIM (seek hold released)");
+}
+
+static void hlsSeguraPasso(void) {
+  Uint32 agora = SDL_GetTicks();
+  if (atomic_exchange(&hlsSeguraPedido, 0)) {
+    hlsSeguraAlvo = hlsSeguraAlvoPedido;
+    hlsSeguraU0 = hlsSeguraUlt = dts_hls_webos_served_until();
+    hlsSeguraEm = hlsSeguraMudou = agora;
+    if (!atomic_load(&hlsSegura) && midia[0] && !pausaPedida) {
+      char b[128];
+      snprintf(b, sizeof b, "{\"mediaId\":\"%s\"}", midia);
+      chamar("pause", b, soLog);
+    }
+    atomic_store(&hlsSegura, 1);
+    printf("[webos-hls] seek hold: player held at %.0f s until %.0f s are fetched\n", hlsSeguraAlvo, HLS_SEGURA_S);
+    fflush(stdout);
+  }
+  if (!atomic_load(&hlsSegura)) return;
+  if (pausaPedida || falhou || terminou) { atomic_store(&hlsSegura, 0); return; }
+  double u = dts_hls_webos_served_until();
+  if (u != hlsSeguraUlt) { hlsSeguraUlt = u; hlsSeguraMudou = agora; }
+  /* The last segment sent can still be one from before the seek: count it
+   * only once a new one is sent, or when it is the target's own segment. */
+  double lead = u - hlsSeguraAlvo;
+  if (!(u != hlsSeguraU0 || (lead >= 0 && lead <= 3.5)) || lead < 0 || lead > 120) lead = 0;
+  if (lead >= HLS_SEGURA_S) hlsSeguraSoltar("enough segments", lead);
+  else if (agora - hlsSeguraMudou >= HLS_SEGURA_PARADO_MS) hlsSeguraSoltar("no segment fetched while paused", lead);
+  else if (agora - hlsSeguraEm >= HLS_SEGURA_TETO_MS) hlsSeguraSoltar("time limit", lead);
+}
+
 static void hlsBombear(void) {
   if ((!hls.pending && !hlsAtivo()) || bindAtivo()) return;
   if (semDVForcado) return;
@@ -4444,6 +4516,7 @@ static void hlsBombear(void) {
     // none while the player rebuffers (owner's log 22/11: at 7 s of a
     // low-bitrate opening the player waited for more than 20 s of data and
     // the held segment never went out: server error 40000).
+    hlsSeguraPasso();
     dts_hls_webos_position(pronto && !bufferandoDesde ? video_pos() : -1);
     // TEMP-BUFFER (owner 22/11, pacing test): how far ahead the player is,
     // from the segments it fetched (its bufferRange shows ~3 s under HLS).
@@ -4790,6 +4863,11 @@ static void bombearDts(void) {
 
 void video_pausar(int pausado) {
   char b[128];
+  if (atomic_exchange(&hlsSegura, 0) | atomic_exchange(&hlsSeguraPedido, 0)) {
+    bufferandoFim();
+    printf("[webos-hls] seek hold: ended by the owner's %s\n", pausado ? "pause" : "play");
+    fflush(stdout);
+  }
   if (dtsSessao) {
     pausaConfirmada = 0; pausaPedida = !!pausado;
     ack_publicar();
@@ -5123,7 +5201,7 @@ void video_estatisticas(VideoStats *s) {
   if (bufferSeg > 0 && bufferSeg >= posSeg) s->bufferSeg = bufferSeg - posSeg;
   vazao_host_publico(urlAtual, s->host, sizeof s->host);
 }
-int    video_tocando(void)  { return tocando; }
+int    video_tocando(void)  { return tocando || atomic_load(&hlsSegura); }   // a seek hold is not a pause
 int    video_pronto(void)   { return pronto; }
 // O "COMECA PAUSADO" DO DOLBY VISION EM MKV (#203, C9 do dono, 08/10). No
 // caminho proprio o `pronto` sobe no loadCompleted (sincronizarPlanoDts:
