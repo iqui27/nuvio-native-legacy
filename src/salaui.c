@@ -193,7 +193,8 @@ static int ehVoltar(const SDL_Event *e) {
 }
 
 static void ok(void) {
-  if (semBaralho || !celular_url()[0]) { novaRodada(); return; }
+  // O vencedor na tela abre mesmo com o endereco ja vencido.
+  if (sala.fase != SALA_DECIDIDO && (semBaralho || !celular_url()[0])) { novaRodada(); return; }
   switch (sala.fase) {
     case SALA_ENTRANDO: if (sala_comecar(&sala)) { publicar(); puts("[sessao] votando"); } break;
     case SALA_VOTANDO:
