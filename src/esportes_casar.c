@@ -117,10 +117,10 @@ void espcasar_passo(time_t agora) {
   if (revEsp != esportes_revisao()) {
     revEsp = esportes_revisao();
     for (int k = 0; k < nAlvos; k++) { preparar(ls[k], &alvos[k]); alvos[k].v.nota = 0; alvos[k].v.id[0] = 0; }
-    cursor = 0;
+    cursor = 0; fimVarredura = 0;
   }
   if (revGuia != guia_busca_revisao() || revEpg != epg_revisao()) {
-    revGuia = guia_busca_revisao(); revEpg = epg_revisao(); cursor = 0;
+    revGuia = guia_busca_revisao(); revEpg = epg_revisao(); cursor = 0; fimVarredura = 0;
     for (int k = 0; k < nAlvos; k++) { alvos[k].v.nota = 0; alvos[k].v.id[0] = 0; }
   }
   Uint32 t0 = SDL_GetTicks();
@@ -130,6 +130,8 @@ void espcasar_passo(time_t agora) {
       // Fim da lista. A grade curta do Xtream chega sem mudar revisao nenhuma:
       // olha de novo umas poucas vezes, guardando o melhor ja achado. Poucas
       // porque cada passada pede a grade curta de quem saiu do cache (192).
+      // Lista ainda carregando nao e fim: o canal ja achado segue valendo.
+      if (guia_busca_carregando()) break;
       if (!fimVarredura) {
         fimVarredura = t0 ? t0 : 1;
         for (int k = 0; k < nAlvos; k++) alvos[k].f = alvos[k].v;

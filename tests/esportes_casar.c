@@ -26,6 +26,8 @@ void epg_iniciar(void) {}
 void epg_passo(void) {}
 void xtepg_passo(void) {}
 unsigned guia_busca_revisao(void) { return revGuia; }
+static int carregando;
+int guia_busca_carregando(void) { return carregando; }
 unsigned epg_revisao(void) { return revEpg; }
 int guia_canal_regra_campos(int i, const char **id, const char **nome, const char **logo, const char **cat, const char **base) {
   (void)id; (void)nome; (void)logo; (void)cat; (void)base; return i >= 0 && i < nCanais;
@@ -159,6 +161,15 @@ int main(void) {
   assert(achou(lem("sport:basketball:nba:402"), "c-espn2"));
   varrer(T0 - 18);
   assert(achou(lem("sport:basketball:nba:402"), "c-espn"));
+  // Lista recarregando (vazia por um instante): o canal segue valendo. Lista
+  // vazia de verdade (a ultima fonte saiu): nao ha mais canal para oferecer.
+  { int tinha = nCanais;
+    nCanais = 0; carregando = 1; revGuia++;
+    varrer(T0 - 17); assert(achou(lem("sport:basketball:nba:402"), "c-espn"));
+    carregando = 0;
+    varrer(T0 - 16); assert(achou(lem("sport:basketball:nba:402"), NULL));
+    nCanais = tinha; revGuia++;
+    varrer(T0 - 15); assert(achou(lem("sport:basketball:nba:402"), "c-espn")); }
   puts("esportes_casar ok");
   return 0;
 }
