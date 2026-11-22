@@ -1181,6 +1181,17 @@ void player_passivo_assumir(int doInicio) {
   printf("[minhanoite] gesto: doInicio=%d; a sessao passa a contar\n", doInicio);
   fflush(stdout);
 }
+// REABERTURA DA MESMA SESSAO (troca de fonte, proximo episodio): app.c fecha e
+// reabre o player, e player_abrir zera a marca. Quem reabre guarda antes e
+// repoe depois, senao o episodio seguinte passaria a contar sem gesto nenhum.
+void player_passivo_guardar(int *minhaNoite, int *passiva) {
+  if (minhaNoite) *minhaNoite = sessaoMinhaNoite;
+  if (passiva) *passiva = sessaoPassiva;
+}
+void player_passivo_repor(int minhaNoite, int passiva) {
+  sessaoMinhaNoite = minhaNoite != 0;
+  sessaoPassiva = minhaNoite && passiva;
+}
 int player_passivo(void) { return (aberto || mini) && sessaoPassiva; }
 int player_minha_noite(void) { return (aberto || mini) && sessaoMinhaNoite; }
 int player_reassistindo(void) { return sessaoRewatch; }

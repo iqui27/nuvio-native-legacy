@@ -2742,7 +2742,10 @@ static void reabrirGuardar(int titulo) {
 }
 static int reabrirTitulo(int titulo) {
   int i = cat_indice_reabrir(titulo, &reabrirCopia);
-  if (i >= 0) player_abrir(i, NULL);
+  int mn = 0, passiva = 0;
+  // Minha noite (minhanoite.h): reabrir a mesma sessao nao e um gesto.
+  player_passivo_guardar(&mn, &passiva);
+  if (i >= 0) { player_abrir(i, NULL); if (mn) player_passivo_repor(mn, passiva); }
   return i;
 }
 static void abrirProximoEpisodio(int t, int e, int apontar) {
@@ -4191,8 +4194,11 @@ static void mnAtualizar(Uint32 agora) {
       }
     }
   }
-  // VOLTAR LEVA A HOME: a pagina do titulo so serviu de caminho de reproducao.
-  if (mnNoAr && !noAr && !player_aberto() && !mnArmado && detail_aberto()) detail_fechar();
+  // VOLTAR LEVA A TELA DE ONDE VEIO: a pagina do titulo so serviu de caminho.
+  if (mnNoAr && !noAr && !player_aberto() && !mnArmado) {
+    player_passivo_repor(0, 0);   // a sessao acabou: nada atravessa para a proxima
+    if (detail_aberto()) detail_fechar();
+  }
   mnNoAr = noAr;
   if (!noAr) mnOferta = 0;
   // ABRIR TOCANDO (Ajustes, desligado de fabrica): uma chance por abertura do
