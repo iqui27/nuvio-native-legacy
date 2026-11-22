@@ -4195,10 +4195,10 @@ static void mnAtualizar(Uint32 agora) {
     }
   }
   // VOLTAR LEVA A TELA DE ONDE VEIO: a pagina do titulo so serviu de caminho.
-  if (mnNoAr && !noAr && !player_aberto() && !mnArmado) {
-    player_passivo_repor(0, 0);   // a sessao acabou: nada atravessa para a proxima
-    if (detail_aberto()) detail_fechar();
-  }
+  // A marca passiva NAO e mexida aqui: o player ainda vai gravar a saida
+  // (player_encerrar, mais abaixo no quadro) e e ela que segura esse registro.
+  // Quem a zera e o proximo player_abrir.
+  if (mnNoAr && !noAr && !player_aberto() && !mnArmado && detail_aberto()) detail_fechar();
   mnNoAr = noAr;
   if (!noAr) mnOferta = 0;
   // ABRIR TOCANDO (Ajustes, desligado de fabrica): uma chance por abertura do
