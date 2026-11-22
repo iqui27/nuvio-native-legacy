@@ -1120,11 +1120,18 @@ static void abrirPorIndice(int i) {
 }
 
 // Consume the panel request through the same title route as other screens.
+// Titulo aberto pelo painel ou pelo aviso: se um amigo mandou uma cena dele,
+// o Play abre naquele instante (cenas.h), como pelo cartao.
+static void armarCenaRecebida(const char *imdb) {
+  int t, e, seg, dur;
+  if (recomenda_cena_de(imdb, &t, &e, &seg, &dur)) cenas_armar(imdb, t, e, seg, dur);
+}
 static void abrirTituloDoPainel(void) {
   if (player_aberto()) return;
   const char *alvo = spainel_pediu_abrir();
   if (!alvo || !alvo[0]) return;
   tituloDoPainel = 1;
+  armarCenaRecebida(alvo);
   int k = cat_indice_por_imdb(alvo);
   if (detail_aberto()) detail_fechar_seco();
   if (k >= 0) abrirPorIndice(k); else desc_pedir_titulo(alvo);
@@ -6217,7 +6224,7 @@ void app_atualizar(float dt, Uint32 agora) {
     const char *alvo = recomenda_pediu_abrir();   // mesmo contrato, outra origem
     { char cImdb[24]; int ct, ce, cs, cd;   // cartao de cena marcada: o Play abre naquele instante
       if (alvo && recomenda_pediu_cena(cImdb, sizeof cImdb, &ct, &ce, &cs, &cd)) cenas_armar(cImdb, ct, ce, cs, cd); }
-    if (!alvo) alvo = avisos_pediu_abrir();
+    if (!alvo && (alvo = avisos_pediu_abrir()) != NULL) armarCenaRecebida(alvo);
     { static char afImdb[24];
       if (!alvo && amigosfil_pediu_titulo(afImdb, sizeof afImdb)) alvo = afImdb; }
     if (!alvo && tela == TELA_AGENDA) alvo = agendaui_pediu_abrir();

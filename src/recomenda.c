@@ -4271,6 +4271,20 @@ const char *rec_frase_texto(int modelo, const char *texto) {
 const char *rec_frase(const RecItem *r) {
   return r ? rec_frase_texto(r->modelo, r->texto) : "";
 }
+// Rotas que abrem o titulo sem passar pelo cartao (painel de Salvos, aviso na
+// ilha): a cena recebida MAIS NOVA daquele titulo.
+int recomenda_cena_de(const char *imdb, int *t, int *e, int *seg, int *dur) {
+  RecItem r;
+  MarcaCena m;
+  int i;
+  if (!imdb || !imdb[0]) return 0;
+  for (i = 0; recomenda_item(i, &r); i++)
+    if (r.modelo == -1 && !strcmp(r.imdb, imdb) && marcacena_ler_texto(r.texto, &m)) {
+      *t = m.temporada; *e = m.episodio; *seg = m.seg; *dur = m.durSeg;
+      return 1;
+    }
+  return 0;
+}
 int recomenda_pediu_cena(char *imdb, size_t tam, int *t, int *e, int *seg, int *dur) {
   if (!cenaPedida) return 0;
   cenaPedida = 0;
