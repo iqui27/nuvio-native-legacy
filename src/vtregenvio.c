@@ -111,7 +111,7 @@ void vtregenvio_resultado(int resultado, int trocou) {
   VtRegEntrada e;
   VideoInfo vi;
   const VideoFaixa *f = NULL;
-  int i, atual, n;
+  int atual, n;
   // Barato quando desligado: nem le o player.
   if (!ajustes_vaitocar() || resultado < 0 || resultado >= VTR_N) return;
   memset(&e, 0, sizeof e);
@@ -124,9 +124,8 @@ void vtregenvio_resultado(int resultado, int trocou) {
   e.altura = video_altura();
   // Faixa de audio em uso. So o codec vai adiante, e por vocabulario fechado:
   // o rotulo (que pode trazer o titulo da faixa do arquivo) nunca sai cru.
-  atual = video_audio_atual(); n = video_n_audio();
-  for (i = 0; i < n && !f; i++) { const VideoFaixa *t = video_audio(i); if (t && t->numero == atual) f = t; }
-  if (!f && n > 0) f = video_audio(atual >= 0 && atual < n ? atual : 0);
+  atual = video_audio_atual(); n = video_n_audio();   // indice da lista, como em faixas.c
+  if (n > 0) f = video_audio(atual >= 0 && atual < n ? atual : 0);
   if (f) e.audio = f->codec[0] ? f->codec : f->rotulo;
   e.resultado = resultado; e.trocou = trocou;
   vtregenvio_enviar(&e);

@@ -2998,7 +2998,8 @@ static int pedirProximaFonteVOD(int depoisDe) {
 // Clipe de aviso (duracao conhecida e curta) tambem anda, mas nao e o titulo.
 // Vai tocar (4.2): este resultado veio depois de uma troca automatica de fonte?
 static int vtregTrocou(void) {
-  return fonteFalha ? fontefalha_tentativas(fonteFalha) > 0 : fonteVODTentativas > 0;
+  // Os dois contadores incluem a tentativa atual: a primeira fonte vale 1.
+  return fonteFalha ? fontefalha_tentativas(fonteFalha) > 1 : fonteVODTentativas > 1;
 }
 static void registrarFonteVODTocando(void) {
   double d = video_duracao();
@@ -5997,15 +5998,6 @@ void app_atualizar(float dt, Uint32 agora) {
         !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() &&
         !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() && !novidades142_aberto() && !novidades148_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !telemetria_aberto() && !pipintro_aberto())
       telemetria_primeira_vez();
-    // Vai tocar nesta TV (4.2): o consentimento do registro anonimo, depois de
-    // todos os outros cartoes de arranque e nunca em perfil infantil.
-    if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() &&
-        !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() &&
-        !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() && !novidades142_aberto() && !novidades148_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !telemetria_aberto() && !pipintro_aberto() &&
-        !novidades20_aberto() && !novidades1312_aberto() && !novcartao_aberto() && !telemetria_aberto() && !recintro_aberto() &&
-        !atualizacao_aberta() && !perfil_infantil_ativo())
-      vtregcartao_primeira_vez();
     // AVISO DE VERSAO NOVA: a consulta ao GitHub so parte quando a home esta
     // de pe (nao disputa a rede com o catalogo), e o cartao so abre quando
     // nenhum outro cartao de primeira vez esta aberto. Chamada a cada quadro:
@@ -6033,8 +6025,17 @@ void app_atualizar(float dt, Uint32 agora) {
     // anuncio de recurso que nao esta no pacote e pior que silencio.
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
         !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() && !novidades142_aberto() && !novidades148_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !telemetria_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
-        !recomenda_aberta())
+        !recomenda_aberta() && !vtregcartao_aberto())
       recintro_primeira_vez();
+    // Vai tocar nesta TV (4.2): o consentimento do registro anonimo, depois de
+    // todos os outros cartoes de arranque e nunca em perfil infantil.
+    if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
+        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() &&
+        !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() &&
+        !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() && !novidades142_aberto() && !novidades148_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !telemetria_aberto() && !pipintro_aberto() &&
+        !novidades20_aberto() && !novidades1312_aberto() && !novcartao_aberto() && !telemetria_aberto() && !recintro_aberto() &&
+        !recomenda_aberta() && !atualizacao_aberta() && !perfil_infantil_ativo())
+      vtregcartao_primeira_vez();
     // LEMBRETE VENCIDO: o unico aviso que esta TV consegue dar. Ultimo da fila
     // pela mesma razao de todos os outros — dois cartoes juntos seria um por
     // cima do outro —, e sem consulta de rede nenhuma: o que ele mostra ja

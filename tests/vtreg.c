@@ -25,6 +25,11 @@ int main(void) {
                     "\"container\":\"mkv\",\"video\":\"hevc\",\"audio\":\"eac3\",\"hdr\":\"dv\",\"mbps\":40,"
                     "\"altura\":2160,\"resultado\":\"tocou\",\"trocou\":0}"));
 
+  // Os MIME do Media3 (Android) para TrueHD e PCM.
+  r = norm((VtRegEntrada){ "android", "x", "14", "mkv", "video/hevc", "audio/true-hd", "none", 0, 0, VTR_TOCOU, 0 });
+  assert(!strcmp(r.audio, "truehd"));
+  r = norm((VtRegEntrada){ "android", "x", "14", "mkv", "video/hevc", "audio/raw", "none", 0, 0, VTR_TOCOU, 0 });
+  assert(!strcmp(r.audio, "pcm"));
   // "ac3" nao pode engolir "eac3"; "none" e SDR; desconhecido e "?"; estranho e "outro".
   r = norm((VtRegEntrada){ "android", "Xiaomi MiTV-MOOQ1", "11", "mp4", "avc1.640028", "ac3", "none", 800, 700, VTR_CAIU, 1 });
   assert(!strcmp(r.audio, "ac3") && !strcmp(r.video, "h264") && !strcmp(r.hdr, "sdr") && r.mbps == 2 && r.altura == 720 && r.trocou == 1);

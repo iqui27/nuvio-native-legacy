@@ -34,10 +34,10 @@ static const Par VIDEO[] = {
   { "vc-1", "vc1" }, { NULL, NULL }
 };
 static const Par AUDIO[] = {
-  { "truehd", "truehd" }, { "mlp", "truehd" }, { "eac3", "eac3" }, { "e-ac-3", "eac3" }, { "ec-3", "eac3" },
+  { "truehd", "truehd" }, { "true-hd", "truehd" }, { "mlp", "truehd" }, { "eac3", "eac3" }, { "e-ac-3", "eac3" }, { "ec-3", "eac3" },
   { "ec3", "eac3" }, { "ddp", "eac3" }, { "ac3", "ac3" }, { "ac-3", "ac3" }, { "dts", "dts" }, { "aac", "aac" },
   { "mp4a", "aac" }, { "opus", "opus" }, { "vorbis", "vorbis" }, { "flac", "flac" }, { "mp3", "mp3" },
-  { "mpeg", "mp3" }, { "pcm", "pcm" }, { NULL, NULL }
+  { "mpeg", "mp3" }, { "pcm", "pcm" }, { "audio/raw", "pcm" }, { NULL, NULL }
 };
 static const Par HDR[] = {
   { "dolby", "dv" }, { "dovi", "dv" }, { "hdr10+", "hdr10p" }, { "hdr10plus", "hdr10p" }, { "hdr10", "hdr10" },
