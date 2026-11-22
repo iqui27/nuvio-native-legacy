@@ -182,6 +182,22 @@ static int fc_afin_prova(const FarolGosto *g, int dim, int32_t id,
   const FarolAfin *a = fc_afin(g, dim, id);
   return a && a->n >= 2 && farolgosto_peso(g, dim, id, dia) > 128;
 }
+// O id esta na lista de temas/generos da ficha? (fc_tema_em tambem serve
+// a fileira 2 abaixo.)
+static int fc_tema_em(const FarolFicha *f, int32_t t) {
+  int j;
+  if (!f) return 0;
+  for (j = 0; j < FAROL_FICHA_TEMA && f->tema[j]; j++)
+    if (f->tema[j] == t) return 1;
+  return 0;
+}
+static int fc_gen_em(const FarolFicha *f, int32_t g) {
+  int j;
+  if (!f) return 0;
+  for (j = 0; j < FAROL_FICHA_GEN && f->genero[j]; j++)
+    if (f->genero[j] == g) return 1;
+  return 0;
+}
 // Mesma tabela de faixas do farolgosto/farolrec (duplicada de proposito:
 // o modulo nao importa estatico de irmao).
 static int fc_durFaixa(int min) {
@@ -219,16 +235,27 @@ static int fc_motivo(const FarolCenaCtx *ctx, const FarolRecCand *c,
       ref = ctx->sementeRef[mo->a];
       if (!ref || !fc_ref_ok(ref, ctx->nCand)) return 0;
       if (mo->b) {
-        // b = afinidade compartilhada forte: o motor busca tema antes de
-        // genero, entao b na lista de temas da ficha => "k", senao "g".
-        int k = 0, j;
-        if (c->ficha)
-          for (j = 0; j < FAROL_FICHA_TEMA && c->ficha->tema[j]; j++)
-            if (c->ficha->tema[j] == mo->b) { k = 1; break; }
-        snprintf(o->a[1], FAROL_ARG_TAM, "%s%ld", k ? "k" : "g",
-                 (long)mo->b);
-        o->m = "FT_MOT_TERMINOU_TEMA";
-        o->na = 2;
+        // b = afinidade compartilhada forte. O motor devolve so o id e
+        // escolhe tema antes de genero — a mesma ordem e reprovada aqui
+        // (id na ficha do candidato E na da semente + afinidade que
+        // sustenta explicacao): um id de tema que so o genero provou
+        // sai "g", nunca "k" (ressalva 2 da r1 — colisao numerica).
+        const FarolFicha *fs = ctx->sementes[mo->a].ficha;
+        int k = c->ficha && fc_tema_em(c->ficha, mo->b) &&
+                fc_tema_em(fs, mo->b) &&
+                fc_afin_prova(ctx->g, FG_DIM_TEMA, mo->b, ctx->dia);
+        int gv = !k && c->ficha && fc_gen_em(c->ficha, mo->b) &&
+                 fc_gen_em(fs, mo->b) &&
+                 fc_afin_prova(ctx->g, FG_DIM_GENERO, mo->b, ctx->dia);
+        if (k || gv) {
+          snprintf(o->a[1], FAROL_ARG_TAM, "%s%ld", k ? "k" : "g",
+                   (long)mo->b);
+          o->m = "FT_MOT_TERMINOU_TEMA";
+          o->na = 2;
+        } else {
+          o->m = "FT_MOT_TERMINOU";
+          o->na = 1;
+        }
       } else {
         o->m = "FT_MOT_TERMINOU";
         o->na = 1;
@@ -243,9 +270,13 @@ static int fc_motivo(const FarolCenaCtx *ctx, const FarolRecCand *c,
     case FMO_PESSOA: {
       // "Do diretor de <semente>, que voce viu <n> vezes": b e o indice
       // da semente que tambem tem a pessoa; pessoa[0] da ficha e a
-      // direcao/criacao. Sem a prova (semente nomeavel + pessoa como
-      // direcao nas duas fichas + afinidade com n>=2) cai na forma
-      // comum — o b = 0 e ambiguo com "sem semente", nao vale prova.
+      // direcao/criacao. A prova e quadrupla: semente nomeavel, pessoa
+      // como direcao nas duas fichas, afinidade com n>=2 e a semente
+      // citada TERMINADA (Diario sem PARCIAL). O <n> conta so titulos
+      // vistos da pessoa — sementes terminadas com ela na direcao —
+      // nao todo sinal do modelo (ressalva 3 da r1: salvo/interesse
+      // nao e "viu"). Sem tudo isso cai na forma comum — o b = 0 e
+      // ambiguo com "sem semente", nao vale prova.
       const FarolRecSemente *s;
       const FarolAfin *af;
       const char *ref;
@@ -254,10 +285,16 @@ static int fc_motivo(const FarolCenaCtx *ctx, const FarolRecCand *c,
         s = &ctx->sementes[mo->b];
         af = fc_afin(ctx->g, FG_DIM_PESSOA, mo->a);
         ref = ctx->sementeRef ? ctx->sementeRef[mo->b] : NULL;
-        if (s->ficha && s->ficha->pessoa[0] == mo->a && af && af->n >= 2 &&
-            ref && fc_ref_ok(ref, ctx->nCand)) {
+        if (s->ficha && s->ficha->pessoa[0] == mo->a && s->terminou &&
+            af && af->n >= 2 && ref && fc_ref_ok(ref, ctx->nCand)) {
+          int nv = 0, i;
+          for (i = 0; i < ctx->nSementes; i++) {
+            const FarolRecSemente *si = &ctx->sementes[i];
+            if (si->ficha && si->terminou &&
+                si->ficha->pessoa[0] == mo->a) nv++;
+          }
           snprintf(o->a[0], FAROL_ARG_TAM, "%s", ref);
-          snprintf(o->a[1], FAROL_ARG_TAM, "%d", (int)af->n);
+          snprintf(o->a[1], FAROL_ARG_TAM, "%d", nv);
           o->m = "FT_MOT_DIRETOR"; o->na = 2;
           return 1;
         }
@@ -306,6 +343,18 @@ static int fc_motivo(const FarolCenaCtx *ctx, const FarolRecCand *c,
   return 0;
 }
 
+// O argumento de afinidade ("g<"/"k<"/"p<") que a linha ja renderizada
+// carrega, ou NULL quando ela nao afirma afinidade — serve para a
+// deduplicacao das linhas do porque.
+static const char *fc_argafin(const FcMot *o) {
+  if (!o->na) return NULL;
+  if (!strcmp(o->m, "FT_MOT_TERMINOU_TEMA")) return o->a[1];
+  if (!strcmp(o->m, "FT_MOT_GENERO") || !strcmp(o->m, "FT_MOT_PESSOA") ||
+      !strcmp(o->m, "FT_MOT_TEMA") || !strcmp(o->m, "FT_MOT_FORA_CURVA"))
+    return o->a[0];
+  return NULL;
+}
+
 // Primeiro motivo renderizavel do item (o motor ja ordena por forca).
 // `salvoDia` aqui e o valor do candidato, nao o vetor. Devolve o indice
 // em it->motivo ou -1.
@@ -318,6 +367,12 @@ static int fc_motivo1(const FarolCenaCtx *ctx, const FarolRecCand *c,
 }
 
 // ----------------------------------------------------------- envelope
+// Teto dos inteiros do envelope: o fp_int64 do validador desiste um
+// digito antes do INT64_MAX real (rejeita o prefixo acima de
+// (LLONG_MAX-9)/10), entao o maior numero que a cena carrega e
+// INT64_MAX-8. Acima disso satura — a cena nunca sai invalida por um
+// relogio grande demais (ressalva 4a da r1).
+#define FC_ENV_MAX (INT64_MAX - 8)
 static void fc_env(Fc *b, const FarolCenaCtx *ctx, const char *tela) {
   fc_raw(b, "{\"v\":1,\"tela\":");
   fc_str(b, tela);
@@ -327,11 +382,11 @@ static void fc_env(Fc *b, const FarolCenaCtx *ctx, const char *tela) {
   }
   if (ctx->feita > 0) {
     fc_raw(b, ",\"feita\":");
-    fc_i64(b, ctx->feita);
+    fc_i64(b, ctx->feita > FC_ENV_MAX ? FC_ENV_MAX : ctx->feita);
   }
   if (ctx->valeS > 0) {
     fc_raw(b, ",\"vale_s\":");
-    fc_i64(b, ctx->valeS);
+    fc_i64(b, ctx->valeS > FC_ENV_MAX ? FC_ENV_MAX : ctx->valeS);
   }
   fc_raw(b, ",\"origem\":\"regras\",\"pecas\":[");
 }
@@ -524,14 +579,6 @@ static int fc_tema_f2(const FarolCenaCtx *ctx, const FarolRecItem *out,
   return 0;
 }
 
-static int fc_tema_em(const FarolFicha *f, int32_t t) {
-  int j;
-  if (!f) return 0;
-  for (j = 0; j < FAROL_FICHA_TEMA && f->tema[j]; j++)
-    if (f->tema[j] == t) return 1;
-  return 0;
-}
-
 // -------------------------------------------------------------- dica
 static const char *const FC_DICA_L1[FC_DICA_N] = {
   "FT_DICA_PAROU_L1", "FT_DICA_FALTA_L1", "FT_DICA_ESTREIA",
@@ -631,15 +678,19 @@ int farolcena_home(char *dst, size_t cap, const FarolCenaCtx *ctx,
     }
     // "Nao aparece": menos de 6 candidatos com pontos > 0 (4.2).
     if (n1 >= 6 && pos >= 6) {
+      int f1 = 0;
       int l = fc_fileira(pc, sizeof pc, ctx, out, idx, n1, nivel,
                          "gosto1", NULL, NULL);
       if (l > 0 && (size_t)(b.fim - b.p) >= (size_t)l) {
         if (nPec) fc_ch(&b, ',');
         fc_raw(&b, pc);
         nPec++;
+        f1 = 1;
       }
       // Fileira 2: o grupo de maior afinidade de tema na segunda pagina.
-      if (nivel >= 2 && n > n1) {
+      // So existe atras de uma gosto1 emitida — com cap apertado a
+      // segunda nunca sai sozinha (ressalva 4b da r1).
+      if (f1 && nivel >= 2 && n > n1) {
         int32_t tema = 0;
         if (fc_tema_f2(ctx, out, n1, n, &tema)) {
           int m = 0;
@@ -719,10 +770,23 @@ int farolcena_detalhe(char *dst, size_t cap, const FarolCenaCtx *ctx,
     rc.faixaHora = ctx->faixaHora;
     rc.semente = ctx->semente;
     if (farolrec_escolher(&rc, &det->alvo, 1, &it, 1) == 1)
-      for (i = 0; i < it.nMotivo && nL < FAROL_LINHAS_MAX; i++)
-        if (fc_motivo(ctx, &det->alvo, det->salvoDia, &it.motivo[i],
-                      &mt[nL]))
-          nL++;
+      for (i = 0; i < it.nMotivo && nL < FAROL_LINHAS_MAX; i++) {
+        const char *af;
+        int k;
+        if (!fc_motivo(ctx, &det->alvo, det->salvoDia, &it.motivo[i],
+                       &mt[nL]))
+          continue;
+        // A mesma afinidade nao se repete em duas linhas do porque —
+        // verdadeira mas redundante na tela (ressalva 4c da r1).
+        af = fc_argafin(&mt[nL]);
+        if (af) {
+          for (k = 0; k < nL; k++)
+            if (fc_argafin(&mt[k]) && !strcmp(fc_argafin(&mt[k]), af))
+              break;
+          if (k < nL) continue;
+        }
+        nL++;
+      }
     // Sinal contrario forte (4.2): o habito de duracao do perfil pesa
     // CONTRA a duracao deste titulo (peso projetado < -0,5) — a P3
     // honesta avisa quando ainda ha o que dizer a favor.
