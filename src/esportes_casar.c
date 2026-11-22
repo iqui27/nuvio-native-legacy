@@ -31,12 +31,20 @@ int espcasar_definir(int ligado) {
   return 1;
 }
 
-static char      alvo[80];           // Lembrete.canal do jogo que se procura
-static time_t    alvoIni;
-static EspEvento ev;
-static int       cursor, nota;
-static unsigned  revGuia, revEpg;
-static char      mId[128], mNome[200], mBase[600];
+// Jogos na mesma hora: cada lembrete guarda o proprio canal, porque o cartao
+// de um sai um segundo depois do outro e nao da tempo de varrer a lista de novo.
+#define ESPCASAR_ALVOS 4
+typedef struct {
+  char      alvo[80];                // Lembrete.canal do jogo que se procura
+  time_t    ini;
+  EspEvento ev;
+  int       nota;
+  char      id[128], nome[200], base[600];
+} Alvo;
+static Alvo      alvos[ESPCASAR_ALVOS];
+static int       nAlvos, cursor;
+static unsigned  revGuia, revEpg, revEsp;
+static Uint32    fimVarredura;
 
 static int esporte(const Lembrete *l) {
   return !strncmp(l->canal, "sport:", 6) || !strncmp(l->base, "sports|", 7);
@@ -47,7 +55,8 @@ static int mesmo(const EspEvento *e, const char *mod, const char *id, size_t nId
 }
 // O evento completo (siglas, emissoras) se a agenda ainda o tem; senao, o que
 // o titulo do lembrete permite refazer.
-static void montarEvento(const Lembrete *l) {
+static void montarEvento(const Lembrete *l, Alvo *a) {
+#define ev a->ev
   char mod[32] = "", liga[80] = "", id[100] = "";
   if (!strncmp(l->base, "sports|", 7)) sscanf(l->base + 7, "%31[^|]|%79[^|]|%99[^|]", mod, liga, id);
   else sscanf(l->canal + 6, "%31[^:]:%79[^:]:%99[^\n]", mod, liga, id);
@@ -58,57 +67,97 @@ static void montarEvento(const Lembrete *l) {
     for (int i = 0; i < esportes_eventos_n(); i++) if (mesmo(esportes_evento(i), mod, id, n)) { ev = *esportes_evento(i); return; }
   }
   esportes_canal_evento_do_titulo(l->titulo, mod, l->ini, l->fim, &ev);
+  // Lembrete.nome e o nome da liga: sem ele a grade de um jogo feminino nao casa.
+  snprintf(ev.liga, sizeof ev.liga, "%s", l->nome);
+#undef ev
+}
+static void preparar(const Lembrete *l, Alvo *a) {
+  montarEvento(l, a);
+  // O horario do lembrete manda: e ele que a pessoa marcou.
+  a->ev.inicio = l->ini; if (a->ev.fim <= a->ev.inicio) a->ev.fim = l->fim;
+  if (a->ev.estado == 3) a->ev.estado = 0;
 }
 
 void espcasar_passo(time_t agora) {
-  const Lembrete *l = NULL;
-  if (!espcasar_ligado() || lembrete_perfil() != perfis_ativo()) { alvo[0] = 0; return; }
+  const Lembrete *ls[ESPCASAR_ALVOS]; int n = 0, novo = 0;
+  if (!espcasar_ligado() || lembrete_perfil() != perfis_ativo()) { nAlvos = 0; return; }
   for (int i = 0; i < lembrete_n(); i++) {
-    const Lembrete *c = lembrete_item(i);
+    const Lembrete *c = lembrete_item(i); int at;
     if (c->avisado || !esporte(c) || agora < c->ini - ESPCASAR_ANTES_S || agora >= c->fim) continue;
-    if (!l || c->ini < l->ini) l = c;
+    for (at = 0; at < n && ls[at]->ini <= c->ini; at++) {}
+    if (at >= ESPCASAR_ALVOS) continue;
+    if (n < ESPCASAR_ALVOS) n++;
+    memmove(ls + at + 1, ls + at, (size_t)(n - at - 1) * sizeof *ls);
+    ls[at] = c;
   }
-  if (!l) { alvo[0] = 0; return; }
-  if (strcmp(alvo, l->canal) || alvoIni != l->ini) {
-    snprintf(alvo, sizeof alvo, "%s", l->canal); alvoIni = l->ini;
-    montarEvento(l);
-    // O horario do lembrete manda: e ele que a pessoa marcou.
-    ev.inicio = l->ini; if (ev.fim <= ev.inicio) ev.fim = l->fim;
-    if (ev.estado == 3) ev.estado = 0;
-    cursor = nota = 0; mId[0] = 0;
-    revGuia = guia_busca_revisao(); revEpg = epg_revisao();
+  if (!n) { nAlvos = 0; return; }
+  // Quem ja estava sendo procurado leva junto o que achou.
+  { static Alvo antes[ESPCASAR_ALVOS]; int nAntes = nAlvos;
+    memcpy(antes, alvos, sizeof antes);
+    for (int k = 0; k < n; k++) {
+      int j;
+      for (j = 0; j < nAntes; j++) if (!strcmp(antes[j].alvo, ls[k]->canal) && antes[j].ini == ls[k]->ini) break;
+      if (j < nAntes) { alvos[k] = antes[j]; continue; }
+      memset(&alvos[k], 0, sizeof alvos[k]);
+      snprintf(alvos[k].alvo, sizeof alvos[k].alvo, "%s", ls[k]->canal); alvos[k].ini = ls[k]->ini;
+      preparar(ls[k], &alvos[k]);
+      novo = 1;
+      printf("[esporte-canal] procurando canal: %s\n", ls[k]->titulo); fflush(stdout);
+    }
+    nAlvos = n; }
+  if (novo) {
+    cursor = 0;
+    revGuia = guia_busca_revisao(); revEpg = epg_revisao(); revEsp = esportes_revisao();
     guia_carregar(); epg_iniciar();
-    printf("[esporte-canal] procurando canal: %s\n", l->titulo); fflush(stdout);
   }
   epg_passo(); xtepg_passo();
+  // A agenda mudou (emissora nova, por exemplo): refaz os eventos.
+  if (revEsp != esportes_revisao()) {
+    revEsp = esportes_revisao();
+    for (int k = 0; k < nAlvos; k++) { preparar(ls[k], &alvos[k]); alvos[k].nota = 0; alvos[k].id[0] = 0; }
+    cursor = 0;
+  }
   if (revGuia != guia_busca_revisao() || revEpg != epg_revisao()) {
-    revGuia = guia_busca_revisao(); revEpg = epg_revisao(); cursor = nota = 0; mId[0] = 0;
+    revGuia = guia_busca_revisao(); revEpg = epg_revisao(); cursor = 0;
+    for (int k = 0; k < nAlvos; k++) { alvos[k].nota = 0; alvos[k].id[0] = 0; }
   }
   Uint32 t0 = SDL_GetTicks();
   for (int lote = 0; lote < 8 && SDL_GetTicks() - t0 < 2; lote++) {
     const char *id, *nome, *grupo, *base;
-    if (!guia_canal_regra_campos(cursor, NULL, NULL, NULL, NULL, NULL)) break;
+    if (!guia_canal_regra_campos(cursor, NULL, NULL, NULL, NULL, NULL)) {
+      // Fim da lista. A grade curta do Xtream chega sem mudar revisao nenhuma:
+      // de tempos em tempos olha de novo, guardando o melhor ja achado.
+      if (!fimVarredura) fimVarredura = t0 ? t0 : 1;
+      else if (cursor && t0 - fimVarredura >= ESPCASAR_REVER_MS) { cursor = 0; fimVarredura = 0; }
+      break;
+    }
+    fimVarredura = 0;
     int i = cursor++;
     if (!guia_canal_campos(i, &id, &nome, NULL, &grupo, &base) || !guia_busca_elegivel(i) ||
         !g5ui_channel_allowed(id, nome, grupo, base)) continue;
-    EpgProg ps[16]; int confirma = 0;
-    time_t ate = ev.fim > ev.inicio ? ev.fim : ev.inicio + 6 * 3600;
-    int n = guia_busca_programas(i, ev.inicio - 3 * 3600, ate, 0, ps, 16);
-    for (int p = 0; p < n; p++) if (esportes_corresponde(&ev, ps[p].titulo, ps[p].ini, ps[p].fim)) confirma = 1;
-    int v = esportes_canal_nota(&ev, nome, confirma);
-    if (v > nota) {
-      nota = v;
-      snprintf(mId, sizeof mId, "%s", id); snprintf(mNome, sizeof mNome, "%s", nome);
-      snprintf(mBase, sizeof mBase, "%s", base ? base : "");
+    for (int k = 0; k < nAlvos; k++) {
+      Alvo *a = &alvos[k];
+      EpgProg ps[16]; int confirma = 0;
+      time_t ate = a->ev.fim > a->ev.inicio ? a->ev.fim : a->ev.inicio + 6 * 3600;
+      int np = guia_busca_programas(i, a->ev.inicio - 3 * 3600, ate, 0, ps, 16);
+      for (int p = 0; p < np; p++) if (esportes_corresponde(&a->ev, ps[p].titulo, ps[p].ini, ps[p].fim)) confirma = 1;
+      int v = esportes_canal_nota(&a->ev, nome, confirma);
+      if (v > a->nota) {
+        a->nota = v;
+        snprintf(a->id, sizeof a->id, "%s", id); snprintf(a->nome, sizeof a->nome, "%s", nome);
+        snprintf(a->base, sizeof a->base, "%s", base ? base : "");
+      }
     }
   }
 }
 
 int espcasar_canal(const Lembrete *l, char *id, size_t nId, char *nome, size_t nNome,
                    char *base, size_t nBase) {
-  if (!l || !espcasar_ligado() || !alvo[0] || strcmp(alvo, l->canal) || alvoIni != l->ini) return 0;
-  if (nota < ESP_CANAL_CERTO || !mId[0] || strlen(mId) >= nId) return 0;
-  snprintf(id, nId, "%s", mId); snprintf(nome, nNome, "%s", mNome); snprintf(base, nBase, "%s", mBase);
-  printf("[esporte-canal] %s -> %s (nota %d)\n", l->titulo, mNome, nota); fflush(stdout);
+  const Alvo *a = NULL;
+  if (!l || !espcasar_ligado()) return 0;
+  for (int k = 0; k < nAlvos; k++) if (!strcmp(alvos[k].alvo, l->canal) && alvos[k].ini == l->ini) a = &alvos[k];
+  if (!a || a->nota < ESP_CANAL_CERTO || !a->id[0] || strlen(a->id) >= nId) return 0;
+  snprintf(id, nId, "%s", a->id); snprintf(nome, nNome, "%s", a->nome); snprintf(base, nBase, "%s", a->base);
+  printf("[esporte-canal] %s -> %s (nota %d)\n", l->titulo, a->nome, a->nota); fflush(stdout);
   return 1;
 }

@@ -19,6 +19,7 @@ int  espcasar_definir(int ligado);   // 1 = gravou
 // Fio de desenho, por quadro. Custa nada sem lembrete de jogo a menos de
 // ESPCASAR_ANTES_S do inicio; com um, varre os canais em fatias de 2 ms.
 #define ESPCASAR_ANTES_S 300
+#define ESPCASAR_REVER_MS 15000u
 void espcasar_passo(time_t agora);
 // O canal achado para este lembrete: 1 e preenche id/nome/base, ou 0.
 int  espcasar_canal(const Lembrete *l, char *id, size_t nId, char *nome, size_t nNome,

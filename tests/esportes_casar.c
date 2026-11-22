@@ -14,11 +14,13 @@
 // --- guia de mentira ---------------------------------------------------------
 typedef struct { const char *id, *nome, *programa; int proibido; } Canal;
 static Canal canais[8]; static int nCanais, carregou, perfil = 1;
-static unsigned revGuia = 1, revEpg = 1;
+static unsigned revGuia = 1, revEpg = 1, revEsp = 1;
+unsigned esportes_revisao(void) { return revEsp; }
 static time_t T0;
 static EspEvento agenda[2]; static int nAgenda;
 int perfis_ativo(void) { return perfil; }
-Uint32 SDL_GetTicks(void) { return 0; }
+static Uint32 relogio = 1000;
+Uint32 SDL_GetTicks(void) { return relogio; }
 void guia_carregar(void) { carregou++; }
 void epg_iniciar(void) {}
 void epg_passo(void) {}
@@ -62,6 +64,11 @@ static int achou(const Lembrete *l, const char *esperado) {
   int r = espcasar_canal(l, id, sizeof id, nome, sizeof nome, base, sizeof base);
   if (r) assert(!strcmp(base, "addon://lista"));
   return esperado ? r && !strcmp(id, esperado) : !r;
+}
+
+static const Lembrete *lem(const char *canal) {
+  for (int i = 0; i < lembrete_n(); i++) if (!strcmp(lembrete_item(i)->canal, canal)) return lembrete_item(i);
+  return NULL;
 }
 
 int main(void) {
@@ -111,6 +118,34 @@ int main(void) {
   canais[3].nome = "ESPN"; revGuia++;
   varrer(T0 - 70);
   for (int i = 0; i < lembrete_n(); i++) assert(achou(lembrete_item(i), NULL));
+
+  // 3. Dois jogos na mesma hora: cada um com o seu canal, e o segundo nao
+  // perde o dele quando o cartao do primeiro sai.
+  nAgenda = 0;
+  canais[0].programa = "Women's Super League: Arsenal x Chelsea";
+  canais[2].programa = "NBA: Chicago Bulls x Miami Heat";
+  assert(lembrete_alternar("sport:soccer:eng.w.1:900", "Women's Super League", "Arsenal vs Chelsea", "", T0, T0 + 7200) == 1);
+  assert(lembrete_alternar("sport:basketball:nba:402", "NBA", "Miami Heat at Chicago Bulls", "", T0, T0 + 7200) == 1);
+  varrer(T0 - 60);
+  // Grade de jogo feminino so casa porque a liga do lembrete foi junto.
+  assert(achou(lem("sport:soccer:eng.w.1:900"), "c-globo"));
+  assert(achou(lem("sport:basketball:nba:402"), "c-espn2"));
+  for (int i = 0; i < lembrete_n(); i++) if (!strcmp(lembrete_item(i)->canal, "sport:soccer:eng.w.1:900")) lembrete_marcar_avisado(i);
+  espcasar_passo(T0 - 59);
+  assert(achou(lem("sport:basketball:nba:402"), "c-espn2"));
+  // A agenda passa a conhecer o jogo e a emissora: o evento e refeito.
+  canais[2].programa = "Poker"; revEpg++;
+  varrer(T0 - 50); assert(achou(lem("sport:basketball:nba:402"), NULL));
+  snprintf(agenda[0].id, sizeof agenda[0].id, "402");
+  snprintf(agenda[0].participantes[0].nome, 120, "Miami Heat");
+  snprintf(agenda[0].participantes[1].nome, 120, "Chicago Bulls");
+  nAgenda = 1; revEsp++;
+  varrer(T0 - 40); assert(achou(lem("sport:basketball:nba:402"), "c-espn"));
+  // Grade curta do Xtream chega sem mudar revisao: a varredura se repete.
+  canais[2].programa = "NBA: Chicago Bulls x Miami Heat";
+  varrer(T0 - 30); assert(achou(lem("sport:basketball:nba:402"), "c-espn"));
+  relogio += ESPCASAR_REVER_MS;
+  varrer(T0 - 20); assert(achou(lem("sport:basketball:nba:402"), "c-espn2"));
   puts("esportes_casar ok");
   return 0;
 }
