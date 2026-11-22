@@ -5,7 +5,9 @@
 #      nv_tpk_video_registrar_pos_lida (posLidoMs, so escrito na leitura real
 #      do GetPlayPosition e zerado ao abrir e a cada seek) — e exclui a
 #      posMantida da reabertura, a base do fluxo e a posConhecida sem
-#      deslocamento, o alvo do posReconLeg e o alvo do ack do seek; o calculo
+#      deslocamento, o alvo do posReconLeg, o alvo do ack do seek e o marcador
+#      com alvo de seek em voo (EV_BUSCOU/EV_BUSCA_FALHOU desarmam so o MESMO
+#      alvo, por CAS); o calculo
 #      do deslocamento do progressivo tambem le o marcador, nao o cache;
 #  (b) harness: posReal/video_pos/video_duracao/video_pos_amostra extraidos de
 #      src/video_tpk.c (o getter REAL, nao stub) rodam com a guarda do
@@ -56,6 +58,13 @@ else:
     if re.search(r"return video_pos\(\);", corpo) and "hPosLida" not in corpo:
         print("farol_amostra_tpk: amostra devolve video_pos() sem marcador",
               file=sys.stderr); ruim = 1
+
+# A falha do seek desarma so o MESMO alvo (CAS): um alvo novo armado por cima
+# continua em voo — sem isso a falha do seek anterior reabre a janela do farol.
+mf = re.search(r"case EV_BUSCA_FALHOU:(.*?)break;", tpk, re.S)
+if not mf or "atomic_compare_exchange_strong(&buscaAlvoMs" not in mf.group(1):
+    print("farol_amostra_tpk: EV_BUSCA_FALHOU desarma alvo diverso em voo",
+          file=sys.stderr); ruim = 1
 
 # O deslocamento do progressivo le o marcador quando existe: um alvo de ack
 # nao pode virar desloc da abertura inteira.
@@ -149,7 +158,7 @@ static void hostRegistrar(void) { hPosLida = getlido; }
 static void hostAbrir(void) { raw = 0; lido = -1; atomic_store(&buscaAlvoMs, -1); hostRegistrar(); }
 static void hostSeek(int ms) { atomic_store(&buscaAlvoMs, ms); lido = -1; }  // pedido: alvo em voo, marcador invalido
 static void hostAckSeek(int ms) { int a = ms; if (atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1)) raw = ms; }
-static void hostSeekFalha(void) { atomic_store(&buscaAlvoMs, -1); }          // EV_BUSCA_FALHOU
+static void hostSeekFalha(int ms) { int a = ms; atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1); }  // EV_BUSCA_FALHOU
 static void hostLeituraReal(int ms) { raw = ms; lido = ms; }
 static int terminou, voo, durMs;
 static int video_busca_em_voo(void) { return voo; }
@@ -241,8 +250,18 @@ int main(void) {
   rc |= check("leitura real depois do ack da janela", 120.1);
 
   convEstadoZera(); hostAbrir(); hostSeek(120000); lido = 1234;
-  hostSeekFalha();
+  hostSeekFalha(120000);
   rc |= check("leitura real depois do seek recusado", 1.234);
+
+  // Seek sobre seek: o segundo pedido rearma o alvo antes do primeiro
+  // responder; a falha do alvo velho nao pode desarmar o novo em voo.
+  convEstadoZera(); hostAbrir(); hostLeituraReal(1234);
+  hostSeek(120000); hostSeek(60000); lido = 1234;
+  hostSeekFalha(120000);
+  rc |= check("falha do alvo velho com alvo novo em voo", 0);
+
+  hostSeekFalha(60000);
+  rc |= check("leitura real depois da falha do alvo corrente", 1.234);
 
   return rc;
 }

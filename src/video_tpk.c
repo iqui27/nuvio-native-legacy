@@ -547,9 +547,11 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
       else if (a >= 100) bufferando = 0;
       break;
     case EV_BUSCA_FALHOU: atomic_fetch_add(&mfRecusas, 1); atomic_fetch_add(&buscaFalhas, 1u);
-      // A falha tambem encerra o voo do alvo: sem o -1 o video_busca_em_voo e a
-      // amostra do farol ficavam presos num seek que a TV ja recusou.
-      atomic_store(&buscaAlvoMs, -1); break;
+      // A falha encerra o voo do MESMO alvo (CAS, como no EV_BUSCOU): um seek
+      // mais novo ja armado por cima nao e desarmado pela falha do anterior.
+      // Sem o -1 o video_busca_em_voo e a amostra do farol ficavam presos num
+      // seek que a TV ja recusou.
+      atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1); break;
     case EV_VELOCIDADE:
       vel_log(a, b ? "plataforma ok" : "plataforma recusou");
       if (!b) { velRecusada = 1; velPedida = 100; }
@@ -1867,7 +1869,8 @@ void video_bombear(void) {
         cv.seekPend = 1; cv.seekAlvo = alvo; cv.seekEm = SDL_GetTicks(); cv.deslocOk = 0;
         convReabrir(alvo, "seek pendente");
         abrirSessao();
-      }
+      } else
+        atomic_store(&buscaAlvoMs, -1);   // seek adiado sem fluxo novo: alvo fora de voo
     } else {
       if (hBuscar) hBuscar(ms);
       if (cv.ativo) { cv.seekPend = 1; cv.seekAlvo = ms / 1000.0; cv.seekEm = SDL_GetTicks(); }
