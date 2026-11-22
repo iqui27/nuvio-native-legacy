@@ -10,6 +10,9 @@ case "${SANITIZE:-}" in
   address) flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer);;
   thread) flags+=(-fsanitize=thread -fno-omit-frame-pointer);;
 esac
+cflags=(-O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
+        -Wno-deprecated-declarations -Wno-macro-redefined "${flags[@]}")
+ldflags=(-L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL "${flags[@]}")
 fontes() {
   local s
   for s in "$1"/*.c "$1"/dts/*.c; do
@@ -17,13 +20,33 @@ fontes() {
     printf '%s\n' "$s"
   done
 }
-compilar() {
-  local srcs=() s
-  while IFS= read -r s; do srcs+=("$s"); done < <(fontes "$1")
-  cc "${srcs[@]}" "$2" -I"$1" -o "$3" \
-    -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-    -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
-    -Wno-deprecated-declarations -Wno-macro-redefined "${flags[@]}" ${4:-}
+# Os ~450 objetos de src/ (sem main.c; detail.c entra pelo #include do teste)
+# compilam UMA vez por rodada e viram uma biblioteca estatica: os 4 casos so
+# recompilam o teste e os arquivos que a copia de sonda instrumenta. Os .o da
+# sonda vao ANTES da biblioteca, entao a copia instrumentada sombreia o objeto
+# base sem precisar retirar nada (o membro so entra se faltar simbolo).
+raiz=$PWD
+obj="$run/obj"
+mkdir -p "$obj"
+jobs=${NVQ_CC_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 1)}
+(cd "$obj" && fontes "$raiz/src" | xargs -P "$jobs" -I{} cc -c {} "${cflags[@]}" -I"$raiz/src")
+ar rcs "$run/libsrc.a" "$obj"/*.o
+
+# Compila so os .c que a sonda instrumentou na copia descartavel.
+sonda_objetos() {  # $1 = dir sonda; $2.. = nomes .c instrumentados
+  local d=$1 f
+  shift
+  mkdir -p "$d/obj"
+  for f in "$@"; do
+    cc -c "$d/src/$f" "${cflags[@]}" -I"$d/src" -o "$d/obj/${f%.c}.o"
+  done
+}
+compilar() {  # $1 = src da vez (-I); $2 = teste .c; $3 = binario; $4 = -D; $5 = objs sonda
+  local objs=() def=
+  cc -c "$2" "${cflags[@]}" -I"$1" ${4:+$4} -o "$3.test.o"
+  objs=("$3.test.o")
+  [ -n "${5:-}" ] && objs+=("$5"/*.o)
+  cc "${objs[@]}" "$run/libsrc.a" "${ldflags[@]}" -o "$3"
 }
 
 # Caso 1: o detalhe sobrevive ao catalogo inteiro ausente por ciclos. Os rc de
@@ -63,7 +86,8 @@ file.write_bytes(source[:start] +
     b'\n    extern void sonda_temporada_n_zero(void);\n'
     b'    sonda_temporada_n_zero();' + source[start:])
 PY
-compilar "$sonda/src" "$sonda/tests/detail_catalogo_ausente.c" "$run/test-sonda" "-DNV_SONDA_TEMPORADA"
+sonda_objetos "$sonda" catalogo.c
+compilar "$sonda/src" "$sonda/tests/detail_catalogo_ausente.c" "$run/test-sonda" "-DNV_SONDA_TEMPORADA" "$sonda/obj"
 "$run/test-sonda" || rc_all=$?
 
 # Caso 3 (sonda do card, DETAIL1431 r2): a recarga publica n = 0 entre
@@ -95,7 +119,8 @@ file.write_bytes(source[:start] +
     b'\n    extern void sonda_temporada_n_zero(void);\n'
     b'    sonda_temporada_n_zero();' + source[start:])
 PY
-compilar "$sonda/src" "$sonda/tests/detail_catalogo_ausente.c" "$run/test-card" "-DNV_SONDA_CARD"
+sonda_objetos "$sonda" catalogo.c
+compilar "$sonda/src" "$sonda/tests/detail_catalogo_ausente.c" "$run/test-card" "-DNV_SONDA_CARD" "$sonda/obj"
 "$run/test-card" || rc_all=$?
 
 # Caso 4 (sonda da barra de progresso, DETAIL1431 r2): no layout padrao, com o
@@ -152,6 +177,7 @@ file.write_bytes(source.replace(
     b'  pthread_mutex_unlock(&trava);\n'
     b'}\n' + anchor))
 PY
-compilar "$sonda/src" "$sonda/tests/detail_catalogo_ausente.c" "$run/test-prog" "-DNV_SONDA_CARD_PROG"
+sonda_objetos "$sonda" catalogo.c ajustes.c extras.c
+compilar "$sonda/src" "$sonda/tests/detail_catalogo_ausente.c" "$run/test-prog" "-DNV_SONDA_CARD_PROG" "$sonda/obj"
 "$run/test-prog" || rc_all=$?
 exit $rc_all

@@ -7,12 +7,18 @@
 #include <string.h>
 typedef unsigned Uint32;
 static int fonteVODRetentou, vodRenovou, aguardandoFonte, preparoEspera;
-static Uint32 fonteManualDesde;
+static int fonteVODAutomatica;
+static Uint32 fonteVODDesde, fonteManualDesde;
 static int delivered;
 static void novaGeracaoFonte(void) {}
 static void limparFontePendente(void) {}
 static void limparFonteVOD(void) {}
 static void provaZerar(void) {}
+static void bingeDaFonteAtual(void) {}
+int stream_atual(void) { return -1; }
+static int armarPoliticaFonteAberta(int indice, int manual, const char *url) {
+  (void)indice; (void)manual; (void)url; return 0;
+}
 static void video_definir_dv(int value) { (void)value; }
 static void video_definir_cabecalhos(const char *value) { (void)value; }
 static void video_definir_mp4(int value) { (void)value; }

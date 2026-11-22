@@ -1,8 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export TMPDIR=/Volumes/ExternalSSD/tmp
-work=$(mktemp -d "$TMPDIR/nuvio-tizen-manual.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-tizen-manual.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 python3 - "$work/manual.inc" <<'PY'
 from pathlib import Path
