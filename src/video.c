@@ -1059,6 +1059,7 @@ static Uint32 dtsRefillEm;
 #define BUFFERANDO_SEEK_JANELA_MS 8000u
 #define BUFFERANDO_SEEK_FOLGA_MS 1500u
 static Uint32 bufferandoFimPend;
+static double bufferandoFimPos;   // playback position when the end was held
 static int bufferandoUniu;   // a held end was followed by a new start: the next end is final
 static Uint32 seekFimEm;
 
@@ -1077,7 +1078,17 @@ static int bufferandoSeekPendente(void) {
  * This retires only the native marker, never the converter's managed refill. */
 static void bufferandoClock(double actual) {
   if(!bufferandoDesde)return;
-  if(bufferandoFimPend || atomic_load(&hlsSegura))return;   // the held end after a seek decides
+  if(atomic_load(&hlsSegura))return;
+  if(bufferandoFimPend) {
+    /* A held end: playback that runs on for a second is back, so the ring
+     * goes now rather than at the end of the wait. */
+    bufferandoPos=actual;
+    if(tocando && !pausaPedida && isfinite(actual) && actual-bufferandoFimPos>=1.0 && actual-bufferandoFimPos<5.0) {
+      bufferandoFim();
+      marco("buffering FIM (playing again after the seek)");
+    }
+    return;
+  }
   double step=actual-bufferandoPos;
   bufferandoPos=actual;
   if(!pronto || !tocando || pausaPedida || falhou || terminou ||
@@ -1752,7 +1763,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
        * ends, playback is back and the ring goes at once. */
       segurar = hlsAtivo() && bufferandoDesde && !bufferandoUniu && seekFimEm &&
                 agora - seekFimEm < BUFFERANDO_SEEK_JANELA_MS;
-      if (segurar) bufferandoFimPend = agora | 1u; }
+      if (segurar) { bufferandoFimPend = agora | 1u; bufferandoFimPos = posNativa; } }
 #endif
     if (!segurar) bufferandoFim();
     snprintf(m, sizeof m, "buffering FIM (buffer %+.1fs a frente)",
@@ -4397,9 +4408,11 @@ static int iniciarDts(int stream) {
 /* Seek hold (see hlsSegura): released once the player fetched HLS_SEGURA_S
  * past the target, or when it fetches nothing while paused, or at a ceiling,
  * so a TV whose player does not fetch while paused only waits a moment. */
-#define HLS_SEGURA_S 6.0
+/* 12 s, not 6 (owner's C5, 22/11): released with 7-8 s fetched, the player
+ * buffered again at once and only played with 12-17 s ahead. */
+#define HLS_SEGURA_S 12.0
 #define HLS_SEGURA_PARADO_MS 4000u
-#define HLS_SEGURA_TETO_MS 10000u
+#define HLS_SEGURA_TETO_MS 15000u
 static Uint32 hlsSeguraEm, hlsSeguraMudou;
 static double hlsSeguraAlvo, hlsSeguraU0, hlsSeguraUlt;
 
@@ -4412,8 +4425,15 @@ static void hlsSeguraSoltar(const char *motivo, double prontoS) {
   if (pausaPedida || !midia[0]) return;
   snprintf(b, sizeof b, "{\"mediaId\":\"%s\"}", midia);
   chamar("play", b, soLog);
-  bufferandoFim();
-  marco("buffering FIM (seek hold released)");
+  tocando = 1;   // as video_pausar: no "not playing" moment before the event (Trakt sent a pause)
+  /* The player often starts buffering again within milliseconds: the ring
+   * stays, as a held end, so it is one ring until the picture really moves. */
+  if (bufferandoDesde) {
+    bufferandoFimPend = SDL_GetTicks() | 1u;
+    bufferandoFimPos = posNativa;
+    bufferandoUniu = 0;
+  }
+  marco("seek hold released");
 }
 
 static void hlsSeguraPasso(void) {
