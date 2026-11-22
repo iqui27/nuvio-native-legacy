@@ -35,6 +35,10 @@ typedef struct {
 } DesktopSourceControl;
 unsigned desktop_native_sources(const DesktopSourceControl *controls, int count, void (*activate)(int),
                                 float x, float y, float w, float h, float scale, float alpha);
+#include "gfx.h"
+void desktop_native_profile_text(const char *text, float cx, float y, float size, int bold, float ink, float alpha);
+void desktop_native_profile_button(GfxRect rect, const char *title, int enabled, int selected, float alpha,
+                                  void (*activate)(int, int), int tag, int slot);
 int desktop_native_menu(const DesktopMenuItem *items, int count, float x, float y);
 void desktop_native_init(SDL_Window *window);
 void desktop_native_sidebar(float fraction, float reveal);
