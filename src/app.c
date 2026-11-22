@@ -1641,7 +1641,7 @@ void app_teste_cw_tocar(int t, int e) { cwTocarT = t; cwTocarE = e; }
 void app_teste_gravar_folha(int t, int e, int tem) { gravarFolhaTocar(t, e, tem); }
 int app_teste_consumir_folha(int *t, int *e) { return consumirFolhaTocar(t, e); }
 static void vigiarFonteGuardada(void) {
-  FontevoltaSinais g;
+  FontevoltaSinais g = {0};
   const char *motivo = NULL;
   Uint32 desde;
   if (!voltaAtiva) return;
