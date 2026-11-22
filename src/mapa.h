@@ -21,6 +21,8 @@
 #ifndef NV_MAPA_H
 #define NV_MAPA_H
 #include <stddef.h>
+#include <stdint.h>
+#include "farolgosto.h"   // mapa_clima_gosto le o modelo (issue 43)
 
 #define MAPA_SEM_MAX    8
 #define MAPA_PONTE_MAX  6
@@ -197,6 +199,9 @@ typedef struct {
   int id;               // posicao na tabela editorial (mapa_clima_nome)
   int total, vistos;    // titulos no clima / quantos a pessoa ja viu
   int afinidade;        // 0..100: parte do que ela viu que cai neste clima
+  int gosto;            // -50..+50: o que o modelo do Farol acha dos generos
+                        // do clima (soma dos pesos, saturada). So ordena —
+                        // a tela continua mostrando `afinidade` (issue 43).
   int remoto;           // 1 = o /discover ja entrou
   int carregando;
   int n;
@@ -217,6 +222,12 @@ const char *mapa_clima_descricao(int id);
 void mapa_climas_pedir(void);
 void mapa_clima_abrir(int id);
 int  mapa_climas_copiar(MapaClimas *dst, unsigned *revisao);
+// Quanto o modelo `g` gosta dos generos da regra do clima `id`, em Q8.8 —
+// soma dos pesos de genero no dia `dia` (dias desde 1/1/2026, a epoca do
+// farolsinal). Filme e serie somam nas duas colunas do GEN_TMDB; em clima
+// soSerie so a coluna de serie conta. Palavras-chave nao entram: o tema do
+// modelo e o id do TMDB e a regra editorial so tem o nome. Puro (issue 43).
+int  mapa_clima_gosto(const FarolGosto *g, int id, uint16_t dia);
 
 // ---------------------------------------------------------------------------
 // DAQUI PARA BAIXO: partes puras, expostas para tests/mapa.c.

@@ -100,36 +100,38 @@ int main(void) {
   pthread_mutex_lock(&V_mtx); V_nIds = 0; pthread_mutex_unlock(&V_mtx);
   antes = V_fopenUi;
 
-  farolsinal_passo();
+  farolsinal_passo(1);
   v1 = D_visita;
   OK(v1 <= VEZ_MAX + 1,
      "passada 1: <= teto+1 entregas no fio chamador (era 700)");
   OK(v1 == VEZ_MAX + 1, "passada 1: fatia cheia (512 + a recusada)");
 
-  farolsinal_passo();
+  farolsinal_passo(1);
   v2 = (int)D_visita - v1;
   OK(v2 <= VEZ_MAX + 1, "passada 2: <= teto+1 entregas no fio chamador");
   OK(v2 == 700 - VEZ_MAX, "passada 2: as 188 que faltavam");
   OK(D_visita == 701, "varredura TERMINOU nos passos seguintes");
-  farolsinal_passo();
+  farolsinal_passo(1);
   OK(D_visita == 701, "sem terceira volta");
 
   drenaTrab();                 // fio de tras termina conferidas/gravacoes
   OK(!farolsinal_teste_trabalho(), "nada pendente depois da drenagem");
 
-  // sem perder nem repetir: cada um dos 700 ids passou pelo cat_indice
-  // exatamente uma vez (o falso nao tem esses itens -> 1 chamada por vez).
+  // sem perder nem repetir — mas so dentro do teto do aquecimento (issue
+  // 43): as entregas sao as 700 de sempre (o cursor anda por todas), so que
+  // vezNova e o cat_indice ficam nos 400 titulos mais novos. No empate
+  // total de `quando` a ordem de entrega e a de insercao: tt_w000..tt_w399.
   {
     int repete = 0, falta = 0;
     pthread_mutex_lock(&V_mtx);
-    OK(V_nIds == 700, "700 processamentos (1 por entrada)");
+    OK(V_nIds == 400, "400 processamentos: o teto do aquecimento");
     for (i = 0; i < 700; i++) {
       int n = 0, j;
       snprintf(id, sizeof id, "tt_w%03d", i);
       for (j = 0; j < V_nIds; j++)
         if (!strcmp(V_ids[j], id)) n++;
       if (n > 1) repete++;
-      if (!n) falta++;
+      if (!n && i < 400) falta++;
     }
     pthread_mutex_unlock(&V_mtx);
     OK(!repete && !falta, "sem perder nem repetir entrada no empate");

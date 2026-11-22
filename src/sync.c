@@ -2,6 +2,7 @@ void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's to
 #include "sync.h"
 #include "idioma.h"
 #include "diario.h"
+#include "farolsinal.h"
 #include "trava.h"
 #include <time.h>
 #include "sessao.h"
@@ -2414,6 +2415,9 @@ void sync_esquecer_usuario(void) {
   // com a conta e outra conta nao os le (diario_dono).
   diario_esquecer();
   diario_dono("");
+  // O gosto do Farol: modelo, estado de processamento, cache de fichas e a
+  // marca "notas do Trakt ja lidas" — tudo e da conta que saiu (issue 43).
+  farolsinal_esquecer();
   trava_esquecer();
   trava_definir_conta("");
   // O jornal da conta sai da MEMORIA; o arquivo (por usuario, so ids) fica

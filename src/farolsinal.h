@@ -61,15 +61,27 @@ void farolsinal_iniciar(void);
 // Laco principal, uma vez por quadro (ou por segundo): reconcilia troca de
 // perfil e varre o diario depois de RECARREGADO em FATIAS de teto rigido
 // (cursor composto, nunca uma leva inteira de mesmo instante no quadro).
+// `momentoBom` e o mesmo do caca_passo (!player_aberto()): a varredura —
+// inclusive o aquecimento de ate 400 titulos do primeiro uso — e a fila
+// lenta de fichas so andam sem player aberto (issue 43, secao 4.4).
 // Serie largada, conferidas de temporada e gravacao do modelo com folga de
 // 60 s rolam num fio de tras que o passo so acorda — disco e conferidas
 // nao voltam ao fio chamador. Custo ocioso: comparacoes e nada mais.
-void farolsinal_passo(void);
+void farolsinal_passo(int momentoBom);
 // Saida do app: grava modelo, estado e cache de fichas.
 void farolsinal_sair(void);
-// Logout/reset do perfil: apaga modelo, estado e pendencias DO PERFIL ATIVO
-// e o cache de fichas do aparelho. A conta dona dos arquivos, como o diario.
+// Logout/reset do perfil: apaga modelo, estado e pendencias DO PERFIL ATIVO,
+// a marca "notas do Trakt ja lidas" da conta e o cache de fichas do aparelho.
+// A conta dona dos arquivos, como o diario. Chamada por sync_esquecer_usuario
+// junto de diario_esquecer/mapa_esquecer (issue 43, secao 2.3).
 void farolsinal_esquecer(void);
+// O backup por aparelho restaurou os arquivos por baixo: agenda uma troca
+// para o proprio perfil que so LE o disco — o modelo em RAM nao grava por
+// cima do recem-restaurado antes (issue 43). Sem efeito com troca em curso.
+void farolsinal_recarregar(void);
+// Forca a gravacao do que a folga de 60 s ainda nao desceu — o instantaneo
+// de backup le os arquivos do disco e quer o estado de agora (issue 43).
+void farolsinal_gravar(void);
 // Ajuste "Recomendar nesta TV" (Ajustes > Farol > Gosto, issue 51): desligado
 // zera coleta — sinais novos sao ignorados — mas nao apaga o modelo; ligar
 // de volta continua de onde parou. Padrao: ligado.
@@ -119,6 +131,17 @@ typedef int (*FarolSinalBusca)(const char *id, long tmdb, int serie,
 void farolsinal_busca(FarolSinalBusca fn);
 // Quantas pendencias esperam ficha agora (0..32).
 int  farolsinal_pendencias(void);
+
+// --- notas antigas do Trakt (issue 43, secao 1.3) ---------------------------
+// /sync/ratings, UMA leitura por conta, no fio do Trakt — nunca no da UI.
+// quer() devolve 1 enquanto a leitura ainda nao aconteceu (a marca
+// farol-notas.txt nao existe); notas() recebe o corpo e, se o perfil que
+// pediu ainda e o residente, aplica as notas como sinais e grava a marca.
+// Uma nota so aquece titulo que o modelo ainda nao conhece: <=3 vira -2,0,
+// >=7 vira +2,0, 4-6 nao pesa. Perfil trocado no meio da viagem: a entrega
+// e descartada sem marca e a volta seguinte tenta de novo.
+int  farolsinal_trakt_quer(void);
+void farolsinal_trakt_notas(int perfil, const char *json);
 
 // --- leitura (medida e issues seguintes) -------------------------------------
 // Copia o modelo do perfil carregado (a 41 pontua com ele).

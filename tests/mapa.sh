@@ -6,5 +6,5 @@ TMPDIR="${TMPDIR%/}"
 set -eu
 cd "$(dirname "$0")/.."
 cc -std=c99 -Wall -Wextra -O1 -g -DNV_MAPA_PURO -Isrc \
-  src/mapa.c src/js.c tests/mapa.c -lm -o ${TMPDIR:-/tmp}/nuvio-mapa-teste
+  src/mapa.c src/js.c src/farolgosto.c tests/mapa.c -lm -o ${TMPDIR:-/tmp}/nuvio-mapa-teste
 ${TMPDIR:-/tmp}/nuvio-mapa-teste

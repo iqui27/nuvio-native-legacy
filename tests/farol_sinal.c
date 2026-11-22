@@ -40,6 +40,9 @@ int perfis_ativo(void) { return T_perfil; }
 static char T_dir[512];
 const char *dados_dir(void) { return T_dir; }
 
+// A conta do aparelho (o marcador das notas do Trakt leva o hash dela).
+const char *sessao_usuario(void) { return "conta-teste"; }
+
 // ------------------------------------------------------------------ dormiu --
 static _Atomic int T_sono;
 int dormiu_suspeita(const char *id, DiarioEntrada *saida) {
@@ -193,12 +196,14 @@ int diario_ultimo_episodio(int perfil, const char *id, int *t, int *e,
 
 // ---------------------------------------------------------------- catalogo --
 static pthread_mutex_t T_cmtx = PTHREAD_MUTEX_INITIALIZER;
-static CatItem C_it[32]; static int C_n;
-static CatEp   C_eps[32][24]; static int C_en[32];
+#define C_MAX 512   // o teste de aquecimento (issue 43) passa de 400 titulos
+static CatItem C_it[C_MAX]; static int C_n;
+static CatEp   C_eps[C_MAX][24]; static int C_en[C_MAX];
 static int cat_add(const char *imdb, const char *tipo, long tmdb,
                    const char *genero, const char *titulo) {
   int i;
   pthread_mutex_lock(&T_cmtx);
+  OK(C_n < C_MAX, "catalogo fake cheio");
   i = C_n++;
   memset(&C_it[i], 0, sizeof C_it[i]);
   snprintf(C_it[i].imdb, sizeof C_it[i].imdb, "%s", imdb);
@@ -345,7 +350,7 @@ static void entrada(DiarioEntrada *e, const char *id, char tipo, int t, int ep,
 static void drenaTrab(void) {
   int i;
   for (i = 0; i < 400 && farolsinal_teste_trabalho(); i++) {
-    farolsinal_passo();
+    farolsinal_passo(1);
     usleep(2000);
   }
   OK(!farolsinal_teste_trabalho(), "fio de tras drenou");
@@ -858,11 +863,11 @@ int main(void) {
   farolsinal_iniciar();                     // recarrega + reagenda o pedido
   OK(farolsinal_pendencias() == 1, "pendencia recarregada do disco");
   for (i = 0; i < 200 && !B_chamadas; i++) {
-    farolsinal_passo(); usleep(2000);
+    farolsinal_passo(1); usleep(2000);
   }
   OK(B_chamadas > 0, "reinicio reagendou a busca");
   for (i = 0; i < 200 && farolsinal_pendencias() > 0; i++) {
-    farolsinal_passo(); usleep(2000);
+    farolsinal_passo(1); usleep(2000);
   }
   OK(farolsinal_pendencias() == 0, "pendencia do disco drenou");
   OK(peso(FG_DIM_GENERO, 28) == FG_D_TERMINOU, "ficha tardia pos-reinicio");
@@ -878,13 +883,13 @@ int main(void) {
   }
   dRecarrega();
   D_visita = 0;
-  farolsinal_passo();
+  farolsinal_passo(1);
   // 512 aceitas + a 513a recusada pelo teto (o cb devolveu 0 e a varredura
   // parou — sem ela o teto nao existiria)
   OK(D_visita == 513, "primeira passada: teto de 512");
-  farolsinal_passo();
+  farolsinal_passo(1);
   OK(D_visita == 601, "segunda passada: os 88 que faltavam");
-  farolsinal_passo();
+  farolsinal_passo(1);
   OK(D_visita == 601, "varredura TERMINOU (sem terceira volta)");
   OK(peso(FG_DIM_GENERO, genAcao) > 0, "historico grande creditou");
 
@@ -906,7 +911,7 @@ int main(void) {
   e.tmdb = 901;
   dAdd(&e);
   for (i = 0; i < 400 && farolsinal_pendencias() > 0; i++) {
-    farolsinal_passo();
+    farolsinal_passo(1);
     usleep(2000);
   }
   OK(farolsinal_pendencias() == 0, "fila lenta drenou");
@@ -919,13 +924,13 @@ int main(void) {
   dAdd(&e);
   OK(peso(FG_DIM_GENERO, genAcao) == FG_D_TERMINOU, "perfil 1 creditou");
   T_perfil = 2;
-  farolsinal_passo();
+  farolsinal_passo(1);
   OK(peso(FG_DIM_GENERO, genAcao) == 0, "perfil 2 comeca zerado");
   entrada(&e, "tt_aaa", DIARIO_FILME, 0, 0, DIARIO_F_CORACAO, 0);
   dAdd(&e);
   OK(peso(FG_DIM_GENERO, genAcao) == FG_D_GOSTOU, "perfil 2 creditou o seu");
   T_perfil = 1;
-  farolsinal_passo();
+  farolsinal_passo(1);
   OK(peso(FG_DIM_GENERO, genAcao) == FG_D_TERMINOU,
      "perfil 1 intacto (sem vazar delta)");
 
@@ -952,7 +957,7 @@ int main(void) {
   dPoe(&e);                               // carga antiga, sem evento
   e.nota10 = 8; e.quando += 10; dPoe(&e);
   dRecarrega();
-  farolsinal_passo();
+  farolsinal_passo(1);
   // a varredura desce do mais novo para o mais velho: a versao rica (nota 8)
   // vence e a mais velha so traria diff negativo, que nao aplica
   OK(peso(FG_DIM_GENERO, genAcao) == esp(0, 0, FG_D_GOSTOU),

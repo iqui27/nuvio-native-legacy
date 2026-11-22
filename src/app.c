@@ -6134,7 +6134,9 @@ void app_atualizar(float dt, Uint32 agora) {
     diariotrakt_passo();
     if (ab && detail_assentado()) diariofontes_nome(ab);
     dormiu_passo();
-    farolsinal_passo();  // pendencias de ficha, varredura e gravacao do gosto
+    // pendencias de ficha, varredura e gravacao do gosto — o aquecimento e a
+    // fila lenta so andam em momentoBom (sem player), como o caca_passo.
+    farolsinal_passo(!player_aberto());
     travarede_passo(agora);
     // O "Reconectar" do Trakt (modal da ilha): Ajustes, na linha do Trakt.
     if (ilhasinais_pediu_trakt() && !player_aberto()) {

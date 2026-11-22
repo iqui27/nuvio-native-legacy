@@ -14,6 +14,7 @@
 #ifndef NV_MAPA_PURO
 #include "catalogo.h"
 #include "descoberta.h"
+#include "farolsinal.h"
 #include "progresso.h"
 #include "salvos.h"
 #include "dados.h"
@@ -1191,6 +1192,28 @@ int mapa_clima_consulta(int id, int serie, const long *ids, int nIds, char *dst,
     if (!nk) { dst[0] = 0; return 0; }
   }
   return dst[0] != 0;
+}
+
+// O GOSTO NUM CLIMA (issue 43): a soma dos pesos que o modelo guarda para
+// os generos da regra — a coluna de filme e a de serie do GEN_TMDB, porque
+// um clima misto junta os dois (em clima soSerie so a de serie conta). O
+// genero "E" entra tambem: ele refina o clima. Palavras-chave ficam de fora
+// por enquanto — o tema do modelo e o id do TMDB e a regra so tem o nome.
+int mapa_clima_gosto(const FarolGosto *g, int id, uint16_t dia) {
+  const ClimaRegra *r = climaRegra(id);
+  int i, j, soma = 0;
+  if (!g || !r) return 0;
+  for (i = -1; i < 3; i++) {              // -1 = o genero E (genE)
+    int gr = i < 0 ? r->genE : r->gen[i];
+    if (!gr) continue;
+    for (j = r->soSerie ? 1 : 0; j < 2; j++) {
+      int tg = GEN_TMDB[gr][j];
+      // sem a coluna de filme a de serie nao repete a mesma id (35/35, 18/18)
+      if (tg && (j == 0 || tg != GEN_TMDB[gr][0]))
+        soma += farolgosto_peso(g, FG_DIM_GENERO, tg, dia);
+    }
+  }
+  return soma;
 }
 
 #ifndef NV_MAPA_PURO
@@ -2642,14 +2665,33 @@ void mapa_climas_pedir(void) {
       if (visto) nSeen[m]++; else nUnseen[m]++;
     }
   }
-  for (m = 0; m < MAPA_CLIMA_N; m++)
-    novo.c[m].afinidade = vistosTotal > 0 ? (novo.c[m].vistos * 100 + vistosTotal / 2) / vistosTotal : 0;
-  // Ordem de afinidade; empate fica na ordem editorial (insercao estavel).
-  for (i = 1; i < MAPA_CLIMA_N; i++) {
-    static MapaClima t;
-    t = novo.c[i];
-    for (m = i; m > 0 && novo.c[m - 1].afinidade < t.afinidade; m--) novo.c[m] = novo.c[m - 1];
-    novo.c[m] = t;
+  {
+    // O modelo do Farol pesa na ORDEM dos climas (issue 43): copia uma vez,
+    // soma os generos de cada regra e satura em +-8,0 -> +-50 pontos sobre a
+    // afinidade, que na tela segue sendo "% do que ela viu". Sem modelo (ou
+    // com a coleta desligada) `gosto` fica 0 e a ordem e a de sempre. O dia
+    // usa a mesma epoca do farolsinal (1/1/2026 = dia 0).
+    static FarolGosto g;
+    uint16_t dia = (uint16_t)((time(NULL) - 1767225600LL) / 86400);
+    int temGosto = farolsinal_recomendar() && farolsinal_modelo(&g);
+    for (m = 0; m < MAPA_CLIMA_N; m++) {
+      int peso = temGosto ? mapa_clima_gosto(&g, novo.c[m].id, dia) : 0;
+      novo.c[m].afinidade = vistosTotal > 0
+        ? (novo.c[m].vistos * 100 + vistosTotal / 2) / vistosTotal : 0;
+      novo.c[m].gosto = peso > 8192 ? 50 : peso < -8192 ? -50
+        : (peso * 50 + (peso >= 0 ? 4096 : -4096)) / 8192;
+    }
+    // Ordem de afinidade + gosto; empate fica na ordem editorial (insercao
+    // estavel).
+    for (i = 1; i < MAPA_CLIMA_N; i++) {
+      static MapaClima t;
+      int ordem;
+      t = novo.c[i];
+      ordem = t.afinidade + t.gosto;
+      for (m = i; m > 0 && novo.c[m - 1].afinidade + novo.c[m - 1].gosto < ordem; m--)
+        novo.c[m] = novo.c[m - 1];
+      novo.c[m] = t;
+    }
   }
   pthread_mutex_lock(&travaClima);
   climaLocal = novo;

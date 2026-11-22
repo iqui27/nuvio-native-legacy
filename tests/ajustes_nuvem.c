@@ -137,6 +137,20 @@ static int recoveryStage(const char *dir, const char *stage) {
     dados_gravar("ltv-urls-p1.txt", "configured-streams\n");
     dados_gravar("xtream-p1.txt", "portal=test.invalid\nusuario=alice\nsenha=secret\n");
     dados_gravar("sessao-private.txt", "DO-NOT-UPLOAD");
+    // Issue 43: o modelo do gosto entra no backup por aparelho como file33 —
+    // o cache de fichas e a marca das notas ficam de fora (reconstruiveis).
+    dados_gravar("farol-gosto-p1.txt", "FG 2 1 1 320 0 0\ng 28 512 1 320 0\n");
+    dados_gravar("farol-fichas.bin", "fichas-locais");
+    {
+      // A marca das notas do Trakt leva o hash da conta (mesmo FNV do
+      // ajustes_device.inc) — a fixture usa o nome real para o esquecer achar.
+      unsigned long long nh = 1469598103934665603ULL;
+      char ncam[64];
+      for (const char *p = sessao_usuario(); *p; p++)
+        { nh ^= (unsigned char)*p; nh *= 1099511628211ULL; }
+      snprintf(ncam, sizeof ncam, "farol-notas-%08llx.txt", nh & 0xffffffffULL);
+      dados_gravar(ncam, "1 123\n");
+    }
     char nome[128]; ajustes_provedores_arquivo(nome, sizeof nome, "fontefalha");
     dados_gravar(nome, "provedores 1\nfiltro_maxgb 10\n");
     fil_registrar("org.test_movie_top", "Top", "Test", "movie", 10);
@@ -176,10 +190,14 @@ static int recoveryStage(const char *dir, const char *stage) {
       check(f - v == 4 && !strncmp(v, "null", 4), "device snapshot excludes shared rules and filters");
     }
     // Keep an old client's whole-file device snapshot in the account too.
+    // file33 rides along: the restore stages prove the Farol model file
+    // round-trips; the other 29 absent keys prove a sparse/old (33-file)
+    // snapshot simply skips what it does not have (issue 43).
     Jsw legacy; jsw_iniciar(&legacy); jsw_obj_ini(&legacy);
-    for (int i = 0; i < 4; i++) {
-      const char *keys[] = {"file8", "file22", "file24", "file25"};
-      const char *names[] = {"fileirasui-p1.txt", nome, "fonteregra.txt", nome};
+    for (int i = 0; i < 5; i++) {
+      const char *keys[] = {"file8", "file22", "file24", "file25", "file33"};
+      const char *names[] = {"fileirasui-p1.txt", nome, "fonteregra.txt", nome,
+                             "farol-gosto-p1.txt"};
       char *text = dados_ler(names[i]); ajusteHex(&legacy, keys[i], text); free(text);
     }
     jsw_obj_fim(&legacy);
@@ -217,6 +235,7 @@ static int recoveryStage(const char *dir, const char *stage) {
       ajustes_aplicar_blob("{\"c_settings_v1\":{\"values\":{\"c_vidroLocal\":1,\"c_modernSidebarBlur\":1}}}");
       check(valor[AJ_VIDRO] == valorPadrao[AJ_VIDRO] && valor[AJ_RAIL_BLUR] == valorPadrao[AJ_RAIL_BLUR], "legacy shared blob cannot override device GPU choices");
       check(!dados_ler("fanart.txt"), "second TV receives no device credentials");
+      check(!dados_ler("farol-gosto-p1.txt"), "second TV keeps own (empty) taste model");
       // B edits shared files after A's upload, with a different provider scope/quota.
       fil_mover(1, -1); fil_definir_limite(5); fil_gravar_registro();
       fonteregra_definir_regex("4K");
@@ -229,6 +248,7 @@ static int recoveryStage(const char *dir, const char *stage) {
       snprintf(path, sizeof path, "%s/../cloud.json", dir); fileWrite(path, cloud, strlen(cloud));
     } else {
       checkFile("fanart.txt", "0123456789abcdef"); checkFile("seekr.txt", "own-seekr-key");
+      checkFile("farol-gosto-p1.txt", "FG 2 1 1 320 0 0\ng 28 512 1 320 0\n");
       checkFile("ltv-urls-p1.txt", "configured-streams\n");
       checkFile("xtream-p1.txt", "portal=test.invalid\nusuario=alice\nsenha=secret\n");
       char protectedPath[1024]; struct stat mode;
@@ -249,6 +269,16 @@ static int recoveryStage(const char *dir, const char *stage) {
       ajustes_aplicar_blob("{\"features\":{\"hero_section_enabled\":true}}");
       check(valor[AJ_RESOLUCAO] == RES_4K && valor[AJ_IDIOMA] == 4, "partial blob preserves absent keys");
       sessao_sair(); sync_esquecer_usuario();
+      {
+        unsigned long long nh = 1469598103934665603ULL;
+        char ncam[64];
+        for (const char *p = sessao_usuario(); *p; p++)
+          { nh ^= (unsigned char)*p; nh *= 1099511628211ULL; }
+        snprintf(ncam, sizeof ncam, "farol-notas-%08llx.txt", nh & 0xffffffffULL);
+        check(!dados_ler("farol-gosto-p1.txt") && !dados_ler("farol-fichas.bin") &&
+              !dados_ler(ncam),
+              "logout removes taste model, ficha cache and ratings mark");
+      }
       memcpy(valor, valorPadrao, sizeof valor); login(); cycle();
       check(valor[AJ_RESOLUCAO] == RES_4K && valor[AJ_IDIOMA] == 4, "logout/login restores same TV");
       check(!strcmp(fil_chave(0), "org.test_series_new") && fil_limite_gravado() == 3, "logout keeps shared order and device quota");

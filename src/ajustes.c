@@ -72,6 +72,7 @@
 #include "trakt.h"
 #include "simklauth.h"
 #include "discord.h"
+#include "farolsinal.h"
 #include "diarionuvem.h"
 #include "simkl.h"
 #include "trakt.h"
