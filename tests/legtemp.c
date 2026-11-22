@@ -4,7 +4,25 @@
 #include <stdio.h>
 #include <string.h>
 
+static void rajada(void) {
+  // Seis toques de 10 s seguidos (60 s no total): ao passar do teto a legenda
+  // sai e os toques seguintes NAO religam; so depois de passar do ponto de
+  // origem um novo recuo curto vale de novo.
+  LegTemp t;
+  int i;
+  legtemp_zerar(&t);
+  assert(legtemp_busca(&t, 100, 90) == LEGTEMP_LIGAR);
+  for (i = 1; i < 4; i++) assert(legtemp_busca(&t, 100 - 10 * i, 90 - 10 * i) == LEGTEMP_NADA);
+  assert(legtemp_busca(&t, 60, 50) == LEGTEMP_DESLIGAR);
+  assert(legtemp_busca(&t, 50, 40) == LEGTEMP_NADA && !t.motivos);
+  assert(legtemp_quadro(&t, 60) == LEGTEMP_NADA);
+  assert(legtemp_busca(&t, 60, 55) == LEGTEMP_NADA && !t.motivos);
+  assert(legtemp_quadro(&t, 103) == LEGTEMP_NADA);
+  assert(legtemp_busca(&t, 103, 95) == LEGTEMP_LIGAR);
+}
+
 int main(void) {
+  rajada();
   LegTemp t;
   const char *o[3];
 
@@ -43,6 +61,7 @@ int main(void) {
   // ...mas passando do teto a pessoa esta navegando: desliga.
   assert(legtemp_busca(&t, 100, 90) == LEGTEMP_LIGAR);
   assert(legtemp_busca(&t, 90, 100 - LEGTEMP_VOLTA_MAX - 1) == LEGTEMP_DESLIGAR);
+  assert(legtemp_quadro(&t, 102) == LEGTEMP_NADA);   // passou do ponto: vale de novo
   // Pular para a frente do ponto de origem tambem encerra.
   assert(legtemp_busca(&t, 100, 90) == LEGTEMP_LIGAR);
   assert(legtemp_busca(&t, 92, 300) == LEGTEMP_DESLIGAR);

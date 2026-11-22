@@ -27,7 +27,8 @@ enum { LEGTEMP_NADA = 0, LEGTEMP_LIGAR, LEGTEMP_DESLIGAR };
 typedef struct {
   int motivos;      // LEGTEMP_MUDO | LEGTEMP_VOLTA em vigor
   int mudo;         // ultimo estado de mudo visto (0/1)
-  double voltaFim;  // posicao em que o motivo VOLTA acaba
+  double voltaFim;
+  int longa;        // recuo passou do teto: fica fora ate voltaFim  // posicao em que o motivo VOLTA acaba
 } LegTemp;
 
 void legtemp_zerar(LegTemp *t);

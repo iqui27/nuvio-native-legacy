@@ -23,11 +23,18 @@ int legtemp_mudo(LegTemp *t, int mudo) {
 
 int legtemp_busca(LegTemp *t, double de, double para) {
   if (!isfinite(de) || !isfinite(para)) return LEGTEMP_NADA;
+  if (t->longa) {
+    // O recuo em passos ja passou do teto: os passos seguintes nao religam.
+    if (para < t->voltaFim) return LEGTEMP_NADA;
+    t->longa = 0;
+  }
   if (t->motivos & LEGTEMP_VOLTA) {
     // Ja revendo: outro recuo soma ate o teto; para a frente do ponto, acabou.
-    if (para >= t->voltaFim - LEGTEMP_VOLTA_FOLGA ||
-        t->voltaFim - LEGTEMP_VOLTA_FOLGA - para > LEGTEMP_VOLTA_MAX)
+    if (para >= t->voltaFim - LEGTEMP_VOLTA_FOLGA) return trocar(t, t->motivos & ~LEGTEMP_VOLTA);
+    if (t->voltaFim - LEGTEMP_VOLTA_FOLGA - para > LEGTEMP_VOLTA_MAX) {
+      t->longa = 1;
       return trocar(t, t->motivos & ~LEGTEMP_VOLTA);
+    }
     return LEGTEMP_NADA;
   }
   if (de - para < LEGTEMP_VOLTA_MIN || de - para > LEGTEMP_VOLTA_MAX) return LEGTEMP_NADA;
@@ -36,7 +43,9 @@ int legtemp_busca(LegTemp *t, double de, double para) {
 }
 
 int legtemp_quadro(LegTemp *t, double pos) {
-  if (!(t->motivos & LEGTEMP_VOLTA) || !isfinite(pos) || pos < t->voltaFim) return LEGTEMP_NADA;
+  if (!isfinite(pos) || pos < t->voltaFim) return LEGTEMP_NADA;
+  t->longa = 0;
+  if (!(t->motivos & LEGTEMP_VOLTA)) return LEGTEMP_NADA;
   return trocar(t, t->motivos & ~LEGTEMP_VOLTA);
 }
 
