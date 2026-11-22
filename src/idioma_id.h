@@ -9704,6 +9704,7 @@
   T("rever do início", "tonton ulang dari awal"),
   T("reviravolta final", "akhir yang mengejutkan"),
   T("robôs", "robot"),
+  T("sai %s", "rilis %s"),
   T("saia da sua rota", "keluar dari rutemu"),
   T("sair", "keluar"),
   T("salvo: %s", "tersimpan: %s"),

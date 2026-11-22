@@ -9704,6 +9704,7 @@
   T("rever do início", "peržiūrėti iš pradžių"),
   T("reviravolta final", "netikėta pabaiga"),
   T("robôs", "robotas"),
+  T("sai %s", "pasirodys %s"),
   T("saia da sua rota", "išeikite iš savo maršruto"),
   T("sair", "išeiti"),
   T("salvo: %s", "išsaugota: %s"),

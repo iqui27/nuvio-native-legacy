@@ -9704,6 +9704,7 @@
   T("rever do início", "从头重看"),
   T("reviravolta final", "结局反转"),
   T("robôs", "机器人"),
+  T("sai %s", "%s上线"),
   T("saia da sua rota", "走出你的常规路线"),
   T("sair", "退出"),
   T("salvo: %s", "已保存：%s"),

@@ -4213,6 +4213,16 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   if (tipo == GFX_VIDRO_PAINEL && !semAro) gfx_vidro_luz(r, raio, a);
 }
 
+// A SOMBRA DE QUEM SOBE (Glass UI 2.0: .gl.foco 0 18px 44px, .cz.foco 0 22px
+// 50px): mancha preta difusa, caida 18 px, para desenhar ANTES da superficie
+// ou da arte em foco. E a elevacao do foco; quem chama nao desenha aro.
+void gfx_vidro_elevacao(GfxRect r, float foco, float a) {
+  float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco);
+  GfxRect s = { r.x - 44.0f, r.y - 44.0f + 18.0f, r.w + 88.0f, r.h + 88.0f };
+  if (f <= 0.01f || a <= 0.001f || layout_desktop_ativo()) return;
+  gfx_rect(s, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.60f * f * a);
+}
+
 // OS CANAIS DE FUNDO DA LUZ ASSADA (fundo.c: "Arte borrada" e "Frost" de tela
 // cheia). MEDIDO no Mac (tests/fluidez_perf.sh, Ajustes): o Frost direto pinta
 // por quadro um clear, um GFX_VEU_CSS e tres GFX_LUZ do tamanho da tela, todos
@@ -4493,28 +4503,16 @@ void gfx_vidro_superficie(GfxRect r, float raio, float a) {
   if (r.w <= 0.0f || r.h <= 0.0f || a <= 0.001f) return;
   gfx_cor(r, raio, 1, 1, 1, 0.05f * gfx_vidro_opacidade() * a);
 }
-// A COR DO FOCO NO VIDRO E O REALCE ESCOLHIDO. O vidro muda a SUPERFICIE (fina,
-// translucida, sem brilho nem sombra), nao a cor de quem esta selecionado: com
-// o tema padrao o realce e branco e o resultado e o da referencia (contorno /
-// pilula brancos); com "Cor de destaque" ou os temas dinamicos o contorno e a
-// pilula seguem a cor. Forcar branco aqui apagava o realce de todas as telas.
+// A linha sobe um degrau de superficie. "Contorno do vidro" acrescenta
+// um aro neutro; "Foco no realce" mantem seu tratamento proprio.
 void gfx_vidro_foco(GfxRect r, float raio, float foco, float a) {
-  float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco), cr, cg, cb;
+  float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco);
   if (f <= 0.01f || a <= 0.001f) return;
   if (gfx_foco_placa(r, raio, f, a)) return;
-  ajustes_acento(&cr, &cg, &cb);
-  // "Contorno do vidro" DESLIGADO (pedido do dono, 30/09: "o contorno que eu
-  // queria desligar e esse quando ta em foco, mais minimalista"): sem anel,
-  // o foco e so o fundo — um degrau claro e a lavagem do realce, fortes o
-  // bastante para ler a 3 m. Cartaz (gfx_vidro_cartao) nao passa por aqui:
-  // sem superficie propria, sem anel ele ficaria sem foco nenhum.
-  if (!ajustes_vidro_contorno()) {
-    gfx_cor(r, raio, 1, 1, 1, 0.07f * f * a);
-    gfx_cor(r, raio, cr, cg, cb, 0.20f * f * a);
-    return;
-  }
-  gfx_cor(r, raio, cr, cg, cb, 0.09f * f * a);
-  gfx_anel(r, raio, 2.0f, cr, cg, cb, 0.96f * f * a);
+  gfx_vidro_elevacao(r, f, a);
+  if (ajustes_vidro()) gfx_cor(r, raio, 1, 1, 1, 0.14f * f * a);
+  else gfx_cor(r, raio, NV_COR_FOCO_RGB, f * a);
+  gfx_vidro_aro(r, raio, 2.0f, 1, 1, 1, 0.90f * f * a);
 }
 // Accent focus keeps the caller's geometry and light foreground. Without glass,
 // use an opaque dark tint, limited by the accent's contrast ink. With glass,
@@ -4553,15 +4551,11 @@ void gfx_vidro_cartao(GfxRect r, float raio, float foco, float a) {
   if (f <= 0.01f || a <= 0.001f) return;
   if (layout_desktop_ativo()) return;
   ajustes_acento(&cr, &cg, &cb);
-  // "Contorno do vidro" DESLIGADO: sem fio no cartao, so um halo fraco por fora
-  // (a arte cobre o interior, entao o realce fica de fora, na mesma ordem de
-  // desenho de quem chama). Antes o contorno nao era lido aqui: Home, Biblioteca
-  // e Amigos ignoravam a opcao.
-  if (!ajustes_vidro_contorno()) {
-    gfx_anel_fora(r, raio, 1.0f, 9.0f, cr, cg, cb, 0.22f * f * a);
-    return;
-  }
-  gfx_anel_fora(r, raio, 2.0f, 3.0f, cr, cg, cb, 0.96f * f * a);
+  // CARTAZ EM FOCO (tv.css .cz.foco): a sombra caida de quem subiu, e nao um
+  // fio. Nem toda tela cresce o cartaz ainda, entao fica o halo fraco do realce
+  // por fora, igual com "Contorno do vidro" ligado ou nao: nunca o anel duro.
+  gfx_vidro_elevacao(r, f, a);
+  gfx_anel_fora(r, raio, 1.0f, 9.0f, cr, cg, cb, 0.22f * f * a);
 }
 void gfx_vidro_pilula_cheia(GfxRect r, float raio, float foco, float a) {
   float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco), cr, cg, cb;
