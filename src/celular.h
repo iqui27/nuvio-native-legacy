@@ -75,6 +75,11 @@ int celular_abrir_pagina(const char *titulo, const char *html, const char *envia
  * status, never credentials) and send the next step. Ends on celular_fechar()
  * or the same expiry. */
 int  celular_abrir_sessao(const char *titulo, const char *html);
+/* For the NEXT celular_abrir_sessao only: lifetime in seconds (0 = the usual
+ * CEL_VALIDADE_S) and whether its page may load https images (CSP img-src
+ * https:; Referrer-Policy stays same-origin, so the image host never sees the
+ * token). Every other opening keeps default-src 'none'. */
+void celular_sessao_opcoes(int validade_s, int imagens);
 void celular_status(const char *s);
 void celular_fechar(void);
 int  celular_estado(void);
