@@ -2741,7 +2741,8 @@ static CatItem reabrirCopia;
 static int reabrirMn, reabrirPassiva;
 static void reabrirGuardar(int titulo) {
   const CatItem *c = cat_item(titulo);
-  reabrirMn = player_minha_noite(); reabrirPassiva = player_passivo();
+  int mesmo = player_indice() == titulo;   // outro titulo nao herda a marca
+  reabrirMn = mesmo && player_minha_noite(); reabrirPassiva = mesmo && player_passivo();
   if (c) reabrirCopia = *c; else memset(&reabrirCopia, 0, sizeof reabrirCopia);
 }
 static int reabrirTitulo(int titulo) {
