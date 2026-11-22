@@ -3736,6 +3736,7 @@ static int gv_activate(void){
     else if(id==4)gv_go("busca");
     else if(id==5)g5ui_open("fontes-gerenciar");
     else if(id==6)g5ui_open("multiview-2");
+    else if(id==7)minha_noite_pedida=1;
     return 1;}
   if(gv_zone==4){
     int source=gv_source_index(gv_chipi);GuiaFonteSaude f;
