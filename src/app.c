@@ -3698,7 +3698,9 @@ static void recarregarFonteVOD(void) {
   if (!player_aberto() || player_quer_sair() || player_id_canal()[0] ||
       aguardandoFonte != 0 || !nv_perfil_sessao_atual(sessaoPerfil)) return;
   // Reabrir o pipeline pode chamar firmware; nao segurar a trava do perfil.
-  int aceita = video_recarregar();
+  // player_recarregar_vod faz a recarga E o rearm do farol: a reabertura da
+  // fonte corrente grava FE_ABRIR e espera o FE_PRONTO da carga nova.
+  int aceita = player_recarregar_vod();
   if (!nv_perfil_sessao_atual(sessaoPerfil)) return;
   if (!aceita) { player_toast(i18n("Indisponível agora"), 2000); return; }
   // A mesma fonte ganha prazo para reabrir, sem recomecar seu orcamento,

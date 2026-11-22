@@ -52,6 +52,9 @@
 #include "audioescolha.h"
 #include "idioma.h"
 #include "fontesonda.h"
+#include "farolanel.h"
+#include "farolerro.h"
+#include "farolcod.h"
 #include "posplay.h"
 #include "extras.h"
 #include "video.h"
@@ -412,6 +415,7 @@ static void corFocoPlayer(float *r, float *g, float *b) { ajustes_acento(r, g, b
 // A guia parental se apoia nisto para aparecer UMA vez, no comeco, e sumir.
 static Uint32 inicioImagem = 0;
 static int memQuadroPendente; // Um primeiro quadro por load, nao por volta da ilha.
+static int prontoAnel;        // FE_PRONTO: um por abertura; rearma no FE_ABRIR.
 // MEDIDA DO RETOMAR (05/10): desde player_abrir ate o pronto e ate o primeiro
 // "tocando" depois de aplicada a retomada. E o numero para comparar, na TV, o
 // Retomar sem reter (fonte guardada + posicao) com o retido ("retomada pronta").
@@ -1003,6 +1007,24 @@ const CatEp *player_proximo_episodio(void) {
 // este canal agora"). Vazio = as frases genericas. Ja traduzido por quem
 // chama; txt_linha tenta traduzir de novo, nao acha chave e deixa como esta.
 static char erroTitulo[160], erroDica[160];
+// FAROL (issue 7; PLANO 2.2): o alvo compilado vira (FarolPlat, token do
+// backend) — os FE_* nao carregam texto livre, so estes tokens de enum.
+#if defined(NV_ANDROID)
+#  define NV_FAROL_PLAT FP_ANDROID
+#  define NV_FAROL_BACKEND "media3"
+#elif defined(NV_TPK)
+#  define NV_FAROL_PLAT FP_TIZEN_TPK
+#  define NV_FAROL_BACKEND "tpk"
+#elif defined(__EMSCRIPTEN__)
+#  define NV_FAROL_PLAT FP_TIZEN_WGT
+#  define NV_FAROL_BACKEND "avplay"
+#elif defined(NV_DESKTOP_MPV)
+#  define NV_FAROL_PLAT FP_OUTRA
+#  define NV_FAROL_BACKEND "mpv"
+#else
+#  define NV_FAROL_PLAT FP_WEBOS
+#  define NV_FAROL_BACKEND "starfish"
+#endif
 #ifdef NV_TOUCH_UI
 static int (*modalToqueGuarda)(void);
 static int avToqueQuadro, avToqueErro, avToqueElegivel;
@@ -1101,6 +1123,15 @@ void player_erro_fonte(void) {
   erroTitulo[0] = erroDica[0] = 0;   // erro sem motivo nao herda o do anterior
   resolverregra_falha_registrar(RES_T_FONTE, i18n("Não foi possível abrir a fonte"), "", linhaEp, (long)time(NULL));
   erroCausaDoPlayer();
+  // FAROL: a causa classificada e o codigo normalizado; nunca a URL nem o titulo.
+  // Ao anel so vai cod da lista fechada (farolcod_anel): um nome recortado de
+  // texto livre, ex. dentro de uma URL, chegaria como token valido.
+  { int http = 0, causa = fontesonda_causa(video_erro_texto(), &http);
+    FarolErro fe; char cs[24];
+    farolerro_ler(NV_FAROL_PLAT, video_erro_texto(),
+                  video_registro_negado() ? -1027 : 0, &fe);
+    farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, causa, http,
+             farolcod_anel(&fe, NV_FAROL_PLAT, cs, sizeof cs)); }
 }
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
   player_erro_fonte();
@@ -2022,7 +2053,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   pedFontes = erroFonte = pedFaixas = pedProxT = pedProxE = trocaEpisodio = 0; inicioImagem = 0;
   durFonteAvisada = durFontePulou = pedProximaFonte = durFonteCurta = durFonteForaCache = 0;
   durFonteAcaoAte = 0; durFonteSkipEm = 0; durFonteManter = 0;
-  abrindoExp = 0; abrindoT = 0.0f; abrindoDesde = 0;
+  abrindoExp = 0; abrindoT = 0.0f; abrindoDesde = 0; prontoAnel = 0;
   memset(&cine, 0, sizeof cine);
   cine.calado = 1;
   erroTitulo[0] = erroDica[0] = 0;
@@ -2266,20 +2297,45 @@ static int travaFonte(const char *url) {
   return 0;
 }
 
+// FAROL (PLANO 2.2): a abertura de fonte — tentativa/max e o backend. Toda
+// abertura que grava FE_ABRIR rearma o primeiro quadro: a troca direta de
+// fonte (player_definir_fonte, ex.: a renovacao do link Stalker em app.c)
+// chega a este ponto sem passar pelo reset da tela, e o FE_PRONTO da fonte
+// nova so sai se inicioImagem/prontoAnel zerarem aqui.
+static void farolAbrir(void) {
+  inicioImagem = 0; prontoAnel = 0;
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, tentativaN, tentativaM, NV_FAROL_BACKEND);
+}
+// FAROL (PLANO 2.2): o ponto unico de rearm do ciclo do anel para uma carga
+// nova da fonte — FE_ABRIR, primeiro quadro pendente e o relogio (loadEm)
+// que o campo `a` do FE_PRONTO mede. Usam-no a troca de fonte
+// (tocarFonteInterno) e a recarga manual do VOD (player_recarregar_vod), nas
+// quatro plataformas: o pedido do dono e o mesmo.
+// A REABERTURA INTERNA por seek (convReabrir/abrirSessao/cdnRenovar no TPK,
+// native-seek-reload do DTS no webOS) fica FORA do ciclo por decisao: e a
+// mesma fonte reabrindo por dentro do backend, nao uma abertura do usuario.
+// Ela nao toca no trio inicioImagem/prontoAnel/memQuadroPendente — se o
+// FE_PRONTO ainda estiver armado, a primeira amostra da sessao reaberta o
+// completa; se ja disparou, nada acontece. Nenhum dos dois estados bloqueia
+// a proxima abertura real, que sempre rearma aqui.
+static void farolRearmar(void) {
+  farolAbrir();
+  loadEm = SDL_GetTicks();   // #202: do pipeline ao primeiro quadro ("[player] load->1o quadro")
+  memlog_evento("load"); memQuadroPendente = 1;
+}
 static void tocarFonteInterno(const char *url);
 static void tocarFonteInterno(const char *url) {
   directcache_encerrar();
   if (!travaFonte(url)) return;
   marco("abrir: url ao pipeline");
+  farolRearmar();
   skipLiberado = 0;
-  loadEm = SDL_GetTicks();   // #202: do pipeline ao primeiro quadro ("[player] load->1o quadro")
   video_definir_reconexao(!ehCanal());
   // Nome do capitulo no idioma do app quando o arquivo traz varios (mkv.c).
   mkv_capitulos_idioma(idioma_iso(ajustes_idioma()));
   video_definir_modo_live(ehCanal() ? guia_modo_do_canal(player_id_canal(), ajustes_livetv_modo()) : 0);
   cacheboost_backend_cache(ehCanal() ? 0 : ajustes_cache_seek_mb());   // F07, ver player_abrir
   armarTituloGuardado();
-  memlog_evento("load"); memQuadroPendente = 1;
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));
   { char px[96], dc[NV_MEDIA_URL_MAX];
     const char *playUrl = url && *url ? directcache_preparar(url, video_cabecalhos(), dc, sizeof dc) : url;
@@ -2310,6 +2366,13 @@ static void tocarFonteInterno(const char *url) {
   mkvass_video_aberto(comVideo);
   aspArmar();
   if (!comVideo) {
+    // FAROL: recusa sincrona na abertura — causa e codigo, nunca a URL.
+    { int http = 0, causa = fontesonda_causa(video_erro_texto(), &http);
+      FarolErro fe; char cs[24];
+      farolerro_ler(NV_FAROL_PLAT, video_erro_texto(),
+                    video_registro_negado() ? -1027 : 0, &fe);
+      farol_ev(FM_FONTE, FE_RECUSA_SINC, 2, causa, http,
+               farolcod_anel(&fe, NV_FAROL_PLAT, cs, sizeof cs)); }
     fontesonda_recusa(url, video_erro_texto(), 1);
     erroSemVideo();
   }
@@ -2438,6 +2501,17 @@ void player_definir_fonte(const char *url) {
 #endif
 }
 
+// FAROL: a recarga manual do VOD (o botao; app.c recarregarFonteVOD chama
+// aqui, nao mais o backend direto) e uma abertura da fonte corrente para o
+// ciclo do anel — o mesmo rearm da troca de fonte, em todas as plataformas.
+// O backend decide se a recarga cabe (video_recarregar devolve 0 e nada
+// muda); so uma carga aceita grava FE_ABRIR e espera um FE_PRONTO novo.
+int player_recarregar_vod(void) {
+  if (!video_recarregar()) return 0;
+  farolRearmar();
+  return 1;
+}
+
 void player_voltar_a_esperar(void) {
   if (!aberto) return;
   fonteAcaoInvalidar();
@@ -2450,7 +2524,7 @@ void player_voltar_a_esperar(void) {
   mkvass_video_aberto(0);
   esperandoFonte = 1; erroFonte = 0; tocando = 1; pausaPessoa = 0;
   erroTitulo[0] = erroDica[0] = 0;
-  retomadaAplicada = 0; inicioImagem = 0;
+  retomadaAplicada = 0; inicioImagem = 0; prontoAnel = 0;
 }
 
 // Consome o pedido de abrir a folha de faixas: quem le, zera.
@@ -3009,7 +3083,7 @@ static void fecharSessao(int manter, int trocaFonte) {
   // fechamento faria a proxima reproducao achar que a janela do aviso ja tinha
   // corrido — o aviso simplesmente nao entraria, sem nada no log dizendo por
   // que. Ver a nota no desenho da guia parental.
-  inicioImagem = 0; pgDesde = pgQuadro = 0;
+  inicioImagem = 0; prontoAnel = 0; pgDesde = pgQuadro = 0;
 }
 
 void player_encerrar(void) {
@@ -5061,9 +5135,26 @@ void player_atualizar(float dt, Uint32 agora) {
   // aparecer.
   // webOS: pronto ja sobe no loadCompleted. A posicao em reproducao e o
   // sinal de quadro usado pelo log do backend, nao apenas a preparacao.
-  if (memQuadroPendente && comVideo && video_pronto() && video_tocando() && video_pos() > 0.0) {
+  if (memQuadroPendente && comVideo && video_pronto() && video_tocando() &&
+      video_pos_amostra(NULL) > 0.0) {
     memQuadroPendente = 0;
     memlog_evento("primeiro-quadro");
+    // FE_PRONTO e o primeiro quadro (PLANO 2.2), nao o loadCompleted: no webOS
+    // o pronto sobe cedo e a imagem so chega quando o pipeline anda (tocando
+    // com a posicao avancando, o mesmo sinal do "primeiro-quadro" do memlog).
+    // A posicao e a AMOSTRA nativa (currentTime/quadro do backend): o alvo
+    // que video_buscar escreve na posicao mostrada antes do seek acontecer —
+    // a retomada busca antes do primeiro currentTime — nao e prova de quadro.
+    // Um por abertura: prontoAnel rearma junto do FE_ABRIR em farolAbrir.
+    if (!prontoAnel) {
+      prontoAnel = 1;
+      // `a` mede da abertura da fonte CORRENTE (loadEm, rearmado em toda
+      // carga nova), nao da sessao do player — a segunda fonte entregue
+      // minutos depois da primeira gravaria o tempo inteiro da sessao.
+      farol_ev(FM_PLAYER, FE_PRONTO, 0,
+               (int32_t)(SDL_GetTicks() - (loadEm ? loadEm : abertoEm)),
+               retomarPct, NULL);
+    }
     if (medirAbertura && !ehCanal()) {
       printf("[player] play->first-frame %u ms (load->first-frame %u ms)\n",
              (unsigned)(SDL_GetTicks() - abertoEm), loadEm ? (unsigned)(SDL_GetTicks() - loadEm) : 0u);
@@ -5167,6 +5258,7 @@ void player_atualizar(float dt, Uint32 agora) {
       // parada: nao conta.
       else if (vodPosEm && (unsigned)(agora - vodPosEm) >= 8000u && !vodLogado && !pausaPessoa) {
         vodLogado = 1;
+        farol_ev(FM_PLAYER, FE_PARADO, 1, (int32_t)(agora - vodPosEm), (int32_t)buf, NULL);
         { int itens = 0; long bytes = 0; char mem[96] = "";
           tex_estatisticas(&itens, NULL, &bytes, NULL, NULL);
           memlog_amostra(mem, sizeof mem);

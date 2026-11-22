@@ -224,6 +224,11 @@ int    video_falhou(void);   // 1 depois de um errorText real na fonte atual
 // o cartao de erro do canal dizer o que o servidor respondeu em vez do
 // generico (#158). Vale ate o proximo video_tocar/video_parar.
 const char *video_erro_texto(void);
+// MODELO DA TV onde o sistema o diz: na webOS sai do getConfigs
+// "tv.model.modelname" (mesmo pedido do EDID, video.c). "?" ate a resposta
+// chegar, ou onde a plataforma nao informa. O Farol usa no perfil do aparelho;
+// o texto ja vem filtrado ([A-Za-z0-9._ -], <= 32).
+const char *video_tv_modelo(void);
 #ifdef NV_ANDROID
 // Codigo do erro atual apenas se o renderer e de VIDEO; 0 para audio/desconhecido.
 int video_erro_decoder_codigo(void);

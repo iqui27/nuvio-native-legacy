@@ -174,6 +174,10 @@ void player_definir_fonte(const char *url);
 // quando a sessao foi iniciada com "Assistir do comeco". Chamar antes de parar.
 // Zero e um ponto valido (a pessoa voltou ao inicio), nao retomada ausente.
 void player_definir_retomada_fonte(double segundos);
+// Recarga manual do VOD (o botao da ilha/transporte): repassa ao backend e,
+// se a carga foi aceita, rearma o ciclo FE_ABRIR/FE_PRONTO da fonte corrente.
+// Devolve 0 quando o backend recusa — o chamador avisa "Indisponível agora".
+int player_recarregar_vod(void);
 // Desfaz a fonte em curso SEM fechar a tela: o video para e a sessao volta a
 // "abrindo fonte", como logo depois de player_abrir. E o recuo da fonte
 // guardada (fontevolta.h) para a busca normal, sem a pessoa ver o player
