@@ -46,7 +46,9 @@ static const char PAG_B[] =
   "else if(i>=D.length)m=T.outros;else m=T.de.replace('%d',i+1).replace('%d',D.length);"
   "$('m').textContent=m;if(vot)carta()}"
   "$('f').onsubmit=e=>{e.preventDefault();const n=$('e').value.trim();try{localStorage.setItem('nvnome',n)}catch(x){}"
-  "manda('j:'+k+':'+n);pedi=1;$('b').disabled=true};"
+  "manda('j:'+k+':'+n);pedi=1;$('b').disabled=true;"
+  // Sala cheia ou pedido perdido: sem confirmacao em 6 s, o botao volta.
+  "setTimeout(()=>{if(!ent){pedi=0;$('b').disabled=false}},6000)};"
   "$('n').onclick=()=>vota(0);$('s').onclick=()=>vota(1);"
   "let x0=null;const c=$('c');"
   "c.ontouchstart=e=>{x0=e.touches[0].clientX};"
