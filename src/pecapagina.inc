@@ -22,7 +22,7 @@ static const char PAGINA_B[] =
   "$('h').textContent=L.h;$('kt').textContent=L.kt;$('kb').textContent=L.kb;$('b').textContent=L.b;"
   "$('q').placeholder=L.ph;"
   "function post(c,v){return fetch(B+c,{method:'POST',body:v,headers:{'Content-Type':'text/plain'}})}"
-  "function ver(s){$('k').hidden=!!s.chave;$('f').hidden=!s.chave;ocup=s.e=='pensando';$('b').disabled=ocup;"
+  "function ver(s){$('k').hidden=!!s.chave&&!(s.e=='erro'&&s.r==2);$('f').hidden=!s.chave;ocup=s.e=='pensando';$('b').disabled=ocup;"
   "var j=JSON.stringify(s);if(j==ult)return;ult=j;var t=$('t');t.textContent='';"
   "$('st').textContent=s.e=='pensando'?L.p+' '+s.pedido:s.e=='erro'?(L.err[s.r]||L.err[8]):s.e=='pronto'?s.pedido:'';"
   "if(s.e!='pronto')return;s.t.forEach(function(x,i){var c=document.createElement('div');c.className='c';"
