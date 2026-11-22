@@ -56,6 +56,12 @@
 #include "spotlight.h"
 #include "ctxlista.h"
 #include "corviva.h"
+#ifdef NV_DESKTOP_UI
+#include "desktop_native.h"
+#define BU_DESKTOP layout_desktop_ativo()
+#else
+#define BU_DESKTOP 0
+#endif
 #include <string.h>
 #include <stdio.h>
 
@@ -102,10 +108,10 @@ static int buTecladoNativo(void) {
 }
 static int buResultadosPagina(void);
 static int buUmaColuna(void) { return layout_desktop_ativo() || buRetrato() || buTecladoNativo(); }
-static float buCampoH(void) { return buTecladoNativo() ? 104.0f : buTelefone() ? 76.0f : 88.0f; }
+static float buCampoH(void) { return BU_DESKTOP ? 52.0f : buTecladoNativo() ? 104.0f : buTelefone() ? 76.0f : 88.0f; }
 static float buMargem(void) { return buTelefone() ? 48.0f : ANC(BU_MARG); }
-static float buX(void)   { return ANC(ajustes_rail_largura_fixa()) + buMargem(); }
-static float buDir(void) { return NV_TELA_W - (buRetratoTelefone() ? buX() : buMargem()); }
+static float buX(void)   { return ANC(ajustes_rail_largura_fixa()) + (BU_DESKTOP ? 80.0f : buMargem()); }
+static float buDir(void) { return NV_TELA_W - (BU_DESKTOP ? 224.0f/3 : buRetratoTelefone() ? buX() : buMargem()); }
 static float buColW(void) { return buUmaColuna() ? buDir() - buX() : fminf(520.0f, ANC(520.0f)); }
 static float buResY(void);
 // A coluna da esquerda desce quando a pilula da Dinamica ocupa o canto. A
@@ -114,7 +120,7 @@ static float buResY(void);
 #define BU_TOPO_VAO 28.0f
 static float buTopoEsq(void) {
   float px, py, pw, ph;
-  if (layout_desktop_ativo()) return ANC(NV_DESKTOP_TOOLBAR_H);   // under the title bar
+  if (BU_DESKTOP) return 72.0f;   // under the title bar
   if (menu_pilula_rect(&px, &py, &pw, &ph)) return ANC(fmaxf(64.0f, py + ph + BU_TOPO_VAO));
   return ANC(64.0f);
 }
@@ -145,11 +151,11 @@ static float buTopoEsq(void) {
 // Rotulo em caixa alta (15/700) 18 acima do conteudo; melhor resultado 226 de
 // altura (capa 330x186 + padding 20); cartaz 180x270, nome 17 a 10 abaixo.
 #define BU_KICK_H       34.0f
-#define BU_MELHOR_H    fmaxf(226.0f, 186.0f * gfx_poster_k() + 40.0f)
+#define BU_MELHOR_H    (BU_DESKTOP ? 200.0f : fmaxf(226.0f, 186.0f * gfx_poster_k() + 40.0f))
 #define BU_CARTAZ_W    (180.0f * gfx_poster_k())
 #define BU_CARTAZ_H    (270.0f * gfx_poster_k())
-#define BU_NOME_ALT     (buTecladoNativo() ? 50.0f : 30.0f)
-#define BU_SECAO_GAP    34.0f
+#define BU_NOME_ALT     (BU_DESKTOP ? 184.0f/3 : buTecladoNativo() ? 50.0f : 30.0f)
+#define BU_SECAO_GAP    (BU_DESKTOP ? 56.0f/3 : 34.0f)
 
 // --- Buscas recentes (campo vazio; regras em buscasrec.h) ---------------------
 // Chips de 56 (o .chip do mockup) a partir de BU_RES_Y + 34, em LINHAS que
@@ -306,7 +312,7 @@ static int  kbTemLayout;                   // a tecla de layout aparece?
 static int  pagSim;                        // 1 = pagina de acentos e sinais (?!#)
 static int  KB_COLUNAS[BU_KB_MAX_FIL + 1] = { 6, 6, 6, 6, 6, 6, 3 };
 static float buResY(void) {
-  if (layout_desktop_ativo()) return buTopoEsq() + BU_CAMPO_H + ANC(32.0f);   // below the typed field
+  if (BU_DESKTOP) return 520.0f/3;   // below the typed field
   if (buResultadosPagina()) return buTopoEsq();
   if (buTecladoNativo()) return buTopoEsq() + BU_CAMPO_H + 44.0f;
   if (!buRetrato()) return ANC(64.0f);
@@ -389,10 +395,10 @@ static void montarPessoas(const char *alvo) {
   int n = cat_n(), i, j, deElenco = 0;
   char nome[160];
   nPess = 0;
-  for (i = 0; i < n && deElenco < 4; i++) {
+  for (i = 0; i < n && deElenco < (BU_DESKTOP ? BU_MAX_PESS : 4); i++) {
     const CatItem *ci = cat_item(i);
     if (!ci || ci->nElenco <= 0) continue;
-    for (j = 0; j < ci->nElenco && deElenco < 4; j++) {
+    for (j = 0; j < ci->nElenco && deElenco < (BU_DESKTOP ? BU_MAX_PESS : 4); j++) {
       if (ci->elenco[j].tmdb <= 0 || !ci->elenco[j].nome[0] || pessoaJa(ci->elenco[j].tmdb)) continue;
       busca_normalizar(ci->elenco[j].nome, nome, sizeof nome);
       if (!nomeCasa(nome, alvo)) continue;
@@ -646,8 +652,10 @@ static void refiltrar(void) {
     nFil++;
     fil[0].titulo = NULL; fil[0].origem = NULL;
     fil[0].itens[0] = melhorIdx; fil[0].n = 1; fil[0].melhor = 1;
-    memmove(&fil[1].itens[0], &fil[1].itens[1], (size_t)(fil[1].n - 1) * sizeof(int));
-    if (--fil[1].n == 0) { memmove(&fil[1], &fil[2], (size_t)(nFil - 2) * sizeof fil[0]); nFil--; }
+    if (!BU_DESKTOP) {
+      memmove(&fil[1].itens[0], &fil[1].itens[1], (size_t)(fil[1].n - 1) * sizeof(int));
+      if (--fil[1].n == 0) { memmove(&fil[1], &fil[2], (size_t)(nFil - 2) * sizeof fil[0]); nFil--; }
+    }
   }
 
   // PESSOAS (mockup): a fileira entra logo depois da primeira de titulos.
@@ -1021,6 +1029,9 @@ void busca_encerrar(void) {
   st_fechar(ST_BUSCA); celb_fechar_dono(CELB_BUSCA);
   gfx_mini_liberar(&fundoBusca);
 }
+#ifdef NV_DESKTOP_UI
+void busca_desktop_editar(const char *text) { campoDefinir(text,0); painel=0; refiltrar(); }
+#endif
 const char *busca_consulta(void) { return consulta; }
 int busca_foco_campo(void) { return painel == 0 ? campoFoco : 0; }
 #ifdef NV_TESTE
@@ -1351,6 +1362,7 @@ static void busca_evento_(const SDL_Event *e) {
 // --- Geometria das entradas da direita ---------------------------------------
 // Five columns at 100%; scaled text keeps enough stride for preserved artwork.
 static float buPasso(void) {
+  if (BU_DESKTOP) return 280.0f;
   float larg = BU_DIR - BU_RES_X;
   if (buTelefone()) {
     if (buTecladoNativo()) {
@@ -1369,6 +1381,7 @@ static float buPasso(void) {
   }
 }
 static float buCartazW(void) {
+  if (BU_DESKTOP) return 192.0f * gfx_poster_k();
   if (gfx_escala_txt() != 1.0f) {
     if (!buTelefone()) return BU_CARTAZ_W;
     float old = gfx_escala();
@@ -1382,13 +1395,14 @@ static float buCartazW(void) {
   return buTecladoNativo() || w < BU_CARTAZ_W ? w : BU_CARTAZ_W;
 }
 // PESSOAS: avatar 64 + 14 + nome (18), vao 26 entre pessoas (o .av do mockup).
-#define BU_PESS_AV     (buTecladoNativo() ? 96.0f : 64.0f)
+#define BU_PESS_AV     (BU_DESKTOP ? 72.0f : buTecladoNativo() ? 96.0f : 64.0f)
 #define BU_PESS_GAP    26.0f
 #define BU_PESS_NOMEMAX 230.0f
 // x (relativo a coluna) e largura de cada pessoa, preenchidos pelo desenho (a
 // largura do nome vem do texto rasterizado) e lidos pela rolagem.
 static float pessX[BU_MAX_PESS], pessW[BU_MAX_PESS];
 static float filKickH(int r) {
+  if (BU_DESKTOP) return fil[r].melhor ? 104.0f/3 : 40.0f;
   if (buTelefone()) {
     int origem = !fil[r].melhor && fil[r].origem && fil[r].origem[0];
     if (origem && (buRetrato() || BU_DIR - BU_RES_X < 760.0f))
@@ -1976,8 +1990,28 @@ static void desenhaBuscaRetrato(Uint32 agora) {
 
 // Ilha do campo: lupa, texto 28/500, cursor no acento; com teclado/voz do
 // sistema (Android) o campo e alvo de foco e o microfone/celular entram no fim.
+#ifdef NV_DESKTOP_UI
+static void desktopLimpar(int a,int b) { (void)a;(void)b; busca_desktop_editar(""); }
+#endif
 static void desenhaCampo(Uint32 agora) {
   GfxRect c = { buX(), buTopoEsq(), BU_COL_W, BU_CAMPO_H };
+#ifdef NV_DESKTOP_UI
+  if (BU_DESKTOP) {
+    if (desktop_native_search(consulta, c.x/NV_TELA_W, c.y/NV_TELA_H, c.w/NV_TELA_W, c.h/NV_TELA_H)) return;
+    // GL readback cannot composite AppKit; keep the same compact query surface.
+    ajustes_ui_neutro(c, c.h*.5f, .08f);
+    gfx_icone((GfxRect){c.x+12,c.y+16,20,20}, "mt_busca", .8f,.8f,.8f,1);
+    TxtLinha line=txt_linha_corta(TXT_ILHA_META, nConsulta?consulta:i18n("Buscar"), BU_TX, c.w-90);
+    txt_desenhar_alpha(line,c.x+44,c.y+(c.h-line.h)*.5f,nConsulta?1:.5f);
+    ponteiro_alvo(c.x,c.y,c.w-44,c.h,focarCampoPonteiro,NULL,1,0);
+    if(nConsulta) {
+      GfxRect clear={c.x+c.w-38,c.y+16,20,20};
+      gfx_icone(clear,"aj_x",.75f,.75f,.75f,1);
+      ponteiro_alvo(clear.x-8,c.y,36,c.h,NULL,desktopLimpar,0,0);
+    }
+    return;
+  }
+#endif
   TxtEstilo estilo = buTecladoNativo() ? TXT_HEADLINE : TXT_CALLOUT;
   float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
@@ -2204,32 +2238,47 @@ static void desenhaResultados(Uint32 agora) {
         int q = fil[r].itens[c];
         float f = animRes[r][c];
         float entra = filEntraEm[r] ? revela_entra(filEntraEm[r], revela_onda_atraso(c, 0), agora) : 1.0f;
-        TxtLinha nm = txt_linha_corta(buTecladoNativo() ? TXT_ILHA_NOME : TXT_ILHA_META,
+        TxtLinha nm = txt_linha_corta(BU_DESKTOP ? TXT_ILHA_META : buTecladoNativo() ? TXT_ILHA_NOME : TXT_ILHA_META,
                                      pess[q].nome, BU_TX, BU_PESS_NOMEMAX);
+#ifdef NV_DESKTOP_UI
+        float avatar = BU_DESKTOP ? 24.0f : BU_PESS_AV;
+        float w = avatar + 14.0f + (float)nm.w;
+        float px = BU_RES_X + x - scrollX[r];
+        GfxRect av = { px + (BU_DESKTOP ? 10.0f : 0), cy + (BU_PESS_AV-avatar)*.5f + (1.0f - entra) * NV_ENTRA_DY, avatar, avatar };
+        pessX[c] = x; pessW[c] = w;
+        x += BU_DESKTOP ? fmaxf(856.0f/3, w + BU_PESS_GAP) : w + BU_PESS_GAP;
+#else
         float w = BU_PESS_AV + 14.0f + (float)nm.w;
         float px = BU_RES_X + x - scrollX[r];
         GfxRect av = { px, cy + (1.0f - entra) * NV_ENTRA_DY, BU_PESS_AV, BU_PESS_AV };
         pessX[c] = x; pessW[c] = w;
         x += w + BU_PESS_GAP;
+#endif
         if (px > BU_DIR + 30.0f || px + w < BU_RES_X - 30.0f) continue;
         buAlvoResultado((GfxRect){av.x - 12.0f, cy - 8.0f, w + 30.0f, BU_PESS_AV + 16.0f},
                         ponteiroResultado, r, c);
         gfx_opacidade_grupo = grupo * entra;
         if (f > 0.01f) {
-          GfxRect pil = { av.x - 12.0f, av.y - 8.0f, w + 30.0f, BU_PESS_AV + 16.0f };
+          GfxRect pil = { av.x - 12.0f, BU_DESKTOP ? cy - 8.0f : av.y - 8.0f, w + 30.0f, BU_PESS_AV + 16.0f };
           gfx_opacidade_grupo = grupo * entra * f;
           ajustes_ui_foco_linha(pil, pil.h * 0.5f);
           gfx_opacidade_grupo = grupo * entra;
         }
-        if (pess[q].foto[0] && !tex_falhou(pess[q].foto)) buArte(av, pess[q].foto, BU_PESS_AV * 0.5f, 1.0f);
+        if (BU_DESKTOP) gfx_icone(av, "aj_user", .95f, .95f, .95f, 1);
+        else if (pess[q].foto[0] && !tex_falhou(pess[q].foto)) buArte(av, pess[q].foto, BU_PESS_AV * 0.5f, 1.0f);
         else {
           // Sem foto no TMDB: o disco com o icone de pessoa, nao um buraco.
           gfx_cor(av, 0.5f, 0.20f, 0.205f, 0.225f, 1.0f);
           gfx_icone((GfxRect){ av.x + av.w * 0.25f, av.y + av.h * 0.25f, av.w * 0.5f, av.h * 0.5f },
                     "aj_user-round", 0.78f, 0.79f, 0.82f, 1.0f);
         }
+#ifdef NV_DESKTOP_UI
+        txt_desenhar_alpha(nm, av.x + avatar + 14.0f, av.y + (avatar - nm.h) * 0.5f,
+                           anim_mistura(0.75f, 1.0f, f));
+#else
         txt_desenhar_alpha(nm, av.x + BU_PESS_AV + 14.0f, av.y + (BU_PESS_AV - nm.h) * 0.5f,
                            anim_mistura(0.75f, 1.0f, f));
+#endif
       }
       gfx_opacidade_grupo = grupo;
       continue;
@@ -2244,22 +2293,28 @@ static void desenhaResultados(Uint32 agora) {
       GfxRect t = { BU_RES_X, cy + (1.0f - entra) * NV_ENTRA_DY, larg, BU_MELHOR_H };
       buAlvoResultado((GfxRect){BU_RES_X, cy, larg, BU_MELHOR_H}, ponteiroResultado, r, 0);
       gfx_opacidade_grupo = grupo * entra;
-      ajustes_ui_ilha(t, 26.0f, 0);
+      if (BU_DESKTOP) {
+        ajustes_ui_neutro(t, 26.0f, .06f);
+        gfx_anel(t,26.0f/t.h,1.333f,.85f,.82f,.78f,.18f);
+      } else ajustes_ui_ilha(t, 26.0f, 0);
       if (f > 0.01f) {
         gfx_opacidade_grupo = grupo * entra * f;
         ajustes_ui_foco_linha(t, 26.0f);
         gfx_opacidade_grupo = grupo * entra;
       }
       { const char *url = ci->backdrop[0] ? ci->backdrop : ci->poster;
-        GfxRect art = { t.x + 20.0f, t.y + 20.0f, 330.0f * gfx_poster_k(), 186.0f * gfx_poster_k() };
+        float pad = BU_DESKTOP ? 16.0f : 20.0f;
+        GfxRect art = { t.x + pad, t.y + pad,
+          (BU_DESKTOP ? 896.0f/3 : 330.0f) * gfx_poster_k(),
+          (BU_DESKTOP ? 168.0f : 186.0f) * gfx_poster_k() };
         float tx, ty, bloco;
         if (!ci->backdrop[0]) art.w = art.h * 2.0f / 3.0f;
         if (buTelefone()) art.w = fminf(art.w, fmaxf(1.0f, (t.w - 68.0f) * 0.45f));
         buArte(art, posterprov_card_formato(ci->origem, ci->imdb, ci->tmdb, ci->tipo, url, ci->backdrop[0] != 0),
-               14.0f, 1.0f);
-        tx = art.x + art.w + 28.0f;
+               BU_DESKTOP ? 0 : 14.0f, 1.0f);
+        tx = art.x + art.w + (BU_DESKTOP ? 88.0f/3 : 28.0f);
         { float tw = t.x + t.w - tx - 26.0f;
-          TxtLinha nome = txt_linha_corta(TXT_ILHA_TITULO, ci->titulo, BU_TX, tw);
+          TxtLinha nome = txt_linha_corta(BU_DESKTOP ? TXT_V3_LN : TXT_ILHA_TITULO, ci->titulo, BU_TX, tw);
           TxtLinha meta = txt_linha_corta(TXT_ILHA_META, ci->meta, BU_TX, tw);
           TxtLinha gen = { 0, 0, 0 };
           if (ci->genero[0]) gen = txt_linha_corta(TXT_ILHA_GENERO, ci->genero, BU_TX, tw);
@@ -2330,7 +2385,7 @@ static void desenhaResultados(Uint32 agora) {
               gfx_esqueleto(p, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, 1.0f);
             else
               gfx_cor(p, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, 1.0f); }
-          { TxtLinha tn = txt_linha_corta(buTelefone() ? TXT_ILHA_GENERO : TXT_ILHA_NOME,
+          { TxtLinha tn = txt_linha_corta(BU_DESKTOP ? TXT_ILHA_META : buTelefone() ? TXT_ILHA_GENERO : TXT_ILHA_NOME,
                                          ci->titulo, BU_TX, cw);
             txt_desenhar_alpha(tn, p.x, p.y + p.h + 10.0f, anim_mistura(0.62f, 1.0f, f)); }
           if (painel == 1 && focus_indice(&focoRes, r, c)) {
@@ -2351,6 +2406,17 @@ static void desenhaResultados(Uint32 agora) {
 }
 
 static void desenhaFundoDireto(void) {
+#ifdef NV_DESKTOP_UI
+  if (BU_DESKTOP && nFil && !fil[0].pessoas) {
+    const CatItem *item=cat_item(fil[0].itens[0]);
+    if(item) {
+      fundo_desenhar_modo(FUNDO_BORRADA,(GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,
+                         item->backdropTmdb[0]?item->backdropTmdb:item->backdrop[0]?item->backdrop:item->poster,1);
+      gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,.10f);
+      return;
+    }
+  }
+#endif
   if (buRetratoTelefone())
     fundo_desenhar_modo(FUNDO_FROST, (GfxRect){0,0,NV_TELA_W,NV_TELA_H}, 0, NULL, 1);
   else ajustes_ui_fundo();
