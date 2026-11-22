@@ -168,6 +168,7 @@ PerdiResultado perdi_resposta(int http, const char *corpo, char *dst, size_t tam
         parte[0] = 0;
         if (!js_texto_linhas(p, f, "text", parte, tam)) continue;
         t = strlen(parte);
+        if (len + 2 >= tam) break;                                               // cheio
         if (len + t + 2 > tam) t = tam - len - 2;
         if (len) dst[len++] = ' ';
         memcpy(dst + len, parte, t); len += t; dst[len] = 0;
