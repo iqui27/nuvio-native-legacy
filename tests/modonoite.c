@@ -172,6 +172,10 @@ static void estereo(void) {
 
   // Dentro de audioesc_escolher: desligado nao muda nada; ligado troca e diz por que.
   audioesc_titulo("tt-noite");
+  { AudioCand r[3] = { { "es-419", "eac3", "Latino 5.1", 6, 0, 1, 0 }, { "es-ES", "aac", "Castellano", 2, 0, 1, 1 },
+                       { "es-419", "aac", "Latino", 2, 0, 1, 2 } };
+    assert(audioesc_estereo(r, 3, 0, AUDIOESC_PREF1) == 2);      // the same regional dub first
+    r[2].pode = 0; assert(audioesc_estereo(r, 3, 0, AUDIOESC_PREF1) == 1); }   // then the same language
   audioesc_preferir_estereo(0);
   assert(audioesc_escolher_com(c, 5, NULL, "en", "", "", &o) == 0 && o == AUDIOESC_PREF1);
   modonoite_simular_capacidade(MN_CAP_ESTEREO);

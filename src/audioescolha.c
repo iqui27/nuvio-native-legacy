@@ -216,14 +216,16 @@ static int extra(const char *rotulo) {
 
 int audioesc_estereo(const AudioCand *c, int n, int escolhida, int origem) {
   const char *id;
-  int i;
+  int i, exata;
   if (!c || escolhida < 0 || escolhida >= n || origem == AUDIOESC_LEMBRADA) return escolhida;
   if (c[escolhida].canais >= 1 && c[escolhida].canais <= 2) return escolhida;
   id = c[escolhida].idioma;
   if (!id || !id[0]) return escolhida;
-  for (i = 0; i < n; i++) {
+  // The same tag first (es-419 stays es-419), then the same language.
+  for (exata = 1; exata >= 0; exata--) for (i = 0; i < n; i++) {
     if (i == escolhida || !c[i].pode || c[i].dts || c[i].canais < 1 || c[i].canais > 2) continue;
     if (!c[i].idioma || !c[i].idioma[0] || !ling_casa(c[i].idioma, id) || !ling_casa(id, c[i].idioma)) continue;
+    if (exata && strcasecmp(c[i].idioma, id)) continue;
     if (extra(c[i].rotulo)) continue;
     return i;
   }
