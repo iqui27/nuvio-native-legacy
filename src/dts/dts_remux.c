@@ -1554,9 +1554,14 @@ static int writePkt(DtsRemuxGen *g, AVPacket *p, AVRational tb, AVStream *os, Dt
   int rr;
   if (g->mp4Hls) {
     /* movenc stages each fragment in RAM. A single HLS segment can contain
-     * several fMP4 fragments while retaining its original seek boundary. */
+     * several fMP4 fragments while retaining its original seek boundary.
+     * 8 MiB, not a whole segment: the source is read while a fragment is
+     * staged, and only sending it is paced, so a 30 MB segment was pulled
+     * from the network in one burst of about a second every segment (1 s
+     * peaks of 250-300 Mb/s). Under a second of 4K per fragment keeps the
+     * source reads at the paced rate too, and the staging RAM small. */
     size_t incoming = (size_t)p->size;
-    if (g->fragmentBytes && g->fragmentBytes + incoming > (40u << 20) &&
+    if (g->fragmentBytes && g->fragmentBytes + incoming > (8u << 20) &&
         (!g->hlsHeaderPending || (st->audio_pkts && st->video_pkts))) {
       rr = flushHlsFragment(g, 0);
       if (rr < 0) { av_packet_free(&p); return rr; }
