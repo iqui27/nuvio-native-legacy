@@ -84,6 +84,11 @@ static void recusas(void) {
   assert(hk_ler("", &b, NULL) == HK_ERR_JSON);
   assert(hk_ler("<html>404</html>", &b, NULL) == HK_ERR_JSON);
   assert(hk_ler("{\"foo\":1}", &b, NULL) == HK_ERR_JSON);
+  // Sem a virgula entre duas colecoes o kit nao entra pela metade.
+  assert(hk_ler("{\"nuvioKit\":1,\"collections\":["
+                "{\"title\":\"A\",\"folders\":[{\"title\":\"a\",\"sources\":[{\"provider\":\"trakt\",\"traktListId\":1}]}]}"
+                "{\"title\":\"B\",\"folders\":[{\"title\":\"b\",\"sources\":[{\"provider\":\"trakt\",\"traktListId\":2}]}]}"
+                "]}", &b, NULL) == HK_ERR_JSON);
   assert(hk_ler("{\"collections\":[]}", &b, NULL) == HK_ERR_VAZIO);
   assert(hk_ler("{\"nuvioKit\":2,\"collections\":[]}", &b, NULL) == HK_ERR_VERSAO);
   // download cortado no meio: nunca meio kit

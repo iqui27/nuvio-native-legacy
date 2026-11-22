@@ -23,6 +23,7 @@ int hk_url_valida(const char *url) {
 // valor fecha e depois dele ha apenas espaco.
 static int completo(const char *p) {
   int prof = 0, emTexto = 0;
+  char ult = 0;  // ultimo sinal fora de texto: valor colado em valor e erro
   while (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') p++;
   if (*p != '{' && *p != '[') return 0;
   for (; *p; p++) {
@@ -31,6 +32,11 @@ static int completo(const char *p) {
       else if (*p == '"') emTexto = 0;
       continue;
     }
+    if (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') continue;
+    // "{...}{...}" ou "a" "b": sem a virgula o leitor pararia no primeiro item
+    // e aceitaria um kit pela metade.
+    if ((*p == '"' || *p == '{' || *p == '[') && (ult == '"' || ult == '}' || ult == ']')) return 0;
+    ult = *p;
     if (*p == '"') emTexto = 1;
     else if (*p == '{' || *p == '[') { if (++prof > 64) return 0; }
     else if (*p == '}' || *p == ']') {
