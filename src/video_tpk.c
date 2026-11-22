@@ -58,17 +58,40 @@ typedef int  (*FnPos)(void);
 static FnAbrir  hAbrir;
 typedef void (*FnAbrirGer)(const char *, const char *, unsigned);
 static FnAbrirGer hAbrirGer;
+static FnSemArg hParar;
 static pthread_mutex_t hostTrava = PTHREAD_MUTEX_INITIALIZER;
-static unsigned hostGer, hostProx, hostErroGer;
+static unsigned hostGer, hostErroGer;
+static atomic_uint hostProx;
 static int hostErroCod, hostErroPreparo;
+// Sessao que o host ja assumiu. EV_FIM nao carrega geracao e o host so troca
+// de sessao dentro do hAbrir/hParar (sessao++ no Trocar, sob trocaTrava —
+// tizen-tpk/Video.cs): um EOF da sessao velha pode chegar na janela entre o
+// reset de abrirSessao e o retorno dessa chamada. Enquanto a troca nao fecha,
+// hostSessao != hostProx e o EOF pertence a sessao que terminou — publica-lo
+// na reabertura nova apagava a capa e a busca dela antes do primeiro
+// bombeamento.
+static atomic_uint hostSessao;
+// EOF da sessao encerrada segurado ate a confirmacao do hAbrir (0/1).
+static atomic_int fimSessaoVelha;
 static void hostInvalidar(void) {
   pthread_mutex_lock(&hostTrava); hostGer = hostErroGer = 0; pthread_mutex_unlock(&hostTrava);
 }
 static void hostAbrir(const char *url, const char *cab) {
-  unsigned ger = ++hostProx;
-  if (!ger) ger = ++hostProx;
+  unsigned ger = atomic_fetch_add(&hostProx, 1) + 1;
+  if (!ger) ger = atomic_fetch_add(&hostProx, 1) + 1;
   pthread_mutex_lock(&hostTrava); hostGer = ger; hostErroGer = 0; pthread_mutex_unlock(&hostTrava);
+  atomic_store(&hostSessao, 0);
   if (hAbrirGer) hAbrirGer(url, cab, ger); else hAbrir(url, cab);
+  atomic_store(&hostSessao, ger);
+}
+// Parada que abre uma troca (abertura adiada ou relay): a janela do EOF da
+// sessao velha termina na volta do hParar — mesmo sessao++ do Trocar. O que a
+// janela segurou em fimSessaoVelha e descartado junto; a sessao nova nao tem
+// geracao ainda, entao hostSessao fica 0 ate o hostAbrir dela assumi-la.
+static void hostPararTroca(void) {
+  atomic_store(&hostSessao, 0);
+  if (hParar) hParar();
+  atomic_store(&fimSessaoVelha, 0);
 }
 
 __attribute__((visibility("default")))
@@ -82,7 +105,6 @@ void nv_tpk_video_erro_geracao(unsigned ger, int codigo, int preparo) {
   }
   pthread_mutex_unlock(&hostTrava);
 }
-static FnSemArg hParar;
 static FnInt    hPausar, hBuscar, hVolume;
 static FnRet    hJanela;
 typedef void (*FnAspecto)(int, int, int, int, int, int, int, int);
@@ -528,7 +550,14 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
     case EV_PRONTO:  durMs = a; pronto = 1; break;
     case EV_TOCANDO: tocando = 1; bufferando = 0; break;
     case EV_PAUSADO: tocando = 0; break;
-    case EV_FIM:     terminou = 1; tocando = 0;
+    case EV_FIM:     // O evento nao carrega sessao: ate o host trocar no
+                     // hAbrir, um EOF publicado e o da sessao que encerrou —
+                     // entrega-lo na reabertura nova apagava a capa e a busca
+                     // dela antes do primeiro bombeamento.
+                     if (atomic_load(&hostSessao) == atomic_load(&hostProx))
+                       atomic_store(&terminou, 1);
+                     else atomic_store(&fimSessaoVelha, 1);
+                     tocando = 0;
                      // O seek/reabertura solta no video_bombear: este callback
                      // roda no fio "Nuvio video" do host e cv./mf./reconBuscarMs
                      // sao do fio do app (video_tpk_capa, video_busca_em_voo).
@@ -705,7 +734,7 @@ static int cdnAbrir(void) {
   pthread_detach(t);
   // O player anterior (seek com link velho, reconexao, outra fonte) nao segue
   // tocando enquanto o link novo e resolvido.
-  if (hParar) hParar();
+  hostPararTroca();
   return 1;
 }
 
@@ -828,7 +857,7 @@ static int mfEsperarAntes(const char *url, const char *cab) {
   fflush(stdout);
   // O player anterior nao segue tocando durante a sonda (como no cdnAbrir).
   hostInvalidar();
-  if (hParar) hParar();
+  hostPararTroca();
   return 1;
 }
 // A sessao atual toca pelo servidor com as legendas de texto escondidas da TV.
@@ -935,6 +964,11 @@ static void abrirSessao(void) {
   atomic_store(&temErroDetalhe, 0);
   vigiaAtiva = 0; buscaAlvoMs = -1;
   atomic_store(&vigiaReiniciar, 1);
+  // Daqui ate o host assumir a sessao nova (hostAbrir devolve a geracao) um
+  // EV_FIM publicado e sempre da sessao que esta saindo — a nova nem tem
+  // player para terminar. O callback o segura em fimSessaoVelha. Marca antes
+  // de zerar terminou: um EOF entre os dois ainda cairia na sessao nova.
+  atomic_store(&hostSessao, 0);
   ativo = 1; pronto = falhou = terminou = tocando = 0;
   largura = altura = durMs = 0; bufferando = 1; bufferDesde = SDL_GetTicks(); bufPct = 0;
   // Convertendo um MKV, as listas sao as do ARQUIVO (montarListaConvertida) e
@@ -985,6 +1019,11 @@ static void abrirSessao(void) {
   // Depois do hAbrir: o host troca de sessao nele, e um aviso da sessao velha
   // emitido antes disso nao pode sobrar para matar a nova.
   atomic_store(&playerPreso, -2); atomic_store(&consultaLentaEm, 0);
+  // Um EV_FIM que chegou antes de o host assumir a sessao nova e dessa sessao
+  // encerrada: a troca ja aposentou o estado dela — a capa e a busca armadas
+  // aqui sao da recarga. Descarta o aviso; fimConsumir derrubaria exatamente
+  // o que a sessao nova montou.
+  atomic_store(&fimSessaoVelha, 0);
   return;
 }
 
@@ -1862,7 +1901,7 @@ void video_bombear(void) {
       mkvfix_sondar_relay_tls(hostUrl, hostCab, strcmp(urlAtual, hostUrl) ? urlAtual : NULL,
                                cdn.arquivo ? cdn.usenet : 0, cdn.arquivo ? cdn.item : 0,
                                cdn.arquivo ? cdn.file : 0);
-      if (hParar) hParar();
+      hostPararTroca();
     } else
 #endif
       nv_tpk_video_evento(EV_ERRO, erroCod, 0);
@@ -2018,6 +2057,7 @@ void video_bombear(void) {
 }
 void video_parar(void) {
   hostInvalidar();
+  atomic_store(&fimSessaoVelha, 0);
   largura = altura = 0; // Stopped stream metadata must not shape the next live open.
   parado = 1; resgateAte = 0;
   cdn.pend = 0; cdn.usado = 0; cdn.arquivo = 0;
@@ -2056,7 +2096,7 @@ void video_buscar(double s) {
   // Seek entre o EV_FIM e o bombeamento que o consumiria: o `terminou = 0`
   // dos caminhos abaixo pularia a limpeza do fim e a reabertura velha (capa e
   // posicao seguradas) sobreviveria ao seek novo, confirmado e tudo.
-  if (terminou) fimConsumir();
+  if (atomic_exchange(&terminou, 0)) fimConsumir();
   if (nv_recon_ativa(&recon)) {
     recon.alvo = s;
     if (recon.pendente || reconErroPend || !pronto || reconBuscarMs >= 0) { reconBuscarMs = (int)(s * 1000.0); return; }
@@ -2086,28 +2126,33 @@ void video_buscar(double s) {
       fflush(stdout);
       cv.seekPend = 0;
     }
-    terminou = 0;
+    if (atomic_exchange(&terminou, 0)) fimConsumir();
     return;
   }
   // Seek com o link do CDN vencido: o seek abriria uma conexao nova com ele.
-  if (pronto && cdnVelho()) { cdnRenovar(s, "seek"); terminou = 0; return; }
+  if (pronto && cdnVelho()) { cdnRenovar(s, "seek"); if (atomic_exchange(&terminou, 0)) fimConsumir(); return; }
   // MKV com o indice so no segundo SeekHead (mkvfix.h): a TV recusaria.
   if (!cv.ativo && !mf.ativo && pronto) {
     if (!mf.sondou) mfSondar();
     if (mf.sondou) {
       int e = mkvfix_estado();
-      if (e == MKVFIX_PRECISA) { mfLigar(s, "seek (the TV can't seek this file as served)"); terminou = 0; return; }
+      if (e == MKVFIX_PRECISA) { mfLigar(s, "seek (the TV can't seek this file as served)"); if (atomic_exchange(&terminou, 0)) fimConsumir(); return; }
       if (e == MKVFIX_SONDANDO) {
         // Segura ate a sonda responder (mfBombear); o seek mais novo vence.
+        // EOF antes de armar: o fimConsumir nao derruba o seek segurado.
+        if (atomic_exchange(&terminou, 0)) fimConsumir();
         if (!mf.pend) mf.pendEm = SDL_GetTicks();
         mf.pend = 1; mf.pendAlvo = s;
-        terminou = 0;
         return;
       }
     }
   }
   if (hBuscar) hBuscar((int)(s * 1000.0));
-  terminou = 0;
+  // Um EV_FIM pode ter publicado depois da leitura da entrada (ex.: durante o
+  // preparo ou no hBuscar): a zeragem cega apagava a notificacao antes do
+  // bombeamento e fimConsumir nao rodava. O exchange consome esse EOF com a
+  // mesma limpeza e ainda deixa passar o EOF que chegar depois desta linha.
+  if (atomic_exchange(&terminou, 0)) fimConsumir();
   // #783: um EV_PRESO da sessao encerrada pode vencer o quadro que zera
   // terminou; a volta depois do seek nao pode reabrir o titulo terminado.
   atomic_store(&playerPreso, -2);
