@@ -23,6 +23,7 @@ import { rotaSala, limpezaSala } from "./sala.js";
 import { rotaDiario, DIARIO_CORPO_MAX, DIARIO_CORPO_MAX_LB } from "./diario.js";
 import { rotaCaca } from "./conquista.js";
 import { rotaTrava, travaRev } from "./trava.js";
+import { rotaParear, limpezaParear } from "./parear.js";
 import { resolverCanonica, canonizarEntrada, identidadesDe, rotaIdentidades, idSimkl,
          perfilExiste, RECURSO } from "./identidade.js";
 
@@ -989,6 +990,13 @@ export default {
       return rotaMusica(url, env, fetch, limitar, req.headers.get("cf-connecting-ip") || "0.0.0.0");
     if (rota === "/m/" && req.method === "GET") return rotaPaginaMusica();
 
+    // CODIGO DE 6 DIGITOS DO LOGIN DA TV (2.1): sem sessao, porque a TV ainda
+    // nao tem conta. Regras, freios e a pagina /c em parear.js.
+    if (rota === "/c" || rota === "/c/" || rota.startsWith("/v1/parear")) {
+      const r = await rotaParear(rota, req, env, url, { json, erro, agora }, limitar);
+      if (r) return r;
+    }
+
     // TRAILER NA SAMSUNG (#136): a pergunta ao IMDb (que exige Referer) e a
     // pagina que embute o YouTube com origem valida. Regras em trailer.js.
     if (rota === "/v1/trailer/imdb" && req.method === "GET") return rotaTrailerImdb(url, fetch, caches.default);
@@ -1151,6 +1159,7 @@ export default {
     // Separado de proposito: sem a migracao 010 aplicada, a tabela `sala` nao
     // existe e o lote inteiro (90 dias de retencao) falharia junto.
     try { await env.DB.batch(limpezaSala(env, t)); } catch {}
+    try { await env.DB.batch(limpezaParear(env, t)); } catch {}
     try { await env.DB.prepare("DELETE FROM ident_hora WHERE hora < ?").bind(t - 30 * 86400).run(); } catch {}
   },
 };
