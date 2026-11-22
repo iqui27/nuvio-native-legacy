@@ -49,7 +49,7 @@ static int uxRequisito(int op) {
       (op == AJ_FONTE_AUTO || op == AJ_FONTE_GRUPO || op == AJ_FONTE_GRUPO_SESSOES || op == AJ_LINK_REUSAR || op == AJ_LINK_PRAZO))
     return AJ_FONTE_PRIORIDADE;
   switch (op) {
-    case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO: return AJ_PAUSA_OVERLAY;
+    case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO: case AJ_PAUSA_AMBIENTE: return AJ_PAUSA_OVERLAY;
     case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC: return AJ_PLR_FORMATO;
     case AJ_MANTER_PRAZO: return AJ_MANTER_VIDEO;
     case AJ_DESCANSO_ESTILO: return AJ_ESMAECER;
