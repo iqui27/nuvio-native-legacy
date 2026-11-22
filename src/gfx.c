@@ -4503,26 +4503,16 @@ void gfx_vidro_superficie(GfxRect r, float raio, float a) {
   if (r.w <= 0.0f || r.h <= 0.0f || a <= 0.001f) return;
   gfx_cor(r, raio, 1, 1, 1, 0.05f * gfx_vidro_opacidade() * a);
 }
-// A COR DO FOCO NO VIDRO E O REALCE ESCOLHIDO. O vidro muda a SUPERFICIE (fina,
-// translucida, sem brilho nem sombra), nao a cor de quem esta selecionado: com
-// o tema padrao o realce e branco e o resultado e o da referencia (contorno /
-// pilula brancos); com "Cor de destaque" ou os temas dinamicos o contorno e a
-// pilula seguem a cor. Forcar branco aqui apagava o realce de todas as telas.
+// A linha sobe um degrau de superficie. "Contorno do vidro" acrescenta
+// um aro neutro; "Foco no realce" mantem seu tratamento proprio.
 void gfx_vidro_foco(GfxRect r, float raio, float foco, float a) {
-  float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco), cr, cg, cb;
+  float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco);
   if (f <= 0.01f || a <= 0.001f) return;
   if (gfx_foco_placa(r, raio, f, a)) return;
-  ajustes_acento(&cr, &cg, &cb);
-  // FOCO POR ELEVACAO, SEM ARO (Glass UI 02/10, design/glass-ilha .gl.foco;
-  // tv.css --foco): a linha ou o cartao em foco sobe um degrau de superficie
-  // (vidro branco 14%, solido #2B2D34) e ganha a sombra caida. Nem lavagem nem
-  // anel do realce, com "Contorno do vidro" ligado ou nao: essa opcao so decide
-  // o fio dos paineis em repouso. O realce fica para botao/chip/tecla
-  // (gfx_vidro_pilula_cheia).
-  (void)cr; (void)cg; (void)cb;
   gfx_vidro_elevacao(r, f, a);
   if (ajustes_vidro()) gfx_cor(r, raio, 1, 1, 1, 0.14f * f * a);
-  else gfx_cor(r, raio, 0x2b / 255.0f, 0x2d / 255.0f, 0x34 / 255.0f, f * a);
+  else gfx_cor(r, raio, NV_COR_FOCO_RGB, f * a);
+  gfx_vidro_aro(r, raio, 2.0f, 1, 1, 1, 0.90f * f * a);
 }
 // Accent focus keeps the caller's geometry and light foreground. Without glass,
 // use an opaque dark tint, limited by the accent's contrast ink. With glass,
