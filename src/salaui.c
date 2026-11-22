@@ -209,6 +209,7 @@ static void ok(void) {
   }
 }
 static void okPonteiro(int a, int b) { (void)a; (void)b; ok(); }
+static void fecharPonteiro(int a, int b) { (void)a; (void)b; salaui_fechar(); }
 
 int salaui_evento(const SDL_Event *e) {
   if (!aberta) return 0;
@@ -255,6 +256,13 @@ void salaui_desenhar(void) {
   if (!aberta) return;
   ponteiro_camada();
   ponteiro_alvo(0, 0, W, H, NULL, okPonteiro, 0, 0);
+  // Toque e mouse nao tem tecla Voltar: um alvo de fechar no canto.
+  if (ponteiro_ativo()) {
+    float fw = 150, fh = 56, fx = W - mx - fw, fy = H * 0.13f - 6;
+    gfx_cor((GfxRect){ fx, fy, fw, fh }, 0.5f, 1, 1, 1, 0.12f * a);
+    texto(TXT_CAPTION2, i18n("Fechar"), 243, fx + (fw - txt_largura(TXT_CAPTION2, i18n("Fechar"))) * 0.5f, fy + 15, fw, 26, a, 1);
+    ponteiro_alvo(fx, fy, fw, fh, NULL, fecharPonteiro, 0, 0);
+  }
   y += texto(TXT_ILHA_TITULO, i18n("Sessão"), 243, mx, y, W * 0.5f, 52, a, 1) + 18;
   u = celular_url();
 
