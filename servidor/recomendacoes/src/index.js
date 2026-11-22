@@ -29,6 +29,7 @@ import { rotaTrava, travaRev } from "./trava.js";
 import { resolverCanonica, canonizarEntrada, identidadesDe, rotaIdentidades, idSimkl,
          perfilExiste, RECURSO } from "./identidade.js";
 import { rotaFarolRegistro, limparFarol, FAROL_CORPO_MAX } from "./farol.js";
+import { rotaVaiTocar, limparVaiTocar, VAITOCAR_CORPO_MAX } from "./vtreg.js";
 
 const DIA = 86400;
 const RETENCAO = 90 * DIA;
@@ -1031,6 +1032,11 @@ export default {
     if (rota === "/v1/xtream" && (req.method === "POST" || req.method === "GET"))
       return rotaXtream(req, url);
 
+    // VAI TOCAR NESTA TV (4.2): registro anonimo de compatibilidade. Sem sessao
+    // de proposito (nao pode ser ligado a conta); so contagem. Regras em vtreg.js.
+    if (rota === "/v1/vaitocar" && req.method === "POST")
+      return rotaVaiTocar(req, env, limitar, await corpoLimitado(req, VAITOCAR_CORPO_MAX));
+
     // SUGESTAO DE CATEGORIA DE CANAL AO VIVO (Jev): so nomes de canal, sem
     // sessao, como /v1/xtream. Cache em KV e limite por IP; o Jev usa
     // HTTP com o segredo TYPESAFE_KEY em livetvcat.js.
@@ -1228,6 +1234,9 @@ export default {
     // garantia de 30 dias se perder sem rastro.
     try { await limparFarol(env, t); }
     catch (e) { console.log("limparFarol falhou: " + (e && e.message ? e.message : e)); }
+    // Vai tocar: 180 dias. Separado: sem a migracao 020 a tabela nao existe.
+    try { await limparVaiTocar(env, t); }
+    catch (e) { console.log("limparVaiTocar falhou: " + (e && e.message ? e.message : e)); }
     // Separado de proposito: sem a migracao 010 aplicada, a tabela `sala` nao
     // existe e o lote inteiro (90 dias de retencao) falharia junto.
     try { await env.DB.batch(limpezaSala(env, t)); } catch {}

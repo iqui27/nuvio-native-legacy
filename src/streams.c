@@ -53,6 +53,7 @@
 #include "fontenota.h"
 #include "linguas.h"
 #include "fontesmortas.h"
+#include "vtregenvio.h"
 #include "video.h"
 #include "botoes.h"
 #include "ponteiro.h"
@@ -6294,7 +6295,7 @@ void stream_folha_evento(const SDL_Event *e) {
           break;
         // Fecha a folha junto: a imagem volta (ou nao) na propria tela do
         // player, e deixar a folha aberta em cima esconderia o resultado.
-        case BT_SEM_HDR:    video_forcar_sdr(); aberta=0; break;
+        case BT_SEM_HDR:    vtregenvio_resultado(VTR_TELA_PRETA, 0); video_forcar_sdr(); aberta=0; break;
         case BT_SO_MP4:     soMp4 = !soMp4; rolagem=0;velRol=0; break;
         case BT_CACHE:      soCache = !soCache; rolagem=0;velRol=0; break;
         case BT_DUB:        soDub = !soDub; rolagem=0;velRol=0; break;
