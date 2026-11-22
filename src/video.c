@@ -1048,14 +1048,16 @@ static Uint32 dtsRefillEm;
  * buffering in that window is held for a moment; a new start continues the
  * same one. */
 #define BUFFERANDO_SEEK_JANELA_MS 8000u
-#define BUFFERANDO_SEEK_FOLGA_MS 1200u
+#define BUFFERANDO_SEEK_FOLGA_MS 1500u
 static Uint32 bufferandoFimPend;
+static int bufferandoUniu;   // a held end was followed by a new start: the next end is final
 static Uint32 seekFimEm;
 
 static void bufferandoFim(void) {
   bufferandoDesde=0;
   bufferandoAvancos=0;
   bufferandoFimPend=0;
+  bufferandoUniu=0;
 }
 static int bufferandoSeekPendente(void) {
   return seekEm || seekEnvEm || seekRetryEm || seekView.active;
@@ -1346,6 +1348,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
     fflush(stdout);
     seekEnvEm = 0;
     seekFimEm = SDL_GetTicks() | 1u;
+    bufferandoUniu = 0;
     nv_seek_ok(&seekRetry);
   }
   if (strstr(p, "sourceInfo")) {
@@ -1712,7 +1715,8 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
       bufferandoPos=posNativa;
       bufferandoAvancos=0;
     }
-    bufferandoFimPend = 0;   // a held end after a seek: the same buffering goes on
+    if (bufferandoFimPend) bufferandoUniu = 1;   // a held end after a seek: the same buffering goes on
+    bufferandoFimPend = 0;
     snprintf(m, sizeof m, "buffering INICIO (buffer %+.1fs a frente)",
              bufferSeg - posSeg);
     marco(m);
@@ -1722,7 +1726,10 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
     int segurar = 0;
 #ifdef NV_WEBOS_HLS_TEST
     { Uint32 agora = SDL_GetTicks();
-      segurar = hlsAtivo() && bufferandoDesde && seekFimEm &&
+      /* Only the first end after a seek is held: the TV player stalls once
+       * after starting on the first segment, and once that second buffering
+       * ends, playback is back and the ring goes at once. */
+      segurar = hlsAtivo() && bufferandoDesde && !bufferandoUniu && seekFimEm &&
                 agora - seekFimEm < BUFFERANDO_SEEK_JANELA_MS;
       if (segurar) bufferandoFimPend = agora | 1u; }
 #endif
@@ -4058,15 +4065,14 @@ static void hlsFalhar(const char *reason) {
 
 static int hlsAbrir(void);
 
-/* HLS input rings: 64 MiB whatever the Buffer size preset (that one stays for
- * playback with HLS Off). The TV player keeps its own segments, about 30 s,
- * which is what rides out a slow source. With 32 MiB the reader held about one
- * 4K segment: after a seek the player started on the first one and stalled
- * again waiting for the next, which came from the network. 64 MiB keeps about
- * two ahead. With little free memory after the remux queue (48 MiB), one
- * staged fMP4 fragment (up to 48 MiB) and the usual floor, the rings drop to
- * 32 and then 16 MiB. */
-#define HLS_RING_MIB 64
+/* HLS input rings: a fixed 32 MiB, as on Tizen, whatever the Buffer size
+ * preset (that one stays for playback with HLS Off). The TV player keeps its
+ * own segments, about 30 s, which is what rides out a slow source. 64 MiB was
+ * measured (owner's C5, 22/11): seeks were no faster, since after a seek the
+ * ring starts empty and the new connection to the source is what is slow.
+ * With little free memory after the remux queue (48 MiB), one staged fMP4
+ * fragment and the usual floor, the rings drop to 16 MiB. */
+#define HLS_RING_MIB 32
 #define HLS_OUTPUT_RESERVE_MB 96
 static int hlsBufferMib(void) {
   long freeMb = memlog_livre_mb();
