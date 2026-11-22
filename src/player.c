@@ -186,6 +186,8 @@ extern __attribute__((weak)) int farolacao_fonte_executar(int acao, int persisti
 #include "player_dts_notice.h"
 #include "miniatura_android.h"
 #include "neste.h"
+#include "perdi.h"
+#include "perdifio.h"
 #include "cacheboost.h"
 #include "directcache.h"
 #include "audioinfo.h"
@@ -291,7 +293,7 @@ static int modoCanal(const char *url) {
 // Na serie, Anterior/Proximo ficam ao lado do Play; o restante conserva a ordem.
 enum { PLR_PLAY, PLR_CC, PLR_AUDIO, PLR_ASPECTO,
        PLR_FONTES, PLR_EPISODIOS, PLR_PROXIMO, PLR_REINICIAR, PLR_NESTE, PLR_OPTIONS,
-       PLR_PARTE_ANT, PLR_PARTE_PROX, PLR_NBTNS };
+       PLR_PARTE_ANT, PLR_PARTE_PROX, PLR_PERDI, PLR_NBTNS };
 
 // Avanco em curso: enquanto vale, posSeg e do DONO e nao do pipeline.
 static int    scrubbing, scrubPassos, scrubTocava, scrubDir, scrubToque;
@@ -4053,6 +4055,83 @@ static void corpoNeste(GfxRect r, float a, void *u) {
   }
 }
 
+// O QUE EU PERDI? (pesquisa 4.3): cartao da ilha com o resumo ate o minuto
+// atual, feito pelo Gemini a partir da legenda ativa (perdi.h). So o texto que
+// JA passou sai do aparelho; a chave e a do usuario (Ajustes).
+enum { PERDI_UI_SEM_LEGENDA = 1, PERDI_UI_POUCO, PERDI_UI_PEDIDO };
+static int perdiAberto, perdiModo, perdiT, perdiE;
+static unsigned perdiId;
+static const void *perdiItem;
+static char perdiAte[32], perdiTexto[PERDI_RESUMO_MAX];
+static const char *perdiMensagem(int *pronto) {
+  PerdiResultado res = PERDI_ERRO;
+  *pronto = 0;
+  if (perdiModo == PERDI_UI_SEM_LEGENDA) return i18n("Ative uma legenda de texto para usar O que eu perdi?");
+  if (perdiModo == PERDI_UI_POUCO) return i18n("Ainda há pouca fala para resumir.");
+  switch (perdifio_estado(perdiId, &res, perdiTexto, sizeof perdiTexto)) {
+    case PERDIFIO_CARREGANDO: return i18n("Resumindo até aqui…");
+    case PERDIFIO_NADA: return i18n("Não foi possível resumir agora.");
+    default: break;
+  }
+  switch (res) {
+    case PERDI_OK: *pronto = 1; return perdiTexto;
+    case PERDI_CHAVE: return i18n("O Gemini recusou a chave. Confira a Chave do Gemini em Ajustes.");
+    case PERDI_COTA: return i18n("A cota da sua chave do Gemini acabou por agora. Tente mais tarde.");
+    case PERDI_BLOQUEADO: return i18n("O Gemini não quis resumir este trecho.");
+    case PERDI_REDE: return i18n("Sem resposta do Gemini. Confira a internet.");
+    default: return i18n("Não foi possível resumir agora.");
+  }
+}
+#define PERDI_UI_W 900.0f
+#define PERDI_UI_LINHA 32.0f
+static float perdiAltura(void) {
+  int pronto;
+  const char *m = perdiMensagem(&pronto);
+  float h = txt_bloco_bruto(TXT_ILHA_TEXTO, m, 0, 0, 0, 0, 0, PERDI_UI_W - 72.0f, PERDI_UI_LINHA, 0.0f, 9);
+  return 18.0f + h + (pronto ? 14.0f + 26.0f : 0.0f) + 22.0f;
+}
+static void corpoPerdi(GfxRect r, float a, void *u) {
+  int pronto;
+  const char *m = perdiMensagem(&pronto);
+  float x = r.x + 36.0f, w = r.w - 72.0f, y = r.y + 18.0f;
+  (void)u;
+  if (pronto) y += txt_bloco_bruto(TXT_ILHA_TEXTO, m, 243, 242, 239, x, y, w, PERDI_UI_LINHA, a, 9);
+  else y += txt_bloco_bruto(TXT_ILHA_TEXTO, m, 158, 157, 155, x, y, w, PERDI_UI_LINHA, a, 9);
+  if (pronto)
+    txt_bloco_corta(TXT_G18M, i18n("Feito pelo Gemini com a legenda até este ponto. Pode conter erros."),
+                    158, 157, 155, x, y + 14.0f, w, 26.0f, a * 0.8f, 1);
+}
+static void perdiFechar(void) {
+  if (!perdiAberto) return;
+  perdiAberto = 0;
+  perdifio_cancelar();
+}
+static void perdiAbrir(void) {
+  static const LegendaDocumentoInfo info = {0};
+  const CatItem *c = item();
+  LegendaDocumento *doc = legenda_documento_ativo(legenda_geracao(), &info);
+  // O MESMO relogio do desenho da legenda: o que esta na tela e o limite.
+  double pos = legsync_posicao(posLegenda());
+  int atraso = legsync_offset_ms(legEstilo.atrasoMs), n = 0, falas = 0;
+  const LegendaCue *v = doc ? legenda_documento_dados(doc, &n) : NULL;
+  char *trecho = v ? perdi_trecho(v, n, pos, atraso, PERDI_TRECHO_MAX, &falas) : NULL, *corpo = NULL, ep[32] = "";
+  long s = posSeg > 0 ? (long)posSeg : 0;
+  perdifio_cancelar();
+  perdiAberto = 1; perdiId = 0; perdiTexto[0] = 0;
+  perdiItem = c; perdiT = epT; perdiE = epE;
+  snprintf(perdiAte, sizeof perdiAte, "%ld:%02ld:%02ld", s / 3600, (s / 60) % 60, s % 60);
+  if (!ehCanal() && epT >= 0 && epE > 0) snprintf(ep, sizeof ep, "S%02dE%02d", epT, epE);
+  if (!v || n <= 0) perdiModo = PERDI_UI_SEM_LEGENDA;
+  else if (!trecho || falas < PERDI_FALAS_MIN) perdiModo = PERDI_UI_POUCO;
+  else {
+    perdiModo = PERDI_UI_PEDIDO;
+    corpo = perdi_pedido(c ? c->titulo : "", ep, posSeg, idioma_iso(ajustes_idioma()), trecho);
+    perdiId = perdifio_pedir(ajustes_perdi_chave(), corpo);
+  }
+  free(trecho);
+  legenda_documento_liberar(doc);
+}
+
 typedef struct { int id, habilitada; } PlrAcao;
 static int transporteSerie(void) { return !ehCanal() && epT >= 0 && epE > 0; }
 static int transporteAcoes(PlrAcao a[PLR_NBTNS]) {
@@ -4076,6 +4155,7 @@ static int transporteAcoes(PlrAcao a[PLR_NBTNS]) {
   a[n++] = (PlrAcao){PLR_FONTES, 1};
   if (temUltimoBotao()) a[n++] = (PlrAcao){PLR_EPISODIOS, 1};
   if (serie) a[n++] = (PlrAcao){PLR_NESTE, 1};
+  if (!ehCanal() && ajustes_perdi()) a[n++] = (PlrAcao){PLR_PERDI, 1};
   a[n++] = (PlrAcao){PLR_OPTIONS, 1};
   return n;
 }
@@ -5018,6 +5098,7 @@ static int ativarBotao(int i, int repetiu) {
     case PLR_OPTIONS: central_abrir(); break;
     case PLR_FONTES: pedFontes = 1; break;
     case PLR_NESTE: nesteAberto = 1; nesteT = epT; nesteE = epE; break;
+    case PLR_PERDI: perdiAbrir(); break;
     case PLR_EPISODIOS:
       if (ehCanal()) pedGuia = 1;
       else if (epE > 0) episodios_abrir(idxAtual(), epT, epE);
@@ -5111,6 +5192,7 @@ void player_evento(const SDL_Event *e) {
   // away. Called before any handler returns.
   pausao_activity();
   if (nesteAberto) { nesteAberto = 0; return; }
+  if (perdiAberto) { perdiFechar(); return; }
 
   // DIGITAR O NUMERO DO CANAL (M7): 1-9 (e o 0 com digitacao em curso) montam o
   // numero; 1,5 s sem tecla ou OK confirma; Voltar cancela so o numero.
@@ -6514,6 +6596,7 @@ static const char *iconeBotao(int i) {
     case PLR_PARTE_PROX: return "pl_skip-forward";
     case PLR_REINICIAR: return "pl_rotate-ccw";
     case PLR_NESTE:     return "pl_users";
+    case PLR_PERDI:     return "aj_sparkles";
     case PLR_OPTIONS:   return "aj_ellipsis";
     default:            return epE > 0 ? "pl_list-video" : "pl_film";
   }
@@ -6530,6 +6613,7 @@ static const char *rotuloBotao(int i) {
     case PLR_PARTE_PROX: return "Próxima parte";
     case PLR_REINICIAR: return "Assistir do começo";
     case PLR_NESTE:     return "Neste episódio";
+    case PLR_PERDI:     return "O que eu perdi?";
     case PLR_OPTIONS:   return "Opções";
     default:            return ehCanal() ? "Guia" : epE > 0 ? "Epis\xc3\xb3""dios" : "Relacionados";
   }
@@ -8017,6 +8101,16 @@ void player_desenhar(Uint32 agora) {
     pd.icone = "pl_users"; pd.texto = i18n("Neste episódio");
     pd.semFim = 1; pd.aberta = 1; pd.video = 1;
     pd.w = 640.0f; pd.h = 36.0f + 34.0f * NESTE_MAX; pd.corpo = corpoNeste;
+    plrilha_pedir(&pd);
+  }
+  if (perdiAberto && (item() != perdiItem || epT != perdiT || epE != perdiE || !aberto || saindo)) perdiFechar();
+  if (perdiAberto) {
+    PlrIlhaPedido pd;
+    memset(&pd, 0, sizeof pd);
+    pd.icone = "aj_sparkles"; pd.texto = i18n("O que eu perdi?");
+    pd.direita = perdiAte;
+    pd.semFim = 1; pd.aberta = 1; pd.video = 1;
+    pd.w = PERDI_UI_W; pd.h = perdiAltura(); pd.corpo = corpoPerdi;
     plrilha_pedir(&pd);
   }
 

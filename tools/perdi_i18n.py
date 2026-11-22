@@ -1,0 +1,248 @@
+#!/usr/bin/env python3
+# Insere as chaves de "O que eu perdi?" (pesquisa 4.3) em idioma_tab.h e nas
+# 29 irmas, cada uma na posicao da ordem strcmp. Idempotente.
+# Uso: python3 tools/perdi_i18n.py
+import pathlib, re, sys
+
+SRC = pathlib.Path(__file__).resolve().parent.parent / "src"
+IDIOMAS = ("en", "ro", "uk", "ru", "fr", "de", "es", "it", "nl", "pl", "tr", "ptpt", "sv",
+           "da", "no", "cs", "sk", "sl", "hu", "lt", "bs", "sr", "bg", "el", "id",
+           "vi", "ja", "zhcn", "zhtw", "ar")
+
+# Cada lista segue a ordem de IDIOMAS.
+NOVAS = {
+  "O que eu perdi?": [
+    "What did I miss?", "Ce am pierdut?", "Що я пропустив?", "Что я пропустил?", "Qu'ai-je manqué ?",
+    "Was habe ich verpasst?", "¿Qué me perdí?", "Cosa mi sono perso?", "Wat heb ik gemist?", "Co mnie ominęło?",
+    "Ne kaçırdım?", "O que é que eu perdi?", "Vad har jag missat?", "Hvad gik jeg glip af?", "Hva gikk jeg glipp av?",
+    "Co mi uteklo?", "Čo mi ušlo?", "Kaj sem zamudil?", "Miről maradtam le?", "Ką praleidau?",
+    "Šta sam propustio?", "Šta sam propustio?", "Какво пропуснах?", "Τι έχασα;", "Apa yang saya lewatkan?",
+    "Tôi đã bỏ lỡ gì?", "何を見逃した？", "我错过了什么？", "我錯過了什麼？", "ماذا فاتني؟"],
+  "Chave do Gemini": [
+    "Gemini key", "Cheia Gemini", "Ключ Gemini", "Ключ Gemini", "Clé Gemini",
+    "Gemini-Schlüssel", "Clave de Gemini", "Chiave di Gemini", "Gemini-sleutel", "Klucz Gemini",
+    "Gemini anahtarı", "Chave do Gemini", "Gemini-nyckel", "Gemini-nøgle", "Gemini-nøkkel",
+    "Klíč Gemini", "Kľúč Gemini", "Ključ Gemini", "Gemini-kulcs", "Gemini raktas",
+    "Gemini ključ", "Gemini ključ", "Ключ за Gemini", "Κλειδί Gemini", "Kunci Gemini",
+    "Khóa Gemini", "Geminiのキー", "Gemini 密钥", "Gemini 金鑰", "مفتاح Gemini"],
+  "Botão no player que resume o que aconteceu até o minuto atual. Envia ao Google Gemini, com a sua chave, só o texto da legenda até esse ponto. Precisa da Chave do Gemini e de uma legenda de texto.": [
+    "A player button that recaps what happened up to the current minute. It sends Google Gemini, with your key, only the subtitle text up to that point. Needs the Gemini key and a text subtitle.",
+    "Buton în player care rezumă ce s-a întâmplat până la minutul curent. Trimite către Google Gemini, cu cheia ta, doar textul subtitrării până în acel punct. Necesită cheia Gemini și o subtitrare text.",
+    "Кнопка в плеєрі, яка переказує, що сталося до поточної хвилини. Надсилає в Google Gemini, з вашим ключем, лише текст субтитрів до цього моменту. Потрібні ключ Gemini і текстові субтитри.",
+    "Кнопка в плеере, которая пересказывает, что произошло до текущей минуты. Отправляет в Google Gemini, с вашим ключом, только текст субтитров до этого момента. Нужны ключ Gemini и текстовые субтитры.",
+    "Bouton du lecteur qui résume ce qui s'est passé jusqu'à la minute en cours. Envoie à Google Gemini, avec votre clé, uniquement le texte des sous-titres jusqu'à ce point. Nécessite la clé Gemini et des sous-titres texte.",
+    "Schaltfläche im Player, die zusammenfasst, was bis zur aktuellen Minute passiert ist. Sendet mit Ihrem Schlüssel nur den Untertiteltext bis zu dieser Stelle an Google Gemini. Benötigt den Gemini-Schlüssel und Textuntertitel.",
+    "Botón del reproductor que resume lo ocurrido hasta el minuto actual. Envía a Google Gemini, con tu clave, solo el texto de los subtítulos hasta ese punto. Requiere la clave de Gemini y subtítulos de texto.",
+    "Pulsante del player che riassume cosa è successo fino al minuto attuale. Invia a Google Gemini, con la tua chiave, solo il testo dei sottotitoli fino a quel punto. Richiede la chiave di Gemini e sottotitoli di testo.",
+    "Knop in de speler die samenvat wat er tot de huidige minuut is gebeurd. Stuurt met jouw sleutel alleen de ondertiteltekst tot dat punt naar Google Gemini. Vereist de Gemini-sleutel en tekstondertitels.",
+    "Przycisk w odtwarzaczu, który streszcza to, co wydarzyło się do bieżącej minuty. Wysyła do Google Gemini, z Twoim kluczem, tylko tekst napisów do tego momentu. Wymaga klucza Gemini i napisów tekstowych.",
+    "Oynatıcıda, geçerli dakikaya kadar olanları özetleyen düğme. Google Gemini'ye, anahtarınızla, yalnızca o ana kadarki altyazı metnini gönderir. Gemini anahtarı ve metin altyazısı gerekir.",
+    "Botão no leitor que resume o que aconteceu até ao minuto atual. Envia ao Google Gemini, com a sua chave, apenas o texto da legenda até esse ponto. Requer a Chave do Gemini e uma legenda de texto.",
+    "Knapp i spelaren som sammanfattar vad som hänt fram till aktuell minut. Skickar bara undertexten fram till den punkten till Google Gemini, med din nyckel. Kräver Gemini-nyckeln och en textundertext.",
+    "Knap i afspilleren, der opsummerer, hvad der er sket indtil det aktuelle minut. Sender kun underteksten frem til det punkt til Google Gemini med din nøgle. Kræver Gemini-nøglen og tekstundertekster.",
+    "Knapp i spilleren som oppsummerer hva som har skjedd fram til gjeldende minutt. Sender bare underteksten fram til det punktet til Google Gemini, med din nøkkel. Krever Gemini-nøkkelen og tekstundertekster.",
+    "Tlačítko v přehrávači, které shrne, co se stalo do aktuální minuty. Odešle do Google Gemini, s vaším klíčem, jen text titulků do tohoto bodu. Vyžaduje klíč Gemini a textové titulky.",
+    "Tlačidlo v prehrávači, ktoré zhrnie, čo sa stalo do aktuálnej minúty. Odošle do Google Gemini, s vaším kľúčom, len text titulkov po tento bod. Vyžaduje kľúč Gemini a textové titulky.",
+    "Gumb v predvajalniku, ki povzame, kaj se je zgodilo do trenutne minute. V Google Gemini pošlje, z vašim ključem, samo besedilo podnapisov do te točke. Potrebuje ključ Gemini in besedilne podnapise.",
+    "Gomb a lejátszóban, amely összefoglalja, mi történt az aktuális percig. A Google Gemininek, a saját kulcsoddal, csak a felirat addigi szövegét küldi el. Gemini-kulcs és szöveges felirat kell hozzá.",
+    "Grotuvo mygtukas, apibendrinantis, kas įvyko iki dabartinės minutės. Į Google Gemini, su jūsų raktu, siunčia tik subtitrų tekstą iki to momento. Reikia Gemini rakto ir tekstinių subtitrų.",
+    "Dugme u playeru koje sažima šta se desilo do trenutne minute. Šalje Google Geminiju, s vašim ključem, samo tekst titla do te tačke. Potreban je Gemini ključ i tekstualni titl.",
+    "Dugme u plejeru koje sažima šta se desilo do trenutnog minuta. Šalje Google Geminiju, sa vašim ključem, samo tekst titla do te tačke. Potreban je Gemini ključ i tekstualni titl.",
+    "Бутон в плейъра, който обобщава какво се е случило до текущата минута. Изпраща към Google Gemini, с вашия ключ, само текста на субтитрите до този момент. Нужни са ключ за Gemini и текстови субтитри.",
+    "Κουμπί στο player που συνοψίζει τι έγινε μέχρι το τρέχον λεπτό. Στέλνει στο Google Gemini, με το κλειδί σας, μόνο το κείμενο των υποτίτλων μέχρι εκείνο το σημείο. Χρειάζεται το κλειδί Gemini και υπότιτλους κειμένου.",
+    "Tombol di pemutar yang merangkum apa yang terjadi hingga menit saat ini. Mengirim ke Google Gemini, dengan kunci Anda, hanya teks subtitle sampai titik itu. Memerlukan kunci Gemini dan subtitle teks.",
+    "Nút trong trình phát tóm tắt những gì đã xảy ra đến phút hiện tại. Chỉ gửi tới Google Gemini, bằng khóa của bạn, phần văn bản phụ đề đến thời điểm đó. Cần khóa Gemini và phụ đề dạng văn bản.",
+    "現在の時点までの出来事を要約するプレーヤーのボタンです。あなたのキーで、その時点までの字幕テキストだけをGoogle Geminiに送信します。Geminiのキーとテキスト字幕が必要です。",
+    "播放器中的按钮，可总结到当前这一分钟为止发生的事情。只会用你的密钥把到该时间点为止的字幕文本发送给 Google Gemini。需要 Gemini 密钥和文本字幕。",
+    "播放器中的按鈕，可摘要到目前這一分鐘為止發生的事。只會用你的金鑰把到該時間點為止的字幕文字傳送給 Google Gemini。需要 Gemini 金鑰和文字字幕。",
+    "زر في المشغّل يلخّص ما حدث حتى الدقيقة الحالية. يرسل إلى Google Gemini، بمفتاحك، نص الترجمة حتى تلك النقطة فقط. يتطلب مفتاح Gemini وترجمة نصية."],
+  "Sua chave pessoal do Google Gemini: aistudio.google.com/apikey. O uso conta na sua cota. Fica só nesta TV, aparece mascarada e só é enviada ao Google.": [
+    "Your personal Google Gemini key: aistudio.google.com/apikey. Usage counts against your quota. It stays on this TV only, is shown masked and is only sent to Google.",
+    "Cheia ta personală Google Gemini: aistudio.google.com/apikey. Utilizarea se scade din cota ta. Rămâne doar pe acest televizor, apare mascată și este trimisă doar către Google.",
+    "Ваш особистий ключ Google Gemini: aistudio.google.com/apikey. Використання йде з вашої квоти. Зберігається лише на цьому телевізорі, показується замаскованим і надсилається лише в Google.",
+    "Ваш личный ключ Google Gemini: aistudio.google.com/apikey. Использование расходует вашу квоту. Хранится только на этом телевизоре, показывается скрытым и отправляется только в Google.",
+    "Votre clé personnelle Google Gemini : aistudio.google.com/apikey. L'utilisation est décomptée de votre quota. Elle reste sur cette TV, s'affiche masquée et n'est envoyée qu'à Google.",
+    "Ihr persönlicher Google-Gemini-Schlüssel: aistudio.google.com/apikey. Die Nutzung zählt auf Ihr Kontingent. Er bleibt nur auf diesem TV, wird maskiert angezeigt und nur an Google gesendet.",
+    "Tu clave personal de Google Gemini: aistudio.google.com/apikey. El uso cuenta en tu cuota. Se queda solo en esta TV, aparece enmascarada y solo se envía a Google.",
+    "La tua chiave personale di Google Gemini: aistudio.google.com/apikey. L'uso conta sulla tua quota. Resta solo su questa TV, appare mascherata e viene inviata solo a Google.",
+    "Je persoonlijke Google Gemini-sleutel: aistudio.google.com/apikey. Gebruik telt mee voor je quotum. Blijft alleen op deze tv, wordt gemaskeerd getoond en alleen naar Google gestuurd.",
+    "Twój osobisty klucz Google Gemini: aistudio.google.com/apikey. Użycie liczy się do Twojego limitu. Zostaje tylko na tym telewizorze, jest wyświetlany zamaskowany i wysyłany tylko do Google.",
+    "Kişisel Google Gemini anahtarınız: aistudio.google.com/apikey. Kullanım kotanızdan düşer. Yalnızca bu TV'de kalır, maskeli görünür ve yalnızca Google'a gönderilir.",
+    "A sua chave pessoal do Google Gemini: aistudio.google.com/apikey. A utilização conta na sua quota. Fica só nesta TV, aparece mascarada e só é enviada à Google.",
+    "Din personliga Google Gemini-nyckel: aistudio.google.com/apikey. Användningen räknas mot din kvot. Den stannar på den här tv:n, visas maskerad och skickas bara till Google.",
+    "Din personlige Google Gemini-nøgle: aistudio.google.com/apikey. Brugen tæller med i din kvote. Den bliver på dette tv, vises maskeret og sendes kun til Google.",
+    "Din personlige Google Gemini-nøkkel: aistudio.google.com/apikey. Bruken teller mot kvoten din. Den blir på denne TV-en, vises maskert og sendes bare til Google.",
+    "Váš osobní klíč Google Gemini: aistudio.google.com/apikey. Použití se počítá do vaší kvóty. Zůstává jen v této TV, zobrazuje se maskovaný a odesílá se jen Googlu.",
+    "Váš osobný kľúč Google Gemini: aistudio.google.com/apikey. Použitie sa počíta do vašej kvóty. Zostáva len v tomto TV, zobrazuje sa maskovaný a odosiela sa len Googlu.",
+    "Vaš osebni ključ Google Gemini: aistudio.google.com/apikey. Uporaba se šteje v vašo kvoto. Ostane samo na tem TV, prikazan je zakrit in se pošlje samo Googlu.",
+    "Személyes Google Gemini-kulcsod: aistudio.google.com/apikey. A használat a saját kvótádat terheli. Csak ezen a tévén marad, maszkolva jelenik meg, és csak a Google kapja meg.",
+    "Jūsų asmeninis Google Gemini raktas: aistudio.google.com/apikey. Naudojimas skaičiuojamas iš jūsų kvotos. Lieka tik šiame televizoriuje, rodomas paslėptas ir siunčiamas tik Google.",
+    "Vaš lični Google Gemini ključ: aistudio.google.com/apikey. Korištenje se računa u vašu kvotu. Ostaje samo na ovom TV-u, prikazuje se maskiran i šalje se samo Googleu.",
+    "Vaš lični Google Gemini ključ: aistudio.google.com/apikey. Korišćenje se računa u vašu kvotu. Ostaje samo na ovom TV-u, prikazuje se maskiran i šalje se samo Google-u.",
+    "Вашият личен ключ за Google Gemini: aistudio.google.com/apikey. Използването се отчита от вашата квота. Остава само на този телевизор, показва се маскиран и се изпраща само на Google.",
+    "Το προσωπικό σας κλειδί Google Gemini: aistudio.google.com/apikey. Η χρήση χρεώνεται στο όριό σας. Μένει μόνο σε αυτή την TV, εμφανίζεται κρυμμένο και στέλνεται μόνο στην Google.",
+    "Kunci Google Gemini pribadi Anda: aistudio.google.com/apikey. Pemakaian dihitung pada kuota Anda. Hanya tersimpan di TV ini, ditampilkan tersamar, dan hanya dikirim ke Google.",
+    "Khóa Google Gemini cá nhân của bạn: aistudio.google.com/apikey. Lượt dùng tính vào hạn mức của bạn. Chỉ lưu trên TV này, hiển thị dạng che và chỉ gửi tới Google.",
+    "あなた個人のGoogle Geminiキー：aistudio.google.com/apikey。利用はあなたの割り当てから消費されます。このテレビにのみ保存され、マスク表示され、Googleにのみ送信されます。",
+    "你的个人 Google Gemini 密钥：aistudio.google.com/apikey。用量计入你的配额。只保存在这台电视上，以掩码显示，且只发送给 Google。",
+    "你的個人 Google Gemini 金鑰：aistudio.google.com/apikey。用量計入你的配額。只保存在這台電視上，以遮罩顯示，且只傳送給 Google。",
+    "مفتاح Google Gemini الشخصي: aistudio.google.com/apikey. الاستخدام يُحسب من حصتك. يبقى على هذا التلفاز فقط، يظهر مقنّعًا ولا يُرسل إلا إلى Google."],
+  "Chave pessoal: aistudio.google.com/apikey. Vazio apaga.": [
+    "Personal key: aistudio.google.com/apikey. Empty clears it.", "Cheie personală: aistudio.google.com/apikey. Gol o șterge.",
+    "Особистий ключ: aistudio.google.com/apikey. Порожнє поле видаляє.", "Личный ключ: aistudio.google.com/apikey. Пустое поле удаляет.",
+    "Clé personnelle : aistudio.google.com/apikey. Vide pour l'effacer.", "Persönlicher Schlüssel: aistudio.google.com/apikey. Leer löscht ihn.",
+    "Clave personal: aistudio.google.com/apikey. Vacío la borra.", "Chiave personale: aistudio.google.com/apikey. Vuoto la cancella.",
+    "Persoonlijke sleutel: aistudio.google.com/apikey. Leeg wist hem.", "Klucz osobisty: aistudio.google.com/apikey. Puste pole usuwa.",
+    "Kişisel anahtar: aistudio.google.com/apikey. Boş bırakmak siler.", "Chave pessoal: aistudio.google.com/apikey. Vazio apaga.",
+    "Personlig nyckel: aistudio.google.com/apikey. Tomt raderar den.", "Personlig nøgle: aistudio.google.com/apikey. Tom sletter den.",
+    "Personlig nøkkel: aistudio.google.com/apikey. Tom sletter den.", "Osobní klíč: aistudio.google.com/apikey. Prázdné pole ho smaže.",
+    "Osobný kľúč: aistudio.google.com/apikey. Prázdne pole ho vymaže.", "Osebni ključ: aistudio.google.com/apikey. Prazno ga izbriše.",
+    "Személyes kulcs: aistudio.google.com/apikey. Üresen törli.", "Asmeninis raktas: aistudio.google.com/apikey. Tuščias ištrina.",
+    "Lični ključ: aistudio.google.com/apikey. Prazno ga briše.", "Lični ključ: aistudio.google.com/apikey. Prazno ga briše.",
+    "Личен ключ: aistudio.google.com/apikey. Празно го изтрива.", "Προσωπικό κλειδί: aistudio.google.com/apikey. Το κενό το σβήνει.",
+    "Kunci pribadi: aistudio.google.com/apikey. Kosong menghapusnya.", "Khóa cá nhân: aistudio.google.com/apikey. Để trống sẽ xóa.",
+    "個人キー：aistudio.google.com/apikey。空にすると削除します。", "个人密钥：aistudio.google.com/apikey。留空即删除。",
+    "個人金鑰：aistudio.google.com/apikey。留空即刪除。", "مفتاح شخصي: aistudio.google.com/apikey. الحقل الفارغ يحذفه."],
+  "Ative uma legenda de texto para usar O que eu perdi?": [
+    "Turn on a text subtitle to use What did I miss?", "Activează o subtitrare text pentru a folosi Ce am pierdut?",
+    "Увімкніть текстові субтитри, щоб користуватися «Що я пропустив?»", "Включите текстовые субтитры, чтобы пользоваться «Что я пропустил?»",
+    "Activez des sous-titres texte pour utiliser Qu'ai-je manqué ?", "Aktivieren Sie Textuntertitel, um „Was habe ich verpasst?“ zu nutzen.",
+    "Activa unos subtítulos de texto para usar ¿Qué me perdí?", "Attiva dei sottotitoli di testo per usare Cosa mi sono perso?",
+    "Zet tekstondertitels aan om Wat heb ik gemist? te gebruiken.", "Włącz napisy tekstowe, aby użyć funkcji Co mnie ominęło?",
+    "Ne kaçırdım? özelliğini kullanmak için bir metin altyazısı açın.", "Ative uma legenda de texto para usar O que é que eu perdi?",
+    "Slå på en textundertext för att använda Vad har jag missat?", "Slå tekstundertekster til for at bruge Hvad gik jeg glip af?",
+    "Slå på tekstundertekster for å bruke Hva gikk jeg glipp av?", "Zapněte textové titulky, abyste mohli použít Co mi uteklo?",
+    "Zapnite textové titulky, aby ste mohli použiť Čo mi ušlo?", "Vklopite besedilne podnapise za uporabo funkcije Kaj sem zamudil?",
+    "Kapcsolj be szöveges feliratot a Miről maradtam le? használatához.", "Įjunkite tekstinius subtitrus, kad galėtumėte naudoti Ką praleidau?",
+    "Uključite tekstualni titl da biste koristili Šta sam propustio?", "Uključite tekstualni titl da biste koristili Šta sam propustio?",
+    "Включете текстови субтитри, за да използвате „Какво пропуснах?“", "Ενεργοποιήστε υπότιτλους κειμένου για να χρησιμοποιήσετε το Τι έχασα;",
+    "Aktifkan subtitle teks untuk memakai Apa yang saya lewatkan?", "Bật phụ đề dạng văn bản để dùng Tôi đã bỏ lỡ gì?",
+    "「何を見逃した？」を使うにはテキスト字幕をオンにしてください。", "开启文本字幕后才能使用“我错过了什么？”", "開啟文字字幕後才能使用「我錯過了什麼？」",
+    "فعّل ترجمة نصية لاستخدام ماذا فاتني؟"],
+  "Ainda há pouca fala para resumir.": [
+    "There is not enough dialogue to recap yet.", "Încă sunt prea puține replici de rezumat.", "Ще замало реплік для переказу.",
+    "Пока слишком мало реплик для пересказа.", "Pas encore assez de dialogues à résumer.", "Noch zu wenig Dialog für eine Zusammenfassung.",
+    "Aún hay poco diálogo para resumir.", "C'è ancora poco dialogo da riassumere.", "Er is nog te weinig dialoog om samen te vatten.",
+    "Na razie jest za mało dialogów do streszczenia.", "Özetlemek için henüz yeterli diyalog yok.", "Ainda há poucas falas para resumir.",
+    "Det finns ännu för lite dialog att sammanfatta.", "Der er endnu for lidt dialog at opsummere.", "Det er ennå for lite dialog å oppsummere.",
+    "Zatím je málo dialogů ke shrnutí.", "Zatiaľ je málo dialógov na zhrnutie.", "Za povzetek je še premalo dialoga.",
+    "Még túl kevés a párbeszéd az összefoglaláshoz.", "Kol kas per mažai dialogo santraukai.", "Još je premalo dijaloga za sažetak.",
+    "Još je premalo dijaloga za sažetak.", "Все още има твърде малко реплики за обобщение.", "Δεν υπάρχει ακόμη αρκετός διάλογος για σύνοψη.",
+    "Dialognya masih terlalu sedikit untuk dirangkum.", "Chưa có đủ lời thoại để tóm tắt.", "要約するにはまだセリフが足りません。",
+    "对白还太少，无法总结。", "對白還太少，無法摘要。", "لا يوجد حوار كافٍ للتلخيص بعد."],
+  "Resumindo até aqui…": [
+    "Recapping up to here…", "Se rezumă până aici…", "Переказую до цього моменту…", "Пересказываю до этого момента…", "Résumé jusqu'ici…",
+    "Zusammenfassung bis hierher…", "Resumiendo hasta aquí…", "Riassunto fino a qui…", "Samenvatten tot hier…", "Streszczam do tego miejsca…",
+    "Buraya kadar özetleniyor…", "A resumir até aqui…", "Sammanfattar hit…", "Opsummerer hertil…", "Oppsummerer hit…",
+    "Shrnuji až sem…", "Zhŕňam až sem…", "Povzemam do sem…", "Összefoglalás idáig…", "Apibendrinama iki čia…",
+    "Sažimam dovde…", "Sažimam dovde…", "Обобщавам дотук…", "Σύνοψη μέχρι εδώ…", "Merangkum sampai di sini…",
+    "Đang tóm tắt đến đây…", "ここまでを要約中…", "正在总结到这里…", "正在摘要到這裡…", "جارٍ التلخيص حتى هنا…"],
+  "Não foi possível resumir agora.": [
+    "Couldn't recap right now.", "Nu s-a putut rezuma acum.", "Не вдалося переказати зараз.", "Не удалось пересказать сейчас.", "Impossible de résumer pour l'instant.",
+    "Zusammenfassung gerade nicht möglich.", "No se pudo resumir ahora.", "Impossibile riassumere ora.", "Samenvatten lukt nu niet.", "Nie udało się teraz streścić.",
+    "Şu anda özetlenemedi.", "Não foi possível resumir agora.", "Kunde inte sammanfatta just nu.", "Kunne ikke opsummere lige nu.", "Kunne ikke oppsummere akkurat nå.",
+    "Teď se nepodařilo shrnout.", "Teraz sa nepodarilo zhrnúť.", "Povzetek trenutno ni mogoč.", "Most nem sikerült összefoglalni.", "Šiuo metu nepavyko apibendrinti.",
+    "Sažetak trenutno nije moguć.", "Sažetak trenutno nije moguć.", "Обобщението не е възможно в момента.", "Δεν ήταν δυνατή η σύνοψη τώρα.", "Tidak bisa merangkum sekarang.",
+    "Hiện không thể tóm tắt.", "今は要約できませんでした。", "暂时无法总结。", "暫時無法摘要。", "تعذّر التلخيص الآن."],
+  "O Gemini recusou a chave. Confira a Chave do Gemini em Ajustes.": [
+    "Gemini rejected the key. Check the Gemini key in Settings.", "Gemini a respins cheia. Verifică cheia Gemini în Setări.",
+    "Gemini відхилив ключ. Перевірте ключ Gemini в Налаштуваннях.", "Gemini отклонил ключ. Проверьте ключ Gemini в Настройках.",
+    "Gemini a refusé la clé. Vérifiez la clé Gemini dans les Réglages.", "Gemini hat den Schlüssel abgelehnt. Prüfen Sie den Gemini-Schlüssel in den Einstellungen.",
+    "Gemini rechazó la clave. Revisa la clave de Gemini en Ajustes.", "Gemini ha rifiutato la chiave. Controlla la chiave di Gemini nelle Impostazioni.",
+    "Gemini heeft de sleutel geweigerd. Controleer de Gemini-sleutel in Instellingen.", "Gemini odrzucił klucz. Sprawdź klucz Gemini w Ustawieniach.",
+    "Gemini anahtarı reddetti. Ayarlar'da Gemini anahtarını kontrol edin.", "O Gemini recusou a chave. Verifique a Chave do Gemini nas Definições.",
+    "Gemini avvisade nyckeln. Kontrollera Gemini-nyckeln i Inställningar.", "Gemini afviste nøglen. Tjek Gemini-nøglen i Indstillinger.",
+    "Gemini avviste nøkkelen. Sjekk Gemini-nøkkelen i Innstillinger.", "Gemini klíč odmítl. Zkontrolujte klíč Gemini v Nastavení.",
+    "Gemini kľúč odmietol. Skontrolujte kľúč Gemini v Nastaveniach.", "Gemini je zavrnil ključ. Preverite ključ Gemini v Nastavitvah.",
+    "A Gemini elutasította a kulcsot. Ellenőrizd a Gemini-kulcsot a Beállításokban.", "Gemini atmetė raktą. Patikrinkite Gemini raktą Nustatymuose.",
+    "Gemini je odbio ključ. Provjerite Gemini ključ u Postavkama.", "Gemini je odbio ključ. Proverite Gemini ključ u Podešavanjima.",
+    "Gemini отхвърли ключа. Проверете ключа за Gemini в Настройки.", "Το Gemini απέρριψε το κλειδί. Ελέγξτε το κλειδί Gemini στις Ρυθμίσεις.",
+    "Gemini menolak kunci. Periksa kunci Gemini di Pengaturan.", "Gemini đã từ chối khóa. Kiểm tra khóa Gemini trong Cài đặt.",
+    "Geminiがキーを拒否しました。設定でGeminiのキーを確認してください。", "Gemini 拒绝了密钥。请在设置中检查 Gemini 密钥。",
+    "Gemini 拒絕了金鑰。請在設定中檢查 Gemini 金鑰。", "رفض Gemini المفتاح. تحقق من مفتاح Gemini في الإعدادات."],
+  "A cota da sua chave do Gemini acabou por agora. Tente mais tarde.": [
+    "Your Gemini key is out of quota for now. Try again later.", "Cota cheii tale Gemini s-a epuizat deocamdată. Încearcă mai târziu.",
+    "Квоту вашого ключа Gemini наразі вичерпано. Спробуйте пізніше.", "Квота вашего ключа Gemini пока исчерпана. Попробуйте позже.",
+    "Le quota de votre clé Gemini est épuisé pour le moment. Réessayez plus tard.", "Das Kontingent Ihres Gemini-Schlüssels ist vorerst aufgebraucht. Später erneut versuchen.",
+    "La cuota de tu clave de Gemini se agotó por ahora. Inténtalo más tarde.", "La quota della tua chiave di Gemini è esaurita per ora. Riprova più tardi.",
+    "Het quotum van je Gemini-sleutel is voorlopig op. Probeer het later opnieuw.", "Limit Twojego klucza Gemini został na razie wyczerpany. Spróbuj później.",
+    "Gemini anahtarınızın kotası şimdilik doldu. Daha sonra tekrar deneyin.", "A quota da sua chave do Gemini esgotou-se por agora. Tente mais tarde.",
+    "Kvoten för din Gemini-nyckel är slut för tillfället. Försök igen senare.", "Kvoten for din Gemini-nøgle er brugt op for nu. Prøv igen senere.",
+    "Kvoten for Gemini-nøkkelen din er brukt opp for nå. Prøv igjen senere.", "Kvóta vašeho klíče Gemini je prozatím vyčerpána. Zkuste to později.",
+    "Kvóta vášho kľúča Gemini je nateraz vyčerpaná. Skúste to neskôr.", "Kvota vašega ključa Gemini je za zdaj porabljena. Poskusite pozneje.",
+    "A Gemini-kulcsod kvótája egyelőre elfogyott. Próbáld újra később.", "Jūsų Gemini rakto kvota kol kas išnaudota. Bandykite vėliau.",
+    "Kvota vašeg Gemini ključa je za sada potrošena. Pokušajte kasnije.", "Kvota vašeg Gemini ključa je za sada potrošena. Pokušajte kasnije.",
+    "Квотата на вашия ключ за Gemini е изчерпана засега. Опитайте по-късно.", "Το όριο του κλειδιού σας Gemini εξαντλήθηκε προς το παρόν. Δοκιμάστε αργότερα.",
+    "Kuota kunci Gemini Anda habis untuk saat ini. Coba lagi nanti.", "Khóa Gemini của bạn tạm thời đã hết hạn mức. Hãy thử lại sau.",
+    "Geminiキーの割り当てを使い切りました。しばらくしてからお試しください。", "你的 Gemini 密钥配额暂时用完了。请稍后再试。",
+    "你的 Gemini 金鑰配額暫時用完了。請稍後再試。", "انتهت حصة مفتاح Gemini مؤقتًا. حاول لاحقًا."],
+  "O Gemini não quis resumir este trecho.": [
+    "Gemini declined to recap this part.", "Gemini a refuzat să rezume această parte.", "Gemini відмовився переказувати цей фрагмент.",
+    "Gemini отказался пересказывать этот фрагмент.", "Gemini a refusé de résumer ce passage.", "Gemini wollte diesen Abschnitt nicht zusammenfassen.",
+    "Gemini no quiso resumir este tramo.", "Gemini non ha voluto riassumere questa parte.", "Gemini wilde dit deel niet samenvatten.",
+    "Gemini odmówił streszczenia tego fragmentu.", "Gemini bu bölümü özetlemeyi reddetti.", "O Gemini não quis resumir este excerto.",
+    "Gemini ville inte sammanfatta det här avsnittet.", "Gemini ville ikke opsummere denne del.", "Gemini ville ikke oppsummere denne delen.",
+    "Gemini odmítl tuto část shrnout.", "Gemini odmietol túto časť zhrnúť.", "Gemini tega dela ni želel povzeti.",
+    "A Gemini nem akarta összefoglalni ezt a részt.", "Gemini atsisakė apibendrinti šią dalį.", "Gemini nije htio sažeti ovaj dio.",
+    "Gemini nije hteo da sažme ovaj deo.", "Gemini отказа да обобщи тази част.", "Το Gemini αρνήθηκε να συνοψίσει αυτό το κομμάτι.",
+    "Gemini menolak merangkum bagian ini.", "Gemini từ chối tóm tắt đoạn này.", "Geminiはこの部分の要約を拒否しました。",
+    "Gemini 拒绝总结这一段。", "Gemini 拒絕摘要這一段。", "رفض Gemini تلخيص هذا الجزء."],
+  "Sem resposta do Gemini. Confira a internet.": [
+    "No response from Gemini. Check the internet.", "Niciun răspuns de la Gemini. Verifică internetul.", "Немає відповіді від Gemini. Перевірте інтернет.",
+    "Нет ответа от Gemini. Проверьте интернет.", "Pas de réponse de Gemini. Vérifiez Internet.", "Keine Antwort von Gemini. Prüfen Sie die Internetverbindung.",
+    "Sin respuesta de Gemini. Revisa internet.", "Nessuna risposta da Gemini. Controlla internet.", "Geen antwoord van Gemini. Controleer internet.",
+    "Brak odpowiedzi od Gemini. Sprawdź internet.", "Gemini'den yanıt yok. İnterneti kontrol edin.", "Sem resposta do Gemini. Verifique a internet.",
+    "Inget svar från Gemini. Kontrollera internet.", "Intet svar fra Gemini. Tjek internettet.", "Ikke noe svar fra Gemini. Sjekk internett.",
+    "Gemini neodpovídá. Zkontrolujte internet.", "Gemini neodpovedá. Skontrolujte internet.", "Gemini se ne odziva. Preverite internet.",
+    "Nincs válasz a Geminitől. Ellenőrizd az internetet.", "Gemini neatsako. Patikrinkite internetą.", "Nema odgovora od Geminija. Provjerite internet.",
+    "Nema odgovora od Geminija. Proverite internet.", "Няма отговор от Gemini. Проверете интернета.", "Καμία απάντηση από το Gemini. Ελέγξτε το internet.",
+    "Tidak ada respons dari Gemini. Periksa internet.", "Không có phản hồi từ Gemini. Kiểm tra internet.", "Geminiから応答がありません。インターネットを確認してください。",
+    "Gemini 没有响应。请检查网络。", "Gemini 沒有回應。請檢查網路。", "لا رد من Gemini. تحقق من الإنترنت."],
+  "Feito pelo Gemini com a legenda até este ponto. Pode conter erros.": [
+    "Made by Gemini from the subtitles up to this point. May contain errors.", "Creat de Gemini din subtitrarea până în acest punct. Poate conține erori.",
+    "Створено Gemini із субтитрів до цього моменту. Можливі помилки.", "Создано Gemini по субтитрам до этого момента. Возможны ошибки.",
+    "Généré par Gemini à partir des sous-titres jusqu'ici. Peut contenir des erreurs.", "Von Gemini aus den Untertiteln bis hierher erstellt. Kann Fehler enthalten.",
+    "Hecho por Gemini con los subtítulos hasta este punto. Puede contener errores.", "Creato da Gemini con i sottotitoli fino a questo punto. Può contenere errori.",
+    "Gemaakt door Gemini met de ondertitels tot dit punt. Kan fouten bevatten.", "Utworzone przez Gemini z napisów do tego momentu. Może zawierać błędy.",
+    "Gemini tarafından bu ana kadarki altyazılardan oluşturuldu. Hata içerebilir.", "Feito pelo Gemini com a legenda até este ponto. Pode conter erros.",
+    "Skapad av Gemini från undertexten fram hit. Kan innehålla fel.", "Lavet af Gemini ud fra underteksterne hertil. Kan indeholde fejl.",
+    "Laget av Gemini fra undertekstene hit. Kan inneholde feil.", "Vytvořil Gemini z titulků až sem. Může obsahovat chyby.",
+    "Vytvoril Gemini z titulkov až sem. Môže obsahovať chyby.", "Ustvaril Gemini iz podnapisov do te točke. Lahko vsebuje napake.",
+    "A Gemini készítette az eddigi feliratból. Hibákat tartalmazhat.", "Sukūrė Gemini iš subtitrų iki šio momento. Gali būti klaidų.",
+    "Napravio Gemini od titla do ove tačke. Može sadržavati greške.", "Napravio Gemini od titla do ove tačke. Može sadržati greške.",
+    "Създадено от Gemini по субтитрите дотук. Може да съдържа грешки.", "Δημιουργήθηκε από το Gemini με τους υπότιτλους μέχρι εδώ. Μπορεί να περιέχει λάθη.",
+    "Dibuat oleh Gemini dari subtitle sampai titik ini. Mungkin mengandung kesalahan.", "Do Gemini tạo từ phụ đề đến thời điểm này. Có thể có sai sót.",
+    "ここまでの字幕からGeminiが作成しました。誤りを含む場合があります。", "由 Gemini 根据到此为止的字幕生成，可能有误。",
+    "由 Gemini 根據到此為止的字幕產生，可能有誤。", "أنشأه Gemini من الترجمة حتى هذه النقطة. قد يحتوي على أخطاء."],
+}
+
+def esc(s):
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+PAT = re.compile(r'^\s*(?:\{\s*|T\(\s*)"((?:[^"\\]|\\.)*)"')
+
+def inserir(caminho, chave, valor, irma):
+    linhas = caminho.read_text(encoding="utf-8").splitlines(keepends=True)
+    nova = ('  T("%s", "%s"),\n' if irma else '  { "%s", "%s" },\n') % (esc(chave), esc(valor))
+    alvo = chave.encode("utf-8")   # a ordem da tabela e a do strcmp: bytes
+    for i, ln in enumerate(linhas):
+        m = PAT.match(ln)
+        if not m:
+            continue
+        k = m.group(1).replace('\\"', '"').replace("\\\\", "\\").encode("utf-8")
+        if k == alvo:
+            return
+        if k > alvo:
+            linhas.insert(i, nova)
+            caminho.write_text("".join(linhas), encoding="utf-8")
+            return
+    sys.exit("sem ponto de insercao para %r em %s" % (chave, caminho.name))
+
+for chave, trads in NOVAS.items():
+    assert len(trads) == len(IDIOMAS), chave
+    for cod, valor in zip(IDIOMAS, trads):
+        if cod == "en":
+            inserir(SRC / "idioma_tab.h", chave, valor, False)
+        else:
+            inserir(SRC / ("idioma_%s.h" % cod), chave, valor, True)
+print("ok: %d chaves" % len(NOVAS))
