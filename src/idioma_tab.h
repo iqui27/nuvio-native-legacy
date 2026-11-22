@@ -4246,6 +4246,7 @@
   { "Jellyfin, Emby e Plex na Home.", "Jellyfin, Emby and Plex on Home." },
   { "Jellyfin, Emby e Plex viram fileiras na Home, com a retomada e os vistos enviados de volta.", "Jellyfin, Emby and Plex become rows on Home, with resume and watched state sent back." },
   { "Jellyfin, Emby e Plex: as suas bibliotecas dentro do Nuvio.", "Jellyfin, Emby and Plex: your libraries inside Nuvio." },
+  { "Jogo no canal certo", "Game on the right channel" },
   { "Jogos aparecem quando o guia mostra uma partida nos canais de esportes.", "Games show up when the guide lists a match on a sports channel." },
   { "Jogos das ligas carregadas. Abra Por liga para consultar qualquer competição.", "Games from loaded leagues. Open By league to browse any competition." },
   { "Jogos e placares por competição", "Games and scores by competition" },

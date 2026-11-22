@@ -4247,6 +4247,7 @@
   T("Jellyfin, Emby e Plex na Home.", "ホームに Jellyfin、Emby、Plex。"),
   T("Jellyfin, Emby e Plex viram fileiras na Home, com a retomada e os vistos enviados de volta.", "Jellyfin、Emby、Plex がホームの行になり、続きと視聴済みが送り返されます。"),
   T("Jellyfin, Emby e Plex: as suas bibliotecas dentro do Nuvio.", "Jellyfin、Emby、Plex: Nuvio 内のライブラリ。"),
+  T("Jogo no canal certo", "試合を正しいチャンネルで"),
   T("Jogos aparecem quando o guia mostra uma partida nos canais de esportes.", "スポーツチャンネルの番組表に試合があると、ここに表示されます。"),
   T("Jogos das ligas carregadas. Abra Por liga para consultar qualquer competição.", "Games from loaded leagues. Open By league to browse any competition."),
   T("Jogos e placares por competição", "Games and scores by competition"),

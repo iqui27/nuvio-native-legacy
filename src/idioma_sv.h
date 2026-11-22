@@ -4247,6 +4247,7 @@
   T("Jellyfin, Emby e Plex na Home.", "Jellyfin, Emby och Plex på Hem."),
   T("Jellyfin, Emby e Plex viram fileiras na Home, com a retomada e os vistos enviados de volta.", "Jellyfin, Emby och Plex blir rader på startsidan, med återupptagning och sett-status skickat tillbaka."),
   T("Jellyfin, Emby e Plex: as suas bibliotecas dentro do Nuvio.", "Jellyfin, Emby och Plex: dina bibliotek i Nuvio."),
+  T("Jogo no canal certo", "Matchen på rätt kanal"),
   T("Jogos aparecem quando o guia mostra uma partida nos canais de esportes.", "Matcher visas när guiden listar en match på sportkanalerna."),
   T("Jogos das ligas carregadas. Abra Por liga para consultar qualquer competição.", "Games from loaded leagues. Open By league to browse any competition."),
   T("Jogos e placares por competição", "Games and scores by competition"),

@@ -4246,6 +4246,7 @@
   T("Jellyfin, Emby e Plex na Home.", "Jellyfin, Emby și Plex pe Acasă."),
   T("Jellyfin, Emby e Plex viram fileiras na Home, com a retomada e os vistos enviados de volta.", "Jellyfin, Emby și Plex devin rânduri pe pagina principală, cu reluarea și vizionările trimise înapoi."),
   T("Jellyfin, Emby e Plex: as suas bibliotecas dentro do Nuvio.", "Jellyfin, Emby și Plex: bibliotecile tale din Nuvio."),
+  T("Jogo no canal certo", "Meciul pe canalul potrivit"),
   T("Jogos aparecem quando o guia mostra uma partida nos canais de esportes.", "Meciurile apar când ghidul arată un meci pe canalele de sport."),
   T("Jogos das ligas carregadas. Abra Por liga para consultar qualquer competição.", "Games from loaded leagues. Open By league to browse any competition."),
   T("Jogos e placares por competição", "Games and scores by competition"),

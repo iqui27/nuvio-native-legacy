@@ -4247,6 +4247,7 @@
   T("Jellyfin, Emby e Plex na Home.", "Jellyfin, Emby và Plex trên Trang chủ."),
   T("Jellyfin, Emby e Plex viram fileiras na Home, com a retomada e os vistos enviados de volta.", "Jellyfin, Emby và Plex thành các hàng ở trang chủ, kèm xem tiếp và trạng thái đã xem được gửi lại."),
   T("Jellyfin, Emby e Plex: as suas bibliotecas dentro do Nuvio.", "Jellyfin, Emby và Plex: thư viện của bạn bên trong Nuvio."),
+  T("Jogo no canal certo", "Trận đấu trên đúng kênh"),
   T("Jogos aparecem quando o guia mostra uma partida nos canais de esportes.", "Trận đấu xuất hiện khi lịch phát sóng có trận trên các kênh thể thao."),
   T("Jogos das ligas carregadas. Abra Por liga para consultar qualquer competição.", "Games from loaded leagues. Open By league to browse any competition."),
   T("Jogos e placares por competição", "Games and scores by competition"),
