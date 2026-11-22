@@ -44,6 +44,14 @@ int  video_tocar_posicao(const char *url, double segundos);
 // sobre a duracao do container ANTES do primeiro quadro; mesmo ack/estado.
 int  video_tocar_retomada(const char *url, double segundos, double pct);
 int  video_retomada_inicial_estado(void);
+#endif
+#ifdef NV_TPK
+// .tpk (owner 18/11): the point goes with the open; the host seeks in Ready,
+// before Start. Same estado (0 waiting, 1 applied, -1 the seek after ready).
+int  video_tocar_retomada(const char *url, double segundos, double pct);
+int  video_retomada_inicial_estado(void);
+#endif
+#ifdef NV_ANDROID
 // Fonte preparada na pagina do titulo: player pausado, sem imagem, audio ou
 // eventos da sessao de reproducao. Token identifica o dono; zero cancela todos.
 int  video_precarregar(const char *url, const char *cabecalhos, double segundos,

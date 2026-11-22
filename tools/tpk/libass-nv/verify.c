@@ -10,6 +10,10 @@
  * size, colour and the w bytes of every row. Exit status 1 on any difference.
  * Also checks the NEON engine with 4 blur threads, and that the dialogue
  * opacity (ass_nv_set_dialogue_alpha, 0003) only changes colours.
+ * 0004: the sharp + soft split passes at the SAME size, merged by
+ * ass_nv_image_key, give exactly the normal frame; the soft pass at half
+ * size runs; events marked nv_sign get no dialogue opacity; skipping the
+ * dialogue leaves exactly the frame with every dialogue line taken out.
  */
 /* 64-bit inodes (CI overlay fs): without this, 32-bit readdir() fails with
  * EOVERFLOW and no font gets loaded. */
@@ -75,7 +79,7 @@ static double now_ms(void)
 }
 
 static int n_fonts, n_msgs;
-static unsigned faded_total;
+static unsigned faded_total, soft_total;
 
 static void load_fonts(ASS_Library *lib, const char *dir)
 {
@@ -183,6 +187,120 @@ static int run_alpha(ASS_Library *lib, const char *file, int alpha, int noalpha,
     return 0;
 }
 
+/* 0004 ---------------------------------------------------------------- */
+#define SPLIT_MAX_IMGS 8192
+/* The two passes' lists merged by key (both already in key order), as the
+ * app does it (assrender.c). Ties: the sharp pass first. */
+static int merge_split(ASS_Image *a, ASS_Image *b, ASS_Image **out)
+{
+    int n = 0;
+    while ((a || b) && n < SPLIT_MAX_IMGS) {
+        if (a && (!b || ass_nv_image_key(a) <= ass_nv_image_key(b))) { out[n++] = a; a = a->next; }
+        else { out[n++] = b; b = b->next; }
+    }
+    return n;
+}
+
+static Frame hash_list(ASS_Image **v, int n)
+{
+    Frame f = { 1469598103934665603ULL, 0 };
+    for (int i = 0; i < n; i++) {
+        ASS_Image *img = v[i];
+        int hdr[5] = { img->w, img->h, img->dst_x, img->dst_y, (int) img->color };
+        f.hash = fnv(f.hash, hdr, sizeof(hdr));
+        for (int y = 0; y < img->h; y++)
+            f.hash = fnv(f.hash, img->bitmap + (size_t) y * img->stride, img->w);
+        f.imgs++;
+    }
+    return f;
+}
+
+/* ref: the normal frames (engine `simd`, 1 thread). Returns the number of
+ * differing frames; *soft counts the images the soft pass drew. */
+static int check_split(ASS_Library *lib, const char *file, int simd, const Frame *ref, int frames, unsigned *soft)
+{
+    static ASS_Image *v[SPLIT_MAX_IMGS];
+    ass_nv_set_threads(1);
+    ASS_Renderer *ra = renderer(lib, simd), *rb = renderer(lib, simd), *rh = renderer(lib, simd);
+    if (!ra || !rb || !rh) return frames + 1;
+    ass_nv_set_split(ra, 1, 0);
+    ass_nv_set_split(rb, 2, 1);
+    ass_nv_set_split(rh, 2, 1);
+    ass_set_frame_size(rh, W / 2, H / 2);
+    ASS_Track *t = ass_read_file(lib, (char *) file, NULL);
+    if (!t) return frames + 1;
+    int diff = 0;
+    for (int k = 0; k < frames; k++) {
+        long long ms_t = (long long) k * STEP_MS;
+        ASS_Image *a = ass_render_frame(ra, t, ms_t, NULL);
+        ASS_Image *b = ass_render_frame(rb, t, ms_t, NULL);
+        for (ASS_Image *p = b; p; p = p->next) (*soft)++;
+        int n = merge_split(a, b, v);
+        Frame f = hash_list(v, n);
+        if (f.hash != ref[k].hash || f.imgs != ref[k].imgs) {
+            if (diff < 5) printf("  split DIFF at %lld ms (%u vs %u images)\n", ms_t, f.imgs, ref[k].imgs);
+            diff++;
+        }
+        ass_render_frame(rh, t, ms_t, NULL);   /* half size: must just run */
+    }
+    ass_free_track(t);
+    ass_renderer_done(ra); ass_renderer_done(rb); ass_renderer_done(rh);
+    return diff;
+}
+
+/* Every event marked a sign: dialogue opacity 127 must change nothing; and
+ * skipping dialogue must equal a track with the non-sign events removed. */
+static int check_sign(ASS_Library *lib, const char *file, int simd, const Frame *ref, int frames)
+{
+    int diff = 0;
+    ASS_Renderer *r = renderer(lib, simd);
+    ASS_Track *t = ass_read_file(lib, (char *) file, NULL);
+    if (!r || !t) return frames + 1;
+    for (int i = 0; i < t->n_events; i++) t->events[i].nv_sign = 1;
+    ass_nv_set_dialogue_alpha(r, 127);
+    ass_nv_set_skip_dialogue(r, 1);
+    for (int k = 0; k < frames; k++) {
+        Frame f = hash_frame(ass_render_frame(r, t, (long long) k * STEP_MS, NULL));
+        if (f.hash != ref[k].hash || f.imgs != ref[k].imgs) diff++;
+    }
+    /* skip vs removed: unmark, render with skip; a second track keeps only
+     * libass's own signs (\pos etc.) by asking the same renderer rule:
+     * nothing is dropped there when skip is off and every event is marked. */
+    for (int i = 0; i < t->n_events; i++) t->events[i].nv_sign = 0;
+    ass_nv_set_dialogue_alpha(r, 255);
+    ASS_Renderer *r2 = renderer(lib, simd);
+    ASS_Track *t2 = ass_read_file(lib, (char *) file, NULL);
+    if (!r2 || !t2) return frames + 1;
+    {   /* t2: dialogue lines (no hard override, normal Effect) deleted */
+        int w = 0;
+        for (int i = 0; i < t2->n_events; i++) {
+            ASS_Event *e = &t2->events[i];
+            const char *x = e->Text ? e->Text : "";
+            int sign = (e->Effect && (!strncmp(e->Effect, "Banner", 6) || !strncmp(e->Effect, "Scroll", 6))) ||
+                       strstr(x, "\\pos") || strstr(x, "\\move") ||
+                       strstr(x, "\\clip") || strstr(x, "\\iclip") || strstr(x, "\\org") || strstr(x, "\\p");
+            if (sign) t2->events[w++] = *e;
+            else { free(e->Name); free(e->Effect); free(e->Text); free(e->render_priv); }
+        }
+        t2->n_events = w;
+    }
+    for (int k = 0; k < frames; k++) {
+        Frame f = hash_frame(ass_render_frame(r, t, (long long) k * STEP_MS, NULL));
+        Frame g = hash_frame(ass_render_frame(r2, t2, (long long) k * STEP_MS, NULL));
+        if (f.hash != g.hash || f.imgs != g.imgs) diff++;
+    }
+    /* -1 (owner 19/11/2026): the app knows every line is dialogue, even with
+     * \pos, \move or a drawing: with skip on nothing at all is drawn. */
+    for (int i = 0; i < t->n_events; i++) t->events[i].nv_sign = -1;
+    for (int k = 0; k < frames; k++) {
+        Frame f = hash_frame(ass_render_frame(r, t, (long long) k * STEP_MS, NULL));
+        if (f.imgs) diff++;
+    }
+    ass_free_track(t); ass_free_track(t2);
+    ass_renderer_done(r); ass_renderer_done(r2);
+    return diff;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 3) { fprintf(stderr, "usage: verify <font dir> <file.ass>...\n"); return 2; }
@@ -235,12 +353,23 @@ int main(int argc, char **argv)
             diff += adiff + odiff;
             faded_total += faded;
         }
+        /* 0004: split passes and the sign flag (NEON engine, b is its reference). */
+        {
+            unsigned soft = 0;
+            int sdiff = check_split(lib, argv[i], 1, b, na, &soft);
+            int gdiff = check_sign(lib, argv[i], 1, b, na);
+            printf("  split sharp+soft = normal: %s (%u soft images) | signs: %s\n",
+                   sdiff ? "FAIL" : "identical", soft, gdiff ? "FAIL" : "ok");
+            diff += sdiff + gdiff;
+            soft_total += soft;
+        }
         bad |= diff != 0;
     }
     printf("total C %.0f ms, NEON %.0f ms (x%.2f; emulated, not TV speed)\n", tc, tn, tn > 0 ? tc / tn : 0);
     if (!faded_total) { printf("no image was faded: the dialogue opacity check tested nothing\n"); bad = 1; }
+    if (!soft_total) { printf("no soft image: the split check tested nothing\n"); bad = 1; }
     printf(bad ? "RESULT: FAIL\n" : "RESULT: NEON engine (1 and 4 threads) bit-identical to C;"
-                 " dialogue opacity changes alpha only\n");
+                 " dialogue opacity changes alpha only; split = normal; signs ok\n");
     ass_library_done(lib);
     return bad;
 }

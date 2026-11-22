@@ -18,6 +18,7 @@
 static const struct { const char *chave; int min, max, padrao; } PESSOA[AP_N] __attribute__((unused)) = {
   [AP_ESCALA] = { "escala", 0, 5, 5 }, [AP_GAMA] = { "gamma", -20, 20, 0 }, [AP_CONTRASTE] = { "contrast", -30, 20, 0 },
   [AP_LIBASS] = { "libass", 0, 1, 1 }, [AP_ASSTAM] = { "asstam", 50, 200, 100 }, [AP_ASSOPAC] = { "assopac", 20, 100, 100 },
+  [AP_DIALIB] = { "dialogo", 0, 1, 1 },
 };
 
 static int val[AP_N] __attribute__((unused));   // read off the .tpk only by the tests
@@ -25,11 +26,14 @@ static int iniciado;
 static unsigned versao;
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_ASSPERF_TESTE)
 static int valido(int id, int v) {
-  if (id == AP_ESCALA) return v == 0 || v == 2 || v == 5;   // 100 %, 75 %, Auto (file values kept)
+  if (id == AP_ESCALA)   // 100 %, 75 %, Auto 75, Auto 50 (the old "Auto" 5)
+    return v == AP_RES_100 || v == AP_RES_75 || v == AP_RES_AUTO75 || v == AP_RES_AUTO50;
   return v >= PESSOA[id].min && v <= PESSOA[id].max;
 }
+#endif
+#ifdef NV_TPK
 
 static void gravar(void) {
   char b[256]; size_t o = 0;
@@ -44,6 +48,15 @@ static void gravar(void) {
 // with the values in place, so an assperf_get from another thread never reads
 // half a file. The first use is always an ASS track or the Style sheet, long
 // after avisos_iniciar (the crash guard needs it).
+/* A saved value as read from the file. "Custom auto" (6) was removed on
+ * 19/11/2026: it reads as Auto 75 % (owner). The old "txtres"/"blurres" keys
+ * are simply not read any more. */
+#if defined(NV_TPK) || defined(NV_ASSPERF_TESTE)
+static int valorLido(int id, int v) {
+  return id == AP_ESCALA && v == AP_RES_VELHO_CUSTOM ? AP_RES_AUTO75 : v;
+}
+#endif
+
 void assperf_iniciar(void) {
   if (__atomic_load_n(&iniciado, __ATOMIC_ACQUIRE)) return;
   pthread_mutex_lock(&trava);
@@ -61,8 +74,10 @@ void assperf_iniciar(void) {
         eq = strchr(l, '=');
         if (!eq) continue;
         *eq = 0;
-        for (i = 0; i < AP_N; i++)
-          if (!strcmp(l, PESSOA[i].chave) && valido(i, atoi(eq + 1))) { val[i] = atoi(eq + 1); novo[i] = 1; }
+        for (i = 0; i < AP_N; i++) {
+          int v = valorLido(i, atoi(eq + 1));
+          if (!strcmp(l, PESSOA[i].chave) && valido(i, v)) { val[i] = v; novo[i] = 1; }
+        }
         /* Files written before the wider ranges (16/11/2026): "gama" was 0 off,
          * 1..5 = -1..-5, 6..10 = +5..+1; "contraste" was 30 minus the TV's
          * number. A new key in the same file wins. */
@@ -86,6 +101,8 @@ void assperf_teste_definir(int id, int v) {
   __atomic_store_n(&iniciado, 1, __ATOMIC_RELEASE);
   if (id >= 0 && id < AP_N) { val[id] = v; __atomic_add_fetch(&versao, 1, __ATOMIC_ACQ_REL); }
 }
+/* What a saved line "key=v" becomes (-1 = not accepted). */
+int assperf_teste_lido(int id, int v) { v = valorLido(id, v); return valido(id, v) ? v : -1; }
 #endif
 
 int assperf_get(int id) {
@@ -238,15 +255,18 @@ int assperf_pesado(void) {
 }
 
 /* ---- Render resolution Auto -----------------------------------------------
- * 100 % normally; 75 % while the subtitles are busy (owner 25/10: "only as a
- * fallback when subtitles get heavy"). At least 5 s at 75 % and 2 s at 100 %
- * between switches: each one redraws everything at the new size. */
+ * 100 % normally; lower while the subtitles are busy (owner 25/10: "only as a
+ * fallback when subtitles get heavy"). At least 5 s reduced and 2 s at 100 %
+ * between switches: each one redraws everything at the new size.
+ * Owner 19/11/2026: while busy, Auto 50 % (default) draws the text at 50 % and
+ * the blur at 40 %, Auto 75 % the text at 75 % and the blur at 55 %. */
 #define AUTO_MIN75_S  5.0
 #define AUTO_MIN100_S 2.0
 static struct { int em75; double desde; } A;
-/* Render resolution Auto in a busy scene: 75 %; Tizen 4-6 50 % (owner,
- * 16-17/11/2026: the 2019 Tizen 5 TV dropped to ~11 fps at 75 %, the 2021
- * Tizen 6 TV rendered heavy signs at 118-192 ms per frame). "em75" = busy. */
+/* Tizen 4-6 (owner 16-17/11/2026: the 2019 Tizen 5 TV dropped to ~11 fps at
+ * 75 %, the 2021 Tizen 6 TV rendered heavy signs at 118-192 ms per frame) had
+ * 50 % forced in busy scenes. Since 19/11/2026 Auto 50 % is everyone's
+ * default and a chosen Auto 75 % is used as chosen. "em75" = reduced now. */
 static int tvLenta;   /* __atomic: set once by video_tpk.c from the Tizen version */
 void assperf_tv_lenta_definir(int sim) { __atomic_store_n(&tvLenta, sim ? 1 : 0, __ATOMIC_RELAXED); }
 int assperf_tv_lenta(void) {
@@ -256,27 +276,35 @@ int assperf_tv_lenta(void) {
   return __atomic_load_n(&tvLenta, __ATOMIC_RELAXED);
 #endif
 }
-#define ESCALA_PESADA (assperf_tv_lenta() ? 0.5 : 0.75)
-
 static void auto_trocar_locked(int em75, double t) { A.em75 = em75; A.desde = t; }
 
-double assperf_escala_quadro(void) {
+/* The two scales of mode v while reduced (busy). texto == blur: one pass. */
+static void escalas_reduzidas(int v, double *texto, double *blur) {
+  if (v == AP_RES_AUTO75) { *texto = AP_AUTO75_TEXTO; *blur = AP_AUTO75_BLUR; }
+  else { *texto = AP_AUTO50_TEXTO; *blur = AP_AUTO50_BLUR; }
+}
+
+int assperf_resolucao_quadro(double *texto, double *blur) {
   int v = assperf_get(AP_ESCALA);
-  double t, r;
-  if (v != 5) {
+  double t;
+  *blur = 0.0;
+  if (!AP_RES_AUTO(v)) {
     pthread_mutex_lock(&autoTrava);
     A.em75 = 0;
     pthread_mutex_unlock(&autoTrava);
-    return v == 2 ? 0.75 : 1.0;
+    *texto = v == AP_RES_75 ? 0.75 : 1.0;
+    return 0;
   }
   t = agoraS();
   pthread_mutex_lock(&autoTrava);
   { int pesado = pesado_locked(t) || CG.prevCedo;
     if (!A.em75 && pesado && t - A.desde >= AUTO_MIN100_S) auto_trocar_locked(1, t);
     else if (A.em75 && !pesado && t - A.desde >= AUTO_MIN75_S) auto_trocar_locked(0, t); }
-  r = A.em75 ? ESCALA_PESADA : 1.0;
+  if (A.em75) escalas_reduzidas(v, texto, blur);
+  else *texto = *blur = 1.0;
   pthread_mutex_unlock(&autoTrava);
-  return r;
+  if (*blur == *texto) { *blur = 0.0; return 0; }
+  return 1;
 }
 
 void assperf_escala_reset(void) {
@@ -288,7 +316,25 @@ void assperf_escala_reset(void) {
 
 double assperf_escala(void) {
   int v = assperf_get(AP_ESCALA), em75;
-  if (v != 5) return v == 2 ? 0.75 : 1.0;
+  double tx, bl;
+  if (!AP_RES_AUTO(v)) return v == AP_RES_75 ? 0.75 : 1.0;
   pthread_mutex_lock(&autoTrava); em75 = A.em75; pthread_mutex_unlock(&autoTrava);
-  return em75 ? ESCALA_PESADA : 1.0;
+  if (!em75) return 1.0;
+  escalas_reduzidas(v, &tx, &bl);
+  return tx;
+}
+
+double assperf_escala_blur(void) {
+  int v = assperf_get(AP_ESCALA), em75;
+  double tx, bl;
+  if (!AP_RES_AUTO(v)) return 0.0;
+  pthread_mutex_lock(&autoTrava); em75 = A.em75; pthread_mutex_unlock(&autoTrava);
+  if (!em75) return 0.0;
+  escalas_reduzidas(v, &tx, &bl);
+  return bl != tx ? bl : 0.0;
+}
+
+int assperf_reduzido(void) {
+  int v = assperf_get(AP_ESCALA);
+  return AP_RES_AUTO(v) && (assperf_escala() < 1.0 || assperf_escala_blur() > 0.0);
 }

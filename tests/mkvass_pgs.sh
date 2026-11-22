@@ -32,6 +32,6 @@ sh=el(0x114d9b74,el(0x4dbb,el(0x53ab,bytes.fromhex('1c53bb6b'))+u(0x53ac,len(sh)
 cues=el(0x1c53bb6b,b''.join(el(0xbb,u(0xb3,t)+el(0xb7,u(0xf7,6)+u(0xf1,len(sh)+len(tr))+u(0xf0,r))) for t,r in zip((1250,5000),rel)))
 p.joinpath('pgs.mkv').write_bytes(el(0x1a45dfa3,el(0x4282,b'matroska'))+el(0x18538067,sh+tr+cluster+cues+el(0xec,b'\0'*1024)))
 PY
-cc -Isrc -O1 -g -Wall -Wextra -DMKVASS_RANGES_POR_SEG=1000 tests/mkvass_pgs.c src/mkvass.c src/fontefamilias.c src/imgsub.c src/pgs.c src/legenda.c tests/mkvass_i18n.c src/assrender.c src/dados.c -o "$DIR/test"
+cc -Isrc -O1 -g -Wall -Wextra -DMKVASS_RANGES_POR_SEG=1000 tests/mkvass_pgs.c src/mkvass.c src/fontefamilias.c src/imgsub.c src/pgs.c src/legenda.c src/asssinais.c tests/mkvass_i18n.c src/assrender.c src/dados.c -o "$DIR/test"
 mkdir "$DIR/dados"
 NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/pgs.mkv"

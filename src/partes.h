@@ -171,9 +171,22 @@ void partes_aquecer(void);
 // file in the TorBox account by an EXACT match only: hash (add-on or link),
 // file name, or exact size, over the cached account list (up to 10 pages).
 // Never "best match", never the title, never adds anything to the account.
+// The torrents first, then the usenet downloads (owner 18/11, log 10: add-on
+// sources with no info hash were usenet downloads, never in the torrent list);
+// the cached lists first, then fresh ones.
 // 1 = found: *item, *arquivoId (TorBox file_id), *usenet and `como` set.
 int  partes_achar_exato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
-                        int *item, int *arquivoId, char *como, unsigned n);
+                        int *item, int *arquivoId, int *usenet, char *como, unsigned n);
+// The same, fresh lists only (owner 19/11, log 12: TorBox's own cached list
+// still had an item that createstream answered ITEM_NOT_FOUND for).
+int  partes_achar_exato_fresco(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                               int *item, int *arquivoId, int *usenet, char *como, unsigned n);
+// The same as partes_achar_exato (cached lists first), also giving the found
+// torrent's info hash (lower case; "" for usenet or none). Burn-in (owner
+// 19/11): TorBox's list still showed an item createstream calls gone; its
+// hash re-adds it to the account (debrid_tb_adicionar, cached only).
+int  partes_achar_exato_hash(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                             int *item, int *arquivoId, int *usenet, char *como, unsigned n, char hashItem[41]);
 
 // ---- link de um arquivo (fio proprio) -------------------------------------
 // Pede o link do CDN de um arquivo. Com `comLista`, le tambem o item (para o

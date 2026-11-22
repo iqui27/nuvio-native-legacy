@@ -21,13 +21,92 @@ void debrid_tb_redigir(char *t) {
   char *p;
   while (t && (p = strstr(t, "SECRETKEY")) != NULL) { memcpy(p, "***", 3); memmove(p + 3, p + 9, strlen(p + 9) + 1); }
 }
-char *debrid_tb_api_get(const char *r, int p, int *st) { (void)r; (void)p; if (st) *st = 0; return NULL; }
-static char viuArquivo[512]; static uint64_t viuBytes;
-int partes_achar_exato(const char *u, const char *h, const char *a, uint64_t b, int *i, int *f, char *c, unsigned n) {
-  (void)u; (void)h; (void)i; (void)f; (void)c; (void)n;
-  snprintf(viuArquivo, sizeof viuArquivo, "%s", a ? a : ""); viuBytes = b;
-  return 0;
+static char ultRota[512];
+static int sumido500, criacoes;   // createstream: item 500 is gone (log 12)
+static int planoRecusa;           // createstream: TorBox refuses the plan
+static int pronto900;             // createstream for the re-added item 900 gives a playlist
+char *debrid_tb_api_get(const char *r, int p, int *st) {
+  (void)p; snprintf(ultRota, sizeof ultRota, "%s", r ? r : ""); if (st) *st = 0;
+  if (r && strstr(r, "createstream")) criacoes++;
+  if (planoRecusa && r && strstr(r, "createstream")) {
+    if (st) *st = 403;
+    return strdup("{\"success\":false,\"error\":\"PLAN_RESTRICTED_FEATURE\"}");
+  }
+  if (sumido500 && r && strstr(r, "createstream?id=500&")) {
+    if (st) *st = 404;
+    return strdup("{\"success\":false,\"error\":\"ITEM_NOT_FOUND\",\"detail\":\"Item not found.\",\"data\":null}");
+  }
+  if (pronto900 && r && strstr(r, "createstream?id=900&")) {
+    if (st) *st = 200;
+    return strdup("{\"success\":true,\"data\":{\"hls_url\":\"https://h.tb-cdn.io/s/900/playlist.m3u8\"}}");
+  }
+  return NULL;
 }
+/* Re-add (owner 19/11/2026): createtorrent, cached only. */
+static char adicionouHash[48]; static int adicionarDa = -1, adicoes;
+int debrid_tb_adicionar(const char *h) {
+  adicoes++; snprintf(adicionouHash, sizeof adicionouHash, "%s", h ? h : "");
+  return adicionarDa;
+}
+/* The cached-first lookup with the item's hash: item 500, hash "ab..". */
+static int hashAchaItem = 500;
+int partes_achar_exato_hash(const char *u, const char *h, const char *a, uint64_t b, int *i, int *f, int *un, char *c, unsigned n, char hi[41]) {
+  (void)u; (void)h; (void)a; (void)b;
+  if (un) *un = 0;
+  if (hi) hi[0] = 0;
+  if (!hashAchaItem) return 0;
+  if (i) *i = hashAchaItem;
+  if (f) *f = 7;
+  if (c && n) snprintf(c, n, "filename");
+  if (hi) snprintf(hi, 41, "%s", "abababababababababababababababababababab");
+  return 1;
+}
+static char viuArquivo[512]; static uint64_t viuBytes;
+// The account lookup: misses unless partesAchar; partesAtrasoMs = how long it takes.
+static int partesAchar, partesUsenet, partesAtrasoMs, conta = 1;
+static volatile int partesN;
+unsigned debrid_tb_geracao(void) { return (unsigned)conta; }
+void rede_fio_fechar(void) {}
+int partes_achar_exato(const char *u, const char *h, const char *a, uint64_t b, int *i, int *f, int *un, char *c, unsigned n) {
+  (void)u; (void)h;
+  snprintf(viuArquivo, sizeof viuArquivo, "%s", a ? a : ""); viuBytes = b;
+  if (partesAtrasoMs) { struct timespec t = {partesAtrasoMs / 1000, (long)(partesAtrasoMs % 1000) * 1000000L}; nanosleep(&t, NULL); }
+  __atomic_add_fetch(&partesN, 1, __ATOMIC_SEQ_CST);
+  if (un) *un = 0;
+  if (!partesAchar) return 0;
+  if (un) *un = partesUsenet;
+  if (i) *i = 500;
+  if (f) *f = 7;
+  if (c && n) snprintf(c, n, "hash");
+  return 1;
+}
+// Fresh lists only (after ITEM_NOT_FOUND): what the test says.
+static int frescoItem, frescoN, frescoAPartir;   // frescoAPartir: found only from that call on
+static char frescoHash[48];
+int partes_achar_exato_fresco(const char *u, const char *h, const char *a, uint64_t b, int *i, int *f, int *un, char *c, unsigned n) {
+  (void)u; (void)a; (void)b;
+  frescoN++;
+  snprintf(frescoHash, sizeof frescoHash, "%s", h ? h : "");
+  if (un) *un = 0;
+  if (!frescoItem || frescoN < frescoAPartir) return 0;
+  if (i) *i = frescoItem;
+  if (f) *f = 7;
+  if (c && n) snprintf(c, n, "filename");
+  return 1;
+}
+static void dormir(int ms) { struct timespec t = {ms / 1000, (long)(ms % 1000) * 1000000L}; nanosleep(&t, NULL); }
+// Waits for the burn-in request to end (no playlist in these stubs: TBB_FALHOU).
+static int viuEsperando;
+static int fimPedido(void) {
+  int e;
+  viuEsperando = 0;
+  for (int k = 0; k < 500 && ((e = tbburn_resultado(NULL, 0, NULL, 0)) == TBB_BUSCANDO || e == TBB_ESPERANDO); k++) {
+    if (e == TBB_ESPERANDO) viuEsperando = 1;
+    dormir(10);
+  }
+  return tbburn_resultado(NULL, 0, NULL, 0);
+}
+static int partesEsperar(int alvo) { for (int k = 0; k < 500 && partesN < alvo; k++) dormir(10); dormir(30); return partesN; }
 char *rede_baixar_st(const char *u, int s, const char *const *c, int *st) { (void)u; (void)s; (void)c; (void)st; return NULL; }
 int rede_torbox_em_voo(int *p) { if (p) *p = 0; return 0; }
 // In-memory data files, one profile, a two-letter language match.
@@ -117,6 +196,12 @@ int main(void) {
   // Known file ids skip the lookup (a part picked in "files of the source").
   tbburn_ids("https://a/b.mkv", 0, 77, 3);
   CHECA(tbburn_linha_visivel());
+  // Owner 19/11: the row stays after a lookup that did not find the file.
+  tbburn_fonte("https://a/nao.mkv", "", "nao.mkv", 2);
+  tbburn_arquivo_tem_ass(1);
+  tbburn_pedir("https://a/nao.mkv", 0, 0);
+  for (int k = 0; k < 300 && tbburn_resultado(NULL, 0, NULL, 0) == TBB_BUSCANDO; k++) { struct timespec t = {0, 10000000L}; nanosleep(&t, NULL); }
+  CHECA(tbburn_resultado(NULL, 0, NULL, 0) == TBB_FALHOU && tbburn_linha_visivel());
 
   // 7) Reuse last link: the player opens the saved URL with no add-on details;
   // the saved record fills them (owner's log 12/11, file=- size=0).
@@ -184,6 +269,168 @@ int main(void) {
     tbburn_titulo("tt7"); CHECA(tbburn_memoria(&r) == 2 && !tbburn_hdr_permitido());
     perfil = 1;
     tbburn_hdr_fonte(1); CHECA(tbburn_hdr_da_fonte()); tbburn_hdr_fonte(0); CHECA(!tbburn_hdr_da_fonte()); }
+
+  // 11) Early lookup (owner 18/11): the key, the MKV guess, then the flow.
+  tbburn_chave(tmp, sizeof tmp, "https://a/x", "ABCDEF0123456789ABCDEF0123456789ABCDEF01", "/d/Show.S01E02.mkv", 42);
+  CHECA(!strcmp(tmp, "h:abcdef0123456789abcdef0123456789abcdef01|n:Show.S01E02.mkv|b:42"));
+  tbburn_chave(tmp, sizeof tmp, "https://a/x", "nothex", "", 0);      // no usable hash/name/size: the URL
+  CHECA(!strcmp(tmp, "u:https://a/x"));
+  tbburn_chave(tmp, sizeof tmp, "", "", "", 0); CHECA(!tmp[0]);
+  CHECA(tbburn_parece_mkv("https://a/b.mkv", "") && tbburn_parece_mkv("https://a/b", "") &&
+        tbburn_parece_mkv("https://a/play?id=1.mp4", "") && tbburn_parece_mkv("https://host", "") &&
+        tbburn_parece_mkv("", "Show.S01E02.1080p.WEB") && tbburn_parece_mkv("https://a/b.mp4", "Show.MKV"));
+  CHECA(!tbburn_parece_mkv("https://a/b.mp4?x=1", "") && !tbburn_parece_mkv("", "dir/Movie.2020.AVI") &&
+        !tbburn_parece_mkv("https://a/b.mkv", "Movie.m2ts"));
+  pro = 1; ligado = 1; chave = 1; tbburn_definir_escolha(-1);
+  // a) Focused source found early; the burn-in request uses it (one lookup in all).
+  partesAchar = 1; partesAtrasoMs = 0; partesN = 0;
+  tbburn_procurar_cedo("https://s/1", "", "A.S01E01.mkv", 1001, "source focused 1 s");
+  CHECA(partesEsperar(1) == 1);
+  tbburn_procurar_cedo("https://s/1", "", "A.S01E01.mkv", 1001, "source focused 1 s");   // known: no new lookup
+  dormir(50); CHECA(partesN == 1);
+  tbburn_fonte("https://played/1", "", "A.S01E01.mkv", 1001);   // the played URL differs; same file
+  tbburn_pedir("https://played/1", 0, 0);
+  CHECA(fimPedido() == TBB_FALHOU && partesN == 1);
+  // b) The request starts while the early lookup runs: it waits for it, no second lookup.
+  partesN = 0; partesAtrasoMs = 300;
+  tbburn_procurar_cedo("https://s/2", "", "A.S01E02.mkv", 1002, "Play");
+  dormir(50);
+  tbburn_fonte("https://s/2", "", "A.S01E02.mkv", 1002);
+  tbburn_pedir("https://s/2", 0, 0);
+  CHECA(fimPedido() == TBB_FALHOU && partesEsperar(1) == 1);
+  // c) A miss: no new early lookup of that file for a while, but the request looks again.
+  partesN = 0; partesAtrasoMs = 0; partesAchar = 0;
+  tbburn_procurar_cedo("https://s/3", "", "A.S01E03.mkv", 1003, "source focused 1 s");
+  CHECA(partesEsperar(1) == 1);
+  tbburn_procurar_cedo("https://s/3", "", "A.S01E03.mkv", 1003, "Play");
+  dormir(50); CHECA(partesN == 1);
+  tbburn_fonte("https://s/3", "", "A.S01E03.mkv", 1003);
+  tbburn_pedir("https://s/3", 0, 0);
+  CHECA(fimPedido() == TBB_FALHOU && partesN == 2);
+  // d) Not for an MP4, nor when burn-in is not possible.
+  partesN = 0; partesAchar = 1;
+  tbburn_procurar_cedo("https://s/4.mp4", "", "", 0, "Play");
+  tbburn_definir_escolha(0); tbburn_procurar_cedo("https://s/5", "", "A.S01E05.mkv", 1005, "Play"); tbburn_definir_escolha(-1);
+  pro = 0; tbburn_procurar_cedo("https://s/6", "", "A.S01E06.mkv", 1006, "Play"); pro = 1;
+  dormir(100); CHECA(partesN == 0);
+  // e) Play: tbburn_fonte arms it, the next frame starts it once; a picked file skips it.
+  tbburn_cedo_bombear(); dormir(50); CHECA(partesN == 0);           // nothing armed
+  tbburn_fonte("https://s/7", "", "A.S01E07.mkv", 1007);
+  tbburn_cedo_bombear(); CHECA(partesEsperar(1) == 1);
+  tbburn_cedo_bombear(); dormir(50); CHECA(partesN == 1);           // once
+  tbburn_fonte("https://s/8", "", "A.S01E08.mkv", 1008);
+  tbburn_ids("https://s/8", 0, 900, 2);
+  tbburn_cedo_bombear(); dormir(50); CHECA(partesN == 1);
+  // f) While one runs, only the newest waiting request is looked up after it.
+  partesN = 0; partesAtrasoMs = 200;
+  tbburn_procurar_cedo("https://s/9", "", "A.S01E09.mkv", 1009, "source focused 1 s");
+  dormir(30);
+  tbburn_procurar_cedo("https://s/10", "", "A.S01E10.mkv", 1010, "source focused 1 s");
+  tbburn_procurar_cedo("https://s/11", "", "A.S01E11.mkv", 1011, "source focused 1 s");
+  CHECA(partesEsperar(2) == 2 && !strcmp(viuArquivo, "A.S01E11.mkv"));
+  dormir(300); CHECA(partesN == 2);
+  // g) Another TorBox account: hits of the old one are not used.
+  partesN = 0; partesAtrasoMs = 0; conta = 2;
+  tbburn_procurar_cedo("https://s/1", "", "A.S01E01.mkv", 1001, "source focused 1 s");
+  CHECA(partesEsperar(1) == 1);
+  conta = 1;
+
+  // 12) Log 10 (owner 18/11).
+  { // l) the early lookup at Play is skipped while the request looks the same file up.
+    partesN = 0; partesAtrasoMs = 300; partesAchar = 1;
+    tbburn_fonte("https://s/12l", "", "B.S01E05.mkv", 2005);
+    tbburn_pedir("https://s/12l", 1, 1);
+    dormir(50);
+    tbburn_cedo_bombear();
+    CHECA(fimPedido() == TBB_FALHOU && partesN == 1);
+    dormir(400); CHECA(partesN == 1);
+    partesAtrasoMs = 0;
+    // m) a usenet download: createstream asks for type=usenet (early lookup and request).
+    partesN = 0; partesUsenet = 1; ultRota[0] = 0;
+    tbburn_procurar_cedo("https://s/12m", "", "B.S01E06.mkv", 2006, "Play");
+    CHECA(partesEsperar(1) == 1);
+    tbburn_fonte("https://s/12m", "", "B.S01E06.mkv", 2006);
+    tbburn_pedir("https://s/12m", 1, 1);
+    CHECA(fimPedido() == TBB_FALHOU && partesN == 1 && strstr(ultRota, "type=usenet") != NULL);
+    partesN = 0; ultRota[0] = 0;
+    tbburn_fonte("https://s/12n", "", "B.S01E07.mkv", 2007);
+    tbburn_pedir("https://s/12n", 1, 1);
+    CHECA(fimPedido() == TBB_FALHOU && partesN == 1 && strstr(ultRota, "type=usenet") != NULL);
+    partesUsenet = 0; ultRota[0] = 0;
+    tbburn_fonte("https://s/12o", "", "B.S01E08.mkv", 2008);
+    tbburn_pedir("https://s/12o", 1, 1);
+    CHECA(fimPedido() == TBB_FALHOU && strstr(ultRota, "type=torrent") != NULL);
+    // p) Log 12: createstream answers ITEM_NOT_FOUND for the listed item -> fresh
+    //    lists once; a new item is asked for; the stale hit is forgotten.
+    CHECA(tbburn_eh_item_sumido(404, "{\"success\":false,\"error\":\"ITEM_NOT_FOUND\"}") &&
+          !tbburn_eh_item_sumido(200, "{\"success\":true}") && !tbburn_eh_item_sumido(0, NULL));
+    sumido500 = 1; frescoItem = 600; frescoN = criacoes = 0; partesN = 0;
+    tbburn_procurar_cedo("https://s/12p", "", "B.S01E09.mkv", 2009, "Play");
+    CHECA(partesEsperar(1) == 1);
+    tbburn_fonte("https://s/12p", "", "B.S01E09.mkv", 2009);
+    tbburn_pedir("https://s/12p", 1, 1);
+    CHECA(fimPedido() == TBB_FALHOU && frescoN == 1 && criacoes == 2 && strstr(ultRota, "createstream?id=600&") != NULL);
+    tbburn_pedir("https://s/12p", 1, 1);   // the fresh item is used now: no list, no 404
+    CHECA(fimPedido() == TBB_FALHOU && frescoN == 1 && criacoes == 3 && strstr(ultRota, "id=600&") != NULL);
+    // q) the fresh list has the same item, or nothing: re-add by the hash TorBox's
+    //    (stale) list gives (owner 19/11/2026). Not cached: one createtorrent,
+    //    no second createstream, Nuvio draws.
+    frescoItem = 500; frescoN = criacoes = adicoes = 0; adicionarDa = -1;
+    tbburn_fonte("https://s/12q", "", "B.S01E10.mkv", 2010);
+    tbburn_pedir("https://s/12q", 1, 1);
+    CHECA(fimPedido() == TBB_FALHOU && frescoN == 1 && criacoes == 1 && adicoes == 1 &&
+          !strcmp(adicionouHash, "abababababababababababababababababababab") && !viuEsperando);
+    frescoItem = 0; frescoN = criacoes = adicoes = 0;
+    tbburn_fonte("https://s/12r", "", "B.S01E11.mkv", 2011);
+    tbburn_pedir("https://s/12r", 1, 1);
+    CHECA(fimPedido() == TBB_FALHOU && frescoN == 1 && criacoes == 1 && adicoes == 1);
+    // r) Re-added (torrent 900): TorBox needs a while; the request waits
+    //    (TBB_ESPERANDO), finds it in the fresh lists on the 3rd look (by the
+    //    hash) and gets a playlist.
+    { char m[256];
+      frescoItem = 900; frescoAPartir = 4; frescoN = criacoes = adicoes = 0; adicionarDa = 900; pronto900 = 1;
+      tbburn_fonte("https://s/12s", "", "B.S01E12.mkv", 2012);
+      tbburn_pedir("https://s/12s", 1, 1);
+      CHECA(fimPedido() == TBB_PRONTO && viuEsperando && adicoes == 1 && frescoN == 4 &&
+            !strcmp(frescoHash, "abababababababababababababababababababab") && strstr(ultRota, "createstream?id=900&") != NULL);
+      CHECA(tbburn_resultado(m, sizeof m, NULL, 0) == TBB_PRONTO && strstr(m, "/s/900/playlist.m3u8") != NULL);
+      // The next request for that file uses item 900 at once.
+      frescoN = criacoes = adicoes = 0;
+      tbburn_pedir("https://s/12s", 1, 1);
+      CHECA(fimPedido() == TBB_PRONTO && adicoes == 0 && frescoN == 0 && criacoes == 1); }
+    // s) Never registered: gives up after the total time, Nuvio draws.
+    frescoItem = 0; frescoAPartir = 0; frescoN = criacoes = adicoes = 0; adicionarDa = 900;
+    tbburn_fonte("https://s/12t", "", "B.S01E13.mkv", 2013);
+    tbburn_pedir("https://s/12t", 1, 1);
+    CHECA(fimPedido() == TBB_FALHOU && viuEsperando && adicoes == 1 && frescoN >= 3 && criacoes == 1);
+    // t) Cancelled while waiting (another pick / the player left): stops asking.
+    { int n0;
+      frescoN = criacoes = adicoes = 0;
+      tbburn_fonte("https://s/12u", "", "B.S01E14.mkv", 2014);
+      tbburn_pedir("https://s/12u", 1, 1);
+      for (int k = 0; k < 200 && tbburn_resultado(NULL, 0, NULL, 0) != TBB_ESPERANDO; k++) dormir(5);
+      tbburn_cancelar();
+      n0 = frescoN; dormir(200);
+      CHECA(frescoN <= n0 + 1 && tbburn_resultado(NULL, 0, NULL, 0) == TBB_NADA); }
+    sumido500 = 0; pronto900 = 0;
+    // u) Not in any list, but the add-on gave its hash: re-added the same way.
+    { partesAchar = 0; frescoItem = 900; frescoAPartir = 1; frescoN = criacoes = adicoes = 0; adicionarDa = 900; pronto900 = 1;
+      tbburn_fonte("https://s/12v", "CDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCD", "B.S01E15.mkv", 2015);
+      tbburn_pedir("https://s/12v", 1, 1);
+      CHECA(fimPedido() == TBB_PRONTO && adicoes == 1 && !strcmp(adicionouHash, "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"));
+      // ...and without a hash from the add-on nothing is added.
+      adicoes = 0;
+      tbburn_fonte("https://s/12w", "", "B.S01E16.mkv", 2016);
+      tbburn_pedir("https://s/12w", 1, 1);
+      CHECA(fimPedido() == TBB_FALHOU && adicoes == 0);
+      pronto900 = 0; frescoItem = 0; }
+    // v) A plan refusal no longer hides burn-in (owner 19/11/2026: never goes on Pro).
+    { partesAchar = 1; planoRecusa = 1;
+      tbburn_fonte("https://s/12x", "", "B.S01E17.mkv", 2017);
+      tbburn_arquivo_tem_ass(1);
+      tbburn_pedir("https://s/12x", 1, 1);
+      CHECA(fimPedido() == TBB_FALHOU && tbburn_recusado() && tbburn_linha_visivel() && tbburn_pode());
+      planoRecusa = 0; } }
 
   if (falhas) { printf("tbburn: %d falha(s)\n", falhas); return 1; }
   printf("tbburn: ok\n");

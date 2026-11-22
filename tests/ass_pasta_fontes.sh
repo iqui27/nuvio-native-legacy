@@ -5,5 +5,5 @@ TMPDIR="${TMPDIR%/}"
 # nao). Ver tests/ass_pasta_fontes.c. A funcao testada nao depende do libass.
 set -eu
 cd "$(dirname "$0")/.."
-cc -Isrc tests/ass_pasta_fontes.c src/assrender.c -o ${TMPDIR:-/tmp}/nuvio-ass-pasta-fontes-test -Wall
+cc -Isrc tests/ass_pasta_fontes.c src/assrender.c src/asssinais.c -o ${TMPDIR:-/tmp}/nuvio-ass-pasta-fontes-test -Wall
 ${TMPDIR:-/tmp}/nuvio-ass-pasta-fontes-test

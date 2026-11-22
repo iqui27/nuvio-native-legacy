@@ -12,7 +12,7 @@ fi
 SDLI="${NV_SDL_INC:-$(pkg-config --cflags-only-I sdl2 2>/dev/null | sed 's#/SDL2##') -I/opt/homebrew/include}"
 GL=""; [ "$(uname)" = Darwin ] && GL="-framework OpenGL"
 cc -DNV_ASS_LIBASS -DNV_ASS_NOVO -DNV_ASSPERF_TESTE -include tests/ass_matriz_gl.h \
-  -Isrc $SDLI tests/ass_matriz.c src/assrender.c src/assperf.c src/assfios.c tests/ass_render_stub.c \
+  -Isrc $SDLI tests/ass_matriz.c src/assrender.c src/asssinais.c src/assperf.c src/assfios.c tests/ass_render_stub.c \
   -o "$TMPDIR/nuvio-ass-matriz-test" \
   $(pkg-config --cflags --libs libass) -lSDL2 -lpthread -lm $GL -Wno-deprecated-declarations -Wno-macro-redefined
 "$TMPDIR/nuvio-ass-matriz-test" 2>/dev/null

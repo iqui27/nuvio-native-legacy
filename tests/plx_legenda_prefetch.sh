@@ -15,7 +15,7 @@ for nome in tocar parar pausar buscar pausa_confirmada tocando pronto ativo falh
 done
 cc "${flags[@]}" "${renomes[@]}" -c src/video.c -o "$dir/video.o"
 cc "${flags[@]}" -Dmkvass_prebuscar=nv_base_mkvass_prebuscar \
-  -Dmkvass_prebusca_fase=nv_base_mkvass_prebusca_fase -c src/mkvass.c -o "$dir/mkvass.o"
+  -Dmkvass_prebusca_fase=nv_base_mkvass_prebusca_fase -c src/mkvass.c src/asssinais.c -o "$dir/mkvass.o"
 sources=()
 for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/video.c|src/mkvass.c) continue;; esac

@@ -13,6 +13,6 @@ callback = re.search(r'static void aliviarMemoria\(void\) \{.*?^\}', source, re.
 assert callback, 'memory callback missing'
 pathlib.Path(sys.argv[1]).write_text(callback[0] + '\n')
 PY
-cc tests/mkvass_memoria.c src/fontefamilias.c src/legenda.c tests/mkvass_i18n.c src/imgsub.c src/pgs.c src/assrender.c src/dados.c \
+cc tests/mkvass_memoria.c src/fontefamilias.c src/legenda.c src/asssinais.c tests/mkvass_i18n.c src/imgsub.c src/pgs.c src/assrender.c src/dados.c \
   -Isrc -I"$DIR" -O1 -g -Wno-deprecated-declarations -pthread -lm -o "$DIR/test"
 "$DIR/test"

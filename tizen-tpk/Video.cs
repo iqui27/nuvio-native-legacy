@@ -116,7 +116,7 @@ namespace NuvioTpk
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int FnPos();
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnEscolher(int tipo, int idx);
 
-        const int EV_PRONTO = 1, EV_TOCANDO = 2, EV_PAUSADO = 3, EV_FIM = 4, EV_ERRO = 5, EV_TAMANHO = 6, EV_BUFFER = 7, EV_VELOCIDADE = 8, EV_PRESO = 9, EV_CONSULTA_LENTA = 10, EV_BUSCOU = 11, EV_BUSCA_FALHOU = 12, EV_RETOMADA = 13;
+        const int EV_PRONTO = 1, EV_TOCANDO = 2, EV_PAUSADO = 3, EV_FIM = 4, EV_ERRO = 5, EV_TAMANHO = 6, EV_BUFFER = 7, EV_VELOCIDADE = 8, EV_PRESO = 9, EV_CONSULTA_LENTA = 10, EV_BUSCOU = 11, EV_BUSCA_FALHOU = 12, EV_RETOMADA = 13, EV_INICIO = 14;
 
         readonly Func<Display> fazDisplay;
         readonly Action<Action> principal;
@@ -606,11 +606,20 @@ namespace NuvioTpk
                 // muda, busca o ponto ANTES do Start e, se pausado, pausa nele.
                 bool retAtivo = false, retPausado = false;
                 int retMs = 0;
+                // Owner 18/11: "X-Nuvio-Start: ms" = open at the saved point (Continue
+                // watching, the burned stream): a fast seek in Ready, then Start, with
+                // sound. Answers EV_INICIO (where it landed, or -1: the C seeks itself).
+                int iniMs = 0;
                 foreach (var linha in (cabecalhos ?? "").Split('\n'))
                 {
                     int i = linha.IndexOf(':');
                     if (i <= 0) continue;
                     string nome = linha.Substring(0, i).Trim(), valor = linha.Substring(i + 1).Trim();
+                    if (nome == "X-Nuvio-Start")
+                    {
+                        if (!int.TryParse(valor, out iniMs) || iniMs < 0) iniMs = 0;
+                        continue;
+                    }
                     // #resume: a reabertura depois do fundo nasce muda; o C
                     // devolve o som (Escolher 5) com o video ja pausado no ponto.
                     if (nome == "X-Nuvio-Resume")
@@ -656,6 +665,16 @@ namespace NuvioTpk
                 NvVid.Evento(EV_PRONTO, dur, 0);
                 if (minha != Volatile.Read(ref sessao)) return;
                 int retPousou = -1;
+                if (iniMs > 0 && !retAtivo)
+                {
+                    long t1 = Stopwatch.GetTimestamp();
+                    int pousou = await SeekAntesDoStart(p, minha, iniMs, false);
+                    if (minha != Volatile.Read(ref sessao)) return;
+                    Log("[video] start at the saved point: seek to " + iniMs + " ms before Start " + (pousou >= 0 ? "ok" : "failed") +
+                        " in " + MsDesde(t1) + " ms (open to here " + MsDesde(retT0) + " ms)");
+                    if (pousou >= 0) lock (trocaTrava) { if (minha == sessao && player == p) posMs = pousou; }
+                    NvVid.Evento(EV_INICIO, pousou, 0);
+                }
                 if (retAtivo && retMs > 0)
                 {
                     long t1 = Stopwatch.GetTimestamp();
@@ -939,9 +958,11 @@ namespace NuvioTpk
 
         // Seek com o player em Ready (depois do Prepare, antes do Start): exato,
         // e o rapido se o exato for recusado. -1 = nao buscou (o C busca depois).
-        async Task<int> SeekAntesDoStart(Player p, int minha, int ms)
+        // exato = false (open at the saved point): the fast seek only, like the
+        // app's own resume seek.
+        async Task<int> SeekAntesDoStart(Player p, int minha, int ms, bool exato = true)
         {
-            foreach (bool exata in new[] { true, false })
+            foreach (bool exata in exato ? new[] { true, false } : new[] { false })
             {
                 try
                 {

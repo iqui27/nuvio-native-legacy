@@ -1010,12 +1010,14 @@ static int enviar(int sock, const void *b, size_t n, Sess *s) {
 // Nunca muda um byte do que vai ao player e nunca pede nada ao CDN.
 #ifdef NV_TPK
 #include "mkvass.h"
+#include "asssinais.h"
 #define MT_CLUSTER   0x1F43B675u
 #define MT_BLOCO_MAX (1L << 20)
 enum { MT_PROCURA, MT_TAMCLUSTER, MT_CAB, MT_PULA, MT_JUNTA };
 typedef struct {
   int64_t pos;              // posicao absoluta do proximo byte
   int estado, faixa, ligado;
+  int faixaS;               // Signs & Songs partner (asssinais.h, owner 19/11/2026): its blocks go there
   int64_t clPos, clFim;     // Cluster atual; clFim -1 = tamanho desconhecido
   int clHdr, temTs, precisaTs;
   unsigned long clTs;
@@ -1028,7 +1030,9 @@ typedef struct {
   unsigned char *buf; long bufN, bufCap, bufTam;
 } MfTap;
 
-static void mtProcurar(MfTap *t) { t->estado = MT_PROCURA; t->janela = 0; t->cabN = 0; t->temTs = 0; }
+/* Looking for the next Cluster = bytes are skipped: the Signs & Songs
+ * partner's known stretch ends here (asssinais.h). */
+static void mtProcurar(MfTap *t) { t->estado = MT_PROCURA; t->janela = 0; t->cabN = 0; t->temTs = 0; if (t->faixaS) asssinais_salto(); }
 
 static int mtGuardar(MfTap *t, const unsigned char *b, long n) {
   if (t->bufN + n > t->bufCap) {
@@ -1069,11 +1073,12 @@ static long mtFaixaDo(const MfTap *t, uint32_t id) {
 
 static void mtAlimentar(MfTap *t, int64_t pos, const unsigned char *b, size_t n) {
   size_t i = 0;
-  int faixa = mkvass_relay_faixa();
+  int faixa = mkvass_relay_faixa(), faixaS = asssinais_relay_faixa();
+  if (faixaS == faixa) faixaS = 0;
   if (!faixa) { t->ligado = 0; t->pos = pos + (int64_t)n; return; }
-  if (!t->ligado || t->pos != pos || faixa != t->faixa) {
+  if (!t->ligado || t->pos != pos || faixa != t->faixa || faixaS != t->faixaS) {
     // Ligou agora, pulou bytes ou trocou de faixa: procura o proximo Cluster.
-    t->ligado = 1; t->faixa = faixa; t->pos = pos; t->bufN = 0; mtProcurar(t);
+    t->ligado = 1; t->faixa = faixa; t->faixaS = faixaS; t->pos = pos; t->bufN = 0; mtProcurar(t);
   }
   while (i < n) {
     switch (t->estado) {
@@ -1145,7 +1150,7 @@ static void mtAlimentar(MfTap *t, int64_t pos, const unsigned char *b, size_t n)
       i += (size_t)k; t->pos += k;
       if (t->junta == 2 && !t->espiou) {
         long fx = mtFaixaDo(t, t->buf[0]);   // buf[0] e o ID de um byte: A0 ou A3
-        if (fx == -2 || (fx >= 0 && fx != t->faixa)) {   // nao e da faixa: o resto e pulado
+        if (fx == -2 || (fx >= 0 && fx != t->faixa && (!t->faixaS || fx != t->faixaS))) {   // nao e da faixa: o resto e pulado
           t->pular = t->bufTam - t->bufN; t->bufN = 0;
           t->estado = t->pular ? MT_PULA : MT_CAB;
           break;
@@ -1157,6 +1162,9 @@ static void mtAlimentar(MfTap *t, int64_t pos, const unsigned char *b, size_t n)
         unsigned long v = 0;
         for (long q = 0; q < t->bufN; q++) v = (v << 8) | t->buf[q];
         t->clTs = v; t->temTs = 1; t->precisaTs = 0;
+        if (t->faixaS) asssinais_cluster(t, v);   // the partner: this stretch of the file is passing
+      } else if (t->faixaS && mtFaixaDo(t, t->buf[0]) == t->faixaS) {
+        asssinais_bloco(t->clTs, t->buf, t->bufN);   // the Signs & Songs partner: only for matching
       } else {
         mkvass_relay_bloco(t->clPos, t->clHdr, t->clTs, t->temTs, t->elPos, t->buf, t->bufN);
       }

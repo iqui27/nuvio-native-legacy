@@ -538,7 +538,9 @@ int partes_achar_t(const char *corpo, int usenet, char hashes[][41], int nHashes
   // 2) o nome do arquivo da fonte num arquivo de algum item. Nome com aspa,
   //    barra ou fora do ASCII pode vir escapado no JSON: ai vale a varredura
   //    item a item, a lenta.
-  if (!achou && nHashes == 0 && b[0]) {
+  // Owner 18/11 (log 10): a 40-hex string in the link that is not this file's
+  // hash (hashesConfiaveis 0) no longer blocks the exact name/size matches.
+  if (!achou && (nHashes == 0 || !hashesConfiaveis) && b[0]) {
     int simples = 1;
     for (const unsigned char *c = (const unsigned char *)b; *c; c++)
       if (*c >= 0x80 || *c == '"' || *c == '\\') simples = 0;
@@ -563,7 +565,7 @@ int partes_achar_t(const char *corpo, int usenet, char hashes[][41], int nHashes
   }
   // 4) TAMANHO EXATO do arquivo (videoSize do addon) num video de algum item:
   //    num arquivo de varios GB, o mesmo numero de bytes e o mesmo arquivo.
-  if (!achou && nHashes == 0 && bytes > 1024ULL * 1024 * 50) {
+  if (!achou && (nHashes == 0 || !hashesConfiaveis) && bytes > 1024ULL * 1024 * 50) {
     char num[32];
     snprintf(num, sizeof num, "%llu", (unsigned long long)bytes);
     for (const char *p = strstr(corpo, num); p && !achou; p = strstr(p + 1, num)) {
@@ -1725,16 +1727,36 @@ void partes_ponto_zerar(void) {
   pthread_mutex_unlock(&pontoTrava);
 }
 
+static int acharExato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                      int *item, int *arquivoId, int *usenet, char *como, unsigned n, int soFresco,
+                      char *hashItem);
 int partes_achar_exato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
-                       int *item, int *arquivoId, char *como, unsigned n) {
+                       int *item, int *arquivoId, int *usenet, char *como, unsigned n) {
+  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, 0, NULL);
+}
+int partes_achar_exato_fresco(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                              int *item, int *arquivoId, int *usenet, char *como, unsigned n) {
+  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, 1, NULL);
+}
+int partes_achar_exato_hash(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                            int *item, int *arquivoId, int *usenet, char *como, unsigned n, char hashItem[41]) {
+  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, 0, hashItem);
+}
+static int acharExato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                      int *item, int *arquivoId, int *usenet, char *como, unsigned n, int soFresco,
+                      char *hashItem) {
   char hashes[10][41];
-  int nh = 0, confiavel = 0, pg, achou = 0;
+  int nh = 0, confiavel = 0, pg, achou = 0, tipo = 0, itensT[2] = { 0, 0 }, paginasT[2] = { 0, 0 };
+  int viuNome = 0, viuTamanho = 0;   // a miss: was the name / the size anywhere in the lists?
+  char tamTxt[32] = "";
   PartesLista l;
   const char *nome = arquivo ? strrchr(arquivo, '/') : NULL;
   nome = nome ? nome + 1 : arquivo ? arquivo : "";
   if (item) *item = 0;
   if (arquivoId) *arquivoId = -1;
+  if (usenet) *usenet = 0;
   if (como && n) como[0] = 0;
+  if (hashItem) hashItem[0] = 0;
   if (hash && strlen(hash) == 40) {
     for (int i = 0; i < 40; i++) hashes[0][i] = (char)tolower((unsigned char)hash[i]);
     hashes[0][40] = 0;
@@ -1742,27 +1764,50 @@ int partes_achar_exato(const char *url, const char *hash, const char *arquivo, u
   }
   if (url) nh += partes_hashes_texto(url, hashes + nh, 9 - nh);
   if (!nh && !nome[0] && !bytes) return 0;
+  if (bytes) snprintf(tamTxt, sizeof tamTxt, "%llu", (unsigned long long)bytes);
   memset(&l, 0, sizeof l);
   // Burn-in (owner 14/11): a miss on the cached account list fetched E07 of a
-  // pack that was there; a second pass asks TorBox for a fresh list.
-  for (int fresco = 0; fresco < 2 && !achou; fresco++) {
-    for (pg = 0; pg < 10 && !achou; pg++) {
-      int st = 0, m = 0, itens = 0;
-      char *r = listaConta(0, pg, fresco, &st, &m);
-      if (!r) break;
-      partes_lista_limpar(&l);
-      memset(&l, 0, sizeof l);
-      achou = partes_achar_n(r, 0, hashes, nh, confiavel, nome, bytes, &l, &itens) &&
-              l.atual >= 0 && l.atual < l.n && strcmp(l.como, "best match");
-      free(r);
-      if (!achou && itens < DEBRID_TB_PAGINA) break;
+  // pack that was there; a second pass asks TorBox for fresh lists. Each pass
+  // reads the torrents, then the usenet downloads (owner 18/11, log 10: a
+  // usenet download has no info hash and is never in the torrent list).
+  for (int fresco = soFresco; fresco < 2 && !achou; fresco++) {
+    for (tipo = 0; tipo < 2 && !achou; tipo++) {
+      itensT[tipo] = paginasT[tipo] = 0;
+      for (pg = 0; pg < 10 && !achou; pg++) {
+        int st = 0, m = 0, itens = 0;
+        char *r = listaConta(tipo, pg, fresco, &st, &m);
+        if (!r) break;
+        partes_lista_limpar(&l);
+        memset(&l, 0, sizeof l);
+        achou = partes_achar_n(r, tipo, hashes, nh, confiavel, nome, bytes, &l, &itens) &&
+                l.atual >= 0 && l.atual < l.n && strcmp(l.como, "best match");
+        if (!achou) {
+          if (nome[0] && strstr(r, nome)) viuNome = 1;
+          if (tamTxt[0] && strstr(r, tamTxt)) viuTamanho = 1;
+        }
+        free(r);
+        itensT[tipo] += itens; paginasT[tipo]++;
+        if (!achou && itens < DEBRID_TB_PAGINA) break;
+      }
     }
-    if (!achou && !fresco) { printf("[partes] exact match not in the cached TorBox list: asking for a fresh one\n"); fflush(stdout); }
+    if (!achou) {
+      printf("[partes] exact match not in the %s TorBox lists (%d torrent(s) in %d page(s), %d usenet download(s) in %d page(s))%s\n",
+             fresco ? "fresh" : "cached", itensT[0], paginasT[0], itensT[1], paginasT[1],
+             fresco ? "" : ": asking for fresh ones");
+      if (fresco)   // what to look at in the next log (owner 18/11, log 10)
+        printf("[partes] miss details: %d hash(es) from the add-on/link (%s); file name in the lists: %s; size %s in the lists: %s\n",
+               nh, confiavel ? "the add-on's: name/size not tried" : nh ? "link only, not trusted" : "none",
+               !nome[0] ? "no name" : viuNome ? "yes" : "no", tamTxt[0] ? tamTxt : "-",
+               !tamTxt[0] ? "-" : viuTamanho ? "yes" : "no");
+      fflush(stdout);
+    }
   }
   if (achou) {
     if (item) *item = l.item;
     if (arquivoId) *arquivoId = l.arq[l.atual].id;
-    if (como && n) snprintf(como, n, "%s", l.como);
+    if (usenet) *usenet = l.usenet;
+    if (como && n) snprintf(como, n, "%s%s", l.como, l.usenet ? ", usenet" : "");
+    if (hashItem && !l.usenet) snprintf(hashItem, 41, "%s", l.hash);
   }
   partes_lista_limpar(&l);
   return achou;

@@ -1711,6 +1711,7 @@ static int resolverUrl(const char *url, const char *cabecalhos, int segundos,
 }
 
 void (*stream_cdn_lembrar)(const char *orig, const char *final, const char *cabecalhos, uint64_t sessao);
+void (*stream_foco_demorado)(const Stream *s);
 
 static int verificarUma(int i, Conferencia *c) {
   char fim[NV_MEDIA_URL_MAX], url[NV_MEDIA_URL_MAX], cab[512], mime[96], addon[sizeof lista->provedor];
@@ -5028,8 +5029,27 @@ void stream_folha_evento(const SDL_Event *e) {
     else okNaLinha();
   }
 }
+// A SOURCE FOCUSED 1 s (owner 18/11): the platform's hook runs once for that
+// row (.tpk: the TorBox account lookup for burn-in starts early).
+#define FOCO_DEMORADO_MS 1000u
+// The row is followed by its source (URL + file name), not by its index: the
+// list grows and reorders while add-ons answer.
+static void focoDemorado(Uint32 agora) {
+  static char chave[640];
+  static int feito;
+  static Uint32 desde;
+  char k[640] = "";
+  int i = aberta && grupo == 1 && !detAberto && !ptAberto ? filtrado(foco) : -1;
+  const Stream *s = i >= 0 ? stream_item(i) : NULL;
+  if (s) snprintf(k, sizeof k, "%.511s|%.120s", s->url[0] ? s->url : s->infoHash, s->arquivo);
+  if (strcmp(k, chave)) { snprintf(chave, sizeof chave, "%s", k); desde = agora; feito = 0; return; }
+  if (!s || feito || agora - desde < FOCO_DEMORADO_MS || !stream_foco_demorado) return;
+  feito = 1;
+  stream_foco_demorado(s);
+}
 void stream_folha_atualizar(float dt, Uint32 agora) {
   int nf;
+  focoDemorado(agora);
   medirCabecalho();
   if (aberta || anim > 0.001f) folhaGeometria();
   anim=anim_mola(anim,aberta?1:0,dt,NV_MOLA_TELA);

@@ -9,6 +9,7 @@
 #include "imgsub.h"
 #include "pgs.h"
 #include "fontefamilias.h"
+#include "asssinais.h"
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -596,6 +597,8 @@ typedef struct {
   // FONTES SOB DEMANDA (.tpk, fontefamilias.h): as familias que o documento
   // pediu ate agora e quais das `fontes` ja foram ao libass (1 por fonte).
   FonteFamilias familias;
+  FonteFamilias anexadas;   // every name the attached fonts answer to (built once)
+  int anexadasLidas, semFonteN;   // semFonteN: requested families with no attached font, last logged
   unsigned char *fonteDada;
   // PRE-BUSCA: `prebusca` = ainda nao adotado (nao entrega); `escolher` decide
   // o ordinal pelo idioma; `fracIni` e onde o player vai comecar; `ordinal` e a
@@ -605,6 +608,10 @@ typedef struct {
   MkvassEscolherCom escolherCom;
   const void *contextoEscolha;
   int independente;
+  // SIGNS & SONGS (asssinais.h, owner 19/11/2026): this ASS track's name says
+  // Signs & Songs; the file's Signs & Songs ASS track to match against (0 =
+  // none); asssinais told at the first delivery.
+  int      trilhaSinais, faixaSinais, sinaisDitos;
   double   fracIni;
   // O servidor recusou o resto de um Range cortado (rede_resto_recusado): esta
   // tentativa para e vira MKVASS_NOGO_RESTO, com recuo longo em faixas.c.
@@ -1636,10 +1643,11 @@ static int escolherNoCabecalho(Fio *f, const unsigned char *p, long n) {
   Iter it = { p, n, 0 }; unsigned long id; const unsigned char *d; long t;
   char idiomas[MKVASS_MAX_LEGENDAS][16];
   const char *vetor[MKVASS_MAX_LEGENDAS];
+  unsigned char sinais[MKVASS_MAX_LEGENDAS];
   int nLeg = 0, ord;
   while (proximo(&it, &id, &d, &t) && nLeg < MKVASS_MAX_LEGENDAS) {
     Iter j = { d, t, 0 }; unsigned long fid; const unsigned char *fd; long ft;
-    int tipo = 0; char lang[16] = "", bcp[16] = "";
+    int tipo = 0; char lang[16] = "", bcp[16] = "", nome[128] = "";
     if (id != ID_TRACKENTRY) continue;
     while (proximo(&j, &fid, &fd, &ft)) {
       if (fid == ID_TRACKTYPE) tipo = (int)lerUint(fd, ft);
@@ -1647,12 +1655,13 @@ static int escolherNoCabecalho(Fio *f, const unsigned char *p, long n) {
         char *dst = fid == ID_LANGUAGE ? lang : bcp;
         size_t z = (size_t)ft < 15 ? (size_t)ft : 15;
         memcpy(dst, fd, z); dst[z] = 0;
-      }
+      } else if (fid == 0x536E) { size_t z = (size_t)ft < sizeof nome - 1 ? (size_t)ft : sizeof nome - 1; memcpy(nome, fd, z); nome[z] = 0; }
     }
     if (tipo != 17) continue;
     // Sem Language o padrao do Matroska e "eng" — o mesmo que mkv.c le.
     snprintf(idiomas[nLeg], sizeof idiomas[nLeg], "%s", bcp[0] ? bcp : lang[0] ? lang : "eng");
     vetor[nLeg] = idiomas[nLeg];
+    sinais[nLeg] = (unsigned char)asssinais_nome(nome);
     nLeg++;
   }
   ord = nLeg && f->escolherCom
@@ -1662,6 +1671,20 @@ static int escolherNoCabecalho(Fio *f, const unsigned char *p, long n) {
     printf("[mkvass] pre-busca: %d legenda(s) no arquivo, nenhuma no idioma preferido\n", nLeg);
     fflush(stdout);
     return -1;
+  }
+  /* The chooser only sees languages: it took a Signs & Songs track while the
+   * same language has a Full/Dialogue one (logs 13/15: the prefetch read the
+   * Signs & Songs track's header, Cues and fonts, then the dialogue track was
+   * picked). The dialogue track first; the Signs & Songs one is read as data
+   * only, from the relay (asssinais.h). */
+  if (sinais[ord]) {
+    int k;
+    for (k = 0; k < nLeg; k++)
+      if (!sinais[k] && !strcasecmp(idiomas[k], idiomas[ord])) {
+        printf("[mkvass] pre-busca: ordinal %d is Signs & Songs; taking the %s dialogue track (ordinal %d)\n",
+               ord, idiomas[ord], k);
+        ord = k; break;
+      }
   }
   f->ordinal = ord;
   f->faixa = -ord - 1;
@@ -1679,6 +1702,46 @@ static void prebuscaTextoSoltar(Fio *f);
 
 // Devolve: 1 achou a faixa e e ASS (ou texto simples aceito); 0 nao achou;
 // -1 achou e nao serve.
+/* SIGNS & SONGS (asssinais.h): with the chosen ASS track known, read every
+ * TrackEntry again for the track names. The partner: an ASS track named
+ * Signs & Songs, of the chosen track's language if there is one. */
+static void sinaisDoArquivo(Fio *f, const unsigned char *p, long n) {
+  Iter it = { p, n, 0 }; unsigned long id; const unsigned char *d; long t;
+  struct { int numero, ass, sinais; char lang[16]; } v[64];
+  int nv = 0, i, meu = -1, par = 0, parLang = 0;
+  while (proximo(&it, &id, &d, &t) && nv < 64) {
+    Iter j; unsigned long fid; const unsigned char *fd; long ft;
+    char nome[128] = "";
+    if (id != ID_TRACKENTRY) continue;
+    memset(&v[nv], 0, sizeof v[nv]);
+    j.p = d; j.n = t; j.o = 0;
+    while (proximo(&j, &fid, &fd, &ft)) {
+      if (fid == ID_TRACKNUMBER) v[nv].numero = (int)lerUint(fd, ft);
+      else if (fid == ID_CODECID)
+        v[nv].ass = ft >= 10 && (!strncmp((const char *)fd, "S_TEXT/ASS", 10) || !strncmp((const char *)fd, "S_TEXT/SSA", 10));
+      else if (fid == 0x536E) { size_t k = (size_t)ft < sizeof nome - 1 ? (size_t)ft : sizeof nome - 1; memcpy(nome, fd, k); nome[k] = 0; }
+      else if ((fid == 0x22B59C || fid == 0x22B59D) && !v[nv].lang[0]) {
+        size_t k = (size_t)ft < sizeof v[nv].lang - 1 ? (size_t)ft : sizeof v[nv].lang - 1;
+        memcpy(v[nv].lang, fd, k); v[nv].lang[k] = 0;
+        { char *h = strchr(v[nv].lang, '-'); if (h) *h = 0; }   // en-US -> en
+      }
+    }
+    v[nv].sinais = asssinais_nome(nome);
+    if (v[nv].numero == f->faixa) meu = nv;
+    nv++;
+  }
+  f->trilhaSinais = meu >= 0 && v[meu].sinais;
+  f->faixaSinais = 0;
+  if (meu < 0 || f->trilhaSinais) return;
+  for (i = 0; i < nv; i++) {
+    int mesma;
+    if (i == meu || !v[i].ass || !v[i].sinais) continue;
+    mesma = v[i].lang[0] && !strcasecmp(v[i].lang, v[meu].lang);
+    if (!par || (mesma && !parLang)) { par = v[i].numero; parLang = mesma; }
+  }
+  f->faixaSinais = par;
+}
+
 static int lerTracks(Fio *f, const unsigned char *p, long n) {
   Iter it = { p, n, 0 }; unsigned long id; const unsigned char *d; long t;
   int ordinalLeg = 0;
@@ -1737,6 +1800,7 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
       return 1;
     }
     if (!ehAss || !priv) return -1;
+    sinaisDoArquivo(f, p, n);
     // O libass sobe aqui, com a faixa ASS ja achada, e nao quando o fio nasce:
     // o aquecimento le a pasta de fontes inteira para a memoria (106 MB na C9,
     // 2-12 s e +65-120 MB de RSS na webOS) e antes rodava em toda pre-busca,
@@ -2004,14 +2068,31 @@ falhou:
 // Fontes ADIADAS (uma conexao so, ver lerCabecalho): pedidas agora, com o fio
 // ocioso e a janela da legenda ja colhida, e esperadas aqui. Devolve 1 quando
 // entraram (a proxima entrega recarrega com elas).
-static int buscarFontesAdiadas(Fio *f) {
+static int buscarFontesAdiadasPor(Fio *f, const char *motivo) {
   if ((f->fontesPasso != 4 && f->fontesPasso != 5) || f->prebusca) return 0;
   if (f->fontesPasso == 4) { f->jobFontes = submeter(f, f->posAttachments, 64); f->fontesPasso = 1; }
   else { f->jobFontes = submeter(f, f->fontesDadosIni, f->fontesCabN); f->fontesPasso = 2; }
   if (!f->jobFontes) { f->fontesPasso = 3; return 0; }
-  printf("[mkvass] fontes anexadas: pedidas agora, com a janela da legenda ja colhida (uma conexao so)\n");
+  printf("[mkvass] fontes anexadas: pedidas agora, %s (uma conexao so; %ld ms desde a escolha)\n", motivo, agoraMs() - f->t0);
   fflush(stdout);
   return avancarFontes(f, 2);
+}
+static int buscarFontesAdiadas(Fio *f) {
+  return buscarFontesAdiadasPor(f, "com a janela da legenda ja colhida");
+}
+// Owner 18/11 (log 10, Kaguya S3E02): a window of frame-by-frame typesetting
+// (5000+ blocks around the ED) took 33 s to collect, and the signs were drawn
+// in Arial all that time. The fonts now come right after the first subtitles
+// reach the screen (or MKVASS_FONTES_PRAZO_MS after the choice), before the
+// rest of the window: what is further ahead waits ~1-3 s for them.
+#ifndef MKVASS_FONTES_PRAZO_MS
+#define MKVASS_FONTES_PRAZO_MS 2000L
+#endif
+static int buscarFontesCedo(Fio *f) {
+  if ((f->fontesPasso != 4 && f->fontesPasso != 5) || f->prebusca) return 0;
+  if (f->primeiraFala) return buscarFontesAdiadasPor(f, "logo depois das primeiras legendas na tela");
+  if (agoraMs() - f->t0 >= MKVASS_FONTES_PRAZO_MS) return buscarFontesAdiadasPor(f, "2 s depois da escolha, sem legenda na tela ainda");
+  return 0;
 }
 
 // --- Cues ----------------------------------------------------------------------
@@ -3206,6 +3287,37 @@ static pthread_mutex_t entregaTrava = PTHREAD_MUTEX_INITIALIZER;
  * as fontes recem-pedidas ANTES do corpo, para o evento que as usa ja
  * nascer com elas. Fora do .tpk, todas, como sempre. Sem memoria para a
  * marcacao: todas tambem. */
+#ifdef NV_TPK
+static void anexadaNome(const char *nome, void *u) {
+  FonteFamilias *s = u;
+  if (!fontefam_tem(s, nome)) fontefam_por(s, nome, strlen(nome));
+}
+// Diagnostic (owner 18/11, log 10): the families the script asks for that no
+// attached font provides -> libass draws them with the app's fonts (Arial).
+// Logged when that list grows, so "missing fonts" can be told apart from
+// "fonts not here yet".
+static void logarSemFonte(Fio *f) {
+  char lista[600] = "";
+  int n = 0, i;
+  size_t u = 0;
+  if (!f->nFontes || !f->familias.n) return;
+  if (!f->anexadasLidas) {
+    f->anexadasLidas = 1;
+    for (i = 0; i < f->nFontes; i++)
+      fontefam_nomes(f->fontes[i].dados, (size_t)f->fontes[i].tam, anexadaNome, &f->anexadas);
+  }
+  for (i = 0; i < f->familias.n; i++) {
+    if (fontefam_tem(&f->anexadas, f->familias.nomes[i])) continue;
+    n++;
+    if (u < sizeof lista - 80) u += (size_t)snprintf(lista + u, sizeof lista - u, "%s%s", u ? ", " : "", f->familias.nomes[i]);
+  }
+  if (n <= f->semFonteN) return;
+  f->semFonteN = n;
+  printf("[mkvass] %d familia(s) pedida(s) sem fonte anexada (o libass usa as do app): %s\n", n, lista);
+  fflush(stdout);
+}
+#endif
+
 static void entregarFontes(Fio *f, const char *corpo, int primeira) {
   int i, dadas = 0, novas = 0;
   double mb = 0, mbTotal = 0;
@@ -3231,6 +3343,9 @@ static void entregarFontes(Fio *f, const char *corpo, int primeira) {
   if (f->fonteDada && (primeira || novas) && f->nFontes)
     printf("[mkvass] fontes sob demanda: %d de %d anexadas no libass (%.1f de %.1f MB; %d familias pedidas)%s\n",
            dadas, f->nFontes, mb, mbTotal, f->familias.n, primeira ? "" : ", \\fn novo no lote");
+#ifdef NV_TPK
+  if (f->fonteDada && f->nFontes) logarSemFonte(f);
+#endif
 }
 
 static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
@@ -3243,12 +3358,17 @@ static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
       // deixou. Outro dono no meio (externa, outra faixa, desligada) = este
       // corpo e de uma faixa que saiu.
       if (legenda_geracao() == f->legG) {
-        unsigned g;
+        unsigned g, velha = f->legG;
         assrender_limpar_fontes();
         if (f->fonteDada) memset(f->fonteDada, 0, (size_t)f->nFontes);   // a lista do libass recomeca aqui
         entregarFontes(f, corpo, 1);
         g = legenda_definir_corpo_se(corpo, f->legG);
         if (g) { f->legG = g; ok = 1; estadoDoFio(f)->fontesLegG = f->nFontes ? g : 0; }
+        /* The same track loaded again (the attached fonts arrived: logs 13
+         * and 15, owner 19/11/2026): the Signs & Songs matching follows it to
+         * the new generation. It stayed on the first one, so no line was ever
+         * looked up ("lookups=0"). */
+        if (g && f->sinaisDitos) asssinais_trocar_geracao(velha, g);
       }
     } else {
       // #412: parse/recriacao do ASS pode levar >120 ms. O quadro usa
@@ -3266,6 +3386,12 @@ static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
              f->faixa, f->legG);
       fflush(stdout);
       f->entregas = -1000000;     // loga uma vez; nunca volta a ser a primeira
+    }
+    /* Signs & Songs (asssinais.h): the generation this track's lines live
+     * under is known now. ASS only (texto/imagem have no styled lines). */
+    if (ok && !f->sinaisDitos && !f->texto && !f->imagem) {
+      f->sinaisDitos = 1;
+      asssinais_definir(f->legG, f->trilhaSinais, f->faixaSinais, f->escala);
     }
   }
   if (travado) pthread_mutex_unlock(&estadoDoFio(f)->trava);
@@ -4021,6 +4147,7 @@ static void *trabalhar(void *arg) {
       ini = pos - MKVASS_ATRAS_SEG;
       fim = pos + alcanceFrente(f);
       { int urg = 0; if (relayDrenar(f, pos, &urg) && urg && !f->prebusca) entregar(f); }
+      if (buscarFontesCedo(f)) entregar(f);
       i = proximoPendente(f, ini, fim, &noJanela);
       // Pre-busca: a janela dos primeiros minutos esta colhida. Solta o video
       // e espera a adocao sem rede; o resto da faixa vem depois, adotada.
@@ -4182,7 +4309,7 @@ fim:
   pthread_cond_broadcast(&estadoDoFio(f)->sinal);
   pthread_mutex_unlock(&estadoDoFio(f)->trava);
   soltarPendentes(f); free(f->pend); pgs_liberar(f->pgs);
-  free(f->pontos); free(f->corpo); liberarFontes(f); fontefam_liberar(&f->familias); soltarEstado(f->dono); free(f);
+  free(f->pontos); free(f->corpo); liberarFontes(f); fontefam_liberar(&f->familias); fontefam_liberar(&f->anexadas); soltarEstado(f->dono); free(f);
   return NULL;
 }
 

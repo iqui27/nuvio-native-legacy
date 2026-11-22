@@ -62,7 +62,7 @@ void video_escolher_audio(int i);
 void video_escolher_legenda(int i);
 void video_bombear(void);
 
-enum { EV_PRONTO = 1, EV_TOCANDO = 2, EV_PAUSADO = 3, EV_ERRO = 5, EV_BUSCOU = 11, EV_RETOMADA = 13 };
+enum { EV_PRONTO = 1, EV_TOCANDO = 2, EV_PAUSADO = 3, EV_ERRO = 5, EV_BUSCOU = 11, EV_RETOMADA = 13, EV_INICIO = 14 };
 
 // The fake host counts what reaches it.
 static int nAbrir, nPausar, ultPausa = -1, nBuscar, nExata, ultExata = -1, nMudo, ultMudo = -1, ultAudio = -1, ultLeg = -1;
@@ -322,6 +322,60 @@ int main(void) {
   video_tpk_log_host("interrompido: ResourceConflict");   // on screen: a real takeover
   ok("another app takes the video on screen: still counted", video_conflito_recurso());
   video_parar();
+
+  // ---- OPEN AT THE SAVED POINT (owner 18/11) -------------------------------
+  // Continue watching: the point goes with the first open; the host seeks in
+  // Ready (before Start) and answers EV_INICIO; player.c seeks only if not.
+  zerarHost();
+  video_definir_reconexao(1);
+  video_tocar_retomada("http://x/serie.mkv", 600.0, 0.0);
+  ok("saved point: goes with the first open", nAbrir == 1 && strstr(ultCab, "X-Nuvio-Start: 600000") != NULL);
+  ok("saved point: not the background reopen's header", strstr(ultCab, "X-Nuvio-Resume") == NULL);
+  ok("saved point: waiting for the host", video_retomada_inicial_estado() == 0);
+  nv_tpk_video_evento(EV_PRONTO, 5400000, 0);
+  video_bombear();
+  ok("saved point: the bar shows the point while the host seeks", fabs(video_pos() - 600.0) < 0.001);
+  ok("saved point: still waiting while the host seeks in Ready", video_retomada_inicial_estado() == 0);
+  nv_tpk_video_evento(EV_INICIO, 600000, 0);
+  fakePosMs = 600000;
+  nv_tpk_video_evento(EV_TOCANDO, 0, 0);
+  video_bombear();
+  ok("saved point: applied by the host", video_retomada_inicial_estado() == 1);
+  ok("saved point: no seek from here", nBuscar == 0 && nExata == 0);
+  ok("saved point: the clock is the host's again", fabs(video_pos() - 600.0) < 0.5);
+  // The host could not seek: the app seeks after ready (player.c).
+  zerarHost();
+  video_tocar_retomada("http://x/serie2.mkv", 300.0, 0.0);
+  nv_tpk_video_evento(EV_PRONTO, 5400000, 0);
+  nv_tpk_video_evento(EV_INICIO, -1, 0);
+  video_bombear();
+  ok("saved point refused by the host: the app seeks after ready", video_retomada_inicial_estado() == -1);
+  // Playing with no answer (a host without the header): the app seeks.
+  zerarHost();
+  video_tocar_retomada("http://x/serie3.mkv", 300.0, 0.0);
+  nv_tpk_video_evento(EV_PRONTO, 5400000, 0);
+  nv_tpk_video_evento(EV_TOCANDO, 0, 0);
+  video_bombear();
+  ok("no answer before playing: the app seeks after ready", video_retomada_inicial_estado() == -1);
+  // Only a percent and the file's length unknown: the open has no point.
+  zerarHost();
+  video_tocar_retomada("http://x/serie4.mkv", 0.0, 40.0);
+  ok("percent with no file length: no point with the open, the app seeks",
+     nAbrir == 1 && strstr(ultCab, "X-Nuvio-Start") == NULL && video_retomada_inicial_estado() == -1);
+  // A plain open (trailer, video_tocar alone): nothing.
+  zerarHost();
+  video_tocar("http://x/outro.mkv");
+  ok("plain open: no point", nAbrir == 1 && strstr(ultCab, "X-Nuvio-Start") == NULL && video_retomada_inicial_estado() == -1);
+  // The next open after a pointed one does not inherit it.
+  zerarHost();
+  video_tocar_retomada("http://x/serie5.mkv", 120.0, 0.0);
+  nv_tpk_video_evento(EV_PRONTO, 5400000, 0);
+  nv_tpk_video_evento(EV_INICIO, 120000, 0);
+  nv_tpk_video_evento(EV_TOCANDO, 0, 0);
+  video_bombear();
+  zerarHost();
+  video_tocar("http://x/serie6.mkv");
+  ok("a later plain open: no point", strstr(ultCab, "X-Nuvio-Start") == NULL);
 
   printf("tpk-fundo: %s\n", falhas ? "FALHOU" : "ok");
   return falhas ? 1 : 0;

@@ -59,7 +59,7 @@ static void colher(void) {
  * them worse (169-217 ms against ~118): there the GL thread itself is the
  * bottleneck and the wait only adds a stall. Light scenes: no difference. */
 static int limite(void) {
-  return assperf_get(AP_ESCALA) == 5 && assperf_escala() < 1.0 ? 1 : 0;
+  return assperf_reduzido();   /* any Auto mode while it is below 100 % (owner 19/11/2026) */
 }
 
 void telalag_quadro_inicio(void) {

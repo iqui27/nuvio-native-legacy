@@ -4,33 +4,33 @@
 #include "tbburn.h"
 #include <stdint.h>
 #include <string.h>
-void tbburn_fonte(const char *u, const char *h, const char *a, uint64_t b) { (void)u; (void)h; (void)a; (void)b; }
-void tbburn_ids(const char *u, int s, int i, int f) { (void)u; (void)s; (void)i; (void)f; }
-int  tbburn_pode(void) { return 0; }
-void tbburn_arquivo_tem_ass(int s) { (void)s; }
-void tbburn_pedir(const char *u, int s, int a) { (void)u; (void)s; (void)a; }
-int  tbburn_resultado(char *m, unsigned n, char *mo, unsigned mn) {
+__attribute__((weak)) void tbburn_fonte(const char *u, const char *h, const char *a, uint64_t b) { (void)u; (void)h; (void)a; (void)b; }
+__attribute__((weak)) void tbburn_ids(const char *u, int s, int i, int f) { (void)u; (void)s; (void)i; (void)f; }
+__attribute__((weak)) int  tbburn_pode(void) { return 0; }
+__attribute__((weak)) void tbburn_arquivo_tem_ass(int s) { (void)s; }
+__attribute__((weak)) void tbburn_pedir(const char *u, int s, int a) { (void)u; (void)s; (void)a; }
+__attribute__((weak)) int  tbburn_resultado(char *m, unsigned n, char *mo, unsigned mn) {
   if (m && n) m[0] = 0;
   if (mo && mn) mo[0] = 0;
   return TBB_NADA;
 }
-void tbburn_cancelar(void) {}
-int  rede_torbox_em_voo(int *p) { if (p) *p = 0; return 0; }
-int  ajustes_leg_queimar(void) { return 0; }
-void tbburn_definir_escolha(int v) { (void)v; }
-int  tbburn_memoria(TbFaixa *m) { (void)m; return 0; }
-void tbburn_lembrar(const TbFaixa *f) { (void)f; }
-int  tbburn_escolher_auto(const TbFaixa *f, int n, int mem, const TbFaixa *m, const char *p) {
+__attribute__((weak)) void tbburn_cancelar(void) {}
+__attribute__((weak)) int  rede_torbox_em_voo(int *p) { if (p) *p = 0; return 0; }
+__attribute__((weak)) int  ajustes_leg_queimar(void) { return 0; }
+__attribute__((weak)) void tbburn_definir_escolha(int v) { (void)v; }
+__attribute__((weak)) int  tbburn_memoria(TbFaixa *m) { (void)m; return 0; }
+__attribute__((weak)) void tbburn_lembrar(const TbFaixa *f) { (void)f; }
+__attribute__((weak)) int  tbburn_escolher_auto(const TbFaixa *f, int n, int mem, const TbFaixa *m, const char *p) {
   (void)f; (void)n; (void)mem; (void)m; (void)p; return -1;
 }
 // Weak: some of these tests link the real ones.
 __attribute__((weak)) void mkvass_teto_conexoes(int n) { (void)n; }
 __attribute__((weak)) const char *ling_legenda(void) { return ""; }
 // HDR rule and original audio with burn-in (owner 13/11): never active here.
-void tbburn_hdr_fonte(int s) { (void)s; }
-int  tbburn_hdr_da_fonte(void) { return 0; }
-int  tbburn_hdr_permitido(void) { return 0; }
-void tbburn_hdr_lembrar(int s) { (void)s; }
+__attribute__((weak)) void tbburn_hdr_fonte(int s) { (void)s; }
+__attribute__((weak)) int  tbburn_hdr_da_fonte(void) { return 0; }
+__attribute__((weak)) int  tbburn_hdr_permitido(void) { return 0; }
+__attribute__((weak)) void tbburn_hdr_lembrar(int s) { (void)s; }
 __attribute__((weak)) int  tbburn_linha_visivel(void) { return 0; }
 __attribute__((weak)) int  ajustes_tb_audio_modo(void) { return 0; }
 __attribute__((weak)) void ajustes_definir_tb_audio_modo(int r) { (void)r; }
@@ -73,3 +73,10 @@ __attribute__((weak)) void rede_fio_fechar(void) {}
 // The Tizen 4-6 slow-TV rules (assperf.h, merged from feat/libass-tizen4):
 // video_tpk.c sets them from the TV's version; no libass engine here.
 __attribute__((weak)) void assperf_tv_lenta_definir(int sim) { (void)sim; }
+// The early TorBox lookup (owner 18/11): never runs here.
+__attribute__((weak)) void tbburn_cedo_bombear(void) {}
+__attribute__((weak)) void tbburn_procurar_cedo(const char *u, const char *h, const char *a, uint64_t b, const char *p) {
+  (void)u; (void)h; (void)a; (void)b; (void)p;
+}
+// TorBox first's hold for the file's header (owner 18/11): no prefetch here.
+__attribute__((weak)) int mkvass_prebusca_fase(void) { return 0; }

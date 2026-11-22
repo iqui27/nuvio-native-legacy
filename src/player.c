@@ -910,6 +910,8 @@ static long tmdbDoTocando(int *tt, int *te) {
 }
 #ifdef NV_ANDROID
 static double retomarSeg;
+#endif
+#if defined(NV_ANDROID) || defined(NV_TPK)
 static int retomadaNaPreparacao;
 #endif
 // "Assistir do comeco" (issue #46): trava da sessao, armada por
@@ -2002,7 +2004,10 @@ void player_abrir(int indiceCatalogo, const char *url) {
   retomadaAplicada=0; semRetomada=0; retomarFonteSeg = -1.0; baseT = baseE = -1;
   abertoEm = SDL_GetTicks(); medirAbertura = 1; tocouMedido = 0; loadEm = 0;
 #ifdef NV_ANDROID
-  retomarSeg = 0.0; retomadaNaPreparacao = 0;
+  retomarSeg = 0.0;
+#endif
+#if defined(NV_ANDROID) || defined(NV_TPK)
+  retomadaNaPreparacao = 0;
 #endif
   botao = PLR_PLAY;
   memset(focoB, 0, sizeof focoB);
@@ -2252,6 +2257,17 @@ static void tocarFonteInterno(const char *url) {
     comVideo = video_tocar_retomada(proxyts_resolver(url, px, sizeof px),
                                     retomadaNaPreparacao ? ponto : 0.0,
                                     retomadaNaPreparacao && retomarFonteSeg < 0.0 && ponto <= 0.0 ? retomarPct : 0.0);
+    if (!comVideo) retomadaNaPreparacao = 0;
+#elif defined(NV_TPK)
+    // .tpk (owner 18/11): the same point the seek after ready used (the source's
+    // own seconds, else the percent) goes with the open; the host seeks in Ready,
+    // before Start (video_tpk.c: TorBox's burned stream no longer shows its start
+    // first). Not applied -> the seek after ready below, as before.
+    retomadaNaPreparacao = !ehCanal() && (retomarFonteSeg >= 0.0 || retomarPct > 0);
+    if (retomadaNaPreparacao) marco("abrir: ponto salvo vai na abertura (.tpk)");
+    comVideo = video_tocar_retomada(proxyts_resolver(url, px, sizeof px),
+                                    retomadaNaPreparacao && retomarFonteSeg >= 0.0 ? retomarFonteSeg : 0.0,
+                                    retomadaNaPreparacao && retomarFonteSeg < 0.0 ? retomarPct : 0.0);
     if (!comVideo) retomadaNaPreparacao = 0;
 #else
     comVideo = video_tocar(proxyts_resolver(url, px, sizeof px));
@@ -4607,6 +4623,11 @@ void player_evento(const SDL_Event *e) {
       { double fim;if(trechoPulavel(&fim)){
           { int tp=0;if(intro_botao_visivel(NULL,&tp)&&tp==INTRO_CREDITOS)player_aprender_creditos(); }
           pularTrecho(puloDestino(fim));if(comVideo)buscarUsuario(posSeg);return; } }
+#ifdef NV_TPK
+      // "Burn-in ready: press OK to switch" (owner 19/11/2026, a re-added
+      // TorBox file): while that notice is up, OK switches instead of pausing.
+      if (!e->key.repeat && video_tpk_queimar_tardio_ok()) { toastAte = 0; return; }   // the notice goes
+#endif
       // O OK com os controles escondidos e o Play/Pause: os controles sobem
       // com o foco NO PLAY, nao onde ficou da ultima vez (Legendas, Audio,
       // Proporcao). Sem isto o OK seguinte abria aquela folha (#109).
@@ -4996,6 +5017,19 @@ void player_atualizar(float dt, Uint32 agora) {
           }
           marco("abrir: seek para o ponto salvo");
           video_buscar(retomarFonteSeg >= 0.0 ? retomarFonteSeg : d * retomarPct / 100.0);
+        }
+      }
+#elif defined(NV_TPK)
+      // The host started at the point (1), or the app seeks now (-1). Waiting
+      // (0, the host still seeking in Ready) never becomes a second seek.
+      int estado = retomadaNaPreparacao ? video_retomada_inicial_estado() : -1;
+      if (estado != 0) {
+        retomadaAplicada = 1;
+        if (estado > 0) marco("abrir: ponto salvo aplicado pelo host antes do Start");
+        else if (retomarFonteSeg >= 0.0 || retomarPct > 0) {
+          if (retomadaNaPreparacao) { printf("[player] retomada: a abertura nao aplicou o ponto salvo; seek depois do pronto\n"); fflush(stdout); }
+          marco("abrir: seek para o ponto salvo");
+          video_buscar(retomarFonteSeg >= 0.0 ? retomarFonteSeg : d*retomarPct/100.0);
         }
       }
 #else
@@ -5739,7 +5773,7 @@ static double escalaFonteAss(void) {
 #ifdef NV_TPK
   /* Styled ASS on the .tpk: its own dialogue size (Subtitles > Style), 100 %
    * = as authored; libass scales only the dialogue (selective font scale). */
-  if (ASS_NOVO) return assperf_get(AP_ASSTAM) / 100.0;
+  if (ASS_NOVO) return assperf_get(AP_ASSTAM) / 100.0;   /* signs & songs never (libass nv_sign, asssinais.h) */
 #endif
   if (pct < TXT_LEG_PCT_MIN) pct = TXT_LEG_PCT_MIN;
   if (pct > TXT_LEG_PCT_MAX) pct = TXT_LEG_PCT_MAX;
@@ -5871,6 +5905,7 @@ static void desenharLegendaPrincipal(float *topoPilha){
   // Escala/trechos aceitos: o instante na legenda, nao no video (o mesmo
   // para libass e para o desenho do app).
   double posLeg = legsync_posicao(posLegenda());
+  int dialogoApp = 0;   // libass drew the signs; the app draws the dialogue below
   assrender_aplicar_invalidacao();
   assrender_definir_cor(0, 0, 0, 0);
   if (overlay && assrender_ativo()) {
@@ -5935,13 +5970,23 @@ static void desenharLegendaPrincipal(float *topoPilha){
     // R4: libass nao informa onde pintou. Estima duas linhas no tamanho da
     // folha acima da base, para a segunda legenda empilhada nao cobri-las.
     *topoPilha = baseLegendaPrincipal() - (2.0f * 58.0f + 5.0f) * (float)escalaFonteAss();
-    return;
+    /* "Dialogue by libass" Off (owner 19/11/2026): libass drew the signs and
+     * songs; the dialogue is the app's own text, below, from the cue copy. */
+    if (!(legenda_dialogo_pelo_app() && !assrender_texto_simples())) return;
+    dialogoApp = 1;
   }
   LegendaCue cues[LEGENDA_SIMULTANEAS];
   int n = overlay ? legenda_cues(posLeg, atraso, cues, LEGENDA_SIMULTANEAS) : 0, i;
+  /* A line found in the Signs & Songs track after the cue copy was made:
+   * libass draws it, the app doesn't (asssinais.h). */
+  if (dialogoApp) {
+    int w = 0;
+    for (i = 0; i < n; i++) if (!legenda_cue_sinal(&cues[i])) cues[w++] = cues[i];
+    n = w;
+  }
   // Sem legenda externa, a EMBUTIDA que o player nativo nao desenha (#122):
   // o mesmo overlay, com a mesma folha de estilo da pessoa.
-  if (n <= 0 && comVideo && player_texto_legenda_nativa(cues[0].texto, sizeof cues[0].texto)) {
+  if (n <= 0 && !dialogoApp && comVideo && player_texto_legenda_nativa(cues[0].texto, sizeof cues[0].texto)) {
     cues[0].inicio = cues[0].fim = 0; cues[0].an = 0; cues[0].negrito = cues[0].italico = 0;
     cues[0].cor = -1; cues[0].posX = cues[0].posY = -1.f; cues[0].resX = cues[0].resY = 0.f;
     cues[0].ordem = 0;
@@ -5950,7 +5995,7 @@ static void desenharLegendaPrincipal(float *topoPilha){
   // PREVIA DA BARRA DE ESTILO (faixas.c): sem fala neste instante, uma linha
   // de exemplo com o estilo da pessoa, para tamanho, cor e posicao terem o que
   // mostrar. So quando e o app que desenha (no ASS o lugar e do arquivo).
-  if (n <= 0 && faixas_estilo_topo()) {
+  if (n <= 0 && !dialogoApp && faixas_estilo_topo()) {
     memset(&cues[0], 0, sizeof cues[0]);
     snprintf(cues[0].texto, sizeof cues[0].texto, "%s", i18n("Assim a legenda vai aparecer"));
     cues[0].cor = -1; cues[0].posX = cues[0].posY = -1.f;

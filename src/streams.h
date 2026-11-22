@@ -373,6 +373,10 @@ int  stream_url_serve(const char *url, const char *cabecalhos);
 // endereco final, para o .tpk entregar o link do CDN ao player sem pedir de
 // novo. NULL fora do .tpk (o tpk.c liga) e nos testes.
 extern void (*stream_cdn_lembrar)(const char *orig, const char *final, const char *cabecalhos, uint64_t sessao);
+// A source focused 1 s in the source list (owner 18/11): once per focused row.
+// NULL outside the .tpk (tpk.c sets it: the early TorBox lookup for burn-in,
+// tbburn.h) and in the tests.
+extern void (*stream_foco_demorado)(const Stream *s);
 
 // 1 quando o texto da fonte diz "fora de cache" (ver Stream.foraCache).
 // Publica para o parser e o teste; a lista ja vem com o campo preenchido.
