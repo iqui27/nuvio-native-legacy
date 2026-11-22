@@ -669,6 +669,7 @@ float notasui_fontes_desenhar(const NotasSecao *s, float x, float y, float a,
 #define MAPA_GAP      6.0f
 #define MAPA_MED_W   64.0f   // coluna da media da temporada (notasmedia.h)
 #define MAPA_MED_MAX 64      // temporadas com media guardada
+#define MAPA_MED_EPS 512     // episodios de uma temporada que entram na media
 
 void notasui_mapa_card(const NotasSecao *s, GfxRect c, int selT, int selI, float aa) {
   int t, i, nt = 0, maxEps = 0;
@@ -691,10 +692,13 @@ void notasui_mapa_card(const NotasSecao *s, GfxRect c, int selT, int selI, float
       int n = s->nEps(t);
       if (n > EX_EP_MAX) n = EX_EP_MAX;
       if (n > maxEps) maxEps = n;
-      { int ns[EX_EP_MAX];
-        for (i = 0; i < n; i++) ns[i] = s->epNota(t, i);
+      // A media e da temporada INTEIRA: a grade corta em EX_EP_MAX colunas,
+      // mas a conta nao pode perder os episodios que nao couberam nela.
+      { int ns[MAPA_MED_EPS], nTodos = s->nEps(t);
+        if (nTodos > MAPA_MED_EPS) nTodos = MAPA_MED_EPS;
+        for (i = 0; i < nTodos; i++) ns[i] = s->epNota(t, i);
         if (t < MAPA_MED_MAX) {
-          medias[t] = nm_media(ns, n, NULL);
+          medias[t] = nm_media(ns, nTodos, NULL);
           if (medias[t] > 0) temMedia = 1;
           nMed = t + 1;
         } }
