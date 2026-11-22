@@ -2736,15 +2736,19 @@ static int escolhaDoNext(const char *base, char *prov, unsigned tam) {
 // Continue Watching rebuild), so the index taken before it can slide or the
 // title can leave (#697). Copy before closing, reopen from the copy.
 static CatItem reabrirCopia;
+// Minha noite (minhanoite.h): a marca da sessao no ar, lida ANTES de fechar. So
+// uma sessao aberta a entrega; um titulo aberto do zero nao herda nada.
+static int reabrirMn, reabrirPassiva;
 static void reabrirGuardar(int titulo) {
   const CatItem *c = cat_item(titulo);
+  reabrirMn = player_minha_noite(); reabrirPassiva = player_passivo();
   if (c) reabrirCopia = *c; else memset(&reabrirCopia, 0, sizeof reabrirCopia);
 }
 static int reabrirTitulo(int titulo) {
   int i = cat_indice_reabrir(titulo, &reabrirCopia);
-  int mn = 0, passiva = 0;
-  // Minha noite (minhanoite.h): reabrir a mesma sessao nao e um gesto.
-  player_passivo_guardar(&mn, &passiva);
+  int mn = reabrirMn, passiva = reabrirPassiva;
+  // Reabrir a mesma sessao nao e um gesto; a marca vale para UMA reabertura.
+  reabrirMn = reabrirPassiva = 0;
   if (i >= 0) { player_abrir(i, NULL); if (mn) player_passivo_repor(mn, passiva); }
   return i;
 }

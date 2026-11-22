@@ -14,7 +14,7 @@ gesto da pessoa.
 | Sessão passiva | `src/player.c` (`player_passivo_*`) | A sessão aberta pelo canal entra na fração do programa que a grade indica e não tem identidade para progresso, visto, Trakt/Simkl, atividade de amigos nem check-in de servidor pessoal (`identidadeValida()`). |
 | OK oferece | `src/app.c` (`mnEvento`, `mnDesenhar`) | Primeiro OK abre a folha "Assistir do início" / "Assistir daqui". Só a escolha é o gesto: dali em diante a sessão conta, e o que tocou sozinho antes não entra na prova do visto. |
 | Voltar | `src/app.c` (`mnAtualizar`) | Voltar fecha o player e a página do título usada como caminho: cai na tela de onde a sintonia saiu (a Home no "Abrir tocando", o guia pelo chip). |
-| Reabertura | `reabrirTitulo` + `player_passivo_guardar/repor` | Troca de fonte e próximo episódio reabrem o player sem perder a marca: continuam sem contar até o gesto. |
+| Reabertura | `reabrirGuardar` / `reabrirTitulo` + `player_passivo_repor` | Troca de fonte e próximo episódio reabrem o player sem perder a marca: continuam sem contar até o gesto. |
 | Abrir tocando | `AJ_ABRIR_TOCANDO` (`abrirTocandoLocal`, local, desligado) | Ligado, o app sintoniza a Minha noite uma vez por abertura, com a Home parada; a primeira tecla cancela. Fica em Ajustes › TV ao vivo › Guia de TV. |
 | Tempo de zap | `src/app.c` (`zapMarcar`, `zapMedir`) | `[zap] pedido: A -> B` e `[zap] A -> B: imagem em N ms` (ou `sem imagem depois de N ms`), também no zap entre canais de IPTV. |
 | Porta de teste | `src/main.c` | `minhanoite`, `minhanoite:oferta`, `ch+`, `ch-` em `/tmp/nuvio-key`. |

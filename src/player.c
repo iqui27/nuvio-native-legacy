@@ -1182,12 +1182,9 @@ void player_passivo_assumir(int doInicio) {
   fflush(stdout);
 }
 // REABERTURA DA MESMA SESSAO (troca de fonte, proximo episodio): app.c fecha e
-// reabre o player, e player_abrir zera a marca. Quem reabre guarda antes e
-// repoe depois, senao o episodio seguinte passaria a contar sem gesto nenhum.
-void player_passivo_guardar(int *minhaNoite, int *passiva) {
-  if (minhaNoite) *minhaNoite = sessaoMinhaNoite;
-  if (passiva) *passiva = sessaoPassiva;
-}
+// reabre o player, e player_abrir zera a marca. Quem reabre le a marca com a
+// sessao ainda aberta (player_minha_noite/player_passivo) e a repoe depois,
+// senao o episodio seguinte passaria a contar sem gesto nenhum.
 void player_passivo_repor(int minhaNoite, int passiva) {
   sessaoMinhaNoite = minhaNoite != 0;
   sessaoPassiva = minhaNoite && passiva;

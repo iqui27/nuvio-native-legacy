@@ -31,7 +31,6 @@ int  player_sem_retomada(void);
 // grava progresso, visto, scrobble nem atividade ate player_passivo_assumir.
 void player_passivo_abrir(double fracao);
 void player_passivo_assumir(int doInicio);
-void player_passivo_guardar(int *minhaNoite, int *passiva);   // antes de reabrir a sessao
 void player_passivo_repor(int minhaNoite, int passiva);       // depois de player_abrir
 int  player_passivo(void);
 int  player_minha_noite(void);
