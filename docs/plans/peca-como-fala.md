@@ -33,3 +33,7 @@ títulos confirmados no Cinemeta.
 - Fonte tocável: "confirmado" hoje é existir no Cinemeta, não ter stream nos
   addons do usuário.
 - Microfone na página (Web Speech exige HTTPS; hoje usa o ditado do teclado).
+- A página do celular é HTTP na rede local, como o controle pelo celular que já
+  existe: a chave do Gemini e o token passam sem cifra entre o celular e a TV.
+  Quem escuta o Wi-Fi da casa consegue ler. Cifrar esse trecho pede certificado
+  na TV ou relay com HTTPS.
