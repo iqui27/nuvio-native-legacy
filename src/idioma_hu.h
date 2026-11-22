@@ -9704,6 +9704,7 @@
   T("rever do início", "megnézés újra az elejétől"),
   T("reviravolta final", "csavaros befejezés"),
   T("robôs", "robot"),
+  T("sai %s", "megjelenik: %s"),
   T("saia da sua rota", "lépj ki a megszokott útvonalból"),
   T("sair", "kilépés"),
   T("salvo: %s", "mentve: %s"),

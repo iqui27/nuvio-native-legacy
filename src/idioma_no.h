@@ -9704,6 +9704,7 @@
   T("rever do início", "se på nytt fra start"),
   T("reviravolta final", "vri på slutten"),
   T("robôs", "robot"),
+  T("sai %s", "slippes %s"),
   T("saia da sua rota", "forlat den vanlige ruten din"),
   T("sair", "avslutt"),
   T("salvo: %s", "lagret: %s"),

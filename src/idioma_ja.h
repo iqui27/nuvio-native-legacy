@@ -9704,6 +9704,7 @@
   T("rever do início", "最初から見直す"),
   T("reviravolta final", "どんでん返しの結末"),
   T("robôs", "ロボット"),
+  T("sai %s", "%sに配信"),
   T("saia da sua rota", "いつもの道から外れる"),
   T("sair", "終了"),
   T("salvo: %s", "保存済み: %s"),

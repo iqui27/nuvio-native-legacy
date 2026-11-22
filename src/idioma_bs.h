@@ -9704,6 +9704,7 @@
   T("rever do início", "pogledaj ponovo od početka"),
   T("reviravolta final", "obrat na kraju"),
   T("robôs", "robot"),
+  T("sai %s", "izlazi %s"),
   T("saia da sua rota", "izađite iz svoje rute"),
   T("sair", "izlaz"),
   T("salvo: %s", "sačuvano: %s"),

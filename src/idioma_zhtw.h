@@ -9704,6 +9704,7 @@
   T("rever do início", "從頭重看"),
   T("reviravolta final", "結局反轉"),
   T("robôs", "機器人"),
+  T("sai %s", "%s上架"),
   T("saia da sua rota", "走出你慣常的路線"),
   T("sair", "離開"),
   T("salvo: %s", "已儲存：%s"),

@@ -9704,6 +9704,7 @@
   T("rever do início", "baştan izle"),
   T("reviravolta final", "sürpriz son"),
   T("robôs", "robot"),
+  T("sai %s", "yayın tarihi: %s"),
   T("saia da sua rota", "alışılmış rotandan çık"),
   T("sair", "çık"),
   T("salvo: %s", "kayıtlı: %s"),

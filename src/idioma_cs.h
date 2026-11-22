@@ -9704,6 +9704,7 @@
   T("rever do início", "zopakovat od začátku"),
   T("reviravolta final", "zvrat na konci"),
   T("robôs", "robot"),
+  T("sai %s", "vychází %s"),
   T("saia da sua rota", "vyjděte ze své trasy"),
   T("sair", "konec"),
   T("salvo: %s", "uloženo: %s"),
