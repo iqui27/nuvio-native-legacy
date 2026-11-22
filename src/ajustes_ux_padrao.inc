@@ -353,3 +353,5 @@
   0, /* gradient smoothing: Automatic */
   0, /* hero logo and information size: Normal */
   0, /* folder hero details: On (V_LIGA 0) */
+  0, /* Nuvio Casa, use a helper: On */
+  1, /* Nuvio Casa, help other TVs: Off */

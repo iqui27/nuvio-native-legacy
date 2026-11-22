@@ -17,9 +17,28 @@
 static _Atomic int ultimoErro;
 int p2p_ultimo_erro(void) { return atomic_load(&ultimoErro); }
 
-int p2p_ativo(void) {
+// NUVIO CASA (casa.h): quem acha o ajudante da rede registra aqui. Ponteiro e
+// nao chamada direta para o p2p.c seguir ligando sozinho nos testes.
+static int (*_Atomic casaBase)(char *, unsigned);
+void p2p_definir_casa(int (*base)(char *, unsigned)) { atomic_store(&casaBase, base); }
+// A base do servidor: o endereco digitado vence; sem ele e sem motor, o
+// ajudante da casa. 1 = endereco, 2 = ajudante, 0 = nenhum.
+static int baseServidor(char *out, unsigned n) {
   const char *u = ajustes_p2p_url();
-  return ajustes_p2p_ligado() && ((u && u[0]) || p2pmotor_disponivel());
+  int (*f)(char *, unsigned) = atomic_load(&casaBase);
+  if (u && u[0]) { snprintf(out, n, "%s", u); return 1; }
+  if (!p2pmotor_disponivel() && f && f(out, n)) return 2;
+  if (n) out[0] = 0;
+  return 0;
+}
+int p2p_usa_casa(void) {
+  char b[200];
+  return ajustes_p2p_ligado() && baseServidor(b, sizeof b) == 2;
+}
+
+int p2p_ativo(void) {
+  char b[200];
+  return ajustes_p2p_ligado() && (p2pmotor_disponivel() || baseServidor(b, sizeof b));
 }
 
 int p2p_usa_motor(void) {
@@ -268,8 +287,8 @@ int p2p_url_reproducao(const char *base, const char *hash, int idx, char *out, u
 // stremio/server. Qualquer outra coisa que responda 200 (um roteador, um Plex)
 // nao tem esse campo, e "conectou" seria mentira.
 int p2p_testar(char *detalhe, unsigned n) {
-  char url[300], v[32] = "";
-  int st = 0;
+  char url[300], base[200], v[32] = "";
+  int st = 0, qual;
   char *r;
   if (detalhe && n) detalhe[0] = 0;
   // Sem endereco e com o motor embutido: nao ha rede a testar; o teste diz que
@@ -280,11 +299,12 @@ int p2p_testar(char *detalhe, unsigned n) {
     return ultimoErro = p2pmotor_resumo(detalhe, n);
   // Testa com o ajuste DESLIGADO tambem: a pessoa confere o endereco antes de
   // ligar. Sem endereco nao ha o que testar.
-  if (!ajustes_p2p_url()[0]) {
+  qual = baseServidor(base, sizeof base);
+  if (!qual) {
     printf("[p2p] sem endereco e sem motor: %s\n", p2pmotor_motivo_indisponivel());
     return ultimoErro = P2P_ERR_DESLIGADO;
   }
-  snprintf(url, sizeof url, "%s/settings", ajustes_p2p_url());
+  snprintf(url, sizeof url, "%s/settings", base);
   r = rede_baixar_st(url, P2P_PRAZO_TESTE, NULL, &st);
   if (!r) return ultimoErro = P2P_ERR_SERVIDOR;
   if (st != 200 || !js_texto(r, NULL, "serverVersion", v, sizeof v)) {
@@ -299,7 +319,7 @@ int p2p_testar(char *detalhe, unsigned n) {
 int p2p_resolver(const char *hash, int fileIdx, const char *fontes, char *url, unsigned n) {
   char corpo[1800], criar[300], base[200], *r, *pedaco;
   const char *cab[2] = { "Content-Type: text/plain", NULL };
-  int st = 0, idx, temp = 0, ep = 0, erro;
+  int st = 0, idx, temp = 0, ep = 0, erro, casa;
   long tam = 0;
   if (url && n) url[0] = 0;
   if (!url || !n) return ultimoErro = P2P_ERR_DESLIGADO;
@@ -309,7 +329,7 @@ int p2p_resolver(const char *hash, int fileIdx, const char *fontes, char *url, u
     debrid_episodio(&temp, &ep);
     return ultimoErro = p2pmotor_resolver(hash, fileIdx, fontes, temp, ep, url, n);
   }
-  snprintf(base, sizeof base, "%s", ajustes_p2p_url());
+  casa = baseServidor(base, sizeof base) == 2;
   // 1) o servidor esta la e e o certo? Falhar aqui em 6 s evita esperar os 30 s
   // dos metadados para descobrir que o IP estava errado.
   erro = p2p_testar(NULL, 0);
@@ -319,8 +339,15 @@ int p2p_resolver(const char *hash, int fileIdx, const char *fontes, char *url, u
   { char h[41]; int i;
     for (i = 0; i < 40; i++) h[i] = (char)tolower((unsigned char)hash[i]);
     h[40] = 0;
-    snprintf(criar, sizeof criar, "%s/%s/create", base, h); }
-  r = rede_postar_st(criar, P2P_PRAZO_METADADOS, cab, corpo, &st);
+    snprintf(criar, sizeof criar, "%s/%s/create", base, h);
+    // Ajudante da casa: o motor dele escolhe o arquivo e prova os primeiros
+    // bytes antes de responder, entao leva o indice e o episodio, e o prazo
+    // cobre as duas esperas.
+    if (casa) {
+      debrid_episodio(&temp, &ep);
+      snprintf(criar, sizeof criar, "%s/%s/create?idx=%d&s=%d&e=%d", base, h, fileIdx, temp, ep);
+    } }
+  r = rede_postar_st(criar, casa ? P2P_PRAZO_METADADOS + P2P_PRAZO_BYTES : P2P_PRAZO_METADADOS, cab, corpo, &st);
   // Sem resposta: o servidor estava vivo um instante atras (passo 1), entao o
   // que faltou foram os metadados — torrent sem peers.
   if (!r && st == 0) {

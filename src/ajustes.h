@@ -275,6 +275,9 @@ void ajustes_definir_vidro(int ligado);
 // streaming do Stremio na rede local) e por aparelho, em p2p.txt.
 int  ajustes_jellyfin_ligado(void);   // F11: personal servers on AND strict HTTP here
 int  ajustes_p2p_ligado(void);
+// Nuvio Casa (casa.h): procurar um ajudante na rede / ser o ajudante.
+int  ajustes_casa_usar(void);
+int  ajustes_casa_ajudar(void);
 void ajustes_definir_p2p_ligado(int ligado);
 // Endereco ja normalizado ("http://192.168.1.5:11470"); "" quando nao ha.
 const char *ajustes_p2p_url(void);

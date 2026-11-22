@@ -725,6 +725,10 @@ typedef enum {
   // Hero logo and information size (0 Normal, 1 Grande, 2 Muito grande). LOCAL, append-only.
   AJ_HERO_TAMANHO,
   AJ_HERO_PASTA_DETALHES, // Device-local folder hero details, append-only; on by default.
+  // Nuvio Casa (casa.h), LOCAIS, append-only. USAR: a TV sem motor procura um
+  // ajudante na rede (ligado de fabrica; so age com o P2P ligado e sem endereco).
+  // AJUDAR: este aparelho abre uma porta na rede local (DESLIGADO de fabrica).
+  AJ_CASA_USAR, AJ_CASA_AJUDAR,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1863,6 +1867,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Suavizar degradês", V_DEGRADES, 3),
   ESC("Tamanho do destaque", V_HERO_TAMANHO, 3),       // local: heroSizeLocal
   ESC("Mostrar detalhes da pasta no destaque", V_LIGA, 2),
+  ESC("Usar um ajudante Nuvio da rede", V_LIGA, 2),    // local: casaUsarLocal
+  ESC("Ajudar outras TVs da rede", V_LIGA, 2),         // local: casaAjudarLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2196,6 +2202,8 @@ static const char *CHAVE[] = {
   "suavizarDegradesLocal",
   "heroSizeLocal",
   "heroFolderDetailsLocal",
+  "casaUsarLocal",
+  "casaAjudarLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3392,10 +3400,14 @@ void ajustes_definir_vidro(int ligado) { int a = valor[AJ_VIDRO]; valor[AJ_VIDRO
 // escondido la (ajustes_ux_tela.inc), inclusive o do servidor Stremio
 // (decisao do dono, a8e7685d). Nem um "p2p" ligado de ajustes.txt antigo vale.
 int ajustes_p2p_ligado(void) { return 0; }
+int ajustes_casa_usar(void) { return 0; }
+int ajustes_casa_ajudar(void) { return 0; }
 unsigned ajustes_p2p_limite_mb(void) { return 0; }
 int ajustes_p2p_usb(void) { return 0; }
 #else
 int ajustes_p2p_ligado(void) { return lig(AJ_P2P_LIGADO) && !SEGURO; }
+int ajustes_casa_usar(void) { return lig(AJ_CASA_USAR) && !SEGURO; }
+int ajustes_casa_ajudar(void) { return lig(AJ_CASA_AJUDAR) && !SEGURO; }
 unsigned ajustes_p2p_limite_mb(void) {
   int v = valor[AJ_P2P_LIMITE];
   return v >= 0 && v < (int)(sizeof P2P_LIMITE_MB / sizeof *P2P_LIMITE_MB) ? P2P_LIMITE_MB[v] : 0;
@@ -6047,6 +6059,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_PERFIL_EDITAR:
     case AJ_PERFIL_INFANTIL: /* marca por perfil em perfilinfantil.c; a conta nao tem a coluna */
     case AJ_P2P_LIGADO:     /* o servidor P2P e um aparelho da rede desta casa */
+    case AJ_CASA_USAR: case AJ_CASA_AJUDAR: /* quem ajuda quem e desta rede e deste aparelho */
     case AJ_P2P_LIMITE:     /* #334: o disco e desta TV */
     case AJ_P2P_DESTINO:    /* #205: pendrive USB desta TV */
     case AJ_JF_LIGADO:
@@ -6758,6 +6771,7 @@ static int foraDestaPlataforma(int op) {
 #endif
 #ifdef __EMSCRIPTEN__
   if (op == AJ_P2P_LIGADO || op == AJ_P2P_URL || op == AJ_P2P_TESTAR || op == AJ_P2P_LIMITE || op == AJ_P2P_DESTINO) return 1;
+  if (op == AJ_CASA_USAR || op == AJ_CASA_AJUDAR) return 1;
 #endif
   return 0;
 }
@@ -7449,6 +7463,9 @@ static int inativa(int op) {
     case AJ_CACHE_SEEK:  return !cacheSeekExiste();
     // #334: so o motor embutido usa o limite; com servidor na rede quem guarda e ele.
     case AJ_P2P_LIMITE:  return !p2pmotor_disponivel() || p2pEndereco[0];
+    // Nuvio Casa: procurar so faz sentido sem motor e sem endereco; ajudar, com motor.
+    case AJ_CASA_USAR:   return !lig(AJ_P2P_LIGADO) || p2pmotor_disponivel() || p2pEndereco[0];
+    case AJ_CASA_AJUDAR: return !lig(AJ_P2P_LIGADO) || !p2pmotor_disponivel();
     // #205: sem pendrive gravavel a linha fica cinza (a sonda e cacheada ~2 s
     // e nao cria nem apaga pasta no volume).
     case AJ_P2P_DESTINO: return !p2pmotor_disponivel() || p2pEndereco[0] || !p2pmotor_usb_presente();
@@ -7642,6 +7659,8 @@ static const char *ajudaOpcaoBase(int op) {
     if (op == AJ_RAIL_BLUR) return "Ative a barra lateral moderna para usar o desfoque.";
     if (op == AJ_HERO_CATALOGOS) return "Ative Mostrar destaque para exibir os catálogos no topo da Home.";
     if (op == AJ_HERO_CHEIO) return "Só vale no layout Moderna. No Padrão o destaque é um banner, e na Dinâmica ele ocupa a largura toda e sobe junto com a rolagem.";
+    if (op == AJ_CASA_USAR) return "Vale só com o P2P ligado, numa TV sem motor P2P e sem endereço de servidor.";
+    if (op == AJ_CASA_AJUDAR) return "Vale só com o P2P ligado e com o motor P2P desta TV.";
     // #205: uma frase por causa, na mesma ordem de inativa().
     if (op == AJ_P2P_LIMITE || op == AJ_P2P_DESTINO) {
       if (!p2pmotor_disponivel()) return "O motor P2P embutido não está disponível nesta TV.";
@@ -7973,6 +7992,8 @@ static const char *ajudaOpcaoBase(int op) {
       if (p2pmotor_disponivel())
         return "Opcional. Vazio, a TV baixa sozinha. Com o IP e a porta de um servidor de streaming do Stremio na sua rede (por exemplo 192.168.1.5:11470), quem baixa é ele e a TV só toca.";
       return "IP e porta do servidor de streaming do Stremio na sua rede, por exemplo 192.168.1.5:11470. Em Docker: docker run -p 11470:11470 stremio/server.";
+    case AJ_CASA_USAR: return "Experimental. Uma TV que não baixa torrents sozinha procura na rede local outro aparelho com Nuvio que esteja ajudando e toca o torrent por ele. Vale com o P2P ligado e sem endereço de servidor.";
+    case AJ_CASA_AJUDAR: return "Experimental. Este aparelho baixa torrents a pedido de outras TVs com Nuvio na mesma rede e entrega o vídeo a elas. Abre uma porta na rede local: qualquer aparelho da sua rede pode pedir. Um pedido por vez, só com o app aberto.";
     case AJ_JF_LIGADO: return "Experimental. Mostra na Home os filmes e séries do seu servidor Jellyfin/Emby/Plex e toca por ele. O token fica só nesta TV e neste perfil; a senha nunca é guardada.";
     case AJ_EM_SERVIDOR: return "IP e porta do servidor, como 192.168.1.5:8096, ou o endereço com https://";
     case AJ_EM_ENTRAR: return "Pede usuário e senha do Emby. A senha só vai ao servidor e nunca é guardada; fica só um token nesta TV e neste perfil.";
