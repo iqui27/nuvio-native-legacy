@@ -192,7 +192,7 @@ static void ajFocoLinha(GfxRect r, float raioPx, float f, float a) {
   }
   else {
     gfx_rect((GfxRect){ r.x - 10, r.y + 2, r.w + 20, r.h + 26 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.30f * f * a);
-    gfx_cor(r, raioPx / r.h, 0.169f, 0.176f, 0.204f, f * a);
+    gfx_cor(r, raioPx / r.h, NV_COR_FOCO_RGB, f * a);
   }
 }
 // Neutro claro sobre a ilha: branco a `vidA` no vidro, o cinza opaco no solido.
@@ -606,6 +606,12 @@ static void aj2CorDin(int v, const char *url, float c1[3], float c2[3]) {
   }
   memcpy(c1, nv_acento_viva, sizeof nv_acento_viva);
   memcpy(c2, v == AJ_TEMA_GRADIENTE ? nv_grad_viva[2] : nv_acento_viva, sizeof nv_acento_viva);
+  // Sem arte a cena esta na reserva rosa: a amostra fica neutra, senao as
+  // cinco dinamicas saem rosa cheio e parecem todas escolhidas, ao lado do Rosa.
+  { static const float N[3] = { 0.953f, 0.949f, 0.937f };
+    float k = nv_acento_reserva < 0 ? 0 : nv_acento_reserva > 1 ? 1 : nv_acento_reserva;
+    int i;
+    for (i = 0; i < 3; i++) { c1[i] += (N[i] - c1[i]) * k; c2[i] += (N[i] - c2[i]) * k; } }
 }
 static void aj2Regua(int op, GfxRect ln, float y, float a) {
   static const char *const KICK[4][2] = {
@@ -963,7 +969,7 @@ static void ajDesenharIndice(void) {
     // Na janela recortada so entram categorias inteiras: meia linha cortada
     // pelo recorte parece defeito, nao rolagem.
     if (indRecorte && (r.y < ilha.y + 7.0f || r.y + 58.0f > indFim + 1.0f)) { y += 62.0f; continue; }
-    if (foco) { if (!gfx_foco_placa(r, .5f, 1, 1)) ajNeutro(r, 29.0f, 0.14f, 0.169f, 0.176f, 0.204f, 1); }
+    if (foco) { if (!gfx_foco_placa(r, .5f, 1, 1)) ajNeutro(r, 29.0f, 0.14f, NV_COR_FOCO_RGB, 1); }
     else if (sel) gfx_cor((GfxRect){ r.x + 7.0f, r.y + 26.5f, 5, 5 }, 0.5f, ar, ag, ab, 1);
     ajIcone(icone, r.x + 20.0f, r.y + 16.0f, 26.0f, al);
     { TxtLinha t = ajTxtC(TXT_AJ_ITEM, titulo, r.w - 82.0f);

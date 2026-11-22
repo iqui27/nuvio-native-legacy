@@ -1368,6 +1368,10 @@ static const AcentoFixo TEMA_ACENTO[] = {
 #define AJ_TEMA_TEXTURA     22
 #define AJ_TEMA_TEXTURA_SUTIL 23
 #define AJ_N_TEMAS_OPC      24
+// RESERVA (dono, 22/11/2026: "dinamico, rosa padrao"): onde o tema dinamico
+// nao roda (perfil seguro, indice de outra versao), o realce cai no Rosa, nao
+// no Branco. O padrao de fabrica continua a Imersiva.
+#define AJ_TEMA_RESERVA      6
 _Static_assert(sizeof TEMA_ACENTO / sizeof *TEMA_ACENTO == AJ_N_TEMAS_OPC,
                "TEMA_ACENTO: uma linha por indice de V_TEMA");
 static const char *V_TEMA[] = {
@@ -3893,9 +3897,9 @@ void ajustes_definir_p2p_ligado(int ligado) { int a = valor[AJ_P2P_LIGADO]; valo
 // chamam esta funcao, varias vezes por quadro: nenhuma conta mora aqui.
 void ajustes_acento(float *r, float *g, float *b) {
   int i = valor[AJ_TEMA];
-  if (SEGURO && temaDinamico()) i = 0;    // sem cor viva, o realce fixo padrao
+  if (SEGURO && temaDinamico()) i = AJ_TEMA_RESERVA;    // sem cor viva, o realce de reserva
   else if (temaDinamico()) { corviva_acento(r, g, b); return; }
-  if (i < 0 || i >= AJ_N_TEMAS_OPC || !TEMA_ACENTO[i].fam) i = 0;   // arquivo de outra versao: branco
+  if (i < 0 || i >= AJ_N_TEMAS_OPC || !TEMA_ACENTO[i].fam) i = AJ_TEMA_RESERVA;   // arquivo de outra versao
   corDeHex(TEMA_ACENTO[i].fill, r, g, b);
 }
 // As cores derivadas de um acento DINAMICO (marca, HDR, luz, tinta) sairiam
@@ -3911,9 +3915,9 @@ static const CorvivaTokens *tokensVivos(void) {
 }
 static int temaFixoAtual(void) {
   int i = valor[AJ_TEMA];
-  if (SEGURO && temaDinamico()) return 0;
+  if (SEGURO && temaDinamico()) return AJ_TEMA_RESERVA;
   if (temaDinamico()) return -1;
-  return (i < 0 || i >= AJ_N_TEMAS_OPC || !TEMA_ACENTO[i].fam) ? 0 : i;
+  return (i < 0 || i >= AJ_N_TEMAS_OPC || !TEMA_ACENTO[i].fam) ? AJ_TEMA_RESERVA : i;
 }
 static int texturaAtiva(void) {
   return !SEGURO && (valor[AJ_TEMA] == AJ_TEMA_TEXTURA || valor[AJ_TEMA] == AJ_TEMA_TEXTURA_SUTIL) &&
@@ -3978,11 +3982,17 @@ void ajustes_acento_hdr(float *r, float *g, float *b) {
 }
 void ajustes_acento_luz(float *r, float *g, float *b) {
   int i = temaFixoAtual();
+  // Tema dinamico caido na RESERVA (perfil seguro, sem titulo, arte cinza): a
+  // luz do fundo fica neutra, a do Branco. O rosa de reserva pinta controles,
+  // nao a pagina; so quem ESCOLHEU o Rosa leva a nevoa rosa.
+  if (i >= 0 && temaDinamico()) i = 0;
   if (i >= 0) { corDeHex(TEMA_ACENTO[i].luz, r, g, b); return; }
   { const CorvivaTokens *t = tokensVivos();
-    if (r) *r = t->luz[0];
-    if (g) *g = t->luz[1];
-    if (b) *b = t->luz[2]; }
+    float k = nv_acento_reserva < 0.0f ? 0.0f : nv_acento_reserva > 1.0f ? 1.0f : nv_acento_reserva, n[3];
+    corDeHex(TEMA_ACENTO[0].luz, &n[0], &n[1], &n[2]);
+    if (r) *r = t->luz[0] + (n[0] - t->luz[0]) * k;
+    if (g) *g = t->luz[1] + (n[1] - t->luz[1]) * k;
+    if (b) *b = t->luz[2] + (n[2] - t->luz[2]) * k; }
 }
 // TEXTURA: a textura do titulo em cena vai ao gfx, que a usa em todo
 // GFX_COR cheio pintado exatamente com o destaque (gfx_rect). Sem titulo, sem
@@ -9843,7 +9853,7 @@ static void riscoGravarSeguro(void) {
   for (i = 0; i < N_RISCOS; i++) {
     const Risco *r = &RISCOS[i];
     int v = riscoAtual(r->op);
-    if (r->op == AJ_TEMA) { if (temaDinamico()) valor[AJ_TEMA] = 0; continue; }
+    if (r->op == AJ_TEMA) { if (temaDinamico()) valor[AJ_TEMA] = AJ_TEMA_RESERVA; continue; }
     if (r->nivel(v) <= 0) continue;
     if (r->op == AJ_FIL_LIMITE) { fil_definir_limite(FIL_LIMITE_PADRAO); valor[AJ_FIL_LIMITE] = fil_limite_gravado(); }
     else if (r->op == AJ_ITENS_FILEIRA || r->op == AJ_RESOLUCAO || r->op == AJ_TEX_MB) valor[r->op] = 0;
@@ -12376,7 +12386,8 @@ int ajustes_teste_quadro(const char *id) {
   if (!strncmp(id, "tri-", 4)) {   // 2.1: as tres ilhas (docs/reviews/ajustes-fable)
     static const char *const nomes[] = { "Marina" };
     perfis_teste_definir(nomes, NULL, 1, 1);
-    triIniciar(); pfTela = 0; uxVeioBusca = 0; valor[AJ_AVANCADAS] = 1; valor[AJ_TEMA] = 6;
+    triIniciar(); pfTela = 0; uxVeioBusca = 0; valor[AJ_AVANCADAS] = 1;
+    valor[AJ_TEMA] = getenv("NUVIO_SHOT_TEMA") && *getenv("NUVIO_SHOT_TEMA") ? atoi(getenv("NUVIO_SHOT_TEMA")) : 6;   // a captura escolhe o tema; o quadro do mockup e Rosa
     valor[AJ_IDIOMA] = 0; idiomaEfetivo = IDIOMA_PT; valor[AJ_HOME_LAYOUT] = 1;
     valor[AJ_QUALIDADE] = 1;   // uma linha "diferente do padrao"
     if (!strcmp(id, "tri-indice")) { }
@@ -12407,7 +12418,8 @@ int ajustes_teste_quadro(const char *id) {
         if (rotCores < 0 && !strcmp(TELA[i].titulo, "Cores e vidro")) rotCores = i;   // o 1.º (o de apresentacao)
         else if (!strcmp(TELA[i].titulo, "Durante e depois")) rotDurante = i;
       }
-    triIniciar(); pfTela = 0; uxVeioBusca = 0; valor[AJ_AVANCADAS] = 1; valor[AJ_TEMA] = 6;
+    triIniciar(); pfTela = 0; uxVeioBusca = 0; valor[AJ_AVANCADAS] = 1;
+    valor[AJ_TEMA] = getenv("NUVIO_SHOT_TEMA") && *getenv("NUVIO_SHOT_TEMA") ? atoi(getenv("NUVIO_SHOT_TEMA")) : 6;   // a captura escolhe o tema; o quadro do mockup e Rosa
     if (!getenv("NUVIO_SHOT_IDIOMA")) { valor[AJ_IDIOMA] = 0; idiomaEfetivo = IDIOMA_PT; }   // long-title proof: de, ru...
     valor[AJ_HOME_LAYOUT] = 1;
     valor[AJ_QUALIDADE] = 1; uxCancelar();
@@ -12711,7 +12723,7 @@ float ajustes_rapido_cor(int i, float *r, float *g, float *b) {
 }
 int ajustes_rapido_cor_atual(void) {
   int i, v = valor[AJ_TEMA];
-  if (SEGURO && temaDinamico()) v = 0;
+  if (SEGURO && temaDinamico()) v = AJ_TEMA_RESERVA;
   for (i = 0; i < 18; i++) if (corTema(i) == v) return i;
   return -1;   // um dinamico: nenhum dos dezoito
 }
