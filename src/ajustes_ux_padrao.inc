@@ -401,3 +401,4 @@
 
   1, // legendaEvitarSdhLocal: Desligado (V_LIGA 1)
   1, /* barrasPretasLocal: Desligado */
+  1, /* abrirTocandoLocal: Desligado (opt-in) */

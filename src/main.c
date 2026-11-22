@@ -364,6 +364,9 @@ static SDL_Keycode codigoDaTecla(const char *nome) {
   // "guia" abre o Guia de TV de qualquer lugar (F10, roteado em app.c). Ver la
   // por que uma porta direta vale mais que navegar ate ele por setas.
   if (!strcmp(nome, "guia"))  return SDLK_F10;
+  // "ch+" / "ch-": o zapping (PageUp/PageDown sao o CH+/CH- de teclado).
+  if (!strcmp(nome, "ch+"))   return SDLK_PAGEUP;
+  if (!strcmp(nome, "ch-"))   return SDLK_PAGEDOWN;
   // "verde" abre o diagnostico da Live TV no guia: o `d` e o equivalente de
   // teclado do VERDE (G_SCANCODE_GREEN em guia.c).
   if (!strcmp(nome, "verde")) return SDLK_d;
@@ -536,6 +539,10 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     // "abrir:tt0121955" abre o titulo direto (app.c). Porta de teste, como
     // "guia".
     if (dp && !strncmp(linha, "abrir:", 6)) { app_abrir_titulo(dp + 1); continue; }
+    // "minhanoite" sintoniza o canal pessoal (minhanoite.h) de qualquer tela,
+    // pelo mesmo caminho do chip do guia.
+    if (!strcmp(linha, "minhanoite")) { app_minha_noite(0); continue; }
+    if (dp && !strcmp(linha, "minhanoite:oferta")) { app_minha_noite(1); continue; }
     // "ime:abrir", "ime:voz", "ime:fechar": teclado do sistema direto
     // (entrada_texto.h), para medir na TV sem depender da tela que o liga.
     if (dp && !strncmp(linha, "ime:", 4)) {

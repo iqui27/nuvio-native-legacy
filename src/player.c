@@ -823,8 +823,13 @@ static void atualizarIdentidade(void) {
   if (atualizarTipoItem()) player_definir_episodio(epPedidoT, epPedidoE);
 }
 
+// SESSAO PASSIVA (Minha noite, minhanoite.h): aberta sem a pessoa escolher o
+// titulo. Enquanto durar, a sessao nao tem identidade para progresso, visto,
+// scrobble nem atividade — identidadeValida() e o portao de todos eles.
+static int sessaoPassiva, sessaoMinhaNoite;
+static int passivaPct, passivaT, passivaE;
 static int identidadeValida(void) {
-  return temFixo && nv_perfil_sessao_atual(itemSessao) &&
+  return temFixo && !sessaoPassiva && nv_perfil_sessao_atual(itemSessao) &&
          (!strcmp(itemFixo.tipo, "movie") ||
           (!strcmp(itemFixo.tipo, "series") && epPedidoT >= 0 && epPedidoE > 0 && epT >= 0 && epE > 0));
 }
@@ -1153,6 +1158,31 @@ void player_do_inicio(void) {
   retomarSeg = 0.0;
 #endif
 }
+// Entra no programa onde a grade esta (fracao da duracao), sem retomada e sem
+// registro. So vale em filme/episodio ja aberto; canal ao vivo nao passa aqui.
+void player_passivo_abrir(double fracao) {
+  if ((!aberto && !mini) || ehCanal()) return;
+  player_do_inicio();
+  sessaoPassiva = sessaoMinhaNoite = 1;
+  retomarPct = fracao > 0.0 ? (int)(fracao * 100.0) : 0;
+  if (retomarPct > 90) retomarPct = 90;
+  passivaPct = retomarPct; passivaT = epT; passivaE = epE;
+  printf("[minhanoite] sessao passiva: entra em %d%%, sem progresso ate um gesto\n", retomarPct);
+  fflush(stdout);
+}
+// O GESTO: a sessao vira uma sessao comum e passa a contar dali em diante. O
+// que tocou sozinho antes do gesto nao entra na prova do visto.
+void player_passivo_assumir(int doInicio) {
+  if (!sessaoPassiva) return;
+  sessaoPassiva = 0;
+  assistidoSeg = 0.0; baseTocou = 0;
+  if (doInicio && video_pronto()) video_buscar(0.0);
+  else if (doInicio) retomarPct = 0;
+  printf("[minhanoite] gesto: doInicio=%d; a sessao passa a contar\n", doInicio);
+  fflush(stdout);
+}
+int player_passivo(void) { return (aberto || mini) && sessaoPassiva; }
+int player_minha_noite(void) { return (aberto || mini) && sessaoMinhaNoite; }
 int player_reassistindo(void) { return sessaoRewatch; }
 void player_rewatch(int sim) {
   sessaoRewatch = sim && item() && rewatch_ativa(item()->imdb);
@@ -1187,6 +1217,9 @@ void player_definir_episodio(int t, int e) {
     int rt=0,re=0,rp=0;
     retomarPct = rewatch_parcial_de(c->imdb,&rt,&re,&rp) && rt==t && re==e ? rp : 0;
   }
+  // Minha noite: a lista de episodios que chega depois repete este pedido; a
+  // entrada no meio vale para o MESMO episodio, o seguinte comeca do zero.
+  if (sessaoPassiva && passivaPct > 0 && t == passivaT && e == passivaE) retomarPct = passivaPct;
 #ifdef NV_ANDROID
   retomarSeg = 0.0;
   if (!sessaoRewatch && c && retomarPct > 0) {
@@ -2030,6 +2063,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   memset(&zapEst, 0, sizeof zapEst); bannerAV = 0.0f; botaoAV = 0; infoAV = 0; pedRecarregar = 0; pedUltimo = 0; pedNumero = 0; ltv_dig_limpar(&digitosCanal);
   avLat0 = -1.0; avAtraso = 0.0; avPausaDesde = 0;
   retomadaAplicada=0; semRetomada=0; retomarFonteSeg = -1.0; baseT = baseE = -1;
+  sessaoPassiva = sessaoMinhaNoite = 0;
   abertoEm = SDL_GetTicks(); medirAbertura = 1; tocouMedido = 0; loadEm = 0;
 #ifdef NV_ANDROID
   retomarSeg = 0.0; retomadaNaPreparacao = 0;
@@ -5291,7 +5325,7 @@ void player_atualizar(float dt, Uint32 agora) {
       // every 10 s, pause/resume immediately. Asked for EVERY title because a
       // regular "tt..." title can be playing from a Plex source; each module
       // ignores URLs it did not hand out, so addon playback is untouched.
-      if (ci) servidores_reproducao_tick(video_url_atual(), posSeg, duracaoSeg,
+      if (ci && !sessaoPassiva) servidores_reproducao_tick(video_url_atual(), posSeg, duracaoSeg,
                                          video_pronto() && tocando && !scrubbing);
       // A server-native item is not a social/Trakt title: never fed onward.
       if (ci && (jfid_e(ci->imdb) || !identidadeValida())) ci = NULL;
