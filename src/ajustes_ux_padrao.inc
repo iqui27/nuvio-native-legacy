@@ -401,3 +401,4 @@
 
   1, // legendaEvitarSdhLocal: Desligado (V_LIGA 1)
   1, /* barrasPretasLocal: Desligado */
+  0, /* assMotorNovoLocal: Ligado (V_LIGA 0) — motor novo de ASS de fabrica */

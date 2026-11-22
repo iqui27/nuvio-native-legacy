@@ -74,6 +74,7 @@
 #include "logotitulo.h"
 #include "extplayer.h"
 #include "corviva.h"
+#include "assperf.h"
 
 // A CASCA DO TIZEN PRECISA SABER SE O PLAYER ESTA NA TELA. tools/tizen-shell.html
 // traduz as teclas de midia do controle Samsung (play/pause, stop, avancar,
@@ -123,6 +124,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "assrender.h"
 #include "mkvass.h"
 #include "relogio.h"
+#include "legimagem.h"
 #include "intro.h"
 #include "capmkv.h"
 #include "idiomacod.h"
@@ -202,6 +204,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "salto.h"
 #include "seekgesto.h"    // .tpk: seek gesture (owner-tuned values, SEEKG_PADRAO)
 #include "video_seekretry.h"
+#include "queda.h"
 // Sem tecla por este tempo, o avanco termina: manda a posicao ao pipeline e
 // retoma. 420 ms e maior que o intervalo de repeticao do controle (que na C9
 // fica perto de 100 ms) e menor que o tempo de reacao de quem soltou de
@@ -491,8 +494,16 @@ static int fontePrincipal(void) {
 }
 static void medirAssistido(void);
 static double posLegenda(void) {
+  double v;
   if (!relLeg.temAmostra || scrubbing) return posSeg;
-  return relogio_ler(&relLeg, monoSeg());
+  v = relogio_ler(&relLeg, monoSeg());
+#ifdef NV_TPK
+  /* CORRECAO DA LEGENDA (legimagem.h, dono 25/10): a imagem da TV anda um
+   * pouco atras da nossa camada enquanto TOCA; pausada, nao. So tocando, com
+   * leituras carimbadas, e nunca logo depois de um seek ainda sem leitura. */
+  if (relLeg.carimbo && relLeg.tocando && !video_pos_incerta()) v -= legimagem_ms() / 1000.0;
+#endif
+  return v;
 }
 // Creditos tambem sao pulaveis — e o "Skip Outro" do web.
 static int skipDisponivel(void), skipLiberado;
@@ -2859,6 +2870,12 @@ static void lembrarFonte(void) {
 }
 
 static void fecharSessao(int manter, int trocaFonte) {
+#ifdef NV_TPK
+  // The crash after Back (27-28/10) came with no report: before the teardown,
+  // make sure our SIGSEGV handler is the one on top (the main loop also checks
+  // every frame; queda.h).
+  queda_conferir("Back");
+#endif
   directcache_encerrar();
   juntos_ao_voltar();
   saiuVisto = 0;
@@ -5388,6 +5405,11 @@ void player_atualizar(float dt, Uint32 agora) {
       double pos = video_pos();
       if (!comVideo || !video_pronto() || ehCanal()) { vodPos = pos; vodPosEm = agora; vodLogado = 0; }
       else if (pos > vodPos + 0.05) { vodPos = pos; vodPosEm = agora; vodLogado = 0; }
+#ifdef NV_TPK
+      // A seek BACK also moves: the position drops under vodPos and must not
+      // read as a stop (log of 23/10).
+      else if (pos < vodPos - 0.5) { vodPos = pos; vodPosEm = agora; vodLogado = 0; }
+#endif
       // UMA linha por PARADA, nao por quadro: a condicao antiga tinha
       // `|| buf == 0`, e `buf` e o buffering AGORA — que continua 0 enquanto o
       // pipeline nao entrega nada. A propria linha reincidia no frame seguinte
@@ -5588,6 +5610,16 @@ void player_atualizar(float dt, Uint32 agora) {
 #endif
                       ;
       relogio_taxa(&relLeg, velMed.efetiva / 100.0);
+#ifdef NV_TPK
+      /* Leitura carimbada pelo host (video.h, video_pos_carimbada): a hora em que
+       * a TV leu a posicao, nao a hora em que a resposta chegou aqui. A mesma
+       * parada do #710 vale para ela (o host ja descarta leitura pre-seek). */
+      { double ap, ac, ai; unsigned sq; static unsigned sqAnt;
+        if (video_pos_carimbada(&ap, &ac, &ai, &sq) && sq != sqAnt) {
+          sqAnt = sq;
+          relogio_amostra_carimbo(&relLeg, ap, ac, ai, !legParada);
+        } }
+#endif
       relogio_amostra(&relLeg, video_pos(), monoSeg(), !legParada); }
     // A cada 10 s: o numero cru do pipeline e o do relogio da legenda, no
     // mesmo instante. A diferenca e o que a interpolacao acrescenta (0..~250).
@@ -6271,6 +6303,11 @@ static PlrRect areaVideoLegenda(void) {
  * cresce junto, como o sub-scale do mpv, sem mexer em cor, borda ou lugar. */
 static double escalaFonteAss(void) {
   int pct = player_leg_estilo_efetivo()->tamanho;
+#ifdef NV_TPK
+  /* Styled ASS on the .tpk: its own dialogue size (Subtitles > Style), 100 %
+   * = as authored; libass scales only the dialogue (selective font scale). */
+  if (ass_novo_ligado()) return assperf_get(AP_ASSTAM) / 100.0;
+#endif
   if (pct < TXT_LEG_PCT_MIN) pct = TXT_LEG_PCT_MIN;
   if (pct > TXT_LEG_PCT_MAX) pct = TXT_LEG_PCT_MAX;
   return pct / 120.0;
@@ -6321,6 +6358,9 @@ static void desenharLegendaExternaCorpo(void) {
    * offset. R4: "No topo" draws it first, in the top band; "Junto da
    * principal" draws it AFTER the primary, stacked right above it, so it needs
    * where the primary's bottom stack starts (topo). Geometry is explicit. */
+#ifdef NV_TPK
+  if (video_pos_incerta()) return;   // the same wait as the primary (seek not landed yet)
+#endif
   PlrRect av = areaVideoLegenda();
   int junto = ajustes_leg2_junto();
   LegendasGeo g2 = { av.x, av.y, av.w, av.h, anim * entrada, entrada, posLegenda(), junto, 0.0f };
@@ -6346,7 +6386,27 @@ static void desenharLegendaExternaCorpo(void) {
   if (junto) { g2.baseY = topo >= 0.0f ? topo : baseLegendaPrincipal(); legendasui_desenhar_secundaria(&g2); }
 }
 
+#ifdef NV_TPK
+/* Como a externa acima: o brilho do player (gfx_osd_mult, 0,80 no padrao e
+ * menos com o degrau automatico) multiplicava a COR do libass — a mascara
+ * branca do typeset virava cinza e as bordas claras escureciam (Kaguya,
+ * INBOX). A legenda e conteudo do filme: desenha a 1,0. */
+static void desenharLegendaPrincipalCorpo(float *topoPilha);
+static void desenharLegendaPrincipal(float *topoPilha) {
+  const float osd = gfx_osd_mult;
+  gfx_osd_mult = 1.0f;
+  desenharLegendaPrincipalCorpo(topoPilha);
+  gfx_osd_mult = osd;
+}
+static void desenharLegendaPrincipalCorpo(float *topoPilha){
+#else
 static void desenharLegendaPrincipal(float *topoPilha){
+#endif
+#ifdef NV_TPK
+  /* Seek feito e a TV ainda nao disse onde caiu (quadro-chave, ate segundos
+   * antes do alvo): desenhar agora mostraria o letreiro de outra cena. */
+  if (video_pos_incerta()) return;
+#endif
   const VideoLegendaEstilo legEstilo=*player_leg_estilo_efetivo();
   // Gate collector output, preserving native callback rendering below.
   int overlay = faixas_legenda_overlay();
@@ -6405,11 +6465,20 @@ static void desenharLegendaPrincipal(float *topoPilha){
       if (assrender_texto_simples()) area = (PlrRect){0, 0, NV_TELA_W, NV_TELA_H};
     }
     float alpha = leg_opacidade_alpha(legEstilo.opacidade) * entrada;
+#ifdef NV_TPK
+    /* Styled ASS: the signs and typesetting (white masks) are part of the
+     * picture; the opacity from Subtitles > Style goes to the dialogue only,
+     * inside libass (assperf AP_ASSOPAC). Plain text follows the sheet. */
+    if (ass_novo_ligado() && !assrender_texto_simples()) alpha = entrada;
+#endif
     assrender_pixels_por_unidade(gfx_px_por_unidade());
     assrender_definir_layout(area.x, area.y, area.w, area.h,
                              assrender_texto_simples() ? 1920 : video_largura(),
                              assrender_texto_simples() ? 1080 : video_altura(),
                              assrender_texto_simples() ? 1.0 : escalaFonteAss());
+#ifdef NV_TPK
+    assrender_definir_fps(legimagem_fps());   // frame grid (assrender.c)
+#endif
     assrender_desenhar(posLeg, atraso, alpha,
                         0, 0, NV_TELA_W, NV_TELA_H);
     // R4: libass nao informa onde pintou. Estima duas linhas no tamanho da

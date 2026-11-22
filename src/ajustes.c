@@ -3,6 +3,8 @@
 // cancela. A lista mostra valor e chevron, a ficha explica alcance e padrao.
 // IDs, chaves persistidas e indices de valores continuam os legados.
 #include "ajustes.h"
+#include "assperf.h"   // ass_novo_registrar: a chave do motor ASS mora aqui
+#include "assrender.h" // assrender_aplicar_invalidacao na troca do motor
 #ifdef NV_IOS
 #include "ios.h"
 #endif
@@ -845,6 +847,9 @@ typedef enum {
   AJ_LEG_EVITAR_SDH,
   // Android-only: black letterbox bars on Surface margins (#768), local, off.
   AJ_BARRAS_PRETAS,
+  // .tpk (PR 734 etapa D): motor novo de legenda ASS (libass NEON) ligado de
+  // fabrica; Desligado volta ao motor de antes de 23/10. LOCAL, append-only.
+  AJ_ASS_MOTOR,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2094,6 +2099,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Personalização igual ao perfil principal", V_LIGA, 2),  // local: personalizacaoDoPerfilPrincipalLocal (#679)
   ESC("Evitar legendas SDH", V_LIGA, 2),                    // local: legendaEvitarSdhLocal (#743)
   ESC("Tarjas pretas no player", V_LIGA, 2),                 // local: barrasPretasLocal (#768)
+  ESC("Motor de legendas ASS", V_LIGA, 2),                   // local: assMotorNovoLocal (.tpk, PR 734)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2483,6 +2489,7 @@ static const char *CHAVE[] = {
   "personalizacaoDoPerfilPrincipalLocal",
   "legendaEvitarSdhLocal",
   "barrasPretasLocal",
+  "assMotorNovoLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3670,6 +3677,17 @@ int ajustes_legenda_sync_audio(void) { return 0; }   // escondida fora do Androi
 #endif
 int ajustes_legenda_forcada_auto(void) { return lig(AJ_LEG_FORCADA); }   // #287, padrao Ligado
 int ajustes_legenda_evitar_sdh(void) { return lig(AJ_LEG_EVITAR_SDH); }   // #743, padrao Desligado
+// Motor novo de legendas ASS do .tpk (assperf.h): 1 = ligado (padrao), 0 = o
+// motor de antes de 23/10. Lido pelo ass_novo_ligado via ass_novo_registrar.
+// A thread de render NAO le valor[]: ela recebe este ESPELHO, publicado com
+// store/load atomicos pela thread principal em cada escrita da chave (a troca
+// em definirValorDireto e a releitura do arquivo em ajustes_dir). Ler valor[op]
+// direto aqui concorria com a gravacao da confirmacao (TSan).
+static int assMotorEspelho = 1;
+static void assMotorPublicar(void) {
+  __atomic_store_n(&assMotorEspelho, lig(AJ_ASS_MOTOR), __ATOMIC_RELEASE);
+}
+int ajustes_ass_motor(void) { return __atomic_load_n(&assMotorEspelho, __ATOMIC_ACQUIRE); }
 // #338: -1 = lembrar o ultimo tamanho; 0..2 = Completo, Compacto, Minimo.
 int ajustes_estat_tamanho(void) {
   int v = valor[AJ_ESTAT_TAMANHO];
@@ -5449,6 +5467,9 @@ void ajustes_dir(const char *dir) {
   valor[AJ_TAMANHO_UI] = UI_SIZE_AUTO;
   fonteregra_carregar();
   fanartCarregar();
+#if defined(NV_TPK) || defined(NV_ASS_NOVO)
+  ass_novo_registrar(ajustes_ass_motor);   // o motor de ASS le a chave daqui (assperf.h)
+#endif
   animeskipCarregar();
   seekrCarregar();
   p2pCarregar();
@@ -5482,6 +5503,7 @@ void ajustes_dir(const char *dir) {
     ajEpgMemoriaAplicar();
     legenda2_atualizar_offset_manual(ajustes_leg2_atraso());
     ajSombraSync();
+    assMotorPublicar();
     return;
   }
   { int viuIdioma = 0, viuAuto = 0, idiomaGravado = IDIOMA_EN, autoGravado = 0;
@@ -5879,6 +5901,7 @@ void ajustes_dir(const char *dir) {
   ppReconciliar();
   previaAplicar();
   ajSombraSync();   // o que veio do disco nao e mudanca de ninguem
+  assMotorPublicar();   // o espelho do motor ASS reflete o arquivo inteiro lido
 }
 
 static int gravar(void) {
@@ -6849,6 +6872,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LEG_MOSTRAR:
     case AJ_TUNNELING:     /* Hardware playback capabilities belong to this device. */
     case AJ_BARRAS_PRETAS: /* Letterbox fill on this Android TV. */
+    case AJ_ASS_MOTOR:     /* o motor de legenda e desta TV */
     case AJ_AFR:          /* Display modes belong to this panel. */
     case AJ_HDR_INTERFACE: /* HDR output belongs to this panel. */
     case AJ_HDR_UI:         /* o painel e desta TV */
@@ -6939,7 +6963,7 @@ static int soNaTv(int op) {
     case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_BUFFER_RAM_REDUZ:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
-    case AJ_TUNNELING: case AJ_BARRAS_PRETAS: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO: case AJ_AFR:
+    case AJ_TUNNELING: case AJ_BARRAS_PRETAS: case AJ_ASS_MOTOR: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO: case AJ_AFR:
     case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_VIDRO_QUALIDADE:
     case AJ_DET_SO_CINEMETA: case AJ_BUSCA_CINEMETA:
     case AJ_FONTE_MANUAL: case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_PRAZO:
@@ -7537,6 +7561,9 @@ static int foraDestaPlataforma(int op) {
 #if defined(NV_TPK) || defined(NV_ANDROID)
   if (op == AJ_DV_MKV) return 1;
   if (op == AJ_DV_AUDIO) return 1;
+#endif
+#if !defined(NV_TPK) && !defined(NV_ASS_NOVO) && !defined(AJUSTES_TESTE)
+  if (op == AJ_ASS_MOTOR) return 1;   // so o .tpk tem o motor novo de ASS
 #endif
 #if defined(NV_TPK) || defined(NV_ANDROID) || !defined(NV_DV7_CONVERSION)
   if (op == AJ_DV7) return 1;
@@ -8962,6 +8989,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_ESPACO_TITULOS: return "O espaço horizontal entre os cartazes de uma fileira da Home.";
     case AJ_TUNNELING: return "Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.";
     case AJ_BARRAS_PRETAS: return "Pinta de preto a área fora do vídeo (tarjas). Útil em HDR/Dolby Vision quando o fundo vaza cor. Vale no player Android TV.";
+    case AJ_ASS_MOTOR: return "Motor de legendas ASS desta TV. Ligado usa o motor novo (libass NEON); Desligado volta ao motor anterior. Vale para arquivos com legenda ASS/SSA.";
     case AJ_TV_HOME: return "Mostra Continuar assistindo e o canal Nuvio no Android TV. Perfis infantis ficam ocultos. Desligar remove os itens publicados. Vale só nesta TV.";
     case AJ_AFR: return "Troca a taxa de atualização da TV para a do vídeo (24 Hz, 50 Hz...), reduzindo trepidação. Automático aplica a melhor correspondência ao abrir o vídeo e restaura ao sair; se a TV não oferecer um modo compatível, nada muda. Só Android TV.";
     case AJ_HDR_INTERFACE: return "HDR experimental para os menus. Branco limitado a 203 nits. Reinicie o app após mudar. Sem suporte, usa SDR.";
@@ -10784,9 +10812,12 @@ static int definirValorDireto(int op, int novo) {
   if (op == AJ_TEX_MB) memoriaEscolhida = 1;
   if (op == AJ_SALVOS_DEST) bibliotecaFonteEscolhida = 1;
   valor[op] = novo;
+  if (op == AJ_ASS_MOTOR) assMotorPublicar();
   if (novo == 0) notaLigarPar(op);
   { int ok; ajOrigem = ajOrigemDireto; ok = gravar(); ajOrigem = 0;
-    if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes; return 0; } }
+    if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes;
+      if (op == AJ_ASS_MOTOR) assMotorPublicar();
+      return 0; } }
   if ((op == AJ_DV_MKV || op == AJ_DV7 || op == AJ_DV7_MAPPING) && antes != 0 && novo == 0) video_dv_guard_reiniciar();
   if (op == AJ_LIVETV_SUGERIR) guia_sugestoes_mudaram();
   if (op == AJ_LIVETV_AGRUPAR) guia_reordenar();
@@ -10802,6 +10833,7 @@ static int definirValorDireto(int op, int novo) {
   if (op == AJ_IDIOMA) { idiomaEscolhido(); desc_repetir(); }
   if (op == AJ_PREVIA_PROVEDOR) previaAplicar();
   if (op == AJ_BARRAS_PRETAS) barraspretas_invalidar();
+  if (op == AJ_ASS_MOTOR) assrender_motor_invalidar();   /* epoca sobe, mesmo pts pede de novo, motor que saiu solta tudo */
   if (op == AJ_TAMANHO_UI) gfx_escala_ui_definir(ajustes_tamanho_ui());
   if (op == AJ_ESCALA_TEXTO) gfx_escala_txt_definir(ajustes_escala_texto());
   if (op == AJ_INTERFACE_MODO) {
