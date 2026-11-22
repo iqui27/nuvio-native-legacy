@@ -170,6 +170,85 @@ static int fp_arr_prox(FpIt *it, const char **vi, const char **vf) {
   return 1;
 }
 
+// ------------------------------------------------- pre-passada estrutural
+// Confere a SINTAXE JSON do documento inteiro antes de validar peca a
+// peca. Os iteradores estritos so descem onde o esquema le: um trecho
+// torto dentro de peca ja recusada por outro motivo — ou alem da 6a —
+// passava despercebido. Um parser JSON de verdade (o do servidor)
+// reprova o documento inteiro nesses casos; a TV faz o mesmo: qualquer
+// torto, em qualquer nivel ou posicao, derruba a cena com -FCE_JSON.
+// Iterativa, sem recursao: 8 KB aninham milhares de niveis e a pilha do
+// fio pode ser curta — um BIT por nivel guarda o delimitador aberto
+// (0 = '{', 1 = '['), entao 1 KB de contexto bastam para o pior caso.
+// Mesmas regras de fp_val_fim + fp_obj_prox/fp_arr_prox: branco so
+// " \t\n\r", string no alfabeto de escapes e sem controle cru, numero na
+// gramatica, true/false/null exatos, "," e ":" no lugar e todo par
+// fechado com o delimitador certo. A semantica (chaves, tipos,
+// duplicatas) fica para a leitura por esquema.
+static int fp_json_ok(const char *p, const char *fim) {
+  unsigned char ctx[FAROL_CENA_MAX / 8];   // um bit por nivel aberto
+  int dep = 0;
+  int est = 0;   // 0 valor; 1 chave ou '}'; 2 elemento ou ']';
+                 // 3 depois de valor; 4 chave depois de ','
+  for (;;) {
+    p = fp_pula(p, fim);
+    if (est == 3) {
+      int obj;
+      if (dep == 0) return p == fim;        // fim: so branco pode restar
+      obj = !(ctx[(dep - 1) >> 3] & (1u << ((dep - 1) & 7)));
+      if (p < fim && *p == ',') { p++; est = obj ? 4 : 0; continue; }
+      if (p < fim && *p == (obj ? '}' : ']')) { dep--; p++; continue; }
+      return 0;
+    }
+    if (p >= fim) return 0;
+    if (est == 1 && *p == '}') { dep--; p++; est = 3; continue; }
+    if (est == 1 || est == 4) {
+      const char *k2;
+      if (*p != '"') return 0;    // fp_str_fim parte do pressuposto
+      k2 = fp_str_fim(p, fim);
+      if (!k2) return 0;
+      p = fp_pula(k2 + 1, fim);
+      if (p >= fim || *p != ':') return 0;
+      p++;
+      est = 0;
+      continue;
+    }
+    if (est == 2 && *p == ']') { dep--; p++; est = 3; continue; }
+    if (*p == '{') {
+      if (dep == FAROL_CENA_MAX) return 0;  // 8 KB nao fecha 8 mil niveis
+      ctx[dep >> 3] &= ~(1u << (dep & 7)); dep++;
+      p++;
+      est = 1;
+      continue;
+    }
+    if (*p == '[') {
+      if (dep == FAROL_CENA_MAX) return 0;
+      ctx[dep >> 3] |= 1u << (dep & 7); dep++;
+      p++;
+      est = 2;
+      continue;
+    }
+    if (*p == '"') {
+      const char *q = fp_str_fim(p, fim);
+      if (!q) return 0;
+      p = q + 1;
+    } else {
+      const char *q = p;
+      while (q < fim && *q != ',' && *q != '}' && *q != ']' &&
+             (unsigned char)*q > ' ') q++;
+      if (q == p) return 0;
+      if (*p == '-' || (*p >= '0' && *p <= '9')) {
+        if (!fp_num_json(p, q)) return 0;
+      } else if (!((q - p == 4 &&
+                    (!memcmp(p, "true", 4) || !memcmp(p, "null", 4))) ||
+                   (q - p == 5 && !memcmp(p, "false", 5))))
+        return 0;
+      p = q;
+    }
+    est = 3;
+  }
+}
+
 // ----------------------------------------------------------- decodifica
 static int fp_hex4(const char *p, const char *fim, unsigned *v) {
   int h;
@@ -239,6 +318,9 @@ static int fp_str_dec(const char *ki, const char *kf, char *dst, size_t tam) {
     dst[k++] = (char)c;
   }
   dst[k] = 0;
+  // O resto do buffer zerado: quem compara a FarolCena crua (memcmp, hash
+  // de conteudo, gravacao em disco) nao herda lixo de pilha depois do NUL.
+  memset(dst + k + 1, 0, tam - k - 1);
   return (int)k;
 }
 
@@ -378,20 +460,24 @@ static int fp_ref(const char *s, int nCand, FarolRef *r) {
       if (s[i] < '0' || s[i] > '9') return 0;
     r->c = -1;
   } else return 0;
+  memset(r->s, 0, sizeof r->s);
   memcpy(r->s, s, n + 1);
   return 1;
 }
 
 // O argumento "c<digitos>" e uma referencia e tem de resolver; qualquer
 // outra forma e texto livre de modelo (valor curto, nome, hora, icone...).
+// "c<digitos><letras>" nao e referencia (secao 4.2): e texto livre — a
+// faixa so decide quando a forma inteira e "c<digitos>"; checar o indice
+// antes de ver a letra reprovava "c1x" com 0 ou 1 candidato.
 static int fp_arg_ref_ok(const char *s, int nCand) {
   size_t n = strlen(s);
   int64_t idx = 0;
   if (n < 2 || s[0] != 'c') return 1;
   for (size_t i = 1; i < n; i++) {
     if (s[i] < '0' || s[i] > '9') return 1;
-    idx = idx * 10 + (s[i] - '0');
-    if (idx > nCand) return 0;
+    if (idx <= nCand)                       // para de crescer sem estourar
+      idx = idx * 10 + (s[i] - '0');
   }
   return idx < nCand;
 }
@@ -519,7 +605,7 @@ static int fp_itens(Fp *fp, const FpSlot *s, FarolRef *itens, int max,
   int r, n = 0;
   if (*s->vi != '[') return FPE_TIPO_VALOR;
   while ((r = fp_arr_prox(&ait, &e, &ef)) == 1) {
-    FarolRef ref;
+    FarolRef ref = { -1, "" };
     if (n >= max) return FPE_FAIXA;
     if (*e != '"') return FPE_TIPO_VALOR;
     if (fp_str_dec(e, ef, buf, sizeof buf) < 0 ||
@@ -543,7 +629,7 @@ static int fp_motivo(Fp *fp, const FpSlot *s, FarolMotivo *mot, int *nMot,
   int r, n = 0;
   if (*s->vi != '{') return FPE_TIPO_VALOR;
   while ((r = fp_obj_prox(&oit, &ki, &kf, &v2, &vf2)) == 1) {
-    FarolRef ref;
+    FarolRef ref = { -1, "" };
     int item;
     if (n >= max) return FPE_FAIXA;
     if (fp_str_dec(ki, kf, buf, sizeof buf) < 0 ||
@@ -704,7 +790,7 @@ static int fp_porque(Fp *fp, const FpSlot *sl, const int *idx, int n,
       if (p->u.porque.nSelos >= FAROL_SELA_MAX) return FPE_FAIXA;
       if (*e2 != '{') return FPE_TIPO_VALOR;
       oit.p = e2 + 1; oit.fim = ef2 - 1; oit.precisa = 0;
-      selo.id = 0;
+      memset(&selo, 0, sizeof selo);
       while ((r = fp_obj_prox(&oit, &ki, &kf, &v2, &vf2)) == 1) {
         if (fp_key_eh(ki, kf, "k")) {
           if (temK) return FPE_JSON;
@@ -765,7 +851,7 @@ static int fp_comparar(Fp *fp, const FpSlot *sl, const int *idx, int n,
   p->u.comparar.escolha = -1;
   if ((s = fp_slot(sl, idx, n, FK_ESCOLHA))) {
     char buf[FAROL_REF_TAM];
-    FarolRef ref;
+    FarolRef ref = { -1, "" };
     if ((e = fp_campo_str(s, buf, sizeof buf, FPE_REF)) != FPE_OK) return e;
     if (!fp_ref(buf, fp->nCand, &ref)) return FPE_REF;
     if ((e = fp_ref_em(p->u.comparar.itens, p->u.comparar.nItens, &ref)) < 0)
@@ -955,27 +1041,6 @@ static int fp_peca(Fp *fp, const char *vi, const char *vf, FarolPeca *p) {
 }
 
 // -------------------------------------------------------------- envelope
-// Profundidade do par {} sobre [ini,fim): zero ao fim e sem aspa aberta.
-// Serve para distinguir o js_fim que achou o '}' da raiz do js_fim que
-// varreu ate o NUL sem ela fechar — nos dois casos o retorno pode cair
-// exatamente em fimDoc.
-static int fp_raiz_fechou(const char *ini, const char *fim) {
-  int prof = 0, texto = 0, esc = 0;
-  for (const char *p = ini; p < fim; p++) {
-    unsigned char c = (unsigned char)*p;
-    if (texto) {
-      if (esc) esc = 0;
-      else if (c == '\\') esc = 1;
-      else if (c == '"') texto = 0;
-      continue;
-    }
-    if (c == '"') texto = 1;
-    else if (c == '{') prof++;
-    else if (c == '}') prof--;
-  }
-  return prof == 0 && !texto;
-}
-
 // Chaves do envelope: a desconhecida recusa a cena inteira (nao ha peca
 // para atribuir a recusa).
 enum { FKE_V, FKE_TELA, FKE_PERFIL, FKE_FEITA, FKE_VALE, FKE_ORIGEM,
@@ -985,7 +1050,7 @@ static const char *const FP_ENV[FKE_N] = {
 };
 
 int farolpeca_ler(FarolCena *c, const char *json, int nCandidatos) {
-  const char *fim, *ini, *fimDoc, *fechDoc;
+  const char *fim, *ini, *fimDoc;
   FpIt it, ait;
   const char *ki, *kf, *vi, *vf, *e, *ef;
   FpSlot env[FKE_N];
@@ -1008,11 +1073,10 @@ int farolpeca_ler(FarolCena *c, const char *json, int nCandidatos) {
   while (fimDoc > ini && (fimDoc[-1] == ' ' || fimDoc[-1] == '\t' ||
          fimDoc[-1] == '\n' || fimDoc[-1] == '\r')) fimDoc--;
   if (ini >= fimDoc || *ini != '{' || fimDoc[-1] != '}') return -FCE_JSON;
-  fechDoc = js_fim(ini);
-  // O fecho tem de ser de verdade: js_fim devolve o fim da string tambem
-  // quando a raiz nunca fecha ("{{}" — o ultimo '}' e de um objeto interno
-  // e o documento inteiro fica aberto). fp_raiz_fechou distingue os dois.
-  if (fechDoc != fimDoc || !fp_raiz_fechou(ini, fimDoc)) return -FCE_JSON;
+  // Pre-passada estrutural: o documento inteiro tem de ser JSON valido —
+  // fecho da raiz, delimitadores, strings, numeros e literais — inclusive
+  // onde a leitura por esquema nao desce (peca ja recusada, alem da 6a).
+  if (!fp_json_ok(ini, fimDoc)) return -FCE_JSON;
 
   it.p = ini + 1; it.fim = fimDoc - 1; it.precisa = 0;
   while ((r = fp_obj_prox(&it, &ki, &kf, &vi, &vf)) == 1) {

@@ -14,6 +14,12 @@ bin="${TMPDIR:-/tmp}/nuvio-farol-peca-test"
   tests/farol_peca.c src/farolpeca.c src/faroltexto.c src/js.c -Isrc -o "$bin"
 "$bin"
 rm -f "$bin"
+# Aridade de modelo ("%%" nao conta marcador): inclui o .c e alcanca a
+# funcao estatica fp_modelo_args (tests/farol_pct.c).
+"$ccbin" ${flags[@]+"${flags[@]}"} -Wall -Wextra -O1 -g \
+  tests/farol_pct.c src/faroltexto.c src/js.c -Isrc -o "$bin-pct"
+"$bin-pct"
+rm -f "$bin-pct"
 # O validador e estatico: malloc na implementacao e bug de contrato, nao de
 # teste. E nenhum printf/titulo em log novo nestes modulos (PLANO-GOSTO 6).
 if grep -nE '(malloc|calloc|realloc|free)[[:space:]]*\(' src/farolpeca.c; then
