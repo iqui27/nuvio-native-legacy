@@ -1584,7 +1584,7 @@ void avisos_lista_desenhar_ptr(float x, float y0, float w, float a, int focoLinh
       else {
         gfx_rect((GfxRect){ row.x - 14.0f, row.y - 2.0f, row.w + 28.0f, row.h + 30.0f }, 0,
                  GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, .30f * a);
-        gfx_cor(row, 22.0f / row.h, .169f, .176f, .204f, a);
+        gfx_cor(row, 22.0f / row.h, NV_COR_FOCO_RGB, a);
       }
     }
     // O disco do icone: branco a 8 % (o ".dsc" do mockup), o icone a 85 %.
@@ -1637,7 +1637,7 @@ void avisos_lista_desenhar_ptr(float x, float y0, float w, float a, int focoLinh
     if (f) {
       if (gfx_foco_placa(row, 22.0f / row.h, 1.0f, a)) { /* Shared accent plate. */ }
       else if (ajustes_vidro()) gfx_cor(row, 22.0f / row.h, 1, 1, 1, .12f * a);
-      else gfx_cor(row, 22.0f / row.h, .169f, .176f, .204f, a);
+      else gfx_cor(row, 22.0f / row.h, NV_COR_FOCO_RGB, a);
     }
     if (ajustes_vidro()) gfx_cor((GfxRect){ x + AVL_PADX, y + 16.0f, 52.0f, 52.0f }, 0.5f, 1, 1, 1, .08f * a);
     else gfx_cor((GfxRect){ x + AVL_PADX, y + 16.0f, 52.0f, 52.0f }, 0.5f, .141f, .149f, .173f, a);

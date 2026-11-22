@@ -192,7 +192,7 @@ static void ajFocoLinha(GfxRect r, float raioPx, float f, float a) {
   }
   else {
     gfx_rect((GfxRect){ r.x - 10, r.y + 2, r.w + 20, r.h + 26 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.30f * f * a);
-    gfx_cor(r, raioPx / r.h, 0.169f, 0.176f, 0.204f, f * a);
+    gfx_cor(r, raioPx / r.h, NV_COR_FOCO_RGB, f * a);
   }
 }
 // Neutro claro sobre a ilha: branco a `vidA` no vidro, o cinza opaco no solido.
@@ -969,7 +969,7 @@ static void ajDesenharIndice(void) {
     // Na janela recortada so entram categorias inteiras: meia linha cortada
     // pelo recorte parece defeito, nao rolagem.
     if (indRecorte && (r.y < ilha.y + 7.0f || r.y + 58.0f > indFim + 1.0f)) { y += 62.0f; continue; }
-    if (foco) { if (!gfx_foco_placa(r, .5f, 1, 1)) ajNeutro(r, 29.0f, 0.14f, 0.169f, 0.176f, 0.204f, 1); }
+    if (foco) { if (!gfx_foco_placa(r, .5f, 1, 1)) ajNeutro(r, 29.0f, 0.14f, NV_COR_FOCO_RGB, 1); }
     else if (sel) gfx_cor((GfxRect){ r.x + 7.0f, r.y + 26.5f, 5, 5 }, 0.5f, ar, ag, ab, 1);
     ajIcone(icone, r.x + 20.0f, r.y + 16.0f, 26.0f, al);
     { TxtLinha t = ajTxtC(TXT_AJ_ITEM, titulo, r.w - 82.0f);

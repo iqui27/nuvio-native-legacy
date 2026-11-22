@@ -331,9 +331,10 @@ static void focoLinha(GfxRect r, float f, float alpha) {
   { GfxRect s = { r.x - MK(30.0f), r.y + MK(10.0f - 30.0f), r.w + MK(60.0f), r.h + MK(60.0f) };
     gfx_rect(s, 0, GFX_SOMBRA, 1.0f, MK(42.0f) * gfx_escala(), 0, (r.h * 0.5f + MK(30.0f)) / s.h,
              0, 0, 0, .40f * f * alpha); }
-  gfx_cor(r, 0.5f, .169f + .06f * (1.0f - .169f), .176f + .06f * (1.0f - .176f),
-          .204f + .06f * (1.0f - .204f), f * alpha);
-  gfx_cor((GfxRect){ r.x, r.y + MK(1.0f), r.w, r.h - MK(1.0f) }, 0.5f, .169f, .176f, .204f, f * alpha);
+  gfx_cor(r, 0.5f, NV_COR_FOCO_R + .06f * (1.0f - NV_COR_FOCO_R),
+          NV_COR_FOCO_G + .06f * (1.0f - NV_COR_FOCO_G),
+          NV_COR_FOCO_B + .06f * (1.0f - NV_COR_FOCO_B), f * alpha);
+  gfx_cor((GfxRect){ r.x, r.y + MK(1.0f), r.w, r.h - MK(1.0f) }, 0.5f, NV_COR_FOCO_RGB, f * alpha);
 }
 
 // PONTEIRO (#99). Passar por cima da rail ABRE o painel ja com o destaque na

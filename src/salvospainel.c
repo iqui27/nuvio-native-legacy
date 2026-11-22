@@ -2843,7 +2843,7 @@ static void superficieItem(GfxRect r, float raio, float f, float a) {
   // painel e o unico sinal, e de longe ele some.
   gfx_rect((GfxRect){ r.x - 14.0f, r.y - 2.0f, r.w + 28.0f, r.h + 30.0f }, 0, GFX_SOMBRA,
            1.0f, 0, 0, 0.5f, 0, 0, 0, .30f * v * a);
-  gfx_cor(r, raio, .169f, .176f, .204f, v * a);
+  gfx_cor(r, raio, NV_COR_FOCO_RGB, v * a);
   { float rp = raio * (r.h < r.w ? r.h : r.w);
     gfx_cor((GfxRect){ r.x + rp, r.y, r.w - 2.0f * rp, 1.0f }, 0.0f, 1, 1, 1, .06f * v * a); }
 }
