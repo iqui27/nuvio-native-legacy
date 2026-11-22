@@ -1061,6 +1061,7 @@ static Uint32 dtsRefillEm;
 static Uint32 bufferandoFimPend;
 static double bufferandoFimPos;   // playback position when the end was held
 static int bufferandoUniu;   // a held end was followed by a new start: the next end is final
+static int bufferandoSoltou; // the held end comes from a seek hold release
 static Uint32 seekFimEm;
 
 static void bufferandoFim(void) {
@@ -1068,6 +1069,7 @@ static void bufferandoFim(void) {
   bufferandoAvancos=0;
   bufferandoFimPend=0;
   bufferandoUniu=0;
+  bufferandoSoltou=0;
 }
 static int bufferandoSeekPendente(void) {
   return seekEm || seekEnvEm || seekRetryEm || seekView.active;
@@ -1773,6 +1775,12 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   if (strstr(p, "playing")) {
     pausaConfirmada = 0;
     tocando = 1;
+    /* Released from a seek hold and playing with no buffering in between
+     * (owner's C5, 22/11: the ring stayed 1.5 s on a moving picture). */
+    if(bufferandoFimPend && bufferandoSoltou && !atomic_load(&hlsSegura) && !pausaPedida) {
+      bufferandoFim();
+      marco("buffering FIM (playing right after the seek hold)");
+    }
     if(bufferandoDesde && !bufferandoFimPend && !atomic_load(&hlsSegura) && !pausaPedida && !bufferandoSeekPendente()) {
       bufferandoFim();
       marco("buffering FIM (playing)");
@@ -4432,6 +4440,7 @@ static void hlsSeguraSoltar(const char *motivo, double prontoS) {
     bufferandoFimPend = SDL_GetTicks() | 1u;
     bufferandoFimPos = posNativa;
     bufferandoUniu = 0;
+    bufferandoSoltou = 1;
   }
   marco("seek hold released");
 }
