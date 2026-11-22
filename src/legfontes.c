@@ -1,3 +1,4 @@
+#define NV_DUBLE_SESSAO
 #include "legfontes.h"
 #include "assrender.h"
 #include "perfisessao.h"

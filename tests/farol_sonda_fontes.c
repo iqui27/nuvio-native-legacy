@@ -25,6 +25,44 @@ void audioext_serie_achou(const char *url, const char *cabecalhos, const char *n
 int addons_parcial_abas(AddonAba *out, int max) { (void)out; (void)max; return 0; }
 const char *i18n(const char *texto) { return texto; }
 
+// macOS nao tem pthread_barrier_t: encontro de 2 rearmado por mutex+cond
+// (a largada de tests/sessao_corrida.c, mas reutilizavel — o caso corrida
+// faz dois encontros).
+#if defined(__APPLE__)
+typedef struct {
+  pthread_mutex_t m;
+  pthread_cond_t c;
+  int n;
+  unsigned era;
+} pthread_barrier_t;
+static int pthread_barrier_init(pthread_barrier_t *b, const void *attr, unsigned n) {
+  (void)attr;
+  assert(n == 2);
+  pthread_mutex_init(&b->m, NULL);
+  pthread_cond_init(&b->c, NULL);
+  b->n = 0;
+  b->era = 0;
+  return 0;
+}
+static int pthread_barrier_wait(pthread_barrier_t *b) {
+  pthread_mutex_lock(&b->m);
+  if (++b->n == 2) {
+    b->n = 0;
+    b->era++;
+    pthread_cond_broadcast(&b->c);
+  } else {
+    unsigned e = b->era;
+    while (e == b->era) pthread_cond_wait(&b->c, &b->m);
+  }
+  pthread_mutex_unlock(&b->m);
+  return 0;
+}
+static int pthread_barrier_destroy(pthread_barrier_t *b) {
+  pthread_mutex_destroy(&b->m);
+  pthread_cond_destroy(&b->c);
+  return 0;
+}
+#endif
 static pthread_barrier_t borda;
 static pthread_t publicador, publicador2;
 static Stream tardia;

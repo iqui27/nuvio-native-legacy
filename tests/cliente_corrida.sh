@@ -22,8 +22,14 @@ case "${SANITIZE:-0}" in
     ;;
 esac
 linker=-Wl,--gc-sections
-[ "$(uname -s)" = Darwin ] && linker=-Wl,-dead_strip
-"$ccbin" "${flags[@]}" "$linker" -Wl,--wrap=fopen -Wl,--wrap=fopen64 \
+wrap="-Wl,--wrap=fopen -Wl,--wrap=fopen64"
+if [ "$(uname -s)" = Darwin ]; then
+  linker=-Wl,-dead_strip
+  # ld64 nao aceita --wrap; o cliente_corrida.c interpoe fopen direto no
+  # binario (simbolo fopen + RTLD_NEXT) quando __APPLE__.
+  wrap=
+fi
+"$ccbin" "${flags[@]}" "$linker" $wrap \
   tests/cliente_corrida.c src/addons.c src/addonmodo.c src/fontefalha.c \
   src/farolanel.c src/js.c src/idcanal.c src/watchstate.c src/dados.c \
   -o "$dir/teste"

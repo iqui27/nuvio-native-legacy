@@ -5,7 +5,10 @@ set -eu
 cd "$(dirname "$0")/.."
 DIR=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-atualizacao-tpk.XXXXXX")
 trap 'rm -rf "$DIR"' EXIT
-flags=(-O1 -g -Isrc -pthread -ffunction-sections -fdata-sections -Wl,--gc-sections -Wno-deprecated-declarations)
+flags=(-O1 -g -Isrc -pthread -ffunction-sections -fdata-sections -Wno-deprecated-declarations)
+# ld64 nao tem --gc-sections; -dead_strip e o equivalente (mesma receita de
+# tests/addonslista.sh).
+if [ "$(uname -s)" = Darwin ]; then flags+=(-Wl,-dead_strip); else flags+=(-Wl,--gc-sections); fi
 if [ "${1:-}" = --sanitize ] || [ "${SANITIZE:-0}" = 1 ]; then
   flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer)
 fi
