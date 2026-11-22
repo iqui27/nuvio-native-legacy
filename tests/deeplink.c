@@ -34,6 +34,17 @@ int main(void) {
   CHECK(d.tipo == DL_TOCAR && d.temporada == 2 && d.episodio == 5);
   d = ok("nuvio-legacy://play/series/tt0944947/2/5?tvprofile=2");
   CHECK(d.tvProfile == 2 && d.temporada == 2 && d.episodio == 5);
+  CHECK(!d.temInicio);
+  d = ok("nuvio-legacy://play/movie/tt0111161?t=3723");
+  CHECK(d.tipo == DL_TOCAR && d.temInicio && d.inicioSeg == 3723);
+  d = ok("nuvio-legacy://play/series/tt0944947/2/5?tvprofile=2&t=0#x");
+  CHECK(d.tvProfile == 2 && d.temInicio && d.inicioSeg == 0 && d.episodio == 5);
+  d = ok("nuvio-legacy://play/movie/tt0111161?t=abc");
+  CHECK(!d.temInicio);
+  d = ok("nuvio-legacy://play/movie/tt0111161?t=999999999");
+  CHECK(!d.temInicio);
+  d = ok("nuvio-legacy://play/movie/tt0111161?start=5");
+  CHECK(!d.temInicio);
   ruim("nuvio-legacy://play/movie/tt0111161?tvprofile=0");
   ruim("nuvio-legacy://play/movie/tt0111161?tvprofile=abc");
   // Explicit season zero must not silently play the default/resume episode.

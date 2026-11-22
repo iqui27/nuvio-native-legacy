@@ -13,6 +13,7 @@
 //
 // O QUE ELE NAO GUARDA: token. A identidade e montada a cada ciclo a partir de
 // trakt.c ou de sessao.c e vai so no cabecalho do pedido.
+#include "marcacena.h"
 #include "recomenda.h"
 #include "nvbackend.h"
 #include "travarede.h"
@@ -272,6 +273,9 @@ static float cartaoEntrada;
 static RecItem cartaoItem;
 static char  pedido[24];
 static int   temPedido;
+static int   cenaPedida;          // o cartao aberto era uma cena marcada
+static MarcaCena cenaM;
+static char  cenaImdb[24];
 
 // =============================================================================
 // ENTRE AMIGOS ALEM DO TRAKT — estado (perfil publico, busca, pedidos, feed).
@@ -4192,6 +4196,8 @@ void recomenda_evento(const SDL_Event *e) {
     cartaoAberto = 0;
     snprintf(pedido, sizeof pedido, "%s", cartaoItem.imdb);
     temPedido = 1;
+    cenaPedida = cartaoItem.modelo == -1 && marcacena_ler_texto(cartaoItem.texto, &cenaM);
+    if (cenaPedida) snprintf(cenaImdb, sizeof cenaImdb, "%s", cartaoItem.imdb);
     recomenda_marcar_vistas();
     return;
   }
@@ -4249,10 +4255,28 @@ void rec_sugestao_origem(char *dst, size_t tam, const RecSugestao *s) {
 }
 
 // Frase da recomendacao: o modelo traduzido, ou o texto livre como veio.
+const char *rec_frase_texto(int modelo, const char *texto) {
+  static __thread char cena[96];
+  MarcaCena m;
+  if (modelo >= 0 && modelo < REC_MODELOS) return i18n(MODELOS[modelo]);
+  if (!texto) return "";
+  // MARCAR CENA: o texto livre "cena 1h02m03s" vira a frase traduzida.
+  if (marcacena_ler_texto(texto, &m)) {
+    char tempo[16];
+    snprintf(cena, sizeof cena, i18n("Cena marcada em %s"), marcacena_tempo(m.seg, tempo, sizeof tempo));
+    return cena;
+  }
+  return texto;
+}
 const char *rec_frase(const RecItem *r) {
-  if (!r) return "";
-  if (r->modelo >= 0 && r->modelo < REC_MODELOS) return i18n(MODELOS[r->modelo]);
-  return r->texto;
+  return r ? rec_frase_texto(r->modelo, r->texto) : "";
+}
+int recomenda_pediu_cena(char *imdb, size_t tam, int *t, int *e, int *seg, int *dur) {
+  if (!cenaPedida) return 0;
+  cenaPedida = 0;
+  snprintf(imdb, tam, "%s", cenaImdb);
+  *t = cenaM.temporada; *e = cenaM.episodio; *seg = cenaM.seg; *dur = cenaM.durSeg;
+  return 1;
 }
 
 // --- AS TRES MARCAS DA LINHA -------------------------------------------------

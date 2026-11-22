@@ -122,6 +122,18 @@ int deeplink_parse(const char *url, DeepLink *o) {
       if (!numero(profile, strcspn(profile, "&#"), 9999, &value) || value < 1) goto lixo;
       o->tvProfile = (int)value;
     }
+    {   // ?t=<segundos>: abre naquele instante (marcar cena, marcacena.h)
+      const char *q = query;
+      while (*q && *q != '#') {
+        size_t z = strcspn(q, "&#");
+        if (z > 2 && q[0] == 't' && q[1] == '=') {
+          long value;
+          // Invalid values are ignored, not rejected: links that worked keep working.
+          if (numero(q + 2, z - 2, 99L * 3600, &value)) { o->inicioSeg = (int)value; o->temInicio = 1; }
+        }
+        q += z; if (*q == '&') q++;
+      }
+    }
   }
   pn = (size_t)(fim - p);
   n = segmentos(p, pn, seg, len, 6);

@@ -258,6 +258,11 @@ int  recomenda_remover_contato(const char *id);
 
 // Frase do modelo `i` em portugues (a chave de i18n). NULL fora da faixa.
 const char *recomenda_modelo(int i);
+// A frase de (modelo, texto). Texto livre que e uma cena marcada (marcacena.h)
+// sai como "Cena marcada em 1:02:03" no idioma da TV.
+const char *rec_frase_texto(int modelo, const char *texto);
+// 1 uma vez quando o cartao que acabou de pedir a abertura era uma cena marcada.
+int recomenda_pediu_cena(char *imdb, size_t tam, int *t, int *e, int *seg, int *dur);
 
 // Frase JA PRONTA de uma recomendacao: o modelo traduzido, ou o texto livre
 // como veio. Nunca NULL. Compartilhada com quem desenha a aba Social, para as

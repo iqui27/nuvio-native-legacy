@@ -109,6 +109,7 @@ static RecContato ctts[REC_CONTATOS_MAX];
 static int   nCtts;
 static char  alvoId[96], alvoNome[64], alvoAvatar[256], alvoIdCor[96];
 static int   focoContato;          // para onde o Voltar devolve o foco
+static char  cenaTexto[64];        // marcar cena: texto livre que viaja no lugar da frase
 static int   modeloEsc;            // a frase que foi (indice)
 static int   envEstado;            // RE_ENV_* na pagina de envio
 static int   esperandoEnvio;       // o resultado ainda nao chegou (ver atualizar)
@@ -246,6 +247,7 @@ static void abrirComum(void) {
 
 int recenviar_abrir(const CatItem *ci) {
   if (!recomenda_ativo() || !ci || !ci->imdb[0]) return 0;
+  cenaTexto[0] = 0;
   item = *ci;
   temItem = 1;
   voltaParaContatos = 0;
@@ -254,8 +256,15 @@ int recenviar_abrir(const CatItem *ci) {
   return 1;
 }
 
+int recenviar_abrir_cena(const CatItem *ci, const char *texto) {
+  if (!texto || !texto[0] || !recenviar_abrir(ci)) return 0;
+  snprintf(cenaTexto, sizeof cenaTexto, "%s", texto);
+  return 1;
+}
+
 int recenviar_abrir_amigos(void) {
   if (!recomenda_ativo()) return 0;
+  cenaTexto[0] = 0;
   memset(&item, 0, sizeof item);
   temItem = 0;
   voltaParaContatos = 0;
@@ -336,7 +345,8 @@ static void irPara(int pag, int novoFoco) {
 static void enviar(void) {
   // O INDICE DO MODELO E O QUE VIAJA, nao a frase: assim a mesma
   // recomendacao chega em portugues numa TV e em ingles na outra.
-  if (recomenda_enviar(&item, alvoId, modeloEsc, "")) {
+  if (cenaTexto[0] ? recomenda_enviar(&item, alvoId, -1, cenaTexto)
+                   : recomenda_enviar(&item, alvoId, modeloEsc, "")) {
     envEstado = RE_ENV_INDO;
     esperandoEnvio = 1;
   } else envEstado = RE_ENV_FALHA;
@@ -353,6 +363,7 @@ static void aplicar(void) {
       snprintf(alvoIdCor, sizeof alvoIdCor, "%s", c->id);
       nomesDe(c, alvoNome, sizeof alvoNome, sub, sizeof sub);
       focoContato = foco;
+      if (cenaTexto[0]) { irPara(RE_PAG_ENVIO, 0); enviar(); return; }
       irPara(RE_PAG_MODELOS, 0);
       return; }
     case RL_ADICIONAR:
@@ -414,7 +425,8 @@ void recenviar_evento(const SDL_Event *e) {
     // amigo, nao recomecar do cartaz. E o foco volta para onde estava.
     if (confirmandoRemover >= 0) { confirmandoRemover = -1; return; }
     if (pagina == RE_PAG_ENVIO && envEstado == RE_ENV_FALHA) {
-      irPara(RE_PAG_MODELOS, modeloEsc);
+      if (cenaTexto[0]) irPara(RE_PAG_CONTATOS, focoContato);
+      else irPara(RE_PAG_MODELOS, modeloEsc);
       return;
     }
     if (pagina == RE_PAG_MODELOS)  { irPara(RE_PAG_CONTATOS, focoContato); return; }
@@ -542,7 +554,8 @@ static void resultadoEnvio(Uint32 agora) {
     ac.icone = "aj_send";
     ac.frase = frase;
     ac.titulo = item.titulo;
-    ac.onde = i18n(recomenda_modelo(modeloEsc) ? recomenda_modelo(modeloEsc) : "");
+    ac.onde = cenaTexto[0] ? rec_frase_texto(-1, cenaTexto)
+            : i18n(recomenda_modelo(modeloEsc) ? recomenda_modelo(modeloEsc) : "");
     ac.thumb = item.poster;
     ac.arte = item.backdrop;
     ac.tipo = ILHA_OK;
@@ -943,9 +956,9 @@ static void desenhaEnvio(float x, float y, float w, float h, float a, Uint32 ago
     snprintf(buf, sizeof buf, i18n("Enviado para %s"), alvoNome);
     { TxtLinha t = txt_linha_corta(TXT_ILHA_PERGUNTA, buf, 243, 242, 239, 255, w);
       txt_desenhar_alpha(t, cx - (float)t.w * .5f, cy + 24.0f, a); }
-    { const char *m = recomenda_modelo(modeloEsc);
+    { const char *m = cenaTexto[0] ? rec_frase_texto(-1, cenaTexto) : recomenda_modelo(modeloEsc);
       if (m) {
-        snprintf(buf, sizeof buf, "\xe2\x80\x9c%s\xe2\x80\x9d", i18n(m));
+        snprintf(buf, sizeof buf, "\xe2\x80\x9c%s\xe2\x80\x9d", cenaTexto[0] ? m : i18n(m));
         TxtLinha t = txt_linha_corta(TXT_ILHA_TEXTO, buf, 243, 242, 239, 255, w);
         txt_desenhar_alpha(t, cx - (float)t.w * .5f, cy + 84.0f, .62f * a);
       } }

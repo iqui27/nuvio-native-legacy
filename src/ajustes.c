@@ -844,6 +844,8 @@ typedef enum {
   AJ_LEG_EVITAR_SDH,
   // Android-only: black letterbox bars on Surface margins (#768), local, off.
   AJ_BARRAS_PRETAS,
+  // Marcar cena (pesquisa 4.7): tecla no player guarda o instante. LOCAL, ligado.
+  AJ_MARCAR_CENA,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2086,6 +2088,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Personalização igual ao perfil principal", V_LIGA, 2),  // local: personalizacaoDoPerfilPrincipalLocal (#679)
   ESC("Evitar legendas SDH", V_LIGA, 2),                    // local: legendaEvitarSdhLocal (#743)
   ESC("Tarjas pretas no player", V_LIGA, 2),                 // local: barrasPretasLocal (#768)
+  ESC("Marcar cena no player", V_LIGA, 2),                   // local: marcarCenaLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2475,6 +2478,7 @@ static const char *CHAVE[] = {
   "personalizacaoDoPerfilPrincipalLocal",
   "legendaEvitarSdhLocal",
   "barrasPretasLocal",
+  "marcarCenaLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3273,6 +3277,7 @@ int ajustes_show_skip_intro(void)     { return lig(AJ_SHOW_SKIP_INTRO); }
 int ajustes_show_skip_recap(void)     { return lig(AJ_SHOW_SKIP_RECAP); }
 int ajustes_show_skip_credits(void)   { return lig(AJ_SHOW_SKIP_CREDITS); }
 int ajustes_show_skip_cena(void)      { return lig(AJ_SHOW_SKIP_CENA); }
+int ajustes_marcar_cena(void)         { return lig(AJ_MARCAR_CENA); }
 int ajustes_update_notifications(void) { return lig(AJ_UPDATE_NOTIFICATIONS); }
 int ajustes_lembrar_perfil(void)      { return lig(AJ_REMEMBER_PROFILE); }
 int ajustes_capitulos(void)           { return lig(AJ_CAPITULOS); }
@@ -6835,6 +6840,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LEG_SYNC_AUDIO: /* PCM e passthrough sao desta TV; o web nao tem */
     case AJ_LEG_FORCADA:    /* #287: o web nao tem esta escolha */
     case AJ_LEG_EVITAR_SDH: /* #743: idem */
+    case AJ_MARCAR_CENA:    /* marcar cena: tecla deste aparelho */
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA: /* estilo da legenda e desta TV */
     case AJ_LEG_CONTORNO_COR: /* #475: idem */
     case AJ_CACHE_SEEK:     /* F07: o disco e o player sao desta TV */
@@ -9224,6 +9230,7 @@ static const char *beneficioProprio(int op) {
     case AJ_PULAR_RESUMO: return "Pula o resumo do episódio anterior quando ele está marcado.";
     case AJ_SHOW_SKIP_INTRO: return "Mostra o botão Pular abertura quando há um trecho marcado. Desligado esconde só o botão, inclusive com os controles abertos; o pulo automático é outra opção.";
     case AJ_SHOW_SKIP_RECAP: return "Mostra o botão Pular resumo quando há um trecho marcado. Desligado esconde só este botão; o pulo automático do resumo é outra opção.";
+    case AJ_MARCAR_CENA: return "No filme ou episódio, a tecla amarela do controle (ou M no teclado) guarda o instante. Apertar de novo envia a cena a um amigo, que abre o título naquele ponto.";
     case AJ_SHOW_SKIP_CENA: return "Mostra o botão Pular cena em trechos pós-créditos marcados no arquivo ou nas fontes de capítulos — conteúdo explícito ou cenas longas. Desligado, só abertura, resumo e créditos.";
     case AJ_SHOW_SKIP_CREDITS: return "Mostra o botão Pular créditos quando há um trecho marcado. Desligado esconde só o botão; o pulo automático e o episódio seguinte são outras opções.";
     case AJ_REMEMBER_PROFILE: return "Abre direto no último perfil usado ao ligar o app, se ele ainda existir e não tiver PIN. Desligado, a escolha de perfil aparece a cada sessão. Vale só nesta TV; perfis protegidos continuam pedindo PIN.";
