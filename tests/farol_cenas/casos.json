@@ -283,6 +283,20 @@
    "rec": 0
   },
   {
+   "arq": "boa-41.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 3,
+   "rec": 0
+  },
+  {
+   "arq": "boa-42.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
    "arq": "ruim-01.json",
    "cand": 12,
    "rc": "FCE_TAMANHO"
@@ -1290,10 +1304,1513 @@
    "arq": "ruim-112.json",
    "cand": 12,
    "rc": "OK",
+   "boas": 2,
+   "rec": 1,
+   "erros": {
+    "2": "FPE_LIMITE"
+   }
+  },
+  {
+   "arq": "ruim-113.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-114.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-115.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-116.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-117.json",
+   "cand": 12,
+   "rc": "OK",
    "boas": 1,
    "rec": 1,
    "erros": {
-    "1": "FPE_LIMITE"
+    "1": "FPE_JSON"
+   }
+  },
+  {
+   "arq": "ruim-118.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 1,
+   "erros": {
+    "1": "FPE_JSON"
+   }
+  },
+  {
+   "arq": "ruim-119.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_X"
+   }
+  },
+  {
+   "arq": "ruim-120.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-121.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_REF"
+   }
+  },
+  {
+   "arq": "ruim-122.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_REF"
+   }
+  },
+  {
+   "arq": "ruim-123.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-124.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-125.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-126.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-127.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-128.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-129.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-130.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-131.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_JSON"
+   }
+  },
+  {
+   "arq": "ruim-132.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_JSON"
+   }
+  },
+  {
+   "arq": "ruim-133.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_JSON"
+   }
+  },
+  {
+   "arq": "ruim-134.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_JSON"
+   }
+  },
+  {
+   "arq": "ruim-135.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_JSON"
+   }
+  },
+  {
+   "arq": "ruim-136.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FALTA"
+   }
+  },
+  {
+   "arq": "ruim-137.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FALTA"
+   }
+  },
+  {
+   "arq": "ruim-138.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FALTA"
+   }
+  },
+  {
+   "arq": "ruim-139.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FALTA"
+   }
+  },
+  {
+   "arq": "ruim-140.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-141.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-142.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-143.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-144.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-145.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-146.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_JSON"
+   }
+  },
+  {
+   "arq": "boa-43.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "ruim-147.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-148.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-149.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-150.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-151.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-152.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-153.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-154.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-155.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-156.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-157.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-158.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-159.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-160.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-161.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-162.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-163.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-164.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-165.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-166.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-167.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-168.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-169.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-170.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-171.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-172.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-173.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_JSON"
+   }
+  },
+  {
+   "arq": "ruim-174.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_JSON"
+   }
+  },
+  {
+   "arq": "ruim-175.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_JSON"
+   }
+  },
+  {
+   "arq": "ruim-176.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_JSON"
+   }
+  },
+  {
+   "arq": "ruim-177.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FALTA"
+   }
+  },
+  {
+   "arq": "ruim-178.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FALTA"
+   }
+  },
+  {
+   "arq": "ruim-179.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_CHAVE"
+   }
+  },
+  {
+   "arq": "ruim-180.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-181.json",
+   "cand": 12,
+   "rc": "FCE_CAMPO"
+  },
+  {
+   "arq": "ruim-182.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-183.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-184.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-185.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-186.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-187.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-188.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-189.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-190.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-191.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-192.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_REF"
+   }
+  },
+  {
+   "arq": "ruim-193.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-194.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-195.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_REF"
+   }
+  },
+  {
+   "arq": "ruim-196.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_REF"
+   }
+  },
+  {
+   "arq": "ruim-197.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_REF"
+   }
+  },
+  {
+   "arq": "ruim-198.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_REF"
+   }
+  },
+  {
+   "arq": "ruim-199.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-200.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-201.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-202.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-203.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-204.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-205.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-206.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-207.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-208.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "boa-44.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "boa-45.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "boa-46.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "boa-47.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "boa-48.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "boa-49.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "ruim-209.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-210.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-211.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-212.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-213.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-214.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-215.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-216.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-217.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-218.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-219.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-220.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-221.json",
+   "cand": 12,
+   "rc": "FCE_JSON"
+  },
+  {
+   "arq": "ruim-222.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_X"
+   }
+  },
+  {
+   "arq": "ruim-223.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_X"
+   }
+  },
+  {
+   "arq": "ruim-224.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_X"
+   }
+  },
+  {
+   "arq": "ruim-225.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_X"
+   }
+  },
+  {
+   "arq": "ruim-226.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_X"
+   }
+  },
+  {
+   "arq": "ruim-227.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_X"
+   }
+  },
+  {
+   "arq": "ruim-228.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_X"
+   }
+  },
+  {
+   "arq": "ruim-229.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-230.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_ENUM"
+   }
+  },
+  {
+   "arq": "ruim-231.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-232.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_ENUM"
+   }
+  },
+  {
+   "arq": "ruim-233.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TIPO_VALOR"
+   }
+  },
+  {
+   "arq": "ruim-234.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_ENUM"
+   }
+  },
+  {
+   "arq": "ruim-235.json",
+   "cand": 12,
+   "rc": "FCE_V"
+  },
+  {
+   "arq": "ruim-236.json",
+   "cand": 12,
+   "rc": "FCE_V"
+  },
+  {
+   "arq": "ruim-237.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-238.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-239.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-240.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_REF"
+   }
+  },
+  {
+   "arq": "ruim-241.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-242.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_CHAVE"
+   }
+  },
+  {
+   "arq": "ruim-243.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_CHAVE"
+   }
+  },
+  {
+   "arq": "ruim-244.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-245.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-246.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-247.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-248.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-249.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_FAIXA"
+   }
+  },
+  {
+   "arq": "ruim-250.json",
+   "cand": 12,
+   "rc": "FCE_CAMPO"
+  },
+  {
+   "arq": "ruim-251.json",
+   "cand": 12,
+   "rc": "FCE_CAMPO"
+  },
+  {
+   "arq": "ruim-252.json",
+   "cand": 12,
+   "rc": "FCE_CAMPO"
+  },
+  {
+   "arq": "ruim-253.json",
+   "cand": 12,
+   "rc": "FCE_CAMPO"
+  },
+  {
+   "arq": "ruim-254.json",
+   "cand": 12,
+   "rc": "FCE_CAMPO"
+  },
+  {
+   "arq": "ruim-255.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-256.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-257.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-258.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-259.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-260.json",
+   "cand": 12,
+   "rc": "FCE_CAMPO"
+  },
+  {
+   "arq": "ruim-261.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "boa-50.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "boa-51.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "ruim-262.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-263.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-264.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "boa-52.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 2,
+   "rec": 0
+  },
+  {
+   "arq": "boa-53.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "boa-54.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 2,
+   "rec": 0
+  },
+  {
+   "arq": "boa-55.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "boa-56.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "boa-57.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "boa-58.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "boa-59.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "boa-60.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "boa-61.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 1,
+   "rec": 0
+  },
+  {
+   "arq": "ruim-265.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-266.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-267.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
+   }
+  },
+  {
+   "arq": "ruim-268.json",
+   "cand": 12,
+   "rc": "OK",
+   "boas": 0,
+   "rec": 1,
+   "erros": {
+    "0": "FPE_TEXTO"
    }
   }
  ]

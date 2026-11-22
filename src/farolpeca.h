@@ -39,10 +39,15 @@
 // o texto livre do LLM: so sobe se passar em faroltexto_aceita() (2 linhas
 // de 62, sem URL, sem emoji, sem a lista "nunca diz" do ALMA 2). Reprovou,
 // cai no "m" de reserva; sem "m", a peca e recusada. "x" aprovado sem "m"
-// tambem vale (as regras nunca produzem "x"; e o LLM quem manda os dois).
+// tambem vale (as regras nunca produzem "x"; e o LLM quem manda os dois) —
+// ate o teto de FAROL_XS textos por cena: estourado o pool, o "x" aprovado
+// tambem cai no "m" de reserva e, sem ele, a peca cai com FPE_LIMITE.
 //
 // MODULO PURO: sem malloc, sem SDL, sem rede, sem dados.h. Tudo estatico na
-// FarolCena (~26 KB no pior caso, transitorio: valida e consome em seguida).
+// FarolCena — 25,9 KB no pior caso. O orcamento da secao 4.4 reserva 8 KB
+// para a cena serializada e 96 KB para o gosto inteiro: a FarolCena TEM de
+// ser transitoria (valida, consome e descarta em seguida); quem a segurar
+// em estado de UI estoura o orcamento.
 // Nenhum titulo, nome de perfil ou gosto em log: este modulo nao loga.
 
 #include <stddef.h>
@@ -73,8 +78,12 @@
 enum {
   FCE_OK = 0,
   FCE_TAMANHO,   // cena > 8 KB
-  FCE_JSON,      // nao e um objeto JSON fechado, lixo depois do '}',
-                 // estrutura torta ou chave duplicada no envelope
+  FCE_JSON,      // nao e JSON valido: nao e um objeto fechado, lixo depois
+                 // do '}', estrutura torta EM QUALQUER NIVEL (virgula ou
+                 // dois-pontos fora do lugar, escape invalido, controle
+                 // cru, token que nao e valor) ou chave duplicada no
+                 // envelope. Documento malformado recusa a cena inteira —
+                 // a recusa por peca e so para JSON valido fora do schema.
   FCE_V,         // "v" ausente ou != 1
   FCE_CHAVE,     // chave desconhecida no envelope
   FCE_CAMPO,     // campo do envelope com tipo ou valor errado
@@ -85,7 +94,8 @@ enum {
 // Guardados por posicao em FarolCena.erro[]; a peca cai sozinha.
 enum {
   FPE_OK = 0,
-  FPE_JSON,        // elemento nao e objeto, estrutura torta ou chave duplicada
+  FPE_JSON,        // elemento nao e objeto ou chave duplicada (literal ou
+                   // resolvendo ao mesmo item, como "c0" e "c00" em motivo)
   FPE_TIPO,        // falta "t" ou tipo fora das sete pecas
   FPE_CHAVE,       // chave desconhecida na peca (ou em texto/acao/selo/...)
   FPE_TIPO_VALOR,  // chave conhecida com tipo JSON errado
@@ -98,7 +108,8 @@ enum {
   FPE_X,           // "x" reprovado por faroltexto_aceita e sem "m" de reserva
   FPE_FAIXA,       // numero fora da faixa, lista curta/longas, duplicado
                    // em eixo/opcao/info.k, alvo onde nao cabe
-  FPE_LIMITE       // peca alem da 6a (ou recurso da cena esgotado)
+  FPE_LIMITE       // peca alem da 6a, ou "x" aprovado com o pool cheio e
+                   // sem "m" de reserva (com "m", cai no modelo)
 };
 
 // ------------------------------------------------------------------- tipos
@@ -129,7 +140,8 @@ typedef struct {
 // O que sobe na tela: x quando usaX, senao o modelo m com os argumentos a[].
 typedef struct {
   uint8_t usaX;                 // 1 = exibir xs[xi]; 0 = exibir o modelo
-  uint8_t xReprovada;           // x veio e nao passou no aceita (caiu no m)
+  uint8_t xReprovada;           // x veio e nao e o exibido: reprovou no
+                                // aceita ou o pool de xs encheu — caiu no m
   int8_t  xi;                   // indice em FarolCena.xs quando usaX, senao -1
   uint8_t nArgs;
   char    m[FAROL_TEXTO_M_TAM]; // "FT_*" ou "" quando so x

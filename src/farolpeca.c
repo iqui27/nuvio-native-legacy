@@ -29,9 +29,19 @@ typedef struct {
   FarolCena *c;          // para o pool de "x"
 } Fp;
 
+// Retorno interno das leitoras de peca: a estrutura JSON quebrou — string
+// sem fecho, escape ruim, controle cru, virgula/dois-pontos fora do lugar,
+// token que nao e valor. Diferente de FPE_JSON (chave duplicada, elemento
+// que nao e objeto: o documento e JSON valido), FP_TORTO derruba a cena
+// inteira com -FCE_JSON.
+#define FP_TORTO (-1)
+
 // ------------------------------------------------------------ varredura
+// Branco JSON e so espaco, tab, LF e CR: outro controle entre tokens torna
+// o documento invalido (o js.h tolerante deixaria passar).
 static const char *fp_pula(const char *p, const char *fim) {
-  while (p < fim && (unsigned char)*p <= ' ') p++;
+  while (p < fim && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r'))
+    p++;
   return p;
 }
 
@@ -66,6 +76,27 @@ static const char *fp_str_fim(const char *p, const char *fim) {
   return NULL;
 }
 
+// Token cru de numero JSON: -?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?.
+// Fracao e expoente passam aqui e reprovam depois, no inteiro estrito.
+static int fp_num_json(const char *p, const char *q) {
+  if (p < q && *p == '-') p++;
+  if (p >= q) return 0;
+  if (*p == '0') p++;
+  else if (*p >= '1' && *p <= '9')
+    while (p < q && *p >= '0' && *p <= '9') p++;
+  else return 0;
+  if (p < q && *p == '.') {
+    if (++p >= q || *p < '0' || *p > '9') return 0;
+    while (p < q && *p >= '0' && *p <= '9') p++;
+  }
+  if (p < q && (*p == 'e' || *p == 'E')) {
+    if (++p < q && (*p == '+' || *p == '-')) p++;
+    if (p >= q || *p < '0' || *p > '9') return 0;
+    while (p < q && *p >= '0' && *p <= '9') p++;
+  }
+  return p == q;
+}
+
 // Fim de um valor qualquer comecando em p (ja sem branco a esquerda).
 static const char *fp_val_fim(const char *p, const char *fim) {
   if (p >= fim) return NULL;
@@ -82,7 +113,15 @@ static const char *fp_val_fim(const char *p, const char *fim) {
   const char *q = p;
   while (q < fim && *q != ',' && *q != '}' && *q != ']' &&
          (unsigned char)*q > ' ') q++;
-  return q > p ? q : NULL;
+  if (q <= p) return NULL;
+  // Token cru so e JSON valido como numero ou true/false/null: "tru", "01",
+  // "+1", "NaN" e cia tornam o documento inteiro invalido.
+  if (*p == '-' || (*p >= '0' && *p <= '9'))
+    return fp_num_json(p, q) ? q : NULL;
+  if (q - p == 4 && (!memcmp(p, "true", 4) || !memcmp(p, "null", 4)))
+    return q;
+  if (q - p == 5 && !memcmp(p, "false", 5)) return q;
+  return NULL;
 }
 
 // Iterador sobre o interior de um objeto/array: [p,fim) NAO inclui o
@@ -171,6 +210,7 @@ static int fp_str_dec(const char *ki, const char *kf, char *dst, size_t tam) {
         p += 6;
       }
       if (cp >= 0xD800 && cp <= 0xDFFF) cp = ' ';
+      if (cp == 0) return -1;   // \u0000 truncaria a string C na validacao
       if (cp < 0x80) {
         if (k + 1 >= tam) return -1;
         dst[k++] = (char)cp;
@@ -286,8 +326,10 @@ static const char *fp_modelo(const char *nome) {
 // Quantos argumentos o modelo espera: um %d/%s por marcador ("%%" nao conta).
 static int fp_modelo_args(const char *lit) {
   int n = 0;
-  for (const char *p = lit; *p; p++)
-    if (p[0] == '%' && p[1] && p[1] != '%') n++;
+  for (const char *p = lit; *p; p++) {
+    if (p[0] == '%' && p[1] == '%') { p++; continue; }   // %% e '%' literal
+    if (p[0] == '%') n++;
+  }
   return n;
 }
 
@@ -396,7 +438,7 @@ static int fp_texto(Fp *fp, const char *vi, const char *vf, FarolTexto *t) {
         if (!fp_arg_ref_ok(t->a[t->nArgs], fp->nCand)) return FPE_REF;
         t->nArgs++;
       }
-      if (r < 0) return FPE_JSON;
+      if (r < 0) return FP_TORTO;
     } else if (fp_key_eh(ki, kf, "x")) {
       if (temX) return FPE_JSON;
       if (*v2 != '"') return FPE_TIPO_VALOR;
@@ -405,7 +447,7 @@ static int fp_texto(Fp *fp, const char *vi, const char *vf, FarolTexto *t) {
       xOk = fp_str_dec(v2, vf2, x, sizeof x) >= 0 && faroltexto_aceita(x);
     } else return FPE_CHAVE;
   }
-  if (r < 0) return FPE_JSON;
+  if (r < 0) return FP_TORTO;
   if (temA && !temM) return FPE_TEXTO;         // argumento sem modelo
   if (!temM && !temX) return FPE_TEXTO;        // texto vazio
   if (temM && t->nArgs != fp_modelo_args(lit)) return FPE_TEXTO;
@@ -414,10 +456,8 @@ static int fp_texto(Fp *fp, const char *vi, const char *vf, FarolTexto *t) {
       t->xi = (int8_t)fp->c->nXs;
       memcpy(fp->c->xs[fp->c->nXs++], x, strlen(x) + 1);
       t->usaX = 1;
-    } else if (xOk) {
-      return FPE_LIMITE;                        // pool de x cheio e nao ha m
     } else if (!temM) {
-      return FPE_X;                             // reprovou e nao ha reserva
+      return xOk ? FPE_LIMITE : FPE_X;          // pool cheio / x reprovado
     } else {
       t->xReprovada = 1;                        // cai no modelo de reserva
     }
@@ -487,7 +527,7 @@ static int fp_itens(Fp *fp, const FpSlot *s, FarolRef *itens, int max,
     if (fp_ref_em(itens, n, &ref) >= 0) return FPE_REF;   // duplicado
     itens[n++] = ref;
   }
-  if (r < 0) return FPE_JSON;
+  if (r < 0) return FP_TORTO;
   if (n < min) return FPE_FAIXA;
   *nItens = n;
   return FPE_OK;
@@ -509,12 +549,15 @@ static int fp_motivo(Fp *fp, const FpSlot *s, FarolMotivo *mot, int *nMot,
     if (fp_str_dec(ki, kf, buf, sizeof buf) < 0 ||
         !fp_ref(buf, fp->nCand, &ref)) return FPE_REF;
     if ((item = fp_ref_em(itens, nItens, &ref)) < 0) return FPE_REF;
+    // Chave duplicada, literal ou apelido ("c0" e "c00" resolvem igual).
+    for (int i = 0; i < n; i++)
+      if (mot[i].item == (int8_t)item) return FPE_JSON;
     if (*v2 != '{') return FPE_TIPO_VALOR;
     if ((r = fp_texto(fp, v2, vf2, &mot[n].t)) != FPE_OK) return r;
     mot[n].item = (int8_t)item;
     n++;
   }
-  if (r < 0) return FPE_JSON;
+  if (r < 0) return FP_TORTO;
   *nMot = n;
   return FPE_OK;
 }
@@ -595,7 +638,7 @@ static int fp_dica(Fp *fp, const FpSlot *sl, const int *idx, int n,
         temAlvo = 1;
       } else return FPE_CHAVE;
     }
-    if (r < 0) return FPE_JSON;
+    if (r < 0) return FP_TORTO;
     if (!temTipo) return FPE_FALTA;
     if (p->u.dica.acao == FP_ACAO_NADA || p->u.dica.acao == FP_ACAO_ESCOLHA) {
       if (temAlvo) return FPE_FAIXA;              // alvo onde nao cabe
@@ -642,7 +685,7 @@ static int fp_porque(Fp *fp, const FpSlot *sl, const int *idx, int n,
         return r;
       p->u.porque.nLinhas++;
     }
-    if (r < 0) return FPE_JSON;
+    if (r < 0) return FP_TORTO;
     if (p->u.porque.nLinhas == 0) return FPE_FAIXA;
   }
   p->u.porque.nSelos = 0;
@@ -679,11 +722,11 @@ static int fp_porque(Fp *fp, const FpSlot *sl, const int *idx, int n,
           temId = 1;
         } else return FPE_CHAVE;
       }
-      if (r < 0) return FPE_JSON;
+      if (r < 0) return FP_TORTO;
       if (!temK || !temId) return FPE_FALTA;
       p->u.porque.selos[p->u.porque.nSelos++] = selo;
     }
-    if (r < 0) return FPE_JSON;
+    if (r < 0) return FP_TORTO;
   }
   return FPE_OK;
 }
@@ -714,7 +757,7 @@ static int fp_comparar(Fp *fp, const FpSlot *sl, const int *idx, int n,
       vistos |= 1u << e;
       p->u.comparar.eixos[p->u.comparar.nEixos++] = (uint8_t)e;
     }
-    if (r < 0) return FPE_JSON;
+    if (r < 0) return FP_TORTO;
     if (p->u.comparar.nEixos == 0) return FPE_FAIXA;
   }
   if ((s = fp_slot(sl, idx, n, FK_VEREDITO)) &&
@@ -779,13 +822,13 @@ static int fp_escolha(Fp *fp, const FpSlot *sl, const int *idx, int n,
           temR = 1;
         } else return FPE_CHAVE;
       }
-      if (r < 0) return FPE_JSON;
+      if (r < 0) return FP_TORTO;
       if (!temId || !temR) return FPE_FALTA;
       for (int i = 0; i < p->u.escolha.nOpcoes; i++)
         if (!strcmp(p->u.escolha.opcoes[i].id, op.id)) return FPE_FAIXA;
       p->u.escolha.opcoes[p->u.escolha.nOpcoes++] = op;
     }
-    if (r < 0) return FPE_JSON;
+    if (r < 0) return FP_TORTO;
     if (p->u.escolha.nOpcoes < 2) return FPE_FAIXA;
   }
   return FPE_OK;
@@ -837,11 +880,11 @@ static int fp_info(Fp *fp, const FpSlot *sl, const int *idx, int n,
           temL = 1;
         } else return FPE_CHAVE;
       }
-      if (r < 0) return FPE_JSON;
+      if (r < 0) return FP_TORTO;
       if (!temK || !temL) return FPE_FALTA;
       p->u.info.itens[p->u.info.nItens++] = item;
     }
-    if (r < 0) return FPE_JSON;
+    if (r < 0) return FP_TORTO;
     if (p->u.info.nItens == 0) return FPE_FAIXA;
   }
   return FPE_OK;
@@ -886,7 +929,7 @@ static int fp_peca(Fp *fp, const char *vi, const char *vf, FarolPeca *p) {
     if (k == FK_T) tSlot = nSl;
     nSl++;
   }
-  if (r < 0) return FPE_JSON;
+  if (r < 0) return FP_TORTO;
   if (tSlot < 0) return FPE_TIPO;
   {
     const FpSlot *ts = &slots[tSlot];
@@ -912,6 +955,27 @@ static int fp_peca(Fp *fp, const char *vi, const char *vf, FarolPeca *p) {
 }
 
 // -------------------------------------------------------------- envelope
+// Profundidade do par {} sobre [ini,fim): zero ao fim e sem aspa aberta.
+// Serve para distinguir o js_fim que achou o '}' da raiz do js_fim que
+// varreu ate o NUL sem ela fechar — nos dois casos o retorno pode cair
+// exatamente em fimDoc.
+static int fp_raiz_fechou(const char *ini, const char *fim) {
+  int prof = 0, texto = 0, esc = 0;
+  for (const char *p = ini; p < fim; p++) {
+    unsigned char c = (unsigned char)*p;
+    if (texto) {
+      if (esc) esc = 0;
+      else if (c == '\\') esc = 1;
+      else if (c == '"') texto = 0;
+      continue;
+    }
+    if (c == '"') texto = 1;
+    else if (c == '{') prof++;
+    else if (c == '}') prof--;
+  }
+  return prof == 0 && !texto;
+}
+
 // Chaves do envelope: a desconhecida recusa a cena inteira (nao ha peca
 // para atribuir a recusa).
 enum { FKE_V, FKE_TELA, FKE_PERFIL, FKE_FEITA, FKE_VALE, FKE_ORIGEM,
@@ -941,10 +1005,14 @@ int farolpeca_ler(FarolCena *c, const char *json, int nCandidatos) {
   fim = json + len;
   ini = fp_pula(json, fim);
   fimDoc = fim;
-  while (fimDoc > ini && (unsigned char)fimDoc[-1] <= ' ') fimDoc--;
-  if (ini >= fimDoc || *ini != '{') return -FCE_JSON;
+  while (fimDoc > ini && (fimDoc[-1] == ' ' || fimDoc[-1] == '\t' ||
+         fimDoc[-1] == '\n' || fimDoc[-1] == '\r')) fimDoc--;
+  if (ini >= fimDoc || *ini != '{' || fimDoc[-1] != '}') return -FCE_JSON;
   fechDoc = js_fim(ini);
-  if (fechDoc != fimDoc) return -FCE_JSON;
+  // O fecho tem de ser de verdade: js_fim devolve o fim da string tambem
+  // quando a raiz nunca fecha ("{{}" — o ultimo '}' e de um objeto interno
+  // e o documento inteiro fica aberto). fp_raiz_fechou distingue os dois.
+  if (fechDoc != fimDoc || !fp_raiz_fechou(ini, fimDoc)) return -FCE_JSON;
 
   it.p = ini + 1; it.fim = fimDoc - 1; it.precisa = 0;
   while ((r = fp_obj_prox(&it, &ki, &kf, &vi, &vf)) == 1) {
@@ -1009,13 +1077,16 @@ int farolpeca_ler(FarolCena *c, const char *json, int nCandidatos) {
       {
         int xsAntes = c->nXs;
         int er = fp_peca(&fp, e, ef, &c->pecas[c->nPecas]);
+        if (er == FP_TORTO) return -FCE_JSON;   // documento invalido
         c->erro[pos] = (uint8_t)er;
         if (er == FPE_OK) c->nPecas++;
         else { c->nRecusadas++; c->nXs = xsAntes; }
       }
       pos++;
     }
-    if (r < 0) c->nRecusadas++;   // elemento torto entre virgulas: 1 recusada
+    // Elemento torto entre virgulas (vazio, virgula sobrando, colchete sem
+    // fecho): o array nao e JSON valido — a cena inteira cai, nao uma peca.
+    if (r < 0) return -FCE_JSON;
   }
   return c->nPecas;
 }

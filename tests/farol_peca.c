@@ -4,8 +4,8 @@
 //   bash tests/farol_peca.sh                  (ASan+UBSan, o padrao)
 //   SANITIZE=0 bash tests/farol_peca.sh       (so os asserts)
 //
-// Cobre: o corpus compartilhado tests/farol_cenas/ INTEIRO (40 boas +
-// 112 ruins do manifesto casos.json, com codigo FPE_* por posicao),
+// Cobre: o corpus compartilhado tests/farol_cenas/ INTEIRO (61 boas +
+// 268 ruins do manifesto casos.json, com codigo FPE_* por posicao),
 // asserts campo a campo nas sete pecas e nos textos x/m, e 100 000
 // mutacoes deterministicas sobre cenas reais — sob ASan/UBSan qualquer
 // leitura fora do buffer aparece aqui.
@@ -419,7 +419,13 @@ static void t_fuzz(void) {
     }
     t_fuzz_buf[n] = 0;
     {
-      int rc = farolpeca_ler(&c, t_fuzz_buf, (int)(t_rnd() % 14));
+      // Copia heap do tamanho exato: leitura alem do NUL vira erro do ASan
+      // (o buffer estatico de 8,7 KB a esconderia).
+      char *b = malloc(n + 1);
+      int rc;
+      memcpy(b, t_fuzz_buf, n + 1);
+      rc = farolpeca_ler(&c, b, (int)(t_rnd() % 14));
+      free(b);
       CHECK(rc >= -FCE_FALTA && rc <= FAROL_PECA_MAX);
       t_invariantes(&c, rc);
     }
