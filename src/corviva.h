@@ -153,6 +153,10 @@ extern int   nv_grad_ativo;
 // animacoes reduzidas: a luz fica parada).
 extern float nv_ambiente_viva[4][3];
 extern float nv_ambiente_forca;
+// 1 quando o destaque e a RESERVA (sem titulo, arte cinza), 0 quando vem da
+// arte; anda junto com a transicao. A luz do fundo e do vidro fica neutra na
+// reserva: o rosa de reserva so pinta controles.
+extern float nv_acento_reserva;
 extern float nv_tempo_viva;
 // A luz do destaque corrente (CorvivaTokens.luz), para o vidro da Imersiva:
 // as ilhas ganham 16% deste matiz junto com nv_ambiente_forca.

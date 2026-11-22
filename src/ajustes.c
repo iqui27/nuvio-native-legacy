@@ -3981,11 +3981,17 @@ void ajustes_acento_hdr(float *r, float *g, float *b) {
 }
 void ajustes_acento_luz(float *r, float *g, float *b) {
   int i = temaFixoAtual();
+  // Tema dinamico caido na RESERVA (perfil seguro, sem titulo, arte cinza): a
+  // luz do fundo fica neutra, a do Branco. O rosa de reserva pinta controles,
+  // nao a pagina; so quem ESCOLHEU o Rosa leva a nevoa rosa.
+  if (i >= 0 && temaDinamico()) i = 0;
   if (i >= 0) { corDeHex(TEMA_ACENTO[i].luz, r, g, b); return; }
   { const CorvivaTokens *t = tokensVivos();
-    if (r) *r = t->luz[0];
-    if (g) *g = t->luz[1];
-    if (b) *b = t->luz[2]; }
+    float k = nv_acento_reserva < 0.0f ? 0.0f : nv_acento_reserva > 1.0f ? 1.0f : nv_acento_reserva, n[3];
+    corDeHex(TEMA_ACENTO[0].luz, &n[0], &n[1], &n[2]);
+    if (r) *r = t->luz[0] + (n[0] - t->luz[0]) * k;
+    if (g) *g = t->luz[1] + (n[1] - t->luz[1]) * k;
+    if (b) *b = t->luz[2] + (n[2] - t->luz[2]) * k; }
 }
 // TEXTURA: a textura do titulo em cena vai ao gfx, que a usa em todo
 // GFX_COR cheio pintado exatamente com o destaque (gfx_rect). Sem titulo, sem
@@ -12379,7 +12385,8 @@ int ajustes_teste_quadro(const char *id) {
   if (!strncmp(id, "tri-", 4)) {   // 2.1: as tres ilhas (docs/reviews/ajustes-fable)
     static const char *const nomes[] = { "Marina" };
     perfis_teste_definir(nomes, NULL, 1, 1);
-    triIniciar(); pfTela = 0; uxVeioBusca = 0; valor[AJ_AVANCADAS] = 1; valor[AJ_TEMA] = 6;
+    triIniciar(); pfTela = 0; uxVeioBusca = 0; valor[AJ_AVANCADAS] = 1;
+    valor[AJ_TEMA] = getenv("NUVIO_SHOT_TEMA") && *getenv("NUVIO_SHOT_TEMA") ? atoi(getenv("NUVIO_SHOT_TEMA")) : 6;   // a captura escolhe o tema; o quadro do mockup e Rosa
     valor[AJ_IDIOMA] = 0; idiomaEfetivo = IDIOMA_PT; valor[AJ_HOME_LAYOUT] = 1;
     valor[AJ_QUALIDADE] = 1;   // uma linha "diferente do padrao"
     if (!strcmp(id, "tri-indice")) { }
@@ -12410,7 +12417,8 @@ int ajustes_teste_quadro(const char *id) {
         if (rotCores < 0 && !strcmp(TELA[i].titulo, "Cores e vidro")) rotCores = i;   // o 1.º (o de apresentacao)
         else if (!strcmp(TELA[i].titulo, "Durante e depois")) rotDurante = i;
       }
-    triIniciar(); pfTela = 0; uxVeioBusca = 0; valor[AJ_AVANCADAS] = 1; valor[AJ_TEMA] = 6;
+    triIniciar(); pfTela = 0; uxVeioBusca = 0; valor[AJ_AVANCADAS] = 1;
+    valor[AJ_TEMA] = getenv("NUVIO_SHOT_TEMA") && *getenv("NUVIO_SHOT_TEMA") ? atoi(getenv("NUVIO_SHOT_TEMA")) : 6;   // a captura escolhe o tema; o quadro do mockup e Rosa
     if (!getenv("NUVIO_SHOT_IDIOMA")) { valor[AJ_IDIOMA] = 0; idiomaEfetivo = IDIOMA_PT; }   // long-title proof: de, ru...
     valor[AJ_HOME_LAYOUT] = 1;
     valor[AJ_QUALIDADE] = 1; uxCancelar();
