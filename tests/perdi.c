@@ -75,6 +75,11 @@ int main(void) {
   assert(perdi_resposta(200, "{\"promptFeedback\":{\"blockReason\":\"SAFETY\"}}", r, sizeof r) == PERDI_BLOQUEADO);
   assert(perdi_resposta(200, "{\"candidates\":[{\"finishReason\":\"RECITATION\"}]}", r, sizeof r) == PERDI_BLOQUEADO);
   assert(perdi_resposta(200, "{\"candidates\":[]}", r, sizeof r) == PERDI_ERRO && !r[0]);
+  { // muitas partes num buffer pequeno: trunca sem estourar
+    char pq[16];
+    assert(perdi_resposta(200, "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"aaaaaaaaaaaaaaaaaaaaaaaa\"},{\"text\":\"bbbb\"},{\"text\":\"cccc\"},{\"text\":\"dddd\"}]}}]}", pq, sizeof pq) == PERDI_OK);
+    assert(strlen(pq) < sizeof pq);
+  }
   puts("perdi ok");
   return 0;
 }
