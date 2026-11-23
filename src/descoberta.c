@@ -3163,6 +3163,24 @@ static long long instanteDaConta(const CatItem *c) {
   return r.lastWatchedMs;
 }
 
+// Instante de ORDEM de um item da fileira. O "a seguir" de uma serie em dia
+// carregava o instante do episodio anterior: com um episodio novo no ar ele
+// voltava para a posicao de quando a pessoa o viu (meses atras, no fim da
+// fileira). Ja exibido e depois da ultima vez vista, vale a estreia: o
+// episodio novo entra na frente, como num servico de streaming. O mesmo
+// instante decide se um oculto ou tirado volta (prog_oculto_vence): um
+// episodio que estreou depois de a pessoa ocultar a serie a traz de volta.
+// Futuros ficam com o instante de antes; a Ordenacao cuida deles.
+static long long instanteOrdem(const CatItem *c) {
+  long long ms = instanteDaConta(c), estreia;
+  if (c->progresso != 0 || c->temporada <= 0 || c->episodio <= 0 || strcmp(c->tipo, "series"))
+    return ms;
+  estreia = cwo_estreia(c->imdb);
+  if (estreia == CWO_SEM_DATA || estreia <= ms || estreia > (long long)time(NULL) * 1000LL)
+    return ms;
+  return estreia;
+}
+
 // 1 quando os dois itens sao a MESMA OBRA. O teste e o de continuarLocal:
 // compara so a parte antes do ':', porque "tt123:4:9" e "tt123:1:2" sao dois
 // episodios da mesma serie e a fileira mostra a serie uma vez.
@@ -3578,7 +3596,7 @@ static int montarContinuar(CatItem *saida, int max) {
   for (i = 0; i < nL && nJ < (int)(sizeof juntos / sizeof *juntos); i++) {
     if (pularLocal[i]) continue;
     juntos[nJ].item = &daConta[i];
-    juntos[nJ].ms   = instanteDaConta(&daConta[i]);
+    juntos[nJ].ms   = instanteOrdem(&daConta[i]);
     juntos[nJ].ord  = i;
     nJ++;
   }
@@ -3588,7 +3606,7 @@ static int montarContinuar(CatItem *saida, int max) {
       if (!pularLocal[j] && mesmaObra(remotos[i], &daConta[j])) { repetido = 1; break; }
     if (repetido) { repetidos++; continue; }
     juntos[nJ].item = remotos[i];
-    juntos[nJ].ms   = instanteDaConta(remotos[i]);
+    juntos[nJ].ms   = instanteOrdem(remotos[i]);
     // Ordem BASE alta: SO decide quando os dois instantes sao desconhecidos ou
     // iguais. Com o paused_at lido em trakt.c e simkl.c isso ficou raro.
     // Nesse resto de casos a conta vem antes, cada fonte na ordem que deu.
@@ -3614,7 +3632,8 @@ static int montarContinuar(CatItem *saida, int max) {
   // OCULTO PELA PESSOA, EM DISCO (#203): o "Tirar de Continuar assistindo" num
   // item "A seguir". Vale para as tres fontes e sobrevive ao reinicio; a obra
   // VOLTA SOZINHA quando ha episodio novo (instante mais novo que o carimbo, ou
-  // registro local mais novo). Esta leitura so altera o espelho local; nao
+  // registro local mais novo). O instante do "a seguir" ja exibido e a estreia
+  // (instanteOrdem): sem ela a serie em dia so voltava se a pessoa visse algo. Esta leitura so altera o espelho local; nao
   // escreve no Trakt.
   { int w = 0, ocultos = 0;
     for (i = 0; i < nJ; i++) {
