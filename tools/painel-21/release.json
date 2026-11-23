@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T20:00:57+00:00",
+    "updatedAt": "2026-11-23T20:08:47+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T19:58:00+00:00",
+    "lastVpsReportedAt": "2026-11-23T20:05:27.167872+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -121,17 +121,20 @@
       "wave": null,
       "sha": "b29addd8a",
       "batch": "21e",
-      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: vai para o lote 21e",
-      "source": "Relato VPS · composição explícita do lote 21e",
+      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: vai para o lote 21e",
+      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
       "verified": false,
       "branch": "agente/21z-farol-4",
-      "updatedAt": "2026-11-23T19:35:13+00:00",
-      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: vai para o lote 21e",
         "vai para o lote 21e"
       ],
-      "batchInclusionVerified": true
+      "batchInclusionVerified": true,
+      "batchSha": "e34f0ddc5d",
+      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
     },
     {
       "id": "farol-5",
@@ -160,18 +163,19 @@
         "farol-3"
       ],
       "allDependencies": false,
-      "status": "CORRECAO",
+      "status": "REVISAO",
       "wave": "A",
-      "sha": "f145c77e0",
+      "sha": "4ab5a75a51",
       "batch": null,
-      "note": "VPS FAROL6C e FAROL46E (Gemini Neon) interrompidas 19:22 sem commit; sobras removidas; relançando",
+      "note": "FAROL6C entregue pelo Gemini Neon; revisão r3 Sol via Codex (…cf48), em substituição a Argon para cumprir independência de família; TV pendente",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-6",
-      "updatedAt": "2026-11-23T19:28:40+00:00",
-      "reportedAt": "2026-11-23T19:26:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "VPS FAROL6C e FAROL46E (Gemini Neon) interrompidas 19:22 sem commit; sobras removidas; relançando",
         "FAROL6C no Gemini 4 Neon (…f6644e7b5351); oracle-vps",
         "Fable r2 REPROVADO (externo e reabertura pós-QR exigem player aberto); FAROL6C no Devin swe-2-high (…9333543); oracle-vps",
         "VPS Devin swe-2-high entregou FAROL6B (playbooks no Resolver; farol_regra/farol_resolver base 134 → ponta 0 nos 3 modos; merge-tree 6/6 rc 0; 2 commits, src/app.c +22/−1 sem trechos do Poke); revisão FAROL6-r2 Fable 5.2 via Devin lançada (task …239f73); TV não verificado (player externo, retomada após QR)",
@@ -217,14 +221,15 @@
       "wave": "A",
       "sha": "aa6d0dbd3",
       "batch": "21e",
-      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: Sol r3 APROVADO_COM_RESSALVAS (codex gpt-6.2-sol, VPS); aguarda lote; TV não verificado",
-      "source": "Relato VPS · composição explícita do lote 21e",
+      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: Sol r3 APROVADO_COM_RESSALVAS (codex gpt-6.2-sol, VPS); aguarda lote; TV não verificado",
+      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
       "verified": false,
       "branch": "agente/21z-farol-8",
-      "updatedAt": "2026-11-23T19:35:13+00:00",
-      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: Sol r3 APROVADO_COM_RESSALVAS (codex gpt-6.2-sol, VPS); aguarda lote; TV não verificado",
         "Sol r3 APROVADO_COM_RESSALVAS (codex gpt-6.2-sol, VPS); aguarda lote; TV não verificado",
         "FAROL8C entregue (Devin swe-2-high, VPS): LG não-OLED volta a \"x\", contrato com servidor 200; revisão FAROL8-r3 Sol (codex gpt-6.2-sol, VPS); TV não verificado",
         "Sol r2 REPROVADO (registro LG NANO recusado com 422 pelo servidor); FAROL8C Devin swe-2-high na VPS; TV não verificado",
@@ -236,7 +241,9 @@
         "2ª tarefa Gemini Neon também encerrou sem commit nem relatório (disse 'em segundo plano', nenhum processo vivo); fechamento passou para VPS Devin swe-2-high; código ainda não verificado",
         "VPS antigravity gemini-4-neon high; 1ª tarefa parou sem commit nem relatório (código não commitado na worktree, não verificado); relançada para fechar testes, commit e relatório"
       ],
-      "batchInclusionVerified": true
+      "batchInclusionVerified": true,
+      "batchSha": "e34f0ddc5d",
+      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
     },
     {
       "id": "farol-9",
@@ -253,17 +260,20 @@
       "wave": null,
       "sha": "c0bca62f0",
       "batch": "21e",
-      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: vai para o lote 21e",
-      "source": "Relato VPS · composição explícita do lote 21e",
+      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: vai para o lote 21e",
+      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
       "verified": false,
       "branch": "agente/21z-farol-9",
-      "updatedAt": "2026-11-23T19:35:13+00:00",
-      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: vai para o lote 21e",
         "vai para o lote 21e"
       ],
-      "batchInclusionVerified": true
+      "batchInclusionVerified": true,
+      "batchSha": "e34f0ddc5d",
+      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
     },
     {
       "id": "farol-10",
@@ -295,21 +305,23 @@
         "farol-8"
       ],
       "allDependencies": false,
-      "status": "IMPLEMENTANDO",
+      "status": "REVISAO",
       "wave": "B",
-      "sha": "0dea681ce8",
+      "sha": "52328b164e",
       "batch": null,
-      "note": "VPS Gemini 4 Neon (antigravity) onda B, task …a969d8f2, brief lotes/sense/briefs/farol-11.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado.",
+      "note": "Gemini Neon entregou pacote FarolRegistro v1; Opus via Antigravity revisa (…e6eff)",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-11",
-      "updatedAt": "2026-11-23T19:41:22+00:00",
-      "reportedAt": "2026-11-23T19:39:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false,
-      "commitRole": "base",
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
-      "owner": "VPS"
+      "owner": "VPS",
+      "previousNotes": [
+        "VPS Gemini 4 Neon (antigravity) onda B, task …a969d8f2, brief lotes/sense/briefs/farol-11.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
+      ]
     },
     {
       "id": "farol-12",
@@ -325,17 +337,20 @@
       "wave": null,
       "sha": "71749228c",
       "batch": "21e",
-      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: vai para o lote 21e",
-      "source": "Relato VPS · composição explícita do lote 21e",
+      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: vai para o lote 21e",
+      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
       "verified": false,
       "branch": "agente/21z-farol-12",
-      "updatedAt": "2026-11-23T19:35:13+00:00",
-      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: vai para o lote 21e",
         "vai para o lote 21e"
       ],
-      "batchInclusionVerified": true
+      "batchInclusionVerified": true,
+      "batchSha": "e34f0ddc5d",
+      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
     },
     {
       "id": "farol-13",
@@ -351,19 +366,22 @@
       "wave": "A",
       "sha": "66fb2d121",
       "batch": "21e",
-      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → 6/6, merge rc 0); servidor sem deploy; próximo lote",
-      "source": "Relato VPS · composição explícita do lote 21e",
+      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → 6/6, merge rc 0); servidor sem deploy; próximo lote",
+      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
       "verified": false,
       "branch": "agente/farol-13",
-      "updatedAt": "2026-11-23T19:35:13+00:00",
-      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → 6/6, merge rc 0); servidor sem deploy; próximo lote",
         "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → 6/6, merge rc 0); servidor sem deploy; próximo lote",
         "VPS Fable 5.2 via Devin (task …68ff22c3), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090",
         "PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-13.txt); entrega por push; não verificado"
       ],
-      "batchInclusionVerified": true
+      "batchInclusionVerified": true,
+      "batchSha": "e34f0ddc5d",
+      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
     },
     {
       "id": "farol-14",
@@ -569,19 +587,22 @@
       "wave": "A",
       "sha": "9fac396d4",
       "batch": "21e",
-      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → ponta 0, mutações 9/11, merge rc 0); sem consumidor até a issue 25; TV não verificado; próximo lote",
-      "source": "Relato VPS · composição explícita do lote 21e",
+      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → ponta 0, mutações 9/11, merge rc 0); sem consumidor até a issue 25; TV não verificado; próximo lote",
+      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
       "verified": false,
       "branch": "agente/farol-24",
-      "updatedAt": "2026-11-23T19:35:13+00:00",
-      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → ponta 0, mutações 9/11, merge rc 0); sem consumidor até a issue 25; TV não verificado; próximo lote",
         "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → ponta 0, mutações 9/11, merge rc 0); sem consumidor até a issue 25; TV não verificado; próximo lote",
         "VPS Fable 5.2 via Devin (task …19cb534a), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090",
         "PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-24.txt); entrega por push; não verificado"
       ],
-      "batchInclusionVerified": true
+      "batchInclusionVerified": true,
+      "batchSha": "e34f0ddc5d",
+      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
     },
     {
       "id": "farol-25",
@@ -668,19 +689,22 @@
       "wave": "A",
       "sha": "32cf15761",
       "batch": "21e",
-      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (9/9, mutações 13/13, merge rc 0); ressalvas vão para a farol-30; sem deploy; próximo lote",
-      "source": "Relato VPS · composição explícita do lote 21e",
+      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (9/9, mutações 13/13, merge rc 0); ressalvas vão para a farol-30; sem deploy; próximo lote",
+      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
       "verified": false,
       "branch": "agente/farol-29",
-      "updatedAt": "2026-11-23T19:35:13+00:00",
-      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (9/9, mutações 13/13, merge rc 0); ressalvas vão para a farol-30; sem deploy; próximo lote",
         "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (9/9, mutações 13/13, merge rc 0); ressalvas vão para a farol-30; sem deploy; próximo lote",
         "VPS Fable 5.2 via Devin (task …2f7dd460), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090",
         "PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-29.txt); entrega por push; não verificado"
       ],
-      "batchInclusionVerified": true
+      "batchInclusionVerified": true,
+      "batchSha": "e34f0ddc5d",
+      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
     },
     {
       "id": "farol-30",
@@ -693,21 +717,23 @@
         "farol-29"
       ],
       "allDependencies": false,
-      "status": "IMPLEMENTANDO",
+      "status": "REVISAO",
       "wave": "B",
-      "sha": "0dea681ce8",
+      "sha": "dc6db69bb3",
       "batch": null,
-      "note": "VPS Gemini 4 Neon (antigravity) onda B, task …fb3ec7c9, brief lotes/sense/briefs/farol-30.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado.",
+      "note": "Gemini Neon entregou cliente farolbusca; aguarda vaga de revisão independente",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-30",
-      "updatedAt": "2026-11-23T19:41:22+00:00",
-      "reportedAt": "2026-11-23T19:39:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false,
-      "commitRole": "base",
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
-      "owner": "VPS"
+      "owner": "VPS",
+      "previousNotes": [
+        "VPS Gemini 4 Neon (antigravity) onda B, task …fb3ec7c9, brief lotes/sense/briefs/farol-30.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
+      ]
     },
     {
       "id": "farol-31",
@@ -875,21 +901,23 @@
         "farol-29"
       ],
       "allDependencies": false,
-      "status": "IMPLEMENTANDO",
+      "status": "CORRECAO",
       "wave": "B",
-      "sha": "0dea681ce8",
+      "sha": "f5037cd057",
       "batch": null,
-      "note": "VPS Gemini 4 Neon (antigravity) onda B, task …3616b0ed, brief lotes/sense/briefs/farol-40.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado.",
+      "note": "Sol r1 REPROVADO: consentimento, privacidade do KV, título literal inventado e hit KV fora do pedido; Gemini Hydrogen (…ca17) corrige na mesma branch",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-40",
-      "updatedAt": "2026-11-23T19:41:22+00:00",
-      "reportedAt": "2026-11-23T19:39:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false,
-      "commitRole": "base",
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
-      "owner": "VPS"
+      "owner": "VPS",
+      "previousNotes": [
+        "VPS Gemini 4 Neon (antigravity) onda B, task …3616b0ed, brief lotes/sense/briefs/farol-40.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
+      ]
     },
     {
       "id": "farol-41",
@@ -970,10 +998,12 @@
       "wave": "A",
       "sha": "bae6663936",
       "batch": "21e",
-      "note": "dedupe farol_gosto × porque_assistiu usa a HOME_ASSISTIU_CHAVE da #840; src/fileiras.c mantém ambas as origens APP e a ordenação da #840. homeassistiu/fileiras/farol_home passaram, além de ASan+UBSan no farol_home e sintaxe TPK/WASM. Remontagem do lote 21e em andamento sobre 96a939a5a6.",
-      "source": "Relato VPS encaminhado em 23/11 às 16h54 (Brasília)",
+      "note": "dedupe da Home por índice, IMDb e TMDB do mesmo tipo; conflito de src/fileiras.c resolvido com a #840; Poke avisado pelo poke-enviar.sh (HTTP 200) Incluído no 21e reconstruído localmente em e34f0ddc5d; estado CORRECAO preservado conforme relato explícito da VPS. Publicação/PR do lote e TV física pendentes.",
+      "source": "Relato VPS",
       "verified": false,
       "previousNotes": [
+        "dedupe da Home por índice, IMDb e TMDB do mesmo tipo; conflito de src/fileiras.c resolvido com a #840; Poke avisado pelo poke-enviar.sh (HTTP 200)",
+        "dedupe farol_gosto × porque_assistiu usa a HOME_ASSISTIU_CHAVE da #840; src/fileiras.c mantém ambas as origens APP e a ordenação da #840. homeassistiu/fileiras/farol_home passaram, além de ASan+UBSan no farol_home e sintaxe TPK/WASM. Remontagem do lote 21e em andamento sobre 96a939a5a6.",
         "Após o merge da PR #840, a VPS informa que Farol 45 fará dedupe farol_gosto × porque_assistiu e resolverá src/fileiras.c. Ajustes pendentes; execução e novo commit ainda não confirmados. Aprovação r2 anterior preservada no histórico. Continua destinado ao lote 21e, que será refeito sobre a integração nova. TV não verificada.",
         "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (4 bloqueios da r1 fechados; merge rc 0 em 7 alvos, rc 1 trivial vs PR #840 em src/fileiras.c); lote 21e; TV não verificada Ordem padrão acordada: continue_watching → porque_assistiu → farol_gosto1; a ordem salva pelo usuário prevalece. Dedupe com home_assistiu_itens por id fica para depois do merge da PR #840, sem bloquear a aprovação atual.",
         "VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (4 bloqueios da r1 fechados; merge rc 0 em 7 alvos, rc 1 trivial vs PR #840 em src/fileiras.c); lote 21e; TV não verificada Ordem padrão acordada: continue_watching → porque_assistiu → farol_gosto1; a ordem salva pelo usuário prevalece. Dedupe com home_assistiu_itens por id fica para depois do merge da PR #840, sem bloquear a aprovação atual.",
@@ -990,8 +1020,8 @@
         "aguarda combinar com o Poke o ponto das fileiras na Home pré-calculada",
         "TV física pendente."
       ],
-      "updatedAt": "2026-11-23T19:55:24+00:00",
-      "reportedAt": "2026-11-23T19:54:20.526676+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "branch": "agente/21z-farol-45",
       "integrationVerified": false,
       "batchInclusionVerified": true,
@@ -1006,7 +1036,9 @@
         ],
         "source": "Relato VPS; não executados nesta sessão",
         "reportedAt": "2026-11-23T19:54:20.526676+00:00"
-      }
+      },
+      "batchSha": "e34f0ddc5d",
+      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
     },
     {
       "id": "farol-46",
@@ -1020,12 +1052,13 @@
       "allDependencies": false,
       "status": "CORRECAO",
       "wave": "A",
-      "sha": "eeb143e57",
+      "sha": "eeb143e572",
       "batch": null,
-      "note": "VPS FAROL6C e FAROL46E (Gemini Neon) interrompidas 19:22 sem commit; sobras removidas; relançando",
+      "note": "r2 Neon encerrou sem relatório, sintaxe 10/10 informada; Gemini Hydrogen (…76c1) retoma provas e relatório usando a ponta existente",
       "source": "Relato VPS",
       "verified": false,
       "previousNotes": [
+        "VPS FAROL6C e FAROL46E (Gemini Neon) interrompidas 19:22 sem commit; sobras removidas; relançando",
         "Devin publicou eeb143e57 sem relatório antes do cancelamento; FAROL46E retomada no Gemini 4 Neon (…a67f9a209349); oracle-vps; não verificado",
         "VPS Devin swe-2-high entregou FAROL46D (gênero por identidade; PT×EN 134 → 0 nos 3 modos; merge-tree 6/6 rc 0); ainda substitui publicação local quando TMDB omite gênero; 2º commit autorizado com patch preparado, FAROL46E no Devin swe-2-high (task …4ac60); TV não verificado",
         "FAROL46D lançada na VPS, Devin swe-2-high (task …e3d348fd); identidade do gênero no lugar do texto; não verificado",
@@ -1042,8 +1075,8 @@
         "TV física pendente."
       ],
       "branch": "agente/21z-farol-46",
-      "updatedAt": "2026-11-23T19:28:40+00:00",
-      "reportedAt": "2026-11-23T19:26:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false
     },
     {
@@ -3538,9 +3571,10 @@
       "batch": "21e",
       "owner": "VPS",
       "verified": false,
-      "source": "Relato VPS · composição explícita do lote 21e",
-      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: Fable CATREV-r2 APROVADO_COM_RESSALVAS (anime kitsu:T:E no Continuar, tt123::1 herdado, ordem de merge com farol-46 em src/mapa.c); oracle-vps; TV não verificada",
+      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
+      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: Fable CATREV-r2 APROVADO_COM_RESSALVAS (anime kitsu:T:E no Continuar, tt123::1 herdado, ordem de merge com farol-46 em src/mapa.c); oracle-vps; TV não verificada",
       "previousNotes": [
+        "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: Fable CATREV-r2 APROVADO_COM_RESSALVAS (anime kitsu:T:E no Continuar, tt123::1 herdado, ordem de merge com farol-46 em src/mapa.c); oracle-vps; TV não verificada",
         "Fable CATREV-r2 APROVADO_COM_RESSALVAS (anime kitsu:T:E no Continuar, tt123::1 herdado, ordem de merge com farol-46 em src/mapa.c); oracle-vps; TV não verificada",
         "VPS Devin swe-2-high entregou CATREVB (base 1 → ponta 0 nos 3 modos, 5 mutações reprovam); merge-tree rc 1 com farol-46@6caab1a65 em src/mapa.c (mapa_vizinhos_pedir); revisão CATREV-r2 Fable 5.2 via Devin lançada (task …a07850); TV não verificado",
         "VPS Fable 5.2 via Devin REPROVADO r1 (série do card de Continuar não casa por strcmp exato); correção CATREVB no Devin swe-2-high; TV não verificado",
@@ -3557,11 +3591,13 @@
       ],
       "branch": "agente/21z-catrev",
       "sha": "773af36d7",
-      "updatedAt": "2026-11-23T19:35:13+00:00",
-      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false,
       "displayId": "CATREV",
-      "batchInclusionVerified": true
+      "batchInclusionVerified": true,
+      "batchSha": "e34f0ddc5d",
+      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
     },
     {
       "id": "hist-semlogin",
@@ -3573,9 +3609,10 @@
       "batch": "21e",
       "owner": "VPS",
       "verified": false,
-      "source": "Relato VPS · composição explícita do lote 21e",
-      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (recovery/biblioteca rc 0, mutação app.c e sync.c reprovam); lote 21e; TV não verificada Último commit contém só testes; a correção anterior não é tratada como test-only. Responsável: VPS; lote 21e.",
+      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
+      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (recovery/biblioteca rc 0, mutação app.c e sync.c reprovam); lote 21e; TV não verificada Último commit contém só testes; a correção anterior não é tratada como test-only. Responsável: VPS; lote 21e.",
       "previousNotes": [
+        "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (recovery/biblioteca rc 0, mutação app.c e sync.c reprovam); lote 21e; TV não verificada Último commit contém só testes; a correção anterior não é tratada como test-only. Responsável: VPS; lote 21e.",
         "VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (recovery/biblioteca rc 0, mutação app.c e sync.c reprovam); lote 21e; TV não verificada Último commit contém só testes; a correção anterior não é tratada como test-only. Responsável: VPS; lote 21e.",
         "HIST-SEMLOGIN-r2 no Gemini 4 Argon (…132b736c2ca4); oracle-vps",
         "VPS Devin swe-2-high entregou HIST-SEMLOGIN-B (só testes: âncora recovery, fixture biblioteca, caso do gate sem login; merge-tree rc 0); Fable HIST-SEMLOGIN-r2 lançada (…1c11b36d1e2); oracle-vps; TV não verificada",
@@ -3587,12 +3624,14 @@
       ],
       "branch": "agente/21z-hist-semlogin",
       "sha": "d8bce6cbb",
-      "updatedAt": "2026-11-23T19:35:13+00:00",
-      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
       "integrationVerified": false,
       "displayId": "HIST-SEMLOGIN",
       "testOnlyLatestCommit": true,
-      "batchInclusionVerified": true
+      "batchInclusionVerified": true,
+      "batchSha": "e34f0ddc5d",
+      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
     }
   ],
   "gates": [
@@ -3770,25 +3809,27 @@
     },
     {
       "id": "21e",
-      "title": "Lote 21e · remontagem em andamento",
-      "status": "IMPLEMENTANDO",
-      "sha": "0dea681ce",
-      "note": "VPS informa remontagem em andamento sobre integracao/2.1@96a939a5a6, incluindo a correção Farol 45@bae6663936. Nova ponta do lote e resultados da bateria remontada ainda não informados. 0dea681ce é apenas a última ponta conhecida da montagem anterior; não é um SHA novo. PR e validação em TV física não confirmadas.",
+      "title": "Lote 21e · pronto localmente, publicação bloqueada",
+      "status": "LOTE",
+      "sha": "e34f0ddc5d",
+      "note": "Reconstruído localmente na VPS em lote/21e@e34f0ddc5d sobre integracao/2.1@96a939a5a6 (#840), preservando os dez itens e incluindo Farol 45@bae6663936. Testes reportados: dirigidos 15/15, ASan+UBSan 3/3; Node 21 passaram e duas falhas já existiam na base. Fixture D1 simulada do contrato de aparelho corrigida (21 modelos); isso não verifica a ancestralidade do D1 real. Publicação bloqueada na VPS sem escrita no GitHub; branch e PR dessa origem ausentes na consulta. Repositório local pronto para publicação e PR com merge commit. TV física pendente; lote não integrado.",
       "pr": null,
       "previousNotes": [
+        "reconstruído localmente sobre integracao/2.1@96a939a5a6, preservados os dez itens; dirigido 15/15, ASan+UBSan 3/3, Node 21 passaram e duas falhas iguais à base; fixture D1 atualizada; relatório revisao/LOTE-21E-840.md; TV física pendente",
+        "VPS informa remontagem em andamento sobre integracao/2.1@96a939a5a6, incluindo a correção Farol 45@bae6663936. Nova ponta do lote e resultados da bateria remontada ainda não informados. 0dea681ce é apenas a última ponta conhecida da montagem anterior; não é um SHA novo. PR e validação em TV física não confirmadas.",
         "A VPS informa que o lote 21e será refeito sobre integracao/2.1 após o merge da PR #840 (96a939a5a). Composição anterior de dez itens e ponta 0dea681ce preservadas apenas como referência; nova ponta, nova composição e resultados de baterias ainda não informados. Farol 45 deve deduplicar farol_gosto × porque_assistiu e resolver src/fileiras.c. PR e TV física não confirmadas.",
         "VPS montado sobre lote/21d@e16157090: farol-4, 8, 9, 12, 13, 24, 29, 45, catrev, hist-semlogin; conflitos triviais resolvidos (video_tpk.c, sanitiza.sh, rede.c, servidor index.js); baterias base×ponta a rodar; TV não verificada",
         "Reservado para aprovados da VPS, incluindo hist-semlogin e Farol 45 (aprovação com ressalvas), CATREV e itens já aprovados. Montagem e PR ainda não confirmadas; não tratar como lote integrado.",
         "Itens aprovados reservados; montagem ainda não confirmada."
       ],
       "branch": "lote/21e",
-      "updatedAt": "2026-11-23T19:55:24+00:00",
-      "reportedAt": "2026-11-23T19:54:20.526676+00:00",
-      "source": "Relato VPS encaminhado em 23/11 às 16h54 (Brasília)",
+      "updatedAt": "2026-11-23T20:08:47+00:00",
+      "reportedAt": "2026-11-23T20:04:00+00:00",
+      "source": "Relatos VPS das 20h04 e confirmação do SHA completo às 20h05; publicação conferida no GitHub",
       "verified": false,
       "integrationVerified": false,
-      "baseBranch": "lote/21d",
-      "baseSha": "e16157090",
+      "baseBranch": "integracao/2.1",
+      "baseSha": "96a939a5a6",
       "items": [
         "farol-4",
         "farol-8",
@@ -3801,12 +3842,64 @@
         "catrev",
         "hist-semlogin"
       ],
-      "pendingRebuild": true,
-      "rebuildOnIntegrationSha": "96a939a5a68b256d91deed83e33d9bbabe2b3c66",
-      "rebuildStatus": "in_progress",
-      "lastBuiltSha": "0dea681ce",
-      "rebuildBaseBranch": "integracao/2.1",
-      "rebuildBaseSha": "96a939a5a6"
+      "pendingRebuild": false,
+      "rebuildStatus": "completed_locally",
+      "lastBuiltSha": "e34f0ddc5d",
+      "previousBuilds": [
+        {
+          "sha": "0dea681ce",
+          "baseBranch": "lote/21d",
+          "baseSha": "e16157090",
+          "items": [
+            "farol-4",
+            "farol-8",
+            "farol-9",
+            "farol-12",
+            "farol-13",
+            "farol-24",
+            "farol-29",
+            "farol-45",
+            "catrev",
+            "hist-semlogin"
+          ]
+        }
+      ],
+      "fullSha": "e34f0ddc5d2585ccea35785ecb7d3c083b936d3f",
+      "baseFullSha": "96a939a5a68b256d91deed83e33d9bbabe2b3c66",
+      "rebuiltOnIntegrationSha": "96a939a5a68b256d91deed83e33d9bbabe2b3c66",
+      "localRepo": "/home/ubuntu/nuvio-qa-21/global/repo",
+      "publication": {
+        "status": "BLOQUEADA",
+        "vpsWriteAccess": false,
+        "githubBranchExists": false,
+        "githubPrNumber": null,
+        "checkedAt": "2026-11-23T20:08:47+00:00",
+        "requiredMergeMethod": "merge_commit",
+        "reason": "VPS sem credencial de escrita no GitHub; branch lote/21e e PR dessa origem ausentes na consulta"
+      },
+      "reportedHostChecks": {
+        "status": "reported_passed_with_baseline_failures",
+        "directed": {
+          "passed": 15,
+          "total": 15
+        },
+        "asanUbsan": {
+          "passed": 3,
+          "total": 3
+        },
+        "node": {
+          "passed": 21,
+          "failed": 2,
+          "sameFailuresOnBase": true
+        },
+        "simulatedDeviceContractFixture": {
+          "name": "D1 simulado",
+          "models": 21,
+          "corrected": true
+        },
+        "source": "Relato VPS; testes não reproduzidos nesta sessão"
+      },
+      "reportPath": "revisao/LOTE-21E-840.md"
     }
   ],
   "outside": [
@@ -3824,6 +3917,84 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T20:05:27.167872+00:00",
+      "appliedAt": "2026-11-23T20:08:47+00:00",
+      "item": "21e",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "[LOTE] 21e reconstruído e validado na VPS: lote/21e@e34f0ddc5d2585ccea35785ecb7d3c083b936d3f em /home/ubuntu/nuvio-qa-21/global/repo, base integracao/2.1@96a939a5a6 (#840); farol-45@bae6663936 incluído. 15/15 dirigidos, 3/3 ASan+UBSan, 21 testes Node passaram e os mesmos dois já falhavam na base. Corrigido o D1 simulado do contrato de aparelho (21 modelos). TV física pendente. A VPS não tem escrita no GitHub; a branch local está pronta para publicação e PR com merge commit.",
+      "source": "Relato encaminhado por Henrique · SHA completo e escopo da fixture D1 simulada"
+    },
+    {
+      "at": "2026-11-23T20:04:00+00:00",
+      "appliedAt": "2026-11-23T20:08:47+00:00",
+      "item": "coordenacao",
+      "from": "A_FAZER",
+      "to": "BLOQUEADA",
+      "facet": "publication",
+      "affectedBatches": [
+        "21e"
+      ],
+      "report": "2026-11-23 20:04 [BLOQUEADA] publicação 21e · lote/21e@e34f0ddc5d · VPS sem credencial de escrita ao GitHub (HTTPS sem usuário, SSH publickey); branch disponível em /home/ubuntu/nuvio-qa-21/global/repo",
+      "source": "Relato VPS · bloqueio de publicação, não do código montado"
+    },
+    {
+      "at": "2026-11-23T20:04:00+00:00",
+      "appliedAt": "2026-11-23T20:08:47+00:00",
+      "item": "farol-46",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 20:04 [CORRECAO] farol-46 · agente/21z-farol-46@eeb143e572 · r2 Neon encerrou sem relatório, sintaxe 10/10 informada; Gemini Hydrogen (…76c1) retoma provas e relatório usando a ponta existente"
+    },
+    {
+      "at": "2026-11-23T20:04:00+00:00",
+      "appliedAt": "2026-11-23T20:08:47+00:00",
+      "item": "farol-40",
+      "from": "IMPLEMENTANDO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 20:04 [CORRECAO] farol-40 · agente/21z-farol-40@f5037cd057 · Sol r1 REPROVADO: consentimento, privacidade do KV, título literal inventado e hit KV fora do pedido; Gemini Hydrogen (…ca17) corrige na mesma branch"
+    },
+    {
+      "at": "2026-11-23T20:04:00+00:00",
+      "appliedAt": "2026-11-23T20:08:47+00:00",
+      "item": "farol-30",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "report": "2026-11-23 20:04 [REVISAO] farol-30 · agente/21z-farol-30@dc6db69bb3 · Gemini Neon entregou cliente farolbusca; aguarda vaga de revisão independente"
+    },
+    {
+      "at": "2026-11-23T20:04:00+00:00",
+      "appliedAt": "2026-11-23T20:08:47+00:00",
+      "item": "farol-11",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "report": "2026-11-23 20:04 [REVISAO] farol-11 · agente/21z-farol-11@52328b164e · Gemini Neon entregou pacote FarolRegistro v1; Opus via Antigravity revisa (…e6eff)"
+    },
+    {
+      "at": "2026-11-23T20:04:00+00:00",
+      "appliedAt": "2026-11-23T20:08:47+00:00",
+      "item": "farol-6",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 20:04 [REVISAO] farol-6 · agente/21z-farol-6@4ab5a75a51 · FAROL6C entregue pelo Gemini Neon; revisão r3 Sol via Codex (…cf48), em substituição a Argon para cumprir independência de família; TV pendente"
+    },
+    {
+      "at": "2026-11-23T20:04:00+00:00",
+      "appliedAt": "2026-11-23T20:08:47+00:00",
+      "item": "21e",
+      "from": "IMPLEMENTANDO",
+      "to": "LOTE",
+      "report": "2026-11-23 20:04 [LOTE] lote-21e · lote/21e@e34f0ddc5d · reconstruído localmente sobre integracao/2.1@96a939a5a6, preservados os dez itens; dirigido 15/15, ASan+UBSan 3/3, Node 21 passaram e duas falhas iguais à base; fixture D1 atualizada; relatório revisao/LOTE-21E-840.md; TV física pendente"
+    },
+    {
+      "at": "2026-11-23T20:04:00+00:00",
+      "appliedAt": "2026-11-23T20:08:47+00:00",
+      "item": "farol-45",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 20:04 [CORRECAO] farol-45 · agente/21z-farol-45@bae6663936 · dedupe da Home por índice, IMDb e TMDB do mesmo tipo; conflito de src/fileiras.c resolvido com a #840; Poke avisado pelo poke-enviar.sh (HTTP 200)"
+    },
     {
       "at": "2026-11-23T19:58:00+00:00",
       "appliedAt": "2026-11-23T20:00:57+00:00",
