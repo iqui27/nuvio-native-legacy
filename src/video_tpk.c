@@ -775,12 +775,24 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
           atomic_store(&buscaFalhouGer, (unsigned)b);
         }
         pthread_mutex_unlock(&buscaGerTrava);
-      } else
+      } else {
         // Sem a geracao no evento (host sem o registro): a falha encerra o
         // voo do MESMO alvo (CAS, como no EV_BUSCOU) — um seek mais novo ja
-        // armado por cima nao e desarmado pela falha do anterior. Sem isto o
-        // video_busca_em_voo e a amostra do farol ficavam presos no recusado.
+        // armado por cima nao e desarmado pela falha do anterior. O par
+        // buscaGerFio/buscaFioMs anda no MESMO criterio do ack acima: so se
+        // ainda aponta para o alvo recusado — zerado quando a falha era do
+        // ultimo pedido, avancado para o pendente que o host assume em
+        // seguida. Sem isto o ack do seek seguinte caia na comparacao com o
+        // alvo morto, virava EV_BUSCOU descartado e a amostra do farol ficava
+        // presa no voo novo (video_busca_em_voo seguia armado).
+        pthread_mutex_lock(&buscaGerTrava);
+        if (buscaGerFio && a == buscaFioMs) {
+          if (buscaGerFio == buscaGer) buscaGerFio = 0;
+          else { buscaGerFio = buscaGer; buscaFioMs = atomic_load(&buscaUltimoMs); }
+        }
         atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1);
+        pthread_mutex_unlock(&buscaGerTrava);
+      }
       break;
     }
     case EV_VELOCIDADE:
