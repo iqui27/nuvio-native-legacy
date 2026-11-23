@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T20:28:21+00:00",
+    "updatedAt": "2026-11-23T20:35:08+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T20:24:00+00:00",
+    "lastVpsReportedAt": "2026-11-23T20:31:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -163,18 +163,19 @@
         "farol-3"
       ],
       "allDependencies": false,
-      "status": "CORRECAO",
+      "status": "REVISAO",
       "wave": "A",
-      "sha": "4ab5a75a51",
+      "sha": "becb865d88",
       "batch": null,
-      "note": "Sol r3 REPROVADO: Resolver diagnostica episódio A após filme B tocar; Player externo recebe URL e título de B. Sonda confirma na ponta e no merge. FAROL6D Gemini Hydrogen (…7097) na mesma branch; retomada do QR em TV física pendente",
+      "note": "FAROL6D entregue pelo Gemini Hydrogen, vincula Player externo à tentativa diagnosticada e revalida no OK. Implementador informa farol_resolver e farol_regra verdes nos três modos; merge-tree com e34f0ddc5d rc 0 confirmado. Sol r4 (…5990) revisa; 14 depende do veredito; TV física pendente",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-6",
-      "updatedAt": "2026-11-23T20:10:48+00:00",
-      "reportedAt": "2026-11-23T20:08:00+00:00",
+      "updatedAt": "2026-11-23T20:35:08+00:00",
+      "reportedAt": "2026-11-23T20:31:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "Sol r3 REPROVADO: Resolver diagnostica episódio A após filme B tocar; Player externo recebe URL e título de B. Sonda confirma na ponta e no merge. FAROL6D Gemini Hydrogen (…7097) na mesma branch; retomada do QR em TV física pendente",
         "FAROL6C entregue pelo Gemini Neon; revisão r3 Sol via Codex (…cf48), em substituição a Argon para cumprir independência de família; TV pendente",
         "VPS FAROL6C e FAROL46E (Gemini Neon) interrompidas 19:22 sem commit; sobras removidas; relançando",
         "FAROL6C no Gemini 4 Neon (…f6644e7b5351); oracle-vps",
@@ -403,9 +404,14 @@
       "wave": "B",
       "sha": null,
       "batch": null,
-      "note": "Caminho crítico.",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "Caminho crítico. Aguarda o veredito da revisão Sol r4 do Farol 6 antes de avançar.",
+      "source": "VPS · escopo 23/11 03h40 UTC + dependência reforçada no relato das 20h31 UTC",
+      "verified": false,
+      "previousNotes": [
+        "Caminho crítico."
+      ],
+      "updatedAt": "2026-11-23T20:35:08+00:00",
+      "dependencyReportedAt": "2026-11-23T20:31:00+00:00"
     },
     {
       "id": "farol-15",
@@ -3943,6 +3949,14 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T20:31:00+00:00",
+      "appliedAt": "2026-11-23T20:35:08+00:00",
+      "item": "farol-6",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 20:31 [REVISAO] farol-6 · agente/21z-farol-6@becb865d88 · FAROL6D entregue pelo Gemini Hydrogen, vincula Player externo à tentativa diagnosticada e revalida no OK. Implementador informa farol_resolver e farol_regra verdes nos três modos; merge-tree com e34f0ddc5d rc 0 confirmado. Sol r4 (…5990) revisa; 14 depende do veredito; TV física pendente"
+    },
     {
       "at": "2026-11-23T20:24:00+00:00",
       "appliedAt": "2026-11-23T20:28:21+00:00",
