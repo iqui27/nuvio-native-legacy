@@ -5068,6 +5068,22 @@ static const char *arquivoVisivel(const Stream *s, float aw) {
   int dw = txt_largura(TXT_PG_FIM, d);
   return dw > 0 && dw <= w ? "" : arq;
 }
+// Na folha desktop a descricao nunca aparece na linha, entao a deduplicacao
+// da TV nao vale: o arquivo inteiro e sempre desenhado. Controles <32 viram
+// espaco, como a TV faz na copia que desenha. Fora do desktop o nome e o
+// arquivoVisivel de sempre — #if, nao folhaDesktop(), para o objeto da TV
+// sair byte a byte igual.
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+static const char *arquivoFolha(const Stream *s, float aw) {
+  (void)aw;
+  static char d[2048];
+  snprintf(d, sizeof d, "%s", arquivoDa(s));
+  for (char *p = d; *p; p++) if ((unsigned char)*p < 32) *p = ' ';
+  return d;
+}
+#else
+#define arquivoFolha(s, aw) arquivoVisivel((s), (aw))
+#endif
 
 // A linha de marca e so para o que esta tocando e para a escolha anterior.
 // A fonte que o automatico tocaria ganha o selo "Melhor para esta TV" ao
@@ -5103,7 +5119,7 @@ static float alturaLinha(int i, int automatica, float abertura) {
     // agora quebra em varias linhas (UTF-8), entao a altura pergunta ao
     // layout — que reusa o cache do desenho, mesma largura tr-tx.
     float aw = FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D-2*FOLHA_TXT;
-    float extra = (abertura>0 ? arquivoAltura(arquivoVisivel(&lista[i],aw),aw) : 0) + FOLHA_FIT_H * fitLinhas(i);
+    float extra = (abertura>0 ? arquivoAltura(arquivoFolha(&lista[i],aw),aw) : 0) + FOLHA_FIT_H * fitLinhas(i);
     h += extra * abertura;
   }
   return h + linhasFaixas(&lista[i]) * FOLHA_FAIXA_H;
