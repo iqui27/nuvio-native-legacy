@@ -39,10 +39,16 @@
 #include "mapa.h"
 #include "app.h"
 #include <pthread.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+// Declarada em home.h; aqui so o prototipo (como o tend_registrar do
+// catalogo.c): home.h puxa gfx.h e a pilha GL, que a cola nao usa — e os
+// fixtures do Farol compilam sem a UI.
+int home_fileiras_na_tela(void);
 
 #define FAROL_CAND_MAX 240          // 60 x 4 blocos; 512 era para um catalogo
 #define FAROL_SEM_MAX  16
@@ -70,6 +76,14 @@ static struct {
   FarolHomeFil fil[2];
 } adotada;
 static pthread_mutex_t travaCena = PTHREAD_MUTEX_INITIALIZER;
+// perfis_ativo() da ultima cena que saiu por falha/limpeza, sob travaCena:
+// e o que impede readotar outra cena no MESMO perfil com a Home a vista.
+// -1 = nenhuma cena saiu ainda (o arranque e a troca de perfil adotam na
+// hora, mesmo com a Home desenhada).
+static int      perfilSaiu = -1;
+// Sobe a cada adocao e a cada invalidacao; a Home cacheia o motivo por ela
+// (lida por __atomic, sem trava no fio do desenho).
+static unsigned geracaoCena;
 
 // ---------------------------------------------------------------- trabalho -
 // Uma montagem por vez (o fio da descoberta); estatico porque CatItem tem
@@ -77,7 +91,7 @@ static pthread_mutex_t travaCena = PTHREAD_MUTEX_INITIALIZER;
 static FarolFicha    fichasC[FAROL_CAND_MAX];
 static FarolRecCand  cand[FAROL_CAND_MAX];
 static uint16_t      salvoD[FAROL_CAND_MAX];      // paralelo a cand (a cena)
-static struct { char imdb[64]; char tipo[8]; int32_t catIdx; }
+static struct { char imdb[64]; char tipo[8]; char titulo[160]; int32_t catIdx; }
                      refC[FAROL_CAND_MAX];        // paralelo a cand (nos)
 static int           nCandAtivo;
 static FarolFicha    fichasS[FAROL_SEM_MAX];
@@ -99,10 +113,18 @@ void farol_teste_relogio(long long (*s)(void)) { relS = s; }
 void farol_teste_home_visivel(int (*v)(void)) { visFn = v; }
 // A cena nova so e adotada com a Home (e o detalhe por cima dela) fora da
 // tela — abrir um titulo nao pode trocar os cartazes debaixo dos olhos.
+// "Na tela" e a Home DESENHADA, nao a camada de cima: o menu lateral e o
+// painel de Salvos abrem sobre a Home E sobre outras telas, entao
+// app_tela_nome() so nao decide. O desenho marca a cada quadro e a copia
+// parada do painel marca pelo mesmo contador (home_fileiras_na_tela /
+// home_fileiras_vistas) — se o motivo do Farol continua pintando, a cena
+// nao pode trocar.
 static int homeVisivel(void) {
+  const char *t;
   if (visFn) return visFn();
-  const char *t = app_tela_nome();
-  return t && (!strcmp(t, "home") || !strcmp(t, "detalhe"));
+  t = app_tela_nome();
+  if (t && !strcmp(t, "home")) return 1;
+  return home_fileiras_na_tela();
 }
 static int diaDe(long long quando) {
   long long d = (quando - DIA_EPOCA) / 86400;
@@ -123,11 +145,22 @@ static int faixaAgoraFim(long long quando, int *fimSem) {
 }
 // "Evento forte" barato: o modelo mudou (terminou, recusou, salvou...). O
 // hash e da COPIA que farolsinal_modelo devolve — a estrutura nao tem
-// ponteiros, o mesmo estado da o mesmo hash.
+// ponteiros, o mesmo estado da o mesmo hash — MAS so do que e entrada de
+// recomendacao. O anel de exibidos (mostProx + mostrado[]) fica fora: ele
+// so aprende "ja apareceu na fileira", e se entrasse no hash a propria
+// exposicao faria a cena que acabou de subir parar de valer (revisao
+// FAROL45 r1).
 static uint32_t hashModelo(const FarolGosto *g) {
+  static const struct { size_t de, ate; } T[] = {
+    { 0, offsetof(FarolGosto, mostProx) },
+    { offsetof(FarolGosto, genero), offsetof(FarolGosto, mostrado) },
+    { offsetof(FarolGosto, horaResto), sizeof(FarolGosto) },
+  };
   const unsigned char *p = (const unsigned char *)g;
   uint32_t h = 2166136261u;
-  for (size_t i = 0; i < sizeof *g; i++) h = (h ^ p[i]) * 16777619u;
+  size_t t, i;
+  for (t = 0; t < sizeof T / sizeof *T; t++)
+    for (i = T[t].de; i < T[t].ate; i++) h = (h ^ p[i]) * 16777619u;
   return h;
 }
 
@@ -238,9 +271,12 @@ static const char *argNome(const char *a, char *dst, size_t cap) {
     return NULL;
   }
   if (a[0] == 't' && a[1] == 't') {
+    // cat_indice_por_imdb catupa cat_revisao() internamente; a copia sai do
+    // catalogo da troca, nao de uma versao a meio.
     int i = cat_indice_por_imdb(a);
     CatItem ci; char t[160];
-    if (i >= 0 && cat_copiar_item(i, &ci) && ci.titulo[0]) {
+    if (i >= 0 && cat_copiar_item(i, &ci) && ci.titulo[0] &&
+        !strcmp(ci.imdb, a)) {
       snprintf(dst, cap, "%s", ci.titulo); return dst;
     }
     if (diario_nome(a, t, sizeof t, NULL, NULL, 0) && t[0]) {
@@ -363,6 +399,12 @@ static void candDeItem(const CatItem *ci, int catIdx, int fontes, int flags) {
   memset(&cand[i], 0, sizeof cand[i]);
   memset(&fichasC[i], 0, sizeof fichasC[i]);
   if (farolficha_ler_item(ci, &fichasC[i])) {
+    // A ficha ja guardada (do detalhe do TMDB, com tema real) vale mais que
+    // a reconstrucao do catalogo — sem tema a fileira "porque voce viu X"
+    // nunca sai. So leitura do cache; nao enche a LRU com ficha do catalogo.
+    FarolFicha det;
+    if (farolsinal_ficha_do_item(ci, &det) && det.nTema > fichasC[i].nTema)
+      fichasC[i] = det;
     cand[i].ficha = &fichasC[i];
     cand[i].chave = farolficha_chave(&fichasC[i]);
   }
@@ -372,27 +414,19 @@ static void candDeItem(const CatItem *ci, int catIdx, int fontes, int flags) {
   cand[i].flags = (uint8_t)flags;
   snprintf(refC[i].imdb, sizeof refC[i].imdb, "%s", ci->imdb);
   snprintf(refC[i].tipo, sizeof refC[i].tipo, "%s", ci->tipo);
+  snprintf(refC[i].titulo, sizeof refC[i].titulo, "%s", ci->titulo);
   refC[i].catIdx = catIdx;
   salvoD[i] = 0;
   nCandAtivo = i + 1;
   (void)c;
 }
 // A fileira "Continuar assistindo" publicada na volta anterior: o que ja
-// esta nela sai dos candidatos (FRC_FL_CONTINUAR — regra so da Home).
+// esta nela sai dos candidatos (FRC_FL_CONTINUAR — regra so da Home). Os
+// imdb sao capturados DENTRO da trava do catalogo (cat_fileira_imdb) — ler
+// cat_fileira()/cat_item() por fora corria com cat_trocar_continuar()
+// reescrevendo a fileira no meio da coleta (revisao FAROL45 r1).
 static void coletarContinuar(void) {
-  int r;
-  nCwImdb = 0;
-  for (r = 0; r < cat_n_fileiras() && nCwImdb < 48; r++) {
-    const CatFileira *f = cat_fileira(r);
-    int i;
-    if (!f || strcmp(f->chave, "continue_watching")) continue;
-    for (i = 0; i < f->n && nCwImdb < 48; i++) {
-      const CatItem *ci = cat_item(f->ini + i);
-      if (ci && ci->imdb[0])
-        snprintf(cwImdb[nCwImdb++], 64, "%s", ci->imdb);
-    }
-    return;
-  }
+  nCwImdb = cat_fileira_imdb("continue_watching", cwImdb, 48, 64);
 }
 // Varredura do catalogo publicado + salvos nao vistos. Vistos, duplicatas,
 // itens do Continuar e o que o perfil infantil nao pode tocar saem aqui
@@ -501,12 +535,19 @@ static int compor(long long agora, int perfil) {
       if (ref->c >= 0 && ref->c < nCand) {              // "c<n>"
         CatItem ci;
         imdb = refC[ref->c].imdb; tipo = refC[ref->c].tipo;
-        if (refC[ref->c].catIdx >= 0 && cat_copiar_item(refC[ref->c].catIdx, &ci))
+        // O indice foi guardado na coleta; o catalogo pode ter trocado —
+        // so vale o titulo se o imdb bate com o candidato do ref.
+        if (refC[ref->c].catIdx >= 0 &&
+            cat_copiar_item(refC[ref->c].catIdx, &ci) &&
+            !strcmp(ci.imdb, imdb))
           snprintf(titulo, sizeof titulo, "%s", ci.titulo);
+        else if (refC[ref->c].titulo[0])
+          snprintf(titulo, sizeof titulo, "%s", refC[ref->c].titulo);
       } else if (ref->s[0]) {                           // "tt<digitos>"
         CatItem ci;
         imdb = ref->s;
-        if (cat_copiar_por_id(ref->s, NULL, &ci)) {
+        if (cat_copiar_por_id(ref->s, NULL, &ci) &&
+            !strcmp(ci.imdb, ref->s)) {
           snprintf(titulo, sizeof titulo, "%s", ci.titulo);
           if (ci.tipo[0]) tipo = ci.tipo;
         }
@@ -540,13 +581,17 @@ static int compor(long long agora, int perfil) {
   adotada.revCat = nova.revCat; adotada.hModelo = nova.hModelo;
   adotada.nFil = nova.nFil;
   memcpy(adotada.fil, nova.fil, sizeof adotada.fil);
+  perfilSaiu = -1;                        // a cena do perfil esta valida
+  __atomic_add_fetch(&geracaoCena, 1, __ATOMIC_RELEASE);
   pthread_mutex_unlock(&travaCena);
   return 1;
 }
 
 static void invalidar(void) {
   pthread_mutex_lock(&travaCena);
+  if (adotada.valida) perfilSaiu = adotada.perfil;
   memset(&adotada, 0, sizeof adotada);
+  __atomic_add_fetch(&geracaoCena, 1, __ATOMIC_RELEASE);
   pthread_mutex_unlock(&travaCena);
 }
 
@@ -556,11 +601,18 @@ int farol_fileira(const char *chave) {
                    !strcmp(chave, "farol_gosto2"));
 }
 
-void farol_home_fileiras(CatItem *lote, int *n, int cap,
-                         CatFileira *fils, int *nFils, int capFils) {
+// Duas voltas podem chamar isto de fios ao mesmo tempo (montar cheio e o
+// parcial da refacao): sem a trava as duas liam "sem cena", compunham e
+// entregavam ao mesmo tempo — cena adotada duas vezes, mostrados marcados
+// em dobro e geracao queimada (revisao FAROL45 r1). A trava e so da cola:
+// compor pode demorar, mas travaCena (a do motivo/desenho) fica tomada so
+// nas copias curtas — o desenho nao espera a cena inteira sair.
+static pthread_mutex_t travaCompor = PTHREAD_MUTEX_INITIALIZER;
+static void home_fileiras_(CatItem *lote, int *n, int cap,
+                           CatFileira *fils, int *nFils, int capFils) {
   static struct {
     int valida, nFil; FarolHomeFil fil[2];
-    long long feita, valeS; int perfil; uint32_t hModelo;
+    long long feita, valeS; int perfil, perfilSaiu; uint32_t hModelo;
   } snap;
   long long agora;
   int precisa, perfil, f, marcou[2] = { 0, 0 };
@@ -573,6 +625,7 @@ void farol_home_fileiras(CatItem *lote, int *n, int cap,
   snap.valida = adotada.valida; snap.nFil = adotada.nFil;
   snap.feita = adotada.feita; snap.valeS = adotada.valeS;
   snap.perfil = adotada.perfil; snap.hModelo = adotada.hModelo;
+  snap.perfilSaiu = perfilSaiu;
   memcpy(snap.fil, adotada.fil, sizeof snap.fil);
   pthread_mutex_unlock(&travaCena);
   // Precisa de cena nova? Arranque e troca de perfil recompem sempre; 24 h
@@ -593,6 +646,14 @@ void farol_home_fileiras(CatItem *lote, int *n, int cap,
     memset(&snap, 0, sizeof snap);
     return;
   }
+  // Readocao proibida com a Home a vista: a fileira ja saiu de cena (o
+  // compositor falhou, ou zerar/opt-out limpou) e trazer uma cena nova de
+  // volta troca os cartazes debaixo dos olhos. Vale para o MESMO perfil que
+  // perdeu a cena — a primeira cena do perfil novo e a do arranque saem
+  // na hora, mesmo com a Home desenhada (revisao FAROL45 r1).
+  if (precisa && !snap.valida && snap.perfilSaiu == perfil &&
+      snap.perfilSaiu >= 0 && homeVisivel())
+    return;
   if (precisa && !compor(agora, perfil)) {
     invalidar();
     memset(&snap, 0, sizeof snap);       // falhou: a antiga nao volta
@@ -624,7 +685,11 @@ void farol_home_fileiras(CatItem *lote, int *n, int cap,
     for (i = 0; i < sf->nItens && *n < cap; i++) {
       CatItem *dst = &lote[*n];
       int idx = cat_indice_por_imdb(sf->it[i].imdb);
-      if (idx >= 0 && cat_copiar_item(idx, dst)) {
+      // O indice sai do catalogo da troca (cat_revisao dentro do indice) e
+      // a copia vem conferida pelo imdb — um item nunca entrega meta de
+      // outro (revisao FAROL45 r1).
+      if (idx >= 0 && cat_copiar_item(idx, dst) &&
+          !strcmp(dst->imdb, sf->it[i].imdb)) {
         (*n)++; cf->n++;
       } else {
         // Fora do catalogo: o minimo que abre (busca_pediu_abrir vai pelo
@@ -648,7 +713,8 @@ void farol_home_fileiras(CatItem *lote, int *n, int cap,
     for (int i = 0; i < snap.fil[f].nItens; i++) {
       int idx = cat_indice_por_imdb(snap.fil[f].it[i].imdb);
       CatItem ci;
-      if (idx >= 0 && cat_copiar_item(idx, &ci))
+      if (idx >= 0 && cat_copiar_item(idx, &ci) &&
+          !strcmp(ci.imdb, snap.fil[f].it[i].imdb))
         farolsinal_mostrado(&ci);
       else {
         memset(&ci, 0, sizeof ci);
@@ -666,14 +732,26 @@ void farol_home_fileiras(CatItem *lote, int *n, int cap,
   }
 }
 
-const char *farol_motivo(const char *chaveFil, int coluna) {
+void farol_home_fileiras(CatItem *lote, int *n, int cap,
+                         CatFileira *fils, int *nFils, int capFils) {
+  pthread_mutex_lock(&travaCompor);
+  home_fileiras_(lote, n, cap, fils, nFils, capFils);
+  pthread_mutex_unlock(&travaCompor);
+}
+
+const char *farol_motivo(const char *chaveFil, int coluna,
+                         const char *imdb) {
   int f;
   const char *r = NULL;
-  if (!chaveFil || coluna < 0) return NULL;
+  if (!chaveFil || coluna < 0 || !imdb || !imdb[0]) return NULL;
   pthread_mutex_lock(&travaCena);
   for (f = 0; f < adotada.nFil && f < 2; f++) {
     if (strcmp(adotada.fil[f].chave, chaveFil)) continue;
+    // O imdb que a Home entregou na posicao e o imdb da cena adotada? A
+    // fileira na tela pode ser de uma cena anterior; conferir antes de
+    // atribuir o motivo ao cartaz (revisao FAROL45 r1).
     if (coluna < adotada.fil[f].nItens &&
+        !strcmp(adotada.fil[f].it[coluna].imdb, imdb) &&
         adotada.fil[f].it[coluna].motivo[0]) {
       snprintf(motOut, sizeof motOut, "%s", adotada.fil[f].it[coluna].motivo);
       r = motOut;
@@ -682,6 +760,11 @@ const char *farol_motivo(const char *chaveFil, int coluna) {
   }
   pthread_mutex_unlock(&travaCena);
   return r;
+}
+
+// A geracao da cena adotada: cache de motivo por quadro na Home.
+unsigned farol_cena_geracao(void) {
+  return __atomic_load_n(&geracaoCena, __ATOMIC_ACQUIRE);
 }
 
 const char *farol_fileira_titulo(const char *chaveFil) {
@@ -702,6 +785,14 @@ const char *farol_fileira_titulo(const char *chaveFil) {
 // ---------------------------------------------------------------- remocao --
 void farol_esquecer(void) { invalidar(); }
 
+// 1 quando a fileira do Farol pode estar publicada: "Recomendar nesta TV"
+// ligado e modo seguro fora. A descoberta confere de novo no ponto de
+// publicacao e na remontagem sem rede — um opt-out no meio da montagem nao
+// republica as fileiras farol_ (revisao FAROL45 r1).
+int farol_ativo(void) {
+  return farolsinal_recomendar() && !seguro_perfil_ativo();
+}
+
 // O CONTRATO: cat_remover primeiro, identidade/estado depois — e a trava da
 // cena so e tomada DEPOIS de soltar a do catalogo (ordem de travas unica).
 void farol_remover_fileiras(const char *dirArte) {
@@ -711,13 +802,13 @@ void farol_remover_fileiras(const char *dirArte) {
 
 // "Zerar/apagar o gosto". A REMOCAO das fileiras acontece com a identidade
 // atual, antes de qualquer reset de modelo — a regravacao do cache cai no
-// perfil novo se a ordem inverter (contrato, item 5).
+// perfil novo se a ordem inverter (contrato, item 5). Depois a cena sai de
+// cena (a remocao ja invalidou) e o modelo zera pela API do farolsinal:
+// sem isso a fileira voltava na proxima volta com o gosto antigo (revisao
+// FAROL45 r1).
 void farol_gosto_zerar(const char *dirArte) {
   farol_remover_fileiras(dirArte);
-  // O reset do modelo e do farolsinal: ate a issue 51 expor a API do ajuste,
-  // o caminho existente e o esquecer do logout (farolsinal_esquecer), que
-  // ja roda DEPOIS desta remocao em qualquer fluxo que a use. Quem ligar o
-  // item "Zerar o gosto" deve chamar a limpeza do modelo aqui.
+  farolsinal_zerar_gosto();
 }
 
 // "Recomendar nesta TV": ao DESLIGAR, as fileiras saem primeiro e a

@@ -545,6 +545,10 @@ const CatFileira *cat_fileira(int r);   // NULL fora da faixa
 int cat_home_apenas_fixas(void);
 int cat_copiar_fileira(const char *chave, CatItem *itens, int max,
                        CatFileira *meta);
+// Os imdb de UMA fileira, capturados de uma vez sob a trava do catalogo
+// (cat_trocar_continuar reescreve a fileira; ler cat_fileira+item por
+// partes coletava uma janela que nunca existiu). Devolve quantos sairam.
+int cat_fileira_imdb(const char *chave, char (*dst)[64], int max, int tam);
 
 // Refaz SO a fileira "continue_watching" (issue #38): os itens novos tomam o
 // lugar da janela dela no vetor unico, as demais fileiras deslizam no `ini` e

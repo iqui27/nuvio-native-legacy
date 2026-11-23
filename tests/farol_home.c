@@ -23,6 +23,7 @@
 #include <assert.h>
 #include <dirent.h>
 #include <limits.h>
+#include <stdatomic.h>
 #include <sys/stat.h>
 #include <unistd.h>
 int arte_reserva_episodios(const char *imdb, const char *corpo) { (void)imdb; (void)corpo; return 0; }
@@ -279,14 +280,32 @@ void farolsinal_definir_recomendar(int ligado) {
   T_rec = ligado;
 }
 int  farolsinal_modelo(FarolGosto *dst) { if (!dst) return 0; *dst = T_g; return 1; }
-void farolsinal_mostrado(const CatItem *ci) { (void)ci; T_mostrados++; }
+// Prova r1: o anel de exibidos muda o modelo e NAO pode recompor a cena;
+// e o opt-out no MEIO da entrega (a primeira marcacao dispara o desligar)
+// nao pode deixar a volta republicar as fileiras.
+static _Atomic int desligarNaEntrega;
+void farolsinal_mostrado(const CatItem *ci) {
+  farolgosto_mostrado(&T_g, mapa_hash_titulo(ci->imdb), 1);
+  T_mostrados++;
+  if (atomic_exchange(&desligarNaEntrega, 0))
+    farol_recomendar_definir(0, dirDados);
+}
+void farolsinal_zerar_gosto(void) { farolgosto_iniciar(&T_g, (uint16_t)T_perfil); }
+int  farolsinal_ficha_do_item(const CatItem *ci, FarolFicha *dst) {
+  (void)ci; (void)dst; return 0;
+}
 void farolsinal_origem(const CatItem *ci, int origem) {
   assert(origem == FS_ORIGEM_FAROL); (void)ci; T_origens++;
 }
 int  seguro_perfil_ativo(void) { return T_seguro; }
 int  perfil_infantil_ativo(void) { return T_infantil; }
 int  perfil_infantil(int idx) { (void)idx; return T_infantil; }
-const char *app_tela_nome(void) { return T_visivel ? "home" : "busca"; }
+const char *app_tela_nome(void) {
+  return T_visivel ? (T_visivel == 2 ? "menu" : "home") : "busca";
+}
+// A visibilidade de verdade (home.c): menu lateral e sobreposicoes deixam a
+// Home pintada — e ela, nao o nome da camada de cima, quem decide.
+int  home_fileiras_na_tela(void) { return T_visivel != 0; }
 int  recomenda_pessoa_canonica(const char *id, char *dst, size_t tam) {
   (void)id; if (tam) *dst = 0; return 0;
 }
@@ -398,7 +417,30 @@ int main(void) {
 
   // ---------- nivel 2: a fileira monta ----------
   modeloGosto();
+  // Prova r1 (republica): o opt-out NO MEIO da entrega — o primeiro
+  // farolsinal_mostrado desliga "Recomendar" — nao pode deixar a volta em
+  // voo republicar as fileiras.
+  desligarNaEntrega = 1;
   volta();
+  assert(T_rec == 0 && nFarol() == 0 && "montagem republicou apos desligar");
+  farol_recomendar_definir(1, dirDados);
+  T_visivel = 0;                    // a readocao espera a Home sair da tela
+  modeloGosto();                    // modelo fresco: anel de exibidos vazio
+  { int antes = T_mostrados;
+    volta();
+    // Cada item publicado marca UMA vez — se a marcacao mudasse o hash da
+    // cena a entrega invalidava a recem-adotada e a volta recompunha e
+    // remarcava na hora (o bug do r1: a cena se invalida depois de
+    // entregue).
+    int esperado = 0, q;
+    for (q = 0; q < cat_n_fileiras(); q++)
+      if (!strncmp(cat_fileira(q)->chave, CAT_PREFIXO_FAROL,
+                   sizeof CAT_PREFIXO_FAROL - 1))
+        esperado += cat_fileira(q)->n;
+    assert(T_mostrados - antes == esperado &&
+           "a propria entrega invalidou a cena (recomposta e remarcada)");
+  }
+  T_visivel = 1;
   r = idxFil("farol_gosto1");
   assert(r >= 0 && cat_fileira(r)->n >= 6);
   printf("    fileiras:");
@@ -417,19 +459,22 @@ int main(void) {
     assert(f->titulo[0] && !temIdiCru(f->titulo));
     const char *m = NULL;
     for (i = 0; i < f->n; i++) {
-      m = farol_motivo("farol_gosto1", i);
+      m = farol_motivo("farol_gosto1", i, cat_item(f->ini + i)->imdb);
       if (m) break;
     }
     assert(m && !temIdiCru(m));
     printf("    titulo=\"%s\" motivo[0]=\"%s\"\n", f->titulo, m);
-    assert(farol_motivo("farol_gosto1", -1) == NULL);
-    assert(farol_motivo("nao_e_farol", 0) == NULL);
+    // o motivo so sai para o imdb que a fileira PUBLICOU na coluna (r1)
+    assert(farol_motivo("farol_gosto1", 0, "tt9999999") == NULL);
+    assert(farol_motivo("farol_gosto1", -1, "tt0000001") == NULL);
+    assert(farol_motivo("nao_e_farol", 0, "tt0000001") == NULL);
   }
   puts("ok  titulo e motivo renderizados, sem id cru");
 
-  // exposicao marcada uma vez por cena entregue
+  // exposicao marcada uma vez por cena entregue (a contagem exata foi
+  // conferida na readocao ali em cima: uma marcacao por item publicado)
   assert(T_mostrados >= 6);
-  puts("ok  mostrado marcado na entrega");
+  puts("ok  mostrado marcado na entrega, sem readocao na mesma volta");
 
   // ---------- mesma cena a cada volta ----------
   { char tit1[96], imdb0[64];
@@ -441,6 +486,14 @@ int main(void) {
     assert(!strcmp(cat_item(cat_fileira(idxFil("farol_gosto1"))->ini)->imdb, imdb0));
   }
   puts("ok  mesma cena reentregue: titulo e primeiro cartaz iguais");
+
+  // ---------- a exposicao sozinha NAO recompoe (revisao r1) ----------
+  { int exposicoes = T_mostrados;
+    T_visivel = 0;
+    volta();
+    assert(T_mostrados == exposicoes && "exposicao sozinha readotou a cena");
+  }
+  puts("ok  anel de exibidos fora do hash: sem recomposicao a passe");
 
   // ---------- evento forte com a Home visivel: a cena FICA ----------
   T_visivel = 1;
@@ -462,23 +515,55 @@ int main(void) {
   T_visivel = 0;
   volta();
   assert(nFarol() == 0);
+  // readocao vetada com a Home visivel no MESMO perfil que perdeu a cena —
+  // a fileira nao pode sumir e reaparecer com a pessoa olhando (revisao r1)
+  modeloGosto(); T_visivel = 1;
+  volta();
+  assert(nFarol() == 0 && "cena readotada com a Home visivel apos falha");
   // nem por preservarFileirasAusentes: a chave farol_ nao volta
   modeloGosto(); T_visivel = 0;
   volta();
   assert(idxFil("farol_gosto1") >= 0);
   puts("ok  falha do compositor: fileira antiga nao reanexa");
 
+  // ---------- zerar o gosto: tela, cena e MODELO (revisao r1) ----------
+  farol_gosto_zerar(dirDados);
+  assert(nFarol() == 0);
+  assert(T_g.titulos == 0 && "Zerar o gosto conservou o modelo anterior");
+  modeloGosto();                        // o modelo zerado e reconstruido
+  puts("ok  zerar o gosto: fileiras saem e o modelo zera junto");
+
   // ---------- recomendar desligado ----------
+  T_visivel = 0;          // a readocao da volta espera a Home sair da tela
+  volta();
+  T_visivel = 1;
+  assert(nFarol() > 0);   // fileira na tela para a prova de ordem valer
   farol_recomendar_definir(0, dirDados);
   // o stub de definir_recomendar ja provou a ORDEM (sem farol_ publicada
   // quando a preferencia virou). Aqui fica o estado:
   assert(T_rec == 0);
+  // a remontagem sem rede tambem obedece o opt-out — a fileira removida da
+  // tela nao volta por filsMontadas (revisao r1)
+  desc_remontar_fileiras();
+  assert(nFarol() == 0 && "remontagem sem rede republicou apos desligar");
   volta();
   assert(nFarol() == 0);
   puts("ok  Recomendar desligado: some na volta e a remocao veio antes");
   farol_recomendar_definir(1, dirDados);
+  T_visivel = 0;          // a volta que readota precisa da Home fora da tela
   volta();
+  T_visivel = 1;
   assert(idxFil("farol_gosto1") >= 0);
+
+  // ---------- menu lateral por cima: a Home continua visivel ----------
+  T_visivel = 2;
+  farol_teste_home_visivel(NULL);    // producao: o desenho, nao o nome da tela
+  farolgosto_iniciar(&T_g, 1);       // modelo zerado = evento forte
+  volta();
+  assert(nFarol() > 0 && "fileira desapareceu sob o menu lateral");
+  farol_teste_home_visivel(fakeVis);
+  modeloGosto(); T_visivel = 1;
+  puts("ok  menu lateral por cima: a cena nao troca");
 
   // ---------- modo seguro ----------
   T_seguro = 1; T_visivel = 0;

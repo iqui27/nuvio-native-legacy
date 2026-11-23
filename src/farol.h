@@ -38,9 +38,23 @@ void farol_home_fileiras(CatItem *lote, int *n, int cap,
                          CatFileira *fils, int *nFils, int capFils);
 
 // A linha de motivo do cartaz em foco: `coluna` e a posicao dentro de
-// itens[] da fileira entregue. Ponteiro para buffer estatico — consumir no
-// ato (o desenho faz exatamente isso). NULL = item sem motivo verdadeiro.
-const char *farol_motivo(const char *chaveFil, int coluna);
+// itens[] da fileira entregue e `imdb` o id do cartaz PUBLICADO nela — o
+// motivo so sai se o imdb bate com o item da cena adotada (a fileira na
+// tela pode ser de uma cena anterior). Ponteiro para buffer estatico —
+// consumir no ato (o desenho faz exatamente isso). NULL = item sem motivo
+// verdadeiro ou imdb divergente.
+const char *farol_motivo(const char *chaveFil, int coluna,
+                         const char *imdb);
+
+// A geracao da cena adotada: sobe a cada adocao e a cada invalidacao. A
+// Home cacheia o motivo por ela e nao toma trava por quadro.
+unsigned farol_cena_geracao(void);
+
+// 1 quando a fileira do Farol pode estar publicada: "Recomendar nesta TV"
+// ligado e modo seguro fora. A descoberta confere de novo no ponto de
+// publicacao e na remontagem sem rede — um opt-out no meio da montagem nao
+// republica as fileiras farol_ (revisao FAROL45 r1).
+int farol_ativo(void);
 
 // O titulo da fileira adotada, ja renderizado e localizado (para quem precisar
 // dele fora do CatFileira; a Home le o dela). "" se a fileira nao existe.

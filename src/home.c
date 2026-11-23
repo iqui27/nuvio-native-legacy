@@ -76,6 +76,7 @@ static void heroTempoInicio(int indice) {
 #include "descoberta.h"
 #include "dados.h"
 #include "tendencia.h"
+#include <stdatomic.h>
 #include <strings.h>
 // Os veus da base de cada forma de card (gfx_veu_base): a fracao da altura que
 // o degrade cobre e o alfa na base. Nomeados porque o laco da fileira os poe
@@ -416,8 +417,9 @@ static Uint32      filEntraEm[MAX_FIL];
 static int         filNAntes[MAX_FIL];
 // Ultimo quadro em que as fileiras foram desenhadas. Uma ausencia longa (a
 // home escondida atras do player, de Ajustes, da selecao de perfil) faz as
-// fileiras visiveis entrarem de novo, em cascata, na volta.
-static Uint32      fileirasVistasEm;
+// fileiras visiveis entrarem de novo, em cascata, na volta. Atomico: alem
+// do desenho, home_fileiras_na_tela() le do fio da descoberta (Farol).
+static _Atomic Uint32 fileirasVistasEm;
 // Primeira vez que um card de fileira foi PINTADO (ver o marcador em
 // home_desenhar): -1 enquanto nao aconteceu. Nao e o mesmo que
 // fileirasVistasEm — aquele e o ultimo quadro, este e o PRIMEIRO e so uma
@@ -8373,6 +8375,19 @@ void home_fileiras_vistas(Uint32 agora) {
   if (fileirasVistasEm) fileirasVistasEm = agora ? agora : 1u;
 }
 
+// As fileiras da Home estao a vista AGORA? Marcadas no quadro recente por
+// home_desenhar_ ou pela copia parada do painel de Salvos (home_fileiras_
+// vistas) — o menu lateral e sobreposicoes por cima da Home contam como
+// "a vista", porque e ela quem continua pintada. O Farol le isto do fio da
+// descoberta para nao trocar a cena debaixo dos olhos (revisao FAROL45 r1).
+// A janela e a mesma do reentra (1,5 s): cobre um quadro de pausa sem abrir
+// margem para "saiu da home" virar visivel.
+int home_fileiras_na_tela(void) {
+  Uint32 v = fileirasVistasEm;
+  if (!v) return 0;
+  return (Uint32)(SDL_GetTicks() - v) <= 1500u;
+}
+
 // TITULO DA FILEIRA (Ajustes > Titulo das fileiras): 0 Classico (o de sempre,
 // texto puro), 1 Ilha (pilula de vidro com icone e contagem), 2 Editorial
 // (kicker em caixa alta na cor de destaque + titulo espacado), 3 Acento (ponto
@@ -8727,21 +8742,39 @@ static void home_desenhar_(Uint32 agora) {
       // item aparece sob o titulo (fade de 150 ms; animacoes reduzidas: troca
       // seca). Sem motivo verdadeiro, sem linha — nunca um texto generico.
       if (farol_fileira(fileiras[r].chave)) {
-        static char motStr[MAX_FIL][200];
+        static char motStr[MAX_FIL][200], motImdb[MAX_FIL][64];
         static Uint32 motDesde[MAX_FIL];
-        const char *mot = NULL;
+        static unsigned motGer[MAX_FIL];
+        static int motCol[MAX_FIL];
         float ar, ag, ab;
         tfAcento(&ar, &ag, &ab);
         gfx_cor((GfxRect){ homeConteudoX() + 3.0f, y + tl.h * 0.5f - 5.0f,
                            10.0f, 10.0f }, 5.0f, ar, ag, ab,
                 0.85f + 0.15f * animFocoFil[r]);
         if (foco.fileira == r && !focoHero &&
-            foco.coluna >= 0 && foco.coluna < fileiras[r].n)
-          mot = farol_motivo(fileiras[r].chave, foco.coluna);
-        if (mot && strcmp(mot, motStr[r])) {
-          snprintf(motStr[r], sizeof motStr[r], "%s", mot);
-          motDesde[r] = agora;
-        } else if (!mot) motStr[r][0] = 0;
+            foco.coluna >= 0 && foco.coluna < fileiras[r].n) {
+          const CatItem *fi =
+            cat_item(fileiraItemIndice(&fileiras[r], foco.coluna));
+          // O motivo e da cena adotada e muda so com ela: o cache por
+          // (geracao da cena, coluna, imdb publicado) dispensa a trava da
+          // cena a cada quadro, e o imdb do cartaz impede a linha de um item
+          // que a fileira na tela ja nao tem (revisao FAROL45 r1).
+          if (!fi || !fi->imdb[0]) { motStr[r][0] = motImdb[r][0] = 0; }
+          else if (farol_cena_geracao() != motGer[r] ||
+                   foco.coluna != motCol[r] ||
+                   strcmp(motImdb[r], fi->imdb)) {
+            const char *mot = farol_motivo(fileiras[r].chave, foco.coluna,
+                                           fi->imdb);
+            motGer[r] = farol_cena_geracao();
+            motCol[r] = foco.coluna;
+            snprintf(motImdb[r], sizeof motImdb[r], "%s", fi->imdb);
+            if (!mot) mot = "";
+            if (strcmp(mot, motStr[r])) {
+              snprintf(motStr[r], sizeof motStr[r], "%s", mot);
+              motDesde[r] = agora;
+            }
+          }
+        } else { motStr[r][0] = motImdb[r][0] = 0; }
         if (motStr[r][0]) {
           const float ma = ajustes_animacoes_reduzidas() ? 1.0f
             : fminf(1.0f, (float)(agora - motDesde[r]) / 150.0f);
