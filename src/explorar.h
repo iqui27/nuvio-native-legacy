@@ -14,7 +14,8 @@ void explorar_iniciar(void);
 // do titulo de volta (explorar_pediu_abrir).
 void explorar_abrir_titulo(const MapaObra *o);
 // Variante do selo do Farol: desce filtrada pelo fio (kw de tema ou genero).
-void explorar_abrir_titulo_fio(const MapaObra *o, const char *temaFio);
+// `temaEhGenero` = 1 quando o fio e nome de genero local, nao palavra-chave.
+void explorar_abrir_titulo_fio(const MapaObra *o, const char *temaFio, int temaEhGenero);
 void explorar_encerrar(void);
 void explorar_evento(const SDL_Event *e);
 void explorar_atualizar(float dt, Uint32 agora);

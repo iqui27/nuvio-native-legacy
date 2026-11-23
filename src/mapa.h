@@ -178,10 +178,14 @@ typedef struct {
 } MapaVizinhos;
 
 // Pede a vizinhanca de `foco`. `pessoaPref` (id do TMDB, 0 = tanto faz) e
-// `temaPref` (palavra-chave em ingles, NULL = tanto faz) mantem o MESMO fio
-// quando a pessoa desce a toca por ele. Repetir o pedido do titulo que ja esta
-// publicado nao faz nada.
-void mapa_vizinhos_pedir(const MapaObra *foco, long pessoaPref, const char *temaPref);
+// `temaPref` (NULL = tanto faz) mantem o MESMO fio quando a pessoa desce a
+// toca por ele. `temaEhGenero` diz o que o fio carrega: 0 = palavra-chave do
+// TMDB em ingles (selo de tema ou entrada generica), 1 = nome de genero
+// local (selo ou grupo de genero) — nunca vira palavra-chave no retrato
+// remoto, so fixa a preferencia de genero (FAROL46C). Repetir o pedido do
+// titulo que ja esta publicado nao faz nada.
+void mapa_vizinhos_pedir(const MapaObra *foco, long pessoaPref, const char *temaPref,
+                         int temaEhGenero);
 int  mapa_vizinhos_copiar(MapaVizinhos *dst, unsigned *revisao);
 // O titulo `indice` do catalogo como MapaObra (entrada pelo Detalhe). 1 = ok.
 int  mapa_obra_do_catalogo(int indice, MapaObra *o);

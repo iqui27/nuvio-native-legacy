@@ -1951,6 +1951,7 @@ static unsigned vizSeq;                 // o pedido mais novo; resultado de outr
 static unsigned vizHashPub;             // titulo do retrato publicado (vizChave)
 static long vizPessoaPub;
 static char vizTemaPub[48];
+static int vizTemaGenPub;                 // o fio publicado e genero, nao kw
 // O pedido, copiado pelo fio sob a trava.
 static MapaSemente vizFocoTrab;
 static MapaVizCand vizPoolTrab[VIZ_POOL];
@@ -1961,9 +1962,10 @@ static unsigned vizVistosTrab[VIZ_VISTOS];
 static int vizNVistos;
 static long vizPessoaPref;
 static char vizTemaPref[48];
+static int vizTemaGenPref;                // idem, a caminho do fio do TMDB
 static char vizChaveApi[96], vizIdioma[12];
 static struct {
-  unsigned h; long pessoa; char tema[48];
+  unsigned h; long pessoa; char tema[48]; int gen;
   unsigned uso;
   MapaVizinhos v;
 } vizMem[VIZ_MEM];
@@ -2093,21 +2095,24 @@ static int vizColetarVistos(unsigned *v, int max) {
   return n;
 }
 
-static void vizGuardarMem(const MapaVizinhos *v, long pessoa, const char *tema) {
+static void vizGuardarMem(const MapaVizinhos *v, long pessoa, const char *tema, int gen) {
   // Chamar com travaViz tomada.
   int i, alvo = 0;
   unsigned h = vizChave(&v->foco);
   for (i = 0; i < VIZ_MEM; i++) {
-    if (vizMem[i].h == h && vizMem[i].pessoa == pessoa && !strcmp(vizMem[i].tema, tema)) { alvo = i; break; }
+    if (vizMem[i].h == h && vizMem[i].pessoa == pessoa &&
+        vizMem[i].gen == gen && !strcmp(vizMem[i].tema, tema)) { alvo = i; break; }
     if (vizMem[i].uso < vizMem[alvo].uso) alvo = i;
   }
   vizMem[alvo].h = h; vizMem[alvo].pessoa = pessoa;
   snprintf(vizMem[alvo].tema, sizeof vizMem[alvo].tema, "%s", tema);
+  vizMem[alvo].gen = gen;
   vizMem[alvo].uso = ++vizUso;
   vizMem[alvo].v = *v;
 }
 
-static void vizPublicar(MapaVizinhos *v, unsigned seq, int carregando, long pessoa, const char *tema) {
+static void vizPublicar(MapaVizinhos *v, unsigned seq, int carregando, long pessoa, const char *tema,
+                        int gen) {
   pthread_mutex_lock(&travaViz);
   if (seq == vizSeq) {
     v->carregando = carregando;
@@ -2115,7 +2120,7 @@ static void vizPublicar(MapaVizinhos *v, unsigned seq, int carregando, long pess
     vizPub = *v;
     vizHashPub = vizChave(&v->foco);
   }
-  if (!carregando && v->remoto) vizGuardarMem(v, pessoa, tema);
+  if (!carregando && v->remoto) vizGuardarMem(v, pessoa, tema, gen);
   pthread_mutex_unlock(&travaViz);
 }
 
@@ -2148,6 +2153,7 @@ static void *vizTrabalhar(void *arg) {
     const char *temaNome = NULL;
     long pessoaPref, temaId = 0;
     unsigned seq;
+    int temaGenero;
     int nPool, nAmg, nVistos, i, k, gi = -1, temCred = 0, temTema = 0, mudou = 0, ok = 0, serie;
     long long agora = (long long)time(NULL);
 
@@ -2160,6 +2166,7 @@ static void *vizTrabalhar(void *arg) {
     nAmg = vizNAmg; memcpy(amg, vizAmgTrab, sizeof(MapaVizAmigo) * (size_t)nAmg);
     nVistos = vizNVistos; memcpy(vistos, vizVistosTrab, sizeof(unsigned) * (size_t)nVistos);
     pessoaPref = vizPessoaPref;
+    temaGenero = vizTemaGenPref;
     snprintf(temaPref, sizeof temaPref, "%s", vizTemaPref);
     snprintf(chave, sizeof chave, "%s", vizChaveApi);
     snprintf(idioma, sizeof idioma, "%s", vizIdioma);
@@ -2213,8 +2220,10 @@ static void *vizTrabalhar(void *arg) {
         }
       }
       // 3. o tema: a palavra do fio, senao a primeira que tem traducao (as
-      // "baseado em ..." por ultimo: dizem a origem, nao o assunto).
-      { int ki = -1, passo;
+      // "baseado em ..." por ultimo: dizem a origem, nao o assunto). Fio de
+      // genero NAO procura palavra-chave: a preferencia vai em generoPref e o
+      // grupo de genero e o que a reserva local ja mostrava (FAROL46C).
+      if (!temaGenero) { int ki = -1, passo;
         for (i = 0; i < foco.nKw; i++)
           if (temaPref[0] && !strcmp(foco.kw[i].nome, temaPref) && mapa_tema_nome(foco.kw[i].nome)) ki = i;
         for (passo = 0; passo < 2 && ki < 0; passo++)
@@ -2253,9 +2262,10 @@ static void *vizTrabalhar(void *arg) {
       e.pool = pool; e.nPool = nPool;
       e.amigos = amg; e.nAmigos = nAmg;
       e.vistos = vistos; e.nVistos = nVistos;
+      if (temaGenero && temaPref[0]) e.generoPref = mapa_hash_titulo(temaPref);
       novo.revisao = 0;
       mapa_vizinhos_montar(&e, &novo);
-      vizPublicar(&novo, seq, 0, pessoaPref, temaPref);
+      vizPublicar(&novo, seq, 0, pessoaPref, temaPref, temaGenero);
       if (mudou) {
         // O titulo de agora primeiro; o corte leva o mais antigo.
         for (k = 0; k < ca.n; k++)
@@ -2281,7 +2291,8 @@ static void *vizTrabalhar(void *arg) {
   return NULL;
 }
 
-void mapa_vizinhos_pedir(const MapaObra *obra, long pessoaPref, const char *temaPref) {
+void mapa_vizinhos_pedir(const MapaObra *obra, long pessoaPref, const char *temaPref,
+                         int temaEhGenero) {
   static MapaSemente foco;
   static MapaVizCand pool[VIZ_POOL];
   static MapaVizAmigo amg[VIZ_AMIGOS];
@@ -2300,16 +2311,18 @@ void mapa_vizinhos_pedir(const MapaObra *obra, long pessoaPref, const char *tema
   pthread_mutex_lock(&travaViz);
   // O mesmo titulo, pelo mesmo fio, ja publicado (voltar do Detalhe): nada.
   if (vizPub.foco.titulo[0] && vizHashPub == h &&
-      vizPessoaPub == pessoaPref && !strcmp(vizTemaPub, temaPref)) {
+      vizPessoaPub == pessoaPref && vizTemaGenPub == temaEhGenero &&
+      !strcmp(vizTemaPub, temaPref)) {
     pthread_mutex_unlock(&travaViz);
     return;
   }
   seq = ++vizSeq;
   vizPessoaPub = pessoaPref;
+  vizTemaGenPub = temaEhGenero;
   snprintf(vizTemaPub, sizeof vizTemaPub, "%s", temaPref);
   // Pronto em memoria (subir um degrau da trilha): publica e acabou.
   for (i = 0; i < VIZ_MEM; i++)
-    if (vizMem[i].uso && vizMem[i].h == h &&
+    if (vizMem[i].uso && vizMem[i].h == h && vizMem[i].gen == temaEhGenero &&
         vizMem[i].pessoa == pessoaPref && !strcmp(vizMem[i].tema, temaPref)) {
       vizMem[i].uso = ++vizUso;
       vizPub = vizMem[i].v;
@@ -2350,10 +2363,10 @@ void mapa_vizinhos_pedir(const MapaObra *obra, long pessoaPref, const char *tema
   // genero pelo proprio rotulo que o grupo mostrou.
   for (i = 0; i < foco.nGente && pessoaPref; i++)
     if (foco.gente[i].id == pessoaPref) e.pessoaPref = mapa_hash_titulo(foco.gente[i].nome);
-  if (temaPref[0]) e.generoPref = mapa_hash_titulo(temaPref);
+  if (temaPref[0] && temaEhGenero) e.generoPref = mapa_hash_titulo(temaPref);
   local.revisao = 0;
   mapa_vizinhos_montar(&e, &local);
-  vizPublicar(&local, seq, comTmdb, pessoaPref, temaPref);
+  vizPublicar(&local, seq, comTmdb, pessoaPref, temaPref, temaEhGenero);
   if (!comTmdb) return;
 
   pthread_mutex_lock(&travaViz);
@@ -2362,6 +2375,7 @@ void mapa_vizinhos_pedir(const MapaObra *obra, long pessoaPref, const char *tema
   vizNAmg = nAmg; memcpy(vizAmgTrab, amg, sizeof(MapaVizAmigo) * (size_t)nAmg);
   vizNVistos = nVistos; memcpy(vizVistosTrab, vistos, sizeof(unsigned) * (size_t)nVistos);
   vizPessoaPref = pessoaPref;
+  vizTemaGenPref = temaEhGenero;
   snprintf(vizTemaPref, sizeof vizTemaPref, "%s", temaPref);
   snprintf(vizChaveApi, sizeof vizChaveApi, "%s", chave);
   snprintf(vizIdioma, sizeof vizIdioma, "%s", desc_tmdb_idioma());

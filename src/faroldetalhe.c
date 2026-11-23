@@ -134,6 +134,10 @@ static Mapa         s_mapaCache;
 static unsigned     s_mapaRev;
 static MapaVizinhos s_vizCache;
 static unsigned     s_vizRev;
+// catIndice resolvido de cada semente do retrato: a busca por IMDb e linear,
+// entao so se refaz quando o catalogo ou a geracao do retrato muda (FAROL46C).
+static unsigned     s_semCatRev, s_semMapaRev;
+static int          s_semIdx[MAPA_SEM_MAX], s_semIdxN;
 
 static struct {
   int       aberto;
@@ -948,6 +952,7 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
   uint8_t faixaHora = 0, fimSemana = 0;
   Mapa mapaLoc;
   MapaVizinhos vizLoc;
+  unsigned mapaRevLoc = 0;
   FdResolCtx rc;
   FarolFicha fichaAlvo;
   int temFicha = 0;
@@ -1063,6 +1068,7 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
   (void)mapa_vizinhos_copiar(&s_vizCache, &s_vizRev);
   mapaLoc = s_mapaCache;
   vizLoc = s_vizCache;
+  mapaRevLoc = s_mapaRev;
   pthread_mutex_unlock(&fd_mapaMu);
 
   memset(&rc, 0, sizeof rc);
@@ -1116,15 +1122,26 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
 
   if (nSems == 0) {
     int i;
-    for (i = 0; i < mapaLoc.nSem && nSems < FD_SEM_MAX; i++) {
+    // mo->catIndice refere-se a revisao do catalogo de quando o retrato foi
+    // montado: a republicacao troca o dono do slot. A semente e rebuscada
+    // pela identidade — mas a busca e linear, entao o indice resolvido so se
+    // refaz quando o catalogo ou o retrato muda; o item e conferido a cada
+    // quadro mesmo assim (FAROL46C).
+    {
+      unsigned revCat = cat_revisao();
+      if (revCat != s_semCatRev || mapaRevLoc != s_semMapaRev) {
+        s_semIdxN = mapaLoc.nSem < MAPA_SEM_MAX ? mapaLoc.nSem : MAPA_SEM_MAX;
+        for (i = 0; i < s_semIdxN; i++)
+          s_semIdx[i] = cat_indice_por_imdb(mapaLoc.sem[i].imdb);
+        s_semCatRev = revCat;
+        s_semMapaRev = mapaRevLoc;
+      }
+    }
+    for (i = 0; i < s_semIdxN && nSems < FD_SEM_MAX; i++) {
       const MapaObra *mo = &mapaLoc.sem[i];
-      int cIdx;
+      int cIdx = s_semIdx[i];
       if (strncmp(mo->imdb, "tt", 2) || !mo->titulo[0]) continue;
       if (!strcmp(mo->imdb, ciCopia.imdb)) continue;
-      // mo->catIndice refere-se a revisao do catalogo de quando o retrato foi
-      // montado: a republicacao troca o dono do slot. A semente e rebuscada
-      // pela identidade a cada quadro e o item resolvido e conferido.
-      cIdx = cat_indice_por_imdb(mo->imdb);
       if (cIdx < 0) continue;
       {
         const CatItem *cs = cat_item(cIdx);
@@ -1821,6 +1838,8 @@ void faroldetalhe_teste_reset(void) {
   memset(&S, 0, sizeof S);
   S.catIdx = -1;
   S.snap.blocoAlpha = 1.0f;
+  s_semCatRev = s_semMapaRev = 0;
+  s_semIdxN = 0;
   FD_UNLOCK();
 }
 
