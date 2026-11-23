@@ -2213,6 +2213,7 @@ function criarEvidenciaVazia() {
     cabeHoje: false,
     cabeHojeMin: null,
     cabeHojeContradit: false,
+    fmoCabeHoje: false,
     amigoAnon: false,
     rever: false,
     recomendadoAnon: false,
@@ -2482,6 +2483,7 @@ function processarMotivoCandidato(mo, ev, candMinutos, ancoras, nomes, extras) {
     } else if (min > 0) {
       ev.cabeHoje = true;
       ev.cabeHojeMin = min;
+      if (aMin > 0) ev.fmoCabeHoje = true;
     }
     return ["fmo", "FMO_CABE_HOJE", aMin];
   }
@@ -2876,8 +2878,12 @@ function contextoAterramento(pedido) {
           ev.diretores.push({ tit: f.diretor, n: f.vezes });
         }
         if (f.cabe_hoje === true || f.cabe_hoje === 1) {
-          const m = Number.isInteger(f.minutos) && f.minutos > 0 ? f.minutos : ev.minutos;
-          if (m > 0 && !(ev.minutos > 0 && f.minutos > 0 && ev.minutos !== f.minutos)) {
+          const fMin = Number.isInteger(f.minutos) && f.minutos > 0 ? f.minutos : 0;
+          const m = fMin > 0 ? fMin : ev.minutos;
+          if ((ev.minutos > 0 && fMin > 0 && ev.minutos !== fMin) ||
+              (m > 0 && ev.cabeHoje && ev.cabeHojeMin !== m)) {
+            ev.cabeHojeContradit = true;
+          } else if (m > 0) {
             ev.cabeHoje = true;
             ev.cabeHojeMin = m;
           }
@@ -2928,6 +2934,7 @@ function contextoAterramento(pedido) {
     servicosOnde,
     fatosPorObra,
     fatosGlobais,
+    tiposPorObra,
     obrasTipoContradit,
     textosGosto,
   };
@@ -2996,24 +3003,82 @@ function fatosParaAlvo(alvoRef, ctx, incluirGlobais = false) {
   return res;
 }
 
+function obraEhFilmeDeclarado(idAlvo, ctx) {
+  if (!idAlvo) return false;
+  if (idAlvo.tipo === "cand" && ctx.candEvs[idAlvo.idx]?.tipo === "filme") return true;
+  return Boolean(ctx.tiposPorObra?.get(idAlvo.obraKey)?.has("filme"));
+}
+
+function fatoProvaTemporadaNova(f) {
+  if (!f || typeof f !== "object") return false;
+  if (f.temporada_nova === false || f.temporada_nova === 0 ||
+      f.nova_temporada === false || f.nova_temporada === 0 ||
+      f.estreia_temporada === false || f.estreia_temporada === 0) {
+    return false;
+  }
+  if (f.temporada_nova === true || f.nova_temporada === true || f.estreia_temporada === true) {
+    return true;
+  }
+  if ((Number.isInteger(f.temporada_nova) && f.temporada_nova > 0) ||
+      (Number.isInteger(f.nova_temporada) && f.nova_temporada > 0) ||
+      (Number.isInteger(f.estreia_temporada) && f.estreia_temporada > 0)) {
+    return true;
+  }
+  if ((f.estreia === true || f.estreia === 1) && !Number.isInteger(f.pessoa)) {
+    return true;
+  }
+  const temp = f.temporada ?? f.temp;
+  if (Number.isInteger(temp) && temp > 0 &&
+      (f.nova === true || f.nova === 1 || f.chegou === true || f.chegou === 1)) {
+    return true;
+  }
+  return false;
+}
+
 function resolverDuracaoELimitesAlvo(alvoRef, ctx) {
   const idAlvo = resolverIdentidadeRef(alvoRef, ctx);
-  if (!idAlvo) return { ok: false, idAlvo: null, cIdxs: [], min: 0, limites: [] };
+  if (!idAlvo) return { ok: false, idAlvo: null, cIdxs: [], min: 0, limites: [], cabeHoje: false, cabeHojeMin: 0, fmoCabeHoje: false };
   if (ctx.obrasTipoContradit?.has(idAlvo.obraKey)) {
-    return { ok: false, idAlvo, cIdxs: [], min: 0, limites: [] };
+    return { ok: false, idAlvo, cIdxs: [], min: 0, limites: [], cabeHoje: false, cabeHojeMin: 0, fmoCabeHoje: false };
   }
   const cIdxs = idAlvo.tipo === "cand" ? [idAlvo.idx] : [];
-  if (cIdxs.some((idx) => ctx.candEvs[idx]?.cabeHojeContradit)) {
-    return { ok: false, idAlvo, cIdxs, min: 0, limites: [] };
+  const ev = cIdxs.length === 1 ? ctx.candEvs[cIdxs[0]] : null;
+  if (ev?.cabeHojeContradit) {
+    return { ok: false, idAlvo, cIdxs, min: 0, limites: [], cabeHoje: false, cabeHojeMin: 0, fmoCabeHoje: false };
   }
   const fatosItem = fatosParaAlvo(alvoRef, ctx, false);
-  const minCand = cIdxs.length === 1 ? ctx.candEvs[cIdxs[0]]?.minutos || 0 : 0;
+  const minCand = ev?.minutos || 0;
   const minFato = fatosItem.find((f) => Number.isInteger(f.minutos) && f.minutos > 0)?.minutos || 0;
   const min = minCand > 0 ? minCand : minFato;
+  const cabeHoje = Boolean(ev?.cabeHoje);
+  const cabeHojeMin = ev?.cabeHojeMin || 0;
+  const fmoCabeHoje = Boolean(ev?.fmoCabeHoje);
+  if (cabeHoje && cabeHojeMin > 0 && min > 0 && cabeHojeMin !== min) {
+    return { ok: false, idAlvo, cIdxs, min: 0, limites: [], cabeHoje: false, cabeHojeMin: 0, fmoCabeHoje: false };
+  }
   const limItem = fatosItem.filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
   const limGlob = ctx.fatosGlobais.filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
   const limites = limItem.length > 0 ? limItem : limGlob;
-  return { ok: true, idAlvo, cIdxs, min, limites };
+  return { ok: true, idAlvo, cIdxs, min, limites, cabeHoje, cabeHojeMin, fmoCabeHoje };
+}
+
+// Regra comum positiva de elegibilidade por duracao para `dica` (`FT_DICA_CURTO`),
+// `fileira`/`achados`/`porque` (`FT_MOT_CABE_HOJE`) e `comparar` (`FT_CMP_VEREDITO_CABE`).
+function duracaoAlvoElegivel(alvoRef, ctx, { exigirLimite = false, permitirSemLimite = "nenhum" } = {}) {
+  const res = resolverDuracaoELimitesAlvo(alvoRef, ctx);
+  if (!res.ok || res.min <= 0) return { ...res, ok: false };
+  if (res.limites.length > 0) {
+    if (!res.limites.every((f) => res.min <= f.tempo_max)) return { ...res, ok: false };
+    return { ...res, ok: true };
+  }
+  if (exigirLimite) return { ...res, ok: false };
+  if (permitirSemLimite === "fmo_nativo") {
+    return { ...res, ok: res.fmoCabeHoje && res.cabeHojeMin === res.min };
+  }
+  if (permitirSemLimite === "cabe_hoje") {
+    return { ...res, ok: res.cabeHoje && res.cabeHojeMin === res.min };
+  }
+  return { ...res, ok: false };
 }
 
 function todosFatos(ctx) {
@@ -3169,8 +3234,9 @@ function motivoCandidatoAterrado(t, candIdx, ctx) {
     case "FT_MOT_SALVO":
       return ev.salvoDurs.has(args[0]);
     case "FT_MOT_CABE_HOJE": {
-      if (ev.cabeHojeContradit || !ev.cabeHoje || !ev.cabeHojeMin) return false;
-      return Number(args[0]) === ev.cabeHojeMin;
+      const dur = duracaoAlvoElegivel(`c${candIdx}`, ctx, { permitirSemLimite: "cabe_hoje" });
+      if (!dur.ok || !dur.cabeHoje || !dur.cabeHojeMin) return false;
+      return Number(args[0]) === dur.cabeHojeMin;
     }
     case "FT_MOT_FORA_CURVA":
       return ev.foraCurvaGeneros.has(args[0].slice(1));
@@ -3209,6 +3275,9 @@ function textoFatoAlvoAterrado(t, alvoRef, ctx) {
   }
   if (t.m === "FT_MOT_CABE_HOJE") {
     const min = Number(args[0]);
+    const dur = resolverDuracaoELimitesAlvo(alvoRef, ctx);
+    if (!dur.ok || dur.min <= 0 || dur.min !== min) return false;
+    if (dur.limites.length > 0 && !dur.limites.every((f) => dur.min <= f.tempo_max)) return false;
     return fatos.some((f) => (f.cabe_hoje === true || f.cabe_hoje === 1) && f.minutos === min);
   }
   if (t.m === "FT_MOT_SALVO") {
@@ -3264,6 +3333,12 @@ function fatoProvaSobe(f, tempNum) {
 function infoItemAterrado(k, l, alvoRef, ctx) {
   const permitidos = INFO_MODELS_POR_K[k];
   if (!permitidos || !permitidos.has(l.m)) return false;
+  const idAlvo = resolverIdentidadeRef(alvoRef, ctx);
+  if (!idAlvo || ctx.obrasTipoContradit?.has(idAlvo.obraKey)) return false;
+  if (obraEhFilmeDeclarado(idAlvo, ctx) &&
+      (INFO_MODELS_POR_K.continuar.has(l.m) || INFO_MODELS_POR_K.retomada.has(l.m))) {
+    return false;
+  }
   const fatos = fatosParaAlvo(alvoRef, ctx, false);
   const cIdxs = resolverCandIndicesPorRef(alvoRef, ctx);
   const candMin = cIdxs.length === 1 ? ctx.candEvs[cIdxs[0]]?.minutos || 0 : 0;
@@ -3372,22 +3447,27 @@ function dicaTextoAterrado(t, alvoDica, ctx) {
   if (!t.m || !t.m.startsWith("FT_DICA_")) return false;
   const a = Array.isArray(t.a) ? t.a : [];
   const ehGlobal = alvoDica === "__global__";
+  const idAlvo = ehGlobal ? null : resolverIdentidadeRef(alvoDica, ctx);
   const fatosAlvo = ehGlobal ? ctx.fatosGlobais : fatosParaAlvo(alvoDica, ctx, false);
   const cIdxsAlvo = ehGlobal ? [] : resolverCandIndicesPorRef(alvoDica, ctx);
 
   switch (t.m) {
     case "FT_DICA_PAROU_L1": {
       if (ehGlobal || !refsTitulosEquivalentes(a[0], alvoDica, ctx)) return false;
+      if (!idAlvo || ctx.obrasTipoContradit?.has(idAlvo.obraKey) || obraEhFilmeDeclarado(idAlvo, ctx)) return false;
       return fatosAlvo.some((f) => (f.temporada ?? f.t) === Number(a[1]) && (f.episodio ?? f.e) === Number(a[2]));
     }
     case "FT_DICA_PAROU_L2": {
+      if (ehGlobal || !idAlvo || ctx.obrasTipoContradit?.has(idAlvo.obraKey) || obraEhFilmeDeclarado(idAlvo, ctx)) return false;
       return fatosAlvo.some((f) => f.semanas === Number(a[0]));
     }
     case "FT_DICA_FALTA_L1": {
       if (ehGlobal || !refsTitulosEquivalentes(a[2], alvoDica, ctx)) return false;
+      if (!idAlvo || ctx.obrasTipoContradit?.has(idAlvo.obraKey) || obraEhFilmeDeclarado(idAlvo, ctx)) return false;
       return fatosAlvo.some((f) => f.faltam === Number(a[0]) && (f.temporada ?? f.temp) === Number(a[1]));
     }
     case "FT_DICA_FALTA_L2": {
+      if (ehGlobal || !idAlvo || ctx.obrasTipoContradit?.has(idAlvo.obraKey) || obraEhFilmeDeclarado(idAlvo, ctx)) return false;
       return fatosAlvo.some((f) => Number.isInteger(f.faltam) && f.faltam > 0);
     }
     case "FT_DICA_SALVO_L1": {
@@ -3412,12 +3492,8 @@ function dicaTextoAterrado(t, alvoDica, ctx) {
     }
     case "FT_DICA_TEMPORADA": {
       if (ehGlobal || !refsTitulosEquivalentes(a[0], alvoDica, ctx)) return false;
-      const idAlvo = resolverIdentidadeRef(alvoDica, ctx);
-      if (idAlvo && ctx.obrasTipoContradit?.has(idAlvo.obraKey)) return false;
-      if (cIdxsAlvo.length > 0 && cIdxsAlvo.every((idx) => ctx.candEvs[idx]?.tipo === "filme")) {
-        return fatosAlvo.some((f) => Number.isInteger(f.temporada ?? f.temp));
-      }
-      return true;
+      if (!idAlvo || ctx.obrasTipoContradit?.has(idAlvo.obraKey) || obraEhFilmeDeclarado(idAlvo, ctx)) return false;
+      return fatosAlvo.some((f) => fatoProvaTemporadaNova(f));
     }
     case "FT_DICA_REVER": {
       if (ehGlobal || !refsTitulosEquivalentes(a[0], alvoDica, ctx)) return false;
@@ -3427,12 +3503,7 @@ function dicaTextoAterrado(t, alvoDica, ctx) {
     }
     case "FT_DICA_CURTO": {
       if (ehGlobal || !refsTitulosEquivalentes(a[0], alvoDica, ctx)) return false;
-      const { ok, min, limites } = resolverDuracaoELimitesAlvo(alvoDica, ctx);
-      if (!ok) return false;
-      if (limites.length > 0 && (min <= 0 || !limites.every((f) => min <= f.tempo_max))) {
-        return false;
-      }
-      return true;
+      return duracaoAlvoElegivel(alvoDica, ctx, { permitirSemLimite: "fmo_nativo" }).ok;
     }
     case "FT_DICA_PERGUNTAS":
     case "FT_DICA_TRAKT":
@@ -3617,9 +3688,8 @@ function pecaAterrada(p, ctx, opts = {}) {
       if (p.veredito.m !== "FT_CMP_VEREDITO_CABE" || !textoAterrado(p.veredito, ctx, false)) return false;
       const vRef = p.veredito.a?.[0];
       if (!p.itens.some((it) => refsTitulosEquivalentes(it, vRef, ctx))) return false;
-      const { ok, cIdxs, min, limites } = resolverDuracaoELimitesAlvo(vRef, ctx);
-      if (!ok || cIdxs.length !== 1 || min <= 0) return false;
-      if (!limites.length || !limites.every((f) => min <= f.tempo_max)) return false;
+      const dur = duracaoAlvoElegivel(vRef, ctx, { exigirLimite: true });
+      if (!dur.ok || dur.cIdxs.length !== 1) return false;
     }
     return true;
   }
