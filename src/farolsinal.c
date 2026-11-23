@@ -1754,6 +1754,28 @@ int farolsinal_modelo(FarolGosto *dst) {
   if (ok) DTRAVA();
   return ok;
 }
+// A ficha ja conhecida do item: a da LRU (detalhe do TMDB, com tema e
+// pessoas reais) ANTES de qualquer reconstrucao de catalogo. So leitura —
+// nao enche a LRU com a ficha pobre derivada de CatItem, que deslocaria as
+// detalhadas. A cola da Home (farol.c) usa para dar tema a segunda fileira;
+// sem ela os "c<n>" salvos nunca tinham tema e a gosto2 nao saia (ressalva
+// da revisao FAROL45 r1). 1 = `dst` recebeu a ficha.
+int farolsinal_ficha_do_item(const CatItem *ci, FarolFicha *dst) {
+  int64_t c, real;
+  int ok = 0, serie;
+  if (!ci || !dst || !ci->imdb[0]) return 0;
+  if (!travaPronta()) return 0;
+  serie = !strcmp(ci->tipo, "series");
+  c = chaveObra(ci->imdb, serie, ci->tmdb);
+  if (c) {
+    real = aliasPara(c);
+    if (farolficha_obter(&S.fc, real, dst) ||
+        (real != c && farolficha_obter(&S.fc, c, dst)))
+      ok = 1;
+  }
+  DTRAVA();
+  return ok;
+}
 int farolsinal_origens(uint32_t *h, uint8_t *o, uint8_t *d, int max) {
   int i, n = 0;
   if (!prontoLeve()) return 0;
@@ -2282,6 +2304,38 @@ void farolsinal_esquecer(void) {
   S.sujo = 0;
   S.fichaSujo = 0;
   S.esqGer++;                 // invalida gravacao/varredura/conferida em voo
+  S.diaFrio = 0;
+  S.recarrega = 0;
+  if (S.trocando) { S.trocando = 0; S.pendTroca = 0; }
+  DTRAVA();
+}
+
+// "ZERAR/APAGAR O GOSTO" (o ajuste do Farol, contrato da issue 45): apaga o
+// modelo do PERFIL ATIVO — RAM e os dois arquivos dele no disco, para a
+// proxima carga nao reviver o gosto velho — junto dos aneis (exibidos,
+// origens) e do que estava pendente. O cache de fichas fica: e metadado do
+// TMDB, nao gosto, e a LRU do aparelho nao e da conta. Diferente de
+// farolsinal_esquecer, que e do logout e esvazia a CONTA inteira.
+// farol_gosto_zerar chama DEPOIS de tirar as fileiras da tela, com a
+// identidade ainda atual — a regravacao cairia no perfil novo invertendo
+// a ordem (contrato, item 5).
+void farolsinal_zerar_gosto(void) {
+  char cam[1100], nome[64];
+  if (!travaPronta()) { TRAVA(); garante_i(); }
+  if (S.perfil >= 1 && S.perfil <= CONTA_PERFIL_MAX) {
+    nomeGosto(S.perfil, nome, sizeof nome);
+    if (caminho(nome, cam, sizeof cam)) remove(cam);
+    nomeEstado(S.perfil, nome, sizeof nome);
+    if (caminho(nome, cam, sizeof cam)) remove(cam);
+  }
+  farolgosto_iniciar(&S.g, (uint16_t)S.perfil);
+  S.nCred = S.nPend = S.nObra = S.obraProx = S.nAli = 0;
+  S.nPed = S.nTempChk = S.nOri = S.oriProx = 0;
+  S.cur = 0; S.curSeq = 0; S.curRest = 0; S.varDe = 0; S.varCur = 0;
+  S.varSeq = 0; S.varrer = 1; S.varGer++; S.nVarId = 0;
+  S.largadaVarrida = 0; S.rec = 1;
+  S.sujo = 0;                  // nada do modelo velho para gravar de volta
+  S.esqGer++;                  // invalida gravacao/varredura/conferida em voo
   S.diaFrio = 0;
   S.recarrega = 0;
   if (S.trocando) { S.trocando = 0; S.pendTroca = 0; }

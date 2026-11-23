@@ -95,6 +95,10 @@ void home_trailer_topo_motivo(const char *motivo);
 void home_desenhar(Uint32 agora);
 // Fileiras ainda visiveis atras da copia parada do painel (salvospainel.c).
 void home_fileiras_vistas(Uint32 agora);
+// As fileiras seguem a vista neste instante? Desenhadas no quadro recente
+// ou servidas pela copia parada — o menu lateral e sobreposicoes por cima
+// contam como "na tela". O Farol le do fio da descoberta (issue 45).
+int  home_fileiras_na_tela(void);
 
 // Onde a ARTE do hero foi desenhada no ultimo quadro. A tela de detalhe usa
 // isto para nascer com o backdrop no mesmo lugar — o fundo do detalhe E a arte
