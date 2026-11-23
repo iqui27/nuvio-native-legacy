@@ -3457,6 +3457,7 @@
   T("Nova busca", "重新搜尋"),
   T("Nova categoria", "新增分類"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "設定中的新選項：依畫質或依外掛順序。"),
+  T("Nova temporada", "新一季"),
   T("Novas exibições", "新的顯示方式"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "新增選項，可自動跳過片頭、回顧和片尾。"),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "九種形狀、S/M/L 三種尺寸和排行榜。在海報上長按 OK。"),

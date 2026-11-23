@@ -3457,6 +3457,7 @@
   T("Nova busca", "Nova pretraga"),
   T("Nova categoria", "Nova kategorija"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Nova opcija u Podešavanjima: Po kvalitetu ili Iz dodatka."),
+  T("Nova temporada", "Nova sezona"),
   T("Novas exibições", "Novi prikazi"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Nove opcije za automatsko preskakanje uvoda, rezimea i odjavne špice."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Devet oblika, veličine S, M i L i rang-liste. Držite OK na posteru."),

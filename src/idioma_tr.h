@@ -3457,6 +3457,7 @@
   T("Nova busca", "Yeni arama"),
   T("Nova categoria", "Yeni kategori"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Ayarlarda yeni seçenek: Kaliteye göre veya Eklentiden."),
+  T("Nova temporada", "Yeni sezon"),
   T("Novas exibições", "Yeni görünümler"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Girişi, özeti ve jeneriği otomatik atlamak için yeni seçenekler."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Dokuz biçim, S, M ve L boyutları ve sıralamalar. Bir afişte OK’e basılı tutun."),

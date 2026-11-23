@@ -3457,6 +3457,7 @@
   T("Nova busca", "Új keresés"),
   T("Nova categoria", "Új kategória"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Új lehetőség a Beállításokban: Minőség szerint vagy A bővítményből."),
+  T("Nova temporada", "Új évad"),
   T("Novas exibições", "Új megjelenítések"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Új lehetőségek az intró, az összefoglaló és a stáblista automatikus átugrásához."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Kilenc forma, S, M és L méret és rangsorok. Tartsd lenyomva az OK-t egy plakáton."),

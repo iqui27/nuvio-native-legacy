@@ -3457,6 +3457,7 @@
   T("Nova busca", "Νέα αναζήτηση"),
   T("Nova categoria", "Νέα κατηγορία"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Νέα επιλογή στις Ρυθμίσεις: Κατά ποιότητα ή Από το πρόσθετο."),
+  T("Nova temporada", "Νέα σεζόν"),
   T("Novas exibições", "Νέοι τρόποι προβολής"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Νέες επιλογές για αυτόματη παράλειψη εισαγωγής, ανακεφαλαίωσης και τίτλων."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Εννέα σχήματα, μεγέθη S, M και L και κατατάξεις. Κρατήστε πατημένο το OK σε μια αφίσα."),

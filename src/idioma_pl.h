@@ -3457,6 +3457,7 @@
   T("Nova busca", "Nowe wyszukiwanie"),
   T("Nova categoria", "Nowa kategoria"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Nowa opcja w Ustawieniach: Według jakości lub Z dodatku."),
+  T("Nova temporada", "Nowy sezon"),
   T("Novas exibições", "Nowe sposoby wyświetlania"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Nowe opcje automatycznego pomijania intro, streszczenia i napisów końcowych."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Dziewięć kształtów, rozmiary S, M i L oraz rankingi. Przytrzymaj OK na plakacie."),

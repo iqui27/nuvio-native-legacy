@@ -3457,6 +3457,7 @@
   T("Nova busca", "Nuova ricerca"),
   T("Nova categoria", "Nuova categoria"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Nuova opzione in Impostazioni: Per qualità o Dall’add-on."),
+  T("Nova temporada", "Nuova stagione"),
   T("Novas exibições", "Nuove visualizzazioni"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Nuove opzioni per saltare automaticamente intro, riepilogo e titoli di coda."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Nove forme, dimensioni S, M e L e classifiche. Tieni premuto OK su una locandina."),

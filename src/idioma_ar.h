@@ -3457,6 +3457,7 @@
   T("Nova busca", "بحث جديد"),
   T("Nova categoria", "فئة جديدة"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "خيار جديد في الإعدادات: حسب الجودة أو من الإضافة."),
+  T("Nova temporada", "موسم جديد"),
   T("Novas exibições", "تخطيطات جديدة"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "خيارات جديدة لتخطي المقدمة والملخص والشارة تلقائيًا."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "تسعة أشكال، وأحجام S وM وL وترتيبات. اضغط مطولًا على OK في ملصق."),

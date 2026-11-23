@@ -3456,6 +3456,7 @@
   T("Nova busca", "Новый поиск"),
   T("Nova categoria", "Новая категория"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Новая опция в настройках: По качеству или От дополнения."),
+  T("Nova temporada", "Новый сезон"),
   T("Novas exibições", "Новые отображения"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Новые опции автоматического пропуска заставки, краткого содержания и титров."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Девять форм, размеры S, M и L и рейтинги. Удерживайте OK на постере."),

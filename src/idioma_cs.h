@@ -3457,6 +3457,7 @@
   T("Nova busca", "Nové hledání"),
   T("Nova categoria", "Nová kategorie"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Nová volba v Nastavení: Podle kvality nebo Z doplňku."),
+  T("Nova temporada", "Nová řada"),
   T("Novas exibições", "Nová zobrazení"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Nové volby pro automatické přeskočení úvodu, rekapitulace a titulků."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Devět tvarů, velikosti S, M a L a žebříčky. Podržte OK na plakátu."),

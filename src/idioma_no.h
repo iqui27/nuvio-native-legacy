@@ -3457,6 +3457,7 @@
   T("Nova busca", "Nytt søk"),
   T("Nova categoria", "Ny kategori"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Nytt valg i Innstillinger: Etter kvalitet eller Fra tillegget."),
+  T("Nova temporada", "Ny sesong"),
   T("Novas exibições", "Nye visninger"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Nye valg for å hoppe over intro, oppsummering og rulletekst automatisk."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Ni former, størrelsene S, M og L og rangeringer. Hold inne OK på en plakat."),

@@ -3457,6 +3457,7 @@
   T("Nova busca", "新しい検索"),
   T("Nova categoria", "新しいカテゴリ"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "設定に新しい選択肢：品質順またはアドオン順。"),
+  T("Nova temporada", "新シーズン"),
   T("Novas exibições", "新しい表示"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "オープニング、あらすじ、クレジットを自動でスキップする新オプション。"),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "9 種類の形、S・M・L サイズ、ランキング。ポスターで OK を長押ししてください。"),

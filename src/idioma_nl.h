@@ -3457,6 +3457,7 @@
   T("Nova busca", "Nieuwe zoekopdracht"),
   T("Nova categoria", "Nieuwe categorie"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Nieuwe optie in Instellingen: Op kwaliteit of Van add-on."),
+  T("Nova temporada", "Nieuw seizoen"),
   T("Novas exibições", "Nieuwe weergaven"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Nieuwe opties om intro, samenvatting en aftiteling automatisch over te slaan."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Negen vormen, formaten S, M en L en ranglijsten. Houd OK ingedrukt op een poster."),

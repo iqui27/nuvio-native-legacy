@@ -3457,6 +3457,7 @@
   T("Nova busca", "Nova pesquisa"),
   T("Nova categoria", "Nova categoria"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Nova opção em Definições: Por qualidade ou Do addon."),
+  T("Nova temporada", "Nova temporada"),
   T("Novas exibições", "Novas apresentações"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Novas opções para saltar genérico, resumo e créditos automaticamente."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Nove formas, tamanhos P, M e G e rankings. Mantenha OK premido num cartaz."),

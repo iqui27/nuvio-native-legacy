@@ -3456,6 +3456,7 @@
   { "Nova busca", "New search" },
   { "Nova categoria", "New category" },
   { "Nova opção em Ajustes: Por qualidade ou Do addon.", "New option in Settings: By quality or From the addon." },
+  { "Nova temporada", "New season" },
   { "Novas exibições", "New layouts" },
   { "Novas opções para pular abertura, recapitulação e créditos sozinho.", "New options to skip the intro, recap and credits automatically." },
   { "Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Nine shapes, S, M and L sizes and rankings. Hold OK on a poster." },

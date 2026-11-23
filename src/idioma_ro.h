@@ -3456,6 +3456,7 @@
   T("Nova busca", "Căutare nouă"),
   T("Nova categoria", "Categorie nouă"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Opțiune nouă în Setări: După calitate sau Din add-on."),
+  T("Nova temporada", "Sezon nou"),
   T("Novas exibições", "Afișări noi"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Opțiuni noi pentru a sări automat peste generic, rezumat și final."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Nouă forme, mărimi S, M și L și clasamente. Ține apăsat OK pe un afiș."),

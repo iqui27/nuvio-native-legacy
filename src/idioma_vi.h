@@ -3457,6 +3457,7 @@
   T("Nova busca", "Tìm kiếm mới"),
   T("Nova categoria", "Danh mục mới"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Tùy chọn mới trong Cài đặt: Theo chất lượng hoặc Từ tiện ích."),
+  T("Nova temporada", "Mùa mới"),
   T("Novas exibições", "Kiểu hiển thị mới"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Tùy chọn mới để tự bỏ qua phần mở đầu, tóm tắt và danh đề."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Chín hình dạng, cỡ S, M và L và bảng xếp hạng. Giữ OK trên một poster."),

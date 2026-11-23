@@ -3457,6 +3457,7 @@
   T("Nova busca", "Pencarian baru"),
   T("Nova categoria", "Kategori baru"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Opsi baru di Pengaturan: Menurut kualitas atau Dari add-on."),
+  T("Nova temporada", "Musim baru"),
   T("Novas exibições", "Cara tampil baru"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Opsi baru untuk melewati intro, rekap, dan kredit secara otomatis."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Sembilan bentuk, ukuran S, M, dan L, serta peringkat. Tahan OK pada poster."),

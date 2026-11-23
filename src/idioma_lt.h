@@ -3457,6 +3457,7 @@
   T("Nova busca", "Nauja paieška"),
   T("Nova categoria", "Nauja kategorija"),
   T("Nova opção em Ajustes: Por qualidade ou Do addon.", "Nauja parinktis Nustatymuose: Pagal kokybę arba Iš priedo."),
+  T("Nova temporada", "Naujas sezonas"),
   T("Novas exibições", "Nauji vaizdai"),
   T("Novas opções para pular abertura, recapitulação e créditos sozinho.", "Naujos parinktys automatiškai praleisti įžangą, santrauką ir titrus."),
   T("Nove formas, tamanhos P, M e G e ranking. Segure OK num pôster.", "Devynios formos, dydžiai S, M ir L ir reitingai. Palaikykite OK ant plakato."),

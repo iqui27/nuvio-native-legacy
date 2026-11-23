@@ -113,10 +113,13 @@ void continuar_desenhar(const CatItem *ci, GfxRect r, float raio) {
     if (futuro && cwo_data_curta(estreia, agoraMs, ajustes_idioma(), 0, quando, sizeof quando))
       snprintf(selo, sizeof selo, i18n("Estreia %s"), quando);
     // "Novo episodio": o "a seguir" que foi ao ar ha no maximo 7 dias. Mesmo
-    // selo neutro dos outros; so o texto muda.
+    // selo neutro dos outros; so o texto muda. "Nova temporada" quando esse
+    // episodio abre uma temporada (S2E1, S3E1...): a mesma janela de 7 dias,
+    // entao maratonar uma serie antiga continua dizendo "A seguir".
     else if (aSeguir && estreia != CWO_SEM_DATA && estreia <= agoraMs &&
              agoraMs - estreia < 7LL * 24 * 3600 * 1000)
-      snprintf(selo, sizeof selo, "%s", i18n("Novo episódio"));
+      snprintf(selo, sizeof selo, "%s",
+               ci->temporada > 1 && ci->episodio == 1 ? i18n("Nova temporada") : i18n("Novo episódio"));
     else if (aSeguir)
       snprintf(selo, sizeof selo, "%s", i18n("A seguir"));
     else if (h && m) snprintf(selo, sizeof selo, i18n("%dh %dmin Restantes"), h, m);
