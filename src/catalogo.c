@@ -1400,45 +1400,14 @@ const CatItem *cat_item(int i) {
   }
 }
 
-// ":<digitos>:<digitos>" e so isso — o sufixo de temporada/episodio.
-static int ehSufixoEp(const char *r, int anime) {
-  int n = 0;
-  if (*r != ':') return 0;
-  r++;
-  while (*r >= '0' && *r <= '9') { r++; n++; }
-  // Anime carrega o episodio ABSOLUTO num so sufixo ("kitsu:7442:17",
-  // idbase.h). Sem este ramo o id de progresso nao achava o proprio titulo e
-  // o Next abria o item do indice -1 embrulhado — um show sem relacao (#697).
-  if (!*r) return anime && n;
-  if (*r != ':') return 0;
-  r++; n = 0;
-  while (*r >= '0' && *r <= '9') { r++; n++; }
-  return n && !*r;
-}
-
-// ERA "compara so ate o primeiro ':'", porque serie com progresso e guardada
-// como "tt123:2:1" e quem procura tem so "tt123". O corte cego cobrava caro em
-// id que NAO e do IMDb: canal e "cs:channel:<hash>", e o primeiro ':' cai logo
-// depois do prefixo de duas letras — todo canal virava "cs", qualquer um
-// "achava" o primeiro da lista, e clicar num abria outro (#37, relato apos a
-// 1.0.42: "jumps to a different channel"). O mesmo valia para "kitsu:12345".
-//
-// A regra agora nao adivinha pelo prefixo: ou os dois ids sao iguais, ou o que
-// sobra de um lado e EXATAMENTE ":<temporada>:<episodio>". E o unico sufixo que
-// este codigo mesmo cria.
+// A regra nao adivinha pelo prefixo: ou os dois ids sao iguais, ou o que
+// sobra de um lado e EXATAMENTE ":<temporada>:<episodio>". E o unico sufixo
+// que este codigo mesmo cria. A historia inteira (o corte cego no primeiro
+// ':' que fazia todo canal "cs:channel:<hash>" virar o mesmo titulo, #37, e
+// o episodio absoluto de anime, #697) esta em idbase_mesmo, idbase.h — uma
+// regra so, usada tambem por mapa.c, explorar.c e farolsinal.c (CATREVB).
 static int mesmoTitulo(const char *a, const char *b) {
-  size_t na, nb;
-  if (!strcmp(a, b)) return 1;
-  // O que pode sobrar de um lado e SO ":<temporada>:<episodio>", que e como o
-  // progresso de serie e chaveado. Quem procura tem o id do titulo; quem esta
-  // guardado pode ter o episodio grudado. Qualquer outra diferenca e outro
-  // titulo.
-  na = strlen(a); nb = strlen(b);
-  { const char *lon = na > nb ? a : b, *cur = na > nb ? b : a;
-    size_t nc = na > nb ? nb : na;
-    const char *r = lon + nc;
-    if (strncmp(lon, cur, nc)) return 0;
-    return ehSufixoEp(r, !idbase_e_imdb(lon) || !idbase_e_imdb(cur)); }
+  return idbase_mesmo(a, b);
 }
 
 void cat_dir_gravacao(const char *dir) {

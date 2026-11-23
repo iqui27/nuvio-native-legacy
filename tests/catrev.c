@@ -9,7 +9,13 @@
 //       nova, resolvidos pela identidade da obra;
 //   (b) troca entre quadros do Explorar (explorar_iniciar -> atualizar ->
 //       abrir_titulo -> Voltar -> explorar_pediu_abrir): o indice pedido
-//       para abrir a pagina tem de ser a mesma obra, nao a mesma posicao.
+//       para abrir a pagina tem de ser a mesma obra, nao a mesma posicao;
+//   (c) a serie do card de Continuar, "tt...:T:E" no catalogo e "tt..." na
+//       mao — a comparacao e pelo id base MESMO sem troca (CATREVB);
+//   (d) id cru sem IMDb/TMDB ("kitsu:..."): republicacao identica nao apaga
+//       o catIndice nem impede o cartaz de abrir (CATREVB);
+//   (e) homonimo sem IMDb (id "tmdb:N") na posicao velha: a vizinhanca
+//       re-resolve pela identidade em vez de adotar o item errado (CATREVB).
 //
 // Sem rede (rede_baixar -> NULL, sem chave do TMDB): so o caminho local roda.
 // O fio do clima sobe de verdade (a fusao republica), entao cada copiar antes
@@ -147,11 +153,35 @@ static void confere(const char *o_que, int ok) {
   if (!ok) falhas++;
 }
 
-// Mesma identidade da correcao: tipo + IMDb; sem IMDb, TMDB (campo ou id
-// "tmdb:N"); sem nenhum, titulo + tipo.
+// Mesma regra de idbase_mesmo (igual, ou sobra exata ":<digitos>" para id
+// nao-IMDb / ":<digitos>:<digitos>"), copiada aqui para o teste compilar
+// tambem contra a base — que ainda nao tem a funcao em idbase.h.
+static int mesmoId(const char *a, const char *b) {
+  size_t na, nb, nc;
+  const char *lon, *cur, *r;
+  int n = 0, anime;
+  if (!a || !b) return 0;
+  if (!strcmp(a, b)) return 1;
+  na = strlen(a); nb = strlen(b);
+  lon = na > nb ? a : b; cur = na > nb ? b : a; nc = na > nb ? nb : na;
+  if (strncmp(lon, cur, nc)) return 0;
+  anime = strncmp(lon, "tt", 2) || strncmp(cur, "tt", 2);
+  r = lon + nc;
+  if (*r != ':') return 0;
+  r++;
+  while (*r >= '0' && *r <= '9') { r++; n++; }
+  if (!*r) return anime && n;
+  if (*r != ':') return 0;
+  r++; n = 0;
+  while (*r >= '0' && *r <= '9') { r++; n++; }
+  return n && !*r;
+}
+
+// Mesma identidade da correcao: tipo + IMDb pelo id base; sem IMDb, TMDB
+// (campo ou id "tmdb:N"); sem nenhum, titulo + tipo.
 static int mesmaObra(const CatItem *ci, const MapaObra *o) {
   if (!ci || strcmp(ci->tipo, o->tipo)) return 0;
-  if (o->imdb[0]) return !strcmp(ci->imdb, o->imdb);
+  if (o->imdb[0]) return mesmoId(ci->imdb, o->imdb);
   if (o->tmdb) {
     if (ci->tmdb == o->tmdb) return 1;
     if (!strncmp(ci->imdb, "tmdb:", 5) && atol(ci->imdb + 5) == o->tmdb) return 1;
@@ -250,6 +280,11 @@ int main(void) {
   drenarCopias(&cl, &rev);
   confere("montagem tem itens nos climas", cl.n > 0);
   confere("indices da montagem batem com o catalogo A", indicesBatem(&cl));
+  // O fio do clima sai depois da fusao inicial. Esperar ele aqui evita a
+  // corrida em que a fusao dele revalida os indices no meio do
+  // cat_definir_tudo seguinte (a janela em que n ja e 0 e itens ainda e o
+  // bloco velho — o retrato sairia todo -1 e ficaria ate a proxima troca).
+  usleep(150000);
 
   { CatItem *b = montarCatalogo(&n, 1);
     unsigned revAntes = cat_revisao();
@@ -295,6 +330,114 @@ int main(void) {
     } else {
       // Recusar a posicao velha tambem e correto: nunca abrir a obra errada.
       confere("Voltar sem obra resolvida nao abre o homonimo", 1);
+    }
+    free(b);
+  }
+
+  // (c) a serie do card de Continuar --------------------------------------
+  // O catalogo guarda o item como "tt...:T:E" e quem procura a serie tem so
+  // o id base ("tt...") — mapa_obra_do_catalogo corta o sufixo, como faz o
+  // Detalhe. SEM troca de catalogo nenhuma: a comparacao tem de ser pelo id
+  // base, a regra de cat_indice_por_imdb (CATREVB).
+  { MapaObra o;
+    CatEp eps[3];
+    unsigned vrev = 0;
+    static MapaVizinhos viz;
+    memset(eps, 0, sizeof eps);
+    memset(&viz, 0, sizeof viz);
+    snprintf(a[5].imdb, sizeof a[5].imdb, "tt7770005:1:2");
+    cat_definir_tudo(a, n, NULL, 0);
+    for (i = 0; i < 3; i++) { eps[i].temporada = 1; eps[i].episodio = i + 1; }
+    cat_definir_episodios(5, eps, 3);
+    confere("catalogo acha o card pelo id base",
+            cat_indice_por_imdb("tt7770005") == 5 && cat_n_episodios(5) == 3);
+    confere("obra do card sai com o id base",
+            mapa_obra_do_catalogo(5, &o) &&
+            !strcmp(o.imdb, "tt7770005") && o.catIndice == 5);
+    explorar_iniciar();
+    explorar_atualizar(0.016f, 16);
+    explorar_abrir_titulo(&o);
+    explorar_atualizar(0.016f, 32);
+    tecla(SDLK_ESCAPE);                     // Voltar: 1o degrau, ORIGEM_DETALHE
+    idx = -1;
+    confere("Voltar do Explorar reabre o Detalhe do card de Continuar",
+            explorar_pediu_abrir(&idx) && idx == 5);
+    mapa_vizinhos_pedir(&o, 0, NULL);
+    mapa_vizinhos_copiar(&viz, &vrev);
+    confere("vizinhanca do card usa o item do catalogo",
+            viz.foco.catIndice == 5);
+  }
+
+  // (d) id cru (kitsu:, servidor pessoal) ----------------------------------
+  // Sem IMDb nem TMDB, a identidade e o id do item inteiro: uma republicacao
+  // IDENTICA do catalogo (cat_revisao sobe igual) nao pode apagar o catIndice
+  // nem impedir o cartaz de abrir (CATREVB).
+  { static MapaClimas cl2;
+    const MapaObra *o2 = NULL;
+    unsigned rev2 = 0;
+    snprintf(a[2].imdb, sizeof a[2].imdb, "kitsu:4242");
+    cat_definir_tudo(a, n, NULL, 0);
+    explorar_iniciar();
+    explorar_atualizar(0.016f, 16);
+    memset(&cl2, 0, sizeof cl2);
+    drenarCopias(&cl2, &rev2);
+    for (i = 0; i < cl2.n && !o2; i++)
+      for (j = 0; j < cl2.c[i].n; j++)
+        if (!strcmp(cl2.c[i].itens[j].titulo, "Titulo 2")) o2 = &cl2.c[i].itens[j];
+    confere("cartaz kitsu: com indice antes da republicacao",
+            o2 && o2->catIndice == 2);
+    cat_definir_tudo(a, n, NULL, 0);        // mesmo conteudo, revisao sobe
+    explorar_atualizar(0.016f, 32);
+    explorar_atualizar(0.016f, 48);
+    memset(&cl2, 0, sizeof cl2);
+    rev2 = 0;
+    drenarCopias(&cl2, &rev2);
+    o2 = NULL;
+    for (i = 0; i < cl2.n && !o2; i++)
+      for (j = 0; j < cl2.c[i].n; j++)
+        if (!strcmp(cl2.c[i].itens[j].titulo, "Titulo 2")) o2 = &cl2.c[i].itens[j];
+    confere("depois da republicacao identica o cartaz kitsu: segue no catalogo",
+            o2 && o2->catIndice == 2);
+    if (o2) {
+      explorar_abrir_titulo(o2);
+      explorar_atualizar(0.016f, 64);
+      tecla(SDLK_ESCAPE);
+      idx = -1;
+      confere("Voltar reabre a pagina do cartaz kitsu:",
+              explorar_pediu_abrir(&idx) && idx == 2);
+    } else confere("Voltar reabre a pagina do cartaz kitsu:", 0);
+  }
+
+  // (e) homonimo sem IMDb (id "tmdb:N") na posicao velha --------------------
+  // A obra so tem TMDB e o catalogo trocou: o homonimo ficou na posicao
+  // antiga. A vizinhanca nao pode adota-lo — re-resolve pela identidade
+  // (CATREVB).
+  { MapaObra alvo;
+    CatItem *b = montarCatalogo(&n, 1);
+    unsigned vrev = 0;
+    static MapaVizinhos viz;
+    memset(&viz, 0, sizeof viz);
+    snprintf(b[3].imdb, sizeof b[3].imdb, "tmdb:9999");   // homonimo na pos. velha
+    snprintf(b[6].imdb, sizeof b[6].imdb, "tmdb:3003");   // a obra foi para a 6
+    alvo = obraEm(a, 3);
+    alvo.imdb[0] = 0;
+    alvo.tmdb = 3003;
+    cat_definir_tudo(b, n, NULL, 0);
+    mapa_vizinhos_pedir(&alvo, 0, NULL);
+    mapa_vizinhos_copiar(&viz, &vrev);
+    confere("vizinhanca sem IMDb (tmdb:N) re-resolve e nao adota o homonimo",
+            viz.foco.catIndice == 6);
+    // Com IMDb, o caso que a r1 ja cobria: nao adota e re-resolve.
+    { MapaObra t = obraEm(a, 4);
+      CatItem *c2 = montarCatalogo(&n, 1);
+      snprintf(c2[4].imdb, sizeof c2[4].imdb, "tt7779994");  // homonimo na 4
+      c2[8] = a[4];                                          // o real foi para a 8
+      cat_definir_tudo(c2, n, NULL, 0);
+      mapa_vizinhos_pedir(&t, 0, NULL);
+      mapa_vizinhos_copiar(&viz, &vrev);
+      confere("vizinhanca com IMDb nao adota o homonimo e re-resolve",
+              viz.foco.catIndice == 8);
+      free(c2);
     }
     free(b);
   }

@@ -13,6 +13,7 @@
 
 #ifndef NV_MAPA_PURO
 #include "catalogo.h"
+#include "idbase.h"
 #include "descoberta.h"
 #include "farolsinal.h"
 #include "progresso.h"
@@ -1303,6 +1304,10 @@ static void obraDoItem(const CatItem *ci, int indice, MapaObra *o) {
   o->ano = mapa_ano_meta(ci->meta);
   o->nota = ci->nota;
   o->catIndice = indice;
+  // O id cru tambem, inteiro: "tt123:2:1" (card de Continuar) e ids sem
+  // equivalente IMDb/TMDB ("kitsu:...", servidor pessoal) continuam
+  // identificaveis quando o catIndice for refeito (CATREVB).
+  snprintf(o->catId, sizeof o->catId, "%s", ci->imdb);
 }
 
 static void sementeDoItem(const CatItem *ci, int indice, int origem, MapaSemente *s) {
@@ -1339,7 +1344,9 @@ static int itemPorImdb(const char *imdb) {
   if (!imdb || !imdb[0]) return -1;
   for (i = 0; i < n; i++) {
     const CatItem *ci = cat_item(i);
-    if (ci && !strcmp(ci->imdb, imdb)) return i;
+    // idbase_mesmo, a regra de cat_indice_por_imdb: a serie do card de
+    // Continuar ("tt123:2:1") tambem e o titulo "tt123" (CATREVB).
+    if (ci && idbase_mesmo(ci->imdb, imdb)) return i;
   }
   return -1;
 }
@@ -1528,6 +1535,8 @@ static void lerObraCampos(char **p, MapaObra *o) {
   snprintf(o->fundo, sizeof o->fundo, "%s", campo(p));
   snprintf(o->sinopse, sizeof o->sinopse, "%s", campo(p));
   o->catIndice = -1;
+  o->catId[0] = 0;           // o cache nao grava o id cru: posicao reaproveitada
+                             // nao pode herdar a identidade da carga anterior
 }
 
 static void cacheLer(Cache *c, const char *nome, const char *idioma) {
@@ -2281,6 +2290,34 @@ static void *vizTrabalhar(void *arg) {
   return NULL;
 }
 
+// O item `ci` e a obra `o`? Para adotar o catIndice guardado na vizinhanca:
+// com IMDb, o id base confere (o card de Continuar guarda "tt123:2:1"); sem
+// IMDb, o TMDB (campo ou o id "tmdb:N"); sem nenhum, o id cru ("kitsu:...").
+// Sem id nenhum resta o titulo — conferido pelo chamador.
+static int vizMesmoItem(const CatItem *ci, const MapaObra *o) {
+  if (o->imdb[0]) return idbase_mesmo(ci->imdb, o->imdb);
+  if (o->tmdb) {
+    if (ci->tmdb == o->tmdb) return 1;
+    return !strncmp(ci->imdb, "tmdb:", 5) && atol(ci->imdb + 5) == o->tmdb;
+  }
+  if (o->catId[0]) return idbase_mesmo(ci->imdb, o->catId);
+  return 1;
+}
+
+// Posicao da obra no catalogo ATUAL, pela identidade + titulo; -1 fora.
+static int vizIndiceDaObra(const MapaObra *o) {
+  int i, n;
+  unsigned ht;
+  if (!o->imdb[0] && !o->tmdb && !o->catId[0]) return -1;
+  ht = mapa_hash_titulo(o->titulo);
+  n = cat_n();
+  for (i = 0; i < n; i++) {
+    const CatItem *ci = cat_item(i);
+    if (ci && mapa_hash_titulo(ci->titulo) == ht && vizMesmoItem(ci, o)) return i;
+  }
+  return -1;
+}
+
 void mapa_vizinhos_pedir(const MapaObra *obra, long pessoaPref, const char *temaPref) {
   static MapaSemente foco;
   static MapaVizCand pool[VIZ_POOL];
@@ -2328,10 +2365,11 @@ void mapa_vizinhos_pedir(const MapaObra *obra, long pessoaPref, const char *tema
   { const CatItem *ci = idx >= 0 && idx < cat_n() ? cat_item(idx) : NULL;
     unsigned ht = mapa_hash_titulo(obra->titulo);
     // Titulo igual nao basta: um indice reaproveitado por obra homonima leva
-    // ao item errado. Com IMDb conhecido, ele tambem tem de conferir.
-    if (!ci || mapa_hash_titulo(ci->titulo) != ht ||
-        (obra->imdb[0] && strcmp(ci->imdb, obra->imdb)))
-      idx = itemPorImdb(obra->imdb);
+    // ao item errado. Com id conhecido (IMDb; sem ele, TMDB ou o id cru), a
+    // identidade tambem tem de conferir — e a re-resolucao e por ela, para
+    // achar a obra na posicao nova em vez de so recusar a velha (CATREVB).
+    if (!ci || mapa_hash_titulo(ci->titulo) != ht || !vizMesmoItem(ci, obra))
+      idx = vizIndiceDaObra(obra);
     ci = idx >= 0 && idx < cat_n() ? cat_item(idx) : NULL;
     if (ci && mapa_hash_titulo(ci->titulo) == ht) {
       sementeDoItem(ci, idx, MAPA_ORIGEM_VISTO, &foco);
@@ -2412,18 +2450,19 @@ static char climaChaveApi[96], climaIdioma[12];
 // Titulo sozinho NAO serve: duas obras homonimas dividiriam o mesmo indice.
 static int obraConfere(const CatItem *ci, const MapaObra *o) {
   if (!ci || strcmp(ci->tipo, o->tipo)) return 0;
-  if (o->imdb[0]) return !strcmp(ci->imdb, o->imdb);
+  if (o->imdb[0]) return idbase_mesmo(ci->imdb, o->imdb);
   if (o->tmdb) {
     if (ci->tmdb == o->tmdb) return 1;
     if (!strncmp(ci->imdb, "tmdb:", 5) && atol(ci->imdb + 5) == o->tmdb) return 1;
   }
+  if (o->catId[0]) return idbase_mesmo(ci->imdb, o->catId);
   return 0;
 }
 
 // Posicao da obra no catalogo ATUAL, pela identidade; -1 quando ela nao esta.
 static int climaIndiceDaObra(const MapaObra *o) {
   int i, n;
-  if (!o->imdb[0] && !o->tmdb) return -1;
+  if (!o->imdb[0] && !o->tmdb && !o->catId[0]) return -1;
   n = cat_n();
   for (i = 0; i < n; i++) if (obraConfere(cat_item(i), o)) return i;
   return -1;

@@ -27,6 +27,7 @@
 #include "mapa.h"
 #include "posterprov.h"
 #include "catalogo.h"
+#include "idbase.h"
 #include "descoberta.h"
 #include "tex_cache.h"
 #include "gfx.h"
@@ -258,24 +259,27 @@ static void metaObra(const MapaObra *o, char *dst, size_t n) {
   else snprintf(dst, n, "%s%s", tipo, nota);
 }
 
-// O item `ci` e a obra `o`? A identidade e tipo + IMDb; sem IMDb, TMDB —
-// campo proprio ou o id "tmdb:N". Sem nenhum dos dois resta titulo + tipo,
+// O item `ci` e a obra `o`? A identidade e tipo + IMDb pelo id base — a serie
+// do card de Continuar e "tt123:2:1" no catalogo e "tt123" aqui (CATREVB);
+// sem IMDb, TMDB — campo proprio ou o id "tmdb:N"; sem nenhum dos dois, o id
+// cru do item (kitsu:, servidor pessoal). Sem id nenhum resta titulo + tipo,
 // o mesmo criterio de antes (aceita o homonimo como ultimo recurso).
 static int obraConfere(const CatItem *ci, const MapaObra *o) {
   if (!ci || strcmp(ci->tipo, o->tipo)) return 0;
-  if (o->imdb[0]) return !strcmp(ci->imdb, o->imdb);
+  if (o->imdb[0]) return idbase_mesmo(ci->imdb, o->imdb);
   if (o->tmdb) {
     if (ci->tmdb == o->tmdb) return 1;
     if (!strncmp(ci->imdb, "tmdb:", 5) && atol(ci->imdb + 5) == o->tmdb) return 1;
     return 0;
   }
+  if (o->catId[0]) return idbase_mesmo(ci->imdb, o->catId);
   return !strcmp(ci->titulo, o->titulo);
 }
 
 // Posicao da obra no catalogo ATUAL, pela identidade; -1 quando ela nao esta.
 static int indiceDaObra(const MapaObra *o) {
   int i, n;
-  if (!o->imdb[0] && !o->tmdb) return -1;
+  if (!o->imdb[0] && !o->tmdb && !o->catId[0]) return -1;
   n = cat_n();
   for (i = 0; i < n; i++) if (obraConfere(cat_item(i), o)) return i;
   return -1;
@@ -1495,7 +1499,10 @@ void explorar_encerrar(void) {
 void explorar_atualizar(float dt, Uint32 agora) {
   int reduzida = ajustes_animacoes_reduzidas();
   (void)agora;
-  climasRevisar();
+  // A copia PRIMEIRO: catalogo trocado dispara climaFundir dentro dela, que ja
+  // re-resolve e republica os indices — a copia chega conferida. climasRevisar
+  // depois so varre de novo se a revisao andou na fresta (CATREVB: antes eram
+  // duas varreduras itens x catalogo no quadro seguinte a cada troca).
   if (mapa_climas_copiar(&climas, &climasRev)) {
     climasCat = cat_revisao();
 #ifdef NV_TOUCH_UI
@@ -1506,6 +1513,7 @@ void explorar_atualizar(float dt, Uint32 agora) {
     // O /discover do clima aberto chegou: as fileiras crescem, o foco fica.
     climaSeparar();
   }
+  climasRevisar();
   if (mapa_vizinhos_copiar(&viz, &vizRev)) {
 #ifdef NV_TOUCH_UI
     if(telefoneui_ativo() && modo==MODO_VIZ)ponteiro_cancelar_alvo(ponteiroViz);

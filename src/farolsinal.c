@@ -20,6 +20,7 @@
 #include "dados.h"
 #include "dormiu.h"
 #include "farolanel.h"
+#include "idbase.h"
 #include "js.h"
 #include "mapa.h"
 #include "perfis.h"
@@ -1960,9 +1961,12 @@ static void confereTemporada(const char *id, int t, int perfil, int ger) {
     const CatItem *ci;
     // Cada leitura so vale se `idx` ainda e a mesma obra: uma troca de
     // catalogo no meio do laco recicla o numero para outro item (CATREV) —
-    // revisao + limites + identidade a cada passada.
+    // revisao + limites + identidade a cada passada. A identidade e o id
+    // base: a serie do card de Continuar fica "tt123:2:1" no catalogo e a
+    // busca (cat_indice_por_imdb) acha por "tt123" — a mesma regra dos dois
+    // lados, senao a guarda reprova a propria obra (CATREVB).
     if (cat_revisao() != catRev || idx >= cat_n() ||
-        (ci = cat_item(idx)) == NULL || strcmp(ci->imdb, id)) return;
+        (ci = cat_item(idx)) == NULL || !idbase_mesmo(ci->imdb, id)) return;
     if ((ep = cat_episodio(idx, i)) == NULL || ep->temporada != t) continue;
     tot++;
     if (diario_episodio(perfil, id, t, ep->episodio, NULL)) vistos++;
@@ -1973,7 +1977,7 @@ static void confereTemporada(const char *id, int t, int perfil, int ger) {
   if (!fioMorre && S.perfil == perfil && S.varGer == ger &&
       cat_revisao() == catRev && achaHb(hb) < 0) {
     const CatItem *ci = idx < cat_n() ? cat_item(idx) : NULL;
-    if (ci && !strcmp(ci->imdb, id)) {
+    if (ci && idbase_mesmo(ci->imdb, id)) {
       Cred c;
       long tmdb = ci->tmdb;
       long long agora = agoraS();
@@ -2039,9 +2043,10 @@ static void varreLargada(int perfil, int ger) {
       const CatEp *ep;
       const CatItem *ci;
       // Mesma guarda da confereTemporada: a leitura so vale se `idx` ainda e
-      // o item de contentId — revisao + limites + identidade (CATREV).
+      // o item de contentId — revisao + limites + identidade pelo id base
+      // (CATREV/CATREVB).
       if (cat_revisao() != catRev || idx >= cat_n() ||
-          (ci = cat_item(idx)) == NULL || strcmp(ci->imdb, regs[i].contentId))
+          (ci = cat_item(idx)) == NULL || !idbase_mesmo(ci->imdb, regs[i].contentId))
         break;
       ep = cat_episodio(idx, k);
       if (ep && (ep->temporada > t || (ep->temporada == t && ep->episodio > e)))
