@@ -29,6 +29,7 @@ import { rotaTrava, travaRev } from "./trava.js";
 import { resolverCanonica, canonizarEntrada, identidadesDe, rotaIdentidades, idSimkl,
          perfilExiste, RECURSO } from "./identidade.js";
 import { rotaFarolRegistro, rotaFarolConhecido, rotaFarolPagina, limparFarol, FAROL_CORPO_MAX } from "./farol.js";
+import { rotaFarolBusca, FAROL_BUSCA_CORPO_MAX } from "./farol-busca.js";
 
 const DIA = 86400;
 const RETENCAO = 90 * DIA;
@@ -1108,11 +1109,12 @@ export default {
     // e o cliente em C nao vai montar um "{}" so para agradar o parser.
     let corpo = {};
     if (req.method === "POST") {
-      if (rota === "/v1/farol/registro") {
-        // Farol: o teto de 64 KB vale para os bytes CRUS, medido ANTES de
-        // materializar o corpo — Content-Length honesto recusa na hora e a
-        // leitura limitada cobre chunked e header mentiroso (secao 2.7).
-        const cru = await corpoLimitado(req, FAROL_CORPO_MAX);
+      if (rota === "/v1/farol/registro" || rota === "/v1/farol/busca") {
+        // Farol: o teto de bytes CRUS vale ANTES de materializar o corpo —
+        // Content-Length honesto recusa na hora e a leitura limitada cobre
+        // chunked e header mentiroso (secao 2.7).
+        const max = rota === "/v1/farol/busca" ? FAROL_BUSCA_CORPO_MAX : FAROL_CORPO_MAX;
+        const cru = await corpoLimitado(req, max);
         if (cru == null) return erro("corpo grande", 413);
         if (cru) {
           try { corpo = JSON.parse(cru); } catch { return erro("json invalido", 400); }
@@ -1155,6 +1157,9 @@ export default {
     if (rota === "/v1/farol/conhecido")
       return req.method === "GET" ? rotaFarolConhecido(env, url, h)
                                   : erro("metodo nao suportado", 405);
+    if (rota === "/v1/farol/busca")
+      return req.method === "POST" ? rotaFarolBusca(env, quemBruto, corpo, h, limitar)
+                                   : erro("metodo nao suportado", 405);
 
     const quem = { ...(await registrar(env, quemBruto)), bruto: quemBruto.bruto || quemBruto.id };
     // Ids antigos (de antes de uma fusao) que TVs guardaram viram o id vivo.
