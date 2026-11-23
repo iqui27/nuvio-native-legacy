@@ -53,7 +53,7 @@ function overview() {
   const fc = s => farol.filter(i=>s.includes(i.status)).length;
   const segments = [[fd,'done'],[fc(['APROVADA','REVISAO','PR_ABERTA']),'review'],[fc(['LOTE']),'batch'],[fc(['IMPLEMENTANDO','CORRECAO']),'active'],[fc(['BLOQUEADA']),'blocked']];
   const activeCount=fc(['IMPLEMENTANDO','CORRECAO']), blockedCount=fc(['BLOQUEADA']);
-  const accessibleSummary=`${fd} integrados, ${fc(['APROVADA','REVISAO','PR_ABERTA'])} em revisão ou aprovados, ${fc(['LOTE'])} em lote, ${activeCount} em andamento, ${blockedCount} bloqueados, ${fc(['A_FAZER','POR_ULTIMO'])} a fazer ou por último. Total ${farol.length} itens.`;
+  const accessibleSummary=`Integrados: ${fd}; em revisão ou aprovados: ${fc(['APROVADA','REVISAO','PR_ABERTA'])}; em lote: ${fc(['LOTE'])}; em andamento: ${activeCount}; bloqueados: ${blockedCount}; a fazer ou por último: ${fc(['A_FAZER','POR_ULTIMO'])}. Total ${farol.length} itens.`;
   let cursor = 0;
   const svg = segments.map(([n,c]) => {const x=cursor;cursor+=n;return `<rect x="${x}" y="0" width="${n}" height="8" class="fill-${c}"/>`;}).join('');
   return `<section class="metrics" aria-label="Resumo da release">
