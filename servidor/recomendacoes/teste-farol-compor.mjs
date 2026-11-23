@@ -31,6 +31,7 @@ import {
   FAROL_ESCOLHA_DIA,
   FAROL_LLM_TETO_PADRAO,
   chaveCacheCompor,
+  dicaIdCanonico,
   farolTextoAceita,
   rotaFarolCompor,
   rotaFarolEscolha,
@@ -2669,5 +2670,272 @@ test("R5-P1.2: hash de cache concorda com precedencia da ordem de fatos em compa
       assert.ok(!valor.includes("Nome Público A"));
       assert.ok(!valor.includes("Nome Público B"));
     }
+  }
+});
+
+// =============================================================================
+// 12. Regressoes dos achados P1 e P2 da revisao FAROL40-r6
+// =============================================================================
+
+test("R6-P1: resolve tipos explicitos conjuntamente para candidato sem tipo entre aliases, recusa contradicao nas duas ordens e preserva parciais coerentes", async (t) => {
+  const baseCands = pedidoHomeBase().candidatos;
+  const candsSemTipo = baseCands.map((c, idx) =>
+    idx === 0 ? { id: "tt2010001" } : c
+  );
+
+  // 1. Reproducao exata do P1 e ordem invertida: c0 sem tipo com fatos series (c0) e movie (tt2010001).
+  const ordensContraditorias = [
+    [
+      { alvo: "c0", tipo: "series", temporada: 2, episodio: 4 },
+      { id: "tt2010001", tipo: "movie", semanas: 9 },
+    ],
+    [
+      { id: "tt2010001", tipo: "movie", semanas: 9 },
+      { alvo: "c0", tipo: "series", temporada: 2, episodio: 4 },
+    ],
+    [
+      { alvo: "c0", tipo: "series", temporada: 2, episodio: 4, semanas: 5 },
+      { id: "tt2010001", tipo: "movie", semanas: 9 },
+    ],
+    [
+      { id: "tt2010001", tipo: "movie", semanas: 9 },
+      { alvo: "c0", tipo: "series", temporada: 2, episodio: 4, semanas: 5 },
+    ],
+  ];
+
+  const cenaRuimBase = {
+    v: 1, tela: "home", origem: "llm",
+    pecas: [{
+      t: "dica",
+      l1: { m: "FT_DICA_PAROU_L1", a: ["c0", "2", "4"] },
+      l2: { m: "FT_DICA_PAROU_L2", a: ["9"] },
+      acao: { tipo: "abrir", alvo: "c0" },
+    }],
+  };
+
+  for (const fatosContradit of ordensContraditorias) {
+    const req = pedidoHomeBase({
+      modo: "dica",
+      candidatos: candsSemTipo,
+      fatos: fatosContradit,
+    });
+
+    // Miss e repeticao caem para regras sem gravar no KV.
+    for (const cenaTestada of [
+      { ...cenaRuimBase, pecas: [{ ...cenaRuimBase.pecas[0], id: "d_r6_1" }] },
+      {
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: "d_r6_1_l1",
+          l1: { m: "FT_DICA_PAROU_L1", a: ["tt2010001", "2", "4"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      },
+    ]) {
+      const { post, kv, chamadasLlm } = cenario(t, {}, { respostaLlm: () => cenaTestada });
+      const r1 = await post("/v1/farol/compor", req, { token: "tok-gosto-a", perfil: 1 });
+      const r2 = await post("/v1/farol/compor", req, { token: "tok-gosto-b", perfil: 1 });
+      assert.deepEqual(r1.body, { origem: "regras" }, JSON.stringify(fatosContradit));
+      assert.deepEqual(r2.body, { origem: "regras" }, JSON.stringify(fatosContradit));
+      assert.equal(kv.mapa.size, 0);
+      assert.equal(chamadasLlm.length, 2);
+    }
+
+    // KV semeado (legado e canonico) tambem recusa a cena contraditoria e recompoe com alternativa valida.
+    const pecaCanon = { ...cenaRuimBase.pecas[0], id: dicaIdCanonico(cenaRuimBase.pecas[0]) };
+    for (const idSemeado of ["d_legado_r6", pecaCanon.id]) {
+      const chave = await chaveCacheCompor(req);
+      const hitEnv = cenario(t, {}, {
+        respostaLlm: () => ({
+          v: 1, tela: "home", origem: "llm",
+          pecas: [{
+            t: "dica", id: "d_trakt",
+            l1: { m: "FT_DICA_TRAKT" },
+            acao: { tipo: "nada" },
+          }],
+        }),
+      });
+      await hitEnv.kv.put(chave, JSON.stringify({
+        v: 1, tela: "home", feita: 1795000000, vale_s: 86400, origem: "llm",
+        pecas: [{ ...cenaRuimBase.pecas[0], id: idSemeado }],
+      }), { expirationTtl: 86400 });
+      const rHit = await hitEnv.post("/v1/farol/compor", req, { token: "tok-gosto-b", perfil: 1 });
+      assert.equal(rHit.body.origem, "llm");
+      assert.equal(rHit.body.pecas[0].l1.m, "FT_DICA_TRAKT");
+      assert.equal(hitEnv.chamadasLlm.length, 1);
+    }
+  }
+
+  // 2. Contradicao entre alias numerico e ref tt no mesmo candidato sem tipo (nas duas ordens).
+  const candsNumRef = baseCands.map((c, idx) =>
+    idx === 0 ? { id: 4825, ref: "tt2010001" } : c
+  );
+  for (const fatosNumRef of [
+    [{ id: 4825, tipo: "series", temporada: 2, episodio: 4 }, { ref: "tt2010001", tipo: "movie", semanas: 9 }],
+    [{ ref: "tt2010001", tipo: "movie", semanas: 9 }, { id: 4825, tipo: "series", temporada: 2, episodio: 4 }],
+  ]) {
+    const reqNumRef = pedidoHomeBase({ modo: "dica", candidatos: candsNumRef, fatos: fatosNumRef });
+    const { post, kv } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: "d_num_ref",
+          l1: { m: "FT_DICA_PAROU_L1", a: ["c0", "2", "4"] },
+          l2: { m: "FT_DICA_PAROU_L2", a: ["9"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      }),
+    });
+    const r = await post("/v1/farol/compor", reqNumRef);
+    assert.deepEqual(r.body, { origem: "regras" });
+    assert.equal(kv.mapa.size, 0);
+  }
+
+  // 3. Controles positivos coerentes com candidato sem tipo: fato unico e fatos parciais combinados entre aliases.
+  for (const fatosCoerentes of [
+    [{ alvo: "c0", tipo: "series", temporada: 2, episodio: 4, semanas: 5 }],
+    [{ alvo: "c0", tipo: "series", temporada: 2, episodio: 4 }, { id: "tt2010001", tipo: "series", semanas: 5 }],
+    [{ alvo: "c0", tipo: "series", temporada: 2, episodio: 4 }, { id: "tt2010001", semanas: 5 }],
+    [{ alvo: "c0", temporada: 2, episodio: 4 }, { id: "tt2010001", tipo: "series", semanas: 5 }],
+  ]) {
+    const reqOk = pedidoHomeBase({
+      modo: "dica",
+      candidatos: candsSemTipo,
+      fatos: fatosCoerentes,
+    });
+    const { post, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: "d_ok",
+          l1: { m: "FT_DICA_PAROU_L1", a: ["c0", "2", "4"] },
+          l2: { m: "FT_DICA_PAROU_L2", a: ["5"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      }),
+    });
+    const miss = await post("/v1/farol/compor", reqOk, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(miss.body.origem, "llm", JSON.stringify(fatosCoerentes));
+    assert.equal(miss.body.pecas[0].l1.a[0], "c0");
+    assert.equal(miss.body.pecas[0].l2.a[0], "5");
+    assert.equal(miss.body.pecas[0].acao.alvo, "c0");
+    const hit = await post("/v1/farol/compor", reqOk, { token: "tok-gosto-b", perfil: 1 });
+    assert.deepEqual(hit.body, miss.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+
+  // 4. Quando o candidato declara tipo:"series", fato invalido movie (semanas:9) e descartado mantendo fato series (semanas:5).
+  {
+    const candsTipado = baseCands.map((c, idx) => (idx === 0 ? { id: "tt2010001", tipo: "series" } : c));
+    const reqTipado = pedidoHomeBase({
+      modo: "dica",
+      candidatos: candsTipado,
+      fatos: [
+        { alvo: "c0", tipo: "series", temporada: 2, episodio: 4, semanas: 5 },
+        { id: "tt2010001", tipo: "movie", semanas: 9 },
+      ],
+    });
+    const { post: post9 } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: "d_9",
+          l1: { m: "FT_DICA_PAROU_L1", a: ["c0", "2", "4"] },
+          l2: { m: "FT_DICA_PAROU_L2", a: ["9"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      }),
+    });
+    assert.deepEqual((await post9("/v1/farol/compor", reqTipado)).body, { origem: "regras" });
+
+    const { post: post5 } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: "d_5",
+          l1: { m: "FT_DICA_PAROU_L1", a: ["c0", "2", "4"] },
+          l2: { m: "FT_DICA_PAROU_L2", a: ["5"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      }),
+    });
+    const r5 = await post5("/v1/farol/compor", reqTipado);
+    assert.equal(r5.body.origem, "llm");
+    assert.equal(r5.body.pecas[0].l2.a[0], "5");
+  }
+});
+
+test("R6-P2: IMDb unico permanece resolvivel quando nome publico da ancora difere do titulo do candidato e preserva hit/chave", async (t) => {
+  const baseCands = pedidoHomeBase().candidatos;
+  const cands = baseCands.map((c, idx) =>
+    idx === 0
+      ? { id: "tt2010002", tipo: "movie", titulo: "Obra 1", ano: 2021, generos: [53], minutos: 100, motivos: [{ tipo: "FMO_TERMINOU", a: "tt2010002", b: 0 }] }
+      : c
+  );
+  const reqIgual = pedidoHomeBase({
+    gosto: { ancoras: [{ id: "tt2010002", titulo: "Obra 1" }], nivel: 2 },
+    candidatos: cands,
+  });
+  const reqVariante = pedidoHomeBase({
+    gosto: { ancoras: [{ id: "tt2010002", titulo: "Obra 1 (versão restaurada)" }], nivel: 2 },
+    candidatos: cands,
+  });
+
+  // 1. Chave coincide quando id estabelece identidade e apenas o rotulo da ancora muda;
+  //    quando id e ref estao ausentes, o rotulo continua distinguindo a chave.
+  assert.equal(await chaveCacheCompor(reqIgual), await chaveCacheCompor(reqVariante));
+  const reqSemIdA = pedidoHomeBase({ gosto: { ancoras: [{ titulo: "Obra 1" }], nivel: 2 }, candidatos: cands });
+  const reqSemIdB = pedidoHomeBase({ gosto: { ancoras: [{ titulo: "Obra 1 (versão restaurada)" }], nivel: 2 }, candidatos: cands });
+  assert.notEqual(await chaveCacheCompor(reqSemIdA), await chaveCacheCompor(reqSemIdB));
+
+  const cenaAncora = {
+    v: 1, tela: "home", origem: "llm",
+    pecas: [{
+      t: "fileira", id: "gosto1",
+      titulo: { m: "FT_FIL_PORQUE_TERMINOU", a: ["tt2010002"] },
+      forma: "cartaz",
+      itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+    }],
+  };
+
+  // 2. Cold miss + hit direto com nome variante da ancora passam com 1 chamada e KV sem literais.
+  {
+    const { post, kv, chamadasLlm } = cenario(t, {}, { respostaLlm: () => cenaAncora });
+    const miss = await post("/v1/farol/compor", reqVariante, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(miss.body.origem, "llm");
+    assert.deepEqual(miss.body.pecas[0].titulo, { m: "FT_FIL_PORQUE_TERMINOU", a: ["tt2010002"] });
+    const hit = await post("/v1/farol/compor", reqVariante, { token: "tok-gosto-b", perfil: 1 });
+    assert.deepEqual(hit.body, miss.body);
+    assert.equal(chamadasLlm.length, 1);
+    assert.equal(kv.mapa.size, 1);
+    const kvVal = [...kv.mapa.values()][0].valor;
+    assert.ok(!kvVal.includes("\"x\""));
+    assert.ok(!kvVal.includes("Obra 1"));
+    assert.ok(!kvVal.includes("versão restaurada"));
+  }
+
+  // 3. Miss com titulo igual seguido de hit trocando somente o rotulo da ancora preserva hit (1 chamada LLM) e mesma cena.
+  {
+    const { post, chamadasLlm } = cenario(t, {}, { respostaLlm: () => cenaAncora });
+    const missIgual = await post("/v1/farol/compor", reqIgual, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(missIgual.body.origem, "llm");
+    const hitVariante = await post("/v1/farol/compor", reqVariante, { token: "tok-gosto-b", perfil: 2 });
+    assert.deepEqual(hitVariante.body, missIgual.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+
+  // 4. Ambiguidade genuina (dois candidatos com o mesmo tt2010002) continua bloqueada no miss e no KV.
+  {
+    const candsAmb = cands.map((c, idx) =>
+      idx === 1 ? { ...c, id: "tt2010002", tipo: "movie", titulo: "Obra 1 (versão restaurada)" } : c
+    );
+    const reqAmb = pedidoHomeBase({
+      gosto: { ancoras: [{ id: "tt2010002", titulo: "Obra 1 (versão restaurada)" }], nivel: 2 },
+      candidatos: candsAmb,
+    });
+    const { post, kv } = cenario(t, {}, { respostaLlm: () => cenaAncora });
+    const r = await post("/v1/farol/compor", reqAmb);
+    assert.deepEqual(r.body, { origem: "regras" });
+    assert.equal(kv.mapa.size, 0);
   }
 });

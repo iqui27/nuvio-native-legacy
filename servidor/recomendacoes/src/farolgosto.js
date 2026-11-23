@@ -2657,7 +2657,6 @@ function contextoAterramento(pedido) {
         pessoasNomes.set(id, p.nome.trim());
     }
   }
-  const titulosPorTtAncora = new Map();
   for (const a of ancoras) {
     const tit = typeof a?.titulo === "string" ? a.titulo.trim() : "";
     for (const k of ["id", "ref"]) {
@@ -2665,12 +2664,7 @@ function contextoAterramento(pedido) {
       if (/^tt\d{1,17}$/.test(v)) {
         titulosAncoras.add(v);
         gostoAncorasTitulos.add(v);
-        if (tit) {
-          const low = tit.toLowerCase();
-          if (titulosPorTtAncora.has(v) && titulosPorTtAncora.get(v) !== low) ttAmbiguos.add(v);
-          else titulosPorTtAncora.set(v, low);
-          if (!titulosPorRef.has(v)) titulosPorRef.set(v, tit);
-        }
+        if (tit && !titulosPorRef.has(v)) titulosPorRef.set(v, tit);
       }
     }
   }
@@ -2734,15 +2728,7 @@ function contextoAterramento(pedido) {
   });
 
   for (const [tt, idxs] of candsPorTt.entries()) {
-    if (idxs.length > 1) {
-      ttAmbiguos.add(tt);
-      continue;
-    }
-    const c = candidatos[idxs[0]];
-    const tit = typeof c?.titulo === "string" ? c.titulo.trim() : "";
-    if (tit && titulosPorTtAncora.has(tt) && tit.toLowerCase() !== titulosPorTtAncora.get(tt)) {
-      ttAmbiguos.add(tt);
-    }
+    if (idxs.length > 1) ttAmbiguos.add(tt);
   }
   for (const [oid, idxs] of candsPorIdNaoTt.entries()) {
     if (idxs.length > 1) idsNaoTtAmbiguos.add(oid);
@@ -2765,22 +2751,45 @@ function contextoAterramento(pedido) {
   }
   coletarTt(ancoras, ttTodos);
 
-  const tiposPorTtExt = new Map();
+  // Resolve tipos explicitos (filme/serie) conjuntamente entre todos os aliases de cada obra
+  // antes de agregar fatos, rejeitando toda evidencia da obra quando houver contradicao.
+  const fatosResolvidos = [];
+  const tiposPorObra = new Map();
+  const obrasTipoContradit = new Set();
   for (const f of pedido.fatos || []) {
     if (!f || typeof f !== "object") continue;
     const idFato = resolverIdentidadeFato(f, candidatos, candsPorTt, candsPorIdNaoTt, idsNaoTtAmbiguos, ttAmbiguos);
     if (idFato.tipo === "invalido") continue;
-
-    if (idFato.tipo === "tt") {
+    if (idFato.tipo !== "global") {
       const tF = tipoCanonico(f.tipo);
       if (tF) {
-        if (tiposPorTtExt.has(idFato.tt) && tiposPorTtExt.get(idFato.tt) !== tF) {
-          ttAmbiguos.add(idFato.tt);
-          fatosPorObra.delete(idFato.obraKey);
-          continue;
+        let setTipos = tiposPorObra.get(idFato.obraKey);
+        if (!setTipos) {
+          setTipos = new Set();
+          tiposPorObra.set(idFato.obraKey, setTipos);
         }
-        tiposPorTtExt.set(idFato.tt, tF);
+        setTipos.add(tF);
+        if (setTipos.size > 1) {
+          obrasTipoContradit.add(idFato.obraKey);
+          if (idFato.tipo === "tt") ttAmbiguos.add(idFato.tt);
+        }
       }
+    }
+    fatosResolvidos.push({ f, idFato });
+  }
+
+  for (let idx = 0; idx < candEvs.length; idx++) {
+    const obraKey = `cand:${idx}`;
+    if (!candEvs[idx].tipo && !obrasTipoContradit.has(obraKey)) {
+      const ts = tiposPorObra.get(obraKey);
+      if (ts && ts.size === 1) candEvs[idx].tipo = [...ts][0];
+    }
+  }
+
+  for (const { f, idFato } of fatosResolvidos) {
+    if (idFato.tipo !== "global" &&
+        (obrasTipoContradit.has(idFato.obraKey) || (idFato.tipo === "tt" && ttAmbiguos.has(idFato.tt)))) {
+      continue;
     }
 
     coletarTt(f, ttTodos);
@@ -2900,6 +2909,7 @@ function contextoAterramento(pedido) {
     servicosOnde,
     fatosPorObra,
     fatosGlobais,
+    obrasTipoContradit,
     textosGosto,
   };
 }
@@ -3363,6 +3373,8 @@ function dicaTextoAterrado(t, alvoDica, ctx) {
     }
     case "FT_DICA_TEMPORADA": {
       if (ehGlobal || !refsTitulosEquivalentes(a[0], alvoDica, ctx)) return false;
+      const idAlvo = resolverIdentidadeRef(alvoDica, ctx);
+      if (idAlvo && ctx.obrasTipoContradit?.has(idAlvo.obraKey)) return false;
       if (cIdxsAlvo.length > 0 && cIdxsAlvo.every((idx) => ctx.candEvs[idx]?.tipo === "filme")) {
         return fatosAlvo.some((f) => Number.isInteger(f.temporada ?? f.temp));
       }
@@ -3376,6 +3388,8 @@ function dicaTextoAterrado(t, alvoDica, ctx) {
     }
     case "FT_DICA_CURTO": {
       if (ehGlobal || !refsTitulosEquivalentes(a[0], alvoDica, ctx)) return false;
+      const idAlvo = resolverIdentidadeRef(alvoDica, ctx);
+      if (idAlvo && ctx.obrasTipoContradit?.has(idAlvo.obraKey)) return false;
       if (cIdxsAlvo.some((idx) => ctx.candEvs[idx]?.cabeHojeContradit)) return false;
       const lim = fatosAlvo.filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
       if (lim.length > 0) {
