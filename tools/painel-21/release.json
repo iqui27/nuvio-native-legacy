@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T20:44:32+00:00",
+    "updatedAt": "2026-11-23T20:58:13+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T20:40:00+00:00",
+    "lastVpsReportedAt": "2026-11-23T20:53:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -911,21 +911,22 @@
         "farol-29"
       ],
       "allDependencies": false,
-      "status": "REVISAO",
+      "status": "CORRECAO",
       "wave": "B",
       "sha": "e7c3d6e443",
       "batch": null,
-      "note": "Gemini Hydrogen entregou correção dos cinco P1, informou 20/20 e corpus 488/488 com paridade no renderer C. Merge-tree 21e rc 0 confirmado. Sol r3 (…ca17) ocupa a vaga do 48; 52 depende deste veredito",
+      "note": "Sol r3 REPROVADO: motivo de outra obra, duração inventada, campos livres no KV e título válido da Home regride. Cinco casos da r2 passaram. Gemini Hydrogen corrige na mesma branch (…1602); 52 segue bloqueada",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-40",
-      "updatedAt": "2026-11-23T20:44:32+00:00",
-      "reportedAt": "2026-11-23T20:40:00+00:00",
+      "updatedAt": "2026-11-23T20:58:13+00:00",
+      "reportedAt": "2026-11-23T20:52:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "Gemini Hydrogen entregou correção dos cinco P1, informou 20/20 e corpus 488/488 com paridade no renderer C. Merge-tree 21e rc 0 confirmado. Sol r3 (…ca17) ocupa a vaga do 48; 52 depende deste veredito",
         "Sol r2 REPROVADO: gosto livre no KV entre contas, título inventado via x, título muda no hit, afinidade fora do pedido e colisão filme/série. Originais passaram, 14/14 dirigidos, 488/488 corpus, merge limpo. Gemini Hydrogen corrige na mesma branch (…31fc)",
         "Gemini Hydrogen entregou correção dos quatro P1 (relata dirigido 14/14 e corpus 488/488); merge-tree 21e rc 0 confirmado; Sol via Codex revisa r2 (…dc7f)",
         "Sol r1 REPROVADO: consentimento, privacidade do KV, título literal inventado e hit KV fora do pedido; Gemini Hydrogen (…ca17) corrige na mesma branch",
@@ -1067,10 +1068,11 @@
       "wave": "A",
       "sha": "eeb143e572",
       "batch": null,
-      "note": "Hydrogen fechou provas da FAROL46E: dirigido nos três modos, 22 scripts verdes, sintaxe 10/10. No 21e confirmei conflito em src/mapa.c do CATREV e três chamadas da fixture que exigem o quarto argumento. Pronto para revisão r4 na primeira vaga; TV pendente",
+      "note": "Sol r4 (…e06d) ocupa a vaga do 40. Valida gênero ausente/créditos do TMDB e árvore 21e com o conflito CATREV resolvido em cópia; TV pendente Resolução CATREV limitada à cópia de validação; nenhuma resolução na branch/lote real nem novo commit informados. Ressalva anterior das três chamadas da fixture que exigem quarto argumento sem resolução informada.",
       "source": "Relato VPS",
       "verified": false,
       "previousNotes": [
+        "Hydrogen fechou provas da FAROL46E: dirigido nos três modos, 22 scripts verdes, sintaxe 10/10. No 21e confirmei conflito em src/mapa.c do CATREV e três chamadas da fixture que exigem o quarto argumento. Pronto para revisão r4 na primeira vaga; TV pendente",
         "r2 Neon encerrou sem relatório, sintaxe 10/10 informada; Gemini Hydrogen (…76c1) retoma provas e relatório usando a ponta existente",
         "VPS FAROL6C e FAROL46E (Gemini Neon) interrompidas 19:22 sem commit; sobras removidas; relançando",
         "Devin publicou eeb143e57 sem relatório antes do cancelamento; FAROL46E retomada no Gemini 4 Neon (…a67f9a209349); oracle-vps; não verificado",
@@ -1089,8 +1091,8 @@
         "TV física pendente."
       ],
       "branch": "agente/21z-farol-46",
-      "updatedAt": "2026-11-23T20:44:32+00:00",
-      "reportedAt": "2026-11-23T20:38:00+00:00",
+      "updatedAt": "2026-11-23T20:58:13+00:00",
+      "reportedAt": "2026-11-23T20:53:00+00:00",
       "integrationVerified": false
     },
     {
@@ -1205,18 +1207,20 @@
         "farol-44"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "BLOQUEADA",
       "wave": "D",
       "sha": null,
       "batch": null,
-      "note": "Caminho crítico. Aguarda o veredito da revisão Sol r3 do Farol 40 antes de avançar.",
-      "source": "VPS · escopo 23/11 03h40 UTC + dependência reforçada no relato das 20h40 UTC",
+      "note": "Caminho crítico. Bloqueado pela reprovação Sol r3 do Farol 40; aguarda a correção Hydrogen e novo veredito antes de avançar.",
+      "source": "Relato VPS do Farol 40 às 20h52 UTC: bloqueio do 52 explícito",
       "verified": false,
       "previousNotes": [
+        "Caminho crítico. Aguarda o veredito da revisão Sol r3 do Farol 40 antes de avançar.",
         "Caminho crítico."
       ],
-      "updatedAt": "2026-11-23T20:44:32+00:00",
-      "dependencyReportedAt": "2026-11-23T20:40:00+00:00"
+      "updatedAt": "2026-11-23T20:58:13+00:00",
+      "dependencyReportedAt": "2026-11-23T20:52:00+00:00",
+      "reportedAt": "2026-11-23T20:52:00+00:00"
     },
     {
       "id": "farol-53",
@@ -3957,6 +3961,33 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T20:53:00+00:00",
+      "appliedAt": "2026-11-23T20:58:13+00:00",
+      "item": "farol-46",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 20:53 [REVISAO] farol-46 · agente/21z-farol-46@eeb143e572 · Sol r4 (…e06d) ocupa a vaga do 40. Valida gênero ausente/créditos do TMDB e árvore 21e com o conflito CATREV resolvido em cópia; TV pendente"
+    },
+    {
+      "at": "2026-11-23T20:52:00+00:00",
+      "appliedAt": "2026-11-23T20:58:13+00:00",
+      "item": "farol-52",
+      "from": "A_FAZER",
+      "to": "BLOQUEADA",
+      "report": "Dependência explícita no relato do Farol 40 às 20h52 UTC: 52 segue bloqueado após reprovação Sol r3.",
+      "source": "Dependência registrada a partir do relato VPS do Farol 40; não é novo relato independente",
+      "relatedReportItem": "farol-40",
+      "derived": true
+    },
+    {
+      "at": "2026-11-23T20:52:00+00:00",
+      "appliedAt": "2026-11-23T20:58:13+00:00",
+      "item": "farol-40",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 20:52 [CORRECAO] farol-40 · agente/21z-farol-40@e7c3d6e443 · Sol r3 REPROVADO: motivo de outra obra, duração inventada, campos livres no KV e título válido da Home regride. Cinco casos da r2 passaram. Gemini Hydrogen corrige na mesma branch (…1602); 52 segue bloqueada"
+    },
     {
       "at": "2026-11-23T20:40:00+00:00",
       "appliedAt": "2026-11-23T20:44:32+00:00",
