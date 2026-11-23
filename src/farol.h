@@ -70,6 +70,11 @@ void farol_remover_fileiras(const char *dirArte);
 // apaga o gosto aprendido (farolsinal, dono do modelo). NESTA ordem, sempre.
 void farol_gosto_zerar(const char *dirArte);
 
+// A epoca do gosto do perfil: sobe a cada "Zerar o gosto". A descoberta
+// carimba a emissao na CatFileira (farolSelo) e confere na publicacao e na
+// remontagem — o que foi montado antes do reset nao republica (FAROL45C).
+unsigned farol_selo(void);
+
 // "Recomendar nesta TV": ao DESLIGAR, remove as fileiras com a identidade
 // atual antes de registrar a preferencia — ligar nao toca no catalogo.
 void farol_recomendar_definir(int ligado, const char *dirArte);

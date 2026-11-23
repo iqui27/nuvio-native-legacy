@@ -282,13 +282,17 @@ void farolsinal_definir_recomendar(int ligado) {
 int  farolsinal_modelo(FarolGosto *dst) { if (!dst) return 0; *dst = T_g; return 1; }
 // Prova r1: o anel de exibidos muda o modelo e NAO pode recompor a cena;
 // e o opt-out no MEIO da entrega (a primeira marcacao dispara o desligar)
-// nao pode deixar a volta republicar as fileiras.
+// nao pode deixar a volta republicar as fileiras. Prova 45C: o mesmo
+// disparo para "Zerar o gosto" — o lote em voo nao pode subir depois.
 static _Atomic int desligarNaEntrega;
+static _Atomic int zerarNaEntrega;
 void farolsinal_mostrado(const CatItem *ci) {
   farolgosto_mostrado(&T_g, mapa_hash_titulo(ci->imdb), 1);
   T_mostrados++;
   if (atomic_exchange(&desligarNaEntrega, 0))
     farol_recomendar_definir(0, dirDados);
+  if (atomic_exchange(&zerarNaEntrega, 0))
+    farol_gosto_zerar(dirDados);
 }
 void farolsinal_zerar_gosto(void) { farolgosto_iniciar(&T_g, (uint16_t)T_perfil); }
 int  farolsinal_ficha_do_item(const CatItem *ci, FarolFicha *dst) {
@@ -532,6 +536,36 @@ int main(void) {
   assert(T_g.titulos == 0 && "Zerar o gosto conservou o modelo anterior");
   modeloGosto();                        // o modelo zerado e reconstruido
   puts("ok  zerar o gosto: fileiras saem e o modelo zera junto");
+
+  // ---------- zerar DEPOIS de montar: a remontagem nao repoe (45C) ------
+  // A fileira guardada em filsMontadas e anterior ao reset: republicar o
+  // retrato da ultima montagem nao pode traze-la de volta.
+  T_visivel = 0;
+  volta();                                     // readota e publica de novo
+  T_visivel = 1;
+  assert(nFarol() > 0);
+  farol_gosto_zerar(dirDados);
+  assert(nFarol() == 0);
+  desc_remontar_fileiras();
+  assert(nFarol() == 0 && "remontagem republicou fileiras anteriores ao zerar");
+  modeloGosto();
+  puts("ok  zerar o gosto: a fileira montada antes nao volta na remontagem");
+
+  // ---------- zerar no MEIO da entrega: o lote em voo nao sobe (45C) ----
+  // O primeiro farolsinal_mostrado da entrega dispara o reset: o lote que
+  // ja estava montado nao pode ser publicado por cima dele.
+  T_visivel = 0;
+  volta();                                     // readota para a prova valer
+  T_visivel = 1;
+  assert(nFarol() > 0);
+  zerarNaEntrega = 1;
+  T_visivel = 0;
+  T_g.titulos++;                               // evento forte -> recompoe
+  volta();
+  assert(nFarol() == 0 && "lote em voo republicou fileiras apos o zerar");
+  assert(T_g.titulos == 0);
+  modeloGosto();
+  puts("ok  zerar no meio da entrega: o lote em voo nao sobe");
 
   // ---------- recomendar desligado ----------
   T_visivel = 0;          // a readocao da volta espera a Home sair da tela

@@ -535,6 +535,11 @@ typedef struct {
   // Social-only account generation captured BEFORE fetching its source data.
   // Metadata/progress revisions never make an old account row current.
   unsigned socialGeracao;
+  // Epoca do gosto do perfil carimbada na emissao (so fileiras farol_): cada
+  // "Zerar o gosto" sobe a epoca em farol.c, e a publicacao/remontagem
+  // descarta fileira com o carimbo anterior ao reset — um lote em voo ou a
+  // filsMontadas guardada nao republica o que ja morreu (FAROL45C).
+  unsigned farolSelo;
 } CatFileira;
 
 int cat_n_fileiras(void);

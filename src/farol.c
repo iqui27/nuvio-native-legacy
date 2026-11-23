@@ -84,6 +84,11 @@ static int      perfilSaiu = -1;
 // Sobe a cada adocao e a cada invalidacao; a Home cacheia o motivo por ela
 // (lida por __atomic, sem trava no fio do desenho).
 static unsigned geracaoCena;
+// A EPOCA do gosto: sobe so no "Zerar o gosto". Cada CatFileira farol_ sai
+// da entrega carimbada com ela; a publicacao e a remontagem da descoberta
+// descartam o carimbo velho, entao um lote em voo ou a filsMontadas de
+// antes do reset nao republicam fileiras mortas (FAROL45C).
+static unsigned seloGosto;
 
 // ---------------------------------------------------------------- trabalho -
 // Uma montagem por vez (o fio da descoberta); estatico porque CatItem tem
@@ -617,6 +622,10 @@ static void home_fileiras_(CatItem *lote, int *n, int cap,
   long long agora;
   int precisa, perfil, f, marcou[2] = { 0, 0 };
   if (!lote || !n || !fils || !nFils) return;
+  // O selo vai lido ANTES de copiar a cena: uma leitura depois do bump do
+  // zerar so acontece com a chamada ja posterior ao invalidar() — cena
+  // velha nunca sai com carimbo novo (FAROL45C).
+  const unsigned selo = __atomic_load_n(&seloGosto, __ATOMIC_ACQUIRE);
   // "Nao aparece": recomendacao desligada nesta TV ou modo seguro.
   if (!farolsinal_recomendar() || seguro_perfil_ativo()) { invalidar(); return; }
   agora = agoraS();
@@ -681,6 +690,7 @@ static void home_fileiras_(CatItem *lote, int *n, int cap,
     snprintf(cf->chave, sizeof cf->chave, "%s", sf->chave);
     snprintf(cf->titulo, sizeof cf->titulo, "%s", sf->titulo);
     cf->tipo[0] = 0;                    // mista: nenhum sufixo de tipo
+    cf->farolSelo = selo;               // a epoca desta emissao (FAROL45C)
     cf->ini = *n; cf->n = 0;
     for (i = 0; i < sf->nItens && *n < cap; i++) {
       CatItem *dst = &lote[*n];
@@ -806,8 +816,17 @@ void farol_remover_fileiras(const char *dirArte) {
 // cena (a remocao ja invalidou) e o modelo zera pela API do farolsinal:
 // sem isso a fileira voltava na proxima volta com o gosto antigo (revisao
 // FAROL45 r1).
+unsigned farol_selo(void) {
+  return __atomic_load_n(&seloGosto, __ATOMIC_ACQUIRE);
+}
+
 void farol_gosto_zerar(const char *dirArte) {
   farol_remover_fileiras(dirArte);
+  // O bump vem depois da remocao (que ja invalidou a cena): uma emissao
+  // inteira dentro do reset carimba o selo velho e e podada na publicacao;
+  // a que comeca depois dele ja ve a cena invalidada e recompoe do modelo
+  // zerado (FAROL45C).
+  __atomic_add_fetch(&seloGosto, 1, __ATOMIC_ACQ_REL);
   farolsinal_zerar_gosto();
 }
 

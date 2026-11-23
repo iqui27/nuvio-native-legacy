@@ -19,6 +19,7 @@ extern __attribute__((weak)) void
 farol_home_fileiras(CatItem *lote, int *n, int cap,
                     CatFileira *fils, int *nFils, int capFils);
 extern __attribute__((weak)) int farol_ativo(void);
+extern __attribute__((weak)) unsigned farol_selo(void);
 #include "homeestado.h"
 #include "sessao.h"
 #include "colecoes.h"
@@ -4313,19 +4314,24 @@ static void cwDepoisDePublicar(CatItem *c, int k) {
 // estavam prontas no lote — a remocao de farol_recomendar_definir so vale
 // para o que esta na tela; sem esta poda o lote em voo (ou o filsMontadas
 // servido de volta num parcial/remontagem) republicava as fileiras mortas
-// (revisao FAROL45 r1). Sem o modulo do Farol (fixture) poda sempre:
-// fileira farol_ sem dono nao sobe. `saida` pode ser o proprio `fils`
-// (a leitura nunca passa da escrita). Devolve o novo nf.
+// (revisao FAROL45 r1). A EPOCA do gosto tambem manda: o carimbo da
+// emissao precisa bater com o selo atual, senao a fileira e de antes de um
+// "Zerar o gosto" — o farol_ativo() continua verdadeiro depois do reset,
+// entao so o portao nao bastava (FAROL45C). Sem o modulo do Farol
+// (fixture) poda sempre: fileira farol_ sem dono nao sobe. `saida` pode
+// ser o proprio `fils` (a leitura nunca passa da escrita). Devolve o
+// novo nf.
 static int podarFarol(const CatFileira *fils, int nf, CatFileira *saida) {
   int k, w = 0;
-  if (farol_ativo && farol_ativo()) {
-    if (saida != fils) memcpy(saida, fils, sizeof *fils * (size_t)nf);
-    return nf;
+  const int ativo = farol_ativo && farol_ativo();
+  const unsigned selo = farol_selo ? farol_selo() : 0;
+  for (k = 0; k < nf; k++) {
+    if (!strncmp(fils[k].chave, CAT_PREFIXO_FAROL,
+                 sizeof CAT_PREFIXO_FAROL - 1) &&
+        (!ativo || fils[k].farolSelo != selo))
+      continue;
+    saida[w++] = fils[k];
   }
-  for (k = 0; k < nf; k++)
-    if (strncmp(fils[k].chave, CAT_PREFIXO_FAROL,
-                sizeof CAT_PREFIXO_FAROL - 1))
-      saida[w++] = fils[k];
   return w;
 }
 // Toda publicacao de montar() passa por aqui (em partes e a do fim).
@@ -6284,14 +6290,20 @@ void desc_remontar_fileiras(void) {
   // desafixar nao pode deixar uma fileira orfa na home ate a proxima
   // montagem; e a farol_ nao volta quando o Farol nao esta ativo — opt-out
   // ou modo seguro tirou as fileiras na hora, e a remontagem sem rede
-  // republicava o que a memoria guardava (revisao FAROL45 r1).
-  for (i = 0; i < nFileirasMontadas && nOut < CAT_FIL_MAX; i++) {
-    const CatFileira *fixa = &filsMontadas[i];
-    if (!fixa->base[0] && !strncmp(fixa->chave, CF_PREFIXO, sizeof CF_PREFIXO - 1) &&
-        !cf_fixada(fixa->chave + sizeof CF_PREFIXO - 1)) continue;
-    if (!strncmp(fixa->chave, CAT_PREFIXO_FAROL, sizeof CAT_PREFIXO_FAROL - 1) &&
-        !(farol_ativo && farol_ativo())) continue;
-    if (!fixa->base[0]) saidaFil[nOut++] = filsMontadas[i];
+  // republicava o que a memoria guardava (revisao FAROL45 r1). Nem quando
+  // o carimbo e de antes do ultimo "Zerar o gosto": a epoca anda no reset
+  // e a fileira montada antes dele fica morta (FAROL45C).
+  {
+    const int ativoFarol = farol_ativo && farol_ativo();
+    const unsigned seloFarol = farol_selo ? farol_selo() : 0;
+    for (i = 0; i < nFileirasMontadas && nOut < CAT_FIL_MAX; i++) {
+      const CatFileira *fixa = &filsMontadas[i];
+      if (!fixa->base[0] && !strncmp(fixa->chave, CF_PREFIXO, sizeof CF_PREFIXO - 1) &&
+          !cf_fixada(fixa->chave + sizeof CF_PREFIXO - 1)) continue;
+      if (!strncmp(fixa->chave, CAT_PREFIXO_FAROL, sizeof CAT_PREFIXO_FAROL - 1) &&
+          (!ativoFarol || fixa->farolSelo != seloFarol)) continue;
+      if (!fixa->base[0]) saidaFil[nOut++] = filsMontadas[i];
+    }
   }
 
   // 2. as de catalogo, filtradas pelas mesmas regras de desligada().
