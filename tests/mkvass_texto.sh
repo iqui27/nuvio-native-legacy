@@ -30,6 +30,8 @@ NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/UTF8.mkv" "$DIR/WEBVTT.mkv"
 for alvo in LG NV_TPK NV_ANDROID; do
   cc -D"$alvo" tests/faixas_texto.c src/faixasmkv.c -Isrc -O1 \
     -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-    -ffunction-sections -fdata-sections -Wl,-dead_strip -Wno-macro-redefined -o "$DIR/escolha"
+    -ffunction-sections -fdata-sections -Wl,-dead_strip -Wno-macro-redefined -o "$DIR/escolha" 2>/dev/null || \
+  cc -D"$alvo" tests/faixas_texto.c src/faixasmkv.c -Isrc -O1 \
+    -ffunction-sections -fdata-sections -Wl,--gc-sections -lm -o "$DIR/escolha"
   "$DIR/escolha"
 done

@@ -24,7 +24,7 @@ exec(compile(fixture, "fixture-pgs-drop", "exec"))
 PY
 # Constantes de producao do ritmo: sem MKVASS_PGS_SCAN_MS reduzido.
 cc ${flags[@]+"${flags[@]}"} -Isrc -O1 -g -Wall -Wextra \
-  tests/mkvass_pgs_ritmo.c src/{mkvass,pgs_mkv_restore,imgsub,pgs,legenda,assrender,dados}.c \
+  tests/mkvass_pgs_ritmo.c src/{mkvass,pgs_mkv_restore,imgsub,pgs,legenda,assrender,assperf,assfios,dados}.c \
   tests/mkvass_i18n.c -lz -lm -o "$DIR/test"
 mkdir "$DIR/dados"
 echo "== ritmo drop (folga 30 -> 19.75 durante o Cluster, relogio 1x)"
