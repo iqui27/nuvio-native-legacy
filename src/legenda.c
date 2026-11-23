@@ -672,6 +672,31 @@ const char *legenda_idioma(const char *idioma, const char *arquivo) {
   return "";
 }
 
+// So host e caminho da URL, sem o ultimo segmento: ele pode ser a chave, e
+// query/fragmento (token de addon) e userinfo (usuario:senha@) ficam de fora.
+// O corte de "?"/"#" precede a busca por '/' para uma URL dentro da query nao
+// chegar ao log.
+static void legenda_log_arquivo(const char *url, char *out, size_t cap) {
+  const char *s, *esq, *h, *at, *e, *fim;
+  size_t n;
+  if (!out || cap < 2) return;
+  out[0] = 0;
+  if (!url || !*url) return;
+  s = url;
+  if ((esq = strstr(s, "://")) != NULL) s = esq + 3;
+  e = strpbrk(s, "?#");
+  if (!e) e = s + strlen(s);
+  for (h = s, at = NULL; h < e && *h != '/'; h++)
+    if (*h == '@') at = h;
+  if (at) s = at + 1;   // o ultimo '@' da autoridade separa userinfo do host
+  fim = e;
+  while (fim > h && fim[-1] != '/') fim--;
+  n = (size_t)(fim - s);
+  if (n >= cap) n = cap - 1;
+  memcpy(out, s, n);
+  out[n] = 0;
+}
+
 char *legenda_utf8(const char *bytes, long n, const char **origem) {
   return legenda_utf8_idioma(bytes, n, NULL, NULL, origem);
 }
@@ -722,6 +747,17 @@ char *legenda_utf8_idioma(const char *bytes, long n, const char *idioma,
       cir = altos >= 8 && colados * 2 > altos;
       ara = cir && soRusso * 10 < altos && soltasArabe * 10 >= altos;
       if (ara) cir = 0;
+      if (ara) {
+        static int log751;
+        if (!log751) {
+          char arq[192];
+          legenda_log_arquivo(arquivo, arq, sizeof arq);
+          log751 = 1;
+          printf("[legenda] arabico: CP1256 (idioma=%s, arquivo=%s)\n",
+                 lang ? lang : "?", arq[0] ? arq : "?");
+          fflush(stdout);
+        }
+      }
       o = ara ? "windows-1256" : cir ? "windows-1251" : "windows-1252";
       if (gre || tur) {
         ara = cir = 0;

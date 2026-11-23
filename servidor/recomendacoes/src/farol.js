@@ -13,12 +13,14 @@
 // (codigo.js); para os dois espacos nao colidirem os ids do Farol comecam em
 // 2^29 (ver migracao-018-farol.sql e codigo-registro.mjs).
 //
-// Match de correcao conhecida (tabela farol_conhecido), GET /v1/farol/conhecido
-// e a pagina /v1/farol/r/<codigo> sao da issue 13 — a tabela ja nasce aqui
-// porque mora no mesmo arquivo de migracao.
+// Issue 13: match de correcao conhecida (farol_conhecido) na resposta do POST
+// e em GET /v1/farol/conhecido, mais a pagina publica GET /v1/farol/r/<codigo>.
+
+import { codigoRegistro as codificarId, decodificarCodigo, FAROL_ID_MIN } from "./codigo.js";
 
 export const FAROL_CORPO_MAX = 64 * 1024;
-const FAROL_RETENCAO = 30 * 24 * 3600;
+export const FAROL_RETENCAO = 30 * 24 * 3600;
+export const ESTADOS_CONHECIDO = new Set(["corrigido", "conhecido", "contorno"]);
 const FAROL_HORA = 6;            // envios por CONTA por hora
 const FAROL_DIA = 20;            // envios por CONTA por dia
 const FAROL_DIA_GLOBAL = 500;    // envios no total por dia
@@ -101,7 +103,9 @@ function versaoOk(v) {
 // aparelho.modelo: "x" ou <prefixo do fabricante><2 digitos de tela><serie>
 // <numero><sufixo>, nos tetos do redator (OLED admite 1/2/3; os demais 2/4/6).
 const MODELO_PREFIXOS = ["OLED", "QN", "QE", "UE", "UN", "UA", "KD-", "XR-", "TCL"];
-function modeloOk(v) {
+// exportada para o contrato dirigido tests/farol_modelo_contrato.mjs: o
+// cliente so pode emitir o que ESTA funcao aceita — o resto vira "x".
+export function modeloOk(v) {
   if (v === "x") return true;
   if (typeof v !== "string") return false;
   for (let i = 0; i < MODELO_PREFIXOS.length; i++) {
@@ -362,6 +366,82 @@ const FAROL_RECLAMAR =
   "THEN farol_dedup.confirmado ELSE 0 END " +
   "RETURNING criado, registro, confirmado, toques";
 
+// Parte numerica da versao ("2.1.0-ipk" -> [2,1,0,0], "2.1" -> [2,1,0,0]).
+// Sufixo de build (-ipk, -apk, -wgt...) e ignorado na comparacao, no mesmo
+// espirito de versaoMaior em src/avisos.c. null = ausente ou ilegivel.
+export function lerVersao(v) {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  if (!s || s.length > 32) return null;
+  const h = s.search(/[-+]/);
+  const num = h < 0 ? s : s.slice(0, h);
+  if (!num) return null;
+  const partes = num.split(".");
+  if (partes.length > 4) return null;
+  const out = [0, 0, 0, 0];
+  for (let i = 0; i < partes.length; i++) {
+    if (!/^\d{1,4}$/.test(partes[i])) return null;
+    out[i] = Number(partes[i]);
+  }
+  return out;
+}
+
+export function versaoMenor(cliente, correcao) {
+  const a = lerVersao(cliente);
+  const b = lerVersao(correcao);
+  if (!a || !b) return false;
+  for (let i = 0; i < 4; i++) {
+    if (a[i] !== b[i]) return a[i] < b[i];
+  }
+  return false;
+}
+
+// Ordem da secao 2.7:
+//   1. `fp` exato
+//   2. `(codigo, plataforma, so_maior)`
+//   3. `(codigo, plataforma)` (com `so_maior IS NULL`)
+// A regra mais especifica presente na tabela governa a chave: `corrigido` so
+// vale quando a versao do cliente e estritamente menor que a da correcao.
+const SQL_CONHECIDO =
+  "SELECT id, " +
+  "CASE WHEN fp IS NOT NULL THEN 1 WHEN so_maior IS NOT NULL THEN 2 ELSE 3 END AS nivel, " +
+  "estado, versao, nota_pt, nota_en " +
+  "FROM farol_conhecido " +
+  "WHERE (? IS NOT NULL AND fp = ?) " +
+  "   OR (? IS NOT NULL AND ? IS NOT NULL AND ? IS NOT NULL " +
+  "       AND fp IS NULL AND codigo = ? AND plataforma = ? AND so_maior = ?) " +
+  "   OR (? IS NOT NULL AND ? IS NOT NULL " +
+  "       AND fp IS NULL AND codigo = ? AND plataforma = ? AND so_maior IS NULL) " +
+  "ORDER BY nivel ASC, id DESC";
+
+export async function buscarConhecido(db, { fp = null, codigo = null, plataforma = null, soMaior = null, versao = "" } = {}) {
+  const f = typeof fp === "string" && fp.length ? fp : null;
+  const c = typeof codigo === "string" && codigo.length ? codigo : null;
+  const p = typeof plataforma === "string" && plataforma.length ? plataforma : null;
+  const s = Number.isInteger(soMaior) ? soMaior : null;
+  if (!f && !(c && p)) return null;
+  const r = await db.prepare(SQL_CONHECIDO).bind(
+    f, f,
+    c, p, s, c, p, s,
+    c, p, c, p
+  ).all();
+  const linhas = r?.results || [];
+  if (!linhas.length) return null;
+  const melhorNivel = linhas[0].nivel;
+  for (const l of linhas) {
+    if (l.nivel !== melhorNivel) break;
+    if (!ESTADOS_CONHECIDO.has(l.estado)) continue;
+    if (l.estado === "corrigido" && !versaoMenor(versao, l.versao)) continue;
+    return {
+      estado: l.estado,
+      versao: l.versao || "",
+      nota_pt: l.nota_pt || "",
+      nota_en: l.nota_en || "",
+    };
+  }
+  return null;
+}
+
 // `quem` e a conta ja verificada por quemE (a mesma autenticacao de
 // /v1/registro), NUNCA uma pessoa criada por `registrar`: a rota do Farol nao
 // faz cadastro social. `corpo` e o JSON lido pelo index.js com o teto medido
@@ -386,6 +466,12 @@ export async function rotaFarolRegistro(env, quem, corpo, h, limitar, codigoRegi
     const conta = String(quem.id).startsWith("nuvio:") ? String(quem.id).replace(/:\d{1,2}$/, "") : String(quem.id);
     const pessoa_h = await hmacHex(env.FAROL_SAL, conta);
     const fp = (await sha256Hex(fingerprint)).slice(0, 16);
+    const versaoCli = String(corpo?.cliente?.versao || "").slice(0, 48);
+    const platCli = String(corpo?.aparelho?.plataforma || "").slice(0, 48);
+    const soCli = intOk(corpo?.aparelho?.so_maior) ? corpo.aparelho.so_maior : null;
+    const acharConhecido = () =>
+      buscarConhecido(env.DB, { fp, codigo, plataforma: platCli, soMaior: soCli, versao: versaoCli })
+        .catch((e) => (/no such table/i.test(String(e?.message || e)) ? null : Promise.reject(e)));
 
     const janela = Math.floor(t / 86400);
     const reclamar = () =>
@@ -442,8 +528,12 @@ export async function rotaFarolRegistro(env, quem, corpo, h, limitar, codigoRegi
       // do criado ORIGINAL e nenhuma cota e debitada.
       await env.DB.prepare("UPDATE farol_registro SET vezes = vezes + 1 WHERE id = ?")
         .bind(ded.registro).run();
-      return json({ ok: 1, codigo: codigoRegistro(ded.registro),
-                    vence: ded.criado + FAROL_RETENCAO, dedup: 1 });
+      const conhecido = await acharConhecido();
+      return json({
+        ok: 1, codigo: codigoRegistro(ded.registro),
+        vence: ded.criado + FAROL_RETENCAO, dedup: 1,
+        ...(conhecido ? { conhecido } : {}),
+      });
     }
     if (!ded) return erro("falha ao gravar", 500);
 
@@ -477,9 +567,9 @@ export async function rotaFarolRegistro(env, quem, corpo, h, limitar, codigoRegi
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?) RETURNING id"
       ).bind(
         t, janela, pessoa_h,
-        String(corpo?.cliente?.versao || "").slice(0, 48),
-        String(corpo?.aparelho?.plataforma || "").slice(0, 48),
-        intOk(corpo?.aparelho?.so_maior) ? corpo.aparelho.so_maior : 0,
+        versaoCli,
+        platCli,
+        soCli ?? 0,
         codigo, fp, fingerprint,
         JSON.stringify(corpo)
       ).first();
@@ -489,12 +579,129 @@ export async function rotaFarolRegistro(env, quem, corpo, h, limitar, codigoRegi
       "UPDATE farol_dedup SET registro = ?, confirmado = 1 " +
       "WHERE pessoa_h = ? AND fp = ? AND confirmado = 0 AND criado = ?"
     ).bind(lin.id, pessoa_h, fp, t).run();
-    return json({ ok: 1, codigo: codigoRegistro(lin.id), vence: t + FAROL_RETENCAO });
+    const conhecido = await acharConhecido();
+    return json({
+      ok: 1, codigo: codigoRegistro(lin.id), vence: t + FAROL_RETENCAO,
+      ...(conhecido ? { conhecido } : {}),
+    });
   } catch (e) {
     // Falha de armazenamento/configuracao responde 5xx no MESMO envelope JSON
     // da API — nunca texto solto nem a excecao do D1 (tabela ausente, BigInt).
     console.log("farol: " + (e && e.message ? e.message : e));
     return erro("farol indisponivel", 503);
+  }
+}
+
+const PARAM_TOK_RX = /^[A-Za-z0-9_.:+-]{1,48}$/;
+
+// GET /v1/farol/conhecido?fp=...&c=...&p=...&v=... (autenticada por conta,
+// sem gravar nada em farol_registro, farol_dedup nem pessoa).
+export async function rotaFarolConhecido(env, url, h) {
+  const { json, erro } = h;
+  try {
+    if (!env?.DB) return erro("farol indisponivel", 503);
+    const fpCru = (url.searchParams.get("fp") ?? "").trim().toLowerCase();
+    const codCru = (url.searchParams.get("c") ?? url.searchParams.get("codigo") ?? "").trim();
+    const platCru = (url.searchParams.get("p") ?? url.searchParams.get("plataforma") ?? "").trim();
+    const verCru = (url.searchParams.get("v") ?? url.searchParams.get("versao") ?? "").trim();
+    const soCru = (url.searchParams.get("so_maior") ?? url.searchParams.get("so") ?? url.searchParams.get("s") ?? "").trim();
+
+    if (fpCru && !FP_RX.test(fpCru)) return erro("fp invalido", 400);
+    if (codCru && !PARAM_TOK_RX.test(codCru)) return erro("codigo invalido", 400);
+    if (platCru && !PARAM_TOK_RX.test(platCru)) return erro("plataforma invalida", 400);
+    if (verCru && !PARAM_TOK_RX.test(verCru)) return erro("versao invalida", 400);
+    let soMaior = null;
+    if (soCru) {
+      if (!/^\d{1,2}$/.test(soCru)) return erro("so_maior invalido", 400);
+      soMaior = Number(soCru);
+    }
+    if (!fpCru && !(codCru && platCru)) return erro("parametros insuficientes", 400);
+
+    const conhecido = await buscarConhecido(env.DB, {
+      fp: fpCru || null,
+      codigo: codCru || null,
+      plataforma: platCru || null,
+      soMaior,
+      versao: verCru,
+    });
+    return json({ ok: 1, conhecido });
+  } catch (e) {
+    console.log("farol conhecido: " + (e && e.message ? e.message : e));
+    return erro("farol indisponivel", 503);
+  }
+}
+
+// --- Pagina publica do QR: GET /v1/farol/r/<codigo> (sem autenticacao) -------
+// Mostra apenas o codigo de 6 caracteres, quando vence e os botoes "Copiar",
+// "Abrir Discord" e "Abrir issue". Nenhum campo do registro e sequer lido do D1
+// (SELECT so `criado`), e 404 responde byte a byte igual para codigo invalido,
+// fora da faixa do Farol, inexistente ou ja vencido.
+const URL_DISCORD = "https://discord.gg/9NWr6SHyzJ";
+const URL_ISSUE = "https://github.com/iqui27/nuvio-native-legacy/issues/new";
+
+const CABECALHOS_PAGINA = {
+  "content-type": "text/html; charset=utf-8",
+  "cache-control": "no-store",
+  "referrer-policy": "no-referrer",
+  "x-robots-tag": "noindex, nofollow",
+  "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'",
+};
+
+const PAGINA_404 = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nuvio · Farol</title>
+<style>body{margin:0;font:16px/1.5 system-ui,-apple-system,sans-serif;background:#10131a;color:#eef2f7;display:grid;place-items:center;min-height:100vh}main{max-width:420px;padding:24px;text-align:center}h1{font-size:20px;margin:0 0 8px}p{margin:0;opacity:.72}</style></head>
+<body><main><h1>Código não encontrado</h1><p>Este código não existe ou já venceu.</p></main></body></html>`;
+
+function respostaPagina404(metodo) {
+  return new Response(metodo === "HEAD" ? null : PAGINA_404, {
+    status: 404,
+    headers: CABECALHOS_PAGINA,
+  });
+}
+
+function paginaReciboHtml(codigo, vence) {
+  const d = new Date(vence * 1000);
+  const iso = d.toISOString();
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const aaaa = String(d.getUTCFullYear());
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nuvio · Farol</title>
+<style>body{margin:0;font:16px/1.5 system-ui,-apple-system,sans-serif;background:#10131a;color:#eef2f7;display:grid;place-items:center;min-height:100vh}main{max-width:420px;width:100%;box-sizing:border-box;padding:24px;text-align:center}.cod{font:700 42px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;padding:18px 16px;margin:12px 0;border-radius:14px;background:#181d27;border:1px solid #ffffff1f;user-select:all}.vence{margin:0 0 22px;opacity:.75;font-size:15px}.acoes{display:flex;flex-direction:column;gap:10px}button,a.btn{display:block;width:100%;box-sizing:border-box;padding:13px 16px;border-radius:12px;border:1px solid #ffffff24;background:#1f2633;color:#eef2f7;font:600 16px system-ui,-apple-system,sans-serif;text-decoration:none;cursor:pointer}button.pri{background:#3b82f6;border-color:#3b82f6;color:#fff}</style></head>
+<body><main>
+<div id="codigo" class="cod">${codigo}</div>
+<p class="vence">Vence em <time datetime="${iso}">${dd}/${mm}/${aaaa}</time></p>
+<div class="acoes">
+<button type="button" id="copiar" class="pri">Copiar</button>
+<a class="btn" href="${URL_DISCORD}" target="_blank" rel="noopener noreferrer">Abrir Discord</a>
+<a class="btn" href="${URL_ISSUE}" target="_blank" rel="noopener noreferrer">Abrir issue</a>
+</div>
+</main>
+<script>(function(){var b=document.getElementById("copiar"),c="${codigo}";b.addEventListener("click",function(){function ok(){b.textContent="Copiado";setTimeout(function(){b.textContent="Copiar"},2000)}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(c).then(ok).catch(fb)}else fb();function fb(){var t=document.createElement("textarea");t.value=c;t.style.position="fixed";t.style.opacity="0";document.body.appendChild(t);t.select();try{document.execCommand("copy");ok()}catch(e){}document.body.removeChild(t)}})})();</script>
+</body></html>`;
+}
+
+export async function rotaFarolPagina(req, env, codigoCru, agoraFn = () => Math.floor(Date.now() / 1000)) {
+  if (req.method !== "GET" && req.method !== "HEAD")
+    return new Response("metodo nao suportado", { status: 405, headers: { "content-type": "text/plain; charset=utf-8" } });
+  if (!env?.DB)
+    return new Response("farol indisponivel", { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } });
+  const id = decodificarCodigo(codigoCru);
+  if (id === null || id < FAROL_ID_MIN) return respostaPagina404(req.method);
+  try {
+    const linha = await env.DB.prepare("SELECT criado FROM farol_registro WHERE id = ?")
+      .bind(id).first();
+    const t = agoraFn();
+    const vence = linha && Number.isFinite(linha.criado) ? linha.criado + FAROL_RETENCAO : 0;
+    if (!linha || vence <= t) return respostaPagina404(req.method);
+    const cod = codificarId(id);
+    if (!cod) return respostaPagina404(req.method);
+    const html = paginaReciboHtml(cod, vence);
+    return new Response(req.method === "HEAD" ? null : html, {
+      status: 200,
+      headers: CABECALHOS_PAGINA,
+    });
+  } catch (e) {
+    console.log("farol pagina: " + (e && e.message ? e.message : e));
+    return new Response("farol indisponivel", { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } });
   }
 }
 

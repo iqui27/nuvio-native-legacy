@@ -21,6 +21,7 @@ fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc "${flags[@]}" -ffunction-sections -fdata-sections tests/video_android_retomada.c \
   src/video_modo.c src/capmkv.c src/mkv.c tests/capmkv_stub.c \
+  src/farolerro.c src/farolanel.c src/fontesonda.c \
   $( [ "$(uname)" = Darwin ] && echo -Wl,-dead_strip || echo -Wl,--gc-sections ) \
   -lpthread -lm -o "$dir/test"
 if [ "${JNI_ONLY:-0}" = 1 ]; then

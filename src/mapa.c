@@ -13,6 +13,7 @@
 
 #ifndef NV_MAPA_PURO
 #include "catalogo.h"
+#include "idbase.h"
 #include "descoberta.h"
 #include "farolsinal.h"
 #include "progresso.h"
@@ -1329,6 +1330,10 @@ static void obraDoItem(const CatItem *ci, int indice, MapaObra *o) {
   o->ano = mapa_ano_meta(ci->meta);
   o->nota = ci->nota;
   o->catIndice = indice;
+  // O id cru tambem, inteiro: "tt123:2:1" (card de Continuar) e ids sem
+  // equivalente IMDb/TMDB ("kitsu:...", servidor pessoal) continuam
+  // identificaveis quando o catIndice for refeito (CATREVB).
+  snprintf(o->catId, sizeof o->catId, "%s", ci->imdb);
 }
 
 static void sementeDoItem(const CatItem *ci, int indice, int origem, MapaSemente *s) {
@@ -1365,7 +1370,9 @@ static int itemPorImdb(const char *imdb) {
   if (!imdb || !imdb[0]) return -1;
   for (i = 0; i < n; i++) {
     const CatItem *ci = cat_item(i);
-    if (ci && !strcmp(ci->imdb, imdb)) return i;
+    // idbase_mesmo, a regra de cat_indice_por_imdb: a serie do card de
+    // Continuar ("tt123:2:1") tambem e o titulo "tt123" (CATREVB).
+    if (ci && idbase_mesmo(ci->imdb, imdb)) return i;
   }
   return -1;
 }
@@ -1554,6 +1561,8 @@ static void lerObraCampos(char **p, MapaObra *o) {
   snprintf(o->fundo, sizeof o->fundo, "%s", campo(p));
   snprintf(o->sinopse, sizeof o->sinopse, "%s", campo(p));
   o->catIndice = -1;
+  o->catId[0] = 0;           // o cache nao grava o id cru: posicao reaproveitada
+                             // nao pode herdar a identidade da carga anterior
 }
 
 static void cacheLer(Cache *c, const char *nome, const char *idioma) {
@@ -2327,6 +2336,34 @@ static void *vizTrabalhar(void *arg) {
   return NULL;
 }
 
+// O item `ci` e a obra `o`? Para adotar o catIndice guardado na vizinhanca:
+// com IMDb, o id base confere (o card de Continuar guarda "tt123:2:1"); sem
+// IMDb, o TMDB (campo ou o id "tmdb:N"); sem nenhum, o id cru ("kitsu:...").
+// Sem id nenhum resta o titulo — conferido pelo chamador.
+static int vizMesmoItem(const CatItem *ci, const MapaObra *o) {
+  if (o->imdb[0]) return idbase_mesmo(ci->imdb, o->imdb);
+  if (o->tmdb) {
+    if (ci->tmdb == o->tmdb) return 1;
+    return !strncmp(ci->imdb, "tmdb:", 5) && atol(ci->imdb + 5) == o->tmdb;
+  }
+  if (o->catId[0]) return idbase_mesmo(ci->imdb, o->catId);
+  return 1;
+}
+
+// Posicao da obra no catalogo ATUAL, pela identidade + titulo; -1 fora.
+static int vizIndiceDaObra(const MapaObra *o) {
+  int i, n;
+  unsigned ht;
+  if (!o->imdb[0] && !o->tmdb && !o->catId[0]) return -1;
+  ht = mapa_hash_titulo(o->titulo);
+  n = cat_n();
+  for (i = 0; i < n; i++) {
+    const CatItem *ci = cat_item(i);
+    if (ci && mapa_hash_titulo(ci->titulo) == ht && vizMesmoItem(ci, o)) return i;
+  }
+  return -1;
+}
+
 void mapa_vizinhos_pedir(const MapaObra *obra, long pessoaPref, const char *temaPref) {
   static MapaSemente foco;
   static MapaVizCand pool[VIZ_POOL];
@@ -2371,10 +2408,15 @@ void mapa_vizinhos_pedir(const MapaObra *obra, long pessoaPref, const char *tema
   // O retrato local, na hora. O titulo vem do catalogo quando esta nele (traz
   // generos, direcao e elenco); senao so a obra.
   idx = obra->catIndice;
-  { const CatItem *ci = idx >= 0 ? cat_item(idx) : NULL;
+  { const CatItem *ci = idx >= 0 && idx < cat_n() ? cat_item(idx) : NULL;
     unsigned ht = mapa_hash_titulo(obra->titulo);
-    if (!ci || mapa_hash_titulo(ci->titulo) != ht) idx = itemPorImdb(obra->imdb);
-    ci = idx >= 0 ? cat_item(idx) : NULL;
+    // Titulo igual nao basta: um indice reaproveitado por obra homonima leva
+    // ao item errado. Com id conhecido (IMDb; sem ele, TMDB ou o id cru), a
+    // identidade tambem tem de conferir — e a re-resolucao e por ela, para
+    // achar a obra na posicao nova em vez de so recusar a velha (CATREVB).
+    if (!ci || mapa_hash_titulo(ci->titulo) != ht || !vizMesmoItem(ci, obra))
+      idx = vizIndiceDaObra(obra);
+    ci = idx >= 0 && idx < cat_n() ? cat_item(idx) : NULL;
     if (ci && mapa_hash_titulo(ci->titulo) == ht) {
       sementeDoItem(ci, idx, MAPA_ORIGEM_VISTO, &foco);
       { char *p = strchr(foco.obra.imdb, ':'); if (p) *p = 0; }
@@ -2435,6 +2477,12 @@ typedef struct { long long quando; int total, n; MapaObra o[CLIMA_REMOTO]; } Cli
 static pthread_mutex_t travaClima = PTHREAD_MUTEX_INITIALIZER;
 static MapaClimas climaPub, climaLocal;
 static unsigned climaRevPub = 1;
+// cat_revisao() contra a qual os catIndice de climaLocal e climaRem foram
+// resolvidos. Se a atual diverge, todo indice guardado e refeito pela
+// identidade da obra antes de publicar ou copiar (o mesmo numero na revisao
+// nova pode ser outra obra — CATREV).
+static unsigned climaCatRev;
+static void climaFundir(void);
 static ClimaRemoto climaRem[MAPA_CLIMA_N];        // por id da tabela
 static struct { char nome[40]; long id; } climaKw[CLIMA_KW_TAB];
 static int nClimaKw;
@@ -2443,10 +2491,51 @@ static int nClimaVistos;
 static int climaFioVivo, climaCarregado, climaPedeId = -1, climaIndo = -1;
 static char climaChaveApi[96], climaIdioma[12];
 
+// O item `ci` e a obra `o`? A identidade e tipo + IMDb; sem IMDb, TMDB —
+// campo proprio ou o id "tmdb:N" que obraDoItem ja desdobrou em o->tmdb.
+// Titulo sozinho NAO serve: duas obras homonimas dividiriam o mesmo indice.
+static int obraConfere(const CatItem *ci, const MapaObra *o) {
+  if (!ci || strcmp(ci->tipo, o->tipo)) return 0;
+  if (o->imdb[0]) return idbase_mesmo(ci->imdb, o->imdb);
+  if (o->tmdb) {
+    if (ci->tmdb == o->tmdb) return 1;
+    if (!strncmp(ci->imdb, "tmdb:", 5) && atol(ci->imdb + 5) == o->tmdb) return 1;
+  }
+  if (o->catId[0]) return idbase_mesmo(ci->imdb, o->catId);
+  return 0;
+}
+
+// Posicao da obra no catalogo ATUAL, pela identidade; -1 quando ela nao esta.
+static int climaIndiceDaObra(const MapaObra *o) {
+  int i, n;
+  if (!o->imdb[0] && !o->tmdb && !o->catId[0]) return -1;
+  n = cat_n();
+  for (i = 0; i < n; i++) if (obraConfere(cat_item(i), o)) return i;
+  return -1;
+}
+
+// Refaz os catIndice guardados quando o catalogo trocou debaixo deles: cada
+// um volta a valer pela identidade, ou -1 quando a obra saiu do catalogo.
+// Chamada com travaClima tomada.
+static void climaRevalidar(void) {
+  unsigned rev = cat_revisao();
+  int m, i;
+  if (rev == climaCatRev) return;
+  for (m = 0; m < climaLocal.n; m++)
+    for (i = 0; i < climaLocal.c[m].n; i++)
+      climaLocal.c[m].itens[i].catIndice = climaIndiceDaObra(&climaLocal.c[m].itens[i]);
+  for (m = 0; m < MAPA_CLIMA_N; m++)
+    for (i = 0; i < climaRem[m].n; i++)
+      climaRem[m].o[i].catIndice = climaIndiceDaObra(&climaRem[m].o[i]);
+  climaCatRev = rev;
+}
+
 int mapa_climas_copiar(MapaClimas *dst, unsigned *revisao) {
   int copiou = 0;
   if (!dst || !revisao) return 0;
   pthread_mutex_lock(&travaClima);
+  // Catalogo trocado sem nova montagem: re-resolve e republica antes de copiar.
+  if (cat_revisao() != climaCatRev) climaFundir();
   if (climaPub.revisao != *revisao) {
     *dst = climaPub;
     *revisao = climaPub.revisao;
@@ -2459,7 +2548,9 @@ int mapa_climas_copiar(MapaClimas *dst, unsigned *revisao) {
 // Local + o que o /discover ja trouxe, e publica. Chamar com travaClima tomada.
 static void climaFundir(void) {
   int p, i, k;
-  unsigned rev = ++climaRevPub;
+  unsigned rev;
+  climaRevalidar();
+  rev = ++climaRevPub;
   climaPub = climaLocal;
   climaPub.revisao = rev;
   for (p = 0; p < climaPub.n; p++) {
@@ -2664,6 +2755,9 @@ void mapa_climas_pedir(void) {
   static unsigned tab[CLIMA_TAB];
   static unsigned vistos[VIZ_VISTOS];
   const char *chave = desc_chave_tmdb();
+  // Revisao ANTES de ler os itens: uma troca no meio da montagem mistura
+  // indices de dois blocos; marcar a velha forca a re-resolucao na fusao.
+  unsigned revCat = cat_revisao();
   int i, m, total = cat_n(), nVistos = 0, vistosTotal = 0, nSeen[MAPA_CLIMA_N], nUnseen[MAPA_CLIMA_N];
   if (!chave || !chave[0]) chave = desc_chave_tmdb_reserva();
   memset(&novo, 0, sizeof novo);
@@ -2741,6 +2835,7 @@ void mapa_climas_pedir(void) {
   }
   pthread_mutex_lock(&travaClima);
   climaLocal = novo;
+  climaCatRev = revCat;
   memcpy(climaVistos, vistos, sizeof vistos);
   nClimaVistos = nVistos;
   snprintf(climaChaveApi, sizeof climaChaveApi, "%s", chave ? chave : "");
@@ -2770,6 +2865,7 @@ static void vizEsquecer(void) {
   memset(climaRem, 0, sizeof climaRem);
   memset(&climaLocal, 0, sizeof climaLocal);
   nClimaVistos = 0;
+  climaCatRev = cat_revisao();
   climaFundir();
   pthread_mutex_unlock(&travaClima);
   dados_apagar(VIZ_NOME);

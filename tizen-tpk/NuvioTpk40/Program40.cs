@@ -121,6 +121,7 @@ namespace NuvioTpk
         [DllImport("libc.so.6", SetLastError = true, EntryPoint = "syscall")]
         static extern int syscall_cache(int number, IntPtr start, IntPtr end, int flags);
         [DllImport("libc.so.6", SetLastError = true)] static extern IntPtr write(int fd, IntPtr buf, IntPtr count);
+        [DllImport("libc.so.6")] static extern int setenv(string name, string value, int overwrite);
         [DllImport("libc.so.6", SetLastError = true)] static extern IntPtr mmap(IntPtr addr, IntPtr len, int prot, int flags, int fd, IntPtr off);
         [DllImport("libc.so.6", SetLastError = true)] static extern int mprotect(IntPtr addr, IntPtr len, int prot);
         [DllImport("libc.so.6", SetLastError = true)] static extern int munmap(IntPtr addr, IntPtr len);
@@ -152,7 +153,8 @@ namespace NuvioTpk
 
         Window janelaVideo, janelaErro, janelaAviso;
         Video video;
-        bool rodando, fim, primeiroQuadro, teclasReservadas;
+        bool rodando, fim, primeiroQuadro, teclasReservadas, tvLogada;
+        int tiques;
 
         protected override void OnCreate()
         {
@@ -216,6 +218,22 @@ namespace NuvioTpk
                 catch { video.PlanoAceitaRoiFora = false; }
                 Etapa("ok video-window");
 
+                // A mesma leitura que decide a geometria publica o aparelho
+                // para o farolperfil (issue 8): as variaveis ja valem na
+                // primeira coleta e a linha [tv], ~3 s depois, completa com a
+                // tela — o mesmo protocolo do host 6+ (tizen-tpk/Program.cs).
+                try
+                {
+                    string modelo40 = null, versao40 = null;
+                    try { Information.TryGetValue<string>("http://tizen.org/system/model_name", out modelo40); } catch { }
+                    try { Information.TryGetValue<string>("http://tizen.org/feature/platform.version", out versao40); } catch { }
+                    if (!string.IsNullOrEmpty(modelo40) && setenv("NUVIO_TV_MODEL", modelo40, 1) != 0)
+                        Etapa("note panel model unavailable: setenv failed");
+                    if (!string.IsNullOrEmpty(versao40) && setenv("NUVIO_TIZEN_VERSION", versao40, 1) != 0)
+                        Etapa("note tizen version unavailable: setenv failed");
+                }
+                catch (Exception e) { Etapa("note tv-info unavailable: " + e.Message); }
+
                 // O OnUpdate(IntPtr,IntPtr) faz o swap ele mesmo quando r>0:
                 // o bool OnUpdate() anterior tinha de devolver sempre true
                 // (o false no arranque parava o callback e o app nunca recebia
@@ -245,7 +263,16 @@ namespace NuvioTpk
             if (etapaAnterior != null) Aviso("Previous launch stopped at: " + etapaAnterior);
             EcoreMainloop.AddTimer(0.25, () =>
             {
-                if (!fim) { video.Tique(); return true; }
+                if (!fim)
+                {
+                    video.Tique();
+                    // ~3 s depois de abrir, quando o main() do app ja
+                    // redirecionou o stdout para o nuvio.log (o mesmo atraso
+                    // do host 6+, Program.cs): a linha diz que TV e esta —
+                    // o farolperfil le modelo, versao e tela daqui.
+                    if (!tvLogada && ++tiques >= 12) { tvLogada = true; LogaTv(); }
+                    return true;
+                }
                 video.Parar();
                 string motivo = Marshal.PtrToStringAnsi(NvLib.Erro());
                 Etapa("note app ended: " + (string.IsNullOrEmpty(motivo) ? "main returned" : motivo));
@@ -412,6 +439,21 @@ namespace NuvioTpk
             if (abertas.Count == 0) return null;
             string ultima = abertas[abertas.Count - 1];
             return ultima + " (" + (origem.ContainsKey(ultima) ? origem[ultima] : "?") + ")";
+        }
+
+        // Linha "[tv]" no nuvio.log via nv_tpk_log (Video.Log tambem anota no
+        // tpk-host.log): o mesmo protocolo do host 6+, com host=tpk40. Modelo
+        // e versao sao os do Tizen.System.Information — os que a geometria do
+        // player ja consulta — e a tela e a fixa do pacote (1920x1080).
+        void LogaTv()
+        {
+            string versao = null, modelo = null;
+            try { Information.TryGetValue<string>("http://tizen.org/feature/platform.version", out versao); } catch { }
+            try { Information.TryGetValue<string>("http://tizen.org/system/model_name", out modelo); } catch { }
+            try { video.Log("[tv] modelo=" + (modelo ?? "?") + " tizen=" + (versao ?? "?") +
+                            " host=tpk40 dotnet=" + RuntimeInformation.FrameworkDescription +
+                            " tela=" + W + "x" + H); }
+            catch { }
         }
 
         // ================= CARGA NATIVA =================

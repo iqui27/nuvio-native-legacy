@@ -521,6 +521,11 @@
         ENV.NUVIO_TV_MODEL = model;
         console.log("[tv] modelo=" + model);
       } catch (_) { /* Unknown panel keeps the 100% fallback. */ }
+      try {
+        var farolTv = window.nvFarolTvInfo();
+        ENV.NUVIO_FAROL_WGT = farolTv.modelo + "|" + farolTv.versao;
+        if (farolTv.versao !== "?") ENV.NUVIO_TIZEN_VERSION = farolTv.versao;
+      } catch (_) { /* Farol perfil cai para "?" quando a casca nao informa. */ }
     }],
     canvas: (function () { return document.getElementById("canvas"); })(),
     // O QUE O RUNTIME JA SABIA E NINGUEM PERGUNTAVA. O Emscripten anuncia o
@@ -580,6 +585,77 @@
     },
     printErr: function (t) { console.warn(t); if (window.__nvDiag) window.__nvDiag(t, 1); }
   };
+
+  // NV-FAROL-TV-INICIO
+  // Coletor da casca WASM para o Farol (issue 8): devolve { modelo, versao }
+  // lendo productinfo/systeminfo do Tizen com recuo para o userAgent.
+  // Campo ausente ou suspeito (URL, IP, caracteres fora de [A-Za-z0-9._ -]) -> "?".
+  function nvFarolTvInfo(wapis, tiz, ua) {
+    if (wapis === undefined) wapis = typeof webapis !== "undefined" ? webapis : null;
+    if (tiz === undefined) tiz = typeof tizen !== "undefined" ? tizen : null;
+    if (ua === undefined) {
+      ua = typeof navigator !== "undefined" && navigator && navigator.userAgent
+        ? String(navigator.userAgent) : "";
+    }
+    var modelo = "", versao = "";
+    var pi = wapis && wapis.productinfo;
+    try {
+      if (pi && typeof pi.getRealModel === "function")
+        modelo = String(pi.getRealModel() || "").replace(/^ +| +$/g, "");
+    } catch (_) {}
+    try {
+      if (!modelo && pi && typeof pi.getModel === "function")
+        modelo = String(pi.getModel() || "").replace(/^ +| +$/g, "");
+    } catch (_) {}
+    var si = tiz && tiz.systeminfo;
+    try {
+      if (!modelo && si && typeof si.getCapability === "function")
+        modelo = String(si.getCapability("http://tizen.org/system/model_name") || "").replace(/^ +| +$/g, "");
+    } catch (_) {}
+    try {
+      if (si && typeof si.getCapability === "function")
+        versao = String(si.getCapability("http://tizen.org/feature/platform.version") || "");
+    } catch (_) {}
+    if (!versao && typeof ua === "string") {
+      var m = /Tizen\s+(\d{1,4}(?:\.\d{1,4}){0,2})/i.exec(ua);
+      if (m) versao = m[1];
+    }
+    var suspeito = false;
+    if (!modelo || modelo.length > 128 || !/^[A-Za-z0-9._ -]+$/.test(modelo) ||
+        !/[A-Za-z0-9]/.test(modelo) || modelo.indexOf("..") >= 0 ||
+        /[0-9a-fA-F]{20}/.test(modelo) || /(?:^| )www\./i.test(modelo) ||
+        /\d{1,3}(?:\.\d{1,3}){3}/.test(modelo)) {
+      suspeito = true;
+    } else {
+      var palavras = modelo.split(/ +/);
+      for (var i = 0; i < palavras.length; i++) {
+        var w = palavras[i].replace(/\.$/, "");
+        if (w.indexOf(".") >= 0) {
+          var partes = w.split(".");
+          if (partes.length >= 2 && partes.length <= 4 &&
+              partes.every(function (p) { return /^(?:0[xX][0-9a-fA-F]+|0[0-7]+|\d+)$/.test(p); })) {
+            suspeito = true;
+            break;
+          }
+        }
+      }
+    }
+    if (suspeito) {
+      modelo = "?";
+    } else {
+      modelo = modelo.replace(/ +/g, " ").slice(0, 32).replace(/ +$/, "");
+      if (!/[A-Za-z0-9]/.test(modelo)) modelo = "?";
+    }
+    versao = versao.replace(/^ +| +$/g, "");
+    if (!/^\d{1,4}(?:\.\d{1,4}){0,2}$/.test(versao) ||
+        (versao.indexOf(".") < 0 && versao.length > 2) ||
+        parseInt(versao, 10) < 1) {
+      versao = "?";
+    }
+    return { modelo: modelo, versao: versao };
+  }
+  if (typeof window !== "undefined") window.nvFarolTvInfo = nvFarolTvInfo;
+  // NV-FAROL-TV-FIM
 
   // TECLADO DA SAMSUNG PARA DIGITAR E PARA O BOTAO DE MICROFONE DAS BUSCAS
   // (src/entrada_texto.c). OK no campo abre o teclado da TV para digitar;

@@ -6007,8 +6007,10 @@ void app_atualizar(float dt, Uint32 agora) {
 
   // Recover every logged-in screen, including same-profile HTTP 401 renewal.
   // Only the drawing thread may install the profile's live state and sources.
-  if (sessao_logada() &&
-      (perfis_sessao_geracao() != perfilSessaoAplicada || !desc_sessao_aberta())) {
+  // Sem login (preview): a troca de perfil tambem reabre a sessao — geracao
+  // mudou — mas a trilha de retry por `!desc_sessao_aberta()` fica na conta.
+  if (perfis_sessao_geracao() != perfilSessaoAplicada ||
+      (sessao_logada() && !desc_sessao_aberta())) {
     printf("[app] retry profile session opening: %s\n",
            perfis_sessao_geracao() != perfilSessaoAplicada
              ? "profile generation changed" : "discovery session unopened");

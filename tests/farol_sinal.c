@@ -7,6 +7,7 @@
 // sao os de verdade.
 #include "farolsinal.h"
 #include "farolanel.h"
+#include "idbase.h"
 #include "progresso.h"
 #include "visto.h"
 #include <assert.h>
@@ -229,10 +230,48 @@ const CatItem *cat_item(int i) {
   pthread_mutex_unlock(&T_cmtx);
   return r;
 }
+int cat_n(void) {
+  int r;
+  pthread_mutex_lock(&T_cmtx);
+  r = C_n;
+  pthread_mutex_unlock(&T_cmtx);
+  return r;
+}
+// A busca do falso e a mesma de producao (a regra de cat_indice_por_imdb,
+// catalogo.c — idbase_mesmo na ponta): ids iguais, ou o item e o id pedido
+// mais ":<T>:<E>" — a serie do card de Continuar fica "tt_ser:1:2" no
+// catalogo e quem procura tem "tt_ser". Copia local porque 51f45fa12 ainda
+// nao tem idbase_mesmo.
+static int sufxoEpFalso(const char *r, int anime) {
+  int n = 0;
+  if (!r || *r != ':') return 0;
+  r++;
+  while (*r >= '0' && *r <= '9') { r++; n++; }
+  if (!*r) return anime && n;
+  if (*r != ':') return 0;
+  r++; n = 0;
+  while (*r >= '0' && *r <= '9') { r++; n++; }
+  return n && !*r;
+}
+static int mesmoTituloFalso(const char *a, const char *b) {
+  size_t na, nb;
+  if (!a || !b) return 0;
+  if (!strcmp(a, b)) return 1;
+  na = strlen(a); nb = strlen(b);
+  { const char *lon = na > nb ? a : b, *cur = na > nb ? b : a;
+    size_t nc = na > nb ? nb : na;
+    const char *r = lon + nc;
+    if (strncmp(lon, cur, nc)) return 0;
+    return sufxoEpFalso(r, !idbase_e_imdb(lon) || !idbase_e_imdb(cur)); }
+}
+
+// O falso so acrescenta, nunca troca o catalogo inteiro: a revisao fica
+// estavel, como o real entre duas chamadas de cat_definir_tudo.
+unsigned cat_revisao(void) { return 1; }
 int cat_indice_por_imdb(const char *imdb) {
   int i, r = -1;
   pthread_mutex_lock(&T_cmtx);
-  for (i = 0; i < C_n; i++) if (!strcmp(C_it[i].imdb, imdb)) { r = i; break; }
+  for (i = 0; i < C_n; i++) if (mesmoTituloFalso(C_it[i].imdb, imdb)) { r = i; break; }
   pthread_mutex_unlock(&T_cmtx);
   return r;
 }
@@ -440,7 +479,10 @@ int main(void) {
 
   // serie: +0,1 por episodio
   zeraTudo();
-  cat_add("tt_ser", "series", 0, "Acao", "Serie S");
+  // O item fica com o id do card de Continuar ("<id>:<T>:<E>"), como em
+  // producao: diario e progresso usam o id base "tt_ser" e a casa e feita
+  // pela regra do id base (CATREVB).
+  cat_add("tt_ser:1:2", "series", 0, "Acao", "Serie S");
   cat_ep(1, 1, 1); cat_ep(1, 1, 2); cat_ep(1, 2, 1);
   entrada(&e, "tt_ser", DIARIO_SERIE, 1, 1, 0, 0);
   dAdd(&e);

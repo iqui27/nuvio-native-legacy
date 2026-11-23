@@ -48,6 +48,9 @@ typedef struct {
   int  nota;            // 0..100 (vote_average * 10)
   int  votos;
   int  catIndice;       // indice em cat_item no momento da montagem; -1 = fora
+  char catId[64];       // id cru do item no catalogo ("kitsu:7442"): identidade
+                        // de quem nao tem IMDb nem TMDB, para re-resolver o
+                        // catIndice depois de uma troca (CATREVB)
 } MapaObra;
 
 // O que liga duas sementes, do mais especifico ao mais vago.

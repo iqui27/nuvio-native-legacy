@@ -8,7 +8,8 @@ static uint64_t perfilSessaoAplicada = 1;
 static unsigned trocaPerfilDesde;
 static pthread_t desenho;
 static int aberturas;
-int sessao_logada(void) { return 1; }
+static int logada = 1;
+int sessao_logada(void) { return logada; }
 int perfilsel_concluido(void) { return 1; }
 void perfilsel_preparar(int v, unsigned t) { (void)v; (void)t; }
 static void perfilAbrirSessao(int antes) {
@@ -51,5 +52,16 @@ int main(void) {
   quadro(102);
   CONFERE(aberturas == 2 && atomic_load(&montares) == 3,
           "Home repairs an unopened discovery session too");
+  // Sem login (preview): a troca de perfil avanca a geracao e tambem reabre a
+  // sessao no fio de desenho — o portao nao pode exigir sessao_logada() aqui.
+  logada = 0;
+  atomic_fetch_add(&sessaoG, 1);
+  quadro(103);
+  CONFERE(aberturas == 3,
+          "profile switch reopens the session even without login");
+  CONFERE(perfilSessaoAplicada == perfis_sessao_geracao(),
+          "applied session tracks the new generation");
+  quadro(104);
+  CONFERE(aberturas == 3, "no reopen loop while generation is stable");
   return falhas ? 1 : 0;
 }
