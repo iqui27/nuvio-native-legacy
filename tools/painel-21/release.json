@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T20:10:48+00:00",
+    "updatedAt": "2026-11-23T20:14:47+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T20:08:00+00:00",
+    "lastVpsReportedAt": "2026-11-23T20:13:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -306,21 +306,22 @@
         "farol-8"
       ],
       "allDependencies": false,
-      "status": "REVISAO",
+      "status": "APROVADA",
       "wave": "B",
       "sha": "52328b164e",
       "batch": null,
-      "note": "Gemini Neon entregou pacote FarolRegistro v1; Opus via Antigravity revisa (…e6eff)",
+      "note": "Opus 5.5 via Antigravity r1 APROVADO_COM_RESSALVAS, próximo lote; testes normal/ASan+UBSan/TSan e contrato TV/worker/leitor passaram, merge limpo vs 21e; 57 948 montagens dentro do teto. Ressalvas para 14/18/22 registradas no ESCOPO-2.1.md; TV física pendente",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-11",
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
+      "updatedAt": "2026-11-23T20:14:47+00:00",
+      "reportedAt": "2026-11-23T20:13:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "Gemini Neon entregou pacote FarolRegistro v1; Opus via Antigravity revisa (…e6eff)",
         "VPS Gemini 4 Neon (antigravity) onda B, task …a969d8f2, brief lotes/sense/briefs/farol-11.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
       ]
     },
@@ -3919,6 +3920,14 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T20:13:00+00:00",
+      "appliedAt": "2026-11-23T20:14:47+00:00",
+      "item": "farol-11",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-23 20:13 [APROVADA] farol-11 · agente/21z-farol-11@52328b164e · Opus 5.5 via Antigravity r1 APROVADO_COM_RESSALVAS, próximo lote; testes normal/ASan+UBSan/TSan e contrato TV/worker/leitor passaram, merge limpo vs 21e; 57 948 montagens dentro do teto. Ressalvas para 14/18/22 registradas no ESCOPO-2.1.md; TV física pendente"
+    },
     {
       "at": "2026-11-23T20:08:00+00:00",
       "appliedAt": "2026-11-23T20:10:48+00:00",
