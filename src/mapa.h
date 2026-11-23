@@ -186,6 +186,11 @@ typedef struct {
 // titulo que ja esta publicado nao faz nada.
 void mapa_vizinhos_pedir(const MapaObra *foco, long pessoaPref, const char *temaPref,
                          int temaEhGenero);
+// Variante com id canonico do genero (> 0 quando veio de um selo ou grupo do
+// Mapa): propaga o id TMDB diretamente sem inferir do texto localizado.
+void mapa_vizinhos_pedir_genero(const MapaObra *foco, long pessoaPref,
+                                const char *temaPref, int temaEhGenero,
+                                long generoId);
 int  mapa_vizinhos_copiar(MapaVizinhos *dst, unsigned *revisao);
 // O titulo `indice` do catalogo como MapaObra (entrada pelo Detalhe). 1 = ok.
 int  mapa_obra_do_catalogo(int indice, MapaObra *o);
@@ -341,6 +346,7 @@ typedef struct {
   unsigned pessoaPref;            // hash do nome preferido na reserva local (0 = nenhum)
   unsigned generoPref;            // hash do genero preferido na reserva local (0 = nenhum)
   unsigned generoPrefMasc;        // o mesmo genero por identidade (mascara MAPA_G_*)
+  long generoPrefId;              // id TMDB do genero preferido (> 0 quando veio do selo)
   const char *generoPrefNome;     // o rotulo do selo, no idioma do catalogo
 } MapaVizEntrada;
 // Monta os quatro grupos. Preserva v->revisao.
@@ -352,10 +358,14 @@ int  mapa_ler_lista(const char *json, int serie, MapaObra *o, int max, int *tota
 // /search/keyword: o id da palavra de nome EXATO `nome` (sem caixa). 0 = nao ha.
 long mapa_ler_keyword_id(const char *json, const char *nome);
 
-// Generos canonicos da regra dos climas (bit = 1 << MAPA_G_*).
+// Generos canonicos da regra dos climas e selos (bit = 1 << MAPA_G_*).
 enum { MAPA_G_ACAO = 1, MAPA_G_AVENTURA, MAPA_G_COMEDIA, MAPA_G_CRIME, MAPA_G_DRAMA,
        MAPA_G_FAMILIA, MAPA_G_FANTASIA, MAPA_G_FICCAO, MAPA_G_MISTERIO,
-       MAPA_G_TERROR, MAPA_G_SUSPENSE, MAPA_G_N };
+       MAPA_G_TERROR, MAPA_G_SUSPENSE,
+       MAPA_G_ANIMACAO, MAPA_G_DOCUMENTARIO, MAPA_G_HISTORIA, MAPA_G_MUSICA,
+       MAPA_G_ROMANCE, MAPA_G_GUERRA, MAPA_G_FAROESTE,
+       MAPA_G_INFANTIL, MAPA_G_NOTICIAS, MAPA_G_REALITY, MAPA_G_NOVELA,
+       MAPA_G_TALK, MAPA_G_N };
 // Mascara de um nome de genero ("Sci-Fi & Fantasy" liga dois bits). Aceita os
 // nomes em ingles, portugues e espanhol que o catalogo e o TMDB mandam.
 unsigned mapa_genero_mascara(const char *nome);

@@ -251,7 +251,9 @@ static const char *fd_genero_tmdb_pt(int32_t id) {
     { 14, "Fantasia" }, { 36, "História" }, { 27, "Terror" }, { 10402, "Música" },
     { 9648, "Mistério" }, { 10749, "Romance" }, { 878, "Ficção científica" },
     { 53, "Suspense" }, { 10752, "Guerra" }, { 37, "Faroeste" },
-    { 10759, "Ação" }, { 10765, "Ficção científica" }, { 10768, "Guerra" }
+    { 10759, "Ação" }, { 10762, "Infantil" }, { 10763, "Notícias" },
+    { 10764, "Reality" }, { 10765, "Ficção científica" }, { 10766, "Novela" },
+    { 10767, "Talk show" }, { 10768, "Guerra" }
   };
   size_t i;
   for (i = 0; i < sizeof TAB / sizeof *TAB; i++)
@@ -1719,10 +1721,11 @@ int faroldetalhe_tecla(SDL_Keycode k, int *pediuMenu) {
   return consumiu;
 }
 
-int faroldetalhe_ativar(long *tmdb, int *elencoCol,
-                        char *nome, size_t tamNome,
-                        char *foto, size_t tamFoto,
-                        int *seloTipo, char *seloFio, size_t tamFio) {
+int faroldetalhe_ativar_id(long *tmdb, int *elencoCol,
+                           char *nome, size_t tamNome,
+                           char *foto, size_t tamFoto,
+                           int *seloTipo, char *seloFio, size_t tamFio,
+                           int32_t *seloId) {
   int acao = FD_ACAO_NENHUMA;
   if (tmdb) *tmdb = 0;
   if (elencoCol) *elencoCol = -1;
@@ -1730,6 +1733,7 @@ int faroldetalhe_ativar(long *tmdb, int *elencoCol,
   if (foto && tamFoto) foto[0] = 0;
   if (seloTipo) *seloTipo = -1;
   if (seloFio && tamFio) seloFio[0] = 0;
+  if (seloId) *seloId = 0;
 
   FD_LOCK();
   if (S.snap.visivel && S.snap.focado &&
@@ -1743,14 +1747,24 @@ int faroldetalhe_ativar(long *tmdb, int *elencoCol,
       if (foto && tamFoto) snprintf(foto, tamFoto, "%s", sl->foto);
     } else {
       // Tema e genero abrem o Explorar filtrado: o fio e o nome cru do Mapa
-      // (kw ou genero local), preservado ate app.c (FAROL46B).
+      // (kw ou genero local), preservado ate app.c (FAROL46B); o id do selo
+      // vai junto quando disponivel.
       acao = FD_ACAO_EXPLORAR;
       if (seloTipo) *seloTipo = sl->tipo;
       if (seloFio && tamFio) snprintf(seloFio, tamFio, "%s", sl->fio);
+      if (seloId) *seloId = sl->id;
     }
   }
   FD_UNLOCK();
   return acao;
+}
+
+int faroldetalhe_ativar(long *tmdb, int *elencoCol,
+                        char *nome, size_t tamNome,
+                        char *foto, size_t tamFoto,
+                        int *seloTipo, char *seloFio, size_t tamFio) {
+  return faroldetalhe_ativar_id(tmdb, elencoCol, nome, tamNome, foto, tamFoto,
+                                seloTipo, seloFio, tamFio, NULL);
 }
 
 // ------------------------------------------------- inspecao e testes

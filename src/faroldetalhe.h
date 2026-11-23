@@ -49,6 +49,12 @@ int   faroldetalhe_ativar(long *tmdb, int *elencoCol,
                           char *nome, size_t tamNome,
                           char *foto, size_t tamFoto,
                           int *seloTipo, char *seloFio, size_t tamFio);
+// Variante que devolve tambem o id do selo (id TMDB > 0 ou hash local < 0).
+int   faroldetalhe_ativar_id(long *tmdb, int *elencoCol,
+                             char *nome, size_t tamNome,
+                             char *foto, size_t tamFoto,
+                             int *seloTipo, char *seloFio, size_t tamFio,
+                             int32_t *seloId);
 
 // --- inspecao e ganchos de teste deterministico (sem rede) -------------------
 int   faroldetalhe_tem_porque(void);

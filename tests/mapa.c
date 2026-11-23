@@ -215,6 +215,34 @@ static void testarVizinhanca(void) {
     // Remoto: so os recomendados do TMDB, sem o enchimento do catalogo.
     assert(v.g[MAPA_VIZ_REC].n == 1 && temTitulo(&v.g[MAPA_VIZ_REC], "Enemy")); }
 
+  // Genero canonico propagado por id TMDB (Animation id 16): casa com candidato
+  // cuja genMasc veio do catalogo em ingles, sem depender do texto do selo.
+  { MapaSemente sf;
+    MapaVizCand animPool[2];
+    MapaVizEntrada ea;
+    memset(&sf, 0, sizeof sf);
+    snprintf(sf.obra.titulo, sizeof sf.obra.titulo, "Spirited Away");
+    snprintf(sf.obra.tipo, sizeof sf.obra.tipo, "movie");
+    sf.gen[0].id = 16;
+    snprintf(sf.gen[0].nome, sizeof sf.gen[0].nome, "Animation");
+    sf.nGen = 1;
+    animPool[0] = cand("Toy Story", 1995, "Animation", NULL, NULL, 10);
+    animPool[0].genMasc = mapa_genero_mascara("Animation");
+    animPool[1] = cand("Heat", 1995, "Crime", NULL, NULL, 11);
+    animPool[1].genMasc = mapa_genero_mascara("Crime");
+    memset(&ea, 0, sizeof ea);
+    ea.foco = &sf;
+    ea.pool = animPool; ea.nPool = 2;
+    ea.generoPref = mapa_hash_titulo("Anima\xc3\xa7\xc3\xa3o");
+    ea.generoPrefId = 16;
+    ea.generoPrefMasc = 1u << MAPA_G_ANIMACAO;
+    ea.generoPrefNome = "Anima\xc3\xa7\xc3\xa3o";
+    mapa_vizinhos_montar(&ea, &v);
+    assert(v.g[MAPA_VIZ_TEMA].tipo == MAPA_GR_GENERO);
+    assert(v.g[MAPA_VIZ_TEMA].ref == 16);
+    assert(!strcmp(v.g[MAPA_VIZ_TEMA].sub, "Anima\xc3\xa7\xc3\xa3o"));
+    assert(v.g[MAPA_VIZ_TEMA].n == 1 && temTitulo(&v.g[MAPA_VIZ_TEMA], "Toy Story")); }
+
   // Nada: sem foco, tudo vazio, sem estourar.
   e.foco = NULL;
   mapa_vizinhos_montar(&e, &v);
@@ -232,6 +260,31 @@ static void testarClimas(void) {
   assert(drama == 1u << MAPA_G_DRAMA && misterio == 1u << MAPA_G_MISTERIO);
   assert(scifi == mapa_genero_mascara("Science Fiction"));
   assert(mapa_genero_mascara("Sci-Fi & Fantasy") == ((1u << MAPA_G_FICCAO) | (1u << MAPA_G_FANTASIA)));
+  assert(mapa_genero_mascara("Animation") == (1u << MAPA_G_ANIMACAO) &&
+         mapa_genero_mascara("Anima\xc3\xa7\xc3\xa3o") == (1u << MAPA_G_ANIMACAO) &&
+         mapa_genero_mascara("Animaci\xc3\xb3n") == (1u << MAPA_G_ANIMACAO));
+  assert(mapa_genero_mascara("Documentary") == (1u << MAPA_G_DOCUMENTARIO) &&
+         mapa_genero_mascara("Document\xc3\xa1rio") == (1u << MAPA_G_DOCUMENTARIO) &&
+         mapa_genero_mascara("Documental") == (1u << MAPA_G_DOCUMENTARIO));
+  assert(mapa_genero_mascara("History") == (1u << MAPA_G_HISTORIA) &&
+         mapa_genero_mascara("Hist\xc3\xb3ria") == (1u << MAPA_G_HISTORIA));
+  assert(mapa_genero_mascara("Music") == (1u << MAPA_G_MUSICA) &&
+         mapa_genero_mascara("M\xc3\xbasica") == (1u << MAPA_G_MUSICA));
+  assert(mapa_genero_mascara("Romance") == (1u << MAPA_G_ROMANCE));
+  assert(mapa_genero_mascara("War") == (1u << MAPA_G_GUERRA) &&
+         mapa_genero_mascara("War & Politics") == (1u << MAPA_G_GUERRA) &&
+         mapa_genero_mascara("Guerra") == (1u << MAPA_G_GUERRA) &&
+         mapa_genero_mascara("B\xc3\xa9lica") == (1u << MAPA_G_GUERRA));
+  assert(mapa_genero_mascara("Western") == (1u << MAPA_G_FAROESTE) &&
+         mapa_genero_mascara("Faroeste") == (1u << MAPA_G_FAROESTE));
+  assert(mapa_genero_mascara("Kids") == (1u << MAPA_G_INFANTIL) &&
+         mapa_genero_mascara("Infantil") == (1u << MAPA_G_INFANTIL) &&
+         mapa_genero_mascara("News") == (1u << MAPA_G_NOTICIAS) &&
+         mapa_genero_mascara("Not\xc3\xad" "cias") == (1u << MAPA_G_NOTICIAS) &&
+         mapa_genero_mascara("Reality") == (1u << MAPA_G_REALITY) &&
+         mapa_genero_mascara("Soap") == (1u << MAPA_G_NOVELA) &&
+         mapa_genero_mascara("Novela") == (1u << MAPA_G_NOVELA) &&
+         mapa_genero_mascara("Talk show") == (1u << MAPA_G_TALK));
   assert(mapa_genero_mascara("Filme") == 0 && mapa_genero_mascara(NULL) == 0);
   // Todo clima tem nome e descricao (chaves de i18n) e nenhum id fora da tabela.
   for (i = 0; i < MAPA_CLIMA_N; i++) assert(mapa_clima_nome(i)[0] && mapa_clima_descricao(i)[0]);

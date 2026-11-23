@@ -656,8 +656,12 @@ static void teste_selos_e_idiomas(void) {
 #ifdef FD_TEM_SELO_FIO
   {
     int sT = -1;
+    int32_t sId = 0;
     char sF[64] = "", fioGenero[64] = "";
-    // R7: selo devolve tipo + fio para Explorar filtrado (destinos distintos).
+    // R7: selo devolve tipo + fio (+ id) para Explorar filtrado (destinos distintos).
+    assert(faroldetalhe_ativar_id(&tmdb, &elCol, nome, sizeof nome, foto, sizeof foto,
+                                  &sT, sF, sizeof sF, &sId) == FD_ACAO_EXPLORAR);
+    assert(sT == FP_SELO_GENERO && sF[0] != 0 && sId == 878);
     assert(faroldetalhe_ativar(&tmdb, &elCol, nome, sizeof nome, foto, sizeof foto,
                                &sT, sF, sizeof sF) == FD_ACAO_EXPLORAR);
     assert(sT == FP_SELO_GENERO && sF[0] != 0);
@@ -695,6 +699,34 @@ static void teste_selos_e_idiomas(void) {
     assert(strstr(s0, "g878") == NULL);
   }
   atomic_store(&g_idioma, 0);
+
+  // Selo Animation (TMDB 16) em ingles e portugues preserva id 16 e rotulo localizado.
+  {
+    int sT = -1;
+    int32_t sId = 0;
+    char sF[64] = "";
+    faroldetalhe_teste_reset();
+    faroldetalhe_teste_relogio(relogioS, relogioMs);
+    montarCatalogoBase();
+    aquecerModelo(&g, d, 0, 0, 16);
+    faroldetalhe_teste_modelo(&g);
+    preencherFicha(&fAlvo, 9002, FF_FILME, 2025, 110, 82, 0, 0, 16);
+    faroldetalhe_teste_ficha("tt9000002", &fAlvo);
+    atomic_store(&g_idioma, IDIOMA_EN);
+    faroldetalhe_abrir(1, 1000u);
+    assert(faroldetalhe_n_selos() == 1);
+    assert(faroldetalhe_selo_rotulo(0, &sT, &sId, s0, sizeof s0));
+    assert(sT == FP_SELO_GENERO && sId == 16 && !strcmp(s0, "Animation"));
+    assert(faroldetalhe_focar(1) == 1);
+    sT = -1; sId = 0;
+    assert(faroldetalhe_ativar_id(&tmdb, &elCol, nome, sizeof nome, foto, sizeof foto,
+                                  &sT, sF, sizeof sF, &sId) == FD_ACAO_EXPLORAR);
+    assert(sT == FP_SELO_GENERO && sId == 16 && !strcmp(sF, "Anima\xc3\xa7\xc3\xa3o"));
+    atomic_store(&g_idioma, IDIOMA_PT);
+    faroldetalhe_atualizar(1, 0, 0, 0.016f, 1050u);
+    assert(faroldetalhe_selo_rotulo(0, &sT, &sId, s0, sizeof s0));
+    assert(sT == FP_SELO_GENERO && sId == 16 && !strcmp(s0, "Anima\xc3\xa7\xc3\xa3o"));
+  }
 }
 
 // FAROL46B R1: o fio da UI nunca dispara carga nem varredura do Diario.

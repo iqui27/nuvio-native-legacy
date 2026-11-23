@@ -87,6 +87,7 @@ typedef struct {
   long pessoa;            // o fio pelo qual ela chegou aqui (mapa_vizinhos_pedir)
   char tema[48];
   int  temaEhGenero;      // o fio em tema[] e genero local, nao palavra-chave
+  long generoId;          // id TMDB do genero quando veio do selo/grupo
   char via[64];           // o "porque" do passo, para a trilha
   int linha, coluna;      // onde estava o foco QUANDO desceu daqui
 #ifdef NV_TOUCH_UI
@@ -344,7 +345,7 @@ static void pedirPasso(const ExPasso *p) {
   }
   toqueVzAtiva = toqueVzUltima = -1;
 #endif
-  mapa_vizinhos_pedir(&p->obra, p->pessoa, p->tema, p->temaEhGenero);
+  mapa_vizinhos_pedir_genero(&p->obra, p->pessoa, p->tema, p->temaEhGenero, p->generoId);
 }
 
 // Os grupos que existem neste retrato, na ordem da tela.
@@ -390,7 +391,8 @@ static float vizRolarFileira(int grupo, int linha, float largura) {
 }
 #endif
 
-static void comecarToca(const MapaObra *o, int org, const char *temaFio, int temaEhGenero) {
+static void comecarToca(const MapaObra *o, int org, const char *temaFio,
+                        int temaEhGenero, long generoId) {
 #ifdef NV_TOUCH_UI
   if (modo == MODO_CLIMA) caPagina = exPagina;
 #endif
@@ -399,9 +401,10 @@ static void comecarToca(const MapaObra *o, int org, const char *temaFio, int tem
   // Fio do selo do Farol: kw de tema ou nome local de genero — a toca ja
   // desce filtrada, igual a um salto por grupo da vizinhanca (FAROL46B). O
   // tipo viaja junto: o Mapa nao troca genero por palavra-chave (FAROL46C).
-  if (temaFio && temaFio[0]) {
-    snprintf(trilha[0].tema, sizeof trilha[0].tema, "%s", temaFio);
+  if ((temaFio && temaFio[0]) || (temaEhGenero && generoId > 0)) {
+    if (temaFio && temaFio[0]) snprintf(trilha[0].tema, sizeof trilha[0].tema, "%s", temaFio);
     trilha[0].temaEhGenero = temaEhGenero;
+    trilha[0].generoId = temaEhGenero ? generoId : 0;
   }
   nTrilha = 1;
   origem = org;
@@ -466,6 +469,7 @@ static void descer(const MapaVizGrupo *g, const MapaVizItem *it) {
   else if (g->tipo == MAPA_GR_GENERO) {
     snprintf(p->tema, sizeof p->tema, "%s", g->sub);
     p->temaEhGenero = 1;
+    p->generoId = g->ref;
   }
   switch (g->tipo) {
     case MAPA_GR_PESSOA: case MAPA_GR_AMIGOS: snprintf(p->via, sizeof p->via, "%s", it->motivo); break;
@@ -537,7 +541,7 @@ static void eventoClima(SDL_Keycode k) {
   else if (k == SDLK_DOWN)  { if (caLinha == 0 && caN[1] > 0) caLinha = 1; }
   else if (ehOk(k)) {
     const MapaObra *o = climaObraFocada();
-    if (o) comecarToca(o, ORIGEM_CLIMA, NULL, 0);
+    if (o) comecarToca(o, ORIGEM_CLIMA, NULL, 0, 0);
     return;
   }
   else return;
@@ -1454,19 +1458,27 @@ void explorar_abrir_titulo(const MapaObra *o) {
   if (!o || !o->titulo[0]) return;
   if (climas.n == 0) { mapa_climas_pedir(); mapa_climas_copiar(&climas, &climasRev); }
   clAberto = -1;
-  comecarToca(o, ORIGEM_DETALHE, NULL, 0);
+  comecarToca(o, ORIGEM_DETALHE, NULL, 0, 0);
 }
 
 // Variante do selo do Farol: a toca comeca no titulo ja descendo pelo fio
 // (tema ou genero) que o selo carrega — `temaEhGenero` separa os dois e vai
-// ate a publicacao remota do Mapa. Fio vazio cai no caminho generico.
-void explorar_abrir_titulo_fio(const MapaObra *o, const char *temaFio, int temaEhGenero) {
-  if (!temaFio || !temaFio[0]) { explorar_abrir_titulo(o); return; }
+// ate a publicacao remota do Mapa. Fio vazio sem id cai no caminho generico.
+void explorar_abrir_titulo_selo(const MapaObra *o, const char *temaFio, int temaEhGenero,
+                                long generoId) {
+  if ((!temaFio || !temaFio[0]) && (!temaEhGenero || generoId <= 0)) {
+    explorar_abrir_titulo(o);
+    return;
+  }
   pediuRelogio = 0;
   if (!o || !o->titulo[0]) return;
   if (climas.n == 0) { mapa_climas_pedir(); mapa_climas_copiar(&climas, &climasRev); }
   clAberto = -1;
-  comecarToca(o, ORIGEM_DETALHE, temaFio, temaEhGenero);
+  comecarToca(o, ORIGEM_DETALHE, temaFio, temaEhGenero, generoId);
+}
+
+void explorar_abrir_titulo_fio(const MapaObra *o, const char *temaFio, int temaEhGenero) {
+  explorar_abrir_titulo_selo(o, temaFio, temaEhGenero, 0);
 }
 
 void explorar_encerrar(void) {
