@@ -272,6 +272,21 @@ int main(int argc, char **argv) {
   ltv_chave_fonte(LTV_ADDON, bases[1], chB, sizeof chB);
   semearFonteCache(bases[0], "Grupo", a, 2);
   semearFonteCache(bases[1], "Grupo", b, 1);
+#ifndef GUIACACHE_BASELINE
+  fIt = calloc(2, sizeof *fIt); assert(fIt);
+  fN = 0; fCanaisCache(chA, "Grupo");
+  assert(fN == 2);
+  free(fIt); fIt = NULL; fN = 0;
+  stagingZerar(); sTeto = 30000;
+  assert(cacheFonteFresca(chA) && sNCanais == 2);
+  assert(cacheFonteFresca(chB) && sNCanais == 3);
+  stagingZerar(); sTeto = 30000;
+  cargaSnapshotStamp++;
+  assert(!cacheFonteFresca(chA) && !sNCanais);
+  assert(cacheFonteLer(chA) == 2 && sNCanais == 2);
+  cargaSnapshotStamp--;
+  stagingZerar();
+#endif
   // Each seed publishes one source; index must retain both fixture sources.
   cacheNomeIndice(nome, sizeof nome);
   { char idx[128]; snprintf(idx, sizeof idx, "%s\n%s\n", chA, chB); dados_gravar(nome, idx); }

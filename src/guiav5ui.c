@@ -5,6 +5,7 @@
 #include "perfilinfantil.h"
 #include "sessao.h"
 #include "dados.h"
+#include "catsnapdisk.h"
 #include "rede.h"
 #include "js.h"
 #include "jsw.h"
@@ -106,6 +107,7 @@ static unsigned vod_revision;
 static int vod_lazy, vod_failed, vod_cache_checked, vod_begin_pending;
 static char vod_cache_key[65], vod_work_key[65], vod_request_id[64];
 static int vod_request_kind;
+static long long vod_refresh_stamp, vod_work_stamp;
 static char (*vod_done[2])[64];
 static int vod_done_count[2];
 static void vod_begin(void);
@@ -247,7 +249,14 @@ static void build_groups(void){
       for(int i=0;i<group_count;i++)if(!strcmp(groups[i],name))group_on[i]=js_num(p,e,"on",0)!=0;p=js_prox(e);}free(b);}
   }
 }
-static int feed(const void *bytes,size_t n,void *user){return g5_playlist_feed(user,bytes,n);}
+typedef struct {G5Playlist parser;char *body;size_t size;} PlaylistTransfer;
+static int feed(const void *bytes,size_t n,void *user){
+  PlaylistTransfer *t=user;
+  if(n>16*1024*1024-t->size)return 0;
+  char *body=realloc(t->body,t->size+n+1);if(!body)return 0;
+  t->body=body;memcpy(body+t->size,bytes,n);t->size+=n;body[t->size]=0;
+  return g5_playlist_feed(&t->parser,bytes,n);
+}
 static int cancelled(void *unused){(void)unused;return worker_cancel;}
 static int load_playlist(G5Item *out,int cap){
   G5Playlist parser;g5_playlist_init(&parser,out,cap);
@@ -256,11 +265,25 @@ static int load_playlist(G5Item *out,int cap){
     int n=g5_playlist_finish(&parser);staging_total=parser.total;return n;
   }
   if(!g5_http_url(work_draft.playlist))return -1;
+  char identity[2500],key[65],file[160];
+  snprintf(identity,sizeof identity,"%d\n%s\n%s",worker_profile,worker_account,work_draft.playlist);
+  admin_sha256_hex((const unsigned char*)identity,strlen(identity),key);erase(identity,sizeof identity);
+  snprintf(file,sizeof file,"guiav5-playlist-%s.txt",key);
+  int fresh=0;char *body=catsnap_read(file,vod_work_stamp,&fresh);
+  if(body&&fresh){
+    int ok=g5_playlist_feed(&parser,body,strlen(body));free(body);
+    int n=ok?g5_playlist_finish(&parser):-1;staging_total=parser.total;
+    if(n>=0)return n;
+    g5_playlist_init(&parser,out,cap);
+  }else free(body);
+  PlaylistTransfer transfer={0};g5_playlist_init(&transfer.parser,out,cap);
   RedePedido req={.url=work_draft.playlist,.prazo_ms=30000,.max_bytes=16*1024*1024,.seguir=1,.mesmo_host=1,
-    .receber_corpo=feed,.corpo_usuario=&parser,.parar=cancelled};
+    .receber_corpo=feed,.corpo_usuario=&transfer,.parar=cancelled};
   RedeResposta res={0};int ok=rede_pedir(&req,&res)==REDE_OK&&res.status>=200&&res.status<300;
-  rede_resposta_limpar(&res);staging_total=parser.total;
-  return ok?g5_playlist_finish(&parser):-1;
+  rede_resposta_limpar(&res);staging_total=transfer.parser.total;
+  int n=ok?g5_playlist_finish(&transfer.parser):-1;
+  if(n>=0&&transfer.body&&!worker_cancel)catsnap_write(file,transfer.body,vod_work_stamp);
+  free(transfer.body);return n;
 }
 static void *load(void *unused){
   (void)unused;rede_parar_quando(cancelled,NULL);
@@ -340,8 +363,10 @@ static int start(int op){
   }
   if(atomic_load(&busy)||(!ltv_fonte_ligada(draft.type?"g5m3u":"xt")&&op!=3))return 0;
   work_draft=draft;work_phone=phone_stage==1||phone_stage==4;
+  vod_work_stamp=catsnap_refresh_stamp(profile);
   if(use_saved&&work_draft.type==0)xtream_dados_copiar(work_draft.server,sizeof work_draft.server,work_draft.user,sizeof work_draft.user,work_draft.password,sizeof work_draft.password);
   if(op==6||op==7||op==8){
+    vod_work_stamp=vod_refresh_stamp;
     vod_free(&vod_pending);
     snprintf(vod_work_key,sizeof vod_work_key,"%s",vod_cache_key);
     for(int k=0;k<2;k++){
@@ -1855,7 +1880,8 @@ static void activate(int id){
     snprintf(action,sizeof action,"get_series_info&series_id=%s",inventory[selected].id);start(4);return;
   }
   if(!strncmp(screen,"vod-",4)){
-    if(id==810){vod_lazy=1;vod_failed=0;memset(vod_done_count,0,sizeof vod_done_count);source_loaded=0;vod_begin();return;}
+    if(id==810){guia_recarregar(0);vod_lazy=1;vod_failed=0;memset(vod_done_count,0,sizeof vod_done_count);source_loaded=0;
+      if(draft.type==0)vod_begin();else{vod_refresh_stamp=catsnap_refresh_stamp(profile);action[0]=0;start(2);}return;}
     if(id==800){episodes_mode=0;catalog_group[0]=0;go("vod-filmes");}else if(id==801){episodes_mode=0;catalog_group[0]=0;go("vod-series");}else if(id==802||id==804){go("vod-busca");input(5,"Buscar",query,0);}
     else if(id==803)go("fontes-gerenciar");else if(id==805){catalog_group[0]=0;focus=VOD_ITEM;}else if(id==806)go("setup-tipo");else if(id>=820&&id<820+group_count){snprintf(catalog_group,sizeof catalog_group,"%s",groups[id-820]);focus=VOD_ITEM;}else if(id>=VOD_ITEM&&id<VOD_ITEM+vod_size)vod_select(id-VOD_ITEM);else if(query[0])query[0]=0;else go("setup-tipo");
     if(id==800||id==801||id==805||(id>=820&&id<820+group_count)){vod_sidebar=0;focus=vod_return_focus=VOD_ITEM;}
@@ -2033,6 +2059,11 @@ int g5ui_event(const SDL_Event *e){
 }
 void g5ui_update(void){
   context();
+  {static Uint32 checked;Uint32 now=SDL_GetTicks();
+   if(now-checked>=1000&&!atomic_load(&busy)&&!strncmp(screen,"vod-",4)){
+     checked=now;long long stamp=catsnap_refresh_stamp(profile);
+     if(stamp!=vod_refresh_stamp){if(draft.type==0)vod_begin();else{vod_refresh_stamp=stamp;action[0]=0;start(2);}}
+   }}
 #ifdef NV_DESKTOP_UI
   if(edit>=0)teclado_atualizar(1.0f/60,SDL_GetTicks());
 #endif
@@ -2056,13 +2087,13 @@ void g5ui_update(void){
     atomic_store(&busy,0);atomic_store(&ready,0);erase(&work_draft,sizeof work_draft);
     if(!worker_cancel&&worker_generation==catalog_generation&&worker_profile==profile&&!strcmp(worker_account,account)){
       if(operation==6||operation==7||operation==8){
-        if(!worker_ok&&(operation==6||operation==7)){vod_lazy=0;fallback_fetch=1;}
+        if(!worker_ok&&(operation==6||operation==7))vod_failed=1;
         if(worker_ok||operation==6){
           int old_focus=focus;float old_scroll=vod_scroll;
           vod_index_inventory(&vod_pending);
           vod_free(&vod_data);vod_data=vod_pending;memset(&vod_pending,0,sizeof vod_pending);
           vod_rebuild();focus=old_focus;vod_scroll=old_scroll;
-          source_loaded=operation!=8;vod_failed=!worker_ok;
+          source_loaded=operation!=8||!worker_categories_missing;vod_failed=!worker_ok;
           if(operation==7){
             int k=vod_request_kind;
             char (*done)[64]=realloc(vod_done[k],(vod_done_count[k]+1)*sizeof *done);
