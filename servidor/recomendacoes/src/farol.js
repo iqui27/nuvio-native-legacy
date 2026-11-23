@@ -101,7 +101,9 @@ function versaoOk(v) {
 // aparelho.modelo: "x" ou <prefixo do fabricante><2 digitos de tela><serie>
 // <numero><sufixo>, nos tetos do redator (OLED admite 1/2/3; os demais 2/4/6).
 const MODELO_PREFIXOS = ["OLED", "QN", "QE", "UE", "UN", "UA", "KD-", "XR-", "TCL"];
-function modeloOk(v) {
+// exportada para o contrato dirigido tests/farol_modelo_contrato.mjs: o
+// cliente so pode emitir o que ESTA funcao aceita — o resto vira "x".
+export function modeloOk(v) {
   if (v === "x") return true;
   if (typeof v !== "string") return false;
   for (let i = 0; i < MODELO_PREFIXOS.length; i++) {

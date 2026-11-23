@@ -212,6 +212,9 @@ static int modelo(const char *s) {
     size_t sufixo = strspn(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     return !p[sufixo] && sufixo <= (i ? 6u : 3u);
   }
+  // Espelho do modeloOk do servidor publicado (recomendacoes/src/farol.js):
+  // fora dos prefixos nao ha excecao — LG com digito a frente ("50NANO80ASA")
+  // nao passa no servidor, entao aqui tambem nao passa (o pacote voltaria 422).
   return 0;
 }
 static int fingerprint(const char *s) {

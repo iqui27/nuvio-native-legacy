@@ -290,6 +290,9 @@ IGNORAR = {
     # farolficha.c: rotulos de tipo que encabecam `genero` do CatItem —
     # vocabulario de casamento (hash do nome), nunca texto desenhado.
     "Película", "Seriál", "Émission de TV",
+    # farolperfil.c: chaves do protocolo "[tv] k=v" do log TPK e enum JSON
+    # (cliente.addons.tipos) — vocabulario de parser/schema, nunca tela.
+    " tela=", "tela=", "catalogo",
     # Remote schema enum, persistence names and trailer diagnostic gate.
     '"POSTER"', "conta-pend-%s.txt", "perfil-infantil.txt", "escolha-perfil",
     # Room protocol values and notice IDs; UI resolves these to translated text.
