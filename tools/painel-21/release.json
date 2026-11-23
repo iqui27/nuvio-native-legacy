@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T03:47:09+00:00",
+    "updatedAt": "2026-11-23T04:17:54+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -114,16 +114,18 @@
       "allDependencies": false,
       "status": "IMPLEMENTANDO",
       "wave": "A",
-      "sha": "bbf45a751",
+      "sha": "0f095f457",
       "batch": null,
-      "note": "lançada (Gemini 4 Carbon via Devin), base lote 21d; sem commit ainda",
+      "note": "relançado no Antigravity Gemini 4 Carbon (regra: Gemini só via Antigravity); continua do commit entregue, não verificado",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-6",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
-      "commitRole": "base",
-      "integrationVerified": false
+      "updatedAt": "2026-11-23T04:17:54+00:00",
+      "reportedAt": "2026-11-23T04:12:00+00:00",
+      "integrationVerified": false,
+      "previousNotes": [
+        "lançada (Gemini 4 Carbon via Devin), base lote 21d; sem commit ainda"
+      ]
     },
     {
       "id": "farol-7",
@@ -822,13 +824,18 @@
         "farol-44"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "BLOQUEADA",
       "wave": "A",
       "sha": null,
       "batch": null,
-      "note": "TV física pendente.",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "aguarda combinar com o Poke o ponto das fileiras na Home pré-calculada",
+      "source": "Relato VPS",
+      "verified": false,
+      "previousNotes": [
+        "TV física pendente."
+      ],
+      "updatedAt": "2026-11-23T04:17:54+00:00",
+      "reportedAt": "2026-11-23T04:16:00+00:00"
     },
     {
       "id": "farol-46",
@@ -1265,10 +1272,10 @@
     {
       "id": "issue-751",
       "title": "A defect in the appearance of Arabic translation",
-      "status": "CORRECAO",
-      "sha": "0ea0c5a9e",
+      "status": "REVISAO",
+      "sha": "03c4bf516",
       "batch": null,
-      "note": "F116 lançada (Sol): merge do 21d, conflito em src/legref.c",
+      "note": "F116 entregue sobre lote 21d, revisão SWE-2 (Devin)",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
@@ -1277,20 +1284,21 @@
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/751",
       "number": 751,
       "previousNotes": [
+        "F116 lançada (Sol): merge do 21d, conflito em src/legref.c",
         "Atualizar sobre 21d antes da revisão; conflito em src/legref.c."
       ],
       "branch": "agente/21z-751",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "updatedAt": "2026-11-23T04:17:54+00:00",
+      "reportedAt": "2026-11-23T04:13:00+00:00",
       "integrationVerified": false
     },
     {
       "id": "issue-786",
       "title": "Arabic subtitles Embedded for Anime",
-      "status": "CORRECAO",
-      "sha": "d2969ddff",
+      "status": "REVISAO",
+      "sha": "0b0bdfad7",
       "batch": null,
-      "note": "F116 lançada (Sol): merge do 21d, conflito em src/legref.c",
+      "note": "F116 entregue sobre lote 21d, revisão SWE-2 (Devin)",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
@@ -1299,11 +1307,12 @@
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/786",
       "number": 786,
       "previousNotes": [
+        "F116 lançada (Sol): merge do 21d, conflito em src/legref.c",
         "Atualizar sobre 21d antes da revisão; conflito em src/legref.c."
       ],
       "branch": "agente/21z-786",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "updatedAt": "2026-11-23T04:17:54+00:00",
+      "reportedAt": "2026-11-23T04:13:00+00:00",
       "integrationVerified": false
     },
     {
@@ -2993,6 +3002,38 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T04:16:00+00:00",
+      "appliedAt": "2026-11-23T04:17:54+00:00",
+      "item": "farol-45",
+      "from": "A_FAZER",
+      "to": "BLOQUEADA",
+      "report": "2026-11-23 04:16 [BLOQUEADA] farol-45 · — · aguarda combinar com o Poke o ponto das fileiras na Home pré-calculada"
+    },
+    {
+      "at": "2026-11-23T04:13:00+00:00",
+      "appliedAt": "2026-11-23T04:17:54+00:00",
+      "item": "issue-786",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 04:13 [REVISAO] 786 · agente/21z-786@0b0bdfad7 · F116 entregue sobre lote 21d, revisão SWE-2 (Devin)"
+    },
+    {
+      "at": "2026-11-23T04:13:00+00:00",
+      "appliedAt": "2026-11-23T04:17:54+00:00",
+      "item": "issue-751",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 04:13 [REVISAO] 751 · agente/21z-751@03c4bf516 · F116 entregue sobre lote 21d, revisão SWE-2 (Devin)"
+    },
+    {
+      "at": "2026-11-23T04:12:00+00:00",
+      "appliedAt": "2026-11-23T04:17:54+00:00",
+      "item": "farol-6",
+      "from": "IMPLEMENTANDO",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 04:12 [IMPLEMENTANDO] farol-6 · agente/21z-farol-6@0f095f457 · relançado no Antigravity Gemini 4 Carbon (regra: Gemini só via Antigravity); continua do commit entregue, não verificado"
+    },
     {
       "at": "2026-11-23T03:45:00+00:00",
       "appliedAt": "2026-11-23T03:47:09+00:00",
