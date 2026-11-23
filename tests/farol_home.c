@@ -128,7 +128,7 @@ int   addons_aceita_id(int i, const char *t, const char *id) { (void)i; (void)t;
 // A rede duble: cada catalogo devolve 2 filmes com generos RODANDO entre
 // Acao/Comedia/Drama/Terror — a variedade e o que deixa a regra de
 // diversidade do motor montar uma fileira de 6+.
-static volatile int pedidosCatalogo;
+static _Atomic int pedidosCatalogo;
 static const char *const GENEROS[4] = { "Action", "Comedy", "Drama", "Horror" };
 char *rede_baixar(const char *url, int t) {
   char buf[900];
