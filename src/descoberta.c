@@ -9,6 +9,15 @@
 #include "catordem.h"
 #include "cotacat.h"
 #include "fileiras.h"
+#include "farol.h"      // farol_home_fileiras (issue 45)
+// Os fixtures de teste que incluem descoberta.c sem linkar src/farol.c ficam
+// com este substituto fraco (o mesmo esquema de tend_registrar em catalogo.c):
+// nenhuma fileira do Farol sai, e o simbolo de verdade ganha quando existe.
+__attribute__((weak)) void
+farol_home_fileiras(CatItem *lote, int *n, int cap,
+                    CatFileira *fils, int *nFils, int capFils) {
+  (void)lote; (void)n; (void)cap; (void)fils; (void)nFils; (void)capFils;
+}
 #include "homeestado.h"
 #include "sessao.h"
 #include "colecoes.h"
@@ -5832,6 +5841,16 @@ static void *montar(void *u) {
   preservarFileirasAusentes(&lote, &n, &cap, filsLote, &nFilsLote);
   // Preservar uma linha antiga tambem respeita a vaga do Continuar em voo.
   if (!nContinuar && nFilsLote == CAT_FIL_MAX) nFilsLote--;
+  // AS FILEIRAS DO FAROL (issue 45). Entram no lote a cada volta — inclusive
+  // nas servidas do snapshot — ANTES de ordenarPorSnapshot: posicao padrao
+  // (1a depois de continue_watching, 2a na 6a) e rank salvo sao todos do
+  // Poke. Compositor falhou -> nada entra e preservarFileirasAusentes, ali
+  // em cima, ja recusa reanexar a chave farol_ antiga. Nao gasta o limite:
+  // o teto conta so Decl de add-on; o teto das farol_ e CAT_FIL_MAX (com a
+  // vaga do Continuar em voo preservada, como acima).
+  GARANTE(FAROL_HOME_ITENS);
+  farol_home_fileiras(lote, &n, cap, filsLote, &nFilsLote,
+                      nContinuar ? CAT_FIL_MAX : CAT_FIL_MAX - 1);
   // Reanexar linhas sem resposta acontece depois das chamadas de rede; aplicar
   // a ordem salva ao conjunto inteiro impede que uma resposta parcial desloque
   // essas linhas para o fim da Home.
