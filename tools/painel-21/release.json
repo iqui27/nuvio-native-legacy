@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T03:43:00Z",
+    "updatedAt": "2026-11-23T03:47:09+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -77,9 +77,13 @@
       "wave": null,
       "sha": "b29addd8a",
       "batch": "21e",
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "vai para o lote 21e",
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/21z-farol-4",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "farol-5",
@@ -108,13 +112,18 @@
         "farol-3"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "IMPLEMENTANDO",
       "wave": "A",
-      "sha": null,
+      "sha": "bbf45a751",
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "lançada (Gemini 4 Carbon via Devin), base lote 21d; sem commit ainda",
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/21z-farol-6",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "commitRole": "base",
+      "integrationVerified": false
     },
     {
       "id": "farol-7",
@@ -168,9 +177,13 @@
       "wave": null,
       "sha": "c0bca62f0",
       "batch": "21e",
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "vai para o lote 21e",
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/21z-farol-9",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "farol-10",
@@ -224,9 +237,13 @@
       "wave": null,
       "sha": "71749228c",
       "batch": "21e",
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "vai para o lote 21e",
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/21z-farol-12",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "farol-13",
@@ -519,9 +536,11 @@
       "wave": null,
       "sha": null,
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "fecho do diagnóstico, só depois de todas",
+      "source": "Relato VPS",
+      "verified": false,
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00"
     },
     {
       "id": "farol-29",
@@ -786,9 +805,13 @@
       "wave": null,
       "sha": "39d90ad05",
       "batch": "21d",
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "no lote 21d",
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/21z-farol-44",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "farol-45",
@@ -1000,9 +1023,11 @@
       "wave": null,
       "sha": null,
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "fecho do gosto, só depois de todas",
+      "source": "Relato VPS",
+      "verified": false,
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00"
     },
     {
       "id": "farol-57",
@@ -1028,14 +1053,18 @@
       "status": "LOTE",
       "sha": "2f3ec08ca",
       "batch": "21d",
-      "note": "",
+      "note": "no lote 21d",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
+      "source": "Relato VPS",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/729",
-      "number": 729
+      "number": 729,
+      "branch": "agente/21z-pr729",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "pr-680",
@@ -1043,14 +1072,21 @@
       "status": "LOTE",
       "sha": "6dfdbe5bd",
       "batch": "21d",
-      "note": "TV Samsung TPK e TPK40 pendente.",
+      "note": "no lote 21d; TV Samsung TPK/TPK40 não verificado",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
+      "source": "Relato VPS",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/680",
-      "number": 680
+      "number": 680,
+      "previousNotes": [
+        "TV Samsung TPK e TPK40 pendente."
+      ],
+      "branch": "agente/21z-pr680",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "pr-734",
@@ -1058,14 +1094,21 @@
       "status": "LOTE",
       "sha": "6f06345f2",
       "batch": "21d",
-      "note": "TV física pendente.",
+      "note": "no lote 21d; TV não verificado",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
+      "source": "Relato VPS",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/734",
-      "number": 734
+      "number": 734,
+      "previousNotes": [
+        "TV física pendente."
+      ],
+      "branch": "agente/21z-pr734",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "perfil-sem-login",
@@ -1073,12 +1116,16 @@
       "status": "LOTE",
       "sha": "957af78d6",
       "batch": "21d",
-      "note": "",
+      "note": "no lote 21d",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/21z-perfil-semlogin",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "arquivo-desktop",
@@ -1086,12 +1133,16 @@
       "status": "LOTE",
       "sha": "c2a62d8ac",
       "batch": "21d",
-      "note": "",
+      "note": "no lote 21d",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/21z-desktop-nomefonte",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "mac-desktop",
@@ -1099,42 +1150,60 @@
       "status": "LOTE",
       "sha": "3490bc902",
       "batch": "21d",
-      "note": "Testes Mac adiados por decisão do dono.",
+      "note": "no lote 21d (inclui mac-perfis e mac-busca)",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "source": "Relato VPS",
+      "verified": false,
+      "previousNotes": [
+        "Testes Mac adiados por decisão do dono."
+      ],
+      "branch": "reconc/mac-ajustes",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
-      "id": "pr-728",
+      "id": "issue-728",
       "title": "Network Drop on Samsung Tizen 4.0 — Nuvio Legacy 2.0.8",
-      "status": "APROVADA",
+      "status": "CORRECAO",
       "sha": "dbd6663d7",
       "batch": "21e",
-      "note": "Conflito com PR 680 em src/video_tpk.c a resolver.",
+      "note": "F115 lançada (Devin SWE-2): merge do 21d, conflito com 680 em src/video_tpk.c",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
+      "source": "Relato VPS",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/728",
-      "number": 728
+      "number": 728,
+      "previousNotes": [
+        "Conflito com PR 680 em src/video_tpk.c a resolver."
+      ],
+      "branch": "agente/21z-728",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
-      "id": "pr-772",
+      "id": "issue-772",
       "title": ".ass subtitle problem",
       "status": "APROVADA",
       "sha": "ddd128e5b",
       "batch": "21e",
-      "note": "",
+      "note": "vai para o lote 21e",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
+      "source": "Relato VPS",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/772",
-      "number": 772
+      "number": 772,
+      "branch": "agente/21z-772",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "pr-761",
@@ -1142,14 +1211,18 @@
       "status": "APROVADA",
       "sha": "a6262d828",
       "batch": "21e",
-      "note": "",
+      "note": "vai para o lote 21e",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
+      "source": "Relato VPS",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/761",
-      "number": 761
+      "number": 761,
+      "branch": "agente/21z-pr761",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "pr-644",
@@ -1157,14 +1230,18 @@
       "status": "APROVADA",
       "sha": "cfa18b3ec",
       "batch": "21e",
-      "note": "",
+      "note": "vai para o lote 21e",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
+      "source": "Relato VPS",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/644",
-      "number": 644
+      "number": 644,
+      "branch": "agente/21z-pr644",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "pr-749",
@@ -1172,76 +1249,107 @@
       "status": "APROVADA",
       "sha": "ebee382e7",
       "batch": "21e",
-      "note": "",
+      "note": "vai para o lote 21e",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
+      "source": "Relato VPS",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/749",
-      "number": 749
+      "number": 749,
+      "branch": "agente/21z-pr749",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
-      "id": "pr-751",
+      "id": "issue-751",
       "title": "A defect in the appearance of Arabic translation",
-      "status": "REVISAO",
+      "status": "CORRECAO",
       "sha": "0ea0c5a9e",
       "batch": null,
-      "note": "Atualizar sobre 21d antes da revisão; conflito em src/legref.c.",
+      "note": "F116 lançada (Sol): merge do 21d, conflito em src/legref.c",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
+      "source": "Relato VPS",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/751",
-      "number": 751
+      "number": 751,
+      "previousNotes": [
+        "Atualizar sobre 21d antes da revisão; conflito em src/legref.c."
+      ],
+      "branch": "agente/21z-751",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
-      "id": "pr-786",
+      "id": "issue-786",
       "title": "Arabic subtitles Embedded for Anime",
-      "status": "REVISAO",
+      "status": "CORRECAO",
       "sha": "d2969ddff",
       "batch": null,
-      "note": "Atualizar sobre 21d antes da revisão; conflito em src/legref.c.",
+      "note": "F116 lançada (Sol): merge do 21d, conflito em src/legref.c",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
+      "source": "Relato VPS",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/786",
-      "number": 786
+      "number": 786,
+      "previousNotes": [
+        "Atualizar sobre 21d antes da revisão; conflito em src/legref.c."
+      ],
+      "branch": "agente/21z-786",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
-      "id": "pr-778",
+      "id": "issue-778",
       "title": "Subtitles disappearing",
       "status": "BLOQUEADA",
       "sha": null,
       "batch": null,
-      "note": "Precisa de log e teste na LG CX.",
+      "note": "precisa de log/teste na LG CX",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "VPS · escopo 23/11 03h40 UTC",
+      "source": "Relato VPS",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/778",
-      "number": 778
+      "number": 778,
+      "previousNotes": [
+        "Precisa de log e teste na LG CX."
+      ],
+      "branch": "agente/21z-778",
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "pr-830",
       "number": 830,
       "title": "Minha noite: um canal pessoal no guia que já entra tocando (Ligou, tocou, 1ª etapa)",
       "group": "prs",
-      "status": "PR_ABERTA",
+      "status": "POR_ULTIMO",
       "branch": "agente/21-ligou-tocou",
       "sha": "347aad717f47dbd7d3467dae105049c53e1b09bd",
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/830",
       "dependencies": [],
       "wave": null,
-      "note": "Estado consultado no GitHub; validação funcional não verificada. Onda e dependências não informadas. VPS mediu conflitos contra 21d em src/ajustes.c (3 blocos) e src/ajustes_ux_padrao.inc (1 bloco); limpo contra 8ada9acdd. Manter AJ_ASS_MOTOR antes do novo ajuste e a mesma ordem nas quatro tabelas. Árvores mescladas não compiladas nem testadas. Ideia 68 da pesquisa: trabalho do Poke, não abrir issue duplicada; inclusão na rodada não confirmada.",
+      "note": "PR do Poke, estrutural (app.c/streams.c/play), entra depois dos lotes da VPS",
       "owner": "Poke",
-      "source": "GitHub · 2026-11-23T03:40:02+00:00",
+      "source": "Relato VPS",
       "verified": false,
-      "scope": "a_confirmar"
+      "scope": "a_confirmar",
+      "githubState": "open",
+      "previousNotes": [
+        "Estado consultado no GitHub; validação funcional não verificada. Onda e dependências não informadas. VPS mediu conflitos contra 21d em src/ajustes.c (3 blocos) e src/ajustes_ux_padrao.inc (1 bloco); limpo contra 8ada9acdd. Manter AJ_ASS_MOTOR antes do novo ajuste e a mesma ordem nas quatro tabelas. Árvores mescladas não compiladas nem testadas. Ideia 68 da pesquisa: trabalho do Poke, não abrir issue duplicada; inclusão na rodada não confirmada."
+      ],
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00"
     },
     {
       "id": "pr-829",
@@ -1258,7 +1366,8 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open"
     },
     {
       "id": "pr-828",
@@ -1275,7 +1384,8 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open"
     },
     {
       "id": "pr-827",
@@ -1292,7 +1402,8 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open"
     },
     {
       "id": "pr-826",
@@ -1309,7 +1420,8 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open"
     },
     {
       "id": "pr-825",
@@ -1326,7 +1438,8 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open"
     },
     {
       "id": "pr-824",
@@ -1343,7 +1456,8 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open"
     },
     {
       "id": "pr-823",
@@ -1360,7 +1474,8 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open"
     },
     {
       "id": "pr-822",
@@ -1377,24 +1492,31 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open"
     },
     {
       "id": "pr-821",
       "number": 821,
       "title": "Vai tocar nesta TV: registro anônimo do que toca em cada aparelho (primeira etapa)",
       "group": "prs",
-      "status": "PR_ABERTA",
+      "status": "POR_ULTIMO",
       "branch": "agente/21-vai-tocar",
       "sha": "ca78b9d58947ef9cb055d824ec94ab6391c7d2cf",
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/821",
       "dependencies": [],
       "wave": null,
-      "note": "Estado consultado no GitHub; validação funcional não verificada. Onda e dependências não informadas. VPS mediu conflitos contra 21d em src/ajustes.c (3 blocos) e src/ajustes_ux_padrao.inc (1 bloco); limpo contra 8ada9acdd. Manter AJ_ASS_MOTOR antes do novo ajuste e a mesma ordem nas quatro tabelas. Árvores mescladas não compiladas nem testadas. Ideia 59 da pesquisa: trabalho do Poke, não abrir issue duplicada; inclusão na rodada não confirmada.",
+      "note": "PR do Poke, estrutural, entra depois dos lotes da VPS",
       "owner": "Poke",
-      "source": "GitHub · 2026-11-23T03:40:02+00:00",
+      "source": "Relato VPS",
       "verified": false,
-      "scope": "a_confirmar"
+      "scope": "a_confirmar",
+      "githubState": "open",
+      "previousNotes": [
+        "Estado consultado no GitHub; validação funcional não verificada. Onda e dependências não informadas. VPS mediu conflitos contra 21d em src/ajustes.c (3 blocos) e src/ajustes_ux_padrao.inc (1 bloco); limpo contra 8ada9acdd. Manter AJ_ASS_MOTOR antes do novo ajuste e a mesma ordem nas quatro tabelas. Árvores mescladas não compiladas nem testadas. Ideia 59 da pesquisa: trabalho do Poke, não abrir issue duplicada; inclusão na rodada não confirmada."
+      ],
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00"
     },
     {
       "id": "pr-820",
@@ -1411,7 +1533,8 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open"
     },
     {
       "id": "pr-819",
@@ -1428,7 +1551,8 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open"
     },
     {
       "id": "pr-818",
@@ -1445,24 +1569,31 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open"
     },
     {
       "id": "pr-817",
       "number": 817,
       "title": "Marcar cena: uma tecla no player guarda o instante e manda para um amigo (primeira etapa)",
       "group": "prs",
-      "status": "PR_ABERTA",
+      "status": "POR_ULTIMO",
       "branch": "agente/21-marcar-cena",
       "sha": "834b1f62b2cc1b02d0b80fa44e1fc8ea9ef597da",
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/817",
       "dependencies": [],
       "wave": null,
-      "note": "Estado consultado no GitHub; validação funcional não verificada. Onda e dependências não informadas. VPS mediu conflitos contra 21d em src/ajustes.c (3 blocos) e src/ajustes_ux_padrao.inc (1 bloco); limpo contra 8ada9acdd. Manter AJ_ASS_MOTOR antes do novo ajuste e a mesma ordem nas quatro tabelas. Árvores mescladas não compiladas nem testadas.",
+      "note": "PR do Poke, estrutural, entra depois dos lotes da VPS",
       "owner": "Poke",
-      "source": "GitHub · 2026-11-23T03:40:02+00:00",
+      "source": "Relato VPS",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open",
+      "previousNotes": [
+        "Estado consultado no GitHub; validação funcional não verificada. Onda e dependências não informadas. VPS mediu conflitos contra 21d em src/ajustes.c (3 blocos) e src/ajustes_ux_padrao.inc (1 bloco); limpo contra 8ada9acdd. Manter AJ_ASS_MOTOR antes do novo ajuste e a mesma ordem nas quatro tabelas. Árvores mescladas não compiladas nem testadas."
+      ],
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00"
     },
     {
       "id": "pr-816",
@@ -1479,7 +1610,8 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open"
     },
     {
       "id": "pr-815",
@@ -1496,7 +1628,8 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "open"
     },
     {
       "id": "pr-813",
@@ -1513,7 +1646,8 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "merged"
     },
     {
       "id": "pr-812",
@@ -1530,7 +1664,8 @@
       "owner": "Poke",
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
-      "scope": "release"
+      "scope": "release",
+      "githubState": "merged"
     },
     {
       "id": "issue-714",
@@ -1616,11 +1751,12 @@
       "branch": "agente/21z-779",
       "sha": "6d935d8ab",
       "mergeSha": "1ac80ed09",
-      "note": "FEITO segundo a VPS: mergeado em 1ac80ed09. Ancestralidade do commit da branch confirmada pela VPS; não equivale a teste funcional.",
+      "note": "FEITO segundo a VPS: mergeado em 1ac80ed09. Ancestralidade do commit da branch confirmada pela VPS; não equivale a teste funcional. O número na fila identifica uma correção relacionada à PR do GitHub, não uma nova issue.",
       "source": "VPS · FILA.md; ancestralidade medida contra 8ada9acdd. Título consultado no GitHub.",
       "verified": false,
       "integrationVerified": true,
-      "reviewUnit": "779"
+      "reviewUnit": "779",
+      "displayId": "CORREÇÃO #779"
     },
     {
       "id": "issue-777",
@@ -1688,11 +1824,12 @@
       "branch": "agente/21z-767",
       "sha": "5834e2e76",
       "mergeSha": "4a9d3fe0b",
-      "note": "FEITO segundo a VPS: mergeado em 4a9d3fe0b. Ancestralidade do commit da branch confirmada pela VPS; não equivale a teste funcional.",
+      "note": "FEITO segundo a VPS: mergeado em 4a9d3fe0b. Ancestralidade do commit da branch confirmada pela VPS; não equivale a teste funcional. O número na fila identifica uma correção relacionada à PR do GitHub, não uma nova issue.",
       "source": "VPS · FILA.md; ancestralidade medida contra 8ada9acdd. Título consultado no GitHub.",
       "verified": false,
       "integrationVerified": true,
-      "reviewUnit": "767"
+      "reviewUnit": "767",
+      "displayId": "CORREÇÃO #767"
     },
     {
       "id": "issue-765",
@@ -1832,11 +1969,12 @@
       "branch": "agente/21z-749",
       "sha": "57264be12",
       "mergeSha": "ce70f2dd8",
-      "note": "FEITO segundo a VPS: mergeado em ce70f2dd8. Ancestralidade do commit da branch confirmada pela VPS; não equivale a teste funcional.",
+      "note": "FEITO segundo a VPS: mergeado em ce70f2dd8. Ancestralidade do commit da branch confirmada pela VPS; não equivale a teste funcional. O número na fila identifica uma correção relacionada à PR do GitHub, não uma nova issue.",
       "source": "VPS · FILA.md; ancestralidade medida contra 8ada9acdd. Título consultado no GitHub.",
       "verified": false,
       "integrationVerified": true,
-      "reviewUnit": "749"
+      "reviewUnit": "749",
+      "displayId": "CORREÇÃO #749"
     },
     {
       "id": "issue-802",
@@ -1922,11 +2060,12 @@
       "branch": "agente/21z-763",
       "sha": "0ef755c09",
       "mergeSha": "ce70f2dd8",
-      "note": "FEITO segundo a VPS: mergeado em ce70f2dd8. Ancestralidade do commit da branch confirmada pela VPS; não equivale a teste funcional.",
+      "note": "FEITO segundo a VPS: mergeado em ce70f2dd8. Ancestralidade do commit da branch confirmada pela VPS; não equivale a teste funcional. O número na fila identifica uma correção relacionada à PR do GitHub, não uma nova issue.",
       "source": "VPS · FILA.md; ancestralidade medida contra 8ada9acdd. Título consultado no GitHub.",
       "verified": false,
       "integrationVerified": true,
-      "reviewUnit": "763"
+      "reviewUnit": "763",
+      "displayId": "CORREÇÃO #763"
     },
     {
       "id": "issue-799",
@@ -2372,11 +2511,12 @@
       "branch": "agente/21z-808",
       "sha": "2dac590f9",
       "mergeSha": "c18c21756",
-      "note": "FEITO segundo a VPS: mergeado em c18c21756. Ancestralidade do commit da branch confirmada pela VPS; não equivale a teste funcional.",
+      "note": "FEITO segundo a VPS: mergeado em c18c21756. Ancestralidade do commit da branch confirmada pela VPS; não equivale a teste funcional. O número na fila identifica uma correção relacionada à PR do GitHub, não uma nova issue.",
       "source": "VPS · FILA.md; ancestralidade medida contra 8ada9acdd. Título consultado no GitHub.",
       "verified": false,
       "integrationVerified": true,
-      "reviewUnit": "808"
+      "reviewUnit": "808",
+      "displayId": "CORREÇÃO #808"
     },
     {
       "id": "pr-763",
@@ -2788,7 +2928,7 @@
       "kind": "tv",
       "status": "pendente",
       "items": [
-        "pr-778"
+        "issue-778"
       ],
       "note": "Sem o teste e o log, a correção 778 continua bloqueada."
     },
@@ -2817,9 +2957,17 @@
       "title": "Lote 21d",
       "status": "LOTE",
       "sha": "bbf45a751",
-      "branch": "lote/21d",
-      "note": "244 testes base × ponta ainda rodando no relato. Inclui 3 commits só de teste. Não há PR aberta confirmada.",
-      "pr": null
+      "branch": "tmp/lote-21d",
+      "note": "244 testes base 8ada9acdd × ponta rodando; sai como PR lote/21d → integracao/2.1",
+      "pr": null,
+      "previousNotes": [
+        "244 testes base × ponta ainda rodando no relato. Inclui 3 commits só de teste. Não há PR aberta confirmada."
+      ],
+      "updatedAt": "2026-11-23T03:47:09+00:00",
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "source": "Relato VPS",
+      "verified": false,
+      "integrationVerified": false
     },
     {
       "id": "21e",
@@ -2844,5 +2992,206 @@
       "note": "Por último, com o Devin na nuvem."
     }
   ],
-  "events": []
+  "events": [
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "farol-56",
+      "from": "POR_ULTIMO",
+      "to": "POR_ULTIMO",
+      "report": "2026-11-23 03:45 [POR_ULTIMO] farol-56 · — · fecho do gosto, só depois de todas"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "farol-28",
+      "from": "POR_ULTIMO",
+      "to": "POR_ULTIMO",
+      "report": "2026-11-23 03:45 [POR_ULTIMO] farol-28 · — · fecho do diagnóstico, só depois de todas"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "pr-817",
+      "from": "PR_ABERTA",
+      "to": "POR_ULTIMO",
+      "report": "2026-11-23 03:45 [POR_ULTIMO] 817 · — · PR do Poke, estrutural, entra depois dos lotes da VPS"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "pr-821",
+      "from": "PR_ABERTA",
+      "to": "POR_ULTIMO",
+      "report": "2026-11-23 03:45 [POR_ULTIMO] 821 · — · PR do Poke, estrutural, entra depois dos lotes da VPS"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "pr-830",
+      "from": "PR_ABERTA",
+      "to": "POR_ULTIMO",
+      "report": "2026-11-23 03:45 [POR_ULTIMO] 830 · — · PR do Poke, estrutural (app.c/streams.c/play), entra depois dos lotes da VPS"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "issue-778",
+      "from": "BLOQUEADA",
+      "to": "BLOQUEADA",
+      "report": "2026-11-23 03:45 [BLOQUEADA] 778 · agente/21z-778 · precisa de log/teste na LG CX"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "farol-6",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 03:45 [IMPLEMENTANDO] farol-6 · agente/21z-farol-6@bbf45a751 · lançada (Gemini 4 Carbon via Devin), base lote 21d; sem commit ainda"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "issue-786",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 03:45 [CORRECAO] 786 · agente/21z-786@d2969ddff · F116 lançada (Sol): merge do 21d, conflito em src/legref.c"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "issue-751",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 03:45 [CORRECAO] 751 · agente/21z-751@0ea0c5a9e · F116 lançada (Sol): merge do 21d, conflito em src/legref.c"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "issue-728",
+      "from": "APROVADA",
+      "to": "CORRECAO",
+      "report": "2026-11-23 03:45 [CORRECAO] 728 · agente/21z-728@dbd6663d7 · F115 lançada (Devin SWE-2): merge do 21d, conflito com 680 em src/video_tpk.c"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "pr-749",
+      "from": "APROVADA",
+      "to": "APROVADA",
+      "report": "2026-11-23 03:45 [APROVADA] 749 · agente/21z-pr749@ebee382e7 · vai para o lote 21e"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "pr-644",
+      "from": "APROVADA",
+      "to": "APROVADA",
+      "report": "2026-11-23 03:45 [APROVADA] 644 · agente/21z-pr644@cfa18b3ec · vai para o lote 21e"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "pr-761",
+      "from": "APROVADA",
+      "to": "APROVADA",
+      "report": "2026-11-23 03:45 [APROVADA] 761 · agente/21z-pr761@a6262d828 · vai para o lote 21e"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "issue-772",
+      "from": "APROVADA",
+      "to": "APROVADA",
+      "report": "2026-11-23 03:45 [APROVADA] 772 · agente/21z-772@ddd128e5b · vai para o lote 21e"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "farol-12",
+      "from": "APROVADA",
+      "to": "APROVADA",
+      "report": "2026-11-23 03:45 [APROVADA] farol-12 · agente/21z-farol-12@71749228c · vai para o lote 21e"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "farol-9",
+      "from": "APROVADA",
+      "to": "APROVADA",
+      "report": "2026-11-23 03:45 [APROVADA] farol-9 · agente/21z-farol-9@c0bca62f0 · vai para o lote 21e"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "farol-4",
+      "from": "APROVADA",
+      "to": "APROVADA",
+      "report": "2026-11-23 03:45 [APROVADA] farol-4 · agente/21z-farol-4@b29addd8a · vai para o lote 21e"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "mac-desktop",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-23 03:45 [LOTE] mac-ajustes · reconc/mac-ajustes@3490bc902 · no lote 21d (inclui mac-perfis e mac-busca)"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "arquivo-desktop",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-23 03:45 [LOTE] nomefonte · agente/21z-desktop-nomefonte@c2a62d8ac · no lote 21d"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "perfil-sem-login",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-23 03:45 [LOTE] perfil-semlogin · agente/21z-perfil-semlogin@957af78d6 · no lote 21d"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "pr-734",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-23 03:45 [LOTE] 734 · agente/21z-pr734@6f06345f2 · no lote 21d; TV não verificado"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "pr-680",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-23 03:45 [LOTE] 680 · agente/21z-pr680@6dfdbe5bd · no lote 21d; TV Samsung TPK/TPK40 não verificado"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "pr-729",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-23 03:45 [LOTE] 729 · agente/21z-pr729@2f3ec08ca · no lote 21d"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "farol-44",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-23 03:45 [LOTE] farol-44 · agente/21z-farol-44@39d90ad05 · no lote 21d"
+    },
+    {
+      "at": "2026-11-23T03:45:00+00:00",
+      "appliedAt": "2026-11-23T03:47:09+00:00",
+      "item": "21d",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-23 03:45 [LOTE] lote-21d · tmp/lote-21d@bbf45a751 · 244 testes base 8ada9acdd × ponta rodando; sai como PR lote/21d → integracao/2.1"
+    }
+  ]
 }

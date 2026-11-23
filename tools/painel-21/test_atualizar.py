@@ -58,6 +58,25 @@ class ReportsTest(unittest.TestCase):
             with self.subTest(line=line), self.assertRaises(ValueError):
                 apply_reports(self.data, [line])
 
+    def test_timestamp_alias_branch_only_and_ordering(self):
+        result = apply_reports(self.data, ['2026-11-23 03:45 [LOTE] perfil-semlogin · agente/perfil@abcdef123 · em lote',
+                                           '2026-11-23 03:45 [BLOQUEADA] 778 · agente/21z-778 · log pendente'])
+        i = next(i for i in result['items'] if i['id'] == 'issue-778')
+        self.assertEqual('agente/21z-778', i['branch'])
+        self.assertIsNone(i['sha'])
+        self.assertEqual('2026-11-23T03:45:00+00:00', i['reportedAt'])
+        with self.assertRaises(ValueError):
+            apply_reports(result, ['2026-11-23 03:44 [FEITO] 778 · — · antigo'])
+
+    def test_branch_disambiguates_port_and_github_state_survives_priority(self):
+        result = apply_reports(self.data, ['[APROVADA] 749 · agente/21z-pr749@abcdef123 · porte aprovado',
+                                          '[POR_ULTIMO] 830 · — · após os lotes VPS'])
+        self.assertEqual('APROVADA', next(i['status'] for i in result['items'] if i['id'] == 'pr-749'))
+        pr = next(i for i in result['items'] if i['id'] == 'pr-830')
+        self.assertEqual('POR_ULTIMO', pr['status'])
+        self.assertEqual('open', pr['githubState'])
+        self.assertTrue(pr['previousNotes'])
+
     def test_cycles_and_missing_dependencies_fail_validation(self):
         for dep in ['farol-1', 'farol-999']:
             broken = copy.deepcopy(self.data)

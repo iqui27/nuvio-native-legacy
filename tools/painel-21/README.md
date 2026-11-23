@@ -33,9 +33,11 @@ python3 tools/painel-21/atualizar.py \
 # Várias linhas: python3 tools/painel-21/atualizar.py --stdin < relatos.txt
 ```
 
-Estados aceitos: `A_FAZER`, `IMPLEMENTANDO`, `REVISAO`, `CORRECAO`, `APROVADA`, `LOTE`, `PR_ABERTA`, `FEITO`, `BLOQUEADA`, `POR_ULTIMO`.
+Estados aceitos: `A_FAZER`, `IMPLEMENTANDO`, `REVISAO`, `CORRECAO`, `APROVADA`, `LOTE`, `PR_ABERTA`, `FEITO`, `BLOQUEADA`, `POR_ULTIMO`. O prefixo opcional `AAAA-MM-DD HH:MM` é interpretado em UTC (horário dos registros da VPS) e aparece convertido para Brasília. Um evento anterior ao último relato do item é recusado. A data de aplicação também fica no histórico.
 
-IDs explícitos são preferíveis: `farol-6`, `issue-714`, `pr-830`, `lote-21d`. Também aceita `Farol 6`, `PR 830`, números de correções não ambíguos e unidades `D1`, `762+720`, `707-r2`. Um número ambíguo falha em vez de mudar o item errado. `—` no campo de referência preserva a referência anterior. O campo observação pode conter mais separadores `·`.
+IDs explícitos são preferíveis: `farol-6`, `issue-714`, `pr-830`, `lote-21d`. Também aceita `Farol 6`, `PR 830`, números não ambíguos, aliases da VPS (`perfil-semlogin`, `nomefonte`, `mac-ajustes`) e unidades `D1`, `762+720`, `707-r2`. Um número ambíguo falha, a menos que a branch identifique exatamente o item ou um porte `prNNN`. `—` preserva a referência anterior; uma branch sem `@sha` é aceita com commit desconhecido. O campo observação pode conter mais separadores `·`. Observações anteriores são conservadas no detalhe do item.
+
+As PRs do Poke conservam `githubState` separadamente da ordem de integração da VPS: uma PR pode continuar aberta no GitHub e estar `POR_ULTIMO` no quadro. Se um relato disser “sem commit”, o SHA é identificado como base de trabalho, não como entrega de implementação. `CORREÇÃO #N` identifica uma correção da fila associada a uma PR de mesmo número; não inventa uma issue do GitHub.
 
 O importador valida o lote inteiro antes de substituir o arquivo atomicamente. Se qualquer relato falhar, nada é escrito. Não cria itens a partir de textos desconhecidos, não infere merge a partir de PR aberta e não encerra pendências do Henrique. A execução deve ser serializada pela coordenação (um escritor por vez). Novos itens e decisões, PR de um lote e a integração publicada são atualizados explicitamente no JSON; o estado de um lote não muda automaticamente seus itens nem o SHA publicado.
 

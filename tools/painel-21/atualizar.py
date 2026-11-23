@@ -56,8 +56,10 @@ def item_id(raw):
     return raw
 
 
-def resolve_targets(result, raw):
+def resolve_targets(result, raw, ref=''):
     key = item_id(raw)
+    key = {'perfil-semlogin': 'perfil-sem-login', 'nomefonte': 'arquivo-desktop',
+           'mac-ajustes': 'mac-desktop'}.get(key, key)
     exact = [i for i in result['items'] if i['id'] == key]
     batch = [b for b in result['batches'] if key == 'lote-' + b['id']]
     if exact or batch:
@@ -65,13 +67,21 @@ def resolve_targets(result, raw):
     # A shared review unit (D1, 762+720) intentionally updates its issue cards together.
     unit = re.sub(r'\s*\(.*\)$', '', raw).strip()
     shared = [i for i in result['items'] if i.get('reviewUnit') == unit]
-    if shared:
+    if shared and not re.fullmatch(r'\d+', unit):
         return shared
     if re.fullmatch(r'\d+(?:\s*\(teste\))?', raw):
         number = int(re.search(r'\d+', raw)[0])
-        matches = [i for i in result['items'] if i.get('number') == number and i['group'] == 'correcoes']
+        matches = [i for i in result['items'] if i.get('number') == number and i['group'] not in ('diagnostico', 'gosto')]
         if len(matches) == 1:
             return matches
+        branch = ref.rsplit('@', 1)[0]
+        exact_branch = [i for i in matches if i.get('branch') == branch]
+        if len(exact_branch) == 1:
+            return exact_branch
+        if re.search(r'(?:^|[-/])pr' + str(number) + r'(?:$|[-/])', branch, re.I):
+            port = [i for i in matches if i['id'] == 'pr-' + str(number)]
+            if len(port) == 1:
+                return port
     raise ValueError('Item desconhecido ou ambíguo (use farol-N, issue-N, pr-N ou lote-21d): ' + raw)
 
 
@@ -81,27 +91,39 @@ def apply_reports(data, lines):
     for line in lines:
         if not line.strip():
             continue
-        match = re.fullmatch(r'\[([A-Z_]+)\]\s*(.+?)\s*·\s*(.*?)\s*·\s*(.*)', line.strip())
-        if not match or match[1] not in STATES:
+        match = re.fullmatch(r'(?:(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s+)?\[([A-Z_]+)\]\s*(.+?)\s*·\s*(.*?)\s*·\s*(.*)', line.strip())
+        if not match or match[2] not in STATES:
             raise ValueError('Relato inválido: ' + line)
-        status, raw, ref, note = match.groups()
-        targets = resolve_targets(result, raw)
+        timestamp, status, raw, ref, note = match.groups()
+        reported_at = dt.datetime.strptime(timestamp, '%Y-%m-%d %H:%M').replace(tzinfo=dt.timezone.utc).isoformat() if timestamp else now
+        targets = resolve_targets(result, raw, ref)
         reference = {}
         if ref not in ('', '—', '-', 'não verificado'):
             if '@' not in ref:
-                raise ValueError('Referência deve ser branch@sha: ' + ref)
-            branch, sha = ref.rsplit('@', 1)
-            if not branch or not re.fullmatch('[0-9a-fA-F]{7,40}', sha):
-                raise ValueError('Referência inválida: ' + ref)
-            reference = dict(branch=branch, sha=sha)
+                if '/' not in ref or re.search(r'\s', ref):
+                    raise ValueError('Referência deve ser branch@sha ou branch sem commit: ' + ref)
+                reference = dict(branch=ref, sha=None)
+            else:
+                branch, sha = ref.rsplit('@', 1)
+                if not branch or not re.fullmatch('[0-9a-fA-F]{7,40}', sha):
+                    raise ValueError('Referência inválida: ' + ref)
+                reference = dict(branch=branch, sha=sha)
         for target in targets:
             previous = target['status']
+            if timestamp and target.get('reportedAt') and reported_at < target['reportedAt']:
+                raise ValueError('Relato anterior ao último estado: ' + target['id'])
+            if target.get('note') and target['note'] != note:
+                target.setdefault('previousNotes', []).insert(0, target['note'])
             target.update(reference)
-            target.update(status=status, note=note, updatedAt=now, source='Relato VPS', verified=False)
+            target.update(status=status, note=note, updatedAt=now, reportedAt=reported_at, source='Relato VPS', verified=False)
+            if 'sem commit' in note.lower():
+                target['commitRole'] = 'base'
+            elif reference:
+                target.pop('commitRole', None)
             # A new report/reference is not an ancestry verification of that new commit.
             if reference:
                 target['integrationVerified'] = False
-            result['events'].insert(0, {'at': now, 'item': target['id'], 'from': previous, 'to': status, 'report': line})
+            result['events'].insert(0, {'at': reported_at, 'appliedAt': now, 'item': target['id'], 'from': previous, 'to': status, 'report': line})
     result['meta']['updatedAt'] = now
     return validate(result)
 
