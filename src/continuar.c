@@ -99,21 +99,25 @@ void continuar_desenhar(const CatItem *ci, GfxRect r, float raio) {
     // episodio de uma serie cujo ultimo terminou (issue #66) — ninguem
     // comecou a ve-lo, entao "restantes" seria mentira.
     // O "a seguir" que AINDA NAO FOI AO AR (issue #127) diz quando estreia:
-    // "A seguir" nele prometia um episodio que nao ha como tocar. Quem e
-    // futuro e a decisao unica da montagem (cwo_e_futuro), a mesma que o poe
-    // em "Proximos episodios".
+    // "A seguir" nele prometia um episodio que nao ha como tocar. Futuro e o
+    // que a montagem pos em "Proximos episodios" (cwo_e_futuro) OU o "a seguir"
+    // com estreia conhecida ainda por vir: na Ordenacao padrao a montagem nao
+    // separa futuros, e o card dizia "A seguir" num episodio que so estreia na
+    // semana seguinte (Dexter S2E5 na C5, 23/11) enquanto a lista dele dizia a data.
     char quando[32];
     long long agoraMs = (long long)time(NULL) * 1000LL, estreia = cwo_estreia(ci->imdb);
-    if (ci->progresso == 0 && cwo_e_futuro(ci->imdb) &&
-        cwo_data_curta(estreia, agoraMs, ajustes_idioma(), 0, quando, sizeof quando))
+    int aSeguir = ci->progresso == 0 &&
+                  (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb) || cwo_conta_a_seguir(ci->imdb));
+    int futuro = ci->progresso == 0 &&
+                 (cwo_e_futuro(ci->imdb) || (aSeguir && estreia != CWO_SEM_DATA && estreia > agoraMs));
+    if (futuro && cwo_data_curta(estreia, agoraMs, ajustes_idioma(), 0, quando, sizeof quando))
       snprintf(selo, sizeof selo, i18n("Estreia %s"), quando);
     // "Novo episodio": o "a seguir" que foi ao ar ha no maximo 7 dias. Mesmo
     // selo neutro dos outros; so o texto muda.
-    else if (ci->progresso == 0 && estreia != CWO_SEM_DATA && estreia <= agoraMs &&
-             agoraMs - estreia < 7LL * 24 * 3600 * 1000 &&
-             (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb) || cwo_conta_a_seguir(ci->imdb)))
+    else if (aSeguir && estreia != CWO_SEM_DATA && estreia <= agoraMs &&
+             agoraMs - estreia < 7LL * 24 * 3600 * 1000)
       snprintf(selo, sizeof selo, "%s", i18n("Novo episódio"));
-    else if (ci->progresso == 0 && (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb) || cwo_conta_a_seguir(ci->imdb)))
+    else if (aSeguir)
       snprintf(selo, sizeof selo, "%s", i18n("A seguir"));
     else if (h && m) snprintf(selo, sizeof selo, i18n("%dh %dmin Restantes"), h, m);
     else if (h) snprintf(selo, sizeof selo, i18n("%dh Restantes"), h);
