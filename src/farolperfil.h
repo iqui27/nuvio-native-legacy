@@ -4,8 +4,10 @@
 // puros para cada plataforma (Android NUVIO_TV_INFO, linha [tv] do TPK,
 // /proc/meminfo, casca WASM e webOS), filtro fechado de modelo (<= 32 chars,
 // [A-Za-z0-9._ -], qualquer valor suspeito vira "?") e coleta assincrona em
-// fio proprio: uma leitura por sessao, com cache, nunca bloqueia o fio
-// principal.
+// fio proprio: com cache, nunca bloqueia o fio principal. No TPK a linha [tv]
+// do log pode tardar ~3 s (ou chegar alem do prefixo): a leitura em blocos
+// cobre o arquivo inteiro e, sem a linha, o fio rele ate um prazo — e o
+// proximo iniciar() recoleta em vez de congelar a leitura sem [tv].
 //
 // Modulo puro: sem SDL, sem rede, sem dados.h, sem _Thread_local (seguro no
 // carregador ELF proprio do TPK40). Depende apenas de farolredator.h para a
@@ -158,8 +160,9 @@ int farolperfil_parse_wgt_info(const char *texto, FarolTvInfoWgt *out);
 int farolperfil_parse_webos_nyx(const char *json, char so[24], int *so_maior);
 int farolperfil_parse_webos_starfish(const char *texto, char so[24], int *so_maior);
 
-/* Coleta assincrona em fio proprio (uma leitura por sessao, com cache).
- * farolperfil_iniciar() e farolperfil_obter() NUNCA bloqueiam em I/O. */
+/* Coleta assincrona em fio proprio (com cache; sem [tv] no TPK, o proximo
+ * farolperfil_iniciar() recoleta). farolperfil_iniciar() e
+ * farolperfil_obter() NUNCA bloqueiam em I/O. */
 void farolperfil_iniciar(void);
 int  farolperfil_obter(FarolPerfil *out); /* 1 = cache pronto, 0 = ainda lendo */
 int  farolperfil_pronto(void);

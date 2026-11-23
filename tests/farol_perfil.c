@@ -577,11 +577,211 @@ static void testar_escrita_redator(void) {
   assert(strstr(buf, "CANARIO") == NULL);
   assert(strstr(buf, "://") == NULL);
   assert(strstr(buf, "\"modelo\":\"x\"") != NULL);
+
+  /* Caso 4: modelo com espaco (Android "<MFR> <MODEL>") sai na forma canonica
+   * da gramatica fechada, sem espaco — "TCL 55C745" -> "TCL55C745" */
+  farolperfil_padrao(&p);
+  strcpy(p.aparelho.modelo, "TCL 55C745");
+  assert(farolredator_abrir(&j, buf, sizeof buf));
+  assert(farolperfil_escrever(&j, &p));
+  assert(farolredator_fechar(&j));
+  assert(j.campos_recusados == 0);
+  assert(strstr(buf, "\"modelo\":\"TCL55C745\"") != NULL);
+  assert(strstr(buf, "\"modelo\":\"x\"") == NULL);
+
+  /* Caso 5: LG fora da linha OLED — digito+serie+numero+sufixo sai de verdade */
+  farolperfil_padrao(&p);
+  strcpy(p.aparelho.modelo, "50NANO80ASA");
+  assert(farolredator_abrir(&j, buf, sizeof buf));
+  assert(farolperfil_escrever(&j, &p));
+  assert(farolredator_fechar(&j));
+  assert(j.campos_recusados == 0);
+  assert(strstr(buf, "\"modelo\":\"50NANO80ASA\"") != NULL);
+
+  farolperfil_padrao(&p);
+  strcpy(p.aparelho.modelo, "43LM6300PSB");
+  assert(farolredator_abrir(&j, buf, sizeof buf));
+  assert(farolperfil_escrever(&j, &p));
+  assert(farolredator_fechar(&j));
+  assert(j.campos_recusados == 0);
+  assert(strstr(buf, "\"modelo\":\"43LM6300PSB\"") != NULL);
+
+  /* Caso 6: a gramatica segue fechada — forma parecida mas fora dela, ou
+   * valor barrado pela privacidade do coletor, sai "x" sem vazar */
+  for (int k = 0; k < 6; k++) {
+    static const char *const fora[] = {
+      "12ABCDEXYZ",              /* serie > 6 letras: fora do molde LG */
+      "Sony BRAVIA 4K VH2",      /* marca fora da lista, com espaco */
+      "123456",                  /* so digitos (PIN) */
+      "user@host.invalid",       /* @: a privacidade recusa no coletor */
+      "www.evil.invalid",        /* www.: idem */
+      "TV 192.168.0.1"           /* IPv4 embutido: idem */
+    };
+    farolperfil_padrao(&p);
+    strcpy(p.aparelho.modelo, fora[k]);
+    assert(farolredator_abrir(&j, buf, sizeof buf));
+    assert(farolperfil_escrever(&j, &p));
+    assert(farolredator_fechar(&j));
+    assert(j.campos_recusados == 0);
+    assert(strstr(buf, "\"modelo\":\"x\"") != NULL);
+    assert(strstr(buf, fora[k]) == NULL);
+  }
 }
 
-int main(void) {
+/* Releitura limitada do log do TPK: [tv] tardia, [tv] alem do prazo (recoleta
+ * no proximo iniciar/obter) e [tv] alem do prefixo de 8 KiB. */
+static void testar_tpk_releitura(const char *dir) {
+  char p_tpk[320], p_mem[320];
+  long pid = (long)getpid();
+  FarolPerfilTesteFontes cfg = {0};
+  FarolPerfil snap;
+  snprintf(p_tpk, sizeof p_tpk, "%s/nuvio-fp-%ld-tpk-re.log", dir, pid);
+  snprintf(p_mem, sizeof p_mem, "%s/nuvio-fp-%ld-tpk-re-meminfo", dir, pid);
+
+  escrever_arq(p_mem, "MemTotal: 1048576 kB\nMemAvailable: 524288 kB\n");
+
+  /* (a) [tv] tardia DENTRO do prazo: o fio trabalhador rele o log ate achar */
+  escrever_arq(p_tpk, "[arranque] inicio do log\n");
+  farolperfil_teste_reiniciar();
+  cfg.plataforma = "tizen_tpk";
+  cfg.meminfo_caminho = p_mem;
+  cfg.tpk_log_caminho = p_tpk;
+  cfg.usar_env_real = 0;
+  farolperfil_teste_configurar(&cfg);
+  farolperfil_iniciar();
+  {
+    struct timespec pausa = { 0, 300000000L }; /* 300 ms << prazo */
+    nanosleep(&pausa, NULL);
+    FILE *f = fopen(p_tpk, "ab");
+    assert(f != NULL);
+    assert(fputs("[host] [tv] modelo=QN55Q80BAGXZD tizen=6.5 host=api9 "
+                 "dotnet=.NET 6.0 tela=1920x1080\n", f) >= 0);
+    assert(fclose(f) == 0);
+  }
+  assert(farolperfil_teste_esperar(8000) == 1);
+  assert(farolperfil_teste_leituras() == 1);
+  assert(farolperfil_obter(&snap) == 1);
+  assert(strcmp(snap.aparelho.modelo, "QN55Q80BAGXZD") == 0);
+  assert(strcmp(snap.aparelho.so, "6.5") == 0 && snap.aparelho.so_maior == 6);
+  assert(snap.aparelho.tela.w == 1920 && snap.aparelho.tela.h == 1080);
+  assert(strcmp(snap.cliente.build, "tizen-tpk") == 0);
+  farolperfil_encerrar();
+
+  /* (b) [tv] alem do prazo: a leitura sem a linha nao congela — a consulta
+   * seguinte dispara a recoleta e acha a linha publicada depois */
+  escrever_arq(p_tpk, "[arranque] inicio do log\n");
+  farolperfil_teste_reiniciar();
+  farolperfil_teste_configurar(&cfg);
+  farolperfil_iniciar();
+  assert(farolperfil_teste_esperar(8000) == 1);  /* o prazo fecha sem [tv] */
+  assert(farolperfil_obter(&snap) == 1);         /* cache parcial e servido */
+  assert(strcmp(snap.aparelho.so, "?") == 0);
+  {
+    FILE *f = fopen(p_tpk, "ab");
+    assert(f != NULL);
+    assert(fputs("[host] [tv] modelo=QN55Q80BAGXZD tizen=6.5 host=api9 "
+                 "dotnet=.NET 6.0 tela=1920x1080\n", f) >= 0);
+    assert(fclose(f) == 0);
+  }
+  farolperfil_iniciar();                         /* pendente: recoleta */
+  assert(farolperfil_teste_esperar(8000) == 1);
+  assert(farolperfil_teste_leituras() == 2);     /* uma recoleta de verdade */
+  assert(farolperfil_obter(&snap) == 1);
+  assert(strcmp(snap.aparelho.modelo, "QN55Q80BAGXZD") == 0);
+  assert(strcmp(snap.aparelho.so, "6.5") == 0 && snap.aparelho.so_maior == 6);
+  assert(snap.aparelho.tela.w == 1920 && snap.aparelho.tela.h == 1080);
+  /* A linha encontrada encerra a pendencia: novas consultas nao releem */
+  farolperfil_iniciar();
+  assert(farolperfil_teste_esperar(2000) == 1);
+  assert(farolperfil_teste_leituras() == 2);
+  farolperfil_encerrar();
+
+  /* (c) [tv] alem do prefixo de 8 KiB: a varredura do arquivo inteiro acha a
+   * ultima ocorrencia na primeira leitura */
+  {
+    FILE *f = fopen(p_tpk, "wb");
+    assert(f != NULL);
+    assert(fputs("[host] [tv] modelo=UE43DU7700KXZD tizen=8.0 host=api9 "
+                 "dotnet=.NET 8.0 tela=1280x720\n", f) >= 0);
+    for (int i = 0; i < 280; i++)
+      assert(fputs("[host] inicializacao do player\n", f) >= 0);
+    assert(fputs("[host] [tv] modelo=UN50TU8000GXZD tizen=5.5 host=tpk40 "
+                 "dotnet=.NET Core 2.0 tela=1920x1080\n", f) >= 0);
+    assert(fclose(f) == 0);
+  }
+  farolperfil_teste_reiniciar();
+  farolperfil_teste_configurar(&cfg);
+  farolperfil_iniciar();
+  assert(farolperfil_teste_esperar(5000) == 1);
+  assert(farolperfil_teste_leituras() == 1);
+  assert(farolperfil_obter(&snap) == 1);
+  assert(strcmp(snap.aparelho.modelo, "UN50TU8000GXZD") == 0);
+  assert(strcmp(snap.aparelho.so, "5.5") == 0 && snap.aparelho.so_maior == 5);
+  assert(snap.aparelho.tela.w == 1920 && snap.aparelho.tela.h == 1080);
+  farolperfil_encerrar();
+
+  unlink(p_tpk);
+  unlink(p_mem);
+}
+
+/* TPK40 (binario compilado com -DNV_TPK -DNV_TPK40): o build decidido em
+ * compilacao nao e sobrescrito pela coleta; com [tv] no log saem modelo, SO e
+ * tela; sem ela o pacote segue tizen-tpk40. */
+static void testar_tpk40_build(const char *dir) {
+#if defined(NV_TPK) && defined(NV_TPK40)
+  char p_tpk[320];
+  long pid = (long)getpid();
+  FarolPerfilTesteFontes cfg = {0};
+  FarolPerfil snap;
+  snprintf(p_tpk, sizeof p_tpk, "%s/nuvio-fp-%ld-tpk40.log", dir, pid);
+
+  escrever_arq(p_tpk,
+      "[arranque] inicio\n"
+      "[host] [tv] modelo=UN50TU8000GXZD tizen=5.5 host=tpk40 "
+      "dotnet=.NET Core 2.0 tela=1920x1080\n");
+  farolperfil_teste_reiniciar();
+  cfg.plataforma = "tizen_tpk";
+  cfg.tpk_log_caminho = p_tpk;
+  cfg.usar_env_real = 0;
+  farolperfil_teste_configurar(&cfg);
+  farolperfil_iniciar();
+  assert(farolperfil_teste_esperar(5000) == 1);
+  assert(farolperfil_obter(&snap) == 1);
+  assert(strcmp(snap.cliente.build, "tizen-tpk40") == 0);
+  assert(strcmp(snap.cliente.backend, "tpk") == 0);
+  assert(strcmp(snap.aparelho.plataforma, "tizen_tpk") == 0);
+  assert(strcmp(snap.aparelho.modelo, "UN50TU8000GXZD") == 0);
+  assert(strcmp(snap.aparelho.so, "5.5") == 0 && snap.aparelho.so_maior == 5);
+  assert(snap.aparelho.tela.w == 1920 && snap.aparelho.tela.h == 1080);
+  farolperfil_encerrar();
+
+  /* Sem [tv] nem variaveis: a identidade do pacote nao e perdida */
+  escrever_arq(p_tpk, "[arranque] inicio\n");
+  farolperfil_teste_reiniciar();
+  farolperfil_teste_configurar(&cfg);
+  farolperfil_iniciar();
+  assert(farolperfil_teste_esperar(8000) == 1);
+  assert(farolperfil_obter(&snap) == 1);
+  assert(strcmp(snap.cliente.build, "tizen-tpk40") == 0);
+  assert(strcmp(snap.aparelho.modelo, "?") == 0);
+  farolperfil_encerrar();
+
+  unlink(p_tpk);
+  printf("farol_perfil: tpk40 build e identidade ok\n");
+#else
+  (void)dir;
+  printf("farol_perfil: tpk40 pulado (binario sem NV_TPK40)\n");
+#endif
+}
+
+int main(int argc, char **argv) {
   const char *tmp = getenv("TMPDIR");
   if (!tmp || !tmp[0]) tmp = ".";
+
+  if (argc > 1 && strcmp(argv[1], "tpk40") == 0) {
+    testar_tpk40_build(tmp);
+    return 0;
+  }
 
   testar_filtro_modelo();
   testar_android_info();
@@ -589,6 +789,7 @@ int main(void) {
   testar_meminfo();
   testar_wgt_webos_tela();
   testar_assincrono_cache_e_tsan(tmp);
+  testar_tpk_releitura(tmp);
   testar_escrita_redator();
 
   printf("farol_perfil: parsers, cache e redator ok\n");

@@ -199,6 +199,27 @@ static int modelo_redator_ok(const char *s) {
     sufixo = strspn(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     return !p[sufixo] && sufixo <= (i ? 6u : 3u);
   }
+  /* LG fora da linha OLED ("50NANO80ASA", "43LM6300PSB"): 2 digitos de tela,
+   * serie em maiusculas, numero e sufixo em maiusculas. A mesma clausura dos
+   * prefixos — so [0-9A-Z], sem espaco, sem minuscula, sem simbolo — entao
+   * nome, URL e IP continuam sem caminho. */
+  {
+    size_t tela = strspn(s, "0123456789");
+    if (tela == 2) {
+      const char *p = s + 2;
+      size_t serie = strspn(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+      if (serie && serie <= 6) {
+        size_t numero, sufixo;
+        p += serie;
+        numero = strspn(p, "0123456789");
+        if (numero && numero <= 4) {
+          p += numero;
+          sufixo = strspn(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+          return !p[sufixo] && sufixo <= 6;
+        }
+      }
+    }
+  }
   return 0;
 }
 
@@ -751,6 +772,9 @@ static int             leituras_feitas;
 static pthread_t       fio_coleta;
 static int             fio_criado;
 static ColetaFontes    fontes_ativas;
+/* Ultima coleta do TPK saiu sem a linha [tv]: o cache nao e definitivo e o
+ * proximo iniciar recoleta (a linha pode tardar mais que o prazo). */
+static int             tv_pendente;
 
 /* Overrides recebidos em tempo de execucao (nunca perdidos pela coleta). */
 static char              ov_modelo[FAROL_PERFIL_MODELO_MAX + 1];
@@ -796,6 +820,62 @@ static size_t ler_arquivo_limitado(const char *caminho, char *buf, size_t cap) {
   return n;
 }
 
+/* Le o log do TPK em blocos e aplica cada linha "[tv] ..." sobre `out`: a
+ * ultima ocorrencia vence, campo a campo. A linha pode chegar depois de
+ * qualquer prefixo — o buffer de 8 KiB deixou de ser o limite. Linha maior
+ * que o buffer de linha le so o inicio, como a leitura antiga. Devolve 1 se
+ * alguma linha [tv] rendeu campo util. */
+static int ler_log_tpk_tv(const char *caminho, FarolTvInfoTpk *out) {
+  FILE *f;
+  char bloco[2048], linha[512];
+  size_t nl = 0;
+  int achou = 0;
+  if (!caminho || !out) return 0;
+  strcpy(out->modelo, "?");
+  strcpy(out->so, "?");
+  out->so_maior = -1;
+  out->tela_w = -1;
+  out->tela_h = -1;
+  f = fopen(caminho, "rb");
+  if (!f) return 0;
+  for (;;) {
+    size_t r = fread(bloco, 1, sizeof bloco, f);
+    size_t i;
+    for (i = 0; i < r; i++) {
+      char c = bloco[i];
+      if (c == '\n' || c == '\r') {
+        if (nl) {
+          FarolTvInfoTpk cand = *out;
+          if (parse_tpk_uma_linha(linha, nl, &cand)) { *out = cand; achou = 1; }
+          nl = 0;
+        }
+      } else if (nl + 1 < sizeof linha) {
+        linha[nl++] = c;
+      }
+    }
+    if (r < sizeof bloco) break;
+  }
+  if (nl) {
+    FarolTvInfoTpk cand = *out;
+    if (parse_tpk_uma_linha(linha, nl, &cand)) { *out = cand; achou = 1; }
+  }
+  fclose(f);
+  return achou;
+}
+
+static long long agora_ms(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+}
+
+/* O host TPK publica a linha [tv] ~3 s depois do arranque (12 tiques de
+ * 250 ms, tizen-tpk/Program.cs e NuvioTpk40/Program40.cs). Uma leitura sem
+ * ela NAO e definitiva: o fio trabalhador rele o log a cada TPK_TV_PASSO_MS
+ * ate achar a linha ou fechar TPK_TV_PRAZO_MS; fechando sem achar, o proximo
+ * farolperfil_iniciar() recoleta (cache "pendente"). */
+enum { TPK_TV_PRAZO_MS = 4000, TPK_TV_PASSO_MS = 200 };
+
 static void aplicar_overrides_travado(FarolPerfil *dst) {
   if (ov_tem_modelo) copiar_str(dst->aparelho.modelo, sizeof dst->aparelho.modelo, ov_modelo);
   if (ov_tem_tela)   dst->aparelho.tela = ov_tela;
@@ -823,9 +903,12 @@ static const char *obter_env_ou_cfg(const char *override_val, int usar_real, con
   return NULL;
 }
 
-static void coletar_fora_da_trava(const ColetaFontes *f, FarolPerfil *local) {
+/* Devolve 1 quando a coleta do TPK saiu sem a linha [tv] (cache pendente:
+ * o proximo iniciar recoleta em vez de tratar a leitura como definitiva). */
+static int coletar_fora_da_trava(const ColetaFontes *f, FarolPerfil *local) {
   char buf[8192];
   const char *e;
+  int tv_pendente = 0;
 
   farolperfil_padrao(local);
   if (f->plataforma[0] && na_lista(f->plataforma, PLATS_VALIDAS)) {
@@ -834,7 +917,13 @@ static void coletar_fora_da_trava(const ColetaFontes *f, FarolPerfil *local) {
       strcpy(local->cliente.build, "webos-ipk");
       strcpy(local->cliente.backend, "starfish");
     } else if (strcmp(f->plataforma, "tizen_tpk") == 0) {
+      /* NV_TPK40 compila o pacote tpk40: o build de compilacao nao e
+       * sobrescrito pelo generico da coleta. */
+#ifdef NV_TPK40
+      strcpy(local->cliente.build, "tizen-tpk40");
+#else
       strcpy(local->cliente.build, "tizen-tpk");
+#endif
       strcpy(local->cliente.backend, "tpk");
     } else if (strcmp(f->plataforma, "tizen_wgt") == 0) {
       strcpy(local->cliente.build, "tizen-wgt");
@@ -878,6 +967,7 @@ static void coletar_fora_da_trava(const ColetaFontes *f, FarolPerfil *local) {
   /* 4. TPK ([tv] no log + NUVIO_TV_MODEL) */
   {
     char log_path[320];
+    int eh_tpk;
     log_path[0] = '\0';
     if (f->tpk_log_caminho[0]) {
       copiar_str(log_path, sizeof log_path, f->tpk_log_caminho);
@@ -890,9 +980,21 @@ static void coletar_fora_da_trava(const ColetaFontes *f, FarolPerfil *local) {
       else if (dd && dd[0]) snprintf(log_path, sizeof log_path, "%s/nuvio.log", dd);
     }
 #endif
-    if (log_path[0] && ler_arquivo_limitado(log_path, buf, sizeof buf) > 0) {
+    eh_tpk = strcmp(local->aparelho.plataforma, "tizen_tpk") == 0;
+    if (log_path[0]) {
       FarolTvInfoTpk ti;
-      if (farolperfil_parse_tpk_tv(buf, &ti)) {
+      int achou = ler_log_tpk_tv(log_path, &ti);
+      if (!achou && eh_tpk) {
+        /* A linha [tv] sai ~3 s depois do arranque: rele ate achar ou fechar
+         * o prazo, sempre neste fio de coleta — nunca no fio principal. */
+        const long long limite = agora_ms() + TPK_TV_PRAZO_MS;
+        const struct timespec passo = { 0, TPK_TV_PASSO_MS * 1000000L };
+        while (agora_ms() < limite) {
+          nanosleep(&passo, NULL);
+          if ((achou = ler_log_tpk_tv(log_path, &ti))) break;
+        }
+      }
+      if (achou) {
         if (strcmp(ti.modelo, "?") != 0)
           copiar_str(local->aparelho.modelo, sizeof local->aparelho.modelo, ti.modelo);
         if (strcmp(ti.so, "?") != 0) {
@@ -903,7 +1005,11 @@ static void coletar_fora_da_trava(const ColetaFontes *f, FarolPerfil *local) {
           local->aparelho.tela.w = ti.tela_w;
           local->aparelho.tela.h = ti.tela_h;
         }
+      } else {
+        tv_pendente = eh_tpk;
       }
+    } else {
+      tv_pendente = eh_tpk;
     }
 #if defined(NV_TPK) && !defined(NV_TPK40)
     if (strcmp(local->aparelho.so, "6.0") == 0) strcpy(local->cliente.build, "tizen-tpk60");
@@ -944,18 +1050,21 @@ static void coletar_fora_da_trava(const ColetaFontes *f, FarolPerfil *local) {
     e = obter_env_ou_cfg(f->env_tv_model, f->usar_env_real, "NUVIO_TV_MODEL");
     if (e && e[0]) farolperfil_filtrar_modelo(e, local->aparelho.modelo);
   }
+
+  return tv_pendente;
 }
 
 static void *trabalhador_coleta(void *arg) {
   ColetaFontes f;
   FarolPerfil local;
+  int pendente;
   (void)arg;
 
   pthread_mutex_lock(&trava);
   f = fontes_ativas;
   pthread_mutex_unlock(&trava);
 
-  coletar_fora_da_trava(&f, &local);
+  pendente = coletar_fora_da_trava(&f, &local);
 
   pthread_mutex_lock(&trava);
   cache_perfil = local;
@@ -964,6 +1073,7 @@ static void *trabalhador_coleta(void *arg) {
 #ifdef FAROL_PERFIL_TESTE
   leituras_feitas++;
 #endif
+  tv_pendente = pendente;
   estado_coleta = FP_ST_PRONTO;
   pthread_cond_broadcast(&pronto_cv);
   pthread_mutex_unlock(&trava);
@@ -971,7 +1081,10 @@ static void *trabalhador_coleta(void *arg) {
 }
 
 static void iniciar_travado(void) {
-  if (estado_coleta != FP_ST_ZERO) return;
+  if (estado_coleta == FP_ST_LENDO) return;
+  /* PRONTO sem [tv] pendente = cache definitivo: uma leitura por sessao.
+   * PRONTO com [tv] pendente = leitura cedo demais: recoleta. */
+  if (estado_coleta == FP_ST_PRONTO && !tv_pendente) return;
   garantir_cache_travado();
   aplicar_overrides_travado(&cache_perfil);
 #ifdef FAROL_PERFIL_TESTE
@@ -981,6 +1094,9 @@ static void iniciar_travado(void) {
   montar_fontes_padrao(&fontes_ativas);
 #endif
   estado_coleta = FP_ST_LENDO;
+  /* Recoleta cria fio novo: junta o anterior antes (aqui nao e LENDO, entao
+   * ele ja encerrou — o join volta na hora — e nao vaza descritor). */
+  if (fio_criado) { pthread_join(fio_coleta, NULL); fio_criado = 0; }
   if (pthread_create(&fio_coleta, NULL, trabalhador_coleta, NULL) == 0) {
     fio_criado = 1;
   } else {
@@ -1133,11 +1249,20 @@ int farolperfil_escrever_aparelho(FarolJson *j, const FarolPerfilAparelho *a) {
   }
   if (!farolredator_campo(j, "so_maior", FT_INT, &a->so_maior)) goto falha;
 
-  /* No FarolJson, aparelho.modelo segue a gramatica fechada do redator (ou "x"). */
-  if (farolperfil_filtrar_modelo(a->modelo, mod_limpo) && modelo_redator_ok(mod_limpo))
-    mod_json = mod_limpo;
-  else
+  /* No FarolJson, aparelho.modelo segue a gramatica fechada do redator (ou
+   * "x"). O filtro do coletor aceita espaco — "TCL 55C745", o
+   * "<MANUFACTURER> <MODEL>" do NuvioActivity.kt — e a gramatica nao; os
+   * espacos saem antes da conferencia e a forma canonica sem espaco e a
+   * emitida. Valor fora da gramatica ou da lista de privacidade vira "x". */
+  if (farolperfil_filtrar_modelo(a->modelo, mod_limpo)) {
+    size_t rr, ww = 0;
+    for (rr = 0; mod_limpo[rr]; rr++)
+      if (mod_limpo[rr] != ' ') mod_limpo[ww++] = mod_limpo[rr];
+    mod_limpo[ww] = '\0';
+    mod_json = modelo_redator_ok(mod_limpo) ? mod_limpo : "x";
+  } else {
     mod_json = "x";
+  }
   if (!farolredator_campo(j, "modelo", FT_TOKEN, mod_json)) goto falha;
 
   if (!farolredator_campo(j, "ram_total_mb", FT_INT, &a->ram_total_mb)) goto falha;
@@ -1334,6 +1459,7 @@ void farolperfil_teste_reiniciar(void) {
   cache_inicializado = 0;
   estado_coleta = FP_ST_ZERO;
   leituras_feitas = 0;
+  tv_pendente = 0;
   ov_modelo[0] = '\0';
   ov_tem_modelo = 0;
   ov_tem_tela = 0;

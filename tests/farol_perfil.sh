@@ -23,12 +23,20 @@ esac
 base_tmp="${TMPDIR:-/tmp}"
 base_tmp="${base_tmp%/}"
 bin=$(mktemp "${base_tmp}/nuvio-farol-perfil-test.XXXXXX")
-trap 'rm -f "$bin"' EXIT
+trap 'rm -f "$bin" "${bin}40"' EXIT
 
 "$ccbin" ${flags[@]+"${flags[@]}"} -Wall -Wextra -O1 -g -pthread -DFAROL_PERFIL_TESTE \
   tests/farol_perfil.c src/farolperfil.c src/farolredator.c src/farolerro.c src/fontesonda.c \
   -Isrc -lm -o "$bin"
 TMPDIR="$base_tmp" ${runner[@]+"${runner[@]}"} "$bin"
+
+# Segundo binario com as macros do pacote TPK40: a identidade tizen-tpk40
+# decidida em compilacao nao pode ser sobrescrita pela coleta.
+"$ccbin" ${flags[@]+"${flags[@]}"} -Wall -Wextra -O1 -g -pthread -DFAROL_PERFIL_TESTE \
+  -DNV_TPK -DNV_TPK40 \
+  tests/farol_perfil.c src/farolperfil.c src/farolredator.c src/farolerro.c src/fontesonda.c \
+  -Isrc -lm -o "${bin}40"
+TMPDIR="$base_tmp" ${runner[@]+"${runner[@]}"} "${bin}40" tpk40
 
 # Contratos estaticos: sem heap e sem _Thread_local (TPK40 proibe PT_TLS).
 if grep -nE '(malloc|calloc|realloc|free)[[:space:]]*\(' src/farolperfil.c; then
