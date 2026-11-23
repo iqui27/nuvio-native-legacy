@@ -2877,17 +2877,6 @@ function contextoAterramento(pedido) {
         if (Number.isInteger(f.vezes) && f.vezes > 0 && typeof f.diretor === "string" && f.diretor) {
           ev.diretores.push({ tit: f.diretor, n: f.vezes });
         }
-        if (f.cabe_hoje === true || f.cabe_hoje === 1) {
-          const fMin = Number.isInteger(f.minutos) && f.minutos > 0 ? f.minutos : 0;
-          const m = fMin > 0 ? fMin : ev.minutos;
-          if ((ev.minutos > 0 && fMin > 0 && ev.minutos !== fMin) ||
-              (m > 0 && ev.cabeHoje && ev.cabeHojeMin !== m)) {
-            ev.cabeHojeContradit = true;
-          } else if (m > 0) {
-            ev.cabeHoje = true;
-            ev.cabeHojeMin = m;
-          }
-        }
         if (f.rever === true || f.rever === 1) ev.rever = true;
       }
     }
@@ -3009,13 +2998,19 @@ function obraEhFilmeDeclarado(idAlvo, ctx) {
   return Boolean(ctx.tiposPorObra?.get(idAlvo.obraKey)?.has("filme"));
 }
 
+function fatoNegaTemporadaNova(f) {
+  if (!f || typeof f !== "object") return false;
+  if (f.temporada_nova === false || (Number.isInteger(f.temporada_nova) && f.temporada_nova <= 0)) return true;
+  if (f.nova_temporada === false || (Number.isInteger(f.nova_temporada) && f.nova_temporada <= 0)) return true;
+  if (f.estreia_temporada === false || (Number.isInteger(f.estreia_temporada) && f.estreia_temporada <= 0)) return true;
+  if ((f.estreia === false || f.estreia === 0) && !Number.isInteger(f.pessoa)) return true;
+  if (f.nova === false || f.nova === 0 || f.chegou === false || f.chegou === 0) return true;
+  return false;
+}
+
 function fatoProvaTemporadaNova(f) {
   if (!f || typeof f !== "object") return false;
-  if (f.temporada_nova === false || f.temporada_nova === 0 ||
-      f.nova_temporada === false || f.nova_temporada === 0 ||
-      f.estreia_temporada === false || f.estreia_temporada === 0) {
-    return false;
-  }
+  if (fatoNegaTemporadaNova(f)) return false;
   if (f.temporada_nova === true || f.nova_temporada === true || f.estreia_temporada === true) {
     return true;
   }
@@ -3035,31 +3030,122 @@ function fatoProvaTemporadaNova(f) {
   return false;
 }
 
-function resolverDuracaoELimitesAlvo(alvoRef, ctx) {
-  const idAlvo = resolverIdentidadeRef(alvoRef, ctx);
-  if (!idAlvo) return { ok: false, idAlvo: null, cIdxs: [], min: 0, limites: [], cabeHoje: false, cabeHojeMin: 0, fmoCabeHoje: false };
-  if (ctx.obrasTipoContradit?.has(idAlvo.obraKey)) {
-    return { ok: false, idAlvo, cIdxs: [], min: 0, limites: [], cabeHoje: false, cabeHojeMin: 0, fmoCabeHoje: false };
+function obraTemporadaNovaElegivel(idAlvo, ctx) {
+  if (!idAlvo || ctx.obrasTipoContradit?.has(idAlvo.obraKey) || obraEhFilmeDeclarado(idAlvo, ctx)) {
+    return false;
   }
+  const fatosObra = ctx.fatosPorObra.get(idAlvo.obraKey) || [];
+  if (fatosObra.some((f) => fatoNegaTemporadaNova(f))) return false;
+  return fatosObra.some((f) => fatoProvaTemporadaNova(f));
+}
+
+function fatoNegaCabeHoje(f) {
+  if (!f || typeof f !== "object") return false;
+  return f.cabe_hoje === false || (Number.isInteger(f.cabe_hoje) && f.cabe_hoje <= 0);
+}
+
+function fatoAfirmaCabeHoje(f) {
+  return Boolean(f && typeof f === "object" && (f.cabe_hoje === true || f.cabe_hoje === 1));
+}
+
+// Resolve a elegibilidade canonica de duracao e limites por obra (candidato ou IMDb externo).
+function resolverDuracaoELimitesAlvo(alvoRef, ctx) {
+  const falha = (idAlvo = null, cIdxs = [], duracaoOk = false) => ({
+    ok: false,
+    duracaoOk,
+    idAlvo,
+    cIdxs,
+    min: 0,
+    limites: [],
+    cabeHoje: false,
+    cabeHojeMin: 0,
+    fmoCabeHoje: false,
+  });
+
+  const idAlvo = resolverIdentidadeRef(alvoRef, ctx);
+  if (!idAlvo) return falha();
+  if (ctx.obrasTipoContradit?.has(idAlvo.obraKey)) return falha(idAlvo);
+
   const cIdxs = idAlvo.tipo === "cand" ? [idAlvo.idx] : [];
   const ev = cIdxs.length === 1 ? ctx.candEvs[cIdxs[0]] : null;
-  if (ev?.cabeHojeContradit) {
-    return { ok: false, idAlvo, cIdxs, min: 0, limites: [], cabeHoje: false, cabeHojeMin: 0, fmoCabeHoje: false };
-  }
-  const fatosItem = fatosParaAlvo(alvoRef, ctx, false);
-  const minCand = ev?.minutos || 0;
-  const minFato = fatosItem.find((f) => Number.isInteger(f.minutos) && f.minutos > 0)?.minutos || 0;
-  const min = minCand > 0 ? minCand : minFato;
-  const cabeHoje = Boolean(ev?.cabeHoje);
-  const cabeHojeMin = ev?.cabeHojeMin || 0;
+  if (ev?.cabeHojeContradit) return falha(idAlvo, cIdxs);
+
+  const candMin = ev?.minutos || 0;
   const fmoCabeHoje = Boolean(ev?.fmoCabeHoje);
-  if (cabeHoje && cabeHojeMin > 0 && min > 0 && cabeHojeMin !== min) {
-    return { ok: false, idAlvo, cIdxs, min: 0, limites: [], cabeHoje: false, cabeHojeMin: 0, fmoCabeHoje: false };
+  const motivoCabeHoje = Boolean(ev?.cabeHoje);
+  const motivoCabeHojeMin = ev?.cabeHojeMin || 0;
+
+  const fatosItem = fatosParaAlvo(alvoRef, ctx, false);
+  let cabeHojeNegado = false;
+  let fatoCabeHoje = false;
+  let fatoCabeHojeInvalido = false;
+  const rawFactMins = [];
+  const affFactMins = new Set();
+
+  for (const f of fatosItem) {
+    if (fatoNegaCabeHoje(f)) cabeHojeNegado = true;
+    const temMinPos = Number.isInteger(f.minutos) && f.minutos > 0;
+    if (temMinPos) rawFactMins.push(f.minutos);
+    if (fatoAfirmaCabeHoje(f)) {
+      fatoCabeHoje = true;
+      if (f.minutos !== undefined && !temMinPos) fatoCabeHojeInvalido = true;
+      if (temMinPos) affFactMins.add(f.minutos);
+    }
   }
+
+  if (fatoCabeHojeInvalido) return falha(idAlvo, cIdxs);
+
+  const temAfirmativa = motivoCabeHoje || fatoCabeHoje;
+  let min = 0;
+  let cabeHoje = false;
+  let cabeHojeMin = 0;
+
+  if (temAfirmativa) {
+    const mins = new Set();
+    if (candMin > 0) mins.add(candMin);
+    if (motivoCabeHojeMin > 0) mins.add(motivoCabeHojeMin);
+    for (const m of rawFactMins) mins.add(m);
+    for (const m of affFactMins) mins.add(m);
+    if (mins.size > 1) return falha(idAlvo, cIdxs);
+    if (mins.size === 1) {
+      min = [...mins][0];
+      cabeHoje = true;
+      cabeHojeMin = min;
+    }
+  } else {
+    const minFato = rawFactMins.length > 0 ? rawFactMins[0] : 0;
+    min = candMin > 0 ? candMin : minFato;
+  }
+
   const limItem = fatosItem.filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
   const limGlob = ctx.fatosGlobais.filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
   const limites = limItem.length > 0 ? limItem : limGlob;
-  return { ok: true, idAlvo, cIdxs, min, limites, cabeHoje, cabeHojeMin, fmoCabeHoje };
+
+  if (cabeHojeNegado) {
+    return {
+      ok: false,
+      duracaoOk: true,
+      idAlvo,
+      cIdxs,
+      min,
+      limites,
+      cabeHoje: false,
+      cabeHojeMin: 0,
+      fmoCabeHoje: false,
+    };
+  }
+
+  return {
+    ok: true,
+    duracaoOk: true,
+    idAlvo,
+    cIdxs,
+    min,
+    limites,
+    cabeHoje,
+    cabeHojeMin,
+    fmoCabeHoje,
+  };
 }
 
 // Regra comum positiva de elegibilidade por duracao para `dica` (`FT_DICA_CURTO`),
@@ -3274,11 +3360,9 @@ function textoFatoAlvoAterrado(t, alvoRef, ctx) {
     return fatos.some((f) => f.genero === idNum);
   }
   if (t.m === "FT_MOT_CABE_HOJE") {
-    const min = Number(args[0]);
-    const dur = resolverDuracaoELimitesAlvo(alvoRef, ctx);
-    if (!dur.ok || dur.min <= 0 || dur.min !== min) return false;
-    if (dur.limites.length > 0 && !dur.limites.every((f) => dur.min <= f.tempo_max)) return false;
-    return fatos.some((f) => (f.cabe_hoje === true || f.cabe_hoje === 1) && f.minutos === min);
+    const dur = duracaoAlvoElegivel(alvoRef, ctx, { permitirSemLimite: "cabe_hoje" });
+    if (!dur.ok || !dur.cabeHoje || !dur.cabeHojeMin) return false;
+    return Number(args[0]) === dur.cabeHojeMin;
   }
   if (t.m === "FT_MOT_SALVO") {
     return fatos.some((f) => extrairSalvoDur(f.salvo ?? f.dias) === args[0]);
@@ -3492,8 +3576,7 @@ function dicaTextoAterrado(t, alvoDica, ctx) {
     }
     case "FT_DICA_TEMPORADA": {
       if (ehGlobal || !refsTitulosEquivalentes(a[0], alvoDica, ctx)) return false;
-      if (!idAlvo || ctx.obrasTipoContradit?.has(idAlvo.obraKey) || obraEhFilmeDeclarado(idAlvo, ctx)) return false;
-      return fatosAlvo.some((f) => fatoProvaTemporadaNova(f));
+      return obraTemporadaNovaElegivel(idAlvo, ctx);
     }
     case "FT_DICA_REVER": {
       if (ehGlobal || !refsTitulosEquivalentes(a[0], alvoDica, ctx)) return false;
@@ -3716,12 +3799,27 @@ function pecaAterrada(p, ctx, opts = {}) {
       const qtd = Number(p.l1.a?.[0]);
       const maxMin = Number(p.l1.a?.[1]);
       if (qtd !== p.itens.length) return false;
-      const cIdxs = p.itens.flatMap((ref) => resolverCandIndicesPorRef(ref, ctx));
-      const todosTemMin = cIdxs.length === p.itens.length && cIdxs.every((idx) => ctx.candEvs[idx]?.minutos > 0);
-      if (todosTemMin) {
-        if (!cIdxs.every((idx) => ctx.candEvs[idx].minutos < maxMin)) return false;
-      } else {
-        const okFato = todosFatos(ctx).some((f) => f.curtos_max_min === maxMin && (!f.curtos_qtd || f.curtos_qtd === qtd));
+      const obrasVistas = new Set();
+      let temDesconhecido = false;
+      for (const ref of p.itens) {
+        const dur = resolverDuracaoELimitesAlvo(ref, ctx);
+        if (!dur.duracaoOk || !dur.idAlvo) return false;
+        if (obrasVistas.has(dur.idAlvo.obraKey)) return false;
+        obrasVistas.add(dur.idAlvo.obraKey);
+        if (dur.min > 0) {
+          if (!(dur.min < maxMin)) return false;
+        } else {
+          temDesconhecido = true;
+        }
+      }
+      const fatosCurtos = todosFatos(ctx).filter((f) =>
+        Number.isInteger(f.curtos_max_min) && f.curtos_max_min === maxMin
+      );
+      if (fatosCurtos.some((f) => f.curtos_qtd !== undefined && f.curtos_qtd !== qtd)) {
+        return false;
+      }
+      if (temDesconhecido) {
+        const okFato = fatosCurtos.some((f) => f.curtos_qtd === undefined || f.curtos_qtd === qtd);
         if (!okFato) return false;
       }
     }

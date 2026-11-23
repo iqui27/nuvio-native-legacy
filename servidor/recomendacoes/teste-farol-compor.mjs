@@ -3635,3 +3635,368 @@ test("R8-Dicas: FT_DICA_TEMPORADA exige fato de nova temporada e filme declarado
     assert.equal(chamadasLlm.length, 1);
   }
 });
+
+// =============================================================================
+// 15. Regressoes dos achados P1 e P2 da revisao FAROL40-r9
+// =============================================================================
+
+test("R9-P1: FT_DICA_TEMPORADA veta contradicao entre fato positivo e negacao explicita na mesma obra", async (t) => {
+  const baseCands = pedidoHomeBase().candidatos;
+  const serie = { id: "tt2010001", tipo: "series", titulo: "Série A" };
+  const candsCom = (c0) => baseCands.map((c, idx) => (idx === 0 ? c0 : c));
+  const cenaTemp = {
+    v: 1, tela: "home", origem: "llm",
+    pecas: [{
+      t: "dica", id: "d_r9_temp",
+      l1: { m: "FT_DICA_TEMPORADA", a: ["c0"] },
+      acao: { tipo: "abrir", alvo: "c0" },
+    }],
+  };
+
+  // 1. Reproducao exata do P1 e variantes por aliases, eixos e ordem invertida.
+  for (const [c0, fatos] of [
+    [serie, [{ c: 0, tipo: "series", nova_temporada: true }, { id: "tt2010001", tipo: "series", nova_temporada: false }]],
+    [serie, [{ id: "tt2010001", tipo: "series", nova_temporada: false }, { c: 0, tipo: "series", nova_temporada: true }]],
+    [serie, [{ c: 0, temporada_nova: 3 }, { ref: "tt2010001", estreia_temporada: 0 }]],
+    [serie, [{ ref: "tt2010001", temporada: 3, nova: true }, { alvo: "c0", chegou: false }]],
+    [serie, [{ c: 0, tipo: "series", estreia: true }, { id: "tt2010001", estreia: false }]],
+    [{ ...serie, eixos: { nova_temporada: false } }, [{ c: 0, tipo: "series", nova_temporada: true }]],
+    [{ ...serie, eixos: { nova_temporada: true } }, [{ id: "tt2010001", nova_temporada: false }]],
+    [serie, [{ c: 0, nova_temporada: true, chegou: 0 }]],
+  ]) {
+    const reqRuim = pedidoHomeBase({ modo: "home", candidatos: candsCom(c0), fatos });
+    const { post, kv, chamadasLlm } = cenario(t, {}, { respostaLlm: () => cenaTemp });
+    const r1 = await post("/v1/farol/compor", reqRuim, { token: "tok-gosto-a", perfil: 1 });
+    const r2 = await post("/v1/farol/compor", reqRuim, { token: "tok-gosto-b", perfil: 1 });
+    assert.deepEqual(r1.body, { origem: "regras" }, JSON.stringify({ c0, fatos }));
+    assert.deepEqual(r2.body, { origem: "regras" }, JSON.stringify({ c0, fatos }));
+    assert.equal(kv.mapa.size, 0);
+    assert.equal(chamadasLlm.length, 2);
+
+    const chave = await chaveCacheCompor(reqRuim);
+    const idCanon = farolGostoMod.dicaIdCanonico(cenaTemp.pecas[0]);
+    for (const idSemeado of [idCanon, "d_legado_r9_temp"]) {
+      const hitEnv = cenario(t, {}, {
+        respostaLlm: () => ({
+          v: 1, tela: "home", origem: "llm",
+          pecas: [{ t: "dica", id: "d_ok", l1: { m: "FT_DICA_TRAKT" }, acao: { tipo: "nada" } }],
+        }),
+      });
+      await hitEnv.kv.put(chave, JSON.stringify({
+        v: 1, tela: "home", feita: 1795000000, vale_s: 86400, origem: "llm",
+        pecas: [{ ...cenaTemp.pecas[0], id: idSemeado }],
+      }), { expirationTtl: 86400 });
+      const rHit = await hitEnv.post("/v1/farol/compor", reqRuim, { token: "tok-gosto-b", perfil: 2 });
+      assert.equal(rHit.body.origem, "llm");
+      assert.equal(rHit.body.pecas[0].l1.m, "FT_DICA_TRAKT");
+      assert.equal(hitEnv.chamadasLlm.length, 1);
+    }
+  }
+
+  // 2. Controles positivos legitimos: negacao em outra obra, fato global ou estreia de pessoa nao veta c0;
+  //    eixo cruzado com alias de outra obra tambem nao veta nem contamina.
+  for (const [c0, fatos] of [
+    [serie, [{ c: 0, tipo: "series", nova_temporada: true }, { c: 1, tipo: "series", nova_temporada: false }]],
+    [serie, [{ c: 0, tipo: "series", nova_temporada: true }, { nova_temporada: false }]],
+    [serie, [{ c: 0, tipo: "series", nova_temporada: true }, { c: 0, pessoa: 137427, estreia: false }]],
+    [{ ...serie, eixos: { ref: "tt0133093", nova_temporada: false } }, [{ c: 0, tipo: "series", nova_temporada: true }]],
+    [serie, [{ c: 0, tipo: "series", nova_temporada: true }, { c: 0, temporada: 2, episodio: 4 }]],
+  ]) {
+    const reqOk = pedidoHomeBase({ modo: "home", candidatos: candsCom(c0), fatos });
+    const { post, chamadasLlm } = cenario(t, {}, { respostaLlm: () => cenaTemp });
+    const miss = await post("/v1/farol/compor", reqOk, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(miss.body.origem, "llm", JSON.stringify({ c0, fatos }));
+    assert.equal(miss.body.pecas[0].l1.m, "FT_DICA_TEMPORADA");
+    const hit = await post("/v1/farol/compor", reqOk, { token: "tok-gosto-b", perfil: 2 });
+    assert.deepEqual(hit.body, miss.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+});
+
+test("R9-P2: elegibilidade canonica por obra recusa cabe_hoje:false e duracoes contraditorias em candidato e IMDb externo", async (t) => {
+  const baseCands = pedidoHomeBase().candidatos;
+  const serie80 = { id: "tt2010001", tipo: "series", titulo: "Série A", minutos: 80, motivos: [{ tipo: 6, a: 80, b: 0 }] };
+  const serieSemMin = { id: "tt2010001", tipo: "series", titulo: "Série A" };
+  const candsCom = (c0) => baseCands.map((c, idx) => (idx === 0 ? c0 : c));
+
+  const cenaDica = {
+    v: 1, tela: "home", origem: "llm",
+    pecas: [{ t: "dica", id: "d_r9_curto", l1: { m: "FT_DICA_CURTO", a: ["c0"] }, acao: { tipo: "abrir", alvo: "c0" } }],
+  };
+  const cenaFileira = {
+    v: 1, tela: "home", origem: "llm",
+    pecas: [{
+      t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz",
+      itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+      motivo: { c0: { m: "FT_MOT_CABE_HOJE", a: ["80"] } },
+    }],
+  };
+  const cenaAchados = {
+    v: 1, tela: "home", origem: "llm",
+    pecas: [{
+      t: "achados", l1: { m: "FT_ACHA_NAO_VIU" }, itens: ["c0"],
+      motivo: { c0: { m: "FT_MOT_CABE_HOJE", a: ["80"] } },
+    }],
+  };
+  const cenaPorque = (alvo = "c0", min = "80") => ({
+    v: 1, tela: "detalhe", origem: "llm",
+    pecas: [{ t: "porque", alvo, confianca: 2, linhas: [{ m: "FT_MOT_CABE_HOJE", a: [String(min)] }] }],
+  });
+  const cenaCmp = {
+    v: 1, tela: "comparar", origem: "llm",
+    pecas: [{ t: "comparar", itens: ["c0", "c1"], eixos: ["duracao", "nota"], veredito: { m: "FT_CMP_VEREDITO_CABE", a: ["c0"] }, escolha: "c0" }],
+  };
+  const telaPorModo = { dica: "home", home: "home", retomada: "detalhe", comparar: "comparar" };
+
+  // 1. Reproducao exata do P2 (candidato com cabe_hoje:false por indice, alias IMDb ou eixos, com e sem tempo_max:100)
+  //    e duracao afirmativa contraditoria caem para regras em dica, fileira, achados, porque e comparar.
+  for (const [c0, fatos] of [
+    [serie80, [{ c: 0, cabe_hoje: false, minutos: 80 }]],
+    [serie80, [{ c: 0, cabe_hoje: false, minutos: 80 }, { tempo_max: 100 }]],
+    [serie80, [{ id: "tt2010001", cabe_hoje: false }, { tempo_max: 100 }]],
+    [serie80, [{ ref: "tt2010001", cabe_hoje: 0 }, { tempo_max: 100 }]],
+    [{ ...serie80, eixos: { cabe_hoje: false } }, [{ tempo_max: 100 }]],
+    [{ ...serieSemMin, eixos: { cabe_hoje: true, minutos: 80 } }, [{ id: "tt2010001", minutos: 120 }, { tempo_max: 150 }]],
+    [serieSemMin, [{ c: 0, cabe_hoje: true, minutos: 80 }, { id: "tt2010001", cabe_hoje: true, minutos: 120 }, { tempo_max: 150 }]],
+    [serieSemMin, [{ id: "tt2010001", cabe_hoje: true, minutos: 120 }, { c: 0, cabe_hoje: true, minutos: 80 }, { tempo_max: 150 }]],
+  ]) {
+    for (const [modo, cena] of [
+      ["dica", cenaDica],
+      ["home", cenaFileira],
+      ["home", cenaAchados],
+      ["retomada", cenaPorque("c0", "80")],
+      ["comparar", cenaCmp],
+    ]) {
+      const reqRuim = pedidoHomeBase({ modo, candidatos: candsCom(c0), fatos });
+      const { post, kv, chamadasLlm } = cenario(t, {}, { respostaLlm: () => cena });
+      const r1 = await post("/v1/farol/compor", reqRuim, { token: "tok-gosto-a", perfil: 1 });
+      const r2 = await post("/v1/farol/compor", reqRuim, { token: "tok-gosto-b", perfil: 1 });
+      assert.deepEqual(r1.body, { origem: "regras" }, `${modo} ${JSON.stringify(fatos)}`);
+      assert.deepEqual(r2.body, { origem: "regras" }, `${modo} ${JSON.stringify(fatos)}`);
+      assert.equal(kv.mapa.size, 0);
+      assert.equal(chamadasLlm.length, 2);
+
+      const chave = await chaveCacheCompor(reqRuim);
+      const tela = telaPorModo[modo];
+      const hitEnv = cenario(t, {}, {
+        respostaLlm: () => ({
+          v: 1, tela, origem: "llm",
+          pecas: [
+            modo === "comparar"
+              ? { t: "comparar", itens: ["c0", "c1"], eixos: ["duracao"], escolha: "c0" }
+              : modo === "retomada"
+                ? { t: "porque", alvo: "c1", confianca: 1, linhas: [{ m: "FT_MOT_GENERO", a: ["g878"] }] }
+                : { t: "dica", id: "d_ok", l1: { m: "FT_DICA_TRAKT" }, acao: { tipo: "nada" } },
+          ],
+        }),
+      });
+      const pecaSemeada = cena.pecas[0].t === "dica"
+        ? { ...cena.pecas[0], id: farolGostoMod.dicaIdCanonico(cena.pecas[0]) }
+        : cena.pecas[0];
+      await hitEnv.kv.put(chave, JSON.stringify({
+        v: 1, tela, feita: 1795000000, vale_s: 86400, origem: "llm",
+        pecas: [pecaSemeada],
+      }), { expirationTtl: 86400 });
+      const rHit = await hitEnv.post("/v1/farol/compor", reqRuim, { token: "tok-gosto-b", perfil: 2 });
+      assert.equal(rHit.body.origem, "llm");
+      assert.equal(hitEnv.chamadasLlm.length, 1);
+      if (modo === "comparar") assert.equal(rHit.body.pecas[0].veredito, undefined);
+      else if (modo === "retomada") assert.equal(rHit.body.pecas[0].linhas[0].m, "FT_MOT_GENERO");
+      else assert.equal(rHit.body.pecas[0].l1.m, "FT_DICA_TRAKT");
+    }
+  }
+
+  // 2. IMDb externo (tt0944947): contradicao em qualquer ordem e cabe_hoje:false sao recusados (inclusive em KV semeado);
+  //    controle positivo com limite igual (120) e limite frouxo (150) passam.
+  const ext = "tt0944947";
+  for (const fatosExtRuins of [
+    [{ alvo: ext, cabe_hoje: true, minutos: 120 }, { alvo: ext, cabe_hoje: true, minutos: 80 }, { tempo_max: 150 }],
+    [{ alvo: ext, cabe_hoje: true, minutos: 80 }, { alvo: ext, cabe_hoje: true, minutos: 120 }, { tempo_max: 150 }],
+    [{ alvo: ext, cabe_hoje: true, minutos: 120 }, { id: ext, minutos: 80 }, { tempo_max: 150 }],
+    [{ alvo: ext, minutos: 80 }, { id: ext, cabe_hoje: true, minutos: 120 }, { tempo_max: 150 }],
+    [{ alvo: ext, cabe_hoje: true, minutos: 120 }, { id: ext, cabe_hoje: false }, { tempo_max: 150 }],
+    [{ id: ext, cabe_hoje: false }, { alvo: ext, cabe_hoje: true, minutos: 120 }, { tempo_max: 150 }],
+  ]) {
+    const reqExtRuim = pedidoHomeBase({ modo: "retomada", fatos: fatosExtRuins });
+    const cenaExt = cenaPorque(ext, "120");
+    const { post, kv, chamadasLlm } = cenario(t, {}, { respostaLlm: () => cenaExt });
+    assert.deepEqual((await post("/v1/farol/compor", reqExtRuim, { token: "tok-gosto-a", perfil: 1 })).body,
+      { origem: "regras" }, JSON.stringify(fatosExtRuins));
+    assert.deepEqual((await post("/v1/farol/compor", reqExtRuim, { token: "tok-gosto-b", perfil: 1 })).body,
+      { origem: "regras" }, JSON.stringify(fatosExtRuins));
+    assert.equal(kv.mapa.size, 0);
+    assert.equal(chamadasLlm.length, 2);
+
+    const chave = await chaveCacheCompor(reqExtRuim);
+    const hitEnv = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "detalhe", origem: "llm",
+        pecas: [{ t: "porque", alvo: "c1", confianca: 1, linhas: [{ m: "FT_MOT_GENERO", a: ["g878"] }] }],
+      }),
+    });
+    await hitEnv.kv.put(chave, JSON.stringify({
+      v: 1, tela: "detalhe", feita: 1795000000, vale_s: 86400, origem: "llm",
+      pecas: cenaExt.pecas,
+    }), { expirationTtl: 86400 });
+    const rHit = await hitEnv.post("/v1/farol/compor", reqExtRuim, { token: "tok-gosto-b", perfil: 2 });
+    assert.equal(rHit.body.origem, "llm");
+    assert.equal(rHit.body.pecas[0].linhas[0].m, "FT_MOT_GENERO");
+    assert.equal(hitEnv.chamadasLlm.length, 1);
+  }
+
+  // Fronteira de alias em eixos: eixos com ref de c1 nao pode vazar cabe_hoje:false para c1 nem conceder cabe_hoje para c0.
+  {
+    const candsAlias = candsCom({ ...serie80, eixos: { ref: "tt0133093", cabe_hoje: false } }).map((c, idx) =>
+      idx === 1 ? { ...c, minutos: 80, motivos: [{ tipo: 6, a: 80, b: 0 }] } : c
+    );
+    const reqC1 = pedidoHomeBase({ modo: "dica", candidatos: candsAlias, fatos: [{ tempo_max: 100 }] });
+    const cenaDicaC1 = {
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{ t: "dica", id: "d_c1", l1: { m: "FT_DICA_CURTO", a: ["c1"] }, acao: { tipo: "abrir", alvo: "c1" } }],
+    };
+    const { post, chamadasLlm } = cenario(t, {}, { respostaLlm: () => cenaDicaC1 });
+    const miss = await post("/v1/farol/compor", reqC1, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(miss.body.origem, "llm");
+    const hit = await post("/v1/farol/compor", reqC1, { token: "tok-gosto-b", perfil: 2 });
+    assert.deepEqual(hit.body, miss.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+
+  // Preserva semantica de ordem r5 para duracoes brutas sem afirmacao explicita de cabe_hoje.
+  {
+    const reqRawOk = pedidoHomeBase({
+      modo: "dica",
+      candidatos: candsCom(serieSemMin),
+      fatos: [{ c: 0, minutos: 80 }, { id: "tt2010001", minutos: 160 }, { tempo_max: 100 }],
+    });
+    const reqRawRuim = pedidoHomeBase({
+      modo: "dica",
+      candidatos: candsCom(serieSemMin),
+      fatos: [{ id: "tt2010001", minutos: 160 }, { c: 0, minutos: 80 }, { tempo_max: 100 }],
+    });
+    const { post: postOk } = cenario(t, {}, { respostaLlm: () => cenaDica });
+    assert.equal((await postOk("/v1/farol/compor", reqRawOk)).body.origem, "llm");
+    const { post: postRuim } = cenario(t, {}, { respostaLlm: () => cenaDica });
+    assert.deepEqual((await postRuim("/v1/farol/compor", reqRawRuim)).body, { origem: "regras" });
+  }
+
+  // Controles positivos: negacao em c1 nao afeta c0, e IMDb externo unico com limite igual/frouxo passa.
+  {
+    const reqC0Ok = pedidoHomeBase({
+      modo: "home",
+      candidatos: candsCom(serie80),
+      fatos: [{ c: 1, cabe_hoje: false, minutos: 80 }, { tempo_max: 100 }],
+    });
+    const { post, chamadasLlm } = cenario(t, {}, { respostaLlm: () => cenaFileira });
+    const miss = await post("/v1/farol/compor", reqC0Ok, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(miss.body.origem, "llm");
+    const hit = await post("/v1/farol/compor", reqC0Ok, { token: "tok-gosto-b", perfil: 2 });
+    assert.deepEqual(hit.body, miss.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+  {
+    const reqExtOk = pedidoHomeBase({
+      modo: "retomada",
+      fatos: [{ alvo: ext, cabe_hoje: true, minutos: 120 }, { tempo_max: 120 }],
+    });
+    const { post, chamadasLlm } = cenario(t, {}, { respostaLlm: () => cenaPorque(ext, "120") });
+    const miss = await post("/v1/farol/compor", reqExtOk, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(miss.body.origem, "llm");
+    const hit = await post("/v1/farol/compor", reqExtOk, { token: "tok-gosto-b", perfil: 2 });
+    assert.deepEqual(hit.body, miss.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+});
+
+test("R9-Achados: FT_ACHA_CURTOS_L1 nao permite fato agregado sobrepor item exibido inelegivel", async (t) => {
+  const baseCands = pedidoHomeBase().candidatos;
+  const cenaAchados = {
+    v: 1, tela: "home", origem: "llm",
+    pecas: [{
+      t: "achados",
+      l1: { m: "FT_ACHA_CURTOS_L1", a: ["2", "100"] },
+      itens: ["c0", "c1"],
+    }],
+  };
+  const mkCands = (c0Mut, c1Mut) => baseCands.map((c, idx) =>
+    idx === 0 ? c0Mut(c) : idx === 1 ? c1Mut(c) : c
+  );
+
+  // 1. Negativos: c0=240 com c1 sem duracao e fato agregado; c0 sem minutos com fato 240;
+  //    c0=80 com contradicao de duracao; agregado com curtos_qtd divergente; itens duplicados por alias.
+  for (const [cands, fatos, cena] of [
+    [
+      mkCands((c) => ({ ...c, minutos: 240 }), ({ minutos: _m, ...rest }) => rest),
+      [{ curtos_max_min: 100, curtos_qtd: 2 }],
+      cenaAchados,
+    ],
+    [
+      mkCands(({ minutos: _m, ...rest }) => rest, ({ minutos: _m, ...rest }) => rest),
+      [{ c: 0, minutos: 240 }, { curtos_max_min: 100, curtos_qtd: 2 }],
+      cenaAchados,
+    ],
+    [
+      mkCands((c) => ({ ...c, minutos: 80 }), ({ minutos: _m, ...rest }) => rest),
+      [{ c: 0, cabe_hoje: true, minutos: 240 }, { curtos_max_min: 100, curtos_qtd: 2 }],
+      cenaAchados,
+    ],
+    [
+      mkCands((c) => ({ ...c, minutos: 80 }), ({ minutos: _m, ...rest }) => rest),
+      [{ curtos_max_min: 100, curtos_qtd: 1 }],
+      cenaAchados,
+    ],
+    [
+      mkCands((c) => ({ ...c, minutos: 80 }), ({ minutos: _m, ...rest }) => rest),
+      [{ curtos_max_min: 100, curtos_qtd: 0 }],
+      cenaAchados,
+    ],
+    [
+      mkCands((c) => ({ ...c, minutos: 80 }), (c) => ({ ...c, minutos: 75 })),
+      [{ curtos_max_min: 100, curtos_qtd: 2 }],
+      {
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{ t: "achados", l1: { m: "FT_ACHA_CURTOS_L1", a: ["2", "100"] }, itens: ["c0", baseCands[0].id] }],
+      },
+    ],
+  ]) {
+    const reqRuim = pedidoHomeBase({ modo: "home", candidatos: cands, fatos });
+    const { post, kv, chamadasLlm } = cenario(t, {}, { respostaLlm: () => cena });
+    const r1 = await post("/v1/farol/compor", reqRuim, { token: "tok-gosto-a", perfil: 1 });
+    const r2 = await post("/v1/farol/compor", reqRuim, { token: "tok-gosto-b", perfil: 1 });
+    assert.deepEqual(r1.body, { origem: "regras" }, JSON.stringify(fatos));
+    assert.deepEqual(r2.body, { origem: "regras" }, JSON.stringify(fatos));
+    assert.equal(kv.mapa.size, 0);
+    assert.equal(chamadasLlm.length, 2);
+
+    const chave = await chaveCacheCompor(reqRuim);
+    const hitEnv = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{ t: "dica", id: "d_ok", l1: { m: "FT_DICA_TRAKT" }, acao: { tipo: "nada" } }],
+      }),
+    });
+    await hitEnv.kv.put(chave, JSON.stringify({
+      v: 1, tela: "home", feita: 1795000000, vale_s: 86400, origem: "llm",
+      pecas: cena.pecas,
+    }), { expirationTtl: 86400 });
+    const rHit = await hitEnv.post("/v1/farol/compor", reqRuim, { token: "tok-gosto-b", perfil: 2 });
+    assert.equal(rHit.body.origem, "llm");
+    assert.equal(rHit.body.pecas[0].l1.m, "FT_DICA_TRAKT");
+  }
+
+  // 2. Controles positivos: ambos curtos conhecidos, ou um curto conhecido (80) + c1 realmente desconhecido com agregado coerente.
+  for (const [cands, fatos] of [
+    [mkCands((c) => ({ ...c, minutos: 80 }), (c) => ({ ...c, minutos: 75 })), [{ curtos_max_min: 100, curtos_qtd: 2 }]],
+    [mkCands((c) => ({ ...c, minutos: 80 }), ({ minutos: _m, ...rest }) => rest), [{ curtos_max_min: 100, curtos_qtd: 2 }]],
+    [mkCands(({ minutos: _m, ...rest }) => rest, ({ minutos: _m, ...rest }) => rest), [{ curtos_max_min: 100, curtos_qtd: 2 }]],
+  ]) {
+    const reqOk = pedidoHomeBase({ modo: "home", candidatos: cands, fatos });
+    const { post, chamadasLlm } = cenario(t, {}, { respostaLlm: () => cenaAchados });
+    const miss = await post("/v1/farol/compor", reqOk, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(miss.body.origem, "llm", JSON.stringify(fatos));
+    assert.equal(miss.body.pecas[0].l1.m, "FT_ACHA_CURTOS_L1");
+    const hit = await post("/v1/farol/compor", reqOk, { token: "tok-gosto-b", perfil: 2 });
+    assert.deepEqual(hit.body, miss.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+});
