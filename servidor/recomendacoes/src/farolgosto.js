@@ -2449,9 +2449,11 @@ function processarMotivoCandidato(mo, ev, candMinutos, ancoras, nomes, extras) {
         nomes.pessoasNomes.set(id, mo.nome.trim());
       if (mo.estreia === true || mo.estreia === 1) ev.estreiasPessoa.add(id);
     }
-    const seedTit = resolverAncoraRef(mo.b, ancoras);
     const vezes = Number.isInteger(mo.vezes) && mo.vezes > 0 ? mo.vezes
       : (Number.isInteger(mo.n) && mo.n > 0 ? mo.n : 0);
+    const seedTit = (vezes > 0 || (typeof mo.b === "string" && mo.b.length > 0))
+      ? resolverAncoraRef(mo.b, ancoras)
+      : null;
     if (seedTit && vezes > 0) ev.diretores.push({ tit: seedTit, n: vezes });
     return ["fmo", "FMO_PESSOA", bruto, seedTit || (Number.isInteger(mo.b) ? mo.b : 0), vezes, mo.estreia ? 1 : 0];
   }
@@ -2527,6 +2529,7 @@ function contextoAterramento(pedido) {
   const pessoasNomes = new Map();
   const titulosPorRef = new Map();
   const titulosAncoras = new Set();
+  const gostoAncorasTitulos = new Set();
   const servicosOnde = new Set();
   const fatosPorAlvo = new Map();
   const fatosGlobais = [];
@@ -2561,8 +2564,14 @@ function contextoAterramento(pedido) {
     }
   }
   for (const a of ancoras) {
-    if (typeof a?.id === "string" && /^tt\d{1,17}$/.test(a.id)) titulosAncoras.add(a.id);
-    if (typeof a?.ref === "string" && /^tt\d{1,17}$/.test(a.ref)) titulosAncoras.add(a.ref);
+    if (typeof a?.id === "string" && /^tt\d{1,17}$/.test(a.id)) {
+      titulosAncoras.add(a.id);
+      gostoAncorasTitulos.add(a.id);
+    }
+    if (typeof a?.ref === "string" && /^tt\d{1,17}$/.test(a.ref)) {
+      titulosAncoras.add(a.ref);
+      gostoAncorasTitulos.add(a.ref);
+    }
     if (typeof a?.titulo === "string" && a.titulo.trim()) {
       const tit = a.titulo.trim();
       if (typeof a.id === "string" && /^tt\d{1,17}$/.test(a.id)) titulosPorRef.set(a.id, tit);
@@ -2741,6 +2750,7 @@ function contextoAterramento(pedido) {
     ttCand,
     ttTodos,
     titulosAncoras,
+    gostoAncorasTitulos,
     generosIds,
     temasIds,
     pessoasIds,
@@ -2857,7 +2867,7 @@ function gerarXDeterministico(m, a, ctx) {
     // Quando o pedido atual nao traz `nome`, a TV resolve pelo elenco local se houver.
     if (!nome) return undefined;
     const x = tpl.replace("%s", nome);
-    return farolTextoAceitaBytes(ENC.encode(x)) ? x : null;
+    return farolTextoAceitaBytes(ENC.encode(x)) ? x : undefined;
   }
   if (m === "FT_MOT_TERMINOU_TEMA") {
     const arg1 = a[1] || "";
@@ -3041,6 +3051,33 @@ const INFO_MODELS_POR_K = Object.freeze({
   retomada: new Set(["FT_INFO_RETOMADA", "FT_INFO_RETOMADA_SIMPLES"]),
 });
 
+function tempsContinuarDirecao(f) {
+  if (!Array.isArray(f?.temps) || f.temps.length < 2) return { dir: 0, tRef: 0 };
+  const v = f.temps
+    .filter((t) => t && Number.isInteger(t.numero) && t.numero > 0)
+    .slice()
+    .sort((a, b) => a.numero - b.numero);
+  let dir = 0, tRef = 0;
+  for (let i = 1; i < v.length; i++) {
+    if (v[i].numero - v[i - 1].numero !== 1) continue;
+    if (!Number.isInteger(v[i - 1].comNota) || v[i - 1].comNota < 5) continue;
+    if (!Number.isInteger(v[i].comNota) || v[i].comNota < 5) continue;
+    if (!Number.isInteger(v[i - 1].notaX10) || v[i - 1].notaX10 <= 0) continue;
+    if (!Number.isInteger(v[i].notaX10) || v[i].notaX10 <= 0) continue;
+    const d = v[i].notaX10 - v[i - 1].notaX10;
+    if (d >= 4) { dir = 1; tRef = v[i].numero; }
+    else if (d <= -4) { dir = -1; tRef = v[i].numero; }
+  }
+  return { dir, tRef };
+}
+
+function fatoProvaSobe(f, tempNum) {
+  if (!f || f.cai === true || f.cai === 1 || f.sobe === false || f.sobe === 0) return false;
+  if (f.sobe === true || f.sobe === 1) return true;
+  const { dir, tRef } = tempsContinuarDirecao(f);
+  return dir === 1 && tRef === tempNum;
+}
+
 function infoItemAterrado(k, l, alvoRef, ctx) {
   const permitidos = INFO_MODELS_POR_K[k];
   if (!permitidos || !permitidos.has(l.m)) return false;
@@ -3051,26 +3088,42 @@ function infoItemAterrado(k, l, alvoRef, ctx) {
 
   switch (l.m) {
     case "FT_INFO_QUALI":
-      return fatos.some((f) => extrairResNome(f) === a[0] && extrairFmtHdr(f) === a[1] && f.audio === a[2]);
+      return fatos.some((f) =>
+        (f.toca === undefined || f.toca === true || f.toca === 1) &&
+        extrairResNome(f) === a[0] && extrairFmtHdr(f) === a[1] && f.audio === a[2]
+      );
     case "FT_INFO_QUALI_AUDIO":
-      return fatos.some((f) => extrairResNome(f) === a[0] && f.audio === a[1]);
+      return fatos.some((f) =>
+        (f.toca === undefined || f.toca === true || f.toca === 1) &&
+        extrairResNome(f) === a[0] && f.audio === a[1]
+      );
     case "FT_INFO_IDIOMA":
-      return fatos.some((f) => f.audio === a[0]);
+      return fatos.some((f) =>
+        (f.toca === undefined || f.toca === true || f.toca === 1) &&
+        f.audio === a[0]
+      );
     case "FT_INFO_LEGENDA":
-      return fatos.some((f) => f.legenda === a[0]);
+      return fatos.some((f) =>
+        (f.toca === undefined || f.toca === true || f.toca === 1) &&
+        f.legenda === a[0]
+      );
     case "FT_INFO_SOBE":
       return fatos.some((f) =>
         (f.temporada ?? f.temp) === Number(a[0]) &&
         f.faltam === Number(a[1]) &&
         (f.min_ep ?? f.minEp ?? f.minutos) === Number(a[2]) &&
-        f.cai !== true
+        fatoProvaSobe(f, Number(a[0]))
       );
     case "FT_INFO_CAI":
-      return fatos.some((f) => (f.temporada ?? f.temp) === Number(a[0]) && f.cai === true);
+      return fatos.some((f) =>
+        (f.temporada ?? f.temp) === Number(a[0]) &&
+        (f.cai === true || f.cai === 1) &&
+        f.sobe !== true && f.sobe !== 1
+      );
     case "FT_INFO_FALTAM":
       return fatos.some((f) => f.faltam === Number(a[0]) && (f.min_ep ?? f.minEp ?? f.minutos) === Number(a[1]));
     case "FT_INFO_MESMO_NIVEL":
-      return fatos.some((f) => f.mesmo_nivel === true);
+      return fatos.some((f) => (f.mesmo_nivel === true || f.mesmo_nivel === 1) && f.sobe !== true && f.cai !== true);
     case "FT_INFO_TERMINA":
       return fatos.some((f) => (f.termina ?? f.hora_fim) === a[0]);
     case "FT_INFO_DUAS_NOITES": {
@@ -3116,79 +3169,85 @@ function infoItemAterrado(k, l, alvoRef, ctx) {
   }
 }
 
-function dicaTextoAterrado(t, acaoAlvo, ctx) {
+function tituloRefDeDicaTexto(t) {
+  if (!t || !Array.isArray(t.a)) return null;
+  switch (t.m) {
+    case "FT_DICA_PAROU_L1":
+    case "FT_DICA_TEMPORADA":
+    case "FT_DICA_REVER":
+    case "FT_DICA_CURTO":
+      return t.a[0] || null;
+    case "FT_DICA_FALTA_L1":
+      return t.a[2] || null;
+    default:
+      return null;
+  }
+}
+
+function dicaTextoAterrado(t, alvoDica, ctx) {
   if (!t) return true;
   if (!t.m || !t.m.startsWith("FT_DICA_")) return false;
   const a = Array.isArray(t.a) ? t.a : [];
+  const ehGlobal = alvoDica === "__global__";
+  const fatosAlvo = ehGlobal ? ctx.fatosGlobais : fatosParaAlvo(alvoDica, ctx, false);
+  const cIdxsAlvo = ehGlobal ? [] : resolverCandIndicesPorRef(alvoDica, ctx);
+
   switch (t.m) {
     case "FT_DICA_PAROU_L1": {
-      const fatos = fatosParaAlvo(a[0], ctx, false);
-      return fatos.some((f) => (f.temporada ?? f.t) === Number(a[1]) && (f.episodio ?? f.e) === Number(a[2]));
+      if (ehGlobal || !refsTitulosEquivalentes(a[0], alvoDica, ctx)) return false;
+      return fatosAlvo.some((f) => (f.temporada ?? f.t) === Number(a[1]) && (f.episodio ?? f.e) === Number(a[2]));
     }
     case "FT_DICA_PAROU_L2": {
-      const fatos = acaoAlvo ? fatosParaAlvo(acaoAlvo, ctx, true) : todosFatos(ctx);
-      return fatos.some((f) => f.semanas === Number(a[0]));
+      return fatosAlvo.some((f) => f.semanas === Number(a[0]));
     }
     case "FT_DICA_FALTA_L1": {
-      const fatos = fatosParaAlvo(a[2], ctx, false);
-      return fatos.some((f) => f.faltam === Number(a[0]) && (f.temporada ?? f.temp) === Number(a[1]));
+      if (ehGlobal || !refsTitulosEquivalentes(a[2], alvoDica, ctx)) return false;
+      return fatosAlvo.some((f) => f.faltam === Number(a[0]) && (f.temporada ?? f.temp) === Number(a[1]));
     }
     case "FT_DICA_FALTA_L2": {
-      const fatos = acaoAlvo ? fatosParaAlvo(acaoAlvo, ctx, true) : todosFatos(ctx);
-      return fatos.some((f) => Number.isInteger(f.faltam) && f.faltam > 0);
+      return fatosAlvo.some((f) => Number.isInteger(f.faltam) && f.faltam > 0);
     }
     case "FT_DICA_SALVO_L1": {
-      if (acaoAlvo) {
-        const cIdxs = resolverCandIndicesPorRef(acaoAlvo, ctx);
-        if (cIdxs.some((idx) => ctx.candEvs[idx]?.salvoDurs.has(a[0]))) return true;
-        return fatosParaAlvo(acaoAlvo, ctx, false).some((f) => extrairSalvoDur(f.salvo ?? f.dias) === a[0]);
-      }
-      return todosFatos(ctx).some((f) => extrairSalvoDur(f.salvo ?? f.dias) === a[0]) ||
-        ctx.candEvs.some((ev) => ev.salvoDurs.has(a[0]));
+      if (cIdxsAlvo.some((idx) => ctx.candEvs[idx]?.salvoDurs.has(a[0]))) return true;
+      return fatosAlvo.some((f) => extrairSalvoDur(f.salvo ?? f.dias) === a[0]);
     }
     case "FT_DICA_SALVO_L2": {
-      if (acaoAlvo) {
-        const cIdxs = resolverCandIndicesPorRef(acaoAlvo, ctx);
-        for (const idx of cIdxs) {
-          const min = ctx.candEvs[idx]?.minutos || 0;
-          if (min > 0 && duracoesFilmeDeMinutos(min).has(a[0])) return true;
-        }
-        return fatosParaAlvo(acaoAlvo, ctx, false).some((f) =>
-          f.duracao === a[0] || (Number.isInteger(f.minutos) && duracoesFilmeDeMinutos(f.minutos).has(a[0]))
-        );
+      for (const idx of cIdxsAlvo) {
+        const min = ctx.candEvs[idx]?.minutos || 0;
+        if (min > 0 && duracoesFilmeDeMinutos(min).has(a[0])) return true;
       }
-      return todosFatos(ctx).some((f) =>
+      return fatosAlvo.some((f) =>
         f.duracao === a[0] || (Number.isInteger(f.minutos) && duracoesFilmeDeMinutos(f.minutos).has(a[0]))
       );
     }
     case "FT_DICA_ESTREIA": {
       const id = a[0].slice(1);
-      if (acaoAlvo) {
-        const cIdxs = resolverCandIndicesPorRef(acaoAlvo, ctx);
-        if (cIdxs.some((idx) => ctx.candEvs[idx]?.estreiasPessoa.has(id))) return true;
-        return fatosParaAlvo(acaoAlvo, ctx, false).some((f) =>
-          (f.estreia === true || f.estreia === 1) && String(f.pessoa) === id
-        );
-      }
-      return ctx.candEvs.some((ev) => ev.estreiasPessoa.has(id)) ||
-        todosFatos(ctx).some((f) => (f.estreia === true || f.estreia === 1) && String(f.pessoa) === id);
+      if (cIdxsAlvo.some((idx) => ctx.candEvs[idx]?.estreiasPessoa.has(id))) return true;
+      return fatosAlvo.some((f) =>
+        (f.estreia === true || f.estreia === 1) && String(f.pessoa) === id
+      );
     }
     case "FT_DICA_TEMPORADA": {
-      const cIdxs = resolverCandIndicesPorRef(a[0], ctx);
-      if (cIdxs.length > 0 && cIdxs.every((idx) => ctx.candEvs[idx]?.tipo === "filme")) {
-        return fatosParaAlvo(a[0], ctx, false).some((f) => Number.isInteger(f.temporada ?? f.temp));
+      if (ehGlobal || !refsTitulosEquivalentes(a[0], alvoDica, ctx)) return false;
+      if (cIdxsAlvo.length > 0 && cIdxsAlvo.every((idx) => ctx.candEvs[idx]?.tipo === "filme")) {
+        return fatosAlvo.some((f) => Number.isInteger(f.temporada ?? f.temp));
       }
       return true;
     }
     case "FT_DICA_REVER": {
-      if (ctx.titulosAncoras.has(a[0])) return true;
-      const cIdxs = resolverCandIndicesPorRef(a[0], ctx);
-      if (cIdxs.some((idx) => ctx.candEvs[idx]?.rever)) return true;
-      return fatosParaAlvo(a[0], ctx, false).some((f) => f.rever === true || Boolean(extrairReverData(f)));
+      if (ehGlobal || !refsTitulosEquivalentes(a[0], alvoDica, ctx)) return false;
+      if ([...ctx.titulosAncoras].some((tit) => refsTitulosEquivalentes(tit, a[0], ctx))) return true;
+      if (cIdxsAlvo.some((idx) => ctx.candEvs[idx]?.rever)) return true;
+      return fatosAlvo.some((f) => f.rever === true || Boolean(extrairReverData(f)));
     }
     case "FT_DICA_CURTO": {
-      const cIdxs = resolverCandIndicesPorRef(a[0], ctx);
-      if (cIdxs.some((idx) => ctx.candEvs[idx]?.cabeHojeContradit)) return false;
+      if (ehGlobal || !refsTitulosEquivalentes(a[0], alvoDica, ctx)) return false;
+      if (cIdxsAlvo.some((idx) => ctx.candEvs[idx]?.cabeHojeContradit)) return false;
+      const lim = fatosAlvo.filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
+      if (lim.length > 0) {
+        const min = cIdxsAlvo.length === 1 ? ctx.candEvs[cIdxsAlvo[0]]?.minutos || 0 : 0;
+        if (min > 0 && lim.some((f) => min > f.tempo_max)) return false;
+      }
       return true;
     }
     case "FT_DICA_PERGUNTAS":
@@ -3197,6 +3256,34 @@ function dicaTextoAterrado(t, acaoAlvo, ctx) {
     default:
       return false;
   }
+}
+
+function dicaAterrada(p, ctx) {
+  const refL1 = tituloRefDeDicaTexto(p.l1);
+  const refL2 = p.l2 ? tituloRefDeDicaTexto(p.l2) : null;
+  const refAcao = p.acao?.alvo || null;
+  const refs = [refL1, refL2, refAcao].filter(Boolean);
+  for (let i = 1; i < refs.length; i++) {
+    if (!refsTitulosEquivalentes(refs[0], refs[i], ctx)) return false;
+  }
+  const alvoDica = refAcao || refL1 || refL2 || null;
+  if (alvoDica) {
+    if (!dicaTextoAterrado(p.l1, alvoDica, ctx)) return false;
+    if (p.l2 && !dicaTextoAterrado(p.l2, alvoDica, ctx)) return false;
+    return true;
+  }
+  const precisaAlvo = (t) => Boolean(t && t.m !== "FT_DICA_PERGUNTAS" && t.m !== "FT_DICA_TRAKT");
+  if (!precisaAlvo(p.l1) && (!p.l2 || !precisaAlvo(p.l2))) return true;
+  const alvos = new Set();
+  for (let i = 0; i < ctx.nCand; i++) alvos.add(`c${i}`);
+  for (const k of ctx.fatosPorAlvo.keys()) alvos.add(k);
+  for (const alv of alvos) {
+    if (dicaTextoAterrado(p.l1, alv, ctx) && (!p.l2 || dicaTextoAterrado(p.l2, alv, ctx))) {
+      return true;
+    }
+  }
+  return dicaTextoAterrado(p.l1, "__global__", ctx) &&
+    (!p.l2 || dicaTextoAterrado(p.l2, "__global__", ctx));
 }
 
 function textoAterrado(t, ctx, permitirAncoras = true) {
@@ -3238,7 +3325,15 @@ function fileiraTituloAterrado(t, itens, ctx) {
   const a = Array.isArray(t.a) ? t.a : [];
   const itemIdxs = itens.flatMap((ref) => resolverCandIndicesPorRef(ref, ctx));
   if (t.m === "FT_FIL_PORQUE_TERMINOU") {
-    return [...ctx.titulosAncoras].some((tit) => refsTitulosEquivalentes(tit, a[0], ctx));
+    const itemHasTerminou = itemIdxs.some((idx) =>
+      [...(ctx.candEvs[idx]?.terminouTitulos || [])].some((tit) => refsTitulosEquivalentes(tit, a[0], ctx))
+    );
+    if (itemHasTerminou) return true;
+    const anyCandHasTerminou = ctx.candEvs.some((ev) =>
+      [...ev.terminouTitulos].some((tit) => refsTitulosEquivalentes(tit, a[0], ctx))
+    );
+    if (anyCandHasTerminou) return false;
+    return [...ctx.gostoAncorasTitulos].some((tit) => refsTitulosEquivalentes(tit, a[0], ctx));
   }
   if (t.m === "FT_FIL_PESSOA") {
     const id = a[0].slice(1);
@@ -3314,9 +3409,7 @@ function pecaAterrada(p, ctx, opts = {}) {
     if (p.icone !== undefined && !DICA_ICONES_CLIENTE.has(p.icone)) return false;
     if (p.acao?.alvo && !refTtPermitida(p.acao.alvo, ttTodos)) return false;
     if (!textoAterrado(p.l1, ctx, true) || !textoAterrado(p.l2, ctx, true)) return false;
-    if (!dicaTextoAterrado(p.l1, p.acao?.alvo, ctx)) return false;
-    if (p.l2 && !dicaTextoAterrado(p.l2, p.acao?.alvo, ctx)) return false;
-    return true;
+    return dicaAterrada(p, ctx);
   }
   if (p.t === "porque") {
     if (!refTtPermitida(p.alvo, ttTodos)) return false;
@@ -3334,12 +3427,17 @@ function pecaAterrada(p, ctx, opts = {}) {
       if (p.veredito.m !== "FT_CMP_VEREDITO_CABE" || !textoAterrado(p.veredito, ctx, false)) return false;
       const vRef = p.veredito.a?.[0];
       if (!p.itens.some((it) => refsTitulosEquivalentes(it, vRef, ctx))) return false;
-      const fatosCmp = todosFatos(ctx).filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
-      if (fatosCmp.length > 0) {
-        const cIdxs = resolverCandIndicesPorRef(vRef, ctx);
-        const min = cIdxs.length === 1 ? ctx.candEvs[cIdxs[0]]?.minutos || 0 : 0;
-        if (min > 0 && !fatosCmp.some((f) => min <= f.tempo_max)) return false;
-      }
+      const cIdxs = resolverCandIndicesPorRef(vRef, ctx);
+      if (cIdxs.length !== 1) return false;
+      const fatosItem = fatosParaAlvo(vRef, ctx, false);
+      const minCand = ctx.candEvs[cIdxs[0]]?.minutos || 0;
+      const minFato = fatosItem.find((f) => Number.isInteger(f.minutos) && f.minutos > 0)?.minutos || 0;
+      const min = minCand > 0 ? minCand : minFato;
+      if (min <= 0) return false;
+      const limItem = fatosItem.filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
+      const limGlob = ctx.fatosGlobais.filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
+      const limites = limItem.length > 0 ? limItem : limGlob;
+      if (!limites.length || !limites.every((f) => min <= f.tempo_max)) return false;
     }
     return true;
   }
@@ -3531,8 +3629,7 @@ function reconstituirTexto(t, ctx, state) {
   if (xDet === null) return null;
   const out = { m: t.m };
   if (args.length) out.a = args;
-  if (typeof xDet === "string") {
-    if (state.xsUsados >= FAROL_XS) return null;
+  if (typeof xDet === "string" && state.xsUsados < FAROL_XS) {
     state.xsUsados++;
     out.x = xDet;
   }
@@ -3671,6 +3768,7 @@ function reconstituirCena(pecasCanonicas, meta, pedido, ctx) {
   const canonicasOut = [];
 
   for (const pc of pecasCanonicas) {
+    const xsAntes = state.xsUsados;
     const pr = reconstituirPeca(pc, ctx, state);
     if (!pr) continue;
     const teste = {
@@ -3682,7 +3780,10 @@ function reconstituirCena(pecasCanonicas, meta, pedido, ctx) {
       pecas: [...pecasOut, pr],
     };
     const js = JSON.stringify(teste);
-    if (ENC.encode(js).length > FAROL_CENA_MAX) continue;
+    if (ENC.encode(js).length > FAROL_CENA_MAX) {
+      state.xsUsados = xsAntes;
+      continue;
+    }
     pecasOut.push(pr);
     canonicasOut.push(pc);
   }
@@ -3905,9 +4006,25 @@ export function tipoCanonico(tipo) {
   return "";
 }
 
+function canonicalizarValor(v) {
+  if (v === null || typeof v !== "object") return v;
+  if (Array.isArray(v)) return v.map(canonicalizarValor);
+  const out = {};
+  for (const k of Object.keys(v).sort()) {
+    out[k] = canonicalizarValor(v[k]);
+  }
+  return out;
+}
+
+function canonicalizarFatos(fatos) {
+  if (!Array.isArray(fatos) || !fatos.length) return [];
+  return fatos
+    .map((f) => JSON.stringify(canonicalizarValor(f)))
+    .sort();
+}
+
 function candidatoCanonicoParaChave(c, i, ancoras) {
   const ttsExtras = new Set();
-  coletarTt(c.motivos, ttsExtras);
   coletarTt(c.eixos, ttsExtras);
   const idCanon = typeof c.id === "number"
     ? `n:${c.id}`
@@ -3920,16 +4037,18 @@ function candidatoCanonicoParaChave(c, i, ancoras) {
   const dummyEv = criarEvidenciaVazia();
   const dummyMap = new Map();
   const dummySet = new Set();
-  const motivos = Array.isArray(c.motivos)
+  const motivosNorm = Array.isArray(c.motivos)
     ? c.motivos.map((mo) => processarMotivoCandidato(
         mo,
         dummyEv,
         Number.isInteger(c.minutos) && c.minutos > 0 ? c.minutos : 0,
         ancoras,
         { generosNomes: dummyMap, temasNomes: dummyMap, pessoasNomes: dummyMap },
-        { generosIds: dummySet, temasIds: dummySet, pessoasIds: dummySet, titulosAncoras: dummySet }
-      )).filter(Boolean).map((m) => JSON.stringify(m)).sort()
+        { generosIds: dummySet, temasIds: dummySet, pessoasIds: dummySet, titulosAncoras: ttsExtras }
+      )).filter(Boolean)
     : [];
+  coletarTt(motivosNorm, ttsExtras);
+  const motivos = motivosNorm.map((m) => JSON.stringify(m)).sort();
   return [
     i,
     c.c !== undefined ? String(c.c) : "",
@@ -3945,7 +4064,7 @@ function candidatoCanonicoParaChave(c, i, ancoras) {
   ];
 }
 
-// Chave = SHA-256(modo, idioma, faixa de hora, gosto quantizado, representacao canonica por candidato, fatos).
+// Chave = SHA-256(modo, idioma, faixa de hora, gosto quantizado, representacao canonica por candidato, fatos canonicos).
 // Nunca inclui conta, perfil nem valores livres de texto: mudancas na evidencia estruturada geram chaves distintas.
 export async function chaveCacheCompor(pedido) {
   const ancoras = pedido.gosto?.ancoras || [];
@@ -3969,7 +4088,7 @@ export async function chaveCacheCompor(pedido) {
       fim_semana: pedido.gosto?.fim_semana ?? 0,
     },
     candidatos: (pedido.candidatos || []).map((c, i) => candidatoCanonicoParaChave(c, i, ancoras)),
-    fatos: pedido.fatos,
+    fatos: canonicalizarFatos(pedido.fatos),
   };
   return "farol:compor:v1:" + (await sha256Hex(JSON.stringify(canon)));
 }

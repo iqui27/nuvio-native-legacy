@@ -339,7 +339,7 @@ test("compor devolve FarolCena v1 valida nos modos home, comparar, dica e retoma
         }) + "\n```",
       }
     );
-    const r = await post("/v1/farol/compor", pedidoHomeBase({ modo: "comparar" }));
+    const r = await post("/v1/farol/compor", pedidoHomeBase({ modo: "comparar", fatos: [{ tempo_max: 150 }] }));
     assert.equal(r.status, 200);
     assert.equal(r.body.origem, "llm");
     assert.equal(r.body.pecas[0].t, "comparar");
@@ -2000,4 +2000,378 @@ test("R3-P1.4: reconstrucao deterministica de nome de pessoa ausente do elenco l
     assert.equal(rLang.body.pecas[0].titulo.x, espTit);
     assert.equal(rLang.body.pecas[0].motivo.c0.x, espMot);
   }
+});
+
+// =============================================================================
+// 10. Regressoes dos 4 P1 da revisao FAROL40-r4
+// =============================================================================
+
+test("R4-P1.1: dica vincula l1, l2 e acao a mesma identidade e FT_FIL_PORQUE_TERMINOU exige ancora da fileira ou de gosto sem vazar outro candidato", async (t) => {
+  const reqDica = pedidoHomeBase({
+    modo: "dica",
+    fatos: [
+      { alvo: "c0", temporada: 2, episodio: 4, semanas: 5 },
+      { alvo: "c1", temporada: 3, episodio: 7, semanas: 9 },
+    ],
+  });
+
+  // 1. Reproducao exata da r4: l1 aponta c0, l2 usa semanas=9 de c1, acao abre c1 -> recusada no miss e no hit KV.
+  for (const cenaRuim of [
+    {
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{
+        t: "dica", id: "d1",
+        l1: { m: "FT_DICA_PAROU_L1", a: ["c0", "2", "4"] },
+        l2: { m: "FT_DICA_PAROU_L2", a: ["9"] },
+        acao: { tipo: "abrir", alvo: "c1" },
+      }],
+    },
+    // l1 e acao em c0, mas l2 pega semanas=9 de c1 -> recusada.
+    {
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{
+        t: "dica", id: "d2",
+        l1: { m: "FT_DICA_PAROU_L1", a: ["c0", "2", "4"] },
+        l2: { m: "FT_DICA_PAROU_L2", a: ["9"] },
+        acao: { tipo: "abrir", alvo: "c0" },
+      }],
+    },
+    // l1 e l2 coerentes em c0 (semanas=5), mas acao abre c1 -> recusada.
+    {
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{
+        t: "dica", id: "d3",
+        l1: { m: "FT_DICA_PAROU_L1", a: ["c0", "2", "4"] },
+        l2: { m: "FT_DICA_PAROU_L2", a: ["5"] },
+        acao: { tipo: "abrir", alvo: "c1" },
+      }],
+    },
+  ]) {
+    const { post, kv } = cenario(t, {}, { respostaLlm: () => cenaRuim });
+    const r = await post("/v1/farol/compor", reqDica);
+    assert.deepEqual(r.body, { origem: "regras" }, JSON.stringify(cenaRuim));
+    assert.equal(kv.mapa.size, 0);
+
+    // Mesmo se uma entrada antiga estiver no KV, o hit revalida e recusa.
+    const chave = await chaveCacheCompor(reqDica);
+    const hitEnv = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: "d_ok",
+          l1: { m: "FT_DICA_PAROU_L1", a: ["c0", "2", "4"] },
+          l2: { m: "FT_DICA_PAROU_L2", a: ["5"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      }),
+    });
+    await hitEnv.kv.put(chave, JSON.stringify({
+      ...cenaRuim,
+      feita: 1795000000,
+      vale_s: 86400,
+    }), { expirationTtl: 86400 });
+    const rHit = await hitEnv.post("/v1/farol/compor", reqDica);
+    assert.equal(rHit.body.origem, "llm");
+    assert.equal(rHit.body.pecas[0].l2.a[0], "5");
+    assert.equal(rHit.body.pecas[0].acao.alvo, "c0");
+    assert.equal(hitEnv.chamadasLlm.length, 1);
+  }
+
+  // Controle: tudo vinculado a c0 (l1=T2E4, l2=5 semanas, acao=c0) passa no miss e no hit com 1 chamada.
+  {
+    const { post, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: "d_ok",
+          l1: { m: "FT_DICA_PAROU_L1", a: ["c0", "2", "4"] },
+          l2: { m: "FT_DICA_PAROU_L2", a: ["5"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      }),
+    });
+    const miss = await post("/v1/farol/compor", reqDica, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(miss.body.origem, "llm");
+    assert.equal(miss.body.pecas[0].l2.a[0], "5");
+    assert.equal(miss.body.pecas[0].acao.alvo, "c0");
+    const hit = await post("/v1/farol/compor", reqDica, { token: "tok-gosto-b", perfil: 1 });
+    assert.deepEqual(hit.body, miss.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+
+  // 2. Segundo caso de escopo: unico FMO_TERMINOU("tt11280740") em c6, fora da fileira c0..c5.
+  for (const ancorasGosto of [undefined, [{ id: "tt11280740", titulo: "Lua" }]]) {
+    const reqFora = pedidoHomeBase({
+      gosto: {
+        generos: [{ id: 53, nome: "Suspense", peso: 1.5 }],
+        ...(ancorasGosto ? { ancoras: ancorasGosto } : {}),
+        nivel: 2,
+      },
+      candidatos: pedidoHomeBase().candidatos.map((c, idx) =>
+        idx === 6 ? { ...c, motivos: [{ tipo: "FMO_TERMINOU", a: "tt11280740", b: 0 }] } : c
+      ),
+    });
+    const cenaFora = {
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{
+        t: "fileira", id: "gosto1",
+        titulo: { m: "FT_FIL_PORQUE_TERMINOU", a: ["tt11280740"] },
+        forma: "cartaz",
+        itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+      }],
+    };
+    const { post, kv } = cenario(t, {}, { respostaLlm: () => cenaFora });
+    const r = await post("/v1/farol/compor", reqFora);
+    assert.deepEqual(r.body, { origem: "regras" });
+    assert.equal(kv.mapa.size, 0);
+
+    // Hit KV legado com a mesma cena tambem e recusado.
+    const chave = await chaveCacheCompor(reqFora);
+    const cHit = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "fileira", id: "gosto1",
+          titulo: { m: "FT_FIL_HORA" },
+          forma: "cartaz",
+          itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+        }],
+      }),
+    });
+    await cHit.kv.put(chave, JSON.stringify({ ...cenaFora, feita: 1795000000, vale_s: 86400 }), { expirationTtl: 86400 });
+    const r2 = await cHit.post("/v1/farol/compor", reqFora);
+    assert.equal(r2.body.pecas[0].titulo.m, "FT_FIL_HORA");
+    assert.equal(cHit.chamadasLlm.length, 1);
+  }
+});
+
+test("R4-P1.2: FT_INFO_SOBE exige prova positiva de subida e FT_CMP_VEREDITO_CABE exige limite pertinente ao item", async (t) => {
+  // 1. Retomada: sobe:false, cai:false (ou ausencia de prova) nao pode aceitar FT_INFO_SOBE.
+  for (const fato of [
+    { alvo: "c0", temporada: 2, faltam: 6, min_ep: 45, sobe: false, cai: false },
+    { alvo: "c0", temporada: 2, faltam: 6, min_ep: 45 },
+    { alvo: "c0", temporada: 2, faltam: 6, min_ep: 45, temps: [{ numero: 1, notaX10: 70, comNota: 4 }, { numero: 2, notaX10: 80, comNota: 6 }] },
+    { alvo: "c0", temporada: 2, faltam: 6, min_ep: 45, temps: [{ numero: 1, notaX10: 70, comNota: 5 }, { numero: 2, notaX10: 73, comNota: 5 }] },
+  ]) {
+    const req = pedidoHomeBase({ modo: "retomada", fatos: [fato] });
+    const cenaSobe = {
+      v: 1, tela: "detalhe", origem: "llm",
+      pecas: [{
+        t: "info", alvo: "c0",
+        itens: [{ k: "continuar", l: { m: "FT_INFO_SOBE", a: ["2", "6", "45"] } }],
+      }],
+    };
+    const { post, kv } = cenario(t, {}, { respostaLlm: () => cenaSobe });
+    const r = await post("/v1/farol/compor", req);
+    assert.deepEqual(r.body, { origem: "regras" }, JSON.stringify(fato));
+    assert.equal(kv.mapa.size, 0);
+  }
+
+  // Controle com prova positiva de subida (sobe:true ou temps >=5 amostras e dif >= 0.4) passa no miss e no hit.
+  for (const fatoOk of [
+    { alvo: "c0", temporada: 2, faltam: 6, min_ep: 45, sobe: true, cai: false },
+    { alvo: "c0", temporada: 2, faltam: 6, min_ep: 45, temps: [{ numero: 1, notaX10: 70, comNota: 5 }, { numero: 2, notaX10: 74, comNota: 5 }] },
+  ]) {
+    const reqOk = pedidoHomeBase({ modo: "retomada", fatos: [fatoOk] });
+    const { post, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "detalhe", origem: "llm",
+        pecas: [{
+          t: "info", alvo: "c0",
+          itens: [{ k: "continuar", l: { m: "FT_INFO_SOBE", a: ["2", "6", "45"] } }],
+        }],
+      }),
+    });
+    const miss = await post("/v1/farol/compor", reqOk, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(miss.body.origem, "llm");
+    const hit = await post("/v1/farol/compor", reqOk, { token: "tok-gosto-b", perfil: 1 });
+    assert.deepEqual(hit.body, miss.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+
+  // 2. Comparar: c0.minutos=127, tempo_max:90 para c0 e tempo_max:240 so para c1 -> FT_CMP_VEREDITO_CABE(c0) recusado;
+  //    e sem prova de tempo_max tambem e recusado.
+  for (const fatosCmp of [
+    [{ alvo: "c0", tempo_max: 90 }, { alvo: "c1", tempo_max: 240 }],
+    [{ alvo: "c1", tempo_max: 240 }],
+    [],
+  ]) {
+    const reqCmp = pedidoHomeBase({ modo: "comparar", fatos: fatosCmp });
+    const cenaCmp = {
+      v: 1, tela: "comparar", origem: "llm",
+      pecas: [{
+        t: "comparar",
+        itens: ["c0", "c1"],
+        eixos: ["duracao", "nota"],
+        veredito: { m: "FT_CMP_VEREDITO_CABE", a: ["c0"] },
+        escolha: "c0",
+      }],
+    };
+    const { post, kv } = cenario(t, {}, { respostaLlm: () => cenaCmp });
+    const r = await post("/v1/farol/compor", reqCmp);
+    assert.deepEqual(r.body, { origem: "regras" }, JSON.stringify(fatosCmp));
+    assert.equal(kv.mapa.size, 0);
+  }
+
+  // Controle comparar: tempo_max pertinente a c0 (150 >= 127) passa no miss e no hit.
+  {
+    const reqCmpOk = pedidoHomeBase({ modo: "comparar", fatos: [{ alvo: "c0", tempo_max: 150 }, { alvo: "c1", tempo_max: 90 }] });
+    const { post, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "comparar", origem: "llm",
+        pecas: [{
+          t: "comparar",
+          itens: ["c0", "c1"],
+          eixos: ["duracao", "nota"],
+          veredito: { m: "FT_CMP_VEREDITO_CABE", a: ["c0"] },
+          escolha: "c0",
+        }],
+      }),
+    });
+    const miss = await post("/v1/farol/compor", reqCmpOk, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(miss.body.origem, "llm");
+    assert.equal(miss.body.pecas[0].veredito.m, "FT_CMP_VEREDITO_CABE");
+    const hit = await post("/v1/farol/compor", reqCmpOk, { token: "tok-gosto-b", perfil: 1 });
+    assert.deepEqual(hit.body, miss.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+});
+
+test("R4-P1.3: nono motivo de pessoa preserva m+a quando o pool de 8 xs lota e mantem fileira valida no miss e no hit", async (t) => {
+  const cands9 = Array.from({ length: 9 }, (_, i) => ({
+    id: `tt000010${i}`,
+    titulo: `Obra ${i}`,
+    ano: 2020,
+    minutos: 100,
+    motivos: [{ tipo: "FMO_PESSOA", a: 600000, b: 0 }],
+  }));
+  const req9 = pedidoHomeBase({
+    gosto: { pessoas: [{ id: 600000, nome: "Diretora B", peso: 1.8 }], nivel: 2 },
+    candidatos: cands9,
+  });
+  const itens9 = cands9.map((_, i) => `c${i}`);
+  const motivo9 = Object.fromEntries(itens9.map((k) => [k, { m: "FT_MOT_PESSOA", a: ["p600000"] }]));
+
+  const { post, kv, chamadasLlm } = cenario(t, {}, {
+    respostaLlm: () => ({
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{
+        t: "fileira",
+        id: "gosto1",
+        titulo: { m: "FT_FIL_HORA" },
+        forma: "cartaz",
+        itens: itens9,
+        motivo: motivo9,
+      }],
+    }),
+  });
+
+  const miss = await post("/v1/farol/compor", req9, { token: "tok-gosto-a", perfil: 1 });
+  assert.equal(miss.status, 200);
+  assert.equal(miss.body.origem, "llm");
+  assert.equal(miss.body.pecas.length, 1);
+  assert.equal(miss.body.pecas[0].itens.length, 9);
+  assert.equal(Object.keys(miss.body.pecas[0].motivo).length, 9);
+  for (let i = 0; i < 8; i++) {
+    assert.equal(miss.body.pecas[0].motivo[`c${i}`].m, "FT_MOT_PESSOA");
+    assert.deepEqual(miss.body.pecas[0].motivo[`c${i}`].a, ["p600000"]);
+    assert.equal(miss.body.pecas[0].motivo[`c${i}`].x, "Com Diretora B, que você acompanha.");
+  }
+  assert.equal(miss.body.pecas[0].motivo.c8.m, "FT_MOT_PESSOA");
+  assert.deepEqual(miss.body.pecas[0].motivo.c8.a, ["p600000"]);
+  assert.equal(miss.body.pecas[0].motivo.c8.x, undefined);
+
+  const valMiss = validarCena(JSON.stringify(miss.body), 9);
+  assert.equal(valMiss.ok, true);
+  assert.equal(valMiss.nPecas, 1);
+  assert.equal(valMiss.nRecusadas, 0);
+  assert.equal(valMiss.xs.length, 8);
+
+  // KV sem `x` nem literal e com todos os 9 motivos preservados.
+  assert.equal(kv.mapa.size, 1);
+  const kvVal = [...kv.mapa.values()][0].valor;
+  assert.ok(!kvVal.includes("\"x\""));
+  assert.ok(!kvVal.includes("Diretora B"));
+  assert.equal(Object.keys(JSON.parse(kvVal).pecas[0].motivo).length, 9);
+
+  // Segunda conta acerta o hit com 1 unica chamada ao LLM.
+  const hit = await post("/v1/farol/compor", req9, { token: "tok-gosto-b", perfil: 2 });
+  assert.deepEqual(hit.body, miss.body);
+  assert.equal(chamadasLlm.length, 1);
+});
+
+test("R4-P1.4: chave canonicaliza ordem de campos em fatos e referencias de ancora sem confundir identidades nem ordem dos candidatos", async (t) => {
+  // 1. Ordem das propriedades em fatos[] nao muda a chave e compartilha KV com 1 chamada ao LLM.
+  const reqF1 = pedidoHomeBase({
+    modo: "dica",
+    fatos: [{ alvo: "c0", temporada: 2, episodio: 4, semanas: 5 }],
+  });
+  const reqF2 = pedidoHomeBase({
+    modo: "dica",
+    fatos: [{ semanas: 5, episodio: 4, temporada: 2, alvo: "c0" }],
+  });
+  assert.equal(await chaveCacheCompor(reqF1), await chaveCacheCompor(reqF2));
+
+  {
+    const { post, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: "d1",
+          l1: { m: "FT_DICA_PAROU_L1", a: ["c0", "2", "4"] },
+          l2: { m: "FT_DICA_PAROU_L2", a: ["5"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      }),
+    });
+    const r1 = await post("/v1/farol/compor", reqF1, { token: "tok-gosto-a", perfil: 1 });
+    const r2 = await post("/v1/farol/compor", reqF2, { token: "tok-gosto-b", perfil: 1 });
+    assert.equal(r1.body.origem, "llm");
+    assert.deepEqual(r2.body, r1.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+
+  // 2. FMO_TERMINOU por indice de ancora (tipo:0, a:0) vs IMDb explicito (tipo:"FMO_TERMINOU", a:"tt11280740")
+  //    compartilha a mesma chave e faz 1 chamada ao LLM.
+  const candsBase = pedidoHomeBase().candidatos;
+  const reqAncIdx = pedidoHomeBase({
+    gosto: { ancoras: [{ id: "tt11280740", titulo: "Ruptura" }], nivel: 2 },
+    candidatos: candsBase.map((c, i) => (i === 0 ? { ...c, motivos: [{ tipo: 0, a: 0, b: 0 }] } : c)),
+  });
+  const reqAncTt = pedidoHomeBase({
+    gosto: { ancoras: [{ id: "tt11280740", titulo: "Ruptura" }], nivel: 2 },
+    candidatos: candsBase.map((c, i) => (i === 0 ? { ...c, motivos: [{ tipo: "FMO_TERMINOU", a: "tt11280740", b: 0 }] } : c)),
+  });
+  assert.equal(await chaveCacheCompor(reqAncIdx), await chaveCacheCompor(reqAncTt));
+
+  {
+    const { post, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "fileira", id: "gosto1",
+          titulo: { m: "FT_FIL_PORQUE_TERMINOU", a: ["tt11280740"] },
+          forma: "cartaz",
+          itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+        }],
+      }),
+    });
+    const r1 = await post("/v1/farol/compor", reqAncIdx, { token: "tok-gosto-a", perfil: 1 });
+    const r2 = await post("/v1/farol/compor", reqAncTt, { token: "tok-gosto-b", perfil: 1 });
+    assert.equal(r1.body.origem, "llm");
+    assert.deepEqual(r2.body, r1.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+
+  // 3. Nao confunde identidades diferentes nem reordena candidatos.
+  const reqAncOutro = pedidoHomeBase({
+    gosto: { ancoras: [{ id: "tt9999999", titulo: "Outra" }], nivel: 2 },
+    candidatos: candsBase.map((c, i) => (i === 0 ? { ...c, motivos: [{ tipo: 0, a: 0, b: 0 }] } : c)),
+  });
+  const reqCandTrocado = pedidoHomeBase({
+    gosto: { ancoras: [{ id: "tt11280740", titulo: "Ruptura" }], nivel: 2 },
+    candidatos: [candsBase[1], candsBase[0], ...candsBase.slice(2)],
+  });
+  assert.notEqual(await chaveCacheCompor(reqAncIdx), await chaveCacheCompor(reqAncOutro));
+  assert.notEqual(await chaveCacheCompor(reqAncIdx), await chaveCacheCompor(reqCandTrocado));
 });
