@@ -135,16 +135,21 @@ void player_limpar_erro_fonte(void);   // fonte "morta" que voltou a entregar
 // (mesma idade da falha de resolverregra_falha_recente). `*foiDebrid` diz se a
 // fonte que falhou era de um servico de cache. 0 = nenhum registrado.
 int  player_ultimo_erro_farol(FarolErro *out, int *foiDebrid);
+// FAROL (6D): identidade da tentativa em que player_ultimo_erro_farol foi gravado (0 = nenhuma).
+uint64_t player_ultimo_erro_tentativa(void);
 // FAROL (6C): identidade do add-on da fonte que falhou (0 se desconhecida) e o
 // ultimo titulo VOD aberto nesta sessao de perfil (para reabrir no ponto apos
 // reconectar o debrid pelo Resolver com o player fechado).
 uint64_t player_ultimo_addon_farol(void);
 int  player_ultimo_titulo(CatItem *out, int *temporada, int *episodio);
-// FAROL (6B/6C): "Player externo" do cartao do Resolver — a fonte que acabou
+// FAROL (6B/6C/6D): "Player externo" do cartao do Resolver — a fonte que acabou
 // de falhar sai para o player externo instalado (Android; nas outras 0),
-// inclusive com o player fechado (Resolver aberto por Ajustes).
+// inclusive com o player fechado (Resolver aberto por Ajustes), desde que a
+// fonte e o titulo guardados ainda pertencam a tentativa diagnosticada.
 int  player_externo_disponivel(void);
+int  player_externo_disponivel_tentativa(uint64_t tentativa);
 int  player_abrir_externo(void);
+int  player_abrir_externo_tentativa(uint64_t tentativa);
 // A tentativa do automatico de fontes ("Fonte 2 de 3" na ilha ao abrir):
 // `n` = qual (1 = a primeira), `max` = o teto. 0, 0 = nenhuma.
 void player_definir_tentativa(int n, int max);

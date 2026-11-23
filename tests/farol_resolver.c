@@ -26,6 +26,11 @@
 //   - cenario 15: QR de debrid com player FECHADO e SEM titulo anterior:
 //     nao abre o player e avisa pela ilha que a conta reconectou, sem laco.
 //   - cenario 16: AG_MODO fora do Resolver com player fechado nao reabre filme.
+//   - cenario 17: A->B (FE_PRONTO) -> fecha -> Resolver diagnostica A e usa
+//     alternativa, sem jamais entregar URL/titulo de B ao player externo.
+//   - cenario 18: A->B (sem FE_PRONTO) apos TV_FORMATO_REPETE -> alternativa.
+//   - cenario 19: Caso positivo de TV_FORMATO unico (1 falha) com player fechado.
+//   - cenario 20: Troca para B entre oferta e OK -> despacho recusa B e usa alternativa.
 
 #include "resolver.h"
 #include "resolverregra.h"
@@ -59,10 +64,9 @@
 
 // ---------------------------------------------------------------- cenario
 static int c_offline, c_addons = 3, c_ocupado, c_semPlano, c_recusa, c_debrid = 1,
-           c_tvNegou, c_temErro, c_erroDebrid, c_kb, c_streamAtual = -1;
+           c_tvNegou, c_kb, c_streamAtual = -1;
 static long c_mem = -1;
 static char c_motivo[200], c_recusaTxt[64];
-static FarolErro c_erro;
 static Stream c_stream;
 static AvisosEnvio c_envio;
 static int c_envioChamadas;
@@ -72,8 +76,10 @@ static int aberto, saindo, pediuSair;
 static int temFixo, canalSessao, epT, epE;
 static CatItem itemFixo, itemCanal;
 static uint64_t itemSessao = 1, c_perfilSessao = 1;
-static int temUltimoFarol;
+static FarolErro ultimoFarol;
+static int temUltimoFarol, ultimoFarolDebrid;
 static uint64_t ultimoFarolAddonId;
+static uint64_t farolTentativaSeq, ultimaFonteTentativa, ultimoFarolTentativa;
 static char ultimaFonteUrl[NV_MEDIA_URL_MAX];
 static int ultimaFonteTemCabs;
 static char c_videoCabs[256];
@@ -152,12 +158,6 @@ int debrid_recusa(char *d, unsigned n) {
 int debrid_ativo(void) { return c_debrid; }
 int video_registro_negado(void) { return c_tvNegou; }
 const char *video_cabecalhos(void) { return c_videoCabs; }
-int player_ultimo_erro_farol(FarolErro *o, int *foiDebrid) {
-  if (!c_temErro) return 0;
-  *o = c_erro;
-  if (foiDebrid) *foiDebrid = c_erroDebrid;
-  return 1;
-}
 void player_toast(const char *t, unsigned ms) { (void)t; (void)ms; }
 void player_abrir(int idx, const char *url) {
   (void)url;
@@ -324,26 +324,63 @@ int cat_indice_reabrir(int idx, const CatItem *copia) {
 // Inclui os trechos REAIS de producao extraidos de src/player.c e src/app.c.
 #include "farol_prod_bridge.inc"
 
+#ifndef FAROL_BRIDGE_TEM_TENTATIVA
+int player_ultimo_erro_farol(FarolErro *o, int *foiDebrid) {
+  if (!temUltimoFarol) return 0;
+  if (o) *o = ultimoFarol;
+  if (foiDebrid) *foiDebrid = ultimoFarolDebrid;
+  return 1;
+}
+#endif
+
+static void sim_abrir_tentativa(const char *imdb, const char *tipo,
+                                const char *titulo, int t, int e,
+                                const char *url, int temCabs) {
+#ifdef FAROL_BRIDGE_TEM_TENTATIVA
+  farolTentativaIniciar();
+#else
+  ultimaFonteUrl[0] = 0;
+  ultimaFonteTemCabs = 0;
+#endif
+  temFixo = 1;
+  canalSessao = 0;
+  memset(&itemFixo, 0, sizeof itemFixo);
+  snprintf(itemFixo.imdb, sizeof itemFixo.imdb, "%s", imdb ? imdb : "");
+  snprintf(itemFixo.tipo, sizeof itemFixo.tipo, "%s", tipo ? tipo : "");
+  snprintf(itemFixo.titulo, sizeof itemFixo.titulo, "%s", titulo ? titulo : "");
+  epT = t;
+  epE = e;
+  if (url && url[0]) {
+#ifdef FAROL_BRIDGE_TEM_TENTATIVA
+    farolFonteRegistrar(url, temCabs);
+#else
+    snprintf(ultimaFonteUrl, sizeof ultimaFonteUrl, "%s", url);
+    ultimaFonteTemCabs = temCabs ? 1 : 0;
+#endif
+  }
+}
+
 void addonguia_shot_passo(float dt);
 
 // ------------------------------------------------------------- cenario-base
 static int c_slotSeq;
 static void zerar(void) {
   memset(&c_stream, 0, sizeof c_stream);
-  memset(&c_erro, 0, sizeof c_erro);
+  memset(&ultimoFarol, 0, sizeof ultimoFarol);
   memset(&c_envio, 0, sizeof c_envio);
   memset(&itemFixo, 0, sizeof itemFixo);
   memset(&itemCanal, 0, sizeof itemCanal);
   memset(&c_catUltimo, 0, sizeof c_catUltimo);
   c_offline = 0; c_addons = 3; c_ocupado = 0; c_semPlano = 0; c_recusa = 0;
-  c_debrid = 1; c_tvNegou = 0; c_temErro = 0; c_erroDebrid = 0; c_kb = 0;
+  c_debrid = 1; c_tvNegou = 0; c_kb = 0;
   c_streamAtual = -1; c_mem = -1; c_motivo[0] = 0; c_recusaTxt[0] = 0;
   c_envioChamadas = 0;
   c_envio.disponivel = 0;
   aberto = saindo = pediuSair = 0;
   temFixo = canalSessao = epT = epE = 0;
   itemSessao = c_perfilSessao = 1;
-  temUltimoFarol = 0; ultimoFarolAddonId = 0;
+  temUltimoFarol = 0; ultimoFarolDebrid = 0; ultimoFarolAddonId = 0;
+  farolTentativaSeq = ultimaFonteTentativa = ultimoFarolTentativa = 0;
   ultimaFonteUrl[0] = 0; ultimaFonteTemCabs = 0; c_videoCabs[0] = 0;
   c_tocarInternoN = 0;
   c_androidApps[0] = 0; c_androidAbrirOk = 1; c_androidAbrirN = 0;
@@ -384,13 +421,18 @@ static void zerar(void) {
 // Resolver mais o erro nativo normalizado que so o Farol le.
 static void falhar_fonte(const char *titulo, const char *dica,
                          FarolClasse classe, int http, const char *cod) {
+  FarolErro fe;
   resolverregra_falha_registrar(RES_T_FONTE, titulo, dica, "T2:E5", (long)time(NULL));
-  c_temErro = 1;
+  memset(&fe, 0, sizeof fe);
+  fe.classe = classe;
+  fe.http = http;
+  snprintf(fe.cod, sizeof fe.cod, "%s", cod ? cod : "");
+#ifdef FAROL_BRIDGE_TEM_TENTATIVA
+  farolErroRegistrar(&fe, ultimoFarolDebrid, ultimoFarolAddonId);
+#else
+  ultimoFarol = fe;
   temUltimoFarol = 1;
-  memset(&c_erro, 0, sizeof c_erro);
-  c_erro.classe = classe;
-  c_erro.http = http;
-  snprintf(c_erro.cod, sizeof c_erro.cod, "%s", cod ? cod : "");
+#endif
 }
 
 static void apertar_ok(void) {
@@ -472,8 +514,8 @@ int main(void) {
   assert(!fontesonda_host_debrid("https://real-debrid.com.outro.example/video"));
   assert(!fontesonda_host_debrid("https://torbox.app@outro.example/video"));
   for (int http = 401; http <= 403; http += 2) {
+    ultimoFarolDebrid = fontesonda_host_debrid("https://CDN.real-debrid.com:443/video");
     falhar_fonte("A última fonte falhou.", "", FC_HTTP, http, "http");
-    c_erroDebrid = fontesonda_host_debrid("https://CDN.real-debrid.com:443/video");
     resolver_abrir();
     resolver_teste_testar(RES_S_NAO_COMECA);
     assert(resolver_teste_veredito() == FAROL_C_DEBRID_DESCONECTOU);
@@ -546,12 +588,8 @@ int main(void) {
   // android_abrir_externo().
   zerar();
   aberto = 0;
-  temFixo = 1;
-  snprintf(itemFixo.imdb, sizeof itemFixo.imdb, "tt7654321");
-  snprintf(itemFixo.tipo, sizeof itemFixo.tipo, "movie");
-  snprintf(itemFixo.titulo, sizeof itemFixo.titulo, "Filme Externo");
-  snprintf(ultimaFonteUrl, sizeof ultimaFonteUrl, "https://cdn.example/video.mkv");
-  ultimaFonteTemCabs = 0;
+  sim_abrir_tentativa("tt7654321", "movie", "Filme Externo", 0, 0,
+                      "https://cdn.example/video.mkv", 0);
   snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
   falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
                FC_FORMATO, 0, "m3_4003");
@@ -586,8 +624,8 @@ int main(void) {
   // (c) falha da Intent com player fechado -> devolve 0 e NAO chama interno.
   zerar();
   aberto = 0;
-  snprintf(ultimaFonteUrl, sizeof ultimaFonteUrl, "https://cdn.example/priv.mkv");
-  ultimaFonteTemCabs = 1;
+  sim_abrir_tentativa("tt7654321", "movie", "Filme Privado", 0, 0,
+                      "https://cdn.example/priv.mkv", 1);
   snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
   falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
                FC_FORMATO, 0, "m3_4003");
@@ -663,8 +701,8 @@ int main(void) {
   snprintf(itemFixo.titulo, sizeof itemFixo.titulo, "Serie Debrid");
   epT = 2; epE = 5;
   ultimoFarolAddonId = addonmodo_id(c_addon[1].base);
+  ultimoFarolDebrid = 1;
   falhar_fonte("O servidor recusou o link (HTTP 403).", "", FC_HTTP, 403, "http");
-  c_erroDebrid = 1;
   resolver_abrir();
   resolver_teste_testar(RES_S_NAO_COMECA);
   assert(resolver_teste_veredito() == FAROL_C_DEBRID_DESCONECTOU);
@@ -714,8 +752,8 @@ int main(void) {
   epT = 0; epE = 0;
   ultimoFarolAddonId = 0;
   c_streamAtual = -1;
+  ultimoFarolDebrid = 1;
   falhar_fonte("O servidor recusou o link (HTTP 401).", "", FC_HTTP, 401, "http");
-  c_erroDebrid = 1;
   resolver_abrir();
   resolver_teste_testar(RES_S_NAO_COMECA);
   assert(resolver_teste_veredito() == FAROL_C_DEBRID_DESCONECTOU);
@@ -773,6 +811,142 @@ int main(void) {
   avancar_addonguia();
   app_addonguia_consumir();
   assert(c_playerAbrirN == 0 && c_ilhaAvisosN == 0);
+
+  // ----------------------------------------------------------- cenario 17
+  // BLOQUEIO r3 (FAROL6D): episodio A falha por formato e fecha; filme B abre,
+  // chega a FE_PRONTO e fecha. Resolver que diagnostica A JAMAIS pode oferecer
+  // ou entregar URL/titulo de B a Intent de Player externo — usa a alternativa.
+  zerar();
+  snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
+  sim_abrir_tentativa("tt1111111", "series", "Episodio A", 1, 3,
+                      "https://cdn.example/epA.mkv", 0);
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
+  falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
+               FC_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  aberto = 0;
+
+  // Agora o filme B abre, chega a FE_PRONTO e fecha.
+  sim_abrir_tentativa("tt2222222", "movie", "Filme B", 0, 0,
+                      "https://cdn.example/filmeB.mkv", 0);
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
+  farol_ev(FM_PLAYER, FE_PRONTO, 0, 250, 0, NULL);
+  aberto = 0;
+
+  assert(player_externo_disponivel() == 0);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO);
+  assert(resolver_teste_prim() != FAROL_A_PLAYER_EXTERNO);
+  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  apertar_ok_app();
+  assert(c_androidAbrirN == 0);
+  assert(c_envioChamadas >= 1);
+  assert(player_abrir_externo() == 0);
+  assert(c_androidAbrirN == 0);
+
+  // ----------------------------------------------------------- cenario 18
+  // A->B mesmo SEM FE_PRONTO (B abriu apos 2 falhas em A e fechou antes do
+  // primeiro quadro): TV_FORMATO_REPETE tambem cai na alternativa e nao entrega B.
+  zerar();
+  snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
+  sim_abrir_tentativa("tt1111111", "series", "Episodio A", 1, 3,
+                      "https://cdn.example/epA.mkv", 0);
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
+  falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
+               FC_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  aberto = 0;
+
+  sim_abrir_tentativa("tt2222222", "movie", "Filme B", 0, 0,
+                      "https://cdn.example/filmeB.mkv", 0);
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
+  aberto = 0;
+
+  assert(player_externo_disponivel() == 0);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO_REPETE);
+  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  apertar_ok_app();
+  assert(c_androidAbrirN == 0);
+  assert(c_envioChamadas >= 1);
+
+  // ----------------------------------------------------------- cenario 19
+  // Cenario positivo (1 falha de formato, TV_FORMATO -> acaoAlt PLAYER_EXTERNO)
+  // com player fechado: tentativa correta ainda e a guardada -> oferece e abre A.
+  zerar();
+  snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
+  sim_abrir_tentativa("tt1111111", "series", "Episodio A", 1, 3,
+                      "https://cdn.example/epA.mkv", 0);
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
+  falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
+               FC_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  aberto = 0;
+  assert(player_externo_disponivel() == 1);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO);
+  assert(resolver_teste_prim() == FAROL_A_PLAYER_EXTERNO);
+  assert(strstr(resolver_teste_corpo(), FT_L2_PLAYER_EXTERNO) != NULL);
+  apertar_ok_app();
+  assert(!resolver_aberto());
+  assert(c_androidAbrirN == 1);
+  assert(!strcmp(c_androidAbrirUrl, "https://cdn.example/epA.mkv"));
+  assert(!strcmp(c_androidAbrirTit, "Episodio A"));
+  assert(c_tocarInternoN == 0);
+
+  // ----------------------------------------------------------- cenario 20
+  // Troca entre oferta e OK: Resolver diagnostica A e oferece "Player externo";
+  // antes do OK, B abre (e/ou chega a FE_PRONTO). O despacho recusa B, nao
+  // grava FE_FAROL_ACAO player_externo, troca o cartao para a alternativa e
+  // o novo OK envia o registro.
+  zerar();
+  snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
+  sim_abrir_tentativa("tt1111111", "series", "Episodio A", 1, 3,
+                      "https://cdn.example/epA.mkv", 0);
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
+  falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
+               FC_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  aberto = 0;
+#ifdef FAROL_BRIDGE_TEM_TENTATIVA
+  uint64_t tentA = player_ultimo_erro_tentativa();
+  assert(tentA != 0);
+#endif
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO_REPETE);
+  assert(resolver_teste_prim() == FAROL_A_PLAYER_EXTERNO);
+
+  // Troca de tentativa entre a oferta na tela e o aperto de OK:
+  sim_abrir_tentativa("tt2222222", "movie", "Filme B", 0, 0,
+                      "https://cdn.example/filmeB.mkv", 0);
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
+  farol_ev(FM_PLAYER, FE_PRONTO, 0, 200, 0, NULL);
+  aberto = 0;
+
+  apertar_ok_app();
+  assert(c_androidAbrirN == 0);
+  assert(resolver_aberto());
+  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  assert(player_abrir_externo() == 0);
+#ifdef FAROL_BRIDGE_TEM_TENTATIVA
+  assert(player_abrir_externo_tentativa(tentA) == 0);
+#endif
+  assert(c_androidAbrirN == 0);
+  {
+    FarolEvento ev[FAROL_ANEL_N];
+    int n = farolanel_ler(ev, FAROL_ANEL_N, 0);
+    for (int i = 0; i < n; i++)
+      assert(!(ev[i].ev == FE_FAROL_ACAO && !strcmp(ev[i].tok, "player_externo")));
+  }
+  apertar_ok_app();
+  assert(c_envioChamadas >= 1);
+  assert(c_androidAbrirN == 0);
 
   puts("farol_resolver: producao ok");
   return 0;

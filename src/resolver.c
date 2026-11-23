@@ -65,6 +65,8 @@ static ResolverFatos fatos;
 static ResolverResultado res;
 static ResolverFalha falha;
 static int   temFalha;
+static uint64_t diagTentativa, pedidoTentativa;
+static int   diagUsaTentativa;
 // O motor de playbooks: os fatos dele saem do app e do anel de eventos;
 // `vered` e o que ele decidiu na ultima chamada de testar().
 static FarolFatos ff;
@@ -100,6 +102,7 @@ int resolver_sintoma(void) { return sint; }
 int resolver_enviados_n(void) { return envN; }
 void resolver_teste_esquecer(void) {
   aberto = 0; entrada = 0.0f; fase = 0; foco = 0; envN = 0; envModo = 0; envNoAr = 0; rolo = 0; temFalha = 0;
+  diagTentativa = 0; pedidoTentativa = 0; diagUsaTentativa = 0;
   memset(&fatos, 0, sizeof fatos);
   memset(&vered, 0, sizeof vered);
 #ifdef RESOLVER_TESTE
@@ -111,6 +114,10 @@ int resolver_pedido(void) {
   int p = pedido;
   pedido = RESOLVER_PEDIU_NADA;
   return p;
+}
+
+uint64_t resolver_tentativa_externo(void) {
+  return pedidoTentativa;
 }
 
 // ------------------------------------------------------------------ enviados
@@ -170,6 +177,15 @@ static int os_maior(void) {
 #endif
 }
 
+static int anel_pronto_apos_erro(const FarolEvento *ev, int n) {
+  int i, iPronto = -1, iErro = -1;
+  for (i = 0; i < n; i++) {
+    if (ev[i].ev == FE_PRONTO) iPronto = i;
+    else if (ev[i].ev == FE_ERRO_FONTE || ev[i].ev == FE_RECUSA_SINC) iErro = i;
+  }
+  return iPronto >= 0 && (iErro < 0 || iPronto > iErro);
+}
+
 static void farol_fatos(void) {
   FarolEvento ev[FAROL_ANEL_N];
   const Stream *ft;
@@ -177,6 +193,8 @@ static void farol_fatos(void) {
   int i, n, iPronto = -1, iBusca = -1, iBuscaAnt = -1, lentos = 0;
   uint32_t agoraMs = SDL_GetTicks();
   long agora = (long)time(NULL);
+  diagTentativa = 0;
+  diagUsaTentativa = 0;
 #ifdef RESOLVER_TESTE
   if (usaFFixos) { ff = ffFixos; return; }
 #endif
@@ -203,8 +221,11 @@ static void farol_fatos(void) {
   // O erro normalizado fica com o player; so vale na janela da falha recente.
   ff.erroIdadeS = -1;
   ff.fonteDebrid = -1;
-  if (ff.haFalha && player_ultimo_erro_farol(&ff.erro, &ff.fonteDebrid))
+  if (ff.haFalha && player_ultimo_erro_farol(&ff.erro, &ff.fonteDebrid)) {
     ff.erroIdadeS = (int)(agora - falha.agora);
+    diagTentativa = player_ultimo_erro_tentativa();
+  }
+  diagUsaTentativa = 1;
   // Anel: falhas seguidas = erros de fonte desde o ultimo primeiro quadro;
   // paradas e recusas de audio contam na janela; a ultima busca de fontes da
   // os add-ons mudos e, varrendo a busca anterior a ela, os lentos.
@@ -254,7 +275,8 @@ static void farol_fatos(void) {
     ff.addonsLentos = lentos;
   }
 #ifdef NV_ANDROID
-  ff.externoDisponivel = player_externo_disponivel();
+  ff.externoDisponivel = (!anel_pronto_apos_erro(ev, n) && diagTentativa &&
+                          player_externo_disponivel_tentativa(diagTentativa)) ? 1 : 0;
 #else
   ff.externoDisponivel = 0;
 #endif
@@ -651,6 +673,9 @@ static void abrir(void) {
   aberto = 1;
   entrada = 0.0f;
   pedido = RESOLVER_PEDIU_NADA;
+  pedidoTentativa = 0;
+  diagTentativa = 0;
+  diagUsaTentativa = 0;
   envModo = M_NADA;
   rolo = 0;
   enviados_ler();
@@ -666,12 +691,26 @@ static void fechar(void) { aberto = 0; }
 // o anel como FE_FAROL_ACAO — o resultado do conserto se mede depois.
 static void aplicar(int a, int fa) {
   const char *tok = fa > 0 ? farolregra_acao_token(fa) : "";
+  pedidoTentativa = 0;
+  if (a == A_PLAYER_EXT && diagUsaTentativa) {
+    FarolEvento ev[FAROL_ANEL_N];
+    int n = farolanel_ler(ev, FAROL_ANEL_N, 0);
+    if (!diagTentativa || anel_pronto_apos_erro(ev, n) ||
+        !player_externo_disponivel_tentativa(diagTentativa)) {
+      testar(sint);
+      foco = B_PRINC;
+      return;
+    }
+  }
   if (tok[0]) farol_ev(FM_FAROL, FE_FAROL_ACAO, 0, fa, 0, tok);
   if (a == A_REPETIR) { testar(sint); foco = B_PRINC; }
   else if (a == A_FONTES) { pedido = RESOLVER_PEDIU_FONTES; fechar(); }
   else if (a == A_DEBRID) { pedido = RESOLVER_PEDIU_DEBRID; fechar(); }
-  else if (a == A_PLAYER_EXT) { pedido = RESOLVER_PEDIU_PLAYER_EXT; fechar(); }
-  else if (a == A_ENVIAR) enviar_registro(sint, RESOLVER_FASE_TESTES);
+  else if (a == A_PLAYER_EXT) {
+    pedidoTentativa = diagUsaTentativa ? diagTentativa : 0;
+    pedido = RESOLVER_PEDIU_PLAYER_EXT;
+    fechar();
+  } else if (a == A_ENVIAR) enviar_registro(sint, RESOLVER_FASE_TESTES);
 }
 
 #ifdef RESOLVER_TESTE

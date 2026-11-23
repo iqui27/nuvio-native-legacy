@@ -51,7 +51,14 @@ def extract_brace_block(src, start_marker, name):
 sair = re.search(r"^static void sairParaExterno\(void\) \{[^\n]*\}", player, re.M)
 if not sair:
     raise SystemExit("falha ao extrair sairParaExterno")
+tent_ini = extract_fn(player, r"^static void farolTentativaIniciar\(void\) \{", "farolTentativaIniciar", required=False)
+fonte_reg = extract_fn(player, r"^static void farolFonteRegistrar\(const char \*url, int temCabs\) \{", "farolFonteRegistrar", required=False)
+erro_reg = extract_fn(player, r"^static void farolErroRegistrar\(const FarolErro \*fe, int foiDebrid, uint64_t addonId\) \{", "farolErroRegistrar", required=False)
+ult_erro = extract_fn(player, r"^int player_ultimo_erro_farol\(FarolErro \*out, int \*foiDebrid\) \{", "player_ultimo_erro_farol", required=False)
+ult_tent = extract_fn(player, r"^uint64_t player_ultimo_erro_tentativa\(void\) \{", "player_ultimo_erro_tentativa", required=False)
+ext_disp_t = extract_fn(player, r"^int player_externo_disponivel_tentativa\(uint64_t tentativa\) \{", "player_externo_disponivel_tentativa", required=False)
 ext_disp = extract_fn(player, r"^int player_externo_disponivel\(void\) \{", "player_externo_disponivel")
+ext_abrir_t = extract_fn(player, r"^int player_abrir_externo_tentativa\(uint64_t tentativa\) \{", "player_abrir_externo_tentativa", required=False)
 ext_abrir = extract_fn(player, r"^int player_abrir_externo\(void\) \{", "player_abrir_externo")
 ult_addon = extract_fn(player, r"^uint64_t player_ultimo_addon_farol\(void\) \{", "player_ultimo_addon_farol", required=False)
 ult_tit = extract_fn(player, r"^int player_ultimo_titulo\(CatItem \*out, int \*temporada, int \*episodio\) \{", "player_ultimo_titulo", required=False)
@@ -61,8 +68,16 @@ app_agp = extract_brace_block(app, "  {\n    int p = addonguia_pedido();", "addo
 
 parts = [
     "// Gerado por tests/farol_resolver.sh a partir de src/player.c e src/app.c.",
+    "#define FAROL_BRIDGE_TEM_TENTATIVA 1" if ult_tent else "",
     sair.group(0),
+    tent_ini,
+    fonte_reg,
+    erro_reg,
+    ult_erro if ult_tent else "",
+    ult_tent,
+    ext_disp_t,
     ext_disp,
+    ext_abrir_t,
     ext_abrir,
     ult_addon,
     ult_tit,

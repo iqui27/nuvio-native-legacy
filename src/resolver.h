@@ -16,6 +16,7 @@
 #ifndef NV_RESOLVER_H
 #define NV_RESOLVER_H
 #include <SDL2/SDL.h>
+#include <stdint.h>
 
 #define RESOLVER_ARQ "resolver-enviados.txt"
 
@@ -33,6 +34,7 @@ void resolver_desenhar(Uint32 agora);
 #define RESOLVER_PEDIU_DEBRID 2   // abrir o login da conta de cache (addonguia, QR)
 #define RESOLVER_PEDIU_PLAYER_EXT 3   // despachar a fonte falha ao player externo (Android)
 int  resolver_pedido(void);
+uint64_t resolver_tentativa_externo(void);
 
 // ---- Para a captura e os testes.
 enum { RESOLVER_FASE_SINTOMA = 0, RESOLVER_FASE_TESTES, RESOLVER_FASE_ENVIO };

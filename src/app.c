@@ -5122,8 +5122,9 @@ void app_evento(const SDL_Event *e) {
         menu_definir_destino(MENU_AJUSTES);
       }
     } else if (rped == RESOLVER_PEDIU_PLAYER_EXT) {
-      // FAROL: a fonte que falhou sai para o player externo instalado.
-      player_abrir_externo();
+      // FAROL: a fonte que falhou sai para o player externo instalado,
+      // vinculada a tentativa diagnosticada.
+      player_abrir_externo_tentativa(resolver_tentativa_externo());
     }
     return;
   }
