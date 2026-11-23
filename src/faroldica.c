@@ -94,8 +94,21 @@ unsigned faroldica_geracao(void) {
   return __atomic_load_n(&dicaGeracao, __ATOMIC_ACQUIRE);
 }
 
+int faroldica_dia_atual(void) {
+  return diaDe(agoraS());
+}
+
+int faroldica_acao_disponivel(uint8_t acao) {
+  if (acao == FP_ACAO_COMPARAR)
+    return __atomic_load_n(&cbComparar, __ATOMIC_ACQUIRE) != NULL;
+  if (acao == FP_ACAO_ESCOLHA)
+    return __atomic_load_n(&cbEscolha, __ATOMIC_ACQUIRE) != NULL;
+  return 1;
+}
+
 int faroldica_focavel(const FarolDica *d) {
-  return d && d->ativa && d->acao != FP_ACAO_NADA;
+  return d && d->ativa && d->acao != FP_ACAO_NADA &&
+         faroldica_acao_disponivel(d->acao);
 }
 
 // ------------------------------------------------------------ avisodisp ----
@@ -348,17 +361,27 @@ static int renderTexto(const FarolCena *c, const FarolTexto *t,
   return dst[0] != 0;
 }
 
-// Resolve o alvo da peca P2 para imdb/tipo/titulo.
-static int resolverAlvo(const FarolRef *ref, int nCand,
+// Resolve o alvo da peca P2 para imdb/tipo/titulo/poster/temporada/episodio.
+// Preserva tipo de serie, temporada e episodio vindos do progresso/Diario ou
+// dos argumentos da peca mesmo quando o titulo esta fora do catalogo.
+static int resolverAlvo(int perfil, const FarolPeca *pc,
+                        const FarolRef *ref, int nCand,
                         const char *const *candImdb,
                         const char *const *candTipo,
                         const char *const *candTitulo,
                         char *imdbOut, size_t imdbCap,
                         char *tipoOut, size_t tipoCap,
-                        char *titOut, size_t titCap) {
+                        char *titOut, size_t titCap,
+                        char *posterOut, size_t posterCap,
+                        int *tempOut, int *epOut) {
   const char *imdb = NULL, *tipo = "", *tit = "";
+  char poster[512] = "";
+  int temp = 0, ep = 0;
   CatItem ci;
   imdbOut[0] = tipoOut[0] = titOut[0] = 0;
+  if (posterOut && posterCap) posterOut[0] = 0;
+  if (tempOut) *tempOut = 0;
+  if (epOut) *epOut = 0;
   if (!ref) return 0;
   if (ref->c >= 0 && ref->c < nCand) {
     if (candImdb && candImdb[ref->c]) imdb = candImdb[ref->c];
@@ -374,27 +397,87 @@ static int resolverAlvo(const FarolRef *ref, int nCand,
     if (idx >= 0 && cat_copiar_item(idx, &ci) && !strcmp(ci.imdb, imdb)) {
       if (ci.tipo[0]) tipo = ci.tipo;
       if (ci.titulo[0]) tit = ci.titulo;
+      if (ci.poster[0]) snprintf(poster, sizeof poster, "%.*s", (int)(sizeof poster - 1), ci.poster);
+      if (ci.temporada > 0) temp = ci.temporada;
+      if (ci.episodio > 0) ep = ci.episodio;
     }
   }
-  if (!tit[0]) {
+  if (!tit[0] || !tipo[0] || !poster[0]) {
     int i, ns = salvos_n();
     for (i = 0; i < ns; i++) {
       const SalvoItem *sv = salvos_item(i);
       if (sv && !strcmp(sv->id, imdb)) {
-        if (sv->titulo[0]) tit = sv->titulo;
+        if (!tit[0] && sv->titulo[0]) tit = sv->titulo;
         if (!tipo[0] && sv->tipo[0]) tipo = sv->tipo;
+        if (!poster[0] && sv->poster[0])
+          snprintf(poster, sizeof poster, "%.*s", (int)(sizeof poster - 1), sv->poster);
         break;
       }
     }
   }
-  if (!tit[0]) {
-    char tbuf[160] = "";
-    if (diario_nome(imdb, tbuf, sizeof tbuf, NULL, NULL, 0) && tbuf[0])
-      snprintf(titOut, titCap, "%s", tbuf);
-  } else {
-    snprintf(titOut, titCap, "%s", tit);
+  // Progresso local do perfil ativo: fonte direta para serie/temporada/episodio
+  // fora do catalogo (ex.: serie parada no T2E4).
+  if (!tipo[0] || ep <= 0) {
+    ProgRegistro pr[32];
+    int np = prog_ler(pr, 32), i;
+    for (i = 0; i < np; i++) {
+      if (strcmp(pr[i].contentId, imdb)) continue;
+      if (pr[i].tipo[0] && (!tipo[0] || !strcmp(pr[i].tipo, "series")))
+        tipo = !strcmp(pr[i].tipo, "series") ? "series" : "movie";
+      if (ep <= 0 && pr[i].episodio > 0) {
+        temp = pr[i].temporada;
+        ep = pr[i].episodio;
+        if (temp > 0 && !tipo[0]) tipo = "series";
+      }
+      break;
+    }
+  }
+  // Diario do perfil ativo: preserva tipo DIARIO_SERIE e ultimo episodio visto.
+  if (!tipo[0] || (!strcmp(tipo, "series") && ep <= 0)) {
+    DiarioTitulo dt;
+    if (diario_titulo(perfil, imdb, &dt)) {
+      if (!tipo[0]) {
+        if (dt.tipo == DIARIO_SERIE) tipo = "series";
+        else if (dt.tipo == DIARIO_FILME) tipo = "movie";
+      }
+      if ((!strcmp(tipo, "series") || dt.tipo == DIARIO_SERIE) && ep <= 0) {
+        int dtT = 0, dtE = 0;
+        if (diario_ultimo_episodio(perfil, imdb, &dtT, &dtE, NULL) && dtE > 0) {
+          temp = dtT;
+          ep = dtE;
+          tipo = "series";
+        }
+      }
+    }
+  }
+  // Cache de nomes/capa do Diario (compartilhado entre perfis).
+  if (!tit[0] || !poster[0]) {
+    char tbuf[160] = "", pbuf[512] = "";
+    if (diario_nome(imdb, tbuf, sizeof tbuf, NULL, pbuf, sizeof pbuf)) {
+      if (!tit[0] && tbuf[0]) snprintf(titOut, titCap, "%s", tbuf);
+      if (!poster[0] && pbuf[0]) snprintf(poster, sizeof poster, "%s", pbuf);
+    }
+  }
+  if (!titOut[0] && tit[0]) snprintf(titOut, titCap, "%s", tit);
+  // Pistas estruturais da propria peca P2 (ex.: FT_DICA_PAROU_L1 [ref, T, E]).
+  if (pc && pc->tipo == FP_DICA && !pc->u.dica.l1.usaX) {
+    const FarolTexto *l1 = &pc->u.dica.l1;
+    if (!strcmp(l1->m, "FT_DICA_PAROU_L1") && l1->nArgs >= 3) {
+      tipo = "series";
+      if (temp <= 0) temp = atoi(l1->a[1]);
+      if (ep <= 0) ep = atoi(l1->a[2]);
+    } else if (!strcmp(l1->m, "FT_DICA_FALTA_L1") && l1->nArgs >= 2) {
+      tipo = "series";
+      if (temp <= 0) temp = atoi(l1->a[1]);
+    } else if (!strcmp(l1->m, "FT_DICA_TEMPORADA")) {
+      tipo = "series";
+    }
   }
   snprintf(tipoOut, tipoCap, "%s", tipo[0] ? tipo : "movie");
+  if (posterOut && posterCap && poster[0])
+    snprintf(posterOut, posterCap, "%s", poster);
+  if (tempOut) *tempOut = temp > 0 ? temp : 0;
+  if (epOut) *epOut = ep > 0 ? ep : 0;
   return 1;
 }
 
@@ -408,6 +491,7 @@ static int adotarPecaDica(const FarolCena *cena, const FarolPeca *pc,
   char idCota[FAROL_ID_TAM] = "";
   if (!cena || !pc || pc->tipo != FP_DICA) return 0;
   if (!farolsinal_recomendar() || seguro_perfil_ativo()) return 0;
+  if (!faroldica_acao_disponivel(pc->u.dica.acao)) return 0;
   if (faroldica_dispensada(pc->u.dica.id)) return 0;
 
   // COTA DIARIA: no maximo 1 dica por dia por perfil.
@@ -440,10 +524,12 @@ static int adotarPecaDica(const FarolCena *cena, const FarolPeca *pc,
 
   if (nova.acao != FP_ACAO_NADA && nova.acao != FP_ACAO_ESCOLHA) {
     if (!pc->u.dica.temAlvo ||
-        !resolverAlvo(&pc->u.dica.alvo, nCand, candImdb, candTipo, candTitulo,
+        !resolverAlvo(perfil, pc, &pc->u.dica.alvo, nCand, candImdb, candTipo, candTitulo,
                       nova.alvo, sizeof nova.alvo,
                       nova.alvoTipo, sizeof nova.alvoTipo,
-                      nova.alvoTitulo, sizeof nova.alvoTitulo))
+                      nova.alvoTitulo, sizeof nova.alvoTitulo,
+                      nova.alvoPoster, sizeof nova.alvoPoster,
+                      &nova.alvoTemporada, &nova.alvoEpisodio))
       return 0;
   }
 
@@ -504,6 +590,7 @@ int faroldica_adotar_fatos(const FarolDicaFato *fatos, int nFatos,
 
   for (i = 0; i < nFatos && nElig < FD_FATOS_MAX; i++) {
     if (!fatos[i].id || !fatos[i].id[0]) continue;
+    if (!faroldica_acao_disponivel((uint8_t)fatos[i].acao)) continue;
     if (faroldica_dispensada(fatos[i].id)) continue;
     if (temCota && strcmp(fatos[i].id, idCota)) continue;
     elig[nElig++] = fatos[i];
@@ -728,8 +815,10 @@ int faroldica_preparar(void) {
     }
   }
 
-  // 4) Assistente de escolha (fallback generico quando nao dispensado).
-  if (nF < FD_FATOS_MAX && !faroldica_dispensada("d_perguntas")) {
+  // 4) Assistente de escolha: entra no rodizio SOMENTE quando a rota de #50
+  //    estiver registrada (sem prometer acao sem destino ao usuario).
+  if (nF < FD_FATOS_MAX && faroldica_acao_disponivel(FP_ACAO_ESCOLHA) &&
+      !faroldica_dispensada("d_perguntas")) {
     snprintf(ids[nF], sizeof ids[nF], "d_perguntas");
     alvos[nF][0] = 0;
     memset(&fatos[nF], 0, sizeof fatos[nF]);
@@ -745,10 +834,15 @@ int faroldica_preparar(void) {
   (void)a3;
   if (nF > 0 && faroldica_adotar_fatos(fatos, nF, nivel)) return 1;
 
-  pthread_mutex_lock(&travaDica);
-  prepPerfil = perfil;
-  prepDia = dia;
-  pthread_mutex_unlock(&travaDica);
+  // So marca (perfil, dia) como encerrado se a cota de hoje ja foi gasta;
+  // sem dica adotada e com cota livre, uma carga posterior de catalogo no
+  // mesmo dia continua elegivel para compor P2.
+  if (cotaDoDia(perfil, dia, NULL, 0)) {
+    pthread_mutex_lock(&travaDica);
+    prepPerfil = perfil;
+    prepDia = dia;
+    pthread_mutex_unlock(&travaDica);
+  }
   return 0;
 }
 
@@ -762,6 +856,13 @@ int faroldica_atual(FarolDica *out) {
   dia = diaDe(agoraS());
   pthread_mutex_lock(&travaDica);
   snap = dicaAtiva;
+  if (snap.ativa && snap.perfil == perfil &&
+      (snap.dia != dia || !faroldica_acao_disponivel(snap.acao))) {
+    memset(&dicaAtiva, 0, sizeof dicaAtiva);
+    pthread_mutex_unlock(&travaDica);
+    bumpGeracao();
+    return 0;
+  }
   pthread_mutex_unlock(&travaDica);
   if (!snap.ativa || snap.perfil != perfil || snap.dia != dia) return 0;
   if (faroldica_dispensada(snap.id)) {
@@ -808,15 +909,27 @@ int faroldica_dispensar(void) {
 
 // --------------------------------------------------- execucao das acoes ----
 void faroldica_ao_comparar(void (*fn)(const char *imdb)) {
+  int mudou = 0;
   pthread_mutex_lock(&travaDica);
-  cbComparar = fn;
+  __atomic_store_n(&cbComparar, fn, __ATOMIC_RELEASE);
+  if (!fn && dicaAtiva.ativa && dicaAtiva.acao == FP_ACAO_COMPARAR) {
+    memset(&dicaAtiva, 0, sizeof dicaAtiva);
+    mudou = 1;
+  }
   pthread_mutex_unlock(&travaDica);
+  if (mudou) bumpGeracao();
 }
 
 void faroldica_ao_escolha(void (*fn)(void)) {
+  int mudou = 0;
   pthread_mutex_lock(&travaDica);
-  cbEscolha = fn;
+  __atomic_store_n(&cbEscolha, fn, __ATOMIC_RELEASE);
+  if (!fn && dicaAtiva.ativa && dicaAtiva.acao == FP_ACAO_ESCOLHA) {
+    memset(&dicaAtiva, 0, sizeof dicaAtiva);
+    mudou = 1;
+  }
   pthread_mutex_unlock(&travaDica);
+  if (mudou) bumpGeracao();
 }
 
 int faroldica_pediu_comparar(char *imdb, size_t cap) {
@@ -858,6 +971,12 @@ static int garantirItemNoCatalogo(const FarolDica *d, CatItem *ciOut) {
            d->alvoTipo[0] ? d->alvoTipo : "movie");
   snprintf(tmp.titulo, sizeof tmp.titulo, "%s",
            d->alvoTitulo[0] ? d->alvoTitulo : d->alvo);
+  if (d->alvoPoster[0])
+    snprintf(tmp.poster, sizeof tmp.poster, "%s", d->alvoPoster);
+  if (!strcmp(tmp.tipo, "series")) {
+    if (d->alvoTemporada > 0) tmp.temporada = d->alvoTemporada;
+    if (d->alvoEpisodio > 0) tmp.episodio = d->alvoEpisodio;
+  }
   idx = cat_acrescentar(&tmp);
   if (idx >= 0 && ciOut) *ciOut = tmp;
   return idx;
@@ -869,6 +988,10 @@ FarolDicaExec faroldica_executar(const FarolDica *d) {
   res.tipo = FD_EXEC_NADA;
   res.catIdx = -1;
   if (!d || !d->ativa || d->acao == FP_ACAO_NADA) return res;
+  if (!farolsinal_recomendar() || seguro_perfil_ativo()) return res;
+  if (d->perfil != perfilAtivo() || d->dia != diaDe(agoraS())) return res;
+  if (faroldica_dispensada(d->id)) return res;
+  if (!faroldica_acao_disponivel(d->acao)) return res;
 
   switch (d->acao) {
     case FP_ACAO_ABRIR: {
@@ -906,6 +1029,8 @@ FarolDicaExec faroldica_executar(const FarolDica *d) {
                  d->alvoTipo[0] ? d->alvoTipo : "movie");
         snprintf(ci.titulo, sizeof ci.titulo, "%s",
                  d->alvoTitulo[0] ? d->alvoTitulo : d->alvo);
+        if (d->alvoPoster[0])
+          snprintf(ci.poster, sizeof ci.poster, "%s", d->alvoPoster);
         salvos_definir(&ci, 1);
         cat_definir_na_lista_imdb(d->alvo, 1);
         res.catIdx = -1;
@@ -920,11 +1045,14 @@ FarolDicaExec faroldica_executar(const FarolDica *d) {
       snprintf(res.imdb, sizeof res.imdb, "%s", d->alvo);
       res.catIdx = cat_indice_por_imdb(d->alvo);
       pthread_mutex_lock(&travaDica);
-      pedComparar = 1;
-      snprintf(pedCompararImdb, sizeof pedCompararImdb, "%s", d->alvo);
-      fn = cbComparar;
+      fn = __atomic_load_n(&cbComparar, __ATOMIC_ACQUIRE);
+      if (fn) {
+        pedComparar = 1;
+        snprintf(pedCompararImdb, sizeof pedCompararImdb, "%s", d->alvo);
+      }
       pthread_mutex_unlock(&travaDica);
-      if (fn) fn(res.imdb);
+      if (!fn) return res;
+      fn(res.imdb);
       res.ok = 1;
       return res;
     }
@@ -932,10 +1060,11 @@ FarolDicaExec faroldica_executar(const FarolDica *d) {
       void (*fn)(void) = NULL;
       res.tipo = FD_EXEC_ESCOLHA;
       pthread_mutex_lock(&travaDica);
-      pedEscolha = 1;
-      fn = cbEscolha;
+      fn = __atomic_load_n(&cbEscolha, __ATOMIC_ACQUIRE);
+      if (fn) pedEscolha = 1;
       pthread_mutex_unlock(&travaDica);
-      if (fn) fn();
+      if (!fn) return res;
+      fn();
       res.ok = 1;
       return res;
     }
@@ -945,6 +1074,7 @@ FarolDicaExec faroldica_executar(const FarolDica *d) {
 }
 
 const char *faroldica_rotulo_acao(uint8_t acao) {
+  if (!faroldica_acao_disponivel(acao)) return "";
   switch (acao) {
     case FP_ACAO_ABRIR:    return i18n("Abrir");
     case FP_ACAO_TOCAR:    return i18n("Reproduzir");
@@ -990,8 +1120,8 @@ void faroldica_teste_reiniciar(void) {
   cotasLidas = 0;
   prepPerfil = -1;
   prepDia = -1;
-  cbComparar = NULL;
-  cbEscolha = NULL;
+  __atomic_store_n(&cbComparar, NULL, __ATOMIC_RELEASE);
+  __atomic_store_n(&cbEscolha, NULL, __ATOMIC_RELEASE);
   pedComparar = 0;
   pedCompararImdb[0] = 0;
   pedEscolha = 0;

@@ -6792,7 +6792,8 @@ void app_atualizar(float dt, Uint32 agora) {
     if (tela == TELA_HOME && home_pediu_abrir()) {
       int acaoDet = home_pediu_acao_detalhe();
       if (home_item_focado(&it)) {
-        abrirTitulo(&it, 1, 1);
+        const CatItem *ci = cat_item(it.indice);
+        abrirTitulo(&it, !(ci && ci->imdb[0]), 1);
         if (acaoDet >= 0) { homeAcaoDet = acaoDet; homeAcaoDetEm = SDL_GetTicks(); }
       }
     } else if (tela == TELA_EXPLORAR && explorar_pediu_abrir(&idx)) {
@@ -6850,7 +6851,7 @@ void app_atualizar(float dt, Uint32 agora) {
           cwEspera = 2; // Resume the current episode once metadata publishes its video ID.
           tocar = 0;
         }
-        abrirTitulo(&it, 1, 1);
+        abrirTitulo(&it, !(cw && cw->imdb[0]), 1);
         if (cwEspera) desc_episodios(detail_indice(), 0);
         if (tocar) detail_pedir_reproduzir();
       }

@@ -218,8 +218,54 @@ static void testeTodasAcoes(void) {
   faroldica_teste_relogio(relogioFake);
   faroldica_esquecer_disco();
   definirPerfil(3);
+
+  // 0) Sem rota registrada de #49/#50: comparar e escolha ficam indisponiveis,
+  //    nao gastam cota, nao prometem acao e faroldica_executar devolve ok=0,
+  //    enquanto abrir/tocar/salvar/nada seguem ativos.
+  definirAgora(dia);
+  assert(faroldica_acao_disponivel(FP_ACAO_ABRIR) == 1);
+  assert(faroldica_acao_disponivel(FP_ACAO_TOCAR) == 1);
+  assert(faroldica_acao_disponivel(FP_ACAO_SALVAR) == 1);
+  assert(faroldica_acao_disponivel(FP_ACAO_NADA) == 1);
+  assert(faroldica_acao_disponivel(FP_ACAO_COMPARAR) == 0);
+  assert(faroldica_acao_disponivel(FP_ACAO_ESCOLHA) == 0);
+  assert(faroldica_rotulo_acao(FP_ACAO_COMPARAR)[0] == 0);
+  assert(faroldica_rotulo_acao(FP_ACAO_ESCOLHA)[0] == 0);
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"a_esc_sem_rota\","
+    "\"l1\":{\"m\":\"FT_DICA_PERGUNTAS\"},"
+    "\"acao\":{\"tipo\":\"escolha\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 0);
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"a_cmp_sem_rota\","
+    "\"l1\":{\"m\":\"FT_DICA_CURTO\",\"a\":[\"tt0133093\"]},"
+    "\"acao\":{\"tipo\":\"comparar\",\"alvo\":\"tt0133093\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 0);
+  assert(faroldica_atual(&d) == 0);
+  {
+    FarolDica fake;
+    memset(&fake, 0, sizeof fake);
+    fake.ativa = 1; fake.focavel = 1; fake.perfil = 3;
+    fake.dia = faroldica_dia_atual();
+    fake.acao = FP_ACAO_ESCOLHA;
+    strcpy(fake.id, "a_fake_esc");
+    assert(faroldica_focavel(&fake) == 0);
+    ex = faroldica_executar(&fake);
+    assert(ex.ok == 0 && faroldica_pediu_escolha() == 0);
+    fake.acao = FP_ACAO_COMPARAR;
+    strcpy(fake.id, "a_fake_cmp");
+    strcpy(fake.alvo, "tt0133093");
+    assert(faroldica_focavel(&fake) == 0);
+    ex = faroldica_executar(&fake);
+    assert(ex.ok == 0 && faroldica_pediu_comparar(cmpImdb, sizeof cmpImdb) == 0);
+  }
+  // Cota NAO foi gasta pelas tentativas sem rota: abrir no mesmo dia sobe!
   faroldica_ao_comparar(onComparar);
   faroldica_ao_escolha(onEscolha);
+  assert(faroldica_acao_disponivel(FP_ACAO_COMPARAR) == 1);
+  assert(faroldica_acao_disponivel(FP_ACAO_ESCOLHA) == 1);
+  assert(faroldica_rotulo_acao(FP_ACAO_COMPARAR)[0] != 0);
+  assert(faroldica_rotulo_acao(FP_ACAO_ESCOLHA)[0] != 0);
 
   // 1) abrir (item no catalogo)
   definirAgora(dia);
@@ -245,6 +291,48 @@ static void testeTodasAcoes(void) {
   ex = faroldica_executar(&d);
   assert(ex.tipo == FD_EXEC_ABRIR && ex.ok == 1 && ex.catIdx >= 0);
   assert(!strcmp(cat_item(ex.catIdx)->imdb, "tt9990001"));
+
+  // 1c) abrir/tocar serie FORA do catalogo com tipo/T/E vindos do Diario ->
+  //     preserva tipo="series", temporada e episodio no CatItem acrescentado.
+  dia += 86400LL; definirAgora(dia);
+  {
+    DiarioEntrada de;
+    memset(&de, 0, sizeof de);
+    strcpy(de.id, "tt7770001");
+    de.tipo = DIARIO_SERIE;
+    de.origem = DIARIO_ORIG_PLAYER;
+    de.temporada = 2;
+    de.episodio = 4;
+    de.quando = dia - 35LL * 86400LL;
+    assert(diario_adicionar(3, &de) >= 0);
+    diario_nome_definir("tt7770001", "Ruptura", 2022, "");
+  }
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"a_serie_fora\","
+    "\"l1\":{\"m\":\"FT_DICA_REVER\",\"a\":[\"tt7770001\"]},"
+    "\"acao\":{\"tipo\":\"abrir\",\"alvo\":\"tt7770001\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 1);
+  assert(faroldica_atual(&d) == 1);
+  assert(!strcmp(d.alvoTipo, "series"));
+  assert(d.alvoTemporada == 2 && d.alvoEpisodio == 4);
+  assert(!strcmp(d.alvoTitulo, "Ruptura"));
+  ex = faroldica_executar(&d);
+  assert(ex.tipo == FD_EXEC_ABRIR && ex.ok == 1 && ex.catIdx >= 0);
+  {
+    const CatItem *ci = cat_item(ex.catIdx);
+    assert(ci && !strcmp(ci->imdb, "tt7770001"));
+    assert(!strcmp(ci->tipo, "series"));
+    assert(ci->temporada == 2 && ci->episodio == 4);
+  }
+  // Virada de dia invalida execucao da copia vencida da dica!
+  {
+    FarolDica vencida = d;
+    definirAgora(dia + 86400LL);
+    assert(faroldica_atual(&d) == 0);
+    ex = faroldica_executar(&vencida);
+    assert(ex.tipo == FD_EXEC_NADA && ex.ok == 0);
+    dia += 86400LL;
+  }
 
   // 2) tocar
   dia += 86400LL; definirAgora(dia);
@@ -344,6 +432,33 @@ static void testePrepararEPortoes(void) {
   definirPerfil(4);
   definirAgora(dia);
 
+  // Sem rota de #50 e sem fatos elegiveis, preparar() NAO emite d_perguntas
+  // nem gasta a cota: um catalogo curto posterior no mesmo dia ainda sobe.
+  {
+    CatItem longos[1];
+    memset(longos, 0, sizeof longos);
+    strcpy(longos[0].imdb, "tt9910001"); strcpy(longos[0].tipo, "movie");
+    strcpy(longos[0].titulo, "Longo"); strcpy(longos[0].meta, "2024 · 160 min");
+    faroldica_teste_reiniciar();
+    faroldica_teste_relogio(relogioFake);
+    faroldica_esquecer_disco();
+    definirPerfil(6);
+    definirAgora(dia);
+    cat_definir(longos, 1);
+    assert(faroldica_preparar() == 0);
+    assert(faroldica_atual(&d) == 0);
+    // Agora chega filme curto (90 min) no mesmo dia -> cota estava livre!
+    montarCatalogoBase();
+    assert(faroldica_preparar() == 1);
+    assert(faroldica_atual(&d) == 1);
+    assert(d.acao == FP_ACAO_TOCAR);
+  }
+  faroldica_teste_reiniciar();
+  faroldica_teste_relogio(relogioFake);
+  faroldica_esquecer_disco();
+  definirPerfil(4);
+  definirAgora(dia);
+
   // Grava progresso de serie parada ha 35 dias (5 semanas)
   {
     ProgRegistro pr;
@@ -393,6 +508,7 @@ static void *fioLeitor(void *u) {
   for (i = 0; i < 400; i++) {
     FarolDica d;
     (void)faroldica_geracao();
+    (void)faroldica_dia_atual();
     if (faroldica_atual(&d)) {
       (void)faroldica_focavel(&d);
     }
@@ -407,13 +523,14 @@ static void *fioEscritor(void *u) {
   for (i = 0; i < 40; i++) {
     FarolDicaFato f;
     memset(&f, 0, sizeof f);
-    f.tipo = FC_DICA_PERGUNTAS;
-    f.acao = FP_ACAO_ESCOLHA;
-    f.id = "d_tsan_q";
-    f.alvo = "";
+    f.tipo = FC_DICA_CURTO;
+    f.acao = FP_ACAO_TOCAR;
+    f.id = "d_tsan_c";
+    f.alvo = "tt0468569";
+    f.l1a[0] = "tt0468569";
+    f.l1na = 1;
     definirAgora(base + (long long)i * 86400LL);
     (void)faroldica_adotar_fatos(&f, 1, 2);
-    (void)faroldica_esquecer;
     faroldica_esquecer();
   }
   return NULL;
@@ -441,8 +558,10 @@ int main(void) {
   limparDir(dir);
   assert(mkdir(dir, 0700) == 0);
   setenv("HOME", dir, 1);
+  setenv("NUVIO_DADOS", dir, 1);
 
   dados_iniciar(dir);
+  assert(!strcmp(dados_dir(), dir));
   avisodisp_esquecer();
   memset(&stubModelo, 0, sizeof stubModelo);
   stubModelo.titulos = 12;

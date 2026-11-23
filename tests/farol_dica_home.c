@@ -24,6 +24,8 @@
 #include <unistd.h>
 
 #include "avisodisp.h"
+#include "diario.h"
+#include "progresso.h"
 #include "salvos.h"
 // Relogio simulado de SDL_GetTicks() para testar hold de Voltar sem sleep!
 static Uint32 fakeTicks = 1000u;
@@ -43,6 +45,18 @@ static long long relogioFake(void) { return stubAgoraS; }
 int perfis_ativo(void) { return stubPerfil; }
 uint64_t perfis_sessao_geracao(void) { return 1; }
 int perfis_sessao_atual(uint64_t s) { return s == 1; }
+int perfis_sessao_travar(uint64_t s) { return s == 1; }
+void perfis_sessao_destravar(void) {}
+int perfil_infantil_ativo(void) { return 0; }
+const char *desc_chave_tmdb(void) { return ""; }
+const char *desc_tmdb_idioma(void) { return "pt-BR"; }
+int mapa_recomendacoes_tmdb(const char *id, long tmdb, int serie,
+                            const char *chave, const char *idioma,
+                            MapaRecomendacoes *out) {
+  (void)id; (void)tmdb; (void)serie; (void)chave; (void)idioma;
+  if (out) memset(out, 0, sizeof *out);
+  return 0;
+}
 int seguro_perfil_ativo(void) { return stubSeguro; }
 int farolsinal_recomendar(void) { return stubRecomendar; }
 int farolsinal_modelo(FarolGosto *out) {
@@ -229,6 +243,36 @@ static void teclaCurta(SDL_Keycode k) {
   teclaUp(k);
 }
 
+static int cbHomeCmpChamou;
+static char cbHomeCmpImdb[FAROL_REF_TAM];
+static int cbHomeEscChamou;
+static void onHomeComparar(const char *imdb) {
+  cbHomeCmpChamou++;
+  snprintf(cbHomeCmpImdb, sizeof cbHomeCmpImdb, "%s", imdb ? imdb : "");
+}
+static void onHomeEscolha(void) { cbHomeEscChamou++; }
+
+static void montarCatalogoLongosSemFarol(void) {
+  CatItem it[6];
+  CatFileira fils[1];
+  int i;
+  memset(it, 0, sizeof it);
+  memset(fils, 0, sizeof fils);
+  for (i = 0; i < 6; i++) {
+    snprintf(it[i].imdb, sizeof it[i].imdb, "tt200%04d", i);
+    strcpy(it[i].tipo, "movie");
+    snprintf(it[i].titulo, sizeof it[i].titulo, "Longo %d", i);
+    strcpy(it[i].meta, "2024 · 155 min");
+  }
+  strcpy(fils[0].chave, "addon_pop");
+  strcpy(fils[0].titulo, "Populares");
+  strcpy(fils[0].base, "https://a.invalid");
+  strcpy(fils[0].catId, "pop");
+  strcpy(fils[0].tipo, "movie");
+  fils[0].ini = 0; fils[0].n = 6;
+  cat_definir_tudo(it, 6, fils, 1);
+}
+
 static void montarCatalogoComFarol(void) {
   CatItem it[18];
   CatFileira fils[3];
@@ -282,8 +326,10 @@ int main(void) {
   limparDir(dir);
   assert(mkdir(dir, 0700) == 0);
   setenv("HOME", dir, 1);
+  setenv("NUVIO_DADOS", dir, 1);
 
   dados_iniciar(dir);
+  assert(!strcmp(dados_dir(), dir));
   salvos_perfil(1);
   salvos_iniciar();
   avisodisp_esquecer();
@@ -415,8 +461,15 @@ int main(void) {
   assert(salvos_tem("tt1000005") == 1);
   assert(dicaSalva == 1);
 
-  // 4) comparar
+  // 4) comparar: sem rota de #49 fica indisponivel; com rota funciona
   stubAgoraS += 86400LL;
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"h_cmp_off\","
+    "\"l1\":{\"m\":\"FT_DICA_CURTO\",\"a\":[\"tt1000002\"]},"
+    "\"acao\":{\"tipo\":\"comparar\",\"alvo\":\"tt1000002\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 0);
+  faroldica_ao_comparar(onHomeComparar);
+  cbHomeCmpChamou = 0; cbHomeCmpImdb[0] = 0;
   assert(faroldica_adotar_cena_json(
     "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"h_cmp\","
     "\"l1\":{\"m\":\"FT_DICA_CURTO\",\"a\":[\"tt1000002\"]},"
@@ -428,12 +481,20 @@ int main(void) {
   teclaCurta(SDLK_RETURN);
   {
     char idOut[FAROL_REF_TAM] = "";
+    assert(cbHomeCmpChamou == 1 && !strcmp(cbHomeCmpImdb, "tt1000002"));
     assert(faroldica_pediu_comparar(idOut, sizeof idOut) == 1);
     assert(!strcmp(idOut, "tt1000002"));
   }
 
-  // 5) escolha + Voltar longo dispensa na Home (avisodisp)
+  // 5) escolha: sem rota de #50 fica indisponivel; com rota funciona + Voltar longo
   stubAgoraS += 86400LL;
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"h_esc_off\","
+    "\"l1\":{\"m\":\"FT_DICA_PERGUNTAS\"},"
+    "\"acao\":{\"tipo\":\"escolha\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 0);
+  faroldica_ao_escolha(onHomeEscolha);
+  cbHomeEscChamou = 0;
   assert(faroldica_adotar_cena_json(
     "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"h_esc\","
     "\"l1\":{\"m\":\"FT_DICA_PERGUNTAS\"},"
@@ -443,6 +504,7 @@ int main(void) {
   r1 = acharFileira("farol_gosto1");
   focoHero = 0; foco.fileira = r1; foco.coluna = 0;
   teclaCurta(SDLK_RETURN);
+  assert(cbHomeEscChamou == 1);
   assert(faroldica_pediu_escolha() == 1);
 
   // Movimento reduzido: foco assenta instantaneamente em 1 passo
@@ -458,16 +520,121 @@ int main(void) {
                      1.0f, 1.0f, 1, 0);
 
   // Voltar longo na col 0 -> dispensa em avisodisp e remove col 0 na hora!
-  teclaDown(SDLK_ESCAPE);
-  fakeTicks += NV_HOLD_MS + 50u;
+  {
+    unsigned catAntes = cat_revisao();
+    unsigned assistAntes = home_assistiu_passo(fakeTicks);
+    teclaDown(SDLK_ESCAPE);
+    fakeTicks += NV_HOLD_MS + 50u;
+    home_atualizar(0.016f, fakeTicks);
+    teclaUp(SDLK_ESCAPE);
+    assert(faroldica_dispensada("h_esc") == 1);
+    r1 = acharFileira("farol_gosto1");
+    assert(fileiras[r1].temDica == 0);
+    assert(fileiras[r1].n == 6);
+    assert(fileiraItemIndice(&fileiras[r1], 0) == 0); // col 0 voltou a ser poster 0!
+    assert(cat_revisao() == catAntes);
+    assert(home_assistiu_passo(fakeTicks) == assistAntes);
+  }
+
+  // ---- CENARIO C: sonda de arranque (bloqueio 1) ----
+  // Modelo aquecido + catalogo inicial de filmes longos SEM fileira farol_*:
+  // home_atualizar NAO pode gastar cota nem produzir d_perguntas sem rota.
+  stubPerfil = 2;
+  salvos_perfil(2); salvos_iniciar();
+  stubAgoraS += 86400LL;
+  stubCenaGer = 0u;
+  faroldica_ao_comparar(NULL);
+  faroldica_ao_escolha(NULL);
+  home_abrir_sessao();
+  montarCatalogoLongosSemFarol();
+  for (int i = 0; i < 10; i++) {
+    fakeTicks += 16u;
+    home_atualizar(0.016f, fakeTicks);
+  }
+  {
+    FarolDica d0;
+    assert(faroldica_atual(&d0) == 0);
+    assert(dicaCache.ativa == 0);
+  }
+  // Agora chegam as fileiras farol_* + catalogo com candidatos de 95 min.
+  stubCenaGer = 1u;
+  montarCatalogoComFarol();
+  fakeTicks += 16u;
   home_atualizar(0.016f, fakeTicks);
-  teclaUp(SDLK_ESCAPE);
-  assert(faroldica_dispensada("h_esc") == 1);
-  sincronizarFileiras();
   r1 = acharFileira("farol_gosto1");
-  assert(fileiras[r1].temDica == 0);
-  assert(fileiras[r1].n == 6);
-  assert(fileiraItemIndice(&fileiras[r1], 0) == 0); // col 0 voltou a ser poster 0!
+  assert(r1 >= 0);
+  assert(fileiras[r1].temDica == 1 && fileiras[r1].dicaFocavel == 1);
+  assert(dicaCache.ativa == 1 && dicaCache.acao == FP_ACAO_TOCAR);
+  assert(strcmp(dicaCache.id, "d_perguntas") != 0);
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  teclaCurta(SDLK_RETURN);
+  assert(home_pediu_tocar() == 1);
+  assert(home_pediu_abrir() == 0);
+  assert(faroldica_pediu_escolha() == 0);
+
+  // ---- CENARIO D: sonda de virada diaria com mesma geracao (bloqueio 3) ----
+  // Foco continua sobre a dica gerada; relogio avanca +24h com stubCenaGer == 1.
+  stubAgoraS += 86400LL;
+  for (int i = 0; i < 60; i++) {
+    fakeTicks += 16u;
+    home_atualizar(0.016f, fakeTicks);
+  }
+  {
+    FarolDica dVenc;
+    r1 = acharFileira("farol_gosto1");
+    assert(r1 >= 0);
+    assert(fileiras[r1].temDica == 0);
+    assert(dicaCache.ativa == 0);
+    assert(faroldica_atual(&dVenc) == 0);
+    assert(dicaCacheGer == faroldica_geracao());
+    // OK na col 0 agora esta no cartaz 0 (abrir), NAO executa a dica vencida (tocar)
+    teclaCurta(SDLK_RETURN);
+    assert(home_pediu_tocar() == 0);
+    (void)home_pediu_abrir();
+  }
+
+  // ---- CENARIO E: sonda de serie fora do catalogo pelo Diario (bloqueio 2) ----
+  stubPerfil = 3;
+  salvos_perfil(3); salvos_iniciar();
+  stubAgoraS += 86400LL;
+  stubCenaGer = 2u;
+  home_abrir_sessao();
+  {
+    ProgRegistro pr;
+    memset(&pr, 0, sizeof pr);
+    pr.perfil = 3;
+    strcpy(pr.chave, "tt7770002_s2e4");
+    strcpy(pr.contentId, "tt7770002");
+    strcpy(pr.tipo, "series");
+    pr.temporada = 2; pr.episodio = 4;
+    pr.posSeg = 900; pr.durSeg = 2700;
+    pr.lastWatchedMs = (stubAgoraS - 35LL * 86400LL) * 1000LL;
+    pr.tocou = 1;
+    assert(prog_aplicar_remoto(&pr) == 1);
+    diario_nome_definir("tt7770002", "Silo", 2023, "");
+  }
+  montarCatalogoComFarol();
+  fakeTicks += 16u;
+  home_atualizar(0.016f, fakeTicks);
+  r1 = acharFileira("farol_gosto1");
+  assert(r1 >= 0 && fileiras[r1].temDica == 1 && fileiras[r1].dicaFocavel == 1);
+  assert(!strcmp(dicaCache.alvo, "tt7770002"));
+  assert(!strcmp(dicaCache.alvoTipo, "series"));
+  assert(dicaCache.alvoTemporada == 2 && dicaCache.alvoEpisodio == 4);
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  teclaCurta(SDLK_RETURN);
+  assert(home_pediu_abrir() == 1);
+  assert(home_pediu_tocar() == 0);
+  {
+    HomeItem hi;
+    const CatItem *ci;
+    assert(home_item_focado(&hi) == 1);
+    assert(hi.arte == NULL);
+    ci = cat_item(hi.indice);
+    assert(ci && !strcmp(ci->imdb, "tt7770002"));
+    assert(!strcmp(ci->tipo, "series"));
+    assert(ci->temporada == 2 && ci->episodio == 4);
+  }
 
   limparDir(dir);
   puts("farol_dica (home): ok");

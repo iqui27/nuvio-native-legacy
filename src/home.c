@@ -212,20 +212,30 @@ typedef struct {
 } Fileira;
 
 // Cache local da dica ativa (issue 48): atualizado apenas quando a geracao
-// atomica faroldica_geracao() muda — zero trava e zero copia por quadro.
+// atomica faroldica_geracao() ou o dia faroldica_dia_atual() mudam — zero
+// trava e zero copia por quadro.
 static FarolDica dicaCache;
 static unsigned  dicaCacheGer = ~0u;
+static int       dicaCacheDia = -1;
 static unsigned  dicaCenaGer  = ~0u;
 static int       dicaSalva;
+static int       homeOculta, heroOcultoAntes;
 static Uint32    backDesde;
 static int       backPressionando, backLongDisparado, backConsumirSoltura;
 
 static void dicaSincronizarCache(void) {
   unsigned g = faroldica_geracao();
-  if (g == dicaCacheGer) return;
-  dicaCacheGer = g;
+  int dia = faroldica_dia_atual();
+  if (g == dicaCacheGer && dia == dicaCacheDia) return;
   dicaSalva = 0;
   if (!faroldica_atual(&dicaCache)) memset(&dicaCache, 0, sizeof dicaCache);
+  dicaCacheGer = faroldica_geracao();
+  dicaCacheDia = dia;
+}
+
+static int fileiraElegivelDica(const Fileira *f) {
+  return f && farol_fileira(f->chave) && f->n > 0 &&
+         f->tipo != FILEIRA_HEROI && !f->stackN;
 }
 
 static int fileiraColMin(const Fileira *f) {
@@ -3228,10 +3238,14 @@ static void sincronizarFileiras(void) {
   // direto (cat_revisao); cat_revisao e bumpado em cat_definir_tudo,
   // cat_trocar_continuar E cat_republicar_fileiras, cobrindo todo caminho
   // que troca fils[].
-  static unsigned ultCatRev, ultFilRev, ultColRev, ultFilLim, ultCwoRev, ultOrdemRev, ultRetRev, ultCfRev, ultOvRev, ultItensRev, ultCurRev, ultDicaRev;
+  static unsigned ultCatRev, ultFilRev, ultColRev, ultFilLim, ultCwoRev, ultOrdemRev, ultRetRev, ultCfRev, ultOvRev, ultItensRev, ultCurRev, ultDicaRev, ultCenaGer = ~0u;
+  static int ultDicaDia = -1, ultOculta = -1;
   unsigned catRev = cat_revisao(), filRev = fil_revisao();
   unsigned itensRev = cat_revisao_conteudo();
   unsigned dicaRev = faroldica_geracao();
+  int dicaDia = faroldica_dia_atual();
+  unsigned cenaGer = farol_cena_geracao();
+  int oculta = homeOculta;
   int filLim = fil_limite();
   // A CURADORIA da fileira Herói entra na guarda: a recomendação chega DEPOIS
   // do catálogo (e volta a cada 30 min), e sem este termo o cartão só trocaria
@@ -3249,10 +3263,12 @@ static void sincronizarFileiras(void) {
       retomarAplicada == retomarRev && cw_retido_rev() == ultRetRev &&
       cf_revisao() == ultCfRev && ov_revisao() == ultOvRev &&
       curRev == ultCurRev && assistiuRev == ultAssistiuRev &&
-      dicaRev == ultDicaRev &&
+      dicaRev == ultDicaRev && dicaDia == ultDicaDia &&
+      cenaGer == ultCenaGer && oculta == ultOculta &&
       ultCatRev) {   // ultCatRev=0: primeira chamada, cai no hash
     ultFilRev = filRev; ultColRev = colRev; ultFilLim = (unsigned)filLim;
     ultCurRev = curRev; ultAssistiuRev = assistiuRev; ultDicaRev = dicaRev;
+    ultDicaDia = dicaDia; ultCenaGer = cenaGer; ultOculta = oculta;
     return;
   }
   // Local group visibility changes also change which source rows are wrapped.
@@ -3268,6 +3284,9 @@ static void sincronizarFileiras(void) {
   ultCurRev = curRev;
   ultAssistiuRev = assistiuRev;
   ultDicaRev = dicaRev;
+  ultDicaDia = dicaDia;
+  ultCenaGer = cenaGer;
+  ultOculta = oculta;
   ultCfRev = cf_revisao(); ultOvRev = ov_revisao(); ultItensRev = itensRev;
   unsigned revisao = 2166136261u;
   // Colecao fixada e "vistos ocultos" (homefil.h) mudam a lista sem o catalogo mudar.
@@ -3275,6 +3294,9 @@ static void sincronizarFileiras(void) {
   revisao = (revisao ^ ultOvRev) * 16777619u;
   revisao = (revisao ^ itensRev) * 16777619u;
   revisao = (revisao ^ dicaRev) * 16777619u;
+  revisao = (revisao ^ (unsigned)dicaDia) * 16777619u;
+  revisao = (revisao ^ cenaGer) * 16777619u;
+  revisao = (revisao ^ (unsigned)oculta) * 16777619u;
   revisao = (revisao ^ (unsigned)reservaEstado) * 16777619u;
   // A escolha LOCAL de fileiras entra na mesma assinatura do catalogo: ordem,
   // liga/desliga, forma, tamanho e limite mudam a lista tanto quanto uma
@@ -3920,26 +3942,36 @@ static void sincronizarFileiras(void) {
     }
   }
   // CARTAO DE DICA DO FAROL (P2, issue 48): entra como coluna 0 da PRIMEIRA
-  // fileira do Farol visivel na Home (normalmente farol_gosto1). Nunca duplica
-  // na segunda fileira; se acao == FP_ACAO_NADA, dicaFocavel = 0 exclui a
-  // coluna 0 da ordem de foco.
+  // fileira do Farol visivel e elegivel na Home (normalmente farol_gosto1).
+  // A cota so e gasta quando ja existe fileira elegivel visivel; na virada do
+  // dia com a mesma geracao de cena, a dica vencida e invalidada sem recompor.
   dicaSincronizarCache();
   for (r = 0; r < destino; r++) {
     fileiras[r].temDica = 0;
     fileiras[r].dicaFocavel = 0;
   }
-  if (dicaCache.ativa) {
+  {
+    int rDica = -1;
     for (r = 0; r < destino; r++) {
-      if (farol_fileira(fileiras[r].chave) && fileiras[r].n > 0 &&
-          fileiras[r].tipo != FILEIRA_HEROI && !fileiras[r].stackN) {
-        int capD = MAX_CARDS - (fileiras[r].verTudo ? 1 : 0);
-        fileiras[r].temDica = 1;
-        fileiras[r].dicaFocavel = faroldica_focavel(&dicaCache);
-        if (fileiras[r].n < capD) fileiras[r].n++;
-        break;
+      if (fileiraElegivelDica(&fileiras[r])) { rDica = r; break; }
+    }
+    if (rDica >= 0 && !homeOculta) {
+      if (!dicaCache.ativa && cenaGer != dicaCenaGer) {
+        if (faroldica_preparar()) {
+          dicaCenaGer = cenaGer;
+          dicaSincronizarCache();
+        }
+      }
+      if (dicaCache.ativa) {
+        int capD = MAX_CARDS - (fileiras[rDica].verTudo ? 1 : 0);
+        fileiras[rDica].temDica = 1;
+        fileiras[rDica].dicaFocavel = faroldica_focavel(&dicaCache);
+        if (fileiras[rDica].n < capD) fileiras[rDica].n++;
+        dicaCenaGer = cenaGer;
       }
     }
   }
+  ultDicaRev = faroldica_geracao();
   nFileiras = destino;
   heroSetRev = 0; // Row contents can change without changing either count.
   retomarAplicada = retomarRev;
@@ -4056,7 +4088,6 @@ void home_ir_topo(void) {
 // na C9 (08/10, 2.0.3): 38 min na escolha de perfil, 0 linhas `[hero] espera` e
 // 327 de `pre-busca nao saiu: desejado=322`. Escondida, vale o mesmo que o
 // detalhe/player na frente: o hero nao muda e o relogio e rearmado na volta.
-static int homeOculta, heroOcultoAntes;
 void home_oculta(int oculta) { homeOculta = oculta ? 1 : 0; }
 // O painel de Salvos/Social na frente: a home de tras fica congelada numa copia
 // (spainel_fundo) e so e desenhada nas repinturas dela, entao o carrossel nao
@@ -4123,13 +4154,6 @@ static void heroAquecerVizinhos(Uint32 agora) {
 
 static void home_atualizar_(float dt, Uint32 agora) {
   curadoria_passo();   // a curadoria da fileira Herói, no seu tempo (curadoria.h)
-  // Cartao de dica do Farol (issue 48): prepara so quando a cena do Farol
-  // muda — no quadro comum custa uma leitura atomica, sem trava nem copia.
-  { unsigned cg = farol_cena_geracao();
-    if (cg != dicaCenaGer) {
-      dicaCenaGer = cg;
-      faroldica_preparar();
-    } }
   if (backPressionando) {
     int noDica = !focoHero && foco.fileira >= 0 && foco.fileira < nFileiras &&
                  fileiraNoDica(&fileiras[foco.fileira], foco.coluna);
@@ -9247,7 +9271,11 @@ static void home_desenhar_(Uint32 agora) {
           }
           if (c == 0 && fileiras[r].temDica) {
             if (fileiras[r].dicaFocavel) alvoCard(px, py, w, h, r, c);
-            if (!focoHero && focus_indice(&foco, r, c)) temItemFoco = 0;
+            if (!focoHero && focus_indice(&foco, r, c)) {
+              ancoraFoco = (GfxRect){ px, py, w, h };
+              temAncoraFoco = 1;
+              if (!pedidoAbrir && !pedidoTocar) temItemFoco = 0;
+            }
             faroldica_desenhar(&dicaCache, (GfxRect){ px, py, w, h },
                                raioDe(w, h),
                                fileiras[r].dicaFocavel ? f : 0.0f,
@@ -9804,7 +9832,7 @@ void home_abrir_sessao(void) {
   okHold = 0.0f;
   backDesde = 0; backPressionando = backLongDisparado = backConsumirSoltura = 0;
   memset(&dicaCache, 0, sizeof dicaCache);
-  dicaCacheGer = ~0u; dicaCenaGer = ~0u; dicaSalva = 0;
+  dicaCacheGer = ~0u; dicaCacheDia = -1; dicaCenaGer = ~0u; dicaSalva = 0;
   faroldica_esquecer();
   home_retomar_esquecer();
   nFileiras = nStreamBarra = nProxHome = 0;

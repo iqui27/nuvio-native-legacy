@@ -9,13 +9,15 @@
 //     de hoje NAO libera uma segunda dica no mesmo dia);
 //   - dispensada nao volta (avisodisp, chave "faroldica:<id>", por perfil);
 //   - cada acao.tipo (abrir | tocar | comparar | escolha | salvar | nada) faz
-//     o que diz — enum fechado, nunca URL;
+//     o que diz — enum fechado, nunca URL; comparar (#49) e escolha (#50)
+//     ficam indisponiveis enquanto nao houver rota registrada (sem prometer
+//     acao nem gastar a cota);
 //   - cartao com acao == FP_ACAO_NADA NAO entra na ordem de foco (faroldica_
 //     focavel() == 0);
 //   - nunca no player, nunca como pilula da Ilha;
-//   - sem custo por quadro: faroldica_geracao() e uma leitura atomica; a Home
-//     mantem uma copia local e so consulta faroldica_atual() quando a geracao
-//     muda (zero trava e zero copia por quadro);
+//   - sem custo por quadro: faroldica_geracao() e faroldica_dia_atual() nao
+//     usam trava nem copia; a Home mantem copia local e so consulta
+//     faroldica_atual() quando a geracao ou o dia mudam;
 //   - nenhum titulo, nome de perfil ou gosto em log.
 #ifndef NV_FAROLDICA_H
 #define NV_FAROLDICA_H
@@ -42,6 +44,9 @@ typedef struct {
   char    alvo[FAROL_REF_TAM];           // "tt..." resolvido ("" para escolha/nada)
   char    alvoTipo[8];                   // "movie" | "series" (ou "")
   char    alvoTitulo[160];               // titulo resolvido do alvo
+  char    alvoPoster[512];               // capa opcional (ex.: diario-nomes)
+  int     alvoTemporada;                 // > 0 para serie com temporada conhecida
+  int     alvoEpisodio;                  // > 0 para serie com episodio conhecido
   char    icone[FAROL_ICONE_TAM];        // nome do icone no atlas (ex.: "aj_farol")
 } FarolDica;
 
@@ -63,8 +68,14 @@ typedef struct {
 } FarolDicaExec;
 
 // Leitura atomica, sem trava: sobe a cada adocao, dispensa ou invalidacao.
-// A Home checa apenas isto por quadro.
+// A Home checa apenas isto + faroldica_dia_atual() por quadro.
 unsigned faroldica_geracao(void);
+// Dia corrente (dias desde 1/1/2026) pelo relogio real ou injetado, sem trava
+// nem copia. Permite virar a validade diaria na Home sem mudar a cena.
+int faroldica_dia_atual(void);
+// 1 se a acao pode ser prometida/executada agora (abrir/tocar/salvar/nada:
+// sempre 1; comparar/escolha: somente quando ha rota registrada de #49/#50).
+int faroldica_acao_disponivel(uint8_t acao);
 
 // Copia a dica ativa para `out` se ela vale para o perfil ativo e para o dia
 // atual (e nao foi dispensada). Devolve 1 se ativa, 0 caso contrario (e zera
