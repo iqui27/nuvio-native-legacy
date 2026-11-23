@@ -2375,3 +2375,299 @@ test("R4-P1.4: chave canonicaliza ordem de campos em fatos e referencias de anco
   assert.notEqual(await chaveCacheCompor(reqAncIdx), await chaveCacheCompor(reqAncOutro));
   assert.notEqual(await chaveCacheCompor(reqAncIdx), await chaveCacheCompor(reqCandTrocado));
 });
+
+// =============================================================================
+// 11. Regressoes dos 2 P1 da revisao FAROL40-r5
+// =============================================================================
+
+test("R5-P1.1: resolve identidade do fato uma vez, recusa campos conflitantes e recusa IMDb ambiguo preservando alias inequivoco", async (t) => {
+  const baseCands = pedidoHomeBase().candidatos;
+
+  // 1. Repro 1: c0 tem tt0114369, c1 tem tt0133093, mas fato entra com {alvo:"c1", id:"tt0114369", semanas:9}.
+  //    Fato conflitante nao pode agregar evidencia em c0 nem autorizar l2=9.
+  const reqConflito = pedidoHomeBase({
+    modo: "dica",
+    candidatos: baseCands.map((c, idx) =>
+      idx === 0 ? { ...c, tipo: "series", titulo: "Série A" }
+        : idx === 1 ? { ...c, tipo: "movie", titulo: "Obra B" }
+        : c
+    ),
+    fatos: [
+      { alvo: "c0", temporada: 2, episodio: 4, semanas: 5 },
+      { alvo: "c1", id: "tt0114369", semanas: 9 },
+    ],
+  });
+  for (const l1Ref of ["c0", "tt0114369"]) {
+    const cenaCruzada = {
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{
+        t: "dica", id: "d_cruz",
+        l1: { m: "FT_DICA_PAROU_L1", a: [l1Ref, "2", "4"] },
+        l2: { m: "FT_DICA_PAROU_L2", a: ["9"] },
+        acao: { tipo: "abrir", alvo: "c0" },
+      }],
+    };
+    const { post, kv } = cenario(t, {}, { respostaLlm: () => cenaCruzada });
+    const r = await post("/v1/farol/compor", reqConflito);
+    assert.deepEqual(r.body, { origem: "regras" });
+    assert.equal(kv.mapa.size, 0);
+
+    // Hit KV semeado com a cena ruim tambem e recusado e recomposto com a dica valida de 5 semanas.
+    const chave = await chaveCacheCompor(reqConflito);
+    const hitEnv = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: "d_ok",
+          l1: { m: "FT_DICA_PAROU_L1", a: ["tt0114369", "2", "4"] },
+          l2: { m: "FT_DICA_PAROU_L2", a: ["5"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      }),
+    });
+    await hitEnv.kv.put(chave, JSON.stringify({ ...cenaCruzada, feita: 1795000000, vale_s: 86400 }), { expirationTtl: 86400 });
+    const rHit = await hitEnv.post("/v1/farol/compor", reqConflito);
+    assert.equal(rHit.body.origem, "llm");
+    assert.equal(rHit.body.pecas[0].l2.a[0], "5");
+    assert.equal(hitEnv.chamadasLlm.length, 1);
+  }
+
+  // 2. Repro 2: c0 (series) e c1 (movie) compartilham o mesmo IMDb tt0114369.
+  //    A forma IMDb fica ambigua: nao pode ligar l1/l2 a acao(c1), nem agregar fato por IMDb, nem autorizar acao(tt0114369).
+  const reqAmb = pedidoHomeBase({
+    modo: "dica",
+    candidatos: baseCands.map((c, idx) =>
+      idx === 0 ? { ...c, id: "tt0114369", tipo: "series", titulo: "Série A" }
+        : idx === 1 ? { ...c, id: "tt0114369", tipo: "movie", titulo: "Obra B" }
+        : c
+    ),
+    fatos: [
+      { alvo: "c0", temporada: 2, episodio: 4, semanas: 5 },
+      { alvo: "c1", semanas: 9 },
+    ],
+  });
+  for (const cenaAmb of [
+    {
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{
+        t: "dica", id: "d_amb1",
+        l1: { m: "FT_DICA_PAROU_L1", a: ["tt0114369", "2", "4"] },
+        l2: { m: "FT_DICA_PAROU_L2", a: ["9"] },
+        acao: { tipo: "abrir", alvo: "c1" },
+      }],
+    },
+    {
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{
+        t: "dica", id: "d_amb2",
+        l1: { m: "FT_DICA_PAROU_L1", a: ["tt0114369", "2", "4"] },
+        l2: { m: "FT_DICA_PAROU_L2", a: ["5"] },
+        acao: { tipo: "abrir", alvo: "c0" },
+      }],
+    },
+    {
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{
+        t: "dica", id: "d_amb3",
+        l1: { m: "FT_DICA_PAROU_L1", a: ["tt0114369", "2", "4"] },
+        l2: { m: "FT_DICA_PAROU_L2", a: ["5"] },
+        acao: { tipo: "abrir", alvo: "tt0114369" },
+      }],
+    },
+    {
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{
+        t: "dica", id: "d_amb4",
+        l1: { m: "FT_DICA_SALVO_L1", a: ["5M"] },
+        acao: { tipo: "abrir", alvo: "tt0114369" },
+      }],
+    },
+  ]) {
+    const { post, kv } = cenario(t, {}, { respostaLlm: () => cenaAmb });
+    const r = await post("/v1/farol/compor", reqAmb);
+    assert.deepEqual(r.body, { origem: "regras" }, JSON.stringify(cenaAmb));
+    assert.equal(kv.mapa.size, 0);
+
+    const chave = await chaveCacheCompor(reqAmb);
+    const hitEnv = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: "d_c0_ok",
+          l1: { m: "FT_DICA_PAROU_L1", a: ["c0", "2", "4"] },
+          l2: { m: "FT_DICA_PAROU_L2", a: ["5"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      }),
+    });
+    await hitEnv.kv.put(chave, JSON.stringify({ ...cenaAmb, feita: 1795000000, vale_s: 86400 }), { expirationTtl: 86400 });
+    const rHit = await hitEnv.post("/v1/farol/compor", reqAmb);
+    assert.equal(rHit.body.origem, "llm");
+    assert.equal(rHit.body.pecas[0].acao.alvo, "c0");
+    assert.equal(rHit.body.pecas[0].l2.a[0], "5");
+    assert.equal(hitEnv.chamadasLlm.length, 1);
+  }
+
+  // Fato que usa apenas o IMDb ambiguo nao agrega evidencia em c0 nem em c1.
+  {
+    const reqFatoAmb = pedidoHomeBase({
+      modo: "dica",
+      candidatos: reqAmb.candidatos,
+      fatos: [{ alvo: "tt0114369", temporada: 2, episodio: 4, semanas: 5, salvo: "5M" }],
+    });
+    const { post, kv } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: "d_sem_ev",
+          l1: { m: "FT_DICA_PAROU_L1", a: ["c0", "2", "4"] },
+          l2: { m: "FT_DICA_PAROU_L2", a: ["5"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      }),
+    });
+    const r = await post("/v1/farol/compor", reqFatoAmb);
+    assert.deepEqual(r.body, { origem: "regras" });
+    assert.equal(kv.mapa.size, 0);
+  }
+
+  // 3. Controle positivo: IMDb inequivoco na linha (tt0114369) e c0 na acao passam no miss e no hit com 5 semanas.
+  {
+    const reqCtrl = pedidoHomeBase({
+      modo: "dica",
+      candidatos: baseCands.map((c, idx) =>
+        idx === 0 ? { ...c, id: "tt0114369", tipo: "series", titulo: "Série A" }
+          : idx === 1 ? { ...c, id: "tt0133093", tipo: "movie", titulo: "Obra B" }
+          : c
+      ),
+      fatos: [
+        { alvo: "c0", temporada: 2, episodio: 4, semanas: 5 },
+        { alvo: "c1", semanas: 9 },
+      ],
+    });
+    const { post, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: "d_ctrl",
+          l1: { m: "FT_DICA_PAROU_L1", a: ["tt0114369", "2", "4"] },
+          l2: { m: "FT_DICA_PAROU_L2", a: ["5"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      }),
+    });
+    const miss = await post("/v1/farol/compor", reqCtrl, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(miss.body.origem, "llm");
+    assert.equal(miss.body.pecas[0].l1.a[0], "tt0114369");
+    assert.equal(miss.body.pecas[0].l2.a[0], "5");
+    assert.equal(miss.body.pecas[0].acao.alvo, "c0");
+    const hit = await post("/v1/farol/compor", reqCtrl, { token: "tok-gosto-b", perfil: 2 });
+    assert.deepEqual(hit.body, miss.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+});
+
+test("R5-P1.2: hash de cache concorda com precedencia da ordem de fatos em comparar e nome publico, preservando canonicalizacao de propriedades", async (t) => {
+  // 1. Comparar sem c0.minutos: [80, 160, tempo_max:100] vs invertido geram chaves distintas e resultados coerentes em miss/hit.
+  const candsSemMin = pedidoHomeBase().candidatos.map((c, idx) =>
+    idx === 0 ? { id: c.id, tipo: "series", titulo: "Série A", generos: c.generos } : c
+  );
+  const reqCmp1 = pedidoHomeBase({
+    modo: "comparar",
+    candidatos: candsSemMin,
+    fatos: [{ alvo: "c0", minutos: 80 }, { alvo: "c0", minutos: 160 }, { tempo_max: 100 }],
+  });
+  const reqCmp2 = pedidoHomeBase({
+    modo: "comparar",
+    candidatos: candsSemMin,
+    fatos: [{ tempo_max: 100 }, { alvo: "c0", minutos: 160 }, { alvo: "c0", minutos: 80 }],
+  });
+  const reqCmp1Props = pedidoHomeBase({
+    modo: "comparar",
+    candidatos: candsSemMin,
+    fatos: [{ minutos: 80, alvo: "c0" }, { minutos: 160, alvo: "c0" }, { tempo_max: 100 }],
+  });
+  assert.notEqual(await chaveCacheCompor(reqCmp1), await chaveCacheCompor(reqCmp2));
+  assert.equal(await chaveCacheCompor(reqCmp1), await chaveCacheCompor(reqCmp1Props));
+
+  {
+    const { post, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "comparar", origem: "llm",
+        pecas: [{
+          t: "comparar",
+          itens: ["c0", "c1"],
+          eixos: ["duracao", "nota"],
+          veredito: { m: "FT_CMP_VEREDITO_CABE", a: ["c0"] },
+          escolha: "c0",
+        }],
+      }),
+    });
+    const miss1 = await post("/v1/farol/compor", reqCmp1, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(miss1.body.origem, "llm");
+    assert.equal(miss1.body.pecas[0].veredito.m, "FT_CMP_VEREDITO_CABE");
+    const hit1 = await post("/v1/farol/compor", reqCmp1Props, { token: "tok-gosto-b", perfil: 1 });
+    assert.deepEqual(hit1.body, miss1.body);
+    assert.equal(chamadasLlm.length, 1);
+
+    // Ordem invertida nao acerta o cache de reqCmp1; reavalia e devolve {origem:"regras"}.
+    const r2 = await post("/v1/farol/compor", reqCmp2, { token: "tok-gosto-b", perfil: 2 });
+    assert.deepEqual(r2.body, { origem: "regras" });
+    assert.equal(chamadasLlm.length, 2);
+  }
+
+  // 2. Nome publico de pessoa em fatos[]: inverter ordem produz chaves distintas, e cada chave e consistente entre miss e hit.
+  const candsPessoa = pedidoHomeBase().candidatos;
+  const reqNomeA = pedidoHomeBase({
+    gosto: { generos: [{ id: 53, nome: "Suspense", peso: 1.5 }], pessoas: [{ id: 137427, peso: 1.6 }], nivel: 2 },
+    candidatos: candsPessoa,
+    fatos: [{ pessoa: 137427, nome: "Nome Público A" }, { pessoa: 137427, nome: "Nome Público B" }],
+  });
+  const reqNomeB = pedidoHomeBase({
+    gosto: { generos: [{ id: 53, nome: "Suspense", peso: 1.5 }], pessoas: [{ id: 137427, peso: 1.6 }], nivel: 2 },
+    candidatos: candsPessoa,
+    fatos: [{ pessoa: 137427, nome: "Nome Público B" }, { pessoa: 137427, nome: "Nome Público A" }],
+  });
+  const reqNomeAProps = pedidoHomeBase({
+    gosto: { generos: [{ id: 53, nome: "Suspense", peso: 1.5 }], pessoas: [{ id: 137427, peso: 1.6 }], nivel: 2 },
+    candidatos: candsPessoa,
+    fatos: [{ nome: "Nome Público A", pessoa: 137427 }, { nome: "Nome Público B", pessoa: 137427 }],
+  });
+  assert.notEqual(await chaveCacheCompor(reqNomeA), await chaveCacheCompor(reqNomeB));
+  assert.equal(await chaveCacheCompor(reqNomeA), await chaveCacheCompor(reqNomeAProps));
+
+  {
+    const { post, kv, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "fileira", id: "gosto1",
+          titulo: { m: "FT_FIL_HORA" },
+          forma: "cartaz",
+          itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+          motivo: { c4: { m: "FT_MOT_PESSOA", a: ["p137427"] } },
+        }],
+      }),
+    });
+    const missA = await post("/v1/farol/compor", reqNomeA, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(missA.body.origem, "llm");
+    assert.equal(missA.body.pecas[0].motivo.c4.x, "Com Nome Público A, que você acompanha.");
+    const hitA = await post("/v1/farol/compor", reqNomeAProps, { token: "tok-gosto-b", perfil: 1 });
+    assert.deepEqual(hitA.body, missA.body);
+    assert.equal(chamadasLlm.length, 1);
+
+    const missB = await post("/v1/farol/compor", reqNomeB, { token: "tok-gosto-a", perfil: 2 });
+    assert.equal(missB.body.origem, "llm");
+    assert.equal(missB.body.pecas[0].motivo.c4.x, "Com Nome Público B, que você acompanha.");
+    const hitB = await post("/v1/farol/compor", reqNomeB, { token: "tok-gosto-b", perfil: 2 });
+    assert.deepEqual(hitB.body, missB.body);
+    assert.equal(chamadasLlm.length, 2);
+
+    assert.equal(kv.mapa.size, 2);
+    for (const { valor } of kv.mapa.values()) {
+      assert.ok(!valor.includes("\"x\""));
+      assert.ok(!valor.includes("Nome Público A"));
+      assert.ok(!valor.includes("Nome Público B"));
+    }
+  }
+});

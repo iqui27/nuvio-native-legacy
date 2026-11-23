@@ -2349,8 +2349,12 @@ function processarMotivoCandidato(mo, ev, candMinutos, ancoras, nomes, extras) {
     } else if (mo.m === "FT_MOT_CABE_HOJE") {
       const min = Number(a[0]);
       if (Number.isInteger(min) && min > 0) {
-        if (candMinutos > 0 && candMinutos !== min) ev.cabeHojeContradit = true;
-        else { ev.cabeHoje = true; ev.cabeHojeMin = min; }
+        if ((candMinutos > 0 && candMinutos !== min) || (ev.cabeHoje && ev.cabeHojeMin !== min)) {
+          ev.cabeHojeContradit = true;
+        } else {
+          ev.cabeHoje = true;
+          ev.cabeHojeMin = min;
+        }
       }
     } else if (mo.m === "FT_MOT_AMIGO_ANON") {
       ev.amigoAnon = true;
@@ -2472,7 +2476,8 @@ function processarMotivoCandidato(mo, ev, candMinutos, ancoras, nomes, extras) {
   if (dim === "FMO_CABE_HOJE") {
     const aMin = Number.isInteger(mo.a) && mo.a > 0 ? mo.a : 0;
     const min = aMin > 0 ? aMin : (candMinutos > 0 ? candMinutos : 0);
-    if (candMinutos > 0 && aMin > 0 && candMinutos !== aMin) {
+    if ((candMinutos > 0 && aMin > 0 && candMinutos !== aMin) ||
+        (min > 0 && ev.cabeHoje && ev.cabeHojeMin !== min)) {
       ev.cabeHojeContradit = true;
     } else if (min > 0) {
       ev.cabeHoje = true;
@@ -2516,6 +2521,91 @@ function canonicalizarEixos(eixos) {
   return out;
 }
 
+function camposAlvoDoFato(f) {
+  const out = [];
+  if (typeof f.alvo === "string" && f.alvo.trim()) out.push({ k: "alvo", v: f.alvo.trim() });
+  if (typeof f.c === "string" && f.c.trim()) out.push({ k: "c", v: f.c.trim() });
+  else if (Number.isInteger(f.c)) out.push({ k: "c", v: f.c >= 0 ? `c${f.c}` : String(f.c) });
+  if (typeof f.id === "string" && f.id.trim()) out.push({ k: "id", v: f.id.trim() });
+  else if (Number.isInteger(f.id) && f.id > 0) out.push({ k: "id", v: String(f.id) });
+  if (typeof f.ref === "string" && f.ref.trim()) out.push({ k: "ref", v: f.ref.trim() });
+  return out;
+}
+
+function tipoFatoCompativel(fTipo, candTipo) {
+  const tF = tipoCanonico(fTipo);
+  const tC = tipoCanonico(candTipo);
+  return !(tF && tC && tF !== tC);
+}
+
+function fatoCombinaComCandidato(c, v) {
+  const cid = c.id !== undefined ? String(c.id).trim() : "";
+  const cref = typeof c.ref === "string" ? c.ref.trim() : "";
+  return Boolean((cid && v === cid) || (cref && v === cref));
+}
+
+function resolverIdentidadeFato(f, candidatos, candsPorTt, candsPorIdNaoTt, idsNaoTtAmbiguos, ttAmbiguos) {
+  const campos = camposAlvoDoFato(f);
+  if (campos.length === 0) return { tipo: "global" };
+
+  const cIdxs = new Set();
+  const tts = new Set();
+  for (const { v } of campos) {
+    if (/^c(?:0|[1-9]\d*)$/.test(v)) {
+      const idx = Number(v.slice(1));
+      if (!Number.isInteger(idx) || idx < 0 || idx >= candidatos.length) return { tipo: "invalido" };
+      cIdxs.add(idx);
+    } else if (/^tt\d{1,17}$/.test(v)) {
+      tts.add(v);
+    }
+  }
+  if (cIdxs.size > 1 || tts.size > 1) return { tipo: "invalido" };
+
+  if (cIdxs.size === 1) {
+    const idx = [...cIdxs][0];
+    const c = candidatos[idx];
+    if (!tipoFatoCompativel(f.tipo, c.tipo)) return { tipo: "invalido" };
+    for (const { v } of campos) {
+      if (/^c(?:0|[1-9]\d*)$/.test(v)) continue;
+      if (!fatoCombinaComCandidato(c, v)) return { tipo: "invalido" };
+    }
+    return { tipo: "cand", idx, obraKey: `cand:${idx}` };
+  }
+
+  if (tts.size === 1) {
+    const tt = [...tts][0];
+    if (ttAmbiguos.has(tt)) return { tipo: "invalido" };
+    if (candsPorTt.has(tt)) {
+      const idxs = candsPorTt.get(tt);
+      if (idxs.length !== 1) return { tipo: "invalido" };
+      const idx = idxs[0];
+      const c = candidatos[idx];
+      if (!tipoFatoCompativel(f.tipo, c.tipo)) return { tipo: "invalido" };
+      for (const { v } of campos) {
+        if (!fatoCombinaComCandidato(c, v)) return { tipo: "invalido" };
+      }
+      return { tipo: "cand", idx, obraKey: `cand:${idx}` };
+    }
+    for (const { v } of campos) {
+      if (v !== tt) return { tipo: "invalido" };
+    }
+    return { tipo: "tt", tt, obraKey: `tt:${tt}` };
+  }
+
+  const vals = new Set(campos.map((x) => x.v));
+  if (vals.size !== 1) return { tipo: "invalido" };
+  const v = campos[0].v;
+  if (idsNaoTtAmbiguos.has(v)) return { tipo: "invalido" };
+  if (candsPorIdNaoTt.has(v)) {
+    const idxs = candsPorIdNaoTt.get(v);
+    if (idxs.length !== 1) return { tipo: "invalido" };
+    const idx = idxs[0];
+    if (!tipoFatoCompativel(f.tipo, candidatos[idx].tipo)) return { tipo: "invalido" };
+    return { tipo: "cand", idx, obraKey: `cand:${idx}` };
+  }
+  return { tipo: "ext", ref: v, obraKey: `ext:${v}` };
+}
+
 function contextoAterramento(pedido) {
   const ttCand = new Set();
   const generosIds = new Set();
@@ -2531,9 +2621,13 @@ function contextoAterramento(pedido) {
   const titulosAncoras = new Set();
   const gostoAncorasTitulos = new Set();
   const servicosOnde = new Set();
-  const fatosPorAlvo = new Map();
+  const fatosPorObra = new Map();
   const fatosGlobais = [];
   const candsPorTt = new Map();
+  const candsPorIdNaoTt = new Map();
+  const ttAmbiguos = new Set();
+  const idsNaoTtAmbiguos = new Set();
+  const candidatos = pedido.candidatos || [];
   const ancoras = pedido.gosto?.ancoras || [];
 
   for (const g of pedido.gosto?.generos || []) {
@@ -2563,39 +2657,51 @@ function contextoAterramento(pedido) {
         pessoasNomes.set(id, p.nome.trim());
     }
   }
+  const titulosPorTtAncora = new Map();
   for (const a of ancoras) {
-    if (typeof a?.id === "string" && /^tt\d{1,17}$/.test(a.id)) {
-      titulosAncoras.add(a.id);
-      gostoAncorasTitulos.add(a.id);
-    }
-    if (typeof a?.ref === "string" && /^tt\d{1,17}$/.test(a.ref)) {
-      titulosAncoras.add(a.ref);
-      gostoAncorasTitulos.add(a.ref);
-    }
-    if (typeof a?.titulo === "string" && a.titulo.trim()) {
-      const tit = a.titulo.trim();
-      if (typeof a.id === "string" && /^tt\d{1,17}$/.test(a.id)) titulosPorRef.set(a.id, tit);
-      if (typeof a.ref === "string" && /^tt\d{1,17}$/.test(a.ref)) titulosPorRef.set(a.ref, tit);
+    const tit = typeof a?.titulo === "string" ? a.titulo.trim() : "";
+    for (const k of ["id", "ref"]) {
+      const v = typeof a?.[k] === "string" ? a[k].trim() : "";
+      if (/^tt\d{1,17}$/.test(v)) {
+        titulosAncoras.add(v);
+        gostoAncorasTitulos.add(v);
+        if (tit) {
+          const low = tit.toLowerCase();
+          if (titulosPorTtAncora.has(v) && titulosPorTtAncora.get(v) !== low) ttAmbiguos.add(v);
+          else titulosPorTtAncora.set(v, low);
+          if (!titulosPorRef.has(v)) titulosPorRef.set(v, tit);
+        }
+      }
     }
   }
 
-  const candEvs = (pedido.candidatos || []).map((c, idx) => {
+  const candEvs = candidatos.map((c, idx) => {
     const ev = criarEvidenciaVazia();
     ev.minutos = Number.isInteger(c.minutos) && c.minutos > 0 ? c.minutos : 0;
     ev.tipo = tipoCanonico(c.tipo);
-    coletarTt(c.id, ttCand);
-    coletarTt(c.ref, ttCand);
-    for (const rawId of [c.id, c.ref]) {
-      if (typeof rawId === "string" && /^tt\d{1,17}$/.test(rawId)) {
-        if (!candsPorTt.has(rawId)) candsPorTt.set(rawId, []);
-        candsPorTt.get(rawId).push(idx);
+    const ttsDoCand = new Set();
+    const outrosDoCand = new Set();
+    for (const raw of [c.id, c.ref]) {
+      if (typeof raw === "string") {
+        const s = raw.trim();
+        if (/^tt\d{1,17}$/.test(s)) ttsDoCand.add(s);
+        else if (s) outrosDoCand.add(s);
+      } else if (Number.isInteger(raw) && raw > 0) {
+        outrosDoCand.add(String(raw));
       }
+    }
+    for (const tt of ttsDoCand) {
+      ttCand.add(tt);
+      if (!candsPorTt.has(tt)) candsPorTt.set(tt, []);
+      candsPorTt.get(tt).push(idx);
+    }
+    for (const oid of outrosDoCand) {
+      if (!candsPorIdNaoTt.has(oid)) candsPorIdNaoTt.set(oid, []);
+      candsPorIdNaoTt.get(oid).push(idx);
     }
     if (typeof c.titulo === "string" && c.titulo.trim()) {
       const tit = c.titulo.trim();
       titulosPorRef.set(`c${idx}`, tit);
-      if (typeof c.id === "string" && /^tt\d{1,17}$/.test(c.id)) titulosPorRef.set(c.id, tit);
-      if (typeof c.ref === "string" && /^tt\d{1,17}$/.test(c.ref)) titulosPorRef.set(c.ref, tit);
     }
     if (Array.isArray(c.generos)) {
       for (const g of c.generos) {
@@ -2619,10 +2725,7 @@ function contextoAterramento(pedido) {
       }
     }
     if (c.eixos && typeof c.eixos === "object") {
-      const exAlvos = [`c${idx}`];
-      if (typeof c.id === "string" && /^tt\d{1,17}$/.test(c.id)) exAlvos.push(c.id);
-      if (typeof c.ref === "string" && /^tt\d{1,17}$/.test(c.ref)) exAlvos.push(c.ref);
-      for (const alv of exAlvos) registrarFatoEmMapa(fatosPorAlvo, alv, c.eixos);
+      registrarFatoEmMapa(fatosPorObra, `cand:${idx}`, c.eixos);
       for (const k of ["onde", "servico"]) {
         if (typeof c.eixos[k] === "string" && c.eixos[k].trim()) servicosOnde.add(c.eixos[k].trim());
       }
@@ -2630,22 +2733,57 @@ function contextoAterramento(pedido) {
     return ev;
   });
 
+  for (const [tt, idxs] of candsPorTt.entries()) {
+    if (idxs.length > 1) {
+      ttAmbiguos.add(tt);
+      continue;
+    }
+    const c = candidatos[idxs[0]];
+    const tit = typeof c?.titulo === "string" ? c.titulo.trim() : "";
+    if (tit && titulosPorTtAncora.has(tt) && tit.toLowerCase() !== titulosPorTtAncora.get(tt)) {
+      ttAmbiguos.add(tt);
+    }
+  }
+  for (const [oid, idxs] of candsPorIdNaoTt.entries()) {
+    if (idxs.length > 1) idsNaoTtAmbiguos.add(oid);
+  }
+  for (let idx = 0; idx < candidatos.length; idx++) {
+    const c = candidatos[idx];
+    const tit = typeof c?.titulo === "string" ? c.titulo.trim() : "";
+    if (!tit) continue;
+    for (const raw of [c.id, c.ref]) {
+      if (typeof raw === "string" && /^tt\d{1,17}$/.test(raw) && !ttAmbiguos.has(raw) && !titulosPorRef.has(raw)) {
+        titulosPorRef.set(raw, tit);
+      }
+    }
+  }
+
   const ttTodos = new Set(ttCand);
-  for (const c of pedido.candidatos || []) {
+  for (const c of candidatos) {
     coletarTt(c.motivos, ttTodos);
     coletarTt(c.eixos, ttTodos);
   }
   coletarTt(ancoras, ttTodos);
-  coletarTt(pedido.fatos, ttTodos);
 
+  const tiposPorTtExt = new Map();
   for (const f of pedido.fatos || []) {
     if (!f || typeof f !== "object") continue;
-    if (typeof f.titulo === "string" && f.titulo.trim()) {
-      const tit = f.titulo.trim();
-      for (const k of ["alvo", "id", "ref"]) {
-        if (typeof f[k] === "string" && /^tt\d{1,17}$/.test(f[k])) titulosPorRef.set(f[k], tit);
+    const idFato = resolverIdentidadeFato(f, candidatos, candsPorTt, candsPorIdNaoTt, idsNaoTtAmbiguos, ttAmbiguos);
+    if (idFato.tipo === "invalido") continue;
+
+    if (idFato.tipo === "tt") {
+      const tF = tipoCanonico(f.tipo);
+      if (tF) {
+        if (tiposPorTtExt.has(idFato.tt) && tiposPorTtExt.get(idFato.tt) !== tF) {
+          ttAmbiguos.add(idFato.tt);
+          fatosPorObra.delete(idFato.obraKey);
+          continue;
+        }
+        tiposPorTtExt.set(idFato.tt, tF);
       }
     }
+
+    coletarTt(f, ttTodos);
     for (const k of ["onde", "servico"]) {
       if (typeof f[k] === "string" && f[k].trim()) servicosOnde.add(f[k].trim());
     }
@@ -2667,59 +2805,56 @@ function contextoAterramento(pedido) {
       if (typeof f.nome === "string" && f.nome.trim() && !generosNomes.has(gid))
         generosNomes.set(gid, f.nome.trim());
     }
+
+    if (idFato.tipo === "global") {
+      fatosGlobais.push(f);
+      continue;
+    }
+
+    registrarFatoEmMapa(fatosPorObra, idFato.obraKey, f);
+
+    if (typeof f.titulo === "string" && f.titulo.trim()) {
+      const tit = f.titulo.trim();
+      if (idFato.tipo === "cand") {
+        if (!titulosPorRef.has(`c${idFato.idx}`)) titulosPorRef.set(`c${idFato.idx}`, tit);
+      } else if (idFato.tipo === "tt" && !ttAmbiguos.has(idFato.tt) && !titulosPorRef.has(idFato.tt)) {
+        titulosPorRef.set(idFato.tt, tit);
+      }
+    }
     if (f.terminou === true || f.terminou === 1) {
-      for (const k of ["alvo", "id", "ref"]) {
-        if (typeof f[k] === "string" && /^tt\d{1,17}$/.test(f[k])) titulosAncoras.add(f[k]);
+      if (idFato.tipo === "tt" && !ttAmbiguos.has(idFato.tt)) {
+        titulosAncoras.add(idFato.tt);
+      } else if (idFato.tipo === "cand") {
+        const c = candidatos[idFato.idx];
+        for (const raw of [c?.id, c?.ref]) {
+          if (typeof raw === "string" && /^tt\d{1,17}$/.test(raw) && !ttAmbiguos.has(raw)) {
+            titulosAncoras.add(raw);
+          }
+        }
       }
     }
 
-    const chavesAlvo = new Set();
-    for (const k of ["alvo", "id", "ref", "c"]) {
-      if (typeof f[k] === "string" && f[k].trim()) chavesAlvo.add(f[k].trim());
-    }
-    if (chavesAlvo.size === 0) {
-      fatosGlobais.push(f);
-    } else {
-      for (const alv of chavesAlvo) {
-        registrarFatoEmMapa(fatosPorAlvo, alv, f);
-        if (/^c(?:0|[1-9]\d*)$/.test(alv)) {
-          const idx = Number(alv.slice(1));
-          const c = (pedido.candidatos || [])[idx];
-          if (c) {
-            if (typeof c.id === "string" && /^tt\d{1,17}$/.test(c.id)) registrarFatoEmMapa(fatosPorAlvo, c.id, f);
-            if (typeof c.ref === "string" && /^tt\d{1,17}$/.test(c.ref)) registrarFatoEmMapa(fatosPorAlvo, c.ref, f);
-          }
-        } else if (/^tt\d{1,17}$/.test(alv) && candsPorTt.has(alv)) {
-          for (const idx of candsPorTt.get(alv)) registrarFatoEmMapa(fatosPorAlvo, `c${idx}`, f);
+    if (idFato.tipo === "cand") {
+      const ev = candEvs[idFato.idx];
+      if (ev) {
+        const sd = extrairSalvoDur(f.salvo ?? f.dias);
+        if (sd) ev.salvoDurs.add(sd);
+        if (f.contra === true || f.contra === 1) ev.contra = true;
+        if ((f.estreia === true || f.estreia === 1) && Number.isInteger(f.pessoa) && f.pessoa !== 0) {
+          ev.estreiasPessoa.add(String(f.pessoa));
+          ev.pessoasMotivo.add(String(f.pessoa));
         }
-      }
-      // Enriquecer evidencia do(s) candidato(s) alvo quando o fato aponta um candidato.
-      for (const alv of chavesAlvo) {
-        const idxs = /^c(?:0|[1-9]\d*)$/.test(alv)
-          ? [Number(alv.slice(1))]
-          : (candsPorTt.get(alv) || []);
-        for (const idx of idxs) {
-          const ev = candEvs[idx];
-          if (!ev) continue;
-          const sd = extrairSalvoDur(f.salvo ?? f.dias);
-          if (sd) ev.salvoDurs.add(sd);
-          if (f.contra === true || f.contra === 1) ev.contra = true;
-          if ((f.estreia === true || f.estreia === 1) && Number.isInteger(f.pessoa) && f.pessoa !== 0) {
-            ev.estreiasPessoa.add(String(f.pessoa));
-            ev.pessoasMotivo.add(String(f.pessoa));
-          }
-          if (Number.isInteger(f.vezes) && f.vezes > 0 && typeof f.diretor === "string" && f.diretor) {
-            ev.diretores.push({ tit: f.diretor, n: f.vezes });
-          }
-          if (f.cabe_hoje === true || f.cabe_hoje === 1) {
-            const m = Number.isInteger(f.minutos) && f.minutos > 0 ? f.minutos : ev.minutos;
-            if (m > 0 && !(ev.minutos > 0 && f.minutos > 0 && ev.minutos !== f.minutos)) {
-              ev.cabeHoje = true;
-              ev.cabeHojeMin = m;
-            }
-          }
-          if (f.rever === true || f.rever === 1) ev.rever = true;
+        if (Number.isInteger(f.vezes) && f.vezes > 0 && typeof f.diretor === "string" && f.diretor) {
+          ev.diretores.push({ tit: f.diretor, n: f.vezes });
         }
+        if (f.cabe_hoje === true || f.cabe_hoje === 1) {
+          const m = Number.isInteger(f.minutos) && f.minutos > 0 ? f.minutos : ev.minutos;
+          if (m > 0 && !(ev.minutos > 0 && f.minutos > 0 && ev.minutos !== f.minutos)) {
+            ev.cabeHoje = true;
+            ev.cabeHojeMin = m;
+          }
+        }
+        if (f.rever === true || f.rever === 1) ev.rever = true;
       }
     }
   }
@@ -2743,10 +2878,11 @@ function contextoAterramento(pedido) {
 
   return {
     idioma: pedido.idioma,
-    nCand: (pedido.candidatos || []).length,
-    candidatos: pedido.candidatos || [],
+    nCand: candidatos.length,
+    candidatos,
     candEvs,
     candsPorTt,
+    ttAmbiguos,
     ttCand,
     ttTodos,
     titulosAncoras,
@@ -2762,13 +2898,15 @@ function contextoAterramento(pedido) {
     pessoasNomes,
     titulosPorRef,
     servicosOnde,
-    fatosPorAlvo,
+    fatosPorObra,
     fatosGlobais,
     textosGosto,
   };
 }
 
-function refTtPermitida(s, permitidos) {
+function refTtPermitida(s, permitidos, ctx) {
+  if (typeof s !== "string") return false;
+  if (ctx?.ttAmbiguos?.has(s)) return false;
   return !s.startsWith("tt") || permitidos.has(s);
 }
 
@@ -2779,55 +2917,51 @@ function refTituloValida(arg, ctx, permitirAncoras) {
     return Number.isInteger(idx) && idx >= 0 && idx < ctx.nCand;
   }
   if (/^tt\d{1,17}$/.test(arg)) {
+    if (ctx.ttAmbiguos.has(arg)) return false;
     return (permitirAncoras ? ctx.ttTodos : ctx.ttCand).has(arg);
   }
   return false;
 }
 
+function resolverIdentidadeRef(ref, ctx) {
+  if (typeof ref !== "string") return null;
+  if (/^c(?:0|[1-9]\d*)$/.test(ref)) {
+    const idx = Number(ref.slice(1));
+    return Number.isInteger(idx) && idx >= 0 && idx < ctx.nCand
+      ? { tipo: "cand", idx, obraKey: `cand:${idx}` }
+      : null;
+  }
+  if (/^tt\d{1,17}$/.test(ref)) {
+    if (ctx.ttAmbiguos.has(ref)) return null;
+    const idxs = ctx.candsPorTt.get(ref);
+    if (idxs && idxs.length === 1) return { tipo: "cand", idx: idxs[0], obraKey: `cand:${idxs[0]}` };
+    if (idxs && idxs.length > 1) return null;
+    if (ctx.ttTodos.has(ref) || ctx.fatosPorObra.has(`tt:${ref}`)) {
+      return { tipo: "tt", tt: ref, obraKey: `tt:${ref}` };
+    }
+    return null;
+  }
+  return null;
+}
+
 function refsTitulosEquivalentes(refA, refB, ctx) {
   if (!refA || !refB) return false;
-  if (refA === refB) return true;
-  const idxA = /^c(?:0|[1-9]\d*)$/.test(refA) ? Number(refA.slice(1)) : -1;
-  const idxB = /^c(?:0|[1-9]\d*)$/.test(refB) ? Number(refB.slice(1)) : -1;
-  if (idxA >= 0 && idxB >= 0) return idxA === idxB;
-  if (idxA >= 0 && /^tt\d{1,17}$/.test(refB)) {
-    const c = ctx.candidatos[idxA];
-    return Boolean(c && (c.id === refB || c.ref === refB));
-  }
-  if (idxB >= 0 && /^tt\d{1,17}$/.test(refA)) {
-    const c = ctx.candidatos[idxB];
-    return Boolean(c && (c.id === refA || c.ref === refA));
-  }
-  return false;
+  if (ctx.ttAmbiguos.has(refA) || ctx.ttAmbiguos.has(refB)) return false;
+  const idA = resolverIdentidadeRef(refA, ctx);
+  const idB = resolverIdentidadeRef(refB, ctx);
+  return Boolean(idA && idB && idA.obraKey === idB.obraKey);
 }
 
 function resolverCandIndicesPorRef(ref, ctx) {
-  if (typeof ref !== "string") return [];
-  if (/^c(?:0|[1-9]\d*)$/.test(ref)) {
-    const idx = Number(ref.slice(1));
-    return Number.isInteger(idx) && idx >= 0 && idx < ctx.nCand ? [idx] : [];
-  }
-  if (/^tt\d{1,17}$/.test(ref)) {
-    return ctx.candsPorTt.get(ref) || [];
-  }
-  return [];
+  const id = resolverIdentidadeRef(ref, ctx);
+  return id && id.tipo === "cand" ? [id.idx] : [];
 }
 
 function fatosParaAlvo(alvoRef, ctx, incluirGlobais = false) {
   const res = [];
-  if (alvoRef) {
-    if (ctx.fatosPorAlvo.has(alvoRef)) res.push(...ctx.fatosPorAlvo.get(alvoRef));
-    for (const idx of resolverCandIndicesPorRef(alvoRef, ctx)) {
-      const ck = `c${idx}`;
-      if (ck !== alvoRef && ctx.fatosPorAlvo.has(ck)) res.push(...ctx.fatosPorAlvo.get(ck));
-      const c = ctx.candidatos[idx];
-      if (c) {
-        if (typeof c.id === "string" && c.id !== alvoRef && ctx.fatosPorAlvo.has(c.id))
-          res.push(...ctx.fatosPorAlvo.get(c.id));
-        if (typeof c.ref === "string" && c.ref !== alvoRef && ctx.fatosPorAlvo.has(c.ref))
-          res.push(...ctx.fatosPorAlvo.get(c.ref));
-      }
-    }
+  const id = resolverIdentidadeRef(alvoRef, ctx);
+  if (id && ctx.fatosPorObra.has(id.obraKey)) {
+    res.push(...ctx.fatosPorObra.get(id.obraKey));
   }
   if (incluirGlobais) res.push(...ctx.fatosGlobais);
   return res;
@@ -2835,7 +2969,7 @@ function fatosParaAlvo(alvoRef, ctx, incluirGlobais = false) {
 
 function todosFatos(ctx) {
   const res = [...ctx.fatosGlobais];
-  for (const lst of ctx.fatosPorAlvo.values()) res.push(...lst);
+  for (const lst of ctx.fatosPorObra.values()) res.push(...lst);
   return res;
 }
 
@@ -3268,6 +3402,7 @@ function dicaAterrada(p, ctx) {
   }
   const alvoDica = refAcao || refL1 || refL2 || null;
   if (alvoDica) {
+    if (!resolverIdentidadeRef(alvoDica, ctx)) return false;
     if (!dicaTextoAterrado(p.l1, alvoDica, ctx)) return false;
     if (p.l2 && !dicaTextoAterrado(p.l2, alvoDica, ctx)) return false;
     return true;
@@ -3276,7 +3411,12 @@ function dicaAterrada(p, ctx) {
   if (!precisaAlvo(p.l1) && (!p.l2 || !precisaAlvo(p.l2))) return true;
   const alvos = new Set();
   for (let i = 0; i < ctx.nCand; i++) alvos.add(`c${i}`);
-  for (const k of ctx.fatosPorAlvo.keys()) alvos.add(k);
+  for (const k of ctx.fatosPorObra.keys()) {
+    if (k.startsWith("tt:")) {
+      const tt = k.slice(3);
+      if (!ctx.ttAmbiguos.has(tt)) alvos.add(tt);
+    }
+  }
   for (const alv of alvos) {
     if (dicaTextoAterrado(p.l1, alv, ctx) && (!p.l2 || dicaTextoAterrado(p.l2, alv, ctx))) {
       return true;
@@ -3391,12 +3531,12 @@ function pecaAterrada(p, ctx, opts = {}) {
   const { ttCand, ttTodos } = ctx;
   if (p.t === "fileira") {
     if (p.id !== "gosto1" && p.id !== "gosto2") return false;
-    if (!p.itens.every((ref) => refTtPermitida(ref, ttCand))) return false;
+    if (!p.itens.every((ref) => refTtPermitida(ref, ttCand, ctx))) return false;
     if (!fileiraTituloAterrado(p.titulo, p.itens, ctx)) return false;
     if (p.sub && !fileiraTituloAterrado(p.sub, p.itens, ctx)) return false;
     if (p.motivo) {
       for (const [k, v] of Object.entries(p.motivo)) {
-        if (!refTtPermitida(k, ttCand)) return false;
+        if (!refTtPermitida(k, ttCand, ctx)) return false;
         if (!v?.m?.startsWith("FT_MOT_") || !textoAterrado(v, ctx, true)) return false;
         const cIdxs = resolverCandIndicesPorRef(k, ctx);
         if (!cIdxs.length || !cIdxs.some((idx) => motivoCandidatoAterrado(v, idx, ctx))) return false;
@@ -3407,12 +3547,12 @@ function pecaAterrada(p, ctx, opts = {}) {
   if (p.t === "dica") {
     if (opts.exigirIdCanonico && p.id !== dicaIdCanonico(p)) return false;
     if (p.icone !== undefined && !DICA_ICONES_CLIENTE.has(p.icone)) return false;
-    if (p.acao?.alvo && !refTtPermitida(p.acao.alvo, ttTodos)) return false;
+    if (p.acao?.alvo && !refTtPermitida(p.acao.alvo, ttTodos, ctx)) return false;
     if (!textoAterrado(p.l1, ctx, true) || !textoAterrado(p.l2, ctx, true)) return false;
     return dicaAterrada(p, ctx);
   }
   if (p.t === "porque") {
-    if (!refTtPermitida(p.alvo, ttTodos)) return false;
+    if (!refTtPermitida(p.alvo, ttTodos, ctx)) return false;
     if (!selosAterrados(p.selos, p.alvo, ctx)) return false;
     return p.linhas.every((l) =>
       Boolean(l?.m?.startsWith("FT_MOT_")) &&
@@ -3421,8 +3561,8 @@ function pecaAterrada(p, ctx, opts = {}) {
     );
   }
   if (p.t === "comparar") {
-    if (!p.itens.every((ref) => refTtPermitida(ref, ttCand))) return false;
-    if (p.escolha && !refTtPermitida(p.escolha, ttCand)) return false;
+    if (!p.itens.every((ref) => refTtPermitida(ref, ttCand, ctx))) return false;
+    if (p.escolha && !refTtPermitida(p.escolha, ttCand, ctx)) return false;
     if (p.veredito) {
       if (p.veredito.m !== "FT_CMP_VEREDITO_CABE" || !textoAterrado(p.veredito, ctx, false)) return false;
       const vRef = p.veredito.a?.[0];
@@ -3451,13 +3591,13 @@ function pecaAterrada(p, ctx, opts = {}) {
            escolhaOpcoesAterradas(p);
   }
   if (p.t === "info") {
-    if (!refTtPermitida(p.alvo, ttTodos)) return false;
+    if (!refTtPermitida(p.alvo, ttTodos, ctx)) return false;
     return p.itens.every((it) =>
       textoAterrado(it.l, ctx, true) && infoItemAterrado(it.k, it.l, p.alvo, ctx)
     );
   }
   if (p.t === "achados") {
-    if (!p.itens.every((ref) => refTtPermitida(ref, ttCand))) return false;
+    if (!p.itens.every((ref) => refTtPermitida(ref, ttCand, ctx))) return false;
     if (!p.l1?.m?.startsWith("FT_ACHA_") || !textoAterrado(p.l1, ctx, true)) return false;
     if (p.l2 && (!p.l2?.m?.startsWith("FT_ACHA_") || !textoAterrado(p.l2, ctx, true))) return false;
     if (p.l1.m === "FT_ACHA_CURTOS_L1") {
@@ -3475,7 +3615,7 @@ function pecaAterrada(p, ctx, opts = {}) {
     }
     if (p.motivo) {
       for (const [k, v] of Object.entries(p.motivo)) {
-        if (!refTtPermitida(k, ttCand)) return false;
+        if (!refTtPermitida(k, ttCand, ctx)) return false;
         if (!v?.m?.startsWith("FT_MOT_") || !textoAterrado(v, ctx, true)) return false;
         const cIdxs = resolverCandIndicesPorRef(k, ctx);
         if (!cIdxs.length || !cIdxs.some((idx) => motivoCandidatoAterrado(v, idx, ctx))) return false;
@@ -4018,9 +4158,7 @@ function canonicalizarValor(v) {
 
 function canonicalizarFatos(fatos) {
   if (!Array.isArray(fatos) || !fatos.length) return [];
-  return fatos
-    .map((f) => JSON.stringify(canonicalizarValor(f)))
-    .sort();
+  return fatos.map((f) => canonicalizarValor(f));
 }
 
 function candidatoCanonicoParaChave(c, i, ancoras) {
