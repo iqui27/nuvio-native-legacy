@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T19:52:49+00:00",
+    "updatedAt": "2026-11-23T19:55:24+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T19:50:00+00:00",
+    "lastVpsReportedAt": "2026-11-23T19:54:20.526676+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -954,12 +954,13 @@
       "allDependencies": false,
       "status": "CORRECAO",
       "wave": "A",
-      "sha": "1f973642c",
+      "sha": "bae6663936",
       "batch": "21e",
-      "note": "Após o merge da PR #840, a VPS informa que Farol 45 fará dedupe farol_gosto × porque_assistiu e resolverá src/fileiras.c. Ajustes pendentes; execução e novo commit ainda não confirmados. Aprovação r2 anterior preservada no histórico. Continua destinado ao lote 21e, que será refeito sobre a integração nova. TV não verificada.",
-      "source": "Relato VPS das 19h43 UTC · ajustes posteriores ao merge #840",
+      "note": "dedupe farol_gosto × porque_assistiu usa a HOME_ASSISTIU_CHAVE da #840; src/fileiras.c mantém ambas as origens APP e a ordenação da #840. homeassistiu/fileiras/farol_home passaram, além de ASan+UBSan no farol_home e sintaxe TPK/WASM. Remontagem do lote 21e em andamento sobre 96a939a5a6.",
+      "source": "Relato VPS encaminhado em 23/11 às 16h54 (Brasília)",
       "verified": false,
       "previousNotes": [
+        "Após o merge da PR #840, a VPS informa que Farol 45 fará dedupe farol_gosto × porque_assistiu e resolverá src/fileiras.c. Ajustes pendentes; execução e novo commit ainda não confirmados. Aprovação r2 anterior preservada no histórico. Continua destinado ao lote 21e, que será refeito sobre a integração nova. TV não verificada.",
         "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (4 bloqueios da r1 fechados; merge rc 0 em 7 alvos, rc 1 trivial vs PR #840 em src/fileiras.c); lote 21e; TV não verificada Ordem padrão acordada: continue_watching → porque_assistiu → farol_gosto1; a ordem salva pelo usuário prevalece. Dedupe com home_assistiu_itens por id fica para depois do merge da PR #840, sem bloquear a aprovação atual.",
         "VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (4 bloqueios da r1 fechados; merge rc 0 em 7 alvos, rc 1 trivial vs PR #840 em src/fileiras.c); lote 21e; TV não verificada Ordem padrão acordada: continue_watching → porque_assistiu → farol_gosto1; a ordem salva pelo usuário prevalece. Dedupe com home_assistiu_itens por id fica para depois do merge da PR #840, sem bloquear a aprovação atual.",
         "FAROL45-r2 no Gemini 4 Argon (…9340395b9fbd); oracle-vps",
@@ -975,11 +976,23 @@
         "aguarda combinar com o Poke o ponto das fileiras na Home pré-calculada",
         "TV física pendente."
       ],
-      "updatedAt": "2026-11-23T19:46:08+00:00",
-      "reportedAt": "2026-11-23T19:43:00+00:00",
+      "updatedAt": "2026-11-23T19:55:24+00:00",
+      "reportedAt": "2026-11-23T19:54:20.526676+00:00",
       "branch": "agente/21z-farol-45",
       "integrationVerified": false,
-      "batchInclusionVerified": true
+      "batchInclusionVerified": true,
+      "reportedHostChecks": {
+        "status": "reported_passed",
+        "checks": [
+          "homeassistiu",
+          "fileiras",
+          "farol_home",
+          "farol_home ASan+UBSan",
+          "sintaxe TPK/WASM"
+        ],
+        "source": "Relato VPS; não executados nesta sessão",
+        "reportedAt": "2026-11-23T19:54:20.526676+00:00"
+      }
     },
     {
       "id": "farol-46",
@@ -3743,20 +3756,21 @@
     },
     {
       "id": "21e",
-      "title": "Lote 21e · recomposição pendente",
-      "status": "CORRECAO",
+      "title": "Lote 21e · remontagem em andamento",
+      "status": "IMPLEMENTANDO",
       "sha": "0dea681ce",
-      "note": "A VPS informa que o lote 21e será refeito sobre integracao/2.1 após o merge da PR #840 (96a939a5a). Composição anterior de dez itens e ponta 0dea681ce preservadas apenas como referência; nova ponta, nova composição e resultados de baterias ainda não informados. Farol 45 deve deduplicar farol_gosto × porque_assistiu e resolver src/fileiras.c. PR e TV física não confirmadas.",
+      "note": "VPS informa remontagem em andamento sobre integracao/2.1@96a939a5a6, incluindo a correção Farol 45@bae6663936. Nova ponta do lote e resultados da bateria remontada ainda não informados. 0dea681ce é apenas a última ponta conhecida da montagem anterior; não é um SHA novo. PR e validação em TV física não confirmadas.",
       "pr": null,
       "previousNotes": [
+        "A VPS informa que o lote 21e será refeito sobre integracao/2.1 após o merge da PR #840 (96a939a5a). Composição anterior de dez itens e ponta 0dea681ce preservadas apenas como referência; nova ponta, nova composição e resultados de baterias ainda não informados. Farol 45 deve deduplicar farol_gosto × porque_assistiu e resolver src/fileiras.c. PR e TV física não confirmadas.",
         "VPS montado sobre lote/21d@e16157090: farol-4, 8, 9, 12, 13, 24, 29, 45, catrev, hist-semlogin; conflitos triviais resolvidos (video_tpk.c, sanitiza.sh, rede.c, servidor index.js); baterias base×ponta a rodar; TV não verificada",
         "Reservado para aprovados da VPS, incluindo hist-semlogin e Farol 45 (aprovação com ressalvas), CATREV e itens já aprovados. Montagem e PR ainda não confirmadas; não tratar como lote integrado.",
         "Itens aprovados reservados; montagem ainda não confirmada."
       ],
       "branch": "lote/21e",
-      "updatedAt": "2026-11-23T19:46:08+00:00",
-      "reportedAt": "2026-11-23T19:43:00+00:00",
-      "source": "Relato VPS das 19h43 UTC",
+      "updatedAt": "2026-11-23T19:55:24+00:00",
+      "reportedAt": "2026-11-23T19:54:20.526676+00:00",
+      "source": "Relato VPS encaminhado em 23/11 às 16h54 (Brasília)",
       "verified": false,
       "integrationVerified": false,
       "baseBranch": "lote/21d",
@@ -3774,7 +3788,11 @@
         "hist-semlogin"
       ],
       "pendingRebuild": true,
-      "rebuildOnIntegrationSha": "96a939a5a68b256d91deed83e33d9bbabe2b3c66"
+      "rebuildOnIntegrationSha": "96a939a5a68b256d91deed83e33d9bbabe2b3c66",
+      "rebuildStatus": "in_progress",
+      "lastBuiltSha": "0dea681ce",
+      "rebuildBaseBranch": "integracao/2.1",
+      "rebuildBaseSha": "96a939a5a6"
     }
   ],
   "outside": [
@@ -3792,6 +3810,20 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T19:54:20.526676+00:00",
+      "appliedAt": "2026-11-23T19:55:24+00:00",
+      "item": "farol-45",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "[CORRECAO] farol-45 · agente/21z-farol-45@bae6663936 · dedupe farol_gosto × porque_assistiu usa a HOME_ASSISTIU_CHAVE da #840; src/fileiras.c mantém ambas as origens APP e a ordenação da #840. homeassistiu/fileiras/farol_home passaram, além de ASan+UBSan no farol_home e sintaxe TPK/WASM. Remontagem do lote 21e em andamento sobre 96a939a5a6.",
+      "affectedBatches": [
+        "21e"
+      ],
+      "previousBatchStates": {
+        "21e": "CORRECAO"
+      }
+    },
     {
       "at": "2026-11-23T19:50:00+00:00",
       "appliedAt": "2026-11-23T19:52:49+00:00",
