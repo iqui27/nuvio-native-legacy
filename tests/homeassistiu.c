@@ -1,15 +1,19 @@
 #include <assert.h>
 #include <time.h>
 #include "../src/homeassistiu.c"
+#include "fileiras.h"
 
-static CatItem catalogo[24];
+static CatItem catalogo[HIST_LOTE + 2];
+static int nCatalogo = 24, consultasHistorico;
 static unsigned versao = 1;
 static uint64_t sessao = 1;
 static int adulto = 1, ligado = 1, rede, nRegs;
 static ProgRegistro regs[2];
 static char visto[16];
+static long resposta = 108;
+static int pedidos;
 
-int cat_n(void) { return sizeof catalogo / sizeof *catalogo; }
+int cat_n(void) { return nCatalogo; }
 const CatItem *cat_item(int i) { return &catalogo[i]; }
 unsigned cat_revisao_itens(void) { return versao; }
 int cat_indice_por_imdb_tipo(const char *id, const char *tipo) {
@@ -19,6 +23,7 @@ int cat_indice_por_imdb_tipo(const char *id, const char *tipo) {
 }
 int cat_historico_estado_tempo(const char *id, const char *tipo, long long *quando) {
   (void)tipo;
+  consultasHistorico++;
   if (strcmp(id, visto)) return -1;
   *quando = 20;
   return 1;
@@ -35,12 +40,20 @@ int farolsinal_recomendar(void) { return ligado; }
 int perfil_infantil_ativo(void) { return !adulto; }
 const char *desc_chave_tmdb(void) { return rede ? "fake-key" : ""; }
 const char *desc_tmdb_idioma(void) { return "pt-BR"; }
+const char *i18n(const char *s) { return s; }
+char *dados_caminho(char *dst, unsigned tam, const char *nome) {
+  (void)dst; (void)tam; (void)nome; return NULL;
+}
+int dados_gravar(const char *nome, const char *conteudo) {
+  (void)nome; (void)conteudo; return 1;
+}
 int mapa_recomendacoes_tmdb(const char *id, long tmdb, int serie, const char *chave,
                             const char *idioma, long *ids, int max) {
   assert(!strcmp(id, "tt900") && !tmdb && !serie && max >= 1);
   assert(!strcmp(chave, "fake-key") && !strcmp(idioma, "pt-BR"));
-  ids[0] = 108;
-  return 1;
+  pedidos++;
+  ids[0] = resposta;
+  return resposta != 0;
 }
 
 static void entrada(int i, int id, const char *gen, int nota) {
@@ -52,6 +65,19 @@ static void entrada(int i, int id, const char *gen, int nota) {
   snprintf(c->poster, sizeof c->poster, "poster-%d", i);
   snprintf(c->classificacao, sizeof c->classificacao, "L");
   c->nota = nota;
+}
+
+static void aguardarResposta(unsigned anterior) {
+  const struct timespec pausa = { .tv_nsec = 1000000 };
+  for (int i = 0; i < 1000 && __atomic_load_n(&remotoRev, __ATOMIC_ACQUIRE) == anterior; i++)
+    nanosleep(&pausa, NULL);
+  assert(__atomic_load_n(&remotoRev, __ATOMIC_ACQUIRE) == anterior + 1);
+}
+
+static void conferirRotulo(const char *esperado) {
+  char rotulo[96];
+  home_assistiu_rotulo(rotulo, sizeof rotulo);
+  assert(!strcmp(rotulo, esperado));
 }
 
 int main(void) {
@@ -77,19 +103,33 @@ int main(void) {
   nRegs = 2;
   unsigned r = home_assistiu_passo(100);
   assert(home_assistiu_itens(out) == 1 && out[0] == 2);
+  conferirRotulo("Parecidos no seu catálogo");
   assert(home_assistiu_passo(101) == r);
   puts("ok  fallback local, sem vistos, em andamento, seek, cartaz ausente ou duplicatas");
 
   rede = 1;
   home_assistiu_passo(102);
-  const struct timespec pausa = { .tv_nsec = 1000000 };
-  for (int i = 0; i < 1000 && !__atomic_load_n(&remotoRev, __ATOMIC_ACQUIRE); i++)
-    nanosleep(&pausa, NULL);
+  aguardarResposta(0);
   home_assistiu_passo(103);
   assert(home_assistiu_itens(out) == 2 && out[0] == 8 && out[1] == 2);
+  conferirRotulo("Porque você assistiu Teste 900");
+  strcpy(catalogo[0].titulo, "Semente do catálogo substituído");
+  CatItem troca = catalogo[8];
+  catalogo[8] = catalogo[2];
+  catalogo[2] = troca;
+  versao++;
+  home_assistiu_passo(103);
+  assert(home_assistiu_itens(out) == 2 && out[0] == 2 && out[1] == 8);
+  conferirRotulo("Porque você assistiu Semente do catálogo substituído");
+  troca = catalogo[8];
+  catalogo[8] = catalogo[2];
+  catalogo[2] = troca;
+  versao++;
+  puts("ok  troca completa do catálogo invalida índices e título");
   rede = 0;
   home_assistiu_passo(104);
   assert(home_assistiu_itens(out) == 1 && out[0] == 2);
+  conferirRotulo("Parecidos no seu catálogo");
   puts("ok  TMDB assincrono prioriza correspondencias; desligar restaura fallback");
 
   adulto = 0;
@@ -111,5 +151,58 @@ int main(void) {
   home_assistiu_passo(107);
   assert(home_assistiu_itens(out) == 0);
   puts("ok  trocar de perfil descarta a fileira anterior");
+
+  nCatalogo = HIST_LOTE + 2;
+  for (int i = 24; i < cat_n(); i++) entrada(i, 900 + i, "Drama", 60);
+  strcpy(visto, catalogo[nCatalogo - 1].imdb);
+  versao++;
+  consultasHistorico = 0;
+  home_assistiu_passo(108);
+  assert(consultasHistorico <= HIST_LOTE && home_assistiu_itens(out) == 0);
+  home_assistiu_passo(109);
+  assert(home_assistiu_itens(out) == HOME_ASSISTIU_MAX);
+  int consultas = consultasHistorico;
+  home_assistiu_passo(110);
+  assert(consultasHistorico == consultas);
+  puts("ok  histórico examinado em lotes e reaproveitado sem nova revisão");
+
+  visto[0] = 0;
+  nRegs = 2;
+  versao++;
+  rede = 1;
+  resposta = 0;
+  uint32_t agora = 102 + REDE_INTERVALO_MS;
+  home_assistiu_passo(agora);
+  aguardarResposta(1);
+  home_assistiu_passo(agora + 1);
+  assert(pedidos == 2);
+  conferirRotulo("Parecidos no seu catálogo");
+  home_assistiu_passo(agora + REDE_INTERVALO_MS - 1);
+  assert(!ocupada && pedidos == 2);
+  agora += REDE_INTERVALO_MS;
+  home_assistiu_passo(agora);
+  aguardarResposta(2);
+  home_assistiu_passo(agora + 1);
+  home_assistiu_passo(agora + 2 * REDE_INTERVALO_MS - 1);
+  assert(!ocupada && pedidos == 3);
+  agora += 2 * REDE_INTERVALO_MS;
+  resposta = 999;
+  home_assistiu_passo(agora);
+  aguardarResposta(3);
+  home_assistiu_passo(agora + 1);
+  assert(pedidos == 4 && home_assistiu_itens(out) > 0);
+  conferirRotulo("Parecidos no seu catálogo");
+  puts("ok  falha retenta com backoff; resultado TMDB sem correspondência não muda o rótulo local");
+
+  const char *const chaves[] = { "continue_watching", HOME_ASSISTIU_CHAVE, "farol_gosto1" };
+  int ordem[3];
+  for (int i = 0; i < 3; i++) fil_registrar(chaves[i], chaves[i], "", "", 1);
+  fil_espelhar_ordem(chaves, NULL, 3);
+  assert(fil_unir(chaves, 3, ordem, 3) == 3 && ordem[0] == 0 && ordem[1] == 1 && ordem[2] == 2);
+  assert(fil_linha_origem(1) == FIL_ORIGEM_APP && !strcmp(fil_chave(1), HOME_ASSISTIU_CHAVE));
+  assert(fil_mover(1, -1) == 0);
+  fil_espelhar_ordem(chaves, NULL, 3);
+  assert(fil_unir(chaves, 3, ordem, 3) == 3 && ordem[0] == 1 && ordem[1] == 0 && ordem[2] == 2);
+  puts("ok  ordem padrão e posição definida em Ajustes para porque_assistiu");
   return 0;
 }

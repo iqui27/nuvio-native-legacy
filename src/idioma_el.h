@@ -6721,6 +6721,7 @@
   T("Por áudio: sem falas claras; nada foi alterado", "Από τον ήχο: καμία καθαρή ομιλία· δεν άλλαξε τίποτα"),
   T("Por áudio: sem áudio decodificado", "Από τον ήχο: δεν υπάρχει αποκωδικοποιημένος ήχος"),
   T("Por último", "Τελευταία"),
+  T("Porque você assistiu %s", "Επειδή είδες το %s"),
   T("Porque você assistiu…", "Επειδή είδες…"),
   T("Porque você terminou %s", "Επειδή ολοκλήρωσες %s"),
   T("Porque você terminou %s.", "Επειδή ολοκλήρωσες %s."),

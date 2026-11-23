@@ -6721,6 +6721,7 @@
   T("Por áudio: sem falas claras; nada foi alterado", "Via audio: geen duidelijke spraak; er is niets gewijzigd"),
   T("Por áudio: sem áudio decodificado", "Via audio: geen gedecodeerd geluid"),
   T("Por último", "Laatst"),
+  T("Porque você assistiu %s", "Omdat je %s hebt gekeken"),
   T("Porque você assistiu…", "Omdat je keek naar…"),
   T("Porque você terminou %s", "Omdat je %s hebt bekeken"),
   T("Porque você terminou %s.", "Omdat je %s hebt bekeken."),

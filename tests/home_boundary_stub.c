@@ -18,6 +18,7 @@ __attribute__((weak)) int gpun_efeito_ativo(int effect) { (void)effect; return 0
 __attribute__((weak)) int menu_ocupado(Uint32 now) { (void)now; return 0; }
 __attribute__((weak)) unsigned home_assistiu_passo(uint32_t agora) { (void)agora; return 0; }
 __attribute__((weak)) int home_assistiu_itens(int saida[HOME_ASSISTIU_MAX]) { (void)saida; return 0; }
+__attribute__((weak)) void home_assistiu_rotulo(char *saida, size_t tam) { if (tam) *saida = 0; }
 
 #include "addons.h"
 #include <stdio.h>

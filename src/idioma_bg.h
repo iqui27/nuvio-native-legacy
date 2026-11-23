@@ -6721,6 +6721,7 @@
   T("Por áudio: sem falas claras; nada foi alterado", "По звук: няма ясна реч; нищо не е променено"),
   T("Por áudio: sem áudio decodificado", "По звук: няма декодиран звук"),
   T("Por último", "Последни"),
+  T("Porque você assistiu %s", "Защото гледахте %s"),
   T("Porque você assistiu…", "Защото гледахте…"),
   T("Porque você terminou %s", "Защото изгледа %s"),
   T("Porque você terminou %s.", "Защото изгледа %s."),

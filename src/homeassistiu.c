@@ -3,6 +3,7 @@
 #include "descoberta.h"
 #include "farolsinal.h"
 #include "idbase.h"
+#include "idioma.h"
 #include "mapa.h"
 #include "perfilinfantil.h"
 #include "perfisessao.h"
@@ -13,7 +14,9 @@
 #include <string.h>
 
 #define HIST_MAX 32
+#define HIST_LOTE 128
 #define REDE_INTERVALO_MS 60000u
+#define REDE_BACKOFF_MAX_MS (8u * REDE_INTERVALO_MS)
 
 typedef struct {
   NvPerfilSessao sessao;
@@ -29,7 +32,9 @@ static int ocupada, pedida, nRemotos;
 static long remotos[MAPA_REC_MAX];
 static unsigned remotoRev;
 static uint32_t ultimoPedido;
+static uint32_t backoff;
 static int itens[HOME_ASSISTIU_MAX], nItens;
+static char tituloSemente[sizeof ((CatItem *)0)->titulo];
 static unsigned revisao;
 
 static const CatItem *item(int i) {
@@ -58,33 +63,46 @@ static int mesmoTitulo(const CatItem *c, const CatItem *b) {
          (tmdb > 0 && tmdb == idTmdb(b));
 }
 
-static const CatItem *semente(const ProgRegistro *reg, int n, int infantil) {
-  for (int j = 0; j < n; j++) {
-    const ProgRegistro *p = &reg[j];
-    if (p->tocou == 0 || p->durSeg <= 0 || p->posSeg < p->durSeg * 0.9) continue;
-    const CatItem *c = item(cat_indice_por_imdb_tipo(p->contentId, p->tipo));
-    if (tipoValido(c) && c->titulo[0] &&
-        (!infantil || perfil_infantil_classif_ok(c->classificacao))) return c;
-  }
-  const CatItem *melhor = NULL;
-  long long maisRecente = 0;
+static const CatItem *semente(int reiniciar, int infantil, int *pendente) {
+  static int pos, melhor;
+  static long long maisRecente;
   int total = cat_n();
-  for (int i = 0; i < total; i++) {
-    const CatItem *c = item(i);
+  if (reiniciar) {
+    ProgRegistro reg[HIST_MAX];
+    int n = prog_ler(reg, HIST_MAX);
+    pos = 0;
+    melhor = -1;
+    maisRecente = 0;
+    for (int j = 0; j < n; j++) {
+      const ProgRegistro *p = &reg[j];
+      if (p->tocou == 0 || p->durSeg <= 0 || p->posSeg < p->durSeg * 0.9) continue;
+      int i = cat_indice_por_imdb_tipo(p->contentId, p->tipo);
+      const CatItem *c = item(i);
+      if (tipoValido(c) && c->titulo[0] &&
+          (!infantil || perfil_infantil_classif_ok(c->classificacao))) {
+        melhor = i;
+        pos = total;
+        break;
+      }
+    }
+  }
+  for (int fim = pos + HIST_LOTE; pos < total && pos < fim; pos++) {
+    const CatItem *c = item(pos);
     long long quando = 0;
     if (tipoValido(c) && c->titulo[0] &&
         (!infantil || perfil_infantil_classif_ok(c->classificacao)) &&
         cat_historico_estado_tempo(c->imdb, c->tipo, &quando) == 1 &&
         quando > maisRecente) {
-      melhor = c;
+      melhor = pos;
       maisRecente = quando;
     }
   }
-  return melhor;
+  *pendente = pos < total;
+  return *pendente ? NULL : item(melhor);
 }
 
 static int montar(const CatItem *base, const long *ids, int nIds, int infantil,
-                  int saida[HOME_ASSISTIU_MAX]) {
+                  int saida[HOME_ASSISTIU_MAX], int *comTmdb) {
   MapaEtiqueta gen[MAPA_GEN_MAX];
   int nGen, notas[HOME_ASSISTIU_MAX], n = 0, total = cat_n();
   mapa_generos_locais(base->genero, gen, &nGen, MAPA_GEN_MAX);
@@ -124,6 +142,7 @@ static int montar(const CatItem *base, const long *ids, int nIds, int infantil,
     notas[j] = pontos;
     saida[j] = i;
   }
+  *comTmdb = n > 0 && notas[0] >= (MAPA_GEN_MAX + 1) * 128;
   return n;
 }
 
@@ -146,24 +165,31 @@ static void *buscar(void *arg) {
 }
 
 static int recomendacoes(const Consulta *q, const char *chave, uint32_t agora,
-                          long *ids, int *aguarda) {
+                          long *ids, uint32_t *aguarda) {
   pthread_t fio;
   int n = 0;
   pthread_mutex_lock(&trava);
-  if (pedida && consulta.sessao == q->sessao && consulta.serie == q->serie &&
-      !strcmp(consulta.id, q->id) && !strcmp(consulta.idioma, q->idioma)) {
+  int mesma = pedida && consulta.sessao == q->sessao && consulta.tmdb == q->tmdb &&
+              consulta.serie == q->serie && !strcmp(consulta.id, q->id) &&
+              !strcmp(consulta.idioma, q->idioma);
+  uint32_t intervalo = mesma ? backoff : REDE_INTERVALO_MS;
+  if (mesma && nRemotos) {
     n = nRemotos;
     memcpy(ids, remotos, (size_t)n * sizeof *ids);
-  } else if (ocupada || (pedida && agora - ultimoPedido < REDE_INTERVALO_MS)) {
-    *aguarda = 1;
+  } else if (ocupada) {
+    // O fim do trabalho muda remotoRev.
+  } else if (pedida && agora - ultimoPedido < intervalo) {
+    *aguarda = intervalo;
   } else if (q->tmdb > 0 || idbase_e_imdb(q->id)) {
     consulta = *q;
     snprintf(chaveTmdb, sizeof chaveTmdb, "%s", chave);
     ocupada = pedida = 1;
     nRemotos = 0;
     ultimoPedido = agora;
+    backoff = !mesma ? REDE_INTERVALO_MS :
+              backoff < REDE_BACKOFF_MAX_MS ? 2 * backoff : backoff;
     if (pthread_create(&fio, NULL, buscar, NULL) == 0) pthread_detach(fio);
-    else { ocupada = 0; memset(chaveTmdb, 0, sizeof chaveTmdb); }
+    else { ocupada = 0; memset(chaveTmdb, 0, sizeof chaveTmdb); *aguarda = backoff; }
   }
   pthread_mutex_unlock(&trava);
   return n;
@@ -172,26 +198,27 @@ static int recomendacoes(const Consulta *q, const char *chave, uint32_t agora,
 unsigned home_assistiu_passo(uint32_t agora) {
   static NvPerfilSessao ultimaSessao;
   static unsigned ultimoCat, ultimoRemoto;
-  static int ultimoLigado, ultimoInfantil, ultimaRede, aguarda;
+  static int ultimoLigado, ultimoInfantil, ultimaRede, pendente;
+  static uint32_t aguarda;
   static char ultimoIdioma[12];
   NvPerfilSessao sessao = nv_perfil_sessao_ler();
   unsigned cat = cat_revisao_itens(), remoto = __atomic_load_n(&remotoRev, __ATOMIC_ACQUIRE);
   int ligado = farolsinal_recomendar(), infantil = perfil_infantil_ativo();
   const char *chave = desc_chave_tmdb(), *idioma = desc_tmdb_idioma();
   int rede = chave[0] != 0;
-  if (sessao == ultimaSessao && cat == ultimoCat && remoto == ultimoRemoto &&
-      ligado == ultimoLigado && infantil == ultimoInfantil && rede == ultimaRede &&
-      !strcmp(ultimoIdioma, idioma) && (!aguarda || agora - ultimoPedido < REDE_INTERVALO_MS))
+  int reiniciar = sessao != ultimaSessao || cat != ultimoCat ||
+                 ligado != ultimoLigado || infantil != ultimoInfantil;
+  if (!reiniciar && !pendente && remoto == ultimoRemoto && rede == ultimaRede &&
+      !strcmp(ultimoIdioma, idioma) && (!aguarda || agora - ultimoPedido < aguarda))
     return revisao;
   int saida[HOME_ASSISTIU_MAX], n = 0;
-  aguarda = 0;
+  char titulo[sizeof tituloSemente] = "";
+  aguarda = pendente = 0;
   if (ligado && cat_n()) {
-    ProgRegistro reg[HIST_MAX];
-    int nr = prog_ler(reg, HIST_MAX);
-    const CatItem *base = semente(reg, nr, infantil);
+    const CatItem *base = semente(reiniciar, infantil, &pendente);
     if (base && nv_perfil_sessao_atual(sessao)) {
       long ids[MAPA_REC_MAX];
-      int nIds = 0;
+      int nIds = 0, comTmdb;
       if (rede) {
         Consulta q = { .sessao = sessao, .tmdb = idTmdb(base),
                        .serie = !strcmp(base->tipo, "series") };
@@ -199,13 +226,16 @@ unsigned home_assistiu_passo(uint32_t agora) {
         snprintf(q.idioma, sizeof q.idioma, "%s", idioma);
         nIds = recomendacoes(&q, chave, agora, ids, &aguarda);
       }
-      n = montar(base, ids, nIds, infantil, saida);
+      n = montar(base, ids, nIds, infantil, saida, &comTmdb);
+      if (comTmdb) snprintf(titulo, sizeof titulo, "%s", base->titulo);
     }
   }
-  if (!nv_perfil_sessao_atual(sessao) || cat != cat_revisao_itens()) n = 0;
-  if (sessao != ultimaSessao || n != nItens || memcmp(itens, saida, (size_t)n * sizeof *itens)) {
+  if (!nv_perfil_sessao_atual(sessao) || cat != cat_revisao_itens()) { n = 0; titulo[0] = 0; }
+  if (sessao != ultimaSessao || n != nItens || strcmp(titulo, tituloSemente) ||
+      memcmp(itens, saida, (size_t)n * sizeof *itens)) {
     memcpy(itens, saida, (size_t)n * sizeof *itens);
     nItens = n;
+    memcpy(tituloSemente, titulo, sizeof titulo);
     revisao++;
   }
   ultimaSessao = sessao;
@@ -221,4 +251,11 @@ unsigned home_assistiu_passo(uint32_t agora) {
 int home_assistiu_itens(int saida[HOME_ASSISTIU_MAX]) {
   memcpy(saida, itens, (size_t)nItens * sizeof *saida);
   return nItens;
+}
+
+void home_assistiu_rotulo(char *saida, size_t tam) {
+  if (tituloSemente[0])
+    snprintf(saida, tam, i18n("Porque você assistiu %s"), tituloSemente);
+  else
+    snprintf(saida, tam, "%s", i18n("Parecidos no seu catálogo"));
 }

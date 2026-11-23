@@ -6721,6 +6721,7 @@
   T("Por áudio: sem falas claras; nada foi alterado", "音声で: はっきりしたせりふがありません。何も変更していません"),
   T("Por áudio: sem áudio decodificado", "音声で: デコード済みの音声がありません"),
   T("Por último", "最後"),
+  T("Porque você assistiu %s", "「%s」を視聴したあなたに"),
   T("Porque você assistiu…", "視聴した作品に基づくおすすめ…"),
   T("Porque você terminou %s", "%s を見終わったから"),
   T("Porque você terminou %s.", "%s を見終わったから"),

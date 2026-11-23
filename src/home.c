@@ -3412,7 +3412,7 @@ static void sincronizarFileiras(void) {
     v.usaItens = 1;
     v.tipo = FILEIRA_NORMAL;
     snprintf(v.chave, sizeof v.chave, "%s", HOME_ASSISTIU_CHAVE);
-    snprintf(v.titulo, sizeof v.titulo, "Porque você assistiu…");
+    home_assistiu_rotulo(v.titulo, sizeof v.titulo);
     memmove(fileiras + pos + 1, fileiras + pos, sizeof v * (size_t)(destino - pos));
     fileiras[pos] = v;
     destino++;
@@ -3510,6 +3510,10 @@ static void sincronizarFileiras(void) {
   for(int i=0;i<destino;i++)if(fileiras[i].tipo==FILEIRA_SOCIAL)socialExiste=1;
   if(!socialExiste && destino<MAX_FIL && ajustes_social()) {
     int pos=destino>0?1:0;
+    if (pos < destino && !strcmp(fileiras[pos].chave, HOME_ASSISTIU_CHAVE)) {
+      pos++;
+      if (pos < destino && !strcmp(fileiras[pos].chave, "farol_gosto1")) pos++;
+    }
     memmove(fileiras+pos+1,fileiras+pos,(destino-pos)*sizeof *fileiras);
     Fileira *s=&fileiras[pos];memset(s,0,sizeof *s);
     s->tipo=FILEIRA_SOCIAL;s->ini=-1;s->n=1;
@@ -3565,6 +3569,8 @@ static void sincronizarFileiras(void) {
       memcpy(fileiras, arranjo, sizeof(Fileira) * (size_t)destino);
     }
     for (q = 0; q < destino; q++) {
+      const char *tituloRegistro = !strcmp(fileiras[q].chave, HOME_ASSISTIU_CHAVE)
+                                   ? "Porque você assistiu…" : fileiras[q].titulo;
       // REGISTRA TAMBEM O QUE VAI SAIR abaixo. E o registro que deixa a tela de
       // Ajustes RELIGAR uma fileira desligada: desligada, ela nao existe mais
       // nem aqui nem em cat_fileira(), e sem a lista de conhecidas desligar
@@ -3583,11 +3589,11 @@ static void sincronizarFileiras(void) {
           if (col_grupo_addon(fileiras[q].titulo, id, sizeof id))
             addonNome = addons_nome_por_id(id);
         }
-        fil_registrar(fileiras[q].chave, fileiras[q].titulo,
+        fil_registrar(fileiras[q].chave, tituloRegistro,
                       addonNome, fileiras[q].catTipo, fileiras[q].n);
       }
       ch[q] = fileiras[q].chave;
-      ti[q] = fileiras[q].titulo;
+      ti[q] = tituloRegistro;
     }
     fil_gravar_registro();
     // A lista de Ajustes passa a espelhar ESTA ordem enquanto ninguem tiver

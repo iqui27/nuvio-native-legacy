@@ -6721,6 +6721,7 @@
   T("Por áudio: sem falas claras; nada foi alterado", "عبر الصوت: لا كلام واضح؛ لم يتغير شيء"),
   T("Por áudio: sem áudio decodificado", "عبر الصوت: لا يوجد صوت مفكوك الترميز"),
   T("Por último", "أخيرًا"),
+  T("Porque você assistiu %s", "لأنك شاهدت %s"),
   T("Porque você assistiu…", "لأنك شاهدت…"),
   T("Porque você terminou %s", "لأنك أنهيت %s"),
   T("Porque você terminou %s.", "لأنك أنهيت %s."),
