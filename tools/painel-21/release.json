@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T19:46:08+00:00",
+    "updatedAt": "2026-11-23T19:52:49+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T19:43:00+00:00",
+    "lastVpsReportedAt": "2026-11-23T19:50:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -26,7 +26,25 @@
         "fullSha": "ec4e6a0b52bbd2f38c56f31778a91744c786ea4a",
         "checkedAt": "2026-11-23T19:29:42+00:00"
       }
-    ]
+    ],
+    "coordination": {
+      "orchestrator": {
+        "status": "CORRECAO",
+        "model": "GPT-6.2 Sol",
+        "provider": "Codex",
+        "effort": "high",
+        "previousModel": "Claude Opus",
+        "previousProvider": "Antigravity",
+        "opusQuotaUnavailableUntil": "2026-11-28",
+        "providerStatus": 429,
+        "claudeAgentProxy": "backoff",
+        "sameThread": true,
+        "childrenPreserved": true,
+        "reportedAt": "2026-11-23T19:50:00+00:00",
+        "source": "Relato VPS · oracle-vps",
+        "note": "Orquestrador movido para Sol/Codex. Falta de cota do Opus reportada até 28/11; filhos preservados. Não é alteração dos estados de implementação."
+      }
+    }
   },
   "items": [
     {
@@ -3774,6 +3792,15 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T19:50:00+00:00",
+      "appliedAt": "2026-11-23T19:52:49+00:00",
+      "item": "coordenacao",
+      "from": "BLOQUEADA",
+      "to": "CORRECAO",
+      "report": "2026-11-23 19:50 [BLOQUEADA→CORRECAO] orquestrador · Claude Opus via Antigravity sem cota até 28/11 (429; proxy do claudeAgent em backoff); orquestrador movido para GPT-6.2 Sol (Codex, high), mesma thread, filhos preservados; oracle-vps",
+      "source": "Relato VPS · evento de coordenação"
+    },
     {
       "at": "2026-11-23T19:46:08+00:00",
       "appliedAt": "2026-11-23T19:46:08+00:00",
