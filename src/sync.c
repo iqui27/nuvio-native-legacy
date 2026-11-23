@@ -1535,8 +1535,7 @@ static int manualAntesN;
 void sync_iniciar(void) {
   plugins_perfil_mudou();   // conta/perfil novos: estado e geracao dos plugins
   colfileiras_contexto();
-  cat_historico_contexto(sessao_logada() ? sessao_usuario() : "",
-                         sessao_logada() ? perfis_ativo() : 0);
+  cat_historico_contexto(sessao_usuario(), perfis_ativo());
   restaurarOrdemLocal();
   // #360: pendencias de addons da versao anterior somem na primeira execucao,
   // com ou sem login — elas nunca mais seriam lidas nem enviadas.

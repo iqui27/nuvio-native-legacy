@@ -9,6 +9,17 @@
 #include "catordem.h"
 #include "cotacat.h"
 #include "fileiras.h"
+#include "farol.h"      // farol_home_fileiras, farol_ativo (issue 45)
+// Os fixtures de teste que incluem descoberta.c sem linkar src/farol.c so
+// existem se estes simbolos forem opcionais: fraco no PONTO DE USO (o mesmo
+// esquema de tend_registrar em catalogo.c), nunca uma definicao fraca aqui —
+// uma definicao fraca em producao venceria a de verdade se os dois .c ficassem
+// na mesma lista de fontes (revisao FAROL45 r1).
+extern __attribute__((weak)) void
+farol_home_fileiras(CatItem *lote, int *n, int cap,
+                    CatFileira *fils, int *nFils, int capFils);
+extern __attribute__((weak)) int farol_ativo(void);
+extern __attribute__((weak)) unsigned farol_selo(void);
 #include "homeestado.h"
 #include "sessao.h"
 #include "colecoes.h"
@@ -3053,6 +3064,44 @@ static int linhaAnterior(const char *chave, CatItem *saida, int max,
   return cat_copiar_fileira(chave, saida, max, meta);
 }
 
+// HOME PRECOMPUTADA (ver cat_home_fresca em catalogo.h). Dentro da validade a
+// fileira de catalogo que ja esta na tela/no cache para este dono/perfil/config
+// entra como resposta, sem rede. desc_repetir() (credencial, addons, idioma,
+// pedido da pessoa) liga homeForcarRede e a volta seguinte pede tudo.
+#ifndef NV_HOME_PRE_VALIDADE_S
+#define NV_HOME_PRE_VALIDADE_S (15 * 60)
+#endif
+static volatile int homeForcarRede;
+// Fileiras desta volta que NAO vieram inteiras da rede (servidas do snapshot ou
+// recuperadas por timeout). Com zero, a volta renova a validade.
+static int homeNaoFrescasVolta;
+
+static int fileiraPodeSerPreservada(const CatFileira *f);
+
+static int homePrecomputadaServir(TarefaCat *t, const char *chave) {
+  CatFileira meta;
+  CatItem *tmp;
+  int got;
+  memset(&meta, 0, sizeof meta);
+  tmp = malloc(sizeof *tmp * HOME_VISTOS_MAX);
+  if (!tmp) return 0;
+  got = linhaAnterior(chave, tmp, HOME_VISTOS_MAX, &meta);
+  if (got <= 0 || !fileiraPodeSerPreservada(&meta)) { free(tmp); return 0; }
+  { int primeiros = got > MAX_POR_FILEIRA ? MAX_POR_FILEIRA : got;
+    memcpy(t->itens, tmp, sizeof *tmp * (size_t)primeiros);
+    if (got > MAX_POR_FILEIRA) {
+      t->extras = malloc(sizeof *tmp * (size_t)(got - MAX_POR_FILEIRA));
+      if (t->extras) memcpy(t->extras, tmp + MAX_POR_FILEIRA,
+                            sizeof *tmp * (size_t)(got - MAX_POR_FILEIRA));
+      else got = MAX_POR_FILEIRA;
+    } }
+  free(tmp);
+  t->n = got;
+  t->respondeu = 1;
+  t->pronto = 1;
+  return 1;
+}
+
 static int fileiraMontada(const CatFileira *v, int n, const char *chave) {
   int i;
   for (i = 0; i < n; i++) if (!strcmp(v[i].chave, chave)) return 1;
@@ -3068,6 +3117,9 @@ static int fileiraPodeSerPreservada(const CatFileira *f) {
   // segue fixada. Desafixar entre voltas nao pode reanexa-la aqui.
   if (!strncmp(f->chave, CF_PREFIXO, sizeof CF_PREFIXO - 1))
     return cf_fixada(f->chave + sizeof CF_PREFIXO - 1);
+  // Fileiras do Farol ("farol_*") sao recalculadas pelo compositor a cada
+  // volta; uma falha dele nao reanexa a fileira anterior.
+  if (!strncmp(f->chave, CAT_PREFIXO_FAROL, sizeof CAT_PREFIXO_FAROL - 1)) return 0;
   return !servidores_chave_fileira(f->chave) && homeestado_contexto_valido() &&
          homeestado_tem_fileira(f->chave);
 }
@@ -3081,9 +3133,37 @@ static int rankSnapshot(const char *chave) {
   return r < 0 ? CAT_FIL_MAX + DECL_MAX : r;
 }
 
+// Posicao de fabrica de uma fileira do Farol sem lugar salvo pela pessoa em
+// Fileiras da Home: farol_gosto1 logo depois de "Continuar assistindo" (ou no
+// topo, sem ele), farol_gosto2 depois da 5a fileira; outra chave farol_ vai
+// para o fim. Com lugar salvo, vale o lugar salvo.
+static void posicionarFarolPadrao(CatFileira *fil, int n) {
+  static const char *const chaves[] = { "farol_gosto1", "farol_gosto2" };
+  int c;
+  for (c = 0; c < 2; c++) {
+    int de = -1, para, i;
+    CatFileira f;
+    for (i = 0; i < n; i++) if (!strcmp(fil[i].chave, chaves[c])) { de = i; break; }
+    if (de < 0 || (homeestado_contexto_valido() && homeestado_ordem_fileira(chaves[c]) >= 0))
+      continue;
+    f = fil[de];
+    memmove(fil + de, fil + de + 1, sizeof *fil * (size_t)(n - de - 1));
+    if (c == 0) {
+      para = 0;
+      for (i = 0; i < n - 1; i++)
+        if (!strcmp(fil[i].chave, "continue_watching")) { para = i + 1; break; }
+    } else {
+      para = n - 1 < 5 ? n - 1 : 5;
+    }
+    memmove(fil + para + 1, fil + para, sizeof *fil * (size_t)(n - 1 - para));
+    fil[para] = f;
+  }
+}
+
 static void ordenarPorSnapshot(CatFileira *fil, int n) {
   int i;
-  if (!fil || n < 2 || !homeestado_contexto_valido()) return;
+  if (!fil || n < 2) return;
+  if (!homeestado_contexto_valido()) { posicionarFarolPadrao(fil, n); return; }
   for (i = 1; i < n; i++) {
     CatFileira atual = fil[i];
     int rank = rankSnapshot(atual.chave), j = i;
@@ -3095,6 +3175,7 @@ static void ordenarPorSnapshot(CatFileira *fil, int n) {
     }
     fil[j] = atual;
   }
+  posicionarFarolPadrao(fil, n);
 }
 
 // Manifesto ausente/timeout nao e uma ordem para apagar a estrutura anterior.
@@ -3187,6 +3268,8 @@ static void *fioCatalogo(void *u) {
     }
     meu = r->prox++;
     t = &r->t[meu];
+    // Fileira servida da home precomputada: ja chegou pronta, nada a pedir.
+    if (t->pronto) { pthread_mutex_unlock(&catTrava); continue; }
     t->inicioMs = descAgoraMs();
     pthread_mutex_unlock(&catTrava);
 
@@ -4226,13 +4309,41 @@ static void cwDepoisDePublicar(CatItem *c, int k) {
   }
   pthread_mutex_unlock(&cwPubTrava);
 }
+// As fileiras farol_ fora do conjunto quando o Farol nao esta ativo:
+// "Recomendar nesta TV" desligado ou modo seguro DEPOIS que elas ja
+// estavam prontas no lote — a remocao de farol_recomendar_definir so vale
+// para o que esta na tela; sem esta poda o lote em voo (ou o filsMontadas
+// servido de volta num parcial/remontagem) republicava as fileiras mortas
+// (revisao FAROL45 r1). A EPOCA do gosto tambem manda: o carimbo da
+// emissao precisa bater com o selo atual, senao a fileira e de antes de um
+// "Zerar o gosto" — o farol_ativo() continua verdadeiro depois do reset,
+// entao so o portao nao bastava (FAROL45C). Sem o modulo do Farol
+// (fixture) poda sempre: fileira farol_ sem dono nao sobe. `saida` pode
+// ser o proprio `fils` (a leitura nunca passa da escrita). Devolve o
+// novo nf.
+static int podarFarol(const CatFileira *fils, int nf, CatFileira *saida) {
+  int k, w = 0;
+  const int ativo = farol_ativo && farol_ativo();
+  const unsigned selo = farol_selo ? farol_selo() : 0;
+  for (k = 0; k < nf; k++) {
+    if (!strncmp(fils[k].chave, CAT_PREFIXO_FAROL,
+                 sizeof CAT_PREFIXO_FAROL - 1) &&
+        (!ativo || fils[k].farolSelo != selo))
+      continue;
+    saida[w++] = fils[k];
+  }
+  return w;
+}
 // Toda publicacao de montar() passa por aqui (em partes e a do fim).
 static void publicarMontagem(const CatItem *lote, int n, const CatFileira *fils, int nf) {
+  static CatFileira filSem[CAT_FIL_MAX];
   int k;
   double t0 = cat_relogio_ms();
   CatItem *cw;
   if (!nv_perfil_sessao_travar(descSessao())) return;
   cw = cwAntesDePublicar(&k);
+  nf = podarFarol(fils, nf, filSem);
+  fils = filSem;
   cat_definir_tudo(lote, n, fils, nf);
   cwDepoisDePublicar(cw, k);
   nv_perfil_sessao_destravar();
@@ -4895,7 +5006,7 @@ static void *montar(void *u) {
   // posicoes do catalogo nessa fileira, entao a ordem aqui e o que define o
   // que aparece la — e o historico tem de ganhar das recomendacoes.
   marco("montar: inicio");
-  nManiFalhouVolta = 0; nPendSnap = 0;     // ver salvarSnapshot
+  nManiFalhouVolta = 0; nPendSnap = 0; homeNaoFrescasVolta = 0;     // ver salvarSnapshot
   // LIMPEZA UNICA DO #197 (fileiras.c, fil_migrar_197). So com a ordem da conta
   // na mao: ela e a prova de escolha que a limpeza usa; sem ela, fica para a
   // volta em que a ordem chegar. Depois da primeira vez e um teste de inteiro.
@@ -5280,6 +5391,11 @@ static void *montar(void *u) {
       // linha dizendo qual dos tres foi.
       int pedidos = 0, responderam = 0, vazios = 0, duplicados = 0;
       int cursor = 0, rodadas = 0;
+      int servidasPre = 0;
+      const int servirPre =
+          !__atomic_exchange_n(&homeForcarRede, 0, __ATOMIC_ACQ_REL) &&
+          cat_home_fresca_valida((long long)time(NULL), NV_HOME_PRE_VALIDADE_S);
+      homeNaoFrescasVolta = 0;
       // Zera POR CICLO. Um contador que so cresce diria, na terceira volta, um
       // numero que e a soma de tres montagens — e a linha [col] existe para
       // descrever a montagem que acabou de acontecer.
@@ -5324,6 +5440,10 @@ static void *montar(void *u) {
           snprintf(tarefas[nTarefas].tipo, sizeof tarefas[nTarefas].tipo, "%s", d->tipo);
           snprintf(tarefas[nTarefas].id, sizeof tarefas[nTarefas].id, "%s", d->id);
           tarefas[nTarefas].paginavel = d->paginavel;
+          if (servirPre && homePrecomputadaServir(&tarefas[nTarefas], d->chave)) {
+            servidasPre++;
+            homeNaoFrescasVolta++;
+          }
           nTarefas++;
           declPedida[ordem[cursor]] = 1;
         }
@@ -5335,8 +5455,9 @@ static void *montar(void *u) {
 
         // ETAPA 2 — CAT_FIOS trabalhando na fila, DESTACADOS: quem monta nao
         // espera fio nenhum no fim da rodada (ver RodadaCat).
-        { int criados = 0, q;
-          for (q = 0; q < CAT_FIOS && q < nTarefas; q++) {
+        { int criados = 0, q, aPedir = 0;
+          for (q = 0; q < nTarefas; q++) if (!tarefas[q].pronto) aPedir++;
+          for (q = 0; q < CAT_FIOS && q < aPedir; q++) {
             pthread_t tf;
             pthread_mutex_lock(&catTrava); rod->refs++; pthread_mutex_unlock(&catTrava);
             if (pthread_create(&tf, NULL, fioCatalogo, rod) == 0) { pthread_detach(tf); criados++; }
@@ -5385,6 +5506,7 @@ static void *montar(void *u) {
               SDL_Delay(10);
             }
             if (largado) {
+              homeNaoFrescasVolta++;
               got = tarefas[k].nPrimeira;
               respondeu = got > 0;
               if (got) origem = tarefas[k].primeira;
@@ -5415,6 +5537,7 @@ static void *montar(void *u) {
               continue;
             }
             if (!respondeu && !got) {
+              homeNaoFrescasVolta++;
               // ISSUE #42(a): antes disto o log so tinha o resumo do fim da
               // rodada ("N pedidos, M responderam") — quem quisesse saber QUAL
               // fileira sumiu tinha de adivinhar por subtracao. Nomear o
@@ -5428,6 +5551,7 @@ static void *montar(void *u) {
               // arranque, sem snapshot, segue omitida de forma segura.
               got = linhaAnterior(d->chave, daLinhaAnterior, HOME_VISTOS_MAX, NULL);
               origem = daLinhaAnterior;
+
               // Sem lote anterior a vaga vai para o seguinte, mas a chave fica
               // no snapshot: a proxima volta pede este de novo (#195).
               if (!got) { pendSnapGuardar(d->chave, nFil); continue; }
@@ -5611,6 +5735,9 @@ static void *montar(void *u) {
              "no limite\n",
              pedidos, rodadas, responderam, pedidos - responderam, vazios,
              duplicados, nFil, teto);
+      if (servidasPre)
+        printf("[desc] home precomputada: %d fileira(s) servidas do cache, sem rede "
+               "(validade %d s)\n", servidasPre, NV_HOME_PRE_VALIDADE_S);
       if (nFil < teto)
         printf("[desc] o limite de %d fileiras nao foi preenchido: acabaram os "
                "catalogos disponiveis (%d declarados, %d na ordem)\n",
@@ -5744,6 +5871,17 @@ static void *montar(void *u) {
   preservarFileirasAusentes(&lote, &n, &cap, filsLote, &nFilsLote);
   // Preservar uma linha antiga tambem respeita a vaga do Continuar em voo.
   if (!nContinuar && nFilsLote == CAT_FIL_MAX) nFilsLote--;
+  // AS FILEIRAS DO FAROL (issue 45). Entram no lote a cada volta — inclusive
+  // nas servidas do snapshot — ANTES de ordenarPorSnapshot: posicao padrao
+  // (1a depois de continue_watching, 2a na 6a) e rank salvo sao todos do
+  // Poke. Compositor falhou -> nada entra e preservarFileirasAusentes, ali
+  // em cima, ja recusa reanexar a chave farol_ antiga. Nao gasta o limite:
+  // o teto conta so Decl de add-on; o teto das farol_ e CAT_FIL_MAX (com a
+  // vaga do Continuar em voo preservada, como acima).
+  GARANTE(FAROL_HOME_ITENS);
+  if (farol_home_fileiras)
+    farol_home_fileiras(lote, &n, cap, filsLote, &nFilsLote,
+                        nContinuar ? CAT_FIL_MAX : CAT_FIL_MAX - 1);
   // Reanexar linhas sem resposta acontece depois das chamadas de rede; aplicar
   // a ordem salva ao conjunto inteiro impede que uma resposta parcial desloque
   // essas linhas para o fim da Home.
@@ -5857,9 +5995,10 @@ static void *montar(void *u) {
     // A tela passa a ter a volta COMPLETA (publicada agora, ou igual a ela).
     parcialNaTela = 0;
     // A partir daqui filsMontadas descreve o bloco da tela nos dois ramos:
-    // publicado agora, ou igual (mesma assinatura) ao que ja estava.
-    nFileirasMontadas = nFilsLote;
-    memcpy(filsMontadas, filsLote, sizeof(CatFileira) * (size_t)nFilsLote);
+    // publicado agora, ou igual (mesma assinatura) ao que ja estava. As
+    // farol_ de um opt-out no meio da montagem nao entram nem nela — e da
+    // filsMontadas que saem o snapshot e a remontagem sem rede (FAROL45 r1).
+    nFileirasMontadas = podarFarol(filsLote, nFilsLote, filsMontadas);
     if (depois != antes || cat_do_cache()) {
       publicarMontagem(lote, n, filsMontadas, nFileirasMontadas);
       marco("catalogo da rede publicado");
@@ -5869,6 +6008,10 @@ static void *montar(void *u) {
       printf("[desc] catalogo montado com %d titulos, igual ao que esta na tela; mantido\n", n);
     }
     DESC_PUBLICAR(cat_cache_substituido());
+    // Volta com todas as fileiras da rede: a home precomputada vale de novo
+    // por NV_HOME_PRE_VALIDADE_S. Servida do snapshot, mantem o horario antigo.
+    if (!homeNaoFrescasVolta && !nManiFalhouVolta)
+      cat_home_fresca((long long)time(NULL));
     localizarContinuarPublicado();
     if (!(mudou & HOMEESTADO_MUDOU_ESTRUTURA))
       salvarSnapshot(filsMontadas, nFileirasMontadas, estadoFim);
@@ -6142,14 +6285,25 @@ void desc_remontar_fileiras(void) {
   int i, k, q, nCat = 0, nOut = 0, teto, engolidas = 0;
   if (nFileirasMontadas < 1) return;
 
-  // 1. as fixas primeiro, na ordem em que ja estavam. Excecao: a fileira
+  // 1. as fixas primeiro, na ordem em que ja estavam. Excecoes: a fileira
   // sintetica "colpin_<id>" (#700) so vale enquanto a pasta segue fixada —
-  // desafixar nao pode deixar uma fileira orfa na home ate a proxima montagem.
-  for (i = 0; i < nFileirasMontadas && nOut < CAT_FIL_MAX; i++) {
-    const CatFileira *fixa = &filsMontadas[i];
-    if (!fixa->base[0] && !strncmp(fixa->chave, CF_PREFIXO, sizeof CF_PREFIXO - 1) &&
-        !cf_fixada(fixa->chave + sizeof CF_PREFIXO - 1)) continue;
-    if (!fixa->base[0]) saidaFil[nOut++] = filsMontadas[i];
+  // desafixar nao pode deixar uma fileira orfa na home ate a proxima
+  // montagem; e a farol_ nao volta quando o Farol nao esta ativo — opt-out
+  // ou modo seguro tirou as fileiras na hora, e a remontagem sem rede
+  // republicava o que a memoria guardava (revisao FAROL45 r1). Nem quando
+  // o carimbo e de antes do ultimo "Zerar o gosto": a epoca anda no reset
+  // e a fileira montada antes dele fica morta (FAROL45C).
+  {
+    const int ativoFarol = farol_ativo && farol_ativo();
+    const unsigned seloFarol = farol_selo ? farol_selo() : 0;
+    for (i = 0; i < nFileirasMontadas && nOut < CAT_FIL_MAX; i++) {
+      const CatFileira *fixa = &filsMontadas[i];
+      if (!fixa->base[0] && !strncmp(fixa->chave, CF_PREFIXO, sizeof CF_PREFIXO - 1) &&
+          !cf_fixada(fixa->chave + sizeof CF_PREFIXO - 1)) continue;
+      if (!strncmp(fixa->chave, CAT_PREFIXO_FAROL, sizeof CAT_PREFIXO_FAROL - 1) &&
+          (!ativoFarol || fixa->farolSelo != seloFarol)) continue;
+      if (!fixa->base[0]) saidaFil[nOut++] = filsMontadas[i];
+    }
   }
 
   // 2. as de catalogo, filtradas pelas mesmas regras de desligada().
@@ -6284,6 +6438,7 @@ void desc_remontar_fileiras(void) {
 
 static void repetirInterno(void);
 void desc_repetir(void) {
+  __atomic_store_n(&homeForcarRede, 1, __ATOMIC_RELEASE);
   montSilenciosa = 0;
   descPedidoPessoa = 1;
   repetirInterno();

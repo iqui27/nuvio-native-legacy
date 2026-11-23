@@ -161,6 +161,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "legsync.h"   // F05 AutoSync: lifecycle + offset (hunks marcados F05)
 #include "progresso.h"
 #include "fontevolta.h"
+#include "rotahost.h"
 #include "retomamorna.h"
 #include "marco.h"
 #include "ilha_voo.h"   /* NV_ILHA_VOO_MS: quanto dura o voo da saida */
@@ -189,6 +190,17 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "atividade.h"
 #include "reacao.h"
 #include "bidi.h"
+
+static int modoCanalTentativa = -1, modoCanalUsado;
+void player_modo_canal_tentativa(int modo) { modoCanalTentativa = modo; }
+int player_modo_canal_usado(void) { return modoCanalUsado; }
+static int modoCanal(const char *url) {
+  int modo = modoCanalTentativa;
+  if (modo < 0) modo = guia_modo_do_canal(player_id_canal(), -1);
+  if (modo < 0) modo = rotahost_modo(url);
+  if (modo < 0) modo = ajustes_livetv_modo();
+  return modoCanalUsado = modo;
+}
 
 // Quanto tempo os controles ficam de pe sem receber tecla. Medido a olho no
 // aparelho: perto de 4s. Menos que isso e o usuario perde a barra no meio de
@@ -2221,7 +2233,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   video_definir_reconexao(!ehCanal());
   // Nome do capitulo no idioma do app quando o arquivo traz varios (mkv.c).
   mkv_capitulos_idioma(idioma_iso(ajustes_idioma()));
-  video_definir_modo_live(ehCanal() ? guia_modo_do_canal(player_id_canal(), ajustes_livetv_modo()) : 0);
+  video_definir_modo_live(ehCanal() ? modoCanal(url) : 0);
   // F07: seek cache for this open (live channels never; the backend also
   // refuses HLS/DASH). Arms only the next video_tocar: trailers stay uncached.
   cacheboost_backend_cache(ehCanal() ? 0 : ajustes_cache_seek_mb());
@@ -2471,7 +2483,7 @@ static void tocarFonteInterno(const char *url) {
   video_definir_reconexao(!ehCanal());
   // Nome do capitulo no idioma do app quando o arquivo traz varios (mkv.c).
   mkv_capitulos_idioma(idioma_iso(ajustes_idioma()));
-  video_definir_modo_live(ehCanal() ? guia_modo_do_canal(player_id_canal(), ajustes_livetv_modo()) : 0);
+  video_definir_modo_live(ehCanal() ? modoCanal(url) : 0);
   cacheboost_backend_cache(ehCanal() ? 0 : ajustes_cache_seek_mb());   // F07, ver player_abrir
   armarTituloGuardado();
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));

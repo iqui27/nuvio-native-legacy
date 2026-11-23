@@ -476,6 +476,7 @@ int main(void) {
   }
   // Fresh load records the migration too, before any user edit.
   unlink(path); ajustes_dir(dir);
+  assert(!ajustes_vidro_contorno());
   for (unsigned i = 0; i < sizeof automatic / sizeof *automatic; i++)
     assert(valor[automatic[i]] == valorPadrao[automatic[i]]);
   assert(definirValorDireto(AJ_ANIM, 1) && gravar());

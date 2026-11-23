@@ -77,6 +77,7 @@ static char *ajustesExtras(void) {
   jsw_iniciar(&w); jsw_obj_ini(&w);
   jsw_chave(&w, "values"); jsw_obj_ini(&w);
   for (int i = 0; i < AJ_N; i++) if (ajustePortavel(i) && !ajusteAparelho(i)) {
+    if (i == AJ_TEMA && valor[i] == AJ_TEMA_SEGURO) continue;
     char key[96]; snprintf(key, sizeof key, "c_%s", CHAVE[i]);
     jsw_ci(&w, key, ajLegendaPrincipal(i) ? ajLegendaValor(i) : valor[i]);
   }
@@ -132,6 +133,7 @@ static int ajustesExtrasAplicar(const char *json, const char *web) {
     if (!acharValor(v, f, key, &p, &end) || p == end) continue;
     char *tail; long num = strtol(p, &tail, 10);
     if (tail != end || num < INT_MIN || num > INT_MAX) continue;
+    if (i == AJ_TEMA && (num == AJ_TEMA_SEGURO || valor[i] == AJ_TEMA_SEGURO)) continue;
     // Web edits win overlapping choices; C-only accents have no web value.
     if (!somenteDesteAparelho(i) &&
         !(i == AJ_TEMA && num >= AJ_N_TEMAS && num < AJ_N_TEMAS_OPC)) {

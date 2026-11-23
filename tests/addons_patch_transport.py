@@ -51,6 +51,30 @@ static char *pedir2(const char *method, const char *url, int seconds, const char
 }
 void rede_resposta_limpar(RedeResposta *r) { free(r->corpo); free(r->cabecalhos); }
 '''
+if 'rede_pedido_wgt_sonda(' in adapter:
+    harness += r'''
+#include "redepedido_wgt.h"
+static int redeCancelouLocal;
+static char *juntarCabs(const char *const *cab, const char *extra) {
+  (void)cab; (void)extra; abort();
+}
+static unsigned long redeAgoraMs(void) { abort(); }
+static int nv_http_iniciar_assinc(const char *m, const char *u, const char *c,
+                                  const char *b, int p, int l, int mode) {
+  (void)m; (void)u; (void)c; (void)b; (void)p; (void)l; (void)mode; abort();
+}
+static void nv_http_esperar_pedido(const RedePedido *p, int id) {
+  (void)p; (void)id; abort();
+}
+static int nv_http_ttfb(int id) { (void)id; abort(); }
+static char *nv_http_colher_assinc(int id, int *tam, int *status,
+                                   char *uf, int uft, char *et, int ett,
+                                   int *ra, int *lim, char *m, int mt,
+                                   long *t, int modo) {
+  (void)id; (void)tam; (void)status; (void)uf; (void)uft; (void)et; (void)ett;
+  (void)ra; (void)lim; (void)m; (void)mt; (void)t; (void)modo; abort();
+}
+'''
 harness += adapter
 harness += r'''
 int main(void) {

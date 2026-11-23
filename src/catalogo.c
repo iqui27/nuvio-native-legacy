@@ -166,6 +166,7 @@ static int nAlocado;
 // 1 enquanto o catalogo na tela veio do cache em disco, e nao da rede desta
 // sessao. Ver a nota em catalogo.h.
 static int veioDoCache;
+static long long homeFrescaEm;   // relogio de parede; 0 = sem rede inteira conhecida
 
 // Garante espaco para `quero` itens. Devolve 0 se nao deu (e o chamador segue
 // com o que ja tinha, que e melhor que perder tudo).
@@ -830,7 +831,8 @@ static const char *cacheMetadataLanguage(void) {
 // keeps sizeof(CatItem) unchanged. Old shared marks cannot identify a source.
 // Version 9 records metadata language: cached poster URLs are localized too.
 // Version 10 adds exact remote episode identity, even if padding keeps sizeof stable.
-#define CACHE_VERSAO 10
+// Version 11 records when the rows last came whole from the network (frescoEm).
+#define CACHE_VERSAO 11
 // Mesmo cabecalho, itens CODIFICADOS (zeros em corrida). Um CatItem tem ~16 KB
 // e quase tudo e zero (buffers de URL dimensionados para o pior caso): 1600
 // titulos eram 25,6 MB gravados na MEMFS dentro da trava do sistema de arquivos
@@ -897,6 +899,10 @@ typedef struct {
   int  perfil;        // perfis_ativo()
   int  ingles;        // ajustes_idioma() (IDIOMA_*; 0 pt, 1 en como antes) quando o arquivo foi escrito
   char metadataLanguage[16];
+  // Relogio de parede em que as fileiras vieram INTEIRAS da rede. Nao e a
+  // hora da gravacao: uma volta servida da home precomputada grava de novo
+  // sem renovar a validade (ver cat_home_fresca_em em catalogo.h).
+  long long frescoEm;
 } CacheCab;
 
 // Quem esta logado AGORA. Chamada nas duas pontas — gravar e ler — e por isso o
@@ -1034,6 +1040,7 @@ int cat_apagar_cache(void) {
   char caminho[600];
   int foi;
   caminhoCache(NULL, caminho, sizeof caminho);
+  __atomic_store_n(&homeFrescaEm, 0, __ATOMIC_RELEASE);
   CACHE_FS_TRAVAR();
   foi = (remove(caminho) == 0);
   if (cachePorPerfil && cacheUltimoUsuario[0]) {
@@ -1091,6 +1098,7 @@ int cat_gravar_cache_se_sessao(const char *dirArte, const char *donoEsperado,
   c.magia = CACHE_MAGIA; c.versao = CACHE_VERSAO;
   c.ingles = ajustes_idioma();
   snprintf(c.metadataLanguage, sizeof c.metadataLanguage, "%s", cacheMetadataLanguage());
+  c.frescoEm = __atomic_load_n(&homeFrescaEm, __ATOMIC_ACQUIRE);
   c.tamItem = (unsigned)sizeof(CatItem);
   c.tamFileira = (unsigned)sizeof(CatFileira);
   identidadeAtual(c.usuario, sizeof c.usuario, &c.perfil);
@@ -1205,6 +1213,9 @@ int cat_ler_cache(const char *dirArte) {
   // static: 40 x 1 KB nao pertence a pilha. Roda uma vez, no arranque.
   static CatFileira lidas[CAT_FIL_MAX];
   int nLidas = 0, legado = 0;
+  // Sem cache valido para esta identidade, a validade da home anterior (de
+  // outro perfil, por exemplo) nao passa para a de agora.
+  __atomic_store_n(&homeFrescaEm, 0, __ATOMIC_RELEASE);
   caminhoCache(dirArte, caminho, sizeof caminho);
   f = fopen(caminho, "rb");
   if (!f && cachePorPerfil) {
@@ -1279,10 +1290,18 @@ int cat_ler_cache(const char *dirArte) {
     nLidas = c.nFileiras;
   }
   fclose(f);
+  // Fileiras do Farol so aparecem quando o compositor as reentrega na volta;
+  // a copia do disco nunca e desenhada antes disso.
+  { int r, w = 0;
+    for (r = 0; r < nLidas; r++)
+      if (strncmp(lidas[r].chave, CAT_PREFIXO_FAROL, sizeof CAT_PREFIXO_FAROL - 1))
+        lidas[w++] = lidas[r];
+    nLidas = w; }
   // Reaproveita o caminho de troca de bloco, que ja e o seguro para o fio de
   // desenho — e o que corta as janelas de fileira pelo tamanho real.
   cat_definir_tudo(novo, c.nItens, lidas, nLidas);
   veioDoCache = 1;
+  __atomic_store_n(&homeFrescaEm, c.frescoEm, __ATOMIC_RELEASE);
   free(novo);
   printf("[cat] cache lido: %d titulos, %d fileiras\n", c.nItens, nLidas);
   fflush(stdout);
@@ -1291,6 +1310,36 @@ int cat_ler_cache(const char *dirArte) {
 }
 
 int cat_do_cache(void) { return veioDoCache; }
+
+int cat_remover_fileiras_prefixo(const char *dirArte, const char *prefixo) {
+  static CatFileira manter[CAT_FIL_MAX];
+  size_t tam;
+  int r, m = 0, tiradas = 0;
+  if (!prefixo || !(tam = strlen(prefixo))) return 0;
+  catTravar();
+  for (r = 0; r < nFils && r < CAT_FIL_MAX; r++) {
+    if (!strncmp(fils[r].chave, prefixo, tam)) tiradas++;
+    else manter[m++] = fils[r];
+  }
+  pthread_mutex_unlock(&pubTrava);
+  if (!tiradas) return 0;
+  cat_republicar_fileiras(manter, m);
+  cat_gravar_cache(dirArte);
+  return tiradas;
+}
+
+void cat_home_fresca(long long quando) {
+  __atomic_store_n(&homeFrescaEm, quando, __ATOMIC_RELEASE);
+}
+long long cat_home_fresca_em(void) {
+  return __atomic_load_n(&homeFrescaEm, __ATOMIC_ACQUIRE);
+}
+int cat_home_fresca_valida(long long agora, int validadeS) {
+  long long em = cat_home_fresca_em();
+  // Relogio que andou para tras (TV sem NTP no arranque) nao estende a
+  // validade: sem prova de idade, a home vai a rede.
+  return em > 0 && validadeS > 0 && agora >= em && agora - em < validadeS;
+}
 
 // ASSINATURA DE UM CATALOGO: o que a home DESENHA dele — fileiras (chave,
 // titulo, janela) e a identidade de cada item (imdb, tipo). FNV-1a sobre isso.
@@ -1351,45 +1400,14 @@ const CatItem *cat_item(int i) {
   }
 }
 
-// ":<digitos>:<digitos>" e so isso — o sufixo de temporada/episodio.
-static int ehSufixoEp(const char *r, int anime) {
-  int n = 0;
-  if (*r != ':') return 0;
-  r++;
-  while (*r >= '0' && *r <= '9') { r++; n++; }
-  // Anime carrega o episodio ABSOLUTO num so sufixo ("kitsu:7442:17",
-  // idbase.h). Sem este ramo o id de progresso nao achava o proprio titulo e
-  // o Next abria o item do indice -1 embrulhado — um show sem relacao (#697).
-  if (!*r) return anime && n;
-  if (*r != ':') return 0;
-  r++; n = 0;
-  while (*r >= '0' && *r <= '9') { r++; n++; }
-  return n && !*r;
-}
-
-// ERA "compara so ate o primeiro ':'", porque serie com progresso e guardada
-// como "tt123:2:1" e quem procura tem so "tt123". O corte cego cobrava caro em
-// id que NAO e do IMDb: canal e "cs:channel:<hash>", e o primeiro ':' cai logo
-// depois do prefixo de duas letras — todo canal virava "cs", qualquer um
-// "achava" o primeiro da lista, e clicar num abria outro (#37, relato apos a
-// 1.0.42: "jumps to a different channel"). O mesmo valia para "kitsu:12345".
-//
-// A regra agora nao adivinha pelo prefixo: ou os dois ids sao iguais, ou o que
-// sobra de um lado e EXATAMENTE ":<temporada>:<episodio>". E o unico sufixo que
-// este codigo mesmo cria.
+// A regra nao adivinha pelo prefixo: ou os dois ids sao iguais, ou o que
+// sobra de um lado e EXATAMENTE ":<temporada>:<episodio>". E o unico sufixo
+// que este codigo mesmo cria. A historia inteira (o corte cego no primeiro
+// ':' que fazia todo canal "cs:channel:<hash>" virar o mesmo titulo, #37, e
+// o episodio absoluto de anime, #697) esta em idbase_mesmo, idbase.h — uma
+// regra so, usada tambem por mapa.c, explorar.c e farolsinal.c (CATREVB).
 static int mesmoTitulo(const char *a, const char *b) {
-  size_t na, nb;
-  if (!strcmp(a, b)) return 1;
-  // O que pode sobrar de um lado e SO ":<temporada>:<episodio>", que e como o
-  // progresso de serie e chaveado. Quem procura tem o id do titulo; quem esta
-  // guardado pode ter o episodio grudado. Qualquer outra diferenca e outro
-  // titulo.
-  na = strlen(a); nb = strlen(b);
-  { const char *lon = na > nb ? a : b, *cur = na > nb ? b : a;
-    size_t nc = na > nb ? nb : na;
-    const char *r = lon + nc;
-    if (strncmp(lon, cur, nc)) return 0;
-    return ehSufixoEp(r, !idbase_e_imdb(lon) || !idbase_e_imdb(cur)); }
+  return idbase_mesmo(a, b);
 }
 
 void cat_dir_gravacao(const char *dir) {
@@ -2255,6 +2273,30 @@ int cat_copiar_fileira(const char *chave, CatItem *saida, int max,
   }
   pthread_mutex_unlock(&pubTrava);
   return 0;
+}
+
+// Os imdb de UMA fileira, capturados sob pubTrava. cat_fileira()/cat_item()
+// sao leituras soltas (o desenho as usa lock-free), mas quem so quer os ids
+// NAO pode montar a leitura por partes: cat_trocar_continuar reescreve a
+// fileira no meio e a coleta sai de uma janela que nunca existiu. Quem usa
+// e o Farol (coleta do Continuar em farol.c — revisao FAROL45 r1).
+int cat_fileira_imdb(const char *chave, char (*dst)[64], int max, int tam) {
+  int r, qtd = 0, i;
+  if (!chave || !*chave || !dst || max < 1 || tam < 2) return 0;
+  catTravar();
+  for (r = 0; r < nFils; r++) {
+    CatFileira *f = &fils[r];
+    if (strcmp(f->chave, chave) || f->n < 1) continue;
+    if (f->ini < 0 || f->ini + f->n > n || !itens) break;
+    for (i = 0; i < f->n && qtd < max; i++)
+      if (itens[f->ini + i].imdb[0]) {
+        snprintf(dst[qtd], (size_t)tam, "%s", itens[f->ini + i].imdb);
+        qtd++;
+      }
+    break;
+  }
+  pthread_mutex_unlock(&pubTrava);
+  return qtd;
 }
 
 // ACRESCENTA UM titulo ao fim do catalogo e devolve o indice dele.

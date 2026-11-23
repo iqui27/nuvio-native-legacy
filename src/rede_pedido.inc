@@ -48,6 +48,9 @@ static void pedidoValor(char *dst, size_t cap, const char *s, size_t n) {
   if (n >= cap) n = cap - 1;
   memcpy(dst, s, n); dst[n] = 0;
 }
+static int pedidoEhRedirect(int st) {
+  return st == 301 || st == 302 || st == 303 || st == 307 || st == 308;
+}
 static size_t pedidoCab(void *b, size_t size, size_t count, void *u) {
   PedidoCtx *c = u;
   const char *s = b;
@@ -72,7 +75,9 @@ static size_t pedidoCab(void *b, size_t size, size_t count, void *u) {
     fim = strchr(c->r->mime, ';'); if (fim) *fim = 0;
   } else if (n > 12 && !strncasecmp(s, "Retry-After:", 12)) {
     c->r->retry_after_s = retrySegundos(s + 12, n - 12);
-  } else if (!c->head && !c->p->janela_corpo_ms && n > 15 && !strncasecmp(s, "Content-Length:", 15)) {
+  } else if (!c->head && !c->p->janela_corpo_ms &&
+             !(c->p->sonda && c->p->seguir && pedidoEhRedirect(c->status)) &&
+             n > 15 && !strncasecmp(s, "Content-Length:", 15)) {
     size_t i = 15, valor = 0;
     while (i < n && (s[i] == ' ' || s[i] == '\t')) i++;
     while (i < n && isdigit((unsigned char)s[i])) {
@@ -95,8 +100,17 @@ static size_t pedidoCorpo(void *b, size_t size, size_t count, void *u) {
   if (size && count > SIZE_MAX / size) { c->r->erro = REDE_LIMITE_CORPO; return 0; }
   n = size * count;
   if (pedidoParar(c)) return 0;
-  if (c->p->janela_corpo_ms && !(c->p->seguir &&
-      (c->status == 301 || c->status == 302 || c->status == 303 || c->status == 307 || c->status == 308))) {
+  /* Sonda ativa (p->sonda): a body on a followed redirect is dropped at the
+   * hop, skimmed without being stored, so a padded 302 does not spend the
+   * body cap before Location is followed. Past the skim bound the hop fails
+   * like any overflow. Pedidos comuns guardam o corpo do salto ate o teto e
+   * o soltam ao trocar de hop, como o pai fazia. */
+  if (c->p->sonda && c->p->seguir && pedidoEhRedirect(c->status)) {
+    if (n > 16384 - c->descartado) { c->r->erro = REDE_LIMITE_CORPO; return 0; }
+    c->descartado += n;
+    return n;
+  }
+  if (c->p->janela_corpo_ms && !(c->p->seguir && pedidoEhRedirect(c->status))) {
     uint64_t agora = pedidoAgoraMs();
     size_t prefixo;
     if (c->primeiro && agora - c->primeiro >= c->p->janela_corpo_ms) {
@@ -129,9 +143,6 @@ static size_t pedidoCorpo(void *b, size_t size, size_t count, void *u) {
   ok = pedidoGuardar(&c->r->corpo, &c->r->n_corpo, &c->corpoCap, c->tetoCorpo, b, n);
   if (ok != 1) { c->r->erro = ok ? REDE_MEMORIA : REDE_LIMITE_CORPO; return 0; }
   return n;
-}
-static int pedidoEhRedirect(int st) {
-  return st == 301 || st == 302 || st == 303 || st == 307 || st == 308;
 }
 static void pedidoIntervalo(PedidoCtx *c, uint64_t agora, int final) {
   RedeIntervalo v;
@@ -238,6 +249,36 @@ static int pedidoCabsValidos(const char *const *cab, size_t teto) {
   }
   return !cab || !cab[k];
 }
+static int pedidoPerform(PedidoCtx *ctx, void *easy) {
+  if (!ctx->p->parar) return curl_perform(easy);
+  if (!curl_multi_init || !curl_multi_add || !curl_multi_remove ||
+      !curl_multi_perform || !curl_multi_cleanup || !curl_multi_info_read ||
+      !(curl_multi_poll || curl_multi_wait)) {
+    ctx->r->erro = REDE_INDISPONIVEL;
+    return 2;
+  }
+  void *multi = curl_multi_init();
+  if (!multi) { ctx->r->erro = REDE_MEMORIA; return 2; }
+  if (curl_multi_add(multi, easy)) { curl_multi_cleanup(multi); return 2; }
+  int ativo = 1, erro = 56;
+  while (!curl_multi_perform(multi, &ativo)) {
+    if (pedidoParar(ctx)) { erro = 42; break; }
+    if (!ativo) {
+      typedef struct { int msg; void *easy; union { void *p; int result; } data; } Msg;
+      Msg *info;
+      int n;
+      while ((info = curl_multi_info_read(multi, &n)))
+        if (info->msg == 1 && info->easy == easy) erro = info->data.result;
+      break;
+    }
+    if (curl_multi_poll) curl_multi_poll(multi, NULL, 0, 20, NULL);
+    else curl_multi_wait(multi, NULL, 0, 20, NULL);
+  }
+  curl_multi_remove(multi, easy);
+  curl_multi_cleanup(multi);
+  return erro;
+}
+
 unsigned rede_pedido_capacidades(void) {
   return REDE_CAP_CORPO | REDE_CAP_JOB | REDE_CAP_REDIRECT | REDE_CAP_INTERVALO;
 }
@@ -392,7 +433,8 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
        multi de performTmdb tirava a associacao antes de getinfo/intervalo
        final — a geracao avancada no callback de intervalo nao era mais
        vista (tests/rede_pedido.c /late, REDE_GERACAO). */
-    r->curl_erro = tmdbFallback(curl, curl_perform(curl), url, NULL);
+    r->curl_erro = pedidoPerform(&c, curl);
+    if (!p->parar) r->curl_erro = tmdbFallback(curl, r->curl_erro, url, NULL);
     { char *final = NULL;
       if (!curl_getinfo(curl, INFO_URL_FINAL, &final) && final)
         snprintf(r->final, sizeof r->final, "%s", final);

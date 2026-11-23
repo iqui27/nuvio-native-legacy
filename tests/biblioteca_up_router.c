@@ -12,6 +12,7 @@ void biblioteca_up_route_start(void) {
   menu_iniciar();
   menu_definir_destino(MENU_BIBLIOTECA);
   uiPreview = 1;
+  perfilSessaoAplicada = perfis_sessao_geracao();
   tela = TELA_BIBLIOTECA;
 }
 

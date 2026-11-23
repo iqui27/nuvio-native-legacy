@@ -55,6 +55,11 @@ NUVIO_JWKS_URL = "https://api.nuvio.tv/auth/v1/.well-known/jwks.json"
 # As rotas /v1/sala* respondem 503 enquanto o segredo SALA_SEGREDO nao existir
 # aqui E la, e a TV esconde o recurso.
 JUNTOS_URL = "https://nuvio-juntos.henriquef29.workers.dev"
+# FAROL LLM (DECISOES §8.3, issue 29): interruptor do modelo pequeno ("0" corta
+# na hora com 503 sem tocar no segredo). Provedor/modelo opcionais em [vars]:
+# FAROL_LLM_PROVEDOR = "openai" | "anthropic" | "gemini"
+# FAROL_LLM_MODELO   = "gpt-4o-mini" (ou equivalente do provedor)
+FAROL_LLM = "1"
 
 # Limpeza da retencao de 90 dias.
 [triggers]
@@ -74,7 +79,9 @@ crons = ["17 4 * * *"]
 #   SUPABASE_ANON_KEY   anon key do mesmo projeto
 #   SALA_SEGREDO        assina os bilhetes do Watch Together; o MESMO valor no
 #                       nuvio-juntos (tools/juntos-publicar.sh --segredo)
-#   TMDB_KEY            chave da API do TMDB (/v1/filmografia da Caca; sem ela a TV
-#                       pergunta ao TMDB direto). `wrangler secret put TMDB_KEY`
+#   TMDB_KEY            chave da API do TMDB (/v1/filmografia da Caca e
+#                       /v1/farol/busca; sem ela responde 503). `wrangler secret put TMDB_KEY`
+#   FAROL_SAL           sal do HMAC(conta) das cotas do Farol (nunca guardar id cru)
+#   FAROL_LLM_KEY       chave do provedor LLM de /v1/farol/busca (`wrangler secret put FAROL_LLM_KEY`)
 # Opcional em [vars]: TRILHA_TRAKT_TOP250 = "<id numerico da lista publica do Trakt>"
 #   (o dono escolhe a lista dos "250 mais bem avaliados"; sem ela so o TMDB).

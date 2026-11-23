@@ -72,6 +72,7 @@ typedef struct {
   Uint32 cacheMs;     // leitura/lock do cache antes de baixar
   Uint32 persistMs;   // LG: so enfileirar a gravacao (fila de fundo); Tizen: escrita/rename
   unsigned int netCalls;
+  char urlTamanho[NV_TEX_URL_MAX];
 } TexFetchTrace;
 // Teto de decodificacao das artes de CARD; a nota que justifica o 640 esta
 // mais abaixo, junto do teto do heroi.
@@ -1833,12 +1834,65 @@ __attribute__((unused)) static void negPor(const char *url, int segundos, int fi
 }
 int tex_negativas_poupadas(void) { return negAcertos; }
 
-static char *baixarImagem(const char *url, long *n, TexFetchTrace *trace) {
+#ifndef __EMSCRIPTEN__
+// Redirect de still: so enderecos publicos conhecidos, sem I/O sob a trava.
+#define NV_ARTE_REDIRECT_MAX 64
+static struct { char origem[NV_TEX_URL_MAX], final[NV_TEX_URL_MAX]; } arteRedirect[NV_ARTE_REDIRECT_MAX];
+static unsigned arteRedirectVez;
+static pthread_mutex_t arteRedirectMtx = PTHREAD_MUTEX_INITIALIZER;
+
+static int episodioMetahub(const char *url) {
+  return url && !strncmp(url, "https://episodes.metahub.space/", sizeof "https://episodes.metahub.space/" - 1);
+}
+
+static void lembrarRedirectArte(const char *origem, const char *final) {
+  unsigned i;
+  if (!episodioMetahub(origem) || !final ||
+      strncmp(final, "https://image.tmdb.org/t/p/", sizeof "https://image.tmdb.org/t/p/" - 1) ||
+      strlen(origem) >= sizeof arteRedirect[0].origem ||
+      strlen(final) >= sizeof arteRedirect[0].final) return;
+  pthread_mutex_lock(&arteRedirectMtx);
+  for (i = 0; i < NV_ARTE_REDIRECT_MAX; i++)
+    if (!strcmp(arteRedirect[i].origem, origem)) break;
+  if (i == NV_ARTE_REDIRECT_MAX) i = arteRedirectVez++ % NV_ARTE_REDIRECT_MAX;
+  snprintf(arteRedirect[i].origem, sizeof arteRedirect[i].origem, "%s", origem);
+  snprintf(arteRedirect[i].final, sizeof arteRedirect[i].final, "%s", final);
+  pthread_mutex_unlock(&arteRedirectMtx);
+}
+
+static int buscarRedirectArte(const char *origem, char *final, size_t tam) {
+  int achou = 0;
+  if (!episodioMetahub(origem)) return 0;
+  pthread_mutex_lock(&arteRedirectMtx);
+  for (unsigned i = 0; i < NV_ARTE_REDIRECT_MAX; i++)
+    if (!strcmp(arteRedirect[i].origem, origem)) {
+      if (strlen(arteRedirect[i].final) < tam) {
+        snprintf(final, tam, "%s", arteRedirect[i].final); achou = 1;
+      }
+      break;
+    }
+  pthread_mutex_unlock(&arteRedirectMtx);
+  return achou;
+}
+#endif
+
+#ifndef __EMSCRIPTEN__
+static int acertoDisco(const char *dst, TexFetchTrace *trace);
+#endif
+
+static char *baixarImagemTamanho(const char *url, long *n, TexFetchTrace *trace, int limite) {
   char urlLogBuf[160];
+  char certo[NV_TEX_URL_MAX];
+#ifndef __EMSCRIPTEN__
+  char direto[NV_TEX_URL_MAX];
+  char final[NV_TEX_URL_MAX] = "";
+#endif
   char *corpo;
+  int variante = 0;
+  if (trace) trace->urlTamanho[0] = 0;
   // URL VIRTUAL DE FONTE (artereserva.h): o fundo do TMDB/Trakt de um item que
   // so trouxe o do catalogo. Resolve aqui, no fio de rede, e baixa a real; o
-  // chamador continua gravando sob a virtual, entao a consulta nao se repete.
+  // item conserva a chave virtual; o arquivo usa a variante real quando muda.
   // -1 = nao ha essa arte: falha como um 404, e quem desenha cai na seguinte.
   { char real[NV_TEX_URL_MAX];
     int r;
@@ -1850,7 +1904,38 @@ static char *baixarImagem(const char *url, long *n, TexFetchTrace *trace) {
       fflush(stdout);
       return NULL;
     }
-    if (r > 0) return baixarImagem(real, n, trace);
+    if (r > 0) return baixarImagemTamanho(real, n, trace, limite);
+  }
+#ifndef __EMSCRIPTEN__
+  if (buscarRedirectArte(url, direto, sizeof direto)) { url = direto; variante = 1; }
+#endif
+  if (arte_tamanho_url(url, limite, certo, sizeof certo)) { url = certo; variante = 1; }
+  if (variante && trace) {
+    snprintf(trace->urlTamanho, sizeof trace->urlTamanho, "%s", url);
+  }
+  // Fonte/reserva resolvida tarde: reaproveita o arquivo da variante real.
+  if (variante && dirCache[0]) {
+#ifndef __EMSCRIPTEN__
+    char arq[600];
+    unsigned char *pendente = NULL;
+    nomeDeCache(url, arq, sizeof arq);
+    if (gravacaoPendente(arq, &pendente, n)) { corpo = (char *)pendente; goto validarImagem; }
+    FILE *f = acertoDisco(arq, trace) ? fopen(arq, "rb") : NULL;
+    if (f) {
+      fseek(f, 0, SEEK_END); *n = ftell(f); rewind(f);
+      corpo = *n > 512 && *n <= (long)cachePerfil().corpoMb * 1048576 ? malloc((size_t)*n) : NULL;
+      if (corpo && fread(corpo, 1, (size_t)*n, f) == (size_t)*n) {
+        fclose(f); goto validarImagem;
+      }
+      free(corpo); fclose(f);
+    }
+#else
+    unsigned char *salvo = NULL;
+    if (cachearte_buscar(url, NV_CACHE_ARTE_MEDIUM, &salvo, n) ||
+        cachearte_buscar(url, NV_CACHE_ARTE_SMALL, &salvo, n)) {
+      corpo = (char *)salvo; goto validarImagem;
+    }
+#endif
   }
   // Ja se sabe que esta URL nao tem arte (ver negTem): falha na hora, sem
   // ocupar o fio — quem desenha cai na proxima fonte como num 404.
@@ -1873,6 +1958,23 @@ static char *baixarImagem(const char *url, long *n, TexFetchTrace *trace) {
     if (NV_REC_URL[0] && !strncmp(url, "http://", 7))
       corpo = rede_postar_bin(NV_REC_URL "/v1/xtream", 8, url, n);
     else
+#endif
+#ifndef __EMSCRIPTEN__
+    if (episodioMetahub(url)) {
+      RedePedido p = { .url = url, .prazo_ms = 8000, .seguir = 1,
+                       .max_bytes = (size_t)rede_teto };
+      RedeResposta r = {0};
+      rede_pedir(&p, &r);
+      corpo = NULL; *n = 0;
+      if (r.erro == REDE_OK && r.status >= 200 && r.status < 300) {
+        corpo = r.corpo; *n = (long)r.n_corpo; r.corpo = NULL;
+        if (strlen(r.final) < sizeof final) snprintf(final, sizeof final, "%s", r.final);
+      }
+      if (r.status == 404 || r.status == 410) negPor(url, NV_NEG_404_S, 1);
+      else if (!corpo && r.status == 0 && r.ms >= 6000) negPor(url, NV_NEG_FALHA_S, 0);
+      else if (!corpo && r.status >= 200 && r.status < 300) negPor(url, NV_NEG_FALHA_S, 0);
+      rede_resposta_limpar(&r);
+    } else
 #endif
     if (posterprov_e_provedor(url)) {
       // PROVEDOR DE POSTER (posterprov.h): no maximo PP_SIMULT juntos, e prazo
@@ -1913,6 +2015,7 @@ static char *baixarImagem(const char *url, long *n, TexFetchTrace *trace) {
       trace->netCalls++;
     } }
   rede_teto = tetoAnterior;
+validarImagem:
   // ESTE RAMO ERA MUDO. Medido numa navegacao da home: 93 "decode falhou" com
   // ZERO "[rede] falha" no log — todas as falhas passavam por aqui, com o curl
   // dizendo sucesso e um corpo curto demais para ser imagem. Sem a linha nao
@@ -1955,7 +2058,14 @@ static char *baixarImagem(const char *url, long *n, TexFetchTrace *trace) {
   // Assinatura dos bytes: "o destaque baixou a mesma imagem do card?"
   // (artereserva.h, arte_mesma_imagem). Um FNV do corpo que ja esta na mao.
   arte_bytes_registrar(url, corpo, *n);
+#ifndef __EMSCRIPTEN__
+  if (final[0]) lembrarRedirectArte(url, final);
+#endif
   return corpo;
+}
+
+static char *baixarImagem(const char *url, long *n, TexFetchTrace *trace) {
+  return baixarImagemTamanho(url, n, trace, 0);
 }
 
 static int resolverReserva(const char *url, char *saida, size_t tam,
@@ -2010,8 +2120,10 @@ static int gravarLocal(const char *dst, const char *corpo, long n,
   return ok;
 }
 
-static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
-                         TexFetchTrace *trace) {
+static int garantirLocalTamanho(const char *url, char *dst, size_t tam, int *foiRede,
+                                TexFetchTrace *trace, int limite) {
+  TexFetchTrace localTrace = {0};
+  if (!trace) trace = &localTrace;
   FILE *f;
   char *corpo;
   long n = 0;
@@ -2046,15 +2158,16 @@ static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
     } }
   if (trace) trace->cacheMs += SDL_GetTicks() - cacheEm;
   if (foiRede) *foiRede = 1;
-  corpo = baixarImagem(url, &n, trace);
+  corpo = baixarImagemTamanho(url, &n, trace, limite);
   // METAHUB FORA DO AR NAO E CARD CINZA: a mesma imagem existe no TMDB pelo id
-  // do IMDb. So depois de a original falhar, e gravada sob a URL original —
-  // para o resto do app e como se o metahub tivesse respondido.
+  // do IMDb. So depois de a original falhar; a chave do item nao muda e o
+  // disco guarda a variante real quando o teto reduz a reserva.
   if (!corpo) {
     char alt[400];
-    if (resolverReserva(url, alt, sizeof alt, trace)) corpo = baixarImagem(alt, &n, trace);
+    if (resolverReserva(url, alt, sizeof alt, trace)) corpo = baixarImagemTamanho(alt, &n, trace, limite);
   }
   if (!corpo) return 0;
+  if (trace->urlTamanho[0]) nomeDeCache(trace->urlTamanho, dst, tam);
   if (!gravarLocal(dst, corpo, n, trace)) { free(corpo); return 0; }
   free(corpo);
   return 1;
@@ -2103,8 +2216,10 @@ static int acertoDisco(const char *dst, TexFetchTrace *trace) {
   return valido;
 }
 
-static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
-                         TexFetchTrace *trace) {
+static int garantirLocalTamanho(const char *url, char *dst, size_t tam, int *foiRede,
+                                TexFetchTrace *trace, int limite) {
+  TexFetchTrace localTrace = {0};
+  if (!trace) trace = &localTrace;
   char *corpo;
   long n = 0;
   int ok;
@@ -2117,15 +2232,16 @@ static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
   nomeDeCache(url, dst, tam);
   if (acertoDisco(dst, trace)) return 1;
   if (foiRede) *foiRede = 1;
-  corpo = baixarImagem(url, &n, trace);
+  corpo = baixarImagemTamanho(url, &n, trace, limite);
   // METAHUB FORA DO AR NAO E CARD CINZA: a mesma imagem existe no TMDB pelo id
-  // do IMDb. So depois de a original falhar, e gravada sob a URL original —
-  // para o resto do app e como se o metahub tivesse respondido.
+  // do IMDb. So depois de a original falhar; a chave do item nao muda e o
+  // disco guarda a variante real quando o teto reduz a reserva.
   if (!corpo) {
     char alt[400];
-    if (resolverReserva(url, alt, sizeof alt, trace)) corpo = baixarImagem(alt, &n, trace);
+    if (resolverReserva(url, alt, sizeof alt, trace)) corpo = baixarImagemTamanho(alt, &n, trace, limite);
   }
   if (!corpo) return 0;
+  if (trace->urlTamanho[0]) nomeDeCache(trace->urlTamanho, dst, tam);
   // SINCRONO de proposito, e so aqui: este caminho e o do GIF (gif.c le por
   // caminho, o arquivo tem de existir ao voltar) e o recuo do decode. O
   // caminho quente do LG e baixarParaItem, que entrega da memoria.
@@ -2137,6 +2253,11 @@ static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
 }
 
 #endif
+
+static int garantirLocal(const char *url, char *dst, size_t tam, int *foiRede,
+                         TexFetchTrace *trace) {
+  return garantirLocalTamanho(url, dst, tam, foiRede, trace, 0);
+}
 
 // O QUE O FIO DE REDE ENTREGA AO DE DECODE. Arte baixada agora: os bytes no
 // proprio item (Item.bruto), nas duas plataformas. No LG, arte que ja estava
@@ -2171,6 +2292,9 @@ static int salvarPedidoMovido(const char *pedido, const char *url, int limite,
 
 static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *foiRede,
                           TexFetchTrace *trace) {
+  TexFetchTrace localTrace = {0};
+  if (!trace) trace = &localTrace;
+  trace->urlTamanho[0] = 0;
   const char *pedido = url;   // o caminho do item; `url` pode virar a variante
   char certo[NV_TEX_URL_MAX];
   int limitePedido;
@@ -2208,7 +2332,7 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
     // sem rede. Ver arqDiscoRegistrar.
     { char arq[600];
       nomeDeCache(url, arq, sizeof arq);
-      if (dirCache[0] && arqDiscoTem(arq)) return garantirLocal(url, dst, tam, foiRede, trace); }
+      if (dirCache[0] && arqDiscoTem(arq)) return garantirLocalTamanho(url, dst, tam, foiRede, trace, limitePedido); }
     /* The exact URL, including its query string, remains the key. `variante`
      * is a second dimension so a small response can never satisfy a hero. */
     corpo = NULL;
@@ -2216,13 +2340,19 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
       if (foiRede) *foiRede = 0;
     } else {
       if (foiRede) *foiRede = 1;
-      corpo = (unsigned char *)baixarImagem(url, &n, trace);
+      corpo = (unsigned char *)baixarImagemTamanho(url, &n, trace, limitePedido);
     }
     if (!corpo) {
       char alt[400];
-      if (resolverReserva(url, alt, sizeof alt, trace)) corpo = (unsigned char *)baixarImagem(alt, &n, trace);
+      if (resolverReserva(url, alt, sizeof alt, trace)) corpo = (unsigned char *)baixarImagemTamanho(alt, &n, trace, limitePedido);
     }
     if (!corpo) return 0;
+    if (trace->urlTamanho[0]) {
+      url = trace->urlTamanho;
+      SDL_LockMutex(mtx);
+      if (mesmoPedido(idx, pedido)) itens[idx].limiteTamanho = limitePedido;
+      SDL_UnlockMutex(mtx);
+    }
     if (n >= 6 && !memcmp(corpo, "GIF8", 4)) {
       // gif.c le por caminho: este continua indo a arquivo. COM OS BYTES QUE
       // JA VIERAM: ate a 1.4.5 eles eram jogados fora e garantirLocal baixava
@@ -2277,8 +2407,13 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
     // A VARIANTE DO TAMANHO DO DESENHO (artetamanho.h), antes do nome de
     // cache: o arquivo no disco e o da variante, e a promocao a heroi, com
     // teto maior, procura outro nome e baixa o maior.
+    char direto[NV_TEX_URL_MAX];
     { int usar = arte_tamanho_url(url, limitePedido, certo, sizeof certo);
       if (usar) url = certo;
+      if (buscarRedirectArte(url, direto, sizeof direto)) {
+        url = direto; usar = 1;
+        if (arte_tamanho_url(url, limitePedido, certo, sizeof certo)) url = certo;
+      }
       SDL_LockMutex(mtx);
       if (mesmoPedido(idx, pedido)) itens[idx].limiteTamanho = usar ? limitePedido : 0;
       SDL_UnlockMutex(mtx); }
@@ -2287,13 +2422,20 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
     if (acertoDisco(dst, trace)) return 1;
     if (!gravacaoPendente(dst, &corpo, &n)) {
       if (foiRede) *foiRede = 1;
-      corpo = (unsigned char *)baixarImagem(url, &n, trace);
+      corpo = (unsigned char *)baixarImagemTamanho(url, &n, trace, limitePedido);
       if (!corpo) {
         char alt[400];
         if (resolverReserva(url, alt, sizeof alt, trace))
-          corpo = (unsigned char *)baixarImagem(alt, &n, trace);
+          corpo = (unsigned char *)baixarImagemTamanho(alt, &n, trace, limitePedido);
       }
       if (!corpo) return 0;
+      if (trace->urlTamanho[0]) {
+        url = trace->urlTamanho;
+        nomeDeCache(url, dst, tam);
+        SDL_LockMutex(mtx);
+        if (mesmoPedido(idx, pedido)) itens[idx].limiteTamanho = limitePedido;
+        SDL_UnlockMutex(mtx);
+      }
       if (n >= 6 && !memcmp(corpo, "GIF8", 4)) {
         Uint32 persistEm = SDL_GetTicks();
         int ok = gravarArquivo(dst, ".parcial", corpo, n);
@@ -2329,7 +2471,7 @@ static int baixarParaItem(int idx, const char *url, char *dst, size_t tam, int *
     return 1;
   }
 #endif
-  return garantirLocal(url, dst, tam, foiRede, trace);
+  return garantirLocalTamanho(url, dst, tam, foiRede, trace, limitePedido);
 }
 
 // FIO DE REDE: tira da fila, garante o arquivo no cache de disco e passa para a
@@ -2376,7 +2518,7 @@ static int threadRede(void *arg) {
 
     { Uint32 redeEm = SDL_GetTicks();
       int foiRede = 0;
-      TexFetchTrace trace = {0, 0, 0, 0, 0};
+      TexFetchTrace trace = {0};
       int baixou = baixarParaItem(idx, caminho, local, sizeof local, &foiRede, &trace);
       Uint32 redeMs = SDL_GetTicks() - redeEm;
       if (urgente == 2) logoOrigem(caminho, foiRede ? "rede" : "disco", redeMs);
@@ -2886,7 +3028,7 @@ static int threadDecode(void *arg) {
     { char local[600], certo[NV_TEX_URL_MAX];
       const char *fonte = caminho;
       if (limTam > 0 && arte_tamanho_url(caminho, limTam, certo, sizeof certo)) fonte = certo;
-      if (garantirLocal(fonte, local, sizeof local, NULL, NULL))
+      if (garantirLocalTamanho(fonte, local, sizeof local, NULL, NULL, limite))
         snprintf(caminho, sizeof caminho, "%s", local);
     }
     // A MAGICA do arquivo (Item.magica): quem veio direto do disco

@@ -252,6 +252,7 @@ static long redeLimiteAtual(void) {
 #include <emscripten.h>
 #include <emscripten/threading.h>
 #include "fio1.h"   // so tem corpo com NV_UM_FIO; nv_http troca de implementacao abaixo
+#include "redepedido_wgt.h"
 
 // Faz a requisicao e devolve um buffer de malloc com o corpo (com um NUL extra
 // no fim, para quem trata como texto). Escreve o tamanho em *tam e o status
@@ -280,7 +281,7 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
     else if (xhr) xhr.abort();
   };
   var reg = { pronto: false, erro: false, status: 0, url: "", etag: "", bytes: null,
-              mime: "", tamanho: -1, retry: 0, limitado: false,
+              mime: "", tamanho: -1, retry: 0, limitado: false, ttfb: -1,
               abortar: function () { reg.erro = true; abortar(); terminar(); } };
   Module.nvFioReqs[id] = reg;
   var terminar = function () {
@@ -294,8 +295,28 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
   var init = { method: UTF8ToString(metodo), headers: cab, redirect: "follow" };
   if (controle) init.signal = controle.signal;
   if (corpo) init.body = UTF8ToString(corpo);
+  // Sonda (modo 2): o primeiro pedido vai com os cabecalhos da fonte e
+  // redirect manual — se houver salto, os cabecalhos NAO podem seguir para
+  // outra origem. O Location nao e exposto (opaqueredirect), entao a cadeia
+  // e refeita com follow levando so Range, como o nativo ao trocar de origem.
+  var enviar = function (cabs2, redir) {
+    if (controle) controle = new AbortController();
+    var op = { method: init.method, headers: cabs2, redirect: redir };
+    if (controle) op.signal = controle.signal;
+    if (init.body !== undefined) op.body = init.body;
+    return fetch(UTF8ToString(url), op);
+  };
+  var soRange = function () {
+    var so = {};
+    Object.keys(cab).forEach(function (nome) {
+      if (nome.toLowerCase() === "range") so[nome] = cab[nome];
+    });
+    return so;
+  };
   teto = teto > 0 ? teto : 33554432;
+  var inicio = Date.now();
   var cabecalhos = function (res) {
+    if (reg.ttfb < 0) reg.ttfb = Date.now() - inicio;
     reg.status = res.status;
     reg.url = res.headers.get("x-nuvio-url-final") || res.url || "";
     reg.etag = res.headers.get("etag") || "";
@@ -317,7 +338,9 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
       xhr.open(init.method, UTF8ToString(url), true);
       xhr.timeout = prazo;
       xhr.overrideMimeType("text/plain; charset=x-user-defined");
-      Object.keys(cab).forEach(function (nome) { xhr.setRequestHeader(nome, cab[nome]); });
+      // XHR nao deixa segurar o redirect: para a sonda so o Range e seguro.
+      var cabX = modo === 2 ? soRange() : cab;
+      Object.keys(cabX).forEach(function (nome) { xhr.setRequestHeader(nome, cabX[nome]); });
       var colher = function () {
         var texto = xhr.responseText || "";
         reg.n = Math.min(texto.length, teto);
@@ -348,7 +371,7 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
     } catch (e) { reg.erro = true; terminar(); abortar(); }
     return id;
   }
-  fetch(UTF8ToString(url), init).then(async function (res) {
+  var consumir = async function (res) {
     if (reg.pronto) {
       if (res.body) res.body.cancel().catch(function () {});
       return;
@@ -377,8 +400,21 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
     reg.bytes = new Uint8Array(modo === 2 ? 0 : n);
     var offset = 0;
     parts.forEach(function (p) { reg.bytes.set(p, offset); offset += p.length; });
-  }).catch(function () { if (!reg.pronto) reg.erro = true; })
-    .then(terminar, terminar);
+  };
+  var falhar = function () { if (!reg.pronto) reg.erro = true; };
+  try {
+    enviar(cab, modo === 2 ? "manual" : "follow").then(async function (res) {
+      if (modo === 2 && !reg.pronto &&
+          (res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400))) {
+        // Salto encontrado: a cadeia refaz so com Range; os cabecalhos da
+        // fonte ja ficaram na origem do primeiro pedido e nao atravessam.
+        // O return espera o refazer terminar antes do terminar() da corrente.
+        reg.ttfb = -1;
+        return enviar(soRange(), "follow").then(consumir);
+      }
+      await consumir(res);
+    }).catch(falhar).then(terminar, terminar);
+  } catch (e) { reg.erro = true; terminar(); }
   return id;
 });
 
@@ -404,7 +440,17 @@ EM_JS(char *, nv_http_colher_bruto, (int id, int *tam, int *status,
   if (tam) HEAP32[tam >> 2] = 0;
   if (tamanho) HEAP32[tamanho >> 2] = reg && !reg.erro ? reg.tamanho : -1;
   if (retryAfter) HEAP32[retryAfter >> 2] = reg ? reg.retry : 0;
-  if (!reg || reg.erro || !reg.bytes) return 0;
+  if (!reg) return 0;
+  /* Sonda (modo 2): os cabecalhos ja sao a resposta. Um corpo que estoura o
+   * prazo ou e abortado depois deles nao pode apagar o status recebido —
+   * um 403 com cabecalhos imediatos vale resposta, nao "nao testado". */
+  if (modo === 2 && reg.status) {
+    if (status) HEAP32[status >> 2] = reg.status;
+    if (tam) HEAP32[tam >> 2] = reg.n || 0;
+    if (limitado) HEAP32[limitado >> 2] = reg.limitado ? 1 : 0;
+    return 1;
+  }
+  if (reg.erro || !reg.bytes) return 0;
   if (status) HEAP32[status >> 2] = reg.status;
   // Probe URLs must fit in full: a truncated signed URL is unusable.
   if (modo === 1 && (reg.status < 200 || reg.status >= 300 ||
@@ -455,9 +501,26 @@ EM_JS(void, nv_http_abortar, (int id), {
   var reg = Module.nvFioReqs && Module.nvFioReqs[id];
   if (reg && !reg.pronto) reg.abortar();
 });
+EM_JS(int, nv_http_ttfb, (int id), {
+  var reg = Module.nvFioReqs && Module.nvFioReqs[id];
+  return reg && reg.ttfb >= 0 ? reg.ttfb : 0;
+});
 static void nv_http_esperar(int id) {
   while (!nv_http_pronto_assinc(id)) {
     if(redeParou()){redeCancelouLocal=1;nv_http_abortar(id);break;}
+#ifdef NV_UM_FIO
+    fio1_ceder();
+#else
+    emscripten_sleep(1);
+#endif
+  }
+}
+// A mesma espera, conferindo tambem o `parar` por pedido (rede_pedir).
+static void nv_http_esperar_pedido(const RedePedido *p, int id) {
+  while (!nv_http_pronto_assinc(id)) {
+    if (redeParou() || (p->parar && p->parar(p->parar_usuario))) {
+      redeCancelouLocal = 1; nv_http_abortar(id); break;
+    }
 #ifdef NV_UM_FIO
     fio1_ceder();
 #else
@@ -586,6 +649,7 @@ EM_JS(void, nv_http_fluxo_soltar, (int id), {
   if (Module.nvFioReqs) delete Module.nvFioReqs[id];
 });
 #endif
+static char *juntarCabs(const char *const *cab, const char *extra);
 int rede_pedir(const RedePedido *p, RedeResposta *r) {
   if (!r) return 0;
   memset(r, 0, sizeof *r);
@@ -629,6 +693,36 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
     r->n_corpo=total;
     return r->erro==REDE_OK;
 #endif
+  }
+  /* Sonda/diagnostico: GET com cabecalhos cujos redirects o proprio fetch
+   * segue; o corpo e contado e cortado no teto (modo 2), nunca guardado. O
+   * `parar` do pedido vale durante a espera, como no caminho nativo. */
+  if (rede_pedido_wgt_sonda(p)) {
+    char *cabs = juntarCabs(p->cabecalhos, NULL);
+    unsigned long ini;
+    int id, n = 0;
+    if (!cabs && p->cabecalhos) { r->erro = REDE_MEMORIA; return 0; }
+    redeCancelouLocal = 0;
+    ini = redeAgoraMs();
+    id = nv_http_iniciar_assinc("GET", p->url, cabs, NULL,
+        (int)(p->prazo_ms ? p->prazo_ms : 15000),
+        (int)(p->max_bytes ? p->max_bytes : REDE_CORPO_PADRAO), 2);
+    free(cabs);
+    nv_http_esperar_pedido(p, id);
+    r->primeiro_byte_ms = (unsigned)nv_http_ttfb(id);
+    { int cancelado = redeCancelouLocal;
+      if (!nv_http_colher_assinc(id, &n, &r->status, NULL, 0,
+                                 NULL, 0, NULL, NULL, NULL, 0, NULL, 2) || cancelado) {
+        /* Cabecalhos colhidos nao viram resposta num cancelamento. */
+        r->status = 0;
+        r->erro = cancelado ? REDE_CANCELADO : REDE_TRANSPORTE;
+        return 0;
+      } }
+    r->n_corpo = (size_t)n;
+    r->bytes_fio = (uint64_t)n;
+    r->ms = (unsigned)(redeAgoraMs() - ini);
+    r->erro = REDE_OK;
+    return 1;
   }
   r->erro = REDE_INDISPONIVEL;
   return 0; /* nenhum XHR: nao prometer teto, timeout ou cancel inexistentes */

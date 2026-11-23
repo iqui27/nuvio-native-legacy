@@ -3,6 +3,9 @@
 #ifndef NV_PLAYER_H
 #define NV_PLAYER_H
 
+void player_modo_canal_tentativa(int modo);
+int player_modo_canal_usado(void);
+
 // VideoLegendaEstilo vem daqui: o estilo da legenda e guardado nas
 // preferencias do player, mas quem o define e o modulo de video.
 #include "video.h"

@@ -1,4 +1,6 @@
 #include "fileiras.h"
+#include "catalogo.h"  // CAT_PREFIXO_FAROL (origem farol_, Farol 45)
+#include "homeassistiu.h"
 #include "ajustes.h"   // PALCO_* (#659)
 #include "dados.h"
 #include "addons.h"
@@ -192,8 +194,11 @@ float fil_tipo_fator(int t) {
 int fil_origem_de(const char *chave) {
   if (!chave || !chave[0]) return FIL_ORIGEM_APP;
   if (!strcmp(chave, "continue_watching") ||
+      !strcmp(chave, HOME_ASSISTIU_CHAVE) ||
       !strcmp(chave, "social_activity") ||
-      !strcmp(chave, "last_session")) return FIL_ORIGEM_APP;
+      !strcmp(chave, "last_session") ||
+      !strncmp(chave, CAT_PREFIXO_FAROL, sizeof CAT_PREFIXO_FAROL - 1))
+    return FIL_ORIGEM_APP;
   if (!strncmp(chave, "jellyfin_", 9) || !strncmp(chave, "emby_", 5) ||
       !strncmp(chave, "plex_", 5) || !strncmp(chave, "srv:", 4)) return FIL_ORIGEM_SERVIDOR;
   if (!strncmp(chave, "collection_", 11) ||
@@ -1254,7 +1259,7 @@ static void registrar(const FilPassada *passada, const char *chave,
     return;
   }
   if (i < 0) {
-    // Chave nova entra no FIM, nunca no meio: a mesma regra do
+    // Catalogo novo entra no FIM: a mesma regra do
     // ensureOrderKeysWithPrefs do web. Catalogo que o addon passou a declarar
     // hoje nao pode empurrar para baixo a fileira que a pessoa deixou no topo.
     // TABELA CHEIA: DESPEJA UMA DISPENSAVEL EM VEZ DE RECUSAR A NOVA.
@@ -1355,7 +1360,14 @@ static void registrar(const FilPassada *passada, const char *chave,
                 sizeof(Linha) * (size_t)(nLinhas - 1 - v));
       nLinhas--;
     }
-    i = nLinhas++;
+    i = nLinhas;
+    if (ordemLocal && !strcmp(chave, HOME_ASSISTIU_CHAVE)) {
+      int cw = achar("continue_watching");
+      int farol = cw < 0 ? achar("farol_gosto1") : -1;
+      i = cw >= 0 ? cw + 1 : farol >= 0 ? farol : 0;
+      memmove(&linhas[i + 1], &linhas[i], sizeof(Linha) * (size_t)(nLinhas - i));
+    }
+    nLinhas++;
     memset(&linhas[i], 0, sizeof linhas[i]);
     snprintf(linhas[i].chave, FIL_CHAVE, "%s", chave);
     linhas[i].tam = FIL_TAM_PADRAO;

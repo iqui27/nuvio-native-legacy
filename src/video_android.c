@@ -38,6 +38,7 @@
 #include "capmkv.h"
 #include "audioinfo.h"
 #include "video_reconexao.h"
+#include "farolprodutor.h"
 #include "idioma.h"
 #include "linguas.h"
 #include "audioescolha.h"
@@ -880,6 +881,7 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(JNIEnv 
     return;
   }
   tocando = 0;
+  farolprod_erro(FP_ANDROID, t, (int)cod, (int)tipo);
   printf("[video] android: erro do player %d (%d) gen=%d\n", (int)cod, (int)tipo, (int)geracao);
   fflush(stdout);
 }
@@ -896,6 +898,7 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(JNIEn
                      snprintf(t, sizeof t, "%d player error:%d", a, b);
                      if (erroPublicarAtual(a, b == 2 /* Media3 C.TRACK_TYPE_VIDEO */, t)) {
                        tocando = 0;
+                       farolprod_erro(FP_ANDROID, t, a, b);
                        printf("[video] android: erro do player %d (%d)\n", a, b);
                      } } break;
     case EV_TAMANHO: largura = a; altura = b; break;
@@ -922,7 +925,8 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(JNIEn
       break;
     case EV_PRIMEIRO_QUADRO: marco("video: primeiro quadro (android)"); primeiroQuadro = 1; break;
     case EV_SUPERFICIE_ESTAVEL: superficieEstavel = 1; break;
-    case EV_AUDIO_SEM_DECODER: semDecoderAudio = 1; break;
+    case EV_AUDIO_SEM_DECODER: semDecoderAudio = 1;
+                     farolprod_erro(FP_ANDROID, "audio no decoder", 0, 0); break;
     case EV_LIVE_SEGMENT:
       pthread_mutex_lock(&travaRetomada);
       if (ativo && (unsigned)b == sessao) liveSegmentoMs = a > 60000 ? 60000u : a > 0 ? (unsigned)a : 0u;
@@ -1207,12 +1211,14 @@ void video_bombear(void) {
   }
   if (!falhou && (!prontoLoad || reconBuscarMs >= 0 || (!pausaPedida && bufferando)) &&
       nv_recon_expirou(&recon, SDL_GetTicks())) {
-    erroPublicarAtual(2002, 0, "2002 player error: recovery timeout");
+    if (erroPublicarAtual(2002, 0, "2002 player error: recovery timeout"))
+      farolprod_erro(FP_ANDROID, "2002 player error: recovery timeout", 2002, 0);
   }
   // A silent VOD stall also needs recovery when Media3 never emits an error.
   if (!falhou && reconPermitida && reconIniciou && !pausaPedida && !nv_recon_ativa(&recon) &&
       bufferando && SDL_GetTicks() - bufferDesde >= NV_RECON_PRAZO_MS) {
-    erroPublicarAtual(2002, 0, "2002 player error: stalled download");
+    if (erroPublicarAtual(2002, 0, "2002 player error: stalled download"))
+      farolprod_erro(FP_ANDROID, "2002 player error: stalled download", 2002, 0);
   }
   {
     int cod;
@@ -1229,6 +1235,8 @@ void video_bombear(void) {
           reconPausado = pausaPedida;
         }
         if (recon.tentativa != antes) {
+          farolprod_recon(FP_ANDROID, txt, cod, recon.tentativa,
+                          nv_recon_espera_ms(recon.tentativa));
           printf("[video] conexao caiu (%d): tentativa %d/%d, espera %us\n",
                  cod, recon.tentativa, NV_RECON_MAX,
                  nv_recon_espera_ms(recon.tentativa) / 1000u);

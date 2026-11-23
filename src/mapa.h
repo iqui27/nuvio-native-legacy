@@ -48,6 +48,9 @@ typedef struct {
   int  nota;            // 0..100 (vote_average * 10)
   int  votos;
   int  catIndice;       // indice em cat_item no momento da montagem; -1 = fora
+  char catId[64];       // id cru do item no catalogo ("kitsu:7442"): identidade
+                        // de quem nao tem IMDb nem TMDB, para re-resolver o
+                        // catIndice depois de uma troca (CATREVB)
 } MapaObra;
 
 // O que liga duas sementes, do mais especifico ao mais vago.
@@ -342,6 +345,18 @@ void mapa_vizinhos_montar(const MapaVizEntrada *e, MapaVizinhos *v);
 // {"results":[...],"total_results":N} de /discover e afins. `serie` fixa o
 // tipo (o /discover nao manda media_type). Devolve quantas obras leu.
 int  mapa_ler_lista(const char *json, int serie, MapaObra *o, int max, int *total);
+typedef struct {
+  MapaObra obra;
+  unsigned tituloHash, originalHash;
+} MapaRecomendacao;
+typedef struct {
+  MapaRecomendacao obras[MAPA_REC_MAX];
+  MapaEtiqueta generos[MAPA_GEN_MAX];
+  int n, nGen;
+} MapaRecomendacoes;
+int  mapa_ler_recomendacoes(const char *json, int serie, MapaRecomendacoes *saida);
+int  mapa_recomendacoes_tmdb(const char *imdb, long tmdb, int serie,
+                             const char *chave, const char *idioma, MapaRecomendacoes *saida);
 // /search/keyword: o id da palavra de nome EXATO `nome` (sem caixa). 0 = nao ha.
 long mapa_ler_keyword_id(const char *json, const char *nome);
 
