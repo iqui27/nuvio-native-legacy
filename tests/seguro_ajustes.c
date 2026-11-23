@@ -91,6 +91,21 @@ int main(int argc, char **argv) {
     OK(!ajustes_vidro() && !ajustes_4k() && fil_limite() == FIL_LIMITE_PADRAO);
     OK(valor[AJ_VIDRO] == 1 && valor[AJ_RESOLUCAO] == 0);   // gravados de vez
     { char *t = dados_ler("ajustes.txt"); OK(t && strstr(t, "vidroLocal 1") && strstr(t, "p2pLocal 1")); free(t); }
+    ajustes_dir(dir);
+    {
+      float r, g, b;
+      OK(ajustes_cor_viva() == CORVIVA_DESLIGADA && ajustes_rapido_cor_atual() == -1);
+      OK(AJ_TEMA_SEGURO >= nValores(AJ_TEMA));
+      ajustes_acento(&r, &g, &b);
+      OK(r == 201 / 255.0f && g == 60 / 255.0f && b == 135 / 255.0f);
+      ajustes_acento_luz(&r, &g, &b);
+      OK(r == 78 / 255.0f && g == 77 / 255.0f && b == 73 / 255.0f);
+      OK(definirValorDireto(AJ_TEMA, AJ_TEMA_RESERVA));
+      ajustes_dir(dir);
+      OK(ajustes_rapido_cor_atual() >= 0);
+      ajustes_acento_luz(&r, &g, &b);
+      OK(r == 120 / 255.0f && g == 47 / 255.0f && b == 83 / 255.0f);
+    }
     seguro_encerrar();
     _exit(0);
   }

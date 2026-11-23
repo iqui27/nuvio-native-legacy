@@ -5683,7 +5683,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "Deljenje je na strežniku izklopljeno"),
   T("O conjunto de selos usado na lista", "Komplet žigov, uporabljen na seznamu"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "Obroba vrstic in kartic, tudi obroba fokusa. Izklopljeno: element v fokusu označuje le svetlejše ozadje v barvi poudarka."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "Obroba vrstic in kartic, tudi obroba fokusa."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "Daljinec, iskanje, račun in posodobitev: kar velja na vsakem zaslonu aplikacije."),
   T("O corte da imagem do trailer", "Izrez slike napovednika"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Merilo samodejne izbire: uravnoteženo, kakovost ali hiter začetek."),

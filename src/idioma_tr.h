@@ -5683,7 +5683,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "Paylaşım sunucuda kapalı"),
   T("O conjunto de selos usado na lista", "Listede kullanılan damga seti"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "Satırların ve kartların kenarlığı, odak kenarlığı dahil. Kapalıyken odaktaki öğe yalnızca vurgu renginde daha açık bir arka planla işaretlenir."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "Satırların ve kartların kenarlığı, odak kenarlığı dahil."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "Kumanda, arama, hesap ve güncelleme: uygulamanın her ekranında geçerli olanlar."),
   T("O corte da imagem do trailer", "Fragman resmi kesildi"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Otomatik seçimin ölçütü: denge, kalite ya da hızlı başlat."),

@@ -166,7 +166,7 @@
   0, 1, 1, 1, 1, 1,/* trakt, tmdb, letterboxd, mal, ebert, nota do mdblist */
   1,                /* perfil pesquisavel: DESLIGADO (V_LIGA: 1 = Desligado). Padrao de todo mundo. */
   0,                /* meu perfil publico: acao */
-  0,                /* glass contour: On (aesthetic, never automatic) */
+  1,                /* glass contour: Off (aesthetic, never automatic) */
   1,                /* som do trailer no destaque: DESLIGADO (V_LIGA: 1 = Desligado) */
   22,               /* espera do trailer no destaque: 2,2 s (em decimos de segundo) */
   90,               /* percentual assistido: 90%, o numero fixo de antes */

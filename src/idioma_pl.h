@@ -5683,7 +5683,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "Udostępnianie jest wyłączone na serwerze"),
   T("O conjunto de selos usado na lista", "Zestaw znaczków użyty na liście"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "Kontur wierszy i kart, także kontur fokusu. Wyłączone: element z fokusem oznacza tylko jaśniejsze tło w kolorze akcentu."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "Kontur wierszy i kart, także kontur fokusu."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "Pilot, wyszukiwanie, konto i aktualizacja: to, co działa na każdym ekranie aplikacji."),
   T("O corte da imagem do trailer", "Wycięty obraz zwiastuna"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Kryterium automatycznego wyboru: równowaga, jakość lub szybki start."),

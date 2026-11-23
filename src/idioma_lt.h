@@ -5683,7 +5683,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "Bendrinimas serveryje išjungtas"),
   T("O conjunto de selos usado na lista", "Sąraše naudojamas antspaudų rinkinys"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "Eilučių ir kortelių kontūras, įskaitant fokuso. Išjungus fokuse esantį elementą žymi tik šviesesnis akcento spalvos fonas."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "Eilučių ir kortelių kontūras, įskaitant fokuso."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "Pultas, paieška, paskyra ir atnaujinimas: kas galioja kiekviename programėlės ekrane."),
   T("O corte da imagem do trailer", "Iškirptas anonso vaizdas"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Automatinio pasirinkimo kriterijus: balansas, kokybė ar greita pradžia."),

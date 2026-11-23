@@ -5683,7 +5683,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "Delen staat uit op de server"),
   T("O conjunto de selos usado na lista", "De stempelset die in de lijst wordt gebruikt"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "De rand van rijen en kaarten, ook die van de focus. Uit: het item met focus wordt alleen gemarkeerd door een lichtere achtergrond in de accentkleur."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "De rand van rijen en kaarten, ook die van de focus."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "De afstandsbediening, zoeken, het account en updates: wat op elk scherm van de app geldt."),
   T("O corte da imagem do trailer", "De trailerafbeelding is verwijderd"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Het criterium van de automatische keuze: evenwicht, kwaliteit of snel starten."),
