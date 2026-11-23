@@ -5683,7 +5683,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "Tính năng chia sẻ đang tắt trên máy chủ"),
   T("O conjunto de selos usado na lista", "Bộ tem được sử dụng trong danh sách"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "Viền của hàng và thẻ, kể cả viền tiêu điểm. Tắt: mục đang chọn chỉ được đánh dấu bằng nền sáng hơn theo màu nhấn."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "Viền của hàng và thẻ, kể cả viền tiêu điểm."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "Điều khiển, tìm kiếm, tài khoản và cập nhật: những gì áp dụng trên mọi màn hình của ứng dụng."),
   T("O corte da imagem do trailer", "Hình ảnh trailer đã bị cắt"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Tiêu chí tự chọn: cân bằng, chất lượng hoặc bắt đầu nhanh."),

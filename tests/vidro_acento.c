@@ -6,6 +6,7 @@
 #include "gfx.h"
 #include "corviva.h"
 #include "ajustes.h"
+#include "dados.h"
 #include "text.h"
 #include "tex_cache.h"
 #include <SDL2/SDL.h>
@@ -82,7 +83,12 @@ int main(int argc, char **argv) {
   GfxRect pill = { 800, 400, 320, 96 };
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
+#ifdef NV_LINUX_DESKTOP
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#else
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+#endif
   SDL_Window *w = SDL_CreateWindow("vidro", 0, 0, 64, 64, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN); assert(w);
   assert(SDL_GL_CreateContext(w));
   glGenTextures(1, &fboTex); glBindTexture(GL_TEXTURE_2D, fboTex);
@@ -92,7 +98,27 @@ int main(int argc, char **argv) {
   assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
   glViewport(0, 0, LW, LH); gfx_tamanho_alvo(LW, LH); assert(gfx_iniciar());
   assert(txt_iniciar("deploy/app", 1)); tex_iniciar(64);
+  assert(getenv("NUVIO_DADOS"));
+  dados_iniciar("deploy/app/art");
+  ajustes_dir(dados_dir());
   setenv("NUVIO_SHOT_VIDRO_FOSCO", "1", 1); ajustes_teste_vidro_env();
+  ajustes_teste_tema(-1, 1);
+  int contorno = ajustes_rapido_op("vidroContornoLocal");
+  assert(contorno >= 0 && !ajustes_vidro_contorno());
+  assert(ajustes_rapido_passo(contorno, 1) && ajustes_vidro_contorno());
+  {
+    double borda[3], meio[3];
+    GfxRect linha = { 800, 400, 320, 96 };
+    for (int vidro = 0; vidro <= 1; vidro++) {
+      ajustes_teste_tema(-1, vidro);
+      quadro(0.10f);
+      gfx_vidro_foco(linha, 0, 1, 1);
+      pixel(960, 400, borda);
+      pixel(960, 448, meio);
+      confere(vidro ? luma(borda) > luma(meio) + 40 : fabs(luma(borda) - luma(meio)) <= 2,
+              vidro ? "glass row keeps the enabled rim" : "solid row has no rim with contour enabled");
+    }
+  }
 
   for (unsigned t = 0; t < sizeof T / sizeof *T; t++) {
     double solido[3], vidro[3], meio[3], topo[3], aro[3];
