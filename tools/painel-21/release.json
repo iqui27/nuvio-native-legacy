@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T20:35:08+00:00",
+    "updatedAt": "2026-11-23T20:44:32+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T20:31:00+00:00",
+    "lastVpsReportedAt": "2026-11-23T20:40:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -911,21 +911,22 @@
         "farol-29"
       ],
       "allDependencies": false,
-      "status": "CORRECAO",
+      "status": "REVISAO",
       "wave": "B",
-      "sha": "6238266cb3",
+      "sha": "e7c3d6e443",
       "batch": null,
-      "note": "Sol r2 REPROVADO: gosto livre no KV entre contas, título inventado via x, título muda no hit, afinidade fora do pedido e colisão filme/série. Originais passaram, 14/14 dirigidos, 488/488 corpus, merge limpo. Gemini Hydrogen corrige na mesma branch (…31fc)",
+      "note": "Gemini Hydrogen entregou correção dos cinco P1, informou 20/20 e corpus 488/488 com paridade no renderer C. Merge-tree 21e rc 0 confirmado. Sol r3 (…ca17) ocupa a vaga do 48; 52 depende deste veredito",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-40",
-      "updatedAt": "2026-11-23T20:28:21+00:00",
-      "reportedAt": "2026-11-23T20:24:00+00:00",
+      "updatedAt": "2026-11-23T20:44:32+00:00",
+      "reportedAt": "2026-11-23T20:40:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "Sol r2 REPROVADO: gosto livre no KV entre contas, título inventado via x, título muda no hit, afinidade fora do pedido e colisão filme/série. Originais passaram, 14/14 dirigidos, 488/488 corpus, merge limpo. Gemini Hydrogen corrige na mesma branch (…31fc)",
         "Gemini Hydrogen entregou correção dos quatro P1 (relata dirigido 14/14 e corpus 488/488); merge-tree 21e rc 0 confirmado; Sol via Codex revisa r2 (…dc7f)",
         "Sol r1 REPROVADO: consentimento, privacidade do KV, título literal inventado e hit KV fora do pedido; Gemini Hydrogen (…ca17) corrige na mesma branch",
         "VPS Gemini 4 Neon (antigravity) onda B, task …3616b0ed, brief lotes/sense/briefs/farol-40.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
@@ -1062,14 +1063,15 @@
         "farol-47"
       ],
       "allDependencies": false,
-      "status": "CORRECAO",
+      "status": "REVISAO",
       "wave": "A",
       "sha": "eeb143e572",
       "batch": null,
-      "note": "r2 Neon encerrou sem relatório, sintaxe 10/10 informada; Gemini Hydrogen (…76c1) retoma provas e relatório usando a ponta existente",
+      "note": "Hydrogen fechou provas da FAROL46E: dirigido nos três modos, 22 scripts verdes, sintaxe 10/10. No 21e confirmei conflito em src/mapa.c do CATREV e três chamadas da fixture que exigem o quarto argumento. Pronto para revisão r4 na primeira vaga; TV pendente",
       "source": "Relato VPS",
       "verified": false,
       "previousNotes": [
+        "r2 Neon encerrou sem relatório, sintaxe 10/10 informada; Gemini Hydrogen (…76c1) retoma provas e relatório usando a ponta existente",
         "VPS FAROL6C e FAROL46E (Gemini Neon) interrompidas 19:22 sem commit; sobras removidas; relançando",
         "Devin publicou eeb143e57 sem relatório antes do cancelamento; FAROL46E retomada no Gemini 4 Neon (…a67f9a209349); oracle-vps; não verificado",
         "VPS Devin swe-2-high entregou FAROL46D (gênero por identidade; PT×EN 134 → 0 nos 3 modos; merge-tree 6/6 rc 0); ainda substitui publicação local quando TMDB omite gênero; 2º commit autorizado com patch preparado, FAROL46E no Devin swe-2-high (task …4ac60); TV não verificado",
@@ -1087,8 +1089,8 @@
         "TV física pendente."
       ],
       "branch": "agente/21z-farol-46",
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
+      "updatedAt": "2026-11-23T20:44:32+00:00",
+      "reportedAt": "2026-11-23T20:38:00+00:00",
       "integrationVerified": false
     },
     {
@@ -1115,21 +1117,22 @@
         "farol-45"
       ],
       "allDependencies": false,
-      "status": "REVISAO",
+      "status": "CORRECAO",
       "wave": "B",
       "sha": "d60b19b4d7",
       "batch": null,
-      "note": "commit e relatório do Gemini Neon recuperados; Sol r1 (…4ab1) revisa. Merge-tree com o 21e pós-#840 aponta conflito em src/home.c nas gerações de Assistiu e Dica; TV física pendente",
+      "note": "Sol r1 REPROVADO: cota antes de render, Escolha sem destino, série do Diário não abre, dica vencida acionável e ligação do dirigido quebra com #840. Gemini Neon corrige na mesma branch (…a924). Sonda inicial gravou fixtures no diretório padrão, revisor limpou o que identificou e refez isolada Conflito anterior em src/home.c contra o 21e pós-#840 sem resolução informada; TV física permanece pendente.",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-48",
-      "updatedAt": "2026-11-23T20:28:21+00:00",
-      "reportedAt": "2026-11-23T20:22:00+00:00",
+      "updatedAt": "2026-11-23T20:44:32+00:00",
+      "reportedAt": "2026-11-23T20:40:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "commit e relatório do Gemini Neon recuperados; Sol r1 (…4ab1) revisa. Merge-tree com o 21e pós-#840 aponta conflito em src/home.c nas gerações de Assistiu e Dica; TV física pendente",
         "VPS Gemini 4 Neon (antigravity) onda B, task …9071e0a7, brief lotes/sense/briefs/farol-48.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
       ]
     },
@@ -1206,9 +1209,14 @@
       "wave": "D",
       "sha": null,
       "batch": null,
-      "note": "Caminho crítico.",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "Caminho crítico. Aguarda o veredito da revisão Sol r3 do Farol 40 antes de avançar.",
+      "source": "VPS · escopo 23/11 03h40 UTC + dependência reforçada no relato das 20h40 UTC",
+      "verified": false,
+      "previousNotes": [
+        "Caminho crítico."
+      ],
+      "updatedAt": "2026-11-23T20:44:32+00:00",
+      "dependencyReportedAt": "2026-11-23T20:40:00+00:00"
     },
     {
       "id": "farol-53",
@@ -3949,6 +3957,30 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T20:40:00+00:00",
+      "appliedAt": "2026-11-23T20:44:32+00:00",
+      "item": "farol-40",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 20:40 [REVISAO] farol-40 · agente/21z-farol-40@e7c3d6e443 · Gemini Hydrogen entregou correção dos cinco P1, informou 20/20 e corpus 488/488 com paridade no renderer C. Merge-tree 21e rc 0 confirmado. Sol r3 (…ca17) ocupa a vaga do 48; 52 depende deste veredito"
+    },
+    {
+      "at": "2026-11-23T20:40:00+00:00",
+      "appliedAt": "2026-11-23T20:44:32+00:00",
+      "item": "farol-48",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 20:40 [CORRECAO] farol-48 · agente/21z-farol-48@d60b19b4d7 · Sol r1 REPROVADO: cota antes de render, Escolha sem destino, série do Diário não abre, dica vencida acionável e ligação do dirigido quebra com #840. Gemini Neon corrige na mesma branch (…a924). Sonda inicial gravou fixtures no diretório padrão, revisor limpou o que identificou e refez isolada"
+    },
+    {
+      "at": "2026-11-23T20:38:00+00:00",
+      "appliedAt": "2026-11-23T20:44:32+00:00",
+      "item": "farol-46",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 20:38 [REVISAO] farol-46 · agente/21z-farol-46@eeb143e572 · Hydrogen fechou provas da FAROL46E: dirigido nos três modos, 22 scripts verdes, sintaxe 10/10. No 21e confirmei conflito em src/mapa.c do CATREV e três chamadas da fixture que exigem o quarto argumento. Pronto para revisão r4 na primeira vaga; TV pendente"
+    },
     {
       "at": "2026-11-23T20:31:00+00:00",
       "appliedAt": "2026-11-23T20:35:08+00:00",
