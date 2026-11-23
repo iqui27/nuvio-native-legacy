@@ -11,6 +11,8 @@
 #include "rede.h"
 
 extern void mkvfix_mp4_stub_ocultar(int n);
+extern void mkvfix_mp4_stub_ocultas(int n);
+extern void mkvfix_mp4_stub_estado(int e);
 extern void dts_tpk_stub_ligar(int on);
 extern int dts_tpk_stub_aberturas(void);
 
@@ -99,8 +101,9 @@ void nv_tpk_video_faixa(int tipo, int idx, const char *lingua);
 void nv_tpk_video_faixas_fim(int selAudio, int selLeg);
 void nv_tpk_video_evento(int tipo, int a, int b);
 
-static int falhas, nLegHost;
-static void hAbrir(const char *u, const char *c) { (void)u; (void)c; }
+static int falhas, nLegHost, nBuscar, ultBuscarMs = -1, nAbrirMkv;
+static void hAbrir(const char *u, const char *c) { (void)c; if (u && strstr(u, "127.0.0.1")) nAbrirMkv++; }
+static void hBuscarT(int ms) { nBuscar++; ultBuscarMs = ms; }
 static void hSem(void) {}
 static void hInt(int v) { (void)v; }
 static void hJanela(int x, int y, int w, int h) { (void)x; (void)y; (void)w; (void)h; }
@@ -124,7 +127,7 @@ int main(void) {
   int rede0, dts0, host0;
   SDL_Init(0);
   montar();
-  nv_tpk_video_registrar(hAbrir, hSem, hInt, hInt, hInt, hJanela, hPos);
+  nv_tpk_video_registrar(hAbrir, hSem, hInt, hBuscarT, hInt, hJanela, hPos);
   nv_tpk_video_registrar_faixas(hEscolher);
   video_iniciar_auto();
 
@@ -227,6 +230,25 @@ int main(void) {
   pronto(0, 0, 0);
   bombear_ms(900);
   ok(redeN == rede0 && dts_tpk_stub_aberturas() == dts0, "G live MP4 adds no side connection");
+  video_parar();
+
+  /* H: resume at a nonzero point with ASS hidden from the TV. The seek waits
+     for the probe; the reopen through the local server lands ON the target
+     (the TV log had it back at 0 s). */
+  cacheOn = 0; rangeOn = 0; posMs = 0; redeN = nLegHost = nBuscar = nAbrirMkv = 0; ultBuscarMs = -1;
+  video_definir_reconexao(1); video_definir_mp4(1);
+  video_tocar("http://h/resume.mp4");
+  pronto(7200000, 1, 0);
+  mkvfix_mp4_stub_estado(MKVFIX_SONDANDO);   /* a sonda no ar (.mp4 nao sonda no stub) */
+  video_buscar(459.0);
+  ok(nBuscar == 0 && video_tpk_seek_segurado_ms() > 0, "H resume seek held during the probe");
+  mkvfix_mp4_stub_ocultas(2); mkvfix_mp4_stub_estado(MKVFIX_NORMAL);
+  bombear(4);
+  ok(nAbrirMkv > 0, "H hidden text subs reopen through the local server");
+  pronto(7200000, 1, 0);
+  nv_tpk_video_evento(2, 0, 0);              /* tocando: o alvo sai */
+  bombear(4);
+  ok(ultBuscarMs == 459000, "H the reopen seeks to the held target, not back to 0");
   video_parar();
 
   printf(falhas ? "tpk-mp4-mkvfix-legendas: %d FAIL(S)\n" : "tpk-mp4-mkvfix-legendas: ok\n", falhas);

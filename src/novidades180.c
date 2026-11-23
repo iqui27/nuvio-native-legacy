@@ -173,7 +173,7 @@ static float linhaFonte(const LinhaF *l, int focada, float x, float y, float w) 
     if (vid()) gfx_cor((GfxRect){ x, y, w, h }, 22.0f / h, 1, 1, 1, 0.12f);
     else {
       gfx_rect((GfxRect){ x - 10, y + 2, w + 20, h + 26 }, 0, GFX_SOMBRA, 1, 0, 0, 0.5f, 0, 0, 0, 0.30f);
-      gfx_cor((GfxRect){ x, y, w, h }, 22.0f / h, 0.169f, 0.176f, 0.204f, 1);
+      gfx_cor((GfxRect){ x, y, w, h }, 22.0f / h, NV_COR_FOCO_RGB, 1);
     }
   }
   x += 22.0f; w -= 44.0f; y += 18.0f;
@@ -369,7 +369,7 @@ static void linhaAj(const char *ic, const char *nm, const char *sb, const char *
   const float h = 86.0f;
   if (f) {
     if (vid()) gfx_cor((GfxRect){ x, y, w, h }, 22.0f / h, 1, 1, 1, 0.12f);
-    else gfx_cor((GfxRect){ x, y, w, h }, 22.0f / h, 0.169f, 0.176f, 0.204f, 1);
+    else gfx_cor((GfxRect){ x, y, w, h }, 22.0f / h, NV_COR_FOCO_RGB, 1);
   }
   icone(ic, (GfxRect){ x + 22, y + h * 0.5f - 13, 26, 26 }, 1, f ? 1.0f : 0.6f);
   { TxtLinha n = txt(TXT_AJ_NOME, nm), s = txt(TXT_ILHA_GENERO, sb), v = txt(TXT_AJ_VALOR, vl);

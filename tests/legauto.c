@@ -4,6 +4,7 @@
 #include <assert.h>
 uint64_t legsync_hash_url(const char *u) { uint64_t h = 1469598103934665603ull; while (*u) h = (h ^ (unsigned char)*u++) * 1099511628211ull; return h; }
 const char *i18n(const char *t) { return t; }
+int ajustes_legenda_evitar_sdh(void) { return 0; }   // #743: desligado neste teste
 static Legenda L(const char *lang, const char *url, const char *arq) {
   Legenda l; memset(&l, 0, sizeof l);
   ling_normalizar(lang, l.idioma, sizeof l.idioma);

@@ -430,8 +430,11 @@ static float detalheFocoEscala(float escala) {
 }
 static GfxRect detalheFoco(GfxRect r,float raio,float f,float escala,float a) {
   r=detalheEscala(r,f,detalheFocoEscala(escala));
+  // Glass UI 2.0 (.cz.foco): quem esta em foco sobe, com a escala acima e a
+  // sombra caida, sem aro. "Borda no cartaz em foco" e o anel da Home; aqui o
+  // fio branco de 1 px competia com a elevacao.
+  gfx_vidro_elevacao(r,f,a);
   if (layout_desktop_ativo()) foco_anel(r,raio,f,a);
-  else if (f>.005f && ajustes_borda_foco()) gfx_anel(r,raio,1,1,1,1,f*a);
   return r;
 }
 static float corpoAlpha(float entrada) { return entrada; }
@@ -1083,6 +1086,9 @@ static void irParaTemporada(int c, int moverFoco) {
   epAncora = 0;
   foco.colunaLembrada[SEC_EPISODIOS] = 0;
   if (moverFoco && epVisiveis() > 0) { foco.fileira = SEC_EPISODIOS; foco.coluna = 0; }
+  // A ABA PEDE A TEMPORADA (#787): ausente ou truncada pelo teto da lista,
+  // desc_episodios a completa do /meta guardado; inteira, ele sai na hora.
+  if (ehSerie()) desc_episodios(idx, temporadaEm(temporada));
 }
 
 // OK NUMA COLUNA DO GRAFICO "Seu progresso": a pagina passa para aquela
@@ -1428,7 +1434,11 @@ static const NotasSecao *notasDados(void) {
   int i;
   for (i = 0; i < EX_NFONTES; i++) s.cru[i] = extras_nota(i);
   if (!s.cru[EX_IMDB] && ajustes_mdblist_fonte(EX_IMDB)) s.cru[EX_IMDB] = notaDe(idx);
-  s.notaPessoal = reacao_nota(cat_item(idx)->imdb);
+  // cat_item pode dar NULL: a refacao do "Continuar assistindo" publica n = 0
+  // por um instante, de outro fio, logo depois de sair do player (era a queda
+  // na tela de episodios, 27/10).
+  { const CatItem *ci = cat_item(idx);
+    s.notaPessoal = ci ? reacao_nota(ci->imdb) : 0; }
   s.nTemp = ehSerie() && (extras_n_temporadas() || notasCatDisponiveis()) ? notasCatNTemp() : 0;
   s.tempNum = notasCatTemp; s.nEps = notasCatNEps;
   s.epNum = notasCatNumero; s.epNota = notasCatNota;
@@ -2460,6 +2470,29 @@ static int montarDetalhes(LinhaDet *o, int max) {
   // serie, Canal e Episódios no lugar de No Brasil/Duração). A classificacao
   // mora na linha do cabecalho das Notas; pais e status saem — o mockup e
   // explicito sobre o que cada linha diz.
+  if (ajustes_det_fonte_antecipada()) {
+    int est = FA_NADA, idx = stream_antecipada(&est);
+    if (idx >= 0 && est == FA_OK) {
+      const Stream *s = stream_item(idx);
+      char buf[320] = "";
+      if (s) {
+        VaiTocar vt = {0};
+        vt_descrever(s, &vt);
+        vt_nome_amigavel(&vt, buf, sizeof buf);
+        if (vt.tamanho[0]) {
+          char tmp[sizeof buf];
+          snprintf(tmp, sizeof tmp, "%s · %s", buf, vt.tamanho);
+          snprintf(buf, sizeof buf, "%s", tmp);
+        }
+        if (s->provedor[0]) {
+          char tmp[sizeof buf];
+          snprintf(tmp, sizeof tmp, "%s%s%s", buf, buf[0] ? " · " : "", s->provedor);
+          snprintf(buf, sizeof buf, "%s", tmp);
+        }
+      }
+      DET_POE("Fonte preparada", buf[0] ? buf : NULL);
+    }
+  }
   DET_POE("Original", extras_titulo_original());
   { const char *orig = extras_titulo_original();
     DET_POE("No Brasil", ci && ci->titulo[0] && strcmp(ci->titulo, orig) ? ci->titulo : NULL); }
@@ -2534,7 +2567,7 @@ static float epCardH(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return epCardW()*9/16+200;
 #endif
-  return epModerno() ? 530 : epApple() ? 500 : NV_DETP_EP_H;
+  return epModerno() ? 530 : epApple() ? 414 : NV_DETP_EP_H;   // 4A: miniatura + duas linhas
 }
 static float epCardPasso(void) {
 #ifdef NV_DESKTOP_UI
@@ -4864,8 +4897,13 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, float focado, fl
     // nao #222, foco realce + tinta + luz. O tamanho (escala no foco) e o
     // glifo continuam daqui.
     if (!detalheRetrato()) {
-      gfx_cor(r,.5f,1,1,1,(.12f + .84f * focado)*a);
-      ic=.953f - .886f * focado;
+      // 2.1 4A (.btn.foco): em foco a pilula cheia no realce com a tinta de
+      // contraste, e nao branca: com a reserva rosa o Assistir saia branco ao
+      // lado da pilula de temporada rosa. No tema Branco nada muda.
+      float ar, ag, ab, ti = focoAcento(&ar, &ag, &ab);
+      gfx_cor(r,.5f,1,1,1,.12f * (1.0f - focado)*a);
+      gfx_cor(r,.5f,ar,ag,ab,focado*a);
+      ic=.953f + (ti - .953f) * focado;
     } else if (ajustes_vidro()) {
       // Vidro: o mesmo disco de botao_disco (branco cheio em foco, glifo escuro).
       gfx_vidro_painel(r, NV_RAIO_PILL, 0.55f, a);
@@ -4945,8 +4983,13 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, float focado, fl
   // o mesmo botao em dois tamanhos, e o Play brigava com o botao em foco.
   { float tinta = 235.0f / 255.0f, fr = 0.14f, fg = 0.15f, fb = 0.17f;
     if (!detalheRetrato()) {
-      gfx_cor(r,.5f,1,1,1,(.12f + .84f * focado)*a);
-      tinta=.953f - .886f * focado;
+      // 2.1 4A (.btn.foco): em foco a pilula cheia no realce com a tinta de
+      // contraste, e nao branca: com a reserva rosa o Assistir saia branco ao
+      // lado da pilula de temporada rosa. No tema Branco nada muda.
+      float ar, ag, ab, ti = focoAcento(&ar, &ag, &ab);
+      gfx_cor(r,.5f,1,1,1,.12f * (1.0f - focado)*a);
+      gfx_cor(r,.5f,ar,ag,ab,focado*a);
+      tinta=.953f + (ti - .953f) * focado;
     } else if (ajustes_vidro()) {
       // Play: vidro com lavagem e aro do realce em repouso; em foco, a pilula
       // cheia na cor do realce (branca no tema padrao).
@@ -6506,7 +6549,8 @@ static void heroWeb(float a, float desloc) {
     // Sem nota dada a pessoa nao tem "Sua nota": o item some em vez de
     // mostrar um traco solto.
     { char mine[96], value[24];
-      int n = reacao_nota(cat_item(idx)->imdb);
+      const CatItem *ciNota = cat_item(idx);   // NULL durante a troca do catalogo
+      int n = ciNota ? reacao_nota(ciNota->imdb) : 0;
       if (n && !servidoresDisponiveis) {  // hide until rated; server titles show the card
         snprintf(value, sizeof value, "%d.%d", n / 2, n % 2 * 5); plrui_decimal(value);
         snprintf(mine, sizeof mine, "%s  %s", i18n("Sua nota"), value);
@@ -6587,8 +6631,9 @@ static int temLembreteTemporada(void) {
 static void rotuloTemporada(int c, char *dst, size_t n) {
   if (c>=colTemp(nTemporadasReais())) {
     if (temporadaLembrete(c)) {
-      const AgItem *ag=agenda_registro(cat_item(idx)->imdb);
-      snprintf(dst,n,i18n("Temporada %d"),ag->temporada);
+      const CatItem *ci=cat_item(idx);
+      const AgItem *ag=ci ? agenda_registro(ci->imdb) : NULL;
+      snprintf(dst,n,i18n("Temporada %d"),ag ? ag->temporada : temporadaEm(posTemp(c)));
     } else snprintf(dst,n,"%s",i18n("Sem spoilers"));
     return;
   }
@@ -6740,7 +6785,7 @@ static void resumoTemporada(float x, float yPilulas, float a) {
     // das duracoes dos episodios por ver (minutosDe le o mesmo texto do card).
     { int alvoNum = alvo, minRest = 0, i, nEp = cat_n_episodios(idx);
       const CatItem *ciC = cat_item(idx);
-      for (i = 0; i < nEp; i++) {
+      for (i = 0; ciC && i < nEp; i++) {
         const CatEp *e = cat_episodio(idx, i);
         if (!e || e->temporada != alvoNum || epNaoExibido(e)) continue;
         if (vistoep_estado(ciC->imdb, e->temporada, e->episodio) != 1)
@@ -6847,7 +6892,9 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
     return;
   }
   if (temporadaLembrete(c)) {
-    const AgItem *ag=agenda_registro(cat_item(idx)->imdb);
+    const CatItem *ci=cat_item(idx);
+    const AgItem *ag=ci ? agenda_registro(ci->imdb) : NULL;
+    if (!ag) return;
     char label[48]; snprintf(label,sizeof label,"T%d · %.4s",ag->temporada,ag->dataProx);
     gfx_icone((GfxRect){r.x+18,r.y+17,22,22},"aj_bell",ink/255.f,ink/255.f,ink/255.f,a);
     txt_desenhar_alpha(txt_linha(TXT_G22M,label,ink,ink,ink,255),r.x+52,r.y+16,a);
@@ -6927,19 +6974,12 @@ static float desenhaNotaEpisodio(float x, float y, int fonte, int nota, float a)
 }
 
 static void desenhaAssistidoEpisodio(GfxRect th, float a) {
-  const float h = 46, pad = 12, icone = 28, gap = 10;
-  TxtLinha texto = txt_linha_corta(TXT_CAPTION2, "Assistido", 255, 255, 255, 255,
-                                  th.w * .5f - pad * 2 - icone - gap);
-  float w = pad * 2 + icone + gap + texto.w;
-  GfxRect selo = {th.x + th.w - w - 18, th.y + 18, w, h};
-  gfx_cor(selo, .5f, .055f, .068f, .09f, .96f * a);
-  gfx_anel(selo, .5f, 1, .68f, .75f, .86f, .30f * a);
-  GfxRect disco = {selo.x + pad, selo.y + (h - icone) * .5f, icone, icone};
-  gfx_cor(disco, .5f, .451f, .839f, .694f, a);
-  gfx_icone((GfxRect){disco.x + 5, disco.y + 5, icone - 10, icone - 10},
-             "check", 1, 1, 1, a);
-  txt_desenhar_alpha(texto, disco.x + icone + gap,
-                     selo.y + (h - texto.h) * .5f, a);
+  // O VISTO DO 2.1 4A (tv.css .visto): disco escuro de 30 px no canto da
+  // miniatura com o check branco. Era uma pilula "Assistido" com disco verde,
+  // que cobria um terco da arte e trazia uma cor fora do tema.
+  GfxRect disco = {th.x + th.w - 30 - 10, th.y + 10, 30, 30};
+  gfx_cor(disco, .5f, .039f, .039f, .047f, .72f * a);
+  gfx_icone((GfxRect){disco.x + 6, disco.y + 6, 18, 18}, "check", 1, 1, 1, a);
 }
 
 // A NOTA DO USUARIO NO EPISODIO (reacao.h): estrela + "4,5", embaixo do selo
@@ -7006,6 +7046,15 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
   // desligado, a miniatura cresce com a animacao do foco. O brilho e o
   // realce de profundidade seguem os mesmos Ajustes (Episodios).
   GfxRect thLayout = th;
+  // EPISODIO EM FOCO COMO NO 2.1 4A (tv.css .cz.foco): a miniatura SOBE, com
+  // escala 1.08 e a sombra caida, sem placa atras e sem aro. So no cartao
+  // epApple da TV (o moderno e o desktop tem o foco deles logo abaixo).
+  int ep4a = epApple() && !(epModerno() && !detalheRetrato()) && !layout_desktop_ativo();
+  if (ep4a && f > .005f) {
+    float k = .08f * anim_clamp(f, 0, 1);
+    th.x -= th.w * k * .5f; th.y -= th.h * k * .5f; th.w *= 1.0f + k; th.h *= 1.0f + k;
+    gfx_vidro_elevacao(th, f, a);
+  }
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) th=detalheFoco(th,raioTh,f,.025f,a);
   else
@@ -7050,7 +7099,11 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
   if (t2) {
     if (aArte < 0.999f) gfx_cor(th, raioTh, 0.133f, 0.133f, 0.133f, a);
     gfx_tex_aspect_atual = tex_aspecto(arte);
+    // Sem o fio claro do GFX_CARD na miniatura em foco (uBorda): o episodio
+    // sobe por escala e sombra, sem aro (Glass UI 2.0).
+    gfx_borda_foco_atual = 0.0f;
     gfx_rect(th, t2, GFX_CARD, f, 0, 0, raioTh, 0, 0, 0, a * aArte);
+    gfx_borda_foco_atual = 1.0f;
     gfx_tex_aspect_atual = 0.0f;
   } else if (arte && !tex_falhou(arte))
     gfx_esqueleto(th, raioTh, 0.133f, 0.133f, 0.133f, a);
@@ -7058,9 +7111,11 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
 #ifdef NV_DESKTOP_UI
   if (!layout_desktop_ativo())
 #endif
-  if (!epModerno() || detalheRetrato()) veuEpisodio(th,a);
+  // 4A: nada escrito sobre a miniatura, entao sem o veu de leitura
+  if (!ep4a && (!epModerno() || detalheRetrato())) veuEpisodio(th,a);
   if (epModerno() && !resumo) gfx_cor(th, raioTh, 0, 0, 0, .30f * (1 - anim_clamp(f, 0, 1)) * a);
-  if (ajustes_vidro()) gfx_vidro_aro(th, raioTh, 1.5f, 1, 1, 1, 0.14f * a);   // vidro: aro fino na miniatura
+  // vidro: aro fino na miniatura em repouso; a que esta em foco sobe sem fio
+  if (ajustes_vidro()) gfx_vidro_aro(th, raioTh, 1.5f, 1, 1, 1, 0.14f * (ep4a ? 1.0f - anim_clamp(f, 0, 1) : 1.0f) * a);
 
   // A mesma fonte que o menu modifica: desconhecido (-1) nao recebe selo.
   // A lavagem e leve para preservar a arte; texto e estado sao desenhados depois.
@@ -7080,7 +7135,11 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
     gfx_cor(d, .5f, .055f, .059f, .071f, .72f * a);
     gfx_icone((GfxRect){ d.x + 21.0f, d.y + 21.0f, 30.0f, 30.0f }, "aj_lock", .95f, .95f, .95f, a);
   }
-  desenhaMinhaNotaEpisodio(th, serie->imdb, ep->temporada, ep->episodio, a);
+  // A mesma janela de recarga de resumoTemporada: serie pode vir NULL aqui e
+  // desenhaMinhaNotaEpisodio monta a chave com snprintf("%s"). idxImdb ja
+  // guarda a identidade do item aberto, entao a nota nem pisca.
+  desenhaMinhaNotaEpisodio(th, serie ? serie->imdb : idxImdb,
+                           ep->temporada, ep->episodio, a);
   th = thLayout;   // o texto abaixo segue a caixa de repouso
 
   // NADA DE RESERVA INVENTADA. Aqui as quatro linhas caiam numa tabela de
@@ -7167,68 +7226,46 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
   }
 #endif
   if (epApple()) {
-    float textX = r.x + 18.0f, textW = resumo ? fmaxf(48.0f, r.w - 36.0f) : r.w - 36.0f;
+    // O CARTAO DO 2.1 4A (design/2.1/titulo.html): sob a miniatura so "N · Nome"
+    // e a linha "47 min" com os selos de pular; o progresso e um trilho no
+    // realce dentro da miniatura e o visto e o selo no canto dela (acima). Sem
+    // kicker, sinopse nem data: a sinopse do episodio em foco mora no painel.
+    float textX = r.x, textW = r.w;
     float textY = r.y + epThumbH() + 18.0f;
-    GfxRect info = {r.x,textY-8,r.w,epCardH()-epThumbH()-18};
-    if (f > .005f) {
-      gfx_cor(info,20.0f/info.h,.19f,.21f,.23f,.64f*f*a);
-      if (ajustes_borda_foco()) gfx_anel(th,20.0f/th.h,1.5f,1,1,1,.18f*f*a);
-    }
-    float metaY = th.y + th.h - 36.0f;
     int watched = serie && ep &&
       vistoep_estado(serie->imdb, ep->temporada, ep->episodio) == 1;
     int current = serie && ep && serie->temporada == ep->temporada &&
       serie->episodio == ep->episodio;
     int progress = current && !watched ? serie->progresso : 0;
-    if (watched)
-      gfx_icone((GfxRect){textX,metaY+2,20,20},"aj_rotate-ccw-clock",
-                .9f,.92f,.94f,a);
-    else
-      gfx_rect((GfxRect){textX,metaY+4,14,17},0,GFX_PLAY,0,0,0,0,
-               .9f,.92f,.94f,a);
-    float durationX = textX+28;
+    int tint = 204 + (int)(39.0f * anim_clamp(f, 0, 1));   // 80% em repouso, cheio em foco
+    char title[240], line[96] = "";
     if (progress > 0 && progress < 100) {
-      GfxRect track = {durationX,metaY+10,72,4};
-      gfx_cor(track,.5f,1,1,1,.25f*a);
-      track.w *= progress/100.0f; gfx_cor(track,.5f,1,1,1,.8f*a);
-      durationX += 84;
-      if (serie->restanteMin > 0) {
-        char remaining[64];
-        int h = serie->restanteMin / 60, m = serie->restanteMin % 60;
-        if (h && m) snprintf(remaining,sizeof remaining,i18n("%dh %dmin Restantes"),h,m);
-        else if (h) snprintf(remaining,sizeof remaining,i18n("%dh Restantes"),h);
-        else snprintf(remaining,sizeof remaining,i18n("%dmin Restantes"),m);
-        txt_desenhar_alpha(txt_linha_corta(TXT_CAPTION,remaining,235,237,240,255,
-                          r.x+r.w-18-durationX),durationX,metaY,a);
-      }
-    } else if (epDur)
-      txt_desenhar_alpha(txt_linha(TXT_CAPTION,epDur,235,237,240,255),durationX,metaY,a);
-    if (!(progress > 0 && progress < 100) && ep && serie && serie->imdb[0] &&
-        vt_pular_ligado()) {
-      int mk = vt_marcas_episodio(serie->imdb, ep->temporada, ep->episodio);
-      float cw = mk ? vtui_chips_episodio(mk, -1.0f, 0, a) : 0.0f;
-      if (cw > 0.0f)
-        vtui_chips_episodio(mk, r.x + r.w - 18.0f - cw, metaY + 2.0f, a);
+      float ar, ag, ab, k = .08f * anim_clamp(f, 0, 1);
+      GfxRect z = { th.x - th.w * k * .5f, th.y - th.h * k * .5f, th.w * (1.0f + k), th.h * (1.0f + k) };
+      GfxRect track = { z.x + 12.0f, z.y + z.h - 10.0f - 5.0f, z.w - 24.0f, 5.0f };
+      ajustes_acento(&ar, &ag, &ab);
+      gfx_cor(track, .5f, 1, 1, 1, .22f * a);
+      track.w *= progress / 100.0f; gfx_cor(track, .5f, ar, ag, ab, a);
     }
-    char number[32]; snprintf(number,sizeof number,i18n("EPISÓDIO %d"),epNum);
-    txt_desenhar_alpha(txt_linha(TXT_CAPTION2,number,164,169,176,255),textX,textY,a);
-    char fallback[40]; snprintf(fallback,sizeof fallback,i18n("Episódio %d"),epNum);
-    TxtLinha name = txt_linha_corta(TXT_DET_META2,epNome ? epNome : fallback,
-                                   246,247,250,255,textW);
-    txt_desenhar_alpha(name,textX,textY+30,a);
-    float y = textY+64;
-    if (epSin) y += txt_bloco_corta(TXT_CAPTION,epSin,171,177,185,
-                                   textX,y,textW,29,a,4);
-    if (epData) {
-      const char *date = epData;
-      if (!ajustes_data_completa() && strlen(date)>=4) date += strlen(date)-4;
-      txt_desenhar_alpha(txt_linha_corta(TXT_CAPTION2,date,165,171,180,255,textW),
-                        textX,y+10,a);
-    }
+    if (epNome) snprintf(title, sizeof title, "%d · %s", epNum, epNome);
+    else snprintf(title, sizeof title, i18n("Episódio %d"), epNum);
+    txt_desenhar_alpha(txt_linha_corta(TXT_DET_META2, title, tint, tint, tint, 255, textW),
+                       textX, textY, a);
     if (epNaoExibido(ep)) {
-      TxtLinha status = txt_linha_corta(TXT_CAPTION2,i18n("NÃO EXIBIDO"),245,199,77,255,textW);
-      txt_desenhar_alpha(status,textX,r.y+epCardH()-30,a);
-    }
+      const char *date = epData;
+      if (date && !ajustes_data_completa() && strlen(date) >= 4) date += strlen(date) - 4;
+      if (date) snprintf(line, sizeof line, i18n("sai %s"), date);
+      else snprintf(line, sizeof line, "%s", i18n("NÃO EXIBIDO"));
+    } else if (progress > 0 && progress < 100 && serie->restanteMin > 0)
+      snprintf(line, sizeof line, i18n("faltam %d min"), serie->restanteMin);
+    else if (epDur) snprintf(line, sizeof line, "%s", epDur);
+    { TxtLinha l = txt_linha_corta(TXT_CAPTION, line, 243, 242, 239, 255, textW);
+      float ly = textY + 36.0f;
+      if (line[0]) txt_desenhar_alpha(l, textX, ly, .40f * a);
+      if (!epNaoExibido(ep) && ep && serie && serie->imdb[0] && vt_pular_ligado()) {
+        int mk = vt_marcas_episodio(serie->imdb, ep->temporada, ep->episodio);
+        if (mk) vtui_chips_episodio(mk, textX + (line[0] ? l.w + 10.0f : 0.0f), ly + 2.0f, a);
+      } }
     return;
   }
 
@@ -7408,7 +7445,11 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
                      NV_DETP_EP_BARRA_H };
       // Anda do valor que esta tela mostrava ate o novo (revela.h): na volta
       // do player a barra do episodio cresce ate onde a pessoa parou.
-      float mostra = revela_progresso(ci->imdb, ep->temporada, ep->episodio,
+      // prog pode vir de extras_ep_progresso() com ci == NULL (item ausente na
+      // janela da recarga); revela_progresso aceita chave vazia e idxImdb ja
+      // guarda a identidade do item aberto.
+      float mostra = revela_progresso(ci ? ci->imdb : idxImdb,
+                                      ep->temporada, ep->episodio,
                                       (float)prog, SDL_GetTicks());
       GfxRect at = { tr.x, tr.y, tr.w * (mostra / 100.0f), tr.h };
       gfx_cor(tr, 0.5f, 0, 0, 0, 0.45f * a);
@@ -9799,7 +9840,11 @@ static void ultimoEpisodio(int *t, int *e) {
   }
 }
 
-int detail_indice(void) { return idx; }
+// Revalidated on every read, not only in detail_atualizar: app.c reads the
+// index for the source search and Play earlier in the same frame, and a
+// catalogue rebuild in between left it on whoever took the old slot for that
+// frame (another title's sources, then Play started that title).
+int detail_indice(void) { if (aberto) revalidarIdx(); return idx; }
 int detail_tem_servidores(void) { return aberto && servidoresDisponiveis; }
 int detail_pediu_reproduzir(void) { int v = pedReproduzir; pedReproduzir = 0; return v; }
 // Pedido de reproducao vindo de FORA da tela (OK no card de "Continuar

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-02T23:59:00Z",
-  "title": "Nuvio TV - Cinema contemporaneo",
+  "generatedAt": "2026-11-22T03:10:00Z",
+  "title": "Nuvio Legacy - Cinema contemporaneo",
   "extensions": {
     "northStar": "Cinema contemporaneo",
     "tone": [
@@ -14,9 +14,14 @@
       "accent": {
         "dynamic": true,
         "source": "ajustes_acento()",
-        "referenceTheme": "rose",
-        "referenceHex": "#EC407A",
-        "rule": "Nunca fixar o tema da captura; tinta clara para acento colorido e tinta escura para branco/quase branco."
+        "rule": "Nunca fixar o tema da captura; tinta clara para acento colorido e tinta escura para branco/quase branco.",
+        "defaultTheme": "Da arte",
+        "defaultThemeIndex": 12,
+        "fallbackTheme": "Rosa",
+        "fallbackThemeIndex": 6,
+        "fallbackHex": "#C93C87",
+        "fallbackRule": "When a dynamic theme cannot run (safe profile, title without art or grey art, index from another version) the accent is Rosa, not Branco (owner, 22/11/2026). The fallback paints controls only: the page background, the Frost light and the glass tint stay neutral.",
+        "mockupNote": "The only rose in the app is #C93C87 (contrast-checked by tests/acentos.sh). The mockups' --ac #EC407A is a drawing placeholder, never a native value."
       },
       "background": {
         "hex": "#0D0D0D",
@@ -37,7 +42,7 @@
     },
     "elevation": {
       "default": "Glass UI 'ilha' (02/10/2026): every panel is an island in the clock island's material — dark cool core (glass ~80% via gfx_vidro_folha, or solid #121316 when ajustes_vidro()==0), one faint corner light (gfx_luz_canto), short GFX_SOMBRA, no outline, large radius (sheet 28, modal 30-36, row 20-22, pill 50%).",
-      "focus": "Row/card focus = one step lighter surface (glass white 12-14%, solid #2B2D34), no ring, no accent block. Button/key/chip focus = full pill in the accent with contrast ink.",
+      "focus": "Row/card focus = one step lighter surface (glass white 12-14%, solid #2B2D34), optional white ring (Contorno do vidro), no accent block. Button/key/chip focus = full pill in the accent with contrast ink.",
       "accent": "Accent only marks state or key elements (active page dot, playing/previous-pick marks, 'Best for this TV', MP4, HDR group tag, chip on).",
       "badges": "Quality logos all in the same white ink (dim off-focus, bright on focus); per-category color was rejected.",
       "gradients": "8-bit panels band: gradients only through shaders that call nv_dither; never stacked gfx_cor strips. GPU level 1 uses the cheap Bayer dither.",
@@ -54,21 +59,58 @@
       },
       {
         "name": "episode-row-focused",
-        "nativeSpec": "Approach A: restrained dark accent wash derived from the active theme, light text, preserved poster ratio; no glow."
+        "nativeSpec": "One block: the whole card rises one surface step (glass white 12-14%, solid #2B2D34); poster ratio preserved; no ring, no accent wash, no split border."
       },
       {
         "name": "focused-content-row",
-        "nativeSpec": "Source, episode actions, saved/social/alerts side panels, and the expanded global menu use a solid theme-accent fill on the focused item, contrast-aware ink, and a soft restrained accent halo behind it. Keep inactive surfaces neutral; no glass, gradient, top reflection, or improvised outline. The corner notification toast stays matte neutral with an accent icon and soft halo."
+        "nativeSpec": "Rows in sources, episode actions, side panels and the expanded menu: focused row = one surface step lighter, with a white ring only when Contorno do vidro is on and no accent fill. Only buttons, chips and keys become a full accent pill with contrast ink. Inactive surfaces stay neutral."
       },
       {
         "name": "close-ghost",
         "nativeSpec": "No box at rest; subtle neutral surface and standard focus cue only while selected."
+      },
+      {
+        "name": "poster-focused",
+        "nativeSpec": "Poster rises (NV_FOCO_LIFT, NV_FOCO_ESCALA_P) with a dropped shadow; no ring. A white ring is an accessibility option only."
       }
     ],
     "referenceMockups": [
       "design/glass-ilha/glass-ilha.html",
-      "design/ilha/ilha-mockup.html"
+      "design/2.1/index.html"
     ],
-    "rule": "A build that does not match the mockup side by side, in both glass and solid, is wrong."
+    "rule": "A build that does not match the mockup side by side, in both glass and solid, is wrong.",
+    "brand": {
+      "name": "Nuvio Legacy",
+      "rule": "Owner decision 22/11/2026. \"Tenzing TV\" in older Pencil boards is obsolete."
+    },
+    "visualBase": {
+      "rule": "The 2.0 mockups are the visual base: design/glass-ilha (material and focus) and design/2.1 (flows). Later Pencil boards (componentes2.lib.pen) and prototypes contribute pieces only after they are redone in these tokens.",
+      "conceptsOnly": [
+        "design/universo-2026/index.html",
+        "design/noite-2026/index.html"
+      ]
+    },
+    "tokens": {
+      "source": "design/2.1/tv.css :root and body[data-mat=solido]",
+      "glass": {
+        "background": "#0D0D0D",
+        "card": "#101114",
+        "text": "#F3F2EF",
+        "textMuted": "rgba(243,242,239,.58)",
+        "textMuted2": "rgba(243,242,239,.40)",
+        "island": "rgba(14,15,18,.80)",
+        "focusSurface": "rgba(255,255,255,.14)",
+        "lightSurface": "rgba(255,255,255,.07)",
+        "islandShadow": "0 14px 40px rgba(0,0,0,.36)",
+        "cornerLight": "radial-gradient(120% 80% at 22% -40%, rgba(255,255,255,.10), transparent 60%)"
+      },
+      "solid": {
+        "island": "#121316",
+        "focusSurface": "#2B2D34",
+        "lightSurface": "#1C1D22",
+        "cornerLight": "none"
+      },
+      "rule": "Glass and solid share geometry; only these values change."
+    }
   }
 }

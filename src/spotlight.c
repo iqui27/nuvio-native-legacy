@@ -1017,7 +1017,7 @@ static void abrirTecladoSis(void) {
   kbAberto = 0; painel = P_CAMPO;
   st_ime_abrir(ST_SPOT, consulta, SP_MAX_TXT - 1);
 }
-static void ditar(void) { if (ditadoDisponivel()) st_voz_iniciar(ST_SPOT); }
+static void ditar(void) { if (ditadoDisponivel()) { st_voz_teclado_inicial(consulta); st_voz_iniciar(ST_SPOT); } }
 
 // OK no campo: respeita "Do app" no Android; senao usa o sistema onde ha.
 static void okCampo(void) {

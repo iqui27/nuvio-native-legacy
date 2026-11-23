@@ -46,3 +46,5 @@ void dts_engine_set_normalize(int on) { (void)on; }
 // audioescolha.c reads the language preferences (linguas.c is not linked).
 int ling_prefere_original(void) { return 0; }
 const char *ling_audio_preferido(void) { return ""; }
+int ling_prefere_regional(const char *p) { (void)p; return 0; }
+int ling_afinidade(const char *c, const char *p) { (void)c; (void)p; return 1; }

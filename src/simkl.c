@@ -5,6 +5,7 @@
 #include "perfisessao.h"
 #include "ajustes.h"
 #include "simklauth.h"
+#include "simklbib.h"
 #include "nuvem.h"
 #include "rede.h"
 #include "js.h"
@@ -115,6 +116,60 @@ static int lerObra(const char *oi, const char *of, CatItem *d, char *imdb,
   { int ano = (int)js_num(oi, of, "year", 0.0);
     if (ano > 1800) snprintf(d->meta, sizeof d->meta, "%d", ano); }
   return 1;
+}
+
+// Anime CW may ship `show` instead of nested `anime`, or ids at activity root (#714).
+static int idNumOk(double v, long *out) {
+  if (v <= 0.0 || v >= 2147483647.0) return 0;
+  *out = (long)v;
+  if (*out <= 0) return 0;
+  return 1;
+}
+
+static int lerIdsSimkl(const char *oi, const char *of, char *imdb, size_t nImdb,
+                       long *tmdb) {
+  const char *ii, *ifim;
+  long id;
+  double v;
+  if (tmdb) *tmdb = 0;
+  imdb[0] = 0;
+  if (!objetoRaiz(oi, of, "ids", &ii, &ifim)) return 0;
+  js_texto(ii, ifim, "imdb", imdb, nImdb);
+  if (imdb[0] == 't' && imdb[1] == 't') return 1;
+  imdb[0] = 0;
+  v = js_num(ii, ifim, "tmdb", 0);
+  if (idNumOk(v, &id)) {
+    snprintf(imdb, nImdb, "tmdb:%ld", id);
+    if (tmdb) *tmdb = id;
+    return 1;
+  }
+  v = js_num(ii, ifim, "simkl", 0);
+  if (idNumOk(v, &id)) { snprintf(imdb, nImdb, "simkl:%ld", id); return 1; }
+  return 0;
+}
+
+static int obraDeAssistindo(const char *p, const char *f, int anime,
+                            const char *chave, const char **oi, const char **of) {
+  char imdb[24];
+  CatItem d;
+  if (objetoRaiz(p, f, chave, oi, of)) {
+    if (!anime) return 1;
+    imdb[0] = 0;
+    if (lerObra(*oi, *of, &d, imdb, sizeof imdb)) return 1;
+    if (lerIdsSimkl(*oi, *of, imdb, sizeof imdb, NULL)) return 1;
+  } else if (!anime) return 0;
+  if (anime && objetoRaiz(p, f, "show", oi, of)) {
+    imdb[0] = 0;
+    if (lerObra(*oi, *of, &d, imdb, sizeof imdb)) return 1;
+    if (lerIdsSimkl(*oi, *of, imdb, sizeof imdb, NULL)) return 1;
+    return 0;
+  }
+  if (anime && lerIdsSimkl(p, f, imdb, sizeof imdb, NULL)) {
+    *oi = p;
+    *of = f;
+    return 1;
+  }
+  return 0;
 }
 
 // ------------------------------------------------------------ leitores puros
@@ -240,23 +295,20 @@ int simkl_ler_assistindo(const char *json, CatItem *dst, int max) {
     }
     if (t < 0 || e <= 0) goto watchingDropped;
     reason = "missing title object";
-    if (!objetoRaiz(p, f, chaves[k], &oi, &of)) goto watchingDropped;
+    if (!obraDeAssistindo(p, f, k == 1, chaves[k], &oi, &of)) goto watchingDropped;
     if (!lerObra(oi, of, d, imdb, sizeof imdb)) {
-      const char *ii, *ifim;
-      long id;
       reason = "missing supported id";
-      if (k != 1 || !objetoRaiz(oi, of, "ids", &ii, &ifim)) goto watchingDropped;
-      id = (long)js_num(ii, ifim, "tmdb", 0);
-      if (id > 0) snprintf(imdb, sizeof imdb, "tmdb:%ld", id);
-      else {
-        id = (long)js_num(ii, ifim, "simkl", 0);
-        if (id <= 0) goto watchingDropped;
-        snprintf(imdb, sizeof imdb, "simkl:%ld", id);
-      }
-    }
-    { const char *ii, *ifim;
-      if (objetoRaiz(oi, of, "ids", &ii, &ifim))
-        d->tmdb = (long)js_num(ii, ifim, "tmdb", 0);
+      if (k != 1) goto watchingDropped;
+      if (!lerIdsSimkl(oi, of, imdb, sizeof imdb, &d->tmdb) &&
+          (oi != p || !lerIdsSimkl(p, f, imdb, sizeof imdb, &d->tmdb)))
+        goto watchingDropped;
+      if (oi == p) js_texto_raiz_em(p, f, "title", d->titulo, sizeof d->titulo);
+    } else {
+      const char *ii, *ifim;
+      long tid;
+      if (objetoRaiz(oi, of, "ids", &ii, &ifim) &&
+          idNumOk(js_num(ii, ifim, "tmdb", 0), &tid))
+        d->tmdb = tid;
     }
     if (absoluto) animeAbsoluto(imdb, absoluto, &t, &e);
     d->temporada = t;
@@ -298,7 +350,8 @@ int simkl_ler_plantowatch(const char *json, int serie, CatItem *dst, int max) {
     CatItem *d = &dst[n];
     char imdb[24];
     memset(d, 0, sizeof *d);
-    if (!objetoRaiz(p, f, chaves[k], &oi, &of)) continue;
+    if (!objetoRaiz(p, f, chaves[k], &oi, &of) &&
+        (k != 2 || !objetoRaiz(p, f, "show", &oi, &of))) continue;
     if (!lerObra(oi, of, d, imdb, sizeof imdb)) continue;
     snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
     snprintf(d->tipo, sizeof d->tipo, "%s", serie ? "series" : "movie");
@@ -444,6 +497,19 @@ const char *simkl_rota_historico(int visto) {
 // `metodo`: 'G' GET, 'P' POST, 'D' DELETE. O token entra so no cabecalho, e
 // nada aqui imprime a URL — o client_id nao e segredo, mas o costume do app e
 // logar so o caminho (ver rede_url_publica).
+// A write reached Simkl: its activities moved, so the next list reader asks
+// again instead of trusting the last check (see SMK_BIB_FRESCA). Atomic:
+// writers may hold `trava`.
+// playSujo: the same for Continue watching's playback copy, which otherwise
+// waits for Simkl's playback timestamps to move (assinarPlayback).
+static int bibSujo, playSujo;
+static void bibSujar(char metodo, int st) {
+  if ((metodo == 'P' || metodo == 'D') && st >= 200 && st < 300) {
+    __atomic_store_n(&bibSujo, 1, __ATOMIC_RELEASE);
+    __atomic_store_n(&playSujo, 1, __ATOMIC_RELEASE);
+  }
+}
+
 static char *pedirComToken(char metodo, const char *caminho, const char *consulta,
                            const char *corpo, int *st, const char *tk) {
   char url[640], cid[200], nome[120], aut[400];
@@ -462,6 +528,7 @@ static char *pedirComToken(char metodo, const char *caminho, const char *consult
   if (metodo == 'P')      r = rede_postar_st(url, 20, cab, corpo ? corpo : "", st);
   else if (metodo == 'D') r = rede_apagar(url, 20, cab, st);
   else                    r = provedorBaixarSt(url, 25, cab, st);
+  bibSujar(metodo, *st);
   return r;
 }
 
@@ -543,6 +610,7 @@ static char *pedir(SmkPedido pedido, char metodo, const char *caminho, const cha
       r = all;
     }
   }
+  bibSujar(metodo, *st);
   return r;
 }
 
@@ -598,6 +666,26 @@ static void perfilSomar(PerfilDados *d, const struct tm *mes, const char *quando
   if (filme) snprintf(r->detalhe, sizeof r->detalhe, "Filme");
   else if (temporada > 0 && episodio > 0)
     snprintf(r->detalhe, sizeof r->detalhe, i18n("T%dE%d"), temporada, episodio);
+  else if (temporada < 0 && episodio > 0)   // an anime numbered across the show
+    snprintf(r->detalhe, sizeof r->detalhe, "E%d", episodio);
+}
+
+// The one TVDB season a per-season anime entry covers: "mapped_tvdb_seasons"
+// is [2] for Kaiju No. 8 Season 2, [1..23] for One Piece (one entry for the
+// whole show). 0 unless it is exactly one season after the first: an entry
+// for season 1 numbers its episodes like the whole show would.
+static int animeTemporadaUnica(const char *p, const char *f) {
+  const char *v, *vf, *q;
+  int n = 0, s = 0;
+  if (!valorRaiz(p, f, "mapped_tvdb_seasons", &v, &vf) || *v != '[') return 0;
+  for (q = v + 1; q < vf; ) {
+    while (q < vf && ((unsigned char)*q <= ' ' || *q == ',' || *q == ']')) q++;
+    if (q >= vf) break;
+    if (*q < '0' || *q > '9') return 0;
+    s = (int)strtol(q, (char **)&q, 10);
+    n++;
+  }
+  return n == 1 && s > 1 && s <= SHRT_MAX ? s : 0;
 }
 
 static void perfilLerTipo(const char *json, const char *lista, int filme,
@@ -608,7 +696,10 @@ static void perfilLerTipo(const char *json, const char *lista, int filme,
     char titulo[128] = "", imdb[24] = "", quando[48] = "";
     int runtime;
     PerfilDestaque r = {0};
-    if (!objetoRaiz(p, f, filme ? "movie" : !strcmp(lista, "anime") ? "anime" : "show", &obra, &obraFim)) continue;
+    // Simkl's anime lists put each item under "show"; "anime" is kept too.
+    if (!objetoRaiz(p, f, filme ? "movie" : "show", &obra, &obraFim) &&
+        (filme || strcmp(lista, "anime") || !objetoRaiz(p, f, "anime", &obra, &obraFim)))
+      continue;
     js_texto_raiz_em(obra, obraFim, "title", titulo, sizeof titulo);
     runtime = (int)js_num(obra, obraFim, "runtime", 0);
     if (objetoRaiz(obra, obraFim, "ids", &ids, &idsFim))
@@ -624,16 +715,30 @@ static void perfilLerTipo(const char *json, const char *lista, int filme,
       perfilSomar(d, mes, quando, &r, runtime, 1, 0, 0);
     } else {
       const char *s;
+      // Simkl files every anime episode under season 1 with its own number
+      // (One Piece E1122, Kaiju No. 8 Season 2's E8). A per-season entry is
+      // labelled by its TVDB placement (S2E8, as Continue watching numbers
+      // it); one numbered across the show by that number alone (E1122).
+      int anime = !strcmp(lista, "anime"), unica = anime ? animeTemporadaUnica(p, f) : 0;
       for (s = js_array(p, f, "seasons"); s && *s == '{'; s = js_prox(js_fim(s))) {
         const char *sf = js_fim(s), *e;
         int temporada = (int)js_num(s, sf, "number", 0);
         for (e = js_array(s, sf, "episodes"); e && *e == '{'; e = js_prox(js_fim(e))) {
-          const char *ef = js_fim(e);
+          const char *ef = js_fim(e), *tv, *tvf;
           int episodio = (int)js_num(e, ef, "number", 0);
           int duracao = (int)js_num(e, ef, "runtime", runtime);
+          int t = temporada, ep = episodio;
+          if (anime && temporada <= 1) {
+            t = -1;
+            if (unica && objetoRaiz(e, ef, "tvdb", &tv, &tvf) &&
+                (int)js_num(tv, tvf, "season", 0) > 0 && (int)js_num(tv, tvf, "episode", 0) > 0) {
+              t = (int)js_num(tv, tvf, "season", 0);
+              ep = (int)js_num(tv, tvf, "episode", 0);
+            }
+          }
           quando[0] = 0;
           js_texto_raiz_em(e, ef, "watched_at", quando, sizeof quando);
-          perfilSomar(d, mes, quando, &r, duracao, 0, temporada, episodio);
+          perfilSomar(d, mes, quando, &r, duracao, 0, t, ep);
         }
       }
     }
@@ -701,6 +806,53 @@ int simkl_perfil_ler(const char *settings, const char *itens,
   return 1;
 }
 
+static void trocar(char **dst, char *novo) { free(*dst); *dst = novo; }
+
+static int pedidoPerfil(SmkPedido p);
+static char *bibAtualizada(SmkPedido pedido, int perfil, char **ativ);
+
+static char *perfilSettings;
+static char perfilSettingsQuando[48];
+static uint64_t perfilSettingsSessao, perfilSettingsGeracao;
+
+// The month's stats from the library in memory: it holds every watched
+// episode with its date, and perfilLerTipo keeps only this month's. One
+// check with Simkl at most (shared with the list readers), and the settings
+// only when they moved: an open with nothing changed sends 0 or 1 request
+// instead of 2. -1 when there is no library (the caller asks Simkl).
+static int perfilDaBiblioteca(PerfilDados *d, time_t agora) {
+  SmkPedido pedido = pedidoCapturar();
+  char *lib, *ativ = NULL, *settings = NULL, quando[48] = "";
+  const char *af, *s, *sf;
+  int perfil, st = 0, guardado = 0, ok;
+  if (!pedido.aut[0] || (perfil = pedidoPerfil(pedido)) < 0) return -1;
+  if (!(lib = bibAtualizada(pedido, perfil, &ativ))) { free(ativ); return -1; }
+  if (ativ && (af = js_fim(ativ)) && objetoRaiz(ativ, af, "settings", &s, &sf))
+    js_texto_raiz_em(s, sf, "all", quando, sizeof quando);
+  if (quando[0] && pedidoTravar(pedido)) {
+    if (perfilSettings && perfilSettingsSessao == pedido.sessao &&
+        perfilSettingsGeracao == pedido.geracao && !strcmp(perfilSettingsQuando, quando))
+      settings = strdup(perfilSettings), guardado = 1;
+    pedidoDestravar();
+  }
+  if (!settings) {
+    settings = pegar(pedido, "/users/settings", NULL, &st);
+    if (settings && quando[0] && pedidoTravar(pedido)) {
+      trocar(&perfilSettings, strdup(settings));
+      snprintf(perfilSettingsQuando, sizeof perfilSettingsQuando, "%s", quando);
+      perfilSettingsSessao = pedido.sessao;
+      perfilSettingsGeracao = pedido.geracao;
+      pedidoDestravar();
+    }
+  }
+  ok = pedidoAtual(pedido) && simkl_perfil_ler(settings, lib, d, agora);
+  printf("[simkl] profile: month from the library, settings %s\n",
+         guardado ? "unchanged" : settings ? "asked" : "unavailable");
+  fflush(stdout);
+  free(settings); free(lib); free(ativ);
+  return ok;
+}
+
 int simkl_perfil(PerfilDados *d) {
   char inicio[48], consulta[256], tk[300];
   unsigned long long credencial;
@@ -709,6 +861,8 @@ int simkl_perfil(PerfilDados *d) {
   struct tm primeiro, utc;
   int st = 0, ok;
   if (!d) return 0;
+  if ((ok = perfilDaBiblioteca(d, agora)) >= 0) return ok;
+  // No library yet (first download failed): the month asked from Simkl.
   credencial = simklauth_credencial_copiar(tk, sizeof tk);
   if (!tk[0]) return 0;
   settings = pedirComToken('G', "/users/settings", NULL, NULL, &st, tk);
@@ -763,7 +917,10 @@ static void vistosTipo(const char *json, const char *lista, int filme,
     const char *f = js_fim(p), *obra, *obraFim, *ids, *idsFim;
     SimklVisto v = {0};
     char quando[48] = "";
-    if (!objetoRaiz(p, f, filme ? "movie" : !strcmp(lista, "anime") ? "anime" : "show", &obra, &obraFim)) continue;
+    // Simkl's anime lists put each item under "show"; "anime" is kept too.
+    if (!objetoRaiz(p, f, filme ? "movie" : "show", &obra, &obraFim) &&
+        (filme || strcmp(lista, "anime") || !objetoRaiz(p, f, "anime", &obra, &obraFim)))
+      continue;
     js_texto_raiz_em(obra, obraFim, "title", v.titulo, sizeof v.titulo);
     if (objetoRaiz(obra, obraFim, "ids", &ids, &idsFim)) js_texto(ids, idsFim, "imdb", v.imdb, sizeof v.imdb);
     if (!imdbValido(v.imdb)) continue;
@@ -1002,11 +1159,23 @@ static int nPtw;
 // o que a doc chama de "the cheapest call in the API". Nao usa date_from: as
 // listas lidas aqui (watching, plantowatch) sao pequenas, e o incremental
 // exigiria guardar e fundir o estado entre arranques.
-static unsigned long assCw, assPtw;
-static char *corpoPlay, *corpoAssist, *corpoAssistAnime,
-            *corpoPtwFilmes, *corpoPtwSeries, *corpoPtwAnime;
+static unsigned long assCw;
+static char *corpoPlay;
 
-static void trocar(char **dst, char *novo) { free(*dst); *dst = novo; }
+// THE LIBRARY IN MEMORY, for the session. Loaded in the background when the
+// profile opens (simkl_biblioteca_iniciar): the saved copy first, then the
+// network only when /sync/activities moved since it.
+// Under `trava`. The body is replaced whole, never edited in place.
+static char *bibCorpo;      // all-items body
+static char *bibAtiv;       // the activities it reflects; NULL = unknown
+static uint64_t bibSessao, bibGeracao;
+static time_t bibConferida; // last activities check that reached Simkl
+static int bibFio;          // a loader is running for bibFioSessao/Geracao
+static int bibVivos;        // loader threads alive, of any session
+static time_t bibTentarApos;
+static unsigned bibFalhas;
+static uint64_t bibFioSessao, bibFioGeracao;
+static pthread_cond_t bibMudou = PTHREAD_COND_INITIALIZER;
 
 static void scrobbleZerar(void);
 
@@ -1019,23 +1188,870 @@ void simkl_esquecer(void) {
   nPlay = nProx = nPtw = 0;
   memset(vistosCache, 0, sizeof vistosCache);
   __atomic_add_fetch(&vistosRev, 1, __ATOMIC_RELEASE);
-  assCw = assPtw = 0;
-  trocar(&corpoPlay, NULL); trocar(&corpoAssist, NULL);
-  trocar(&corpoAssistAnime, NULL);
-  trocar(&corpoPtwFilmes, NULL); trocar(&corpoPtwSeries, NULL);
-  trocar(&corpoPtwAnime, NULL);
+  assCw = 0;
+  trocar(&corpoPlay, NULL);
+  trocar(&perfilSettings, NULL);
+  perfilSettingsQuando[0] = 0;
+  trocar(&bibCorpo, NULL); trocar(&bibAtiv, NULL);
+  bibSessao = bibGeracao = 0;
+  bibConferida = 0;
+  bibTentarApos = 0;
+  bibFalhas = 0;
+  bibFio = 0;
+  pthread_cond_broadcast(&bibMudou);
   pthread_mutex_unlock(&trava);
 }
 
 void simkl_abrir_sessao(void) { simkl_esquecer(); }
 
-static unsigned long atividades(SmkPedido pedido) {
-  int st = 0;
-  char *r = pegar(pedido, "/sync/activities", NULL, &st);
-  unsigned long h = assinar(r);
-  free(r);
-  return h;
+// The playback timestamps of the activities (tv_shows, anime, movies), as
+// Simkl's sync guide asks: marking an episode watched or changing a list
+// moves "all" but not these, and the paused items are the same. An answer
+// without them (older data, the test fakes) falls back to the whole
+// activities, as before.
+static unsigned long assinarPlayback(const char *ativ) {
+  static const char *const blocos[] = { "tv_shows", "anime", "movies" };
+  const char *f, *o, *of, *v, *vf;
+  char junto[200] = "";
+  size_t usado = 0;
+  int achou = 0;
+  if (!ativ || !(f = js_fim(ativ))) return assinar(ativ);
+  for (int b = 0; b < 3; b++) {
+    int n;
+    if (!objetoRaiz(ativ, f, blocos[b], &o, &of) || !valorRaiz(o, of, "playback", &v, &vf)) {
+      n = snprintf(junto + usado, sizeof junto - usado, "-|");
+    } else {
+      achou = 1;
+      n = snprintf(junto + usado, sizeof junto - usado, "%.*s|", (int)(vf - v), v);
+    }
+    if (n < 0 || (size_t)n >= sizeof junto - usado) return assinar(ativ);
+    usado += (size_t)n;
+  }
+  return achou ? assinar(junto) : assinar(ativ);
 }
+
+
+// THE SAVED LIBRARY (simklbib.h). The whole pull below joins its answers (one
+// per type, or per status over max_items) into one body of all-items' shape,
+// and saves it with the activities
+// asked just before: a later delta from that "all" may repeat a change, never
+// miss one.
+typedef struct { char *p; size_t n, cap; } SmkTexto;
+
+static int textoPor(SmkTexto *t, const char *s, size_t n) {
+  if (t->n + n + 1 > t->cap) {
+    size_t cap = t->cap ? t->cap : 4096;
+    char *novo;
+    while (cap < t->n + n + 1) cap *= 2;
+    if (cap > REDE_CORPO_MAXIMO || !(novo = realloc(t->p, cap))) return 0;
+    t->p = novo; t->cap = cap;
+  }
+  memcpy(t->p + t->n, s, n);
+  t->n += n;
+  t->p[t->n] = 0;
+  return 1;
+}
+
+static char *bibliotecaPedido(SmkPedido pedido, const char *caminho, const char *episodios,
+                              const char *desde, int *st, int *grande) {
+  char url[720], consulta[300], *erro = NULL, *r;
+  const char *cab[3];
+  int proxima;   // same transport as Simkl's other GETs; all-items has no pages
+  // full_anime_seasons is full plus, for anime, each episode's TVDB season and
+  // episode and the entry's mapped_tvdb_seasons. It also gives a per-season
+  // entry the show's IDs: with full, 21 of 86 anime entries on a real account
+  // came with no IMDb or TMDB ID (My Hero Academia S2-7, Spy x Family...).
+  // language=en: an anime's title is otherwise its romaji name; language=pt
+  // was tried and gave romaji too. No page/limit: Simkl documents no paging
+  // for all-items, it answers the whole list or max_items.
+  snprintf(consulta, sizeof consulta,
+           "extended=full_anime_seasons&include_all_episodes=%s&episode_watched_at=yes"
+           "&episode_tvdb_id=yes&language=en%s%s",
+           episodios, desde ? "&date_from=" : "", desde ? desde : "");
+  snprintf(url, sizeof url, "%s%s?client_id=%s&app-name=%s&app-version=1.0.1&%s",
+           SMK_API, caminho, pedido.cid, pedido.nome, consulta);
+  cab[0] = pedido.aut;
+  cab[1] = "Accept: application/json";
+  cab[2] = NULL;
+  *grande = 0;
+  r = provedorGetErro(url, 25, cab, st, &proxima, 1, &erro);
+  if (!r && *st == 400 && erro && strstr(erro, "\"max_items\"")) *grande = 1;
+  free(erro);
+  return r;
+}
+
+// An answer with nothing in it: Simkl may send null or [] instead of lists.
+static int corpoVazio(const char *r) {
+  while (r && (unsigned char)*r <= ' ' && *r) r++;
+  if (!r) return 0;
+  if (!strncmp(r, "null", 4)) r += 4;
+  else if (r[0] == '[' || r[0] == '{') {
+    const char *q = r + 1;
+    while ((unsigned char)*q <= ' ' && *q) q++;
+    if ((r[0] == '[' && *q != ']') || (r[0] == '{' && *q != '}')) return 0;
+    r = q + 1;
+  } else return 0;
+  while ((unsigned char)*r <= ' ' && *r) r++;
+  return !*r;
+}
+
+static const char *const bibTipos[3] = { "shows", "anime", "movies" };
+
+// Appends one answer's items, list by list. `estado`: the answer is one
+// status list; an item without its own "status" gets it, since the library's
+// readers pick items by that field. 0 when the answer is not all-items.
+static int bibliotecaJuntarEstado(SmkTexto tipos[3], const char *resposta, const char *estado) {
+  const char *ini = resposta, *fim, *v, *vf;
+  if (!perfilHistoricoValido(resposta)) return 0;
+  while ((unsigned char)*ini <= ' ') ini++;
+  fim = js_fim(ini);
+  for (int i = 0; i < 3; i++) {
+    if (!valorRaiz(ini, fim, bibTipos[i], &v, &vf)) continue;
+    if (estado) {
+      for (const char *p = v + 1; p < vf; ) {
+        const char *f, *sv, *svf;
+        while (p < vf && ((unsigned char)*p <= ' ' || *p == ',')) p++;
+        if (p >= vf || *p == ']') break;
+        if (*p != '{' || !(f = js_fim(p)) || f > vf) return 0;
+        if (tipos[i].n && !textoPor(&tipos[i], ",", 1)) return 0;
+        if (valorRaiz(p, f, "status", &sv, &svf)) {
+          if (!textoPor(&tipos[i], p, (size_t)(f - p))) return 0;
+        } else {
+          const char *q = p + 1;
+          char cab[40];
+          while (q < f && (unsigned char)*q <= ' ') q++;
+          int n = snprintf(cab, sizeof cab, "{\"status\":\"%s\"%s", estado, *q == '}' ? "" : ",");
+          if (!textoPor(&tipos[i], cab, (size_t)n) ||
+              !textoPor(&tipos[i], p + 1, (size_t)(f - p - 1))) return 0;
+        }
+        p = f;
+      }
+      continue;
+    }
+    const char *a = v + 1, *b = vf - 1;
+    while (a < b && (unsigned char)*a <= ' ') a++;
+    while (b > a && (unsigned char)b[-1] <= ' ') b--;
+    if (a == b) continue;
+    if ((tipos[i].n && !textoPor(&tipos[i], ",", 1)) ||
+        !textoPor(&tipos[i], a, (size_t)(b - a))) return 0;
+  }
+  return 1;
+}
+
+#define SMK_BIB_ITENS_MAX 20000
+#define SMK_BIB_BYTES_MAX (8u * 1024u * 1024u)
+
+static int bibliotecaLimitada(const char *corpo) {
+  const char *fim = corpo ? js_fim(corpo) : NULL;
+  int n = 0;
+  if (!fim || strlen(corpo) > SMK_BIB_BYTES_MAX) return 0;
+  for (int i = 0; i < 3; i++) {
+    const char *a, *af;
+    if (!valorRaiz(corpo, fim, bibTipos[i], &a, &af) || *a != '[') continue;
+    for (const char *p = js_array(corpo, NULL, bibTipos[i]); p && *p == '{'; p = js_prox(js_fim(p)))
+      if (++n > SMK_BIB_ITENS_MAX) return 0;
+  }
+  return 1;
+}
+
+static char *bibliotecaMontar(const SmkTexto tipos[3]) {
+  SmkTexto t = {0};
+  int ok = textoPor(&t, "{", 1);
+  for (int i = 0; ok && i < 3; i++) {
+    char cab[24];
+    int n = snprintf(cab, sizeof cab, "%s\"%s\":[", i ? "," : "", bibTipos[i]);
+    ok = textoPor(&t, cab, (size_t)n) &&
+         (!tipos[i].n || textoPor(&t, tipos[i].p, tipos[i].n)) && textoPor(&t, "]", 1);
+  }
+  if (ok) ok = textoPor(&t, "}", 1);
+  if (!ok || !bibliotecaLimitada(t.p)) { free(t.p); return NULL; }
+  return t.p;
+}
+
+// /sync/activities as the saved library keeps it: an object with "all".
+static char *bibliotecaAtividades(SmkPedido pedido) {
+  char quando[40] = "";
+  int st = 0;
+  char *r = pedir(pedido, 'G', "/sync/activities", NULL, NULL, &st);
+  const char *p = r;
+  while (p && *p && (unsigned char)*p <= ' ') p++;
+  if (!r || st < 200 || st >= 300 || !p || *p != '{' ||
+      !js_texto_raiz(p, "all", quando, sizeof quando) || !quando[0]) {
+    free(r);
+    return NULL;
+  }
+  return r;
+}
+
+// The link the request went out with, as simklbib signs it.
+static unsigned long long pedidoConta(SmkPedido pedido) {
+  static const char pre[] = "Authorization: Bearer ";
+  if (strncmp(pedido.aut, pre, sizeof pre - 1)) return 0;
+  return simklbib_conta(pedido.aut + sizeof pre - 1);
+}
+
+// One request joined into `tipos`: 1 joined, 0 failed, -1 max_items.
+static int bibliotecaJuntarPedido(SmkPedido pedido, SmkTexto tipos[3], const char *caminho,
+                                  const char *episodios, const char *desde,
+                                  const char *estado, int *st) {
+  int grande = 0;
+  char *json;
+  if (!pedidoAtual(pedido)) return 0;
+  // A body only comes with a 2xx answer.
+  json = bibliotecaPedido(pedido, caminho, episodios, desde, st, &grande);
+  if (!json) return grande ? -1 : 0;
+  int ok = corpoVazio(json) || bibliotecaJuntarEstado(tipos, json, estado);
+  free(json);
+  return ok;
+}
+
+// One type of the whole library. Over Simkl's item or episode cap (400
+// max_items), the guide's split: one request per status, and a status still
+// over it with include_all_episodes=original. 1 = joined.
+static int bibliotecaPuxarTipo(SmkPedido pedido, SmkTexto tipos[3], const char *tipo, int *st) {
+  // Movies have no watching or hold list.
+  static const char *const estados[] = { "watching", "plantowatch", "hold", "completed", "dropped" };
+  static const char *const estadosFilmes[] = { "plantowatch", "completed", "dropped" };
+  const char *const *lista = strcmp(tipo, "movies") ? estados : estadosFilmes;
+  int n = strcmp(tipo, "movies") ? 5 : 3, r;
+  char caminho[64];
+  snprintf(caminho, sizeof caminho, "/sync/all-items/%s", tipo);
+  r = bibliotecaJuntarPedido(pedido, tipos, caminho, "yes", NULL, NULL, st);
+  if (r >= 0) return r;
+  printf("[simkl] library: %s over Simkl's max_items, asking it status by status\n", tipo);
+  for (int i = 0; i < n; i++) {
+    snprintf(caminho, sizeof caminho, "/sync/all-items/%s/%s", tipo, lista[i]);
+    r = bibliotecaJuntarPedido(pedido, tipos, caminho, "yes", NULL, lista[i], st);
+    if (r < 0) {
+      printf("[simkl] library: %s %s still over it, only the recorded episodes\n",
+             tipo, lista[i]);
+      r = bibliotecaJuntarPedido(pedido, tipos, caminho, "original", NULL, lista[i], st);
+    }
+    if (r <= 0) return 0;
+  }
+  return 1;
+}
+
+// The library from the network: whole (one type after the other, as the
+// sync guide asks), or (`desde`) the items changed since, in one request on
+// bare /sync/all-items (the guide's path for an app with several types).
+// 1 = *corpo set, 0 failed, -1 the delta was over max_items.
+static int bibliotecaPuxar(SmkPedido pedido, const char *desde, char **corpo, int *st) {
+  SmkTexto tipos[3] = {{0}};
+  int ok = 1;
+  *corpo = NULL;
+  if (desde) ok = bibliotecaJuntarPedido(pedido, tipos, "/sync/all-items", "yes",
+                                         desde, NULL, st);
+  else
+    for (int i = 0; ok > 0 && i < 3; i++) ok = bibliotecaPuxarTipo(pedido, tipos, bibTipos[i], st);
+  if (ok > 0 && !(*corpo = bibliotecaMontar(tipos))) ok = 0;
+  for (int i = 0; i < 3; i++) free(tipos[i].p);
+  return ok;
+}
+
+// A show page asks Simkl again (activities first) once the check is older.
+#define SMK_BIB_IDADE 600
+
+static int bibDoPedido(SmkPedido p) {   // under trava
+  return bibCorpo && bibSessao == p.sessao && bibGeracao == p.geracao;
+}
+
+// The item without its "seasons" (the episode history): a status list
+// (/sync/all-items/<type>/<status>) has none, and its readers were written
+// for that shape.
+static int textoItem(SmkTexto *t, const char *ini, const char *fim) {
+  const char *v, *vf, *k, *corteIni, *corteFim;
+  if (!valorRaiz(ini, fim, "seasons", &v, &vf)) return textoPor(t, ini, (size_t)(fim - ini));
+  // Back from the value to the key's opening quote: "seasons" :
+  k = v - 1;
+  while (k > ini && (unsigned char)*k <= ' ') k--;
+  if (*k != ':') return textoPor(t, ini, (size_t)(fim - ini));
+  k--;
+  while (k > ini && (unsigned char)*k <= ' ') k--;
+  k -= 8;   // the 7 letters and the opening quote
+  if (k <= ini || *k != '"') return textoPor(t, ini, (size_t)(fim - ini));
+  corteIni = k;
+  corteFim = vf;
+  k--;
+  while (k > ini && (unsigned char)*k <= ' ') k--;
+  if (*k == ',') corteIni = k;   // not the first key: drop the comma before
+  else {                         // the first key: drop the comma after
+    while (corteFim < fim && (unsigned char)*corteFim <= ' ') corteFim++;
+    if (corteFim < fim && *corteFim == ',') corteFim++;
+  }
+  return textoPor(t, ini, (size_t)(corteIni - ini)) &&
+         textoPor(t, corteFim, (size_t)(fim - corteFim));
+}
+
+// One status list of the library, as /sync/all-items/<lista>/<estado> answers
+// it: {"<lista>":[the items with that status]}. NULL without a library.
+static char *bibLista(const char *corpo, const char *lista, const char *estado) {
+  SmkTexto t = {0};
+  const char *ini = corpo, *fim, *p;
+  int itens = 0, ok;
+  char cab[32], st[24];
+  if (!corpo) return NULL;
+  while ((unsigned char)*ini <= ' ') ini++;
+  fim = js_fim(ini);
+  snprintf(cab, sizeof cab, "{\"%s\":[", lista);
+  ok = textoPor(&t, cab, strlen(cab));
+  const char *v, *vf;
+  if (ok && valorRaiz(ini, fim, lista, &v, &vf) && *v == '[') {
+    for (p = v + 1; ok && p < vf; ) {
+      while (p < vf && ((unsigned char)*p <= ' ' || *p == ',')) p++;
+      if (p >= vf || *p != '{') break;
+      const char *f = js_fim(p);
+      if (!f || f > vf) break;
+      st[0] = 0;
+      js_texto_raiz_em(p, f, "status", st, sizeof st);
+      if (!strcmp(st, estado))
+        ok = (!itens++ || textoPor(&t, ",", 1)) && textoItem(&t, p, f);
+      p = f;
+    }
+  }
+  if (ok) ok = textoPor(&t, "]}", 2);
+  if (!ok) { free(t.p); return NULL; }
+  return t.p;
+}
+
+// A copy of the library of this session, or NULL.
+static void bibPublicar(SmkPedido p, char *corpo, char *ativ, int conferida) {
+  if (corpo && !bibliotecaLimitada(corpo)) { free(corpo); free(ativ); return; }
+  if (pedidoTravar(p)) {
+    if (corpo) {
+      trocar(&bibCorpo, corpo); corpo = NULL;
+      trocar(&bibAtiv, ativ); ativ = NULL;
+      bibSessao = p.sessao;
+      bibGeracao = p.geracao;
+    } else if (ativ && bibDoPedido(p)) {
+      trocar(&bibAtiv, ativ); ativ = NULL;   // only the activities moved on
+    }
+    if (conferida && bibDoPedido(p)) bibConferida = time(NULL);
+    pthread_cond_broadcast(&bibMudou);
+    pedidoDestravar();
+  }
+  free(corpo);
+  free(ativ);
+}
+
+// Copies of the library and the activities it reflects; 0 when either is
+// missing (a library loaded without its activities gets the whole pull).
+static int bibAtivCopiar(SmkPedido p, char **corpo, char **ativ) {
+  int ok = 0;
+  *corpo = *ativ = NULL;
+  pthread_mutex_lock(&trava);
+  if (bibDoPedido(p) && bibAtiv) {
+    *corpo = strdup(bibCorpo);
+    *ativ = strdup(bibAtiv);
+    ok = *corpo && *ativ;
+  }
+  pthread_mutex_unlock(&trava);
+  if (!ok) { free(*corpo); free(*ativ); *corpo = *ativ = NULL; }
+  return ok;
+}
+
+static int bibMesmoAll(const char *a, const char *b) {
+  char x[40] = "", y[40] = "";
+  return a && b && js_texto_raiz(a, "all", x, sizeof x) &&
+         js_texto_raiz(b, "all", y, sizeof y) && x[0] && !strcmp(x, y);
+}
+
+// Regular shows only; see the note above for anime.
+static int pedidoPerfil(SmkPedido p) {
+  int perfil = -1;
+  if (pedidoTravar(p)) {
+    perfil = simklauth_perfil();
+    pedidoDestravar();
+  }
+  return perfil;
+}
+
+// WHAT MOVED between the activities the library reflects and new ones, per
+// type: a status bucket (an item added or changed: a date_from delta) or
+// removed_from_list (an item gone: the IDs-only list). Playback, ratings,
+// settings and custom lists move nothing in the library. A block missing on
+// either side counts as moved.
+static void ativComparar(const char *velho, const char *novo, int *mudou, int *removeu) {
+  static const char *const blocos[] = { "tv_shows", "anime", "movies" };
+  static const char *const estados[] = { "plantowatch", "watching", "completed", "hold", "dropped" };
+  const char *vf = js_fim(velho), *nf = js_fim(novo);
+  *mudou = *removeu = 0;
+  for (int b = 0; b < 3; b++) {
+    const char *vi, *vfim, *ni, *nfim;
+    if (!vf || !nf || !objetoRaiz(velho, vf, blocos[b], &vi, &vfim) ||
+        !objetoRaiz(novo, nf, blocos[b], &ni, &nfim)) {
+      *mudou = 1;
+      continue;
+    }
+    for (int k = 0; k <= 5; k++) {
+      const char *chave = k < 5 ? estados[k] : "removed_from_list";
+      char x[48] = "", y[48] = "";
+      js_texto_raiz_em(vi, vfim, chave, x, sizeof x);
+      js_texto_raiz_em(ni, nfim, chave, y, sizeof y);
+      if (strcmp(x, y)) *(k < 5 ? mudou : removeu) = 1;
+    }
+  }
+}
+
+// The "ids" object of an all-items item: in its show/anime/movie, or its own
+// "ids" (the IDs-only list).
+static int itemIds(const char *p, const char *f, const char **ids, const char **idsf) {
+  static const char *const env[] = { "show", "anime", "movie" };
+  const char *o, *of;
+  for (int i = 0; i < 3; i++)
+    if (objetoRaiz(p, f, env[i], &o, &of) && objetoRaiz(o, of, "ids", ids, idsf)) return 1;
+  return objetoRaiz(p, f, "ids", ids, idsf);
+}
+// An item's Simkl ID. 0 when it has none.
+static long itemSimkl(const char *p, const char *f) {
+  const char *ids, *idsf;
+  return itemIds(p, f, &ids, &idsf) ? (long)js_num(ids, idsf, "simkl", 0.0) : 0;
+}
+
+// One of an item's other IDs as text ("tt123", "456"), quotes dropped. 0 when
+// missing, null or empty.
+static int idOutro(const char *ids, const char *idsf, const char *chave, char *dst, size_t n) {
+  const char *v, *vf;
+  if (!valorRaiz(ids, idsf, chave, &v, &vf)) return 0;
+  if (*v == '"') { v++; if (vf > v && vf[-1] == '"') vf--; }
+  if (vf <= v || (size_t)(vf - v) >= n || (vf - v == 4 && !strncmp(v, "null", 4))) return 0;
+  memcpy(dst, v, (size_t)(vf - v));
+  dst[vf - v] = 0;
+  return 1;
+}
+
+// Two items without a common Simkl ID are the same title when they share at
+// least one other ID and no ID they both carry differs. Kaiju No. 8's
+// seasons share an IMDb ID but not their MAL ID, so they never match.
+static int itensMesmos(const char *a, const char *af, const char *b, const char *bf) {
+  static const char *const chaves[] = { "imdb", "tmdb", "tvdb", "mal", "anidb", "anilist", "kitsu" };
+  const char *ia, *iaf, *ib, *ibf;
+  long sa, sb;
+  int iguais = 0;
+  if (!itemIds(a, af, &ia, &iaf) || !itemIds(b, bf, &ib, &ibf)) return 0;
+  sa = (long)js_num(ia, iaf, "simkl", 0.0);
+  sb = (long)js_num(ib, ibf, "simkl", 0.0);
+  if (sa > 0 && sb > 0) return sa == sb;
+  for (size_t k = 0; k < sizeof chaves / sizeof *chaves; k++) {
+    char x[48], y[48];
+    if (!idOutro(ia, iaf, chaves[k], x, sizeof x) || !idOutro(ib, ibf, chaves[k], y, sizeof y))
+      continue;
+    if (strcmp(x, y)) return 0;
+    iguais++;
+  }
+  return iguais > 0;
+}
+
+typedef struct { long *v; int n, cap; } SmkIds;
+static int idsComparar(const void *a, const void *b) {
+  long x = *(const long *)a, y = *(const long *)b;
+  return (x > y) - (x < y);
+}
+// Every Simkl ID in an all-items body, sorted. 0 if out of memory.
+static int idsLer(SmkIds *s, const char *corpo) {
+  const char *ini = corpo, *fim, *v, *vf, *p;
+  while ((unsigned char)*ini <= ' ') ini++;
+  fim = js_fim(ini);
+  for (int t = 0; t < 3; t++) {
+    if (!fim || !valorRaiz(ini, fim, bibTipos[t], &v, &vf) || *v != '[') continue;
+    for (p = v + 1; p < vf; ) {
+      while (p < vf && ((unsigned char)*p <= ' ' || *p == ',')) p++;
+      if (p >= vf || *p != '{') break;
+      const char *f = js_fim(p);
+      if (!f || f > vf) break;
+      long id = itemSimkl(p, f);
+      if (id > 0) {
+        if (s->n == s->cap) {
+          long *novo = realloc(s->v, sizeof *novo * (size_t)(s->cap ? s->cap * 2 : 256));
+          if (!novo) return 0;
+          s->v = novo;
+          s->cap = s->cap ? s->cap * 2 : 256;
+        }
+        s->v[s->n++] = id;
+      }
+      p = f;
+    }
+  }
+  if (s->n) qsort(s->v, (size_t)s->n, sizeof *s->v, idsComparar);
+  return 1;
+}
+static int idsTem(const SmkIds *s, long id) {
+  return s->n && bsearch(&id, s->v, (size_t)s->n, sizeof *s->v, idsComparar);
+}
+
+// Every item of an all-items body, pointing into it. -1 out of memory.
+typedef struct { const char *p, *f; long id; int filme; } SmkItem;
+static int itensLer(const char *corpo, SmkItem **v) {
+  const char *ini = corpo, *fim, *a, *af, *p;
+  int n = 0, cap = 0;
+  *v = NULL;
+  while ((unsigned char)*ini <= ' ') ini++;
+  fim = js_fim(ini);
+  for (int t = 0; t < 3; t++) {
+    if (!fim || !valorRaiz(ini, fim, bibTipos[t], &a, &af) || *a != '[') continue;
+    for (p = a + 1; p < af; ) {
+      while (p < af && ((unsigned char)*p <= ' ' || *p == ',')) p++;
+      if (p >= af || *p != '{') break;
+      const char *f = js_fim(p);
+      if (!f || f > af) break;
+      if (n == cap) {
+        SmkItem *novo = realloc(*v, sizeof *novo * (size_t)(cap ? cap * 2 : 64));
+        if (!novo) { free(*v); *v = NULL; return -1; }
+        *v = novo;
+        cap = cap ? cap * 2 : 64;
+      }
+      (*v)[n++] = (SmkItem){ p, f, itemSimkl(p, f), t == 2 };
+      p = f;
+    }
+  }
+  return n;
+}
+
+// The delta item an item of the library is replaced by, if any. By Simkl ID;
+// when either side has none, by its other IDs (itensMesmos), shows and anime
+// together, movies apart (TMDB numbers TV and movies separately).
+static int itemTrocado(const SmkItem *o, const SmkIds *novos, const SmkItem *d, int nd) {
+  if (o->id > 0 && idsTem(novos, o->id)) return 1;
+  for (int i = 0; i < nd; i++)
+    if ((o->id <= 0 || d[i].id <= 0) && o->filme == d[i].filme &&
+        itensMesmos(o->p, o->f, d[i].p, d[i].f))
+      return 1;
+  return 0;
+}
+
+// THE MERGE. Each item of the delta replaces the library's item with the same
+// Simkl ID, in whichever list it was (keyed by Simkl ID, not IMDb: Kaiju No.
+// 8's two seasons share one IMDb ID); new ones are added. Simkl gives every
+// item an ID; one without is matched by its other IDs (itemTrocado), and if
+// it matches several library items, *ambiguo is set and NULL returned: the
+// caller downloads the whole library rather than replace the wrong one.
+// With `atuais` (the IDs-only list) an item no longer there is dropped; one
+// without a Simkl ID cannot be checked and stays. NULL on failure.
+static char *bibliotecaFundir(const char *velho, const char *delta, const SmkIds *atuais,
+                              int *trocados, int *removidos, int *ambiguo) {
+  SmkIds novos = {0};
+  SmkTexto t = {0};
+  SmkItem *vs = NULL, *ds = NULL;
+  const char *vi = velho, *di = delta, *vfim, *dfim;
+  int ok, nv, nd;
+  *trocados = *removidos = *ambiguo = 0;
+  while ((unsigned char)*vi <= ' ') vi++;
+  while ((unsigned char)*di <= ' ') di++;
+  vfim = js_fim(vi);
+  dfim = js_fim(di);
+  if (!vfim || !dfim || !idsLer(&novos, delta)) { free(novos.v); return NULL; }
+  nv = itensLer(velho, &vs);
+  nd = itensLer(delta, &ds);
+  if (nv < 0 || nd < 0) { free(vs); free(ds); free(novos.v); return NULL; }
+  // A delta item without a Simkl ID that fits more than one library item.
+  for (int i = 0; i < nd && !*ambiguo; i++) {
+    int achados = 0;
+    if (ds[i].id > 0) continue;
+    for (int j = 0; j < nv && achados < 2; j++)
+      if (!(vs[j].id > 0 && idsTem(&novos, vs[j].id)) && vs[j].filme == ds[i].filme &&
+          itensMesmos(vs[j].p, vs[j].f, ds[i].p, ds[i].f))
+        achados++;
+    *ambiguo = achados > 1;
+  }
+  free(vs);
+  if (*ambiguo) { free(ds); free(novos.v); return NULL; }
+  ok = textoPor(&t, "{", 1);
+  for (int k = 0; ok && k < 3; k++) {
+    const char *v, *vf, *p;
+    int itens = 0;
+    char cab[24];
+    int n = snprintf(cab, sizeof cab, "%s\"%s\":[", k ? "," : "", bibTipos[k]);
+    ok = textoPor(&t, cab, (size_t)n);
+    for (int lado = 0; ok && lado < 2; lado++) {
+      const char *ini = lado ? di : vi, *fim = lado ? dfim : vfim;
+      if (!valorRaiz(ini, fim, bibTipos[k], &v, &vf) || *v != '[') continue;
+      for (p = v + 1; ok && p < vf; ) {
+        while (p < vf && ((unsigned char)*p <= ' ' || *p == ',')) p++;
+        if (p >= vf || *p != '{') break;
+        const char *f = js_fim(p);
+        if (!f || f > vf) break;
+        if (!lado) {
+          SmkItem o = { p, f, itemSimkl(p, f), k == 2 };
+          if (itemTrocado(&o, &novos, ds, nd)) { (*trocados)++; p = f; continue; }
+          if (o.id > 0 && atuais && !idsTem(atuais, o.id)) { (*removidos)++; p = f; continue; }
+        }
+        ok = (!itens++ || textoPor(&t, ",", 1)) && textoPor(&t, p, (size_t)(f - p));
+        p = f;
+      }
+    }
+    if (ok) ok = textoPor(&t, "]", 1);
+  }
+  if (ok) ok = textoPor(&t, "}", 1);
+  free(ds);
+  free(novos.v);
+  if (!ok || !bibliotecaLimitada(t.p)) { free(t.p); return NULL; }
+  return t.p;
+}
+
+// The IDs-only list (/sync/all-items?extended=simkl_ids_only): what is in the
+// library now. 0 if it could not be had.
+static int bibliotecaIds(SmkPedido pedido, SmkIds *ids, int *st) {
+  char *r = pedir(pedido, 'G', "/sync/all-items", "extended=simkl_ids_only", NULL, st);
+  int ok = r && *st >= 200 && *st < 300 &&
+           (corpoVazio(r) || (perfilHistoricoValido(r) && idsLer(ids, r)));
+  free(r);
+  return ok;
+}
+
+// Brings `velho` (the library at `ativVelho`) up to `ativ`. 0 failed (nothing
+// changed), 1 the library is unchanged (only playback and the like moved),
+// 2 *novo and *delta set, 3 a merge cannot be trusted or the changes are over
+// max_items: download it whole.
+static int bibliotecaAtualizar(SmkPedido pedido, const char *velho, const char *ativVelho,
+                               const char *ativ, char **novo, char **delta, int *st) {
+  char desde[48] = "";
+  int mudou, removeu, trocados = 0, removidos = 0, ambiguo = 0;
+  SmkIds atuais = {0};
+  *novo = *delta = NULL;
+  ativComparar(ativVelho, ativ, &mudou, &removeu);
+  if (!mudou && !removeu) return 1;
+  if (!js_texto_raiz(ativVelho, "all", desde, sizeof desde) || !desde[0]) {
+    printf("[simkl] library: no date to ask changes from, downloading it whole\n");
+    return 3;
+  }
+  if (mudou) {
+    int r = bibliotecaPuxar(pedido, desde, delta, st);
+    if (r < 0) {
+      printf("[simkl] library: changes over Simkl's max_items, downloading it whole\n");
+      return 3;
+    }
+    if (!r) return 0;
+  } else if (!(*delta = strdup("{\"shows\":[],\"anime\":[],\"movies\":[]}"))) {
+    return 0;
+  }
+  if (removeu && !bibliotecaIds(pedido, &atuais, st)) {
+    free(*delta); *delta = NULL;
+    free(atuais.v);
+    return 0;
+  }
+  *novo = bibliotecaFundir(velho, *delta, removeu ? &atuais : NULL, &trocados, &removidos,
+                           &ambiguo);
+  free(atuais.v);
+  if (!*novo) {
+    free(*delta); *delta = NULL;
+    if (!ambiguo) return 0;
+    printf("[simkl] library: an item without a Simkl ID fits several, downloading it whole\n");
+    return 3;
+  }
+  // The delta's own items: one that replaced nothing is new to the library,
+  // so "replaced" alone reads 0 for an item just added on Simkl.
+  {
+    SmkItem *ds = NULL;
+    int nd = itensLer(*delta, &ds);
+    free(ds);
+    printf("[simkl] library: delta since %s: %d item(s) in it, %d library item(s) replaced, "
+           "%d removed%s\n", desde, nd < 0 ? 0 : nd, trocados, removidos,
+           removeu ? " (removals checked)" : "");
+  }
+  return 2;
+}
+
+typedef struct { SmkPedido pedido; int perfil; unsigned long long cred; } BibCarga;
+
+static void bibGravar(BibCarga c, char *ativ, char *corpo) {
+  if (pedidoTravar(c.pedido)) {
+    if (simklauth_credencial_travar(c.cred, c.perfil, c.pedido.aut)) {
+      simklbib_gravar(c.perfil, pedidoConta(c.pedido), &(SimklBib){ ativ, corpo });
+      simklauth_credencial_destravar();
+    }
+    pedidoDestravar();
+  }
+}
+
+static void *bibCarregarFio(void *arg) {
+  BibCarga c = *(BibCarga *)arg;
+  SmkPedido pedido = c.pedido;
+  unsigned long long conta = pedidoConta(pedido);
+  char *ativ, *corpo = NULL, *ativVelho = NULL, *novo = NULL, *delta = NULL;
+  int tem, igual, st = 0, r = 3;
+  free(arg);
+  pthread_mutex_lock(&trava);
+  tem = bibDoPedido(pedido);
+  pthread_mutex_unlock(&trava);
+  // 1. The saved copy, once per session.
+  if (!tem) {
+    SimklBib salvo;
+    if (simklbib_ler(c.perfil, conta, &salvo)) {
+      bibPublicar(pedido, salvo.biblioteca, salvo.atividades, 0);
+    }
+  }
+  // 2. Activities: unchanged since the copy = nothing to download. A write
+  // after this point flags the library again.
+  __atomic_store_n(&bibSujo, 0, __ATOMIC_RELEASE);
+  ativ = bibliotecaAtividades(pedido);
+  if (pedidoTravar(pedido)) {
+    if (ativ) {
+      bibFalhas = 0;
+      bibTentarApos = 0;
+    } else {
+      if (bibFalhas < 5) bibFalhas++;
+      bibTentarApos = time(NULL) + (30 << (bibFalhas - 1));
+    }
+    pedidoDestravar();
+  }
+  pthread_mutex_lock(&trava);
+  tem = bibDoPedido(pedido);
+  igual = tem && bibMesmoAll(bibAtiv, ativ);
+  pthread_mutex_unlock(&trava);
+  if (igual) {
+    printf("[simkl] library: activities unchanged, saved copy is current\n");
+    free(ativ);
+    bibPublicar(pedido, NULL, NULL, 1);
+    goto fim;
+  }
+  if (!ativ && tem) {
+    // Simkl unreachable: keep the saved copy, ask again on a later show page.
+    printf("[simkl] library: activities unavailable, keeping the saved copy\n");
+    bibPublicar(pedido, NULL, NULL, 0);
+    goto fim;
+  }
+  // 3. A library and the activities it reflects: only what changed (r 0-2).
+  // r 3: no library yet, one without its activities, one a merge cannot be
+  // trusted with, or changes over max_items: the whole library below.
+  if (tem && ativ && bibAtivCopiar(pedido, &corpo, &ativVelho))
+    r = bibliotecaAtualizar(pedido, corpo, ativVelho, ativ, &novo, &delta, &st);
+  free(corpo);
+  free(ativVelho);
+  corpo = NULL;
+  if (r == 2) {
+    free(delta);
+    bibGravar(c, ativ, novo);
+    bibPublicar(pedido, novo, ativ, 1);
+  } else if (r == 1) {
+    printf("[simkl] library: only playback/ratings/settings moved, nothing to download\n");
+    bibPublicar(pedido, NULL, ativ, 1);
+  } else if (r == 0) {
+    // Nothing saved or published: the next reader asks again.
+    printf("[simkl] library: delta failed (HTTP %d), keeping the library\n", st);
+    free(ativ);
+    bibPublicar(pedido, NULL, NULL, 0);
+  } else if (bibliotecaPuxar(pedido, NULL, &corpo, &st) > 0) {
+    // Without activities the copy is used but not saved: a later delta would
+    // have no date to start from.
+    if (ativ) bibGravar(c, ativ, corpo);
+    bibPublicar(pedido, corpo, ativ, ativ != NULL);
+  } else {
+    printf("[simkl] library: download failed (HTTP %d)\n", st);
+    free(ativ);
+    bibPublicar(pedido, NULL, NULL, 0);
+  }
+fim:
+  fflush(stdout);
+  pthread_mutex_lock(&trava);
+  if (bibFio && bibFioSessao == pedido.sessao && bibFioGeracao == pedido.geracao)
+    bibFio = 0;
+  bibVivos--;
+  pthread_cond_broadcast(&bibMudou);
+  pthread_mutex_unlock(&trava);
+  return NULL;
+}
+
+// Starts the loader unless one runs for this generation. `velha`: only when
+// the library is missing or its last check is SMK_BIB_IDADE old.
+static void bibIniciar(SmkPedido pedido, int perfil, int velha) {
+  BibCarga *c;
+  pthread_t fio;
+  time_t agora = time(NULL);
+  pthread_mutex_lock(&trava);
+  if (pedido.geracao != cacheGeracao || bibFio || agora < bibTentarApos ||
+      (velha && bibDoPedido(pedido) && agora >= bibConferida &&
+       agora - bibConferida < SMK_BIB_IDADE)) {
+    pthread_mutex_unlock(&trava);
+    return;
+  }
+  bibFio = 1;
+  bibFioSessao = pedido.sessao;
+  bibFioGeracao = pedido.geracao;
+  bibVivos++;
+  pthread_mutex_unlock(&trava);
+  if ((c = malloc(sizeof *c))) {
+    c->pedido = pedido;
+    c->perfil = perfil;
+    c->cred = simklauth_credencial_copiar(NULL, 0);
+    if (pthread_create(&fio, NULL, bibCarregarFio, c) == 0) {
+      pthread_detach(fio);
+      return;
+    }
+    free(c);
+  }
+  pthread_mutex_lock(&trava);
+  if (bibFioSessao == pedido.sessao && bibFioGeracao == pedido.geracao) bibFio = 0;
+  bibVivos--;
+  pthread_cond_broadcast(&bibMudou);
+  pthread_mutex_unlock(&trava);
+}
+
+int simkl_biblioteca_carregando(void) {
+  int r;
+  pthread_mutex_lock(&trava);
+  r = bibVivos > 0;
+  pthread_mutex_unlock(&trava);
+  return r;
+}
+
+void simkl_biblioteca_iniciar(void) {
+  SmkPedido pedido = pedidoCapturar();
+  int perfil;
+  if (!pedido.aut[0] || (perfil = pedidoPerfil(pedido)) < 0) return;
+  bibIniciar(pedido, perfil, 0);
+}
+
+// LIST READERS (Continue watching, Saved, the Lists tab) want what Simkl has
+// now, as when each of them asked activities on every build: the library
+// checked within SMK_BIB_FRESCA, and again after a write from this app. They
+// wait for that check; at launch it is the load already on its way.
+#ifndef SMK_BIB_FRESCA   // tests set 0: every read asks activities, as before
+#define SMK_BIB_FRESCA 900
+#endif
+
+static int bibFresca(SmkPedido p) {   // under trava
+  time_t agora = time(NULL);
+  return bibDoPedido(p) && bibConferida && agora >= bibConferida &&
+         agora - bibConferida < SMK_BIB_FRESCA &&
+         !__atomic_load_n(&bibSujo, __ATOMIC_ACQUIRE);
+}
+
+// The library and the activities it reflects (copies; either may be NULL).
+static char *bibAtualizada(SmkPedido pedido, int perfil, char **ativ) {
+  struct timespec ate;
+  char *copia = NULL;
+  int fresca;
+  if (ativ) *ativ = NULL;
+  pthread_mutex_lock(&trava);
+  fresca = bibFresca(pedido);
+  pthread_mutex_unlock(&trava);
+  if (!fresca) bibIniciar(pedido, perfil, 0);
+  clock_gettime(CLOCK_REALTIME, &ate);
+  ate.tv_sec += 60;
+  pthread_mutex_lock(&trava);
+  while (bibFio && bibFioSessao == pedido.sessao && bibFioGeracao == pedido.geracao &&
+         pedido.geracao == cacheGeracao)
+    if (pthread_cond_timedwait(&bibMudou, &trava, &ate)) break;
+  if (bibDoPedido(pedido)) {
+    copia = strdup(bibCorpo);
+    if (ativ && bibAtiv) *ativ = strdup(bibAtiv);
+  }
+  pthread_mutex_unlock(&trava);
+  return copia;
+}
+
+char *simkl_lista_corpo(const char *tipo, const char *estado) {
+  SmkPedido pedido = pedidoCapturar();
+  char *lib, *r;
+  int perfil;
+  if (!tipo || !estado || !pedido.aut[0] || (perfil = pedidoPerfil(pedido)) < 0) return NULL;
+  lib = bibAtualizada(pedido, perfil, NULL);
+  r = bibLista(lib, tipo, estado);
+  free(lib);
+  return r;
+}
+
+
 
 int simkl_e_a_seguir(const char *id) {
   int i, sim = 0;
@@ -1059,33 +2075,41 @@ int simkl_continuar(CatItem *saida, int max) {
   char proxLocal[SMK_PLAY_MAX][28]; int nProxLocal = 0;
   int n, nP, nA, i, k;
   SmkPedido pedido = pedidoCapturar();
+  char *lib, *ativ = NULL;
+  int perfil;
   if (!saida || max <= 0 || !pedido.aut[0]) return 0;
   if (max > SMK_PLAY_MAX) max = SMK_PLAY_MAX;
-  h = atividades(pedido);
-  if (!pedidoTravar(pedido)) return 0;
-  if (h && h == assCw && corpoPlay && corpoAssist && corpoAssistAnime) {
-    cPlay = strdup(corpoPlay); cAssist = strdup(corpoAssist);
-    cAnime = strdup(corpoAssistAnime);
-    printf("[simkl] resume: activities unchanged, cached playback/shows/anime bodies\n");
+  if ((perfil = pedidoPerfil(pedido)) < 0) return 0;
+  // The lists come from the library (status watching); only playback is not
+  // in it. Playback is asked again when its own timestamps move
+  // (assinarPlayback) or after a write from this app.
+  lib = bibAtualizada(pedido, perfil, &ativ);
+  h = assinarPlayback(ativ);
+  // A write from this app asks again whatever the timestamps say.
+  if (!__atomic_exchange_n(&playSujo, 0, __ATOMIC_ACQ_REL) && pedidoTravar(pedido)) {
+    if (h && h == assCw && corpoPlay) {
+      cPlay = strdup(corpoPlay);
+      printf("[simkl] resume: playback unchanged, cached playback\n");
+    }
+    pedidoDestravar();
   }
-  pedidoDestravar();
-  if (!cPlay || !cAssist || !cAnime) {
-    int st = 0; free(cPlay); free(cAssist); free(cAnime);
+  if (!cPlay) {
+    int st = 0;
     cPlay = pegar(pedido, "/sync/playback", NULL, &st);
-    cAssist = pegar(pedido, "/sync/all-items/shows/watching", NULL, &st);
-    // Anime e um TERCEIRO tipo no Simkl: /sync/all-items/anime/<estado>.
-    // Sem este pedido, nenhum anime aparece no Continuar assistindo.
-    cAnime = pegar(pedido, "/sync/all-items/anime/watching", NULL, &st);
-    printf("[simkl] anime watching fetch: status=%d body=%s\n", st, cAnime ? "received" : "missing");
     if (pedidoTravar(pedido)) {
-      if (h && cPlay && cAssist && cAnime) {
-        trocar(&corpoPlay, strdup(cPlay)); trocar(&corpoAssist, strdup(cAssist));
-        trocar(&corpoAssistAnime, strdup(cAnime)); assCw = h;
-      } else assCw = 0;
+      if (h && cPlay) { trocar(&corpoPlay, strdup(cPlay)); assCw = h; }
+      else assCw = 0;
       pedidoDestravar();
     }
   }
-  if (!pedidoAtual(pedido)) { free(cPlay); free(cAssist); free(cAnime); return 0; }
+  cAssist = bibLista(lib, "shows", "watching");
+  // Anime e um TERCEIRO tipo no Simkl. Sem esta lista, nenhum anime aparece
+  // no Continuar assistindo.
+  cAnime = bibLista(lib, "anime", "watching");
+  free(ativ); free(lib);
+  if (!pedidoAtual(pedido) || !cPlay || !cAssist || !cAnime) {
+    free(cPlay); free(cAssist); free(cAnime); return 0;
+  }
   n = simkl_ler_playback(cPlay, saida, ids, max);
   int nPausados = n;
   prox = malloc(sizeof(CatItem) * SMK_PLAY_MAX);
@@ -1157,30 +2181,17 @@ int simkl_continuar(CatItem *saida, int max) {
 }
 
 int simkl_plantowatch(CatItem *saida, int max) {
-  unsigned long h; char *cF = NULL, *cS = NULL, *cA = NULL; int n = 0, nA, i, j;
+  char *cF, *cS, *cA, *lib;
+  int n = 0, nA, i, j, perfil;
   SmkPedido pedido = pedidoCapturar();
   if (!saida || max <= 0 || !pedido.aut[0]) return 0;
-  h = atividades(pedido);
-  if (!pedidoTravar(pedido)) return 0;
-  if (h && h == assPtw && corpoPtwFilmes && corpoPtwSeries && corpoPtwAnime) {
-    cF = strdup(corpoPtwFilmes); cS = strdup(corpoPtwSeries);
-    cA = strdup(corpoPtwAnime);
-  }
-  pedidoDestravar();
-  if (!cF || !cS || !cA) {
-    int st = 0; free(cF); free(cS); free(cA);
-    cF = pegar(pedido, "/sync/all-items/movies/plantowatch", NULL, &st);
-    cS = pegar(pedido, "/sync/all-items/shows/plantowatch", NULL, &st);
-    // Anime e o terceiro tipo do Simkl: vai para o lado das series.
-    cA = pegar(pedido, "/sync/all-items/anime/plantowatch", NULL, &st);
-    if (pedidoTravar(pedido)) {
-      if (h && cF && cS && cA) {
-        trocar(&corpoPtwFilmes, strdup(cF)); trocar(&corpoPtwSeries, strdup(cS));
-        trocar(&corpoPtwAnime, strdup(cA)); assPtw = h;
-      } else assPtw = 0;
-      pedidoDestravar();
-    }
-  }
+  if ((perfil = pedidoPerfil(pedido)) < 0) return 0;
+  lib = bibAtualizada(pedido, perfil, NULL);
+  cF = bibLista(lib, "movies", "plantowatch");
+  cS = bibLista(lib, "shows", "plantowatch");
+  // Anime e o terceiro tipo do Simkl: vai para o lado das series.
+  cA = bibLista(lib, "anime", "plantowatch");
+  free(lib);
   if (!cF || !cS || !cA) {
     free(cF); free(cS); free(cA);
     return -1;
@@ -1225,7 +2236,6 @@ static void ptwMarcar(const char *id, int dentro) { // caller owns pedidoTravar
   for (i = 0; i < nPtw; i++) if (!strcmp(ptw[i], id)) break;
   if (dentro && i == nPtw && nPtw < SMK_PTW_MAX) snprintf(ptw[nPtw++], sizeof ptw[0], "%s", id);
   if (!dentro && i < nPtw) { memmove(ptw[i], ptw[i + 1], sizeof ptw[0] * (size_t)(nPtw - i - 1)); nPtw--; }
-  assPtw = 0;
 }
 static void *fioLista(void *u) {
   SmkLista *a = u; char corpo[200], *r; int st = 0, ok;

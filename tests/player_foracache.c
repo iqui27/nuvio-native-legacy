@@ -58,6 +58,10 @@ int stream_falha_tem_proxima(const FonteFalhaSessao *s, unsigned g) { (void)s; (
 static void player_voltar_a_esperar(void) { failed = 0; }
 static int pedirProximaFonteVOD(int i) { (void)i; requested++; return 1; }
 static int nv_res_tem(const char *s, const char *part) { return strstr(s, part) != NULL; }
+// O que a producao passou a usar: a marca "fonte escolhida" (a mao, a
+// guardada ou a preferida) e a sessao de partes no app (PF_NADA fora dela).
+static int fonteEscolhida, parteFase;
+enum { PF_NADA = 0 };
 #include "decision.c"
 
 static void reset(void) {
@@ -66,6 +70,7 @@ static void reset(void) {
   durFonteAcaoAte = toastAte = 0;
   stopped = failed = requested = reconnecting = kept = parts = 0;
   fonteVODAutomatica = comVideo = 1; fonteFalha = NULL;
+  fonteEscolhida = parteFase = 0;
   memset(excluded, 0, sizeof excluded);
   memset(lista, 0, sizeof lista);
   for (int i = 0; i < n; i++) {
@@ -94,7 +99,7 @@ int main(void) {
   reset(); durFonteAtualizar(121, 100); assert(!stopped && durFonteSkipEm);
   reset(); expected = 30; durFonteAtualizar(27, 100); assert(!stopped && !failed);
   expected = 2580;
-  reset(); tentativaN = 0; durFonteAtualizar(90, 100);
+  reset(); tentativaN = 0; fonteEscolhida = 1; durFonteAtualizar(90, 100);
   assert(!stopped && !failed && comVideo && !durFonteForaCache && !durFonteSkipEm);
   assert(durFonteCurta && durFonteAcaoAte);
   tentarProximaFonteVOD(); assert(!requested && !excluded[0]);

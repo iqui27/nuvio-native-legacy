@@ -67,7 +67,7 @@
 
   1,                /* desfocar nao assistidos: desligado */
   0,                /* botao de trailer: ligado */
-  0,                /* metadados externos: ligado */
+  1,                /* metadados externos: desligado */
   0,                /* data completa: ligada */
   100,              /* escurecimento do fundo do titulo: vinheta inteira */
   0,                /* trailer automatico na pagina de titulo: ligado */
@@ -259,6 +259,11 @@
   0, /* Settings layout (#339): Painel = the card grid and the art beside the list */
   0, /* P2P space limit (#334): Automatico */
   0, /* P2P cache location (#205): Interno */
+  0, /* P2P metadata wait (#775): 30 s */
+  0, /* folha fontes (#782): ilha nova */
+  0, /* fontes carregando (#774): padrao */
+  1, /* fonte na ficha (#457): V_LIGA 1=desligado */
+  1, /* direct cache USB (#764): V_LIGA 1=desligado */
   0, /* Source display order (#400): Por qualidade, local */
   0, /* Sincronia automática da legenda: Ligado, local */
   0, /* Mostrar no player (#425): Só meus idiomas; sem preferencia, todas */
@@ -366,6 +371,7 @@
   1, 1, 0, /* Guide: start on OK, audible, one day. */
   2, 2, 2, /* Capability exclusions: automatic defaults, resolved per device; unknown stays off. */
   0, /* Android TV home: enabled. */
+  0, /* Servidor Nuvio: acao; o valor mora em nuvio-backend.txt, nao em valor[] */
   1, /* Profile picker avatar size: Medium. */
   0, /* Group channel variants: enabled. */
   0, /* Sports menu entry: enabled. */
@@ -389,3 +395,10 @@
   0, // conversionBufferConnectionsLocal: 1, Standard continuous request (R14)
   1, 1, 1, // bufferDataLocal/ramOverlayLocal/ramGreenLocal: Desligado
   0, // bufferRamReduzLocal: Ligado (reducao automatica mantem a protecao)
+  0, // heroListaLocal: 10 titulos no carrossel do destaque (#797)
+  0, // showSkipCenaLocal: desligado (#342)
+  1, // personalizacaoDoPerfilPrincipalLocal: Desligado (#679) — opt-in
+
+  1, // legendaEvitarSdhLocal: Desligado (V_LIGA 1)
+  1, /* barrasPretasLocal: Desligado */
+  0, /* assMotorNovoLocal: Ligado (V_LIGA 0) — motor novo de ASS de fabrica */

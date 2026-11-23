@@ -31,6 +31,15 @@ int dados_gravar(const char *n, const char *c) { (void)c; if (strstr(n, "diario-
 int trakt_ativo(void) { return 0; }
 int trakt_cabecalhos(const char **c, char *a, size_t na, char *k, size_t nk) { (void)c; (void)a; (void)na; (void)k; (void)nk; return 1; }
 char *rede_baixar_com(const char *u, int s, const char *const *c);
+// Dubles do farolsinal (issue 43): por padrao o Farol nao pede notas e o fio
+// segue o comportamento anterior; o caso final liga e confere a entrega.
+static int farolQuer, notasN, notasPerfil;
+static char notasJson[64];
+int farolsinal_trakt_quer(void) { return farolQuer; }
+void farolsinal_trakt_notas(int perfil, const char *json) {
+  notasN++; notasPerfil = perfil; snprintf(notasJson, sizeof notasJson, "%s", json);
+}
+static const char *NOTAS = "[{\"rating\":9,\"type\":\"movie\"}]";
 
 static const char *HIST =
 "[{\"id\":1,\"watched_at\":\"2026-10-05T23:10:00.000Z\",\"action\":\"watch\",\"type\":\"episode\","
@@ -53,7 +62,7 @@ static const char *SERIES =
 char *rede_baixar_com(const char *u, int s, const char *const *c) {
   (void)s; (void)c;
   if (++requests == switchAt) diario_dono("account-b");
-  return strdup(strstr(u, "movies") ? FILMES : strstr(u, "shows") ? SERIES : HIST);
+  return strdup(strstr(u, "ratings") ? NOTAS : strstr(u, "movies") ? FILMES : strstr(u, "shows") ? SERIES : HIST);
 }
 
 int main(void) {
@@ -120,6 +129,25 @@ int main(void) {
   vt->perfil = 1; vt->dono = diario_dono_geracao();
   fio(vt);
   assert(diario_n(1) == 5 && cursorWrites == 1);
+  assert(notasN == 0);                              // sem pedido do Farol, sem /sync/ratings
+  // Farol pede as notas: uma leitura de /sync/ratings, entregue ao perfil certo.
+  farolQuer = 1;
+  diario_dono("account-c");
+  requests = cursorWrites = 0;
+  vt = calloc(1, sizeof *vt);
+  vt->perfil = 1; vt->dono = diario_dono_geracao();
+  fio(vt);
+  assert(requests == 4 && notasN == 1 && notasPerfil == 1 && !strcmp(notasJson, NOTAS));
+  assert(diario_n(1) == 5 && cursorWrites == 1);
+  // Troca de conta durante /sync/ratings: as notas nao chegam e o cursor nao grava.
+  diario_dono("account-a");
+  requests = cursorWrites = notasN = 0;
+  switchAt = 4;
+  vt = calloc(1, sizeof *vt);
+  vt->perfil = 1; vt->dono = diario_dono_geracao();
+  fio(vt);
+  switchAt = farolQuer = 0;
+  assert(notasN == 0 && cursorWrites == 0);
   printf("diariotrakt: ok\n");
   return 0;
 }

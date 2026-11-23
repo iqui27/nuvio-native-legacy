@@ -41,6 +41,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <ctype.h>
 
 #ifndef NV_VERSAO
 #define NV_VERSAO "dev"
@@ -376,27 +377,146 @@ static int terminaEm(const char *s, size_t n, const char *sufixo) {
   return n >= k && !strncmp(s + n - k, AT_SUFIXO2, k);
 }
 
-// O sha256 hex do anexo cuja browser_download_url comeca em `ini`. O campo
-// `digest` vem ANTES do browser_download_url dentro do mesmo anexo (ordem do
-// JSON do GitHub: ... size, digest, download_count, ..., browser_download_url),
-// entao a busca e PARA TRAS a partir da url — ir para frente pegaria o digest do
-// anexo SEGUINTE. Escreve "" quando o anexo nao tem digest.
+// ---- O que se aceita do JSON da release --------------------------------------
+// O JSON traz a URL e o sha256 do que sera instalado como codigo. Dois freios,
+// alem do TLS verificado em baixarJsonSeguro: a URL tem de ser a de anexo de
+// release deste repositorio (nenhum outro host, nenhum caractere de shell), e o
+// hash tem de ser sha256 hex.
+#define AT_DL_PREFIXO "https://github.com/iqui27/nuvio-native-legacy/releases/download/"
+static int urlOficial(const char *u, size_t n) {
+  size_t k = strlen(AT_DL_PREFIXO), i;
+  if (n <= k || strncmp(u, AT_DL_PREFIXO, k)) return 0;
+  for (i = k; i < n; i++) {
+    unsigned char c = (unsigned char)u[i];
+    if (!(isalnum(c) || c == '.' || c == '_' || c == '-' || c == '+' || c == '/' || c == '%' || c == '~')) return 0;
+  }
+  for (i = k; i + 1 < n; i++) if (u[i] == '.' && u[i + 1] == '.') return 0;
+  return 1;
+}
+static int hashHexValido(const char *h) {
+  size_t i;
+  if (!h || strlen(h) != 64) return 0;
+  for (i = 0; i < 64; i++) if (!isxdigit((unsigned char)h[i])) return 0;
+  return 1;
+}
+
+// A consulta do JSON da release com TLS VERIFICADO (rede_pedir). O caminho
+// generico (rede_baixar) nao verifica o certificado, e um JSON forjado vira
+// download de codigo. So o JSON precisa disso: o binario e conferido pelo sha256
+// vindo dele. No navegador (.wgt) o TLS e sempre do navegador; no Android, sem
+// libcurl, o caminho Java tambem verifica.
+static char *baixarJsonSeguro(const char *url, int segundos) {
+#ifdef __EMSCRIPTEN__
+  return rede_baixar(url, segundos);
+#else
+  RedePedido p;
+  RedeResposta r;
+  char *out = NULL;
+  memset(&p, 0, sizeof p);
+  p.url = url;
+  p.prazo_ms = (unsigned)segundos * 1000u;
+  p.max_bytes = 2u * 1024u * 1024u;
+  p.seguir = 1;
+  if (rede_pedir(&p, &r) && r.status >= 200 && r.status < 300 && r.corpo && r.n_corpo) {
+    out = (char *)malloc(r.n_corpo + 1);
+    if (out) { memcpy(out, r.corpo, r.n_corpo); out[r.n_corpo] = 0; }
+  }
+#ifdef NV_ANDROID
+  if (!out && r.erro == REDE_INDISPONIVEL) { rede_resposta_limpar(&r); return rede_baixar(url, segundos); }
+#endif
+  rede_resposta_limpar(&r);
+  return out;
+#endif
+}
+
+// O sha256 hex do anexo cuja browser_download_url comeca em `ini`. O digest
+// tem de ser do PROPRIO OBJETO JSON do anexo — a busca antiga pegava a ultima
+// ocorrência de "digest": desde o comeco do corpo ate a URL, e um anexo sem
+// digest herdava o do anexo ANTERIOR (o .ipk ficava com o sha256 do .wgt e o
+// instalador conferia contra o hash errado). A delimitacao rastreia `{`/`}`
+// fora de string: no `ini` o objeto aberto mais interno e o do anexo que tem
+// a URL, e so a chave "digest" DO NIVEL DELE conta — uma dentro de objeto
+// aninhado (uploader) ou dentro de string nao e o digest do arquivo. Escreve
+// "" quando o anexo nao tem digest proprio ou quando nao da para delimitar.
 static void hashAntesDe(const char *corpo, const char *ini, char *hash, size_t tamHash) {
-  const char *d = NULL, *q = corpo;
-  if (!hash || !tamHash) return;
+  const char *pilha[32], *p, *d = NULL, *obj, *fim = NULL;
+  char tipos[32];
+  int topo = 0, extra = 0, emStr = 0, iObj, prof;
+  if (!hash || !tamHash || !corpo || !ini || ini <= corpo) return;
   hash[0] = 0;
-  while (q < ini) {
-    const char *r = strstr(q, "\"digest\":");
-    if (!r || r > ini) break;
-    d = r; q = r + 8;
+  // ATE `ini`: sobe a pilha de `{`/`[` fora de string. `extra` conta o que nao
+  // coube na pilha: com estouro nao ha como saber onde o objeto termina.
+  for (p = corpo; p < ini && *p; p++) {
+    char c = *p;
+    if (emStr) {
+      if (c == '\\' && p + 1 < ini) p++;
+      else if (c == '"') emStr = 0;
+      continue;
+    }
+    if (c == '"') emStr = 1;
+    else if (c == '{' || c == '[') {
+      if (topo < 32) { pilha[topo] = p; tipos[topo] = c; topo++; }
+      else extra++;
+    } else if (c == '}' || c == ']') {
+      if (extra) extra--;
+      else if (topo) topo--;
+    }
+  }
+  if (extra) return;
+  // O objeto do anexo e o `{` mais interno aberto na URL.
+  for (iObj = topo - 1; iObj >= 0 && tipos[iObj] != '{'; iObj--) {}
+  if (iObj < 0) return;
+  obj = pilha[iObj];
+  // DE `ini` ATE O `}` QUE FECHA ESSE OBJETO (emStr continua 1: o ini esta
+  // dentro da string da URL). Fechamento com topo == iObj+1 fecha o proprio.
+  for (; *p; p++) {
+    char c = *p;
+    if (emStr) {
+      if (c == '\\' && p[1]) p++;
+      else if (c == '"') emStr = 0;
+      continue;
+    }
+    if (c == '"') emStr = 1;
+    else if (c == '{' || c == '[') {
+      if (topo < 32) { pilha[topo] = p; tipos[topo] = c; topo++; }
+      else extra++;
+    } else if (c == '}' || c == ']') {
+      if (extra) extra--;
+      else if (topo > iObj + 1) topo--;
+      else { fim = p; break; }
+    }
+  }
+  if (!fim) return;
+  // A ultima chave "digest" de nivel 1 dentro de [obj, fim), fora de string.
+  prof = 0;
+  for (p = obj; p < fim; p++) {
+    char c = *p;
+    if (emStr) {
+      if (c == '\\' && p + 1 < fim) p++;
+      else if (c == '"') emStr = 0;
+      continue;
+    }
+    if (c == '"') {
+      emStr = 1;
+      if (prof == 1 && fim - p > 8 && !memcmp(p + 1, "digest\"", 7)) {
+        const char *t = p + 8;
+        while (t < fim && (*t == ' ' || *t == '\t' || *t == '\r' || *t == '\n')) t++;
+        if (t < fim && *t == ':') d = t + 1;
+      }
+      continue;
+    }
+    if (c == '{' || c == '[') prof++;
+    else if (c == '}' || c == ']') prof--;
   }
   if (!d) return;
-  d = strchr(d + 8, '"');
-  if (!d) return;
+  while (d < fim && (*d == ' ' || *d == '\t' || *d == '\r' || *d == '\n')) d++;
+  if (d >= fim || *d != '"') return;
   d++;
   if (!strncmp(d, "sha256:", 7)) d += 7;   // so o hex interessa
   { const char *e = strchr(d, '"');
-    if (e && (size_t)(e - d) < tamHash) { memcpy(hash, d, (size_t)(e - d)); hash[e - d] = 0; } }
+    if (e && e < fim && (size_t)(e - d) < tamHash) { memcpy(hash, d, (size_t)(e - d)); hash[e - d] = 0; }
+    // Um digest que nao seja sha256 hex de 64 caracteres nao e hash: descarta.
+    if (hash[0] && !hashHexValido(hash)) hash[0] = 0; }
 }
 
 // `sufixo` obrigatorio. NAO ha reserva para "qualquer .ipk": uma release sem o
@@ -417,14 +537,18 @@ static int acharIpk(const char *corpo, char *dst, size_t tam,
     ini = ++p;
     while (*p && *p != '"') p++;
     n = (size_t)(p - ini);
-    if (n > 4 && n < tam && terminaEm(ini, n, sufixo)) {
+    if (n > 4 && n < tam && terminaEm(ini, n, sufixo) && urlOficial(ini, n)) {
+      char h[80] = "";
+      // O SHA-256 DO MESMO ANEXO, e ele e OBRIGATORIO: sem ele o instalador
+      // do Homebrew Channel compara o hash calculado contra `undefined` e
+      // responde `returnValue: false` com "Invalid file checksum" — MEDIDO
+      // na C9, e o arquivo ate chegou a ser instalado, o que e pior: sucesso
+      // reportado como falha. Digest ausente ou invalido = anexo descartado,
+      // como no acharAnexo do .tpk/.apk, e o cartao fica sem o botao.
+      hashAntesDe(corpo, ini, h, sizeof h);
+      if (!h[0]) continue;
       memcpy(dst, ini, n); dst[n] = 0;
-      // O SHA-256 DO MESMO ANEXO, e ele e obrigatorio na pratica: sem ele o
-      // instalador do Homebrew Channel compara o hash calculado contra
-      // `undefined` e responde `returnValue: false` com "Invalid file
-      // checksum" — MEDIDO na C9, e o arquivo ate chegou a ser instalado, o
-      // que e pior: sucesso reportado como falha.
-      hashAntesDe(corpo, ini, hash, tamHash);
+      snprintf(hash, tamHash, "%s", h);
       return 1;
     }
   }
@@ -451,7 +575,7 @@ static int acharAnexo(const char *corpo, char *dst, size_t tam, char *hash, size
     ini = ++p;
     while (*p && *p != '"') p++;
     n = (size_t)(p - ini);
-    if (n > k && n < tam && !strncmp(ini + n - k, sufixo, k)) {
+    if (n > k && n < tam && !strncmp(ini + n - k, sufixo, k) && urlOficial(ini, n)) {
       char h[80] = "";
       hashAntesDe(corpo, ini, h, sizeof h);
       if (!h[0]) continue;                 // sem digest: nao confiar
@@ -568,7 +692,7 @@ static int fioConsulta(void *arg) {
   SDL_UnlockMutex(mtx);
   return 0;  // hosted app e sempre current
 #endif
-  corpo = rede_baixar(AT_URL, 12);
+  corpo = baixarJsonSeguro(AT_URL, 12);
   if (!corpo) { printf("[atualizacao] sem resposta do GitHub\n"); fflush(stdout); }
   else {
     textoJson(corpo, "tag_name", tag, sizeof tag);
@@ -656,6 +780,14 @@ static int fioInstalar(void *arg) {
   SDL_UnlockMutex(mtx);
   return 0;  // hosted app e sempre current
 #endif
+  // O URL e o hash vao dentro de um comando de shell entre aspas simples. Eles
+  // vem do JSON da release: revalida aqui, na ponta, e nunca monta o comando com
+  // algo que nao seja o endereco oficial e 64 hex (sem aspas, espaco, $, crase).
+  if (!urlOficial(ipkUrl, strlen(ipkUrl)) || !hashHexValido(ipkHash)) {
+    SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx);
+    printf("[atualizacao] endereco ou hash do .ipk fora do padrao: nao instalo\n"); fflush(stdout);
+    return 0;
+  }
   { char extra[110] = "";
     if (ipkHash[0]) snprintf(extra, sizeof extra, ",\"ipkHash\":\"%s\"", ipkHash);
     snprintf(cmd, sizeof cmd,
@@ -771,7 +903,7 @@ static int fioBaixarSo(void *arg) {
     return 0;
   }
   printf("[atualizacao] baixando libnuvio.so nova (%s)\n", soUrl); fflush(stdout);
-  buf = rede_baixar_bin(soUrl, 120, &n);
+  buf = rede_baixar_bin_seguro(soUrl, 120, &n);
   if (!buf || n <= 0) {
     printf("[atualizacao] download da .so falhou\n"); fflush(stdout);
     free(buf);
@@ -880,7 +1012,7 @@ static int fioInstalarApk(void *arg) {
       for (tent = 0; tent < 3; tent++) {
         if (tent) { printf("[atualizacao] tentando de novo em %d s\n", 10 * tent); fflush(stdout); SDL_Delay(10000u * (unsigned)tent); }
         n = 0;
-        buf = rede_baixar_bin(apkUrl, 600, &n);
+        buf = rede_baixar_bin_seguro(apkUrl, 600, &n);
         if (buf && n > 0) break;
         free(buf); buf = NULL;
       } }

@@ -6,6 +6,7 @@
 #if defined(__EMSCRIPTEN__) || defined(_WIN32)
 int  celular_disponivel(void) { return 0; }
 int  celular_abrir(const char *t) { (void)t; return 0; }
+int  celular_abrir_digitar(const char *t) { (void)t; return 0; }
 int celular_abrir_relatorio(const char *p) { (void)p; return 0; }
 const char *celular_motivo(void) { return ""; }
 void celular_relatorio_fixo(const char *t, int p) { (void)t; (void)p; }
@@ -64,6 +65,7 @@ static FILE *relatorio; /* Sanitized, immutable snapshot; never the original log
  * computer keeps it as a bookmark. Set by celbotao.c from the saved token. */
 static char tokenFixo[CEL_TOKEN_N + 1];
 static int portaFixa;
+static int lanFixoAtivo;
 static long envioPrazo;
 // WHY THE LAST OPENING FAILED ("Could not load" said nothing): short,
 // technical, shown in the Download log card and logged.
@@ -676,7 +678,8 @@ static int abrir(const char *titulo,const char *destino,const char *snapshot) {
   celular_fechar();
   motivoFalha[0] = 0;
   if (!ipLan(ip, sizeof ip)) { printf("[celular] sem IP de rede local: %s\n", motivoFalha); return 0; }
-  if (snapshot && tokenValido(tokenFixo)) snprintf(token, sizeof token, "%s", tokenFixo);
+  if ((snapshot && tokenValido(tokenFixo)) || (lanFixoAtivo && tokenValido(tokenFixo)))
+    snprintf(token, sizeof token, "%s", tokenFixo);
   else if (!gerarToken()) { snprintf(motivoFalha, sizeof motivoFalha, "no random source"); return 0; }
   if (pipe(acorda)) { acorda[0] = acorda[1] = -1; snprintf(motivoFalha, sizeof motivoFalha, "pipe errno %d", errno); return 0; }
   ouvir = socket(AF_INET, SOCK_STREAM, 0);
@@ -688,7 +691,7 @@ static int abrir(const char *titulo,const char *destino,const char *snapshot) {
   a.sin_port = 0;                          // porta livre, do sistema
   // DIAGNOSTICO: a porta fixa primeiro (endereco de favorito); ocupada, a do
   // sistema, e o cartao mostra o endereco novo.
-  if (snapshot && portaFixa) {
+  if ((snapshot && portaFixa) || (lanFixoAtivo && portaFixa)) {
     a.sin_port = htons((unsigned short)portaFixa);
     if (bind(ouvir, (struct sockaddr *)&a, sizeof a)) {
       printf("[celular] porta fixa %d ocupada (errno %d): porta do sistema\n", portaFixa, errno);
@@ -739,6 +742,13 @@ falhou:
   return 1;
 }
 int celular_abrir(const char *titulo) { return abrir(titulo,NULL,NULL); }
+int celular_abrir_digitar(const char *titulo) {
+  int ok;
+  lanFixoAtivo = portaFixa || tokenFixo[0];
+  ok = abrir(titulo, NULL, NULL);
+  lanFixoAtivo = 0;
+  return ok;
+}
 int celular_abrir_relatorio(const char *snapshot) {
   return snapshot && *snapshot ? abrir("Export diagnostics", NULL, snapshot) : 0;
 }

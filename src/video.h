@@ -205,6 +205,16 @@ int    video_reconectando(void);
 // the target instead of the stale position.
 int      video_busca_em_voo(void);
 unsigned video_busca_falhas(void);
+// SUBTITLE CLOCK (owner 25/10). The host reads the TV's position with a query
+// that takes 50-600 ms and stamps the MIDDLE of it (CLOCK_MONOTONIC, s); half
+// the duration is the uncertainty. 1 = there is a reading; *seq changes with
+// every new one. Same transform as video_pos (converted stream offset).
+int      video_pos_carimbada(double *pos, double *carimbo, double *incerteza, unsigned *seq);
+// 1 from a seek until the first real reading of where the TV landed (the TV
+// seeks to a keyframe, seconds before the target). Subtitles hide meanwhile.
+int      video_pos_incerta(void);
+// Frame rate and HDR of the playing file (MKV header); 0 = unknown.
+int      video_tpk_quadro(double *fps, int *hdr);
 #endif
 int    video_tocando(void);
 // Pausa comprovada pelo backend da sessao atual, nao a intencao local de
@@ -224,6 +234,11 @@ int    video_falhou(void);   // 1 depois de um errorText real na fonte atual
 // o cartao de erro do canal dizer o que o servidor respondeu em vez do
 // generico (#158). Vale ate o proximo video_tocar/video_parar.
 const char *video_erro_texto(void);
+// MODELO DA TV onde o sistema o diz: na webOS sai do getConfigs
+// "tv.model.modelname" (mesmo pedido do EDID, video.c). "?" ate a resposta
+// chegar, ou onde a plataforma nao informa. O Farol usa no perfil do aparelho;
+// o texto ja vem filtrado ([A-Za-z0-9._ -], <= 32).
+const char *video_tv_modelo(void);
 #ifdef NV_ANDROID
 // Codigo do erro atual apenas se o renderer e de VIDEO; 0 para audio/desconhecido.
 int video_erro_decoder_codigo(void);
@@ -302,6 +317,11 @@ int    video_terminou(void); // 1 depois do fim de fluxo (endOfStream) da fonte 
 int    video_conflito_recurso(void);
 #ifdef NV_TPK
 void   video_tpk_log_host(const char *linha);   // tpk.c repassa cada linha do host
+// A reconexao em curso e do arquivo sendo preparado pelo mkvfix (seek durante
+// a sonda, reabertura pelo servidor local), nao queda de rede: outro aviso.
+int    video_tpk_reconexao_preparo(void);
+// Ha quanto tempo (ms) um seek espera a sonda do mkvfix; 0 = nenhum segurado.
+unsigned video_tpk_seek_segurado_ms(void);
 int    video_tpk_codec_recusado(const char *codecId);  // #313: DTS/TrueHD/MLP, que a Samsung nao toca
 // Zoom/recorte do plano de video (ROI), experimental (#241): liga/desliga em
 // execucao; o padrao e NV_TPK_ZOOM_ROI (0). Loga "[trailer] tpk zoom ROI: ...".
@@ -314,6 +334,8 @@ int    video_tpk_cartao_cover(void);       // 1 = o cartao recebe cover (recorte
 void   video_tpk_cartao_destino(float x, float y, float w, float h, float *ox, float *oy, float *ow, float *oh);
 void   video_tpk_cartao_furo(float x, float y, float w, float h, float *ox, float *oy, float *ow, float *oh);
 void   video_tpk_tizen_definir(const char *versao);   // gpunivel.c: platform.version
+int    video_tpk_tizen_maior(void);                   // versao maior da Tizen em execucao (0 = desconhecida)
+int    video_tpk_tizen_menor(void);                   // versao menor ("6.5" -> 5; atoi puro perderia)
 int    video_recorte_fonte_trailer(void);   // so o trailer: o ajuste em execucao
 #else
 static inline int video_recorte_fonte_trailer(void) { return video_recorte_fonte(); }

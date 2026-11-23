@@ -1,4 +1,5 @@
 #include "streams.h"
+#include "farolanel.h"
 #include "aiostreamsui.h"
 #include "addonmodo.h"
 #include "vaitocarui.h"
@@ -96,6 +97,7 @@ static inline int folhaDesktop(void) {
 // Phone Sources extends beneath the system bar; content keeps its inset.
 #define FOLHA_MARGEM    40.0f
 static int folhaRelogio;
+static int temAio(void);
 static inline int folhaFone(void) {
 #ifdef NV_TOUCH_UI
   return telefoneui_ativo() && nv_layout_h > nv_layout_w && !player_aberto() && !folhaRelogio;
@@ -113,7 +115,7 @@ static float folhaEscala(void) {
 static inline float folhaLarg(void) {
   if (folhaDesktop()) return fminf(1056.0f, NV_TELA_W - 80.0f);
   if (folhaFone()) return NV_TELA_W;
-  return telefoneui_largura(820.0f, NV_TELA_W, FOLHA_MARGEM);
+  return telefoneui_largura(temAio() && !ajustes_folha_classica() ? 1336.0f : 820.0f, NV_TELA_W, FOLHA_MARGEM);
 }
 #define FOLHA_W        folhaLarg()
 #if defined(NV_DESKTOP_UI) && defined(__APPLE__)
@@ -186,7 +188,13 @@ static void folhaDados(void);
 static void conferenciaPublicar(int i, unsigned geracao, int estado);
 static float linhaTopo(int row);
 static int cacheConfirmado(const Stream *s) {
-  return s->emCache && !s->cacheNegado && (!s->foraCache || s->cacheNativo) && !s->urlP2P && !s->naoVideo;
+  return fontefiltro_cache_estado(s->emCache,s->cacheNegado,s->foraCache,
+                                  s->cacheNativo,s->urlP2P,s->naoVideo) ==
+         FONTEFILTRO_CACHE_SIM;
+}
+static unsigned cacheEstado(const Stream *s) {
+  return fontefiltro_cache_estado(s->emCache,s->cacheNegado,s->foraCache,
+                                  s->cacheNativo,s->urlP2P,s->naoVideo);
 }
 static void cacheConfirmar(Stream *s) {
   s->emCache = 1;
@@ -502,19 +510,24 @@ static int ehInformativa(const Stream *s) {
 void stream_filtro_dados(const Stream *s, FonteFiltroDados *dados) {
   if (!dados) return;
   if (!s) { memset(dados, 0, sizeof *dados); return; }
-  if (s->filtroLido) { *dados = s->filtro; return; }
-  char texto[sizeof s->rotulo + sizeof s->descricao + 2], resolucao[24] = "";
-  snprintf(texto, sizeof texto, "%s\n%s", s->rotulo, s->descricao);
-  if (s->altura > 0) snprintf(resolucao, sizeof resolucao, "%dp", s->altura);
-  FonteFiltroEntrada entrada = {0};
-  entrada.resolucao = resolucao; entrada.filename = s->arquivo; entrada.texto = texto;
-  entrada.tamanhoBytes = s->tamanhoBytes;
-  if (!entrada.tamanhoBytes && s->tamanhoMB > 0)
-    entrada.tamanhoBytes = (uint64_t)s->tamanhoMB > UINT64_MAX / UINT64_C(1048576)
-                        ? UINT64_MAX : (uint64_t)s->tamanhoMB * UINT64_C(1048576);
-  int naoVod = s->filtro.naoVod;
-  fontefiltro_classificar(&entrada, dados);
-  dados->naoVod = naoVod;
+  if (s->filtroLido) *dados = s->filtro;
+  else {
+    char texto[sizeof s->rotulo + sizeof s->descricao + 2], resolucao[24] = "";
+    snprintf(texto, sizeof texto, "%s\n%s", s->rotulo, s->descricao);
+    if (s->altura > 0) snprintf(resolucao, sizeof resolucao, "%dp", s->altura);
+    FonteFiltroEntrada entrada = {0};
+    entrada.resolucao = resolucao; entrada.filename = s->arquivo; entrada.texto = texto;
+    entrada.tamanhoBytes = s->tamanhoBytes;
+    if (!entrada.tamanhoBytes && s->tamanhoMB > 0)
+      entrada.tamanhoBytes = (uint64_t)s->tamanhoMB > UINT64_MAX / UINT64_C(1048576)
+                          ? UINT64_MAX : (uint64_t)s->tamanhoMB * UINT64_C(1048576);
+    int naoVod = s->filtro.naoVod;
+    fontefiltro_classificar(&entrada, dados);
+    dados->naoVod = naoVod;
+  }
+  // Pode mudar depois do parse quando o resolvedor nativo confirma ou nega.
+  // Nunca conservar no cache de metadados uma disponibilidade antiga.
+  dados->cache = cacheEstado(s);
 }
 static void filtroCompletar(Stream *s) {
   if (!s->filtroLido) { stream_filtro_dados(s, &s->filtro); s->filtroLido = 1; }
@@ -535,13 +548,18 @@ int stream_filtro_permite(const Stream *s) {
   fontefalha_filtro(&cfg); stream_filtro_dados(s, &dados);
   return fontefiltro_permite(&cfg, &dados);
 }
+static int filtroPermiteStream(const FonteFiltroConfig *cfg, const Stream *s) {
+  FonteFiltroDados dados;
+  stream_filtro_dados(s, &dados);
+  return fontefiltro_permite(cfg, &dados);
+}
 int stream_filtro_bloqueou(void) {
   if (!fontefalha_filtro_ativo()) return 0;
   FonteFiltroConfig cfg; fontefalha_filtro(&cfg);
   pthread_mutex_lock(&verTrava);
   int bloqueou = n > 0;
   for (int i = 0; i < n && bloqueou; i++)
-    if (fontefiltro_permite(&cfg, &lista[i].filtro)) bloqueou = 0;
+    if (filtroPermiteStream(&cfg, &lista[i])) bloqueou = 0;
   pthread_mutex_unlock(&verTrava);
   return bloqueou;
 }
@@ -554,7 +572,7 @@ enum { MOT_FICA, MOT_EXCLUIDA, MOT_FILTRO, MOT_FORA_CACHE, MOT_INFORMATIVA, MOT_
 static int motivoForaDoAuto(int i, const FonteFiltroConfig *filtro) {
   if (automaticaExcluida(i)) return MOT_EXCLUIDA;
   if (i < 0 || i >= n) return MOT_FICA;
-  if (!canalFolha && (filtro ? !fontefiltro_permite(filtro, &lista[i].filtro) : !stream_filtro_permite(&lista[i]))) return MOT_FILTRO;
+  if (!canalFolha && (filtro ? !filtroPermiteStream(filtro, &lista[i]) : !stream_filtro_permite(&lista[i]))) return MOT_FILTRO;
   if (!lista[i].filtro.naoVod && lista[i].foraCache) return MOT_FORA_CACHE;
   if (ehInformativa(&lista[i])) return MOT_INFORMATIVA;
   if (incompatOculta(&lista[i]) || excedeDecoder(&lista[i])) return MOT_DECODER;
@@ -1355,8 +1373,10 @@ static int incompatContar(void) {
 }
 static int incompatOculta(const Stream *s) {
   if (incompatRevelada || !incompatRegra(s)) return 0;
-  // Never empty a completed list. A later compatible arrival restores filtering.
-  return n > 0 && incompatContar() < n;
+  if (n > 0 && incompatContar() < n) {
+    return 1;
+  }
+  return 0;
 }
 
 #ifndef NV_STREAMS_LG
@@ -2023,7 +2043,7 @@ static int verificarUma(int i, Conferencia *c) {
     pthread_mutex_unlock(&verTrava);
     return 0;
   }
-  if (!fontefiltro_permite(&c->filtro, &lista[i].filtro) || (!lista[i].filtro.naoVod && lista[i].foraCache) || incompatOculta(&lista[i]) || excedeDecoder(&lista[i]) || fontesmortas_idade(&lista[i]) >= 0) {
+  if ((!canalFolha && !filtroPermiteStream(&c->filtro, &lista[i])) || (!lista[i].filtro.naoVod && lista[i].foraCache) || incompatOculta(&lista[i]) || excedeDecoder(&lista[i]) || fontesmortas_idade(&lista[i]) >= 0) {
     pthread_mutex_unlock(&verTrava); return 0;
   }
   snprintf(url, sizeof url, "%s", lista[i].url);
@@ -2379,6 +2399,20 @@ static void faixaPontos(const Stream *s, char *dst, size_t tam) {
            !cabeNaAltura(s) ? " over-cap" : foraDaFaixaTamanho(s) == 1 ? " over-size"
            : foraDaFaixaTamanho(s) == 2 ? " under-size" : "");
 }
+static void farolFonteEscolhida(const Stream *w, long pontosFonte) {
+  char token[FAROL_TOKEN_N];
+  snprintf(token, sizeof token, "%s_%s_%s_%s",
+           w->altura >= 2160 ? "2160p" : w->altura >= 1080 ? "1080p" : w->altura >= 720 ? "720p" : "sd",
+           (w->badges & (badges_bit("v-hdr") | badges_bit("v-hdr10") | badges_bit("v-hdr10plus") | badges_bit("v-hlg"))) ? "hdr" : "sdr",
+           w->dolbyVision ? "dv" : "nodv",
+           (w->badges & badges_bit("a-ddp")) ? "eac3" : (w->badges & badges_bit("a-dts")) ? "dts" : "outro");
+  // O campo e int32: acima de ~200 EB o double nao cabe e a conversao seria
+  // indefinida (o parser aceita tamanhoMB nessa ordem em stream_parse.c).
+  { double gb10 = w->tamanhoMB / 102.4;
+    int32_t gb = gb10 <= 0 ? 0 : gb10 >= (double)INT32_MAX ? INT32_MAX : (int32_t)gb10;
+    farol_ev(FM_FONTE, FE_FONTE_ESCOLHIDA, 0, pontosFonte, gb, token); }
+}
+
 static void logarEscolha(int escolhida, int pref, int modoPrimeira) {
   char a[96], b[96] = "none", fit[96];
   int vice = -1, i, k;
@@ -2397,6 +2431,7 @@ static void logarEscolha(int escolhida, int pref, int modoPrimeira) {
              foraDaFaixaTamanho(w) ? " (winner outside: nothing inside)" : "");
   }
   pe = pontos(w);
+  farolFonteEscolhida(w, pe);
   for (k = 0; k < n; k++) {
     long p;
     i = ORD(k);
@@ -2470,7 +2505,7 @@ void stream_falha_identidade(const Stream *s, char *dst, unsigned tam) {
   } else snprintf(dst, tam, "%s\n%s", s->url, s->cabecalhos);
 }
 static int falhaCandidatas(unsigned geracao, int escolhida, int primeira, FonteFalhaCandidata **saida,
-                           Stream **fontes, int *quantidade) {
+                           Stream **fontes, int *quantidade, int *totalFontes) {
   int total, nf = 0, pref = -1, livres = 0;
   int *ordem = NULL, *fila = NULL, *rk = NULL;
   long *pts = NULL;
@@ -2480,6 +2515,7 @@ static int falhaCandidatas(unsigned geracao, int escolhida, int primeira, FonteF
   FonteFalhaCandidata *c = NULL;
   FonteRegraCfg escopo = regraCfg();
   *saida = NULL; *fontes = NULL; *quantidade = 0;
+  if (totalFontes) *totalFontes = 0;
   pthread_mutex_lock(&verTrava);
   if (geracao != listaGeracao) { pthread_mutex_unlock(&verTrava); return 0; }
   total = n;
@@ -2533,12 +2569,14 @@ static int falhaCandidatas(unsigned geracao, int escolhida, int primeira, FonteF
     }
     stream_falha_identidade(s, id, (unsigned)tam);
     c[q].indice = i; c[q].nativa = s->infoHash[0] != 0;
-    c[q].filtro = s->filtro;
+    c[q].pontos = pts[fila[q]];
+    stream_filtro_dados(s, &c[q].filtro);
     c[q].ordemAddon = s->addonOrdem;
     snprintf(c[q].addon, sizeof c[q].addon, "%s", s->addonChave);
     c[q].identidade = id;
   }
   *saida = c; c = NULL; *fontes = copia; copia = NULL; *quantidade = nf;
+  if (totalFontes) *totalFontes = total;
 fim:
   pthread_mutex_unlock(&verTrava);
   free(ordem); free(fila); free(rk); free(pts); free(acima); free(excl); free(grp);
@@ -2560,7 +2598,7 @@ int stream_falha_tem_proxima(const FonteFalhaSessao *sessao, unsigned geracao) {
   Stream *fontes = NULL;
   FonteFalhaRota rota;
   int nc = 0, tem = 0;
-  if (copia && falhaCandidatas(geracao, -1, 0, &c, &fontes, &nc))
+  if (copia && falhaCandidatas(geracao, -1, 0, &c, &fontes, &nc, NULL))
     tem = fontefalha_proxima(copia, c, nc, 1, &rota) == FONTEFALHA_PROXIMA;
   for (int i = 0; i < nc; i++) free((void *)c[i].identidade);
   free(c); free(fontes); fontefalha_sessao_liberar(copia);
@@ -2575,9 +2613,40 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
   if (indice) *indice = -1;
   if (servico) *servico = FONTEFALHA_DIRETA;
   if (url && tam) url[0] = 0;
+  int nfFontes = 0;
   if (!sessao || !url || !tam || falhaCancelada(geracao, cancelado, ctx) ||
       !falhaCandidatas(geracao, escolhida, fontefalha_tentativas(sessao) == 0,
-                       &c, &fontes, &nc)) return FONTEFALHA_FIM;
+                       &c, &fontes, &nc, &nfFontes)) return FONTEFALHA_FIM;
+  // O atalho "1 candidata" vale so para a PRIMEIRA verificacao da escolha a
+  // dedo: depois que ela falha, o failover tem de ver a fila inteira —
+  // cortar de novo aqui sempre devolvia FIM sem consultar as alternativas.
+  if (ajustes_fonte_manual() && escolhida >= 0 && fontefalha_tentativas(sessao) == 0) {
+    int q, m = 0;
+    for (q = 0; q < nc; q++) if (c[q].indice == escolhida) { m = 1; break; }
+    if (m) {
+      FonteFalhaCandidata *u = calloc(1, sizeof *u);
+      if (u) {
+        *u = c[q];
+        u->identidade = strdup(c[q].identidade);
+        // Solta as identidades das outras candidatas e o vetor delas — mas
+        // o vetor de fontes FICA INTEIRO: c[].indice e nfFontes continuam se
+        // referindo a lista completa. Trocar por um vetor de 1 fonte deixava
+        // nfFontes=N e indice=escolhida apontando fora da alocacao (OOB na
+        // primeira verificacao manual do ultimo indice, #784).
+        for (int k = 0; k < nc; k++) free((void *)c[k].identidade);
+        free(c);
+        if (!u->identidade) { free(u); c = NULL; nc = 0; }
+        else {
+          // O indice continua sendo o DA LISTA (escolhida), nao a posicao 0
+          // de um vetor cortado: conferenciaPublicar e *indice levam esse
+          // numero ao app.c, que marca o estado na linha certa (#784).
+          u->indice = escolhida;
+          c = u; nc = 1;
+        }
+      }
+    }
+  }
+
   for (;;) {
     FonteFalhaRota r;
     char resolvida[NV_MEDIA_URL_MAX] = "", fim[NV_MEDIA_URL_MAX], mime[96] = "";
@@ -2586,9 +2655,16 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
     if (falhaCancelada(geracao, cancelado, ctx)) break;
     resultado = fontefalha_proxima(sessao, c, nc, addons_estado() != ADD_BUSCANDO, &r);
     if (resultado != FONTEFALHA_PROXIMA) break;
-    const Stream *s = &fontes[r.indice];
+    // A fila c[] pode estar reordenada e r.candidata e a POSICAO nela — a
+    // fonte certa e a do indice que falhaCandidatas gravou, nao a da posicao
+    // no vetor completo (com a fila comecando em 1, abria a fonte 0).
+    const Stream *s = (r.candidata >= 0 && r.candidata < nc &&
+                       c[r.candidata].indice >= 0 && c[r.candidata].indice < nfFontes)
+                      ? &fontes[c[r.candidata].indice] : NULL;
+    if (!s) { resultado = FONTEFALHA_FIM; break; }
     if (!fontefalha_tentar(sessao, &c[r.candidata], r.servico)) { resultado = FONTEFALHA_FIM; break; }
     if (falhaCancelada(geracao, cancelado, ctx)) { resultado = FONTEFALHA_FIM; break; }
+    farol_ev(FM_FONTE, FE_FONTE_PROXIMA, 0, fontefalha_tentativas(sessao), fontefalha_teto(sessao), "proxima");
     conferenciaPublicar(r.indice, geracao, FA_CONFERINDO);
     if (r.servico >= 0) {
       ok = debrid_resolver_servico_cache(r.servico, s->infoHash, s->fileIdx,
@@ -2610,6 +2686,11 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
     snprintf(url, tam, "%s", resolvida);
     if (indice) *indice = r.indice;
     if (servico) *servico = r.servico;
+    // A pontuacao vem da candidata (calculada sob verTrava em falhaCandidatas):
+    // reler a lista aqui, sem a trava, corria com stream_lista_acrescentar.
+    // Escolha manual nao e escolha automatica: o evento so vale para a fila.
+    if (!(escolhida >= 0 && r.indice == escolhida && ajustes_fonte_manual()))
+      farolFonteEscolhida(s, c[r.candidata].pontos);
     resultado = FONTEFALHA_PROXIMA;
     break;
   }
@@ -2700,6 +2781,8 @@ struct StreamPreparo {
   int n, nc, teto, falhaAtiva;
   FonteFalhaSessao *politica;
   FonteFiltroConfig filtro;
+  FonteFiltroDados filtroVencedor;
+  int indiceVencedor;
   DebridContexto debrid;
   uint64_t configuracao;
   uint64_t sessaoPerfil;
@@ -2795,6 +2878,7 @@ StreamPreparo *stream_preparo_criar_alvo(const Stream *fontes, int total, int pr
   int pref = -1;
   unsigned disponiveis = 0;
   if (!p) return NULL;
+  p->indiceVencedor = -1;
   p->sessaoPerfil = nv_perfil_sessao_ler();
   if (!nv_perfil_sessao_atual(p->sessaoPerfil)) goto erro;
   p->fontes = malloc((size_t)total * sizeof *p->fontes);
@@ -2831,7 +2915,7 @@ StreamPreparo *stream_preparo_criar_alvo(const Stream *fontes, int total, int pr
   for (int q = 0; q < total; q++) {
     int i = ordem[q]; const Stream *s = &fontes[i];
     pts[q] = pontosDoAlvo(s, alvo ? alvo : ""); acima[q] = acimaDoTetoAuto(s);
-    excl[q] = !fontefiltro_permite(&p->filtro, &s->filtro) ||
+    excl[q] = !filtroPermiteStream(&p->filtro, s) ||
               s->urlP2P || (s->foraCache && !s->infoHash[0]) || ehInformativa(s) || incompatRegra(s) || excedeDecoder(s) ||
               (!s->infoHash[0] && fontesmortas_idade(s) >= 0);
     grupo[q] = grupoDaFonte(&escopo, s); rank[q] = fonteregra_ordem_rank(s->provedor);
@@ -2864,7 +2948,7 @@ StreamPreparo *stream_preparo_criar_alvo(const Stream *fontes, int total, int pr
     c->identidade = strdup(identidade);
     if (!c->identidade) goto erro;
     c->indice = i; c->nativa = s->infoHash[0] != 0; c->ordemAddon = s->addonOrdem;
-    c->filtro = s->filtro;
+    stream_filtro_dados(s, &c->filtro);
     snprintf(c->addon, sizeof c->addon, "%s", s->addonChave); p->nc++;
   }
   free(ordem); free(fila); free(rank); free(pts); free(acima); free(excl); free(grupo);
@@ -2908,6 +2992,8 @@ int stream_preparo_resolver(StreamPreparo *p, int (*cancelado)(void *), void *ct
     fonte->debridServico = r.servico + 1; fonte->urlP2P = 0;
     if (s->infoHash[0]) cacheConfirmar(fonte);
     p->fontes[r.indice] = *fonte;
+    p->indiceVencedor = r.indice;
+    p->filtroVencedor = p->candidatas[r.candidata].filtro;
     if (indice) *indice = r.indice;
     if (politica && p->falhaAtiva) { *politica = p->politica; p->politica = NULL; }
     resultado = 1; break;
@@ -2922,7 +3008,10 @@ int stream_preparo_renovar(StreamPreparo *p, int indice, int (*cancelado)(void *
   if (!p || !p->fontes || !fonte || indice < 0 || indice >= p->n ||
       !nv_perfil_sessao_atual(p->sessaoPerfil) || (cancelado && cancelado(ctx))) return 0;
   const Stream *s = &p->fontes[indice];
-  if (incompatRegra(s) || !fontefiltro_permite(&p->filtro, &s->filtro)) return 0;
+  FonteFiltroDados filtroAtual;
+  stream_filtro_dados(s, &filtroAtual);
+  if (incompatRegra(s) || indice != p->indiceVencedor ||
+      !fontefiltro_renovacao_permite(&p->filtro, &p->filtroVencedor, &filtroAtual)) return 0;
   char url[NV_MEDIA_URL_MAX] = "", fim[NV_MEDIA_URL_MAX], mime[96] = "";
   int ok = 0, fora = 0;
   long corpo = -1;
@@ -2980,6 +3069,38 @@ int stream_falha_aplicar_sessao(int indice, unsigned geracao, int servico,
 int stream_falha_aplicar(int indice, unsigned geracao, int servico, const char *url) {
   return stream_falha_aplicar_sessao(indice, geracao, servico, url,
                                    nv_perfil_sessao_ler());
+}
+
+// Escolha MANUAL ja resolvida pela folha (#784): semeia a sessao com a
+// identidade/URL reais da fonte para o failover seguinte nao repeti-la e
+// contar o primeiro link como tentativa consumida. 0 se a fonte nao existe.
+int stream_falha_semear_manual(FonteFalhaSessao *sessao, int indice,
+                              unsigned geracao, const char *url) {
+  FonteFalhaCandidata c;
+  char id[sizeof ((Stream *)0)->url + sizeof ((Stream *)0)->cabecalhos + 48];
+  int ok = 0;
+  if (!sessao || !url || !*url) return 0;
+  pthread_mutex_lock(&verTrava);
+  if (geracao == listaGeracao && indice >= 0 && indice < n) {
+    const Stream *s = &lista[indice];
+    memset(&c, 0, sizeof c);
+    stream_falha_identidade(s, id, sizeof id);
+    c.identidade = id;
+    c.indice = indice;
+    c.nativa = s->infoHash[0] != 0;
+    // O snapshot do parse nao tem o estado de cache vivo; a folha exibe com
+    // stream_filtro_dados, entao a semeadura usa o mesmo dado (F67).
+    stream_filtro_dados(s, &c.filtro);
+    c.ordemAddon = s->addonOrdem;
+    snprintf(c.addon, sizeof c.addon, "%s", s->addonChave);
+    int servico = s->infoHash[0] && s->debridServico > 0 ? s->debridServico - 1
+                                                       : FONTEFALHA_DIRETA;
+    // Semear so se nao tentada ainda: a mesma URL resolvida pela folha
+    // nao pode consumir uma segunda vaga do orcamento.
+    ok = fontefalha_semear(sessao, &c, servico, url);
+  }
+  pthread_mutex_unlock(&verTrava);
+  return ok;
 }
 
 // Chamar com verTrava: Play e descricao consultam a mesma fila, sem rede.
@@ -3918,6 +4039,31 @@ static const char *fraseVazioChips(void) {
   return frase;
 }
 static int passaFiltro(int i) {
+  if (i >= 0 && i < n && vt_copia_rep(i) != i) {
+    // A deduplicacao esconde a copia na aba do OUTRO addon, mas nao em
+    // "Todas" — la ela some so quando a copia inteira (rep + irmaos) ficou
+    // fora dos filtros ativos: senao "Só MP4" escondia a unica copia elegivel
+    // (a do addon B, cujo representante A nao passa). Chips primeiro, dedup
+    // depois ENTRE OS QUE PASSAM: com chips desligados o grupo vira 1 linha.
+    if (filtro == 0) {
+      int k;
+      for (k = 0; k < n; k++) {
+        if (k == i) continue;
+        if (vt_copia_rep(k) != vt_copia_rep(i)) continue;
+        // Alguem do mesmo grupo passa nos filtros SEM ser copia escondida:
+        // a dedup decide pela ORDEM de exibicao (ORD), nao pelo indice.
+        int antesDe = 0, q;
+        for (q = 0; q < n; q++) { int o = ORD(q); if (o == k) { antesDe = 1; break; } if (o == i) break; }
+        if (!antesDe) continue;
+        if (filtroServidor >= 0) {
+          const char *pre[] = {"plex|", "jellyfin|", "emby|"};
+          if (strncmp(lista[k].bingeGroup, pre[filtroServidor], strlen(pre[filtroServidor]))) continue;
+        }
+        if (!passaChips(k)) continue;
+        return 0;                               // o irmao visivel cobre o grupo
+      }
+    } else if (!(filtro > 0 && filtro < nProvedores && doProvedor(&lista[i], filtro))) return 0;
+  }
   if (filtro < 0) return 0;
   if (filtroServidor >= 0) {
     const char *pre[] = {"plex|", "jellyfin|", "emby|"};
@@ -4922,6 +5068,22 @@ static const char *arquivoVisivel(const Stream *s, float aw) {
   int dw = txt_largura(TXT_PG_FIM, d);
   return dw > 0 && dw <= w ? "" : arq;
 }
+// Na folha desktop a descricao nunca aparece na linha, entao a deduplicacao
+// da TV nao vale: o arquivo inteiro e sempre desenhado. Controles <32 viram
+// espaco, como a TV faz na copia que desenha. Fora do desktop o nome e o
+// arquivoVisivel de sempre — #if, nao folhaDesktop(), para o objeto da TV
+// sair byte a byte igual.
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+static const char *arquivoFolha(const Stream *s, float aw) {
+  (void)aw;
+  static char d[2048];
+  snprintf(d, sizeof d, "%s", arquivoDa(s));
+  for (char *p = d; *p; p++) if ((unsigned char)*p < 32) *p = ' ';
+  return d;
+}
+#else
+#define arquivoFolha(s, aw) arquivoVisivel((s), (aw))
+#endif
 
 // A linha de marca e so para o que esta tocando e para a escolha anterior.
 // A fonte que o automatico tocaria ganha o selo "Melhor para esta TV" ao
@@ -4957,7 +5119,7 @@ static float alturaLinha(int i, int automatica, float abertura) {
     // agora quebra em varias linhas (UTF-8), entao a altura pergunta ao
     // layout — que reusa o cache do desenho, mesma largura tr-tx.
     float aw = FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D-2*FOLHA_TXT;
-    float extra = (abertura>0 ? arquivoAltura(arquivoVisivel(&lista[i],aw),aw) : 0) + FOLHA_FIT_H * fitLinhas(i);
+    float extra = (abertura>0 ? arquivoAltura(arquivoFolha(&lista[i],aw),aw) : 0) + FOLHA_FIT_H * fitLinhas(i);
     h += extra * abertura;
   }
   return h + linhasFaixas(&lista[i]) * FOLHA_FAIXA_H;
@@ -5278,7 +5440,7 @@ static void montar(int automatica) {
     if (r >= 0) foco = r;
   }
 }
-static int folhaIlha(void) { return !folhaDesktop() && player_aberto(); }
+static int folhaIlha(void) { return !folhaDesktop() && player_aberto() && !ajustes_folha_classica(); }
 static float folhaIlhaH(void) { return NV_TELA_H - FOLHA_ILHA_Y - FOLHA_ILHA_CAB - FOLHA_ILHA_BASE; }
 static void folhaGeometria(void) {
   if (folhaDesktop() && !canaisFolha) {
@@ -5787,7 +5949,7 @@ int stream_escolher_indice(int indice) {
 // does) and, where TorBox lists the files, "Files of this version". With the
 // setting off, or on a source the converter cannot read, the hold opens the
 // files list exactly as before.
-enum { FM_AUDIO = 0, FM_FAIXAS, FM_ARQUIVOS, FM_SYNC };
+enum { FM_AUDIOEXT = 0, FM_FAIXAS, FM_ARQUIVOS, FM_SYNC };
 static int fmAberto, fmN, fmFoco, fmAcoes[4], fmMarcada, fmPrimeiro;   // labels frozen at open (they fade out unchanged)
 static int fmIndice = -1;   // the source the menu is for
 // "Choose audio track…": the version's header is read on a thread
@@ -5861,7 +6023,7 @@ static void fonteMenuAbrir(int i) {
   fmIndice = i;
   audioext_idioma_principal_definir(ling_audio());
   fmModoFaixas = 0; fmSondaN = -2;
-  fmAcoes[fmN++] = FM_AUDIO;
+  fmAcoes[fmN++] = FM_AUDIOEXT;
   if (audioext_sonda_disponivel()) fmAcoes[fmN++] = FM_FAIXAS;
   if (linhaAceitaPartes(i)) fmAcoes[fmN++] = FM_ARQUIVOS;
   if (audioext_tocando()) fmAcoes[fmN++] = FM_SYNC;
@@ -5950,7 +6112,7 @@ static void fonteMenuEscolher(void) {
   fmAberto = 0;
   if (acao == FM_SYNC) { audioext_dopasuj_pedir(); return; }
   if (i < 0) return;
-  if (acao == FM_AUDIO) fonteMarcarAudio(i);
+  if (acao == FM_AUDIOEXT) fonteMarcarAudio(i);
   else if (acao == FM_ARQUIVOS && linhaAceitaPartes(i)) partesAbrirPainel(i);
 }
 static const char *fonteMenuRotulo(int r, const char **icone) {
@@ -7403,6 +7565,8 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     if (y>NV_TELA_H) break;
     int i=ordem[row], sel=grupo==1&&foco==row;
     const Stream *s=i>=0?&lista[i]:NULL;
+    if (s && stream_fonte_estado(i) == FA_CONFERINDO)
+      anim *= ajustes_fonte_carga_brilho_alto() ? 1.15f : 0.88f;
     uint64_t tira, logos;
     if(y+h<FOLHA_TOPO-8 || y>NV_TELA_H) continue;
     GfxRect r={lx,y,rw,h};

@@ -80,8 +80,8 @@ void mkvass_iniciar_ordinal(const char *url, int ordinalFaixa);
 // colheita. Barato — so compara e acorda o fio quando a posicao andou.
 void mkvass_passo(double posSeg);
 // Quanto buffer de VIDEO ha a frente do playhead, em segundos; negativo =
-// desconhecido. So a VARREDURA usa: abaixo de 20 s ela pausa, para nao
-// disputar a conexao com o video. Chamar junto com mkvass_passo.
+// desconhecido. Abaixo de 20 s a varredura pausa; PGS conserva progresso
+// com Ranges pequenos e espacados, inclusive com folga zero. Chamar junto com mkvass_passo.
 void mkvass_folga(double segundosAFrente);
 
 // Nova tentativa da MESMA url e faixa do ultimo pedido, depois de um no-go
@@ -192,11 +192,37 @@ int  mkvass_varredura(void);
 // 1 enquanto ha fio de colheita vivo (o teste espera por isto).
 int  mkvass_ocupado(void);
 
+// Snapshot counters are per reader generation, not inferred screen output.
+// Network bytes include container/video headers read while finding subtitles.
+enum { MKVASS_SCAN_IDLE, MKVASS_SCAN_READING, MKVASS_SCAN_BUDGET,
+       MKVASS_SCAN_WINDOW, MKVASS_SCAN_VIDEO, MKVASS_SCAN_RETRY };
+typedef struct {
+  uint64_t packets, payload_bytes, pending_drops, parse_errors;
+  uint64_t decode_attempts, decoded, decode_errors, restore_errors, emitted;
+  uint64_t range_failures, late;
+  double max_lateness, reader_seconds, playback_seconds, video_headroom;
+  long long reader_byte;
+  size_t buffered_bytes, pending_bytes;
+  int pending_packets, state, scanning, throttled, scan_state;
+  unsigned generation;
+  long requests, network_bytes;
+} MkvassDiagnostico;
+void mkvass_diagnostico(MkvassDiagnostico *out);
+
 // Telemetria: Ranges feitos, bytes baixados, blocos colhidos e total de
 // blocos indexados. Qualquer ponteiro pode ser NULL. `colhidos` conta o que ja
 // foi colhido ATE AGORA: com o corpo em janela (#384, faixa que nao cabe
 // inteira) os blocos que sairam do corpo continuam na conta, entao o numero
 // so cresce — e pode passar de `total` depois de varios seeks.
 void mkvass_estatisticas(long *pedidos, long *bytes, int *colhidos, int *total);
+
+// assperf "Read subs from local relay" (.tpk, mkvfix): o numero da faixa que a
+// colheita quer agora (0 = nenhuma ou chave desligada) e cada bloco dessa faixa
+// visto no fluxo que o mkvfix entrega ao player. `clPos`/`blkPos` sao posicoes
+// absolutas no arquivo, `clHdr` a largura do cabecalho do Cluster, `clTs` o
+// Timestamp dele; `b` e o elemento inteiro (BlockGroup ou SimpleBlock).
+int  mkvass_relay_faixa(void);
+void mkvass_relay_bloco(long long clPos, int clHdr, unsigned long clTs, int temTs,
+                        long long blkPos, const unsigned char *b, long n);
 
 #endif

@@ -144,6 +144,12 @@ typedef struct {
   // fotosDoElenco em descoberta.c). Era descartado; e por ele que se chega a
   // COLECAO do filme, que o TMDB so expoe por id proprio.
   long tmdb;
+  // Ids que o Simkl devolve junto da obra nos `ids` das listas: o proprio id
+  // dele e, em anime, o do MyAnimeList. Na aba Series da biblioteca Simkl as
+  // temporadas da mesma obra dividem o IMDb — e este par que separa "a mesma
+  // obra em shows e em anime" (dedup) de "outra temporada" (cartao proprio)
+  // e que casa cada item com a sua copia enriquecida. 0 = ausente.
+  long simkl, mal;
   int posCreditos; // TMDB 179430/179431: manter o video ate o fim real
   // QUANDO isto foi visto pela ultima vez, em ms desde a epoca. 0 = nao se sabe.
   //

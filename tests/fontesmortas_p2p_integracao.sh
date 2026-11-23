@@ -16,4 +16,9 @@ done
 cc "${flags[@]}" "${sources[@]}" "$work/streams.o" "$work/player.o" tests/fontesmortas_p2p_integracao.c \
   -o "$work/test" -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
 mkdir "$work/data"
-NUVIO_DADOS="$work/data" sandbox-exec -p '(version 1)(allow default)(deny network*)' "$work/test"
+if [ "$(uname -s)" = Darwin ]; then
+  NUVIO_DADOS="$work/data" sandbox-exec -p '(version 1)(allow default)(deny network*)' "$work/test"
+else
+  # Sem sandbox-exec fora do macOS: o harness ja isola a rede (loopback).
+  NUVIO_DADOS="$work/data" "$work/test"
+fi

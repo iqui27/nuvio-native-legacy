@@ -21,6 +21,7 @@
 // ------------------------------------------------------------ cotos do app
 int ajustes_p2p_ligado(void) { return 1; }
 const char *ajustes_p2p_url(void) { return ""; }
+int ajustes_p2p_prazo_metadados_s(void) { return 30; }
 void debrid_episodio(int *t, int *e) { *t = 0; *e = 0; }
 const char *dados_dir(void) { return "/nao/usado"; }
 char *rede_baixar_st(const char *u, int s, const char *const *c, int *st) { (void)u; (void)s; (void)c; if (st) *st = 0; return NULL; }
@@ -29,6 +30,7 @@ char *rede_baixar_trecho_st(const char *u, int s, long long a, long long b, long
   (void)u; (void)s; (void)a; (void)b; (void)t; (void)e; (void)f; (void)n; if (st) *st = 0; return NULL; }
 int rede_pedir(const RedePedido *p, RedeResposta *r) { (void)p; r->erro = REDE_INDISPONIVEL; return 0; }
 void rede_resposta_limpar(RedeResposta *r) { (void)r; }
+RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) { (void)parar; (void)usuario; return (RedePararEstado){ .instalado = 1 }; }
 
 // ------------------------------------------------------------ relogio
 static double agora(void) {

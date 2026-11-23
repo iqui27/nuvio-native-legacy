@@ -33,7 +33,7 @@ class TrailerAudioTest {
     }
     static int Main() {
         NvVid.Registrar = (a,b,c,d,e,f,g) => {};
-        NvVid.RegistrarFaixas = a => {}; NvVid.RegistrarAspecto = a => {};
+        NvVid.RegistrarFaixas = a => {}; NvVid.RegistrarAspecto = a => {}; NvVid.RegistrarPosLida = _ => {};
         NvVid.Evento = (a,b,c) => {}; NvVid.Faixa = (a,b,c) => {}; NvVid.FaixasFim = (a,b) => {};
         NvVid.LogNativo = Console.WriteLine;
         NvVid.RegistrarGeracao = a => {}; NvVid.ErroGeracao = (g,c,p) => Interlocked.Increment(ref erros);
@@ -55,6 +55,13 @@ class TrailerAudioTest {
         trailer.DisposeRelease.Set();
         Wait(() => Player.All.Count == 3 && Player.All[2].Starts == 1); Drain();
         Check(!Player.All[2].Muted && Player.All[2].Volume == 1, "audible autoplay survives delayed release");
+        trailer.BlockDispose = true;
+        Open(); Wait(() => trailer.DisposeEntered.IsSet);
+        trailer.DisposeRelease.Set();
+        Wait(() => Player.All.Count == 4 && Player.All[3].Starts == 1); Drain();
+        Check(!Player.All[3].Muted, "open without fVolume defaults audible");
+        Entry("fParar"); Open(); Wait(() => Player.All.Count == 5 && Player.All[4].Starts == 1); Drain();
+        Check(!Player.All[4].Muted, "Parar then open without fVolume does not inherit mute");
         Check(erros == 0, "no generation errors reported");
         Entry("fParar");
         return 0;

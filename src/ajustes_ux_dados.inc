@@ -20,11 +20,11 @@ static int uxValorPadrao(int op) {
 static int uxValorAtual(int op) {
   if (op >= AJ_FONTE_OCULTAR_DV && op <= AJ_FONTE_OCULTAR_VIDEO) return !ajustes_fonte_ocultar(op - AJ_FONTE_OCULTAR_DV);
   if (op < 0 || op >= AJ_N) return 0;
-  if (ajFonte(op)) return ajFonteAtual(op);
   if (op == AJ_XTREAM_CONEXOES) return xtream_conexoes_modo();
   if (op == AJ_SALVOS_DEST) return ajustes_fonte_biblioteca();
   if(op==AJ_GUIA_CATEGORIAS || op==AJ_IPTV_ACOES || op==AJ_IPTV_EXCLUIR)return 0;
   if(ajIptvGerenciador(op))return ajIptvQuantos(ajIptvTipo(op))?ajIptvAtualTipo(ajIptvTipo(op)):1;
+  if (ajFonte(op)) return ajFonteAtual(op);
   if (ajLegendaPrincipal(op)) return ajLegendaValor(op);
   if (ajFalhaBackend(op)) return ajFalhaValor(op);
   if (op == AJ_SEEKR_LIGADO && !previaCredencial()) return 1;
@@ -306,6 +306,7 @@ static const char *uxSinonimos(int op) {
       return "trailer trailers som audio mudo silencio volume";
     case AJ_HERO_TRAILER_ESPERA: return "trailer trailers espera tempo demora atraso";
     case AJ_LEG_FORCADA: return "legenda forcada forcadas forced letreiros placas audio idioma automatica subtitle so os letreiros quando o audio ja e no seu idioma";
+    case AJ_LEG_EVITAR_SDH: return "sdh cc surdos surdo hearing impaired descricao som legenda sem descricoes evitar nao escolher";
     case AJ_LEG_SYNC_AUTO: case AJ_LEG_SYNC_AUDIO: return "sincronia sincronizar legenda audio fala falas atraso automatico sync subtitle speech";
     case AJ_AVANCADAS: return "avancado avancada avancados avancadas tecnico tecnica opcoes ocultas mostrar esconder advanced";
     case AJ_LOGO_TRAILER: return "trailer trailers logo marca titulo oled queimar burn-in esconder canto";
@@ -331,6 +332,8 @@ static const char *uxSinonimos(int op) {
       return "openseek convite biblioteca compartilhada convidado ajuste seekr servidor proprio miniatura barra tempo previa parear pareamento nas";
     case AJ_SOURCE_BADGE_POSITION:
       return "selos badges posicao topo embaixo formatter addon icons cima baixo gora dol polozenie ikon";
+    case AJ_ASS_MOTOR:
+      return "ass ssa legenda legenda estilizada typeset motor novo antigo libass travando lentidao subtitle engine";
     default: return "";
   }
 }

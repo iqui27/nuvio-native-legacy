@@ -9,6 +9,6 @@ for plataforma in linux mac emscripten; do
     linux) flags=(-D__linux__);;
     emscripten) flags=(-D__linux__ -D__EMSCRIPTEN__);;
   esac
-  cc -std=c99 -Wall -Wextra -Werror "${flags[@]}" tests/memlog.c -o "$dir/test"
+  cc -std=c99 -Wall -Wextra -Werror "${flags[@]}" tests/memlog.c src/farolanel.c -pthread -o "$dir/test"
   "$dir/test"
 done

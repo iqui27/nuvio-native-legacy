@@ -39,6 +39,7 @@ char *rede_baixar_bin(const char *u, int s, long *n) {
 
 uint64_t perfis_sessao_geracao(void) { return 0; }
 int perfis_sessao_atual(uint64_t s) { return s == 0; }
+int ajustes_guia_dias(void) { return 7; }
 char *rede_baixar_bin_medido_controle(const char *url, int s, const char *const *cab,
     const RedeControle *ctl, long *n, RedeMedida *m) {
   (void)cab; (void)ctl; (void)m; return rede_baixar_bin(url, s, n);

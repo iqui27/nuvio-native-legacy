@@ -1391,7 +1391,8 @@ static int cancelado(void *u) { return atomic_load(&geracao) != ((Pedido *)u)->g
 // -2 cancelado. Eventos de outro pedido sao descartados (e contados).
 static int esperar(Pedido *p, int tipo, uint64_t rid, const char *tid, double prazo,
                    P2pmEvento *ev, int *espaco) {
-  double fim = agora() + prazo;
+  int ilimitado = prazo <= 0;
+  double fim = ilimitado ? 0 : agora() + prazo;
   for (;;) {
     if (cancelado(p)) return -2;
     memset(ev, 0, sizeof *ev);
@@ -1424,7 +1425,7 @@ static int esperar(Pedido *p, int tipo, uint64_t rid, const char *tid, double pr
       }
       memset(ev, 0, sizeof *ev);
     }
-    if (agora() >= fim) return 0;
+    if (!ilimitado && agora() >= fim) return 0;
     dormirMs(20);
   }
 }

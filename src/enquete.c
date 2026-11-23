@@ -17,6 +17,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "nvbackend.h"
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif

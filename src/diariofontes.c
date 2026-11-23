@@ -2,6 +2,7 @@
 #include "diariofontes.h"
 #include "diario.h"
 #include "dormiu.h"
+#include "farolsinal.h"
 #include "contalib.h"
 #include "corviva.h"
 #include "perfis.h"
@@ -14,6 +15,7 @@ static struct {
   char id[DIARIO_ID_MAX];
   char tipo;
   int t, e;
+  long tmdb;                // o que o catalogo sabia (0 = ainda sem detalhe)
   double seg;               // tocado neste episodio
   short hora;               // dia*24+hora local do inicio deste episodio
   int gravado;              // a vez deste episodio ja foi ao diario
@@ -80,6 +82,7 @@ void diariofontes_player_passo(const CatItem *ci, int t, int e, double pos, doub
     P.ativo = 1;
     snprintf(P.id, sizeof P.id, "%s", id);
     P.tipo = tipo; P.t = t; P.e = e;
+    P.tmdb = ci->tmdb;
     P.hora = horaAgora();
     diariofontes_nome(ci);
   }
@@ -92,6 +95,10 @@ void diariofontes_player_passo(const CatItem *ci, int t, int e, double pos, doub
 void diariofontes_player_saiu(double pos, double dur, int concluiu) {
   if (P.ativo && concluiu) { if (dur > 0) P.dur = dur; gravarVez(); }
   dormiu_player_saiu(pos, dur, concluiu);
+  // O Farol ouve a saida: o que nao concluiu pode ser abandono cedo (sono e
+  // falha de fonte ja sao filtrados la dentro). DEPOIS do dormiu, para a
+  // suspeita de sono desta sessao ja existir quando o sinal julgar.
+  farolsinal_saida(P.id, P.tipo, P.t, P.e, P.tmdb, pos, dur, concluiu);
   P.ativo = 0;
 }
 

@@ -17,7 +17,7 @@ class Responsive {
     static void Wait(Func<bool> ready) { var sw=Stopwatch.StartNew(); while(!ready() && sw.ElapsedMilliseconds<2000) { Pump(); Thread.Sleep(1); } Check(ready(),"host respondeu"); }
     static void Open() { var p=Marshal.StringToHGlobalAnsi("https://test/movie"); try { Entry("fAbrir",p,IntPtr.Zero,(uint)1); } finally { Marshal.FreeHGlobal(p); } Pump(); }
     static int Main() {
-        NvVid.Registrar=(a,b,c,d,e,f,g)=>{}; NvVid.RegistrarFaixas=a=>{}; NvVid.RegistrarAspecto=a=>{};
+        NvVid.Registrar=(a,b,c,d,e,f,g)=>{}; NvVid.RegistrarFaixas=a=>{}; NvVid.RegistrarAspecto=a=>{}; NvVid.RegistrarPosLida=_=>{};
         NvVid.RegistrarGeracao=a=>{}; NvVid.ErroGeracao=(g,c,p)=>{};
         NvVid.Evento=(a,b,c)=>{ if(a==10) Interlocked.Increment(ref lentas); }; NvVid.LogNativo=Console.WriteLine; NvVid.Faixa=(a,b,c)=>{}; NvVid.FaixasFim=(a,b)=>{};
         video=new Video(()=>new Display(),a=>ui.Enqueue(a),System.IO.Path.GetTempPath(),1920,1080);

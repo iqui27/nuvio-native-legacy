@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 failures = []
 p = Path('src/player.c').read_text()
-a = Path('src/assrender.c').read_text()
+a = Path('src/assrender.c src/assperf.c src/assfios.c').read_text()
 v = Path('src/video.c').read_text()
 s = Path('src/ajustes.c').read_text()
 checks = {

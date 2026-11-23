@@ -21,6 +21,10 @@ char *android_http(const char *v, const char *u, const char *c, const char *b, i
   *n = 2; snprintf(error, ne, "test transport failure");
   return androidFails ? NULL : strdup("{}");
 }
+char *android_http_seguro(const char *v, const char *u, const char *c, const char *b, int p,
+                          int *st, int *retry, long *n, char *error, size_t ne) {
+  return android_http(v, u, c, b, p, st, retry, n, error, ne);
+}
 void android_etapa(const char *s) { (void)s; }
 void android_quadro(void) {}
 static void request(const char *url, int code, int method) {

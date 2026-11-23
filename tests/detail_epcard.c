@@ -95,9 +95,9 @@ int main(void) {
     snprintf(settings, sizeof settings, "homeLayoutLocal 2\nepTamanhoLocal %d\n", v);
     gravar(settings);
     assert(epApple() && !epModerno());
-    assert(epCardW() == 420 && epCardH() == 500);
+    assert(epCardW() == 420 && epCardH() == 414);
     assert(epThumbH() == 236 && epCardPasso() == 452);
-    assert(epCardH() - epThumbH() == 264);
+    assert(epCardH() - epThumbH() == 178);
     assert(secaoN(SEC_ABAS_INFO) == (nAbasInfo() > 1 ? nAbasInfo() : 0));
     nivel = 1; foco.fileira = SEC_EPISODIOS;
     assert(secaoAlvo(SEC_TEMPORADAS) == .42f);

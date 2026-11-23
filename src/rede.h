@@ -196,6 +196,12 @@ char *rede_baixar(const char *url, int segundos);
 // Igual, mas para conteudo BINARIO: devolve o tamanho em *n. A versao acima
 // termina em NUL e serve para JSON; imagem tem zeros no meio e strlen mentiria.
 char *rede_baixar_bin(const char *url, int segundos, long *n);
+// Download binario VERIFICADO (certificado e hostname pela CA do pacote):
+// reservado aos artefatos de release que viram codigo (.so do .tpk, .apk).
+// O redirect so e seguido sob o prefixo oficial de anexos — o GitHub devolve
+// 302 do releases/download ao CDN de assets, e o pedido nao leva credencial.
+// Legenda, cartaz e fonte continuam no caminho publico acima.
+char *rede_baixar_bin_seguro(const char *url, int segundos, long *n);
 // GET EM FLUXO: o corpo vai em pedacos para `cb` (que devolve 0 para cortar a
 // transferencia de proposito, o que conta como sucesso) e nada fica na memoria.
 // `maxBytes` 0 = sem teto. 1 = terminou (2xx); 0 = falha (*status = HTTP, 0 sem
@@ -547,5 +553,7 @@ int rede_tls_tentar_enviar(RedeTls *t, const void *buf, size_t n, size_t *foi);
 // >0 bytes lidos, 0 nada chegou, -1 conexao caiu ou fechou.
 int rede_tls_receber(RedeTls *t, void *buf, size_t n, int esperaMs);
 void rede_tls_fechar(RedeTls *t);
+// Login TLS falhou: sonda CONNECT_ONLY (bundle/sistema/semca) so para log (#737).
+int rede_sonda_tls(const char *url);
 
 #endif

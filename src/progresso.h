@@ -136,6 +136,12 @@ int  prog_oculto_vence(const char *imdb, long long instanteMs);
 // registro e devolve 1: quem chama desfaz tambem o oculto do Trakt.
 int  prog_oculto_soltar(const char *imdb, long long instanteMs);
 
+// QUEM QUER SABER quando a pessoa tira algo do Continuar (prog_marcar_
+// removido ou prog_ocultar_continuar), chamado no fio de quem gesturou, fora
+// do mutex — o Farol le como recusa leve (farolsinal.c). `imdb` pode ser
+// composto. Um ouvinte so; NULL desliga.
+void prog_ao_retirar(void (*fn)(const char *imdb));
+
 // Apaga o arquivo inteiro, todos os perfis. Chamar no logout, junto de
 // sync_esquecer_usuario.
 void prog_esquecer_tudo(void);

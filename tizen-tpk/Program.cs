@@ -49,6 +49,7 @@ namespace NuvioTpk
         [DllImport("libnuvio.so")] static extern void nv_tpk_tecla(string nome, int apertou);
         [DllImport("libnuvio.so")] static extern void nv_tpk_log(string linha);
         [DllImport("libnuvio.so")] static extern void nv_tpk_ciclo(int memoria);
+        [DllImport("libnuvio.so")] static extern void nv_tpk_retomou();
         [DllImport("libdl.so.2")] static extern IntPtr dlopen(string path, int flags);
         [DllImport("libdl.so.2")] static extern IntPtr dlerror();
         [DllImport("libcapi-appfw-application.so.0")] static extern IntPtr app_get_data_path();
@@ -191,6 +192,9 @@ namespace NuvioTpk
         GLWindow gl;
 #if NV_API11
         GLView glView;
+        object GlViewOuNulo() { return glView; }
+#else
+        object GlViewOuNulo() { return null; }   // GLView so existe na API11 (Exibe.cs: premult)
 #endif
         volatile bool fim;
         NuiTimer vigia, prime;
@@ -352,6 +356,9 @@ namespace NuvioTpk
             Etapa("begin apps-init");
             try { Apps.Registrar(a => { if (principal != null) principal.Post(_ => a(), null); else a(); }); } catch (Exception e) { Etapa("note apps-init " + e.GetType().Name); }
             Etapa("ok apps-init");
+            // Borda das legendas: premult do GLView so enquanto o libass desenha (Exibe.cs, src/tpkborda.c).
+            try { Exibe.Registrar(a => { if (principal != null) principal.Post(_ => a(), null); else a(); }, () => new object[] { NuiWindow.Instance, gl, GlViewOuNulo() }); }
+            catch (Exception e) { Etapa("note display-test-init " + e.GetType().Name); }
             NvCarga.LimparAntigos(dados);
             // Prova no log (#184): >0 = os DllImport passaram pelo resolvedor e
             // cairam na encenada; o "[atualizacao] instalada X" do C deve dizer
@@ -622,6 +629,11 @@ namespace NuvioTpk
                 return true;
             };
             vigia.Start();
+            // Subtitle clock (owner 25/10): the TV position every 40 ms instead of
+            // every 250 ms (a reading costs ~1 ms), on its own thread (Video.cs):
+            // the main thread starved this timer on heavy signs. One query in
+            // flight, only while Playing, so this is idle otherwise.
+            video.IniciaRelogio(() => fim);
 
             AgendaPrime();
         }
@@ -1024,16 +1036,24 @@ namespace NuvioTpk
             {
                 // Firmware hides the main window and then GL after OnPause.
                 // Wait for both events; an immediate raise is undone by that hide.
+                // #769 (QN90B, 6.5): a OnResume pode chegar ANTES dos hides
+                // ("pause/window events followed by a later resume" no log).
+                // Cancelar a recuperacao ali deixava as janelas escondidas
+                // para sempre: processo vivo em RAM desenhando nada, a TV na
+                // homescreen; reabrir subia as janelas pelo AppControl e o app
+                // "entrava instantaneo". Um resume com janela ainda escondida
+                // recupera agora, nao cancela.
                 var t = new NuiTimer(100);
                 t.Tick += (s, e) => {
                     if (saindo || soltou || fim || erroNaTela || primeiraTecla ||
-                        !pausado || relogio.ElapsedMilliseconds >= 8000) return false;
-                    if (principalVisivel || (!JanelaUnica && glVisivel)) return true;
+                        relogio.ElapsedMilliseconds >= 8000) return false;
+                    if (!pausado && principalVisivel && (JanelaUnica || glVisivel)) return false;
+                    if (pausado && (principalVisivel || (!JanelaUnica && gl != null && glVisivel))) return true;
                     Etapa("note recovering startup pause" + Contagem());
                     try { NuiWindow.Instance.Show(); NuiWindow.Instance.Raise(); }
                     catch (Exception x) { Etapa("note startup raise failed " + x.GetType().Name + ": " + x.Message); }
                     SobeGl("startup pause");
-                    OnResume();
+                    if (pausado) OnResume();
                     return false;
                 };
                 t.Start();
@@ -1053,6 +1073,7 @@ namespace NuvioTpk
             // #783: retomada real (foreground) pede a reconexao nativa da
             // sessao que a Home parou; sem sessao parada pelo sistema e no-op.
             try { video?.RetomarDoSistema(); } catch { }
+            try { nv_tpk_retomou(); } catch (EntryPointNotFoundException) { }
             base.OnResume();
         }
 
@@ -1276,6 +1297,8 @@ namespace NuvioTpk
             }
             catch (Exception e) { Console.Error.WriteLine("Startup trace unavailable: " + e.Message); }
             AppDomain.CurrentDomain.UnhandledException += (s, e) => Etapa("note unhandled " + e.ExceptionObject);
+            // .NET errors into the app log too, with the session time of the native fault records (NetLog.cs).
+            try { NetLog.Registrar(); } catch (Exception e) { Etapa("note netlog " + e.GetType().Name); }
             Etapa("note entry host=" + Host + " process=" + RuntimeInformation.ProcessArchitecture + " os=" + RuntimeInformation.OSArchitecture);
             try
             {

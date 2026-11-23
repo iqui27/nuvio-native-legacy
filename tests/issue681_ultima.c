@@ -17,6 +17,7 @@ static int escolhidaEmb = -99;
 static char escolhidaExtUrl[600];
 static VideoLegendaEstilo estilo = { 120, 0, 0, 3, 1, 0, 0, 0, 0, -1 };
 int ajustes_legendas_todas(void) { return 1; }   // open straight in the full list
+int ajustes_legenda_evitar_sdh(void) { return 0; }   // #743: desligado neste teste
 int ajustes_leg2_tamanho(void) { return 0; }
 int ajustes_leg2_cor(void) { return -1; }
 int ajustes_leg2_fundo(void) { return -1; }

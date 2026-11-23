@@ -82,8 +82,9 @@ static void folhaDesktopLinha(const Stream *s,int i,GfxRect r,int sel,float a,Ui
   cy+=desenharFaixas(s,x,cy,right-x,sel,a);
   float expanded=sel?abreFoco:0;
   if(expanded>.02f) {
-    const char *file=arquivoDa(s);
-    if(file[0]) { desenharNomeFonte(file,i,sel&&!detAberto&&!ptAberto,x,cy,right-x,a*expanded,now);cy+=FOLHA_ARQ_H; }
+    float aw=FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D-2*FOLHA_TXT;
+    const char *file=arquivoFolha(s,aw);
+    if(file[0]) { arquivoDesenhar(file,x,cy,aw,a*expanded);cy+=arquivoAltura(file,aw); }
     char line[160],line2[128];fitTexto2(i,line,sizeof line,line2,sizeof line2);
     if(line[0]) txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,line,160,160,158,255,right-x),x,cy,a*expanded);
     if(line2[0]) txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,line2,160,160,158,255,right-x),x,cy+FOLHA_FIT_H,a*expanded);

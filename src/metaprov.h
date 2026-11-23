@@ -54,6 +54,11 @@ int metaprov_busca_valida(const char *corpo);
 char *metaprov_meta_com(const char *tipo, const char *id, int seg_cine,
                         MetaprovGet get, void *ctx, int *prov);
 char *metaprov_meta(const char *tipo, const char *id, int seg_cine, int *prov);
+// #794: temporadas/episodios — addonOnly pula o catalogo do Nuvio na chave e no /meta.
+void metaprov_chave_episodios(char *dst, size_t n, const char *tipo, const char *id,
+                              int addonOnly);
+char *metaprov_meta_ficha_episodios(const char *tipo, const char *id, int seg_cine,
+                                    int addonOnly, int *prov);
 // So o Cinemeta (sem passar pelo catalogo do Nuvio); NULL se falhar ou vier
 // sem ficha valida. Para quem precisa conferir o que o Nuvio nao listou.
 typedef enum {

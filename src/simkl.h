@@ -192,6 +192,21 @@ int simkl_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd, int
 int simkl_titulo_marcar(const char *imdb, const char *tipo, const int *temporadas,
                         int nt, int visto);
 
+// A biblioteca do vinculo vive na memoria da sessao: simkl_biblioteca_iniciar
+// (ao abrir o perfil) a traz em segundo plano — a copia guardada
+// (simklbib.h) primeiro, e a rede so quando /sync/activities mudou. Nao
+// bloqueia.
+void simkl_biblioteca_iniciar(void);
+// Uma lista de estado da biblioteca, na forma de /sync/all-items/<tipo>/<estado>
+// ({"<tipo>":[...]}, sem o historico de episodios): tipo "shows", "anime" ou
+// "movies"; estado "watching", "plantowatch", "hold", "completed", "dropped".
+// Bloqueia (fio de trabalho): a biblioteca conferida com o Simkl ha pouco.
+// NULL sem vinculo ou sem biblioteca. free pelo chamador.
+char *simkl_lista_corpo(const char *tipo, const char *estado);
+// 1 enquanto algum fio de carga roda (tambem o de uma sessao ja encerrada,
+// que so termina o pedido em voo e nao publica nada).
+int simkl_biblioteca_carregando(void);
+
 // --- scrobble do player (#459) ------------------------------------------------
 
 // Mesma interface de trakt_scrobble (traktscrobble.h), decisao Simkl: `evento`

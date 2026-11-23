@@ -73,6 +73,12 @@ static int checkedUnlink(const char *file) {
 #undef fopen
 #undef link
 #undef unlink
+#ifndef NV_ANDROID
+int fonteurl_iniciar(const char *url, const char *dir) { assert(strstr(url, "https://") && dir[0]); requests++; return 1; }
+int fonteurl_resultado(char *out, size_t n) { return android_fonte_evento(out,n); }
+void fonteurl_cancelar(void) { event[0]=0; }
+#define legfontes_pedir_importacao(slot) legfontes_pedir_url(slot,"https://fonts.example/fixture.ttf")
+#endif
 int main(int argc, char **argv) {
   assert(argc == 2); CHECK(TTF_Init() == 0);
   unsigned char sfnt[64] = {0,1,0,0,0,1};
