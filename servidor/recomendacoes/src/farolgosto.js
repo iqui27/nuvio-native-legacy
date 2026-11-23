@@ -13,10 +13,33 @@
 //     (`consentiu: true` ou `1`). Ausencia, `0` ou `false` devolve `{origem:"regras"}`
 //     sem chamar o LLM nem gastar cota. Falha na consulta infantil (`sala_infantil`)
 //     tambem cai para `{origem:"regras"}` (fail-closed).
+//   - Contrato de serializacao da issue 52 (`POST /v1/farol/compor`):
+//       * `candidatos[]` (<= 24) deve preservar a ordem exata de `c<n>`. Cada item:
+//         `{ c?, id?, ref?, tipo:"filme"|"serie"|"movie"|"series", titulo?, ano?,
+//            minutos?, nota?, pontos?, generos?:int32[], motivos?:FarolMotivo[], eixos? }`.
+//       * `motivos[]` aceita representacao numerica nativa `FarolMotivo` do C
+//         (`src/farolrec.h:130`: `{ tipo: 0..9, a: int32|ref, b: int32|ref }`, com
+//         0=FMO_TERMINOU, 1=FMO_GENERO, 2=FMO_PESSOA, 3=FMO_TEMA, 4=FMO_AMIGO,
+//         5=FMO_SALVO, 6=FMO_CABE_HOJE, 7=FMO_REVER, 8=FMO_FORA_CURVA, 9=FMO_RECOMENDADO)
+//         ou string `"FMO_*"`. Em `FMO_TERMINOU` (0), `a` e `"tt..."` ou indice 0..2
+//         de `gosto.ancoras` e `b` e `0` ou `id` de tema/genero compartilhado; em
+//         `FMO_SALVO` (5), `a` e dias > 0 ou `"<n><d|w|M|y>"`; em `FMO_CABE_HOJE` (6),
+//         `a` e `minutos` > 0 igual a `candidatos[i].minutos`; `FMO_AMIGO` (4) e
+//         `FMO_RECOMENDADO` (9) vao anonimizados (`a: 0`, §5.3).
+//       * `gosto.{generos,temas,pessoas}` (tetos §5.3: 6/6/4; tolera 12/12/8): `id`
+//         int32 nao nulo; `nome` opcional permite reconstrucao deterministica de `x`
+//         quando o cliente nao resolve localmente (`k<id>`, genero fora da tabela e
+//         pessoa ausente do elenco local como creditos de direcao).
+//       * `fatos[]` (<= 12): fatos estruturados por `alvo`/`id`/`ref` para aterrar
+//         `dica`, `info`, `porque`, `comparar` e `achados`.
+//       * `dica`: `id` e canonicalizado pelo servidor a partir de campos controlados
+//         (`l1`, `l2`, `acao`); `icone` e restrito a `DICA_ICONES_CLIENTE` (`"aj_farol"`
+//         ou icone `aj_*` sem hifen do atlas do cliente).
 //   - Nunca grava corpo, frase, gosto nem id cru no D1, KV ou log: no D1 so contadores
 //     em `limite` por HMAC(FAROL_SAL, conta) + global diario; no KV `CATS` apenas cenas
-//     reduzidas a modelos (`m`) e referencias controladas (`a`), sem `x` livre nem
-//     valores literais de gosto. Todo hit do KV revalida referencias contra o pedido atual.
+//     reduzidas a modelos (`m`) e referencias/campos controlados, sem `x` livre nem
+//     valores literais do pedido. Todo hit do KV revalida referencias, evidencias por
+//     candidato e campos canonicos contra o pedido atual.
 //   - Reaproveita o interruptor `FAROL_LLM` e o adaptador de configuracao de farol-busca.js
 //     (provedor/modelo por env, chave em secret FAROL_LLM_KEY ou FAROL_LLM_CHAVE).
 //   - `FAROL_LLM=0`, perfil infantil, sem consentimento, falha do LLM ou saida fora do
@@ -1931,41 +1954,146 @@ function generoResolvidoNaTv(idStr) {
   return Number.isInteger(n) && (TV_TMDB_GENERO_IDS.has(n) || TV_HASH_GENERO_IDS.has(n));
 }
 
-// Modelos de tema/genero para geracao deterministica de `x` quando o renderer da TV
-// nao resolve `k<id>` (src/farol.c:298) ou genero fora da tabela nativa.
-// Ordem por entrada: [FT_FIL_TEMA, FT_FIL_SUB_TEMA, FT_MOT_TEMA, FT_MOT_TERMINOU_TEMA, FT_FIL_GENERO, FT_MOT_GENERO, FT_MOT_FORA_CURVA]
+// Icones aceitos em `dica.icone` no contrato do cliente (src/farolcena.c:641,
+// src/farolpeca.c:738 sem hifen, e atlas aj_*.png em deploy/app/art/icones/).
+export const DICA_ICONES_CLIENTE = new Set([
+  "aj_farol",
+  "aj_activity", "aj_aperture", "aj_baby", "aj_bell", "aj_blend", "aj_bold",
+  "aj_bookmark", "aj_bug", "aj_building", "aj_calendar", "aj_captions", "aj_check",
+  "aj_circle", "aj_clapperboard", "aj_clock", "aj_cloud", "aj_code", "aj_compass",
+  "aj_contact", "aj_contrast", "aj_copy", "aj_cpu", "aj_crop", "aj_crosshair",
+  "aj_database", "aj_delete", "aj_download", "aj_droplet", "aj_ellipsis", "aj_eye",
+  "aj_factory", "aj_feather", "aj_film", "aj_focus", "aj_folders", "aj_funnel",
+  "aj_gauge", "aj_globe", "aj_heart", "aj_hexagon", "aj_history", "aj_hourglass",
+  "aj_house", "aj_image", "aj_images", "aj_inbox", "aj_info", "aj_key",
+  "aj_keyboard", "aj_languages", "aj_layers", "aj_library", "aj_lightbulb", "aj_link",
+  "aj_list", "aj_loader", "aj_lock", "aj_map", "aj_maximize", "aj_megaphone",
+  "aj_menu", "aj_mic", "aj_minus", "aj_monitor", "aj_moon", "aj_music",
+  "aj_network", "aj_package", "aj_palette", "aj_pause", "aj_pencil", "aj_percent",
+  "aj_pin", "aj_pipette", "aj_play", "aj_plug", "aj_plus", "aj_power",
+  "aj_puzzle", "aj_quote", "aj_radio", "aj_repeat", "aj_ribbon", "aj_save",
+  "aj_scale", "aj_scan", "aj_search", "aj_send", "aj_server", "aj_settings",
+  "aj_shield", "aj_shuffle", "aj_smartphone", "aj_sparkle", "aj_sparkles", "aj_spotlight",
+  "aj_square", "aj_star", "aj_stethoscope", "aj_sun", "aj_tag", "aj_tags",
+  "aj_telescope", "aj_terminal", "aj_timer", "aj_trophy", "aj_tv", "aj_type",
+  "aj_unlink", "aj_unplug", "aj_user", "aj_users", "aj_wand", "aj_wifi",
+  "aj_wrench", "aj_x", "aj_zap",
+]);
+
+const DICA_SLUG_POR_M = Object.freeze({
+  FT_DICA_PAROU_L1: "parou",
+  FT_DICA_FALTA_L1: "falta",
+  FT_DICA_ESTREIA: "estreia",
+  FT_DICA_TEMPORADA: "temp",
+  FT_DICA_SALVO_L1: "salvo",
+  FT_DICA_REVER: "rever",
+  FT_DICA_CURTO: "curto",
+  FT_DICA_PERGUNTAS: "perguntas",
+  FT_DICA_TRAKT: "trakt",
+});
+
+function fnv1a32Hex(str) {
+  const bytes = ENC.encode(str);
+  let h = 2166136261 >>> 0;
+  for (const b of bytes) {
+    h ^= b;
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+// ID canonico da peca `dica`, derivado exclusivamente de campos controlados.
+export function dicaIdCanonico(p) {
+  const m = p?.l1?.m || "";
+  const slug = DICA_SLUG_POR_M[m] || "dica";
+  if (!p?.l1?.a?.length && !p?.l2 && p?.acao && !p.acao.alvo &&
+      (m === "FT_DICA_TRAKT" || m === "FT_DICA_PERGUNTAS")) {
+    return `d_${slug}`;
+  }
+  const acao = p?.acao?.alvo
+    ? { tipo: p.acao.tipo, alvo: p.acao.alvo }
+    : { tipo: p?.acao?.tipo || "nada" };
+  const canon = JSON.stringify({
+    l1: textoSemX(p?.l1) || null,
+    l2: p?.l2 ? (textoSemX(p.l2) || null) : null,
+    acao,
+  });
+  return `d_${slug}_${fnv1a32Hex(canon)}`;
+}
+
+// Enum FarolMotivoTipo do C (src/farolrec.h:130) -> nome canonico.
+const FMO_NUM_PARA_NOME = Object.freeze([
+  "FMO_TERMINOU",
+  "FMO_GENERO",
+  "FMO_PESSOA",
+  "FMO_TEMA",
+  "FMO_AMIGO",
+  "FMO_SALVO",
+  "FMO_CABE_HOJE",
+  "FMO_REVER",
+  "FMO_FORA_CURVA",
+  "FMO_RECOMENDADO",
+]);
+const FMO_NOME_SET = new Set(FMO_NUM_PARA_NOME);
+
+function fcTempoDias(dd) {
+  if (dd < 14) return `${dd > 0 ? dd : 1}d`;
+  if (dd < 63) return `${Math.floor(dd / 7)}w`;
+  if (dd < 730) return `${Math.floor(dd / 30)}M`;
+  return `${Math.floor(dd / 365)}y`;
+}
+
+function duracoesFilmeDeMinutos(min) {
+  const out = new Set();
+  if (!Number.isInteger(min) || min <= 0) return out;
+  out.add(`${min} min`);
+  out.add(`${min}min`);
+  if (min >= 60) {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    out.add(`${h}h${String(m).padStart(2, "0")}`);
+    if (m === 0) out.add(`${h}h`);
+  }
+  return out;
+}
+
+// Modelos de tema/genero/pessoa para geracao deterministica de `x` quando o renderer da TV
+// nao resolve `k<id>` (src/farol.c:298), genero fora da tabela nativa, ou pessoa ausente do elenco local.
+// Ordem: [0:FT_FIL_TEMA, 1:FT_FIL_SUB_TEMA, 2:FT_MOT_TEMA, 3:FT_MOT_TERMINOU_TEMA,
+//         4:FT_FIL_GENERO, 5:FT_MOT_GENERO, 6:FT_MOT_FORA_CURVA,
+//         7:FT_FIL_PESSOA, 8:FT_MOT_PESSOA, 9:FT_MOT_ESTREIA, 10:FT_DICA_ESTREIA]
 const MODELOS_29 = Object.freeze({
-  pt:     ["Do mesmo tema: %s", "Mais sobre %s", "Do mesmo tema: %s.", "Você terminou %s e gosta de %s.", "Para quem gosta de %s", "Você gosta de %s.", "Fora do seu costume: %s bem avaliado."],
-  "pt-pt":["Do mesmo tema: %s", "Mais sobre %s", "Do mesmo tema: %s.", "Terminaste %s e gostas de %s.", "Para quem gosta de %s", "Gostas de %s.", "Fora do teu costume: %s bem avaliado."],
-  en:     ["Same theme: %s", "More about %s", "Same theme: %s.", "You finished %s and like %s.", "For fans of %s", "You like %s.", "Outside your usual: %s, well rated."],
-  ar:     ["الموضوع نفسه: %s", "المزيد عن %s", "الموضوع نفسه: %s.", "أنهيت %s وتحب %s.", "لمحبي %s", "تحب %s.", "خارج عادتك: %s بتقييم جيد."],
-  bg:     ["Същата тема: %s", "Още за %s", "Същата тема: %s.", "Изгледа %s и харесваш %s.", "За любителите на %s", "Харесваш %s.", "Извън обичайното: %s — добре оценено."],
-  bs:     ["Ista tema: %s", "Više o %s", "Ista tema: %s.", "Pogledao si %s i voliš %s.", "Za ljubitelje: %s", "Voliš %s.", "Izvan običaja: %s — dobro ocijenjeno."],
-  cs:     ["Stejné téma: %s", "Více o %s", "Stejné téma: %s.", "Dokoukal jsi %s a máš rád %s.", "Pro fanoušky: %s", "Máš rád %s.", "Mimo zvyk: %s — dobře hodnocené."],
-  da:     ["Samme tema: %s", "Mere om %s", "Samme tema: %s.", "Du har set %s og kan lide %s.", "Til dig, der kan lide %s", "Du kan lide %s.", "Uden for det sædvanlige: %s, godt bedømt."],
-  de:     ["Gleiches Thema: %s", "Mehr über %s", "Gleiches Thema: %s.", "Du hast %s gesehen und magst %s.", "Für Fans von %s", "Du magst %s.", "Außerhalb deiner Gewohnheit: %s, gut bewertet."],
-  el:     ["Ίδιο θέμα: %s", "Περισσότερα για %s", "Ίδιο θέμα: %s.", "Είδες %s και σου αρέσει %s.", "Για θαυμαστές: %s", "Σου αρέσει %s.", "Εκτός συνηθειών: %s — καλά βαθμολογημένο."],
-  es:     ["Mismo tema: %s", "Más sobre %s", "Mismo tema: %s.", "Terminaste %s y te gusta %s.", "Para fans de %s", "Te gusta %s.", "Fuera de lo habitual: %s bien valorado."],
-  fr:     ["Même thème : %s", "Plus sur %s", "Même thème : %s.", "Vous avez terminé %s et aimez %s.", "Pour les fans de %s", "Vous aimez %s.", "Hors de vos habitudes : %s bien noté."],
-  hu:     ["Ugyanaz a téma: %s", "Még több: %s", "Ugyanaz a téma: %s.", "Végignézted: %s, és kedveled: %s.", "%s rajongóknak", "Kedveled: %s.", "Szokatlan: jól értékelt %s."],
-  id:     ["Tema yang sama: %s", "Lebih lanjut tentang %s", "Tema yang sama: %s.", "Kamu menonton %s dan suka %s.", "Untuk penggemar %s", "Kamu suka %s.", "Di luar kebiasaan: %s berperingkat baik."],
-  it:     ["Stesso tema: %s", "Altro su %s", "Stesso tema: %s.", "Hai finito %s e ti piace %s.", "Per chi ama %s", "Ti piace %s.", "Fuori dal solito: %s ben valutato."],
-  ja:     ["同じテーマ: %s", "%s についてもっと", "同じテーマ: %s", "%s を見終わり、%s が好き", "%s が好きな人へ", "%s が好き", "いつもと違う: 高評価の %s"],
-  lt:     ["Ta pati tema: %s", "Daugiau apie %s", "Ta pati tema: %s.", "Peržiūrėjai %s ir tau patinka %s.", "Mėgstantiems: %s", "Tau patinka %s.", "Ne pagal įprotį: %s — gerai įvertinta."],
-  nl:     ["Zelfde thema: %s", "Meer over %s", "Zelfde thema: %s.", "Je keek %s uit en houdt van %s.", "Voor fans van %s", "Je houdt van %s.", "Buiten je gewoonte: %s, goed beoordeeld."],
-  no:     ["Samme tema: %s", "Mer om %s", "Samme tema: %s.", "Du har sett %s og liker %s.", "For deg som liker %s", "Du liker %s.", "Utenfor det vanlige: %s, godt vurdert."],
-  pl:     ["Ten sam temat: %s", "Więcej o %s", "Ten sam temat: %s.", "Obejrzałeś %s i lubisz %s.", "Dla fanów: %s", "Lubisz %s.", "Poza zwyczajem: %s — dobrze oceniane."],
-  ro:     ["Același subiect: %s", "Mai mult despre %s", "Același subiect: %s.", "Ai terminat %s și îți place %s.", "Pentru fani: %s", "Îți place %s.", "În afara obișnuitului: %s bine evaluat."],
-  ru:     ["Та же тема: %s", "Больше о %s", "Та же тема: %s.", "Вы посмотрели %s и любите %s.", "Для любителей: %s", "Вам нравится %s.", "Вне привычного: %s с хорошей оценкой."],
-  sk:     ["Rovnaká téma: %s", "Viac o %s", "Rovnaká téma: %s.", "Dopozeral si %s a máš rád %s.", "Pre fanúšikov: %s", "Máš rád %s.", "Mimo zvyku: %s — dobre hodnotené."],
-  sl:     ["Ista tema: %s", "Več o %s", "Ista tema: %s.", "Ogledal si %s in ti je všeč %s.", "Za ljubitelje: %s", "Všeč ti je %s.", "Zunaj navad: %s — dobro ocenjeno."],
-  sr:     ["Ista tema: %s", "Više o %s", "Ista tema: %s.", "Pogledao si %s i voliš %s.", "Za ljubitelje: %s", "Voliš %s.", "Van običaja: %s — dobro ocenjeno."],
-  sv:     ["Samma tema: %s", "Mer om %s", "Samma tema: %s.", "Du såg %s och gillar %s.", "För dig som gillar %s", "Du gillar %s.", "Utanför det vanliga: %s, högt betygsatt."],
-  tr:     ["Aynı tema: %s", "%s hakkında daha fazlası", "Aynı tema: %s.", "%s bitirdin ve %s seviyorsun.", "%s sevenler için", "%s seviyorsun.", "Alışkanlığının dışında: iyi puanlı %s."],
-  uk:     ["Та сама тема: %s", "Більше про %s", "Та сама тема: %s.", "Ви переглянули %s і любите %s.", "Для шанувальників: %s", "Вам подобається %s.", "Поза звичним: %s з добрими оцінками."],
-  vi:     ["Cùng chủ đề: %s", "Thêm về %s", "Cùng chủ đề: %s.", "Bạn đã xem %s và thích %s.", "Dành cho người thích %s", "Bạn thích %s.", "Khác thói quen: %s được đánh giá cao."],
-  "zh-cn":["同一主题：%s", "更多关于%s", "同一主题：%s", "你看完了%s，也喜欢%s", "给喜欢%s的你", "你喜欢%s", "不同寻常：好评的%s"],
-  "zh-tw":["同一主題：%s", "更多關於%s", "同一主題：%s", "你看完了%s，也喜歡%s", "給喜歡%s的你", "你喜歡%s", "不同尋常：好評的%s"],
+  pt:     ["Do mesmo tema: %s", "Mais sobre %s", "Do mesmo tema: %s.", "Você terminou %s e gosta de %s.", "Para quem gosta de %s", "Você gosta de %s.", "Fora do seu costume: %s bem avaliado.", "Com %s, de quem você gosta", "Com %s, que você acompanha.", "Estreia de %s, que você acompanha.", "Estreia nova de %s."],
+  "pt-pt":["Do mesmo tema: %s", "Mais sobre %s", "Do mesmo tema: %s.", "Terminaste %s e gostas de %s.", "Para quem gosta de %s", "Gostas de %s.", "Fora do teu costume: %s bem avaliado.", "Com %s, de quem gostas", "Com %s, que acompanhas.", "Estreia de %s, que acompanhas.", "Estreia nova de %s."],
+  en:     ["Same theme: %s", "More about %s", "Same theme: %s.", "You finished %s and like %s.", "For fans of %s", "You like %s.", "Outside your usual: %s, well rated.", "With %s, whose work you like", "With %s, who you follow.", "New release by %s, who you follow.", "New release by %s."],
+  ar:     ["الموضوع نفسه: %s", "المزيد عن %s", "الموضوع نفسه: %s.", "أنهيت %s وتحب %s.", "لمحبي %s", "تحب %s.", "خارج عادتك: %s بتقييم جيد.", "مع %s — تحب أعماله", "مع %s الذي تتابعه.", "عمل جديد لـ%s الذي تتابعه.", "عمل جديد لـ%s."],
+  bg:     ["Същата тема: %s", "Още за %s", "Същата тема: %s.", "Изгледа %s и харесваш %s.", "За любителите на %s", "Харесваш %s.", "Извън обичайното: %s — добре оценено.", "С %s, когото харесваш", "С %s — следиш.", "Премиера на %s — следиш.", "Нова премиера на %s."],
+  bs:     ["Ista tema: %s", "Više o %s", "Ista tema: %s.", "Pogledao si %s i voliš %s.", "Za ljubitelje: %s", "Voliš %s.", "Izvan običaja: %s — dobro ocijenjeno.", "S %s, koga voliš", "S %s — pratiš.", "Premijera %s — pratiš.", "Nova premijera %s."],
+  cs:     ["Stejné téma: %s", "Více o %s", "Stejné téma: %s.", "Dokoukal jsi %s a máš rád %s.", "Pro fanoušky: %s", "Máš rád %s.", "Mimo zvyk: %s — dobře hodnocené.", "S %s, jehož práci máš rád", "S %s — sleduješ.", "Premiéra %s — sleduješ.", "Nová premiéra %s."],
+  da:     ["Samme tema: %s", "Mere om %s", "Samme tema: %s.", "Du har set %s og kan lide %s.", "Til dig, der kan lide %s", "Du kan lide %s.", "Uden for det sædvanlige: %s, godt bedømt.", "Med %s, som du kan lide", "Med %s, som du følger.", "Premiere af %s — du følger.", "Ny premiere af %s."],
+  de:     ["Gleiches Thema: %s", "Mehr über %s", "Gleiches Thema: %s.", "Du hast %s gesehen und magst %s.", "Für Fans von %s", "Du magst %s.", "Außerhalb deiner Gewohnheit: %s, gut bewertet.", "Mit %s, dessen Arbeit du magst", "Mit %s, dem du folgst.", "Neu von %s — du folgst.", "Neuerscheinung von %s."],
+  el:     ["Ίδιο θέμα: %s", "Περισσότερα για %s", "Ίδιο θέμα: %s.", "Είδες %s και σου αρέσει %s.", "Για θαυμαστές: %s", "Σου αρέσει %s.", "Εκτός συνηθειών: %s — καλά βαθμολογημένο.", "Με %s, που σου αρέσει", "Με %s — ακολουθείς.", "Πρεμιέρα: %s — ακολουθείς.", "Νέα κυκλοφορία: %s."],
+  es:     ["Mismo tema: %s", "Más sobre %s", "Mismo tema: %s.", "Terminaste %s y te gusta %s.", "Para fans de %s", "Te gusta %s.", "Fuera de lo habitual: %s bien valorado.", "Con %s, que te gusta", "Con %s, a quien sigues.", "Estreno de %s, a quien sigues.", "Estreno nuevo de %s."],
+  fr:     ["Même thème : %s", "Plus sur %s", "Même thème : %s.", "Vous avez terminé %s et aimez %s.", "Pour les fans de %s", "Vous aimez %s.", "Hors de vos habitudes : %s bien noté.", "Avec %s, que vous aimez", "Avec %s, que vous suivez.", "Nouveauté de %s, que vous suivez.", "Nouvelle sortie de %s."],
+  hu:     ["Ugyanaz a téma: %s", "Még több: %s", "Ugyanaz a téma: %s.", "Végignézted: %s, és kedveled: %s.", "%s rajongóknak", "Kedveled: %s.", "Szokatlan: jól értékelt %s.", "%s — akit kedvelsz", "%s — követed.", "Új mű %s-től — követed.", "Új mű %s-től."],
+  id:     ["Tema yang sama: %s", "Lebih lanjut tentang %s", "Tema yang sama: %s.", "Kamu menonton %s dan suka %s.", "Untuk penggemar %s", "Kamu suka %s.", "Di luar kebiasaan: %s berperingkat baik.", "Bersama %s, yang kamu suka", "Bersama %s, yang kamu ikuti.", "Rilis baru dari %s — kamu ikuti.", "Rilis baru oleh %s."],
+  it:     ["Stesso tema: %s", "Altro su %s", "Stesso tema: %s.", "Hai finito %s e ti piace %s.", "Per chi ama %s", "Ti piace %s.", "Fuori dal solito: %s ben valutato.", "Con %s, che ti piace", "Con %s, che segui.", "Novità di %s, che segui.", "Novità di %s."],
+  ja:     ["同じテーマ: %s", "%s についてもっと", "同じテーマ: %s", "%s を見終わり、%s が好き", "%s が好きな人へ", "%s が好き", "いつもと違う: 高評価の %s", "お気に入りの %s", "%s — フォローしている人", "フォロー中の %s の新作", "%s の新作"],
+  lt:     ["Ta pati tema: %s", "Daugiau apie %s", "Ta pati tema: %s.", "Peržiūrėjai %s ir tau patinka %s.", "Mėgstantiems: %s", "Tau patinka %s.", "Ne pagal įprotį: %s — gerai įvertinta.", "Su %s, kurį mėgsti", "Su %s — seki.", "Premjera: %s — seki.", "Nauja premjera: %s."],
+  nl:     ["Zelfde thema: %s", "Meer over %s", "Zelfde thema: %s.", "Je keek %s uit en houdt van %s.", "Voor fans van %s", "Je houdt van %s.", "Buiten je gewoonte: %s, goed beoordeeld.", "Met %s, van wie je houdt", "Met %s, die je volgt.", "Nieuw van %s — je volgt.", "Nieuwe release van %s."],
+  no:     ["Samme tema: %s", "Mer om %s", "Samme tema: %s.", "Du har sett %s og liker %s.", "For deg som liker %s", "Du liker %s.", "Utenfor det vanlige: %s, godt vurdert.", "Med %s, som du liker", "Med %s, som du følger.", "Premiere av %s — du følger.", "Ny premiere av %s."],
+  pl:     ["Ten sam temat: %s", "Więcej o %s", "Ten sam temat: %s.", "Obejrzałeś %s i lubisz %s.", "Dla fanów: %s", "Lubisz %s.", "Poza zwyczajem: %s — dobrze oceniane.", "Z %s — lubisz tę osobę", "Z %s — śledzisz.", "Premiera %s — śledzisz.", "Nowa premiera %s."],
+  ro:     ["Același subiect: %s", "Mai mult despre %s", "Același subiect: %s.", "Ai terminat %s și îți place %s.", "Pentru fani: %s", "Îți place %s.", "În afara obișnuitului: %s bine evaluat.", "Cu %s, care îți place", "Cu %s, pe care îl urmezi.", "Lansare de %s — îl urmezi.", "Lansare nouă de %s."],
+  ru:     ["Та же тема: %s", "Больше о %s", "Та же тема: %s.", "Вы посмотрели %s и любите %s.", "Для любителей: %s", "Вам нравится %s.", "Вне привычного: %s с хорошей оценкой.", "С %s, кого вы любите", "С %s — вы следите.", "Премьера %s — вы следите.", "Новая премьера %s."],
+  sk:     ["Rovnaká téma: %s", "Viac o %s", "Rovnaká téma: %s.", "Dopozeral si %s a máš rád %s.", "Pre fanúšikov: %s", "Máš rád %s.", "Mimo zvyku: %s — dobre hodnotené.", "S %s, ktorého prácu máš rád", "S %s — sleduješ.", "Premiéra %s — sleduješ.", "Nová premiéra %s."],
+  sl:     ["Ista tema: %s", "Več o %s", "Ista tema: %s.", "Ogledal si %s in ti je všeč %s.", "Za ljubitelje: %s", "Všeč ti je %s.", "Zunaj navad: %s — dobro ocenjeno.", "Z %s, katerega delo ti je všeč", "Z %s — spremljaš.", "Premiera %s — spremljaš.", "Nova premiera %s."],
+  sr:     ["Ista tema: %s", "Više o %s", "Ista tema: %s.", "Pogledao si %s i voliš %s.", "Za ljubitelje: %s", "Voliš %s.", "Van običaja: %s — dobro ocenjeno.", "Sa %s, koga voliš", "Sa %s — pratiš.", "Premijera %s — pratiš.", "Nova premijera %s."],
+  sv:     ["Samma tema: %s", "Mer om %s", "Samma tema: %s.", "Du såg %s och gillar %s.", "För dig som gillar %s", "Du gillar %s.", "Utanför det vanliga: %s, högt betygsatt.", "Med %s, som du gillar", "Med %s, som du följer.", "Premiär av %s — du följer.", "Ny premiär av %s."],
+  tr:     ["Aynı tema: %s", "%s hakkında daha fazlası", "Aynı tema: %s.", "%s bitirdin ve %s seviyorsun.", "%s sevenler için", "%s seviyorsun.", "Alışkanlığının dışında: iyi puanlı %s.", "Sevdiğin %s ile", "Takip ettiğin %s ile.", "Takip ettiğin %s yeni işi.", "%s yeni çıkışı."],
+  uk:     ["Та сама тема: %s", "Більше про %s", "Та сама тема: %s.", "Ви переглянули %s і любите %s.", "Для шанувальників: %s", "Вам подобається %s.", "Поза звичним: %s з добрими оцінками.", "З %s, кого ви любите", "З %s — ви стежите.", "Прем'єра %s — ви стежите.", "Нова прем'єра %s."],
+  vi:     ["Cùng chủ đề: %s", "Thêm về %s", "Cùng chủ đề: %s.", "Bạn đã xem %s và thích %s.", "Dành cho người thích %s", "Bạn thích %s.", "Khác thói quen: %s được đánh giá cao.", "Với %s, người bạn thích", "Với %s mà bạn theo dõi.", "Tác phẩm mới của %s mà bạn theo dõi.", "Tác phẩm mới của %s."],
+  "zh-cn":["同一主题：%s", "更多关于%s", "同一主题：%s", "你看完了%s，也喜欢%s", "给喜欢%s的你", "你喜欢%s", "不同寻常：好评的%s", "你喜欢的 %s", "%s——你关注的人", "你关注的 %s 新作品", "%s 新作品"],
+  "zh-tw":["同一主題：%s", "更多關於%s", "同一主題：%s", "你看完了%s，也喜歡%s", "給喜歡%s的你", "你喜歡%s", "不同尋常：好評的%s", "你喜歡的 %s", "%s——你關注的人", "你關注的 %s 新作品", "%s 新作品"],
 });
 
 const MODELO_IDX_29 = Object.freeze({
@@ -1976,6 +2104,10 @@ const MODELO_IDX_29 = Object.freeze({
   FT_FIL_GENERO: 4,
   FT_MOT_GENERO: 5,
   FT_MOT_FORA_CURVA: 6,
+  FT_FIL_PESSOA: 7,
+  FT_MOT_PESSOA: 8,
+  FT_MOT_ESTREIA: 9,
+  FT_DICA_ESTREIA: 10,
 });
 
 function tabelaIdioma29(idioma) {
@@ -2052,45 +2184,334 @@ function coletarTt(v, set) {
   }
 }
 
-function coletarAfinidadesMotivos(motivos, generosIds, temasIds, pessoasIds) {
-  if (!Array.isArray(motivos)) return;
-  for (const mo of motivos) {
-    if (typeof mo === "string") {
-      let m = /^g(-?(?:0|[1-9]\d*))$/.exec(mo);
-      if (m && m[1] !== "0") generosIds.add(m[1]);
-      else if ((m = /^k(-?(?:0|[1-9]\d*))$/.exec(mo)) && m[1] !== "0") temasIds.add(m[1]);
-      else if ((m = /^p(-?(?:0|[1-9]\d*))$/.exec(mo)) && m[1] !== "0") pessoasIds.add(m[1]);
-      continue;
+function resolverAncoraRef(a, ancoras) {
+  if (typeof a === "string") {
+    if (/^tt\d{1,17}$/.test(a)) return a;
+    if (/^c(?:0|[1-9]\d*)$/.test(a)) return a;
+    return null;
+  }
+  if (Number.isInteger(a) && a >= 0 && Array.isArray(ancoras) && ancoras[a]) {
+    const anc = ancoras[a];
+    if (typeof anc.ref === "string" && /^tt\d{1,17}$/.test(anc.ref)) return anc.ref;
+    if (typeof anc.id === "string" && /^tt\d{1,17}$/.test(anc.id)) return anc.id;
+  }
+  return null;
+}
+
+function criarEvidenciaVazia() {
+  return {
+    generosCand: new Set(),
+    generosMotivo: new Set(),
+    temasMotivo: new Set(),
+    pessoasMotivo: new Set(),
+    foraCurvaGeneros: new Set(),
+    estreiasPessoa: new Set(),
+    terminouTitulos: new Set(),
+    terminouShared: [], // { tit, bInt, bTag }
+    diretores: [],      // { tit, n }
+    salvoDurs: new Set(),
+    cabeHoje: false,
+    cabeHojeMin: null,
+    cabeHojeContradit: false,
+    amigoAnon: false,
+    rever: false,
+    recomendadoAnon: false,
+    contra: false,
+  };
+}
+
+function normalizarTipoMotivo(mo) {
+  if (!mo || typeof mo !== "object") return "";
+  if (typeof mo.tipo === "number" && Number.isInteger(mo.tipo)) {
+    return FMO_NUM_PARA_NOME[mo.tipo] || "";
+  }
+  if (typeof mo.tipo === "string") return mo.tipo;
+  if (typeof mo.k === "string") return mo.k;
+  return "";
+}
+
+function registrarFatoEmMapa(mapa, chave, f) {
+  if (!mapa.has(chave)) mapa.set(chave, []);
+  mapa.get(chave).push(f);
+}
+
+function extrairResNome(f) {
+  if (typeof f.res === "string" && f.res) return f.res;
+  if (typeof f.resolucao === "string" && f.resolucao) return f.resolucao;
+  if (Number.isInteger(f.altura) && f.altura > 0) {
+    if (f.altura >= 4000) return "8K";
+    if (f.altura >= 2000) return "4K";
+    return `${f.altura}p`;
+  }
+  return null;
+}
+
+function extrairFmtHdr(f) {
+  if (typeof f.fmt === "string" && f.fmt) return f.fmt;
+  if (typeof f.formato === "string" && f.formato) return f.formato;
+  if (f.dv === 1 || f.dv === true) return "Dolby Vision";
+  if (f.hdr === 1 || f.hdr === true) return "HDR";
+  return null;
+}
+
+function extrairReverData(f) {
+  if (typeof f.rever_data === "string" && /^(?:19|20)\d{2}-(?:0[1-9]|1[0-2])$/.test(f.rever_data))
+    return f.rever_data;
+  if (typeof f.data === "string" && /^(?:19|20)\d{2}-(?:0[1-9]|1[0-2])$/.test(f.data))
+    return f.data;
+  if (Number.isInteger(f.ano) && f.ano >= 1900 && f.ano <= 2099 &&
+      Number.isInteger(f.mes) && f.mes >= 1 && f.mes <= 12) {
+    return `${String(f.ano).padStart(4, "0")}-${String(f.mes).padStart(2, "0")}`;
+  }
+  return null;
+}
+
+function extrairSalvoDur(v) {
+  if (typeof v === "string" && /^[1-9]\d{0,3}(?:d|w|M|y)$/.test(v)) return v;
+  if (Number.isInteger(v) && v > 0) return fcTempoDias(v);
+  return null;
+}
+
+// Normaliza um elemento de `c.motivos[]` para chave canonica (sem texto livre) e
+// popula a evidencia do candidato correspondente.
+function processarMotivoCandidato(mo, ev, candMinutos, ancoras, nomes, extras) {
+  if (typeof mo === "string") {
+    let m = /^g(-?[1-9]\d*)$/.exec(mo);
+    if (m) {
+      ev.generosMotivo.add(m[1]);
+      extras.generosIds.add(m[1]);
+      return ["s", "g", m[1]];
     }
-    if (!mo || typeof mo !== "object") continue;
-    if (typeof mo.m === "string" && Array.isArray(mo.a)) {
-      const specs = FT_CONTRATO_ARGS.get(mo.m);
-      if (specs) {
-        specs.forEach((sp, i) => {
-          if (sp.t === "afin" && typeof mo.a[i] === "string") {
-            const s = mo.a[i];
-            if ((sp.dim === "g" || sp.dim === "kg") && /^g-?[1-9]\d*$/.test(s)) generosIds.add(s.slice(1));
-            if ((sp.dim === "k" || sp.dim === "kg") && /^k-?[1-9]\d*$/.test(s)) temasIds.add(s.slice(1));
-            if (sp.dim === "p" && /^p-?[1-9]\d*$/.test(s)) pessoasIds.add(s.slice(1));
-          }
-        });
+    if ((m = /^k(-?[1-9]\d*)$/.exec(mo))) {
+      ev.temasMotivo.add(m[1]);
+      extras.temasIds.add(m[1]);
+      return ["s", "k", m[1]];
+    }
+    if ((m = /^p(-?[1-9]\d*)$/.exec(mo))) {
+      ev.pessoasMotivo.add(m[1]);
+      extras.pessoasIds.add(m[1]);
+      return ["s", "p", m[1]];
+    }
+    if (/^tt\d{1,17}$/.test(mo)) {
+      ev.terminouTitulos.add(mo);
+      extras.titulosAncoras.add(mo);
+      return ["s", "tt", mo];
+    }
+    return ["s", "outro", fnv1a32Hex(mo)];
+  }
+  if (!mo || typeof mo !== "object") return null;
+
+  if (typeof mo.m === "string" && Array.isArray(mo.a)) {
+    const a = mo.a;
+    if (mo.m === "FT_MOT_GENERO" || mo.m === "FT_FIL_GENERO") {
+      const m = /^g(-?[1-9]\d*)$/.exec(String(a[0] || ""));
+      if (m) { ev.generosMotivo.add(m[1]); extras.generosIds.add(m[1]); }
+    } else if (mo.m === "FT_MOT_FORA_CURVA") {
+      const m = /^g(-?[1-9]\d*)$/.exec(String(a[0] || ""));
+      if (m) { ev.foraCurvaGeneros.add(m[1]); ev.generosMotivo.add(m[1]); extras.generosIds.add(m[1]); }
+    } else if (mo.m === "FT_MOT_TEMA" || mo.m === "FT_FIL_TEMA" || mo.m === "FT_FIL_SUB_TEMA") {
+      const m = /^k(-?[1-9]\d*)$/.exec(String(a[0] || ""));
+      if (m) { ev.temasMotivo.add(m[1]); extras.temasIds.add(m[1]); }
+    } else if (mo.m === "FT_MOT_PESSOA" || mo.m === "FT_FIL_PESSOA") {
+      const m = /^p(-?[1-9]\d*)$/.exec(String(a[0] || ""));
+      if (m) { ev.pessoasMotivo.add(m[1]); extras.pessoasIds.add(m[1]); }
+    } else if (mo.m === "FT_MOT_ESTREIA") {
+      const m = /^p(-?[1-9]\d*)$/.exec(String(a[0] || ""));
+      if (m) { ev.estreiasPessoa.add(m[1]); ev.pessoasMotivo.add(m[1]); extras.pessoasIds.add(m[1]); }
+    } else if (mo.m === "FT_MOT_TERMINOU" || mo.m === "FT_MOT_SEMELHANTE") {
+      if (typeof a[0] === "string" && a[0]) {
+        ev.terminouTitulos.add(a[0]);
+        extras.titulosAncoras.add(a[0]);
+      }
+    } else if (mo.m === "FT_MOT_TERMINOU_TEMA") {
+      if (typeof a[0] === "string" && a[0]) {
+        ev.terminouTitulos.add(a[0]);
+        extras.titulosAncoras.add(a[0]);
+        const s = String(a[1] || "");
+        if (/^k-?[1-9]\d*$/.test(s)) {
+          ev.temasMotivo.add(s.slice(1));
+          extras.temasIds.add(s.slice(1));
+          ev.terminouShared.push({ tit: a[0], bInt: Number(s.slice(1)), bTag: s });
+        } else if (/^g-?[1-9]\d*$/.test(s)) {
+          ev.generosMotivo.add(s.slice(1));
+          extras.generosIds.add(s.slice(1));
+          ev.terminouShared.push({ tit: a[0], bInt: Number(s.slice(1)), bTag: s });
+        }
+      }
+    } else if (mo.m === "FT_MOT_DIRETOR") {
+      const n = Number(a[1]);
+      if (typeof a[0] === "string" && a[0] && Number.isInteger(n) && n > 0) {
+        ev.diretores.push({ tit: a[0], n });
+      }
+    } else if (mo.m === "FT_MOT_SALVO") {
+      const dur = extrairSalvoDur(a[0]);
+      if (dur) ev.salvoDurs.add(dur);
+    } else if (mo.m === "FT_MOT_CABE_HOJE") {
+      const min = Number(a[0]);
+      if (Number.isInteger(min) && min > 0) {
+        if (candMinutos > 0 && candMinutos !== min) ev.cabeHojeContradit = true;
+        else { ev.cabeHoje = true; ev.cabeHojeMin = min; }
+      }
+    } else if (mo.m === "FT_MOT_AMIGO_ANON") {
+      ev.amigoAnon = true;
+    } else if (mo.m === "FT_MOT_REVER") {
+      ev.rever = true;
+    } else if (mo.m === "FT_MOT_RECOM_ANON") {
+      ev.recomendadoAnon = true;
+    } else if (mo.m === "FT_MOT_CONTRA") {
+      ev.contra = true;
+    }
+    return ["ft", mo.m, ...(a || []).map(String)];
+  }
+
+  const dim = normalizarTipoMotivo(mo);
+
+  if (Number.isInteger(mo.genero) && mo.genero !== 0) {
+    const id = String(mo.genero);
+    ev.generosMotivo.add(id);
+    extras.generosIds.add(id);
+    if (typeof mo.nome === "string" && mo.nome.trim() && !nomes.generosNomes.has(id))
+      nomes.generosNomes.set(id, mo.nome.trim());
+  }
+  if (Number.isInteger(mo.tema) && mo.tema !== 0) {
+    const id = String(mo.tema);
+    ev.temasMotivo.add(id);
+    extras.temasIds.add(id);
+    if (typeof mo.nome === "string" && mo.nome.trim() && !nomes.temasNomes.has(id))
+      nomes.temasNomes.set(id, mo.nome.trim());
+  }
+  if (Number.isInteger(mo.pessoa) && mo.pessoa !== 0) {
+    const id = String(mo.pessoa);
+    ev.pessoasMotivo.add(id);
+    extras.pessoasIds.add(id);
+    if (typeof mo.nome === "string" && mo.nome.trim() && !nomes.pessoasNomes.has(id))
+      nomes.pessoasNomes.set(id, mo.nome.trim());
+    if (mo.estreia === true || mo.estreia === 1) ev.estreiasPessoa.add(id);
+  }
+
+  if (dim === "FMO_TERMINOU") {
+    const tit = resolverAncoraRef(mo.a, ancoras) ||
+      resolverAncoraRef(mo.ref, ancoras) ||
+      resolverAncoraRef(mo.id, ancoras);
+    let bInt = 0;
+    let bTag = null;
+    if (typeof mo.b === "string") {
+      if (/^[kg]-?[1-9]\d*$/.test(mo.b)) {
+        bTag = mo.b;
+        bInt = Number(mo.b.slice(1));
+      }
+    } else if (Number.isInteger(mo.b) && mo.b !== 0) {
+      bInt = mo.b;
+    }
+    if (tit) {
+      ev.terminouTitulos.add(tit);
+      extras.titulosAncoras.add(tit);
+      if (bTag || bInt !== 0) ev.terminouShared.push({ tit, bInt, bTag });
+    }
+    return ["fmo", "FMO_TERMINOU", tit || "", bTag || bInt];
+  }
+
+  if (dim === "FMO_GENERO" || dim === "genero" || dim === "FMO_FORA_CURVA") {
+    const bruto = typeof mo.a === "string" && /^g-?[1-9]\d*$/.test(mo.a) ? Number(mo.a.slice(1))
+      : (Number.isInteger(mo.a) && mo.a !== 0 ? mo.a : (Number.isInteger(mo.id) && mo.id !== 0 ? mo.id : 0));
+    if (bruto !== 0) {
+      const id = String(bruto);
+      ev.generosMotivo.add(id);
+      extras.generosIds.add(id);
+      if (dim === "FMO_FORA_CURVA") ev.foraCurvaGeneros.add(id);
+      if (typeof mo.nome === "string" && mo.nome.trim() && !nomes.generosNomes.has(id))
+        nomes.generosNomes.set(id, mo.nome.trim());
+    }
+    return ["fmo", dim === "genero" ? "FMO_GENERO" : dim, bruto];
+  }
+
+  if (dim === "FMO_TEMA" || dim === "tema") {
+    const bruto = typeof mo.a === "string" && /^k-?[1-9]\d*$/.test(mo.a) ? Number(mo.a.slice(1))
+      : (Number.isInteger(mo.a) && mo.a !== 0 ? mo.a : (Number.isInteger(mo.id) && mo.id !== 0 ? mo.id : 0));
+    if (bruto !== 0) {
+      const id = String(bruto);
+      ev.temasMotivo.add(id);
+      extras.temasIds.add(id);
+      if (typeof mo.nome === "string" && mo.nome.trim() && !nomes.temasNomes.has(id))
+        nomes.temasNomes.set(id, mo.nome.trim());
+    }
+    return ["fmo", "FMO_TEMA", bruto];
+  }
+
+  if (dim === "FMO_PESSOA" || dim === "pessoa") {
+    const bruto = typeof mo.a === "string" && /^p-?[1-9]\d*$/.test(mo.a) ? Number(mo.a.slice(1))
+      : (Number.isInteger(mo.a) && mo.a !== 0 ? mo.a : (Number.isInteger(mo.id) && mo.id !== 0 ? mo.id : 0));
+    if (bruto !== 0) {
+      const id = String(bruto);
+      ev.pessoasMotivo.add(id);
+      extras.pessoasIds.add(id);
+      if (typeof mo.nome === "string" && mo.nome.trim() && !nomes.pessoasNomes.has(id))
+        nomes.pessoasNomes.set(id, mo.nome.trim());
+      if (mo.estreia === true || mo.estreia === 1) ev.estreiasPessoa.add(id);
+    }
+    const seedTit = resolverAncoraRef(mo.b, ancoras);
+    const vezes = Number.isInteger(mo.vezes) && mo.vezes > 0 ? mo.vezes
+      : (Number.isInteger(mo.n) && mo.n > 0 ? mo.n : 0);
+    if (seedTit && vezes > 0) ev.diretores.push({ tit: seedTit, n: vezes });
+    return ["fmo", "FMO_PESSOA", bruto, seedTit || (Number.isInteger(mo.b) ? mo.b : 0), vezes, mo.estreia ? 1 : 0];
+  }
+
+  if (dim === "FMO_AMIGO") {
+    ev.amigoAnon = true;
+    return ["fmo", "FMO_AMIGO", Number.isInteger(mo.a) ? mo.a : 0, Number.isInteger(mo.b) ? mo.b : 0];
+  }
+
+  if (dim === "FMO_SALVO") {
+    const dur = extrairSalvoDur(mo.a ?? mo.dias ?? mo.salvo);
+    if (dur) ev.salvoDurs.add(dur);
+    return ["fmo", "FMO_SALVO", dur || (Number.isInteger(mo.a) ? mo.a : 0)];
+  }
+
+  if (dim === "FMO_CABE_HOJE") {
+    const aMin = Number.isInteger(mo.a) && mo.a > 0 ? mo.a : 0;
+    const min = aMin > 0 ? aMin : (candMinutos > 0 ? candMinutos : 0);
+    if (candMinutos > 0 && aMin > 0 && candMinutos !== aMin) {
+      ev.cabeHojeContradit = true;
+    } else if (min > 0) {
+      ev.cabeHoje = true;
+      ev.cabeHojeMin = min;
+    }
+    return ["fmo", "FMO_CABE_HOJE", aMin];
+  }
+
+  if (dim === "FMO_REVER") {
+    ev.rever = true;
+    return ["fmo", "FMO_REVER"];
+  }
+
+  if (dim === "FMO_RECOMENDADO") {
+    ev.recomendadoAnon = true;
+    return ["fmo", "FMO_RECOMENDADO"];
+  }
+
+  // Fallback para outros objetos estruturados em motivos (sem vazar texto livre na chave).
+  return ["obj", dim || "", Number.isInteger(mo.a) ? mo.a : 0, Number.isInteger(mo.b) ? mo.b : 0,
+    Number.isInteger(mo.genero) ? mo.genero : 0, Number.isInteger(mo.tema) ? mo.tema : 0,
+    Number.isInteger(mo.pessoa) ? mo.pessoa : 0];
+}
+
+function canonicalizarEixos(eixos) {
+  if (!eixos || typeof eixos !== "object") return null;
+  const out = [];
+  for (const k of Object.keys(eixos).sort()) {
+    const v = eixos[k];
+    if (typeof v === "number" || typeof v === "boolean" || v === null) {
+      out.push([k, v]);
+    } else if (typeof v === "string") {
+      if (/^tt\d{1,17}$/.test(v) || /^[0-9]+(?::[0-9]+)?$/.test(v) ||
+          k === "onde" || k === "servico" || k === "duracao" || k === "termina") {
+        out.push([k, v]);
+      } else {
+        out.push([k, "h:" + fnv1a32Hex(v)]);
       }
     }
-    if (Number.isInteger(mo.genero) && mo.genero !== 0) generosIds.add(String(mo.genero));
-    if (Number.isInteger(mo.tema) && mo.tema !== 0) temasIds.add(String(mo.tema));
-    if (Number.isInteger(mo.pessoa) && mo.pessoa !== 0) pessoasIds.add(String(mo.pessoa));
-    const dim = typeof mo.tipo === "string" ? mo.tipo : (typeof mo.k === "string" ? mo.k : "");
-    if (Number.isInteger(mo.id) && mo.id !== 0) {
-      if (dim === "genero" || dim === "FMO_GENERO" || dim === "FMO_FORA_CURVA") generosIds.add(String(mo.id));
-      else if (dim === "tema" || dim === "FMO_TEMA") temasIds.add(String(mo.id));
-      else if (dim === "pessoa" || dim === "FMO_PESSOA") pessoasIds.add(String(mo.id));
-    }
-    if (Number.isInteger(mo.a) && mo.a !== 0) {
-      if (dim === "FMO_GENERO" || dim === "FMO_FORA_CURVA") generosIds.add(String(mo.a));
-      else if (dim === "FMO_TEMA") temasIds.add(String(mo.a));
-      else if (dim === "FMO_PESSOA") pessoasIds.add(String(mo.a));
-    }
   }
+  return out;
 }
 
 function contextoAterramento(pedido) {
@@ -2098,14 +2519,69 @@ function contextoAterramento(pedido) {
   const generosIds = new Set();
   const temasIds = new Set();
   const pessoasIds = new Set();
+  const gostoGenerosIds = new Set();
+  const gostoTemasIds = new Set();
+  const gostoPessoasIds = new Set();
   const temasNomes = new Map();
   const generosNomes = new Map();
+  const pessoasNomes = new Map();
   const titulosPorRef = new Map();
+  const titulosAncoras = new Set();
   const servicosOnde = new Set();
+  const fatosPorAlvo = new Map();
+  const fatosGlobais = [];
+  const candsPorTt = new Map();
+  const ancoras = pedido.gosto?.ancoras || [];
 
-  (pedido.candidatos || []).forEach((c, idx) => {
+  for (const g of pedido.gosto?.generos || []) {
+    if (g.id !== undefined) {
+      const k = String(g.id);
+      generosIds.add(k);
+      gostoGenerosIds.add(k);
+      if (typeof g.nome === "string" && g.nome.trim() && !generosNomes.has(k))
+        generosNomes.set(k, g.nome.trim());
+    }
+  }
+  for (const k of pedido.gosto?.temas || []) {
+    if (k.id !== undefined) {
+      const id = String(k.id);
+      temasIds.add(id);
+      gostoTemasIds.add(id);
+      if (typeof k.nome === "string" && k.nome.trim() && !temasNomes.has(id))
+        temasNomes.set(id, k.nome.trim());
+    }
+  }
+  for (const p of pedido.gosto?.pessoas || []) {
+    if (p.id !== undefined) {
+      const id = String(p.id);
+      pessoasIds.add(id);
+      gostoPessoasIds.add(id);
+      if (typeof p.nome === "string" && p.nome.trim() && !pessoasNomes.has(id))
+        pessoasNomes.set(id, p.nome.trim());
+    }
+  }
+  for (const a of ancoras) {
+    if (typeof a?.id === "string" && /^tt\d{1,17}$/.test(a.id)) titulosAncoras.add(a.id);
+    if (typeof a?.ref === "string" && /^tt\d{1,17}$/.test(a.ref)) titulosAncoras.add(a.ref);
+    if (typeof a?.titulo === "string" && a.titulo.trim()) {
+      const tit = a.titulo.trim();
+      if (typeof a.id === "string" && /^tt\d{1,17}$/.test(a.id)) titulosPorRef.set(a.id, tit);
+      if (typeof a.ref === "string" && /^tt\d{1,17}$/.test(a.ref)) titulosPorRef.set(a.ref, tit);
+    }
+  }
+
+  const candEvs = (pedido.candidatos || []).map((c, idx) => {
+    const ev = criarEvidenciaVazia();
+    ev.minutos = Number.isInteger(c.minutos) && c.minutos > 0 ? c.minutos : 0;
+    ev.tipo = tipoCanonico(c.tipo);
     coletarTt(c.id, ttCand);
     coletarTt(c.ref, ttCand);
+    for (const rawId of [c.id, c.ref]) {
+      if (typeof rawId === "string" && /^tt\d{1,17}$/.test(rawId)) {
+        if (!candsPorTt.has(rawId)) candsPorTt.set(rawId, []);
+        candsPorTt.get(rawId).push(idx);
+      }
+    }
     if (typeof c.titulo === "string" && c.titulo.trim()) {
       const tit = c.titulo.trim();
       titulosPorRef.set(`c${idx}`, tit);
@@ -2114,10 +2590,35 @@ function contextoAterramento(pedido) {
     }
     if (Array.isArray(c.generos)) {
       for (const g of c.generos) {
-        if (typeof g === "number" && Number.isInteger(g) && g !== 0) generosIds.add(String(g));
+        if (typeof g === "number" && Number.isInteger(g) && g !== 0) {
+          const gid = String(g);
+          ev.generosCand.add(gid);
+          generosIds.add(gid);
+        }
       }
     }
-    coletarAfinidadesMotivos(c.motivos, generosIds, temasIds, pessoasIds);
+    if (Array.isArray(c.motivos)) {
+      for (const mo of c.motivos) {
+        processarMotivoCandidato(
+          mo,
+          ev,
+          ev.minutos,
+          ancoras,
+          { generosNomes, temasNomes, pessoasNomes },
+          { generosIds, temasIds, pessoasIds, titulosAncoras }
+        );
+      }
+    }
+    if (c.eixos && typeof c.eixos === "object") {
+      const exAlvos = [`c${idx}`];
+      if (typeof c.id === "string" && /^tt\d{1,17}$/.test(c.id)) exAlvos.push(c.id);
+      if (typeof c.ref === "string" && /^tt\d{1,17}$/.test(c.ref)) exAlvos.push(c.ref);
+      for (const alv of exAlvos) registrarFatoEmMapa(fatosPorAlvo, alv, c.eixos);
+      for (const k of ["onde", "servico"]) {
+        if (typeof c.eixos[k] === "string" && c.eixos[k].trim()) servicosOnde.add(c.eixos[k].trim());
+      }
+    }
+    return ev;
   });
 
   const ttTodos = new Set(ttCand);
@@ -2125,16 +2626,9 @@ function contextoAterramento(pedido) {
     coletarTt(c.motivos, ttTodos);
     coletarTt(c.eixos, ttTodos);
   }
-  coletarTt(pedido.gosto?.ancoras, ttTodos);
+  coletarTt(ancoras, ttTodos);
   coletarTt(pedido.fatos, ttTodos);
 
-  for (const a of pedido.gosto?.ancoras || []) {
-    if (typeof a?.titulo === "string" && a.titulo.trim()) {
-      const tit = a.titulo.trim();
-      if (typeof a.id === "string" && /^tt\d{1,17}$/.test(a.id)) titulosPorRef.set(a.id, tit);
-      if (typeof a.ref === "string" && /^tt\d{1,17}$/.test(a.ref)) titulosPorRef.set(a.ref, tit);
-    }
-  }
   for (const f of pedido.fatos || []) {
     if (!f || typeof f !== "object") continue;
     if (typeof f.titulo === "string" && f.titulo.trim()) {
@@ -2146,24 +2640,79 @@ function contextoAterramento(pedido) {
     for (const k of ["onde", "servico"]) {
       if (typeof f[k] === "string" && f[k].trim()) servicosOnde.add(f[k].trim());
     }
-  }
+    if (Number.isInteger(f.pessoa) && f.pessoa !== 0) {
+      const pid = String(f.pessoa);
+      pessoasIds.add(pid);
+      if (typeof f.nome === "string" && f.nome.trim() && !pessoasNomes.has(pid))
+        pessoasNomes.set(pid, f.nome.trim());
+    }
+    if (Number.isInteger(f.tema) && f.tema !== 0) {
+      const tid = String(f.tema);
+      temasIds.add(tid);
+      if (typeof f.nome === "string" && f.nome.trim() && !temasNomes.has(tid))
+        temasNomes.set(tid, f.nome.trim());
+    }
+    if (Number.isInteger(f.genero) && f.genero !== 0) {
+      const gid = String(f.genero);
+      generosIds.add(gid);
+      if (typeof f.nome === "string" && f.nome.trim() && !generosNomes.has(gid))
+        generosNomes.set(gid, f.nome.trim());
+    }
+    if (f.terminou === true || f.terminou === 1) {
+      for (const k of ["alvo", "id", "ref"]) {
+        if (typeof f[k] === "string" && /^tt\d{1,17}$/.test(f[k])) titulosAncoras.add(f[k]);
+      }
+    }
 
-  for (const g of pedido.gosto?.generos || []) {
-    if (g.id !== undefined) {
-      const k = String(g.id);
-      generosIds.add(k);
-      if (typeof g.nome === "string" && g.nome.trim() && !generosNomes.has(k)) generosNomes.set(k, g.nome.trim());
+    const chavesAlvo = new Set();
+    for (const k of ["alvo", "id", "ref", "c"]) {
+      if (typeof f[k] === "string" && f[k].trim()) chavesAlvo.add(f[k].trim());
     }
-  }
-  for (const k of pedido.gosto?.temas || []) {
-    if (k.id !== undefined) {
-      const id = String(k.id);
-      temasIds.add(id);
-      if (typeof k.nome === "string" && k.nome.trim() && !temasNomes.has(id)) temasNomes.set(id, k.nome.trim());
+    if (chavesAlvo.size === 0) {
+      fatosGlobais.push(f);
+    } else {
+      for (const alv of chavesAlvo) {
+        registrarFatoEmMapa(fatosPorAlvo, alv, f);
+        if (/^c(?:0|[1-9]\d*)$/.test(alv)) {
+          const idx = Number(alv.slice(1));
+          const c = (pedido.candidatos || [])[idx];
+          if (c) {
+            if (typeof c.id === "string" && /^tt\d{1,17}$/.test(c.id)) registrarFatoEmMapa(fatosPorAlvo, c.id, f);
+            if (typeof c.ref === "string" && /^tt\d{1,17}$/.test(c.ref)) registrarFatoEmMapa(fatosPorAlvo, c.ref, f);
+          }
+        } else if (/^tt\d{1,17}$/.test(alv) && candsPorTt.has(alv)) {
+          for (const idx of candsPorTt.get(alv)) registrarFatoEmMapa(fatosPorAlvo, `c${idx}`, f);
+        }
+      }
+      // Enriquecer evidencia do(s) candidato(s) alvo quando o fato aponta um candidato.
+      for (const alv of chavesAlvo) {
+        const idxs = /^c(?:0|[1-9]\d*)$/.test(alv)
+          ? [Number(alv.slice(1))]
+          : (candsPorTt.get(alv) || []);
+        for (const idx of idxs) {
+          const ev = candEvs[idx];
+          if (!ev) continue;
+          const sd = extrairSalvoDur(f.salvo ?? f.dias);
+          if (sd) ev.salvoDurs.add(sd);
+          if (f.contra === true || f.contra === 1) ev.contra = true;
+          if ((f.estreia === true || f.estreia === 1) && Number.isInteger(f.pessoa) && f.pessoa !== 0) {
+            ev.estreiasPessoa.add(String(f.pessoa));
+            ev.pessoasMotivo.add(String(f.pessoa));
+          }
+          if (Number.isInteger(f.vezes) && f.vezes > 0 && typeof f.diretor === "string" && f.diretor) {
+            ev.diretores.push({ tit: f.diretor, n: f.vezes });
+          }
+          if (f.cabe_hoje === true || f.cabe_hoje === 1) {
+            const m = Number.isInteger(f.minutos) && f.minutos > 0 ? f.minutos : ev.minutos;
+            if (m > 0 && !(ev.minutos > 0 && f.minutos > 0 && ev.minutos !== f.minutos)) {
+              ev.cabeHoje = true;
+              ev.cabeHojeMin = m;
+            }
+          }
+          if (f.rever === true || f.rever === 1) ev.rever = true;
+        }
+      }
     }
-  }
-  for (const p of pedido.gosto?.pessoas || []) {
-    if (p.id !== undefined) pessoasIds.add(String(p.id));
   }
 
   const textosGosto = [];
@@ -2173,7 +2722,7 @@ function contextoAterramento(pedido) {
       if (typeof it?.id === "string" && it.id.trim()) textosGosto.push(it.id.trim());
     }
   }
-  for (const a of pedido.gosto?.ancoras || []) {
+  for (const a of ancoras) {
     if (typeof a?.titulo === "string" && a.titulo.trim()) textosGosto.push(a.titulo.trim());
     if (typeof a?.id === "string" && a.id.trim() && !/^tt\d{1,17}$/.test(a.id.trim())) {
       textosGosto.push(a.id.trim());
@@ -2186,15 +2735,25 @@ function contextoAterramento(pedido) {
   return {
     idioma: pedido.idioma,
     nCand: (pedido.candidatos || []).length,
+    candidatos: pedido.candidatos || [],
+    candEvs,
+    candsPorTt,
     ttCand,
     ttTodos,
+    titulosAncoras,
     generosIds,
     temasIds,
     pessoasIds,
+    gostoGenerosIds,
+    gostoTemasIds,
+    gostoPessoasIds,
     temasNomes,
     generosNomes,
+    pessoasNomes,
     titulosPorRef,
     servicosOnde,
+    fatosPorAlvo,
+    fatosGlobais,
     textosGosto,
   };
 }
@@ -2213,6 +2772,61 @@ function refTituloValida(arg, ctx, permitirAncoras) {
     return (permitirAncoras ? ctx.ttTodos : ctx.ttCand).has(arg);
   }
   return false;
+}
+
+function refsTitulosEquivalentes(refA, refB, ctx) {
+  if (!refA || !refB) return false;
+  if (refA === refB) return true;
+  const idxA = /^c(?:0|[1-9]\d*)$/.test(refA) ? Number(refA.slice(1)) : -1;
+  const idxB = /^c(?:0|[1-9]\d*)$/.test(refB) ? Number(refB.slice(1)) : -1;
+  if (idxA >= 0 && idxB >= 0) return idxA === idxB;
+  if (idxA >= 0 && /^tt\d{1,17}$/.test(refB)) {
+    const c = ctx.candidatos[idxA];
+    return Boolean(c && (c.id === refB || c.ref === refB));
+  }
+  if (idxB >= 0 && /^tt\d{1,17}$/.test(refA)) {
+    const c = ctx.candidatos[idxB];
+    return Boolean(c && (c.id === refA || c.ref === refA));
+  }
+  return false;
+}
+
+function resolverCandIndicesPorRef(ref, ctx) {
+  if (typeof ref !== "string") return [];
+  if (/^c(?:0|[1-9]\d*)$/.test(ref)) {
+    const idx = Number(ref.slice(1));
+    return Number.isInteger(idx) && idx >= 0 && idx < ctx.nCand ? [idx] : [];
+  }
+  if (/^tt\d{1,17}$/.test(ref)) {
+    return ctx.candsPorTt.get(ref) || [];
+  }
+  return [];
+}
+
+function fatosParaAlvo(alvoRef, ctx, incluirGlobais = false) {
+  const res = [];
+  if (alvoRef) {
+    if (ctx.fatosPorAlvo.has(alvoRef)) res.push(...ctx.fatosPorAlvo.get(alvoRef));
+    for (const idx of resolverCandIndicesPorRef(alvoRef, ctx)) {
+      const ck = `c${idx}`;
+      if (ck !== alvoRef && ctx.fatosPorAlvo.has(ck)) res.push(...ctx.fatosPorAlvo.get(ck));
+      const c = ctx.candidatos[idx];
+      if (c) {
+        if (typeof c.id === "string" && c.id !== alvoRef && ctx.fatosPorAlvo.has(c.id))
+          res.push(...ctx.fatosPorAlvo.get(c.id));
+        if (typeof c.ref === "string" && c.ref !== alvoRef && ctx.fatosPorAlvo.has(c.ref))
+          res.push(...ctx.fatosPorAlvo.get(c.ref));
+      }
+    }
+  }
+  if (incluirGlobais) res.push(...ctx.fatosGlobais);
+  return res;
+}
+
+function todosFatos(ctx) {
+  const res = [...ctx.fatosGlobais];
+  for (const lst of ctx.fatosPorAlvo.values()) res.push(...lst);
+  return res;
 }
 
 function gerarXDeterministico(m, a, ctx) {
@@ -2234,6 +2848,14 @@ function gerarXDeterministico(m, a, ctx) {
     if (generoResolvidoNaTv(id)) return undefined; // TV resolve nativamente em 29 idiomas
     const nome = ctx.generosNomes.get(id);
     if (!nome) return null;
+    const x = tpl.replace("%s", nome);
+    return farolTextoAceitaBytes(ENC.encode(x)) ? x : null;
+  }
+  if (m === "FT_FIL_PESSOA" || m === "FT_MOT_PESSOA" || m === "FT_MOT_ESTREIA" || m === "FT_DICA_ESTREIA") {
+    const id = a[0]?.slice(1);
+    const nome = ctx.pessoasNomes.get(id);
+    // Quando o pedido atual nao traz `nome`, a TV resolve pelo elenco local se houver.
+    if (!nome) return undefined;
     const x = tpl.replace("%s", nome);
     return farolTextoAceitaBytes(ENC.encode(x)) ? x : null;
   }
@@ -2319,6 +2941,264 @@ function argContratoValido(arg, spec, ctx) {
   }
 }
 
+function motivoCandidatoAterrado(t, candIdx, ctx) {
+  const ev = ctx.candEvs[candIdx];
+  if (!ev) return false;
+  const args = Array.isArray(t.a) ? t.a : [];
+  switch (t.m) {
+    case "FT_MOT_TERMINOU":
+    case "FT_MOT_SEMELHANTE":
+      return [...ev.terminouTitulos].some((tit) => refsTitulosEquivalentes(tit, args[0], ctx));
+    case "FT_MOT_TERMINOU_TEMA": {
+      const a1 = args[1] || "";
+      const id = a1.slice(1);
+      const idNum = Number(id);
+      return ev.terminouShared.some((sh) => {
+        if (!refsTitulosEquivalentes(sh.tit, args[0], ctx)) return false;
+        if (sh.bTag) return sh.bTag === a1;
+        return sh.bInt === idNum;
+      });
+    }
+    case "FT_MOT_GENERO": {
+      const id = args[0].slice(1);
+      return ev.generosMotivo.has(id) || (ev.generosCand.has(id) && ctx.gostoGenerosIds.has(id));
+    }
+    case "FT_MOT_TEMA":
+      return ev.temasMotivo.has(args[0].slice(1));
+    case "FT_MOT_PESSOA":
+      return ev.pessoasMotivo.has(args[0].slice(1));
+    case "FT_MOT_ESTREIA":
+      return ev.estreiasPessoa.has(args[0].slice(1));
+    case "FT_MOT_DIRETOR": {
+      const n = Number(args[1]);
+      return ev.diretores.some((d) => refsTitulosEquivalentes(d.tit, args[0], ctx) && d.n === n);
+    }
+    case "FT_MOT_SALVO":
+      return ev.salvoDurs.has(args[0]);
+    case "FT_MOT_CABE_HOJE": {
+      if (ev.cabeHojeContradit || !ev.cabeHoje || !ev.cabeHojeMin) return false;
+      return Number(args[0]) === ev.cabeHojeMin;
+    }
+    case "FT_MOT_FORA_CURVA":
+      return ev.foraCurvaGeneros.has(args[0].slice(1));
+    case "FT_MOT_AMIGO_ANON":
+      return ev.amigoAnon;
+    case "FT_MOT_REVER":
+      return ev.rever;
+    case "FT_MOT_RECOM_ANON":
+      return ev.recomendadoAnon;
+    case "FT_MOT_CONTRA":
+      return ev.contra;
+    default:
+      return false;
+  }
+}
+
+function textoFatoAlvoAterrado(t, alvoRef, ctx) {
+  const args = Array.isArray(t.a) ? t.a : [];
+  const cIdxs = resolverCandIndicesPorRef(alvoRef, ctx);
+  if (t.m.startsWith("FT_MOT_") && cIdxs.length > 0) {
+    return cIdxs.some((idx) => motivoCandidatoAterrado(t, idx, ctx));
+  }
+  const fatos = fatosParaAlvo(alvoRef, ctx, false);
+  if (!fatos.length) return false;
+  if (t.m === "FT_MOT_PESSOA") {
+    const idNum = Number(args[0].slice(1));
+    return fatos.some((f) => f.pessoa === idNum);
+  }
+  if (t.m === "FT_MOT_TEMA") {
+    const idNum = Number(args[0].slice(1));
+    return fatos.some((f) => f.tema === idNum);
+  }
+  if (t.m === "FT_MOT_GENERO") {
+    const idNum = Number(args[0].slice(1));
+    return fatos.some((f) => f.genero === idNum);
+  }
+  if (t.m === "FT_MOT_CABE_HOJE") {
+    const min = Number(args[0]);
+    return fatos.some((f) => (f.cabe_hoje === true || f.cabe_hoje === 1) && f.minutos === min);
+  }
+  if (t.m === "FT_MOT_SALVO") {
+    return fatos.some((f) => extrairSalvoDur(f.salvo ?? f.dias) === args[0]);
+  }
+  if (t.m === "FT_MOT_TERMINOU" || t.m === "FT_MOT_SEMELHANTE") {
+    return fatos.some((f) => f.terminou === true && refsTitulosEquivalentes(f.semente || f.ancora || "", args[0], ctx));
+  }
+  if (t.m === "FT_MOT_REVER") return fatos.some((f) => f.rever === true);
+  if (t.m === "FT_MOT_AMIGO_ANON") return fatos.some((f) => f.amigo === true);
+  if (t.m === "FT_MOT_RECOM_ANON") return fatos.some((f) => f.recomendado === true);
+  if (t.m === "FT_MOT_CONTRA") return fatos.some((f) => f.contra === true);
+  return false;
+}
+
+const INFO_MODELS_POR_K = Object.freeze({
+  qualidade: new Set(["FT_INFO_QUALI", "FT_INFO_QUALI_AUDIO", "FT_INFO_IDIOMA", "FT_INFO_LEGENDA"]),
+  continuar: new Set(["FT_INFO_SOBE", "FT_INFO_CAI", "FT_INFO_FALTAM", "FT_INFO_MESMO_NIVEL"]),
+  tempo: new Set(["FT_INFO_TERMINA", "FT_INFO_DUAS_NOITES"]),
+  onde: new Set(["FT_INFO_ONDE"]),
+  saga: new Set(["FT_INFO_SAGA", "FT_INFO_SAGA_VOCE_VIU"]),
+  rever: new Set(["FT_INFO_REVER", "FT_INFO_REVER_SIMPLES"]),
+  retomada: new Set(["FT_INFO_RETOMADA", "FT_INFO_RETOMADA_SIMPLES"]),
+});
+
+function infoItemAterrado(k, l, alvoRef, ctx) {
+  const permitidos = INFO_MODELS_POR_K[k];
+  if (!permitidos || !permitidos.has(l.m)) return false;
+  const fatos = fatosParaAlvo(alvoRef, ctx, false);
+  const cIdxs = resolverCandIndicesPorRef(alvoRef, ctx);
+  const candMin = cIdxs.length === 1 ? ctx.candEvs[cIdxs[0]]?.minutos || 0 : 0;
+  const a = Array.isArray(l.a) ? l.a : [];
+
+  switch (l.m) {
+    case "FT_INFO_QUALI":
+      return fatos.some((f) => extrairResNome(f) === a[0] && extrairFmtHdr(f) === a[1] && f.audio === a[2]);
+    case "FT_INFO_QUALI_AUDIO":
+      return fatos.some((f) => extrairResNome(f) === a[0] && f.audio === a[1]);
+    case "FT_INFO_IDIOMA":
+      return fatos.some((f) => f.audio === a[0]);
+    case "FT_INFO_LEGENDA":
+      return fatos.some((f) => f.legenda === a[0]);
+    case "FT_INFO_SOBE":
+      return fatos.some((f) =>
+        (f.temporada ?? f.temp) === Number(a[0]) &&
+        f.faltam === Number(a[1]) &&
+        (f.min_ep ?? f.minEp ?? f.minutos) === Number(a[2]) &&
+        f.cai !== true
+      );
+    case "FT_INFO_CAI":
+      return fatos.some((f) => (f.temporada ?? f.temp) === Number(a[0]) && f.cai === true);
+    case "FT_INFO_FALTAM":
+      return fatos.some((f) => f.faltam === Number(a[0]) && (f.min_ep ?? f.minEp ?? f.minutos) === Number(a[1]));
+    case "FT_INFO_MESMO_NIVEL":
+      return fatos.some((f) => f.mesmo_nivel === true);
+    case "FT_INFO_TERMINA":
+      return fatos.some((f) => (f.termina ?? f.hora_fim) === a[0]);
+    case "FT_INFO_DUAS_NOITES": {
+      const noites = Number(a[0]);
+      const minNoite = Number(a[1]);
+      return fatos.some((f) => {
+        const mn = f.min_noite ?? f.minNoite;
+        if (mn !== minNoite) return false;
+        if (Number.isInteger(f.noites)) return f.noites === noites;
+        const m = Number.isInteger(f.minutos) && f.minutos > 0 ? f.minutos : candMin;
+        return m > 0 && Math.ceil(m / mn) === noites;
+      });
+    }
+    case "FT_INFO_ONDE":
+      return fatos.some((f) => f.onde === a[0] || f.servico === a[0]);
+    case "FT_INFO_SAGA":
+      return fatos.some((f) => (f.pos ?? f.saga_pos) === Number(a[0]) && (f.total ?? f.saga_total) === Number(a[1]));
+    case "FT_INFO_SAGA_VOCE_VIU":
+      return fatos.some((f) =>
+        (f.pos ?? f.saga_pos) === Number(a[0]) &&
+        (f.total ?? f.saga_total) === Number(a[1]) &&
+        (f.vistos ?? f.saga_vistos) === Number(a[2])
+      );
+    case "FT_INFO_REVER":
+      return fatos.some((f) => {
+        if (extrairReverData(f) !== a[0]) return false;
+        const est = Number.isInteger(f.estrelas) ? f.estrelas
+          : (Number.isInteger(f.nota10) && f.nota10 >= 2 && f.nota10 % 2 === 0 ? f.nota10 / 2 : -1);
+        return est === Number(a[1]);
+      });
+    case "FT_INFO_REVER_SIMPLES":
+      return fatos.some((f) => extrairReverData(f) === a[0]);
+    case "FT_INFO_RETOMADA":
+      return fatos.some((f) =>
+        (f.temporada ?? f.t) === Number(a[0]) &&
+        (f.episodio ?? f.e) === Number(a[1]) &&
+        (f.retomada ?? f.ha) === a[2]
+      );
+    case "FT_INFO_RETOMADA_SIMPLES":
+      return fatos.some((f) => (f.temporada ?? f.t) === Number(a[0]) && (f.episodio ?? f.e) === Number(a[1]));
+    default:
+      return false;
+  }
+}
+
+function dicaTextoAterrado(t, acaoAlvo, ctx) {
+  if (!t) return true;
+  if (!t.m || !t.m.startsWith("FT_DICA_")) return false;
+  const a = Array.isArray(t.a) ? t.a : [];
+  switch (t.m) {
+    case "FT_DICA_PAROU_L1": {
+      const fatos = fatosParaAlvo(a[0], ctx, false);
+      return fatos.some((f) => (f.temporada ?? f.t) === Number(a[1]) && (f.episodio ?? f.e) === Number(a[2]));
+    }
+    case "FT_DICA_PAROU_L2": {
+      const fatos = acaoAlvo ? fatosParaAlvo(acaoAlvo, ctx, true) : todosFatos(ctx);
+      return fatos.some((f) => f.semanas === Number(a[0]));
+    }
+    case "FT_DICA_FALTA_L1": {
+      const fatos = fatosParaAlvo(a[2], ctx, false);
+      return fatos.some((f) => f.faltam === Number(a[0]) && (f.temporada ?? f.temp) === Number(a[1]));
+    }
+    case "FT_DICA_FALTA_L2": {
+      const fatos = acaoAlvo ? fatosParaAlvo(acaoAlvo, ctx, true) : todosFatos(ctx);
+      return fatos.some((f) => Number.isInteger(f.faltam) && f.faltam > 0);
+    }
+    case "FT_DICA_SALVO_L1": {
+      if (acaoAlvo) {
+        const cIdxs = resolverCandIndicesPorRef(acaoAlvo, ctx);
+        if (cIdxs.some((idx) => ctx.candEvs[idx]?.salvoDurs.has(a[0]))) return true;
+        return fatosParaAlvo(acaoAlvo, ctx, false).some((f) => extrairSalvoDur(f.salvo ?? f.dias) === a[0]);
+      }
+      return todosFatos(ctx).some((f) => extrairSalvoDur(f.salvo ?? f.dias) === a[0]) ||
+        ctx.candEvs.some((ev) => ev.salvoDurs.has(a[0]));
+    }
+    case "FT_DICA_SALVO_L2": {
+      if (acaoAlvo) {
+        const cIdxs = resolverCandIndicesPorRef(acaoAlvo, ctx);
+        for (const idx of cIdxs) {
+          const min = ctx.candEvs[idx]?.minutos || 0;
+          if (min > 0 && duracoesFilmeDeMinutos(min).has(a[0])) return true;
+        }
+        return fatosParaAlvo(acaoAlvo, ctx, false).some((f) =>
+          f.duracao === a[0] || (Number.isInteger(f.minutos) && duracoesFilmeDeMinutos(f.minutos).has(a[0]))
+        );
+      }
+      return todosFatos(ctx).some((f) =>
+        f.duracao === a[0] || (Number.isInteger(f.minutos) && duracoesFilmeDeMinutos(f.minutos).has(a[0]))
+      );
+    }
+    case "FT_DICA_ESTREIA": {
+      const id = a[0].slice(1);
+      if (acaoAlvo) {
+        const cIdxs = resolverCandIndicesPorRef(acaoAlvo, ctx);
+        if (cIdxs.some((idx) => ctx.candEvs[idx]?.estreiasPessoa.has(id))) return true;
+        return fatosParaAlvo(acaoAlvo, ctx, false).some((f) =>
+          (f.estreia === true || f.estreia === 1) && String(f.pessoa) === id
+        );
+      }
+      return ctx.candEvs.some((ev) => ev.estreiasPessoa.has(id)) ||
+        todosFatos(ctx).some((f) => (f.estreia === true || f.estreia === 1) && String(f.pessoa) === id);
+    }
+    case "FT_DICA_TEMPORADA": {
+      const cIdxs = resolverCandIndicesPorRef(a[0], ctx);
+      if (cIdxs.length > 0 && cIdxs.every((idx) => ctx.candEvs[idx]?.tipo === "filme")) {
+        return fatosParaAlvo(a[0], ctx, false).some((f) => Number.isInteger(f.temporada ?? f.temp));
+      }
+      return true;
+    }
+    case "FT_DICA_REVER": {
+      if (ctx.titulosAncoras.has(a[0])) return true;
+      const cIdxs = resolverCandIndicesPorRef(a[0], ctx);
+      if (cIdxs.some((idx) => ctx.candEvs[idx]?.rever)) return true;
+      return fatosParaAlvo(a[0], ctx, false).some((f) => f.rever === true || Boolean(extrairReverData(f)));
+    }
+    case "FT_DICA_CURTO": {
+      const cIdxs = resolverCandIndicesPorRef(a[0], ctx);
+      if (cIdxs.some((idx) => ctx.candEvs[idx]?.cabeHojeContradit)) return false;
+      return true;
+    }
+    case "FT_DICA_PERGUNTAS":
+    case "FT_DICA_TRAKT":
+      return true;
+    default:
+      return false;
+  }
+}
+
 function textoAterrado(t, ctx, permitirAncoras = true) {
   if (!t) return true; // campos opcionais ausentes sao tratados pelo validador de peca
   if (typeof t.m !== "string" || !t.m || !FT_ARIDADE.has(t.m)) return false;
@@ -2351,14 +3231,55 @@ function textoAterrado(t, ctx, permitirAncoras = true) {
   return true;
 }
 
-function selosAterrados(selos, ctx) {
+function fileiraTituloAterrado(t, itens, ctx) {
+  if (!t) return true;
+  if (!t.m || !t.m.startsWith("FT_FIL_")) return false;
+  if (!textoAterrado(t, ctx, true)) return false;
+  const a = Array.isArray(t.a) ? t.a : [];
+  const itemIdxs = itens.flatMap((ref) => resolverCandIndicesPorRef(ref, ctx));
+  if (t.m === "FT_FIL_PORQUE_TERMINOU") {
+    return [...ctx.titulosAncoras].some((tit) => refsTitulosEquivalentes(tit, a[0], ctx));
+  }
+  if (t.m === "FT_FIL_PESSOA") {
+    const id = a[0].slice(1);
+    return ctx.gostoPessoasIds.has(id) || itemIdxs.some((idx) => ctx.candEvs[idx]?.pessoasMotivo.has(id));
+  }
+  if (t.m === "FT_FIL_TEMA" || t.m === "FT_FIL_SUB_TEMA") {
+    const id = a[0].slice(1);
+    return ctx.gostoTemasIds.has(id) || itemIdxs.some((idx) => ctx.candEvs[idx]?.temasMotivo.has(id));
+  }
+  if (t.m === "FT_FIL_GENERO") {
+    const id = a[0].slice(1);
+    return ctx.gostoGenerosIds.has(id) ||
+      itemIdxs.some((idx) => ctx.candEvs[idx]?.generosMotivo.has(id) || ctx.candEvs[idx]?.generosCand.has(id));
+  }
+  return true;
+}
+
+function selosAterrados(selos, alvoRef, ctx) {
   if (!selos) return true;
+  const cIdxs = resolverCandIndicesPorRef(alvoRef, ctx);
+  const fatos = fatosParaAlvo(alvoRef, ctx, false);
   for (const s of selos) {
     const id = String(s.id);
-    if (s.k === "pessoa" && !ctx.pessoasIds.has(id)) return false;
-    else if (s.k === "tema" && !ctx.temasIds.has(id)) return false;
-    else if (s.k === "genero" && !ctx.generosIds.has(id)) return false;
-    else if (s.k !== "pessoa" && s.k !== "tema" && s.k !== "genero") return false;
+    if (s.k !== "pessoa" && s.k !== "tema" && s.k !== "genero") return false;
+    if (cIdxs.length > 0) {
+      const okCand = cIdxs.some((idx) => {
+        const ev = ctx.candEvs[idx];
+        if (!ev) return false;
+        if (s.k === "pessoa") return ev.pessoasMotivo.has(id);
+        if (s.k === "tema") return ev.temasMotivo.has(id);
+        return ev.generosMotivo.has(id) || (ev.generosCand.has(id) && ctx.gostoGenerosIds.has(id));
+      });
+      if (!okCand) return false;
+    } else {
+      const okFato = fatos.some((f) =>
+        (s.k === "pessoa" && f.pessoa === s.id) ||
+        (s.k === "tema" && f.tema === s.id) ||
+        (s.k === "genero" && f.genero === s.id)
+      );
+      if (!okFato) return false;
+    }
   }
   return true;
 }
@@ -2369,49 +3290,97 @@ function escolhaOpcoesAterradas(p) {
   return p.opcoes.every((o) => Object.hasOwn(mapaOps, o.id) && o.r?.m === mapaOps[o.id]);
 }
 
-// Confere que o LLM nao inventou titulo, afinidade, opcao ou argumento fora do contrato fechado.
-function pecaAterrada(p, ctx) {
+// Confere que o LLM nao inventou titulo, afinidade, opcao ou argumento fora do contrato fechado
+// nem atribuiu motivo, numero, duracao ou quantidade a um candidato sem evidencia estruturada.
+function pecaAterrada(p, ctx, opts = {}) {
   const { ttCand, ttTodos } = ctx;
   if (p.t === "fileira") {
     if (p.id !== "gosto1" && p.id !== "gosto2") return false;
     if (!p.itens.every((ref) => refTtPermitida(ref, ttCand))) return false;
-    if (!textoAterrado(p.titulo, ctx, true) || !textoAterrado(p.sub, ctx, true)) return false;
+    if (!fileiraTituloAterrado(p.titulo, p.itens, ctx)) return false;
+    if (p.sub && !fileiraTituloAterrado(p.sub, p.itens, ctx)) return false;
     if (p.motivo) {
       for (const [k, v] of Object.entries(p.motivo)) {
-        if (!refTtPermitida(k, ttCand) || !textoAterrado(v, ctx, true)) return false;
+        if (!refTtPermitida(k, ttCand)) return false;
+        if (!v?.m?.startsWith("FT_MOT_") || !textoAterrado(v, ctx, true)) return false;
+        const cIdxs = resolverCandIndicesPorRef(k, ctx);
+        if (!cIdxs.length || !cIdxs.some((idx) => motivoCandidatoAterrado(v, idx, ctx))) return false;
       }
     }
     return true;
   }
   if (p.t === "dica") {
+    if (opts.exigirIdCanonico && p.id !== dicaIdCanonico(p)) return false;
+    if (p.icone !== undefined && !DICA_ICONES_CLIENTE.has(p.icone)) return false;
     if (p.acao?.alvo && !refTtPermitida(p.acao.alvo, ttTodos)) return false;
-    return textoAterrado(p.l1, ctx, true) && textoAterrado(p.l2, ctx, true);
+    if (!textoAterrado(p.l1, ctx, true) || !textoAterrado(p.l2, ctx, true)) return false;
+    if (!dicaTextoAterrado(p.l1, p.acao?.alvo, ctx)) return false;
+    if (p.l2 && !dicaTextoAterrado(p.l2, p.acao?.alvo, ctx)) return false;
+    return true;
   }
   if (p.t === "porque") {
     if (!refTtPermitida(p.alvo, ttTodos)) return false;
-    if (!selosAterrados(p.selos, ctx)) return false;
-    return p.linhas.every((l) => textoAterrado(l, ctx, true));
+    if (!selosAterrados(p.selos, p.alvo, ctx)) return false;
+    return p.linhas.every((l) =>
+      Boolean(l?.m?.startsWith("FT_MOT_")) &&
+      textoAterrado(l, ctx, true) &&
+      textoFatoAlvoAterrado(l, p.alvo, ctx)
+    );
   }
   if (p.t === "comparar") {
     if (!p.itens.every((ref) => refTtPermitida(ref, ttCand))) return false;
     if (p.escolha && !refTtPermitida(p.escolha, ttCand)) return false;
-    return textoAterrado(p.veredito, ctx, false);
+    if (p.veredito) {
+      if (p.veredito.m !== "FT_CMP_VEREDITO_CABE" || !textoAterrado(p.veredito, ctx, false)) return false;
+      const vRef = p.veredito.a?.[0];
+      if (!p.itens.some((it) => refsTitulosEquivalentes(it, vRef, ctx))) return false;
+      const fatosCmp = todosFatos(ctx).filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
+      if (fatosCmp.length > 0) {
+        const cIdxs = resolverCandIndicesPorRef(vRef, ctx);
+        const min = cIdxs.length === 1 ? ctx.candEvs[cIdxs[0]]?.minutos || 0 : 0;
+        if (min > 0 && !fatosCmp.some((f) => min <= f.tempo_max)) return false;
+      }
+    }
+    return true;
   }
   if (p.t === "escolha") {
+    if (!p.pergunta?.m?.startsWith("FT_ESC_")) return false;
+    if (p.pergunta.m === "FT_ESC_PASSO") {
+      if (Number(p.pergunta.a?.[0]) !== p.passo || Number(p.pergunta.a?.[1]) !== p.de) return false;
+    }
     return textoAterrado(p.pergunta, ctx, true) &&
-           p.opcoes.every((o) => textoAterrado(o.r, ctx, true)) &&
+           p.opcoes.every((o) => Boolean(o.r?.m?.startsWith("FT_ESC_")) && textoAterrado(o.r, ctx, true)) &&
            escolhaOpcoesAterradas(p);
   }
   if (p.t === "info") {
     if (!refTtPermitida(p.alvo, ttTodos)) return false;
-    return p.itens.every((it) => textoAterrado(it.l, ctx, true));
+    return p.itens.every((it) =>
+      textoAterrado(it.l, ctx, true) && infoItemAterrado(it.k, it.l, p.alvo, ctx)
+    );
   }
   if (p.t === "achados") {
     if (!p.itens.every((ref) => refTtPermitida(ref, ttCand))) return false;
-    if (!textoAterrado(p.l1, ctx, true) || !textoAterrado(p.l2, ctx, true)) return false;
+    if (!p.l1?.m?.startsWith("FT_ACHA_") || !textoAterrado(p.l1, ctx, true)) return false;
+    if (p.l2 && (!p.l2?.m?.startsWith("FT_ACHA_") || !textoAterrado(p.l2, ctx, true))) return false;
+    if (p.l1.m === "FT_ACHA_CURTOS_L1") {
+      const qtd = Number(p.l1.a?.[0]);
+      const maxMin = Number(p.l1.a?.[1]);
+      if (qtd !== p.itens.length) return false;
+      const cIdxs = p.itens.flatMap((ref) => resolverCandIndicesPorRef(ref, ctx));
+      const todosTemMin = cIdxs.length === p.itens.length && cIdxs.every((idx) => ctx.candEvs[idx]?.minutos > 0);
+      if (todosTemMin) {
+        if (!cIdxs.every((idx) => ctx.candEvs[idx].minutos < maxMin)) return false;
+      } else {
+        const okFato = todosFatos(ctx).some((f) => f.curtos_max_min === maxMin && (!f.curtos_qtd || f.curtos_qtd === qtd));
+        if (!okFato) return false;
+      }
+    }
     if (p.motivo) {
       for (const [k, v] of Object.entries(p.motivo)) {
-        if (!refTtPermitida(k, ttCand) || !textoAterrado(v, ctx, true)) return false;
+        if (!refTtPermitida(k, ttCand)) return false;
+        if (!v?.m?.startsWith("FT_MOT_") || !textoAterrado(v, ctx, true)) return false;
+        const cIdxs = resolverCandIndicesPorRef(k, ctx);
+        if (!cIdxs.length || !cIdxs.some((idx) => motivoCandidatoAterrado(v, idx, ctx))) return false;
       }
     }
     return true;
@@ -2462,12 +3431,19 @@ function pecaParaCache(p) {
       l2 = textoSemX(p.l2);
       if (!l2) return null;
     }
-    return {
+    const base = {
       t: "dica",
-      id: p.id,
       l1,
       ...(l2 ? { l2 } : {}),
-      acao: { ...p.acao },
+      acao: p.acao?.alvo ? { tipo: p.acao.tipo, alvo: p.acao.alvo } : { tipo: p.acao.tipo },
+      ...(p.icone ? { icone: p.icone } : {}),
+    };
+    return {
+      t: "dica",
+      id: dicaIdCanonico(base),
+      l1,
+      ...(l2 ? { l2 } : {}),
+      acao: base.acao,
       ...(p.icone ? { icone: p.icone } : {}),
     };
   }
@@ -2604,7 +3580,7 @@ function reconstituirPeca(p, ctx, state) {
     }
     return {
       t: "dica",
-      id: p.id,
+      id: dicaIdCanonico(p),
       l1,
       ...(l2 ? { l2 } : {}),
       acao: p.acao?.alvo ? { tipo: p.acao.tipo, alvo: p.acao.alvo } : { tipo: p.acao.tipo },
@@ -2777,7 +3753,7 @@ function cenaContemGostoLiteral(pecas, textosGosto) {
   return false;
 }
 
-// Limita o conteudo persistido no KV compartilhado a modelos `m` e referencias controladas,
+// Limita o conteudo persistido no KV compartilhado a modelos `m` e referencias/campos controlados,
 // sem `x` livre nem literais de gosto. Devolve string JSON valida ou null (omite do cache).
 function cenaParaCache(pecasCanonicas, meta, pedido, ctx) {
   const pecas = [];
@@ -2800,7 +3776,7 @@ function cenaParaCache(pecasCanonicas, meta, pedido, ctx) {
   if (cenaContemGostoLiteral(pecas, ctx.textosGosto)) return null;
   const re = validarCena(jsonStr, pedido.candidatos.length);
   if (!re.ok || re.nPecas === 0 || re.nRecusadas > 0 || re.xs.length > 0 || re.teveX) return null;
-  if (!re.pecas.every((p) => pecaAterrada(p, ctx))) return null;
+  if (!re.pecas.every((p) => pecaAterrada(p, ctx, { exigirIdCanonico: true }))) return null;
   return jsonStr;
 }
 
@@ -2849,7 +3825,7 @@ function validarHitCacheCompor(guardado, pedido) {
   if (re.tela !== telaEsperada) return null;
   const ctx = contextoAterramento(pedido);
   if (cenaContemGostoLiteral(re.pecas, ctx.textosGosto)) return null;
-  if (!re.pecas.every((p) => pecaAterrada(p, ctx))) return null;
+  if (!re.pecas.every((p) => pecaAterrada(p, ctx, { exigirIdCanonico: true }))) return null;
 
   const pecasCanonicas = [];
   for (const p of re.pecas) {
@@ -2929,9 +3905,50 @@ export function tipoCanonico(tipo) {
   return "";
 }
 
-// Chave = SHA-256(modo, idioma, faixa de hora, gosto quantizado, identidades canonicas dos candidatos, fatos).
-// Nunca inclui conta nem perfil: perfis com mesmo gosto e candidatos dividem a resposta.
+function candidatoCanonicoParaChave(c, i, ancoras) {
+  const ttsExtras = new Set();
+  coletarTt(c.motivos, ttsExtras);
+  coletarTt(c.eixos, ttsExtras);
+  const idCanon = typeof c.id === "number"
+    ? `n:${c.id}`
+    : typeof c.id === "string"
+      ? `s:${c.id}`
+      : "";
+  const generos = Array.isArray(c.generos)
+    ? c.generos.map((g) => (typeof g === "number" ? `n:${g}` : `h:${fnv1a32Hex(String(g))}`)).sort()
+    : [];
+  const dummyEv = criarEvidenciaVazia();
+  const dummyMap = new Map();
+  const dummySet = new Set();
+  const motivos = Array.isArray(c.motivos)
+    ? c.motivos.map((mo) => processarMotivoCandidato(
+        mo,
+        dummyEv,
+        Number.isInteger(c.minutos) && c.minutos > 0 ? c.minutos : 0,
+        ancoras,
+        { generosNomes: dummyMap, temasNomes: dummyMap, pessoasNomes: dummyMap },
+        { generosIds: dummySet, temasIds: dummySet, pessoasIds: dummySet, titulosAncoras: dummySet }
+      )).filter(Boolean).map((m) => JSON.stringify(m)).sort()
+    : [];
+  return [
+    i,
+    c.c !== undefined ? String(c.c) : "",
+    tipoCanonico(c.tipo),
+    idCanon,
+    c.ref !== undefined ? String(c.ref) : "",
+    Number.isInteger(c.ano) ? c.ano : null,
+    Number.isInteger(c.minutos) ? c.minutos : null,
+    generos,
+    motivos,
+    canonicalizarEixos(c.eixos),
+    [...ttsExtras].sort(),
+  ];
+}
+
+// Chave = SHA-256(modo, idioma, faixa de hora, gosto quantizado, representacao canonica por candidato, fatos).
+// Nunca inclui conta, perfil nem valores livres de texto: mudancas na evidencia estruturada geram chaves distintas.
 export async function chaveCacheCompor(pedido) {
+  const ancoras = pedido.gosto?.ancoras || [];
   const canon = {
     v: 1,
     modo: pedido.modo,
@@ -2941,7 +3958,7 @@ export async function chaveCacheCompor(pedido) {
       generos: quantizarAfinidades(pedido.gosto?.generos),
       temas: quantizarAfinidades(pedido.gosto?.temas),
       pessoas: quantizarAfinidades(pedido.gosto?.pessoas),
-      ancoras: (pedido.gosto?.ancoras || [])
+      ancoras: ancoras
         .map((a) => [
           a.id !== undefined ? String(a.id) : "",
           a.ref !== undefined ? String(a.ref) : "",
@@ -2951,24 +3968,7 @@ export async function chaveCacheCompor(pedido) {
       nivel: pedido.gosto?.nivel ?? null,
       fim_semana: pedido.gosto?.fim_semana ?? 0,
     },
-    candidatos: (pedido.candidatos || []).map((c, i) => {
-      const ttsExtras = new Set();
-      coletarTt(c.motivos, ttsExtras);
-      coletarTt(c.eixos, ttsExtras);
-      const idCanon = typeof c.id === "number"
-        ? `n:${c.id}`
-        : typeof c.id === "string"
-          ? `s:${c.id}`
-          : "";
-      return [
-        i,
-        c.c !== undefined ? String(c.c) : "",
-        tipoCanonico(c.tipo),
-        idCanon,
-        c.ref !== undefined ? String(c.ref) : "",
-        [...ttsExtras].sort(),
-      ];
-    }),
+    candidatos: (pedido.candidatos || []).map((c, i) => candidatoCanonicoParaChave(c, i, ancoras)),
     fatos: pedido.fatos,
   };
   return "farol:compor:v1:" + (await sha256Hex(JSON.stringify(canon)));

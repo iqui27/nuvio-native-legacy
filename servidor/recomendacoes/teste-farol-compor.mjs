@@ -128,7 +128,7 @@ function pedidoHomeBase(extra = {}) {
       { id: "tt0133093", titulo: "Matrix", ano: 1999, generos: [878, 28], minutos: 136 },
       { id: "tt0816692", titulo: "Interestelar", ano: 2014, generos: [878, 18], minutos: 169 },
       { id: "tt1375666", titulo: "A Origem", ano: 2010, generos: [878, 53], minutos: 148 },
-      { id: "tt2543164", titulo: "A Chegada", ano: 2016, generos: [878, 18], minutos: 116 },
+      { id: "tt2543164", titulo: "A Chegada", ano: 2016, generos: [878, 18], minutos: 116, motivos: [{ tipo: "FMO_PESSOA", a: 137427, b: 0 }] },
       { id: "tt1856101", titulo: "Blade Runner 2049", ano: 2017, generos: [878, 18], minutos: 164 },
       { id: "tt0482571", titulo: "O Grande Truque", ano: 2006, generos: [53, 9648], minutos: 130 },
     ],
@@ -724,11 +724,11 @@ test("nada do corpo e gravado: D1 so tem contadores HMAC (sem pessoa) e KV so te
       ancoras: [{ id: "tt11280740", titulo: canarioTitulo }],
     },
     candidatos: [
-      { id: "tt0114369", titulo: canarioTitulo, ano: 1995 },
+      { id: "tt0114369", titulo: canarioTitulo, ano: 1995, generos: [53] },
       { id: "tt0133093", titulo: "Matrix", ano: 1999 },
       { id: "tt0816692", titulo: "Interestelar", ano: 2014 },
       { id: "tt1375666", titulo: "A Origem", ano: 2010 },
-      { id: "tt2543164", titulo: "A Chegada", ano: 2016 },
+      { id: "tt2543164", titulo: "A Chegada", ano: 2016, motivos: [{ tipo: "FMO_PESSOA", a: 137427, b: 0 }] },
       { id: "tt1856101", titulo: "Blade Runner 2049", ano: 2017 },
     ],
   });
@@ -1017,7 +1017,7 @@ test("P1.2: cache compartilhado nao grava literais de gosto mesmo quando o LLM e
 
 test("P1.3: argumentos de titulo por modelo FT_* exigem referencia valida do pedido (nunca titulo literal)", async (t) => {
   const req = pedidoHomeBase({
-    fatos: [{ alvo: "tt0903747", temporada: 2, episodio: 4 }],
+    fatos: [{ alvo: "tt0903747", temporada: 2, episodio: 4, faltam: 3 }],
   });
 
   const cenasComTituloInvalido = [
@@ -1233,7 +1233,17 @@ test("R2-P1.1: rejeita id textual de afinidade e exige contrato fechado por mode
 
   // 2. Contrato fechado de argumentos por modelo: valores livres em modelos de duracao/data/hora/quali/onde/amigos falham.
   const reqComFatos = pedidoHomeBase({
-    fatos: [{ alvo: "tt0903747", titulo: "Breaking Bad", onde: "Netflix" }],
+    fatos: [{
+      alvo: "tt0903747",
+      titulo: "Breaking Bad",
+      onde: "Netflix",
+      salvo: "5M",
+      minutos: 92,
+      termina: "23:40",
+      temporada: 2,
+      episodio: 4,
+      retomada: "7w",
+    }],
   });
   const cenasInvalidasContrato = [
     // FT_DICA_SALVO_L1 fora do formato fechado (<n><d|w|M|y>)
@@ -1324,11 +1334,15 @@ test("R2-P1.2: titulo fora do pedido dentro de `x` (com m+a valido) nunca chega 
 });
 
 test("R2-P1.3: tema `k<id>` entrega a mesma cena renderizavel no miss e no hit sem gravar literal no KV", async (t) => {
+  const baseCands = pedidoHomeBase().candidatos;
   const req = pedidoHomeBase({
     gosto: {
       temas: [{ id: 4565, nome: "mundos paralelos", peso: 1.5 }],
       ancoras: [{ id: "tt11280740", titulo: "Ruptura" }],
     },
+    candidatos: baseCands.map((c, idx) =>
+      idx === 0 ? { ...c, motivos: [{ tipo: "FMO_TERMINOU", a: "tt11280740", b: 4565 }] } : c
+    ),
   });
   const { post, kv, chamadasLlm } = cenario(t, {}, {
     respostaLlm: () => ({
@@ -1528,5 +1542,462 @@ test("R2-KV-Legado: nunca devolve JSON bruto do KV e rejeita entradas legadas co
     assert.ok(!JSON.stringify(r.body).includes("exemplo.invalid"));
     assert.ok(!JSON.stringify(r.body).includes("Texto legado"));
     assert.equal(chamadasLlm.length, 1, `entrada legada devia ter sido rejeitada: ${JSON.stringify(leg)}`);
+  }
+});
+
+// =============================================================================
+// 9. Regressoes dos 4 P1 da revisao FAROL40-r3 e contrato de serializacao 52
+// =============================================================================
+
+test("R3-P1.1: motivo pertence ao candidato correto no miss, na chave KV e no hit (incluindo FarolMotivo numerico)", async (t) => {
+  const candsBase = [
+    { id: "tt0114369", titulo: "Seven", ano: 1995, generos: [53, 80], minutos: 127 },
+    { id: "tt0133093", titulo: "Matrix", ano: 1999, generos: [878, 28], minutos: 136 },
+    { id: "tt0816692", titulo: "Interestelar", ano: 2014, generos: [878, 18], minutos: 169 },
+    { id: "tt1375666", titulo: "A Origem", ano: 2010, generos: [878, 53], minutos: 148 },
+    { id: "tt2543164", titulo: "A Chegada", ano: 2016, generos: [878, 18], minutos: 116 },
+    { id: "tt1856101", titulo: "Blade Runner 2049", ano: 2017, generos: [878, 18], minutos: 164 },
+  ];
+
+  // 1. Sonda exata da r3: c0=Seven sem pessoa, c1=Matrix com FMO_PESSOA 137427, sem gosto.pessoas.
+  //    motivo.c0 = FT_MOT_PESSOA(p137427) tem de ser RECUSADO no miss (nao cai em Seven).
+  const reqB = pedidoHomeBase({
+    gosto: { generos: [{ id: 53, nome: "Suspense", peso: 1.5 }], nivel: 2 },
+    candidatos: candsBase.map((c, i) => (i === 1 ? { ...c, motivos: [{ tipo: "FMO_PESSOA", a: 137427, b: 0 }] } : c)),
+  });
+  {
+    const { post, kv } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz",
+          itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+          motivo: { c0: { m: "FT_MOT_PESSOA", a: ["p137427"] } },
+        }],
+      }),
+    });
+    const r = await post("/v1/farol/compor", reqB);
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { origem: "regras" });
+    assert.equal(kv.mapa.size, 0);
+  }
+
+  // Mesmo com gosto.pessoas contendo 137427, c0 sem evidencia propria nao pode receber p137427; c1 pode.
+  const reqComGostoPessoa = pedidoHomeBase({
+    gosto: { pessoas: [{ id: 137427, nome: "Denis Villeneuve", peso: 1.8 }], nivel: 2 },
+    candidatos: candsBase.map((c, i) => (i === 1 ? { ...c, motivos: [{ tipo: 2, a: 137427, b: 0 }] } : c)),
+  });
+  {
+    const { post } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz",
+          itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+          motivo: { c0: { m: "FT_MOT_PESSOA", a: ["p137427"] } },
+        }],
+      }),
+    });
+    const r = await post("/v1/farol/compor", reqComGostoPessoa);
+    assert.deepEqual(r.body, { origem: "regras" });
+  }
+  {
+    const { post } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz",
+          itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+          motivo: { c1: { m: "FT_MOT_PESSOA", a: ["p137427"] } },
+        }],
+      }),
+    });
+    const r = await post("/v1/farol/compor", reqComGostoPessoa);
+    assert.equal(r.body.origem, "llm");
+    assert.equal(r.body.pecas[0].motivo.c1.m, "FT_MOT_PESSOA");
+  }
+
+  // 2. Conta A (evidencia em c0) vs Conta B (evidencia so em c1): chaves distintas e zero hit cruzado.
+  const reqA = pedidoHomeBase({
+    gosto: { generos: [{ id: 53, nome: "Suspense", peso: 1.5 }], nivel: 2 },
+    candidatos: candsBase.map((c, i) => (i === 0 ? { ...c, motivos: [{ tipo: "FMO_PESSOA", a: 137427, b: 0 }] } : c)),
+  });
+  const kA = await chaveCacheCompor(reqA);
+  const kB = await chaveCacheCompor(reqB);
+  assert.notEqual(kA, kB, "evidencia em c0 vs c1 deve gerar chaves KV distintas");
+
+  {
+    const { post, kv, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: (reqBody) => {
+        const user = JSON.parse(reqBody.messages[1].content);
+        const temEmC0 = Array.isArray(user.candidatos[0].motivos) && user.candidatos[0].motivos.length > 0;
+        return {
+          v: 1, tela: "home", origem: "llm",
+          pecas: [{
+            t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz",
+            itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+            motivo: temEmC0
+              ? { c0: { m: "FT_MOT_PESSOA", a: ["p137427"] } }
+              : { c1: { m: "FT_MOT_PESSOA", a: ["p137427"] } },
+          }],
+        };
+      },
+    });
+    const rA = await post("/v1/farol/compor", reqA, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(rA.body.origem, "llm");
+    assert.ok(rA.body.pecas[0].motivo.c0);
+    const rB = await post("/v1/farol/compor", reqB, { token: "tok-gosto-b", perfil: 1 });
+    assert.equal(rB.body.origem, "llm");
+    assert.equal(rB.body.pecas[0].motivo.c0, undefined);
+    assert.ok(rB.body.pecas[0].motivo.c1);
+    assert.equal(chamadasLlm.length, 2);
+
+    // Mesmo injetando cena de A sob a chave de B no KV, hit revalida por candidato e recompoe em B.
+    const valA = kv.mapa.get(kA).valor;
+    await kv.put(kB, valA, { expirationTtl: 86400 });
+    const rB2 = await post("/v1/farol/compor", reqB, { token: "tok-gosto-b", perfil: 2 });
+    assert.equal(rB2.body.origem, "llm");
+    assert.equal(rB2.body.pecas[0].motivo.c0, undefined);
+    assert.ok(rB2.body.pecas[0].motivo.c1);
+    assert.equal(chamadasLlm.length, 3);
+  }
+
+  // 3. Adjacentes: `porque` e selo no candidato errado + motivo por chave `tt...` + numeric FarolMotivo 0..9.
+  {
+    const ruinsPorque = [
+      { v: 1, tela: "home", pecas: [{ t: "porque", alvo: "c0", confianca: 2, linhas: [{ m: "FT_MOT_PESSOA", a: ["p137427"] }] }] },
+      { v: 1, tela: "home", pecas: [{ t: "porque", alvo: "c0", confianca: 2, linhas: [{ m: "FT_MOT_GENERO", a: ["g53"] }], selos: [{ k: "pessoa", id: 137427 }] }] },
+      { v: 1, tela: "home", pecas: [{ t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"], motivo: { tt0114369: { m: "FT_MOT_PESSOA", a: ["p137427"] } } }] },
+    ];
+    for (const ruim of ruinsPorque) {
+      const { post, kv } = cenario(t, {}, { respostaLlm: () => ruim });
+      const r = await post("/v1/farol/compor", reqB);
+      assert.deepEqual(r.body, { origem: "regras" }, JSON.stringify(ruim));
+      assert.equal(kv.mapa.size, 0);
+    }
+  }
+
+  // Todos os enum numericos C FarolMotivoTipo (0..9) funcionam no candidato correto.
+  {
+    const reqTodosFmo = pedidoHomeBase({
+      gosto: {
+        generos: [{ id: 53, nome: "Suspense", peso: 1.5 }],
+        temas: [{ id: 4565, nome: "distopia", peso: 1.3 }],
+        pessoas: [{ id: 137427, nome: "Denis Villeneuve", peso: 1.7 }],
+        ancoras: [{ id: "tt11280740", titulo: "Ruptura" }],
+      },
+      candidatos: [
+        { ...candsBase[0], minutos: 127, motivos: [
+          { tipo: 0, a: 0, b: 4565 },       // FMO_TERMINOU(ancora[0], tema 4565)
+          { tipo: 1, a: 53, b: 0 },         // FMO_GENERO
+          { tipo: 2, a: 137427, b: 0 },     // FMO_PESSOA
+          { tipo: 6, a: 127, b: 0 },        // FMO_CABE_HOJE
+        ] },
+        { ...candsBase[1], motivos: [{ tipo: 3, a: 4565, b: 0 }, { tipo: 4, a: 0, b: 80 }] },
+        { ...candsBase[2], motivos: [{ tipo: 5, a: 150, b: 0 }, { tipo: 7, a: 0, b: 0 }] },
+        { ...candsBase[3], motivos: [{ tipo: 8, a: 53, b: 0 }, { tipo: 9, a: 0, b: 0 }] },
+        candsBase[4],
+        candsBase[5],
+      ],
+    });
+    const { post } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "fileira", id: "gosto1",
+          titulo: { m: "FT_FIL_PORQUE_TERMINOU", a: ["tt11280740"] },
+          forma: "cartaz",
+          itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+          motivo: {
+            c0: { m: "FT_MOT_TERMINOU_TEMA", a: ["tt11280740", "k4565"] },
+            c1: { m: "FT_MOT_AMIGO_ANON" },
+            c2: { m: "FT_MOT_SALVO", a: ["5M"] },
+            c3: { m: "FT_MOT_FORA_CURVA", a: ["g53"] },
+          },
+        }],
+      }),
+    });
+    const r = await post("/v1/farol/compor", reqTodosFmo);
+    assert.equal(r.body.origem, "llm");
+    assert.equal(r.body.pecas[0].motivo.c0.m, "FT_MOT_TERMINOU_TEMA");
+    assert.equal(r.body.pecas[0].motivo.c2.a[0], "5M");
+    assert.equal(r.body.pecas[0].motivo.c3.m, "FT_MOT_FORA_CURVA");
+  }
+});
+
+test("R3-P1.2: numeros, duracoes e quantidades exigem correspondencia exata aos fatos ou motivos do item", async (t) => {
+  const cands = pedidoHomeBase().candidatos.map((c, idx) =>
+    idx === 0 ? { ...c, minutos: 127, motivos: [{ tipo: "FMO_CABE_HOJE", a: 127, b: 0 }] } : c
+  );
+  const req127 = pedidoHomeBase({ candidatos: cands });
+
+  // 1. Sonda exata da r3: Seven com minutos=127 e FMO_CABE_HOJE=127 nao pode aceitar "20".
+  {
+    const { post, kv } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz",
+          itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+          motivo: { c0: { m: "FT_MOT_CABE_HOJE", a: ["20"] } },
+        }],
+      }),
+    });
+    const r = await post("/v1/farol/compor", req127);
+    assert.deepEqual(r.body, { origem: "regras" });
+    assert.equal(kv.mapa.size, 0);
+  }
+
+  // Hit legado no KV com "20" sob minutos=127 tambem e rejeitado e recomposto.
+  {
+    const chave127 = await chaveCacheCompor(req127);
+    const { kv, post, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz",
+          itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+          motivo: { c0: { m: "FT_MOT_CABE_HOJE", a: ["127"] } },
+        }],
+      }),
+    });
+    await kv.put(chave127, JSON.stringify({
+      v: 1, tela: "home", feita: 1795000000, vale_s: 86400, origem: "llm",
+      pecas: [{
+        t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz",
+        itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+        motivo: { c0: { m: "FT_MOT_CABE_HOJE", a: ["20"] } },
+      }],
+    }), { expirationTtl: 86400 });
+    const r = await post("/v1/farol/compor", req127);
+    assert.equal(r.body.origem, "llm");
+    assert.equal(r.body.pecas[0].motivo.c0.a[0], "127");
+    assert.equal(chamadasLlm.length, 1);
+  }
+
+  // Mudanca em minutos/motivo altera a chave de cache.
+  const req95 = pedidoHomeBase({
+    candidatos: cands.map((c, idx) => (idx === 0 ? { ...c, minutos: 95, motivos: [{ tipo: "FMO_CABE_HOJE", a: 95, b: 0 }] } : c)),
+  });
+  assert.notEqual(await chaveCacheCompor(req127), await chaveCacheCompor(req95));
+
+  // 2. Casos adjacentes de numeros, duracoes e quantidades em dica, info, motivo, achados e escolha.
+  const reqFatos = pedidoHomeBase({
+    candidatos: cands.map((c, idx) =>
+      idx === 0 ? { ...c, minutos: 92, motivos: [{ tipo: "FMO_SALVO", a: 150, b: 0 }, { tipo: "FMO_PESSOA", a: 137427, b: "tt11280740", vezes: 3 }] }
+        : idx === 1 ? { ...c, minutos: 80 }
+        : c
+    ),
+    fatos: [
+      {
+        alvo: "tt0903747",
+        temporada: 2,
+        episodio: 4,
+        faltam: 3,
+        semanas: 5,
+        salvo: "5M",
+        minutos: 92,
+        min_ep: 45,
+        min_noite: 50,
+        noites: 2,
+        termina: "23:40",
+        onde: "Netflix",
+      },
+      {
+        alvo: "tt0903747",
+        pos: 2,
+        total: 3,
+        vistos: 1,
+        rever_data: "2024-03",
+        estrelas: 4,
+        retomada: "7w",
+      },
+    ],
+  });
+
+  const cenasContraditorias = [
+    // FT_MOT_DIRETOR com contagem inventada (atestado=3, devolve=9)
+    { modo: "home", cena: { v: 1, tela: "home", pecas: [{ t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"], motivo: { c0: { m: "FT_MOT_DIRETOR", a: ["tt11280740", "9"] } } }] } },
+    // FT_MOT_SALVO com duracao inventada (atestado=5M, devolve=9y)
+    { modo: "home", cena: { v: 1, tela: "home", pecas: [{ t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"], motivo: { c0: { m: "FT_MOT_SALVO", a: ["9y"] } } }] } },
+    // FT_DICA_SALVO_L2 contradizendo minutos=92 (devolve "2h00")
+    { modo: "home", cena: { v: 1, tela: "home", pecas: [{ t: "dica", id: "d1", l1: { m: "FT_DICA_SALVO_L1", a: ["5M"] }, l2: { m: "FT_DICA_SALVO_L2", a: ["2h00"] }, acao: { tipo: "abrir", alvo: "c0" } }] } },
+    // FT_DICA_PAROU_L1 com episodio inventado (atestado=T2E4, devolve T2E9)
+    { modo: "home", cena: { v: 1, tela: "home", pecas: [{ t: "dica", id: "d1", l1: { m: "FT_DICA_PAROU_L1", a: ["tt0903747", "2", "9"] }, acao: { tipo: "abrir", alvo: "tt0903747" } }] } },
+    // FT_DICA_FALTA_L1 com faltam inventado (atestado=3, devolve 8)
+    { modo: "home", cena: { v: 1, tela: "home", pecas: [{ t: "dica", id: "d1", l1: { m: "FT_DICA_FALTA_L1", a: ["8", "2", "tt0903747"] }, acao: { tipo: "abrir", alvo: "tt0903747" } }] } },
+    // FT_INFO_TERMINA com hora inventada (atestado=23:40, devolve 22:15)
+    { modo: "retomada", cena: { v: 1, tela: "detalhe", pecas: [{ t: "info", alvo: "tt0903747", itens: [{ k: "tempo", l: { m: "FT_INFO_TERMINA", a: ["22:15"] } }] }] } },
+    // FT_INFO_REVER com nota inventada (atestado=4, devolve 5)
+    { modo: "retomada", cena: { v: 1, tela: "detalhe", pecas: [{ t: "info", alvo: "tt0903747", itens: [{ k: "rever", l: { m: "FT_INFO_REVER", a: ["2024-03", "5"] } }] }] } },
+    // FT_INFO_SAGA com total inventado (atestado=3, devolve 5)
+    { modo: "retomada", cena: { v: 1, tela: "detalhe", pecas: [{ t: "info", alvo: "tt0903747", itens: [{ k: "saga", l: { m: "FT_INFO_SAGA", a: ["2", "5"] } }] }] } },
+    // FT_ACHA_CURTOS_L1 com quantidade divergente (2 itens, diz "3") ou duracao maior que o corte (c0=92 >= 90)
+    { modo: "home", cena: { v: 1, tela: "home", pecas: [{ t: "achados", l1: { m: "FT_ACHA_CURTOS_L1", a: ["3", "100"] }, itens: ["c0", "c1"] }] } },
+    { modo: "home", cena: { v: 1, tela: "home", pecas: [{ t: "achados", l1: { m: "FT_ACHA_CURTOS_L1", a: ["2", "90"] }, itens: ["c0", "c1"] }] } },
+    // FT_ESC_PASSO divergente de passo/de
+    { modo: "home", cena: { v: 1, tela: "home", pecas: [{ t: "escolha", passo: 1, de: 3, pergunta: { m: "FT_ESC_PASSO", a: ["2", "3"] }, opcoes: [{ id: "t45", r: { m: "FT_ESC_TEMPO_45" } }, { id: "tanto", r: { m: "FT_ESC_TANTO_FAZ" } }] }] } },
+    // FT_CMP_VEREDITO_CABE citando item fora de comparar.itens
+    { modo: "comparar", cena: { v: 1, tela: "comparar", pecas: [{ t: "comparar", itens: ["c0", "c1"], eixos: ["duracao"], veredito: { m: "FT_CMP_VEREDITO_CABE", a: ["c2"] } }] } },
+  ];
+  for (const caso of cenasContraditorias) {
+    const { post, kv } = cenario(t, {}, { respostaLlm: () => caso.cena });
+    const r = await post("/v1/farol/compor", { ...reqFatos, modo: caso.modo });
+    assert.deepEqual(r.body, { origem: "regras" }, JSON.stringify(caso.cena));
+    assert.equal(kv.mapa.size, 0);
+  }
+
+  // Casos verdadeiros correspondentes passam.
+  const cenasVerdadeiras = [
+    { modo: "home", cena: { v: 1, tela: "home", pecas: [{ t: "achados", l1: { m: "FT_ACHA_CURTOS_L1", a: ["2", "100"] }, itens: ["c0", "c1"], motivo: { c0: { m: "FT_MOT_DIRETOR", a: ["tt11280740", "3"] } } }] } },
+    { modo: "retomada", cena: { v: 1, tela: "detalhe", pecas: [{ t: "info", alvo: "tt0903747", itens: [{ k: "tempo", l: { m: "FT_INFO_TERMINA", a: ["23:40"] } }, { k: "rever", l: { m: "FT_INFO_REVER", a: ["2024-03", "4"] } }, { k: "saga", l: { m: "FT_INFO_SAGA_VOCE_VIU", a: ["2", "3", "1"] } }] }] } },
+  ];
+  for (const caso of cenasVerdadeiras) {
+    const { post } = cenario(t, {}, { respostaLlm: () => caso.cena });
+    const r = await post("/v1/farol/compor", { ...reqFatos, modo: caso.modo });
+    assert.equal(r.body.origem, "llm", JSON.stringify(caso.cena));
+  }
+});
+
+test("R3-P1.3: dica.id canonico, dica.icone no contrato do cliente e revalidacao de KV legado", async (t) => {
+  const canario = "canariotituloprivado";
+  const req = pedidoHomeBase({
+    candidatos: pedidoHomeBase().candidatos.map((c, i) => (i === 0 ? { ...c, titulo: canario } : c)),
+  });
+
+  // 1. Sonda exata da r3: dica com id e icone iguais ao titulo canario -> recusado, zero KV.
+  {
+    const { post, kv } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica",
+          id: canario,
+          icone: canario,
+          l1: { m: "FT_DICA_CURTO", a: ["c0"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      }),
+    });
+    const r = await post("/v1/farol/compor", req);
+    assert.deepEqual(r.body, { origem: "regras" });
+    assert.equal(kv.mapa.size, 0);
+  }
+
+  // 2. LLM devolve id arbitrario com icone valido (`aj_farol`): id e canonicalizado, literal nao vaza no retorno nem no KV.
+  {
+    const { post, kv, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica",
+          id: canario,
+          icone: "aj_farol",
+          l1: { m: "FT_DICA_CURTO", a: ["c0"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      }),
+    });
+    const DICA_ICONES_CLIENTE = farolGostoMod.DICA_ICONES_CLIENTE;
+    const dicaIdCanonico = farolGostoMod.dicaIdCanonico;
+    assert.ok(DICA_ICONES_CLIENTE instanceof Set);
+    assert.equal(typeof dicaIdCanonico, "function");
+    assert.equal(DICA_ICONES_CLIENTE.has("aj_farol"), true);
+    assert.equal(DICA_ICONES_CLIENTE.has("aj_clock"), true);
+    assert.equal(DICA_ICONES_CLIENTE.has(canario), false);
+
+    const miss = await post("/v1/farol/compor", req, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(miss.body.origem, "llm");
+    const esperadaId = dicaIdCanonico(miss.body.pecas[0]);
+    assert.equal(miss.body.pecas[0].id, esperadaId);
+    assert.match(esperadaId, /^d_curto_[0-9a-f]{8}$/);
+    assert.equal(miss.body.pecas[0].icone, "aj_farol");
+    assert.ok(!JSON.stringify(miss.body).includes(canario));
+
+    const [[, entradaKv]] = [...kv.mapa.entries()];
+    assert.ok(!entradaKv.valor.includes(canario));
+    assert.equal(JSON.parse(entradaKv.valor).pecas[0].id, esperadaId);
+
+    const hit = await post("/v1/farol/compor", req, { token: "tok-gosto-b", perfil: 1 });
+    assert.deepEqual(hit.body, miss.body);
+    assert.equal(chamadasLlm.length, 1);
+  }
+
+  // 3. Entradas legadas no KV com dica.id nao canonico ("d1" / canario) ou icone fora do contrato sao rejeitadas e recompostas.
+  const chave = await chaveCacheCompor(req);
+  const dicaCanon = farolGostoMod.dicaIdCanonico({ t: "dica", l1: { m: "FT_DICA_CURTO", a: ["c0"] }, acao: { tipo: "abrir", alvo: "c0" } });
+  for (const leg of [
+    { v: 1, tela: "home", feita: 1795000000, vale_s: 86400, origem: "llm", pecas: [{ t: "dica", id: canario, l1: { m: "FT_DICA_CURTO", a: ["c0"] }, acao: { tipo: "abrir", alvo: "c0" }, icone: "aj_farol" }] },
+    { v: 1, tela: "home", feita: 1795000000, vale_s: 86400, origem: "llm", pecas: [{ t: "dica", id: "d1", l1: { m: "FT_DICA_CURTO", a: ["c0"] }, acao: { tipo: "abrir", alvo: "c0" }, icone: "aj_farol" }] },
+    { v: 1, tela: "home", feita: 1795000000, vale_s: 86400, origem: "llm", pecas: [{ t: "dica", id: dicaCanon, l1: { m: "FT_DICA_CURTO", a: ["c0"] }, acao: { tipo: "abrir", alvo: "c0" }, icone: canario }] },
+  ]) {
+    const { kv, post, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{ t: "dica", id: "d_ok", l1: { m: "FT_DICA_CURTO", a: ["c0"] }, acao: { tipo: "abrir", alvo: "c0" }, icone: "aj_clock" }],
+      }),
+    });
+    await kv.put(chave, JSON.stringify(leg), { expirationTtl: 86400 });
+    const r = await post("/v1/farol/compor", req);
+    assert.equal(r.body.origem, "llm");
+    assert.equal(r.body.pecas[0].icone, "aj_clock");
+    assert.ok(!JSON.stringify(r.body).includes(canario));
+    assert.equal(chamadasLlm.length, 1);
+  }
+});
+
+test("R3-P1.4: reconstrucao deterministica de nome de pessoa ausente do elenco local com paridade miss/hit e KV limpo", async (t) => {
+  const cands = pedidoHomeBase().candidatos.map((c, i) =>
+    i === 0 ? { ...c, motivos: [{ tipo: "FMO_PESSOA", a: 600000, b: 0 }] } : c
+  );
+  const req = pedidoHomeBase({
+    gosto: { pessoas: [{ id: 600000, nome: "Diretora B", peso: 1.8 }], nivel: 2 },
+    candidatos: cands,
+  });
+
+  const { post, kv, chamadasLlm } = cenario(t, {}, {
+    respostaLlm: () => ({
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{
+        t: "fileira",
+        id: "gosto1",
+        titulo: { m: "FT_FIL_PESSOA", a: ["p600000"], x: "Da mesma pessoa: Diretora B" },
+        forma: "cartaz",
+        itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+        motivo: { c0: { m: "FT_MOT_PESSOA", a: ["p600000"] } },
+      }],
+    }),
+  });
+
+  const miss = await post("/v1/farol/compor", req, { token: "tok-gosto-a", perfil: 1 });
+  assert.equal(miss.status, 200);
+  assert.equal(miss.body.origem, "llm");
+  assert.equal(miss.body.pecas[0].titulo.m, "FT_FIL_PESSOA");
+  assert.deepEqual(miss.body.pecas[0].titulo.a, ["p600000"]);
+  assert.equal(miss.body.pecas[0].titulo.x, "Com Diretora B, de quem você gosta");
+  assert.equal(miss.body.pecas[0].motivo.c0.x, "Com Diretora B, que você acompanha.");
+  assert.ok(!JSON.stringify(miss.body).includes("Da mesma pessoa"));
+
+  // KV nao persiste `x` nem o nome "Diretora B".
+  assert.equal(kv.mapa.size, 1);
+  const kvVal = [...kv.mapa.values()][0].valor;
+  assert.ok(!kvVal.includes("\"x\""));
+  assert.ok(!kvVal.includes("Diretora B"));
+
+  // Hit devolve exatamente o mesmo JSON com 1 unica chamada ao LLM.
+  const hit = await post("/v1/farol/compor", req, { token: "tok-gosto-b", perfil: 2 });
+  assert.deepEqual(hit.body, miss.body);
+  assert.equal(chamadasLlm.length, 1);
+
+  // Paridade nos idiomas distintos (ex.: en, ja, zh-tw).
+  for (const [idioma, espTit, espMot] of [
+    ["en", "With Diretora B, whose work you like", "With Diretora B, who you follow."],
+    ["ja", "お気に入りの Diretora B", "Diretora B — フォローしている人"],
+    ["zh-TW", "你喜歡的 Diretora B", "Diretora B——你關注的人"],
+  ]) {
+    const rLang = await post("/v1/farol/compor", { ...req, idioma });
+    assert.equal(rLang.body.origem, "llm");
+    assert.equal(rLang.body.pecas[0].titulo.x, espTit);
+    assert.equal(rLang.body.pecas[0].motivo.c0.x, espMot);
   }
 });
