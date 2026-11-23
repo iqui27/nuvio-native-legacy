@@ -2723,9 +2723,25 @@ static void lembrarProximoDoConcluido(void) {
 }
 // Test hook for tests/app_next_manual.c: the episode playing now just finished.
 void player_teste_concluiu(void) { lembrarProximoDoConcluido(); }
+// A FONTE QUE ESTA TOCANDO, copiada quando a imagem fica pronta (ver
+// fonteTocandoCopiar). Ao sair do player a pagina do titulo pode pedir fontes
+// de novo ANTES de fecharSessao: a lista trocada por baixo deixava
+// stream_item(stream_atual()) sem a fonte, e nada era guardado para o Retomar
+// do Continuar assistindo (log do dono 23/11, S.W.A.T. T7E8: "addons: consulta
+// inicio" logo antes do encerramento, nenhum "[voltafonte] guardada").
+static Stream fonteTocando;
+static Uint32 fonteTocandoObtida;   // SDL_GetTicks() de quando o link saiu do addon
+static void fonteTocandoCopiar(void) {
+  const Stream *s = stream_item(stream_atual());
+  const char *url = video_url_atual();
+  if (!s || !url[0] || strcmp(s->url, url) || !strcmp(fonteTocando.url, url)) return;
+  fonteTocando = *s;
+  fonteTocandoObtida = SDL_GetTicks() - stream_idade_ms();
+}
 static void lembrarFonte(void) {
   const Stream *s = stream_item(stream_atual());
   const char *url = video_url_atual();
+  Uint32 idade = stream_idade_ms();
   double cred;
   char alvo[64];
   if (ehCanal() || !comVideo) return;
@@ -2733,17 +2749,27 @@ static void lembrarFonte(void) {
   if (erroFonte || video_falhou()) {
     fontevolta_esquecer_alvo(alvo, sessao_usuario(), perfis_ativo(), "sessao falhou"); return;
   }
-  if (!video_pronto() || duracaoSeg < 120.0f) return;
+  if (!video_pronto() || duracaoSeg < 120.0f) {
+    printf("[voltafonte] nao guardada: %s\n", video_pronto() ? "duracao curta" : "video nao ficou pronto");
+    fflush(stdout); return;
+  }
   cred = credEfetivo();
   if (concluiuAgora(cred)) {
     fontevolta_esquecer_alvo(alvo, sessao_usuario(), perfis_ativo(), "titulo concluido");
     lembrarProximoDoConcluido();
     return;
   }
-  // A lista pode ter sido trocada por baixo (a busca de fundo do Retomar que
-  // abriu pela fonte guardada): quem toca e a entrada que ja existe.
-  if (!s || strcmp(s->url, url)) return;
-  fontevolta_guardar(alvo, sessao_usuario(), perfis_ativo(), s, stream_idade_ms(), SDL_GetTicks());
+  // A lista pode ter sido trocada por baixo (a busca da pagina do titulo ao
+  // sair, a busca de fundo do Retomar): vale a copia da fonte que tocou.
+  if ((!s || strcmp(s->url, url)) && url[0] && !strcmp(fonteTocando.url, url)) {
+    s = &fonteTocando; idade = SDL_GetTicks() - fonteTocandoObtida;
+  }
+  // Aberta pela fonte guardada (sem indice na lista): a entrada ja existe.
+  if (!s || strcmp(s->url, url)) {
+    printf("[voltafonte] nao guardada: a fonte que toca nao esta na lista nem na copia\n");
+    fflush(stdout); return;
+  }
+  fontevolta_guardar(alvo, sessao_usuario(), perfis_ativo(), s, idade, SDL_GetTicks());
 }
 
 static void fecharSessao(int manter, int trocaFonte) {
@@ -5024,6 +5050,8 @@ void player_atualizar(float dt, Uint32 agora) {
     memQuadroPendente = 0;
     memlog_evento("primeiro-quadro");
   }
+  // A fonte que toca, para lembrarFonte (barato: so copia quando a URL muda).
+  if (comVideo && video_pronto() && !ehCanal()) fonteTocandoCopiar();
   if (!inicioImagem && comVideo && video_pronto()) {
     inicioImagem = agora; acordar();
     if (medirAbertura && !ehCanal()) {

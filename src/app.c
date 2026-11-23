@@ -308,6 +308,11 @@ static int autoParcialPronto(void) {
 // instante ainda nao tem a lista de episodios nem o "proximo" que
 // continuar_desenhar calculou para desenhar o card.
 static int cwTocarT, cwTocarE;
+// O pedido de reproducao veio do card de Continuar assistindo (ou da ilha):
+// "Reusar o ultimo link" toca a fonte guardada mesmo com "Escolher a fonte ao
+// reproduzir" ligado — e o "Remember last selected source in Continue
+// Watching" do Nuvio. Consumido pelo proximo "abrir: reproduzir pedido".
+static int cwRetomar;
 // Episode the source sheet was opened FOR (#513). Not cwTocar: that slot is
 // rewritten every frame by Continue Watching, the island and the agenda, and
 // the sheet stays up across frames (stream_folha_aberta eats the keys). A
@@ -1330,7 +1335,7 @@ static int retentarCanal(void) {
   return 0;
 }
 
-static int tocarFonteGuardada(void) {
+static int tocarFonteGuardada(int deCw) {
   Stream s;
   char alvo[64];
   Uint32 started = SDL_GetTicks();
@@ -1341,7 +1346,9 @@ static int tocarFonteGuardada(void) {
   // sozinha. A folha e quem escolhe (detail_pediu_fontes, e o #62 quando a
   // lista chega). O Retomar do Continuar assistindo pede reproducao e cai
   // aqui tambem — com o ajuste ligado ele espera a folha, como o Play.
-  if (!fontevolta_toca_guardada(ajustes_fonte_manual(),
+  // Do card de Continuar assistindo com "Reusar o ultimo link": a fonte
+  // guardada toca mesmo com a folha pedida ao reproduzir.
+  if (!fontevolta_toca_guardada(ajustes_fonte_manual() && !(deCw && ajustes_link_reusar()),
                                 player_id_canal()[0], player_aberto()))
     return 0;
   alvoPlayer(alvo, sizeof alvo);
@@ -1369,7 +1376,7 @@ static int tocarFonteGuardada(void) {
   return 1;
 }
 // Test hook for tests/detail_ep_fonte.c. Same function the router calls.
-int app_teste_tocar_guardada(void) { return tocarFonteGuardada(); }
+int app_teste_tocar_guardada(void) { return tocarFonteGuardada(0); }
 // Test hooks for tests/detail_ep_fonte_trava.c.
 void app_teste_cw_tocar(int t, int e) { cwTocarT = t; cwTocarE = e; }
 void app_teste_gravar_folha(int t, int e, int tem) { gravarFolhaTocar(t, e, tem); }
@@ -2531,7 +2538,7 @@ static void abrirProximoEpisodio(int t, int e, int apontar) {
     // The search resets VOD state, including buscaNextAlvo. Arm Next only
     // afterwards so manual-source mode can follow the playing release.
     snprintf(buscaNextAlvo, sizeof buscaNextAlvo, "%s", alvo);
-    if (!tocarParteGuardada() && !(ajustes_link_reusar() && tocarFonteGuardada())) aguardandoFonte = 1;
+    if (!tocarParteGuardada() && !(ajustes_link_reusar() && tocarFonteGuardada(0))) aguardandoFonte = 1;
   }
 }
 static void proximoPreparoPasso(void) {
@@ -3913,7 +3920,7 @@ static void perfilEncerrarSessao(void) {
   canalViaProxy = stalkerTentativas = stalkerRenovando = 0;
   memset(&liveStall, 0, sizeof liveStall);
   abrirTeste[0] = 0;
-  cwTocarT = cwTocarE = cwEspera = 0;
+  cwTocarT = cwTocarE = cwEspera = cwRetomar = 0;
   cwEsperaDesde = 0;
   memset(&cwEsperaItem, 0, sizeof cwEsperaItem);
   prefFolhaN = -1;
@@ -5666,6 +5673,7 @@ void app_atualizar(float dt, Uint32 agora) {
         cwTocarT = cwTocarE = 0; cwEspera = 0;
         if (o == ILHA_PEDIU_TOCAR && ic.serie && ic.t >= 0 && ic.e > 0) { cwTocarT = ic.t; cwTocarE = ic.e; }
         abrirPorIndice(idx);
+        cwRetomar = o == ILHA_PEDIU_TOCAR;
         if (o == ILHA_PEDIU_TOCAR) detail_pedir_reproduzir();
       } else desc_pedir_titulo(ic.imdb);
     } else if (o == ILHA_PEDIU_DISPENSAR) {
@@ -5994,6 +6002,7 @@ void app_atualizar(float dt, Uint32 agora) {
         }
         abrirTitulo(&it, 1, 1);
         if (cwEspera) desc_episodios(detail_indice(), 0);
+        cwRetomar = tocar || cwEspera;
         if (tocar) detail_pedir_reproduzir();
       }
     } else if (tela == TELA_BUSCA && busca_pediu_pessoa(&pedPessoa)) {
@@ -6023,6 +6032,7 @@ void app_atualizar(float dt, Uint32 agora) {
     if (!detail_aberto() || player_aberto() ||
         SDL_GetTicks() - cwEsperaDesde > CW_ESPERA_MS) {
       printf("[cw] %s: lista nao chegou a tempo; fica so a pagina\n", cwEsperaItem.imdb);
+      if (!player_aberto()) cwRetomar = 0;
       cwEspera = 0; cwTocarT = cwTocarE = 0;
     } else {
       int k = cat_indice_titulo(cwEsperaItem.imdb, detail_indice());
@@ -6135,7 +6145,10 @@ void app_atualizar(float dt, Uint32 agora) {
         player_precarregar_cancelar(preparo.token); preparo.token = 0;
       }
 #endif
-      int usouPreparo = !ajustes_fonte_manual() &&
+      // Do Continuar assistindo com "Reusar o ultimo link": a fonte guardada
+      // vem antes da que a pagina preparou (tocarFonteGuardada abaixo).
+      int deCw = cwRetomar; cwRetomar = 0;
+      int usouPreparo = !ajustes_fonte_manual() && !(deCw && ajustes_link_reusar()) &&
                        preparoUsar(alvoPreparo, lembradaPreparo, &idxPreparado);
       // Armado antes da abertura: o proximo quadro nao cancela o worker
       // quando a pagina do titulo cede lugar ao player.
@@ -6187,7 +6200,7 @@ void app_atualizar(float dt, Uint32 agora) {
       } else {
         if (usouPreparo) limparFonteVOD();
         renovarListaDoPlayer();
-        if (tocarParteGuardada() || tocarFonteGuardada()) { preparoEspera = 0; }
+        if (tocarParteGuardada() || tocarFonteGuardada(deCw)) { preparoEspera = 0; }
         else {
           aguardandoFonte = 1;
           if (!doInicio) detalheSeguirDepoisDoFim(alvoDefinitivo);
@@ -6992,7 +7005,7 @@ void app_atualizar(float dt, Uint32 agora) {
       marco("buscando fontes"); buscarParaPlayer();
       // "Reusar o ultimo link": o episodio ja tocou com um link que vale? Abre
       // nele; a busca acima segue em segundo plano para o recuo e a folha.
-      if (!tocarParteGuardada() && !(ajustes_link_reusar() && tocarFonteGuardada())) aguardandoFonte=1;
+      if (!tocarParteGuardada() && !(ajustes_link_reusar() && tocarFonteGuardada(0))) aguardandoFonte=1;
     }
   }
   { int t,e;
