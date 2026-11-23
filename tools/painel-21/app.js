@@ -51,7 +51,9 @@ function overview() {
   const totalDone = done(data.items), percent = Math.round(fd / farol.length * 100);
   const batchCount = data.items.filter(i=>i.status==='LOTE').length;
   const fc = s => farol.filter(i=>s.includes(i.status)).length;
-  const segments = [[fd,'done'],[fc(['APROVADA','REVISAO','PR_ABERTA']),'review'],[fc(['LOTE']),'batch'],[fc(['IMPLEMENTANDO','CORRECAO']),'active']];
+  const segments = [[fd,'done'],[fc(['APROVADA','REVISAO','PR_ABERTA']),'review'],[fc(['LOTE']),'batch'],[fc(['IMPLEMENTANDO','CORRECAO']),'active'],[fc(['BLOQUEADA']),'blocked']];
+  const activeCount=fc(['IMPLEMENTANDO','CORRECAO']), blockedCount=fc(['BLOQUEADA']);
+  const accessibleSummary=`${fd} integrados, ${fc(['APROVADA','REVISAO','PR_ABERTA'])} em revisão ou aprovados, ${fc(['LOTE'])} em lote, ${activeCount} em andamento, ${blockedCount} bloqueados, ${fc(['A_FAZER','POR_ULTIMO'])} a fazer ou por último. Total ${farol.length} itens.`;
   let cursor = 0;
   const svg = segments.map(([n,c]) => {const x=cursor;cursor+=n;return `<rect x="${x}" y="0" width="${n}" height="8" class="fill-${c}"/>`;}).join('');
   return `<section class="metrics" aria-label="Resumo da release">
@@ -62,8 +64,8 @@ function overview() {
   </section>
   <div class="overview-grid"><section class="panel"><div class="panel-heading"><div><h2>O Farol está tomando forma</h2><p class="subheading">Diagnóstico + gosto · do planejamento à integração</p></div><button class="text-link" data-view="board">Ver quadro ↗</button></div>
     <div class="progress-summary"><strong>${percent}%</strong><span>integrado · ${farol.length-fd} itens pela frente</span></div>
-    <svg class="stacked-progress" viewBox="0 0 ${farol.length} 8" preserveAspectRatio="none" role="img" aria-label="${fd} integrados, ${fc(['APROVADA'])} aprovados, ${fc(['LOTE'])} em lote, ${fc(['A_FAZER','POR_ULTIMO'])} a fazer"><rect width="${farol.length}" height="8" class="fill-pending"/>${svg}</svg>
-    <div class="progress-legend"><span><i class="legend-dot"></i>Integrado ${fd}</span><span><i class="legend-dot review"></i>Aprovado ${fc(['APROVADA'])}</span><span><i class="legend-dot batch"></i>Em lote ${fc(['LOTE'])}</span><span>A fazer + fechos ${fc(['A_FAZER','POR_ULTIMO'])}</span></div>
+    <svg class="stacked-progress" viewBox="0 0 ${farol.length} 8" preserveAspectRatio="none" role="img" aria-label="${esc(accessibleSummary)}"><rect width="${farol.length}" height="8" class="fill-pending"/>${svg}</svg>
+    <div class="progress-legend"><span><i class="legend-dot"></i>Integrado ${fd}</span><span><i class="legend-dot review"></i>Revisão / aprovado ${fc(['APROVADA','REVISAO','PR_ABERTA'])}</span><span><i class="legend-dot batch"></i>Em lote ${fc(['LOTE'])}</span>${activeCount?`<span><i class="legend-dot active"></i>Em andamento ${activeCount}</span>`:''}${blockedCount?`<span><i class="legend-dot blocked"></i>Bloqueado ${blockedCount}</span>`:''}<span>A fazer + fechos ${fc(['A_FAZER','POR_ULTIMO'])}</span></div>
     ${Object.entries(GROUPS).map(([key,name])=>{const list=data.items.filter(i=>i.group===key);return `<div class="front-row"><div class="front-title"><span class="front-dot ${key}"></span><div><button data-group="${key}">${name}</button><small>${key==='prs'?'Frente paralela · escopo sinalizado por item':key==='ux'?'Tokens, primitivas e coerência visual':`${list.length} itens identificados`}</small></div></div>${meter(done(list),list.length)}<span class="fraction">${done(list)}/${list.length}</span></div>`;}).join('')}
   </section><aside class="attention-column"><section class="panel attention"><div class="panel-heading"><h2><span class="alert-icon">◷</span> Precisa do Henrique</h2><span class="badge status-LOTE">${pendingGates().length}</span></div>
     ${pendingGates().filter(g=>['tv-680','tv-778','worker'].includes(g.id)).map(g=>`<button class="gate-preview" data-view="gates"><strong>${esc(g.title)} ↗</strong><span>${g.kind==='tv'?'Teste em TV física pendente':'Deploy manual · não confirmado'}</span></button>`).join('')}
