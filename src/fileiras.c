@@ -1256,7 +1256,7 @@ static void registrar(const FilPassada *passada, const char *chave,
     return;
   }
   if (i < 0) {
-    // Chave nova entra no FIM, nunca no meio: a mesma regra do
+    // Catalogo novo entra no FIM: a mesma regra do
     // ensureOrderKeysWithPrefs do web. Catalogo que o addon passou a declarar
     // hoje nao pode empurrar para baixo a fileira que a pessoa deixou no topo.
     // TABELA CHEIA: DESPEJA UMA DISPENSAVEL EM VEZ DE RECUSAR A NOVA.
@@ -1357,7 +1357,14 @@ static void registrar(const FilPassada *passada, const char *chave,
                 sizeof(Linha) * (size_t)(nLinhas - 1 - v));
       nLinhas--;
     }
-    i = nLinhas++;
+    i = nLinhas;
+    if (ordemLocal && !strcmp(chave, HOME_ASSISTIU_CHAVE)) {
+      int cw = achar("continue_watching");
+      int farol = cw < 0 ? achar("farol_gosto1") : -1;
+      i = cw >= 0 ? cw + 1 : farol >= 0 ? farol : 0;
+      memmove(&linhas[i + 1], &linhas[i], sizeof(Linha) * (size_t)(nLinhas - i));
+    }
+    nLinhas++;
     memset(&linhas[i], 0, sizeof linhas[i]);
     snprintf(linhas[i].chave, FIL_CHAVE, "%s", chave);
     linhas[i].tam = FIL_TAM_PADRAO;

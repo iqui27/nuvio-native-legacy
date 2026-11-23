@@ -816,6 +816,32 @@ int mapa_ler_lista(const char *json, int serie, MapaObra *o, int max, int *total
   return n;
 }
 
+int mapa_ler_recomendacoes(const char *json, int serie, MapaRecomendacoes *saida) {
+  const char *p, *lista, *fim;
+  memset(saida, 0, sizeof *saida);
+  if (!json) return -1;
+  lerGenerosDetalhe(json, saida->generos, &saida->nGen, MAPA_GEN_MAX);
+  lista = valorRaiz(json, NULL, "recommendations");
+  if (!lista || *lista != '{' || !(fim = js_fim(lista))) return -1;
+  for (p = js_array(lista, fim, "results"); p && p < fim && *p == '{' &&
+       saida->n < MAPA_REC_MAX; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    MapaRecomendacao *r = &saida->obras[saida->n];
+    char original[160] = "";
+    const char *adulto = valorRaiz(p, f, "adult");
+    if (adulto && !strncmp(adulto, "true", 4)) continue;
+    lerObraLista(p, f, &r->obra, NULL, NULL);
+    if (r->obra.tmdb <= 0 || !r->obra.titulo[0]) continue;
+    snprintf(r->obra.tipo, sizeof r->obra.tipo, "%s", serie ? "series" : "movie");
+    js_texto(p, f, "imdb_id", r->obra.imdb, sizeof r->obra.imdb);
+    js_texto(p, f, serie ? "original_name" : "original_title", original, sizeof original);
+    r->tituloHash = mapa_hash_titulo(r->obra.titulo);
+    r->originalHash = original[0] ? mapa_hash_titulo(original) : 0;
+    saida->n++;
+  }
+  return saida->n;
+}
+
 static int igualSemCaixa(const char *a, const char *b) {
   for (; *a && *b; a++, b++)
     if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) return 0;
@@ -2133,22 +2159,23 @@ static int listaDoTmdb(const char *caminho, int serie, const char *chave, const 
 }
 
 int mapa_recomendacoes_tmdb(const char *imdb, long tmdb, int serie,
-                            const char *chave, const char *idioma, long *ids, int max) {
-  MapaObra obras[MAPA_REC_MAX];
-  char caminho[64], tipo[8] = "";
-  if (!chave[0] || max < 1) return 0;
+                            const char *chave, const char *idioma, MapaRecomendacoes *saida) {
+  char url[600], tipo[8] = "", *corpo;
+  if (!chave[0]) return 0;
   if (tmdb <= 0 && !strncmp(imdb, "tt", 2) && imdb[2] &&
       !imdb[2 + strspn(imdb + 2, "0123456789")]) {
     tmdb = resolverTmdb(imdb, tipo, sizeof tipo, chave, idioma);
     if (*tipo && serie != !strcmp(tipo, "series")) return 0;
   }
   if (tmdb <= 0) return 0;
-  snprintf(caminho, sizeof caminho, "%s/%ld/recommendations",
-           serie ? "tv" : "movie", tmdb);
-  int n = listaDoTmdb(caminho, serie, chave, idioma, obras,
-                      max < MAPA_REC_MAX ? max : MAPA_REC_MAX, NULL);
-  for (int i = 0; i < n; i++) ids[i] = obras[i].tmdb;
-  return n > 0 ? n : 0;
+  snprintf(url, sizeof url,
+           "https://api.themoviedb.org/3/%s/%ld?api_key=%s&language=%s&append_to_response=recommendations",
+           serie ? "tv" : "movie", tmdb, chave, idioma);
+  corpo = rede_baixar(url, 20);
+  if (!corpo) return 0;
+  int ok = mapa_ler_recomendacoes(corpo, serie, saida) >= 0;
+  free(corpo);
+  return ok;
 }
 
 static void *vizTrabalhar(void *arg) {

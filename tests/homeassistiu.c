@@ -3,7 +3,7 @@
 #include "../src/homeassistiu.c"
 #include "fileiras.h"
 
-static CatItem catalogo[HIST_LOTE + 2];
+static CatItem catalogo[HIST_LOTE + 2 + HOME_ASSISTIU_MAX];
 static int nCatalogo = 24, consultasHistorico;
 static unsigned versao = 1;
 static uint64_t sessao = 1;
@@ -12,10 +12,22 @@ static ProgRegistro regs[2];
 static char visto[16];
 static long resposta = 108;
 static int pedidos;
+static const char *respostaJson;
+static int lotes;
 
 int cat_n(void) { return nCatalogo; }
 const CatItem *cat_item(int i) { return &catalogo[i]; }
 unsigned cat_revisao_itens(void) { return versao; }
+int cat_acrescentar_lote(const CatItem *v, int qtd, int *saida) {
+  assert(nCatalogo + qtd <= (int)(sizeof catalogo / sizeof *catalogo));
+  for (int i = 0; i < qtd; i++) {
+    saida[i] = nCatalogo;
+    catalogo[nCatalogo++] = v[i];
+  }
+  lotes++;
+  versao++;
+  return qtd;
+}
 int cat_indice_por_imdb_tipo(const char *id, const char *tipo) {
   for (int i = 0; i < cat_n(); i++)
     if (!strcmp(id, catalogo[i].imdb) && !strcmp(tipo, catalogo[i].tipo)) return i;
@@ -36,6 +48,8 @@ int prog_ler(ProgRegistro *saida, int max) {
 }
 uint64_t perfis_sessao_geracao(void) { return __atomic_load_n(&sessao, __ATOMIC_ACQUIRE); }
 int perfis_sessao_atual(uint64_t g) { return g == perfis_sessao_geracao(); }
+int perfis_sessao_travar(uint64_t g) { return perfis_sessao_atual(g); }
+void perfis_sessao_destravar(void) {}
 int farolsinal_recomendar(void) { return ligado; }
 int perfil_infantil_ativo(void) { return !adulto; }
 const char *desc_chave_tmdb(void) { return rede ? "fake-key" : ""; }
@@ -48,11 +62,16 @@ int dados_gravar(const char *nome, const char *conteudo) {
   (void)nome; (void)conteudo; return 1;
 }
 int mapa_recomendacoes_tmdb(const char *id, long tmdb, int serie, const char *chave,
-                            const char *idioma, long *ids, int max) {
-  assert(!strcmp(id, "tt900") && !tmdb && !serie && max >= 1);
+                            const char *idioma, MapaRecomendacoes *saida) {
+  assert(!strcmp(id, "tt900") && !tmdb && !serie);
   assert(!strcmp(chave, "fake-key") && !strcmp(idioma, "pt-BR"));
   pedidos++;
-  ids[0] = resposta;
+  if (respostaJson) return mapa_ler_recomendacoes(respostaJson, serie, saida) >= 0;
+  memset(saida, 0, sizeof *saida);
+  if (resposta) {
+    saida->n = 1;
+    saida->obras[0].obra.tmdb = resposta;
+  }
   return resposta != 0;
 }
 
@@ -193,6 +212,52 @@ int main(void) {
   assert(pedidos == 4 && home_assistiu_itens(out) > 0);
   conferirRotulo("Parecidos no seu catálogo");
   puts("ok  falha retenta com backoff; resultado TMDB sem correspondência não muda o rótulo local");
+
+  catalogo[0].genero[0] = 0;
+  strcpy(catalogo[2].titulo, "The original: title");
+  strcpy(catalogo[2].meta, "2022 · 2h");
+  catalogo[2].tmdb = 0;
+  strcpy(catalogo[8].titulo, "The original title");
+  strcpy(catalogo[8].meta, "1980");
+  catalogo[8].tmdb = 0;
+  respostaJson = "{\"recommendations\":{\"results\":["
+                 "{\"id\":108,\"title\":\"Título localizado\",\"original_title\":\"The Original Title\","
+                 "\"release_date\":\"2022-01-01\",\"poster_path\":\"/test.jpg\"}]}}";
+  agora += REDE_INTERVALO_MS;
+  __atomic_add_fetch(&sessao, 1, __ATOMIC_RELEASE);
+  versao++;
+  home_assistiu_passo(agora);
+  aguardarResposta(4);
+  home_assistiu_passo(agora + 1);
+  assert(home_assistiu_itens(out) == 1 && out[0] == 2 && lotes == 0);
+  conferirRotulo("Porque você assistiu Semente do catálogo substituído");
+  puts("ok  catálogo só com IMDb casa pelo título original e ano, sem confundir homônimos");
+
+  respostaJson = "{\"genres\":[{\"id\":18,\"name\":\"Drama\"}],"
+                 "\"recommendations\":{\"results\":[]}}";
+  agora += REDE_INTERVALO_MS;
+  __atomic_add_fetch(&sessao, 1, __ATOMIC_RELEASE);
+  home_assistiu_passo(agora);
+  aguardarResposta(5);
+  home_assistiu_passo(agora + 1);
+  assert(home_assistiu_itens(out) > 0 && lotes == 0);
+  conferirRotulo("Parecidos no seu catálogo");
+  puts("ok  gêneros da semente no TMDB alimentam o fallback local");
+
+  respostaJson = "{\"recommendations\":{\"results\":["
+                 "{\"id\":502,\"title\":\"Fora do catálogo\",\"release_date\":\"2024-01-01\","
+                 "\"poster_path\":\"/remote.jpg\"}]}}";
+  agora += REDE_INTERVALO_MS;
+  __atomic_add_fetch(&sessao, 1, __ATOMIC_RELEASE);
+  home_assistiu_passo(agora);
+  aguardarResposta(6);
+  home_assistiu_passo(agora + 1);
+  assert(home_assistiu_itens(out) == 1 && lotes == 1);
+  assert(!strcmp(catalogo[out[0]].imdb, "tmdb:502") && catalogo[out[0]].tmdb == 502);
+  assert(!strcmp(catalogo[out[0]].meta, "2024"));
+  home_assistiu_passo(agora + 2);
+  assert(home_assistiu_itens(out) == 1 && lotes == 1);
+  puts("ok  sem candidatos locais, publica card TMDB navegável uma única vez");
 
   const char *const chaves[] = { "continue_watching", HOME_ASSISTIU_CHAVE, "farol_gosto1" };
   int ordem[3];

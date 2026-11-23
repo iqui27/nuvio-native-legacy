@@ -28,8 +28,8 @@ typedef struct {
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static Consulta consulta;
 static char chaveTmdb[96];
-static int ocupada, pedida, nRemotos;
-static long remotos[MAPA_REC_MAX];
+static int ocupada, pedida, recebeu;
+static MapaRecomendacoes remotos;
 static unsigned remotoRev;
 static uint32_t ultimoPedido;
 static uint32_t backoff;
@@ -101,35 +101,59 @@ static const CatItem *semente(int reiniciar, int infantil, int *pendente) {
   return *pendente ? NULL : item(melhor);
 }
 
-static int montar(const CatItem *base, const long *ids, int nIds, int infantil,
-                  int saida[HOME_ASSISTIU_MAX], int *comTmdb) {
+static int recIndice(const CatItem *c, const MapaRecomendacoes *rec) {
+  long tmdb = idTmdb(c);
+  int ano = mapa_ano_meta(c->meta);
+  unsigned titulo = ano ? mapa_hash_titulo(c->titulo) : 0;
+  for (int j = 0; j < rec->n; j++) {
+    const MapaRecomendacao *r = &rec->obras[j];
+    if (tmdb > 0) {
+      if (tmdb == r->obra.tmdb) return j;
+    } else if (r->obra.imdb[0] && idbase_e_imdb(c->imdb)) {
+      size_t len = idbase_len(c->imdb);
+      if (len == strlen(r->obra.imdb) && !strncmp(c->imdb, r->obra.imdb, len)) return j;
+    } else if (titulo && ano == r->obra.ano &&
+               (titulo == r->tituloHash || titulo == r->originalHash)) return j;
+  }
+  return -1;
+}
+
+#define PONTOS_TMDB ((MAPA_GEN_MAX + 1) * 128)
+
+static int montar(const CatItem *base, const MapaRecomendacoes *rec, int infantil,
+                  int saida[HOME_ASSISTIU_MAX], int *comTmdb, unsigned *noCatalogo) {
   MapaEtiqueta gen[MAPA_GEN_MAX];
   int nGen, notas[HOME_ASSISTIU_MAX], n = 0, total = cat_n();
   mapa_generos_locais(base->genero, gen, &nGen, MAPA_GEN_MAX);
+  if (!nGen) {
+    nGen = rec->nGen;
+    memcpy(gen, rec->generos, (size_t)nGen * sizeof *gen);
+    for (int g = 0; g < nGen; g++) gen[g].id = mapa_hash_nome(gen[g].nome);
+  }
   for (int i = 0; i < total; i++) {
     const CatItem *c = item(i);
-    if (!tipoValido(c) || strcmp(c->tipo, base->tipo) || !c->titulo[0] ||
-        !c->poster[0] || c->progresso > 0 || mesmoTitulo(c, base) ||
+    if (!tipoValido(c) || strcmp(c->tipo, base->tipo)) continue;
+    int remoto = rec->n ? recIndice(c, rec) : -1;
+    if (remoto >= 0) *noCatalogo |= 1u << remoto;
+    if (!c->titulo[0] || !c->poster[0] || c->progresso > 0 || mesmoTitulo(c, base) ||
         (infantil && !perfil_infantil_classif_ok(c->classificacao))) continue;
-    int pontos = 0, j;
-    long tmdb = idTmdb(c);
-    for (j = 0; tmdb > 0 && j < nIds; j++) if (ids[j] == tmdb) {
-      pontos = (MAPA_REC_MAX - j + MAPA_GEN_MAX) * 128;
-      break;
-    }
+    int pontos = remoto < 0 ? 0 : (MAPA_REC_MAX - remoto + MAPA_GEN_MAX) * 128, j;
     if (!pontos && nGen) {
       MapaEtiqueta cg[MAPA_GEN_MAX];
       int nc;
       mapa_generos_locais(c->genero, cg, &nc, MAPA_GEN_MAX);
       for (int g = 0; g < nGen; g++)
-        for (j = 0; j < nc; j++) if (gen[g].id == cg[j].id) {
+        for (j = 0; j < nc; j++) if (gen[g].id == cg[j].id ||
+            (rec->nGen && (mapa_genero_mascara(gen[g].nome) & mapa_genero_mascara(cg[j].nome)))) {
           pontos += 128;
           break;
         }
     }
     if (!pontos || cat_visto(c)) continue;
     pontos += c->nota < 0 ? 0 : c->nota > 100 ? 100 : c->nota;
-    for (j = 0; j < n; j++) if (mesmoTitulo(c, item(saida[j]))) break;
+    for (j = 0; j < n; j++)
+      if (mesmoTitulo(c, item(saida[j])) ||
+          (pontos >= PONTOS_TMDB && pontos / 128 == notas[j] / 128)) break;
     if (j < n) {
       if (pontos <= notas[j]) continue;
       for (; j + 1 < n; j++) { notas[j] = notas[j+1]; saida[j] = saida[j+1]; }
@@ -142,21 +166,63 @@ static int montar(const CatItem *base, const long *ids, int nIds, int infantil,
     notas[j] = pontos;
     saida[j] = i;
   }
-  *comTmdb = n > 0 && notas[0] >= (MAPA_GEN_MAX + 1) * 128;
+  *comTmdb = n > 0 && notas[0] >= PONTOS_TMDB;
   return n;
+}
+
+static int acrescentarRemotos(const MapaRecomendacoes *rec, const CatItem *base,
+                              unsigned noCatalogo, NvPerfilSessao sessao, unsigned *cat,
+                              int saida[HOME_ASSISTIU_MAX]) {
+  CatItem *lote = calloc((size_t)(rec->n < HOME_ASSISTIU_MAX ? rec->n : HOME_ASSISTIU_MAX),
+                         sizeof *lote);
+  ProgRegistro prog[HIST_MAX];
+  int n = 0;
+  if (!lote) return 0;
+  int nProg = prog_ler(prog, HIST_MAX);
+  for (int i = 0; i < rec->n && n < HOME_ASSISTIU_MAX; i++) {
+    const MapaObra *o = &rec->obras[i].obra;
+    CatItem *c = &lote[n];
+    int j;
+    if ((noCatalogo & (1u << i)) || !o->poster[0]) continue;
+    c->tmdb = o->tmdb;
+    if (idbase_e_imdb(o->imdb)) snprintf(c->imdb, sizeof c->imdb, "%s", o->imdb);
+    else snprintf(c->imdb, sizeof c->imdb, "tmdb:%ld", o->tmdb);
+    snprintf(c->tipo, sizeof c->tipo, "%s", o->tipo);
+    if (mesmoTitulo(c, base) || cat_visto(c)) continue;
+    for (j = 0; j < n; j++) if (mesmoTitulo(c, &lote[j])) break;
+    if (j < n) continue;
+    for (j = 0; j < nProg; j++)
+      if (prog[j].posSeg > 0 && !strcmp(prog[j].contentId, c->imdb) &&
+          !strcmp(prog[j].tipo, c->tipo)) break;
+    if (j < nProg) continue;
+    snprintf(c->titulo, sizeof c->titulo, "%s", o->titulo);
+    snprintf(c->poster, sizeof c->poster, "%s", o->poster);
+    snprintf(c->backdrop, sizeof c->backdrop, "%s", o->fundo);
+    snprintf(c->sinopse, sizeof c->sinopse, "%s", o->sinopse);
+    if (o->ano) snprintf(c->meta, sizeof c->meta, "%d", o->ano);
+    c->nota = o->nota;
+    n++;
+  }
+  int publicados = 0;
+  if (n && nv_perfil_sessao_travar(sessao)) {
+    if (*cat == cat_revisao_itens()) publicados = cat_acrescentar_lote(lote, n, saida);
+    nv_perfil_sessao_destravar();
+  }
+  free(lote);
+  if (publicados) ++*cat;
+  return publicados;
 }
 
 static void *buscar(void *arg) {
   (void)arg;
   Consulta q = consulta;
-  long ids[MAPA_REC_MAX];
-  int n = 0;
+  MapaRecomendacoes resposta;
+  int ok = 0;
   if (nv_perfil_sessao_atual(q.sessao))
-    n = mapa_recomendacoes_tmdb(q.id, q.tmdb, q.serie, chaveTmdb,
-                                 q.idioma, ids, MAPA_REC_MAX);
+    ok = mapa_recomendacoes_tmdb(q.id, q.tmdb, q.serie, chaveTmdb, q.idioma, &resposta);
   pthread_mutex_lock(&trava);
-  nRemotos = nv_perfil_sessao_atual(q.sessao) ? n : 0;
-  memcpy(remotos, ids, (size_t)nRemotos * sizeof *ids);
+  recebeu = ok && nv_perfil_sessao_atual(q.sessao);
+  if (recebeu) remotos = resposta;
   memset(chaveTmdb, 0, sizeof chaveTmdb);
   ocupada = 0;
   __atomic_add_fetch(&remotoRev, 1u, __ATOMIC_RELEASE);
@@ -164,18 +230,16 @@ static void *buscar(void *arg) {
   return NULL;
 }
 
-static int recomendacoes(const Consulta *q, const char *chave, uint32_t agora,
-                          long *ids, uint32_t *aguarda) {
+static void recomendacoes(const Consulta *q, const char *chave, uint32_t agora,
+                           MapaRecomendacoes *saida, uint32_t *aguarda) {
   pthread_t fio;
-  int n = 0;
   pthread_mutex_lock(&trava);
   int mesma = pedida && consulta.sessao == q->sessao && consulta.tmdb == q->tmdb &&
               consulta.serie == q->serie && !strcmp(consulta.id, q->id) &&
               !strcmp(consulta.idioma, q->idioma);
   uint32_t intervalo = mesma ? backoff : REDE_INTERVALO_MS;
-  if (mesma && nRemotos) {
-    n = nRemotos;
-    memcpy(ids, remotos, (size_t)n * sizeof *ids);
+  if (mesma && recebeu) {
+    *saida = remotos;
   } else if (ocupada) {
     // O fim do trabalho muda remotoRev.
   } else if (pedida && agora - ultimoPedido < intervalo) {
@@ -184,7 +248,7 @@ static int recomendacoes(const Consulta *q, const char *chave, uint32_t agora,
     consulta = *q;
     snprintf(chaveTmdb, sizeof chaveTmdb, "%s", chave);
     ocupada = pedida = 1;
-    nRemotos = 0;
+    recebeu = 0;
     ultimoPedido = agora;
     backoff = !mesma ? REDE_INTERVALO_MS :
               backoff < REDE_BACKOFF_MAX_MS ? 2 * backoff : backoff;
@@ -192,7 +256,6 @@ static int recomendacoes(const Consulta *q, const char *chave, uint32_t agora,
     else { ocupada = 0; memset(chaveTmdb, 0, sizeof chaveTmdb); *aguarda = backoff; }
   }
   pthread_mutex_unlock(&trava);
-  return n;
 }
 
 unsigned home_assistiu_passo(uint32_t agora) {
@@ -217,16 +280,22 @@ unsigned home_assistiu_passo(uint32_t agora) {
   if (ligado && cat_n()) {
     const CatItem *base = semente(reiniciar, infantil, &pendente);
     if (base && nv_perfil_sessao_atual(sessao)) {
-      long ids[MAPA_REC_MAX];
-      int nIds = 0, comTmdb;
+      static MapaRecomendacoes rec;
+      int comTmdb;
+      unsigned noCatalogo = 0;
+      rec.n = rec.nGen = 0;
       if (rede) {
         Consulta q = { .sessao = sessao, .tmdb = idTmdb(base),
                        .serie = !strcmp(base->tipo, "series") };
         idbase_copiar(base->imdb, q.id, sizeof q.id);
         snprintf(q.idioma, sizeof q.idioma, "%s", idioma);
-        nIds = recomendacoes(&q, chave, agora, ids, &aguarda);
+        recomendacoes(&q, chave, agora, &rec, &aguarda);
       }
-      n = montar(base, ids, nIds, infantil, saida, &comTmdb);
+      n = montar(base, &rec, infantil, saida, &comTmdb, &noCatalogo);
+      if (!comTmdb && !infantil && rec.n && cat == cat_revisao_itens()) {
+        int novos = acrescentarRemotos(&rec, base, noCatalogo, sessao, &cat, saida);
+        if (novos) { n = novos; comTmdb = 1; }
+      }
       if (comTmdb) snprintf(titulo, sizeof titulo, "%s", base->titulo);
     }
   }

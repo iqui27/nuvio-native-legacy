@@ -10,6 +10,7 @@
 // para a ordem de registro, derrubando as fixas para o fim.
 #include "fileiras.h"
 #include "ajustes.h"   // PALCO_* (#659)
+#include "homeassistiu.h"
 #include "nvtmp.h"
 #include <assert.h>
 #include <stdio.h>
@@ -1564,6 +1565,37 @@ int main(void) {
   usaArquivo = 0;
   puts("ok  #659: fundo do Palco por fileira persiste e respeita fileira fixa do app");
 
+  {
+    const char *conta[] = { "social_activity", "continue_watching", "farol_gosto1" };
+    const char *home[] = { conta[1], HOME_ASSISTIU_CHAVE, conta[2], conta[0] };
+    int ordem[4];
+    fil_esquecer();
+    usaArquivo = 1;
+    fil_definir_perfil(1);
+    assert(dados_gravar("fileirasui-p1.txt",
+      "ordem 1\nlinha social_activity\t0\t0\t0\tAmigos\n"
+      "linha continue_watching\t0\t0\t0\tContinuar\nlinha farol_gosto1\t0\t0\t0\tFarol\n"));
+    fil_recarregar();
+    assert(fil_tem_ordem() && fil_teste_achar(HOME_ASSISTIU_CHAVE) == -1);
+    conferir("ordem salva antes da nova fileira", conta, 3);
+    fil_registrar(HOME_ASSISTIU_CHAVE, "Porque você assistiu…", "", "", 8);
+    fil_gravar_registro();
+    fil_espelhar_ordem(home, NULL, 4);
+    assert(fil_estado_chave(HOME_ASSISTIU_CHAVE) == FIL_NA_HOME);
+    assert(fil_unir(home, 4, ordem, 4) == 4);
+    assert(ordem[0] == 3 && ordem[1] == 0 && ordem[2] == 1 && ordem[3] == 2);
+    assert(!strcmp(fil_chave(2), HOME_ASSISTIU_CHAVE));
+    assert(fil_mover(2, -1) == 1);
+    fil_recarregar();
+    fil_registrar(HOME_ASSISTIU_CHAVE, "Porque você assistiu…", "", "", 8);
+    fil_espelhar_ordem(home, NULL, 4);
+    assert(fil_unir(home, 4, ordem, 4) == 4);
+    assert(ordem[0] == 3 && ordem[1] == 1 && ordem[2] == 0 && ordem[3] == 2);
+    remove(nvt("/fileirasui-p1.txt"));
+    fil_definir_perfil(0);
+    usaArquivo = 0;
+    puts("ok  fileira nova entra após Continuar e depois respeita a posição salva");
+  }
 
   puts("fileiras: tudo ok");
   return 0;
