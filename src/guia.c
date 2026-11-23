@@ -50,6 +50,8 @@
 #include "badges.h"   /* marcas de resolucao no heroi */
 #include "aovivo.h"
 #include "fontecache.h"
+#include "catsnap.h"
+#include "catsnapdisk.h"
 #include "ajustes.h"   /* ajustes_acento: cor do anel de foco */
 #include "ponteiro.h"
 #include "rolagemtoque.h"
@@ -318,6 +320,7 @@ typedef struct {
   int  deCache;                 // a rede falhou e a lista e a do disco
   int  respondeu;               // successful fetch, including filtered-empty results
   long long atualizada;         // epoch da lista
+  long long snapshotStamp, snapshotIdentity;
   int  erro;                    // XT_* (Xtream) ou 1 = nao respondeu
   int  ngi; GGrupoInfo *gi;     // malloc, nomes na arena da lista
   // EPG (M5): canais resolvidos e com grade, por metodo
@@ -325,6 +328,12 @@ typedef struct {
   char urlTvg[1024];            // M3U: url-tvg do cabecalho (nunca em log)
   int  fusoS;                   // deslocamento da grade (M6), das prefs
 } GFonteLtv;
+
+static long long cargaSnapshotStamp;
+static atomic_uint catalogRefreshRevision;
+unsigned guia_catalog_refresh_revision(void) {
+  return atomic_load_explicit(&catalogRefreshRevision,memory_order_relaxed);
+}
 
 // Publicados (so o fio de desenho le).
 static GCanal *canais;   static int nCanais, capCanais;
@@ -473,6 +482,7 @@ static int sFonteChave(const char *ch, int tipo, const char *nome, const char *b
   sLtvF[i].base = ltv_dup(&sArena, base ? base : "");
   sLtvF[i].saude = LTV_SAUDE_OK;
   sLtvF[i].atualizada = (long long)time(NULL);
+  sLtvF[i].snapshotStamp = cargaSnapshotStamp;
   return i;
 }
 static int sFonte(int tipo, const char *ref, const char *nome, const char *base) {
@@ -1554,6 +1564,48 @@ static int carregarCatalogo(const GFonte *f, int fl) {
 }
 
 // --- Stalker, Xtream e M3U para o staging ---------------------------------------
+typedef struct {
+  int canais, cats, mixed, inventario, alts, pendentes, filtrados;
+  size_t cacheBytes;
+} GFonteStage;
+static GFonteStage fonteStageInicio(void) {
+  return (GFonteStage){sNCanais,sNCats,sNMixedVod,sNInventario,sNAlts,sPendentes,sFiltrados,sCacheBytes};
+}
+static void fonteStageDescartar(int f, GFonteStage inicio) {
+  sNCanais=inicio.canais; sNCats=inicio.cats; sNMixedVod=inicio.mixed;
+  sNInventario=inicio.inventario; sNAlts=inicio.alts;
+  sPendentes=inicio.pendentes; sFiltrados=inicio.filtrados; sCacheBytes=inicio.cacheBytes;
+  if(sCache[f])fclose(sCache[f]);
+  sCache[f]=NULL; sCacheN[f]=sCacheErro[f]=sCacheCortada[f]=0;
+  GFonteLtv *fonte=&sLtvF[f];
+  free(fonte->gi); fonte->gi=NULL; fonte->ngi=0;
+  fonte->nCanais=fonte->nGrupos=fonte->total=fonte->cortada=fonte->respondeu=0;
+  fonte->erro=1;
+  guiafiltro_dup_zerar(&sDup);
+  for(int i=0;i<sNCanais;i++){
+    const GCanal *c=&sCanais[i];
+    guiafiltro_dup_registrar(&sFltLive,&sDup,c->fonte,sCats[c->cat].nome,c->nome,sLtvF[c->fonte].nome,i);
+  }
+  if(sInventarioDisco){
+    long cursor=ftell(sInventarioDisco); int ok=cursor>=0;
+    char block[G_INVENTARIO_BLOCO];
+    for(long pos=0;ok;pos+=sizeof block){
+      if(fseek(sInventarioDisco,pos,SEEK_SET)){ok=0;break;}
+      if(fread(block,sizeof block,1,sInventarioDisco)!=1){ok=!ferror(sInventarioDisco);break;}
+      int changed=0;
+      for(size_t off=0;off+4*sizeof(unsigned short)<=sizeof block;){
+        unsigned short h[4];memcpy(h,block+off,sizeof h);
+        if(!h[2]||!h[3]||h[2]>GF_ID||h[3]>GF_NOME||off+sizeof h+h[2]+h[3]>sizeof block)break;
+        if(h[0]==f){h[0]=USHRT_MAX;memcpy(block+off,h,sizeof h);changed=1;}
+        off+=sizeof h+h[2]+h[3];
+      }
+      if(changed&&(fseek(sInventarioDisco,pos,SEEK_SET)||fwrite(block,sizeof block,1,sInventarioDisco)!=1))ok=0;
+    }
+    if(!ok||fseek(sInventarioDisco,cursor,SEEK_SET)){
+      fclose(sInventarioDisco);sInventarioDisco=NULL;sInventarioCortado=1;
+    }
+  }
+}
 static int stCanal(const StalkerCanal *st, void *u) {
   int fl = *(int *)u;
   GCru c = {0};
@@ -1574,7 +1626,9 @@ static int stalkerCarregar(const IptvConta *conta) {
   char chave[LTV_CHAVE]; contaChave(conta, chave, sizeof chave);
   int fl = sFonteChave(chave, LTV_STALKER, conta->nome, "");
   if (fl < 0) return 0;
-  int n = stalker_fonte_canais_cb(conta->id, stCanal, &fl, cargaSessao);
+  GFonteStage inicio=fonteStageInicio();
+  int n=stalker_fonte_canais_cb(conta->id,stCanal,&fl,cargaSessao);
+  if(n<=0)fonteStageDescartar(fl,inicio);
   sLtvF[fl].respondeu = n > 0;
   return n;
 }
@@ -1702,6 +1756,7 @@ static int m3uCarregar(const LtvUrl *u, const char *chave, const char *epgUrl) {
   memset(&x, 0, sizeof x);
   x.fl = chave ? sFonteChave(chave, LTV_M3U, u->nome, "") : sFonte(LTV_M3U, u->url, u->nome, "");
   if (x.fl < 0||!ltv_fonte_ligada(sLtvF[x.fl].chave)) return 0;
+  GFonteStage inicio=fonteStageInicio();
   x.nsel = sGruposEscolhidos(x.fl, x.sel, 256);
   x.conta=chave && fonteConta(&sLtvF[x.fl],&x.contaId);x.origem=u->url;
   if(x.conta) {
@@ -1709,8 +1764,10 @@ static int m3uCarregar(const LtvUrl *u, const char *chave, const char *epgUrl) {
     x.indice=calloc(x.capIndice,sizeof *x.indice);if(!x.indice)return 0;
   }
   ltv_m3u_iniciar(&p, m3uCanal, &x);
-  ok = rede_baixar_fluxo(u->url, 120, NULL, alimentarM3u, &p, 200LL << 20, &st, &bytes);
+  ok=rede_baixar_fluxo(u->url,120,NULL,alimentarM3u,&p,200LL<<20,&st,&bytes);
   ltv_m3u_fim(&p);
+  ok=ok&&(p.cabecalho||p.nCanais>0);
+  if(!ok)fonteStageDescartar(x.fl,inicio);
   free(x.indice);
   snprintf(sLtvF[x.fl].urlTvg, sizeof sLtvF[x.fl].urlTvg, "%s", epgUrl && epgUrl[0] ? epgUrl : p.urlTvg);
   // A chave da fonte e o tamanho; nunca a URL.
@@ -1735,7 +1792,7 @@ static int m3uCarregar(const LtvUrl *u, const char *chave, const char *epgUrl) {
 // struct crua: uma build que mude GCanal le o mesmo arquivo), e
 // ltv-indice-p<perfil>.txt com as chaves na ordem da barra.
 #define GC_MAGIA  0x324c564eu   /* "NVL2" */
-#define GC_VERSAO 3u
+#define GC_VERSAO 4u
 static int cacheLido;          // ja tentou ler nesta sessao
 static unsigned long assinaturaPublicada;
 
@@ -1748,6 +1805,32 @@ static void cacheNomeIndice(char *d, size_t n) {
   int p = perfis_ativo();
   if (p <= 0) snprintf(d, n, "ltv-indice.txt");
   else        snprintf(d, n, "ltv-indice-p%d.txt", p);
+}
+
+static long long cacheIdentidade(const char *chave) {
+  IptvConta contas[IPTV_MAX_CONTAS];
+  char file[96], key[LTV_CHAVE];
+  char *body = NULL;
+  int n = iptv_contas(contas, IPTV_MAX_CONTAS);
+  for (int i = 0; i < n; i++) {
+    contaChave(&contas[i], key, sizeof key);
+    if (strcmp(key, chave)) continue;
+    const char *kind = contas[i].tipo == IPTV_XTREAM ? "xtream" : contas[i].tipo == IPTV_STALKER ? "stalker" : "m3u";
+    if (contas[i].id) snprintf(file, sizeof file, "%s-p%d-s%u.txt", kind, perfis_ativo(), contas[i].id);
+    else snprintf(file, sizeof file, "%s-p%d.txt", kind, perfis_ativo());
+    body = dados_ler(file);
+    break;
+  }
+  if (!strcmp(chave, "g5m3u")) {
+    snprintf(file, sizeof file, "guiav5-source-p%d.json", perfis_ativo());
+    body = dados_ler(file);
+  }
+  uint64_t hash = UINT64_C(14695981039346656037);
+  const char *parts[] = {chave, body ? body : ""};
+  for (int i = 0; i < 2; i++) for (const unsigned char *p = (const unsigned char *)parts[i]; *p; p++)
+    hash = (hash ^ *p) * UINT64_C(1099511628211);
+  free(body);
+  return (long long)(hash & INT64_MAX);
 }
 
 static int cStr(FILE *f, const char *s) {
@@ -1806,6 +1889,7 @@ static void cacheFonteGravar(int f) {
   if (fp) {
     ok = cInt(fp, GC_MAGIA) && cInt(fp, GC_VERSAO) && cInt(fp, F->tipo) && cInt(fp, raw ? sCacheN[f] : F->nCanais) &&
          cInt(fp, F->ngi) && cInt(fp, F->total) && cInt(fp, F->cortada) && cInt(fp, F->atualizada) &&
+         cInt(fp, cacheIdentidade(F->chave)) && cInt(fp, cargaSnapshotStamp) &&
          cStr(fp, F->nome) && cStr(fp, F->base) && cStr(fp, F->urlTvg);
     // Reverse regrouping once per changed channel; leave published counts intact.
     for (i = 0; ok && !raw && i < nCanais && F->ngi; i++) {
@@ -1843,6 +1927,15 @@ static void cacheFonteGravar(int f) {
       ok = cStr(fp, c->sug ? c->grupoOriginal : cats[c->cat].nome) && cInt(fp, c->numero) && cStr(fp, c->id) && cStr(fp, c->nome) &&
            cStr(fp, c->logo) && cStr(fp, c->desc) && cStr(fp, c->epgId) && cStr(fp, c->tvgNome) &&
            cStr(fp, c->url) && cStr(fp, c->ua) && cStr(fp, c->ref) && cStr(fp, c->tipo) && cInt(fp, c->sug);
+    }
+    int mixed = 0;
+    for (i = 0; i < nMixedVod; i++) if (!strcmp(mixedVod[i].source, F->chave)) mixed++;
+    ok = ok && cInt(fp, mixed);
+    for (i = 0; ok && i < nMixedVod; i++) {
+      const G5Item *v = &mixedVod[i];
+      if (strcmp(v->source, F->chave)) continue;
+      ok = cInt(fp, v->kind) && cStr(fp, v->id) && cStr(fp, v->name) &&
+           cStr(fp, v->url) && cStr(fp, v->poster) && cStr(fp, v->group);
     }
     ok = (fclose(fp) == 0) && ok;
     if (!ok || rename(tmp, caminho) != 0) remove(tmp);
@@ -1899,15 +1992,37 @@ static int cacheFonteLer(const char *chave) {
   l.p = b; l.fim = b + n; l.ok = 1;
   if (lInt(&l) != GC_MAGIA) { free(b); return -1; }
   versao = (int)lInt(&l);
-  if (versao != 2 && versao != GC_VERSAO) { free(b); return -1; }
+  if (versao != GC_VERSAO) { free(b); return -1; }
   tipo = (int)lInt(&l); nc = (int)lInt(&l); ngi = (int)lInt(&l);
   total = (int)lInt(&l); cortada = (int)lInt(&l); quando = lInt(&l);
+  long long identity = lInt(&l), stamp = lInt(&l);
+  if (!l.ok || identity != cacheIdentidade(chave)) { free(b); return -1; }
   lStr(&l, s1, sizeof s1); lStr(&l, s2, sizeof s2); lStr(&l, s3, sizeof s3);
   if (!l.ok || nc < 0 || ngi < 0) { free(b); return -1; }
+  CLeitor check = l;
+  for (i = 0; i < ngi && check.ok; i++) {
+    lStr(&check, s1, sizeof s1); (void)lInt(&check); (void)lInt(&check);
+  }
+  for (i = 0; i < nc && check.ok; i++) {
+    lStr(&check, s1, sizeof s1); (void)lInt(&check);
+    for (int k = 0; k < 10; k++) lStr(&check, s1, sizeof s1);
+    (void)lInt(&check);
+  }
+  long long mixed = lInt(&check);
+  if (mixed < 0 || mixed > 30000) check.ok = 0;
+  for (long long j = 0; j < mixed && check.ok; j++) {
+    (void)lInt(&check);
+    for (int k = 0; k < 5; k++) lStr(&check, s1, sizeof s1);
+  }
+  if (!check.ok || check.p != check.fim) { free(b); return -1; }
+  l.p = b + 10 * sizeof(long long);
+  lStr(&l, s1, sizeof s1); lStr(&l, s2, sizeof s2); lStr(&l, s3, sizeof s3);
   // A chave vem do nome do arquivo; o tipo e o nome de exibicao, de dentro.
   fl = sFonteChave(chave, tipo, s1, s2);
   if (fl < 0) { free(b); return -1; }
   sLtvF[fl].atualizada = quando;
+  sLtvF[fl].snapshotStamp = stamp;
+  sLtvF[fl].snapshotIdentity = identity;
   sLtvF[fl].deCache = 1;
   snprintf(sLtvF[fl].urlTvg, sizeof sLtvF[fl].urlTvg, "%s", s3);
   for (i = 0; i < ngi && l.ok; i++) {
@@ -1927,10 +2042,32 @@ static int cacheFonteLer(const char *chave) {
     if (versao >= 3) c.sug = (int)lInt(&l);
     if (l.ok) sCanalAdd(fl, &c);
   }
+  mixed = lInt(&l);
+  for (long long j = 0; j < mixed && l.ok; j++) {
+    static char id[80], name[140], url[4096], logo[1024], group[256];
+    int kind = (int)lInt(&l);
+    lStr(&l, id, sizeof id); lStr(&l, name, sizeof name); lStr(&l, url, sizeof url);
+    lStr(&l, logo, sizeof logo); lStr(&l, group, sizeof group);
+    mixedVodAdd(fl, kind, id, name, url, logo, group);
+  }
   sLtvF[fl].total = total > sLtvF[fl].nCanais ? total : sLtvF[fl].nCanais;
   sLtvF[fl].cortada = cortada || sLtvF[fl].cortada;
   free(b);
   return sNCanais - antes;
+}
+
+static int cacheFonteFresca(const char *chave) {
+  char nome[64], path[600];
+  long long header[10];
+  cacheNomeFonte(chave, nome, sizeof nome);
+  if (!dados_caminho(path, sizeof path, nome)) return 0;
+  FILE *fp = fopen(path, "rb");
+  int readable = fp && fread(header, sizeof header, 1, fp) == 1;
+  if (fp) fclose(fp);
+  if (!readable) return 0;
+  if (catsnap_needs_fetch(header[0] == GC_MAGIA, header[1] == GC_VERSAO ? CATSNAP_VERSION : 0,
+        header[8] == cacheIdentidade(chave), header[9] != cargaSnapshotStamp, header[7], time(NULL))) return 0;
+  return cacheFonteLer(chave) >= 0;
 }
 
 static void cacheGravar(void) {
@@ -1938,7 +2075,8 @@ static void cacheGravar(void) {
   size_t u = 0;
   int i;
   for (i = 0; i < nLtvF; i++) {
-    if (ltv_fonte_ligada(ltvF[i].chave) && !ltvF[i].deCache && (sCacheN[i] > 0 || ltvF[i].nCanais > 0))
+    if (ltv_fonte_ligada(ltvF[i].chave) && !ltvF[i].deCache && !ltvF[i].erro &&
+        (ltvF[i].respondeu || sCacheN[i] > 0 || ltvF[i].nCanais > 0))
       cacheFonteGravar(i);
     if (sCache[i]) { fclose(sCache[i]); sCache[i] = NULL; }
     sCacheN[i] = 0;
@@ -2168,6 +2306,9 @@ static void *fioGuia(void *u) {
   sondaManifestos();
   // ADDONS: uma fonte da barra por addon (base), com todos os catalogos dele.
   for (i = 0; cargaAtual() && i < sNFontes; i++) {
+    char chave[LTV_CHAVE];
+    ltv_chave_fonte(LTV_ADDON, sFontes[i].base, chave, sizeof chave);
+    if (cacheFonteFresca(chave)) { ok = 1; continue; }
     int fl = sFonte(LTV_ADDON, sFontes[i].base, nomeDoAddon(sFontes[i].base), sFontes[i].base);
     if (fl < 0) continue;
     if (carregarCatalogo(&sFontes[i], fl)) ok = 1;
@@ -2185,6 +2326,7 @@ static void *fioGuia(void *u) {
     if (!c->ativa){sFonteChave(chave,c->tipo==IPTV_XTREAM?LTV_XTREAM:c->tipo==IPTV_STALKER?LTV_STALKER:LTV_M3U,c->nome,"");cacheFonteLer(chave);continue;}
     tipo = c->tipo == IPTV_XTREAM ? LTV_XTREAM : c->tipo == IPTV_STALKER ? LTV_STALKER : LTV_M3U;
     if(!ltv_fonte_ligada(chave)){sFonteChave(chave,tipo,c->nome,"");continue;}
+    if (cacheFonteFresca(chave)) { ok = 1; continue; }
     if (c->tipo == IPTV_XTREAM && xtream_fonte_configurado(c->id)) n = xtreamCarregar(c);
     else if (c->tipo == IPTV_STALKER && stalker_fonte_configurado(c->id)) n = stalkerCarregar(c);
     else if (c->tipo == IPTV_M3U) {
@@ -2213,10 +2355,13 @@ static void *fioGuia(void *u) {
       if (m3u_fonte_urls(cargaContas[k].id, lista, sizeof lista, epgUrl, sizeof epgUrl) && !strcmp(lista, urls[i].url)) duplicada = 1;
     }
     if (duplicada) continue;
+    char chave[LTV_CHAVE];
+    ltv_chave_fonte(LTV_M3U, urls[i].url, chave, sizeof chave);
+    if (cacheFonteFresca(chave)) { ok = 1; continue; }
     if (m3uCarregar(&urls[i], NULL, NULL) > 0) ok = 1;
     else fonteVaziaRecupera(LTV_M3U, urls[i].url, urls[i].nome, "");
   }
-  if (nCargaG5 > 0 && cargaAtual()) {
+  if (nCargaG5 > 0 && cargaAtual() && !cacheFonteFresca("g5m3u")) {
     int fl = sFonteChave("g5m3u", LTV_M3U, i18n("Lista do Guia TV"), "");
     for (i = 0; fl >= 0 && i < nCargaG5; i++) {
       char id[96];
@@ -2227,8 +2372,10 @@ static void *fioGuia(void *u) {
     }
   }
   free(cargaG5); cargaG5 = NULL; nCargaG5 = 0;
+  for (i = 0; i < sNLtvF; i++) if (!sLtvF[i].deCache)
+    sLtvF[i].snapshotIdentity = cacheIdentidade(sLtvF[i].chave);
   if (cargaAtual()) sugerirSecoes();
-  for (i = 0; i < sNLtvF; i++) if (sLtvF[i].nCanais > 0) ok = 1;
+  for (i = 0; i < sNLtvF; i++) if (sLtvF[i].nCanais > 0 || sLtvF[i].respondeu) ok = 1;
   // FONTE ACHADA E NENHUMA PAGINA RESPONDEU tambem e "nao respondeu".
   if (sNFontes > 0 && !ok) sFalhas++;
   sOk = ok || sFiltrados > 0 || sNMixedVod>0 || nCargaDesligadas>0;
@@ -2683,7 +2830,7 @@ static void publicar(void) {
            guiacorte_motivo(&corte));
   fflush(stdout);
   marco("guia: lista da rede publicada");
-  if (nCanais > 0 || sFiltrados > 0) cacheGravar();
+  if (nLtvF > 0 || sFiltrados > 0) cacheGravar();
   epgPaisesEscolher();
   epgExtrasMontar();
   epgCoberturaZerar();
@@ -2700,6 +2847,7 @@ static void iniciarCarga(void) {
   // Copia no desenho: nenhum pedido relera as URLs ou os manifestos do
   // perfil novo enquanto a resposta do anterior ainda estiver em voo.
   cargaSessao = nv_perfil_sessao_ler(); cargaCancelada = 0;
+  cargaSnapshotStamp = catsnap_refresh_stamp(perfis_ativo());
   nCargaDesligadas=0;
   for(int f=0;f<nLtvF;f++)if(!ltv_fonte_ligada(ltvF[f].chave))cargaDesligadas[nCargaDesligadas++]=ltvF[f];
   nCargaUrls = ltv_urls_copiar(cargaUrls, LTV_URLS_MAX);
@@ -2751,6 +2899,15 @@ void guia_carregar(void) {
   if (!fontesOk) descobrirFontes();
   // A lista de ontem NA HORA; a de hoje vem atras. Ver o bloco do cache.
   if (!cacheLido) { cacheLido = 1; if (estado == G_PARADO && nCanais == 0) cacheLer(); }
+  if (estado == G_PRONTO) {
+    long long stamp = catsnap_refresh_stamp(perfis_ativo());
+    for (int i = 0; i < nLtvF; i++) {
+      const GFonteLtv *f = &ltvF[i];
+      if (ltv_fonte_ligada(f->chave) && catsnap_needs_fetch(1, CATSNAP_VERSION,
+          f->snapshotIdentity == cacheIdentidade(f->chave), f->snapshotStamp != stamp,
+          f->atualizada, time(NULL))) { estado = G_PARADO; break; }
+    }
+  }
   if (estado == G_PARADO || estado == G_FALHOU) {
     if (fioVivo) recarregarPend = 1;
     else iniciarCarga();
@@ -3870,7 +4027,7 @@ static void fCanalAdd(const char *fonte, const char *id, const char *nome) {
 // Read only this category into the bounded panel, including later raw entries.
 static void fCanaisCache(const char *chave, const char *cat) {
   char nome[64], caminho[600], grupo[GF_NOME], id[GF_ID], canal[GF_NOME];
-  long long header[8];
+  long long header[10];
   FILE *fp;
   cacheNomeFonte(chave, nome, sizeof nome);
   if (!dados_caminho(caminho, sizeof caminho, nome) || !(fp = fopen(caminho, "rb"))) return;
@@ -8209,6 +8366,8 @@ void guia_abrir_sessao(void) {
 
 // Refresh retains the published source caches until replacements arrive.
 void guia_recarregar(int limparLista) {
+  catsnap_request_refresh(perfis_ativo());
+  atomic_fetch_add_explicit(&catalogRefreshRevision,1,memory_order_relaxed);
   cargaCancelada = 1; xtepg_limpar();
   if (limparLista) { guia_limpar_lista(); return; }
   IptvConta contas[IPTV_MAX_CONTAS]; int n = iptv_contas(contas, IPTV_MAX_CONTAS);
@@ -8257,4 +8416,3 @@ int guia_canal_logo_url(const char *id, char *dst, size_t n) {
     }
   return 0;
 }
-

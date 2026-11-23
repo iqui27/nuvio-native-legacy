@@ -40,16 +40,26 @@ static char *vod_merge_items(const char *old,const char *fresh,int kind,const ch
 }
 static void vod_load_worker(void){
   Uint32 began=SDL_GetTicks();int status=0,items=0,categories=0;worker_ok=1;
+  worker_snapshot_served=0;
   if(operation==8){
     for(int k=0;k<2;k++)for(int cat=0;cat<2;cat++){
-      char file[160];vod_cache_file(file,sizeof file,k,cat);char *body=dados_ler(file);
+      char file[160];int fresh=0;vod_cache_file(file,sizeof file,k,cat);char *body=catsnap_read(file,vod_work_stamp,&fresh);
       if(body&&!vod_array(body)){free(body);body=NULL;}
+      if(body&&fresh)worker_snapshot_served=1;
+      if(cat&&(k?work_draft.series:work_draft.movies)&&(!body||!fresh))worker_categories_missing=1;
       if(cat){free(vod_pending.categories[k]);vod_pending.categories[k]=body;}
       else{free(vod_pending.json[k]);vod_pending.json[k]=body;}
     }
   }else if(operation==6){
     for(int k=0;k<2&&!worker_cancel;k++){
       if(k?!work_draft.series:!work_draft.movies)continue;
+      char file[160];int fresh=0;vod_cache_file(file,sizeof file,k,1);
+      char *cached=catsnap_read(file,vod_work_stamp,&fresh);
+      if(cached&&fresh&&vod_array(cached)){
+        worker_snapshot_served=1;
+        free(vod_pending.categories[k]);vod_pending.categories[k]=cached;continue;
+      }
+      free(cached);
       char *body=xtream_consultar(work_draft.server,work_draft.user,work_draft.password,k?"get_series_categories":"get_vod_categories",15,&status);
       if(status<200||status>=300||!vod_array(body)){free(body);worker_ok=0;continue;}
       Jsw w;jsw_iniciar(&w);jsw_arr_ini(&w);
@@ -66,14 +76,20 @@ static void vod_load_worker(void){
       jsw_arr_fim(&w);const char *safe=jsw_texto_final(&w);char *clean=safe?strdup(safe):NULL;
       jsw_livre(&w);free(body);
       if(!clean){worker_ok=0;continue;}
+      if(!worker_cancel)catsnap_write(file,clean,vod_work_stamp);
       free(vod_pending.categories[k]);vod_pending.categories[k]=clean;
     }
   }else{
     char request[160];snprintf(request,sizeof request,"%s&category_id=%s",vod_request_kind?"get_series":"get_vod_streams",vod_request_id);
-    char *body=xtream_consultar(work_draft.server,work_draft.user,work_draft.password,request,30,&status);
-    if(status<200||status>=300||!vod_array(body))worker_ok=0;
+    char file[240];int fresh=0;
+    snprintf(file,sizeof file,"guiav5-vod-%s-%d-item-%s.json",vod_work_key,vod_request_kind,vod_request_id);
+    char *body=catsnap_read(file,vod_work_stamp,&fresh);
+    if(fresh&&vod_array(body))worker_snapshot_served=1;
+    if(!fresh||!vod_array(body)){free(body);body=xtream_consultar(work_draft.server,work_draft.user,work_draft.password,request,30,&status);fresh=0;}
+    if((!fresh&&(status<200||status>=300))||!vod_array(body))worker_ok=0;
     else{
       char *safe=vod_safe_items(body,vod_request_kind);
+      if(safe&&!fresh&&!worker_cancel)catsnap_write(file,safe,vod_work_stamp);
       char *merged=safe?vod_merge_items(vod_pending.json[vod_request_kind],safe,vod_request_kind,vod_request_id):NULL;
       free(safe);if(!merged)worker_ok=0;
       else{free(vod_pending.json[vod_request_kind]);vod_pending.json[vod_request_kind]=merged;}
@@ -83,20 +99,25 @@ static void vod_load_worker(void){
   for(int k=0;k<2;k++){
     for(const char *p=js_raiz_array(vod_pending.json[k]);p;p=js_prox(js_fim(p)))items++;
     for(const char *p=js_raiz_array(vod_pending.categories[k]);p;p=js_prox(js_fim(p)))categories++;
-    if(operation!=8&&!worker_cancel){
-      for(int cat=0;cat<2;cat++){
-        const char *body=cat?vod_pending.categories[k]:vod_pending.json[k];char file[160];vod_cache_file(file,sizeof file,k,cat);
-        if(body)dados_gravar_leve(file,body);
-      }
+    if(operation==7&&worker_ok&&!worker_cancel){
+      const char *body=vod_pending.json[k];char file[160];vod_cache_file(file,sizeof file,k,0);
+      if(body)catsnap_write(file,body,vod_work_stamp);
     }
   }
   if(!worker_cancel)vod_index(&vod_pending,0);
   printf("[vod-load] phase=%s http=%d categories=%d items=%d ok=%d ms=%u\n",operation==8?"cache":operation==6?"categories":"items",status,categories,items,worker_ok,SDL_GetTicks()-began);
 }
+static int vod_fallback_required(void){
+  return !worker_ok&&(operation==6||operation==7)&&!vod_snapshot_served;
+}
 static void vod_begin(void){
   if(atomic_load(&busy)){vod_begin_pending=1;return;}
   use_saved=1;
-  if(vod_cache_checked&&!vod_lazy){if(!source_loaded||categories_missing){action[0]=0;start(2);}return;}
+  vod_refresh_revision=guia_catalog_refresh_revision();
+  vod_snapshot_served=0;
+  vod_refresh_stamp=catsnap_refresh_stamp(profile);
+  vod_cache_checked=0;vod_failed=0;
+  memset(vod_done_count,0,sizeof vod_done_count);
   vod_lazy=1;
   if(!committed)draft.movies=draft.series=1;
   char server[256],user[96],password[96],identity[700];

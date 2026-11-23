@@ -85,6 +85,10 @@ void perfis_sessao_destravar(void) {}
 const char *i18n(const char *s) { return s; }
 
 // Rede: nunca responde (o que vale aqui e o cache, nao a carga).
+#ifndef GUIACACHE_BASELINE
+static const char *fixtureM3uBody;
+static int fixtureStreamFailed, fixtureSawStreaming, fixtureStalkerFailed;
+#endif
 char *rede_baixar(const char *u, int s) { (void)u; (void)s; return NULL; }
 char *rede_baixar_medido_controle(const char *u, int s, const char *const *c,
                                   const RedeControle *ct, RedeMedida *m) {
@@ -100,6 +104,15 @@ int rede_baixar_fluxo(const char *u, int s, const char *const *c,
                       long long max, int *st, long long *bytes) {
   (void)s; (void)c; (void)max;
   if (st) *st = 0; if (bytes) *bytes = 0;
+#ifndef GUIACACHE_BASELINE
+  if(fixtureM3uBody){
+    int before=sNCanais;size_t n=strlen(fixtureM3uBody);
+    for(size_t i=0;i<n;i++)if(!cb(fixtureM3uBody+i,1,x))return 0;
+    fixtureSawStreaming=sNCanais>before;
+    if(st)*st=200;if(bytes)*bytes=(long long)n;
+    return !fixtureStreamFailed;
+  }
+#endif
 #ifdef GUIAFILTRO_LOADER
   char *body = filtroResposta(u);
   if (body) {
@@ -116,7 +129,17 @@ int rede_baixar_fluxo(const char *u, int s, const char *const *c,
 }
 #ifndef GUIAFILTRO_STALKER_TEST
 int stalker_canais_sessao(StalkerCanal *s, int m, uint64_t se) { (void)s; (void)m; (void)se; return 0; }
-int stalker_canais_cb_sessao(StalkerCb cb, void *u, uint64_t se) { (void)cb; (void)u; (void)se; return 0; }
+int stalker_canais_cb_sessao(StalkerCb cb, void *u, uint64_t se) {
+  (void)cb; (void)u; (void)se;
+#ifndef GUIACACHE_BASELINE
+  if(fixtureStalkerFailed){
+    StalkerCanal canal={0};snprintf(canal.id,sizeof canal.id,"stalker:fixture");
+    snprintf(canal.nome,sizeof canal.nome,"Partial channel");
+    assert(cb(&canal,u));return 0;
+  }
+#endif
+  return 0;
+}
 #endif
 int xtream_canais_cb_sessao(void (*cat)(const char *, int, int, void *),
                             XtreamCb cb, void *u, int *total, uint64_t sessao) {
@@ -272,6 +295,43 @@ int main(int argc, char **argv) {
   ltv_chave_fonte(LTV_ADDON, bases[1], chB, sizeof chB);
   semearFonteCache(bases[0], "Grupo", a, 2);
   semearFonteCache(bases[1], "Grupo", b, 1);
+#ifndef GUIACACHE_BASELINE
+  fIt = calloc(2, sizeof *fIt); assert(fIt);
+  fN = 0; fCanaisCache(chA, "Grupo");
+  assert(fN == 2);
+  free(fIt); fIt = NULL; fN = 0;
+  stagingZerar(); sTeto = 30000;
+  assert(cacheFonteFresca(chA) && sNCanais == 2);
+  assert(cacheFonteFresca(chB) && sNCanais == 3);
+  stagingZerar(); sTeto = 30000;
+  cargaSnapshotStamp++;
+  assert(!cacheFonteFresca(chA) && !sNCanais);
+  assert(cacheFonteLer(chA) == 2 && sNCanais == 2);
+  cargaSnapshotStamp--;
+  stagingZerar();
+  for(int scenario=0;scenario<3;scenario++){
+    sTeto=30000;assert(cacheFonteFresca(chA)&&sNCanais==2);
+    LtvUrl url={.tipo=LTV_URL_M3U,.nome="Stream fixture",.url="https://stream.invalid/list"};
+    fixtureM3uBody=scenario==0?"#EXTM3U\n#EXTINF:-1,Partial channel\nhttps://stream.invalid/channel\n#EXTINF:120,Film\nhttps://stream.invalid/movie.mp4\n":scenario==1?"<html>Unavailable</html>\n":"#EXTM3U\n";
+    fixtureStreamFailed=scenario==0;fixtureSawStreaming=0;
+    assert(m3uCarregar(&url,"m12345678",NULL)==0&&sNCanais==2&&!sNMixedVod);
+    assert(sLtvF[1].respondeu==(scenario==2));
+    if(!scenario)assert(fixtureSawStreaming&&sNInventario==2);
+    stagingZerar();
+  }
+  fixtureM3uBody=NULL;fixtureStreamFailed=0;
+#ifndef GUIAFILTRO_STALKER_TEST
+  sTeto=30000;assert(cacheFonteFresca(chA)&&sNCanais==2);
+  IptvConta portal={.tipo=IPTV_STALKER,.nome="Portal fixture"};
+  fixtureStalkerFailed=1;
+  assert(stalkerCarregar(&portal)==0&&sNCanais==2&&!sLtvF[1].nCanais&&sNInventario==2);
+  fixtureStalkerFailed=0;stagingZerar();
+#endif
+  unsigned revision=guia_catalog_refresh_revision();
+  atomic_fetch_add(&catalogRefreshRevision,1);
+  assert(guia_catalog_refresh_revision()==revision+1);
+  puts("PASS: streaming source rollback preserves other sources; non-M3U rejection, empty M3U and memory refresh revision");
+#endif
   // Each seed publishes one source; index must retain both fixture sources.
   cacheNomeIndice(nome, sizeof nome);
   { char idx[128]; snprintf(idx, sizeof idx, "%s\n%s\n", chA, chB); dados_gravar(nome, idx); }
