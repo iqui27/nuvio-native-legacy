@@ -5688,7 +5688,7 @@
   { "Usar sempre o catálogo do Nuvio", "Always use the Nuvio catalog" },
   { "Use", "Use" },
   { "Use Fonte ou Recarregar aqui embaixo, ou CH+ e CH− para trocar de canal.", "Use Source or Reload below, or CH+ and CH− to change channel." },
-  { "Use HLS fMP4 or MPEG-TS for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "Use HLS fMP4 or MPEG-TS for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply." },
+  { "Use HLS fMP4 or MPEG-TS for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices. Use only if you have issues. Reopen the video to apply.", "Use HLS fMP4 or MPEG-TS for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices. Use only if you have issues. Reopen the video to apply." },
   { "Use Recarregar para tentar novamente.", "Use Reload to try again." },
   { "Use Reduzidas para movimentos mais discretos ao navegar pela interface.", "Use Reduced for gentler movement as you navigate the interface." },
   { "Use as audio", "Use as audio" },

@@ -5689,7 +5689,7 @@
   T("Usar sempre o catálogo do Nuvio", "Altijd Nuvio gebruiken"),
   T("Use", "Gebruiken"),
   T("Use Fonte ou Recarregar aqui embaixo, ou CH+ e CH− para trocar de canal.", "Gebruik Bron of Opnieuw laden hieronder, of CH+ en CH− om van kanaal te wisselen."),
-  T("Use HLS fMP4 or MPEG-TS for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "Gebruik HLS fMP4 of MPEG-TS voor de conversie van DTS en Dolby Vision P7. Het geluid wordt uitgevoerd in Dolby Digital (AC-3). Dit kan op sommige apparaten helpen, maar vraagt meer bandbreedte. Zet het alleen bij problemen aan. Open de video opnieuw om toe te passen."),
+  T("Use HLS fMP4 or MPEG-TS for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices. Use only if you have issues. Reopen the video to apply.", "Gebruik HLS fMP4 of MPEG-TS voor de conversie van DTS en Dolby Vision P7. Het geluid wordt uitgevoerd in Dolby Digital (AC-3). Dit kan op sommige apparaten helpen. Zet het alleen bij problemen aan. Open de video opnieuw om toe te passen."),
   T("Use Recarregar para tentar novamente.", "Gebruik Opnieuw laden om het nog eens te proberen."),
   T("Use Reduzidas para movimentos mais discretos ao navegar pela interface.", "Gebruik Beperkt voor zachtere beweging tijdens het navigeren door de interface."),
   T("Use as audio", "Use as audio"),

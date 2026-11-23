@@ -5689,7 +5689,7 @@
   T("Usar sempre o catálogo do Nuvio", "Vedno uporabi Nuvio"),
   T("Use", "Uporabi"),
   T("Use Fonte ou Recarregar aqui embaixo, ou CH+ e CH− para trocar de canal.", "Uporabite Vir ali Naloži znova spodaj, ali CH+ in CH−, da zamenjate kanal."),
-  T("Use HLS fMP4 or MPEG-TS for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "Uporablja HLS fMP4 ali MPEG-TS za pretvorbo DTS in Dolby Vision P7. Zvočni izhod je Dolby Digital (AC-3). Lahko pomaga na nekaterih napravah, a zahteva več pasovne širine. Vklopite le ob težavah. Za uveljavitev znova odprite videoposnetek."),
+  T("Use HLS fMP4 or MPEG-TS for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices. Use only if you have issues. Reopen the video to apply.", "Uporablja HLS fMP4 ali MPEG-TS za pretvorbo DTS in Dolby Vision P7. Zvočni izhod je Dolby Digital (AC-3). Lahko pomaga na nekaterih napravah. Vklopite le ob težavah. Za uveljavitev znova odprite videoposnetek."),
   T("Use Recarregar para tentar novamente.", "Poskusite znova z gumbom Naloži znova."),
   T("Use Reduzidas para movimentos mais discretos ao navegar pela interface.", "Uporabite Zmanjšano za milejše gibanje pri krmarjenju po vmesniku."),
   T("Use as audio", "Use as audio"),

@@ -5689,7 +5689,7 @@
   T("Usar sempre o catálogo do Nuvio", "始终使用 Nuvio"),
   T("Use", "使用"),
   T("Use Fonte ou Recarregar aqui embaixo, ou CH+ e CH− para trocar de canal.", "请使用下方的片源或重新加载，或用 CH+ 和 CH− 切换频道。"),
-  T("Use HLS fMP4 or MPEG-TS for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.", "使用 HLS fMP4 或 MPEG-TS 转换 DTS 和 Dolby Vision P7。音频以 Dolby Digital (AC-3) 输出。可能改善部分设备上的播放，但需要更高的网络带宽。仅在遇到问题时启用。重新打开视频即可生效。"),
+  T("Use HLS fMP4 or MPEG-TS for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices. Use only if you have issues. Reopen the video to apply.", "使用 HLS fMP4 或 MPEG-TS 转换 DTS 和 Dolby Vision P7。音频以 Dolby Digital (AC-3) 输出。可能改善部分设备上的播放。仅在遇到问题时启用。重新打开视频即可生效。"),
   T("Use Recarregar para tentar novamente.", "请点“重新加载”再试一次。"),
   T("Use Reduzidas para movimentos mais discretos ao navegar pela interface.", "选择“缩减”后，在界面中导航时的动画会更柔和。"),
   T("Use as audio", "Use as audio"),
