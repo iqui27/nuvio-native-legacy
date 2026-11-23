@@ -2516,6 +2516,8 @@ function canonicalizarEixos(eixos) {
       } else {
         out.push([k, "h:" + fnv1a32Hex(v)]);
       }
+    } else if (Array.isArray(v) || ehObjPlano(v)) {
+      out.push([k, canonicalizarValor(v)]);
     }
   }
   return out;
@@ -2604,6 +2606,22 @@ function resolverIdentidadeFato(f, candidatos, candsPorTt, candsPorIdNaoTt, idsN
     return { tipo: "cand", idx, obraKey: `cand:${idx}` };
   }
   return { tipo: "ext", ref: v, obraKey: `ext:${v}` };
+}
+
+function resolverIdentidadeFonteFato(f, origem, candidatos, candsPorTt, candsPorIdNaoTt, idsNaoTtAmbiguos, ttAmbiguos) {
+  if (origem?.tipo === "eixos") {
+    const idx = origem.idx;
+    const c = candidatos[idx];
+    if (!c) return { tipo: "invalido" };
+    const campos = camposAlvoDoFato(f);
+    if (campos.length === 0) {
+      if (!tipoFatoCompativel(f.tipo, c.tipo)) return { tipo: "invalido" };
+      return { tipo: "cand", idx, obraKey: `cand:${idx}` };
+    }
+    const idFato = resolverIdentidadeFato(f, candidatos, candsPorTt, candsPorIdNaoTt, idsNaoTtAmbiguos, ttAmbiguos);
+    return idFato.tipo === "cand" && idFato.idx === idx ? idFato : { tipo: "invalido" };
+  }
+  return resolverIdentidadeFato(f, candidatos, candsPorTt, candsPorIdNaoTt, idsNaoTtAmbiguos, ttAmbiguos);
 }
 
 function contextoAterramento(pedido) {
@@ -2718,12 +2736,6 @@ function contextoAterramento(pedido) {
         );
       }
     }
-    if (c.eixos && typeof c.eixos === "object") {
-      registrarFatoEmMapa(fatosPorObra, `cand:${idx}`, c.eixos);
-      for (const k of ["onde", "servico"]) {
-        if (typeof c.eixos[k] === "string" && c.eixos[k].trim()) servicosOnde.add(c.eixos[k].trim());
-      }
-    }
     return ev;
   });
 
@@ -2747,18 +2759,25 @@ function contextoAterramento(pedido) {
   const ttTodos = new Set(ttCand);
   for (const c of candidatos) {
     coletarTt(c.motivos, ttTodos);
-    coletarTt(c.eixos, ttTodos);
   }
   coletarTt(ancoras, ttTodos);
 
-  // Resolve tipos explicitos (filme/serie) conjuntamente entre todos os aliases de cada obra
-  // antes de agregar fatos, rejeitando toda evidencia da obra quando houver contradicao.
+  // Resolve identidade e tipos explicitos (filme/serie) conjuntamente para todas as fontes
+  // que abastecem fatosPorObra (`candidatos[].eixos` e `pedido.fatos[]`) antes da agregacao.
+  const fontes = [];
+  for (let idx = 0; idx < candidatos.length; idx++) {
+    const e = candidatos[idx]?.eixos;
+    if (e && typeof e === "object") fontes.push({ f: e, origem: { tipo: "eixos", idx } });
+  }
+  for (const f of pedido.fatos || []) {
+    if (f && typeof f === "object") fontes.push({ f, origem: { tipo: "fato" } });
+  }
+
   const fatosResolvidos = [];
   const tiposPorObra = new Map();
   const obrasTipoContradit = new Set();
-  for (const f of pedido.fatos || []) {
-    if (!f || typeof f !== "object") continue;
-    const idFato = resolverIdentidadeFato(f, candidatos, candsPorTt, candsPorIdNaoTt, idsNaoTtAmbiguos, ttAmbiguos);
+  for (const { f, origem } of fontes) {
+    const idFato = resolverIdentidadeFonteFato(f, origem, candidatos, candsPorTt, candsPorIdNaoTt, idsNaoTtAmbiguos, ttAmbiguos);
     if (idFato.tipo === "invalido") continue;
     if (idFato.tipo !== "global") {
       const tF = tipoCanonico(f.tipo);
@@ -2975,6 +2994,26 @@ function fatosParaAlvo(alvoRef, ctx, incluirGlobais = false) {
   }
   if (incluirGlobais) res.push(...ctx.fatosGlobais);
   return res;
+}
+
+function resolverDuracaoELimitesAlvo(alvoRef, ctx) {
+  const idAlvo = resolverIdentidadeRef(alvoRef, ctx);
+  if (!idAlvo) return { ok: false, idAlvo: null, cIdxs: [], min: 0, limites: [] };
+  if (ctx.obrasTipoContradit?.has(idAlvo.obraKey)) {
+    return { ok: false, idAlvo, cIdxs: [], min: 0, limites: [] };
+  }
+  const cIdxs = idAlvo.tipo === "cand" ? [idAlvo.idx] : [];
+  if (cIdxs.some((idx) => ctx.candEvs[idx]?.cabeHojeContradit)) {
+    return { ok: false, idAlvo, cIdxs, min: 0, limites: [] };
+  }
+  const fatosItem = fatosParaAlvo(alvoRef, ctx, false);
+  const minCand = cIdxs.length === 1 ? ctx.candEvs[cIdxs[0]]?.minutos || 0 : 0;
+  const minFato = fatosItem.find((f) => Number.isInteger(f.minutos) && f.minutos > 0)?.minutos || 0;
+  const min = minCand > 0 ? minCand : minFato;
+  const limItem = fatosItem.filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
+  const limGlob = ctx.fatosGlobais.filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
+  const limites = limItem.length > 0 ? limItem : limGlob;
+  return { ok: true, idAlvo, cIdxs, min, limites };
 }
 
 function todosFatos(ctx) {
@@ -3388,13 +3427,10 @@ function dicaTextoAterrado(t, alvoDica, ctx) {
     }
     case "FT_DICA_CURTO": {
       if (ehGlobal || !refsTitulosEquivalentes(a[0], alvoDica, ctx)) return false;
-      const idAlvo = resolverIdentidadeRef(alvoDica, ctx);
-      if (idAlvo && ctx.obrasTipoContradit?.has(idAlvo.obraKey)) return false;
-      if (cIdxsAlvo.some((idx) => ctx.candEvs[idx]?.cabeHojeContradit)) return false;
-      const lim = fatosAlvo.filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
-      if (lim.length > 0) {
-        const min = cIdxsAlvo.length === 1 ? ctx.candEvs[cIdxsAlvo[0]]?.minutos || 0 : 0;
-        if (min > 0 && lim.some((f) => min > f.tempo_max)) return false;
+      const { ok, min, limites } = resolverDuracaoELimitesAlvo(alvoDica, ctx);
+      if (!ok) return false;
+      if (limites.length > 0 && (min <= 0 || !limites.every((f) => min <= f.tempo_max))) {
+        return false;
       }
       return true;
     }
@@ -3581,16 +3617,8 @@ function pecaAterrada(p, ctx, opts = {}) {
       if (p.veredito.m !== "FT_CMP_VEREDITO_CABE" || !textoAterrado(p.veredito, ctx, false)) return false;
       const vRef = p.veredito.a?.[0];
       if (!p.itens.some((it) => refsTitulosEquivalentes(it, vRef, ctx))) return false;
-      const cIdxs = resolverCandIndicesPorRef(vRef, ctx);
-      if (cIdxs.length !== 1) return false;
-      const fatosItem = fatosParaAlvo(vRef, ctx, false);
-      const minCand = ctx.candEvs[cIdxs[0]]?.minutos || 0;
-      const minFato = fatosItem.find((f) => Number.isInteger(f.minutos) && f.minutos > 0)?.minutos || 0;
-      const min = minCand > 0 ? minCand : minFato;
-      if (min <= 0) return false;
-      const limItem = fatosItem.filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
-      const limGlob = ctx.fatosGlobais.filter((f) => Number.isInteger(f.tempo_max) && f.tempo_max > 0);
-      const limites = limItem.length > 0 ? limItem : limGlob;
+      const { ok, cIdxs, min, limites } = resolverDuracaoELimitesAlvo(vRef, ctx);
+      if (!ok || cIdxs.length !== 1 || min <= 0) return false;
       if (!limites.length || !limites.every((f) => min <= f.tempo_max)) return false;
     }
     return true;
