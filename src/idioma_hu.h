@@ -6731,6 +6731,8 @@
   T("Por áudio: sem falas claras; nada foi alterado", "Hang alapján: nincs tiszta beszéd; semmi sem változott"),
   T("Por áudio: sem áudio decodificado", "Hang alapján: nincs dekódolt hang"),
   T("Por último", "Hátul"),
+  T("Porque você assistiu %s", "Mert megnézted: %s"),
+  T("Porque você assistiu…", "Mert megnézted…"),
   T("Porque você terminou %s", "Mert megnézted: %s"),
   T("Porque você terminou %s.", "Mert megnézted: %s."),
   T("Porque você viu", "Mert megnézted"),

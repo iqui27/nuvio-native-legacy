@@ -550,7 +550,7 @@ static const char *tituloDoGenero(const StGen *gen, int nGen, const char *id) {
 
 int stalker_canais_cb_sessao(StalkerCb cb, void *u, uint64_t sessao) {
   StGen *gen = NULL;
-  int nGen, pagina, n = 0, parar = 0;
+  int nGen, pagina, n = 0, parar = 0, falhou = 0;
   unsigned long anterior = 0;
   if (!nv_perfil_sessao_atual(sessao) || !stalker_configurado() || !cb) return 0;
   nGen = lerGeneros(&gen, sessao);
@@ -567,7 +567,8 @@ int stalker_canais_cb_sessao(StalkerCb cb, void *u, uint64_t sessao) {
              "type=itv&action=get_ordered_list&genre=*&force_ch_link_check="
              "&fav=0&sortby=number&hd=0&p=%d", pagina);
     corpo = chamar(consulta, 0, sessao);
-    if (!corpo) break;
+    if (!corpo) { falhou = 1; break; }
+    if (!js_array_presente(corpo, NULL, "data")) { free(corpo); falhou = 1; break; }
     // Stop portals ignoring p without truncating valid later pages.
     unsigned long hash = 5381;
     for (const unsigned char *s = (const unsigned char *)corpo; *s; s++) hash = hash * 33 + *s;
@@ -604,7 +605,7 @@ int stalker_canais_cb_sessao(StalkerCb cb, void *u, uint64_t sessao) {
   // le o stdout do app e o desenha NA TELA (ver a nota no topo do header).
   printf("[stalker] portal ok, %d canal(is) em %d categoria(s)\n", n, nGen);
   free(gen);
-  return nv_perfil_sessao_atual(sessao) ? n : 0;
+  return !falhou && nv_perfil_sessao_atual(sessao) ? n : 0;
 }
 
 typedef struct { StalkerCanal *saida; int n, max; } StVetor;

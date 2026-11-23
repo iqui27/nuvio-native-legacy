@@ -13,7 +13,7 @@
 #include <unistd.h>
 
 static const char *pasta;
-static int perfil=1, falhar;
+static int perfil=1, falhar, falharPortal;
 static uint64_t sessao=1;
 uint64_t perfis_sessao_geracao(void){return sessao;}
 int perfis_sessao_atual(uint64_t s){return s==sessao;}
@@ -44,6 +44,8 @@ char *rede_baixar_bin_medido_controle(const char *url,int s,const char *const *h
 }
 char *rede_baixar_com(const char *url,int s,const char *const *h){
   (void)s;(void)h;int b=strstr(url,"b.invalid")!=NULL;
+  if(falharPortal&&strstr(url,"action=get_ordered_list")&&strstr(url,"&p=2"))
+    return falharPortal==1?NULL:strdup("{\"js\":{\"error\":\"unavailable\"}}");
   if(strstr(url,"action=handshake"))return strdup("{\"js\":1,\"token\":\"TOKEN\"}");
   if(strstr(url,"action=get_profile"))return strdup("{\"js\":{}}");
   if(strstr(url,"action=get_genres"))return strdup("{\"js\":[{\"id\":\"1\",\"title\":\"News\"}]}");
@@ -53,6 +55,7 @@ char *rede_baixar_com(const char *url,int s,const char *const *h){
 }
 static void xtConfig(unsigned id,const char *server,const char *user){xtream_fonte_selecionar(id);xtream_definir_servidor(server);xtream_definir_usuario(user);xtream_definir_senha("dummy");}
 static void stConfig(unsigned id,const char *server){stalker_fonte_selecionar(id);stalker_definir_portal(server);stalker_definir_mac("00:1a:79:00:00:01");}
+static int stConta(const StalkerCanal *canal,void *u){(void)canal;(*(int *)u)++;return 1;}
 int main(int argc,char **argv){
   assert(argc==2);pasta=argv[1];assert(!mkdir(pasta,0700));
   xtConfig(0,"https://a.invalid","alice");m3u_fonte_selecionar(0);assert(m3u_definir_lista("https://a.invalid/list"));stConfig(0,"a.invalid");
@@ -87,6 +90,12 @@ int main(int argc,char **argv){
   assert(stalker_resolver_sessao(sa[0].id,url,sizeof url,sessao)&&strstr(url,"a.invalid/stalker/play"));
   assert(stalker_resolver_sessao(sbch[0].id,url,sizeof url,sessao)&&strstr(url,"b.invalid/stalker/play"));
   puts("PASS: two Stalker accounts keep command tables, handshakes and playback separate");
+  for(falharPortal=1;falharPortal<=2;falharPortal++){
+    int recebidos=0;
+    assert(stalker_fonte_canais_cb(0,stConta,&recebidos,sessao)==0&&recebidos==1);
+  }
+  falharPortal=0;
+  puts("PASS: failed later Stalker pages cannot publish a successful partial snapshot");
 
   int n=iptv_contas(c,32);assert(n==6);assert(iptv_conta_renomear("Second portal"));assert(iptv_conta_ativar(0));
   assert(iptv_conta_selecionada(&selected)&&!selected.ativa&&!strcmp(selected.nome,"Second portal"));
