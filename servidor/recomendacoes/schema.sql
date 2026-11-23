@@ -160,6 +160,8 @@ CREATE TABLE IF NOT EXISTS farol_conhecido (
   versao TEXT NOT NULL DEFAULT '',
   nota_pt TEXT NOT NULL DEFAULT '', nota_en TEXT NOT NULL DEFAULT ''
 );
+CREATE INDEX IF NOT EXISTS farol_conhecido_fp ON farol_conhecido (fp);
+CREATE INDEX IF NOT EXISTS farol_conhecido_cod ON farol_conhecido (codigo, plataforma, so_maior);
 
 CREATE TABLE IF NOT EXISTS ident_hora (
   hora   INTEGER PRIMARY KEY,
