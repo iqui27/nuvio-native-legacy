@@ -1252,7 +1252,12 @@ void player_erro_fonte(void) {
              farolcod_anel(&fe, NV_FAROL_PLAT, cs, sizeof cs)); }
   { const Stream *st = stream_item(stream_atual());
     farolErroRegistrar(&ultimoFarol, ultimoFarolDebrid,
-                       st ? st->addonIdentidade : 0); }
+                       st ? st->addonIdentidade : 0);
+#ifdef NV_ANDROID
+    if (video_falhou() && !video_erro_identificado())
+      ultimoFarolTentativa = 0;
+#endif
+  }
 }
 int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid) {
   if (!temUltimoFarol) return 0;
@@ -2550,9 +2555,11 @@ int player_externo_disponivel_tentativa(uint64_t tentativa) {
     if ((ultimaFonteTemItem || temFixo) && !nv_perfil_sessao_atual(sessao))
       return 0;
     if (c && !strcmp(c->tipo, "series")) {
-      if (!aberto && !mini && c->imdb[0]) {
+      if (c->imdb[0]) {
         int achado = cat_indice_titulo(c->imdb, ix);
         ix = achado >= 0 ? achado : -1;
+      } else {
+        ix = -1;
       }
       if (travaui_segura(c->imdb, ix, t, e, NULL, NULL))
         return 0;

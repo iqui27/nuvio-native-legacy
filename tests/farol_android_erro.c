@@ -81,6 +81,7 @@ void video_taxa_recusar(void) {}
 #include "ponteiro.h"
 #include <assert.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -363,17 +364,45 @@ static void zerar_farol(void) {
 typedef struct {
   unsigned genA;
   unsigned genB;
+  _Atomic int pubValida;
   _Atomic int parar;
 } CorridaCtx;
 
 static void *fio_jni_corrida(void *arg) {
   CorridaCtx *ctx = arg;
   int i = 0;
-  while (!atomic_load(&ctx->parar)) {
+  while (!atomic_load_explicit(&ctx->parar, memory_order_acquire)) {
     unsigned g = (i & 1) ? ctx->genA : ctx->genB;
     int cod = (i & 1) ? 4003 : 2004;
     int tipo = (i & 1) ? 2 : 0;
     Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)g, cod, tipo);
+    if (g == ctx->genB)
+      atomic_store_explicit(&ctx->pubValida, 1, memory_order_release);
+    i++;
+  }
+  return NULL;
+}
+
+typedef struct {
+  _Atomic unsigned genAtual;
+  _Atomic int parar;
+} TransicaoCtx;
+
+static void *fio_jni_transicao(void *arg) {
+  TransicaoCtx *ctx = arg;
+  int i = 0;
+  while (!atomic_load_explicit(&ctx->parar, memory_order_acquire)) {
+    unsigned g = atomic_load_explicit(&ctx->genAtual, memory_order_acquire);
+    if (g) {
+      if (i & 1) {
+        unsigned obsoleta = g > 1 ? g - 1 : 99999u;
+        Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)obsoleta, 2004, 0);
+      } else {
+        Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)g, 4003, 2);
+      }
+      if ((i & 7) == 0)
+        Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_TOCANDO, 0, 0);
+    }
     i++;
   }
   return NULL;
@@ -441,14 +470,24 @@ int main(void) {
   assert(video_erro_decoder_codigo() == 0);
 
   // 4) Corrida concorrente entre fio JNI (nativeErro genA=4003/video vs genB=2004/rede)
-  // e fio SDL (video_bombear + leitura de video_erro_texto/codigo): zero corrida em TSan
-  // e identidade/codigo/texto sempre coerentes com genB.
+  // e fio SDL (video_bombear + leitura de video_erro_texto/codigo): espera a primeira
+  // publicacao valida antes de encerrar o consumo; zero corrida em TSan e identidade/
+  // codigo/texto sempre coerentes com genB.
   zerar_farol();
   abrir_titulo("tt3000003", "movie", "A_corrida", 0, 0, "https://example.com/a2.mkv", &genA);
   abrir_titulo("tt4000004", "movie", "B_corrida", 0, 0, "https://example.com/b2.mkv", &genB);
-  CorridaCtx ctx = { .genA = genA, .genB = genB, .parar = 0 };
+  CorridaCtx ctx = { .genA = genA, .genB = genB, .pubValida = 0, .parar = 0 };
   pthread_t th;
   assert(pthread_create(&th, NULL, fio_jni_corrida, &ctx) == 0);
+  {
+    struct timespec t0, tNow;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    while (!atomic_load_explicit(&ctx.pubValida, memory_order_acquire)) {
+      sched_yield();
+      clock_gettime(CLOCK_MONOTONIC, &tNow);
+      assert(tNow.tv_sec - t0.tv_sec < 10);
+    }
+  }
   int viuFalhaB = 0;
   for (int i = 0; i < 4000; i++) {
     atomic_fetch_add(&relogioMs, 1);
@@ -458,13 +497,82 @@ int main(void) {
       int dec = video_erro_decoder_codigo();
       assert(!strcmp(txt, "2004 player error:0"));
       assert(dec == 0);
+      assert(video_erro_identificado() == 1);
       viuFalhaB = 1;
       break;
     }
+    sched_yield();
   }
-  atomic_store(&ctx.parar, 1);
+  atomic_store_explicit(&ctx.parar, 1, memory_order_release);
   pthread_join(th, NULL);
   assert(viuFalhaB);
+
+  // 5) FAROL6-r5 achado 3: evento legado EV_ERRO sem geracao preserva feedback e
+  // compatibilidade de erro/diagnostico, mas NAO pode autorizar player externo
+  // para tentativa B que nao identifica.
+  zerar_farol();
+  abrir_titulo("tt5000005", "movie", "A_legado", 0, 0, "https://example.com/a_leg.mkv", &genA);
+  abrir_titulo("tt6000006", "movie", "B_legado", 0, 0, "https://example.com/b_leg.mkv", &genB);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_ERRO, 4003, 2);
+  video_bombear();
+  assert(video_falhou());
+  assert(!strcmp(video_erro_texto(), "4003 player error:2"));
+  assert(video_erro_decoder_codigo() == 4003);
+  assert(video_erro_identificado() == 0);
+  player_erro_fonte();
+  {
+    FarolErro fe;
+    assert(player_ultimo_erro_farol(&fe, NULL));
+    assert(fe.classe == FC_FORMATO);
+  }
+  assert(player_ultimo_erro_tentativa() == 0);
+  assert(player_externo_disponivel() == 0);
+  aberto = 0;
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO);
+  assert(resolver_teste_prim() != FAROL_A_PLAYER_EXTERNO);
+  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  apertar_ok_app();
+  assert(c_androidAbrirN == 0);
+  assert(c_envioChamadas >= 1);
+  assert(player_abrir_externo() == 0);
+  assert(c_androidAbrirN == 0);
+
+  // 6) FAROL6-r5 achado 2: transicao concorrente abrir/bombear/consumir/video_parar
+  // com entrega JNI simultanea (ativo + sessao + erro + tocando sob TSan).
+  zerar_farol();
+  TransicaoCtx tctx = { .genAtual = 0, .parar = 0 };
+  pthread_t thTrans;
+  assert(pthread_create(&thTrans, NULL, fio_jni_transicao, &tctx) == 0);
+  for (int ciclo = 0; ciclo < 400; ciclo++) {
+    unsigned g = 0;
+    abrir_titulo("tt7000007", "movie", "Trans", 0, 0, "https://example.com/trans.mkv", &g);
+    atomic_store_explicit(&tctx.genAtual, g, memory_order_release);
+    for (int passo = 0; passo < 3; passo++) {
+      atomic_fetch_add(&relogioMs, 1);
+      video_bombear();
+      (void)video_ativo();
+      (void)video_tocando();
+      if (video_falhou()) {
+        const char *txt = video_erro_texto();
+        int dec = video_erro_decoder_codigo();
+        int id = video_erro_identificado();
+        assert(id == 1);
+        assert(!strcmp(txt, "4003 player error:2"));
+        assert(dec == 4003);
+        break;
+      }
+      sched_yield();
+    }
+    video_parar();
+    assert(!video_ativo());
+    assert(video_erro_texto()[0] == 0);
+    assert(video_erro_decoder_codigo() == 0);
+    assert(video_erro_identificado() == 0);
+  }
+  atomic_store_explicit(&tctx.parar, 1, memory_order_release);
+  pthread_join(thTrans, NULL);
 
   puts("farol_android_erro: tudo ok");
   return 0;

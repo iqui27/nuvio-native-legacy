@@ -137,14 +137,28 @@ int player_aberto(void) { return aberto; }
 static void tocarFonteInterno(const char *url) { (void)url; c_tocarInternoN++; }
 static int mini;
 static int idxAtual(void) { return c_catIdxAtual; }
+static struct { char imdb[24]; int nEpsT1; } c_catSlots[4];
+static int c_catSlotCount;
 int cat_indice_titulo(const char *imdb, int preferido) {
-  (void)imdb;
-  return preferido;
+  if (!c_catSlotCount) {
+    (void)imdb;
+    return preferido;
+  }
+  if (preferido >= 0 && preferido < c_catSlotCount &&
+      !strcmp(c_catSlots[preferido].imdb, imdb))
+    return preferido;
+  for (int i = 0; i < c_catSlotCount; i++)
+    if (!strcmp(c_catSlots[i].imdb, imdb)) return i;
+  return -1;
 }
 static int travaui_segura(const char *imdb, int idxCat, int t, int e, int *perfis, int *n) {
-  (void)idxCat; (void)perfis;
+  (void)perfis;
   if (n) *n = 0;
   if (!c_travaBloq || c_travaManualAutorizada) return 0;
+  if (c_catSlotCount > 0) {
+    int nEps = (idxCat >= 0 && idxCat < c_catSlotCount) ? c_catSlots[idxCat].nEpsT1 : 0;
+    return imdb && !strcmp(imdb, c_travaImdb) && t == 2 && e == 1 && nEps >= 3;
+  }
   if (!c_travaImdb[0]) return 1;
   return imdb && !strcmp(imdb, c_travaImdb) && t == c_travaT && e == c_travaE;
 }
@@ -1088,6 +1102,94 @@ int main(void) {
   assert(!strcmp(c_androidAbrirUrl, "https://cdn.example/s1e2_ok.mkv"));
   assert(!strcmp(c_androidAbrirTit, "Serie Autorizada"));
   assert(c_tocarInternoN == 0);
+
+  // ----------------------------------------------------------- cenario 24
+  // FAROL6-r5 achado 4: indice da serie reavaliado pela identidade antes da
+  // trava na oferta e na confirmacao, inclusive com player aberto ou mini e
+  // catalogo reordenado (slot antigo agora tem 2 eps em T1; serie real com 3
+  // eps moveu para slot 1 e deve bloquear T2E1).
+  for (int modo = 0; modo < 2; modo++) {
+    zerar();
+    snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
+    c_catSlotCount = 2;
+    snprintf(c_catSlots[0].imdb, sizeof c_catSlots[0].imdb, "tt6666666");
+    c_catSlots[0].nEpsT1 = 3;
+    snprintf(c_catSlots[1].imdb, sizeof c_catSlots[1].imdb, "tt9999998");
+    c_catSlots[1].nEpsT1 = 2;
+    c_catIdxAtual = 0;
+    aberto = modo == 0 ? 1 : 0;
+    mini = modo == 1 ? 1 : 0;
+    c_travaBloq = 1;
+    snprintf(c_travaImdb, sizeof c_travaImdb, "tt6666666");
+    sim_abrir_tentativa("tt6666666", "series", "Serie Reordenada", 2, 1,
+                        "https://cdn.example/s2e1.mkv", 0);
+    farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
+    falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
+                 FC_FORMATO, 0, "m3_4003");
+    farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+#ifdef FAROL_BRIDGE_TEM_TENTATIVA
+    uint64_t tentReord = player_ultimo_erro_tentativa();
+    assert(tentReord != 0);
+#endif
+    // Catalogo reordena mantendo o player aberto/mini: slot 0 fica com serie
+    // de 2 episodios em T1, e tt6666666 (3 eps) move para slot 1.
+    snprintf(c_catSlots[0].imdb, sizeof c_catSlots[0].imdb, "tt9999998");
+    c_catSlots[0].nEpsT1 = 2;
+    snprintf(c_catSlots[1].imdb, sizeof c_catSlots[1].imdb, "tt6666666");
+    c_catSlots[1].nEpsT1 = 3;
+    c_catIdxAtual = 1;
+    assert(player_externo_disponivel() == 0);
+#ifdef FAROL_BRIDGE_TEM_TENTATIVA
+    assert(player_externo_disponivel_tentativa(tentReord) == 0);
+#endif
+    resolver_abrir();
+    resolver_teste_testar(RES_S_NAO_COMECA);
+    assert(resolver_teste_prim() != FAROL_A_PLAYER_EXTERNO);
+    apertar_ok_app();
+    assert(c_androidAbrirN == 0);
+#ifdef FAROL_BRIDGE_TEM_TENTATIVA
+    assert(player_abrir_externo_tentativa(tentReord) == 0);
+#endif
+    assert(c_androidAbrirN == 0);
+
+    // Tambem na confirmacao: oferta inicial sem trava (ou antes da realocacao),
+    // catalogo reordena e trava passa a bloquear entre oferta e OK.
+    zerar();
+    snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
+    c_catSlotCount = 2;
+    snprintf(c_catSlots[0].imdb, sizeof c_catSlots[0].imdb, "tt6666666");
+    c_catSlots[0].nEpsT1 = 3;
+    snprintf(c_catSlots[1].imdb, sizeof c_catSlots[1].imdb, "tt9999998");
+    c_catSlots[1].nEpsT1 = 2;
+    c_catIdxAtual = 0;
+    aberto = modo == 0 ? 1 : 0;
+    mini = modo == 1 ? 1 : 0;
+    c_travaBloq = 0;
+    snprintf(c_travaImdb, sizeof c_travaImdb, "tt6666666");
+    sim_abrir_tentativa("tt6666666", "series", "Serie Reordenada Conf", 2, 1,
+                        "https://cdn.example/s2e1.mkv", 0);
+    farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
+    falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
+                 FC_FORMATO, 0, "m3_4003");
+    farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+    resolver_abrir();
+    resolver_teste_testar(RES_S_NAO_COMECA);
+    assert(resolver_teste_prim() == FAROL_A_PLAYER_EXTERNO);
+    snprintf(c_catSlots[0].imdb, sizeof c_catSlots[0].imdb, "tt9999998");
+    c_catSlots[0].nEpsT1 = 2;
+    snprintf(c_catSlots[1].imdb, sizeof c_catSlots[1].imdb, "tt6666666");
+    c_catSlots[1].nEpsT1 = 3;
+    c_catIdxAtual = 1;
+    c_travaBloq = 1;
+    apertar_ok_app();
+    assert(c_androidAbrirN == 0);
+    assert(resolver_aberto());
+    assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+    assert(player_abrir_externo() == 0);
+    assert(c_androidAbrirN == 0);
+  }
+  c_catSlotCount = 0;
+  mini = 0;
 
   puts("farol_resolver: producao ok");
   return 0;
