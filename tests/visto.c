@@ -43,6 +43,11 @@ unsigned long long simklauth_credencial_copiar(char *dst, size_t tam) {
   return 1;
 }
 int simklauth_invalidar_se(unsigned long long cred) { (void)cred; tokenSimkl = ""; return 1; }
+int simklauth_credencial_travar(unsigned long long cred, int p, const char *aut) {
+  return cred == 1 && p == perfil && tokenSimkl[0] &&
+         !strcmp(aut + strlen("Authorization: Bearer "), tokenSimkl);
+}
+void simklauth_credencial_destravar(void) {}
 const char *nuvem_simkl_cliente(void) { return "cid-teste"; }
 const char *nuvem_simkl_app(void) { return "nuvio"; }
 const char *nuvem_trakt_cliente(void) { return "cli-trakt"; }
@@ -101,6 +106,13 @@ int dados_gravar(const char *n, const char *c) {
 int dados_apagar(const char *n) {
   if (strstr(n, "conta-pend-")) { free(journal); journal = NULL; }
   return 1;
+}
+int dados_gravar_leve(const char *n, const char *c) { return dados_gravar(n, c); }
+int simklauth_perfil(void) { return 1; }
+int simklauth_token_perfil(int p, char *dst, size_t tam) {
+  (void)p;
+  if (dst && tam) snprintf(dst, tam, "%s", tokenSimkl);
+  return tokenSimkl[0] != 0;
 }
 int cat_indice_por_imdb(const char *imdb) { (void)imdb; return -1; }
 void cat_aplicar_progresso(int i, double p, double d, int t, int e) { (void)i; (void)p; (void)d; (void)t; (void)e; }

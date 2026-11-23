@@ -571,10 +571,19 @@ static float fatorTamanho(void) {
 // (medido: 344 + 352 de diametro + nome + cartao 142 = 935, ainda a 13 px do
 // rodape de acoes). Pequeno e Medio ficam onde sempre estiveram.
 static float filaY(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return NV_TELA_H * (352.0f / 900.0f);
+#endif
   return ajustes_ps_tamanho() == 2 ? PS_FILA_Y - 52.0f : PS_FILA_Y;
 }
 
 static float diametro(int m) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) {
+    float k = NV_TELA_W / 1440.0f;
+    return fminf(140.0f * k * fatorTamanho(), (NV_TELA_W - 96.0f * k) / fmaxf(1, m) / 1.4f);
+  }
+#endif
   float util = NV_TELA_W - 2.0f * NV_MARGEM_X;
   float f = fatorTamanho();
   float d;
@@ -584,6 +593,10 @@ static float diametro(int m) {
 }
 
 static float vaoDe(int m, float d) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return fminf(76.0f * NV_TELA_W / 1440.0f,
+    (NV_TELA_W - 96.0f * NV_TELA_W / 1440.0f - m * d) / fmaxf(1, m - 1));
+#endif
   float util = NV_TELA_W - 2.0f * NV_MARGEM_X;
   float g = d * PS_VAO_RAZAO;
   if (m <= 1) return g;
@@ -812,6 +825,9 @@ static void ambAtualizar(float dt, int reduzida) {
   for (i = 0; i < CONTA_PERFIL_MAX; i++) {
     const ContaPerfil *p = i < m ? perfis_item(i) : NULL;
     const char *u = p ? ambUrl(i) : NULL;
+#ifdef NV_DESKTOP_UI
+    if (layout_desktop_ativo()) { ambFonte[i] = u ? tex_obter_larg_qualquer(u, NV_TELA_W) : 0; continue; }
+#endif
     ambFonte[i] = u ? tex_obter_larg_qualquer(u, PS_AMB_LARG) : 0;
   }
   if (ambAtual < 0) { ambAtual = ambAnt = foco; ambT = 1.0f; }
@@ -1489,7 +1505,7 @@ static void desenhaPin(void) {
     // texto preto —, que e exatamente o padrao que a nota de NV_COR_FOCO em
     // layout.h descreve como o errado e manda nao repetir.
     if (f) {
-      gfx_cor(r, NV_RAIO_PILL, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, a);
+      gfx_cor(r, NV_RAIO_PILL, NV_COR_FOCO_RGB, a);
       float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
       gfx_anel_fora(r, NV_RAIO_PILL, 0.0f, NV_ANEL_FOCO, ar, ag, ab, a);
     } else {
@@ -1499,6 +1515,10 @@ static void desenhaPin(void) {
     txt_desenhar_alpha(l, r.x + (r.w - l.w) * 0.5f, r.y + (r.h - l.h) * 0.5f, a);
   }
 }
+
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+#include "perfilsel_desktop.inc"
+#endif
 
 void perfilsel_desenhar(Uint32 agora) {
   int i, m = perfis_n();
@@ -1540,6 +1560,10 @@ void perfilsel_desenhar(Uint32 agora) {
       } else if (modo != PS_FUNDO_LISTRAS && modo != PS_FUNDO_ARTE && cob < 0.999f)
         muralDesenhar(a * (1.0f - cob) * (pinDe >= 0 ? 0.30f : 1.0f), reduzida);
     } }
+
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+  if (layout_desktop_ativo()) { psDesktopDesenhar(agora, a, subida); return; }
+#endif
 
   { TxtLinha t = txt_linha(TXT_TITULO1, "Quem está assistindo?", 255, 255, 255, 255);
     TxtLinha sombra = txt_linha(TXT_TITULO1, "Quem está assistindo?", 0, 0, 0, 230);

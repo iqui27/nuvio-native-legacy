@@ -6,6 +6,7 @@
 #include "ajustes.h"
 #ifdef NV_TPK
 #include "video.h"
+#include "mkvfix.h"
 #endif
 #ifdef NV_ANDROID
 #include "android.h"
@@ -491,7 +492,7 @@ void gpun_descartar_cor(int padrao) {
 }
 
 void gpun_redimensionar(int w, int h) {
-#ifdef NV_TOUCH_UI
+#if defined(NV_TOUCH_UI) || defined(NV_TPK)
   if (w <= 0 || h <= 0) return;
   // Switching TV/Mobile can change the logical canvas without resizing the
   // drawable. A fixed logical target must be rebuilt in that case too.
@@ -671,6 +672,12 @@ int gpun_janela_elegivel(double *fps, double pior, int cena, int cheia) {
 void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) {
   double alvo = periodo > 0 ? 1000.0 / periodo : 60.0;
   int automaticos = ajustes_efeitos_automaticos();
+#ifdef NV_TPK
+  if (mkvfix_estado() == MKVFIX_SONDANDO) {
+    printf("[gpu-nivel] report ignored: mkvfix probe active (fps=%.1f)\n", fps);
+    return;
+  }
+#endif
   int limpa = gpun_janela_elegivel(&fps, pior, cena, cheia);
   medidaTransiente = 0;
   medidaMs = medidaRuim = 0; medidaN = 0;

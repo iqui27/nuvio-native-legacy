@@ -738,6 +738,26 @@ int main(void) {
       assert(!strcmp(a[0].nome, "O")); }
     puts("ok  #176: mescla de episodios: texto sobrepoe, vazios so preenche");
 
+    // #747: Tokyo Revengers-style — mescla TEXTO troca dataIso no par, nao data de S1 em S3.
+    { CatEp b[1], addon[1];
+      memset(b, 0, sizeof b); memset(addon, 0, sizeof addon);
+      b[0].temporada = 3; b[0].episodio = 5;
+      snprintf(b[0].dataIso, sizeof b[0].dataIso, "%s", "2023-03-01");
+      addon[0].temporada = 3; addon[0].episodio = 5;
+      snprintf(addon[0].dataIso, sizeof addon[0].dataIso, "%s", "2024-10-01T00:00:00.000Z");
+      desc_mesclar_episodios(b, 1, addon, 1, DESC_MESCLA_TEXTO);
+      assert(!strcmp(b[0].dataIso, "2024-10-01T00:00:00.000Z"));
+      assert(b[0].data[0]); }
+    { CatEp b[1], addon[1];
+      memset(b, 0, sizeof b); memset(addon, 0, sizeof addon);
+      b[0].temporada = 2; b[0].episodio = 1;
+      snprintf(b[0].dataIso, sizeof b[0].dataIso, "%s", "2022-01-01");
+      addon[0].temporada = 2; addon[0].episodio = 1;
+      snprintf(addon[0].dataIso, sizeof addon[0].dataIso, "%s", "2024-06-15");
+      desc_mesclar_episodios(b, 1, addon, 1, DESC_MESCLA_VAZIOS);
+      assert(!strcmp(b[0].dataIso, "2022-01-01")); }
+    puts("ok  #747: mescla TEXTO troca dataIso do episodio no par certo");
+
     // CW / SPOTLIGHT ----------------------------------------------------------
     // 17) Texto localizado de um item do Continuar (titulo em ingles do Trakt):
     //     pela FICHA DO ADDON quando preferida, com um pedido por titulo.

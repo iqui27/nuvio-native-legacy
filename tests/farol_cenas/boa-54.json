@@ -1,0 +1,1 @@
+{"v":1,"tela":"home","pecas":[{"t":"dica","id":"z9_","l1":{"m":"FT_DICA_TRAKT"},"acao":{"tipo":"nada"}},{"t":"comparar","itens":["c0","c1"],"eixos":["duracao","nota"],"veredito":{"m":"FT_CMP_VEREDITO_CABE","a":["c1"]},"escolha":"c0"}]}

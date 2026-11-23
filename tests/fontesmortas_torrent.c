@@ -1,5 +1,6 @@
 // Ciclo real do job manual: baixar -> resolver -> primeiro quadro -> limpar.
 #define SDL_MAIN_HANDLED
+#include "stub_perfisessao.h"
 #include "../src/app.c"
 #include "stub_m3u.h"
 #include "fontesmortas.h"
@@ -84,8 +85,6 @@ int stream_resolver_escolhida(int i, unsigned g, char *u, unsigned n,
 }
 int p2p_ultimo_erro(void) { return 0; }
 void p2pmotor_arquivo_atual(uint64_t *t, uint64_t *m, uint64_t *l) { *t = *m = *l = 0; }
-int debrid_sem_plano(void) { return 0; }
-const char *debrid_sem_plano_frase(int m) { (void)m; return ""; }
 const CatItem *cat_item(int i) { (void)i; return titulo.imdb[0] ? &titulo : NULL; }
 void ilhasinais_debrid_baixando(const char *s, const char *t) { (void)s; (void)t; }
 const char *i18n(const char *s) { return s; }
@@ -111,7 +110,18 @@ int juntos_precarregando(void) { return 0; }
 void juntos_retomar_player(int i) { (void)i; }
 int juntosui_escolhendo_filme(void) { return 0; }
 void juntosui_sala_abriu(void) {}
+int addons_base_por_id_copiar(const char *id, char *base, unsigned tam) {
+  (void)id; if (tam) base[0] = 0; return 0;
+}
+void addons_definir_origem(const char *base) { (void)base; }
+void servidores_dica(const char *a, const char *b, int c) { (void)a;(void)b;(void)c; }
+int srvidx_ano_de(const char *meta) { (void)meta; return 0; }
+int stream_falha_semear_manual(FonteFalhaSessao *s, int i, unsigned g, const char *u) {
+  (void)s;(void)i;(void)g;(void)u; return 0;
+}
+int xtream_url_limitada(const char *u) { (void)u; return 0; }
 int p2p_ativo(void) { return 1; }
+void p2p_cancelar(void) {}
 int p2p_usa_motor(void) { return 1; }
 void p2pmotor_cancelar(void) {}
 void p2pmotor_parar_fundo(void) {}

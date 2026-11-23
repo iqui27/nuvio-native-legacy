@@ -100,6 +100,13 @@ void extras_definir_chave(const char *chave) {
 
 int extras_mdblist_tem_chave(void) { return mdbChave[0] != 0; }
 
+int extras_mdblist_chave(char *dst, unsigned n) {
+  if (!dst || !n) return 0;
+  if (!mdbChave[0]) { dst[0] = 0; return 0; }
+  snprintf(dst, n, "%s", mdbChave);
+  return 1;
+}
+
 void extras_carregar(const char *dirArte) {
   char caminho[600];
   FILE *f;

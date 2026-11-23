@@ -9,3 +9,7 @@ cc -O1 -g -Wall "${inc[@]}" tests/partes.c src/partes.c src/js.c -lpthread -lm -
 "${TMPDIR:-/tmp}/nuvio-partes"
 cc -O1 -g -Wall "${inc[@]}" tests/partes-account.c src/js.c -lpthread -lm -o "${TMPDIR:-/tmp}/nuvio-partes-account"
 "${TMPDIR:-/tmp}/nuvio-partes-account"
+# Cartoes dos arquivos da fonte: a fileira nao da autoplay (tests/partescartao.c).
+cc -O1 -g -Wall "${inc[@]}" tests/partescartao.c src/partescartao.c -lpthread -lm \
+  -o "${TMPDIR:-/tmp}/nuvio-partescartao"
+"${TMPDIR:-/tmp}/nuvio-partescartao"

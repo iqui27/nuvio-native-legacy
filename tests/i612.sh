@@ -66,6 +66,11 @@ globals_end = s.index('// Fio do app: devolve', globals_start)
 globals_text = s[globals_start:globals_end]
 # Error storage may move ahead of the loader; declare it once in this harness.
 globals_text = globals_text.replace('static char erro[512];', '')
+# A flag #754 pode ficar fora deste recorte (perto da fila de ciclo): declara aqui.
+globals_text = re.sub(r'static int revalidarSuperficie;[^\n]*', '', globals_text)
+globals_text += '\nstatic int revalidarSuperficie;\n'
+# Idem para a geracao da superficie (#754/F62): mora junto da flag no fonte.
+globals_text += 'static unsigned geracaoSuperficie;\n'
 (w/'egl-test.c').write_text('''#include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -81,6 +86,17 @@ typedef int GLint;
 static void glGetIntegerv(int p, int *v) { *v = 8; }
 static void glClearColor(float r, float g, float b, float a) {}
 static void glClear(int mask) {}
+static void glViewport(int x, int y, int w, int h) {}
+typedef unsigned Uint32;
+typedef unsigned char Uint8;
+#define SDL_WINDOWEVENT 0x200
+#define SDL_WINDOWEVENT_SIZE_CHANGED 5
+typedef union SDL_Event {
+  Uint32 type;
+  struct { Uint32 type; Uint32 timestamp; Uint32 windowID;
+           Uint8 event, p1, p2, p3; int data1, data2; } window;
+} SDL_Event;
+static int SDL_PushEvent(SDL_Event *e) { (void)e; return 0; }
 static char erro[512];
 '''+s[s.index('static char etapasArq'):s.index('static void etapasAnteriorParaLog')]+'''
 TpkEgl tpkEgl;

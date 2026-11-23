@@ -205,6 +205,8 @@ const char *guia_vod_origem(const char *source);
 int  guia_canal_campos(int i, const char **id, const char **nome, const char **logo,
                        const char **cat, const char **base);
 /* Unfiltered metadata for the authenticated parental rule editor only. */
+int guia_canal_logo_url(const char *id, char *dst, size_t n);
+/* Unfiltered metadata for the parental rule editor only. */
 int guia_canal_regra_campos(int i,const char **id,const char **nome,const char **logo,const char **cat,const char **base);
 
 // Bounded programme search for the Sports catalog, on the UI thread.

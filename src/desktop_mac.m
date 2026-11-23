@@ -18,6 +18,100 @@ void gfx_arte_caminho(const char *rel, char *out, unsigned n);
 #include "idioma.h"
 #include "esportes.h"
 #include "tex_cache.h"
+#include "layout.h"
+#include "busca.h"
+static NSSearchField *searchField;
+static BOOL searchDrawn;
+static Uint32 searchWindowID;
+@interface NVSearchTarget : NSObject <NSSearchFieldDelegate>
+@end
+@implementation NVSearchTarget
+- (void)controlTextDidChange:(NSNotification *)notification {
+  busca_desktop_editar(searchField.stringValue.UTF8String);
+}
+- (BOOL)control:(NSControl *)control textView:(NSTextView *)view doCommandBySelector:(SEL)selector {
+  SDL_Keycode key=selector==@selector(moveDown:)?SDLK_DOWN:
+    selector==@selector(moveUp:)?SDLK_UP:selector==@selector(insertNewline:)?SDLK_RETURN:
+    selector==@selector(cancelOperation:)?SDLK_ESCAPE:0;
+  if(!key) return NO;
+  [control.window makeFirstResponder:control.window.contentView];
+  SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.windowID=searchWindowID;event.key.keysym.sym=key;
+  SDL_PushEvent(&event);event.type=SDL_KEYUP;SDL_PushEvent(&event);
+  return YES;
+}
+@end
+#include "gfx.h"
+#include "layout.h"
+// Use real AppKit controls for system styling, including in GL readback proofs.
+// Cache per visible catalog option; changing state/title invalidates only its texture.
+int desktop_native_control(int slot, int kind, const char *title, int state, int enabled,
+                           float x, float y, float w, float h, float alpha) {
+  static struct { NSString *key; GLuint texture; } cache[1024];
+  if (slot < 0 || slot >= 1024 || w <= 0 || h <= 0) return 0;
+  @autoreleasepool {
+    NSString *text = [NSString stringWithUTF8String:title ? title : ""];
+    int ww = 1440, wh = 900;
+    SDL_Window *window = SDL_GL_GetCurrentWindow();
+    if (window) SDL_GetWindowSize(window, &ww, &wh);
+    float points = gfx_escala() / layout_window_units(ww, wh);
+    NSRect bounds = NSMakeRect(0, 0, w * points, h * points);
+    NSString *key = [NSString stringWithFormat:@"%d:%d:%d:%.2f:%.2f:%@", kind, state, enabled, bounds.size.width, bounds.size.height, text];
+    if (![cache[slot].key isEqualToString:key]) {
+      NSControl *control;
+      if (kind == 0) {
+        NSSwitch *toggle = [[NSSwitch alloc] initWithFrame:bounds];
+        toggle.state = state ? NSControlStateValueOn : NSControlStateValueOff;
+        control = toggle;
+      } else if (kind == 1) {
+        NSPopUpButton *popup = [[NSPopUpButton alloc] initWithFrame:bounds pullsDown:NO];
+        [popup addItemWithTitle:text]; popup.bezelStyle = NSBezelStyleAccessoryBar;
+        control = popup;
+      } else if (kind == 4) {
+        NSTextField *label = [[NSTextField labelWithString:text] retain];
+        label.frame = bounds; label.textColor = NSColor.whiteColor;
+        control = label;
+      } else if (kind == 3) {
+        NSSearchField *search = [[NSSearchField alloc] initWithFrame:bounds];
+        search.placeholderString = text;
+        control = search;
+      } else {
+        NSButton *button = [[NSButton alloc] initWithFrame:bounds];
+        button.title = text; button.bezelStyle = NSBezelStyleAccessoryBar;
+        control = button;
+      }
+      control.enabled = enabled;
+      control.font = [NSFont systemFontOfSize:kind == 4 ? state : 13];
+      control.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+      NSBitmapImageRep *bitmap = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+        pixelsWide:(NSInteger)ceil(bounds.size.width * 2) pixelsHigh:(NSInteger)ceil(bounds.size.height * 2) bitsPerSample:8 samplesPerPixel:4
+        hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bitmapFormat:0
+        bytesPerRow:(NSInteger)ceil(bounds.size.width * 2)*4 bitsPerPixel:32];
+      bitmap.size = bounds.size;
+      [control.appearance performAsCurrentDrawingAppearance:^{
+        [control cacheDisplayInRect:bounds toBitmapImageRep:bitmap];
+      }];
+      // Quartz draws premultiplied RGBA; the shared GL compositor uses straight alpha.
+      for (NSInteger i = 0; i < bitmap.pixelsWide * bitmap.pixelsHigh; i++) {
+        unsigned char *p = bitmap.bitmapData + i * 4;
+        if (p[3]) for (int c = 0; c < 3; c++) p[c] = MIN(255, p[c] * 255 / p[3]);
+      }
+      GLint binding; glGetIntegerv(GL_TEXTURE_BINDING_2D, &binding);
+      if (!cache[slot].texture) glGenTextures(1, &cache[slot].texture);
+      glBindTexture(GL_TEXTURE_2D, cache[slot].texture);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)bitmap.pixelsWide, (GLsizei)bitmap.pixelsHigh,
+                   0, GL_RGBA, GL_UNSIGNED_BYTE, bitmap.bitmapData);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      glBindTexture(GL_TEXTURE_2D, (GLuint)binding);
+      [cache[slot].key release]; cache[slot].key = [key copy];
+      [bitmap release]; [control release];
+    }
+    gfx_rect((GfxRect){x,y,w,h}, cache[slot].texture, GFX_TEXTO, 0, 0, 0, 0, 1,1,1,alpha);
+    return 1;
+  }
+}
 static NSWindow *nativeWindow;
 static NSView *sidebar, *sidebarControls;
 static NSView *sourceControls;
@@ -159,6 +253,94 @@ static NSView *serviceContent;
 - (void)toggleSidebar:(id)sender { menu_desktop_alternar(); }
 @end
 static NSButton *sidebarToggle;
+static NSButton *profileButtons[3];
+static BOOL profileButtonUsed[3];
+static void (*profileButtonActions[3])(int, int);
+@interface NVProfileButton : NSButton
+@property int actionTag;
+@end
+@implementation NVProfileButton
+- (void)chooseProfile:(id)sender {
+  if (profileButtonActions[self.tag]) profileButtonActions[self.tag](self.actionTag, 0);
+}
+@end
+
+// Native SF glyphs and NSButton snapshots are also used by GL readback proofs.
+// Cache only this screen's small, bounded set of labels and controls.
+static GLuint profileBitmap(NSBitmapImageRep *bitmap) {
+  int w=(int)bitmap.pixelsWide,h=(int)bitmap.pixelsHigh;
+  unsigned char *pixels=malloc((size_t)w*h*4);
+  for(int y=0;y<h;y++) for(int x=0;x<w;x++) {
+    NSColor *c=[[bitmap colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    size_t p=((size_t)y*w+x)*4;
+    pixels[p]=c.redComponent*255; pixels[p+1]=c.greenComponent*255;
+    pixels[p+2]=c.blueComponent*255; pixels[p+3]=c.alphaComponent*255;
+  }
+  GLuint texture; glGenTextures(1,&texture); glBindTexture(GL_TEXTURE_2D,texture);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+  free(pixels); return texture;
+}
+void desktop_native_profile_text(const char *text, float cx, float y, float size, int bold, float ink, float alpha) {
+  static NSMutableDictionary *cache;
+  if(!cache) cache=[NSMutableDictionary new];
+  NSString *string=[NSString stringWithUTF8String:text];
+  NSString *key=[NSString stringWithFormat:@"%@:%g:%d",string,size,bold];
+  NSArray *entry=cache[key];
+  if(!entry) {
+    if(cache.count>=64) {
+      for(NSArray *old in cache.allValues) {GLuint t=[old[0] unsignedIntValue];gfx_tex_esquecer(t);glDeleteTextures(1,&t);}
+      [cache removeAllObjects];
+    }
+    NSDictionary *attrs=@{NSFontAttributeName:[NSFont systemFontOfSize:size weight:bold?NSFontWeightSemibold:NSFontWeightRegular],NSForegroundColorAttributeName:NSColor.whiteColor};
+    NSSize s=[string sizeWithAttributes:attrs]; s.width=ceil(s.width);s.height=ceil(s.height);
+    NSImage *image=[[[NSImage alloc] initWithSize:s] autorelease];
+    [image lockFocusFlipped:YES];[string drawAtPoint:NSZeroPoint withAttributes:attrs];[image unlockFocus];
+    NSBitmapImageRep *bitmap=[NSBitmapImageRep imageRepWithData:image.TIFFRepresentation];
+    entry=@[@(profileBitmap(bitmap)),@(s.width),@(s.height)]; cache[key]=entry;
+  }
+  float w=[entry[1] floatValue],h=[entry[2] floatValue];
+  gfx_rect((GfxRect){cx-w*.5f,y,w,h},[entry[0] unsignedIntValue],GFX_TEXTO,0,1,0,0,ink,ink,ink,alpha);
+}
+void desktop_native_profile_button(GfxRect rect, const char *title, int enabled, int selected, float alpha,
+                                  void (*activate)(int,int), int tag, int slot) {
+  if(!nativeWindow || slot<0 || slot>=3) return;
+  NVProfileButton *button=(NVProfileButton *)profileButtons[slot];
+  if(!button) {
+    button=[NVProfileButton new];profileButtons[slot]=button;
+    button.tag=slot;button.target=button;button.action=@selector(chooseProfile:);
+    button.bezelStyle=slot==2?NSBezelStyleCircular:NSBezelStyleRounded;
+    button.controlSize=NSControlSizeLarge;
+    button.appearance=[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    button.font=[NSFont systemFontOfSize:15];
+    [nativeWindow.contentView addSubview:button];
+  }
+  profileButtonUsed[slot]=YES;profileButtonActions[slot]=activate;button.actionTag=tag;
+  NSView *view=nativeWindow.contentView;
+  float scale=view.bounds.size.width/NV_TELA_W;
+  button.frame=NSMakeRect(rect.x*scale,view.bounds.size.height-(rect.y+rect.h)*scale,rect.w*scale,rect.h*scale);
+  button.title=[NSString stringWithUTF8String:title];button.enabled=enabled;button.alphaValue=alpha;
+  [button highlight:selected];button.hidden=NO;
+  if(getenv("NV_CAPTURA_GL")) {
+    static GLuint textures[3];static NSString *keys[3];
+    NSString *key=[NSString stringWithFormat:@"%@:%d:%d:%g:%g",button.title,enabled,selected,rect.w,rect.h];
+    if(![keys[slot] isEqual:key]) {
+      [keys[slot] release];keys[slot]=[key copy];
+      if(textures[slot]) {gfx_tex_esquecer(textures[slot]);glDeleteTextures(1,&textures[slot]);}
+      NSImage *image=[[[NSImage alloc] initWithSize:button.bounds.size] autorelease];
+      [button.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        [image lockFocusFlipped:YES];
+        [button.cell drawWithFrame:button.bounds inView:button];
+        [image unlockFocus];
+      }];
+      NSBitmapImageRep *bitmap=[NSBitmapImageRep imageRepWithData:image.TIFFRepresentation];
+      textures[slot]=profileBitmap(bitmap);
+    }
+    button.hidden=YES;
+    gfx_rect(rect,textures[slot],GFX_TEXTO,0,0,0,0,1,1,1,alpha);
+  }
+}
 static NSInteger alertAnswer = -1;
 static NSString *alertText;
 // Window-modal NSAlert sheet; SDL keeps pumping while it is up.
@@ -346,10 +528,14 @@ void desktop_native_init(SDL_Window *window) {
   if (!SDL_GetWindowWMInfo(window, &info)) return;
   nativeWindow = info.info.cocoa.window;
   BOOL capture = getenv("NV_CAPTURA") != NULL;
-  [NSApp setActivationPolicy:capture ? NSApplicationActivationPolicyAccessory : NSApplicationActivationPolicyRegular];
+  BOOL readback = capture && getenv("NV_CAPTURA_GL");
+  [NSApp setActivationPolicy:readback ? NSApplicationActivationPolicyProhibited :
+                            capture ? NSApplicationActivationPolicyAccessory : NSApplicationActivationPolicyRegular];
   if (capture) {
     nativeWindow.hidesOnDeactivate = NO;
-    [nativeWindow orderBack:nil];
+    nativeWindow.ignoresMouseEvents = YES;
+    if (readback) [nativeWindow orderOut:nil];
+    else [nativeWindow orderBack:nil];
   } else {
     [NSApp activateIgnoringOtherApps:YES];
     [nativeWindow makeKeyAndOrderFront:nil];
@@ -448,6 +634,7 @@ void desktop_native_init(SDL_Window *window) {
     if((event.phase&NSEventPhaseCancelled) || (event.momentumPhase&(NSEventPhaseEnded|NSEventPhaseCancelled))) nativeScrollLatched=NO;
     return nil;
   }];
+  searchWindowID=SDL_GetWindowID(window);
   nativeWindow.acceptsMouseMovedEvents=YES;
   // Titlebar sidebar button, beside the traffic lights like Finder and Notes.
   NSButton *zoom = [nativeWindow standardWindowButton:NSWindowZoomButton];
@@ -472,6 +659,9 @@ void desktop_native_init(SDL_Window *window) {
       if(control && NSPointInRect([control convertPoint:event.locationInWindow fromView:nil],control.bounds)) return event;
     }
     if(!sidebarToggle.hidden && NSPointInRect([sidebarToggle convertPoint:event.locationInWindow fromView:nil],sidebarToggle.bounds)) return event;
+    if(!searchField.hidden && searchField && NSPointInRect([searchField convertPoint:event.locationInWindow fromView:nil],searchField.bounds)) return event;
+    if(event.type==NSEventTypeLeftMouseDown && searchField.currentEditor)
+      [nativeWindow makeFirstResponder:content];
     menu_desktop_hover(p.x);
     NSPoint containerPoint=[sidebar.superview convertPoint:event.locationInWindow fromView:nil];
     if(sourceActive) {
@@ -503,7 +693,41 @@ void desktop_native_sidebar(float fraction, float reveal) {
   if (getenv("NV_CAPTURA_GL")) fraction=0;
   sidebarFraction=fraction; sidebarReveal=reveal;
 }
+int desktop_native_search(const char *query,float x,float y,float w,float h) {
+  if(!nativeWindow) return 0;
+  searchDrawn=YES;
+  if(getenv("NV_CAPTURA_GL")) return 0;
+  BOOL appearing=!searchField || searchField.hidden;
+  if(!searchField) {
+    searchField=[[NSSearchField alloc] init];
+    searchField.delegate=[NVSearchTarget new];
+    searchField.sendsSearchStringImmediately=YES;
+    searchField.font=[NSFont systemFontOfSize:14];
+    searchField.placeholderString=[NSString stringWithUTF8String:i18n("Buscar")];
+    searchField.accessibilityLabel=searchField.placeholderString;
+    [nativeWindow.contentView addSubview:searchField];
+    printf("[desktop-search] control=NSSearchField\n"); fflush(stdout);
+  }
+  NSView *content=nativeWindow.contentView;
+  NSRect bounds=content.bounds;
+  searchField.frame=NSMakeRect(x*bounds.size.width,content.isFlipped?y*bounds.size.height:(1-y-h)*bounds.size.height,w*bounds.size.width,h*bounds.size.height);
+  NSString *value=[NSString stringWithUTF8String:query];
+  if(![searchField.stringValue isEqualToString:value]) searchField.stringValue=value;
+  searchField.hidden=NO;
+  if(appearing && nativeWindow.isKeyWindow && !getenv("NV_CAPTURA"))
+    [nativeWindow makeFirstResponder:searchField];
+  return 1;
+}
 void desktop_native_finish(void) {
+  for(int i=0;i<3;i++) {
+    if(!profileButtonUsed[i]) profileButtons[i].hidden=YES;
+    profileButtonUsed[i]=NO;
+  }
+  if(!searchDrawn && !searchField.hidden) {
+    if(searchField.currentEditor) [nativeWindow makeFirstResponder:nativeWindow.contentView];
+    searchField.hidden=YES;
+  }
+  searchDrawn=NO;
   float fraction=sourceActive?0:sidebarFraction;
   if (!sidebar) return;
   if(fraction<=0 || sidebarReveal<.001f) {sidebar.hidden=YES;return;}

@@ -28,6 +28,7 @@ import { rotaDiario, DIARIO_CORPO_MAX, DIARIO_CORPO_MAX_LB } from "./diario.js";
 import { rotaTrava, travaRev } from "./trava.js";
 import { resolverCanonica, canonizarEntrada, identidadesDe, rotaIdentidades, idSimkl,
          perfilExiste, RECURSO } from "./identidade.js";
+import { rotaFarolRegistro, limparFarol, FAROL_CORPO_MAX } from "./farol.js";
 
 const DIA = 86400;
 const RETENCAO = 90 * DIA;
@@ -81,6 +82,32 @@ function limparTexto(s) {
     .slice(0, TEXTO_MAX);
 }
 const limpar = (s, n) => String(s == null ? "" : s).slice(0, n);
+
+// Le ate `max` bytes CRUS do corpo sem materializar o resto: o Content-Length
+// honesto recusa sem ler; o fluxo limitado cobre chunked e header mentiroso.
+// Devolve o texto ("" sem corpo) ou null quando passa do teto.
+async function corpoLimitado(req, max) {
+  const cl = Number(req.headers.get("content-length"));
+  if (Number.isFinite(cl) && cl > max) return null;
+  if (!req.body) return "";
+  const leitor = req.body.getReader();
+  const partes = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await leitor.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      try { await leitor.cancel(); } catch {}
+      return null;
+    }
+    partes.push(value);
+  }
+  const buf = new Uint8Array(total);
+  let o = 0;
+  for (const p of partes) { buf.set(p, o); o += p.length; }
+  return new TextDecoder().decode(buf);
+}
 
 // --- Identidade --------------------------------------------------------------
 //
@@ -811,10 +838,13 @@ const REGISTRO_MAX = 256 * 1024;
 const REGISTRO_CORPO_MAX = 2 * 1024 * 1024;   // corpo cru acima disto: 413
 const REGISTRO_DEDUP_JANELA = 24 * 3600;
 // codigoRegistro (o codigo de seis caracteres do recibo): ver src/codigo.js.
-// RETENCAO (#203): o D1 chegou a 6 GB de 10 GB com logs de 150 KB. Logs comuns
-// ficam 4 dias; so o registro de arranque (pessoa 'arranque:%', o vigia do APK
-// sem conta, poucos e pequenos) fica 30.
-const REGISTRO_RETENCAO = 4 * 24 * 3600;
+// RETENCAO (#203): o D1 chegou a 6 GB de 10 GB com logs de 150 KB. O envio
+// AUTOMATICO ("(auto)"/"(anterior)", que e o que enche) fica 4 dias; o manual
+// — a pessoa apertou "Enviar", poucos por dia — fica 30, que e o prazo que a
+// TV promete na tela de enviados (RES_GUARDA_S), alinhado pelo Farol. O
+// registro de arranque ('arranque:%', vigia do APK sem conta) tambem fica 30.
+const REGISTRO_RETENCAO = 4 * 24 * 3600;          // envio automatico
+const REGISTRO_RETENCAO_MANUAL = 30 * 24 * 3600;  // "Enviar registro" na TV
 const REGISTRO_RETENCAO_ARRANQUE = 30 * 24 * 3600;
 const REGISTRO_LOTE = 200;
 const REGISTRO_LOTES_MAX = 40;
@@ -847,8 +877,14 @@ async function rotaRegistro(env, quem, corpo) {
   let res = null;
   // IGUAL AO QUE JA ESTA NO D1 = NADA A GRAVAR (#203): devolve o recibo da linha
   // existente. Comparacao exata do texto (mais forte que um hash e sem coluna nova).
+  // O dedupe vale so DENTRO da mesma classe de origem — a mesma divisao que a
+  // limpeza usa para o prazo. Sem isto um "(manual)" identico a um "(auto)"
+  // devolvia o recibo do auto e herdava os 4 dias no lugar dos 30 prometidos.
   const igual = await env.DB.prepare(
-    "SELECT id FROM registro WHERE criado > ? AND pessoa = ? AND length(texto) = ? AND texto = ? LIMIT 1"
+    "SELECT id FROM registro WHERE criado > ? AND pessoa = ? AND length(texto) = ? AND texto = ? " +
+    (automatico ? "AND (quando LIKE '%(auto)' OR quando LIKE '%(anterior)') "
+                : "AND quando NOT LIKE '%(auto)' AND quando NOT LIKE '%(anterior)' ") +
+    "LIMIT 1"
   ).bind(t - REGISTRO_DEDUP_JANELA, quem.id, texto.length, texto).first();
   if (igual?.id) res = { meta: { last_row_id: igual.id } };
   if (!res && /\(auto\)$/.test(quando)) {
@@ -911,8 +947,12 @@ async function rotaApagar(env, quem, corpo) {
 
 export async function limparRegistro(env, t) {
   const passos = [
-    ["DELETE FROM registro WHERE id IN (SELECT id FROM registro WHERE criado < ? AND pessoa NOT LIKE 'arranque:%' LIMIT ?)",
+    ["DELETE FROM registro WHERE id IN (SELECT id FROM registro WHERE criado < ? AND pessoa NOT LIKE 'arranque:%' " +
+     "AND (quando LIKE '%(auto)' OR quando LIKE '%(anterior)') LIMIT ?)",
       t - REGISTRO_RETENCAO],
+    ["DELETE FROM registro WHERE id IN (SELECT id FROM registro WHERE criado < ? AND pessoa NOT LIKE 'arranque:%' " +
+     "AND quando NOT LIKE '%(auto)' AND quando NOT LIKE '%(anterior)' LIMIT ?)",
+      t - REGISTRO_RETENCAO_MANUAL],
     ["DELETE FROM registro WHERE id IN (SELECT id FROM registro WHERE criado < ? AND pessoa LIKE 'arranque:%' LIMIT ?)",
       t - REGISTRO_RETENCAO_ARRANQUE],
   ];
@@ -1066,14 +1106,25 @@ export default {
     // e o cliente em C nao vai montar um "{}" so para agradar o parser.
     let corpo = {};
     if (req.method === "POST") {
-      const cru = (await req.text()).trim();
-      if (rota === "/v1/registro" && cru.length > REGISTRO_CORPO_MAX) return erro("corpo grande", 413);
-      // Diario: corpo limitado (64 KB; 128 KB so na importacao do Letterboxd).
-      if (rota.startsWith("/v1/diario") &&
-          cru.length > (rota === "/v1/diario/letterboxd" ? DIARIO_CORPO_MAX_LB : DIARIO_CORPO_MAX))
-        return erro("corpo grande", 413);
-      if (cru) {
-        try { corpo = JSON.parse(cru); } catch { return erro("json invalido", 400); }
+      if (rota === "/v1/farol/registro") {
+        // Farol: o teto de 64 KB vale para os bytes CRUS, medido ANTES de
+        // materializar o corpo — Content-Length honesto recusa na hora e a
+        // leitura limitada cobre chunked e header mentiroso (secao 2.7).
+        const cru = await corpoLimitado(req, FAROL_CORPO_MAX);
+        if (cru == null) return erro("corpo grande", 413);
+        if (cru) {
+          try { corpo = JSON.parse(cru); } catch { return erro("json invalido", 400); }
+        }
+      } else {
+        const cru = (await req.text()).trim();
+        if (rota === "/v1/registro" && cru.length > REGISTRO_CORPO_MAX) return erro("corpo grande", 413);
+        // Diario: corpo limitado (64 KB; 128 KB so na importacao do Letterboxd).
+        if (rota.startsWith("/v1/diario") &&
+            cru.length > (rota === "/v1/diario/letterboxd" ? DIARIO_CORPO_MAX_LB : DIARIO_CORPO_MAX))
+          return erro("corpo grande", 413);
+        if (cru) {
+          try { corpo = JSON.parse(cru); } catch { return erro("json invalido", 400); }
+        }
       }
     }
 
@@ -1091,8 +1142,16 @@ export default {
                     identidades: await identidadesDe(env, eu.id) });
     }
 
-    const quem = { ...(await registrar(env, quemBruto)), bruto: quemBruto.bruto || quemBruto.id };
     const h = { json, erro, agora, limparTexto, limpar };
+    // FAROL NAO CADASTRA PESSOA (DECISOES.md item 4): a conta ja foi verificada
+    // por quemE/resolverCanonica e basta. Antes da correcao esta rota passava
+    // por `registrar` e um pacote recusado (422) JA tinha gravado id cru e nome
+    // de conta em `pessoa`. A cota tambem e por conta, sem sufixo de perfil.
+    if (rota === "/v1/farol/registro")
+      return req.method === "POST" ? rotaFarolRegistro(env, quemBruto, corpo, h, limitar, codigoRegistro)
+                                   : erro("metodo nao suportado", 405);
+
+    const quem = { ...(await registrar(env, quemBruto)), bruto: quemBruto.bruto || quemBruto.id };
     // Ids antigos (de antes de uma fusao) que TVs guardaram viram o id vivo.
     await canonizarEntrada(env, corpo, url);
 
@@ -1159,9 +1218,16 @@ export default {
       ...limpezaSocial(env, t),
     ]);
     // `registro` em pedacos (#203): um DELETE unico de milhares de linhas de
-    // 150 KB segura o unico escritor do D1. 4 dias para o comum, 30 para
-    // 'arranque:%'; cada passo apaga ate 200 por id, com teto de passos.
+    // 150 KB segura o unico escritor do D1. 4 dias para o automatico, 30 para
+    // o manual e para 'arranque:%'; cada passo apaga ate 200 por id, com teto
+    // de passos.
     await limparRegistro(env, t);
+    // Farol: 30 dias (o prazo da tela de enviados). Separado de proposito: sem
+    // a migracao 018 aplicada a tabela nao existe e nada mais pode falhar junto.
+    // A excecao vai para o log: calar uma falha REAL de limpeza faria a
+    // garantia de 30 dias se perder sem rastro.
+    try { await limparFarol(env, t); }
+    catch (e) { console.log("limparFarol falhou: " + (e && e.message ? e.message : e)); }
     // Separado de proposito: sem a migracao 010 aplicada, a tabela `sala` nao
     // existe e o lote inteiro (90 dias de retencao) falharia junto.
     try { await env.DB.batch(limpezaSala(env, t)); } catch {}

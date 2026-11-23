@@ -816,6 +816,7 @@ void gfx_vidro_painel(GfxRect r, float raio, float fundo, float a);
 void gfx_vidro_painel_sem_aro(GfxRect r, float raio, float fundo, float a);
 // FOCO de uma pilula/linha JA desenhada com gfx_vidro_painel: o miolo clareia
 // (branco a 9 %) e o contorno de 2 px em branco acende com a mola `foco`.
+void gfx_vidro_elevacao(GfxRect r, float foco, float a);   // sombra caida do foco, antes da superficie
 void gfx_vidro_foco(GfxRect r, float raio, float foco, float a);
 // FOCO de um cartaz/cartao de arte: contorno na cor do realce (branco no padrao) de 3 px POR FORA, com 2 px
 // de vao — limpo, sem brilho colorido nem sombra.

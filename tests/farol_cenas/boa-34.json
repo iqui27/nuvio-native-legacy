@@ -1,0 +1,1 @@
+{"v":1,"tela":"home","perfil":2,"feita":1795000000,"vale_s":86400,"origem":"regras","pecas":[{"t":"escolha","passo":3,"de":3,"pergunta":{"m":"FT_ESC_HUMOR"},"opcoes":[{"id":"a","r":{"m":"FT_ESC_HUMOR_RIR"}},{"id":"b","r":{"m":"FT_ESC_HUMOR_TENSAO"}},{"id":"c","r":{"m":"FT_ESC_TANTO_FAZ"}}]}]}

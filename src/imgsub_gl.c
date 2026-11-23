@@ -6,9 +6,13 @@
 #include <string.h>
 
 static unsigned id;
+static unsigned relatado;        // ultimo quadro informado a imgsub_apresentado
 static GLuint tex[PGS_MAX_OBJ];
 
 void imgsub_gl_limpar(void) {
+  // A limpeza direta tambem apaga o que estava na tela: sem avisar, o
+  // diagnostico contava drawn sem o cleared correspondente.
+  if (relatado) { imgsub_apresentado(NULL, 0.0); relatado = 0; }
   if (!id) return;
   glDeleteTextures(PGS_MAX_OBJ, tex);
   memset(tex, 0, sizeof tex);
@@ -22,6 +26,9 @@ int imgsub_desenhar(double t, float x, float y, float w, float h, float alpha) {
   if (!legenda_ligada_em(imgsub_dono_atual())) f = NULL;
   else f = imgsub_pegar(t);
   if (!f || f->n < 1) {
+    // So avisa numa transicao real: um NULL a cada quadro pagava mutex sem
+    // mudar estado nenhum.
+    if (relatado) { imgsub_apresentado(NULL, t); relatado = 0; }
     imgsub_soltar(f);
     imgsub_gl_limpar();
     return 0;
@@ -48,6 +55,8 @@ int imgsub_desenhar(double t, float x, float y, float w, float h, float alpha) {
     gfx_rect(r, tex[i], GFX_TEXTO, 0, 0, 0, 0, 1, 1, 1, alpha);
     ok = 1;
   }
+  { unsigned apresentou = ok ? f->id : 0;
+    if (apresentou != relatado) { imgsub_apresentado(ok ? f : NULL, t); relatado = apresentou; } }
   imgsub_soltar(f);
   return ok;
 }

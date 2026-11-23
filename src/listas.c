@@ -5,6 +5,7 @@
 #include "musica.h"
 #include "trakt.h"
 #include "simklauth.h"
+#include "simkl.h"
 #include "nuvem.h"
 #include "descoberta.h"
 #include "colecoes.h"
@@ -14,6 +15,7 @@
 #include "perfis.h"
 #include "recomenda.h"
 #include "rede.h"
+#include "extras.h"
 #include "js.h"
 #include "servidores.h"
 #include "idioma.h"
@@ -33,8 +35,8 @@ static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 // UMA TABELA POR ORIGEM (#202): a resposta do Trakt nao apaga o Simkl, e uma
 // busca publica nao apaga "Minhas listas". A aba escolhida decide qual `tab`
 // a tela le; as outras ficam prontas para a volta.
-enum { LST_TAB_TRAKT = 0, LST_TAB_SIMKL, LST_TAB_NUVIO, LST_TAB_FIXADAS,
-       LST_TAB_PUBLICAS, LST_TAB_TRILHAS, LST_TAB_N };
+enum { LST_TAB_TRAKT = 0, LST_TAB_SIMKL, LST_TAB_NUVIO, LST_TAB_MDB,
+       LST_TAB_FIXADAS, LST_TAB_PUBLICAS, LST_TAB_TRILHAS, LST_TAB_N };
 typedef struct {
   LstLista v[LST_MAX];
   int n;
@@ -47,7 +49,8 @@ static int fonteAtual = LST_TAB_TRAKT;
 
 // O QUE ESTE FIO FOI PEDIR. Copiado sob trava antes de sair, para o fio nunca
 // ler um pedido que a pessoa ja trocou.
-enum { PED_NADA = 0, PED_TRAKT_MINHAS, PED_TRAKT_BUSCA, PED_SIMKL_ITENS, PED_SERVIDORES };
+enum { PED_NADA = 0, PED_TRAKT_MINHAS, PED_TRAKT_BUSCA, PED_SIMKL_ITENS, PED_SERVIDORES,
+       PED_MDB_MINHAS };
 enum { LST_TAB_SERVIDOR = LST_TAB_N };
 static char termoBusca[96];
 
@@ -100,17 +103,20 @@ static void limpo(char *dst, size_t tam, const char *s) {
 static void chaveDe(const LstLista *l, char *dst, size_t n) {
   if (!l) { if (n) dst[0] = 0; return; }
   if (l->fonte == LST_TRAKT)      snprintf(dst, n, "%ld", l->traktId);
-  else if (l->fonte == LST_NUVIO || l->fonte == LST_SERVIDOR) snprintf(dst, n, "%s", l->colId);
+  else if (l->fonte == LST_NUVIO || l->fonte == LST_SERVIDOR || l->fonte == LST_MDB)
+                                  snprintf(dst, n, "%s", l->colId);
   else                            snprintf(dst, n, "%s", l->estado);
 }
 
 static const char *nomeFonte(int f) {
-  return f == LST_TRAKT ? "trakt" : f == LST_SIMKL ? "simkl" : f == LST_SERVIDOR ? "servidor" : "nuvio";
+  return f == LST_TRAKT ? "trakt" : f == LST_SIMKL ? "simkl" : f == LST_SERVIDOR ? "servidor"
+       : f == LST_MDB ? "mdblist" : "nuvio";
 }
 static int fonteDeNome(const char *s) {
   if (!strcmp(s, "trakt")) return LST_TRAKT;
   if (!strcmp(s, "simkl")) return LST_SIMKL;
   if (!strcmp(s, "servidor")) return LST_SERVIDOR;
+  if (!strcmp(s, "mdblist")) return LST_MDB;
   return LST_NUVIO;
 }
 
@@ -242,6 +248,13 @@ int lst_aceita_home(const LstLista *l, const char **porque) {
     if (porque) *porque = "Este pacote não tem a chave do Trakt";
     return 0;
   }
+  if (l->fonte == LST_MDB) {
+    if (!l->colId[0]) { if (porque) *porque = "Esta lista não tem id no MDBList"; return 0; }
+    if (!extras_mdblist_tem_chave()) {
+      if (porque) *porque = "Este pacote não tem a chave do MDBList";
+      return 0;
+    }
+  }
   return 1;
 }
 
@@ -258,18 +271,25 @@ static void aplicarHome(void) {
   int n = 0, i;
   for (i = 0; i < nFixas && n < LST_FIX_MAX; i++) {
     ColFolder *v;
-    if (!fixas[i].naHome || fixas[i].fonte != LST_TRAKT) continue;
+    if (!fixas[i].naHome || (fixas[i].fonte != LST_TRAKT && fixas[i].fonte != LST_MDB)) continue;
     v = &pastas[n];
     memset(v, 0, sizeof *v);
     memset(&fontes[n], 0, sizeof fontes[n]);
     v->sources = &fontes[n];
     snprintf(v->group, sizeof v->group, "%s", LST_GRUPO_HOME);
     snprintf(v->groupId, sizeof v->groupId, "%s", "listas_fixadas");
-    snprintf(v->id, sizeof v->id, "lista_trakt_%s", fixas[i].id);
+    snprintf(v->id, sizeof v->id, "lista_%s_%s", nomeFonte(fixas[i].fonte), fixas[i].id);
     snprintf(v->title, sizeof v->title, "%s", fixas[i].titulo);
     { ColSource *s = &v->sources[0];
-      snprintf(s->prov, sizeof s->prov, "trakt");
-      s->traktLista = atol(fixas[i].id);
+      if (fixas[i].fonte == LST_MDB) {
+        // MDBList (#762): o id numerico da lista vai no catId do provider
+        // "mdblist", resolvido por desc_vertudo_fonte como o "trakt" ja e.
+        snprintf(s->prov, sizeof s->prov, "mdblist");
+        snprintf(s->catId, sizeof s->catId, "%s", fixas[i].id);
+      } else {
+        snprintf(s->prov, sizeof s->prov, "trakt");
+        s->traktLista = atol(fixas[i].id);
+      }
       snprintf(s->title, sizeof s->title, "%s", fixas[i].titulo);
       snprintf(s->midia, sizeof s->midia, "%s",
                fixas[i].midia[0] ? fixas[i].midia : "MOVIE");
@@ -447,6 +467,39 @@ static int lerListaTrakt(const char *p, const char *f, LstLista *d) {
   return 1;
 }
 
+// Listas proprias do MDBList (#762): o GET /lists/user devolve objetos planos.
+static int lerListaMdblist(const char *p, const char *f, LstLista *d) {
+  char mt[24] = "";
+  memset(d, 0, sizeof *d);
+  d->fonte = LST_MDB;
+  d->itens = -1;
+  d->curtidas = -1;
+  { long id = (long)js_num(p, f, "id", 0);
+    if (id <= 0) return 0;
+    snprintf(d->colId, sizeof d->colId, "%ld", id); }
+  if (!js_texto(p, f, "name", d->titulo, sizeof d->titulo) &&
+      !js_texto(p, f, "title", d->titulo, sizeof d->titulo)) return 0;
+  // Lista do MDBList pode misturar filme e serie; sem mediatype=show claro
+  // declarar MOVIE faria os carregadores esconderem as series. O tipo real
+  // de cada item vem do mediatype dele no envelope (deMetaMdblist).
+  if (js_texto(p, f, "mediatype", mt, sizeof mt))
+    snprintf(d->midia, sizeof d->midia, "%s",
+             !strcasecmp(mt, "show") || !strcasecmp(mt, "tv") ? "TV" : "MOVIE");
+  else d->midia[0] = 0;
+  d->propria = 1;
+  return 1;
+}
+
+static int lerVetorMdblist(const char *json, LstLista *dst, int max) {
+  const char *p = json ? js_raiz_array(json) : NULL;
+  int n = 0;
+  for (; p && *p == '{' && n < max; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    if (lerListaMdblist(p, f, &dst[n])) n++;
+  }
+  return n;
+}
+
 static int lerVetor(const char *json, int envelope, LstLista *dst, int max) {
   const char *p;
   int n = 0;
@@ -579,12 +632,12 @@ int lst_ler_simkl_itens(const char *json, int serie, CatItem *dst, int max) {
       if (brutoRaiz(oi, of, "ids", ids, sizeof ids)) {
         js_texto(ids, ids + strlen(ids), "imdb", imdb, sizeof imdb);
         d->tmdb = (long)js_num(ids, NULL, "tmdb", 0);
+        d->simkl = (long)js_num(ids, NULL, "simkl", 0);
+        d->mal = (long)js_num(ids, NULL, "mal", 0);
         if (!imdb[0] && d->tmdb > 0)
           snprintf(imdb, sizeof imdb, "tmdb:%ld", d->tmdb);
-        if (!imdb[0]) {
-          long id = (long)js_num(ids, NULL, "simkl", 0);
-          if (id > 0) snprintf(imdb, sizeof imdb, "simkl:%ld", id);
-        }
+        if (!imdb[0] && d->simkl > 0)
+          snprintf(imdb, sizeof imdb, "simkl:%ld", d->simkl);
       } }
     if (!d->titulo[0]) continue;
     snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
@@ -671,6 +724,24 @@ static int montarSimkl(void) {
   return n;
 }
 
+static void montarMdbAviso(const char *msg) {
+  LstFonteTab *tab = &tabs[LST_TAB_MDB];
+  pthread_mutex_lock(&trava);
+  tab->n = 0;
+  snprintf(tab->aviso, sizeof tab->aviso, "%s", msg);
+  pthread_mutex_unlock(&trava);
+}
+
+int lst_teste_mdblist_listas(const char *json) {
+  LstFonteTab *tab = &tabs[LST_TAB_MDB];
+  pthread_mutex_lock(&trava);
+  fonteAtual = LST_TAB_MDB;
+  tab->n = lerVetorMdblist(json, tab->v, LST_MAX);
+  tab->aviso[0] = 0;
+  pthread_mutex_unlock(&trava);
+  return tab->n;
+}
+
 static int montarFixadas(void) {
   LstFonteTab *tab = &tabs[LST_TAB_FIXADAS];
   int i, n = 0;
@@ -688,7 +759,8 @@ static int montarFixadas(void) {
       d->traktId = atol(fixas[i].id);
       d->propria = fixas[i].propria;
     }
-    else if (fixas[i].fonte == LST_NUVIO || fixas[i].fonte == LST_SERVIDOR) snprintf(d->colId, sizeof d->colId, "%s", fixas[i].id);
+    else if (fixas[i].fonte == LST_NUVIO || fixas[i].fonte == LST_SERVIDOR ||
+             fixas[i].fonte == LST_MDB) snprintf(d->colId, sizeof d->colId, "%s", fixas[i].id);
     else                                  snprintf(d->estado, sizeof d->estado, "%s", fixas[i].id);
   }
   tab->n = n;
@@ -809,6 +881,49 @@ static void *fioListas(void *u) {
     }
     pthread_mutex_unlock(&trava);
     memset(t, 0, sizeof *t); free(t); return NULL;
+  }
+  if (qual == PED_MDB_MINHAS) {
+    LstLista *parsed = NULL;
+    int count = 0;
+    if (!t->chave[0]) montarMdbAviso("Este pacote não tem a chave do MDBList");
+    else if (perfis_sessao_atual(t->sessao)) {
+      snprintf(url, sizeof url,
+               "https://api.mdblist.com/lists/user?apikey=%s", t->chave);
+      corpo = rede_baixar_st_retry(url, 15, NULL, &st, NULL);
+      if (corpo && (st < 200 || st > 299)) { free(corpo); corpo = NULL; }
+      parsed = corpo ? calloc(LST_MAX, sizeof *parsed) : NULL;
+      count = parsed ? lerVetorMdblist(corpo, parsed, LST_MAX) : 0;
+    }
+    if (!perfis_sessao_travar(t->sessao)) {
+      pthread_mutex_lock(&trava);
+      if (t->geracao == tab->geracao && tab->fioVivo > 0) tab->fioVivo--;
+      pthread_mutex_unlock(&trava);
+    } else {
+      pthread_mutex_lock(&trava);
+      if (t->geracao == tab->geracao) {
+        if (corpo) {
+          tab->n = count;
+          if (count) memcpy(tab->v, parsed, sizeof *parsed * (size_t)count);
+          tab->aviso[0] = 0;
+          if (!tab->n) snprintf(tab->aviso, sizeof tab->aviso,
+                                "Você ainda não criou listas no MDBList");
+        } else if (!tab->n) {
+          const char *why = !t->chave[0]
+            ? "Este pacote não tem a chave do MDBList"
+            : st == 401 ? "A chave do MDBList foi recusada"
+            : "Não foi possível carregar listas. Verifique a conexão e tente novamente.";
+          snprintf(tab->aviso, sizeof tab->aviso, "%s", why);
+        }
+        if (tab->fioVivo > 0) tab->fioVivo--;
+      }
+      pthread_mutex_unlock(&trava);
+      perfis_sessao_destravar();
+    }
+    free(parsed);
+    free(corpo);
+    memset(t, 0, sizeof *t);
+    free(t);
+    return NULL;
   }
   if (perfis_sessao_atual(t->sessao)) {
     const char *cab[4];
@@ -936,12 +1051,15 @@ static void disparar(int qual) {
   uint64_t sessao = perfis_sessao_geracao();
   if (!t || !perfis_sessao_travar(sessao)) { free(t); return; }
   t->qual = qual; t->sessao = sessao;
-  t->tab = qual == PED_TRAKT_MINHAS ? LST_TAB_TRAKT : LST_TAB_PUBLICAS;
+  t->tab = qual == PED_TRAKT_MINHAS ? LST_TAB_TRAKT
+         : qual == PED_MDB_MINHAS ? LST_TAB_MDB : LST_TAB_PUBLICAS;
   // Capturar identidade e pedido ANTES de criar o fio. Um fio atrasado nao
   // pode ler as credenciais nem a geracao do pedido seguinte.
   if (qual == PED_TRAKT_MINHAS) {
     const char *cab[4];
     trakt_cabecalhos(cab, t->aut, sizeof t->aut, t->chave, sizeof t->chave);
+  } else if (qual == PED_MDB_MINHAS) {
+    extras_mdblist_chave(t->chave, sizeof t->chave);
   } else if (nuvem_trakt_cliente()[0]) {
     snprintf(t->chave, sizeof t->chave, "trakt-api-key: %s", nuvem_trakt_cliente());
   }
@@ -958,12 +1076,24 @@ static void disparar(int qual) {
 
 void lst_pedir(int fonte) {
   int tab = fonte == LST_NUVIO ? LST_TAB_NUVIO
-          : fonte == LST_SIMKL ? LST_TAB_SIMKL : LST_TAB_TRAKT;
+          : fonte == LST_SIMKL ? LST_TAB_SIMKL
+          : fonte == LST_MDB ? LST_TAB_MDB : LST_TAB_TRAKT;
   pthread_mutex_lock(&trava);
   fonteAtual = tab;
   pthread_mutex_unlock(&trava);
   if (tab == LST_TAB_NUVIO)      { montarNuvio(); return; }
   if (tab == LST_TAB_SIMKL)      { montarSimkl(); return; }
+  if (tab == LST_TAB_MDB) {
+    int pronta, semChave;
+    pthread_mutex_lock(&trava);
+    pronta = tabs[LST_TAB_MDB].n > 0 || tabs[LST_TAB_MDB].fioVivo;
+    semChave = !extras_mdblist_tem_chave();
+    pthread_mutex_unlock(&trava);
+    if (pronta) return;
+    if (semChave) { montarMdbAviso("Este pacote não tem a chave do MDBList"); return; }
+    disparar(PED_MDB_MINHAS);
+    return;
+  }
   pthread_mutex_lock(&trava);
   { int pronta = tabs[tab].n > 0;
     pthread_mutex_unlock(&trava);
@@ -1151,34 +1281,34 @@ static int mapear(int i) {
 typedef struct {
   unsigned geracao;
   uint64_t sessao;
-  char estado[16], midia[8], cid[200], nome[120], token[400];
+  char estado[16], midia[8];
 } SimklTarefa;
 
-static char *fioSimklBaixar(const char *caminho, const SimklTarefa *t,
-                            const char *const *cab) {
-  char url[500];
-  snprintf(url, sizeof url,
-           "https://api.simkl.com%s?client_id=%s&app-name=%s"
-           "&app-version=1.0.1&extended=full",
-           caminho, t->cid, t->nome);
-  return rede_baixar_com(url, 20, cab);
+// SERIES: a dedup entre as fatias shows/anime so fecha com confirmacao
+// POSITIVA de provedor — o mesmo Simkl (!=0) ou o mesmo MAL (!=0) — e sem
+// nenhum id em contradicao (Simkl, MAL, TMDB ou um IMDb real presente nos
+// dois lados). O IMDb igual sozinho nao basta: temporadas distintas da
+// mesma obra dividem o tt, e ids ausentes nao confirmam nem contradizem.
+// O campo `imdb` pode trazer um id sintetizado ("simkl:N", "tmdb:N"), por
+// isso a comparacao vai pelos campos numericos e nao pela string.
+static int mesmaObraSerie(const CatItem *a, const CatItem *b) {
+  if (a->simkl && b->simkl && a->simkl != b->simkl) return 0;
+  if (a->mal && b->mal && a->mal != b->mal) return 0;
+  if (a->tmdb && b->tmdb && a->tmdb != b->tmdb) return 0;
+  if (!strncmp(a->imdb, "tt", 2) && !strncmp(b->imdb, "tt", 2) &&
+      strcmp(a->imdb, b->imdb)) return 0;
+  return (a->simkl && a->simkl == b->simkl) || (a->mal && a->mal == b->mal);
 }
 
 static void *fioSimkl(void *u) {
   SimklTarefa *t = u;
-  char url[40], aut[430];
-  const char *cab[3];
   CatItem *lote = NULL;
   int n = 0, serie = !strcasecmp(t->midia, "TV");
-  snprintf(url, sizeof url, "/sync/all-items/%s/%s", serie ? "shows" : "movies",
-           t->estado);
-  snprintf(aut, sizeof aut, "Authorization: Bearer %s", t->token);
-  cab[0] = aut; cab[1] = "Accept: application/json"; cab[2] = NULL;
-  // All-items returns a complete snapshot. Size storage from the response,
-  // including anime's usual "show" envelope, rather than truncating at 120.
+  // The lists come from the shared library (simkl.c): a status-filtered copy
+  // of the body it already fetched, no request of its own.
   for (int part = 0; part < 2; part++) {
-    if (part) snprintf(url, sizeof url, "/sync/all-items/anime/%s", t->estado);
-    char *corpo = perfis_sessao_atual(t->sessao) ? fioSimklBaixar(url, t, cab) : NULL;
+    const char *tipo = part ? "anime" : serie ? "shows" : "movies";
+    char *corpo = perfis_sessao_atual(t->sessao) ? simkl_lista_corpo(tipo, t->estado) : NULL;
     if (!corpo) { free(lote); lote = NULL; n = 0; break; }
     int count = 0;
     static const char *keys[] = {"movies", "shows", "anime"};
@@ -1187,20 +1317,82 @@ static void *fioSimkl(void *u) {
     CatItem *grown = count ? realloc(lote, sizeof *lote * (size_t)(n + count)) : lote;
     if (count && !grown) { free(corpo); free(lote); lote = NULL; n = 0; break; }
     lote = grown;
-    if (count) n += lst_ler_simkl_itens(corpo, serie, lote + n, count);
+    if (count) {
+      int base = n;
+      n += lst_ler_simkl_itens(corpo, serie, lote + n, count);
+      // Simkl can return the same title in movies/shows and in anime; dedup
+      // so it does not appear twice (as simkl.c does for plantowatch/CW).
+      // Movies dedups by IMDb (F86). In Series the second slice is anime and
+      // distinct seasons of the same show share the IMDb id, so the dedup
+      // there asks for POSITIVE provider confirmation (mesmaObraSerie) —
+      // the same work repeats the Simkl or the MAL id in both slices,
+      // another season changes them and an absent id cannot stand in for
+      // the match.
+      for (int i = base; i < n; i++) {
+        int j;
+        for (j = 0; j < base; j++)
+          if (serie ? mesmaObraSerie(&lote[j], &lote[i])
+                    : (lote[i].imdb[0] && !strcmp(lote[j].imdb, lote[i].imdb)))
+            break;
+        if (j < base) {
+          // The card that stays is the first slice's; merge into it the
+          // provider ids the dropped half may carry alone. The merge cannot
+          // leave the card without a key the OK can open: when the kept half
+          // has no real IMDb, it inherits the dropped half's openable key
+          // ("tt…" or "tmdb:N") — a real tt is never traded for a synthetic
+          // id.
+          if (serie) {
+            if (strncmp(lote[j].imdb, "tt", 2) &&
+                (!strncmp(lote[i].imdb, "tt", 2) ||
+                 !strncmp(lote[i].imdb, "tmdb:", 5)))
+              snprintf(lote[j].imdb, sizeof lote[j].imdb, "%s", lote[i].imdb);
+            if (!lote[j].simkl) lote[j].simkl = lote[i].simkl;
+            if (!lote[j].mal) lote[j].mal = lote[i].mal;
+            if (!lote[j].tmdb) lote[j].tmdb = lote[i].tmdb;
+          }
+          memmove(lote + i, lote + i + 1, sizeof lote[0] * (size_t)(n - i - 1));
+          n--; i--;
+        }
+      }
+    }
     free(corpo);
   }
   // Enrichment may compact unsupported IDs. Enrich copies so metadata failure
   // cannot remove account entries or merge distinct Simkl titles by IMDb.
+  // Each copy goes back by its ORIGIN POSITION, stashed in `ranking` (unused
+  // in this list): compaction reorders the array and the id key cannot tell
+  // two entries of the same slice apart — two seasons can even share IMDb,
+  // Simkl and MAL. The account identity (provider ids, title/year, season)
+  // is then restored over the enriched metadata.
   CatItem *enriched = malloc(sizeof *enriched * 32);
   for (int i = 0; enriched && i < n && perfis_sessao_atual(t->sessao); i += 32) {
     int end = n - i < 32 ? n - i : 32, count = 0;
     for (int j = 0; j < end; j++)
-      if (!strncmp(lote[i + j].imdb, "tt", 2)) enriched[count++] = lote[i + j];
+      if (!strncmp(lote[i + j].imdb, "tt", 2)) {
+        enriched[count] = lote[i + j];
+        enriched[count].ranking = i + j;
+        count++;
+      }
     if (count) count = trakt_enfeitar_lote_sessao(enriched, count, t->sessao);
-    for (int j = 0; j < end; j++)
-      for (int k = 0; k < count; k++)
-        if (!strcmp(lote[i + j].imdb, enriched[k].imdb)) { lote[i + j] = enriched[k]; break; }
+    for (int k = 0; k < count; k++) {
+      int j = enriched[k].ranking;
+      CatItem orig;
+      if (j < i || j >= i + end) continue;
+      orig = lote[j];
+      lote[j] = enriched[k];
+      snprintf(lote[j].imdb, sizeof lote[j].imdb, "%s", orig.imdb);
+      snprintf(lote[j].tipo, sizeof lote[j].tipo, "%s", orig.tipo);
+      snprintf(lote[j].titulo, sizeof lote[j].titulo, "%s", orig.titulo);
+      // O ano so e identidade da conta quando a conta o trouxe: meta vazia
+      // aqui nao pode apagar o "ano · duracao" que a ficha preencheu.
+      if (orig.meta[0])
+        snprintf(lote[j].meta, sizeof lote[j].meta, "%s", orig.meta);
+      snprintf(lote[j].nomeEpisodio, sizeof lote[j].nomeEpisodio, "%s", orig.nomeEpisodio);
+      lote[j].tmdb = orig.tmdb; lote[j].simkl = orig.simkl; lote[j].mal = orig.mal;
+      lote[j].temporada = orig.temporada; lote[j].episodio = orig.episodio;
+      lote[j].tvdbEp = orig.tvdbEp; lote[j].progresso = orig.progresso;
+      lote[j].ranking = orig.ranking;
+    }
   }
   free(enriched);
   if (perfis_sessao_travar(t->sessao)) {
@@ -1254,10 +1446,6 @@ void lst_abrir(const LstLista *l, const char *midia) {
     uint64_t sessao = perfis_sessao_geracao();
     if (!t || !perfis_sessao_travar(sessao)) { free(t); return; }
     t->sessao = sessao;
-    nuvem_url_escapar(nuvem_simkl_cliente(), t->cid, sizeof t->cid);
-    nuvem_url_escapar(nuvem_simkl_app()[0] ? nuvem_simkl_app() : "nuvio",
-                      t->nome, sizeof t->nome);
-    snprintf(t->token, sizeof t->token, "%s", simklauth_token());
     pthread_mutex_lock(&itTrava);
     t->geracao = itGeracao;
     snprintf(t->estado, sizeof t->estado, "%s", itEstado);
@@ -1284,6 +1472,14 @@ void lst_abrir(const LstLista *l, const char *midia) {
     snprintf(s.midia, sizeof s.midia, "%s", midia && midia[0] ? midia : l->midia);
     snprintf(s.ordenar, sizeof s.ordenar, "rank");
     snprintf(s.ordem, sizeof s.ordem, "asc");
+    desc_vertudo_fonte(&s);
+    return;
+  }
+  if (l->fonte == LST_MDB) {
+    snprintf(s.prov, sizeof s.prov, "mdblist");
+    snprintf(s.catId, sizeof s.catId, "%s", l->colId);
+    snprintf(s.title, sizeof s.title, "%s", l->titulo);
+    snprintf(s.midia, sizeof s.midia, "%s", midia && midia[0] ? midia : l->midia);
     desc_vertudo_fonte(&s);
     return;
   }

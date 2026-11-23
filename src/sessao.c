@@ -2,6 +2,7 @@
 #include "trava.h"
 #include "idioma.h"
 #include "nuvem.h"
+#include "rede.h"
 #include "dados.h"
 #include "js.h"
 #include "jsw.h"
@@ -206,6 +207,14 @@ static void anexarTransporte(char *dst, unsigned tam, int st) {
   }
 }
 
+#if defined(NV_WEBOS) && !defined(__EMSCRIPTEN__)
+static void *sondaLoginFio(void *u) {
+  char *alvo = (char *)u;
+  if (alvo) { rede_sonda_tls(alvo); free(alvo); }
+  return NULL;
+}
+#endif
+
 // Three attempts on the login worker, with 1s/2s backoff. No refresh-token
 // retries here: rotating refresh tokens are handled separately in renovarToken.
 static char *loginPost(const char *etapa, const char *path, const char *body,
@@ -225,7 +234,20 @@ static char *loginPost(const char *etapa, const char *path, const char *body,
     printf("[login] stage=%s class=%s http=%d curl=%d attempt=%d utc=%lld backoff_ms=%d\n",
            etapa, loginClasse(*st), *st, r, tentativa, (long long)time(NULL), espera * 1000);
     fflush(stdout);
-    if (!espera) return resp;
+    if (!espera) {
+#if defined(NV_WEBOS) && !defined(__EMSCRIPTEN__)
+      if (!*st && r == 35) {
+        char *alvo = malloc(900);
+        if (alvo) {
+          pthread_t th;
+          snprintf(alvo, 900, "%s/auth/v1/token", nuvem_url());
+          if (!pthread_create(&th, NULL, sondaLoginFio, alvo)) pthread_detach(th);
+          else free(alvo);
+        }
+      }
+#endif
+      return resp;
+    }
     free(resp);
     { struct timespec restante = { espera, 0 };
       while (nanosleep(&restante, &restante) < 0 && errno == EINTR) {} }

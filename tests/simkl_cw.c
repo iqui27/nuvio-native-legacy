@@ -14,7 +14,9 @@
 #include "nvtmp.h"
 #include "../src/ajustes.h"
 #include "../src/js.h"
+#include "../src/metaprov.h"
 #include "../src/rede.h"
+#include "../src/simklbib.h"
 #include <stdint.h>
 #include <assert.h>
 #include <fcntl.h>
@@ -42,9 +44,45 @@ const char *metaprov_idioma(void) { return "en"; }
 char *fichameta_ler(const char *key, long ttl) { (void)key; (void)ttl; return NULL; }
 #endif
 
-char *dados_ler(const char *nome) { (void)nome; return NULL; }
+// One file kept for real: the saved library (simklbib.c). The rest of the
+// disk stays write-only, as before.
+static char bibNome[48], *bibTexto;
+static int bibGravacoes;
+// And the Simkl anime cache (simklanime.c), for the same reason.
+static char *animeTexto;
+static int ehBib(const char *nome) { return !strncmp(nome, "simkl-biblioteca-", 17); }
+static int ehAnime(const char *nome) { return !strcmp(nome, "simkl-anime.txt"); }
+char *dados_ler(const char *nome) {
+  if (ehAnime(nome)) return animeTexto ? strdup(animeTexto) : NULL;
+  return ehBib(nome) && bibTexto && !strcmp(nome, bibNome) ? strdup(bibTexto) : NULL;
+}
 int dados_gravar(const char *nome, const char *buf) { (void)nome; (void)buf; return 1; }
-int dados_apagar(const char *nome) { (void)nome; return 1; }
+int dados_gravar_leve(const char *nome, const char *buf) {
+  if (ehAnime(nome)) { free(animeTexto); animeTexto = strdup(buf); return 1; }
+  if (!ehBib(nome)) return 1;
+  free(bibTexto);
+  bibTexto = strdup(buf);
+  snprintf(bibNome, sizeof bibNome, "%s", nome);
+  bibGravacoes++;
+  return 1;
+}
+int dados_apagar(const char *nome) {
+  if (ehBib(nome) && !strcmp(nome, bibNome)) { free(bibTexto); bibTexto = NULL; }
+  return 1;
+}
+#ifndef SIMKL_ANIME_FIXTURE
+char *metaprov_meta(const char *tipo, const char *id, int seg, int *prov) {
+  (void)tipo; (void)id; (void)seg; (void)prov; return NULL;
+}
+char *metaprov_meta_cinemeta_com(const char *tipo, const char *id, int seg,
+                                 MetaprovGet get, void *ctx,
+                                 MetaprovCineResult *result) {
+  (void)tipo; (void)id; (void)seg; (void)get; (void)ctx;
+  if (result) *result = METAPROV_CINE_RETRY;
+  return NULL;
+}
+void fichameta_gravar(const char *key, const char *body) { (void)key; (void)body; }
+#endif
 static int proximoTeste = 1;
 int ajustes_cw_proximo(void) { return proximoTeste; }
 int ajustes_cw_minimo(void) { return 1; }
@@ -62,6 +100,12 @@ unsigned long long simklauth_credencial_copiar(char *dst, size_t tam) {
   if (dst && tam) snprintf(dst, tam, "%s", tokenAtual);
   return credGeracao;
 }
+int simklauth_perfil(void) { return 2; }
+int simklauth_credencial_travar(unsigned long long cred, int perfil, const char *aut) {
+  return cred == credGeracao && perfil == 2 && tokenAtual[0] &&
+         !strcmp(aut + strlen("Authorization: Bearer "), tokenAtual);
+}
+void simklauth_credencial_destravar(void) {}
 const char *nuvem_simkl_cliente(void) { return "cid-teste"; }
 const char *nuvem_simkl_app(void) { return "nuvio"; }
 void nuvem_url_escapar(const char *v, char *dst, unsigned tam) { snprintf(dst, tam, "%s", v); }
@@ -138,13 +182,109 @@ static const char *PTW_ANIME =
   "{\"anime\":[{\"status\":\"plantowatch\","
   "\"anime\":{\"title\":\"Frieren\",\"year\":2023,"
   "\"ids\":{\"mal\":52991,\"imdb\":\"tt22248376\"}}}]}";
+static const char *FEITO_ANIME = "{\"anime\":[]}";
+// Titles on hold, dropped, or shows completed: empty unless a test fills them.
+static const char *HOLD = "{}", *DROPPED = "{}", *FEITO_SERIES = "{}";
+static const char *WATCHED_HISTORY =
+  "{\"movies\":[],"
+  "\"shows\":[{\"show\":{\"ids\":{\"imdb\":\"tt0903747\"}},\"seasons\":["
+    "{\"number\":1,\"episodes\":[{\"number\":1,\"watched_at\":\"2026-10-10T12:00:00Z\"},"
+    "{\"number\":2}]}]}],"
+  "\"anime\":[{\"anime\":{\"ids\":{\"imdb\":\"tt0388629\"}},\"seasons\":["
+    "{\"number\":22,\"episodes\":[{\"number\":1122,\"watched_at\":\"2026-10-11T12:00:00Z\"},"
+    "{\"number\":1123,\"watched_at\":\"2026-10-12T12:00:00Z\"},"
+    "{\"number\":1124}]}]},"
+    "{\"anime\":{\"ids\":{\"simkl\":38636,\"tmdb\":37854}},\"seasons\":["
+    "{\"number\":22,\"episodes\":[{\"number\":36,\"tvdb_season\":22,"
+    "\"tvdb_number\":36,\"watched_at\":\"2026-10-13T12:00:00Z\"}]}]}]}";
 
 static char atividades[200] = "{\"all\":\"2024-01-20T21:00:00Z\"}";
-static int batidas[9];   // activities, playback, watching, ptw filmes, ptw series,
-                         // post, delete, outro, anime
+
+static const char *historicoCorpo;
+static void bibEsperar(void);
+
+// The library Simkl answers (/sync/all-items/<type>, one slice of it per
+// type; a date_from delta on bare /sync/all-items): the status fixtures above
+// (watching, plan to watch, completed) and the watched history, one array per
+// type, built when asked so a test can swap a fixture.
+// Each item of the fixture's array, with the status of the list it stands for
+// when the fixture leaves it out (a status endpoint did not need it).
+static void juntarArray(char **dst, size_t *n, const char *corpo, const char *chave,
+                        const char *estado) {
+  const char *p, *f;
+  char st[24];
+  for (p = js_array(corpo, NULL, chave); p && *p == '{'; p = js_prox(f)) {
+    size_t k, extra;
+    f = js_fim(p);
+    assert(f);
+    k = (size_t)(f - p);
+    st[0] = 0;
+    js_texto_raiz_em(p, f, "status", st, sizeof st);
+    extra = !st[0] && estado ? strlen(estado) + 16 : 0;
+    *dst = realloc(*dst, *n + k + extra + 2);
+    assert(*dst);
+    if (*n) (*dst)[(*n)++] = ',';
+    if (extra) {
+      *n += (size_t)sprintf(*dst + *n, "{\"status\":\"%s\"%s", estado, k > 2 ? "," : "");
+      memcpy(*dst + *n, p + 1, k - 1);
+      *n += k - 1;
+    } else {
+      memcpy(*dst + *n, p, k);
+      *n += k;
+    }
+    (*dst)[*n] = 0;
+  }
+}
+static char *bibliotecaFalsa(void);
+// The fixture's "all", followed by a fingerprint of the library it would
+// download: as on Simkl, data that changed moves the activities, so a test
+// that swaps a fixture sees it after the next check.
+static char *atividadesFalsas(void) {
+  char all[64] = "", *lib = historicoCorpo ? strdup(historicoCorpo) : bibliotecaFalsa(), *r;
+  unsigned h = 2166136261u;
+  for (const char *c = lib; c && *c; c++) h = (h ^ (unsigned char)*c) * 16777619u;
+  free(lib);
+  if (!js_texto_raiz(atividades, "all", all, sizeof all)) return strdup(atividades);
+  r = malloc(strlen(atividades) + 16);
+  sprintf(r, "{\"all\":\"%s~%08x\"}", all, h);
+  return r;
+}
+static char *bibliotecaFalsa(void) {
+  static const char *const tipos[3] = { "shows", "anime", "movies" };
+  // Hold, dropped and completed first: on Simkl an item has one status, and
+  // a test puts a title there to move it out of watching.
+  struct { const char *corpo, *estado; } fontes[3][8] = {
+    { { HOLD, "hold" }, { DROPPED, "dropped" }, { FEITO_SERIES, "completed" },
+      { WATCHING, "watching" }, { PTW_SERIES, "plantowatch" }, { WATCHED_HISTORY, NULL } },
+    { { HOLD, "hold" }, { DROPPED, "dropped" }, { WATCHING_ANIME, "watching" },
+      { PTW_ANIME, "plantowatch" }, { FEITO_ANIME, "completed" }, { WATCHED_HISTORY, NULL } },
+    { { HOLD, "hold" }, { DROPPED, "dropped" }, { PTW_FILMES, "plantowatch" },
+      { WATCHED_HISTORY, NULL } } };
+  size_t tam = 32;
+  char *r, *partes[3] = { NULL, NULL, NULL };
+  size_t ns[3] = { 0, 0, 0 };
+  for (int t = 0; t < 3; t++) {
+    for (int f = 0; f < 8 && fontes[t][f].corpo; f++)
+      juntarArray(&partes[t], &ns[t], fontes[t][f].corpo, tipos[t], fontes[t][f].estado);
+    tam += ns[t] + 16;
+  }
+  r = malloc(tam);
+  snprintf(r, tam, "{\"shows\":[%s],\"anime\":[%s],\"movies\":[%s]}",
+           partes[0] ? partes[0] : "", partes[1] ? partes[1] : "", partes[2] ? partes[2] : "");
+  for (int t = 0; t < 3; t++) free(partes[t]);
+  return r;
+}
+
+static int batidas[12];  // activities, playback, watching, ptw filmes, ptw series,
+                         // post, delete, outro, anime, watched history,
+                         // library delta (date_from), IDs only
+// Library deltas (step 2): real-shaped activities, the date_from answer, the
+// IDs-only answer, a failing delta, and the date_from last sent.
+static const char *atividadesInteiras, *historicoDelta, *historicoSoIds;
+static int deltaFalha;
+static char ultimoDesde[48];
 static char ultimaRota[64], ultimoCorpo[300], ultimaUrl[700];
 static int  semBearer, comApiKey;
-
 static void conferirCabecalhos(const char *url, const char *const *cab) {
   int k, bearer = 0;
   snprintf(ultimaUrl, sizeof ultimaUrl, "%s", url);
@@ -170,7 +310,44 @@ static void rota(const char *url, char *dst, size_t tam) {
 }
 
 static int perfilRede, trocarNaResposta, perfilHistorySt = 200, libraryFailure;
+static int pedidosSettings, pedidosMesPerfil;   // Profile & Stats requests
+// History pull: activities fail, Simkl forgotten mid-pull, activities count
+// when the library was asked.
+static int atividadesFalham, esquecerNoHistorico, atividadesAntes = -1;
+static int desconectarNoHistorico;
 static const char *perfilHistoryBody = "{\"movies\":[],\"shows\":[],\"anime\":[]}";
+// Simkl's max_items (api.simkl.org/guides/sync): `grandeTipo`'s whole list is
+// over the cap, and so is its `grandeEstado` list unless only the recorded
+// episodes are asked (even then with `grandeSempre`); `deltaGrande` a
+// date_from delta. The requests by status
+// and with include_all_episodes=original are counted.
+static const char *grandeTipo, *grandeEstado;
+static int deltaGrande, grandeSempre, pedidosEstado, pedidosOriginal;
+static const char *const MAX_ITEMS =
+    "{\"error\":\"max_items\",\"code\":400,\"message\":\"Too many items: ...\"}";
+
+// `tipo`'s list of the whole fake library, as /sync/all-items/<tipo> answers
+// it; `estado`: only the items with that status (<tipo>/<estado>).
+static char *bibliotecaFatia(const char *tudo, const char *tipo, const char *estado) {
+  const char *p, *f;
+  size_t n, cap = strlen(tudo) + 32;
+  char *r = malloc(cap), st[24];
+  int itens = 0;
+  assert(r);
+  n = (size_t)sprintf(r, "{\"%s\":[", tipo);
+  for (p = js_array(tudo, NULL, tipo); p && *p == '{'; p = js_prox(f)) {
+    f = js_fim(p);
+    assert(f);
+    st[0] = 0;
+    js_texto_raiz_em(p, f, "status", st, sizeof st);
+    if (estado && strcmp(st, estado)) continue;
+    if (itens++) r[n++] = ',';
+    memcpy(r + n, p, (size_t)(f - p));
+    n += (size_t)(f - p);
+  }
+  memcpy(r + n, "]}", 3);
+  return r;
+}
 
 char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   char r[64];
@@ -183,17 +360,112 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
     *st = 400; return NULL;
   }
   if (perfilRede && !strcmp(r, "/users/settings")) {
+    pedidosSettings++;
     if (trocarNaResposta == 1) { tokenAtual = "OUTRO-TOKEN-FALSO"; credGeracao++; }
     return strdup("{\"user\":{\"name\":\"Identidade Simkl\"}}");
   }
-  if (perfilRede && !strcmp(r, "/sync/all-items/all/all")) {
-    assert(strstr(url, "include_all_episodes=original") && strstr(url, "episode_watched_at=yes"));
+  // The profile's own month request (no library); the library's pull asks
+  // include_all_episodes=yes and goes on below.
+  if (perfilRede && !strcmp(r, "/sync/all-items/all/all") &&
+      strstr(url, "include_all_episodes=original")) {
+    assert(strstr(url, "episode_watched_at=yes"));
+    pedidosMesPerfil++;
     if (trocarNaResposta == 2) { tokenAtual = "OUTRO-TOKEN-FALSO"; credGeracao++; }
     *st = perfilHistorySt;
     return perfilHistoryBody ? strdup(perfilHistoryBody) : NULL;
   }
-  if (!strcmp(r, "/sync/activities"))                   { batidas[0]++; return strdup(atividades); }
+  if (!strcmp(r, "/sync/activities")) {
+    batidas[0]++;
+    if (atividadesFalham) {
+      *st = atividadesFalham == 2 ? 0 : atividadesFalham == 3 ? 429 : 503;
+      return *st ? strdup("<html>busy</html>") : NULL;
+    }
+    if (atividadesInteiras) return strdup(atividadesInteiras);
+    return atividadesFalsas();
+  }
   if (!strcmp(r, "/sync/playback"))                     { batidas[1]++; return strdup(PLAYBACK); }
+  if (!strcmp(r, "/sync/all-items") && strstr(url, "extended=simkl_ids_only")) {
+    batidas[11]++;
+    if (historicoSoIds) return strdup(historicoSoIds);
+  }
+  // The library's own requests: no paging (all-items has none), the episode
+  // history with its dates and TVDB placement, English titles.
+  // A delta: the whole library in one request on bare /sync/all-items (the
+  // sync guide's path for an app with several types; not all/all), date_from
+  // as activities wrote it.
+  assert(!(!strcmp(r, "/sync/all-items/all/all") && strstr(url, "include_all_episodes=yes")));
+  if (!strcmp(r, "/sync/all-items") && strstr(url, "date_from=")) {
+    const char *d = strstr(url, "date_from=");
+    size_t k;
+    assert(strstr(url, "extended=full_anime_seasons") && strstr(url, "episode_watched_at=yes") &&
+           strstr(url, "episode_tvdb_id=yes") && strstr(url, "language=en") &&
+           strstr(url, "include_all_episodes=yes") &&
+           !strstr(url, "page=") && !strstr(url, "limit="));
+    k = strcspn(d + 10, "&");
+    batidas[10]++;
+    snprintf(ultimoDesde, sizeof ultimoDesde, "%.*s", (int)k, d + 10);
+    if (deltaFalha) { *st = 500; return NULL; }
+    if (deltaGrande) { *st = 400; return strdup(MAX_ITEMS); }
+    if (historicoDelta) return strdup(historicoDelta);
+    // No delta fixture: the whole library, counted as a pull.
+    batidas[9]++;
+    atividadesAntes = batidas[0];
+    if (esquecerNoHistorico) simkl_esquecer();
+    if (libraryFailure) { *st = 400; return NULL; }
+    return historicoCorpo ? strdup(historicoCorpo) : bibliotecaFalsa();
+  }
+  if (!strncmp(r, "/sync/all-items/", 16)) {
+    const char *resto = r + 16, *barra = strchr(resto, '/');
+    char tipo[16] = "";
+    if (!barra) snprintf(tipo, sizeof tipo, "%s", resto);
+    else if ((size_t)(barra - resto) < sizeof tipo)
+      snprintf(tipo, sizeof tipo, "%.*s", (int)(barra - resto), resto);
+    if ((!barra && (!strcmp(tipo, "shows") || !strcmp(tipo, "anime") ||
+                    !strcmp(tipo, "movies"))) ||
+        (grandeTipo && !strcmp(tipo, grandeTipo))) {
+      assert(strstr(url, "extended=full_anime_seasons") && strstr(url, "episode_watched_at=yes") &&
+             strstr(url, "episode_tvdb_id=yes") && strstr(url, "language=en") &&
+             !strstr(url, "page=") && !strstr(url, "limit="));
+      assert(strstr(url, "include_all_episodes=yes") ||
+             strstr(url, "include_all_episodes=original"));
+    }
+    // The whole library: one type after the other, shows first (counted as
+    // the pull), status by status for a type over max_items.
+    if (grandeTipo && !strcmp(tipo, grandeTipo)) {
+      char *tudo = historicoCorpo ? strdup(historicoCorpo) : bibliotecaFalsa(), *fatia;
+      if (!barra) { free(tudo); *st = 400; return strdup(MAX_ITEMS); }
+      pedidosEstado++;
+      if (strstr(url, "include_all_episodes=original")) pedidosOriginal++;
+      if (grandeEstado && !strcmp(barra + 1, grandeEstado) &&
+          (grandeSempre || !strstr(url, "include_all_episodes=original"))) {
+        free(tudo); *st = 400;
+        return strdup("{\"error\":\"max_items\",\"code\":400,"
+                      "\"message\":\"Too many episodes: ...\"}");
+      }
+      fatia = bibliotecaFatia(tudo, tipo, barra + 1);
+      free(tudo);
+      return fatia;
+    }
+    if (!barra && (!strcmp(tipo, "shows") || !strcmp(tipo, "anime") || !strcmp(tipo, "movies"))) {
+      char *tudo, *fatia;
+      assert(strstr(url, "include_all_episodes=yes") && !strstr(url, "date_from="));
+      if (!strcmp(tipo, "shows")) {
+        batidas[9]++;
+        atividadesAntes = batidas[0];
+        if (esquecerNoHistorico) simkl_esquecer();
+      }
+      if (libraryFailure) { *st = 400; return strdup("{\"error\":\"bad_request\",\"code\":400}"); }
+      tudo = historicoCorpo ? strdup(historicoCorpo) : bibliotecaFalsa();
+      fatia = bibliotecaFatia(tudo, tipo, NULL);
+      if (desconectarNoHistorico && !strcmp(tipo, "movies")) {
+        tokenAtual = "";
+        credGeracao++;
+        simklbib_apagar(2);
+      }
+      free(tudo);
+      return fatia;
+    }
+  }
   if (!strcmp(r, "/sync/all-items/shows/watching"))     { batidas[2]++; return strdup(WATCHING); }
   if (!strcmp(r, "/sync/all-items/movies/plantowatch")) { batidas[3]++; return strdup(PTW_FILMES); }
   if (!strcmp(r, "/sync/all-items/shows/plantowatch"))  { batidas[4]++; return strdup(PTW_SERIES); }
@@ -202,6 +474,7 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
     batidas[8]++;
     if (!strcmp(r, "/sync/all-items/anime/watching"))    return strdup(WATCHING_ANIME);
     if (!strcmp(r, "/sync/all-items/anime/plantowatch")) return strdup(PTW_ANIME);
+    if (!strcmp(r, "/sync/all-items/anime/completed"))   return strdup(FEITO_ANIME);
   }
   batidas[7]++;
   *st = 404;
@@ -236,7 +509,7 @@ char *rede_apagar(const char *url, int s, const char *const *cab, int *st) {
 
 static int totalBatidas(void) {
   int i, t = 0;
-  for (i = 0; i < 9; i++) t += batidas[i];
+  for (i = 0; i < 12; i++) t += batidas[i];
   return t;
 }
 
@@ -347,18 +620,25 @@ static void retomada(void) {
   assert(simkl_e_a_seguir("tt22248376:3:4"));
   assert(simkl_e_a_seguir("tt11280740:2:3"));
   assert(!simkl_e_a_seguir("tt1375666"));
-  assert(batidas[0] == 1 && batidas[1] == 1 && batidas[2] == 1 && batidas[8] == 1);
+  // Lists from the library (all-items, one type after the other), playback asked; no
+  // status list is downloaded (shows/watching, anime/...).
+  assert(batidas[0] == 1 && batidas[1] == 1 && batidas[9] == 1 &&
+         batidas[2] == 0 && batidas[8] == 0);
   assert(!semBearer && !comApiKey);
   OK("retomada: pausados + a seguir de shows E anime, sem repetir serie");
 
-  // Atividades iguais: nada de playback nem all-items de novo.
+  // Atividades iguais: nada de playback nem biblioteca de novo.
   n = simkl_continuar(v, 12);
-  assert(n == 6 && batidas[0] == 2 && batidas[1] == 1 && batidas[2] == 1 && batidas[8] == 1);
-  // Atividade nova: rebaixa.
+  assert(n == 6 && batidas[0] == 2 && batidas[1] == 1 && batidas[9] == 1);
+  // Atividade nova: a biblioteca e o playback de novo.
+  // The fake answers the date_from delta with its whole library (batidas[9]
+  // counts it too), whose items have no Simkl ID and repeat across lists:
+  // the merge cannot tell them apart, so the library is downloaded again.
   snprintf(atividades, sizeof atividades, "{\"all\":\"2024-01-21T00:00:00Z\"}");
   n = simkl_continuar(v, 12);
-  assert(n == 6 && batidas[0] == 3 && batidas[1] == 2 && batidas[2] == 2 && batidas[8] == 2);
-  OK("retomada: /sync/activities igual nao baixa all-items de novo");
+  assert(n == 6 && batidas[0] == 3 && batidas[1] == 2 && batidas[10] == 1 && batidas[9] == 3);
+  assert(batidas[2] == 0 && batidas[8] == 0);
+  OK("retomada: /sync/activities igual nao baixa a biblioteca de novo");
 
   // Lista cheia: a sugestao nao expulsa nenhum pausado.
   n = simkl_continuar(v, 3);
@@ -421,7 +701,8 @@ static void maisMenos(void) {
   // Dune + Shogun + Repetido. Frieren (anime) tem o MESMO imdb de Repetido:
   // baixado, mas entra uma vez so.
   assert(simkl_plantowatch(v, 12) == 3);
-  assert(batidas[3] == 1 && batidas[4] == 1 && batidas[8] == 1);
+  // From the library: no movies/shows/anime plantowatch request.
+  assert(batidas[3] == 0 && batidas[4] == 0 && batidas[8] == 0);
   assert(v[0].naLista && v[1].naLista && v[2].naLista);
   assert(!strcmp(v[2].imdb, "tt22248376") && !strcmp(v[2].tipo, "series"));
   assert(simkl_na_plantowatch("tt2788316") && simkl_na_plantowatch("tt1160419"));
@@ -430,16 +711,25 @@ static void maisMenos(void) {
   assert(esperarEscrita() == SMK_OP_CONFIRMADA);
   assert(!strcmp(ultimoCorpo, "{\"shows\":[{\"ids\":{\"imdb\":\"tt2788316\"}}]}"));
   OK("plantowatch da rede: naLista e a guarda do - conhece o que veio de la");
+  // No library (download failed, nothing saved): no list, not an empty one.
+  bibEsperar();
   simkl_esquecer();
+  free(bibTexto); bibTexto = NULL;
   libraryFailure = 1;
   assert(simkl_plantowatch(v, 12) == -1);
   libraryFailure = 0;
+  bibEsperar();
   simkl_esquecer();
   OK("partial Simkl library is rejected instead of replacing complete membership");
 }
 
 static void perfilRedeCasos(void) {
   PerfilDados d;
+  // No library (its download fails): the month is asked from Simkl.
+  bibEsperar();
+  simkl_esquecer();
+  free(bibTexto); bibTexto = NULL;
+  libraryFailure = 1;
   perfilRede = 1;
   assert(simkl_perfil(&d) && !strcmp(d.nome, "Identidade Simkl"));
   perfilHistorySt = 500;
@@ -453,7 +743,364 @@ static void perfilRedeCasos(void) {
   tokenAtual = TOKEN; credGeracao++; trocarNaResposta = 2;
   assert(!simkl_perfil(&d));
   tokenAtual = TOKEN; credGeracao++; trocarNaResposta = 0; perfilRede = 0;
+  libraryFailure = 0;
+  bibEsperar();
+  simkl_esquecer();
   OK("perfil: HTTP/HTML falham e relink no meio da consulta nao mistura contas");
+}
+
+static const char *ativDelta(const char *all, const char *playback, const char *watching,
+                             const char *removidoFilmes);
+// With a library: the month's plays come from it (no month request), and the
+// name only when Simkl's settings activity moved.
+static void perfilBiblioteca(void) {
+  PerfilDados d;
+  char agora[32], lib[2000], ativ[300];
+  time_t t = time(NULL);
+  int settingsAntes, mesAntes;
+  strftime(agora, sizeof agora, "%Y-%m-%dT%H:%M:%SZ", gmtime(&t));
+  snprintf(lib, sizeof lib,
+           "{\"shows\":[{\"status\":\"watching\",\"show\":{\"title\":\"Show B\",\"runtime\":40,"
+           "\"ids\":{\"simkl\":2,\"imdb\":\"tt0000002\"}},\"seasons\":[{\"number\":1,\"episodes\":["
+           "{\"number\":1,\"watched_at\":\"2020-01-01T00:00:00Z\"},"
+           "{\"number\":2,\"watched_at\":\"%s\"},{\"number\":3,\"watched_at\":\"%s\"}]}]}],"
+           "\"anime\":[{\"status\":\"watching\",\"mapped_tvdb_seasons\":[2],"
+           "\"show\":{\"title\":\"Kaiju S2\",\"ids\":{\"simkl\":6,\"imdb\":\"tt0000006\"}},"
+           "\"seasons\":[{\"number\":1,\"episodes\":[{\"number\":8,\"watched_at\":\"%s\","
+           "\"tvdb\":{\"season\":2,\"episode\":8}}]}]},"
+           "{\"status\":\"watching\",\"mapped_tvdb_seasons\":[1,2,22],"
+           "\"show\":{\"title\":\"Long Anime\",\"ids\":{\"simkl\":7,\"imdb\":\"tt0000007\"}},"
+           "\"seasons\":[{\"number\":1,\"episodes\":[{\"number\":1122,\"watched_at\":\"%s\","
+           "\"tvdb\":{\"season\":22,\"episode\":37}}]}]}],"
+           "\"movies\":[{\"status\":\"completed\",\"last_watched_at\":\"%s\","
+           "\"movie\":{\"title\":\"Movie A\",\"runtime\":100,\"ids\":{\"simkl\":3,\"imdb\":\"tt0000003\"}}}]}",
+           agora, agora, agora, agora, agora);
+  bibEsperar();
+  simkl_esquecer();
+  free(bibTexto); bibTexto = NULL;
+  memset(batidas, 0, sizeof batidas);
+  historicoCorpo = lib;
+  snprintf(ativ, sizeof ativ, "%s", ativDelta("2026-11-01T00:00:00Z", "2026-11-01T00:00:00Z",
+                                              "2026-11-01T00:00:00Z", NULL));
+  atividadesInteiras = ativ;
+  perfilRede = 1;
+  settingsAntes = pedidosSettings; mesAntes = pedidosMesPerfil;
+  assert(simkl_perfil(&d) && !strcmp(d.nome, "Identidade Simkl"));
+  // Two show episodes this month (not the 2020 one), two anime episodes and
+  // the movie; no month request.
+  assert(d.episodios == 4 && d.filmes == 1 && d.plays == 5 && d.minutos == 180);
+  // Anime labels: a per-season entry by its TVDB placement, one numbered
+  // across the show by Simkl's number (not "T1E8" / "T1E1122").
+  { int kaiju = 0, longo = 0;
+    for (int i = 0; i < d.nDestaques; i++) {
+      if (!strcmp(d.destaques[i].id, "tt0000006")) kaiju = !strcmp(d.destaques[i].detalhe, "T2E8");
+      if (!strcmp(d.destaques[i].id, "tt0000007")) longo = !strcmp(d.destaques[i].detalhe, "E1122");
+    }
+    assert(kaiju && longo); }
+  assert(pedidosMesPerfil == mesAntes && pedidosSettings == settingsAntes + 1);
+  // Opened again, settings activity the same: the name is kept.
+  assert(simkl_perfil(&d) && !strcmp(d.nome, "Identidade Simkl"));
+  assert(pedidosSettings == settingsAntes + 1 && pedidosMesPerfil == mesAntes);
+  // The settings moved (name or avatar changed on Simkl; "all" moves with
+  // them, as on Simkl): asked again.
+  snprintf(ativ, sizeof ativ, "%s", ativDelta("2026-11-02T00:00:00Z", "2026-11-01T00:00:00Z",
+                                              "2026-11-01T00:00:00Z", NULL));
+  { char *m = strstr(ativ, "\"settings\":{\"all\":\"2026-01-01");
+    assert(m);
+    memcpy(m + 19, "2027", 4); }
+  assert(simkl_perfil(&d) && pedidosSettings == settingsAntes + 2);
+  assert(pedidosMesPerfil == mesAntes);
+  perfilRede = 0;
+  bibEsperar();
+  historicoCorpo = atividadesInteiras = NULL;
+  simkl_esquecer();
+  free(bibTexto); bibTexto = NULL;
+  OK("perfil: the month from the library, the name only when its settings moved");
+}
+
+static void bibEsperar(void) {
+  for (int i = 0; i < 2000 && simkl_biblioteca_carregando(); i++) usleep(1000);
+  assert(!simkl_biblioteca_carregando());
+}
+// The whole pull saves the library: activities asked first, the pages as one
+// all-items body, signed by the link. Read back, it imports the same marks.
+// Step 1c: the library loads in the background when the profile opens; the
+// list readers share it from memory.
+static void bibliotecaNaAbertura(void) {
+  char *r;
+  int ativ, puxadas, gravadas;
+  bibEsperar();
+  simkl_esquecer();
+  tokenAtual = TOKEN;
+  free(bibTexto); bibTexto = NULL; bibGravacoes = 0;
+
+  // No saved copy: activities, the whole library, saved — never the token.
+  ativ = batidas[0]; puxadas = batidas[9];
+  simkl_biblioteca_iniciar();
+  bibEsperar();
+  assert(batidas[0] == ativ + 1 && batidas[9] == puxadas + 1 && bibGravacoes == 1);
+  assert(bibTexto && !strstr(bibTexto, TOKEN));
+  assert(!strcmp(bibNome, "simkl-biblioteca-p2.txt"));
+  OK("open: no saved copy downloads and saves the library, never the token");
+
+  // The readers share it: with SMK_BIB_FRESCA 0 (as compiled here) a read
+  // checks with Simkl once; unchanged activities keep the library in memory.
+  ativ = batidas[0];
+  r = simkl_lista_corpo("shows", "watching");
+  bibEsperar();
+  assert(r && strstr(r, "Severance") && !strstr(r, "\"seasons\""));
+  free(r);
+  assert(batidas[0] == ativ + 1 && batidas[9] == puxadas + 1);
+  OK("open: the status lists are read from memory, one activities check");
+
+  // Next launch, nothing changed on Simkl: the saved copy, one activities
+  // request, no download, no save.
+  bibEsperar();
+  simkl_esquecer();
+  ativ = batidas[0]; puxadas = batidas[9]; gravadas = bibGravacoes;
+  simkl_biblioteca_iniciar();
+  bibEsperar();
+  assert(batidas[0] == ativ + 1 && batidas[9] == puxadas && bibGravacoes == gravadas);
+  OK("open: activities unchanged uses the saved copy, downloads nothing");
+
+  // Something changed: a delta, then (the fake's items repeat across lists
+  // and carry no Simkl ID — unmergeable) the whole library, saved.
+  bibEsperar();
+  simkl_esquecer();
+  snprintf(atividades, sizeof atividades, "{\"all\":\"2024-01-22T00:00:00Z\"}");
+  ativ = batidas[0]; puxadas = batidas[9];
+  { int deltasAntes = batidas[10];
+    simkl_biblioteca_iniciar();
+    bibEsperar();
+    assert(batidas[0] == ativ + 1 && batidas[10] == deltasAntes + 1 &&
+           batidas[9] == puxadas + 2 && bibGravacoes == gravadas + 1);
+    assert(strstr(bibTexto, "2024-01-22T00:00:00Z")); }
+  OK("open: activities moved downloads and saves again");
+
+  // A reader waits for a load already on its way instead of starting one.
+  bibEsperar();
+  simkl_esquecer();
+  puxadas = batidas[9];
+  simkl_biblioteca_iniciar();
+  r = simkl_lista_corpo("shows", "watching");
+  bibEsperar();
+  assert(r && batidas[9] == puxadas);
+  free(r);
+  OK("open: a reader waits for the load in progress, no second one");
+
+  // No link: nothing starts.
+  bibEsperar();
+  simkl_esquecer();
+  tokenAtual = "";
+  ativ = batidas[0];
+  simkl_biblioteca_iniciar();
+  assert(!simkl_biblioteca_carregando() && batidas[0] == ativ);
+  tokenAtual = TOKEN;
+  OK("open: no Simkl link starts nothing");
+}
+
+// STEP 2: the library brought up to date by what moved in the activities.
+// Every item has a Simkl ID, as on Simkl.
+static const char *DELTA_L0 =
+  "{\"shows\":[{\"status\":\"watching\",\"next_to_watch\":\"S01E03\","
+  "\"show\":{\"title\":\"Show B\",\"ids\":{\"simkl\":2,\"imdb\":\"tt0000002\"}},"
+  "\"seasons\":[{\"number\":1,\"episodes\":["
+  "{\"number\":1,\"watched_at\":\"2026-10-01T00:00:00Z\"},"
+  "{\"number\":2,\"watched_at\":\"2026-10-02T00:00:00Z\"}]}]}],"
+  "\"anime\":[],"
+  "\"movies\":[{\"status\":\"plantowatch\",\"movie\":{\"title\":\"Movie A\","
+  "\"ids\":{\"simkl\":3,\"imdb\":\"tt0000003\"}}}]}";
+// Show B finished (episode 3) and Show C started.
+static const char *DELTA_D1 =
+  "{\"shows\":[{\"status\":\"completed\",\"next_to_watch\":null,"
+  "\"show\":{\"title\":\"Show B\",\"ids\":{\"simkl\":2,\"imdb\":\"tt0000002\"}},"
+  "\"seasons\":[{\"number\":1,\"episodes\":["
+  "{\"number\":1,\"watched_at\":\"2026-10-01T00:00:00Z\"},"
+  "{\"number\":2,\"watched_at\":\"2026-10-02T00:00:00Z\"},"
+  "{\"number\":3,\"watched_at\":\"2026-11-02T00:00:00Z\"}]}]},"
+  "{\"status\":\"watching\",\"next_to_watch\":\"S01E02\","
+  "\"show\":{\"title\":\"Show C\",\"ids\":{\"simkl\":4,\"imdb\":\"tt0000004\"}}}]}";
+static char deltaAtiv[600];
+static const char *ativDelta(const char *all, const char *playback, const char *watching,
+                             const char *removidoFilmes) {
+  snprintf(deltaAtiv, sizeof deltaAtiv,
+           "{\"all\":\"%s\",\"settings\":{\"all\":\"2026-01-01T00:00:00Z\"},"
+           "\"tv_shows\":{\"all\":\"%s\",\"rated_at\":null,\"playback\":\"%s\","
+           "\"plantowatch\":null,\"watching\":\"%s\",\"completed\":\"%s\",\"hold\":null,"
+           "\"dropped\":null,\"removed_from_list\":null},"
+           "\"anime\":{\"all\":null,\"playback\":null,\"watching\":null,\"removed_from_list\":null},"
+           "\"movies\":{\"all\":\"%s\",\"playback\":null,\"plantowatch\":\"2026-10-01T00:00:00Z\","
+           "\"completed\":null,\"removed_from_list\":%s%s%s}}",
+           all, all, playback, watching, watching, all,
+           removidoFilmes ? "\"" : "", removidoFilmes ? removidoFilmes : "null",
+           removidoFilmes ? "\"" : "");
+  return deltaAtiv;
+}
+static int contar(const char *s, const char *t) {
+  int n = 0;
+  for (const char *p = s; p && (p = strstr(p, t)); p += strlen(t)) n++;
+  return n;
+}
+// A list read: with SMK_BIB_FRESCA 0 here, each one checks with Simkl.
+static char *listaDelta(const char *tipo, const char *estado) {
+  char *r = simkl_lista_corpo(tipo, estado);
+  bibEsperar();
+  return r;
+}
+
+static void bibliotecaDelta(void) {
+  char *r;
+  int puxadas, deltas, grav;
+  bibEsperar();
+  simkl_esquecer();
+  tokenAtual = TOKEN;
+  free(bibTexto); bibTexto = NULL;
+  memset(batidas, 0, sizeof batidas);
+  historicoCorpo = DELTA_L0;
+  atividadesInteiras = ativDelta("2026-11-01T00:00:00Z", "2026-11-01T00:00:00Z",
+                                 "2026-11-01T00:00:00Z", NULL);
+  simkl_biblioteca_iniciar();
+  bibEsperar();
+  assert(batidas[9] == 1 && batidas[10] == 0 && bibGravacoes > 0);
+  grav = bibGravacoes;
+
+  // Only playback moved: nothing to download, nothing saved. Not on the next
+  // launch either (the saved copy's buckets are the same).
+  atividadesInteiras = ativDelta("2026-11-01T01:00:00Z", "2026-11-01T01:00:00Z",
+                                 "2026-11-01T00:00:00Z", NULL);
+  r = listaDelta("shows", "watching");
+  assert(r && strstr(r, "Show B"));
+  free(r);
+  assert(batidas[9] == 1 && batidas[10] == 0 && batidas[11] == 0 && bibGravacoes == grav);
+  simkl_esquecer();
+  simkl_biblioteca_iniciar();
+  bibEsperar();
+  assert(batidas[9] == 1 && batidas[10] == 0 && batidas[11] == 0 && bibGravacoes == grav);
+  OK("delta: only playback moved downloads nothing, at once or on the next launch");
+
+  // A status bucket moved: one date_from request from the last activities;
+  // Show B replaced (completed, 3 episodes), Show C added, saved.
+  historicoDelta = DELTA_D1;
+  atividadesInteiras = ativDelta("2026-11-02T00:00:00Z", "2026-11-01T01:00:00Z",
+                                 "2026-11-02T00:00:00Z", NULL);
+  r = listaDelta("shows", "watching");
+  assert(batidas[9] == 1 && batidas[10] == 1 && batidas[11] == 0);
+  // From the activities last confirmed: the playback-only check moved them on.
+  assert(!strcmp(ultimoDesde, "2026-11-01T01:00:00Z"));
+  assert(r && strstr(r, "Show C") && !strstr(r, "Show B"));
+  free(r);
+  r = listaDelta("shows", "completed");
+  assert(r && contar(r, "Show B") == 1);
+  free(r);
+  assert(bibGravacoes == grav + 1 && strstr(bibTexto, "Show C") &&
+         strstr(bibTexto, "2026-11-02T00:00:00Z") && contar(bibTexto, "\"simkl\":2,") == 1);
+  OK("delta: a moved bucket asks date_from once, replaces by Simkl ID, adds, saves");
+
+  // Only removed_from_list moved: the IDs-only list, no delta; Movie A goes.
+  historicoSoIds = "{\"shows\":[{\"show\":{\"ids\":{\"simkl\":2}}},"
+                 "{\"show\":{\"ids\":{\"simkl\":4}}}],\"anime\":[],\"movies\":[]}";
+  atividadesInteiras = ativDelta("2026-11-03T00:00:00Z", "2026-11-01T01:00:00Z",
+                                 "2026-11-02T00:00:00Z", "2026-11-03T00:00:00Z");
+  r = listaDelta("movies", "plantowatch");
+  assert(batidas[10] == 1 && batidas[11] == 1);
+  assert(r && !strstr(r, "Movie A"));
+  free(r);
+  assert(bibGravacoes == grav + 2 && !strstr(bibTexto, "Movie A") && strstr(bibTexto, "Show C"));
+  OK("delta: removed_from_list asks the IDs-only list and drops what is gone");
+
+  // The delta fails: the library stays, nothing saved, the next read retries.
+  atividadesInteiras = ativDelta("2026-11-04T00:00:00Z", "2026-11-01T01:00:00Z",
+                                 "2026-11-04T00:00:00Z", "2026-11-03T00:00:00Z");
+  deltaFalha = 1;
+  deltas = batidas[10];
+  r = listaDelta("shows", "watching");
+  assert(r && strstr(r, "Show C"));
+  free(r);
+  assert(batidas[10] == deltas + 1 && bibGravacoes == grav + 2);
+  deltaFalha = 0;
+  r = listaDelta("shows", "watching");
+  free(r);
+  assert(batidas[10] == deltas + 2 && bibGravacoes == grav + 3);
+  assert(!strcmp(ultimoDesde, "2026-11-03T00:00:00Z"));
+  OK("delta: a failed delta keeps the library and asks again on the next read");
+
+  // A delta over Simkl's max_items: asking it again would get the same 400,
+  // so the whole library comes instead (type by type) and is saved.
+  atividadesInteiras = ativDelta("2026-11-04T12:00:00Z", "2026-11-01T01:00:00Z",
+                                 "2026-11-04T12:00:00Z", "2026-11-03T00:00:00Z");
+  deltaGrande = 1;
+  deltas = batidas[10]; puxadas = batidas[9]; grav = bibGravacoes;
+  r = listaDelta("shows", "watching");
+  free(r);
+  assert(batidas[10] == deltas + 1 && batidas[9] == puxadas + 1 && bibGravacoes == grav + 1);
+  deltaGrande = 0;
+  OK("delta: one over max_items downloads the whole library instead");
+
+  // Items without a Simkl ID (Simkl always sends one) still go by delta. A new
+  // one is added; the two Kaiju seasons share an IMDb ID, not a MAL ID.
+  historicoDelta = "{\"shows\":[{\"status\":\"watching\",\"show\":{\"title\":\"No ID\","
+                   "\"ids\":{\"imdb\":\"tt0000009\"}}}],"
+                   "\"anime\":[{\"status\":\"watching\",\"show\":{\"title\":\"Kaiju S1\","
+                   "\"ids\":{\"simkl\":5,\"imdb\":\"tt0000008\",\"mal\":\"1\"}}},"
+                   "{\"status\":\"watching\",\"show\":{\"title\":\"Kaiju S2\","
+                   "\"ids\":{\"simkl\":6,\"imdb\":\"tt0000008\",\"mal\":\"2\"}}}]}";
+  atividadesInteiras = ativDelta("2026-11-05T00:00:00Z", "2026-11-01T01:00:00Z",
+                                 "2026-11-05T00:00:00Z", "2026-11-03T00:00:00Z");
+  puxadas = batidas[9]; deltas = batidas[10];
+  r = listaDelta("shows", "watching");
+  free(r);
+  assert(batidas[10] == deltas + 1 && batidas[9] == puxadas);
+  assert(contar(bibTexto, "No ID") == 1 && strstr(bibTexto, "Kaiju S2"));
+  // Without a Simkl ID, its IMDb and MAL IDs pick season 2 alone.
+  historicoDelta = "{\"anime\":[{\"status\":\"completed\",\"show\":{\"title\":\"Kaiju S2 done\","
+                   "\"ids\":{\"imdb\":\"tt0000008\",\"mal\":2}}}]}";
+  atividadesInteiras = ativDelta("2026-11-06T00:00:00Z", "2026-11-01T01:00:00Z",
+                                 "2026-11-06T00:00:00Z", "2026-11-03T00:00:00Z");
+  r = listaDelta("shows", "watching");
+  free(r);
+  assert(batidas[10] == deltas + 2 && batidas[9] == puxadas);
+  assert(strstr(bibTexto, "Kaiju S1\"") && strstr(bibTexto, "Kaiju S2 done") &&
+         !strstr(bibTexto, "Kaiju S2\""));
+  OK("delta: items without a Simkl ID are added or matched by their other IDs");
+
+  // Only the IMDb ID: both seasons fit, so the whole library instead.
+  historicoDelta = "{\"anime\":[{\"status\":\"completed\",\"show\":{\"title\":\"Kaiju ?\","
+                   "\"ids\":{\"imdb\":\"tt0000008\"}}}]}";
+  atividadesInteiras = ativDelta("2026-11-07T00:00:00Z", "2026-11-01T01:00:00Z",
+                                 "2026-11-07T00:00:00Z", "2026-11-03T00:00:00Z");
+  r = listaDelta("shows", "watching");
+  free(r);
+  assert(batidas[10] == deltas + 3 && batidas[9] == puxadas + 1);
+  assert(!strstr(bibTexto, "Kaiju") && strstr(bibTexto, "Movie A"));   // DELTA_L0 again
+  OK("delta: an item without a Simkl ID that fits several downloads the whole library");
+
+  // Continue watching asks /sync/playback only when the playback timestamps
+  // move: watching an episode or changing a list moves "all", not them.
+  { CatItem v[12];
+    int play;
+    historicoDelta = "{\"shows\":[]}";
+    atividadesInteiras = ativDelta("2026-11-08T00:00:00Z", "2026-11-08T00:00:00Z",
+                                   "2026-11-07T00:00:00Z", "2026-11-03T00:00:00Z");
+    play = batidas[1];
+    simkl_continuar(v, 12);
+    bibEsperar();
+    assert(batidas[1] == play + 1);
+    atividadesInteiras = ativDelta("2026-11-09T00:00:00Z", "2026-11-08T00:00:00Z",
+                                   "2026-11-09T00:00:00Z", "2026-11-03T00:00:00Z");
+    simkl_continuar(v, 12);
+    bibEsperar();
+    assert(batidas[1] == play + 1);
+    atividadesInteiras = ativDelta("2026-11-10T00:00:00Z", "2026-11-10T00:00:00Z",
+                                   "2026-11-09T00:00:00Z", "2026-11-03T00:00:00Z");
+    simkl_continuar(v, 12);
+    bibEsperar();
+    assert(batidas[1] == play + 2); }
+  OK("playback: asked again only when its own timestamps move");
+
+  bibEsperar();
+  historicoCorpo = historicoDelta = historicoSoIds = atividadesInteiras = NULL;
+  simkl_esquecer();
+  free(bibTexto); bibTexto = NULL;
 }
 
 static void perfilFalhas(void) {
@@ -489,6 +1136,23 @@ static void perfilAnimeRanking(void) {
   assert(d.streakAtual == 3 && d.diasAtivosMes == 3 && d.atividade[11] == 1);
   assert(d.nGeneros == 0 && d.parcial && !d.anoCompleto && !d.streakCompleto);
   OK("perfil: anime conta e o quinto titulo mais visto entra nos quatro destaques");
+
+  // Simkl's real anime shape: each item under "show", not "anime".
+  { const char *comShow =
+      "{\"movies\":[],\"shows\":[],"
+      "\"anime\":[{\"show\":{\"title\":\"Frieren\",\"runtime\":24,\"ids\":{\"imdb\":\"tt22248376\"}},"
+      "\"seasons\":[{\"number\":1,\"episodes\":[{\"number\":1,\"watched_at\":\"2026-10-11T12:00:00Z\"},"
+      "{\"number\":2,\"watched_at\":\"2026-10-12T12:00:00Z\"}]}]}]}";
+    assert(simkl_perfil_ler(NULL, comShow, &d, agora));
+    assert(d.plays == 2 && d.episodios == 2 && d.minutos == 48 && d.diasAtivosMes == 2);
+    assert(d.nDestaques == 1 && !strcmp(d.destaques[0].id, "tt22248376"));
+    CatItem v[4];
+    const char *ptw =
+      "{\"anime\":[{\"status\":\"plantowatch\",\"show\":{\"title\":\"Frieren\","
+      "\"ids\":{\"simkl\":77,\"imdb\":\"tt22248376\"}}}]}";
+    assert(simkl_ler_plantowatch(ptw, 1, v, 4) == 1 && !strcmp(v[0].imdb, "tt22248376"));
+    assert(simkl_ler_plantowatch(ptw, 0, v, 4) == 0); }
+  OK("perfil e plan to watch: anime sob \"show\" (forma real do Simkl) conta");
 }
 
 static void perfilStats(void) {
@@ -529,7 +1193,7 @@ int main(int argc, char **argv) {
   int fd = mkstemp(caminho), salvo = dup(1);
   FILE *f;
   char linha[512];
-  int vazou = 0;
+  int vazou = 0, deltaContado = 0;
   assert(fd >= 0 && salvo >= 0);
   fflush(stdout);
   dup2(fd, 1);
@@ -542,6 +1206,9 @@ int main(int argc, char **argv) {
   perfilFalhas();
   perfilAnimeRanking();
   perfilRedeCasos();
+  perfilBiblioteca();
+  bibliotecaNaAbertura();
+  bibliotecaDelta();
   simkl_esquecer();
   assert(!simkl_na_plantowatch("tt2788316"));
 
@@ -549,11 +1216,19 @@ int main(int argc, char **argv) {
   dup2(salvo, 1);
   f = fopen(caminho, "r");
   assert(f);
-  while (fgets(linha, sizeof linha, f)) if (strstr(linha, TOKEN)) vazou = 1;
+  while (fgets(linha, sizeof linha, f)) {
+    if (strstr(linha, TOKEN)) vazou = 1;
+    // bibliotecaDelta's DELTA_D1: Show B replaced, Show C new.
+    if (strstr(linha, "[simkl] library: delta since 2026-11-01T01:00:00Z: 2 item(s) in it, "
+                      "1 library item(s) replaced, 0 removed\n"))
+      deltaContado = 1;
+  }
   fclose(f);
   unlink(caminho);
   assert(!vazou);
   OK("o token nunca aparece no stdout do modulo");
+  assert(deltaContado);
+  OK("delta: the log counts the delta's items, a new one included");
   printf("simkl_cw: tudo ok\n");
   return 0;
 }

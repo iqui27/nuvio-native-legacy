@@ -604,22 +604,27 @@ void corviva_definir_logo(const char *chave, int prioridade) {
 // degrade e as quatro luzes de regiao. Mais a forca da luz ambiente, que e um
 // numero so (entra e sai com o modo imersivo).
 #define CV_NCOR 9
-// Sem titulo (ou arte cinza): o acento Branco (#f4f2ee), e nao o #ffffff —
-// e a mesma cor do acento fixo 0.
-static const float BRANCO[3] = { 0xf4 / 255.0f, 0xf2 / 255.0f, 0xee / 255.0f };
+// Sem titulo (ou arte cinza): o acento Rosa (#c93c87), a mesma cor do acento
+// fixo 6 e a reserva de ajustes_acento (AJ_TEMA_RESERVA).
+static const float RESERVA[3] = { 0xc9 / 255.0f, 0x3c / 255.0f, 0x87 / 255.0f };
 static const float FUNDO[3]  = { 0.051f, 0.051f, 0.051f };   // NV_COR_FUNDO
 float nv_cor_fundo_viva[3] = { 0.051f, 0.051f, 0.051f };
-float nv_acento_viva[3] = { 0xf4 / 255.0f, 0xf2 / 255.0f, 0xee / 255.0f };
+float nv_acento_viva[3] = { 0xc9 / 255.0f, 0x3c / 255.0f, 0x87 / 255.0f };
 float nv_grad_viva[3][3] = { { 1, 1, 1 }, { 1, 1, 1 }, { 1, 1, 1 } };
 float nv_luz_viva[3] = { 0.30f, 0.30f, 0.29f };
 CorvivaTextura nv_textura_viva;
 int   nv_grad_ativo;
 float nv_ambiente_viva[4][3];
 float nv_ambiente_forca;
+float nv_acento_reserva = 1.0f;
 float nv_tempo_viva;
 static float deL[CV_NCOR][3], paraL[CV_NCOR][3];   // OKLab
 static float alvo[CV_NCOR][3];                     // sRGB
 static float deForca, paraForca, alvoForca = -1.0f;
+static float deReserva = 1.0f, paraReserva = 1.0f;
+// A LUZ da reserva e neutra (a do Branco, #4e4d49): o rosa de reserva vai nos
+// controles, nunca no fundo nem no vidro (Nuvio UX, 22/11: "nevoa magenta").
+static const float LUZ_NEUTRA[3] = { 0x4e / 255.0f, 0x4d / 255.0f, 0x49 / 255.0f };
 static int alvoGrad;
 static float t = 1.0f;
 static int iniciado, retargets;
@@ -713,7 +718,7 @@ void corviva_quadro(float dt, int modo, int usarLogo, int reduzido) {
   if (!fonteOk && modo != CORVIVA_DESLIGADA && temLogo && cenaLogo.ok) {
     fonte = &cenaLogo; fonteOk = 1;   // arte P&B com logo colorido
   }
-  memcpy(novo[0], fonteOk ? fonte->acento : BRANCO, sizeof novo[0]);
+  memcpy(novo[0], fonteOk ? fonte->acento : RESERVA, sizeof novo[0]);
   if (fonteOk && modo == CORVIVA_SIMPLES_CLARO) {
     float L, C, h;
     lchDe(novo[0], &L, &C, &h);
@@ -722,7 +727,7 @@ void corviva_quadro(float dt, int modo, int usarLogo, int reduzido) {
     lchParaSrgb(L + (1.0f - L) * 0.65f, C * 0.45f, h, novo[0]);
   }
   memcpy(novo[1], FUNDO, sizeof novo[1]);   // o estilizado (base tingida) saiu
-  for (k = 0; k < 3; k++) memcpy(novo[2 + k], fonteOk ? fonte->grad[k] : BRANCO, sizeof novo[0]);
+  for (k = 0; k < 3; k++) memcpy(novo[2 + k], fonteOk ? fonte->grad[k] : RESERVA, sizeof novo[0]);
   for (k = 0; k < 4; k++) memcpy(novo[5 + k], temCena ? cena.regiao[k] : FUNDO, sizeof novo[0]);
   // "Cor da logo" tambem vale para a LUZ da Imersiva (dono, 05/10: "o imersivo
   // da logo nao ta pegando a cor da logo"): as quatro luzes saiam sempre das
@@ -735,13 +740,15 @@ void corviva_quadro(float dt, int modo, int usarLogo, int reduzido) {
   grad = fonteOk && modo == CORVIVA_GRADIENTE;
   forca = (modo == CORVIVA_IMERSIVA && temCena) ? 1.0f : 0.0f;
 
-  if (memcmp(novo, alvo, sizeof alvo) || forca != alvoForca || !iniciado) {
+  if (memcmp(novo, alvo, sizeof alvo) || forca != alvoForca ||
+      (fonteOk ? 0.0f : 1.0f) != paraReserva || !iniciado) {
     memcpy(alvo, novo, sizeof alvo);
     for (k = 0; k < CV_NCOR; k++) {
       corviva_srgb_para_oklab(corAtual(k), deL[k]);
       corviva_srgb_para_oklab(alvo[k], paraL[k]);
     }
     deForca = nv_ambiente_forca; paraForca = forca; alvoForca = forca;
+    deReserva = nv_acento_reserva; paraReserva = fonteOk ? 0.0f : 1.0f;
     // Primeiro quadro (cor do arranque) e animacoes reduzidas: sem transicao.
     t = (!iniciado || reduzido) ? 1.0f : 0.0f;
     if (iniciado) retargets++;
@@ -749,6 +756,7 @@ void corviva_quadro(float dt, int modo, int usarLogo, int reduzido) {
     if (t >= 1.0f) {
       for (k = 0; k < CV_NCOR; k++) memcpy(corAtual(k), alvo[k], sizeof alvo[k]);
       nv_ambiente_forca = paraForca;
+      nv_acento_reserva = paraReserva;
     }
   }
   // O degrade LIGA no inicio da transicao e DESLIGA no fim: durante ela as
@@ -769,14 +777,18 @@ void corviva_quadro(float dt, int modo, int usarLogo, int reduzido) {
         corviva_oklab_para_srgb(l, corAtual(k)); }
     }
     nv_ambiente_forca = deForca + (paraForca - deForca) * e;
+    nv_acento_reserva = deReserva + (paraReserva - deReserva) * e;
   }
   if (t >= 1.0f) nv_grad_ativo = alvoGrad;
-  { static float ultimo[3] = { -1, -1, -1 };
-    if (memcmp(ultimo, nv_acento_viva, sizeof ultimo)) {
+  { static float ultimo[4] = { -1, -1, -1, -1 };
+    if (memcmp(ultimo, nv_acento_viva, 3 * sizeof(float)) || ultimo[3] != nv_acento_reserva) {
       CorvivaTokens tk;
-      memcpy(ultimo, nv_acento_viva, sizeof ultimo);
+      int j;
+      memcpy(ultimo, nv_acento_viva, 3 * sizeof(float));
+      ultimo[3] = nv_acento_reserva;
       corviva_tokens(nv_acento_viva, &tk);
-      memcpy(nv_luz_viva, tk.luz, sizeof nv_luz_viva);
+      for (j = 0; j < 3; j++)
+        nv_luz_viva[j] = tk.luz[j] + (LUZ_NEUTRA[j] - tk.luz[j]) * nv_acento_reserva;
     } }
 }
 
@@ -942,11 +954,13 @@ void corviva_zerar(void) {
   memset(&nv_textura_viva, 0, sizeof nv_textura_viva);
   pedidoPrio = pedidoLogoPrio = 0; temCena = temLogo = 0;
   relogio = 0; pendDesde = 0; ultGravacao = -1e9;
-  memcpy(nv_acento_viva, BRANCO, sizeof nv_acento_viva);
+  memcpy(nv_acento_viva, RESERVA, sizeof nv_acento_viva);
   memcpy(nv_cor_fundo_viva, FUNDO, sizeof nv_cor_fundo_viva);
-  for (k = 0; k < 3; k++) memcpy(nv_grad_viva[k], BRANCO, sizeof BRANCO);
+  for (k = 0; k < 3; k++) memcpy(nv_grad_viva[k], RESERVA, sizeof RESERVA);
   for (k = 0; k < 4; k++) memcpy(nv_ambiente_viva[k], FUNDO, sizeof FUNDO);
   memset(alvo, 0, sizeof alvo);
   nv_ambiente_forca = 0; alvoForca = -1.0f; nv_grad_ativo = 0; alvoGrad = 0;
+  nv_acento_reserva = deReserva = paraReserva = 1.0f;
+  memcpy(nv_luz_viva, LUZ_NEUTRA, sizeof nv_luz_viva);
   t = 1.0f; iniciado = 0; retargets = 0;
 }

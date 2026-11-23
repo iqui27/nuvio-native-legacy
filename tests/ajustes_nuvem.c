@@ -137,6 +137,20 @@ static int recoveryStage(const char *dir, const char *stage) {
     dados_gravar("ltv-urls-p1.txt", "configured-streams\n");
     dados_gravar("xtream-p1.txt", "portal=test.invalid\nusuario=alice\nsenha=secret\n");
     dados_gravar("sessao-private.txt", "DO-NOT-UPLOAD");
+    // Issue 43: o modelo do gosto entra no backup por aparelho como file33 —
+    // o cache de fichas e a marca das notas ficam de fora (reconstruiveis).
+    dados_gravar("farol-gosto-p1.txt", "FG 2 1 1 320 0 0\ng 28 512 1 320 0\n");
+    dados_gravar("farol-fichas.bin", "fichas-locais");
+    {
+      // A marca das notas do Trakt leva o hash da conta (mesmo FNV do
+      // ajustes_device.inc) — a fixture usa o nome real para o esquecer achar.
+      unsigned long long nh = 1469598103934665603ULL;
+      char ncam[64];
+      for (const char *p = sessao_usuario(); *p; p++)
+        { nh ^= (unsigned char)*p; nh *= 1099511628211ULL; }
+      snprintf(ncam, sizeof ncam, "farol-notas-%08llx.txt", nh & 0xffffffffULL);
+      dados_gravar(ncam, "1 123\n");
+    }
     char nome[128]; ajustes_provedores_arquivo(nome, sizeof nome, "fontefalha");
     dados_gravar(nome, "provedores 1\nfiltro_maxgb 10\n");
     fil_registrar("org.test_movie_top", "Top", "Test", "movie", 10);
@@ -148,8 +162,15 @@ static int recoveryStage(const char *dir, const char *stage) {
     VideoLegendaEstilo style = *player_leg_estilo(); style.tamanho = 160;
     assert(player_leg_estilo_definir(&style, PLR_LEG_FONTE));
     player_aspecto_definir(PLR_ASP_ESTICAR);
+    // O instantaneo do backup forca o descarrego do Farol ANTES de ler os
+    // arquivos: a RAM tem de pousar em farol-sinal-p1.txt (estado) e
+    // farol-gosto-p1.txt (modelo) — o recarregar recoloca a fixture na RAM
+    // e o ajuste a suja, senao nada sujo sairia para a prova.
+    farolsinal_recarregar();
+    farolsinal_definir_recomendar(0);
     // Deliberately no sync_proteger: direct file editors must still upload.
     cycle();
+    check(dados_ler("farol-sinal-p1.txt") != NULL, "device snapshot drains farol signal state");
     check(pushes > 0, "external/device edits uploaded without dirty notification");
     check(strstr(cloud, "future_web") && strstr(cloud, "future_ext") && strstr(cloud, "c_future"), "unknown web and C fields preserved");
     check(!strstr(cloud, "DO-NOT-UPLOAD") && !strstr(cloud, "444f2d4e4f542d55504c4f4144"), "session files excluded");
@@ -176,10 +197,14 @@ static int recoveryStage(const char *dir, const char *stage) {
       check(f - v == 4 && !strncmp(v, "null", 4), "device snapshot excludes shared rules and filters");
     }
     // Keep an old client's whole-file device snapshot in the account too.
+    // file33 rides along: the restore stages prove the Farol model file
+    // round-trips; the other 29 absent keys prove a sparse/old (33-file)
+    // snapshot simply skips what it does not have (issue 43).
     Jsw legacy; jsw_iniciar(&legacy); jsw_obj_ini(&legacy);
-    for (int i = 0; i < 4; i++) {
-      const char *keys[] = {"file8", "file22", "file24", "file25"};
-      const char *names[] = {"fileirasui-p1.txt", nome, "fonteregra.txt", nome};
+    for (int i = 0; i < 5; i++) {
+      const char *keys[] = {"file8", "file22", "file24", "file25", "file33"};
+      const char *names[] = {"fileirasui-p1.txt", nome, "fonteregra.txt", nome,
+                             "farol-gosto-p1.txt"};
       char *text = dados_ler(names[i]); ajusteHex(&legacy, keys[i], text); free(text);
     }
     jsw_obj_fim(&legacy);
@@ -200,6 +225,17 @@ static int recoveryStage(const char *dir, const char *stage) {
     snprintf(path, sizeof path, "%s/../expected.bin", dir); char *raw = fileRead(path);
     memcpy(expected, raw, sizeof expected); free(raw);
     injectLegacyLocalOnly(0, 0); // Legacy non-default local-only values must not import.
+    // A RAM diverge do arquivo que o instantaneo traz (ressalva R5): um
+    // modelo velho de 2 titulos reside aqui; o restore devolve a fixture de
+    // 1 — sem o recarregar da troca a RAM velha vencia (mutacao M13).
+    if (strcmp(stage, "device-other")) {
+      FarolGosto gd;
+      dados_gravar("farol-gosto-p1.txt",
+                   "FG 2 1 2 320 0 0\ng 28 512 1 320 0\ng 35 256 1 320 0\n");
+      farolsinal_definir_recomendar(1);   // rouba a carga: o modelo reside
+      check(farolsinal_modelo(&gd) && gd.titulos == 2,
+            "farol RAM divergente antes do restore");
+    }
     cycle();
     int other = !strcmp(stage, "device-other");
     for (int i = 0; i < AJ_N; i++) {
@@ -217,6 +253,7 @@ static int recoveryStage(const char *dir, const char *stage) {
       ajustes_aplicar_blob("{\"c_settings_v1\":{\"values\":{\"c_vidroLocal\":1,\"c_modernSidebarBlur\":1}}}");
       check(valor[AJ_VIDRO] == valorPadrao[AJ_VIDRO] && valor[AJ_RAIL_BLUR] == valorPadrao[AJ_RAIL_BLUR], "legacy shared blob cannot override device GPU choices");
       check(!dados_ler("fanart.txt"), "second TV receives no device credentials");
+      check(!dados_ler("farol-gosto-p1.txt"), "second TV keeps own (empty) taste model");
       // B edits shared files after A's upload, with a different provider scope/quota.
       fil_mover(1, -1); fil_definir_limite(5); fil_gravar_registro();
       fonteregra_definir_regex("4K");
@@ -229,6 +266,22 @@ static int recoveryStage(const char *dir, const char *stage) {
       snprintf(path, sizeof path, "%s/../cloud.json", dir); fileWrite(path, cloud, strlen(cloud));
     } else {
       checkFile("fanart.txt", "0123456789abcdef"); checkFile("seekr.txt", "own-seekr-key");
+      {
+        // O instantaneo regravou o modelo da RAM: o arquivo restaurado vem
+        // na forma canonica do escritor (com as linhas de faixa), mas o
+        // peso da fixture tem de estar la inteiro.
+        char *fg = dados_ler("farol-gosto-p1.txt");
+        check(fg && strstr(fg, "g 28 512 1 320 0\n"), "farol model file restored");
+        free(fg);
+      }
+      {
+        // ...e a RAM volta ao restaurado pela releitura agendada no apply
+        // (o recarregar da issue 43): espera o fio de tras fechar a troca.
+        FarolGosto g; int w = 0;
+        while (w++ < 400 && farolsinal_teste_trabalho()) usleep(5000);
+        check(farolsinal_modelo(&g) && g.titulos == 1,
+              "farol RAM volta ao modelo restaurado (recarregar)");
+      }
       checkFile("ltv-urls-p1.txt", "configured-streams\n");
       checkFile("xtream-p1.txt", "portal=test.invalid\nusuario=alice\nsenha=secret\n");
       char protectedPath[1024]; struct stat mode;
@@ -248,7 +301,30 @@ static int recoveryStage(const char *dir, const char *stage) {
       // Partial blobs never reset missing shared/device keys or stores.
       ajustes_aplicar_blob("{\"features\":{\"hero_section_enabled\":true}}");
       check(valor[AJ_RESOLUCAO] == RES_4K && valor[AJ_IDIOMA] == 4, "partial blob preserves absent keys");
-      sessao_sair(); sync_esquecer_usuario();
+      // Logout na ordem REAL (ajustes.c): sessao_sair() vem ANTES de
+      // sync_esquecer_usuario() — o nome da marca tem de ser calculado com
+      // a sessao ainda logada, e os arquivos do Farol de TODOS os perfis da
+      // conta saem, nao so do ativo (revisao FAROL43-r1).
+      {
+        unsigned long long nh = 1469598103934665603ULL;
+        char ncam[64];
+        for (const char *p = sessao_usuario(); *p; p++)
+          { nh ^= (unsigned char)*p; nh *= 1099511628211ULL; }
+        snprintf(ncam, sizeof ncam, "farol-notas-%08llx.txt", nh & 0xffffffffULL);
+        dados_gravar(ncam, "1 123\n");
+        dados_gravar("farol-sinal-p1.txt", "FS 2 1 1 0 0\n");
+        dados_gravar("farol-gosto-p2.txt", "FG 2 2 1 320 0 0\ng 28 512 1 320 0\n");
+        dados_gravar("farol-sinal-p2.txt", "FS 2 2 1 0 0\n");
+        sessao_sair();
+        check(!sessao_usuario()[0], "logout clears the session before forgetting");
+        sync_esquecer_usuario();
+        check(!dados_ler(ncam), "logout removes the account ratings mark");
+        check(!dados_ler("farol-gosto-p1.txt") && !dados_ler("farol-sinal-p1.txt"),
+              "logout removes active-profile farol files");
+        check(!dados_ler("farol-gosto-p2.txt") && !dados_ler("farol-sinal-p2.txt"),
+              "logout removes every other profile's farol files");
+        check(!dados_ler("farol-fichas.bin"), "logout removes ficha cache");
+      }
       memcpy(valor, valorPadrao, sizeof valor); login(); cycle();
       check(valor[AJ_RESOLUCAO] == RES_4K && valor[AJ_IDIOMA] == 4, "logout/login restores same TV");
       check(!strcmp(fil_chave(0), "org.test_series_new") && fil_limite_gravado() == 3, "logout keeps shared order and device quota");

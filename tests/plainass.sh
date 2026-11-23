@@ -9,6 +9,6 @@ if [ "${SANITIZE:-0}" = 1 ]; then
   flags=(-fsanitize=address,undefined -fno-omit-frame-pointer)
 fi
 cc -DNV_ASS_LIBASS -include tests/ass_pisca_gl.h -Isrc \
-  "${flags[@]}" tests/plainass.c src/plainass.c src/legenda.c src/assrender.c \
+  "${flags[@]}" tests/plainass.c src/plainass.c src/legenda.c src/assrender.c src/assperf.c src/assfios.c \
   -o "$dir/test" $(pkg-config --cflags --libs libass sdl2 fribidi) -lm -pthread
 "$dir/test"

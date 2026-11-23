@@ -14,6 +14,7 @@
 #ifndef NV_MAPA_PURO
 #include "catalogo.h"
 #include "descoberta.h"
+#include "farolsinal.h"
 #include "progresso.h"
 #include "salvos.h"
 #include "dados.h"
@@ -125,16 +126,123 @@ static void lerObraLista(const char *p, const char *f, MapaObra *o, long *gen, i
   }
 }
 
-static void addPessoa(MapaSemente *s, long id, const char *nome, const char *foto, int dir) {
+static void addPessoa(MapaPessoa *g, int *nGente, int max, long id,
+                      const char *nome, const char *foto, int dir) {
   int i;
-  if (!nome || !nome[0] || s->nGente >= MAPA_GENTE_MAX) return;
-  for (i = 0; i < s->nGente; i++) if (s->gente[i].id == id) return;
-  s->gente[s->nGente].id = id;
-  copiaLimpa(s->gente[s->nGente].nome, sizeof s->gente[0].nome, nome);
-  s->gente[s->nGente].foto[0] = 0;
-  urlImg(s->gente[s->nGente].foto, sizeof s->gente[0].foto, "w185", foto);
-  s->gente[s->nGente].direcao = dir;
-  s->nGente++;
+  if (!nome || !nome[0] || *nGente >= max) return;
+  for (i = 0; i < *nGente; i++) if (g[i].id == id) return;
+  g[*nGente].id = id;
+  copiaLimpa(g[*nGente].nome, sizeof g[0].nome, nome);
+  g[*nGente].foto[0] = 0;
+  urlImg(g[*nGente].foto, sizeof g[0].foto, "w185", foto);
+  g[*nGente].direcao = dir;
+  (*nGente)++;
+}
+
+// Os tres blocos de lista do detalhe do TMDB, extraidos de mapa_ler_detalhe
+// para o farolficha ler a MESMA resposta sem copiar o parser (PLANO-GOSTO,
+// issue 36). Cada um enche o vetor do chamador ate `max`.
+
+// "genres" da raiz: [{id, name}, ...]. Sem o array, o vetor do chamador fica
+// como esta (a semente local ja pode trazer generos do catalogo).
+static void lerGenerosDetalhe(const char *json, MapaEtiqueta *gen, int *nGen, int max) {
+  const char *v = valorRaiz(json, NULL, "genres"), *fimV, *p;
+  if (v && *v == '[') {
+    *nGen = 0;
+    fimV = js_fim(v);
+    for (p = v + 1; p && p < fimV && *p; ) {
+      while (*p && *p != '{' && *p != ']') p++;
+      if (*p != '{') break;
+      { const char *f = js_fim(p);
+        if (*nGen < max) {
+          gen[*nGen].id = (long)js_num(p, f, "id", 0.0);
+          js_texto(p, f, "name", gen[*nGen].nome, sizeof gen[0].nome);
+          if (gen[*nGen].nome[0]) (*nGen)++;
+        }
+        p = f ? f + 1 : NULL; }
+    }
+  }
+}
+
+// keywords.keywords (filme) ou keywords.results (serie).
+static void lerPalavrasDetalhe(const char *json, int serie, MapaEtiqueta *kw,
+                               int *nKw, int max) {
+  const char *v = valorRaiz(json, NULL, "keywords"), *fimV, *p;
+  if (v && *v == '{') {
+    *nKw = 0;
+    fimV = js_fim(v);
+    p = js_array(v, fimV, serie ? "results" : "keywords");
+    while (p && p < fimV && *nKw < max) {
+      const char *f = js_fim(p);
+      kw[*nKw].id = (long)js_num(p, f, "id", 0.0);
+      kw[*nKw].nome[0] = 0;
+      js_texto(p, f, "name", kw[*nKw].nome, sizeof kw[0].nome);
+      if (kw[*nKw].nome[0]) (*nKw)++;
+      p = js_prox(f);
+    }
+  }
+}
+
+// Direcao/criacao primeiro: e o fio mais forte entre duas historias. Depois
+// os primeiros 8 do elenco.
+static void lerGenteDetalhe(const char *json, int serie, MapaPessoa *gente,
+                            int *nGente, int max) {
+  const char *v, *fimV, *p;
+  *nGente = 0;
+  if (serie) {
+    v = valorRaiz(json, NULL, "created_by");
+    if (v && *v == '[') {
+      fimV = js_fim(v);
+      for (p = v + 1; p && p < fimV && *p; ) {
+        while (*p && *p != '{' && *p != ']') p++;
+        if (*p != '{') break;
+        { const char *f = js_fim(p);
+          char nome[80] = "", foto[128] = "";
+          js_texto(p, f, "name", nome, sizeof nome);
+          js_texto(p, f, "profile_path", foto, sizeof foto);
+          addPessoa(gente, nGente, max, (long)js_num(p, f, "id", 0.0), nome, foto, 1);
+          p = f ? f + 1 : NULL; }
+      }
+    }
+  }
+  v = valorRaiz(json, NULL, "credits");
+  if (v && *v == '{') {
+    const char *fc = js_fim(v);
+    const char *crew = valorRaiz(v, fc, "crew");
+    const char *cast = valorRaiz(v, fc, "cast");
+    if (!serie && crew && *crew == '[') {
+      const char *fcr = js_fim(crew);
+      for (p = crew + 1; p && p < fcr && *p; ) {
+        while (*p && *p != '{' && *p != ']') p++;
+        if (*p != '{') break;
+        { const char *f = js_fim(p);
+          char job[32] = "";
+          js_texto(p, f, "job", job, sizeof job);
+          if (!strcmp(job, "Director")) {
+            char nome[80] = "", foto[128] = "";
+            js_texto(p, f, "name", nome, sizeof nome);
+            js_texto(p, f, "profile_path", foto, sizeof foto);
+            addPessoa(gente, nGente, max, (long)js_num(p, f, "id", 0.0), nome, foto, 1);
+          }
+          p = f ? f + 1 : NULL; }
+      }
+    }
+    if (cast && *cast == '[') {
+      const char *fca = js_fim(cast);
+      int k = 0;
+      for (p = cast + 1; p && p < fca && *p && k < 8; ) {
+        while (*p && *p != '{' && *p != ']') p++;
+        if (*p != '{') break;
+        { const char *f = js_fim(p);
+          char nome[80] = "", foto[128] = "";
+          js_texto(p, f, "name", nome, sizeof nome);
+          js_texto(p, f, "profile_path", foto, sizeof foto);
+          addPessoa(gente, nGente, max, (long)js_num(p, f, "id", 0.0), nome, foto, 0);
+          k++;
+          p = f ? f + 1 : NULL; }
+      }
+    }
+  }
 }
 
 int mapa_ler_detalhe(const char *json, int serie, MapaSemente *s) {
@@ -169,96 +277,9 @@ int mapa_ler_detalhe(const char *json, int serie, MapaSemente *s) {
       snprintf(s->obra.imdb, sizeof s->obra.imdb, "%s", imdb);
   }
 
-  // generos da raiz
-  v = valorRaiz(json, NULL, "genres");
-  if (v && *v == '[') {
-    s->nGen = 0;
-    fimV = js_fim(v);
-    for (p = v + 1; p && p < fimV && *p; ) {
-      while (*p && *p != '{' && *p != ']') p++;
-      if (*p != '{') break;
-      { const char *f = js_fim(p);
-        if (s->nGen < MAPA_GEN_MAX) {
-          s->gen[s->nGen].id = (long)js_num(p, f, "id", 0.0);
-          js_texto(p, f, "name", s->gen[s->nGen].nome, sizeof s->gen[0].nome);
-          if (s->gen[s->nGen].nome[0]) s->nGen++;
-        }
-        p = f ? f + 1 : NULL; }
-    }
-  }
-
-  // keywords.keywords (filme) ou keywords.results (serie)
-  v = valorRaiz(json, NULL, "keywords");
-  if (v && *v == '{') {
-    fimV = js_fim(v);
-    p = js_array(v, fimV, serie ? "results" : "keywords");
-    s->nKw = 0;
-    while (p && p < fimV && s->nKw < MAPA_KW_MAX) {
-      const char *f = js_fim(p);
-      s->kw[s->nKw].id = (long)js_num(p, f, "id", 0.0);
-      s->kw[s->nKw].nome[0] = 0;
-      js_texto(p, f, "name", s->kw[s->nKw].nome, sizeof s->kw[0].nome);
-      if (s->kw[s->nKw].nome[0]) s->nKw++;
-      p = js_prox(f);
-    }
-  }
-
-  // Direcao/criacao primeiro: e o fio mais forte entre duas historias.
-  s->nGente = 0;
-  if (serie) {
-    v = valorRaiz(json, NULL, "created_by");
-    if (v && *v == '[') {
-      fimV = js_fim(v);
-      for (p = v + 1; p && p < fimV && *p; ) {
-        while (*p && *p != '{' && *p != ']') p++;
-        if (*p != '{') break;
-        { const char *f = js_fim(p);
-          char nome[80] = "", foto[128] = "";
-          js_texto(p, f, "name", nome, sizeof nome);
-          js_texto(p, f, "profile_path", foto, sizeof foto);
-          addPessoa(s, (long)js_num(p, f, "id", 0.0), nome, foto, 1);
-          p = f ? f + 1 : NULL; }
-      }
-    }
-  }
-  v = valorRaiz(json, NULL, "credits");
-  if (v && *v == '{') {
-    const char *fc = js_fim(v);
-    const char *crew = valorRaiz(v, fc, "crew");
-    const char *cast = valorRaiz(v, fc, "cast");
-    if (!serie && crew && *crew == '[') {
-      const char *fcr = js_fim(crew);
-      for (p = crew + 1; p && p < fcr && *p; ) {
-        while (*p && *p != '{' && *p != ']') p++;
-        if (*p != '{') break;
-        { const char *f = js_fim(p);
-          char job[32] = "";
-          js_texto(p, f, "job", job, sizeof job);
-          if (!strcmp(job, "Director")) {
-            char nome[80] = "", foto[128] = "";
-            js_texto(p, f, "name", nome, sizeof nome);
-            js_texto(p, f, "profile_path", foto, sizeof foto);
-            addPessoa(s, (long)js_num(p, f, "id", 0.0), nome, foto, 1);
-          }
-          p = f ? f + 1 : NULL; }
-      }
-    }
-    if (cast && *cast == '[') {
-      const char *fca = js_fim(cast);
-      int k = 0;
-      for (p = cast + 1; p && p < fca && *p && k < 8; ) {
-        while (*p && *p != '{' && *p != ']') p++;
-        if (*p != '{') break;
-        { const char *f = js_fim(p);
-          char nome[80] = "", foto[128] = "";
-          js_texto(p, f, "name", nome, sizeof nome);
-          js_texto(p, f, "profile_path", foto, sizeof foto);
-          addPessoa(s, (long)js_num(p, f, "id", 0.0), nome, foto, 0);
-          k++;
-          p = f ? f + 1 : NULL; }
-      }
-    }
-  }
+  lerGenerosDetalhe(json, s->gen, &s->nGen, MAPA_GEN_MAX);
+  lerPalavrasDetalhe(json, serie, s->kw, &s->nKw, MAPA_KW_MAX);
+  lerGenteDetalhe(json, serie, s->gente, &s->nGente, MAPA_GENTE_MAX);
 
   v = valorRaiz(json, NULL, "recommendations");
   if (v && *v == '{') {
@@ -274,6 +295,44 @@ int mapa_ler_detalhe(const char *json, int serie, MapaSemente *s) {
     }
   }
   return s->obra.titulo[0] != 0;
+}
+
+int mapa_ler_ids(const char *json, int serie, MapaDetalhe *d) {
+  char data[16] = "", imdb[24] = "";
+  const char *v;
+  if (!json || !d || json[0] != '{') return 0;
+  memset(d, 0, sizeof *d);
+  d->tmdb = (long)numRaiz(json, "id", 0.0);
+  if (js_texto_raiz(json, serie ? "first_air_date" : "release_date", data, sizeof data))
+    d->ano = anoDe(data);
+  { double va = numRaiz(json, "vote_average", -1.0);
+    if (va >= 0) d->nota = (int)(va * 10.0 + 0.5);
+    d->votos = (int)numRaiz(json, "vote_count", 0.0); }
+  if (!serie && js_texto_raiz(json, "imdb_id", imdb, sizeof imdb) && imdb[0])
+    snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
+  v = valorRaiz(json, NULL, "external_ids");
+  if (v && *v == '{') {
+    imdb[0] = 0;
+    if (js_texto(v, js_fim(v), "imdb_id", imdb, sizeof imdb) && !strncmp(imdb, "tt", 2))
+      snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
+  }
+  // Duracao: "runtime" do filme; a serie traz um vetor de duracao de episodio
+  // (geralmente um so numero) — vale o primeiro.
+  if (serie) {
+    v = valorRaiz(json, NULL, "episode_run_time");
+    if (v && *v == '[') {
+      v++;
+      while (*v == ' ' || *v == '\t' || *v == '\n' || *v == '\r') v++;
+      if (*v == '-' || (*v >= '0' && *v <= '9')) d->minutos = atoi(v);
+    }
+  } else {
+    d->minutos = (int)numRaiz(json, "runtime", 0.0);
+  }
+  js_texto_raiz(json, "original_language", d->idioma, sizeof d->idioma);
+  lerGenerosDetalhe(json, d->gen, &d->nGen, MAPA_GEN_MAX);
+  lerPalavrasDetalhe(json, serie, d->kw, &d->nKw, MAPA_KW_MAX);
+  lerGenteDetalhe(json, serie, d->gente, &d->nGente, MAPA_GENTE_MAX);
+  return d->tmdb > 0 || d->imdb[0] || d->nGen > 0 || d->nKw > 0 || d->nGente > 0;
 }
 
 int mapa_ler_creditos(const char *json, int direcao, MapaCreditos *c) {
@@ -391,6 +450,48 @@ unsigned mapa_hash_titulo(const char *t) {
     }
   }
   return h;
+}
+
+long mapa_hash_nome(const char *s) { return -(long)(mapa_hash_titulo(s) & 0x3fffffff) - 1; }
+
+// "Filme  ·  Ação  ·  Drama": o primeiro pedaco e o tipo, o resto sao generos.
+// Como o catalogo nao tem os ids do TMDB, cada um vira mapa_hash_nome — a
+// mesma convencao de id negativo do MapaFio na reserva local.
+void mapa_generos_locais(const char *g, MapaEtiqueta *gen, int *nGen, int max) {
+  char buf[160], *p, *tok;
+  int primeiro = 1;
+  if (!gen || !nGen) return;
+  snprintf(buf, sizeof buf, "%s", g ? g : "");
+  p = buf;
+  *nGen = 0;
+  while (p && *p && *nGen < max) {
+    char *sep = strstr(p, "\xc2\xb7");
+    if (sep) *sep = 0;
+    tok = p;
+    while (*tok == ' ') tok++;
+    { size_t k = strlen(tok); while (k && tok[k - 1] == ' ') tok[--k] = 0; }
+    if (tok[0] && !primeiro) {
+      gen[*nGen].id = mapa_hash_nome(tok);
+      snprintf(gen[*nGen].nome, sizeof gen[0].nome, "%s", tok);
+      (*nGen)++;
+    }
+    primeiro = 0;
+    p = sep ? sep + 2 : NULL;
+  }
+}
+
+int mapa_ano_meta(const char *meta) {
+  const char *p = meta;
+  if (!p) return 0;
+  while (*p) {
+    if (isdigit((unsigned char)p[0]) && isdigit((unsigned char)p[1]) &&
+        isdigit((unsigned char)p[2]) && isdigit((unsigned char)p[3])) {
+      int a = atoi(p);
+      if (a > 1870 && a < 2100) return a;
+    }
+    p++;
+  }
+  return 0;
 }
 
 static long long chaveObra(const MapaObra *o) {
@@ -1093,6 +1194,28 @@ int mapa_clima_consulta(int id, int serie, const long *ids, int nIds, char *dst,
   return dst[0] != 0;
 }
 
+// O GOSTO NUM CLIMA (issue 43): a soma dos pesos que o modelo guarda para
+// os generos da regra — a coluna de filme e a de serie do GEN_TMDB, porque
+// um clima misto junta os dois (em clima soSerie so a de serie conta). O
+// genero "E" entra tambem: ele refina o clima. Palavras-chave ficam de fora
+// por enquanto — o tema do modelo e o id do TMDB e a regra so tem o nome.
+int mapa_clima_gosto(const FarolGosto *g, int id, uint16_t dia) {
+  const ClimaRegra *r = climaRegra(id);
+  int i, j, soma = 0;
+  if (!g || !r) return 0;
+  for (i = -1; i < 3; i++) {              // -1 = o genero E (genE)
+    int gr = i < 0 ? r->genE : r->gen[i];
+    if (!gr) continue;
+    for (j = r->soSerie ? 1 : 0; j < 2; j++) {
+      int tg = GEN_TMDB[gr][j];
+      // sem a coluna de filme a de serie nao repete a mesma id (35/35, 18/18)
+      if (tg && (j == 0 || tg != GEN_TMDB[gr][0]))
+        soma += farolgosto_peso(g, FG_DIM_GENERO, tg, dia);
+    }
+  }
+  return soma;
+}
+
 #ifndef NV_MAPA_PURO
 // ---------------------------------------------------------------------------
 // 3. ESTADO
@@ -1168,45 +1291,6 @@ void mapa_esquecer(void) {
 
 // --- sementes a partir do que o app ja tem -----------------------------------
 
-static int anoDoMeta(const char *meta) {
-  const char *p = meta;
-  if (!p) return 0;
-  while (*p) {
-    if (isdigit((unsigned char)p[0]) && isdigit((unsigned char)p[1]) &&
-        isdigit((unsigned char)p[2]) && isdigit((unsigned char)p[3])) {
-      int a = atoi(p);
-      if (a > 1870 && a < 2100) return a;
-    }
-    p++;
-  }
-  return 0;
-}
-
-static long hashNome(const char *s) { return -(long)(mapa_hash_titulo(s) & 0x3fffffff) - 1; }
-
-// "Filme  ·  Ação  ·  Drama": o primeiro pedaco e o tipo, o resto sao generos.
-static void generosLocais(const char *g, MapaSemente *s) {
-  char buf[160], *p, *tok;
-  int primeiro = 1;
-  snprintf(buf, sizeof buf, "%s", g ? g : "");
-  p = buf;
-  s->nGen = 0;
-  while (p && *p && s->nGen < MAPA_GEN_MAX) {
-    char *sep = strstr(p, "\xc2\xb7");
-    if (sep) *sep = 0;
-    tok = p;
-    while (*tok == ' ') tok++;
-    { size_t k = strlen(tok); while (k && tok[k - 1] == ' ') tok[--k] = 0; }
-    if (tok[0] && !primeiro) {
-      s->gen[s->nGen].id = hashNome(tok);
-      snprintf(s->gen[s->nGen].nome, sizeof s->gen[0].nome, "%s", tok);
-      s->nGen++;
-    }
-    primeiro = 0;
-    p = sep ? sep + 2 : NULL;
-  }
-}
-
 static void obraDoItem(const CatItem *ci, int indice, MapaObra *o) {
   memset(o, 0, sizeof *o);
   snprintf(o->imdb, sizeof o->imdb, "%s", !strncmp(ci->imdb, "tt", 2) ? ci->imdb : "");
@@ -1216,7 +1300,7 @@ static void obraDoItem(const CatItem *ci, int indice, MapaObra *o) {
   snprintf(o->poster, sizeof o->poster, "%s", ci->poster[0] ? ci->poster : ci->backdrop);
   snprintf(o->fundo, sizeof o->fundo, "%s", ci->backdrop);
   copiaLimpa(o->sinopse, sizeof o->sinopse, ci->sinopse);
-  o->ano = anoDoMeta(ci->meta);
+  o->ano = mapa_ano_meta(ci->meta);
   o->nota = ci->nota;
   o->catIndice = indice;
 }
@@ -1226,7 +1310,7 @@ static void sementeDoItem(const CatItem *ci, int indice, int origem, MapaSemente
   memset(s, 0, sizeof *s);
   obraDoItem(ci, indice, &s->obra);
   s->origem = origem;
-  generosLocais(ci->genero, s);
+  mapa_generos_locais(ci->genero, s->gen, &s->nGen, MAPA_GEN_MAX);
   if (ci->direcao[0]) {
     char buf[128], *p, *q;
     snprintf(buf, sizeof buf, "%s", ci->direcao);
@@ -1234,11 +1318,12 @@ static void sementeDoItem(const CatItem *ci, int indice, int origem, MapaSemente
       q = strchr(p, ',');
       if (q) *q++ = 0;
       while (*p == ' ') p++;
-      if (*p) addPessoa(s, hashNome(p), p, NULL, 1);
+      if (*p) addPessoa(s->gente, &s->nGente, MAPA_GENTE_MAX, mapa_hash_nome(p), p, NULL, 1);
     }
   }
   for (i = 0; i < ci->nElenco && i < 6; i++)
-    addPessoa(s, ci->elenco[i].tmdb > 0 ? ci->elenco[i].tmdb : hashNome(ci->elenco[i].nome),
+    addPessoa(s->gente, &s->nGente, MAPA_GENTE_MAX,
+              ci->elenco[i].tmdb > 0 ? ci->elenco[i].tmdb : mapa_hash_nome(ci->elenco[i].nome),
               ci->elenco[i].nome, NULL, 0);
   // elenco[].foto ja e URL pronta; addPessoa espera caminho do TMDB.
   for (i = 0; i < s->nGente; i++) {
@@ -1331,7 +1416,7 @@ static int coletar(MapaSemente *s, int max, unsigned *vistos, int *nVistos,
     snprintf(s[n].obra.tipo, sizeof s[n].obra.tipo, "%s", sv->tipo);
     copiaLimpa(s[n].obra.titulo, sizeof s[n].obra.titulo, sv->titulo);
     snprintf(s[n].obra.poster, sizeof s[n].obra.poster, "%s", sv->poster);
-    s[n].obra.ano = anoDoMeta(sv->meta);
+    s[n].obra.ano = mapa_ano_meta(sv->meta);
     s[n].obra.nota = sv->nota;
     s[n].obra.catIndice = -1;
     s[n].origem = MAPA_ORIGEM_LISTA;
@@ -1370,7 +1455,7 @@ static void recomendarDoCatalogo(MapaSemente *s, int n) {
       int g, h, comum = 0;
       if (!ci || !ci->titulo[0] || !ci->poster[0] || ci->progresso > 0) continue;
       if (jaTem(s, n, ci->imdb, ci->titulo)) continue;
-      generosLocais(ci->genero, &tmp);
+      mapa_generos_locais(ci->genero, tmp.gen, &tmp.nGen, MAPA_GEN_MAX);
       for (g = 0; g < tmp.nGen; g++)
         for (h = 0; h < s[i].nGen; h++) if (tmp.gen[g].id == s[i].gen[h].id) comum++;
       if (!comum) continue;
@@ -1637,6 +1722,42 @@ static int lerDoTmdb(MapaSemente *s, const char *chaveTmdb, const char *idiomaTm
   return ok;
 }
 
+// Transporte da fila lenta do Farol (issue 38): devolve o corpo JSON do
+// detalhe TMDB do titulo — resolve imdb->tmdb quando preciso (mesmo
+// /find/ do cruzamento) — ou 0. Roda no fio do farolsinal, nunca no da UI;
+// chave e idioma sao os que o mapa ja usa (copiados sob a trava).
+int mapa_detalhe_json(const char *imdb, long tmdb, int serie, char *dst,
+                      size_t cap) {
+  char url[500], chave[96], idioma[12], *corpo;
+  size_t n;
+  if (!dst || cap < 2) return 0;
+  pthread_mutex_lock(&trava);
+  snprintf(chave, sizeof chave, "%s", chaveTmdb);
+  snprintf(idioma, sizeof idioma, "%s", idiomaTmdb);
+  pthread_mutex_unlock(&trava);
+  if (!chave[0]) return 0;
+  if (tmdb <= 0 && imdb && imdb[0]) {
+    if (!strncmp(imdb, "tmdb:", 5)) tmdb = strtol(imdb + 5, NULL, 10);
+    else {
+      char tipo[8] = "";
+      tmdb = resolverTmdb(imdb, tipo, sizeof tipo, chave, idioma);
+      if (tipo[0]) serie = !strcmp(tipo, "series");
+    }
+  }
+  if (tmdb <= 0) return 0;
+  snprintf(url, sizeof url,
+           "https://api.themoviedb.org/3/%s/%ld?api_key=%s&language=%s"
+           "&append_to_response=keywords,credits,external_ids",
+           serie ? "tv" : "movie", tmdb, chave, idioma);
+  corpo = rede_baixar(url, 20);
+  if (!corpo) return 0;
+  n = strlen(corpo);
+  if (n >= cap) n = cap - 1;
+  memcpy(dst, corpo, n);
+  free(corpo);
+  return (int)n;
+}
+
 static int lerCreditos(long pessoa, int direcao, MapaCreditos *c,
                        const char *chaveTmdb, const char *idiomaTmdb) {
   char url[400], *corpo;
@@ -1880,11 +2001,11 @@ int mapa_obra_do_catalogo(int indice, MapaObra *o) {
 }
 
 static int candDoItem(const CatItem *ci, int indice, MapaVizCand *c) {
-  static MapaSemente tmp;        // so para generosLocais; fio principal
+  static MapaSemente tmp;        // so para mapa_generos_locais; fio principal
   int i;
   char buf[128], *p, *q;
   c->nGen = c->nGente = 0;
-  generosLocais(ci->genero, &tmp);
+  mapa_generos_locais(ci->genero, tmp.gen, &tmp.nGen, MAPA_GEN_MAX);
   for (i = 0; i < tmp.nGen; i++) c->gen[c->nGen++] = mapa_hash_titulo(tmp.gen[i].nome);
   snprintf(buf, sizeof buf, "%s", ci->direcao);
   for (p = buf; p && *p && c->nGente < MAPA_GENTE_MAX; p = q) {
@@ -1918,7 +2039,7 @@ static int vizColetarPool(const MapaSemente *foco, MapaVizCand *pool, int max) {
       for (k = 0; k < n; k++) if (mapa_hash_titulo(pool[k].obra.titulo) == h) break;
       if (k < n) continue;
       candDoItem(ci, i, &c);
-      ano = anoDoMeta(ci->meta);
+      ano = mapa_ano_meta(ci->meta);
       if (ano && foco->obra.ano && ano / 10 == foco->obra.ano / 10) perto = 1;
       for (k = 0; k < foco->nGen && !perto; k++)
         if (candTemGen(&c, mapa_hash_titulo(foco->gen[k].nome))) perto = 1;
@@ -2544,14 +2665,33 @@ void mapa_climas_pedir(void) {
       if (visto) nSeen[m]++; else nUnseen[m]++;
     }
   }
-  for (m = 0; m < MAPA_CLIMA_N; m++)
-    novo.c[m].afinidade = vistosTotal > 0 ? (novo.c[m].vistos * 100 + vistosTotal / 2) / vistosTotal : 0;
-  // Ordem de afinidade; empate fica na ordem editorial (insercao estavel).
-  for (i = 1; i < MAPA_CLIMA_N; i++) {
-    static MapaClima t;
-    t = novo.c[i];
-    for (m = i; m > 0 && novo.c[m - 1].afinidade < t.afinidade; m--) novo.c[m] = novo.c[m - 1];
-    novo.c[m] = t;
+  {
+    // O modelo do Farol pesa na ORDEM dos climas (issue 43): copia uma vez,
+    // soma os generos de cada regra e satura em +-8,0 -> +-50 pontos sobre a
+    // afinidade, que na tela segue sendo "% do que ela viu". Sem modelo (ou
+    // com a coleta desligada) `gosto` fica 0 e a ordem e a de sempre. O dia
+    // usa a mesma epoca do farolsinal (1/1/2026 = dia 0).
+    static FarolGosto g;
+    uint16_t dia = (uint16_t)((time(NULL) - 1767225600LL) / 86400);
+    int temGosto = farolsinal_recomendar() && farolsinal_modelo(&g);
+    for (m = 0; m < MAPA_CLIMA_N; m++) {
+      int peso = temGosto ? mapa_clima_gosto(&g, novo.c[m].id, dia) : 0;
+      novo.c[m].afinidade = vistosTotal > 0
+        ? (novo.c[m].vistos * 100 + vistosTotal / 2) / vistosTotal : 0;
+      novo.c[m].gosto = peso > 8192 ? 50 : peso < -8192 ? -50
+        : (peso * 50 + (peso >= 0 ? 4096 : -4096)) / 8192;
+    }
+    // Ordem de afinidade + gosto; empate fica na ordem editorial (insercao
+    // estavel).
+    for (i = 1; i < MAPA_CLIMA_N; i++) {
+      static MapaClima t;
+      int ordem;
+      t = novo.c[i];
+      ordem = t.afinidade + t.gosto;
+      for (m = i; m > 0 && novo.c[m - 1].afinidade + novo.c[m - 1].gosto < ordem; m--)
+        novo.c[m] = novo.c[m - 1];
+      novo.c[m] = t;
+    }
   }
   pthread_mutex_lock(&travaClima);
   climaLocal = novo;

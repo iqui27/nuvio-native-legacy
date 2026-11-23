@@ -931,7 +931,7 @@ int main(int argc,char **argv) {
       for(int k=0;k<3;k++){
         intro_shot_definir(markers,3);intro_definir_duracao(3000,0);
         double end=-1;int type=-1,enabled=!!(mask&(1<<k));
-        assert(intro_botao_config(positions[k],100,osd,focused,&end,&type,mask&1,mask&2,mask&4)==enabled);
+        assert(intro_botao_config(positions[k],100,osd,focused,&end,&type,mask&1,mask&2,mask&4,0)==enabled);
         assert(intro_botao_visivel(NULL,NULL)==enabled);
         if(enabled)assert(type==types[k]&&end==markers[k].fim);
         else assert(end==-1&&type==-1);
@@ -940,20 +940,41 @@ int main(int argc,char **argv) {
         assert(intro_auto_pular(types[k],markers[k].fim,3000,1,1,1));
       }
     intro_shot_definir(markers,3);intro_definir_duracao(3000,0);
-    assert(intro_botao_config(40,100,0,0,NULL,NULL,1,1,1));
-    assert(!intro_botao_config(40,101,1,1,NULL,NULL,0,1,1));
+    assert(intro_botao_config(40,100,0,0,NULL,NULL,1,1,1,0));
+    assert(!intro_botao_config(40,101,1,1,NULL,NULL,0,1,1,0));
     assert(!intro_botao_visivel(NULL,NULL)); // no stale actionable button
-    assert(intro_botao_config(40,102,0,0,NULL,NULL,1,1,1));
-    assert(!intro_botao_config(40,113,0,0,NULL,NULL,1,1,1));
-    assert(intro_botao_config(40,114,1,0,NULL,NULL,1,1,1));
+    assert(intro_botao_config(40,102,0,0,NULL,NULL,1,1,1,0));
+    assert(!intro_botao_config(40,113,0,0,NULL,NULL,1,1,1,0));
+    assert(intro_botao_config(40,114,1,0,NULL,NULL,1,1,1,0));
     intro_botao_esconder(115);assert(!intro_botao_visivel(NULL,NULL));
     // An overlapping disabled intro must not block an enabled recap.
     markers[1]=(IntroTrecho){20,70,INTRO_RESUMO,0};
     intro_shot_definir(markers,3);intro_definir_duracao(3000,0);
     double end;int type;
-    assert(intro_botao_config(40,200,0,0,&end,&type,0,1,0)&&type==INTRO_RESUMO&&end==70);
+    assert(intro_botao_config(40,200,0,0,&end,&type,0,1,0,0)&&type==INTRO_RESUMO&&end==70);
     assert(intro_botao(40,201,0,0,&end,&type)&&type==INTRO_ABERTURA); // compatibility wrapper
     puts("ok  independent intro/recap/outro button visibility: all 8 combinations, OSD/focus, live toggles, timers, overlap and unchanged markers/automatic skips");
+  }
+  // #342: "Pular cena" button on post-credits segments, gated by its own toggle.
+  {
+    IntroTrecho markers[]={{5700,5750,INTRO_POS_CREDITOS,0}};
+    intro_shot_definir(markers,1);intro_definir_duracao(6000,0);
+    double end=-1;int type=-1;
+    // Toggle off: no button, no visible skip target, automatic skip ignores it.
+    assert(!intro_botao_config(5710,100,1,0,&end,&type,1,1,1,0));
+    assert(!intro_botao_visivel(NULL,NULL));
+    assert(!intro_ativo(5710,&end,&type));
+    assert(!intro_auto_ativo(5710,&end,&type));
+    // Toggle on: the button appears inside the window, reports POS_CREDITOS and the segment end.
+    assert(intro_botao_config(5710,101,1,0,&end,&type,1,1,1,1));
+    assert(type==INTRO_POS_CREDITOS&&end==5750);
+    assert(intro_botao_visivel(&end,&type)&&end==5750&&type==INTRO_POS_CREDITOS);
+    // Focus keeps it on screen; outside the window it is gone.
+    assert(intro_botao_config(5710,200,0,1,&end,&type,1,1,1,1));
+    assert(!intro_botao_config(5800,201,1,0,NULL,NULL,1,1,1,1));
+    // The automatic path still never skips a post-credits scene.
+    assert(!intro_auto_ativo(5710,&end,&type));
+    puts("ok  post-credits scene button: toggle off hides it, toggle on shows it with POS_CREDITOS type and segment end, focus/osd/timers, automatic skip untouched");
   }
   assert(!rmdir(dadosTeste));
   puts("intro: tudo ok");

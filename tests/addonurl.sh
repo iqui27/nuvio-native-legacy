@@ -15,7 +15,7 @@ if [ "$(uname -s)" = Darwin ]; then flags+=(-Wl,-dead_strip); else flags+=(-Wl,-
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 # SO addons.c e js.c, com a mesma receita de tests/addonslista.sh: -dead_strip
 # descarta o resto do modulo e os vizinhos sao dublados no proprio teste.
-cc "${flags[@]}" src/addons.c src/addonmodo.c src/idcanal.c src/fontefalha.c src/addonstats.c src/js.c src/watchstate.c tests/addonurl.c -o ${TMPDIR:-/tmp}/nuvio-addonurl-tests
+cc "${flags[@]}" src/addons.c src/farolanel.c src/addonmodo.c src/idcanal.c src/fontefalha.c src/addonstats.c src/js.c src/watchstate.c tests/addonurl.c -o ${TMPDIR:-/tmp}/nuvio-addonurl-tests
 saida=$(${TMPDIR:-/tmp}/nuvio-addonurl-tests)
 echo "$saida" | grep -v '^\[addons\]' || true
 echo "$saida" | grep -q 'addonurl: ok'

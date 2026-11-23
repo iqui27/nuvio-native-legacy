@@ -54,6 +54,8 @@ int dados_apagar(const char *nome) {
   snprintf(caminho, sizeof caminho, "%s/%s", disco, nome);
   return unlink(caminho) == 0;
 }
+// The saved Simkl library (simklbib.c) is not under test here.
+int dados_gravar_leve(const char *nome, const char *buf) { (void)nome; (void)buf; return 1; }
 
 #define TOKEN "TOKEN-SIMKL-SEGREDO-459"
 #define OK(s) fprintf(stderr, "ok  %s\n", s)
@@ -82,10 +84,35 @@ int simklauth_invalidar_se(unsigned long long cred) {
   tokenAtual = ""; nInvalidar++; credGeracao++;
   return 1;
 }
+int simklauth_perfil(void) { return 1; }
+int simklauth_credencial_travar(unsigned long long cred, int perfil, const char *aut) {
+  return cred == credGeracao && perfil == 1 && tokenAtual[0] &&
+         !strcmp(aut + strlen("Authorization: Bearer "), tokenAtual);
+}
+void simklauth_credencial_destravar(void) {}
+int simklauth_token_perfil(int perfil, char *dst, size_t tam) {
+  (void)perfil;
+  if (dst && tam) snprintf(dst, tam, "%s", tokenAtual);
+  return tokenAtual[0] != 0;
+}
+uint64_t nv_perfil_sessao_ler(void) { return 1; }
+int nv_perfil_sessao_travar(uint64_t s) { return s == 1; }
+void nv_perfil_sessao_destravar(void) {}
+int rede_pedir(const RedePedido *p, RedeResposta *r) {
+  memset(r, 0, sizeof *r);
+  r->corpo = rede_baixar_st(p->url, 20, p->cabecalhos, &r->status);
+  return 1;
+}
+void rede_resposta_limpar(RedeResposta *r) { free(r->corpo); free(r->cabecalhos); memset(r, 0, sizeof *r); }
+char *rede_baixar_st_retry(const char *u, int s, const char *const *c, int *st, int *ra) {
+  (void)s; *ra = 0; return rede_baixar_st(u, s, c, st);
+}
 const char *nuvem_simkl_cliente(void) { return "cid-teste"; }
 const char *nuvem_simkl_app(void) { return "nuvio"; }
 void nuvem_url_escapar(const char *v, char *dst, unsigned tam) { snprintf(dst, tam, "%s", v); }
 const char *i18n(const char *s) { return s; }
+const char *metaprov_idioma(void) { return "en"; }
+char *fichameta_ler(const char *chave, long ttlSeg) { (void)chave; (void)ttlSeg; return NULL; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
 int trakt_enfeitar_lote(CatItem *saida, int n) { (void)saida; return n; }
 int trakt_enfeitar_lote_sessao(CatItem *saida, int n, uint64_t sessao) {

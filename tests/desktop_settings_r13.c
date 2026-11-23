@@ -8,6 +8,29 @@
 #include "app.h"
 #include "nvtmp.h"
 #include <assert.h>
+#include <sys/wait.h>
+
+static void isolamentoCaptura(const char *dir) {
+  // Fork before SDL starts threads; rejected paths must exit before any fallback.
+  for (int missing = 0; missing < 2; missing++) {
+    pid_t child = fork(); assert(child >= 0);
+    if (!child) {
+      assert(setenv("NV_CAPTURA", "1", 1) == 0);
+      if (missing) assert(unsetenv("NUVIO_DADOS") == 0);
+      else {
+        char invalid[1200]; snprintf(invalid, sizeof invalid, "%s/not-a-directory/child", dir);
+        char file[1200]; snprintf(file, sizeof file, "%s/not-a-directory", dir);
+        FILE *f = fopen(file, "w"); assert(f && fclose(f) == 0);
+        assert(setenv("NUVIO_DADOS", invalid, 1) == 0);
+      }
+      dados_iniciar(NULL);
+      _exit(0);
+    }
+    int status; assert(waitpid(child, &status, 0) == child);
+    assert(WIFEXITED(status) && WEXITSTATUS(status) == 78);
+  }
+  puts("PASS: capture rejects missing/unwritable isolation without data fallback");
+}
 
 static int falhas, playerFalso;
 int nvt_player_aberto(void) { return playerFalso; }
@@ -109,6 +132,33 @@ static float escalaTv(void) {
   s *= gfx_escala_txt();
   return s;
 }
+static void controlesNativos(void) {
+#ifdef NV_DESKTOP_NATIVE_CONTROLS
+  unsigned char on[3], off[3];
+  float scale = gfx_escala();
+  janela(1440, 900); gfx_escala_sair(1);
+  gfx_novo_quadro(); glClear(GL_COLOR_BUFFER_BIT);
+  desktop_native_control(1000, 0, "", 1, 1, 100, 50, 108, 48, 1);
+  int read = gfx_tela_px(120.0f / NV_TELA_W, 74.0f / NV_TELA_H, on);
+  glClear(GL_COLOR_BUFFER_BIT);
+  desktop_native_control(1000, 0, "", 0, 1, 100, 50, 108, 48, 1);
+  read &= gfx_tela_px(120.0f / NV_TELA_W, 74.0f / NV_TELA_H, off);
+  confere(read && on[2] > on[0] + 40 && abs(on[2] - off[2]) > 30,
+          "AppKit switch has visible blue pixels in GL readback and changes on toggle");
+  gfx_escala_sair(scale);
+#endif
+}
+static void pranchaDesktop(void) {
+  janela(1440, 900);
+  float s = ajustes_tamanho_ajustes() * .75f;
+  GfxRect sections = triSecR(), list = triIlha2R(), inspector = triInspR();
+  confere(!triBladeLayout() && triTemInsp(), "approved Mac board keeps three columns at every depth");
+  confere(fabsf(sections.x * s - 304) < 1 && fabsf(sections.y * s - 156) < 1 &&
+          fabsf(sections.w * s - 226) < 1 && fabsf(inspector.w * s - 270) < 1 &&
+          fabsf(list.x * s - 546) < 1 && fabsf((list.y + list.h) * s - 864) < 1,
+          "approved 1440x900 board: section, list and inspector bounds");
+  confere(fabsf(AJ2_LN_H * s - 38) < 1, "desktop rows keep the board's 38pt rhythm");
+}
 static void densidade(void) {
   float tv, s, d;
   janela(900, 700);
@@ -122,7 +172,7 @@ static void densidade(void) {
   janela(1440, 900);
   d = escalaTv() * NV_DESKTOP_AJUSTES_DENSIDADE; if (ajRetrato()) d *= 1.25f;
   s = ajustes_tamanho_ajustes();
-  confere(layout_desktop_ativo() && !memcmp(&s, &d, sizeof s) && TRI_SEC_W == 470.0f && TRI_INSP_W == 560.0f,
+  confere(layout_desktop_ativo() && !memcmp(&s, &d, sizeof s) && fabsf(TRI_SEC_W * s - 904.0f / 3) < .01f && fabsf(TRI_INSP_W * s - 360) < .01f,
           "1440x900 (desktop): Mac density and wider columns");
   confere(!ajudaOpcao(AJ_AUDIO_NORMALIZAR)[0] && !uxBeneficio(AJ_AUDIO_NORMALIZAR)[0] && ajudaOpcao(AJ_QUALIDADE)[0],
           "1440x900: descriptions naming webOS/Tizen/Android are hidden, others kept");
@@ -152,6 +202,9 @@ int main(void) {
   SDL_Window *win;
   snprintf(dir, sizeof dir, "%s/nuvio-desktop-settings-r13-XXXXXX", nvt_dir());
   assert(mkdtemp(dir)); assert(setenv("NUVIO_DADOS", dir, 1) == 0);
+  isolamentoCaptura(dir);
+  assert(setenv("NV_CAPTURA", "1", 1) == 0);
+  SDL_SetHint(SDL_HINT_MAC_BACKGROUND_APP, "1");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
   win = SDL_CreateWindow("Desktop Settings r13", 0, 0, 1440, 900, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
@@ -162,6 +215,8 @@ int main(void) {
   ajustes_iniciar(); assert(gravar());
   ponteiro_iniciar(); ponteiro_teste_relogio(agora);
   densidade();
+  pranchaDesktop();
+  controlesNativos();
   janela(1440, 900);
   triIniciar(); focarSecao(0); quadros(40);
   hoverEClique();

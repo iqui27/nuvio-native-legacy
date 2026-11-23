@@ -54,7 +54,13 @@ void vt_descrever(const Stream *s, VaiTocar *vt) {
   static const struct { const char *bit, *rot; } TIPO[] = {
     { "q-remux", "Remux" }, { "q-bluray", "BluRay" }, { "q-webdl", "WEB-DL" }, { "q-webrip", "WEB-Rip" },
   };
-  vt->tem = 1;
+  // Zera so os campos que esta funcao preenche: temporada/episodio e a faixa 2
+  // pertencem ao chamador (vt_montar os grava ANTES de chamar).
+  memset(vt->tipo, 0, sizeof vt->tipo); memset(vt->res, 0, sizeof vt->res);
+  memset(vt->hdr, 0, sizeof vt->hdr); memset(vt->audio, 0, sizeof vt->audio);
+  memset(vt->idiomas, 0, sizeof vt->idiomas); memset(vt->tamanho, 0, sizeof vt->tamanho);
+  memset(vt->provedor, 0, sizeof vt->provedor);
+  vt->cache = 0; vt->estado = 0; vt->tem = 1;
   for (size_t i = 0; i < sizeof TIPO / sizeof TIPO[0]; i++)
     if (s->badges & badges_bit(TIPO[i].bit)) { snprintf(vt->tipo, sizeof vt->tipo, "%s", TIPO[i].rot); break; }
   if (s->altura >= 2000 || (s->badges & badges_bit("r-4k"))) snprintf(vt->res, sizeof vt->res, "4K");

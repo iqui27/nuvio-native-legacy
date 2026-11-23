@@ -111,25 +111,40 @@ int main(void) {
   assert(v[0].tmdb == 37854);
   assert(v[1].tmdb == 123 && v[2].tmdb == 456);
   // Simkl anime uses bare absolute numbers too. Prime bodies, then reuse them
-  // with unchanged activities; changed stub bodies must never be requested.
+  // with unchanged activities: the shared library is checked, not downloaded.
   simkl_esquecer();
-  WATCHING_ANIME = "{\"anime\":[{\"last_watched\":1122,\"next_to_watch\":1123,"
-    "\"status\":\"watching\",\"anime\":{\"title\":\"One Piece\","
-    "\"ids\":{\"imdb\":\"tt0388629\",\"tmdb\":37854}}}]}";
   (void)simkl_continuar(v, 16);
   int requests = totalBatidas();
-  WATCHING_ANIME = "{\"anime\":[]}";
   n = simkl_continuar(v, 16);
-  assert(totalBatidas() == requests + 1); // activities only, cached anime body
-  assert(n == 1 && !strcmp(v[0].imdb, "tt0388629"));
-  assert(v[0].tmdb == 37854 && simkl_e_a_seguir(v[0].imdb));
-  assert(v[0].temporada == 0 && v[0].episodio == 0); // unknown provider mapping
+  assert(totalBatidas() == requests + 1); // activities only, library is current
+  assert(n == 4);
+  for (int i = 0; i < n; i++) {
+    assert(!strcmp(v[i].imdb, expected[i]));
+    assert(simkl_e_a_seguir(v[i].imdb));
+    assert(v[i].temporada == 0 && v[i].episodio == 0); // unknown provider mapping
+  }
+  assert(v[0].tmdb == 37854);
   assert(simkl_ler_assistindo("{\"anime\":[{\"next_to_watch\":\"1123\","
     "\"anime\":{\"ids\":{\"imdb\":\"tt0388629\"}}}]}", mapped, 1) == 1);
   assert(simkl_ler_assistindo("{\"anime\":[{\"next_to_watch\":null,"
     "\"anime\":{\"ids\":{\"imdb\":\"tt0388629\"}}}]}", mapped, 1) == 0);
   proximoTeste = 0;
   assert(simkl_continuar(v, 16) == 0);
+  // #714: Simkl watching/anime may use `show` or root-level ids (log 596HEG).
+  assert(simkl_ler_assistindo(
+      "{\"anime\":[{\"next_to_watch\":\"S01E12\","
+      "\"show\":{\"title\":\"Cyberpunk\",\"ids\":{\"imdb\":\"tt11093726\"}}}]}"
+      , mapped, 1) == 1);
+  assert(!strcmp(mapped[0].imdb, "tt11093726:1:12"));
+  assert(simkl_ler_assistindo(
+      "{\"anime\":[{\"next_to_watch\":\"S01E02\","
+      "\"ids\":{\"tmdb\":105248},\"title\":\"Flat entry\"}]}"
+      , mapped, 1) == 1);
+  assert(!strcmp(mapped[0].imdb, "tmdb:105248:1:2"));
+  assert(simkl_ler_assistindo(
+      "{\"shows\":[{\"next_to_watch\":\"S01E02\","
+      "\"ids\":{\"tmdb\":105248},\"title\":\"Not anime\"}]}"
+      , mapped, 1) == 0);
   puts("PASS: absolute anime provider mapping, title fallback, dedup and next-up setting");
   return 0;
 }

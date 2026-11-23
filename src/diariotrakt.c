@@ -1,5 +1,6 @@
 // O TRAKT COMO FONTE DO DIARIO (diariotrakt.h).
 #include "diariotrakt.h"
+#include "farolsinal.h"
 #include "js.h"
 #include "perfis.h"
 #include "rede.h"
@@ -187,6 +188,15 @@ static void *fio(void *u) {
     if (n > 0) total += diario_adicionar_lote_se_dono(vt->perfil, v, n, vt->dono);
     if (mais > novo) novo = mais;
     if (n < 100) break;
+  }
+  // 4. Notas antigas: UMA leitura de /sync/ratings por conta, aqui no fio do
+  // Trakt — nunca no da UI (issue 43, PLANO-GOSTO 1.3). A marca so grava
+  // quando o perfil que pediu ainda e o residente; rede caida nao marca e a
+  // volta seguinte tenta de novo.
+  if (farolsinal_trakt_quer()) {
+    char *c = rede_baixar_com("https://api.trakt.tv/sync/ratings", 30, cab);
+    if (vt->dono != diario_dono_geracao()) { free(c); goto fim; }
+    if (c) { farolsinal_trakt_notas(vt->perfil, c); free(c); }
   }
   if (vt->dono != diario_dono_geracao()) goto fim;
   if (novo > vt->cursor) diario_trakt_cursor(vt->perfil, novo, vt->dono);

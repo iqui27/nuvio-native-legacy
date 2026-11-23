@@ -2,8 +2,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const src = fs.readFileSync('src/rede.c', 'utf8');
-const found = src.match(/EM_JS\(int, nv_http_iniciar_assinc,[\s\S]*?, \{([\s\S]*?)\n\}\);/);
-const collect = src.match(/EM_JS\(char \*, nv_http_colher_assinc,[\s\S]*?, \{([\s\S]*?)\n\}\);/);
+const found = src.match(/EM_JS\(int, nv_http_iniciar_bruto,[\s\S]*?, \{([\s\S]*?)\n\}\);/);
+const collect = src.match(/EM_JS\(char \*, nv_http_colher_bruto,[\s\S]*?, \{([\s\S]*?)\n\}\);/);
 assert(found, 'production async request body');
 const heap = new ArrayBuffer(4096);
 const HEAP32 = new Int32Array(heap), HEAPU8 = new Uint8Array(heap);

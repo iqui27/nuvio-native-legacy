@@ -106,6 +106,7 @@ namespace NuvioTpk
 
     class Program : TVGLApplication
     {
+        [DllImport("libEGL.so.1")] static extern int eglSwapBuffers(IntPtr display, IntPtr surface);
         [DllImport("libdl.so.2")] static extern IntPtr dlopen(string path, int flags);
         [DllImport("libdl.so.2")] static extern IntPtr dlsym(IntPtr h, string sym);
         [DllImport("libdl.so.2")] static extern IntPtr dlerror();
@@ -215,10 +216,11 @@ namespace NuvioTpk
                 catch { video.PlanoAceitaRoiFora = false; }
                 Etapa("ok video-window");
 
-                // OnUpdate SEMPRE devolve true, como o JuvoPlayer.OpenGL: com
-                // false no arranque (app ainda sem quadro) a TVGLApplication
-                // parava de chamar, o app nunca recebia o contexto e ficava
-                // tela preta sem log (Tizen 5.0, 28/09). Espera sem limite:
+                // O OnUpdate(IntPtr,IntPtr) faz o swap ele mesmo quando r>0:
+                // o bool OnUpdate() anterior tinha de devolver sempre true
+                // (o false no arranque parava o callback e o app nunca recebia
+                // o contexto — tela preta sem log, Tizen 5.0, 28/09), o que
+                // tambem pedia swap sem superficie corrente. Espera sem limite:
                 // no arranque limpa para preto, depois espera o quadro do app.
                 NvLib.Config(-1, 0);
                 Etapa("begin nv_tpk_iniciar");
@@ -254,20 +256,34 @@ namespace NuvioTpk
             });
         }
 
-        // Fio principal, contexto GL corrente. true = a TVGLApplication troca
-        // os buffers; false = nada novo neste quadro.
-        protected override bool OnUpdate()
+        // Fio principal, contexto GL corrente. No overload bool do SDK, o true
+        // pede eglSwapBuffer ao framework — inclusive sem superficie corrente
+        // (o achado do F59-r2) — e o false cancela o callback de quadro (tela
+        // preta, Tizen 5.0, 28/09). Nao existe "vivo sem swap" naquele
+        // contrato. Neste overload a TVGLApplication passa os ENDERECOS das
+        // variaveis onde o GLApplication::Run guarda o display e a superficie
+        // do quadro (lea nos dois argumentos; o swap antigo le os valores): o
+        // swap e nosso ("User Should call eglSwapBuffer") mas pede os
+        // handles, nao os ponteiros. r>0 e ha superficie -> desreferencia e
+        // eglSwapBuffers aqui; r==0 -> nada troca e o callback segue vivo;
+        // r<0 -> fim.
+        protected override void OnUpdate(IntPtr eglDisplay, IntPtr eglSurface)
         {
-            // Nunca false enquanto o app vive: a TVGLApplication para de chamar.
-            if (fim) return false;
-            if (!rodando) return true;
+            if (fim) return;
+            if (!rodando) return;
             // Aqui a TVGLApplication ja criou a janela GL. Uma tentativa por
             // backend, nunca por quadro; TOPMOST acompanha o foco da janela.
             if (!teclasReservadas) { teclasReservadas = true; ReservaTeclasMidia(); }
             int r = NvLib.Quadro();
-            if (r < 0) fim = true;
-            if (r > 0 && !primeiroQuadro) { primeiroQuadro = true; Etapa("ok first-frame"); }
-            return r > 0;
+            if (r < 0) { fim = true; return; }
+            if (r > 0)
+            {
+                IntPtr display = Marshal.ReadIntPtr(eglDisplay);
+                IntPtr superficie = Marshal.ReadIntPtr(eglSurface);
+                if (display != IntPtr.Zero && superficie != IntPtr.Zero &&
+                    eglSwapBuffers(display, superficie) != 0 &&
+                    !primeiroQuadro) { primeiroQuadro = true; Etapa("ok first-frame"); }
+            }
         }
 
         protected override void OnKeyEvent(GLKey k)

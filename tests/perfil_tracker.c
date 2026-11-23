@@ -8,6 +8,8 @@
 #define sessao_logada teste_sessao_logada
 #define sessao_usuario teste_sessao_usuario
 #define perfis_ativo teste_perfis_ativo
+#define perfis_item_ativo teste_perfis_item_ativo
+#define diario_perfil_dados teste_diario_perfil_dados
 #include "../src/app.c"
 #include "stub_m3u.h"
 #include <assert.h>
@@ -23,6 +25,10 @@ int teste_simkl_ativo(void) { return skLigado; }
 int teste_sessao_logada(void) { return 1; }
 const char *teste_sessao_usuario(void) { return contaAtual; }
 int teste_perfis_ativo(void) { return perfilAtual; }
+const ContaPerfil *teste_perfis_item_ativo(void) { return NULL; }
+int teste_diario_perfil_dados(int perfil, PerfilDados *d, long long agora) {
+  (void)perfil; (void)d; (void)agora; return 0;
+}
 int teste_trakt_perfil(PerfilDados *d) {
   tkChamadas++;
   snprintf(d->nome, sizeof d->nome, "Trakt");
@@ -41,6 +47,7 @@ static void consultar(int tk, int sk, int okTk, int okSk, int antigo) {
   tkChamadas=skChamadas=0;
   p->geracao=atomic_load(&perfilGeracao) - (unsigned)antigo;
   p->perfil=1;
+  p->logado=1;
   snprintf(p->conta, sizeof p->conta, "conta-teste");
   memset(&perfilPendente, 0, sizeof perfilPendente);
   perfilSucesso=0;

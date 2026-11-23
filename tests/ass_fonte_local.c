@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <SDL2/SDL_ttf.h>
+#include "fonteurl.h"
 static size_t failSize;
 static void *checkedMalloc(size_t n) {
   if (failSize && n == failSize) { failSize = 0; return NULL; }
@@ -28,6 +29,13 @@ void gfx_rect(GfxRect r, GLuint t, GfxModo m, float f, float px, float py,
   (void)r;(void)t;(void)m;(void)f;(void)px;(void)py;(void)radius;
   (void)cr;(void)cg;(void)cb;(void)ca;abort();
 }
+/* legfontes.c calls the URL downloader from legfontes_dir/pedir_url/atualizar
+ * on non-Android targets. This fixture exercises only the local-file side, so
+ * inert stubs satisfy the link; fonteurl_cancelar() does run via
+ * legfontes_dir(). The downloader itself is covered by tests/fonteurl.c. */
+int fonteurl_iniciar(const char *url, const char *pasta) { (void)url; (void)pasta; return 0; }
+int fonteurl_resultado(char *evento, size_t n) { (void)evento; (void)n; return 0; }
+void fonteurl_cancelar(void) { }
 static int checks, commits;
 static const unsigned char *attached; static size_t attachedN;
 #define CHECK(x) do { assert(x); checks++; } while (0)

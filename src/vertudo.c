@@ -39,6 +39,7 @@
 #include "dados.h"
 #include "home.h"
 #include "fileiras.h"
+#include "extras.h"
 #include "perfisessao.h"
 #include <pthread.h>
 #ifdef NV_TOUCH_UI
@@ -636,6 +637,7 @@ static const char *baseDaFonte(const ColSource *s) {
 static const char *mensagemSemFonte(const ColSource *s) {
   if (s && !strcmp(s->prov, "tmdb")) return i18n("O TMDB não está configurado nesta TV.");
   if (s && !strcmp(s->prov, "trakt")) return i18n("O Trakt não está configurado nesta TV.");
+  if (s && !strcmp(s->prov, "mdblist")) return i18n("O MDBList não está configurado nesta TV.");
   AddonIdentidadeEstado estado = addons_identidade_estado(s ? s->addonId : "");
   if (estado == ADD_IDENTIDADE_PENDENTE || estado == ADD_IDENTIDADE_PRONTA)
     return i18n("Carregando…");
@@ -682,8 +684,12 @@ static void carregarFonte(void) {
   // nesta TV (sem chave do TMDB / sem client id do Trakt), nao addon
   // faltando.
   if (s->prov[0]) {
-    semFonte = !strcmp(s->prov,"tmdb") ? !desc_chave_tmdb()[0]
-                                      : !nuvem_trakt_cliente()[0];
+    // Cada provedor tem a sua credencial: prov "mdblist" pede a chave do
+    // MDBList, nao o client id do Trakt (#762: a pasta da Home nem
+    // consultava num pacote sem Trakt).
+    semFonte = !strcmp(s->prov,"tmdb")    ? !desc_chave_tmdb()[0]
+             : !strcmp(s->prov,"mdblist") ? !extras_mdblist_tem_chave()
+                                         : !nuvem_trakt_cliente()[0];
     snprintf(catalogId,sizeof catalogId,"%s",s->title);
     if (semFonte) {
       printf("[vertudo] fonte %s sem servico configurado: %s\n",
@@ -1979,7 +1985,9 @@ static void vitCarregar(Uint32 agora) {
     if (vitRetentarEm[r] && (Sint32)(agora - vitRetentarEm[r]) < 0) continue;
     vitRetentarEm[r] = 0;
     int disponivel = s->prov[0]
-        ? (!strcmp(s->prov, "tmdb") ? desc_chave_tmdb()[0] != 0 : nuvem_trakt_cliente()[0] != 0)
+        ? (!strcmp(s->prov, "tmdb") ? desc_chave_tmdb()[0] != 0
+          : !strcmp(s->prov, "mdblist") ? extras_mdblist_tem_chave() != 0
+          : nuvem_trakt_cliente()[0] != 0)
         : base[0] != 0;
     if (!disponivel) {
       l->estado = VIT_VAZIA; l->semFonte = 1; continue;

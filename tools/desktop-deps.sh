@@ -91,6 +91,8 @@ desktop_art() {
   local dest="$1"
   mkdir -p "$dest"
   NUVIO_ARTE_ESTAGIO="$dest/art" bash tools/tizen-art.sh >/dev/null
+  mkdir -p "$dest/art/desktop"
+  cp design/desktop/ajustes-background.jpg "$dest/art/desktop/ajustes-background.jpg"
   ditto deploy/app/fonts "$dest/fonts"
   ditto deploy/app/licencas "$dest/licencas"
 }

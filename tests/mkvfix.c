@@ -110,6 +110,11 @@ int main(void) {
     ok(k == 2 && off[0] == 5 + ini[2] + 2 + 3 + 2 && off[1] == 5 + ini[3] + 2 + 3 + 2,
        "subtitles: offsets point at the TrackType values of the ASS and SRT tracks");
     ok(k == 2 && tr[off[0]] == 0x11 && tr[off[1]] == 0x11, "subtitles: the bytes to swap are TrackType 0x11");
+    // ASS e SRT saem, PGS fica: a faixa de imagem continua com o tipo dela e
+    // nenhum offset aponta para ela (a reabertura devolve PGS para a TV).
+    ok(tr[5 + ini[4] + 2 + 3 + 2] == 0x11, "subtitles: the PGS entry keeps TrackType 0x11");
+    ok(off[0] != 5 + ini[4] + 2 + 3 + 2 && off[1] != 5 + ini[4] + 2 + 3 + 2,
+       "subtitles: no swap offset points at the PGS entry");
     // After the swap the Tracks still parses, the tracks are "control" and
     // nothing is left to hide.
     if (k == 2) { tr[off[0]] = MKVFIX_TIPO_ESCONDIDA; tr[off[1]] = MKVFIX_TIPO_ESCONDIDA; }

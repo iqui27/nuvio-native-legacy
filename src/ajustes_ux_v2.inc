@@ -370,7 +370,7 @@ static void aj2DesenharMenu(const Aj2Pose *p) {
       if (ajVid()) gfx_cor(r, 38.0f / r.h, 1, 1, 1, 0.14f);
       else {
         gfx_rect((GfxRect){ r.x - 10, r.y + 2, r.w + 20, r.h + 26 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.30f);
-        gfx_cor(r, 38.0f / r.h, 0.169f, 0.176f, 0.204f, 1);
+        gfx_cor(r, 38.0f / r.h, NV_COR_FOCO_RGB, 1);
       }
       gfx_cor(r, 38.0f / r.h, ar, ag, ab, 0.14f);
     }   // um toque leve do acento
@@ -1338,4 +1338,3 @@ static Aj2Pose aj2PoseAgora(void) {
   if (red) { p.mS = p.lS = p.eS = 1.0f; p.mDx = p.lDx = p.eDx = p.iDx = 0.0f; }
   return p;
 }
-

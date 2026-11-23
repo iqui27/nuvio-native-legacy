@@ -247,6 +247,36 @@ static int natural(const char *a, const char *b) {
 }
 
 typedef struct { ParteArq a; char caminho[512]; } ArqTmp;
+// Dois nomes iguais menos UM numero curto (1-2 digitos): "Filme.Part.4.mkv"
+// e "Filme.Part.1.mkv", "Filme CD2" e "Filme CD1". Numero longo diferente
+// (1080p/720p, um ano) nao conta: e outra copia, nao outra parte.
+static int moldeIgual(const char *x, const char *y) {
+  int difs = 0;
+  while (*x || *y) {
+    if (isdigit((unsigned char)*x) && isdigit((unsigned char)*y)) {
+      const char *x0 = x, *y0 = y;
+      while (isdigit((unsigned char)*x)) x++;
+      while (isdigit((unsigned char)*y)) y++;
+      if (x - x0 != y - y0 || strncmp(x0, y0, (size_t)(x - x0))) {
+        if (x - x0 > 2 || y - y0 > 2) return 0;
+        difs++;
+      }
+      continue;
+    }
+    if (tolower((unsigned char)*x) != tolower((unsigned char)*y)) return 0;
+    x++; y++;
+  }
+  return difs == 1;
+}
+// O arquivo `i` (pequeno) tem o molde de um arquivo GRANDE da lista, que e
+// parte: e a ultima parte curta, nao um extra.
+static int mesmoMoldeDeParte(const ArqTmp *t, int n, int i, uint64_t maior) {
+  for (int j = 0; j < n; j++) {
+    if (j == i || t[j].a.tipo != PARTE_EP || t[j].a.bytes * 5 < maior) continue;
+    if (moldeIgual(t[i].a.nome, t[j].a.nome)) return 1;
+  }
+  return 0;
+}
 // Episodios, depois especiais, depois extras; dentro de cada um a ordem
 // natural do caminho — e a temporada primeiro quando TODO episodio diz a sua.
 static int ordemPorTemporada;   // sob tmpTrava
@@ -334,7 +364,11 @@ int partes_ler_item(const char *item, const char *fim, int usenet, PartesLista *
     for (int i = 0; i < n; i++) {
       ParteArq *a = &tmp[i].a;
       if (a->tipo == PARTE_EXTRA && maior > 0 && a->bytes * 2 >= maior) a->tipo = PARTE_EP;
-      if (a->tipo == PARTE_EP && maior > 0 && a->bytes > 0 && a->bytes * 5 < maior) a->tipo = PARTE_EXTRA;
+      // ...salvo a ULTIMA PARTE CURTA de verdade: o mesmo nome das partes
+      // grandes com so o numero trocado ("Filme Part 4" de 10 min ao lado de
+      // partes de 60 min) continua parte (pedido do dono, 23/10).
+      if (a->tipo == PARTE_EP && maior > 0 && a->bytes > 0 && a->bytes * 5 < maior &&
+          !mesmoMoldeDeParte(tmp, n, i, maior)) a->tipo = PARTE_EXTRA;
       eps += a->tipo == PARTE_EP;
     }
     // Tudo "especial" (um filme cujo nome diz Movie): sao as partes.
@@ -1570,6 +1604,11 @@ int partes_airlock_estado(int *ligado, char *detalhe, unsigned n) {
 static char sesAlvo[64];
 static PartesLista sesLista;
 static int sesK = -1;
+// Duracao REAL de cada parte que ja tocou nesta sessao (0 = so a estimativa
+// pelo tamanho). A barra do filme inteiro usa (partes_barra).
+#define SES_DUR_MAX 64
+static double sesDur[SES_DUR_MAX];
+static int sesBarraAvisou;
 
 void partes_sessao_iniciar(const char *alvo, const PartesLista *l, int k) {
   if (!alvo || !*alvo || !l || k < 0 || k >= l->n || l->arq[k].extra || partes_principais(l) < 2) {
@@ -1579,6 +1618,7 @@ void partes_sessao_iniciar(const char *alvo, const PartesLista *l, int k) {
   snprintf(sesAlvo, sizeof sesAlvo, "%s", alvo);
   if (!partes_lista_copiar(&sesLista, l)) { partes_sessao_parar("allocation failed"); return; }
   sesK = k;
+  memset(sesDur, 0, sizeof sesDur); sesBarraAvisou = 0;
   printf("[partes] parts session on: part %d of %d\n", partes_numero(l, k), partes_principais(l));
   fflush(stdout);
 }
@@ -1596,6 +1636,108 @@ int partes_sessao_de(const char *alvo) {
 const PartesLista *partes_sessao_lista(void) { return sesAlvo[0] ? &sesLista : NULL; }
 int partes_sessao_indice(void) { return sesAlvo[0] ? sesK : -1; }
 void partes_sessao_ir(int k) { if (sesAlvo[0] && k >= 0 && k < sesLista.n) sesK = k; }
+
+// O NUMERO DA PARTE no nome: "Part 2", "pt.2", "CD2", "Disc 2", "Disk-2".
+// -1 = o nome nao diz.
+static int numeroDaParte(const char *nome) {
+  static const char *w[] = { "part", "pt", "cd", "disc", "disk", NULL };
+  for (const char *p = nome; p && *p; p++) {
+    if (p > nome && isalpha((unsigned char)p[-1])) continue;
+    for (int i = 0; w[i]; i++) {
+      size_t L = strlen(w[i]);
+      const char *q;
+      if (strncasecmp(p, w[i], L)) continue;
+      q = p + L;
+      while (*q == ' ' || *q == '.' || *q == '_' || *q == '-') q++;
+      if (isdigit((unsigned char)*q)) return atoi(q);
+    }
+  }
+  return -1;
+}
+// A barra do filme inteiro e honesta? Numeracao com buraco (1, 2, 4) = falta
+// uma parte; a soma estimada longe da duracao do catalogo (mais de 30%) =
+// algo a mais ou a menos na sequencia. Sem certeza, a barra fica a da parte.
+static int barraConfere(double tot, double catDur, const char **porque) {
+  int ant = -1;
+  for (int i = 0; i < sesLista.n; i++) {
+    int nm;
+    if (sesLista.arq[i].extra) continue;
+    nm = numeroDaParte(sesLista.arq[i].nome);
+    if (nm < 0) continue;
+    if (ant >= 0 && nm != ant + 1) { *porque = "the part numbers have a gap"; return 0; }
+    ant = nm;
+  }
+  if (catDur > 600.0 && fabs(tot - catDur) > catDur * 0.30) { *porque = "the parts don't add up to the catalog runtime"; return 0; }
+  return 1;
+}
+void partes_duracao_real(int k, double dur) {
+  if (sesAlvo[0] && k >= 0 && k < SES_DUR_MAX && k < sesLista.n && dur > 1.0) sesDur[k] = dur;
+}
+// Duracao (real ou estimada) da parte `i`: a real quando ja tocou; senao o
+// tamanho dela na proporcao segundos/byte da parte que toca.
+static double durParte(int i, double durAtual) {
+  double bAt = (double)sesLista.arq[sesK].bytes;
+  if (i < SES_DUR_MAX && sesDur[i] > 1.0) return sesDur[i];
+  if (i == sesK) return durAtual;
+  if (!(bAt > 0) || !sesLista.arq[i].bytes) return 0;
+  return durAtual * (double)sesLista.arq[i].bytes / bAt;
+}
+int partes_barra(const char *alvo, double dur, double catDur, double *off, double *tot) {
+  double antes = 0, soma = 0;
+  const char *porque = NULL;
+  if (!partes_sessao_de(alvo) || !(dur > 1.0) || sesLista.n > SES_DUR_MAX ||
+      sesLista.arq[sesK].extra) return 0;
+  for (int i = 0; i < sesLista.n; i++) {
+    double di;
+    if (sesLista.arq[i].extra) continue;
+    di = durParte(i, dur);
+    if (!(di > 1.0)) { porque = "a part has no size"; break; }
+    if (i < sesK) antes += di;
+    soma += di;
+  }
+  if (!porque && !barraConfere(soma, catDur, &porque)) { /* porque definido */ }
+  if (porque) {
+    if (!sesBarraAvisou) {
+      sesBarraAvisou = 1;
+      printf("[partes] whole-movie bar off: %s (estimate %.0f min, catalog %.0f min); one bar per part\n",
+             porque, soma / 60.0, catDur / 60.0);
+      fflush(stdout);
+    }
+    return 0;
+  }
+  *off = antes; *tot = soma;
+  return 1;
+}
+int partes_barra_limites(double dur, float *fr, int max) {
+  double soma = 0, acc = 0;
+  int n = 0, ultima = -1;
+  if (!sesAlvo[0] || sesK < 0) return 0;
+  for (int i = 0; i < sesLista.n; i++) if (!sesLista.arq[i].extra) { soma += durParte(i, dur); ultima = i; }
+  if (!(soma > 0)) return 0;
+  for (int i = 0; i < sesLista.n && n < max; i++) {
+    if (sesLista.arq[i].extra) continue;
+    acc += durParte(i, dur);
+    if (i != ultima) fr[n++] = (float)(acc / soma);
+  }
+  return n;
+}
+int partes_barra_achar(double v, double dur, int *k, double *pos) {
+  double acc = 0;
+  int ultima = -1;
+  if (!sesAlvo[0] || sesK < 0) return 0;
+  for (int i = 0; i < sesLista.n; i++) {
+    double di;
+    if (sesLista.arq[i].extra) continue;
+    di = durParte(i, dur);
+    ultima = i;
+    if (v < acc + di) { *k = i; *pos = v - acc > 0 ? v - acc : 0; return 1; }
+    acc += di;
+  }
+  if (ultima < 0) return 0;
+  *k = ultima; *pos = durParte(ultima, dur) - 5.0;
+  if (*pos < 0) *pos = 0;
+  return 1;
+}
 
 int partes_virtual(const char *alvo, double pos, double dur, double catDur,
                    double *vpos, double *vdur, int *ultima) {
