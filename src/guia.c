@@ -330,6 +330,10 @@ typedef struct {
 } GFonteLtv;
 
 static long long cargaSnapshotStamp;
+static atomic_uint catalogRefreshRevision;
+unsigned guia_catalog_refresh_revision(void) {
+  return atomic_load_explicit(&catalogRefreshRevision,memory_order_relaxed);
+}
 
 // Publicados (so o fio de desenho le).
 static GCanal *canais;   static int nCanais, capCanais;
@@ -1560,6 +1564,48 @@ static int carregarCatalogo(const GFonte *f, int fl) {
 }
 
 // --- Stalker, Xtream e M3U para o staging ---------------------------------------
+typedef struct {
+  int canais, cats, mixed, inventario, alts, pendentes, filtrados;
+  size_t cacheBytes;
+} GFonteStage;
+static GFonteStage fonteStageInicio(void) {
+  return (GFonteStage){sNCanais,sNCats,sNMixedVod,sNInventario,sNAlts,sPendentes,sFiltrados,sCacheBytes};
+}
+static void fonteStageDescartar(int f, GFonteStage inicio) {
+  sNCanais=inicio.canais; sNCats=inicio.cats; sNMixedVod=inicio.mixed;
+  sNInventario=inicio.inventario; sNAlts=inicio.alts;
+  sPendentes=inicio.pendentes; sFiltrados=inicio.filtrados; sCacheBytes=inicio.cacheBytes;
+  if(sCache[f])fclose(sCache[f]);
+  sCache[f]=NULL; sCacheN[f]=sCacheErro[f]=sCacheCortada[f]=0;
+  GFonteLtv *fonte=&sLtvF[f];
+  free(fonte->gi); fonte->gi=NULL; fonte->ngi=0;
+  fonte->nCanais=fonte->nGrupos=fonte->total=fonte->cortada=fonte->respondeu=0;
+  fonte->erro=1;
+  guiafiltro_dup_zerar(&sDup);
+  for(int i=0;i<sNCanais;i++){
+    const GCanal *c=&sCanais[i];
+    guiafiltro_dup_registrar(&sFltLive,&sDup,c->fonte,sCats[c->cat].nome,c->nome,sLtvF[c->fonte].nome,i);
+  }
+  if(sInventarioDisco){
+    long cursor=ftell(sInventarioDisco); int ok=cursor>=0;
+    char block[G_INVENTARIO_BLOCO];
+    for(long pos=0;ok;pos+=sizeof block){
+      if(fseek(sInventarioDisco,pos,SEEK_SET)){ok=0;break;}
+      if(fread(block,sizeof block,1,sInventarioDisco)!=1){ok=!ferror(sInventarioDisco);break;}
+      int changed=0;
+      for(size_t off=0;off+4*sizeof(unsigned short)<=sizeof block;){
+        unsigned short h[4];memcpy(h,block+off,sizeof h);
+        if(!h[2]||!h[3]||h[2]>GF_ID||h[3]>GF_NOME||off+sizeof h+h[2]+h[3]>sizeof block)break;
+        if(h[0]==f){h[0]=USHRT_MAX;memcpy(block+off,h,sizeof h);changed=1;}
+        off+=sizeof h+h[2]+h[3];
+      }
+      if(changed&&(fseek(sInventarioDisco,pos,SEEK_SET)||fwrite(block,sizeof block,1,sInventarioDisco)!=1))ok=0;
+    }
+    if(!ok||fseek(sInventarioDisco,cursor,SEEK_SET)){
+      fclose(sInventarioDisco);sInventarioDisco=NULL;sInventarioCortado=1;
+    }
+  }
+}
 static int stCanal(const StalkerCanal *st, void *u) {
   int fl = *(int *)u;
   GCru c = {0};
@@ -1576,21 +1622,13 @@ static int stCanal(const StalkerCanal *st, void *u) {
   sCanalAdd(fl, &c);
   return 1;
 }
-static int stGuardar(const StalkerCanal *canal, void *u) {
-  return cargaAtual() && fwrite(canal, sizeof *canal, 1, u) == 1;
-}
 static int stalkerCarregar(const IptvConta *conta) {
   char chave[LTV_CHAVE]; contaChave(conta, chave, sizeof chave);
   int fl = sFonteChave(chave, LTV_STALKER, conta->nome, "");
   if (fl < 0) return 0;
-  FILE *raw = tmpfile();
-  int n = raw ? stalker_fonte_canais_cb(conta->id, stGuardar, raw, cargaSessao) : 0;
-  if (n > 0 && fflush(raw) == 0 && !ferror(raw)) {
-    StalkerCanal canal;
-    rewind(raw);
-    while (fread(&canal, sizeof canal, 1, raw) == 1) if (!stCanal(&canal, &fl)) break;
-  } else n = 0;
-  if (raw) fclose(raw);
+  GFonteStage inicio=fonteStageInicio();
+  int n=stalker_fonte_canais_cb(conta->id,stCanal,&fl,cargaSessao);
+  if(n<=0)fonteStageDescartar(fl,inicio);
   sLtvF[fl].respondeu = n > 0;
   return n;
 }
@@ -1710,7 +1748,6 @@ static int m3uCanal(const LtvM3uCanal *m, void *u) {
   return 1;
 }
 static int alimentarM3u(const char *d, size_t n, void *u) { return cargaAtual() && ltv_m3u_alimentar((LtvM3u *)u, d, n); }
-static int guardarM3u(const char *d, size_t n, void *u) { return cargaAtual() && fwrite(d, 1, n, u) == n; }
 static int m3uCarregar(const LtvUrl *u, const char *chave, const char *epgUrl) {
   static LtvM3u p;     // ~10 KB: fora da pilha do fio
   M3uCtx x;
@@ -1719,6 +1756,7 @@ static int m3uCarregar(const LtvUrl *u, const char *chave, const char *epgUrl) {
   memset(&x, 0, sizeof x);
   x.fl = chave ? sFonteChave(chave, LTV_M3U, u->nome, "") : sFonte(LTV_M3U, u->url, u->nome, "");
   if (x.fl < 0||!ltv_fonte_ligada(sLtvF[x.fl].chave)) return 0;
+  GFonteStage inicio=fonteStageInicio();
   x.nsel = sGruposEscolhidos(x.fl, x.sel, 256);
   x.conta=chave && fonteConta(&sLtvF[x.fl],&x.contaId);x.origem=u->url;
   if(x.conta) {
@@ -1726,20 +1764,10 @@ static int m3uCarregar(const LtvUrl *u, const char *chave, const char *epgUrl) {
     x.indice=calloc(x.capIndice,sizeof *x.indice);if(!x.indice)return 0;
   }
   ltv_m3u_iniciar(&p, m3uCanal, &x);
-  FILE *raw = tmpfile();
-  ok = raw && rede_baixar_fluxo(u->url, 120, NULL, guardarM3u, raw, 200LL << 20, &st, &bytes);
-  if (ok && fflush(raw) == 0) {
-    char block[16384]; size_t size;
-    rewind(raw);
-    size = fread(block, 1, sizeof block - 1, raw); block[size] = 0;
-    if (!strstr(block, "#EXTM3U") && !strstr(block, "#EXTINF")) ok = 0;
-    rewind(raw);
-    while (ok && (size = fread(block, 1, sizeof block, raw)) > 0)
-      if (!alimentarM3u(block, size, &p)) break;
-    ltv_m3u_fim(&p);
-    if (ferror(raw)) ok = 0;
-  } else ok = 0;
-  if (raw) fclose(raw);
+  ok=rede_baixar_fluxo(u->url,120,NULL,alimentarM3u,&p,200LL<<20,&st,&bytes);
+  ltv_m3u_fim(&p);
+  ok=ok&&(p.cabecalho||p.nCanais>0);
+  if(!ok)fonteStageDescartar(x.fl,inicio);
   free(x.indice);
   snprintf(sLtvF[x.fl].urlTvg, sizeof sLtvF[x.fl].urlTvg, "%s", epgUrl && epgUrl[0] ? epgUrl : p.urlTvg);
   // A chave da fonte e o tamanho; nunca a URL.
@@ -8339,6 +8367,7 @@ void guia_abrir_sessao(void) {
 // Refresh retains the published source caches until replacements arrive.
 void guia_recarregar(int limparLista) {
   catsnap_request_refresh(perfis_ativo());
+  atomic_fetch_add_explicit(&catalogRefreshRevision,1,memory_order_relaxed);
   cargaCancelada = 1; xtepg_limpar();
   if (limparLista) { guia_limpar_lista(); return; }
   IptvConta contas[IPTV_MAX_CONTAS]; int n = iptv_contas(contas, IPTV_MAX_CONTAS);

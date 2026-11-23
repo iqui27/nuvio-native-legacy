@@ -53,6 +53,7 @@ void guia_carregar(void);
 // Invalidate a published/in-flight guide after the suggestions setting changes.
 void guia_sugestoes_mudaram(void);
 void guia_recarregar(int limparLista);
+unsigned guia_catalog_refresh_revision(void);
 // Nova abertura de perfil: fecha a tela e invalida a carga anterior sem
 // esperar rede. O cache persistido do perfil novo continua disponivel.
 void guia_abrir_sessao(void);
