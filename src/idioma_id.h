@@ -6731,6 +6731,8 @@
   T("Por áudio: sem falas claras; nada foi alterado", "Lewat audio: tidak ada ucapan yang jelas; tidak ada yang diubah"),
   T("Por áudio: sem áudio decodificado", "Lewat audio: tidak ada audio yang didekode"),
   T("Por último", "Terakhir"),
+  T("Porque você assistiu %s", "Karena Anda menonton %s"),
+  T("Porque você assistiu…", "Karena Anda menonton…"),
   T("Porque você terminou %s", "Karena kamu menonton %s"),
   T("Porque você terminou %s.", "Karena kamu menonton %s."),
   T("Porque você viu", "Karena kamu menonton"),

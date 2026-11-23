@@ -6731,6 +6731,8 @@
   T("Por áudio: sem falas claras; nada foi alterado", "Theo âm thanh: không có lời thoại rõ; không thay đổi gì"),
   T("Por áudio: sem áudio decodificado", "Theo âm thanh: không có âm thanh đã giải mã"),
   T("Por último", "Sau cùng"),
+  T("Porque você assistiu %s", "Vì bạn đã xem %s"),
+  T("Porque você assistiu…", "Vì bạn đã xem…"),
   T("Porque você terminou %s", "Vì bạn đã xem %s"),
   T("Porque você terminou %s.", "Vì bạn đã xem %s."),
   T("Porque você viu", "Vì bạn đã xem"),

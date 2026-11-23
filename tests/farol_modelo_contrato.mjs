@@ -81,6 +81,7 @@ const DB = {
       bind(...valores) {
         return {
           first: async () => sqlite.prepare(sql).get(...valores),
+          all: async () => ({ results: sqlite.prepare(sql).all(...valores) }),
           run: async () => sqlite.prepare(sql).run(...valores),
         };
       },

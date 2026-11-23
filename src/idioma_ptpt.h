@@ -6731,6 +6731,8 @@
   T("Por áudio: sem falas claras; nada foi alterado", "Por áudio: sem falas claras; nada foi alterado"),
   T("Por áudio: sem áudio decodificado", "Por áudio: sem áudio descodificado"),
   T("Por último", "Por último"),
+  T("Porque você assistiu %s", "Porque viste %s"),
+  T("Porque você assistiu…", "Porque viste…"),
   T("Porque você terminou %s", "Porque terminaste %s"),
   T("Porque você terminou %s.", "Porque terminaste %s."),
   T("Porque você viu", "Porque viste"),
