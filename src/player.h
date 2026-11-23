@@ -7,6 +7,7 @@
 // preferencias do player, mas quem o define e o modulo de video.
 #include "video.h"
 #include "catalogo.h"
+#include "farolerro.h"
 #ifdef NV_ANDROID
 #include "streams.h"
 #endif
@@ -130,6 +131,14 @@ void player_toast(const char *texto, unsigned ms);
 // pilula da ilha abre com ele (plrilha.h). player_toast e o informativo.
 void player_toast_ex(const char *texto, unsigned ms, const char *icone, int ambar);
 void player_limpar_erro_fonte(void);   // fonte "morta" que voltou a entregar
+// FAROL (6B): o erro nativo ja normalizado do ultimo player_erro_fonte
+// (mesma idade da falha de resolverregra_falha_recente). `*foiDebrid` diz se a
+// fonte que falhou era de um servico de cache. 0 = nenhum registrado.
+int  player_ultimo_erro_farol(FarolErro *out, int *foiDebrid);
+// FAROL (6B): "Player externo" do cartao do Resolver — a fonte que acabou de
+// falhar sai para o player externo instalado (Android; nas outras 0).
+int  player_externo_disponivel(void);
+int  player_abrir_externo(void);
 // A tentativa do automatico de fontes ("Fonte 2 de 3" na ilha ao abrir):
 // `n` = qual (1 = a primeira), `max` = o teto. 0, 0 = nenhuma.
 void player_definir_tentativa(int n, int max);

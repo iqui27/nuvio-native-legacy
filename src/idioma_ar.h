@@ -867,6 +867,7 @@
   T("Abrir título", "فتح العنوان"),
   T("Abrir um título não baixa nada", "فتح عنوان لا يُنزّل شيئًا"),
   T("Abrir álbum", "فتح الألبوم"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "أفتحها في المشغل الخارجي لهذا التلفاز — اضغط OK."),
   T("Aceitando…", "جارٍ القبول…"),
   T("Aceitar", "قبول"),
   T("Aceitar pedido", "قبول الطلب"),

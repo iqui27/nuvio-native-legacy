@@ -1039,6 +1039,15 @@ const CatEp *player_proximo_episodio(void) {
 // este canal agora"). Vazio = as frases genericas. Ja traduzido por quem
 // chama; txt_linha tenta traduzir de novo, nao acha chave e deixa como esta.
 static char erroTitulo[160], erroDica[160];
+// FAROL (6B): o erro normalizado do ultimo player_erro_fonte e se a fonte que
+// falhou era debrid — o Resolver le os dois ao julgar. Vai junto da falha de
+// resolverregra_falha_registrar: limpa junto em player_limpar_erro_fonte.
+static FarolErro ultimoFarol;
+static int temUltimoFarol, ultimoFarolDebrid;
+// A URL da ultima fonte mandada ao pipeline (sem o proxy local): e a que o
+// "Player externo" do Resolver despacha para o app externo instalado.
+static char ultimaFonteUrl[NV_MEDIA_URL_MAX];
+
 // FAROL (issue 7; PLANO 2.2): o alvo compilado vira (FarolPlat, token do
 // backend) — os FE_* nao carregam texto livre, so estes tokens de enum.
 #if defined(NV_ANDROID)
@@ -1160,10 +1169,20 @@ void player_erro_fonte(void) {
   // texto livre, ex. dentro de uma URL, chegaria como token valido.
   { int http = 0, causa = fontesonda_causa(video_erro_texto(), &http);
     FarolErro fe; char cs[24];
+    const Stream *st;
     farolerro_ler(NV_FAROL_PLAT, video_erro_texto(),
                   video_registro_negado() ? -1027 : 0, &fe);
+    st = stream_item(stream_atual());
+    ultimoFarol = fe; temUltimoFarol = 1;
+    ultimoFarolDebrid = (st && st->debridServico > 0) || fontesonda_host_debrid(ultimaFonteUrl);
     farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, causa, http,
              farolcod_anel(&fe, NV_FAROL_PLAT, cs, sizeof cs)); }
+}
+int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid) {
+  if (!temUltimoFarol) return 0;
+  if (out) *out = ultimoFarol;
+  if (foiDebrid) *foiDebrid = ultimoFarolDebrid;
+  return 1;
 }
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
   player_erro_fonte();
@@ -1185,7 +1204,7 @@ static void erroSemVideo(void) {
 }
 // Desfaz o de cima quando a fonte que parecia morta volta a entregar. Ver a
 // nota no watchdog de canal em app.c.
-void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; resolverregra_falha_limpar(); } }
+void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; temUltimoFarol = 0; resolverregra_falha_limpar(); } }
 // Leitura do estado para o watchdog de canal do app.c: uma fonte ao vivo que
 // falhou (ou nao abre no prazo) deve trocar para a proxima da lista sozinha.
 int  player_fonte_falhou(void) { return erroFonte; }
@@ -1998,6 +2017,7 @@ static void armarTituloGuardado(void) {
 }
 
 void player_abrir(int indiceCatalogo, const char *url) {
+  ultimaFonteUrl[0] = 0;
   dtsAvisoSessao++;
   saiuVisto = 0;
 #ifdef NV_TOUCH_UI
@@ -2360,6 +2380,7 @@ static void tocarFonteInterno(const char *url);
 static void tocarFonteInterno(const char *url) {
   directcache_encerrar();
   if (!travaFonte(url)) return;
+  snprintf(ultimaFonteUrl, sizeof ultimaFonteUrl, "%s", url ? url : "");
   marco("abrir: url ao pipeline");
   farolRearmar();
   skipLiberado = 0;
@@ -2417,6 +2438,31 @@ static void tocarFonteInterno(const char *url) {
 #ifdef NV_ANDROID
 static void sairParaExterno(void) { saindo = 1; pediuSair = 1; }
 #endif
+int player_externo_disponivel(void) {
+#ifdef NV_ANDROID
+  if (!player_aberto() || !ultimaFonteUrl[0] || video_cabecalhos()[0]) return 0;
+  extplayer_atualizar_apps();
+  return extplayer_n_apps() > 0;
+#else
+  return 0;
+#endif
+}
+
+int player_abrir_externo(void) {
+#ifdef NV_ANDROID
+  // O pedido veio do cartao do Resolver ("Player externo"), nao do ajuste:
+  // externo na marra, sem a pergunta "Onde reproduzir?". Sem URL tentada nao
+  // ha o que despachar.
+  const CatItem *c = item();
+  char url[NV_MEDIA_URL_MAX];
+  if (!player_externo_disponivel()) return 0;
+  snprintf(url, sizeof url, "%s", ultimaFonteUrl);
+  return extplayer_forcar(url, c ? c->titulo : "",
+                          tocarFonteInterno, sairParaExterno);
+#else
+  return 0;
+#endif
+}
 static void tocarFonte(const char *url) {
 #ifdef NV_ANDROID
   const CatItem *c = item();   // #501: Interno / Externo / Perguntar sempre

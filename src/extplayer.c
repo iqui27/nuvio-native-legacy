@@ -128,6 +128,21 @@ int extplayer_tentar(const char *url, const char *titulo, int anime,
   }
 }
 
+int extplayer_forcar(const char *url, const char *titulo,
+                     void (*interno)(const char *), void (*sair)(void)) {
+  int avisar;
+  if (!url || !url[0]) return 0;
+  if (perguntaAberta) return 1;   // modal aberto: o segundo pedido espera a resposta
+  extplayer_atualizar_apps();
+  if (extplayer_decidir(EXTPLAYER_EXTERNO, video_cabecalhos(), &avisar) == EXTPLAYER_INTERNO) {
+    if (avisar) player_toast(i18n("Player externo indisponível; usando o interno"), 3500u);
+    interno(url);
+    return 1;
+  }
+  abrirExterno(url, titulo, "", interno, sair);
+  return 1;
+}
+
 static void concluir(int externo) {
   void (*interno)(const char *) = pendInterno;
   void (*sair)(void) = pendSair;

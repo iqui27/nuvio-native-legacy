@@ -867,6 +867,7 @@
   T("Abrir título", "Atidaryti pavadinimą"),
   T("Abrir um título não baixa nada", "Atidarant pavadinimą nieko neatsisiunčiama"),
   T("Abrir álbum", "Atverti albumą"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Atidarau ją išoriniame šio TV grotuve — spausk OK."),
   T("Aceitando…", "Priimama…"),
   T("Aceitar", "Priimti"),
   T("Aceitar pedido", "Priimti prašymą"),

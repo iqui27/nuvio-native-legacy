@@ -65,6 +65,23 @@ static void soHost(const char *url, char *h, unsigned tam) {
   memcpy(h, p, n); h[n] = 0;
 }
 
+int fontesonda_host_debrid(const char *url) {
+  static const char *const dominios[] = {
+    "real-debrid.com", "rdeb.io", "alldebrid.com", "alldebrid.fr",
+    "premiumize.me", "torbox.app"
+  };
+  char host[256];
+  soHost(url, host, sizeof host);
+  size_t n = strlen(host);
+  if (n == sizeof host - 1) return 0;
+  for (size_t i = 0; i < sizeof dominios / sizeof dominios[0]; i++) {
+    size_t dominio = strlen(dominios[i]);
+    if (n >= dominio && (n == dominio || host[n - dominio - 1] == '.') &&
+        !strcasecmp(host + n - dominio, dominios[i])) return 1;
+  }
+  return 0;
+}
+
 void fontesonda_recusa(const char *url, const char *erroTexto, int sincrona) {
   char host[128]; int http = 0;
   int causa = fontesonda_causa(erroTexto, &http);

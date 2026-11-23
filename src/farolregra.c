@@ -218,7 +218,7 @@ static const FarolRegra tabela[] = {
     FT_IMAGEM_DV_L1, FT_IMAGEM_DV_L2,
     FAROL_A_FONTE_SEM_DV, FAROL_A_DESLIGAR_HDR, FAROL_ESC_NUNCA },
   { FAROL_C_TV_FORMATO_REPETE, RES_T_TV, FAROL_P_ANDROID, casa_tv_formato_rep_ext,
-    FT_TV_FORMATO_REPETE_L1, FT_TV_FORMATO_REPETE_L2,
+    FT_TV_FORMATO_REPETE_L1, FT_L2_PLAYER_EXTERNO,
     FAROL_A_PLAYER_EXTERNO, FAROL_A_FONTE_OUTRO_FORMATO, FAROL_ESC_JUNTO },
   { FAROL_C_TV_FORMATO_REPETE, RES_T_TV, FAROL_P_TODAS, casa_tv_formato_repete,
     FT_TV_FORMATO_REPETE_L1, FT_TV_FORMATO_REPETE_L2,
@@ -277,12 +277,15 @@ static void preencher_estados(int sintoma, const FarolFatos *f, uint8_t pbit,
       falhou[tabela[i].estagio] = 1;
   }
   if (f->offline >= 0 && erro_recente(f) && f->erro.classe == FC_REDE) falhou[RES_T_FONTE] = 1;
+  if (f->addonsMotivo > 0) falhou[RES_T_ADDONS] = 1;
   if (f->tvNegou > 0) falhou[RES_T_TV] = 1;
   rf.offline = falhou[RES_T_INTERNET];
   rf.addonsQtd = f->addonsQtd == 0 ? 0 : 1;
   if (falhou[RES_T_ADDONS] && rf.addonsQtd > 0) rf.addonsMotivo[0] = 'x';
   if (falhou[RES_T_DEBRID]) rf.debridMotivo[0] = 'x';
-  rf.haFalha = falhou[RES_T_FONTE];
+  // A falha generica recente conta mesmo sem causa reconhecida: o filtro de
+  // erro_recente() pertence as regras por classe, nao a etapa da cadeia.
+  rf.haFalha = falhou[RES_T_FONTE] || f->haFalha > 0;
   if (falhou[RES_T_TV]) rf.tvMotivo[0] = 'x';
   if (falhou[RES_T_AUDIO]) rf.audioMotivo[0] = 'x';
   resolverregra_testar(sintoma, &rf, &rr);

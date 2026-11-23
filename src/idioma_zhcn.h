@@ -867,6 +867,7 @@
   T("Abrir título", "打开作品"),
   T("Abrir um título não baixa nada", "打开作品不会下载任何内容"),
   T("Abrir álbum", "打开专辑"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "我会在这台电视的外部播放器中打开 — 按 OK。"),
   T("Aceitando…", "正在接受…"),
   T("Aceitar", "接受"),
   T("Aceitar pedido", "接受请求"),

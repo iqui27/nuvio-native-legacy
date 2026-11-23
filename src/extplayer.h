@@ -31,6 +31,12 @@ int         extplayer_app_instalado(const char *pkg);
 // Nunca registra a URL.
 int  extplayer_tentar(const char *url, const char *titulo, int anime,
                       void (*interno)(const char *url), void (*sair)(void));
+// FAROL (6B): o cartao do Resolver pediu o externo NA MARRA — sem consultar o
+// ajuste Interno/Externo/Perguntar nem abrir "Onde reproduzir?". A unica
+// recusa mantida e a do fluxo normal: URL com cabecalhos nao cabe na Intent e
+// cai no interno com o aviso. 1 = tratou (externo ou recuo no interno).
+int  extplayer_forcar(const char *url, const char *titulo,
+                      void (*interno)(const char *url), void (*sair)(void));
 void extplayer_acao(const char *chave, int botao);
 void extplayer_passo(unsigned agora);
 #endif

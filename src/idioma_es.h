@@ -866,6 +866,7 @@
   T("Abrir título", "Abrir título"),
   T("Abrir um título não baixa nada", "Abrir un título no descarga nada"),
   T("Abrir álbum", "Abrir álbum"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "La abro en el reproductor externo de esta TV — pulsa OK."),
   T("Aceitando…", "Aceptando…"),
   T("Aceitar", "Aceptar"),
   T("Aceitar pedido", "Aceptar solicitud"),

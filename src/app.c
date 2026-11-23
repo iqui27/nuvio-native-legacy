@@ -5081,13 +5081,34 @@ void app_evento(const SDL_Event *e) {
   // RESOLVER UM PROBLEMA (2.1, resolver.h): tela inteira, come o teclado todo.
   // "Ver Fontes e addons" fecha a tela e abre Ajustes no lugar.
   if (resolver_aberto()) {
+    int rped;
     resolver_evento(e);
-    if (resolver_pedido() == RESOLVER_PEDIU_FONTES) {
+    rped = resolver_pedido();
+    if (rped == RESOLVER_PEDIU_FONTES) {
       menu_fechar();
       ajustes_abrir_na_espera_fonte();
       if (tela == TELA_AJUSTES) ajustes_iniciar();
       else trocarTela(TELA_AJUSTES);
       menu_definir_destino(MENU_AJUSTES);
+    } else if (rped == RESOLVER_PEDIU_DEBRID) {
+      // FAROL: "Abrir a conta de cache"/"Reconectar pelo celular" — a tela/QR
+      // de login do debrid que ja existe (AG_CONECTAR). Ao voltar logado o
+      // pedido AGP_REPETIR do addonguia reabre o video, sem gancho novo.
+      int ag = stream_atual() >= 0 ? stream_ordem_addon(stream_atual()) : 0;
+      if (ag < 0 || ag >= addons_n()) ag = 0;
+      if (addons_n() > 0) {
+        menu_fechar();
+        addonguia_reconectar_debrid(ag);
+      } else {
+        menu_fechar();
+        ajustes_abrir_na_espera_fonte();
+        if (tela == TELA_AJUSTES) ajustes_iniciar();
+        else trocarTela(TELA_AJUSTES);
+        menu_definir_destino(MENU_AJUSTES);
+      }
+    } else if (rped == RESOLVER_PEDIU_PLAYER_EXT) {
+      // FAROL: a fonte que falhou sai para o player externo instalado.
+      player_abrir_externo();
     }
     return;
   }

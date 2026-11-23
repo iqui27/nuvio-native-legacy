@@ -5,11 +5,9 @@
 #include "resolverregra.h"
 #include <stdint.h>
 
-#ifdef RES_S_CORES
+// "Cores estranhas": o sintoma vive em resolverregra.h com valor proprio
+// (era 6 fixo e colidia com RES_S_GERAL — IMAGEM_DV disparava sem o sintoma).
 #define FAROL_S_CORES RES_S_CORES
-#else
-#define FAROL_S_CORES 6
-#endif
 
 #define FAROL_P_WEBOS      (1u << FP_WEBOS)
 #define FAROL_P_TIZEN_WGT  (1u << FP_TIZEN_WGT)
@@ -80,8 +78,10 @@ enum {
 
 typedef struct {
   int offline, addonsQtd;
+  int addonsMotivo;    // 1 = a ultima busca dos add-ons veio com motivo de falha
   int debridSemPlano, debridRecusa;
   int tvNegou;
+  int haFalha;         // 1 = falha de reproducao recente, mesmo de causa nao lida
   FarolPlat plat;
   int osMaior;
   FarolErro erro;

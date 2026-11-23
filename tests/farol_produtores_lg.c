@@ -80,6 +80,15 @@ static void memlog_evento(const char *e) { (void)e; }
 static const char *erro_player = "";
 static const char *video_erro_texto(void) { return erro_player; }
 static int video_registro_negado(void) { return 0; }
+// FAROL6B: o erro de fonte tambem grava o FarolErro normalizado e a
+// proveniencia debrid da fonte corrente — os mesmos nomes dos estaticos de
+// player.c, com um Stream minimo (so o campo que o trecho extraido le).
+typedef struct { int debridServico; } Stream;
+static Stream fonteFarol = { 1 };
+static int stream_atual(void) { return 0; }
+static const Stream *stream_item(int i) { (void)i; return &fonteFarol; }
+static FarolErro ultimoFarol;
+static int temUltimoFarol, ultimoFarolDebrid;
 typedef void LSHandle;
 typedef void LSMessage;
 static const char *lsPayload(LSMessage *m) { return m; }

@@ -867,6 +867,7 @@
   T("Abrir título", "作品を開く"),
   T("Abrir um título não baixa nada", "作品を開いてもダウンロードは始まりません"),
   T("Abrir álbum", "アルバムを開く"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "このテレビの外部プレーヤーで開きます — OKを押してください。"),
   T("Aceitando…", "承認中…"),
   T("Aceitar", "承認"),
   T("Aceitar pedido", "リクエストを承認"),

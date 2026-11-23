@@ -864,16 +864,58 @@ static void testar_bordas_e_mutantes(void) {
   f.fonteDv = 1;
   farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
   assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+
+#ifdef RES_S_CORES
+  // CORRECAO-FAROL6B: FAROL_S_CORES tem valor proprio — com a falha recente
+  // tipica de quem abre o Resolver depois de um erro, RES_S_GERAL nao pode
+  // casar IMAGEM_DV (antigamente 6 == RES_S_GERAL e casava). E o caminho ao
+  // contrario tambem: sintoma "cores estranhas" casa DV mesmo sem erro
+  // recente (a regra so pede fonte DV + TV sem DV).
+  f = base_fatos(FP_WEBOS, 6);
+  f.fonteDv = 1;
+  f.tvDv = 0;
+  f.erro.classe = FC_HTTP;
+  f.erro.http = 403;
+  farolregra_julgar(RES_S_GERAL, &f, &v);
+  assert(v.regra->codigo != FAROL_C_IMAGEM_DV);
+  farolregra_julgar(FAROL_S_CORES, &f, &v);
+  assert(v.regra->codigo == FAROL_C_FONTE_RECUSOU);
+  f.erro.classe = FC_NENHUMA;
+  f.erro.http = 0;
+  farolregra_julgar(FAROL_S_CORES, &f, &v);
+  assert(v.regra->codigo == FAROL_C_IMAGEM_DV);
+  assert(resolverregra_mascara(FAROL_S_CORES) ==
+         ((1U << RES_T_FONTE) | (1U << RES_T_TV)));
+  assert(resolverregra_mascara(RES_S_GERAL) == 0);
+
+  // CORRECAO-FAROL6B: addonsMotivo e falha recente de classe desconhecida
+  // (FC_NENHUMA + token seguro tipo "ums_outro") viram RES_FALHOU na tela —
+  // os dois diagnosticos que a ponte resolver -> FarolFatos perdia.
+  f = base_fatos(FP_WEBOS, 6);
+  f.addonsMotivo = 1;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.estado[RES_T_ADDONS] == RES_FALHOU);
+  f = base_fatos(FP_WEBOS, 6);
+  f.haFalha = 1;
+  farolerro_ler(FP_WEBOS, "realloc: out of memory", 0, &f.erro);
+  assert(f.erro.classe == FC_NENHUMA && f.erro.cod[0] != 0);
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.estado[RES_T_FONTE] == RES_FALHOU);
+#endif
 }
 
 static void testar_regressao_resolver(void) {
   int mask, sint, p;
 
-  // Varredura exaustiva (2^6 combinacoes dos fatos antigos x 7 sintomas x 5 plataformas = 2240 casos):
-  // o vetor estado[RES_T_N] de farolregra_julgar e identico ao de resolverregra_testar.
+  // Varredura exaustiva (2^7 combinacoes dos fatos antigos x 8 sintomas x 5
+  // plataformas = 5120 casos): o vetor estado[RES_T_N] de farolregra_julgar e
+  // identico ao de resolverregra_testar. O bit 6 e o addonsMotivo (antes a
+  // ponte perdia), haFalha varia de classe — inclusive FC_NENHUMA com token
+  // seguro — em vez de colar 403 em toda falha (o teste era cego), e o laco
+  // de sintomas cobre FAROL_S_CORES, o id proprio que nao colide com GERAL.
   for (p = FP_WEBOS; p <= FP_OUTRA; p++) {
-    for (sint = 0; sint <= RES_S_GERAL; sint++) {
-      for (mask = 0; mask < 64; mask++) {
+    for (sint = 0; sint <= FAROL_S_CORES; sint++) {
+      for (mask = 0; mask < 128; mask++) {
         ResolverFatos rf;
         ResolverResultado rr;
         FarolFatos ff = base_fatos((FarolPlat)p, 6);
@@ -886,16 +928,37 @@ static void testar_regressao_resolver(void) {
         rf.haFalha = (mask >> 3) & 1;
         if ((mask >> 4) & 1) strcpy(rf.tvMotivo, "recusou");
         if ((mask >> 5) & 1) strcpy(rf.audioMotivo, "sem som");
+        if ((mask >> 6) & 1) strcpy(rf.addonsMotivo, "lista vazia");
 
         ff.offline = rf.offline;
         ff.addonsQtd = rf.addonsQtd;
         ff.debridSemPlano = ((mask >> 2) & 1);
         if (rf.haFalha) {
+#ifdef RES_S_CORES
+          ff.haFalha = 1;
+          switch ((mask >> 1) & 3) {
+            case 0:
+              ff.erro.classe = FC_NENHUMA;
+              snprintf(ff.erro.cod, sizeof ff.erro.cod, "ums_outro");
+              break;
+            case 1:
+              ff.erro.classe = FC_REDE;
+              break;
+            default:
+              ff.erro.classe = FC_HTTP;
+              ff.erro.http = (mask & 2) ? 403 : 404;
+              break;
+          }
+#else
           ff.erro.classe = FC_HTTP;
           ff.erro.http = 403;
+#endif
         }
         ff.tvNegou = ((mask >> 4) & 1);
         ff.audioRecusado = ((mask >> 5) & 1);
+#ifdef RES_S_CORES
+        ff.addonsMotivo = ((mask >> 6) & 1);
+#endif
 
         resolverregra_testar(sint, &rf, &rr);
         farolregra_julgar(sint, &ff, &fv);

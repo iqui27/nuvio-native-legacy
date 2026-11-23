@@ -867,6 +867,7 @@
   T("Abrir título", "Otvoriť titul"),
   T("Abrir um título não baixa nada", "Otvorenie titulu nič nesťahuje"),
   T("Abrir álbum", "Otvoriť album"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Otvorím ju v externom prehrávači tejto TV — stlač OK."),
   T("Aceitando…", "Prijímam…"),
   T("Aceitar", "Prijať"),
   T("Aceitar pedido", "Prijať žiadosť"),

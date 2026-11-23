@@ -866,6 +866,7 @@
   T("Abrir título", "Ouvrir le titre"),
   T("Abrir um título não baixa nada", "Ouvrir un titre ne télécharge rien"),
   T("Abrir álbum", "Ouvrir l’album"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Je l'ouvre dans le lecteur externe de cette TV — appuie sur OK."),
   T("Aceitando…", "Acceptation…"),
   T("Aceitar", "Accepter"),
   T("Aceitar pedido", "Accepter la demande"),

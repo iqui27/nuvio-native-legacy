@@ -867,6 +867,7 @@
   T("Abrir título", "Öppna titel"),
   T("Abrir um título não baixa nada", "Att öppna en titel laddar inte ner något"),
   T("Abrir álbum", "Öppna album"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Jag öppnar den i tv:ns externa spelare — tryck OK."),
   T("Aceitando…", "Accepterar…"),
   T("Aceitar", "Godkänn"),
   T("Aceitar pedido", "Godkänn förfrågan"),

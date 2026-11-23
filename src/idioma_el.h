@@ -867,6 +867,7 @@
   T("Abrir título", "Άνοιγμα τίτλου"),
   T("Abrir um título não baixa nada", "Το άνοιγμα ενός τίτλου δεν κατεβάζει τίποτα"),
   T("Abrir álbum", "Άνοιγμα άλμπουμ"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Την ανοίγω στο εξωτερικό player της τηλεόρασης — πάτα OK."),
   T("Aceitando…", "Αποδοχή…"),
   T("Aceitar", "Αποδοχή"),
   T("Aceitar pedido", "Αποδοχή αιτήματος"),

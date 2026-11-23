@@ -867,6 +867,7 @@
   T("Abrir título", "Otvori naslov"),
   T("Abrir um título não baixa nada", "Otvaranje naslova ništa ne preuzima"),
   T("Abrir álbum", "Otvori album"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Otvaram je u vanjskom playeru ove TV — pritisni OK."),
   T("Aceitando…", "Prihvatam…"),
   T("Aceitar", "Prihvati"),
   T("Aceitar pedido", "Prihvati zahtjev"),

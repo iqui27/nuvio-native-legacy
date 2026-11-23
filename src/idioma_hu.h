@@ -867,6 +867,7 @@
   T("Abrir título", "Cím megnyitása"),
   T("Abrir um título não baixa nada", "A cím megnyitása nem tölt le semmit"),
   T("Abrir álbum", "Album megnyitása"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Megnyitom a TV külső lejátszójában — nyomj OK-t."),
   T("Aceitando…", "Elfogadás…"),
   T("Aceitar", "Elfogadás"),
   T("Aceitar pedido", "Kérés elfogadása"),

@@ -867,6 +867,7 @@
   T("Abrir título", "Buka judul"),
   T("Abrir um título não baixa nada", "Membuka judul tidak mengunduh apa pun"),
   T("Abrir álbum", "Buka album"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Saya buka di pemutar eksternal TV ini — tekan OK."),
   T("Aceitando…", "Menerima…"),
   T("Aceitar", "Terima"),
   T("Aceitar pedido", "Terima permintaan"),

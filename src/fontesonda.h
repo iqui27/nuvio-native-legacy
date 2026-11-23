@@ -21,6 +21,7 @@ int fontesonda_erro_conexao(const char *erroTexto);
 // 2001/2002 rede, 2004-2006 HTTP, 3xxx/4xxx formato/decoder.
 enum { FS_CAUSA_NENHUMA, FS_CAUSA_HTTP, FS_CAUSA_REDE, FS_CAUSA_FORMATO };
 int fontesonda_causa(const char *erroTexto, int *http);
+int fontesonda_host_debrid(const char *url);
 // One safe failure line: classified reason, HTTP status and host only.
 void fontesonda_recusa(const char *url, const char *erroTexto, int sincrona);
 
