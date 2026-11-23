@@ -1199,8 +1199,8 @@ int video_tpk_aviso_busca(void);   // video_tpk.c (mkvfix.h)
 // player ja deixa saber: servidor da fonte recusou (add-on/debrid), a conexao
 // nao chegou, ou formato/decoder (esse sim pode ser app ou TV). Nunca a URL.
 static void erroCausaDoPlayer(void) {
-  int http = 0, causa = fontesonda_causa(video_erro_texto(), &http);
   const char *err = video_erro_texto();
+  int http = 0, causa = fontesonda_causa(err, &http);
   if (xtream_url_limitada(video_url_atual()) && err &&
       (strstr(err, "403") || strstr(err, "458") || strstr(err, "509"))) {
     snprintf(erroTitulo, sizeof erroTitulo, "%s", i18n("Esta linha está em uso em outra tela"));
@@ -1223,6 +1223,10 @@ static void erroCausaDoPlayer(void) {
   }
 }
 void player_erro_fonte(void) {
+#ifdef NV_ANDROID
+  int erroFalhou = video_falhou();
+  int erroIdentificado = erroFalhou ? video_erro_identificado() : 0;
+#endif
 #ifdef NV_TPK
   // O fluxo DTS/TrueHD convertido nao fica tocando atras do cartao de erro (e da
   // tela inicial depois dele). So convertendo: o resto segue como antes.
@@ -1240,10 +1244,11 @@ void player_erro_fonte(void) {
   // FAROL: a causa classificada e o codigo normalizado; nunca a URL nem o titulo.
   // Ao anel so vai cod da lista fechada (farolcod_anel): um nome recortado de
   // texto livre, ex. dentro de uma URL, chegaria como token valido.
-  { int http = 0, causa = fontesonda_causa(video_erro_texto(), &http);
+  { const char *err = video_erro_texto();
+    int http = 0, causa = fontesonda_causa(err, &http);
     FarolErro fe; char cs[24];
     const Stream *st;
-    farolerro_ler(NV_FAROL_PLAT, video_erro_texto(),
+    farolerro_ler(NV_FAROL_PLAT, err,
                   video_registro_negado() ? -1027 : 0, &fe);
     st = stream_item(stream_atual());
     ultimoFarol = fe; temUltimoFarol = 1;
@@ -1254,7 +1259,7 @@ void player_erro_fonte(void) {
     farolErroRegistrar(&ultimoFarol, ultimoFarolDebrid,
                        st ? st->addonIdentidade : 0);
 #ifdef NV_ANDROID
-    if (video_falhou() && !video_erro_identificado())
+    if (erroFalhou && !erroIdentificado)
       ultimoFarolTentativa = 0;
 #endif
   }

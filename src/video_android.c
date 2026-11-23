@@ -428,6 +428,14 @@ unsigned video_live_pedido_ms(void) {
 }
 #define ANDROID_FURO_PRAZO_MS 3000u   // sem quadro (so audio): abre 3 s depois de tocar
 
+typedef struct {
+  unsigned geracao;
+  int identificado;
+  int cod;
+  int isVideo;
+  char txt[64];
+} AndroidErroSnapshot;
+
 // RECONEXAO (video_reconexao.h): igual ao .tpk. O evento 5 so ANOTA; a
 // decisao e o recarregar sao do video_bombear.
 static NvReconexao recon;
@@ -441,9 +449,10 @@ static int recarregarPausa = -1, recarregarPosMs;
 static char erroTxt[64];
 static unsigned reconErroGeracao;
 static int reconErroIdentificado;
+static AndroidErroSnapshot consErro;
 // Ordem de trava: travaRetomada (externa) -> travaErro (interna).
-// Identidade (geracao), codigo, tipo de decoder e texto sao publicados e
-// consumidos juntos sob a mesma trava; erros obsoletos sao descartados.
+// Pendente (reconErro*/erroTxt) e consumido (consErro) sao isolados sob a
+// mesma trava: um evento pendente nunca altera o snapshot ja consumido.
 static pthread_mutex_t travaErro = PTHREAD_MUTEX_INITIALIZER;
 
 static int erroPublicarSeAtualEx(unsigned geracao, int exigirGeracao, int identificado,
@@ -452,7 +461,7 @@ static int erroPublicarSeAtualEx(unsigned geracao, int exigirGeracao, int identi
   pthread_mutex_lock(&travaRetomada);
   if (ativo && sessao != 0 && (!exigirGeracao || (geracao != 0 && geracao == sessao))) {
     pthread_mutex_lock(&travaErro);
-    if (identificado || !(falhou && reconErroIdentificado && reconErroGeracao == sessao)) {
+    if (identificado || !(reconErroPend && reconErroIdentificado && reconErroGeracao == sessao)) {
       reconErroGeracao = sessao;
       reconErroIdentificado = identificado ? 1 : 0;
       reconErroCod = cod;
@@ -487,16 +496,20 @@ static int erroTomar(int *cod, char *txt, size_t txtTam) {
   pthread_mutex_lock(&travaErro);
   if (reconErroPend) {
     if (ativo && reconErroGeracao != 0 && reconErroGeracao == sessao) {
+      consErro.geracao = reconErroGeracao;
+      consErro.identificado = reconErroIdentificado;
+      consErro.cod = reconErroCod;
+      consErro.isVideo = reconErroVideo;
+      snprintf(consErro.txt, sizeof consErro.txt, "%s", erroTxt);
       *cod = reconErroCod;
       if (txt && txtTam) snprintf(txt, txtTam, "%s", erroTxt);
       pend = 1;
-    } else {
-      reconErroGeracao = 0;
-      reconErroIdentificado = 0;
-      reconErroCod = 0;
-      reconErroVideo = 0;
-      erroTxt[0] = 0;
     }
+    reconErroGeracao = 0;
+    reconErroIdentificado = 0;
+    reconErroCod = 0;
+    reconErroVideo = 0;
+    erroTxt[0] = 0;
     reconErroPend = 0;
   }
   pthread_mutex_unlock(&travaErro);
@@ -761,6 +774,7 @@ static unsigned novaRetomada(int estado, int novoAtivo, int *estavaAtivo) {
   pthread_mutex_lock(&travaErro);
   reconErroPend = 0; reconErroCod = 0; reconErroVideo = 0;
   reconErroGeracao = 0; reconErroIdentificado = 0; erroTxt[0] = 0;
+  memset(&consErro, 0, sizeof consErro);
   pthread_mutex_unlock(&travaErro);
   pthread_mutex_unlock(&travaRetomada);
   return geracao;
@@ -1228,7 +1242,8 @@ void video_bombear(void) {
     if (erroTomar(&cod, txt, sizeof txt)) {
       int antes = recon.tentativa;
       int rede = erroDeRede(cod);
-      if (!(xtream_url_limitada(urlAtual) && (cod == 403 || cod == 458 || cod == 509)) &&
+      if (!falhou &&
+          !(xtream_url_limitada(urlAtual) && (cod == 403 || cod == 458 || cod == 509)) &&
           reconPermitida && urlAtual[0] && (reconIniciou || recon.tentativa) &&
           nv_recon_erro(&recon, rede, SDL_GetTicks(),
                         eraRecarga ? recarregarPosMs / 1000.0 : pos)) {
@@ -1469,8 +1484,8 @@ const char *video_erro_texto(void) {
   if (!falhou) return "";
   pthread_mutex_lock(&travaRetomada);
   pthread_mutex_lock(&travaErro);
-  if (ativo && reconErroGeracao && reconErroGeracao == sessao)
-    snprintf(copia, sizeof copia, "%s", erroTxt);
+  if (falhou && ativo && consErro.geracao && consErro.geracao == sessao)
+    snprintf(copia, sizeof copia, "%s", consErro.txt);
   else
     copia[0] = 0;
   pthread_mutex_unlock(&travaErro);
@@ -1482,8 +1497,8 @@ int video_erro_decoder_codigo(void) {
   if (!falhou) return 0;
   pthread_mutex_lock(&travaRetomada);
   pthread_mutex_lock(&travaErro);
-  if (ativo && reconErroGeracao && reconErroGeracao == sessao && reconErroVideo)
-    cod = reconErroCod;
+  if (falhou && ativo && consErro.geracao && consErro.geracao == sessao && consErro.isVideo)
+    cod = consErro.cod;
   pthread_mutex_unlock(&travaErro);
   pthread_mutex_unlock(&travaRetomada);
   return cod;
@@ -1493,7 +1508,7 @@ int video_erro_identificado(void) {
   if (!falhou) return 0;
   pthread_mutex_lock(&travaRetomada);
   pthread_mutex_lock(&travaErro);
-  id = ativo && reconErroGeracao && reconErroGeracao == sessao && reconErroIdentificado;
+  id = falhou && ativo && consErro.geracao && consErro.geracao == sessao && consErro.identificado;
   pthread_mutex_unlock(&travaErro);
   pthread_mutex_unlock(&travaRetomada);
   return id;

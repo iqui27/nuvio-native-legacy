@@ -408,6 +408,57 @@ static void *fio_jni_transicao(void *arg) {
   return NULL;
 }
 
+typedef struct {
+  unsigned gen;
+  int legado;
+  int cod;
+  int tipo;
+  const char *esperadoTok;
+  const char *esperadoTxt;
+  int esperadoDec;
+  int esperadoId;
+  int disparado;
+} IntercalarCtx;
+
+static IntercalarCtx g_intercalar;
+
+void __real_farol_ev(FarolMod mod, int ev, int sev, int32_t a, int32_t b,
+                     const char *tok);
+
+static void *fio_jni_intercalar(void *arg) {
+  IntercalarCtx *c = arg;
+  if (c->legado)
+    Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_ERRO, c->cod, c->tipo);
+  else
+    Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)c->gen, c->cod, c->tipo);
+  return NULL;
+}
+
+void __wrap_farol_ev(FarolMod mod, int ev, int sev, int32_t a, int32_t b,
+                     const char *tok) {
+  if (ev == FE_ERRO_FONTE && g_intercalar.esperadoTok) {
+    IntercalarCtx c = g_intercalar;
+    pthread_t th;
+    g_intercalar.esperadoTok = NULL;
+    g_intercalar.disparado = 1;
+    assert(tok && !strcmp(tok, c.esperadoTok));
+    assert(video_erro_identificado() == c.esperadoId);
+    assert(pthread_create(&th, NULL, fio_jni_intercalar, &c) == 0);
+    assert(pthread_join(th, NULL) == 0);
+    // O snapshot consumido deve permanecer imutavel durante o diagnostico/autorizacao;
+    // o evento novo pendente nao pode ser classificado antes de seu proprio consumo.
+    if (c.gen == video_android_sessao() || c.legado)
+      assert(erroPendente() == 1);
+    else
+      assert(erroPendente() == 0);
+    assert(video_falhou() == 1);
+    assert(video_erro_identificado() == c.esperadoId);
+    assert(!strcmp(video_erro_texto(), c.esperadoTxt));
+    assert(video_erro_decoder_codigo() == c.esperadoDec);
+  }
+  __real_farol_ev(mod, ev, sev, a, b, tok);
+}
+
 int main(void) {
   jni.NewGlobalRef = jni_global;
   jni.GetStaticMethodID = jni_metodo;
@@ -573,6 +624,223 @@ int main(void) {
   }
   atomic_store_explicit(&tctx.parar, 1, memory_order_release);
   pthread_join(thTrans, NULL);
+
+  // 7) FAROL6-r6: intercalamento deterministico legado (EV_ERRO 4003 consumido)
+  // seguido de nativeErro(genB, 2004, 0) durante FE_ERRO_FONTE antes da leitura de
+  // identidade. O erro consumido preserva diagnostico m3_4003 e recusa player externo;
+  // o erro 2004 pendente retem codigo/tipo/geracao/proveniencia e eh consumido depois.
+  zerar_farol();
+  abrir_titulo("tt8000001", "movie", "A intercalado", 0, 0,
+               "https://example.invalid/a_r6.mkv", &genA);
+  abrir_titulo("tt8000002", "movie", "B intercalado", 0, 0,
+               "https://example.invalid/b_r6.mkv", &genB);
+  assert(genA != genB);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_ERRO, 4003, 2);
+  video_bombear();
+  assert(video_falhou() && !video_erro_identificado());
+  assert(!strcmp(video_erro_texto(), "4003 player error:2"));
+  assert(video_erro_decoder_codigo() == 4003);
+  g_intercalar = (IntercalarCtx){
+    .gen = genB, .legado = 0, .cod = 2004, .tipo = 0,
+    .esperadoTok = "m3_4003", .esperadoTxt = "4003 player error:2",
+    .esperadoDec = 4003, .esperadoId = 0, .disparado = 0
+  };
+  player_erro_fonte();
+  assert(g_intercalar.disparado == 1 && g_intercalar.esperadoTok == NULL);
+  {
+    FarolErro fe;
+    assert(player_ultimo_erro_farol(&fe, NULL));
+    assert(fe.classe == FC_FORMATO);
+    assert(!strcmp(fe.cod, "m3_4003"));
+  }
+  assert(player_ultimo_erro_tentativa() == 0);
+  assert(player_externo_disponivel() == 0);
+  aberto = 0;
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO);
+  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  apertar_ok_app();
+  assert(c_androidAbrirN == 0);
+  assert(c_envioChamadas >= 1);
+  assert(player_abrir_externo() == 0);
+  assert(c_androidAbrirN == 0);
+
+  // Prova de consumo proprio do segundo evento (2004 pendente de genB):
+  assert(erroPendente() == 1);
+  video_bombear();
+  assert(erroPendente() == 0);
+  assert(video_falhou() == 1);
+  assert(!strcmp(video_erro_texto(), "2004 player error:0"));
+  assert(video_erro_decoder_codigo() == 0);
+  assert(video_erro_identificado() == 1);
+  player_erro_fonte();
+  {
+    FarolErro fe;
+    assert(player_ultimo_erro_farol(&fe, NULL));
+    assert(fe.classe == FC_HTTP);
+    assert(!strcmp(fe.cod, "m3_2004"));
+  }
+  assert(player_ultimo_erro_tentativa() != 0);
+  assert(player_externo_disponivel() == 1);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_FONTE_RECUSOU);
+  assert(resolver_teste_prim() != FAROL_A_PLAYER_EXTERNO);
+  apertar_ok_app();
+  assert(c_androidAbrirN == 0);
+
+  // 8a) Intercalamento inverso (controle positivo): falha identificada legítima
+  // nativeErro(genB, 4003, 2) consumida nao eh corrompida por nativeErro(genB, 2004, 0)
+  // pendente durante FE_ERRO_FONTE; despacho abre B e 2004 eh consumido depois.
+  zerar_farol();
+  abrir_titulo("tt8000003", "movie", "A inverso", 0, 0,
+               "https://example.invalid/a_inv.mkv", &genA);
+  abrir_titulo("tt8000004", "movie", "B inverso", 0, 0,
+               "https://example.invalid/b_inv.mkv", &genB);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)genB, 4003, 2);
+  video_bombear();
+  assert(video_falhou() && video_erro_identificado() == 1);
+  g_intercalar = (IntercalarCtx){
+    .gen = genB, .legado = 0, .cod = 2004, .tipo = 0,
+    .esperadoTok = "m3_4003", .esperadoTxt = "4003 player error:2",
+    .esperadoDec = 4003, .esperadoId = 1, .disparado = 0
+  };
+  player_erro_fonte();
+  assert(g_intercalar.disparado == 1);
+  {
+    FarolErro fe;
+    assert(player_ultimo_erro_farol(&fe, NULL));
+    assert(fe.classe == FC_FORMATO && !strcmp(fe.cod, "m3_4003"));
+  }
+  assert(player_ultimo_erro_tentativa() != 0);
+  assert(player_externo_disponivel() == 1);
+  aberto = 0;
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO);
+  assert(resolver_teste_prim() == FAROL_A_PLAYER_EXTERNO);
+  apertar_ok_app();
+  assert(c_androidAbrirN == 1);
+  assert(!strcmp(c_androidAbrirUrl, "https://example.invalid/b_inv.mkv"));
+  assert(!strcmp(c_androidAbrirTit, "B inverso"));
+  assert(erroPendente() == 1);
+  video_bombear();
+  assert(erroPendente() == 0);
+  assert(!strcmp(video_erro_texto(), "2004 player error:0"));
+  assert(video_erro_decoder_codigo() == 0);
+  assert(video_erro_identificado() == 1);
+  player_erro_fonte();
+  {
+    FarolErro fe;
+    assert(player_ultimo_erro_farol(&fe, NULL));
+    assert(fe.classe == FC_HTTP && !strcmp(fe.cod, "m3_2004"));
+  }
+
+  // 8b) Intercalamento inverso com evento legado posterior: falha identificada
+  // nativeErro(genB, 4003, 2) consumida nao eh rebaixada por EV_ERRO(2004, 0)
+  // pendente; EV_ERRO mantem proveniencia=0 ao ser consumido na chamada seguinte.
+  zerar_farol();
+  abrir_titulo("tt8000005", "movie", "A leg inv", 0, 0,
+               "https://example.invalid/a_linv.mkv", &genA);
+  abrir_titulo("tt8000006", "movie", "B leg inv", 0, 0,
+               "https://example.invalid/b_linv.mkv", &genB);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)genB, 4003, 2);
+  video_bombear();
+  g_intercalar = (IntercalarCtx){
+    .gen = 0, .legado = 1, .cod = 2004, .tipo = 0,
+    .esperadoTok = "m3_4003", .esperadoTxt = "4003 player error:2",
+    .esperadoDec = 4003, .esperadoId = 1, .disparado = 0
+  };
+  player_erro_fonte();
+  assert(g_intercalar.disparado == 1);
+  assert(player_ultimo_erro_tentativa() != 0);
+  assert(player_externo_disponivel() == 1);
+  aberto = 0;
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_prim() == FAROL_A_PLAYER_EXTERNO);
+  apertar_ok_app();
+  assert(c_androidAbrirN == 1);
+  assert(!strcmp(c_androidAbrirUrl, "https://example.invalid/b_linv.mkv"));
+  assert(erroPendente() == 1);
+  video_bombear();
+  assert(erroPendente() == 0);
+  assert(!strcmp(video_erro_texto(), "2004 player error:0"));
+  assert(video_erro_decoder_codigo() == 0);
+  assert(video_erro_identificado() == 0);
+  player_erro_fonte();
+  assert(player_ultimo_erro_tentativa() == 0);
+
+  // 8c) Inverso por tipo de erro: 2004 (HTTP) identificado consumido nao pode ser
+  // sobrescrito por nativeErro(genB, 4003, 2) pendente durante FE_ERRO_FONTE para
+  // autorizar player externo; na rodada seguinte 4003 eh consumido e despacha B.
+  zerar_farol();
+  abrir_titulo("tt8000007", "movie", "A http", 0, 0,
+               "https://example.invalid/a_http.mkv", &genA);
+  abrir_titulo("tt8000008", "movie", "B http", 0, 0,
+               "https://example.invalid/b_http.mkv", &genB);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)genB, 2004, 0);
+  video_bombear();
+  g_intercalar = (IntercalarCtx){
+    .gen = genB, .legado = 0, .cod = 4003, .tipo = 2,
+    .esperadoTok = "m3_2004", .esperadoTxt = "2004 player error:0",
+    .esperadoDec = 0, .esperadoId = 1, .disparado = 0
+  };
+  player_erro_fonte();
+  assert(g_intercalar.disparado == 1);
+  {
+    FarolErro fe;
+    assert(player_ultimo_erro_farol(&fe, NULL));
+    assert(fe.classe == FC_HTTP && !strcmp(fe.cod, "m3_2004"));
+  }
+  assert(player_externo_disponivel() == 1);
+  aberto = 0;
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_FONTE_RECUSOU);
+  assert(resolver_teste_prim() != FAROL_A_PLAYER_EXTERNO);
+  apertar_ok_app();
+  assert(c_androidAbrirN == 0);
+  // Agora consome o 4003 pendente com codigo/tipo/geracao/proveniencia intactos:
+  assert(erroPendente() == 1);
+  video_bombear();
+  assert(erroPendente() == 0);
+  assert(!strcmp(video_erro_texto(), "4003 player error:2"));
+  assert(video_erro_decoder_codigo() == 4003);
+  assert(video_erro_identificado() == 1);
+  player_erro_fonte();
+  assert(player_externo_disponivel() == 1);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO_REPETE);
+  assert(resolver_teste_prim() == FAROL_A_PLAYER_EXTERNO);
+  apertar_ok_app();
+  assert(c_androidAbrirN == 1);
+  assert(!strcmp(c_androidAbrirUrl, "https://example.invalid/b_http.mkv"));
+
+  // 8d) Pendente identificado nao eh rebaixado por EV_ERRO legado antes do consumo,
+  // e erro de geracao obsoleta (genA) intercalado durante FE_ERRO_FONTE eh descartado.
+  zerar_farol();
+  abrir_titulo("tt8000009", "movie", "A obs", 0, 0,
+               "https://example.invalid/a_obs.mkv", &genA);
+  abrir_titulo("tt8000010", "movie", "B obs", 0, 0,
+               "https://example.invalid/b_obs.mkv", &genB);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)genB, 4003, 2);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_ERRO, 2004, 0);
+  video_bombear();
+  assert(video_falhou() && video_erro_identificado() == 1);
+  assert(!strcmp(video_erro_texto(), "4003 player error:2"));
+  assert(video_erro_decoder_codigo() == 4003);
+  g_intercalar = (IntercalarCtx){
+    .gen = genA, .legado = 0, .cod = 2004, .tipo = 0,
+    .esperadoTok = "m3_4003", .esperadoTxt = "4003 player error:2",
+    .esperadoDec = 4003, .esperadoId = 1, .disparado = 0
+  };
+  player_erro_fonte();
+  assert(g_intercalar.disparado == 1);
+  assert(erroPendente() == 0);
+  assert(player_externo_disponivel() == 1);
 
   puts("farol_android_erro: tudo ok");
   return 0;

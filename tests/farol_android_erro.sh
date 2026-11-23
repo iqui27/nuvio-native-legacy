@@ -83,6 +83,7 @@ PY
 "$ccbin" ${flags[@]+"${flags[@]}"} -DRESOLVER_TESTE -DNV_ANDROID -DNV_NDK_JNI -DNV_SHOT_HOOKS \
   -Wall -Wextra -O1 -g -Wno-deprecated-declarations -Wno-macro-redefined \
   -I"$work/include" -I"$work" -Isrc \
+  -Wl,--wrap=farol_ev \
   tests/farol_android_erro.c src/resolver.c src/resolverregra.c src/farolregra.c \
   src/farolerro.c src/farolanel.c src/fontesonda.c src/extplayer.c \
   src/addonguia.c src/addonmodo.c src/video_modo.c src/capmkv.c src/mkv.c tests/capmkv_stub.c \
