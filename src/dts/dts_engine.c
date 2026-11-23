@@ -2101,9 +2101,12 @@ static int configure_audio(DtsEngine *e,int core,double start) {
 }
 /* External audio: which tracks of the other file the TV takes as they are.
  * The native Load accepts AC-3/E-AC-3 (any layout up to 7.1) and raw stereo
- * 48 kHz AAC-LC, the same streams the converter itself produces. */
-static int ext_usable(const AVCodecParameters *p) {
+ * 48 kHz AAC-LC, the same streams the converter itself produces. DTS too when
+ * DTS conversion is off and the TV declares DTS (dts_off 2,
+ * tv.model.edidType): the whole stream, as on the Dolby Vision path. */
+static int ext_usable(const DtsEngine *e,const AVCodecParameters *p) {
   if(p->codec_type!=AVMEDIA_TYPE_AUDIO) return 0;
+  if(p->codec_id==AV_CODEC_ID_DTS) return e->dts_off==2 && p->ch_layout.nb_channels<=8;
   if(p->codec_id==AV_CODEC_ID_AC3 || p->codec_id==AV_CODEC_ID_EAC3)
     return p->ch_layout.nb_channels<=8;
   return p->codec_id==AV_CODEC_ID_AAC && p->ch_layout.nb_channels==2 && p->sample_rate==48000 &&
@@ -2123,7 +2126,7 @@ static int ext_convertible(const DtsEngine *e,const AVCodecParameters *p) {
 }
 /* 2 = passes through, 1 = needs conversion, 0 = unusable. */
 static int ext_rank(const DtsEngine *e,const AVCodecParameters *p) {
-  return ext_usable(p)?2:ext_convertible(e,p)?1:0;
+  return ext_usable(e,p)?2:ext_convertible(e,p)?1:0;
 }
 /* The audio tracks of a version, for the hold-OK menu: opens only its
  * container header (a few MiB) on a throwaway engine. */
@@ -2402,7 +2405,14 @@ static int configure_external(DtsEngine *e,double start) {
   /* Following another cut switches the encoder to this file's audio in the
    * scenes the other lacks: the conversion path. */
   int follow=e->fw_on && abs(e->ext_cut_s)>10;
-  if(!ext_usable(ap) || ext_k(e)!=1.0 || follow) {
+  if(!ext_usable(e,ap) || ext_k(e)!=1.0 || follow) {
+    /* A DTS track the TV would take as it is still needs the conversion for
+     * another speed or another cut (nothing else stretches or splices it). */
+    if(ap->codec_id==AV_CODEC_ID_DTS && e->dts_off==2) {
+      printf("[ext-audio] DTS from the other version: %s, converted although DTS conversion is off\n",
+             follow?"following another cut":"another speed");
+      fflush(stdout);
+    }
     if(ext_configure_conv(e,as)<0) return -1;
     if(ext_k(e)!=1.0) { printf("[ext-audio] other version's speed corrected: ratio %.6f\n",ext_k(e)); fflush(stdout); }
     e->info.channels=e->enc->ch_layout.nb_channels; e->info.sample_rate=48000;
@@ -2414,6 +2424,11 @@ static int configure_external(DtsEngine *e,double start) {
     e->info.channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:(ap->codec_id==AV_CODEC_ID_AAC?2:6);
     e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
     snprintf(e->info.audio_codec,sizeof e->info.audio_codec,"%s",avcodec_get_name(ap->codec_id));
+    if(ap->codec_id==AV_CODEC_ID_DTS) {
+      printf("[ext-audio] DTS off, the TV decodes DTS: the other version's DTS goes to the TV as it is ch=%d rate=%d profile=%d\n",
+             e->info.channels,e->info.sample_rate,ap->profile);
+      fflush(stdout);
+    }
   }
   /* Every donor audio track this TV can play or convert, for the audio menu
    * (owner, 07/11: a WEB-DL with a dub and a voice-over picks either). */

@@ -339,6 +339,21 @@ int main(int argc, char **argv) {
   assert(dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0);
   assert(strstr(dts_engine_error(e), "External audio: no audio track"));
   dts_engine_destroy(e);
+  /* DTS conversion off on a TV that declares DTS (dts_off 2): the DTS donor
+   * goes to the TV as it is, no decoder or encoder; seek still applies. */
+  dts_engine_set_dts_off(2);
+  e = dts_engine_create();
+  dts_engine_external_audio(e, dts_only, HEADERS, "", 0);
+  if (dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
+  assert(!strcmp(dts_engine_info(e)->audio_codec, "dts"));
+  assert(dts_engine_info(e)->channels == 2 && dts_engine_info(e)->sample_rate == 48000);
+  r = play(e, 250000000LL, 0);
+  assert(r.video == 100 && r.audio > 100 && r.last_audio > 3800000000LL);
+  assert(dts_engine_seek(e, 2.0) == 0);
+  r = play(e, 250000000LL, 0);
+  assert(r.first_audio >= 1950000000LL && r.first_audio < 2100000000LL);
+  printf("DTS donor with DTS off, the TV decodes DTS: passed through, %d audio packets\n", r.audio);
+  dts_engine_destroy(e);
   dts_engine_set_dts_off(0);
   checkBytes = 1;
 

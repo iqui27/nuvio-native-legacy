@@ -684,7 +684,8 @@ static void extMontar(int forcar) {
   if (!o.pref1[0]) o.pref1 = idioma_iso(ajustes_idioma());
   o.pref2 = ling_audio2();
   o.ocultarForaCache = ajustes_audio_externo_ocultar_fora_cache();
-  o.semDts = ajustes_dts_desligado();
+  // DTS conversion off: another version's DTS only on a TV that decodes it.
+  o.semDts = ajustes_dts_desligado() && !video_tv_dts();
   o.ocultarCopias = ajustes_audio_externo_ocultar_copias();
   o.ordemAddon = ajustes_audio_externo_ordem_addon();
   o.casa = ling_casa;
@@ -1875,8 +1876,10 @@ static void extDetalhes(int indice, const char *idioma, char *sub, size_t tam, i
   if (!en) return;
   if (st && stream_outro_corte(st, stream_item(stream_atual()))) extJuntar(sub, tam, i18n("Another cut"));
   audioext_codec_texto(en->codec, en->canais, codec, sizeof codec);
-  // DTS, TrueHD and the others reach the TV as AC-3 5.1 or AAC stereo.
-  if (audioext_converte(en->codec)) {
+  // DTS, TrueHD and the others reach the TV as AC-3 5.1 or AAC stereo; DTS
+  // as it is when conversion is off and the TV decodes DTS.
+  if (audioext_converte(en->codec) &&
+      !(en->codec == AEXT_DTS && ajustes_dts_desligado() && video_tv_dts())) {
     size_t u = strlen(codec);
     snprintf(codec + u, sizeof codec - u, "%s%s", u ? " " : "", ajustes_dts_ac3() ? "\xe2\x86\x92 AC-3" : "\xe2\x86\x92 AAC");
   }

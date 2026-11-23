@@ -744,6 +744,7 @@ static int edidEtapa;                 /* 0 not asked, 1 LS2 asked, 2 libhelpers 
 static int edidTentarHelpers;         /* LS2 gave no answer: try libhelpers on the main thread */
 static int edidAplicado = -1;         /* main thread: last value applied to dtsDesligado */
 static int dtsTvDts(void) { return __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) == 1; }
+int video_tv_dts(void) { return dtsTvDts(); }
 static int dtsHabilitado, dtsTentou, dtsRevisao, dtsLoadRevisao, dtsFalhaLogada;
 #ifdef NV_MP4_BD_TEST
 static int mp4TestEnabled,mp4TestPending,mp4TestStarted;
@@ -4947,3 +4948,6 @@ int video_legenda_nativa(char *d, int t) {
 #endif
 
 #endif  /* !__EMSCRIPTEN__ */
+#if defined(__EMSCRIPTEN__) || defined(__APPLE__) || defined(NV_LINUX_DESKTOP) || defined(NV_TPK) || defined(NV_ANDROID)
+int video_tv_dts(void) { return 0; }   // only the webOS branch asks the TV about DTS
+#endif
