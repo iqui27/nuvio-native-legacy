@@ -348,7 +348,7 @@ typedef struct Sessao {
   DtsTrack externalHint;
   char *externalUrl, *externalHeaders;
   char externalLangs[64];
-  int lastSegment;                // TEMP-NETLOG: last segment sent in full
+  int lastSegment;                // last segment sent in full (pacing)
   struct { int seg; int64_t bytes; } sent[64];   // pacing: sizes of the last segments sent
 #endif
   volatile int cancelar;
@@ -678,8 +678,6 @@ static int saidaEscrever(void *u, const unsigned char *d, int n) {
 #define HLS_AHEAD_S 20.0
 #define HLS_AHEAD_MIN_MB 100.0
 static atomic_llong hlsPosMs = -1;     /* playback position, -1 unknown (rebuffer) */
-static double hlsPaceMB[3];            /* for the log: MB sent full / 1.25x / 1.0x */
-static unsigned hlsPaceSegs, hlsPaceSleptMs;
 void dts_hls_webos_position(double s) { atomic_store(&hlsPosMs, s >= 0 ? (long long)llround(s * 1000.0) : -1); }
 /* Bytes of the segments sent after the one at `pos`: what the player holds. */
 static double hlsBytesAhead(Sessao *s, double pos) {
@@ -707,7 +705,7 @@ static double hlsContentRate(Sessao *s) {
 static void hlsCompasso(Saida *o, int n) {
   Sessao *s = o->s;
   long long p = atomic_load(&hlsPosMs);
-  int last = s->lastSegment, mode = 0;
+  int last = s->lastSegment;
   double f = 0, rate = 0;
   if (p >= 0 && last >= 0 && o->seg > last && o->seg <= last + 2) {   /* in order, playing */
     double pos = p / 1000.0;
@@ -715,10 +713,9 @@ static void hlsCompasso(Saida *o, int n) {
     double mb = hlsBytesAhead(s, pos) / 1048576.0;
     rate = hlsContentRate(s);
     if (rate <= 0 || ahead < HLS_FILL_S || mb < HLS_FILL_MB || ahead > 600) f = 0;
-    else if (ahead < HLS_AHEAD_S || mb < HLS_AHEAD_MIN_MB) { f = 1.25; mode = 1; }
-    else { f = 1.0; mode = 2; }
+    else if (ahead < HLS_AHEAD_S || mb < HLS_AHEAD_MIN_MB) f = 1.25;
+    else f = 1.0;
   }
-  hlsPaceMB[mode] += n / 1048576.0;
   if (f <= 0) { o->paceT0 = 0; return; }
   uint64_t now = agoraMs();
   if (!o->paceT0 || o->paceF != f) { o->paceT0 = now; o->paceB = 0; o->paceF = f; }
@@ -730,10 +727,9 @@ static void hlsCompasso(Saida *o, int n) {
     double w = due - el;
     if (w > 200) w = 200;                                /* re-check stop/cancel often */
     usleep((useconds_t)(w * 1000));
-    hlsPaceSleptMs += (unsigned)w;
   }
 }
-/* End of the last segment sent in full, for the log: what the player holds. */
+/* End of the last segment sent in full: what the player holds. */
 double dts_hls_webos_served_until(void) {
   double v = -1;
   pthread_mutex_lock(&G);
@@ -757,7 +753,7 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
     snprintf(cab, sizeof cab, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nCache-Control: no-cache\r\nConnection: %s\r\n\r\n",
              tipo, manter ? "keep-alive" : "close");
     enviarTudo(sock, cab, strlen(cab), &s->cancelar, NULL);
-    if (!s->webosMp4) {
+    if (!s->webos) {
       printf("[dts-tpk] #%u <- 200 HEAD (sem corpo)\n", nr);
       fflush(stdout);
     }
@@ -808,29 +804,14 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
   pthread_mutex_unlock(&s->m);
   soltarGerador(s, ger);
 #ifdef NV_WEBOS_HLS_TEST
-  /* TEMP-NETLOG: restarts and early closes are what can make HLS read the source twice:
-   * a restart seeks back to the segment's keyframe. */
-  if (s->webos && seg >= 0 && (ok || rr == -2) && (st.fresh || !ok)) {
-    char after[24] = "first in this session";
-    if (s->lastSegment >= 0) snprintf(after, sizeof after, "after seg %d", s->lastSegment);
-    printf("[webos-hls] seg %d %s, %s: %.1f MB sent in %u ms\n", seg,
-           ok ? "restarted from its keyframe" : "closed by the player", after,
-           enviados / 1e6, (unsigned)(agoraMs() - t0));
-    fflush(stdout);
-  }
   if (s->webos && seg >= 0 && ok) {
     pthread_mutex_lock(&s->m);
     s->sent[seg & 63].seg = seg; s->sent[seg & 63].bytes = enviados;
     pthread_mutex_unlock(&s->m);
     s->lastSegment = seg;
-    if (++hlsPaceSegs % 10 == 0) {
-      printf("[webos-hls] TEMP-PACE: %u segments; MB sent at full speed %.0f, at 1.25x %.0f, at 1.0x %.0f; slowed %.1f s in all\n",
-             hlsPaceSegs, hlsPaceMB[0], hlsPaceMB[1], hlsPaceMB[2], hlsPaceSleptMs / 1000.0);
-      fflush(stdout);
-    }
   }
 #endif
-  if (s->webosMp4 && (ok || rr == -2)) return ok && manter;
+  if (s->webos && (ok || rr == -2)) return ok && manter;
   uint64_t fim = agoraMs();
   char stTxt[8];                           // "-": nada saiu (o player fechou antes)
   if (status) snprintf(stTxt, sizeof stTxt, "%d", status); else snprintf(stTxt, sizeof stTxt, "-");
@@ -923,7 +904,7 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
   pthread_mutex_unlock(&s->m);
   // webOS MPEG-TS: one connection per request, as Stremio Origin serves it.
   if (s->webos && !s->webosMp4) manter = 0;
-  if (!s->webosMp4) {   // TEMP-NETLOG: webOS TS requests are logged like the Samsung ones
+  if (!s->webos) {
     printf("[dts-tpk] #%u -> %s %s%s%s Range=%s Connection=%s (+%u ms desde a abertura)%s%s\n", nr, pd->metodo, resto,
            pd->query[0] ? "?" : "", pd->query, pd->range[0] ? pd->range : "-", pd->conexao[0] ? pd->conexao : "-",
            (unsigned)(agoraMs() - s->criadaMs), logAgente ? " UA=" : "", logAgente ? pd->agente : "");
@@ -950,7 +931,7 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
                    "Content-Length: %zu\r\nCache-Control: no-cache\r\nConnection: %s\r\n\r\n", strlen(b), manter ? "keep-alive" : "close");
           enviarTudo(sock, cab, strlen(cab), NULL, NULL);
         } else responderSimples(sock, 200, "OK", "application/vnd.apple.mpegurl", b, manter);
-        if (!s->webosMp4) {
+        if (!s->webos) {
           if (mestre) { const char *v = strstr(b, "BANDWIDTH"); v = v ? v : "";
                         printf("[dts-tpk] #%u <- 200 playlist mestre: %.*s\n", nr, (int)strcspn(v, "\n"), v); }
           else printf("[dts-tpk] #%u <- 200 playlist: %d segmento(s), %zu B\n", nr, dts_remux_info(s->rx)->n_segments, strlen(b));

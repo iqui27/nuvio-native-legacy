@@ -19,14 +19,6 @@
 
 /* Jobs nao dependem de TLS nem dos controles antigos por fio. O grupo e
  * retido pelos jobs, e a requisicao retem seu job ate terminar. */
-#ifdef NV_WEBOS_HLS_TEST   /* TEMP-NETLOG: media bytes for the HLS On/Off comparison */
-static uint64_t redeBytesMidia;
-uint64_t rede_bytes_midia(void) { return __atomic_load_n(&redeBytesMidia, __ATOMIC_RELAXED); }
-#define REDE_CONTAR_MIDIA(n) __atomic_add_fetch(&redeBytesMidia, (uint64_t)(n), __ATOMIC_RELAXED)
-#else
-#define REDE_CONTAR_MIDIA(n) ((void)0)
-#endif
-
 struct RedeGrupo {
   pthread_mutex_t trava;
   unsigned refs;
@@ -3319,7 +3311,6 @@ static size_t dtsRangeBody(void *data, size_t size, size_t count, void *user) {
   }
   if (n) memcpy(r->body.p + r->body.n, data, n);
   r->body.n += n;
-  REDE_CONTAR_MIDIA(n);
   if (r->body.p) r->body.p[r->body.n] = 0;
   return n;
 }
@@ -3574,7 +3565,6 @@ static size_t dtsFluxoBody(void *data, size_t size, size_t count, void *user) {
      * body still flows (a seek by position in a file without an index). */
     if (f->total && f->r.total >= 0) *f->total = f->r.total;
   }
-  REDE_CONTAR_MIDIA(n);
   if (!f->sink(f->opaque, data, n)) { f->stopped = 1; return 0; }
   f->got += (int64_t)n;
   f->lastByteMs = fluxoAgoraMs();

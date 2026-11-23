@@ -155,11 +155,6 @@ char *rede_baixar_trecho64_cab(const char *url, const char *headers,
                               int64_t start, int64_t end, long *size,
                               int64_t *total, int *status,
                               volatile int *cancelled);
-#ifdef NV_WEBOS_HLS_TEST
-/* TEMP-NETLOG: body bytes received by the media range and stream downloads above, from
- * every reader (native RAM buffer, converter, HLS, other source, probes). */
-uint64_t rede_bytes_midia(void);
-#endif
 
 typedef struct {
   int status;          // 0 = transporte sem resposta

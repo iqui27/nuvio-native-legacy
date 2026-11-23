@@ -829,123 +829,6 @@ static void hlsParar(void) {
   atomic_store(&hlsAudioRequest, 0);
 }
 
-/* TEMP-NETLOG: temporary network comparison for HLS On and Off.
- * "app": media bytes of the playback readers (rede_bytes_midia: native RAM
- * buffer, converter, HLS, other source, probes). "TV": every byte the TV's
- * network interfaces received (/proc/net/dev, loopback excluded), which is
- * what the router sees, including the TV player and the app's other requests.
- * Sampled every 10 s, with the highest 1 s rate of the TV interface in that
- * window, and a summary when the video closes. MB and Mbps are decimal. */
-#define NET_LOG_INTERVAL_MS 10000u
-static struct {
-  int active, ifaceOk;
-  Uint32 startMs, sampleMs, pumpMs, secMs;
-  uint64_t startBytes, sampleBytes;
-  uint64_t ifStart, ifSample, ifSec;
-  double playedS, peakMbps, ifPeak10s, ifPeak1s, ifPeakAll1s;
-  const char *route;
-} netLog;
-
-static int netIfaceRx(uint64_t *out) {
-  FILE *f = fopen("/proc/net/dev", "r");
-  char line[512];
-  uint64_t total = 0;
-  int found = 0;
-  if (!f) return 0;
-  while (fgets(line, sizeof line, f)) {
-    char *colon = strchr(line, ':'), *name = line;
-    unsigned long long rx;
-    if (!colon) continue;
-    *colon = 0;
-    while (*name == ' ') name++;
-    if (!strcmp(name, "lo")) continue;
-    if (sscanf(colon + 1, "%llu", &rx) == 1) { total += rx; found = 1; }
-  }
-  fclose(f);
-  *out = total;
-  return found;
-}
-
-static const char *netRoute(void) {
-  if (hlsAtivo() || hls.pending) return "HLS";
-  if (dtsSessao) return "converter";
-  DtsBufferInfo b;
-  if (moviebuffer_info(&b) > 0) return "native+app-buffer";
-  return "native-direct (app not counted)";
-}
-
-static void netLogEnd(const char *why) {
-  if (!netLog.active) return;
-  Uint32 now = SDL_GetTicks();
-  double wall = (now - netLog.startMs) / 1000.0;
-  double mb = (double)(rede_bytes_midia() - netLog.startBytes) / 1e6;
-  uint64_t ifNow = 0;
-  double ifMb = netLog.ifaceOk && netIfaceRx(&ifNow) ? (double)(ifNow - netLog.ifStart) / 1e6 : -1.0;
-  printf("[net] end (%s): route=%s, %.0f s, played %.0f s; app %.1f MB (avg %.1f Mbps, per played second %.1f Mbps, "
-         "peak 10 s %.1f Mbps); TV %.1f MB (avg %.1f Mbps, per played second %.1f Mbps, peak 10 s %.1f Mbps, peak 1 s %.1f Mbps)\n",
-         why, netLog.route ? netLog.route : "-", wall, netLog.playedS,
-         mb, wall > 0 ? mb * 8.0 / wall : 0.0, netLog.playedS > 0 ? mb * 8.0 / netLog.playedS : 0.0, netLog.peakMbps,
-         ifMb, wall > 0 && ifMb >= 0 ? ifMb * 8.0 / wall : 0.0,
-         netLog.playedS > 0 && ifMb >= 0 ? ifMb * 8.0 / netLog.playedS : 0.0, netLog.ifPeak10s, netLog.ifPeakAll1s);
-  fflush(stdout);
-  netLog.active = 0;
-}
-
-static void netLogStart(void) {
-  netLogEnd("next video");
-  memset(&netLog, 0, sizeof netLog);
-  netLog.active = 1;
-  netLog.startMs = netLog.sampleMs = netLog.pumpMs = netLog.secMs = SDL_GetTicks();
-  netLog.startBytes = netLog.sampleBytes = rede_bytes_midia();
-  netLog.ifaceOk = netIfaceRx(&netLog.ifStart);
-  netLog.ifSample = netLog.ifSec = netLog.ifStart;
-  printf("[net] start: HLS setting %s, buffer preset %d, TV interface counter %s\n",
-         hls.enabled ? "On" : "Off", ajustes_buffer_preset(), netLog.ifaceOk ? "on" : "unavailable");
-  fflush(stdout);
-}
-
-static void netLogBombear(void) {
-  if (!netLog.active) return;
-  Uint32 now = SDL_GetTicks();
-  if (pronto && tocando) netLog.playedS += (now - netLog.pumpMs) / 1000.0;
-  netLog.pumpMs = now;
-  uint64_t ifNow = 0;
-  if (netLog.ifaceOk && now - netLog.secMs >= 1000u && netIfaceRx(&ifNow)) {
-    double mbps = (double)(ifNow - netLog.ifSec) * 0.008 / (now - netLog.secMs);
-    if (mbps > netLog.ifPeak1s) netLog.ifPeak1s = mbps;
-    if (mbps > netLog.ifPeakAll1s) netLog.ifPeakAll1s = mbps;
-    netLog.ifSec = ifNow;
-    netLog.secMs = now;
-  }
-  Uint32 interval = now - netLog.sampleMs;
-  if (interval < NET_LOG_INTERVAL_MS) return;
-  const char *route = netRoute();
-  if (route != netLog.route) {
-    printf("[net] route: %s -> %s at %.1f s\n", netLog.route ? netLog.route : "-", route, posSeg);
-    fflush(stdout);
-    netLog.route = route;
-  }
-  uint64_t bytes = rede_bytes_midia();
-  double mbps = (double)(bytes - netLog.sampleBytes) * 0.008 / interval;
-  double wall = (now - netLog.startMs) / 1000.0;
-  double total = (double)(bytes - netLog.startBytes) / 1e6;
-  if (mbps > netLog.peakMbps) netLog.peakMbps = mbps;
-  char tv[96] = "";
-  if (netLog.ifaceOk && netIfaceRx(&ifNow)) {
-    double ifMbps = (double)(ifNow - netLog.ifSample) * 0.008 / interval;
-    if (ifMbps > netLog.ifPeak10s) netLog.ifPeak10s = ifMbps;
-    snprintf(tv, sizeof tv, "; TV last 10 s %.1f Mbps (peak 1 s %.1f), %.1f MB",
-             ifMbps, netLog.ifPeak1s, (double)(ifNow - netLog.ifStart) / 1e6);
-    netLog.ifSample = ifNow;
-  }
-  netLog.ifPeak1s = 0;
-  printf("[net] %.0f s, pos %.1f s, %s: app last 10 s %.1f Mbps, avg %.1f Mbps, %.1f MB%s, played %.0f s%s\n",
-         wall, posSeg, route, mbps, wall > 0 ? total * 8.0 / wall : 0.0, total, tv, netLog.playedS,
-         pronto && tocando ? "" : " (paused or loading)");
-  fflush(stdout);
-  netLog.sampleMs = now;
-  netLog.sampleBytes = bytes;
-}
 #endif
 static void bombearDts(void);
 static int dtsLiberadoNestaTv(void);
@@ -3034,7 +2917,6 @@ int video_tocar(const char *url) {
   hls.downloadMbps = -1.0;
 #endif
   hls.enabled = ajustes_webos_hls();
-  netLogStart();   /* TEMP-NETLOG */
 #endif
   audioMkvNovaFonte();
 #ifdef NV_NATIVE_SEEK_TEST
@@ -3250,7 +3132,6 @@ void video_bombear(void) {
   acbBindRecolher();
 #ifdef NV_WEBOS_HLS_TEST
   hlsBombear();
-  netLogBombear();   /* TEMP-NETLOG */
 #endif
   if (ligado) acbConfigurarTipo(dtsSessao != NULL);
   audioMkvPedidoBombear();
@@ -3828,9 +3709,6 @@ void video_parar(void) {
 #endif
   nv_recon_zerar(&recon);
   reconErroPend = 0;
-#ifdef NV_WEBOS_HLS_TEST
-  netLogEnd("stopped");   /* TEMP-NETLOG */
-#endif
   pararSessao();
 }
 
@@ -4567,16 +4445,6 @@ static void hlsBombear(void) {
     // the held segment never went out: server error 40000).
     hlsSeguraPasso();
     dts_hls_webos_position(pronto && !bufferandoDesde ? video_pos() : -1);
-    // TEMP-BUFFER (owner 22/11, pacing test): how far ahead the player is,
-    // from the segments it fetched (its bufferRange shows ~3 s under HLS).
-    { static Uint32 lastBufferLog;
-      if (pronto && SDL_GetTicks() - lastBufferLog >= 10000) {
-        double until = dts_hls_webos_served_until(), pos = video_pos();
-        lastBufferLog = SDL_GetTicks();
-        printf("[webos-hls] TEMP-BUFFER: player %.1f s ahead at %.0f s (segments fetched up to %.0f s), %u segments\n",
-               until > pos ? until - pos : 0.0, pos, until, dts_tpk_segmentos());
-        fflush(stdout);
-      } }
     // The other format started where the first did not: this TV starts with
     // it from now on, kept across restarts (Settings, this TV only).
     if (pronto && hls.formatSwitched && !hls.formatRemembered) {
