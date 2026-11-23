@@ -62,7 +62,7 @@ static int subir(int atual, int limite) {
 }
 
 static int tmdb(const char *url, int limite, char *saida, size_t tam) {
-  static const int ESCADA[] = { 300, 780, 1280 };
+  static const int ESCADA[] = { 92, 154, 185, 300, 342, 500, 780, 1280 };
   const char *tok = depoisDoHost(url, "image.tmdb.org/t/p/"), *fim;
   int atual, nova;
   char novo[16];
@@ -70,7 +70,7 @@ static int tmdb(const char *url, int limite, char *saida, size_t tam) {
   atual = larguraDoToken(tok, (size_t)(fim - tok));
   if (!atual) return 0;
   nova = qualidadeAlta ? subir(atual, limite) : 0;
-  if (!nova) nova = escolher(ESCADA, 3, atual, limite);
+  if (!nova) nova = escolher(ESCADA, sizeof ESCADA / sizeof ESCADA[0], atual, limite);
   if (!nova) return 0;
   snprintf(novo, sizeof novo, "w%d", nova);
   return trocar(url, tok, (size_t)(fim - tok), novo, saida, tam);
