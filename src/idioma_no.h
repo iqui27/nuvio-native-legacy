@@ -6721,6 +6721,7 @@
   T("Por áudio: sem falas claras; nada foi alterado", "Via lyd: ingen tydelig tale; ingenting ble endret"),
   T("Por áudio: sem áudio decodificado", "Via lyd: ingen dekodet lyd"),
   T("Por último", "Sist"),
+  T("Porque você assistiu…", "Fordi du så…"),
   T("Porque você terminou %s", "Fordi du har sett %s"),
   T("Porque você terminou %s.", "Fordi du har sett %s."),
   T("Porque você viu", "Fordi du har sett"),

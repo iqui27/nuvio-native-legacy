@@ -6721,6 +6721,7 @@
   T("Por áudio: sem falas claras; nada foi alterado", "Pagal garsą: nėra aiškios kalbos; niekas nepakeista"),
   T("Por áudio: sem áudio decodificado", "Pagal garsą: nėra iškoduoto garso"),
   T("Por último", "Paskutiniai"),
+  T("Porque você assistiu…", "Nes žiūrėjote…"),
   T("Porque você terminou %s", "Nes peržiūrėjai %s"),
   T("Porque você terminou %s.", "Nes peržiūrėjai %s."),
   T("Porque você viu", "Nes žiūrėjote"),

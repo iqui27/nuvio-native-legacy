@@ -6721,6 +6721,7 @@
   T("Por áudio: sem falas claras; nada foi alterado", "Według dźwięku: brak wyraźnej mowy; nic nie zmieniono"),
   T("Por áudio: sem áudio decodificado", "Według dźwięku: brak zdekodowanego dźwięku"),
   T("Por último", "Na końcu"),
+  T("Porque você assistiu…", "Ponieważ oglądano…"),
   T("Porque você terminou %s", "Po obejrzeniu %s"),
   T("Porque você terminou %s.", "Po obejrzeniu %s."),
   T("Porque você viu", "Bo obejrzałeś(-aś)"),

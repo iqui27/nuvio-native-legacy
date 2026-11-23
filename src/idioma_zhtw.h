@@ -6721,6 +6721,7 @@
   T("Por áudio: sem falas claras; nada foi alterado", "依音訊：沒有清楚的對白；未作任何變更"),
   T("Por áudio: sem áudio decodificado", "依音訊：沒有已解碼的音訊"),
   T("Por último", "最後"),
+  T("Porque você assistiu…", "因為你觀看過…"),
   T("Porque você terminou %s", "因為你看完了%s"),
   T("Porque você terminou %s.", "因為你看完了%s"),
   T("Porque você viu", "因為你看過"),

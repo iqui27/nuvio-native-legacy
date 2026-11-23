@@ -1,4 +1,5 @@
 #include "fileiras.h"
+#include "homeassistiu.h"
 #include "ajustes.h"   // PALCO_* (#659)
 #include "dados.h"
 #include "addons.h"
@@ -192,6 +193,7 @@ float fil_tipo_fator(int t) {
 int fil_origem_de(const char *chave) {
   if (!chave || !chave[0]) return FIL_ORIGEM_APP;
   if (!strcmp(chave, "continue_watching") ||
+      !strcmp(chave, HOME_ASSISTIU_CHAVE) ||
       !strcmp(chave, "social_activity") ||
       !strcmp(chave, "last_session")) return FIL_ORIGEM_APP;
   if (!strncmp(chave, "jellyfin_", 9) || !strncmp(chave, "emby_", 5) ||

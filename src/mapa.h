@@ -342,6 +342,8 @@ void mapa_vizinhos_montar(const MapaVizEntrada *e, MapaVizinhos *v);
 // {"results":[...],"total_results":N} de /discover e afins. `serie` fixa o
 // tipo (o /discover nao manda media_type). Devolve quantas obras leu.
 int  mapa_ler_lista(const char *json, int serie, MapaObra *o, int max, int *total);
+int  mapa_recomendacoes_tmdb(const char *imdb, long tmdb, int serie,
+                             const char *chave, const char *idioma, long *ids, int max);
 // /search/keyword: o id da palavra de nome EXATO `nome` (sem caixa). 0 = nao ha.
 long mapa_ler_keyword_id(const char *json, const char *nome);
 

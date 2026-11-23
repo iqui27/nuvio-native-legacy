@@ -3,6 +3,7 @@
 // hero no topo, rail fixa à esquerda e fileiras horizontais de posters. A
 // infraestrutura nativa cuida de cache assíncrono, foco e transições.
 #include "home.h"
+#include "homeassistiu.h"
 #include "buscanorm.h"
 #include "menu.h"
 #include "memlog.h"
@@ -3059,6 +3060,8 @@ static int heroiCuradoriaIndice(void) {
 
 static void sincronizarFileiras(void) {
   desc_ocultar_vistos_atualizar();
+  unsigned assistiuRev = home_assistiu_passo(SDL_GetTicks());
+  static unsigned ultAssistiuRev;
   int nCat = cat_n_fileiras(), r, destino = 0;
   int assin = assinaturaPrefs();
   // #392: reservas expiram em 30 s, mesmo sem nova resposta da rede.
@@ -3105,7 +3108,7 @@ static void sincronizarFileiras(void) {
       filLim == ultFilLim && cwoRev == ultCwoRev &&
       retomarAplicada == retomarRev && cw_retido_rev() == ultRetRev &&
       cf_revisao() == ultCfRev && ov_revisao() == ultOvRev &&
-      curRev == ultCurRev &&
+      curRev == ultCurRev && assistiuRev == ultAssistiuRev &&
       ultCatRev) {   // ultCatRev=0: primeira chamada, cai no hash
     ultFilRev = filRev; ultColRev = colRev; ultFilLim = (unsigned)filLim;
     ultCurRev = curRev;
@@ -3122,6 +3125,7 @@ static void sincronizarFileiras(void) {
   ultOrdemRev = ordemRev;
   ultRetRev = cw_retido_rev();
   ultCurRev = curRev;
+  ultAssistiuRev = assistiuRev;
   ultCfRev = cf_revisao(); ultOvRev = ov_revisao(); ultItensRev = itensRev;
   unsigned revisao = 2166136261u;
   // Colecao fixada e "vistos ocultos" (homefil.h) mudam a lista sem o catalogo mudar.
@@ -3155,6 +3159,7 @@ static void sincronizarFileiras(void) {
   revisao = (revisao ^ cw_retido_rev()) * 16777619u;
   // A curadoria também pesa no hash: ela muda sem o catálogo mudar.
   revisao = (revisao ^ curRev) * 16777619u;
+  revisao = (revisao ^ assistiuRev) * 16777619u;
   for (r = 0; r < nCat; r++) {
     const CatFileira *cf = cat_fileira(r);
     if (!cf) break;
@@ -3173,7 +3178,9 @@ static void sincronizarFileiras(void) {
         revisao = (revisao ^ *s) * 16777619u;
     }
   }
-  if ((nCat < 1 && !col_n() && !nFileiras) || (nCat == filsAplicadas && assin == prefsAplicadas
+  int assistiuItens[HOME_ASSISTIU_MAX];
+  int assistiuN = home_assistiu_itens(assistiuItens);
+  if ((nCat < 1 && !col_n() && !nFileiras && !assistiuN) || (nCat == filsAplicadas && assin == prefsAplicadas
       && revisao == ultimaRevisao && retomarAplicada == retomarRev)) return;
   // Guardar o estado por chave: inserir o hub não deve transferir a rolagem
   // horizontal de uma fileira para outra.
@@ -3394,6 +3401,21 @@ static void sincronizarFileiras(void) {
     if(v.n) { v.tipo=FILEIRA_NORMAL;v.usaItens=1; }
     else { v.n=1;v.folders[0]=fi; }
     fileiras[destino++]=v;
+  }
+  if (assistiuN > 0 && destino < MAX_FIL) {
+    Fileira v = {0};
+    int pos = 0;
+    for (int i = 0; i < destino; i++)
+      if (!strcmp(fileiras[i].chave, "continue_watching")) { pos = i + 1; break; }
+    v.n = assistiuN;
+    memcpy(v.itens, assistiuItens, (size_t)assistiuN * sizeof *v.itens);
+    v.usaItens = 1;
+    v.tipo = FILEIRA_NORMAL;
+    snprintf(v.chave, sizeof v.chave, "%s", HOME_ASSISTIU_CHAVE);
+    snprintf(v.titulo, sizeof v.titulo, "Porque você assistiu…");
+    memmove(fileiras + pos + 1, fileiras + pos, sizeof v * (size_t)(destino - pos));
+    fileiras[pos] = v;
+    destino++;
   }
   // FORMA E TAMANHO ESCOLHIDOS POR FILEIRA (Ajustes -> Fileiras da Home).
   // Aplicado AQUI, antes da normalizacao do Top 10 logo abaixo: quem escolhe

@@ -6720,6 +6720,7 @@
   { "Por áudio: sem falas claras; nada foi alterado", "By audio: no clear speech; nothing was changed" },
   { "Por áudio: sem áudio decodificado", "By audio: no decoded audio" },
   { "Por último", "Last" },
+  { "Porque você assistiu…", "Because you watched…" },
   { "Porque você terminou %s", "Because you finished %s" },
   { "Porque você terminou %s.", "Because you finished %s." },
   { "Porque você viu", "Because you watched" },

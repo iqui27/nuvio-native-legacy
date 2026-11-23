@@ -2132,6 +2132,25 @@ static int listaDoTmdb(const char *caminho, int serie, const char *chave, const 
   return n;
 }
 
+int mapa_recomendacoes_tmdb(const char *imdb, long tmdb, int serie,
+                            const char *chave, const char *idioma, long *ids, int max) {
+  MapaObra obras[MAPA_REC_MAX];
+  char caminho[64], tipo[8] = "";
+  if (!chave[0] || max < 1) return 0;
+  if (tmdb <= 0 && !strncmp(imdb, "tt", 2) && imdb[2] &&
+      !imdb[2 + strspn(imdb + 2, "0123456789")]) {
+    tmdb = resolverTmdb(imdb, tipo, sizeof tipo, chave, idioma);
+    if (*tipo && serie != !strcmp(tipo, "series")) return 0;
+  }
+  if (tmdb <= 0) return 0;
+  snprintf(caminho, sizeof caminho, "%s/%ld/recommendations",
+           serie ? "tv" : "movie", tmdb);
+  int n = listaDoTmdb(caminho, serie, chave, idioma, obras,
+                      max < MAPA_REC_MAX ? max : MAPA_REC_MAX, NULL);
+  for (int i = 0; i < n; i++) ids[i] = obras[i].tmdb;
+  return n > 0 ? n : 0;
+}
+
 static void *vizTrabalhar(void *arg) {
   static MapaSemente foco;
   static MapaVizCand pool[VIZ_POOL];

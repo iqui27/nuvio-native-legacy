@@ -6721,6 +6721,7 @@
   T("Por áudio: sem falas claras; nada foi alterado", "Sese göre: net konuşma yok; hiçbir şey değiştirilmedi"),
   T("Por áudio: sem áudio decodificado", "Sese göre: çözülmüş ses yok"),
   T("Por último", "Sonra"),
+  T("Porque você assistiu…", "İzlediğin için…"),
   T("Porque você terminou %s", "Çünkü %s bitirdin"),
   T("Porque você terminou %s.", "Çünkü %s bitirdin."),
   T("Porque você viu", "İzlediğin için"),

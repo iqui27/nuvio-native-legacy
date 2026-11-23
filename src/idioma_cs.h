@@ -6721,6 +6721,7 @@
   T("Por áudio: sem falas claras; nada foi alterado", "Podle zvuku: žádná zřetelná řeč; nic se nezměnilo"),
   T("Por áudio: sem áudio decodificado", "Podle zvuku: žádný dekódovaný zvuk"),
   T("Por último", "Nakonec"),
+  T("Porque você assistiu…", "Protože jste sledovali…"),
   T("Porque você terminou %s", "Protože jsi dokoukal %s"),
   T("Porque você terminou %s.", "Protože jsi dokoukal %s."),
   T("Porque você viu", "Protože jste sledovali"),

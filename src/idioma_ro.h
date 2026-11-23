@@ -6720,6 +6720,7 @@
   T("Por áudio: sem falas claras; nada foi alterado", "După audio: fără vorbire clară; nu s-a schimbat nimic"),
   T("Por áudio: sem áudio decodificado", "După audio: fără audio decodat"),
   T("Por último", "Ultimele"),
+  T("Porque você assistiu…", "Pentru că ai urmărit…"),
   T("Porque você terminou %s", "Pentru că ai terminat %s"),
   T("Porque você terminou %s.", "Pentru că ai terminat %s."),
   T("Porque você viu", "Pentru că ai vizionat"),
