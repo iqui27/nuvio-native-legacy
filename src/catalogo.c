@@ -2306,6 +2306,30 @@ int cat_copiar_fileira(const char *chave, CatItem *saida, int max,
   return 0;
 }
 
+// Os imdb de UMA fileira, capturados sob pubTrava. cat_fileira()/cat_item()
+// sao leituras soltas (o desenho as usa lock-free), mas quem so quer os ids
+// NAO pode montar a leitura por partes: cat_trocar_continuar reescreve a
+// fileira no meio e a coleta sai de uma janela que nunca existiu. Quem usa
+// e o Farol (coleta do Continuar em farol.c — revisao FAROL45 r1).
+int cat_fileira_imdb(const char *chave, char (*dst)[64], int max, int tam) {
+  int r, qtd = 0, i;
+  if (!chave || !*chave || !dst || max < 1 || tam < 2) return 0;
+  catTravar();
+  for (r = 0; r < nFils; r++) {
+    CatFileira *f = &fils[r];
+    if (strcmp(f->chave, chave) || f->n < 1) continue;
+    if (f->ini < 0 || f->ini + f->n > n || !itens) break;
+    for (i = 0; i < f->n && qtd < max; i++)
+      if (itens[f->ini + i].imdb[0]) {
+        snprintf(dst[qtd], (size_t)tam, "%s", itens[f->ini + i].imdb);
+        qtd++;
+      }
+    break;
+  }
+  pthread_mutex_unlock(&pubTrava);
+  return qtd;
+}
+
 // ACRESCENTA UM titulo ao fim do catalogo e devolve o indice dele.
 //
 // Existe para o titulo que veio de FORA: um credito na filmografia de um ator

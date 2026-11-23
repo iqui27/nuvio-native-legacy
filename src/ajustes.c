@@ -75,6 +75,7 @@
 #include "simklauth.h"
 #include "discord.h"
 #include "farolsinal.h"
+#include "farol.h"       // farol_remover_fileiras antes de sessao_sair (45)
 #include "diarionuvem.h"
 #include "simkl.h"
 #include "trakt.h"
@@ -11264,6 +11265,10 @@ static void eventoTela(const SDL_Event *e) {
       // Sair apaga a sessao do disco. Chega aqui so no SEGUNDO OK (ver
       // pedeConfirmacao, acima): o primeiro arma e a linha diz o que o
       // proximo faz; qualquer movimento desarma (focar).
+      // Fileiras do Farol: saem do snapshot do perfil ANTES de a sessao mudar
+      // a identidade (CONTRATO-HOME-POKE, item 5) — depois do sessao_sair a
+      // regravacao do cache cairia na pasta/nome do perfil novo.
+      farol_remover_fileiras(NULL);
       sessao_sair();
       traktauth_esquecer();
       simklauth_esquecer();

@@ -65,6 +65,23 @@ static int mesmoTitulo(const CatItem *c, const CatItem *b) {
          (tmdb > 0 && tmdb == idTmdb(b));
 }
 
+int home_assistiu_sem_farol(int *recomendados, int n, const int *farol, int nFarol) {
+  if (nFarol == 0) return n;
+  int total = 0;
+  for (int i = 0; i < n; i++) {
+    const CatItem *recomendado = item(recomendados[i]);
+    int repetido = 0;
+    for (int j = 0; j < nFarol && !repetido; j++) {
+      const CatItem *exibido = item(farol[j]);
+      repetido = recomendados[i] == farol[j] ||
+                 (recomendado && exibido && recomendado->imdb[0] && exibido->imdb[0] &&
+                  !strcmp(recomendado->tipo, exibido->tipo) && mesmoTitulo(recomendado, exibido));
+    }
+    if (!repetido) recomendados[total++] = recomendados[i];
+  }
+  return total;
+}
+
 static const CatItem *semente(int reiniciar, int infantil, int *pendente) {
   static int pos, melhor;
   static long long maisRecente;
