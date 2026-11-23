@@ -2,15 +2,15 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T21:21:16+00:00",
+    "updatedAt": "2026-11-23T22:17:28+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
       "branch": "integracao/2.1",
-      "sha": "96a939a5a",
-      "pr": 840,
-      "fullSha": "96a939a5a68b256d91deed83e33d9bbabe2b3c66",
-      "checkedAt": "2026-11-23T19:46:08+00:00"
+      "sha": "015d181d45",
+      "fullSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "pr": 841,
+      "checkedAt": "2026-11-23T22:17:28+00:00"
     },
     "coverageNote": "56 itens Farol informados: o #42 não consta no escopo. Inventário externo detalhado: 61 linhas da VPS, com #731 unificada; D1 e 762+720 têm cartões por issue e revisão conjunta. D1: ancestralidade não verificada. Testes isolados são identificados como tal.",
     "unknownDoneFixes": 0,
@@ -25,6 +25,13 @@
         "pr": 839,
         "fullSha": "ec4e6a0b52bbd2f38c56f31778a91744c786ea4a",
         "checkedAt": "2026-11-23T19:29:42+00:00"
+      },
+      {
+        "branch": "integracao/2.1",
+        "sha": "96a939a5a",
+        "pr": 840,
+        "fullSha": "96a939a5a68b256d91deed83e33d9bbabe2b3c66",
+        "checkedAt": "2026-11-23T19:46:08+00:00"
       }
     ],
     "coordination": {
@@ -117,24 +124,27 @@
       "phase": 0,
       "dependencies": [],
       "allDependencies": false,
-      "status": "LOTE",
+      "status": "FEITO",
       "wave": null,
       "sha": "b29addd8a",
       "batch": "21e",
-      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: vai para o lote 21e",
-      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
+      "note": "Integrado pelo lote 21e / PR #841 em 23/11 às 19h12min48s (Brasília), merge 015d181d45. Commit de origem b29addd8a e ponta 121b2ca867 ancestrais do merge, conferidos localmente. Código integrado não significa validação funcional ou TV física. Bateria ampla e diagnósticos TSan continuam pendentes conforme a PR.",
+      "source": "GitHub PR #841 + ancestralidade conferida no git",
       "verified": false,
       "branch": "agente/21z-farol-4",
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
-      "integrationVerified": false,
+      "updatedAt": "2026-11-23T22:17:28+00:00",
+      "reportedAt": "2026-11-23T22:12:48Z",
+      "integrationVerified": true,
       "previousNotes": [
+        "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: vai para o lote 21e",
         "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: vai para o lote 21e",
         "vai para o lote 21e"
       ],
       "batchInclusionVerified": true,
-      "batchSha": "e34f0ddc5d",
-      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
+      "batchSha": "121b2ca867",
+      "batchInclusionSource": "Composição da PR #841 e ancestralidade conferidas; origem preservada",
+      "integrationMergeSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "integrationPr": 841
     },
     {
       "id": "farol-5",
@@ -220,18 +230,19 @@
         "farol-4"
       ],
       "allDependencies": false,
-      "status": "LOTE",
+      "status": "FEITO",
       "wave": "A",
       "sha": "aa6d0dbd3",
       "batch": "21e",
-      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: Sol r3 APROVADO_COM_RESSALVAS (codex gpt-6.2-sol, VPS); aguarda lote; TV não verificado",
-      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
+      "note": "Integrado pelo lote 21e / PR #841 em 23/11 às 19h12min48s (Brasília), merge 015d181d45. Commit de origem aa6d0dbd3 e ponta 121b2ca867 ancestrais do merge, conferidos localmente. Código integrado não significa validação funcional ou TV física. Bateria ampla e diagnósticos TSan continuam pendentes conforme a PR.",
+      "source": "GitHub PR #841 + ancestralidade conferida no git",
       "verified": false,
       "branch": "agente/21z-farol-8",
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
-      "integrationVerified": false,
+      "updatedAt": "2026-11-23T22:17:28+00:00",
+      "reportedAt": "2026-11-23T22:12:48Z",
+      "integrationVerified": true,
       "previousNotes": [
+        "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: Sol r3 APROVADO_COM_RESSALVAS (codex gpt-6.2-sol, VPS); aguarda lote; TV não verificado",
         "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: Sol r3 APROVADO_COM_RESSALVAS (codex gpt-6.2-sol, VPS); aguarda lote; TV não verificado",
         "Sol r3 APROVADO_COM_RESSALVAS (codex gpt-6.2-sol, VPS); aguarda lote; TV não verificado",
         "FAROL8C entregue (Devin swe-2-high, VPS): LG não-OLED volta a \"x\", contrato com servidor 200; revisão FAROL8-r3 Sol (codex gpt-6.2-sol, VPS); TV não verificado",
@@ -245,8 +256,10 @@
         "VPS antigravity gemini-4-neon high; 1ª tarefa parou sem commit nem relatório (código não commitado na worktree, não verificado); relançada para fechar testes, commit e relatório"
       ],
       "batchInclusionVerified": true,
-      "batchSha": "e34f0ddc5d",
-      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
+      "batchSha": "121b2ca867",
+      "batchInclusionSource": "Composição da PR #841 e ancestralidade conferidas; origem preservada",
+      "integrationMergeSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "integrationPr": 841
     },
     {
       "id": "farol-9",
@@ -259,24 +272,27 @@
         "farol-3"
       ],
       "allDependencies": false,
-      "status": "LOTE",
+      "status": "FEITO",
       "wave": null,
       "sha": "c0bca62f0",
       "batch": "21e",
-      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: vai para o lote 21e",
-      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
+      "note": "Integrado pelo lote 21e / PR #841 em 23/11 às 19h12min48s (Brasília), merge 015d181d45. Commit de origem c0bca62f0 e ponta 121b2ca867 ancestrais do merge, conferidos localmente. Código integrado não significa validação funcional ou TV física. Bateria ampla e diagnósticos TSan continuam pendentes conforme a PR.",
+      "source": "GitHub PR #841 + ancestralidade conferida no git",
       "verified": false,
       "branch": "agente/21z-farol-9",
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
-      "integrationVerified": false,
+      "updatedAt": "2026-11-23T22:17:28+00:00",
+      "reportedAt": "2026-11-23T22:12:48Z",
+      "integrationVerified": true,
       "previousNotes": [
+        "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: vai para o lote 21e",
         "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: vai para o lote 21e",
         "vai para o lote 21e"
       ],
       "batchInclusionVerified": true,
-      "batchSha": "e34f0ddc5d",
-      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
+      "batchSha": "121b2ca867",
+      "batchInclusionSource": "Composição da PR #841 e ancestralidade conferidas; origem preservada",
+      "integrationMergeSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "integrationPr": 841
     },
     {
       "id": "farol-10",
@@ -337,24 +353,27 @@
         "farol-2"
       ],
       "allDependencies": false,
-      "status": "LOTE",
+      "status": "FEITO",
       "wave": null,
       "sha": "71749228c",
       "batch": "21e",
-      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: vai para o lote 21e",
-      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
+      "note": "Integrado pelo lote 21e / PR #841 em 23/11 às 19h12min48s (Brasília), merge 015d181d45. Commit de origem 71749228c e ponta 121b2ca867 ancestrais do merge, conferidos localmente. Código integrado não significa validação funcional ou TV física. Bateria ampla e diagnósticos TSan continuam pendentes conforme a PR.",
+      "source": "GitHub PR #841 + ancestralidade conferida no git",
       "verified": false,
       "branch": "agente/21z-farol-12",
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
-      "integrationVerified": false,
+      "updatedAt": "2026-11-23T22:17:28+00:00",
+      "reportedAt": "2026-11-23T22:12:48Z",
+      "integrationVerified": true,
       "previousNotes": [
+        "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: vai para o lote 21e",
         "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: vai para o lote 21e",
         "vai para o lote 21e"
       ],
       "batchInclusionVerified": true,
-      "batchSha": "e34f0ddc5d",
-      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
+      "batchSha": "121b2ca867",
+      "batchInclusionSource": "Composição da PR #841 e ancestralidade conferidas; origem preservada",
+      "integrationMergeSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "integrationPr": 841
     },
     {
       "id": "farol-13",
@@ -366,26 +385,29 @@
         "farol-5"
       ],
       "allDependencies": false,
-      "status": "LOTE",
+      "status": "FEITO",
       "wave": "A",
       "sha": "66fb2d121",
       "batch": "21e",
-      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → 6/6, merge rc 0); servidor sem deploy; próximo lote",
-      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
+      "note": "Integrado pelo lote 21e / PR #841 em 23/11 às 19h12min48s (Brasília), merge 015d181d45. Commit de origem 66fb2d121 e ponta 121b2ca867 ancestrais do merge, conferidos localmente. Código integrado não significa validação funcional ou TV física. Bateria ampla e diagnósticos TSan continuam pendentes conforme a PR.",
+      "source": "GitHub PR #841 + ancestralidade conferida no git",
       "verified": false,
       "branch": "agente/farol-13",
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
-      "integrationVerified": false,
+      "updatedAt": "2026-11-23T22:17:28+00:00",
+      "reportedAt": "2026-11-23T22:12:48Z",
+      "integrationVerified": true,
       "previousNotes": [
+        "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → 6/6, merge rc 0); servidor sem deploy; próximo lote",
         "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → 6/6, merge rc 0); servidor sem deploy; próximo lote",
         "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → 6/6, merge rc 0); servidor sem deploy; próximo lote",
         "VPS Fable 5.2 via Devin (task …68ff22c3), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090",
         "PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-13.txt); entrega por push; não verificado"
       ],
       "batchInclusionVerified": true,
-      "batchSha": "e34f0ddc5d",
-      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
+      "batchSha": "121b2ca867",
+      "batchInclusionSource": "Composição da PR #841 e ancestralidade conferidas; origem preservada",
+      "integrationMergeSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "integrationPr": 841
     },
     {
       "id": "farol-14",
@@ -594,26 +616,29 @@
         "farol-1"
       ],
       "allDependencies": false,
-      "status": "LOTE",
+      "status": "FEITO",
       "wave": "A",
       "sha": "9fac396d4",
       "batch": "21e",
-      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → ponta 0, mutações 9/11, merge rc 0); sem consumidor até a issue 25; TV não verificado; próximo lote",
-      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
+      "note": "Integrado pelo lote 21e / PR #841 em 23/11 às 19h12min48s (Brasília), merge 015d181d45. Commit de origem 9fac396d4 e ponta 121b2ca867 ancestrais do merge, conferidos localmente. Código integrado não significa validação funcional ou TV física. Bateria ampla e diagnósticos TSan continuam pendentes conforme a PR.",
+      "source": "GitHub PR #841 + ancestralidade conferida no git",
       "verified": false,
       "branch": "agente/farol-24",
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
-      "integrationVerified": false,
+      "updatedAt": "2026-11-23T22:17:28+00:00",
+      "reportedAt": "2026-11-23T22:12:48Z",
+      "integrationVerified": true,
       "previousNotes": [
+        "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → ponta 0, mutações 9/11, merge rc 0); sem consumidor até a issue 25; TV não verificado; próximo lote",
         "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → ponta 0, mutações 9/11, merge rc 0); sem consumidor até a issue 25; TV não verificado; próximo lote",
         "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → ponta 0, mutações 9/11, merge rc 0); sem consumidor até a issue 25; TV não verificado; próximo lote",
         "VPS Fable 5.2 via Devin (task …19cb534a), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090",
         "PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-24.txt); entrega por push; não verificado"
       ],
       "batchInclusionVerified": true,
-      "batchSha": "e34f0ddc5d",
-      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
+      "batchSha": "121b2ca867",
+      "batchInclusionSource": "Composição da PR #841 e ancestralidade conferidas; origem preservada",
+      "integrationMergeSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "integrationPr": 841
     },
     {
       "id": "farol-25",
@@ -696,26 +721,29 @@
         "farol-5"
       ],
       "allDependencies": false,
-      "status": "LOTE",
+      "status": "FEITO",
       "wave": "A",
       "sha": "32cf15761",
       "batch": "21e",
-      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (9/9, mutações 13/13, merge rc 0); ressalvas vão para a farol-30; sem deploy; próximo lote",
-      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
+      "note": "Integrado pelo lote 21e / PR #841 em 23/11 às 19h12min48s (Brasília), merge 015d181d45. Commit de origem 32cf15761 e ponta 121b2ca867 ancestrais do merge, conferidos localmente. Código integrado não significa validação funcional ou TV física. Bateria ampla e diagnósticos TSan continuam pendentes conforme a PR.",
+      "source": "GitHub PR #841 + ancestralidade conferida no git",
       "verified": false,
       "branch": "agente/farol-29",
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
-      "integrationVerified": false,
+      "updatedAt": "2026-11-23T22:17:28+00:00",
+      "reportedAt": "2026-11-23T22:12:48Z",
+      "integrationVerified": true,
       "previousNotes": [
+        "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (9/9, mutações 13/13, merge rc 0); ressalvas vão para a farol-30; sem deploy; próximo lote",
         "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (9/9, mutações 13/13, merge rc 0); ressalvas vão para a farol-30; sem deploy; próximo lote",
         "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (9/9, mutações 13/13, merge rc 0); ressalvas vão para a farol-30; sem deploy; próximo lote",
         "VPS Fable 5.2 via Devin (task …2f7dd460), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090",
         "PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-29.txt); entrega por push; não verificado"
       ],
       "batchInclusionVerified": true,
-      "batchSha": "e34f0ddc5d",
-      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
+      "batchSha": "121b2ca867",
+      "batchInclusionSource": "Composição da PR #841 e ancestralidade conferidas; origem preservada",
+      "integrationMergeSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "integrationPr": 841
     },
     {
       "id": "farol-30",
@@ -1013,14 +1041,15 @@
         "farol-44"
       ],
       "allDependencies": false,
-      "status": "CORRECAO",
+      "status": "FEITO",
       "wave": "A",
       "sha": "bae6663936",
       "batch": "21e",
-      "note": "dedupe da Home por índice, IMDb e TMDB do mesmo tipo; conflito de src/fileiras.c resolvido com a #840; Poke avisado pelo poke-enviar.sh (HTTP 200) Incluído no 21e reconstruído localmente em e34f0ddc5d; estado CORRECAO preservado conforme relato explícito da VPS. Publicação/PR do lote e TV física pendentes.",
-      "source": "Relato VPS",
+      "note": "Integrado pelo lote 21e / PR #841 em 23/11 às 19h12min48s (Brasília), merge 015d181d45. Commit de origem bae6663936 e ponta 121b2ca867 ancestrais do merge, conferidos localmente. Código integrado não significa validação funcional ou TV física. Bateria ampla e diagnósticos TSan continuam pendentes conforme a PR.",
+      "source": "GitHub PR #841 + ancestralidade conferida no git",
       "verified": false,
       "previousNotes": [
+        "dedupe da Home por índice, IMDb e TMDB do mesmo tipo; conflito de src/fileiras.c resolvido com a #840; Poke avisado pelo poke-enviar.sh (HTTP 200) Incluído no 21e reconstruído localmente em e34f0ddc5d; estado CORRECAO preservado conforme relato explícito da VPS. Publicação/PR do lote e TV física pendentes.",
         "dedupe da Home por índice, IMDb e TMDB do mesmo tipo; conflito de src/fileiras.c resolvido com a #840; Poke avisado pelo poke-enviar.sh (HTTP 200)",
         "dedupe farol_gosto × porque_assistiu usa a HOME_ASSISTIU_CHAVE da #840; src/fileiras.c mantém ambas as origens APP e a ordenação da #840. homeassistiu/fileiras/farol_home passaram, além de ASan+UBSan no farol_home e sintaxe TPK/WASM. Remontagem do lote 21e em andamento sobre 96a939a5a6.",
         "Após o merge da PR #840, a VPS informa que Farol 45 fará dedupe farol_gosto × porque_assistiu e resolverá src/fileiras.c. Ajustes pendentes; execução e novo commit ainda não confirmados. Aprovação r2 anterior preservada no histórico. Continua destinado ao lote 21e, que será refeito sobre a integração nova. TV não verificada.",
@@ -1039,10 +1068,10 @@
         "aguarda combinar com o Poke o ponto das fileiras na Home pré-calculada",
         "TV física pendente."
       ],
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
+      "updatedAt": "2026-11-23T22:17:28+00:00",
+      "reportedAt": "2026-11-23T22:12:48Z",
       "branch": "agente/21z-farol-45",
-      "integrationVerified": false,
+      "integrationVerified": true,
       "batchInclusionVerified": true,
       "reportedHostChecks": {
         "status": "reported_passed",
@@ -1056,8 +1085,10 @@
         "source": "Relato VPS; não executados nesta sessão",
         "reportedAt": "2026-11-23T19:54:20.526676+00:00"
       },
-      "batchSha": "e34f0ddc5d",
-      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
+      "batchSha": "121b2ca867",
+      "batchInclusionSource": "Composição da PR #841 e ancestralidade conferidas; origem preservada",
+      "integrationMergeSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "integrationPr": 841
     },
     {
       "id": "farol-46",
@@ -1611,50 +1642,62 @@
     {
       "id": "issue-751",
       "title": "A defect in the appearance of Arabic translation",
-      "status": "APROVADA",
+      "status": "FEITO",
       "sha": "03c4bf516",
       "batch": "21e",
-      "note": "F116-r1 SWE-2 (Devin, VPS): aprovada com ressalvas, 141 testes em paridade; entra no próximo lote; TV não verificado",
+      "note": "Integrado pelo lote 21e / PR #841 em 23/11 às 19h12min48s (Brasília), merge 015d181d45. Commit de origem 03c4bf516 e ponta 121b2ca867 ancestrais do merge, conferidos localmente. Código integrado não significa validação funcional ou TV física. Bateria ampla e diagnósticos TSan continuam pendentes conforme a PR.",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "Relato VPS",
+      "source": "GitHub PR #841 + ancestralidade conferida no git",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/751",
       "number": 751,
       "previousNotes": [
+        "F116-r1 SWE-2 (Devin, VPS): aprovada com ressalvas, 141 testes em paridade; entra no próximo lote; TV não verificado",
         "F116 entregue sobre lote 21d, revisão SWE-2 (Devin)",
         "F116 lançada (Sol): merge do 21d, conflito em src/legref.c",
         "Atualizar sobre 21d antes da revisão; conflito em src/legref.c."
       ],
       "branch": "agente/21z-751",
-      "updatedAt": "2026-11-23T19:27:55+00:00",
-      "reportedAt": "2026-11-23T05:01:00+00:00",
-      "integrationVerified": false
+      "updatedAt": "2026-11-23T22:17:28+00:00",
+      "reportedAt": "2026-11-23T22:12:48Z",
+      "integrationVerified": true,
+      "integrationMergeSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "integrationPr": 841,
+      "batchSha": "121b2ca867",
+      "batchInclusionVerified": true,
+      "batchInclusionSource": "Composição da PR #841 e ancestralidade conferidas; origem preservada"
     },
     {
       "id": "issue-786",
       "title": "Arabic subtitles Embedded for Anime",
-      "status": "APROVADA",
+      "status": "FEITO",
       "sha": "0b0bdfad7",
       "batch": "21e",
-      "note": "F116-r1 SWE-2 (Devin, VPS): aprovada com ressalvas, emcc ok; entra no próximo lote; TV não verificado",
+      "note": "Integrado pelo lote 21e / PR #841 em 23/11 às 19h12min48s (Brasília), merge 015d181d45. Commit de origem 0b0bdfad7 e ponta 121b2ca867 ancestrais do merge, conferidos localmente. Código integrado não significa validação funcional ou TV física. Bateria ampla e diagnósticos TSan continuam pendentes conforme a PR.",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "Relato VPS",
+      "source": "GitHub PR #841 + ancestralidade conferida no git",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/786",
       "number": 786,
       "previousNotes": [
+        "F116-r1 SWE-2 (Devin, VPS): aprovada com ressalvas, emcc ok; entra no próximo lote; TV não verificado",
         "F116 entregue sobre lote 21d, revisão SWE-2 (Devin)",
         "F116 lançada (Sol): merge do 21d, conflito em src/legref.c",
         "Atualizar sobre 21d antes da revisão; conflito em src/legref.c."
       ],
       "branch": "agente/21z-786",
-      "updatedAt": "2026-11-23T19:27:55+00:00",
-      "reportedAt": "2026-11-23T05:01:00+00:00",
-      "integrationVerified": false
+      "updatedAt": "2026-11-23T22:17:28+00:00",
+      "reportedAt": "2026-11-23T22:12:48Z",
+      "integrationVerified": true,
+      "integrationMergeSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "integrationPr": 841,
+      "batchSha": "121b2ca867",
+      "batchInclusionVerified": true,
+      "batchInclusionSource": "Composição da PR #841 e ancestralidade conferidas; origem preservada"
     },
     {
       "id": "issue-778",
@@ -3601,15 +3644,16 @@
       "id": "catrev",
       "title": "Guarda da revisão do catálogo nos climas e no Continuar",
       "group": "correcoes",
-      "status": "LOTE",
+      "status": "FEITO",
       "dependencies": [],
       "wave": null,
       "batch": "21e",
       "owner": "VPS",
       "verified": false,
-      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
-      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: Fable CATREV-r2 APROVADO_COM_RESSALVAS (anime kitsu:T:E no Continuar, tt123::1 herdado, ordem de merge com farol-46 em src/mapa.c); oracle-vps; TV não verificada",
+      "source": "GitHub PR #841 + ancestralidade conferida no git",
+      "note": "Integrado pelo lote 21e / PR #841 em 23/11 às 19h12min48s (Brasília), merge 015d181d45. Commit de origem 773af36d7 e ponta 121b2ca867 ancestrais do merge, conferidos localmente. Código integrado não significa validação funcional ou TV física. Bateria ampla e diagnósticos TSan continuam pendentes conforme a PR.",
       "previousNotes": [
+        "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: Fable CATREV-r2 APROVADO_COM_RESSALVAS (anime kitsu:T:E no Continuar, tt123::1 herdado, ordem de merge com farol-46 em src/mapa.c); oracle-vps; TV não verificada",
         "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: Fable CATREV-r2 APROVADO_COM_RESSALVAS (anime kitsu:T:E no Continuar, tt123::1 herdado, ordem de merge com farol-46 em src/mapa.c); oracle-vps; TV não verificada",
         "Fable CATREV-r2 APROVADO_COM_RESSALVAS (anime kitsu:T:E no Continuar, tt123::1 herdado, ordem de merge com farol-46 em src/mapa.c); oracle-vps; TV não verificada",
         "VPS Devin swe-2-high entregou CATREVB (base 1 → ponta 0 nos 3 modos, 5 mutações reprovam); merge-tree rc 1 com farol-46@6caab1a65 em src/mapa.c (mapa_vizinhos_pedir); revisão CATREV-r2 Fable 5.2 via Devin lançada (task …a07850); TV não verificado",
@@ -3627,27 +3671,30 @@
       ],
       "branch": "agente/21z-catrev",
       "sha": "773af36d7",
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
-      "integrationVerified": false,
+      "updatedAt": "2026-11-23T22:17:28+00:00",
+      "reportedAt": "2026-11-23T22:12:48Z",
+      "integrationVerified": true,
       "displayId": "CATREV",
       "batchInclusionVerified": true,
-      "batchSha": "e34f0ddc5d",
-      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
+      "batchSha": "121b2ca867",
+      "batchInclusionSource": "Composição da PR #841 e ancestralidade conferidas; origem preservada",
+      "integrationMergeSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "integrationPr": 841
     },
     {
       "id": "hist-semlogin",
       "title": "Isolar o histórico do perfil sem login",
       "group": "correcoes",
-      "status": "LOTE",
+      "status": "FEITO",
       "dependencies": [],
       "wave": null,
       "batch": "21e",
       "owner": "VPS",
       "verified": false,
-      "source": "Relato VPS · composição reconstruída do 21e confirmada às 20h04 UTC",
-      "note": "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (recovery/biblioteca rc 0, mutação app.c e sync.c reprovam); lote 21e; TV não verificada Último commit contém só testes; a correção anterior não é tratada como test-only. Responsável: VPS; lote 21e.",
+      "source": "GitHub PR #841 + ancestralidade conferida no git",
+      "note": "Integrado pelo lote 21e / PR #841 em 23/11 às 19h12min48s (Brasília), merge 015d181d45. Commit de origem d8bce6cbb e ponta 121b2ca867 ancestrais do merge, conferidos localmente. Código integrado não significa validação funcional ou TV física. Bateria ampla e diagnósticos TSan continuam pendentes conforme a PR.",
       "previousNotes": [
+        "Incluído no 21e reconstruído localmente em e34f0ddc5d sobre integracao/2.1@96a939a5a6, conforme VPS. Dirigidos 15/15 e ASan+UBSan 3/3 reportados; Node 21 passaram e duas falhas iguais à base. Publicação/PR bloqueada na VPS sem escrita no GitHub; TV não verificada. Aprovação anterior: VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (recovery/biblioteca rc 0, mutação app.c e sync.c reprovam); lote 21e; TV não verificada Último commit contém só testes; a correção anterior não é tratada como test-only. Responsável: VPS; lote 21e.",
         "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (recovery/biblioteca rc 0, mutação app.c e sync.c reprovam); lote 21e; TV não verificada Último commit contém só testes; a correção anterior não é tratada como test-only. Responsável: VPS; lote 21e.",
         "VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (recovery/biblioteca rc 0, mutação app.c e sync.c reprovam); lote 21e; TV não verificada Último commit contém só testes; a correção anterior não é tratada como test-only. Responsável: VPS; lote 21e.",
         "HIST-SEMLOGIN-r2 no Gemini 4 Argon (…132b736c2ca4); oracle-vps",
@@ -3660,14 +3707,16 @@
       ],
       "branch": "agente/21z-hist-semlogin",
       "sha": "d8bce6cbb",
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
-      "integrationVerified": false,
+      "updatedAt": "2026-11-23T22:17:28+00:00",
+      "reportedAt": "2026-11-23T22:12:48Z",
+      "integrationVerified": true,
       "displayId": "HIST-SEMLOGIN",
       "testOnlyLatestCommit": true,
       "batchInclusionVerified": true,
-      "batchSha": "e34f0ddc5d",
-      "batchInclusionSource": "Relato VPS: dez itens preservados na reconstrução local; não é integração no GitHub"
+      "batchSha": "121b2ca867",
+      "batchInclusionSource": "Composição da PR #841 e ancestralidade conferidas; origem preservada",
+      "integrationMergeSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "integrationPr": 841
     }
   ],
   "gates": [
@@ -3802,6 +3851,28 @@
         "pr-840"
       ],
       "note": "Segundo perfil protegido por PIN não testado; não está incluído na aprovação do reteste logado da PR #840."
+    },
+    {
+      "id": "tv-21e",
+      "title": "Validação física do lote 21e",
+      "kind": "tv",
+      "status": "pendente",
+      "items": [
+        "farol-4",
+        "farol-8",
+        "farol-9",
+        "farol-12",
+        "farol-13",
+        "farol-24",
+        "farol-29",
+        "farol-45",
+        "catrev",
+        "hist-semlogin",
+        "issue-751",
+        "issue-786"
+      ],
+      "note": "PR #841 integrada, sem validação em TV física. Conferir Home/navegação, perfil sem login, legendas #751/#786 e eventos do player em LG, Android e Samsung. Integração e testes host não encerram este gate.",
+      "source": "https://github.com/iqui27/nuvio-native-legacy/pull/841"
     }
   ],
   "batches": [
@@ -3845,12 +3916,13 @@
     },
     {
       "id": "21e",
-      "title": "Lote 21e · bateria em andamento",
-      "status": "LOTE",
-      "sha": "e34f0ddc5d",
-      "note": "Sol retoma a bateria do 21e@e34f0ddc5d contra a base pós-#840 (integracao/2.1@96a939a5a6); resultado final ainda não informado. A tentativa Argon na montagem antiga 0dea681ce8 terminou com bloqueio do provedor e evidência parcial; não é resultado da ponta reconstruída. Validação dirigida anterior preservada: 15/15 dirigidos, ASan+UBSan 3/3, Node 21 passaram e duas falhas iguais à base. Isso não equivale a bateria atual concluída. Publicação ainda sem credencial na VPS; branch lote/21e e PR dessa origem continuam ausentes na nova consulta ao GitHub. TV física pendente; lote não integrado.",
-      "pr": null,
+      "title": "Lote 21e · integrado",
+      "status": "FEITO",
+      "sha": "121b2ca867",
+      "note": "PR #841 mergeada em integracao/2.1 em 23/11 às 19h12min48s (Brasília), merge 015d181d45; ponta publicada 121b2ca867. Doze entregas com SHAs ancestrais confirmados, incluindo #751/#786 via pilha/21; o total Farol integrado passa a 24/56. Os dois commits após e34f0ddc5d alteram somente tests/addons_patch_transport.py e tests/farol_home.c, conferidos no git. Publicação concluída; não permanece bloqueada por credencial da VPS. TV física e empacotamento com SDKs continuam pendentes. A PR reporta bateria parcial e deltas dirigidos: Node 21 passaram e duas falhas iguais à base; ASan+UBSan 5/5; TSan forçado 4/5 e rc 66 em farol_home, com nFils também reproduzido na base e avisos adicionais de fils/espera da fixture. nav21 teve timeouts a 360/900 s nos dois lados; bateria ampla ainda não fechada. Testes são reportados pela VPS, não executados aqui. Cinco itens apenas previstos para 21e (728, 772 e PRs 761/644/749) não tiveram SHAs confirmados e não foram promovidos a integrados. Fixture D1 simulada de 21 modelos não verifica ancestralidade do D1 real.",
+      "pr": 841,
       "previousNotes": [
+        "Sol retoma a bateria do 21e@e34f0ddc5d contra a base pós-#840 (integracao/2.1@96a939a5a6); resultado final ainda não informado. A tentativa Argon na montagem antiga 0dea681ce8 terminou com bloqueio do provedor e evidência parcial; não é resultado da ponta reconstruída. Validação dirigida anterior preservada: 15/15 dirigidos, ASan+UBSan 3/3, Node 21 passaram e duas falhas iguais à base. Isso não equivale a bateria atual concluída. Publicação ainda sem credencial na VPS; branch lote/21e e PR dessa origem continuam ausentes na nova consulta ao GitHub. TV física pendente; lote não integrado.",
         "Reconstruído localmente na VPS em lote/21e@e34f0ddc5d sobre integracao/2.1@96a939a5a6 (#840), preservando os dez itens e incluindo Farol 45@bae6663936. Testes reportados: dirigidos 15/15, ASan+UBSan 3/3; Node 21 passaram e duas falhas já existiam na base. Fixture D1 simulada do contrato de aparelho corrigida (21 modelos); isso não verifica a ancestralidade do D1 real. Publicação bloqueada na VPS sem escrita no GitHub; branch e PR dessa origem ausentes na consulta. Repositório local pronto para publicação e PR com merge commit. TV física pendente; lote não integrado.",
         "reconstruído localmente sobre integracao/2.1@96a939a5a6, preservados os dez itens; dirigido 15/15, ASan+UBSan 3/3, Node 21 passaram e duas falhas iguais à base; fixture D1 atualizada; relatório revisao/LOTE-21E-840.md; TV física pendente",
         "VPS informa remontagem em andamento sobre integracao/2.1@96a939a5a6, incluindo a correção Farol 45@bae6663936. Nova ponta do lote e resultados da bateria remontada ainda não informados. 0dea681ce é apenas a última ponta conhecida da montagem anterior; não é um SHA novo. PR e validação em TV física não confirmadas.",
@@ -3860,11 +3932,11 @@
         "Itens aprovados reservados; montagem ainda não confirmada."
       ],
       "branch": "lote/21e",
-      "updatedAt": "2026-11-23T20:28:21+00:00",
-      "reportedAt": "2026-11-23T20:24:00+00:00",
-      "source": "Relato VPS [BATERIA] às 20h24 UTC + publicação reconferida no GitHub",
+      "updatedAt": "2026-11-23T22:17:28+00:00",
+      "reportedAt": "2026-11-23T22:12:48Z",
+      "source": "GitHub PR #841 + ancestralidade conferida no git",
       "verified": false,
-      "integrationVerified": false,
+      "integrationVerified": true,
       "baseBranch": "integracao/2.1",
       "baseSha": "96a939a5a6",
       "items": [
@@ -3877,11 +3949,13 @@
         "farol-29",
         "farol-45",
         "catrev",
-        "hist-semlogin"
+        "hist-semlogin",
+        "issue-751",
+        "issue-786"
       ],
       "pendingRebuild": false,
-      "rebuildStatus": "completed_locally",
-      "lastBuiltSha": "e34f0ddc5d",
+      "rebuildStatus": "published_and_merged",
+      "lastBuiltSha": "121b2ca867",
       "previousBuilds": [
         {
           "sha": "0dea681ce",
@@ -3899,20 +3973,42 @@
             "catrev",
             "hist-semlogin"
           ]
+        },
+        {
+          "sha": "e34f0ddc5d",
+          "fullSha": "e34f0ddc5d2585ccea35785ecb7d3c083b936d3f",
+          "baseBranch": "integracao/2.1",
+          "baseSha": "96a939a5a6",
+          "items": [
+            "farol-4",
+            "farol-8",
+            "farol-9",
+            "farol-12",
+            "farol-13",
+            "farol-24",
+            "farol-29",
+            "farol-45",
+            "catrev",
+            "hist-semlogin"
+          ],
+          "note": "Reconstrução local anterior aos dois deltas de teste publicados na PR #841"
         }
       ],
-      "fullSha": "e34f0ddc5d2585ccea35785ecb7d3c083b936d3f",
+      "fullSha": "121b2ca8673754d904ed25b7ee2ab40a713741b9",
       "baseFullSha": "96a939a5a68b256d91deed83e33d9bbabe2b3c66",
       "rebuiltOnIntegrationSha": "96a939a5a68b256d91deed83e33d9bbabe2b3c66",
       "localRepo": "/home/ubuntu/nuvio-qa-21/global/repo",
       "publication": {
-        "status": "BLOQUEADA",
+        "status": "FEITO",
         "vpsWriteAccess": false,
-        "githubBranchExists": false,
-        "githubPrNumber": null,
-        "checkedAt": "2026-11-23T20:27:30+00:00",
+        "githubBranchExists": true,
+        "githubPrNumber": 841,
+        "checkedAt": "2026-11-23T22:17:28+00:00",
         "requiredMergeMethod": "merge_commit",
-        "reason": "VPS sem credencial de escrita no GitHub; branch lote/21e e PR dessa origem ausentes na consulta"
+        "reason": "Publicado no GitHub e integrado pela PR #841; limitação anterior de escrita da VPS não bloqueia mais este lote",
+        "githubState": "merged",
+        "githubHeadSha": "121b2ca8673754d904ed25b7ee2ab40a713741b9",
+        "githubMergeSha": "015d181d4599d0b1164e003a627e37606b816394"
       },
       "reportedHostChecks": {
         "status": "reported_passed_with_baseline_failures",
@@ -3938,22 +4034,64 @@
       },
       "reportPath": "revisao/LOTE-21E-840.md",
       "battery": {
-        "status": "in_progress",
-        "batchSha": "e34f0ddc5d",
+        "status": "partial_results_reported",
+        "matrixBatchSha": "e34f0ddc5d",
+        "publishedHeadSha": "121b2ca867",
         "baseSha": "96a939a5a6",
-        "reviewer": "Sol via Codex",
-        "task": "…b912",
-        "previousAttempt": {
-          "batchSha": "0dea681ce8",
-          "reviewer": "Argon",
-          "status": "provider_blocked",
-          "evidence": "partial"
-        },
-        "directedValidationPreserved": true,
         "finalResultReported": false,
-        "reportedAt": "2026-11-23T20:24:00+00:00",
-        "source": "Relato VPS"
-      }
+        "fullSuitePending": true,
+        "source": "https://github.com/iqui27/nuvio-native-legacy/pull/841",
+        "checkedAt": "2026-11-23T22:17:28+00:00",
+        "previousState": {
+          "status": "in_progress",
+          "batchSha": "e34f0ddc5d",
+          "baseSha": "96a939a5a6",
+          "reviewer": "Sol via Codex",
+          "task": "…b912",
+          "previousAttempt": {
+            "batchSha": "0dea681ce8",
+            "reviewer": "Argon",
+            "status": "provider_blocked",
+            "evidence": "partial"
+          },
+          "directedValidationPreserved": true,
+          "finalResultReported": false,
+          "reportedAt": "2026-11-23T20:24:00+00:00",
+          "source": "Relato VPS"
+        },
+        "reportedResults": {
+          "sharedDirected": "6/6",
+          "newDirected": "9/9",
+          "gates": "6/6",
+          "nodePassed": 21,
+          "nodeFailed": 2,
+          "nodeFailuresSameAsBase": true,
+          "asanUbsan": "5/5",
+          "forcedTsan": "4/5",
+          "farolHomeTsanRc": 66,
+          "nFilsAlsoOnBase": true,
+          "additionalWarnings": [
+            "fils na ponta instrumentada",
+            "espera da fixture"
+          ],
+          "nav21TimeoutSeconds": [
+            360,
+            900
+          ],
+          "crossSyntax": "70/70",
+          "deltas": "Validação dirigida independente; suíte ampla nos SHAs originais da matriz"
+        }
+      },
+      "githubState": "merged",
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "mergedAt": "2026-11-23T22:12:48Z",
+      "plannedItemsUnconfirmed": [
+        "issue-728",
+        "issue-772",
+        "pr-761",
+        "pr-644",
+        "pr-749"
+      ]
     }
   ],
   "outside": [
@@ -3971,6 +4109,159 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T22:12:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "lote-21e",
+      "from": "PR_ABERTA",
+      "to": "FEITO",
+      "report": "GitHub: PR #841 mergeada em integracao/2.1, merge 015d181d45, ponta 121b2ca867; 12 entregas com ancestralidade confirmada; TV física pendente.",
+      "source": "GitHub API + git merge-base --is-ancestor",
+      "pr": 841,
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
+    },
+    {
+      "at": "2026-11-23T22:12:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "farol-4",
+      "from": "LOTE",
+      "to": "FEITO",
+      "report": "GitHub: farol-4@b29addd8a integrado pela PR #841; ancestral de 015d181d45. TV física pendente.",
+      "source": "GitHub API + git merge-base --is-ancestor",
+      "pr": 841,
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
+    },
+    {
+      "at": "2026-11-23T22:12:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "farol-8",
+      "from": "LOTE",
+      "to": "FEITO",
+      "report": "GitHub: farol-8@aa6d0dbd3 integrado pela PR #841; ancestral de 015d181d45. TV física pendente.",
+      "source": "GitHub API + git merge-base --is-ancestor",
+      "pr": 841,
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
+    },
+    {
+      "at": "2026-11-23T22:12:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "farol-9",
+      "from": "LOTE",
+      "to": "FEITO",
+      "report": "GitHub: farol-9@c0bca62f0 integrado pela PR #841; ancestral de 015d181d45. TV física pendente.",
+      "source": "GitHub API + git merge-base --is-ancestor",
+      "pr": 841,
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
+    },
+    {
+      "at": "2026-11-23T22:12:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "farol-12",
+      "from": "LOTE",
+      "to": "FEITO",
+      "report": "GitHub: farol-12@71749228c integrado pela PR #841; ancestral de 015d181d45. TV física pendente.",
+      "source": "GitHub API + git merge-base --is-ancestor",
+      "pr": 841,
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
+    },
+    {
+      "at": "2026-11-23T22:12:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "farol-13",
+      "from": "LOTE",
+      "to": "FEITO",
+      "report": "GitHub: farol-13@66fb2d121 integrado pela PR #841; ancestral de 015d181d45. TV física pendente.",
+      "source": "GitHub API + git merge-base --is-ancestor",
+      "pr": 841,
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
+    },
+    {
+      "at": "2026-11-23T22:12:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "farol-24",
+      "from": "LOTE",
+      "to": "FEITO",
+      "report": "GitHub: farol-24@9fac396d4 integrado pela PR #841; ancestral de 015d181d45. TV física pendente.",
+      "source": "GitHub API + git merge-base --is-ancestor",
+      "pr": 841,
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
+    },
+    {
+      "at": "2026-11-23T22:12:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "farol-29",
+      "from": "LOTE",
+      "to": "FEITO",
+      "report": "GitHub: farol-29@32cf15761 integrado pela PR #841; ancestral de 015d181d45. TV física pendente.",
+      "source": "GitHub API + git merge-base --is-ancestor",
+      "pr": 841,
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
+    },
+    {
+      "at": "2026-11-23T22:12:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "farol-45",
+      "from": "CORRECAO",
+      "to": "FEITO",
+      "report": "GitHub: farol-45@bae6663936 integrado pela PR #841; ancestral de 015d181d45. TV física pendente.",
+      "source": "GitHub API + git merge-base --is-ancestor",
+      "pr": 841,
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
+    },
+    {
+      "at": "2026-11-23T22:12:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "issue-751",
+      "from": "APROVADA",
+      "to": "FEITO",
+      "report": "GitHub: issue-751@03c4bf516 integrado pela PR #841; ancestral de 015d181d45. TV física pendente.",
+      "source": "GitHub API + git merge-base --is-ancestor",
+      "pr": 841,
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
+    },
+    {
+      "at": "2026-11-23T22:12:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "issue-786",
+      "from": "APROVADA",
+      "to": "FEITO",
+      "report": "GitHub: issue-786@0b0bdfad7 integrado pela PR #841; ancestral de 015d181d45. TV física pendente.",
+      "source": "GitHub API + git merge-base --is-ancestor",
+      "pr": 841,
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
+    },
+    {
+      "at": "2026-11-23T22:12:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "catrev",
+      "from": "LOTE",
+      "to": "FEITO",
+      "report": "GitHub: catrev@773af36d7 integrado pela PR #841; ancestral de 015d181d45. TV física pendente.",
+      "source": "GitHub API + git merge-base --is-ancestor",
+      "pr": 841,
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
+    },
+    {
+      "at": "2026-11-23T22:12:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "hist-semlogin",
+      "from": "LOTE",
+      "to": "FEITO",
+      "report": "GitHub: hist-semlogin@d8bce6cbb integrado pela PR #841; ancestral de 015d181d45. TV física pendente.",
+      "source": "GitHub API + git merge-base --is-ancestor",
+      "pr": 841,
+      "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
+    },
+    {
+      "at": "2026-11-23T21:28:48Z",
+      "appliedAt": "2026-11-23T22:17:28+00:00",
+      "item": "lote-21e",
+      "from": "LOTE",
+      "to": "PR_ABERTA",
+      "report": "GitHub: PR #841 aberta de lote/21e para integracao/2.1; ponta final conferida 121b2ca867. Publicação não equivale a integração ou TV validada.",
+      "source": "GitHub PR #841: abertura confirmada retroativamente por createdAt; ponta final conforme headRefOid",
+      "pr": 841
+    },
     {
       "at": "2026-11-23T21:18:00+00:00",
       "appliedAt": "2026-11-23T21:21:16+00:00",
