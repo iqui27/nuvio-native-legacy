@@ -1360,6 +1360,12 @@ static int tocarFonteGuardada(int deCw) {
     return 0;
   }
   marco("abrir: fonte guardada, sem busca");
+  // Tocava com o audio de outra fonte: volta com ele e com a mesma sincronia.
+  { static FontevoltaAudio a;
+    if (fontevolta_audio(alvo, sessao_usuario(), perfis_ativo(), &a)) {
+      audioext_alvo(alvo);
+      audioext_retomar(a.url, a.cabecalhos, a.nome, a.idioma, a.faixa, a.offsetMs, a.velocidadePpm);
+    } }
   stream_definir_atual(-1);
   voltaFonte = s;
   video_definir_dv(s.dolbyVision);

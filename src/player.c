@@ -2738,6 +2738,21 @@ static void fonteTocandoCopiar(void) {
   fonteTocando = *s;
   fonteTocandoObtida = SDL_GetTicks() - stream_idade_ms();
 }
+// O audio de outra fonte que toca agora vai junto com a fonte guardada (ou sai
+// dela, quando voltou ao audio do proprio arquivo). 1 = a entrada mudou.
+static int lembrarAudio(const char *alvo, const char *url) {
+  static FontevoltaAudio a;
+  memset(&a, 0, sizeof a);
+  if (audioext_tocando() && audioext_pedido(url)) {
+    a.tem = 1;
+    snprintf(a.url, sizeof a.url, "%s", audioext_url());
+    snprintf(a.cabecalhos, sizeof a.cabecalhos, "%s", audioext_cabecalhos());
+    snprintf(a.nome, sizeof a.nome, "%s", audioext_nome());
+    snprintf(a.idioma, sizeof a.idioma, "%s", audioext_idioma());
+    a.faixa = audioext_faixa(); a.offsetMs = audioext_offset_ms(); a.velocidadePpm = audioext_velocidade();
+  }
+  return fontevolta_guardar_audio(alvo, sessao_usuario(), perfis_ativo(), url, &a);
+}
 static void lembrarFonte(void) {
   const Stream *s = stream_item(stream_atual());
   const char *url = video_url_atual();
@@ -2764,12 +2779,17 @@ static void lembrarFonte(void) {
   if ((!s || strcmp(s->url, url)) && url[0] && !strcmp(fonteTocando.url, url)) {
     s = &fonteTocando; idade = SDL_GetTicks() - fonteTocandoObtida;
   }
-  // Aberta pela fonte guardada (sem indice na lista): a entrada ja existe.
+  // Aberta pela fonte guardada (sem indice na lista): a entrada ja existe, e
+  // so o audio de outra fonte (a sincronia pode ter mudado) e atualizado.
   if (!s || strcmp(s->url, url)) {
-    printf("[voltafonte] nao guardada: a fonte que toca nao esta na lista nem na copia\n");
-    fflush(stdout); return;
+    if (!lembrarAudio(alvo, url)) {
+      printf("[voltafonte] nao guardada: a fonte que toca nao esta na lista nem na copia\n");
+      fflush(stdout);
+    }
+    return;
   }
   fontevolta_guardar(alvo, sessao_usuario(), perfis_ativo(), s, idade, SDL_GetTicks());
+  lembrarAudio(alvo, url);
 }
 
 static void fecharSessao(int manter, int trocaFonte) {

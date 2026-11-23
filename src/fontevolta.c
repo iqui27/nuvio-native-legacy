@@ -24,6 +24,7 @@ typedef struct {
   Uint32 obtido;       // SDL_GetTicks de quando o link saiu do addon (modo desligado)
   long long obtidoS;   // time(NULL) do mesmo instante (modo ligado)
   Stream s;
+  FontevoltaAudio a;   // o audio de outra fonte que tocava junto (a.tem)
 } Entrada;
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static Entrada umaSo;  // desligado: a unica entrada, sem alocar a tabela
@@ -87,9 +88,10 @@ static void gravarSemTrava(void) {
   int i;
   if (!persistir || !arqGravar) return;
   if (!nEnt) { if (arqApagar) arqApagar(ARQUIVO); return; }
-  cap = (size_t)nEnt * (2u * sizeof(Stream) + 2048u) + 64u;
+  cap = (size_t)nEnt * (2u * sizeof(Stream) + 2u * sizeof(FontevoltaAudio) + 2048u) + 64u;
   for (i = 0; i < nEnt; i++) {
     size_t len = strlen(nv_media_url(ent[i].s.url));
+    if (strlen(ent[i].a.url) > len) len = strlen(ent[i].a.url);
     if (len > 4096) cap += 2 * (len - 4096);
     if (2 * len + 8 > tmpTam) tmpTam = 2 * len + 8;
   }
@@ -112,8 +114,18 @@ static void gravarSemTrava(void) {
     for (int j = 0; j < FONTEFILTRO_N; j++)
       k += (size_t)snprintf(buf + k, cap - k, "%llu\t", (unsigned long long)s->filtro.valores[j]);
     if (k + 1 < cap)
-      k += (size_t)snprintf(buf + k, cap - k, "%d\t%d\t%d\t%d\t%d\t%ld\t%d\n", s->altura, s->dolbyVision,
+      k += (size_t)snprintf(buf + k, cap - k, "%d\t%d\t%d\t%d\t%d\t%ld\t%d", s->altura, s->dolbyVision,
                             s->dolbyAtmos, s->mp4, s->fileIdx, s->tamanhoMB, s->debridServico);
+    // O audio de outra fonte, depois de tudo: arquivo de antes (sem estes
+    // campos) carrega sem audio.
+    if (e->a.tem && k + 1 < cap) {
+      k += (size_t)snprintf(buf + k, cap - k, "\t1\t");
+#define CAMPO(txt) do { esc(tmp, tmpTam, (txt)); k += (size_t)snprintf(buf + k, cap - k, "%s\t", tmp); } while (0)
+      CAMPO(nv_media_url(e->a.url)); CAMPO(e->a.cabecalhos); CAMPO(e->a.nome); CAMPO(e->a.idioma);
+#undef CAMPO
+      k += (size_t)snprintf(buf + k, cap - k, "%d\t%d\t%d", e->a.faixa, e->a.offsetMs, e->a.velocidadePpm);
+    }
+    if (k + 1 < cap) k += (size_t)snprintf(buf + k, cap - k, "\n");
   }
   arqGravar(ARQUIVO, buf);
   free(buf); free(tmp);
@@ -174,6 +186,22 @@ static void carregarSemTrava(void) {
     e->s.fileIdx = atoi(campo(&p));
     e->s.tamanhoMB = atol(campo(&p));
     e->s.debridServico = atoi(campo(&p));
+    if (p && atoi(campo(&p)) == 1) {
+      const char *salva = campo(&p);
+      char *url = malloc(strlen(salva) + 1);
+      if (url) {
+        desesc(url, strlen(salva) + 1, salva);
+        e->a.tem = nv_media_url_guardar(url, e->a.url, sizeof e->a.url);
+        free(url);
+      }
+      desesc(e->a.cabecalhos, sizeof e->a.cabecalhos, campo(&p));
+      desesc(e->a.nome, sizeof e->a.nome, campo(&p));
+      desesc(e->a.idioma, sizeof e->a.idioma, campo(&p));
+      e->a.faixa = atoi(campo(&p));
+      e->a.offsetMs = atoi(campo(&p));
+      e->a.velocidadePpm = atoi(campo(&p));
+      if (!e->a.url[0]) e->a.tem = 0;
+    }
     if (!e->alvo[0] || !e->conta[0] || !e->s.url[0] || e->obtidoS <= 0) continue;
     nEnt++;
   }
@@ -240,6 +268,7 @@ void fontevolta_guardar(const char *alvo, const char *conta, int perfil,
   snprintf(ent[i].conta, sizeof ent[i].conta, "%s", conta);
   ent[i].perfil = perfil;
   ent[i].s = *s;
+  memset(&ent[i].a, 0, sizeof ent[i].a);
   ent[i].obtido = agora - idadeLink;
   ent[i].obtidoS = (long long)time(NULL) - (long long)(idadeLink / 1000u);
   gravarSemTrava();
@@ -251,6 +280,37 @@ void fontevolta_guardar(const char *alvo, const char *conta, int perfil,
 int fontevolta_toca_guardada(int escolherManual, int canal, int playerAberto) {
   if (escolherManual || canal || !playerAberto) return 0;
   return 1;
+}
+
+int fontevolta_guardar_audio(const char *alvo, const char *conta, int perfil,
+                             const char *urlVideo, const FontevoltaAudio *a) {
+  int i, tem = a && a->tem && a->url[0];
+  if (!alvo || !*alvo || !conta || !urlVideo || !*urlVideo) return 0;
+  pthread_mutex_lock(&trava);
+  carregarSemTrava();
+  i = acharSemTrava(alvo, conta, perfil);
+  if (i < 0 || strcmp(ent[i].s.url, urlVideo) || (!tem && !ent[i].a.tem)) {
+    pthread_mutex_unlock(&trava); return 0;
+  }
+  if (tem) ent[i].a = *a; else memset(&ent[i].a, 0, sizeof ent[i].a);
+  ent[i].a.tem = tem;
+  gravarSemTrava();
+  pthread_mutex_unlock(&trava);
+  if (tem) printf("[voltafonte] audio de outra fonte guardado para %s: %.60s offset %d ms\n", alvo, a->nome, a->offsetMs);
+  else printf("[voltafonte] audio de outra fonte tirado de %s\n", alvo);
+  fflush(stdout);
+  return 1;
+}
+
+int fontevolta_audio(const char *alvo, const char *conta, int perfil, FontevoltaAudio *out) {
+  int i, tem = 0;
+  if (!alvo || !*alvo || !conta) return 0;
+  pthread_mutex_lock(&trava);
+  carregarSemTrava();
+  i = acharSemTrava(alvo, conta, perfil);
+  if (i >= 0 && ent[i].a.tem) { tem = 1; if (out) *out = ent[i].a; }
+  pthread_mutex_unlock(&trava);
+  return tem;
 }
 
 int fontevolta_pegar(const char *alvo, const char *conta, int perfil,
