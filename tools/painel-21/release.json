@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T20:14:47+00:00",
+    "updatedAt": "2026-11-23T20:19:10+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T20:13:00+00:00",
+    "lastVpsReportedAt": "2026-11-23T20:16:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -719,21 +719,22 @@
         "farol-29"
       ],
       "allDependencies": false,
-      "status": "REVISAO",
+      "status": "APROVADA",
       "wave": "B",
       "sha": "dc6db69bb3",
       "batch": null,
-      "note": "Opus 5.5 via Antigravity (…8599) revisa cliente de busca e compatibilidade com lote/21e@e34f0ddc5d",
+      "note": "Opus r1 APROVADO_COM_RESSALVAS, próximo lote; 3 modos e merge vs 21e passaram; em 31/32 mover autenticação para fora da UI, aplicar filtro infantil inclusive em perfil privado, ligar preferências e validar Samsung WGT",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-30",
-      "updatedAt": "2026-11-23T20:10:48+00:00",
-      "reportedAt": "2026-11-23T20:08:00+00:00",
+      "updatedAt": "2026-11-23T20:19:10+00:00",
+      "reportedAt": "2026-11-23T20:16:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "Opus 5.5 via Antigravity (…8599) revisa cliente de busca e compatibilidade com lote/21e@e34f0ddc5d",
         "Gemini Neon entregou cliente farolbusca; aguarda vaga de revisão independente",
         "VPS Gemini 4 Neon (antigravity) onda B, task …fb3ec7c9, brief lotes/sense/briefs/farol-30.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
       ]
@@ -904,21 +905,22 @@
         "farol-29"
       ],
       "allDependencies": false,
-      "status": "CORRECAO",
+      "status": "REVISAO",
       "wave": "B",
-      "sha": "f5037cd057",
+      "sha": "6238266cb3",
       "batch": null,
-      "note": "Sol r1 REPROVADO: consentimento, privacidade do KV, título literal inventado e hit KV fora do pedido; Gemini Hydrogen (…ca17) corrige na mesma branch",
+      "note": "Gemini Hydrogen entregou correção dos quatro P1 (relata dirigido 14/14 e corpus 488/488); merge-tree 21e rc 0 confirmado; Sol via Codex revisa r2 (…dc7f)",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-40",
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
+      "updatedAt": "2026-11-23T20:19:10+00:00",
+      "reportedAt": "2026-11-23T20:16:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "Sol r1 REPROVADO: consentimento, privacidade do KV, título literal inventado e hit KV fora do pedido; Gemini Hydrogen (…ca17) corrige na mesma branch",
         "VPS Gemini 4 Neon (antigravity) onda B, task …3616b0ed, brief lotes/sense/briefs/farol-40.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
       ]
     },
@@ -3920,6 +3922,22 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T20:16:00+00:00",
+      "appliedAt": "2026-11-23T20:19:10+00:00",
+      "item": "farol-30",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-23 20:16 [APROVADA] farol-30 · agente/21z-farol-30@dc6db69bb3 · Opus r1 APROVADO_COM_RESSALVAS, próximo lote; 3 modos e merge vs 21e passaram; em 31/32 mover autenticação para fora da UI, aplicar filtro infantil inclusive em perfil privado, ligar preferências e validar Samsung WGT"
+    },
+    {
+      "at": "2026-11-23T20:16:00+00:00",
+      "appliedAt": "2026-11-23T20:19:10+00:00",
+      "item": "farol-40",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 20:16 [REVISAO] farol-40 · agente/21z-farol-40@6238266cb3 · Gemini Hydrogen entregou correção dos quatro P1 (relata dirigido 14/14 e corpus 488/488); merge-tree 21e rc 0 confirmado; Sol via Codex revisa r2 (…dc7f)"
+    },
     {
       "at": "2026-11-23T20:13:00+00:00",
       "appliedAt": "2026-11-23T20:14:47+00:00",
