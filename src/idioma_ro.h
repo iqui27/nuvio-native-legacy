@@ -5691,7 +5691,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "Partajarea este dezactivată pe server"),
   T("O conjunto de selos usado na lista", "Setul de ștampile utilizate în listă"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "Conturul rândurilor și cardurilor, inclusiv cel de focus. Dezactivat, elementul în focus e marcat doar de un fundal mai deschis în culoarea de accent."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "Conturul rândurilor și cardurilor, inclusiv cel de focus."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "Telecomanda, căutarea, contul și actualizarea: ce funcționează pe orice ecran al aplicației."),
   T("O corte da imagem do trailer", "Imaginea trailerului tăiată"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Criteriul alegerii automate: echilibru, calitate sau pornire rapidă."),

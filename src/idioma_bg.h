@@ -5692,7 +5692,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "Споделянето е изключено на сървъра"),
   T("O conjunto de selos usado na lista", "Комплектът печати, използван в списъка"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "Контурът на редовете и картите, включително този на фокуса. Изключено: елементът във фокус се маркира само с по-светъл фон в цвета за акцент."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "Контурът на редовете и картите, включително този на фокуса."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "Дистанционното, търсенето, профилът и обновяването: това, което важи на всеки екран."),
   T("O corte da imagem do trailer", "Изображението на трейлъра е изрязано"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Критерият на автоматичния избор: баланс, качество или бърз старт."),

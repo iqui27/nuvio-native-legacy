@@ -5691,7 +5691,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "El uso compartido está desactivado en el servidor"),
   T("O conjunto de selos usado na lista", "El conjunto de sellos utilizado en la lista."),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "El contorno de filas y tarjetas, incluido el del foco. Desactivado, el elemento en foco se marca solo con un fondo más claro en el color de acento."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "El contorno de filas y tarjetas, incluido el del foco."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "El mando, la búsqueda, la cuenta y la actualización: lo que vale en cualquier pantalla de la app."),
   T("O corte da imagem do trailer", "El corte de la imagen del trailer."),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "El criterio de la elección automática: equilibrio, calidad o inicio rápido."),

@@ -4510,7 +4510,7 @@ void gfx_vidro_borda(GfxRect r, float raio, float a) {
   gfx_brilho_topo(r, raio, 0.50f, 1.0f, 1.0f, 1.0f, 0.18f * a);
 }
 void gfx_vidro_aro(GfxRect r, float raio, float esp, float cr, float cg, float cb, float ca) {
-  if (!ajustes_vidro_contorno()) return;
+  if (!ajustes_vidro() || !ajustes_vidro_contorno()) return;
   gfx_anel(r, raio, esp, cr, cg, cb, ca);
 }
 // Cartao/linha em repouso dentro de uma folha de vidro: um veu claro, sem aro.
@@ -4518,8 +4518,8 @@ void gfx_vidro_superficie(GfxRect r, float raio, float a) {
   if (r.w <= 0.0f || r.h <= 0.0f || a <= 0.001f) return;
   gfx_cor(r, raio, 1, 1, 1, 0.05f * gfx_vidro_opacidade() * a);
 }
-// A linha sobe um degrau de superficie. "Contorno do vidro" acrescenta
-// um aro neutro; "Foco no realce" mantem seu tratamento proprio.
+// A linha sobe um degrau de superficie. No vidro, a opcao de contorno
+// acrescenta um aro neutro; "Foco no realce" mantem seu tratamento proprio.
 void gfx_vidro_foco(GfxRect r, float raio, float foco, float a) {
   float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco);
   if (f <= 0.01f || a <= 0.001f) return;

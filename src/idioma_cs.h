@@ -5692,7 +5692,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "Sdílení je na serveru vypnuté"),
   T("O conjunto de selos usado na lista", "Sada razítek použitá v seznamu"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "Obrys řádků a karet, včetně obrysu fokusu. Vypnuto: prvek ve fokusu označí jen světlejší pozadí v barvě zvýraznění."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "Obrys řádků a karet, včetně obrysu fokusu."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "Ovladač, hledání, účet a aktualizace: co platí na každé obrazovce aplikace."),
   T("O corte da imagem do trailer", "Vystřižený obrázek traileru"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Kritérium automatické volby: vyváženě, kvalita, nebo rychlý start."),

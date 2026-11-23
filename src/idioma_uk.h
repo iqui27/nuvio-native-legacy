@@ -5691,7 +5691,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "Спільний доступ вимкнено на сервері"),
   T("O conjunto de selos usado na lista", "Набір штампів, використаний у списку"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "Контур рядків і карток, зокрема контур фокуса. Вимкнено — елемент у фокусі позначається лише світлішим фоном кольору акценту."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "Контур рядків і карток, зокрема контур фокуса."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "Пульт, пошук, акаунт і оновлення: те, що працює на будь-якому екрані застосунку."),
   T("O corte da imagem do trailer", "Вирізане зображення трейлера"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Критерій автовибору: баланс, якість чи швидкий старт."),

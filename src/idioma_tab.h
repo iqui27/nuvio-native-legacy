@@ -5691,7 +5691,7 @@
   { "O certificado do servidor mudou", "Certificate changed" },
   { "O compartilhamento está desligado no servidor", "Sharing is turned off on the server" },
   { "O conjunto de selos usado na lista", "The stamp set used in the list" },
-  { "O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "The outline of rows and cards, including the focus one. Off, the focused item is marked only by a lighter background in the accent color." },
+  { "O contorno das linhas e dos cartões, inclusive o do foco.", "The outline of rows and cards, including the focus one." },
   { "O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "The remote, search, your account and updates: what works on every screen of the app." },
   { "O corte da imagem do trailer", "The trailer image cut" },
   { "O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "The automatic choice's criterion: balance, quality or quick start." },

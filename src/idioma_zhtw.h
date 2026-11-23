@@ -5692,7 +5692,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "伺服器已關閉共享"),
   T("O conjunto de selos usado na lista", "列表中使用的圖章集"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "列和卡片的描邊，包括焦點描邊。關閉後，焦點項目只用強調色的較亮背景標示。"),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "列和卡片的描邊，包括焦點描邊。"),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "遙控器、搜尋、帳號和更新：在應用程式的每個介面都適用的內容。"),
   T("O corte da imagem do trailer", "預告片截圖"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "自動選擇的標準：均衡、畫質或快速開始。"),

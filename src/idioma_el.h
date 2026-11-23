@@ -5692,7 +5692,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "Η κοινή χρήση είναι απενεργοποιημένη στον διακομιστή"),
   T("O conjunto de selos usado na lista", "Το σύνολο γραμματοσήμων που χρησιμοποιείται στη λίστα"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "Το περίγραμμα γραμμών και καρτών, και αυτό της εστίασης. Ανενεργό: το στοιχείο σε εστίαση σημαδεύεται μόνο με πιο ανοιχτό φόντο στο χρώμα έμφασης."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "Το περίγραμμα γραμμών και καρτών, και αυτό της εστίασης."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "Τηλεχειριστήριο, αναζήτηση, λογαριασμός και ενημέρωση: ό,τι ισχύει σε κάθε οθόνη της εφαρμογής."),
   T("O corte da imagem do trailer", "Η αποκοπή της εικόνας του τρέιλερ"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Το κριτήριο της αυτόματης επιλογής: ισορροπία, ποιότητα ή γρήγορη εκκίνηση."),

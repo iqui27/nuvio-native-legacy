@@ -5692,7 +5692,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "Delning är avstängd på servern"),
   T("O conjunto de selos usado na lista", "Stämpeluppsättningen som används i listan"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "Kanten runt rader och kort, även fokuskanten. Av: objektet i fokus markeras bara med en ljusare bakgrund i accentfärgen."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "Kanten runt rader och kort, även fokuskanten."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "Fjärrkontrollen, sökningen, kontot och uppdateringen: det som gäller på alla skärmar i appen."),
   T("O corte da imagem do trailer", "Trailerbilden klippt"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Kriteriet för automatiskt val: balans, kvalitet eller snabb start."),

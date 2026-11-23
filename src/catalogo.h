@@ -289,6 +289,28 @@ int  cat_apagar_cache(void);
 int  cat_do_cache(void);
 void cat_cache_substituido(void);
 
+// HOME PRECOMPUTADA: as fileiras de catalogo que estao na tela (e no cache em
+// disco) servem como resposta enquanto forem recentes, em vez de refazer os
+// ~30 pedidos a cada abertura ou ciclo de 5 min. A validade e o relogio de
+// parede (segundos) da ultima volta em que TODAS as fileiras vieram da rede;
+// ela vai no cabecalho do cache e volta com ele. Uma volta servida do cache
+// nao a renova, entao a home expira no horario original e a volta seguinte
+// pede tudo de novo. 0 = desconhecida (sem cache, cache apagado, outro perfil).
+void cat_home_fresca(long long quando);
+long long cat_home_fresca_em(void);
+// 1 se a home ficou inteira ha menos de `validadeS` segundos de `agora`.
+int  cat_home_fresca_valida(long long agora, int validadeS);
+
+// FILEIRAS DO FAROL ("farol_*"). Sao do compositor do Farol: cat_ler_cache
+// nunca as publica do disco (so aparecem quando a volta as reentrega), e a
+// home precomputada nunca as reaproveita.
+#define CAT_PREFIXO_FAROL "farol_"
+// Tira da tela e do cache em disco do perfil ATUAL as fileiras cuja chave
+// comeca com `prefixo`; o resto do snapshot fica. Os itens nao saem do vetor.
+// Chamar antes de a identidade mudar (saida da conta), senao a gravacao vai
+// para o perfil novo. Devolve quantas fileiras sairam.
+int  cat_remover_fileiras_prefixo(const char *dirArte, const char *prefixo);
+
 int  cat_n(void);
 // O ponteiro devolvido (e os campos dele: backdrop, poster, logo) vale ate o
 // FIM DO QUADRO em que foi pedido, mesmo que a descoberta troque o catalogo

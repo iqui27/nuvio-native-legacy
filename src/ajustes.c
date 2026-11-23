@@ -1376,9 +1376,10 @@ static const AcentoFixo TEMA_ACENTO[] = {
 #define AJ_TEMA_TEXTURA     22
 #define AJ_TEMA_TEXTURA_SUTIL 23
 #define AJ_N_TEMAS_OPC      24
+#define AJ_TEMA_SEGURO      AJ_N_TEMAS_OPC
 // RESERVA (dono, 22/11/2026: "dinamico, rosa padrao"): onde o tema dinamico
 // nao roda (perfil seguro, indice de outra versao), o realce cai no Rosa, nao
-// no Branco. O padrao de fabrica continua a Imersiva.
+// no Branco. O padrao de fabrica continua Da arte.
 #define AJ_TEMA_RESERVA      6
 _Static_assert(sizeof TEMA_ACENTO / sizeof *TEMA_ACENTO == AJ_N_TEMAS_OPC,
                "TEMA_ACENTO: uma linha por indice de V_TEMA");
@@ -1387,10 +1388,10 @@ static const char *V_TEMA[] = {
   "Rosa", "Dourado", "Jade", "Ouro rosé", "Azul ártico", "Grafite",
   "Da arte", "Dinâmica estilizada", "Gradiente", "Imersiva",
   "Champagne", "Sálvia", "Lavanda", "Vinho", "Petróleo", "Índigo",
-  "Textura", "Textura sutil"
+  "Textura", "Textura sutil", "Modo seguro ligado"
 };
-_Static_assert(sizeof V_TEMA / sizeof *V_TEMA == AJ_N_TEMAS_OPC,
-               "V_TEMA: um nome por indice de TEMA_ACENTO");
+_Static_assert(sizeof V_TEMA / sizeof *V_TEMA == AJ_N_TEMAS_OPC + 1,
+               "V_TEMA: um nome por acento e um para o perfil seguro");
 // A REGUA (Ajustes › Aparência › Cor de destaque): nove claros e nove
 // profundos em ordem de matiz, e as dinamicas. E a ordem da TELA; o indice
 // gravado continua o de V_TEMA.
@@ -3460,13 +3461,16 @@ int ajustes_idioma_ingles(void)       { return ajustes_idioma() == IDIOMA_EN; }
 
 // 1 = o tema escolhido e um dos dinamicos (cor viva), que so existem nesta TV.
 static int temaEhDinamico(int v) {
-  return v >= 0 && v < AJ_N_TEMAS_OPC && v >= AJ_N_TEMAS && !TEMA_ACENTO[v].fam;
+  return v >= AJ_N_TEMAS && v < AJ_N_TEMAS_OPC && !TEMA_ACENTO[v].fam;
 }
 static int temaDinamico(void) { return temaEhDinamico(valor[AJ_TEMA]); }
+static int temaEmReserva(void) {
+  return valor[AJ_TEMA] == AJ_TEMA_SEGURO || (SEGURO && temaDinamico());
+}
 // LOCAL = nao existe no app web: os dinamicos e os seis fixos de 03/10. Nao
 // sobe para a conta e a conta nao o desfaz (ajustes_aplicar_blob,
 // ajustes_mesclar_blob).
-static int temaLocal(void) { return valor[AJ_TEMA] >= AJ_N_TEMAS && valor[AJ_TEMA] < AJ_N_TEMAS_OPC; }
+static int temaLocal(void) { return valor[AJ_TEMA] >= AJ_N_TEMAS && valor[AJ_TEMA] <= AJ_TEMA_SEGURO; }
 int ajustes_cor_viva(void) {
   if (SEGURO) return CORVIVA_DESLIGADA;   // qualquer tema dinamico: a cor viva anima a arte inteira
   return valor[AJ_TEMA] == AJ_TEMA_DINAMICA   ? (valor[AJ_ARTE_TOM] == 1 ? CORVIVA_SIMPLES_CLARO : CORVIVA_SIMPLES)
@@ -3942,7 +3946,7 @@ void ajustes_definir_p2p_ligado(int ligado) { int a = valor[AJ_P2P_LIGADO]; valo
 // chamam esta funcao, varias vezes por quadro: nenhuma conta mora aqui.
 void ajustes_acento(float *r, float *g, float *b) {
   int i = valor[AJ_TEMA];
-  if (SEGURO && temaDinamico()) i = AJ_TEMA_RESERVA;    // sem cor viva, o realce de reserva
+  if (temaEmReserva()) i = AJ_TEMA_RESERVA;
   else if (temaDinamico()) { corviva_acento(r, g, b); return; }
   if (i < 0 || i >= AJ_N_TEMAS_OPC || !TEMA_ACENTO[i].fam) i = AJ_TEMA_RESERVA;   // arquivo de outra versao
   corDeHex(TEMA_ACENTO[i].fill, r, g, b);
@@ -3960,7 +3964,7 @@ static const CorvivaTokens *tokensVivos(void) {
 }
 static int temaFixoAtual(void) {
   int i = valor[AJ_TEMA];
-  if (SEGURO && temaDinamico()) return AJ_TEMA_RESERVA;
+  if (temaEmReserva()) return AJ_TEMA_RESERVA;
   if (temaDinamico()) return -1;
   return (i < 0 || i >= AJ_N_TEMAS_OPC || !TEMA_ACENTO[i].fam) ? AJ_TEMA_RESERVA : i;
 }
@@ -4030,7 +4034,7 @@ void ajustes_acento_luz(float *r, float *g, float *b) {
   // Tema dinamico caido na RESERVA (perfil seguro, sem titulo, arte cinza): a
   // luz do fundo fica neutra, a do Branco. O rosa de reserva pinta controles,
   // nao a pagina; so quem ESCOLHEU o Rosa leva a nevoa rosa.
-  if (i >= 0 && temaDinamico()) i = 0;
+  if (temaEmReserva()) i = 0;
   if (i >= 0) { corDeHex(TEMA_ACENTO[i].luz, r, g, b); return; }
   { const CorvivaTokens *t = tokensVivos();
     float k = nv_acento_reserva < 0.0f ? 0.0f : nv_acento_reserva > 1.0f ? 1.0f : nv_acento_reserva, n[3];
@@ -5615,7 +5619,7 @@ void ajustes_dir(const char *dir) {
       if (OPCOES[i].tipo == OP_LEITURA || OPCOES[i].tipo == OP_ACAO) continue;
       // Valor fora da faixa (arquivo de outra versao, ou editado a mao) cai no
       // padrao em vez de indexar fora do vetor.
-      valor[i] = limita(i, v);
+      valor[i] = i == AJ_TEMA && v == AJ_TEMA_SEGURO ? v : limita(i, v);
       if (i == AJ_MEDIDOR) viuMedidor = 1;
       if (i == AJ_RESOLUCAO) viuRes = 1;
       if (i == AJ_FONTE_PRAZO) viuEspera = 1;
@@ -7070,7 +7074,7 @@ static int perfilLerVetor(int perfil, int *v, char *tem) {
       for (i = 0; i < AJ_N; i++) {
         if (!dePerfil(i) || strcmp(CHAVE[i], chave)) continue;
         if (i == AJ_COLECAO_EXIBICAO && (x < VT_LAY_AUTO || x >= VT_LAY_N)) x = VT_LAY_AUTO;
-        v[i] = limita(i, x);
+        v[i] = i == AJ_TEMA && x == AJ_TEMA_SEGURO ? x : limita(i, x);
         tem[i] = 1;
         break;
       }
@@ -8956,7 +8960,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_PROVEDORES_ESCOPO: return "Compartilhada usa as mesmas contas de provedores neste aparelho. Separada guarda uma cópia para este perfil. Trocar de opção mantém as duas configurações.";
     case AJ_AJUSTES_DO_PRINCIPAL: return "Ligado, cada perfil secundário desta conta herda da TV os ajustes locais de personalização que ainda não tiver salvos — o mesmo Hero, fileiras e visual do perfil principal. Desligado, só vale o que já estiver no arquivo do perfil.";
     case AJ_ADDONS_PRINCIPAL: return "Os outros perfis desta conta usam os addons do perfil principal. Desligado, cada perfil usa os seus — a não ser que a conta já diga para usar os do principal.";
-    case AJ_VIDRO_CONTORNO: return "O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.";
+    case AJ_VIDRO_CONTORNO: return "O contorno das linhas e dos cartões, inclusive o do foco.";
     case AJ_NT_EP: return "Qual nota aparece nos cartões de episódio. Como na linha do título segue os interruptores de Notas (IMDb, Trakt, TMDB). Só nesta TV.";
     case AJ_ARTE_TOM: return "Vívido mantém as cores da arte. Claro usa tons pastel da mesma cor, com texto contrastante. Só nesta TV.";
     case AJ_COR_LOGO: return "Com um tema dinâmico, a cor sai do logo do título em vez da arte de fundo. Logo branco ou preto usa a arte.";
@@ -9921,7 +9925,7 @@ static void riscoGravarSeguro(void) {
   for (i = 0; i < N_RISCOS; i++) {
     const Risco *r = &RISCOS[i];
     int v = riscoAtual(r->op);
-    if (r->op == AJ_TEMA) { if (temaDinamico()) valor[AJ_TEMA] = AJ_TEMA_RESERVA; continue; }
+    if (r->op == AJ_TEMA) { if (temaDinamico()) valor[AJ_TEMA] = AJ_TEMA_SEGURO; continue; }
     if (r->nivel(v) <= 0) continue;
     if (r->op == AJ_FIL_LIMITE) { fil_definir_limite(FIL_LIMITE_PADRAO); valor[AJ_FIL_LIMITE] = fil_limite_gravado(); }
     else if (r->op == AJ_ITENS_FILEIRA || r->op == AJ_RESOLUCAO || r->op == AJ_TEX_MB) valor[r->op] = 0;
@@ -11572,6 +11576,7 @@ static int nValores(int op) {
 // Texto do valor de uma linha. Buffer estatico porque so uma linha e desenhada
 // por vez dentro de desenhaLinha.
 static const char *textoValor(int op) {
+  if (op == AJ_TEMA && valor[AJ_TEMA] == AJ_TEMA_SEGURO) return i18n(V_TEMA[AJ_TEMA_SEGURO]);
   if (op >= AJ_FONTE_OCULTAR_DV && op <= AJ_FONTE_OCULTAR_VIDEO)
     return i18n(V_LIGA[!ajustes_fonte_ocultar(op - AJ_FONTE_OCULTAR_DV)]);
   if (op == AJ_MINIATURA_RES) { static const char *labels[] = {"Automático", "180p (320 x 180)", "270p (480 x 270)", "360p (640 x 360)"}; return i18n(labels[valor[op] >= 0 && valor[op] <= 3 ? valor[op] : 0]); }
@@ -12800,12 +12805,13 @@ float ajustes_rapido_cor(int i, float *r, float *g, float *b) {
 }
 int ajustes_rapido_cor_atual(void) {
   int i, v = valor[AJ_TEMA];
-  if (SEGURO && temaDinamico()) v = AJ_TEMA_RESERVA;
+  if (temaEmReserva()) return -1;
   for (i = 0; i < 18; i++) if (corTema(i) == v) return i;
   return -1;   // um dinamico: nenhum dos dezoito
 }
 const char *ajustes_rapido_cor_atual_nome(void) {
   int i = ajustes_rapido_cor_atual();
+  if (temaEmReserva()) return V_TEMA[AJ_TEMA_SEGURO];
   return i >= 0 ? V_TEMA[corTema(i)] : V_TEMA[valor[AJ_TEMA] >= 0 && valor[AJ_TEMA] < AJ_N_TEMAS_OPC ? valor[AJ_TEMA] : 0];
 }
 int ajustes_rapido_cor_definir(int i) {

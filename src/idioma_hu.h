@@ -5692,7 +5692,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "A megosztás ki van kapcsolva a szerveren"),
   T("O conjunto de selos usado na lista", "A listában használt bélyegkészlet"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "A sorok és kártyák körvonala, a fókuszé is. Kikapcsolva a fókuszban lévő elemet csak egy világosabb háttér jelöli a kiemelőszínben."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "A sorok és kártyák körvonala, a fókuszé is."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "A távirányító, a keresés, a fiók és a frissítés: ami az alkalmazás minden képernyőjén érvényes."),
   T("O corte da imagem do trailer", "Az előzetes kép kivágása"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Az automatikus választás szempontja: egyensúly, minőség vagy gyors indítás."),

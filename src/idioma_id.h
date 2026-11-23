@@ -5692,7 +5692,7 @@
   T("O certificado do servidor mudou", "Certificate changed"),
   T("O compartilhamento está desligado no servidor", "Berbagi dimatikan di server"),
   T("O conjunto de selos usado na lista", "Kumpulan stempel yang digunakan dalam daftar"),
-  T("O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.", "Garis tepi baris dan kartu, termasuk garis fokus. Mati: item yang difokus hanya ditandai latar lebih terang dalam warna aksen."),
+  T("O contorno das linhas e dos cartões, inclusive o do foco.", "Garis tepi baris dan kartu, termasuk garis fokus."),
   T("O controle, a busca, a conta e a atualização: o que vale em qualquer tela do app.", "Remote, pencarian, akun, dan pembaruan: hal yang berlaku di setiap layar aplikasi."),
   T("O corte da imagem do trailer", "Gambar trailernya terpotong"),
   T("O critério da escolha automática: equilíbrio, qualidade ou começar rápido.", "Kriteria pilihan otomatis: seimbang, kualitas, atau mulai cepat."),
