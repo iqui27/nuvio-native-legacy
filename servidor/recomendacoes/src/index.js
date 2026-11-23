@@ -28,7 +28,7 @@ import { rotaDiario, DIARIO_CORPO_MAX, DIARIO_CORPO_MAX_LB } from "./diario.js";
 import { rotaTrava, travaRev } from "./trava.js";
 import { resolverCanonica, canonizarEntrada, identidadesDe, rotaIdentidades, idSimkl,
          perfilExiste, RECURSO } from "./identidade.js";
-import { rotaFarolRegistro, limparFarol, FAROL_CORPO_MAX } from "./farol.js";
+import { rotaFarolRegistro, rotaFarolConhecido, rotaFarolPagina, limparFarol, FAROL_CORPO_MAX } from "./farol.js";
 
 const DIA = 86400;
 const RETENCAO = 90 * DIA;
@@ -1042,6 +1042,8 @@ export default {
     if (rota.startsWith("/musica/v1/") && req.method === "GET")
       return rotaMusica(url, env, fetch, limitar, req.headers.get("cf-connecting-ip") || "0.0.0.0");
     if (rota === "/m/" && req.method === "GET") return rotaPaginaMusica();
+    if (rota.startsWith("/v1/farol/r/"))
+      return rotaFarolPagina(req, env, rota.slice("/v1/farol/r/".length), agora);
 
     // TRAILER NA SAMSUNG (#136): a pergunta ao IMDb (que exige Referer) e a
     // pagina que embute o YouTube com origem valida. Regras em trailer.js.
@@ -1150,6 +1152,9 @@ export default {
     if (rota === "/v1/farol/registro")
       return req.method === "POST" ? rotaFarolRegistro(env, quemBruto, corpo, h, limitar, codigoRegistro)
                                    : erro("metodo nao suportado", 405);
+    if (rota === "/v1/farol/conhecido")
+      return req.method === "GET" ? rotaFarolConhecido(env, url, h)
+                                  : erro("metodo nao suportado", 405);
 
     const quem = { ...(await registrar(env, quemBruto)), bruto: quemBruto.bruto || quemBruto.id };
     // Ids antigos (de antes de uma fusao) que TVs guardaram viram o id vivo.

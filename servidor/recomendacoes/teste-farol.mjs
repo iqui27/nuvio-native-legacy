@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import worker from "./src/index.js";
 import { limparRegistro } from "./src/index.js";
 import { limparFarol, rotaFarolRegistro } from "./src/farol.js";
@@ -346,7 +347,7 @@ test("envio manual identico a um automatico preserva o prazo de 30 dias", async 
 });
 
 test("codigo-registro.mjs preserva a saida legada pura; tabela so com --tabela", async () => {
-  const cli = new URL("codigo-registro.mjs", import.meta.url).pathname;
+  const cli = fileURLToPath(new URL("codigo-registro.mjs", import.meta.url));
   const run = (...args) => execFileSync("node", [cli, ...args], { encoding: "utf8" }).trim();
   // Legado: id puro no decode, codigo puro no --id. Sem tabela na saida.
   const codigo = run("--id", "536870912");
