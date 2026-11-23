@@ -35,9 +35,21 @@ typedef struct {
 } DesktopSourceControl;
 unsigned desktop_native_sources(const DesktopSourceControl *controls, int count, void (*activate)(int),
                                 float x, float y, float w, float h, float scale, float alpha);
+#include "gfx.h"
+void desktop_native_profile_text(const char *text, float cx, float y, float size, int bold, float ink, float alpha);
+void desktop_native_profile_button(GfxRect rect, const char *title, int enabled, int selected, float alpha,
+                                  void (*activate)(int, int), int tag, int slot);
+#define NV_DESKTOP_NATIVE_CONTROLS 1
+// AppKit draws the controls into cached GL textures; SDL rows own hit testing.
+// kind: 0 switch, 1 popup, 2 button, 3 search, 4 label (state = font points).
+// Coordinates use the caller's canvas.
+int desktop_native_control(int slot, int kind, const char *title, int state, int enabled,
+                           float x, float y, float w, float h, float alpha);
 int desktop_native_menu(const DesktopMenuItem *items, int count, float x, float y);
 void desktop_native_init(SDL_Window *window);
 void desktop_native_sidebar(float fraction, float reveal);
+// Query field geometry is normalized to the content view; returns 0 for GL proof.
+int desktop_native_search(const char *query, float x, float y, float w, float h);
 void desktop_native_finish(void);
 void desktop_native_appearance(const char *name);
 int desktop_native_fullscreen(void);
@@ -54,7 +66,13 @@ int desktop_native_alert_result(char *text, int size);
 #if !defined(NV_DESKTOP_UI) || !defined(_WIN32)
 static inline void desktop_native_init(SDL_Window *window) { (void)window; }
 #endif
+static inline int desktop_native_control(int slot, int kind, const char *title, int state, int enabled,
+                                         float x, float y, float w, float h, float alpha) {
+  (void)slot; (void)kind; (void)title; (void)state; (void)enabled;
+  (void)x; (void)y; (void)w; (void)h; (void)alpha; return 0;
+}
 static inline void desktop_native_sidebar(float fraction, float reveal) { (void)fraction; (void)reveal; }
+static inline int desktop_native_search(const char *q,float x,float y,float w,float h) { (void)q;(void)x;(void)y;(void)w;(void)h;return 0; }
 static inline void desktop_native_finish(void) {}
 static inline void desktop_native_appearance(const char *name) { (void)name; }
 static inline int desktop_native_fullscreen(void) { return 0; }

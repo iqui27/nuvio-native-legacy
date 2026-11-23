@@ -13,7 +13,7 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 # ContentEncoding: sem compressao, zlib (padrao em muitos remuxes) e cabecalho
 # removido.
 python3 tests/mkvass_pgs_fixture.py "$DIR"
-SRC="src/mkvass.c src/pgs_mkv_restore.c src/imgsub.c src/pgs.c src/legenda.c tests/mkvass_i18n.c src/assrender.c src/dados.c"
+SRC="src/mkvass.c src/pgs_mkv_restore.c src/imgsub.c src/pgs.c src/legenda.c tests/mkvass_i18n.c src/assrender.c src/assperf.c src/assfios.c src/dados.c"
 cc ${flags[@]+"${flags[@]}"} -Isrc -O1 -g -Wall -Wextra -DMKVASS_RANGES_POR_SEG=1000 -DMKVASS_PGS_SCAN_MS=50 tests/mkvass_pgs.c $SRC -lz -lm -o "$DIR/test"
 mkdir "$DIR/dados"
 for modo in plain zlib strip plain-scan zlib-scan strip-scan; do

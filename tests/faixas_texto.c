@@ -42,6 +42,11 @@ int addons_legendas_copiar(Legenda *dst, int max, unsigned *g, int *p) { (void)d
 int ajustes_legenda_forcada_auto(void) { return 0; }
 void legenda_desligar(void) {}
 void legenda_pre_descartar(const char *motivo) { (void)motivo; }
+int legenda_ass_ativa(void) { return 0; }
+int assrender_ativo(void) { return 0; }
+int assrender_texto_simples(void) { return 0; }
+int assperf_get(int id) { (void)id; return 0; }
+int ass_novo_ligado(void) { return 0; }
 void legendasui_atualizar(float dt) { (void)dt; }
 void legendasui_id_addon(const Legenda *l, char out[24]) { (void)l; out[0] = 0; }
 const char *ling_legenda(void) { return ""; }

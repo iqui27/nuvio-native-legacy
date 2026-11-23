@@ -3,6 +3,8 @@
 // cancela. A lista mostra valor e chevron, a ficha explica alcance e padrao.
 // IDs, chaves persistidas e indices de valores continuam os legados.
 #include "ajustes.h"
+#include "assperf.h"   // ass_novo_registrar: a chave do motor ASS mora aqui
+#include "assrender.h" // assrender_aplicar_invalidacao na troca do motor
 #ifdef NV_IOS
 #include "ios.h"
 #endif
@@ -138,6 +140,9 @@ static void navigationRange(float,float,float,float,float,float,PonteiroFn,Ponte
 #include "abertura.h"
 #include "apoio.h"
 #include "telefoneui.h"
+#ifdef NV_DESKTOP_UI
+#include "desktop_native.h"
+#endif
 #include "dts/dts_hls_tpk.h"
 #ifdef NV_ANDROID
 #include "android.h"
@@ -845,6 +850,9 @@ typedef enum {
   AJ_LEG_EVITAR_SDH,
   // Android-only: black letterbox bars on Surface margins (#768), local, off.
   AJ_BARRAS_PRETAS,
+  // .tpk (PR 734 etapa D): motor novo de legenda ASS (libass NEON) ligado de
+  // fabrica; Desligado volta ao motor de antes de 23/10. LOCAL, append-only.
+  AJ_ASS_MOTOR,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -1508,8 +1516,11 @@ static const char *JF_ALFA_SENHA =
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-@!#$%&*+=?/ ";
 
 static const char *V_PREVIA_PROV[] = { "Seekr.tv", "OpenSeek (servidor próprio)", "No aparelho (teste)" };
-// "No aparelho" (miniatura_android.c) so existe no Android.
-#ifdef NV_ANDROID
+// "No aparelho" existe onde ha motor local: Android (miniatura_android.c) e
+// .tpk 6+ / webOS (miniatura.c). Num aparelho que nao passa no portao — pouca
+// memoria pela regra do guia ou pacote sem as ferramentas FFmpeg — nValores
+// esconde o valor e a linha gira so Seekr/OpenSeek.
+#if defined(NV_ANDROID) || defined(NV_TPK) || defined(NV_WEBOS)
 #define NV_PREVIA_N 3
 #else
 #define NV_PREVIA_N 2
@@ -2092,6 +2103,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Personalização igual ao perfil principal", V_LIGA, 2),  // local: personalizacaoDoPerfilPrincipalLocal (#679)
   ESC("Evitar legendas SDH", V_LIGA, 2),                    // local: legendaEvitarSdhLocal (#743)
   ESC("Tarjas pretas no player", V_LIGA, 2),                 // local: barrasPretasLocal (#768)
+  ESC("Motor de legendas ASS", V_LIGA, 2),                   // local: assMotorNovoLocal (.tpk, PR 734)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2481,6 +2493,7 @@ static const char *CHAVE[] = {
   "personalizacaoDoPerfilPrincipalLocal",
   "legendaEvitarSdhLocal",
   "barrasPretasLocal",
+  "assMotorNovoLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2780,11 +2793,15 @@ static int ajIptvLinhaVisivel(int op) {
     return !iptvForm.tipo;
   return 1;
 }
+static void previaAplicar(void);
 static void ajEpgMemoriaAplicar(void) {
   long ram = 0;
   tex_orcamento_info(NULL, &ram, NULL, NULL);
   if (ram <= 0) ram = SDL_GetSystemRAM();
   epg_memoria_definir(valor[AJ_EPG_MEMORIA], ram);
+  // "No aparelho" depends on this same rule (previaLocalCapaz): Baixa desliga
+  // o provedor local na hora — nao espera o heartbeat do worker expirar.
+  previaAplicar();
 }
 static char faAddonEditar[FONTEFALHA_CHAVE];
 static char faAddonTitulo[FR_NOME_MAX + 48];
@@ -3164,10 +3181,27 @@ static int previaOpenSeek(void) {
   return valor[AJ_PREVIA_PROVEDOR] == 1;
 #endif
 }
-// As miniaturas sao feitas neste aparelho (miniatura_android.c)?
-static int previaLocal(void) {
+// As miniaturas PODEM ser feitas neste aparelho? No Android sempre; no .tpk
+// 6+ / webOS (miniatura.c) so com as ferramentas FFmpeg no pacote E memoria
+// suficiente pela MESMA regra do guia (memoria.h: modo AJ_EPG_MEMORIA sobre a
+// RAM do tex_orcamento_info, fallback SDL_GetSystemRAM — como ajEpgMemoria-
+// Aplicar). Fora disso, "No aparelho" nem aparece na lista.
+static int previaLocalCapaz(void) {
 #ifdef NV_ANDROID
-  return valor[AJ_PREVIA_PROVEDOR] == 2;
+  return 1;
+#elif defined(NV_TPK) || defined(NV_WEBOS)
+  long ram = 0;
+  tex_orcamento_info(NULL, &ram, NULL, NULL);
+  if (ram <= 0) ram = SDL_GetSystemRAM();
+  return miniatura_tv_capaz(valor[AJ_EPG_MEMORIA], ram);
+#else
+  return 0;
+#endif
+}
+// As miniaturas sao feitas neste aparelho (miniatura_android.c / miniatura.c)?
+static int previaLocal(void) {
+#if defined(NV_ANDROID) || defined(NV_TPK) || defined(NV_WEBOS)
+  return valor[AJ_PREVIA_PROVEDOR] == 2 && previaLocalCapaz();
 #else
   return 0;
 #endif
@@ -3650,6 +3684,17 @@ int ajustes_legenda_sync_audio(void) { return 0; }   // escondida fora do Androi
 #endif
 int ajustes_legenda_forcada_auto(void) { return lig(AJ_LEG_FORCADA); }   // #287, padrao Ligado
 int ajustes_legenda_evitar_sdh(void) { return lig(AJ_LEG_EVITAR_SDH); }   // #743, padrao Desligado
+// Motor novo de legendas ASS do .tpk (assperf.h): 1 = ligado (padrao), 0 = o
+// motor de antes de 23/10. Lido pelo ass_novo_ligado via ass_novo_registrar.
+// A thread de render NAO le valor[]: ela recebe este ESPELHO, publicado com
+// store/load atomicos pela thread principal em cada escrita da chave (a troca
+// em definirValorDireto e a releitura do arquivo em ajustes_dir). Ler valor[op]
+// direto aqui concorria com a gravacao da confirmacao (TSan).
+static int assMotorEspelho = 1;
+static void assMotorPublicar(void) {
+  __atomic_store_n(&assMotorEspelho, lig(AJ_ASS_MOTOR), __ATOMIC_RELEASE);
+}
+int ajustes_ass_motor(void) { return __atomic_load_n(&assMotorEspelho, __ATOMIC_ACQUIRE); }
 // #338: -1 = lembrar o ultimo tamanho; 0..2 = Completo, Compacto, Minimo.
 int ajustes_estat_tamanho(void) {
   int v = valor[AJ_ESTAT_TAMANHO];
@@ -5429,6 +5474,9 @@ void ajustes_dir(const char *dir) {
   valor[AJ_TAMANHO_UI] = UI_SIZE_AUTO;
   fonteregra_carregar();
   fanartCarregar();
+#if defined(NV_TPK) || defined(NV_ASS_NOVO)
+  ass_novo_registrar(ajustes_ass_motor);   // o motor de ASS le a chave daqui (assperf.h)
+#endif
   animeskipCarregar();
   seekrCarregar();
   p2pCarregar();
@@ -5462,6 +5510,7 @@ void ajustes_dir(const char *dir) {
     ajEpgMemoriaAplicar();
     legenda2_atualizar_offset_manual(ajustes_leg2_atraso());
     ajSombraSync();
+    assMotorPublicar();
     return;
   }
   { int viuIdioma = 0, viuAuto = 0, idiomaGravado = IDIOMA_EN, autoGravado = 0;
@@ -5859,6 +5908,7 @@ void ajustes_dir(const char *dir) {
   ppReconciliar();
   previaAplicar();
   ajSombraSync();   // o que veio do disco nao e mudanca de ninguem
+  assMotorPublicar();   // o espelho do motor ASS reflete o arquivo inteiro lido
 }
 
 static int gravar(void) {
@@ -6829,6 +6879,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LEG_MOSTRAR:
     case AJ_TUNNELING:     /* Hardware playback capabilities belong to this device. */
     case AJ_BARRAS_PRETAS: /* Letterbox fill on this Android TV. */
+    case AJ_ASS_MOTOR:     /* o motor de legenda e desta TV */
     case AJ_AFR:          /* Display modes belong to this panel. */
     case AJ_HDR_INTERFACE: /* HDR output belongs to this panel. */
     case AJ_HDR_UI:         /* o painel e desta TV */
@@ -6919,7 +6970,7 @@ static int soNaTv(int op) {
     case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_BUFFER_RAM_REDUZ:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
-    case AJ_TUNNELING: case AJ_BARRAS_PRETAS: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO: case AJ_AFR:
+    case AJ_TUNNELING: case AJ_BARRAS_PRETAS: case AJ_ASS_MOTOR: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO: case AJ_AFR:
     case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_VIDRO_QUALIDADE:
     case AJ_DET_SO_CINEMETA: case AJ_BUSCA_CINEMETA:
     case AJ_FONTE_MANUAL: case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_PRAZO:
@@ -7517,6 +7568,9 @@ static int foraDestaPlataforma(int op) {
 #if defined(NV_TPK) || defined(NV_ANDROID)
   if (op == AJ_DV_MKV) return 1;
   if (op == AJ_DV_AUDIO) return 1;
+#endif
+#if !defined(NV_TPK) && !defined(NV_ASS_NOVO) && !defined(AJUSTES_TESTE)
+  if (op == AJ_ASS_MOTOR) return 1;   // so o .tpk tem o motor novo de ASS
 #endif
 #if defined(NV_TPK) || defined(NV_ANDROID) || !defined(NV_DV7_CONVERSION)
   if (op == AJ_DV7) return 1;
@@ -8942,6 +8996,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_ESPACO_TITULOS: return "O espaço horizontal entre os cartazes de uma fileira da Home.";
     case AJ_TUNNELING: return "Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.";
     case AJ_BARRAS_PRETAS: return "Pinta de preto a área fora do vídeo (tarjas). Útil em HDR/Dolby Vision quando o fundo vaza cor. Vale no player Android TV.";
+    case AJ_ASS_MOTOR: return "Motor de legendas ASS desta TV. Ligado usa o motor novo (libass NEON); Desligado volta ao motor anterior. Vale para arquivos com legenda ASS/SSA.";
     case AJ_TV_HOME: return "Mostra Continuar assistindo e o canal Nuvio no Android TV. Perfis infantis ficam ocultos. Desligar remove os itens publicados. Vale só nesta TV.";
     case AJ_AFR: return "Troca a taxa de atualização da TV para a do vídeo (24 Hz, 50 Hz...), reduzindo trepidação. Automático aplica a melhor correspondência ao abrir o vídeo e restaura ao sair; se a TV não oferecer um modo compatível, nada muda. Só Android TV.";
     case AJ_HDR_INTERFACE: return "HDR experimental para os menus. Branco limitado a 203 nits. Reinicie o app após mudar. Sem suporte, usa SDR.";
@@ -9102,11 +9157,24 @@ static const char *ajudaOpcao(int op) {
     snprintf(b, sizeof b, "%s\n%s", i18n(base), atual);
     return b;
   }
-  // Copy-first (miniatura_android.c): a 4K title's previews come from a smaller copy in the source list, so the
-  // person's add-on filters decide how fast they are. Shown only when the previews are made on this device.
+  // Previews made on this device. Android copy-first (miniatura_android.c): a
+  // 4K title's previews come from a smaller copy in the source list, so the
+  // person's add-on filters decide how fast they are. .tpk 6+ / webOS
+  // (miniatura.c): the TV makes them from the playing file itself.
   if ((op == AJ_PREVIA_PROVEDOR || op == AJ_MINIATURA_RES) && previaLocal()) {
     snprintf(b, sizeof b, "%s\n%s", i18n(base),
-      i18n("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme."));
+#ifdef NV_ANDROID
+      i18n("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme.")
+#else
+      i18n("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.")
+#endif
+    );
+    return b;
+  }
+  // "No aparelho" appears in the list (this device can): what the choice does.
+  if (op == AJ_PREVIA_PROVEDOR && previaLocalCapaz()) {
+    snprintf(b, sizeof b, "%s\n%s", i18n(base),
+      i18n("No aparelho: a própria TV tira os quadros do vídeo que está tocando, sem chave nem envio."));
     return b;
   }
   if (op == AJ_AMPLIAR_UI && saidaLimitada && ampliarUiVale()) {
@@ -10751,9 +10819,12 @@ static int definirValorDireto(int op, int novo) {
   if (op == AJ_TEX_MB) memoriaEscolhida = 1;
   if (op == AJ_SALVOS_DEST) bibliotecaFonteEscolhida = 1;
   valor[op] = novo;
+  if (op == AJ_ASS_MOTOR) assMotorPublicar();
   if (novo == 0) notaLigarPar(op);
   { int ok; ajOrigem = ajOrigemDireto; ok = gravar(); ajOrigem = 0;
-    if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes; return 0; } }
+    if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes;
+      if (op == AJ_ASS_MOTOR) assMotorPublicar();
+      return 0; } }
   if ((op == AJ_DV_MKV || op == AJ_DV7 || op == AJ_DV7_MAPPING) && antes != 0 && novo == 0) video_dv_guard_reiniciar();
   if (op == AJ_LIVETV_SUGERIR) guia_sugestoes_mudaram();
   if (op == AJ_LIVETV_AGRUPAR) guia_reordenar();
@@ -10769,6 +10840,7 @@ static int definirValorDireto(int op, int novo) {
   if (op == AJ_IDIOMA) { idiomaEscolhido(); desc_repetir(); }
   if (op == AJ_PREVIA_PROVEDOR) previaAplicar();
   if (op == AJ_BARRAS_PRETAS) barraspretas_invalidar();
+  if (op == AJ_ASS_MOTOR) assrender_motor_invalidar();   /* epoca sobe, mesmo pts pede de novo, motor que saiu solta tudo */
   if (op == AJ_TAMANHO_UI) gfx_escala_ui_definir(ajustes_tamanho_ui());
   if (op == AJ_ESCALA_TEXTO) gfx_escala_txt_definir(ajustes_escala_texto());
   if (op == AJ_INTERFACE_MODO) {
@@ -11493,6 +11565,11 @@ static int nValores(int op) {
   // ja gravado le como fora da faixa e fica o padrao, Automatico (limita).
   if (op == AJ_TRAILER_FONTE) return 3;
 #endif
+  // "No aparelho" (o 3o valor) so entra na lista quando ESTE aparelho pode:
+  // ferramentas FFmpeg no pacote e memoria suficiente pela regra do guia
+  // (previaLocalCapaz). Um 2 gravado numa TV que nao passa volta ao padrao
+  // pelo conferirPadroes — e o Seekr segue.
+  if (op == AJ_PREVIA_PROVEDOR && NV_PREVIA_N > 2 && !previaLocalCapaz()) return 2;
   return OPCOES[op].n;
 }
 

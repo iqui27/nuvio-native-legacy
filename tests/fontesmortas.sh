@@ -29,7 +29,7 @@ if [ "$#" -gt 0 ] && [ "$1" != retomar ] && [ "$1" != escolhida ]; then "$dir/te
   fi
   cc "${flags[@]}" -Wno-deprecated-declarations tests/fontesmortas_torrent.c \
     src/fontesmortas.c src/fontevolta.c src/fontefalha.c src/fontefiltro.c src/linguas.c \
-    src/fontesonda.c src/farolanel.c src/debrid.c src/audioescolha.c \
+    src/fontesonda.c src/farolanel.c src/debrid.c src/audioescolha.c src/partescartao.c \
     "${linker[@]}" -o "$dir/torrent"
   if [ "$#" -gt 0 ]; then "$dir/torrent" "$@"; else
     "$dir/torrent"

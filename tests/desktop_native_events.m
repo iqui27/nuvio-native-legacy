@@ -4,6 +4,15 @@
 #include <SDL2/SDL_syswm.h>
 #include <assert.h>
 #include "../src/desktop_native.h"
+#include "../src/gfx.h"
+// This harness checks event routing; Settings GL rendering has its own pixel test.
+int perftv_enabled, perftv_uploads;
+float gfx_escala(void) { return 1; }
+void gfx_rect(GfxRect r, GLuint t, GfxModo m, float f, float x, float y, float radius,
+              float red, float green, float blue, float alpha) {
+  (void)r; (void)t; (void)m; (void)f; (void)x; (void)y; (void)radius;
+  (void)red; (void)green; (void)blue; (void)alpha;
+}
 void menu_desktop_hover(float x) { (void)x; }
 // Native sidebar (fbb448224, 6fb8eee66) calls into the app; inert stubs for this harness.
 void menu_desktop_alternar(void) {}

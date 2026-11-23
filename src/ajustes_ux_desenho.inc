@@ -142,6 +142,12 @@ static GfxRect ajIlhaMiolo0(GfxRect r, float raioPx) {
 // de cima, sem contorno. `modal` = miolo a 86%, para a ilha por cima de outra.
 static void ajIlhaMaterial(GfxRect r, float raioPx, float a, int modal, int pagina) {
   if (pagina) raioPx = 0.0f;
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo() && !modal && !pagina) {
+    gfx_cor(r, 16.0f / r.h, .16f, .17f, .19f, .24f * a);
+    return;
+  }
+#endif
   float raio = raioPx / r.h;
   if (a <= 0.003f) return;
   // Solido e opaco: o Frost pendente nao e pintado embaixo do miolo.
@@ -212,9 +218,25 @@ static void ajAcento8(int *r, int *g, int *b) {
 // (txt_desenhar_alpha), nao na rasterizacao: uma textura por opacidade
 // encheria o cache de linhas.
 #define AJ_TX 243, 242, 239, 255
-static TxtLinha ajTxt(TxtEstilo e, const char *s) { return txt_linha(e, s, AJ_TX); }
-static TxtLinha ajTxtC(TxtEstilo e, const char *s, float maxW) { return txt_linha_corta(e, s, AJ_TX, maxW); }
-static TxtLinha ajTxtT(TxtEstilo e, const char *s) { int t = ajTinta(); return txt_linha(e, s, t, t, t, 255); }
+#ifdef NV_DESKTOP_UI
+// Match the board's readable Mac labels without changing row geometry or TV fonts.
+static TxtEstilo ajDesktopTexto(TxtEstilo e) {
+  if (layout_desktop_ativo()) {
+    if (e == TXT_V2_LN) return TXT_V3_LN;
+    if (e == TXT_V2_LN_B) return TXT_V3_LN_B;
+    if (e == TXT_V2_24) return TXT_V2_28;
+    if (e == TXT_V2_18) return TXT_AJ_TEXTO;
+    if (e == TXT_V3_INSP) return TXT_V3_VAL;
+  }
+  return e;
+}
+#define AJ_TEXTO(e) ajDesktopTexto(e)
+#else
+#define AJ_TEXTO(e) (e)
+#endif
+static TxtLinha ajTxt(TxtEstilo e, const char *s) { return txt_linha(AJ_TEXTO(e), s, AJ_TX); }
+static TxtLinha ajTxtC(TxtEstilo e, const char *s, float maxW) { return txt_linha_corta(AJ_TEXTO(e), s, AJ_TX, maxW); }
+static TxtLinha ajTxtT(TxtEstilo e, const char *s) { int t = ajTinta(); return txt_linha(AJ_TEXTO(e), s, t, t, t, 255); }
 // Caixa alta espacada (kicker): i18n antes, maiusculas (latim + acentos) e tracking.
 static float ajCapsRGB(TxtEstilo e, const char *s, float track, float x, float y, float al, int cr, int cg, int cb) {
   char up[200];
@@ -271,7 +293,7 @@ static void ajIconeT(const char *nome, float x, float y, float lado, float a) {
 }
 // Bloco de texto com a cor do mockup e o alfa no desenho.
 static float ajBloco(TxtEstilo e, const char *s, float x, float y, float w, float lh, float al, int maxL) {
-  return txt_bloco(e, s, 243, 242, 239, x, y, w, lh, al, maxL);
+  return txt_bloco(AJ_TEXTO(e), s, 243, 242, 239, x, y, w, lh, al, maxL);
 }
 
 // --- FUNDO ----------------------------------------------------------------------
@@ -298,6 +320,16 @@ static const char *ajFundoArte(void) {
 // caminho do Frost do app (fundo_desenhar_modo): a luz assada no canal, sem
 // fosco a mais, e as mesmas quedas nos niveis de GPU menores.
 static void ajFundo(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) {
+    char path[1100];
+    gfx_arte_caminho("desktop/ajustes-background.jpg", path, sizeof path);
+    GLuint art = tex_obter_larg(path, NV_VTELA_W);
+    if (art) gfx_rect((GfxRect){0, 0, NV_VTELA_W, NV_VTELA_H}, art, GFX_ARTE, 0, 0, 0, 0, 1, 1, 1, 1);
+    else fundo_desenhar_modo(FUNDO_FROST, (GfxRect){0, 0, NV_VTELA_W, NV_VTELA_H}, 0, ajFundoArte(), 1);
+    return;
+  }
+#endif
   fundo_desenhar_modo(FUNDO_FROST, (GfxRect){ 0, 0, NV_VTELA_W, NV_VTELA_H }, 0.0f, ajFundoArte(), 1.0f);
 }
 static void ajFundoPagina(void) {
@@ -375,7 +407,11 @@ static float aj2X0(void) {
   return ((ajTelaCheia() && rail <= 0.0f ? 0.0f : 48.0f) + rail) / AJ2_S;
 }
 // A3: linhas compactas (58 + 2 de vao, rotulo 24), o dobro de linhas na tela.
+#ifdef NV_DESKTOP_UI
+#define AJ2_LN_H        (layout_desktop_ativo() ? (152.0f / 3.0f) / AJ2_S : ajRetrato() ? 96.0f : (triBladeLayout() ? 70.0f : 60.0f))
+#else
 #define AJ2_LN_H        (ajRetrato() ? 96.0f : (triBladeLayout() ? 70.0f : 60.0f))
+#endif
 #define AJ2_LN_GAP       2.0f
 #define AJ2_LN_SUB      (ajRetrato() ? 120.0f : 76.0f)
 #define AJ2_LN_LINHA1   AJ2_LN_H
@@ -1187,6 +1223,9 @@ static float aj2PilulaEstado(int op, float xDir, float yc, int ligado, float a) 
   // 2.1 (mockup de 27/10): um INTERRUPTOR de 52 x 30 — trilho branco 14%
   // desligado, no acento ligado; o botao branco desliza. `on` e a mola da
   // linha, para o deslize acompanhar o OK.
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo() && desktop_native_control(8 + op, 0, "", ligado, 1, xDir - 108, yc - 24, 108, 48, a)) return 108;
+#endif
   return ajustes_ui_interruptor(xDir, yc, op >= 0 ? aj2PilulaOn(op, ligado) : (float)(ligado ? 1 : 0), a);
 }
 // Palco (mockup claude-c): 60 x 34, botao 24. `on` pode passar de 0..1 (a mola
@@ -1296,6 +1335,9 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
   int abre = !palco && h > AJ2_LN_SUB + 0.5f && !aviso && !(aj2TemInsp() && aj2FocoNaLista(item) && op != AJ_FUNDO && !(ajPaleta(op) && ed));
   int beneficio = !palco && !sub && !aviso && aj2TemInsp() && aj2FocoNaLista(item) && op != AJ_FUNDO && !(ajPaleta(op) && ed) && h > AJ2_LN_H + 0.5f;
   float recuo = filha ? 34.0f : 0.0f;
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo() && (op == AJ_SEEKR_CHAVE || op == AJ_SEEKR_TESTAR)) recuo += 48;
+#endif
   float aT = a * (desligada ? 0.45f : 1.0f), aTx = a * aj2TextoLista;
   float xDir = ln.x + ln.w - 22.0f, yc = (abre || beneficio || aviso) ? y + AJ2_LN_LINHA1 * 0.5f : y + h * 0.5f;
   float cauda = 0, icoX = palco ? AJ_PALCO_TX - 22.0f : 0.0f;   // Palco: o icone Lucide antes do rotulo
@@ -1313,12 +1355,25 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
   ajFocoLinha(ln, 20.0f, f, aTx);
   if (ajFocoCompart && aj2FocoNaLista(item)) triSupReportar(ln);
   if (aTx <= 0.004f) return;
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo() && (op == AJ_SEEKR_CHAVE || op == AJ_SEEKR_TESTAR))
+    ajIcone("aj_key-round", ln.x + 22, yc - 14, 28, aT);
+#endif
   if (palco)   // o icone Lucide 28 da opcao (mockup claude-c)
     gfx_icone((GfxRect){ ln.x + 18.0f + recuo, yc - 14.0f, 28, 28 }, ajVisualIcone(op), 0.953f, 0.949f, 0.937f,
               (emFoco ? 0.95f : 0.62f) * aT);
   // A3: o segmentado da opcao em foco fica sobre a arte (ajDesenharInspetor);
   // a linha mostra o valor, como as outras escolhas.
   // Sem a arte (#339 "Lista", 120%), o segmentado da escolha em foco fica na linha.
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo() && tipo == AJL_TOG &&
+      desktop_native_control(8 + op, 0, "", lig(op), !desligada, xDir - 108, yc - 24, 108, 48, aT)) {
+    cauda = 108;
+  } else if (layout_desktop_ativo() && tipo == AJL_ESC && !ajPaleta(op) &&
+             desktop_native_control(8 + op, 1, textoValor(op), 0, !desligada, xDir - 320, yc - 24, 320, 48, aT)) {
+    cauda = 320;
+  } else
+#endif
   if ((tipo == AJL_TOG && ed) || ((!aj2TemInsp() || ajRetrato()) && ajSegmentada(op) && !desligada && (ed || emFoco))) {
     int n = nValores(op);
     if (n > 3) n = 3;
@@ -1402,6 +1457,12 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
     cauda = xDir - x;
   } else if (tipo == AJL_ACAO) {
     const char *st = ajEstadoAcao(op);
+#ifdef NV_DESKTOP_UI
+    if (layout_desktop_ativo() && !seekrChave[0]) {
+      if (op == AJ_SEEKR_CHAVE) st = i18n("Editar");
+      if (op == AJ_SEEKR_TESTAR) st = i18n("Testar conexão");
+    }
+#endif
     float x = xDir;
     if (!desligada) { aj2Chevron(x, yc, (emFoco ? 0.7f : 0.32f) * aT); x -= 22.0f + 12.0f; }
     if (st && st[0]) {
@@ -1467,7 +1528,11 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
     else txt_desenhar_alpha(r, tx, tyc - r.h * 0.5f, (emFoco ? 1.0f : 0.88f) * aT);
     rx = longo ? tx + maxW : tx + r.w;   // the marks do not fit beside a long label
     { int fm = marcaDaOpcao(op);
-      if (fm >= 0) {
+      if (fm >= 0
+#ifdef NV_DESKTOP_UI
+          && !layout_desktop_ativo()
+#endif
+         ) {
         float mw = marca_formato_largura((FormatoMarca)fm, 30.0f);
         if (rx + 12 + mw < tx + maxW) {
           marca_formato((FormatoMarca)fm, rx + 12, tyc - 15, 30, 1, 1, 1, (emFoco ? 0.85f : 0.55f) * aT);
@@ -1532,7 +1597,11 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
 // As margens do mockup colapsam: a linha seguinte (margin-top 4) fica a 6 do
 // fio, nao a 10 — o grupo leva 2 e a linha os seus 4.
 // A3: margem 20 e 8 embaixo (era 26 e 12); o nome continua 26/800 a 100%.
+#ifdef NV_DESKTOP_UI
+#define AJ2_GRUPO_H (layout_desktop_ativo() ? 76.0f : 20.0f + 31.2f + 8.0f + 2.0f + 2.0f)
+#else
 #define AJ2_GRUPO_H (20.0f + 31.2f + 8.0f + 2.0f + 2.0f)
+#endif
 // 2.0.2: sem a contagem a direita (so a nota de um ROTS, "para quem faz o app").
 static void ajDesenharGrupo(int item, float y, float a) {
   GfxRect fr = aj2ListaR();
@@ -1540,6 +1609,12 @@ static void ajDesenharGrupo(int item, float y, float a) {
   TxtLinha t;
   a *= aj2TextoLista;
   if (a <= 0.004f) return;
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) {
+    ajCaps(TXT_V2_18, i18n(TELA[item].titulo), 0, x + 22, yc - 10, .6f * a);
+    return;
+  }
+#endif
   { int sec = secDoItem[item];
     // Depois do MAIS(): "Mais opcoes · Escolha da fonte" (mockup v3, tela 07).
     if (maisItem[sec] >= 0 && item > maisItem[sec]) {

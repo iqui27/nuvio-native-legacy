@@ -103,6 +103,77 @@ int main(void) {
     partes_lista_limpar(&copy);
   }
 
+  // PARTE CURTA DE MESMO MOLDE: "Filme Part 4" de 50 MB ao lado de partes de
+  // 300 MB continua parte; um nome fora do molde vira extra; e "1080p" tambem
+  // (numero longo = outra copia, nao outra parte).
+  { PartesLista p = {0};
+    static const char *item =
+      "{\"id\":7,\"files\":["
+      "{\"id\":1,\"name\":\"F/Filme Part 1.mkv\",\"size\":300000000},"
+      "{\"id\":2,\"name\":\"F/Filme Part 2.mkv\",\"size\":300000000},"
+      "{\"id\":3,\"name\":\"F/Filme Part 3.mkv\",\"size\":300000000},"
+      "{\"id\":4,\"name\":\"F/Filme Part 4.mkv\",\"size\":50000000},"
+      "{\"id\":5,\"name\":\"F/Filme Sample.mkv\",\"size\":50000000}]}";
+    ok(partes_ler_item(item, NULL, 0, &p) && p.n == 5, "part mold: five files listed");
+    ok(partes_principais(&p) == 4, "short last part with the same name pattern stays a part");
+    ok(p.arq[4].extra, "a small file outside the pattern is an extra");
+    partes_lista_limpar(&p); }
+  { PartesLista p = {0};
+    static const char *item =
+      "{\"id\":7,\"files\":["
+      "{\"id\":1,\"name\":\"F/Filme 720p Part 1.mkv\",\"size\":300000000},"
+      "{\"id\":2,\"name\":\"F/Filme 720p Part 2.mkv\",\"size\":300000000},"
+      "{\"id\":3,\"name\":\"F/Filme 1080p Part 2.mkv\",\"size\":50000000}]}";
+    ok(partes_ler_item(item, NULL, 0, &p) && p.n == 3, "two copies listed");
+    ok(partes_principais(&p) == 2 && p.arq[2].extra,
+       "a long-number difference (1080p) is another copy, not a part");
+    partes_lista_limpar(&p); }
+
+  // A BARRA DO FILME INTEIRO (sessao de partes): inicio/soma estimados pela
+  // proporcao de bytes, fronteiras e o salto; buraco na numeracao ou soma
+  // longe do catalogo desligam a barra.
+  { static PartesLista l2;
+    double off = -1, tot = -1, pos = -1; float fr[8] = {0}; int k = -1;
+    ok(partes_achar(corpo, 0, hs, 0, 0, "Kaguya-sama First Kiss - 02.mkv", 300000000, &l2) == 1,
+       "movie list for the bar test");
+    partes_sessao_iniciar("alvoT", &l2, 1);
+    ok(partes_sessao_de("alvoT") && partes_sessao_indice() == 1, "session on part 2");
+    ok(partes_barra("alvoT", 1920, 5760, &off, &tot) && fabs(off - 1920) < 1 && fabs(tot - 5760) < 1,
+       "whole-movie bar: part 2 starts at a third");
+    ok(partes_barra_limites(1920, fr, 8) == 2 &&
+       fabs(fr[0] - 1.0f / 3.0f) < 0.01f && fabs(fr[1] - 2.0f / 3.0f) < 0.01f,
+       "part boundaries at the thirds");
+    ok(partes_barra_achar(2000, 1920, &k, &pos) && k == 1 && fabs(pos - 80) < 1,
+       "movie second 2000 is part 2 at 80 s");
+    ok(partes_barra_achar(4500, 1920, &k, &pos) && k == 2 && fabs(pos - 660) < 1,
+       "movie second 4500 is part 3 at 660 s");
+    ok(!partes_barra("outroTitulo", 1920, 5760, &off, &tot), "the bar only answers for the session's title");
+    partes_duracao_real(0, 1200);
+    ok(partes_barra("alvoT", 1920, 5760, &off, &tot) && fabs(off - 1200) < 1 && fabs(tot - 5040) < 1,
+       "a measured part replaces its byte estimate");
+    partes_sessao_parar("test done"); }
+  { PartesLista g = {0};
+    double off = -1, tot = -1;
+    static const char *gi =
+      "{\"id\":7,\"files\":["
+      "{\"id\":1,\"name\":\"F/Filme Part 1.mkv\",\"size\":300000000},"
+      "{\"id\":2,\"name\":\"F/Filme Part 2.mkv\",\"size\":300000000},"
+      "{\"id\":4,\"name\":\"F/Filme Part 4.mkv\",\"size\":300000000}]}";
+    ok(partes_ler_item(gi, NULL, 0, &g) && g.n == 3, "gap list read");
+    partes_sessao_iniciar("alvoG", &g, 0);
+    ok(!partes_barra("alvoG", 1920, 5760, &off, &tot), "a gap in part numbers turns the bar off");
+    partes_sessao_parar("test done");
+    partes_lista_limpar(&g); }
+  { static PartesLista l3;
+    double off = -1, tot = -1;
+    ok(partes_achar(corpo, 0, hs, 0, 0, "Kaguya-sama First Kiss - 02.mkv", 300000000, &l3) == 1,
+       "movie list for the runtime check");
+    partes_sessao_iniciar("alvoT2", &l3, 1);
+    ok(!partes_barra("alvoT2", 600, 5760, &off, &tot),
+       "parts far from the catalog runtime turn the bar off");
+    partes_sessao_parar("test done");
+    partes_lista_limpar(&l3); }
+
   printf(falhas ? "partes: %d FAIL\n" : "partes: ok\n", falhas);
   return falhas != 0;
 }

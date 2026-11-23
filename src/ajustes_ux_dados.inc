@@ -332,6 +332,8 @@ static const char *uxSinonimos(int op) {
       return "openseek convite biblioteca compartilhada convidado ajuste seekr servidor proprio miniatura barra tempo previa parear pareamento nas";
     case AJ_SOURCE_BADGE_POSITION:
       return "selos badges posicao topo embaixo formatter addon icons cima baixo gora dol polozenie ikon";
+    case AJ_ASS_MOTOR:
+      return "ass ssa legenda legenda estilizada typeset motor novo antigo libass travando lentidao subtitle engine";
     default: return "";
   }
 }

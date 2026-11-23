@@ -197,12 +197,7 @@ static int epgMemoriaBaixa, soProvedores, forcarRede;
 static unsigned epgRevisao;
 
 void epg_memoria_definir(int modo, long ramMB) {
-  if (modo < EPG_MEMORIA_AUTO || modo > EPG_MEMORIA_COMPLETA) modo = EPG_MEMORIA_AUTO;
-  int baixa = modo == EPG_MEMORIA_BAIXA ||
-              (modo == EPG_MEMORIA_AUTO && (ramMB <= 0 || ramMB <= 2048));
-#ifdef __EMSCRIPTEN__
-  if (modo == EPG_MEMORIA_AUTO) baixa = 1;
-#endif
+  int baixa = epg_memoria_eh_baixa(modo, ramMB);
   pthread_mutex_lock(&trava);
   if (epgMemoriaBaixa != baixa) {
     epgMemoriaBaixa = baixa; fontesMudaram = 1;

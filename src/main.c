@@ -80,6 +80,7 @@
 #include "androidcache.h"
 #include "negcache.h"
 #include "p2pmotor.h"
+#include "telalag.h"   // every target: off the .tpk the calls are no-ops (telalag.c)
 #include <pthread.h>
 #include <stdatomic.h>
 #include <time.h>
@@ -98,6 +99,7 @@
 #include "desempenho.h"
 #include "atualizacao.h"
 #include "avisos.h"
+#include "queda.h"
 #include "seguro.h"
 #include "video.h"
 #include "addons.h"
@@ -522,7 +524,7 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
       continue;
     }
     if (dp && !strncmp(linha,"input:",6)) {
-      SDL_Event text={0};text.type=SDL_TEXTINPUT;snprintf(text.text.text,sizeof text.text.text,"%s",dp+1);SDL_PushEvent(&text);continue;
+      SDL_Event text={0};text.type=SDL_TEXTINPUT;text.text.windowID=SDL_GetWindowID(SDL_GL_GetCurrentWindow());snprintf(text.text.text,sizeof text.text.text,"%s",dp+1);SDL_PushEvent(&text);continue;
     }
 #endif
     if (dp && !strncmp(linha, "janela:", 7)) {
@@ -2352,6 +2354,10 @@ int main(int argc, char **argv) {
     Uint64 t0 = NV_T0();
     tex_upl_n = 0; tex_upl_bytes = 0;
     gputempo_quadro_inicio();   // the GPU clock brackets uploads + draw
+    telalag_quadro_inicio();    // .tpk: the GPU queue limit (Auto at 75 %)
+#ifdef NV_TPK
+    queda_vigiar();             // .tpk: our SIGSEGV handler stays on top (one syscall; queda.h)
+#endif
     tex_bombear(3);
     fBomb = NV_DT(t0);
     fUplN = tex_upl_n; fUplB = tex_upl_bytes;
@@ -2478,6 +2484,7 @@ int main(int argc, char **argv) {
     capturaSeSolicitado();
     fAux = NV_DT(t0);
     gputempo_quadro_fim();
+    telalag_quadro_fim();
     t0 = NV_T0();
     int playerUi = player_ui_frame(player_aberto(), gfx_n_rect, gfx_n_outros);
     int playerClockUi = playerUi;

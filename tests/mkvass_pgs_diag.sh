@@ -25,7 +25,7 @@ hook = needle + '  extern void mkvassTesteDiag(unsigned g);\n  mkvassTesteDiag(f
 Path(sys.argv[1]).write_text(src.replace(needle, hook))
 PY
 cc ${flags[@]+"${flags[@]}"} -Isrc -O1 -g -Wall -Wextra \
-  tests/mkvass_pgs_diag.c "$DIR/mkvass.c" src/{pgs_mkv_restore,imgsub,pgs,legenda,assrender,dados}.c \
+  tests/mkvass_pgs_diag.c "$DIR/mkvass.c" src/{pgs_mkv_restore,imgsub,pgs,legenda,assrender,assperf,assfios,dados}.c \
   tests/mkvass_i18n.c -lz -lm -o "$DIR/test"
 mkdir "$DIR/dados"
 run() { NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/sparse.mkv" "$1"; }

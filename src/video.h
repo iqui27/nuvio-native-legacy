@@ -205,6 +205,16 @@ int    video_reconectando(void);
 // the target instead of the stale position.
 int      video_busca_em_voo(void);
 unsigned video_busca_falhas(void);
+// SUBTITLE CLOCK (owner 25/10). The host reads the TV's position with a query
+// that takes 50-600 ms and stamps the MIDDLE of it (CLOCK_MONOTONIC, s); half
+// the duration is the uncertainty. 1 = there is a reading; *seq changes with
+// every new one. Same transform as video_pos (converted stream offset).
+int      video_pos_carimbada(double *pos, double *carimbo, double *incerteza, unsigned *seq);
+// 1 from a seek until the first real reading of where the TV landed (the TV
+// seeks to a keyframe, seconds before the target). Subtitles hide meanwhile.
+int      video_pos_incerta(void);
+// Frame rate and HDR of the playing file (MKV header); 0 = unknown.
+int      video_tpk_quadro(double *fps, int *hdr);
 #endif
 int    video_tocando(void);
 // Pausa comprovada pelo backend da sessao atual, nao a intencao local de
@@ -307,6 +317,11 @@ int    video_terminou(void); // 1 depois do fim de fluxo (endOfStream) da fonte 
 int    video_conflito_recurso(void);
 #ifdef NV_TPK
 void   video_tpk_log_host(const char *linha);   // tpk.c repassa cada linha do host
+// A reconexao em curso e do arquivo sendo preparado pelo mkvfix (seek durante
+// a sonda, reabertura pelo servidor local), nao queda de rede: outro aviso.
+int    video_tpk_reconexao_preparo(void);
+// Ha quanto tempo (ms) um seek espera a sonda do mkvfix; 0 = nenhum segurado.
+unsigned video_tpk_seek_segurado_ms(void);
 int    video_tpk_codec_recusado(const char *codecId);  // #313: DTS/TrueHD/MLP, que a Samsung nao toca
 // Zoom/recorte do plano de video (ROI), experimental (#241): liga/desliga em
 // execucao; o padrao e NV_TPK_ZOOM_ROI (0). Loga "[trailer] tpk zoom ROI: ...".

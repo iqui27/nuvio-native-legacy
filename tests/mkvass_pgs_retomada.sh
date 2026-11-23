@@ -26,7 +26,7 @@ exec(compile(fixture, 'fixture-pgs-retomada', 'exec'))
 PY
 # Constantes de producao do ritmo: sem MKVASS_PGS_SCAN_MS reduzido.
 cc ${flags[@]+"${flags[@]}"} -Isrc -O1 -g -Wall -Wextra \
-  tests/mkvass_pgs_retomada.c src/{mkvass,pgs_mkv_restore,imgsub,pgs,legenda,assrender,dados}.c \
+  tests/mkvass_pgs_retomada.c src/{mkvass,pgs_mkv_restore,imgsub,pgs,legenda,assrender,assperf,assfios,dados}.c \
   tests/mkvass_i18n.c -lz -lm -o "$DIR/test"
 mkdir "$DIR/dados"
 echo "== retomada (pausa em 600,0 s; folga 30 -> 19.75; relogio 1x apos 1,3 s)"

@@ -4,6 +4,7 @@
 #include <SDL2/SDL.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #ifdef _WIN32
 #include <winsock2.h>
 #include <windows.h>
@@ -14,6 +15,11 @@ static inline void desktop_start(void) {
   WSADATA ws;
   if (WSAStartup(MAKEWORD(2, 2), &ws)) exit(1);
 #endif
+  const char *proofData = getenv("NUVIO_DADOS");
+  if (getenv("NV_CAPTURA") && (!proofData || !*proofData)) {
+    fputs("[dados] capture requires writable isolated NUVIO_DADOS\n", stderr);
+    exit(1);
+  }
   if (!getenv("NUVIO_DADOS")) {
     char *p = SDL_GetPrefPath("", "Nuvio");
     if (!p) exit(1);
