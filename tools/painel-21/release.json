@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T20:19:10+00:00",
+    "updatedAt": "2026-11-23T20:28:21+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T20:16:00+00:00",
+    "lastVpsReportedAt": "2026-11-23T20:24:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -905,21 +905,22 @@
         "farol-29"
       ],
       "allDependencies": false,
-      "status": "REVISAO",
+      "status": "CORRECAO",
       "wave": "B",
       "sha": "6238266cb3",
       "batch": null,
-      "note": "Gemini Hydrogen entregou correção dos quatro P1 (relata dirigido 14/14 e corpus 488/488); merge-tree 21e rc 0 confirmado; Sol via Codex revisa r2 (…dc7f)",
+      "note": "Sol r2 REPROVADO: gosto livre no KV entre contas, título inventado via x, título muda no hit, afinidade fora do pedido e colisão filme/série. Originais passaram, 14/14 dirigidos, 488/488 corpus, merge limpo. Gemini Hydrogen corrige na mesma branch (…31fc)",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-40",
-      "updatedAt": "2026-11-23T20:19:10+00:00",
-      "reportedAt": "2026-11-23T20:16:00+00:00",
+      "updatedAt": "2026-11-23T20:28:21+00:00",
+      "reportedAt": "2026-11-23T20:24:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "Gemini Hydrogen entregou correção dos quatro P1 (relata dirigido 14/14 e corpus 488/488); merge-tree 21e rc 0 confirmado; Sol via Codex revisa r2 (…dc7f)",
         "Sol r1 REPROVADO: consentimento, privacidade do KV, título literal inventado e hit KV fora do pedido; Gemini Hydrogen (…ca17) corrige na mesma branch",
         "VPS Gemini 4 Neon (antigravity) onda B, task …3616b0ed, brief lotes/sense/briefs/farol-40.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
       ]
@@ -1108,21 +1109,23 @@
         "farol-45"
       ],
       "allDependencies": false,
-      "status": "IMPLEMENTANDO",
+      "status": "REVISAO",
       "wave": "B",
-      "sha": "0dea681ce8",
+      "sha": "d60b19b4d7",
       "batch": null,
-      "note": "VPS Gemini 4 Neon (antigravity) onda B, task …9071e0a7, brief lotes/sense/briefs/farol-48.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado.",
+      "note": "commit e relatório do Gemini Neon recuperados; Sol r1 (…4ab1) revisa. Merge-tree com o 21e pós-#840 aponta conflito em src/home.c nas gerações de Assistiu e Dica; TV física pendente",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-48",
-      "updatedAt": "2026-11-23T19:41:22+00:00",
-      "reportedAt": "2026-11-23T19:39:00+00:00",
+      "updatedAt": "2026-11-23T20:28:21+00:00",
+      "reportedAt": "2026-11-23T20:22:00+00:00",
       "integrationVerified": false,
-      "commitRole": "base",
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
-      "owner": "VPS"
+      "owner": "VPS",
+      "previousNotes": [
+        "VPS Gemini 4 Neon (antigravity) onda B, task …9071e0a7, brief lotes/sense/briefs/farol-48.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
+      ]
     },
     {
       "id": "farol-49",
@@ -3814,12 +3817,13 @@
     },
     {
       "id": "21e",
-      "title": "Lote 21e · pronto localmente, publicação bloqueada",
+      "title": "Lote 21e · bateria em andamento",
       "status": "LOTE",
       "sha": "e34f0ddc5d",
-      "note": "Reconstruído localmente na VPS em lote/21e@e34f0ddc5d sobre integracao/2.1@96a939a5a6 (#840), preservando os dez itens e incluindo Farol 45@bae6663936. Testes reportados: dirigidos 15/15, ASan+UBSan 3/3; Node 21 passaram e duas falhas já existiam na base. Fixture D1 simulada do contrato de aparelho corrigida (21 modelos); isso não verifica a ancestralidade do D1 real. Publicação bloqueada na VPS sem escrita no GitHub; branch e PR dessa origem ausentes na consulta. Repositório local pronto para publicação e PR com merge commit. TV física pendente; lote não integrado.",
+      "note": "Sol retoma a bateria do 21e@e34f0ddc5d contra a base pós-#840 (integracao/2.1@96a939a5a6); resultado final ainda não informado. A tentativa Argon na montagem antiga 0dea681ce8 terminou com bloqueio do provedor e evidência parcial; não é resultado da ponta reconstruída. Validação dirigida anterior preservada: 15/15 dirigidos, ASan+UBSan 3/3, Node 21 passaram e duas falhas iguais à base. Isso não equivale a bateria atual concluída. Publicação ainda sem credencial na VPS; branch lote/21e e PR dessa origem continuam ausentes na nova consulta ao GitHub. TV física pendente; lote não integrado.",
       "pr": null,
       "previousNotes": [
+        "Reconstruído localmente na VPS em lote/21e@e34f0ddc5d sobre integracao/2.1@96a939a5a6 (#840), preservando os dez itens e incluindo Farol 45@bae6663936. Testes reportados: dirigidos 15/15, ASan+UBSan 3/3; Node 21 passaram e duas falhas já existiam na base. Fixture D1 simulada do contrato de aparelho corrigida (21 modelos); isso não verifica a ancestralidade do D1 real. Publicação bloqueada na VPS sem escrita no GitHub; branch e PR dessa origem ausentes na consulta. Repositório local pronto para publicação e PR com merge commit. TV física pendente; lote não integrado.",
         "reconstruído localmente sobre integracao/2.1@96a939a5a6, preservados os dez itens; dirigido 15/15, ASan+UBSan 3/3, Node 21 passaram e duas falhas iguais à base; fixture D1 atualizada; relatório revisao/LOTE-21E-840.md; TV física pendente",
         "VPS informa remontagem em andamento sobre integracao/2.1@96a939a5a6, incluindo a correção Farol 45@bae6663936. Nova ponta do lote e resultados da bateria remontada ainda não informados. 0dea681ce é apenas a última ponta conhecida da montagem anterior; não é um SHA novo. PR e validação em TV física não confirmadas.",
         "A VPS informa que o lote 21e será refeito sobre integracao/2.1 após o merge da PR #840 (96a939a5a). Composição anterior de dez itens e ponta 0dea681ce preservadas apenas como referência; nova ponta, nova composição e resultados de baterias ainda não informados. Farol 45 deve deduplicar farol_gosto × porque_assistiu e resolver src/fileiras.c. PR e TV física não confirmadas.",
@@ -3828,9 +3832,9 @@
         "Itens aprovados reservados; montagem ainda não confirmada."
       ],
       "branch": "lote/21e",
-      "updatedAt": "2026-11-23T20:08:47+00:00",
-      "reportedAt": "2026-11-23T20:04:00+00:00",
-      "source": "Relatos VPS das 20h04 e confirmação do SHA completo às 20h05; publicação conferida no GitHub",
+      "updatedAt": "2026-11-23T20:28:21+00:00",
+      "reportedAt": "2026-11-23T20:24:00+00:00",
+      "source": "Relato VPS [BATERIA] às 20h24 UTC + publicação reconferida no GitHub",
       "verified": false,
       "integrationVerified": false,
       "baseBranch": "integracao/2.1",
@@ -3878,7 +3882,7 @@
         "vpsWriteAccess": false,
         "githubBranchExists": false,
         "githubPrNumber": null,
-        "checkedAt": "2026-11-23T20:08:47+00:00",
+        "checkedAt": "2026-11-23T20:27:30+00:00",
         "requiredMergeMethod": "merge_commit",
         "reason": "VPS sem credencial de escrita no GitHub; branch lote/21e e PR dessa origem ausentes na consulta"
       },
@@ -3904,7 +3908,24 @@
         },
         "source": "Relato VPS; testes não reproduzidos nesta sessão"
       },
-      "reportPath": "revisao/LOTE-21E-840.md"
+      "reportPath": "revisao/LOTE-21E-840.md",
+      "battery": {
+        "status": "in_progress",
+        "batchSha": "e34f0ddc5d",
+        "baseSha": "96a939a5a6",
+        "reviewer": "Sol via Codex",
+        "task": "…b912",
+        "previousAttempt": {
+          "batchSha": "0dea681ce8",
+          "reviewer": "Argon",
+          "status": "provider_blocked",
+          "evidence": "partial"
+        },
+        "directedValidationPreserved": true,
+        "finalResultReported": false,
+        "reportedAt": "2026-11-23T20:24:00+00:00",
+        "source": "Relato VPS"
+      }
     }
   ],
   "outside": [
@@ -3922,6 +3943,33 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T20:24:00+00:00",
+      "appliedAt": "2026-11-23T20:28:21+00:00",
+      "item": "21e",
+      "from": "LOTE",
+      "to": "LOTE",
+      "observedStatus": "BATERIA",
+      "facet": "battery",
+      "report": "2026-11-23 20:24 [BATERIA] lote-21e · lote/21e@e34f0ddc5d · Argon encerrou a bateria antiga (0dea681ce8) com bloqueio do provedor e evidência parcial; Sol (…b912) retoma contra a base com #840 (96a939a5a6). Validação dirigida anterior segue registrada. Publicação ainda sem credencial",
+      "source": "Relato VPS · fase de testes separada do estado de integração do lote"
+    },
+    {
+      "at": "2026-11-23T20:24:00+00:00",
+      "appliedAt": "2026-11-23T20:28:21+00:00",
+      "item": "farol-40",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 20:24 [CORRECAO] farol-40 · agente/21z-farol-40@6238266cb3 · Sol r2 REPROVADO: gosto livre no KV entre contas, título inventado via x, título muda no hit, afinidade fora do pedido e colisão filme/série. Originais passaram, 14/14 dirigidos, 488/488 corpus, merge limpo. Gemini Hydrogen corrige na mesma branch (…31fc)"
+    },
+    {
+      "at": "2026-11-23T20:22:00+00:00",
+      "appliedAt": "2026-11-23T20:28:21+00:00",
+      "item": "farol-48",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "report": "2026-11-23 20:22 [REVISAO] farol-48 · agente/21z-farol-48@d60b19b4d7 · commit e relatório do Gemini Neon recuperados; Sol r1 (…4ab1) revisa. Merge-tree com o 21e pós-#840 aponta conflito em src/home.c nas gerações de Assistiu e Dica; TV física pendente"
+    },
     {
       "at": "2026-11-23T20:16:00+00:00",
       "appliedAt": "2026-11-23T20:19:10+00:00",

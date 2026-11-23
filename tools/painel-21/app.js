@@ -58,7 +58,7 @@ function overview() {
   const svg = segments.map(([n,c]) => {const x=cursor;cursor+=n;return `<rect x="${x}" y="0" width="${n}" height="8" class="fill-${c}"/>`;}).join('');
   return `<section class="metrics" aria-label="Resumo da release">
     <div class="metric"><div class="metric-label">Farol integrado <span class="metric-icon">◴</span></div><div class="metric-value">${fd} <small>/ ${farol.length}</small></div><div class="metric-note">${percent}% do escopo Farol informado</div></div>
-    <div class="metric"><div class="metric-label">Prontos para integrar <span class="metric-icon">⑂</span></div><div class="metric-value">${approved + batchCount}<small> itens</small></div><div class="metric-note">${approved} aprovados · ${batchCount} em lote</div></div>
+    <div class="metric"><div class="metric-label">Na fila de integração <span class="metric-icon">⑂</span></div><div class="metric-value">${approved + batchCount}<small> itens</small></div><div class="metric-note">${approved} aprovados · ${batchCount} em lote</div></div>
     <div class="metric"><div class="metric-label">PRs do Poke abertas <span class="metric-icon">↗</span></div><div class="metric-value">${data.items.filter(i=>i.group==='prs'&&(i.githubState==='open'||i.status==='PR_ABERTA')).length}<small> PRs</small></div><div class="metric-note">Separadas do escopo da VPS</div></div>
     <div class="metric"><div class="metric-label">Depende de você <span class="alert-icon">◷</span></div><div class="metric-value">${pendingGates().length}<small> pendências</small></div><div class="metric-note">TV física e publicação do worker</div></div>
   </section>
