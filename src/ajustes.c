@@ -5105,9 +5105,10 @@ void ajustes_dir(const char *dir) {
   }
   if (!viuHlsMode)
     valor[AJ_WEBOS_HLS_MODE] = !(lig(AJ_WEBOS_HLS_DTS) || lig(AJ_WEBOS_HLS_DV7));
-  // One HLS switch (owner 21/11): the old "HLS: MPEG-TS" switch alone turned
-  // HLS on; it stays as the format this TV starts with, under HLS.
-  if (lig(AJ_WEBOS_HLS_TS) && !lig(AJ_WEBOS_HLS_MODE)) valor[AJ_WEBOS_HLS_MODE] = 0;
+  // One HLS switch (owner 21/11): the old "HLS: MPEG-TS" key stays only as
+  // the format this TV starts with, under HLS. It no longer turns HLS on: that
+  // ran on every start, so HLS switched Off came back On after a restart on any
+  // TV with the format learned (the C5 still had it from the old switch).
   // Prefer the new default for ambiguous legacy 100% records: old saves
   // cannot distinguish factory defaults from explicit choices. Versioned
   // choices, including 100%, and other valid legacy scales are preserved.
