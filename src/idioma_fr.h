@@ -9717,6 +9717,7 @@
   T("rever do início", "revoir depuis le début"),
   T("reviravolta final", "retournement final"),
   T("robôs", "robots"),
+  T("sai %s", "sort le %s"),
   T("saia da sua rota", "sortez de votre route"),
   T("sair", "quitter"),
   T("salvo: %s", "enregistré : %s"),

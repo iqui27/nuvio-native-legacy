@@ -9718,6 +9718,7 @@
   T("rever do início", "se om från början"),
   T("reviravolta final", "twist på slutet"),
   T("robôs", "robot"),
+  T("sai %s", "släpps %s"),
   T("saia da sua rota", "lämna din vanliga väg"),
   T("sair", "avsluta"),
   T("salvo: %s", "sparat: %s"),

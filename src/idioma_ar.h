@@ -9718,6 +9718,7 @@
   T("rever do início", "المراجعة من البداية"),
   T("reviravolta final", "نهاية مفاجئة"),
   T("robôs", "روبوت"),
+  T("sai %s", "يصدر في %s"),
   T("saia da sua rota", "step off your usual route"),
   T("sair", "خروج"),
   T("salvo: %s", "محفوظ: %s"),

@@ -9718,6 +9718,7 @@
   T("rever do início", "rever desde o início"),
   T("reviravolta final", "reviravolta final"),
   T("robôs", "robôs"),
+  T("sai %s", "sai a %s"),
   T("saia da sua rota", "saia do seu caminho habitual"),
   T("sair", "sair"),
   T("salvo: %s", "guardado: %s"),

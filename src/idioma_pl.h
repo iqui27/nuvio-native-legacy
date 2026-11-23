@@ -9718,6 +9718,7 @@
   T("rever do início", "obejrzyj od początku"),
   T("reviravolta final", "zaskakujące zakończenie"),
   T("robôs", "robot"),
+  T("sai %s", "premiera %s"),
   T("saia da sua rota", "zejdź ze zwykłej trasy"),
   T("sair", "wyjdź"),
   T("salvo: %s", "zapisane: %s"),

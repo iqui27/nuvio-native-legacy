@@ -9717,6 +9717,7 @@
   { "rever do início", "review from the start" },
   { "reviravolta final", "twist ending" },
   { "robôs", "robot" },
+  { "sai %s", "out %s" },
   { "saia da sua rota", "step off your usual route" },
   { "sair", "exit" },
   { "salvo: %s", "saved: %s" },

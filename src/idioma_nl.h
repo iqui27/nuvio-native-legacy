@@ -9718,6 +9718,7 @@
   T("rever do início", "opnieuw vanaf het begin"),
   T("reviravolta final", "plottwist aan het eind"),
   T("robôs", "robot"),
+  T("sai %s", "verschijnt op %s"),
   T("saia da sua rota", "ga eens van je gewone route af"),
   T("sair", "afsluiten"),
   T("salvo: %s", "opgeslagen: %s"),

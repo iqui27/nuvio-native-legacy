@@ -9718,6 +9718,7 @@
   T("rever do início", "xem lại từ đầu"),
   T("reviravolta final", "cái kết bất ngờ"),
   T("robôs", "người máy"),
+  T("sai %s", "phát hành ngày %s"),
   T("saia da sua rota", "đi chệch lộ trình quen thuộc"),
   T("sair", "thoát"),
   T("salvo: %s", "đã lưu: %s"),

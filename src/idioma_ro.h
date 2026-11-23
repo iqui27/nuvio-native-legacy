@@ -9717,6 +9717,7 @@
   T("rever do início", "revezi de la început"),
   T("reviravolta final", "final cu răsturnare de situație"),
   T("robôs", "roboți"),
+  T("sai %s", "apare pe %s"),
   T("saia da sua rota", "ieși de pe drumul tău"),
   T("sair", "ieșire"),
   T("salvo: %s", "salvat: %s"),
