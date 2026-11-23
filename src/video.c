@@ -741,6 +741,9 @@ static char      vidVarredura[24] = "progressive";
 // vence o rotulo do addon: um arquivo marcado HDR-DV pode entregar apenas a
 // camada HDR10 nesta TV/perfil.
 static char      vidHdr[24] = "none";
+// Video codec the TV's player reports in videoInfo ("video\/x-vp9"), for
+// the HLS choice: HLS remuxes HEVC/H.264 only.
+static char      vidCodec[32];
 static long      seiX0, seiX1, seiX2, seiY0, seiY1, seiY2;
 static long      seiBrancoX, seiBrancoY, seiMinLum, seiMaxLum;
 static long      seiMaxCLL, seiMaxFALL;
@@ -1628,6 +1631,10 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
       if (q) { const char *f; q += 12; f = strchr(q, '"');
         if (f && f - q < (int)sizeof vidVarredura) {
           memcpy(vidVarredura, q, f - q); vidVarredura[f - q] = 0; } } }
+    { const char *q = strstr(p, "\"codec\":\"");
+      if (q) { const char *f; q += 9; f = strchr(q, '"');
+        if (f && f - q < (int)sizeof vidCodec) {
+          memcpy(vidCodec, q, f - q); vidCodec[f - q] = 0; } } }
     { const char *q = strstr(p, "\"hdrType\":\"");
       if (q) { const char *f; q += 11; f = strchr(q, '"');
         if (f && f - q < (int)sizeof vidHdr) {
@@ -3624,6 +3631,7 @@ static int tocarInternoRota(const char *url, int comDV, int hlsLoad) {
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; vidAtmos = 0;
   legUrlAtual[0] = 0; mkvPendente = 0;
   snprintf(vidHdr, sizeof vidHdr, "none");
+  vidCodec[0] = 0;
   seiX0 = seiX1 = seiX2 = seiY0 = seiY1 = seiY2 = 0;
   seiBrancoX = seiBrancoY = seiMinLum = seiMaxLum = seiMaxCLL = seiMaxFALL = 0;
   vuiPrim = vuiTrans = vuiMatriz = 2;
@@ -4292,8 +4300,20 @@ static int iniciarDts(int stream) {
     // HLS carries Dolby Vision only through the P7 -> P8.1 conversion, and its
     // probe rejects any other Dolby Vision source. P5/P8, or P7 without that
     // conversion, keep the existing converter instead of ending in an HLS error.
-    if (dts && !dv7 && dvMkvPerfil) {
+    // The MKV probe gives the profile; MP4 has no such probe, so the TV's own
+    // hdrType counts too (MP4 DV with audio from another source ended in
+    // "cannot use HLS without P7 conversion", Dexter on the C5, 23/11).
+    if (dts && !dv7 && (dvMkvPerfil || !strcmp(vidHdr, "DolbyVision"))) {
       printf("[webos-hls] Dolby Vision profile %d without P7 conversion: existing converter\n", dvMkvPerfil);
+      fflush(stdout);
+      dts = 0;
+    }
+    // HLS remuxes HEVC/H.264 only; the existing converter also takes VP9 and
+    // AV1 (VP9 4K with audio from another source ended in "Video codec not
+    // HEVC/H.264", 23/11). No codec reported yet: HLS as before.
+    if (dts && !dv7 && vidCodec[0] && !strstr(vidCodec, "265") && !strstr(vidCodec, "264") &&
+        !strstr(vidCodec, "hevc") && !strstr(vidCodec, "avc")) {
+      printf("[webos-hls] video %s is not HEVC/H.264: existing converter\n", vidCodec);
       fflush(stdout);
       dts = 0;
     }
