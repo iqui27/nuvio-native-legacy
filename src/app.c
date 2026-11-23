@@ -1233,6 +1233,7 @@ void app_desktop_preview(const char *screen) {
   }
   detail_fechar_seco(); vertudo_fechar_seco(); conquistas_ocultar(); menu_fechar();
   if (!strcmp(screen,"home")) { menu_ir(MENU_INICIO); trocarTela(TELA_HOME); home_ir_topo(); }
+  else if (!strcmp(screen,"profiles")) { tela=TELA_ESCOLHA_PERFIL; perfilAntes=perfis_ativo(); perfilsel_iniciar(); }
   else if (!strcmp(screen,"search")) { menu_ir(MENU_BUSCAR); trocarTela(TELA_BUSCA); }
   else if (!strcmp(screen,"library")) { menu_ir(MENU_BIBLIOTECA); trocarTela(TELA_BIBLIOTECA); }
   else if (!strcmp(screen,"lists")) { menu_definir_destino(MENU_LISTAS); trocarTela(TELA_BIBLIOTECA); biblioteca_abrir_listas(); }

@@ -140,6 +140,9 @@ static void navigationRange(float,float,float,float,float,float,PonteiroFn,Ponte
 #include "abertura.h"
 #include "apoio.h"
 #include "telefoneui.h"
+#ifdef NV_DESKTOP_UI
+#include "desktop_native.h"
+#endif
 #include "dts/dts_hls_tpk.h"
 #ifdef NV_ANDROID
 #include "android.h"

@@ -383,18 +383,27 @@ void dados_iniciar(const char *dirArte) {
   const char *candidatos[5];
   int n = 0, i;
 
-#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+#ifdef NV_DESKTOP_UI
+  // Capture/proof runs must never probe a default or developer profile if their
+  // explicit isolated directory fails (reconciles mac-fontes, mac-perfis,
+  // mac-busca and mac-ajustes): absolute path, real directory (no symlink),
+  // writable, else exit 78 before any fallback.
   if (getenv("NV_CAPTURA")) {
+#ifdef _WIN32
+    int absoluto = env && (env[0] == '/' || env[0] == '\\' ||
+                           (((env[0] | 32) >= 'a' && (env[0] | 32) <= 'z') && env[1] == ':'));
+    int diretorio = 1;
+#else
     struct stat st;
-    // A delayed background launch can outlive its disposable directory.
-    // Capture must stop here, before even considering a default profile.
-    if (!env || !*env || strlen(env) >= sizeof dir || lstat(env,&st) ||
-        !S_ISDIR(st.st_mode) || !serve(env)) {
-      fputs("[dados] capture isolation unavailable; refusing default data\n",stderr);
+    int absoluto = env && env[0] == '/';
+    int diretorio = absoluto && !lstat(env, &st) && S_ISDIR(st.st_mode);
+#endif
+    if (!env || !absoluto || strlen(env) >= sizeof dir || !diretorio || !serve(env)) {
+      fputs("[dados] capture requires writable isolated NUVIO_DADOS; refusing default data\n", stderr);
       exit(78);
     }
-    snprintf(dir,sizeof dir,"%s",env);
-    printf("[dados] gravando em %s\n",dir);fflush(stdout);
+    snprintf(dir, sizeof dir, "%s", env);
+    printf("[dados] gravando em %s\n", dir); fflush(stdout);
     return;
   }
 #endif

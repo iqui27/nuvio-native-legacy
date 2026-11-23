@@ -171,7 +171,11 @@ static void ajDesenharInspetor(void) {
       }
       if (ph > 0) y += ph;
     } }
+#ifdef NV_DESKTOP_UI
+  y += layout_desktop_ativo() ? 64.0f : 30.0f;
+#else
   y += 30.0f;
+#endif
   // Kicker: a categoria e o bloco ("REPRODUCAO · IMAGEM E SOM", mockup v3).
   { char k[200];
     const char *bl = op >= 0 ? uxBloco(op) : naMais ? "Mais opções" : "";
@@ -185,6 +189,10 @@ static void ajDesenharInspetor(void) {
   { const char *t = naMais ? "Mais opções" : categoria ? TELA[secIni[secAtual]].titulo
                   : op == AJ_TEMA ? V_TEMA[ajEditandoLinha(op) ? uxPendente : valor[AJ_TEMA]]
                   : rotuloOpcao(op);
+#ifdef NV_DESKTOP_UI
+    if (layout_desktop_ativo() && desktop_native_control(5, 4, i18n(t), 28, 1, x, y, w, 80, 1)) y += 80;
+    else
+#endif
     y += ajBloco(TXT_V2_A3TIT, t, x, y, w, 56.0f, 1, 2); }
   y += 10.0f;
   // 2.1: "Vale para" e "Recomendado" tem lugar garantido; a descricao e o
@@ -334,6 +342,16 @@ static void ajDesenharMais(int item, float y, float f, float a) {
   }
   ajIcone("aj_sliders-horizontal", ln.x + 20.0f, yc - 12.0f, 24.0f, (f > 0.5f ? 0.9f : 0.6f) * aTx);
   snprintf(rot, sizeof rot, "%s · %d", i18n("Mais opções"), n);
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) {
+    r = ajTxt(TXT_V2_LN, rot);
+    txt_desenhar_alpha(r, ln.x + 58, yc - r.h * .5f, aTx);
+    aj2Chevron(xDir, yc, .5f * aTx);
+    v = ajTxtC(TXT_V2_18, aberto ? i18n("Esconder") : resumo, ln.w - 80);
+    txt_desenhar_alpha(v, ln.x + 28, y + AJ2_LN_H + 10, .5f * aTx);
+    return;
+  }
+#endif
   r = ajTxt(f > 0.5f ? TXT_V2_LN_B : TXT_V2_LN, rot);
   txt_desenhar_alpha(r, ln.x + 58.0f, yc - r.h * 0.5f, (f > 0.5f ? 1.0f : 0.85f) * aTx);
   aj2Chevron(xDir, yc, (f > 0.5f ? 0.7f : 0.32f) * aTx);
@@ -349,7 +367,12 @@ static float ajAlturaItem(int i) {
     case IT_SEC: return 0.0f;
     case IT_ROT: return AJ2_GRUPO_H;
     case IT_GRP: return AJ2_LN_GAP + AJ2_LN_H;
-    case IT_MAIS: return 14.0f + AJ2_LN_GAP + AJ2_LN_H + 4.0f;
+    case IT_MAIS: return 14.0f + AJ2_LN_GAP + AJ2_LN_H +
+#ifdef NV_DESKTOP_UI
+      (layout_desktop_ativo() ? 44.0f : 4.0f);
+#else
+      4.0f;
+#endif
     default: return AJ2_LN_GAP + ajLinhaH(i);
   }
 }
