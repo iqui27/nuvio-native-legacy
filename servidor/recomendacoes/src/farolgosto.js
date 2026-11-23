@@ -882,6 +882,7 @@ function fpTexto(fp, b, vi, vf) {
       if (temX) return { erro: FPE.JSON };
       if (b[ent.vi] !== 0x22) return { erro: FPE.TIPO_VALOR };
       temX = true;
+      fp.teveX = true;
       const dec = fpStrDec(b, ent.vi, ent.vf, FAROL_X_TAM);
       xOk = Boolean(dec && farolTextoAceitaBytes(dec));
       if (xOk) xBuf = dec;
@@ -1385,6 +1386,7 @@ function erroCena(fce) {
     erro: [0, 0, 0, 0, 0, 0],
     erroNomes: ["FPE_OK", "FPE_OK", "FPE_OK", "FPE_OK", "FPE_OK", "FPE_OK"],
     xs: [],
+    teveX: false,
   };
 }
 
@@ -1468,7 +1470,7 @@ export function validarCena(entrada, nCandidatos = 0) {
     origem = DEC.decode(oBuf);
   }
 
-  const fp = { nCand: nCandidatos < 0 ? 0 : nCandidatos, xs: [] };
+  const fp = { nCand: nCandidatos < 0 ? 0 : nCandidatos, xs: [], teveX: false };
   const pecas = [];
   const erro = [0, 0, 0, 0, 0, 0];
   let nRecusadas = 0;
@@ -1512,6 +1514,7 @@ export function validarCena(entrada, nCandidatos = 0) {
     erro,
     erroNomes: erro.map((c) => FPE_NOMES[c] || "FPE_?"),
     xs: fp.xs,
+    teveX: fp.teveX,
   };
 }
 
@@ -1592,23 +1595,19 @@ function validarListaAfinidade(lista, maxItens) {
       if (!it.trim() || !textoSeguro(it, 64)) return null;
       out.push({ nome: it.trim() });
     } else if (typeof it === "number") {
-      if (!Number.isInteger(it) || Math.abs(it) > 0x7fffffff) return null;
+      if (!Number.isInteger(it) || it < -0x80000000 || it > 0x7fffffff || it === 0) return null;
       out.push({ id: it });
     } else if (ehObjPlano(it)) {
       const ks = Object.keys(it);
       if (!ks.length || ks.some((k) => k !== "id" && k !== "nome" && k !== "peso")) return null;
       const item = {};
       if (it.id !== undefined) {
-        if (typeof it.id === "number") {
-          if (!Number.isInteger(it.id) || Math.abs(it.id) > 0x7fffffff) return null;
-          item.id = it.id;
-        } else if (typeof it.id === "string") {
-          if (!textoSeguro(it.id, 32)) return null;
-          item.id = it.id;
-        } else return null;
+        if (typeof it.id !== "number" || !Number.isInteger(it.id) ||
+            it.id < -0x80000000 || it.id > 0x7fffffff || it.id === 0) return null;
+        item.id = it.id;
       }
       if (it.nome !== undefined) {
-        if (!textoSeguro(it.nome, 64)) return null;
+        if (!textoSeguro(it.nome, 64) || !it.nome.trim()) return null;
         item.nome = it.nome.trim();
       }
       if (it.peso !== undefined) {
@@ -1843,55 +1842,199 @@ export function validarPedidoEscolha(corpo) {
   };
 }
 
-// Modelos FT_* cujo(s) argumento(s) representam titulo (src/faroltexto.h / farolcena.c):
-// na saida do LLM devem ser referencia valida ("c<n>" ou "tt<digitos>" do pedido), nunca literal.
-const FT_ARGS_TITULO = new Map([
-  ["FT_RETOMAR_L1", [0]],
-  ["FT_FIL_PORQUE_TERMINOU", [0]],
-  ["FT_MOT_TERMINOU", [0]],
-  ["FT_MOT_TERMINOU_TEMA", [0]],
-  ["FT_MOT_SEMELHANTE", [0]],
-  ["FT_MOT_DIRETOR", [0]],
-  ["FT_DICA_PAROU_L1", [0]],
-  ["FT_DICA_FALTA_L1", [2]],
-  ["FT_DICA_TEMPORADA", [0]],
-  ["FT_DICA_REVER", [0]],
-  ["FT_DICA_CURTO", [0]],
-  ["FT_CMP_VEREDITO_CABE", [0]],
+const FT_MODS_COMPOR_0_RX = /^FT_(?:FIL|MOT|DICA|INFO|ESC|CMP|ACHA)_/;
+
+const ESCOLHA_PECA_PERGUNTAS = Object.freeze({
+  FT_ESC_TEMPO: Object.freeze({
+    t45: "FT_ESC_TEMPO_45",
+    t100: "FT_ESC_TEMPO_FILME",
+    t999: "FT_ESC_TEMPO_NOITE",
+    tanto: "FT_ESC_TANTO_FAZ",
+  }),
+  FT_ESC_PESO: Object.freeze({
+    leve: "FT_ESC_PESO_LEVE",
+    intenso: "FT_ESC_PESO_INTENSO",
+    tanto: "FT_ESC_TANTO_FAZ",
+  }),
+  FT_ESC_COMPANHIA: Object.freeze({
+    so: "FT_ESC_SO_EU",
+    dois: "FT_ESC_A_DOIS",
+    crianca: "FT_ESC_CRIANCA",
+    tanto: "FT_ESC_TANTO_FAZ",
+  }),
+  FT_ESC_NOVIDADE: Object.freeze({
+    novo: "FT_ESC_NOVO",
+    conhecido: "FT_ESC_CONHECIDO",
+    tanto: "FT_ESC_TANTO_FAZ",
+  }),
+  FT_ESC_FORMATO: Object.freeze({
+    filme: "FT_ESC_FILME",
+    serie: "FT_ESC_SERIE",
+    tanto: "FT_ESC_TANTO_FAZ",
+  }),
+  FT_ESC_IDIOMA: Object.freeze({
+    dublado: "FT_ESC_DUBLADO",
+    legendado: "FT_ESC_LEGENDADO",
+    tanto: "FT_ESC_TANTO_FAZ",
+  }),
+  FT_ESC_EPOCA: Object.freeze({
+    nova: "FT_ESC_EPOCA_NOVA",
+    antiga: "FT_ESC_EPOCA_ANTIGA",
+    tanto: "FT_ESC_TANTO_FAZ",
+  }),
+  FT_ESC_HUMOR: Object.freeze({
+    rir: "FT_ESC_HUMOR_RIR",
+    emocionar: "FT_ESC_HUMOR_EMOCIONAR",
+    tensao: "FT_ESC_HUMOR_TENSAO",
+    tanto: "FT_ESC_TANTO_FAZ",
+  }),
+  FT_ESC_CONTINUAR: Object.freeze({
+    continuar: "FT_ESC_CONT_SIM",
+    comecar: "FT_ESC_COMECAR",
+    tanto: "FT_ESC_TANTO_FAZ",
+  }),
+});
+
+// IDs de genero resolvidos nativamente em src/farol.c (generoNome).
+const TV_TMDB_GENERO_IDS = new Set([
+  28, 12, 16, 35, 80, 99, 18, 10751, 14, 36, 27, 10402, 9648, 10749, 878, 53,
+  10752, 37, 10759, 10762, 10763, 10764, 10765, 10766, 10767, 10768,
 ]);
 
-// Modelos FT_* com argumento de afinidade controlada (g<id>, k<id>, p<id>).
-const FT_ARGS_AFINIDADE = new Map([
-  ["FT_FIL_GENERO", [[0, "g"]]],
-  ["FT_MOT_GENERO", [[0, "g"]]],
-  ["FT_MOT_FORA_CURVA", [[0, "g"]]],
-  ["FT_FIL_TEMA", [[0, "k"]]],
-  ["FT_FIL_SUB_TEMA", [[0, "k"]]],
-  ["FT_MOT_TEMA", [[0, "k"]]],
-  ["FT_FIL_PESSOA", [[0, "p"]]],
-  ["FT_MOT_PESSOA", [[0, "p"]]],
-  ["FT_MOT_ESTREIA", [[0, "p"]]],
-  ["FT_DICA_ESTREIA", [[0, "p"]]],
-  ["FT_MOT_TERMINOU_TEMA", [[1, "kg"]]],
-]);
+function mapaHashNome(s) {
+  const bytes = ENC.encode(s);
+  let h = 2166136261 >>> 0;
+  for (const b of bytes) {
+    let c = b;
+    if (c >= 0x41 && c <= 0x5A) c += 0x20;
+    if ((c >= 0x61 && c <= 0x7A) || (c >= 0x30 && c <= 0x39) || c >= 0x80) {
+      h ^= c;
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+  }
+  return -(h & 0x3fffffff) - 1;
+}
 
-const FT_ARGS_INT = new Map([
-  ["FT_MOT_DIRETOR", [1]],
-  ["FT_MOT_CABE_HOJE", [0]],
-  ["FT_DICA_PAROU_L1", [1, 2]],
-  ["FT_DICA_PAROU_L2", [0]],
-  ["FT_DICA_FALTA_L1", [0, 1]],
-  ["FT_INFO_SOBE", [0, 1, 2]],
-  ["FT_INFO_CAI", [0]],
-  ["FT_INFO_FALTAM", [0, 1]],
-  ["FT_INFO_DUAS_NOITES", [0, 1]],
-  ["FT_INFO_SAGA", [0, 1]],
-  ["FT_INFO_SAGA_VOCE_VIU", [0, 1, 2]],
-  ["FT_INFO_RETOMADA", [0, 1]],
-  ["FT_INFO_RETOMADA_SIMPLES", [0, 1]],
-  ["FT_ESC_PASSO", [0, 1]],
-  ["FT_ACHA_CURTOS_L1", [0, 1]],
-  ["FT_ACHA_L1", [0]],
+const TV_HASH_GENERO_IDS = new Set([
+  "Ação", "Aventura", "Animação", "Comédia", "Crime", "Documentário", "Drama",
+  "Família", "Fantasia", "História", "Terror", "Música", "Mistério", "Romance",
+  "Ficção científica", "Suspense", "Guerra", "Faroeste", "Infantil", "Notícias",
+  "Reality", "Novela", "Talk show",
+  "Action", "Action & Adventure", "Adventure", "Animation", "Comedy", "Crime",
+  "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Music",
+  "Mystery", "Romance", "Sci-Fi & Fantasy", "Science Fiction", "Thriller",
+  "War", "War & Politics", "Western", "Kids", "News", "Soap", "Talk",
+].map(mapaHashNome));
+
+function generoResolvidoNaTv(idStr) {
+  const n = Number(idStr);
+  return Number.isInteger(n) && (TV_TMDB_GENERO_IDS.has(n) || TV_HASH_GENERO_IDS.has(n));
+}
+
+// Modelos de tema/genero para geracao deterministica de `x` quando o renderer da TV
+// nao resolve `k<id>` (src/farol.c:298) ou genero fora da tabela nativa.
+// Ordem por entrada: [FT_FIL_TEMA, FT_FIL_SUB_TEMA, FT_MOT_TEMA, FT_MOT_TERMINOU_TEMA, FT_FIL_GENERO, FT_MOT_GENERO, FT_MOT_FORA_CURVA]
+const MODELOS_29 = Object.freeze({
+  pt:     ["Do mesmo tema: %s", "Mais sobre %s", "Do mesmo tema: %s.", "Você terminou %s e gosta de %s.", "Para quem gosta de %s", "Você gosta de %s.", "Fora do seu costume: %s bem avaliado."],
+  "pt-pt":["Do mesmo tema: %s", "Mais sobre %s", "Do mesmo tema: %s.", "Terminaste %s e gostas de %s.", "Para quem gosta de %s", "Gostas de %s.", "Fora do teu costume: %s bem avaliado."],
+  en:     ["Same theme: %s", "More about %s", "Same theme: %s.", "You finished %s and like %s.", "For fans of %s", "You like %s.", "Outside your usual: %s, well rated."],
+  ar:     ["الموضوع نفسه: %s", "المزيد عن %s", "الموضوع نفسه: %s.", "أنهيت %s وتحب %s.", "لمحبي %s", "تحب %s.", "خارج عادتك: %s بتقييم جيد."],
+  bg:     ["Същата тема: %s", "Още за %s", "Същата тема: %s.", "Изгледа %s и харесваш %s.", "За любителите на %s", "Харесваш %s.", "Извън обичайното: %s — добре оценено."],
+  bs:     ["Ista tema: %s", "Više o %s", "Ista tema: %s.", "Pogledao si %s i voliš %s.", "Za ljubitelje: %s", "Voliš %s.", "Izvan običaja: %s — dobro ocijenjeno."],
+  cs:     ["Stejné téma: %s", "Více o %s", "Stejné téma: %s.", "Dokoukal jsi %s a máš rád %s.", "Pro fanoušky: %s", "Máš rád %s.", "Mimo zvyk: %s — dobře hodnocené."],
+  da:     ["Samme tema: %s", "Mere om %s", "Samme tema: %s.", "Du har set %s og kan lide %s.", "Til dig, der kan lide %s", "Du kan lide %s.", "Uden for det sædvanlige: %s, godt bedømt."],
+  de:     ["Gleiches Thema: %s", "Mehr über %s", "Gleiches Thema: %s.", "Du hast %s gesehen und magst %s.", "Für Fans von %s", "Du magst %s.", "Außerhalb deiner Gewohnheit: %s, gut bewertet."],
+  el:     ["Ίδιο θέμα: %s", "Περισσότερα για %s", "Ίδιο θέμα: %s.", "Είδες %s και σου αρέσει %s.", "Για θαυμαστές: %s", "Σου αρέσει %s.", "Εκτός συνηθειών: %s — καλά βαθμολογημένο."],
+  es:     ["Mismo tema: %s", "Más sobre %s", "Mismo tema: %s.", "Terminaste %s y te gusta %s.", "Para fans de %s", "Te gusta %s.", "Fuera de lo habitual: %s bien valorado."],
+  fr:     ["Même thème : %s", "Plus sur %s", "Même thème : %s.", "Vous avez terminé %s et aimez %s.", "Pour les fans de %s", "Vous aimez %s.", "Hors de vos habitudes : %s bien noté."],
+  hu:     ["Ugyanaz a téma: %s", "Még több: %s", "Ugyanaz a téma: %s.", "Végignézted: %s, és kedveled: %s.", "%s rajongóknak", "Kedveled: %s.", "Szokatlan: jól értékelt %s."],
+  id:     ["Tema yang sama: %s", "Lebih lanjut tentang %s", "Tema yang sama: %s.", "Kamu menonton %s dan suka %s.", "Untuk penggemar %s", "Kamu suka %s.", "Di luar kebiasaan: %s berperingkat baik."],
+  it:     ["Stesso tema: %s", "Altro su %s", "Stesso tema: %s.", "Hai finito %s e ti piace %s.", "Per chi ama %s", "Ti piace %s.", "Fuori dal solito: %s ben valutato."],
+  ja:     ["同じテーマ: %s", "%s についてもっと", "同じテーマ: %s", "%s を見終わり、%s が好き", "%s が好きな人へ", "%s が好き", "いつもと違う: 高評価の %s"],
+  lt:     ["Ta pati tema: %s", "Daugiau apie %s", "Ta pati tema: %s.", "Peržiūrėjai %s ir tau patinka %s.", "Mėgstantiems: %s", "Tau patinka %s.", "Ne pagal įprotį: %s — gerai įvertinta."],
+  nl:     ["Zelfde thema: %s", "Meer over %s", "Zelfde thema: %s.", "Je keek %s uit en houdt van %s.", "Voor fans van %s", "Je houdt van %s.", "Buiten je gewoonte: %s, goed beoordeeld."],
+  no:     ["Samme tema: %s", "Mer om %s", "Samme tema: %s.", "Du har sett %s og liker %s.", "For deg som liker %s", "Du liker %s.", "Utenfor det vanlige: %s, godt vurdert."],
+  pl:     ["Ten sam temat: %s", "Więcej o %s", "Ten sam temat: %s.", "Obejrzałeś %s i lubisz %s.", "Dla fanów: %s", "Lubisz %s.", "Poza zwyczajem: %s — dobrze oceniane."],
+  ro:     ["Același subiect: %s", "Mai mult despre %s", "Același subiect: %s.", "Ai terminat %s și îți place %s.", "Pentru fani: %s", "Îți place %s.", "În afara obișnuitului: %s bine evaluat."],
+  ru:     ["Та же тема: %s", "Больше о %s", "Та же тема: %s.", "Вы посмотрели %s и любите %s.", "Для любителей: %s", "Вам нравится %s.", "Вне привычного: %s с хорошей оценкой."],
+  sk:     ["Rovnaká téma: %s", "Viac o %s", "Rovnaká téma: %s.", "Dopozeral si %s a máš rád %s.", "Pre fanúšikov: %s", "Máš rád %s.", "Mimo zvyku: %s — dobre hodnotené."],
+  sl:     ["Ista tema: %s", "Več o %s", "Ista tema: %s.", "Ogledal si %s in ti je všeč %s.", "Za ljubitelje: %s", "Všeč ti je %s.", "Zunaj navad: %s — dobro ocenjeno."],
+  sr:     ["Ista tema: %s", "Više o %s", "Ista tema: %s.", "Pogledao si %s i voliš %s.", "Za ljubitelje: %s", "Voliš %s.", "Van običaja: %s — dobro ocenjeno."],
+  sv:     ["Samma tema: %s", "Mer om %s", "Samma tema: %s.", "Du såg %s och gillar %s.", "För dig som gillar %s", "Du gillar %s.", "Utanför det vanliga: %s, högt betygsatt."],
+  tr:     ["Aynı tema: %s", "%s hakkında daha fazlası", "Aynı tema: %s.", "%s bitirdin ve %s seviyorsun.", "%s sevenler için", "%s seviyorsun.", "Alışkanlığının dışında: iyi puanlı %s."],
+  uk:     ["Та сама тема: %s", "Більше про %s", "Та сама тема: %s.", "Ви переглянули %s і любите %s.", "Для шанувальників: %s", "Вам подобається %s.", "Поза звичним: %s з добрими оцінками."],
+  vi:     ["Cùng chủ đề: %s", "Thêm về %s", "Cùng chủ đề: %s.", "Bạn đã xem %s và thích %s.", "Dành cho người thích %s", "Bạn thích %s.", "Khác thói quen: %s được đánh giá cao."],
+  "zh-cn":["同一主题：%s", "更多关于%s", "同一主题：%s", "你看完了%s，也喜欢%s", "给喜欢%s的你", "你喜欢%s", "不同寻常：好评的%s"],
+  "zh-tw":["同一主題：%s", "更多關於%s", "同一主題：%s", "你看完了%s，也喜歡%s", "給喜歡%s的你", "你喜歡%s", "不同尋常：好評的%s"],
+});
+
+const MODELO_IDX_29 = Object.freeze({
+  FT_FIL_TEMA: 0,
+  FT_FIL_SUB_TEMA: 1,
+  FT_MOT_TEMA: 2,
+  FT_MOT_TERMINOU_TEMA: 3,
+  FT_FIL_GENERO: 4,
+  FT_MOT_GENERO: 5,
+  FT_MOT_FORA_CURVA: 6,
+});
+
+function tabelaIdioma29(idioma) {
+  const low = String(idioma || "pt-BR").toLowerCase();
+  if (low === "pt-pt") return MODELOS_29["pt-pt"];
+  if (low === "zh-cn" || low === "zh-hans") return MODELOS_29["zh-cn"];
+  if (low === "zh-tw" || low === "zh-hant") return MODELOS_29["zh-tw"];
+  const base = low.split("-")[0];
+  if (base === "nb" || base === "nn") return MODELOS_29.no;
+  return MODELOS_29[base] || MODELOS_29.pt;
+}
+
+// Contrato fechado para TODOS os modelos FT_* com aridade >= 1 permitidos em /v1/farol/compor.
+// Qualquer modelo com aridade >= 1 ausente deste mapa e recusado no aterramento.
+const FT_CONTRATO_ARGS = new Map([
+  ["FT_FIL_PORQUE_TERMINOU", [{ t: "titulo", ancoras: true }]],
+  ["FT_FIL_PESSOA", [{ t: "afin", dim: "p" }]],
+  ["FT_FIL_TEMA", [{ t: "afin", dim: "k" }]],
+  ["FT_FIL_GENERO", [{ t: "afin", dim: "g" }]],
+  ["FT_FIL_SUB_TEMA", [{ t: "afin", dim: "k" }]],
+  ["FT_MOT_TERMINOU", [{ t: "titulo", ancoras: true }]],
+  ["FT_MOT_TERMINOU_TEMA", [{ t: "titulo", ancoras: true }, { t: "afin", dim: "kg" }]],
+  ["FT_MOT_SEMELHANTE", [{ t: "titulo", ancoras: true }]],
+  ["FT_MOT_GENERO", [{ t: "afin", dim: "g" }]],
+  ["FT_MOT_TEMA", [{ t: "afin", dim: "k" }]],
+  ["FT_MOT_PESSOA", [{ t: "afin", dim: "p" }]],
+  ["FT_MOT_DIRETOR", [{ t: "titulo", ancoras: true }, { t: "int", min: 1, max: 999 }]],
+  ["FT_MOT_SALVO", [{ t: "dur_rel_salvo" }]],
+  ["FT_MOT_CABE_HOJE", [{ t: "int", min: 1, max: 2000 }]],
+  ["FT_MOT_FORA_CURVA", [{ t: "afin", dim: "g" }]],
+  ["FT_MOT_ESTREIA", [{ t: "afin", dim: "p" }]],
+  ["FT_DICA_PAROU_L1", [{ t: "titulo", ancoras: true }, { t: "int", min: 1, max: 999 }, { t: "int", min: 1, max: 9999 }]],
+  ["FT_DICA_PAROU_L2", [{ t: "int", min: 1, max: 999 }]],
+  ["FT_DICA_SALVO_L1", [{ t: "dur_rel_salvo" }]],
+  ["FT_DICA_SALVO_L2", [{ t: "dur_filme" }]],
+  ["FT_DICA_ESTREIA", [{ t: "afin", dim: "p" }]],
+  ["FT_DICA_FALTA_L1", [{ t: "int", min: 1, max: 999 }, { t: "int", min: 1, max: 999 }, { t: "titulo", ancoras: true }]],
+  ["FT_DICA_TEMPORADA", [{ t: "titulo", ancoras: true }]],
+  ["FT_DICA_REVER", [{ t: "titulo", ancoras: true }]],
+  ["FT_DICA_CURTO", [{ t: "titulo", ancoras: true }]],
+  ["FT_INFO_QUALI", [{ t: "res" }, { t: "fmt_hdr" }, { t: "iso_lang" }]],
+  ["FT_INFO_QUALI_AUDIO", [{ t: "res" }, { t: "iso_lang" }]],
+  ["FT_INFO_IDIOMA", [{ t: "iso_lang" }]],
+  ["FT_INFO_LEGENDA", [{ t: "iso_lang" }]],
+  ["FT_INFO_SOBE", [{ t: "int", min: 1, max: 999 }, { t: "int", min: 1, max: 999 }, { t: "int", min: 1, max: 2000 }]],
+  ["FT_INFO_CAI", [{ t: "int", min: 1, max: 999 }]],
+  ["FT_INFO_FALTAM", [{ t: "int", min: 1, max: 999 }, { t: "int", min: 1, max: 2000 }]],
+  ["FT_INFO_TERMINA", [{ t: "hora_relogio" }]],
+  ["FT_INFO_DUAS_NOITES", [{ t: "int", min: 1, max: 99 }, { t: "int", min: 1, max: 2000 }]],
+  ["FT_INFO_ONDE", [{ t: "onde" }]],
+  ["FT_INFO_SAGA", [{ t: "int", min: 1, max: 99 }, { t: "int", min: 2, max: 99 }]],
+  ["FT_INFO_SAGA_VOCE_VIU", [{ t: "int", min: 1, max: 99 }, { t: "int", min: 2, max: 99 }, { t: "int", min: 1, max: 99 }]],
+  ["FT_INFO_REVER", [{ t: "yyyy_mm" }, { t: "int", min: 1, max: 5 }]],
+  ["FT_INFO_REVER_SIMPLES", [{ t: "yyyy_mm" }]],
+  ["FT_INFO_RETOMADA", [{ t: "int", min: 1, max: 999 }, { t: "int", min: 1, max: 9999 }, { t: "dur_rel_retomada" }]],
+  ["FT_INFO_RETOMADA_SIMPLES", [{ t: "int", min: 1, max: 999 }, { t: "int", min: 1, max: 9999 }]],
+  ["FT_ESC_PASSO", [{ t: "int", min: 1, max: 3 }, { t: "int", min: 1, max: 3 }]],
+  ["FT_CMP_VEREDITO_CABE", [{ t: "titulo", ancoras: false }]],
+  ["FT_ACHA_CURTOS_L1", [{ t: "int", min: 1, max: 24 }, { t: "int", min: 1, max: 2000 }]],
 ]);
 
 // Coleta todos os ids `tt<digitos>` presentes num valor (para aterramento das pecas do LLM).
@@ -1909,21 +2052,73 @@ function coletarTt(v, set) {
   }
 }
 
+function coletarAfinidadesMotivos(motivos, generosIds, temasIds, pessoasIds) {
+  if (!Array.isArray(motivos)) return;
+  for (const mo of motivos) {
+    if (typeof mo === "string") {
+      let m = /^g(-?(?:0|[1-9]\d*))$/.exec(mo);
+      if (m && m[1] !== "0") generosIds.add(m[1]);
+      else if ((m = /^k(-?(?:0|[1-9]\d*))$/.exec(mo)) && m[1] !== "0") temasIds.add(m[1]);
+      else if ((m = /^p(-?(?:0|[1-9]\d*))$/.exec(mo)) && m[1] !== "0") pessoasIds.add(m[1]);
+      continue;
+    }
+    if (!mo || typeof mo !== "object") continue;
+    if (typeof mo.m === "string" && Array.isArray(mo.a)) {
+      const specs = FT_CONTRATO_ARGS.get(mo.m);
+      if (specs) {
+        specs.forEach((sp, i) => {
+          if (sp.t === "afin" && typeof mo.a[i] === "string") {
+            const s = mo.a[i];
+            if ((sp.dim === "g" || sp.dim === "kg") && /^g-?[1-9]\d*$/.test(s)) generosIds.add(s.slice(1));
+            if ((sp.dim === "k" || sp.dim === "kg") && /^k-?[1-9]\d*$/.test(s)) temasIds.add(s.slice(1));
+            if (sp.dim === "p" && /^p-?[1-9]\d*$/.test(s)) pessoasIds.add(s.slice(1));
+          }
+        });
+      }
+    }
+    if (Number.isInteger(mo.genero) && mo.genero !== 0) generosIds.add(String(mo.genero));
+    if (Number.isInteger(mo.tema) && mo.tema !== 0) temasIds.add(String(mo.tema));
+    if (Number.isInteger(mo.pessoa) && mo.pessoa !== 0) pessoasIds.add(String(mo.pessoa));
+    const dim = typeof mo.tipo === "string" ? mo.tipo : (typeof mo.k === "string" ? mo.k : "");
+    if (Number.isInteger(mo.id) && mo.id !== 0) {
+      if (dim === "genero" || dim === "FMO_GENERO" || dim === "FMO_FORA_CURVA") generosIds.add(String(mo.id));
+      else if (dim === "tema" || dim === "FMO_TEMA") temasIds.add(String(mo.id));
+      else if (dim === "pessoa" || dim === "FMO_PESSOA") pessoasIds.add(String(mo.id));
+    }
+    if (Number.isInteger(mo.a) && mo.a !== 0) {
+      if (dim === "FMO_GENERO" || dim === "FMO_FORA_CURVA") generosIds.add(String(mo.a));
+      else if (dim === "FMO_TEMA") temasIds.add(String(mo.a));
+      else if (dim === "FMO_PESSOA") pessoasIds.add(String(mo.a));
+    }
+  }
+}
+
 function contextoAterramento(pedido) {
   const ttCand = new Set();
   const generosIds = new Set();
   const temasIds = new Set();
   const pessoasIds = new Set();
+  const temasNomes = new Map();
+  const generosNomes = new Map();
+  const titulosPorRef = new Map();
+  const servicosOnde = new Set();
 
-  for (const c of pedido.candidatos || []) {
+  (pedido.candidatos || []).forEach((c, idx) => {
     coletarTt(c.id, ttCand);
     coletarTt(c.ref, ttCand);
+    if (typeof c.titulo === "string" && c.titulo.trim()) {
+      const tit = c.titulo.trim();
+      titulosPorRef.set(`c${idx}`, tit);
+      if (typeof c.id === "string" && /^tt\d{1,17}$/.test(c.id)) titulosPorRef.set(c.id, tit);
+      if (typeof c.ref === "string" && /^tt\d{1,17}$/.test(c.ref)) titulosPorRef.set(c.ref, tit);
+    }
     if (Array.isArray(c.generos)) {
       for (const g of c.generos) {
-        if (typeof g === "number" && Number.isInteger(g)) generosIds.add(String(g));
+        if (typeof g === "number" && Number.isInteger(g) && g !== 0) generosIds.add(String(g));
       }
     }
-  }
+    coletarAfinidadesMotivos(c.motivos, generosIds, temasIds, pessoasIds);
+  });
 
   const ttTodos = new Set(ttCand);
   for (const c of pedido.candidatos || []) {
@@ -1933,11 +2128,39 @@ function contextoAterramento(pedido) {
   coletarTt(pedido.gosto?.ancoras, ttTodos);
   coletarTt(pedido.fatos, ttTodos);
 
+  for (const a of pedido.gosto?.ancoras || []) {
+    if (typeof a?.titulo === "string" && a.titulo.trim()) {
+      const tit = a.titulo.trim();
+      if (typeof a.id === "string" && /^tt\d{1,17}$/.test(a.id)) titulosPorRef.set(a.id, tit);
+      if (typeof a.ref === "string" && /^tt\d{1,17}$/.test(a.ref)) titulosPorRef.set(a.ref, tit);
+    }
+  }
+  for (const f of pedido.fatos || []) {
+    if (!f || typeof f !== "object") continue;
+    if (typeof f.titulo === "string" && f.titulo.trim()) {
+      const tit = f.titulo.trim();
+      for (const k of ["alvo", "id", "ref"]) {
+        if (typeof f[k] === "string" && /^tt\d{1,17}$/.test(f[k])) titulosPorRef.set(f[k], tit);
+      }
+    }
+    for (const k of ["onde", "servico"]) {
+      if (typeof f[k] === "string" && f[k].trim()) servicosOnde.add(f[k].trim());
+    }
+  }
+
   for (const g of pedido.gosto?.generos || []) {
-    if (g.id !== undefined) generosIds.add(String(g.id));
+    if (g.id !== undefined) {
+      const k = String(g.id);
+      generosIds.add(k);
+      if (typeof g.nome === "string" && g.nome.trim() && !generosNomes.has(k)) generosNomes.set(k, g.nome.trim());
+    }
   }
   for (const k of pedido.gosto?.temas || []) {
-    if (k.id !== undefined) temasIds.add(String(k.id));
+    if (k.id !== undefined) {
+      const id = String(k.id);
+      temasIds.add(id);
+      if (typeof k.nome === "string" && k.nome.trim() && !temasNomes.has(id)) temasNomes.set(id, k.nome.trim());
+    }
   }
   for (const p of pedido.gosto?.pessoas || []) {
     if (p.id !== undefined) pessoasIds.add(String(p.id));
@@ -1947,6 +2170,7 @@ function contextoAterramento(pedido) {
   for (const lista of [pedido.gosto?.generos, pedido.gosto?.temas, pedido.gosto?.pessoas]) {
     for (const it of lista || []) {
       if (typeof it?.nome === "string" && it.nome.trim()) textosGosto.push(it.nome.trim());
+      if (typeof it?.id === "string" && it.id.trim()) textosGosto.push(it.id.trim());
     }
   }
   for (const a of pedido.gosto?.ancoras || []) {
@@ -1960,12 +2184,17 @@ function contextoAterramento(pedido) {
   }
 
   return {
+    idioma: pedido.idioma,
     nCand: (pedido.candidatos || []).length,
     ttCand,
     ttTodos,
     generosIds,
     temasIds,
     pessoasIds,
+    temasNomes,
+    generosNomes,
+    titulosPorRef,
+    servicosOnde,
     textosGosto,
   };
 }
@@ -1976,7 +2205,7 @@ function refTtPermitida(s, permitidos) {
 
 function refTituloValida(arg, ctx, permitirAncoras) {
   if (typeof arg !== "string") return false;
-  if (/^c\d+$/.test(arg)) {
+  if (/^c(?:0|[1-9]\d*)$/.test(arg)) {
     const idx = Number(arg.slice(1));
     return Number.isInteger(idx) && idx >= 0 && idx < ctx.nCand;
   }
@@ -1986,53 +2215,165 @@ function refTituloValida(arg, ctx, permitirAncoras) {
   return false;
 }
 
-function refAfinidadeValida(arg, tipo) {
+function gerarXDeterministico(m, a, ctx) {
+  const idx = MODELO_IDX_29[m];
+  if (idx === undefined) return undefined;
+  const tab = tabelaIdioma29(ctx.idioma);
+  const tpl = tab[idx];
+  if (!tpl) return null;
+
+  if (m === "FT_FIL_TEMA" || m === "FT_FIL_SUB_TEMA" || m === "FT_MOT_TEMA") {
+    const id = a[0]?.slice(1);
+    const nome = ctx.temasNomes.get(id);
+    if (!nome) return null;
+    const x = tpl.replace("%s", nome);
+    return farolTextoAceitaBytes(ENC.encode(x)) ? x : null;
+  }
+  if (m === "FT_FIL_GENERO" || m === "FT_MOT_GENERO" || m === "FT_MOT_FORA_CURVA") {
+    const id = a[0]?.slice(1);
+    if (generoResolvidoNaTv(id)) return undefined; // TV resolve nativamente em 29 idiomas
+    const nome = ctx.generosNomes.get(id);
+    if (!nome) return null;
+    const x = tpl.replace("%s", nome);
+    return farolTextoAceitaBytes(ENC.encode(x)) ? x : null;
+  }
+  if (m === "FT_MOT_TERMINOU_TEMA") {
+    const arg1 = a[1] || "";
+    if (arg1.startsWith("g")) {
+      const id = arg1.slice(1);
+      if (generoResolvidoNaTv(id)) return undefined;
+      const nome = ctx.generosNomes.get(id);
+      const tit = ctx.titulosPorRef.get(a[0]);
+      if (!nome || !tit) return null;
+      const x = tpl.replace("%s", tit).replace("%s", nome);
+      return farolTextoAceitaBytes(ENC.encode(x)) ? x : null;
+    }
+    if (arg1.startsWith("k")) {
+      const id = arg1.slice(1);
+      const nome = ctx.temasNomes.get(id);
+      const tit = ctx.titulosPorRef.get(a[0]);
+      if (!nome || !tit) return null;
+      const x = tpl.replace("%s", tit).replace("%s", nome);
+      return farolTextoAceitaBytes(ENC.encode(x)) ? x : null;
+    }
+    return null;
+  }
+  return undefined;
+}
+
+function refAfinidadeValida(arg, tipo, ctx) {
   if (typeof arg !== "string") return false;
-  if (tipo === "g") return /^g-?\d+$/.test(arg);
-  if (tipo === "k") return /^k-?\d+$/.test(arg);
-  if (tipo === "p") return /^p-?\d+$/.test(arg);
-  if (tipo === "kg") return /^[kg]-?\d+$/.test(arg);
+  if (tipo === "g") {
+    const m = /^g(-?[1-9]\d*)$/.exec(arg);
+    if (!m || !ctx.generosIds.has(m[1])) return false;
+    return generoResolvidoNaTv(m[1]) || ctx.generosNomes.has(m[1]);
+  }
+  if (tipo === "k") {
+    const m = /^k(-?[1-9]\d*)$/.exec(arg);
+    return Boolean(m && ctx.temasIds.has(m[1]) && ctx.temasNomes.has(m[1]));
+  }
+  if (tipo === "p") {
+    const m = /^p(-?[1-9]\d*)$/.exec(arg);
+    return Boolean(m && ctx.pessoasIds.has(m[1]));
+  }
+  if (tipo === "kg") {
+    if (arg.startsWith("k")) return refAfinidadeValida(arg, "k", ctx);
+    if (arg.startsWith("g")) return refAfinidadeValida(arg, "g", ctx);
+    return false;
+  }
   return false;
 }
 
-function textoAterrado(t, ctx, permitirAncoras = true) {
-  if (!t || !Array.isArray(t.a)) return true;
-  const permitidos = permitirAncoras ? ctx.ttTodos : ctx.ttCand;
-  for (const arg of t.a) {
-    if (/^c\d+$/.test(arg)) {
-      const idx = Number(arg.slice(1));
-      if (!Number.isInteger(idx) || idx < 0 || idx >= ctx.nCand) return false;
-    } else if (/^tt\d+$/.test(arg)) {
-      if (!permitidos.has(arg)) return false;
+function argContratoValido(arg, spec, ctx) {
+  if (typeof arg !== "string" || !arg.length) return false;
+  switch (spec.t) {
+    case "titulo":
+      return refTituloValida(arg, ctx, spec.ancoras);
+    case "afin":
+      return refAfinidadeValida(arg, spec.dim, ctx);
+    case "int": {
+      if (!/^(?:0|[1-9]\d{0,5})$/.test(arg)) return false;
+      const n = Number(arg);
+      return Number.isInteger(n) && n >= spec.min && n <= spec.max;
     }
+    case "dur_rel_salvo":
+      return /^[1-9]\d{0,3}(?:d|w|M|y)$/.test(arg);
+    case "dur_rel_retomada":
+      return /^[1-9]\d{0,3}(?:min|h|d|w|M|y)$/.test(arg);
+    case "dur_filme":
+      return /^(?:[1-9]\d?h(?:[0-5]\d)?|[1-9]\d{0,3}(?:\s?min))$/.test(arg);
+    case "hora_relogio":
+      return /^(?:(?:[01]\d|2[0-3]):[0-5]\d|(?:[1-9]|1[0-2]):[0-5]\d (?:AM|PM))$/.test(arg);
+    case "yyyy_mm":
+      return /^(?:19|20)\d{2}-(?:0[1-9]|1[0-2])$/.test(arg);
+    case "res":
+      return /^(?:8K|4K|[1-9]\d{2,3}p)$/.test(arg);
+    case "fmt_hdr":
+      return arg === "Dolby Vision" || arg === "HDR" || arg === "HDR10";
+    case "iso_lang":
+      return /^[a-z]{2}(?:-[A-Za-z]{2,4})?$/.test(arg);
+    case "onde":
+      return ctx.servicosOnde.has(arg);
+    default:
+      return false;
   }
-  if (t.m) {
-    const idxsTit = FT_ARGS_TITULO.get(t.m);
-    if (idxsTit) {
-      for (const idx of idxsTit) {
-        if (!refTituloValida(t.a[idx], ctx, permitirAncoras)) return false;
-      }
-    }
-    const specsAfin = FT_ARGS_AFINIDADE.get(t.m);
-    if (specsAfin) {
-      for (const [idx, tipo] of specsAfin) {
-        if (!refAfinidadeValida(t.a[idx], tipo)) return false;
-      }
-    }
-    const idxsInt = FT_ARGS_INT.get(t.m);
-    if (idxsInt) {
-      for (const idx of idxsInt) {
-        if (typeof t.a[idx] !== "string" || !/^\d{1,6}$/.test(t.a[idx])) return false;
-      }
-    }
+}
+
+function textoAterrado(t, ctx, permitirAncoras = true) {
+  if (!t) return true; // campos opcionais ausentes sao tratados pelo validador de peca
+  if (typeof t.m !== "string" || !t.m || !FT_ARIDADE.has(t.m)) return false;
+  const aridade = FT_ARIDADE.get(t.m);
+  const args = Array.isArray(t.a) ? t.a : [];
+  if (args.length !== aridade) return false;
+
+  if (aridade === 0) {
+    return FT_MODS_COMPOR_0_RX.test(t.m);
+  }
+
+  const specs = FT_CONTRATO_ARGS.get(t.m);
+  if (!specs || specs.length !== aridade) return false;
+
+  for (let i = 0; i < specs.length; i++) {
+    const sp = specs[i].t === "titulo" ? { ...specs[i], ancoras: permitirAncoras && specs[i].ancoras } : specs[i];
+    if (!argContratoValido(args[i], sp, ctx)) return false;
+  }
+
+  if (t.m === "FT_INFO_SAGA" || t.m === "FT_INFO_SAGA_VOCE_VIU") {
+    const pos = Number(args[0]);
+    const total = Number(args[1]);
+    if (pos > total) return false;
+    if (t.m === "FT_INFO_SAGA_VOCE_VIU" && Number(args[2]) > total) return false;
+  }
+  if (t.m === "FT_ESC_PASSO" && Number(args[0]) > Number(args[1])) return false;
+
+  // Confere se modelos que dependem de sintese deterministica de `x` conseguem renderizar texto aceito na TV.
+  if (gerarXDeterministico(t.m, args, ctx) === null) return false;
+  return true;
+}
+
+function selosAterrados(selos, ctx) {
+  if (!selos) return true;
+  for (const s of selos) {
+    const id = String(s.id);
+    if (s.k === "pessoa" && !ctx.pessoasIds.has(id)) return false;
+    else if (s.k === "tema" && !ctx.temasIds.has(id)) return false;
+    else if (s.k === "genero" && !ctx.generosIds.has(id)) return false;
+    else if (s.k !== "pessoa" && s.k !== "tema" && s.k !== "genero") return false;
   }
   return true;
 }
 
-// Confere que o LLM nao inventou nenhum titulo fora dos candidatos/ancoras/fatos recebidos.
+function escolhaOpcoesAterradas(p) {
+  const mapaOps = ESCOLHA_PECA_PERGUNTAS[p.pergunta?.m];
+  if (!mapaOps) return false;
+  return p.opcoes.every((o) => Object.hasOwn(mapaOps, o.id) && o.r?.m === mapaOps[o.id]);
+}
+
+// Confere que o LLM nao inventou titulo, afinidade, opcao ou argumento fora do contrato fechado.
 function pecaAterrada(p, ctx) {
   const { ttCand, ttTodos } = ctx;
   if (p.t === "fileira") {
+    if (p.id !== "gosto1" && p.id !== "gosto2") return false;
     if (!p.itens.every((ref) => refTtPermitida(ref, ttCand))) return false;
     if (!textoAterrado(p.titulo, ctx, true) || !textoAterrado(p.sub, ctx, true)) return false;
     if (p.motivo) {
@@ -2048,6 +2389,7 @@ function pecaAterrada(p, ctx) {
   }
   if (p.t === "porque") {
     if (!refTtPermitida(p.alvo, ttTodos)) return false;
+    if (!selosAterrados(p.selos, ctx)) return false;
     return p.linhas.every((l) => textoAterrado(l, ctx, true));
   }
   if (p.t === "comparar") {
@@ -2056,7 +2398,9 @@ function pecaAterrada(p, ctx) {
     return textoAterrado(p.veredito, ctx, false);
   }
   if (p.t === "escolha") {
-    return textoAterrado(p.pergunta, ctx, true) && p.opcoes.every((o) => textoAterrado(o.r, ctx, true));
+    return textoAterrado(p.pergunta, ctx, true) &&
+           p.opcoes.every((o) => textoAterrado(o.r, ctx, true)) &&
+           escolhaOpcoesAterradas(p);
   }
   if (p.t === "info") {
     if (!refTtPermitida(p.alvo, ttTodos)) return false;
@@ -2204,6 +2548,188 @@ function pecaParaCache(p) {
   return null;
 }
 
+function reconstituirTexto(t, ctx, state) {
+  if (!t || typeof t.m !== "string" || !t.m) return null;
+  const args = Array.isArray(t.a) ? [...t.a] : [];
+  const xDet = gerarXDeterministico(t.m, args, ctx);
+  if (xDet === null) return null;
+  const out = { m: t.m };
+  if (args.length) out.a = args;
+  if (typeof xDet === "string") {
+    if (state.xsUsados >= FAROL_XS) return null;
+    state.xsUsados++;
+    out.x = xDet;
+  }
+  return out;
+}
+
+function reconstituirPeca(p, ctx, state) {
+  const xsAntes = state.xsUsados;
+  const falha = () => { state.xsUsados = xsAntes; return null; };
+
+  if (p.t === "fileira") {
+    const titulo = reconstituirTexto(p.titulo, ctx, state);
+    if (!titulo) return falha();
+    let sub;
+    if (p.sub) {
+      sub = reconstituirTexto(p.sub, ctx, state);
+      if (!sub) return falha();
+    }
+    let motivo;
+    if (p.motivo) {
+      motivo = {};
+      for (const [k, v] of Object.entries(p.motivo)) {
+        const vt = reconstituirTexto(v, ctx, state);
+        if (!vt) return falha();
+        motivo[k] = vt;
+      }
+    }
+    return {
+      t: "fileira",
+      id: p.id,
+      titulo,
+      ...(sub ? { sub } : {}),
+      forma: p.forma,
+      itens: [...p.itens],
+      ...(motivo && Object.keys(motivo).length ? { motivo } : {}),
+    };
+  }
+  if (p.t === "dica") {
+    const l1 = reconstituirTexto(p.l1, ctx, state);
+    if (!l1) return falha();
+    let l2;
+    if (p.l2) {
+      l2 = reconstituirTexto(p.l2, ctx, state);
+      if (!l2) return falha();
+    }
+    return {
+      t: "dica",
+      id: p.id,
+      l1,
+      ...(l2 ? { l2 } : {}),
+      acao: p.acao?.alvo ? { tipo: p.acao.tipo, alvo: p.acao.alvo } : { tipo: p.acao.tipo },
+      ...(p.icone ? { icone: p.icone } : {}),
+    };
+  }
+  if (p.t === "porque") {
+    const linhas = [];
+    for (const l of p.linhas) {
+      const lt = reconstituirTexto(l, ctx, state);
+      if (!lt) return falha();
+      linhas.push(lt);
+    }
+    return {
+      t: "porque",
+      alvo: p.alvo,
+      confianca: p.confianca,
+      linhas,
+      ...(p.selos ? { selos: p.selos.map((s) => ({ k: s.k, id: s.id })) } : {}),
+    };
+  }
+  if (p.t === "comparar") {
+    let veredito;
+    if (p.veredito) {
+      veredito = reconstituirTexto(p.veredito, ctx, state);
+      if (!veredito) return falha();
+    }
+    return {
+      t: "comparar",
+      itens: [...p.itens],
+      eixos: [...p.eixos],
+      ...(veredito ? { veredito } : {}),
+      ...(p.escolha ? { escolha: p.escolha } : {}),
+    };
+  }
+  if (p.t === "escolha") {
+    const pergunta = reconstituirTexto(p.pergunta, ctx, state);
+    if (!pergunta) return falha();
+    const opcoes = [];
+    for (const o of p.opcoes) {
+      const rt = reconstituirTexto(o.r, ctx, state);
+      if (!rt) return falha();
+      opcoes.push({ id: o.id, r: rt });
+    }
+    return { t: "escolha", passo: p.passo, de: p.de, pergunta, opcoes };
+  }
+  if (p.t === "info") {
+    const itens = [];
+    for (const it of p.itens) {
+      const lt = reconstituirTexto(it.l, ctx, state);
+      if (!lt) return falha();
+      itens.push({ k: it.k, l: lt });
+    }
+    return { t: "info", alvo: p.alvo, itens };
+  }
+  if (p.t === "achados") {
+    const l1 = reconstituirTexto(p.l1, ctx, state);
+    if (!l1) return falha();
+    let l2;
+    if (p.l2) {
+      l2 = reconstituirTexto(p.l2, ctx, state);
+      if (!l2) return falha();
+    }
+    let motivo;
+    if (p.motivo) {
+      motivo = {};
+      for (const [k, v] of Object.entries(p.motivo)) {
+        const vt = reconstituirTexto(v, ctx, state);
+        if (!vt) return falha();
+        motivo[k] = vt;
+      }
+    }
+    return {
+      t: "achados",
+      l1,
+      ...(l2 ? { l2 } : {}),
+      itens: [...p.itens],
+      ...(motivo && Object.keys(motivo).length ? { motivo } : {}),
+    };
+  }
+  return falha();
+}
+
+function reconstituirCena(pecasCanonicas, meta, pedido, ctx) {
+  const nCand = pedido.candidatos.length;
+  const state = { xsUsados: 0 };
+  const pecasOut = [];
+  const canonicasOut = [];
+
+  for (const pc of pecasCanonicas) {
+    const pr = reconstituirPeca(pc, ctx, state);
+    if (!pr) continue;
+    const teste = {
+      v: 1,
+      tela: meta.tela,
+      ...(meta.feita !== undefined ? { feita: meta.feita } : {}),
+      ...(meta.vale_s !== undefined ? { vale_s: meta.vale_s } : {}),
+      origem: "llm",
+      pecas: [...pecasOut, pr],
+    };
+    const js = JSON.stringify(teste);
+    if (ENC.encode(js).length > FAROL_CENA_MAX) continue;
+    pecasOut.push(pr);
+    canonicasOut.push(pc);
+  }
+
+  if (!pecasOut.length) return { ok: false, status: 422, erro: "sem_peca_renderizavel" };
+
+  const cena = {
+    v: 1,
+    tela: meta.tela,
+    ...(meta.feita !== undefined ? { feita: meta.feita } : {}),
+    ...(meta.vale_s !== undefined ? { vale_s: meta.vale_s } : {}),
+    origem: "llm",
+    pecas: pecasOut,
+  };
+  const jsonStr = JSON.stringify(cena);
+  if (ENC.encode(jsonStr).length > FAROL_CENA_MAX)
+    return { ok: false, status: 422, erro: "FCE_TAMANHO" };
+  const re = validarCena(jsonStr, nCand);
+  if (!re.ok || re.nPecas !== pecasOut.length || re.nRecusadas > 0)
+    return { ok: false, status: 422, erro: re.rcNome || "reserializacao" };
+  return { ok: true, cena, jsonStr, pecasCanonicas: canonicasOut };
+}
+
 function coletarValoresTextoPeca(p, out) {
   if (!p || typeof p !== "object") return;
   if (typeof p.id === "string") out.push(p.id);
@@ -2253,9 +2779,9 @@ function cenaContemGostoLiteral(pecas, textosGosto) {
 
 // Limita o conteudo persistido no KV compartilhado a modelos `m` e referencias controladas,
 // sem `x` livre nem literais de gosto. Devolve string JSON valida ou null (omite do cache).
-function cenaParaCache(cena, pedido, ctx) {
+function cenaParaCache(pecasCanonicas, meta, pedido, ctx) {
   const pecas = [];
-  for (const p of cena.pecas || []) {
+  for (const p of pecasCanonicas || []) {
     const pm = pecaParaCache(p);
     if (!pm) return null;
     pecas.push(pm);
@@ -2263,9 +2789,9 @@ function cenaParaCache(cena, pedido, ctx) {
   if (!pecas.length) return null;
   const cenaLimpa = {
     v: 1,
-    tela: cena.tela,
-    feita: cena.feita,
-    vale_s: cena.vale_s,
+    tela: meta.tela,
+    feita: meta.feita,
+    vale_s: meta.vale_s,
     origem: "llm",
     pecas,
   };
@@ -2273,13 +2799,13 @@ function cenaParaCache(cena, pedido, ctx) {
   if (ENC.encode(jsonStr).length > FAROL_CENA_MAX) return null;
   if (cenaContemGostoLiteral(pecas, ctx.textosGosto)) return null;
   const re = validarCena(jsonStr, pedido.candidatos.length);
-  if (!re.ok || re.nPecas === 0 || re.nRecusadas > 0 || re.xs.length > 0) return null;
+  if (!re.ok || re.nPecas === 0 || re.nRecusadas > 0 || re.xs.length > 0 || re.teveX) return null;
   if (!re.pecas.every((p) => pecaAterrada(p, ctx))) return null;
   return jsonStr;
 }
 
 // Valida e sanea a cena devolvida pelo LLM para o pedido de /v1/farol/compor.
-// Devolve `{ ok: true, cena, jsonStr, ctx }` ou `{ ok: false, status: 422, erro }`.
+// Devolve `{ ok: true, cena, jsonStr, pecasCanonicas, ctx }` ou `{ ok: false, status: 422, erro }`.
 export function validarCenaLlm(textoBruto, pedido, feita) {
   if (typeof textoBruto !== "string") return { ok: false, status: 422, erro: "texto_esperado" };
   const limpo = textoBruto.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, "$1").trim();
@@ -2287,40 +2813,57 @@ export function validarCenaLlm(textoBruto, pedido, feita) {
   const val = validarCena(limpo, nCand);
   if (!val.ok) return { ok: false, status: 422, erro: val.rcNome };
 
+  const telaEsperada = TELA_POR_MODO[pedido.modo] || "home";
+  if (val.tela !== telaEsperada) return { ok: false, status: 422, erro: "tela_divergente" };
+
   const ctx = contextoAterramento(pedido);
   const pecasBoas = val.pecas.filter((p) => pecaAterrada(p, ctx));
   if (pecasBoas.length === 0) return { ok: false, status: 422, erro: "sem_peca_valida" };
 
-  const cena = {
-    v: 1,
-    tela: val.tela || TELA_POR_MODO[pedido.modo] || "home",
-    feita,
-    vale_s: FAROL_CACHE_TTL_S,
-    origem: "llm",
-    pecas: pecasBoas,
+  const pecasCanonicas = [];
+  for (const p of pecasBoas) {
+    const pm = pecaParaCache(p);
+    if (!pm) return { ok: false, status: 422, erro: "sem_modelo_canonico" };
+    pecasCanonicas.push(pm);
+  }
+
+  const meta = { tela: telaEsperada, feita, vale_s: FAROL_CACHE_TTL_S };
+  const reconst = reconstituirCena(pecasCanonicas, meta, pedido, ctx);
+  if (!reconst.ok) return reconst;
+
+  return {
+    ok: true,
+    status: 200,
+    cena: reconst.cena,
+    jsonStr: reconst.jsonStr,
+    pecasCanonicas: reconst.pecasCanonicas,
+    ctx,
   };
-  const jsonStr = JSON.stringify(cena);
-  if (ENC.encode(jsonStr).length > FAROL_CENA_MAX)
-    return { ok: false, status: 422, erro: "FCE_TAMANHO" };
-  // Dupla conferida na saida reserializada: toda cena emitida passa limpa em validarCena.
-  const re = validarCena(jsonStr, nCand);
-  if (!re.ok || re.nPecas === 0 || re.nRecusadas > 0)
-    return { ok: false, status: 422, erro: re.rcNome || "reserializacao" };
-  return { ok: true, status: 200, cena, jsonStr, ctx };
 }
 
 function validarHitCacheCompor(guardado, pedido) {
   if (typeof guardado !== "string" || !guardado.length) return null;
   const re = validarCena(guardado, pedido.candidatos.length);
-  if (!re.ok || re.nPecas === 0 || re.nRecusadas > 0 || re.xs.length > 0) return null;
+  if (!re.ok || re.nPecas === 0 || re.nRecusadas > 0 || re.xs.length > 0 || re.teveX) return null;
+  const telaEsperada = TELA_POR_MODO[pedido.modo] || "home";
+  if (re.tela !== telaEsperada) return null;
   const ctx = contextoAterramento(pedido);
   if (cenaContemGostoLiteral(re.pecas, ctx.textosGosto)) return null;
   if (!re.pecas.every((p) => pecaAterrada(p, ctx))) return null;
-  try {
-    return JSON.parse(guardado);
-  } catch {
-    return null;
+
+  const pecasCanonicas = [];
+  for (const p of re.pecas) {
+    const pm = pecaParaCache(p);
+    if (!pm) return null;
+    pecasCanonicas.push(pm);
   }
+  const meta = {
+    tela: telaEsperada,
+    ...(re.feita !== undefined ? { feita: re.feita } : {}),
+    ...(re.vale_s !== undefined ? { vale_s: re.vale_s } : {}),
+  };
+  const reconst = reconstituirCena(pecasCanonicas, meta, pedido, ctx);
+  return reconst.ok ? reconst.cena : null;
 }
 
 export function validarRespostaEscolhaLlm(textoBruto, perguntas) {
@@ -2380,6 +2923,12 @@ function quantizarAfinidades(lista) {
   }).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1]));
 }
 
+export function tipoCanonico(tipo) {
+  if (tipo === "filme" || tipo === "movie") return "filme";
+  if (tipo === "serie" || tipo === "series") return "serie";
+  return "";
+}
+
 // Chave = SHA-256(modo, idioma, faixa de hora, gosto quantizado, identidades canonicas dos candidatos, fatos).
 // Nunca inclui conta nem perfil: perfis com mesmo gosto e candidatos dividem a resposta.
 export async function chaveCacheCompor(pedido) {
@@ -2406,10 +2955,16 @@ export async function chaveCacheCompor(pedido) {
       const ttsExtras = new Set();
       coletarTt(c.motivos, ttsExtras);
       coletarTt(c.eixos, ttsExtras);
+      const idCanon = typeof c.id === "number"
+        ? `n:${c.id}`
+        : typeof c.id === "string"
+          ? `s:${c.id}`
+          : "";
       return [
         i,
         c.c !== undefined ? String(c.c) : "",
-        c.id !== undefined ? String(c.id) : "",
+        tipoCanonico(c.tipo),
+        idCanon,
         c.ref !== undefined ? String(c.ref) : "",
         [...ttsExtras].sort(),
       ];
@@ -2605,7 +3160,12 @@ export async function rotaFarolCompor(env, quem, corpo, h, limitar, fetchFn = gl
     if (!cenaVal.ok) return json({ origem: "regras" });
 
     if (env.CATS) {
-      const jsonCache = cenaParaCache(cenaVal.cena, pedido, cenaVal.ctx);
+      const jsonCache = cenaParaCache(
+        cenaVal.pecasCanonicas,
+        { tela: cenaVal.cena.tela, feita: cenaVal.cena.feita, vale_s: cenaVal.cena.vale_s },
+        pedido,
+        cenaVal.ctx
+      );
       if (jsonCache) {
         await env.CATS.put(chaveCache, jsonCache, { expirationTtl: FAROL_CACHE_TTL_S }).catch(() => {});
       }

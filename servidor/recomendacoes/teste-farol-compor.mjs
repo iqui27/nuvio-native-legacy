@@ -21,6 +21,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import worker from "./src/index.js";
 import { limitar } from "./src/amigos.js";
+import * as farolGostoMod from "./src/farolgosto.js";
 import {
   FAROL_CACHE_TTL_S,
   FAROL_CENA_MAX,
@@ -304,7 +305,9 @@ test("compor devolve FarolCena v1 valida nos modos home, comparar, dica e retoma
     assert.equal(r.body.tela, "home");
     assert.equal(r.body.pecas.length, 1);
     assert.equal(r.body.pecas[0].t, "fileira");
-    assert.equal(r.body.pecas[0].titulo.x, "Suspense e ficção para esta noite");
+    assert.equal(r.body.pecas[0].titulo.m, "FT_FIL_PORQUE_TERMINOU");
+    assert.deepEqual(r.body.pecas[0].titulo.a, ["tt11280740"]);
+    assert.equal(r.body.pecas[0].titulo.x, undefined);
     const v = validarCena(JSON.stringify(r.body), 7);
     assert.equal(v.ok, true);
     assert.equal(v.nRecusadas, 0);
@@ -717,6 +720,7 @@ test("nada do corpo e gravado: D1 so tem contadores HMAC (sem pessoa) e KV so te
     gosto: {
       generos: [{ id: 53, nome: "Suspense", peso: 1.5 }],
       temas: [{ id: 999, nome: canarioTema, peso: 1.2 }],
+      pessoas: [{ id: 137427, nome: "Denis Villeneuve", peso: 1.6 }],
       ancoras: [{ id: "tt11280740", titulo: canarioTitulo }],
     },
     candidatos: [
@@ -961,7 +965,7 @@ test("P1.2: cache compartilhado nao grava literais de gosto mesmo quando o LLM e
     assert.equal(cenaKv.pecas[1].l1.x, undefined);
   }
 
-  // Caso B: peca com texto apenas `x` (sem `m`) ecoando canario -> omitida do cache KV.
+  // Caso B: peca com texto apenas `x` (sem `m`) -> recusada (nao exibe prosa nao aterrada e nao quebra cache).
   {
     const { kv, post } = cenario(t, {}, {
       respostaLlm: () => ({
@@ -981,8 +985,8 @@ test("P1.2: cache compartilhado nao grava literais de gosto mesmo quando o LLM e
       gosto: { temas: [{ id: 999, nome: canarioTema, peso: 1.5 }] },
     }));
     assert.equal(r.status, 200);
-    assert.equal(r.body.origem, "llm");
-    assert.equal(kv.mapa.size, 0, "cena sem modelo m de reserva nao entra no cache");
+    assert.deepEqual(r.body, { origem: "regras" });
+    assert.equal(kv.mapa.size, 0, "cena sem modelo m nao entra no cache nem na resposta");
   }
 
   // Caso C: LLM tenta colocar canario dentro de `a` (ex.: FT_FIL_TEMA) -> recusado.
@@ -1196,5 +1200,333 @@ test("P1.4: chave de cache distingue identidades canonicas (id+ref) e hit KV val
     assert.equal(r2.status, 200);
     assert.equal(r2.body.pecas[0].titulo.m, "FT_FIL_HORA");
     assert.equal(chamadasLlm.length, 2);
+  }
+});
+
+// =============================================================================
+// 8. Regressoes dos 5 P1 da revisao FAROL40-r2 e contrato fechado
+// =============================================================================
+
+test("R2-P1.1: rejeita id textual de afinidade e exige contrato fechado por modelo FT_* (duracao, hora, data, escolha)", async (t) => {
+  // 1. gosto.temas/generos/pessoas com id textual -> 400 sem chamar LLM nem gravar KV.
+  for (const gostoRuim of [
+    { temas: [{ id: "CanarioIdLivreR2" }] },
+    { generos: [{ id: "CanarioGenLivre" }] },
+    { pessoas: [{ id: "CanarioPesLivre" }] },
+    { temas: [{ id: 0 }] },
+  ]) {
+    const { post, chamadasLlm, kv } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: "d1",
+          l1: { m: "FT_DICA_SALVO_L1", a: ["CanarioIdLivreR2"] },
+          acao: { tipo: "nada" },
+        }],
+      }),
+    });
+    const r = await post("/v1/farol/compor", pedidoHomeBase({ gosto: gostoRuim }));
+    assert.equal(r.status, 400, JSON.stringify(gostoRuim));
+    assert.equal(chamadasLlm.length, 0);
+    assert.equal(kv.mapa.size, 0);
+  }
+
+  // 2. Contrato fechado de argumentos por modelo: valores livres em modelos de duracao/data/hora/quali/onde/amigos falham.
+  const reqComFatos = pedidoHomeBase({
+    fatos: [{ alvo: "tt0903747", titulo: "Breaking Bad", onde: "Netflix" }],
+  });
+  const cenasInvalidasContrato = [
+    // FT_DICA_SALVO_L1 fora do formato fechado (<n><d|w|M|y>)
+    { v: 1, tela: "home", pecas: [{ t: "dica", id: "d1", l1: { m: "FT_DICA_SALVO_L1", a: ["CanarioIdLivreR2"] }, acao: { tipo: "nada" } }] },
+    { v: 1, tela: "home", pecas: [{ t: "dica", id: "d1", l1: { m: "FT_DICA_SALVO_L1", a: ["0d"] }, acao: { tipo: "nada" } }] },
+    // FT_DICA_SALVO_L2 fora do formato fechado
+    { v: 1, tela: "home", pecas: [{ t: "dica", id: "d1", l1: { m: "FT_DICA_SALVO_L1", a: ["5M"] }, l2: { m: "FT_DICA_SALVO_L2", a: ["CanarioDur"] }, acao: { tipo: "nada" } }] },
+    // FT_MOT_SALVO fora do formato fechado
+    { v: 1, tela: "home", pecas: [{ t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"], motivo: { c0: { m: "FT_MOT_SALVO", a: ["muito tempo"] } } }] },
+    // FT_INFO_RETOMADA arg[2] nao pode ser texto livre
+    { v: 1, tela: "detalhe", pecas: [{ t: "info", alvo: "tt0903747", itens: [{ k: "retomada", l: { m: "FT_INFO_RETOMADA", a: ["2", "4", "CanarioRet"] } }] }] },
+    // FT_INFO_TERMINA fora de HH:MM / H:MM AM|PM
+    { v: 1, tela: "detalhe", pecas: [{ t: "info", alvo: "tt0903747", itens: [{ k: "tempo", l: { m: "FT_INFO_TERMINA", a: ["meia-noite"] } }] }] },
+    // FT_INFO_REVER fora de YYYY-MM ou estrelas > 5
+    { v: 1, tela: "detalhe", pecas: [{ t: "info", alvo: "tt0903747", itens: [{ k: "rever", l: { m: "FT_INFO_REVER", a: ["2024-13", "4"] } }] }] },
+    { v: 1, tela: "detalhe", pecas: [{ t: "info", alvo: "tt0903747", itens: [{ k: "rever", l: { m: "FT_INFO_REVER", a: ["2024-03", "9"] } }] }] },
+    // FT_INFO_ONDE nao aterrado em fatos
+    { v: 1, tela: "detalhe", pecas: [{ t: "info", alvo: "tt0903747", itens: [{ k: "onde", l: { m: "FT_INFO_ONDE", a: ["CanarioServico"] } }] }] },
+    // FT_INFO_SAGA com pos > total ou FT_ESC_PASSO com passo > de
+    { v: 1, tela: "detalhe", pecas: [{ t: "info", alvo: "tt0903747", itens: [{ k: "saga", l: { m: "FT_INFO_SAGA", a: ["4", "3"] } }] }] },
+    // Modelos fora do compor (diagnostico ou amigos com u<id>)
+    { v: 1, tela: "home", pecas: [{ t: "dica", id: "d1", l1: { m: "FT_FONTE_TROCADA", a: ["Canario"] }, acao: { tipo: "nada" } }] },
+    { v: 1, tela: "home", pecas: [{ t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"], motivo: { c0: { m: "FT_MOT_AMIGO", a: ["u1", "8"] } } }] },
+    // P1 fileira com id nao suportado pela TV (src/farol.c:525 so aceita gosto1/gosto2)
+    { v: 1, tela: "home", pecas: [{ t: "fileira", id: "outra", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"] }] },
+    // P5 escolha com pergunta/opcao fora do banco fechado da TV
+    { v: 1, tela: "home", pecas: [{ t: "escolha", passo: 1, de: 3, pergunta: { m: "FT_ESC_TEMPO" }, opcoes: [{ id: "inventada", r: { m: "FT_ESC_TEMPO_45" } }, { id: "tanto", r: { m: "FT_ESC_TANTO_FAZ" } }] }] },
+    { v: 1, tela: "home", pecas: [{ t: "escolha", passo: 1, de: 3, pergunta: { m: "FT_ESC_TEMPO" }, opcoes: [{ id: "t45", r: { m: "FT_ESC_PESO_LEVE" } }, { id: "tanto", r: { m: "FT_ESC_TANTO_FAZ" } }] }] },
+  ];
+  for (const ruim of cenasInvalidasContrato) {
+    const modo = ruim.tela === "detalhe" ? "retomada" : "home";
+    const req = { ...reqComFatos, modo };
+    const { post, kv } = cenario(t, {}, { respostaLlm: () => ruim });
+    const r = await post("/v1/farol/compor", req);
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { origem: "regras" }, `esperava regras para ${JSON.stringify(ruim)}`);
+    assert.equal(kv.mapa.size, 0);
+  }
+
+  // 3. Formatos fechados validos passam e sao cacheados.
+  const cenasValidasContrato = [
+    { modo: "home", cena: { v: 1, tela: "home", pecas: [{ t: "dica", id: "d1", l1: { m: "FT_DICA_SALVO_L1", a: ["5M"] }, l2: { m: "FT_DICA_SALVO_L2", a: ["1h32"] }, acao: { tipo: "nada" } }] } },
+    { modo: "home", cena: { v: 1, tela: "home", pecas: [{ t: "escolha", passo: 1, de: 3, pergunta: { m: "FT_ESC_TEMPO" }, opcoes: [{ id: "t45", r: { m: "FT_ESC_TEMPO_45" } }, { id: "tanto", r: { m: "FT_ESC_TANTO_FAZ" } }] }] } },
+    { modo: "retomada", cena: { v: 1, tela: "detalhe", pecas: [{ t: "info", alvo: "tt0903747", itens: [{ k: "tempo", l: { m: "FT_INFO_TERMINA", a: ["23:40"] } }, { k: "onde", l: { m: "FT_INFO_ONDE", a: ["Netflix"] } }, { k: "retomada", l: { m: "FT_INFO_RETOMADA", a: ["2", "4", "7w"] } }] }] } },
+  ];
+  for (const { modo, cena } of cenasValidasContrato) {
+    const { post, kv } = cenario(t, {}, { respostaLlm: () => cena });
+    const r = await post("/v1/farol/compor", { ...reqComFatos, modo });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.origem, "llm", JSON.stringify(cena));
+    assert.equal(kv.mapa.size, 1);
+  }
+});
+
+test("R2-P1.2: titulo fora do pedido dentro de `x` (com m+a valido) nunca chega a TV no miss nem no hit", async (t) => {
+  const req = pedidoHomeBase({
+    gosto: { ancoras: [{ id: "tt0200001", titulo: "Filme Aterrado" }] },
+  });
+  const { post, kv, chamadasLlm } = cenario(t, {}, {
+    respostaLlm: () => ({
+      v: 1,
+      tela: "home",
+      origem: "llm",
+      pecas: [{
+        t: "fileira",
+        id: "gosto1",
+        titulo: { m: "FT_FIL_PORQUE_TERMINOU", a: ["tt0200001"], x: "Mais como Planeta Imaginário" },
+        forma: "cartaz",
+        itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+      }],
+    }),
+  });
+
+  const miss = await post("/v1/farol/compor", req, { token: "tok-gosto-a", perfil: 1 });
+  assert.equal(miss.status, 200);
+  assert.equal(miss.body.origem, "llm");
+  assert.equal(miss.body.pecas[0].titulo.m, "FT_FIL_PORQUE_TERMINOU");
+  assert.deepEqual(miss.body.pecas[0].titulo.a, ["tt0200001"]);
+  assert.equal(miss.body.pecas[0].titulo.x, undefined);
+  assert.ok(!JSON.stringify(miss.body).includes("Planeta Imaginário"));
+
+  const hit = await post("/v1/farol/compor", req, { token: "tok-gosto-b", perfil: 1 });
+  assert.equal(hit.status, 200);
+  assert.deepEqual(hit.body, miss.body);
+  assert.equal(chamadasLlm.length, 1);
+  assert.equal(kv.mapa.size, 1);
+  assert.ok(![...kv.mapa.values()][0].valor.includes("Planeta Imaginário"));
+});
+
+test("R2-P1.3: tema `k<id>` entrega a mesma cena renderizavel no miss e no hit sem gravar literal no KV", async (t) => {
+  const req = pedidoHomeBase({
+    gosto: {
+      temas: [{ id: 4565, nome: "mundos paralelos", peso: 1.5 }],
+      ancoras: [{ id: "tt11280740", titulo: "Ruptura" }],
+    },
+  });
+  const { post, kv, chamadasLlm } = cenario(t, {}, {
+    respostaLlm: () => ({
+      v: 1,
+      tela: "home",
+      origem: "llm",
+      pecas: [{
+        t: "fileira",
+        id: "gosto1",
+        titulo: { m: "FT_FIL_TEMA", a: ["k4565"], x: "Histórias de mundos paralelos" },
+        sub: { m: "FT_FIL_SUB_TEMA", a: ["k4565"] },
+        forma: "cartaz",
+        itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+        motivo: { c0: { m: "FT_MOT_TERMINOU_TEMA", a: ["tt11280740", "k4565"] } },
+      }],
+    }),
+  });
+
+  const miss = await post("/v1/farol/compor", req, { token: "tok-gosto-a", perfil: 1 });
+  assert.equal(miss.status, 200);
+  assert.equal(miss.body.origem, "llm");
+  assert.equal(miss.body.pecas[0].titulo.m, "FT_FIL_TEMA");
+  assert.deepEqual(miss.body.pecas[0].titulo.a, ["k4565"]);
+  assert.equal(miss.body.pecas[0].titulo.x, "Do mesmo tema: mundos paralelos");
+  assert.equal(miss.body.pecas[0].sub.x, "Mais sobre mundos paralelos");
+  assert.equal(miss.body.pecas[0].motivo.c0.x, "Você terminou Ruptura e gosta de mundos paralelos.");
+  assert.ok(!JSON.stringify(miss.body).includes("Histórias de mundos paralelos"));
+
+  // KV nao guarda `x` nem os literais de tema/ancora.
+  assert.equal(kv.mapa.size, 1);
+  const kvVal = [...kv.mapa.values()][0].valor;
+  assert.ok(!kvVal.includes("\"x\""));
+  assert.ok(!kvVal.includes("mundos paralelos"));
+  assert.ok(!kvVal.includes("Ruptura"));
+
+  // Hit devolve exatamente a mesma cena renderizavel em 1 unica chamada ao LLM.
+  const hit = await post("/v1/farol/compor", req, { token: "tok-gosto-b", perfil: 2 });
+  assert.equal(hit.status, 200);
+  assert.deepEqual(hit.body, miss.body);
+  assert.equal(chamadasLlm.length, 1);
+
+  // Sem `nome` para o tema `k4565`, TV nao consegue renderizar -> recusada igualmente no miss e no hit.
+  const reqSemNome = pedidoHomeBase({ gosto: { temas: [{ id: 4565, peso: 1.5 }] } });
+  const cSemNome = cenario(t, {}, {
+    respostaLlm: () => ({
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{
+        t: "fileira", id: "gosto1",
+        titulo: { m: "FT_FIL_TEMA", a: ["k4565"], x: "Histórias de mundos paralelos" },
+        forma: "cartaz",
+        itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+      }],
+    }),
+  });
+  const rSem = await cSemNome.post("/v1/farol/compor", reqSemNome);
+  assert.equal(rSem.status, 200);
+  assert.deepEqual(rSem.body, { origem: "regras" });
+  assert.equal(cSemNome.kv.mapa.size, 0);
+});
+
+test("R2-P1.4: afinidades canonicas (g/k/p e selos) exigem presenca na entrada e no namespace certo", async (t) => {
+  const req = pedidoHomeBase({
+    gosto: {
+      generos: [{ id: 53, nome: "Suspense", peso: 1.5 }],
+      temas: [{ id: 4565, nome: "distopia", peso: 1.2 }],
+      pessoas: [{ id: 137427, nome: "Denis Villeneuve", peso: 1.6 }],
+    },
+    candidatos: [
+      { id: "tt0114369", titulo: "Seven", ano: 1995, generos: [53], minutos: 127 },
+      { id: "tt0133093", titulo: "Matrix", ano: 1999, generos: [878], minutos: 136 },
+      { id: "tt0816692", titulo: "Interestelar", ano: 2014, generos: [878], minutos: 169 },
+      { id: "tt1375666", titulo: "A Origem", ano: 2010, generos: [878], minutos: 148 },
+      { id: "tt2543164", titulo: "A Chegada", ano: 2016, generos: [878], minutos: 116 },
+      { id: "tt1856101", titulo: "Blade Runner 2049", ano: 2017, generos: [878], minutos: 164 },
+    ],
+  });
+
+  const ruins = [
+    // Pessoa ausente da entrada (caso do relatorio)
+    { v: 1, tela: "home", pecas: [{ t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"], motivo: { c0: { m: "FT_MOT_PESSOA", a: ["p987654321"] } } }] },
+    // Namespace trocado: id de pessoa (137427) usado como genero ou tema
+    { v: 1, tela: "home", pecas: [{ t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_GENERO", a: ["g137427"] }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"] }] },
+    { v: 1, tela: "home", pecas: [{ t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_TEMA", a: ["k137427"] }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"] }] },
+    // Namespace trocado: id de tema (4565) usado como pessoa
+    { v: 1, tela: "home", pecas: [{ t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_PESSOA", a: ["p4565"] }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"] }] },
+    // Selo fora da entrada em `porque`
+    { v: 1, tela: "home", pecas: [{ t: "porque", alvo: "c0", confianca: 2, linhas: [{ m: "FT_MOT_GENERO", a: ["g53"] }], selos: [{ k: "pessoa", id: 987654321 }] }] },
+  ];
+
+  for (const ruim of ruins) {
+    const { post, kv } = cenario(t, {}, { respostaLlm: () => ruim });
+    const r = await post("/v1/farol/compor", req);
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { origem: "regras" }, JSON.stringify(ruim));
+    assert.equal(kv.mapa.size, 0);
+  }
+
+  // Afinidade vinda de candidato.motivos e aceita no namespace correto.
+  const reqMotivo = pedidoHomeBase({
+    gosto: { generos: [{ id: 53, nome: "Suspense", peso: 1.5 }] },
+    candidatos: req.candidatos.map((c, idx) => (idx === 0 ? { ...c, motivos: ["p777001"] } : c)),
+  });
+  const { post } = cenario(t, {}, {
+    respostaLlm: () => ({
+      v: 1, tela: "home", origem: "llm",
+      pecas: [{
+        t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz",
+        itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+        motivo: { c0: { m: "FT_MOT_PESSOA", a: ["p777001"] } },
+      }],
+    }),
+  });
+  const okMot = await post("/v1/farol/compor", reqMotivo);
+  assert.equal(okMot.status, 200);
+  assert.equal(okMot.body.origem, "llm");
+});
+
+test("R2-P1.5: tipo canonico e namespace de id participam da chave de cache", async (t) => {
+  assert.equal(typeof farolGostoMod.tipoCanonico, "function");
+  assert.equal(farolGostoMod.tipoCanonico("filme"), "filme");
+  assert.equal(farolGostoMod.tipoCanonico("movie"), "filme");
+  assert.equal(farolGostoMod.tipoCanonico("serie"), "serie");
+  assert.equal(farolGostoMod.tipoCanonico("series"), "serie");
+
+  const mkReq = (tipo, id = 321) => pedidoHomeBase({
+    modo: "dica",
+    candidatos: [{ c: "c0", id, tipo }],
+  });
+
+  const kFilme = await chaveCacheCompor(mkReq("filme", 321));
+  const kMovie = await chaveCacheCompor(mkReq("movie", 321));
+  const kSerie = await chaveCacheCompor(mkReq("serie", 321));
+  const kSeries = await chaveCacheCompor(mkReq("series", 321));
+  const kFilmeStr = await chaveCacheCompor(mkReq("filme", "321"));
+
+  assert.equal(kFilme, kMovie, "filme e movie sao o mesmo tipo canonico");
+  assert.equal(kSerie, kSeries, "serie e series sao o mesmo tipo canonico");
+  assert.notEqual(kFilme, kSerie, "filme e serie com mesmo id 321 devem ter chaves distintas");
+  assert.notEqual(kFilme, kFilmeStr, "id numerico e string devem ter namespaces distintos");
+
+  let n = 0;
+  const { post, chamadasLlm } = cenario(t, {}, {
+    respostaLlm: () => {
+      n++;
+      return {
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "dica", id: `d_${n}`,
+          l1: { m: n === 1 ? "FT_DICA_CURTO" : "FT_DICA_TEMPORADA", a: ["c0"] },
+          acao: { tipo: "abrir", alvo: "c0" },
+        }],
+      };
+    },
+  });
+
+  const rFilme = await post("/v1/farol/compor", mkReq("filme"), { token: "tok-gosto-a", perfil: 1 });
+  assert.equal(rFilme.status, 200);
+  assert.equal(rFilme.body.pecas[0].l1.m, "FT_DICA_CURTO");
+
+  const rSerie = await post("/v1/farol/compor", mkReq("serie"), { token: "tok-gosto-b", perfil: 1 });
+  assert.equal(rSerie.status, 200);
+  assert.equal(rSerie.body.pecas[0].l1.m, "FT_DICA_TEMPORADA");
+  assert.equal(chamadasLlm.length, 2);
+});
+
+test("R2-KV-Legado: nunca devolve JSON bruto do KV e rejeita entradas legadas com `x` ou contrato invalido", async (t) => {
+  const req = pedidoHomeBase();
+  const chave = await chaveCacheCompor(req);
+
+  const entradasLegadas = [
+    // Entrada legada com `x` reprovado + `m` valido (ressalva do relatorio r2)
+    { v: 1, tela: "home", origem: "llm", pecas: [{ t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA", x: "https://exemplo.invalid" }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"] }] },
+    // Entrada legada com `x` valido guardado no KV
+    { v: 1, tela: "home", origem: "llm", pecas: [{ t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA", x: "Texto legado em KV" }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"] }] },
+    // Entrada legada com afinidade ausente do pedido atual
+    { v: 1, tela: "home", origem: "llm", pecas: [{ t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"], motivo: { c0: { m: "FT_MOT_PESSOA", a: ["p987654321"] } } }] },
+    // Entrada legada com `tela` divergente do modo
+    { v: 1, tela: "comparar", origem: "llm", pecas: [{ t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" }, forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"] }] },
+  ];
+
+  for (const leg of entradasLegadas) {
+    const { kv, post, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "fileira", id: "gosto1", titulo: { m: "FT_FIL_HORA" },
+          forma: "cartaz", itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+        }],
+      }),
+    });
+    await kv.put(chave, JSON.stringify(leg), { expirationTtl: 86400 });
+    const r = await post("/v1/farol/compor", req);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.origem, "llm");
+    assert.equal(r.body.tela, "home");
+    assert.equal(r.body.pecas[0].titulo.x, undefined);
+    assert.ok(!JSON.stringify(r.body).includes("exemplo.invalid"));
+    assert.ok(!JSON.stringify(r.body).includes("Texto legado"));
+    assert.equal(chamadasLlm.length, 1, `entrada legada devia ter sido rejeitada: ${JSON.stringify(leg)}`);
   }
 });
