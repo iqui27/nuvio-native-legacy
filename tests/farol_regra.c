@@ -222,6 +222,19 @@ static void testar_invariantes_tabela(void) {
     assert(vistos[c]);
     assert(strcmp(farolregra_codigo_nome(c), "?") != 0);
   }
+  assert(!strcmp(farolregra_acao_texto(FAROL_A_NENHUMA), ""));
+  assert(!strcmp(farolregra_acao_texto(-1), ""));
+  assert(!strcmp(farolregra_acao_texto(FAROL_A_N), ""));
+  assert(!strcmp(farolregra_acao_token(FAROL_A_NENHUMA), ""));
+  assert(!strcmp(farolregra_acao_token(FAROL_A_ENVIAR_REGISTRO), ""));
+  assert(!strcmp(farolregra_acao_token(-1), ""));
+  assert(!strcmp(farolregra_acao_token(FAROL_A_N), ""));
+  for (c = FAROL_A_TENTAR_DE_NOVO; c < FAROL_A_N; c++) {
+    assert(frase_em_faroltexto(farolregra_acao_texto(c)));
+    if (c != FAROL_A_ENVIAR_REGISTRO) {
+      assert(token_acao_no_schema(farolregra_acao_token(c)));
+    }
+  }
 }
 
 static void testar_matriz_codigo_plataforma(void) {
@@ -407,14 +420,27 @@ static void testar_nao_sei(void) {
   tudo_menos1.sintoma = -1;
 
   for (p = FP_WEBOS; p <= FP_OUTRA; p++) {
+    static const FarolClasse classes[] = {
+      FC_NENHUMA, FC_REDE, FC_HTTP, FC_FORMATO, FC_AUDIO, FC_SISTEMA, FC_PARADO
+    };
     tudo_menos1.plat = (FarolPlat)p;
-    for (i = 0; i < n - 1; i++) assert(!t[i].casa(&tudo_menos1));
-    farolregra_julgar(-1, &tudo_menos1, &v);
-    assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
-    farolregra_julgar(RES_S_NAO_COMECA, &tudo_menos1, &v);
-    assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
-    farolregra_julgar(FAROL_S_CORES, &tudo_menos1, &v);
-    assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+    for (size_t ci = 0; ci < sizeof classes / sizeof classes[0]; ci++) {
+      tudo_menos1.erro.classe = classes[ci];
+      tudo_menos1.erro.http = classes[ci] == FC_HTTP ? 403 : -1;
+      snprintf(tudo_menos1.erro.cod, sizeof tudo_menos1.erro.cod, "%s",
+               classes[ci] == FC_SISTEMA ? "ls2_permissao" : "");
+      for (i = 0; i < n - 1; i++) assert(!t[i].casa(&tudo_menos1));
+      farolregra_julgar(-1, &tudo_menos1, &v);
+      assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+      farolregra_julgar(RES_S_NAO_COMECA, &tudo_menos1, &v);
+      assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+      for (int st = 0; st < RES_T_N; st++) assert(v.estado[st] == RES_OK);
+      farolregra_julgar(FAROL_S_CORES, &tudo_menos1, &v);
+      assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+    }
+    tudo_menos1.erro.classe = FC_NENHUMA;
+    tudo_menos1.erro.http = -1;
+    tudo_menos1.erro.cod[0] = 0;
   }
 
   // Plataforma fora do enum (ex.: -1) nao gera UB e cai em FP_OUTRA.
@@ -593,6 +619,251 @@ static void testar_conversao_audio_por_plataforma(void) {
   f.conversaoPossivel = 1;
   farolregra_julgar(RES_S_SOM, &f, &v);
   assert(v.regra->codigo == FAROL_C_AUDIO_DTS_SEM_SAIDA);
+
+  // Fronteira webOS 5 (NV_DTS_TV_PRIMEIRA_SEM_DTS = 5) vs osMaior desconhecido (0).
+  f = base_fatos(FP_WEBOS, 5);
+  f.faixaDts = 1;
+  f.conversaoPossivel = 1;
+  farolregra_julgar(RES_S_SOM, &f, &v);
+  assert(v.regra->codigo == FAROL_C_AUDIO_DTS_SEM_SAIDA);
+  f = base_fatos(FP_WEBOS, 0);
+  f.faixaDts = 1;
+  f.conversaoPossivel = 1;
+  farolregra_julgar(RES_S_SOM, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+
+  // Faixa que NAO e DTS (ex.: TrueHD/FLAC/Opus com ums_200 ou audioRecusado=1):
+  // NUNCA pode afirmar "Sua TV nao aceita audio DTS direto" nem ligar conversor DTS.
+  f = base_fatos(FP_WEBOS, 6);
+  f.audioRecusado = 1;
+  f.faixaDts = 0;
+  f.conversaoPossivel = 1;
+  f.outraFaixa = 1;
+  farolregra_julgar(RES_S_SOM, &f, &v);
+  assert(v.regra->codigo == FAROL_C_AUDIO_OUTRA_FAIXA &&
+         v.regra->acao == FAROL_A_TROCAR_FAIXA);
+  f.outraFaixa = 0;
+  farolregra_julgar(RES_S_SOM, &f, &v);
+  assert(v.regra->codigo == FAROL_C_AUDIO_SEM_SAIDA &&
+         v.regra->acao == FAROL_A_FONTE_SEM_DTS);
+
+  f = base_fatos(FP_TIZEN_TPK, 6);
+  farolerro_ler(FP_TIZEN_TPK, "erro AudioCodecNotSupported", 0, &f.erro);
+  f.faixaDts = 0;
+  f.conversaoPossivel = 1;
+  farolregra_julgar(RES_S_SOM, &f, &v);
+  assert(v.regra->codigo == FAROL_C_AUDIO_SEM_SAIDA);
+}
+
+static void testar_idade_erro_e_disjuncoes(void) {
+  FarolFatos f;
+  FarolVeredito v;
+
+  // Regra de 6 h (RES_REJEITA_S = 21600, tests/resolver.c): recente (<= 6h) conta; > 6h nao.
+  f = base_fatos(FP_WEBOS, 6);
+  f.erro.classe = FC_HTTP;
+  f.erro.http = 404;
+  f.erroIdadeS = 240;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_FONTE_RECUSOU && v.estado[RES_T_FONTE] == RES_FALHOU);
+
+  f.erroIdadeS = RES_REJEITA_S;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_FONTE_RECUSOU && v.estado[RES_T_FONTE] == RES_FALHOU);
+
+  f.erroIdadeS = RES_REJEITA_S + 1;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+  for (int t = 0; t < RES_T_N; t++) assert(v.estado[t] == RES_OK);
+
+  f.erroIdadeS = 7 * 3600;
+  f.erro.classe = FC_REDE;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO && v.estado[RES_T_FONTE] == RES_OK);
+
+  f.erro.classe = FC_FORMATO;
+  f.falhasSeguidas = 3;
+  f.memLivreMB = 80;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO && v.estado[RES_T_TV] == RES_OK);
+
+  f.erro.classe = FC_PARADO;
+  f.fonteGBx10 = 100;
+  f.vazaoMbps = 80;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO && v.estado[RES_T_TV] == RES_OK);
+
+  f.erro.classe = FC_AUDIO;
+  farolregra_julgar(RES_S_SOM, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO && v.estado[RES_T_AUDIO] == RES_OK);
+
+  // Estado ao vivo (offline, tvNegou, debridRecusa, audioRecusado) independe de erroIdadeS.
+  f.audioRecusado = 1;
+  farolregra_julgar(RES_S_SOM, &f, &v);
+  assert(v.regra->codigo == FAROL_C_AUDIO_SEM_SAIDA && v.estado[RES_T_AUDIO] == RES_FALHOU);
+
+  // Disjuncoes independentes: -1 em um ramo nao bloqueia outro ramo positivo conhecido.
+  // 1) debridRecusa = -1 mas fonteDebrid = 1 + HTTP 401/403 recente -> DEBRID_DESCONECTOU.
+  f = base_fatos(FP_WEBOS, 6);
+  f.debridRecusa = -1;
+  f.fonteDebrid = 1;
+  f.erro.classe = FC_HTTP;
+  f.erro.http = 401;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_DEBRID_DESCONECTOU);
+  f.erro.http = 403;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_DEBRID_DESCONECTOU);
+  f.erro.http = 404;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_FONTE_RECUSOU);
+
+  // 2) audioRecusado = -1 mas erro FC_AUDIO recente ou DTS sem suporte na TV -> AUDIO_*.
+  f = base_fatos(FP_WEBOS, 6);
+  f.audioRecusado = -1;
+  farolerro_ler(FP_WEBOS, "200 Audio Codec Not Supported", 200, &f.erro);
+  f.faixaDts = 1;
+  f.conversaoPossivel = 1;
+  farolregra_julgar(RES_S_SOM, &f, &v);
+  assert(v.regra->codigo == FAROL_C_AUDIO_DTS_SEM_SAIDA);
+
+  f = base_fatos(FP_WEBOS, 23);
+  f.audioRecusado = -1;
+  f.faixaDts = 1;
+  f.conversaoPossivel = 1;
+  farolregra_julgar(RES_S_SOM, &f, &v);
+  assert(v.regra->codigo == FAROL_C_AUDIO_DTS_SEM_SAIDA);
+
+  // 3) tvNegou = -1 mas erro recente ls2_permissao / tpk_conflito -> TV_NEGOU_PLAYER (mesmo com pouca RAM).
+  f = base_fatos(FP_WEBOS, 6);
+  f.tvNegou = -1;
+  f.memLivreMB = 90;
+  farolerro_ler(FP_WEBOS, NULL, -1027, &f.erro);
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_TV_NEGOU_PLAYER);
+
+  f = base_fatos(FP_TIZEN_TPK, 6);
+  f.tvNegou = -1;
+  f.memLivreMB = 90;
+  farolerro_ler(FP_TIZEN_TPK, "interrompido: ResourceConflict", 0, &f.erro);
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_TV_NEGOU_PLAYER);
+}
+
+static void testar_bordas_e_mutantes(void) {
+  FarolFatos f;
+  FarolVeredito v;
+
+  // Overflow defensivo em taxa_mbps(fonteGBx10 = INT_MAX) em LP64 e ILP32.
+  f = base_fatos(FP_WEBOS, 6);
+  f.paradas5min = 2;
+  f.fonteGBx10 = INT_MAX;
+  f.vazaoMbps = 100;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_REDE_CURTA);
+
+  f = base_fatos(FP_WEBOS, 6);
+  f.erro.classe = FC_PARADO;
+  f.fonteGBx10 = INT_MAX;
+  f.vazaoMbps = INT_MAX;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_PLAYER_PAROU);
+
+  // ADDON_LENTO: limiares exatos 0, 1, 2, 3.
+  f = base_fatos(FP_WEBOS, 6);
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+  f.addonsMudos = 1;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_ADDON_LENTO && v.regra->escala == FAROL_ESC_NUNCA);
+  f.addonsLentos = 1;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_ADDON_LENTO && v.regra->escala == FAROL_ESC_NUNCA);
+  f.addonsMudos = 2;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_ADDON_LENTO && v.regra->escala == FAROL_ESC_SE_FALHAR);
+
+  // FONTE_RECUSOU: bordas HTTP 399, 400, 599, 600.
+  f = base_fatos(FP_WEBOS, 6);
+  f.erro.classe = FC_HTTP;
+  f.erro.http = 399;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+  f.erro.http = 400;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_FONTE_RECUSOU);
+  f.erro.http = 599;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_FONTE_RECUSOU);
+  f.erro.http = 600;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+
+  // REDE_CURTA e PLAYER_PAROU: bordas paradas5min, arredondamento GBx10 e fonteMbps explicito.
+  f = base_fatos(FP_WEBOS, 6);
+  f.paradas5min = 1;
+  f.fonteGBx10 = 200;
+  f.vazaoMbps = 5;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+  f.paradas5min = 2;
+  f.fonteGBx10 = 9; // (9+8)/9 = 1 Mbps
+  f.vazaoMbps = 1;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+  f.fonteGBx10 = 10; // (10+8)/9 = 2 Mbps
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_REDE_CURTA);
+  f.fonteMbps = 30;
+  f.vazaoMbps = 29;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_REDE_CURTA);
+  f.vazaoMbps = 30;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+
+  f = base_fatos(FP_WEBOS, 6);
+  f.erro.classe = FC_PARADO;
+  f.vazaoMbps = 9;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+  f.vazaoMbps = 10;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_PLAYER_PAROU);
+  f.fonteMbps = 25;
+  f.vazaoMbps = 24;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+  f.vazaoMbps = 25;
+  farolregra_julgar(RES_S_TRAVA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_PLAYER_PAROU);
+
+  // TV_SEM_MEMORIA: limiar exato MEMLOG_PISO_MB (150) e FC_SISTEMA ums_pipeline.
+  f = base_fatos(FP_WEBOS, 6);
+  farolerro_ler(FP_WEBOS, "0 com.webos.pipeline.3 is not running", 0, &f.erro);
+  f.memLivreMB = 0;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_TV_SEM_MEMORIA);
+  f.memLivreMB = 149;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_TV_SEM_MEMORIA);
+  f.memLivreMB = 150;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+
+  // IMAGEM_DV: tvDv = 1, fonteDv = 0, sintoma diferente nao casam.
+  f = base_fatos(FP_WEBOS, 6);
+  f.fonteDv = 1;
+  f.tvDv = 1;
+  farolregra_julgar(FAROL_S_CORES, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+  f.tvDv = 0;
+  f.fonteDv = 0;
+  farolregra_julgar(FAROL_S_CORES, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
+  f.fonteDv = 1;
+  farolregra_julgar(RES_S_NAO_COMECA, &f, &v);
+  assert(v.regra->codigo == FAROL_C_NADA_ACHADO);
 }
 
 static void testar_regressao_resolver(void) {
@@ -653,6 +924,16 @@ static void testar_regressao_resolver(void) {
     farolregra_julgar(RES_S_NAO_COMECA, NULL, &fv);
     assert(fv.regra->codigo == FAROL_C_NADA_ACHADO);
     farolregra_julgar(RES_S_NAO_COMECA, &ff, NULL);
+
+    // Tambem cobre debridRecusa na paridade de estados.
+    memset(&rf, 0, sizeof rf);
+    rf.addonsQtd = 3;
+    strcpy(rf.debridMotivo, "recusada");
+    ff = base_fatos(FP_ANDROID, 33);
+    ff.debridRecusa = 1;
+    resolverregra_testar(RES_S_NAO_COMECA, &rf, &rr);
+    farolregra_julgar(RES_S_NAO_COMECA, &ff, &fv);
+    assert(memcmp(fv.estado, rr.estado, sizeof rr.estado) == 0);
   }
 }
 
@@ -662,6 +943,8 @@ int main(void) {
   testar_ordem_primeira_vence();
   testar_nao_sei();
   testar_conversao_audio_por_plataforma();
+  testar_idade_erro_e_disjuncoes();
+  testar_bordas_e_mutantes();
   testar_regressao_resolver();
   puts("farol_regra: motor ok");
   return 0;

@@ -85,7 +85,7 @@ typedef struct {
   FarolPlat plat;
   int osMaior;
   FarolErro erro;
-  int erroIdadeS;
+  int erroIdadeS;   // 0..RES_REJEITA_S (6 h) = recente; < 0 = nao sei; > RES_REJEITA_S = vencido
   int falhasSeguidas;
   int paradas5min;
   int addonsLentos, addonsMudos;

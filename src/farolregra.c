@@ -2,6 +2,7 @@
 #include "dts_tv.h"
 #include "faroltexto.h"
 #include "memlog.h"
+#include <limits.h>
 #include <string.h>
 
 static uint8_t plat_bit(FarolPlat p) {
@@ -9,10 +10,24 @@ static uint8_t plat_bit(FarolPlat p) {
   return (uint8_t)(1u << (unsigned)p);
 }
 
+static int erro_recente(const FarolFatos *f) {
+  return f->erro.classe != FC_NENHUMA &&
+         f->erroIdadeS >= 0 && f->erroIdadeS <= RES_REJEITA_S;
+}
+
+static int eh_erro_negou(const FarolFatos *f) {
+  return erro_recente(f) && f->erro.classe == FC_SISTEMA &&
+         (!strcmp(f->erro.cod, "ls2_permissao") || !strcmp(f->erro.cod, "tpk_conflito"));
+}
+
 static int taxa_mbps(const FarolFatos *f) {
+  int64_t t;
   if (f->fonteMbps < 0 || f->fonteGBx10 < 0) return 0;
   if (f->fonteMbps > 0) return f->fonteMbps;
-  if (f->fonteGBx10 > 0) return (f->fonteGBx10 + 8) / 9;
+  if (f->fonteGBx10 > 0) {
+    t = ((int64_t)f->fonteGBx10 + 8) / 9;
+    return t > INT_MAX ? INT_MAX : (int)t;
+  }
   return 0;
 }
 
@@ -38,8 +53,7 @@ static int dts_sem_suporte(const FarolFatos *f) {
 
 static int sem_saida_audio(const FarolFatos *f) {
   if (f->audioRecusado > 0) return 1;
-  if (f->audioRecusado < 0) return 0;
-  if (f->erro.classe == FC_AUDIO) return 1;
+  if (erro_recente(f) && f->erro.classe == FC_AUDIO) return 1;
   return dts_sem_suporte(f);
 }
 
@@ -52,16 +66,16 @@ static int casa_addon_nenhum(const FarolFatos *f) {
 }
 
 static int casa_addon_lento_3(const FarolFatos *f) {
-  long s;
+  int64_t s;
   if (f->sintoma != RES_S_TRAVA || f->addonsLentos < 0 || f->addonsMudos < 0) return 0;
-  s = (long)f->addonsLentos + (long)f->addonsMudos;
+  s = (int64_t)f->addonsLentos + (int64_t)f->addonsMudos;
   return s >= 3;
 }
 
 static int casa_addon_lento(const FarolFatos *f) {
-  long s;
+  int64_t s;
   if (f->sintoma != RES_S_TRAVA || f->addonsLentos < 0 || f->addonsMudos < 0) return 0;
-  s = (long)f->addonsLentos + (long)f->addonsMudos;
+  s = (int64_t)f->addonsLentos + (int64_t)f->addonsMudos;
   return s >= 1;
 }
 
@@ -71,16 +85,16 @@ static int casa_debrid_sem_plano(const FarolFatos *f) {
 
 static int casa_debrid_desconectou(const FarolFatos *f) {
   if (f->debridRecusa > 0) return 1;
-  if (f->debridRecusa < 0 || f->fonteDebrid <= 0) return 0;
+  if (f->fonteDebrid <= 0 || !erro_recente(f)) return 0;
   return f->erro.classe == FC_HTTP && (f->erro.http == 401 || f->erro.http == 403);
 }
 
 static int casa_rede_nao_chega(const FarolFatos *f) {
-  return f->offline == 0 && f->erro.classe == FC_REDE;
+  return f->offline == 0 && erro_recente(f) && f->erro.classe == FC_REDE;
 }
 
 static int casa_fonte_recusou(const FarolFatos *f) {
-  if (f->erro.classe != FC_HTTP) return 0;
+  if (!erro_recente(f) || f->erro.classe != FC_HTTP) return 0;
   return f->erro.http == 0 || (f->erro.http >= 400 && f->erro.http <= 599);
 }
 
@@ -96,17 +110,15 @@ static int casa_rede_curta(const FarolFatos *f) {
 }
 
 static int casa_tv_negou(const FarolFatos *f) {
-  if (f->tvNegou < 0) return 0;
   if (f->tvNegou > 0) return 1;
-  return f->erro.classe == FC_SISTEMA &&
-         (!strcmp(f->erro.cod, "ls2_permissao") || !strcmp(f->erro.cod, "tpk_conflito"));
+  return eh_erro_negou(f);
 }
 
 static int casa_tv_sem_memoria(const FarolFatos *f) {
   if (f->memLivreMB < 0 || f->memLivreMB >= MEMLOG_PISO_MB) return 0;
-  if (f->tvNegou > 0) return 0;
-  if (!strcmp(f->erro.cod, "ls2_permissao") || !strcmp(f->erro.cod, "tpk_conflito")) return 0;
-  return f->erro.classe == FC_SISTEMA || f->erro.classe == FC_FORMATO;
+  if (f->tvNegou > 0 || eh_erro_negou(f)) return 0;
+  return erro_recente(f) &&
+         (f->erro.classe == FC_SISTEMA || f->erro.classe == FC_FORMATO);
 }
 
 static int casa_imagem_dv(const FarolFatos *f) {
@@ -114,27 +126,28 @@ static int casa_imagem_dv(const FarolFatos *f) {
 }
 
 static int casa_tv_formato_rep_ext(const FarolFatos *f) {
-  return f->erro.classe == FC_FORMATO && f->falhasSeguidas >= 2 && f->externoDisponivel > 0;
+  return erro_recente(f) && f->erro.classe == FC_FORMATO &&
+         f->falhasSeguidas >= 2 && f->externoDisponivel > 0;
 }
 
 static int casa_tv_formato_repete(const FarolFatos *f) {
-  return f->erro.classe == FC_FORMATO && f->falhasSeguidas >= 2;
+  return erro_recente(f) && f->erro.classe == FC_FORMATO && f->falhasSeguidas >= 2;
 }
 
 static int casa_tv_formato_ext(const FarolFatos *f) {
-  return f->erro.classe == FC_FORMATO && f->externoDisponivel > 0;
+  return erro_recente(f) && f->erro.classe == FC_FORMATO && f->externoDisponivel > 0;
 }
 
 static int casa_tv_formato(const FarolFatos *f) {
-  return f->erro.classe == FC_FORMATO;
+  return erro_recente(f) && f->erro.classe == FC_FORMATO;
 }
 
 static int casa_player_parou(const FarolFatos *f) {
-  return f->erro.classe == FC_PARADO && vazao_boa(f);
+  return erro_recente(f) && f->erro.classe == FC_PARADO && vazao_boa(f);
 }
 
 static int casa_audio_dts(const FarolFatos *f) {
-  if (f->conversaoPossivel <= 0 || f->faixaDts < 0) return 0;
+  if (f->conversaoPossivel <= 0 || f->faixaDts <= 0) return 0;
   if (f->plat == FP_TIZEN_TPK && f->osMaior < 6) return 0;
   return sem_saida_audio(f);
 }
@@ -263,7 +276,7 @@ static void preencher_estados(int sintoma, const FarolFatos *f, uint8_t pbit,
     if ((tabela[i].plats & pbit) && tabela[i].casa(f))
       falhou[tabela[i].estagio] = 1;
   }
-  if (f->offline >= 0 && f->erro.classe == FC_REDE) falhou[RES_T_FONTE] = 1;
+  if (f->offline >= 0 && erro_recente(f) && f->erro.classe == FC_REDE) falhou[RES_T_FONTE] = 1;
   if (f->tvNegou > 0) falhou[RES_T_TV] = 1;
   rf.offline = falhou[RES_T_INTERNET];
   rf.addonsQtd = f->addonsQtd == 0 ? 0 : 1;
