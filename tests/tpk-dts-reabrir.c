@@ -39,8 +39,6 @@ int ling_tipo_legenda(const char *s, int f, int d) { (void)s; (void)f; (void)d; 
 const char *ling_tipo_legenda_rotulo(int t) { (void)t; return ""; }
 const char *ling_do_nome(const char *nome) { (void)nome; return NULL; }
 int ling_letreiro(const char *nome, int forcado) { (void)nome; (void)forcado; return 0; }
-int ling_prefere_regional(const char *p) { (void)p; return 0; }
-int ling_afinidade(const char *c, const char *p) { (void)c; (void)p; return 1; }
 void mkvass_aceitar_texto(int sim) { (void)sim; }
 void mkvass_aceitar_imagem(int sim) { (void)sim; }
 void intro_definir_capitulos(const IntroTrecho *v, int n) { (void)v; (void)n; }
