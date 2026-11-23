@@ -28,13 +28,24 @@ int main(void) {
   const char *orig = "https://image.tmdb.org/t/p/original/fIhXD6m9LJgC7yDMOHMpYgkYAJ.jpg";
 
   // 1. TMDB `original`: a menor da escada que cobre o teto.
-  vira(orig, 480, "https://image.tmdb.org/t/p/w780/fIhXD6m9LJgC7yDMOHMpYgkYAJ.jpg");
+  vira(orig, 480, "https://image.tmdb.org/t/p/w500/fIhXD6m9LJgC7yDMOHMpYgkYAJ.jpg");
   vira(orig, 704, "https://image.tmdb.org/t/p/w780/fIhXD6m9LJgC7yDMOHMpYgkYAJ.jpg");
   vira(orig, 780, "https://image.tmdb.org/t/p/w780/fIhXD6m9LJgC7yDMOHMpYgkYAJ.jpg");
   vira(orig, 800, "https://image.tmdb.org/t/p/w1280/fIhXD6m9LJgC7yDMOHMpYgkYAJ.jpg");
   vira(orig, 1280, "https://image.tmdb.org/t/p/w1280/fIhXD6m9LJgC7yDMOHMpYgkYAJ.jpg");
   vira(orig, 288, "https://image.tmdb.org/t/p/w300/fIhXD6m9LJgC7yDMOHMpYgkYAJ.jpg");
-  puts("ok  TMDB original -> w300/w780/w1280 pelo teto");
+  {
+    const int escada[] = {92, 154, 185, 300, 342, 500, 780, 1280};
+    char esperado[160];
+    int anterior = 0;
+    for (unsigned i = 0; i < sizeof escada / sizeof escada[0]; i++) {
+      snprintf(esperado, sizeof esperado, "https://image.tmdb.org/t/p/w%d/fIhXD6m9LJgC7yDMOHMpYgkYAJ.jpg", escada[i]);
+      vira(orig, anterior + 1, esperado);
+      vira(orig, escada[i], esperado);
+      anterior = escada[i];
+    }
+  }
+  puts("ok  TMDB original -> w92/w154/w185/w300/w342/w500/w780/w1280 pelo teto");
 
   // 2. Heroi de 1920 (e qualquer teto acima de 1280) continua em original:
   //    e a promocao que pede isso, e ela nao pode receber um w1280.
@@ -50,8 +61,11 @@ int main(void) {
   vira("https://image.tmdb.org/t/p/w500/abc.jpg", 288, "https://image.tmdb.org/t/p/w300/abc.jpg");
   fica("https://image.tmdb.org/t/p/w780/abc.jpg", 704);
   fica("https://image.tmdb.org/t/p/w185/abc.jpg", 128);
+  vira("https://image.tmdb.org/t/p/w780/abc.jpg", 480, "https://image.tmdb.org/t/p/w500/abc.jpg");
+  fica("https://image.tmdb.org/t/p/w500/abc.jpg", 342);    // ganho menor que 1,5x
+  vira("https://image.tmdb.org/t/p/w342/abc.jpg", 185, "https://image.tmdb.org/t/p/w185/abc.jpg");
   fica("https://image.tmdb.org/t/p/h632/abc.jpg", 128);     // perfil por altura
-  vira("http://image.tmdb.org/t/p/original/logo.png?x=1", 480, "http://image.tmdb.org/t/p/w780/logo.png?x=1");
+  vira("http://image.tmdb.org/t/p/original/logo.png?x=1", 480, "http://image.tmdb.org/t/p/w500/logo.png?x=1");
   puts("ok  TMDB wNNN: so desce com ganho, sem ampliar, hNNN intacto");
 
   // 4. Still do metahub: w780/w1280/original.
@@ -91,6 +105,8 @@ int main(void) {
   fica("/app/art/00.jpg", 416);
   fica("nuvio.invalid/arte/tmdb/w1280/tt0468569", 416);
   fica(orig, 0);
+  fica(orig, -1);
+  fica("", 480);
   fica(NULL, 704);
   assert(!arte_tamanho_url(orig, 704, saida, 20));
   puts("ok  host desconhecido, local, teto 0 e saida curta ficam como vieram");

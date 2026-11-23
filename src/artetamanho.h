@@ -14,7 +14,7 @@
 // tex_cache.c — a largura em pixels que a textura vai ter), devolve a menor
 // variante do MESMO arquivo que ainda cobre o teto. So hosts cuja escada de
 // tamanhos esta medida:
-//   image.tmdb.org/t/p/<w300|w780|w1280|original|wNNN>/...
+//   image.tmdb.org/t/p/<wNNN|original>/...: escada 92/154/185/300/342/500/780/1280
 //   episodes.metahub.space/<tt>/<t>/<e>/<w780|w1280|original>.jpg
 //   images.metahub.space/background/medium/... -> small (480x270) com teto
 //     <= 480; medium, big, large e original sao o mesmo 1920x1080 (artehero.c).
@@ -23,10 +23,11 @@
 //
 // Nunca desce ABAIXO do teto (o card nao amplia) e so troca quando a variante
 // e ao menos 1,5x menor que a atual: w342 -> w300 e cache novo sem ganho.
+// Escada conferida no CDN para cartaz, fundo e still; a menor que cobre o teto.
 //
-// QUEM CHAMA: tex_cache.c, no fio de rede, com o teto do pedido. A CHAVE do
-// item continua sendo a URL original; so o download (e o arquivo no cache de
-// disco) e da variante. A promocao a heroi pede de novo com teto maior e cai
+// QUEM CHAMA: tex_cache.c, com o teto do pedido, tambem apos fonte e reserva.
+// A CHAVE do item continua sendo a URL original; so o download (e o arquivo
+// no cache de disco) e da variante. A promocao pede de novo com teto maior e cai
 // na variante maior — ou na URL original.
 #ifndef NV_ARTETAMANHO_H
 #define NV_ARTETAMANHO_H
