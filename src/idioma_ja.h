@@ -3470,6 +3470,7 @@
   T("Novidades da 1.8.0", "1.8.0 の新機能"),
   T("Novo", "新着"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "新しいプレーヤー設定：自動、64、128、256 MB。空きメモリの範囲内で選べます。"),
+  T("Novo episódio", "新しいエピソード"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "新しい行のスタイル：選択中の作品がポスターの横に大きく表示されます。「行のスタイル」で選べます。"),
   T("Novo na 1.8.0", "1.8.0 の新機能"),
   T("Novo na 2.0", "2.0 の新機能"),

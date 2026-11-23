@@ -3470,6 +3470,7 @@
   T("Novidades da 1.8.0", "Τι νέο στην 1.8.0"),
   T("Novo", "Νέο"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "Νέα ρύθμιση player: Αυτόματο, 64, 128 ή 256 MB, μέσα στη διαθέσιμη μνήμη."),
+  T("Novo episódio", "Νέο επεισόδιο"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "Νέο στυλ σειράς: ο επιλεγμένος τίτλος φαίνεται μεγάλος δίπλα στις αφίσες. Διάλεξέ το στο Στυλ σειράς."),
   T("Novo na 1.8.0", "Νέο στην 1.8.0"),
   T("Novo na 2.0", "Νέο στην 2.0"),

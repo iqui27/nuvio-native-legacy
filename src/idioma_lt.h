@@ -3470,6 +3470,7 @@
   T("Novidades da 1.8.0", "Kas naujo 1.8.0 versijoje"),
   T("Novo", "Nauja"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "Naujas grotuvo nustatymas: Automatinis, 64, 128 arba 256 MB, pagal laisvą atmintį."),
+  T("Novo episódio", "Nauja serija"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "Naujas eilės stilius: pažymėtas pavadinimas rodomas didelis šalia plakatų. Pasirinkite jį Eilės stilius."),
   T("Novo na 1.8.0", "Nauja 1.8.0"),
   T("Novo na 2.0", "Nauja 2.0"),

@@ -103,10 +103,16 @@ void continuar_desenhar(const CatItem *ci, GfxRect r, float raio) {
     // futuro e a decisao unica da montagem (cwo_e_futuro), a mesma que o poe
     // em "Proximos episodios".
     char quando[32];
+    long long agoraMs = (long long)time(NULL) * 1000LL, estreia = cwo_estreia(ci->imdb);
     if (ci->progresso == 0 && cwo_e_futuro(ci->imdb) &&
-        cwo_data_curta(cwo_estreia(ci->imdb), (long long)time(NULL) * 1000LL,
-                       ajustes_idioma(), 0, quando, sizeof quando))
+        cwo_data_curta(estreia, agoraMs, ajustes_idioma(), 0, quando, sizeof quando))
       snprintf(selo, sizeof selo, i18n("Estreia %s"), quando);
+    // "Novo episodio": o "a seguir" que foi ao ar ha no maximo 7 dias. Mesmo
+    // selo neutro dos outros; so o texto muda.
+    else if (ci->progresso == 0 && estreia != CWO_SEM_DATA && estreia <= agoraMs &&
+             agoraMs - estreia < 7LL * 24 * 3600 * 1000 &&
+             (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb) || cwo_conta_a_seguir(ci->imdb)))
+      snprintf(selo, sizeof selo, "%s", i18n("Novo episódio"));
     else if (ci->progresso == 0 && (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb) || cwo_conta_a_seguir(ci->imdb)))
       snprintf(selo, sizeof selo, "%s", i18n("A seguir"));
     else if (h && m) snprintf(selo, sizeof selo, i18n("%dh %dmin Restantes"), h, m);

@@ -3470,6 +3470,7 @@
   T("Novidades da 1.8.0", "Šta je novo u 1.8.0"),
   T("Novo", "Novo"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "Novo podešavanje plejera: Automatski, 64, 128 ili 256 MB, u okviru slobodne memorije."),
+  T("Novo episódio", "Nova epizoda"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "Novi stil reda: izabrani naslov je velik pored postera. Izaberite ga u Stil reda."),
   T("Novo na 1.8.0", "Novo u 1.8.0"),
   T("Novo na 2.0", "Novo u 2.0"),

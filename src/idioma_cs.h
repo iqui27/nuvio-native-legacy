@@ -3470,6 +3470,7 @@
   T("Novidades da 1.8.0", "Novinky v 1.8.0"),
   T("Novo", "Nové"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "Nové nastavení přehrávače: Automaticky, 64, 128 nebo 256 MB, v rámci volné paměti."),
+  T("Novo episódio", "Nový díl"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "Nový styl řady: vybraný titul je velký vedle plakátů. Zvolte ho ve Styl řady."),
   T("Novo na 1.8.0", "Nové v 1.8.0"),
   T("Novo na 2.0", "Novinka ve 2.0"),

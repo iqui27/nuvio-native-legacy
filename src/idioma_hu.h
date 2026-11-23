@@ -3470,6 +3470,7 @@
   T("Novidades da 1.8.0", "Az 1.8.0 újdonságai"),
   T("Novo", "Új"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "Új lejátszóbeállítás: Automatikus, 64, 128 vagy 256 MB, a szabad memórián belül."),
+  T("Novo episódio", "Új epizód"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "Új sorstílus: a kijelölt cím nagyban látszik a poszterek mellett. A Sor stílusa alatt választható."),
   T("Novo na 1.8.0", "Új az 1.8.0-ban"),
   T("Novo na 2.0", "Új a 2.0-ban"),

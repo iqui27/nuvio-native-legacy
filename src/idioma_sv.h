@@ -3470,6 +3470,7 @@
   T("Novidades da 1.8.0", "Nytt i 1.8.0"),
   T("Novo", "Nytt"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "Ny spelarinställning: Automatiskt, 64, 128 eller 256 MB, inom ledigt minne."),
+  T("Novo episódio", "Nytt avsnitt"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "Ny radstil: den markerade titeln visas stort bredvid affischerna. Välj den under Radstil."),
   T("Novo na 1.8.0", "Nytt i 1.8.0"),
   T("Novo na 2.0", "Nytt i 2.0"),

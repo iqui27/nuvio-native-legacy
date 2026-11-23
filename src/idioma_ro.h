@@ -3469,6 +3469,7 @@
   T("Novidades da 1.8.0", "Noutăți din 1.8.0"),
   T("Novo", "Nou"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "Setare nouă a playerului: Automat, 64, 128 sau 256 MB, în limita memoriei libere."),
+  T("Novo episódio", "Episod nou"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "Stil nou de rând: titlul selectat apare mare lângă postere. Alege-l din Stilul rândului."),
   T("Novo na 1.8.0", "Nou în 1.8.0"),
   T("Novo na 2.0", "Nou în 2.0"),

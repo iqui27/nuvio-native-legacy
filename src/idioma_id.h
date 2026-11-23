@@ -3470,6 +3470,7 @@
   T("Novidades da 1.8.0", "Yang baru di 1.8.0"),
   T("Novo", "Baru"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "Pengaturan pemutar baru: Otomatis, 64, 128, atau 256 MB, sesuai memori kosong."),
+  T("Novo episódio", "Episode baru"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "Gaya baris baru: judul yang difokus tampil besar di samping poster. Pilih di Gaya baris."),
   T("Novo na 1.8.0", "Baru di 1.8.0"),
   T("Novo na 2.0", "Baru di 2.0"),

@@ -3470,6 +3470,7 @@
   T("Novidades da 1.8.0", "1.8.0 sürümündeki yenilikler"),
   T("Novo", "Yeni"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "Yeni oynatıcı ayarı: Otomatik, 64, 128 veya 256 MB, boş bellek sınırında."),
+  T("Novo episódio", "Yeni bölüm"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "Yeni satır stili: seçili başlık afişlerin yanında büyük görünür. Satır stili'nden seç."),
   T("Novo na 1.8.0", "1.8.0'da yeni"),
   T("Novo na 2.0", "2.0’da yeni"),

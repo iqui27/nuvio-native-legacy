@@ -3470,6 +3470,7 @@
   T("Novidades da 1.8.0", "Có gì mới trong 1.8.0"),
   T("Novo", "Mới"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "Cài đặt trình phát mới: Tự động, 64, 128 hoặc 256 MB, trong giới hạn bộ nhớ trống."),
+  T("Novo episódio", "Tập mới"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "Kiểu hàng mới: tựa đang chọn hiện lớn bên cạnh các áp phích. Chọn trong Kiểu hàng."),
   T("Novo na 1.8.0", "Mới trong 1.8.0"),
   T("Novo na 2.0", "Mới trong 2.0"),

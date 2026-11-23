@@ -3470,6 +3470,7 @@
   T("Novidades da 1.8.0", "Novosti v 1.8.0"),
   T("Novo", "Novo"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "Nova nastavitev: Samodejno, 64, 128 ali 256 MB, v mejah prostega pomnilnika."),
+  T("Novo episódio", "Nova epizoda"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "Nov slog vrstice: izbrani naslov je velik ob plakatih. Izberite ga v Slog vrstice."),
   T("Novo na 1.8.0", "Novo v 1.8.0"),
   T("Novo na 2.0", "Novo v 2.0"),

@@ -3469,6 +3469,7 @@
   { "Novidades da 1.8.0", "What's new in 1.8.0" },
   { "Novo", "New" },
   { "Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "New player setting: Automatic, 64, 128 or 256 MB, within free memory." },
+  { "Novo episódio", "New episode" },
   { "Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "A new row style: the focused title shows large next to the posters. Pick it in Row style." },
   { "Novo na 1.8.0", "New in 1.8.0" },
   { "Novo na 2.0", "New in 2.0" },

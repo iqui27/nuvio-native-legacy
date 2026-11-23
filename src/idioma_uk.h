@@ -3469,6 +3469,7 @@
   T("Novidades da 1.8.0", "Що нового в 1.8.0"),
   T("Novo", "Нове"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "Нове налаштування плеєра: Автоматично, 64, 128 або 256 MB, у межах вільної пам’яті."),
+  T("Novo episódio", "Нова серія"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "Новий стиль рядка: вибраний тайтл великий поруч із постерами. Виберіть його в Стиль рядка."),
   T("Novo na 1.8.0", "Нове в 1.8.0"),
   T("Novo na 2.0", "Нове в 2.0"),

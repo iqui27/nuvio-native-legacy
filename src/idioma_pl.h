@@ -3470,6 +3470,7 @@
   T("Novidades da 1.8.0", "Nowości w 1.8.0"),
   T("Novo", "Nowość"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "Nowe ustawienie: Automatycznie, 64, 128 lub 256 MB, w granicach wolnej pamięci."),
+  T("Novo episódio", "Nowy odcinek"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "Nowy styl rzędu: wybrany tytuł jest duży obok plakatów. Wybierz go w Styl rzędu."),
   T("Novo na 1.8.0", "Nowe w 1.8.0"),
   T("Novo na 2.0", "Nowość w 2.0"),

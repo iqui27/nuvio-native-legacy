@@ -3470,6 +3470,7 @@
   T("Novidades da 1.8.0", "1.8.0 新功能"),
   T("Novo", "新"),
   T("Novo ajuste do player: Automático, 64, 128 ou 256 MB, dentro da memória livre.", "新的播放器設定：自動、64、128 或 256 MB，不超過可用記憶體。"),
+  T("Novo episódio", "新一集"),
   T("Novo estilo de fileira: o título em foco fica grande ao lado dos pôsteres. Escolha em Estilo da fileira.", "新的列樣式：選取的作品在海報旁大幅顯示。在「列樣式」中選擇。"),
   T("Novo na 1.8.0", "1.8.0 新增"),
   T("Novo na 2.0", "2.0 新功能"),
