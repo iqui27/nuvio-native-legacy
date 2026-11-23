@@ -27,6 +27,7 @@
 #include "juntos.h"
 #include "partes.h"
 #include "detail.h"
+#include "deeplink.h"
 #include "fontepref.h"
 
 static Uint32 fakeTicks = 1000u;
@@ -54,6 +55,7 @@ static int espPlayerAbrir;
 static int stubPlayerAberto;
 static int espPlayerIdx = -1;
 static int espPlayerT, espPlayerE;
+static int espPlayerEncerrar;
 static int espAddonsBuscar;
 static char espAddonsAlvo[64];
 static char espStreamAlvo[64];
@@ -297,7 +299,26 @@ void desc_episodios(int indice, int forcar) {
 }
 int desc_elenco_precisa_pessoas(const CatItem *ci) { (void)ci; return 0; }
 static int explorar_pediu_abrir(int *idx) { (void)idx; return 0; }
-static void abrirPorIndice(int idx) { (void)idx; }
+static void detail_fechar_seco_(void) {
+  if (stubDetailAberto) {
+    stubDetailSaindo = 1;
+    espDetailPedReproduzir = 0;
+  }
+}
+void detail_fechar_seco(void) { detail_fechar_seco_(); }
+static int spainel_aberto(void) { return 0; }
+static void spainel_fechar(void) {}
+static int player_retido(void) { return 0; }
+static void player_encerrar(void) { espPlayerEncerrar++; stubPlayerAberto = 0; }
+static void preparoInvalidar(void) {}
+static void fa_nova_rodada(void) {}
+static void p2pmotor_cancelar(void) {}
+static void p2p_cancelar(void) {}
+void menu_definir_destino(int m) { (void)m; }
+static void busca_definir_consulta(const char *s) { (void)s; }
+void desc_pedir_titulo(const char *s) { (void)s; }
+void desc_pedir_titulo_tmdb(long tmdb, const char *tipo) { (void)tmdb; (void)tipo; }
+int desc_titulo_buscando(void) { return 0; }
 
 static int player_visivel(void) { return stubPlayerAberto; }
 static int player_indice(void) { return espPlayerIdx; }
@@ -324,8 +345,11 @@ static void aquecerAoAbrirTitulo(void) {}
 static void aquecerQuandoChegarem(void) {}
 static void prepararAoAbrir(void) {}
 static int aguardandoFonte = 0;
+static int autoEsperaN = 0, stalkerRenovando = 0;
 static int preparoEspera = 0, preparoLembradaPlay = -1, fonteEscolhida = -2, fonteFalha = 0;
 static unsigned fontePedidoGeracao = 0;
+static unsigned torrentSessao = 0;
+static int torrentPendente = -1;
 enum { FJOB_FALHA = 1 };
 static unsigned novaGeracaoFonte(void) { return 1u; }
 static void limparFontePendente(void) {}
@@ -388,8 +412,9 @@ static int srvidx_ano_de(const char *meta) { (void)meta; return 0; }
 
 #define NV_LINK_VALIDO_MS 60000
 #define CW_ESPERA_MS 8000u
-enum { TELA_HOME = 0, TELA_EXPLORAR = 1 };
+enum { TELA_HOME = 0, TELA_EXPLORAR = 1, TELA_LOGIN = 2, TELA_ESCOLHA_PERFIL = 3, TELA_BUSCA = 4 };
 static int tela = TELA_HOME;
+static void trocarTela(int t) { tela = t; }
 static int homeAcaoDet = -1;
 static Uint32 homeAcaoDetEm = 0;
 static int cwRewatch, cwTocarT, cwTocarE, cwEspera;
@@ -400,6 +425,10 @@ static Uint32 cwEsperaDesde;
 
 /* APP_ABRIR_TITULO */
 
+/* APP_ABRIR_POR_INDICE */
+
+/* APP_DEEPLINK_ABRIR */
+
 /* APP_ALVO_PLAYER */
 
 /* APP_RENOVAR_LISTA */
@@ -409,6 +438,10 @@ static void despacharAppHome(void) {
   HomeItem it;
   (void)idx;
 /* APP_HOME_DISPATCH */
+}
+
+static void despacharDeeplinkApp(void) {
+/* APP_DEEPLINK_DISPATCH */
 }
 
 static void passoEsperaApp(void) {
@@ -482,6 +515,7 @@ static void zerarEspias(void) {
   stubPlayerAberto = 0;
   espPlayerIdx = -1;
   espPlayerT = espPlayerE = 0;
+  espPlayerEncerrar = 0;
   espAddonsBuscar = 0;
   espAddonsAlvo[0] = 0;
   espStreamAlvo[0] = 0;
@@ -1406,6 +1440,364 @@ int main(void) {
   assert(cwEspera == 0 && espDetailReproduzir == 0 && detail_aberto() == 1);
   passoConsumoApp();
   assert(espPlayerAbrir == 0 && espAddonsBuscar == 0);
+
+  // 13) Regressao r4: link externo valido para B (nuvio-legacy://play/series/tt7723199/1/3)
+  //     durante espera P2 para A (tt7723120 T4E6, home_t4e6 + Diario T4E6) deve tocar
+  //     B no episodio pedido sem ser descartado por farolPendExec de A, e A tardio
+  //     permanece invalidado.
+  stubAgoraS += 86400LL;
+  zerarEspias();
+  montarCatalogoComFarol();
+  {
+    DiarioEntrada de;
+    memset(&de, 0, sizeof de);
+    strcpy(de.id, "tt7723120");
+    de.tipo = DIARIO_SERIE;
+    de.origem = DIARIO_ORIG_PLAYER;
+    de.temporada = 4; de.episodio = 6;
+    de.quando = stubAgoraS - 6LL * 86400LL;
+    assert(diario_adicionar(1, &de) >= 0);
+    diario_nome_definir("tt7723120", "Severance", 2022, "");
+  }
+  assert(cat_indice_por_imdb("tt7723120") < 0);
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"home_t4e6\","
+    "\"l1\":{\"m\":\"FT_DICA_CURTO\",\"a\":[\"tt7723120\"]},"
+    "\"acao\":{\"tipo\":\"tocar\",\"alvo\":\"tt7723120\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 1);
+  home_atualizar(0.016f, fakeTicks);
+  assert(dicaCache.alvoTemporada == 4 && dicaCache.alvoEpisodio == 6);
+  {
+    CatItem it[12];
+    CatFileira fils[2];
+    memset(it, 0, sizeof it);
+    memset(fils, 0, sizeof fils);
+    strcpy(it[0].imdb, "tt7723120");
+    strcpy(it[0].tipo, "series");
+    strcpy(it[0].titulo, "Severance");
+    strcpy(it[1].imdb, "tt7723199");
+    strcpy(it[1].tipo, "series");
+    strcpy(it[1].titulo, "Silo B");
+    strcpy(it[1].poster, "https://a.invalid/b.jpg");
+    it[1].temporada = 1; it[1].episodio = 1;
+    for (int i = 2; i < 12; i++) {
+      snprintf(it[i].imdb, sizeof it[i].imdb, "tt300%04d", i);
+      strcpy(it[i].tipo, "movie");
+      snprintf(it[i].titulo, sizeof it[i].titulo, "Catalogo %d", i);
+      strcpy(it[i].meta, "2024 · 140 min");
+    }
+    strcpy(fils[0].chave, "farol_gosto1");
+    strcpy(fils[0].titulo, "Para voce");
+    fils[0].ini = 0; fils[0].n = 6;
+    strcpy(fils[1].chave, "addon_pop");
+    strcpy(fils[1].titulo, "Populares");
+    strcpy(fils[1].base, "https://a.invalid");
+    strcpy(fils[1].catId, "pop");
+    strcpy(fils[1].tipo, "movie");
+    fils[1].ini = 6; fils[1].n = 6;
+    cat_definir_tudo(it, 12, fils, 2);
+  }
+  {
+    CatEp epsB[1];
+    memset(epsB, 0, sizeof epsB);
+    epsB[0].temporada = 1; epsB[0].episodio = 3;
+    strcpy(epsB[0].vid, "tt7723199:publicado:1:3");
+    cat_definir_episodios(1, epsB, 1);
+  }
+  fakeTicks += 16u;
+  home_atualizar(0.016f, fakeTicks);
+  r1 = acharFileira("farol_gosto1");
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  teclaOk();
+  despacharAppHome();
+  assert(cwEspera == 2 && farolPendExec == 1);
+  assert(!strcmp(cat_item(detail_indice())->imdb, "tt7723120"));
+  deeplink_postar("nuvio-legacy://play/series/tt7723199/1/3");
+  despacharDeeplinkApp();
+  assert(cwEspera == 0 && farolPendExec == 0);
+  assert(!strcmp(cat_item(detail_indice())->imdb, "tt7723199"));
+  assert(espDetailPedReproduzir == 1);
+  passoPrefetchApp();
+  passoConsumoApp();
+  assert(espPlayerAbrir == 1 && espPlayerIdx == 1 && espPlayerT == 1 && espPlayerE == 3);
+  assert(espAddonsBuscar >= 1 && !strcmp(espAddonsAlvo, "tt7723199:publicado:1:3"));
+  // Chegada tardia dos metadados de A nao pode disparar reproducao:
+  {
+    CatEp epsA[1];
+    memset(epsA, 0, sizeof epsA);
+    epsA[0].temporada = 4; epsA[0].episodio = 6;
+    strcpy(epsA[0].vid, "tt7723120:publicado:4:6");
+    cat_definir_episodios(0, epsA, 1);
+  }
+  passoEsperaApp();
+  passoConsumoApp();
+  assert(espPlayerAbrir == 1 && espPlayerIdx == 1 && espPlayerT == 1 && espPlayerE == 3);
+
+  // 14) Controle positivo do link externo para B sem espera P2:
+  zerarEspias();
+  {
+    CatItem it[12];
+    CatFileira fils[2];
+    memset(it, 0, sizeof it);
+    memset(fils, 0, sizeof fils);
+    strcpy(it[0].imdb, "tt7723120");
+    strcpy(it[0].tipo, "series");
+    strcpy(it[0].titulo, "Severance");
+    strcpy(it[1].imdb, "tt7723199");
+    strcpy(it[1].tipo, "series");
+    strcpy(it[1].titulo, "Silo B");
+    strcpy(it[1].poster, "https://a.invalid/b.jpg");
+    for (int i = 2; i < 12; i++) {
+      snprintf(it[i].imdb, sizeof it[i].imdb, "tt300%04d", i);
+      strcpy(it[i].tipo, "movie");
+      snprintf(it[i].titulo, sizeof it[i].titulo, "Catalogo %d", i);
+      strcpy(it[i].meta, "2024 · 140 min");
+    }
+    strcpy(fils[0].chave, "farol_gosto1");
+    strcpy(fils[0].titulo, "Para voce");
+    fils[0].ini = 0; fils[0].n = 6;
+    strcpy(fils[1].chave, "addon_pop");
+    strcpy(fils[1].titulo, "Populares");
+    strcpy(fils[1].base, "https://a.invalid");
+    strcpy(fils[1].catId, "pop");
+    strcpy(fils[1].tipo, "movie");
+    fils[1].ini = 6; fils[1].n = 6;
+    cat_definir_tudo(it, 12, fils, 2);
+  }
+  {
+    CatEp epsB[1];
+    memset(epsB, 0, sizeof epsB);
+    epsB[0].temporada = 1; epsB[0].episodio = 3;
+    strcpy(epsB[0].vid, "tt7723199:publicado:1:3");
+    cat_definir_episodios(1, epsB, 1);
+  }
+  deeplink_postar("nuvio-legacy://play/series/tt7723199/1/3");
+  despacharDeeplinkApp();
+  passoPrefetchApp();
+  passoConsumoApp();
+  assert(espPlayerAbrir == 1 && espPlayerIdx == 1 && espPlayerT == 1 && espPlayerE == 3);
+  assert(espAddonsBuscar >= 1 && !strcmp(espAddonsAlvo, "tt7723199:publicado:1:3"));
+
+  // 15a) Link externo para o MESMO A em T1E3 durante espera P2 de A T4E6:
+  //      novo ciclo abre A em T1E3 e metadados tardios de A nao reacionam T4E6.
+  stubAgoraS += 86400LL;
+  zerarEspias();
+  {
+    CatItem it[12];
+    CatFileira fils[2];
+    memset(it, 0, sizeof it);
+    memset(fils, 0, sizeof fils);
+    strcpy(it[0].imdb, "tt7723120");
+    strcpy(it[0].tipo, "series");
+    strcpy(it[0].titulo, "Severance");
+    strcpy(it[0].poster, "https://a.invalid/a.jpg");
+    for (int i = 1; i < 12; i++) {
+      snprintf(it[i].imdb, sizeof it[i].imdb, "tt300%04d", i);
+      strcpy(it[i].tipo, "movie");
+      snprintf(it[i].titulo, sizeof it[i].titulo, "Catalogo %d", i);
+      strcpy(it[i].meta, "2024 · 140 min");
+    }
+    strcpy(fils[0].chave, "farol_gosto1");
+    strcpy(fils[0].titulo, "Para voce");
+    fils[0].ini = 0; fils[0].n = 6;
+    strcpy(fils[1].chave, "addon_pop");
+    strcpy(fils[1].titulo, "Populares");
+    strcpy(fils[1].base, "https://a.invalid");
+    strcpy(fils[1].catId, "pop");
+    strcpy(fils[1].tipo, "movie");
+    fils[1].ini = 6; fils[1].n = 6;
+    cat_definir_tudo(it, 12, fils, 2);
+  }
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"app_r4_same\","
+    "\"l1\":{\"m\":\"FT_DICA_CURTO\",\"a\":[\"tt7723120\"]},"
+    "\"acao\":{\"tipo\":\"tocar\",\"alvo\":\"tt7723120\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 1);
+  home_atualizar(0.016f, fakeTicks);
+  r1 = acharFileira("farol_gosto1");
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  teclaOk();
+  despacharAppHome();
+  assert(cwEspera == 2 && farolPendExec == 1);
+  {
+    CatEp epsA[2];
+    memset(epsA, 0, sizeof epsA);
+    epsA[0].temporada = 1; epsA[0].episodio = 3; strcpy(epsA[0].vid, "tt7723120:publicado:1:3");
+    epsA[1].temporada = 4; epsA[1].episodio = 6; strcpy(epsA[1].vid, "tt7723120:publicado:4:6");
+    cat_definir_episodios(0, epsA, 2);
+  }
+  deeplink_postar("nuvio-legacy://play/series/tt7723120/1/3");
+  despacharDeeplinkApp();
+  passoConsumoApp();
+  assert(espPlayerAbrir == 1 && espPlayerIdx == 0 && espPlayerT == 1 && espPlayerE == 3);
+  assert(espAddonsBuscar >= 1 && !strcmp(espAddonsAlvo, "tt7723120:publicado:1:3"));
+
+  // 15b) Reabrir A em novo ciclo apos enfileirar Play P2 e antes do consumo cancela P2:
+  stubAgoraS += 86400LL;
+  zerarEspias();
+  {
+    CatItem it[12];
+    CatFileira fils[2];
+    memset(it, 0, sizeof it);
+    memset(fils, 0, sizeof fils);
+    strcpy(it[0].imdb, "tt7723120");
+    strcpy(it[0].tipo, "series");
+    strcpy(it[0].titulo, "Severance");
+    for (int i = 1; i < 12; i++) {
+      snprintf(it[i].imdb, sizeof it[i].imdb, "tt300%04d", i);
+      strcpy(it[i].tipo, "movie");
+      snprintf(it[i].titulo, sizeof it[i].titulo, "Catalogo %d", i);
+      strcpy(it[i].meta, "2024 · 140 min");
+    }
+    strcpy(fils[0].chave, "farol_gosto1");
+    strcpy(fils[0].titulo, "Para voce");
+    fils[0].ini = 0; fils[0].n = 6;
+    strcpy(fils[1].chave, "addon_pop");
+    strcpy(fils[1].titulo, "Populares");
+    strcpy(fils[1].base, "https://a.invalid");
+    strcpy(fils[1].catId, "pop");
+    strcpy(fils[1].tipo, "movie");
+    fils[1].ini = 6; fils[1].n = 6;
+    cat_definir_tudo(it, 12, fils, 2);
+  }
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"app_r4_reopen\","
+    "\"l1\":{\"m\":\"FT_DICA_CURTO\",\"a\":[\"tt7723120\"]},"
+    "\"acao\":{\"tipo\":\"tocar\",\"alvo\":\"tt7723120\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 1);
+  home_atualizar(0.016f, fakeTicks);
+  r1 = acharFileira("farol_gosto1");
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  teclaOk();
+  despacharAppHome();
+  assert(cwEspera == 2 && farolPendExec == 1);
+  {
+    CatEp epsA[1];
+    memset(epsA, 0, sizeof epsA);
+    epsA[0].temporada = 4; epsA[0].episodio = 6; strcpy(epsA[0].vid, "tt7723120:publicado:4:6");
+    cat_definir_episodios(0, epsA, 1);
+  }
+  passoEsperaApp();
+  assert(espDetailPedReproduzir == 1);
+  {
+    HomeItem ha = {0};
+    ha.indice = 0;
+    ha.titulo = "Severance";
+    detail_abrir(&ha);
+  }
+  passoConsumoApp();
+  assert(espPlayerAbrir == 0 && espAddonsBuscar == 0);
+
+  // 16) Play manual direto no Detalhe A durante espera P2 no mesmo ciclo:
+  //     nao e descartado nem sequestrado pelo T4E6 da espera P2, e cancela espera.
+  stubAgoraS += 86400LL;
+  zerarEspias();
+  {
+    CatItem it[12];
+    CatFileira fils[2];
+    memset(it, 0, sizeof it);
+    memset(fils, 0, sizeof fils);
+    strcpy(it[0].imdb, "tt7723120");
+    strcpy(it[0].tipo, "series");
+    strcpy(it[0].titulo, "Severance");
+    for (int i = 1; i < 12; i++) {
+      snprintf(it[i].imdb, sizeof it[i].imdb, "tt300%04d", i);
+      strcpy(it[i].tipo, "movie");
+      snprintf(it[i].titulo, sizeof it[i].titulo, "Catalogo %d", i);
+      strcpy(it[i].meta, "2024 · 140 min");
+    }
+    strcpy(fils[0].chave, "farol_gosto1");
+    strcpy(fils[0].titulo, "Para voce");
+    fils[0].ini = 0; fils[0].n = 6;
+    strcpy(fils[1].chave, "addon_pop");
+    strcpy(fils[1].titulo, "Populares");
+    strcpy(fils[1].base, "https://a.invalid");
+    strcpy(fils[1].catId, "pop");
+    strcpy(fils[1].tipo, "movie");
+    fils[1].ini = 6; fils[1].n = 6;
+    cat_definir_tudo(it, 12, fils, 2);
+  }
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"app_r4_manual\","
+    "\"l1\":{\"m\":\"FT_DICA_CURTO\",\"a\":[\"tt7723120\"]},"
+    "\"acao\":{\"tipo\":\"tocar\",\"alvo\":\"tt7723120\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 1);
+  home_atualizar(0.016f, fakeTicks);
+  r1 = acharFileira("farol_gosto1");
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  teclaOk();
+  despacharAppHome();
+  assert(cwEspera == 2 && farolPendExec == 1 && !farolPendPediu);
+  espDetailPedReproduzir = 1; // Simula pedReproduzir = 1 direto no Detalhe no mesmo ciclo.
+  passoConsumoApp();
+  assert(espPlayerAbrir == 1 && espPlayerIdx == 0);
+  assert(espPlayerT == 0 && espPlayerE == 0); // T4E6 da espera P2 nao sobrescreveu o Play manual.
+  assert(cwEspera == 0 && !farolPendExec);
+  {
+    CatEp epsA[1];
+    memset(epsA, 0, sizeof epsA);
+    epsA[0].temporada = 4; epsA[0].episodio = 6; strcpy(epsA[0].vid, "tt7723120:publicado:4:6");
+    cat_definir_episodios(0, epsA, 1);
+  }
+  passoEsperaApp();
+  passoConsumoApp();
+  assert(espPlayerAbrir == 1);
+
+  // 17) Abertura concorrente sem link externo (abrirPorIndice) durante espera P2
+  //     cancela a espera P2 para que metadados tardios de A nao toquem em B.
+  stubAgoraS += 86400LL;
+  zerarEspias();
+  {
+    CatItem it[12];
+    CatFileira fils[2];
+    memset(it, 0, sizeof it);
+    memset(fils, 0, sizeof fils);
+    strcpy(it[0].imdb, "tt7723120");
+    strcpy(it[0].tipo, "series");
+    strcpy(it[0].titulo, "Severance");
+    strcpy(it[1].imdb, "tt7723199");
+    strcpy(it[1].tipo, "series");
+    strcpy(it[1].titulo, "Silo B");
+    strcpy(it[1].poster, "https://a.invalid/b.jpg");
+    for (int i = 2; i < 12; i++) {
+      snprintf(it[i].imdb, sizeof it[i].imdb, "tt300%04d", i);
+      strcpy(it[i].tipo, "movie");
+      snprintf(it[i].titulo, sizeof it[i].titulo, "Catalogo %d", i);
+      strcpy(it[i].meta, "2024 · 140 min");
+    }
+    strcpy(fils[0].chave, "farol_gosto1");
+    strcpy(fils[0].titulo, "Para voce");
+    fils[0].ini = 0; fils[0].n = 6;
+    strcpy(fils[1].chave, "addon_pop");
+    strcpy(fils[1].titulo, "Populares");
+    strcpy(fils[1].base, "https://a.invalid");
+    strcpy(fils[1].catId, "pop");
+    strcpy(fils[1].tipo, "movie");
+    fils[1].ini = 6; fils[1].n = 6;
+    cat_definir_tudo(it, 12, fils, 2);
+  }
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"app_r4_open\","
+    "\"l1\":{\"m\":\"FT_DICA_CURTO\",\"a\":[\"tt7723120\"]},"
+    "\"acao\":{\"tipo\":\"tocar\",\"alvo\":\"tt7723120\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 1);
+  home_atualizar(0.016f, fakeTicks);
+  r1 = acharFileira("farol_gosto1");
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  teclaOk();
+  despacharAppHome();
+  assert(cwEspera == 2 && farolPendExec == 1);
+  abrirPorIndice(1);
+  assert(cwEspera == 0 && !farolPendExec);
+  {
+    CatEp epsA[1];
+    memset(epsA, 0, sizeof epsA);
+    epsA[0].temporada = 4; epsA[0].episodio = 6; strcpy(epsA[0].vid, "tt7723120:publicado:4:6");
+    cat_definir_episodios(0, epsA, 1);
+  }
+  passoEsperaApp();
+  passoConsumoApp();
+  assert(espPlayerAbrir == 0);
 
   limparDir(dir);
   puts("farol_dica (app): ok");

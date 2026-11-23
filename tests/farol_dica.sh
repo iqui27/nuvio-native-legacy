@@ -94,6 +94,14 @@ a_ini = app.index('static void abrirTitulo(const HomeItem *it, int exigeArte, in
 a_fim = app.index('\nstatic void abrirPorIndice(int i) {', a_ini)
 abrir_fn = app[a_ini:a_fim]
 
+ai_ini = app.index('static void abrirPorIndice(int i) {')
+ai_fim = app.index('\n// Consume the panel request', ai_ini)
+abrir_idx_fn = app[ai_ini:ai_fim]
+
+dl_ini = app.index('static void deeplinkAbrir(const DeepLink *d) {')
+dl_fim = app.index('\nstatic void spotAbrir(', dl_ini)
+deeplink_fn = app[dl_ini:dl_fim]
+
 ap_ini = app.index('static void alvoPlayer(char *alvo, size_t tam) {')
 ap_fim = app.index('\n// --- StreamFit', ap_ini)
 alvo_player_fn = app[ap_ini:ap_fim]
@@ -105,6 +113,10 @@ renovar_fn = app[rl_ini:rl_fim]
 d_ini = app.index('    if (tela == TELA_HOME && home_pediu_abrir()) {')
 d_fim = app.index('    } else if (tela == TELA_BUSCA && busca_pediu_pessoa(&pedPessoa)) {', d_ini)
 dispatch_blk = app[d_ini:d_fim] + '    }\n'
+
+dd_ini = app.index('  { DeepLink dl;')
+dd_fim = app.index('\n  // Da pagina do titulo', dd_ini)
+deeplink_dispatch_blk = app[dd_ini:dd_fim] + '\n'
 
 e_ini = app.index('  if (cwEspera) {\n    if (!detail_aberto()')
 e_fim = app.index('\n  legendasDaFonte();', e_ini)
@@ -126,9 +138,12 @@ Path(sys.argv[2]).write_text(f'#include "{Path("src/home.c").resolve()}"\n')
 src = Path('tests/farol_dica_app.c').read_text()
 src = src.replace('/* APP_FAROL_PEND */', farol_pend_blk)
 src = src.replace('/* APP_ABRIR_TITULO */', abrir_fn)
+src = src.replace('/* APP_ABRIR_POR_INDICE */', abrir_idx_fn)
+src = src.replace('/* APP_DEEPLINK_ABRIR */', deeplink_fn)
 src = src.replace('/* APP_ALVO_PLAYER */', alvo_player_fn)
 src = src.replace('/* APP_RENOVAR_LISTA */', renovar_fn)
 src = src.replace('/* APP_HOME_DISPATCH */', dispatch_blk)
+src = src.replace('/* APP_DEEPLINK_DISPATCH */', deeplink_dispatch_blk)
 src = src.replace('/* APP_CW_ESPERA */', espera_blk)
 src = src.replace('/* APP_DETAIL_PREFETCH */', prefetch_blk)
 src = src.replace('/* APP_DETAIL_CONSUMO */', consumo_blk)
@@ -138,7 +153,7 @@ PY
 
   "$CC_BIN" ${flags[@]+"${flags[@]}"} -DNV_MAPA_PURO -DCURADORIA_TESTE \
     -ffunction-sections -fdata-sections "${gc_flags[@]}" \
-    "$work/farol_dica_app_gen.c" "${home_srcs[@]}" \
+    "$work/farol_dica_app_gen.c" src/deeplink.c "${home_srcs[@]}" \
     -I"$work" -Isrc "${sdl_inc[@]}" -O1 -g -pthread -lm \
     -Wall -Wno-deprecated-declarations -Wno-unused-function \
     -o "$bin3"

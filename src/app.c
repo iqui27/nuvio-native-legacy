@@ -367,9 +367,10 @@ static int cwEspera;
 static CatItem cwEsperaItem;
 static Uint32 cwEsperaDesde;
 #define CW_ESPERA_MS 15000u
-// Pending P2 Farol Tocar execution bound to Detail identity/cycle and
-// session/profile generation until the playback request is consumed.
+// Pending P2 Farol Tocar execution bound to Detail identity/cycle,
+// explicit Play enqueue ownership, and session/profile generation until consumed.
 static int farolPendExec;
+static int farolPendPediu;
 static unsigned farolPendCiclo;
 static uint64_t farolPendSessao;
 static int farolPendPerfil;
@@ -378,6 +379,7 @@ static int farolPendT, farolPendE;
 
 static void farolPendLimpar(void) {
   farolPendExec = 0;
+  farolPendPediu = 0;
   farolPendCiclo = 0;
   farolPendSessao = 0;
   farolPendPerfil = 0;
@@ -1136,6 +1138,7 @@ static Uint32 trocaPerfilDesde;
 // `descartarRetido` = 0 so no pos-play (nunca descartou a sessao retida).
 static void abrirTitulo(const HomeItem *it, int exigeArte, int descartarRetido) {
   if (!it || (exigeArte && !it->arte)) return;
+  if (farolPendExec) farolPendCancelar();
   // Uma pagina nova pode abrir trailer no mesmo plano. Retomar na ilha ja
   // foi tratado antes deste caminho, sem passar pela pagina nem por fontes.
   if (descartarRetido) player_descartar_retido();
@@ -4629,6 +4632,10 @@ static void deeplinkAbrir(const DeepLink *d) {
   if (d->tvProfile && (d->tvProfile != perfis_ativo() || !ajustes_tv_home() || perfil_infantil_ativo())) return;
   if (d->tvProfile) tvHomePending = *d;
 #endif
+  farolPendCancelar();
+  cwTocarT = cwTocarE = 0; cwEspera = 0;
+  cwRewatch = -1; cwEsperaDesde = 0;
+  memset(&cwEsperaItem, 0, sizeof cwEsperaItem);
   // Invalidate outgoing source work before a new title can request Play.
   preparoInvalidar();
   novaGeracaoFonte();
@@ -5583,7 +5590,7 @@ static void marcarAssistidoSeSolicitado(void) {
 
 static void trocaDeTituloSeSolicitada(void) {
   int alvo = detail_pediu_abrir();
-  if (alvo >= 0) { detail_volta_notar(alvo); abrirPorIndice(alvo); return; }
+  if (alvo >= 0) { farolPendCancelar(); detail_volta_notar(alvo); abrirPorIndice(alvo); return; }
   // Titulo que veio de FORA do catalogo: a descoberta buscou o meta num fio e
   // avisa aqui quando ele entrou. Abrir no fio da rede seria mexer na tela de
   // outro fio; este e o unico lugar que abre titulo.
@@ -5595,6 +5602,7 @@ static void trocaDeTituloSeSolicitada(void) {
     // Pedido de um MENU (segurar OK numa lista): o titulo chegou, abre o menu.
     if (novo >= 0 && ctxlista_tomar(novo)) novo = -1;
     if (novo >= 0) {
+      farolPendCancelar();
       if (player_aberto() || player_retido()) player_encerrar();
       detail_volta_notar(novo);
       abrirPorIndice(novo);
@@ -5821,7 +5829,7 @@ static void juntosAbrirEFonte(Uint32 agora) {
   int t, e;
   if (!juntos_no_player()) juntosFontePendente = -1;
   if (juntosui_pediu_fechar_player()) player_sair();
-  if (juntosui_pediu_reproduzir()) detail_pedir_reproduzir();
+  if (juntosui_pediu_reproduzir()) { farolPendCancelar(); detail_pedir_reproduzir(); }
   if (juntosui_pediu_escolher_filme()) {
     detail_fechar_seco();
     trocarTela(TELA_BUSCA);
@@ -6524,19 +6532,24 @@ void app_atualizar(float dt, Uint32 agora) {
       if (qual == ILHA_ESTREIA) avisos_marcar_visto(ic.avisoId);
       if (o == ILHA_PEDIU_TOCAR && qual == ILHA_VIVO &&
           player_retomar_retido(ic.imdb, ic.serie ? ic.t : 0, ic.serie ? ic.e : 0)) {
+        farolPendCancelar();
         if (detail_aberto()) detail_fechar_seco();
         if (menu_aberto()) menu_fechar();
         ilha_modal_fechar(1);
       } else if (idx >= 0) {
+        farolPendCancelar();
         if (o == ILHA_PEDIU_TOCAR && qual == ILHA_VIVO && ajustes_retomada_morna()) cacheboost_backend_quadro(2);
         // O mesmo caminho do OK no card de "Continuar assistindo" com "OK no
         // card" = Retomar: a pagina abre e a reproducao e pedida junto, no
         // episodio que o cartao mostrava (cwTocarT/E, issue #93).
-        cwTocarT = cwTocarE = 0; cwEspera = 0;
+        cwTocarT = cwTocarE = 0; cwEspera = 0; cwRewatch = -1;
         if (o == ILHA_PEDIU_TOCAR && ic.serie && ic.t >= 0 && ic.e > 0) { cwTocarT = ic.t; cwTocarE = ic.e; }
         abrirPorIndice(idx);
         if (o == ILHA_PEDIU_TOCAR) detail_pedir_reproduzir();
-      } else desc_pedir_titulo(ic.imdb);
+      } else {
+        farolPendCancelar();
+        desc_pedir_titulo(ic.imdb);
+      }
     } else if (o == ILHA_PEDIU_DISPENSAR) {
       if (qual == ILHA_VIVO) player_descartar_retido();
       ilhacart_dispensar(qual);
@@ -6564,6 +6577,8 @@ void app_atualizar(float dt, Uint32 agora) {
       const char *tc = agendaui_pediu_tocar(&tt, &te);
       if (tc && tc[0]) {
         int k = cat_indice_por_imdb(tc);
+        farolPendCancelar();
+        cwTocarT = cwTocarE = 0; cwEspera = 0; cwRewatch = -1;
         if (k >= 0) {
           abrirPorIndice(k);
           if (detail_aberto()) { cwTocarT = tt; cwTocarE = te; detail_pedir_reproduzir(); }
@@ -6928,6 +6943,7 @@ void app_atualizar(float dt, Uint32 agora) {
               tocar = 0;
             } else if (cwEspera || tocar) {
               farolPendExec = 1;
+              farolPendPediu = 0;
               farolPendCiclo = ciclo;
               farolPendSessao = perfis_sessao_geracao();
               farolPendPerfil = perfis_ativo();
@@ -6937,7 +6953,10 @@ void app_atualizar(float dt, Uint32 agora) {
             }
           }
           if (cwEspera) desc_episodios(detail_indice(), 0);
-          if (tocar) detail_pedir_reproduzir();
+          if (tocar) {
+            detail_pedir_reproduzir();
+            if (farolPendExec) farolPendPediu = 1;
+          }
         }
       } else {
         (void)home_farol_alvo(NULL, NULL);
@@ -7008,8 +7027,8 @@ void app_atualizar(float dt, Uint32 agora) {
     if (!detail_aberto() || player_aberto() ||
         SDL_GetTicks() - cwEsperaDesde > CW_ESPERA_MS) {
       printf("[cw] %s: lista nao chegou a tempo; fica so a pagina\n", cwEsperaItem.imdb);
-      cwEspera = 0; cwTocarT = cwTocarE = 0;
-      farolPendLimpar();
+      if (farolPendExec) farolPendCancelar();
+      else { cwEspera = 0; cwTocarT = cwTocarE = 0; }
     } else if (farolPendExec && !farolPendValido()) {
       farolPendCancelar();
     } else {
@@ -7023,13 +7042,16 @@ void app_atualizar(float dt, Uint32 agora) {
         if (retomar) {
           cwTocarT = cwEsperaItem.temporada; cwTocarE = cwEsperaItem.episodio;
           detail_pedir_reproduzir();
+          if (farolPendExec) farolPendPediu = 1;
         } else if (prox_seguinte(&cwEsperaItem, cat_episodio(k, 0), cat_n_episodios(k),
                           ajustes_cw_concluido(),
                           (long long)time(NULL) * 1000LL, &prox)) {
           cwTocarT = prox.temporada; cwTocarE = prox.episodio;
           detail_pedir_reproduzir();
-        } else
+        } else {
           printf("[cw] %s terminado e sem proximo: abrindo so a pagina\n", cwEsperaItem.imdb);
+          if (farolPendExec) farolPendCancelar();
+        }
       }
     }
   }
@@ -7038,7 +7060,7 @@ void app_atualizar(float dt, Uint32 agora) {
   { char rwId[64]; int rt=0,re=0;
     if (rewatchui_tocar(rwId,sizeof rwId,&rt,&re)) {
       int k=cat_indice_titulo(rwId,detail_aberto() ? detail_indice() : -1);
-      if (k>=0) { abrirPorIndice(k); cwTocarT=rt; cwTocarE=re; cwRewatch=1; detail_pedir_reproduzir(); }
+      if (k>=0) { farolPendCancelar(); abrirPorIndice(k); cwTocarT=rt; cwTocarE=re; cwRewatch=1; detail_pedir_reproduzir(); }
     }
   }
 
@@ -7115,12 +7137,17 @@ void app_atualizar(float dt, Uint32 agora) {
     int doInicio = detail_pediu_do_inicio();
     int querTocar = detail_pediu_reproduzir() || doInicio;
     if (farolPendExec) {
+      unsigned cicloAtual = detail_ciclo();
       if (doInicio) {
         cwEspera = 0; cwTocarT = cwTocarE = 0; cwRewatch = -1;
         cwEsperaDesde = 0; memset(&cwEsperaItem, 0, sizeof cwEsperaItem);
         farolPendLimpar();
+      } else if (!cicloAtual || cicloAtual != farolPendCiclo) {
+        farolPendCancelar();
       } else if (querTocar) {
-        if (!farolPendValido()) {
+        if (!farolPendPediu) {
+          farolPendCancelar();
+        } else if (!farolPendValido()) {
           querTocar = 0;
           cwTocarT = cwTocarE = 0;
           cwRewatch = -1;
@@ -8260,6 +8287,7 @@ void app_atualizar(float dt, Uint32 agora) {
 #ifdef NV_DESKTOP_UI
   { int action,index=ctx_desktop_pedido(&action);
     if(index>=0) {
+      farolPendCancelar();
       abrirPorIndice(index);
       if(action==1) detail_pedir_reproduzir();
       if(action==2) { homeAcaoDet=DETAIL_BARRA_TRAILER;homeAcaoDetEm=agora; }
