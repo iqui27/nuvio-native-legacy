@@ -30,6 +30,7 @@ import { resolverCanonica, canonizarEntrada, identidadesDe, rotaIdentidades, idS
          perfilExiste, RECURSO } from "./identidade.js";
 import { rotaFarolRegistro, rotaFarolConhecido, rotaFarolPagina, limparFarol, FAROL_CORPO_MAX } from "./farol.js";
 import { rotaFarolBusca, FAROL_BUSCA_CORPO_MAX } from "./farol-busca.js";
+import { rotaFarolCompor, rotaFarolEscolha, FAROL_COMPOR_CORPO_MAX, FAROL_ESCOLHA_CORPO_MAX } from "./farolgosto.js";
 
 const DIA = 86400;
 const RETENCAO = 90 * DIA;
@@ -1109,11 +1110,15 @@ export default {
     // e o cliente em C nao vai montar um "{}" so para agradar o parser.
     let corpo = {};
     if (req.method === "POST") {
-      if (rota === "/v1/farol/registro" || rota === "/v1/farol/busca") {
+      if (rota === "/v1/farol/registro" || rota === "/v1/farol/busca" ||
+          rota === "/v1/farol/compor" || rota === "/v1/farol/escolha") {
         // Farol: o teto de bytes CRUS vale ANTES de materializar o corpo —
         // Content-Length honesto recusa na hora e a leitura limitada cobre
-        // chunked e header mentiroso (secao 2.7).
-        const max = rota === "/v1/farol/busca" ? FAROL_BUSCA_CORPO_MAX : FAROL_CORPO_MAX;
+        // chunked e header mentiroso (secao 2.7 / 5.4).
+        const max = rota === "/v1/farol/busca" ? FAROL_BUSCA_CORPO_MAX
+          : rota === "/v1/farol/compor" ? FAROL_COMPOR_CORPO_MAX
+          : rota === "/v1/farol/escolha" ? FAROL_ESCOLHA_CORPO_MAX
+          : FAROL_CORPO_MAX;
         const cru = await corpoLimitado(req, max);
         if (cru == null) return erro("corpo grande", 413);
         if (cru) {
@@ -1159,6 +1164,12 @@ export default {
                                   : erro("metodo nao suportado", 405);
     if (rota === "/v1/farol/busca")
       return req.method === "POST" ? rotaFarolBusca(env, quemBruto, corpo, h, limitar)
+                                   : erro("metodo nao suportado", 405);
+    if (rota === "/v1/farol/compor")
+      return req.method === "POST" ? rotaFarolCompor(env, quemBruto, corpo, h, limitar)
+                                   : erro("metodo nao suportado", 405);
+    if (rota === "/v1/farol/escolha")
+      return req.method === "POST" ? rotaFarolEscolha(env, quemBruto, corpo, h, limitar)
                                    : erro("metodo nao suportado", 405);
 
     const quem = { ...(await registrar(env, quemBruto)), bruto: quemBruto.bruto || quemBruto.id };
