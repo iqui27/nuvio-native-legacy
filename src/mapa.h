@@ -322,6 +322,7 @@ void mapa_publicar_teste(const MapaSemente *s, int n, const MapaCreditos *c, int
 typedef struct {
   MapaObra obra;
   unsigned gen[MAPA_GEN_MAX];     int nGen;
+  unsigned genMasc;             // os mesmos generos por identidade (mascara MAPA_G_*)
   unsigned gente[MAPA_GENTE_MAX]; int nGente;
 } MapaVizCand;
 typedef struct { MapaObra obra; char quem[32]; } MapaVizAmigo;
@@ -339,6 +340,8 @@ typedef struct {
   const unsigned *vistos; int nVistos;   // hashes de titulo ja comecados
   unsigned pessoaPref;            // hash do nome preferido na reserva local (0 = nenhum)
   unsigned generoPref;            // hash do genero preferido na reserva local (0 = nenhum)
+  unsigned generoPrefMasc;        // o mesmo genero por identidade (mascara MAPA_G_*)
+  const char *generoPrefNome;     // o rotulo do selo, no idioma do catalogo
 } MapaVizEntrada;
 // Monta os quatro grupos. Preserva v->revisao.
 void mapa_vizinhos_montar(const MapaVizEntrada *e, MapaVizinhos *v);
