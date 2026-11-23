@@ -1289,6 +1289,13 @@ int cat_ler_cache(const char *dirArte) {
     nLidas = c.nFileiras;
   }
   fclose(f);
+  // Fileiras do Farol so aparecem quando o compositor as reentrega na volta;
+  // a copia do disco nunca e desenhada antes disso.
+  { int r, w = 0;
+    for (r = 0; r < nLidas; r++)
+      if (strncmp(lidas[r].chave, CAT_PREFIXO_FAROL, sizeof CAT_PREFIXO_FAROL - 1))
+        lidas[w++] = lidas[r];
+    nLidas = w; }
   // Reaproveita o caminho de troca de bloco, que ja e o seguro para o fio de
   // desenho — e o que corta as janelas de fileira pelo tamanho real.
   cat_definir_tudo(novo, c.nItens, lidas, nLidas);
@@ -1302,6 +1309,23 @@ int cat_ler_cache(const char *dirArte) {
 }
 
 int cat_do_cache(void) { return veioDoCache; }
+
+int cat_remover_fileiras_prefixo(const char *dirArte, const char *prefixo) {
+  static CatFileira manter[CAT_FIL_MAX];
+  size_t tam;
+  int r, m = 0, tiradas = 0;
+  if (!prefixo || !(tam = strlen(prefixo))) return 0;
+  catTravar();
+  for (r = 0; r < nFils && r < CAT_FIL_MAX; r++) {
+    if (!strncmp(fils[r].chave, prefixo, tam)) tiradas++;
+    else manter[m++] = fils[r];
+  }
+  pthread_mutex_unlock(&pubTrava);
+  if (!tiradas) return 0;
+  cat_republicar_fileiras(manter, m);
+  cat_gravar_cache(dirArte);
+  return tiradas;
+}
 
 void cat_home_fresca(long long quando) {
   __atomic_store_n(&homeFrescaEm, quando, __ATOMIC_RELEASE);

@@ -3108,7 +3108,7 @@ static int fileiraPodeSerPreservada(const CatFileira *f) {
     return cf_fixada(f->chave + sizeof CF_PREFIXO - 1);
   // Fileiras do Farol ("farol_*") sao recalculadas pelo compositor a cada
   // volta; uma falha dele nao reanexa a fileira anterior.
-  if (!strncmp(f->chave, "farol_", 6)) return 0;
+  if (!strncmp(f->chave, CAT_PREFIXO_FAROL, sizeof CAT_PREFIXO_FAROL - 1)) return 0;
   return !servidores_chave_fileira(f->chave) && homeestado_contexto_valido() &&
          homeestado_tem_fileira(f->chave);
 }
@@ -3122,9 +3122,37 @@ static int rankSnapshot(const char *chave) {
   return r < 0 ? CAT_FIL_MAX + DECL_MAX : r;
 }
 
+// Posicao de fabrica de uma fileira do Farol sem lugar salvo pela pessoa em
+// Fileiras da Home: farol_gosto1 logo depois de "Continuar assistindo" (ou no
+// topo, sem ele), farol_gosto2 depois da 5a fileira; outra chave farol_ vai
+// para o fim. Com lugar salvo, vale o lugar salvo.
+static void posicionarFarolPadrao(CatFileira *fil, int n) {
+  static const char *const chaves[] = { "farol_gosto1", "farol_gosto2" };
+  int c;
+  for (c = 0; c < 2; c++) {
+    int de = -1, para, i;
+    CatFileira f;
+    for (i = 0; i < n; i++) if (!strcmp(fil[i].chave, chaves[c])) { de = i; break; }
+    if (de < 0 || (homeestado_contexto_valido() && homeestado_ordem_fileira(chaves[c]) >= 0))
+      continue;
+    f = fil[de];
+    memmove(fil + de, fil + de + 1, sizeof *fil * (size_t)(n - de - 1));
+    if (c == 0) {
+      para = 0;
+      for (i = 0; i < n - 1; i++)
+        if (!strcmp(fil[i].chave, "continue_watching")) { para = i + 1; break; }
+    } else {
+      para = n - 1 < 5 ? n - 1 : 5;
+    }
+    memmove(fil + para + 1, fil + para, sizeof *fil * (size_t)(n - 1 - para));
+    fil[para] = f;
+  }
+}
+
 static void ordenarPorSnapshot(CatFileira *fil, int n) {
   int i;
-  if (!fil || n < 2 || !homeestado_contexto_valido()) return;
+  if (!fil || n < 2) return;
+  if (!homeestado_contexto_valido()) { posicionarFarolPadrao(fil, n); return; }
   for (i = 1; i < n; i++) {
     CatFileira atual = fil[i];
     int rank = rankSnapshot(atual.chave), j = i;
@@ -3136,6 +3164,7 @@ static void ordenarPorSnapshot(CatFileira *fil, int n) {
     }
     fil[j] = atual;
   }
+  posicionarFarolPadrao(fil, n);
 }
 
 // Manifesto ausente/timeout nao e uma ordem para apagar a estrutura anterior.

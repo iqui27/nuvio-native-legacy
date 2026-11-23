@@ -409,6 +409,47 @@ int main(void) {
     assert(!cat_home_fresca_em()); }
   puts("ok  sem prova de idade, nada servido");
 
+  printf("\n==> fileiras do Farol\n");
+  { CatItem it[4];
+    CatFileira fs[3], ord[9];
+    static const char *nomes[9] = { "continue_watching", AID "_movie_cat_a", AID "_movie_cat_b",
+      AID "_movie_cat_c", AID "_movie_cat_d", AID "_movie_cat_e", AID "_movie_cat_f",
+      "farol_gosto2", "farol_gosto1" };
+    int k;
+    memset(it, 0, sizeof it); memset(fs, 0, sizeof fs); memset(ord, 0, sizeof ord);
+    for (k = 0; k < 4; k++) { snprintf(it[k].imdb, sizeof it[k].imdb, "tt900%d", k); snprintf(it[k].tipo, sizeof it[k].tipo, "movie"); }
+    snprintf(fs[0].chave, sizeof fs[0].chave, "%s", AID "_movie_cat_a"); fs[0].ini = 0; fs[0].n = 2;
+    snprintf(fs[1].chave, sizeof fs[1].chave, "farol_gosto1"); fs[1].ini = 2; fs[1].n = 1;
+    snprintf(fs[2].chave, sizeof fs[2].chave, "%s", AID "_movie_cat_b"); fs[2].ini = 3; fs[2].n = 1;
+    cat_definir_tudo(it, 4, fs, 3);
+    assert(cat_n_fileiras() == 3);
+    assert(cat_gravar_cache(dirDados));
+    assert(cat_ler_cache(dirDados));
+    assert(cat_n_fileiras() == 2);
+    for (k = 0; k < cat_n_fileiras(); k++) assert(strncmp(cat_fileira(k)->chave, "farol_", 6));
+    puts("ok  farol_ do disco nao e publicada no arranque");
+
+    cat_definir_tudo(it, 4, fs, 3);
+    assert(cat_remover_fileiras_prefixo(dirDados, CAT_PREFIXO_FAROL) == 1);
+    assert(cat_n_fileiras() == 2);
+    assert(!strcmp(cat_fileira(1)->chave, AID "_movie_cat_b"));
+    assert(cat_remover_fileiras_prefixo(dirDados, CAT_PREFIXO_FAROL) == 0);
+    assert(cat_ler_cache(dirDados) && cat_n_fileiras() == 2);
+    puts("ok  cat_remover_fileiras_prefixo tira da tela e do disco, o resto fica");
+
+    for (k = 0; k < 7; k++) snprintf(ord[k].chave, sizeof ord[k].chave, "%s", nomes[k]);
+    homeestado_salvar(ord, 7);
+    assert(homeestado_contexto_valido());
+    for (k = 0; k < 9; k++) snprintf(ord[k].chave, sizeof ord[k].chave, "%s", nomes[(k + 7) % 9]);
+    ordenarPorSnapshot(ord, 9);
+    for (k = 0; k < 9; k++) printf(" %s", ord[k].chave);
+    printf("\n");
+    assert(!strcmp(ord[0].chave, "continue_watching"));
+    assert(!strcmp(ord[1].chave, "farol_gosto1"));
+    assert(!strcmp(ord[5].chave, "farol_gosto2"));
+    assert(!strcmp(ord[4].chave, AID "_movie_cat_c"));
+    puts("ok  posicao de fabrica: gosto1 depois do Continuar, gosto2 depois da 5a"); }
+
   puts("home_precomputada: tudo ok");
   return 0;
 }
