@@ -7007,11 +7007,11 @@ void app_atualizar(float dt, Uint32 agora) {
   atualizarFolha(dt, agora);
   // FOLHA FECHADA SEM ESCOLHER, com o player esperando por ela. Voltar na
   // folha e "desisti", nao "tente sozinho": abrir a fonte que a pessoa acabou
-  // de recusar seria contradizer o gesto. O player mostra o erro de fonte, que
-  // ja tem saida pela mesma tecla.
+  // de recusar seria contradizer o gesto. O player fecha e a pagina do titulo
+  // volta com o Assistir (antes: o cartao de erro, e um segundo Voltar).
   if (folhaParaTocar && !stream_folha_aberta()) {
     folhaParaTocar = 0;
-    if (player_aberto()) player_erro_fonte();
+    if (player_aberto()) player_desistir_fonte();
   }
 
   // SAIR DO PLAYER COLOCA O TITULO NA FRENTE DE "CONTINUAR ASSISTINDO".

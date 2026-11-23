@@ -1080,6 +1080,18 @@ void player_erro_fonte(void) {
   erroTitulo[0] = erroDica[0] = 0;   // erro sem motivo nao herda o do anterior
   erroCausaDoPlayer();
 }
+// THE SOURCE SHEET OPENED BY PLAY, CLOSED WITHOUT A PICK: the player closes
+// like Back while loading, and the title page comes back with its Play
+// button. It used to show the source error card, so a second Back was needed
+// for nothing that had failed. Android keeps the card (#409).
+void player_desistir_fonte(void) {
+#ifdef NV_ANDROID
+  player_erro_fonte();
+#else
+  esperandoFonte = 0;
+  saindo = 1; pediuSair = 1;
+#endif
+}
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
   player_erro_fonte();
   snprintf(erroTitulo, sizeof erroTitulo, "%s", titulo ? titulo : "");
