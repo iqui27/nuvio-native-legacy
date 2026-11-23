@@ -2,22 +2,31 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T19:41:22+00:00",
+    "updatedAt": "2026-11-23T19:46:08+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
       "branch": "integracao/2.1",
-      "sha": "ec4e6a0b5",
-      "pr": 839,
-      "fullSha": "ec4e6a0b52bbd2f38c56f31778a91744c786ea4a",
-      "checkedAt": "2026-11-23T19:29:42+00:00"
+      "sha": "96a939a5a",
+      "pr": 840,
+      "fullSha": "96a939a5a68b256d91deed83e33d9bbabe2b3c66",
+      "checkedAt": "2026-11-23T19:46:08+00:00"
     },
     "coverageNote": "56 itens Farol informados: o #42 não consta no escopo. Inventário externo detalhado: 61 linhas da VPS, com #731 unificada; D1 e 762+720 têm cartões por issue e revisão conjunta. D1: ancestralidade não verificada. Testes isolados são identificados como tal.",
     "unknownDoneFixes": 0,
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T19:39:00+00:00"
+    "lastVpsReportedAt": "2026-11-23T19:43:00+00:00",
+    "integrationHistory": [
+      {
+        "branch": "integracao/2.1",
+        "sha": "ec4e6a0b5",
+        "pr": 839,
+        "fullSha": "ec4e6a0b52bbd2f38c56f31778a91744c786ea4a",
+        "checkedAt": "2026-11-23T19:29:42+00:00"
+      }
+    ]
   },
   "items": [
     {
@@ -925,14 +934,15 @@
         "farol-44"
       ],
       "allDependencies": false,
-      "status": "LOTE",
+      "status": "CORRECAO",
       "wave": "A",
       "sha": "1f973642c",
       "batch": "21e",
-      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (4 bloqueios da r1 fechados; merge rc 0 em 7 alvos, rc 1 trivial vs PR #840 em src/fileiras.c); lote 21e; TV não verificada Ordem padrão acordada: continue_watching → porque_assistiu → farol_gosto1; a ordem salva pelo usuário prevalece. Dedupe com home_assistiu_itens por id fica para depois do merge da PR #840, sem bloquear a aprovação atual.",
-      "source": "Relato VPS · composição explícita do lote 21e",
+      "note": "Após o merge da PR #840, a VPS informa que Farol 45 fará dedupe farol_gosto × porque_assistiu e resolverá src/fileiras.c. Ajustes pendentes; execução e novo commit ainda não confirmados. Aprovação r2 anterior preservada no histórico. Continua destinado ao lote 21e, que será refeito sobre a integração nova. TV não verificada.",
+      "source": "Relato VPS das 19h43 UTC · ajustes posteriores ao merge #840",
       "verified": false,
       "previousNotes": [
+        "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (4 bloqueios da r1 fechados; merge rc 0 em 7 alvos, rc 1 trivial vs PR #840 em src/fileiras.c); lote 21e; TV não verificada Ordem padrão acordada: continue_watching → porque_assistiu → farol_gosto1; a ordem salva pelo usuário prevalece. Dedupe com home_assistiu_itens por id fica para depois do merge da PR #840, sem bloquear a aprovação atual.",
         "VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (4 bloqueios da r1 fechados; merge rc 0 em 7 alvos, rc 1 trivial vs PR #840 em src/fileiras.c); lote 21e; TV não verificada Ordem padrão acordada: continue_watching → porque_assistiu → farol_gosto1; a ordem salva pelo usuário prevalece. Dedupe com home_assistiu_itens por id fica para depois do merge da PR #840, sem bloquear a aprovação atual.",
         "FAROL45-r2 no Gemini 4 Argon (…9340395b9fbd); oracle-vps",
         "Fable FAROL45-r2 lançada (…75eda7d); oracle-vps; TV não verificada",
@@ -947,8 +957,8 @@
         "aguarda combinar com o Poke o ponto das fileiras na Home pré-calculada",
         "TV física pendente."
       ],
-      "updatedAt": "2026-11-23T19:35:13+00:00",
-      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "updatedAt": "2026-11-23T19:46:08+00:00",
+      "reportedAt": "2026-11-23T19:43:00+00:00",
       "branch": "agente/21z-farol-45",
       "integrationVerified": false,
       "batchInclusionVerified": true
@@ -3423,33 +3433,55 @@
       "number": 840,
       "title": "Adiciona a fileira \"Porque você assistiu…\" na Home",
       "group": "prs",
-      "status": "CORRECAO",
+      "status": "FEITO",
       "dependencies": [],
       "wave": null,
       "owner": "Poke",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/840",
       "branch": "devin/1795451676-porque-voce-assistiu",
-      "sha": "23db4e1f000e3f3e0d4196dce590e76854fc5c02",
-      "note": "PR aberta. a52ebc2cb recebeu os pontos a–f da VPS; ponta atual 23db4e1f0 já inclui a correção do casamento TMDB×catálogo e da posição inicial (GitHub). CI verde, sem equivaler a teste funcional: reteste logado em andamento conforme o relato do Poke, TMDB ao vivo e TV física ainda não confirmados. Ordem padrão: continue_watching → porque_assistiu → farol_gosto1; ordem salva pelo usuário prevalece. hist-semlogin pertence à VPS no lote 21e, não a esta PR.",
-      "source": "Relato Poke de 23/11 16h22 Brasília + GitHub 2026-11-23T19:27:55+00:00",
+      "sha": "aab5f09d4f3a2de62af3ae698edfcb37806ae305",
+      "note": "PR #840 mergeada em integracao/2.1 em 2026-11-23T19:43:20Z; merge 96a939a5a, ponta aab5f09d4, ancestralidade conferida no git e CI verde. Reteste logado aprovado conforme confirmação do Poke; validação parcial: segundo perfil com PIN e TV física não testados. TMDB ao vivo sem confirmação específica. HOME_ASSISTIU_CHAVE exportada. Ordem padrão preservada: continue_watching → porque_assistiu → farol_gosto1; ordem salva prevalece. hist-semlogin continua com a VPS no 21e; dedupe do Farol 45 e resolução de src/fileiras.c ainda pendentes.",
+      "source": "GitHub PR #840 (merge e ancestralidade conferidos) + confirmação de reteste logado pelo Poke",
       "scope": "release",
-      "githubState": "open",
-      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
-      "githubHeadSha": "23db4e1f000e3f3e0d4196dce590e76854fc5c02",
+      "githubState": "merged",
+      "githubCheckedAt": "2026-11-23T19:46:08+00:00",
+      "githubHeadSha": "aab5f09d4f3a2de62af3ae698edfcb37806ae305",
       "githubBaseBranch": "integracao/2.1",
-      "githubUpdatedAt": "2026-11-23T19:21:17Z",
+      "githubUpdatedAt": "2026-11-23T19:43:20Z",
       "githubChecks": "success",
-      "integrationVerified": false,
-      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "integrationVerified": true,
+      "updatedAt": "2026-11-23T19:46:08+00:00",
       "previousNotes": [
+        "Poke mergeou (HOME_ASSISTIU_CHAVE exportada); farol-45 vai fazer dedupe farol_gosto × porque_assistiu e resolver src/fileiras.c; lote 21e será refeito sobre a integração nova",
+        "PR aberta. a52ebc2cb recebeu os pontos a–f da VPS; ponta atual 23db4e1f0 já inclui a correção do casamento TMDB×catálogo e da posição inicial (GitHub). CI verde, sem equivaler a teste funcional: reteste logado em andamento conforme o relato do Poke, TMDB ao vivo e TV física ainda não confirmados. Ordem padrão: continue_watching → porque_assistiu → farol_gosto1; ordem salva pelo usuário prevalece. hist-semlogin pertence à VPS no lote 21e, não a esta PR.",
         "Item acrescentado ao inventário a partir da PR do GitHub."
       ],
       "homeOrder": [
         "continue_watching",
         "porque_assistiu",
         "farol_gosto1"
-      ]
+      ],
+      "reportedAt": "2026-11-23T19:43:00+00:00",
+      "githubMergedAt": "2026-11-23T19:43:20Z",
+      "integrationMergeSha": "96a939a5a68b256d91deed83e33d9bbabe2b3c66",
+      "verificationSummary": "parcial — reteste logado aprovado; segundo perfil com PIN e TV física não testados",
+      "functionalVerification": {
+        "status": "partial",
+        "loggedIn": {
+          "status": "approved",
+          "source": "Confirmação do Poke, 23/11 às 16h43 (Brasília)"
+        },
+        "secondProfilePin": {
+          "status": "not_tested"
+        },
+        "physicalTv": {
+          "status": "not_tested"
+        },
+        "tmdbLive": {
+          "status": "not_confirmed"
+        }
+      }
     },
     {
       "id": "catrev",
@@ -3639,7 +3671,17 @@
       "items": [
         "pr-840"
       ],
-      "note": "PR #840 aberta; reteste logado em andamento. TMDB ao vivo e validação em TV física não confirmados."
+      "note": "PR #840 integrada e reteste logado aprovado, segundo o Poke. TV física não testada; a aprovação logada não fecha este gate. TMDB ao vivo sem confirmação específica."
+    },
+    {
+      "id": "perfil-pin-home-assistiu",
+      "title": "Segundo perfil com PIN",
+      "kind": "functional",
+      "status": "pendente",
+      "items": [
+        "pr-840"
+      ],
+      "note": "Segundo perfil protegido por PIN não testado; não está incluído na aprovação do reteste logado da PR #840."
     }
   ],
   "batches": [
@@ -3683,19 +3725,20 @@
     },
     {
       "id": "21e",
-      "title": "Lote 21e · baterias pendentes",
-      "status": "LOTE",
+      "title": "Lote 21e · recomposição pendente",
+      "status": "CORRECAO",
       "sha": "0dea681ce",
-      "note": "VPS montado sobre lote/21d@e16157090: farol-4, 8, 9, 12, 13, 24, 29, 45, catrev, hist-semlogin; conflitos triviais resolvidos (video_tpk.c, sanitiza.sh, rede.c, servidor index.js); baterias base×ponta a rodar; TV não verificada",
+      "note": "A VPS informa que o lote 21e será refeito sobre integracao/2.1 após o merge da PR #840 (96a939a5a). Composição anterior de dez itens e ponta 0dea681ce preservadas apenas como referência; nova ponta, nova composição e resultados de baterias ainda não informados. Farol 45 deve deduplicar farol_gosto × porque_assistiu e resolver src/fileiras.c. PR e TV física não confirmadas.",
       "pr": null,
       "previousNotes": [
+        "VPS montado sobre lote/21d@e16157090: farol-4, 8, 9, 12, 13, 24, 29, 45, catrev, hist-semlogin; conflitos triviais resolvidos (video_tpk.c, sanitiza.sh, rede.c, servidor index.js); baterias base×ponta a rodar; TV não verificada",
         "Reservado para aprovados da VPS, incluindo hist-semlogin e Farol 45 (aprovação com ressalvas), CATREV e itens já aprovados. Montagem e PR ainda não confirmadas; não tratar como lote integrado.",
         "Itens aprovados reservados; montagem ainda não confirmada."
       ],
       "branch": "lote/21e",
-      "updatedAt": "2026-11-23T19:35:13+00:00",
-      "reportedAt": "2026-11-23T19:33:00+00:00",
-      "source": "Relato VPS",
+      "updatedAt": "2026-11-23T19:46:08+00:00",
+      "reportedAt": "2026-11-23T19:43:00+00:00",
+      "source": "Relato VPS das 19h43 UTC",
       "verified": false,
       "integrationVerified": false,
       "baseBranch": "lote/21d",
@@ -3711,7 +3754,9 @@
         "farol-45",
         "catrev",
         "hist-semlogin"
-      ]
+      ],
+      "pendingRebuild": true,
+      "rebuildOnIntegrationSha": "96a939a5a68b256d91deed83e33d9bbabe2b3c66"
     }
   ],
   "outside": [
@@ -3729,6 +3774,37 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T19:46:08+00:00",
+      "appliedAt": "2026-11-23T19:46:08+00:00",
+      "item": "pr-840",
+      "from": "FEITO",
+      "to": "FEITO",
+      "report": "Poke: #840 (Porque você assistiu…) foi mergeada em integracao/2.1 após reteste logado aprovado; 2º perfil (PIN) e TV física não testados.",
+      "source": "Confirmação do Poke · validação parcial, não execução de teste nesta sessão"
+    },
+    {
+      "at": "2026-11-23T19:43:00+00:00",
+      "appliedAt": "2026-11-23T19:46:08+00:00",
+      "item": "pr-840",
+      "from": "CORRECAO",
+      "to": "FEITO",
+      "report": "2026-11-23 19:43 [FEITO] PR #840 · integracao/2.1 · Poke mergeou (HOME_ASSISTIU_CHAVE exportada); farol-45 vai fazer dedupe farol_gosto × porque_assistiu e resolver src/fileiras.c; lote 21e será refeito sobre a integração nova",
+      "affectedItems": [
+        "pr-840",
+        "farol-45"
+      ],
+      "affectedBatches": [
+        "21e"
+      ],
+      "previousItemStates": {
+        "pr-840": "CORRECAO",
+        "farol-45": "LOTE"
+      },
+      "previousBatchStates": {
+        "21e": "LOTE"
+      }
+    },
     {
       "at": "2026-11-23T19:39:00+00:00",
       "appliedAt": "2026-11-23T19:41:22+00:00",
