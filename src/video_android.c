@@ -1182,7 +1182,11 @@ int video_recarregar(void) {
   reconAudio = audioAtual; reconLeg = legAtual; reconFaixasPend = 1;
   reconBuscarMs = -1;
   recarregarPosMs = alvo;
-  if (!abrirSessao(alvo, 0)) { recarregarPausa = -1; return 0; }
+  if (!abrirSessao(alvo, 0)) {
+    recarregarPausa = -1;
+    if (recon.tentativa) recon.esgotou = 1;
+    return 0;
+  }
   recarregarPausa = pausado;
   // As duas chamadas entram na mesma fila do Kotlin: a pausa pertence ao
   // player novo, antes do prepare completar, sem alterar o audio preferido.
@@ -1242,7 +1246,10 @@ void video_bombear(void) {
     if (erroTomar(&cod, txt, sizeof txt)) {
       int antes = recon.tentativa;
       int rede = erroDeRede(cod);
-      if (!falhou &&
+      // Uma recusa sincrona de reabertura na reconexao ativa ja consumiu o
+      // prazo e deixou falhou=1 antes de publicar -1; uma falha terminal
+      // encerra a reconexao (esgotou=1 ou tentativa=0) e bloqueia rede tardia.
+      if ((!falhou || (nv_recon_ativa(&recon) && !recon.pendente)) &&
           !(xtream_url_limitada(urlAtual) && (cod == 403 || cod == 458 || cod == 509)) &&
           reconPermitida && urlAtual[0] && (reconIniciou || recon.tentativa) &&
           nv_recon_erro(&recon, rede, SDL_GetTicks(),
@@ -1259,9 +1266,11 @@ void video_bombear(void) {
                  nv_recon_espera_ms(recon.tentativa) / 1000u);
           fflush(stdout);
         }
+        falhou = 0;
         bufferando = 0;
       } else {
         if (recon.esgotou) { printf("[video] reconexao: desistiu depois de %d tentativas\n", NV_RECON_MAX); fflush(stdout); }
+        if (recon.tentativa) recon.esgotou = 1;
         falhou = 1;
       }
     }

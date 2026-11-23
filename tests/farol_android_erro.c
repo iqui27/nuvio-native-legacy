@@ -116,7 +116,12 @@ static jmethodID JNICALL jni_metodo(JNIEnv *e, jclass c, const char *nome, const
   if (!strcmp(nome, "parar")) return (jmethodID)(uintptr_t)12;
   return (jmethodID)(uintptr_t)1;
 }
+static int g_recusarNewString;
 static jstring JNICALL jni_texto(JNIEnv *e, const jchar *u, jsize n) {
+  if (g_recusarNewString > 0) {
+    g_recusarNewString--;
+    return NULL;
+  }
   char *t = malloc((size_t)n + 1);
   (void)e;
   for (jsize i = 0; i < n; i++) t[i] = (char)u[i];
@@ -841,6 +846,103 @@ int main(void) {
   assert(g_intercalar.disparado == 1);
   assert(erroPendente() == 0);
   assert(player_externo_disponivel() == 1);
+
+  // 9) FAROL6-r7: recusa sincrona de NewString na primeira retentativa VOD nao
+  // prende o backend em reconexao eterna; consome -1, avanca para tentativa 2
+  // e recupera na segunda reabertura com nova geracao e posicao preservada.
+  zerar_farol();
+  g_recusarNewString = 0;
+  video_definir_reconexao(1);
+  abrir_titulo("tt9000001", "movie", "VOD recon NewString", 0, 0,
+               "https://example.invalid/vod_recon.mkv", &genA);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_PRONTO, 100000, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_TOCANDO, 0, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativePos(NULL, NULL, 12345, 0, 0, -1, (jint)genA);
+  video_bombear();
+  assert(!video_falhou() && !video_reconectando() && video_pos() == 12.345);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)genA, 2002, 0);
+  video_bombear();
+  assert(!video_falhou() && video_reconectando() == 1);
+  assert(recon.tentativa == 1 && recon.pendente == 1);
+
+  g_recusarNewString = 1;
+  atomic_fetch_add(&relogioMs, 3000);
+  video_bombear();
+  unsigned genRecusada = video_android_sessao();
+  assert(genRecusada != genA && g_recusarNewString == 0 && erroPendente());
+  assert(video_falhou() && !video_erro_texto()[0] && !video_erro_decoder_codigo() && !video_erro_identificado());
+  assert(video_reconectando() == 1);
+
+  video_bombear();
+  assert(!erroPendente() && !video_falhou());
+  assert(recon.tentativa == 2 && recon.pendente == 1 && video_reconectando() == 2);
+
+  atomic_fetch_add(&relogioMs, 10000);
+  video_bombear();
+  unsigned genFinal = video_android_sessao();
+  assert(genFinal != genRecusada && (unsigned)atomic_load(&geracaoAberta) == genFinal);
+  // Entrega obsoleta da geracao anterior eh descartada apos a recuperacao.
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)genA, 4003, 2);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)genRecusada, 2004, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_PRONTO, 100000, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_TOCANDO, 0, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativePos(NULL, NULL, 12345, 0, 0, -1, (jint)genFinal);
+  video_bombear();
+  assert(!erroPendente() && !video_falhou() && !video_reconectando());
+  assert(prontoLoad == 1 && video_pos() == 12.345);
+  assert(!video_erro_texto()[0] && !video_erro_decoder_codigo() && !video_erro_identificado());
+
+  // 10) Recusas sincronas repetidas esgotam o orcamento de retentativas e
+  // desistem sem laco perpetuo de reconexao nem reinicio por 2004 tardio.
+  zerar_farol();
+  video_definir_reconexao(1);
+  abrir_titulo("tt9000002", "movie", "VOD recon esgota", 0, 0,
+               "https://example.invalid/vod_esgota.mkv", &genA);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_PRONTO, 100000, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_TOCANDO, 0, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativePos(NULL, NULL, 12345, 0, 0, -1, (jint)genA);
+  video_bombear();
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)genA, 2002, 0);
+  video_bombear();
+  assert(recon.tentativa == 1 && recon.pendente == 1);
+  for (int t = 1; t <= NV_RECON_MAX; t++) {
+    g_recusarNewString = 1;
+    atomic_fetch_add(&relogioMs, nv_recon_espera_ms(t));
+    video_bombear();
+    assert(g_recusarNewString == 0 && erroPendente());
+    video_bombear();
+    if (t < NV_RECON_MAX) {
+      assert(!video_falhou() && recon.tentativa == t + 1 && recon.pendente == 1);
+    } else {
+      assert(video_falhou() && recon.esgotou && !recon.pendente && !video_reconectando());
+    }
+  }
+  unsigned genEsgotada = video_android_sessao();
+  int abertaAntes = atomic_load(&geracaoAberta);
+  atomic_fetch_add(&relogioMs, 60000);
+  video_bombear();
+  assert(video_android_sessao() == genEsgotada && atomic_load(&geracaoAberta) == abertaAntes);
+  assert(video_falhou() && recon.esgotou && !video_reconectando() && video_pos() == 12.345);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)genEsgotada, 2004, 0);
+  video_bombear();
+  assert(video_falhou() && recon.esgotou && !recon.pendente && !video_reconectando());
+
+  // 11) Erro 2004 tardio apos falha terminal 4003 nao reinicia reconexao.
+  zerar_farol();
+  video_definir_reconexao(1);
+  abrir_titulo("tt9000003", "movie", "VOD terminal 4003", 0, 0,
+               "https://example.invalid/vod_term.mkv", &genA);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_PRONTO, 100000, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(NULL, NULL, EV_TOCANDO, 0, 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativePos(NULL, NULL, 12345, 0, 0, -1, (jint)genA);
+  video_bombear();
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)genA, 4003, 2);
+  video_bombear();
+  assert(video_falhou() && video_erro_decoder_codigo() == 4003 && !video_reconectando());
+  assert(recon.tentativa == 0 && recon.pendente == 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)genA, 2004, 0);
+  video_bombear();
+  assert(video_falhou() && !video_reconectando() && recon.tentativa == 0 && recon.pendente == 0);
 
   puts("farol_android_erro: tudo ok");
   return 0;
