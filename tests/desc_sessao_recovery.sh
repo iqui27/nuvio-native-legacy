@@ -8,7 +8,14 @@ python3 - "$tmp/recovery.inc" <<'PY'
 from pathlib import Path
 import sys
 s = Path('src/app.c').read_text()
-start = s.index('  if (tela == TELA_ESCOLHA_PERFIL && perfilsel_concluido() &&') if '  // Recover every logged-in screen' not in s else s.index('  if (sessao_logada() &&', s.index('  // Recover every logged-in screen'))
+if '  // Recover every logged-in screen' not in s:
+    start = s.index('  if (tela == TELA_ESCOLHA_PERFIL && perfilsel_concluido() &&')
+else:
+    ancora = s.index('  // Recover every logged-in screen')
+    try:
+        start = s.index('  if (perfis_sessao_geracao() != perfilSessaoAplicada ||', ancora)
+    except ValueError:
+        start = s.index('  if (sessao_logada() &&', ancora)
 end = s.index('  // Os vinculos de Trakt', start)
 Path(sys.argv[1]).write_text(s[start:end])
 PY
