@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T19:35:13+00:00",
+    "updatedAt": "2026-11-23T19:41:22+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T19:33:00+00:00"
+    "lastVpsReportedAt": "2026-11-23T19:39:00+00:00"
   },
   "items": [
     {
@@ -254,13 +254,21 @@
         "farol-8"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "IMPLEMENTANDO",
       "wave": "B",
-      "sha": null,
+      "sha": "0dea681ce8",
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "VPS Gemini 4 Neon (antigravity) onda B, task …a969d8f2, brief lotes/sense/briefs/farol-11.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado.",
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/21z-farol-11",
+      "updatedAt": "2026-11-23T19:41:22+00:00",
+      "reportedAt": "2026-11-23T19:39:00+00:00",
+      "integrationVerified": false,
+      "commitRole": "base",
+      "baseBranch": "lote/21e",
+      "baseSha": "0dea681ce8",
+      "owner": "VPS"
     },
     {
       "id": "farol-12",
@@ -644,13 +652,21 @@
         "farol-29"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "IMPLEMENTANDO",
       "wave": "B",
-      "sha": null,
+      "sha": "0dea681ce8",
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "VPS Gemini 4 Neon (antigravity) onda B, task …fb3ec7c9, brief lotes/sense/briefs/farol-30.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado.",
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/21z-farol-30",
+      "updatedAt": "2026-11-23T19:41:22+00:00",
+      "reportedAt": "2026-11-23T19:39:00+00:00",
+      "integrationVerified": false,
+      "commitRole": "base",
+      "baseBranch": "lote/21e",
+      "baseSha": "0dea681ce8",
+      "owner": "VPS"
     },
     {
       "id": "farol-31",
@@ -818,13 +834,21 @@
         "farol-29"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "IMPLEMENTANDO",
       "wave": "B",
-      "sha": null,
+      "sha": "0dea681ce8",
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "VPS Gemini 4 Neon (antigravity) onda B, task …3616b0ed, brief lotes/sense/briefs/farol-40.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado.",
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/21z-farol-40",
+      "updatedAt": "2026-11-23T19:41:22+00:00",
+      "reportedAt": "2026-11-23T19:39:00+00:00",
+      "integrationVerified": false,
+      "commitRole": "base",
+      "baseBranch": "lote/21e",
+      "baseSha": "0dea681ce8",
+      "owner": "VPS"
     },
     {
       "id": "farol-41",
@@ -991,13 +1015,21 @@
         "farol-45"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "IMPLEMENTANDO",
       "wave": "B",
-      "sha": null,
+      "sha": "0dea681ce8",
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "VPS Gemini 4 Neon (antigravity) onda B, task …9071e0a7, brief lotes/sense/briefs/farol-48.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado.",
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/21z-farol-48",
+      "updatedAt": "2026-11-23T19:41:22+00:00",
+      "reportedAt": "2026-11-23T19:39:00+00:00",
+      "integrationVerified": false,
+      "commitRole": "base",
+      "baseBranch": "lote/21e",
+      "baseSha": "0dea681ce8",
+      "owner": "VPS"
     },
     {
       "id": "farol-49",
@@ -3697,6 +3729,42 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T19:39:00+00:00",
+      "appliedAt": "2026-11-23T19:41:22+00:00",
+      "item": "farol-48",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 19:39 [IMPLEMENTANDO] farol-48 · agente/21z-farol-48@lote/21e 0dea681ce8 · VPS Gemini 4 Neon (antigravity) onda B, task …9071e0a7, brief lotes/sense/briefs/farol-48.md; não verificado",
+      "referenceRole": "base"
+    },
+    {
+      "at": "2026-11-23T19:39:00+00:00",
+      "appliedAt": "2026-11-23T19:41:22+00:00",
+      "item": "farol-40",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 19:39 [IMPLEMENTANDO] farol-40 · agente/21z-farol-40@lote/21e 0dea681ce8 · VPS Gemini 4 Neon (antigravity) onda B, task …3616b0ed, brief lotes/sense/briefs/farol-40.md; não verificado",
+      "referenceRole": "base"
+    },
+    {
+      "at": "2026-11-23T19:39:00+00:00",
+      "appliedAt": "2026-11-23T19:41:22+00:00",
+      "item": "farol-30",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 19:39 [IMPLEMENTANDO] farol-30 · agente/21z-farol-30@lote/21e 0dea681ce8 · VPS Gemini 4 Neon (antigravity) onda B, task …fb3ec7c9, brief lotes/sense/briefs/farol-30.md; não verificado",
+      "referenceRole": "base"
+    },
+    {
+      "at": "2026-11-23T19:39:00+00:00",
+      "appliedAt": "2026-11-23T19:41:22+00:00",
+      "item": "farol-11",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 19:39 [IMPLEMENTANDO] farol-11 · agente/21z-farol-11@lote/21e 0dea681ce8 · VPS Gemini 4 Neon (antigravity) onda B, task …a969d8f2, brief lotes/sense/briefs/farol-11.md; não verificado",
+      "referenceRole": "base"
+    },
     {
       "at": "2026-11-23T19:33:00+00:00",
       "appliedAt": "2026-11-23T19:35:13+00:00",
