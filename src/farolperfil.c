@@ -199,27 +199,11 @@ static int modelo_redator_ok(const char *s) {
     sufixo = strspn(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     return !p[sufixo] && sufixo <= (i ? 6u : 3u);
   }
-  /* LG fora da linha OLED ("50NANO80ASA", "43LM6300PSB"): 2 digitos de tela,
-   * serie em maiusculas, numero e sufixo em maiusculas. A mesma clausura dos
-   * prefixos — so [0-9A-Z], sem espaco, sem minuscula, sem simbolo — entao
-   * nome, URL e IP continuam sem caminho. */
-  {
-    size_t tela = strspn(s, "0123456789");
-    if (tela == 2) {
-      const char *p = s + 2;
-      size_t serie = strspn(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
-      if (serie && serie <= 6) {
-        size_t numero, sufixo;
-        p += serie;
-        numero = strspn(p, "0123456789");
-        if (numero && numero <= 4) {
-          p += numero;
-          sufixo = strspn(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
-          return !p[sufixo] && sufixo <= 6;
-        }
-      }
-    }
-  }
+  /* Sem excecao por fora dos prefixos: a gramatica e a do modeloOk do
+   * servidor JA PUBLICADO (servidor/recomendacoes/src/farol.js), que rejeita
+   * o registro inteiro com 422 antes de gravar. LG fora da linha OLED
+   * ("50NANO80ASA", "43LM6300PSB") comeca com digito e nao tem caminho —
+   * sai "x" como no pai, ate um alargamento do modeloOk ser deployado. */
   return 0;
 }
 
@@ -1250,10 +1234,12 @@ int farolperfil_escrever_aparelho(FarolJson *j, const FarolPerfilAparelho *a) {
   if (!farolredator_campo(j, "so_maior", FT_INT, &a->so_maior)) goto falha;
 
   /* No FarolJson, aparelho.modelo segue a gramatica fechada do redator (ou
-   * "x"). O filtro do coletor aceita espaco — "TCL 55C745", o
-   * "<MANUFACTURER> <MODEL>" do NuvioActivity.kt — e a gramatica nao; os
-   * espacos saem antes da conferencia e a forma canonica sem espaco e a
-   * emitida. Valor fora da gramatica ou da lista de privacidade vira "x". */
+   * "x") — a mesma do modeloOk do servidor publicado: emitir fora dela faz o
+   * registro inteiro voltar 422. O filtro do coletor aceita espaco —
+   * "TCL 55C745", o "<MANUFACTURER> <MODEL>" do NuvioActivity.kt — e a
+   * gramatica nao; os espacos saem antes da conferencia e a forma canonica
+   * sem espaco e a emitida. Valor fora da gramatica (LG com digito a
+   * frente, fabricante fora da lista) ou da lista de privacidade vira "x". */
   if (farolperfil_filtrar_modelo(a->modelo, mod_limpo)) {
     size_t rr, ww = 0;
     for (rr = 0; mod_limpo[rr]; rr++)

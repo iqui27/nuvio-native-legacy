@@ -589,14 +589,18 @@ static void testar_escrita_redator(void) {
   assert(strstr(buf, "\"modelo\":\"TCL55C745\"") != NULL);
   assert(strstr(buf, "\"modelo\":\"x\"") == NULL);
 
-  /* Caso 5: LG fora da linha OLED — digito+serie+numero+sufixo sai de verdade */
+  /* Caso 5: LG fora da linha OLED comeca com digito — a gramatica publicada
+   * do servidor nao tem ramo para ela, entao emitir o modelo recusa o
+   * registro inteiro (422). O coletor guarda o modelo real; o JSON sai "x"
+   * e o valor nao vaza — o comportamento do pai. */
   farolperfil_padrao(&p);
   strcpy(p.aparelho.modelo, "50NANO80ASA");
   assert(farolredator_abrir(&j, buf, sizeof buf));
   assert(farolperfil_escrever(&j, &p));
   assert(farolredator_fechar(&j));
   assert(j.campos_recusados == 0);
-  assert(strstr(buf, "\"modelo\":\"50NANO80ASA\"") != NULL);
+  assert(strstr(buf, "\"modelo\":\"x\"") != NULL);
+  assert(strstr(buf, "50NANO80ASA") == NULL);
 
   farolperfil_padrao(&p);
   strcpy(p.aparelho.modelo, "43LM6300PSB");
@@ -604,13 +608,14 @@ static void testar_escrita_redator(void) {
   assert(farolperfil_escrever(&j, &p));
   assert(farolredator_fechar(&j));
   assert(j.campos_recusados == 0);
-  assert(strstr(buf, "\"modelo\":\"43LM6300PSB\"") != NULL);
+  assert(strstr(buf, "\"modelo\":\"x\"") != NULL);
+  assert(strstr(buf, "43LM6300PSB") == NULL);
 
   /* Caso 6: a gramatica segue fechada — forma parecida mas fora dela, ou
    * valor barrado pela privacidade do coletor, sai "x" sem vazar */
   for (int k = 0; k < 6; k++) {
     static const char *const fora[] = {
-      "12ABCDEXYZ",              /* serie > 6 letras: fora do molde LG */
+      "12ABCDEXYZ",              /* digitos + letras, sem prefixo da lista */
       "Sony BRAVIA 4K VH2",      /* marca fora da lista, com espaco */
       "123456",                  /* so digitos (PIN) */
       "user@host.invalid",       /* @: a privacidade recusa no coletor */

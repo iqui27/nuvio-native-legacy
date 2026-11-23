@@ -212,24 +212,9 @@ static int modelo(const char *s) {
     size_t sufixo = strspn(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     return !p[sufixo] && sufixo <= (i ? 6u : 3u);
   }
-  // LG fora da linha OLED ("50NANO80ASA", "43LM6300PSB"): 2 digitos de tela,
-  // serie em maiusculas, numero e sufixo em maiusculas. A mesma clausura dos
-  // prefixos — so [0-9A-Z], sem espaco, sem minuscula, sem simbolo — entao
-  // nome, URL e IP continuam sem caminho.
-  size_t tela = strspn(s, "0123456789");
-  if (tela == 2) {
-    const char *p = s + 2;
-    size_t serie = strspn(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
-    if (serie && serie <= 6) {
-      p += serie;
-      size_t numero = strspn(p, "0123456789");
-      if (numero && numero <= 4) {
-        p += numero;
-        size_t sufixo = strspn(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
-        return !p[sufixo] && sufixo <= 6;
-      }
-    }
-  }
+  // Espelho do modeloOk do servidor publicado (recomendacoes/src/farol.js):
+  // fora dos prefixos nao ha excecao — LG com digito a frente ("50NANO80ASA")
+  // nao passa no servidor, entao aqui tambem nao passa (o pacote voltaria 422).
   return 0;
 }
 static int fingerprint(const char *s) {
