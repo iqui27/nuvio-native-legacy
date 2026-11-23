@@ -7,7 +7,10 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent
 ALLOWED = {'/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js',
-           '/style.css': 'style.css', '/release.json': 'release.json'}
+           '/style.css': 'style.css', '/release.json': 'release.json',
+           '/manifest.webmanifest': 'manifest.webmanifest',
+           '/icon-192.png': 'icon-192.png', '/icon-512.png': 'icon-512.png',
+           '/icon-180.png': 'icon-180.png'}
 
 
 class Handler(SimpleHTTPRequestHandler):
