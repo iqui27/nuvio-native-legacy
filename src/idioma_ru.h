@@ -8347,6 +8347,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "Всё больше людей смотрят вместе с нами. Спасибо всем, кто пользуется приложением, присылает предложения и помогает находить проблемы."),
   T("Tem em %s %s, com áudio em %s.", "Есть в %s %s, аудио: %s."),
   T("Tem em %s, com áudio em %s.", "Есть в %s, аудио: %s."),
+  T("Tem em %s.", "Есть в %s."),
   T("Tem legenda em %s.", "Есть субтитры: %s."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "Имеет собственный пакет из ветки webos3 — это не тот же файл. У этих телевизоров нет ни H.265, ни HDR."),
   T("Tem uma enquete para você", "Для вас есть опрос"),

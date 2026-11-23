@@ -8348,6 +8348,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "Sve više ljudi gleda s nama. Hvala svima koji koriste aplikaciju, šalju prijedloge i pomažu u pronalaženju problema."),
   T("Tem em %s %s, com áudio em %s.", "Ima u %s %s, zvuk: %s."),
   T("Tem em %s, com áudio em %s.", "Ima u %s, zvuk: %s."),
+  T("Tem em %s.", "Ima u %s."),
   T("Tem legenda em %s.", "Ima titl: %s."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "Ima svoj paket, iz grane webos3 — nije ista datoteka. Ti TV-i nemaju H.265 ni HDR."),
   T("Tem uma enquete para você", "Imate anketu"),

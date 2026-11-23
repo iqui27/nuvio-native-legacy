@@ -8347,6 +8347,7 @@
   { "Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "More people are watching with us. Thank you to everyone who uses the app, sends suggestions and helps find problems." },
   { "Tem em %s %s, com áudio em %s.", "Available in %s %s, with audio in %s." },
   { "Tem em %s, com áudio em %s.", "Available in %s, with audio in %s." },
+  { "Tem em %s.", "Available in %s." },
   { "Tem legenda em %s.", "Has subtitles in %s." },
   { "Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "It has its own package, from the webos3 branch — not the same file. Those TVs have no H.265 and no HDR." },
   { "Tem uma enquete para você", "There's a poll for you" },

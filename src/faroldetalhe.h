@@ -40,9 +40,15 @@ int   faroldetalhe_selo_atual(void);
 int   faroldetalhe_focar(int entrar);
 void  faroldetalhe_ponteiro(int col);
 int   faroldetalhe_tecla(SDL_Keycode k, int *pediuMenu);
+// seloTipo/seloFio: tipo FP_SELO_* e fio cru (kw ou genero local) do selo
+// ativado quando a acao e FD_ACAO_EXPLORAR (-1/"" em pessoa ou nenhuma).
+// FD_TEM_SELO_FIO marca a assinatura nova (FAROL46B) para quem compila contra
+// a revisao anterior (testes dirigidos base-vs-ponta).
+#define FD_TEM_SELO_FIO 1
 int   faroldetalhe_ativar(long *tmdb, int *elencoCol,
                           char *nome, size_t tamNome,
-                          char *foto, size_t tamFoto);
+                          char *foto, size_t tamFoto,
+                          int *seloTipo, char *seloFio, size_t tamFio);
 
 // --- inspecao e ganchos de teste deterministico (sem rede) -------------------
 int   faroldetalhe_tem_porque(void);

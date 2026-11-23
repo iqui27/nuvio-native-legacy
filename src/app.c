@@ -4770,6 +4770,19 @@ static void abrirExplorarNoTitulo(void) {
   explorar_abrir_titulo(&o);
 }
 
+// Entrada isolada do selo do Farol (FAROL46B): tema e genero abrem a toca ja
+// filtrada pelo fio que o selo carrega; sem fio cai no caminho generico.
+// Fora dos trechos reservados urlCanalRota/retentarCanal/watchdog.
+static void abrirExplorarSelo(const char *seloFio) {
+  MapaObra o;
+  if (!seloFio || !seloFio[0]) { abrirExplorarNoTitulo(); return; }
+  if (!mapa_obra_do_catalogo(detail_indice(), &o)) return;
+  detail_fechar_seco();
+  trocarTela(TELA_EXPLORAR);
+  menu_definir_destino(MENU_EXPLORAR);
+  explorar_abrir_titulo_fio(&o, seloFio);
+}
+
 // Foco por controle na ilha: cada pagina pede somente ao ultrapassar seu
 // proprio topo. A geometria do ultimo desenho nao decide quem possui a tecla.
 static int relogioCabe(void);
@@ -5387,7 +5400,9 @@ void app_evento(const SDL_Event *e) {
     }
     { char im[24];
       if (detail_aberto() && detail_pediu_amigos(im, sizeof im)) abrirSocialNoTitulo(im); }
-    if (detail_aberto() && detail_pediu_explorar()) abrirExplorarNoTitulo();
+    { char fio[64];
+      if (detail_aberto() && detail_pediu_explorar_selo(NULL, fio, sizeof fio))
+        abrirExplorarSelo(fio); }
     return;
   }
   // O MENU DO CARTAZ ABERTO PELO PAINEL (segurar OK numa linha de Salvos)

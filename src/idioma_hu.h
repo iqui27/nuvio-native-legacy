@@ -8348,6 +8348,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "Egyre többen néznek velünk. Köszönjük mindenkinek, aki használja az appot, javaslatokat küld, és segít megtalálni a hibákat."),
   T("Tem em %s %s, com áudio em %s.", "Van %s %s, hang: %s."),
   T("Tem em %s, com áudio em %s.", "Van %s, hang: %s."),
+  T("Tem em %s.", "Van %s."),
   T("Tem legenda em %s.", "Van %s felirat."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "Saját csomagja van a webos3 ágból — nem ugyanaz a fájl. Azokon a TV-ken nincs H.265 és HDR."),
   T("Tem uma enquete para você", "Van egy szavazásod"),

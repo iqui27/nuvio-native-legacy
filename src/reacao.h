@@ -63,6 +63,8 @@ int  reacao_estado(const char *imdb);
 void reacao_responder(const char *imdb, int reacao);
 
 // Nota em meia estrela, 1 a 10 (0 = sem nota). `imdb` do titulo ou "tt:S:E".
+// 1 quando notas*.txt do perfil ativo ja foi lido (sem disparar carga).
+int  reacao_notas_lida(void);
 int  reacao_nota(const char *imdb);
 unsigned reacao_tags(const char *id);
 int reacao_episodio_abrir(const CatItem *ci, int temporada, int episodio);

@@ -25,6 +25,7 @@
 #include "fonteantecipa.h"
 #include "gfx.h"
 #include "horafmt.h"
+#include "idbase.h"
 #include "idioma.h"
 #include "idiomacod.h"
 #include "linguas.h"
@@ -72,6 +73,7 @@ typedef struct {
   int     elencoCol;     // >= 0 se presente em CatItem.elenco
   char    rotulo[80];
   char    foto[256];
+  char    fio[64];       // nome cru p/ o Mapa (kw de tema ou genero local)
   float   larg;          // medida 1x por cena (secao 4.4)
 } FdSelo;
 
@@ -137,6 +139,12 @@ static struct {
   int       aberto;
   int       catIdx;
   char      imdb[24];
+  unsigned  diaGer;      // diario: geracao consultada (0 = nada consultado)
+  char      diaImdb[24]; // diario: titulo consultado (base)
+  int       diaTemTit, diaTemEp;
+  DiarioTitulo diaTit;
+  int       diaRetT, diaRetE;
+  long long diaRetQ;
   Uint32    aberturaMs;
   Uint32    ultMs;
   uint64_t  assinatura;
@@ -293,8 +301,17 @@ static int fd_resolver_titulo(const FdResolCtx *rc, const char *ref,
     const CatItem *c = cat_item(idx);
     if (c && c->titulo[0]) { snprintf(dst, cap, "%s", c->titulo); return 1; }
   }
-  if (diario_nome(ref, dst, cap, NULL, NULL, 0) && dst[0]) return 1;
+  // Carga fria de diario-nomes.txt fica fora do fio da UI (FAROL46B): o
+  // fallback so entra quando o cache ja foi lido por outro caminho.
+  if (diario_nomes_lido() && diario_nome(ref, dst, cap, NULL, NULL, 0) && dst[0])
+    return 1;
   return 0;
+}
+
+// Identidade base: "tt9000002" e "tt9000002:1:2" sao a mesma obra.
+static int fd_mesmo_id(const char *a, const char *b) {
+  size_t na = idbase_len(a), nb = idbase_len(b);
+  return na != 0 && na == nb && !strncmp(a, b, na);
 }
 
 static int fd_resolver_pessoa(const FdResolCtx *rc, int32_t id,
@@ -370,14 +387,18 @@ static int fd_resolver_pessoa(const FdResolCtx *rc, int32_t id,
 }
 
 static int fd_resolver_tema(const FdResolCtx *rc, int32_t id,
-                            char *dst, size_t cap) {
+                            char *dst, size_t cap,
+                            char *fio, size_t capFio) {
   int i;
+  if (fio && capFio) fio[0] = 0;
   if (!dst || !cap || !id) return 0;
   dst[0] = 0;
   for (i = 0; i < S.nTVocab; i++)
     if (S.tVocab[i].tipo == FP_SELO_TEMA && S.tVocab[i].id == id) {
       const char *pt = mapa_tema_nome(S.tVocab[i].nome);
       snprintf(dst, cap, "%s", i18n(pt ? pt : S.tVocab[i].nome));
+      // O fio leva o identificador do Mapa (kw ingles), nao o rotulo i18n.
+      if (fio && capFio) snprintf(fio, capFio, "%s", S.tVocab[i].nome);
       return dst[0] != 0;
     }
   if (rc && rc->temMvAlvo && rc->mv) {
@@ -387,6 +408,8 @@ static int fd_resolver_tema(const FdResolCtx *rc, int32_t id,
         const char *pt = gr->sub[0] ? gr->sub : mapa_tema_nome(gr->kw);
         if (pt && pt[0]) {
           snprintf(dst, cap, "%s", i18n(pt));
+          if (fio && capFio)
+            snprintf(fio, capFio, "%s", gr->kw[0] ? gr->kw : gr->sub);
           return 1;
         }
       }
@@ -396,18 +419,25 @@ static int fd_resolver_tema(const FdResolCtx *rc, int32_t id,
 }
 
 static int fd_resolver_genero(const FdResolCtx *rc, int32_t id,
-                              char *dst, size_t cap) {
+                              char *dst, size_t cap,
+                              char *fio, size_t capFio) {
   const char *pt;
   int i;
+  if (fio && capFio) fio[0] = 0;
   if (!dst || !cap || !id) return 0;
   dst[0] = 0;
   for (i = 0; i < S.nTVocab; i++)
     if (S.tVocab[i].tipo == FP_SELO_GENERO && S.tVocab[i].id == id) {
       snprintf(dst, cap, "%s", i18n(S.tVocab[i].nome));
+      if (fio && capFio) snprintf(fio, capFio, "%s", S.tVocab[i].nome);
       return dst[0] != 0;
     }
   pt = fd_genero_tmdb_pt(id);
-  if (pt) { snprintf(dst, cap, "%s", i18n(pt)); return 1; }
+  if (pt) {
+    snprintf(dst, cap, "%s", i18n(pt));
+    if (fio && capFio) snprintf(fio, capFio, "%s", pt);
+    return 1;
+  }
   if (rc && rc->ci && rc->ci->genero[0]) {
     MapaEtiqueta gen[8];
     int nGen = 0;
@@ -415,6 +445,7 @@ static int fd_resolver_genero(const FdResolCtx *rc, int32_t id,
     for (i = 0; i < nGen; i++)
       if ((int32_t)gen[i].id == id && gen[i].nome[0]) {
         snprintf(dst, cap, "%s", i18n(gen[i].nome));
+        if (fio && capFio) snprintf(fio, capFio, "%s", gen[i].nome);
         return 1;
       }
   }
@@ -427,6 +458,7 @@ static int fd_resolver_genero(const FdResolCtx *rc, int32_t id,
     for (i = 0; i < nGen; i++)
       if ((int32_t)gen[i].id == id && gen[i].nome[0]) {
         snprintf(dst, cap, "%s", i18n(gen[i].nome));
+        if (fio && capFio) snprintf(fio, capFio, "%s", gen[i].nome);
         return 1;
       }
   }
@@ -612,12 +644,18 @@ static int fd_render_texto(const FarolCena *cena, const FarolTexto *t,
     if (!fd_formatar_mes_ano(args[0], args[0], sizeof args[0]))
       return 0;
   } else if (!strcmp(m, "FT_INFO_QUALI") && nArgs == 3) {
-    fd_idioma_midia(args[2], args[2], sizeof args[2]);
+    char idi[64];
+    fd_idioma_midia(args[2], idi, sizeof idi);
+    snprintf(args[2], sizeof args[2], "%s", idi);
   } else if (!strcmp(m, "FT_INFO_QUALI_AUDIO") && nArgs == 2) {
-    fd_idioma_midia(args[1], args[1], sizeof args[1]);
+    char idi[64];
+    fd_idioma_midia(args[1], idi, sizeof idi);
+    snprintf(args[1], sizeof args[1], "%s", idi);
   } else if ((!strcmp(m, "FT_INFO_IDIOMA") || !strcmp(m, "FT_INFO_LEGENDA")) &&
              nArgs == 1) {
-    fd_idioma_midia(args[0], args[0], sizeof args[0]);
+    char idi[64];
+    fd_idioma_midia(args[0], idi, sizeof idi);
+    snprintf(args[0], sizeof args[0], "%s", idi);
   }
 
   for (i = 0; i < nArgs; i++) {
@@ -630,10 +668,12 @@ static int fd_render_texto(const FarolCena *cena, const FarolTexto *t,
                               args[i], sizeof args[i], NULL, 0, NULL, NULL))
         return 0;
     } else if (a[0] == 'k' && (isdigit((unsigned char)a[1]) || a[1] == '-')) {
-      if (!fd_resolver_tema(rc, (int32_t)atol(a + 1), args[i], sizeof args[i]))
+      if (!fd_resolver_tema(rc, (int32_t)atol(a + 1), args[i], sizeof args[i],
+                            NULL, 0))
         return 0;
     } else if (a[0] == 'g' && (isdigit((unsigned char)a[1]) || a[1] == '-')) {
-      if (!fd_resolver_genero(rc, (int32_t)atol(a + 1), args[i], sizeof args[i]))
+      if (!fd_resolver_genero(rc, (int32_t)atol(a + 1), args[i], sizeof args[i],
+                              NULL, 0))
         return 0;
     } else if (a[0] == 'u' && (isdigit((unsigned char)a[1]) || a[1] == '-')) {
       if (!fd_resolver_amigo(rc, (int32_t)atol(a + 1), args[i], sizeof args[i]))
@@ -693,9 +733,11 @@ static void fd_consumir_cena_locked(const FarolCena *c, const FdResolCtx *rc) {
                                       out.foto, sizeof out.foto,
                                       &out.tmdb, &out.elencoCol);
             else if (sl->k == FP_SELO_TEMA)
-              ok = fd_resolver_tema(rc, sl->id, out.rotulo, sizeof out.rotulo);
+              ok = fd_resolver_tema(rc, sl->id, out.rotulo, sizeof out.rotulo,
+                                    out.fio, sizeof out.fio);
             else if (sl->k == FP_SELO_GENERO)
-              ok = fd_resolver_genero(rc, sl->id, out.rotulo, sizeof out.rotulo);
+              ok = fd_resolver_genero(rc, sl->id, out.rotulo, sizeof out.rotulo,
+                                      out.fio, sizeof out.fio);
             if (ok && out.rotulo[0]) selos[nSelos++] = out;
           }
         }
@@ -844,7 +886,11 @@ void faroldetalhe_abrir(int catIndice, Uint32 agoraMs) {
   Uint32 relMs = fd_agora_ms(agoraMs);
   S.aberto = 1;
   S.catIdx = catIndice;
-  snprintf(S.imdb, sizeof S.imdb, "%s", (ci && ci->imdb[0]) ? ci->imdb : "");
+  if (ci) idbase_copiar(ci->imdb, S.imdb, sizeof S.imdb);
+  else S.imdb[0] = 0;
+  S.diaGer = 0;
+  S.diaImdb[0] = 0;
+  S.diaTemTit = S.diaTemEp = 0;
   S.aberturaMs = relMs;
   S.ultMs = relMs;
   S.assinatura = 0;
@@ -864,6 +910,9 @@ void faroldetalhe_fechar(void) {
   S.aberto = 0;
   S.catIdx = -1;
   S.imdb[0] = 0;
+  S.diaGer = 0;
+  S.diaImdb[0] = 0;
+  S.diaTemTit = S.diaTemEp = 0;
   S.assinatura = 0;
   S.cenaManual = 0;
   memset(&S.borda, 0, sizeof S.borda);
@@ -949,18 +998,28 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
   }
 
   relMs = fd_agora_ms(agoraMs);
-  if (!S.aberto || S.catIdx != catIndice ||
-      (ci && strcmp(S.imdb, ci->imdb) != 0)) {
-    S.aberto = 1;
-    S.catIdx = catIndice;
-    snprintf(S.imdb, sizeof S.imdb, "%s", (ci && ci->imdb[0]) ? ci->imdb : "");
-    S.aberturaMs = relMs;
-    S.assinatura = 0;
-    S.qualEntrou = 0;
-    S.qualBloqueada = 0;
-    S.seloLembrado = 0;
-    memset(&S.snap, 0, sizeof S.snap);
-    S.snap.blocoAlpha = 1.0f;
+  {
+    char idAgora[24];
+    if (ci) idbase_copiar(ci->imdb, idAgora, sizeof idAgora);
+    else idAgora[0] = 0;
+    // Abertura e identidade (IMDb base), nunca posicao: a republicacao do
+    // catalogo troca o catIndice do mesmo titulo (detail.c revalidarIdx) e
+    // NAO pode reiniciar aberturaMs nem as guardas de qualidade (FAROL46B).
+    if (!S.aberto || (idAgora[0] && strcmp(S.imdb, idAgora) != 0)) {
+      S.aberto = 1;
+      snprintf(S.imdb, sizeof S.imdb, "%s", idAgora);
+      S.diaGer = 0;
+      S.diaImdb[0] = 0;
+      S.diaTemTit = S.diaTemEp = 0;
+      S.aberturaMs = relMs;
+      S.assinatura = 0;
+      S.qualEntrou = 0;
+      S.qualBloqueada = 0;
+      S.seloLembrado = 0;
+      memset(&S.snap, 0, sizeof S.snap);
+      S.snap.blocoAlpha = 1.0f;
+    }
+    S.catIdx = catIndice;   // espelho do quadro; posicao nao e identidade
   }
   epochS = fd_agora_s();
   decorrido = relMs - S.aberturaMs;
@@ -980,6 +1039,13 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
   }
 
   if (!usarTesteModelo) temG = farolsinal_modelo(&g);
+  // A pagina e da obra, nunca do episodio: "tt…:T:E" (cartao de Continuar)
+  // normaliza para a serie antes de qualquer busca, fonte ou cena (FAROL46B).
+  {
+    char idTmp[24];
+    idbase_copiar(ciCopia.imdb, idTmp, sizeof idTmp);
+    snprintf(ciCopia.imdb, sizeof ciCopia.imdb, "%s", idTmp);
+  }
   diaHoje = fd_dia_de(epochS);
   fd_tempo_partes(epochS, &tmAgora, &faixaHora, &fimSemana);
 
@@ -1055,11 +1121,15 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
       int cIdx;
       if (strncmp(mo->imdb, "tt", 2) || !mo->titulo[0]) continue;
       if (!strcmp(mo->imdb, ciCopia.imdb)) continue;
-      cIdx = mo->catIndice >= 0 ? mo->catIndice : cat_indice_por_imdb(mo->imdb);
+      // mo->catIndice refere-se a revisao do catalogo de quando o retrato foi
+      // montado: a republicacao troca o dono do slot. A semente e rebuscada
+      // pela identidade a cada quadro e o item resolvido e conferido.
+      cIdx = cat_indice_por_imdb(mo->imdb);
       if (cIdx < 0) continue;
       {
         const CatItem *cs = cat_item(cIdx);
-        if (!cs || !farolficha_ler_item(cs, &fichasSem[nSems]) ||
+        if (!cs || !fd_mesmo_id(cs->imdb, mo->imdb) ||
+            !farolficha_ler_item(cs, &fichasSem[nSems]) ||
             !fd_ficha_tem_dados(&fichasSem[nSems]))
           continue;
       }
@@ -1123,9 +1193,40 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
   // 4) Outros fatos da P6 (continuar, onde, amigos, saga, rever, retomada).
   salvo = ciCopia.naLista || salvos_tem(ciCopia.imdb);
   {
+    // Diario so quando quente (diario_carregado e a consulta barata da 38D):
+    // carga fria e varredura por quadro ficam fora do fio da UI. O resultado
+    // fica cacheado por (imdb, geracao) — a assinatura so muda quando o
+    // diario muda; frio, os fatos ficam de fora ate o cache esquentar.
+    int ehSerieTv = (!strcmp(ciCopia.tipo, "series") || !strcmp(ciCopia.tipo, "tv"));
+    int temTit = 0, temEp = 0, tRL = 0, eRL = 0;
+    long long qRL = 0;
     DiarioTitulo dtTit;
-    if (diario_titulo(0, ciCopia.imdb, &dtTit) && dtTit.vezes > 0) {
-      if (strcmp(ciCopia.tipo, "series") != 0 && strcmp(ciCopia.tipo, "tv") != 0) {
+    memset(&dtTit, 0, sizeof dtTit);
+    if (diario_carregado(0)) {
+      unsigned ger = diario_geracao(0);
+      int mesmo;
+      FD_LOCK();
+      mesmo = (S.diaGer == ger && !strcmp(S.diaImdb, ciCopia.imdb));
+      if (mesmo) {
+        temTit = S.diaTemTit; dtTit = S.diaTit;
+        temEp = S.diaTemEp; tRL = S.diaRetT; eRL = S.diaRetE; qRL = S.diaRetQ;
+      }
+      FD_UNLOCK();
+      if (!mesmo) {
+        temTit = diario_titulo(0, ciCopia.imdb, &dtTit);
+        if (ehSerieTv)
+          temEp = diario_ultimo_episodio(0, ciCopia.imdb, &tRL, &eRL, &qRL);
+        FD_LOCK();
+        S.diaGer = ger;
+        idbase_copiar(ciCopia.imdb, S.diaImdb, sizeof S.diaImdb);
+        S.diaTemTit = temTit; S.diaTit = dtTit;
+        S.diaTemEp = temEp; S.diaRetT = tRL; S.diaRetE = eRL; S.diaRetQ = qRL;
+        FD_UNLOCK();
+      }
+      if (temEp) { retT = tRL; retE = eRL; retQuando = qRL; }
+    }
+    if (temTit && dtTit.vezes > 0) {
+      if (!ehSerieTv) {
         jaVisto = 1;
         if (dtTit.ultimo > 0) {
           time_t tv = (time_t)dtTit.ultimo;
@@ -1134,13 +1235,14 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
             reverAno = tmv.tm_year + 1900;
             reverMes = tmv.tm_mon + 1;
           }
-          reverNota10 = dtTit.nota10 > 0 ? (int)dtTit.nota10 : reacao_nota(ciCopia.imdb);
+          reverNota10 = dtTit.nota10 > 0 ? (int)dtTit.nota10
+                      : (reacao_notas_lida() ? reacao_nota(ciCopia.imdb) : 0);
         }
       }
-    } else if (ciCopia.progresso >= 90 && strcmp(ciCopia.tipo, "series") != 0 &&
-               strcmp(ciCopia.tipo, "tv") != 0) {
+    } else if (ciCopia.progresso >= 90 && !ehSerieTv) {
       jaVisto = 1;
     }
+    if (ehSerieTv && jaVisto) { retT = 0; retE = 0; retQuando = 0; }
   }
 
   if (!strcmp(ciCopia.tipo, "series") || !strcmp(ciCopia.tipo, "tv")) {
@@ -1161,9 +1263,8 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
     (void)extras_progresso_serie(&vistosEp, &totalEp);
     if (totalEp > vistosEp && vistosEp > 0) faltam = totalEp - vistosEp;
     minEp = fichaAlvo.minutos;
-    if (totalEp > 0 && vistosEp >= totalEp) jaVisto = 1;
-    if (!jaVisto)
-      diario_ultimo_episodio(0, ciCopia.imdb, &retT, &retE, &retQuando);
+    if (totalEp > 0 && vistosEp >= totalEp) { jaVisto = 1; retT = 0; retE = 0; retQuando = 0; }
+    if (jaVisto) { retT = 0; retE = 0; retQuando = 0; }
   }
 
   if (ondever_n(ciCopia.imdb) > 0 && ondever_item(ciCopia.imdb, 0, &ov) && ov.nome[0])
@@ -1195,6 +1296,10 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
 
   // 5) Assinatura dos insumos: so recompoe e remede quando algo mudou.
   sig = fd_fnv(0, ciCopia.imdb, strlen(ciCopia.imdb));
+  {
+    unsigned revCat = cat_revisao();
+    sig = fd_fnv(sig, &revCat, sizeof revCat);
+  }
   sig = fd_fnv(sig, &fichaAlvo, sizeof fichaAlvo);
   sig = fd_fnv(sig, &epTemp, sizeof epTemp);
   sig = fd_fnv(sig, &epNum, sizeof epNum);
@@ -1599,12 +1704,15 @@ int faroldetalhe_tecla(SDL_Keycode k, int *pediuMenu) {
 
 int faroldetalhe_ativar(long *tmdb, int *elencoCol,
                         char *nome, size_t tamNome,
-                        char *foto, size_t tamFoto) {
+                        char *foto, size_t tamFoto,
+                        int *seloTipo, char *seloFio, size_t tamFio) {
   int acao = FD_ACAO_NENHUMA;
   if (tmdb) *tmdb = 0;
   if (elencoCol) *elencoCol = -1;
   if (nome && tamNome) nome[0] = 0;
   if (foto && tamFoto) foto[0] = 0;
+  if (seloTipo) *seloTipo = -1;
+  if (seloFio && tamFio) seloFio[0] = 0;
 
   FD_LOCK();
   if (S.snap.visivel && S.snap.focado &&
@@ -1617,7 +1725,11 @@ int faroldetalhe_ativar(long *tmdb, int *elencoCol,
       if (nome && tamNome) snprintf(nome, tamNome, "%s", sl->rotulo);
       if (foto && tamFoto) snprintf(foto, tamFoto, "%s", sl->foto);
     } else {
+      // Tema e genero abrem o Explorar filtrado: o fio e o nome cru do Mapa
+      // (kw ou genero local), preservado ate app.c (FAROL46B).
       acao = FD_ACAO_EXPLORAR;
+      if (seloTipo) *seloTipo = sl->tipo;
+      if (seloFio && tamFio) snprintf(seloFio, tamFio, "%s", sl->fio);
     }
   }
   FD_UNLOCK();

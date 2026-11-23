@@ -72,6 +72,13 @@ static _Atomic int g_drawPtr   = 0;
 
 static pthread_mutex_t g_catMu = PTHREAD_MUTEX_INITIALIZER;
 static CatItem g_itens[4];
+static int semente_teste;             // R3: semente do Mapa com slot obsoleto
+static int leituras_indice_obsoleto;  // leituras via catIndice guardado
+static unsigned mapa_rev_stub = 1;
+static _Atomic int g_diaLido = 1;     // R1: 0 = diario frio (arquivo nao lido)
+static _Atomic int g_diaGer = 1;      // geracao do diario publicada
+static int leituras_diario;           // consultas a diario_titulo/ultimo_ep
+static _Atomic int g_catRev = 1;      // revisao do catalogo
 static int g_nItens = 0;
 
 static long long relogioS(void)  { return atomic_load(&g_epoch); }
@@ -144,8 +151,13 @@ const CatItem *cat_item(int idx) {
   pthread_mutex_lock(&g_catMu);
   if (idx >= 0 && idx < g_nItens) r = &g_itens[idx];
   pthread_mutex_unlock(&g_catMu);
+  // R3: conta leituras feitas pelo catIndice guardado do retrato do Mapa —
+  // a republicacao troca o dono do slot e o Farol nao pode ler o errado.
+  if (semente_teste && idx == 0 && r && strcmp(r->imdb, "tt9000001"))
+    leituras_indice_obsoleto++;
   return r;
 }
+unsigned cat_revisao(void) { return (unsigned)atomic_load(&g_catRev); }
 int cat_indice_por_imdb(const char *id) {
   int i, r = -1;
   if (!id || !id[0]) return -1;
@@ -162,9 +174,17 @@ int mapa_vizinhos_copiar(MapaVizinhos *dst, unsigned *revisao) {
   return 0;
 }
 int mapa_copiar(Mapa *dst, unsigned *revisao) {
-  (void)revisao;
-  if (dst) memset(dst, 0, sizeof *dst);
-  return 0;
+  if (!dst || !revisao || *revisao == mapa_rev_stub) return 0;
+  memset(dst, 0, sizeof *dst);
+  if (semente_teste) {
+    dst->nSem = 1;
+    snprintf(dst->sem[0].imdb, sizeof dst->sem[0].imdb, "tt9000001");
+    snprintf(dst->sem[0].titulo, sizeof dst->sem[0].titulo, "Semente vista");
+    dst->sem[0].catIndice = 0;   // slot do retrato: fica obsoleto na republicacao
+    dst->semOrigem[0] = MAPA_ORIGEM_VISTO;
+  }
+  *revisao = mapa_rev_stub;
+  return 1;
 }
 const char *mapa_tema_nome(const char *kw) {
   if (!kw) return NULL;
@@ -250,13 +270,18 @@ int diario_nome(const char *id, char *tit, size_t capT, int *ano, char *p, size_
   if (tit && capT) tit[0] = 0;
   return 0;
 }
+int diario_carregado(int perfil)  { (void)perfil; return atomic_load(&g_diaLido); }
+unsigned diario_geracao(int perfil) { (void)perfil; return (unsigned)atomic_load(&g_diaGer); }
+int diario_nomes_lido(void)       { return atomic_load(&g_diaLido); }
 int diario_titulo(int perfil, const char *id, DiarioTitulo *saida) {
   (void)perfil; (void)id;
+  leituras_diario++;
   if (saida) memset(saida, 0, sizeof *saida);
   return 0;
 }
 int diario_ultimo_episodio(int perfil, const char *id, int *t, int *e, long long *q) {
   (void)perfil; (void)id;
+  leituras_diario++;
   if (t) *t = 0;
   if (e) *e = 0;
   if (q) *q = 0;
@@ -264,6 +289,7 @@ int diario_ultimo_episodio(int perfil, const char *id, int *t, int *e, long long
 }
 int salvos_tem(const char *id)    { (void)id; return 0; }
 int reacao_nota(const char *id)   { (void)id; return 0; }
+int reacao_notas_lida(void)       { return 1; }
 int ondever_n(const char *id)     { (void)id; return 0; }
 int ondever_item(const char *id, int i, OndeVer *dst) {
   (void)id; (void)i;
@@ -627,12 +653,38 @@ static void teste_selos_e_idiomas(void) {
   assert(faroldetalhe_tecla(SDLK_UP, &menu) == 0);
   assert(faroldetalhe_tecla(SDLK_DOWN, &menu) == 0);
 
+#ifdef FD_TEM_SELO_FIO
+  {
+    int sT = -1;
+    char sF[64] = "", fioGenero[64] = "";
+    // R7: selo devolve tipo + fio para Explorar filtrado (destinos distintos).
+    assert(faroldetalhe_ativar(&tmdb, &elCol, nome, sizeof nome, foto, sizeof foto,
+                               &sT, sF, sizeof sF) == FD_ACAO_EXPLORAR);
+    assert(sT == FP_SELO_GENERO && sF[0] != 0);
+    snprintf(fioGenero, sizeof fioGenero, "%s", sF);
+    faroldetalhe_tecla(SDLK_LEFT, &menu);
+    sT = -1; sF[0] = 0;
+    assert(faroldetalhe_ativar(&tmdb, &elCol, nome, sizeof nome, foto, sizeof foto,
+                               &sT, sF, sizeof sF) == FD_ACAO_EXPLORAR);
+    assert(sT == FP_SELO_TEMA && !strcmp(sF, "time travel"));
+    assert(strcmp(sF, fioGenero) != 0);
+    faroldetalhe_tecla(SDLK_LEFT, &menu);
+    sT = -1; sF[0] = 0;
+    assert(faroldetalhe_ativar(&tmdb, &elCol, nome, sizeof nome, foto, sizeof foto,
+                               &sT, sF, sizeof sF) == FD_ACAO_PESSOA);
+    assert(tmdb == 7701 && elCol == 0 && !strcmp(nome, "Rebecca Ferguson"));
+    assert(sT == -1 && sF[0] == 0);
+  }
+#else
+  // Revisao base (assinatura antiga): o selo nao carrega destino — o
+  // bloqueio 7 e estrutural nela (Explorar generico), sem assert possivel.
   assert(faroldetalhe_ativar(&tmdb, &elCol, nome, sizeof nome, foto, sizeof foto) == FD_ACAO_EXPLORAR);
   faroldetalhe_tecla(SDLK_LEFT, &menu);
   assert(faroldetalhe_ativar(&tmdb, &elCol, nome, sizeof nome, foto, sizeof foto) == FD_ACAO_EXPLORAR);
   faroldetalhe_tecla(SDLK_LEFT, &menu);
   assert(faroldetalhe_ativar(&tmdb, &elCol, nome, sizeof nome, foto, sizeof foto) == FD_ACAO_PESSOA);
   assert(tmdb == 7701 && elCol == 0 && !strcmp(nome, "Rebecca Ferguson"));
+#endif
 
   for (lang = 0; lang < 29; lang++) {
     atomic_store(&g_idioma, lang);
@@ -643,6 +695,201 @@ static void teste_selos_e_idiomas(void) {
     assert(strstr(s0, "g878") == NULL);
   }
   atomic_store(&g_idioma, 0);
+}
+
+// FAROL46B R1: o fio da UI nunca dispara carga nem varredura do Diario.
+// Frio -> nenhuma consulta sai; quente -> uma consulta por (imdb, geracao).
+static void teste_diario_fora_do_fio_ui(void) {
+  FarolGosto g;
+  uint16_t d = diaAtual();
+  int i;
+
+  faroldetalhe_teste_reset();
+  faroldetalhe_teste_relogio(relogioS, relogioMs);
+  montarCatalogoBase();
+  aquecerModelo(&g, d, 7701, 4379, 878);
+  faroldetalhe_teste_modelo(&g);
+
+  atomic_store(&g_diaLido, 0);
+  atomic_store(&g_diaGer, 5);
+  leituras_diario = 0;
+  atomic_store(&g_ms, 1000u);
+  faroldetalhe_abrir(1, 1000u);
+  for (i = 0; i < 30; i++)
+    faroldetalhe_atualizar(1, 0, 0, 0.016f, 1016u + (Uint32)(i * 16));
+  assert(leituras_diario == 0);
+
+  atomic_store(&g_diaLido, 1);
+  atomic_store(&g_diaGer, 7);
+  faroldetalhe_atualizar(1, 0, 0, 0.016f, 2000u);
+  assert(leituras_diario == 1);   // filme: so diario_titulo
+  for (i = 0; i < 30; i++)
+    faroldetalhe_atualizar(1, 0, 0, 0.016f, 2100u + (Uint32)(i * 16));
+  assert(leituras_diario == 1);
+
+  atomic_store(&g_diaGer, 8);     // geracao nova -> exatamente uma consulta
+  faroldetalhe_atualizar(1, 0, 0, 0.016f, 3000u);
+  assert(leituras_diario == 2);
+  atomic_store(&g_diaGer, 1);
+}
+
+// FAROL46B R2: o prazo de 8 s e da abertura pela identidade (IMDb base),
+// nao da posicao — a republicacao nao pode reabrir a janela.
+static void teste_prazo_identidade_nao_posicao(void) {
+  FarolGosto g;
+  FarolInfoFonte fonte;
+  FarolInfoCaps caps = { 1, 1 };
+  uint16_t d = diaAtual();
+
+  memset(&fonte, 0, sizeof fonte);
+  fonte.altura = 2160;
+  fonte.dv = 1;
+  fonte.toca = 1;
+  snprintf(fonte.audio, sizeof fonte.audio, "pt");
+
+  faroldetalhe_teste_reset();
+  faroldetalhe_teste_relogio(relogioS, relogioMs);
+  montarCatalogoBase();
+  aquecerModelo(&g, d, 7701, 4379, 878);
+  faroldetalhe_teste_modelo(&g);
+
+  atomic_store(&g_ms, 1000u);
+  faroldetalhe_abrir(1, 1000u);
+  atomic_store(&g_ms, 13000u);    // fonte chega aos 12 s: fora do prazo
+  faroldetalhe_teste_fontes("", &fonte, 1, &caps);
+  faroldetalhe_atualizar(1, 0, 0, 0.016f, 13000u);
+  assert(faroldetalhe_tem_qualidade() == 0);
+
+  { CatItem tmp = g_itens[0];     // republicacao: mesmo IMDb na posicao 0
+    g_itens[0] = g_itens[1]; g_itens[1] = tmp;
+    atomic_store(&g_catRev, 2); }
+  faroldetalhe_atualizar(0, 0, 0, 0.016f, 13016u);
+  fprintf(stderr, "republicacao: mesmo IMDb %s; idade=12016ms; qualidade=%d\n",
+          g_itens[0].imdb, faroldetalhe_tem_qualidade());
+  assert(!faroldetalhe_tem_qualidade());
+  { CatItem tmp = g_itens[0];
+    g_itens[0] = g_itens[1]; g_itens[1] = tmp;
+    atomic_store(&g_catRev, 3); }
+}
+
+// FAROL46B R3: o retrato do Mapa guarda catIndice da revisao antiga; a
+// semente tem que ser rebuscada pela identidade e conferida.
+static void teste_semente_rebusca_identidade(void) {
+  faroldetalhe_teste_reset();
+  faroldetalhe_teste_relogio(relogioS, relogioMs);
+  montarCatalogoBase();
+  semente_teste = 1;
+  mapa_rev_stub++;
+  leituras_indice_obsoleto = 0;
+
+  faroldetalhe_abrir(1, 1000u);
+  { CatItem tmp = g_itens[0];     // tt9000001 sai do slot 0 (entra o canal)
+    g_itens[0] = g_itens[2]; g_itens[2] = tmp;
+    atomic_store(&g_catRev, 2); }
+  faroldetalhe_atualizar(1, 0, 0, 0.016f, 1016u);
+  fprintf(stderr, "semente: slot0=%s, idx(tt9000001)=%d, leituras=%d\n",
+          g_itens[0].imdb, cat_indice_por_imdb("tt9000001"),
+          leituras_indice_obsoleto);
+  assert(leituras_indice_obsoleto == 0);
+  semente_teste = 0;
+  mapa_rev_stub++;
+}
+
+// FAROL46B R4: o codigo do idioma e traduzido (i18n) para buffer separado —
+// nunca o mesmo ponteiro de leitura e escrita.
+static void teste_idioma_linha_qualidade(void) {
+  FarolGosto g;
+  FarolInfoFonte fonte;
+  FarolInfoCaps caps = { 1, 1 };
+  uint16_t d = diaAtual();
+  char l0[192];
+
+  memset(&fonte, 0, sizeof fonte);
+  fonte.altura = 2160;
+  fonte.dv = 1;
+  fonte.toca = 1;
+  snprintf(fonte.audio, sizeof fonte.audio, "pt");
+
+  faroldetalhe_teste_reset();
+  faroldetalhe_teste_relogio(relogioS, relogioMs);
+  montarCatalogoBase();
+  aquecerModelo(&g, d, 7701, 4379, 878);
+  faroldetalhe_teste_modelo(&g);
+
+  atomic_store(&g_ms, 1000u);
+  faroldetalhe_abrir(1, 1000u);
+  faroldetalhe_teste_fontes("tt9000002", &fonte, 1, &caps);
+  atomic_store(&g_idioma, 1);
+  faroldetalhe_atualizar(1, 0, 0, 0.016f, 3500u);
+  assert(faroldetalhe_tem_qualidade() == 1);
+  assert(faroldetalhe_linha_info(0, l0, sizeof l0));
+  assert(strcmp(i18n("Português"), "Português") != 0);
+  fprintf(stderr, "linha de qualidade: [%s]; idioma esperado: [%s]\n",
+          l0, i18n("Português"));
+  assert(strstr(l0, i18n("Português")) != NULL);
+  atomic_store(&g_idioma, 0);
+}
+
+// FAROL46B R5: "tt…:T:E" normaliza para a serie — mesmo bloco do imdb puro.
+static void teste_id_episodio_normaliza(void) {
+  FarolInfoFonte fonte;
+  FarolInfoCaps caps = { 0, 0 };
+  int puro;
+
+  memset(&fonte, 0, sizeof fonte);
+  fonte.altura = 1080;
+  fonte.toca = 1;
+  snprintf(fonte.audio, sizeof fonte.audio, "pt");
+
+  faroldetalhe_teste_reset();
+  faroldetalhe_teste_relogio(relogioS, relogioMs);
+  montarCatalogoBase();
+  snprintf(g_itens[1].tipo, sizeof g_itens[1].tipo, "series");
+  atomic_store(&g_ms, 1000u);
+  faroldetalhe_abrir(1, 1000u);
+  faroldetalhe_teste_fontes("", &fonte, 1, &caps);
+  faroldetalhe_atualizar(1, 1, 2, 0.016f, 1016u);
+  puro = faroldetalhe_tem_qualidade();
+  assert(puro == 1);
+
+  snprintf(g_itens[1].imdb, sizeof g_itens[1].imdb, "tt9000002:1:2");
+  faroldetalhe_abrir(1, 1000u);
+  faroldetalhe_atualizar(1, 1, 2, 0.016f, 1016u);
+  fprintf(stderr, "qualidade com IMDb puro=%d, com sufixo de episodio=%d\n",
+          puro, faroldetalhe_tem_qualidade());
+  assert(faroldetalhe_tem_qualidade() == 1);
+
+  snprintf(g_itens[1].imdb, sizeof g_itens[1].imdb, "tt9000002");
+  snprintf(g_itens[1].tipo, sizeof g_itens[1].tipo, "movie");
+}
+
+// FAROL46B R6: resolucao/formato sem audio declarado ainda contam
+// qualidade (FT_INFO_QUALI_SO precisa de modelo de texto).
+static void teste_qualidade_sem_audio(void) {
+  FarolGosto g;
+  FarolInfoFonte fonte;
+  FarolInfoCaps caps = { 1, 1 };
+  uint16_t d = diaAtual();
+
+  memset(&fonte, 0, sizeof fonte);
+  fonte.altura = 2160;
+  fonte.dv = 1;
+  fonte.toca = 1;
+  assert(fonte.audio[0] == 0);
+
+  faroldetalhe_teste_reset();
+  faroldetalhe_teste_relogio(relogioS, relogioMs);
+  montarCatalogoBase();
+  aquecerModelo(&g, d, 7701, 4379, 878);
+  faroldetalhe_teste_modelo(&g);
+
+  atomic_store(&g_ms, 1000u);
+  faroldetalhe_abrir(1, 1000u);
+  faroldetalhe_teste_fontes("tt9000002", &fonte, 1, &caps);
+  faroldetalhe_atualizar(1, 0, 0, 0.016f, 3500u);
+  fprintf(stderr, "fonte confirmada 4K DV, audio nao declarado; qualidade=%d\n",
+          faroldetalhe_tem_qualidade());
+  assert(faroldetalhe_tem_qualidade() == 1);
 }
 
 // 5. Estresse concorrente para clang TSan (leitores/navegacao vs atualizacoes).
@@ -687,12 +934,24 @@ static void teste_concorrencia_tsan(void) {
   for (i = 0; i < 3; i++) pthread_join(leitores[i], NULL);
 }
 
-int main(void) {
-  teste_nasce_no_quadro_da_ficha();
-  teste_qualidade_fade_e_prazo_8s();
-  teste_ausencia_bloco_zero();
-  teste_selos_e_idiomas();
-  teste_concorrencia_tsan();
+int main(int argc, char **argv) {
+  static const struct { const char *n; void (*f)(void); } ts[] = {
+    { "nasce",                teste_nasce_no_quadro_da_ficha },
+    { "prazo8s",              teste_qualidade_fade_e_prazo_8s },
+    { "ausencia",             teste_ausencia_bloco_zero },
+    { "selos",                teste_selos_e_idiomas },
+    { "r1-diario-fio-ui",     teste_diario_fora_do_fio_ui },
+    { "r2-prazo-identidade",  teste_prazo_identidade_nao_posicao },
+    { "r3-semente-identidade",teste_semente_rebusca_identidade },
+    { "r4-idioma-buffer",     teste_idioma_linha_qualidade },
+    { "r5-id-episodio",       teste_id_episodio_normaliza },
+    { "r6-qualidade-sem-audio", teste_qualidade_sem_audio },
+    { "tsan",                 teste_concorrencia_tsan },
+  };
+  int i, achou = 0;
+  for (i = 0; i < (int)(sizeof ts / sizeof ts[0]); i++)
+    if (argc < 2 || !strcmp(argv[1], ts[i].n)) { ts[i].f(); achou = 1; }
+  assert(achou && "teste desconhecido");
   puts("farol_detalhe (core): ok");
   return 0;
 }
@@ -1039,7 +1298,17 @@ int main(int argc, char **argv) {
   enviarTecla(SDLK_RIGHT);
   assert(faroldetalhe_selo_atual() == 1);
   enviarTecla(SDLK_RETURN);
+#ifdef FD_TEM_SELO_FIO
+  {
+    int seloTipo = -1;
+    char seloFio[64];
+    assert(detail_pediu_explorar_selo(&seloTipo, seloFio, sizeof seloFio) == 1);
+    assert(seloTipo == FP_SELO_TEMA && seloFio[0] != 0);
+    fprintf(stderr, "selo de tema -> Explorar fio=[%s]\n", seloFio);
+  }
+#else
   assert(detail_pediu_explorar() == 1);
+#endif
 
   preencherFicha(&fRica, 8102, FF_SERIE, 2025, 50, 86, 7701, 4379, 878);
   faroldetalhe_teste_ficha("tt8100002", &fRica);

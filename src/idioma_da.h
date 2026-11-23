@@ -8348,6 +8348,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "Flere og flere ser med os. Tak til alle, der bruger appen, sender forslag og hjælper med at finde problemer."),
   T("Tem em %s %s, com áudio em %s.", "Findes i %s %s, lyd på %s."),
   T("Tem em %s, com áudio em %s.", "Findes i %s, lyd på %s."),
+  T("Tem em %s.", "Findes i %s."),
   T("Tem legenda em %s.", "Har undertekster på %s."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "Den har sin egen pakke fra webos3-grenen — ikke den samme fil. Disse tv har hverken H.265 eller HDR."),
   T("Tem uma enquete para você", "Der er en afstemning til dig"),

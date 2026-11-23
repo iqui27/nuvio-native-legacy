@@ -8348,6 +8348,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "المزيد من الناس يشاهدون معنا. شكرًا لكل من يستخدم التطبيق ويرسل الاقتراحات ويساعد في اكتشاف المشكلات."),
   T("Tem em %s %s, com áudio em %s.", "متوفر بـ%s %s، والصوت بـ%s."),
   T("Tem em %s, com áudio em %s.", "متوفر بـ%s، والصوت بـ%s."),
+  T("Tem em %s.", "متوفر بـ%s."),
   T("Tem legenda em %s.", "فيه ترجمة بـ%s."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "له حزمته الخاصة، من فرع webos3 — ليس الملف نفسه. تلك الأجهزة بلا H.265 وبلا HDR."),
   T("Tem uma enquete para você", "يوجد استطلاع لك"),

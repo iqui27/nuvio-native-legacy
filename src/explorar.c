@@ -389,12 +389,16 @@ static float vizRolarFileira(int grupo, int linha, float largura) {
 }
 #endif
 
-static void comecarToca(const MapaObra *o, int org) {
+static void comecarToca(const MapaObra *o, int org, const char *temaFio) {
 #ifdef NV_TOUCH_UI
   if (modo == MODO_CLIMA) caPagina = exPagina;
 #endif
   memset(trilha, 0, sizeof trilha);
   trilha[0].obra = *o;
+  // Fio do selo do Farol: kw de tema ou nome local de genero — a toca ja
+  // desce filtrada, igual a um salto por grupo da vizinhanca (FAROL46B).
+  if (temaFio && temaFio[0])
+    snprintf(trilha[0].tema, sizeof trilha[0].tema, "%s", temaFio);
   nTrilha = 1;
   origem = org;
   vizRev = 0;           // copia mesmo quando o titulo ja era o publicado
@@ -526,7 +530,7 @@ static void eventoClima(SDL_Keycode k) {
   else if (k == SDLK_DOWN)  { if (caLinha == 0 && caN[1] > 0) caLinha = 1; }
   else if (ehOk(k)) {
     const MapaObra *o = climaObraFocada();
-    if (o) comecarToca(o, ORIGEM_CLIMA);
+    if (o) comecarToca(o, ORIGEM_CLIMA, NULL);
     return;
   }
   else return;
@@ -1443,7 +1447,18 @@ void explorar_abrir_titulo(const MapaObra *o) {
   if (!o || !o->titulo[0]) return;
   if (climas.n == 0) { mapa_climas_pedir(); mapa_climas_copiar(&climas, &climasRev); }
   clAberto = -1;
-  comecarToca(o, ORIGEM_DETALHE);
+  comecarToca(o, ORIGEM_DETALHE, NULL);
+}
+
+// Variante do selo do Farol: a toca comeca no titulo ja descendo pelo fio
+// (tema ou genero) que o selo carrega. Fio vazio cai no caminho generico.
+void explorar_abrir_titulo_fio(const MapaObra *o, const char *temaFio) {
+  if (!temaFio || !temaFio[0]) { explorar_abrir_titulo(o); return; }
+  pediuRelogio = 0;
+  if (!o || !o->titulo[0]) return;
+  if (climas.n == 0) { mapa_climas_pedir(); mapa_climas_copiar(&climas, &climasRev); }
+  clAberto = -1;
+  comecarToca(o, ORIGEM_DETALHE, temaFio);
 }
 
 void explorar_encerrar(void) {

@@ -373,6 +373,8 @@ static unsigned srvAvailabilityVersion;
 static void ponteiroServidor(int p, int unused) { (void)unused; nivel = 0; focoVersao = 0; focoAmigos = 0; focoServidor = p; }
 static int  pedAmigos = 0;
 static int  pedExplorar = 0;   // circular "Explorar": o roteador abre a toca neste titulo
+static int  pedExplorarSelo = -1; // selo do Farol que pediu (FP_SELO_*), -1 = generico
+static char pedExplorarFio[64];   // fio cru do selo (kw de tema ou genero local)
 #define DET_PTR_AMIGOS 99
 #define NV_DETW_AMIGOS_H   76.0f
 #define NV_DETW_AMIGOS_GAP 18.0f
@@ -3511,7 +3513,9 @@ static void detail_evento_(const SDL_Event *e) {
     } else if (nivel == 0 && faroldetalhe_focado()) {
       long pTmdb = 0; int elCol = -1;
       char pNome[96], pFoto[256];
-      int ac = faroldetalhe_ativar(&pTmdb, &elCol, pNome, sizeof pNome, pFoto, sizeof pFoto);
+      int seloTipo = -1; char seloFio[64];
+      int ac = faroldetalhe_ativar(&pTmdb, &elCol, pNome, sizeof pNome, pFoto,
+                                   sizeof pFoto, &seloTipo, seloFio, sizeof seloFio);
       if (ac == FD_ACAO_PESSOA) {
         const CatItem *ci = cat_item(idx);
         if (pTmdb > 0) detail_mostrar_pessoa(pTmdb, pNome, pFoto);
@@ -3520,6 +3524,8 @@ static void detail_evento_(const SDL_Event *e) {
       } else if (ac == FD_ACAO_EXPLORAR) {
         trailer_fechar();
         pedExplorar = 1;
+        pedExplorarSelo = seloTipo;
+        snprintf(pedExplorarFio, sizeof pedExplorarFio, "%s", seloFio);
       }
     } else if (nivel == 0) {
       // Ordem FIXA: primario, adicionar a lista, marcar como visto, fontes.
@@ -9983,7 +9989,19 @@ int detail_pediu_fontes_ep(int *t, int *e) {
   if (t) *t = tt; if (e) *e = te;
   return tt >= 0 && te > 0;
 }
-int detail_pediu_explorar(void)   { int v = pedExplorar;   pedExplorar = 0;   return v; }
+int detail_pediu_explorar(void)   { int v = pedExplorar;   pedExplorar = 0;
+                                    pedExplorarSelo = -1; pedExplorarFio[0] = 0; return v; }
+// Versao com destino: devolve o tipo do selo (FP_SELO_*) e o fio que o Farol
+// resolveu, para o roteador abrir a toca filtrada (FAROL46B).
+int detail_pediu_explorar_selo(int *tipo, char *fio, size_t capFio) {
+  int v = pedExplorar;
+  pedExplorar = 0;
+  if (tipo) *tipo = pedExplorarSelo;
+  if (fio && capFio) snprintf(fio, capFio, "%s", pedExplorarFio);
+  pedExplorarSelo = -1;
+  pedExplorarFio[0] = 0;
+  return v;
+}
 // "Reproduzir desde o inicio" ainda cai no mesmo caminho do primario: o
 // roteador so sabe abrir o player no ponto salvo. Consumir o pedido aqui evita
 // que ele fique pendurado.
