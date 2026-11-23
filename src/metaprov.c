@@ -289,6 +289,23 @@ char *metaprov_meta_cinemeta_com(const char *tipo, const char *id, int seg,
   return c;
 }
 
+void metaprov_chave_episodios(char *dst, size_t n, const char *tipo, const char *id,
+                              int addonOnly) {
+  metaprov_chave(dst, n, tipo, id);
+  if (addonOnly && n > 1) {
+    size_t u = strlen(dst);
+    snprintf(dst + u, n - u, "/epext");
+  }
+}
+
+char *metaprov_meta_ficha_episodios(const char *tipo, const char *id, int seg_cine,
+                                    int addonOnly, int *prov) {
+  if (!addonOnly)
+    return metaprov_meta_com(tipo, id, seg_cine, metaprov_get_rede, NULL, prov);
+  if (prov) *prov = -1;
+  return NULL;
+}
+
 char *metaprov_meta(const char *tipo, const char *id, int seg_cine, int *prov) {
   return metaprov_meta_com(tipo, id, seg_cine, metaprov_get_rede, NULL, prov);
 }

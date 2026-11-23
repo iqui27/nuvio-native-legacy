@@ -1061,6 +1061,11 @@ static double fimEmendado(int i){
 // comeco de uma PREVIA que comece dentro dele (rede "ate o fim" + capitulo
 // "PV"/"Preview"). Quem pula o encerramento quer ver a previa; quem nao quer usa
 // o cartao do proximo. Chamar com a trava.
+// Se o botao de cena estiver ligado, o trecho POS_CREDITOS pode ser pulado
+// manualmente pelo botao (o automatico nunca o pula). Chamado a cada quadro.
+static int cenaBotaoLigado=0;
+void intro_cena_botao_definir(int ligado){pthread_mutex_lock(&trava);cenaBotaoLigado=!!ligado;pthread_mutex_unlock(&trava);}
+
 static double fimPulo(int i){
   double f=trechos[i].fim;
   if(trechos[i].tipo!=INTRO_CREDITOS)return f;
@@ -1116,15 +1121,16 @@ int intro_auto_ativo(double pos,double*fim,int*tipo){
 // 10 s se nao estiver focado, e so volta enquanto os controles (osd) estao de
 // pe dentro da janela. Chamado a cada quadro; `agora` em segundos monotonicos.
 int intro_botao(double pos,double agora,int osd,int focado,double*fim,int*tipo){
-  return intro_botao_config(pos,agora,osd,focado,fim,tipo,1,1,1);
+  return intro_botao_config(pos,agora,osd,focado,fim,tipo,1,1,1,0);
 }
 int intro_botao_config(double pos,double agora,int osd,int focado,double*fim,int*tipo,
-                       int mostrarIntro,int mostrarResumo,int mostrarCreditos){
+                       int mostrarIntro,int mostrarResumo,int mostrarCreditos,int mostrarCena){
   int i,idx=-1,vis=0;
   pthread_mutex_lock(&trava);
   for(i=0;i<nTrechos;i++){
     int dentro=trechos[i].fim>0.0?(pos>=trechos[i].inicio&&pos<trechos[i].fim):(pos>=trechos[i].inicio);
-    if(trechos[i].tipo==INTRO_PREVIA||trechos[i].tipo==INTRO_POS_CREDITOS)continue;
+    if(trechos[i].tipo==INTRO_PREVIA)continue;
+    if(trechos[i].tipo==INTRO_POS_CREDITOS){if(!mostrarCena)continue;}
     if(trechos[i].tipo==INTRO_ABERTURA&&!mostrarIntro)continue;
     if(trechos[i].tipo==INTRO_RESUMO&&!mostrarResumo)continue;
     if(trechos[i].tipo==INTRO_CREDITOS&&!mostrarCreditos)continue;
@@ -1305,3 +1311,32 @@ int intro_auto_pular(int tipo,double fim,double dur,int pularAbertura,int pularR
   if(tipo==INTRO_CREDITOS)return pularCreditos&&dur>0.0&&fim<=dur-5.0;
   return (tipo==INTRO_ABERTURA&&pularAbertura)||(tipo==INTRO_RESUMO&&pularResumo);
 }
+
+// #494: diario local para futura contribuicao AniSkip/TheIntroDB (sem rede).
+// Append-only com teto (INTRO_CONTRIB_MAX, intro.h): cheio, gira para .1 e
+// recomeca — a TV nunca enche o disco de dados por causa dele.
+void intro_contrib_registrar(const char *imdb, int tipo, int iniMs, int fimMs) {
+  FILE *f;
+  char path[600], rot[616];
+  char linha[160];
+  int tam;
+  struct stat st;
+  if (!imdb || !imdb[0] || iniMs < 0 || fimMs <= iniMs) return;
+  if (!dados_caminho(path, sizeof path, "skip-contrib-local.jsonl")) return;
+  tam = snprintf(linha, sizeof linha, "{\"imdb\":\"%s\",\"tipo\":%d,\"ini\":%d,\"fim\":%d}\n",
+                 imdb, tipo, iniMs, fimMs);
+  if (tam <= 0 || tam >= (int)sizeof linha) return;
+  // Rotaciona ANTES de estourar o teto: se esta linha levaria o arquivo alem
+  // de INTRO_CONTRIB_MAX, o atual vira .1 e a escrita cai no diario novo —
+  // nenhum dos dois passa do limite.
+  if (!stat(path, &st) && st.st_size + tam > INTRO_CONTRIB_MAX) {
+    snprintf(rot, sizeof rot, "%s.1", path);
+    rename(path, rot);
+  }
+  f = fopen(path, "a");
+  if (!f) return;
+  fputs(linha, f);
+  fclose(f);
+  chmod(path, 0600);
+}
+

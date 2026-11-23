@@ -1,8 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export TMPDIR=/Volumes/ExternalSSD/tmp
-work=$(mktemp -d "$TMPDIR/nuvio-tizen-manual.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-tizen-manual.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 python3 - "$work/manual.inc" <<'PY'
 from pathlib import Path
@@ -13,7 +12,7 @@ def function(name):
     return s[start:s.index('\n}', start) + 2]
 Path(sys.argv[1]).write_text(function('definirFonteVOD') + '\n' + function('abrirFonteManualDireta'))
 PY
-cc -std=gnu11 -Wall -Wextra -Werror -Isrc -I/opt/homebrew/include -I"$work" tests/tizen_manual_network.c src/redesaude.c -pthread -o "$work/manual"
+cc -std=gnu11 -Wall -Wextra -Werror -Isrc -I/opt/homebrew/include -I"$work" tests/tizen_manual_network.c src/redesaude.c src/farolanel.c -pthread -o "$work/manual"
 # Prove the no-headers fixture catches the leaking transport without changing the checkout.
 git show "${TIZEN_NETWORK_BASELINE:-0c80e6f9e}:src/rede.c" > "$work/baseline.c"
 if TIZEN_NETWORK_SOURCE="$work/baseline.c" node tests/tizen_manual_network.cjs "$work/manual" > "$work/baseline.log" 2>&1; then

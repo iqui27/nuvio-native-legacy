@@ -86,7 +86,7 @@ static void rgFocoLinha(GfxRect r, float raioPx) {
   if (rgVid()) gfx_cor(r, raioPx / r.h, 1, 1, 1, 0.12f);
   else {
     gfx_rect((GfxRect){ r.x - 10, r.y + 2, r.w + 20, r.h + 26 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.30f);
-    gfx_cor(r, raioPx / r.h, 0.169f, 0.176f, 0.204f, 1);
+    gfx_cor(r, raioPx / r.h, NV_COR_FOCO_RGB, 1);
   }
 }
 static void rgPilulaAcento(GfxRect r, float raioPx, float a) {

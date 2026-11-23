@@ -13,6 +13,7 @@ objects=()
 pids=()
 flags=(-DAJUSTES_TESTE)
 if [ "$source_test" = tests/nav21.c ]; then flags+=('-DNV_REC_URL="http://127.0.0.1:8799"'); fi
+if [ "$source_test" = tests/pessoas_shot.c ]; then flags+=('-DNV_REC_URL="http://127.0.0.1:1"'); fi
 for source in src/*.c src/dts/*.c "$source_test"; do
   case "$source" in src/main.c) continue;; esac
   case "$source_test:$source" in

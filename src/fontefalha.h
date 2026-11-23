@@ -60,6 +60,9 @@ int fontefalha_addon_definir_ao_vivo(const char *chave, int ligado);
 typedef struct FonteFalhaSessao FonteFalhaSessao;
 typedef struct {
   int indice, nativa, ordemAddon;
+  // Pontuacao ja calculada sob verTrava em falhaCandidatas: o verificador a
+  // usa no evento de escolha sem reler a lista viva fora da trava.
+  long pontos;
   char addon[FONTEFALHA_CHAVE];
   // Hash + arquivo para native; URL + cabecalhos para URL direta. O chamador
   // mantem a string durante a chamada; tentar() guarda uma copia propria.

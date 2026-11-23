@@ -14,6 +14,17 @@ typedef struct ImgsubQuadro {
   unsigned id;               // unico por quadro: chave do cache de textura do desenho
 } ImgsubQuadro;
 
+// Per-store snapshot. Drawn means submitted to gfx, not hardware presentation.
+typedef struct {
+  uint64_t queued, rejected, evicted, selected, drawn, cleared;
+  unsigned owner;
+  int frames;
+  size_t bytes;
+  double max_draw_lateness;
+} ImgsubDiagnostico;
+void imgsub_diagnostico(ImgsubDiagnostico *out);
+void imgsub_apresentado(const ImgsubQuadro *frame, double t);
+
 // Guarda o quadro decodificado (leva os bitmaps: q->obj[i].rgba fica NULL).
 void imgsub_por(unsigned dono, double ini, double fim, PgsQuadro *q);
 void imgsub_limpar(void);

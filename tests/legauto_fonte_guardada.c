@@ -47,6 +47,7 @@ void addons_legendas_fonte(const char *id, const char *tipo, const char *arq,
 }
 uint64_t legsync_hash_url(const char *u) { uint64_t h = 5381; while (*u) h = h * 33 + (unsigned char)*u++; return h; }
 const char *i18n(const char *s) { return s; }
+int ajustes_legenda_evitar_sdh(void) { return 0; }   // #743: desligado neste teste
 
 int main(void) {
   snprintf(titulo.imdb, sizeof titulo.imdb, "tt205");

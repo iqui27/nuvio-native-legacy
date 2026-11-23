@@ -119,15 +119,26 @@ static int parecenca(const AudioCand *c, const AudioLembrada *m) {
   return p + (rot ? 4 : 0) + (cod ? 2 : 0) + (ch ? 1 : 0);
 }
 
-// Num idioma: a primeira que nao e DTS/TrueHD; senao a primeira DTS/TrueHD.
+/* Preferencia regional (#777): entre faixas do mesmo idioma, ling_afinidade
+ * separa es-419 de es-ES (e pt-BR de pt-PT). A variante so DESEMPATA dentro
+ * do idioma: a familia toda continua casando — sem a etiqueta exata, a familia
+ * do idioma principal vence qualquer preferencia secundaria (F48-r2). E sem
+ * variante na preferencia ("en", "pt") nao ha o que desempatar: empate geral,
+ * vale a ordem da lista, como sempre foi. */
 static int noIdioma(const AudioCand *c, int n, const char *pref) {
-  int i, dts = -1;
+  int i, melhor = -1, nota = 0, dtsMelhor = -1, dtsNota = 0, a;
+  int regional = ling_prefere_regional(pref);
   for (i = 0; i < n; i++) {
     if (!c[i].pode || !c[i].idioma || !c[i].idioma[0] || !ling_casa(c[i].idioma, pref)) continue;
-    if (!c[i].dts) return i;
-    if (dts < 0) dts = i;
+    a = regional ? ling_afinidade(c[i].idioma, pref) : 1;
+    if (!c[i].dts) {
+      if (a > nota) { nota = a; melhor = i; }
+    } else if (a > dtsNota) {
+      dtsNota = a; dtsMelhor = i;
+    }
   }
-  return dts;
+  if (melhor >= 0) return melhor;
+  return dtsMelhor;
 }
 
 // A MESMA RELEASE: o bingeGroup e a declaracao do addon de que estes episodios

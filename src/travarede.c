@@ -29,6 +29,7 @@
 #endif
 #endif
 
+#include "nvbackend.h"
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif
@@ -545,7 +546,9 @@ void travarede_visto(const char *imdb, const VistoPar *pares, int n, int visto) 
   }
 }
 
-static void ouvinte(const char *imdb, const VistoPar *pares, int n, int visto) {
+static void ouvinte(const char *imdb, const char *tipo, const VistoPar *pares,
+                    int n, int visto) {
+  (void)tipo;   // a trava e de serie; o titulo inteiro chega com n == 0
   travarede_visto(imdb, pares, n, visto);
 }
 

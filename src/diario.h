@@ -111,6 +111,7 @@ typedef struct {
   unsigned short semFlags;  // e com NENHUMA destas
   char origem;              // 0 = qualquer
   int  decrescente;         // 1 = mais novas primeiro
+  int  saltar;              // pula as N primeiras que casam (retomar varredura)
 } DiarioFiltro;
 
 // Eventos para os ouvintes.
@@ -193,6 +194,8 @@ int  diario_percorrer(int perfil, const DiarioFiltro *f, DiarioVisita cb, void *
 // --- mudancas --------------------------------------------------------------
 // Sobe a cada mudanca daquele perfil (qualquer fio). 0 = perfil nunca carregado.
 unsigned diario_geracao(int perfil);
+// 1 = a loja do perfil ja leu o arquivo. So consulta — nao dispara a carga.
+int  diario_carregado(int perfil);
 typedef void (*DiarioOuvinte)(int perfil, int evento, const DiarioEntrada *e, void *ctx);
 // Ate 8 ouvintes. Chamados so no laco principal (diario_passo). 1 se registrou.
 int  diario_ouvir(DiarioOuvinte fn, void *ctx);

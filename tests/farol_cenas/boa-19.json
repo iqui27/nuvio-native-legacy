@@ -1,0 +1,1 @@
+{"v":1,"tela":"home","perfil":2,"feita":1795000000,"vale_s":86400,"origem":"regras","pecas":[{"t":"escolha","passo":2,"de":2,"pergunta":{"m":"FT_ESC_PESO"},"opcoes":[{"id":"leve","r":{"m":"FT_ESC_PESO_LEVE"}},{"id":"forte","r":{"m":"FT_ESC_PESO_INTENSO"}}]}]}

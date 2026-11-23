@@ -107,6 +107,15 @@ typedef struct {
   long posMs;               // posicao mostrada (a do scrub, enquanto avanca)
   long playheadMs;          // video_pos()
   int scrubbing;            // 1 enquanto a pessoa avanca/volta
+  // Estado do video lido no fio do player, que monta esta struct a cada
+  // batida. Um provedor com fio proprio nao chama video_*/ajustes_* ele
+  // mesmo: fora desse fio algumas dessas chamadas mudam estado partilhado
+  // (video_pos() no TPK pode limpar posReconLeg, que a reconexao usa).
+  int pronto;               // video_pronto()
+  int tocando;              // video_tocando()
+  unsigned bufferandoMs;    // video_bufferando_ms()
+  int dts;                  // video_dts_estado()
+  int larguraMiniatura;     // ajustes_miniatura_largura()
 } SeekrFonte;
 typedef struct {
   int  (*tem_chave)(void);

@@ -30,6 +30,7 @@ int legfontes_sfnt_valido(const void *dados, size_t n);
  * The staging file is removed on both success and failure. */
 int legfontes_importar(int slot, const char *arquivo);
 int legfontes_pedir_importacao(int slot);
+int legfontes_pedir_url(int slot, const char *url);
 /* Poll once per UI tick. Returns a translatable status string, or NULL. */
 const char *legfontes_atualizar(void);
 #endif

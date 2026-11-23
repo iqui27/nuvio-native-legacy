@@ -1,22 +1,18 @@
 // #92: o pipeline recebe a URL inteira; a sonda e o ASS precisam da mesma URL.
+// video.c inteiro nao linka mais no teste (audio externo/DTS puxam dezenas de
+// modulos); video_url.inc extrai as cotas de simulacao — urlAtual,
+// video_url_atual e o video_tocar coto — do src/video.c de verdade.
+#ifndef NV_LINUX_DESKTOP
+#define NV_LINUX_DESKTOP   // VideoSimulacao existe so na cota desktop do video.h
+#endif
+#include "../src/mediaurl.h"
 #include "../src/video.h"
-#include <assert.h>
+#include <stdlib.h>
 #include <stdio.h>
+#include <assert.h>
 #include <string.h>
 
-// Dobles inertes: video.c os referencia (velocidade e legenda DTS), este teste so olha a URL.
-#include "../src/cacheboost.h"
-#include "../src/dts/dts_overlay.h"
-int cacheboost_ganho_estado(void) { return 0; }
-int dados_gravar(const char *nome, const char *conteudo) {
-  (void)nome; (void)conteudo;
-  return 1;
-}
-int dts_overlay_draw(DtsPlayback *p, double seconds, float x, float y,
-                     float w, float h, int video_w, int video_h, float alpha) {
-  (void)p; (void)seconds; (void)x; (void)y; (void)w; (void)h; (void)video_w; (void)video_h; (void)alpha;
-  return 0;
-}
+#include "video_url.inc"
 
 int main(void) {
   char url[4096];

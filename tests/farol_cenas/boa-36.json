@@ -1,0 +1,43 @@
+{
+ "v": 1,
+ "tela": "home",
+ "perfil": 2,
+ "feita": 1795000000,
+ "vale_s": 86400,
+ "origem": "regras",
+ "pecas": [
+  {
+   "t": "fileira",
+   "id": "gosto1",
+   "titulo": {
+    "m": "FT_FIL_PORQUE_TERMINOU",
+    "a": [
+     "tt11280740"
+    ]
+   },
+   "sub": {
+    "m": "FT_FIL_SUB_TEMA",
+    "a": [
+     "k9951"
+    ]
+   },
+   "forma": "cartaz",
+   "itens": [
+    "c0",
+    "c4",
+    "c1",
+    "c7",
+    "c2",
+    "c9"
+   ],
+   "motivo": {
+    "c0": {
+     "m": "FT_MOT_PESSOA",
+     "a": [
+      "p137427"
+     ]
+    }
+   }
+  }
+ ]
+}

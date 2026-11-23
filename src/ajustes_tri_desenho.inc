@@ -6,14 +6,26 @@
 #include "menu.h"
 _Static_assert(AJS_HOME == 4 && AJS_CONTAS == 8, "triGrupo segue a ordem dos SEC de TELA");
 
+#ifdef NV_DESKTOP_UI
+#define TRI_TOPO      (layout_desktop_ativo() ? 208.0f / AJ2_S : 232.0f)
+#else
 #define TRI_TOPO      232.0f
+#endif
 #define TRI_BASE      (triBaseTela())
+#ifdef NV_DESKTOP_UI
+#define TRI_VAO        (layout_desktop_ativo() ? 64.0f / 3.0f / AJ2_S : 16.0f)
+// Owner's Mac board: stable category, content and inspector columns.
+#define TRI_SEC_W     (layout_desktop_ativo() ? 904.0f / 3.0f / AJ2_S : 400.0f)
+#define TRI_INSP_W    (layout_desktop_ativo() ? 360.0f / AJ2_S : 480.0f)
+#define TRI_SEC_LN     (layout_desktop_ativo() ? 46.0f / AJ2_S : ajRetrato() ? AJ2_LN_H : 54.0f)
+#define TRI_LISTA_CAB  (layout_desktop_ativo() ? 128.0f : 104.0f)
+#else
 #define TRI_VAO        16.0f
-// Desktop layout (Mac density): full category names, unclipped inspector.
 #define TRI_SEC_W     (layout_desktop_ativo() ? 470.0f : 400.0f)
 #define TRI_INSP_W    (layout_desktop_ativo() ? 560.0f : 480.0f)
 #define TRI_SEC_LN     (ajRetrato() ? AJ2_LN_H : 54.0f)
 #define TRI_LISTA_CAB  104.0f
+#endif
 
 // PALCO (mockup claude-c, aprovado 30/10/2026): a tela e uma PILHA DE BLADES.
 // Menu 380 em (48,112); a partir da profundidade 2 vira pilula de icones 104.
@@ -37,16 +49,27 @@ static float triBladeLargura(void) { return TRI_P_COL; }
 // O menu real e desenhado pelo app (menu.c) por cima; aqui nada o imita.
 static float triX0(void) {
   float s = ajustes_tamanho_ajustes();
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return (NV_DESKTOP_RAIL_W + 208.0f / 3.0f) / s;
+#endif
   if (ajRetrato()) return 16.0f * NV_LAYOUT_REAL_W / (466.0f * s);
   return (ajustes_rail_largura_fixa() > 0.0f ? fmaxf(48.0f, ajustes_conteudo_x()) : 48.0f) / s;
 }
-static float triXFim(void) { return NV_VTELA_W - (ajRetrato() ? 0.0f : 48.0f); }
+static float triXFim(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return NV_VTELA_W - 36.0f / AJ2_S;
+#endif
+  return NV_VTELA_W - (ajRetrato() ? 0.0f : 48.0f);
+}
 static int triTemSecoes(void) { return !ajRetrato(); }
 
 // --- O PALCO (mockup claude-c): o layout de blades --------------------------------------
 // Ativo na tela larga com secoes (o retrato/"Lista"/celular mantem o caminho
 // antigo: uma faixa de secoes e uma blade por vez, sem palco).
 static int triBladeLayout(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return 0;
+#endif
   return !ajRetrato() && !ajustes_layout_lista() && !ajTelaCheia() &&
          triXFim() - triX0() >= 1240.0f;
 }
@@ -83,8 +106,16 @@ static int triTopoNivel(void) { int n = triProfundidade(); return n > 0 ? n - 1 
 
 // Portrait reuses the section island as a grouped list, then opens its page.
 static float triIlhaTopo(void) { return triBladeLayout() ? TRI_P_TOPO : TRI_TOPO; }
-static float triBaseTela(void) { return triBladeLayout() ? TRI_P_TOPO + TRI_P_H : NV_VTELA_H - 80.0f; }
+static float triBaseTela(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return NV_VTELA_H - 48.0f / AJ2_S;
+#endif
+  return triBladeLayout() ? TRI_P_TOPO + TRI_P_H : NV_VTELA_H - 80.0f;
+}
 static int triTemInsp(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return 1;
+#endif
   if (ajustes_layout_lista() || ajRetrato()) return 0;
   return triBladeLayout() || triXFim() - triX0() - TRI_SEC_W - TRI_VAO - TRI_INSP_W - TRI_VAO >= 560.0f;
 }
@@ -154,6 +185,9 @@ static void triCabecalho(void) {
   static const char *const icones[] = { "aj_search", "aj_wand-sparkles", "aj_rotate-ccw", "aj_sparkles" };
   static const char *const rot[] = { "Buscar ajuste", "Predefinições", "Diferente do padrão", "O que o Nuvio faz?" };
   float x = triX0(), y = 112.0f, xd = triXFim(), ar, ag, ab;
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) y = 88.0f / AJ2_S;
+#endif
   char n[TRI_C_N][24];
   int i, difs = 0;
   ajustes_acento(&ar, &ag, &ab);
@@ -235,6 +269,35 @@ static void triCabecalho(void) {
   // O kicker: o perfil em uso (as preferencias "Conta/perfil" sao dele).
   // Layout Dinamica: a pilula da Apple TV (menu.c) ja diz "Ajustes" nesse
   // canto; o titulo grande ficaria duplicado atras dela (como perfil.c).
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) {
+    ajKicker("Nuvio · Desktop", x, y, 1);
+    if (!desktop_native_control(4, 4, i18n("Ajustes"), 34, 1, x, y + 32 / AJ2_S, 480, 64 / AJ2_S, 1)) {
+      TxtLinha title = ajTxt(TXT_AJ_NUM64, "Ajustes");
+      txt_desenhar(title, x, y + 30);
+    }
+    for (i = 0; i < AJ_N; i++) if (TELA[i].tipo == IT_OPC && ajOpcaoDisponivel(TELA[i].op) && uxDiferente(TELA[i].op) && triMutavel(TELA[i].op)) difs++;
+    const float points = (4.0f / 3.0f) / AJ2_S;
+    static const float widths[] = {190, 118, 182, 150};
+    static const float gaps[] = {0, 8, 18, 60};
+    xd -= 38 * points;
+    for (i = TRI_C_N - 1; i >= 0; i--) {
+      char label[200];
+      snprintf(label, sizeof label, "%s", i18n(rot[i]));
+      if (i == TRI_C_DIF && difs) snprintf(label, sizeof label, "%s · %d", i18n(rot[i]), difs);
+      float w = fmaxf(widths[i] * points, txt_largura(TXT_V2_SEG, label) + 44);
+      GfxRect r = {xd - w, 100 * points, w, 24 * points};
+      if (!desktop_native_control(i, i == TRI_C_BUSCA ? 3 : 2, label, 0, 1, r.x, r.y, r.w, r.h, 1)) {
+        ajNeutro(r, 8, .08f, AJ_CHIP_SOL, 1);
+        TxtLinha t = ajTxtC(TXT_V2_SEG, label, r.w - 24);
+        txt_desenhar(t, r.x + 12, r.y + (r.h - t.h) * .5f);
+      }
+      ponteiro_alvo(r.x, r.y, r.w, r.h, triPontChip, NULL, i, 0);
+      xd = r.x - gaps[i] * points;
+    }
+    return;
+  }
+#endif
   if (!menu_pilula_titulo()) {
     const ContaPerfil *p = perfis_item_ativo();
     char k[160];
@@ -292,6 +355,9 @@ static void triPontSecaoAbrir(int i, int b) {
 }
 // A altura das secoes com os rotulos de grupo (o mesmo passo do desenho).
 static float triSecoesAltura(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return (nSecoes + 1) * TRI_SEC_LN + 3 * 51 + 2 * 18;
+#endif
   float h = 0.0f; int j, g = -1;
   for (j = 0; j <= nSecoes; j++) {
     int gj = triParental(j) ? 2 : triGrupo(j);
@@ -346,6 +412,9 @@ static void triIlhaSecoes(void) {
   if (ajRolagemLivre() && !uxEditor && !ajModalAberto())
     triSecRolY = ajToqueRegistrar(AJT_SECOES, (GfxRect){ ilha.x, topo, ilha.w, base - topo }, &triSecRolY, total - (base - topo), triSecRolY, 0);
 #endif
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) topo += 12;
+#endif
   y = topo - triSecRolY;
   gfx_recorte(ilha.x, topo, ilha.w, base - topo);
   for (j = 0; j <= nSecoes; j++) {
@@ -357,17 +426,34 @@ static void triIlhaSecoes(void) {
     const char *icone = triParental(j) ? "aj_shield" : TELA[secIni[j]].icone;
     GfxRect r;
     if (gj != g) {
-      if (g >= 0) y += 6.0f;
-      g = gj;
-      if (condK < 0.99f) { gfx_opacidade_grupo = rotA; ajKicker(triGrupoNome(g), ilha.x + 32.0f, y + 10.0f, 1); gfx_opacidade_grupo = 1.0f; }
-      y += 10.0f + 15.0f + 6.0f;
+#ifdef NV_DESKTOP_UI
+      if (layout_desktop_ativo()) {
+        if (g >= 0) y += 18;
+        g = gj;
+        ajCaps(TXT_V2_18, i18n(triGrupoNome(g)), 0, ilha.x + 24, y + 10, .5f);
+        y += 51;
+      } else
+#endif
+      {
+        if (g >= 0) y += 6.0f;
+        g = gj;
+        if (condK < 0.99f) { gfx_opacidade_grupo = rotA; ajKicker(triGrupoNome(g), ilha.x + 32.0f, y + 10.0f, 1); gfx_opacidade_grupo = 1.0f; }
+        y += 10.0f + 15.0f + 6.0f;
+      }
     }
     float inset = ajRetrato() ? 0.0f : 14.0f;
     r = (GfxRect){ ilha.x + inset, y, ilha.w - 2.0f * inset, TRI_SEC_LN };
     if (j == triSecFoco) { fy0 = y + triSecRolY; fy1 = fy0 + TRI_SEC_LN; }
     ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, ajRetrato() ? NULL : triPontSecao, ajRetrato() ? triPontSecaoAbrir : NULL, j, 0);
     ajFocoLinha(r, 20.0f, f, 1);
-    if (aberta && f < 0.99f) gfx_cor((GfxRect){ r.x + 7.0f, r.y + r.h * 0.5f - 2.5f, 5, 5 }, 0.5f, ar, ag, ab, 1.0f - f);
+#ifdef NV_DESKTOP_UI
+    if (layout_desktop_ativo() && aberta) gfx_cor(r, 12 / r.h, 1, 1, 1, .06f * (1 - f));
+#endif
+    if (
+#ifdef NV_DESKTOP_UI
+        !layout_desktop_ativo() &&
+#endif
+        aberta && f < 0.99f) gfx_cor((GfxRect){ r.x + 7.0f, r.y + r.h * 0.5f - 2.5f, 5, 5 }, 0.5f, ar, ag, ab, 1.0f - f);
     float iconH = primaria ? 26.0f : 22.0f;
     float ix = r.x + 20.0f + (26.0f - iconH) * 0.5f;
     if (condK > 0.0f) {   // condensado: o icone centra na pilula de 104
@@ -385,6 +471,9 @@ static void triIlhaSecoes(void) {
     if (condK < 0.99f) {
       { float width = (palco ? 380.0f - 28.0f : r.w) - 62.0f - 48.0f;   // Palco: mede no menu aberto; o recorte da ilha corta
         int style = primaria || foco ? TXT_W20_24B : TXT_AJ_SUB;
+#ifdef NV_DESKTOP_UI
+        if (layout_desktop_ativo()) style = TXT_V2_LN;
+#endif
         if (primaria && txt_largura(style, i18n(titulo)) > width) style = TXT_ILHA_SECAO;
         TxtLinha t = ajTxtC(style, titulo, width);
         txt_desenhar_alpha(t, r.x + 62.0f, r.y + (r.h - t.h) * 0.5f, al * rotA); }
@@ -413,6 +502,9 @@ static void triIlhaSecoes(void) {
 static void triListaCabecalho(GfxRect ilha, const char *titulo, const char *sub, float a) {
   TxtLinha t = ajTxtC(TXT_V2_LN_B, titulo, ilha.w - 60.0f);
   float x = ilha.x + 30.0f, y = ilha.y + 22.0f;
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) y += 16;
+#endif
   txt_desenhar_alpha(t, x, y, a);
   if (sub && sub[0]) {
     TxtLinha s = ajTxtC(TXT_V2_18, sub, ilha.w - 60.0f);
@@ -1233,6 +1325,14 @@ static void triRodape(void) {
   if (ajPontInline) { ajToqueBotoes(xd, yc, 1.0f); return; }
 #endif
   if (ajTelaCheia()) return;
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) {
+    snprintf(rota, sizeof rota, "%s · %s", i18n("Ajustes"), i18n(TELA[secIni[secAtual]].titulo));
+    TxtLinha t = ajTxt(TXT_G18R, uxAviso[0] ? uxAviso : rota);
+    txt_desenhar_alpha(t, xd - t.w, NV_VTELA_H - 28, .45f);
+    return;
+  }
+#endif
   if (triBladeLayout()) {
     // Palco: SEM barra de dicas (o mockup claude-c nao tem; as teclas moram no
     // proprio controle). So o aviso "Ajuste salvo..." quando existe.

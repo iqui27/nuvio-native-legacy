@@ -174,7 +174,7 @@ int  intro_botao(double posSeg,double agora,int osd,int focado,double *fim,int *
 // Same timed button, restricted to enabled manual types. Does not affect markers,
 // automatic skipping, credits detection or next-episode behavior.
 int  intro_botao_config(double posSeg,double agora,int osd,int focado,double *fim,int *tipo,
-                        int mostrarIntro,int mostrarResumo,int mostrarCreditos);
+                        int mostrarIntro,int mostrarResumo,int mostrarCreditos,int mostrarCena);
 int  intro_botao_visivel(double *fim,int *tipo);
 void intro_botao_esconder(double agora);
 // #329/#331: o trecho (tipo, fim) deve ser pulado sozinho? Abertura/resumo: ajuste ligado e
@@ -200,4 +200,8 @@ void intro_shot_definir(const IntroTrecho *v,int n);   // capturas: trechos fixo
 void intro_shot_marcas(const char *imdb,int t,int e,const IntroTrecho *v,int n,int origem);
 void intro_shot_rede(const IntroTrecho *v,int n,const IntroTrecho *lim,int nl);   // teste: trechos da rede   // capturas: trechos fixos
 #endif
+void intro_contrib_registrar(const char *imdb, int tipo, int iniMs, int fimMs);
+// Teto do diario local (#494): cheio, gira para .1 e recomeca.
+#define INTRO_CONTRIB_MAX 262144L
 #endif
+

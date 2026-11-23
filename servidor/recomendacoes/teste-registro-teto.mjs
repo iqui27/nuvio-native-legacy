@@ -61,8 +61,10 @@ test("corpo acima de 2 MB: 413", async (t) => {
 
 test("texto identico da mesma pessoa nao cria linha e devolve o mesmo recibo", async (t) => {
   const { sqlite, post } = cenario(t);
+  // Mesma classe de origem: o dedupe vale so dentro dela — um "(manual)"
+  // identico a um "(auto)" NAO herda os 4 dias do automatico (issue farol-5).
   const a = await post({ quando: "2026-10-07 10:00 (anterior)", texto: "log igual" });
-  const b = await post({ quando: "2026-10-07 11:00", texto: "log igual" });
+  const b = await post({ quando: "2026-10-07 11:00 (anterior)", texto: "log igual" });
   const c = await post({ quando: "2026-10-07 11:00", texto: "log igual" }, "outra");
   assert.equal(b.body.registro_id, a.body.registro_id);
   assert.notEqual(c.body.registro_id, a.body.registro_id);
@@ -77,17 +79,22 @@ test("(auto) seguido, texto diferente, na janela de 15 min: substitui", async (t
   assert.deepEqual(l.map((x) => x.texto), ["dois"]);
 });
 
-test("retencao: 4 dias, arranque 30, em lotes", async (t) => {
+test("retencao: automatico 4 dias, manual e arranque 30, em lotes", async (t) => {
   const { sqlite, env } = cenario(t);
   const t0 = Math.floor(Date.now() / 1000), dia = 86400;
-  const ins = sqlite.prepare("INSERT INTO registro (pessoa, criado, texto) VALUES (?, ?, '')");
-  for (let i = 0; i < 450; i++) ins.run("p" + i, t0 - 5 * dia);      // velhos: saem
-  for (let i = 0; i < 10; i++) ins.run("p" + i, t0 - 3 * dia);       // novos: ficam
-  for (let i = 0; i < 5; i++) ins.run("arranque:x", t0 - 10 * dia);  // arranque 10 dias: fica
-  for (let i = 0; i < 5; i++) ins.run("arranque:x", t0 - 31 * dia);  // arranque 31 dias: sai
+  const ins = sqlite.prepare("INSERT INTO registro (pessoa, criado, quando, texto) VALUES (?, ?, ?, '')");
+  for (let i = 0; i < 450; i++) ins.run("p" + i, t0 - 5 * dia, "log (auto)");  // autos velhos: saem
+  for (let i = 0; i < 10; i++) ins.run("p" + i, t0 - 3 * dia, "log (auto)");   // autos novos: ficam
+  ins.run("manual-a", t0 - 29 * dia, "hoje");                                // manual 29 dias: fica
+  ins.run("manual-b", t0 - 31 * dia, "hoje");                                // manual 31 dias: sai
+  for (let i = 0; i < 5; i++) ins.run("arranque:x", t0 - 10 * dia, "");        // arranque 10 dias: fica
+  for (let i = 0; i < 5; i++) ins.run("arranque:x", t0 - 31 * dia, "");        // arranque 31 dias: sai
   await limparRegistro(env, t0);
   const q = (w) => sqlite.prepare(`SELECT COUNT(*) AS n FROM registro WHERE ${w}`).get().n;
-  assert.equal(q("pessoa NOT LIKE 'arranque:%' AND criado < " + (t0 - 4 * dia)), 0);
-  assert.equal(q("pessoa NOT LIKE 'arranque:%'"), 10);
+  assert.equal(q("pessoa NOT LIKE 'arranque:%' AND criado < " + (t0 - 4 * dia) +
+                 " AND (quando LIKE '%(auto)' OR quando LIKE '%(anterior)')"), 0);
+  assert.equal(q("pessoa = 'manual-a'"), 1);
+  assert.equal(q("pessoa = 'manual-b'"), 0);
+  assert.equal(q("pessoa NOT LIKE 'arranque:%'"), 11);
   assert.equal(q("pessoa LIKE 'arranque:%'"), 5);
 });

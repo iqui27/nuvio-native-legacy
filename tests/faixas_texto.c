@@ -42,6 +42,11 @@ int addons_legendas_copiar(Legenda *dst, int max, unsigned *g, int *p) { (void)d
 int ajustes_legenda_forcada_auto(void) { return 0; }
 void legenda_desligar(void) {}
 void legenda_pre_descartar(const char *motivo) { (void)motivo; }
+int legenda_ass_ativa(void) { return 0; }
+int assrender_ativo(void) { return 0; }
+int assrender_texto_simples(void) { return 0; }
+int assperf_get(int id) { (void)id; return 0; }
+int ass_novo_ligado(void) { return 0; }
 void legendasui_atualizar(float dt) { (void)dt; }
 void legendasui_id_addon(const Legenda *l, char out[24]) { (void)l; out[0] = 0; }
 const char *ling_legenda(void) { return ""; }
@@ -88,6 +93,31 @@ void video_sondar_mkv_agora(void) {}
 int video_velocidade_bloqueada(void) { return 0; }
 int video_velocidade_atual(void) { return VEL_NORMAL; }
 int video_velocidade_suportada(void) { return 1; }
+// Dublês do audio externo / lista de streams que faixas.c passou a consultar
+// (escolha estendida). Inertes: este teste so olha a faixa de texto do MKV.
+int stream_n(void) { return 0; }
+int stream_atual(void) { return -1; }
+const Stream *stream_item(int i) { (void)i; return NULL; }
+unsigned stream_lista_geracao(void) { return 0; }
+int stream_lista_do_alvo_atual(void) { return 0; }
+void stream_audioext_entrada(const Stream *s, struct AudioExtEntradaS *e) { (void)s; (void)e; }
+void stream_audioext_versao(const Stream *s, char *out, unsigned tam) { (void)s; if (tam) out[0] = 0; }
+int audioext_tocando(void) { return 0; }
+int audioext_tem_marca(void) { return 0; }
+int audioext_candidatos(const AudioExtEntrada *e, int n, const char *pref1, const char *pref2,
+                        int ocultarForaCache, int semDts, int (*casa)(const char *, const char *),
+                        AudioExtCand *out, int max) {
+  (void)e; (void)n; (void)pref1; (void)pref2; (void)ocultarForaCache; (void)semDts;
+  (void)casa; (void)out; (void)max; return 0;
+}
+const char *ling_audio(void) { return ""; }
+const char *ling_audio2(void) { return ""; }
+int ajustes_idioma(void) { return 0; }
+int ajustes_audio_externo(void) { return 0; }
+int ajustes_audio_externo_ocultar_fora_cache(void) { return 0; }
+int ajustes_dts_desligado(void) { return 0; }
+void mkvass_retomar(void) {}
+void mkvass_retomar_segurando(void) {}
 
 int main(void) {
   strcpy(faixa.codec, "S_TEXT/UTF8");

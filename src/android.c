@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <poll.h>
 #include <android/api-level.h>
+#include "nvbackend.h"
 
 #define AND_TAG "nuvio"
 
@@ -541,9 +542,9 @@ int android_abrir_loja(const char *pacote, const char *nome) {
 
 // Ver android.h. A resposta vem como byte[]: 4 bytes de status (big-endian) e
 // 4 bytes de Retry-After em segundos e o corpo; status 0 = falha de transporte.
-char *android_http(const char *verbo, const char *url, const char *cabs,
-                   const char *corpo, int prazoMs, int *status, int *retryAfter, long *n,
-                   char *erro, size_t nErro) {
+static char *httpJni(const char *metodoJni, const char *verbo, const char *url,
+                     const char *cabs, const char *corpo, int prazoMs, int *status,
+                     int *retryAfter, long *n, char *erro, size_t nErro) {
   JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
   jobject act = env ? (jobject)SDL_AndroidGetActivity() : NULL;
   jclass cls = NULL;
@@ -555,13 +556,23 @@ char *android_http(const char *verbo, const char *url, const char *cabs,
   if (n) *n = 0;
   if (retryAfter) *retryAfter = 0;
   if (erro && nErro) snprintf(erro, nErro, "jni indisponivel");
-  if (!env || !act) return NULL;
-  m = metodo(env, act, &cls, "httpPedir", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[BI)[B");
+  if (!env) return NULL;
+  if (!act) {
+    // A obtencao da Activity pode deixar excecao pendente; volta limpa para
+    // nao vazar o erro para o proximo chamador JNI neste fio.
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    return NULL;
+  }
+  m = metodo(env, act, &cls, metodoJni, "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[BI)[B");
   if (m && !(*env)->ExceptionCheck(env)) {
+    // Cada chamada JNI so vale sem excecao pendente: um NewStringUTF que
+    // estoura (OOM) invalida o proximo — cria na sequencia conferindo.
     jm = (*env)->NewStringUTF(env, verbo ? verbo : "GET");
-    ju = (*env)->NewStringUTF(env, url ? url : "");
-    jc = (*env)->NewStringUTF(env, cabs ? cabs : "");
-    if (corpo) {
+    if (jm && !(*env)->ExceptionCheck(env))
+      ju = (*env)->NewStringUTF(env, url ? url : "");
+    if (ju && !(*env)->ExceptionCheck(env))
+      jc = (*env)->NewStringUTF(env, cabs ? cabs : "");
+    if (corpo && !(*env)->ExceptionCheck(env)) {
       jsize k = (jsize)strlen(corpo);
       jcorpo = (*env)->NewByteArray(env, k);
       if (jcorpo) (*env)->SetByteArrayRegion(env, jcorpo, 0, k, (const jbyte *)corpo);
@@ -601,6 +612,22 @@ char *android_http(const char *verbo, const char *url, const char *cabs,
   if (cls) (*env)->DeleteLocalRef(env, cls);
   (*env)->DeleteLocalRef(env, act);
   return r;
+}
+char *android_http(const char *verbo, const char *url, const char *cabs,
+                   const char *corpo, int prazoMs, int *status, int *retryAfter, long *n,
+                   char *erro, size_t nErro) {
+  return httpJni("httpPedir", verbo, url, cabs, corpo, prazoMs, status, retryAfter, n,
+                 erro, nErro);
+}
+// RESERVA VERIFICADA (F94, android.h): NuvioActivity.httpPedirSeguro faz UM
+// salto por chamada — redirect desligado no Java e, num 3xx, o "corpo" e o
+// Location resolvido. O salto seguinte e decidido no C (viaAndroidSeguro,
+// rede.c) contra a lista oficial. Activity sem o metodo novo falha fechado.
+char *android_http_seguro(const char *verbo, const char *url, const char *cabs,
+                          const char *corpo, int prazoMs, int *status, int *retryAfter,
+                          long *n, char *erro, size_t nErro) {
+  return httpJni("httpPedirSeguro", verbo, url, cabs, corpo, prazoMs, status, retryAfter, n,
+                 erro, nErro);
 }
 
 // PILHA DOS FIOS. O bionic da ~1 MB a um pthread criado sem atributo; o glibc
@@ -727,7 +754,9 @@ Java_space_nuvio_nativelegacy_NuvioActivity_nativeQuadros(JNIEnv *env, jobject a
 JNIEXPORT jstring JNICALL
 Java_space_nuvio_nativelegacy_NuvioActivity_nativeRecUrl(JNIEnv *env, jobject act) {
   (void)act;
-  return (*env)->NewStringUTF(env, NV_REC_URL);
+  char rec[400];
+  nv_rec_url_copiar(rec, sizeof rec);
+  return (*env)->NewStringUTF(env, rec);
 }
 
 #endif

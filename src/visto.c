@@ -25,6 +25,9 @@ extern int simkl_titulo_marcar_destino(const SimklDestino *, const char *, const
 #define VT_LOTE SMK_LOTE_MAX
 #define VT_TEMPS 64
 
+static void avisar(const char *imdb, const char *tipo, const VistoPar *pares,
+                   int n, int visto);
+
 int visto_destinos(void) {
   return (trakt_ativo() ? VISTO_TRAKT : 0) |
          (simkl_ativo() ? VISTO_SIMKL : 0) |
@@ -103,6 +106,7 @@ int visto_titulo_ja(const char *imdb, const char *tipo, const int *temporadas,
   if (!imdb || !imdb[0]) return 0;
   NvPerfilSessao sessao = nv_perfil_sessao_ler();
   if (!nv_perfil_sessao_travar(sessao)) return 0;
+  avisar(imdb, tipo, NULL, 0, visto);
   long long ms = contapend_gesto(imdb, tipo, NULL, 0, visto, destinos, temporadas, nt);
   int trackers = destinos & (VISTO_TRAKT | VISTO_SIMKL);
   int enviados = visto_reenviar(imdb, tipo, NULL, 0, visto, trackers,
@@ -189,8 +193,17 @@ static int lancar(Envio *e) {
   return 1;
 }
 
-static VistoOuvinte ouvinte;
-void visto_ao_marcar(VistoOuvinte fn) { ouvinte = fn; }
+static VistoOuvinte ouvintes[4];
+void visto_ao_marcar(VistoOuvinte fn) {
+  int i;
+  for (i = 0; i < 4; i++) if (ouvintes[i] == fn) return;
+  for (i = 0; i < 4; i++) if (!ouvintes[i]) { ouvintes[i] = fn; return; }
+}
+static void avisar(const char *imdb, const char *tipo, const VistoPar *pares,
+                   int n, int visto) {
+  int i;
+  for (i = 0; i < 4; i++) if (ouvintes[i]) ouvintes[i](imdb, tipo, pares, n, visto);
+}
 
 static void capturarDestinos(Envio *e) { // caller holds the profile opening gate
   if ((e->destinos & VISTO_TRAKT) && trakt_destino_capturar && !trakt_destino_capturar(&e->trakt)) e->destinos &= ~VISTO_TRAKT;
@@ -200,8 +213,9 @@ static int episodiosEnviar(int indice, const char *imdb, const char *tipo,
                            const VistoPar *pares, int n, int visto, int destinos) {
   if (!imdb || !imdb[0] || !pares || n < 1) return 0;
   // O GESTO, antes de qualquer destino (inclusive sem nenhum): a trava de
-  // serie anda a posicao do perfil e, no modo Juntos, marca para os outros.
-  if (ouvinte) ouvinte(imdb, pares, n, visto);
+  // serie anda a posicao do perfil e, no modo Juntos, marca para os outros;
+  // o Farol converte em sinal de gosto (farolsinal.c).
+  avisar(imdb, tipo, pares, n, visto);
   if (!destinos) return 1;   // so local: nao ha o que mandar
   if (n > VT_LOTE) n = VT_LOTE;
   NvPerfilSessao sessao = nv_perfil_sessao_ler();
@@ -259,6 +273,9 @@ int visto_titulo(const char *imdb, const char *tipo, const int *temporadas,
   NvPerfilSessao sessao = nv_perfil_sessao_ler();
   if (!nv_perfil_sessao_travar(sessao)) return 0;
   vistoep_titulo_gesto(imdb, visto);
+  // O gesto de TITULO tambem chega aos ouvintes (n == 0): o Farol precisa do
+  // desmarcar para desfazer o que a vez somou (farolsinal.c).
+  avisar(imdb, tipo, NULL, 0, visto);
   long long ms = contapend_gesto(imdb, tipo, NULL, 0, visto, destinos, temporadas, nt);
   Envio *e = calloc(1, sizeof *e);
   if (!e) { nv_perfil_sessao_destravar(); return 0; }

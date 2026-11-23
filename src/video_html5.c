@@ -68,6 +68,7 @@
 #include "idioma.h"
 #include "marco.h"
 #include "mkv.h"
+#include "nv_ticks.h"
 #include <SDL2/SDL.h>
 #include <emscripten.h>
 #if defined(__EMSCRIPTEN_PTHREADS__)
@@ -605,6 +606,9 @@ static int    temVideo;      // document.createElement('video') funciona
 static int    ativo;         // ha sessao aberta — e o que abre o furo
 static int    tocando, pronto, fim;
 static double posSeg, durSeg, bufFimSeg;
+// A posicao que o <video> reportou no ultimo poll — a amostra nativa. O alvo
+// que video_buscar escreve em posSeg para a barra responder na hora nao entra.
+static double posAmostra;
 static unsigned bufMs;
 static int    vidW, vidH;
 static int    houveErro;
@@ -690,6 +694,17 @@ int video_iniciar(void) {
 }
 
 int video_iniciar_auto(void) { return video_iniciar(); }
+
+// Recarregar a MESMA fonte preservando posicao e pausa exige esperar o
+// loadedmetadata do novo <video> e reaplicar o seek; este alvo nao modela esse
+// estado (o elemento antigo e descartado em "abrir"). Nega, e quem chamou
+// (recarregarFonteVOD em app.c) mostra "Indisponivel agora" em vez de deixar a
+// tela presa. Mesmo contrato do stub de src/video_tpk.c.
+//
+// Faltava: src/video.c inteiro esta sob #ifndef __EMSCRIPTEN__, entao no wasm
+// a unica definicao possivel era esta, e o alvo VIDAA nao linkava
+// ("undefined symbol: video_recarregar" em app.o).
+int video_recarregar(void) { return 0; }
 // Sem hub LS2 neste alvo: nada aqui pode negar registro por permissao.
 int video_registro_negado(void) { return 0; }
 
@@ -703,7 +718,7 @@ int video_tocar(const char *url) {
   creditosNomeado = creditosUltimo = 0.0;
   snprintf(urlAtual, sizeof urlAtual, "%s", url);
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; faixasLidas = 0;
-  posSeg = durSeg = bufFimSeg = 0; bufMs = 0; vidW = vidH = 0; houveErro = 0; fim = 0;
+  posSeg = posAmostra = durSeg = bufFimSeg = 0; bufMs = 0; vidW = vidH = 0; houveErro = 0; fim = 0;
   seekEm = 0;
   cropAtivo = 0;
 #if defined(__EMSCRIPTEN_PTHREADS__)
@@ -745,7 +760,7 @@ void video_bombear(void) {
 
   memset(est, 0, sizeof est);
   if (avChamar("estado", NULL, 0, 0, 0, 0, (char *)est, (int)sizeof est) < 1) return;
-  posSeg    = est[EST_POS];
+  posSeg    = posAmostra = est[EST_POS];
   durSeg    = est[EST_DUR];
   tocando   = est[EST_TOCANDO] != 0;
   pronto    = est[EST_PRONTO]  != 0;
@@ -784,7 +799,7 @@ void video_parar(void) {
 #endif
   if (temVideo) AV0("parar");
   ativo = tocando = pronto = fim = 0;
-  posSeg = durSeg = bufFimSeg = 0; bufMs = 0;
+  posSeg = posAmostra = durSeg = bufFimSeg = 0; bufMs = 0;
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; faixasLidas = 0;
   cropAtivo = 0;
   urlAtual[0] = 0;
@@ -873,6 +888,10 @@ void video_recorte_reaplicar(void) {
 
 const char *video_url_atual(void) { return urlAtual; }
 double video_pos(void)        { return posSeg; }
+double video_pos_amostra(Uint64 *t) {
+  if (t) *t = nv_ticks64();
+  return posAmostra;
+}
 double video_duracao(void)    { return durSeg; }
 double video_buffer_fim(void) { return bufFimSeg; }
 unsigned video_bufferando_ms(void) { return bufMs; }

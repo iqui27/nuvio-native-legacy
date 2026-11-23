@@ -68,6 +68,7 @@ int player_com_video(void) { return videoPronto; }
 const char *player_id_canal(void) { return ""; }
 static int forcadaAuto;
 int ajustes_legenda_forcada_auto(void) { return forcadaAuto; }
+int ajustes_legenda_evitar_sdh(void) { return 0; }   // #743: desligado neste teste
 
 // --- addons falsos ----------------------------------------------------------------
 static Legenda adds[2];

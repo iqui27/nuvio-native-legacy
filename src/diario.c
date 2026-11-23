@@ -927,7 +927,7 @@ static int juntar(const DiarioEntrada *e, void *c) {
 }
 
 int diario_percorrer(int perfil, const DiarioFiltro *f, DiarioVisita cb, void *ctx) {
-  int p = perfilReal(perfil), i, n = 0, ti = -2, ini, fim, passo;
+  int p = perfilReal(perfil), i, n = 0, ti = -2, ini, fim, passo, saltei = 0;
   char id[DIARIO_ID_MAX];
   Loja *L;
   DiarioFiltro z;
@@ -941,6 +941,38 @@ int diario_percorrer(int perfil, const DiarioFiltro *f, DiarioVisita cb, void *c
   }
   if (f->decrescente) { ini = L->n - 1; fim = -1; passo = -1; }
   else { ini = 0; fim = L->n; passo = 1; }
+  // Filtro so de `quando` (de/ate): o vetor esta ordenado por data, entao os
+  // casados sao contiguos — as fronteiras se acham por busca binaria e o
+  // salto da retomada vira aritmetica, sem reler o prefixo a cada fatia.
+  // So vale quando nenhum outro campo filtra (id/tipo/flags/origem), porque
+  // `saltar` conta entradas CASADAS, nao posicoes (correcao FAROL38D: o
+  // passo da UI custava O(n) relendo o ja varrido).
+  if (!f->id && !f->tipo && !f->comFlags && !f->semFlags && !f->origem &&
+      (f->de || f->ate || f->saltar > 0)) {
+    int lo = 0, hi = L->n;
+    if (f->ate) {
+      int a = 0, b = L->n, m;
+      while (a < b) { m = a + (b - a) / 2;
+        if (L->ent[m].quando < f->ate) a = m + 1; else b = m; }
+      hi = a;                 // [0, hi) = quando < ate
+    }
+    if (f->de) {
+      int a = lo, b = hi, m;
+      while (a < b) { m = a + (b - a) / 2;
+        if (L->ent[m].quando < f->de) a = m + 1; else b = m; }
+      lo = a;                 // [lo, hi) = de <= quando < ate
+    }
+    saltei = f->saltar;
+    if (f->decrescente) {
+      ini = hi - 1 - f->saltar;
+      fim = lo - 1;
+      if (ini < lo) ini = fim;             // o salto cobriu o intervalo
+    } else {
+      ini = lo + f->saltar;
+      fim = hi;
+      if (ini >= hi) ini = fim;
+    }
+  }
   for (i = ini; i != fim; i += passo) {
     Ent *x = &L->ent[i];
     DiarioEntrada d;
@@ -951,6 +983,7 @@ int diario_percorrer(int perfil, const DiarioFiltro *f, DiarioVisita cb, void *c
     if ((x->flags & f->comFlags) != f->comFlags) continue;
     if (x->flags & f->semFlags) continue;
     if (f->origem && x->origem != (unsigned char)f->origem) continue;
+    if (saltei < f->saltar) { saltei++; continue; }
     n++;
     if (cb) {
       paraPublica(L, x, &d);
@@ -1004,6 +1037,16 @@ unsigned diario_geracao(int perfil) {
   unsigned g;
   pthread_mutex_lock(&trava); g = lojas[p].geracao; pthread_mutex_unlock(&trava);
   return g;
+}
+
+// A loja ja leu o arquivo? Consulta barata que NAO dispara a carga — para
+// quem so pode pagar I/O num fio proprio (correcao FAROL38D: o passo da UI
+// adia a varredura ate a carga fria ter saido do fio de tras).
+int diario_carregado(int perfil) {
+  int p = perfilReal(perfil), c;
+  pthread_mutex_lock(&trava); c = lojas[p].carregado;
+  pthread_mutex_unlock(&trava);
+  return c;
 }
 
 int diario_ouvir(DiarioOuvinte fn, void *ctx) {

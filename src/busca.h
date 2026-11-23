@@ -45,6 +45,10 @@ void busca_definir_consulta(const char *t);
 
 // O texto do campo (UTF-8), como a pessoa o digitou. Para testes.
 const char *busca_consulta(void);
+#ifdef NV_DESKTOP_UI
+// AppKit edits preserve trailing spaces and use the normal search debounce.
+void busca_desktop_editar(const char *text);
+#endif
 // Foco na barra: 0 teclado, 1 campo, 2 Falar, 3 celular. Para testes.
 int  busca_foco_campo(void);
 #ifdef NV_TESTE

@@ -103,6 +103,8 @@ int legenda_extrair_srt(const char *corpo, LegendaCue **saida);
 int legenda_extrair_ass(const char *corpo, LegendaCue **saida);
 /* 1 quando o corpo se parece com ASS/SSA. */
 int legenda_eh_ass(const char *corpo);
+/* 1 while the subtitle on (this generation) is an ASS/SSA document. */
+int legenda_ass_ativa(void);
 
 /* Immutable subtitle documents, independent of the currently drawn overlay.
  * Build once on a worker, retain while analysing/drawing, release when done.
@@ -114,7 +116,12 @@ enum {
   LEGENDA_DOC_COMPLETO = 1u << 0,
   LEGENDA_DOC_FORCED = 1u << 1,
   LEGENDA_DOC_SINAIS = 1u << 2,
-  LEGENDA_DOC_JANELA = 1u << 3 /* COMPLETO somente entre janelaInicio/Fim */
+  LEGENDA_DOC_JANELA = 1u << 3, /* COMPLETO somente entre janelaInicio/Fim */
+  /* Timing-only reference whose cue ENDS are partly estimated (an index point
+   * without CueDuration: end = next start, capped). Starts are exact. The
+   * engine then matches on starts only. Set only by legref's index mode
+   * (.tpk 6+); no other document carries it. */
+  LEGENDA_DOC_FIM_ESTIMADO = 1u << 4
 };
 typedef struct {
   char idioma[24], origem[96], identidade[128];

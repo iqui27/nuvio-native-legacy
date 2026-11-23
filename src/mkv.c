@@ -4,6 +4,7 @@
 #include "mkvcore.h"
 #endif
 #include <stdint.h>
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -119,7 +120,7 @@ static unsigned long lerId(const unsigned char *p, long resta, int *usou) {
 // vez de pular por cima dele.
 static long lerTam(const unsigned char *p, long resta, int *usou) {
   int w, i;
-  unsigned long v;
+  uint64_t v;     // 64 bits: em ILP32 (webOS ARM32, Tizen armv7, wasm) `long` perde os 8 bytes
   int todosUm = 1;
   if (resta < 1) return -1;
   w = larguraDe(p[0]);
@@ -132,6 +133,12 @@ static long lerTam(const unsigned char *p, long resta, int *usou) {
   }
   *usou = w;
   if (todosUm) return -2;
+  // SATURA em LONG_MAX em vez de dar a volta (negativo, ou so os 32 bits baixos
+  // em ILP32): um Segment de >2 GiB continua sendo "enorme" e a descida nele
+  // funciona, e um elemento com tamanho absurdo cai em `tam > n - o`, nunca em
+  // aritmetica que passe do fim do buffer. Quem soma tamanhos compara por
+  // `tam > resta`, nao por `o + tam > n` (estouro com tam perto de LONG_MAX).
+  if (v > (uint64_t)LONG_MAX) return LONG_MAX;
   return (long)v;
 }
 
@@ -171,6 +178,10 @@ static void lerTexto(const unsigned char *p, long n, char *dst, size_t tam) {
 #define ID_FLAGHEARING 0x55ABUL      // FlagHearingImpaired: SDH (#287)
 #define ID_AUDIO       0xE1UL        // Audio (mestre dentro da TrackEntry)
 #define ID_CHANNELS    0x9FUL        // Audio > Channels
+#define ID_DEFAULTDUR  0x23E383UL    // TrackEntry > DefaultDuration (ns por quadro)
+#define ID_VIDEO       0xE0UL        // TrackEntry > Video
+#define ID_COLOUR      0x55B0UL      // Video > Colour
+#define ID_TRANSFER    0x55BAUL      // Colour > TransferCharacteristics
 #define ID_BLOCKADDMAP 0x41E4UL      // BlockAdditionMapping (Dolby Vision config)
 #define ID_BLOCKADDTYPE 0x41E7UL     // BlockAddIDType: 'dvcC' / 'dvvC'
 #define ID_BLOCKADDDATA 0x41EDUL     // BlockAddIDExtraData: the DOVI record
@@ -207,7 +218,7 @@ static int lerTracks(const unsigned char *p, long n, MkvFaixa *saida, int max) {
     tam = lerTam(p + o + ui, n - o - ui, &ut);
     if (tam < 0) break;
     o += ui + ut;
-    if (o + tam > n) break;
+    if (tam > n - o) break;
     if (id == ID_TRACKENTRY) {
       MkvFaixa f;
       long q = 0;
@@ -220,7 +231,7 @@ static int lerTracks(const unsigned char *p, long n, MkvFaixa *saida, int max) {
         ftam = lerTam(p + o + q + vi, tam - q - vi, &vt);
         if (ftam < 0) break;
         q += vi + vt;
-        if (q + ftam > tam) break;
+        if (ftam > tam - q) break;
         { const unsigned char *v = p + o + q;
           if (fid == ID_TRACKNUMBER) f.numero = (int)lerUint(v, ftam);
           else if (fid == ID_TRACKTYPE) f.tipo = (int)lerUint(v, ftam);
@@ -234,6 +245,35 @@ static int lerTracks(const unsigned char *p, long n, MkvFaixa *saida, int max) {
           else if (fid == ID_CODECID) lerTexto(v, ftam, f.codec, sizeof f.codec);
           else if (fid == ID_CODECPRIV) { f.cpN = ftam; lerHvcc(v, ftam, &f); }
           else if (fid == ID_FLAGFORCED) f.forcado = lerUint(v, ftam) != 0;
+          else if (fid == ID_DEFAULTDUR) f.quadroNs = (unsigned long long)lerUint(v, ftam);
+          // Video > Colour > TransferCharacteristics: PQ/HLG = HDR (correcao da legenda).
+          else if (fid == ID_VIDEO) {
+            long r = 0;
+            while (r < ftam) {
+              int ai = 0, at = 0;
+              unsigned long aid = lerId(v + r, ftam - r, &ai);
+              long atam;
+              if (!aid) break;
+              atam = lerTam(v + r + ai, ftam - r - ai, &at);
+              if (atam < 0 || r + ai + at + atam > ftam) break;
+              r += ai + at;
+              if (aid == ID_COLOUR) {
+                long c = 0;
+                while (c < atam) {
+                  int ci = 0, ct = 0;
+                  unsigned long cid = lerId(v + r + c, atam - c, &ci);
+                  long ctam;
+                  if (!cid) break;
+                  ctam = lerTam(v + r + c + ci, atam - c - ci, &ct);
+                  if (ctam < 0 || c + ci + ct + ctam > atam) break;
+                  c += ci + ct;
+                  if (cid == ID_TRANSFER) f.transferencia = (int)lerUint(v + r + c, ctam);
+                  c += ctam;
+                }
+              }
+              r += atam;
+            }
+          }
           else if (fid == ID_FLAGHEARING) f.sdh = lerUint(v, ftam) != 0;
           // Channels mora um nivel abaixo, em Audio. O .tpk nao tem outra
           // fonte para "5.1" (o Tizen.Multimedia.Player so da o idioma, #206).
@@ -245,7 +285,7 @@ static int lerTracks(const unsigned char *p, long n, MkvFaixa *saida, int max) {
               long atam;
               if (!aid) break;
               atam = lerTam(v + r + ai, ftam - r - ai, &at);
-              if (atam < 0 || r + ai + at + atam > ftam) break;
+              if (atam < 0 || atam > ftam - r - ai - at) break;
               r += ai + at;
               if (aid == ID_CHANNELS) f.canais = (int)lerUint(v + r, atam);
               r += atam;
@@ -264,7 +304,7 @@ static int lerTracks(const unsigned char *p, long n, MkvFaixa *saida, int max) {
               long atam;
               if (!aid) break;
               atam = lerTam(v + r + ai, ftam - r - ai, &at);
-              if (atam < 0 || r + ai + at + atam > ftam) break;
+              if (atam < 0 || atam > ftam - r - ai - at) break;
               r += ai + at;
               if (aid == ID_BLOCKADDTYPE) tipo = (unsigned long)lerUint(v + r, atam);
               else if (aid == ID_BLOCKADDDATA) { dado = v + r; dadoN = atam; }
@@ -318,7 +358,7 @@ static unsigned long filho(const unsigned char *p, long n, long *q, const unsign
   id = lerId(p + *q, n - *q, &ui);
   if (!id) return 0;
   tam = lerTam(p + *q + ui, n - *q - ui, &ut);
-  if (tam < 0 || *q + ui + ut + tam > n) return 0;
+  if (tam < 0 || tam > n - *q - ui - ut) return 0;
   *v = p + *q + ui + ut; *vn = tam;
   *q += ui + ut + tam;
   return id;
@@ -462,7 +502,7 @@ static void lerSeekHead(const unsigned char *p, long n) {
     tam = lerTam(p + o + ui, n - o - ui, &ut);
     if (tam < 0) return;
     o += ui + ut;
-    if (o + tam > n) return;
+    if (tam > n - o) return;
     if (id == ID_SEEK) {
       unsigned long alvo = 0;
       long long pos = -1;
@@ -475,7 +515,7 @@ static void lerSeekHead(const unsigned char *p, long n) {
         ftam = lerTam(p + o + q + vi, tam - q - vi, &vt);
         if (ftam < 0) break;
         q += vi + vt;
-        if (q + ftam > tam) break;
+        if (ftam > tam - q) break;
         if (fid == ID_SEEKID) alvo = (unsigned long)lerUint(p + o + q, ftam);
         else if (fid == ID_SEEKPOS) pos = (long long)lerUint(p + o + q, ftam);
         q += ftam;
@@ -510,7 +550,7 @@ static int acharTracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
       if (id == ID_SEGMENT) { segIni = o; continue; }
       break;
     }
-    if (id == ID_SEEKHEAD && o + tam <= n) lerSeekHead(p + o, tam);
+    if (id == ID_SEEKHEAD && tam <= n - o) lerSeekHead(p + o, tam);
     if (id == ID_TRACKS) {
       long disp = n - o;
       long t = tam > disp ? disp : tam;   // cabecalho maior que o trecho baixado
@@ -540,7 +580,7 @@ static int acharTracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
       posChapters = -1;
       break;
     }
-    if (o + tam > n) break;  // elemento passa do que baixamos
+    if (tam > n - o) break;  // elemento passa do que baixamos
     o += tam;
   }
   // #483: Tracks alem da janela (remux remontado por mkvpropedit, com um
@@ -973,7 +1013,7 @@ static long cabBloco(const unsigned char *p, long n, int faixa) {
 
 // Elementos de um Cluster (ou BlockGroup) a partir de p[0]; `base` e a posicao
 // absoluta de p[0] e `fim` o fim do contentor (ou do trecho). 1 = decidiu.
-static int rpuNoContentor(const unsigned char *p, long n, long long base, int faixa, int nalTam) {
+static int rpuNoContentor(const unsigned char *p, long n, long long base, int faixa, int nalTam, int prof) {
   long o = 0;
   while (o < n) {
     int ui = 0, ut = 0;
@@ -984,7 +1024,9 @@ static int rpuNoContentor(const unsigned char *p, long n, long long base, int fa
     if (tam < 0) return 0;
     o += ui + ut;
     if (id == ID_BLOCKGROUP) {
-      if (rpuNoContentor(p + o, tam > n - o ? n - o : tam, base + o, faixa, nalTam)) return 1;
+      // Profundidade limitada (o nucleo Rust usa 8): BlockGroup aninhado em
+      // cadeia num arquivo hostil estourava a pilha da sonda.
+      if (prof < 8 && rpuNoContentor(p + o, tam > n - o ? n - o : tam, base + o, faixa, nalTam, prof + 1)) return 1;
     } else if (id == ID_SIMPLEBLOCK || id == ID_BLOCK) {
       long disp = tam > n - o ? n - o : tam;
       h = cabBloco(p + o, disp, faixa);
@@ -1025,7 +1067,7 @@ static void diagTrecho(const unsigned char *p, long n, const MkvFaixa *fx, int n
     if (id == ID_SEGMENT) continue;
     if (id == ID_CLUSTER) {
       long t = (tam < 0 || tam > n - o) ? n - o : tam;
-      if (!rpuNoContentor(p + o, t, o, faixa, nalTam) && diag.quadros > 0 && tam >= 0 && tam <= n - o)
+      if (!rpuNoContentor(p + o, t, o, faixa, nalTam, 0) && diag.quadros > 0 && tam >= 0 && tam <= n - o)
         diag.rpu = 0;                     // Cluster inteiro varrido, quadros sem RPU
       return;
     }

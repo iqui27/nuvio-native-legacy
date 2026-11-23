@@ -64,6 +64,7 @@ int ling_casa(const char *codigo, const char *pref);
 void ling_normalizar(const char *raw, char *out, unsigned tam);
 const char *ling_selo(const char *cod);
 int ling_afinidade(const char *cod, const char *pref);
+int ling_prefere_regional(const char *pref);
 
 // Preferencias em vigor. Devolvem "" quando nao ha preferencia (sem filtro) e
 // "none" quando a pessoa pediu explicitamente NENHUMA legenda.
@@ -153,5 +154,14 @@ int ling_legenda_auto(const char *pref,
 int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
                            const char *const *emb, const int *tipoEmb, int nEmb, int embFechado,
                            const char *const *add, int nAdd, int addFechado);
+// A mesma com `evitaSdh` (#743): 1 = faixa SDH/CC nunca liga na automatica
+// (nem como ultimo recurso embutido; a de addon segue disponivel).
+int ling_legenda_auto_tipo2(const char *pref, const char *audio, int forcadaAuto, int evitaSdh,
+                            const char *const *emb, const int *tipoEmb, int nEmb, int embFechado,
+                            const char *const *add, int nAdd, int addFechado);
+
+// #743: 1 = o nome (rotulo ou arquivo) marca a legenda como SDH/CC. Serve
+// para a filtragem das legendas de addon, que nao carregam a flag de tipo.
+int ling_nome_sdh(const char *nome);
 
 #endif

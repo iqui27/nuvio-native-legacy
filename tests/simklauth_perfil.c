@@ -116,6 +116,20 @@ int main(void) {
   assert(simklauth_trocar_perfil(1) == 1 && !strcmp(simklauth_token(), "SIMKL-FALSO-P1"));
   printf("ok  autorizar no perfil 2 grava so simkl-p2.txt\n");
 
+  // A biblioteca guardada (simklbib.h) e do vinculo do perfil: desvincular o
+  // 2 apaga so a do 2.
+  dados_gravar("simkl-biblioteca-p1.txt", "x");
+  dados_gravar("simkl-biblioteca-p2.txt", "x");
+  assert(simklauth_trocar_perfil(2) == 1);
+  unsigned long long cargaCred = simklauth_credencial_copiar(NULL, 0);
+  assert(simklauth_credencial_travar(cargaCred, 2, "Authorization: Bearer SIMKL-FALSO-P2"));
+  simklauth_credencial_destravar();
+  simklauth_desconectar();
+  assert(!simklauth_credencial_travar(cargaCred, 2, "Authorization: Bearer SIMKL-FALSO-P2"));
+  assert(!existe("simkl-biblioteca-p2.txt") && existe("simkl-biblioteca-p1.txt"));
+  assert(simklauth_trocar_perfil(1) == 1 && !strcmp(simklauth_token(), "SIMKL-FALSO-P1"));
+  printf("ok  desvincular apaga so a biblioteca guardada do perfil\n");
+
   // Recarregar a credencial no MESMO perfil invalida consultas em andamento;
   // a copia antiga continua inteira, nunca aponta para o buffer vivo.
   char copia[300];
@@ -129,9 +143,22 @@ int main(void) {
   assert(!strcmp(copia, "SIMKL-OUTRA-CONTA"));
   assert(simklauth_carregar() && simklauth_credencial_copiar(NULL, 0) == cred);
 
+  // 401: so o da credencial atual apaga, e so a biblioteca deste perfil.
+  dados_gravar("simkl-biblioteca-p3.txt", "x");
+  assert(!simklauth_invalidar_se(cred + 1) && existe("simkl-biblioteca-p1.txt"));
+  assert(simklauth_credencial_travar(cred, 1, "Authorization: Bearer SIMKL-OUTRA-CONTA"));
+  simklauth_credencial_destravar();
+  assert(!simklauth_credencial_travar(cred, 2, "Authorization: Bearer SIMKL-OUTRA-CONTA"));
+  assert(!simklauth_credencial_travar(cred, 1, "Authorization: Bearer OUTRA"));
+  assert(simklauth_invalidar_se(cred));
+  assert(!simklauth_credencial_travar(cred, 1, "Authorization: Bearer SIMKL-OUTRA-CONTA"));
+  assert(!existe("simkl-biblioteca-p1.txt") && existe("simkl-biblioteca-p3.txt"));
+  printf("ok  401 do vinculo atual apaga a biblioteca do perfil\n");
+
   simklauth_esquecer();
   assert(simklauth_credencial_copiar(copia, sizeof copia) != cred && !copia[0]);
   assert(!existe("simkl-p1.txt") && !existe("simkl-p2.txt") && !simklauth_token()[0]);
+  assert(!existe("simkl-biblioteca-p3.txt"));
   printf("ok  sair apaga o vinculo de todos os perfis\n");
   printf("simklauth_perfil: tudo ok\n");
   return 0;

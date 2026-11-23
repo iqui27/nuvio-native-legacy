@@ -30,6 +30,7 @@ static const char AVISO_MIC_CONTROLE[] = "Aperte o microfone do controle e fale.
 // (nada de busca, resultados nem cartazes montados por baixo dele). So o
 // texto final, ao fechar, entra e busca.
 static int micTeclado;
+static char vozTecladoBuf[512];
 
 #define ST_FILA 16
 // One event tag plus a complete poster template and terminator.
@@ -76,6 +77,9 @@ int st_abre_sozinho(void) {
 #else
   return teste();
 #endif
+}
+void st_voz_teclado_inicial(const char *texto) {
+  snprintf(vozTecladoBuf, sizeof vozTecladoBuf, "%s", texto ? texto : "");
 }
 static int pelaPlataforma(void) {
 #ifdef NV_ANDROID
@@ -137,7 +141,7 @@ int st_voz_iniciar(int d) {
 #ifdef NV_ANDROID
   ok = android_st_ditar(desc_tmdb_idioma());
 #else
-  if (pelaPlataforma()) { texto_sistema_abrir("", 1); ok = texto_sistema_aberto(); }
+  if (pelaPlataforma()) { texto_sistema_abrir(vozTecladoBuf, 1); ok = texto_sistema_aberto(); }
   else ok = 1;
 #endif
   estado = ok ? ST_OUVINDO : ST_PARADO;
@@ -148,6 +152,12 @@ int st_voz_iniciar(int d) {
     estado = ST_DIGITANDO;
     aviso = AVISO_MIC_CONTROLE;
     micTeclado = 1;
+  }
+#endif
+#ifndef NV_ANDROID
+  if (!ok && st_ime_disponivel()) {
+    ok = st_ime_abrir(d, vozTecladoBuf, 255);
+    if (ok) aviso = "Use o microfone do teclado do sistema.";
   }
 #endif
   if (!ok) aviso = "O ditado não respondeu. Tente de novo ou digite.";

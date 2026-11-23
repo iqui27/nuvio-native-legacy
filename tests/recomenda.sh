@@ -27,7 +27,7 @@ for source in src/*.c src/dts/*.c; do
 done
 
 compila() { # binario, defines extras
-  cc "${sources[@]}" tests/recomenda.c -Isrc -o "$1" \
+  cc "${sources[@]}" tests/recomenda.c -Isrc ${3--DNV_REC_URL='"http://127.0.0.1:8799"'} -o "$1" \
     -O1 -g ${2:-} -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
     -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
     -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
@@ -39,5 +39,5 @@ ${TMPDIR:-/tmp}/nuvio-recomenda
 # O MESMO TESTE COM O PACOTE SEM SERVICO. E a build que o dono publica hoje, e
 # o que ela tem de provar e a AUSENCIA: nenhuma requisicao, nenhuma lista,
 # nenhum selo. Um recurso "invisivel" que ainda abre conexao nao esta desligado.
-compila ${TMPDIR:-/tmp}/nuvio-recomenda-sem-url -DREC_TESTE_SEM_URL
+compila ${TMPDIR:-/tmp}/nuvio-recomenda-sem-url -DREC_TESTE_SEM_URL ""
 ${TMPDIR:-/tmp}/nuvio-recomenda-sem-url

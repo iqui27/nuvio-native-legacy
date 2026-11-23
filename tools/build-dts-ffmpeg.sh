@@ -2,7 +2,10 @@
 export TMPDIR="${TMPDIR:-/tmp}"
 TMPDIR="${TMPDIR%/}"
 # Minimal static LGPL FFmpeg: DTS decode, stereo AAC and AC3 5.1 encode (no GPL/nonfree). No FFmpeg
-# network/TLS protocols or software video decoders enter the TV executable.
+# network/TLS protocols enter the TV executable. Software video decoders only for the seek-bar
+# thumbnails made on the TV (src/miniatura*.c): h264/hevc decoders (keyframes only, one at a
+# time), the mjpeg encoder (320x180 tiles) and the mpegts demuxer (.m2ts / .ts remuxes) — the
+# .tpk and webOS targets below.
 #
 # NUVIO_DTS_TARGET picks the build:
 #   webos (default) cross build with the LG SDK (tools/Dockerfile); output unchanged.
@@ -18,6 +21,7 @@ PREFIX=${NUVIO_DTS_ROOT:-/opt/nuvio-dts}
 BUILD=${NUVIO_DTS_BUILD:-${TMPDIR:-/tmp}/nuvio-dts-build}
 TARGET=${NUVIO_DTS_TARGET:-webos}
 DECODERS=dca,dvdsub,pgssub,ass,ssa,subrip,movtext,webvtt
+ENCODERS=aac,ac3
 MUXERS=
 PARSERS=dca,h264,hevc,aac
 DEMUXERS=matroska,mov
@@ -26,24 +30,30 @@ if [ "$TARGET" = webos ]; then
   DECODERS=$DECODERS,aac,ac3,eac3,truehd,mlp,opus,flac,vorbis,mp3
   PARSERS=$PARSERS,ac3,mlp,opus,flac,vorbis,mpegaudio
   DEMUXERS=$DEMUXERS,avi,mpegts
+  # Seek-bar thumbnails made on the TV (src/miniatura*.c): h264/hevc decoders
+  # and the mjpeg encoder; the mpegts demuxer is already there for donor audio.
+  DECODERS=$DECODERS,h264,hevc
+  ENCODERS=$ENCODERS,mjpeg
 fi
 BSFS=h264_mp4toannexb,hevc_mp4toannexb,dca_core
 # Donor AAC from MPEG-TS arrives ADTS-framed; the TV is told raw AAC.
 if [ "$TARGET" = webos ]; then BSFS=$BSFS,aac_adtstoasc; fi
-ZLIB=
+# zlib: Matroska tracks stored zlib-compressed (ContentCompression) and MP4
+# with a compressed header (cmov) arrive raw without it ("Unsupported encoding
+# type"). Common on remux PGS tracks. Every native target already links libz
+# (webOS: tools/arm.sh -lz; .tpk: the SDK's static libz.a via tools/tpk.sh).
+ZLIB=--enable-zlib
 mkdir -p "$BUILD" "$PREFIX"
 if [ "$TARGET" = tpk ]; then
   SRC=${NUVIO_DTS_SRC:?tools/tpk.sh passes the extracted ffmpeg-$VERSION source}
   CC=${CC:-gcc}
-  DECODERS=$DECODERS,truehd,mlp
+  DECODERS=$DECODERS,truehd,mlp,h264,hevc
+  ENCODERS=$ENCODERS,mjpeg
   MUXERS=mpegts,matroska,mp4
+  # mpegts demuxer: thumbnails for Blu-ray remuxes kept as .m2ts / .ts.
+  DEMUXERS=$DEMUXERS,mpegts
   PARSERS=$PARSERS,mlp,ac3
   BSFS=$BSFS,truehd_core
-  # zlib: Matroska tracks stored zlib-compressed (ContentCompression) and MP4
-  # with a compressed header (cmov) arrive raw without it ("Unsupported encoding
-  # type"). The .tpk already links the SDK's static libz.a (tools/tpk.sh, also
-  # used by epg.c), so this adds no new dependency on the TV.
-  ZLIB=--enable-zlib
   # Out of tree: the source stays clean in the host cache.
   mkdir -p "$BUILD/obj"
   cd "$BUILD/obj"
@@ -73,14 +83,14 @@ else
   fi
 fi
 # --enable-muxer must come AFTER --disable-everything and --enable-zlib after
-# --disable-autodetect (configure applies them in order). Unquoted on purpose:
-# both empty for webOS, so its configure line is unchanged.
+# --disable-autodetect (configure applies them in order). MUXERS is unquoted on
+# purpose: it is empty for webOS.
 "$SRC/configure" "$@" --prefix="$PREFIX" --disable-everything ${MUXERS:+--enable-muxer=$MUXERS} \
   --disable-autodetect $ZLIB --disable-shared --enable-static --enable-pic \
   --disable-programs --disable-doc --disable-debug --disable-network \
   --disable-avdevice --disable-avfilter --disable-swscale --disable-postproc \
   --enable-avcodec --enable-avformat --enable-avutil --enable-swresample \
-  --enable-decoder="$DECODERS" --enable-encoder=aac,ac3 \
+  --enable-decoder="$DECODERS" --enable-encoder="$ENCODERS" \
   --enable-demuxer="$DEMUXERS" --enable-parser="$PARSERS" \
   --enable-bsf="$BSFS" \
   --extra-cflags="${CFLAGS:--O2}"

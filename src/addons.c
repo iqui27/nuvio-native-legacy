@@ -1,4 +1,5 @@
 #include "addons.h"
+#include "farolanel.h"
 #include "plugins.h"
 #include "idbase.h"
 #include "armids.h"
@@ -38,6 +39,8 @@
 #include <pthread.h>
 #include <time.h>
 #include <stdatomic.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 // 16, e nao 12. O sync le ate SY_ADD_MAX (16) addons da conta e entregava a
 // lista inteira aqui; o laco de addons_definir_lista cortava no 12o EM SILENCIO
@@ -995,7 +998,68 @@ int addons_faltam(char *nomes, unsigned tam) { return addons_faltam_tipo(nomes, 
 // esperar por ele so gasta o prazo inteiro. 0 = ninguem e ignorado (Instantaneo
 // nao espera ninguem; "Todos os add-ons" e a pessoa pedindo para esperar).
 // Ele segue sendo consultado e, quando responde, entra na lista como sempre.
-static unsigned espDecisaoMs;
+static atomic_uint espDecisaoMs;
+// PSEUDONIMO COM SAL — a forma "h:<8 hex>" que o redator do Farol 4 exige
+// (o addon_<8 hex> sem sal e recusado). O catalogo de add-ons e publico e
+// curto: um hash sem sal do identificador e estavel entre instalacoes e
+// revertido por forca bruta por quem le o registro. O sal e a identidade
+// estavel da INSTALACAO (dados_cliente_id, a mesma que o sync ja usa); em
+// fixtures isolados sem dados.c a importacao fraca cai em NULL e o sal vira
+// aleatorio por processo — em ambos, imprevisivel para quem so ve o registro.
+// Convencao NV_PERFIL_OPCIONAL de perfisessao.h: importacao fraca conferida
+// antes da chamada, sem simbolo novo no link.
+#if defined(__APPLE__) && (defined(__GNUC__) || defined(__clang__))
+#define NV_DADOS_OPCIONAL __attribute__((weak_import))
+#elif defined(__GNUC__) || defined(__clang__)
+#define NV_DADOS_OPCIONAL __attribute__((weak))
+#else
+#define NV_DADOS_OPCIONAL
+#endif
+extern const char *dados_cliente_id(void) NV_DADOS_OPCIONAL;
+// Mach-O: a importacao fraca INDEFINIDA ainda reprova o link estatico do
+// ld64 — a mesma regra dos NV_DUBLE_* de perfisessao.h — entao o modulo
+// emite um default fraco. dados.c (forte) sobrepoe no app completo; no
+// fixture isolado ele devolve NULL e cai no mesmo sal aleatorio por
+// processo que a importacao indefinida dava no ELF.
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((weak)) const char *dados_cliente_id(void) { return NULL; }
+#endif
+static pthread_once_t salUmaVez = PTHREAD_ONCE_INIT;
+static unsigned char salProcesso[16];
+static void salProcessoIniciar(void) {
+  int i, f = open("/dev/urandom", O_RDONLY);
+  if (f >= 0) {
+    if (read(f, salProcesso, 16) != 16) f = -1; else close(f);
+  }
+  if (f < 0) {   // sem urandom: relogio + endereco, o mesmo plano B de admin.c
+    unsigned long long t = (unsigned long long)time(NULL) * 2654435761u ^ (unsigned long long)(size_t)salProcesso;
+    for (i = 0; i < 16; i++) { t = t * 6364136223846793005ULL + 1442695040888963407ULL; salProcesso[i] = (unsigned char)(t >> 33); }
+  }
+}
+static void pseudonimoAddon(const char *chave, char dst[FAROL_TOKEN_N]) {
+  unsigned hash = 2166136261u;
+  const char *sal = dados_cliente_id ? dados_cliente_id() : NULL;
+  if (sal && *sal) {
+    for (const unsigned char *p = (const unsigned char *)sal; *p; p++)
+      hash = (hash ^ *p) * 16777619u;
+  } else {
+    pthread_once(&salUmaVez, salProcessoIniciar);
+    for (int i = 0; i < 16; i++)
+      hash = (hash ^ salProcesso[i]) * 16777619u;
+  }
+  for (const unsigned char *p = (const unsigned char *)chave; *p; p++)
+    hash = (hash ^ *p) * 16777619u;
+  snprintf(dst, FAROL_TOKEN_N, "h:%08x", hash);
+}
+static void registrarLatencia(const char *chave, unsigned ms, int respondeu) {
+  unsigned limite = atomic_load(&espDecisaoMs);
+  addonstats_registrar(chave, ms, respondeu);
+  if (!respondeu || (limite && ms > limite)) {
+    char token[FAROL_TOKEN_N];
+    pseudonimoAddon(chave, token);
+    farol_ev(FM_ADDON, FE_ADDON_LENTO, 1, ms, !respondeu, token);
+  }
+}
 void addons_definir_espera_decisao(int ms) { espDecisaoMs = ms > 0 ? (unsigned)ms : 0; }
 static int naoSegura(const char *nome) {
   return nome && nome[0] && addonstats_ignoravel(nome, espDecisaoMs);
@@ -3254,7 +3318,7 @@ static void avisoExtra(void *u, int k, const char *nome, const char *id,
   if ((estado == 2 || estado == 3) && nome && !(cancelaExtra(p)))
     if (nv_perfil_sessao_travar(p->sessao)) {
       char chave[32]; chaveEstatistica(nome, 1, chave);
-      addonstats_registrar(chave, (unsigned)(SDL_GetTicks() - progInicio), estado == 2);
+      registrarLatencia(chave, (unsigned)(SDL_GetTicks() - progInicio), estado == 2);
       nv_perfil_sessao_destravar();
     }
   if (nv_perfil_sessao_travar(p->sessao)) {
@@ -3319,7 +3383,7 @@ static void *fioExtra(void *u) {
     for (i = 0; i < ADD_EXTRA_MAX; i++)
       if (progEstadoEx[i] == 1 && progNomeEx[i][0]) {
         char chave[32]; chaveEstatistica(progNomeEx[i], 1, chave);
-        addonstats_registrar(chave, (unsigned)(SDL_GetTicks() - progInicio), 0);
+        registrarLatencia(chave, (unsigned)(SDL_GetTicks() - progInicio), 0);
       }
     pthread_mutex_unlock(&progTrava);
     nv_perfil_sessao_destravar();
@@ -3341,6 +3405,7 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
   if (!id || !*id || !tipo || !*tipo) return 0;
   if (!nv_perfil_sessao_atual(sessao)) return -1;
   memset(&c, 0, sizeof c); c.sessao = sessao;
+  c.inicio = SDL_GetTicks();
   c.origens = capturarPedidos(sessao, &c.nOrigens, &c.versao);
   // So na busca ampla: canal com origem conhecida pergunta a um addon so.
   memset(&extra, 0, sizeof extra);
@@ -3359,6 +3424,11 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
     if (rs) rs->extraIncompleta = extra.pendentes != 0 || extra.incompleta;
     free(c.origens);
     if (!nv_perfil_sessao_atual(sessao) || (cancelado && cancelado(ctx))) { free(extra.l); return -1; }
+    // Busca so com plugins tambem conclui: o mesmo evento do caminho com
+    // add-ons (sem origens consultadas, `b` fica so com o extra incompleto).
+    if (progresso)
+      farol_ev(FM_ADDON, FE_ADDON_BUSCA, 0, (int32_t)(SDL_GetTicks() - c.inicio),
+               (rs ? rs->semResposta : 0) + (rs && rs->extraIncompleta), "busca");
     if (extra.n > 0) { *saida = extra.l; return extra.n; }
     free(extra.l);
     return 0;
@@ -3382,7 +3452,6 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
   // o prazo longo nao segura quem ja respondeu, e a fonte automatica tem prazo
   // proprio (fonteauto). Canal ao vivo e prefetch continuam com 12 s.
   c.timeout = progresso ? ADD_PRAZO_VOD_S : 12;
-  c.inicio = SDL_GetTicks();
   pthread_mutex_init(&c.trava, NULL);
   c.baldes = calloc((size_t)c.nOrigens, sizeof(BaldeFonte));
   if (c.baldes) {
@@ -3477,7 +3546,7 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
         const AddonPedido *a = &c.origens[idx];
         if (c.versao == versaoLista && idx < nAddon && !strcmp(addon[idx].base, a->base)) {
           if (c.progresso)
-            addonstats_registrar(a->estatistica,
+            registrarLatencia(a->estatistica,
                 c.baldes[q].respondeu ? c.baldes[q].ms : (unsigned)(SDL_GetTicks() - c.inicio),
                 c.baldes[q].respondeu);
           if (c.baldes[q].respondeu) addon[idx].mudoSeg = 0;
@@ -3518,6 +3587,9 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
   // Cancelada, a lista pode estar pela metade: nao e resposta, e lixo.
   if (!nv_perfil_sessao_atual(sessao) || (cancelado && cancelado(ctx))) { free(achados); return -1; }
   if (!progresso) stream_preparar_dica_p2p(achados, n);
+  if (progresso)
+    farol_ev(FM_ADDON, FE_ADDON_BUSCA, 0, SDL_GetTicks() - c.inicio,
+             (rs ? rs->semResposta : 0) + (rs && rs->extraIncompleta), "busca");
   *saida = achados;
   return n;
 }
@@ -3871,6 +3943,15 @@ int addons_busca_incompleta(void) {
   return resumo.semResposta || resumo.extraIncompleta;
 }
 
+static void addons_log765_scrapers(int term, int enq, int inst, int lig) {
+  static int uTerm = -1, uEnq = -1, uInst = -1, uLig = -1;
+  if (term == uTerm && enq == uEnq && inst == uInst && lig == uLig) return;
+  uTerm = term; uEnq = enq; uInst = inst; uLig = lig;
+  printf("[addons] #765: sem fontes addon — scrapers %d/%d, add-ons instalados=%d ligados=%d\n",
+         term, enq, inst, lig);
+  fflush(stdout);
+}
+
 int addons_motivo_vazio(char *dst, unsigned n) {
   const Resumo *r = &resumo;
   int canal = !strcmp(alvoTipo, "tv") || !strcmp(alvoTipo, "channel") ||
@@ -3879,9 +3960,12 @@ int addons_motivo_vazio(char *dst, unsigned n) {
   if (!dst || !n || !r->valido) return 0;
   PlugResumo plugins;
   plugins_resumo(alvoId, alvoTipo, &plugins);
-  if (plugins.enfileirados && !r->comFontes)
+  if (plugins.enfileirados && !r->comFontes) {
+    addons_log765_scrapers(plugins.terminados, plugins.enfileirados,
+                           r->instalados, r->ligadosComFonte);
     snprintf(dst, n, i18n("Plugins não encontraram fontes (%d de %d scrapers verificados)"),
              plugins.terminados, plugins.enfileirados);
+  }
   // Other extra providers are absent from the Stremio summary. Let callers
   // use their generic source wording while one is active.
   else if (addons_origem_extra_ativa()) return 0;

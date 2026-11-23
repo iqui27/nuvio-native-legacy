@@ -432,6 +432,8 @@ int  video_simulado_dv_recusas(void) { return simDvRecusas; }
 int  video_ativo(void) { return SIM.aceita; }
 int  video_falhou(void) { return 0; }
 const char *video_erro_texto(void) { return ""; }
+// Sem configd fora da webOS: o modelo vem de outra fonte por plataforma.
+const char *video_tv_modelo(void) { return "?"; }
 int  video_decoder_anunciou(void) { return 1; }
 int  video_audio_nao_suportado(void) { return 0; }
 int  video_seek_desistiu(void) { return 0; }
@@ -490,6 +492,9 @@ int  video_velocidade_bloqueada(void) { return cacheboost_ganho_estado() == CB_G
 // .tpk da Samsung: o player e o do host .NET, em video_tpk.c.
 #elif !defined(NV_TPK) && !defined(NV_ANDROID)   // ramo luna (webOS): Android usa video_android.c
 #include <dlfcn.h>
+#include "farolanel.h"
+#include "farolerro.h"
+#include "farolcod.h"
 
 typedef struct LSHandle LSHandle;
 typedef struct LSMessage LSMessage;
@@ -745,12 +750,52 @@ static int edidResposta(LSHandle *h, LSMessage *m, void *u);
 static NvHContext edidCtx = { edidResposta, 0, 0, 0, 1, 0 };
 static int (*edidChamar)(const char *, const char *, NvHContext *);
 static int edidEnviado;
+// Modelo da TV (ex.: "OLED55C9PSA"), do MESMO getConfigs do EDID — a chave
+// extra nao custa uma chamada. "" ate a resposta chegar; video_tv_modelo()
+// responde "?" nesse caso (convencao da linha [tv]).
+// Publicacao sob trava curta: o callback do LS2 grava segurando tvModeloTrava
+// e o getter copia para um buffer do PROPRIO fio (_Thread_local, o padrao dos
+// getters de discord.c) — cada leitor recebe uma copia estavel, nunca um
+// ponteiro para o vetor que a proxima resposta reescreve.
+static char tvModelo[33];
+static pthread_mutex_t tvModeloTrava = PTHREAD_MUTEX_INITIALIZER;
+// Le `"tv.model.modelname":"<v>"` de um JSON do configd e saneia para
+// [A-Za-z0-9._ -] com teto de 32 — a mesma faixa do filtro do farolperfil
+// (issue 8): o que nao e modelo de TV nunca chega ao pacote. Funcao pura,
+// separada para o teste alimentar respostas reais sem o barramento.
+static void farolTvModeloLer(const char *json, char *out, size_t nOut) {
+  const char *k = json ? strstr(json, "\"tv.model.modelname\"") : NULL;
+  char v[64] = "";
+  size_t i, n = 0;
+  if (!out || !nOut) return;
+  out[0] = 0;
+  if (k) sscanf(k + 20, " : \"%63[^\"]", v);
+  if (nOut > 33) nOut = 33;
+  for (i = 0; v[i] && n + 1 < nOut; i++) {
+    unsigned char c = (unsigned char)v[i];
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_' || c == ' ')
+      out[n++] = (char)c;
+  }
+  out[n] = 0;
+  while (n && out[n - 1] == ' ') out[--n] = 0;
+}
+const char *video_tv_modelo(void) {
+  static _Thread_local char copia[33];
+  pthread_mutex_lock(&tvModeloTrava);
+  memcpy(copia, tvModelo, sizeof copia);
+  pthread_mutex_unlock(&tvModeloTrava);
+  return copia[0] ? copia : "?";
+}
 static int edidResposta(LSHandle *h, LSMessage *m, void *u) {
   const char *r;
   (void)h;
   (void)u;
   r = lsPayload(m);
   __atomic_store_n(&edidDts, nv_dts_edid(r) ? 1 : 0, __ATOMIC_RELEASE);
+  pthread_mutex_lock(&tvModeloTrava);
+  farolTvModeloLer(r, tvModelo, sizeof tvModelo);
+  pthread_mutex_unlock(&tvModeloTrava);
   printf("[dts] %.160s\n", r ? r : "");
   fflush(stdout);
   return 1;
@@ -773,8 +818,11 @@ static void pedirEdid(void) {
   edidPedidoMs = SDL_GetTicks();
   __atomic_store_n(&edidDts, -1, __ATOMIC_RELEASE);
   /* Return value is not a documented success bit. */
+  /* tv.model.modelname: chave do configd vista na familia webOS (homebrew);
+   * confirmacao na C9 pendente — sem ela na resposta, modelo fica "?". */
   edidChamar("luna://com.webos.service.config/getConfigs",
-             "{\"configNames\":[\"tv.model.edidType\"]}", &edidCtx);
+             "{\"configNames\":[\"tv.model.edidType\",\"tv.model.modelname\"]}",
+             &edidCtx);
 }
 // RECONEXAO (video_reconexao.h). O erro chega no fio do LS2 e so ANOTA
 // (reconErroPend); a decisao e o recarregar sao do video_bombear, no fio
@@ -883,6 +931,7 @@ static Uint32 bufferandoDesde;
 static double bufferandoPos;
 static unsigned bufferandoAvancos;
 static unsigned dtsRefillMs;
+static Uint32 bufferClockLogEm;
 static Uint32 dtsRefillEm;
 // Seek pendente neste instante (o seekView do fork virou seekEm/seekRetry aqui).
 static void bufferandoFim(void);
@@ -900,6 +949,16 @@ static void bufferandoClock(double actual) {
       bufferandoSeekPendente() || !isfinite(step) || step < 0.01 ||
       step > 1.5 || bufferSeg < actual + 0.5) {
     bufferandoAvancos = 0;
+#if defined(NV_WEBOS) || defined(NV_HTTP_BUFFER_DIAG)
+    { Uint32 now = SDL_GetTicks();
+      if (now - bufferClockLogEm >= 5000u) {
+        bufferClockLogEm = now;
+        printf("[video] buffering clock reset step=%.3f buf=%.3f actual=%.3f (%s)\n",
+               step, bufferSeg, actual,
+               step > 1.5 ? "large-step" : "no-ahead");
+      }
+    }
+#endif
     return;
   }
   if (++bufferandoAvancos >= 2) {
@@ -1143,6 +1202,38 @@ static void recorteNoPrimeiroQuadro(void) {
 
 // Definida junto da tela do DV (video_dv_tela), chamada no load e no playing.
 static void dvSilenciarTv(void);
+// FAROL (issue 7; PLANO 2.2, produtores player/LG): cada erro REAL do uMS
+// vira UM evento no anel, com o cod NORMALIZADO do farolerro — o texto nativo
+// nunca vai ao anel (so tokens de lista fechada). O despacho espelha os pontos
+// da tabela: errorCode 200 -> FE_AUDIO_RECUSADO, "is not running" ->
+// FE_PIPELINE_MORREU, o resto -> FE_ERRO_NATIVO. `erroTxt` recebe o mesmo
+// "<codigo> <texto>" que video_erro_texto expoe. Separada de eventoPayload
+// para o teste alimentar os JSONs medidos na TV sem linkar o video.c inteiro.
+static void farolUmsErro(const char *p, double posicaoS, char *erroTxt, size_t nErro) {
+  double cod = numeroDe(p, "\"errorCode\":");
+  const char *t = strstr(p, "errorText\":\"");
+  char txt[72] = "";
+  FarolErro fe;
+  if (t) {
+    const char *f = strchr(t + 12, '"');
+    if (f && f - (t + 12) < (int)sizeof txt) {
+      memcpy(txt, t + 12, (size_t)(f - (t + 12)));
+      txt[f - (t + 12)] = 0;
+    }
+  }
+  snprintf(erroTxt, nErro, "%.0f %s", cod >= 0 ? cod : 0.0, txt);
+  farolerro_ler(FP_WEBOS, erroTxt, (int)(cod >= 0 ? cod : 0.0), &fe);
+  // Ao anel so vai cod da lista fechada (farolcod_anel): um token montado de
+  // texto livre nao passa daqui.
+  { char cs[24];
+    const char *tok = farolcod_anel(&fe, FP_WEBOS, cs, sizeof cs);
+    if (fe.classe == FC_AUDIO)
+      farol_ev(FM_AUDIO, FE_AUDIO_RECUSADO, 2, fe.nativo, 0, tok);
+    else if (!strcmp(fe.cod, "ums_pipeline"))
+      farol_ev(FM_VIDEO, FE_PIPELINE_MORREU, 2, (int32_t)posicaoS, 0, tok);
+    else
+      farol_ev(FM_VIDEO, FE_ERRO_NATIVO, 2, fe.nativo, 0, tok); }
+}
 static int eventoPayload(const char *p, unsigned minhaSessao) {
   if (minhaSessao != sessao) return 1;
   if (!p) return 1;
@@ -1512,11 +1603,23 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   // Carimba quanto do buffer havia no instante: e o numero que separa "a fonte
   // nao entrega" de "o decoder engasgou".
   if (strstr(p, "bufferingStart")) {
-    char m[64];
+    char m[96];
     // So o PRIMEIRO de uma sequencia carimba. O uMS repete o bufferingStart
     // enquanto nao enche; reiniciar o relogio a cada repeticao daria um "faz
     // 0 ms que travou" eterno, que e exatamente o caso que se quer detectar.
-    if (!bufferandoDesde) { bufferandoDesde = SDL_GetTicks(); bufferandoPos = posNativa; bufferandoAvancos = 0; }
+    if (!bufferandoDesde) {
+      char urlHost[64] = "local";
+      bufferandoDesde = SDL_GetTicks(); bufferandoPos = posNativa; bufferandoAvancos = 0;
+      if (urlAtual[0]) {
+        if (!strncmp(urlAtual, "http://", 7) || !strncmp(urlAtual, "https://", 8))
+          snprintf(urlHost, sizeof urlHost, "net");
+        else if (strncmp(urlAtual, "file:", 5))
+          snprintf(urlHost, sizeof urlHost, "app");
+      }
+      printf("[webos-buffer] start pos=%.1fs ahead=%.1fs dts=%d dv=%d urlHost=%s\n",
+             posSeg, bufferSeg - posSeg, dtsModoDv, dvHabilitado, urlHost);
+      fflush(stdout);
+    }
     snprintf(m, sizeof m, "buffering INICIO (buffer %+.1fs a frente)",
              bufferSeg - posSeg);
     marco(m);
@@ -1579,17 +1682,10 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
     marco(m);
     // Guardado para a tela (video_erro_texto): codigo e texto, sem o resto do
     // JSON. "40403 server error:40403" e o que o registro 4958 (#158) trouxe
-    // no canal que o provedor dava como "Media Not Found".
-    { double cod = numeroDe(p, "\"errorCode\":");
-      const char *t = strstr(p, "errorText\":\"");
-      char txt[72] = "";
-      if (t) {
-        const char *f;
-        t += 12;
-        f = strchr(t, '"');
-        if (f && f - t < (int)sizeof txt) { memcpy(txt, t, (size_t)(f - t)); txt[f - t] = 0; }
-      }
-      snprintf(erroTexto, sizeof erroTexto, "%.0f %s", cod >= 0 ? cod : 0.0, txt); }
+    // no canal que o provedor dava como "Media Not Found". farolUmsErro monta
+    // esse mesmo "<codigo> <texto>" e grava o evento do Farol com o cod
+    // normalizado (nunca o texto).
+    farolUmsErro(p, posSeg, erroTexto, sizeof erroTexto);
     // PIPELINE DESTRUIDO. Medido duas vezes na TV do dono: ~71 s depois de um
     // avanco, o uMS responde "com.webos.pipeline.<id> is not running" e o video
     // simplesmente para — o app nao fazia NADA, e era isso que ele descrevia
@@ -2736,8 +2832,29 @@ static int nativasAudio(void) {
   for (int i = 0; i < nAudio; i++) if (!nv_audio_mkv_recuperado(&faixaAudio[i])) n++;
   return n;
 }
+static void aplicarOrdemAudioMkv(void) {
+  AudioCand c[NV_FAIXA_MAX];
+  int i, o, k;
+  if (nAudio < 1 || dtsSessao) return;
+  for (i = 0; i < nAudio; i++) {
+    c[i].idioma = faixaAudio[i].idioma; c[i].codec = faixaAudio[i].codec;
+    c[i].rotulo = faixaAudio[i].rotulo; c[i].canais = faixaAudio[i].canais;
+    c[i].dts = audioesc_dts_truehd(faixaAudio[i].codec, faixaAudio[i].rotulo);
+    c[i].pode = !nv_audio_mkv_recuperado(&faixaAudio[i]) || dtsHabilitado;
+    c[i].numero = video_audio_numero_memoria(&faixaAudio[i]);
+  }
+  k = audioesc_escolher(c, nAudio, &o);
+  if (k >= 0 && k != audioAtual && !modoLoad) {
+    printf("[video] audio apos MKV (%s): %s (faixa %d de %d)\n", audioesc_origem_nome(o),
+           faixaAudio[k].rotulo, k + 1, nAudio);
+    fflush(stdout);
+    if (audioAoCarregar < 0) video_escolher_audio(k);
+  }
+}
+
 static void audioMkvOmitidas(void) {
   static int antes = -1;
+  static unsigned sessaoVista;
   if (!dtsHabilitado || ajustes_dts_desligado() ||
       !__atomic_load_n(&audioMkvPronto, __ATOMIC_ACQUIRE)) return;
   int n = nv_audio_mkv_omitidas(faixaAudio, nAudio, NV_FAIXA_MAX, dvAudios,
@@ -2751,12 +2868,20 @@ static void audioMkvOmitidas(void) {
     if (!audioinfo_texto(dvAudioCodec[f->ordinalMkv], f->canais, 0, sub, sizeof sub)) snprintf(sub, sizeof sub, "DTS");
     nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, lang, lang, sub);
   }
-  if (n != antes) {
-    printf("[dts] MKV omitted DTS tracks recovered: %d of %d rows\n", n - nativasAudio(), n);
-    fflush(stdout);
-    antes = n;
+  { int mudou = n != antes;
+    if (dvSessaoN != sessaoVista) {
+      sessaoVista = dvSessaoN;
+      antes = -1;
+      mudou = 1;
+    }
+    if (mudou) {
+      printf("[dts] MKV omitted DTS tracks recovered: %d of %d rows\n", n - nativasAudio(), n);
+      fflush(stdout);
+      antes = n;
+    }
+    nAudio = n;
+    if (mudou) aplicarOrdemAudioMkv();
   }
-  nAudio = n;
 }
 void video_bombear(void) {
   ack_publicar();
@@ -2933,6 +3058,8 @@ void video_bombear(void) {
                  erroTexto, recon.tentativa, NV_RECON_MAX,
                  nv_recon_espera_ms(recon.tentativa) / 1000u);
         marco(m);
+        farol_ev(FM_VIDEO, FE_RECONEXAO, 1, recon.tentativa,
+                 (int32_t)nv_recon_espera_ms(recon.tentativa), NULL);
       }
       bufferandoDesde = 0;
     } else {
@@ -3453,7 +3580,8 @@ static int dvPronto(void) {
     }
     // Keep the selected TrueHD track; the opt-in DV path converts its audio.
     if (nv_dts_truehd_codec(c) && !ajustes_dts_desligado()) {
-      printf("[dv] audio %s converted to keep Dolby Vision\n", c); fflush(stdout);
+      printf("[webos-audio] TrueHD track %d (%s) routed through DV converter (#749)\n",
+             m + 1, c); fflush(stdout);
       dvAudioMkvOrd = m; dvTruehd = 1; return 1;
     }
     if (!nv_dvaudio_alimentavel(c)) {

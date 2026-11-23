@@ -8,7 +8,7 @@ flags=(-O1 -g -Isrc -pthread -Wall -I/opt/homebrew/include -L/opt/homebrew/lib)
 if [ "${SANITIZE:-0}" = 1 ]; then
   flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer)
 fi
-cc "${flags[@]}" tests/atividade_corrida.c -lSDL2 -o "$bin"
+cc "${flags[@]}" tests/atividade_corrida.c tests/nvbackend_stub.c -lSDL2 -o "$bin"
 falhou=0
 for caso in revogar perfil conta recarregar revogar-repor normal; do
   if "$bin" "$caso"; then

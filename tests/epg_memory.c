@@ -44,5 +44,15 @@ int main(int argc,char **argv) {
   epg_memoria_definir(EPG_MEMORIA_COMPLETA,8192);epg_passo();esperar();assert(P.nCanais==1 && P.nEvs==6);
   assert(pedidos==3);epg_abrir_sessao(1);
   puts("PASS: mode changes rebuild filtered binary caches; returning to Full retrieves later programmes rather than reusing a shortened24-hour schedule");
+  // (#776) troca Automático(2 GB) → Completo com Um dia: o cache de 24 h nao
+  // pode ser aceito como fresco — o Completo guarda o passado que o Automático
+  // omite. O hash do filtro cobre passado+futuro e o perfil.
+  epg_abrir_sessao(1);epg_so_provedores(1);epg_memoria_definir(EPG_MEMORIA_AUTO,2048);
+  teste_dias=1;
+  epg_extras_definir(&fonte,1);epg_iniciar();esperar();assert(P.nCanais==1 && P.nEvs==3);
+  epg_memoria_definir(EPG_MEMORIA_COMPLETA,2048);epg_passo();esperar();
+  // Sem o hash por perfil, o cache de 24 h seria aceito como fresco e daria 3.
+  assert(P.nCanais==1 && P.nEvs==5);epg_abrir_sessao(1);
+  puts("PASS: Automático→Completo com Um dia invalida o cache de 24 h e recupera o passado");
   return 0;
 }

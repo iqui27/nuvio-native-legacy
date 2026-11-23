@@ -36,6 +36,8 @@ static int logFake(const char *fmt, ...) {
 
 int main(void) {
   char s[96];
+  FarolEvento eventos[4];
+  farolanel_zerar();
   status = "Name:\tnuvio\nVmSize: 999999 kB\nVmRSS:\t235520 kB\nThreads: 8\n";
   meminfo = "MemTotal: 2012160 kB\nMemFree: 1024 kB\nMemAvailable: 307200 kB\n";
   memlog_amostra(s, sizeof s);
@@ -77,7 +79,11 @@ int main(void) {
   memlog_amostra(s, sizeof s); assert(!*s && !*logbuf);
   meminfo = "MemAvailable: 204800 kB"; // sem newline, RSS zero valido.
   memlog_amostra(s, sizeof s); assert(!strcmp(s, " | mem=0.0/200.0MB"));
+  assert(farolanel_ler(eventos, 4, 0) == 2);
+  assert(eventos[0].ev == FE_MEM_BAIXA && eventos[0].a == 149 && eventos[0].b == 230);
+  assert(eventos[1].ev == FE_MEM_BAIXA && eventos[1].a == 0);
 #else
+  assert(!farolanel_ler(eventos, 4, 0));
   memlog_evento("load"); memlog_evento("primeiro-quadro");
   assert(!*s && !*logbuf && leituras == 0);
   (void)procFake; (void)logFake;

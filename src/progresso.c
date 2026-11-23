@@ -29,6 +29,10 @@ static pthread_mutex_t tranca = PTHREAD_MUTEX_INITIALIZER;
 #define TRANCAR()   pthread_mutex_lock(&tranca)
 #define DESTRANCAR() pthread_mutex_unlock(&tranca)
 
+// Ouvinte do gesto "tirou do Continuar" — chamado FORA do mutex (farol-38).
+static void (*aoRetirar)(const char *imdb);
+void prog_ao_retirar(void (*fn)(const char *imdb)) { aoRetirar = fn; }
+
 static ProgRegistro regs[PROG_MAX];
 static int nRegs;
 static int carregado;
@@ -436,6 +440,7 @@ void prog_marcar_removido(const char *imdb) {
   snprintf(removidos[alvo].obra, sizeof removidos[alvo].obra, "%s", obra);
   removidos[alvo].ms = agora;
   DESTRANCAR();
+  if (aoRetirar) aoRetirar(imdb);
 }
 
 // Vale para QUALQUER perfil: a escolha de perfil olha o ultimo item de quem
@@ -545,6 +550,7 @@ void prog_ocultar_continuar(const char *imdb) {
   ocultos[i].ms = agora;
   ocultosGravar();
   DESTRANCAR();
+  if (aoRetirar) aoRetirar(imdb);
 }
 
 // Chamar com a trava tomada. 1 = continua oculto.

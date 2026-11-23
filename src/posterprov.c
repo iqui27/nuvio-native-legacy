@@ -340,6 +340,22 @@ static int montar_formato(const PosterProvCfg *c, const char *imdb, long tmdb,
         w = snprintf(out, n, "https://api.ratingposterdb.com/%s/tmdb/poster-default/%s-%ld.jpg?fallback=true",
                      c->chave, d.serie ? "series" : "movie", d.tm);
       break;
+    case PP_POSTERSPLUS: {
+      char inst[PP_INSTANCIA_MAX], sid[32], q[PP_URL_MAX];
+      int qn;
+      if (!c->instancia[0]) return 0;
+      snprintf(inst, sizeof inst, "%s", c->instancia);
+      if (d.tt[0]) snprintf(sid, sizeof sid, "%s", d.tt);
+      else snprintf(sid, sizeof sid, "%ld", d.tm);
+      qn = snprintf(q, sizeof q, "shape=%s", landscape ? "landscape" : "poster");
+      if (c->extra[0] && qn > 0 && (size_t)qn < sizeof q)
+        qn += snprintf(q + qn, sizeof q - (size_t)qn, "&%s", c->extra);
+      if (c->token[0] && token_valido(c->token, strlen(c->token)) && qn > 0 && (size_t)qn < sizeof q)
+        qn += snprintf(q + qn, sizeof q - (size_t)qn, "&access_key=%s", c->token);
+      if (qn < 0 || (size_t)qn >= sizeof q) return 0;
+      w = snprintf(out, n, "%s/poster?tmdb_id=%ld&imdb_id=%s&stremio_id=%s&type=%s&%s",
+                   inst, d.tm, d.tt, sid, d.serie ? "series" : "movie", q);
+      break; }
     case PP_MODELO: {
       char decoded[PP_MODELO_MAX];
       const char *p = decoded;
@@ -439,6 +455,9 @@ static void prefixo_de(const PosterProvCfg *c) {
       break;
     case PP_RPDB:
       snprintf(prefixo, sizeof prefixo, "https://api.ratingposterdb.com");
+      break;
+    case PP_POSTERSPLUS:
+      snprintf(prefixo, sizeof prefixo, "%s", c->instancia[0] ? c->instancia : "");
       break;
     case PP_MODELO:
       m = c->modelo;

@@ -126,7 +126,7 @@ static char *ajJsonMerge(const char *base, const char *be, const char *patch, co
   jsw_livre(&w); return out;
 }
 
-#define AJ_DEVICE_FILES 33
+#define AJ_DEVICE_FILES 34
 static void ajusteDeviceFile(int k, char *name, size_t cap) {
   static const char *const fixed[] = {
     "player.txt", "player-externo.txt", "fanart.txt", "seekr.txt", "posteres.txt",
@@ -152,7 +152,10 @@ static void ajusteDeviceFile(int k, char *name, size_t cap) {
   else {
     static const char *const memory[] = {
       "audiomemoria-p%d.txt", "legmemoria-p%d.txt", "fontepref-p%d.txt",
-      "fontepref-auto-p%d.txt", "listas-p%d.txt", "salvos-org-p%d.txt"
+      "fontepref-auto-p%d.txt", "listas-p%d.txt", "salvos-org-p%d.txt",
+      "farol-gosto-p%d.txt"    // indice 33: novo no FIM da lista (issue 43,
+                             // PLANO-GOSTO 2.3) — instantaneo velho de 33
+                             // arquivos simplesmente nao traz esta chave.
     };
     snprintf(name, cap, memory[k - 27], perfis_ativo());
   }
@@ -221,6 +224,9 @@ static char *ajustesDeviceSnapshot(void) {
   char order[EX_NFONTES * 8] = ""; size_t n = 0;
   for (int i = 0; i < EX_NFONTES; i++) n += (size_t)snprintf(order + n, sizeof order - n, "%d ", ajustes_nota_fonte(i));
   jsw_cs(&w, "rating_order", order);
+  // O modelo do Farol grava com folga propria de 60 s — o instantaneo pede
+  // o estado de agora, nao o de ate um minuto atras (issue 43).
+  farolsinal_gravar();
   jsw_chave(&w, "files"); jsw_obj_ini(&w);
   for (int i = 0; i < AJ_DEVICE_FILES; i++) {
     char name[128] = "", key[24]; ajusteDeviceFile(i, name, sizeof name);
@@ -298,6 +304,7 @@ static int ajustesDeviceAplicar(const char *json) {
       memcpy(notaFontes, next, sizeof next); changed++;
     }
   }
+  int farolMudou = 0;
   if (ajJsonGet(dev, end, "files", &values, &ve)) {
     for (int i = 0; i < AJ_DEVICE_FILES; i++) {
       char key[24], name[128] = "";
@@ -306,7 +313,13 @@ static int ajustesDeviceAplicar(const char *json) {
       ajusteDeviceFile(i, name, sizeof name); if (!*name) continue;
       if (f - v == 4 && !strncmp(v, "null", 4)) {
         char *old = dados_ler(name);
-        if (i != 8 && old) { dados_apagar(name); changed++; }
+        // A releitura do Farol marca ANTES do arquivo restaurado mexer:
+        // a gravacao de folga nao pode descarregar a RAM velha por cima do
+        // novo no intervalo (ressalva R5 da r1).
+        if (i != 8 && old) {
+          if (i == 33) { farolsinal_restaura_marcar(); farolMudou = 1; }
+          dados_apagar(name); changed++;
+        }
         free(old); continue;
       }
       char *text = ajusteUnhex(v, f); if (!text) continue;
@@ -316,7 +329,10 @@ static int ajustesDeviceAplicar(const char *json) {
         if (!text) continue;
       }
       char *old = dados_ler(name);
-      if ((!old || strcmp(old, text)) && debGravarArquivo(name, text)) changed++;
+      if (!old || strcmp(old, text)) {
+        if (i == 33) { farolsinal_restaura_marcar(); farolMudou = 1; }
+        if (debGravarArquivo(name, text)) changed++;
+      }
       free(old);
       free(text);
     }
@@ -340,6 +356,9 @@ static int ajustesDeviceAplicar(const char *json) {
   if (curated) { curadoria_definir_url(curated); free(curated); }
   gfx_escala_ui_definir(ajustes_tamanho_ui()); gfx_escala_txt_definir(ajustes_escala_texto());
   interfaceAplicar();
+  // O modelo do gosto chegou por baixo, por arquivo: agenda a releitura no
+  // Farol — a RAM nao grava por cima do recem-restaurado (issue 43).
+  if (farolMudou) farolsinal_recarregar();
   if (changed) gravar();
   return changed;
 }

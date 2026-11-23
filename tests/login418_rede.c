@@ -36,7 +36,8 @@ int main(void) {
   assert(!r && st == 0 && strstr(rede_ultimo_erro(), "curl 6"));
   assert(!strstr(rede_ultimo_erro(), "SECRET"));
   assert(timeoutMs == 25000 && connectMs == 10000);
-  assert(verifyPeer == 0 && verifyHost == 0);
+  // Desde o porte do PR 600 todo POST https e verificado (login/token/sync).
+  assert(verifyPeer == 1 && verifyHost == 2);
   noHandle = 1;
   r = rede_postar_st("https://example.test/auth", 25, NULL, "{}", &st);
   assert(!r && st == 0 && strstr(rede_ultimo_erro(), "curl 27"));

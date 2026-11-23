@@ -127,6 +127,8 @@ int ajustes_audio_normalizar(void) { return 0; }
 void dts_engine_set_normalize(int on) { (void)on; }
 int ling_prefere_original(void) { return 0; }
 const char *ling_audio_preferido(void) { return ""; }
+int ling_prefere_regional(const char *p) { (void)p; return 0; }
+int ling_afinidade(const char *c, const char *p) { (void)c; (void)p; return 1; }
 int debrid_tb_link(int u, int i, int a, char *url, unsigned n) {
   (void)u; (void)i; (void)a; if (n) *url = 0; return 0;
 }
