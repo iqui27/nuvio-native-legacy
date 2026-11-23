@@ -572,6 +572,57 @@ int main(void) {
   testeTresDiasECota(dir);
   testeTodasAcoes();
   testePrepararEPortoes();
+
+  // P2 formado com Diario T4E6 preserva T/E em faroldica_executar mesmo apos
+  // republicacao no catalogo com T0E0 ou outro episodio (T1E2), sem mutar o
+  // item global do catalogo.
+  {
+    long long dia = 1767225600LL + 190LL * 86400LL + 36000LL;
+    DiarioEntrada de;
+    FarolDica d;
+    FarolDicaExec ex;
+    CatItem itens[2];
+    faroldica_teste_reiniciar();
+    faroldica_teste_relogio(relogioFake);
+    faroldica_esquecer_disco();
+    definirPerfil(1);
+    definirAgora(dia);
+    montarCatalogoBase();
+    memset(&de, 0, sizeof de);
+    strcpy(de.id, "tt7723120");
+    de.tipo = DIARIO_SERIE;
+    de.origem = DIARIO_ORIG_PLAYER;
+    de.temporada = 4; de.episodio = 6;
+    de.quando = dia - 10LL * 86400LL;
+    assert(diario_adicionar(1, &de) >= 0);
+    diario_nome_definir("tt7723120", "Severance", 2022, "");
+    assert(faroldica_adotar_cena_json(
+      "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"core_t4e6\","
+      "\"l1\":{\"m\":\"FT_DICA_CURTO\",\"a\":[\"tt7723120\"]},"
+      "\"acao\":{\"tipo\":\"tocar\",\"alvo\":\"tt7723120\"},\"icone\":\"aj_farol\"}]}",
+      0, NULL, NULL, NULL) == 1);
+    assert(faroldica_atual(&d) == 1);
+    assert(d.alvoTemporada == 4 && d.alvoEpisodio == 6);
+
+    // Republicacao com T0E0:
+    memset(itens, 0, sizeof itens);
+    strcpy(itens[0].imdb, "tt7723120"); strcpy(itens[0].tipo, "series");
+    strcpy(itens[0].titulo, "Severance");
+    cat_definir(itens, 1);
+    ex = faroldica_executar(&d);
+    assert(ex.ok == 1 && ex.tipo == FD_EXEC_TOCAR && ex.catIdx == 0);
+    assert(!strcmp(ex.alvoTipo, "series") && ex.temporada == 4 && ex.episodio == 6);
+    assert(cat_item(0)->temporada == 0 && cat_item(0)->episodio == 0);
+
+    // Republicacao com outro episodio (T1E2):
+    itens[0].temporada = 1; itens[0].episodio = 2;
+    cat_definir(itens, 1);
+    ex = faroldica_executar(&d);
+    assert(ex.ok == 1 && ex.tipo == FD_EXEC_TOCAR && ex.catIdx == 0);
+    assert(!strcmp(ex.alvoTipo, "series") && ex.temporada == 4 && ex.episodio == 6);
+    assert(cat_item(0)->temporada == 1 && cat_item(0)->episodio == 2);
+  }
+
   testeConcorrencia();
 
   limparDir(dir);

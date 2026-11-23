@@ -6808,52 +6808,77 @@ void app_atualizar(float dt, Uint32 agora) {
         // (continuar_desenhar troca T/E pelo prox_seguinte quando o semeado
         // ja terminou), e episodioAlvo chegaria a outro numero — ou a nenhum,
         // porque a lista de episodios ainda nao chegou da rede.
-        const CatItem *cw = cat_item(it.indice);
-        int tocar = 1;
-        cwRewatch = cw ? cw->rewatch : 0;
-        cwTocarT = cwTocarE = 0;
-        cwEspera = 0;
-        if (cw && !strcmp(cw->tipo, "series")) {
-          cwTocarT = cw->temporada; cwTocarE = cw->episodio;
-          if (cw->episodio <= 0) tocar = 0;
-          // EPISODIO TERMINADO NUNCA TOCA DE NOVO DO COMECO. O card ja anuncia
-          // o proximo quando a lista existe; sem lista (a copia do card nao
-          // tem), a pagina abre e o toque espera a lista (cwEsperarProximo).
-          // Sem proximo — fim da serie, ou o seguinte ainda nao foi ao ar —,
-          // so a pagina abre.
-          if (cw->progresso >= ajustes_cw_concluido() && cw->temporada >= 0 &&
-              cw->episodio > 0) {
-            int k = cat_indice_titulo(cw->imdb, it.indice);
-            ProxSugestao prox;
-            tocar = 0;
-            cwTocarT = cwTocarE = 0;
-            if (cat_episodios_finais(k, cw->imdb)) {
-              if (prox_seguinte(cw, cat_episodio(k, 0), cat_n_episodios(k),
-                                ajustes_cw_concluido(),
-                                (long long)time(NULL) * 1000LL, &prox)) {
-                cwTocarT = prox.temporada; cwTocarE = prox.episodio;
-                tocar = 1;
-              } else
-                printf("[cw] %s terminado e sem proximo: abrindo so a pagina\n", cw->imdb);
-            } else {
+        HomeFarolAlvo fa;
+        int farolPend = home_farol_alvo(&it, &fa);
+        if (farolPend >= 0) {
+          const CatItem *cw = cat_item(it.indice);
+          int tocar = 1;
+          cwRewatch = cw ? cw->rewatch : 0;
+          cwTocarT = cwTocarE = 0;
+          cwEspera = 0;
+          if (farolPend > 0) {
+            const char *tipoAlvo = fa.tipo[0] ? fa.tipo : (cw ? cw->tipo : "");
+            if (!strcmp(tipoAlvo, "series")) {
+              cwTocarT = fa.temporada; cwTocarE = fa.episodio;
+              if (cwTocarE <= 0) tocar = 0;
+              if (tocar && cw &&
+                  !cat_episodio_existe_final(cat_indice_titulo(cw->imdb, it.indice),
+                                             cw->imdb, cwTocarT, cwTocarE)) {
+                cwEsperaItem = *cw;
+                snprintf(cwEsperaItem.tipo, sizeof cwEsperaItem.tipo, "series");
+                cwEsperaItem.temporada = cwTocarT;
+                cwEsperaItem.episodio = cwTocarE;
+                cwEsperaDesde = SDL_GetTicks();
+                cwEspera = 2; // Resume the current episode once metadata publishes its video ID.
+                tocar = 0;
+              }
+            }
+          } else {
+            if (cw && !strcmp(cw->tipo, "series")) {
+              cwTocarT = cw->temporada; cwTocarE = cw->episodio;
+              if (cw->episodio <= 0) tocar = 0;
+              // EPISODIO TERMINADO NUNCA TOCA DE NOVO DO COMECO. O card ja anuncia
+              // o proximo quando a lista existe; sem lista (a copia do card nao
+              // tem), a pagina abre e o toque espera a lista (cwEsperarProximo).
+              // Sem proximo — fim da serie, ou o seguinte ainda nao foi ao ar —,
+              // so a pagina abre.
+              if (cw->progresso >= ajustes_cw_concluido() && cw->temporada >= 0 &&
+                  cw->episodio > 0) {
+                int k = cat_indice_titulo(cw->imdb, it.indice);
+                ProxSugestao prox;
+                tocar = 0;
+                cwTocarT = cwTocarE = 0;
+                if (cat_episodios_finais(k, cw->imdb)) {
+                  if (prox_seguinte(cw, cat_episodio(k, 0), cat_n_episodios(k),
+                                    ajustes_cw_concluido(),
+                                    (long long)time(NULL) * 1000LL, &prox)) {
+                    cwTocarT = prox.temporada; cwTocarE = prox.episodio;
+                    tocar = 1;
+                  } else
+                    printf("[cw] %s terminado e sem proximo: abrindo so a pagina\n", cw->imdb);
+                } else {
+                  cwEsperaItem = *cw;
+                  cwEsperaDesde = SDL_GetTicks();
+                  cwEspera = 1;
+                  printf("[cw] %s terminado, lista a caminho: o toque espera o proximo\n", cw->imdb);
+                }
+              }
+            }
+            if (tocar && cw && !strcmp(cw->tipo, "series") &&
+                !cat_episodio_existe_final(cat_indice_titulo(cw->imdb, it.indice),
+                                          cw->imdb, cwTocarT, cwTocarE)) {
               cwEsperaItem = *cw;
               cwEsperaDesde = SDL_GetTicks();
-              cwEspera = 1;
-              printf("[cw] %s terminado, lista a caminho: o toque espera o proximo\n", cw->imdb);
+              cwEspera = 2; // Resume the current episode once metadata publishes its video ID.
+              tocar = 0;
             }
           }
+          abrirTitulo(&it, !(cw && cw->imdb[0]), 1);
+          if (cwEspera) desc_episodios(detail_indice(), 0);
+          if (tocar) detail_pedir_reproduzir();
         }
-        if (tocar && cw && !strcmp(cw->tipo, "series") &&
-            !cat_episodio_existe_final(cat_indice_titulo(cw->imdb, it.indice),
-                                      cw->imdb, cwTocarT, cwTocarE)) {
-          cwEsperaItem = *cw;
-          cwEsperaDesde = SDL_GetTicks();
-          cwEspera = 2; // Resume the current episode once metadata publishes its video ID.
-          tocar = 0;
-        }
-        abrirTitulo(&it, !(cw && cw->imdb[0]), 1);
-        if (cwEspera) desc_episodios(detail_indice(), 0);
-        if (tocar) detail_pedir_reproduzir();
+      } else {
+        (void)home_farol_alvo(NULL, NULL);
       }
     } else if (tela == TELA_BUSCA && busca_pediu_pessoa(&pedPessoa)) {
       abrirPessoa(&pedPessoa);

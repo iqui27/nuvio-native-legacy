@@ -636,6 +636,88 @@ int main(void) {
     assert(ci->temporada == 2 && ci->episodio == 4);
   }
 
+  // ---- CENARIO F: P2 Diario T4E6 + republicacao T0E0 preserva alvo em home_farol_alvo ----
+  stubPerfil = 4;
+  salvos_perfil(4); salvos_iniciar();
+  stubAgoraS += 86400LL;
+  stubCenaGer = 3u;
+  home_abrir_sessao();
+  montarCatalogoComFarol();
+  {
+    DiarioEntrada de;
+    memset(&de, 0, sizeof de);
+    strcpy(de.id, "tt7723120");
+    de.tipo = DIARIO_SERIE;
+    de.origem = DIARIO_ORIG_PLAYER;
+    de.temporada = 4; de.episodio = 6;
+    de.quando = stubAgoraS - 8LL * 86400LL;
+    assert(diario_adicionar(4, &de) >= 0);
+    diario_nome_definir("tt7723120", "Severance", 2022, "");
+  }
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"home_t4e6\","
+    "\"l1\":{\"m\":\"FT_DICA_CURTO\",\"a\":[\"tt7723120\"]},"
+    "\"acao\":{\"tipo\":\"tocar\",\"alvo\":\"tt7723120\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 1);
+  assert(dicaCache.alvoTemporada == 0);
+  home_atualizar(0.016f, fakeTicks);
+  assert(dicaCache.alvoTemporada == 4 && dicaCache.alvoEpisodio == 6);
+  // Descoberta republica a serie na fileira com T/E zerados e sem arte:
+  {
+    CatItem it[12];
+    CatFileira fils[2];
+    memset(it, 0, sizeof it);
+    memset(fils, 0, sizeof fils);
+    strcpy(it[0].imdb, "tt7723120");
+    strcpy(it[0].tipo, "series");
+    strcpy(it[0].titulo, "Severance");
+    for (int i = 1; i < 12; i++) {
+      snprintf(it[i].imdb, sizeof it[i].imdb, "tt300%04d", i);
+      strcpy(it[i].tipo, "movie");
+      snprintf(it[i].titulo, sizeof it[i].titulo, "Catalogo %d", i);
+      strcpy(it[i].meta, "2024 · 140 min");
+    }
+    strcpy(fils[0].chave, "farol_gosto1");
+    strcpy(fils[0].titulo, "Para voce");
+    fils[0].ini = 0; fils[0].n = 6;
+    strcpy(fils[1].chave, "addon_pop");
+    strcpy(fils[1].titulo, "Populares");
+    strcpy(fils[1].base, "https://a.invalid");
+    strcpy(fils[1].catId, "pop");
+    strcpy(fils[1].tipo, "movie");
+    fils[1].ini = 6; fils[1].n = 6;
+    cat_definir_tudo(it, 12, fils, 2);
+  }
+  fakeTicks += 16u;
+  home_atualizar(0.016f, fakeTicks);
+  r1 = acharFileira("farol_gosto1");
+  assert(r1 >= 0 && fileiras[r1].temDica == 1 && fileiras[r1].dicaFocavel == 1);
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  teclaCurta(SDLK_RETURN);
+  assert(home_pediu_tocar() == 1);
+  assert(home_pediu_abrir() == 0);
+  {
+    HomeItem hi;
+    HomeFarolAlvo fa;
+    assert(home_item_focado(&hi) == 1);
+    assert(home_farol_alvo(&hi, &fa) == 1);
+    assert(!strcmp(fa.imdb, "tt7723120") && !strcmp(fa.tipo, "series"));
+    assert(fa.temporada == 4 && fa.episodio == 6);
+    assert(cat_item(hi.indice)->temporada == 0 && cat_item(hi.indice)->episodio == 0);
+    // Ja consumido:
+    assert(home_farol_alvo(&hi, &fa) == 0);
+  }
+  // Cartao comum nao aciona home_farol_alvo:
+  focoHero = 0; foco.fileira = r1; foco.coluna = 1;
+  teclaCurta(SDLK_RETURN);
+  assert(home_pediu_abrir() == 1);
+  {
+    HomeItem hi;
+    HomeFarolAlvo fa;
+    assert(home_item_focado(&hi) == 1);
+    assert(home_farol_alvo(&hi, &fa) == 0);
+  }
+
   limparDir(dir);
   puts("farol_dica (home): ok");
   return 0;

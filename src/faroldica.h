@@ -65,6 +65,9 @@ typedef struct {
   int  ok;                               // 1 = acao executada com sucesso
   int  catIdx;                           // indice no catalogo (>= 0) para abrir/tocar/salvar
   char imdb[FAROL_REF_TAM];              // alvo resolvido ("tt...")
+  char alvoTipo[8];                      // "movie" | "series" (ou "")
+  int  temporada;                        // > 0 para serie com temporada conhecida
+  int  episodio;                         // > 0 para serie com episodio conhecido
 } FarolDicaExec;
 
 // Leitura atomica, sem trava: sobe a cada adocao, dispensa ou invalidacao.

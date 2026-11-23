@@ -31,10 +31,12 @@ Uint32 SDL_GetTicks(void) { return fakeTicks; }
 
 // ---- dubles minimos da UI/ambiente + espias do roteador de detalhe ----
 static int stubPerfil = 1;
+static uint64_t stubSessao = 1;
 static long long stubAgoraS = 1767225600LL + 350LL * 86400LL + 36000LL;
 static unsigned stubCenaGer = 1u;
 
 static int espDetailAbrir;
+static int stubDetailAberto;
 static HomeItem espDetailItem;
 static int espDetailReproduzir;
 static int espDescartarRetido;
@@ -43,9 +45,9 @@ static int espDetailIdx = -1;
 
 static long long relogioFake(void) { return stubAgoraS; }
 int perfis_ativo(void) { return stubPerfil; }
-uint64_t perfis_sessao_geracao(void) { return 1; }
-int perfis_sessao_atual(uint64_t s) { return s == 1; }
-int perfis_sessao_travar(uint64_t s) { return s == 1; }
+uint64_t perfis_sessao_geracao(void) { return stubSessao; }
+int perfis_sessao_atual(uint64_t s) { return s == stubSessao; }
+int perfis_sessao_travar(uint64_t s) { return s == stubSessao; }
 void perfis_sessao_destravar(void) {}
 int perfil_infantil_ativo(void) { return 0; }
 const char *desc_chave_tmdb(void) { return ""; }
@@ -152,12 +154,21 @@ void sync_proteger_ajustes_locais(void) {}
 void biblioteca_alternar_lista(int i) { (void)i; }
 int prox_seguinte(const CatItem *ci, const CatEp *eps, int n, int limiarPct,
                   long long agoraMs, ProxSugestao *saida) {
-  (void)ci; (void)eps; (void)n; (void)limiarPct; (void)agoraMs; (void)saida;
+  (void)limiarPct; (void)agoraMs;
+  if (!ci || !eps || n <= 0 || !saida) return 0;
+  for (int i = 0; i < n; i++) {
+    if (eps[i].temporada == ci->temporada && eps[i].episodio == ci->episodio + 1) {
+      memset(saida, 0, sizeof *saida);
+      saida->temporada = eps[i].temporada;
+      saida->episodio = eps[i].episodio;
+      return 1;
+    }
+  }
   return 0;
 }
 int menu_ocupado(Uint32 a) { (void)a; return 0; }
 void menu_fechar(void) {}
-int detail_aberto(void) { return 0; }
+int detail_aberto(void) { return stubDetailAberto; }
 float detail_progresso(void) { return 0.0f; }
 int player_aberto(void) { return 0; }
 int trailer_aberto(void) { return 0; }
@@ -225,6 +236,7 @@ int canal_e_chave(const char *c) { (void)c; return 0; }
 void player_descartar_retido(void) { espDescartarRetido++; }
 void detail_abrir(const HomeItem *it) {
   espDetailAbrir++;
+  stubDetailAberto = 1;
   if (it) { espDetailItem = *it; espDetailIdx = it->indice; }
 }
 int detail_indice(void) { return espDetailIdx; }
@@ -235,6 +247,7 @@ void desc_episodios(int indice, int forcar) {
 static int explorar_pediu_abrir(int *idx) { (void)idx; return 0; }
 static void abrirPorIndice(int idx) { (void)idx; }
 
+#define CW_ESPERA_MS 8000u
 enum { TELA_HOME = 0, TELA_EXPLORAR = 1 };
 static int tela = TELA_HOME;
 static int homeAcaoDet = -1;
@@ -250,6 +263,10 @@ static void despacharAppHome(void) {
   HomeItem it;
   (void)idx;
 /* APP_HOME_DISPATCH */
+}
+
+static void passoEsperaApp(void) {
+/* APP_CW_ESPERA */
 }
 
 static void teclaOk(void) {
@@ -293,12 +310,15 @@ static int acharFileira(const char *chave) {
 
 static void zerarEspias(void) {
   espDetailAbrir = 0;
+  stubDetailAberto = 0;
   memset(&espDetailItem, 0, sizeof espDetailItem);
   espDetailReproduzir = 0;
   espDescartarRetido = 0;
   espDescEpisodios = 0;
   espDetailIdx = -1;
   cwRewatch = cwTocarT = cwTocarE = cwEspera = 0;
+  memset(&cwEsperaItem, 0, sizeof cwEsperaItem);
+  cwEsperaDesde = 0;
 }
 
 static void limparDir(const char *dir) {
@@ -392,6 +412,19 @@ int main(void) {
     const CatItem *ci = cat_item(espDetailItem.indice);
     assert(ci && !strcmp(ci->imdb, "tt7770011") && !strcmp(ci->tipo, "series"));
   }
+  {
+    CatEp ep;
+    char streamId[96] = "";
+    memset(&ep, 0, sizeof ep);
+    ep.temporada = 3; ep.episodio = 7;
+    strcpy(ep.vid, "tt7770011:3:7");
+    cat_definir_episodios(detail_indice(), &ep, 1);
+    passoEsperaApp();
+    assert(cwEspera == 0 && espDetailReproduzir == 1);
+    assert(cwTocarT == 3 && cwTocarE == 7);
+    assert(cat_id_stream(detail_indice(), cwTocarT, cwTocarE, streamId, sizeof streamId) == 1);
+    assert(!strcmp(streamId, "tt7770011:3:7"));
+  }
 
   // 3) Filme fora do catalogo (Diario nome, sem arte) -> tocar
   stubAgoraS += 86400LL;
@@ -444,6 +477,252 @@ int main(void) {
     assert(ci && !strcmp(ci->imdb, "tt7770013") && !strcmp(ci->tipo, "series"));
     assert(ci->episodio == 0);
   }
+
+  // 5) Regressao r2: P2 formado com Diario T4E6 sem arte, e descoberta republica
+  //    tt7723120 sem arte com T/E zerados (T0E0) entre composicao e OK.
+  //    Preserva T4E6 ate o despacho, entra em espera e resolve ID tt7723120:4:6
+  //    sem escrever T/E no item global do catalogo.
+  stubAgoraS += 86400LL;
+  montarCatalogoComFarol();
+  {
+    DiarioEntrada de;
+    memset(&de, 0, sizeof de);
+    strcpy(de.id, "tt7723120");
+    de.tipo = DIARIO_SERIE;
+    de.origem = DIARIO_ORIG_PLAYER;
+    de.temporada = 4; de.episodio = 6;
+    de.quando = stubAgoraS - 6LL * 86400LL;
+    assert(diario_adicionar(1, &de) >= 0);
+    diario_nome_definir("tt7723120", "Severance", 2022, "");
+  }
+  assert(cat_indice_por_imdb("tt7723120") < 0);
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"app_r2_t0e0\","
+    "\"l1\":{\"m\":\"FT_DICA_CURTO\",\"a\":[\"tt7723120\"]},"
+    "\"acao\":{\"tipo\":\"tocar\",\"alvo\":\"tt7723120\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 1);
+  home_atualizar(0.016f, fakeTicks);
+  assert(dicaCache.alvoTemporada == 4 && dicaCache.alvoEpisodio == 6);
+  {
+    CatItem it[12];
+    CatFileira fils[2];
+    memset(it, 0, sizeof it);
+    memset(fils, 0, sizeof fils);
+    strcpy(it[0].imdb, "tt7723120");
+    strcpy(it[0].tipo, "series");
+    strcpy(it[0].titulo, "Severance");
+    it[0].temporada = 0; it[0].episodio = 0;
+    for (int i = 1; i < 12; i++) {
+      snprintf(it[i].imdb, sizeof it[i].imdb, "tt300%04d", i);
+      strcpy(it[i].tipo, "movie");
+      snprintf(it[i].titulo, sizeof it[i].titulo, "Catalogo %d", i);
+      strcpy(it[i].meta, "2024 · 140 min");
+    }
+    strcpy(fils[0].chave, "farol_gosto1");
+    strcpy(fils[0].titulo, "Para voce");
+    fils[0].ini = 0; fils[0].n = 6;
+    strcpy(fils[1].chave, "addon_pop");
+    strcpy(fils[1].titulo, "Populares");
+    strcpy(fils[1].base, "https://a.invalid");
+    strcpy(fils[1].catId, "pop");
+    strcpy(fils[1].tipo, "movie");
+    fils[1].ini = 6; fils[1].n = 6;
+    cat_definir_tudo(it, 12, fils, 2);
+  }
+  fakeTicks += 16u;
+  home_atualizar(0.016f, fakeTicks);
+  r1 = acharFileira("farol_gosto1");
+  assert(r1 >= 0 && fileiras[r1].temDica == 1 && fileiras[r1].dicaFocavel == 1);
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  zerarEspias();
+  teclaOk();
+  despacharAppHome();
+  assert(espDetailAbrir == 1);
+  assert(espDetailItem.arte == NULL);
+  assert(cwTocarT == 4 && cwTocarE == 6);
+  assert(cwEspera == 2 && espDescEpisodios == 1);
+  assert(cwEsperaItem.temporada == 4 && cwEsperaItem.episodio == 6);
+  assert(cat_item(espDetailItem.indice)->temporada == 0 &&
+         cat_item(espDetailItem.indice)->episodio == 0);
+  {
+    CatEp eps[2];
+    char streamId[96] = "";
+    memset(eps, 0, sizeof eps);
+    eps[0].temporada = 1; eps[0].episodio = 1; strcpy(eps[0].vid, "tt7723120:1:1");
+    eps[1].temporada = 4; eps[1].episodio = 6; strcpy(eps[1].vid, "tt7723120:4:6");
+    cat_definir_episodios(detail_indice(), eps, 2);
+    passoEsperaApp();
+    assert(cwEspera == 0 && espDetailReproduzir == 1);
+    assert(cwTocarT == 4 && cwTocarE == 6);
+    assert(cat_id_stream(detail_indice(), cwTocarT, cwTocarE, streamId, sizeof streamId) == 1);
+    assert(!strcmp(streamId, "tt7723120:4:6"));
+  }
+
+  // 6) Regressao r2: republicacao com OUTRO episodio (T1E2) e progresso concluido
+  //    no catalogo NAO desvia T4E6 nem aciona prox_seguinte do item global.
+  stubAgoraS += 86400LL;
+  montarCatalogoComFarol();
+  {
+    DiarioEntrada de;
+    memset(&de, 0, sizeof de);
+    strcpy(de.id, "tt7723121");
+    de.tipo = DIARIO_SERIE;
+    de.origem = DIARIO_ORIG_PLAYER;
+    de.temporada = 4; de.episodio = 6;
+    de.quando = stubAgoraS - 6LL * 86400LL;
+    assert(diario_adicionar(1, &de) >= 0);
+    diario_nome_definir("tt7723121", "Foundation", 2021, "");
+  }
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"app_r2_t1e2\","
+    "\"l1\":{\"m\":\"FT_DICA_CURTO\",\"a\":[\"tt7723121\"]},"
+    "\"acao\":{\"tipo\":\"tocar\",\"alvo\":\"tt7723121\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 1);
+  home_atualizar(0.016f, fakeTicks);
+  assert(dicaCache.alvoTemporada == 4 && dicaCache.alvoEpisodio == 6);
+  {
+    CatItem it[12];
+    CatFileira fils[2];
+    memset(it, 0, sizeof it);
+    memset(fils, 0, sizeof fils);
+    strcpy(it[0].imdb, "tt7723121");
+    strcpy(it[0].tipo, "series");
+    strcpy(it[0].titulo, "Foundation");
+    it[0].temporada = 1; it[0].episodio = 2; it[0].progresso = 100;
+    for (int i = 1; i < 12; i++) {
+      snprintf(it[i].imdb, sizeof it[i].imdb, "tt300%04d", i);
+      strcpy(it[i].tipo, "movie");
+      snprintf(it[i].titulo, sizeof it[i].titulo, "Catalogo %d", i);
+      strcpy(it[i].meta, "2024 · 140 min");
+    }
+    strcpy(fils[0].chave, "farol_gosto1");
+    strcpy(fils[0].titulo, "Para voce");
+    fils[0].ini = 0; fils[0].n = 6;
+    strcpy(fils[1].chave, "addon_pop");
+    strcpy(fils[1].titulo, "Populares");
+    strcpy(fils[1].base, "https://a.invalid");
+    strcpy(fils[1].catId, "pop");
+    strcpy(fils[1].tipo, "movie");
+    fils[1].ini = 6; fils[1].n = 6;
+    cat_definir_tudo(it, 12, fils, 2);
+  }
+  fakeTicks += 16u;
+  home_atualizar(0.016f, fakeTicks);
+  r1 = acharFileira("farol_gosto1");
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  zerarEspias();
+  teclaOk();
+  despacharAppHome();
+  assert(espDetailAbrir == 1);
+  assert(cwTocarT == 4 && cwTocarE == 6);
+  assert(cwEspera == 2 && espDescEpisodios == 1);
+  assert(cwEsperaItem.temporada == 4 && cwEsperaItem.episodio == 6);
+  assert(cat_item(espDetailItem.indice)->temporada == 1 &&
+         cat_item(espDetailItem.indice)->episodio == 2);
+  {
+    CatEp eps[3];
+    char streamId[96] = "";
+    memset(eps, 0, sizeof eps);
+    eps[0].temporada = 1; eps[0].episodio = 2; strcpy(eps[0].vid, "tt7723121:1:2");
+    eps[1].temporada = 1; eps[1].episodio = 3; strcpy(eps[1].vid, "tt7723121:1:3");
+    eps[2].temporada = 4; eps[2].episodio = 6; strcpy(eps[2].vid, "tt7723121:4:6");
+    cat_definir_episodios(detail_indice(), eps, 3);
+    passoEsperaApp();
+    assert(cwEspera == 0 && espDetailReproduzir == 1);
+    assert(cwTocarT == 4 && cwTocarE == 6);
+    assert(cat_id_stream(detail_indice(), cwTocarT, cwTocarE, streamId, sizeof streamId) == 1);
+    assert(!strcmp(streamId, "tt7723121:4:6"));
+  }
+
+  // 7) Guardas entre OK e despacho: troca de revisao de catalogo, troca de sessao,
+  //    troca de perfil e dispensa rejeitam o pedido pendente.
+  // 7a) Revisao de catalogo muda apos OK:
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  zerarEspias();
+  teclaOk();
+  montarCatalogoComFarol();
+  despacharAppHome();
+  assert(espDetailAbrir == 0 && espDetailReproduzir == 0 && cwEspera == 0);
+
+  // 7b) Sessao muda apos OK:
+  stubAgoraS += 86400LL;
+  assert(faroldica_adotar_cena_json(
+    "{\"v\":1,\"tela\":\"home\",\"pecas\":[{\"t\":\"dica\",\"id\":\"app_r2_guard\","
+    "\"l1\":{\"m\":\"FT_DICA_CURTO\",\"a\":[\"tt7723120\"]},"
+    "\"acao\":{\"tipo\":\"tocar\",\"alvo\":\"tt7723120\"},\"icone\":\"aj_farol\"}]}",
+    0, NULL, NULL, NULL) == 1);
+  home_atualizar(0.016f, fakeTicks);
+  r1 = acharFileira("farol_gosto1");
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  zerarEspias();
+  teclaOk();
+  stubSessao++;
+  despacharAppHome();
+  assert(espDetailAbrir == 0 && espDetailReproduzir == 0 && cwEspera == 0);
+
+  // 7c) Perfil muda apos OK (mesmo sem alterar stubSessao):
+  fakeTicks += 16u;
+  home_atualizar(0.016f, fakeTicks);
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  zerarEspias();
+  teclaOk();
+  stubPerfil = 2;
+  despacharAppHome();
+  assert(espDetailAbrir == 0 && espDetailReproduzir == 0 && cwEspera == 0);
+  stubPerfil = 1;
+
+  // 7d) Dispensa apos OK:
+  fakeTicks += 16u;
+  home_atualizar(0.016f, fakeTicks);
+  focoHero = 0; foco.fileira = r1; foco.coluna = 0;
+  zerarEspias();
+  teclaOk();
+  assert(faroldica_dispensar() == 1);
+  despacharAppHome();
+  assert(espDetailAbrir == 0 && espDetailReproduzir == 0 && cwEspera == 0);
+
+  // 8) Cartao comum de Continuar assistindo preserva semantica normal (sem P2):
+  {
+    CatItem it[12];
+    CatFileira fils[2];
+    memset(it, 0, sizeof it);
+    memset(fils, 0, sizeof fils);
+    strcpy(it[0].imdb, "tt7723122");
+    strcpy(it[0].tipo, "series");
+    strcpy(it[0].titulo, "Pachinko");
+    it[0].temporada = 1; it[0].episodio = 5; it[0].progresso = 40;
+    for (int i = 1; i < 12; i++) {
+      snprintf(it[i].imdb, sizeof it[i].imdb, "tt300%04d", i);
+      strcpy(it[i].tipo, "movie");
+      snprintf(it[i].titulo, sizeof it[i].titulo, "Catalogo %d", i);
+      strcpy(it[i].meta, "2024 · 140 min");
+    }
+    strcpy(fils[0].chave, "continue_watching");
+    strcpy(fils[0].titulo, "Continuar assistindo");
+    fils[0].ini = 0; fils[0].n = 2;
+    strcpy(fils[1].chave, "farol_gosto1");
+    strcpy(fils[1].titulo, "Para voce");
+    fils[1].ini = 2; fils[1].n = 6;
+    cat_definir_tudo(it, 12, fils, 2);
+  }
+  fakeTicks += 16u;
+  home_atualizar(0.016f, fakeTicks);
+  int rCw = acharFileira("continue_watching");
+  assert(rCw >= 0);
+  focoHero = 0; foco.fileira = rCw; foco.coluna = 0;
+  itemFoco.indice = fileiraItemIndice(&fileiras[rCw], 0);
+  itemFoco.rect = (GfxRect){ 48, 200, 320, 180 };
+  itemFoco.arte = NULL;
+  itemFoco.titulo = "Pachinko";
+  itemFoco.genero = NULL;
+  itemFoco.meta = NULL;
+  publicarItemFoco();
+  zerarEspias();
+  teclaOk();
+  despacharAppHome();
+  assert(espDetailAbrir == 1);
+  assert(cwTocarT == 1 && cwTocarE == 5);
+  assert(cwEspera == 2 && espDescEpisodios == 1);
 
   limparDir(dir);
   puts("farol_dica (app): ok");

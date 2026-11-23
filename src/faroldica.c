@@ -463,9 +463,13 @@ static int resolverAlvo(int perfil, const FarolPeca *pc,
   if (pc && pc->tipo == FP_DICA && !pc->u.dica.l1.usaX) {
     const FarolTexto *l1 = &pc->u.dica.l1;
     if (!strcmp(l1->m, "FT_DICA_PAROU_L1") && l1->nArgs >= 3) {
+      int lt = atoi(l1->a[1]), le = atoi(l1->a[2]);
       tipo = "series";
-      if (temp <= 0) temp = atoi(l1->a[1]);
-      if (ep <= 0) ep = atoi(l1->a[2]);
+      if (lt > 0 && le > 0) { temp = lt; ep = le; }
+      else {
+        if (temp <= 0 && lt > 0) temp = lt;
+        if (ep <= 0 && le > 0) ep = le;
+      }
     } else if (!strcmp(l1->m, "FT_DICA_FALTA_L1") && l1->nArgs >= 2) {
       tipo = "series";
       if (temp <= 0) temp = atoi(l1->a[1]);
@@ -996,18 +1000,28 @@ FarolDicaExec faroldica_executar(const FarolDica *d) {
   switch (d->acao) {
     case FP_ACAO_ABRIR: {
       CatItem ci;
+      memset(&ci, 0, sizeof ci);
       int idx = garantirItemNoCatalogo(d, &ci);
       res.tipo = FD_EXEC_ABRIR;
       snprintf(res.imdb, sizeof res.imdb, "%s", d->alvo);
+      snprintf(res.alvoTipo, sizeof res.alvoTipo, "%s",
+               d->alvoTipo[0] ? d->alvoTipo : ci.tipo);
+      res.temporada = d->alvoTemporada;
+      res.episodio = d->alvoEpisodio;
       res.catIdx = idx;
       res.ok = (idx >= 0 && d->alvo[0] != 0) ? 1 : 0;
       return res;
     }
     case FP_ACAO_TOCAR: {
       CatItem ci;
+      memset(&ci, 0, sizeof ci);
       int idx = garantirItemNoCatalogo(d, &ci);
       res.tipo = FD_EXEC_TOCAR;
       snprintf(res.imdb, sizeof res.imdb, "%s", d->alvo);
+      snprintf(res.alvoTipo, sizeof res.alvoTipo, "%s",
+               d->alvoTipo[0] ? d->alvoTipo : ci.tipo);
+      res.temporada = d->alvoTemporada;
+      res.episodio = d->alvoEpisodio;
       res.catIdx = idx;
       res.ok = (idx >= 0 && d->alvo[0] != 0) ? 1 : 0;
       return res;

@@ -94,10 +94,15 @@ d_ini = app.index('    if (tela == TELA_HOME && home_pediu_abrir()) {')
 d_fim = app.index('    } else if (tela == TELA_BUSCA && busca_pediu_pessoa(&pedPessoa)) {', d_ini)
 dispatch_blk = app[d_ini:d_fim] + '    }\n'
 
+e_ini = app.index('  if (cwEspera) {\n    if (!detail_aberto()')
+e_fim = app.index('\n  legendasDaFonte();', e_ini)
+espera_blk = app[e_ini:e_fim] + '\n'
+
 Path(sys.argv[2]).write_text(f'#include "{Path("src/home.c").resolve()}"\n')
 src = Path('tests/farol_dica_app.c').read_text()
 src = src.replace('/* APP_ABRIR_TITULO */', abrir_fn)
 src = src.replace('/* APP_HOME_DISPATCH */', dispatch_blk)
+src = src.replace('/* APP_CW_ESPERA */', espera_blk)
 Path(sys.argv[1]).write_text(src)
 PY
 

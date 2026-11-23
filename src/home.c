@@ -441,7 +441,41 @@ static int  temItemFoco = 0;
 static GfxRect ancoraFoco; static int temAncoraFoco = 0;
 static uint64_t itemFocoSessao;
 static unsigned itemFocoCatalogo;
+static struct {
+  int      ativo;
+  int      indice;
+  int      perfil;
+  int      dia;
+  int      temporada;
+  int      episodio;
+  uint64_t sessao;
+  unsigned catRev;
+  unsigned dicaGer;
+  char     id[FAROL_ID_TAM];
+  char     imdb[64];
+  char     tipo[8];
+} farolAlvoPend;
+static void farolAlvoLimpar(void) {
+  memset(&farolAlvoPend, 0, sizeof farolAlvoPend);
+}
+static void farolAlvoDefinir(const FarolDica *d, const FarolDicaExec *ex) {
+  farolAlvoLimpar();
+  if (!d || !ex || !ex->ok || ex->tipo != FD_EXEC_TOCAR) return;
+  farolAlvoPend.ativo = 1;
+  farolAlvoPend.indice = ex->catIdx;
+  farolAlvoPend.perfil = d->perfil;
+  farolAlvoPend.dia = d->dia;
+  farolAlvoPend.temporada = ex->temporada;
+  farolAlvoPend.episodio = ex->episodio;
+  farolAlvoPend.sessao = itemFocoSessao;
+  farolAlvoPend.catRev = itemFocoCatalogo;
+  farolAlvoPend.dicaGer = faroldica_geracao();
+  snprintf(farolAlvoPend.id, sizeof farolAlvoPend.id, "%s", d->id);
+  snprintf(farolAlvoPend.imdb, sizeof farolAlvoPend.imdb, "%s", ex->imdb);
+  snprintf(farolAlvoPend.tipo, sizeof farolAlvoPend.tipo, "%s", ex->alvoTipo);
+}
 static void publicarItemFoco(void) {
+  farolAlvoLimpar();
   itemFocoSessao = perfis_sessao_geracao();
   itemFocoCatalogo = cat_revisao();
   temItemFoco = 1;
@@ -2805,9 +2839,13 @@ static void home_evento_(const SDL_Event *e) {
         if (dur >= NV_HOLD_MS) abrirMenuCartaz();
         else if (layout_desktop_ativo()) {
           const CatItem *ci = cat_item_exato(heroAtual);
+          farolAlvoLimpar();
           if (ci && (strcmp(ci->tipo, "series") || ci->episodio > 0)) pedidoTocar = 1;
           else pedidoAbrir = 1;
-        } else pedidoAbrir = 1;
+        } else {
+          farolAlvoLimpar();
+          pedidoAbrir = 1;
+        }
         return;
       }
       int noVerTudo = (foco.fileira >= 0 && foco.fileira < nFileiras &&
@@ -2833,8 +2871,12 @@ static void home_evento_(const SDL_Event *e) {
             itemFoco.genero = ci ? ci->genero : NULL;
             itemFoco.meta   = ci ? ci->meta : NULL;
             publicarItemFoco();
-            if (ex.tipo == FD_EXEC_TOCAR) pedidoTocar = 1;
-            else pedidoAbrir = 1;
+            if (ex.tipo == FD_EXEC_TOCAR) {
+              farolAlvoDefinir(&dicaCache, &ex);
+              pedidoTocar = 1;
+            } else {
+              pedidoAbrir = 1;
+            }
           } else if (ex.ok && ex.tipo == FD_EXEC_SALVAR) {
             dicaSalva = 1;
           }
@@ -2873,6 +2915,7 @@ static void home_evento_(const SDL_Event *e) {
                  fileiras[foco.fileira].tipo == FILEIRA_RETORNO ||
                  !strcmp(fileiras[foco.fileira].chave, "continue_watching") ||
                  !strcmp(fileiras[foco.fileira].chave, "upcoming_section")) {
+        farolAlvoLimpar();
         if (ajustes_cw_ok_toca() && strcmp(fileiras[foco.fileira].chave, "upcoming_section"))
           pedidoTocar = 1;
         else pedidoAbrir = 1;
@@ -2885,6 +2928,7 @@ static void home_evento_(const SDL_Event *e) {
           const CatItem *ci = idx >= 0 ? cat_item(idx) : NULL;
           if (ci) farolsinal_origem(ci, FS_ORIGEM_FAROL);
         }
+        farolAlvoLimpar();
         pedidoAbrir = 1;
       }
       return;
@@ -8800,7 +8844,10 @@ static void home_desenhar_(Uint32 agora) {
   homeResidencia();
   // Nao conservar ponteiros para o catalogo de outro quadro/perfil quando
   // nenhuma tela de titulo publica um item (pasta, social ou estado vazio).
-  temItemFoco = 0;
+  if (!pedidoAbrir && !pedidoTocar) {
+    temItemFoco = 0;
+    farolAlvoLimpar();
+  }
 #ifdef NV_TOUCH_UI
   if (!layout_rolagem_livre()) { toqueHomeLimpar(); toqueHeroCancelar(); }
 #endif
@@ -9738,13 +9785,45 @@ const char *home_backdrop(int i) {
 }
 const char *home_arte(int i) { return (nBd && i >= 0 && i < nBd) ? bd[i] : NULL; }
 
+int home_farol_alvo(const HomeItem *it, HomeFarolAlvo *out) {
+  if (out) memset(out, 0, sizeof *out);
+  if (!farolAlvoPend.ativo) return 0;
+  FarolDica d;
+  const CatItem *ci = (it && it->indice >= 0) ? cat_item(it->indice) : NULL;
+  int ok = it && out &&
+           perfis_sessao_atual(farolAlvoPend.sessao) &&
+           farolAlvoPend.catRev == cat_revisao() &&
+           farolAlvoPend.dicaGer == faroldica_geracao() &&
+           farolAlvoPend.dia == faroldica_dia_atual() &&
+           farolAlvoPend.indice == it->indice &&
+           ci && farolAlvoPend.imdb[0] && !strcmp(ci->imdb, farolAlvoPend.imdb) &&
+           faroldica_atual(&d) && d.ativa && d.acao == FP_ACAO_TOCAR &&
+           d.perfil == farolAlvoPend.perfil &&
+           !strcmp(d.id, farolAlvoPend.id) &&
+           !strcmp(d.alvo, farolAlvoPend.imdb);
+  if (ok) {
+    out->indice = farolAlvoPend.indice;
+    snprintf(out->imdb, sizeof out->imdb, "%s", farolAlvoPend.imdb);
+    snprintf(out->tipo, sizeof out->tipo, "%s", farolAlvoPend.tipo);
+    out->temporada = farolAlvoPend.temporada;
+    out->episodio = farolAlvoPend.episodio;
+  }
+  farolAlvoLimpar();
+  return ok ? 1 : -1;
+}
+
 // Consome o pedido de abrir: quem le, zera. Assim o OK vale uma vez so, mesmo
 // que o quadro demore.
-int home_pediu_abrir(void) { int v = pedidoAbrir; pedidoAbrir = 0; return v; }
+int home_pediu_abrir(void) {
+  int v = pedidoAbrir;
+  pedidoAbrir = 0;
+  if (v) farolAlvoLimpar();
+  return v;
+}
 // "Ver detalhes" do menu do cartao de retomada (#350): OK ali toca, e a pagina
 // do titulo ficava sem porta. O foco nao mudou, entao e o mesmo pedido que o OK
 // faria com "OK no card = abre a pagina": app.c o atende por abrirTitulo.
-void home_pedir_abrir(void) { pedidoAbrir = 1; }
+void home_pedir_abrir(void) { farolAlvoLimpar(); pedidoAbrir = 1; }
 // O card focado e de retomada e o OK nele TOCA (Ajustes > Continuar)?
 int home_foco_retomada(void) {
   const Fileira *s;
@@ -9821,6 +9900,7 @@ void home_abrir_sessao(void) {
   // So estado derivado/transitorio. A arte cacheada pode ser reutilizada;
   // escolhas e dados persistidos continuam sendo do perfil que os carregou.
   temItemFoco = temCartaoFoco = 0;
+  farolAlvoLimpar();
   memset(&itemFoco, 0, sizeof itemFoco);
   memset(&cartaoFoco, 0, sizeof cartaoFoco);
   gfx_mini_liberar(&fichaCopy); memset(&fichaCopyKey, 0, sizeof fichaCopyKey);
