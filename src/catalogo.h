@@ -289,6 +289,18 @@ int  cat_apagar_cache(void);
 int  cat_do_cache(void);
 void cat_cache_substituido(void);
 
+// HOME PRECOMPUTADA: as fileiras de catalogo que estao na tela (e no cache em
+// disco) servem como resposta enquanto forem recentes, em vez de refazer os
+// ~30 pedidos a cada abertura ou ciclo de 5 min. A validade e o relogio de
+// parede (segundos) da ultima volta em que TODAS as fileiras vieram da rede;
+// ela vai no cabecalho do cache e volta com ele. Uma volta servida do cache
+// nao a renova, entao a home expira no horario original e a volta seguinte
+// pede tudo de novo. 0 = desconhecida (sem cache, cache apagado, outro perfil).
+void cat_home_fresca(long long quando);
+long long cat_home_fresca_em(void);
+// 1 se a home ficou inteira ha menos de `validadeS` segundos de `agora`.
+int  cat_home_fresca_valida(long long agora, int validadeS);
+
 int  cat_n(void);
 // O ponteiro devolvido (e os campos dele: backdrop, poster, logo) vale ate o
 // FIM DO QUADRO em que foi pedido, mesmo que a descoberta troque o catalogo
