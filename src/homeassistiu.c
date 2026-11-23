@@ -5,9 +5,11 @@
 #include "idbase.h"
 #include "idioma.h"
 #include "mapa.h"
+#include "perfis.h"
 #include "perfilinfantil.h"
 #include "perfisessao.h"
 #include "progresso.h"
+#include "sessao.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,9 +22,9 @@
 
 typedef struct {
   NvPerfilSessao sessao;
-  char id[64], idioma[12];
+  char usuario[80], id[64], idioma[12];
   long tmdb;
-  int serie;
+  int perfil, serie;
 } Consulta;
 
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
@@ -234,11 +236,13 @@ static void recomendacoes(const Consulta *q, const char *chave, uint32_t agora,
                            MapaRecomendacoes *saida, uint32_t *aguarda) {
   pthread_t fio;
   pthread_mutex_lock(&trava);
-  int mesma = pedida && consulta.sessao == q->sessao && consulta.tmdb == q->tmdb &&
-              consulta.serie == q->serie && !strcmp(consulta.id, q->id) &&
-              !strcmp(consulta.idioma, q->idioma);
+  int mesmoContexto = pedida && consulta.perfil == q->perfil &&
+                      !strcmp(consulta.usuario, q->usuario) &&
+                      consulta.tmdb == q->tmdb && consulta.serie == q->serie &&
+                      !strcmp(consulta.id, q->id) && !strcmp(consulta.idioma, q->idioma);
+  int mesma = mesmoContexto && consulta.sessao == q->sessao;
   uint32_t intervalo = mesma ? backoff : REDE_INTERVALO_MS;
-  if (mesma && recebeu) {
+  if (recebeu && (mesma || (mesmoContexto && q->usuario[0]))) {
     *saida = remotos;
   } else if (ocupada) {
     // O fim do trabalho muda remotoRev.
@@ -285,8 +289,9 @@ unsigned home_assistiu_passo(uint32_t agora) {
       unsigned noCatalogo = 0;
       rec.n = rec.nGen = 0;
       if (rede) {
-        Consulta q = { .sessao = sessao, .tmdb = idTmdb(base),
+        Consulta q = { .sessao = sessao, .perfil = perfis_ativo(), .tmdb = idTmdb(base),
                        .serie = !strcmp(base->tipo, "series") };
+        snprintf(q.usuario, sizeof q.usuario, "%s", sessao_usuario());
         idbase_copiar(base->imdb, q.id, sizeof q.id);
         snprintf(q.idioma, sizeof q.idioma, "%s", idioma);
         recomendacoes(&q, chave, agora, &rec, &aguarda);

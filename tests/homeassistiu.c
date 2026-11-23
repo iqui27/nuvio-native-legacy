@@ -7,6 +7,7 @@ static CatItem catalogo[HIST_LOTE + 2 + HOME_ASSISTIU_MAX];
 static int nCatalogo = 24, consultasHistorico;
 static unsigned versao = 1;
 static uint64_t sessao = 1;
+static int perfil = 1;
 static int adulto = 1, ligado = 1, rede, nRegs;
 static ProgRegistro regs[2];
 static char visto[16];
@@ -50,6 +51,8 @@ uint64_t perfis_sessao_geracao(void) { return __atomic_load_n(&sessao, __ATOMIC_
 int perfis_sessao_atual(uint64_t g) { return g == perfis_sessao_geracao(); }
 int perfis_sessao_travar(uint64_t g) { return perfis_sessao_atual(g); }
 void perfis_sessao_destravar(void) {}
+int perfis_ativo(void) { return perfil; }
+const char *sessao_usuario(void) { return "conta-teste"; }
 int farolsinal_recomendar(void) { return ligado; }
 int perfil_infantil_ativo(void) { return !adulto; }
 const char *desc_chave_tmdb(void) { return rede ? "fake-key" : ""; }
@@ -166,6 +169,7 @@ int main(void) {
   puts("ok  restricao infantil, historico sem progresso e teto de 12");
 
   visto[0] = 0;
+  perfil++;
   __atomic_add_fetch(&sessao, 1, __ATOMIC_RELEASE);
   home_assistiu_passo(107);
   assert(home_assistiu_itens(out) == 0);
@@ -224,6 +228,7 @@ int main(void) {
                  "{\"id\":108,\"title\":\"Título localizado\",\"original_title\":\"The Original Title\","
                  "\"release_date\":\"2022-01-01\",\"poster_path\":\"/test.jpg\"}]}}";
   agora += REDE_INTERVALO_MS;
+  perfil++;
   __atomic_add_fetch(&sessao, 1, __ATOMIC_RELEASE);
   versao++;
   home_assistiu_passo(agora);
@@ -236,6 +241,7 @@ int main(void) {
   respostaJson = "{\"genres\":[{\"id\":18,\"name\":\"Drama\"}],"
                  "\"recommendations\":{\"results\":[]}}";
   agora += REDE_INTERVALO_MS;
+  perfil++;
   __atomic_add_fetch(&sessao, 1, __ATOMIC_RELEASE);
   home_assistiu_passo(agora);
   aguardarResposta(5);
@@ -248,6 +254,7 @@ int main(void) {
                  "{\"id\":502,\"title\":\"Fora do catálogo\",\"release_date\":\"2024-01-01\","
                  "\"poster_path\":\"/remote.jpg\"}]}}";
   agora += REDE_INTERVALO_MS;
+  perfil++;
   __atomic_add_fetch(&sessao, 1, __ATOMIC_RELEASE);
   home_assistiu_passo(agora);
   aguardarResposta(6);
@@ -258,6 +265,27 @@ int main(void) {
   home_assistiu_passo(agora + 2);
   assert(home_assistiu_itens(out) == 1 && lotes == 1);
   puts("ok  sem candidatos locais, publica card TMDB navegável uma única vez");
+
+  nCatalogo--;
+  versao++;
+  home_assistiu_passo(agora + 3);
+  assert(home_assistiu_itens(out) == 1 && lotes == 2 && pedidos == 7);
+  puts("ok  substituir só o catálogo republica o card sem pedir TMDB");
+
+  int nAntes = nCatalogo - 1;
+  __atomic_add_fetch(&sessao, 1, __ATOMIC_RELEASE);
+  nCatalogo = 0;
+  versao++;
+  home_assistiu_passo(agora + 4);
+  assert(home_assistiu_itens(out) == 0);
+  nCatalogo = nAntes;
+  versao++;
+  home_assistiu_passo(agora + 5);
+  assert(home_assistiu_itens(out) == 1 && lotes == 3 && pedidos == 7);
+  assert(!strcmp(catalogo[out[0]].imdb, "tmdb:502"));
+  home_assistiu_passo(agora + REDE_INTERVALO_MS + 1);
+  assert(home_assistiu_itens(out) == 1 && lotes == 3 && pedidos == 7 && !ocupada);
+  puts("ok  reabrir a sessão do mesmo perfil reaproveita TMDB sem duplicar pedidos");
 
   const char *const chaves[] = { "continue_watching", HOME_ASSISTIU_CHAVE, "farol_gosto1" };
   int ordem[3];
