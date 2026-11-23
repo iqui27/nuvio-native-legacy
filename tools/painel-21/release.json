@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T21:11:51+00:00",
+    "updatedAt": "2026-11-23T21:17:14+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T21:08:00+00:00",
+    "lastVpsReportedAt": "2026-11-23T21:13:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -914,21 +914,22 @@
         "farol-29"
       ],
       "allDependencies": false,
-      "status": "CORRECAO",
+      "status": "REVISAO",
       "wave": "B",
-      "sha": "e7c3d6e443",
+      "sha": "d727bbefbf",
       "batch": null,
-      "note": "Sol r3 REPROVADO: motivo de outra obra, duração inventada, campos livres no KV e título válido da Home regride. Cinco casos da r2 passaram. Gemini Hydrogen corrige na mesma branch (…1602); 52 segue bloqueada",
+      "note": "Hydrogen entregou correção dos quatro bloqueios r3; informa 24/24 dirigidos, corpus 488/488 e paridade do renderer C em 31 idiomas. Confirmei merge-tree limpo com e34f0ddc5d. Aguarda primeira vaga para r4; issue 52 segue bloqueada Merge-tree confirmado pela VPS, sem revisão r4 iniciada ou aprovação inferida; TV física permanece pendente.",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-40",
-      "updatedAt": "2026-11-23T20:58:13+00:00",
-      "reportedAt": "2026-11-23T20:52:00+00:00",
+      "updatedAt": "2026-11-23T21:17:14+00:00",
+      "reportedAt": "2026-11-23T21:13:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "Sol r3 REPROVADO: motivo de outra obra, duração inventada, campos livres no KV e título válido da Home regride. Cinco casos da r2 passaram. Gemini Hydrogen corrige na mesma branch (…1602); 52 segue bloqueada",
         "Gemini Hydrogen entregou correção dos cinco P1, informou 20/20 e corpus 488/488 com paridade no renderer C. Merge-tree 21e rc 0 confirmado. Sol r3 (…ca17) ocupa a vaga do 48; 52 depende deste veredito",
         "Sol r2 REPROVADO: gosto livre no KV entre contas, título inventado via x, título muda no hit, afinidade fora do pedido e colisão filme/série. Originais passaram, 14/14 dirigidos, 488/488 corpus, merge limpo. Gemini Hydrogen corrige na mesma branch (…31fc)",
         "Gemini Hydrogen entregou correção dos quatro P1 (relata dirigido 14/14 e corpus 488/488); merge-tree 21e rc 0 confirmado; Sol via Codex revisa r2 (…dc7f)",
@@ -1122,21 +1123,22 @@
         "farol-45"
       ],
       "allDependencies": false,
-      "status": "CORRECAO",
+      "status": "REVISAO",
       "wave": "B",
-      "sha": "d60b19b4d7",
+      "sha": "16e84d5fa6",
       "batch": null,
-      "note": "Sol r1 REPROVADO: cota antes de render, Escolha sem destino, série do Diário não abre, dica vencida acionável e ligação do dirigido quebra com #840. Gemini Neon corrige na mesma branch (…a924). Sonda inicial gravou fixtures no diretório padrão, revisor limpou o que identificou e refez isolada Conflito anterior em src/home.c contra o 21e pós-#840 sem resolução informada; TV física permanece pendente.",
+      "note": "Neon entregou a correção dos bloqueios r1 e a ligação do teste Home com #840; dirigido verde nos três modos informado. Confirmei ancestralidade do 21e e merge-tree rc 0. Sol r2 (…e01e) revisa o fluxo da Home; TV pendente Ancestralidade e merge-tree confirmados pela VPS, não verificados localmente e sem integração inferida. Conflito em src/home.c permanece no histórico da ponta anterior d60b19b4d7; para a nova ponta a VPS relata merge-tree rc 0. Ressalva anterior das fixtures no diretório padrão preservada: o revisor limpou o que identificou e refez isolada, sem confirmação de limpeza completa.",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-48",
-      "updatedAt": "2026-11-23T20:44:32+00:00",
-      "reportedAt": "2026-11-23T20:40:00+00:00",
+      "updatedAt": "2026-11-23T21:17:14+00:00",
+      "reportedAt": "2026-11-23T21:12:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "Sol r1 REPROVADO: cota antes de render, Escolha sem destino, série do Diário não abre, dica vencida acionável e ligação do dirigido quebra com #840. Gemini Neon corrige na mesma branch (…a924). Sonda inicial gravou fixtures no diretório padrão, revisor limpou o que identificou e refez isolada Conflito anterior em src/home.c contra o 21e pós-#840 sem resolução informada; TV física permanece pendente.",
         "commit e relatório do Gemini Neon recuperados; Sol r1 (…4ab1) revisa. Merge-tree com o 21e pós-#840 aponta conflito em src/home.c nas gerações de Assistiu e Dica; TV física pendente",
         "VPS Gemini 4 Neon (antigravity) onda B, task …9071e0a7, brief lotes/sense/briefs/farol-48.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
       ]
@@ -1214,16 +1216,17 @@
       "wave": "D",
       "sha": null,
       "batch": null,
-      "note": "Caminho crítico. Bloqueado pela reprovação Sol r3 do Farol 40; aguarda a correção Hydrogen e novo veredito antes de avançar.",
-      "source": "Relato VPS do Farol 40 às 20h52 UTC: bloqueio do 52 explícito",
+      "note": "Caminho crítico. Permanece bloqueado pelo Farol 40: correção entregue em d727bbefbf, aguardando primeira vaga para revisão r4 e novo veredito antes de avançar. Não iniciado.",
+      "source": "Relato VPS do Farol 40 às 21h13 UTC: 52 segue bloqueado",
       "verified": false,
       "previousNotes": [
+        "Caminho crítico. Bloqueado pela reprovação Sol r3 do Farol 40; aguarda a correção Hydrogen e novo veredito antes de avançar.",
         "Caminho crítico. Aguarda o veredito da revisão Sol r3 do Farol 40 antes de avançar.",
         "Caminho crítico."
       ],
-      "updatedAt": "2026-11-23T20:58:13+00:00",
-      "dependencyReportedAt": "2026-11-23T20:52:00+00:00",
-      "reportedAt": "2026-11-23T20:52:00+00:00"
+      "updatedAt": "2026-11-23T21:17:14+00:00",
+      "dependencyReportedAt": "2026-11-23T21:13:00+00:00",
+      "reportedAt": "2026-11-23T21:13:00+00:00"
     },
     {
       "id": "farol-53",
@@ -3964,6 +3967,33 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T21:13:00+00:00",
+      "appliedAt": "2026-11-23T21:17:14+00:00",
+      "item": "farol-40",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 21:13 [REVISAO] farol-40 · agente/21z-farol-40@d727bbefbf · Hydrogen entregou correção dos quatro bloqueios r3; informa 24/24 dirigidos, corpus 488/488 e paridade do renderer C em 31 idiomas. Confirmei merge-tree limpo com e34f0ddc5d. Aguarda primeira vaga para r4; issue 52 segue bloqueada"
+    },
+    {
+      "at": "2026-11-23T21:13:00+00:00",
+      "appliedAt": "2026-11-23T21:17:14+00:00",
+      "item": "farol-52",
+      "from": "BLOQUEADA",
+      "to": "BLOQUEADA",
+      "report": "Dependência explícita no relato do Farol 40 às 21h13 UTC: issue 52 segue bloqueada; correção entregue aguarda vaga para r4.",
+      "source": "Dependência registrada a partir do relato VPS do Farol 40; não é novo relato independente",
+      "relatedReportItem": "farol-40",
+      "derived": true
+    },
+    {
+      "at": "2026-11-23T21:12:00+00:00",
+      "appliedAt": "2026-11-23T21:17:14+00:00",
+      "item": "farol-48",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 21:12 [REVISAO] farol-48 · agente/21z-farol-48@16e84d5fa6 · Neon entregou a correção dos bloqueios r1 e a ligação do teste Home com #840; dirigido verde nos três modos informado. Confirmei ancestralidade do 21e e merge-tree rc 0. Sol r2 (…e01e) revisa o fluxo da Home; TV pendente"
+    },
     {
       "at": "2026-11-23T21:08:00+00:00",
       "appliedAt": "2026-11-23T21:11:51+00:00",
