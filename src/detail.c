@@ -259,6 +259,7 @@ static GfxRect colecaoListaRect(void) {
 
 static HomeItem item;
 static int  aberto = 0, saindo = 0;
+static unsigned ciclo = 0;
 static int  idx = 0;                 // titulo atual dentro do acervo
 // A IDENTIDADE do titulo aberto, e uma copia dele. Ver revalidarIdx.
 // Do tamanho do CatItem.imdb: com [24] o id de canal ao vivo ("pp-live:...",
@@ -1831,6 +1832,8 @@ static void abrirInterno(const HomeItem *it) {
   audAberta = 0; audTempAberta = -1; audTempVista = -1; frasesAberta = 0;
   item = *it;
   aberto = 1; saindo = 0; nivel = 0; botao = 0; focoAmigos = 0; focoServidor = -1; fonteServidorPedida = -1; servidoresDisponiveis = 0; srvAvailabilityIndex = -1;
+  if (!++ciclo) ciclo = 1;
+  pedReproduzir = 0; pedDoInicio = 0;
   amtui_fechar();
   detmais_zerar();
   heroReiniciar();
@@ -1999,6 +2002,7 @@ void detail_fechar(void) {
   pessoaAberta = 0;
   nivel = 0;
   saindo = 1;
+  pedReproduzir = 0; pedDoInicio = 0;
 }
 
 // SECO: o proximo detail_atualizar ja a encerra (o mesmo fim da mola de
@@ -2012,6 +2016,7 @@ void detail_fechar_seco(void) {
   pessoaAberta = 0;
   nivel = 0;
   saindo = 1;
+  pedReproduzir = 0; pedDoInicio = 0;
   t = 0.0f;
 }
 
@@ -2202,6 +2207,7 @@ static int carDesenhaFundo(void) {
 }
 
 int detail_aberto(void) { return aberto; }
+unsigned detail_ciclo(void) { return (aberto && !saindo) ? ciclo : 0u; }
 int detail_relogio_oculto(void) { return musicaui_visivel() || (aberto && carro && !carCheia && nivel == 0); }
 // [quadro] do main: a pagina rolando para o heroi (sobe) ou para as fileiras.
 const char *detail_transicao(void) {
@@ -3751,10 +3757,10 @@ static void detail_evento_(const SDL_Event *e) {
       trilhaVolta = -1;
       trilhas_voltar_do_titulo();
       if (nVolta > 0) { pedAbrir = voltaPilha[--nVolta]; voltando = 1; restaurarVolta = 1; }
-      else { saindo = 1; pediuMenu = 0; }
+      else { saindo = 1; pediuMenu = 0; pedReproduzir = 0; pedDoInicio = 0; }
     }
     else if (nVolta > 0) { pedAbrir = voltaPilha[--nVolta]; voltando = 1; restaurarVolta=1; }   // volta ao titulo de onde veio
-    else { saindo = 1; pediuMenu = 0; }   // Voltar nao abre um menu pedido antes
+    else { saindo = 1; pediuMenu = 0; pedReproduzir = 0; pedDoInicio = 0; }   // Voltar nao abre um menu pedido antes
     return;
   }
   if (nivel == 0) {
@@ -4605,7 +4611,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
         }
       }
     }
-    aberto = 0; saindo = 0; t = 0.0f; carro = 0; trailer_fechar(); return;
+    aberto = 0; saindo = 0; pedReproduzir = 0; pedDoInicio = 0; t = 0.0f; carro = 0; trailer_fechar(); return;
   }
 
   // SEGURAR OK SEM RESPOSTA NA TELA (dono, 06/10): na home o cartao ganha a
@@ -9846,11 +9852,11 @@ static void ultimoEpisodio(int *t, int *e) {
 // frame (another title's sources, then Play started that title).
 int detail_indice(void) { if (aberto) revalidarIdx(); return idx; }
 int detail_tem_servidores(void) { return aberto && servidoresDisponiveis; }
-int detail_pediu_reproduzir(void) { int v = pedReproduzir; pedReproduzir = 0; return v; }
+int detail_pediu_reproduzir(void) { int v = pedReproduzir; pedReproduzir = 0; return v && aberto && !saindo; }
 // Pedido de reproducao vindo de FORA da tela (OK no card de "Continuar
 // assistindo", issue #93): o quadro seguinte cai no mesmo ramo de
 // detail_pediu_reproduzir do app.c, com a pagina ja aberta por baixo.
-void detail_pedir_reproduzir(void) { pedReproduzir = 1; }
+void detail_pedir_reproduzir(void) { if (aberto && !saindo) pedReproduzir = 1; }
 int detail_pediu_abrir(void) { int v = pedAbrir; pedAbrir = -1; return v; }
 void detail_trilha_notar(void) { trilhaPendente = 1; }
 void detail_volta_notar(int novo) {
@@ -9913,7 +9919,7 @@ int detail_pediu_explorar(void)   { int v = pedExplorar;   pedExplorar = 0;   re
 // "Reproduzir desde o inicio" ainda cai no mesmo caminho do primario: o
 // roteador so sabe abrir o player no ponto salvo. Consumir o pedido aqui evita
 // que ele fique pendurado.
-int detail_pediu_do_inicio(void)  { int v = pedDoInicio;   pedDoInicio = 0;   return v; }
+int detail_pediu_do_inicio(void)  { int v = pedDoInicio;   pedDoInicio = 0;   return v && aberto && !saindo; }
 
 // Uma vez por pedido: a pagina saiu por ESQUERDA e quer a barra lateral no
 // lugar. app.c le depois de detail_aberto() virar 0.

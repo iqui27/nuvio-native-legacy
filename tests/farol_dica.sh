@@ -86,9 +86,21 @@ from pathlib import Path
 import sys
 
 app = Path('src/app.c').read_text()
+p_ini = app.index('// Pending P2 Farol Tocar execution')
+p_fim = app.index('\nstatic pthread_t fioFonte;', p_ini)
+farol_pend_blk = app[p_ini:p_fim]
+
 a_ini = app.index('static void abrirTitulo(const HomeItem *it, int exigeArte, int descartarRetido) {')
 a_fim = app.index('\nstatic void abrirPorIndice(int i) {', a_ini)
 abrir_fn = app[a_ini:a_fim]
+
+ap_ini = app.index('static void alvoPlayer(char *alvo, size_t tam) {')
+ap_fim = app.index('\n// --- StreamFit', ap_ini)
+alvo_player_fn = app[ap_ini:ap_fim]
+
+rl_ini = app.index('static void renovarListaDoPlayer(void) {')
+rl_fim = app.index('\n// RETOMAR PELA FONTE', rl_ini)
+renovar_fn = app[rl_ini:rl_fim]
 
 d_ini = app.index('    if (tela == TELA_HOME && home_pediu_abrir()) {')
 d_fim = app.index('    } else if (tela == TELA_BUSCA && busca_pediu_pessoa(&pedPessoa)) {', d_ini)
@@ -98,11 +110,29 @@ e_ini = app.index('  if (cwEspera) {\n    if (!detail_aberto()')
 e_fim = app.index('\n  legendasDaFonte();', e_ini)
 espera_blk = app[e_ini:e_fim] + '\n'
 
+pf_ini = app.index('    { static char ultimoAlvo[64] = "";')
+pf_fim = app.index('\n    aquecerQuandoChegarem();', pf_ini)
+prefetch_blk = app[pf_ini:pf_fim] + '\n'
+
+c_ini = app.index('    int doInicio = detail_pediu_do_inicio();')
+c_fim = app.index('    if (detail_pediu_marcar()) {', c_ini)
+consumo_blk = app[c_ini:c_fim]
+
+post_ini = app.index('  if (!detail_aberto() && !cwEspera && farolPendExec) {')
+post_fim = app.index('\n  // Escolher uma fonte', post_ini)
+post_blk = app[post_ini:post_fim] + '\n'
+
 Path(sys.argv[2]).write_text(f'#include "{Path("src/home.c").resolve()}"\n')
 src = Path('tests/farol_dica_app.c').read_text()
+src = src.replace('/* APP_FAROL_PEND */', farol_pend_blk)
 src = src.replace('/* APP_ABRIR_TITULO */', abrir_fn)
+src = src.replace('/* APP_ALVO_PLAYER */', alvo_player_fn)
+src = src.replace('/* APP_RENOVAR_LISTA */', renovar_fn)
 src = src.replace('/* APP_HOME_DISPATCH */', dispatch_blk)
 src = src.replace('/* APP_CW_ESPERA */', espera_blk)
+src = src.replace('/* APP_DETAIL_PREFETCH */', prefetch_blk)
+src = src.replace('/* APP_DETAIL_CONSUMO */', consumo_blk)
+src = src.replace('/* APP_DETAIL_POST */', post_blk)
 Path(sys.argv[1]).write_text(src)
 PY
 

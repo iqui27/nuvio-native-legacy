@@ -367,6 +367,47 @@ static int cwEspera;
 static CatItem cwEsperaItem;
 static Uint32 cwEsperaDesde;
 #define CW_ESPERA_MS 15000u
+// Pending P2 Farol Tocar execution bound to Detail identity/cycle and
+// session/profile generation until the playback request is consumed.
+static int farolPendExec;
+static unsigned farolPendCiclo;
+static uint64_t farolPendSessao;
+static int farolPendPerfil;
+static char farolPendImdb[sizeof(((CatItem *)0)->imdb)];
+static int farolPendT, farolPendE;
+
+static void farolPendLimpar(void) {
+  farolPendExec = 0;
+  farolPendCiclo = 0;
+  farolPendSessao = 0;
+  farolPendPerfil = 0;
+  farolPendImdb[0] = 0;
+  farolPendT = farolPendE = 0;
+}
+
+static void farolPendCancelar(void) {
+  if (farolPendExec) {
+    cwEspera = 0;
+    cwTocarT = cwTocarE = 0;
+    cwRewatch = -1;
+    cwEsperaDesde = 0;
+    memset(&cwEsperaItem, 0, sizeof cwEsperaItem);
+  }
+  farolPendLimpar();
+}
+
+static int farolPendValido(void) {
+  unsigned ciclo;
+  const CatItem *det;
+  if (!farolPendExec) return 0;
+  if (!perfis_sessao_atual(farolPendSessao) || perfis_ativo() != farolPendPerfil) return 0;
+  ciclo = detail_ciclo();
+  if (!ciclo || ciclo != farolPendCiclo) return 0;
+  det = cat_item(detail_indice());
+  if (!det || !farolPendImdb[0] || !idbase_mesmo(det->imdb, farolPendImdb)) return 0;
+  if (cwEspera == 2 && !idbase_mesmo(cwEsperaItem.imdb, farolPendImdb)) return 0;
+  return 1;
+}
 static pthread_t fioFonte;
 static int fioFonteVivo;                  // 0 = canal escolheu sem o fio
 static _Atomic int fonteEscolhida = -2;   // release/acquire entre verificacao e UI
@@ -4334,6 +4375,7 @@ static void perfilEncerrarSessao(void) {
   cwTocarT = cwTocarE = cwEspera = 0;
   cwEsperaDesde = 0;
   memset(&cwEsperaItem, 0, sizeof cwEsperaItem);
+  farolPendLimpar();
   prefFolhaN = -1;
   if (detail_aberto()) detail_fechar_seco();
   stream_definir_lista(NULL, 0);
@@ -4351,6 +4393,7 @@ static void perfilEncerrarSessao(void) {
 
 static void perfilAbrirSessao(int antes) {
   uint64_t sessao = perfis_sessao_geracao();
+  farolPendCancelar();
   char audioPerfil[64];
   snprintf(audioPerfil, sizeof audioPerfil, "%llu:%d", (unsigned long long)sessao, perfis_ativo());
   audioext_perfil(audioPerfil);
@@ -6799,6 +6842,7 @@ void app_atualizar(float dt, Uint32 agora) {
     } else if (tela == TELA_EXPLORAR && explorar_pediu_abrir(&idx)) {
       abrirPorIndice(idx);
     } else if (tela == TELA_HOME && home_pediu_tocar()) {
+      farolPendCancelar();
       // OK no card da retomada com "OK no card" = Retomar (issue #93): abre a
       // pagina do titulo E pede reproducao no mesmo passe. A pagina fica
       // aberta por baixo — Voltar do player cai nela, como o dono espera.
@@ -6874,6 +6918,24 @@ void app_atualizar(float dt, Uint32 agora) {
             }
           }
           abrirTitulo(&it, !(cw && cw->imdb[0]), 1);
+          if (farolPend > 0) {
+            const char *alvoImdb = fa.imdb[0] ? fa.imdb : (cw ? cw->imdb : "");
+            unsigned ciclo = detail_ciclo();
+            const CatItem *det = ciclo ? cat_item(detail_indice()) : NULL;
+            if (!ciclo || !det || !alvoImdb[0] || !idbase_mesmo(det->imdb, alvoImdb)) {
+              cwEspera = 0; cwTocarT = cwTocarE = 0; cwRewatch = -1;
+              cwEsperaDesde = 0; memset(&cwEsperaItem, 0, sizeof cwEsperaItem);
+              tocar = 0;
+            } else if (cwEspera || tocar) {
+              farolPendExec = 1;
+              farolPendCiclo = ciclo;
+              farolPendSessao = perfis_sessao_geracao();
+              farolPendPerfil = perfis_ativo();
+              snprintf(farolPendImdb, sizeof farolPendImdb, "%s", alvoImdb);
+              farolPendT = cwTocarT;
+              farolPendE = cwTocarE;
+            }
+          }
           if (cwEspera) desc_episodios(detail_indice(), 0);
           if (tocar) detail_pedir_reproduzir();
         }
@@ -6947,6 +7009,9 @@ void app_atualizar(float dt, Uint32 agora) {
         SDL_GetTicks() - cwEsperaDesde > CW_ESPERA_MS) {
       printf("[cw] %s: lista nao chegou a tempo; fica so a pagina\n", cwEsperaItem.imdb);
       cwEspera = 0; cwTocarT = cwTocarE = 0;
+      farolPendLimpar();
+    } else if (farolPendExec && !farolPendValido()) {
+      farolPendCancelar();
     } else {
       int k = cat_indice_titulo(cwEsperaItem.imdb, detail_indice());
       if (cat_episodios_finais(k, cwEsperaItem.imdb) &&
@@ -7018,7 +7083,7 @@ void app_atualizar(float dt, Uint32 agora) {
 #ifdef NV_DESKTOP_UI
           !uiPreview &&
 #endif
-          !cwEspera && !player_visivel() && aguardandoFonte != 2 && ci && ci->imdb[0] && !esperaFoco &&
+          detail_ciclo() && !cwEspera && !player_visivel() && aguardandoFonte != 2 && ci && ci->imdb[0] && !esperaFoco &&
           (strcmp(alvo, ultimoAlvo) || (detail_aberto() && ultimaVersao != addons_versao()))) {
         if (!strcmp(alvo, ultimoAlvo)) printf("[addons] lista mudou: refazendo a busca de fontes de %s\n", alvo);
         snprintf(ultimoAlvo, sizeof ultimoAlvo, "%s", alvo);
@@ -7049,6 +7114,27 @@ void app_atualizar(float dt, Uint32 agora) {
     // player_definir_episodio.
     int doInicio = detail_pediu_do_inicio();
     int querTocar = detail_pediu_reproduzir() || doInicio;
+    if (farolPendExec) {
+      if (doInicio) {
+        cwEspera = 0; cwTocarT = cwTocarE = 0; cwRewatch = -1;
+        cwEsperaDesde = 0; memset(&cwEsperaItem, 0, sizeof cwEsperaItem);
+        farolPendLimpar();
+      } else if (querTocar) {
+        if (!farolPendValido()) {
+          querTocar = 0;
+          cwTocarT = cwTocarE = 0;
+          cwRewatch = -1;
+          farolPendLimpar();
+        } else if (farolPendE > 0) {
+          cwTocarT = farolPendT;
+          cwTocarE = farolPendE;
+        }
+      } else if (!cwEspera) {
+        cwTocarT = cwTocarE = 0;
+        cwRewatch = -1;
+        farolPendLimpar();
+      }
+    }
     const JsMotor *salaJ = juntos_motor();
     const CatItem *tituloJ = cat_item(detail_indice());
     if (querTocar && juntos_no_player() && tituloJ) {
@@ -7067,6 +7153,7 @@ void app_atualizar(float dt, Uint32 agora) {
     // PERFIL INFANTIL (perfilinfantil.h): so classificacao livre ou ate 10 anos.
     if (querTocar && !perfilPermiteReproduzir(detail_indice())) querTocar = 0;
     if (querTocar && aguardandoFonte != 2) {
+      if (farolPendExec && !doInicio) { cwEspera = 0; farolPendLimpar(); }
       marco("abrir: reproduzir pedido");
       // A tela abre JA, no estado "abrindo fonte", e a escolha acontece depois.
       // Escolher antes deixaria o botao sem resposta por segundos, e escolher
@@ -7142,6 +7229,10 @@ void app_atualizar(float dt, Uint32 agora) {
         if (tocarParteGuardada() || tocarFonteGuardada()) { preparoEspera = 0; }
         else aguardandoFonte = 1;
       }
+    } else if (farolPendExec && !doInicio && (querTocar || !cwEspera)) {
+      cwTocarT = cwTocarE = 0;
+      cwRewatch = -1;
+      farolPendLimpar();
     }
     if (detail_pediu_marcar()) {
       // Alterna no Trakt E no espelho local. O estado de partida vem de
@@ -7216,6 +7307,11 @@ void app_atualizar(float dt, Uint32 agora) {
       nomeParaFolha(); stream_folha_abrir();
       stream_folha_servidor(detail_fonte_servidor());
     }
+  }
+  if (!detail_aberto() && !cwEspera && farolPendExec) {
+    cwTocarT = cwTocarE = 0;
+    cwRewatch = -1;
+    farolPendLimpar();
   }
   // Escolher uma fonte na folha inicia a reproducao DELA. Trocar de fonte com o
   // player ja aberto tambem vale: fecha a sessao atual e abre na nova, senao
