@@ -23,6 +23,7 @@
 #include "nv_ticks.h"
 #include "mediaurl.h"
 #include "video_reconexao.h"
+#include "farolprodutor.h"
 #include "idioma.h"
 #include "linguas.h"
 #include "audioescolha.h"
@@ -623,6 +624,7 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
     case EV_ERRO:    atomic_store(&erroDetalhe, (unsigned)a);
                      atomic_store(&temErroDetalhe, 1);
                      reconErroCod = a; reconErroPend = 1; tocando = 0;
+                     farolprod_erro(FP_TIZEN_TPK, NULL, a, 0);
                      printf("[video] tpk: player error 0x%08x (%d)\n", (unsigned)a, b); break;
     case 13: // output fps / video bitrate from StreamInfo, on the session worker
       pthread_mutex_lock(&infoTrava); infoTpk.fps = a > 0 ? a : 0; infoTpk.kbps = b > 0 ? b / 1000 : 0;
@@ -1748,6 +1750,7 @@ static void escolhasPendentes(void) {
 
 static void recuperarPlayer(int alvoMs) {
   if (reconErroPend) return; // ja ha recuperacao/erro neste quadro: um hParar so
+  farolprod_erro(FP_TIZEN_TPK, NULL, -2, 0);   // relogio congelado: tpk_preso
   { double p = progressoPos > 0.5 ? progressoPos : video_pos();
     if (p > 0.5) posReconLeg = p; }
   reconAlvoMs = alvoMs >= 0 ? alvoMs : buscaAlvoMs;
@@ -1966,6 +1969,9 @@ void video_bombear(void) {
     if (erroPreparo && ativo && !parado && reconPermitida && !cv.ativo && !emTrailer && !mf.ativo &&
         !mf.relayTentou && !strncmp(hostUrl, "https://", 8) &&
         !strstr(hostUrl, "://127.0.0.1") && !strstr(hostUrl, "://localhost")) {
+      // Este ramo desvia do EV_ERRO para tentar o relay TLS: a falha do
+      // prepare conta uma vez aqui, com o codigo nativo da ErroGeracao.
+      farolprod_erro(FP_TIZEN_TPK, NULL, erroCod, 0);
       mf.relayTentou = 1; mf.sondou = 1; mf.esperando = mf.esperaFallback = 1; mf.esperaDesde = SDL_GetTicks();
       snprintf(mfEspUrl, sizeof mfEspUrl, "%s", hostUrl);
       snprintf(mfEspCab, sizeof mfEspCab, "%s", hostCab);
@@ -2043,6 +2049,7 @@ void video_bombear(void) {
   if (!falhou && !parado && (!pronto || reconBuscarMs >= 0 || (!pausaPedida && bufferando)) &&
       nv_recon_expirou(&recon, SDL_GetTicks())) {
     reconErroCod = NV_RECON_TPK_CONNECTION_FAILED; reconErroPend = 1;
+    farolprod_erro(FP_TIZEN_TPK, NULL, NV_RECON_TPK_CONNECTION_FAILED, 0);
   }
   if (reconErroPend && !cv.ativo && !parado) {
     Uint32 agora = SDL_GetTicks();
@@ -2087,6 +2094,8 @@ void video_bombear(void) {
                        SDL_GetTicks() - mf.ligouEm < 8000u;
       }
       if (recon.tentativa != antes) {
+        farolprod_recon(FP_TIZEN_TPK, NULL, reconErroCod, recon.tentativa,
+                        nv_recon_espera_ms(recon.tentativa));
         if (reconPreparo)
           printf("[video] seek failed during the mkvfix check (0x%x): retry %d/%d in %us\n",
                  (unsigned)reconErroCod, recon.tentativa, NV_RECON_MAX,
@@ -2629,8 +2638,12 @@ int  video_conflito_recurso(void) { return conflito; }
 static volatile int janelaVisivel = 1;
 void video_tpk_log_host(const char *linha) {
   if (!linha) return;
-  // "erro ConnectionFailed" vem logo antes do evento 5 (Video.cs).
-  if (!strncmp(linha, "erro ", 5) && nv_recon_rede_tpk(0, linha)) reconLinhaRede = 1;
+  // "erro ConnectionFailed" vem logo antes do evento 5 (Video.cs). A mesma
+  // chamada do host ja entrega o erro por ErroGeracao com o codigo numerico:
+  // o evento do anel sai so por la, para a falha nao entrar duas vezes.
+  if (!strncmp(linha, "erro ", 5) && nv_recon_rede_tpk(0, linha)) {
+    reconLinhaRede = 1;
+  }
   // O player acusa o codec sem lista vazia: mesmo aviso, com a linha de prova.
   // Video.cs loga o nome do enum PlayerError do Tizen.Multimedia, que e
   // "AudioCodecNotSupported" (log do S95C, 16/10); o outro e o nome do CAPI.
@@ -2654,7 +2667,7 @@ void video_tpk_log_host(const char *linha) {
   }
   if (!strstr(linha, "interrompido: ResourceConflict") || !janelaVisivel) return;
   tocando = 0;
-  if (!conflito) { printf("[video] tpk: outro app tomou o video da TV; trailers automaticos desligados nesta sessao\n"); fflush(stdout); }
+  if (!conflito) { printf("[video] tpk: outro app tomou o video da TV; trailers automaticos desligados nesta sessao\n"); fflush(stdout); farolprod_erro(FP_TIZEN_TPK, linha, 0, 0); }
   conflito = 1;
 }
 int  video_n_audio(void) { return nAudio; }

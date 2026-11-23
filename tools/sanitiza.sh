@@ -25,7 +25,7 @@ mkdir -p "$LOGS/asan" "$LOGS/thread"
 # proposito: e o contrato do job TSan e nao deve depender de grep no proprio
 # runner (o runner e a unica fonte de "quem roda com TSan").
 TSAN_TESTS="audsync autosync cacheboost capmkv capmkv_url_longa cateps_corrida
-cliente_corrida colhash_corrida credfio desc_iniciar_corrida emby farol_anel fontecache jellyfin legenda2
+cliente_corrida colhash_corrida credfio desc_iniciar_corrida emby farol_anel farol_produtores_tv fontecache jellyfin legenda2
 legref legsync nvbackend_escrita p2pmotor p2pmotor_real plex pluginjs plugins_fontes rede_pedido
 sessao_corrida streamfit streamfit_diagnostico streamfit_passiva
 sync_resumo_corrida trakt_play_corrida uuid_concorrente vistoep_corrida"
