@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#fcfcfc">
+  <title>Nuvio · Lançamento 2.1</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#content">Pular para o conteúdo</a>
+  <aside class="sidebar">
+    <a class="brand" href="#" aria-label="Nuvio, início"><span class="brand-mark">n</span>nuvio<span class="internal">coordenação</span></a>
+    <div class="project"><span class="project-icon">2.1</span><div><strong>Lançamento 2.1</strong><small>Em construção</small></div><span class="live-dot"></span></div>
+    <div class="nav-label">ACOMPANHAMENTO</div>
+    <nav aria-label="Navegação principal" id="nav">
+      <button data-view="overview" class="active"><span class="nav-icon">▦</span>Visão geral</button>
+      <button data-view="board"><span class="nav-icon">▥</span>Quadro de trabalho</button>
+      <button data-view="waves"><span class="nav-icon">≋</span>Ondas e dependências</button>
+      <button data-view="gates"><span class="nav-icon">◷</span>Depende de você<span id="gate-count" class="nav-count"></span></button>
+      <button data-view="integration"><span class="nav-icon">⑂</span>Integração e lotes</button>
+    </nav>
+    <div class="nav-label front-label">FRENTES DE TRABALHO</div>
+    <nav id="fronts" aria-label="Frentes de trabalho"></nav>
+    <div class="sidebar-bottom"><div class="owner-avatar">H</div><div><strong>Henrique</strong><small>Visão da coordenação</small></div><a href="https://app.devin.ai/sessions/ee11f6251e0745a18f52494ef7274245" target="_blank" rel="noopener" aria-label="Solicitar alteração no painel">↗</a></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> Nuvio <span>/</span> <strong>Release 2.1</strong></div><div class="sync"><span class="live-dot"></span><span id="sync">Carregando dados…</span><button id="refresh" title="Atualizar dados" aria-label="Atualizar dados">↻</button></div></header>
+    <main id="content" tabindex="-1">
+      <div id="error" role="status" hidden></div>
+      <div class="page-heading"><div><div class="eyebrow">RELEASE WORKSPACE <span>2.1</span></div><h1 id="page-title">Tudo no mesmo rumo.</h1><p id="page-description">Da primeira branch até a TV. O que avançou, o que falta e o que precisa de você.</p></div><button class="secondary" id="export">↓ Exportar JSON</button></div>
+      <div id="view"><div class="loading">Preparando o acompanhamento da 2.1…</div></div>
+      <footer><span>Feito no código ≠ validado na TV. Cada pendência continua visível até ser confirmada.</span><a href="https://app.devin.ai/sessions/ee11f6251e0745a18f52494ef7274245" target="_blank" rel="noopener">Pedir uma alteração ↗</a></footer>
+    </main>
+  </div>
+  <dialog id="detail" aria-labelledby="detail-title"><div class="dialog-top"><span>DETALHES DO ITEM</span><button id="close-detail" class="icon-button" aria-label="Fechar detalhes">×</button></div><div id="detail-body"></div></dialog>
+</body>
+</html>
