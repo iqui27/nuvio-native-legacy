@@ -99,6 +99,8 @@ static float tempo, entrada, focoT;
 
 static MapaClimas climas;
 static unsigned climasRev;
+static unsigned climasCat;            // cat_revisao() da copia: os catIndice
+                                      // guardados so valem nela (CATREV)
 static int clFoco;                    // posicao na grade
 static int clAberto = -1;             // posicao do clima aberto (climas.c[])
 static int caLinha, caCol[2];         // clima aberto: 0 = descobrir, 1 = vistos
@@ -256,14 +258,48 @@ static void metaObra(const MapaObra *o, char *dst, size_t n) {
   else snprintf(dst, n, "%s%s", tipo, nota);
 }
 
-static int indicePorImdb(const char *imdb) {
-  int i, n = cat_n();
-  if (!imdb || !imdb[0]) return -1;
-  for (i = 0; i < n; i++) {
-    const CatItem *ci = cat_item(i);
-    if (ci && !strcmp(ci->imdb, imdb)) return i;
+// O item `ci` e a obra `o`? A identidade e tipo + IMDb; sem IMDb, TMDB —
+// campo proprio ou o id "tmdb:N". Sem nenhum dos dois resta titulo + tipo,
+// o mesmo criterio de antes (aceita o homonimo como ultimo recurso).
+static int obraConfere(const CatItem *ci, const MapaObra *o) {
+  if (!ci || strcmp(ci->tipo, o->tipo)) return 0;
+  if (o->imdb[0]) return !strcmp(ci->imdb, o->imdb);
+  if (o->tmdb) {
+    if (ci->tmdb == o->tmdb) return 1;
+    if (!strncmp(ci->imdb, "tmdb:", 5) && atol(ci->imdb + 5) == o->tmdb) return 1;
+    return 0;
   }
+  return !strcmp(ci->titulo, o->titulo);
+}
+
+// Posicao da obra no catalogo ATUAL, pela identidade; -1 quando ela nao esta.
+static int indiceDaObra(const MapaObra *o) {
+  int i, n;
+  if (!o->imdb[0] && !o->tmdb) return -1;
+  n = cat_n();
+  for (i = 0; i < n; i++) if (obraConfere(cat_item(i), o)) return i;
   return -1;
+}
+
+// catIndice ainda aponta para esta obra? Leitura so com limites + identidade:
+// cat_item() aplica modulo no indice fora da faixa, e depois de uma troca de
+// catalogo o mesmo numero pode ser outra obra.
+static int catIndiceConfere(const MapaObra *o) {
+  return o->catIndice >= 0 && o->catIndice < cat_n() &&
+         obraConfere(cat_item(o->catIndice), o);
+}
+
+// Catalogo trocado entre quadros: refaz cada catIndice copiado pela
+// identidade da obra antes de usar (CATREV). Barato por quadro — so a
+// comparacao da revisao; o passe inteiro so roda uma vez por troca.
+static void climasRevisar(void) {
+  unsigned rev = cat_revisao();
+  int m, i;
+  if (rev == climasCat) return;
+  for (m = 0; m < climas.n; m++)
+    for (i = 0; i < climas.c[m].n; i++)
+      climas.c[m].itens[i].catIndice = indiceDaObra(&climas.c[m].itens[i]);
+  climasCat = rev;
 }
 
 // A pagina do titulo: do catalogo quando ele esta la; senao a descoberta busca
@@ -271,11 +307,8 @@ static int indicePorImdb(const char *imdb) {
 static void abrirPagina(const MapaObra *o) {
   int idx;
   if (!o || !o->titulo[0]) return;
-  idx = indicePorImdb(o->imdb);
-  if (idx < 0 && o->catIndice >= 0) {
-    const CatItem *ci = cat_item(o->catIndice);
-    if (ci && !strcmp(ci->titulo, o->titulo)) idx = o->catIndice;
-  }
+  idx = indiceDaObra(o);
+  if (idx < 0 && catIndiceConfere(o)) idx = o->catIndice;
   if (idx >= 0) { pediuIndice = idx; pediuAbrir = 1; return; }
   if (desc_titulo_buscando()) return;
   if (o->tmdb > 0) desc_pedir_titulo_tmdb(o->tmdb, !strcmp(o->tipo, "series") ? "tv" : "movie");
@@ -488,9 +521,12 @@ static void subir(void) {
   // O primeiro degrau: de volta a origem.
   nTrilha = 0;
   if (origem == ORIGEM_CLIMA && clAberto >= 0) { trocarModo(MODO_CLIMA); return; }
-  if (origem == ORIGEM_DETALHE && trilha[0].obra.catIndice >= 0) {
-    pediuIndice = trilha[0].obra.catIndice;
-    pediuAbrir = 1;
+  if (origem == ORIGEM_DETALHE) {
+    // O catIndice da trilha pode ser de outra revisao do catalogo: identidade
+    // primeiro, o numero guardado so entra conferido (CATREV).
+    int idx = indiceDaObra(&trilha[0].obra);
+    if (idx < 0 && catIndiceConfere(&trilha[0].obra)) idx = trilha[0].obra.catIndice;
+    if (idx >= 0) { pediuIndice = idx; pediuAbrir = 1; }
   }
   trocarModo(MODO_CLIMAS);
 }
@@ -1429,19 +1465,23 @@ void explorar_iniciar(void) {
   tempo = 0.0f;
   memset(&climas, 0, sizeof climas);
   climasRev = 0;
+  climasCat = 0;
   clFoco = 0;
   clAberto = -1;
   nTrilha = 0;
   origem = ORIGEM_NADA;
   trocarModo(MODO_CLIMAS);
   mapa_climas_pedir();
-  mapa_climas_copiar(&climas, &climasRev);
+  if (mapa_climas_copiar(&climas, &climasRev)) climasCat = cat_revisao();
 }
 
 void explorar_abrir_titulo(const MapaObra *o) {
   pediuRelogio = 0;
   if (!o || !o->titulo[0]) return;
-  if (climas.n == 0) { mapa_climas_pedir(); mapa_climas_copiar(&climas, &climasRev); }
+  if (climas.n == 0) {
+    mapa_climas_pedir();
+    if (mapa_climas_copiar(&climas, &climasRev)) climasCat = cat_revisao();
+  }
   clAberto = -1;
   comecarToca(o, ORIGEM_DETALHE);
 }
@@ -1455,7 +1495,9 @@ void explorar_encerrar(void) {
 void explorar_atualizar(float dt, Uint32 agora) {
   int reduzida = ajustes_animacoes_reduzidas();
   (void)agora;
+  climasRevisar();
   if (mapa_climas_copiar(&climas, &climasRev)) {
+    climasCat = cat_revisao();
 #ifdef NV_TOUCH_UI
     if(telefoneui_ativo() && modo!=MODO_VIZ)
       ponteiro_cancelar_alvo(modo==MODO_CLIMAS ? ponteiroClimas : ponteiroClima);

@@ -229,6 +229,16 @@ const CatItem *cat_item(int i) {
   pthread_mutex_unlock(&T_cmtx);
   return r;
 }
+int cat_n(void) {
+  int r;
+  pthread_mutex_lock(&T_cmtx);
+  r = C_n;
+  pthread_mutex_unlock(&T_cmtx);
+  return r;
+}
+// O falso so acrescenta, nunca troca o catalogo inteiro: a revisao fica
+// estavel, como o real entre duas chamadas de cat_definir_tudo.
+unsigned cat_revisao(void) { return 1; }
 int cat_indice_por_imdb(const char *imdb) {
   int i, r = -1;
   pthread_mutex_lock(&T_cmtx);

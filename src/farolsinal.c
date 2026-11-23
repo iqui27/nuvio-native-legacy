@@ -1951,10 +1951,18 @@ static void confereTemporada(const char *id, int t, int perfil, int ger) {
   int idx, ne, i, tot = 0, vistos = 0;
   const CatEp *ep;
   uint64_t hb;
+  unsigned catRev;
   if (fioMorre) return;
   if ((idx = cat_indice_por_imdb(id)) < 0) return;
+  catRev = cat_revisao();
   ne = cat_n_episodios(idx);
   for (i = 0; i < ne && !fioMorre; i++) {
+    const CatItem *ci;
+    // Cada leitura so vale se `idx` ainda e a mesma obra: uma troca de
+    // catalogo no meio do laco recicla o numero para outro item (CATREV) —
+    // revisao + limites + identidade a cada passada.
+    if (cat_revisao() != catRev || idx >= cat_n() ||
+        (ci = cat_item(idx)) == NULL || strcmp(ci->imdb, id)) return;
     if ((ep = cat_episodio(idx, i)) == NULL || ep->temporada != t) continue;
     tot++;
     if (diario_episodio(perfil, id, t, ep->episodio, NULL)) vistos++;
@@ -1963,17 +1971,19 @@ static void confereTemporada(const char *id, int t, int perfil, int ger) {
   hb = hDom(id, K_TEMP, t);
   TRAVA();
   if (!fioMorre && S.perfil == perfil && S.varGer == ger &&
-      achaHb(hb) < 0) {
-    Cred c;
-    const CatItem *ci = cat_item(idx);
-    long tmdb = ci ? ci->tmdb : 0;
-    long long agora = agoraS();
-    memset(&c, 0, sizeof c);
-    c.idh = h1(id); c.hb = hb; c.eh = hb ^ mix64((uint64_t)agora);
-    c.quando = agora; c.chave = chaveObra(id, 1, tmdb);
-    c.delta = FG_D_TERMINOU; c.faixa = (int16_t)faixaAgora(agora);
-    c.kind = K_TEMP;
-    credita(id, 1, tmdb, &c);
+      cat_revisao() == catRev && achaHb(hb) < 0) {
+    const CatItem *ci = idx < cat_n() ? cat_item(idx) : NULL;
+    if (ci && !strcmp(ci->imdb, id)) {
+      Cred c;
+      long tmdb = ci->tmdb;
+      long long agora = agoraS();
+      memset(&c, 0, sizeof c);
+      c.idh = h1(id); c.hb = hb; c.eh = hb ^ mix64((uint64_t)agora);
+      c.quando = agora; c.chave = chaveObra(id, 1, tmdb);
+      c.delta = FG_D_TERMINOU; c.faixa = (int16_t)faixaAgora(agora);
+      c.kind = K_TEMP;
+      credita(id, 1, tmdb, &c);
+    }
   }
   DTRAVA();
 }
@@ -2023,13 +2033,21 @@ static void varreLargada(int perfil, int ger) {
     if (fioMorre) return;
     if (neps < 1 || neps > 3) continue;
     if ((idx = cat_indice_por_imdb(regs[i].contentId)) < 0) continue;
+    { unsigned catRev = cat_revisao();
     ne = cat_n_episodios(idx);
     for (k = 0; k < ne && !ha && !fioMorre; k++) {
-      const CatEp *ep = cat_episodio(idx, k);
+      const CatEp *ep;
+      const CatItem *ci;
+      // Mesma guarda da confereTemporada: a leitura so vale se `idx` ainda e
+      // o item de contentId — revisao + limites + identidade (CATREV).
+      if (cat_revisao() != catRev || idx >= cat_n() ||
+          (ci = cat_item(idx)) == NULL || strcmp(ci->imdb, regs[i].contentId))
+        break;
+      ep = cat_episodio(idx, k);
       if (ep && (ep->temporada > t || (ep->temporada == t && ep->episodio > e)))
         ha = 1;
     }
-    if (!ha) continue;
+    if (!ha || cat_revisao() != catRev) continue; }
     TRAVA();
     if (!fioMorre && S.perfil == perfil && S.varGer == ger &&
         achaHb(hb) < 0) {
