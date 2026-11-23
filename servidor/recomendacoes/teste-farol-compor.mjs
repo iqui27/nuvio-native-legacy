@@ -114,6 +114,7 @@ function pedidoHomeBase(extra = {}) {
     modo: "home",
     idioma: "pt-BR",
     hora: "noite_semana",
+    consentiu: 1,
     gosto: {
       generos: [{ id: 53, nome: "Suspense", peso: 1.8 }, { id: 878, nome: "Ficcao", peso: 1.4 }],
       temas: [{ id: 4565, nome: "distopia", peso: 1.2 }],
@@ -373,6 +374,7 @@ test("compor devolve FarolCena v1 valida nos modos home, comparar, dica e retoma
       modo: "retomada",
       idioma: "pt-BR",
       hora: "noite_semana",
+      consentiu: 1,
       gosto: {},
       candidatos: [],
       fatos: [{ alvo: "tt0903747", temporada: 2, episodio: 4, sinopse: "Resumo do episodio ja visto." }],
@@ -514,16 +516,23 @@ test("mesma entrada em 24 h nao chama o LLM de novo e compartilha cache entre co
   assert.equal(entradaKv.ttl, 86400);
 
   // Mesma entrada dentro de 24 h (mesma conta): acerta cache e NAO chama o LLM.
+  // O KV persiste apenas modelos `m` e referencias controladas (sem texto livre `x`).
+  assert.ok(!entradaKv.valor.includes("\"x\""), "KV nao persiste texto livre x");
+  assert.ok(!entradaKv.valor.includes("Suspense"), "KV nao persiste literal de gosto");
   avancarRelogio(3600);
   const r2 = await post("/v1/farol/compor", req1, { token: "tok-gosto-a", perfil: 1 });
   assert.equal(r2.status, 200);
-  assert.deepEqual(r2.body, r1.body);
+  assert.equal(r2.body.origem, "llm");
+  assert.equal(r2.body.pecas[0].titulo.m, "FT_FIL_PORQUE_TERMINOU");
+  assert.deepEqual(r2.body.pecas[0].titulo.a, ["tt11280740"]);
+  assert.equal(r2.body.pecas[0].titulo.x, undefined);
+  assert.equal(validarCena(JSON.stringify(r2.body), 7).ok, true);
   assert.equal(chamadasLlm.length, 1);
 
   // Outra conta/perfil com o MESMO gosto e candidatos: divide o mesmo cache sem chamar o LLM.
   const r3 = await post("/v1/farol/compor", req1, { token: "tok-gosto-b", perfil: 2 });
   assert.equal(r3.status, 200);
-  assert.deepEqual(r3.body, r1.body);
+  assert.deepEqual(r3.body, r2.body);
   assert.equal(chamadasLlm.length, 1);
 
   // Apos 24 h, TTL vence e volta a chamar o LLM.
@@ -609,6 +618,7 @@ test("escolha: traduz frase em respostas fechadas, valida saida do LLM e bloquei
   const corpoEscolha = {
     v: 1,
     idioma: "pt-BR",
+    consentiu: 1,
     frase: "algo leve de uma hora para ver com meu filho",
     perguntas: ["tempo", "peso", "companhia", "formato"],
     gosto: { generos: [{ id: 16, nome: "Animacao", peso: 1.5 }] },
@@ -660,7 +670,7 @@ test("FAROL_LLM=0 e chave ausente devolvem {origem:'regras'} sem chamar LLM nem 
     assert.deepEqual(r1.body, { origem: "regras" });
 
     const r2 = await post("/v1/farol/escolha", {
-      v: 1, idioma: "pt-BR", frase: "algo curto", perguntas: ["tempo", "peso"],
+      v: 1, idioma: "pt-BR", consentiu: 1, frase: "algo curto", perguntas: ["tempo", "peso"],
     }, { envCustom: { ...env, FAROL_LLM: desligado } });
     assert.equal(r2.status, 200);
     assert.deepEqual(r2.body, { origem: "regras" });
@@ -724,7 +734,7 @@ test("nada do corpo e gravado: D1 so tem contadores HMAC (sem pessoa) e KV so te
   assert.equal(rc.body.origem, "llm");
 
   const re = await post("/v1/farol/escolha", {
-    v: 1, idioma: "pt-BR", frase: canarioFrase, perguntas: ["tempo", "peso"],
+    v: 1, idioma: "pt-BR", consentiu: 1, frase: canarioFrase, perguntas: ["tempo", "peso"],
     gosto: { temas: [{ id: 999, nome: canarioTema, peso: 1.0 }] },
   });
   assert.equal(re.status, 200);
@@ -774,28 +784,60 @@ test("nada do corpo e gravado: D1 so tem contadores HMAC (sem pessoa) e KV so te
   }
 });
 
-test("perfil infantil (corpo ou sala_infantil) e sem consentimento nunca chamam o LLM", async (t) => {
+test("perfil infantil (corpo, sala_infantil ou erro na consulta) e sem consentimento afirmativo nunca chamam o LLM", async (t) => {
   const { sqlite, post, chamadasLlm } = cenario(t);
 
-  // infantil: 1 e consentiu: 0 -> {origem:"regras"} sem chamar LLM.
-  for (const extra of [{ infantil: 1 }, { consentiu: 0 }]) {
+  // infantil: 1, consentiu: 0/false e consentiu AUSENTE -> {origem:"regras"} sem chamar LLM nem gastar cota.
+  const semOptIn = [
+    { infantil: 1 },
+    { consentiu: 0 },
+    { consentiu: false },
+  ];
+  for (const extra of semOptIn) {
     const r1 = await post("/v1/farol/compor", pedidoHomeBase(extra));
     assert.equal(r1.status, 200);
     assert.deepEqual(r1.body, { origem: "regras" });
 
     const r2 = await post("/v1/farol/escolha", {
-      v: 1, idioma: "pt-BR", frase: "desenho curto", perguntas: ["tempo", "peso"], ...extra,
+      v: 1, idioma: "pt-BR", frase: "desenho curto", perguntas: ["tempo", "peso"], consentiu: 1, ...extra,
     });
     assert.equal(r2.status, 200);
     assert.deepEqual(r2.body, { origem: "regras" });
   }
 
-  // Perfil infantil registrado no banco (`sala_infantil`), mesmo sem flag no corpo.
+  // Ausencia de `consentiu` nas duas rotas deve cair em {origem:"regras"} (P1.1).
+  const reqComporSemConsentiu = pedidoHomeBase();
+  delete reqComporSemConsentiu.consentiu;
+  const rComporOmisso = await post("/v1/farol/compor", reqComporSemConsentiu);
+  assert.equal(rComporOmisso.status, 200);
+  assert.deepEqual(rComporOmisso.body, { origem: "regras" });
+
+  const rEscolhaOmisso = await post("/v1/farol/escolha", {
+    v: 1, idioma: "pt-BR", frase: "desenho curto", perguntas: ["tempo", "peso"],
+  });
+  assert.equal(rEscolhaOmisso.status, 200);
+  assert.deepEqual(rEscolhaOmisso.body, { origem: "regras" });
+
+  // Perfil infantil registrado no banco (`sala_infantil`), mesmo com consentiu: 1.
   sqlite.prepare("INSERT INTO sala_infantil (pessoa, visto) VALUES ('nuvio:conta-gosto-a:2', 1)").run();
-  const rBanco = await post("/v1/farol/compor", pedidoHomeBase(), { perfil: 2 });
+  const rBanco = await post("/v1/farol/compor", pedidoHomeBase({ consentiu: true }), { perfil: 2 });
   assert.equal(rBanco.status, 200);
   assert.deepEqual(rBanco.body, { origem: "regras" });
+
+  // Falha na consulta infantil (`sala_infantil` indisponivel/erro no D1) -> fail-closed para {origem:"regras"} nas duas rotas (P1.1).
+  sqlite.exec("DROP TABLE sala_infantil");
+  const rComporDbErro = await post("/v1/farol/compor", pedidoHomeBase({ consentiu: true }), { perfil: 1 });
+  assert.equal(rComporDbErro.status, 200);
+  assert.deepEqual(rComporDbErro.body, { origem: "regras" });
+
+  const rEscolhaDbErro = await post("/v1/farol/escolha", {
+    v: 1, idioma: "pt-BR", consentiu: true, frase: "algo leve", perguntas: ["tempo", "peso"],
+  }, { perfil: 1 });
+  assert.equal(rEscolhaDbErro.status, 200);
+  assert.deepEqual(rEscolhaDbErro.body, { origem: "regras" });
+
   assert.equal(chamadasLlm.length, 0);
+  assert.equal(q(sqlite, "SELECT count(*) AS n FROM limite")[0].n, 0);
 });
 
 // =============================================================================
@@ -820,7 +862,7 @@ test("corpo > 12 KB da 413 (com e sem Content-Length) e entradas invalidas dao 4
   assert.equal((await post("/v1/farol/compor", grande1)).status, 413);
   assert.equal((await post("/v1/farol/compor", grande1, { semContentLength: true })).status, 413);
 
-  const escolhaStr = JSON.stringify({ v: 1, idioma: "pt-BR", frase: "ok", perguntas: ["tempo"] });
+  const escolhaStr = JSON.stringify({ v: 1, idioma: "pt-BR", consentiu: 1, frase: "ok", perguntas: ["tempo"] });
   const grandeEscolha = escolhaStr + " ".repeat(FAROL_ESCOLHA_CORPO_MAX - escolhaStr.length + 1);
   assert.equal((await post("/v1/farol/escolha", grandeEscolha)).status, 413);
   assert.equal((await post("/v1/farol/escolha", grandeEscolha, { semContentLength: true })).status, 413);
@@ -862,4 +904,297 @@ test("corpo > 12 KB da 413 (com e sem Content-Length) e entradas invalidas dao 4
   assert.equal(chamadasLlm.length, 1);
   assert.equal(q(sqlite, "SELECT n FROM limite WHERE chave LIKE 'farol_compor:d:%'")[0].n, 1);
   assert.equal(q(sqlite, "SELECT count(*) AS n FROM limite WHERE chave LIKE 'farol_escolha:d:%'")[0].n, 0);
+});
+
+// =============================================================================
+// 7. Regressoes dos P1 da revisao FAROL40-r1
+// =============================================================================
+
+test("P1.2: cache compartilhado nao grava literais de gosto mesmo quando o LLM ecoa canarios", async (t) => {
+  const canarioTema = "CanarioTemaEco9911";
+  const canarioPessoa = "CanarioPessoaEco8822";
+  const canarioAncora = "CanarioAncoraEco7733";
+
+  // Caso A: LLM devolve m+a valido e ecoa canarios dentro de `x` (dica.l1.x e titulo.x).
+  {
+    const { kv, post } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1,
+        tela: "home",
+        origem: "llm",
+        pecas: [
+          {
+            t: "fileira",
+            id: "gosto1",
+            titulo: { m: "FT_FIL_PORQUE_TERMINOU", a: ["tt11280740"], x: `Parecido com ${canarioAncora}` },
+            forma: "cartaz",
+            itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+          },
+          {
+            t: "dica",
+            id: "d_tema",
+            l1: { m: "FT_DICA_TRAKT", x: `Curte ${canarioTema} e ${canarioPessoa}` },
+            acao: { tipo: "nada" },
+          },
+        ],
+      }),
+    });
+
+    const r = await post("/v1/farol/compor", pedidoHomeBase({
+      consentiu: true,
+      gosto: {
+        generos: [{ id: 53, nome: "Suspense", peso: 1.8 }],
+        temas: [{ id: 999, nome: canarioTema, peso: 1.5 }],
+        pessoas: [{ id: 137427, nome: canarioPessoa, peso: 1.4 }],
+        ancoras: [{ id: "tt11280740", titulo: canarioAncora }],
+      },
+    }));
+    assert.equal(r.status, 200);
+    assert.equal(r.body.origem, "llm");
+    assert.equal(kv.mapa.size, 1);
+    const [[, entrada]] = [...kv.mapa.entries()];
+    for (const c of [canarioTema, canarioPessoa, canarioAncora, "Suspense", "\"x\""]) {
+      assert.ok(!entrada.valor.includes(c), `KV vazou ${c}`);
+    }
+    const cenaKv = JSON.parse(entrada.valor);
+    assert.equal(cenaKv.pecas[1].l1.m, "FT_DICA_TRAKT");
+    assert.equal(cenaKv.pecas[1].l1.x, undefined);
+  }
+
+  // Caso B: peca com texto apenas `x` (sem `m`) ecoando canario -> omitida do cache KV.
+  {
+    const { kv, post } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1,
+        tela: "home",
+        origem: "llm",
+        pecas: [{
+          t: "dica",
+          id: "d_so_x",
+          l1: { x: `Tema: ${canarioTema}` },
+          acao: { tipo: "nada" },
+        }],
+      }),
+    });
+    const r = await post("/v1/farol/compor", pedidoHomeBase({
+      consentiu: 1,
+      gosto: { temas: [{ id: 999, nome: canarioTema, peso: 1.5 }] },
+    }));
+    assert.equal(r.status, 200);
+    assert.equal(r.body.origem, "llm");
+    assert.equal(kv.mapa.size, 0, "cena sem modelo m de reserva nao entra no cache");
+  }
+
+  // Caso C: LLM tenta colocar canario dentro de `a` (ex.: FT_FIL_TEMA) -> recusado.
+  {
+    const { kv, post } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1,
+        tela: "home",
+        origem: "llm",
+        pecas: [{
+          t: "fileira",
+          id: "gosto1",
+          titulo: { m: "FT_FIL_TEMA", a: [canarioTema] },
+          forma: "cartaz",
+          itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+        }],
+      }),
+    });
+    const r = await post("/v1/farol/compor", pedidoHomeBase({
+      consentiu: 1,
+      gosto: { temas: [{ id: 999, nome: canarioTema, peso: 1.5 }] },
+    }));
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { origem: "regras" });
+    assert.equal(kv.mapa.size, 0);
+  }
+});
+
+test("P1.3: argumentos de titulo por modelo FT_* exigem referencia valida do pedido (nunca titulo literal)", async (t) => {
+  const req = pedidoHomeBase({
+    fatos: [{ alvo: "tt0903747", temporada: 2, episodio: 4 }],
+  });
+
+  const cenasComTituloInvalido = [
+    // Literal ausente de candidatos/ancoras/fatos ("Planeta Imaginário" da revisao)
+    {
+      v: 1, tela: "home", pecas: [{
+        t: "fileira", id: "gosto1",
+        titulo: { m: "FT_FIL_PORQUE_TERMINOU", a: ["Planeta Imaginário"] },
+        forma: "cartaz",
+        itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+      }],
+    },
+    // Literal mesmo que seja nome de candidato ou ancora do pedido (precisa ser ref c<n>/tt<n>)
+    {
+      v: 1, tela: "home", pecas: [{
+        t: "fileira", id: "gosto1",
+        titulo: { m: "FT_FIL_PORQUE_TERMINOU", a: ["Ruptura"] },
+        forma: "cartaz",
+        itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+      }],
+    },
+    // FT_DICA_FALTA_L1 tem o titulo no argumento indice 2
+    {
+      v: 1, tela: "home", pecas: [{
+        t: "dica", id: "d1",
+        l1: { m: "FT_DICA_FALTA_L1", a: ["3", "2", "Planeta Imaginário"] },
+        acao: { tipo: "abrir", alvo: "tt0903747" },
+      }],
+    },
+    // FT_MOT_DIRETOR tem titulo no indice 0
+    {
+      v: 1, tela: "home", pecas: [{
+        t: "fileira", id: "gosto1",
+        titulo: { m: "FT_FIL_HORA" },
+        forma: "cartaz",
+        itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+        motivo: { c0: { m: "FT_MOT_DIRETOR", a: ["Seven", "2"] } },
+      }],
+    },
+    // FT_CMP_VEREDITO_CABE nao pode citar ancora (apenas candidato) nem titulo literal
+    {
+      v: 1, tela: "comparar", pecas: [{
+        t: "comparar", itens: ["c0", "c1"], eixos: ["duracao"],
+        veredito: { m: "FT_CMP_VEREDITO_CABE", a: ["tt11280740"] },
+      }],
+    },
+    {
+      v: 1, tela: "comparar", pecas: [{
+        t: "comparar", itens: ["c0", "c1"], eixos: ["duracao"],
+        veredito: { m: "FT_CMP_VEREDITO_CABE", a: ["Seven"] },
+      }],
+    },
+  ];
+
+  for (const ruim of cenasComTituloInvalido) {
+    const val = validarCenaLlm(JSON.stringify(ruim), req, 1795000000);
+    assert.equal(val.ok, false, `esperava rejeicao para ${JSON.stringify(ruim)}`);
+    const { post, kv } = cenario(t, {}, { respostaLlm: () => ruim });
+    const r = await post("/v1/farol/compor", req);
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { origem: "regras" });
+    assert.equal(kv.mapa.size, 0);
+  }
+
+  // Referencia valida no argumento indice 2 de FT_DICA_FALTA_L1 passa limpa.
+  const okDica = validarCenaLlm(JSON.stringify({
+    v: 1, tela: "home", pecas: [{
+      t: "dica", id: "d1",
+      l1: { m: "FT_DICA_FALTA_L1", a: ["3", "2", "tt0903747"] },
+      acao: { tipo: "abrir", alvo: "tt0903747" },
+    }],
+  }), req, 1795000000);
+  assert.equal(okDica.ok, true);
+});
+
+test("P1.4: chave de cache distingue identidades canonicas (id+ref) e hit KV valida referencias contra pedido atual", async (t) => {
+  const fazerCandidatos = (ref0) => [
+    { id: "cand-primario-0", ref: ref0, titulo: "Filme Zero", ano: 2020 },
+    { id: "tt0133093", titulo: "Matrix", ano: 1999 },
+    { id: "tt0816692", titulo: "Interestelar", ano: 2014 },
+    { id: "tt1375666", titulo: "A Origem", ano: 2010 },
+    { id: "tt2543164", titulo: "A Chegada", ano: 2016 },
+    { id: "tt1856101", titulo: "Blade Runner 2049", ano: 2017 },
+  ];
+
+  const reqA = pedidoHomeBase({
+    gosto: { ancoras: [{ id: "anc-1", ref: "tt1111111", titulo: "Ancora A" }] },
+    candidatos: fazerCandidatos("tt0114369"),
+  });
+  const reqB = pedidoHomeBase({
+    gosto: { ancoras: [{ id: "anc-1", ref: "tt1111111", titulo: "Ancora A" }] },
+    candidatos: fazerCandidatos("tt9999999"),
+  });
+  const reqC = pedidoHomeBase({
+    gosto: { ancoras: [{ id: "anc-1", ref: "tt2222222", titulo: "Ancora A" }] },
+    candidatos: fazerCandidatos("tt0114369"),
+  });
+
+  // 1. Mesmo id primario com ref diferente gera chaves distintas (candidato e ancora).
+  const kA = await chaveCacheCompor(reqA);
+  const kB = await chaveCacheCompor(reqB);
+  const kC = await chaveCacheCompor(reqC);
+  assert.notEqual(kA, kB, "ref diferente no candidato deve mudar a chave");
+  assert.notEqual(kA, kC, "ref diferente na ancora deve mudar a chave");
+
+  // 2. Segunda conta com mesmo id primario e ref diferente NAO recebe alvo IMDb da primeira.
+  {
+    let nChamada = 0;
+    const { post, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => {
+        nChamada++;
+        const ref0 = nChamada === 1 ? "tt0114369" : "tt9999999";
+        return {
+          v: 1, tela: "home", origem: "llm",
+          pecas: [{
+            t: "fileira", id: "gosto1",
+            titulo: { m: "FT_FIL_HORA" },
+            forma: "cartaz",
+            itens: [ref0, "c1", "c2", "c3", "c4", "c5"],
+          }],
+        };
+      },
+    });
+
+    const rA = await post("/v1/farol/compor", reqA, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(rA.status, 200);
+    assert.equal(rA.body.pecas[0].itens[0], "tt0114369");
+
+    const rB = await post("/v1/farol/compor", reqB, { token: "tok-gosto-b", perfil: 1 });
+    assert.equal(rB.status, 200);
+    assert.equal(rB.body.pecas[0].itens[0], "tt9999999");
+    assert.equal(chamadasLlm.length, 2);
+  }
+
+  // 3. Mesmo havendo entrada no KV na chave do pedido atual com tt estranho ou titulo literal,
+  // o hit do KV revalida contra o pedido atual e recusa a entrada invalida.
+  {
+    const { kv, post, chamadasLlm } = cenario(t, {}, {
+      respostaLlm: () => ({
+        v: 1, tela: "home", origem: "llm",
+        pecas: [{
+          t: "fileira", id: "gosto1",
+          titulo: { m: "FT_FIL_HORA" },
+          forma: "cartaz",
+          itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+        }],
+      }),
+    });
+    const chaveA = await chaveCacheCompor(reqA);
+
+    // Injeta cena com IMDb estranho `tt8888888` ausente de reqA:
+    await kv.put(chaveA, JSON.stringify({
+      v: 1, tela: "home", feita: 1795000000, vale_s: 86400, origem: "llm",
+      pecas: [{
+        t: "fileira", id: "gosto1",
+        titulo: { m: "FT_FIL_HORA" },
+        forma: "cartaz",
+        itens: ["tt8888888", "c1", "c2", "c3", "c4", "c5"],
+      }],
+    }), { expirationTtl: 86400 });
+
+    const r = await post("/v1/farol/compor", reqA, { token: "tok-gosto-a", perfil: 1 });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.origem, "llm");
+    assert.equal(r.body.pecas[0].itens[0], "c0", "hit KV invalido deve ser rejeitado e recomputado");
+    assert.equal(chamadasLlm.length, 1);
+
+    // Injeta cena com titulo literal em FT_FIL_PORQUE_TERMINOU:
+    await kv.put(chaveA, JSON.stringify({
+      v: 1, tela: "home", feita: 1795000000, vale_s: 86400, origem: "llm",
+      pecas: [{
+        t: "fileira", id: "gosto1",
+        titulo: { m: "FT_FIL_PORQUE_TERMINOU", a: ["Planeta Imaginário"] },
+        forma: "cartaz",
+        itens: ["c0", "c1", "c2", "c3", "c4", "c5"],
+      }],
+    }), { expirationTtl: 86400 });
+
+    const r2 = await post("/v1/farol/compor", reqA, { token: "tok-gosto-b", perfil: 1 });
+    assert.equal(r2.status, 200);
+    assert.equal(r2.body.pecas[0].titulo.m, "FT_FIL_HORA");
+    assert.equal(chamadasLlm.length, 2);
+  }
 });

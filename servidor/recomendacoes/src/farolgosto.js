@@ -9,8 +9,14 @@
 //                             das perguntas do assistente + qual pergunta falta (ou null).
 //
 // Privacidade, custos e defesa dupla (DECISOES §4/§8, PLANO-GOSTO §5.3–5.4):
+//   - Contrato com os clientes (issues 52–54): `consentiu` exige opt-in afirmativo
+//     (`consentiu: true` ou `1`). Ausencia, `0` ou `false` devolve `{origem:"regras"}`
+//     sem chamar o LLM nem gastar cota. Falha na consulta infantil (`sala_infantil`)
+//     tambem cai para `{origem:"regras"}` (fail-closed).
 //   - Nunca grava corpo, frase, gosto nem id cru no D1, KV ou log: no D1 so contadores
-//     em `limite` por HMAC(FAROL_SAL, conta) + global diario; no KV so a cena validada.
+//     em `limite` por HMAC(FAROL_SAL, conta) + global diario; no KV `CATS` apenas cenas
+//     reduzidas a modelos (`m`) e referencias controladas (`a`), sem `x` livre nem
+//     valores literais de gosto. Todo hit do KV revalida referencias contra o pedido atual.
 //   - Reaproveita o interruptor `FAROL_LLM` e o adaptador de configuracao de farol-busca.js
 //     (provedor/modelo por env, chave em secret FAROL_LLM_KEY ou FAROL_LLM_CHAVE).
 //   - `FAROL_LLM=0`, perfil infantil, sem consentimento, falha do LLM ou saida fora do
@@ -1787,7 +1793,7 @@ export function validarPedidoCompor(corpo) {
   }
 
   const infantil = corpo.infantil === 1 || corpo.infantil === true;
-  const consentiu = !(corpo.consentiu === 0 || corpo.consentiu === false);
+  const consentiu = corpo.consentiu === 1 || corpo.consentiu === true;
 
   return {
     ok: true,
@@ -1829,13 +1835,64 @@ export function validarPedidoEscolha(corpo) {
   if (gosto === null) return { ok: false, erro: "gosto invalido" };
 
   const infantil = corpo.infantil === 1 || corpo.infantil === true;
-  const consentiu = !(corpo.consentiu === 0 || corpo.consentiu === false);
+  const consentiu = corpo.consentiu === 1 || corpo.consentiu === true;
 
   return {
     ok: true,
     pedido: { v: 1, idioma, frase, perguntas, gosto, infantil, consentiu },
   };
 }
+
+// Modelos FT_* cujo(s) argumento(s) representam titulo (src/faroltexto.h / farolcena.c):
+// na saida do LLM devem ser referencia valida ("c<n>" ou "tt<digitos>" do pedido), nunca literal.
+const FT_ARGS_TITULO = new Map([
+  ["FT_RETOMAR_L1", [0]],
+  ["FT_FIL_PORQUE_TERMINOU", [0]],
+  ["FT_MOT_TERMINOU", [0]],
+  ["FT_MOT_TERMINOU_TEMA", [0]],
+  ["FT_MOT_SEMELHANTE", [0]],
+  ["FT_MOT_DIRETOR", [0]],
+  ["FT_DICA_PAROU_L1", [0]],
+  ["FT_DICA_FALTA_L1", [2]],
+  ["FT_DICA_TEMPORADA", [0]],
+  ["FT_DICA_REVER", [0]],
+  ["FT_DICA_CURTO", [0]],
+  ["FT_CMP_VEREDITO_CABE", [0]],
+]);
+
+// Modelos FT_* com argumento de afinidade controlada (g<id>, k<id>, p<id>).
+const FT_ARGS_AFINIDADE = new Map([
+  ["FT_FIL_GENERO", [[0, "g"]]],
+  ["FT_MOT_GENERO", [[0, "g"]]],
+  ["FT_MOT_FORA_CURVA", [[0, "g"]]],
+  ["FT_FIL_TEMA", [[0, "k"]]],
+  ["FT_FIL_SUB_TEMA", [[0, "k"]]],
+  ["FT_MOT_TEMA", [[0, "k"]]],
+  ["FT_FIL_PESSOA", [[0, "p"]]],
+  ["FT_MOT_PESSOA", [[0, "p"]]],
+  ["FT_MOT_ESTREIA", [[0, "p"]]],
+  ["FT_DICA_ESTREIA", [[0, "p"]]],
+  ["FT_MOT_TERMINOU_TEMA", [[1, "kg"]]],
+]);
+
+const FT_ARGS_INT = new Map([
+  ["FT_MOT_DIRETOR", [1]],
+  ["FT_MOT_CABE_HOJE", [0]],
+  ["FT_DICA_PAROU_L1", [1, 2]],
+  ["FT_DICA_PAROU_L2", [0]],
+  ["FT_DICA_FALTA_L1", [0, 1]],
+  ["FT_INFO_SOBE", [0, 1, 2]],
+  ["FT_INFO_CAI", [0]],
+  ["FT_INFO_FALTAM", [0, 1]],
+  ["FT_INFO_DUAS_NOITES", [0, 1]],
+  ["FT_INFO_SAGA", [0, 1]],
+  ["FT_INFO_SAGA_VOCE_VIU", [0, 1, 2]],
+  ["FT_INFO_RETOMADA", [0, 1]],
+  ["FT_INFO_RETOMADA_SIMPLES", [0, 1]],
+  ["FT_ESC_PASSO", [0, 1]],
+  ["FT_ACHA_CURTOS_L1", [0, 1]],
+  ["FT_ACHA_L1", [0]],
+]);
 
 // Coleta todos os ids `tt<digitos>` presentes num valor (para aterramento das pecas do LLM).
 function coletarTt(v, set) {
@@ -1852,53 +1909,165 @@ function coletarTt(v, set) {
   }
 }
 
+function contextoAterramento(pedido) {
+  const ttCand = new Set();
+  const generosIds = new Set();
+  const temasIds = new Set();
+  const pessoasIds = new Set();
+
+  for (const c of pedido.candidatos || []) {
+    coletarTt(c.id, ttCand);
+    coletarTt(c.ref, ttCand);
+    if (Array.isArray(c.generos)) {
+      for (const g of c.generos) {
+        if (typeof g === "number" && Number.isInteger(g)) generosIds.add(String(g));
+      }
+    }
+  }
+
+  const ttTodos = new Set(ttCand);
+  for (const c of pedido.candidatos || []) {
+    coletarTt(c.motivos, ttTodos);
+    coletarTt(c.eixos, ttTodos);
+  }
+  coletarTt(pedido.gosto?.ancoras, ttTodos);
+  coletarTt(pedido.fatos, ttTodos);
+
+  for (const g of pedido.gosto?.generos || []) {
+    if (g.id !== undefined) generosIds.add(String(g.id));
+  }
+  for (const k of pedido.gosto?.temas || []) {
+    if (k.id !== undefined) temasIds.add(String(k.id));
+  }
+  for (const p of pedido.gosto?.pessoas || []) {
+    if (p.id !== undefined) pessoasIds.add(String(p.id));
+  }
+
+  const textosGosto = [];
+  for (const lista of [pedido.gosto?.generos, pedido.gosto?.temas, pedido.gosto?.pessoas]) {
+    for (const it of lista || []) {
+      if (typeof it?.nome === "string" && it.nome.trim()) textosGosto.push(it.nome.trim());
+    }
+  }
+  for (const a of pedido.gosto?.ancoras || []) {
+    if (typeof a?.titulo === "string" && a.titulo.trim()) textosGosto.push(a.titulo.trim());
+    if (typeof a?.id === "string" && a.id.trim() && !/^tt\d{1,17}$/.test(a.id.trim())) {
+      textosGosto.push(a.id.trim());
+    }
+    if (typeof a?.ref === "string" && a.ref.trim() && !/^tt\d{1,17}$/.test(a.ref.trim())) {
+      textosGosto.push(a.ref.trim());
+    }
+  }
+
+  return {
+    nCand: (pedido.candidatos || []).length,
+    ttCand,
+    ttTodos,
+    generosIds,
+    temasIds,
+    pessoasIds,
+    textosGosto,
+  };
+}
+
 function refTtPermitida(s, permitidos) {
   return !s.startsWith("tt") || permitidos.has(s);
 }
 
-function textoAterrado(t, permitidos) {
-  if (!t || !Array.isArray(t.a)) return true;
-  return t.a.every((arg) => !/^tt\d+$/.test(arg) || permitidos.has(arg));
+function refTituloValida(arg, ctx, permitirAncoras) {
+  if (typeof arg !== "string") return false;
+  if (/^c\d+$/.test(arg)) {
+    const idx = Number(arg.slice(1));
+    return Number.isInteger(idx) && idx >= 0 && idx < ctx.nCand;
+  }
+  if (/^tt\d{1,17}$/.test(arg)) {
+    return (permitirAncoras ? ctx.ttTodos : ctx.ttCand).has(arg);
+  }
+  return false;
 }
 
-// Confere que o LLM nao inventou nenhum titulo `tt...` fora dos candidatos/ancoras/fatos recebidos.
-function pecaAterrada(p, ttCand, ttTodos) {
+function refAfinidadeValida(arg, tipo) {
+  if (typeof arg !== "string") return false;
+  if (tipo === "g") return /^g-?\d+$/.test(arg);
+  if (tipo === "k") return /^k-?\d+$/.test(arg);
+  if (tipo === "p") return /^p-?\d+$/.test(arg);
+  if (tipo === "kg") return /^[kg]-?\d+$/.test(arg);
+  return false;
+}
+
+function textoAterrado(t, ctx, permitirAncoras = true) {
+  if (!t || !Array.isArray(t.a)) return true;
+  const permitidos = permitirAncoras ? ctx.ttTodos : ctx.ttCand;
+  for (const arg of t.a) {
+    if (/^c\d+$/.test(arg)) {
+      const idx = Number(arg.slice(1));
+      if (!Number.isInteger(idx) || idx < 0 || idx >= ctx.nCand) return false;
+    } else if (/^tt\d+$/.test(arg)) {
+      if (!permitidos.has(arg)) return false;
+    }
+  }
+  if (t.m) {
+    const idxsTit = FT_ARGS_TITULO.get(t.m);
+    if (idxsTit) {
+      for (const idx of idxsTit) {
+        if (!refTituloValida(t.a[idx], ctx, permitirAncoras)) return false;
+      }
+    }
+    const specsAfin = FT_ARGS_AFINIDADE.get(t.m);
+    if (specsAfin) {
+      for (const [idx, tipo] of specsAfin) {
+        if (!refAfinidadeValida(t.a[idx], tipo)) return false;
+      }
+    }
+    const idxsInt = FT_ARGS_INT.get(t.m);
+    if (idxsInt) {
+      for (const idx of idxsInt) {
+        if (typeof t.a[idx] !== "string" || !/^\d{1,6}$/.test(t.a[idx])) return false;
+      }
+    }
+  }
+  return true;
+}
+
+// Confere que o LLM nao inventou nenhum titulo fora dos candidatos/ancoras/fatos recebidos.
+function pecaAterrada(p, ctx) {
+  const { ttCand, ttTodos } = ctx;
   if (p.t === "fileira") {
     if (!p.itens.every((ref) => refTtPermitida(ref, ttCand))) return false;
-    if (!textoAterrado(p.titulo, ttTodos) || !textoAterrado(p.sub, ttTodos)) return false;
+    if (!textoAterrado(p.titulo, ctx, true) || !textoAterrado(p.sub, ctx, true)) return false;
     if (p.motivo) {
       for (const [k, v] of Object.entries(p.motivo)) {
-        if (!refTtPermitida(k, ttCand) || !textoAterrado(v, ttTodos)) return false;
+        if (!refTtPermitida(k, ttCand) || !textoAterrado(v, ctx, true)) return false;
       }
     }
     return true;
   }
   if (p.t === "dica") {
     if (p.acao?.alvo && !refTtPermitida(p.acao.alvo, ttTodos)) return false;
-    return textoAterrado(p.l1, ttTodos) && textoAterrado(p.l2, ttTodos);
+    return textoAterrado(p.l1, ctx, true) && textoAterrado(p.l2, ctx, true);
   }
   if (p.t === "porque") {
     if (!refTtPermitida(p.alvo, ttTodos)) return false;
-    return p.linhas.every((l) => textoAterrado(l, ttTodos));
+    return p.linhas.every((l) => textoAterrado(l, ctx, true));
   }
   if (p.t === "comparar") {
     if (!p.itens.every((ref) => refTtPermitida(ref, ttCand))) return false;
     if (p.escolha && !refTtPermitida(p.escolha, ttCand)) return false;
-    return textoAterrado(p.veredito, ttTodos);
+    return textoAterrado(p.veredito, ctx, false);
   }
   if (p.t === "escolha") {
-    return textoAterrado(p.pergunta, ttTodos) && p.opcoes.every((o) => textoAterrado(o.r, ttTodos));
+    return textoAterrado(p.pergunta, ctx, true) && p.opcoes.every((o) => textoAterrado(o.r, ctx, true));
   }
   if (p.t === "info") {
     if (!refTtPermitida(p.alvo, ttTodos)) return false;
-    return p.itens.every((it) => textoAterrado(it.l, ttTodos));
+    return p.itens.every((it) => textoAterrado(it.l, ctx, true));
   }
   if (p.t === "achados") {
     if (!p.itens.every((ref) => refTtPermitida(ref, ttCand))) return false;
-    if (!textoAterrado(p.l1, ttTodos) || !textoAterrado(p.l2, ttTodos)) return false;
+    if (!textoAterrado(p.l1, ctx, true) || !textoAterrado(p.l2, ctx, true)) return false;
     if (p.motivo) {
       for (const [k, v] of Object.entries(p.motivo)) {
-        if (!refTtPermitida(k, ttCand) || !textoAterrado(v, ttTodos)) return false;
+        if (!refTtPermitida(k, ttCand) || !textoAterrado(v, ctx, true)) return false;
       }
     }
     return true;
@@ -1906,8 +2075,211 @@ function pecaAterrada(p, ttCand, ttTodos) {
   return false;
 }
 
+function textoSemX(t) {
+  if (!t || typeof t.m !== "string" || !t.m) return null;
+  const out = { m: t.m };
+  if (Array.isArray(t.a) && t.a.length) out.a = [...t.a];
+  return out;
+}
+
+function pecaParaCache(p) {
+  if (p.t === "fileira") {
+    const titulo = textoSemX(p.titulo);
+    if (!titulo) return null;
+    let sub;
+    if (p.sub) {
+      sub = textoSemX(p.sub);
+      if (!sub) return null;
+    }
+    let motivo;
+    if (p.motivo) {
+      motivo = {};
+      for (const [k, v] of Object.entries(p.motivo)) {
+        const vm = textoSemX(v);
+        if (!vm) return null;
+        motivo[k] = vm;
+      }
+    }
+    return {
+      t: "fileira",
+      id: p.id,
+      titulo,
+      ...(sub ? { sub } : {}),
+      forma: p.forma,
+      itens: [...p.itens],
+      ...(motivo && Object.keys(motivo).length ? { motivo } : {}),
+    };
+  }
+  if (p.t === "dica") {
+    const l1 = textoSemX(p.l1);
+    if (!l1) return null;
+    let l2;
+    if (p.l2) {
+      l2 = textoSemX(p.l2);
+      if (!l2) return null;
+    }
+    return {
+      t: "dica",
+      id: p.id,
+      l1,
+      ...(l2 ? { l2 } : {}),
+      acao: { ...p.acao },
+      ...(p.icone ? { icone: p.icone } : {}),
+    };
+  }
+  if (p.t === "porque") {
+    const linhas = [];
+    for (const l of p.linhas) {
+      const lm = textoSemX(l);
+      if (!lm) return null;
+      linhas.push(lm);
+    }
+    return {
+      t: "porque",
+      alvo: p.alvo,
+      confianca: p.confianca,
+      linhas,
+      ...(p.selos ? { selos: p.selos.map((s) => ({ ...s })) } : {}),
+    };
+  }
+  if (p.t === "comparar") {
+    let veredito;
+    if (p.veredito) {
+      veredito = textoSemX(p.veredito);
+      if (!veredito) return null;
+    }
+    return {
+      t: "comparar",
+      itens: [...p.itens],
+      eixos: [...p.eixos],
+      ...(veredito ? { veredito } : {}),
+      ...(p.escolha ? { escolha: p.escolha } : {}),
+    };
+  }
+  if (p.t === "escolha") {
+    const pergunta = textoSemX(p.pergunta);
+    if (!pergunta) return null;
+    const opcoes = [];
+    for (const o of p.opcoes) {
+      const rm = textoSemX(o.r);
+      if (!rm) return null;
+      opcoes.push({ id: o.id, r: rm });
+    }
+    return { t: "escolha", passo: p.passo, de: p.de, pergunta, opcoes };
+  }
+  if (p.t === "info") {
+    const itens = [];
+    for (const it of p.itens) {
+      const lm = textoSemX(it.l);
+      if (!lm) return null;
+      itens.push({ k: it.k, l: lm });
+    }
+    return { t: "info", alvo: p.alvo, itens };
+  }
+  if (p.t === "achados") {
+    const l1 = textoSemX(p.l1);
+    if (!l1) return null;
+    let l2;
+    if (p.l2) {
+      l2 = textoSemX(p.l2);
+      if (!l2) return null;
+    }
+    let motivo;
+    if (p.motivo) {
+      motivo = {};
+      for (const [k, v] of Object.entries(p.motivo)) {
+        const vm = textoSemX(v);
+        if (!vm) return null;
+        motivo[k] = vm;
+      }
+    }
+    return {
+      t: "achados",
+      l1,
+      ...(l2 ? { l2 } : {}),
+      itens: [...p.itens],
+      ...(motivo && Object.keys(motivo).length ? { motivo } : {}),
+    };
+  }
+  return null;
+}
+
+function coletarValoresTextoPeca(p, out) {
+  if (!p || typeof p !== "object") return;
+  if (typeof p.id === "string") out.push(p.id);
+  if (typeof p.icone === "string") out.push(p.icone);
+  const pushTexto = (t) => {
+    if (t && Array.isArray(t.a)) {
+      for (const a of t.a) out.push(a);
+    }
+  };
+  pushTexto(p.titulo);
+  pushTexto(p.sub);
+  pushTexto(p.l1);
+  pushTexto(p.l2);
+  pushTexto(p.veredito);
+  pushTexto(p.pergunta);
+  if (p.motivo) {
+    for (const v of Object.values(p.motivo)) pushTexto(v);
+  }
+  if (Array.isArray(p.linhas)) {
+    for (const l of p.linhas) pushTexto(l);
+  }
+  if (Array.isArray(p.opcoes)) {
+    for (const o of p.opcoes) {
+      if (typeof o?.id === "string") out.push(o.id);
+      pushTexto(o?.r);
+    }
+  }
+  if (Array.isArray(p.itens)) {
+    for (const it of p.itens) {
+      if (it && typeof it === "object") pushTexto(it.l);
+    }
+  }
+}
+
+function cenaContemGostoLiteral(pecas, textosGosto) {
+  if (!textosGosto.length) return false;
+  const valores = [];
+  for (const p of pecas || []) coletarValoresTextoPeca(p, valores);
+  for (const val of valores) {
+    const valLow = val.toLowerCase();
+    for (const s of textosGosto) {
+      if (s.length >= 3 ? valLow.includes(s.toLowerCase()) : val === s) return true;
+    }
+  }
+  return false;
+}
+
+// Limita o conteudo persistido no KV compartilhado a modelos `m` e referencias controladas,
+// sem `x` livre nem literais de gosto. Devolve string JSON valida ou null (omite do cache).
+function cenaParaCache(cena, pedido, ctx) {
+  const pecas = [];
+  for (const p of cena.pecas || []) {
+    const pm = pecaParaCache(p);
+    if (!pm) return null;
+    pecas.push(pm);
+  }
+  if (!pecas.length) return null;
+  const cenaLimpa = {
+    v: 1,
+    tela: cena.tela,
+    feita: cena.feita,
+    vale_s: cena.vale_s,
+    origem: "llm",
+    pecas,
+  };
+  const jsonStr = JSON.stringify(cenaLimpa);
+  if (ENC.encode(jsonStr).length > FAROL_CENA_MAX) return null;
+  if (cenaContemGostoLiteral(pecas, ctx.textosGosto)) return null;
+  const re = validarCena(jsonStr, pedido.candidatos.length);
+  if (!re.ok || re.nPecas === 0 || re.nRecusadas > 0 || re.xs.length > 0) return null;
+  if (!re.pecas.every((p) => pecaAterrada(p, ctx))) return null;
+  return jsonStr;
+}
+
 // Valida e sanea a cena devolvida pelo LLM para o pedido de /v1/farol/compor.
-// Devolve `{ ok: true, cena, jsonStr }` ou `{ ok: false, status: 422, erro }`.
+// Devolve `{ ok: true, cena, jsonStr, ctx }` ou `{ ok: false, status: 422, erro }`.
 export function validarCenaLlm(textoBruto, pedido, feita) {
   if (typeof textoBruto !== "string") return { ok: false, status: 422, erro: "texto_esperado" };
   const limpo = textoBruto.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, "$1").trim();
@@ -1915,13 +2287,8 @@ export function validarCenaLlm(textoBruto, pedido, feita) {
   const val = validarCena(limpo, nCand);
   if (!val.ok) return { ok: false, status: 422, erro: val.rcNome };
 
-  const ttCand = new Set();
-  coletarTt(pedido.candidatos, ttCand);
-  const ttTodos = new Set(ttCand);
-  coletarTt(pedido.gosto?.ancoras, ttTodos);
-  coletarTt(pedido.fatos, ttTodos);
-
-  const pecasBoas = val.pecas.filter((p) => pecaAterrada(p, ttCand, ttTodos));
+  const ctx = contextoAterramento(pedido);
+  const pecasBoas = val.pecas.filter((p) => pecaAterrada(p, ctx));
   if (pecasBoas.length === 0) return { ok: false, status: 422, erro: "sem_peca_valida" };
 
   const cena = {
@@ -1939,7 +2306,21 @@ export function validarCenaLlm(textoBruto, pedido, feita) {
   const re = validarCena(jsonStr, nCand);
   if (!re.ok || re.nPecas === 0 || re.nRecusadas > 0)
     return { ok: false, status: 422, erro: re.rcNome || "reserializacao" };
-  return { ok: true, status: 200, cena, jsonStr };
+  return { ok: true, status: 200, cena, jsonStr, ctx };
+}
+
+function validarHitCacheCompor(guardado, pedido) {
+  if (typeof guardado !== "string" || !guardado.length) return null;
+  const re = validarCena(guardado, pedido.candidatos.length);
+  if (!re.ok || re.nPecas === 0 || re.nRecusadas > 0 || re.xs.length > 0) return null;
+  const ctx = contextoAterramento(pedido);
+  if (cenaContemGostoLiteral(re.pecas, ctx.textosGosto)) return null;
+  if (!re.pecas.every((p) => pecaAterrada(p, ctx))) return null;
+  try {
+    return JSON.parse(guardado);
+  } catch {
+    return null;
+  }
 }
 
 export function validarRespostaEscolhaLlm(textoBruto, perguntas) {
@@ -1993,13 +2374,13 @@ async function hmacHex(sal, texto) {
 function quantizarAfinidades(lista) {
   if (!Array.isArray(lista) || !lista.length) return [];
   return lista.map((it) => {
-    const k = it.id !== undefined ? String(it.id) : String(it.nome || "").toLowerCase();
+    const k = it.id !== undefined ? `id:${String(it.id)}` : `n:${String(it.nome || "").toLowerCase()}`;
     const p = typeof it.peso === "number" ? Math.round(it.peso * 2) / 2 : 0;
     return [k, p];
   }).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1]));
 }
 
-// Chave = SHA-256(modo, idioma, faixa de hora, gosto quantizado, ids dos candidatos, fatos).
+// Chave = SHA-256(modo, idioma, faixa de hora, gosto quantizado, identidades canonicas dos candidatos, fatos).
 // Nunca inclui conta nem perfil: perfis com mesmo gosto e candidatos dividem a resposta.
 export async function chaveCacheCompor(pedido) {
   const canon = {
@@ -2011,11 +2392,28 @@ export async function chaveCacheCompor(pedido) {
       generos: quantizarAfinidades(pedido.gosto?.generos),
       temas: quantizarAfinidades(pedido.gosto?.temas),
       pessoas: quantizarAfinidades(pedido.gosto?.pessoas),
-      ancoras: (pedido.gosto?.ancoras || []).map((a) => String(a.id || a.ref || a.titulo || "")).sort(),
+      ancoras: (pedido.gosto?.ancoras || [])
+        .map((a) => [
+          a.id !== undefined ? String(a.id) : "",
+          a.ref !== undefined ? String(a.ref) : "",
+          a.id === undefined && a.ref === undefined && a.titulo !== undefined ? String(a.titulo) : "",
+        ])
+        .sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : x[2] < y[2] ? -1 : x[2] > y[2] ? 1 : 0)),
       nivel: pedido.gosto?.nivel ?? null,
       fim_semana: pedido.gosto?.fim_semana ?? 0,
     },
-    candidatos: pedido.candidatos.map((c, i) => String(c.id ?? c.ref ?? c.c ?? i)),
+    candidatos: (pedido.candidatos || []).map((c, i) => {
+      const ttsExtras = new Set();
+      coletarTt(c.motivos, ttsExtras);
+      coletarTt(c.eixos, ttsExtras);
+      return [
+        i,
+        c.c !== undefined ? String(c.c) : "",
+        c.id !== undefined ? String(c.id) : "",
+        c.ref !== undefined ? String(c.ref) : "",
+        [...ttsExtras].sort(),
+      ];
+    }),
     fatos: pedido.fatos,
   };
   return "farol:compor:v1:" + (await sha256Hex(JSON.stringify(canon)));
@@ -2039,11 +2437,12 @@ function obterConfigLlm(env) {
 }
 
 async function perfilInfantilNoBanco(env, id) {
+  if (!id || !env?.DB) return true;
   try {
     const r = await env.DB.prepare("SELECT 1 AS ok FROM sala_infantil WHERE pessoa = ?").bind(id).first();
     return Boolean(r?.ok);
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -2176,12 +2575,8 @@ export async function rotaFarolCompor(env, quem, corpo, h, limitar, fetchFn = gl
     if (env.CATS) {
       try {
         const guardado = await env.CATS.get(chaveCache);
-        if (typeof guardado === "string" && guardado.length) {
-          const re = validarCena(guardado, pedido.candidatos.length);
-          if (re.ok && re.nPecas > 0 && re.nRecusadas === 0) {
-            return json(JSON.parse(guardado));
-          }
-        }
+        const cenaCache = validarHitCacheCompor(guardado, pedido);
+        if (cenaCache) return json(cenaCache);
       } catch {
         // Falha pontual no KV segue sem quebrar o pedido.
       }
@@ -2210,7 +2605,10 @@ export async function rotaFarolCompor(env, quem, corpo, h, limitar, fetchFn = gl
     if (!cenaVal.ok) return json({ origem: "regras" });
 
     if (env.CATS) {
-      await env.CATS.put(chaveCache, cenaVal.jsonStr, { expirationTtl: FAROL_CACHE_TTL_S }).catch(() => {});
+      const jsonCache = cenaParaCache(cenaVal.cena, pedido, cenaVal.ctx);
+      if (jsonCache) {
+        await env.CATS.put(chaveCache, jsonCache, { expirationTtl: FAROL_CACHE_TTL_S }).catch(() => {});
+      }
     }
     return json(cenaVal.cena);
   } catch {
