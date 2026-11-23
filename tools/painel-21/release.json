@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T19:30:57+00:00",
+    "updatedAt": "2026-11-23T19:35:13+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T19:26:00+00:00"
+    "lastVpsReportedAt": "2026-11-23T19:33:00+00:00"
   },
   "items": [
     {
@@ -76,17 +76,21 @@
       "phase": 0,
       "dependencies": [],
       "allDependencies": false,
-      "status": "APROVADA",
+      "status": "LOTE",
       "wave": null,
       "sha": "b29addd8a",
       "batch": "21e",
-      "note": "vai para o lote 21e",
-      "source": "Relato VPS",
+      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: vai para o lote 21e",
+      "source": "Relato VPS · composição explícita do lote 21e",
       "verified": false,
       "branch": "agente/21z-farol-4",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "updatedAt": "2026-11-23T19:35:13+00:00",
+      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "integrationVerified": false,
+      "previousNotes": [
+        "vai para o lote 21e"
+      ],
+      "batchInclusionVerified": true
     },
     {
       "id": "farol-5",
@@ -168,18 +172,19 @@
         "farol-4"
       ],
       "allDependencies": false,
-      "status": "APROVADA",
+      "status": "LOTE",
       "wave": "A",
       "sha": "aa6d0dbd3",
       "batch": "21e",
-      "note": "Sol r3 APROVADO_COM_RESSALVAS (codex gpt-6.2-sol, VPS); aguarda lote; TV não verificado",
-      "source": "Relato VPS",
+      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: Sol r3 APROVADO_COM_RESSALVAS (codex gpt-6.2-sol, VPS); aguarda lote; TV não verificado",
+      "source": "Relato VPS · composição explícita do lote 21e",
       "verified": false,
       "branch": "agente/21z-farol-8",
-      "updatedAt": "2026-11-23T19:27:55+00:00",
-      "reportedAt": "2026-11-23T14:23:00+00:00",
+      "updatedAt": "2026-11-23T19:35:13+00:00",
+      "reportedAt": "2026-11-23T19:33:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "Sol r3 APROVADO_COM_RESSALVAS (codex gpt-6.2-sol, VPS); aguarda lote; TV não verificado",
         "FAROL8C entregue (Devin swe-2-high, VPS): LG não-OLED volta a \"x\", contrato com servidor 200; revisão FAROL8-r3 Sol (codex gpt-6.2-sol, VPS); TV não verificado",
         "Sol r2 REPROVADO (registro LG NANO recusado com 422 pelo servidor); FAROL8C Devin swe-2-high na VPS; TV não verificado",
         "FAROL8B entregue (Devin swe-2-high, VPS); revisão FAROL8-r2 Sol (codex gpt-6.2-sol, VPS); TV não verificado",
@@ -189,7 +194,8 @@
         "VPS claudeAgent claude-opus-5-5 high (2ª tentativa; a 1ª falhou com 'Claude API unknown' sem relatório); entrega Devin swe-2-high PRONTO_COM_RESSALVAS, TV pendente",
         "2ª tarefa Gemini Neon também encerrou sem commit nem relatório (disse 'em segundo plano', nenhum processo vivo); fechamento passou para VPS Devin swe-2-high; código ainda não verificado",
         "VPS antigravity gemini-4-neon high; 1ª tarefa parou sem commit nem relatório (código não commitado na worktree, não verificado); relançada para fechar testes, commit e relatório"
-      ]
+      ],
+      "batchInclusionVerified": true
     },
     {
       "id": "farol-9",
@@ -202,17 +208,21 @@
         "farol-3"
       ],
       "allDependencies": false,
-      "status": "APROVADA",
+      "status": "LOTE",
       "wave": null,
       "sha": "c0bca62f0",
       "batch": "21e",
-      "note": "vai para o lote 21e",
-      "source": "Relato VPS",
+      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: vai para o lote 21e",
+      "source": "Relato VPS · composição explícita do lote 21e",
       "verified": false,
       "branch": "agente/21z-farol-9",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "updatedAt": "2026-11-23T19:35:13+00:00",
+      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "integrationVerified": false,
+      "previousNotes": [
+        "vai para o lote 21e"
+      ],
+      "batchInclusionVerified": true
     },
     {
       "id": "farol-10",
@@ -262,17 +272,21 @@
         "farol-2"
       ],
       "allDependencies": false,
-      "status": "APROVADA",
+      "status": "LOTE",
       "wave": null,
       "sha": "71749228c",
       "batch": "21e",
-      "note": "vai para o lote 21e",
-      "source": "Relato VPS",
+      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: vai para o lote 21e",
+      "source": "Relato VPS · composição explícita do lote 21e",
       "verified": false,
       "branch": "agente/21z-farol-12",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "updatedAt": "2026-11-23T19:35:13+00:00",
+      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "integrationVerified": false,
+      "previousNotes": [
+        "vai para o lote 21e"
+      ],
+      "batchInclusionVerified": true
     },
     {
       "id": "farol-13",
@@ -284,21 +298,23 @@
         "farol-5"
       ],
       "allDependencies": false,
-      "status": "APROVADA",
+      "status": "LOTE",
       "wave": "A",
       "sha": "66fb2d121",
       "batch": "21e",
-      "note": "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → 6/6, merge rc 0); servidor sem deploy; próximo lote",
-      "source": "Relato VPS",
+      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → 6/6, merge rc 0); servidor sem deploy; próximo lote",
+      "source": "Relato VPS · composição explícita do lote 21e",
       "verified": false,
       "branch": "agente/farol-13",
-      "updatedAt": "2026-11-23T19:27:55+00:00",
-      "reportedAt": "2026-11-23T17:14:00+00:00",
+      "updatedAt": "2026-11-23T19:35:13+00:00",
+      "reportedAt": "2026-11-23T19:33:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → 6/6, merge rc 0); servidor sem deploy; próximo lote",
         "VPS Fable 5.2 via Devin (task …68ff22c3), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090",
         "PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-13.txt); entrega por push; não verificado"
-      ]
+      ],
+      "batchInclusionVerified": true
     },
     {
       "id": "farol-14",
@@ -500,21 +516,23 @@
         "farol-1"
       ],
       "allDependencies": false,
-      "status": "APROVADA",
+      "status": "LOTE",
       "wave": "A",
       "sha": "9fac396d4",
       "batch": "21e",
-      "note": "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → ponta 0, mutações 9/11, merge rc 0); sem consumidor até a issue 25; TV não verificado; próximo lote",
-      "source": "Relato VPS",
+      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → ponta 0, mutações 9/11, merge rc 0); sem consumidor até a issue 25; TV não verificado; próximo lote",
+      "source": "Relato VPS · composição explícita do lote 21e",
       "verified": false,
       "branch": "agente/farol-24",
-      "updatedAt": "2026-11-23T19:27:55+00:00",
-      "reportedAt": "2026-11-23T17:11:00+00:00",
+      "updatedAt": "2026-11-23T19:35:13+00:00",
+      "reportedAt": "2026-11-23T19:33:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → ponta 0, mutações 9/11, merge rc 0); sem consumidor até a issue 25; TV não verificado; próximo lote",
         "VPS Fable 5.2 via Devin (task …19cb534a), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090",
         "PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-24.txt); entrega por push; não verificado"
-      ]
+      ],
+      "batchInclusionVerified": true
     },
     {
       "id": "farol-25",
@@ -597,21 +615,23 @@
         "farol-5"
       ],
       "allDependencies": false,
-      "status": "APROVADA",
+      "status": "LOTE",
       "wave": "A",
       "sha": "32cf15761",
       "batch": "21e",
-      "note": "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (9/9, mutações 13/13, merge rc 0); ressalvas vão para a farol-30; sem deploy; próximo lote",
-      "source": "Relato VPS",
+      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (9/9, mutações 13/13, merge rc 0); ressalvas vão para a farol-30; sem deploy; próximo lote",
+      "source": "Relato VPS · composição explícita do lote 21e",
       "verified": false,
       "branch": "agente/farol-29",
-      "updatedAt": "2026-11-23T19:27:55+00:00",
-      "reportedAt": "2026-11-23T17:14:00+00:00",
+      "updatedAt": "2026-11-23T19:35:13+00:00",
+      "reportedAt": "2026-11-23T19:33:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (9/9, mutações 13/13, merge rc 0); ressalvas vão para a farol-30; sem deploy; próximo lote",
         "VPS Fable 5.2 via Devin (task …2f7dd460), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090",
         "PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-29.txt); entrega por push; não verificado"
-      ]
+      ],
+      "batchInclusionVerified": true
     },
     {
       "id": "farol-30",
@@ -881,14 +901,15 @@
         "farol-44"
       ],
       "allDependencies": false,
-      "status": "APROVADA",
+      "status": "LOTE",
       "wave": "A",
       "sha": "1f973642c",
       "batch": "21e",
-      "note": "VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (4 bloqueios da r1 fechados; merge rc 0 em 7 alvos, rc 1 trivial vs PR #840 em src/fileiras.c); lote 21e; TV não verificada Ordem padrão acordada: continue_watching → porque_assistiu → farol_gosto1; a ordem salva pelo usuário prevalece. Dedupe com home_assistiu_itens por id fica para depois do merge da PR #840, sem bloquear a aprovação atual.",
-      "source": "Relato VPS",
+      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (4 bloqueios da r1 fechados; merge rc 0 em 7 alvos, rc 1 trivial vs PR #840 em src/fileiras.c); lote 21e; TV não verificada Ordem padrão acordada: continue_watching → porque_assistiu → farol_gosto1; a ordem salva pelo usuário prevalece. Dedupe com home_assistiu_itens por id fica para depois do merge da PR #840, sem bloquear a aprovação atual.",
+      "source": "Relato VPS · composição explícita do lote 21e",
       "verified": false,
       "previousNotes": [
+        "VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (4 bloqueios da r1 fechados; merge rc 0 em 7 alvos, rc 1 trivial vs PR #840 em src/fileiras.c); lote 21e; TV não verificada Ordem padrão acordada: continue_watching → porque_assistiu → farol_gosto1; a ordem salva pelo usuário prevalece. Dedupe com home_assistiu_itens por id fica para depois do merge da PR #840, sem bloquear a aprovação atual.",
         "FAROL45-r2 no Gemini 4 Argon (…9340395b9fbd); oracle-vps",
         "Fable FAROL45-r2 lançada (…75eda7d); oracle-vps; TV não verificada",
         "VPS Devin swe-2-high entregou FAROL45B (5 de 6 pontos da r1 corrigidos, rc 134→0); opt-out ainda vaza fileiras após farol_gosto_zerar; 2º commit autorizado, FAROL45C no Devin swe-2-high (task …07fbb4); TV não verificado",
@@ -902,10 +923,11 @@
         "aguarda combinar com o Poke o ponto das fileiras na Home pré-calculada",
         "TV física pendente."
       ],
-      "updatedAt": "2026-11-23T19:27:55+00:00",
-      "reportedAt": "2026-11-23T19:19:00+00:00",
+      "updatedAt": "2026-11-23T19:35:13+00:00",
+      "reportedAt": "2026-11-23T19:33:00+00:00",
       "branch": "agente/21z-farol-45",
-      "integrationVerified": false
+      "integrationVerified": false,
+      "batchInclusionVerified": true
     },
     {
       "id": "farol-46",
@@ -3401,15 +3423,16 @@
       "id": "catrev",
       "title": "Guarda da revisão do catálogo nos climas e no Continuar",
       "group": "correcoes",
-      "status": "APROVADA",
+      "status": "LOTE",
       "dependencies": [],
       "wave": null,
       "batch": "21e",
       "owner": "VPS",
       "verified": false,
-      "source": "Relato VPS",
-      "note": "Fable CATREV-r2 APROVADO_COM_RESSALVAS (anime kitsu:T:E no Continuar, tt123::1 herdado, ordem de merge com farol-46 em src/mapa.c); oracle-vps; TV não verificada",
+      "source": "Relato VPS · composição explícita do lote 21e",
+      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: Fable CATREV-r2 APROVADO_COM_RESSALVAS (anime kitsu:T:E no Continuar, tt123::1 herdado, ordem de merge com farol-46 em src/mapa.c); oracle-vps; TV não verificada",
       "previousNotes": [
+        "Fable CATREV-r2 APROVADO_COM_RESSALVAS (anime kitsu:T:E no Continuar, tt123::1 herdado, ordem de merge com farol-46 em src/mapa.c); oracle-vps; TV não verificada",
         "VPS Devin swe-2-high entregou CATREVB (base 1 → ponta 0 nos 3 modos, 5 mutações reprovam); merge-tree rc 1 com farol-46@6caab1a65 em src/mapa.c (mapa_vizinhos_pedir); revisão CATREV-r2 Fable 5.2 via Devin lançada (task …a07850); TV não verificado",
         "VPS Fable 5.2 via Devin REPROVADO r1 (série do card de Continuar não casa por strcmp exato); correção CATREVB no Devin swe-2-high; TV não verificado",
         "Sol CATREV-r1b caiu (créditos WorkBuddy esgotados, HTTP 429); relançada na VPS com Fable 5.2 via Devin (task …fa80d39c), família diferente do Devin SWE-2; confere o caso 'homônimo na vizinhança' (não verificado)",
@@ -3425,24 +3448,26 @@
       ],
       "branch": "agente/21z-catrev",
       "sha": "773af36d7",
-      "updatedAt": "2026-11-23T19:27:55+00:00",
-      "reportedAt": "2026-11-23T18:57:00+00:00",
+      "updatedAt": "2026-11-23T19:35:13+00:00",
+      "reportedAt": "2026-11-23T19:33:00+00:00",
       "integrationVerified": false,
-      "displayId": "CATREV"
+      "displayId": "CATREV",
+      "batchInclusionVerified": true
     },
     {
       "id": "hist-semlogin",
       "title": "Isolar o histórico do perfil sem login",
       "group": "correcoes",
-      "status": "APROVADA",
+      "status": "LOTE",
       "dependencies": [],
       "wave": null,
       "batch": "21e",
       "owner": "VPS",
       "verified": false,
-      "source": "Relato VPS",
-      "note": "VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (recovery/biblioteca rc 0, mutação app.c e sync.c reprovam); lote 21e; TV não verificada Último commit contém só testes; a correção anterior não é tratada como test-only. Responsável: VPS; lote 21e.",
+      "source": "Relato VPS · composição explícita do lote 21e",
+      "note": "Incluído no lote 21e@0dea681ce, montado sobre lote/21d@e16157090; baterias base×ponta sem resultado informado; TV não verificada. Aprovação anterior: VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (recovery/biblioteca rc 0, mutação app.c e sync.c reprovam); lote 21e; TV não verificada Último commit contém só testes; a correção anterior não é tratada como test-only. Responsável: VPS; lote 21e.",
       "previousNotes": [
+        "VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (recovery/biblioteca rc 0, mutação app.c e sync.c reprovam); lote 21e; TV não verificada Último commit contém só testes; a correção anterior não é tratada como test-only. Responsável: VPS; lote 21e.",
         "HIST-SEMLOGIN-r2 no Gemini 4 Argon (…132b736c2ca4); oracle-vps",
         "VPS Devin swe-2-high entregou HIST-SEMLOGIN-B (só testes: âncora recovery, fixture biblioteca, caso do gate sem login; merge-tree rc 0); Fable HIST-SEMLOGIN-r2 lançada (…1c11b36d1e2); oracle-vps; TV não verificada",
         "Fable r1 REPROVADO (desc_sessao_recovery/biblioteca_up quebrados, gate app.c sem teste); HIST-SEMLOGIN-B no Devin swe-2-high (…5638a49); oracle-vps",
@@ -3453,11 +3478,12 @@
       ],
       "branch": "agente/21z-hist-semlogin",
       "sha": "d8bce6cbb",
-      "updatedAt": "2026-11-23T19:27:55+00:00",
-      "reportedAt": "2026-11-23T19:15:00+00:00",
+      "updatedAt": "2026-11-23T19:35:13+00:00",
+      "reportedAt": "2026-11-23T19:33:00+00:00",
       "integrationVerified": false,
       "displayId": "HIST-SEMLOGIN",
-      "testOnlyLatestCommit": true
+      "testOnlyLatestCommit": true,
+      "batchInclusionVerified": true
     }
   ],
   "gates": [
@@ -3541,7 +3567,7 @@
         "farol-13",
         "farol-29"
       ],
-      "note": "Deploy é do Henrique. Código informado como feito não significa worker publicado. Farol 13 e 29 aprovados para o próximo lote, ainda sem deploy segundo a VPS."
+      "note": "Deploy é do Henrique. Código informado como feito não significa worker publicado. Farol 13 e 29 incluídos no lote 21e, ainda sem deploy segundo a VPS."
     },
     {
       "id": "tv-farol6",
@@ -3561,7 +3587,7 @@
       "items": [
         "farol-8"
       ],
-      "note": "Farol 8 aprovado com ressalvas e aguardando lote; TV não verificada pela VPS."
+      "note": "Farol 8 aprovado com ressalvas e incluído no lote 21e; TV não verificada pela VPS."
     },
     {
       "id": "tv-catrev",
@@ -3625,13 +3651,34 @@
     },
     {
       "id": "21e",
-      "title": "Próximo lote · 21e",
-      "status": "A_FAZER",
-      "sha": null,
-      "note": "Reservado para aprovados da VPS, incluindo hist-semlogin e Farol 45 (aprovação com ressalvas), CATREV e itens já aprovados. Montagem e PR ainda não confirmadas; não tratar como lote integrado.",
+      "title": "Lote 21e · baterias pendentes",
+      "status": "LOTE",
+      "sha": "0dea681ce",
+      "note": "VPS montado sobre lote/21d@e16157090: farol-4, 8, 9, 12, 13, 24, 29, 45, catrev, hist-semlogin; conflitos triviais resolvidos (video_tpk.c, sanitiza.sh, rede.c, servidor index.js); baterias base×ponta a rodar; TV não verificada",
       "pr": null,
       "previousNotes": [
+        "Reservado para aprovados da VPS, incluindo hist-semlogin e Farol 45 (aprovação com ressalvas), CATREV e itens já aprovados. Montagem e PR ainda não confirmadas; não tratar como lote integrado.",
         "Itens aprovados reservados; montagem ainda não confirmada."
+      ],
+      "branch": "lote/21e",
+      "updatedAt": "2026-11-23T19:35:13+00:00",
+      "reportedAt": "2026-11-23T19:33:00+00:00",
+      "source": "Relato VPS",
+      "verified": false,
+      "integrationVerified": false,
+      "baseBranch": "lote/21d",
+      "baseSha": "e16157090",
+      "items": [
+        "farol-4",
+        "farol-8",
+        "farol-9",
+        "farol-12",
+        "farol-13",
+        "farol-24",
+        "farol-29",
+        "farol-45",
+        "catrev",
+        "hist-semlogin"
       ]
     }
   ],
@@ -3650,6 +3697,38 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T19:33:00+00:00",
+      "appliedAt": "2026-11-23T19:35:13+00:00",
+      "item": "21e",
+      "from": "A_FAZER",
+      "to": "LOTE",
+      "report": "2026-11-23 19:33 [LOTE] lote-21e · lote/21e@0dea681ce · VPS montado sobre lote/21d@e16157090: farol-4, 8, 9, 12, 13, 24, 29, 45, catrev, hist-semlogin; conflitos triviais resolvidos (video_tpk.c, sanitiza.sh, rede.c, servidor index.js); baterias base×ponta a rodar; TV não verificada",
+      "affectedItems": [
+        "farol-4",
+        "farol-8",
+        "farol-9",
+        "farol-12",
+        "farol-13",
+        "farol-24",
+        "farol-29",
+        "farol-45",
+        "catrev",
+        "hist-semlogin"
+      ],
+      "previousItemStates": {
+        "farol-4": "APROVADA",
+        "farol-8": "APROVADA",
+        "farol-9": "APROVADA",
+        "farol-12": "APROVADA",
+        "farol-13": "APROVADA",
+        "farol-24": "APROVADA",
+        "farol-29": "APROVADA",
+        "farol-45": "APROVADA",
+        "catrev": "APROVADA",
+        "hist-semlogin": "APROVADA"
+      }
+    },
     {
       "at": "2026-11-23T19:27:55+00:00",
       "appliedAt": "2026-11-23T19:27:55+00:00",
