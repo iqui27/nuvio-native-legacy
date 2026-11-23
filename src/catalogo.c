@@ -1400,45 +1400,14 @@ const CatItem *cat_item(int i) {
   }
 }
 
-// ":<digitos>:<digitos>" e so isso — o sufixo de temporada/episodio.
-static int ehSufixoEp(const char *r, int anime) {
-  int n = 0;
-  if (*r != ':') return 0;
-  r++;
-  while (*r >= '0' && *r <= '9') { r++; n++; }
-  // Anime carrega o episodio ABSOLUTO num so sufixo ("kitsu:7442:17",
-  // idbase.h). Sem este ramo o id de progresso nao achava o proprio titulo e
-  // o Next abria o item do indice -1 embrulhado — um show sem relacao (#697).
-  if (!*r) return anime && n;
-  if (*r != ':') return 0;
-  r++; n = 0;
-  while (*r >= '0' && *r <= '9') { r++; n++; }
-  return n && !*r;
-}
-
-// ERA "compara so ate o primeiro ':'", porque serie com progresso e guardada
-// como "tt123:2:1" e quem procura tem so "tt123". O corte cego cobrava caro em
-// id que NAO e do IMDb: canal e "cs:channel:<hash>", e o primeiro ':' cai logo
-// depois do prefixo de duas letras — todo canal virava "cs", qualquer um
-// "achava" o primeiro da lista, e clicar num abria outro (#37, relato apos a
-// 1.0.42: "jumps to a different channel"). O mesmo valia para "kitsu:12345".
-//
-// A regra agora nao adivinha pelo prefixo: ou os dois ids sao iguais, ou o que
-// sobra de um lado e EXATAMENTE ":<temporada>:<episodio>". E o unico sufixo que
-// este codigo mesmo cria.
+// A regra nao adivinha pelo prefixo: ou os dois ids sao iguais, ou o que
+// sobra de um lado e EXATAMENTE ":<temporada>:<episodio>". E o unico sufixo
+// que este codigo mesmo cria. A historia inteira (o corte cego no primeiro
+// ':' que fazia todo canal "cs:channel:<hash>" virar o mesmo titulo, #37, e
+// o episodio absoluto de anime, #697) esta em idbase_mesmo, idbase.h — uma
+// regra so, usada tambem por mapa.c, explorar.c e farolsinal.c (CATREVB).
 static int mesmoTitulo(const char *a, const char *b) {
-  size_t na, nb;
-  if (!strcmp(a, b)) return 1;
-  // O que pode sobrar de um lado e SO ":<temporada>:<episodio>", que e como o
-  // progresso de serie e chaveado. Quem procura tem o id do titulo; quem esta
-  // guardado pode ter o episodio grudado. Qualquer outra diferenca e outro
-  // titulo.
-  na = strlen(a); nb = strlen(b);
-  { const char *lon = na > nb ? a : b, *cur = na > nb ? b : a;
-    size_t nc = na > nb ? nb : na;
-    const char *r = lon + nc;
-    if (strncmp(lon, cur, nc)) return 0;
-    return ehSufixoEp(r, !idbase_e_imdb(lon) || !idbase_e_imdb(cur)); }
+  return idbase_mesmo(a, b);
 }
 
 void cat_dir_gravacao(const char *dir) {
@@ -2304,6 +2273,30 @@ int cat_copiar_fileira(const char *chave, CatItem *saida, int max,
   }
   pthread_mutex_unlock(&pubTrava);
   return 0;
+}
+
+// Os imdb de UMA fileira, capturados sob pubTrava. cat_fileira()/cat_item()
+// sao leituras soltas (o desenho as usa lock-free), mas quem so quer os ids
+// NAO pode montar a leitura por partes: cat_trocar_continuar reescreve a
+// fileira no meio e a coleta sai de uma janela que nunca existiu. Quem usa
+// e o Farol (coleta do Continuar em farol.c — revisao FAROL45 r1).
+int cat_fileira_imdb(const char *chave, char (*dst)[64], int max, int tam) {
+  int r, qtd = 0, i;
+  if (!chave || !*chave || !dst || max < 1 || tam < 2) return 0;
+  catTravar();
+  for (r = 0; r < nFils; r++) {
+    CatFileira *f = &fils[r];
+    if (strcmp(f->chave, chave) || f->n < 1) continue;
+    if (f->ini < 0 || f->ini + f->n > n || !itens) break;
+    for (i = 0; i < f->n && qtd < max; i++)
+      if (itens[f->ini + i].imdb[0]) {
+        snprintf(dst[qtd], (size_t)tam, "%s", itens[f->ini + i].imdb);
+        qtd++;
+      }
+    break;
+  }
+  pthread_mutex_unlock(&pubTrava);
+  return qtd;
 }
 
 // ACRESCENTA UM titulo ao fim do catalogo e devolve o indice dele.

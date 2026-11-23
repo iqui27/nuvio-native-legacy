@@ -297,5 +297,25 @@ int main(void) {
   fil_espelhar_ordem(chaves, NULL, 3);
   assert(fil_unir(chaves, 3, ordem, 3) == 3 && ordem[0] == 1 && ordem[1] == 0 && ordem[2] == 2);
   puts("ok  ordem padrão e posição definida em Ajustes para porque_assistiu");
+  {
+    int recomendados[] = { 1, 2, 3, 4, 5 };
+    int farol[] = { 3, 20, 21 };
+    nCatalogo = 22;
+    for (int indice = 1; indice <= 5; indice++) {
+      memset(&catalogo[indice], 0, sizeof catalogo[indice]);
+      entrada(indice, 700 + indice, "Drama", 7);
+    }
+    memset(&catalogo[20], 0, 2 * sizeof catalogo[20]);
+    entrada(20, 701, "Drama", 7);
+    entrada(21, 799, "Drama", 7);
+    snprintf(catalogo[21].imdb, sizeof catalogo[21].imdb, "tmdb:702");
+    catalogo[2].tmdb = catalogo[4].tmdb = 702;
+    snprintf(catalogo[4].tipo, sizeof catalogo[4].tipo, "series");
+    assert(home_assistiu_sem_farol(recomendados, 5, farol, 0) == 5);
+    assert(home_assistiu_sem_farol(recomendados, 5, farol, 3) == 2);
+    assert(recomendados[0] == 4 && recomendados[1] == 5);
+    assert(home_assistiu_sem_farol(farol, 3, farol, 3) == 0);
+  }
+  puts("ok  dedupe porque_assistiu x farol_gosto por indice, IMDb e TMDB do mesmo tipo");
   return 0;
 }

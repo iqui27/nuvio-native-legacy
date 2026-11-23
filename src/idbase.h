@@ -72,4 +72,40 @@ static inline int idbase_tem_episodio(const char *id) {
   return id && id[idbase_len(id)] == ':';
 }
 
+// ":<digitos>" (episodio absoluto de anime) ou ":<digitos>:<digitos>"
+// (":<temporada>:<episodio>") e so isso — o unico sufixo que este codigo cria.
+static inline int idbase_sufixo_ep(const char *r, int anime) {
+  int n = 0;
+  if (!r || *r != ':') return 0;
+  r++;
+  while (*r >= '0' && *r <= '9') { r++; n++; }
+  // Anime carrega o episodio ABSOLUTO num so sufixo ("kitsu:7442:17"). Sem
+  // este ramo o id de progresso nao achava o proprio titulo e o Next abria
+  // o item do indice -1 embrulhado — um show sem relacao (#697).
+  if (!*r) return anime && n;
+  if (*r != ':') return 0;
+  r++; n = 0;
+  while (*r >= '0' && *r <= '9') { r++; n++; }
+  return n && !*r;
+}
+
+// O MESMO TITULO com dois ids? A serie em "Continuar assistindo" fica
+// guardada no catalogo com o episodio grudado ("tt123:2:1") e quem procura
+// tem so o id do titulo ("tt123"). Regra: ids iguais, ou o que sobra do lado
+// mais comprido e EXATAMENTE o sufixo de episodio acima. Qualquer outra
+// diferenca e outro titulo — comparar so ate o primeiro ':' ja fez todo
+// canal "cs:channel:<hash>" virar o mesmo titulo (#37). E a regra de
+// cat_indice_por_imdb (catalogo.c), que sempre casou os dois.
+static inline int idbase_mesmo(const char *a, const char *b) {
+  size_t na, nb;
+  if (!a || !b) return 0;
+  if (!strcmp(a, b)) return 1;
+  na = strlen(a); nb = strlen(b);
+  { const char *lon = na > nb ? a : b, *cur = na > nb ? b : a;
+    size_t nc = na > nb ? nb : na;
+    const char *r = lon + nc;
+    if (strncmp(lon, cur, nc)) return 0;
+    return idbase_sufixo_ep(r, !idbase_e_imdb(lon) || !idbase_e_imdb(cur)); }
+}
+
 #endif

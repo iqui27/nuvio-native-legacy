@@ -28,7 +28,8 @@ import { rotaDiario, DIARIO_CORPO_MAX, DIARIO_CORPO_MAX_LB } from "./diario.js";
 import { rotaTrava, travaRev } from "./trava.js";
 import { resolverCanonica, canonizarEntrada, identidadesDe, rotaIdentidades, idSimkl,
          perfilExiste, RECURSO } from "./identidade.js";
-import { rotaFarolRegistro, limparFarol, FAROL_CORPO_MAX } from "./farol.js";
+import { rotaFarolRegistro, rotaFarolConhecido, rotaFarolPagina, limparFarol, FAROL_CORPO_MAX } from "./farol.js";
+import { rotaFarolBusca, FAROL_BUSCA_CORPO_MAX } from "./farol-busca.js";
 
 const DIA = 86400;
 const RETENCAO = 90 * DIA;
@@ -1042,6 +1043,8 @@ export default {
     if (rota.startsWith("/musica/v1/") && req.method === "GET")
       return rotaMusica(url, env, fetch, limitar, req.headers.get("cf-connecting-ip") || "0.0.0.0");
     if (rota === "/m/" && req.method === "GET") return rotaPaginaMusica();
+    if (rota.startsWith("/v1/farol/r/"))
+      return rotaFarolPagina(req, env, rota.slice("/v1/farol/r/".length), agora);
 
     // TRAILER NA SAMSUNG (#136): a pergunta ao IMDb (que exige Referer) e a
     // pagina que embute o YouTube com origem valida. Regras em trailer.js.
@@ -1106,11 +1109,12 @@ export default {
     // e o cliente em C nao vai montar um "{}" so para agradar o parser.
     let corpo = {};
     if (req.method === "POST") {
-      if (rota === "/v1/farol/registro") {
-        // Farol: o teto de 64 KB vale para os bytes CRUS, medido ANTES de
-        // materializar o corpo — Content-Length honesto recusa na hora e a
-        // leitura limitada cobre chunked e header mentiroso (secao 2.7).
-        const cru = await corpoLimitado(req, FAROL_CORPO_MAX);
+      if (rota === "/v1/farol/registro" || rota === "/v1/farol/busca") {
+        // Farol: o teto de bytes CRUS vale ANTES de materializar o corpo —
+        // Content-Length honesto recusa na hora e a leitura limitada cobre
+        // chunked e header mentiroso (secao 2.7).
+        const max = rota === "/v1/farol/busca" ? FAROL_BUSCA_CORPO_MAX : FAROL_CORPO_MAX;
+        const cru = await corpoLimitado(req, max);
         if (cru == null) return erro("corpo grande", 413);
         if (cru) {
           try { corpo = JSON.parse(cru); } catch { return erro("json invalido", 400); }
@@ -1149,6 +1153,12 @@ export default {
     // de conta em `pessoa`. A cota tambem e por conta, sem sufixo de perfil.
     if (rota === "/v1/farol/registro")
       return req.method === "POST" ? rotaFarolRegistro(env, quemBruto, corpo, h, limitar, codigoRegistro)
+                                   : erro("metodo nao suportado", 405);
+    if (rota === "/v1/farol/conhecido")
+      return req.method === "GET" ? rotaFarolConhecido(env, url, h)
+                                  : erro("metodo nao suportado", 405);
+    if (rota === "/v1/farol/busca")
+      return req.method === "POST" ? rotaFarolBusca(env, quemBruto, corpo, h, limitar)
                                    : erro("metodo nao suportado", 405);
 
     const quem = { ...(await registrar(env, quemBruto)), bruto: quemBruto.bruto || quemBruto.id };

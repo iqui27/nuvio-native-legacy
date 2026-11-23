@@ -1,4 +1,5 @@
 #include "fileiras.h"
+#include "catalogo.h"  // CAT_PREFIXO_FAROL (origem farol_, Farol 45)
 #include "homeassistiu.h"
 #include "ajustes.h"   // PALCO_* (#659)
 #include "dados.h"
@@ -195,7 +196,9 @@ int fil_origem_de(const char *chave) {
   if (!strcmp(chave, "continue_watching") ||
       !strcmp(chave, HOME_ASSISTIU_CHAVE) ||
       !strcmp(chave, "social_activity") ||
-      !strcmp(chave, "last_session")) return FIL_ORIGEM_APP;
+      !strcmp(chave, "last_session") ||
+      !strncmp(chave, CAT_PREFIXO_FAROL, sizeof CAT_PREFIXO_FAROL - 1))
+    return FIL_ORIGEM_APP;
   if (!strncmp(chave, "jellyfin_", 9) || !strncmp(chave, "emby_", 5) ||
       !strncmp(chave, "plex_", 5) || !strncmp(chave, "srv:", 4)) return FIL_ORIGEM_SERVIDOR;
   if (!strncmp(chave, "collection_", 11) ||

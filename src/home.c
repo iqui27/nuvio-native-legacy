@@ -29,6 +29,8 @@
 #include "homevazio.h"
 #include "cachearte.h"
 #include "fileiras.h"
+#include "farol.h"       // fileiras do Farol: ponto de luz, motivo (45)
+#include "farolsinal.h"  // farolsinal_origem: o Play mede a recomendacao
 #include "curadoria.h"
 #include "continuar.h"
 #include "proximo.h"
@@ -75,6 +77,7 @@ static void heroTempoInicio(int indice) {
 #include "descoberta.h"
 #include "dados.h"
 #include "tendencia.h"
+#include <stdatomic.h>
 #include <strings.h>
 // Os veus da base de cada forma de card (gfx_veu_base): a fracao da altura que
 // o degrade cobre e o alfa na base. Nomeados porque o laco da fileira os poe
@@ -415,8 +418,9 @@ static Uint32      filEntraEm[MAX_FIL];
 static int         filNAntes[MAX_FIL];
 // Ultimo quadro em que as fileiras foram desenhadas. Uma ausencia longa (a
 // home escondida atras do player, de Ajustes, da selecao de perfil) faz as
-// fileiras visiveis entrarem de novo, em cascata, na volta.
-static Uint32      fileirasVistasEm;
+// fileiras visiveis entrarem de novo, em cascata, na volta. Atomico: alem
+// do desenho, home_fileiras_na_tela() le do fio da descoberta (Farol).
+static _Atomic Uint32 fileirasVistasEm;
 // Primeira vez que um card de fileira foi PINTADO (ver o marcador em
 // home_desenhar): -1 enquanto nao aconteceu. Nao e o mesmo que
 // fileirasVistasEm — aquele e o ultimo quadro, este e o PRIMEIRO e so uma
@@ -2792,6 +2796,14 @@ static void home_evento_(const SDL_Event *e) {
           pedidoTocar = 1;
         else pedidoAbrir = 1;
       } else {
+        // Abrir pela fileira do Farol: a origem do Play mede se a
+        // recomendacao serviu (farolsinal, secao 2.3). O item e o cartaz
+        // em foco — o mesmo que home_pediu_abrir vai entregar.
+        if (farol_fileira(fileiras[foco.fileira].chave)) {
+          int idx = fileiraItemIndice(&fileiras[foco.fileira], foco.coluna);
+          const CatItem *ci = idx >= 0 ? cat_item(idx) : NULL;
+          if (ci) farolsinal_origem(ci, FS_ORIGEM_FAROL);
+        }
         pedidoAbrir = 1;
       }
       return;
@@ -3406,6 +3418,17 @@ static void sincronizarFileiras(void) {
     if(v.n) { v.tipo=FILEIRA_NORMAL;v.usaItens=1; }
     else { v.n=1;v.folders[0]=fi; }
     fileiras[destino++]=v;
+  }
+  if (assistiuN > 0) {
+    int fora[2 * MAX_CARDS], nFora = 0;
+    for (int i = 0; i < destino; i++) {
+      if (!farol_fileira(fileiras[i].chave)) continue;
+      for (int c = 0; c < fileiras[i].n && nFora < (int)(sizeof fora / sizeof *fora); c++) {
+        int idx = fileiraItemIndice(&fileiras[i], c);
+        if (idx >= 0) fora[nFora++] = idx;
+      }
+    }
+    assistiuN = home_assistiu_sem_farol(assistiuItens, assistiuN, fora, nFora);
   }
   if (assistiuN > 0 && destino < MAX_FIL) {
     Fileira v = {0};
@@ -8391,6 +8414,19 @@ void home_fileiras_vistas(Uint32 agora) {
   if (fileirasVistasEm) fileirasVistasEm = agora ? agora : 1u;
 }
 
+// As fileiras da Home estao a vista AGORA? Marcadas no quadro recente por
+// home_desenhar_ ou pela copia parada do painel de Salvos (home_fileiras_
+// vistas) — o menu lateral e sobreposicoes por cima da Home contam como
+// "a vista", porque e ela quem continua pintada. O Farol le isto do fio da
+// descoberta para nao trocar a cena debaixo dos olhos (revisao FAROL45 r1).
+// A janela e a mesma do reentra (1,5 s): cobre um quadro de pausa sem abrir
+// margem para "saiu da home" virar visivel.
+int home_fileiras_na_tela(void) {
+  Uint32 v = fileirasVistasEm;
+  if (!v) return 0;
+  return (Uint32)(SDL_GetTicks() - v) <= 1500u;
+}
+
 // TITULO DA FILEIRA (Ajustes > Titulo das fileiras): 0 Classico (o de sempre,
 // texto puro), 1 Ilha (pilula de vidro com icone e contagem), 2 Editorial
 // (kicker em caixa alta na cor de destaque + titulo espacado), 3 Acento (ponto
@@ -8433,7 +8469,9 @@ static const char *tfKicker(const Fileira *f) {
 static float desenhaTituloFil(int r, float y, const char *rot, int cr, int cg, int cb,
                               float k, float maxW, int desenhar, TxtLinha *tl) {
   const Fileira *f = &fileiras[r];
-  const float x0 = homeConteudoX();
+  // PONTO DE LUZ DO FAROL (issue 45): o titulo recua 18 px para o ponto de
+  // acento que o chamador desenha a esquerda (marca de "veio do seu gosto").
+  const float x0 = homeConteudoX() + (farol_fileira(f->chave) ? 18.0f : 0.0f);
   const int est = desenhar ? ajustes_titulo_fil() : 0;
   float ar, ag, ab;
   tfAcento(&ar, &ag, &ab);
@@ -8738,6 +8776,53 @@ static void home_desenhar_(Uint32 agora) {
         if (tipo == FILEIRA_HEROI_DIVIDIDO) gfx_opacidade_grupo = og * divididoRotuloAlfa(k);
         fimTit = desenhaTituloFil(r, y, rotFil, cr, cg, cb, k, maxW, !mudo, &tl);
         gfx_opacidade_grupo = og; }
+      // PONTO DE LUZ + MOTIVO DO FAROL (issue 45, PLANO-GOSTO 4.2). O ponto de
+      // acento marca a fileira; com o foco num cartaz, a linha "motivo" daquele
+      // item aparece sob o titulo (fade de 150 ms; animacoes reduzidas: troca
+      // seca). Sem motivo verdadeiro, sem linha — nunca um texto generico.
+      if (farol_fileira(fileiras[r].chave)) {
+        static char motStr[MAX_FIL][200], motImdb[MAX_FIL][64];
+        static Uint32 motDesde[MAX_FIL];
+        static unsigned motGer[MAX_FIL];
+        static int motCol[MAX_FIL];
+        float ar, ag, ab;
+        tfAcento(&ar, &ag, &ab);
+        gfx_cor((GfxRect){ homeConteudoX() + 3.0f, y + tl.h * 0.5f - 5.0f,
+                           10.0f, 10.0f }, 5.0f, ar, ag, ab,
+                0.85f + 0.15f * animFocoFil[r]);
+        if (foco.fileira == r && !focoHero &&
+            foco.coluna >= 0 && foco.coluna < fileiras[r].n) {
+          const CatItem *fi =
+            cat_item(fileiraItemIndice(&fileiras[r], foco.coluna));
+          // O motivo e da cena adotada e muda so com ela: o cache por
+          // (geracao da cena, coluna, imdb publicado) dispensa a trava da
+          // cena a cada quadro, e o imdb do cartaz impede a linha de um item
+          // que a fileira na tela ja nao tem (revisao FAROL45 r1).
+          if (!fi || !fi->imdb[0]) { motStr[r][0] = motImdb[r][0] = 0; }
+          else if (farol_cena_geracao() != motGer[r] ||
+                   foco.coluna != motCol[r] ||
+                   strcmp(motImdb[r], fi->imdb)) {
+            const char *mot = farol_motivo(fileiras[r].chave, foco.coluna,
+                                           fi->imdb);
+            motGer[r] = farol_cena_geracao();
+            motCol[r] = foco.coluna;
+            snprintf(motImdb[r], sizeof motImdb[r], "%s", fi->imdb);
+            if (!mot) mot = "";
+            if (strcmp(mot, motStr[r])) {
+              snprintf(motStr[r], sizeof motStr[r], "%s", mot);
+              motDesde[r] = agora;
+            }
+          }
+        } else { motStr[r][0] = motImdb[r][0] = 0; }
+        if (motStr[r][0]) {
+          const float ma = ajustes_animacoes_reduzidas() ? 1.0f
+            : fminf(1.0f, (float)(agora - motDesde[r]) / 150.0f);
+          TxtLinha lm = txt_linha_corta(TXT_HERO_META, motStr[r],
+                                      168, 173, 181, 255,
+                                      homeLarguraUtil() - 40.0f);
+          txt_desenhar_alpha(lm, homeConteudoX() + 18.0f, y + tl.h + 6.0f, ma);
+        }
+      }
       if(layout_desktop_ativo() && tipo==FILEIRA_CONTINUE) {
         gfx_icone((GfxRect){fimTit+6,y+(tl.h-24)*.5f,24,24},"aj_chevron-right",.7f,.72f,.75f,1);
         ponteiro_alvo(homeConteudoX(),y,fimTit-homeConteudoX()+36,tl.h,NULL,desktopContinueRow,r,0);

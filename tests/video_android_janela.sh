@@ -10,5 +10,6 @@ flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc "${flags[@]}" -ffunction-sections -fdata-sections tests/video_android_janela.c \
   src/capmkv.c src/mkv.c tests/capmkv_stub.c \
+  src/farolerro.c src/farolanel.c src/fontesonda.c \
   -Wl,-dead_strip -lpthread -o "$dir/test"
 "$dir/test"

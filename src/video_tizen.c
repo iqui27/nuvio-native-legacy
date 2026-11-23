@@ -87,6 +87,7 @@
 #include "mediaurl.h"
 #include "avroi.h"
 #include "video_reconexao.h"
+#include "farolprodutor.h"
 #include "linguas.h"
 #include "audioescolha.h"
 #include "idioma.h"
@@ -241,6 +242,27 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
           S.legTxt = text ? "" + text : "";
           S.legAte = S.legTxt && d > 0 ? S.posMs + d : 0;
           S.legN = (S.legN | 0) + 1;
+          try {
+            if (!S.leg786Log && S.legTxt) {
+              var t = S.legTxt, i, cp, ar = 0, asc = 1, n = 0;
+              // SEM escape de byte aqui: o corpo do EM_JS atravessa o C como
+              // literal de string e um escape hexa do JS chegaria ao emcc como
+              // byte de verdade — o acorn quebrava com "Unterminated regular
+              // expression". Classe por codigo, sem byte literal.
+              for (i = 0; i < t.length; i++) {
+                cp = t.charCodeAt(i);
+                if (cp > 0x7F) asc = 0;
+                if (cp === 0xFEFF) continue;
+                n++;
+                if (cp >= 0x0600 && cp <= 0x06FF) ar = 1;
+              }
+              S.leg786Log = 1;
+              var cs = (n && !ar && asc) ? "ascii" : "utf-8";
+              if (ar) cs = "utf-8-arabic";
+              console.log("[legenda] #786 embutida: charset=" + cs + " arabic=" + (ar ? "yes" : "no") +
+                          " len=" + n);
+            }
+          } catch (e) {}
         },
         ondrmevent:          function () {}
       });
@@ -736,7 +758,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   if (op === "faixa") {
     var p8 = pl();
     if (!p8 || !S.aberto) return 0;
-    if (s === "TEXT") { S.legTxt = ""; S.legAte = 0; }
+    if (s === "TEXT") { S.legTxt = ""; S.legAte = 0; S.leg786Log = 0; }
     try { p8.setSelectTrack(s, a | 0); } catch (e) { return 0; }
     return 1;
   }
@@ -806,8 +828,8 @@ typedef struct {
   double res;
 } Pedido;
 
-static int executarNoPrincipal(int p) {
-  Pedido *q = (Pedido *)(uintptr_t)p;
+static int executarNoPrincipal(uintptr_t p) {
+  Pedido *q = (Pedido *)p;
   q->res = nv_av(q->cmd, q->txt, q->a, q->b, q->c, q->d, q->dst, q->dstTam);
   return 0;
 }
@@ -819,10 +841,10 @@ static em_proxying_queue *filaPrincipal;
 static pthread_once_t filaUmaVez = PTHREAD_ONCE_INIT;
 static void criarFila(void) { filaPrincipal = em_proxying_queue_create(); }
 
-// emscripten_proxy_sync quer void(void*); executarNoPrincipal e int(int) porque
-// nasceu para a assinatura EM_FUNC_SIG_II da API antiga. O resultado nao se
-// perde: sai em p.res, dentro do proprio Pedido.
-static void executarNoPrincipalV(void *arg) { (void)executarNoPrincipal((int)(uintptr_t)arg); }
+// emscripten_proxy_sync quer void(void*); executarNoPrincipal ficou com a
+// largura do ponteiro (uintptr_t, igual a int no wasm32) para servir dos dois
+// lados. O resultado nao se perde: sai em p.res, dentro do proprio Pedido.
+static void executarNoPrincipalV(void *arg) { (void)executarNoPrincipal((uintptr_t)arg); }
 #endif
 
 
@@ -837,13 +859,13 @@ static double avChamar(const char *cmd, const char *txt,
   p.a = a; p.b = b; p.c = c; p.d = d;
   p.dst = dst; p.dstTam = dstTam; p.res = 0;
   if (emscripten_is_main_browser_thread()) {
-    executarNoPrincipal((int)(uintptr_t)&p);
+    executarNoPrincipal((uintptr_t)&p);
   } else {
 #ifdef NV_UM_FIO
     // Single-thread asm.js/VIDAA-st: there is no proxying queue. Run the
     // request inline on this fiber; the AVPlay calls are JS EM_JS stubs that
     // complete synchronously and write p.res.
-    executarNoPrincipal((int)(uintptr_t)&p);
+    executarNoPrincipal((uintptr_t)&p);
 #else
     // emscripten_sync_run_in_main_runtime_thread FOI REMOVIDA do runtime. Ela
     // ainda e DECLARADA em emscripten/threading_legacy.h, entao o compilador
@@ -1158,6 +1180,7 @@ static void logarErro(const char *onde) {
   snprintf(erroTexto, sizeof erroTexto, "%s", buf);
   printf("[video] avplay erro (%s): %s\n", onde, buf);
   fflush(stdout);
+  farolprod_erro(FP_TIZEN_WGT, erroTexto, 0, 0);
 }
 
 // Le do JS as faixas de audio e legenda e monta os rotulos. Chamada uma vez por
@@ -1341,11 +1364,15 @@ void video_bombear(void) {
   // como a tentativa seguinte.
   if (temAvplay && nv_recon_vencida(&recon, SDL_GetTicks())) {
     char m[64];
+    int antes = recon.tentativa;
     snprintf(m, sizeof m, "reconectando: alvo %.0fs, tentativa %d", recon.alvo, recon.tentativa);
     marco(m);
     estavaPronto = 0;
     if (!reabrirMesmaFonte(recon.alvo) &&
         !nv_recon_erro(&recon, 1, SDL_GetTicks(), recon.alvo)) houveErro = 1;
+    if (recon.tentativa != antes)
+      farolprod_recon(FP_TIZEN_WGT, erroTexto, 0, recon.tentativa,
+                      nv_recon_espera_ms(recon.tentativa));
   }
 
   if (!temAvplay || !ativo) return;
@@ -1369,8 +1396,13 @@ void video_bombear(void) {
   if (pronto && reconBuscar < 0) nv_recon_progresso(&recon, posSeg);
   if (!houveErro && (!pronto || reconBuscar >= 0 || (!pausaPedida && bufPct < 100)) &&
       nv_recon_expirou(&recon, SDL_GetTicks())) {
+    int antes = recon.tentativa;
     snprintf(erroTexto, sizeof erroTexto, "network recovery timeout");
+    farolprod_erro(FP_TIZEN_WGT, erroTexto, 0, 0);
     if (!nv_recon_erro(&recon, 1, SDL_GetTicks(), recon.alvo)) houveErro = 1;
+    if (recon.tentativa != antes)
+      farolprod_recon(FP_TIZEN_WGT, erroTexto, 0, recon.tentativa,
+                      nv_recon_espera_ms(recon.tentativa));
   }
   // Esperando a reconexao, o erro da sessao morta segue no estado ate o
   // proximo open: nao e erro novo.
@@ -1390,6 +1422,9 @@ void video_bombear(void) {
                erroTexto, recon.tentativa, NV_RECON_MAX,
                nv_recon_espera_ms(recon.tentativa) / 1000u);
       marco(m);
+      if (recon.tentativa != antes)
+        farolprod_recon(FP_TIZEN_WGT, erroTexto, 0, recon.tentativa,
+                        nv_recon_espera_ms(recon.tentativa));
       tocando = 0;
     } else {
       if (recon.esgotou) marco("reconexao: desistiu depois de 3 tentativas");

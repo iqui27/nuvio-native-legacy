@@ -78,6 +78,12 @@ void farolsinal_sair(void);
 // sync_esquecer_usuario junto de diario_esquecer/mapa_esquecer (issue 43,
 // secao 2.3).
 void farolsinal_esquecer(void);
+// "Zerar/apagar o gosto" do perfil ATIVO (farol_gosto_zerar, contrato da
+// issue 45): modelo, aneis e pendencias zeram, e os arquivos do perfil no
+// disco somem para a proxima carga nao reviver o gosto velho. O cache de
+// fichas (metadado do TMDB, nao gosto) e os demais perfis ficam — o
+// esquecer da CONTA inteira e farolsinal_esquecer.
+void farolsinal_zerar_gosto(void);
 // O backup por aparelho restaurou os arquivos por baixo: agenda uma troca
 // para o proprio perfil que so LE o disco — o modelo em RAM nao grava por
 // cima do recem-restaurado antes (issue 43). Sem efeito com troca em curso.
@@ -157,6 +163,11 @@ void farolsinal_trakt_notas(int perfil, const char *json);
 int  farolsinal_modelo(FarolGosto *dst);
 // Quantas origens de Play o anel guarda; copia em `h/o/d` ate `max`.
 int  farolsinal_origens(uint32_t *h, uint8_t *o, uint8_t *d, int max);
+// A ficha ja conhecida do item: a da LRU (detalhe do TMDB, com tema e
+// pessoas reais) antes de qualquer reconstrucao de catalogo. So leitura —
+// nao enche a LRU com a ficha pobre de CatItem. A cola da Home (farol.c)
+// usa para dar tema a segunda fileira. 1 = `dst` recebeu a ficha.
+int  farolsinal_ficha_do_item(const CatItem *ci, FarolFicha *dst);
 
 // --- teste -------------------------------------------------------------------
 // Relogio injetavel: s devolve epoch em segundos, ms os milissegundos do anel

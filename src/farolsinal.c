@@ -20,6 +20,7 @@
 #include "dados.h"
 #include "dormiu.h"
 #include "farolanel.h"
+#include "idbase.h"
 #include "js.h"
 #include "mapa.h"
 #include "perfis.h"
@@ -1754,6 +1755,28 @@ int farolsinal_modelo(FarolGosto *dst) {
   if (ok) DTRAVA();
   return ok;
 }
+// A ficha ja conhecida do item: a da LRU (detalhe do TMDB, com tema e
+// pessoas reais) ANTES de qualquer reconstrucao de catalogo. So leitura —
+// nao enche a LRU com a ficha pobre derivada de CatItem, que deslocaria as
+// detalhadas. A cola da Home (farol.c) usa para dar tema a segunda fileira;
+// sem ela os "c<n>" salvos nunca tinham tema e a gosto2 nao saia (ressalva
+// da revisao FAROL45 r1). 1 = `dst` recebeu a ficha.
+int farolsinal_ficha_do_item(const CatItem *ci, FarolFicha *dst) {
+  int64_t c, real;
+  int ok = 0, serie;
+  if (!ci || !dst || !ci->imdb[0]) return 0;
+  if (!travaPronta()) return 0;
+  serie = !strcmp(ci->tipo, "series");
+  c = chaveObra(ci->imdb, serie, ci->tmdb);
+  if (c) {
+    real = aliasPara(c);
+    if (farolficha_obter(&S.fc, real, dst) ||
+        (real != c && farolficha_obter(&S.fc, c, dst)))
+      ok = 1;
+  }
+  DTRAVA();
+  return ok;
+}
 int farolsinal_origens(uint32_t *h, uint8_t *o, uint8_t *d, int max) {
   int i, n = 0;
   if (!prontoLeve()) return 0;
@@ -1951,10 +1974,21 @@ static void confereTemporada(const char *id, int t, int perfil, int ger) {
   int idx, ne, i, tot = 0, vistos = 0;
   const CatEp *ep;
   uint64_t hb;
+  unsigned catRev;
   if (fioMorre) return;
   if ((idx = cat_indice_por_imdb(id)) < 0) return;
+  catRev = cat_revisao();
   ne = cat_n_episodios(idx);
   for (i = 0; i < ne && !fioMorre; i++) {
+    const CatItem *ci;
+    // Cada leitura so vale se `idx` ainda e a mesma obra: uma troca de
+    // catalogo no meio do laco recicla o numero para outro item (CATREV) —
+    // revisao + limites + identidade a cada passada. A identidade e o id
+    // base: a serie do card de Continuar fica "tt123:2:1" no catalogo e a
+    // busca (cat_indice_por_imdb) acha por "tt123" — a mesma regra dos dois
+    // lados, senao a guarda reprova a propria obra (CATREVB).
+    if (cat_revisao() != catRev || idx >= cat_n() ||
+        (ci = cat_item(idx)) == NULL || !idbase_mesmo(ci->imdb, id)) return;
     if ((ep = cat_episodio(idx, i)) == NULL || ep->temporada != t) continue;
     tot++;
     if (diario_episodio(perfil, id, t, ep->episodio, NULL)) vistos++;
@@ -1963,17 +1997,19 @@ static void confereTemporada(const char *id, int t, int perfil, int ger) {
   hb = hDom(id, K_TEMP, t);
   TRAVA();
   if (!fioMorre && S.perfil == perfil && S.varGer == ger &&
-      achaHb(hb) < 0) {
-    Cred c;
-    const CatItem *ci = cat_item(idx);
-    long tmdb = ci ? ci->tmdb : 0;
-    long long agora = agoraS();
-    memset(&c, 0, sizeof c);
-    c.idh = h1(id); c.hb = hb; c.eh = hb ^ mix64((uint64_t)agora);
-    c.quando = agora; c.chave = chaveObra(id, 1, tmdb);
-    c.delta = FG_D_TERMINOU; c.faixa = (int16_t)faixaAgora(agora);
-    c.kind = K_TEMP;
-    credita(id, 1, tmdb, &c);
+      cat_revisao() == catRev && achaHb(hb) < 0) {
+    const CatItem *ci = idx < cat_n() ? cat_item(idx) : NULL;
+    if (ci && idbase_mesmo(ci->imdb, id)) {
+      Cred c;
+      long tmdb = ci->tmdb;
+      long long agora = agoraS();
+      memset(&c, 0, sizeof c);
+      c.idh = h1(id); c.hb = hb; c.eh = hb ^ mix64((uint64_t)agora);
+      c.quando = agora; c.chave = chaveObra(id, 1, tmdb);
+      c.delta = FG_D_TERMINOU; c.faixa = (int16_t)faixaAgora(agora);
+      c.kind = K_TEMP;
+      credita(id, 1, tmdb, &c);
+    }
   }
   DTRAVA();
 }
@@ -2023,13 +2059,22 @@ static void varreLargada(int perfil, int ger) {
     if (fioMorre) return;
     if (neps < 1 || neps > 3) continue;
     if ((idx = cat_indice_por_imdb(regs[i].contentId)) < 0) continue;
+    { unsigned catRev = cat_revisao();
     ne = cat_n_episodios(idx);
     for (k = 0; k < ne && !ha && !fioMorre; k++) {
-      const CatEp *ep = cat_episodio(idx, k);
+      const CatEp *ep;
+      const CatItem *ci;
+      // Mesma guarda da confereTemporada: a leitura so vale se `idx` ainda e
+      // o item de contentId — revisao + limites + identidade pelo id base
+      // (CATREV/CATREVB).
+      if (cat_revisao() != catRev || idx >= cat_n() ||
+          (ci = cat_item(idx)) == NULL || !idbase_mesmo(ci->imdb, regs[i].contentId))
+        break;
+      ep = cat_episodio(idx, k);
       if (ep && (ep->temporada > t || (ep->temporada == t && ep->episodio > e)))
         ha = 1;
     }
-    if (!ha) continue;
+    if (!ha || cat_revisao() != catRev) continue; }
     TRAVA();
     if (!fioMorre && S.perfil == perfil && S.varGer == ger &&
         achaHb(hb) < 0) {
@@ -2282,6 +2327,38 @@ void farolsinal_esquecer(void) {
   S.sujo = 0;
   S.fichaSujo = 0;
   S.esqGer++;                 // invalida gravacao/varredura/conferida em voo
+  S.diaFrio = 0;
+  S.recarrega = 0;
+  if (S.trocando) { S.trocando = 0; S.pendTroca = 0; }
+  DTRAVA();
+}
+
+// "ZERAR/APAGAR O GOSTO" (o ajuste do Farol, contrato da issue 45): apaga o
+// modelo do PERFIL ATIVO — RAM e os dois arquivos dele no disco, para a
+// proxima carga nao reviver o gosto velho — junto dos aneis (exibidos,
+// origens) e do que estava pendente. O cache de fichas fica: e metadado do
+// TMDB, nao gosto, e a LRU do aparelho nao e da conta. Diferente de
+// farolsinal_esquecer, que e do logout e esvazia a CONTA inteira.
+// farol_gosto_zerar chama DEPOIS de tirar as fileiras da tela, com a
+// identidade ainda atual — a regravacao cairia no perfil novo invertendo
+// a ordem (contrato, item 5).
+void farolsinal_zerar_gosto(void) {
+  char cam[1100], nome[64];
+  if (!travaPronta()) { TRAVA(); garante_i(); }
+  if (S.perfil >= 1 && S.perfil <= CONTA_PERFIL_MAX) {
+    nomeGosto(S.perfil, nome, sizeof nome);
+    if (caminho(nome, cam, sizeof cam)) remove(cam);
+    nomeEstado(S.perfil, nome, sizeof nome);
+    if (caminho(nome, cam, sizeof cam)) remove(cam);
+  }
+  farolgosto_iniciar(&S.g, (uint16_t)S.perfil);
+  S.nCred = S.nPend = S.nObra = S.obraProx = S.nAli = 0;
+  S.nPed = S.nTempChk = S.nOri = S.oriProx = 0;
+  S.cur = 0; S.curSeq = 0; S.curRest = 0; S.varDe = 0; S.varCur = 0;
+  S.varSeq = 0; S.varrer = 1; S.varGer++; S.nVarId = 0;
+  S.largadaVarrida = 0; S.rec = 1;
+  S.sujo = 0;                  // nada do modelo velho para gravar de volta
+  S.esqGer++;                  // invalida gravacao/varredura/conferida em voo
   S.diaFrio = 0;
   S.recarrega = 0;
   if (S.trocando) { S.trocando = 0; S.pendTroca = 0; }

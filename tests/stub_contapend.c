@@ -83,6 +83,7 @@ WEAK int perfis_sessao_atual(uint64_t g) { return g == 0; }
 WEAK int perfis_sessao_travar(uint64_t g) { return g == 0; }
 WEAK void perfis_sessao_destravar(void) {}
 WEAK void fontevolta_esquecer_tudo(void) {}
+WEAK void farolsinal_esquecer(void) {}
 WEAK void guia_fonte_esquecer(const char *id) { (void)id; }
 #include "contalib.h"
 WEAK int ajustes_fonte_biblioteca(void) { return 0; }
