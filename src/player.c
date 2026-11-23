@@ -1044,9 +1044,14 @@ static char erroTitulo[160], erroDica[160];
 // resolverregra_falha_registrar: limpa junto em player_limpar_erro_fonte.
 static FarolErro ultimoFarol;
 static int temUltimoFarol, ultimoFarolDebrid;
-// A URL da ultima fonte mandada ao pipeline (sem o proxy local): e a que o
-// "Player externo" do Resolver despacha para o app externo instalado.
+static uint64_t ultimoFarolAddonId;
+// A URL da ultima fonte mandada ao pipeline (sem o proxy local) e se ela exigia
+// cabecalhos privados: e o que o "Player externo" do Resolver usa (inclusive
+// com o player fechado, quando o Resolver abre por Ajustes).
 static char ultimaFonteUrl[NV_MEDIA_URL_MAX];
+#ifdef NV_ANDROID
+static int ultimaFonteTemCabs;
+#endif
 
 // FAROL (issue 7; PLANO 2.2): o alvo compilado vira (FarolPlat, token do
 // backend) — os FE_* nao carregam texto livre, so estes tokens de enum.
@@ -1177,11 +1182,24 @@ void player_erro_fonte(void) {
     ultimoFarolDebrid = (st && st->debridServico > 0) || fontesonda_host_debrid(ultimaFonteUrl);
     farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, causa, http,
              farolcod_anel(&fe, NV_FAROL_PLAT, cs, sizeof cs)); }
+  { const Stream *st = stream_item(stream_atual());
+    ultimoFarolAddonId = st ? st->addonIdentidade : 0; }
 }
 int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid) {
   if (!temUltimoFarol) return 0;
   if (out) *out = ultimoFarol;
   if (foiDebrid) *foiDebrid = ultimoFarolDebrid;
+  return 1;
+}
+uint64_t player_ultimo_addon_farol(void) {
+  return temUltimoFarol ? ultimoFarolAddonId : 0;
+}
+int player_ultimo_titulo(CatItem *out, int *temporada, int *episodio) {
+  if (!temFixo || canalSessao || !itemFixo.imdb[0]) return 0;
+  if (!nv_perfil_sessao_atual(itemSessao)) return 0;
+  if (out) *out = itemFixo;
+  if (temporada) *temporada = epT;
+  if (episodio) *episodio = epE;
   return 1;
 }
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
@@ -1204,7 +1222,7 @@ static void erroSemVideo(void) {
 }
 // Desfaz o de cima quando a fonte que parecia morta volta a entregar. Ver a
 // nota no watchdog de canal em app.c.
-void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; temUltimoFarol = 0; resolverregra_falha_limpar(); } }
+void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; temUltimoFarol = 0; ultimoFarolAddonId = 0; resolverregra_falha_limpar(); } }
 // Leitura do estado para o watchdog de canal do app.c: uma fonte ao vivo que
 // falhou (ou nao abre no prazo) deve trocar para a proxima da lista sozinha.
 int  player_fonte_falhou(void) { return erroFonte; }
@@ -2018,6 +2036,9 @@ static void armarTituloGuardado(void) {
 
 void player_abrir(int indiceCatalogo, const char *url) {
   ultimaFonteUrl[0] = 0;
+#ifdef NV_ANDROID
+  ultimaFonteTemCabs = 0;
+#endif
   dtsAvisoSessao++;
   saiuVisto = 0;
 #ifdef NV_TOUCH_UI
@@ -2156,6 +2177,10 @@ void player_abrir(int indiceCatalogo, const char *url) {
     int bloqueado = c && !strcmp(c->tipo, "series") && travaui_segura(c->imdb, idxAtual(),
         c->temporada > 0 ? c->temporada : 1, c->episodio > 0 ? c->episodio : 1, NULL, NULL);
     if (url && *url && !bloqueado) {
+      snprintf(ultimaFonteUrl, sizeof ultimaFonteUrl, "%s", url);
+#ifdef NV_ANDROID
+      ultimaFonteTemCabs = video_cabecalhos()[0] != 0;
+#endif
       const char *u = directcache_preparar(url, video_cabecalhos(), dc, sizeof dc);
       comVideo = video_tocar(proxyts_resolver(u, px, sizeof px));
     } else comVideo = 0; }
@@ -2381,6 +2406,9 @@ static void tocarFonteInterno(const char *url) {
   directcache_encerrar();
   if (!travaFonte(url)) return;
   snprintf(ultimaFonteUrl, sizeof ultimaFonteUrl, "%s", url ? url : "");
+#ifdef NV_ANDROID
+  ultimaFonteTemCabs = video_cabecalhos()[0] != 0;
+#endif
   marco("abrir: url ao pipeline");
   farolRearmar();
   skipLiberado = 0;
@@ -2436,11 +2464,13 @@ static void tocarFonteInterno(const char *url) {
   else aplicarAspecto();
 }
 #ifdef NV_ANDROID
-static void sairParaExterno(void) { saindo = 1; pediuSair = 1; }
+static void sairParaExterno(void) { if (aberto) { saindo = 1; pediuSair = 1; } }
 #endif
 int player_externo_disponivel(void) {
 #ifdef NV_ANDROID
-  if (!player_aberto() || !ultimaFonteUrl[0] || video_cabecalhos()[0]) return 0;
+  if (!ultimaFonteUrl[0] || ultimaFonteTemCabs ||
+      (player_aberto() && video_cabecalhos()[0])) return 0;
+  if (temFixo && !nv_perfil_sessao_atual(itemSessao)) return 0;
   extplayer_atualizar_apps();
   return extplayer_n_apps() > 0;
 #else
@@ -2451,14 +2481,18 @@ int player_externo_disponivel(void) {
 int player_abrir_externo(void) {
 #ifdef NV_ANDROID
   // O pedido veio do cartao do Resolver ("Player externo"), nao do ajuste:
-  // externo na marra, sem a pergunta "Onde reproduzir?". Sem URL tentada nao
-  // ha o que despachar.
+  // externo na marra, sem a pergunta "Onde reproduzir?". Vale tambem com o
+  // player fechado (Resolver aberto por Ajustes): usa a URL e o titulo
+  // guardados da ultima tentativa e, sem player aberto, nunca dispara o
+  // pipeline interno em segundo plano se a Intent falhar.
   const CatItem *c = item();
   char url[NV_MEDIA_URL_MAX];
+  const char *cabs = aberto ? video_cabecalhos() : (ultimaFonteTemCabs ? "x" : "");
   if (!player_externo_disponivel()) return 0;
   snprintf(url, sizeof url, "%s", ultimaFonteUrl);
-  return extplayer_forcar(url, c ? c->titulo : "",
-                          tocarFonteInterno, sairParaExterno);
+  return extplayer_forcar(url, c ? c->titulo : "", cabs,
+                          aberto ? tocarFonteInterno : NULL,
+                          aberto ? sairParaExterno : NULL);
 #else
   return 0;
 #endif

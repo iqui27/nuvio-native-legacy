@@ -214,8 +214,14 @@ static void farol_fatos(void) {
     else if (ev[i].ev == FE_ADDON_BUSCA) { iBuscaAnt = iBusca; iBusca = i; }
   }
   ff.falhasSeguidas = 0;
-  for (i = iPronto + 1; i < n; i++)
-    if (ev[i].ev == FE_ERRO_FONTE || ev[i].ev == FE_RECUSA_SINC) ff.falhasSeguidas++;
+  for (i = iPronto + 1; i < n; i++) {
+    // Recusa sincrona emite FE_RECUSA_SINC seguido de FE_ERRO_FONTE no mesmo
+    // erro: contar os dois dobrava uma unica falha para TV_FORMATO_REPETE.
+    if (ev[i].ev == FE_ERRO_FONTE) ff.falhasSeguidas++;
+    else if (ev[i].ev == FE_RECUSA_SINC &&
+             !(i + 1 < n && ev[i + 1].ev == FE_ERRO_FONTE))
+      ff.falhasSeguidas++;
+  }
   ff.paradas5min = farolanel_contar(FE_PARADO, 5u * 60u * 1000u, agoraMs);
   ff.audioRecusado = farolanel_contar(FE_AUDIO_RECUSADO, (uint32_t)RES_REJEITA_S * 1000u, agoraMs);
   ff.faixaDts = -1;
@@ -659,7 +665,8 @@ static void fechar(void) { aberto = 0; }
 // `fa` e a acao do veredito que gerou o botao (0 no cartao antigo): vai para
 // o anel como FE_FAROL_ACAO — o resultado do conserto se mede depois.
 static void aplicar(int a, int fa) {
-  if (fa > 0) farol_ev(FM_FAROL, FE_FAROL_ACAO, 0, fa, 0, farolregra_acao_token(fa));
+  const char *tok = fa > 0 ? farolregra_acao_token(fa) : "";
+  if (tok[0]) farol_ev(FM_FAROL, FE_FAROL_ACAO, 0, fa, 0, tok);
   if (a == A_REPETIR) { testar(sint); foco = B_PRINC; }
   else if (a == A_FONTES) { pedido = RESOLVER_PEDIU_FONTES; fechar(); }
   else if (a == A_DEBRID) { pedido = RESOLVER_PEDIU_DEBRID; fechar(); }

@@ -1,17 +1,31 @@
-// CORRECAO-FAROL6B: o caminho de PRODUCAO do Resolver com o motor de
-// playbooks. Amarra o src/resolver.c real — o mesmo arquivo que a TV compila —
-// com um cenario mutavel nos stubs (o "mini app" dos testes de UI). O que a
-// revisao reprovou era julgar so no teste: aqui quem falha e o testar() de
-// producao. Cobre:
-//   - add-on instalado que voltou sem fonte (addonsMotivo) -> Add-ons RES_FALHOU
-//   - falha recente de Fonte com erro desconhecido (FC_NENHUMA/"ums_outro")
-//   - IMAGEM_DV nao dispara sem o sintoma "cores estranhas" (mascara propria)
-//   - cartao/veredito Farol: texto promete a acao que o botao executa
-//   - despacho: PLAYER_EXTERNO -> RESOLVER_PEDIU_PLAYER_EXT,
-//               RECONECTAR_DEBRID -> RESOLVER_PEDIU_DEBRID
-// Mutantes que tem de quebrar este teste: tirar addonsMotivo da ponte
-// farol_fatos, voltar a filtrar FC_NENHUMA como "sem falha", ou devolver a
-// linha de resolver.c para resolverregra_testar so.
+// CORRECAO-FAROL6B/6C: o caminho de PRODUCAO do Resolver com o motor de
+// playbooks e os executores reais (player fechado = como abre por Ajustes).
+// Compila src/resolver.c, src/extplayer.c (NV_ANDROID), src/addonguia.c,
+// src/addonmodo.c e os trechos reais de src/player.c e src/app.c.
+//
+// Cobre:
+//   - cenarios 1..8 (paridade Add-ons, Fonte FC_NENHUMA, mascara IMAGEM_DV,
+//     DEBRID_DESCONECTOU, PLAYER_EXTERNO, sem botao morto, FE_FAROL_VEREDITO)
+//   - cenario 9: Android com player FECHADO — player_externo_disponivel() decide
+//     sem exigir player aberto, o cartao oferece "Player externo", e o OK passa
+//     por app.c -> player_abrir_externo() -> extplayer_forcar() ->
+//     android_abrir_externo() sem abrir o pipeline interno.
+//   - cenario 10: Android com player FECHADO e cabecalhos privados / sem app
+//     instalado / falha na Intent — recusa com seguranca sem tocar interno.
+//   - cenario 11: Recusa sincrona (FE_RECUSA_SINC + FE_ERRO_FONTE) conta UMA
+//     falha (TV_FORMATO), e duas recusas contam 2 (TV_FORMATO_REPETE).
+//   - cenario 12: FE_FAROL_ACAO nunca sai com token vazio em "Mandar registro".
+//   - cenario 13: QR de debrid com player FECHADO e titulo VOD (serie T2E5):
+//     app.c -> addonguia_reconectar_debrid() -> celb_pegar -> AGP_REPETIR ->
+//     app.c reabre o titulo no ponto (sem player_do_inicio) e renova fontes,
+//     gravando AM_DEBRID so no add-on de fontes que falhou (nunca no 0 de
+//     catalogo) e sem laco.
+//   - cenario 14: QR de debrid com player FECHADO e lista trocada (sem add-on
+//     de stream correspondente): grava credencial, nao suja add-on 0 de catalogo,
+//     e reabre o filme no ponto.
+//   - cenario 15: QR de debrid com player FECHADO e SEM titulo anterior:
+//     nao abre o player e avisa pela ilha que a conta reconectou, sem laco.
+//   - cenario 16: AG_MODO fora do Resolver com player fechado nao reabre filme.
 
 #include "resolver.h"
 #include "resolverregra.h"
@@ -20,12 +34,24 @@
 #include "farolanel.h"
 #include "faroltexto.h"
 #include "fontesonda.h"
+#include "extplayer.h"
+#include "addonguia.h"
+#include "addonmodo.h"
+#include "addons.h"
+#include "catalogo.h"
+#include "mediaurl.h"
 #include "streams.h"
 #include "avisos.h"
+#include "celbotao.h"
+#include "ilha.h"
+#include "p2pmotor.h"
+#include "perfis.h"
+#include "plrilha.h"
 #include "gfx.h"
 #include "text.h"
 #include "ponteiro.h"
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +67,60 @@ static Stream c_stream;
 static AvisosEnvio c_envio;
 static int c_envioChamadas;
 
+// Estado espelhado de src/player.c (para os trechos extraidos)
+static int aberto, saindo, pediuSair;
+static int temFixo, canalSessao, epT, epE;
+static CatItem itemFixo, itemCanal;
+static uint64_t itemSessao = 1, c_perfilSessao = 1;
+static int temUltimoFarol;
+static uint64_t ultimoFarolAddonId;
+static char ultimaFonteUrl[NV_MEDIA_URL_MAX];
+static int ultimaFonteTemCabs;
+static char c_videoCabs[256];
+static int c_tocarInternoN;
+
+// Estado espelhado de Android/extplayer
+static char c_androidApps[256];
+static int c_androidAbrirOk = 1, c_androidAbrirN;
+static char c_androidAbrirUrl[NV_MEDIA_URL_MAX], c_androidAbrirTit[160], c_androidAbrirPkg[64];
+
+// Estado espelhado de addons/addonguia/app.c
+static struct {
+  char base[128];
+  char nome[64];
+  int ativo, sondado, forneceStream;
+} c_addon[4];
+static int c_streamOrdemAddon = -1;
+static int c_celbDisp = 1, c_celbAbertoN, c_celbFechadoN;
+static char c_celbChave[128];
+static int c_debridCelN;
+static char c_debridCelServ[32], c_debridCelChave[128];
+static int c_ilhaAvisosN;
+static char c_ilhaChave[64], c_ilhaTexto[256];
+
+// Espias de app.c
+enum { TELA_HOME = 0, TELA_AJUSTES = 1 };
+enum { MENU_AJUSTES = 5 };
+static int tela = TELA_AJUSTES;
+static uint64_t guiaTorrentRepetir;
+static int torrentSessao, torrentPendente = -1, aguardandoFonte;
+static int c_playerAbrirN, c_playerAbrirIdx = -1, c_playerDoInicioN;
+static int c_playerDefEpN, c_playerDefT, c_playerDefE;
+static int c_buscarModoN, c_buscarModoRenovar;
+static int c_menuFechouN, c_ajustesFontesN, c_travauiBloq;
+static CatItem c_catUltimo;
+static int c_catReabrirIdx = 7;
+
+// ------------------------------------------------------- simbolos de player
+static const CatItem *item(void) {
+  if (canalSessao) return &itemCanal;
+  if (temFixo) return &itemFixo;
+  return NULL;
+}
+int player_aberto(void) { return aberto; }
+static void tocarFonteInterno(const char *url) { (void)url; c_tocarInternoN++; }
+static int nv_perfil_sessao_atual(uint64_t s) { return s == c_perfilSessao; }
+
 // ------------------------------------------------------------------- stubs
 const char *i18n(const char *s) { return s; }
 char *dados_ler(const char *n) { (void)n; return NULL; }
@@ -48,6 +128,15 @@ int dados_gravar(const char *n, const char *v) { (void)n; (void)v; return 1; }
 int rede_saude_offline(void) { return c_offline; }
 int addons_n(void) { return c_addons; }
 int addons_ocupado(void) { return c_ocupado; }
+int addons_ativo(int i) { return i >= 0 && i < c_addons ? c_addon[i].ativo : 0; }
+int addons_sondado(int i) { return i >= 0 && i < c_addons ? c_addon[i].sondado : 0; }
+const char *addons_base(int i) { return i >= 0 && i < c_addons ? c_addon[i].base : ""; }
+const char *addons_nome(int i) { return i >= 0 && i < c_addons ? c_addon[i].nome : ""; }
+int addons_fornece(int i, int rec) {
+  if (i < 0 || i >= c_addons) return 0;
+  if (rec == ADD_STREAM) return c_addon[i].forneceStream;
+  return !c_addon[i].forneceStream;
+}
 int addons_motivo_vazio(char *d, unsigned n) {
   if (!c_motivo[0]) return 0;
   snprintf(d, n, "%s", c_motivo);
@@ -62,22 +151,122 @@ int debrid_recusa(char *d, unsigned n) {
 }
 int debrid_ativo(void) { return c_debrid; }
 int video_registro_negado(void) { return c_tvNegou; }
+const char *video_cabecalhos(void) { return c_videoCabs; }
 int player_ultimo_erro_farol(FarolErro *o, int *foiDebrid) {
   if (!c_temErro) return 0;
   *o = c_erro;
   if (foiDebrid) *foiDebrid = c_erroDebrid;
   return 1;
 }
-int stream_atual(void) { return c_streamAtual; }
-const Stream *stream_item(int i) { (void)i; return &c_stream; }
-int stream_kbps_atual(void) { return c_kb; }
-long memlog_livre_mb(void) { return c_mem; }
-int avisos_envio_info(AvisosEnvio *o) { *o = c_envio; c_envioChamadas++; return 1; }
+void player_toast(const char *t, unsigned ms) { (void)t; (void)ms; }
+void player_abrir(int idx, const char *url) {
+  (void)url;
+  c_playerAbrirN++;
+  c_playerAbrirIdx = idx;
+  aberto = 1;
+}
+void player_definir_episodio(int t, int e) { c_playerDefEpN++; c_playerDefT = t; c_playerDefE = e; }
+void player_voltar_a_esperar(void) {}
+
+char *android_listar_players(void) {
+  char *s = (char *)malloc(strlen(c_androidApps) + 1);
+  if (s) strcpy(s, c_androidApps);
+  return s;
+}
+int android_abrir_externo(const char *url, const char *titulo, const char *pkg) {
+  c_androidAbrirN++;
+  snprintf(c_androidAbrirUrl, sizeof c_androidAbrirUrl, "%s", url ? url : "");
+  snprintf(c_androidAbrirTit, sizeof c_androidAbrirTit, "%s", titulo ? titulo : "");
+  snprintf(c_androidAbrirPkg, sizeof c_androidAbrirPkg, "%s", pkg ? pkg : "");
+  return c_androidAbrirOk;
+}
+int ajustes_player_externo(int anime) { (void)anime; return EXTPLAYER_INTERNO; }
+const char *ajustes_player_pacote(int anime) { (void)anime; return ""; }
+int ajustes_debrid_celular(const char *serv, const char *chave) {
+  c_debridCelN++;
+  snprintf(c_debridCelServ, sizeof c_debridCelServ, "%s", serv ? serv : "");
+  snprintf(c_debridCelChave, sizeof c_debridCelChave, "%s", chave ? chave : "");
+  c_debrid = 1;
+  return 1;
+}
+void ajustes_definir_p2p_ligado(int on) { (void)on; }
+int ajustes_p2p_ligado(void) { return 0; }
+const char *ajustes_p2p_url(void) { return ""; }
+const char *ajustes_idioma(void) { return "pt"; }
+int ajustes_vidro(void) { return 0; }
 int ajustes_animacoes_reduzidas(void) { return 1; }
+int ajustes_animacoes_reduzidas_usuario(void) { return 1; }
 void ajustes_acento(float *r, float *g, float *b) { *r = 0.4f; *g = 0.7f; *b = 1.0f; }
 float ajustes_acento_tinta(float *r, float *g, float *b) { *r = *g = *b = 1.0f; return 1.0f; }
 int ajustes_tinta_foco(void) { return 255; }
 int ajustes_tinta_foco2(void) { return 200; }
+void ajustes_abrir_na_espera_fonte(void) { c_ajustesFontesN++; }
+void ajustes_abrir_fileiras(void) {}
+void ajustes_iniciar(void) {}
+
+int celb_disponivel(void) { return c_celbDisp; }
+int celb_embutido(int dono) { (void)dono; return 0; }
+int celb_abrir_embutido(int dono, const char *tit) { (void)dono; (void)tit; c_celbAbertoN++; return 1; }
+void celb_fechar_dono(int dono) { (void)dono; c_celbFechadoN++; }
+int celb_pegar(int dono, char *dst, size_t n) {
+  (void)dono;
+  if (!c_celbChave[0]) return 0;
+  snprintf(dst, n, "%s", c_celbChave);
+  c_celbChave[0] = 0;
+  return 1;
+}
+void celb_desenhar_em(int dono, GfxRect r, float a) { (void)dono; (void)r; (void)a; }
+float celb_qr_lado(void) { return 100.0f; }
+void celb_qr_desenhar(const char *u, float x, float y, float a) { (void)u; (void)x; (void)y; (void)a; }
+
+void ilha_avisar(const char *chave, int tipo, const char *ic, const char *texto, unsigned ms, int tecla) {
+  (void)tipo; (void)ic; (void)ms; (void)tecla;
+  c_ilhaAvisosN++;
+  snprintf(c_ilhaChave, sizeof c_ilhaChave, "%s", chave ? chave : "");
+  snprintf(c_ilhaTexto, sizeof c_ilhaTexto, "%s", texto ? texto : "");
+}
+void ilha_avisar_ex(const IlhaAvisoEx *a) { (void)a; }
+int ilha_tem(const char *chave) { (void)chave; return 0; }
+int ilha_modal_aberto(void) { return 0; }
+int ilha_modal_visivel(void) { return 0; }
+
+int stream_atual(void) { return c_streamAtual; }
+const Stream *stream_item(int i) { return i >= 0 ? &c_stream : NULL; }
+int stream_kbps_atual(void) { return c_kb; }
+int stream_ordem_addon(int i) { (void)i; return c_streamOrdemAddon; }
+int stream_proxima_vod(int i) { (void)i; return -1; }
+int stream_incompativel(int i) { (void)i; return 0; }
+int stream_automatico_excluir(int i) { (void)i; return 0; }
+void stream_folha_abrir(void) {}
+
+long memlog_livre_mb(void) { return c_mem; }
+int avisos_envio_info(AvisosEnvio *o) { *o = c_envio; c_envioChamadas++; return 1; }
+int p2p_ativo(void) { return 0; }
+void p2p_cancelar(void) {}
+int p2pmotor_disponivel(void) { return 1; }
+void p2pmotor_estado(P2pmEstado *e) { memset(e, 0, sizeof *e); }
+void p2pmotor_cancelar(void) {}
+const char *nuvem_base_login(void) { return ""; }
+const char *perfis_dono(void) { return "u"; }
+static int c_perfilSlot;
+int perfis_ativo_addons(void) { return c_perfilSlot; }
+const ContaPerfil *perfis_item_ativo(void) { return NULL; }
+const char *sessao_usuario(void) { return "u"; }
+int sync_manual_addons(void) { return 0; }
+int sync_manual_addons_rodando(void) { return 0; }
+int plrilha_centro_visivel(void) { return 0; }
+void plrilha_pedir(const PlrIlhaPedido *p) { (void)p; }
+void plrilha_desenhar(Uint32 agora) { (void)agora; }
+void plrui_botao_repouso(GfxRect r, float a) { (void)r; (void)a; }
+void plrui_linha_foco(GfxRect r, float raio, float f) { (void)r; (void)raio; (void)f; }
+void plrui_material(GfxRect r, float raio, int modo, float a) { (void)r; (void)raio; (void)modo; (void)a; }
+void addonsui_ponteiro(int a, int b) { (void)a; (void)b; }
+void rec_avatar_estilo(GfxRect r, const char *u, const char *n, const char *f, float a, TxtEstilo e) {
+  (void)r; (void)u; (void)n; (void)f; (void)a; (void)e;
+}
+
+float gfx_opacidade_grupo = 1.0f;
+int gfx_vidro_sem_aro = 0;
 float botao_largura(const char *rot, const char *ic, int pri) { (void)rot; (void)ic; (void)pri; return 100.0f; }
 void botao_pilula(GfxRect r, const char *rot, const char *ic, float f, int p, int al, float a) { (void)r; (void)rot; (void)ic; (void)f; (void)p; (void)al; (void)a; }
 float botao_cor_foco(float *r, float *g, float *b) { *r = *g = *b = 1.0f; return 1.0f; }
@@ -85,29 +274,108 @@ void botao_luz(GfxRect r, float f, float a) { (void)r; (void)f; (void)a; }
 void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) { (void)r; (void)raio; (void)cr; (void)cg; (void)cb; (void)ca; }
 void gfx_anel(GfxRect r, float raio, float esp, float cr, float cg, float cb, float ca) { (void)r; (void)raio; (void)esp; (void)cr; (void)cg; (void)cb; (void)ca; }
 void gfx_icone(GfxRect r, const char *n, float cr, float cg, float cb, float ca) { (void)r; (void)n; (void)cr; (void)cg; (void)cb; (void)ca; }
+void gfx_luz_canto(GfxRect r, float raio, float lx, float ly, float lr, float cr, float cg, float cb, float ca) {
+  (void)r; (void)raio; (void)lx; (void)ly; (void)lr; (void)cr; (void)cg; (void)cb; (void)ca;
+}
+void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a) {
+  (void)r; (void)raio; (void)tipo; (void)cinza; (void)dens; (void)a;
+}
+float gfx_vidro_opacidade(void) { return 1.0f; }
+void gfx_sombra_sob(GfxRect s, float foco, float parx, float raio, float cr, float cg, float cb,
+                    float a, GfxRect recorte, float recRaio, float recA) {
+  (void)s; (void)foco; (void)parx; (void)raio; (void)cr; (void)cg; (void)cb;
+  (void)a; (void)recorte; (void)recRaio; (void)recA;
+}
+void gfx_transformar(float x, float y, float s, float dx, float dy) { (void)x; (void)y; (void)s; (void)dx; (void)dy; }
+void gfx_sem_transformar(void) {}
 float gfx_escala_ui(void) { return 1.0f; }
 float gfx_escala(void) { return 1.0f; }
 float gfx_escala_entrar(void) { return 1.0f; }
 void gfx_escala_sair(float a) { (void)a; }
+float gfx_escala_txt(void) { return 1.0f; }
+float gfx_escala_txt_entrar(void) { return 1.0f; }
 int ponteiro_ativo(void) { return 0; }
 void ponteiro_alvo(float x, float y, float w, float h, PonteiroFn fo, PonteiroFn at, int a, int b) { (void)x; (void)y; (void)w; (void)h; (void)fo; (void)at; (void)a; (void)b; }
 TxtLinha txt_linha(TxtEstilo e, const char *s, int r, int g, int b, int a) { TxtLinha l; memset(&l, 0, sizeof l); (void)e; (void)s; (void)r; (void)g; (void)b; (void)a; return l; }
 TxtLinha txt_linha_corta(TxtEstilo e, const char *s, int r, int g, int b, int a, float mw) { TxtLinha l; memset(&l, 0, sizeof l); (void)e; (void)s; (void)r; (void)g; (void)b; (void)a; (void)mw; return l; }
 void txt_desenhar_alpha(TxtLinha l, float x, float y, float a) { (void)l; (void)x; (void)y; (void)a; }
 float txt_bloco(TxtEstilo e, const char *s, int r, int g, int b, float x, float y, float w, float ld, float a, int ml) { (void)e; (void)s; (void)r; (void)g; (void)b; (void)x; (void)y; (void)w; (void)ld; (void)a; (void)ml; return 0.0f; }
+float txt_bloco_corta(TxtEstilo e, const char *s, int r, int g, int b, float x, float y, float w, float ld, float a, int ml) { (void)e; (void)s; (void)r; (void)g; (void)b; (void)x; (void)y; (void)w; (void)ld; (void)a; (void)ml; return 0.0f; }
 float txt_tracking(TxtEstilo e, const char *s, int r, int g, int b, float x, float y, float a, float t) { (void)e; (void)s; (void)r; (void)g; (void)b; (void)x; (void)y; (void)a; (void)t; return 0.0f; }
 
+// Helpers referenciados pelos blocos extraidos de src/app.c
+static void menu_fechar(void) { c_menuFechouN++; }
+static void menu_definir_destino(int d) { (void)d; }
+static void trocarTela(int nova) { tela = nova; }
+static void nomeParaFolha(void) {}
+static int pedirProximaFonteVOD(int atual) { (void)atual; return 0; }
+static void pedirTorrentEscolhido(int idx) { (void)idx; }
+static void buscarParaPlayerModo(int renovar) { c_buscarModoN++; c_buscarModoRenovar = renovar; }
+static void diagnostico_cancelar_vazao(void) {}
+static void limparFonteVOD(void) {}
+static int travaui_abrir_espera(int idx, int t, int e) { (void)idx; (void)t; (void)e; return c_travauiBloq; }
+int cat_indice_reabrir(int idx, const CatItem *copia) {
+  (void)idx;
+  if (!copia || !copia->imdb[0]) return -1;
+  c_catUltimo = *copia;
+  return c_catReabrirIdx;
+}
+
+// Inclui os trechos REAIS de producao extraidos de src/player.c e src/app.c.
+#include "farol_prod_bridge.inc"
+
+void addonguia_shot_passo(float dt);
+
 // ------------------------------------------------------------- cenario-base
+static int c_slotSeq;
 static void zerar(void) {
   memset(&c_stream, 0, sizeof c_stream);
   memset(&c_erro, 0, sizeof c_erro);
   memset(&c_envio, 0, sizeof c_envio);
+  memset(&itemFixo, 0, sizeof itemFixo);
+  memset(&itemCanal, 0, sizeof itemCanal);
+  memset(&c_catUltimo, 0, sizeof c_catUltimo);
   c_offline = 0; c_addons = 3; c_ocupado = 0; c_semPlano = 0; c_recusa = 0;
   c_debrid = 1; c_tvNegou = 0; c_temErro = 0; c_erroDebrid = 0; c_kb = 0;
   c_streamAtual = -1; c_mem = -1; c_motivo[0] = 0; c_recusaTxt[0] = 0;
   c_envioChamadas = 0;
   c_envio.disponivel = 0;
+  aberto = saindo = pediuSair = 0;
+  temFixo = canalSessao = epT = epE = 0;
+  itemSessao = c_perfilSessao = 1;
+  temUltimoFarol = 0; ultimoFarolAddonId = 0;
+  ultimaFonteUrl[0] = 0; ultimaFonteTemCabs = 0; c_videoCabs[0] = 0;
+  c_tocarInternoN = 0;
+  c_androidApps[0] = 0; c_androidAbrirOk = 1; c_androidAbrirN = 0;
+  c_androidAbrirUrl[0] = c_androidAbrirTit[0] = c_androidAbrirPkg[0] = 0;
+  memset(c_addon, 0, sizeof c_addon);
+  snprintf(c_addon[0].base, sizeof c_addon[0].base, "https://v3-cinemeta.strem.io");
+  snprintf(c_addon[0].nome, sizeof c_addon[0].nome, "Cinemeta");
+  c_addon[0].ativo = 1; c_addon[0].sondado = 1; c_addon[0].forneceStream = 0;
+  snprintf(c_addon[1].base, sizeof c_addon[1].base, "https://torrentio.example");
+  snprintf(c_addon[1].nome, sizeof c_addon[1].nome, "Torrentio");
+  c_addon[1].ativo = 1; c_addon[1].sondado = 1; c_addon[1].forneceStream = 1;
+  snprintf(c_addon[2].base, sizeof c_addon[2].base, "https://mediafusion.example");
+  snprintf(c_addon[2].nome, sizeof c_addon[2].nome, "MediaFusion");
+  c_addon[2].ativo = 1; c_addon[2].sondado = 1; c_addon[2].forneceStream = 1;
+  c_streamOrdemAddon = -1;
+  c_celbDisp = 1; c_celbAbertoN = c_celbFechadoN = 0; c_celbChave[0] = 0;
+  c_debridCelN = 0; c_debridCelServ[0] = c_debridCelChave[0] = 0;
+  c_ilhaAvisosN = 0; c_ilhaChave[0] = c_ilhaTexto[0] = 0;
+  tela = TELA_AJUSTES;
+  guiaTorrentRepetir = 0; torrentSessao = 0; torrentPendente = -1; aguardandoFonte = 0;
+  c_playerAbrirN = 0; c_playerAbrirIdx = -1; c_playerDoInicioN = 0;
+  c_playerDefEpN = 0; c_playerDefT = c_playerDefE = 0;
+  c_buscarModoN = 0; c_buscarModoRenovar = 0;
+  c_menuFechouN = 0; c_ajustesFontesN = 0; c_travauiBloq = 0;
+  c_catReabrirIdx = 7;
+  c_perfilSlot = ++c_slotSeq;
+  addonmodo_preparar("u", c_perfilSlot);
+  addonguia_fechar();
+  (void)addonguia_pedido();
+  farolanel_zerar();
   resolverregra_falha_limpar();
+  resolver_teste_esquecer();
   resolver_teste_fatos(NULL);
   resolver_teste_fatos_farol(NULL);
 }
@@ -118,6 +386,7 @@ static void falhar_fonte(const char *titulo, const char *dica,
                          FarolClasse classe, int http, const char *cod) {
   resolverregra_falha_registrar(RES_T_FONTE, titulo, dica, "T2:E5", (long)time(NULL));
   c_temErro = 1;
+  temUltimoFarol = 1;
   memset(&c_erro, 0, sizeof c_erro);
   c_erro.classe = classe;
   c_erro.http = http;
@@ -130,13 +399,24 @@ static void apertar_ok(void) {
   resolver_evento(&evento);
 }
 
+static void apertar_ok_app(void) {
+  SDL_Event evento = { .type = SDL_KEYDOWN };
+  evento.key.keysym.sym = SDLK_RETURN;
+  app_resolver_despachar(&evento);
+}
+
+static void avancar_addonguia(void) {
+  for (int i = 0; i < 40; i++) {
+    addonguia_shot_passo(0.05f);
+    addonguia_atualizar(0);
+  }
+}
+
 int main(void) {
   const int *est;
   FarolFatos fx;
 
   // ------------------------------------------------------------ cenario 1
-  // Add-on instalado que voltou sem fonte: o motivo da busca tem de chegar
-  // como RES_FALHOU na etapa Add-ons (antes a ponte perdia o diagnostico).
   zerar();
   snprintf(c_motivo, sizeof c_motivo, "%s",
            "4 add-ons responderam: nenhum tem este título");
@@ -152,9 +432,6 @@ int main(void) {
   assert(!resolver_aberto());
 
   // ------------------------------------------------------------ cenario 2
-  // Falha recente de Fonte com causa nativa desconhecida: FC_NENHUMA +
-  // "ums_outro". O filtro velho tratava como sem falha e a tela dizia
-  // NADA_ACHADO; agora a etapa Fonte falha e o cartao vem da cadeia.
   zerar();
   falhar_fonte("A última fonte falhou.", "Escolha outra fonte.",
                FC_NENHUMA, 0, "ums_outro");
@@ -168,8 +445,6 @@ int main(void) {
   assert(c_envioChamadas >= 1);
 
   // ------------------------------------------------------------ cenario 3
-  // Mascara de sintoma: fonte DV + TV sem DV so pode dar IMAGEM_DV quando a
-  // pessoa escolheu "cores estranhas" — nunca pelo RES_S_GERAL do registro.
   zerar();
   memset(&fx, 0, sizeof fx);
   farolregra_fatos_iniciar(&fx);
@@ -188,14 +463,11 @@ int main(void) {
   resolver_teste_fatos_farol(&fx);
   resolver_teste_testar(FAROL_S_CORES);
   assert(resolver_teste_veredito() == FAROL_C_IMAGEM_DV);
-  // DV sem executor: o primario tem de cair no registro, nunca botao morto.
   assert(strstr(resolver_teste_titulo(), FT_IMAGEM_DV_L1) != NULL);
   apertar_ok();
   assert(c_envioChamadas >= 1);
 
   // ------------------------------------------------------------ cenario 4
-  // DEBRID_DESCONECTOU: o cartao vem do playbook e o OK pede a tela de
-  // login/QR que ja existe (RESOLVER_PEDIU_DEBRID) — despacho novo.
   zerar();
   assert(!fontesonda_host_debrid("https://real-debrid.com.outro.example/video"));
   assert(!fontesonda_host_debrid("https://torbox.app@outro.example/video"));
@@ -214,9 +486,6 @@ int main(void) {
   }
 
   // ------------------------------------------------------------ cenario 5
-  // PLAYER_EXTERNO no Android: TV_FORMATO com player instalado promove a
-  // alternativa; a linha 2 dedicada promete o player externo e o OK pede
-  // RESOLVER_PEDIU_PLAYER_EXT. Sem player, cai no registro (botao vivo).
   zerar();
   memset(&fx, 0, sizeof fx);
   farolregra_fatos_iniciar(&fx);
@@ -236,8 +505,6 @@ int main(void) {
   assert(!resolver_aberto());
 
   // ------------------------------------------------------------ cenario 6
-  // TV_FORMATO_REPETE no Android com externo: a acao da propria regra e
-  // PLAYER_EXTERNO — o despacho sai igual.
   zerar();
   fx.falhasSeguidas = 2;
   resolver_teste_fatos_farol(&fx);
@@ -251,8 +518,6 @@ int main(void) {
   assert(resolver_pedido() == RESOLVER_PEDIU_PLAYER_EXT);
 
   // ------------------------------------------------------------ cenario 7
-  // Sem player externo nem outra alternativa com executor: mesma regra, e o
-  // primario vira o envio do registro — o contrato "sem botao morto".
   zerar();
   fx.externoDisponivel = 0;
   fx.falhasSeguidas = 1;
@@ -264,7 +529,6 @@ int main(void) {
   assert(c_envioChamadas >= 1);
 
   // ------------------------------------------------------------ cenario 8
-  // O veredito entra no anel de eventos (o que a TV registra de verdade).
   {
     FarolEvento ev[FAROL_ANEL_N];
     int n = farolanel_ler(ev, FAROL_ANEL_N, 0), i, achou = 0;
@@ -272,6 +536,243 @@ int main(void) {
       if (ev[i].ev == FE_FAROL_VEREDITO) achou = 1;
     assert(achou);
   }
+
+  // ------------------------------------------------------------ cenario 9
+  // CAMINHO REAL (FAROL6C, item 1): Android, player FECHADO (como Ajustes >
+  // Resolver sempre abre), externo instalado, 2 falhas de formato no anel.
+  // Sem resolver_teste_fatos_farol(): farol_fatos() chama o
+  // player_externo_disponivel() real, o cartao oferece "Player externo", e OK
+  // passa pelo app.c real -> player_abrir_externo() -> extplayer_forcar() ->
+  // android_abrir_externo().
+  zerar();
+  aberto = 0;
+  temFixo = 1;
+  snprintf(itemFixo.imdb, sizeof itemFixo.imdb, "tt7654321");
+  snprintf(itemFixo.tipo, sizeof itemFixo.tipo, "movie");
+  snprintf(itemFixo.titulo, sizeof itemFixo.titulo, "Filme Externo");
+  snprintf(ultimaFonteUrl, sizeof ultimaFonteUrl, "https://cdn.example/video.mkv");
+  ultimaFonteTemCabs = 0;
+  snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
+  falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
+               FC_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  assert(player_externo_disponivel() == 1);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO_REPETE);
+  assert(resolver_teste_prim() == FAROL_A_PLAYER_EXTERNO);
+  assert(strstr(resolver_teste_corpo(), FT_L2_PLAYER_EXTERNO) != NULL);
+  apertar_ok_app();
+  assert(!resolver_aberto());
+  assert(c_androidAbrirN == 1);
+  assert(!strcmp(c_androidAbrirUrl, "https://cdn.example/video.mkv"));
+  assert(!strcmp(c_androidAbrirTit, "Filme Externo"));
+  assert(c_tocarInternoN == 0);
+  assert(!saindo && !pediuSair);
+  {
+    FarolEvento ev[FAROL_ANEL_N];
+    int n = farolanel_ler(ev, FAROL_ANEL_N, 0), achou = 0;
+    for (int i = 0; i < n; i++)
+      if (ev[i].ev == FE_FAROL_ACAO && !strcmp(ev[i].tok, "player_externo"))
+        achou = 1;
+    assert(achou);
+  }
+
+  // ----------------------------------------------------------- cenario 10
+  // Guardas do player externo com player FECHADO:
+  // (a) fonte que exigiu cabecalhos privados -> indisponivel -> Mandar registro;
+  // (b) nenhum app externo instalado -> indisponivel;
+  // (c) falha da Intent com player fechado -> devolve 0 e NAO chama interno.
+  zerar();
+  aberto = 0;
+  snprintf(ultimaFonteUrl, sizeof ultimaFonteUrl, "https://cdn.example/priv.mkv");
+  ultimaFonteTemCabs = 1;
+  snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
+  falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
+               FC_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  assert(player_externo_disponivel() == 0);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+
+  ultimaFonteTemCabs = 0;
+  c_androidApps[0] = 0;
+  assert(player_externo_disponivel() == 0);
+
+  snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
+  // Cabecalhos de outra tela (ex. musica) nao podem derrubar fonte sem cabecalho
+  // com o player fechado, e falha da Intent nao dispara tocarFonteInterno.
+  snprintf(c_videoCabs, sizeof c_videoCabs, "Referer: https://www.deezer.com/\r\n");
+  c_androidAbrirOk = 0;
+  assert(player_externo_disponivel() == 1);
+  assert(player_abrir_externo() == 0);
+  assert(c_androidAbrirN == 1);
+  assert(c_tocarInternoN == 0);
+
+  // ----------------------------------------------------------- cenario 11
+  // Ressalva: uma recusa sincrona emite FE_RECUSA_SINC + FE_ERRO_FONTE para o
+  // mesmo erro. Deve contar 1 falha (TV_FORMATO), e so com duas falhas virar
+  // TV_FORMATO_REPETE.
+  zerar();
+  aberto = 0;
+  falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
+               FC_FORMATO, 0, "m3_4003");
+  farol_ev(FM_FONTE, FE_RECUSA_SINC, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO);
+
+  farol_ev(FM_FONTE, FE_RECUSA_SINC, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO_REPETE);
+
+  // ----------------------------------------------------------- cenario 12
+  // Ressalva: "Mandar registro" nao pode emitir FE_FAROL_ACAO com token vazio.
+  zerar();
+  falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
+               FC_FORMATO, 0, "m3_4003");
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  apertar_ok();
+  assert(c_envioChamadas >= 1);
+  {
+    FarolEvento ev[FAROL_ANEL_N];
+    int n = farolanel_ler(ev, FAROL_ANEL_N, 0);
+    for (int i = 0; i < n; i++)
+      assert(!(ev[i].ev == FE_FAROL_ACAO && ev[i].tok[0] == '\0'));
+  }
+
+  // ----------------------------------------------------------- cenario 13
+  // CAMINHO REAL (FAROL6C, item 2): Debrid desconectou, player FECHADO,
+  // serie T2E5 falhou no add-on 1 (stream), enquanto o add-on 0 e so catalogo.
+  // Resolver OK -> app.c abre addonguia_reconectar_debrid(1) -> celular envia
+  // chave -> addonguia emite AGP_REPETIR -> app.c reabre T2E5 no ponto (sem
+  // player_do_inicio) e renova fontes; add-on 0 nao vira AM_DEBRID; sem laco.
+  zerar();
+  aberto = 0;
+  c_debrid = 0;
+  temFixo = 1;
+  snprintf(itemFixo.imdb, sizeof itemFixo.imdb, "tt1234567");
+  snprintf(itemFixo.tipo, sizeof itemFixo.tipo, "series");
+  snprintf(itemFixo.titulo, sizeof itemFixo.titulo, "Serie Debrid");
+  epT = 2; epE = 5;
+  ultimoFarolAddonId = addonmodo_id(c_addon[1].base);
+  falhar_fonte("O servidor recusou o link (HTTP 403).", "", FC_HTTP, 403, "http");
+  c_erroDebrid = 1;
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_DEBRID_DESCONECTOU);
+  assert(resolver_teste_prim() == FAROL_A_RECONECTAR_DEBRID);
+  apertar_ok_app();
+  assert(!resolver_aberto());
+  assert(addonguia_aberto());
+  assert(addonguia_identidade() == addonmodo_id(c_addon[1].base));
+  {
+    SDL_Event okEv = { .type = SDL_KEYDOWN };
+    okEv.key.keysym.sym = SDLK_RETURN;
+    addonguia_evento(&okEv);
+  }
+  assert(c_celbAbertoN == 1);
+  snprintf(c_celbChave, sizeof c_celbChave, "CHAVE_TESTE_RD");
+  avancar_addonguia();
+  assert(!addonguia_aberto());
+  assert(c_debridCelN == 1);
+  assert(!strcmp(c_debridCelServ, "realdebrid"));
+  assert(addonmodo_get(addonmodo_id(c_addon[1].base)) == AM_DEBRID);
+  assert(addonmodo_get(addonmodo_id(c_addon[0].base)) == AM_AUTO);
+  app_addonguia_consumir();
+  assert(c_playerAbrirN == 1);
+  assert(c_playerAbrirIdx == c_catReabrirIdx);
+  assert(!strcmp(c_catUltimo.imdb, "tt1234567"));
+  assert(c_playerDefEpN == 1 && c_playerDefT == 2 && c_playerDefE == 5);
+  assert(c_playerDoInicioN == 0);
+  assert(c_buscarModoN == 1 && c_buscarModoRenovar == 1);
+  assert(aguardandoFonte == 1);
+  assert(c_ilhaAvisosN == 0);
+  // Sem laco: novos quadros nao disparam segunda reabertura.
+  avancar_addonguia();
+  app_addonguia_consumir();
+  assert(c_playerAbrirN == 1);
+
+  // ----------------------------------------------------------- cenario 14
+  // Ressalva: lista trocada (sem add-on de stream conhecido) e add-on 0 so de
+  // catalogo. O QR salva a credencial sem gravar AM_DEBRID no add-on 0 e
+  // reabre o filme no ponto.
+  zerar();
+  aberto = 0;
+  c_debrid = 0;
+  temFixo = 1;
+  snprintf(itemFixo.imdb, sizeof itemFixo.imdb, "tt9999999");
+  snprintf(itemFixo.tipo, sizeof itemFixo.tipo, "movie");
+  snprintf(itemFixo.titulo, sizeof itemFixo.titulo, "Filme Sem Lista");
+  epT = 0; epE = 0;
+  ultimoFarolAddonId = 0;
+  c_streamAtual = -1;
+  falhar_fonte("O servidor recusou o link (HTTP 401).", "", FC_HTTP, 401, "http");
+  c_erroDebrid = 1;
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_DEBRID_DESCONECTOU);
+  apertar_ok_app();
+  assert(addonguia_aberto());
+  assert(addonguia_identidade() == 0);
+  snprintf(c_celbChave, sizeof c_celbChave, "CHAVE_SEM_ADDON");
+  avancar_addonguia();
+  assert(c_debridCelN == 1);
+  assert(addonmodo_get(addonmodo_id(c_addon[0].base)) == AM_AUTO);
+  app_addonguia_consumir();
+  assert(c_playerAbrirN == 1);
+  assert(!strcmp(c_catUltimo.imdb, "tt9999999"));
+  assert(c_playerDefEpN == 0);
+  assert(c_buscarModoN == 1 && c_buscarModoRenovar == 1);
+
+  // ----------------------------------------------------------- cenario 15
+  // CAMINHO REAL (FAROL6C, item 2 — sem titulo): player FECHADO e nenhum
+  // titulo aberto na sessao. Apos o QR, nao tenta abrir o player e avisa pela
+  // ilha que a conta reconectou, sem laco.
+  zerar();
+  aberto = 0;
+  c_debrid = 0;
+  c_recusa = 1;
+  temFixo = 0;
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_DEBRID_DESCONECTOU);
+  apertar_ok_app();
+  assert(addonguia_aberto());
+  snprintf(c_celbChave, sizeof c_celbChave, "CHAVE_SEM_TITULO");
+  avancar_addonguia();
+  app_addonguia_consumir();
+  assert(c_playerAbrirN == 0);
+  assert(c_ilhaAvisosN == 1);
+  assert(c_ilhaTexto[0] != '\0');
+  avancar_addonguia();
+  app_addonguia_consumir();
+  assert(c_playerAbrirN == 0 && c_ilhaAvisosN == 1);
+
+  // ----------------------------------------------------------- cenario 16
+  // Protecao contra disparo acidental: escolher modo em Ajustes > Meus addons
+  // (AG_MODO) com o player fechado nao pode emitir AGP_REPETIR nem abrir filme.
+  zerar();
+  aberto = 0;
+  temFixo = 1;
+  snprintf(itemFixo.imdb, sizeof itemFixo.imdb, "tt1111111");
+  snprintf(itemFixo.tipo, sizeof itemFixo.tipo, "movie");
+  addonguia_abrir(AG_MODO, 1, NULL);
+  {
+    SDL_Event okEv = { .type = SDL_KEYDOWN };
+    okEv.key.keysym.sym = SDLK_RETURN;
+    addonguia_evento(&okEv);
+  }
+  avancar_addonguia();
+  app_addonguia_consumir();
+  assert(c_playerAbrirN == 0 && c_ilhaAvisosN == 0);
 
   puts("farol_resolver: producao ok");
   return 0;

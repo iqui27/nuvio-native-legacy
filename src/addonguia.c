@@ -211,6 +211,7 @@ static void rotas(float x,float y,float w) {
 }
 /* Public configurator only: never put installation credentials in a QR. */
 static int configUrl(char *out,size_t n) {
+  if(indice<0||indice>=addons_n())return 0;
   const char *base=addons_base(indice), *p=strstr(base,"://");
   if(!p || strncmp(base,"https://",8))return 0;
   const char *end=p+3+strcspn(p+3,"/?#");
@@ -222,11 +223,16 @@ void addonguia_abrir(int t,int addon,const char *tit) {
   tela=t; telaVisivel=t; paginaAlpha=0; entradaTempo=0;
   indice=addon; foco=0;detalhes=0;anterior=AG_MODO;acessoConfig=0;semCel=0;
   repetirAposDebrid=syncDebridPedido=0;
-  modoSelecionado=addonmodo_get(addonmodo_id(addons_base(addon)));
-  if(modoSelecionado<AM_P2P)modoSelecionado=AM_P2P;
-  identidade=addonmodo_id(addons_base(addon));
-  snprintf(nome,sizeof nome,"%s",addons_nome(addon));
-  snprintf(titulo,sizeof titulo,"%s",tit&&*tit? tit:addons_nome(addon));
+  if(addon>=0 && addon<addons_n()) {
+    identidade=addonmodo_id(addons_base(addon));
+    modoSelecionado=addonmodo_get(identidade);
+    if(modoSelecionado<AM_P2P)modoSelecionado=AM_P2P;
+    snprintf(nome,sizeof nome,"%s",addons_nome(addon));
+    snprintf(titulo,sizeof titulo,"%s",tit&&*tit? tit:addons_nome(addon));
+  } else {
+    identidade=0; modoSelecionado=AM_DEBRID; nome[0]=0;
+    snprintf(titulo,sizeof titulo,"%s",tit&&*tit? tit:"");
+  }
 }
 void addonguia_reconectar_debrid(int addon) {
   addonguia_abrir(AG_CONECTAR,addon,NULL);
@@ -243,7 +249,7 @@ uint64_t addonguia_identidade(void) {return identidade;}
 void addonguia_progresso(const char *s,int p) {snprintf(servico,sizeof servico,"%s",s?s:"");pct=p;}
 static void entregar(int p) {pedido=p;sair();}
 static void debrid_conectado(void) {
-  if(repetirAposDebrid) entregar(AGP_REPETIR);
+  if(repetirAposDebrid) { repetirAposDebrid=0; syncDebridPedido=0; entregar(AGP_REPETIR); }
   else {tela=AG_MODO;foco=1;}
 }
 static int escolher(int modo) {
@@ -263,7 +269,7 @@ static void ativar(void) {
     if(foco==40)foco=modoSelecionado-1;
     if(foco<=2)modoSelecionado=foco+1;
     if(foco==1 && !debrid_ativo()){conectar();return;}
-    if(foco<=2 && escolher(foco+1))entregar(AGP_REPETIR);
+    if(foco<=2 && escolher(foco+1))entregar(player_aberto()?AGP_REPETIR:AGP_NADA);
     return;
   }
   if(tela==AG_CONECTAR) {
@@ -330,7 +336,7 @@ void addonguia_atualizar(int permitir) {
       /* Same local credential store as Settings; input comes only from phone. */
       int ok=ajustes_debrid_celular(CHAVES[serv],chave);
       memset(chave,0,sizeof chave);
-      if(ok && addonmodo_set(identidade,AM_DEBRID))debrid_conectado();
+      if(ok && (!identidade || addonmodo_set(identidade,AM_DEBRID)))debrid_conectado();
     }
   }
   if(tela>=0||!permitir||guiaMostrado)return;
