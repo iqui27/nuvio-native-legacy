@@ -1,11 +1,22 @@
 #include <assert.h>
+#include <dirent.h>
 #include "../src/guiav5ui.c"
 
 static struct { char name[240]; char *body; } files[32];
 static int nfiles, requests, fail_request, playlist_requests, empty_playlist;
+static const char *folder;
+char *dados_caminho(char *out,unsigned cap,const char *name){
+  int n=snprintf(out,cap,"%s/%s",folder,name);return n>=0&&(unsigned)n<cap?out:NULL;
+}
+void dados_marcar_sujo(int leve){assert(leve==1);}
+unsigned guia_catalog_refresh_revision(void){return 0;}
 char *dados_ler(const char *name){
   for(int i=0;i<nfiles;i++)if(!strcmp(files[i].name,name))return strdup(files[i].body);
-  return NULL;
+  char path[600];assert(dados_caminho(path,sizeof path,name));
+  FILE *f=fopen(path,"rb");if(!f)return NULL;
+  assert(!fseek(f,0,SEEK_END));long n=ftell(f);assert(n>=0);rewind(f);
+  char *body=malloc((size_t)n+1);assert(body);assert(fread(body,1,(size_t)n,f)==(size_t)n);
+  body[n]=0;assert(!fclose(f));return body;
 }
 int dados_gravar_leve(const char *name,const char *body){
   int i=0;while(i<nfiles&&strcmp(files[i].name,name))i++;
@@ -22,7 +33,7 @@ void admin_sha256_hex(const unsigned char *body,unsigned long n,char *hex){
 int rede_pedir(const RedePedido *request,RedeResposta *response){
   playlist_requests++;response->status=fail_request?503:200;
   const char *body=empty_playlist?"#EXTM3U\n":"#EXTM3U\n#EXTINF:-1,Movie\nhttps://example.invalid/movie.mp4\n";
-  if(!fail_request)assert(request->receber_corpo(body,strlen(body),request->corpo_usuario));
+  for(size_t i=0;i<strlen(body);i++)assert(request->receber_corpo(body+i,1,request->corpo_usuario));
   return REDE_OK;
 }
 void rede_resposta_limpar(RedeResposta *response){(void)response;}
@@ -39,7 +50,8 @@ static void run(int op,int kind,const char *category){
   operation=op;vod_request_kind=kind;snprintf(vod_request_id,sizeof vod_request_id,"%s",category);
   worker_categories_missing=0;vod_load_worker();
 }
-int main(void){
+int main(int argc,char **argv){
+  assert(argc==2);folder=argv[1];
   snprintf(vod_work_key,sizeof vod_work_key,"identity-a");
   snprintf(work_draft.user,sizeof work_draft.user,"fixture-user");
   snprintf(work_draft.password,sizeof work_draft.password,"fixture-password");
@@ -54,6 +66,8 @@ int main(void){
   run(6,0,"");assert(requests==6);
   char *old=strdup(vod_pending.json[0]);assert(old);
   fail_request=1;run(7,0,"1");assert(!worker_ok&&requests==7&&!strcmp(old,vod_pending.json[0]));free(old);
+  vod_snapshot_served=0;assert(vod_fallback_required());
+  vod_snapshot_served=1;assert(!vod_fallback_required());vod_snapshot_served=0;
   fail_request=0;run(7,0,"1");assert(worker_ok&&requests==8);
   run(7,0,"3");assert(worker_ok&&requests==9);
   run(7,0,"3");assert(worker_ok&&requests==9);
@@ -75,8 +89,16 @@ int main(void){
   assert(load_playlist(out,2)==0&&playlist_requests==3);
   snprintf(work_draft.playlist,sizeof work_draft.playlist,"https://other.invalid/list");
   assert(load_playlist(out,2)==0&&playlist_requests==4);
+  vod_work_stamp++;worker_cancel=1;
+  assert(load_playlist(out,2)==0&&playlist_requests==5);
+  worker_cancel=0;vod_work_stamp--;
+  assert(load_playlist(out,2)==0&&playlist_requests==5);
+  DIR *dir=opendir(folder);assert(dir);struct dirent *entry;
+  while((entry=readdir(dir)))assert(!strstr(entry->d_name,".tmp"));
+  closedir(dir);
   for(int i=0;i<nfiles;i++)free(files[i].body);
   puts("catsnap VOD: fresh restart has zero requests; refresh, identity, empty, corrupt and failure retention OK");
   puts("catsnap playlist: fresh snapshot has zero requests; refresh, identity, empty and failed refresh retention OK");
+  puts("catsnap fixes: streaming chunks, failed/cancelled temp cleanup, lazy fallback with no fresh snapshot OK");
   return 0;
 }

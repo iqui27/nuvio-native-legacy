@@ -50,4 +50,44 @@ static inline int catsnap_write(const char *file, const char *body, long long re
   free(saved);
   return ok;
 }
+
+typedef struct { FILE *file; char path[600], tmp[620]; } CatsnapStream;
+static inline int catsnap_stream_begin(CatsnapStream *s,const char *file,long long refresh) {
+  memset(s,0,sizeof *s);
+  if(!dados_caminho(s->path,sizeof s->path,file))return 0;
+  snprintf(s->tmp,sizeof s->tmp,"%s.tmp",s->path);
+#ifdef __EMSCRIPTEN__
+  dados_fs_travar();
+#endif
+  s->file=fopen(s->tmp,"wb");
+  int ok=s->file&&fprintf(s->file,"NVCS %u %lld %lld\n",CATSNAP_VERSION,(long long)time(NULL),refresh)>0;
+#ifdef __EMSCRIPTEN__
+  dados_fs_liberar();
+#endif
+  return ok;
+}
+static inline int catsnap_stream_write(CatsnapStream *s,const void *body,size_t n) {
+  if(!s->file)return 0;
+#ifdef __EMSCRIPTEN__
+  dados_fs_travar();
+#endif
+  int ok=fwrite(body,1,n,s->file)==n;
+#ifdef __EMSCRIPTEN__
+  dados_fs_liberar();
+#endif
+  return ok;
+}
+static inline int catsnap_stream_finish(CatsnapStream *s,int ok) {
+#ifdef __EMSCRIPTEN__
+  dados_fs_travar();
+#endif
+  if(s->file){if(fclose(s->file))ok=0;s->file=NULL;}else ok=0;
+  if(ok&&rename(s->tmp,s->path))ok=0;
+  if(!ok&&s->tmp[0])remove(s->tmp);
+#ifdef __EMSCRIPTEN__
+  dados_fs_liberar();
+#endif
+  if(ok)dados_marcar_sujo(1);
+  return ok;
+}
 #endif

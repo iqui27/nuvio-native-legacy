@@ -11,4 +11,4 @@ else
 fi
 cc -std=c11 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -O0 -g -Isrc "${flags[@]}" \
   tests/catsnap_vod.c src/guiav5.c src/js.c src/jsw.c -lm -o "$work/test"
-"$work/test"
+"$work/test" "$work"

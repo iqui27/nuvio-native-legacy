@@ -40,10 +40,12 @@ static char *vod_merge_items(const char *old,const char *fresh,int kind,const ch
 }
 static void vod_load_worker(void){
   Uint32 began=SDL_GetTicks();int status=0,items=0,categories=0;worker_ok=1;
+  worker_snapshot_served=0;
   if(operation==8){
     for(int k=0;k<2;k++)for(int cat=0;cat<2;cat++){
       char file[160];int fresh=0;vod_cache_file(file,sizeof file,k,cat);char *body=catsnap_read(file,vod_work_stamp,&fresh);
       if(body&&!vod_array(body)){free(body);body=NULL;}
+      if(body&&fresh)worker_snapshot_served=1;
       if(cat&&(k?work_draft.series:work_draft.movies)&&(!body||!fresh))worker_categories_missing=1;
       if(cat){free(vod_pending.categories[k]);vod_pending.categories[k]=body;}
       else{free(vod_pending.json[k]);vod_pending.json[k]=body;}
@@ -54,6 +56,7 @@ static void vod_load_worker(void){
       char file[160];int fresh=0;vod_cache_file(file,sizeof file,k,1);
       char *cached=catsnap_read(file,vod_work_stamp,&fresh);
       if(cached&&fresh&&vod_array(cached)){
+        worker_snapshot_served=1;
         free(vod_pending.categories[k]);vod_pending.categories[k]=cached;continue;
       }
       free(cached);
@@ -81,6 +84,7 @@ static void vod_load_worker(void){
     char file[240];int fresh=0;
     snprintf(file,sizeof file,"guiav5-vod-%s-%d-item-%s.json",vod_work_key,vod_request_kind,vod_request_id);
     char *body=catsnap_read(file,vod_work_stamp,&fresh);
+    if(fresh&&vod_array(body))worker_snapshot_served=1;
     if(!fresh||!vod_array(body)){free(body);body=xtream_consultar(work_draft.server,work_draft.user,work_draft.password,request,30,&status);fresh=0;}
     if((!fresh&&(status<200||status>=300))||!vod_array(body))worker_ok=0;
     else{
@@ -103,9 +107,14 @@ static void vod_load_worker(void){
   if(!worker_cancel)vod_index(&vod_pending,0);
   printf("[vod-load] phase=%s http=%d categories=%d items=%d ok=%d ms=%u\n",operation==8?"cache":operation==6?"categories":"items",status,categories,items,worker_ok,SDL_GetTicks()-began);
 }
+static int vod_fallback_required(void){
+  return !worker_ok&&(operation==6||operation==7)&&!vod_snapshot_served;
+}
 static void vod_begin(void){
   if(atomic_load(&busy)){vod_begin_pending=1;return;}
   use_saved=1;
+  vod_refresh_revision=guia_catalog_refresh_revision();
+  vod_snapshot_served=0;
   vod_refresh_stamp=catsnap_refresh_stamp(profile);
   vod_cache_checked=0;vod_failed=0;
   memset(vod_done_count,0,sizeof vod_done_count);

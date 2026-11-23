@@ -108,6 +108,8 @@ static int vod_lazy, vod_failed, vod_cache_checked, vod_begin_pending;
 static char vod_cache_key[65], vod_work_key[65], vod_request_id[64];
 static int vod_request_kind;
 static long long vod_refresh_stamp, vod_work_stamp;
+static unsigned vod_refresh_revision;
+static int vod_snapshot_served, worker_snapshot_served;
 static char (*vod_done[2])[64];
 static int vod_done_count[2];
 static void vod_begin(void);
@@ -249,12 +251,10 @@ static void build_groups(void){
       for(int i=0;i<group_count;i++)if(!strcmp(groups[i],name))group_on[i]=js_num(p,e,"on",0)!=0;p=js_prox(e);}free(b);}
   }
 }
-typedef struct {G5Playlist parser;char *body;size_t size;} PlaylistTransfer;
+typedef struct {G5Playlist parser;CatsnapStream snapshot;int snapshot_ok;} PlaylistTransfer;
 static int feed(const void *bytes,size_t n,void *user){
   PlaylistTransfer *t=user;
-  if(n>16*1024*1024-t->size)return 0;
-  char *body=realloc(t->body,t->size+n+1);if(!body)return 0;
-  t->body=body;memcpy(body+t->size,bytes,n);t->size+=n;body[t->size]=0;
+  if(t->snapshot_ok)t->snapshot_ok=catsnap_stream_write(&t->snapshot,bytes,n);
   return g5_playlist_feed(&t->parser,bytes,n);
 }
 static int cancelled(void *unused){(void)unused;return worker_cancel;}
@@ -277,13 +277,14 @@ static int load_playlist(G5Item *out,int cap){
     g5_playlist_init(&parser,out,cap);
   }else free(body);
   PlaylistTransfer transfer={0};g5_playlist_init(&transfer.parser,out,cap);
+  transfer.snapshot_ok=catsnap_stream_begin(&transfer.snapshot,file,vod_work_stamp);
   RedePedido req={.url=work_draft.playlist,.prazo_ms=30000,.max_bytes=16*1024*1024,.seguir=1,.mesmo_host=1,
     .receber_corpo=feed,.corpo_usuario=&transfer,.parar=cancelled};
   RedeResposta res={0};int ok=rede_pedir(&req,&res)==REDE_OK&&res.status>=200&&res.status<300;
   rede_resposta_limpar(&res);staging_total=transfer.parser.total;
   int n=ok?g5_playlist_finish(&transfer.parser):-1;
-  if(n>=0&&transfer.body&&!worker_cancel)catsnap_write(file,transfer.body,vod_work_stamp);
-  free(transfer.body);return n;
+  catsnap_stream_finish(&transfer.snapshot,n>=0&&!worker_cancel&&transfer.snapshot_ok);
+  return n;
 }
 static void *load(void *unused){
   (void)unused;rede_parar_quando(cancelled,NULL);
@@ -364,6 +365,7 @@ static int start(int op){
   if(atomic_load(&busy)||(!ltv_fonte_ligada(draft.type?"g5m3u":"xt")&&op!=3))return 0;
   work_draft=draft;work_phone=phone_stage==1||phone_stage==4;
   vod_work_stamp=catsnap_refresh_stamp(profile);
+  if(op==2){vod_refresh_revision=guia_catalog_refresh_revision();vod_refresh_stamp=vod_work_stamp;}
   if(use_saved&&work_draft.type==0)xtream_dados_copiar(work_draft.server,sizeof work_draft.server,work_draft.user,sizeof work_draft.user,work_draft.password,sizeof work_draft.password);
   if(op==6||op==7||op==8){
     vod_work_stamp=vod_refresh_stamp;
@@ -2059,11 +2061,9 @@ int g5ui_event(const SDL_Event *e){
 }
 void g5ui_update(void){
   context();
-  {static Uint32 checked;Uint32 now=SDL_GetTicks();
-   if(now-checked>=1000&&!atomic_load(&busy)&&!strncmp(screen,"vod-",4)){
-     checked=now;long long stamp=catsnap_refresh_stamp(profile);
-     if(stamp!=vod_refresh_stamp){if(draft.type==0)vod_begin();else{vod_refresh_stamp=stamp;action[0]=0;start(2);}}
-   }}
+  if(!atomic_load(&busy)&&!strncmp(screen,"vod-",4)&&guia_catalog_refresh_revision()!=vod_refresh_revision){
+    if(draft.type==0)vod_begin();else{action[0]=0;start(2);}
+  }
 #ifdef NV_DESKTOP_UI
   if(edit>=0)teclado_atualizar(1.0f/60,SDL_GetTicks());
 #endif
@@ -2087,7 +2087,9 @@ void g5ui_update(void){
     atomic_store(&busy,0);atomic_store(&ready,0);erase(&work_draft,sizeof work_draft);
     if(!worker_cancel&&worker_generation==catalog_generation&&worker_profile==profile&&!strcmp(worker_account,account)){
       if(operation==6||operation==7||operation==8){
-        if(!worker_ok&&(operation==6||operation==7))vod_failed=1;
+        vod_snapshot_served|=worker_snapshot_served;
+        if(vod_fallback_required()){vod_lazy=0;fallback_fetch=1;}
+        else if(!worker_ok&&(operation==6||operation==7))vod_failed=1;
         if(worker_ok||operation==6){
           int old_focus=focus;float old_scroll=vod_scroll;
           vod_index_inventory(&vod_pending);
