@@ -1084,12 +1084,16 @@ void player_erro_fonte(void) {
 // like Back while loading, and the title page comes back with its Play
 // button. It used to show the source error card, so a second Back was needed
 // for nothing that had failed. Android keeps the card (#409).
+// NO EXIT FADE: nothing played, and with esperandoFonte off the black of the
+// opening gives way to the title's backdrop, which then faded out over the
+// page (the blink the owner saw, 23/11). The page is already underneath.
 void player_desistir_fonte(void) {
 #ifdef NV_ANDROID
   player_erro_fonte();
 #else
   esperandoFonte = 0;
   saindo = 1; pediuSair = 1;
+  entrada = 0.0f;
 #endif
 }
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
