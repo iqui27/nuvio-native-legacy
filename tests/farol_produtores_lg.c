@@ -84,7 +84,8 @@ static int video_registro_negado(void) { return 0; }
 // proveniencia debrid da fonte corrente — os mesmos nomes dos estaticos de
 // player.c, com um Stream minimo (so o campo que o trecho extraido le).
 typedef struct { int debridServico; } Stream;
-static Stream fonteFarol = { 1 };
+static const Stream fonteFarol;
+static const char ultimaFonteUrl[] = "https://cdn.real-debrid.com/video";
 static int stream_atual(void) { return 0; }
 static const Stream *stream_item(int i) { (void)i; return &fonteFarol; }
 static FarolErro ultimoFarol;
@@ -351,6 +352,7 @@ int main(int argc, char **argv) {
   emitir_erro_fonte();
   n = farolanel_ler(ev, FAROL_ANEL_N, 0);
   assert(n == 2 && ev[0].ev == FE_RECUSA_SINC && ev[1].ev == FE_ERRO_FONTE);
+  assert(temUltimoFarol && ultimoFarolDebrid);
 #if defined(__EMSCRIPTEN__)
   assert(!strcmp(ev[0].tok, "av_invalid_operation") &&
          !strcmp(ev[1].tok, "av_invalid_operation"));
