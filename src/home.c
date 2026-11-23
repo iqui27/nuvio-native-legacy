@@ -29,6 +29,7 @@
 #include "cachearte.h"
 #include "fileiras.h"
 #include "farol.h"       // fileiras do Farol: ponto de luz, motivo (45)
+#include "faroldica.h"   // cartao de dica P2 como coluna 0 da fileira Farol (48)
 #include "farolsinal.h"  // farolsinal_origem: o Play mede a recomendacao
 #include "curadoria.h"
 #include "continuar.h"
@@ -202,10 +203,44 @@ typedef struct {
   // que com a capa da colecao. FILEIRA_CATALOGOS e o Automatico: vale a forma
   // que a conta deu a pasta (`forma`).
   TipoFileira estiloCol;
+  // Cartao de dica do Farol (P2, issue 48) como coluna 0 da primeira fileira
+  // do Farol: temDica=1 desloca os cartazes para 1..n-1; dicaFocavel=0 exclui
+  // a coluna 0 da ordem de foco (acao == FP_ACAO_NADA).
+  int temDica;
+  int dicaFocavel;
 } Fileira;
+
+// Cache local da dica ativa (issue 48): atualizado apenas quando a geracao
+// atomica faroldica_geracao() muda — zero trava e zero copia por quadro.
+static FarolDica dicaCache;
+static unsigned  dicaCacheGer = ~0u;
+static unsigned  dicaCenaGer  = ~0u;
+static int       dicaSalva;
+static Uint32    backDesde;
+static int       backPressionando, backLongDisparado, backConsumirSoltura;
+
+static void dicaSincronizarCache(void) {
+  unsigned g = faroldica_geracao();
+  if (g == dicaCacheGer) return;
+  dicaCacheGer = g;
+  dicaSalva = 0;
+  if (!faroldica_atual(&dicaCache)) memset(&dicaCache, 0, sizeof dicaCache);
+}
+
+static int fileiraColMin(const Fileira *f) {
+  return (f && f->temDica && !f->dicaFocavel && f->n > 1) ? 1 : 0;
+}
+
+static int fileiraNoDica(const Fileira *f, int coluna) {
+  return f && f->temDica && coluna == 0;
+}
 
 static int fileiraItemIndice(const Fileira *f, int coluna) {
   if (!f || coluna < 0 || coluna >= (f->stackN ? f->stackN : f->n)) return -1;
+  if (f->temDica) {
+    if (coluna == 0) return -1;
+    coluna--;
+  }
   // A FILEIRA DE AMIGOS (amigosfil.h): as colunas sao ROSTOS, e nao itens do
   // catalogo. O item dela e o cartao em foco (ou o titulo mais novo do rosto),
   // que e o que o destaque e a memoria de posicao precisam.
@@ -1562,6 +1597,7 @@ static void abrirMenuCartaz(void) {
     return;
   }
   s = &fileiras[foco.fileira];
+  if (fileiraNoDica(s, foco.coluna)) return;
   if (!strcmp(s->chave, "library") && s->verTudo && foco.coluna == s->n) {
     ctx_abrir_filmenu(s->chave, s->titulo, "", 1);
     return;
@@ -1598,6 +1634,7 @@ static int foco_pode_pressao_longa(void) {
   const Fileira *s = &fileiras[foco.fileira];
   // Pasta de colecao: o menu e so o do estilo da fileira (ctx_abrir_fileira).
   if (s->tipo == FILEIRA_SOCIAL) return 0;
+  if (fileiraNoDica(s, foco.coluna)) return 0;
   // Pilha fechada: so o estilo da fileira, entao so quando ela aceita forma.
   if (s->tipo == FILEIRA_TOP10 && s->stackN)
     return fil_estilos(s->chave, NULL, NULL, FIL_TIPO_N) > 0;
@@ -2070,7 +2107,10 @@ static float sobraDireitaFoco(int r, float abre) {
 static float alvoScrollFil(int r, int col, float atual, float abre) {
   float passo = passoFil(r);
   float esq   = (float)col * passo;
-  float dir   = esq + larguraFil(r) + xOffTipo(fileiras[r].tipo);
+  // Cartao de dica nao focavel (acao: nada) mora na coluna 0: ao voltar ao
+  // primeiro cartaz (col 1), ancora em 0 para o cartao ficar inteiro a vista.
+  if (fileiras[r].temDica && !fileiras[r].dicaFocavel && col == 1) esq = 0.0f;
+  float dir   = (float)col * passo + larguraFil(r) + xOffTipo(fileiras[r].tipo);
   float util  = homeLarguraUtil();
   if (fileiras[r].tipo == FILEIRA_FICHA) {
     esq += fichaOffset(r, col);
@@ -2481,7 +2521,7 @@ static void posCapturar(void) {
     // confiavel que o indice: a publicacao incremental pode ja ter trocado o
     // bloco do catalogo quando este snapshot for capturado.
     { int a, idx = fileiraItemIndice(&fileiras[r], p->coluna);
-      const CatItem *it = p->coluna < fileiras[r].n ? cat_item(idx) : NULL;
+      const CatItem *it = (idx >= 0 && p->coluna < fileiras[r].n) ? cat_item(idx) : NULL;
       p->itemId[0] = p->itemTipo[0] = 0;
       for (a = 0; a < antigoN; a++)
         // Keep the saved identity across publications, but refresh it after
@@ -2541,7 +2581,7 @@ static int posAplicarTabela(const HomePos *t, int n,
       int q;
       for (q = 0; q < fileiras[r].n; q++) {
         int idx = fileiraItemIndice(&fileiras[r], q);
-        const CatItem *it = cat_item(idx);
+        const CatItem *it = idx >= 0 ? cat_item(idx) : NULL;
         if (it && !strcmp(it->imdb, p->itemId) &&
             !strcmp(it->tipo, p->itemTipo)) { c = q; break; }
       }
@@ -2549,7 +2589,7 @@ static int posAplicarTabela(const HomePos *t, int n,
     // A fileira pode ter encolhido entre uma publicacao e outra, ou entre
     // ontem e hoje.
     if (c >= foco.nColunas[r]) c = foco.nColunas[r] - 1;
-    if (c < 0) c = 0;
+    if (c < fileiraColMin(&fileiras[r])) c = fileiraColMin(&fileiras[r]);
     foco.colunaLembrada[r] = c;
     scrollX[r] = (float)p->scrollX;
   }
@@ -2564,13 +2604,13 @@ static int posAplicarTabela(const HomePos *t, int n,
       int q;
       for (q = 0; q < fileiras[achou].n; q++) {
         int idx = fileiraItemIndice(&fileiras[achou], q);
-        const CatItem *it = cat_item(idx);
+        const CatItem *it = idx >= 0 ? cat_item(idx) : NULL;
         if (it && !strcmp(it->imdb, pf->itemId) &&
             !strcmp(it->tipo, pf->itemTipo)) { c = q; break; }
       }
     }
     if (c >= foco.nColunas[achou]) c = foco.nColunas[achou] - 1;
-    if (c < 0) c = 0;
+    if (c < fileiraColMin(&fileiras[achou])) c = fileiraColMin(&fileiras[achou]);
     foco.fileira = achou;
     foco.coluna  = c;
     foco.colunaLembrada[achou] = c;
@@ -2607,7 +2647,7 @@ static void homeAtualizarReferenciasArte(void) {
     float largura = larguraFil(r);
     for (i = 0; i < limite; i++) {
       int idx = fileiraItemIndice(&fileiras[r], i);
-      const CatItem *it = cat_item(idx);
+      const CatItem *it = idx >= 0 ? cat_item(idx) : NULL;
       if (!it) continue;
       homeMarcarURL(posterprov_card_addon(it->origem, it->imdb, it->tmdb, it->tipo, it->poster), largura);
       homeMarcarURL(it->logo, largura * 0.65f);
@@ -2667,7 +2707,15 @@ int home_iniciar(const char *dirArte) {
 // Logical rows own vertical navigation, including rows outside the viewport.
 // focus_mover restores the destination row's saved column.
 static int focoVertical(int dy) {
-  return focus_mover(&foco, 0, dy);
+  int moveu = focus_mover(&foco, 0, dy);
+  if (moveu && foco.fileira >= 0 && foco.fileira < nFileiras) {
+    int cMin = fileiraColMin(&fileiras[foco.fileira]);
+    if (foco.coluna < cMin) {
+      foco.coluna = cMin;
+      foco.colunaLembrada[foco.fileira] = cMin;
+    }
+  }
+  return moveu;
 }
 
 static void home_evento_(const SDL_Event *e) {
@@ -2759,6 +2807,29 @@ static void home_evento_(const SDL_Event *e) {
       okLongDisparado = 0;
       okHold = 0.0f;
       if (foco.fileira < 0 || foco.fileira >= nFileiras) return;
+      // Cartao de dica do Farol (P2, coluna 0): executa a acao tipada.
+      if (fileiraNoDica(&fileiras[foco.fileira], foco.coluna)) {
+        dicaSincronizarCache();
+        if (dicaCache.ativa && dicaCache.focavel) {
+          FarolDicaExec ex = faroldica_executar(&dicaCache);
+          if (ex.ok && (ex.tipo == FD_EXEC_ABRIR || ex.tipo == FD_EXEC_TOCAR)) {
+            const CatItem *ci = ex.catIdx >= 0 ? cat_item_exato(ex.catIdx) : NULL;
+            if (ci) farolsinal_origem(ci, FS_ORIGEM_FAROL);
+            itemFoco.indice = ex.catIdx;
+            itemFoco.rect   = temAncoraFoco ? ancoraFoco : (GfxRect){ 0, 0, 0, 0 };
+            itemFoco.arte   = ex.catIdx >= 0 ? arte_por_identidade(ex.catIdx, 0) : NULL;
+            itemFoco.titulo = ci ? ci->titulo : dicaCache.alvoTitulo;
+            itemFoco.genero = ci ? ci->genero : NULL;
+            itemFoco.meta   = ci ? ci->meta : NULL;
+            publicarItemFoco();
+            if (ex.tipo == FD_EXEC_TOCAR) pedidoTocar = 1;
+            else pedidoAbrir = 1;
+          } else if (ex.ok && ex.tipo == FD_EXEC_SALVAR) {
+            dicaSalva = 1;
+          }
+        }
+        return;
+      }
       if(fileiras[foco.fileira].tipo==FILEIRA_TOP10 && fileiras[foco.fileira].stackN) {
         Fileira *s=&fileiras[foco.fileira];
         s->n=s->stackN;   // a fileira inteira, nao 10 (issue #201)
@@ -2807,6 +2878,48 @@ static void home_evento_(const SDL_Event *e) {
       }
       return;
     } }
+
+  // VOLTAR LONGO NO CARTAO DE DICA (P2, coluna 0): dispensa a dica (avisodisp)
+  // e ela nao volta. Toque curto preserva o Voltar normal da Home.
+  { SDL_Keycode bk = e->key.keysym.sym;
+    int ehBack = (bk == SDLK_ESCAPE || bk == SDLK_AC_BACK || bk == SDLK_BACKSPACE);
+    int noDica = !focoHero && foco.fileira >= 0 && foco.fileira < nFileiras &&
+                 fileiraNoDica(&fileiras[foco.fileira], foco.coluna);
+    if (e->type == SDL_KEYDOWN && ehBack && noDica) {
+      if (!backPressionando) {
+        backPressionando = 1;
+        backLongDisparado = 0;
+        backConsumirSoltura = 0;
+        backDesde = SDL_GetTicks();
+      }
+      return;
+    } else if (e->type == SDL_KEYUP && ehBack) {
+      if (backConsumirSoltura) {
+        backConsumirSoltura = 0; backPressionando = 0;
+        backLongDisparado = 0; backDesde = 0;
+        return;
+      }
+      if (backPressionando) {
+        Uint32 dur = backDesde ? SDL_GetTicks() - backDesde : 0;
+        backPressionando = 0; backLongDisparado = 0; backDesde = 0;
+        if (noDica && dur >= NV_HOLD_MS) {
+          faroldica_dispensar();
+          dicaSincronizarCache();
+          return;
+        }
+#if !defined(__APPLE__) && !defined(NV_LINUX_DESKTOP)
+        if (!focoHero) {
+          focoHero = 1;
+          foco.fileira = 0;
+          foco.coluna = 0;
+          foco.colunaLembrada[0] = 0;
+          sairPerguntadoEm = 0;
+        }
+#endif
+        return;
+      }
+    }
+  }
 
   if (e->type != SDL_KEYDOWN) return;
   SDL_Keycode k = e->key.keysym.sym;
@@ -2876,6 +2989,13 @@ static void home_evento_(const SDL_Event *e) {
         if (primeira < 0) return;
         foco.fileira = primeira; foco.coluna = 0;
       }
+      if (foco.fileira >= 0 && foco.fileira < nFileiras) {
+        int cMin = fileiraColMin(&fileiras[foco.fileira]);
+        if (foco.coluna < cMin) {
+          foco.coluna = cMin;
+          foco.colunaLembrada[foco.fileira] = cMin;
+        }
+      }
       focoHero = 0; return;
     }
     // Up reaches the top menu or focuses the clock until OK is pressed.
@@ -2915,7 +3035,9 @@ static void home_evento_(const SDL_Event *e) {
     // por exemplo) nao tinha como abrir o menu sem antes descer. O carrossel
     // continua acessivel pela direita e pela troca automatica.
     // Por isso a esquerda nunca bate na borda: a coluna 0 e a porta do menu.
-    if (foco.coluna == 0) { pedidoMenu = 1; return; }
+    int colMin = (foco.fileira >= 0 && foco.fileira < nFileiras)
+               ? fileiraColMin(&fileiras[foco.fileira]) : 0;
+    if (foco.coluna <= colMin) { pedidoMenu = 1; return; }
     if (!focus_mover(&foco, -1, 0) && foco.fileira < MAX_FIL)
       anim_borda_bater(&bordaFil[foco.fileira], -NV_BORDA_AMP);
   }
@@ -3103,9 +3225,10 @@ static void sincronizarFileiras(void) {
   // direto (cat_revisao); cat_revisao e bumpado em cat_definir_tudo,
   // cat_trocar_continuar E cat_republicar_fileiras, cobrindo todo caminho
   // que troca fils[].
-  static unsigned ultCatRev, ultFilRev, ultColRev, ultFilLim, ultCwoRev, ultOrdemRev, ultRetRev, ultCfRev, ultOvRev, ultItensRev, ultCurRev;
+  static unsigned ultCatRev, ultFilRev, ultColRev, ultFilLim, ultCwoRev, ultOrdemRev, ultRetRev, ultCfRev, ultOvRev, ultItensRev, ultCurRev, ultDicaRev;
   unsigned catRev = cat_revisao(), filRev = fil_revisao();
   unsigned itensRev = cat_revisao_conteudo();
+  unsigned dicaRev = faroldica_geracao();
   int filLim = fil_limite();
   // A CURADORIA da fileira Herói entra na guarda: a recomendação chega DEPOIS
   // do catálogo (e volta a cada 30 min), e sem este termo o cartão só trocaria
@@ -3122,10 +3245,10 @@ static void sincronizarFileiras(void) {
       filLim == ultFilLim && cwoRev == ultCwoRev &&
       retomarAplicada == retomarRev && cw_retido_rev() == ultRetRev &&
       cf_revisao() == ultCfRev && ov_revisao() == ultOvRev &&
-      curRev == ultCurRev &&
+      curRev == ultCurRev && dicaRev == ultDicaRev &&
       ultCatRev) {   // ultCatRev=0: primeira chamada, cai no hash
     ultFilRev = filRev; ultColRev = colRev; ultFilLim = (unsigned)filLim;
-    ultCurRev = curRev;
+    ultCurRev = curRev; ultDicaRev = dicaRev;
     return;
   }
   // Local group visibility changes also change which source rows are wrapped.
@@ -3139,12 +3262,14 @@ static void sincronizarFileiras(void) {
   ultOrdemRev = ordemRev;
   ultRetRev = cw_retido_rev();
   ultCurRev = curRev;
+  ultDicaRev = dicaRev;
   ultCfRev = cf_revisao(); ultOvRev = ov_revisao(); ultItensRev = itensRev;
   unsigned revisao = 2166136261u;
   // Colecao fixada e "vistos ocultos" (homefil.h) mudam a lista sem o catalogo mudar.
   revisao = (revisao ^ ultCfRev) * 16777619u;
   revisao = (revisao ^ ultOvRev) * 16777619u;
   revisao = (revisao ^ itensRev) * 16777619u;
+  revisao = (revisao ^ dicaRev) * 16777619u;
   revisao = (revisao ^ (unsigned)reservaEstado) * 16777619u;
   // A escolha LOCAL de fileiras entra na mesma assinatura do catalogo: ordem,
   // liga/desliga, forma, tamanho e limite mudam a lista tanto quanto uma
@@ -3227,6 +3352,8 @@ static void sincronizarFileiras(void) {
     // usou índices compostos. Limpar a marca evita que uma linha comum herde
     // silenciosamente os índices daquela montagem anterior.
     fileiras[destino].usaItens = 0;
+    fileiras[destino].temDica = 0;
+    fileiras[destino].dicaFocavel = 0;
     snprintf(fileiras[destino].titulo, sizeof fileiras[destino].titulo, "%s", cf->titulo);
     // "Continuar assistindo" e a unica landscape: e o
     // `continueWatchingCardStyle: "card"` do perfil. Todo o resto e poster 2:3.
@@ -3752,6 +3879,27 @@ static void sincronizarFileiras(void) {
       }
     }
   }
+  // CARTAO DE DICA DO FAROL (P2, issue 48): entra como coluna 0 da PRIMEIRA
+  // fileira do Farol visivel na Home (normalmente farol_gosto1). Nunca duplica
+  // na segunda fileira; se acao == FP_ACAO_NADA, dicaFocavel = 0 exclui a
+  // coluna 0 da ordem de foco.
+  dicaSincronizarCache();
+  for (r = 0; r < destino; r++) {
+    fileiras[r].temDica = 0;
+    fileiras[r].dicaFocavel = 0;
+  }
+  if (dicaCache.ativa) {
+    for (r = 0; r < destino; r++) {
+      if (farol_fileira(fileiras[r].chave) && fileiras[r].n > 0 &&
+          fileiras[r].tipo != FILEIRA_HEROI && !fileiras[r].stackN) {
+        int capD = MAX_CARDS - (fileiras[r].verTudo ? 1 : 0);
+        fileiras[r].temDica = 1;
+        fileiras[r].dicaFocavel = faroldica_focavel(&dicaCache);
+        if (fileiras[r].n < capD) fileiras[r].n++;
+        break;
+      }
+    }
+  }
   nFileiras = destino;
   heroSetRev = 0; // Row contents can change without changing either count.
   retomarAplicada = retomarRev;
@@ -3801,6 +3949,16 @@ static void sincronizarFileiras(void) {
       cols[k] = fileiras[k].n + (fileiras[k].verTudo ? 1 : 0);
     focus_iniciar(&foco, nFileiras, cols);
     posAplicarTabela(posViva, nPosViva, posVivaFoco, posVivaCol);
+    // Garante que nenhuma fileira com dica nao focavel (acao: nada) fique com
+    // foco ou coluna lembrada na coluna 0.
+    for (k = 0; k < nFileiras; k++) {
+      int cMin = fileiraColMin(&fileiras[k]);
+      if (foco.colunaLembrada[k] < cMin) foco.colunaLembrada[k] = cMin;
+    }
+    if (foco.fileira >= 0 && foco.fileira < nFileiras) {
+      int cMin = fileiraColMin(&fileiras[foco.fileira]);
+      if (foco.coluna < cMin) foco.coluna = cMin;
+    }
     // Rebase saved IDs on the restored columns. Otherwise navigation back
     // onto an old column can resurrect its previous ID on the next rebuild.
     nPosViva = 0;
@@ -3847,6 +4005,8 @@ void home_ir_topo(void) {
   posVivaFoco[0] = 0;
   posVivaCol = 0;
   sairPerguntadoEm = 0;
+  backPressionando = backLongDisparado = backConsumirSoltura = 0;
+  backDesde = 0;
   heroUltTecla = SDL_GetTicks();
 }
 
@@ -3880,7 +4040,10 @@ static void heroPreBuscarInfo(int indice) {
     const Fileira *f = &fileiras[foco.fileira];
     for (int d = -1; d <= 1; d += 2) {
       int col = foco.coluna + d;
-      if (col >= 0 && col < f->n) lista[n++] = fileiraItemIndice(f, col);
+      if (col >= 0 && col < f->n) {
+        int idxV = fileiraItemIndice(f, col);
+        if (idxV >= 0) lista[n++] = idxV;
+      }
     }
   }
   desc_sinopse_hero(lista, n);
@@ -3920,6 +4083,27 @@ static void heroAquecerVizinhos(Uint32 agora) {
 
 static void home_atualizar_(float dt, Uint32 agora) {
   curadoria_passo();   // a curadoria da fileira Herói, no seu tempo (curadoria.h)
+  // Cartao de dica do Farol (issue 48): prepara so quando a cena do Farol
+  // muda — no quadro comum custa uma leitura atomica, sem trava nem copia.
+  { unsigned cg = farol_cena_geracao();
+    if (cg != dicaCenaGer) {
+      dicaCenaGer = cg;
+      faroldica_preparar();
+    } }
+  if (backPressionando) {
+    int noDica = !focoHero && foco.fileira >= 0 && foco.fileira < nFileiras &&
+                 fileiraNoDica(&fileiras[foco.fileira], foco.coluna);
+    if (!noDica) {
+      backPressionando = 0; backDesde = 0;
+    } else if (!backLongDisparado && backDesde && agora - backDesde >= NV_HOLD_MS) {
+      backLongDisparado = 1;
+      backConsumirSoltura = 1;
+      backPressionando = 0;
+      backDesde = 0;
+      faroldica_dispensar();
+      dicaSincronizarCache();
+    }
+  }
 #ifdef NV_TOUCH_UI
   if (!layout_rolagem_livre()) { toqueHomeLimpar(); toqueHeroCancelar(); }
 #endif
@@ -4200,7 +4384,9 @@ static void home_atualizar_(float dt, Uint32 agora) {
       int pronto = expDesde && (agora - expDesde) >= (Uint32)(atraso * 1000.0f);
       // Fileira DEITADA (e a de continuar assistindo) ja mostra a arte larga:
       // nao ha para o que expandir.
-      if (pronto && podeExpandir(foco.fileira))
+      if (pronto && podeExpandir(foco.fileira) &&
+          !(foco.fileira >= 0 && foco.fileira < nFileiras &&
+            fileiraNoDica(&fileiras[foco.fileira], foco.coluna)))
         expAbre = motionReduzido ? 1.0f
                    : anim_mola(expAbre, 1.0f, dt, NV_MOLA_TELA); }
   } else {
@@ -6325,7 +6511,7 @@ static void desenhaFundo(Uint32 agora) {
 // sair desarmada). O OK do clique chega depois, pelo caminho de sempre.
 static void ponteiroCard(int r, int c) {
   if (layout_desktop_ativo()) menu_fechar();
-  if (r < 0 || r >= nFileiras || c < 0 || c >= foco.nColunas[r]) return;
+  if (r < 0 || r >= nFileiras || c < fileiraColMin(&fileiras[r]) || c >= foco.nColunas[r]) return;
 #ifdef NV_TOUCH_UI
   if (!layout_desktop_ativo()) toqueHomeLimpar();
   if(layout_desktop_ativo() && ponteiro_mouse()) { toqueLivreY=1; toqueLivreX[r]=1; }
@@ -8526,6 +8712,7 @@ static void homeResidencia(void) {
       float x = homeFileiraX(r, c);
       if (x < -lw * 1.5f || x > NV_TELA_W + lw) continue;
       int idx = fileiraItemIndice(&fileiras[r], c);
+      if (idx < 0) continue;
       tex_residencia_marcar(arte_por_identidade(idx,
         (tipo == FILEIRA_CONTINUE || tipo == FILEIRA_RETORNO) ? 3 : deitado), r);
       // Expanded cards may have a second cached landscape variant.
@@ -8753,20 +8940,21 @@ static void home_desenhar_(Uint32 agora) {
                 0.85f + 0.15f * animFocoFil[r]);
         if (foco.fileira == r && !focoHero &&
             foco.coluna >= 0 && foco.coluna < fileiras[r].n) {
-          const CatItem *fi =
-            cat_item(fileiraItemIndice(&fileiras[r], foco.coluna));
+          int idxF = fileiraItemIndice(&fileiras[r], foco.coluna);
+          int colMot = foco.coluna - (fileiras[r].temDica ? 1 : 0);
+          const CatItem *fi = idxF >= 0 ? cat_item(idxF) : NULL;
           // O motivo e da cena adotada e muda so com ela: o cache por
           // (geracao da cena, coluna, imdb publicado) dispensa a trava da
           // cena a cada quadro, e o imdb do cartaz impede a linha de um item
           // que a fileira na tela ja nao tem (revisao FAROL45 r1).
-          if (!fi || !fi->imdb[0]) { motStr[r][0] = motImdb[r][0] = 0; }
+          if (!fi || !fi->imdb[0] || colMot < 0) { motStr[r][0] = motImdb[r][0] = 0; }
           else if (farol_cena_geracao() != motGer[r] ||
-                   foco.coluna != motCol[r] ||
+                   colMot != motCol[r] ||
                    strcmp(motImdb[r], fi->imdb)) {
-            const char *mot = farol_motivo(fileiras[r].chave, foco.coluna,
+            const char *mot = farol_motivo(fileiras[r].chave, colMot,
                                            fi->imdb);
             motGer[r] = farol_cena_geracao();
-            motCol[r] = foco.coluna;
+            motCol[r] = colMot;
             snprintf(motImdb[r], sizeof motImdb[r], "%s", fi->imdb);
             if (!mot) mot = "";
             if (strcmp(mot, motStr[r])) {
@@ -9017,6 +9205,16 @@ static void home_desenhar_(Uint32 agora) {
             (void)f;
             continue;
           }
+          if (c == 0 && fileiras[r].temDica) {
+            if (fileiras[r].dicaFocavel) alvoCard(px, py, w, h, r, c);
+            if (!focoHero && focus_indice(&foco, r, c)) temItemFoco = 0;
+            faroldica_desenhar(&dicaCache, (GfxRect){ px, py, w, h },
+                               raioDe(w, h),
+                               fileiras[r].dicaFocavel ? f : 0.0f,
+                               gfx_opacidade_grupo,
+                               ajustes_animacoes_reduzidas(), dicaSalva);
+            continue;
+          }
           alvoCard(px, py, w, h, r, c);
 
           const int idxCat = fileiraItemIndice(&fileiras[r], c);
@@ -9249,9 +9447,10 @@ static void home_desenhar_(Uint32 agora) {
                    (d > 0 ? (int)(NV_TELA_W / passo) + 2 : -2);
           if (c2 >= 0 && c2 < fileiras[r].n) {
             int idx2 = fileiraItemIndice(&fileiras[r], c2);
-            tex_lookahead_pedir(arte_por_identidade(idx2,
-              (tipo == FILEIRA_CONTINUE || tipo == FILEIRA_RETORNO) ? 3 : deitado),
-              lw);
+            if (idx2 >= 0)
+              tex_lookahead_pedir(arte_por_identidade(idx2,
+                (tipo == FILEIRA_CONTINUE || tipo == FILEIRA_RETORNO) ? 3 : deitado),
+                lw);
           }
         }
       }
@@ -9371,6 +9570,7 @@ static void home_desenhar_(Uint32 agora) {
         float x = homeFileiraX(r, c);
         if (x < -lw * 1.5f || x > NV_TELA_W + lw) continue;
         int idx = fileiraItemIndice(&fileiras[r], c);
+        if (idx < 0) continue;
         const char *cam = arte_por_identidade(idx,
           (tipo == FILEIRA_CONTINUE || tipo == FILEIRA_RETORNO) ? 3 : deitado);
         pediu = tex_lookahead_pedir(cam, lw);
@@ -9562,6 +9762,10 @@ void home_abrir_sessao(void) {
   memset(&pessoaSocial, 0, sizeof pessoaSocial); guiaId[0] = 0;
   okDesde = 0; okPressionando = okLongDisparado = okConsumirSoltura = 0;
   okHold = 0.0f;
+  backDesde = 0; backPressionando = backLongDisparado = backConsumirSoltura = 0;
+  memset(&dicaCache, 0, sizeof dicaCache);
+  dicaCacheGer = ~0u; dicaCenaGer = ~0u; dicaSalva = 0;
+  faroldica_esquecer();
   home_retomar_esquecer();
   nFileiras = nStreamBarra = nProxHome = 0;
   memset(fileiras, 0, sizeof fileiras);
