@@ -82,8 +82,18 @@ static uint64_t ultimoFarolAddonId;
 static uint64_t farolTentativaSeq, ultimaFonteTentativa, ultimoFarolTentativa;
 static char ultimaFonteUrl[NV_MEDIA_URL_MAX];
 static int ultimaFonteTemCabs;
+static int ultimaFonteTemItem, ultimaFonteIdx, ultimaFonteEpT, ultimaFonteEpE;
+static CatItem ultimaFonteItem;
+static uint64_t ultimaFonteSessao;
 static char c_videoCabs[256];
 static int c_tocarInternoN;
+static int erroFonte;
+static char erroTitulo[160], erroDica[160], linhaEp[220];
+static int esperandoFonte, visivel, tocando, soBarra, erroBotao;
+static int c_travaBloq, c_travaManualAutorizada;
+static char c_travaImdb[24];
+static int c_travaT, c_travaE;
+static int c_catIdxAtual = 3;
 
 // Estado espelhado de Android/extplayer
 static char c_androidApps[256];
@@ -125,6 +135,35 @@ static const CatItem *item(void) {
 }
 int player_aberto(void) { return aberto; }
 static void tocarFonteInterno(const char *url) { (void)url; c_tocarInternoN++; }
+static int mini;
+static int idxAtual(void) { return c_catIdxAtual; }
+int cat_indice_titulo(const char *imdb, int preferido) {
+  (void)imdb;
+  return preferido;
+}
+static int travaui_segura(const char *imdb, int idxCat, int t, int e, int *perfis, int *n) {
+  (void)idxCat; (void)perfis;
+  if (n) *n = 0;
+  if (!c_travaBloq || c_travaManualAutorizada) return 0;
+  if (!c_travaImdb[0]) return 1;
+  return imdb && !strcmp(imdb, c_travaImdb) && t == c_travaT && e == c_travaE;
+}
+static void farolErroRegistrar(const FarolErro *fe, int foiDebrid, uint64_t addonId);
+
+void player_erro_fonte(void) {
+  FarolErro fe;
+  erroFonte = 1;
+  memset(&fe, 0, sizeof fe);
+  fe.classe = FC_FORMATO;
+  snprintf(fe.cod, sizeof fe.cod, "m3_4003");
+  farolErroRegistrar(&fe, ultimoFarolDebrid, ultimoFarolAddonId);
+}
+void player_erro_fonte_motivo(const char *titulo, const char *dica) {
+  player_erro_fonte();
+  snprintf(erroTitulo, sizeof erroTitulo, "%s", titulo ? titulo : "");
+  snprintf(erroDica, sizeof erroDica, "%s", dica ? dica : "");
+  resolverregra_falha_registrar(RES_T_FONTE, erroTitulo, erroDica, linhaEp, (long)time(NULL));
+}
 static int nv_perfil_sessao_atual(uint64_t s) { return s == c_perfilSessao; }
 
 // ------------------------------------------------------------------- stubs
@@ -382,6 +421,12 @@ static void zerar(void) {
   temUltimoFarol = 0; ultimoFarolDebrid = 0; ultimoFarolAddonId = 0;
   farolTentativaSeq = ultimaFonteTentativa = ultimoFarolTentativa = 0;
   ultimaFonteUrl[0] = 0; ultimaFonteTemCabs = 0; c_videoCabs[0] = 0;
+  ultimaFonteTemItem = 0; memset(&ultimaFonteItem, 0, sizeof ultimaFonteItem);
+  ultimaFonteIdx = -1; ultimaFonteEpT = 0; ultimaFonteEpE = 0; ultimaFonteSessao = 0;
+  erroFonte = 0; erroTitulo[0] = 0; erroDica[0] = 0; linhaEp[0] = 0;
+  esperandoFonte = visivel = tocando = soBarra = erroBotao = mini = 0;
+  c_travaBloq = 0; c_travaManualAutorizada = 0;
+  c_travaImdb[0] = 0; c_travaT = 0; c_travaE = 0; c_catIdxAtual = 3;
   c_tocarInternoN = 0;
   c_androidApps[0] = 0; c_androidAbrirOk = 1; c_androidAbrirN = 0;
   c_androidAbrirUrl[0] = c_androidAbrirTit[0] = c_androidAbrirPkg[0] = 0;
@@ -947,6 +992,102 @@ int main(void) {
   apertar_ok_app();
   assert(c_envioChamadas >= 1);
   assert(c_androidAbrirN == 0);
+
+  // ----------------------------------------------------------- cenario 21
+  // BLOQUEIO r4 (item 2): recusa de player_definir_fonte por travaFonte NAO
+  // pode revalidar erro/URL da fonte anterior do episodio.
+  zerar();
+  snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
+  sim_abrir_tentativa("tt3333333", "series", "Serie Travada", 1, 3,
+                      "https://cdn.example/s1e3_antiga.mkv", 0);
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
+  falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
+               FC_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  uint64_t tentAnterior = player_ultimo_erro_tentativa();
+  assert(tentAnterior != 0);
+  aberto = 1;
+  c_travaBloq = 1;
+  snprintf(c_travaImdb, sizeof c_travaImdb, "tt3333333");
+  c_travaT = 1; c_travaE = 3;
+#ifdef FAROL_BRIDGE_TEM_TENTATIVA
+  farol_test_definir_fonte_prefixo("https://cdn.example/s1e3_nova.mkv");
+#endif
+  aberto = 0;
+  assert(player_externo_disponivel() == 0);
+  assert(player_externo_disponivel_tentativa(tentAnterior) == 0);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_prim() != FAROL_A_PLAYER_EXTERNO);
+  apertar_ok_app();
+  assert(c_androidAbrirN == 0);
+
+  // ----------------------------------------------------------- cenario 22
+  // BLOQUEIO r4 (item 2): trava passa a bloquear ENTRE oferta e OK (com player
+  // fechado e catalogo/itemFixo deslocados). Candidato conserva identidade e
+  // episodio; disponibilidade e despacho recusam, sem chamar JNI.
+  zerar();
+  snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
+  sim_abrir_tentativa("tt4444444", "series", "Serie Sinc", 2, 5,
+                      "https://cdn.example/s2e5.mkv", 0);
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
+  falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
+               FC_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  aberto = 0;
+  // Mesmo com itemFixo/epT/epE limpos ou deslocados fora do player, o candidato
+  // conserva os dados do episodio.
+  temFixo = 0; memset(&itemFixo, 0, sizeof itemFixo); epT = 0; epE = 0;
+  uint64_t tentSinc = player_ultimo_erro_tentativa();
+  assert(tentSinc != 0);
+  assert(player_externo_disponivel() == 1);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO_REPETE);
+  assert(resolver_teste_prim() == FAROL_A_PLAYER_EXTERNO);
+
+  // Sincronizacao em segundo plano ativa a trava de serie apos a oferta.
+  c_travaBloq = 1;
+  snprintf(c_travaImdb, sizeof c_travaImdb, "tt4444444");
+  c_travaT = 2; c_travaE = 5;
+  assert(player_externo_disponivel_tentativa(tentSinc) == 0);
+  apertar_ok_app();
+  assert(c_androidAbrirN == 0);
+  assert(resolver_aberto());
+  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  assert(player_abrir_externo_tentativa(tentSinc) == 0);
+  assert(c_androidAbrirN == 0);
+  apertar_ok_app();
+  assert(c_envioChamadas >= 1);
+  assert(c_androidAbrirN == 0);
+
+  // ----------------------------------------------------------- cenario 23
+  // Autorizacao manual legitima da trava ("Assistir mesmo assim"): episodio
+  // liberado segue elegivel com player fechado e entrega titulo/URL corretos.
+  zerar();
+  snprintf(c_androidApps, sizeof c_androidApps, "org.videolan.vlc\tVLC\n");
+  c_travaBloq = 1;
+  snprintf(c_travaImdb, sizeof c_travaImdb, "tt5555555");
+  c_travaT = 1; c_travaE = 2;
+  c_travaManualAutorizada = 1;
+  sim_abrir_tentativa("tt5555555", "series", "Serie Autorizada", 1, 2,
+                      "https://cdn.example/s1e2_ok.mkv", 0);
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
+  falhar_fonte("A TV não conseguiu tocar o formato desta fonte.", "",
+               FC_FORMATO, 0, "m3_4003");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, FS_CAUSA_FORMATO, 0, "m3_4003");
+  aberto = 0;
+  assert(player_externo_disponivel() == 1);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_prim() == FAROL_A_PLAYER_EXTERNO);
+  apertar_ok_app();
+  assert(!resolver_aberto());
+  assert(c_androidAbrirN == 1);
+  assert(!strcmp(c_androidAbrirUrl, "https://cdn.example/s1e2_ok.mkv"));
+  assert(!strcmp(c_androidAbrirTit, "Serie Autorizada"));
+  assert(c_tocarInternoN == 0);
 
   puts("farol_resolver: producao ok");
   return 0;

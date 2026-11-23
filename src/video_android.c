@@ -429,13 +429,86 @@ unsigned video_live_pedido_ms(void) {
 // decisao e o recarregar sao do video_bombear.
 static NvReconexao recon;
 static int reconProxima, reconPermitida, reconIniciou;
-static volatile int reconErroPend, reconErroCod, reconErroVideo;
+static int reconErroPend, reconErroCod, reconErroVideo;
 static int reconAudio = -1, reconLeg = -1;
 static volatile int reconFaixasPend;
 static int reconBuscarMs = -1;
 static int reconPausado;
 static int recarregarPausa = -1, recarregarPosMs;
 static char erroTxt[64];
+static unsigned reconErroGeracao;
+// Ordem de trava: travaRetomada (externa) -> travaErro (interna).
+// Identidade (geracao), codigo, tipo de decoder e texto sao publicados e
+// consumidos juntos sob a mesma trava; erros obsoletos sao descartados.
+static pthread_mutex_t travaErro = PTHREAD_MUTEX_INITIALIZER;
+
+static int erroPublicarSeAtual(unsigned geracao, int cod, int isVideo, const char *txt) {
+  int aceito = 0;
+  pthread_mutex_lock(&travaRetomada);
+  if (ativo && geracao != 0 && geracao == sessao) {
+    pthread_mutex_lock(&travaErro);
+    reconErroGeracao = geracao;
+    reconErroCod = cod;
+    reconErroVideo = isVideo ? 1 : 0;
+    if (txt) snprintf(erroTxt, sizeof erroTxt, "%s", txt);
+    else erroTxt[0] = 0;
+    reconErroPend = 1;
+    pthread_mutex_unlock(&travaErro);
+    aceito = 1;
+  }
+  pthread_mutex_unlock(&travaRetomada);
+  return aceito;
+}
+
+static int erroPublicarAtual(int cod, int isVideo, const char *txt) {
+  int aceito = 0;
+  pthread_mutex_lock(&travaRetomada);
+  if (ativo && sessao != 0) {
+    pthread_mutex_lock(&travaErro);
+    reconErroGeracao = sessao;
+    reconErroCod = cod;
+    reconErroVideo = isVideo ? 1 : 0;
+    if (txt) snprintf(erroTxt, sizeof erroTxt, "%s", txt);
+    else erroTxt[0] = 0;
+    reconErroPend = 1;
+    pthread_mutex_unlock(&travaErro);
+    aceito = 1;
+  }
+  pthread_mutex_unlock(&travaRetomada);
+  return aceito;
+}
+
+static int erroTomar(int *cod, char *txt, size_t txtTam) {
+  int pend = 0;
+  pthread_mutex_lock(&travaRetomada);
+  pthread_mutex_lock(&travaErro);
+  if (reconErroPend) {
+    if (ativo && reconErroGeracao != 0 && reconErroGeracao == sessao) {
+      *cod = reconErroCod;
+      if (txt && txtTam) snprintf(txt, txtTam, "%s", erroTxt);
+      pend = 1;
+    } else {
+      reconErroGeracao = 0;
+      reconErroCod = 0;
+      reconErroVideo = 0;
+      erroTxt[0] = 0;
+    }
+    reconErroPend = 0;
+  }
+  pthread_mutex_unlock(&travaErro);
+  pthread_mutex_unlock(&travaRetomada);
+  return pend;
+}
+
+static int erroPendente(void) {
+  int pend;
+  pthread_mutex_lock(&travaRetomada);
+  pthread_mutex_lock(&travaErro);
+  pend = reconErroPend && ativo && reconErroGeracao != 0 && reconErroGeracao == sessao;
+  pthread_mutex_unlock(&travaErro);
+  pthread_mutex_unlock(&travaRetomada);
+  return pend;
+}
 
 // Media3 I/O failures, including HTTP rejection and premature EOF. Recovery
 // is bounded; the app can renew the addon URL after reopening fails.
@@ -676,6 +749,10 @@ static unsigned novaRetomada(int estado) {
   posMs = posNativoMs = 0;
   livePosMs = liveBufferFimMs = 0; liveProgressoValido = liveBufferValido = 0;
   sampleBytes = samplePeakBytes = -1;
+  pthread_mutex_lock(&travaErro);
+  reconErroPend = 0; reconErroCod = 0; reconErroVideo = 0;
+  reconErroGeracao = 0; erroTxt[0] = 0;
+  pthread_mutex_unlock(&travaErro);
   pthread_mutex_unlock(&travaRetomada);
   return geracao;
 }
@@ -791,6 +868,22 @@ enum { EV_PRONTO = 1, EV_TOCANDO = 2, EV_PAUSADO = 3, EV_FIM = 4, EV_ERRO = 5,
        EV_TAMANHO = 6, EV_BUFFER = 7, EV_PRIMEIRO_QUADRO = 8, EV_AUDIO_SEM_DECODER = 9,
        EV_SUPERFICIE_ESTAVEL = 10, EV_LIVE_RECOVERY = 11, EV_LIVE_SEGMENT = 12 };
 
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(JNIEnv *env, jclass cls, jint geracao, jint cod, jint tipo) {
+  char t[64];
+  (void)env; (void)cls;
+  if (geracao <= 0) return;
+  snprintf(t, sizeof t, "%d player error:%d", (int)cod, (int)tipo);
+  if (!erroPublicarSeAtual((unsigned)geracao, (int)cod, tipo == 2, t)) {
+    printf("[video] android: erro obsoleto descartado gen=%d cod=%d (%d)\n",
+           (int)geracao, (int)cod, (int)tipo);
+    fflush(stdout);
+    return;
+  }
+  tocando = 0;
+  printf("[video] android: erro do player %d (%d) gen=%d\n", (int)cod, (int)tipo, (int)geracao);
+  fflush(stdout);
+}
+
 JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(JNIEnv *env, jclass cls, jint tipo, jint a, jint b) {
   (void)env; (void)cls;
   switch (tipo) {
@@ -799,10 +892,12 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(JNIEn
     case EV_PAUSADO: tocando = 0; if (pausaPedida) pausaVista = 1; break;
     case EV_FIM:     terminou = 1; tocando = 0; break;
     // Sem `falhou` aqui: o video_bombear decide entre reconectar e desistir.
-    case EV_ERRO:    reconErroCod = a; reconErroVideo = b == 2; /* Media3 C.TRACK_TYPE_VIDEO */
-                     reconErroPend = 1; tocando = 0;
-                     snprintf(erroTxt, sizeof erroTxt, "%d player error:%d", a, b);
-                     printf("[video] android: erro do player %d (%d)\n", a, b); break;
+    case EV_ERRO:    { char t[64];
+                     snprintf(t, sizeof t, "%d player error:%d", a, b);
+                     if (erroPublicarAtual(a, b == 2 /* Media3 C.TRACK_TYPE_VIDEO */, t)) {
+                       tocando = 0;
+                       printf("[video] android: erro do player %d (%d)\n", a, b);
+                     } } break;
     case EV_TAMANHO: largura = a; altura = b; break;
     case EV_BUFFER:
       if (a < 100) {
@@ -868,7 +963,7 @@ static int abrirSessao(int inicioMs, int fracao) {
   pthread_mutex_lock(&travaAmostra);
   posAmostraMs = 0; posAmostraEm = nv_ticks64();
   pthread_mutex_unlock(&travaAmostra);
-  tocandoDesde = 0; semDecoderAudio = 0; erroTxt[0] = 0; reconErroVideo = 0;
+  tocandoDesde = 0; semDecoderAudio = 0;
   pausaVista = 0;
   pausaPedida = juntos_precarregando();
   hdrAtual = "none"; dvAtual = atmosAtual = 0;
@@ -1021,7 +1116,7 @@ int video_tocar_retomada(const char *u, double segundos, double pct) {
   // lateral de capitulos, como no .tpk — conexao a mais no provedor de IPTV
   // pode derrubar a sessao, e canal nao tem capitulo para mostrar.
   if (limited || player_eh_canal()) capmkv_zerar(); else capmkv_iniciar(urlAtual);
-  reconIniciou = 0; reconErroPend = 0;
+  reconIniciou = 0;
   reconAudio = reconLeg = -1; reconFaixasPend = 0; reconBuscarMs = -1; reconPausado = 0;
   recarregarPausa = -1;
   playerSessao = cacheArmado >= 0;
@@ -1062,7 +1157,7 @@ void video_definir_reconexao(int sim) { reconProxima = sim ? 1 : 0; }
 int video_recarregar(void) {
   int alvo = posNativoMs, pausado = pausaPedida;
   if (!ativo || !prontoLoad || !urlAtual[0] || falhou || terminou ||
-      reconErroPend || video_reconectando() || recarregarPausa >= 0 ||
+      erroPendente() || video_reconectando() || recarregarPausa >= 0 ||
       alvo < 0 || !ambiente()) return 0;
   reconAudio = audioAtual; reconLeg = legAtual; reconFaixasPend = 1;
   reconBuscarMs = -1;
@@ -1084,7 +1179,7 @@ void video_bombear(void) {
   int eraRecarga = recarregarPausa >= 0;
   if (recarregarPausa >= 0) {
     if (falhou || terminou || !ativo) recarregarPausa = -1;
-    else if (prontoLoad && !reconErroPend && !recon.pendente) {
+    else if (prontoLoad && !erroPendente() && !recon.pendente) {
       // Cascas antigas podem recusar a posicao de abertura. Nesse caso a
       // mesma sessao recebe o seek, inclusive se a pessoa estava pausada.
       if (recarregarPosMs > 0 && video_retomada_inicial_estado() < 0)
@@ -1112,37 +1207,38 @@ void video_bombear(void) {
   }
   if (!falhou && (!prontoLoad || reconBuscarMs >= 0 || (!pausaPedida && bufferando)) &&
       nv_recon_expirou(&recon, SDL_GetTicks())) {
-    reconErroCod = 2002; reconErroPend = 1;
-    snprintf(erroTxt, sizeof erroTxt, "2002 player error: recovery timeout");
+    erroPublicarAtual(2002, 0, "2002 player error: recovery timeout");
   }
   // A silent VOD stall also needs recovery when Media3 never emits an error.
   if (!falhou && reconPermitida && reconIniciou && !pausaPedida && !nv_recon_ativa(&recon) &&
       bufferando && SDL_GetTicks() - bufferDesde >= NV_RECON_PRAZO_MS) {
-    reconErroCod = 2002; reconErroPend = 1;
-    snprintf(erroTxt, sizeof erroTxt, "2002 player error: stalled download");
+    erroPublicarAtual(2002, 0, "2002 player error: stalled download");
   }
-  if (reconErroPend) {
-    int antes = recon.tentativa;
-    int rede = erroDeRede(reconErroCod);
-    reconErroPend = 0;
-    if (!(xtream_url_limitada(urlAtual) && (reconErroCod == 403 || reconErroCod == 458 || reconErroCod == 509)) &&
-        reconPermitida && urlAtual[0] && (reconIniciou || recon.tentativa) &&
-        nv_recon_erro(&recon, rede, SDL_GetTicks(),
-                      eraRecarga ? recarregarPosMs / 1000.0 : pos)) {
-      if (!antes && !eraRecarga) {
-        reconAudio = audioAtual; reconLeg = legAtual;
-        reconPausado = pausaPedida;
+  {
+    int cod;
+    char txt[64];
+    if (erroTomar(&cod, txt, sizeof txt)) {
+      int antes = recon.tentativa;
+      int rede = erroDeRede(cod);
+      if (!(xtream_url_limitada(urlAtual) && (cod == 403 || cod == 458 || cod == 509)) &&
+          reconPermitida && urlAtual[0] && (reconIniciou || recon.tentativa) &&
+          nv_recon_erro(&recon, rede, SDL_GetTicks(),
+                        eraRecarga ? recarregarPosMs / 1000.0 : pos)) {
+        if (!antes && !eraRecarga) {
+          reconAudio = audioAtual; reconLeg = legAtual;
+          reconPausado = pausaPedida;
+        }
+        if (recon.tentativa != antes) {
+          printf("[video] conexao caiu (%d): tentativa %d/%d, espera %us\n",
+                 cod, recon.tentativa, NV_RECON_MAX,
+                 nv_recon_espera_ms(recon.tentativa) / 1000u);
+          fflush(stdout);
+        }
+        bufferando = 0;
+      } else {
+        if (recon.esgotou) { printf("[video] reconexao: desistiu depois de %d tentativas\n", NV_RECON_MAX); fflush(stdout); }
+        falhou = 1;
       }
-      if (recon.tentativa != antes) {
-        printf("[video] conexao caiu (%d): tentativa %d/%d, espera %us\n",
-               reconErroCod, recon.tentativa, NV_RECON_MAX,
-               nv_recon_espera_ms(recon.tentativa) / 1000u);
-        fflush(stdout);
-      }
-      bufferando = 0;
-    } else {
-      if (recon.esgotou) { printf("[video] reconexao: desistiu depois de %d tentativas\n", NV_RECON_MAX); fflush(stdout); }
-      falhou = 1;
     }
   }
   if (falhou) recarregarPausa = -1;
@@ -1153,7 +1249,7 @@ void video_bombear(void) {
     reconBuscarMs = recarregarPausa < 0 && recon.alvo > 1.0 ? (int)(recon.alvo * 1000.0) : -1;
     if (!abrirSessao(recarregarPausa >= 0 ? recarregarPosMs :
                      (int)(recon.alvo * 1000.0), 0))
-      { reconErroCod = -1; reconErroPend = 1; }
+      erroPublicarAtual(-1, 0, NULL);
     else if (recarregarPausa > 0) video_pausar(1);
     else if (recarregarPausa < 0 && reconPausado) {
       // abrirSessao nasce tocando. Enfileirar pause logo depois da abertura
@@ -1168,7 +1264,7 @@ void video_parar(void) {
   novaRetomada(-1);
   capmkv_zerar();   // fio de capitulos em voo nao alimenta o proximo titulo
   nv_recon_zerar(&recon);
-  reconErroPend = 0; reconErroVideo = 0; reconFaixasPend = 0; reconBuscarMs = -1; reconPausado = 0;
+  reconFaixasPend = 0; reconBuscarMs = -1; reconPausado = 0;
   recarregarPausa = -1;
   if (ativo) {
     // Troca de episodio: o consumidor ja destacou o proximo buffer. Soltar
@@ -1351,8 +1447,30 @@ int  video_seek_desistiu(void) { return 0; }
 int  video_terminou(void) { return terminou; }
 // Foco de audio perdido = pausa (NvPlayer); nao ha "outro app com o video".
 int  video_conflito_recurso(void) { return conflito; }
-const char *video_erro_texto(void) { return falhou ? erroTxt : ""; }
-int video_erro_decoder_codigo(void) { return falhou && reconErroVideo ? reconErroCod : 0; }
+const char *video_erro_texto(void) {
+  static _Thread_local char copia[64];
+  if (!falhou) return "";
+  pthread_mutex_lock(&travaRetomada);
+  pthread_mutex_lock(&travaErro);
+  if (ativo && reconErroGeracao && reconErroGeracao == sessao)
+    snprintf(copia, sizeof copia, "%s", erroTxt);
+  else
+    copia[0] = 0;
+  pthread_mutex_unlock(&travaErro);
+  pthread_mutex_unlock(&travaRetomada);
+  return copia;
+}
+int video_erro_decoder_codigo(void) {
+  int cod = 0;
+  if (!falhou) return 0;
+  pthread_mutex_lock(&travaRetomada);
+  pthread_mutex_lock(&travaErro);
+  if (ativo && reconErroGeracao && reconErroGeracao == sessao && reconErroVideo)
+    cod = reconErroCod;
+  pthread_mutex_unlock(&travaErro);
+  pthread_mutex_unlock(&travaRetomada);
+  return cod;
+}
 // O Media3 nao da o sinal de decoder anunciado: valem os neutros do .tpk.
 int  video_decoder_anunciou(void) { return 1; }
 

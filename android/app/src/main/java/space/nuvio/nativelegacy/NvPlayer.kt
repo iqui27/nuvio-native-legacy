@@ -175,6 +175,7 @@ object NvPlayer {
     @JvmStatic external fun nativeBarrasPretas(): Boolean
     @JvmStatic external fun nativeAfr(): Int
     @JvmStatic external fun nativeEvento(tipo: Int, a: Int, b: Int)
+    @JvmStatic external fun nativeErro(geracao: Int, cod: Int, tipo: Int)
     // flags (#287): 1 = forcada (SELECTION_FLAG_FORCED), 2 = SDH
     // (ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND); nome = Format.label.
     // mime/canais (#293): codec e canais da faixa de audio.
@@ -432,6 +433,17 @@ object NvPlayer {
 
     private fun ev(tipo: Int, a: Int = 0, b: Int = 0) {
         try { nativeEvento(tipo, a, b) } catch (e: UnsatisfiedLinkError) { Log.w(TAG, "evento $tipo sem lib: $e") }
+    }
+    private fun evErro(geracao: Int, cod: Int, tipo: Int) {
+        if (geracao > 0) {
+            try {
+                nativeErro(geracao, cod, tipo)
+                return
+            } catch (e: UnsatisfiedLinkError) {
+                Log.w(TAG, "nativeErro sem lib ($geracao): $e")
+            }
+        }
+        ev(EV_ERRO, cod, tipo)
     }
 
     // One silent, surface-free player. Its request counter is independent of
@@ -1825,7 +1837,7 @@ object NvPlayer {
             preparada?.recursos?.let { if (recursosAtuais !== it) soltarRecursosPreparo(it) }
             confirmarRetomada(geracao, false)
             Log.w(TAG, "abrir: $e")
-            ev(EV_ERRO, -1, 0)
+            evErro(geracao, -1, 0)
         }
     }
 
@@ -2382,6 +2394,7 @@ object NvPlayer {
     // --- eventos do player ----------------------------------------------------
 
     private fun ouvinte(minha: Int) = object : Player.Listener {
+        private val minhaGeracao = geracaoNative
         private var liveSegmentMs = -1
         private val live = LiveWindowRecovery(
             schedule = { tarefa, atraso -> principal.postDelayed(tarefa, atraso) },
@@ -2545,21 +2558,23 @@ object NvPlayer {
                 .filterIsInstance<HttpDataSource.InvalidResponseCodeException>().firstOrNull()?.responseCode
             if (limitedSession && status in listOf(403, 458, 509)) {
                 live.cancel()
-                ev(EV_ERRO, status ?: 0, C.TRACK_TYPE_UNKNOWN)
+                if (!atual(minha)) return
+                evErro(minhaGeracao, status ?: 0, C.TRACK_TYPE_UNKNOWN)
                 try { nativeErroTexto("HTTP $status") } catch (_: Throwable) {}
                 return
             }
             // Music owns its single refresh and quiet per-track failure.
             if (ParaleloDataSource.previa(Uri.parse(urlAtual))) {
                 live.cancel()
-                ev(EV_ERRO, status ?: error.errorCode, C.TRACK_TYPE_UNKNOWN)
+                if (!atual(minha)) return
+                evErro(minhaGeracao, status ?: error.errorCode, C.TRACK_TYPE_UNKNOWN)
                 return
             }
             val recoveryTimeout = LiveWindowRecovery.timeoutForSegment(liveSegmentMs)
             if (p != null && live.recover(p, error, SystemClock.elapsedRealtime(), recoveryTimeout) {
                     Log.w(TAG, "[live] recuperacao excedeu $recoveryTimeout ms sessao=$minha; seguindo erro normal")
                     try { nativeErroTexto("${error.errorCodeName} (${error.errorCode}): recovery timeout") } catch (_: Throwable) {}
-                    ev(EV_ERRO, error.errorCode, C.TRACK_TYPE_UNKNOWN)
+                    if (atual(minha)) evErro(minhaGeracao, error.errorCode, C.TRACK_TYPE_UNKNOWN)
                 }) {
                 Log.i(TAG, "[live] janela/playlist invalida code=${error.errorCode}; buscando posicao ao vivo sem trocar URL sessao=$minha")
                 return
@@ -2608,13 +2623,14 @@ object NvPlayer {
                 val c = cabAtual
                 val inicio = player?.currentPosition?.takeIf { it > 0 }?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt()
                     ?: inicioAtualMs
-                val geracao = geracaoNative
+                val geracao = minhaGeracao
                 val pedido = pedidoAtivo
                 val fracao = if (inicio > 0) 0 else fracaoAtual
                 principal.postDelayed({ if (atual(minha)) abrirMain(u, c, true, inicio, geracao, pedido, fracao) }, 400)
                 return
             }
-            ev(EV_ERRO, error.errorCode, tipo)
+            if (!atual(minha)) return
+            evErro(minhaGeracao, error.errorCode, tipo)
         }
     }
 

@@ -1052,6 +1052,9 @@ static uint64_t farolTentativaSeq, ultimaFonteTentativa, ultimoFarolTentativa;
 static char ultimaFonteUrl[NV_MEDIA_URL_MAX];
 #ifdef NV_ANDROID
 static int ultimaFonteTemCabs;
+static int ultimaFonteTemItem, ultimaFonteIdx, ultimaFonteEpT, ultimaFonteEpE;
+static CatItem ultimaFonteItem;
+static uint64_t ultimaFonteSessao;
 #endif
 static void farolTentativaIniciar(void) {
   if (!++farolTentativaSeq) farolTentativaSeq = 1;
@@ -1059,6 +1062,12 @@ static void farolTentativaIniciar(void) {
   ultimaFonteTentativa = 0;
 #ifdef NV_ANDROID
   ultimaFonteTemCabs = 0;
+  ultimaFonteTemItem = 0;
+  memset(&ultimaFonteItem, 0, sizeof ultimaFonteItem);
+  ultimaFonteIdx = -1;
+  ultimaFonteEpT = 0;
+  ultimaFonteEpE = 0;
+  ultimaFonteSessao = 0;
 #endif
 }
 static void farolFonteRegistrar(const char *url, int temCabs) {
@@ -1066,6 +1075,26 @@ static void farolFonteRegistrar(const char *url, int temCabs) {
   snprintf(ultimaFonteUrl, sizeof ultimaFonteUrl, "%s", url ? url : "");
 #ifdef NV_ANDROID
   ultimaFonteTemCabs = temCabs ? 1 : 0;
+  {
+    const CatItem *c = item();
+    if (c) {
+      ultimaFonteItem = *c;
+      ultimaFonteTemItem = 1;
+    } else {
+      memset(&ultimaFonteItem, 0, sizeof ultimaFonteItem);
+      ultimaFonteTemItem = 0;
+    }
+    ultimaFonteIdx = idxAtual();
+    ultimaFonteEpT = epT;
+    ultimaFonteEpE = epE;
+    if (c && !strcmp(c->tipo, "series")) {
+      if (ultimaFonteEpT < 0 || (ultimaFonteEpT == 0 && ultimaFonteEpE < 1))
+        ultimaFonteEpT = c->temporada > 0 || (c->temporada == 0 && c->episodio > 0) ? c->temporada : 1;
+      if (ultimaFonteEpE < 1)
+        ultimaFonteEpE = c->episodio > 0 ? c->episodio : 1;
+    }
+    ultimaFonteSessao = itemSessao;
+  }
 #else
   (void)temCabs;
 #endif
@@ -1295,7 +1324,7 @@ void player_definir_episodio(int t, int e) {
   atualizarTipoItem();
   const CatItem *c = item();
   if (t != epT || e != epE) {
-    if (!abrindoSessao && !comVideo) farolTentativaIniciar();
+    if (!abrindoSessao) farolTentativaIniciar();
     retomarFonteSeg = -1.0;
     memset(&scrobbleAlvo, 0, sizeof scrobbleAlvo); scrobbleAlvoPronto = 0;
     scrobbleTvdbCapturado = 0;
@@ -2398,6 +2427,9 @@ static int travaFonte(const char *url) {
   if (!c || strcmp(c->tipo, "series") ||
       !travaui_segura(c->imdb, idxAtual(), epT, epE, NULL, NULL)) return 1;
   player_erro_fonte_motivo(i18n("Travar série"), i18n("Separados"));
+  temUltimoFarol = 0;
+  ultimoFarolTentativa = 0;
+  ultimoFarolAddonId = 0;
   return 0;
 }
 
@@ -2497,7 +2529,23 @@ int player_externo_disponivel_tentativa(uint64_t tentativa) {
     return 0;
   if (!ultimaFonteUrl[0] || ultimaFonteTemCabs ||
       (player_aberto() && video_cabecalhos()[0])) return 0;
-  if (temFixo && !nv_perfil_sessao_atual(itemSessao)) return 0;
+  {
+    const CatItem *c = ultimaFonteTemItem ? &ultimaFonteItem : item();
+    uint64_t sessao = ultimaFonteTemItem ? ultimaFonteSessao : itemSessao;
+    int t = ultimaFonteTemItem ? ultimaFonteEpT : epT;
+    int e = ultimaFonteTemItem ? ultimaFonteEpE : epE;
+    int ix = ultimaFonteTemItem ? ultimaFonteIdx : idxAtual();
+    if ((ultimaFonteTemItem || temFixo) && !nv_perfil_sessao_atual(sessao))
+      return 0;
+    if (c && !strcmp(c->tipo, "series")) {
+      if (!aberto && !mini && c->imdb[0]) {
+        int achado = cat_indice_titulo(c->imdb, ix);
+        ix = achado >= 0 ? achado : -1;
+      }
+      if (travaui_segura(c->imdb, ix, t, e, NULL, NULL))
+        return 0;
+    }
+  }
   extplayer_atualizar_apps();
   return extplayer_n_apps() > 0;
 #else
@@ -2517,7 +2565,7 @@ int player_abrir_externo_tentativa(uint64_t tentativa) {
   // player fechado (Resolver aberto por Ajustes): usa a URL e o titulo
   // guardados da tentativa diagnosticada e, sem player aberto, nunca dispara o
   // pipeline interno em segundo plano se a Intent falhar.
-  const CatItem *c = item();
+  const CatItem *c = ultimaFonteTemItem ? &ultimaFonteItem : item();
   char url[NV_MEDIA_URL_MAX];
   const char *cabs = aberto ? video_cabecalhos() : (ultimaFonteTemCabs ? "x" : "");
   if (!player_externo_disponivel_tentativa(tentativa)) return 0;
@@ -2621,6 +2669,7 @@ void player_definir_retomada_fonte(double segundos) {
 }
 void player_definir_fonte(const char *url) {
   if ((!aberto && !mini) || !url || !*url) return;
+  farolTentativaIniciar();
   if (!travaFonte(url)) return;
   intro_trocar_fonte();
   fonteAcaoInvalidar();

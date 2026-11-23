@@ -54,6 +54,12 @@ if not sair:
 tent_ini = extract_fn(player, r"^static void farolTentativaIniciar\(void\) \{", "farolTentativaIniciar", required=False)
 fonte_reg = extract_fn(player, r"^static void farolFonteRegistrar\(const char \*url, int temCabs\) \{", "farolFonteRegistrar", required=False)
 erro_reg = extract_fn(player, r"^static void farolErroRegistrar\(const FarolErro \*fe, int foiDebrid, uint64_t addonId\) \{", "farolErroRegistrar", required=False)
+trava_fonte = extract_fn(player, r"^static int travaFonte\(const char \*url\) \{", "travaFonte", required=False)
+def_fonte = extract_fn(player, r"^void player_definir_fonte\(const char \*url\) \{", "player_definir_fonte", required=False)
+def_fonte_pref = ""
+if def_fonte and "if (!travaFonte(url)) return;" in def_fonte:
+    head = def_fonte.split("if (!travaFonte(url)) return;", 1)[0] + "if (!travaFonte(url)) return;\n}"
+    def_fonte_pref = head.replace("void player_definir_fonte(", "static void farol_test_definir_fonte_prefixo(", 1)
 ult_erro = extract_fn(player, r"^int player_ultimo_erro_farol\(FarolErro \*out, int \*foiDebrid\) \{", "player_ultimo_erro_farol", required=False)
 ult_tent = extract_fn(player, r"^uint64_t player_ultimo_erro_tentativa\(void\) \{", "player_ultimo_erro_tentativa", required=False)
 ext_disp_t = extract_fn(player, r"^int player_externo_disponivel_tentativa\(uint64_t tentativa\) \{", "player_externo_disponivel_tentativa", required=False)
@@ -73,6 +79,8 @@ parts = [
     tent_ini,
     fonte_reg,
     erro_reg,
+    trava_fonte,
+    def_fonte_pref,
     ult_erro if ult_tent else "",
     ult_tent,
     ext_disp_t,
