@@ -34,6 +34,18 @@ class ReportsTest(unittest.TestCase):
             apply_reports(self.data, ['[FEITO] Farol 6 · — · entregue', '[FEITO] desconhecido · — · erro'])
         self.assertEqual(before, self.data)
 
+    def test_interrupted_attempt_preserves_the_delivered_commit_role(self):
+        base = apply_reports(self.data, ['[IMPLEMENTANDO] farol-6 · agente/f6@aaaaaaa · base de trabalho; sem commit ainda'])
+        self.assertEqual('base', next(i for i in base['items'] if i['id'] == 'farol-6')['commitRole'])
+        base = apply_reports(base, ['[IMPLEMENTANDO] farol-6 · agente/f6@aaaaaaa · tentativa interrompida sem commit'])
+        self.assertEqual('base', next(i for i in base['items'] if i['id'] == 'farol-6')['commitRole'])
+        delivered = apply_reports(base, ['[REVISAO] farol-6 · agente/f6@bbbbbbb · implementação entregue'])
+        result = apply_reports(delivered, ['[CORRECAO] farol-6 · agente/f6@bbbbbbb · nova tentativa interrompida sem commit; relançando'])
+        item = next(i for i in result['items'] if i['id'] == 'farol-6')
+        self.assertEqual('bbbbbbb', item['sha'])
+        self.assertNotEqual('base', item.get('commitRole'))
+        self.assertFalse(item['verified'])
+
     def test_ambiguous_number_requires_explicit_identity(self):
         with self.assertRaises(ValueError):
             apply_reports(self.data, ['[FEITO] 763 · — · não adivinhar issue ou porte'])
@@ -59,6 +71,10 @@ class ReportsTest(unittest.TestCase):
                 apply_reports(self.data, [line])
 
     def test_timestamp_alias_branch_only_and_ordering(self):
+        # Keep the ordering fixture independent of later production reports.
+        for item in self.data['items']:
+            if item['id'] in ('perfil-sem-login', 'issue-778'):
+                item['reportedAt'] = '2026-11-23T03:44:00+00:00'
         result = apply_reports(self.data, ['2026-11-23 03:45 [LOTE] perfil-semlogin · agente/perfil@abcdef123 · em lote',
                                            '2026-11-23 03:45 [BLOQUEADA] 778 · agente/21z-778 · log pendente'])
         i = next(i for i in result['items'] if i['id'] == 'issue-778')

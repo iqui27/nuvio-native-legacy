@@ -114,11 +114,15 @@ def apply_reports(data, lines):
                 raise ValueError('Relato anterior ao último estado: ' + target['id'])
             if target.get('note') and target['note'] != note:
                 target.setdefault('previousNotes', []).insert(0, target['note'])
+            sha_changed = bool(reference) and reference.get('sha') != target.get('sha')
             target.update(reference)
             target.update(status=status, note=note, updatedAt=now, reportedAt=reported_at, source='Relato VPS', verified=False)
-            if 'sem commit' in note.lower():
+            # An interrupted attempt without a new commit does not turn an
+            # already delivered, unchanged SHA back into a work base.
+            no_commit = 'sem commit' in note.lower()
+            if no_commit and sha_changed:
                 target['commitRole'] = 'base'
-            elif reference:
+            elif reference and not no_commit:
                 target.pop('commitRole', None)
             # A new report/reference is not an ancestry verification of that new commit.
             if reference:

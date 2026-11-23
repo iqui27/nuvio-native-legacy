@@ -2,19 +2,22 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T04:17:54+00:00",
+    "updatedAt": "2026-11-23T19:30:57+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
       "branch": "integracao/2.1",
-      "sha": "8ada9acdd",
-      "pr": 813
+      "sha": "ec4e6a0b5",
+      "pr": 839,
+      "fullSha": "ec4e6a0b52bbd2f38c56f31778a91744c786ea4a",
+      "checkedAt": "2026-11-23T19:29:42+00:00"
     },
     "coverageNote": "56 itens Farol informados: o #42 não consta no escopo. Inventário externo detalhado: 61 linhas da VPS, com #731 unificada; D1 e 762+720 têm cartões por issue e revisão conjunta. D1: ancestralidade não verificada. Testes isolados são identificados como tal.",
     "unknownDoneFixes": 0,
-    "githubCheckedAt": "2026-11-23T03:40:02+00:00",
+    "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
-    "inventoryUnits": 60
+    "inventoryUnits": 60,
+    "lastVpsReportedAt": "2026-11-23T19:26:00+00:00"
   },
   "items": [
     {
@@ -112,18 +115,27 @@
         "farol-3"
       ],
       "allDependencies": false,
-      "status": "IMPLEMENTANDO",
+      "status": "CORRECAO",
       "wave": "A",
-      "sha": "0f095f457",
+      "sha": "f145c77e0",
       "batch": null,
-      "note": "relançado no Antigravity Gemini 4 Carbon (regra: Gemini só via Antigravity); continua do commit entregue, não verificado",
+      "note": "VPS FAROL6C e FAROL46E (Gemini Neon) interrompidas 19:22 sem commit; sobras removidas; relançando",
       "source": "Relato VPS",
       "verified": false,
       "branch": "agente/21z-farol-6",
-      "updatedAt": "2026-11-23T04:17:54+00:00",
-      "reportedAt": "2026-11-23T04:12:00+00:00",
+      "updatedAt": "2026-11-23T19:28:40+00:00",
+      "reportedAt": "2026-11-23T19:26:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "FAROL6C no Gemini 4 Neon (…f6644e7b5351); oracle-vps",
+        "Fable r2 REPROVADO (externo e reabertura pós-QR exigem player aberto); FAROL6C no Devin swe-2-high (…9333543); oracle-vps",
+        "VPS Devin swe-2-high entregou FAROL6B (playbooks no Resolver; farol_regra/farol_resolver base 134 → ponta 0 nos 3 modos; merge-tree 6/6 rc 0; 2 commits, src/app.c +22/−1 sem trechos do Poke); revisão FAROL6-r2 Fable 5.2 via Devin lançada (task …239f73); TV não verificado (player externo, retomada após QR)",
+        "ERRATA da linha 16:35: FAROL6B só foi despachada agora (VPS Devin swe-2-high, task …40d4f23a); antes não havia tarefa",
+        "VPS Sol (codex gpt-6.2-sol) REPROVADO r1: motor não está no caminho de produção, ações §C sem despacho, 2 diagnósticos perdidos; correção Devin SWE-2 FAROL6B",
+        "Devin swe-2-high fechou sem commit novo (WIP Gemini cumpre o brief); revisão Sol r1 (codex gpt-6.2-sol, VPS); TV não verificado",
+        "VPS Devin swe-2-high, fechamento após tarefa Gemini parada (WIP preservado em -wip); não verificado",
+        "relançado no Antigravity puro (gemini-4-carbon); commit compila e farol_regra rc 0 em ASan/TSan/normal, ainda sem revisão",
+        "relançado no Antigravity Gemini 4 Carbon (regra: Gemini só via Antigravity); continua do commit entregue, não verificado",
         "lançada (Gemini 4 Carbon via Devin), base lote 21d; sem commit ainda"
       ]
     },
@@ -156,13 +168,28 @@
         "farol-4"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "APROVADA",
       "wave": "A",
-      "sha": null,
-      "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "sha": "aa6d0dbd3",
+      "batch": "21e",
+      "note": "Sol r3 APROVADO_COM_RESSALVAS (codex gpt-6.2-sol, VPS); aguarda lote; TV não verificado",
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/21z-farol-8",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T14:23:00+00:00",
+      "integrationVerified": false,
+      "previousNotes": [
+        "FAROL8C entregue (Devin swe-2-high, VPS): LG não-OLED volta a \"x\", contrato com servidor 200; revisão FAROL8-r3 Sol (codex gpt-6.2-sol, VPS); TV não verificado",
+        "Sol r2 REPROVADO (registro LG NANO recusado com 422 pelo servidor); FAROL8C Devin swe-2-high na VPS; TV não verificado",
+        "FAROL8B entregue (Devin swe-2-high, VPS); revisão FAROL8-r2 Sol (codex gpt-6.2-sol, VPS); TV não verificado",
+        "FAROL8B lançada na VPS acpRegistry_devin swe-2-high (modelo vira x, cache TPK sem [tv], TPK40 perde build)",
+        "Sol FAROL8-r1 REPROVADO (modelo vira \"x\" no JSON; cache TPK congela antes da linha [tv]; TPK40 vira tizen-tpk); correção VPS Devin swe-2-high FAROL8B",
+        "2ª revisão Opus também falhou com 'Claude API unknown' sem relatório nem sobras; relançada na VPS codex main/codex/gpt-6.2-sol (FAROL8-r1, worktrees sol-farol8r1-* em uso)",
+        "VPS claudeAgent claude-opus-5-5 high (2ª tentativa; a 1ª falhou com 'Claude API unknown' sem relatório); entrega Devin swe-2-high PRONTO_COM_RESSALVAS, TV pendente",
+        "2ª tarefa Gemini Neon também encerrou sem commit nem relatório (disse 'em segundo plano', nenhum processo vivo); fechamento passou para VPS Devin swe-2-high; código ainda não verificado",
+        "VPS antigravity gemini-4-neon high; 1ª tarefa parou sem commit nem relatório (código não commitado na worktree, não verificado); relançada para fechar testes, commit e relatório"
+      ]
     },
     {
       "id": "farol-9",
@@ -257,13 +284,21 @@
         "farol-5"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "APROVADA",
       "wave": "A",
-      "sha": null,
-      "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "sha": "66fb2d121",
+      "batch": "21e",
+      "note": "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → 6/6, merge rc 0); servidor sem deploy; próximo lote",
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/farol-13",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T17:14:00+00:00",
+      "integrationVerified": false,
+      "previousNotes": [
+        "VPS Fable 5.2 via Devin (task …68ff22c3), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090",
+        "PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-13.txt); entrega por push; não verificado"
+      ]
     },
     {
       "id": "farol-14",
@@ -465,13 +500,21 @@
         "farol-1"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "APROVADA",
       "wave": "A",
-      "sha": null,
-      "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "sha": "9fac396d4",
+      "batch": "21e",
+      "note": "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → ponta 0, mutações 9/11, merge rc 0); sem consumidor até a issue 25; TV não verificado; próximo lote",
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/farol-24",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T17:11:00+00:00",
+      "integrationVerified": false,
+      "previousNotes": [
+        "VPS Fable 5.2 via Devin (task …19cb534a), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090",
+        "PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-24.txt); entrega por push; não verificado"
+      ]
     },
     {
       "id": "farol-25",
@@ -554,13 +597,21 @@
         "farol-5"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "APROVADA",
       "wave": "A",
-      "sha": null,
-      "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "sha": "32cf15761",
+      "batch": "21e",
+      "note": "VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (9/9, mutações 13/13, merge rc 0); ressalvas vão para a farol-30; sem deploy; próximo lote",
+      "source": "Relato VPS",
+      "verified": false,
+      "branch": "agente/farol-29",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T17:14:00+00:00",
+      "integrationVerified": false,
+      "previousNotes": [
+        "VPS Fable 5.2 via Devin (task …2f7dd460), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090",
+        "PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-29.txt); entrega por push; não verificado"
+      ]
     },
     {
       "id": "farol-30",
@@ -803,17 +854,23 @@
         "farol-47"
       ],
       "allDependencies": false,
-      "status": "LOTE",
+      "status": "FEITO",
       "wave": null,
-      "sha": "39d90ad05",
+      "sha": "e16157090",
       "batch": "21d",
-      "note": "no lote 21d",
-      "source": "Relato VPS",
+      "note": "Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem 39d90ad05 e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
+      "source": "GitHub PR #839 + ancestralidade conferida no git",
       "verified": false,
-      "branch": "agente/21z-farol-44",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "branch": "lote/21d",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T18:52:48Z",
+      "integrationVerified": true,
+      "previousNotes": [
+        "na PR #839",
+        "no lote 21d"
+      ],
+      "implementationSha": "39d90ad05",
+      "integrationMergeSha": "ec4e6a0b52bbd2f38c56f31778a91744c786ea4a"
     },
     {
       "id": "farol-45",
@@ -824,18 +881,31 @@
         "farol-44"
       ],
       "allDependencies": false,
-      "status": "BLOQUEADA",
+      "status": "APROVADA",
       "wave": "A",
-      "sha": null,
-      "batch": null,
-      "note": "aguarda combinar com o Poke o ponto das fileiras na Home pré-calculada",
+      "sha": "1f973642c",
+      "batch": "21e",
+      "note": "VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (4 bloqueios da r1 fechados; merge rc 0 em 7 alvos, rc 1 trivial vs PR #840 em src/fileiras.c); lote 21e; TV não verificada Ordem padrão acordada: continue_watching → porque_assistiu → farol_gosto1; a ordem salva pelo usuário prevalece. Dedupe com home_assistiu_itens por id fica para depois do merge da PR #840, sem bloquear a aprovação atual.",
       "source": "Relato VPS",
       "verified": false,
       "previousNotes": [
+        "FAROL45-r2 no Gemini 4 Argon (…9340395b9fbd); oracle-vps",
+        "Fable FAROL45-r2 lançada (…75eda7d); oracle-vps; TV não verificada",
+        "VPS Devin swe-2-high entregou FAROL45B (5 de 6 pontos da r1 corrigidos, rc 134→0); opt-out ainda vaza fileiras após farol_gosto_zerar; 2º commit autorizado, FAROL45C no Devin swe-2-high (task …07fbb4); TV não verificado",
+        "PR #840 (refs/poke/pr840 39f49c290) aceita: linha porque_assistiu na ordem do Poke; dedupe farol_gosto×home_assistiu_itens por id fica para depois do merge da #840",
+        "VPS Sol (codex gpt-6.2-sol) REPROVADO r1 16h05: cena muda com Home visível sob o menu, exposição invalida a cena, opt-out não fecha na publicação, corrida TSan coletarContinuar; correção FAROL45B VPS Devin swe-2-high (task …b20e265c); TV não verificado",
+        "Devin SWE-2 entregou (cena na Home, farol_home 15 checks rc 0 normal/ASan); revisão Sol (codex gpt-6.2-sol) FAROL45-r1 na VPS; TV não verificado",
+        "VPS Devin swe-2-high; base contém #835 (38e6d9ccf, conferido); contrato Home do Poke vale sobre o plano",
+        "Antigravity gemini-4-carbon, contrato CONTRATO-HOME-POKE.md",
+        "aguarda merge da #835 (brief pronto: sense/briefs/farol-45.md, contrato da Home respondido em 38e6d9ccf)",
+        "aguarda #835 do Poke entrar e resposta dos três pontos (CONTRATO-HOME-POKE.md)",
+        "aguarda combinar com o Poke o ponto das fileiras na Home pré-calculada",
         "TV física pendente."
       ],
-      "updatedAt": "2026-11-23T04:17:54+00:00",
-      "reportedAt": "2026-11-23T04:16:00+00:00"
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T19:19:00+00:00",
+      "branch": "agente/21z-farol-45",
+      "integrationVerified": false
     },
     {
       "id": "farol-46",
@@ -847,13 +917,33 @@
         "farol-47"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "CORRECAO",
       "wave": "A",
-      "sha": null,
+      "sha": "eeb143e57",
       "batch": null,
-      "note": "TV física pendente.",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "VPS FAROL6C e FAROL46E (Gemini Neon) interrompidas 19:22 sem commit; sobras removidas; relançando",
+      "source": "Relato VPS",
+      "verified": false,
+      "previousNotes": [
+        "Devin publicou eeb143e57 sem relatório antes do cancelamento; FAROL46E retomada no Gemini 4 Neon (…a67f9a209349); oracle-vps; não verificado",
+        "VPS Devin swe-2-high entregou FAROL46D (gênero por identidade; PT×EN 134 → 0 nos 3 modos; merge-tree 6/6 rc 0); ainda substitui publicação local quando TMDB omite gênero; 2º commit autorizado com patch preparado, FAROL46E no Devin swe-2-high (task …4ac60); TV não verificado",
+        "FAROL46D lançada na VPS, Devin swe-2-high (task …e3d348fd); identidade do gênero no lugar do texto; não verificado",
+        "VPS Sol r3 REPROVADO (selo de gênero troca com TMDB em outro idioma); correção FAROL46D no Devin swe-2-high; TV não verificado",
+        "ERRATA da linha 16:35: revisão r3 só foi despachada agora (VPS Sol codex gpt-6.2-sol, task …6a38c12b)",
+        "VPS Devin SWE-2 entregou FAROL46C (selo gênero×tema chega ao Mapa, sonda base 134 → ponta 0); revisão r3 Sol (codex gpt-6.2-sol)",
+        "Sol r2 REPROVADO (codex gpt-6.2-sol, VPS): selo de gênero perde o filtro quando o TMDB responde; correção FAROL46C Devin swe-2-high (VPS); TV não verificado",
+        "FAROL46B entregue (Devin swe-2-high, VPS), 7 bloqueios r1; revisão FAROL46-r2 Sol (codex gpt-6.2-sol, VPS); testes do Devin não verificados; TV não verificado",
+        "FAROL46B lançada na VPS acpRegistry_devin swe-2-high (task …3b1ac779); TV pendente",
+        "Sol FAROL46-r1 REPROVADO (7 defeitos: Diário no fio da UI, prazo 8 s reinicia, ficha de outra obra, idioma em branco, sufixo de episódio, QUALI_SO sem modelo, selo abre Explorar genérico); correção VPS acpRegistry_devin swe-2-high FAROL46B; TV pendente",
+        "revisão Opus falhou com 'Claude API unknown' sem relatório nem sobras; relançada na VPS codex main/codex/gpt-6.2-sol (FAROL46-r1); TV pendente",
+        "entrega Devin swe-2-high PRONTO (GL portátil, 3 modos rc 0, mutações 134, merge rc 0); revisão VPS claudeAgent claude-opus-5-5 high; TV pendente",
+        "VPS antigravity gemini-4-carbon encerrou sem commit nem relatório (código na worktree; parte core do teste ok, parte GL só de Mac falha no Linux); fechamento passou para Devin swe-2-high (VPS)",
+        "TV física pendente."
+      ],
+      "branch": "agente/21z-farol-46",
+      "updatedAt": "2026-11-23T19:28:40+00:00",
+      "reportedAt": "2026-11-23T19:26:00+00:00",
+      "integrationVerified": false
     },
     {
       "id": "farol-47",
@@ -1057,127 +1147,175 @@
     {
       "id": "pr-729",
       "title": "Android: on-device seek thumbnails with safe decoding and Dolby Vision GPU colours",
-      "status": "LOTE",
-      "sha": "2f3ec08ca",
+      "status": "FEITO",
+      "sha": "e16157090",
       "batch": "21d",
-      "note": "no lote 21d",
+      "note": "Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem 2f3ec08ca e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "Relato VPS",
+      "source": "GitHub PR #839 + ancestralidade conferida no git",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/729",
       "number": 729,
-      "branch": "agente/21z-pr729",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "branch": "lote/21d",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T18:52:48Z",
+      "integrationVerified": true,
+      "previousNotes": [
+        "na PR #839",
+        "no lote 21d"
+      ],
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "55a4575f649be5a43c212e1e82aaef4ef01ae24c",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-07T20:31:14Z",
+      "githubChecks": "success",
+      "implementationSha": "2f3ec08ca",
+      "integrationMergeSha": "ec4e6a0b52bbd2f38c56f31778a91744c786ea4a"
     },
     {
       "id": "pr-680",
       "title": "Local thumbnails tizen/ lg (#729 android)",
-      "status": "LOTE",
-      "sha": "6dfdbe5bd",
+      "status": "FEITO",
+      "sha": "e16157090",
       "batch": "21d",
-      "note": "no lote 21d; TV Samsung TPK/TPK40 não verificado",
+      "note": "Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem 6dfdbe5bd e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "Relato VPS",
+      "source": "GitHub PR #839 + ancestralidade conferida no git",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/680",
       "number": 680,
       "previousNotes": [
+        "na PR #839",
+        "no lote 21d; TV Samsung TPK/TPK40 não verificado",
         "TV Samsung TPK e TPK40 pendente."
       ],
-      "branch": "agente/21z-pr680",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "branch": "lote/21d",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T18:52:48Z",
+      "integrationVerified": true,
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "f3da7aab5d2b3d9dfb702f72a07396dce25228e6",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-10-28T21:22:33Z",
+      "githubChecks": "success",
+      "implementationSha": "6dfdbe5bd",
+      "integrationMergeSha": "ec4e6a0b52bbd2f38c56f31778a91744c786ea4a"
     },
     {
       "id": "pr-734",
       "title": "Libass engine rewrite tizen",
-      "status": "LOTE",
-      "sha": "6f06345f2",
+      "status": "FEITO",
+      "sha": "e16157090",
       "batch": "21d",
-      "note": "no lote 21d; TV não verificado",
+      "note": "Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem 6f06345f2 e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "Relato VPS",
+      "source": "GitHub PR #839 + ancestralidade conferida no git",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/734",
       "number": 734,
       "previousNotes": [
+        "na PR #839",
+        "no lote 21d; TV não verificado",
         "TV física pendente."
       ],
-      "branch": "agente/21z-pr734",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "branch": "lote/21d",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T18:52:48Z",
+      "integrationVerified": true,
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "2cd4a00934fc639ec08f7e7fee6adadc0af929ae",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-10-29T20:33:15Z",
+      "githubChecks": "success",
+      "implementationSha": "6f06345f2",
+      "integrationMergeSha": "ec4e6a0b52bbd2f38c56f31778a91744c786ea4a"
     },
     {
       "id": "perfil-sem-login",
       "title": "Perfil sem login",
-      "status": "LOTE",
-      "sha": "957af78d6",
+      "status": "FEITO",
+      "sha": "e16157090",
       "batch": "21d",
-      "note": "no lote 21d",
+      "note": "Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem 957af78d6 e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "Relato VPS",
+      "source": "GitHub PR #839 + ancestralidade conferida no git",
       "verified": false,
-      "branch": "agente/21z-perfil-semlogin",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "branch": "lote/21d",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T18:52:48Z",
+      "integrationVerified": true,
+      "previousNotes": [
+        "na PR #839",
+        "no lote 21d"
+      ],
+      "implementationSha": "957af78d6",
+      "integrationMergeSha": "ec4e6a0b52bbd2f38c56f31778a91744c786ea4a"
     },
     {
       "id": "arquivo-desktop",
       "title": "Nome do arquivo no desktop",
-      "status": "LOTE",
-      "sha": "c2a62d8ac",
+      "status": "FEITO",
+      "sha": "e16157090",
       "batch": "21d",
-      "note": "no lote 21d",
+      "note": "Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem c2a62d8ac e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "Relato VPS",
+      "source": "GitHub PR #839 + ancestralidade conferida no git",
       "verified": false,
-      "branch": "agente/21z-desktop-nomefonte",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "branch": "lote/21d",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T18:52:48Z",
+      "integrationVerified": true,
+      "previousNotes": [
+        "na PR #839",
+        "no lote 21d"
+      ],
+      "implementationSha": "c2a62d8ac",
+      "integrationMergeSha": "ec4e6a0b52bbd2f38c56f31778a91744c786ea4a"
     },
     {
       "id": "mac-desktop",
       "title": "Desktop Mac: perfis, busca e ajustes",
-      "status": "LOTE",
-      "sha": "3490bc902",
+      "status": "FEITO",
+      "sha": "e16157090",
       "batch": "21d",
-      "note": "no lote 21d (inclui mac-perfis e mac-busca)",
+      "note": "Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem 3490bc902 e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "Relato VPS",
+      "source": "GitHub PR #839 + ancestralidade conferida no git",
       "verified": false,
       "previousNotes": [
+        "na PR #839",
+        "no lote 21d (inclui mac-perfis e mac-busca)",
         "Testes Mac adiados por decisão do dono."
       ],
-      "branch": "reconc/mac-ajustes",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "branch": "lote/21d",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T18:52:48Z",
+      "integrationVerified": true,
+      "implementationSha": "3490bc902",
+      "integrationMergeSha": "ec4e6a0b52bbd2f38c56f31778a91744c786ea4a"
     },
     {
       "id": "issue-728",
       "title": "Network Drop on Samsung Tizen 4.0 — Nuvio Legacy 2.0.8",
-      "status": "CORRECAO",
-      "sha": "dbd6663d7",
+      "status": "APROVADA",
+      "sha": "a69626eef",
       "batch": "21e",
-      "note": "F115 lançada (Devin SWE-2): merge do 21d, conflito com 680 em src/video_tpk.c",
+      "note": "F117-r1 (Sol GPT-6.2 via Codex, VPS) aprovou com ressalvas: ACK de B libera a amostra do Farol, mutações reprovam, merge rc 0 com lote 21d; TV não verificado",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
@@ -1186,11 +1324,16 @@
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/728",
       "number": 728,
       "previousNotes": [
+        "revisão F117-r1 lançada (Sol GPT-6.2 via Codex, VPS)",
+        "F117 entregue (Devin SWE-2, VPS): recusa de seek legado corrigida, dirigido 18/18, merge rc 0 com lote 21d; revisão F117-r1 no Sol; TV não verificado",
+        "F115-r1 reprovou (recusa de seek legado prende rastreador, Farol sem amostra); correção F117 no Devin SWE-2",
+        "F115 entregue (lote 21d mesclado, conflito video_tpk.c resolvido); revisão Sol",
+        "F115 lançada (Devin SWE-2): merge do 21d, conflito com 680 em src/video_tpk.c",
         "Conflito com PR 680 em src/video_tpk.c a resolver."
       ],
       "branch": "agente/21z-728",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T05:59:00+00:00",
       "integrationVerified": false
     },
     {
@@ -1229,7 +1372,13 @@
       "branch": "agente/21z-pr761",
       "updatedAt": "2026-11-23T03:47:09+00:00",
       "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "integrationVerified": false,
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "89752caaabe3f74f5fe9eeada210ea4efb71ddbc",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-04T20:32:02Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-644",
@@ -1248,7 +1397,13 @@
       "branch": "agente/21z-pr644",
       "updatedAt": "2026-11-23T03:47:09+00:00",
       "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "integrationVerified": false,
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "c3b91227815e7ca77cfdcf7fd471917360f5a50b",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-10-23T02:59:01Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-749",
@@ -1267,15 +1422,21 @@
       "branch": "agente/21z-pr749",
       "updatedAt": "2026-11-23T03:47:09+00:00",
       "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "integrationVerified": false,
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "87f985e97eb7d07d3540ba3b02fe7a1ca89a15a9",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-16T02:21:04Z",
+      "githubChecks": "success"
     },
     {
       "id": "issue-751",
       "title": "A defect in the appearance of Arabic translation",
-      "status": "REVISAO",
+      "status": "APROVADA",
       "sha": "03c4bf516",
-      "batch": null,
-      "note": "F116 entregue sobre lote 21d, revisão SWE-2 (Devin)",
+      "batch": "21e",
+      "note": "F116-r1 SWE-2 (Devin, VPS): aprovada com ressalvas, 141 testes em paridade; entra no próximo lote; TV não verificado",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
@@ -1284,21 +1445,22 @@
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/751",
       "number": 751,
       "previousNotes": [
+        "F116 entregue sobre lote 21d, revisão SWE-2 (Devin)",
         "F116 lançada (Sol): merge do 21d, conflito em src/legref.c",
         "Atualizar sobre 21d antes da revisão; conflito em src/legref.c."
       ],
       "branch": "agente/21z-751",
-      "updatedAt": "2026-11-23T04:17:54+00:00",
-      "reportedAt": "2026-11-23T04:13:00+00:00",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T05:01:00+00:00",
       "integrationVerified": false
     },
     {
       "id": "issue-786",
       "title": "Arabic subtitles Embedded for Anime",
-      "status": "REVISAO",
+      "status": "APROVADA",
       "sha": "0b0bdfad7",
-      "batch": null,
-      "note": "F116 entregue sobre lote 21d, revisão SWE-2 (Devin)",
+      "batch": "21e",
+      "note": "F116-r1 SWE-2 (Devin, VPS): aprovada com ressalvas, emcc ok; entra no próximo lote; TV não verificado",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
@@ -1307,12 +1469,13 @@
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/786",
       "number": 786,
       "previousNotes": [
+        "F116 entregue sobre lote 21d, revisão SWE-2 (Devin)",
         "F116 lançada (Sol): merge do 21d, conflito em src/legref.c",
         "Atualizar sobre 21d antes da revisão; conflito em src/legref.c."
       ],
       "branch": "agente/21z-786",
-      "updatedAt": "2026-11-23T04:17:54+00:00",
-      "reportedAt": "2026-11-23T04:13:00+00:00",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T05:01:00+00:00",
       "integrationVerified": false
     },
     {
@@ -1358,7 +1521,12 @@
         "Estado consultado no GitHub; validação funcional não verificada. Onda e dependências não informadas. VPS mediu conflitos contra 21d em src/ajustes.c (3 blocos) e src/ajustes_ux_padrao.inc (1 bloco); limpo contra 8ada9acdd. Manter AJ_ASS_MOTOR antes do novo ajuste e a mesma ordem nas quatro tabelas. Árvores mescladas não compiladas nem testadas. Ideia 68 da pesquisa: trabalho do Poke, não abrir issue duplicada; inclusão na rodada não confirmada."
       ],
       "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00"
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "347aad717f47dbd7d3467dae105049c53e1b09bd",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:24:43Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-829",
@@ -1376,7 +1544,12 @@
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "open"
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "d8f5b8dd6e8aade3f9f6daf39f5bb48a53502173",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:24:42Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-828",
@@ -1394,7 +1567,12 @@
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "open"
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "f8c59d123f53ff8939372f03a03a3781b54661a6",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:24:40Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-827",
@@ -1412,7 +1590,12 @@
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "open"
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "e22e029c1383698e16561d2dce0ea30df1afde7d",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:24:39Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-826",
@@ -1430,7 +1613,12 @@
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "open"
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "87c6c261a58e685611c6e1c1dbd65ceac224fe26",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:25:08Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-825",
@@ -1448,7 +1636,12 @@
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "open"
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "a89b254feae49a6f107c1b354c7e34f20dc09b9d",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:25:08Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-824",
@@ -1466,7 +1659,12 @@
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "open"
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "5a1dc63a62d1b8ebffadfb6625c2134bb7c3a8e4",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:25:08Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-823",
@@ -1484,7 +1682,12 @@
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "open"
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "5adbf91f0fc1c72c20908450e9539cb539f35e22",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:25:08Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-822",
@@ -1502,7 +1705,12 @@
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "open"
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "aaf769b52be7298646d5cda30a30aba2e805c9e9",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:24:55Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-821",
@@ -1525,7 +1733,12 @@
         "Estado consultado no GitHub; validação funcional não verificada. Onda e dependências não informadas. VPS mediu conflitos contra 21d em src/ajustes.c (3 blocos) e src/ajustes_ux_padrao.inc (1 bloco); limpo contra 8ada9acdd. Manter AJ_ASS_MOTOR antes do novo ajuste e a mesma ordem nas quatro tabelas. Árvores mescladas não compiladas nem testadas. Ideia 59 da pesquisa: trabalho do Poke, não abrir issue duplicada; inclusão na rodada não confirmada."
       ],
       "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00"
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "ca78b9d58947ef9cb055d824ec94ab6391c7d2cf",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:24:54Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-820",
@@ -1543,7 +1756,12 @@
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "open"
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "8f7f95a8c648c2c3f3513209a5bdc3b2f206a56c",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:24:53Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-819",
@@ -1561,7 +1779,12 @@
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "open"
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "476ef42b4c11b9480e30f1687918844a4c56aa7a",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:24:53Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-818",
@@ -1579,7 +1802,12 @@
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "open"
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "0d316ff500bf6292ee8c40e1130cfd01024f9742",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:26:06Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-817",
@@ -1602,7 +1830,12 @@
         "Estado consultado no GitHub; validação funcional não verificada. Onda e dependências não informadas. VPS mediu conflitos contra 21d em src/ajustes.c (3 blocos) e src/ajustes_ux_padrao.inc (1 bloco); limpo contra 8ada9acdd. Manter AJ_ASS_MOTOR antes do novo ajuste e a mesma ordem nas quatro tabelas. Árvores mescladas não compiladas nem testadas."
       ],
       "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00"
+      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "834b1f62b2cc1b02d0b80fa44e1fc8ea9ef597da",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:26:06Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-816",
@@ -1620,7 +1853,12 @@
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "open"
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "60f86bb55a56c6f9ff7d1e5d54acdc559205b89f",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:26:09Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-815",
@@ -1638,7 +1876,12 @@
       "source": "GitHub · 2026-11-23T03:40:02+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "open"
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "70c96bbb168a4eb448a54438cef82ca88d784350",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:26:01Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-813",
@@ -1651,12 +1894,24 @@
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/813",
       "dependencies": [],
       "wave": null,
-      "note": "Estado consultado no GitHub; validação funcional não verificada. Onda e dependências não informadas.",
+      "note": "PR #813 mergeada em integracao/2.1 em 2026-11-22T23:24:53Z; ancestralidade conferida no git. Validação funcional e TV não verificadas.",
       "owner": "Poke",
-      "source": "GitHub · 2026-11-23T03:40:02+00:00",
+      "source": "GitHub · merge e ancestralidade conferidos em 2026-11-23T19:27:55+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "merged"
+      "githubState": "merged",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "f14ee375977502a465a903132d39703287e5d276",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:26:52Z",
+      "githubChecks": "success",
+      "githubMergedAt": "2026-11-22T23:24:53Z",
+      "integrationVerified": true,
+      "integrationMergeSha": "8ada9acdd97f56d57febf91412e7f0490efbedaa",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "previousNotes": [
+        "Estado consultado no GitHub; validação funcional não verificada. Onda e dependências não informadas."
+      ]
     },
     {
       "id": "pr-812",
@@ -1669,12 +1924,24 @@
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/812",
       "dependencies": [],
       "wave": null,
-      "note": "Estado consultado no GitHub; validação funcional não verificada. Onda e dependências não informadas.",
+      "note": "PR #812 mergeada em integracao/2.1 em 2026-11-22T21:59:43Z; ancestralidade conferida no git. Validação funcional e TV não verificadas.",
       "owner": "Poke",
-      "source": "GitHub · 2026-11-23T03:40:02+00:00",
+      "source": "GitHub · merge e ancestralidade conferidos em 2026-11-23T19:27:55+00:00",
       "verified": false,
       "scope": "release",
-      "githubState": "merged"
+      "githubState": "merged",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "cf8c85aede112986cf5f107c885974263bede9c9",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T01:26:51Z",
+      "githubChecks": "success",
+      "githubMergedAt": "2026-11-22T21:59:43Z",
+      "integrationVerified": true,
+      "integrationMergeSha": "3e71e07b05789ca6e3101868b2f513e14d9402d1",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "previousNotes": [
+        "Estado consultado no GitHub; validação funcional não verificada. Onda e dependências não informadas."
+      ]
     },
     {
       "id": "issue-714",
@@ -1765,7 +2032,13 @@
       "verified": false,
       "integrationVerified": true,
       "reviewUnit": "779",
-      "displayId": "CORREÇÃO #779"
+      "displayId": "CORREÇÃO #779",
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "fac01f95665045f076231c79ba5de37e8954bf95",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-09T02:32:26Z",
+      "githubChecks": "success"
     },
     {
       "id": "issue-777",
@@ -1838,7 +2111,13 @@
       "verified": false,
       "integrationVerified": true,
       "reviewUnit": "767",
-      "displayId": "CORREÇÃO #767"
+      "displayId": "CORREÇÃO #767",
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "cc1d5e6b3ecc8ca19b413ce9ddd0e27c593cd613",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-06T20:29:22Z",
+      "githubChecks": "success"
     },
     {
       "id": "issue-765",
@@ -1983,7 +2262,13 @@
       "verified": false,
       "integrationVerified": true,
       "reviewUnit": "749",
-      "displayId": "CORREÇÃO #749"
+      "displayId": "CORREÇÃO #749",
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "87f985e97eb7d07d3540ba3b02fe7a1ca89a15a9",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-16T02:21:04Z",
+      "githubChecks": "success"
     },
     {
       "id": "issue-802",
@@ -2074,7 +2359,13 @@
       "verified": false,
       "integrationVerified": true,
       "reviewUnit": "763",
-      "displayId": "CORREÇÃO #763"
+      "displayId": "CORREÇÃO #763",
+      "githubState": "closed",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "df27ca7ed28a3610b9f77533dfc934486dfbf703",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-22T00:52:51Z",
+      "githubChecks": "success"
     },
     {
       "id": "issue-799",
@@ -2525,7 +2816,13 @@
       "verified": false,
       "integrationVerified": true,
       "reviewUnit": "808",
-      "displayId": "CORREÇÃO #808"
+      "displayId": "CORREÇÃO #808",
+      "githubState": "closed",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "df78206c749f6953de709381e231234e3aa9489d",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-20T23:11:49Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-763",
@@ -2543,7 +2840,13 @@
       "source": "VPS · FILA.md; ancestralidade medida contra 8ada9acdd. Título consultado no GitHub.",
       "verified": false,
       "integrationVerified": true,
-      "reviewUnit": "pr763"
+      "reviewUnit": "pr763",
+      "githubState": "closed",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "df27ca7ed28a3610b9f77533dfc934486dfbf703",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-22T00:52:51Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-600",
@@ -2561,7 +2864,13 @@
       "source": "VPS · FILA.md; ancestralidade medida contra 8ada9acdd. Título consultado no GitHub.",
       "verified": false,
       "integrationVerified": true,
-      "reviewUnit": "pr600"
+      "reviewUnit": "pr600",
+      "githubState": "closed",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "637690542f6944eb476844bf12e6c509b28fefb5",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-22T00:52:49Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-575",
@@ -2579,7 +2888,13 @@
       "source": "VPS · FILA.md; ancestralidade medida contra 8ada9acdd. Título consultado no GitHub.",
       "verified": false,
       "integrationVerified": true,
-      "reviewUnit": "pr575"
+      "reviewUnit": "pr575",
+      "githubState": "closed",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "8e1474a7b9e668b8dbdac3c112ce278de3948449",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-22T00:52:46Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-573",
@@ -2597,7 +2912,13 @@
       "source": "VPS · FILA.md; ancestralidade medida contra 8ada9acdd. Título consultado no GitHub.",
       "verified": false,
       "integrationVerified": true,
-      "reviewUnit": "pr573"
+      "reviewUnit": "pr573",
+      "githubState": "closed",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "1157aa43fca736f11e92d9c9624b7fa0b97c039d",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-22T00:52:44Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-807",
@@ -2615,7 +2936,13 @@
       "source": "VPS · FILA.md; ancestralidade medida contra 8ada9acdd. Título consultado no GitHub.",
       "verified": false,
       "integrationVerified": true,
-      "reviewUnit": "pr807"
+      "reviewUnit": "pr807",
+      "githubState": "closed",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "54f60e43f8e8eb2fa754c0431032046f889aa15d",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-23T08:39:37Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-796",
@@ -2633,7 +2960,13 @@
       "source": "VPS · FILA.md; ancestralidade medida contra 8ada9acdd. Título consultado no GitHub.",
       "verified": false,
       "integrationVerified": true,
-      "reviewUnit": "pr796"
+      "reviewUnit": "pr796",
+      "githubState": "closed",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "95d3b37e7e9b733f5c43ab531767a3ab1a558024",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-22T00:52:54Z",
+      "githubChecks": "success"
     },
     {
       "id": "pr-795",
@@ -2651,7 +2984,13 @@
       "source": "VPS · FILA.md; ancestralidade medida contra 8ada9acdd. Título consultado no GitHub.",
       "verified": false,
       "integrationVerified": true,
-      "reviewUnit": "pr795"
+      "reviewUnit": "pr795",
+      "githubState": "closed",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "572569b9c1df0f087aa04689d135242afc9e8311",
+      "githubBaseBranch": "master",
+      "githubUpdatedAt": "2026-11-22T00:52:59Z",
+      "githubChecks": "success"
     },
     {
       "id": "issue-457",
@@ -2870,6 +3209,255 @@
       "note": "Zerar em vigiarFonteGuardada (src/app.c:1644). Ancestralidade confirmada pela VPS, teste funcional não verificado.",
       "verified": false,
       "integrationVerified": true
+    },
+    {
+      "id": "pr-833",
+      "number": 833,
+      "title": "fix(ux): aro do vidro só no vidro e modo seguro sem salvar o Rosa de reserva",
+      "group": "ux",
+      "status": "FEITO",
+      "dependencies": [],
+      "wave": null,
+      "owner": "Poke",
+      "verified": false,
+      "url": "https://github.com/iqui27/nuvio-native-legacy/pull/833",
+      "branch": "devin/1795404673-ux-aro-rosa",
+      "sha": "78ee37c00856f486234c17d377cf08822667888e",
+      "note": "PR #833 mergeada em integracao/2.1 em 2026-11-23T04:02:57Z; ancestralidade conferida no git. Validação funcional e TV não verificadas.",
+      "source": "GitHub · merge e ancestralidade conferidos em 2026-11-23T19:27:55+00:00",
+      "scope": "release",
+      "githubState": "merged",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "78ee37c00856f486234c17d377cf08822667888e",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T04:02:57Z",
+      "githubChecks": "success",
+      "githubMergedAt": "2026-11-23T04:02:57Z",
+      "integrationVerified": true,
+      "integrationMergeSha": "1d43dcc3c4dff8011a61ad4d34d275140ffd16cd",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "previousNotes": [
+        "Item acrescentado ao inventário a partir da PR do GitHub."
+      ]
+    },
+    {
+      "id": "pr-835",
+      "number": 835,
+      "title": "Home precomputada: fileiras de catálogo servidas do cache enquanto frescas",
+      "group": "prs",
+      "status": "FEITO",
+      "dependencies": [],
+      "wave": null,
+      "owner": "Poke",
+      "verified": false,
+      "url": "https://github.com/iqui27/nuvio-native-legacy/pull/835",
+      "branch": "devin/1795407247-home-precomputada",
+      "sha": "38e6d9ccf04856c6996a031c9233b82011c8744c",
+      "note": "PR #835 mergeada em integracao/2.1 em 2026-11-23T04:39:15Z; ancestralidade conferida no git. Validação funcional e TV não verificadas.",
+      "source": "GitHub · merge e ancestralidade conferidos em 2026-11-23T19:27:55+00:00",
+      "scope": "release",
+      "previousNotes": [
+        "Home pré-calculada mergeada pelo Poke (contém 38e6d9ccf)",
+        "Item acrescentado ao inventário a partir da PR do GitHub."
+      ],
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T04:41:00+00:00",
+      "integrationVerified": true,
+      "githubState": "merged",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "38e6d9ccf04856c6996a031c9233b82011c8744c",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T04:39:15Z",
+      "githubChecks": "success",
+      "githubMergedAt": "2026-11-23T04:39:15Z",
+      "integrationMergeSha": "ede2b2dc56ffa2f86bf3d96b10f488292d2b524c"
+    },
+    {
+      "id": "pr-836",
+      "number": 836,
+      "title": "Live TV: memória de rota direta/proxy por host e tentativas com teto",
+      "group": "prs",
+      "status": "FEITO",
+      "dependencies": [],
+      "wave": null,
+      "owner": "Poke",
+      "verified": false,
+      "url": "https://github.com/iqui27/nuvio-native-legacy/pull/836",
+      "branch": "devin/1795407253-proxy-memoria",
+      "sha": "26ee77184438633f5638c74b6406d6a23b2a0fbb",
+      "note": "PR #836 mergeada em integracao/2.1 em 2026-11-23T12:26:02Z; ancestralidade conferida no git. Validação funcional e TV não verificadas.",
+      "source": "GitHub · merge e ancestralidade conferidos em 2026-11-23T19:27:55+00:00",
+      "scope": "release",
+      "githubState": "merged",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "26ee77184438633f5638c74b6406d6a23b2a0fbb",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T12:26:02Z",
+      "githubChecks": "success",
+      "githubMergedAt": "2026-11-23T12:26:02Z",
+      "integrationVerified": true,
+      "integrationMergeSha": "f124c0e0ac2dd52af477e4c119bc51d94dadaceb",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "previousNotes": [
+        "Item acrescentado ao inventário a partir da PR do GitHub."
+      ]
+    },
+    {
+      "id": "pr-837",
+      "number": 837,
+      "title": "Size TMDB artwork to the Tex Cache ceiling and skip the metahub episode redirect",
+      "group": "prs",
+      "status": "FEITO",
+      "dependencies": [],
+      "wave": null,
+      "owner": "Poke",
+      "verified": false,
+      "url": "https://github.com/iqui27/nuvio-native-legacy/pull/837",
+      "branch": "devin/1795407245-tmdb-tile-cdn",
+      "sha": "7e3bd73c4e094c1203735e694539a8d33c3ab9c6",
+      "note": "PR #837 mergeada em integracao/2.1 em 2026-11-23T04:39:09Z; ancestralidade conferida no git. Validação funcional e TV não verificadas.",
+      "source": "GitHub · merge e ancestralidade conferidos em 2026-11-23T19:27:55+00:00",
+      "scope": "release",
+      "previousNotes": [
+        "PR do Poke mergeada (imagens TMDB no tamanho do tile); integracao/2.1 = ede2b2dc5",
+        "Item acrescentado ao inventário a partir da PR do GitHub."
+      ],
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T04:39:00+00:00",
+      "githubState": "merged",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "7e3bd73c4e094c1203735e694539a8d33c3ab9c6",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T04:39:09Z",
+      "githubChecks": "success",
+      "githubMergedAt": "2026-11-23T04:39:09Z",
+      "integrationVerified": true,
+      "integrationMergeSha": "b2cb1dfa455bb1eacbbb476dbf53b665772e75ed"
+    },
+    {
+      "id": "pr-838",
+      "number": 838,
+      "title": "Snapshot de catálogo em disco com refresh explícito (guia ao vivo + VOD)",
+      "group": "prs",
+      "status": "FEITO",
+      "dependencies": [],
+      "wave": null,
+      "owner": "Poke",
+      "verified": false,
+      "url": "https://github.com/iqui27/nuvio-native-legacy/pull/838",
+      "branch": "devin/catalog-snapshot",
+      "sha": "26fc3cbdc1ad8d35417586662929a0935736fa85",
+      "note": "PR #838 mergeada em integracao/2.1 em 2026-11-23T12:29:01Z; ancestralidade conferida no git. Validação funcional e TV não verificadas.",
+      "source": "GitHub · merge e ancestralidade conferidos em 2026-11-23T19:27:55+00:00",
+      "scope": "release",
+      "githubState": "merged",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "26fc3cbdc1ad8d35417586662929a0935736fa85",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T12:29:01Z",
+      "githubChecks": "success",
+      "githubMergedAt": "2026-11-23T12:29:01Z",
+      "integrationVerified": true,
+      "integrationMergeSha": "512cabac58b77a7e5f85621442f43e3c752ab3c3",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "previousNotes": [
+        "Item acrescentado ao inventário a partir da PR do GitHub."
+      ]
+    },
+    {
+      "id": "pr-840",
+      "number": 840,
+      "title": "Adiciona a fileira \"Porque você assistiu…\" na Home",
+      "group": "prs",
+      "status": "CORRECAO",
+      "dependencies": [],
+      "wave": null,
+      "owner": "Poke",
+      "verified": false,
+      "url": "https://github.com/iqui27/nuvio-native-legacy/pull/840",
+      "branch": "devin/1795451676-porque-voce-assistiu",
+      "sha": "23db4e1f000e3f3e0d4196dce590e76854fc5c02",
+      "note": "PR aberta. a52ebc2cb recebeu os pontos a–f da VPS; ponta atual 23db4e1f0 já inclui a correção do casamento TMDB×catálogo e da posição inicial (GitHub). CI verde, sem equivaler a teste funcional: reteste logado em andamento conforme o relato do Poke, TMDB ao vivo e TV física ainda não confirmados. Ordem padrão: continue_watching → porque_assistiu → farol_gosto1; ordem salva pelo usuário prevalece. hist-semlogin pertence à VPS no lote 21e, não a esta PR.",
+      "source": "Relato Poke de 23/11 16h22 Brasília + GitHub 2026-11-23T19:27:55+00:00",
+      "scope": "release",
+      "githubState": "open",
+      "githubCheckedAt": "2026-11-23T19:29:42+00:00",
+      "githubHeadSha": "23db4e1f000e3f3e0d4196dce590e76854fc5c02",
+      "githubBaseBranch": "integracao/2.1",
+      "githubUpdatedAt": "2026-11-23T19:21:17Z",
+      "githubChecks": "success",
+      "integrationVerified": false,
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "previousNotes": [
+        "Item acrescentado ao inventário a partir da PR do GitHub."
+      ],
+      "homeOrder": [
+        "continue_watching",
+        "porque_assistiu",
+        "farol_gosto1"
+      ]
+    },
+    {
+      "id": "catrev",
+      "title": "Guarda da revisão do catálogo nos climas e no Continuar",
+      "group": "correcoes",
+      "status": "APROVADA",
+      "dependencies": [],
+      "wave": null,
+      "batch": "21e",
+      "owner": "VPS",
+      "verified": false,
+      "source": "Relato VPS",
+      "note": "Fable CATREV-r2 APROVADO_COM_RESSALVAS (anime kitsu:T:E no Continuar, tt123::1 herdado, ordem de merge com farol-46 em src/mapa.c); oracle-vps; TV não verificada",
+      "previousNotes": [
+        "VPS Devin swe-2-high entregou CATREVB (base 1 → ponta 0 nos 3 modos, 5 mutações reprovam); merge-tree rc 1 com farol-46@6caab1a65 em src/mapa.c (mapa_vizinhos_pedir); revisão CATREV-r2 Fable 5.2 via Devin lançada (task …a07850); TV não verificado",
+        "VPS Fable 5.2 via Devin REPROVADO r1 (série do card de Continuar não casa por strcmp exato); correção CATREVB no Devin swe-2-high; TV não verificado",
+        "Sol CATREV-r1b caiu (créditos WorkBuddy esgotados, HTTP 429); relançada na VPS com Fable 5.2 via Devin (task …fa80d39c), família diferente do Devin SWE-2; confere o caso 'homônimo na vizinhança' (não verificado)",
+        "review.sh órfão terminou (evidências sol-catrevr1b); reenvio ao Sol depois das 18h UTC (cota Codex); worktrees de revisão limpas",
+        "VPS Sol CATREV-r1b caiu no limite de uso do Codex (HTTP 429, volta ~18h UTC) sem veredito; review.sh do Sol segue rodando e gravando evidências em evidencias/sol-catrevr1b; achado parcial 'homônimo na vizinhança' não verificado; retomada no Sol após o limite",
+        "revisão Gemini neon também morreu sem veredito (encerrou o turno esperando task-61, nenhum processo vivo); sondas parciais guardadas, sobras removidas; relançada na VPS em codex gpt-6.2-sol com redação neutra (CATREV-r1b)",
+        "ERRATA da linha 16:35: a revisão relançada roda na VPS em antigravity gemini-4-neon (família diferente do Devin), não no Sol; sem veredito ainda",
+        "revisão Sol caiu no filtro do provedor (sem veredito); relançada com redação neutra",
+        "Devin SWE-2 entregou (guarda cat_revisao em mapa.c/explorar.c/farolsinal.c, teste catrev base rc 1 → ponta 0 ×3 modos, não verificado pelo orquestrador); revisão Sol (codex gpt-6.2-sol) CATREV-r1 na VPS; vai para o lote 21e",
+        "VPS Devin swe-2-high; guarda de cat_revisao nas cópias de catIndice (mapa.c climaLocal/climaPub, explorar.c climas) + farolsinal se local; destino lote 21e",
+        "leitura Sol: 3 cópias de índice cat_item sem guarda de cat_revisao() nos climas do Mapa; decisão de issue pendente",
+        "Unidade de trabalho nomeada pela VPS; sem issue numerada no relato."
+      ],
+      "branch": "agente/21z-catrev",
+      "sha": "773af36d7",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T18:57:00+00:00",
+      "integrationVerified": false,
+      "displayId": "CATREV"
+    },
+    {
+      "id": "hist-semlogin",
+      "title": "Isolar o histórico do perfil sem login",
+      "group": "correcoes",
+      "status": "APROVADA",
+      "dependencies": [],
+      "wave": null,
+      "batch": "21e",
+      "owner": "VPS",
+      "verified": false,
+      "source": "Relato VPS",
+      "note": "VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (recovery/biblioteca rc 0, mutação app.c e sync.c reprovam); lote 21e; TV não verificada Último commit contém só testes; a correção anterior não é tratada como test-only. Responsável: VPS; lote 21e.",
+      "previousNotes": [
+        "HIST-SEMLOGIN-r2 no Gemini 4 Argon (…132b736c2ca4); oracle-vps",
+        "VPS Devin swe-2-high entregou HIST-SEMLOGIN-B (só testes: âncora recovery, fixture biblioteca, caso do gate sem login; merge-tree rc 0); Fable HIST-SEMLOGIN-r2 lançada (…1c11b36d1e2); oracle-vps; TV não verificada",
+        "Fable r1 REPROVADO (desc_sessao_recovery/biblioteca_up quebrados, gate app.c sem teste); HIST-SEMLOGIN-B no Devin swe-2-high (…5638a49); oracle-vps",
+        "VPS Fable 5.2 via Devin HIST-SEMLOGIN-r1 lançada (task …f53041f8); brief revisao/briefs/HIST-SEMLOGIN-r1.md; TV não verificada",
+        "VPS Devin swe-2-high entregou (teste base falha → ponta passa, merge rc 0); revisão Fable 5.2 via Devin HIST-SEMLOGIN-r1; TV não verificada",
+        "VPS Devin swe-2-high (task …d154f78d): perfil sem login herda histórico do perfil 1; teste que falha primeiro; causa sync.c/app.c não verificada; vai ao lote 21e",
+        "Unidade de trabalho nomeada pela VPS; sem issue numerada no relato."
+      ],
+      "branch": "agente/21z-hist-semlogin",
+      "sha": "d8bce6cbb",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T19:15:00+00:00",
+      "integrationVerified": false,
+      "displayId": "HIST-SEMLOGIN",
+      "testOnlyLatestCommit": true
     }
   ],
   "gates": [
@@ -2928,7 +3516,9 @@
       "title": "Perfil e Estatísticas",
       "kind": "tv",
       "status": "pendente",
-      "items": [],
+      "items": [
+        "hist-semlogin"
+      ],
       "note": "Testar logado; depois sair, entrar e reabrir."
     },
     {
@@ -2947,9 +3537,51 @@
       "kind": "deploy",
       "status": "pendente",
       "items": [
-        "farol-5"
+        "farol-5",
+        "farol-13",
+        "farol-29"
       ],
-      "note": "Deploy é do Henrique. Código informado como feito não significa worker publicado."
+      "note": "Deploy é do Henrique. Código informado como feito não significa worker publicado. Farol 13 e 29 aprovados para o próximo lote, ainda sem deploy segundo a VPS."
+    },
+    {
+      "id": "tv-farol6",
+      "title": "Playbooks: player externo e retorno após QR",
+      "kind": "tv",
+      "status": "pendente",
+      "items": [
+        "farol-6"
+      ],
+      "note": "Validação em TV pendente; correção FAROL6C ainda em andamento. Não confundir aprovação de testes host com TV."
+    },
+    {
+      "id": "tv-farol8",
+      "title": "Coletor dos dados da TV",
+      "kind": "tv",
+      "status": "pendente",
+      "items": [
+        "farol-8"
+      ],
+      "note": "Farol 8 aprovado com ressalvas e aguardando lote; TV não verificada pela VPS."
+    },
+    {
+      "id": "tv-catrev",
+      "title": "Continuar e climas do catálogo",
+      "kind": "tv",
+      "status": "pendente",
+      "items": [
+        "catrev"
+      ],
+      "note": "CATREV aprovado com ressalvas para 21e; conferir anime kitsu:T:E, tt123::1 herdado e ordem de merge com Farol 46. TV não verificada."
+    },
+    {
+      "id": "tv-home-assistiu",
+      "title": "Fileira Porque você assistiu na Home",
+      "kind": "tv",
+      "status": "pendente",
+      "items": [
+        "pr-840"
+      ],
+      "note": "PR #840 aberta; reteste logado em andamento. TMDB ao vivo e validação em TV física não confirmados."
     }
   ],
   "batches": [
@@ -2964,27 +3596,43 @@
     {
       "id": "21d",
       "title": "Lote 21d",
-      "status": "LOTE",
-      "sha": "bbf45a751",
-      "branch": "tmp/lote-21d",
-      "note": "244 testes base 8ada9acdd × ponta rodando; sai como PR lote/21d → integracao/2.1",
-      "pr": null,
+      "status": "FEITO",
+      "sha": "e16157090",
+      "branch": "lote/21d",
+      "note": "PR #839 mergeada na integração em 23/11 às 15h52 (Brasília), merge ec4e6a0b5. VPS reportou 244+288+84 testes base×ponta, sem regressões; ressalvas do harness e TV permanecem na PR. Inclui sete entregas e três commits só de teste. Não é confirmação de validação funcional em TV.",
+      "pr": 839,
       "previousNotes": [
+        "PR #839 → integracao/2.1 (merge commit); inclui 512cabac5; base×ponta 244+288+84 testes, 0 regressões; TV não verificado",
+        "bateria completa (287) contra f124c0e0a rodando em 5 fatias × base/ponta; delta #838 (83 testes) encadeado para depois; GitHub integracao/2.1 = 512cabac5; resultado não verificado",
+        "integracao/2.1 andou de novo para 512cabac5 (PR #838 catsnap, 2ª repetição); por decisão do orquestrador a bateria não para: reteste f124c0e0a × f03ed109f segue; merge 512cabac5 sem conflito, interseção de arquivos com o lote vazia; delta (83 testes) roda depois da bateria; resultado não verificado",
+        "reteste dirigido base f124c0e0a × ponta f03ed109f lançado na VPS (287 testes incl. rotahost.sh e rotahost_canal.sh, 5 fatias × 2 árvores em paralelo); resultado não verificado",
+        "integracao/2.1 andou para f124c0e0a (PR #836 rotahost, 1ª repetição por avanço do GitHub); merge sem conflito; lote não chama urlCanalRota/retentarCanal nem mexe no vigia de canal; hunks de app.c/player.c/.h do merge idênticos ao diff da #836",
+        "reteste dirigido ede parou por limite de tempo (base 115/285, ponta 112/285, sem FIM); comparação e PR aguardam nova rodada",
+        "rodada completa 244/244 sem regressão (vidro_todo rc 1 dos dois lados); reteste dirigido ede em curso, não verificado",
+        "rodada completa 243/244 sem regressão (26 consertos); vidro_todo.sh e reteste dirigido ede em curso, não verificado",
+        "ede2b2dc5 mesclado sem conflito; reteste dirigido (285 testes) base ede2b2dc5 × ponta em curso; rodada completa 8ada9acdd × bbf45a751 em 216/212 de 244, nada preso",
+        "244 testes base 8ada9acdd × ponta rodando; sai como PR lote/21d → integracao/2.1",
         "244 testes base × ponta ainda rodando no relato. Inclui 3 commits só de teste. Não há PR aberta confirmada."
       ],
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
-      "source": "Relato VPS",
+      "updatedAt": "2026-11-23T19:27:55+00:00",
+      "reportedAt": "2026-11-23T18:52:48Z",
+      "source": "GitHub PR #839 + relato VPS",
       "verified": false,
-      "integrationVerified": false
+      "integrationVerified": true,
+      "mergeSha": "ec4e6a0b52bbd2f38c56f31778a91744c786ea4a",
+      "mergedAt": "2026-11-23T18:52:48Z",
+      "githubState": "merged"
     },
     {
       "id": "21e",
       "title": "Próximo lote · 21e",
       "status": "A_FAZER",
       "sha": null,
-      "note": "Itens aprovados reservados; montagem ainda não confirmada.",
-      "pr": null
+      "note": "Reservado para aprovados da VPS, incluindo hist-semlogin e Farol 45 (aprovação com ressalvas), CATREV e itens já aprovados. Montagem e PR ainda não confirmadas; não tratar como lote integrado.",
+      "pr": null,
+      "previousNotes": [
+        "Itens aprovados reservados; montagem ainda não confirmada."
+      ]
     }
   ],
   "outside": [
@@ -3002,6 +3650,901 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-23T19:27:55+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "pr-840",
+      "from": "A_FAZER",
+      "to": "CORRECAO",
+      "report": "[CORRECAO] pr-840 · devin/1795451676-porque-voce-assistiu@23db4e1f0 · PR aberta. a52ebc2cb recebeu os pontos a–f da VPS; ponta atual 23db4e1f0 já inclui a correção do casamento TMDB×catálogo e da posição inicial (GitHub). CI verde, sem equivaler a teste funcional: reteste logado em andamento conforme o relato do Poke, TMDB ao vivo e TV física ainda não confirmados. Ordem padrão: continue_watching → porque_assistiu → farol_gosto1; ordem salva pelo usuário prevalece. hist-semlogin pertence à VPS no lote 21e, não a esta PR.",
+      "source": "GitHub + coordenação Poke"
+    },
+    {
+      "at": "2026-11-23T19:26:00+00:00",
+      "appliedAt": "2026-11-23T19:28:40+00:00",
+      "item": "farol-46",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 19:26 [CORRECAO] farol-6 + farol-46 · agente/21z-farol-6@f145c77e0, agente/21z-farol-46@eeb143e57 · VPS FAROL6C e FAROL46E (Gemini Neon) interrompidas 19:22 sem commit; sobras removidas; relançando",
+      "sourceReportId": "45372b502a5c3e8c"
+    },
+    {
+      "at": "2026-11-23T19:26:00+00:00",
+      "appliedAt": "2026-11-23T19:28:40+00:00",
+      "item": "farol-6",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 19:26 [CORRECAO] farol-6 + farol-46 · agente/21z-farol-6@f145c77e0, agente/21z-farol-46@eeb143e57 · VPS FAROL6C e FAROL46E (Gemini Neon) interrompidas 19:22 sem commit; sobras removidas; relançando",
+      "sourceReportId": "45372b502a5c3e8c"
+    },
+    {
+      "at": "2026-11-23T19:19:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-45",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-23 19:19 [APROVADA] farol-45 · agente/21z-farol-45@1f973642c · VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (4 bloqueios da r1 fechados; merge rc 0 em 7 alvos, rc 1 trivial vs PR #840 em src/fileiras.c); lote 21e; TV não verificada"
+    },
+    {
+      "at": "2026-11-23T19:15:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "hist-semlogin",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-23 19:15 [APROVADA] hist-semlogin · agente/21z-hist-semlogin@d8bce6cbb · VPS Gemini 4 Argon APROVADO_COM_RESSALVAS r2 (recovery/biblioteca rc 0, mutação app.c e sync.c reprovam); lote 21e; TV não verificada"
+    },
+    {
+      "at": "2026-11-23T19:09:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "hist-semlogin",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 19:09 [REVISAO] hist-semlogin · agente/21z-hist-semlogin@d8bce6cbb · HIST-SEMLOGIN-r2 no Gemini 4 Argon (…132b736c2ca4); oracle-vps"
+    },
+    {
+      "at": "2026-11-23T19:09:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-45",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 19:09 [REVISAO] farol-45 · agente/21z-farol-45@1f973642c · FAROL45-r2 no Gemini 4 Argon (…9340395b9fbd); oracle-vps"
+    },
+    {
+      "at": "2026-11-23T19:09:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-46",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 19:09 [CORRECAO] farol-46 · agente/21z-farol-46@eeb143e57 · Devin publicou eeb143e57 sem relatório antes do cancelamento; FAROL46E retomada no Gemini 4 Neon (…a67f9a209349); oracle-vps; não verificado"
+    },
+    {
+      "at": "2026-11-23T19:09:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-6",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 19:09 [CORRECAO] farol-6 · agente/21z-farol-6@f145c77e0 · FAROL6C no Gemini 4 Neon (…f6644e7b5351); oracle-vps"
+    },
+    {
+      "at": "2026-11-23T19:09:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "coordenacao",
+      "from": null,
+      "to": "CORRECAO",
+      "report": "2026-11-23 19:09 [CORRECAO] troca de modelos · dono mandou parar o Devin: FAROL6C, FAROL46E, FAROL45-r2 e HIST-SEMLOGIN-r2 cancelados no Devin e relançados no antigravity (implementa gemini-4-neon, revisa gemini-4-argon); worktrees órfãs removidas; oracle-vps",
+      "source": "Relato VPS · aviso de coordenação"
+    },
+    {
+      "at": "2026-11-23T19:03:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "hist-semlogin",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 19:03 [REVISAO] hist-semlogin · agente/21z-hist-semlogin@d8bce6cbb · VPS Devin swe-2-high entregou HIST-SEMLOGIN-B (só testes: âncora recovery, fixture biblioteca, caso do gate sem login; merge-tree rc 0); Fable HIST-SEMLOGIN-r2 lançada (…1c11b36d1e2); oracle-vps; TV não verificada"
+    },
+    {
+      "at": "2026-11-23T18:57:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-45",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 18:57 [REVISAO] farol-45 · agente/21z-farol-45@1f973642c · Fable FAROL45-r2 lançada (…75eda7d); oracle-vps; TV não verificada"
+    },
+    {
+      "at": "2026-11-23T18:57:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-6",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 18:57 [CORRECAO] farol-6 · agente/21z-farol-6@f145c77e0 · Fable r2 REPROVADO (externo e reabertura pós-QR exigem player aberto); FAROL6C no Devin swe-2-high (…9333543); oracle-vps"
+    },
+    {
+      "at": "2026-11-23T18:57:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "hist-semlogin",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 18:57 [CORRECAO] hist-semlogin · agente/21z-hist-semlogin@894392632 · Fable r1 REPROVADO (desc_sessao_recovery/biblioteca_up quebrados, gate app.c sem teste); HIST-SEMLOGIN-B no Devin swe-2-high (…5638a49); oracle-vps"
+    },
+    {
+      "at": "2026-11-23T18:57:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "catrev",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-23 18:57 [APROVADA] catrev · agente/21z-catrev@773af36d7 · Fable CATREV-r2 APROVADO_COM_RESSALVAS (anime kitsu:T:E no Continuar, tt123::1 herdado, ordem de merge com farol-46 em src/mapa.c); oracle-vps; TV não verificada"
+    },
+    {
+      "at": "2026-11-23T18:52:48Z",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "mac-desktop",
+      "from": "PR_ABERTA",
+      "to": "FEITO",
+      "report": "[FEITO] mac-desktop · lote/21d@e16157090 · Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem 3490bc902 e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
+      "source": "GitHub + coordenação Poke"
+    },
+    {
+      "at": "2026-11-23T18:52:48Z",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "arquivo-desktop",
+      "from": "PR_ABERTA",
+      "to": "FEITO",
+      "report": "[FEITO] arquivo-desktop · lote/21d@e16157090 · Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem c2a62d8ac e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
+      "source": "GitHub + coordenação Poke"
+    },
+    {
+      "at": "2026-11-23T18:52:48Z",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "perfil-sem-login",
+      "from": "PR_ABERTA",
+      "to": "FEITO",
+      "report": "[FEITO] perfil-sem-login · lote/21d@e16157090 · Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem 957af78d6 e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
+      "source": "GitHub + coordenação Poke"
+    },
+    {
+      "at": "2026-11-23T18:52:48Z",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "pr-734",
+      "from": "PR_ABERTA",
+      "to": "FEITO",
+      "report": "[FEITO] pr-734 · lote/21d@e16157090 · Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem 6f06345f2 e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
+      "source": "GitHub + coordenação Poke"
+    },
+    {
+      "at": "2026-11-23T18:52:48Z",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "pr-680",
+      "from": "PR_ABERTA",
+      "to": "FEITO",
+      "report": "[FEITO] pr-680 · lote/21d@e16157090 · Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem 6dfdbe5bd e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
+      "source": "GitHub + coordenação Poke"
+    },
+    {
+      "at": "2026-11-23T18:52:48Z",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "pr-729",
+      "from": "PR_ABERTA",
+      "to": "FEITO",
+      "report": "[FEITO] pr-729 · lote/21d@e16157090 · Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem 2f3ec08ca e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
+      "source": "GitHub + coordenação Poke"
+    },
+    {
+      "at": "2026-11-23T18:52:48Z",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-44",
+      "from": "PR_ABERTA",
+      "to": "FEITO",
+      "report": "[FEITO] farol-44 · lote/21d@e16157090 · Integrado pelo lote 21d / PR #839 em 23/11 às 15h52 (Brasília); commit de origem 39d90ad05 e ponta e16157090 ancestrais de ec4e6a0b5. Teste funcional e TV não verificados.",
+      "source": "GitHub + coordenação Poke"
+    },
+    {
+      "at": "2026-11-23T18:52:48Z",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "lote-21d",
+      "from": "PR_ABERTA",
+      "to": "FEITO",
+      "report": "[FEITO] lote-21d · lote/21d@e16157090 · PR #839 mergeada na integração em 23/11 às 15h52 (Brasília), merge ec4e6a0b5. VPS reportou 244+288+84 testes base×ponta, sem regressões; ressalvas do harness e TV permanecem na PR. Inclui sete entregas e três commits só de teste. Não é confirmação de validação funcional em TV.",
+      "source": "GitHub + coordenação Poke"
+    },
+    {
+      "at": "2026-11-23T18:15:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-46",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 18:15 [CORRECAO] farol-46 · agente/21z-farol-46@2303aa211 · VPS Devin swe-2-high entregou FAROL46D (gênero por identidade; PT×EN 134 → 0 nos 3 modos; merge-tree 6/6 rc 0); ainda substitui publicação local quando TMDB omite gênero; 2º commit autorizado com patch preparado, FAROL46E no Devin swe-2-high (task …4ac60); TV não verificado"
+    },
+    {
+      "at": "2026-11-23T18:14:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-6",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 18:14 [REVISAO] farol-6 · agente/21z-farol-6@f145c77e0 · VPS Devin swe-2-high entregou FAROL6B (playbooks no Resolver; farol_regra/farol_resolver base 134 → ponta 0 nos 3 modos; merge-tree 6/6 rc 0; 2 commits, src/app.c +22/−1 sem trechos do Poke); revisão FAROL6-r2 Fable 5.2 via Devin lançada (task …239f73); TV não verificado (player externo, retomada após QR)"
+    },
+    {
+      "at": "2026-11-23T18:01:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-45",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 18:01 [CORRECAO] farol-45 · agente/21z-farol-45@166ab03ac · VPS Devin swe-2-high entregou FAROL45B (5 de 6 pontos da r1 corrigidos, rc 134→0); opt-out ainda vaza fileiras após farol_gosto_zerar; 2º commit autorizado, FAROL45C no Devin swe-2-high (task …07fbb4); TV não verificado"
+    },
+    {
+      "at": "2026-11-23T18:01:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "catrev",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 18:01 [REVISAO] catrev · agente/21z-catrev@773af36d7 · VPS Devin swe-2-high entregou CATREVB (base 1 → ponta 0 nos 3 modos, 5 mutações reprovam); merge-tree rc 1 com farol-46@6caab1a65 em src/mapa.c (mapa_vizinhos_pedir); revisão CATREV-r2 Fable 5.2 via Devin lançada (task …a07850); TV não verificado"
+    },
+    {
+      "at": "2026-11-23T17:39:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "hist-semlogin",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 17:39 [REVISAO] hist-semlogin · agente/21z-hist-semlogin@894392632 · VPS Fable 5.2 via Devin HIST-SEMLOGIN-r1 lançada (task …f53041f8); brief revisao/briefs/HIST-SEMLOGIN-r1.md; TV não verificada"
+    },
+    {
+      "at": "2026-11-23T17:38:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "hist-semlogin",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "report": "2026-11-23 17:38 [REVISAO] hist-semlogin · agente/21z-hist-semlogin@894392632 · VPS Devin swe-2-high entregou (teste base falha → ponta passa, merge rc 0); revisão Fable 5.2 via Devin HIST-SEMLOGIN-r1; TV não verificada"
+    },
+    {
+      "at": "2026-11-23T17:21:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "catrev",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 17:21 [CORRECAO] catrev · agente/21z-catrev@51f45fa12 · VPS Fable 5.2 via Devin REPROVADO r1 (série do card de Continuar não casa por strcmp exato); correção CATREVB no Devin swe-2-high; TV não verificado"
+    },
+    {
+      "at": "2026-11-23T17:16:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-46",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 17:16 [CORRECAO] farol-46 · agente/21z-farol-46@6caab1a65 · FAROL46D lançada na VPS, Devin swe-2-high (task …e3d348fd); identidade do gênero no lugar do texto; não verificado"
+    },
+    {
+      "at": "2026-11-23T17:14:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-46",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 17:14 [CORRECAO] farol-46 · agente/21z-farol-46@6caab1a65 · VPS Sol r3 REPROVADO (selo de gênero troca com TMDB em outro idioma); correção FAROL46D no Devin swe-2-high; TV não verificado"
+    },
+    {
+      "at": "2026-11-23T17:14:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-29",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-23 17:14 [APROVADA] farol-29 · agente/farol-29@32cf15761 · VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (9/9, mutações 13/13, merge rc 0); ressalvas vão para a farol-30; sem deploy; próximo lote"
+    },
+    {
+      "at": "2026-11-23T17:14:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-13",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-23 17:14 [APROVADA] farol-13 · agente/farol-13@66fb2d121 · VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → 6/6, merge rc 0); servidor sem deploy; próximo lote"
+    },
+    {
+      "at": "2026-11-23T17:11:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-24",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-23 17:11 [APROVADA] farol-24 · agente/farol-24@9fac396d4 · VPS Fable 5.2 via Devin APROVADO_COM_RESSALVAS r1 (teste base 1 → ponta 0, mutações 9/11, merge rc 0); sem consumidor até a issue 25; TV não verificado; próximo lote"
+    },
+    {
+      "at": "2026-11-23T17:10:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "catrev",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 17:10 [REVISAO] catrev · agente/21z-catrev@51f45fa12 · Sol CATREV-r1b caiu (créditos WorkBuddy esgotados, HTTP 429); relançada na VPS com Fable 5.2 via Devin (task …fa80d39c), família diferente do Devin SWE-2; confere o caso 'homônimo na vizinhança' (não verificado)"
+    },
+    {
+      "at": "2026-11-23T17:08:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "catrev",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 17:08 [REVISAO] catrev · agente/21z-catrev@51f45fa12 · review.sh órfão terminou (evidências sol-catrevr1b); reenvio ao Sol depois das 18h UTC (cota Codex); worktrees de revisão limpas"
+    },
+    {
+      "at": "2026-11-23T17:08:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-45",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 17:08 [CORRECAO] farol-45 · agente/21z-farol-45@114ae6c89 · PR #840 (refs/poke/pr840 39f49c290) aceita: linha porque_assistiu na ordem do Poke; dedupe farol_gosto×home_assistiu_itens por id fica para depois do merge da #840"
+    },
+    {
+      "at": "2026-11-23T17:08:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-29",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "report": "2026-11-23 17:08 [REVISAO] farol-29 · agente/farol-29@32cf15761 · VPS Fable 5.2 via Devin (task …2f7dd460), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090"
+    },
+    {
+      "at": "2026-11-23T17:08:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-24",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "report": "2026-11-23 17:08 [REVISAO] farol-24 · agente/farol-24@9fac396d4 · VPS Fable 5.2 via Devin (task …19cb534a), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090"
+    },
+    {
+      "at": "2026-11-23T17:08:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-13",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "report": "2026-11-23 17:08 [REVISAO] farol-13 · agente/farol-13@66fb2d121 · VPS Fable 5.2 via Devin (task …68ff22c3), implementado por Gemini no PC Windows; testes da VPS ok, merge-tree rc 0 vs e16157090"
+    },
+    {
+      "at": "2026-11-23T17:08:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "hist-semlogin",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 17:08 [IMPLEMENTANDO] hist-semlogin · agente/21z-hist-semlogin@e16157090 · VPS Devin swe-2-high (task …d154f78d): perfil sem login herda histórico do perfil 1; teste que falha primeiro; causa sync.c/app.c não verificada; vai ao lote 21e"
+    },
+    {
+      "at": "2026-11-23T17:02:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "catrev",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 17:02 [REVISAO] catrev · agente/21z-catrev@51f45fa12 · VPS Sol CATREV-r1b caiu no limite de uso do Codex (HTTP 429, volta ~18h UTC) sem veredito; review.sh do Sol segue rodando e gravando evidências em evidencias/sol-catrevr1b; achado parcial 'homônimo na vizinhança' não verificado; retomada no Sol após o limite"
+    },
+    {
+      "at": "2026-11-23T16:53:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "catrev",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 16:53 [REVISAO] catrev · agente/21z-catrev@51f45fa12 · revisão Gemini neon também morreu sem veredito (encerrou o turno esperando task-61, nenhum processo vivo); sondas parciais guardadas, sobras removidas; relançada na VPS em codex gpt-6.2-sol com redação neutra (CATREV-r1b)"
+    },
+    {
+      "at": "2026-11-23T16:48:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "catrev",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 16:48 [REVISAO] catrev · agente/21z-catrev@51f45fa12 · ERRATA da linha 16:35: a revisão relançada roda na VPS em antigravity gemini-4-neon (família diferente do Devin), não no Sol; sem veredito ainda"
+    },
+    {
+      "at": "2026-11-23T16:48:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-46",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 16:48 [REVISAO] farol-46 · agente/21z-farol-46@6caab1a65 · ERRATA da linha 16:35: revisão r3 só foi despachada agora (VPS Sol codex gpt-6.2-sol, task …6a38c12b)"
+    },
+    {
+      "at": "2026-11-23T16:48:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-45",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 16:48 [CORRECAO] farol-45 · agente/21z-farol-45@114ae6c89 · VPS Sol (codex gpt-6.2-sol) REPROVADO r1 16h05: cena muda com Home visível sob o menu, exposição invalida a cena, opt-out não fecha na publicação, corrida TSan coletarContinuar; correção FAROL45B VPS Devin swe-2-high (task …b20e265c); TV não verificado"
+    },
+    {
+      "at": "2026-11-23T16:48:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-6",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 16:48 [CORRECAO] farol-6 · agente/21z-farol-6@4f4386a06 · ERRATA da linha 16:35: FAROL6B só foi despachada agora (VPS Devin swe-2-high, task …40d4f23a); antes não havia tarefa"
+    },
+    {
+      "at": "2026-11-23T16:35:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "catrev",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 16:35 [REVISAO] catrev · agente/21z-catrev@51f45fa12 · revisão Sol caiu no filtro do provedor (sem veredito); relançada com redação neutra"
+    },
+    {
+      "at": "2026-11-23T16:35:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-46",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 16:35 [REVISAO] farol-46 · agente/21z-farol-46@6caab1a65 · VPS Devin SWE-2 entregou FAROL46C (selo gênero×tema chega ao Mapa, sonda base 134 → ponta 0); revisão r3 Sol (codex gpt-6.2-sol)"
+    },
+    {
+      "at": "2026-11-23T16:35:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-6",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 16:35 [CORRECAO] farol-6 · agente/21z-farol-6@4f4386a06 · VPS Sol (codex gpt-6.2-sol) REPROVADO r1: motor não está no caminho de produção, ações §C sem despacho, 2 diagnósticos perdidos; correção Devin SWE-2 FAROL6B"
+    },
+    {
+      "at": "2026-11-23T16:04:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "catrev",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 16:04 [REVISAO] catrev · agente/21z-catrev@51f45fa12 · Devin SWE-2 entregou (guarda cat_revisao em mapa.c/explorar.c/farolsinal.c, teste catrev base rc 1 → ponta 0 ×3 modos, não verificado pelo orquestrador); revisão Sol (codex gpt-6.2-sol) CATREV-r1 na VPS; vai para o lote 21e"
+    },
+    {
+      "at": "2026-11-23T15:46:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-45",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "report": "2026-11-23 15:46 [REVISAO] farol-45 · agente/21z-farol-45@114ae6c89 · Devin SWE-2 entregou (cena na Home, farol_home 15 checks rc 0 normal/ASan); revisão Sol (codex gpt-6.2-sol) FAROL45-r1 na VPS; TV não verificado"
+    },
+    {
+      "at": "2026-11-23T15:44:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "mac-desktop",
+      "from": "LOTE",
+      "to": "PR_ABERTA",
+      "report": "2026-11-23 15:44 [PR_ABERTA] mac-ajustes · lote/21d@e16157090 · na PR #839"
+    },
+    {
+      "at": "2026-11-23T15:44:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "arquivo-desktop",
+      "from": "LOTE",
+      "to": "PR_ABERTA",
+      "report": "2026-11-23 15:44 [PR_ABERTA] nomefonte · lote/21d@e16157090 · na PR #839"
+    },
+    {
+      "at": "2026-11-23T15:44:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-44",
+      "from": "LOTE",
+      "to": "PR_ABERTA",
+      "report": "2026-11-23 15:44 [PR_ABERTA] farol-44 · lote/21d@e16157090 · na PR #839"
+    },
+    {
+      "at": "2026-11-23T15:44:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "perfil-sem-login",
+      "from": "LOTE",
+      "to": "PR_ABERTA",
+      "report": "2026-11-23 15:44 [PR_ABERTA] perfil-semlogin · lote/21d@e16157090 · na PR #839"
+    },
+    {
+      "at": "2026-11-23T15:44:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "pr-729",
+      "from": "LOTE",
+      "to": "PR_ABERTA",
+      "report": "2026-11-23 15:44 [PR_ABERTA] 729 · lote/21d@e16157090 · na PR #839"
+    },
+    {
+      "at": "2026-11-23T15:44:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "pr-680",
+      "from": "LOTE",
+      "to": "PR_ABERTA",
+      "report": "2026-11-23 15:44 [PR_ABERTA] 680 · lote/21d@e16157090 · na PR #839"
+    },
+    {
+      "at": "2026-11-23T15:44:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "pr-734",
+      "from": "LOTE",
+      "to": "PR_ABERTA",
+      "report": "2026-11-23 15:44 [PR_ABERTA] 734 · lote/21d@e16157090 · na PR #839"
+    },
+    {
+      "at": "2026-11-23T15:44:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "21d",
+      "from": "IMPLEMENTANDO",
+      "to": "PR_ABERTA",
+      "report": "2026-11-23 15:44 [PR_ABERTA] lote-21d · lote/21d@e16157090 · PR #839 → integracao/2.1 (merge commit); inclui 512cabac5; base×ponta 244+288+84 testes, 0 regressões; TV não verificado"
+    },
+    {
+      "at": "2026-11-23T14:58:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-6",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "report": "2026-11-23 14:58 [REVISAO] farol-6 · agente/21z-farol-6@4f4386a06 · Devin swe-2-high fechou sem commit novo (WIP Gemini cumpre o brief); revisão Sol r1 (codex gpt-6.2-sol, VPS); TV não verificado"
+    },
+    {
+      "at": "2026-11-23T14:54:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-46",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 14:54 [CORRECAO] farol-46 · agente/21z-farol-46@ef2a8ecfc · Sol r2 REPROVADO (codex gpt-6.2-sol, VPS): selo de gênero perde o filtro quando o TMDB responde; correção FAROL46C Devin swe-2-high (VPS); TV não verificado"
+    },
+    {
+      "at": "2026-11-23T14:48:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-45",
+      "from": "IMPLEMENTANDO",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 14:48 [IMPLEMENTANDO] farol-45 · agente/21z-farol-45@247a4b065 · VPS Devin swe-2-high; base contém #835 (38e6d9ccf, conferido); contrato Home do Poke vale sobre o plano"
+    },
+    {
+      "at": "2026-11-23T14:48:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-6",
+      "from": "IMPLEMENTANDO",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 14:48 [IMPLEMENTANDO] farol-6 · agente/21z-farol-6@4f4386a06 · VPS Devin swe-2-high, fechamento após tarefa Gemini parada (WIP preservado em -wip); não verificado"
+    },
+    {
+      "at": "2026-11-23T14:48:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "catrev",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 14:48 [CORRECAO] CATREV · agente/21z-catrev@e16157090 · VPS Devin swe-2-high; guarda de cat_revisao nas cópias de catIndice (mapa.c climaLocal/climaPub, explorar.c climas) + farolsinal se local; destino lote 21e"
+    },
+    {
+      "at": "2026-11-23T14:37:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-29",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 14:37 [IMPLEMENTANDO] farol-29 · agente/farol-29@a45d1ffc4 · PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-29.txt); entrega por push; não verificado"
+    },
+    {
+      "at": "2026-11-23T14:37:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-24",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 14:37 [IMPLEMENTANDO] farol-24 · agente/farol-24@a45d1ffc4 · PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-24.txt); entrega por push; não verificado"
+    },
+    {
+      "at": "2026-11-23T14:37:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-13",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 14:37 [IMPLEMENTANDO] farol-13 · agente/farol-13@a45d1ffc4 · PC Windows antigravity gemini-4-carbon, worktree sobre origin/agente/pilha-21; lançada pela conversa principal (brief autocontido em lotes/sense/briefs/pc/farol-13.txt); entrega por push; não verificado"
+    },
+    {
+      "at": "2026-11-23T14:23:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-8",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-23 14:23 [APROVADA] farol-8 · agente/21z-farol-8@aa6d0dbd3 · Sol r3 APROVADO_COM_RESSALVAS (codex gpt-6.2-sol, VPS); aguarda lote; TV não verificado"
+    },
+    {
+      "at": "2026-11-23T14:14:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-46",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 14:14 [REVISAO] farol-46 · agente/21z-farol-46@ef2a8ecfc · FAROL46B entregue (Devin swe-2-high, VPS), 7 bloqueios r1; revisão FAROL46-r2 Sol (codex gpt-6.2-sol, VPS); testes do Devin não verificados; TV não verificado"
+    },
+    {
+      "at": "2026-11-23T14:02:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-8",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 14:02 [REVISAO] farol-8 · agente/21z-farol-8@aa6d0dbd3 · FAROL8C entregue (Devin swe-2-high, VPS): LG não-OLED volta a \"x\", contrato com servidor 200; revisão FAROL8-r3 Sol (codex gpt-6.2-sol, VPS); TV não verificado"
+    },
+    {
+      "at": "2026-11-23T13:29:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-8",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 13:29 [CORRECAO] farol-8 · agente/21z-farol-8@2e843b364 · Sol r2 REPROVADO (registro LG NANO recusado com 422 pelo servidor); FAROL8C Devin swe-2-high na VPS; TV não verificado"
+    },
+    {
+      "at": "2026-11-23T12:59:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-8",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 12:59 [REVISAO] farol-8 · agente/21z-farol-8@2e843b364 · FAROL8B entregue (Devin swe-2-high, VPS); revisão FAROL8-r2 Sol (codex gpt-6.2-sol, VPS); TV não verificado"
+    },
+    {
+      "at": "2026-11-23T12:35:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "21d",
+      "from": "LOTE",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 12:35 [IMPLEMENTANDO] lote-21d · tmp/lote-21d-g@e16157090 · bateria completa (287) contra f124c0e0a rodando em 5 fatias × base/ponta; delta #838 (83 testes) encadeado para depois; GitHub integracao/2.1 = 512cabac5; resultado não verificado"
+    },
+    {
+      "at": "2026-11-23T12:32:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "21d",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-23 12:32 [LOTE] lote-21d · tmp/lote-21d-g@e16157090 · integracao/2.1 andou de novo para 512cabac5 (PR #838 catsnap, 2ª repetição); por decisão do orquestrador a bateria não para: reteste f124c0e0a × f03ed109f segue; merge 512cabac5 sem conflito, interseção de arquivos com o lote vazia; delta (83 testes) roda depois da bateria; resultado não verificado"
+    },
+    {
+      "at": "2026-11-23T12:29:01Z",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "pr-838",
+      "from": "A_FAZER",
+      "to": "FEITO",
+      "report": "[FEITO] pr-838 · devin/catalog-snapshot@26fc3cbdc · PR #838 mergeada em integracao/2.1 em 2026-11-23T12:29:01Z; ancestralidade conferida no git. Validação funcional e TV não verificadas.",
+      "source": "GitHub + coordenação Poke"
+    },
+    {
+      "at": "2026-11-23T12:28:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "21d",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-23 12:28 [LOTE] lote-21d · tmp/lote-21d-f@f03ed109f · reteste dirigido base f124c0e0a × ponta f03ed109f lançado na VPS (287 testes incl. rotahost.sh e rotahost_canal.sh, 5 fatias × 2 árvores em paralelo); resultado não verificado"
+    },
+    {
+      "at": "2026-11-23T12:28:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "21d",
+      "from": "BLOQUEADA",
+      "to": "LOTE",
+      "report": "2026-11-23 12:28 [LOTE] lote-21d · tmp/lote-21d-f@f03ed109f · integracao/2.1 andou para f124c0e0a (PR #836 rotahost, 1ª repetição por avanço do GitHub); merge sem conflito; lote não chama urlCanalRota/retentarCanal nem mexe no vigia de canal; hunks de app.c/player.c/.h do merge idênticos ao diff da #836"
+    },
+    {
+      "at": "2026-11-23T12:26:02Z",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "pr-836",
+      "from": "A_FAZER",
+      "to": "FEITO",
+      "report": "[FEITO] pr-836 · devin/1795407253-proxy-memoria@26ee77184 · PR #836 mergeada em integracao/2.1 em 2026-11-23T12:26:02Z; ancestralidade conferida no git. Validação funcional e TV não verificadas.",
+      "source": "GitHub + coordenação Poke"
+    },
+    {
+      "at": "2026-11-23T12:19:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-46",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 12:19 [CORRECAO] farol-46 · agente/21z-farol-46@c8e4e7549 · FAROL46B lançada na VPS acpRegistry_devin swe-2-high (task …3b1ac779); TV pendente"
+    },
+    {
+      "at": "2026-11-23T12:18:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-46",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 12:18 [CORRECAO] farol-46 · agente/21z-farol-46@c8e4e7549 · Sol FAROL46-r1 REPROVADO (7 defeitos: Diário no fio da UI, prazo 8 s reinicia, ficha de outra obra, idioma em branco, sufixo de episódio, QUALI_SO sem modelo, selo abre Explorar genérico); correção VPS acpRegistry_devin swe-2-high FAROL46B; TV pendente"
+    },
+    {
+      "at": "2026-11-23T12:15:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-8",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 12:15 [CORRECAO] farol-8 · agente/21z-farol-8@7ef25a0d7 · FAROL8B lançada na VPS acpRegistry_devin swe-2-high (modelo vira x, cache TPK sem [tv], TPK40 perde build)"
+    },
+    {
+      "at": "2026-11-23T12:13:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-8",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 12:13 [CORRECAO] farol-8 · agente/21z-farol-8@7ef25a0d7 · Sol FAROL8-r1 REPROVADO (modelo vira \"x\" no JSON; cache TPK congela antes da linha [tv]; TPK40 vira tizen-tpk); correção VPS Devin swe-2-high FAROL8B"
+    },
+    {
+      "at": "2026-11-23T08:11:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-46",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 08:11 [REVISAO] farol-46 · agente/21z-farol-46@c8e4e7549 · revisão Opus falhou com 'Claude API unknown' sem relatório nem sobras; relançada na VPS codex main/codex/gpt-6.2-sol (FAROL46-r1); TV pendente"
+    },
+    {
+      "at": "2026-11-23T08:00:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-8",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 08:00 [REVISAO] farol-8 · agente/21z-farol-8@7ef25a0d7 · 2ª revisão Opus também falhou com 'Claude API unknown' sem relatório nem sobras; relançada na VPS codex main/codex/gpt-6.2-sol (FAROL8-r1, worktrees sol-farol8r1-* em uso)"
+    },
+    {
+      "at": "2026-11-23T07:40:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-46",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "report": "2026-11-23 07:40 [REVISAO] farol-46 · agente/21z-farol-46@c8e4e7549 · entrega Devin swe-2-high PRONTO (GL portátil, 3 modos rc 0, mutações 134, merge rc 0); revisão VPS claudeAgent claude-opus-5-5 high; TV pendente"
+    },
+    {
+      "at": "2026-11-23T07:27:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-8",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "report": "2026-11-23 07:27 [REVISAO] farol-8 · agente/21z-farol-8@7ef25a0d7 · VPS claudeAgent claude-opus-5-5 high (2ª tentativa; a 1ª falhou com 'Claude API unknown' sem relatório); entrega Devin swe-2-high PRONTO_COM_RESSALVAS, TV pendente"
+    },
+    {
+      "at": "2026-11-23T07:05:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-46",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 07:05 [IMPLEMENTANDO] farol-46 · agente/21z-farol-46@a45d1ffc4 · VPS antigravity gemini-4-carbon encerrou sem commit nem relatório (código na worktree; parte core do teste ok, parte GL só de Mac falha no Linux); fechamento passou para Devin swe-2-high (VPS)"
+    },
+    {
+      "at": "2026-11-23T06:43:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-8",
+      "from": "IMPLEMENTANDO",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 06:43 [IMPLEMENTANDO] farol-8 · agente/21z-farol-8@a45d1ffc4 · 2ª tarefa Gemini Neon também encerrou sem commit nem relatório (disse 'em segundo plano', nenhum processo vivo); fechamento passou para VPS Devin swe-2-high; código ainda não verificado"
+    },
+    {
+      "at": "2026-11-23T06:42:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "21d",
+      "from": "LOTE",
+      "to": "BLOQUEADA",
+      "report": "2026-11-23 06:42 [BLOQUEADA] lote-21d · tmp/lote-21d-e@247a4b065 · reteste dirigido ede parou por limite de tempo (base 115/285, ponta 112/285, sem FIM); comparação e PR aguardam nova rodada"
+    },
+    {
+      "at": "2026-11-23T06:37:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-8",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 06:37 [IMPLEMENTANDO] farol-8 · agente/21z-farol-8@a45d1ffc4 · VPS antigravity gemini-4-neon high; 1ª tarefa parou sem commit nem relatório (código não commitado na worktree, não verificado); relançada para fechar testes, commit e relatório"
+    },
+    {
+      "at": "2026-11-23T06:03:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "coordenacao",
+      "from": null,
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 06:03 [IMPLEMENTANDO] lote-21d · agente/pilha-21@a45d1ffc4 · AVISO: agente/pilha-21 é branch de TRABALHO no GitHub (base da onda A do Farol no PC Windows), NÃO é para merge nem PR",
+      "source": "Relato VPS · aviso de coordenação"
+    },
+    {
+      "at": "2026-11-23T05:59:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "issue-728",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-23 05:59 [APROVADA] 728 · agente/21z-728@a69626eef · F117-r1 (Sol GPT-6.2 via Codex, VPS) aprovou com ressalvas: ACK de B libera a amostra do Farol, mutações reprovam, merge rc 0 com lote 21d; TV não verificado"
+    },
+    {
+      "at": "2026-11-23T05:30:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "issue-728",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 05:30 [REVISAO] 728 · agente/21z-728@a69626eef · revisão F117-r1 lançada (Sol GPT-6.2 via Codex, VPS)"
+    },
+    {
+      "at": "2026-11-23T05:28:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "21d",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-23 05:28 [LOTE] lote-21d · tmp/lote-21d@bbf45a751 · rodada completa 244/244 sem regressão (vidro_todo rc 1 dos dois lados); reteste dirigido ede em curso, não verificado"
+    },
+    {
+      "at": "2026-11-23T05:26:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "issue-728",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 05:26 [REVISAO] 728 · agente/21z-728@a69626eef · F117 entregue (Devin SWE-2, VPS): recusa de seek legado corrigida, dirigido 18/18, merge rc 0 com lote 21d; revisão F117-r1 no Sol; TV não verificado"
+    },
+    {
+      "at": "2026-11-23T05:25:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "21d",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-23 05:25 [LOTE] lote-21d · tmp/lote-21d@bbf45a751 · rodada completa 243/244 sem regressão (26 consertos); vidro_todo.sh e reteste dirigido ede em curso, não verificado"
+    },
+    {
+      "at": "2026-11-23T05:01:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "issue-786",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-23 05:01 [APROVADA] 786 · agente/21z-786@0b0bdfad7 · F116-r1 SWE-2 (Devin, VPS): aprovada com ressalvas, emcc ok; entra no próximo lote; TV não verificado"
+    },
+    {
+      "at": "2026-11-23T05:01:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "issue-751",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-23 05:01 [APROVADA] 751 · agente/21z-751@03c4bf516 · F116-r1 SWE-2 (Devin, VPS): aprovada com ressalvas, 141 testes em paridade; entra no próximo lote; TV não verificado"
+    },
+    {
+      "at": "2026-11-23T04:46:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "issue-728",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 04:46 [CORRECAO] 728 · agente/21z-728@9a4da1795 · F115-r1 reprovou (recusa de seek legado prende rastreador, Farol sem amostra); correção F117 no Devin SWE-2"
+    },
+    {
+      "at": "2026-11-23T04:41:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "catrev",
+      "from": "A_FAZER",
+      "to": "REVISAO",
+      "report": "2026-11-23 04:41 [REVISAO] catrev · tmp/lote-21d@bbf45a751 · leitura Sol: 3 cópias de índice cat_item sem guarda de cat_revisao() nos climas do Mapa; decisão de issue pendente"
+    },
+    {
+      "at": "2026-11-23T04:41:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-45",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 04:41 [IMPLEMENTANDO] farol-45 · agente/21z-farol-45 (base 247a4b065) · Antigravity gemini-4-carbon, contrato CONTRATO-HOME-POKE.md"
+    },
+    {
+      "at": "2026-11-23T04:41:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "21d",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-23 04:41 [LOTE] lote-21d · tmp/lote-21d-e@247a4b065 · ede2b2dc5 mesclado sem conflito; reteste dirigido (285 testes) base ede2b2dc5 × ponta em curso; rodada completa 8ada9acdd × bbf45a751 em 216/212 de 244, nada preso"
+    },
+    {
+      "at": "2026-11-23T04:41:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "pr-835",
+      "from": "A_FAZER",
+      "to": "FEITO",
+      "report": "2026-11-23 04:41 [FEITO] 835 · integracao/2.1@ede2b2dc5 · Home pré-calculada mergeada pelo Poke (contém 38e6d9ccf)"
+    },
+    {
+      "at": "2026-11-23T04:39:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "pr-837",
+      "from": "A_FAZER",
+      "to": "FEITO",
+      "report": "2026-11-23 04:39 [FEITO] 837 · — · PR do Poke mergeada (imagens TMDB no tamanho do tile); integracao/2.1 = ede2b2dc5"
+    },
+    {
+      "at": "2026-11-23T04:33:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-45",
+      "from": "BLOQUEADA",
+      "to": "A_FAZER",
+      "report": "2026-11-23 04:33 [A_FAZER] farol-45 · — · aguarda merge da #835 (brief pronto: sense/briefs/farol-45.md, contrato da Home respondido em 38e6d9ccf)"
+    },
+    {
+      "at": "2026-11-23T04:30:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-45",
+      "from": "BLOQUEADA",
+      "to": "BLOQUEADA",
+      "report": "2026-11-23 04:30 [BLOQUEADA] farol-45 · — · aguarda #835 do Poke entrar e resposta dos três pontos (CONTRATO-HOME-POKE.md)"
+    },
+    {
+      "at": "2026-11-23T04:25:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "farol-6",
+      "from": "IMPLEMENTANDO",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-23 04:25 [IMPLEMENTANDO] farol-6 · agente/21z-farol-6@0f095f457 · relançado no Antigravity puro (gemini-4-carbon); commit compila e farol_regra rc 0 em ASan/TSan/normal, ainda sem revisão"
+    },
+    {
+      "at": "2026-11-23T04:18:00+00:00",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "issue-728",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 04:18 [REVISAO] 728 · agente/21z-728@9a4da1795 · F115 entregue (lote 21d mesclado, conflito video_tpk.c resolvido); revisão Sol"
+    },
     {
       "at": "2026-11-23T04:16:00+00:00",
       "appliedAt": "2026-11-23T04:17:54+00:00",
@@ -3033,6 +4576,15 @@
       "from": "IMPLEMENTANDO",
       "to": "IMPLEMENTANDO",
       "report": "2026-11-23 04:12 [IMPLEMENTANDO] farol-6 · agente/21z-farol-6@0f095f457 · relançado no Antigravity Gemini 4 Carbon (regra: Gemini só via Antigravity); continua do commit entregue, não verificado"
+    },
+    {
+      "at": "2026-11-23T04:02:57Z",
+      "appliedAt": "2026-11-23T19:27:55+00:00",
+      "item": "pr-833",
+      "from": "A_FAZER",
+      "to": "FEITO",
+      "report": "[FEITO] pr-833 · devin/1795404673-ux-aro-rosa@78ee37c00 · PR #833 mergeada em integracao/2.1 em 2026-11-23T04:02:57Z; ancestralidade conferida no git. Validação funcional e TV não verificadas.",
+      "source": "GitHub + coordenação Poke"
     },
     {
       "at": "2026-11-23T03:45:00+00:00",
