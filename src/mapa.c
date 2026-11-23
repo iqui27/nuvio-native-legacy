@@ -886,6 +886,7 @@ static int candTemGen(const MapaVizCand *c, unsigned h) {
 
 // A identidade canonica do genero (mascara MAPA_G_*), definida adiante junto
 // da tabela GEN_TMDB.
+static unsigned genTmdbMasc(long id);
 static unsigned genMasc(const MapaEtiqueta *g);
 
 // O genero do titulo do catalogo casa pelo hash do rotulo (mesmo idioma) ou
@@ -894,11 +895,46 @@ static int candTemGenM(const MapaVizCand *c, unsigned h, unsigned m) {
   return candTemGen(c, h) || (m != 0 && (c->genMasc & m) != 0);
 }
 
-static int candGenComum(const MapaVizCand *c, const MapaSemente *f) {
+static unsigned focoGenMasc(const MapaVizEntrada *e, int i) {
+  if (!e || !e->foco || i < 0 || i >= e->foco->nGen) return 0;
+  return genMasc(&e->foco->gen[i]) | (i < MAPA_GEN_MAX ? e->focoGenMasc[i] : 0u);
+}
+
+static int candGenComum(const MapaVizCand *c, const MapaVizEntrada *e) {
+  const MapaSemente *f = e ? e->foco : NULL;
   int i, n = 0;
+  if (!f) return 0;
   for (i = 0; i < f->nGen; i++)
-    if (candTemGenM(c, mapa_hash_titulo(f->gen[i].nome), genMasc(&f->gen[i]))) n++;
+    if (candTemGenM(c, mapa_hash_titulo(f->gen[i].nome), focoGenMasc(e, i))) n++;
   return n;
+}
+
+static const char *genTmdbNomePt(long id);
+
+static void vizMontarEpoca(const MapaVizEntrada *e, const MapaSemente *f,
+                           MapaVizGrupo *g, VizUsados *u) {
+  int k, dec;
+  char d[16];
+  if (g->n || f->obra.ano <= 0) return;
+  dec = (f->obra.ano / 10) * 10;
+  snprintf(d, sizeof d, "%d", dec);
+  g->tipo = MAPA_GR_EPOCA;
+  g->ref = 0;
+  snprintf(g->sub, sizeof g->sub, "%s", d);
+  // O mais proximo no tempo primeiro; a cada volta, o melhor que sobrou.
+  while (g->n < MAPA_VIZ_ITENS) {
+    const MapaObra *best = NULL;
+    int bd = 1000;
+    for (k = 0; k < e->nPool + f->nRec; k++) {
+      const MapaObra *o = k < e->nPool ? &e->pool[k].obra : &f->rec[k - e->nPool].o;
+      int dif;
+      if (!o->ano || (o->ano / 10) * 10 != dec || !o->poster[0] || vizJa(u, o)) continue;
+      dif = abs(o->ano - f->obra.ano);
+      if (dif < bd) { bd = dif; best = o; }
+    }
+    if (!best || !vizPoe(e, g, u, best, d)) break;
+  }
+  if (!g->n) g->tipo = MAPA_GR_PESSOA;
 }
 
 void mapa_vizinhos_montar(const MapaVizEntrada *e, MapaVizinhos *v) {
@@ -906,10 +942,23 @@ void mapa_vizinhos_montar(const MapaVizEntrada *e, MapaVizinhos *v) {
   VizUsados u;
   MapaVizGrupo *g;
   unsigned rev = v->revisao;
+  unsigned idMasc, prefMasc, prefNomeMasc;
+  int usaTexto, temGenPref, deferEpoca;
+  const char *prefNome;
   int i, k;
   memset(v, 0, sizeof *v);
   v->revisao = rev;
   if (!f) return;
+  idMasc = e->generoPrefId > 0 ? genTmdbMasc(e->generoPrefId) : 0;
+  usaTexto = !idMasc;
+  prefMasc = idMasc ? idMasc : e->generoPrefMasc;
+  temGenPref = (usaTexto && e->generoPref != 0) || prefMasc != 0 || e->generoPrefId > 0;
+  prefNomeMasc = (e->generoPrefNome && e->generoPrefNome[0])
+                 ? mapa_genero_mascara(e->generoPrefNome) : 0;
+  prefNome = (e->generoPrefNome && e->generoPrefNome[0] &&
+              (!idMasc || !prefNomeMasc || (prefNomeMasc & idMasc)))
+             ? e->generoPrefNome : NULL;
+  deferEpoca = temGenPref && !(e->nTema > 0 && e->temaNome && e->temaNome[0]);
   u.n = 0;
   v->foco = f->obra;
   vizMarca(&u, &f->obra);
@@ -947,28 +996,9 @@ void mapa_vizinhos_montar(const MapaVizEntrada *e, MapaVizinhos *v) {
         if (candTemGente(&e->pool[k], h)) vizPoe(e, g, &u, &e->pool[k].obra, g->sub);
     }
   }
-  if (!g->n && f->obra.ano > 0) {
-    int dec = (f->obra.ano / 10) * 10;
-    char d[16];
-    snprintf(d, sizeof d, "%d", dec);
-    g->tipo = MAPA_GR_EPOCA;
-    g->ref = 0;
-    snprintf(g->sub, sizeof g->sub, "%s", d);
-    // O mais proximo no tempo primeiro; a cada volta, o melhor que sobrou.
-    while (g->n < MAPA_VIZ_ITENS) {
-      const MapaObra *best = NULL;
-      int bd = 1000;
-      for (k = 0; k < e->nPool + f->nRec; k++) {
-        const MapaObra *o = k < e->nPool ? &e->pool[k].obra : &f->rec[k - e->nPool].o;
-        int dif;
-        if (!o->ano || (o->ano / 10) * 10 != dec || !o->poster[0] || vizJa(&u, o)) continue;
-        dif = abs(o->ano - f->obra.ano);
-        if (dif < bd) { bd = dif; best = o; }
-      }
-      if (!best || !vizPoe(e, g, &u, best, d)) break;
-    }
-    if (!g->n) g->tipo = MAPA_GR_PESSOA;
-  }
+  // Com selo/fio de genero explicito, a reserva de epoca espera a alocacao do
+  // genero pedido para nao consumir seu unico candidato da mesma decada.
+  if (!deferEpoca) vizMontarEpoca(e, f, g, &u);
 
   // TEMA. A palavra-chave pelo /discover; sem ela, o genero do titulo que mais
   // se repete no catalogo.
@@ -982,19 +1012,17 @@ void mapa_vizinhos_montar(const MapaVizEntrada *e, MapaVizinhos *v) {
   }
   if (!g->n) {
     int melhor = -1, melhorN = 0;
-    int temGenPref = e->generoPref != 0 || e->generoPrefMasc != 0 || e->generoPrefId > 0;
     for (i = 0; i < f->nGen; i++) {
       unsigned h = mapa_hash_titulo(f->gen[i].nome);
-      unsigned gm = genMasc(&f->gen[i]);
+      unsigned gm = focoGenMasc(e, i);
       int c = 0, ehPref;
       // O genero do fio que a pessoa vem seguindo casa pela identidade (id do
-      // TMDB ou mascara canonica), nunca pelo texto: a resposta em outro
-      // idioma traz o mesmo genero com outro nome ("Comedy" x "Comédia") e
-      // nao pode troca-lo.
+      // TMDB ou mascara canonica); texto livre so entra quando nao ha id
+      // canonico conhecido (chamadas legadas sem id).
       ehPref = temGenPref &&
                ((e->generoPrefId > 0 && f->gen[i].id == e->generoPrefId) ||
-                (e->generoPrefMasc && gm && (gm & e->generoPrefMasc)) ||
-                (e->generoPref && h == e->generoPref));
+                (prefMasc && gm && (gm & prefMasc)) ||
+                (usaTexto && e->generoPref && h == e->generoPref));
       if (temGenPref && !ehPref) continue;
       for (k = 0; k < e->nPool; k++)
         if (candTemGenM(&e->pool[k], h, gm) && !vizJa(&u, &e->pool[k].obra)) c++;
@@ -1003,15 +1031,14 @@ void mapa_vizinhos_montar(const MapaVizEntrada *e, MapaVizinhos *v) {
     }
     if (melhor >= 0) {
       unsigned h = mapa_hash_titulo(f->gen[melhor].nome);
-      unsigned gm = genMasc(&f->gen[melhor]);
+      unsigned gm = focoGenMasc(e, melhor);
       g->tipo = MAPA_GR_GENERO;
       g->ref = e->generoPrefId > 0 ? e->generoPrefId
              : (f->gen[melhor].id > 0 ? f->gen[melhor].id : 0);
       // O rotulo e o do selo, no idioma do catalogo — nao o nome que a
-      // resposta remota trouxe.
+      // resposta remota trouxe (nem um rotulo livre conflitante).
       snprintf(g->sub, sizeof g->sub, "%s",
-               temGenPref && e->generoPrefNome && e->generoPrefNome[0]
-                 ? e->generoPrefNome : f->gen[melhor].nome);
+               temGenPref && prefNome ? prefNome : f->gen[melhor].nome);
       // Quem divide MAIS generos com o titulo vem antes.
       while (g->n < MAPA_VIZ_ITENS) {
         const MapaObra *best = NULL;
@@ -1019,37 +1046,43 @@ void mapa_vizinhos_montar(const MapaVizEntrada *e, MapaVizinhos *v) {
         for (k = 0; k < e->nPool; k++) {
           int c;
           if (!candTemGenM(&e->pool[k], h, gm) || vizJa(&u, &e->pool[k].obra)) continue;
-          c = candGenComum(&e->pool[k], f);
+          c = candGenComum(&e->pool[k], e);
           if (c > bn) { bn = c; best = &e->pool[k].obra; }
         }
         if (!best || !vizPoe(e, g, &u, best, g->sub)) break;
       }
     }
-    if (!g->n && temGenPref && e->generoPrefNome && e->generoPrefNome[0]) {
+    if (!g->n && temGenPref) {
       // A resposta remota nao trouxe o genero do selo (ou ele nao rende
-      // itens): a publicacao local fica — o mesmo rotulo e os candidatos
-      // locais, casados por identidade.
-      g->tipo = MAPA_GR_GENERO;
-      g->ref = e->generoPrefId > 0 ? e->generoPrefId : 0;
-      snprintf(g->sub, sizeof g->sub, "%s", e->generoPrefNome);
-      while (g->n < MAPA_VIZ_ITENS) {
-        const MapaObra *best = NULL;
-        int bn = 0;
-        for (k = 0; k < e->nPool; k++) {
-          const MapaVizCand *cand = &e->pool[k];
-          int c;
-          if (!((e->generoPref && candTemGen(cand, e->generoPref)) ||
-                (e->generoPrefMasc && (cand->genMasc & e->generoPrefMasc))) ||
-              vizJa(&u, &cand->obra)) continue;
-          c = candGenComum(cand, f);
-          // O genero do selo nao esta na resposta: o comum pode ser zero e a
-          // ordem do pool decide — mas nenhum candidato fica de fora por isso.
-          if (!best || c > bn) { bn = c; best = &cand->obra; }
+      // itens), ou o foco local nao trazia a etiqueta no catalogo: tenta a
+      // reserva por identidade com o rotulo valido ou o canonico do id.
+      const char *sub = prefNome ? prefNome
+                      : (e->generoPrefId > 0 ? genTmdbNomePt(e->generoPrefId) : NULL);
+      if (sub && sub[0]) {
+        g->tipo = MAPA_GR_GENERO;
+        g->ref = e->generoPrefId > 0 ? e->generoPrefId : 0;
+        snprintf(g->sub, sizeof g->sub, "%s", sub);
+        while (g->n < MAPA_VIZ_ITENS) {
+          const MapaObra *best = NULL;
+          int bn = 0;
+          for (k = 0; k < e->nPool; k++) {
+            const MapaVizCand *cand = &e->pool[k];
+            int c;
+            if (!((prefMasc && (cand->genMasc & prefMasc)) ||
+                  (usaTexto && e->generoPref && candTemGen(cand, e->generoPref))) ||
+                vizJa(&u, &cand->obra)) continue;
+            c = candGenComum(cand, e);
+            // O genero do selo nao esta na resposta: o comum pode ser zero e a
+            // ordem do pool decide — mas nenhum candidato fica de fora por isso.
+            if (!best || c > bn) { bn = c; best = &cand->obra; }
+          }
+          if (!best || !vizPoe(e, g, &u, best, g->sub)) break;
         }
-        if (!best || !vizPoe(e, g, &u, best, g->sub)) break;
       }
     }
   }
+
+  if (deferEpoca) vizMontarEpoca(e, f, &v->g[MAPA_VIZ_PESSOA], &u);
 
   // RECOMENDADOS. Os do TMDB; senao generos em comum e ano perto, do catalogo
   // (e, sem genero nenhum em comum, o que o catalogo tem de mais bem avaliado:
@@ -1065,7 +1098,7 @@ void mapa_vizinhos_montar(const MapaVizEntrada *e, MapaVizinhos *v) {
       const MapaObra *o = &e->pool[k].obra;
       float sc;
       if (vizJa(&u, o) || !o->poster[0]) continue;
-      sc = (float)candGenComum(&e->pool[k], f) * 10.0f + (float)o->nota * 0.02f;
+      sc = (float)candGenComum(&e->pool[k], e) * 10.0f + (float)o->nota * 0.02f;
       if (o->ano && f->obra.ano) sc -= (float)abs(o->ano - f->obra.ano) * 0.25f;
       if (sc > bs) { bs = sc; best = o; }
     }
@@ -1183,6 +1216,24 @@ static const int GEN_TMDB[MAPA_G_N][2] = {
   { 10766, 10766 },   // NOVELA
   { 10767, 10767 },   // TALK
 };
+
+static const char *const GEN_NOME_PT[MAPA_G_N] = {
+  NULL,
+  "Ação", "Aventura", "Comédia", "Crime", "Drama",
+  "Família", "Fantasia", "Ficção científica", "Mistério",
+  "Terror", "Suspense",
+  "Animação", "Documentário", "História", "Música",
+  "Romance", "Guerra", "Faroeste",
+  "Infantil", "Notícias", "Reality", "Novela", "Talk show"
+};
+
+static const char *genTmdbNomePt(long id) {
+  int i;
+  if (id <= 0) return NULL;
+  for (i = 1; i < MAPA_G_N; i++)
+    if (GEN_TMDB[i][0] == id || GEN_TMDB[i][1] == id) return GEN_NOME_PT[i];
+  return NULL;
+}
 
 // A mascara canonica de um id de genero do TMDB (0 = fora da tabela). O id
 // combinado da TV acende os dois generos que ele junta.
@@ -2092,6 +2143,7 @@ static char vizTemaPref[48];
 static int vizTemaGenPref;                // idem, a caminho do fio do TMDB
 static long vizTemaGenIdPref;
 static unsigned vizTemaGenMascPref;
+static int vizTemaConfTrab;
 static unsigned vizCatRevTrab;
 static char vizChaveApi[96], vizIdioma[12];
 static struct {
@@ -2136,31 +2188,6 @@ static int vizMesmaObra(const MapaObra *a, const MapaObra *b) {
 // Reaproveita o mapeamento i18n() das 29 linguas (fio principal apenas) quando
 // o genero do catalogo/selo veio localizado fora de PT/EN/ES.
 static unsigned generoMascLocal(const char *nome) {
-  static const struct { const char *pt; int g; } GEN_PT[] = {
-    { "Ação", MAPA_G_ACAO },
-    { "Aventura", MAPA_G_AVENTURA },
-    { "Animação", MAPA_G_ANIMACAO },
-    { "Comédia", MAPA_G_COMEDIA },
-    { "Crime", MAPA_G_CRIME },
-    { "Documentário", MAPA_G_DOCUMENTARIO },
-    { "Drama", MAPA_G_DRAMA },
-    { "Família", MAPA_G_FAMILIA },
-    { "Fantasia", MAPA_G_FANTASIA },
-    { "Ficção científica", MAPA_G_FICCAO },
-    { "História", MAPA_G_HISTORIA },
-    { "Terror", MAPA_G_TERROR },
-    { "Música", MAPA_G_MUSICA },
-    { "Mistério", MAPA_G_MISTERIO },
-    { "Romance", MAPA_G_ROMANCE },
-    { "Suspense", MAPA_G_SUSPENSE },
-    { "Guerra", MAPA_G_GUERRA },
-    { "Faroeste", MAPA_G_FAROESTE },
-    { "Infantil", MAPA_G_INFANTIL },
-    { "Notícias", MAPA_G_NOTICIAS },
-    { "Reality", MAPA_G_REALITY },
-    { "Novela", MAPA_G_NOVELA },
-    { "Talk show", MAPA_G_TALK },
-  };
   unsigned m = mapa_genero_mascara(nome);
   char norm[64];
   size_t i, k = 0;
@@ -2172,15 +2199,15 @@ static unsigned generoMascLocal(const char *nome) {
     norm[k++] = (*s >= 'A' && *s <= 'Z') ? (char)(*s - 'A' + 'a') : *s;
   while (k && norm[k - 1] == ' ') k--;
   norm[k] = 0;
-  for (i = 0; i < sizeof GEN_PT / sizeof GEN_PT[0]; i++) {
-    const char *tr = i18n(GEN_PT[i].pt);
+  for (i = 1; i < MAPA_G_N; i++) {
+    const char *tr = i18n(GEN_NOME_PT[i]);
     char tnorm[64];
     size_t j = 0;
     if (!tr || !tr[0]) continue;
     for (; *tr && j + 1 < sizeof tnorm; tr++)
       tnorm[j++] = (*tr >= 'A' && *tr <= 'Z') ? (char)(*tr - 'A' + 'a') : *tr;
     tnorm[j] = 0;
-    if (!strcmp(norm, tnorm)) return 1u << GEN_PT[i].g;
+    if (!strcmp(norm, tnorm)) return 1u << i;
   }
   return 0;
 }
@@ -2380,7 +2407,7 @@ static void *vizTrabalhar(void *arg) {
     const char *temaNome = NULL;
     long pessoaPref, temaId = 0, temaGenId;
     unsigned seq, temaGenMasc, trabCatRev;
-    int temaGenero;
+    int temaGenero, temaConflita;
     int nPool, nAmg, nVistos, i, k, gi = -1, temCred = 0, temTema = 0, mudou = 0, ok = 0, serie;
     long long agora = (long long)time(NULL);
 
@@ -2396,6 +2423,7 @@ static void *vizTrabalhar(void *arg) {
     temaGenero = vizTemaGenPref;
     temaGenId = vizTemaGenIdPref;
     temaGenMasc = vizTemaGenMascPref;
+    temaConflita = vizTemaConfTrab;
     trabCatRev = vizCatRevTrab;
     snprintf(temaPref, sizeof temaPref, "%s", vizTemaPref);
     snprintf(chave, sizeof chave, "%s", vizChaveApi);
@@ -2494,17 +2522,18 @@ static void *vizTrabalhar(void *arg) {
       e.amigos = amg; e.nAmigos = nAmg;
       e.vistos = vistos; e.nVistos = nVistos;
       if (temaGenero && (temaPref[0] || temaGenId > 0)) {
-        e.generoPref = temaPref[0] ? mapa_hash_titulo(temaPref) : 0;
+        unsigned idMasc = temaGenId > 0 ? genTmdbMasc(temaGenId) : 0;
+        int usaTexto = !idMasc;
+        e.generoPref = usaTexto && temaPref[0] ? mapa_hash_titulo(temaPref) : 0;
         e.generoPrefId = temaGenId > 0 ? temaGenId : 0;
-        e.generoPrefMasc = temaGenId > 0 ? genTmdbMasc(temaGenId) : 0;
-        if (!e.generoPrefMasc && temaGenMasc) e.generoPrefMasc = temaGenMasc;
+        e.generoPrefMasc = idMasc ? idMasc : temaGenMasc;
         if (!e.generoPrefMasc && temaPref[0]) e.generoPrefMasc = mapa_genero_mascara(temaPref);
-        e.generoPrefNome = temaPref;
+        e.generoPrefNome = temaConflita ? "" : temaPref;
         for (i = 0; i < foco.nGen; i++) {
           const MapaEtiqueta *genero = &foco.gen[i];
           if ((e.generoPrefId > 0 && genero->id == e.generoPrefId) ||
               (e.generoPrefMasc && (genMasc(genero) & e.generoPrefMasc)) ||
-              (e.generoPref && mapa_hash_titulo(genero->nome) == e.generoPref))
+              (usaTexto && e.generoPref && mapa_hash_titulo(genero->nome) == e.generoPref))
             break;
         }
         generoPresente = i < foco.nGen;
@@ -2549,9 +2578,9 @@ void mapa_vizinhos_pedir_genero(const MapaObra *obra, long pessoaPref,
   static MapaVizinhos local;
   MapaVizEntrada e;
   const char *chave = desc_chave_tmdb();
-  unsigned h, seq, catRev, prefMasc = 0;
+  unsigned h, seq, catRev, prefMasc = 0, idMasc = 0;
   long genId = temaEhGenero && generoId > 0 ? generoId : 0;
-  int i, idx, comTmdb, nPool, nAmg, nVistos, criar = 0;
+  int i, idx, comTmdb, nPool, nAmg, nVistos, criar = 0, temaConflita = 0;
   if (!obra || !obra->titulo[0]) return;
   if (!temaPref) temaPref = "";
   if (!chave || !chave[0]) chave = desc_chave_tmdb_reserva();
@@ -2559,8 +2588,12 @@ void mapa_vizinhos_pedir_genero(const MapaObra *obra, long pessoaPref,
   h = vizChave(obra);
   catRev = cat_revisao();
   if (temaEhGenero) {
-    if (genId > 0) prefMasc = genTmdbMasc(genId);
-    if (!prefMasc && temaPref[0]) prefMasc = generoMascLocal(temaPref);
+    if (genId > 0) idMasc = prefMasc = genTmdbMasc(genId);
+    if (temaPref[0]) {
+      unsigned nomeMasc = generoMascLocal(temaPref);
+      if (idMasc && nomeMasc && !(nomeMasc & idMasc)) temaConflita = 1;
+      if (!prefMasc) prefMasc = nomeMasc;
+    }
   }
 
   pthread_mutex_lock(&travaViz);
@@ -2623,13 +2656,15 @@ void mapa_vizinhos_pedir_genero(const MapaObra *obra, long pessoaPref,
   e.vistos = vistos; e.nVistos = nVistos;
   // O fio na reserva local: a pessoa pelo nome (o id local e um hash dele), o
   // genero pela identidade canonica (id TMDB ou mascara do rotulo local).
+  for (i = 0; i < foco.nGen && i < MAPA_GEN_MAX; i++)
+    e.focoGenMasc[i] = generoMascLocal(foco.gen[i].nome);
   for (i = 0; i < foco.nGente && pessoaPref; i++)
     if (foco.gente[i].id == pessoaPref) e.pessoaPref = mapa_hash_titulo(foco.gente[i].nome);
   if (temaEhGenero && (temaPref[0] || genId > 0)) {
-    e.generoPref = temaPref[0] ? mapa_hash_titulo(temaPref) : 0;
+    e.generoPref = (!idMasc && !temaConflita && temaPref[0]) ? mapa_hash_titulo(temaPref) : 0;
     e.generoPrefId = genId;
     e.generoPrefMasc = prefMasc;
-    e.generoPrefNome = temaPref;
+    e.generoPrefNome = temaConflita ? "" : temaPref;
   }
   local.revisao = 0;
   mapa_vizinhos_montar(&e, &local);
@@ -2645,6 +2680,7 @@ void mapa_vizinhos_pedir_genero(const MapaObra *obra, long pessoaPref,
   vizTemaGenPref = temaEhGenero;
   vizTemaGenIdPref = genId;
   vizTemaGenMascPref = prefMasc;
+  vizTemaConfTrab = temaConflita;
   vizCatRevTrab = catRev;
   snprintf(vizTemaPref, sizeof vizTemaPref, "%s", temaPref);
   snprintf(vizChaveApi, sizeof vizChaveApi, "%s", chave);

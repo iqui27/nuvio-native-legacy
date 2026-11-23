@@ -241,7 +241,138 @@ static void testarVizinhanca(void) {
     assert(v.g[MAPA_VIZ_TEMA].tipo == MAPA_GR_GENERO);
     assert(v.g[MAPA_VIZ_TEMA].ref == 16);
     assert(!strcmp(v.g[MAPA_VIZ_TEMA].sub, "Anima\xc3\xa7\xc3\xa3o"));
-    assert(v.g[MAPA_VIZ_TEMA].n == 1 && temTitulo(&v.g[MAPA_VIZ_TEMA], "Toy Story")); }
+    assert(v.g[MAPA_VIZ_TEMA].n == 1 && temTitulo(&v.g[MAPA_VIZ_TEMA], "Toy Story"));
+
+    // Mesma decada: selo explicito de genero (16) retem o unico candidato
+    // elegivel mesmo quando ele tambem serve para MAPA_GR_EPOCA, preservando
+    // os demais da mesma decada no grupo de epoca sem duplicacao; rota
+    // generica sem preferencia mantem a prioridade original da epoca.
+    { MapaVizCand decPool[3];
+      MapaVizEntrada ed;
+      sf.obra.ano = 2024;
+      sf.nGente = 0;
+      sf.nGen = 2;
+      sf.gen[0].id = 18; snprintf(sf.gen[0].nome, sizeof sf.gen[0].nome, "Drama");
+      sf.gen[1].id = 16; snprintf(sf.gen[1].nome, sizeof sf.gen[1].nome, "Animation");
+      decPool[0] = cand("Drama Um", 2024, "Drama", NULL, NULL, 20);
+      decPool[0].genMasc = mapa_genero_mascara("Drama");
+      decPool[1] = cand("Unica Animacao", 2024, "Animation", NULL, NULL, 21);
+      decPool[1].genMasc = mapa_genero_mascara("Animation");
+      decPool[2] = cand("Drama Dois", 2024, "Drama", NULL, NULL, 22);
+      decPool[2].genMasc = mapa_genero_mascara("Drama");
+      memset(&ed, 0, sizeof ed);
+      ed.foco = &sf;
+      ed.pool = decPool; ed.nPool = 3;
+      ed.generoPrefId = 16;
+      ed.generoPrefMasc = 1u << MAPA_G_ANIMACAO;
+      ed.generoPrefNome = "Anima\xc3\xa7\xc3\xa3o";
+      mapa_vizinhos_montar(&ed, &v);
+      assert(v.g[MAPA_VIZ_TEMA].tipo == MAPA_GR_GENERO && v.g[MAPA_VIZ_TEMA].ref == 16);
+      assert(v.g[MAPA_VIZ_TEMA].n == 1 && temTitulo(&v.g[MAPA_VIZ_TEMA], "Unica Animacao"));
+      assert(v.g[MAPA_VIZ_PESSOA].tipo == MAPA_GR_EPOCA && v.g[MAPA_VIZ_PESSOA].n == 2);
+      assert(!temTitulo(&v.g[MAPA_VIZ_PESSOA], "Unica Animacao"));
+      assert(temTitulo(&v.g[MAPA_VIZ_PESSOA], "Drama Um") && temTitulo(&v.g[MAPA_VIZ_PESSOA], "Drama Dois"));
+
+      // Rota generica (sem preferencia): preserva ordem e dedup originais.
+      ed.generoPrefId = 0; ed.generoPrefMasc = 0; ed.generoPrefNome = NULL;
+      mapa_vizinhos_montar(&ed, &v);
+      assert(v.g[MAPA_VIZ_PESSOA].tipo == MAPA_GR_EPOCA && v.g[MAPA_VIZ_PESSOA].n == 3);
+      assert(temTitulo(&v.g[MAPA_VIZ_PESSOA], "Unica Animacao"));
+    }
+
+    // ID conhecido sem rotulo + mascara do foco localizada (ex.: Komodie):
+    // resolve localmente sem depender do texto em PT/EN/ES, e tambem quando
+    // o foco nao traz a etiqueta (fallback por genTmdbNomePt).
+    { MapaSemente sfDe;
+      MapaVizCand dePool[2];
+      MapaVizEntrada ede;
+      memset(&sfDe, 0, sizeof sfDe);
+      snprintf(sfDe.obra.titulo, sizeof sfDe.obra.titulo, "Foco DE");
+      snprintf(sfDe.obra.tipo, sizeof sfDe.obra.tipo, "movie");
+      sfDe.obra.ano = 2024;
+      sfDe.nGen = 2;
+      sfDe.gen[0].id = -1; snprintf(sfDe.gen[0].nome, sizeof sfDe.gen[0].nome, "Drama");
+      sfDe.gen[1].id = -2; snprintf(sfDe.gen[1].nome, sizeof sfDe.gen[1].nome, "Kom\xc3\xb6" "die");
+      dePool[0] = cand("Drama DE", 2024, "Drama", NULL, NULL, 30);
+      dePool[0].genMasc = mapa_genero_mascara("Drama");
+      dePool[1] = cand("Comedia DE", 2024, "Kom\xc3\xb6" "die", NULL, NULL, 31);
+      dePool[1].genMasc = 1u << MAPA_G_COMEDIA;
+      memset(&ede, 0, sizeof ede);
+      ede.foco = &sfDe;
+      ede.pool = dePool; ede.nPool = 2;
+      ede.generoPrefId = 35;
+      ede.generoPrefMasc = 1u << MAPA_G_COMEDIA;
+      ede.focoGenMasc[0] = 1u << MAPA_G_DRAMA;
+      ede.focoGenMasc[1] = 1u << MAPA_G_COMEDIA;
+      mapa_vizinhos_montar(&ede, &v);
+      assert(v.g[MAPA_VIZ_TEMA].tipo == MAPA_GR_GENERO && v.g[MAPA_VIZ_TEMA].ref == 35);
+      assert(v.g[MAPA_VIZ_TEMA].n == 1 && temTitulo(&v.g[MAPA_VIZ_TEMA], "Comedia DE"));
+
+      sfDe.nGen = 0;
+      mapa_vizinhos_montar(&ede, &v);
+      assert(v.g[MAPA_VIZ_TEMA].tipo == MAPA_GR_GENERO && v.g[MAPA_VIZ_TEMA].ref == 35);
+      assert(v.g[MAPA_VIZ_TEMA].n == 1 && temTitulo(&v.g[MAPA_VIZ_TEMA], "Comedia DE"));
+      assert(!strcmp(v.g[MAPA_VIZ_TEMA].sub, "Com\xc3\xa9" "dia"));
+    }
+
+    // Rotulo livre conflitante ("Drama") nao vence sobre ID conhecido (16).
+    { MapaVizCand cfPool[2];
+      MapaVizEntrada ec;
+      sf.nGen = 2;
+      sf.gen[0].id = 18; snprintf(sf.gen[0].nome, sizeof sf.gen[0].nome, "Drama");
+      sf.gen[1].id = 16; snprintf(sf.gen[1].nome, sizeof sf.gen[1].nome, "Animation");
+      cfPool[0] = cand("Drama A", 2004, "Drama", NULL, NULL, 40);
+      cfPool[0].genMasc = mapa_genero_mascara("Drama");
+      cfPool[1] = cand("Anim A", 2004, "Animation", NULL, NULL, 41);
+      cfPool[1].genMasc = mapa_genero_mascara("Animation");
+      memset(&ec, 0, sizeof ec);
+      ec.foco = &sf;
+      ec.pool = cfPool; ec.nPool = 2;
+      ec.generoPref = mapa_hash_titulo("Drama");
+      ec.generoPrefId = 16;
+      ec.generoPrefMasc = 1u << MAPA_G_ANIMACAO;
+      ec.generoPrefNome = "Drama";
+      mapa_vizinhos_montar(&ec, &v);
+      assert(v.g[MAPA_VIZ_TEMA].tipo == MAPA_GR_GENERO && v.g[MAPA_VIZ_TEMA].ref == 16);
+      assert(v.g[MAPA_VIZ_TEMA].n == 1 && temTitulo(&v.g[MAPA_VIZ_TEMA], "Anim A"));
+      assert(!strcmp(v.g[MAPA_VIZ_TEMA].sub, "Animation"));
+    }
+
+    // Chamada legada sem ID preserva casamento textual; variantes oficiais
+    // TV/filme (10768 <-> War, 10759 <-> Action) seguem casando.
+    { MapaSemente sfLeg;
+      MapaVizCand legPool[3];
+      MapaVizEntrada el;
+      memset(&sfLeg, 0, sizeof sfLeg);
+      snprintf(sfLeg.obra.titulo, sizeof sfLeg.obra.titulo, "Foco Legado");
+      snprintf(sfLeg.obra.tipo, sizeof sfLeg.obra.tipo, "series");
+      sfLeg.nGen = 2;
+      snprintf(sfLeg.gen[0].nome, sizeof sfLeg.gen[0].nome, "Cyberpunk");
+      sfLeg.gen[1].id = 10768;
+      snprintf(sfLeg.gen[1].nome, sizeof sfLeg.gen[1].nome, "War & Politics");
+      legPool[0] = cand("Outro", 2004, "Drama", NULL, NULL, 50);
+      legPool[1] = cand("Neon", 2004, "Cyberpunk", NULL, NULL, 51);
+      legPool[2] = cand("Guerra Filme", 2004, "War", NULL, NULL, 52);
+      legPool[2].genMasc = mapa_genero_mascara("War");
+      memset(&el, 0, sizeof el);
+      el.foco = &sfLeg;
+      el.pool = legPool; el.nPool = 3;
+      el.generoPref = mapa_hash_titulo("Cyberpunk");
+      el.generoPrefNome = "Cyberpunk";
+      mapa_vizinhos_montar(&el, &v);
+      assert(v.g[MAPA_VIZ_TEMA].tipo == MAPA_GR_GENERO && v.g[MAPA_VIZ_TEMA].n == 1);
+      assert(temTitulo(&v.g[MAPA_VIZ_TEMA], "Neon") && !strcmp(v.g[MAPA_VIZ_TEMA].sub, "Cyberpunk"));
+
+      memset(&el, 0, sizeof el);
+      el.foco = &sfLeg;
+      el.pool = legPool; el.nPool = 3;
+      el.generoPrefId = 10768;
+      el.generoPrefMasc = 1u << MAPA_G_GUERRA;
+      el.generoPrefNome = "War";
+      mapa_vizinhos_montar(&el, &v);
+      assert(v.g[MAPA_VIZ_TEMA].tipo == MAPA_GR_GENERO && v.g[MAPA_VIZ_TEMA].ref == 10768);
+      assert(v.g[MAPA_VIZ_TEMA].n == 1 && temTitulo(&v.g[MAPA_VIZ_TEMA], "Guerra Filme"));
+    } }
 
   // Nada: sem foco, tudo vazio, sem estourar.
   e.foco = NULL;

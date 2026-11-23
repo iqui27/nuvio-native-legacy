@@ -348,6 +348,7 @@ typedef struct {
   unsigned generoPrefMasc;        // o mesmo genero por identidade (mascara MAPA_G_*)
   long generoPrefId;              // id TMDB do genero preferido (> 0 quando veio do selo)
   const char *generoPrefNome;     // o rotulo do selo, no idioma do catalogo
+  unsigned focoGenMasc[MAPA_GEN_MAX]; // mascaras canonicas dos generos do foco (fio principal)
 } MapaVizEntrada;
 // Monta os quatro grupos. Preserva v->revisao.
 void mapa_vizinhos_montar(const MapaVizEntrada *e, MapaVizinhos *v);
