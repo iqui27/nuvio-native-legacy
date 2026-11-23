@@ -2193,6 +2193,15 @@ static void vizPublicar(MapaVizinhos *v, unsigned seq, int carregando, long pess
   pthread_mutex_unlock(&travaViz);
 }
 
+static void vizConcluirLocal(unsigned seq) {
+  pthread_mutex_lock(&travaViz);
+  if (seq == vizSeq) {
+    vizPub.carregando = 0;
+    vizPub.revisao = ++vizRevPub;
+  }
+  pthread_mutex_unlock(&travaViz);
+}
+
 static int listaDoTmdb(const char *caminho, int serie, const char *chave, const char *idioma,
                        MapaObra *o, int max, int *total) {
   char url[600], *corpo;
@@ -2270,6 +2279,7 @@ static void *vizTrabalhar(void *arg) {
     }
 
     if (ok) {
+      int generoPresente = 1;
       serie = !strcmp(foco.obra.tipo, "series");
       // 2. a pessoa: a do fio que a pessoa vem seguindo, senao a primeira
       // (direcao/criacao vem antes do elenco em mapa_ler_detalhe).
@@ -2335,10 +2345,19 @@ static void *vizTrabalhar(void *arg) {
         e.generoPref = mapa_hash_titulo(temaPref);
         e.generoPrefMasc = mapa_genero_mascara(temaPref);
         e.generoPrefNome = temaPref;
+        for (i = 0; i < foco.nGen; i++) {
+          const MapaEtiqueta *genero = &foco.gen[i];
+          if ((genMasc(genero) & e.generoPrefMasc) ||
+              mapa_hash_titulo(genero->nome) == e.generoPref) break;
+        }
+        generoPresente = i < foco.nGen;
       }
       novo.revisao = 0;
       mapa_vizinhos_montar(&e, &novo);
-      vizPublicar(&novo, seq, 0, pessoaPref, temaPref, temaGenero);
+      if (generoPresente && (!e.generoPref || novo.g[MAPA_VIZ_TEMA].n))
+        vizPublicar(&novo, seq, 0, pessoaPref, temaPref, temaGenero);
+      else
+        vizConcluirLocal(seq);
       if (mudou) {
         // O titulo de agora primeiro; o corte leva o mais antigo.
         for (k = 0; k < ca.n; k++)
@@ -2355,9 +2374,7 @@ static void *vizTrabalhar(void *arg) {
     } else {
       // Sem rede (ou o TMDB nao conhece o titulo): fica o retrato local, sem o
       // "cruzando" eterno.
-      pthread_mutex_lock(&travaViz);
-      if (seq == vizSeq) { vizPub.carregando = 0; vizPub.revisao = ++vizRevPub; }
-      pthread_mutex_unlock(&travaViz);
+      vizConcluirLocal(seq);
     }
     free(ca.s); free(ca.c); free(ca.cq); free(ca.t);
   }
