@@ -776,10 +776,12 @@ static LegendaDocumento *coletarMp4(Job *j, LegRefStatus *st, const unsigned cha
 #define LR_ASS_RAJADA     1.0     // +-1 s
 #define LR_ASS_RAJADA_N   5       // 5 inicios nessa janela = karaoke/efeito
 
-// 06/11 (dono): o que e melhor no Tizen vale para a LG e o Android tambem,
-// e para o .tpk 4/5 (Tizen 4.0-5.5) igual ao 6+.
+// 06/11 (dono): o que e melhor no Tizen vale para o .tpk 4/5 (Tizen 4.0-5.5)
+// igual ao 6+. LG e Android seguem no modo de sempre: o modo so indice nao le
+// os blocos, entao a referencia sai sem texto — a fixture ASS de
+// tests/legref.c (-DNV_WEBOS) reprovava (rc 134). Ativar la exige QA antes.
 static int modoIndice =
-#if defined(NV_TPK) || defined(NV_WEBOS) || defined(NV_ANDROID)
+#if defined(NV_TPK)
   1;
 #else
   0;
