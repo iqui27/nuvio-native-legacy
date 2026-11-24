@@ -38,10 +38,16 @@
 #define FESCUI_PERGUNTA  1
 #define FESCUI_RESULTADO 2   // 0, 1 ou (P4 recusado) 2..3 cartazes + Voltar
 #define FESCUI_COMPARAR  3   // entregue ao P4 (o Farol fecha)
+#define FESCUI_OUVINDO   4   // ditado ativo (#54, st_voz_iniciar + parciais)
+#define FESCUI_PREVIA    5   // previa obrigatoria ANTES de enviar (0 POSTs)
+#define FESCUI_ESPERA    6   // aguardando POST /v1/farol/escolha (cancelavel)
 
-#define FESCUI_FOCO_VOLTAR (-1)
+#define FESCUI_FOCO_VOLTAR    (-1)
+#define FESCUI_FOCO_VOZ       (-2)
+#define FESCUI_FOCO_CONFIRMAR (-3)
 
 void farolescolhaui_reset(void);
+void farolescolhaui_fechar(void);
 // Monta os candidatos do catalogo vivo e comeca (pode ja terminar: < 3
 // candidatos ou nada que divida). Depois de abrir, confira
 // farolescolhaui_pediu_fechar (o P4 pode ter aberto direto).
@@ -49,6 +55,10 @@ void farolescolhaui_abrir(void);
 // Gancho do #54: pre-responde por ids ("tempo", "t45"). So antes da 1a
 // resposta da pessoa. 1 = aceita.
 int  farolescolhaui_pre_responder(const char *perguntaId, const char *opcaoId);
+// Gancho limpo do #54/#55 (voz Android, teclado Samsung, LG QR, WASM):
+// normaliza `frase` e abre a previa (FESCUI_PREVIA) com 0 POSTs.
+// 1 = entrou na previa; 0 = frase vazia/invalida ou fora da 1a pergunta.
+int  farolescolhaui_aplicar_frase(const char *frase);
 
 // Processa um evento. `pediuSair`: Voltar sem nada a desfazer (sai para o
 // Inicio do Farol). `pediuAbrir`: OK num cartaz (identidade em
@@ -69,7 +79,10 @@ int  farolescolhaui_n_candidatos(void);
 const FarolEsc *farolescolhaui_motor(void);
 int  farolescolhaui_n_resultados(void);  // cartazes no modo RESULTADO
 int  farolescolhaui_resultado_indice(int i);   // indice vivo no catalogo; -1 fora
-int  farolescolhaui_saida(void);         // FESC_SAIDA_* do ultimo fim
+int         farolescolhaui_saida(void);         // FESC_SAIDA_* do ultimo fim
+int         farolescolhaui_voz_visivel(void);   // 1 se botao de microfone visivel
+const char *farolescolhaui_frase(void);         // frase na previa/espera (ou "")
+const char *farolescolhaui_parcial(void);       // parcial enquanto ouve (ou "")
 
 // ------------------------------------------------------------ ganchos de teste
 void farolescolhaui_teste_hora(int hora);        // -2 = relogio real

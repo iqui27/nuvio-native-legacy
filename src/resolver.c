@@ -79,6 +79,26 @@
 #define SINT_H      104.0f
 #define SINT_GAP     18.0f
 
+// O assistente P5 (#50). Os harnesses isolados do Farol (-DRESOLVER_TESTE com
+// lista explicita de fontes) nao ligam farolescolhaui: la os simbolos sao
+// fracos e o 5o item some, com o Inicio de sempre. No app ele sempre liga.
+#ifdef RESOLVER_TESTE
+#pragma weak farolescolhaui_reset
+#pragma weak farolescolhaui_fechar
+#pragma weak farolescolhaui_abrir
+#pragma weak farolescolhaui_evento
+#pragma weak farolescolhaui_atualizar
+#pragma weak farolescolhaui_desenhar
+#pragma weak farolescolhaui_pediu_abrir
+#pragma weak farolescolhaui_pediu_fechar
+#define ESCOLHA_LIGADA() (farolescolhaui_abrir != NULL)
+#else
+#define ESCOLHA_LIGADA() 1
+#endif
+// FALTA_TEXTO: "Me ajude a escolher" (entrada do P5) ainda sem chave em
+// src/idioma_*.h; i18n() devolve o portugues ate a traducao entrar.
+#define ROT_ESCOLHA "Me ajude a escolher"
+
 // Ganchos fracos da camada de voz (#31) para manter os testes isolados do
 // Resolver e da Tela 7 sem puxar farolvozui.c / farolbusca.c / sistexto.c.
 __attribute__((weak)) int  farolvozui_disponivel(void) { return 0; }
@@ -97,24 +117,6 @@ __attribute__((weak)) void farolvozui_atualizar(float dt, Uint32 agora, int *abr
 __attribute__((weak)) void farolvozui_desenhar(float ox, float oy, float alpha, Uint32 agora) {
   (void)ox; (void)oy; (void)alpha; (void)agora;
 }
-// O assistente P5 (#50). Os harnesses isolados do Farol (-DRESOLVER_TESTE com
-// lista explicita de fontes) nao ligam farolescolhaui: la os simbolos sao
-// fracos e o 5o item some, com o Inicio de sempre. No app ele sempre liga.
-#ifdef RESOLVER_TESTE
-#pragma weak farolescolhaui_reset
-#pragma weak farolescolhaui_abrir
-#pragma weak farolescolhaui_evento
-#pragma weak farolescolhaui_atualizar
-#pragma weak farolescolhaui_desenhar
-#pragma weak farolescolhaui_pediu_abrir
-#pragma weak farolescolhaui_pediu_fechar
-#define ESCOLHA_LIGADA() (farolescolhaui_abrir != NULL)
-#else
-#define ESCOLHA_LIGADA() 1
-#endif
-// FALTA_TEXTO: "Me ajude a escolher" (entrada do P5) ainda sem chave em
-// src/idioma_*.h; i18n() devolve o portugues ate a traducao entrar.
-#define ROT_ESCOLHA "Me ajude a escolher"
 
 // Ids de foco. Os cartoes de sintoma usam o RES_S_* (RES_S_CORES inclusive);
 // o resto vale por fase (resolver.h).
@@ -1056,6 +1058,7 @@ static void fechar(void) {
   farolconsentui_fechar();
   farolenvioui_fechar();
   farolvozui_fechar();
+  if (ESCOLHA_LIGADA()) farolescolhaui_fechar();
   if (segura || sonda_no_ar()) {
     farolsonda_cancelar();
     sondaCancelada = sonda_no_ar();
@@ -1174,14 +1177,14 @@ static void ok(int longo) {
       acharVoltaFoco = foco;
       farolachaui_abrir((FarolAchaTipo)k, FAROL_ACHA_CURTO_PADRAO, 0u);
       fase = RESOLVER_FASE_ACHAR;
-    } else if (foco == B_ACHAR_VOZ && farolvozui_disponivel()) {
-      acharVoltaFoco = B_ACHAR_VOZ;
-      farolvozui_abrir(RESOLVER_FASE_SINTOMA);
     } else if (foco == B_ACHAR_ESCOLHA && ESCOLHA_LIGADA()) {
       acharVoltaFoco = foco;
       fase = RESOLVER_FASE_ESCOLHA;
       farolescolhaui_abrir();
       if (farolescolhaui_pediu_fechar()) fechar();   // ja terminou no P4
+    } else if (foco == B_ACHAR_VOZ && farolvozui_disponivel()) {
+      acharVoltaFoco = B_ACHAR_VOZ;
+      farolvozui_abrir(RESOLVER_FASE_SINTOMA);
     }
   } else if (fase == RESOLVER_FASE_CADEIA) {
     if (!segura) veredito_entrar();   // OK adianta a luz; a sonda no ar segura
@@ -1219,17 +1222,6 @@ static int tecla_ok(SDL_Keycode k) {
 
 static void ir_fase(int f);
 
-static void sincronizar_envioui(float dt) {
-  int ped = RESOLVER_PEDIU_NADA, fech = 0, volt = 0, recar = 0, dfOk = -1;
-  if (!farolenvioui_presente()) return;
-  farolenvioui_passo(dt, &ped, &fech, &volt, &recar, &dfOk);
-  if (recar) enviados_ler();
-  if (dfOk >= 0) farol_registrar_resultado(FAROL_A_ENVIAR_REGISTRO, dfOk);
-  if (ped != RESOLVER_PEDIU_NADA) pedido = ped;
-  if (fech) fechar();
-  else if (volt && fase == RESOLVER_FASE_ENVIO) ir_fase(voltaFase);
-}
-
 static void voz_voltar_fase(void) {
   int vf = farolvozui_volta_fase();
   if (vf == RESOLVER_FASE_ACHAR) {
@@ -1240,6 +1232,17 @@ static void voz_voltar_fase(void) {
         acharVoltaFoco == B_ACHAR_VOZ)
       foco = acharVoltaFoco;
   }
+}
+
+static void sincronizar_envioui(float dt) {
+  int ped = RESOLVER_PEDIU_NADA, fech = 0, volt = 0, recar = 0, dfOk = -1;
+  if (!farolenvioui_presente()) return;
+  farolenvioui_passo(dt, &ped, &fech, &volt, &recar, &dfOk);
+  if (recar) enviados_ler();
+  if (dfOk >= 0) farol_registrar_resultado(FAROL_A_ENVIAR_REGISTRO, dfOk);
+  if (ped != RESOLVER_PEDIU_NADA) pedido = ped;
+  if (fech) fechar();
+  else if (volt && fase == RESOLVER_FASE_ENVIO) ir_fase(voltaFase);
 }
 
 void resolver_evento(const SDL_Event *e) {
@@ -1324,7 +1327,6 @@ void resolver_evento(const SDL_Event *e) {
   if (k == SDLK_UP)    { mover(0, -1); return; }
   if (k == SDLK_DOWN)  { mover(0, 1); return; }
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
-  if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) voltar();
 }
 
@@ -1382,8 +1384,10 @@ void resolver_atualizar(float dt, Uint32 agora) {
       else if (pediuVoltar) voz_voltar_fase();
     } else if (fase == RESOLVER_FASE_ACHAR) {
       farolachaui_atualizar(dt, agora);
+    } else if (fase == RESOLVER_FASE_ESCOLHA) {
+      farolescolhaui_atualizar(dt, agora);
+      if (farolescolhaui_pediu_fechar()) fechar();
     }
-    if (fase == RESOLVER_FASE_ESCOLHA) farolescolhaui_atualizar(dt, agora);
   }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
   if (red) { entrada = aberto ? 1.0f : 0.0f; return; }

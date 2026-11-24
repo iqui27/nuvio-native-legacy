@@ -1,7 +1,8 @@
-// Modo perguntas do Farol (P5 sem LLM, issue 50). Ver farolescolhaui.h.
+// Modo perguntas do Farol (P5 sem LLM #50 + assistente por frase #54). Ver farolescolhaui.h.
 #include "farolescolhaui.h"
 #include "farolacha.h"
 #include "farolcompara.h"
+#include "farolescolha_rede.h"
 #include "faroltexto.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -13,8 +14,10 @@
 #include "perfilinfantil.h"
 #include "ponteiro.h"
 #include "posterprov.h"
+#include "sistexto.h"
 #include "tex_cache.h"
 #include "text.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -28,6 +31,10 @@
 #define ESC_CARD_H    420.0f
 #define ESC_CARD_GAP   48.0f
 #define ESC_VOLTAR_Y  888.0f
+#define ESC_PAINEL_Y  290.0f
+#define ESC_PAINEL_H  320.0f
+#define ESC_VOZ_BTN_Y 680.0f
+#define ESC_PULSO_MS  1400.0f
 #define ESC_SEMENTE   0x5e5d0050u   // fixa: mesmo catalogo = mesmas perguntas
 
 // FALTA_TEXTO: "Nada exato…" (P5, 0 titulos) e "Achamos este" / "Achamos
@@ -59,6 +66,14 @@ static struct {
   int      escolhido[FESC_PERG_MAX];   // opcao oferecida escolhida em cada passo
   float    anim[FESC_OPC_MAX];
   float    animVoltar;
+  float    animVoz;
+  float    animConf;
+  // Assistente por frase (#54).
+  float    nivelVoz;
+  float    pulsoMs;
+  uint64_t redeGen;
+  char     parcial[FAROL_ESCOLHA_FRASE_BYTES];
+  char     frase[FAROL_ESCOLHA_FRASE_BYTES];
   // Resultado (modo RESULTADO).
   FarolEscResultado res;
   int      saida;
@@ -233,13 +248,29 @@ static void garantirResultado(void) {
   if (S.foco >= S.nRes) S.foco = S.nRes > 0 ? S.nRes - 1 : FESCUI_FOCO_VOLTAR;
 }
 
+static void zerarFrases(void) {
+  memset(S.parcial, 0, sizeof S.parcial);
+  memset(S.frase, 0, sizeof S.frase);
+}
+
+static int podeUsarVoz(void) {
+  return S.modo == FESCUI_PERGUNTA &&
+         farolescolha_feitas(&S.motor) == 0 &&
+         S.motor.nPre == 0 &&
+         st_voz_disponivel() == 1;
+}
+
 static void zerarAnim(void) {
   int i;
   for (i = 0; i < FESC_OPC_MAX; i++) S.anim[i] = 0.0f;
   S.animVoltar = 0.0f;
+  S.animVoz = 0.0f;
+  S.animConf = 0.0f;
   if (ajustes_animacoes_reduzidas()) {
     if (S.foco >= 0 && S.foco < FESC_OPC_MAX) S.anim[S.foco] = 1.0f;
     if (S.foco == FESCUI_FOCO_VOLTAR) S.animVoltar = 1.0f;
+    if (S.foco == FESCUI_FOCO_VOZ) S.animVoz = 1.0f;
+    if (S.foco == FESCUI_FOCO_CONFIRMAR) S.animConf = 1.0f;
   }
 }
 
@@ -273,6 +304,8 @@ static void concluir(void) {
 // ------------------------------------------------------------ fluxo --
 void farolescolhaui_reset(void) {
   int th = S.testeHora, ti = S.testeInfantil;
+  if (S.modo == FESCUI_OUVINDO) st_fechar(ST_BUSCA);
+  if (S.modo == FESCUI_ESPERA || S.redeGen != 0) farolescolha_rede_cancelar();
   memset(&S, 0, sizeof S);
   S.testeHora = th;
   S.testeInfantil = ti;
@@ -285,6 +318,17 @@ static void entrarPergunta(int foco) {
   S.foco = (foco >= 0 && foco < n) ? foco : 0;
   S.focoAntesVoltar = S.foco;
   zerarAnim();
+}
+
+void farolescolhaui_fechar(void) {
+  if (S.modo == FESCUI_OUVINDO) st_fechar(ST_BUSCA);
+  if (S.modo == FESCUI_ESPERA || S.redeGen != 0) {
+    farolescolha_rede_cancelar();
+    S.redeGen = 0;
+  }
+  zerarFrases();
+  if (S.modo == FESCUI_OUVINDO || S.modo == FESCUI_PREVIA || S.modo == FESCUI_ESPERA)
+    entrarPergunta(0);
 }
 
 static void seguir(int foco) {
@@ -308,6 +352,80 @@ int farolescolhaui_pre_responder(const char *perguntaId, const char *opcaoId) {
   return 1;
 }
 
+int farolescolhaui_aplicar_frase(const char *frase) {
+  char norm[FAROL_ESCOLHA_FRASE_BYTES];
+  int eraOuvindo = (S.modo == FESCUI_OUVINDO);
+  if (S.modo != FESCUI_PERGUNTA && !eraOuvindo) return 0;
+  if (farolescolha_feitas(&S.motor) > 0 || S.motor.nPre > 0) return 0;
+  if (!farolescolha_rede_normalizar_frase(frase, norm, sizeof norm)) {
+    if (eraOuvindo) {
+      st_fechar(ST_BUSCA);
+      zerarFrases();
+      entrarPergunta(0);
+    }
+    return 0;
+  }
+  if (eraOuvindo) st_fechar(ST_BUSCA);
+  zerarFrases();
+  snprintf(S.frase, sizeof S.frase, "%s", norm);
+  memset(norm, 0, sizeof norm);
+  S.modo = FESCUI_PREVIA;
+  S.foco = FESCUI_FOCO_CONFIRMAR;
+  zerarAnim();
+  return 1;
+}
+
+static void iniciarVoz(void) {
+  if (!st_voz_disponivel()) return;
+  zerarFrases();
+  S.nivelVoz = 0.0f;
+  S.pulsoMs = 0.0f;
+  st_voz_teclado_inicial("");
+  if (st_voz_iniciar(ST_BUSCA)) {
+    S.modo = FESCUI_OUVINDO;
+    S.foco = FESCUI_FOCO_VOLTAR;
+    zerarAnim();
+  }
+}
+
+static void confirmarPrevia(void) {
+  uint64_t gen;
+  if (!S.frase[0] || infantilAgora() || !farolescolha_rede_autorizado()) {
+    zerarFrases();
+    entrarPergunta(0);
+    return;
+  }
+  gen = farolescolha_rede_pedir(S.frase, &S.motor, NULL);
+  if (gen == 0) {
+    zerarFrases();
+    entrarPergunta(0);
+    return;
+  }
+  S.redeGen = gen;
+  S.modo = FESCUI_ESPERA;
+  S.foco = FESCUI_FOCO_VOLTAR;
+  S.pulsoMs = 0.0f;
+  zerarAnim();
+}
+
+static int montarBotoesPrevia(int ids[3]) {
+  int n = 0;
+  ids[n++] = FESCUI_FOCO_CONFIRMAR;
+  if (st_voz_disponivel()) ids[n++] = FESCUI_FOCO_VOZ;
+  ids[n++] = FESCUI_FOCO_VOLTAR;
+  return n;
+}
+
+static void moverFocoPrevia(int dir) {
+  int ids[3], n = montarBotoesPrevia(ids), i, cur = -1;
+  for (i = 0; i < n; i++) if (ids[i] == S.foco) { cur = i; break; }
+  if (cur < 0) { S.foco = ids[0]; return; }
+  cur += dir;
+  if (cur < 0) cur = 0;
+  if (cur >= n) cur = n - 1;
+  S.foco = ids[cur];
+}
+
 // Voltar: desfaz um passo (foco na opcao escolhida nele) ou pede a saida.
 static void voltarUmPasso(int *pediuSair) {
   if (farolescolha_voltar(&S.motor)) {
@@ -328,6 +446,10 @@ static int nFocaveis(void) {
 
 static int okNoFoco(int *pediuSair) {
   if (S.foco == FESCUI_FOCO_VOLTAR) { voltarUmPasso(pediuSair); return 1; }
+  if (S.foco == FESCUI_FOCO_VOZ) {
+    if (podeUsarVoz()) iniciarVoz();
+    return 1;
+  }
   if (S.modo == FESCUI_PERGUNTA) {
     int passo = farolescolha_feitas(&S.motor), f = S.foco;
     if (!farolescolha_responder(&S.motor, f)) return 1;
@@ -344,7 +466,62 @@ int farolescolhaui_evento(const SDL_Event *e, int *pediuSair, int *pediuAbrir) {
   FarolAchaPedido okExibido;
   if (pediuSair) *pediuSair = 0;
   if (pediuAbrir) *pediuAbrir = 0;
-  if (!e || e->type != SDL_KEYDOWN) return 0;
+  if (!e) return 0;
+  if (S.modo == FESCUI_OUVINDO && st_evento(e)) return 1;
+  if (e->type != SDL_KEYDOWN) return 0;
+  k = e->key.keysym.sym;
+
+  // Estados de voz, previa e espera (#54): ignorar key.repeat em OK e Voltar.
+  if (S.modo == FESCUI_OUVINDO) {
+    if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE ||
+        k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
+        k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) {
+      if (e->key.repeat != 0) return 1;
+      st_fechar(ST_BUSCA);
+      zerarFrases();
+      entrarPergunta(0);
+      return 1;
+    }
+    return 1;
+  }
+  if (S.modo == FESCUI_PREVIA) {
+    if (k == SDLK_LEFT || k == SDLK_UP) { moverFocoPrevia(-1); return 1; }
+    if (k == SDLK_RIGHT || k == SDLK_DOWN) { moverFocoPrevia(1); return 1; }
+    if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
+      if (e->key.repeat != 0) return 1;
+      if (S.foco == FESCUI_FOCO_CONFIRMAR) {
+        confirmarPrevia();
+      } else if (S.foco == FESCUI_FOCO_VOZ && st_voz_disponivel()) {
+        iniciarVoz();
+      } else {
+        zerarFrases();
+        entrarPergunta(0);
+      }
+      return 1;
+    }
+    if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
+        k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) {
+      if (e->key.repeat != 0) return 1;
+      zerarFrases();
+      entrarPergunta(0);
+      return 1;
+    }
+    return 1;
+  }
+  if (S.modo == FESCUI_ESPERA) {
+    if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE ||
+        k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
+        k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) {
+      if (e->key.repeat != 0) return 1;
+      farolescolha_rede_cancelar();
+      S.redeGen = 0;
+      zerarFrases();
+      entrarPergunta(0);
+      return 1;
+    }
+    return 1;
+  }
+
   if (S.modo != FESCUI_PERGUNTA && S.modo != FESCUI_RESULTADO) return 0;
   // TOCTOU: o OK vale para o cartaz EXIBIDO sob o foco (o que a pessoa viu),
   // nao para o que ocupar o slot depois de garantirResultado() recontar o
@@ -356,13 +533,14 @@ int farolescolhaui_evento(const SDL_Event *e, int *pediuSair, int *pediuAbrir) {
   okVoltar = (S.modo == FESCUI_RESULTADO && S.foco == FESCUI_FOCO_VOLTAR);
   garantirResultado();
   n = nFocaveis();
-  k = e->key.keysym.sym;
   if (k == SDLK_LEFT) {
     if (S.foco > 0) S.foco--;
+    else if (S.foco == FESCUI_FOCO_VOZ) S.foco = FESCUI_FOCO_VOLTAR;
     return 1;
   }
   if (k == SDLK_RIGHT) {
     if (S.foco >= 0 && S.foco + 1 < n) S.foco++;
+    else if (S.foco == FESCUI_FOCO_VOLTAR && podeUsarVoz()) S.foco = FESCUI_FOCO_VOZ;
     return 1;
   }
   if (k == SDLK_DOWN) {
@@ -370,7 +548,7 @@ int farolescolhaui_evento(const SDL_Event *e, int *pediuSair, int *pediuAbrir) {
     return 1;
   }
   if (k == SDLK_UP) {
-    if (S.foco == FESCUI_FOCO_VOLTAR && n > 0)
+    if ((S.foco == FESCUI_FOCO_VOLTAR || S.foco == FESCUI_FOCO_VOZ) && n > 0)
       S.foco = (S.focoAntesVoltar >= 0 && S.focoAntesVoltar < n) ? S.focoAntesVoltar : 0;
     return 1;
   }
@@ -415,15 +593,79 @@ void farolescolhaui_atualizar(float dt, Uint32 agora) {
   int red = ajustes_animacoes_reduzidas(), i;
   (void)agora;
   garantirResultado();
+  if (S.modo == FESCUI_PERGUNTA && S.foco == FESCUI_FOCO_VOZ && !podeUsarVoz())
+    S.foco = FESCUI_FOCO_VOLTAR;
+
+  if (S.modo == FESCUI_OUVINDO) {
+    char buf[FAROL_ESCOLHA_FRASE_BYTES];
+    int valorRec = 0;
+    int r = st_ler_valor(ST_BUSCA, buf, sizeof buf, &valorRec);
+    float nv = st_nivel();
+    S.nivelVoz = red ? nv : anim_mola(S.nivelVoz, nv, dt, 18.0f);
+    if (r == ST_TEXTO) {
+      if (valorRec) snprintf(S.parcial, sizeof S.parcial, "%s", buf);
+    } else if (r == ST_FIM) {
+      if (!farolescolhaui_aplicar_frase(buf)) {
+        st_fechar(ST_BUSCA);
+        zerarFrases();
+        entrarPergunta(0);
+      }
+    } else if (r == ST_PEDE_TECLADO) {
+      if (!(st_ime_disponivel() && st_ime_abrir(ST_BUSCA, S.parcial, FAROL_ESCOLHA_FRASE_MAX))) {
+        st_fechar(ST_BUSCA);
+        zerarFrases();
+        entrarPergunta(0);
+      }
+    } else if (r == ST_CANCELOU) {
+      st_fechar(ST_BUSCA);
+      zerarFrases();
+      entrarPergunta(0);
+    }
+  } else if (S.modo == FESCUI_ESPERA) {
+    FarolEscRedeInfo info;
+    FarolEscRedeEstado st = farolescolha_rede_estado(&info);
+    if (S.redeGen == 0) {
+      zerarFrases();
+      entrarPergunta(0);
+    } else if (st == FER_PRONTO && info.geracao == S.redeGen) {
+      FarolEscRedeResp resp;
+      int ok = farolescolha_rede_resposta(S.redeGen, &resp);
+      S.redeGen = 0;
+      zerarFrases();
+      if (!ok) {
+        entrarPergunta(0);
+      } else {
+        int aplicados = 0;
+        for (i = 0; i < resp.nRespostas && aplicados < FESC_PERG_MAX; i++) {
+          if (farolescolha_pre_responder(&S.motor, resp.respostas[i].perg,
+                                         resp.respostas[i].opcaoId))
+            aplicados++;
+        }
+        if (!farolescolha_terminou(&S.motor) && resp.temFalta)
+          (void)farolescolha_priorizar(&S.motor, resp.faltaPerg);
+        S.nRes = 0;
+        seguir(0);
+      }
+    } else if (st != FER_BUSCANDO || info.geracao != S.redeGen) {
+      S.redeGen = 0;
+      zerarFrases();
+      entrarPergunta(0);
+    }
+  }
+
   for (i = 0; i < FESC_OPC_MAX; i++) {
     float alvo = S.foco == i ? 1.0f : 0.0f;
     S.anim[i] = red ? alvo : anim_mola(S.anim[i], alvo, dt,
                                        alvo > S.anim[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
   }
   {
-    float alvo = S.foco == FESCUI_FOCO_VOLTAR ? 1.0f : 0.0f;
-    S.animVoltar = red ? alvo : anim_mola(S.animVoltar, alvo, dt,
-                                          alvo > S.animVoltar ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+    float aVol  = S.foco == FESCUI_FOCO_VOLTAR    ? 1.0f : 0.0f;
+    float aVoz  = S.foco == FESCUI_FOCO_VOZ       ? 1.0f : 0.0f;
+    float aConf = S.foco == FESCUI_FOCO_CONFIRMAR ? 1.0f : 0.0f;
+    S.animVoltar = red ? aVol  : anim_mola(S.animVoltar, aVol,  dt, aVol  > S.animVoltar ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+    S.animVoz    = red ? aVoz  : anim_mola(S.animVoz,    aVoz,  dt, aVoz  > S.animVoz    ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+    S.animConf   = red ? aConf : anim_mola(S.animConf,   aConf, dt, aConf > S.animConf   ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+    S.pulsoMs    = red ? 0.0f : fmodf(S.pulsoMs + (dt > 0.0f ? dt * 1000.0f : 0.0f), ESC_PULSO_MS);
   }
 }
 
@@ -436,9 +678,9 @@ static void txt_em(TxtEstilo est, const char *s, float x, float y, float maxW,
 
 static void pt_foco(int id, int nada) {
   (void)nada;
-  if (id == FESCUI_FOCO_VOLTAR) {
+  if (id == FESCUI_FOCO_VOLTAR || id == FESCUI_FOCO_VOZ || id == FESCUI_FOCO_CONFIRMAR) {
     if (S.foco >= 0) S.focoAntesVoltar = S.foco;
-    S.foco = FESCUI_FOCO_VOLTAR;
+    S.foco = id;
   } else if (id >= 0 && id < nFocaveis()) {
     S.foco = id;
   }
@@ -557,22 +799,144 @@ static void desenha_resultado(float ox, float oy, float a) {
   }
 }
 
+static void painel_esc(GfxRect r, float raioPx, float a) {
+  if (ajustes_vidro()) {
+    gfx_vidro_painel(r, raioPx / r.h, 0.78f, a);
+  } else {
+    gfx_cor(r, raioPx / r.h, 0.12f, 0.125f, 0.145f, 0.90f * a);
+    gfx_anel(r, raioPx / r.h, 1.0f, 1, 1, 1, 0.08f * a);
+  }
+}
+
+static float pulso_esc(void) {
+  if (ajustes_animacoes_reduzidas()) return 1.0f;
+  return 0.65f + 0.35f * cosf(S.pulsoMs / ESC_PULSO_MS * 6.2831853f);
+}
+
+static void desenha_voz_estado(float ox, float oy, float a) {
+  GfxRect pr = { ox + ESC_MARGEM, oy + ESC_PAINEL_Y, ESC_LARG, ESC_PAINEL_H };
+  float ar, ag, ab;
+  float bx = ox + ESC_MARGEM, by = oy + ESC_VOZ_BTN_Y;
+  const char *tit = "";
+  const char *sub = "";
+
+  ajustes_acento(&ar, &ag, &ab);
+  if (S.modo == FESCUI_OUVINDO) {
+    tit = i18n(FT_OUVINDO);
+    sub = i18n(FT_BUSCA_FRASE_PROMPT);
+  } else if (S.modo == FESCUI_PREVIA) {
+    tit = i18n(FT_VOCE_DISSE);
+    sub = i18n(FT_CONFIRMA_DESCARTA);
+  } else {
+    tit = i18n(FT_ESCOLHENDO);
+    sub = i18n(FT_CONFIRMA_DESCARTA);
+  }
+
+  txt_em(TXT_NOV_TITULO, tit, ox + ESC_MARGEM, oy + 128.0f, ESC_LARG, 248, 249, 252, a);
+  if (sub[0])
+    txt_em(TXT_V2_26, sub, ox + ESC_MARGEM, oy + 206.0f, 1500.0f, 186, 192, 204, a);
+
+  painel_esc(pr, 28.0f, a);
+
+  if (S.modo == FESCUI_OUVINDO) {
+    float p = pulso_esc();
+    float nv = S.nivelVoz > 0.05f ? S.nivelVoz : 0.25f * p;
+    GfxRect micBox = { pr.x + 48.0f, pr.y + (pr.h - 84.0f) * 0.5f, 84.0f, 84.0f };
+    if (nv > 0.02f) {
+      GfxRect halo = { micBox.x - 10.0f, micBox.y - 10.0f, micBox.w + 20.0f, micBox.h + 20.0f };
+      gfx_rect(halo, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.45f * nv * a);
+    }
+    gfx_cor(micBox, 0.5f, ar, ag, ab, 0.22f * a);
+    gfx_anel(micBox, 0.5f, 2.0f, ar, ag, ab, p * a);
+    gfx_icone((GfxRect){ micBox.x + 22.0f, micBox.y + 22.0f, 40.0f, 40.0f },
+              "aj_mic", 0.96f, 0.96f, 0.98f, a);
+    if (S.parcial[0]) {
+      txt_bloco(TXT_ILHA_TITULO, S.parcial, 248, 249, 252,
+                pr.x + 168.0f, pr.y + 84.0f, pr.w - 220.0f, 48.0f, a, 3);
+    } else {
+      txt_em(TXT_V2_26, i18n(FT_BUSCA_FRASE_EXEMPLO),
+             pr.x + 168.0f, pr.y + (pr.h - 32.0f) * 0.5f, pr.w - 220.0f,
+             186, 192, 204, a);
+    }
+  } else if (S.modo == FESCUI_PREVIA) {
+    GfxRect micBox = { pr.x + 48.0f, pr.y + 52.0f, 72.0f, 72.0f };
+    gfx_cor(micBox, 0.36f, 1, 1, 1, 0.08f * a);
+    gfx_icone((GfxRect){ micBox.x + 18.0f, micBox.y + 18.0f, 36.0f, 36.0f },
+              "aj_mic", 0.95f, 0.95f, 0.96f, a);
+    txt_bloco(TXT_ILHA_TITULO, S.frase, 248, 249, 252,
+              pr.x + 156.0f, pr.y + 52.0f, pr.w - 208.0f, 52.0f, a, 3);
+    txt_em(TXT_CAPTION, i18n(FT_CONFIRMA_DESCARTA),
+           pr.x + 156.0f, pr.y + pr.h - 54.0f, pr.w - 208.0f, 166, 172, 184, a);
+  } else {
+    float p = pulso_esc();
+    GfxRect dot = { pr.x + 56.0f, pr.y + 72.0f, 20.0f, 20.0f };
+    gfx_cor(dot, 0.5f, ar, ag, ab, p * a);
+    txt_em(TXT_ILHA_TITULO, i18n(FT_ESCOLHENDO),
+           pr.x + 98.0f, pr.y + 54.0f, pr.w - 150.0f, 248, 249, 252, a);
+    txt_bloco(TXT_V2_26, S.frase, 186, 192, 204,
+              pr.x + 98.0f, pr.y + 132.0f, pr.w - 150.0f, 34.0f, a, 3);
+  }
+
+  if (S.modo == FESCUI_OUVINDO || S.modo == FESCUI_ESPERA) {
+    const char *rotV = i18n(FT_ACAO_VOLTAR);
+    GfxRect rV = { bx, by, botao_largura(rotV, "aj_arrow-left", 1), BOTAO_H_PRIMARIO };
+    botao_pilula(rV, rotV, "aj_arrow-left", S.animVoltar, 1, 0, a);
+    ponteiro_alvo(rV.x, rV.y, rV.w, rV.h, pt_foco, NULL, FESCUI_FOCO_VOLTAR, 0);
+  } else {
+    const char *rotOk = i18n(FT_ACAO_PRONTO);
+    const char *rotFal = i18n(FT_ACAO_FALAR);
+    const char *rotVol = i18n(FT_ACAO_VOLTAR);
+    GfxRect rOk = { bx, by, botao_largura(rotOk, "aj_check", 1), BOTAO_H_PRIMARIO };
+    float x = rOk.x + rOk.w + BOTAO_GAP;
+    botao_pilula(rOk, rotOk, "aj_check", S.animConf, 1, 0, a);
+    ponteiro_alvo(rOk.x, rOk.y, rOk.w, rOk.h, pt_foco, NULL, FESCUI_FOCO_CONFIRMAR, 0);
+    if (st_voz_disponivel()) {
+      GfxRect rFal = { x, by + 8.0f, botao_largura(rotFal, "aj_mic", 0), BOTAO_H_SECUNDARIO };
+      botao_pilula(rFal, rotFal, "aj_mic", S.animVoz, 0, 0, a);
+      ponteiro_alvo(rFal.x, rFal.y, rFal.w, rFal.h, pt_foco, NULL, FESCUI_FOCO_VOZ, 0);
+      x = rFal.x + rFal.w + BOTAO_GAP;
+    }
+    {
+      GfxRect rVol = { x, by + 8.0f, botao_largura(rotVol, "aj_arrow-left", 0), BOTAO_H_SECUNDARIO };
+      botao_pilula(rVol, rotVol, "aj_arrow-left", S.animVoltar, 0, 0, a);
+      ponteiro_alvo(rVol.x, rVol.y, rVol.w, rVol.h, pt_foco, NULL, FESCUI_FOCO_VOLTAR, 0);
+    }
+  }
+}
+
 void farolescolhaui_desenhar(float ox, float oy, float alpha, Uint32 agora) {
   char kick[160];
   const char *rotV = i18n(FT_ACAO_VOLTAR);
   int primario = S.modo == FESCUI_RESULTADO && S.nRes == 0;
   GfxRect rV;
   (void)agora;
-  if (S.modo != FESCUI_PERGUNTA && S.modo != FESCUI_RESULTADO) return;
+  if (S.modo != FESCUI_PERGUNTA && S.modo != FESCUI_RESULTADO &&
+      S.modo != FESCUI_OUVINDO && S.modo != FESCUI_PREVIA && S.modo != FESCUI_ESPERA)
+    return;
   garantirResultado();
   snprintf(kick, sizeof kick, "%s › %s", i18n(FT_NOME), i18n(FT_ACHAR_O_QUE_VER));
   txt_em(TXT_CAPTION, kick, ox + ESC_MARGEM, oy + 96.0f, 1500.0f, 150, 156, 168, alpha);
+  if (S.modo == FESCUI_OUVINDO || S.modo == FESCUI_PREVIA || S.modo == FESCUI_ESPERA) {
+    desenha_voz_estado(ox, oy, alpha);
+    return;
+  }
   if (S.modo == FESCUI_PERGUNTA) desenha_pergunta(ox, oy, alpha);
   else desenha_resultado(ox, oy, alpha);
   rV = (GfxRect){ ox + ESC_MARGEM, oy + ESC_VOLTAR_Y, botao_largura(rotV, "aj_arrow-left", primario),
                   primario ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO };
   botao_pilula(rV, rotV, "aj_arrow-left", S.animVoltar, primario, 0, alpha);
   ponteiro_alvo(rV.x, rV.y, rV.w, rV.h, pt_foco, NULL, FESCUI_FOCO_VOLTAR, 0);
+  if (podeUsarVoz()) {
+    const char *rotFal = i18n(FT_ACAO_FALAR);
+    GfxRect rMic = {
+      rV.x + rV.w + BOTAO_GAP,
+      oy + ESC_VOLTAR_Y,
+      botao_largura(rotFal, "aj_mic", 0),
+      BOTAO_H_SECUNDARIO
+    };
+    botao_pilula(rMic, rotFal, "aj_mic", S.animVoz, 0, 0, alpha);
+    ponteiro_alvo(rMic.x, rMic.y, rMic.w, rMic.h, pt_foco, NULL, FESCUI_FOCO_VOZ, 0);
+  }
 }
 
 // ------------------------------------------------------------ pedidos --
@@ -600,6 +964,9 @@ int farolescolhaui_resultado_indice(int i) {
   return (S.modo == FESCUI_RESULTADO && i >= 0 && i < S.nRes) ? S.resIdx[i] : -1;
 }
 int farolescolhaui_saida(void) { return S.saida; }
+int farolescolhaui_voz_visivel(void) { return podeUsarVoz(); }
+const char *farolescolhaui_frase(void) { return S.frase; }
+const char *farolescolhaui_parcial(void) { return S.parcial; }
 
 void farolescolhaui_teste_hora(int hora) { S.testeHora = hora; }
 void farolescolhaui_teste_infantil(int infantil) { S.testeInfantil = infantil; }

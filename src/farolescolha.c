@@ -95,12 +95,12 @@ static const char *const R_RIR[] = { "comed", "coméd", "comic", "cômic", "sitc
 static const char *const R_EMOC[] = { "drama", "romanc", "romant", "român", "music",
   "músic", "biogra", NULL };
 static const char *const R_TENS[] = { "suspen", "thrill", "terror", "horror", "crime",
-  "myster", "mistér", "polici", NULL };
+  "myster", "mister", "polici", NULL };
 static const char *const R_LEVE[] = { "comed", "coméd", "comic", "cômic", "sitcom",
   "anima", "famil", "famíl", "infant", "kids", "crian", "aventur", "advent", "fantas",
   "music", "músic", "romanc", "romant", "român", NULL };
 static const char *const R_INTENSO[] = { "suspen", "thrill", "terror", "horror", "crime",
-  "myster", "mistér", "polici", "drama", "guerra", "action", "ação", "acao",
+  "myster", "mister", "polici", "drama", "guerra", "action", "ação", "acao",
   "faroeste", "western", NULL };
 // Palavras INTEIRAS (sem radical): "war" nao pode casar "Warner" nem
 // "Warcraft" — a fronteira tem de valer nos dois lados.
@@ -310,6 +310,10 @@ static void escolher(FarolEsc *e) {
     if (g > melhorG) { melhorG = g; melhor = p; }
   }
   if (melhor < 0) { terminar(e); return; }
+  if (e->falta >= 0 && e->falta < FESC_N && !pulada(e, e->falta)) {
+    long long gf = 0;
+    if (oferecer(e, e->falta, NULL, &gf) >= 1 && gf > 0) melhor = e->falta;
+  }
   e->perg = melhor;
   e->nOpc = oferecer(e, melhor, e->opc, NULL);
   e->opc[e->nOpc++] = farolescolha_tanto(melhor);
@@ -325,6 +329,7 @@ void farolescolha_iniciar(FarolEsc *e, const FarolEscCand *cand, int n,
   e->nCand = cand ? (n < 0 ? 0 : (n > FESC_CAND_MAX ? FESC_CAND_MAX : n)) : 0;
   e->ctx.hora = -1;
   e->ctx.emAndamento = 1;
+  e->falta = -1;
   if (ctx) e->ctx = *ctx;
   for (p = 0; p < FESC_N; p++) e->resp[p] = FESC_SEM_RESP;
   // O que o contexto responde sai do banco (sem filtrar: quem monta a lista
@@ -355,6 +360,17 @@ int farolescolha_pre_responder(FarolEsc *e, int perg, const char *opcaoId) {
   e->orig[perg] = FESC_ORIG_PRE;
   e->nPre++;
   refazerVivos(e);
+  escolher(e);
+  return 1;
+}
+
+int farolescolha_priorizar(FarolEsc *e, int perg) {
+  long long g = 0;
+  if (!e || e->perg < 0 || e->nPilha > 0 || !pergValida(perg) || pulada(e, perg))
+    return 0;
+  if (oferecer(e, perg, NULL, &g) < 1 || g <= 0)
+    return 0;
+  e->falta = (int8_t)perg;
   escolher(e);
   return 1;
 }
