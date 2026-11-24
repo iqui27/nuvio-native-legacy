@@ -31,7 +31,8 @@ base="http://127.0.0.1:$(cat "$tmp/port")"
   src/redeurl.c \
   -o "$tmp/cliente"
 
-"$tmp/cliente" "$base" "$tmp/dados" >"$tmp/log" 2>&1
+"$tmp/cliente" "$base" "$tmp/dados" >"$tmp/log" 2>&1 || { cat "$tmp/log"; exit 1; }
+grep '^ok  ' "$tmp/log" || true
 
 # Auditoria pos-execucao sobre corpos HTTP capturados e logs (zero canario/token/URL):
 python3 - "$tmp/log" "$base" "$tmp/capture.jsonl" <<'PY'

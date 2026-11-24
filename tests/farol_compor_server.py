@@ -36,6 +36,8 @@ STATE = {
     "scenario": "ok_home",
     "delay_s": 0.0,
     "hits": 0,
+    "last_raw": b"",
+    "last_perfil": "",
 }
 
 def validate_request(raw_bytes):
@@ -78,6 +80,7 @@ def validate_request(raw_bytes):
     if len(cands) > 24:
         raise ValueError(f"too many candidates: {len(cands)}")
     anchor_ids = {a.get("id") for a in ancoras}
+    cited = set()
     for i, c in enumerate(cands):
         cextra = set(c.keys()) - ALLOWED_CAND_KEYS
         if cextra:
@@ -94,8 +97,13 @@ def validate_request(raw_bytes):
             if t in ("FMO_AMIGO", "FMO_RECOMENDADO"):
                 if m.get("a") != 0 or m.get("b") != 0 or "quem" in m or "nome" in m:
                     raise ValueError(f"friend motif not anonymized: {m}")
-            if t == "FMO_TERMINOU" and m.get("id") not in anchor_ids:
-                raise ValueError(f"dangling FMO_TERMINOU anchor: {m.get('id')}")
+            if t == "FMO_TERMINOU":
+                if m.get("id") not in anchor_ids:
+                    raise ValueError(f"dangling FMO_TERMINOU anchor: {m.get('id')}")
+                cited.add(m.get("id"))
+    # PLANO-GOSTO 5.3: so ancora citada por motivo de candidato enviado.
+    if anchor_ids - cited:
+        raise ValueError(f"unreferenced anchors: {sorted(anchor_ids - cited)}")
     return doc
 
 def build_response(scenario):
@@ -266,6 +274,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 out = {"hits": STATE["hits"], "scenario": STATE["scenario"]}
             self._send(200, json.dumps(out))
             return
+        if parsed.path == "/__last_raw":
+            with LOCK:
+                raw = STATE["last_raw"]
+            self._send(200, raw)
+            return
+        if parsed.path == "/__last_perfil":
+            with LOCK:
+                perfil = STATE["last_perfil"]
+            self._send(200, perfil)
+            return
         self._send(404, '{"erro":"not found"}')
 
     def do_POST(self):
@@ -291,6 +309,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         with LOCK:
             STATE["hits"] += 1
+            STATE["last_raw"] = raw
+            STATE["last_perfil"] = self.headers.get("X-Nuvio-Perfil", "")
             sc = STATE["scenario"]
             delay_s = STATE["delay_s"]
 

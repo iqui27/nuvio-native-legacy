@@ -16,6 +16,11 @@
 //     <=24 candidatos (id/tipo/titulo/ano/generos/minutos/motivos estruturados
 //     com motivo de amigo SEMPRE anonimizado), fatos opcionais (incluindo frase
 //     ditada sanitizada quando aplicavel), infantil e consentiu.
+//   - Credenciais (que podem renovar JWT por HTTP) sao resolvidas DENTRO do
+//     fio do job, ja registrado e cancelavel, no mesmo prazo de 6 s; logo
+//     antes do POST os bloqueios sao conferidos de novo (job vivo, mesma
+//     geracao/perfil/sessao/conta, player fechado, nao infantil, consentimento)
+//     e qualquer mudanca aborta com zero bytes enviados.
 //   - NUNCA envia Diario cru, notas/datas, nome ou ID de perfil, amigos,
 //     addons/fontes ou vetor completo de gosto.
 //   - Falha de rede, offline, 429, 5xx, timeout, JSON invalido, referencia nao
@@ -152,6 +157,13 @@ int  farolcompor_consentimento(void);
 
 // Funcoes puras (serializacao, extracao do gosto e validacao da resposta):
 size_t farolcompor_montar_corpo(const FarolComporPedido *ped, char *dst, size_t cap);
+// Igual a farolcompor_montar_corpo, e devolve o mapa EXATO do corpo:
+// mapaOut[k] = indice em ped->candidatos do candidato escrito como "c<k>"
+// (sanitizacao e teto de 12 KB descartam candidatos e compactam os cN).
+// `gosto.ancoras` so leva ancora citada por FMO_TERMINOU de candidato
+// efetivamente escrito. mapaOut precisa de FAROL_COMPOR_CAND_MAX posicoes.
+size_t farolcompor_montar_corpo_mapa(const FarolComporPedido *ped, char *dst, size_t cap,
+                                     int *mapaOut, int *nMapaOut);
 int farolcompor_validar_resposta(FarolComporModo modo, const char *json, size_t len,
                                  const FarolComporCand *cand, int nCand,
                                  FarolCena *cenaOut, int *ehRegrasOut);
