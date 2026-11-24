@@ -87,6 +87,7 @@ typedef struct {
   unsigned         prazoMs;
   int              cancelar;
   int              usouTrakt;
+  int              bloqueou;   // contexto mudou (atomico: pode vir do fio da rede)
   FarolComporModo  modo;
   int              perfil;
   uint64_t         sessao;
@@ -571,16 +572,46 @@ static int motivoTipoNome(uint8_t tipo, const char **nomeOut) {
   }
 }
 
-static int ancoraContem(const char ancoras[][20], int nAnc, const char *tt) {
-  int i;
-  if (!tt || !tt[0]) return 0;
-  for (i = 0; i < nAnc; i++) if (!strcmp(ancoras[i], tt)) return 1;
-  return 0;
+// Ancoras ELEGIVEIS do pedido (<= 3, id IMDb valido, titulo publico seguro,
+// sem duplicata). `deEntrada[i]` leva o indice de ped->ancoras[i] (o `a` de
+// FMO_TERMINOU) a posicao elegivel, ou -1. O corpo so publica a ancora que
+// algum motivo FMO_TERMINOU de candidato EFETIVAMENTE enviado referencia.
+typedef struct {
+  int  n;
+  char id[FAROL_COMPOR_ANCORA_MAX][20];
+  char titulo[FAROL_COMPOR_ANCORA_MAX][104];
+  int  deEntrada[FAROL_COMPOR_CAND_MAX];
+  int  nEntrada;
+} AncorasElegiveis;
+
+static void ancorasElegiveis(const FarolComporPedido *ped, AncorasElegiveis *ae) {
+  int i, k;
+  memset(ae, 0, sizeof *ae);
+  if (!ped->ancoras || ped->nAncoras <= 0) return;
+  ae->nEntrada = ped->nAncoras < FAROL_COMPOR_CAND_MAX ? ped->nAncoras : FAROL_COMPOR_CAND_MAX;
+  for (i = 0; i < ae->nEntrada; i++) {
+    ae->deEntrada[i] = -1;
+    if (!imdbValido(ped->ancoras[i].id)) continue;
+    for (k = 0; k < ae->n; k++)
+      if (!strcmp(ae->id[k], ped->ancoras[i].id)) break;
+    if (k < ae->n) { ae->deEntrada[i] = k; continue; }
+    if (ae->n >= FAROL_COMPOR_ANCORA_MAX) continue;
+    if (!textoSeguroLimpar(ped->ancoras[i].titulo, ae->titulo[ae->n],
+                           sizeof ae->titulo[ae->n], 96, 0))
+      continue;
+    snprintf(ae->id[ae->n], sizeof ae->id[ae->n], "%s", ped->ancoras[i].id);
+    ae->deEntrada[i] = ae->n++;
+  }
 }
 
+static int ancoraDoMotivo(const AncorasElegiveis *ae, int32_t a) {
+  if (!ae || a < 0 || a >= ae->nEntrada) return -1;
+  return ae->deEntrada[a];
+}
+
+// `usadas` (opcional) recebe o bit de cada ancora elegivel referenciada.
 static void escCandidato(Esc *e, int idx, const FarolComporCand *c,
-                         const char ancoraIds[FAROL_COMPOR_ANCORA_MAX][20],
-                         int nAnc) {
+                         const AncorasElegiveis *ae, unsigned *usadas) {
   char idPub[32], titulo[124];
   int hasGen = 0, hasMot = 0, i;
   const char *cStr;
@@ -644,14 +675,15 @@ static void escCandidato(Esc *e, int idx, const FarolComporCand *c,
       escStr(e, tn);
       escLit(e, ",\"a\":0,\"b\":0}");
     } else if (mo->tipo == FMO_TERMINOU) {
-      // So referencia ancora explicitamente enviada (nunca semente/diario fora das <=3 ancoras).
-      if (mo->a < 0 || mo->a >= nAnc || !ancoraContem(ancoraIds, nAnc, ancoraIds[mo->a]))
-        continue;
+      // So referencia ancora elegivel (nunca semente/diario fora das <=3 ancoras).
+      int k = ancoraDoMotivo(ae, mo->a);
+      if (k < 0) continue;
       escLit(e, !hasMot ? ",\"motivos\":[" : ",");
       hasMot = 1;
       escLit(e, "{\"tipo\":\"FMO_TERMINOU\",\"id\":");
-      escStr(e, ancoraIds[mo->a]);
+      escStr(e, ae->id[k]);
       escLit(e, "}");
+      if (usadas) *usadas |= 1u << k;
     } else if (mo->tipo == FMO_GENERO || mo->tipo == FMO_FORA_CURVA ||
                mo->tipo == FMO_PESSOA || mo->tipo == FMO_TEMA) {
       if (mo->a <= 0) continue; // apenas IDs publicos TMDB > 0
@@ -722,21 +754,25 @@ static int fatoChaveValida(const char *k) {
   return 1;
 }
 
-size_t farolcompor_montar_corpo(const FarolComporPedido *ped, char *dst, size_t cap) {
+// Uma passada de escrita. `forcados` != NULL: escreve EXATAMENTE esses
+// candidatos de entrada (na ordem, como c0..k-1) e publica so as ancoras do
+// bit `ancMask`; NULL: seleciona sob o teto de 12 KB, publicando todas as
+// ancoras elegiveis (cota superior do cabecalho). `mapa[k]` recebe o indice
+// de entrada do candidato escrito como "c<k>"; `usadas`, as ancoras que os
+// motivos dos candidatos ESCRITOS referenciam.
+static size_t montarCorpoPassada(const FarolComporPedido *ped, const AncorasElegiveis *ae,
+                                 unsigned ancMask, const int *forcados, int nForcados,
+                                 char *dst, size_t cap, int *mapa, int *nMapa,
+                                 unsigned *usadas) {
   const char *modoStr, *idiStr;
   char fraseNorm[FAROL_COMPOR_FRASE_MAX + 4];
-  char ancoraIds[FAROL_COMPOR_ANCORA_MAX][20];
-  int nAnc = 0, hora, fimSem = 0, nivel, i, candEscritos = 0, fatosEscritos = 0;
+  int hora, fimSem = 0, nivel, i, k, candEscritos = 0, fatosEscritos = 0, nAncEsc = 0;
   size_t lim;
   Esc e;
 
-  if (dst && cap) dst[0] = '\0';
-  if (!ped || !dst || cap < 64) return 0;
-  // Requisito de privacidade: suprimir pedido quando infantil ou sem consentimento.
-  if (ped->infantil || !ped->consentiu) return 0;
+  *nMapa = 0;
+  *usadas = 0;
   modoStr = modoNome(ped->modo);
-  if (!modoStr) return 0;
-
   idiStr = (ped->idioma && idiomaValido(ped->idioma)) ? ped->idioma : "pt-BR";
   if (ped->hora >= 0 && ped->hora <= 7) {
     hora = ped->hora;
@@ -780,50 +816,56 @@ size_t farolcompor_montar_corpo(const FarolComporPedido *ped, char *dst, size_t 
   escListaAfin(&e, "temas", ped->temas, ped->nTemas, FAROL_COMPOR_TEMA_MAX, 0);
   escListaAfin(&e, "pessoas", ped->pessoas, ped->nPessoas, FAROL_COMPOR_PESSOA_MAX, 0);
 
-  // <= 3 ancoras publicas referenciadas
-  if (ped->ancoras && ped->nAncoras > 0) {
-    for (i = 0; i < ped->nAncoras && nAnc < FAROL_COMPOR_ANCORA_MAX; i++) {
-      char tit[104];
-      if (!imdbValido(ped->ancoras[i].id) ||
-          ancoraContem(ancoraIds, nAnc, ped->ancoras[i].id))
-        continue;
-      if (!textoSeguroLimpar(ped->ancoras[i].titulo, tit, sizeof tit, 96, 0))
-        continue;
-      escLit(&e, nAnc == 0 ? ",\"ancoras\":[" : ",");
-      escLit(&e, "{\"id\":");
-      escStr(&e, ped->ancoras[i].id);
-      escLit(&e, ",\"titulo\":");
-      escStr(&e, tit);
-      escLit(&e, "}");
-      snprintf(ancoraIds[nAnc], sizeof ancoraIds[nAnc], "%s", ped->ancoras[i].id);
-      nAnc++;
-    }
-    if (nAnc > 0) escLit(&e, "]");
+  // <= 3 ancoras publicas (na passada final: SO as referenciadas por motivo enviado)
+  for (k = 0; k < ae->n; k++) {
+    if (!(ancMask & (1u << k))) continue;
+    escLit(&e, nAncEsc == 0 ? ",\"ancoras\":[" : ",");
+    escLit(&e, "{\"id\":");
+    escStr(&e, ae->id[k]);
+    escLit(&e, ",\"titulo\":");
+    escStr(&e, ae->titulo[k]);
+    escLit(&e, "}");
+    nAncEsc++;
   }
+  if (nAncEsc > 0) escLit(&e, "]");
   escLit(&e, "}");
   if (e.erro) { dst[0] = '\0'; return 0; }
 
-  // --- candidatos (<= 24, preserva indice cN 0..k-1 e teto de 12 KB) ---
+  // --- candidatos (<= 24, cN compactado 0..k-1 e teto de 12 KB) ---
   escLit(&e, ",\"candidatos\":[");
   if (ped->candidatos && ped->nCandidatos > 0) {
     // Reserva margem para fatos/frase + fechamento ("]," + "fatos":[...] + "}").
     size_t reservaCauda = 256 + (fraseNorm[0] ? strlen(fraseNorm) * 2 + 32 : 0);
-    for (i = 0; i < ped->nCandidatos && candEscritos < FAROL_COMPOR_CAND_MAX; i++) {
+    int nIt = forcados ? nForcados : ped->nCandidatos;
+    for (k = 0; k < nIt && candEscritos < FAROL_COMPOR_CAND_MAX; k++) {
+      int iEnt = forcados ? forcados[k] : k;
       size_t marcaN = e.n;
+      unsigned usadasCand = 0;
       Esc probe;
       char candBuf[1024];
+      if (iEnt < 0 || iEnt >= ped->nCandidatos) { dst[0] = '\0'; return 0; }
       probe.buf = candBuf;
       probe.n = 0;
       probe.cap = sizeof candBuf;
       probe.erro = 0;
       candBuf[0] = '\0';
-      escCandidato(&probe, candEscritos, &ped->candidatos[i], ancoraIds, nAnc);
-      if (probe.erro || probe.n == 0) continue;
-      if (e.n + probe.n + (candEscritos > 0 ? 1 : 0) + reservaCauda >= e.cap)
+      escCandidato(&probe, candEscritos, &ped->candidatos[iEnt], ae, &usadasCand);
+      if (probe.erro || probe.n == 0) {
+        if (forcados) { dst[0] = '\0'; return 0; }
+        continue;
+      }
+      if (e.n + probe.n + (candEscritos > 0 ? 1 : 0) + reservaCauda >= e.cap) {
+        if (forcados) { dst[0] = '\0'; return 0; }
         break; // para no candidato anterior antes de passar dos 12 KB
+      }
       if (candEscritos > 0) escLit(&e, ",");
       escLit(&e, candBuf);
-      if (e.erro) { e.n = marcaN; dst[e.n] = '\0'; e.erro = 0; break; }
+      if (e.erro) {
+        if (forcados) { dst[0] = '\0'; return 0; }
+        e.n = marcaN; dst[e.n] = '\0'; e.erro = 0; break;
+      }
+      mapa[candEscritos] = iEnt;
+      *usadas |= usadasCand;
       candEscritos++;
     }
   }
@@ -884,7 +926,47 @@ size_t farolcompor_montar_corpo(const FarolComporPedido *ped, char *dst, size_t 
     dst[0] = '\0';
     return 0;
   }
+  *nMapa = candEscritos;
   return e.n;
+}
+
+size_t farolcompor_montar_corpo_mapa(const FarolComporPedido *ped, char *dst, size_t cap,
+                                     int *mapaOut, int *nMapaOut) {
+  AncorasElegiveis ae;
+  int mapa[FAROL_COMPOR_CAND_MAX], mapa2[FAROL_COMPOR_CAND_MAX];
+  int nMapa = 0, nMapa2 = 0, k;
+  unsigned usadas = 0, usadas2 = 0;
+  size_t n;
+
+  if (nMapaOut) *nMapaOut = 0;
+  if (dst && cap) dst[0] = '\0';
+  if (!ped || !dst || cap < 64) return 0;
+  // Requisito de privacidade: suprimir pedido quando infantil ou sem consentimento.
+  if (ped->infantil || !ped->consentiu) return 0;
+  if (!modoNome(ped->modo)) return 0;
+
+  ancorasElegiveis(ped, &ae);
+  // 1a passada: escolhe os candidatos sob o teto com o cabecalho MAIOR
+  // possivel (todas as ancoras elegiveis) e descobre quais ancoras os
+  // motivos dos candidatos escolhidos citam.
+  n = montarCorpoPassada(ped, &ae, (1u << ae.n) - 1u, NULL, 0, dst, cap,
+                         mapa, &nMapa, &usadas);
+  if (n == 0) return 0;
+  // 2a passada (final): o MESMO conjunto, na mesma ordem, e so as ancoras
+  // referenciadas. O cabecalho so encolhe, entao todo candidato cabe de novo.
+  n = montarCorpoPassada(ped, &ae, usadas, mapa, nMapa, dst, cap,
+                         mapa2, &nMapa2, &usadas2);
+  if (n == 0 || nMapa2 != nMapa || usadas2 != usadas) { dst[0] = '\0'; return 0; }
+  for (k = 0; k < nMapa; k++) {
+    if (mapa2[k] != mapa[k]) { dst[0] = '\0'; return 0; }
+    if (mapaOut) mapaOut[k] = mapa[k];
+  }
+  if (nMapaOut) *nMapaOut = nMapa;
+  return n;
+}
+
+size_t farolcompor_montar_corpo(const FarolComporPedido *ped, char *dst, size_t cap) {
+  return farolcompor_montar_corpo_mapa(ped, dst, cap, NULL, NULL);
 }
 
 // ------------------------------------------------- validacao da resposta ----
@@ -1419,20 +1501,81 @@ static int jobCancelado(ComporJob *j) {
   return sim;
 }
 
+static int suprimidoAgora(void);
+
+// 1 quando o contexto que autorizou o job deixou de valer: player aberto,
+// perfil infantil, sem consentimento, modo seguro, "Recomendar" desligado ou
+// outro perfil/sessao/conta. Sem I/O; chamada fora da `trava`.
+static int contextoMudou(ComporJob *j) {
+  if (suprimidoAgora() || perfilAtualValido() != j->perfil ||
+      perfis_sessao_geracao() != j->sessao || contaAtualHash() != j->contaHash) {
+    __atomic_store_n(&j->bloqueou, 1, __ATOMIC_RELEASE);
+    return 1;
+  }
+  return 0;
+}
+
+static int jobBloqueou(ComporJob *j) {
+  return __atomic_load_n(&j->bloqueou, __ATOMIC_ACQUIRE);
+}
+
+// Parada do job: cancelado/superado, prazo de 6 s (que inclui a resolucao das
+// credenciais) ou contexto que mudou. Vale para a renovacao de JWT (gancho
+// por fio de rede_parar_trocar) e para o POST (RedePedido.parar).
 static int comporParar(void *u) {
   ComporJob *j = (ComporJob *)u;
-  return jobCancelado(j) || agoraMs() >= j->fim;
+  return jobCancelado(j) || agoraMs() >= j->fim || contextoMudou(j);
 }
+
+static int obterAuth(char *aut, size_t na, char *via, size_t nv,
+                     char *perfilCab, size_t np, int *usouTrakt);
 
 static void *executarCompor(void *u) {
   ComporJob *j = (ComporJob *)u;
   const char *cab[5];
-  int nc = 0, http = 0;
-  int cancelado = 0, prazoEstourou = 0, transporteFalhou = 0;
+  int nc = 0, http = 0, authOk = 0, usouTrakt = 0;
+  int cancelado = 0, prazoEstourou = 0, transporteFalhou = 0, bloqueado = 0;
   char *respCorpo = NULL;
   size_t respLen = 0;
+  long long restaMs;
   FarolCena parsed;
   int ehRegras = 0, valRc = -1;
+
+  // 1. Credenciais DENTRO do job ja registrado: recomenda_cabecalhos pode
+  //    renovar o JWT por HTTP (sessao.c); o gancho por fio faz essa rede
+  //    obedecer ao cancelamento, ao prazo de 6 s e a mudanca de contexto.
+  if (!jobCancelado(j) && !contextoMudou(j)) {
+    RedePararEstado prev = rede_parar_trocar(comporParar, j);
+    authOk = obterAuth(j->aut, sizeof j->aut, j->via, sizeof j->via,
+                       j->perfilCab, sizeof j->perfilCab, &usouTrakt);
+    rede_parar_trocar(prev.parar, prev.usuario);
+  }
+  j->usouTrakt = usouTrakt;
+
+  // 2. Revalida TODOS os bloqueios imediatamente antes de abrir o POST.
+  if (jobCancelado(j)) cancelado = 1;
+  else if (jobBloqueou(j) || contextoMudou(j)) bloqueado = 1;
+  else if (agoraMs() >= j->fim) prazoEstourou = 1;
+  else if (!authOk) transporteFalhou = 1;
+  if (!cancelado && !bloqueado && !prazoEstourou && !transporteFalhou) {
+    // A cota Home (1/dia local/perfil) so e gasta quando o POST vai sair.
+    pthread_mutex_lock(&trava);
+    if (j->cancelar || j->gen != geracaoAtual) {
+      cancelado = 1;
+    } else if (j->modo == FC_MODO_HOME) {
+      homeDiaMem.perfil = j->perfil;
+      homeDiaMem.contaHash = j->contaHash;
+      homeDiaMem.diaLocal = j->diaLocal;
+    }
+    pthread_mutex_unlock(&trava);
+    if (!cancelado && j->modo == FC_MODO_HOME)
+      gravarMetaDia(j->perfil, j->diaLocal, j->quando, j->contaHash);
+  }
+  restaMs = j->fim - agoraMs();
+  if (!cancelado && !bloqueado && !prazoEstourou && !transporteFalhou && restaMs <= 0)
+    prazoEstourou = 1;
+  if (cancelado || bloqueado || prazoEstourou || transporteFalhou)
+    goto depositar; // zero bytes enviados
 
   if (j->aut[0]) cab[nc++] = j->aut;
   if (j->via[0]) cab[nc++] = j->via;
@@ -1445,12 +1588,14 @@ static void *executarCompor(void *u) {
 #ifdef __EMSCRIPTEN__
   {
     RedePararEstado prev = rede_parar_trocar(comporParar, j);
-    int seg = (int)((j->prazoMs + 999u) / 1000u);
+    int seg = (int)((restaMs + 999LL) / 1000LL);
     if (seg < 1) seg = 1;
     respCorpo = rede_postar_st(j->url, seg, cab, j->corpo, &http);
     rede_parar_trocar(prev.parar, prev.usuario);
     if (jobCancelado(j)) {
       cancelado = 1;
+    } else if (jobBloqueou(j)) {
+      bloqueado = 1;
     } else if (agoraMs() >= j->fim && http == 0) {
       prazoEstourou = 1;
     } else if (!respCorpo || http == 0) {
@@ -1470,7 +1615,7 @@ static void *executarCompor(void *u) {
     req.cabecalhos = cab;
     req.corpo = j->corpo;
     req.n_corpo = j->nCorpo;
-    req.prazo_ms = j->prazoMs;
+    req.prazo_ms = (unsigned)restaMs;
     req.max_bytes = FAROL_CENA_MAX + 512u; // rejeita > 8 KB na validacao tambem
     req.max_cabecalhos = 8192u;
     req.seguir = 0;
@@ -1481,6 +1626,8 @@ static void *executarCompor(void *u) {
     http = res.status;
     if (jobCancelado(j)) {
       cancelado = 1;
+    } else if (jobBloqueou(j)) {
+      bloqueado = 1;
     } else if (res.erro == REDE_PRAZO ||
                (res.erro == REDE_CANCELADO && agoraMs() >= j->fim)) {
       prazoEstourou = 1;
@@ -1497,15 +1644,16 @@ static void *executarCompor(void *u) {
   }
 #endif
 
-  if (!cancelado && !prazoEstourou && !transporteFalhou && http == 200 && respCorpo) {
+  if (!cancelado && !bloqueado && !prazoEstourou && !transporteFalhou && http == 200 && respCorpo) {
     valRc = farolcompor_validar_resposta(j->modo, respCorpo, respLen,
                                          j->cand, j->nCand, &parsed, &ehRegras);
   }
   free(respCorpo);
 
-  if (!cancelado && http == 401 && j->usouTrakt)
+  if (!cancelado && !bloqueado && http == 401 && j->usouTrakt)
     trakt_http_recusada();
 
+depositar:
   // O worker NAO adota diretamente nem toca UI: apenas deposita em `pendente`
   // se a geracao ainda e atual. O fio principal adota em `farolcompor_passo()`.
   pthread_mutex_lock(&trava);
@@ -1515,6 +1663,12 @@ static void *executarCompor(void *u) {
       estadoAtual.estado = FC_CANCELADO;
       estadoAtual.motivo = FC_MOT_CANCELADO;
       estadoAtual.http = 0;
+      estadoAtual.preservaRegra = 1;
+    } else if (bloqueado) {
+      estadoAtual.estado = FC_SUPRIMIDO;
+      estadoAtual.motivo = FC_MOT_SUPRIMIDO;
+      estadoAtual.http = 0;
+      estadoAtual.doCache = 0;
       estadoAtual.preservaRegra = 1;
     } else if (valRc > 0) {
       memset(&pendente, 0, sizeof pendente);
@@ -1666,14 +1820,20 @@ static void copiarCandParaSlot(CenaSlot *dst, const FarolComporCand *src, int nC
 
 int farolcompor_pedir(const FarolComporPedido *ped) {
   char corpoBuf[FAROL_COMPOR_CORPO_MAX + 1];
-  char baseUrl[384], aut[3200], via[64], perfilCab[64];
+  char baseUrl[384];
   size_t nCorpo;
-  int perfil, diaLocal, usouTrakt = 0, consentiu, infantil;
-  uint64_t sessao, contaHash;
+  int perfil, diaLocal, consentiu, infantil, k;
+  int mapa[FAROL_COMPOR_CAND_MAX], nMapa = 0;
+  uint64_t sessao, contaHash, gen0;
   long long agora;
   FarolComporPedido copia;
 
   if (!ped || !modoNome(ped->modo)) return 0;
+  // O job fica vinculado a esta geracao desde o inicio: qualquer troca de
+  // perfil/cancelamento ate o registro do job aborta o pedido.
+  pthread_mutex_lock(&trava);
+  gen0 = geracaoAtual;
+  pthread_mutex_unlock(&trava);
   perfil = perfilAtualValido();
   sessao = perfis_sessao_geracao();
   contaHash = contaAtualHash();
@@ -1771,7 +1931,7 @@ int farolcompor_pedir(const FarolComporPedido *ped) {
   if (!copia.idioma || !idiomaValido(copia.idioma))
     copia.idioma = ajustes_tmdb_idioma();
 
-  nCorpo = farolcompor_montar_corpo(&copia, corpoBuf, sizeof corpoBuf);
+  nCorpo = farolcompor_montar_corpo_mapa(&copia, corpoBuf, sizeof corpoBuf, mapa, &nMapa);
   if (nCorpo == 0) {
     pthread_mutex_lock(&trava);
     estadoAtual.estado = FC_REGRAS;
@@ -1781,10 +1941,10 @@ int farolcompor_pedir(const FarolComporPedido *ped) {
     return 0;
   }
 
-  if (rede_saude_offline() ||
-      !obterBaseUrl(baseUrl, sizeof baseUrl) ||
-      !obterAuth(aut, sizeof aut, via, sizeof via, perfilCab, sizeof perfilCab, &usouTrakt)) {
-    memset(aut, 0, sizeof aut);
+  // Credenciais NAO sao resolvidas aqui (podem fazer HTTP fora do controle de
+  // cancelamento): o worker resolve dentro do job registrado.
+  if (rede_saude_offline() || !obterBaseUrl(baseUrl, sizeof baseUrl)) {
+    memset(corpoBuf, 0, sizeof corpoBuf);
     pthread_mutex_lock(&trava);
     estadoAtual.estado = FC_REGRAS;
     estadoAtual.motivo = FC_MOT_OFFLINE;
@@ -1805,21 +1965,17 @@ int farolcompor_pedir(const FarolComporPedido *ped) {
     pthread_t fio;
     int erro, attrOk;
 
-    if (!j) { memset(aut, 0, sizeof aut); return 0; }
+    if (!j) { memset(corpoBuf, 0, sizeof corpoBuf); return 0; }
     j->corpo = (char *)malloc(nCorpo + 1);
-    if (!j->corpo) { memset(aut, 0, sizeof aut); limparJob(j); return 0; }
+    if (!j->corpo) { memset(corpoBuf, 0, sizeof corpoBuf); limparJob(j); return 0; }
     memcpy(j->corpo, corpoBuf, nCorpo + 1);
+    memset(corpoBuf, 0, sizeof corpoBuf);
     j->nCorpo = nCorpo;
 
     nBase = strlen(baseUrl);
     while (nBase > 0 && baseUrl[nBase - 1] == '/') baseUrl[--nBase] = '\0';
     snprintf(j->url, sizeof j->url, "%s/v1/farol/compor", baseUrl);
-    snprintf(j->aut, sizeof j->aut, "%s", aut);
-    snprintf(j->via, sizeof j->via, "%s", via);
-    snprintf(j->perfilCab, sizeof j->perfilCab, "%s", perfilCab);
-    memset(aut, 0, sizeof aut);
 
-    j->usouTrakt = usouTrakt;
     j->modo = ped->modo;
     j->perfil = perfil;
     j->sessao = sessao;
@@ -1829,18 +1985,27 @@ int farolcompor_pedir(const FarolComporPedido *ped) {
     j->quando = agora;
     j->prazoMs = FAROL_COMPOR_PRAZO_MS;
     j->fim = agoraMs() + (long long)j->prazoMs;
-    j->nCand = (ped->candidatos && ped->nCandidatos > 0)
-                 ? (ped->nCandidatos > FAROL_COMPOR_CAND_MAX
-                      ? FAROL_COMPOR_CAND_MAX : ped->nCandidatos)
-                 : 0;
-    if (j->nCand > 0)
-      memcpy(j->cand, ped->candidatos, (size_t)j->nCand * sizeof ped->candidatos[0]);
+    // A lista do job e a COMPACTADA que entrou no corpo: "c<k>" do JSON ->
+    // j->cand[k], 1-para-1, mesmo quando sanitizacao/teto descartaram.
+    j->nCand = nMapa;
+    for (k = 0; k < nMapa; k++) j->cand[k] = ped->candidatos[mapa[k]];
 
     attrOk = pthread_attr_init(&attr) == 0;
     if (!attrOk) { limparJob(j); return 0; }
     erro = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
     pthread_mutex_lock(&trava);
+    if (geracaoAtual != gen0) {
+      // Cancelado/trocado de perfil enquanto o corpo era montado.
+      estadoAtual.estado = FC_CANCELADO;
+      estadoAtual.motivo = FC_MOT_CANCELADO;
+      estadoAtual.http = 0;
+      estadoAtual.preservaRegra = 1;
+      pthread_mutex_unlock(&trava);
+      pthread_attr_destroy(&attr);
+      limparJob(j);
+      return 0;
+    }
     if (jobAtual) { jobAtual->cancelar = 1; jobAtual = NULL; }
     geracaoAtual++;
     j->gen = geracaoAtual;
@@ -1857,11 +2022,6 @@ int farolcompor_pedir(const FarolComporPedido *ped) {
       estadoAtual.doCache = 0;
       estadoAtual.preservaRegra = 1;
       estadoAtual.geracao = geracaoAtual;
-      if (ped->modo == FC_MODO_HOME) {
-        homeDiaMem.perfil = perfil;
-        homeDiaMem.contaHash = contaHash;
-        homeDiaMem.diaLocal = diaLocal;
-      }
       erro = pthread_create(&fio, &attr, executarCompor, j);
       if (erro) {
         if (jobAtual == j) jobAtual = NULL;
@@ -1878,8 +2038,6 @@ int farolcompor_pedir(const FarolComporPedido *ped) {
     pthread_attr_destroy(&attr);
 
     if (erro) { limparJob(j); return 0; }
-    if (ped->modo == FC_MODO_HOME)
-      gravarMetaDia(perfil, diaLocal, agora, contaHash);
     return 1;
   }
 }
