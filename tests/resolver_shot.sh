@@ -10,6 +10,10 @@
 #   bash tests/resolver_shot.sh tests/out/resolver
 set -eu
 cd "$(dirname "$0")/.."
+# Linux: o mesmo build headless de tests/farol_shot.sh (GLES2 + xvfb-run).
+if [ "$(uname -s)" != "Darwin" ]; then
+  FAROL_SHOT_FONTE=tests/resolver_shot.c exec bash tests/farol_shot.sh "${1:-${TMPDIR:-/tmp}/nuvio-resolver}"
+fi
 NUVIO_DADOS=$(mktemp -d /tmp/nuvio-resolver-shot.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT

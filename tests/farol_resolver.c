@@ -38,6 +38,8 @@
 #include "farolerro.h"
 #include "farolanel.h"
 #include "faroltexto.h"
+#include "farolsonda.h"
+#include "farol.h"
 #include "fontesonda.h"
 #include "extplayer.h"
 #include "addonguia.h"
@@ -247,8 +249,10 @@ void ajustes_definir_p2p_ligado(int on) { (void)on; }
 int ajustes_p2p_ligado(void) { return 0; }
 const char *ajustes_p2p_url(void) { return ""; }
 const char *ajustes_idioma(void) { return "pt"; }
-int ajustes_vidro(void) { return 0; }
-int ajustes_animacoes_reduzidas(void) { return 1; }
+// tests/farol_tela.c mexe nestes dois: Interface de vidro e animacoes.
+static int c_vidro, c_reduzidas = 1, c_vidroPaineis;
+int ajustes_vidro(void) { return c_vidro; }
+int ajustes_animacoes_reduzidas(void) { return c_reduzidas; }
 int ajustes_animacoes_reduzidas_usuario(void) { return 1; }
 void ajustes_acento(float *r, float *g, float *b) { *r = 0.4f; *g = 0.7f; *b = 1.0f; }
 float ajustes_acento_tinta(float *r, float *g, float *b) { *r = *g = *b = 1.0f; return 1.0f; }
@@ -322,7 +326,8 @@ void rec_avatar_estilo(GfxRect r, const char *u, const char *n, const char *f, f
 float gfx_opacidade_grupo = 1.0f;
 int gfx_vidro_sem_aro = 0;
 float botao_largura(const char *rot, const char *ic, int pri) { (void)rot; (void)ic; (void)pri; return 100.0f; }
-void botao_pilula(GfxRect r, const char *rot, const char *ic, float f, int p, int al, float a) { (void)r; (void)rot; (void)ic; (void)f; (void)p; (void)al; (void)a; }
+static void txt_anotar(const char *s);
+void botao_pilula(GfxRect r, const char *rot, const char *ic, float f, int p, int al, float a) { (void)r; (void)ic; (void)f; (void)p; (void)al; (void)a; txt_anotar(rot); }
 float botao_cor_foco(float *r, float *g, float *b) { *r = *g = *b = 1.0f; return 1.0f; }
 void botao_luz(GfxRect r, float f, float a) { (void)r; (void)f; (void)a; }
 void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) { (void)r; (void)raio; (void)cr; (void)cg; (void)cb; (void)ca; }
@@ -350,12 +355,108 @@ float gfx_escala_txt(void) { return 1.0f; }
 float gfx_escala_txt_entrar(void) { return 1.0f; }
 int ponteiro_ativo(void) { return 0; }
 void ponteiro_alvo(float x, float y, float w, float h, PonteiroFn fo, PonteiroFn at, int a, int b) { (void)x; (void)y; (void)w; (void)h; (void)fo; (void)at; (void)a; (void)b; }
-TxtLinha txt_linha(TxtEstilo e, const char *s, int r, int g, int b, int a) { TxtLinha l; memset(&l, 0, sizeof l); (void)e; (void)s; (void)r; (void)g; (void)b; (void)a; return l; }
-TxtLinha txt_linha_corta(TxtEstilo e, const char *s, int r, int g, int b, int a, float mw) { TxtLinha l; memset(&l, 0, sizeof l); (void)e; (void)s; (void)r; (void)g; (void)b; (void)a; (void)mw; return l; }
+// O que o desenho escreveu no quadro (tests/farol_tela.c confere textos).
+static char c_txt[160][200];
+static int c_txtN;
+static void txt_anotar(const char *s) {
+  if (s && c_txtN < (int)(sizeof c_txt / sizeof c_txt[0]))
+    snprintf(c_txt[c_txtN++], sizeof c_txt[0], "%s", s);
+}
+TxtLinha txt_linha(TxtEstilo e, const char *s, int r, int g, int b, int a) { TxtLinha l; memset(&l, 0, sizeof l); (void)e; (void)r; (void)g; (void)b; (void)a; txt_anotar(s); return l; }
+TxtLinha txt_linha_corta(TxtEstilo e, const char *s, int r, int g, int b, int a, float mw) { TxtLinha l; memset(&l, 0, sizeof l); (void)e; (void)r; (void)g; (void)b; (void)a; (void)mw; txt_anotar(s); return l; }
 void txt_desenhar_alpha(TxtLinha l, float x, float y, float a) { (void)l; (void)x; (void)y; (void)a; }
-float txt_bloco(TxtEstilo e, const char *s, int r, int g, int b, float x, float y, float w, float ld, float a, int ml) { (void)e; (void)s; (void)r; (void)g; (void)b; (void)x; (void)y; (void)w; (void)ld; (void)a; (void)ml; return 0.0f; }
+float txt_bloco(TxtEstilo e, const char *s, int r, int g, int b, float x, float y, float w, float ld, float a, int ml) { (void)e; if (a > 0.0f) txt_anotar(s); (void)r; (void)g; (void)b; (void)x; (void)y; (void)w; (void)ld; (void)a; (void)ml; return 0.0f; }
 float txt_bloco_corta(TxtEstilo e, const char *s, int r, int g, int b, float x, float y, float w, float ld, float a, int ml) { (void)e; (void)s; (void)r; (void)g; (void)b; (void)x; (void)y; (void)w; (void)ld; (void)a; (void)ml; return 0.0f; }
 float txt_tracking(TxtEstilo e, const char *s, int r, int g, int b, float x, float y, float a, float t) { (void)e; (void)s; (void)r; (void)g; (void)b; (void)x; (void)y; (void)a; (void)t; return 0.0f; }
+
+// ------------------------------------------- fachada do Farol (issue 19)
+// src/farol.c entra de verdade: o Resolver julga por farol_julgar. O lado da
+// Home (cena, catalogo, gosto) fica mudo como em tests/farol_fachada.c; os
+// produtores que a cadeia le saem dos mesmos espelhos do cenario.
+int home_fileiras_na_tela(void) { return 0; }
+const char *app_tela_nome(void) { return "resolver"; }
+int recomenda_pessoa_canonica(const char *id, char *dst, size_t tam) {
+  (void)id; if (dst && tam) dst[0] = 0; return 0;
+}
+int cat_indice_por_imdb(const char *imdb) { (void)imdb; return -1; }
+int cat_copiar_item(int idx, CatItem *dst) { (void)idx; (void)dst; return 0; }
+int cat_copiar_por_id(const char *id, const char *tipo, CatItem *dst) { (void)id; (void)tipo; (void)dst; return 0; }
+int cat_fileira_imdb(const char *chave, char (*out)[64], int max, int stride) {
+  (void)chave; (void)out; (void)max; (void)stride; return 0;
+}
+const CatItem *cat_item(int i) { (void)i; return NULL; }
+int cat_n(void) { return 0; }
+unsigned cat_revisao(void) { return 0; }
+int cat_visto(const CatItem *ci) { (void)ci; return 0; }
+int cat_remover_fileiras_prefixo(const char *d, const char *pf) { (void)d; (void)pf; return 0; }
+int farolcena_home(char *dst, size_t cap, const void *ctx, void *a, size_t b) {
+  (void)dst; (void)cap; (void)ctx; (void)a; (void)b; return 0;
+}
+int farolpeca_ler(void *pc, const char *j, int nc) { (void)pc; (void)j; (void)nc; return 0; }
+int farolpeca_texto_tem(const void *t) { (void)t; return 0; }
+const char *farolpeca_x(const void *c, const void *t) { (void)c; (void)t; return ""; }
+int farolrec_nivel(const void *g) { (void)g; return 0; }
+int farolficha_ler_item(const CatItem *ci, void *dst) { (void)ci; (void)dst; return 0; }
+uint32_t farolficha_chave(const void *f) { (void)f; return 0; }
+int farolsinal_modelo(void *dst) { (void)dst; return 0; }
+int farolsinal_ficha_do_item(const CatItem *ci, void *dst) { (void)ci; (void)dst; return 0; }
+void farolsinal_mostrado(const CatItem *ci) { (void)ci; }
+int farolsinal_recomendar(void) { return 0; }
+void farolsinal_zerar_gosto(void) {}
+void farolsinal_definir_recomendar(int ligado) { (void)ligado; }
+int seguro_perfil_ativo(void) { return 0; }
+int perfil_infantil_ativo(void) { return 0; }
+int perfis_ativo(void) { return 1; }
+int fil_oculta(const char *chave) { (void)chave; return 0; }
+int diario_n(int perfil) { (void)perfil; return 0; }
+int diario_entrada(int perfil, int i, void *dst) { (void)perfil; (void)i; (void)dst; return 0; }
+int diario_titulo(int perfil, const char *id, void *dst) { (void)perfil; (void)id; (void)dst; return 0; }
+int diario_nome(const char *id, char *t, size_t nt, int *a, char *pn, size_t np) {
+  (void)id; if (t && nt) t[0] = 0; (void)a; if (pn && np) pn[0] = 0; return 0;
+}
+int salvos_n(void) { return 0; }
+const void *salvos_item(int i) { (void)i; return NULL; }
+int32_t mapa_hash_nome(const char *x) { (void)x; return -1; }
+uint32_t mapa_hash_titulo(const char *x) { (void)x; return 1; }
+const char *atualizacao_nova(void) { return ""; }
+int dts_playback_enabled(void) { return 0; }
+int dts_tpk_disponivel(void) { return 0; }
+int video_audio_nao_suportado(void) { return 0; }
+int video_n_audio(void) { return 0; }
+typedef struct VideoFaixa VideoFaixa;
+const VideoFaixa *video_audio(int i) { (void)i; return NULL; }
+int video_audio_atual(void) { return -1; }
+int video_faixa_dts(const VideoFaixa *f) { (void)f; return 0; }
+int video_dts_estado(void) { return 0; }
+int video_tem_dolby_vision(void) { return 0; }
+const char *video_hdr(void) { return ""; }
+// A sonda ativa (farolsonda.h): pronta = nada no ar.
+static int c_sondaPronta = 1, c_sondaCanceladaN;
+int farolsonda_estado(FarolSonda *o) {
+  if (o) { memset(o, 0, sizeof *o); o->http = 0; }
+  return c_sondaPronta;
+}
+void farolsonda_cancelar(void) { c_sondaCanceladaN++; c_sondaPronta = 1; }
+// A fonte atual como o Resolver do pai lia (stream_item(stream_atual())).
+void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
+                        int *fonteMbps, int *fonteDebrid, int *temOutraFonte,
+                        int *temFonteMenor, int *temFonteSemDv,
+                        int *temFonteSemDts, int *tvHdr, int *tvDv,
+                        int *vazaoMbps) {
+  const Stream *ft = stream_atual() >= 0 ? stream_item(stream_atual()) : NULL;
+  *fonteDv = *fonteHdr = *fonteGBx10 = *fonteMbps = *fonteDebrid = -1;
+  *temOutraFonte = *temFonteMenor = *temFonteSemDv = *temFonteSemDts = -1;
+  *tvHdr = *tvDv = *vazaoMbps = -1;
+  if (ft) {
+    uint64_t g = ft->tamanhoBytes / 100000000ULL;
+    int kbps = stream_kbps_atual();
+    *fonteDv = ft->dolbyVision > 0 ? 1 : 0;
+    *fonteGBx10 = !ft->tamanhoBytes ? -1 : g > INT32_MAX ? INT32_MAX : (int)g;
+    *fonteMbps = kbps > 0 ? kbps / 1000 : -1;
+    *fonteDebrid = ft->debridServico > 0 ? 1 : 0;
+  }
+}
+void gfx_vidro_painel(GfxRect r, float raio, float fundo, float a) { (void)r; (void)raio; (void)fundo; (void)a; c_vidroPaineis++; }
 
 // Helpers referenciados pelos blocos extraidos de src/app.c
 static void menu_fechar(void) { c_menuFechouN++; }
@@ -483,6 +584,10 @@ static void zerar(void) {
 static void falhar_fonte(const char *titulo, const char *dica,
                          FarolClasse classe, int http, const char *cod) {
   FarolErro fe;
+  // Como no player, o erro e gravado DEPOIS de um evento da tentativa no anel
+  // (a fonte abriu): a fachada (issue 19) descarta erro com seq na fronteira
+  // da sessao, e sem evento nenhum a seq do erro seria a propria fronteira.
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
   resolverregra_falha_registrar(RES_T_FONTE, titulo, dica, "T2:E5", (long)time(NULL));
   memset(&fe, 0, sizeof fe);
   fe.classe = classe;
@@ -515,6 +620,7 @@ static void avancar_addonguia(void) {
   }
 }
 
+#ifndef FAROL_RESOLVER_SEM_MAIN
 int main(void) {
   const int *est;
   FarolFatos fx;
@@ -1196,3 +1302,4 @@ int main(void) {
   puts("farol_resolver: producao ok");
   return 0;
 }
+#endif

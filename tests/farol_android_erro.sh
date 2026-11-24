@@ -68,6 +68,7 @@ parts = [
     extract_fn(player, r"^void player_erro_fonte\(void\) \{", "player_erro_fonte"),
     extract_fn(player, r"^int player_ultimo_erro_farol\(FarolErro \*out, int \*foiDebrid\) \{", "player_ultimo_erro_farol"),
     extract_fn(player, r"^uint64_t player_ultimo_erro_tentativa\(void\) \{", "player_ultimo_erro_tentativa"),
+    extract_fn(player, r"^uint64_t player_ultimo_erro_seq\(void\) \{", "player_ultimo_erro_seq"),
     extract_fn(player, r"^uint64_t player_ultimo_addon_farol\(void\) \{", "player_ultimo_addon_farol"),
     extract_fn(player, r"^int player_externo_disponivel_tentativa\(uint64_t tentativa\) \{", "player_externo_disponivel_tentativa"),
     extract_fn(player, r"^int player_externo_disponivel\(void\) \{", "player_externo_disponivel"),
@@ -84,7 +85,7 @@ PY
   -Wall -Wextra -O1 -g -Wno-deprecated-declarations -Wno-macro-redefined \
   -I"$work/include" -I"$work" -Isrc \
   -Wl,--wrap=farol_ev \
-  tests/farol_android_erro.c src/resolver.c src/resolverregra.c src/farolregra.c \
+  tests/farol_android_erro.c src/resolver.c src/resolverregra.c src/farolregra.c src/farol.c \
   src/farolerro.c src/farolanel.c src/fontesonda.c src/extplayer.c \
   src/addonguia.c src/addonmodo.c src/video_modo.c src/capmkv.c src/mkv.c tests/capmkv_stub.c \
   -lm -lpthread -o "$work/farol-android-erro-test"

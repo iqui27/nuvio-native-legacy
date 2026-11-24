@@ -64,6 +64,8 @@ void video_taxa_recusar(void) {}
 #include "farolcod.h"
 #include "farolanel.h"
 #include "faroltexto.h"
+#include "farolsonda.h"
+#include "farol.h"
 #include "fontesonda.h"
 #include "extplayer.h"
 #include "addonguia.h"
@@ -319,6 +321,69 @@ float txt_bloco_corta(TxtEstilo e, const char *s, int r, int g, int b, float x, 
 }
 float txt_tracking(TxtEstilo e, const char *s, int r, int g, int b, float x, float y, float a, float t) {
   (void)e; (void)s; (void)r; (void)g; (void)b; (void)x; (void)y; (void)a; (void)t; return 0.0f;
+}
+void gfx_vidro_painel(GfxRect r, float raio, float fundo, float a) { (void)r; (void)raio; (void)fundo; (void)a; }
+int home_fileiras_na_tela(void) { return 0; }
+const char *app_tela_nome(void) { return "resolver"; }
+int recomenda_pessoa_canonica(const char *id, char *dst, size_t tam) {
+  (void)id; if (dst && tam) dst[0] = 0; return 0;
+}
+int cat_indice_por_imdb(const char *imdb) { (void)imdb; return -1; }
+int cat_copiar_item(int idx, CatItem *dst) { (void)idx; (void)dst; return 0; }
+int cat_copiar_por_id(const char *id, const char *tipo, CatItem *dst) { (void)id; (void)tipo; (void)dst; return 0; }
+int cat_fileira_imdb(const char *chave, char (*out)[64], int max, int stride) {
+  (void)chave; (void)out; (void)max; (void)stride; return 0;
+}
+const CatItem *cat_item(int i) { (void)i; return NULL; }
+int cat_n(void) { return 0; }
+unsigned cat_revisao(void) { return 0; }
+int cat_visto(const CatItem *ci) { (void)ci; return 0; }
+int cat_remover_fileiras_prefixo(const char *d, const char *pf) { (void)d; (void)pf; return 0; }
+int farolcena_home(char *dst, size_t cap, const void *ctx, void *a, size_t b) {
+  (void)dst; (void)cap; (void)ctx; (void)a; (void)b; return 0;
+}
+int farolpeca_ler(void *pc, const char *j, int nc) { (void)pc; (void)j; (void)nc; return 0; }
+int farolpeca_texto_tem(const void *t) { (void)t; return 0; }
+const char *farolpeca_x(const void *c, const void *t) { (void)c; (void)t; return ""; }
+int farolrec_nivel(const void *g) { (void)g; return 0; }
+int farolficha_ler_item(const CatItem *ci, void *dst) { (void)ci; (void)dst; return 0; }
+uint32_t farolficha_chave(const void *f) { (void)f; return 0; }
+int farolsinal_modelo(void *dst) { (void)dst; return 0; }
+int farolsinal_ficha_do_item(const CatItem *ci, void *dst) { (void)ci; (void)dst; return 0; }
+void farolsinal_mostrado(const CatItem *ci) { (void)ci; }
+int farolsinal_recomendar(void) { return 0; }
+void farolsinal_zerar_gosto(void) {}
+void farolsinal_definir_recomendar(int ligado) { (void)ligado; }
+int seguro_perfil_ativo(void) { return 0; }
+int perfil_infantil_ativo(void) { return 0; }
+int perfis_ativo(void) { return 1; }
+int fil_oculta(const char *chave) { (void)chave; return 0; }
+int diario_n(int perfil) { (void)perfil; return 0; }
+int diario_entrada(int perfil, int i, void *dst) { (void)perfil; (void)i; (void)dst; return 0; }
+int diario_titulo(int perfil, const char *id, void *dst) { (void)perfil; (void)id; (void)dst; return 0; }
+int diario_nome(const char *id, char *t, size_t nt, int *a, char *pn, size_t np) {
+  (void)id; if (t && nt) t[0] = 0; (void)a; if (pn && np) pn[0] = 0; return 0;
+}
+int salvos_n(void) { return 0; }
+const void *salvos_item(int i) { (void)i; return NULL; }
+int32_t mapa_hash_nome(const char *x) { (void)x; return -1; }
+uint32_t mapa_hash_titulo(const char *x) { (void)x; return 1; }
+const char *atualizacao_nova(void) { return ""; }
+int dts_playback_enabled(void) { return 0; }
+int dts_tpk_disponivel(void) { return 0; }
+int video_faixa_dts(const VideoFaixa *f) { (void)f; return 0; }
+int video_dts_estado(void) { return 0; }
+int nv_webos_major(void) { return 0; }
+int farolsonda_estado(FarolSonda *o) { if (o) memset(o, 0, sizeof *o); return 1; }
+void farolsonda_cancelar(void) {}
+void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
+                        int *fonteMbps, int *fonteDebrid, int *temOutraFonte,
+                        int *temFonteMenor, int *temFonteSemDv,
+                        int *temFonteSemDts, int *tvHdr, int *tvDv,
+                        int *vazaoMbps) {
+  *fonteDv = *fonteHdr = *fonteGBx10 = *fonteMbps = *fonteDebrid = -1;
+  *temOutraFonte = *temFonteMenor = *temFonteSemDv = *temFonteSemDts = -1;
+  *tvHdr = *tvDv = *vazaoMbps = -1;
 }
 static void menu_fechar(void) {}
 static void menu_definir_destino(int d) { (void)d; }

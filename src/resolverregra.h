@@ -22,6 +22,13 @@ enum { RES_S_NAO_COMECA = 0, RES_S_TRAVA, RES_S_SOM, RES_S_LEGENDA, RES_S_CONTIN
 // RES_S_GERAL: antes o FAROL_S_CORES=6 colidia e IMAGEM_DV disparava sem o
 // sintoma. resolverregra_mascara ja conhece o id.
 #define RES_S_CORES (RES_S_N + 1)
+// A grade da tela inicial do Farol (issue 19): os seis cartoes de sempre mais
+// "Cores estranhas", na ordem em que aparecem (o video primeiro, as contas por
+// ultimo). `i` fora de 0..RES_S_FAROL_N-1 devolve -1.
+#define RES_S_FAROL_N 7
+int resolverregra_sintoma_farol(int i);
+// 1 = `s` e um sintoma que a grade oferece (RES_S_* ou RES_S_CORES).
+int resolverregra_sintoma_valido(int s);
 // Na ordem em que rodam.
 enum { RES_T_INTERNET = 0, RES_T_ADDONS, RES_T_DEBRID, RES_T_FONTE, RES_T_TV, RES_T_AUDIO, RES_T_N };
 enum { RES_NAO_TESTADO = 0, RES_OK, RES_FALHOU };
