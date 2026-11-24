@@ -116,6 +116,8 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "episodios.h"
 #include "streams.h"
 #include "farolacao_fonte.h"
+// Fixtures de teste podem compilar player.c sem farolacao_fonte.c: opcional.
+extern __attribute__((weak)) void farolacao_fonte_encerrar(void);
 #include "addons.h"
 #include "duracaook.h"
 #include "partes.h"
@@ -3402,7 +3404,7 @@ static void fecharSessao(int manter, int trocaFonte) {
 void player_encerrar(void) {
   // O filtro temporario das acoes de fonte do Farol vale para ESTA reproducao.
   // player_encerrar_fonte (troca de fonte da mesma reproducao) o conserva.
-  farolacao_fonte_encerrar();
+  if (farolacao_fonte_encerrar) farolacao_fonte_encerrar();
   if (retido) player_descartar_retido(); else fecharSessao(0, 0);
 }
 

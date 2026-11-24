@@ -33,9 +33,28 @@ esac
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-farol-acao-fonte.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-mkdir "$work/data"
+mkdir "$work/data" "$work/data2"
 
 "$ccbin" "${flags[@]}" tests/farol_acao_fonte.c src/farolacao_fonte.c \
   src/fontefalha.c src/fontefiltro.c src/linguas.c -lm -o "$work/teste"
 "$work/teste" "$work/data"
+
+linker=-Wl,--gc-sections
+[ "$(uname -s)" = Darwin ] && linker=-Wl,-dead_strip
+flags_int=(-std=gnu11 -D_POSIX_C_SOURCE=200809L -O1 -g -Wall -Wextra -Wno-unused-function
+           -Wno-unused-parameter -Isrc -pthread -ffunction-sections -fdata-sections -DNV_LINUX_DESKTOP)
+if pkg-config --exists sdl2 2>/dev/null; then
+  read -r -a sdk <<< "$(pkg-config --cflags sdl2)"
+  flags_int+=("${sdk[@]}")
+fi
+case "${SANITIZE:-0}" in
+  1) flags_int+=(-fsanitize=address,undefined -fno-omit-frame-pointer) ;;
+  thread) flags_int+=(-fsanitize=thread) ;;
+esac
+
+"$ccbin" "${flags_int[@]}" tests/farol_acao_fonte_streams.c src/streams.c \
+  src/farolacao_fonte.c src/fontefalha.c src/fonteauto.c src/limpa.c \
+  src/dobra.c src/fontenota.c src/linguas.c src/fontefiltro.c \
+  "$linker" -lm -o "$work/teste_streams"
+"$work/teste_streams" "$work/data2"
 echo "farol_acao_fonte: tudo ok"

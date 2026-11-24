@@ -8,6 +8,8 @@
 #include "ilhaacao.h"
 #include "idioma.h"
 #include "streams.h"
+// Testes unitarios de farolacao_fonte compilam sem streams.c: opcional.
+extern __attribute__((weak)) void stream_filtro_atualizar(void);
 #include <pthread.h>
 #include <stdatomic.h>
 #include <string.h>
@@ -147,7 +149,9 @@ int farolacao_fonte_desfazer_dv(void) {
   FonteFiltroConfig f;
   fontefalha_filtro(&f);
   f.excluir[FONTEFILTRO_VISUAL] &= ~bits;
-  return fontefalha_filtro_definir(&f);
+  int ok = fontefalha_filtro_definir(&f);
+  if (ok && stream_filtro_atualizar) stream_filtro_atualizar();
+  return ok;
 }
 
 // Grava o filtro persistente com os bits de DV e avisa na ilha com Desfazer.
@@ -158,6 +162,7 @@ static void esconderDvNestaTv(void) {
   uint64_t novos = BITS_DV & ~f.excluir[FONTEFILTRO_VISUAL];
   f.excluir[FONTEFILTRO_VISUAL] |= BITS_DV;
   if (!fontefalha_filtro_definir(&f)) return;
+  if (stream_filtro_atualizar) stream_filtro_atualizar();
   pthread_mutex_lock(&trava);
   dvAcrescentado = novos;
   pthread_mutex_unlock(&trava);
@@ -201,10 +206,10 @@ int farolacao_fonte_executar(int acao, int persistir) {
     if (!farolacao_fonte_filtro_temporario_definir(&novo)) bits = 0;
   }
 
-  // A atual e a escolhida contam como tentadas: nenhuma das duas volta.
-  for (int i = 0; i < n; i++) if (linhas[i].atual) farolacao_fonte_tentada_marcar(geracao, linhas[i].indice);
   ok = stream_farol_trocar(indice, geracao);
   if (ok) {
+    // A atual e a escolhida contam como tentadas: nenhuma das duas volta.
+    for (int i = 0; i < n; i++) if (linhas[i].atual) farolacao_fonte_tentada_marcar(geracao, linhas[i].indice);
     farolacao_fonte_tentada_marcar(geracao, indice);
     // A unica gravacao persistente e a escolha explicita, depois da troca.
     if (acao == FAROL_A_FONTE_SEM_DV && persistir) esconderDvNestaTv();

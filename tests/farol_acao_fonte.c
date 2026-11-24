@@ -185,6 +185,7 @@ static void executor_e_tentadas(void) {
   assert(farolacao_fonte_executar(FAROL_A_FONTE_SEM_DV, 0) == 0);
   assert(bitsTemp(FONTEFILTRO_VISUAL) == 0 && bitsTemp(FONTEFILTRO_AUDIO) == (UINT64_C(1) << 8));
   assert(nResultados == 1 && resultadoOk[0] == 0);
+  assert(!farolacao_fonte_tentada(geracaoLista, 0));
   assert(!farolacao_fonte_tentada(geracaoLista, 2));
   puts("executor, tentadas que nao voltam e troca recusada PASS");
 }

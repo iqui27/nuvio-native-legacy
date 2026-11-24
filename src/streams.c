@@ -1,4 +1,12 @@
 #include "streams.h"
+// Fixtures de teste que incluem/compilam streams.c sem linkar farolacao_fonte.c
+// precisam destes simbolos opcionais (mesmo padrao de descoberta.c).
+extern __attribute__((weak)) int farolacao_fonte_filtro_temporario(FonteFiltroConfig *out);
+extern __attribute__((weak)) void farolacao_fonte_encerrar(void);
+extern __attribute__((weak)) void farolacao_fonte_tentada_marcar(unsigned geracao, int indice);
+extern __attribute__((weak)) int farolacao_fonte_tentada(unsigned geracao, int indice);
+extern __attribute__((weak)) void farolacao_fonte_elegibilidade(
+    const FarolFonteLinha *l, int n, unsigned geracao, FarolFonteElegib *out);
 #include "farolanel.h"
 #include "aiostreamsui.h"
 #include "addonmodo.h"
@@ -546,7 +554,7 @@ void stream_filtro_atualizar(void) {
 // soma-se ao persistente, nunca o substitui nem o grava, e some com a lista.
 static int filtroTempPermite(const Stream *s) {
   FonteFiltroConfig temp; FonteFiltroDados dados;
-  if (!farolacao_fonte_filtro_temporario(&temp)) return 1;
+  if (!farolacao_fonte_filtro_temporario || !farolacao_fonte_filtro_temporario(&temp)) return 1;
   stream_filtro_dados(s, &dados);
   return fontefiltro_permite(&temp, &dados);
 }
@@ -566,15 +574,21 @@ static int filtroPermiteStream(const FonteFiltroConfig *cfg, const Stream *s) {
 // A sessao de falha herda o filtro temporario (ou o perde, se ele acabou).
 static void sessaoFiltroTemporario(FonteFalhaSessao *sessao) {
   FonteFiltroConfig temp;
-  fontefalha_sessao_filtro_temporario(sessao, farolacao_fonte_filtro_temporario(&temp) ? &temp : NULL);
+  fontefalha_sessao_filtro_temporario(
+      sessao, (farolacao_fonte_filtro_temporario && farolacao_fonte_filtro_temporario(&temp)) ? &temp : NULL);
 }
 int stream_filtro_bloqueou(void) {
-  if (!fontefalha_filtro_ativo()) return 0;
-  FonteFiltroConfig cfg; fontefalha_filtro(&cfg);
+  FonteFiltroConfig temp;
+  int ativoPersist = fontefalha_filtro_ativo();
+  int ativoTemp = farolacao_fonte_filtro_temporario && farolacao_fonte_filtro_temporario(&temp);
+  if (!ativoPersist && !ativoTemp) return 0;
+  FonteFiltroConfig cfg;
+  if (ativoPersist) fontefalha_filtro(&cfg);
   pthread_mutex_lock(&verTrava);
   int bloqueou = n > 0;
   for (int i = 0; i < n && bloqueou; i++)
-    if (filtroPermiteStream(&cfg, &lista[i])) bloqueou = 0;
+    if (ativoPersist ? filtroPermiteStream(&cfg, &lista[i]) : filtroTempPermite(&lista[i]))
+      bloqueou = 0;
   pthread_mutex_unlock(&verTrava);
   return bloqueou;
 }
@@ -585,7 +599,9 @@ int stream_filtro_bloqueou(void) {
 // Por que a fonte sai do automatico (0 = fica), na ordem em que o teste corre.
 enum { MOT_FICA, MOT_EXCLUIDA, MOT_FILTRO, MOT_FORA_CACHE, MOT_INFORMATIVA, MOT_DECODER, MOT_MORTA, MOT_N };
 static int motivoForaDoAuto(int i, const FonteFiltroConfig *filtro) {
-  if (automaticaExcluida(i)) return MOT_EXCLUIDA;
+  if (automaticaExcluida(i) ||
+      (farolacao_fonte_tentada && farolacao_fonte_tentada(listaGeracao, i)))
+    return MOT_EXCLUIDA;
   if (i < 0 || i >= n) return MOT_FICA;
   if (!canalFolha && (filtro ? !filtroPermiteStream(filtro, &lista[i]) : !stream_filtro_permite(&lista[i]))) return MOT_FILTRO;
   if (!lista[i].filtro.naoVod && lista[i].foraCache) return MOT_FORA_CACHE;
@@ -922,7 +938,7 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   memset(decoderFalhaAltura, 0, sizeof decoderFalhaAltura);
   pthread_mutex_unlock(&autoExclTrava);
   // O filtro temporario e as tentadas do Farol valem para UMA reproducao.
-  farolacao_fonte_encerrar();
+  if (farolacao_fonte_encerrar) farolacao_fonte_encerrar();
   pthread_mutex_lock(&verTrava); trocaFarol = -1; pthread_mutex_unlock(&verTrava);
   // LISTA NOVA, INDICE VELHO NAO VALE. A preferida e uma posicao na lista
   // ANTERIOR; mantida, ela apontaria para outra fonte do episodio seguinte —
@@ -2560,6 +2576,7 @@ static int falhaCandidatas(unsigned geracao, int escolhida, int primeira, FonteF
     // pelo RD/PM/AD. Hash nativo passa apenas pelo resolvedor cache-only da
     // rota escolhida. URL direta fora de cache continua fora do automatico.
     excl[q] = (unsigned char)(s->urlP2P || (s->foraCache && !s->infoHash[0]) || ehInformativa(s) || incompatOculta(s) || excedeDecoder(s) ||
+                 (farolacao_fonte_tentada && farolacao_fonte_tentada(geracao, i)) ||
                  (!s->infoHash[0] && (automaticaExcluida(i) || fontesmortas_idade(s) >= 0)));
     grp[q] = (signed char)grupoDe(i);
     // Escolha explicita continua podendo tocar fora das regras do automatico.
@@ -2683,7 +2700,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
                       ? &fontes[c[r.candidata].indice] : NULL;
     if (!s) { resultado = FONTEFALHA_FIM; break; }
     if (!fontefalha_tentar(sessao, &c[r.candidata], r.servico)) { resultado = FONTEFALHA_FIM; break; }
-    farolacao_fonte_tentada_marcar(geracao, r.indice);
+    if (farolacao_fonte_tentada_marcar) farolacao_fonte_tentada_marcar(geracao, r.indice);
     if (falhaCancelada(geracao, cancelado, ctx)) { resultado = FONTEFALHA_FIM; break; }
     farol_ev(FM_FONTE, FE_FONTE_PROXIMA, 0, fontefalha_tentativas(sessao), fontefalha_teto(sessao), "proxima");
     conferenciaPublicar(r.indice, geracao, FA_CONFERINDO);
@@ -3120,7 +3137,7 @@ int stream_falha_semear_manual(FonteFalhaSessao *sessao, int indice,
     // nao pode consumir uma segunda vaga do orcamento.
     sessaoFiltroTemporario(sessao);
     ok = fontefalha_semear(sessao, &c, servico, url);
-    if (ok) farolacao_fonte_tentada_marcar(geracao, indice);
+    if (ok && farolacao_fonte_tentada_marcar) farolacao_fonte_tentada_marcar(geracao, indice);
   }
   pthread_mutex_unlock(&verTrava);
   return ok;
@@ -8166,7 +8183,7 @@ void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
     FarolFonteLinha linhas[FAROL_FONTE_MAX];
     unsigned ger = 0;
     int nl = stream_farol_fontes(linhas, FAROL_FONTE_MAX, &ger);
-    if (nl > 0) {
+    if (nl > 0 && farolacao_fonte_elegibilidade) {
       FarolFonteElegib e;
       farolacao_fonte_elegibilidade(linhas, nl, ger, &e);
       outra = e.outra; menor = e.menor; semDv = e.semDv; semDts = e.semDts;
