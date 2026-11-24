@@ -67,6 +67,7 @@ extern __attribute__((weak)) int farolsinal_tema_nome(int32_t id, char *dst, siz
 extern __attribute__((weak)) int32_t farolgosto_peso(const FarolGosto *g, int dim,
                                                      int32_t id, uint16_t dia);
 extern __attribute__((weak)) const char *mapa_tema_nome(const char *kw);
+extern __attribute__((weak)) void ilhaacao_abrir_sessao(void);
 int home_fileiras_na_tela(void);
 const char *app_tela_nome(void);
 int recomenda_pessoa_canonica(const char *id, char *dst, size_t tam);
@@ -875,9 +876,12 @@ static void limparUndoRecusaLocked(void) {
 }
 
 static void limparUndoRecusa(void) {
+  int tinha;
   pthread_mutex_lock(&travaUndo);
+  tinha = undoRec.imdb[0] != 0;
   limparUndoRecusaLocked();
   pthread_mutex_unlock(&travaUndo);
+  if (tinha && ilhaacao_abrir_sessao) ilhaacao_abrir_sessao();
 }
 
 static int mesmaObraImdb(const char *a, const char *b) {

@@ -3745,7 +3745,7 @@ static void farolAvisosPublicar(void) {
 }
 static void farolGostoEspelhar(void) {
   valor[AJ_FAROL_RECOMENDAR] = farolsinal_recomendar() ? 0 : 1;
-  valor[AJ_FAROL_LLM_SO_ESTA_TV] = (farolgostoui_llm_ativo && farolgostoui_llm_ativo()) ? 0 : 1;
+  valor[AJ_FAROL_LLM_SO_ESTA_TV] = (farolgostoui_llm_ativo && farolgostoui_llm_ativo()) ? 1 : 0;
 }
 int ajustes_farol_avisos(void) { return valor[AJ_FAROL_AVISOS] != 0; }
 void ajustes_farol_avisos_definir(int ligado) {
@@ -9165,7 +9165,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_FAROL_RECOMENDAR: return "Mostra fileiras e motivos personalizados para este perfil nesta TV. Desligar tira as fileiras na hora e para de registrar sinais.";
     case AJ_FAROL_APRENDEU: return "Mostra os gêneros, pessoas e temas que o Farol identificou como favoritos deste perfil.";
     case AJ_FAROL_ZERAR: return "Apaga o que o Farol aprendeu e as pendências deste perfil nesta TV.";
-    case AJ_FAROL_LLM_SO_ESTA_TV: return "Controla se o gosto pode usar recursos extras de IA com consentimento. Desligado por padrão e indisponível no perfil infantil.";
+    case AJ_FAROL_LLM_SO_ESTA_TV: return "Ligado por padrão: tudo do gosto fica só nesta TV. Desligar permite usar o servidor com consentimento (indisponível no perfil infantil).";
     case AJ_DICASCONTROLE: return "Dicas do controle";
     case AJ_NOVIDADES20: return "O tour do que mudou na 2.0, capítulo por capítulo, com o que vale neste aparelho. Abre do começo.";
     case AJ_APOIAR: return "Se o Nuvio te ajuda e você quiser apoiar quem faz o app, aponte a câmera do celular para um dos códigos. É opcional: nada muda no app.";
@@ -10911,7 +10911,7 @@ static int definirValorDireto(int op, int novo) {
       farolGostoEspelhar();
       return 0;
     }
-    if (farolgostoui_llm_definir) farolgostoui_llm_definir(novo == 0);
+    if (farolgostoui_llm_definir) farolgostoui_llm_definir(novo == 1);
     farolGostoEspelhar();
     return 1;
   }

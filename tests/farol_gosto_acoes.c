@@ -41,18 +41,24 @@
 void testar(int s);
 void testar(int s) { (void)s; }
 
-// Gancho forte simulando #53 (farolconsent) para provar que o ajuste aciona o
-// gancho e respeita perfil infantil/trava parental.
+// Gancho forte simulando #53 (farolconsent) para provar que o ajuste aciona os
+// simbolos reais (1=SO_TV, 2=SIM) e respeita perfil infantil/trava parental.
+enum {
+  TEST_CONSENT_NAO_PERGUNTADO = 0,
+  TEST_CONSENT_SO_TV = 1,
+  TEST_CONSENT_SIM = 2
+};
 static int gConsentEstado;
 static int gConsentChamadas;
 static int gConsentAbrir;
-int farolconsent_ativo(void) { return gConsentEstado; }
-int farolconsent_definir(int ligado) {
+int farolconsent_llm_ativo(void) { return gConsentEstado == TEST_CONSENT_SIM; }
+int farolconsent_estado(void) { return gConsentEstado; }
+int farolconsent_definir(int estado) {
   gConsentChamadas++;
-  gConsentEstado = ligado ? 1 : 0;
+  gConsentEstado = estado;
   return 1;
 }
-int farolconsent_abrir(void) { gConsentAbrir++; return 1; }
+void farolconsentui_abrir(void) { gConsentAbrir++; }
 
 static long long gEpochS = 1775077200LL; // 2026-04-01 UTC
 static uint32_t gMs = 10000u;
@@ -191,7 +197,7 @@ static void selecionarCtxPorRotulo(const char *rot) {
 // 3: Nao e para mim, 4: Comparar com... (quando Recomendar esta ligado!).
 // Quando Recomendar esta desligado:
 // 0: Salvar na biblioteca, 1: Marcar como assistido,
-// 2: Nao e para mim, 3: Comparar com...
+// 2: Comparar com... ("Mais assim" e "Nao e para mim" ficam ocultos).
 static void testarCtxMenuGostoECompara(void) {
   FarolGosto g;
   int32_t pesoAntes, pesoDepois;
@@ -229,18 +235,19 @@ static void testarCtxMenuGostoECompara(void) {
   avancarIlha(4200);
   assert(!ilha_tem("farol-gosto"));
 
-  // Quando Recomendar esta desligado, "Mais assim" sai do menu e sinal nao entra;
-  // menu passa a ter "Nao e para mim" na pos 2 e "Comparar com..." na pos 3.
+  // Quando Recomendar esta desligado, "Mais assim" e "Nao e para mim" saem do
+  // menu e sinal nao entra; menu passa a ter "Comparar com..." na pos 2.
   farol_recomendar_definir(0, NULL);
   assert(!farolsinal_recomendar());
   assert(!farolContem("tt0000101")); // desligar removeu farol_gosto1 na hora!
   montarCatalogoComFarol();
   abrirCtx(0);
   teclaCtx(SDLK_DOWN, 0); // 1: Assistido
-  teclaCtx(SDLK_DOWN, 0); // 2: Nao e para mim (pois Mais assim sumiu!)
-  teclaCtx(SDLK_DOWN, 0); // 3: Comparar com...
+  teclaCtx(SDLK_DOWN, 0); // 2: Comparar com... (Mais assim e Nao e para mim sumiram!)
   teclaCtx(SDLK_RETURN, 0);
   assert(ctx_comparar_contar() == 1);
+  assert(farolsinal_modelo(&g));
+  assert(farolgosto_recusado(&g, mapa_hash_titulo("tt0000101")) == 0);
   ctx_comparar_limpar();
 
   // 2) "Nao e para mim" + remocao imediata + Desfazer via ilhaacao_feita.
@@ -266,6 +273,32 @@ static void testarCtxMenuGostoECompara(void) {
   assert(farolsinal_modelo(&g));
   assert(farolgosto_recusado(&g, mapa_hash_titulo("tt0000102")) == 0);
   avancarIlha(7000);
+
+  // P2-2: farol_gosto_zerar e farol_recomendar_definir(0) limpam Desfazer pendente!
+  abrirCtx(9);
+  teclaCtx(SDLK_DOWN, 0);
+  teclaCtx(SDLK_DOWN, 0);
+  teclaCtx(SDLK_DOWN, 0);
+  teclaCtx(SDLK_RETURN, 0);
+  assert(ilhaacao_tem_desfazer() == 1);
+  farol_gosto_zerar(NULL);
+  assert(ilhaacao_tem_desfazer() == 0);
+  avancarIlha(7000);
+
+  montarCatalogoComFarol();
+  abrirCtx(9);
+  teclaCtx(SDLK_DOWN, 0);
+  teclaCtx(SDLK_DOWN, 0);
+  teclaCtx(SDLK_DOWN, 0);
+  teclaCtx(SDLK_RETURN, 0);
+  assert(ilhaacao_tem_desfazer() == 1);
+  farol_recomendar_definir(0, NULL);
+  assert(ilhaacao_tem_desfazer() == 0);
+  avancarIlha(7000);
+  farol_recomendar_definir(1, NULL);
+  farol_gosto_zerar(NULL);
+  esperarFiosSinal();
+  montarCatalogoComFarol();
 
   // 3) "Comparar com...": ate 3 distintos, limpa em troca de perfil/logout.
   ctx_comparar_limpar();
@@ -332,8 +365,14 @@ static void testarCtxInfoP6(void) {
   assert(strstr(txt, "Termina ") != NULL || strstr(txt, "min") != NULL);
   hCom = ctxinfo_altura(&comDado, NULL, CTXI_W);
   assert(hCom > hSem);
+  // P2-7: extras carregado de outra serie nao casa com o ci focado.
+  assert(!extras_do_titulo("tt0000201", 201));
+  extras_teste_progresso("tt0000999", 1, 10, 1, 2);
+  assert(extras_do_titulo("tt0000999", 0) == 1);
+  assert(extras_do_titulo("tt0000202", 202) == 0);
+  extras_abrir_sessao();
   ctxinfo_teste_relogio(NULL);
-  puts("  ctxinfo (1 linha P6 com dado / nada sem dado): ok");
+  puts("  ctxinfo (1 linha P6 com dado / nada sem dado / P2-7 extras): ok");
 }
 
 static void alimentarModeloTop5(void) {
@@ -479,22 +518,34 @@ static void testarAjustesEGostoUI(void) {
   assert(farolgostoui_modo() == 0);
   farolgostoui_fechar();
 
-  // Lista (1): AJ_FAROL_ZERAR abre confirmacao -> Voltar cancela preservando tudo!
+  // Lista (1): AJ_FAROL_ZERAR abre confirmacao com foco seguro (1=Cancelar);
+  // OK imediato ou Voltar cancelam preservando tudo!
   valor[AJ_LAYOUT_AJUSTES] = 1;
   ajustes_abrir_opcao(AJ_FAROL_ZERAR);
   ajustes_iniciar();
   assert(focoOp == AJ_FAROL_ZERAR);
   teclaAj(SDLK_RETURN);
   assert(farolgostoui_aberto() && farolgostoui_modo() == 2);
-  teclaFgui(SDLK_ESCAPE, 0); // Cancela
+  assert(farolgostoui_foco() == 1); // foco inicial em Cancelar!
+  teclaFgui(SDLK_RETURN, 0); // confirma no foco inicial -> cancela!
   farolgostoui_fechar();
   farolgostoui_resumo(&r);
   assert(!r.vazio); // preservado!
 
-  // Confirma Zerar (ignorando repeat) -> zera modelo + pendencias + anuncia na pilula
+  teclaAj(SDLK_RETURN);
+  assert(farolgostoui_aberto() && farolgostoui_modo() == 2);
+  assert(farolgostoui_foco() == 1);
+  teclaFgui(SDLK_ESCAPE, 0); // Voltar tambem cancela
+  farolgostoui_fechar();
+  farolgostoui_resumo(&r);
+  assert(!r.vazio);
+
+  // Move foco para Zerar (0), ignora repeat e confirma -> zera modelo + pendencias + anuncia
   montarCatalogoComFarol();
   teclaAj(SDLK_RETURN);
-  assert(farolgostoui_modo() == 2);
+  assert(farolgostoui_modo() == 2 && farolgostoui_foco() == 1);
+  teclaFgui(SDLK_LEFT, 0);
+  assert(farolgostoui_foco() == 0);
   teclaFgui(SDLK_RETURN, 1); // repeat ignorado
   assert(farolgostoui_modo() == 2);
   teclaFgui(SDLK_RETURN, 0); // confirma!
@@ -506,29 +557,42 @@ static void testarAjustesEGostoUI(void) {
   assert(r.vazio == 1);
   avancarIlha(4200);
 
-  // LLM / "So nesta TV": seguro desligado por padrao; liga quando desbloqueado;
-  // bloqueado em perfil infantil!
-  gConsentEstado = 0; gConsentChamadas = 0; gConsentAbrir = 0;
+  // LLM / "So nesta TV": 0 = Ligado (padrao seguro, LLM desligado),
+  // 1 = Desligado (permite LLM -> grava SIM=2). Bloqueado em perfil infantil!
+  gConsentEstado = TEST_CONSENT_NAO_PERGUNTADO;
+  gConsentChamadas = 0;
+  gConsentAbrir = 0;
+  farolGostoEspelhar();
   assert(!ajustes_farol_llm_ativo());
-  assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 1); // Desligado (padrao)
+  assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 0); // Ligado ("So nesta TV", padrao)
   ajustes_abrir_opcao(AJ_FAROL_LLM_SO_ESTA_TV);
   ajustes_iniciar();
-  teclaAj(SDLK_RETURN);
+  teclaAj(SDLK_RETURN); // 0 -> 1 (Desligado = permitir LLM)
+  assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 1);
+  assert(gConsentEstado == TEST_CONSENT_SIM);
   assert(ajustes_farol_llm_ativo() == 1);
   assert(gConsentChamadas == 1 && gConsentAbrir == 1);
-  teclaAj(SDLK_RETURN);
+  teclaAj(SDLK_RETURN); // 1 -> 0 (Ligado = so nesta TV)
+  assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 0);
+  assert(gConsentEstado == TEST_CONSENT_SO_TV);
   assert(ajustes_farol_llm_ativo() == 0);
+  assert(gConsentChamadas == 2);
 
-  // Perfil infantil bloqueia LLM even when settings are unlocked!
+  // Perfil infantil bloqueia LLM mesmo com ajustes destravados!
   assert(perfil_infantil_definir(1, 1));
   assert(perfil_infantil_ativo() == 1);
   assert(!perfil_ajustes_travados(1));
   farolGostoEspelhar();
   assert(inativa(AJ_FAROL_LLM_SO_ESTA_TV));
+  assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 0);
   teclaAj(SDLK_RETURN);
+  assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 0);
   assert(ajustes_farol_llm_ativo() == 0);
-  definirValorDireto(AJ_FAROL_LLM_SO_ESTA_TV, 0);
+  assert(gConsentEstado == TEST_CONSENT_SO_TV);
+  assert(definirValorDireto(AJ_FAROL_LLM_SO_ESTA_TV, 1) == 0);
+  assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 0);
   assert(ajustes_farol_llm_ativo() == 0);
+  assert(gConsentEstado != TEST_CONSENT_SIM);
   puts("  ajustes + farolgostoui + child LLM block: ok");
 }
 
@@ -572,8 +636,10 @@ static void testarTravaParental(void) {
   definirValorDireto(AJ_FAROL_RECOMENDAR, 1);
   assert(farolsinal_recomendar() == 1);
 
-  definirValorDireto(AJ_FAROL_LLM_SO_ESTA_TV, 0);
+  assert(definirValorDireto(AJ_FAROL_LLM_SO_ESTA_TV, 1) == 0);
+  assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 0);
   assert(ajustes_farol_llm_ativo() == 0);
+  assert(gConsentEstado != TEST_CONSENT_SIM);
 
   farol_gosto_zerar(NULL);
   assert(farolContem("tt0000101"));

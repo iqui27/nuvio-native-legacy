@@ -633,9 +633,10 @@ static void montar(void) {
   }
   if (!doPainel && ci->imdb[0] &&
       (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series"))) {
-    if (farolsinal_recomendar && farolsinal_recomendar())
+    if (farolsinal_recomendar && farolsinal_recomendar()) {
       juntar(FT_MAIS_ASSIM, OP_MAIS_ASSIM);
-    juntar(FT_NAO_E_PARA_MIM, OP_NAO_E_PARA_MIM);
+      juntar(FT_NAO_E_PARA_MIM, OP_NAO_E_PARA_MIM);
+    }
     juntar(FT_COMPARAR_COM, OP_COMPARAR_COM);
   }
   // SO EXISTE SE O PACOTE TEM O SERVICO. Sem NUVIO_REC_URL compilada,
@@ -1342,6 +1343,7 @@ static void aplicar(void) {
       static CatItem recusaUndo;
       IlhaAcao a;
       if (perfil_ajustes_travados && perfil_ajustes_travados(perfis_ativo())) break;
+      if (!(farolsinal_recomendar && farolsinal_recomendar())) break;
       recusaUndo = *ci;
       if (farolsinal_recusar) farolsinal_recusar(&recusaUndo);
       if (farol_recusar_titulo) farol_recusar_titulo(recusaUndo.imdb);

@@ -214,6 +214,8 @@ int extras_progresso_serie(int *vistosEp, int *exibidos);
 // desenha deve OMITIR a linha nesse caso, nunca escrever um valor de reserva:
 // ver a nota sobre a classificacao cravada em descoberta.c.
 int extras_status_titulo(const char *imdb, char *dst, unsigned cap);
+// 1 quando o estado carregado por extras_pedir pertence ao titulo informado.
+int extras_do_titulo(const char *imdb, long tmdbId);
 const char *extras_ficha_status(void);          // "Released", "Post Production"
 int         extras_ficha_duracao(void);         // minutos; 0 = nao ha
 const char *extras_ficha_paises(void);          // "United States of America, Canada"

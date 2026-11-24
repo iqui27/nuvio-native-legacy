@@ -407,4 +407,4 @@
   0, /* farolRecomendar: 0 = Ligado (#51) */
   0, /* farolAprendeu: acao (#51) */
   0, /* farolZerar: acao (#51) */
-  1  /* farolLlmSoEstaTv: 1 = Desligado (padrao seguro, #51) */
+  0  /* farolLlmSoEstaTv: 0 = Ligado ("So nesta TV", padrao seguro, #51) */

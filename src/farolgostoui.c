@@ -24,9 +24,15 @@
 #include <string.h>
 
 // Ganchos fracos prontos para farolconsent (#53).
-extern int farolconsent_ativo(void) __attribute__((weak));
-extern int farolconsent_definir(int ligado) __attribute__((weak));
-extern int farolconsent_abrir(void) __attribute__((weak));
+enum {
+  FAROL_CONSENT_NAO_PERGUNTADO_VAL = 0,
+  FAROL_CONSENT_SO_TV_VAL = 1,
+  FAROL_CONSENT_SIM_VAL = 2
+};
+extern int  farolconsent_llm_ativo(void) __attribute__((weak));
+extern int  farolconsent_estado(void) __attribute__((weak));
+extern int  farolconsent_definir(int estado) __attribute__((weak));
+extern void farolconsentui_abrir(void) __attribute__((weak));
 
 enum { FGUI_FECHADO = 0, FGUI_APRENDEU = 1, FGUI_ZERAR = 2 };
 
@@ -70,7 +76,7 @@ void farolgostoui_abrir_zerar(void) {
   if (perfil_ajustes_travados(perfis_ativo())) return;
   modoAtual = FGUI_ZERAR;
   querAberto = 1;
-  foco = 0;
+  foco = 1; // Inicia no botao seguro ("Cancelar"), nunca no destrutivo.
   scrollIdx = 0;
 }
 
@@ -101,26 +107,28 @@ int farolgostoui_llm_ativo(void) {
     llmPerfil = p;
   }
   if (perfil_infantil_ativo()) return 0;
-  if (farolconsent_ativo) return farolconsent_ativo() ? 1 : 0;
+  if (farolconsent_llm_ativo) return farolconsent_llm_ativo() ? 1 : 0;
+  if (farolconsent_estado)
+    return (farolconsent_estado() == FAROL_CONSENT_SIM_VAL) ? 1 : 0;
   return llmConsentLocal;
 }
 
-int farolgostoui_llm_definir(int ligado) {
+int farolgostoui_llm_definir(int permitirLlm) {
   int p = perfis_ativo();
-  int v = ligado ? 1 : 0;
+  int v = permitirLlm ? 1 : 0;
   if (llmPerfil != p) {
     llmConsentLocal = 0;
     llmPerfil = p;
   }
   if (perfil_infantil_ativo() || perfil_ajustes_travados(p)) return 0;
   if (farolconsent_definir) {
-    int ok = farolconsent_definir(v);
-    llmConsentLocal = ok ? v : (farolconsent_ativo ? farolconsent_ativo() : 0);
-    if (v && farolconsent_abrir) farolconsent_abrir();
+    int ok = farolconsent_definir(v ? FAROL_CONSENT_SIM_VAL : FAROL_CONSENT_SO_TV_VAL);
+    llmConsentLocal = ok ? v : farolgostoui_llm_ativo();
+    if (ok && v && farolconsentui_abrir) farolconsentui_abrir();
     return ok;
   }
   llmConsentLocal = v;
-  if (v && farolconsent_abrir) farolconsent_abrir();
+  if (v && farolconsentui_abrir) farolconsentui_abrir();
   return 1;
 }
 

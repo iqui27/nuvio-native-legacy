@@ -385,7 +385,7 @@ static void montarFarolInfo(const CatItem *ci, const Modelo *m, char *dst, size_
   }
 
   // 4) Sobe/cai de temporada (serie com episodios avaliados)
-  if (serie && extras_n_temporadas() > 0) {
+  if (serie && extras_do_titulo(ci->imdb, ci->tmdb) && extras_n_temporadas() > 0) {
     FarolInfoTemp temps[16];
     int nt = extras_n_temporadas(), ti, nT = 0, vEp = 0, tEp = 0, falt = 0;
     for (ti = 0; ti < nt && nT < 16; ti++) {
