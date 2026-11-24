@@ -3308,12 +3308,15 @@ int  ajustes_farol_hdr_off_ativo(void) { return __atomic_load_n(&farolHdrOff, __
 // O ajuste GRAVADO, sem o override (e o que o Desfazer devolve).
 int  ajustes_dolby_vision_gravado(void) { return lig(AJ_DV); }
 // "Desligar o HDR sempre nesta TV": grava a preferencia (com Desfazer na ilha).
-void ajustes_dolby_vision_definir(int ligado) {
-  int a = valor[AJ_DV];
+// Retorna -1 quando o disco nao confirmou: o chamador do Farol avisa em vez de
+// prometer um "sempre" que o proximo arranque esqueceria (FAROL34B, P2).
+int ajustes_dolby_vision_definir(int ligado) {
+  int a = valor[AJ_DV], ok = 0;
   valor[AJ_DV] = ligado ? 0 : 1;
-  if (valor[AJ_DV] == a) return;
-  AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar());
+  if (valor[AJ_DV] == a) return 0;
+  AJ_COM_ORIGEM(AJLOG_CENTRAL, ok = gravar());
   riscoNotar(AJ_DV, a);
+  return ok ? 0 : -1;
 }
 int ajustes_dolby_vision(void)        { return lig(AJ_DV) && !ajustes_farol_hdr_off_ativo(); }
 int ajustes_dolby_atmos(void)         { return lig(AJ_ATMOS); }

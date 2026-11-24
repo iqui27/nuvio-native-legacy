@@ -3519,6 +3519,10 @@ int player_retido_so_voo(void) { return retido && retidoVoo; }
 
 void player_descartar_retido(void) {
   if (!retido) return;
+  // Farol (#34): a reproducao que estava suspensa morreu — os overrides
+  // "so desta reproducao" (buffer maior, HDR desligado) morrem com ela, o
+  // mesmo fim que player_encerrar ja garante sem retido.
+  farolacao_rede_encerrar();
   // Um backend ja substituido nao pertence mais a esta sessao.
   if (strcmp(retidoUrl, video_url_atual())) comVideo = 0;
   fecharSessao(0, 0); // progresso ja gravado na suspensao, nao faz outro scrobble

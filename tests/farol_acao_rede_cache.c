@@ -79,6 +79,26 @@ int main(void) {
     assert(limpos == antes + 1 && multisLimpos == antesM + 1);
     assert(estacTomar("https://exemplo.invalid/x", NULL) == NULL);
   }
+
+  // FAROL34B: a corrida que faltava — par nascido na geracao velha estacionado
+  // DEPOIS de rede_zerar_cache nao pode ser adotado: a carimbo do pool do fio
+  // (a geracao em que o handle nasceu) fica menor que a atual e o tomador o
+  // descarta na hora. Antes o carimbo era so lido por quem o pool pegava.
+  { char hosts[1][96] = {"https://exemplo.invalid"};   // hostDaUrl guarda esquema+host
+    HandlePool *pp = (HandlePool *)pthread_getspecific(handleChave);
+    void *hc = pegarHandle("https://exemplo.invalid/e");
+    void *hm;
+    int antes, antesM;
+    assert(pp && hc);
+    hm = pp->multi;
+    pp->c = NULL; pp->multi = NULL;      // como rede_aquecer_job faz
+    rede_zerar_cache();
+    estacionar(hc, hm, hosts, 1);        // carimbo = pp->ger (velha)
+    antes = limpos; antesM = multisLimpos;
+    assert(estacTomar("https://exemplo.invalid/x", NULL) == NULL);
+    assert(limpos == antes + 1);
+    assert(multisLimpos == antesM + (hm ? 1 : 0));
+  }
   puts("PASS: rede_zerar_cache");
   return 0;
 }

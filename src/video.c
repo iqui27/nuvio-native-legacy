@@ -2728,8 +2728,10 @@ int video_tocar(const char *url) {
   reconAudio = reconLeg = -1; reconLegUrl[0] = 0;
   falhou = 0; terminou = 0; audioNaoSup = 0;
   ack_publicar();
-  // FONTE NOVA, decisao nova: o "sem HDR" era sobre o arquivo anterior.
-  semDVForcado = 0;
+  // FONTE NOVA, decisao nova: o "sem HDR" era sobre o arquivo anterior — a
+  // menos que seja o override do Farol (#34), que e sobre ESTA REPRODUCAO: o
+  // recarregar desta sessao e a reabertura seguinte voltam sem DV igual.
+  semDVForcado = ajustes_farol_hdr_off_ativo() ? 1 : 0;
   // Titulo novo: o marcador do anterior nao vale. Sem isto um filme sem
   // capitulos herdaria os creditos do filme de antes — e o painel subiria numa
   // hora sem relacao nenhuma com o que esta tocando.
@@ -3246,8 +3248,9 @@ static int tocarInterno(const char *url, int comDV) {
   seiBrancoX = seiBrancoY = seiMinLum = seiMaxLum = seiMaxCLL = seiMaxFALL = 0;
   vuiPrim = vuiTrans = vuiMatriz = 2;
   // A afirmacao de DV da fonte escolhida sobrevive ao reset: e ela que o bind
-  // descreve ao tv.display. Sem ela, toda sessao nasceria "none".
-  vidDV = dvPedido;
+  // descreve ao tv.display. Sem ela, toda sessao nasceria "none". E respeita
+  // o comDV: recarregar "sem HDR" nao pode voltar a afirmar DV no bind.
+  vidDV = dvPedido && comDV ? 1 : 0;
   cronPediu = 1; cronLoad = 0; cronQuadro = 0;
   clock_gettime(CLOCK_MONOTONIC, &t0Pedido);
   // windowId "window_id_dummy" NAO e enfeite: com string vazia o load responde
@@ -4539,7 +4542,12 @@ void video_forcar_sdr(void) {
   fflush(stdout);
 }
 
-void video_definir_dv(int dv) { dvPedido = dv ? 1 : 0; }
+void video_definir_dv(int dv) {
+  // Override do Farol "Desligar o HDR nesta reproducao" (#34): enquanto estiver
+  // ativo, nenhuma afirmacao de DV da fonte volta a ligar — a reabertura pedida
+  // pelo farolacao_rede reafirmaria o DV pelo dolbyVision gravado no Stream.
+  dvPedido = (dv && !ajustes_farol_hdr_off_ativo()) ? 1 : 0;
+}
 
 void video_escolher_audio(int i) {
   char b[192];

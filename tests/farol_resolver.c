@@ -31,6 +31,9 @@
 //   - cenario 18: A->B (sem FE_PRONTO) apos TV_FORMATO_REPETE -> alternativa.
 //   - cenario 19: Caso positivo de TV_FORMATO unico (1 falha) com player fechado.
 //   - cenario 20: Troca para B entre oferta e OK -> despacho recusa B e usa alternativa.
+//   - cenarios FAROL34B (issue #34): as 4 acoes de rede saem como PEDIU_FAROL
+//     para farolacao_rede_executar (toque vs segurar no Desligar o HDR),
+//     e o cartao IMAGEM_DV que antes caia no envio do registro agora executa.
 
 #include "resolver.h"
 #include "resolverregra.h"
@@ -55,6 +58,9 @@
 #include "gfx.h"
 #include "text.h"
 #include "ponteiro.h"
+#include "layout.h"
+#include "segurar.h"
+#include "farolacao_rede.h"
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -283,6 +289,25 @@ void ilha_avisar_ex(const IlhaAvisoEx *a) { (void)a; }
 int ilha_tem(const char *chave) { (void)chave; return 0; }
 int ilha_modal_aberto(void) { return 0; }
 int ilha_modal_visivel(void) { return 0; }
+// FAROL34B: a dica do OK segurado ("sempre nesta TV") e o vencer do segurar.
+static int c_ilhaAtvN;
+static char c_ilhaAtvTxt[256];
+void ilha_atividade(const char *texto, float progresso) {
+  (void)progresso;
+  c_ilhaAtvN++;
+  snprintf(c_ilhaAtvTxt, sizeof c_ilhaAtvTxt, "%s", texto ? texto : "");
+}
+int segurar_venceu(Uint32 agora, Uint32 desde, const char *tela) {
+  (void)tela;
+  return desde != 0 && (Sint32)(agora - desde) >= (Sint32)NV_HOLD_MS;
+}
+// FAROL34B: o despacho real de app.c (farol_prod_bridge.inc) chega aqui —
+// a prova de que RESOLVER_PEDIU_FAROL executa a acao escolhida.
+static int c_farolExecN, c_farolExecAcao, c_farolExecPersistir;
+int farolacao_rede_executar(int acao, int persistir) {
+  c_farolExecN++; c_farolExecAcao = acao; c_farolExecPersistir = persistir;
+  return 1;
+}
 
 int stream_atual(void) { return c_streamAtual; }
 const Stream *stream_item(int i) { return i >= 0 ? &c_stream : NULL; }
@@ -460,6 +485,8 @@ static void zerar(void) {
   c_celbDisp = 1; c_celbAbertoN = c_celbFechadoN = 0; c_celbChave[0] = 0;
   c_debridCelN = 0; c_debridCelServ[0] = c_debridCelChave[0] = 0;
   c_ilhaAvisosN = 0; c_ilhaChave[0] = c_ilhaTexto[0] = 0;
+  c_ilhaAtvN = 0; c_ilhaAtvTxt[0] = 0;
+  c_farolExecN = 0; c_farolExecAcao = 0; c_farolExecPersistir = 0;
   tela = TELA_AJUSTES;
   guiaTorrentRepetir = 0; torrentSessao = 0; torrentPendente = -1; aguardandoFonte = 0;
   c_playerAbrirN = 0; c_playerAbrirIdx = -1; c_playerDoInicioN = 0;
@@ -504,6 +531,20 @@ static void apertar_ok(void) {
 
 static void apertar_ok_app(void) {
   SDL_Event evento = { .type = SDL_KEYDOWN };
+  evento.key.keysym.sym = SDLK_RETURN;
+  app_resolver_despachar(&evento);
+}
+
+// O OK longo executa no KEYUP: depois de apertar_ok(), soltar conclui o
+// toque (ou a versao duravel, se o segurar ja venceu no atualizar).
+static void soltar_ok(void) {
+  SDL_Event evento = { .type = SDL_KEYUP };
+  evento.key.keysym.sym = SDLK_RETURN;
+  resolver_evento(&evento);
+}
+
+static void soltar_ok_app(void) {
+  SDL_Event evento = { .type = SDL_KEYUP };
   evento.key.keysym.sym = SDLK_RETURN;
   app_resolver_despachar(&evento);
 }
@@ -567,8 +608,18 @@ int main(void) {
   resolver_teste_testar(FAROL_S_CORES);
   assert(resolver_teste_veredito() == FAROL_C_IMAGEM_DV);
   assert(strstr(resolver_teste_titulo(), FT_IMAGEM_DV_L1) != NULL);
+  // FAROL34B (issue #34): "Desligar o HDR" executa de verdade. O toque (sem
+  // segurar vencer) sai como PEDIU_FAROL com persistir=0 — e NAO mais cai no
+  // envio do registro, que era o botao morto apontado na revisao.
+  assert(resolver_teste_prim() == FAROL_A_DESLIGAR_HDR);
   apertar_ok();
-  assert(c_envioChamadas >= 1);
+  assert(resolver_aberto());           // toque ainda nao acabou: falta o KEYUP
+  soltar_ok();
+  assert(resolver_pedido() == RESOLVER_PEDIU_FAROL);
+  assert(resolver_pedido_acao() == FAROL_A_DESLIGAR_HDR);
+  assert(resolver_pedido_persistir() == 0);
+  assert(!resolver_aberto());
+  assert(c_envioChamadas == 0);
 
   // ------------------------------------------------------------ cenario 4
   zerar();
@@ -695,7 +746,9 @@ int main(void) {
   assert(player_externo_disponivel() == 0);
   resolver_abrir();
   resolver_teste_testar(RES_S_NAO_COMECA);
-  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  // FAROL34B: TV_FORMATO_REPETE sem player externo cai na alternativa
+  // LIMPAR_CACHE — que agora executa (antes cairia no registro).
+  assert(resolver_teste_prim() == FAROL_A_LIMPAR_CACHE);
 
   ultimaFonteTemCabs = 0;
   c_androidApps[0] = 0;
@@ -929,10 +982,12 @@ int main(void) {
   resolver_abrir();
   resolver_teste_testar(RES_S_NAO_COMECA);
   assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO_REPETE);
-  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  // FAROL34B: a alternativa LIMPAR_CACHE executa — nao cai mais no registro.
+  assert(resolver_teste_prim() == FAROL_A_LIMPAR_CACHE);
   apertar_ok_app();
   assert(c_androidAbrirN == 0);
-  assert(c_envioChamadas >= 1);
+  assert(c_farolExecN == 1 && c_farolExecAcao == FAROL_A_LIMPAR_CACHE);
+  assert(c_envioChamadas == 0);
 
   // ----------------------------------------------------------- cenario 19
   // Cenario positivo (1 falha de formato, TV_FORMATO -> acaoAlt PLAYER_EXTERNO)
@@ -1071,11 +1126,12 @@ int main(void) {
   apertar_ok_app();
   assert(c_androidAbrirN == 0);
   assert(resolver_aberto());
-  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  assert(resolver_teste_prim() == FAROL_A_LIMPAR_CACHE);
   assert(player_abrir_externo_tentativa(tentSinc) == 0);
   assert(c_androidAbrirN == 0);
   apertar_ok_app();
-  assert(c_envioChamadas >= 1);
+  // FAROL34B: a alternativa LIMPAR_CACHE executa (era Mandar registro).
+  assert(c_farolExecN == 1 && c_farolExecAcao == FAROL_A_LIMPAR_CACHE);
   assert(c_androidAbrirN == 0);
 
   // ----------------------------------------------------------- cenario 23
@@ -1192,6 +1248,101 @@ int main(void) {
   }
   c_catSlotCount = 0;
   mini = 0;
+
+  // ----------------------------------------------------------- cenario 25
+  // FAROL34B (issue #34): REDE_NAO_CHEGA (erro FC_REDE recente, sem offline)
+  // -> prim "Reconectar a rede" -> PEDIU_FAROL -> app.c chama
+  // farolacao_rede_executar(RECONECTAR_REDE, 0). Prova o despacho de producao
+  // inteiro (o bloco extraido em farol_prod_bridge.inc).
+  zerar();
+  memset(&fx, 0, sizeof fx);
+  farolregra_fatos_iniciar(&fx);
+  fx.plat = FP_WEBOS;
+  fx.offline = 0;
+  fx.erro.classe = FC_REDE;
+  fx.erroIdadeS = 30;
+  resolver_teste_fatos_farol(&fx);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_REDE_NAO_CHEGA);
+  assert(resolver_teste_prim() == FAROL_A_RECONECTAR_REDE);
+  apertar_ok_app();                     // nao e celula longa: executa no KEYDOWN
+  assert(!resolver_aberto());
+  assert(c_farolExecN == 1);
+  assert(c_farolExecAcao == FAROL_A_RECONECTAR_REDE);
+  assert(c_farolExecPersistir == 0);
+
+  // ----------------------------------------------------------- cenario 26
+  // FAROL34B: PLAYER_PAROU com vazao suficiente -> prim "Buffer maior" ->
+  // executar(BUFFER_MAIOR, 0); secundario escala JUNTO = Mandar registro.
+  zerar();
+  memset(&fx, 0, sizeof fx);
+  farolregra_fatos_iniciar(&fx);
+  fx.plat = FP_WEBOS;
+  fx.erro.classe = FC_PARADO;
+  fx.erroIdadeS = 30;
+  fx.fonteMbps = 5;
+  fx.fonteGBx10 = 0;
+  fx.vazaoMbps = 5;
+  resolver_teste_fatos_farol(&fx);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_PLAYER_PAROU);
+  assert(resolver_teste_prim() == FAROL_A_BUFFER_MAIOR);
+  assert(resolver_teste_sec() == FAROL_A_ENVIAR_REGISTRO);
+  apertar_ok_app();
+  assert(!resolver_aberto());
+  assert(c_farolExecN == 1);
+  assert(c_farolExecAcao == FAROL_A_BUFFER_MAIOR);
+  assert(c_farolExecPersistir == 0);
+
+  // ----------------------------------------------------------- cenario 27
+  // FAROL34B: TV_FORMATO_REPETE sem player externo (webOS): a regra oferece
+  // FONTE_OUTRO_FORMATO (sem executor) e o cartao cai na ALTERNATIVA
+  // LIMPAR_CACHE — que executa, nao vai mais para o envio de registro.
+  zerar();
+  memset(&fx, 0, sizeof fx);
+  farolregra_fatos_iniciar(&fx);
+  fx.plat = FP_WEBOS;
+  fx.erro.classe = FC_FORMATO;
+  fx.erroIdadeS = 30;
+  fx.falhasSeguidas = 2;
+  resolver_teste_fatos_farol(&fx);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO_REPETE);
+  assert(resolver_teste_prim() == FAROL_A_LIMPAR_CACHE);
+  apertar_ok_app();
+  assert(!resolver_aberto());
+  assert(c_farolExecN == 1);
+  assert(c_farolExecAcao == FAROL_A_LIMPAR_CACHE);
+  assert(c_farolExecPersistir == 0);
+
+  // ----------------------------------------------------------- cenario 28
+  // FAROL34B: segurar OK em "Desligar o HDR" sobe a dica da versao duravel
+  // e o KEYUP depois do vencido executa persistir=1 ("sempre nesta TV").
+  // O toque do cenario 3 provou persistir=0.
+  zerar();
+  memset(&fx, 0, sizeof fx);
+  farolregra_fatos_iniciar(&fx);
+  fx.plat = FP_WEBOS;
+  fx.fonteDv = 1;
+  fx.tvDv = 0;
+  resolver_teste_fatos_farol(&fx);
+  resolver_abrir();
+  resolver_teste_testar(FAROL_S_CORES);
+  assert(resolver_teste_veredito() == FAROL_C_IMAGEM_DV);
+  assert(resolver_teste_prim() == FAROL_A_DESLIGAR_HDR);
+  apertar_ok();                          // KEYDOWN: arma (nao executa)
+  assert(resolver_aberto());
+  resolver_atualizar(0.016f, SDL_GetTicks() + NV_HOLD_MS + 16);
+  assert(c_ilhaAtvN >= 1);
+  assert(strstr(c_ilhaAtvTxt, "sempre") != NULL);
+  soltar_ok();                           // KEYUP depois do vencido: duravel
+  assert(resolver_pedido() == RESOLVER_PEDIU_FAROL);
+  assert(resolver_pedido_acao() == FAROL_A_DESLIGAR_HDR);
+  assert(resolver_pedido_persistir() == 1);
+  assert(!resolver_aberto());
 
   puts("farol_resolver: producao ok");
   return 0;

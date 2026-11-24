@@ -146,7 +146,8 @@ int  ajustes_farol_buffer_maior_ativo(void);
 void ajustes_farol_hdr_off(int on);
 int  ajustes_farol_hdr_off_ativo(void);
 int  ajustes_dolby_vision_gravado(void);
-void ajustes_dolby_vision_definir(int ligado);
+// 0 = ok ou sem mudanca; -1 = a gravacao falhou (a memoria mudou, o disco nao).
+int  ajustes_dolby_vision_definir(int ligado);
 int ajustes_dolby_atmos(void);
 // pauseOverlayEnabled: o painel de ficha que sobe alguns segundos depois de
 // pausar o video. Ver pausao.h.

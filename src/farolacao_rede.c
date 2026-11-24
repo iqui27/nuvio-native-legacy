@@ -222,11 +222,19 @@ static int desligarHdr(int persistir) {
   if (!aberto && !persistir) return 0;
   if (persistir) {
     int antes = ajustes_dolby_vision_gravado();
-    ajustes_dolby_vision_definir(0);
-    pthread_mutex_lock(&trava);
-    hdrAnterior = antes ? 1 : -1;     // so desfaz o que ESTA acao mudou
-    pthread_mutex_unlock(&trava);
-    avisarHdrPersistido(antes != 0);
+    // Gravacao que falhou NAO vira "sempre nesta TV": sem isto o ilha-aviso
+    // prometia um desligado permanente que o proximo arranque esqueceria.
+    if (ajustes_dolby_vision_definir(0) < 0) {
+      printf("[farol] acao=desligar_hdr: ajuste nao gravou; "
+             "aplicando so a esta reproducao\n");
+      fflush(stdout);
+      persistir = 0;
+    } else {
+      pthread_mutex_lock(&trava);
+      hdrAnterior = antes ? 1 : -1;   // so desfaz o que ESTA acao mudou
+      pthread_mutex_unlock(&trava);
+      avisarHdrPersistido(antes != 0);
+    }
   }
   if (aberto) {
     ajustes_farol_hdr_off(1);

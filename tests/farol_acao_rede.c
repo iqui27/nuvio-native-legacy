@@ -60,7 +60,15 @@ int  ajustes_farol_buffer_maior_ativo(void) { return bufferOverride; }
 void ajustes_farol_hdr_off(int on) { hdrOverride = on ? 1 : 0; }
 int  ajustes_farol_hdr_off_ativo(void) { return hdrOverride; }
 int  ajustes_dolby_vision_gravado(void) { return dvGravado; }
-void ajustes_dolby_vision_definir(int ligado) { if (dvGravado != (ligado ? 1 : 0)) escritas++; dvGravado = ligado ? 1 : 0; }
+// FAROL34B: a assinatura real agora devolve int (0 ok / -1 disco nao
+// confirmou). gravarFalha simula a falha para o caso novo do fim.
+static int gravarFalha;
+int  ajustes_dolby_vision_definir(int ligado) {
+  if (gravarFalha) return -1;
+  if (dvGravado != (ligado ? 1 : 0)) escritas++;
+  dvGravado = ligado ? 1 : 0;
+  return 0;
+}
 
 // Idioma e ilha: a frase da acao feita e a copia do contexto do Desfazer.
 const char *i18n(const char *s) { return s ? s : ""; }
@@ -315,6 +323,20 @@ static void caso_hdr(void) {
   assert(ilhaFeitas == 1 && ilhaUlt.desfazer == NULL);
   assert(!farolacao_rede_reabertura_pedida(&pos));
   assert(!farolacao_rede_desfazer_hdr() && dvGravado == 0);
+
+  // FAROL34B (P2): gravacao que o disco nao confirma NAO vira "sempre nesta
+  // TV" — desce para o desligado temporario, sem a ilha que prometia desfazer
+  // uma preferencia que o proximo arranque esqueceria.
+  dvGravado = 1; escritas = 0; ilhaFeitas = 0; tocando = 1; posicao = 30; ANEL_ZERAR();
+  gravarFalha = 1;
+  assert(farolacao_rede_executar(FAROL_A_DESLIGAR_HDR, 1) == 1);     // temporario ainda vale
+  gravarFalha = 0;
+  assert(hdrOverride && farolacao_rede_hdr_desligado_ativo());
+  assert(dvGravado == 1 && escritas == 0);                            // nada foi prometido
+  assert(ilhaFeitas == 0);                                            // nem a ilha de sucesso
+  assert(farolacao_rede_reabertura_pedida(&pos));
+  farolacao_rede_encerrar();
+  assert(!hdrOverride && dvGravado == 1);
   printf("ok: DESLIGAR_HDR\n");
 }
 

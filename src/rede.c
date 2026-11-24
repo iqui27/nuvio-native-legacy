@@ -228,9 +228,6 @@ static long redeLimiteAtual(void) {
   return rede_teto > 0 ? rede_teto : 0;
 }
 
-static unsigned redeGerCache;
-unsigned rede_cache_geracao(void) { return __atomic_load_n(&redeGerCache, __ATOMIC_ACQUIRE); }
-
 #ifdef __EMSCRIPTEN__
 // ---------------------------------------------------------------- EMSCRIPTEN
 // Caminho de rede do alvo Tizen (WASM).
@@ -1435,9 +1432,13 @@ int rede_tls_enviar(RedeTls *t, const void *buf, size_t n) { (void)t; (void)buf;
 int rede_tls_tentar_enviar(RedeTls *t, const void *buf, size_t n, size_t *foi) { (void)t; (void)buf; (void)n; if (foi) *foi = 0; return -1; }
 int rede_tls_receber(RedeTls *t, void *buf, size_t n, int esperaMs) { (void)t; (void)buf; (void)n; (void)esperaMs; return -1; }
 void rede_tls_fechar(RedeTls *t) { (void)t; }
-void rede_zerar_cache(void) { __atomic_add_fetch(&redeGerCache, 1u, __ATOMIC_ACQ_REL); }
 
 #else
+
+// FAROL (#34): geracao do cache de DNS/conexoes do cliente. So existe no
+// ramo nativo: no Emscripten rede_zerar_cache e no-op e a geracao e sempre 0.
+static unsigned redeGerCache;
+unsigned rede_cache_geracao(void) { return __atomic_load_n(&redeGerCache, __ATOMIC_ACQUIRE); }
 
 #ifndef NV_TPK40   // no NV_TPK40 estes nomes sao macros da struct por fio (topo)
 // Codigo da libcurl do ultimo pedido DESTE fio (0 = transporte ok). So o
@@ -2060,7 +2061,11 @@ static int performV4(void *c, const char *url, CancelVigia *v) {
 // O par easy+multi viaja junto: o cache de conexoes do pre-aquecimento mora no
 // multi (performTmdb passa por ele), e o fio consumidor precisa DOS DOIS para
 // reusar o HEAD aquecido — a easy sozinha chegaria sem conexao nenhuma.
-typedef struct { void *c; void *multi; unsigned long ms; int nh; char h[REDE_ESTAC_HOSTS][96]; } Estac;
+// `ger`: a geracao do cache em que o par foi estacionado (FAROL #34). Um HEAD
+// que comecou ANTES de rede_zerar_cache e estacionou DEPOIS nao pode entregar
+// conexoes/DNS do mundo velho ao fio que o adota — sem este campo ele entrava
+// no pool ja com a geracao nova (poolAlocar) e ninguem mais o descartava.
+typedef struct { void *c; void *multi; unsigned long ms; unsigned ger; int nh; char h[REDE_ESTAC_HOSTS][96]; } Estac;
 static Estac estac[REDE_ESTAC_MAX];
 static pthread_mutex_t estacTrava = PTHREAD_MUTEX_INITIALIZER;
 // Chamar com estacTrava: joga fora os que passaram da validade.
@@ -2086,8 +2091,14 @@ static void estacionar(void *c, void *multi, char h[][96], int nh) {
   if (livre < 0) { livre = velho;
     if (estac[livre].multi && curl_multi_cleanup) curl_multi_cleanup(estac[livre].multi);
     if (curl_cleanup) curl_cleanup(estac[livre].c); }
+
   estac[livre].c = c; estac[livre].multi = multi;
   estac[livre].ms = agora; estac[livre].nh = nh;
+  // Carimbo e a geracao de NASCIMENTO do par (a do pool do fio), nao a do
+  // instante do estacionamento: e assim que um HEAD iniciado antes de
+  // rede_zerar_cache e estacionado depois ainda morre no estacTomar.
+  { HandlePool *pp = (HandlePool *)pthread_getspecific(handleChave);
+    estac[livre].ger = pp ? pp->ger : __atomic_load_n(&redeGerCache, __ATOMIC_ACQUIRE); }
   for (i = 0; i < nh && i < REDE_ESTAC_HOSTS; i++) snprintf(estac[livre].h[i], 96, "%s", h[i]);
   pthread_mutex_unlock(&estacTrava);
 }
@@ -2101,6 +2112,17 @@ static void *estacTomar(const char *url, void **multi) {
   if (!h[0]) return NULL;
   pthread_mutex_lock(&estacTrava);
   estacVelhos(agora);
+  // FAROL (#34): par estacionado por um job que comecou antes do reset — a
+  // conexao/DNS dele e do mundo velho mesmo tendo chegado depois. Morre na
+  // hora, como os que rede_zerar_cache apaga sob a mesma trava.
+  { unsigned gAgora = __atomic_load_n(&redeGerCache, __ATOMIC_ACQUIRE);
+    for (i = 0; i < REDE_ESTAC_MAX; i++) {
+      if (estac[i].c && estac[i].ger != gAgora) {
+        if (estac[i].multi && curl_multi_cleanup) curl_multi_cleanup(estac[i].multi);
+        if (curl_cleanup) curl_cleanup(estac[i].c);
+        estac[i].c = NULL;
+        estac[i].multi = NULL;
+      } } }
   for (i = 0; i < REDE_ESTAC_MAX && !c; i++)
     for (k = 0; estac[i].c && k < estac[i].nh; k++)
       if (!strcmp(estac[i].h[k], h)) { c = estac[i].c;

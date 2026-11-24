@@ -5181,6 +5181,10 @@ void app_evento(const SDL_Event *e) {
       // FAROL: a fonte que falhou sai para o player externo instalado,
       // vinculada a tentativa diagnosticada.
       player_abrir_externo_tentativa(resolver_tentativa_externo());
+    } else if (rped == RESOLVER_PEDIU_FAROL) {
+      // FAROL34B: o resolver so decidiu a acao; a execucao (rede, cache,
+      // buffer, HDR, reabertura do video) mora toda em farolacao_rede.
+      farolacao_rede_executar(resolver_pedido_acao(), resolver_pedido_persistir());
     }
     return;
   }
