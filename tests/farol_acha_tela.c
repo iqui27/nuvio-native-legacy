@@ -23,11 +23,14 @@
 
 // Prototipos usados por farol_resolver.c antes da inclusao.
 #include "catalogo.h"
+#include "home.h"
 const CatItem *cat_item(int i);
 int cat_n(void);
 unsigned cat_revisao(void);
 int cacavisto_filme(const char *imdb, long tmdb, long long *quando);
-static void abrirPorIndice(int idx);
+static void player_descartar_retido(void);
+static void detail_abrir(const HomeItem *it);
+static int  detail_aberto(void);
 
 #include "farol_resolver.c"
 
@@ -38,9 +41,13 @@ static unsigned A_rev = 1u;
 static char     A_vistos[32][32];
 static int      A_vistosN;
 static int      A_abriuN;
+static int      A_detailAberto;
 static int      A_abriuIdx = -1;
 static char     A_abriuImdb[64];
 static char     A_abriuTipo[8];
+static char     A_abriuTitulo[160];
+static char     A_abriuMeta[96];
+static char     A_abriuArte[NV_ARTE_URL_MAX];
 
 const CatItem *cat_item(int i) {
   return (i >= 0 && i < A_n) ? &A_itens[i] : NULL;
@@ -58,16 +65,30 @@ int cacavisto_filme(const char *imdb, long tmdb, long long *quando) {
   return 0;
 }
 
-static void abrirPorIndice(int idx) {
-  const CatItem *c = cat_item(idx);
+static void player_descartar_retido(void) {}
+
+static void detail_abrir(const HomeItem *it) {
+  const CatItem *c = it ? cat_item(it->indice) : NULL;
   A_abriuN++;
-  A_abriuIdx = idx;
+  A_detailAberto = 1;
+  A_abriuIdx = it ? it->indice : -1;
   A_abriuImdb[0] = '\0';
   A_abriuTipo[0] = '\0';
+  A_abriuTitulo[0] = '\0';
+  A_abriuMeta[0] = '\0';
+  A_abriuArte[0] = '\0';
+  if (it && it->arte)
+    snprintf(A_abriuArte, sizeof A_abriuArte, "%s", it->arte);
   if (c) {
     snprintf(A_abriuImdb, sizeof A_abriuImdb, "%s", c->imdb);
     snprintf(A_abriuTipo, sizeof A_abriuTipo, "%s", c->tipo);
+    snprintf(A_abriuTitulo, sizeof A_abriuTitulo, "%s", c->titulo);
+    snprintf(A_abriuMeta, sizeof A_abriuMeta, "%s", c->meta);
   }
+}
+
+static int detail_aberto(void) {
+  return A_detailAberto;
 }
 
 static int falhas;
@@ -85,9 +106,13 @@ static void zera_tudo(void) {
   A_rev++;
   A_vistosN = 0;
   A_abriuN = 0;
+  A_detailAberto = 0;
   A_abriuIdx = -1;
   A_abriuImdb[0] = '\0';
   A_abriuTipo[0] = '\0';
+  A_abriuTitulo[0] = '\0';
+  A_abriuMeta[0] = '\0';
+  A_abriuArte[0] = '\0';
   c_reduzidas = 1;
   resolver_teste_esquecer();
 }
@@ -143,6 +168,13 @@ static int escreveu(const char *s) {
   for (i = 0; i < c_txtN; i++)
     if (strstr(c_txt[i], s)) return 1;
   return 0;
+}
+
+static int escreveu_qtd(const char *s) {
+  int i, q = 0;
+  for (i = 0; i < c_txtN; i++)
+    if (strstr(c_txt[i], s)) q++;
+  return q;
 }
 
 static void varredura_fase(int esperados, int faseEsperada) {
@@ -314,7 +346,7 @@ int main(void) {
   tecla(SDLK_LEFT);  CONFERE(farolachaui_foco() == 0);
   varredura_fase(2, RESOLVER_FASE_ACHAR);
 
-  // 4. OK num cartaz copia id e tipo, fecha o Farol e dispara resolver_pediu_abrir (inclusive via app.c).
+  // 4. OK num cartaz copia identidade completa e despacha via app.c antes de fechar o Farol.
   zera_tudo();
   seed_catalogo_completo();
   resolver_abrir();
@@ -323,13 +355,23 @@ int main(void) {
   CONFERE(farolachaui_n() == 2);
   tecla(SDLK_RIGHT); // foca segundo item (obra_07, tt1000007, movie)
   tecla(SDLK_RETURN);
-  CONFERE(!resolver_aberto());
-  idx = -1;
-  CONFERE(resolver_pediu_abrir(&idx) == 1);
-  CONFERE(idx >= 0 && idx < cat_n());
-  CONFERE(!strcmp(cat_item(idx)->imdb, "tt1000007"));
-  CONFERE(!strcmp(cat_item(idx)->tipo, "movie"));
-  CONFERE(resolver_pediu_abrir(&idx) == 0); // consome UMA vez
+  // P1-2: Farol so fecha depois que app.c confirmar o despacho do detalhe.
+  CONFERE(resolver_aberto());
+  {
+    FarolAchaPedido ped;
+    unsigned revRes = 0;
+    CONFERE(resolver_pediu_abrir(&ped) == 1);
+    CONFERE(!strcmp(ped.imdb, "tt1000007"));
+    CONFERE(!strcmp(ped.tipo, "movie"));
+    CONFERE(!strcmp(ped.titulo, "obra_07"));
+    idx = resolver_resolver_pedido(&ped, &revRes);
+    CONFERE(idx >= 0 && idx < cat_n() && revRes == A_rev);
+    CONFERE(!strcmp(cat_item(idx)->imdb, "tt1000007"));
+    CONFERE(!strcmp(cat_item(idx)->tipo, "movie"));
+    CONFERE(resolver_pediu_abrir(&ped) == 0); // consome UMA vez
+    resolver_fechar();
+    CONFERE(!resolver_aberto());
+  }
 
   // Mesmo fluxo passando pelo bloco real de src/app.c (app_resolver_despachar).
   resolver_abrir();
@@ -337,6 +379,7 @@ int main(void) {
   tecla(SDLK_RETURN);
   tecla_app(SDLK_RETURN);
   CONFERE(!resolver_aberto());
+  CONFERE(A_detailAberto == 1);
   CONFERE(A_abriuN == 1);
   CONFERE(A_abriuIdx >= 0 && A_abriuIdx < cat_n());
   CONFERE(!strcmp(cat_item(A_abriuIdx)->imdb, A_abriuImdb));
@@ -400,11 +443,15 @@ int main(void) {
     A_n++;
     A_rev++;
     tecla(SDLK_RETURN);
-    CONFERE(!resolver_aberto());
-    idx = -1;
-    CONFERE(resolver_pediu_abrir(&idx) == 1);
-    CONFERE(idx >= 0 && idx < cat_n());
-    CONFERE(farolacha_minutos_meta(cat_item(idx)->meta) <= 100);
+    CONFERE(resolver_aberto());
+    {
+      FarolAchaPedido ped;
+      CONFERE(resolver_pediu_abrir(&ped) == 1);
+      idx = resolver_resolver_pedido(&ped, NULL);
+      CONFERE(idx >= 0 && idx < cat_n());
+      CONFERE(farolacha_minutos_meta(cat_item(idx)->meta) <= 100);
+      resolver_fechar();
+    }
   }
 
   // 7. Regra de honestidade:
@@ -453,6 +500,203 @@ int main(void) {
     CONFERE(farolachaui_n() == 2);
     CONFERE(!strcmp(farolachaui_l2(), "")); // tt4000001 foi visto
   }
+
+  // 9. P1-1 Causa A: troca de catalogo antes de OK sem redesenho NAO abre outra obra silenciosamente.
+  zera_tudo();
+  add_cat("tt5000001", 501, "movie", "obra_A", "Filme · Drama", "2024 · 80 min", 85, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  CONFERE(farolachaui_n() == 1 && farolachaui_foco() == 0);
+  desenhar();
+  // Sem redesenhar, substitui obra_A por obra_X na posicao 0.
+  memset(&A_itens[0], 0, sizeof A_itens[0]);
+  snprintf(A_itens[0].imdb, sizeof A_itens[0].imdb, "tt5000099");
+  A_itens[0].tmdb = 599;
+  snprintf(A_itens[0].tipo, sizeof A_itens[0].tipo, "movie");
+  snprintf(A_itens[0].titulo, sizeof A_itens[0].titulo, "obra_X");
+  snprintf(A_itens[0].genero, sizeof A_itens[0].genero, "Filme · Drama");
+  snprintf(A_itens[0].meta, sizeof A_itens[0].meta, "2024 · 82 min");
+  A_rev++;
+  tecla_app(SDLK_RETURN);
+  CONFERE(A_abriuN == 0 && A_detailAberto == 0);
+  CONFERE(resolver_aberto() && resolver_fase() == RESOLVER_FASE_ACHAR);
+  CONFERE(farolachaui_revisao() == A_rev);
+  // Nova confirmacao do usuario na tela recarregada abre obra_X.
+  tecla_app(SDLK_RETURN);
+  CONFERE(!resolver_aberto());
+  CONFERE(A_abriuN == 1 && A_detailAberto == 1);
+  CONFERE(!strcmp(A_abriuImdb, "tt5000099"));
+
+  // Tambem quando a lista vira vazia antes de OK sem redesenho.
+  zera_tudo();
+  add_cat("tt5000002", 502, "movie", "obra_B", "Filme · Drama", "2024 · 80 min", 85, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  CONFERE(farolachaui_n() == 1);
+  A_n = 0;
+  A_rev++;
+  tecla_app(SDLK_RETURN);
+  CONFERE(A_abriuN == 0 && A_detailAberto == 0);
+  CONFERE(resolver_aberto() && resolver_fase() == RESOLVER_FASE_ACHAR);
+  CONFERE(farolachaui_n() == 0 && farolachaui_foco() == -1);
+
+  // 10. P1-1 Causa B: inversao do catalogo apos resolver_pediu_abrir() (antes de abrirFarolPedido).
+  zera_tudo();
+  add_cat("tt6000001", 601, "movie", "obra_inv_1", "Filme · Drama", "2024 · 85 min", 90, 0, 0);
+  add_cat("tt6000002", 602, "movie", "obra_inv_2", "Filme · Drama", "2024 · 86 min", 70, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  CONFERE(farolachaui_n() == 2);
+  tecla(SDLK_RETURN);
+  {
+    FarolAchaPedido ped;
+    CatItem tmp;
+    char imdbEsperado[64];
+    CONFERE(resolver_pediu_abrir(&ped) == 1);
+    snprintf(imdbEsperado, sizeof imdbEsperado, "%s", ped.imdb);
+    // Inverte o catalogo inteiro entre o getter e abrirFarolPedido().
+    tmp = A_itens[0];
+    A_itens[0] = A_itens[1];
+    A_itens[1] = tmp;
+    A_rev++;
+    CONFERE(abrirFarolPedido(&ped) == 1);
+    CONFERE(A_detailAberto == 1 && !strcmp(A_abriuImdb, imdbEsperado));
+    CONFERE(!strcmp(cat_item(A_abriuIdx)->imdb, imdbEsperado));
+    // Se a obra sumir completamente entre o getter e abrirFarolPedido(), NAO abre outra nem fecha Farol.
+    A_abriuN = 0; A_detailAberto = 0;
+    A_n = 1;
+    snprintf(A_itens[0].imdb, sizeof A_itens[0].imdb, "tt6999999");
+    A_itens[0].tmdb = 6999;
+    A_rev++;
+    CONFERE(abrirFarolPedido(&ped) == 0);
+    CONFERE(A_abriuN == 0 && A_detailAberto == 0);
+    CONFERE(resolver_aberto());
+    resolver_fechar();
+  }
+
+  // 11. P1-1 Causa C: dois homonimos sem IMDb/TMDB (150 min x 84 min).
+  zera_tudo();
+  add_cat("", 0, "movie", "Obra Homonima", "Filme · Drama", "2024 · 150 min", 95, 0, 0);
+  add_cat("", 0, "movie", "Obra Homonima", "Filme · Drama", "2024 · 84 min",  75, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  CONFERE(farolachaui_n() == 1);
+  tecla_app(SDLK_RETURN);
+  CONFERE(!resolver_aberto());
+  CONFERE(A_detailAberto == 1 && A_abriuIdx == 1);
+  CONFERE(!strcmp(A_abriuMeta, "2024 · 84 min"));
+
+  // Homonimo sem ID apos deslocamento do catalogo: resolve unico por titulo+meta+tipo.
+  zera_tudo();
+  add_cat("", 0, "movie", "Obra Homonima", "Filme · Drama", "2024 · 150 min", 95, 0, 0);
+  add_cat("", 0, "movie", "Obra Homonima", "Filme · Drama", "2024 · 84 min",  75, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  tecla(SDLK_RETURN);
+  {
+    FarolAchaPedido ped;
+    CONFERE(resolver_pediu_abrir(&ped) == 1);
+    memmove(&A_itens[1], &A_itens[0], sizeof(CatItem) * (size_t)A_n);
+    A_n++;
+    memset(&A_itens[0], 0, sizeof A_itens[0]);
+    snprintf(A_itens[0].imdb, sizeof A_itens[0].imdb, "tt9990001");
+    snprintf(A_itens[0].tipo, sizeof A_itens[0].tipo, "movie");
+    snprintf(A_itens[0].titulo, sizeof A_itens[0].titulo, "Desloca");
+    snprintf(A_itens[0].meta, sizeof A_itens[0].meta, "2025 · 140 min");
+    A_rev++;
+    CONFERE(abrirFarolPedido(&ped) == 1);
+    CONFERE(A_abriuIdx == 2 && !strcmp(A_abriuMeta, "2024 · 84 min"));
+    resolver_fechar();
+  }
+
+  // Dois homonimos identicos sem ID (mesmo titulo+meta+tipo): aceita na mesma revisao, recusa se ambigua apos mudanca.
+  zera_tudo();
+  add_cat("", 0, "movie", "Obra Igual", "Filme · Drama", "2024 · 84 min", 80, 0, 0);
+  add_cat("", 0, "movie", "Obra Igual", "Filme · Drama", "2024 · 84 min", 80, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  CONFERE(farolachaui_n() == 1);
+  tecla(SDLK_RETURN);
+  {
+    FarolAchaPedido ped;
+    int idxFocado;
+    CONFERE(resolver_pediu_abrir(&ped) == 1);
+    idxFocado = ped.indice;
+    CONFERE(resolver_resolver_pedido(&ped, NULL) == idxFocado);
+    A_rev++;
+    CONFERE(resolver_resolver_pedido(&ped, NULL) == -1);
+    resolver_fechar();
+  }
+
+  // 12. P1-2: obra valida sem poster e sem backdrop abre o detalhe de verdade e fecha o Farol.
+  zera_tudo();
+  add_cat("tt7000001", 701, "movie", "Local Sem Arte", "Filme · Drama", "2024 · 95 min", 80, 42, 1700000009000LL);
+  CONFERE(A_itens[0].poster[0] == '\0' && A_itens[0].backdrop[0] == '\0');
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_RETOMAR);
+  tecla(SDLK_RETURN);
+  CONFERE(farolachaui_n() == 1);
+  tecla_app(SDLK_RETURN);
+  CONFERE(!resolver_aberto());
+  CONFERE(A_detailAberto == 1 && A_abriuN == 1);
+  CONFERE(!strcmp(A_abriuImdb, "tt7000001"));
+  CONFERE(A_abriuArte[0] == '\0');
+
+  // 13. P2-1: filme de exatos 100 min NAO sai sob "com menos de 100 min" / "1h40".
+  zera_tudo();
+  add_cat("tt8000001", 801, "movie", "Exatos Cem", "Filme · Suspense", "2025 · 100 min", 85, 0, 0);
+  add_cat("tt8000002", 802, "movie", "Exatos 1h40", "Filme · Suspense", "2025 · 1h40", 85, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  desenhar();
+  CONFERE(farolachaui_n() == 2 && farolachaui_em_fallback() == 1);
+  CONFERE(strstr(farolachaui_l1(), "Nada com menos de 100 min") != NULL);
+  CONFERE(farolachaui_l2()[0] == '\0'); // P2-2: fallback parcial (2 itens) sem L2 enganosa
+
+  // Com 99 min + 100 min: so o de 99 min entra na busca < 100 min.
+  zera_tudo();
+  add_cat("tt8000003", 803, "movie", "Noventa e Nove", "Filme · Suspense", "2025 · 99 min", 85, 0, 0);
+  add_cat("tt8000004", 804, "movie", "Cem Min",        "Filme · Suspense", "2025 · 100 min", 90, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  desenhar();
+  CONFERE(farolachaui_n() == 1 && farolachaui_em_fallback() == 0);
+  CONFERE(strstr(farolachaui_l1(), "1h40") != NULL);
+  tecla_app(SDLK_RETURN);
+  CONFERE(!strcmp(A_abriuImdb, "tt8000003"));
+
+  // 14. P2-2: estado vazio sem duplicar texto no cabecalho e no painel; fallback parcial 1 item sem L2.
+  zera_tudo();
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  desenhar();
+  CONFERE(farolachaui_n() == 0);
+  CONFERE(escreveu_qtd("Nada com menos de 100 min") == 1);
+  tecla(SDLK_ESCAPE);
+  ir_intencao(RESOLVER_B_ACHAR_NAO_VI);
+  tecla(SDLK_RETURN);
+  desenhar();
+  CONFERE(farolachaui_n() == 0);
+  CONFERE(escreveu_qtd("Nada encontrado") == 1);
+
+  zera_tudo();
+  add_cat("tt8000010", 810, "movie", "Parcial Um", "Filme · Drama", "2025 · 115 min", 84, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  desenhar();
+  CONFERE(farolachaui_n() == 1 && farolachaui_em_fallback() == 1);
+  CONFERE(farolachaui_l2()[0] == '\0');
+  CONFERE(!escreveu(FT_ACHA_L2_NAO_VISTO));
 
   // Modo vidro e animacoes ligadas (exercicio sem crashes).
   c_reduzidas = 0;

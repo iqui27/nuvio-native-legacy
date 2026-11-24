@@ -23,6 +23,7 @@
 #define NV_RESOLVER_H
 #include <SDL2/SDL.h>
 #include <stdint.h>
+#include "farolachaui.h"
 
 #define RESOLVER_ARQ "resolver-enviados.txt"
 
@@ -43,9 +44,13 @@ void resolver_desenhar(Uint32 agora);
 #define RESOLVER_PEDIU_DEBRID 2   // abrir o login da conta de cache (addonguia, QR)
 #define RESOLVER_PEDIU_PLAYER_EXT 3   // despachar a fonte falha ao player externo (Android)
 int  resolver_pedido(void);
-// OK num cartaz de "Achar o que ver" (#25): devolve 1 UMA vez e escreve em
-// `indiceCatalogo` o indice vivo em cat_item() (contrato de busca_pediu_abrir).
-int  resolver_pediu_abrir(int *indiceCatalogo);
+// OK num cartaz de "Achar o que ver" (#25): devolve 1 UMA vez com a identidade
+// completa do cartaz selecionado (`FarolAchaPedido`) para validacao no
+// catalogo vivo em `app.c` antes de abrir o detalhe e fechar o Farol.
+int  resolver_pediu_abrir(FarolAchaPedido *pedido);
+int  resolver_resolver_pedido(const FarolAchaPedido *pedido, unsigned *revisaoOut);
+void resolver_fechar(void);
+void resolver_recarregar_achar(void);
 uint64_t resolver_tentativa_externo(void);
 
 // ---- Para a captura e os testes.

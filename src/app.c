@@ -1128,6 +1128,31 @@ static void abrirPorIndice(int i) {
   abrirTitulo(&it, 1, 1);
 }
 
+static int abrirFarolPedido(const FarolAchaPedido *p) {
+  int tentativa;
+  if (!p) return 0;
+  for (tentativa = 0; tentativa < 3; tentativa++) {
+    unsigned rev = 0;
+    int idx = resolver_resolver_pedido(p, &rev);
+    const CatItem *c;
+    HomeItem it;
+    GfxRect tudo = { 0, 0, NV_TELA_W, NV_TELA_H };
+    if (idx < 0) return 0;
+    c = cat_item(idx);
+    if (!c || cat_revisao() != rev) continue;
+    memset(&it, 0, sizeof it);
+    it.indice = idx;
+    it.rect = tudo;
+    it.arte = c->backdrop[0] ? c->backdrop : (c->poster[0] ? c->poster : NULL);
+    it.titulo = c->titulo;
+    it.genero = c->genero;
+    it.meta = c->meta;
+    abrirTitulo(&it, 0, 1);
+    return detail_aberto();
+  }
+  return 0;
+}
+
 // Consume the panel request through the same title route as other screens.
 static void abrirTituloDoPainel(void) {
   if (player_aberto()) return;
@@ -5136,7 +5161,8 @@ void app_evento(const SDL_Event *e) {
   // RESOLVER UM PROBLEMA (2.1, resolver.h): tela inteira, come o teclado todo.
   // "Ver Fontes e addons" fecha a tela e abre Ajustes no lugar.
   if (resolver_aberto()) {
-    int rped, ridx;
+    int rped;
+    FarolAchaPedido rpedAcha;
     resolver_evento(e);
     rped = resolver_pedido();
     if (rped == RESOLVER_PEDIU_FONTES) {
@@ -5181,8 +5207,12 @@ void app_evento(const SDL_Event *e) {
       // vinculada a tentativa diagnosticada.
       player_abrir_externo_tentativa(resolver_tentativa_externo());
     }
-    if (resolver_pediu_abrir(&ridx)) {
-      abrirPorIndice(ridx);
+    if (resolver_pediu_abrir(&rpedAcha)) {
+      if (abrirFarolPedido(&rpedAcha)) {
+        resolver_fechar();
+      } else {
+        resolver_recarregar_achar();
+      }
     }
     return;
   }

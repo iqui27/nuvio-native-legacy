@@ -178,8 +178,22 @@ int resolver_pedido(void) {
   return p;
 }
 
-int resolver_pediu_abrir(int *indiceCatalogo) {
-  return farolachaui_pediu_abrir(indiceCatalogo);
+int resolver_pediu_abrir(FarolAchaPedido *pedido) {
+  return farolachaui_pediu_abrir(pedido);
+}
+
+int resolver_resolver_pedido(const FarolAchaPedido *pedido, unsigned *revisaoOut) {
+  return farolachaui_resolver_pedido(pedido, revisaoOut);
+}
+
+static void fechar(void);
+
+void resolver_fechar(void) {
+  fechar();
+}
+
+void resolver_recarregar_achar(void) {
+  farolachaui_recarregar();
 }
 
 uint64_t resolver_tentativa_externo(void) {
@@ -980,9 +994,8 @@ void resolver_evento(const SDL_Event *e) {
   if (fase == RESOLVER_FASE_ACHAR) {
     int pediuVoltar = 0, pediuAbrir = 0;
     farolachaui_evento(e, &pediuVoltar, &pediuAbrir);
-    if (pediuAbrir) {
-      fechar();
-    } else if (pediuVoltar) {
+    (void)pediuAbrir;
+    if (pediuVoltar) {
       ir_fase(RESOLVER_FASE_SINTOMA);
       if (acharVoltaFoco >= B_ACHAR_0 && acharVoltaFoco <= B_ACHAR_3)
         foco = acharVoltaFoco;

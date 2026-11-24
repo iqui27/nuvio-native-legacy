@@ -23,32 +23,26 @@
 #define ACHA_VOLTAR_Y  888.0f
 #define ACHA_FOCO_VOLTAR (-1)
 
-typedef struct {
-  int  tem;
-  long tmdb;
-  char imdb[64];
-  char tipo[8];
-  char titulo[160];
-} AchaPedido;
-
 static struct {
-  FarolAchaTipo tipo;
-  int           maxMin;
-  int           limEfetivo;
-  char          genero[32];
-  char          kicker[96];
-  char          l1Override[200];
-  char          l2Override[200];
-  unsigned      semente;
-  unsigned      rev;
-  FarolAchado   achados[FAROL_ACHA_UI_MAX];
-  int           nAchados;
-  int           fallbackAtivo;
-  int           focoIdx;
-  int           ultimoPoster;
-  float         animCard[FAROL_ACHA_UI_MAX];
-  float         animVoltar;
-  AchaPedido    pedido;
+  FarolAchaTipo   tipo;
+  int             maxMin;
+  int             limEfetivo;
+  char            genero[32];
+  char            kicker[96];
+  char            l1Override[200];
+  char            l2Override[200];
+  unsigned        semente;
+  unsigned        rev;
+  FarolAchado     achados[FAROL_ACHA_UI_MAX];
+  FarolAchaPedido cards[FAROL_ACHA_UI_MAX];
+  int             nAchados;
+  int             fallbackAtivo;
+  int             focoIdx;
+  int             ultimoPoster;
+  float           animCard[FAROL_ACHA_UI_MAX];
+  float           animVoltar;
+  int             pedidoTem;
+  FarolAchaPedido pedido;
 } S;
 
 static unsigned sementeSeq = 1u;
@@ -163,56 +157,192 @@ static void montarTextos(void) {
 
   if (S.l2Override[0]) {
     snprintf(linha2, sizeof linha2, "%s", S.l2Override);
-  } else if (S.fallbackAtivo && S.tipo == FA_CURTO && n == 3 && todosCurtos) {
-    snprintf(linha2, sizeof linha2, "%s", i18n(FT_NADA_ACHAR_L2));
-  } else if (todosNaoVi) {
+  } else if (S.fallbackAtivo && S.tipo == FA_CURTO) {
+    if (n == 3 && todosCurtos)
+      snprintf(linha2, sizeof linha2, "%s", i18n(FT_NADA_ACHAR_L2));
+  } else if (!S.fallbackAtivo && todosNaoVi) {
     snprintf(linha2, sizeof linha2, "%s", i18n(FT_ACHA_L2_NAO_VISTO));
   }
 }
 
+static void identidadeCardDe(FarolAchaPedido *dst, unsigned rev, int indice,
+                             const CatItem *c) {
+  memset(dst, 0, sizeof *dst);
+  dst->rev = rev;
+  dst->indice = indice;
+  if (!c) return;
+  dst->tmdb = c->tmdb;
+  snprintf(dst->imdb, sizeof dst->imdb, "%s", c->imdb);
+  snprintf(dst->tipo, sizeof dst->tipo, "%s", c->tipo);
+  snprintf(dst->titulo, sizeof dst->titulo, "%s", c->titulo);
+  snprintf(dst->meta, sizeof dst->meta, "%s", c->meta);
+}
+
+static int itemBateSemId(const CatItem *c, const FarolAchaPedido *p) {
+  if (!c || !p) return 0;
+  if (c->imdb[0] || c->tmdb > 0) return 0;
+  if (strcmp(c->tipo, p->tipo) != 0) return 0;
+  if (strcmp(c->titulo, p->titulo) != 0) return 0;
+  if (strcmp(c->meta, p->meta) != 0) return 0;
+  return 1;
+}
+
+static int itemBateComId(const CatItem *c, const FarolAchaPedido *p,
+                         const char *basePed, int temBase) {
+  char baseCat[64];
+  if (!c || !p) return 0;
+  if (p->tipo[0] && c->tipo[0] && ehSerieTipo(p->tipo) != ehSerieTipo(c->tipo))
+    return 0;
+  if (p->imdb[0] && !strcmp(c->imdb, p->imdb)) return 1;
+  if (temBase) {
+    idBaseDe(c->imdb, baseCat, sizeof baseCat);
+    if (baseCat[0] && !strcmp(baseCat, basePed)) return 1;
+  }
+  if (p->tmdb > 0) {
+    if (c->tmdb == p->tmdb) return 1;
+    if (c->tmdb <= 0 && !strncmp(c->imdb, "tmdb:", 5)) {
+      char tbuf[32];
+      snprintf(tbuf, sizeof tbuf, "tmdb:%ld", p->tmdb);
+      if (!strcmp(c->imdb, tbuf)) return 1;
+    }
+  }
+  if (!strncmp(p->imdb, "tmdb:", 5) && c->tmdb > 0) {
+    char tbuf[32];
+    snprintf(tbuf, sizeof tbuf, "tmdb:%ld", c->tmdb);
+    if (!strcmp(p->imdb, tbuf)) return 1;
+  }
+  return 0;
+}
+
+static int itemBatePedido(const CatItem *c, const FarolAchaPedido *p) {
+  char basePed[64];
+  if (!c || !p) return 0;
+  if (p->imdb[0] || p->tmdb > 0) {
+    idBaseDe(p->imdb, basePed, sizeof basePed);
+    return itemBateComId(c, p, basePed, basePed[0] != '\0');
+  }
+  return itemBateSemId(c, p);
+}
+
+static int mesmaIdentidadeCard(const FarolAchaPedido *a, const FarolAchaPedido *b) {
+  int temIdA, temIdB;
+  if (!a || !b) return 0;
+  temIdA = (a->imdb[0] != '\0' || a->tmdb > 0);
+  temIdB = (b->imdb[0] != '\0' || b->tmdb > 0);
+  if (temIdA != temIdB) return 0;
+  if (temIdA) {
+    char ba[64], bb[64];
+    if (a->tipo[0] && b->tipo[0] && ehSerieTipo(a->tipo) != ehSerieTipo(b->tipo))
+      return 0;
+    if (a->imdb[0] && b->imdb[0] && !strcmp(a->imdb, b->imdb)) return 1;
+    idBaseDe(a->imdb, ba, sizeof ba);
+    idBaseDe(b->imdb, bb, sizeof bb);
+    if (ba[0] && bb[0] && !strcmp(ba, bb)) return 1;
+    if (a->tmdb > 0 && b->tmdb > 0 && a->tmdb == b->tmdb) return 1;
+    if (a->tmdb > 0 && !strncmp(b->imdb, "tmdb:", 5)) {
+      char tbuf[32];
+      snprintf(tbuf, sizeof tbuf, "tmdb:%ld", a->tmdb);
+      if (!strcmp(b->imdb, tbuf)) return 1;
+    }
+    if (b->tmdb > 0 && !strncmp(a->imdb, "tmdb:", 5)) {
+      char tbuf[32];
+      snprintf(tbuf, sizeof tbuf, "tmdb:%ld", b->tmdb);
+      if (!strcmp(a->imdb, tbuf)) return 1;
+    }
+    return 0;
+  }
+  return !strcmp(a->tipo, b->tipo) &&
+         !strcmp(a->titulo, b->titulo) &&
+         !strcmp(a->meta, b->meta);
+}
+
+static int contarSemIdExato(const FarolAchaPedido *p) {
+  int tentativa;
+  if (!p) return -1;
+  for (tentativa = 0; tentativa < 3; tentativa++) {
+    unsigned r = cat_revisao();
+    int nc = cat_n(), i, matches = 0;
+    for (i = 0; i < nc; i++) {
+      const CatItem *c = cat_item(i);
+      if (itemBateSemId(c, p)) matches++;
+    }
+    if (cat_revisao() == r) return matches;
+  }
+  return -1;
+}
+
 static void recarregar(void) {
   int lim = S.maxMin > 0 ? S.maxMin : FAROL_ACHA_CURTO_PADRAO;
-  int n = 0;
-  unsigned r = 0;
+  int limConsulta = (S.tipo == FA_CURTO) ? (lim > 1 ? lim - 1 : 1) : lim;
+  int limFb = lim < 130 ? 130 : lim + 30;
+  int limFbConsulta = limFb > 1 ? limFb - 1 : 1;
+  int tentativa;
 
+  for (tentativa = 0; tentativa < 3; tentativa++) {
+    int n = 0, i, ok = 1;
+    unsigned r = 0;
+
+    S.fallbackAtivo = 0;
+    S.limEfetivo = lim;
+    memset(S.achados, 0, sizeof S.achados);
+    memset(S.cards, 0, sizeof S.cards);
+
+    if (S.genero[0]) {
+      n = farolacha_listar_genero(S.tipo, limConsulta, S.genero, S.achados,
+                                  FAROL_ACHA_UI_MAX, S.semente, &r);
+      if (n == 0) {
+        n = farolacha_listar_rev(S.tipo, limConsulta, S.achados,
+                                 FAROL_ACHA_UI_MAX, S.semente, &r);
+        if (n > 0) S.fallbackAtivo = 1;
+      }
+    } else {
+      n = farolacha_listar_rev(S.tipo, limConsulta, S.achados,
+                               FAROL_ACHA_UI_MAX, S.semente, &r);
+    }
+
+    if (n == 0 && S.tipo == FA_CURTO) {
+      n = farolacha_listar_rev(FA_CURTO, limFbConsulta, S.achados,
+                               FAROL_ACHA_UI_MAX, S.semente, &r);
+      if (n > 0) {
+        S.fallbackAtivo = 1;
+        S.limEfetivo = limFb;
+      }
+    }
+
+    for (i = 0; i < n; i++) {
+      const CatItem *ci = farolacha_item(&S.achados[i], r);
+      if (!ci) { ok = 0; break; }
+      identidadeCardDe(&S.cards[i], r, S.achados[i].indice, ci);
+    }
+
+    if (ok && cat_revisao() == r) {
+      S.nAchados = n;
+      S.rev = r;
+      if (S.nAchados <= 0) {
+        S.focoIdx = ACHA_FOCO_VOLTAR;
+      } else if (S.focoIdx >= S.nAchados) {
+        S.focoIdx = S.nAchados - 1;
+      }
+      if (S.ultimoPoster >= S.nAchados)
+        S.ultimoPoster = S.nAchados > 0 ? S.nAchados - 1 : 0;
+      montarTextos();
+      return;
+    }
+  }
+
+  S.nAchados = 0;
+  S.rev = cat_revisao();
   S.fallbackAtivo = 0;
   S.limEfetivo = lim;
   memset(S.achados, 0, sizeof S.achados);
-
-  if (S.genero[0]) {
-    n = farolacha_listar_genero(S.tipo, lim, S.genero, S.achados,
-                                FAROL_ACHA_UI_MAX, S.semente, &r);
-    if (n == 0) {
-      n = farolacha_listar_rev(S.tipo, lim, S.achados,
-                               FAROL_ACHA_UI_MAX, S.semente, &r);
-      if (n > 0) S.fallbackAtivo = 1;
-    }
-  } else {
-    n = farolacha_listar_rev(S.tipo, lim, S.achados,
-                             FAROL_ACHA_UI_MAX, S.semente, &r);
-  }
-
-  if (n == 0 && S.tipo == FA_CURTO) {
-    int limFb = lim < 130 ? 130 : lim + 30;
-    n = farolacha_listar_rev(FA_CURTO, limFb, S.achados,
-                             FAROL_ACHA_UI_MAX, S.semente, &r);
-    if (n > 0) {
-      S.fallbackAtivo = 1;
-      S.limEfetivo = limFb;
-    }
-  }
-
-  S.nAchados = n;
-  S.rev = r;
-  if (S.nAchados <= 0) {
-    S.focoIdx = ACHA_FOCO_VOLTAR;
-  } else if (S.focoIdx >= S.nAchados) {
-    S.focoIdx = S.nAchados - 1;
-  }
-  if (S.ultimoPoster >= S.nAchados)
-    S.ultimoPoster = S.nAchados > 0 ? S.nAchados - 1 : 0;
-
+  memset(S.cards, 0, sizeof S.cards);
+  S.focoIdx = ACHA_FOCO_VOLTAR;
+  S.ultimoPoster = 0;
   montarTextos();
+}
+
+void farolachaui_recarregar(void) {
+  recarregar();
 }
 
 static void garantirRevisao(void) {
@@ -283,21 +413,36 @@ void farolachaui_abrir(FarolAchaTipo tipo, int maxMin, unsigned semente) {
 }
 
 static int selecionarFocado(void) {
+  FarolAchaPedido exibido;
+  int focoAntes;
+  unsigned revAtual;
   const CatItem *c;
-  garantirRevisao();
-  if (S.focoIdx < 0 || S.focoIdx >= S.nAchados) return 0;
-  c = farolacha_item(&S.achados[S.focoIdx], S.rev);
-  if (!c) return 0;
 
-  memset(&S.pedido, 0, sizeof S.pedido);
-  S.pedido.tem = 1;
-  S.pedido.tmdb = c->tmdb;
-  if (c->imdb[0])
-    snprintf(S.pedido.imdb, sizeof S.pedido.imdb, "%s", c->imdb);
-  else if (c->tmdb > 0)
-    snprintf(S.pedido.imdb, sizeof S.pedido.imdb, "tmdb:%ld", c->tmdb);
-  snprintf(S.pedido.tipo, sizeof S.pedido.tipo, "%s", c->tipo);
-  snprintf(S.pedido.titulo, sizeof S.pedido.titulo, "%s", c->titulo);
+  if (S.focoIdx < 0 || S.focoIdx >= S.nAchados) return 0;
+  exibido = S.cards[S.focoIdx];
+  focoAntes = S.focoIdx;
+  revAtual = cat_revisao();
+
+  if (revAtual != exibido.rev) {
+    recarregar();
+    if (focoAntes < 0 || focoAntes >= S.nAchados) return 0;
+    if (!mesmaIdentidadeCard(&S.cards[focoAntes], &exibido)) return 0;
+    if (!exibido.imdb[0] && exibido.tmdb <= 0 &&
+        contarSemIdExato(&exibido) != 1)
+      return 0;
+    S.pedido = S.cards[focoAntes];
+    S.pedidoTem = 1;
+    return 1;
+  }
+
+  c = farolacha_item(&S.achados[focoAntes], exibido.rev);
+  if (!c || !itemBatePedido(c, &exibido) || cat_revisao() != exibido.rev) {
+    recarregar();
+    return 0;
+  }
+
+  S.pedido = exibido;
+  S.pedidoTem = 1;
   return 1;
 }
 
@@ -473,10 +618,12 @@ void farolachaui_desenhar(float ox, float oy, float alpha, Uint32 agora) {
   txt_em(TXT_CAPTION, kick, ox + ACHA_MARGEM, oy + 96.0f, 1500.0f, 150, 156, 168, alpha);
   txt_em(TXT_NOV_TITULO, i18n(farolacha_rotulo(S.tipo)), ox + ACHA_MARGEM, oy + 128.0f,
          1680.0f, 248, 249, 252, alpha);
-  if (linha1[0])
-    txt_em(TXT_V2_26, linha1, ox + ACHA_MARGEM, oy + 206.0f, 1500.0f, 232, 235, 242, alpha);
-  if (linha2[0])
-    txt_em(TXT_V2_26, linha2, ox + ACHA_MARGEM, oy + 244.0f, 1500.0f, 186, 192, 204, alpha);
+  if (S.nAchados > 0) {
+    if (linha1[0])
+      txt_em(TXT_V2_26, linha1, ox + ACHA_MARGEM, oy + 206.0f, 1500.0f, 232, 235, 242, alpha);
+    if (linha2[0])
+      txt_em(TXT_V2_26, linha2, ox + ACHA_MARGEM, oy + 244.0f, 1500.0f, 186, 192, 204, alpha);
+  }
 
   if (S.nAchados == 0) {
     GfxRect pr = { ox + ACHA_MARGEM, oy + ACHA_ROW_Y, 820.0f, 160.0f };
@@ -500,12 +647,14 @@ void farolachaui_desenhar(float ox, float oy, float alpha, Uint32 agora) {
   ponteiro_alvo(rVoltar.x, rVoltar.y, rVoltar.w, rVoltar.h, pt_foco_acha, NULL, ACHA_FOCO_VOLTAR, 0);
 }
 
-static int resolvePedido(const AchaPedido *p) {
+int farolachaui_resolver_pedido(const FarolAchaPedido *p, unsigned *revisaoOut) {
   int tentativa;
   char basePed[64];
-  int temBase;
+  int temBase, temId;
 
+  if (revisaoOut) *revisaoOut = 0u;
   if (!p || (!p->imdb[0] && p->tmdb <= 0 && !p->titulo[0])) return -1;
+  temId = (p->imdb[0] != '\0' || p->tmdb > 0);
   idBaseDe(p->imdb, basePed, sizeof basePed);
   temBase = basePed[0] != '\0';
 
@@ -514,51 +663,63 @@ static int resolvePedido(const AchaPedido *p) {
     int nc = cat_n();
     int i, found = -1;
 
-    for (i = 0; i < nc; i++) {
-      const CatItem *c = cat_item(i);
-      char baseCat[64];
-      if (!c) continue;
-      if (p->tipo[0] && c->tipo[0] && ehSerieTipo(p->tipo) != ehSerieTipo(c->tipo))
-        continue;
-      if (p->imdb[0] && !strcmp(c->imdb, p->imdb)) {
-        found = i;
-        break;
+    if (temId) {
+      if (r == p->rev && p->indice >= 0 && p->indice < nc) {
+        const CatItem *cp = cat_item(p->indice);
+        if (cp && itemBateComId(cp, p, basePed, temBase))
+          found = p->indice;
       }
-      if (temBase && found < 0) {
-        idBaseDe(c->imdb, baseCat, sizeof baseCat);
-        if (baseCat[0] && !strcmp(baseCat, basePed)) found = i;
-      }
-      if (found < 0 && p->tmdb > 0 && c->tmdb == p->tmdb)
-        found = i;
-    }
-
-    if (found < 0 && !p->imdb[0] && p->tmdb <= 0 && p->titulo[0]) {
-      for (i = 0; i < nc; i++) {
-        const CatItem *c = cat_item(i);
-        if (!c) continue;
-        if (p->tipo[0] && c->tipo[0] && ehSerieTipo(p->tipo) != ehSerieTipo(c->tipo))
-          continue;
-        if (!strcmp(c->titulo, p->titulo)) {
-          found = i;
-          break;
+      if (found < 0) {
+        for (i = 0; i < nc; i++) {
+          const CatItem *c = cat_item(i);
+          if (!c) continue;
+          if (p->tipo[0] && c->tipo[0] && ehSerieTipo(p->tipo) != ehSerieTipo(c->tipo))
+            continue;
+          if (p->imdb[0] && !strcmp(c->imdb, p->imdb)) {
+            found = i;
+            break;
+          }
+          if (temBase && found < 0) {
+            char baseCat[64];
+            idBaseDe(c->imdb, baseCat, sizeof baseCat);
+            if (baseCat[0] && !strcmp(baseCat, basePed)) found = i;
+          }
+          if (found < 0 && itemBateComId(c, p, basePed, temBase))
+            found = i;
         }
       }
+    } else {
+      if (r == p->rev) {
+        if (p->indice >= 0 && p->indice < nc) {
+          const CatItem *cp = cat_item(p->indice);
+          if (itemBateSemId(cp, p)) found = p->indice;
+        }
+      } else {
+        int matches = 0, matchIdx = -1;
+        for (i = 0; i < nc; i++) {
+          const CatItem *c = cat_item(i);
+          if (itemBateSemId(c, p)) {
+            matchIdx = i;
+            matches++;
+          }
+        }
+        if (matches == 1) found = matchIdx;
+      }
     }
 
-    if (cat_revisao() == r) return found;
+    if (cat_revisao() == r) {
+      if (revisaoOut) *revisaoOut = r;
+      return found;
+    }
   }
   return -1;
 }
 
-int farolachaui_pediu_abrir(int *indiceCatalogo) {
-  AchaPedido p;
-  int idx;
-  if (!S.pedido.tem) return 0;
-  p = S.pedido;
+int farolachaui_pediu_abrir(FarolAchaPedido *pedido) {
+  if (!S.pedidoTem) return 0;
+  if (pedido) *pedido = S.pedido;
+  S.pedidoTem = 0;
   memset(&S.pedido, 0, sizeof S.pedido);
-  idx = resolvePedido(&p);
-  if (idx < 0) return 0;
-  if (indiceCatalogo) *indiceCatalogo = idx;
   return 1;
 }
 

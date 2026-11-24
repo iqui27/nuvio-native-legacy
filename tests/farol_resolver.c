@@ -46,6 +46,8 @@
 #include "addonmodo.h"
 #include "addons.h"
 #include "catalogo.h"
+#include "home.h"
+#include "layout.h"
 #include "mediaurl.h"
 #include "streams.h"
 #include "avisos.h"
@@ -498,7 +500,9 @@ static void buscarParaPlayerModo(int renovar) { c_buscarModoN++; c_buscarModoRen
 static void diagnostico_cancelar_vazao(void) {}
 static void limparFonteVOD(void) {}
 #ifndef FAROL_TESTE_CAT_PROPRIO
-static void abrirPorIndice(int idx) { (void)idx; }
+static void player_descartar_retido(void) {}
+static void detail_abrir(const HomeItem *it) { (void)it; }
+static int  detail_aberto(void) { return 0; }
 #endif
 static int travaui_abrir_espera(int idx, int t, int e) { (void)idx; (void)t; (void)e; return c_travauiBloq; }
 int cat_indice_reabrir(int idx, const CatItem *copia) {

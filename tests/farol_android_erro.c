@@ -72,6 +72,8 @@ void video_taxa_recusar(void) {}
 #include "addonmodo.h"
 #include "addons.h"
 #include "catalogo.h"
+#include "home.h"
+#include "layout.h"
 #include "avisos.h"
 #include "celbotao.h"
 #include "ilha.h"
@@ -276,6 +278,7 @@ void rec_avatar_estilo(GfxRect r, const char *u, const char *n, const char *f, f
   (void)r; (void)u; (void)n; (void)f; (void)a; (void)e;
 }
 float gfx_opacidade_grupo = 1.0f;
+float gfx_tex_aspect_atual = 0.0f;
 int gfx_vidro_sem_aro = 0;
 float botao_largura(const char *r, const char *i, int p) { (void)r; (void)i; (void)p; return 100.0f; }
 void botao_pilula(GfxRect r, const char *ro, const char *i, float f, int p, int al, float a) {
@@ -284,6 +287,16 @@ void botao_pilula(GfxRect r, const char *ro, const char *i, float f, int p, int 
 float botao_cor_foco(float *r, float *g, float *b) { *r = *g = *b = 1.0f; return 1.0f; }
 void botao_luz(GfxRect r, float f, float a) { (void)r; (void)f; (void)a; }
 void gfx_cor(GfxRect r, float ra, float cr, float cg, float cb, float ca) { (void)r; (void)ra; (void)cr; (void)cg; (void)cb; (void)ca; }
+void gfx_esqueleto(GfxRect r, float ra, float cr, float cg, float cb, float ca) { (void)r; (void)ra; (void)cr; (void)cg; (void)cb; (void)ca; }
+void gfx_rect(GfxRect r, GLuint t, GfxModo m, float f, float px, float py, float ra, float cr, float cg, float cb, float ca) {
+  (void)r; (void)t; (void)m; (void)f; (void)px; (void)py; (void)ra; (void)cr; (void)cg; (void)cb; (void)ca;
+}
+GLuint tex_obter_larg(const char *c, float l) { (void)c; (void)l; return 0; }
+float tex_aspecto(const char *c) { (void)c; return 0.0f; }
+int tex_falhou(const char *c) { (void)c; return 0; }
+const char *posterprov_card_addon(const char *o, const char *i, long t, const char *tp, const char *or) {
+  (void)o; (void)i; (void)t; (void)tp; return or ? or : "";
+}
 void gfx_anel(GfxRect r, float ra, float e, float cr, float cg, float cb, float ca) { (void)r; (void)ra; (void)e; (void)cr; (void)cg; (void)cb; (void)ca; }
 void gfx_icone(GfxRect r, const char *n, float cr, float cg, float cb, float ca) { (void)r; (void)n; (void)cr; (void)cg; (void)cb; (void)ca; }
 void gfx_luz_canto(GfxRect r, float ra, float lx, float ly, float lr, float cr, float cg, float cb, float ca) {
@@ -338,6 +351,7 @@ const CatItem *cat_item(int i) { (void)i; return NULL; }
 int cat_n(void) { return 0; }
 unsigned cat_revisao(void) { return 0; }
 int cat_visto(const CatItem *ci) { (void)ci; return 0; }
+int cacavisto_filme(const char *i, long t, long long *q) { (void)i; (void)t; if (q) *q = 0; return 0; }
 int cat_remover_fileiras_prefixo(const char *d, const char *pf) { (void)d; (void)pf; return 0; }
 int farolcena_home(char *dst, size_t cap, const void *ctx, void *a, size_t b) {
   (void)dst; (void)cap; (void)ctx; (void)a; (void)b; return 0;
@@ -389,6 +403,9 @@ void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
 static void menu_fechar(void) {}
 static void menu_definir_destino(int d) { (void)d; }
 static void trocarTela(int n) { (void)n; }
+static void player_descartar_retido(void) {}
+static void detail_abrir(const HomeItem *it) { (void)it; }
+static int  detail_aberto(void) { return 0; }
 int cat_indice_reabrir(int idx, const CatItem *c) { (void)idx; (void)c; return -1; }
 enum { TELA_AJUSTES = 1, MENU_AJUSTES = 5 };
 static int tela = TELA_AJUSTES;

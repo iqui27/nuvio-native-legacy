@@ -55,6 +55,8 @@ ext_abrir = extract_fn(player, r"^int player_abrir_externo\(void\) \{", "player_
 ult_addon = extract_fn(player, r"^uint64_t player_ultimo_addon_farol\(void\) \{", "player_ultimo_addon_farol", required=False)
 ult_tit = extract_fn(player, r"^int player_ultimo_titulo\(CatItem \*out, int \*temporada, int \*episodio\) \{", "player_ultimo_titulo", required=False)
 
+app_abrir_titulo = extract_fn(app, r"^static void abrirTitulo\(const HomeItem \*it, int exigeArte, int descartarRetido\) \{", "abrirTitulo em app.c")
+app_abrir_farol = extract_fn(app, r"^static int abrirFarolPedido\(const FarolAchaPedido \*p\) \{", "abrirFarolPedido em app.c")
 app_res = extract_brace_block(app, "  if (resolver_aberto()) {", "resolver_aberto em app.c")
 app_agp = extract_brace_block(app, "  {\n    int p = addonguia_pedido();", "addonguia_pedido em app.c")
 
@@ -76,6 +78,8 @@ parts = [
     ext_abrir,
     ult_addon,
     ult_tit,
+    app_abrir_titulo,
+    app_abrir_farol,
     "static void app_resolver_despachar(const SDL_Event *e) {",
     app_res,
     "}",
