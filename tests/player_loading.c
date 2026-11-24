@@ -32,6 +32,11 @@ int video_pronto(void) { return testReady; }
 int video_iniciando(void) { return testStarting; }
 int video_dts_imagem_exibida(void) { return testPresented; }
 int cacheboost_backend_quadro(int mode) { (void)mode;return 0; }
+// Audio from another source: renderFura keeps the artwork while the donor
+// track opens; these fixtures never exit, play a channel or load donor audio.
+static int saindo;
+static int ehCanal(void) { return 0; }
+int audioext_carregando(void) { return 0; }
 #include "video-state.c"
 #include "loading-state.c"
 #include "plane-state.c"

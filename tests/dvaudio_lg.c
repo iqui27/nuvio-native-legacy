@@ -476,7 +476,7 @@ int main(void) {
     // exactly that startup event. No source-name or DV badge is required.
     for(int enabled=0;enabled<2;enabled++) {
       montar(NULL,0,t,1,0);mp4TestEnabled=enabled;mp4TestPending=mp4TestStarted=0;
-      falhou=terminou=0;dtsImagemExibida=0;
+      falhou=terminou=0;dtsImagemExibida=dtsImagemFonte=0;
       snprintf(urlAtual,sizeof urlAtual,"http://h/dual.mp4");fonteMp4=1;
       reconErroPend=recuperando=modoLoad=0;fonteTocou=0;
       eventoPayload(failure,sessao);
@@ -489,9 +489,11 @@ int main(void) {
     assert(iniciarDts(-1) && fixtureNextMp4Mode==1 && partidaPos==246 && converterResumeUsed);
     { VideoDvFase f;
       video_dv_fase(&f);assert(f.mp4Inicial && f.caminho);
-      dtsImagemExibida=1;video_dv_fase(&f);assert(!f.mp4Inicial);
+      // The source's first converter picture (dtsImagemFonte) ends startup;
+      // an audio swap only clears dtsImagemExibida until the next picture.
+      dtsImagemExibida=dtsImagemFonte=1;video_dv_fase(&f);assert(!f.mp4Inicial);
       pronto=tocando=0;video_dv_fase(&f);assert(!f.mp4Inicial); // Seek/audio reload cannot restore startup text.
-      dtsImagemExibida=0;falhou=1;video_dv_fase(&f);assert(!f.mp4Inicial);falhou=0;
+      dtsImagemExibida=dtsImagemFonte=0;falhou=1;video_dv_fase(&f);assert(!f.mp4Inicial);falhou=0;
     }
     dtsSessao=NULL;
     for(int variant=0;variant<3;variant++) {
