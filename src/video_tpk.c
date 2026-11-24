@@ -107,6 +107,9 @@ void nv_tpk_video_erro_geracao(unsigned ger, int codigo, int preparo) {
   pthread_mutex_unlock(&hostTrava);
 }
 static FnInt    hPausar, hBuscar, hVolume;
+// #728 (r4): o seek leva a geracao do pedido e o host a devolve no ack.
+typedef void (*FnBuscaGer)(int, unsigned);
+static FnBuscaGer hBuscarGer;
 static FnRet    hJanela;
 typedef void (*FnAspecto)(int, int, int, int, int, int, int, int);
 static FnAspecto hAspecto;
@@ -199,6 +202,10 @@ static volatile int reconErroPend, reconErroCod, reconLinhaRede;
 static int reconAudio = -1, reconLeg = -1;
 static volatile int reconFaixasPend;
 static int reconBuscarMs = -1;
+// #728: o alvo da reconexao veio de um seek do USUARIO (video_buscar com a
+// queda em curso). Segue o recon.alvo: quem rearma o alvo por outro motivo
+// (erro novo, posicao da queda) tambem zera esta marca.
+static int reconBuscaUsr;
 // #412: relogio congelado com estado Playing, fora de pausa/buffer/seek.
 #define TPK_PRESO_MS 15000u
 static Uint32 progressoEm;
@@ -212,7 +219,33 @@ static atomic_int playerPreso = -2;   // -2 = sem aviso (0 e um relogio valido)
 static atomic_uint consultaLentaEm;
 static int reconPausa = -1;
 // Seek enviado sem confirmacao do host: a recuperacao retoma nele.
-static atomic_int buscaAlvoMs = -1;
+// -1 = confirmado (o EV_BUSCOU do CAS so escreve -1); -2 = liberado SEM ack
+// (sessao nova, prazo das legendas, saida). Em pausa so -1 vale como pouso.
+static atomic_int buscaAlvoMs = -2;
+// #728: o alvo do ultimo seek enviado ao host, guardado a parte da marca das
+// legendas (que o prazo limpa para -2). O host tem ate 15 s para confirmar
+// (tizen-tpk/Video.cs): o ack atrasado do alvo ATUAL ainda vale.
+static atomic_int buscaUltimoMs = -2;
+// #728 (r4): o alvo em ms sozinho nao nomeia a operacao — dois seeks ao mesmo
+// ponto recebem o mesmo EV_BUSCOU. O host serializa as buscas, guarda so o
+// ultimo pedido pendente e emite o ack da operacao EM ANDAMENTO antes de o
+// assumir (tizen-tpk/Video.cs:699-745): nem o alvo nem a ordem dos pedidos no
+// C dizem qual operacao o host executou. Entao a geracao viaja ate o host e
+// volta: cada pedido sai com o numero dele (hostBuscar) e o host devolve o
+// numero da operacao executada no EV_BUSCOU e no EV_BUSCA_FALHOU. O C confirma
+// so o ack da geracao mais recente ENVIADA ao host (buscaGerHost): pedido
+// armado mas nao enviado e ack de operacao superada nao confirmam, nem com
+// alvo igual. Sem o registro novo (host antigo), vale a classificacao da r3
+// por buscaGerFio/buscaFioMs. buscaGer e unsigned com volta explicita que
+// pula o 0 (sentinela de "nenhuma operacao"); ++int estourava em INT_MAX.
+// Trava curta: so o fio do host (evento) e o do app (pedido) se encontram.
+static pthread_mutex_t buscaGerTrava = PTHREAD_MUTEX_INITIALIZER;
+static unsigned buscaGer, buscaGerFio, buscaGerHost;
+static int buscaFioMs;
+// #728: geracao da operacao corrente que o EV_BUSCA_FALHOU aposentou. O fio
+// do host a grava na mesma trava do -2; o fio do app a consome no vigia do
+// reabrindo (cv.reabGer) — atomico, sem ampliar a secao critica.
+static atomic_uint buscaFalhouGer;
 // ---- RELOGIO DA LEGENDA (dono 25/10) ------------------------------------------
 // Leituras reais da posicao, carimbadas pelo host no MEIO da consulta
 // (nv_tpk_video_posicao). Antes: depois de um seek o host guardava o ALVO como
@@ -232,6 +265,46 @@ static int reconAlvoMs = -1;
 // #710: enquanto a sessao reabre ou o host ainda devolve 0, o relogio da legenda
 // segue o ponto da queda (como o player trata reconexao parada).
 static double posReconLeg = -1.0;
+
+// Pontos de ordem forcada do teste de corridas do ack (tests/tpk728_ack.c,
+// compilado com -DNV_TEST_TPK_ACK). Fora do teste nao existem.
+#ifdef NV_TEST_TPK_ACK
+void tpk_teste_ack_ponto(void);      // fio do host: o ack vai ser classificado
+void tpk_teste_pos_ack_ponto(void);  // fio do host: o ack ja foi classificado
+void tpk_teste_prazo_ponto(void);    // fio do app: o prazo vai gravar o -2
+#endif
+
+// Arma um pedido NOVO de seek: geracao propria e alvo na marca das legendas.
+// Devolve a geracao para o pedido ir ao host (hostBuscar). Se nao ha operacao
+// em andamento registrada, este pedido passa a ser ela; havendo, fica como o
+// pendente que o host assume depois do proximo ack. Fio do app.
+static unsigned buscaArmar(int ms) {
+  pthread_mutex_lock(&buscaGerTrava);
+  unsigned g = buscaGer + 1;
+  if (!g) g = 1;          // a volta pula a sentinela 0
+  buscaGer = g;
+  atomic_store(&buscaUltimoMs, ms);
+  atomic_store(&buscaAlvoMs, ms);
+  if (!buscaGerFio) { buscaGerFio = g; buscaFioMs = ms; }
+  pthread_mutex_unlock(&buscaGerTrava);
+  return g;
+}
+
+// Manda o seek ao host com a geracao do pedido (0 nos seeks internos do
+// convertido, que nao passam por buscaArmar — o ack deles nao nomeia pedido
+// nenhum). buscaGerHost sobe ANTES da chamada: um ack sincrono ja o enxerga.
+static void hostBuscar(int ms, unsigned ger) {
+  if (hBuscarGer) {
+    if (ger) {
+      pthread_mutex_lock(&buscaGerTrava);
+      buscaGerHost = ger;
+      pthread_mutex_unlock(&buscaGerTrava);
+    }
+    hBuscarGer(ms, ger);
+  } else if (hBuscar) {
+    hBuscar(ms);
+  }
+}
 
 // CABECALHO DO MKV (#206). O player do host so da o idioma de cada faixa; o
 // Name ("Forced", "DD 5.1"), a FlagForced e os canais estao nas TrackEntry, e
@@ -305,6 +378,14 @@ static struct {
   // no alvo, senao o cartao "Abrindo fonte" e os prazos de abertura do app.c
   // (aberturaVencida, escolha manual) tratam a fonte como morta.
   int reabrindo; double posMantida; Uint32 reabriuEm, reabTocandoEm;
+  int reabSeekUsr;    // #728: um seek do usuario redirecionou o alvo do reabrindo
+  // #728: a operacao nao tem seek a confirmar (alvo <= 1 s): para a permissao
+  // pausada vale como ack. Com seek, quem confirma e buscaAlvoMs == -1 (CAS).
+  int reabAck;
+  // #728: a geracao cujo ack o pouso pausado espera (0 = nenhuma, ou pedido
+  // ainda nao enviado ao host). A falha dela aposenta a reabertura — o -2 da
+  // falha nao confirma o pouso e a espera ia ate o teto de 60 s.
+  unsigned reabGer;
   int fonteTocou;       // esta fonte (original ou convertida) ja andou > 0,5 s
   double posConhecida;  // ultima posicao real do convertido (nunca 0 por falta de dado)
 } cv = { .buscarMs = -1 };
@@ -334,6 +415,9 @@ void nv_tpk_video_registrar(FnAbrir abrir, FnSemArg parar, FnInt pausar, FnInt b
   hAbrir = abrir; hParar = parar; hPausar = pausar; hBuscar = buscar;
   hVolume = volume; hJanela = janela; hPos = pos;
 }
+
+__attribute__((visibility("default")))
+void nv_tpk_video_registrar_busca_geracao(FnBuscaGer buscar) { hBuscarGer = buscar; }
 
 __attribute__((visibility("default")))
 void nv_tpk_video_registrar_faixas(FnEscolher escolher) { hEscolher = escolher; }
@@ -529,7 +613,8 @@ static char hostUrl[sizeof urlAtual], hostCab[sizeof cabecalhos];
 static struct {
   int sondou;            // a sonda deste arquivo ja saiu
   int ativo;             // o player le pelo servidor local
-  int pend; double pendAlvo; Uint32 pendEm;   // seek pedido com a sonda em curso
+  int pend; double pendAlvo; Uint32 pendEm;
+  unsigned pendGer;   // seek pedido com a sonda em curso
   int avisou;            // "nao da para buscar" ja foi dito nesta fonte
   // Legendas de texto escondidas da TV (mkvfix.h): a abertura espera a sonda
   // quando o cabecalho ja mostrou ASS/SSA; senao, uma reabertura cedo.
@@ -582,6 +667,45 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
   if ((tipo == EV_TOCANDO && !tocando) || tipo == EV_PAUSADO ||
       (tipo == EV_BUFFER && bufferando != (a < 100)))
     atomic_store(&vigiaReiniciar, 1);
+  // #728: o prazo das legendas limpa a marca para -2, mas o host tem ate 15 s
+  // para confirmar — o rearme devolve o ack atrasado DA OPERACAO CORRENTE ao
+  // CAS que confirma igual a um ack dentro do prazo. E o alvo em ms nao
+  // nomeia a operacao: o host serializa as buscas, guarda so o ultimo pedido
+  // pendente e emite o ack da operacao EM ANDAMENTO antes de o assumir
+  // (tizen-tpk/Video.cs:699-745). Por isso a geracao vai e volta: o host diz
+  // no `b` qual operacao executou, e so o ack da geracao mais recente enviada
+  // ao host confirma — superada e ignorada mesmo com alvo igual. Classificacao
+  // e transicao (rearme -2->alvo + CAS alvo->-1) na MESMA trava: o prazo das
+  // legendas e um seek novo ao mesmo alvo nao entram na janela. Host antigo,
+  // sem a geracao no ack, cai na decisao da r3 por buscaGerFio/buscaFioMs.
+  if (tipo == EV_BUSCOU && a >= 0) {
+#ifdef NV_TEST_TPK_ACK
+    tpk_teste_ack_ponto();
+#endif
+    int corrente = 0;
+    pthread_mutex_lock(&buscaGerTrava);
+    if (hBuscarGer) {
+      corrente = b != 0 && (unsigned)b == buscaGerHost && (unsigned)b == buscaGer &&
+                 a == atomic_load(&buscaUltimoMs);
+      if (corrente) buscaGerHost = 0;
+    } else if (buscaGerFio && a == buscaFioMs) {
+      corrente = buscaGerFio == buscaGer;
+      if (corrente) buscaGerFio = 0;
+      else { buscaGerFio = buscaGer; buscaFioMs = atomic_load(&buscaUltimoMs); }
+    }
+    if (corrente) {
+      int liberado = -2, alvo = a;
+      atomic_compare_exchange_strong(&buscaAlvoMs, &liberado, a);
+      if (atomic_compare_exchange_strong(&buscaAlvoMs, &alvo, -1))
+        atomic_store(&legSeekChegou, 1);
+    }
+    pthread_mutex_unlock(&buscaGerTrava);
+#ifdef NV_TEST_TPK_ACK
+    tpk_teste_pos_ack_ponto();
+#endif
+    if (!corrente) { b = a; a = -3; }   // o alvo descartado fica no log, no b vazio
+    else { b = a; a = -1; }             // confirmado na trava: o CAS do caso vira no-op
+  }
   switch (tipo) {
     case EV_PRESO: { // -1 = ultimo relogio; GetState nao apaga alvo de seek.
       int vazio = -2;
@@ -635,12 +759,44 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
       if (a < 100 && !bufferando) { bufferando = 1; bufferDesde = SDL_GetTicks(); }
       else if (a >= 100) bufferando = 0;
       break;
-    case EV_BUSCA_FALHOU: atomic_fetch_add(&mfRecusas, 1); atomic_fetch_add(&buscaFalhas, 1u);
-      // A falha encerra o voo do MESMO alvo (CAS, como no EV_BUSCOU): um seek
-      // mais novo ja armado por cima nao e desarmado pela falha do anterior.
-      // Sem o -1 o video_busca_em_voo e a amostra do farol ficavam presos num
-      // seek que a TV ja recusou.
-      atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1); break;
+    case EV_BUSCA_FALHOU: {
+      atomic_fetch_add(&mfRecusas, 1); atomic_fetch_add(&buscaFalhas, 1u);
+      // Com a geracao no evento, a falha aposenta a operacao que falhou: a
+      // marca do pedido mais recente volta a -2 sem esperar o prazo das
+      // legendas, e o proximo pedido nao herda nem e bloqueado pela falha.
+      // Falha de operacao superada so conta — quem manda e a mais recente.
+      if (hBuscarGer && b != 0) {
+        pthread_mutex_lock(&buscaGerTrava);
+        if ((unsigned)b == buscaGerHost && (unsigned)b == buscaGer) {
+          buscaGerHost = 0;
+          int armado = atomic_load(&buscaUltimoMs);
+          atomic_compare_exchange_strong(&buscaAlvoMs, &armado, -2);
+          // A falha aposenta tambem a reabertura que esperava o ack desta
+          // geracao (o vigia consome no fio do app): pausada, ela nunca
+          // veria o -1 do pouso e prendia capa e busca ate o teto de 60 s.
+          atomic_store(&buscaFalhouGer, (unsigned)b);
+        }
+        pthread_mutex_unlock(&buscaGerTrava);
+      } else {
+        // Sem a geracao no evento (host sem o registro): a falha encerra o
+        // voo do MESMO alvo (CAS, como no EV_BUSCOU) — um seek mais novo ja
+        // armado por cima nao e desarmado pela falha do anterior. O par
+        // buscaGerFio/buscaFioMs anda no MESMO criterio do ack acima: so se
+        // ainda aponta para o alvo recusado — zerado quando a falha era do
+        // ultimo pedido, avancado para o pendente que o host assume em
+        // seguida. Sem isto o ack do seek seguinte caia na comparacao com o
+        // alvo morto, virava EV_BUSCOU descartado e a amostra do farol ficava
+        // presa no voo novo (video_busca_em_voo seguia armado).
+        pthread_mutex_lock(&buscaGerTrava);
+        if (buscaGerFio && a == buscaFioMs) {
+          if (buscaGerFio == buscaGer) buscaGerFio = 0;
+          else { buscaGerFio = buscaGer; buscaFioMs = atomic_load(&buscaUltimoMs); }
+        }
+        atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1);
+        pthread_mutex_unlock(&buscaGerTrava);
+      }
+      break;
+    }
     case EV_VELOCIDADE:
       vel_log(a, b ? "plataforma ok" : "plataforma recusou");
       if (!b) { velRecusada = 1; velPedida = 100; }
@@ -839,7 +995,11 @@ static void cdnRenovar(double alvo, const char *porque) {
   fflush(stdout);
   reconAudio = audioAtual; reconLeg = legAtual; reconFaixasPend = 1;
   reconBuscarMs = alvo > 1.0 ? (int)(alvo * 1000.0) : -1;
+  // #728: operacao NOVA — a permissao e o ack da reabertura anterior morrem
+  // aqui; sem seek a confirmar (alvo <= 1 s) o ack nasce dado. O chamador do
+  // seek do usuario rearma reabSeekUsr na volta.
   cv.reabrindo = 1; cv.posMantida = alvo; cv.reabriuEm = SDL_GetTicks(); cv.reabTocandoEm = 0;
+  cv.reabSeekUsr = 0; cv.reabAck = reconBuscarMs < 0; cv.reabGer = 0;
   abrirSessao();
 }
 
@@ -871,7 +1031,9 @@ static void mfLigar(double alvo, const char *porque) {
   }
   reconAudio = audioAtual; reconLeg = legAtual; reconFaixasPend = 1;
   reconBuscarMs = alvo > 1.0 ? (int)(alvo * 1000.0) : -1;
+  // #728: operacao NOVA, mesmo ciclo de vida do cdnRenovar (ver la).
   cv.reabrindo = 1; cv.posMantida = alvo; cv.reabriuEm = SDL_GetTicks(); cv.reabTocandoEm = 0;
+  cv.reabSeekUsr = 0; cv.reabAck = reconBuscarMs < 0; cv.reabGer = 0;
   abrirSessao();
 }
 // A sonda: so filme/episodio, so o arquivo original (nao o conversor) e so
@@ -970,7 +1132,7 @@ static void mfBombear(void) {
       printf("[mkvfix] no answer from the check in %u ms: seek to %.1f s goes to the TV as is\n",
              MF_SEGURA_MS, mf.pendAlvo);
       fflush(stdout);
-      if (ativo && !parado && hBuscar) hBuscar((int)(mf.pendAlvo * 1000.0));
+      if (ativo && !parado) hostBuscar((int)(mf.pendAlvo * 1000.0), mf.pendGer);
     }
     return;
   }
@@ -980,6 +1142,7 @@ static void mfBombear(void) {
     if (e == MKVFIX_PRECISA && !mf.ativo && !cv.ativo && ativo && !parado && esperou < 20000u) {
       printf("[mkvfix] seek to %.1f s held %u ms for the check\n", mf.pendAlvo, (unsigned)esperou);
       mfLigar(mf.pendAlvo, "seek asked during the check (the TV can't seek this file as served)");
+      cv.reabSeekUsr = 1;
     } else if (mkvfix_ocultas() > 0 && !mf.ativo && !mf.reabriuLeg && !cv.ativo && ativo && !parado && pronto) {
       // A reabertura que esconde as legendas vem logo abaixo e usaria a
       // posicao de AGORA (o seek recem-mandado ainda nao chegou: 0 s). Log da
@@ -987,12 +1150,13 @@ static void mfBombear(void) {
       mf.reabriuLeg = 1;
       printf("[mkvfix] seek to %.1f s held %u ms for the check\n", mf.pendAlvo, (unsigned)esperou);
       mfLigar(mf.pendAlvo, "subtitle tracks hidden from the TV player (it hangs on some ASS drawings)");
+      cv.reabSeekUsr = 1;
       return;
-    } else if (ativo && !parado && hBuscar) {
+    } else if (ativo && !parado) {
       printf("[mkvfix] seek to %.1f s held %u ms for the check: the TV seeks it directly\n",
              mf.pendAlvo, (unsigned)esperou);
       fflush(stdout);
-      hBuscar((int)(mf.pendAlvo * 1000.0));
+      hostBuscar((int)(mf.pendAlvo * 1000.0), mf.pendGer);
     } else
       atomic_store(&buscaAlvoMs, -1);   // o seek adiado foi descartado: alvo fora de voo
   }
@@ -1027,7 +1191,13 @@ static void abrirSessao(void) {
   mkvass_aceitar_texto(1);
   mkvass_aceitar_imagem(1);   // PGS: o app decodifica e desenha (imgsub)
   atomic_store(&temErroDetalhe, 0);
-  vigiaAtiva = 0; buscaAlvoMs = -1;
+  vigiaAtiva = 0;
+  pthread_mutex_lock(&buscaGerTrava);
+  buscaAlvoMs = buscaUltimoMs = -2;
+  buscaGerFio = 0;   // sessao nova: os seeks da anterior morreram com ela
+  buscaGerHost = 0;
+  atomic_store(&buscaFalhouGer, 0);
+  pthread_mutex_unlock(&buscaGerTrava);
   pthread_mutex_lock(&amTrava); am.valido = 0; amBusca = 0; pthread_mutex_unlock(&amTrava);   // seq continua: o player compara
   atomic_store(&posIncerta, 0);
   atomic_store(&vigiaReiniciar, 1);
@@ -1123,7 +1293,7 @@ int video_tocar(const char *u) {
   pausaPedida = 0; reconPausa = -1;
   nv_recon_zerar(&recon);
   reconIniciou = 0; reconErroPend = 0; reconLinhaRede = 0;
-  reconAudio = reconLeg = -1; reconFaixasPend = 0; reconBuscarMs = -1;
+  reconAudio = reconLeg = -1; reconFaixasPend = 0; reconBuscarMs = -1; reconBuscaUsr = 0;
   // CABECALHO JA LIDO (pre-busca do mkvass, sem rede): um MKV so com DTS/TrueHD
   // ja abre convertido, sem o original mudo antes.
   // Lido sempre que a pre-busca trouxe o cabecalho: as legendas ASS decidem
@@ -1414,7 +1584,10 @@ static int modoProg(int modo) { return modo == DTSTPK_PROG_TS; }
 // convertido mostrar quadro de novo (convBombear solta).
 static void convReabrir(double alvo, const char *porque) {
   if (!cv.fonteTocou) return;
+  // #728: operacao NOVA — reinicia a permissao, o ack e o relogio do pouso
+  // (o chamador do seek do usuario rearma reabSeekUsr na volta).
   cv.reabrindo = 1; cv.posMantida = alvo; cv.reabriuEm = SDL_GetTicks();
+  cv.reabTocandoEm = 0; cv.reabSeekUsr = 0; cv.reabAck = 0; cv.reabGer = 0;
   printf("[dts-tpk] reabrindo o convertido em %.1f s (%s): para o app e um seek\n", alvo, porque);
   fflush(stdout);
 }
@@ -1713,13 +1886,28 @@ static void escolhasPendentes(void) {
   }
   if (!comecou) return;
   // Hold writes while a seek is in flight; timeout if the host never confirms.
-  if (atomic_load(&buscaAlvoMs) >= 0) {
+  int alvoArmado = atomic_load(&buscaAlvoMs);
+  if (alvoArmado >= 0) {
     if (!legEsperaSeekEm) legEsperaSeekEm = agora ? agora : 1u;
     if (agora - legEsperaSeekEm < LEG_ESPERA_SEEK_MS) return;
-    atomic_store(&buscaAlvoMs, -1);
-    printf("[video] tpk: seek did not confirm in %u ms; choosing the subtitle anyway\n",
-           LEG_ESPERA_SEEK_MS);
-    fflush(stdout);
+    // #728: -2 = liberado sem ack; nao confirma o pouso pausado do reabrindo
+    // (o ack atrasado do alvo atual confirma depois, via buscaUltimoMs). CAS:
+    // o -1 de um ack que entrou entre a leitura e esta escrita nao se apaga,
+    // nem o alvo novo de um seek que chegou no mesmo instante.
+#ifdef NV_TEST_TPK_ACK
+    tpk_teste_prazo_ponto();
+#endif
+    // #728 (r4): a gravacao do -2 corre na trava da geracao — entre a
+    // classificacao e a confirmacao do ack nao cabe mais este CAS.
+    int expirou;
+    pthread_mutex_lock(&buscaGerTrava);
+    expirou = atomic_compare_exchange_strong(&buscaAlvoMs, &alvoArmado, -2);
+    pthread_mutex_unlock(&buscaGerTrava);
+    if (expirou) {
+      printf("[video] tpk: seek did not confirm in %u ms; choosing the subtitle anyway\n",
+             LEG_ESPERA_SEEK_MS);
+      fflush(stdout);
+    }
   }
   legEsperaSeekEm = 0;
   // Seek landed: restart the settle clock and repeat an earlier write if it collided.
@@ -1772,8 +1960,8 @@ static void vigiarPlayer(double pos) {
     vigiaAtiva = 1; progressoPos = pos; progressoEm = agora; return;
   }
   if (agora - progressoEm < TPK_PRESO_MS) return;
-  printf("[video] tpk preso: relogio %.3fs sem andar ha %u ms; parar e recuperar\n",
-         pos, (unsigned)(agora - progressoEm));
+  printf("[video] tpk preso: relogio %.3fs sem andar ha %u ms (tentativa %d, recon %d); parar e recuperar\n",
+         pos, (unsigned)(agora - progressoEm), recon.tentativa, recon.pendente ? 1 : 0);
   fflush(stdout);
   // Mesma maquina limitada da reconexao: nao cria um loop paralelo infinito.
   recuperarPlayer(-1);
@@ -1845,7 +2033,7 @@ static void convBombear(void) {
   if (!cv.ativo) {
     // Voltando ao original (falha ou escolha): o seek para onde estava.
     if (cv.buscarMs >= 0 && pronto && tocando) {
-      if (hBuscar) hBuscar(cv.buscarMs);
+      hostBuscar(cv.buscarMs, 0);
       cv.buscarMs = -1;
     }
     return;
@@ -1869,7 +2057,7 @@ static void convBombear(void) {
   // Troca no meio do filme (HLS): o player abriu do zero, e o seek vai depois
   // do Start, como no recarregar da reconexao.
   if (cv.buscarMs >= 0 && pronto && tocando) {
-    if (hBuscar) hBuscar(cv.buscarMs);
+    hostBuscar(cv.buscarMs, 0);
     printf("[dts-tpk] seek para %.1f s depois de abrir o convertido\n", cv.buscarMs / 1000.0);
     fflush(stdout);
     cv.seekPend = 1; cv.seekAlvo = cv.buscarMs / 1000.0; cv.seekEm = agora;
@@ -1900,16 +2088,29 @@ static void convBombear(void) {
     static Uint32 baseEm; static double base = -1;
     double p = posReal();
     if (baseEm != cv.seekEm) { baseEm = cv.seekEm; base = -1; }
-    if (base < 0 && fabs(p - cv.seekAlvo) < 2.5 && p >= cv.seekAlvo - 0.5) base = p;
-    if (base >= 0 && p >= base + 0.3) {
-      printf("[dts-tpk] seek para %.1f s: tocando de novo em %u ms (posicao %.2f s, modo %s)\n", cv.seekAlvo,
-             (unsigned)(agora - cv.seekEm), p, nomeModo(cv.modo));
+    // #728: o progressivo abre o fluxo novo no quadro-chave ANTES do alvo e o
+    // primeiro quadro dele ja e a prova do pouso — nao ha eco de seek cru e a
+    // posicao vem ancorada no inicio do fluxo (deslocOk). Esperar a amostra
+    // acima do alvo segurava a capa e entregava o relogio mantido (antigo) a
+    // proxima queda — regressao contra a base.
+    if (cv.prog && fabs(p - cv.seekAlvo) <= 2.5) {
+      printf("[dts-tpk] seek para %.1f s: primeiro quadro do fluxo novo em %.2f s (modo %s)\n",
+             cv.seekAlvo, p, nomeModo(cv.modo));
       fflush(stdout);
       cv.seekPend = 0;
-    } else if ((int)(agora - cv.seekEm) > 30000) {
-      printf("[dts-tpk] seek para %.1f s: posicao %.2f s depois de 30 s\n", cv.seekAlvo, p);
-      fflush(stdout);
-      cv.seekPend = 0;
+    }
+    if (cv.seekPend) {
+      if (base < 0 && fabs(p - cv.seekAlvo) < 2.5 && p >= cv.seekAlvo - 0.5) base = p;
+      if (base >= 0 && p >= base + 0.3) {
+        printf("[dts-tpk] seek para %.1f s: tocando de novo em %u ms (posicao %.2f s, modo %s)\n", cv.seekAlvo,
+               (unsigned)(agora - cv.seekEm), p, nomeModo(cv.modo));
+        fflush(stdout);
+        cv.seekPend = 0;
+      } else if ((int)(agora - cv.seekEm) > 30000) {
+        printf("[dts-tpk] seek para %.1f s: posicao %.2f s depois de 30 s\n", cv.seekAlvo, p);
+        fflush(stdout);
+        cv.seekPend = 0;
+      }
     }
   }
 }
@@ -1923,20 +2124,42 @@ static void reabrindoVigiar(void) {
   if (!cv.reabrindo) return;
   if (!ativo || falhou || agora - cv.reabriuEm > 60000u) {
     if (ativo && !falhou) { printf("[dts-tpk] reabrindo: sem quadro em 60 s, o app ve o estado real\n"); fflush(stdout); }
-    cv.reabrindo = 0; return;
+    cv.reabrindo = 0; cv.reabSeekUsr = 0; cv.reabAck = 0; cv.reabGer = 0; return;
   }
-  if (!pronto || !tocando || cv.buscarMs >= 0 || reconBuscarMs >= 0 || recon.pendente ||
+  // #728: a falha da geracao corrente aposenta a reabertura que esperava o
+  // ack dela. O pouso pausado do seek do usuario so aceita o -1 do CAS do
+  // EV_BUSCOU — o -2 da falha nao confirma (o -2 do prazo das legendas segue
+  // sem confirmar) — e sem mais nada para desbloquear a espera ia aos 60 s.
+  if (!tocando && cv.reabSeekUsr && !cv.reabAck && !cv.ativo && cv.reabGer &&
+      cv.reabGer == atomic_load(&buscaFalhouGer)) {
+    cv.reabrindo = 0; cv.reabSeekUsr = 0; cv.reabAck = 0; cv.reabGer = 0;
+    atomic_store(&buscaFalhouGer, 0);
+    return;
+  }
+  // #728: com o host PAUSADO so o seek do usuario libera — e so depois do ack
+  // do alvo ATUAL: buscaAlvoMs so fica -1 pelo CAS do EV_BUSCOU (inclusive o
+  // ack atrasado que casa buscaUltimoMs); o prazo das legendas e os clears
+  // sem ack (-2) nao confirmam. Sem seek a confirmar
+  // (cv.reabAck, alvo <= 1 s) ou no convertido (o pouso do fluxo novo ja e a
+  // prova) o ack nao faz falta; na retomada normal a espera pelo tocar fica.
+  if (!pronto || (!tocando && !(cv.reabSeekUsr &&
+      (cv.reabAck || cv.ativo || atomic_load(&buscaAlvoMs) == -1))) || cv.buscarMs >= 0 ||
+      reconBuscarMs >= 0 || recon.pendente || atomic_load(&buscaAlvoMs) >= 0 ||
+      (cv.ativo && cv.seekPend) ||
       (cv.ativo && cv.prog && !cv.deslocOk)) { cv.reabTocandoEm = 0; return; }
   if (!cv.reabTocandoEm) cv.reabTocandoEm = agora ? agora : 1u;   // "| 1" passava agora (par) e virava 4 G ms
   p = posReal();
   // Com sinal: no quadro em que foi marcado, `agora | 1` pode passar de agora
   // por 1 ms, e a conta sem sinal dava 4 bilhoes (soltava em posicao 0).
-  if (p < 0.3 && (int)(agora - cv.reabTocandoEm) < 10000) return;
-  if (fabs(p - cv.posMantida) > 20.0 && (int)(agora - cv.reabTocandoEm) < 10000) return;
+  // O corte de 0,3 s espera o player provar que andou; pausado com o ack do
+  // seek do usuario, p~0 ja e o pouso (o relogio nao anda para provar).
+  if (p < 0.3 && tocando && (int)(agora - cv.reabTocandoEm) < 10000) return;
+  // #728: so aceita posicao do host perto do alvo ou depois de esperar o seek.
+  if (fabs(p - cv.posMantida) > 2.5 && (int)(agora - cv.reabTocandoEm) < 30000) return;
   printf("%s reaberto em %u ms: posicao %.2f s (alvo %.1f s)\n", cv.ativo ? "[dts-tpk]" : "[fonte-cdn]",
          (unsigned)(agora - cv.reabriuEm), p, cv.posMantida);
   fflush(stdout);
-  cv.reabrindo = 0;
+  cv.reabrindo = 0; cv.reabSeekUsr = 0; cv.reabAck = 0; cv.reabGer = 0;
 }
 
 // Aposenta o estado de busca/reabertura da sessao que o EV_FIM encerrou. Fim
@@ -1949,8 +2172,15 @@ static void reabrindoVigiar(void) {
 static void fimConsumir(void) {
   nv_recon_zerar(&recon);
   cv.reabrindo = 0; cv.seekPend = 0; mf.pend = 0;
-  reconErroPend = 0; reconBuscarMs = reconPausa = -1;
+  cv.reabSeekUsr = 0; cv.reabAck = 0; cv.reabGer = 0;
+  reconErroPend = 0; reconBuscarMs = reconPausa = -1; reconBuscaUsr = 0;
+  pthread_mutex_lock(&buscaGerTrava);
+  buscaGerFio = 0;
+  buscaGerHost = 0;
+  atomic_store(&buscaUltimoMs, -2);
   atomic_store(&buscaAlvoMs, -1);
+  atomic_store(&buscaFalhouGer, 0);
+  pthread_mutex_unlock(&buscaGerTrava);
   atomic_store(&playerPreso, -2);
 }
 
@@ -2008,6 +2238,9 @@ void video_bombear(void) {
   // depois do prepare, e um seek no meio disso concorre com ele.
   if (reconBuscarMs >= 0 && pronto && tocando) {
     int ms = reconBuscarMs;
+    unsigned buscaGerEnvio = buscaArmar(ms);
+    cv.reabAck = 0;   // o seek da operacao sai agora: vale o ack que vier
+    cv.reabGer = buscaGerEnvio;
     reconBuscarMs = -1;
     atomic_store(&buscaAlvoMs, ms);
     if (cv.ativo && cv.prog) {
@@ -2018,10 +2251,11 @@ void video_bombear(void) {
         cv.seekPend = 1; cv.seekAlvo = alvo; cv.seekEm = SDL_GetTicks(); cv.deslocOk = 0;
         convReabrir(alvo, "seek pendente");
         abrirSessao();
+        if (cv.reabrindo) cv.reabSeekUsr = reconBuscaUsr;
       } else
         atomic_store(&buscaAlvoMs, -1);   // seek adiado sem fluxo novo: alvo fora de voo
     } else {
-      if (hBuscar) hBuscar(ms);
+      hostBuscar(ms, buscaGerEnvio);
       if (cv.ativo) { cv.seekPend = 1; cv.seekAlvo = ms / 1000.0; cv.seekEm = SDL_GetTicks(); }
     }
     vigiaAtiva = 0;
@@ -2082,9 +2316,9 @@ void video_bombear(void) {
     reconAlvoMs = -1;
     if (reconPermitida && urlAtual[0] && (reconIniciou || recon.tentativa) &&
         nv_recon_erro(&recon, rede, SDL_GetTicks(), alvoMs >= 0 ? alvoMs / 1000.0 : pos)) {
-      if (alvoMs >= 0) recon.alvo = alvoMs / 1000.0;
+      if (alvoMs >= 0) { recon.alvo = alvoMs / 1000.0; reconBuscaUsr = 0; }
       if (!antes) {
-        reconAudio = audioAtual; reconLeg = legAtual;
+        reconAudio = audioAtual; reconLeg = legAtual; reconBuscaUsr = 0;
         // So a reabertura pelo servidor local ha pouco (mkvfix) e "preparo":
         // ali o player fala com o 127.0.0.1 do app, e a falha e do arquivo
         // sendo preparado. Com o arquivo ORIGINAL na TV (sonda no ar ou seek
@@ -2119,9 +2353,27 @@ void video_bombear(void) {
     else if (progressoPos > 0.5) posReconLeg = progressoPos;
     reconFaixasPend = 1;
     reconBuscarMs = recon.alvo > 1.0 ? (int)(recon.alvo * 1000.0) : -1;
+    if (!cv.ativo && recon.alvo >= 0) {
+      /* #728: sem o convertido o player reabre antes do seek — video_pos() nao
+       * pode cair para 0 e arrastar a legenda (igual ao #710 no .wgt). O alvo
+       * mantido e o da tentativa NOVA: um seek enfileirado a 0 s substitui a
+       * posicao da queda. reabSeekUsr/reabAck seguem a operacao que vem: valem
+       * se o alvo e um seek do usuario (reconBuscaUsr); sem seek a confirmar
+       * (reconBuscarMs < 0) o ack nasce dado. */
+      cv.reabrindo = 1;
+      cv.posMantida = recon.alvo;
+      cv.reabriuEm = SDL_GetTicks();
+      cv.reabTocandoEm = 0;
+      cv.reabSeekUsr = reconBuscaUsr;
+      cv.reabAck = reconBuscarMs < 0; cv.reabGer = 0;
+      printf("[video] reconexao TPK: mantem pos %.1f s ate reabrir (tentativa %d)\n",
+             cv.posMantida, recon.tentativa);
+      fflush(stdout);
+    }
     if (cv.ativo) {
       double alvo = recon.alvo > 1.0 ? recon.alvo : cv.posConhecida;
       convReabrir(alvo, "reconexao");
+      cv.reabSeekUsr = reconBuscaUsr;
       // Progressivo: o fluxo recomeca no alvo (?t=); nunca seek cru nele.
       if (cv.prog) {
         reconBuscarMs = -1; cv.deslocOk = 0;
@@ -2157,10 +2409,15 @@ void video_parar(void) {
   atomic_store(&legSeekChegou, 0);
   legendaLimpar(1);
   nv_recon_zerar(&recon);
-  reconErroPend = 0; reconFaixasPend = 0; reconBuscarMs = -1; reconPausa = -1;
+  reconErroPend = 0; reconFaixasPend = 0; reconBuscarMs = -1; reconPausa = -1; reconBuscaUsr = 0;
   reconAlvoMs = buscaAlvoMs = -1;
   posReconLeg = -1.0;
   atomic_store(&playerPreso, -2); // aviso de antes da saida nao reabre o video
+  pthread_mutex_lock(&buscaGerTrava);
+  buscaGerFio = 0;   // o host parou: ack da sessao morta nao confirma nada
+  buscaGerHost = 0;
+  atomic_store(&buscaFalhouGer, 0);
+  pthread_mutex_unlock(&buscaGerTrava);
   if (ativo && hParar) hParar();
   ativo = pronto = tocando = 0;
   // AS FAIXAS SAEM COM O VIDEO (27/10). O memset do `cv` acima zerava
@@ -2188,10 +2445,27 @@ void video_buscar(double s) {
   if (atomic_exchange(&terminou, 0)) fimConsumir();
   if (nv_recon_ativa(&recon)) {
     recon.alvo = s;
-    if (recon.pendente || reconErroPend || !pronto || reconBuscarMs >= 0) { reconBuscarMs = (int)(s * 1000.0); return; }
+    reconBuscaUsr = 1;   // o alvo da reconexao passa a ser o seek do usuario
+    if (recon.pendente || reconErroPend || !pronto || reconBuscarMs >= 0) {
+      reconBuscarMs = (int)(s * 1000.0);
+      /* A posicao de referencia segue o alvo novo (na base integrada ela
+       * alimenta o relogio mantido da #710): sem isto um seek a 0 s na espera
+       * pregava o relogio na posicao da queda. */
+      progressoEm = SDL_GetTicks(); progressoPos = s;
+      /* #728: o "reabrindo" aponta para o alvo NOVO do seek na hora — sem isto o
+       * vigia segurava a posicao da queda ate 30 s (barra, toast e capa presos).
+       * A marca vale ja (reconBuscaUsr): a reabertura que vem mira recon.alvo,
+       * o alvo do usuario — e o ack dela tera de chegar de novo (reabAck). */
+      cv.reabSeekUsr = 1;
+      if (cv.reabrindo) { cv.posMantida = s; cv.reabTocandoEm = 0; cv.reabAck = 0; cv.reabGer = 0; }
+      return;
+    }
   }
   progressoEm = SDL_GetTicks(); progressoPos = video_pos(); vigiaAtiva = 1;
-  buscaAlvoMs = (int)(s * 1000.0);
+  unsigned buscaGerEnvio = buscaArmar((int)(s * 1000.0));
+  // #728: o alvo do reabrindo passa a ser este seek — vale so o ack dele.
+  if (cv.reabrindo) { cv.posMantida = s; cv.reabTocandoEm = 0; cv.reabSeekUsr = 1; cv.reabAck = 0;
+                     cv.reabGer = buscaGerEnvio; }
   legEsperaSeekEm = 0;
   if (legEscrito >= 0 && travaLeg) {
     Uint32 envEm;
@@ -2209,6 +2483,7 @@ void video_buscar(double s) {
       cv.deslocOk = 0;
       convReabrir(s, "seek");
       abrirSessao();
+      if (cv.reabrindo) cv.reabSeekUsr = 1;
     } else {
       // Nunca um seek cru no fluxo progressivo (o player nao sabe buscar nele).
       printf("[dts-tpk] seek progressivo para %.1f s: o servidor nao deu o fluxo novo; fica onde esta\n", s);
@@ -2220,24 +2495,35 @@ void video_buscar(double s) {
     return;
   }
   // Seek com o link do CDN vencido: o seek abriria uma conexao nova com ele.
-  if (pronto && cdnVelho()) { cdnRenovar(s, "seek"); if (atomic_exchange(&terminou, 0)) fimConsumir(); return; }
+  if (pronto && cdnVelho()) { cdnRenovar(s, "seek"); cv.reabSeekUsr = 1; if (atomic_exchange(&terminou, 0)) fimConsumir(); return; }
   // MKV com o indice so no segundo SeekHead (mkvfix.h): a TV recusaria.
   if (!cv.ativo && !mf.ativo && pronto) {
     if (!mf.sondou) mfSondar();
     if (mf.sondou) {
       int e = mkvfix_estado();
-      if (e == MKVFIX_PRECISA) { mfLigar(s, "seek (the TV can't seek this file as served)"); if (atomic_exchange(&terminou, 0)) fimConsumir(); return; }
+      if (e == MKVFIX_PRECISA) { mfLigar(s, "seek (the TV can't seek this file as served)"); cv.reabSeekUsr = 1; if (atomic_exchange(&terminou, 0)) fimConsumir(); return; }
       if (e == MKVFIX_SONDANDO) {
         // Segura ate a sonda responder (mfBombear); o seek mais novo vence.
         // EOF antes de armar: o fimConsumir nao derruba o seek segurado.
         if (atomic_exchange(&terminou, 0)) fimConsumir();
         if (!mf.pend) mf.pendEm = SDL_GetTicks();
+        // Seek retido substituido por um mais novo sem sair: no host legado a
+        // geracao que o fio espera ver passa a ser a do pedido vencedor.
+        if (mf.pend && !hBuscarGer) {
+          pthread_mutex_lock(&buscaGerTrava);
+          if (buscaGerFio == mf.pendGer) {
+            buscaGerFio = buscaGerEnvio;
+            buscaFioMs = (int)(s * 1000.0);
+          }
+          pthread_mutex_unlock(&buscaGerTrava);
+        }
+        mf.pendGer = buscaGerEnvio;
         mf.pend = 1; mf.pendAlvo = s;
         return;
       }
     }
   }
-  if (hBuscar) hBuscar((int)(s * 1000.0));
+  hostBuscar((int)(s * 1000.0), buscaGerEnvio);
   // Um EV_FIM pode ter publicado depois da leitura da entrada (ex.: durante o
   // preparo ou no hBuscar): a zeragem cega apagava a notificacao antes do
   // bombeamento e fimConsumir nao rodava. O exchange consome esse EOF com a
