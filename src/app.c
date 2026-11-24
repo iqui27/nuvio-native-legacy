@@ -5492,6 +5492,14 @@ void app_evento(const SDL_Event *e) {
     if (ctx_aberto()) ctx_evento(e); else spainel_evento(e);
     return;
   }
+  // O VOLTAR QUE DISPENSA O AVISO DA ILHA (o do Farol, issue 20) e o ultimo
+  // da fila: todas as camadas que se desenham por cima da pilula — central,
+  // folhas, cartoes, spotlight, painel de Salvos e o player — ja tiveram a
+  // chance dele, e ilha_evento_dispensar so consome com a pilula visivel de
+  // fato (nem coberta por ilha_coberta nem atras de uma tela opaca). Antes
+  // ele ficava em ilha_evento, acima de todas elas, e engolia o Voltar que
+  // fecharia a camada da frente (e dispensava um aviso que ninguem via).
+  if (ilha_evento_dispensar(e)) return;
   if (menu_aberto())   { menu_evento(e);   return; }
   // "Ver tudo" fica ENTRE a home e o detalhe: ela cobre a home e o detalhe
   // cobre ela. Por isso vem depois do detalhe e antes do roteamento por tela.

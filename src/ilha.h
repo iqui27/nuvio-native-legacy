@@ -268,8 +268,15 @@ int  ilha_modal_abrir(void);
 void ilha_modal_fechar(int seco);   // seco = 1: some sem recolher (virou o painel)
 int  ilha_modal_aberto(void);
 int  ilha_modal_visivel(void);
-// Teclado do modal (come tudo enquanto aberto). Fora dele devolve 0.
+// Teclado do modal (come tudo enquanto aberto) e a AZUL que abre o modal
+// do aviso. Fora dele devolve 0.
 int  ilha_evento(const SDL_Event *e);
+// VOLTAR que dispensa um aviso `dispensavel` (o do Farol): fecha a pilula e
+// ilha_aviso_dispensado entrega a chave uma vez. Vai por ultimo na fila de
+// teclas do app — depois de TODAS as camadas desenhadas por cima da ilha e
+// do player — e so consome com a pilula desenhada de fato no quadro recente
+// (nunca coberta pelo painel/cartao que nasceu dela nem atras de overlay).
+int  ilha_evento_dispensar(const SDL_Event *e);
 // Acao pedida no modal, entregue uma vez (o contrato de avisos_pediu). `c`
 // recebe o cartao em que ela foi pedida.
 //

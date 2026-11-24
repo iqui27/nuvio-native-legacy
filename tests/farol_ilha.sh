@@ -23,6 +23,33 @@ grep -q '"aj_farol"' src/ilhasinais.c || { echo "farol_ilha: aviso sem o icone a
 [ -f deploy/app/art/icones/lucide/farol.svg ] || { echo "farol_ilha: falta o SVG fonte do aj_farol" >&2; exit 1; }
 grep -qw farol tools/icones-lucide.sh || { echo "farol_ilha: aj_farol fora de tools/icones-lucide.sh" >&2; exit 1; }
 
+# FAROL 20B: o Voltar do aviso dispensavel so pode agir com a pilula visivel
+# DE FATO — fora da ilha_coberta e atras das camadas que se desenham depois
+# dela. A dispensa vive fora de ilha_evento (ilha_evento_dispensar) e o
+# app_evento chama depois de todas elas.
+grep -q 'ilha_evento_dispensar' src/ilha.h src/app.c || { echo "farol_ilha: ilha_evento_dispensar sem chamada em app.c" >&2; exit 1; }
+if ! grep -q '^int ilha_evento_dispensar(const SDL_Event' src/ilha.c; then
+  echo "farol_ilha: ilha_evento_dispensar nao definido em ilha.c" >&2; exit 1
+fi
+# a dispensa so pode ser armada na funcao nova (nada dela no ilha_evento
+# que roda antes das camadas)
+fdisp=$(grep -n '^int ilha_evento_dispensar' src/ilha.c | cut -d: -f1)
+if grep -n 'avDispensou = 1' src/ilha.c | awk -F: -v f="$fdisp" '$1 < f' | grep -q .; then
+  echo "farol_ilha: a dispensa do Voltar ficou antes de ilha_evento_dispensar" >&2; exit 1
+fi
+# Em app_evento a dispensa e o ultimo recurso: DEPOIS do player (que cobre a
+# ilha), do srvsetup e dos dois blocos do spainel — e antes do roteamento por
+# tela (menu/ctx), onde o Voltar tem dono.
+linhaDe() { grep -n "$2" "$1" | head -1 | cut -d: -f1; }
+d=$(linhaDe src/app.c 'ilha_evento_dispensar(e)')
+p=$(linhaDe src/app.c 'player_visivel().*player_evento')
+s=$(linhaDe src/app.c 'if (spainel_aberto()) {$')
+m=$(linhaDe src/app.c 'if (menu_aberto())  *{ menu_evento')
+if [ -z "$d" ] || [ -z "$p" ] || [ -z "$s" ] || [ -z "$m" ] || \
+   ! { [ "$p" -lt "$d" ] && [ "$s" -lt "$d" ] && [ "$d" -lt "$m" ]; }; then
+  echo "farol_ilha: ilha_evento_dispensar fora da ordem em app_evento (p=$p s=$s d=$d m=$m)" >&2; exit 1
+fi
+
 flags=(-Wall -Wextra -Werror -O1 -g)
 ccbin="${CC:-cc}"
 case "${SANITIZE:-0}" in
@@ -37,4 +64,12 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-farol-ilha.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 "$ccbin" "${flags[@]}" tests/farol_ilha.c src/farolilha.c -Isrc -o "$work/farol-ilha"
 "$work/farol-ilha"
+
+# O cenario do FAROL 20B de ponta a ponta, sem janela nem GL: ilha.c e
+# ilhasinais.c de producao com os desenhos em stub e o relogio injetado.
+"$ccbin" "${flags[@]}" -std=c11 -D_POSIX_C_SOURCE=200809L \
+  -Wno-unused-parameter -Wno-format-truncation \
+  tests/farol_ilha_voltar.c src/ilha.c src/ilhasinais.c src/farolilha.c src/farolregra.c \
+  -Isrc -I. -lm -o "$work/farol-ilha-voltar"
+"$work/farol-ilha-voltar"
 echo "farol_ilha: tudo ok"

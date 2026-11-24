@@ -96,6 +96,11 @@ static char  mostraChave[80];
 static int dsMostra, dsVez, dsCartao;
 #define DS_CARTAO_MAX 1180.0f
 static Uint32 ultQuadro;
+// O ULTIMO QUADRO EM QUE A PILULA APARECEU DE FATO. ultQuadro anda a cada
+// ilha_desenhar, ate coberta; ultDesenho so anda depois de passar pelo
+// `if (coberta) ... return` e zera enquanto ela esta coberta ou apagada.
+// E a prova de "aviso visivel" do Voltar dispensavel (ilha_evento_dispensar).
+static Uint32 ultDesenho;
 
 // O relogio: troca seco, sem animacao (ver o topo).
 static char hora[12];
@@ -648,20 +653,11 @@ int ilha_evento(const SDL_Event *e) {
         teclaAzul(e->key.keysym.sym, e->key.keysym.scancode) &&
         A > 0.5f && mostra == M_AVISO && abrirDoAviso())
       return 1;
-    // VOLTAR NUM AVISO DISPENSAVEL (o do Farol, issue 20): a pilula fecha
-    // ja, e quem o pos sabe (ilha_aviso_dispensado). So com a pilula na tela
-    // DE FATO — dentro do player app.c nao desenha esta ilha, e o Voltar e
-    // do player. Sem aviso dispensavel o Voltar segue para a tela.
-    if (e->type == SDL_KEYDOWN && !e->key.repeat && temCur && curAte && cur.dispensavel &&
-        mostra == M_AVISO && !strcmp(mostraA.chave, cur.chave) && A > 0.5f &&
-        ultQuadro && SDL_GetTicks() - ultQuadro < 250u &&
-        (e->key.keysym.sym == SDLK_AC_BACK || e->key.keysym.sym == SDLK_ESCAPE ||
-         e->key.keysym.sym == SDLK_BACKSPACE || e->key.keysym.scancode == NV_SCANCODE_BACK)) {
-      avDispensou = 1;
-      snprintf(avDispensouChave, sizeof avDispensouChave, "%s", cur.chave);
-      proximo();
-      return 1;
-    }
+    // VOLTAR NUM AVISO DISPENSAVEL: nao roda aqui. Este handler chega antes
+    // das camadas que cobrem a pilula (avisos, spot, painel, player — ver a
+    // ordem de desenho em app.c), e dispensar um aviso que ninguem esta
+    // vendo engole o Voltar da camada ativa. Quem toca isso e
+    // ilha_evento_dispensar, chamada DEPOIS de todas elas.
     // AZUL/CH+ COM A BOLINHA NO RELOGIO PARADO: reabre a enquete. Quem a tem
     // (enquete.c) le o pedido por ilha_ponto_pediu e poe o convite de novo.
     if (e->type == SDL_KEYDOWN && !e->key.repeat && pontoEnquete && relogioQuer &&
@@ -737,6 +733,29 @@ static int atividadeViva(Uint32 agora) {
 }
 
 int ilha_ocupada(void) { return temCur || atividadeViva(SDL_GetTicks()); }
+
+// VOLTAR NUM AVISO DISPENSAVEL (o do Farol, issue 20): a pilula fecha ja, e
+// quem o pos sabe (ilha_aviso_dispensado). app_evento chama isto DEPOIS de
+// todas as camadas que se desenham por cima da ilha (avisos, cartoes,
+// spotlight, paineis) e do player: um Voltar que nenhuma delas quis pode
+// dispensar o aviso — mas so com a pilula na tela DE FATO (ultDesenho),
+// nao atras do painel de Salvos, do cartao da atualizacao ou dentro dos
+// primeiros quadros de uma tela opaca. Sem aviso dispensavel devolve 0 e o
+// Voltar segue para a tela.
+int ilha_evento_dispensar(const SDL_Event *e) {
+  if (modalAberto || e->type != SDL_KEYDOWN || e->key.repeat) return 0;
+  if (temCur && curAte && cur.dispensavel &&
+      mostra == M_AVISO && !strcmp(mostraA.chave, cur.chave) && A > 0.5f &&
+      ultDesenho && SDL_GetTicks() - ultDesenho < 250u &&
+      (e->key.keysym.sym == SDLK_AC_BACK || e->key.keysym.sym == SDLK_ESCAPE ||
+       e->key.keysym.sym == SDLK_BACKSPACE || e->key.keysym.scancode == NV_SCANCODE_BACK)) {
+    avDispensou = 1;
+    snprintf(avDispensouChave, sizeof avDispensouChave, "%s", cur.chave);
+    proximo();
+    return 1;
+  }
+  return 0;
+}
 
 // MOLA SUBAMORTECIDA (zeta 0,68): passa um pouco do alvo e volta, que e o
 // "pulo" da Dynamic Island. As molas de anim.h sao criticas de proposito (sem
@@ -2216,7 +2235,7 @@ static void ilha_desenharCorpo_(Uint32 agora) {
     vooPasso(agora);
     if (A < 0.01f) {
       if (!vis) { mostra = alvo; dsMostra = dsVez; conteudoA = 0.0f; W = H = NV_ILHA_H * 0.6f; vW = vH = 0.0f; }
-      ancDef = 0; ultRectOk = 0; coberta = 0;
+      ancDef = 0; ultRectOk = 0; coberta = 0; ultDesenho = 0;
       if (voo) { desenharVoo(pf, 0); desenharVoo(pf, 1); }
       return;
     }
@@ -2287,7 +2306,9 @@ static void ilha_desenharCorpo_(Uint32 agora) {
     }
     ultRect = R; ultRectOk = 1;
     repouso = modalT <= 0.0f && corpoT <= 0.0f;
-    if (coberta) { coberta = 0; return; }
+    if (coberta) { coberta = 0; ultDesenho = 0; return; }
+    // Passou pelo corte de cobertura: a pilula vai aparecer neste quadro.
+    ultDesenho = agora;
     // O MODAL ESCURECE A TELA DE TRAS (veu do mockup, 40% / solido 42%): a
     // ilha crescida e a coisa na frente, a home fica atras.
     if (modalT > 0.0f || corpoT > 0.0f) {
@@ -2403,7 +2424,7 @@ void ilha_abrir_sessao(void) {
   vooDesde = svooDesde = pousouEm = altBase = 0; vooT = svooT = 0.0f;
   vooArte[0] = vooCapa[0] = svooPoster[0] = 0; svooIconeA = 1.0f;
   pontoEnquete = pontoPediu = coberta = ultRectOk = relogioFocado = 0;
-  W = vW = H = vH = A = conteudoA = 0.0f; ultQuadro = 0;
+  W = vW = H = vH = A = conteudoA = 0.0f; ultQuadro = ultDesenho = 0;
   dsMostra = dsVez = dsCartao = 0;
 #ifdef NV_TOUCH_UI
   modalToqueReiniciar();

@@ -457,7 +457,9 @@ static void farolProativo(void) {
   f.falhasSeguidas = ff.falhasSeguidas;
   f.paradas5min = ff.paradas5min;
   f.playerAberto = player_aberto();
-  f.videoAndando = player_retido();
+  // video andando = retido (saida no meio) OU o mini-player (PiP) tocando —
+  // como farolsonda, musicaui e o pre-carregar de fonte ja fazem em app.c.
+  f.videoAndando = player_retido() || player_mini_ativo();
   f.titulo = player_ultimo_titulo(&ult, &t, &e) ? ult.imdb : "";
   ff.sintoma = farolilha_sintoma(&f);
   farolregra_julgar(ff.sintoma, &ff, &v);
@@ -497,7 +499,10 @@ static void farolConserto(Uint32 agora) {
       if (!frase) continue;
       if (player_aberto()) {
         snprintf(farolConsFrase, sizeof farolConsFrase, "%s", i18n(frase));
+        // 0 e "desligado": no wrap de 32 bits (agora + 4 s = 0, ~49,7 dias de
+        // uptime) a pilula do conserto apagaria na hora. Sobe para 1.
         farolConsAte = (agora ? agora : 1) + FAROLILHA_CONSERTO_MS;
+        if (!farolConsAte) farolConsAte = 1;
       } else {
         ilha_avisar(FAROL_CONS_CHAVE, ILHA_OK, "aj_farol", i18n(frase), FAROLILHA_CONSERTO_MS, 0);
       }
