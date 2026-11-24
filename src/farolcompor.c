@@ -4,6 +4,7 @@
 #define FarolMotivo FarolRecMotivo
 #include "farolrec.h"
 #undef FarolMotivo
+#include "farolinfo.h"
 #include "faroltexto.h"
 #include "rede.h"
 #include <ctype.h>
@@ -128,6 +129,17 @@ static struct {
   uint64_t contaHash;
   int      diaLocal;
 } homeDiaMem;
+
+// Ultimo pedido de retomada (issue 57): o mesmo (perfil, serie, t, e) nao
+// sai duas vezes na sessao, nem se a resposta caiu nas regras.
+static struct {
+  int      tem;
+  int      perfil;
+  uint64_t sessao;
+  uint64_t contaHash;
+  char     imdb[24];
+  int      t, e;
+} retUltimo;
 
 static int                    consentiuCfg;
 static FarolComporAllowlistFn allowlistFn;
@@ -335,6 +347,847 @@ static int textoSeguroLimpar(const char *src, char *dst, size_t cap,
   }
   dst[u] = '\0';
   return u > 0;
+}
+
+static char retBaseLatim(long cp) {
+  static const char T[0x40] = {
+    'a','a','a','a','a','a', 0 ,'c',
+    'e','e','e','e','i','i','i','i',
+     0 ,'n','o','o','o','o','o', 0 ,
+     0 ,'u','u','u','u','y', 0 , 0 ,
+    'a','a','a','a','a','a', 0 ,'c',
+    'e','e','e','e','i','i','i','i',
+     0 ,'n','o','o','o','o','o', 0 ,
+     0 ,'u','u','u','u','y', 0 ,'y',
+  };
+  return (cp >= 0xC0 && cp <= 0xFF) ? T[cp - 0xC0] : 0;
+}
+
+static int retEhCombinante(long cp) {
+  return (cp >= 0x0300 && cp <= 0x036F) ||
+         (cp >= 0x1AB0 && cp <= 0x1AFF) ||
+         (cp >= 0x20D0 && cp <= 0x20FF) ||
+         (cp >= 0xFE20 && cp <= 0xFE2F);
+}
+
+static int retEhSeparador(long cp) {
+  if (cp < 0x80) {
+    return !((cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z') ||
+             (cp >= '0' && cp <= '9'));
+  }
+  if (cp == 0xAA || cp == 0xBA || cp == 0xB0) return 0;
+  if (cp >= 0xC0 && cp <= 0xFF) return retBaseLatim(cp) == 0 && cp != 0xC6 &&
+    cp != 0xD0 && cp != 0xD8 && cp != 0xDE && cp != 0xDF && cp != 0xE6 &&
+    cp != 0xF0 && cp != 0xF8 && cp != 0xFE;
+  return cp == 0xA0 || cp == 0x2028 || cp == 0x2029 ||
+         (cp >= 0xA1 && cp <= 0xBF) ||
+         (cp >= 0x2000 && cp <= 0x206F) ||
+         (cp >= 0x3001 && cp <= 0x303F) ||
+         (cp >= 0xFF01 && cp <= 0xFF65);
+}
+
+static int retTemIraFuturo(const char *s) {
+  const char *p = s, *fim = s + strlen(s);
+  int sepAntes = 1;
+  while (p < fim) {
+    long cp = lerUtf8(&p, fim);
+    if (cp < 0) return 1;
+    if (retEhCombinante(cp)) continue;
+    if (sepAntes && (cp == 'i' || cp == 'I')) {
+      const char *q = p;
+      long c2 = lerUtf8(&q, fim);
+      if (c2 == 'r' || c2 == 'R') {
+        long c3 = lerUtf8(&q, fim);
+        int ehA = (c3 == 0xE1 || c3 == 0xC1);
+        if (!ehA && (c3 == 'a' || c3 == 'A')) {
+          const char *q2 = q;
+          if (lerUtf8(&q2, fim) == 0x0301) { ehA = 1; q = q2; }
+        }
+        if (ehA) {
+          long c4 = lerUtf8(&q, fim);
+          if (c4 == ' ' || c4 == '\t') {
+            while (q < fim) {
+              long c5 = lerUtf8(&q, fim);
+              if (c5 != ' ' && c5 != '\t') {
+                if (c5 >= 0 && !retEhSeparador(c5)) return 1;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+    sepAntes = retEhSeparador(cp);
+  }
+  return 0;
+}
+
+static int retEhNaoFuturoAra(const char *s) {
+  static const char *const exc[] = {
+    "alvar\xc3\xa1", "guaran\xc3\xa1", "par\xc3\xa1", "maracuj\xc3\xa1", "caj\xc3\xa1",
+    "car\xc3\xa1", "bacar\xc3\xa1", "man\xc3\xa1", "saar\xc3\xa1", "sahar\xc3\xa1",
+  };
+  size_t i;
+  for (i = 0; i < sizeof exc / sizeof exc[0]; i++) {
+    if (!strcmp(s, exc[i])) return 1;
+  }
+  return 0;
+}
+
+static int retTemFuturoAcentuado(const char *s) {
+  const char *p = s, *fim = s + strlen(s);
+  char pal[96];
+  size_t len = 0;
+  int temDigito = 0;
+  static const char *const sufs[] = {
+    "ar\xc3\xa1", "er\xc3\xa1", "ir\xc3\xa1",
+    "ar\xc3\xa3o", "er\xc3\xa3o", "ir\xc3\xa3o",
+    "ar\xc3\xa1n", "er\xc3\xa1n", "ir\xc3\xa1n",
+  };
+  for (;;) {
+    long cp = p < fim ? lerUtf8(&p, fim) : -2;
+    if (cp == -1) return 1;
+    if (cp >= 0 && retEhCombinante(cp)) {
+      if ((cp == 0x0301 || cp == 0x0303) && len > 0 && pal[len - 1] == 'a' && len + 1 < sizeof pal) {
+        pal[len - 1] = (char)0xC3;
+        pal[len++] = (char)(cp == 0x0301 ? 0xA1 : 0xA3);
+      }
+      continue;
+    }
+    if (cp >= 0 && !retEhSeparador(cp)) {
+      if (cp >= '0' && cp <= '9') temDigito = 1;
+      if (cp >= 'A' && cp <= 'Z') cp += 32;
+      else if (cp >= 0xC0 && cp <= 0xDD && cp != 0xD7) cp += 32;
+      if (cp < 0x80) {
+        if (len + 1 < sizeof pal) pal[len++] = (char)cp;
+      } else if (cp < 0x800) {
+        if (len + 2 < sizeof pal) {
+          pal[len++] = (char)(0xC0 | (cp >> 6));
+          pal[len++] = (char)(0x80 | (cp & 0x3F));
+        }
+      } else if (cp < 0x10000) {
+        if (len + 3 < sizeof pal) {
+          pal[len++] = (char)(0xE0 | (cp >> 12));
+          pal[len++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+          pal[len++] = (char)(0x80 | (cp & 0x3F));
+        }
+      } else {
+        if (len + 4 < sizeof pal) {
+          pal[len++] = (char)(0xF0 | (cp >> 18));
+          pal[len++] = (char)(0x80 | ((cp >> 12) & 0x3F));
+          pal[len++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+          pal[len++] = (char)(0x80 | (cp & 0x3F));
+        }
+      }
+      continue;
+    }
+    if (len > 0 && !temDigito) {
+      size_t i;
+      pal[len] = '\0';
+      if (!retEhNaoFuturoAra(pal)) {
+        for (i = 0; i < sizeof sufs / sizeof sufs[0]; i++) {
+          size_t sl = strlen(sufs[i]);
+          if (len > sl && memcmp(pal + len - sl, sufs[i], sl) == 0) {
+            size_t rad = len - sl, k, cps = 0;
+            for (k = 0; k < rad; k++) {
+              if (((unsigned char)pal[k] & 0xC0) != 0x80) cps++;
+            }
+            if (cps >= 2) return 1;
+          }
+        }
+      }
+    }
+    len = 0;
+    temDigito = 0;
+    if (cp == -2) break;
+  }
+  return 0;
+}
+
+static int retEhWillFuturoSeg(const char *s) {
+  static const char *const seg[] = {
+    "he", "she", "it", "they", "we", "you", "i", "there", "this", "that", "these", "those",
+    "anyone", "someone", "everyone", "nobody", "noone",
+    "anything", "something", "everything", "nothing",
+    "not", "never", "still", "also", "soon", "eventually", "finally", "probably", "likely",
+    "be", "have", "do", "go", "come", "see", "say", "make", "take", "know", "get", "give",
+    "find", "tell", "ask", "try", "leave", "die", "live", "kill", "save", "escape", "return",
+    "reveal", "discover", "change", "betray", "win", "lose", "survive", "fight", "hide", "flee",
+    "run", "fall", "meet", "keep", "hold", "hear", "think", "bring", "break", "speak", "help",
+    "stay", "wait", "stop", "start", "begin", "learn", "pay", "send", "move", "turn", "face",
+    "follow", "lead", "watch", "show", "use", "need", "want", "become", "happen", "end",
+  };
+  size_t i;
+  for (i = 0; i < sizeof seg / sizeof seg[0]; i++) {
+    if (!strcmp(s, seg[i])) return 1;
+  }
+  return 0;
+}
+
+static int retTemWillFuturo(const char *s) {
+  char orig[320], low[320];
+  char *tokO[64], *tokL[64];
+  const char *p = s, *fim = s + strlen(s);
+  size_t uo = 0, ul = 0;
+  int nt = 0, emEspaco = 1, i;
+  int temPergunta = strchr(s, '?') != NULL;
+
+  while (p < fim && uo + 5 < sizeof orig && ul + 5 < sizeof low) {
+    const char *ini = p;
+    long cp = lerUtf8(&p, fim);
+    char b;
+    if (cp < 0) return 1;
+    if (retEhCombinante(cp)) continue;
+    if (retEhSeparador(cp)) { emEspaco = 1; continue; }
+    if (uo > 0 && emEspaco) { orig[uo++] = ' '; low[ul++] = ' '; }
+    emEspaco = 0;
+    if (cp < 0x80) {
+      orig[uo++] = (char)cp;
+      low[ul++] = (cp >= 'A' && cp <= 'Z') ? (char)(cp + 32) : (char)cp;
+    } else {
+      const char *q = ini;
+      while (q < p && uo + 1 < sizeof orig) orig[uo++] = *q++;
+      b = retBaseLatim(cp);
+      if (b) low[ul++] = b;
+      else {
+        q = ini;
+        while (q < p && ul + 1 < sizeof low) low[ul++] = *q++;
+      }
+    }
+  }
+  orig[uo] = '\0';
+  low[ul] = '\0';
+
+  {
+    char *qo = orig, *ql = low;
+    while (*qo && *ql && nt < 64) {
+      while (*qo == ' ') qo++;
+      while (*ql == ' ') ql++;
+      if (!*qo || !*ql) break;
+      tokO[nt] = qo;
+      tokL[nt] = ql;
+      nt++;
+      while (*qo && *qo != ' ') qo++;
+      while (*ql && *ql != ' ') ql++;
+      if (*qo == ' ') *qo++ = '\0';
+      if (*ql == ' ') *ql++ = '\0';
+    }
+  }
+
+  for (i = 0; i < nt; i++) {
+    if ((!strcmp(tokO[i], "will") || !strcmp(tokO[i], "WILL")) && i + 1 < nt)
+      return 1;
+    if (!strcmp(tokO[i], "Will") && i + 1 < nt) {
+      if (i == 0 && temPergunta) return 1;
+      if (retEhWillFuturoSeg(tokL[i + 1])) return 1;
+    }
+  }
+  return 0;
+}
+
+static int retParseInt(const char *s, int *out) {
+  long v = 0;
+  int n = 0;
+  if (!s || !*s) return 0;
+  while (s[n] >= '0' && s[n] <= '9') {
+    v = v * 10 + (s[n] - '0');
+    if (v > 100000) v = 100000;
+    n++;
+  }
+  if (!n || s[n] != '\0') return 0;
+  *out = (int)v;
+  return 1;
+}
+
+static int retParseOrdNum(const char *s, int *out) {
+  long v = 0;
+  int n = 0;
+  const char *suf;
+  if (!s || !*s) return 0;
+  while (s[n] >= '0' && s[n] <= '9') {
+    v = v * 10 + (s[n] - '0');
+    if (v > 100000) v = 100000;
+    n++;
+  }
+  if (!n) return 0;
+  suf = s + n;
+  if (!suf[0] || !strcmp(suf, "a") || !strcmp(suf, "o") ||
+      !strcmp(suf, "st") || !strcmp(suf, "nd") ||
+      !strcmp(suf, "rd") || !strcmp(suf, "th")) {
+    *out = (int)v;
+    return 1;
+  }
+  return 0;
+}
+
+static int retParseTxEy(const char *s, int *tOut, int *eOut) {
+  long tv = 0, ev = 0;
+  int nt = 0, ne = 0;
+  if (!s || (s[0] != 't' && s[0] != 's')) return 0;
+  s++;
+  while (*s >= '0' && *s <= '9') {
+    tv = tv * 10 + (*s++ - '0');
+    if (tv > 100000) tv = 100000;
+    nt++;
+  }
+  if (!nt || *s != 'e') return 0;
+  s++;
+  while (*s >= '0' && *s <= '9') {
+    ev = ev * 10 + (*s++ - '0');
+    if (ev > 100000) ev = 100000;
+    ne++;
+  }
+  if (!ne || *s != '\0') return 0;
+  *tOut = (int)tv;
+  *eOut = (int)ev;
+  return 1;
+}
+
+static int retCardinalUnidade(const char *s) {
+  static const struct { const char *p; int v; } tab[] = {
+    { "um", 1 }, { "uma", 1 }, { "one", 1 }, { "uno", 1 }, { "un", 1 }, { "una", 1 },
+    { "dois", 2 }, { "duas", 2 }, { "two", 2 }, { "dos", 2 },
+    { "tres", 3 }, { "three", 3 },
+    { "quatro", 4 }, { "four", 4 }, { "cuatro", 4 },
+    { "cinco", 5 }, { "five", 5 },
+    { "seis", 6 }, { "six", 6 },
+    { "sete", 7 }, { "seven", 7 }, { "siete", 7 },
+    { "oito", 8 }, { "eight", 8 }, { "ocho", 8 },
+    { "nove", 9 }, { "nine", 9 }, { "nueve", 9 },
+  };
+  size_t i;
+  for (i = 0; i < sizeof tab / sizeof tab[0]; i++) {
+    if (!strcmp(s, tab[i].p)) return tab[i].v;
+  }
+  return 0;
+}
+
+static int retCardinalDez(const char *s) {
+  static const struct { const char *p; int v; } tab[] = {
+    { "dez", 10 }, { "ten", 10 }, { "diez", 10 },
+    { "onze", 11 }, { "eleven", 11 }, { "once", 11 },
+    { "doze", 12 }, { "twelve", 12 }, { "doce", 12 },
+    { "treze", 13 }, { "thirteen", 13 }, { "trece", 13 },
+    { "catorze", 14 }, { "quatorze", 14 }, { "fourteen", 14 }, { "catorce", 14 },
+    { "quinze", 15 }, { "fifteen", 15 }, { "quince", 15 },
+    { "dezesseis", 16 }, { "dezasseis", 16 }, { "sixteen", 16 }, { "dieciseis", 16 },
+    { "dezessete", 17 }, { "dezassete", 17 }, { "seventeen", 17 }, { "diecisiete", 17 },
+    { "dezoito", 18 }, { "eighteen", 18 }, { "dieciocho", 18 },
+    { "dezenove", 19 }, { "dezanove", 19 }, { "nineteen", 19 }, { "diecinueve", 19 },
+    { "veintiuno", 21 }, { "veintiun", 21 }, { "veintiuna", 21 },
+    { "veintidos", 22 }, { "veintitres", 23 }, { "veinticuatro", 24 }, { "veinticinco", 25 },
+    { "veintiseis", 26 }, { "veintisiete", 27 }, { "veintiocho", 28 }, { "veintinueve", 29 },
+  };
+  size_t i;
+  for (i = 0; i < sizeof tab / sizeof tab[0]; i++) {
+    if (!strcmp(s, tab[i].p)) return tab[i].v;
+  }
+  return 0;
+}
+
+static int retCardinalDezena(const char *s) {
+  static const struct { const char *p; int v; } tab[] = {
+    { "vinte", 20 }, { "twenty", 20 }, { "veinte", 20 },
+    { "trinta", 30 }, { "thirty", 30 }, { "treinta", 30 },
+    { "quarenta", 40 }, { "forty", 40 }, { "cuarenta", 40 },
+    { "cinquenta", 50 }, { "fifty", 50 }, { "cincuenta", 50 },
+    { "sessenta", 60 }, { "sixty", 60 }, { "sesenta", 60 },
+    { "setenta", 70 }, { "seventy", 70 },
+    { "oitenta", 80 }, { "eighty", 80 }, { "ochenta", 80 },
+    { "noventa", 90 }, { "ninety", 90 },
+  };
+  size_t i;
+  for (i = 0; i < sizeof tab / sizeof tab[0]; i++) {
+    if (!strcmp(s, tab[i].p)) return tab[i].v;
+  }
+  return 0;
+}
+
+static int retOrdinalUnidade(const char *s) {
+  static const struct { const char *p; int v; } tab[] = {
+    { "primeiro", 1 }, { "primeira", 1 }, { "primeiros", 1 }, { "primeiras", 1 },
+    { "primero", 1 }, { "primera", 1 }, { "primer", 1 }, { "primeros", 1 }, { "primeras", 1 }, { "first", 1 },
+    { "segundo", 2 }, { "segunda", 2 }, { "segundos", 2 }, { "segundas", 2 }, { "second", 2 },
+    { "terceiro", 3 }, { "terceira", 3 }, { "terceiros", 3 }, { "terceiras", 3 },
+    { "tercero", 3 }, { "tercera", 3 }, { "tercer", 3 }, { "terceros", 3 }, { "terceras", 3 }, { "third", 3 },
+    { "quarto", 4 }, { "quarta", 4 }, { "quartos", 4 }, { "quartas", 4 },
+    { "cuarto", 4 }, { "cuarta", 4 }, { "cuartos", 4 }, { "cuartas", 4 }, { "fourth", 4 },
+    { "quinto", 5 }, { "quinta", 5 }, { "quintos", 5 }, { "quintas", 5 }, { "fifth", 5 },
+    { "sexto", 6 }, { "sexta", 6 }, { "sextos", 6 }, { "sextas", 6 }, { "sixth", 6 },
+    { "setimo", 7 }, { "setima", 7 }, { "setimos", 7 }, { "setimas", 7 },
+    { "septimo", 7 }, { "septima", 7 }, { "septimos", 7 }, { "septimas", 7 }, { "seventh", 7 },
+    { "oitavo", 8 }, { "oitava", 8 }, { "oitavos", 8 }, { "oitavas", 8 },
+    { "octavo", 8 }, { "octava", 8 }, { "octavos", 8 }, { "octavas", 8 }, { "eighth", 8 },
+    { "nono", 9 }, { "nona", 9 }, { "nonos", 9 }, { "nonas", 9 },
+    { "noveno", 9 }, { "novena", 9 }, { "novenos", 9 }, { "novenas", 9 }, { "ninth", 9 },
+  };
+  size_t i;
+  for (i = 0; i < sizeof tab / sizeof tab[0]; i++) {
+    if (!strcmp(s, tab[i].p)) return tab[i].v;
+  }
+  return 0;
+}
+
+static int retOrdinalSimples(const char *s) {
+  static const struct { const char *p; int v; } tab[] = {
+    { "undecimo", 11 }, { "undecima", 11 }, { "onzeno", 11 }, { "onzena", 11 }, { "eleventh", 11 },
+    { "duodecimo", 12 }, { "duodecima", 12 }, { "twelfth", 12 },
+    { "thirteenth", 13 }, { "fourteenth", 14 }, { "fifteenth", 15 }, { "sixteenth", 16 },
+    { "seventeenth", 17 }, { "eighteenth", 18 }, { "nineteenth", 19 },
+  };
+  size_t i;
+  for (i = 0; i < sizeof tab / sizeof tab[0]; i++) {
+    if (!strcmp(s, tab[i].p)) return tab[i].v;
+  }
+  return 0;
+}
+
+static int retOrdinalDezena(const char *s) {
+  static const struct { const char *p; int v; } tab[] = {
+    { "decimo", 10 }, { "decima", 10 }, { "decimos", 10 }, { "decimas", 10 }, { "tenth", 10 },
+    { "vigesimo", 20 }, { "vigesima", 20 }, { "twentieth", 20 },
+    { "trigesimo", 30 }, { "trigesima", 30 }, { "thirtieth", 30 },
+    { "quadragesimo", 40 }, { "quadragesima", 40 }, { "fortieth", 40 },
+    { "quinquagesimo", 50 }, { "quinquagesima", 50 }, { "fiftieth", 50 },
+    { "sexagesimo", 60 }, { "sexagesima", 60 }, { "sixtieth", 60 },
+    { "septuagesimo", 70 }, { "septuagesima", 70 }, { "setuagesimo", 70 }, { "setuagesima", 70 }, { "seventieth", 70 },
+    { "octogesimo", 80 }, { "octogesima", 80 }, { "eightieth", 80 },
+    { "nonagesimo", 90 }, { "nonagesima", 90 }, { "ninetieth", 90 },
+  };
+  size_t i;
+  for (i = 0; i < sizeof tab / sizeof tab[0]; i++) {
+    if (!strcmp(s, tab[i].p)) return tab[i].v;
+  }
+  return 0;
+}
+
+static int retOrdinalFused(const char *s) {
+  static const struct { const char *p; int v; } pref[] = {
+    { "decimo", 10 }, { "decima", 10 }, { "vigesimo", 20 }, { "vigesima", 20 },
+    { "trigesimo", 30 }, { "trigesima", 30 }, { "quadragesimo", 40 }, { "quadragesima", 40 },
+    { "quinquagesimo", 50 }, { "quinquagesima", 50 }, { "sexagesimo", 60 }, { "sexagesima", 60 },
+    { "septuagesimo", 70 }, { "septuagesima", 70 }, { "octogesimo", 80 }, { "octogesima", 80 },
+    { "nonagesimo", 90 }, { "nonagesima", 90 },
+  };
+  size_t i;
+  for (i = 0; i < sizeof pref / sizeof pref[0]; i++) {
+    size_t pl = strlen(pref[i].p);
+    if (strncmp(s, pref[i].p, pl) == 0 && s[pl] != '\0') {
+      int u = retOrdinalUnidade(s + pl);
+      if (u > 0) return pref[i].v + u;
+    }
+  }
+  if (strncmp(s, "decim", 5) == 0 && s[5] != '\0') {
+    if (retOrdinalUnidade(s + 5) == 8) return 18;
+  }
+  return 0;
+}
+
+static int retEhArtigoUm(const char *s) {
+  return !strcmp(s, "um") || !strcmp(s, "uma") || !strcmp(s, "un") || !strcmp(s, "una") ||
+         !strcmp(s, "a") || !strcmp(s, "an");
+}
+
+static int retParseNumeroExtenso(char *const *tok, const int *quebra, int nt, int i,
+                                 int *lenOut, int *artigoOut) {
+  int v;
+  *lenOut = 0;
+  *artigoOut = 0;
+  if (retParseOrdNum(tok[i], &v)) { *lenOut = 1; return v; }
+  if ((v = retOrdinalUnidade(tok[i])) > 0) { *lenOut = 1; return v; }
+  if ((v = retOrdinalSimples(tok[i])) > 0) { *lenOut = 1; return v; }
+  if ((v = retOrdinalFused(tok[i])) > 0) { *lenOut = 1; return v; }
+  if ((v = retOrdinalDezena(tok[i])) > 0) {
+    if (i + 1 < nt && !quebra[i + 1]) {
+      int u = retOrdinalUnidade(tok[i + 1]);
+      if (u > 0) { *lenOut = 2; return v + u; }
+      if ((!strcmp(tok[i + 1], "e") || !strcmp(tok[i + 1], "y")) &&
+          i + 2 < nt && !quebra[i + 2]) {
+        u = retOrdinalUnidade(tok[i + 2]);
+        if (u > 0) { *lenOut = 3; return v + u; }
+      }
+    }
+    *lenOut = 1;
+    return v;
+  }
+  if ((v = retCardinalDezena(tok[i])) > 0) {
+    if (i + 1 < nt && !quebra[i + 1]) {
+      int u = retCardinalUnidade(tok[i + 1]);
+      if (!u) u = retOrdinalUnidade(tok[i + 1]);
+      if (u > 0) { *lenOut = 2; return v + u; }
+      if ((!strcmp(tok[i + 1], "e") || !strcmp(tok[i + 1], "y")) &&
+          i + 2 < nt && !quebra[i + 2]) {
+        u = retCardinalUnidade(tok[i + 2]);
+        if (!u) u = retOrdinalUnidade(tok[i + 2]);
+        if (u > 0) { *lenOut = 3; return v + u; }
+      }
+    }
+    *lenOut = 1;
+    return v;
+  }
+  if ((v = retCardinalDez(tok[i])) > 0) {
+    if (!strcmp(tok[i], "diez") && i + 2 < nt && !quebra[i + 1] &&
+        !strcmp(tok[i + 1], "y") && !quebra[i + 2]) {
+      int u = retCardinalUnidade(tok[i + 2]);
+      if (u > 0) { *lenOut = 3; return 10 + u; }
+    }
+    *lenOut = 1;
+    return v;
+  }
+  if ((v = retCardinalUnidade(tok[i])) > 0) {
+    *lenOut = 1;
+    *artigoOut = retEhArtigoUm(tok[i]);
+    return v;
+  }
+  return 0;
+}
+
+static int retEhFuturoSimples(const char *s) {
+  static const char *const ban[] = {
+    "futuro", "futura", "futuros", "futuras", "upcoming", "spoiler", "spoilers",
+  };
+  size_t i;
+  for (i = 0; i < sizeof ban / sizeof ban[0]; i++) {
+    if (!strcmp(s, ban[i])) return 1;
+  }
+  return 0;
+}
+
+static int retEhSubstEp(const char *s) {
+  return !strcmp(s, "episodio") || !strcmp(s, "episodios") ||
+         !strcmp(s, "episode") || !strcmp(s, "episodes") ||
+         !strcmp(s, "capitulo") || !strcmp(s, "capitulos") ||
+         !strcmp(s, "chapter") || !strcmp(s, "chapters") ||
+         !strcmp(s, "ep") || !strcmp(s, "eps") || !strcmp(s, "cap");
+}
+
+static int retEhSubstTemp(const char *s) {
+  return !strcmp(s, "temporada") || !strcmp(s, "temporadas") ||
+         !strcmp(s, "season") || !strcmp(s, "seasons") ||
+         !strcmp(s, "temp") || !strcmp(s, "seas");
+}
+
+static int retEhSubstPlural(const char *s) {
+  return !strcmp(s, "episodios") || !strcmp(s, "episodes") ||
+         !strcmp(s, "capitulos") || !strcmp(s, "chapters") ||
+         !strcmp(s, "eps") || !strcmp(s, "temporadas") ||
+         !strcmp(s, "seasons") || !strcmp(s, "seas");
+}
+
+static int retEhQuantPlural(const char *s) {
+  static const char *const q[] = {
+    "several", "few", "many", "some", "multiple", "various", "other",
+    "varios", "varias", "alguns", "algumas", "algunos", "algunas",
+    "poucos", "poucas", "pocos", "pocas", "muitos", "muitas", "muchos", "muchas",
+    "outros", "outras", "otros", "otras",
+  };
+  size_t i;
+  for (i = 0; i < sizeof q / sizeof q[0]; i++) {
+    if (!strcmp(s, q[i])) return 1;
+  }
+  return 0;
+}
+
+static int retEhQuantPar(const char *s) {
+  return !strcmp(s, "couple") || !strcmp(s, "pair") || !strcmp(s, "par");
+}
+
+static int retEhProximo(const char *s) {
+  return !strcmp(s, "proximo") || !strcmp(s, "proxima") ||
+         !strcmp(s, "proximos") || !strcmp(s, "proximas") ||
+         !strcmp(s, "seguinte") || !strcmp(s, "seguintes") ||
+         !strcmp(s, "siguiente") || !strcmp(s, "siguientes");
+}
+
+static int retEhNextAlvo(const char *s) {
+  return !strcmp(s, "episode") || !strcmp(s, "episodes") ||
+         !strcmp(s, "ep") || !strcmp(s, "eps") ||
+         !strcmp(s, "season") || !strcmp(s, "seasons") ||
+         !strcmp(s, "chapter") || !strcmp(s, "chapters") ||
+         !strcmp(s, "time") || !strcmp(s, "times");
+}
+
+static int retEhProxAlvo(const char *s) {
+  return retEhSubstEp(s) || retEhSubstTemp(s) ||
+         !strcmp(s, "vez") || !strcmp(s, "vezes") ||
+         !strcmp(s, "time") || !strcmp(s, "times");
+}
+
+static int retEhArtProx(const char *s) {
+  return !strcmp(s, "no") || !strcmp(s, "na") || !strcmp(s, "nos") || !strcmp(s, "nas") ||
+         !strcmp(s, "el") || !strcmp(s, "la") || !strcmp(s, "los") || !strcmp(s, "las");
+}
+
+static int retEhPrepEspacial(const char *s) {
+  return !strcmp(s, "a") || !strcmp(s, "ao") || !strcmp(s, "aos") || !strcmp(s, "as") ||
+         !strcmp(s, "de") || !strcmp(s, "da") || !strcmp(s, "do") ||
+         !strcmp(s, "das") || !strcmp(s, "dos") || !strcmp(s, "del");
+}
+
+static int retEhNumLig(const char *s) {
+  return !strcmp(s, "n") || !strcmp(s, "no") || !strcmp(s, "num") ||
+         !strcmp(s, "nro") || !strcmp(s, "nr") ||
+         !strcmp(s, "numero") || !strcmp(s, "number");
+}
+
+static int retEhAbrevPonto(const char *s) {
+  return !strcmp(s, "n") || !strcmp(s, "no") || !strcmp(s, "num") ||
+         !strcmp(s, "nro") || !strcmp(s, "nr") ||
+         !strcmp(s, "ep") || !strcmp(s, "eps") || !strcmp(s, "cap") ||
+         !strcmp(s, "temp") || !strcmp(s, "seas");
+}
+
+static int retEhMarcadorTemp(char *const *tok, const int *quebra, int nt, int i) {
+  static const char *const m1[] = {
+    "later", "after", "afterward", "afterwards", "ahead", "following",
+    "depois", "adiante", "apos", "despues", "adelante",
+  };
+  size_t k;
+  if (i >= nt || quebra[i]) return 0;
+  for (k = 0; k < sizeof m1 / sizeof m1[0]; k++) {
+    if (!strcmp(tok[i], m1[k])) return 1;
+  }
+  if (i + 1 >= nt || quebra[i + 1]) return 0;
+  return (!strcmp(tok[i], "from") && !strcmp(tok[i + 1], "now")) ||
+         (!strcmp(tok[i], "mais") && !strcmp(tok[i + 1], "tarde")) ||
+         (!strcmp(tok[i], "mas") && (!strcmp(tok[i + 1], "tarde") || !strcmp(tok[i + 1], "adelante"))) ||
+         (!strcmp(tok[i], "a") && !strcmp(tok[i + 1], "frente"));
+}
+
+static int retEhAfterDemonstrativo(char *const *tok, const int *quebra, int nt, int i) {
+  static const char *const dem[] = {
+    "this", "that", "it", "current",
+    "este", "esta", "esse", "essa", "deste", "desta", "desse", "dessa",
+    "isto", "isso", "disto", "disso", "aquele", "aquela", "daquele", "daquela",
+    "ese", "esa", "esto", "eso", "aquel", "aquella", "atual", "actual",
+  };
+  size_t k;
+  int j;
+  if (i >= nt || quebra[i]) return 0;
+  if (strcmp(tok[i], "after") && strcmp(tok[i], "following") &&
+      strcmp(tok[i], "depois") && strcmp(tok[i], "apos") && strcmp(tok[i], "despues")) {
+    return 0;
+  }
+  j = i + 1;
+  if (j < nt && !quebra[j] && (!strcmp(tok[j], "de") || !strcmp(tok[j], "of"))) j++;
+  if (j >= nt || quebra[j]) return 0;
+  for (k = 0; k < sizeof dem / sizeof dem[0]; k++) {
+    if (!strcmp(tok[j], dem[k])) return 1;
+  }
+  return 0;
+}
+
+// Coerente com validarResumoRetomada (farolgosto.js): recusa referencias a
+// outro episodio/temporada (numericas ou por extenso) e futuro/spoiler.
+static int retomadaResumoSemSpoiler(const char *s, int temporada, int episodio) {
+  char pre[320], fold[320];
+  char *tok[64];
+  int quebra[64];
+  const char *p, *fim;
+  size_t up = 0, uf = 0, idx;
+  int nt = 0, i, qPend = 0;
+
+  if (!s || !s[0] || temporada < 1 || episodio < 1) return 0;
+  if (retTemIraFuturo(s) || retTemFuturoAcentuado(s) || retTemWillFuturo(s)) return 0;
+
+  // Passo 1: dobra acentos e maiusculas mantendo '.', ',', ';', '!', '?' para
+  // colapsar ordinais pontuados (3.a -> 3a) e preservar quebras de oracao.
+  p = s;
+  fim = s + strlen(s);
+  while (p < fim && up + 5 < sizeof pre) {
+    const char *ini = p;
+    long cp = lerUtf8(&p, fim);
+    char b;
+    if (cp < 0) return 0;
+    if (retEhCombinante(cp)) continue;
+    if (cp == '.' || cp == ',' || cp == ';' || cp == '!' || cp == '?') {
+      pre[up++] = (char)cp;
+      continue;
+    }
+    if (retEhSeparador(cp)) {
+      if (up > 0 && pre[up - 1] != ' ') pre[up++] = ' ';
+      continue;
+    }
+    if (cp == 0xAA) { pre[up++] = 'a'; continue; }
+    if (cp == 0xBA || cp == 0xB0) { pre[up++] = 'o'; continue; }
+    if (cp >= 'A' && cp <= 'Z') { pre[up++] = (char)(cp + 32); continue; }
+    if ((cp >= 'a' && cp <= 'z') || (cp >= '0' && cp <= '9')) {
+      pre[up++] = (char)cp;
+      continue;
+    }
+    b = retBaseLatim(cp);
+    if (b) { pre[up++] = b; continue; }
+    while (ini < p && up + 1 < sizeof pre) pre[up++] = *ini++;
+  }
+  pre[up] = '\0';
+
+  // Passo 2: colapsa (\d+)\s*\.\s*([ao])\b -> $1$2 e converte separadores em ' '
+  // marcando quebras de oracao com '\x01'.
+  idx = 0;
+  while (idx < up && uf + 2 < sizeof fold) {
+    unsigned char ch = (unsigned char)pre[idx];
+    if (ch >= '0' && ch <= '9') {
+      size_t dFim = idx;
+      while (dFim < up && pre[dFim] >= '0' && pre[dFim] <= '9') dFim++;
+      {
+        size_t k = dFim;
+        while (k < up && pre[k] == ' ') k++;
+        if (k < up && pre[k] == '.') {
+          k++;
+          while (k < up && pre[k] == ' ') k++;
+          if (k < up && (pre[k] == 'a' || pre[k] == 'o')) {
+            unsigned char seg = (k + 1 < up) ? (unsigned char)pre[k + 1] : 0;
+            int lim = (seg == 0 || seg == ' ' || seg == '.' || seg == ',' ||
+                       seg == ';' || seg == '!' || seg == '?');
+            if (lim) {
+              while (idx < dFim && uf + 2 < sizeof fold) fold[uf++] = pre[idx++];
+              fold[uf++] = pre[k];
+              idx = k + 1;
+              continue;
+            }
+          }
+        }
+      }
+    }
+    if (ch == ',' || ch == ';' || ch == '.' || ch == '!' || ch == '?') {
+      int abrev = 0;
+      if (ch == '.' && idx > 0) {
+        size_t ini = idx;
+        while (ini > 0 && pre[ini - 1] != ' ' &&
+               pre[ini - 1] != '.' && pre[ini - 1] != ',' &&
+               pre[ini - 1] != ';' && pre[ini - 1] != '!' && pre[ini - 1] != '?') {
+          ini--;
+        }
+        if (idx > ini && idx - ini < 16) {
+          char ab[16];
+          memcpy(ab, pre + ini, idx - ini);
+          ab[idx - ini] = '\0';
+          abrev = retEhAbrevPonto(ab);
+        }
+      }
+      fold[uf++] = abrev ? ' ' : '\x01';
+      idx++;
+      continue;
+    }
+    fold[uf++] = (char)ch;
+    idx++;
+  }
+  fold[uf] = '\0';
+
+  {
+    char *q = fold;
+    while (*q && nt < 64) {
+      while (*q == ' ' || *q == '\x01') {
+        if (*q == '\x01') qPend = 1;
+        q++;
+      }
+      if (!*q) break;
+      tok[nt] = q;
+      quebra[nt] = qPend;
+      nt++;
+      qPend = 0;
+      while (*q && *q != ' ' && *q != '\x01') q++;
+      if (*q == '\x01') { qPend = 1; *q++ = '\0'; }
+      else if (*q == ' ') { *q++ = '\0'; }
+    }
+  }
+
+  for (i = 0; i < nt; i++) {
+    int tVal = 0, eVal = 0, num = 0, len = 0, art = 0, j;
+    if (retEhFuturoSimples(tok[i])) return 0;
+    if (!strcmp(tok[i], "vai") && i + 1 < nt && !quebra[i + 1]) return 0;
+    if (!strcmp(tok[i], "va") && i + 2 < nt && !quebra[i + 1] &&
+        !strcmp(tok[i + 1], "a") && !quebra[i + 2])
+      return 0;
+    if ((!strcmp(tok[i], "em") || !strcmp(tok[i], "en")) &&
+        i + 1 < nt && !quebra[i + 1] && !strcmp(tok[i + 1], "breve"))
+      return 0;
+    if (!strcmp(tok[i], "later") && i + 1 < nt && !quebra[i + 1] && !strcmp(tok[i + 1], "in"))
+      return 0;
+    if (!strcmp(tok[i], "season") && i + 1 < nt && !quebra[i + 1] && !strcmp(tok[i + 1], "finale"))
+      return 0;
+    if (!strcmp(tok[i], "final") && i + 2 < nt && !quebra[i + 1] &&
+        (!strcmp(tok[i + 1], "da") || !strcmp(tok[i + 1], "de")) &&
+        !quebra[i + 2] && !strcmp(tok[i + 2], "temporada"))
+      return 0;
+    if (!strcmp(tok[i], "next") && i + 1 < nt && !quebra[i + 1] && retEhNextAlvo(tok[i + 1]))
+      return 0;
+    if (retEhProximo(tok[i])) {
+      if (i > 0 && !quebra[i] && (retEhSubstEp(tok[i - 1]) || retEhSubstTemp(tok[i - 1])))
+        return 0;
+      if (i + 1 < nt && !quebra[i + 1] && retEhProxAlvo(tok[i + 1]))
+        return 0;
+      if (i > 0 && !quebra[i] && retEhArtProx(tok[i - 1]) &&
+          (i + 1 >= nt || quebra[i + 1] || !retEhPrepEspacial(tok[i + 1])))
+        return 0;
+    }
+
+    if (retParseTxEy(tok[i], &tVal, &eVal) &&
+        (tVal != temporada || eVal != episodio))
+      return 0;
+    if ((tok[i][0] == 't' || tok[i][0] == 's') &&
+        retParseInt(tok[i] + 1, &tVal) && i + 1 < nt && !quebra[i + 1] &&
+        tok[i + 1][0] == 'e' && retParseInt(tok[i + 1] + 1, &eVal) &&
+        (tVal != temporada || eVal != episodio))
+      return 0;
+    if (tok[i][0] == 'e' && tok[i][1] == 'p' &&
+        retParseInt(tok[i] + 2, &num) && num != episodio)
+      return 0;
+
+    if (retEhSubstPlural(tok[i]) && retEhMarcadorTemp(tok, quebra, nt, i + 1)) return 0;
+    if ((retEhSubstEp(tok[i]) || retEhSubstTemp(tok[i])) &&
+        retEhMarcadorTemp(tok, quebra, nt, i + 1))
+      return 0;
+    if (retEhQuantPlural(tok[i]) && i + 1 < nt && !quebra[i + 1] &&
+        retEhSubstPlural(tok[i + 1]))
+      return 0;
+    if (retEhQuantPar(tok[i])) {
+      j = i + 1;
+      if (j < nt && !quebra[j] && (!strcmp(tok[j], "of") || !strcmp(tok[j], "de"))) j++;
+      if (j < nt && !quebra[j] && retEhSubstPlural(tok[j])) return 0;
+    }
+    if ((retEhSubstEp(tok[i]) || retEhSubstTemp(tok[i])) &&
+        retEhAfterDemonstrativo(tok, quebra, nt, i + 1))
+      return 0;
+
+    if (retEhSubstEp(tok[i])) {
+      j = i + 1;
+      if (j < nt && !quebra[j] && retEhNumLig(tok[j])) j++;
+      if (j < nt && !quebra[j]) {
+        num = retParseNumeroExtenso(tok, quebra, nt, j, &len, &art);
+        if (num > 0 && (retEhSubstPlural(tok[i]) || num != episodio)) return 0;
+      }
+    }
+    if (retEhSubstTemp(tok[i])) {
+      j = i + 1;
+      if (j < nt && !quebra[j] && retEhNumLig(tok[j])) j++;
+      if (j < nt && !quebra[j]) {
+        num = retParseNumeroExtenso(tok, quebra, nt, j, &len, &art);
+        if (num > 0 && (retEhSubstPlural(tok[i]) || num != temporada)) return 0;
+      }
+    }
+
+    num = retParseNumeroExtenso(tok, quebra, nt, i, &len, &art);
+    if (num == 0 && retEhArtigoUm(tok[i])) {
+      num = 1;
+      len = 1;
+      art = 1;
+    }
+    if (num > 0 && i + len < nt && !quebra[i + len]) {
+      int posAlvo = i + len;
+      const char *alvo = tok[posAlvo];
+      if (retEhSubstPlural(alvo)) return 0;
+      if (retEhSubstEp(alvo) || retEhSubstTemp(alvo)) {
+        if (retEhMarcadorTemp(tok, quebra, nt, posAlvo + 1)) return 0;
+        if (!(art && num == 1)) {
+          if (retEhSubstEp(alvo) && num != episodio) return 0;
+          if (retEhSubstTemp(alvo) && num != temporada) return 0;
+        }
+      }
+    }
+    if (num > 0 && len > 1) i += len - 1;
+  }
+  return 1;
 }
 
 static int idiomaValido(const char *s) {
@@ -844,6 +1697,28 @@ static size_t montarCorpoPassada(const FarolComporPedido *ped, const AncorasEleg
   escInt(&e, hora);
   escLit(&e, ",\"infantil\":0,\"consentiu\":1");
 
+  // --- retomada (issue 57): SO no modo retomada, SO o episodio ja visto ---
+  // Sem nenhum dos tres campos, o modo retomada segue o pedido de cena da #52.
+  if (ped->modo == FC_MODO_RETOMADA &&
+      (ped->retTemporada || ped->retEpisodio || ped->retSinopse)) {
+    char sin[FAROL_COMPOR_SINOPSE_MAX + 4];
+    if (ped->retTemporada < 1 || ped->retTemporada > 999 ||
+        ped->retEpisodio < 1 || ped->retEpisodio > 9999 ||
+        !textoSeguroLimpar(ped->retSinopse, sin, sizeof sin,
+                           FAROL_COMPOR_SINOPSE_MAX, 1)) {
+      dst[0] = '\0';
+      return 0;
+    }
+    escLit(&e, ",\"retomada\":{\"temporada\":");
+    escInt(&e, ped->retTemporada);
+    escLit(&e, ",\"episodio\":");
+    escInt(&e, ped->retEpisodio);
+    escLit(&e, ",\"sinopse\":");
+    escStr(&e, sin);
+    escLit(&e, "}");
+    memset(sin, 0, sizeof sin);
+  }
+
   // --- gosto ---
   escLit(&e, ",\"gosto\":{\"nivel\":");
   escInt(&e, nivel);
@@ -1145,7 +2020,21 @@ int farolcompor_validar_resposta(FarolComporModo modo, const char *json, size_t 
         break;
       case FP_INFO:
         if (!refCandValida(&pc->u.info.alvo, cand, nCand)) return -1;
-        if (modo == FC_MODO_RETOMADA) temEsperada = 1;
+        if (modo == FC_MODO_RETOMADA) {
+          for (j = 0; j < pc->u.info.nItens; j++) {
+            const FarolInfoItem *it = &pc->u.info.itens[j];
+            if (it->k == FP_INFO_RETOMADA && it->l.usaX &&
+                strcmp(it->l.m, "FT_INFO_RETOMADA_SIMPLES") == 0 &&
+                it->l.nArgs == 2) {
+              const char *rx = farolpeca_x(&tmp, &it->l);
+              int rt = atoi(it->l.a[0]), re = atoi(it->l.a[1]);
+              if (!rx || !farolinfo_retomada_linha_ok(rx) ||
+                  !retomadaResumoSemSpoiler(rx, rt, re))
+                return -1;
+            }
+          }
+          temEsperada = 1;
+        }
         break;
       case FP_COMPARAR:
         if (pc->u.comparar.nItens < 2) return -1;
@@ -2329,6 +3218,7 @@ void farolcompor_encerrar(void) {
   memset(&adotadaHome, 0, sizeof adotadaHome);
   memset(adotadaModos, 0, sizeof adotadaModos);
   memset(&estadoAtual, 0, sizeof estadoAtual);
+  memset(&retUltimo, 0, sizeof retUltimo);
   pthread_mutex_unlock(&trava);
 }
 
@@ -2341,6 +3231,7 @@ void farolcompor_trocar_perfil(void) {
   memset(adotadaModos, 0, sizeof adotadaModos);
   memset(&estadoAtual, 0, sizeof estadoAtual);
   memset(&homeDiaMem, 0, sizeof homeDiaMem);
+  memset(&retUltimo, 0, sizeof retUltimo);
   homeGeracao++;
   pthread_mutex_unlock(&trava);
   farolconsent_invalidar();
@@ -2367,6 +3258,115 @@ void farolcompor_zerar_gosto(void) {
   lojaApagar(nome);
   nomeArquivoMeta(p, nome, sizeof nome);
   lojaApagar(nome);
+}
+
+// ------------------------------------------- retomada sem spoiler (57) ---
+
+int farolcompor_pedir_retomada(const char *imdb, const char *titulo,
+                               int temporada, int episodio,
+                               const char *sinopse) {
+  FarolComporPedido ped;
+  FarolComporCand c;
+  int perfil, repetido, ok;
+  uint64_t sessao, conta;
+
+  if (!imdbValido(imdb) || !titulo || !titulo[0] || !sinopse || !sinopse[0])
+    return 0;
+  if (temporada < 1 || temporada > 999 || episodio < 1 || episodio > 9999)
+    return 0;
+  // Bloqueios ANTES de qualquer coisa: nada e montado nem gravado.
+  if (suprimidoAgora()) return 0;
+  // A Home (ou outro modo) em voo tem prioridade: nao derruba, tenta depois.
+  if (farolcompor_em_voo()) return 0;
+
+  perfil = perfilAtualValido();
+  sessao = perfis_sessao_geracao();
+  conta = contaAtualHash();
+  pthread_mutex_lock(&trava);
+  repetido = retUltimo.tem && retUltimo.perfil == perfil &&
+             retUltimo.sessao == sessao && retUltimo.contaHash == conta &&
+             retUltimo.t == temporada && retUltimo.e == episodio &&
+             !strcmp(retUltimo.imdb, imdb);
+  pthread_mutex_unlock(&trava);
+  if (repetido) return 0;
+
+  memset(&c, 0, sizeof c);
+  snprintf(c.imdb, sizeof c.imdb, "%s", imdb);
+  c.tipo = 1;
+  snprintf(c.titulo, sizeof c.titulo, "%s", titulo);
+  c.nota10 = -1;
+
+  memset(&ped, 0, sizeof ped);
+  ped.modo = FC_MODO_RETOMADA;
+  ped.idioma = ajustes_tmdb_idioma();
+  ped.hora = -1;
+  ped.fimSemana = -1;
+  ped.infantil = perfil_infantil_ativo();
+  ped.consentiu = farolcompor_consentimento();
+  ped.candidatos = &c;
+  ped.nCandidatos = 1;
+  ped.retTemporada = temporada;
+  ped.retEpisodio = episodio;
+  ped.retSinopse = sinopse;
+  ok = farolcompor_pedir(&ped);
+
+  if (ok) {
+    pthread_mutex_lock(&trava);
+    retUltimo.tem = 1;
+    retUltimo.perfil = perfil;
+    retUltimo.sessao = sessao;
+    retUltimo.contaHash = conta;
+    snprintf(retUltimo.imdb, sizeof retUltimo.imdb, "%s", imdb);
+    retUltimo.t = temporada;
+    retUltimo.e = episodio;
+    pthread_mutex_unlock(&trava);
+  }
+  return ok;
+}
+
+int farolcompor_retomada_resumo(const char *imdb, int temporada, int episodio,
+                                char *dst, size_t cap) {
+  FarolCena cena;
+  FarolComporCand cand[FAROL_COMPOR_CAND_MAX];
+  int nCand = 0, p, i;
+
+  if (dst && cap) dst[0] = '\0';
+  if (!dst || cap < 2 || !imdbValido(imdb) || temporada < 1 || episodio < 1)
+    return 0;
+  if (!farolcompor_cena_modo(FC_MODO_RETOMADA, &cena, cand, &nCand,
+                             FAROL_COMPOR_CAND_MAX, NULL))
+    return 0;
+  if (nCand < 1 || strcmp(cand[0].imdb, imdb) != 0) return 0;
+
+  for (p = 0; p < cena.nPecas; p++) {
+    const FarolPeca *pc = &cena.pecas[p];
+    if (pc->tipo != FP_INFO) continue;
+    // So a peca da propria serie (c0 ou o tt dela).
+    if (!(pc->u.info.alvo.c == 0 ||
+          (pc->u.info.alvo.c < 0 && !strcmp(pc->u.info.alvo.s, imdb))))
+      continue;
+    for (i = 0; i < pc->u.info.nItens; i++) {
+      const FarolInfoItem *it = &pc->u.info.itens[i];
+      const FarolTexto *t = &it->l;
+      const char *x;
+      if (it->k != FP_INFO_RETOMADA || !t->usaX) continue;
+      // O (t, e) que o servidor diz ter resumido TEM de ser o pedido.
+      if (strcmp(t->m, "FT_INFO_RETOMADA_SIMPLES") != 0 || t->nArgs != 2)
+        continue;
+      { char ts[16], es[16];
+        snprintf(ts, sizeof ts, "%d", temporada);
+        snprintf(es, sizeof es, "%d", episodio);
+        if (strcmp(t->a[0], ts) != 0 || strcmp(t->a[1], es) != 0) continue; }
+      x = farolpeca_x(&cena, t);
+      if (!x || !farolinfo_retomada_linha_ok(x) || !faroltexto_aceita(x) ||
+          !retomadaResumoSemSpoiler(x, temporada, episodio))
+        continue;
+      if (strlen(x) + 1 > cap) return 0;
+      memcpy(dst, x, strlen(x) + 1);
+      return 1;
+    }
+  }
+  return 0;
 }
 
 // ------------------------------------------------------------ leitura UI ---

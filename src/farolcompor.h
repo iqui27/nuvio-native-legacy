@@ -134,7 +134,16 @@ typedef struct {
   const FarolComporCand     *candidatos; int nCandidatos;
   const FarolComporFato     *fatos;      int nFatos;
   const char                *frase;      // frase ditada opcional quando aplicavel
+  // modo retomada (issue 57): o episodio JA VISTO (entrada real no Diario) e
+  // a sinopse DAQUELE episodio. Fora do modo retomada nunca vai ao corpo; no
+  // modo retomada com algum deles preenchido e os tres nao validos, o corpo nao
+  // e montado (zero POST). Os tres zerados: pedido de cena da #52, sem objeto.
+  int                        retTemporada; // >= 1
+  int                        retEpisodio;  // >= 1
+  const char                *retSinopse;   // CatEp.sinopse do (t, e) visto
 } FarolComporPedido;
+
+#define FAROL_COMPOR_SINOPSE_MAX 400u  // bytes UTF-8 da sinopse no corpo
 
 typedef struct {
   FarolComporEstado estado;
@@ -196,6 +205,22 @@ void farolcompor_trocar_perfil(void);
 void farolcompor_esquecer(void);
 void farolcompor_zerar_gosto(void);
 int  farolcompor_carregar_cache_home(void);
+
+// RETOMADA SEM SPOILER (issue 57). Pede o resumo de 1 linha do episodio JA
+// VISTO (t, e) da serie `imdb`: quem chama garante que (t, e) e o que
+// diario_ultimo_episodio devolveu e que `sinopse` e a daquele episodio
+// (farolinfo_retomada_sinopse). Os bloqueios da #52 valem todos (player,
+// infantil, consentimento, seguro, Recomendar, offline, prazo de 6 s). Nao
+// derruba pedido em voo (a Home tem prioridade) e nao repete o mesmo
+// (perfil, serie, t, e) na sessao. 1 = pedido iniciado.
+int  farolcompor_pedir_retomada(const char *imdb, const char *titulo,
+                                int temporada, int episodio,
+                                const char *sinopse);
+// O resumo adotado para (imdb, t, e): 1 linha validada (farolinfo_retomada_
+// linha_ok + faroltexto_aceita), alvo e (t, e) da resposta iguais aos do
+// pedido. 0 = nao ha (fica so a linha deterministica de tempo).
+int  farolcompor_retomada_resumo(const char *imdb, int temporada, int episodio,
+                                 char *dst, size_t cap);
 
 // Leitura segura sob trava (sem I/O nem bloqueio):
 FarolComporEstado farolcompor_estado(FarolComporInfo *info);

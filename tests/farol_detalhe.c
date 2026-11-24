@@ -279,12 +279,44 @@ int diario_titulo(int perfil, const char *id, DiarioTitulo *saida) {
   if (saida) memset(saida, 0, sizeof *saida);
   return 0;
 }
+// Ultimo episodio do Diario: zero por padrao; tests/farol_retomada.c (issue 57)
+// liga uma entrada real (g_retT, g_retE) para a linha retomada da P6.
+static _Atomic int       g_retT = 0, g_retE = 0;
+static _Atomic long long g_retQ = 0;
 int diario_ultimo_episodio(int perfil, const char *id, int *t, int *e, long long *q) {
+  int tt = atomic_load(&g_retT), ee = atomic_load(&g_retE);
   (void)perfil; (void)id;
   leituras_diario++;
-  if (t) *t = 0;
-  if (e) *e = 0;
-  if (q) *q = 0;
+  if (t) *t = tt > 0 && ee > 0 ? tt : 0;
+  if (e) *e = tt > 0 && ee > 0 ? ee : 0;
+  if (q) *q = tt > 0 && ee > 0 ? atomic_load(&g_retQ) : 0;
+  return tt > 0 && ee > 0;
+}
+
+// Lista de episodios do catalogo (cat_episodio e circular como o real).
+static const CatEp *g_eps;
+static int          g_nEps;
+int cat_n_episodios(int idx) { (void)idx; return g_eps ? g_nEps : 0; }
+const CatEp *cat_episodio(int idx, int i) {
+  (void)idx;
+  if (!g_eps || g_nEps <= 0) return NULL;
+  i %= g_nEps;
+  if (i < 0) i += g_nEps;
+  return &g_eps[i];
+}
+
+// Compositor (#52/#57): fracos para o nucleo sem rede; tests/farol_retomada.c
+// linka o src/farolcompor.c real e as definicoes dele vencem.
+__attribute__((weak)) int farolcompor_pedir_retomada(const char *imdb, const char *titulo,
+                                                     int temporada, int episodio,
+                                                     const char *sinopse) {
+  (void)imdb; (void)titulo; (void)temporada; (void)episodio; (void)sinopse;
+  return 0;
+}
+__attribute__((weak)) int farolcompor_retomada_resumo(const char *imdb, int temporada,
+                                                      int episodio, char *dst, size_t cap) {
+  (void)imdb; (void)temporada; (void)episodio;
+  if (dst && cap) dst[0] = 0;
   return 0;
 }
 int salvos_tem(const char *id)    { (void)id; return 0; }
@@ -966,6 +998,7 @@ static void teste_concorrencia_tsan(void) {
   for (i = 0; i < 3; i++) pthread_join(leitores[i], NULL);
 }
 
+#ifndef FD_SEM_MAIN
 int main(int argc, char **argv) {
   static const struct { const char *n; void (*f)(void); } ts[] = {
     { "nasce",                teste_nasce_no_quadro_da_ficha },
@@ -987,6 +1020,7 @@ int main(int argc, char **argv) {
   puts("farol_detalhe (core): ok");
   return 0;
 }
+#endif // FD_SEM_MAIN
 
 #else
 // ============================================================================

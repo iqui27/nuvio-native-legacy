@@ -137,4 +137,30 @@ int farolinfo_rever(FarolInfoLinha *sai, int ano, int mes, int nota10);
 int farolinfo_retomada(FarolInfoLinha *sai, int t, int e,
                        long long agora, long long quando);
 
+// --- retomada sem spoiler (issue 57) ----------------------------------------
+// Um episodio da lista do catalogo (CatEp: temporada, episodio, sinopse),
+// resumido pelo chamador — o modulo nao conhece catalogo.h.
+typedef struct {
+  int         temporada;
+  int         episodio;
+  const char *sinopse;     // NULL / "" = sem sinopse
+} FarolInfoEp;
+
+// A sinopse que PODE ir ao resumo da retomada: a do episodio (t, e) que o
+// Diario registrou como o ultimo visto (diario_ultimo_episodio), procurada
+// por igualdade EXATA de temporada e episodio. Nunca a do proximo (e + 1 ou
+// t + 1), nunca "a mais proxima": sem casamento exato, sem entrada no Diario
+// (t <= 0 ou e <= 0) ou com sinopse vazia devolve NULL — e nada sai da TV.
+// Lista com o mesmo (t, e) repetido e ambigua: NULL tambem.
+const char *farolinfo_retomada_sinopse(int t, int e,
+                                       const FarolInfoEp *eps, int n);
+
+// O resumo devolvido cabe na P6: UMA linha (sem \n, \r nem controle), UTF-8
+// valido, 1..FI_RESUMO_PONTOS pontos de codigo, sem espaco nas pontas.
+// 1 = cabe; 0 = recusa (quem chama fica so com a linha de tempo). O filtro de
+// conteudo (URL, emoji, palavras proibidas do ALMA) e o faroltexto_aceita,
+// aplicado por quem chama — este modulo e puro e nao o liga.
+#define FI_RESUMO_PONTOS 62
+int farolinfo_retomada_linha_ok(const char *s);
+
 #endif

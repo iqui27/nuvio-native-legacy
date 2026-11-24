@@ -30,6 +30,11 @@ void  faroldetalhe_fechar(void);
 void  faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
                              float dt, Uint32 agoraMs);
 
+// Retomada sem spoiler (issue 57): chamada uma vez por quadro, logo depois
+// de faroldetalhe_atualizar. Pede ao compositor o resumo de 1 linha do
+// episodio JA VISTO (Diario) quando a linha retomada esta na P6; o resumo
+// adotado entra abaixo dela no proximo quadro. Fora disso nao faz nada.
+void  faroldetalhe_retomada(int catIndice);
 float faroldetalhe_altura(float larg);
 void  faroldetalhe_desenhar(float x, float y, float larg, float a,
                             PonteiroFn ptrFn, int ptrRow);
