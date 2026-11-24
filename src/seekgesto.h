@@ -8,7 +8,8 @@
 //  - Every counted press (taps, and repeats throttled to one per throttleMs)
 //    grows the remembered step by growthPct, never past capPct of the duration.
 //  - HOLD: a keydown that arrives within holdGapMs of the previous one in the
-//    same direction. While held, the position glides at step / throttleMs.
+//    same direction. While held, the position glides at step / tick, the tick
+//    being throttleMs but never below SEEKG_DESLIZE_MS (100 ms).
 //  - TAP AFTER HOLD: the hold ended (no key for SEEKG_VIVO_MS) but the scrub
 //    is still open, so a tap jumps the remembered (grown) step: same speed as
 //    the hold.
@@ -21,6 +22,13 @@
 // ~100-117 ms, a held key never enters the glide: every repeat is a press that
 // jumps the step and grows it 30% — stremio-web's discrete feel, which is what
 // felt right. The glide stays for remotes that repeat faster than 80 ms.
+//
+// NEVER FASTER THAN THE SMART REMOTE (owner 23/11/2026, log 11: "seeking
+// suddenly becomes super fast"). Keys used to be stamped when the main thread
+// handled them; after a 300+ ms stall the queued repeats came a few ms apart,
+// read as a fast remote, and the glide ran at step / 40 ms, ~2.5x a held
+// Smart Remote. Now player.c passes the key's own SDL timestamp, and the glide
+// moves (and grows the step) at most once per SEEKG_DESLIZE_MS.
 #ifndef NV_SEEKGESTO_H
 #define NV_SEEKGESTO_H
 
@@ -35,6 +43,13 @@ typedef struct {
 
 #define SEEKG_PADRAO { 5, 30, 40, 80, 4, 65 }
 #define SEEKG_MIN_S  1.0f
+#define SEEKG_DESLIZE_MS 100u   // the Smart Remote's repeat: the glide's slowest tick
+
+// The glide's tick: throttleMs, never below SEEKG_DESLIZE_MS.
+static inline unsigned seekgesto_tick_ms(const SeekParams *p) {
+  unsigned t = p->throttleMs > 0 ? (unsigned)p->throttleMs : 130u;
+  return t < SEEKG_DESLIZE_MS ? SEEKG_DESLIZE_MS : t;
+}
 
 typedef struct {
   int ativo, dir, segurando, contadas;
@@ -97,12 +112,13 @@ static inline float seekgesto_tecla(SeekGesto *g, const SeekParams *p, int dir, 
   g->ultTecla = agora;
   if (g->segurando && gap > seekgesto_vivo_ms(p)) g->segurando = 0;   // frame didn't run
   if (g->segurando) {
-    if (agora - g->ultContada < (unsigned)p->throttleMs) m = SEEKG_REP_IGNORADA;
+    unsigned tick = seekgesto_tick_ms(p);
+    if (agora - g->ultContada < tick) m = SEEKG_REP_IGNORADA;
     else {
       // Advance by whole ticks so a 100 ms remote and a 40 ms keyboard both
-      // average one counted repeat per throttleMs (no quantization drift).
-      g->ultContada += (unsigned)p->throttleMs;
-      if (agora - g->ultContada >= (unsigned)p->throttleMs) g->ultContada = agora - (unsigned)p->throttleMs;
+      // average one counted repeat per tick (no quantization drift).
+      g->ultContada += tick;
+      if (agora - g->ultContada >= tick) g->ultContada = agora - tick;
       g->contadas++; g->passo = seekgesto_crescer(p, g->passo, dur); m = SEEKG_REPETICAO;
     }
     if (modo) *modo = m;
@@ -127,12 +143,12 @@ static inline float seekgesto_quadro(SeekGesto *g, const SeekParams *p, unsigned
   // Signed: a key stamped after the frame clock must not read as ~49 days ago.
   if ((int)(agora - g->ultTecla) > (int)seekgesto_vivo_ms(p)) { g->segurando = 0; return 0.0f; }
   if (dt > 0.05f) dt = 0.05f;
-  return g->dir * g->passo * 1000.0f / (float)(p->throttleMs > 0 ? p->throttleMs : 130) * dt;
+  return g->dir * g->passo * 1000.0f / (float)seekgesto_tick_ms(p) * dt;
 }
 
 // Glide speed (media seconds per real second) right now, for the log.
 static inline float seekgesto_vel(const SeekGesto *g, const SeekParams *p) {
-  return g->segurando ? g->passo * 1000.0f / (float)(p->throttleMs > 0 ? p->throttleMs : 130) : 0.0f;
+  return g->segurando ? g->passo * 1000.0f / (float)seekgesto_tick_ms(p) : 0.0f;
 }
 
 #endif

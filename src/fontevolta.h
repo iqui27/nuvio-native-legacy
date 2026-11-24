@@ -47,6 +47,9 @@ void fontevolta_guardar(const char *alvo, const char *conta, int perfil,
 // validade. Entrada vencida ou de outra pessoa e apagada aqui (0).
 int  fontevolta_pegar(const char *alvo, const char *conta, int perfil,
                       Uint32 agora, Stream *saida);
+// The saved entry for `url` with no hash at all (hashTorrent and infoHash
+// empty) keeps `hash` (40 hex): TorBox burn-in's match (owner 24/11/2026).
+void fontevolta_completar_hash(const char *url, const char *hash);
 
 // 1 when the saved URL may start before the source sheet. escolherManual is
 // "Escolher a fonte ao reproduzir": the sheet picks, so a live URL from the

@@ -532,6 +532,7 @@ int  tba_rendicao_de(int o) { (void)o; return -1; }
 void tba_definir_audio(int o) { (void)o; }
 int  tba_audio(void) { return -1; }
 void tba_log(void) {}
+void tba_marcar_busca(void) {}
 #else
 
 #include "dts_engine.h"
@@ -586,7 +587,12 @@ typedef struct Sessao {
   pthread_mutex_t m;                   // state below
   pthread_cond_t c;
   int pronto, falhou, modo, audio;   // audio: index in fx[]
+  double abertoEm;                     // tba_abrir (agoraMs): log 15's "first segment through Nuvio" line
+  atomic_int vidPrimeiro;              // video segments served so far (the first is logged)
   int opusLog;                         // Opus packet lines logged (first segments only)
+  int ac3Seg;                          // AC3/E-AC3 copied: segments logged since the last seek
+  double ac3Fim;                       // end (source s) of the last copied AC3 packet written; <0 = after a seek
+  int ac3Bsid, ac3Acmod, ac3Taxa;      // the stream's first header (-1 = none yet)
   int64_t proxPts;                     // the reading track's next timestamp (laced frames carry none)
   int semPts, semPtsLog;               // packets that came without a timestamp (filled in) / lines logged
   unsigned tbrGer;                     // the burned stream this session serves (tbrelogio.h)
@@ -605,6 +611,7 @@ typedef struct Sessao {
   DtsEngine *eng;
   AVFormatContext *ic;
   double origV0, durArq;
+  int64_t tamArq;                      // the original file's size (10 s reader line)
   int sBusca;                          // the stream seeks go through (the one the index covers)
   Faixa fx[TBA_FAIXAS]; int nfx;
   // generator (gm); TorBox video downloads (vm)
@@ -812,13 +819,14 @@ static int prepTorbox(Sessao *s) {
     if (s->tbInit && tba_mp4_escala(s->tbInit, s->tbInitN, &esc)) {
       unsigned char *h = baixar(s, s->pl.seg[0].uri, TB_CABECA, &n, NULL, 0, &st, &ms);
       if (h && tba_mp4_tfdt(h, n, &t)) { s->tbOff = (double)t / esc; s->tbOffOk = 1; }
+      if (!h) printf("[tbaudio] TorBox segment 0 head did not download (fMP4, HTTP %d, %.0f ms): logged only, the session goes on\n", st, ms);
       free(h);
     }
   } else {
     unsigned char *h = baixar(s, s->pl.seg[0].uri, TB_CABECA, &n, NULL, 0, &st, &ms);
     if (h && tba_ts_primeiro_pts(h, n, &s->tbOff)) s->tbOffOk = 1;
-    if (!h) printf("[tbaudio] TorBox segment 0 head did not download (HTTP %d)\n", st);
-    if (h) printf("[tbaudio] TorBox segment 0 head: %zu bytes in %.0f ms\n", n, ms);
+    if (!h) printf("[tbaudio] TorBox segment 0 head did not download (HTTP %d, %.0f ms): logged only, the session goes on\n", st, ms);
+    if (h) printf("[tbaudio] TorBox segment 0 head: %zu bytes in %.0f ms (Range 0-%d)\n", n, ms, TB_CABECA - 1);
     free(h);
   }
   printf("[tbaudio] TorBox's first video PTS: %s%.3f s\n", s->tbOffOk ? "" : "UNKNOWN, using ", s->tbOffOk ? s->tbOff : 0.0);
@@ -858,6 +866,7 @@ static int prepOriginal(Sessao *s, int ordPedido) {
   }
   for (i = 0; i < (int)ic->nb_streams; i++) ic->streams[i]->discard = AVDISCARD_ALL;
   s->durArq = ic->duration > 0 ? ic->duration / (double)AV_TIME_BASE : 0;
+  { int64_t t = ic->pb ? avio_size(ic->pb) : -1; s->tamArq = t > 0 ? t : 0; }
   s->origV0 = 0;
   if (v >= 0 && ic->streams[v]->start_time != AV_NOPTS_VALUE)
     s->origV0 = ic->streams[v]->start_time * av_q2d(ic->streams[v]->time_base);
@@ -1117,8 +1126,9 @@ static int posicionar(Sessao *s, int fi, int seg, const double *ini, double len,
   int mesmo = s->gOk && s->gFaixa == fi && s->gModo == f->modo && s->gIni == ini && s->gSeg >= 0;
   *saltou = 0; *como = "continued";
   if (mesmo && s->gSeg == seg) return 0;
-  if (mesmo && seg > s->gSeg && ini[seg] - ini[s->gSeg] <= len + 0.5) { *saltou = 1; *como = "read ahead"; return 0; }
+  if (mesmo && seg > s->gSeg && ini[seg] - ini[s->gSeg] <= len + 0.5) { *saltou = 1; *como = "read ahead"; s->ac3Fim = -1; return 0; }
   *saltou = 1; *como = "seeked";
+  s->ac3Seg = 0; s->ac3Fim = -1;   // AC3 copy diagnostic: a new run of lines
   filaLimpar(s);
   s->eof = 0;
   s->proxPts = AV_NOPTS_VALUE;   // a seek: the next timestamp comes from the file again
@@ -1229,6 +1239,37 @@ static int escreverAudio(Sessao *s, Mux *m, int idx, AVPacket *p, AVRational tb,
 
 typedef struct { unsigned char *b; size_t n; char tipo[48]; int status; } Resp;
 
+/* AC3 / E-AC3 copied as is (owner 24/11/2026, log 19, Married Couple: a copied
+ * AC3 5.1 rendition had sound for a few seconds after each seek, then none).
+ * Diagnostic only: the frame header of every packet (sync word, bsid, channel
+ * mode, rate code) and timestamp gaps/overlaps, one line per segment for the
+ * first 4 segments after each seek, then only segments with something odd. */
+typedef struct { int n, semSync, mudou, buracos, sobreposicoes, bsid, acmod, taxa; double maiorBuraco, maiorSobre; } Ac3Diag;
+static void ac3Ler(const unsigned char *d, int n, int *bsid, int *acmod, int *taxa) {
+  *bsid = *acmod = *taxa = -1;
+  if (n < 7 || d[0] != 0x0B || d[1] != 0x77) return;
+  *bsid = d[5] >> 3;
+  if (*bsid <= 10) { *taxa = d[4] & 0x3F; *acmod = d[6] >> 5; }            // AC3: frmsizecod, acmod
+  else if (*bsid == 16) { *taxa = ((d[2] & 7) << 8) | d[3]; *acmod = (d[4] >> 1) & 7; }   // E-AC3: frmsiz, acmod
+}
+static void ac3Pacote(Sessao *s, Ac3Diag *g, const AVPacket *p, double t, double dur) {
+  int b, a, r;
+  ac3Ler(p->data, p->size, &b, &a, &r);
+  g->n++;
+  if (b < 0) { g->semSync++; return; }
+  if (g->bsid < 0) { g->bsid = b; g->acmod = a; g->taxa = r; }
+  if (s->ac3Bsid < 0) { s->ac3Bsid = b; s->ac3Acmod = a; s->ac3Taxa = r; }
+  else if (b != s->ac3Bsid || a != s->ac3Acmod || (b <= 10 && r != s->ac3Taxa)) {
+    g->mudou++; s->ac3Bsid = b; s->ac3Acmod = a; s->ac3Taxa = r;
+  }
+  if (s->ac3Fim >= 0) {
+    double d = t - s->ac3Fim;
+    if (d > 0.002) { g->buracos++; if (d > g->maiorBuraco) g->maiorBuraco = d; }
+    else if (d < -0.002) { g->sobreposicoes++; if (-d > g->maiorSobre) g->maiorSobre = -d; }
+  }
+  s->ac3Fim = t + (dur > 0 ? dur : 0.032);
+}
+
 // Audio of track fi, segment `seg` (AUD_SEG_S) or -1 = the fMP4 init.
 // -2 = stopped (the player hung up or moved on), nothing to send.
 static int gerarAudio(Sessao *s, int fi, int seg, Resp *r, char *err, size_t en, int so, long chave) {
@@ -1237,6 +1278,8 @@ static int gerarAudio(Sessao *s, int fi, int seg, Resp *r, char *err, size_t en,
   AVRational tb, srcTb;
   Mux m;
   int mp4 = f->modo == M_MP4, saltou = 0, nPk = 0, rr = 0, ab = 0;
+  int ac3 = (f->id == AV_CODEC_ID_AC3 || f->id == AV_CODEC_ID_EAC3) && f->modo == M_TS;
+  Ac3Diag ag = { 0, 0, 0, 0, 0, -1, -1, -1, 0, 0 };
   // Opus diagnostic (owner 16/11: 13-15 packets per 2 s where 20 ms frames
   // give 100): durations, sizes and the first packet's TOC, first segments only.
   int opusDiag = 0, toc = -1, tocN = 0, opSemDur = 0;   // set once positioned (a converter may still be open before)
@@ -1282,6 +1325,7 @@ static int gerarAudio(Sessao *s, int fi, int seg, Resp *r, char *err, size_t en,
       if (it.p->size > opTamMax) opTamMax = it.p->size;
       if (toc < 0 && it.p->size > 0) { toc = it.p->data[0]; tocN = it.p->size > 1 ? it.p->data[1] : 0; }
     }
+    if (ac3 && !s->dec) ac3Pacote(s, &ag, it.p, it.t, it.p->duration > 0 ? it.p->duration * av_q2d(srcTb) : 0);
     if (escreverAudio(s, &m, 0, it.p, srcTb, 0) < 0) { av_packet_free(&it.p); snprintf(err, en, "mux write"); rr = -1; break; }
     av_packet_free(&it.p);
     nPk++;
@@ -1304,6 +1348,13 @@ static int gerarAudio(Sessao *s, int fi, int seg, Resp *r, char *err, size_t en,
   s->nSeg++; s->bytes += (long long)r->n; s->msLer += tl - t0;
   printf("[tbaudio] audio %d seg %d (%.1f-%.1f s): %d packets, %zu KB, %.0f ms, %s; first audio at %.3f s\n",
          f->ord, seg, s->aIni[seg], s->aIni[seg + 1], nPk, r->n / 1024, tl - t0, como, pri >= 0 ? pri - s->origV0 : -1.0);
+  if (ac3 && !s->dec && ag.n &&
+      (s->ac3Seg++ < 4 || ag.semSync || ag.mudou || ag.buracos || ag.sobreposicoes)) {
+    printf("[tbaudio] AC3 copy audio %d seg %d: %d packets, %d without the sync word, bsid %d, channel mode %d, rate code %d, "
+           "header changes %d, gaps %d (largest %.0f ms), overlaps %d (largest %.0f ms)\n",
+           f->ord, seg, ag.n, ag.semSync, ag.bsid, ag.acmod, ag.taxa, ag.mudou, ag.buracos, ag.maiorBuraco * 1000.0,
+           ag.sobreposicoes, ag.maiorSobre * 1000.0);
+  }
   if (opusDiag && nPk > 0) {
     // TOC: config (frame length), code 0 = 1 frame, 1/2 = 2 frames, 3 = N frames (byte 2).
     static const double DUR[32] = { 10, 20, 40, 60, 10, 20, 40, 60, 10, 20, 40, 60, 10, 20, 10, 20,
@@ -1330,6 +1381,13 @@ static int gerarVideo(Sessao *s, int seg, Resp *r, char *err, size_t en) {
   unsigned char *b;
   tbr_servido(s->tbrGer, seg);   // the first one after an open/seek: the segment the player landed in
   b = baixar(s, s->pl.seg[seg].uri, TB_SEG_MAX, &n, NULL, 0, &st, &ms);
+  // Log 15 (owner 23/11/2026): when the TV player's first video segment
+  // arrives through Nuvio's session, and how long TorBox took for it.
+  if (atomic_fetch_add(&s->vidPrimeiro, 1) == 0) {
+    printf("[tbaudio] first video segment the TV asked for: seg %d, %s from TorBox in %.0f ms (HTTP %d, %zu KB), %.0f ms after the session opened\n",
+           seg, b ? "came" : "did NOT come", ms, st, b ? n / 1024 : (size_t)0, agoraMs() - s->abertoEm);
+    fflush(stdout);
+  }
   if (!b) { snprintf(err, en, "TorBox segment %d did not download (HTTP %d)", seg, st); return -1; }
   if (s->tbMp4) {
     if (!s->stripAviso++) { printf("[tbaudio] TorBox's segments are fMP4: passed as they are (only MPEG-TS is stripped)\n"); fflush(stdout); }
@@ -1469,6 +1527,15 @@ static int entregar(int so, Sessao *s, const char *nome, int e, Resp *r, const c
   return responder(so, 200, r->tipo, r->b, r->n, manter, head, s);
 }
 // One request. Returns 0 to close the connection.
+/* The TV's requests right after a seek (owner 24/11/2026, burn-in sound gone
+ * a few seconds after each seek): the first 16, with the time since the seek,
+ * so the log shows the order the TV asks audio/video and whether it waits. */
+static atomic_uint buscaMarcaMs;
+static atomic_int pedidosAposBusca;
+void tba_marcar_busca(void) {
+  atomic_store(&buscaMarcaMs, (unsigned)agoraMs() | 1u);
+  atomic_store(&pedidosAposBusca, 16);
+}
 static int atender(int so, const char *metodo, const char *caminho, int manter) {
   Sessao *s = pegar();
   char nome[128], err[160] = "";
@@ -1482,6 +1549,10 @@ static int atender(int so, const char *metodo, const char *caminho, int manter) 
     return responder(so, 404, NULL, "", 0, 0, head, NULL) && 0;
   }
   snprintf(nome, sizeof nome, "%s", caminho + 2 + lt);
+  if (atomic_load(&pedidosAposBusca) > 0 && atomic_fetch_sub(&pedidosAposBusca, 1) > 0) {
+    printf("[tbaudio] after seek +%u ms: the TV asks %s\n", (unsigned)agoraMs() - atomic_load(&buscaMarcaMs), nome);
+    fflush(stdout);
+  }
   if (!esperarPronto(s)) {
     printf("[tbaudio] request %s: the session is not ready (%s)\n", nome, s->motivo[0] ? s->motivo : "timeout");
     fflush(stdout);
@@ -1632,7 +1703,9 @@ int tba_abrir(const char *tbUrl, const char *orig, const char *cab, int ordinal,
   atomic_store(&s->espChave, -1L);
   s->modo = modo;
   s->audio = ordinal; s->gFaixa = -1; s->gSeg = -1; s->proxPts = AV_NOPTS_VALUE;
+  s->ac3Fim = -1; s->ac3Bsid = s->ac3Acmod = s->ac3Taxa = -1;
   s->tbrGer = tbr_geracao();
+  s->abertoEm = agoraMs();
   s->tbUrl = strdup(tbUrl); s->orig = strdup(orig); s->cab = strdup(cab ? cab : "");
   gerarToken(s->tok, 28);
   if (!s->tbUrl || !s->orig || !s->cab) { atomic_store(&s->refs, 1); soltar(s); return 0; }
@@ -1711,6 +1784,28 @@ void tba_log(void) {
            "dropped %ld, failed %ld%s%s\n", modoNome(s->modo), s->pronto ? "ready" : s->falhou ? "failed" : "preparing",
            s->nSeg, s->bytes / 1024, s->nSeg ? s->msLer / s->nSeg : 0.0, s->nVid, s->nVid ? s->msVid / s->nVid : 0.0,
            s->nLarg, s->nErro, s->ultErro[0] ? "; last: " : "", s->ultErro);
+    /* Log 21 (owner 24/11/2026): audio segments took 2-4 s per 2 s after a
+     * seek, so the TV ran out of sound. The original file's reader: what it
+     * downloaded in these 10 s against what the file needs per second, how
+     * long the audio generator waited for the network, and how far ahead the
+     * ring is. Diagnostic only. */
+    if (s->pronto && s->eng) {
+      static DtsEngineMetrics ant; static DtsEngine *antEng; static double antT;
+      DtsEngineMetrics m; long long adiante = 0, pos = 0;
+      double t = agoraMs(), dt, mb, precisa = 0;
+      dts_engine_metrics(s->eng, &m);
+      dts_engine_ring(s->eng, &adiante, &pos);
+      if (antEng != s->eng) { memset(&ant, 0, sizeof ant); antEng = s->eng; antT = s->abertoEm; }
+      dt = (t - antT) / 1000.0;
+      mb = (double)(m.range_bytes - ant.range_bytes) / 1048576.0;
+      if (s->tamArq > 0 && s->durArq > 0) precisa = (double)s->tamArq * 8.0 / 1e6 / s->durArq;
+      printf("[tbaudio] 10s file reader: %.1f MiB in %.1f s (%.1f Mbit/s; the file averages %.1f Mbit/s), "
+             "the audio waited for the network %.0f ms, %.1f MiB ahead of the reader, connections %llu so far\n",
+             mb, dt, dt > 0 ? mb * 8.388608 / dt : 0.0, precisa,
+             (double)(m.range_blocked_ns - ant.range_blocked_ns) / 1e6, (double)adiante / 1048576.0,
+             (unsigned long long)m.range_requests);
+      ant = m; antT = t;
+    }
     fflush(stdout);
   }
   soltar(s);

@@ -115,6 +115,7 @@ void player_toast(const char *texto, unsigned ms);
 // O mesmo aviso com o icone (art/icones) e, `ambar` = 1, a cor de aviso: a
 // pilula da ilha abre com ele (plrilha.h). player_toast e o informativo.
 void player_toast_ex(const char *texto, unsigned ms, const char *icone, int ambar);
+void player_toast_apagar_se(const char *texto);
 void player_limpar_erro_fonte(void);   // fonte "morta" que voltou a entregar
 // A tentativa do automatico de fontes ("Fonte 2 de 3" na ilha ao abrir):
 // `n` = qual (1 = a primeira), `max` = o teto. 0, 0 = nenhuma.

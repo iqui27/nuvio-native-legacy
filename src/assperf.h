@@ -38,33 +38,56 @@
 
 // The person's options (Subtitles > Style on an ASS/SSA track, .tpk):
 enum {
-  AP_ESCALA,       // render resolution (AP_RES_*): Auto 50 % (default), Auto 75 %, 100 %, 75 %
+  AP_ESCALA,       // render resolution (AP_RES_*): Low / Medium / High auto (default by Tizen version)
   AP_GAMA,         // gamma like the TV's slider, signed: -20..+20 (0 off; the TV stops at 5)
   AP_CONTRASTE,    // contrast as the TV's number minus 30: -30..+20 (0 = TV default 30, gain 1.0)
   AP_LIBASS,       // 1 = libass draws ASS/SSA; 0 = dialogue only, as plain text
   AP_ASSTAM,       // dialogue size, %: 50..200 (100)
   AP_ASSOPAC,      // dialogue opacity, %: 20..100 (100)
-  AP_DIALIB,       // 1 = libass draws the dialogue; 0 = the app draws it, libass the signs & songs (1)
   AP_N
 };
+/* The renderer's test rows are gone (owner 23/11/2026, "we have good values"):
+ * split frames Per image, merged positions Exact, authored ASS hinting None
+ * (plain text keeps Light), large caches, scripts of 540 lines or fewer at
+ * 100 % in the Autos, busy scenes render only the newest frame. Custom auto
+ * and its text / blur rows went with them; a saved Custom (6) or any old key
+ * loads as the TV's default and is dropped on the next save. KeijoMika's
+ * always-on savings (event index, signature cache, hashing) stay. */
+/* The TV's Tizen major version (video_tpk.c), for the default render mode. */
+void assperf_tizen_definir(int maior);
 
-/* AP_ESCALA values. 5 was "Auto" (100 %, 75 % busy, 50 % on Tizen 4-6)
- * before: a saved 5 is Auto 50 %, the default. 6 was "Custom auto" (owner's
- * test mode, 19/11/2026, removed the same day): a saved 6 is Auto 75 %.
- * Both Autos: 100 % normally; while busy the text and the blur are drawn at
- * their own resolutions (libass split passes, 0004). Values chosen on the S95C
- * (owner 19/11/2026, logs 13 and 15):
- *   Auto 50 %: text 50 %, blur 40 %.   Auto 75 %: text 75 %, blur 55 %. */
-#define AP_RES_100     0
-#define AP_RES_75      2
-#define AP_RES_AUTO75  3
-#define AP_RES_AUTO50  5
-#define AP_RES_VELHO_CUSTOM 6   // only read from old files: becomes Auto 75 %
-#define AP_RES_AUTO(v) ((v) == AP_RES_AUTO50 || (v) == AP_RES_AUTO75)
-#define AP_AUTO50_TEXTO 0.50
-#define AP_AUTO50_BLUR  0.40
-#define AP_AUTO75_TEXTO 0.75
-#define AP_AUTO75_BLUR  0.55
+/* AP_ESCALA values (owner 22/11/2026): three Autos, all at
+ * 100 % in quiet scenes; while busy the text and the blur are drawn at their
+ * own resolutions (libass split passes, 0004).
+ *   Low auto (was "Auto 50 %" = 5):  text 50 %, blur clean near 40 % (one pass at 50 when 50 is clean).
+ *   Medium auto (was "Auto 75 %" = 3): text 75 %, blur clean near 50 %.
+ *   High auto (7):                      text 100 %, blur clean near 50 % (owner 23/11/2026, LOG 8:
+ *                                       text 100 costs the same as 90 on the S95C).
+ * Default mode by the TV (owner 23/11/2026; a saved choice wins): Tizen 7+
+ * High, Tizen 6/6.5 Medium, Tizen 4/5 (and the NuvioTpk40 library) Low;
+ * version unknown: Medium (assperf_tizen_definir).
+ * Saved fixed 100 % (0) reads as High auto, fixed 75 % (2) as Medium auto;
+ * a saved Custom auto (6, removed 23/11/2026) as the TV's default.
+ * "Clean" blur (no horizontal lines on gradients built from thin strips):
+ * screen pixels per script pixel f = frame height (layout x k x %) / PlayResY
+ * is one of 1/4, 1/3, 2/5, 1/2, 1, 2, 3, 4. The Auto takes the lowest clean %
+ * at or above its target (25..75 %), else the highest clean % up to 75, else
+ * the target. Scripts of 540 lines or fewer: text 100 %, blur the highest
+ * clean % up to 100 (owner: 480p renders at 100). */
+#define AP_RES_100_VELHO 0   // only read from old files: High auto
+#define AP_RES_75_VELHO  2   // only read from old files: Medium auto
+#define AP_RES_MEDIO     3
+#define AP_RES_BAIXO     5
+#define AP_RES_CUSTOM_VELHO 6   // only read from old files: the TV's default
+#define AP_RES_ALTO      7
+#define AP_RES_AUTO(v) ((v) == AP_RES_BAIXO || (v) == AP_RES_MEDIO || (v) == AP_RES_ALTO)
+#define AP_BAIXO_TEXTO 0.50
+#define AP_BAIXO_BLUR  0.40
+#define AP_MEDIO_TEXTO 0.75
+#define AP_MEDIO_BLUR  0.50
+#define AP_ALTO_TEXTO  1.00
+#define AP_ALTO_BLUR   0.50
+#define AP_BLUR_TETO   0.75
 
 // Current value (cheap). Outside the .tpk: always 0.
 int  assperf_get(int id);
@@ -85,6 +108,12 @@ unsigned assperf_versao(void);
 #define ASSPERF_PARQUE      (ASS_NOVO ? (6L << 20) : 0L)   // relay blocks parked ahead, bytes
 double assperf_escala(void);                 // render resolution now (Auto, busy: the text's)
 double assperf_escala_blur(void);            // Auto, busy: the blur's; 0 = one pass
+// The pixel grid the clean values are worked out on (worker): the text pass's
+// frame height at 100 % (layout height x k) and the script's PlayResY.
+void   assperf_grade_definir(int alturaPx, int playResY);
+void   assperf_grade(int *alturaPx, int *playResY);
+// The current mode's name and busy scales, for the log.
+void   assperf_modo_texto(char *b, int n);
 // Subtitle colour like the video's (AP_GAMA, AP_CONTRASTE): the TV's picture
 // processing only touches the video plane.
 double assperf_gama(void);                   // exponent: 1.0 = off

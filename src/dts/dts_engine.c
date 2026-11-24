@@ -38,6 +38,7 @@ int dts_engine_available(void) { return 0; }
 void dts_engine_dv(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_metrics(DtsEngine *e,DtsEngineMetrics *out) { (void)e; if(out) memset(out,0,sizeof(*out)); }
+void dts_engine_ring(DtsEngine *e,long long *a,long long *p) { (void)e; if(a)*a=0; if(p)*p=0; }
 int dts_engine_open(DtsEngine *e,const char *u,const char *h,int a,int c,double s) {
   (void)e;(void)u;(void)h;(void)a;(void)c;(void)s; return -1;
 }
@@ -160,7 +161,22 @@ static uint64_t clock_ns(clockid_t clock) {
   return (uint64_t)t.tv_sec*UINT64_C(1000000000)+(uint64_t)t.tv_nsec;
 }
 void dts_engine_metrics(DtsEngine *e,DtsEngineMetrics *out) {
-  if(out) { if(e) *out=e->metrics; else memset(out,0,sizeof(*out)); }
+  if(!out) return;
+  if(!e) { memset(out,0,sizeof(*out)); return; }
+  pthread_mutex_lock(&e->range_lock);   /* 64-bit counters on a 32-bit TV */
+  *out=e->metrics;
+  pthread_mutex_unlock(&e->range_lock);
+}
+/* The sequential reader's position (log 21, owner 24/11/2026: burn-in audio
+ * fell behind): bytes the ring holds past the reader, and connections made. */
+void dts_engine_ring(DtsEngine *e,long long *ahead,long long *pos) {
+  if(ahead) *ahead=0;
+  if(pos) *pos=0;
+  if(!e) return;
+  pthread_mutex_lock(&e->range_lock);
+  if(ahead) *ahead=e->fx_hi>e->pos?(long long)(e->fx_hi-e->pos):0;
+  if(pos) *pos=(long long)e->pos;
+  pthread_mutex_unlock(&e->range_lock);
 }
 static int fail(DtsEngine *e,const char *msg,int code) {
   char detail[64] = "";
@@ -440,6 +456,15 @@ static void *fx_worker(void *opaque) {
     int r=rede_fluxo64(target,strip?(e->source_stream && e->final_cross!=2?e->source_public_headers:""):e->headers,at,fx_sink,e,&total,&status,
       e->source_stream?&e->source_cancel:&e->cancelled,fin,&cross,FX_STALL_MS,&got);
     uint64_t ms=fx_now_ms()-t0;
+    /* One line per connection (log 21, owner 24/11/2026: TorBox burn-in audio
+     * came 2-4 s per 2 s segment after a seek): how fast this connection was. */
+    if(got>=(1<<20) || r!=1) {
+      printf("[dts-range] connection from %lld MiB ended: %lld KiB in %llu ms (%.1f Mbit/s), HTTP %d, %s\n",
+             (long long)(at>>20),(long long)(got>>10),(unsigned long long)ms,
+             ms?(double)got*8.0/1000.0/(double)ms:0.0,status,
+             r==1?"stopped (seek or close)":r==0?"body ended":"error");
+      fflush(stdout);
+    }
     pthread_mutex_lock(&e->range_lock);
     e->metrics.range_requests++;
     if(total>=0) e->total=total;

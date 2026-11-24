@@ -43,6 +43,10 @@ int  mkvass_relay_faixa(void) { return -1; }
 void mkvass_relay_bloco(long long clPos, int clHdr, unsigned long clTs, int temTs, long long blkPos, const unsigned char *b, long n) {
   (void)clPos; (void)clHdr; (void)clTs; (void)temTs; (void)blkPos; (void)b; (void)n;
 }
+void mkvass_relay_antes(long long clPos, int clHdr, unsigned long clTs, int temTs, long long blkPos, const unsigned char *b, long n) {
+  (void)clPos; (void)clHdr; (void)clTs; (void)temTs; (void)blkPos; (void)b; (void)n;
+}
+void mkvass_relay_antes_limpar(void) {}
 void intro_definir_capitulos(const IntroTrecho *v, int n) { (void)v; (void)n; }
 char *rede_baixar_trecho_st(const char *url, int segundos, long long ini, long long fim,
                             long *tam, int *status, int *erro, char *final, unsigned tamFinal) {

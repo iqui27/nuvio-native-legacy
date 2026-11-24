@@ -253,6 +253,9 @@ static SaltoEst scrubSalto;   // rajada do teclado (salto.h)
 // remembered step; the memory lives until the seek commits (terminarSalto).
 static SeekGesto gesto;
 static const SeekParams seekPar = SEEKG_PADRAO;
+/* One "[seek] scrub:" line per committed scrub (owner 23/11/2026): how many
+ * presses, whether the glide ran and how fast, and the largest jump. */
+static float scrubPicoVel, scrubMaiorSalto;
 // SEEK IN FLIGHT. The host only updates its position cache once
 // SetPlayPositionAsync finishes, so for a while after a seek video_pos() is
 // the OLD position. Copying it into posSeg made the bar slide back to where
@@ -1884,6 +1887,10 @@ void player_toast_ex(const char *texto, unsigned ms, const char *icone, int amba
   toastAte = SDL_GetTicks() + ms;
 }
 void player_toast(const char *texto, unsigned ms) { player_toast_ex(texto, ms, NULL, 0); }
+// Takes the notice down if it is still this text (a newer one stays).
+void player_toast_apagar_se(const char *texto) {
+  if (texto && toastAte && !strcmp(toastTexto, texto)) toastAte = 0;
+}
 
 void player_aspecto_ciclar(void) {
   durFonteAcaoAte = 0;
@@ -2672,9 +2679,32 @@ static void lembrarFonte(void) {
   if (concluiuAgora(cred)) {
     fontevolta_esquecer_alvo(alvo, sessao_usuario(), perfis_ativo(), "titulo concluido"); return;
   }
+#ifdef NV_TPK
+  /* The saved link keeps the hash (owner 24/11/2026, log 24): a source whose
+   * record has no hash keeps the one TorBox burn-in used or found, so a
+   * later start can add the file to TorBox by it. */
+  char hTb[41] = "";
+  if (!tbburn_hash_achado(url, hTb)) hTb[0] = 0;
+#endif
   // A lista pode ter sido trocada por baixo (a busca de fundo do Retomar que
   // abriu pela fonte guardada): quem toca e a entrada que ja existe.
-  if (!s || strcmp(s->url, url)) return;
+  if (!s || strcmp(s->url, url)) {
+#ifdef NV_TPK
+    if (hTb[0]) fontevolta_completar_hash(url, hTb);
+#endif
+    return;
+  }
+#ifdef NV_TPK
+  if (hTb[0] && !s->hashTorrent[0] && !s->infoHash[0]) {
+    static Stream c;
+    c = *s;
+    snprintf(c.hashTorrent, sizeof c.hashTorrent, "%s", hTb);
+    printf("[voltafonte] the source had no hash: saved with TorBox's %.8s...\n", hTb);
+    fflush(stdout);
+    fontevolta_guardar(alvo, sessao_usuario(), perfis_ativo(), &c, stream_idade_ms(), SDL_GetTicks());
+    return;
+  }
+#endif
   fontevolta_guardar(alvo, sessao_usuario(), perfis_ativo(), s, stream_idade_ms(), SDL_GetTicks());
 }
 
@@ -4301,13 +4331,19 @@ static void iniciarSalto(int toque) {
   scrubToque = toque;
   scrubbing = 1;
   scrubPassos = 0;
+#ifdef NV_TPK
+  scrubPicoVel = scrubMaiorSalto = 0.0f;
+#endif
   scrubTocava = tocando || retomandoSalto;
   pausao_fechar();
   if (tocando && comVideo) { video_pausar(1); tocando = 0; }
   posplay_busca_usuario();
 }
 
-static void saltar(int dir, int repeticao) {
+/* `quando`: the key event's own SDL timestamp (0 = unknown). A press handled
+ * after a main-thread stall keeps the time it was pressed, so the queued
+ * repeats don't read as a fast remote (seekgesto.h, owner 23/11/2026). */
+static void saltar(int dir, int repeticao, Uint32 quando) {
   int novo = 0;
   if (!scrubbing) {
     iniciarSalto(0);
@@ -4321,17 +4357,21 @@ static void saltar(int dir, int repeticao) {
   Uint32 agora = SDL_GetTicks();
 #ifdef NV_TPK
   { const SeekParams *sp = &seekPar;
-    float s = seekgesto_tecla(&gesto, sp, dir, agora, duracaoSeg, NULL);
+    /* Older than 2 s or ahead of the clock: not a usable stamp. */
+    Uint32 t = quando && (Sint32)(agora - quando) >= 0 && agora - quando < 2000u ? quando : agora;
+    float s = seekgesto_tecla(&gesto, sp, dir, t, duracaoSeg, NULL);
     (void)novo; (void)repeticao;
     scrubUltimo = agora;
     if (s != 0.0f) {
       double de = posSeg;
+      if (fabsf(s) > scrubMaiorSalto) scrubMaiorSalto = fabsf(s);
       scrubPassos++;
       posSeg = anim_clamp(posSeg + s, 0.0f, duracaoSeg);
       recuarAutomatico(de, posSeg);
     }
     return; }
 #endif
+  (void)quando;
   // Repeticao de tecla segurada entre dois passos: so mantem o avanco vivo (scrubUltimo), nao anda.
   float passo = salto_tecla(&scrubSalto, novo, repeticao, agora, duracaoSeg);
   scrubUltimo = agora;
@@ -4355,6 +4395,10 @@ static void terminarSalto(void) {
   pausao_fechar();
   seekr_ocioso();   // solta a folha decodificada (~22 MB), fica o JPEG
 #ifdef NV_TPK
+  printf("[seek] scrub: %d presses (%d jumps), glide %s (peak %.0f s/s), largest jump %.1f s, from %.1f to %.1f s\n",
+         gesto.contadas, scrubPassos, scrubPicoVel > 0.0f ? "yes" : "no", scrubPicoVel, scrubMaiorSalto,
+         scrubInicio, (double)posSeg);
+  fflush(stdout);
   seekgesto_zerar(&gesto);   // the memory lives until the commit
 #endif
   if (comVideo) {
@@ -4644,7 +4688,7 @@ void player_evento(const SDL_Event *e) {
       acordar();
       barraFoco = 1; skipFoco = 0; soBarra = 1;
       if (anim < 0.05f) cheio = 0.0f;   // de tudo apagado: o resto nem comeca a subir
-      saltar(k == SDLK_RIGHT ? 1 : -1, e->key.repeat);
+      saltar(k == SDLK_RIGHT ? 1 : -1, e->key.repeat, e->key.timestamp);
       return;
     }
     if (k == SDLK_UP || k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_RIGHT) {
@@ -4710,8 +4754,8 @@ void player_evento(const SDL_Event *e) {
   }
   if (barraFoco) {
     // Na barra, ESQUERDA e DIREITA procuram no filme em vez de trocar de botao.
-    if (k == SDLK_LEFT)       saltar(-1, e->key.repeat);
-    else if (k == SDLK_RIGHT) saltar(1, e->key.repeat);
+    if (k == SDLK_LEFT)       saltar(-1, e->key.repeat, e->key.timestamp);
+    else if (k == SDLK_RIGHT) saltar(1, e->key.repeat, e->key.timestamp);
     else if (k == SDLK_DOWN)  barraFoco = 0;
     acordar();
     return;
@@ -5121,6 +5165,7 @@ void player_atualizar(float dt, Uint32 agora) {
     double de = posSeg;
 #ifdef NV_TPK
     posSeg = anim_clamp(posSeg + seekgesto_quadro(&gesto, &seekPar, agora, dt), 0.0f, duracaoSeg);
+    { float v = seekgesto_vel(&gesto, &seekPar); if (v > scrubPicoVel) scrubPicoVel = v; }
 #else
     posSeg = anim_clamp(posSeg + salto_quadro(&scrubSalto, scrubDir, agora, dt, duracaoSeg),
                         0.0f, duracaoSeg);
@@ -5905,7 +5950,6 @@ static void desenharLegendaPrincipal(float *topoPilha){
   // Escala/trechos aceitos: o instante na legenda, nao no video (o mesmo
   // para libass e para o desenho do app).
   double posLeg = legsync_posicao(posLegenda());
-  int dialogoApp = 0;   // libass drew the signs; the app draws the dialogue below
   assrender_aplicar_invalidacao();
   assrender_definir_cor(0, 0, 0, 0);
   if (overlay && assrender_ativo()) {
@@ -5970,23 +6014,13 @@ static void desenharLegendaPrincipal(float *topoPilha){
     // R4: libass nao informa onde pintou. Estima duas linhas no tamanho da
     // folha acima da base, para a segunda legenda empilhada nao cobri-las.
     *topoPilha = baseLegendaPrincipal() - (2.0f * 58.0f + 5.0f) * (float)escalaFonteAss();
-    /* "Dialogue by libass" Off (owner 19/11/2026): libass drew the signs and
-     * songs; the dialogue is the app's own text, below, from the cue copy. */
-    if (!(legenda_dialogo_pelo_app() && !assrender_texto_simples())) return;
-    dialogoApp = 1;
+    return;
   }
   LegendaCue cues[LEGENDA_SIMULTANEAS];
   int n = overlay ? legenda_cues(posLeg, atraso, cues, LEGENDA_SIMULTANEAS) : 0, i;
-  /* A line found in the Signs & Songs track after the cue copy was made:
-   * libass draws it, the app doesn't (asssinais.h). */
-  if (dialogoApp) {
-    int w = 0;
-    for (i = 0; i < n; i++) if (!legenda_cue_sinal(&cues[i])) cues[w++] = cues[i];
-    n = w;
-  }
   // Sem legenda externa, a EMBUTIDA que o player nativo nao desenha (#122):
   // o mesmo overlay, com a mesma folha de estilo da pessoa.
-  if (n <= 0 && !dialogoApp && comVideo && player_texto_legenda_nativa(cues[0].texto, sizeof cues[0].texto)) {
+  if (n <= 0 && comVideo && player_texto_legenda_nativa(cues[0].texto, sizeof cues[0].texto)) {
     cues[0].inicio = cues[0].fim = 0; cues[0].an = 0; cues[0].negrito = cues[0].italico = 0;
     cues[0].cor = -1; cues[0].posX = cues[0].posY = -1.f; cues[0].resX = cues[0].resY = 0.f;
     cues[0].ordem = 0;
@@ -5995,7 +6029,7 @@ static void desenharLegendaPrincipal(float *topoPilha){
   // PREVIA DA BARRA DE ESTILO (faixas.c): sem fala neste instante, uma linha
   // de exemplo com o estilo da pessoa, para tamanho, cor e posicao terem o que
   // mostrar. So quando e o app que desenha (no ASS o lugar e do arquivo).
-  if (n <= 0 && !dialogoApp && faixas_estilo_topo()) {
+  if (n <= 0 && faixas_estilo_topo()) {
     memset(&cues[0], 0, sizeof cues[0]);
     snprintf(cues[0].texto, sizeof cues[0].texto, "%s", i18n("Assim a legenda vai aparecer"));
     cues[0].cor = -1; cues[0].posX = cues[0].posY = -1.f;

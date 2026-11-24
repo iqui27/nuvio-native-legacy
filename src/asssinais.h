@@ -1,8 +1,7 @@
 // SIGNS & SONGS (owner 19/11/2026, .tpk libass engine).
 //
-// The dialogue settings of an ASS track (Subtitles > Style: size, opacity,
-// and "Dialogue by libass" Off, where the app draws the dialogue as its own
-// text) must never touch the signs and songs. libass's own rule (\pos,
+// The dialogue settings of an ASS track (Subtitles > Style: size and
+// opacity) must never touch the signs and songs. libass's own rule (\pos,
 // \move, \clip, \iclip, \org, \pbo, a drawing, a Banner/Scroll Effect) misses
 // the songs: OP/ED karaoke lines usually have none of those tags.
 //

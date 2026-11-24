@@ -14,11 +14,16 @@ int  queda_conferir(const char *quando) { (void)quando; return 1; }
 void queda_armar_registro(const char *arquivo, unsigned sessaoMs) { (void)arquivo; (void)sessaoMs; }
 void queda_vigiar(void) {}
 int  queda_relatar_sessao(const char *arquivo, int caiu, long caiuS, FILE *saida) { (void)arquivo; (void)caiu; (void)caiuS; (void)saida; return 0; }
+void queda_fio_iniciar(void) {}
+void queda_fio_fim(void) {}
+void queda_passo(const char *passo, long long a, long long b) { (void)passo; (void)a; (void)b; }
+void queda_vigiar_fio(void) {}
 #else
 #include <signal.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
+#include <pthread.h>
 #if defined(__linux__)
 #include <ucontext.h>
 #elif defined(__APPLE__)
@@ -104,7 +109,7 @@ void queda_espelho(const char *arquivo) {
 // --- modo encadeado (Android, ver queda.h) ------------------------------------
 // Tudo estatico: o tratador roda na pilha alternativa que o bionic da a cada
 // fio (16 KB), nao cabe buffer grande nela. Um relato so por processo.
-#define QD_E_PILHA  256   // palavras da pilha (limitadas ao fim do mapa da pilha)
+#define QD_E_PILHA  1024  // palavras da pilha (limitadas ao fim do mapa da pilha); ARM32 has no frame chain, so read deeper
 #define QD_E_QUADROS 32   // cadeia de fp (aarch64)
 #define QD_E_SINAIS 5
 static const int qdSinaisE[QD_E_SINAIS] = { SIGSEGV, SIGBUS, SIGABRT, SIGFPE, SIGILL };
@@ -223,6 +228,42 @@ static void qdTid(int fd) {
   qdTexto(fd, "\n");
 }
 
+// --- worker threads: breadcrumbs (queda.h, queda_passo) ----------------------
+// One slot per registered thread, found by tid in the handler (no TLS there:
+// __tls_get_addr in a shared library may allocate). `passo` is a literal.
+#define QD_PASSOS 48
+/* No thread-local storage: the Tizen 4/5 library must have no PT_TLS segment
+ * (tools/tpk.sh), so each thread finds its slot by tid. */
+static struct { int tid; const char *passo; long long a, b; void *alt; } qdPassos[QD_PASSOS];
+static int qdSlotDo(int t) {
+  int i;
+  for (i = 0; i < QD_PASSOS; i++) if (__atomic_load_n(&qdPassos[i].tid, __ATOMIC_ACQUIRE) == t) return i;
+  return -1;
+}
+static void qdDec64(int fd, long long v) {
+  char b[24]; int i = (int)sizeof b - 1;
+  unsigned long long u = v < 0 ? (unsigned long long)-v : (unsigned long long)v;
+  b[i] = 0;
+  do { b[--i] = (char)('0' + u % 10); u /= 10; } while (u && i > 1);
+  if (v < 0) b[--i] = '-';
+  qdTexto(fd, b + i);
+}
+// "<antes><what> a=<n> b=<n><depois>" for the calling thread, or nothing.
+static void qdPassoEscrever(int fd, const char *antes, const char *depois) {
+  int t = qdGettid(), i;
+  for (i = 0; i < QD_PASSOS; i++) {
+    const char *p;
+    if (__atomic_load_n(&qdPassos[i].tid, __ATOMIC_ACQUIRE) != t) continue;
+    p = __atomic_load_n(&qdPassos[i].passo, __ATOMIC_ACQUIRE);
+    if (!p) return;
+    qdTexto(fd, antes); qdTexto(fd, p);
+    qdTexto(fd, " a="); qdDec64(fd, qdPassos[i].a);
+    qdTexto(fd, " b="); qdDec64(fd, qdPassos[i].b);
+    qdTexto(fd, depois);
+    return;
+  }
+}
+
 // Grava o relato. 0 = nao gravou (codigo gerenciado ou sem arquivo).
 // `reg` > 0 (modo registro): grava SEMPRE, com a linha "registro n=.. t=..
 // tipo=.." antes (`acrescentar` = no fim do arquivo); *gerOut diz se o pc caiu
@@ -287,6 +328,17 @@ static int qdGravarReg(const char *arquivo, int sig, siginfo_t *si, void *ctx,
   qdCampo(fd, " pc=", pc); qdCampo(fd, " lr=", lr); qdCampo(fd, " sp=", sp);
   qdTexto(fd, "\n");
   qdTid(fd);
+  qdPassoEscrever(fd, "passo=", "\n");
+#if defined(__linux__) && defined(__arm__)
+  { ucontext_t *u = ctx;   // ARM32 has no frame chain: the registers say what the faulting code held
+    qdCampo(fd, "regs=r0=", u->uc_mcontext.arm_r0); qdCampo(fd, " r1=", u->uc_mcontext.arm_r1);
+    qdCampo(fd, " r2=", u->uc_mcontext.arm_r2); qdCampo(fd, " r3=", u->uc_mcontext.arm_r3);
+    qdCampo(fd, " r4=", u->uc_mcontext.arm_r4); qdCampo(fd, " r5=", u->uc_mcontext.arm_r5);
+    qdCampo(fd, " r6=", u->uc_mcontext.arm_r6); qdCampo(fd, " r7=", u->uc_mcontext.arm_r7);
+    qdCampo(fd, " r8=", u->uc_mcontext.arm_r8); qdCampo(fd, " r9=", u->uc_mcontext.arm_r9);
+    qdCampo(fd, " r10=", u->uc_mcontext.arm_r10); qdCampo(fd, " fp=", u->uc_mcontext.arm_fp);
+    qdCampo(fd, " ip=", u->uc_mcontext.arm_ip); qdTexto(fd, "\n"); }
+#endif
   qdTexto(fd, "quadros=");
   for (int i = 0; i < qdNQuadros; i++) { qdHex(fd, qdQuadros[i]); qdTexto(fd, " "); }
   qdTexto(fd, "\npilha=");
@@ -339,6 +391,19 @@ static void qdRegistrar(int sig, siginfo_t *si, void *ctx) {
   clock_gettime(CLOCK_MONOTONIC, &ag);
   tMs = qdSessaoMs + (unsigned long)((ag.tv_sec - qdMono0.tv_sec) * 1000L + (ag.tv_nsec - qdMono0.tv_nsec) / 1000000L);
   qdPcMod[0] = 0; qdPcRel = 0;
+  /* First, before any /proc reading: one line saying a fault was caught here
+   * (the nv-relay crash left nothing at all; if the record below fails, this
+   * still shows the handler ran, on which thread and doing what). */
+  if (qdFdLog >= 0 && n <= QD_REG_AO_VIVO) {
+    uintptr_t pc, lr, sp, fp;
+    qdRegs(ctx, &pc, &lr, &sp, &fp);
+    qdTexto(qdFdLog, "[queda] fault #"); qdDec(qdFdLog, (unsigned long)n);
+    qdTexto(qdFdLog, " caught: signal "); qdDec(qdFdLog, (unsigned long)sig);
+    qdCampo(qdFdLog, " pc ", pc);
+    qdCampo(qdFdLog, " addr ", (uintptr_t)(si ? si->si_addr : 0));
+    qdPassoEscrever(qdFdLog, " step ", "");
+    qdTexto(qdFdLog, " "); qdTid(qdFdLog);
+  }
   // As primeiras QD_REG_COMPLETOS no arquivo, em ordem; dali em diante cada
   // falha SOBRESCREVE o .ult: a que matou o processo sempre fica completa.
   if (n <= QD_REG_COMPLETOS) qdGravarReg(qdArq, sig, si, ctx, n, tMs, 1, &ger);
@@ -475,10 +540,27 @@ static int qdJaVisto(int sig, void *h) {
   return 0;
 }
 
+/* Every replacement of SIGSEGV, not only the first per handler (each one is
+ * logged once): queda_vigiar sums them up at most every 30 s. If CoreCLR keeps
+ * putting its handler back, a fault in that window skips ours (the nv-relay
+ * crash, 23/11). */
+static unsigned qdTrocasSeg, qdTrocasSegLog;
+static void *qdUltimoSeg;
+static const char *qdUltimoSegQuando;
+// The app thread and worker threads (queda_vigiar_fio) both re-arm: one at a time.
+static pthread_mutex_t qdConferirTrava = PTHREAD_MUTEX_INITIALIZER;
+static int qdConferir(const char *quando);
 int queda_conferir(const char *quando) {
+  int r;
+  if (!qdEncadeado) return 1;
+  if (pthread_mutex_trylock(&qdConferirTrava) != 0) return 1;   // another thread is re-arming right now
+  r = qdConferir(quando);
+  pthread_mutex_unlock(&qdConferirTrava);
+  return r;
+}
+static int qdConferir(const char *quando) {
   struct sigaction atual, sa;
   int i, trocou = 0, ativo, novo;
-  if (!qdEncadeado) return 1;
   ativo = __atomic_load_n(&qdSlot, __ATOMIC_ACQUIRE) & 1;
   novo = !ativo;
   memcpy(qdVelhoSlot[novo], qdVelhoSlot[ativo], sizeof qdVelhoSlot[novo]);
@@ -491,7 +573,9 @@ int queda_conferir(const char *quando) {
     qdVelhoSlot[novo][i] = atual;
     trocou |= 1 << i;
     h = (atual.sa_flags & SA_SIGINFO) ? (void *)atual.sa_sigaction : (void *)atual.sa_handler;
+    if (qdSinaisE[i] == SIGSEGV) { qdTrocasSeg++; qdUltimoSeg = h; qdUltimoSegQuando = quando; }
     if (!qdJaVisto(qdSinaisE[i], h)) {
+      if (qdSinaisE[i] == SIGSEGV) qdTrocasSegLog = qdTrocasSeg;   // this one is on its own line
       char onde[200];
       if (h == (void *)SIG_DFL || h == (void *)SIG_IGN) snprintf(onde, sizeof onde, "%s", h == (void *)SIG_DFL ? "SIG_DFL" : "SIG_IGN");
       else qdModuloDe((uintptr_t)h, onde, sizeof onde);
@@ -518,12 +602,91 @@ int queda_conferir(const char *quando) {
 // quadro.
 void queda_vigiar(void) {
   static unsigned quadros;
+  static time_t ultimoResumo;
   struct sigaction atual;
   if (!qdEncadeado) return;
   memset(&atual, 0, sizeof atual);
   if ((++quadros % 60) == 0 ||
       (sigaction(SIGSEGV, NULL, &atual) == 0 && !((atual.sa_flags & SA_SIGINFO) && atual.sa_sigaction == qdTratarE)))
     queda_conferir("frame");
+  if ((quadros % 60) == 0) {
+    struct timespec ag;
+    unsigned n;
+    clock_gettime(CLOCK_MONOTONIC, &ag);
+    pthread_mutex_lock(&qdConferirTrava);
+    n = qdTrocasSeg - qdTrocasSegLog;
+    if (n && ag.tv_sec - ultimoResumo >= 30) {
+      char onde[200];
+      void *h = qdUltimoSeg;
+      if (h == (void *)SIG_DFL || h == (void *)SIG_IGN) snprintf(onde, sizeof onde, "%s", h == (void *)SIG_DFL ? "SIG_DFL" : "SIG_IGN");
+      else qdModuloDe((uintptr_t)h, onde, sizeof onde);
+      printf("[queda] signal 11 handler replaced %u more time(s) (%u in all; last by %s, seen at %s); re-armed each time\n",
+             n, qdTrocasSeg, onde, qdUltimoSegQuando ? qdUltimoSegQuando : "?");
+      fflush(stdout);
+      qdTrocasSegLog = qdTrocasSeg; ultimoResumo = ag.tv_sec;
+    }
+    pthread_mutex_unlock(&qdConferirTrava);
+  }
+}
+
+// --- worker threads (queda.h) ------------------------------------------------
+#define QD_FIO_ALT (64 * 1024)
+void queda_fio_iniciar(void) {
+  int t = qdGettid(), i = qdSlotDo(t);
+  stack_t velho;
+  if (i < 0)
+    for (i = 0; i < QD_PASSOS; i++) {
+      int livre = 0;
+      if (__atomic_compare_exchange_n(&qdPassos[i].tid, &livre, t, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        __atomic_store_n(&qdPassos[i].passo, (const char *)NULL, __ATOMIC_RELEASE);
+        qdPassos[i].alt = NULL;
+        break;
+      }
+    }
+  if (i >= QD_PASSOS) return;   // no slot: no breadcrumb and no stack of our own (nothing to free later)
+  // A signal stack of its own (glibc gives threads none; CoreCLR only to its own).
+  memset(&velho, 0, sizeof velho);
+  if (!qdPassos[i].alt && sigaltstack(NULL, &velho) == 0 && (velho.ss_flags & SS_DISABLE)) {
+    void *p = malloc(QD_FIO_ALT);
+    if (p) {
+      stack_t alt;
+      alt.ss_sp = p; alt.ss_size = QD_FIO_ALT; alt.ss_flags = 0;
+      if (sigaltstack(&alt, NULL) == 0) qdPassos[i].alt = p; else free(p);
+    }
+  }
+}
+void queda_fio_fim(void) {
+  int i = qdSlotDo(qdGettid());
+  if (i < 0) return;
+  if (qdPassos[i].alt) {
+    stack_t alt;
+    memset(&alt, 0, sizeof alt);
+    alt.ss_flags = SS_DISABLE;
+    if (sigaltstack(&alt, NULL) == 0) free(qdPassos[i].alt);
+    qdPassos[i].alt = NULL;
+  }
+  __atomic_store_n(&qdPassos[i].passo, (const char *)NULL, __ATOMIC_RELEASE);
+  __atomic_store_n(&qdPassos[i].tid, 0, __ATOMIC_RELEASE);
+}
+void queda_passo(const char *passo, long long a, long long b) {
+  int i = qdSlotDo(qdGettid());
+  if (i < 0) return;
+  qdPassos[i].a = a; qdPassos[i].b = b;
+  __atomic_store_n(&qdPassos[i].passo, passo, __ATOMIC_RELEASE);
+}
+void queda_vigiar_fio(void) {
+  static long long ultimo;   // shared by all worker threads: one look per 100 ms is enough
+  struct timespec ag;
+  struct sigaction atual;
+  long long ms;
+  if (!qdEncadeado) return;
+  clock_gettime(CLOCK_MONOTONIC, &ag);
+  ms = (long long)ag.tv_sec * 1000 + ag.tv_nsec / 1000000;
+  if (ms - __atomic_load_n(&ultimo, __ATOMIC_RELAXED) < 100) return;
+  __atomic_store_n(&ultimo, ms, __ATOMIC_RELAXED);
+  memset(&atual, 0, sizeof atual);
+  if (sigaction(SIGSEGV, NULL, &atual) == 0 && !((atual.sa_flags & SA_SIGINFO) && atual.sa_sigaction == qdTratarE))
+    queda_conferir("relay thread");
 }
 
 void queda_armar_registro(const char *arquivo, unsigned sessaoMs) {
@@ -570,7 +733,7 @@ static void qdImprimir(char *txt, FILE *out, const char *titulo, int compacto) {
   char *pilha, *mapas, *quadros, *fio, *p;
   QdMapa *m; int nm = 0, capm = 512;
   unsigned long sinal = 0, codigo = 0, addr = 0, pc = 0, lr = 0, sp = 0;
-  char onde[160], ondeLr[160] = "", nomeFio[48] = "";
+  char onde[160], ondeLr[160] = "", nomeFio[48] = "", passo[160] = "", regs[256] = "";
   m = calloc((size_t)capm, sizeof *m);
   if (!m) return;
   if (sscanf(txt, "sinal=%lx codigo=%lx addr=%lx pc=%lx lr=%lx sp=%lx", &sinal, &codigo, &addr, &pc, &lr, &sp) < 3) {
@@ -582,6 +745,9 @@ static void qdImprimir(char *txt, FILE *out, const char *titulo, int compacto) {
   fio = strstr(txt, "\nfio=");
   mapas = strstr(txt, "\nmapas:\n");
   if (mapas) { *mapas = 0; mapas += 8; }
+  // Worker-thread breadcrumb and ARM32 registers (queda_passo; both optional).
+  if ((p = strstr(txt, "\npasso=")) != NULL) { size_t k = strcspn(p + 7, "\n"); if (k >= sizeof passo) k = sizeof passo - 1; memcpy(passo, p + 7, k); passo[k] = 0; }
+  if ((p = strstr(txt, "\nregs=")) != NULL) { size_t k = strcspn(p + 6, "\n"); if (k >= sizeof regs) k = sizeof regs - 1; memcpy(regs, p + 6, k); regs[k] = 0; }
   for (p = mapas; p && *p && nm < capm; ) {
     char *fimL = strchr(p, '\n'), perm[8] = "", cam[256] = "";
     unsigned long a, b, d;
@@ -607,13 +773,15 @@ static void qdImprimir(char *txt, FILE *out, const char *titulo, int compacto) {
     snprintf(onde, sizeof onde, titulo ? "0x%lx (outside any module)" : "0x%lx (fora de qualquer modulo)", pc);
   qdOnde(m, nm, lr, 0, ondeLr, sizeof ondeLr);
   if (compacto) {
-    fprintf(out, "[queda] %s: signal %lu addr 0x%lx pc %s%s%s%s%s\n", titulo, sinal, addr, onde,
-            ondeLr[0] ? " lr " : "", ondeLr, nomeFio[0] ? " thread " : "", nomeFio);
+    fprintf(out, "[queda] %s: signal %lu addr 0x%lx pc %s%s%s%s%s%s%s\n", titulo, sinal, addr, onde,
+            ondeLr[0] ? " lr " : "", ondeLr, nomeFio[0] ? " thread " : "", nomeFio, passo[0] ? " step " : "", passo);
     free(m); return;
   }
   if (titulo) fprintf(out, "[queda] %s: signal %lu (code %lu), address 0x%lx\n", titulo, sinal, codigo, addr);
   else fprintf(out, "[queda] a sessao anterior morreu com sinal %lu (codigo %lu), endereco 0x%lx\n", sinal, codigo, addr);
   if (nomeFio[0]) fprintf(out, "[queda] fio %s\n", nomeFio);
+  if (passo[0]) fprintf(out, "[queda] step %s\n", passo);
+  if (regs[0]) fprintf(out, "[queda] regs %s\n", regs);
   fprintf(out, "[queda] pc %s\n", onde);
   if (ondeLr[0]) fprintf(out, "[queda] lr %s\n", ondeLr);
   // Cadeia de quadros (aarch64): exata, na ordem da chamada.

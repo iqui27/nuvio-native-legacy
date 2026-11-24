@@ -60,6 +60,13 @@ int main(void) {
   agora += 2000;
   ok(!cdnlink_recente(mf, NULL, CDNLINK_REUSO_MS, d, sizeof d, NULL), "not reused after 60 s (resolved again at open)");
   ok(!cdnlink_recente("https://other.test/x", NULL, CDNLINK_REUSO_MS, d, sizeof d, NULL), "other link: nothing");
+  // Log 13 (23/11/2026): the source check asks whether the link already
+  // resolved this session, whatever headers the player used.
+  ok(cdnlink_resolvido(mf, h, sizeof h) && h[0], "resolved this session: yes (past the 60 s reuse), with the CDN host");
+  ok(cdnlink_resolvido(mf, NULL, 0), "resolved: any headers, no host buffer needed");
+  ok(!cdnlink_resolvido("https://other.test/x", h, sizeof h) && !h[0], "other link: not resolved");
+  agora += CDNLINK_VALIDADE_MS;
+  ok(!cdnlink_resolvido(mf, h, sizeof h), "past the link's validity: not resolved");
 
   for (int i = 0; i < 12; i++) {   // the cache keeps the newest 8
     char o[64]; snprintf(o, sizeof o, "https://addon.test/%d", i);

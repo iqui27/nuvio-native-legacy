@@ -57,6 +57,25 @@ int tbburn_json_texto(const char *corpo, const char *chave, char *out, unsigned 
   return 0;
 }
 
+/* A JSON true/false value (log 15, owner 23/11/2026: createstream's
+ * needs_transcoding / is_transcoding). 1 true, 0 false, -1 absent. */
+int tbburn_json_bool(const char *corpo, const char *chave) {
+  char pad[96];
+  const char *p;
+  if (!corpo || !chave) return -1;
+  snprintf(pad, sizeof pad, "\"%s\"", chave);
+  for (p = strstr(corpo, pad); p; p = strstr(p + 1, pad)) {
+    const char *v = p + strlen(pad);
+    while (*v == ' ' || *v == '\t' || *v == '\n' || *v == '\r') v++;
+    if (*v != ':') continue;
+    v++;
+    while (*v == ' ' || *v == '\t' || *v == '\n' || *v == '\r') v++;
+    if (!strncmp(v, "true", 4)) return 1;
+    if (!strncmp(v, "false", 5)) return 0;
+  }
+  return -1;
+}
+
 int tbburn_achar_m3u8(const char *corpo, char *out, unsigned n) {
   const char *p;
   char *tmp;
@@ -223,7 +242,9 @@ static struct {
   uint64_t bytes;
 } fonte;
 // The file found for fonte.url (cached: one account lookup per source).
-static struct { char url[TBB_URL_MAX]; int item, arquivo, usenet, achou, procurou; char como[72]; } ids;
+// hash: the item's info hash from TorBox's list when it was found (owner
+// 22/11/2026: the re-add needs it after the item left the list).
+static struct { char url[TBB_URL_MAX]; int item, arquivo, usenet, achou, procurou; char como[72], hash[41]; } ids;
 static int escolha = -1, temAss, recusado;
 static int cedoFontePend;   // tbburn_fonte -> tbburn_cedo_bombear (the early lookup at Play)
 static struct {
@@ -249,7 +270,8 @@ void tbburn_fonte(const char *url, const char *hash, const char *arquivo, uint64
   pthread_mutex_lock(&trava);
   if (url && url[0] && !strcmp(url, guardada.url) && !(hash && hash[0]) && !(arquivo && arquivo[0]) && !bytes) {
     hash = guardada.hash; arquivo = guardada.arquivo; bytes = guardada.bytes;
-    printf("[tbburn] source details from the saved last link (Reuse last link)\n");
+    printf("[tbburn] source details from the saved last link (Reuse last link): hash %s, file name %s, size %s\n",
+           strlen(guardada.hash) == 40 ? "yes" : "none", guardada.arquivo[0] ? "yes" : "none", guardada.bytes ? "yes" : "none");
     fflush(stdout);
   }
   if (!url || strcmp(url, fonte.url)) {
@@ -286,8 +308,13 @@ void tbburn_definir_escolha(int v) {
   fflush(stdout);
 }
 static int manterProximo;
+// The file whose stuck TorBox item was removed and re-added in this playback
+// (readicionar, owner 24/11/2026): once per file per playback. Under trava.
+static char apagadoUrl[TBB_URL_MAX];
 void tbburn_manter_proximo(void) { manterProximo = 1; }
 void tbburn_sessao_nova(void) {
+  pthread_mutex_lock(&trava); apagadoUrl[0] = 0; pthread_mutex_unlock(&trava);
+  tbburn_original_parou();
   if (manterProximo) { manterProximo = 0; return; }
   escolha = -1;
 }
@@ -313,7 +340,7 @@ int tbburn_linha_visivel(void) {
 typedef struct {
   char chave[TBB_CHAVE];
   int achou, item, arquivo, usenet;
-  char como[72];
+  char como[72], hash[41];   // hash: the item's info hash from TorBox's list ("" = none)
   unsigned em, conta;
 } Cedo;
 typedef struct {
@@ -339,13 +366,15 @@ static Cedo *cedoAchar(const char *chave, int erros) {
   }
   return NULL;
 }
-static void cedoGuardar(const char *chave, int achou, int item, int arquivo, int usenet, const char *como) {
+static void cedoGuardar(const char *chave, int achou, int item, int arquivo, int usenet, const char *como,
+                        const char *hash) {
   Cedo *c = NULL;
   for (int i = 0; i < TBB_CEDO_N && !c; i++) if (!strcmp(cedo[i].chave, chave)) c = &cedo[i];
   if (!c) { c = &cedo[cedoProx]; cedoProx = (cedoProx + 1) % TBB_CEDO_N; }
   snprintf(c->chave, sizeof c->chave, "%s", chave);
   c->achou = achou; c->item = item; c->arquivo = arquivo; c->usenet = usenet;
   snprintf(c->como, sizeof c->como, "%s", como ? como : "");
+  snprintf(c->hash, sizeof c->hash, "%s", hash && strlen(hash) == 40 ? hash : "");
   c->em = msAgora(); c->conta = debrid_tb_geracao();
 }
 // TorBox no longer has the item a hit pointed to: forget it (with `trava`).
@@ -362,16 +391,17 @@ static void cedoLogPedido(const CedoPedido *p, const char *o) {
 static void *fioCedo(void *arg) {
   CedoPedido *p = arg;
   for (;;) {
-    char como[72] = "";
+    char como[72] = "", hItem[41] = "";
     int item = 0, arquivo = -1, usenet = 0, achou;
     unsigned t0 = msAgora();
     cedoLogPedido(p, "looking the file up in your TorBox");
-    achou = partes_achar_exato(p->url, p->hash, p->arquivo, p->bytes, &item, &arquivo, &usenet, como, sizeof como);
-    if (achou) printf("[tbburn] early lookup (%s): found item %d, file %d (by %s) in %u ms\n", p->porque, item, arquivo, como, msAgora() - t0);
+    achou = partes_achar_exato(p->url, p->hash, p->arquivo, p->bytes, &item, &arquivo, &usenet, como, sizeof como, hItem);
+    if (achou) printf("[tbburn] early lookup (%s): found item %d, file %d (by %s) in %u ms; item hash %s%.8s\n", p->porque, item, arquivo,
+                      como, msAgora() - t0, hItem[0] ? "" : "none", hItem);
     else printf("[tbburn] early lookup (%s): not found in %u ms (the burn-in request looks again)\n", p->porque, msAgora() - t0);
     fflush(stdout);
     pthread_mutex_lock(&trava);
-    cedoGuardar(p->chave, achou, item, arquivo, usenet, como);
+    cedoGuardar(p->chave, achou, item, arquivo, usenet, como, hItem);
     cedoAtual[0] = 0;
     if (cedoTemPend) {
       *p = cedoPend; cedoTemPend = 0;
@@ -462,6 +492,10 @@ typedef struct {
   uint64_t bytes;
   int sub, audio;
   unsigned geracao;
+  // tbburn_readicionar (owner 22/11/2026): straight to the re-add of item
+  // readdItem (TorBox sent no video for it), with its hash from the list.
+  int readd, readdItem, readdArq;
+  char readdHash[41];
 } Pedido;
 
 static unsigned msAgora(void) {
@@ -497,9 +531,11 @@ static int publicar(unsigned geracao, int estado, const char *m3u8, const char *
   return ok;
 }
 
-static int pegarIds(const Pedido *p, int *item, int *arquivo, int *usenet, char *como, unsigned n) {
+/* *sem: the torrent of the add-on's/link's hash is listed without the playing
+ * file (its item id), 0 otherwise (owner 24/11/2026: then it isn't added). */
+static int pegarIds(const Pedido *p, int *item, int *arquivo, int *usenet, char *como, unsigned n, int *sem) {
   int achou;
-  *usenet = 0;
+  *usenet = 0; *sem = 0;
   pthread_mutex_lock(&trava);
   // Only a FOUND file is reused: a miss is looked up again next time (owner
   // 14/11, Horimiya E07: one miss was reused for every retry).
@@ -531,6 +567,7 @@ static int pegarIds(const Pedido *p, int *item, int *arquivo, int *usenet, char 
       snprintf(ids.url, sizeof ids.url, "%s", p->url);
       ids.item = c->item; ids.arquivo = c->arquivo; ids.usenet = c->usenet; ids.achou = ids.procurou = 1;
       snprintf(ids.como, sizeof ids.como, "%s", como);
+      snprintf(ids.hash, sizeof ids.hash, "%s", c->hash);
       pthread_mutex_unlock(&trava);
       printf("[tbburn] burn-in request: the early lookup had the file (waited %u ms for it)\n", esperou ? msAgora() - t0 : 0u);
       fflush(stdout);
@@ -545,17 +582,19 @@ static int pegarIds(const Pedido *p, int *item, int *arquivo, int *usenet, char 
   pthread_mutex_lock(&trava);
   tbburn_chave(trabAtual, sizeof trabAtual, p->url, p->hash, p->arquivo, p->bytes);
   pthread_mutex_unlock(&trava);
-  achou = partes_achar_exato(p->url, p->hash, p->arquivo, p->bytes, item, arquivo, usenet, como, n);
+  { char hItem[41] = "";
+  achou = partes_achar_exato_x(p->url, p->hash, p->arquivo, p->bytes, 0, item, arquivo, usenet, como, n, hItem, sem);
   pthread_mutex_lock(&trava);
   trabAtual[0] = 0;
   snprintf(ids.url, sizeof ids.url, "%s", p->url);
   ids.item = *item; ids.arquivo = *arquivo; ids.usenet = *usenet; ids.achou = achou; ids.procurou = 1;
   snprintf(ids.como, sizeof ids.como, "%s", como);
+  snprintf(ids.hash, sizeof ids.hash, "%s", achou ? hItem : "");
   if (achou) {
     char chave[TBB_CHAVE];
     tbburn_chave(chave, sizeof chave, p->url, p->hash, p->arquivo, p->bytes);
-    if (chave[0]) cedoGuardar(chave, 1, *item, *arquivo, *usenet, como);
-  }
+    if (chave[0]) cedoGuardar(chave, 1, *item, *arquivo, *usenet, como, hItem);
+  } }
   pthread_mutex_unlock(&trava);
   return achou;
 }
@@ -585,18 +624,31 @@ static void logPlaylist(const char *m3u8) {
 // Log 12: TorBox's list showed the item, createstream answered ITEM_NOT_FOUND.
 // The owner: adding the hash on TorBox's dashboard by hand always fixes it.
 // So Nuvio does it: createtorrent with add_only_if_cached (debrid_tb_adicionar;
-// never starts a real download), then asks for the stream again every ~20 s
-// for up to 3 min while the original plays with Nuvio's subtitles (TorBox
-// may need a few minutes to register it). The torrent stays on the dashboard.
-#ifndef TBB_READD_PRIMEIRO_MS
-#define TBB_READD_PRIMEIRO_MS 5000u
+// never starts a real download), then asks for the stream. The torrent stays
+// on the dashboard.
+// THE SCHEDULE (owner 24/11/2026, log 24; replaces the four asks of 23/11):
+//  1. 3.5 s after the add: look in a fresh list (never one asked for before
+//     the add). Found and TorBox answers -> switch (automatic).
+//  2. Not listed, or listed but not playable: the original plays on with
+//     Nuvio's subtitles, and Nuvio removes the torrent and adds the hash again
+//     (once per file per playback).
+//  3. 7 s into the original's playback (its first frame, or the first frame
+//     after a failed switch; never sooner than 3.5 s after the last add): look
+//     again (fresh). Found -> switch. Not -> stop; Burn in asks again.
+// The stuck item (TorBox listed it but sent no video) uses the same schedule
+// (owner OK 24/11/2026): removed + added first, then steps 1 and 3.
+// A torrent of the hash that is listed without the playing file (the link's
+// hash was another torrent) is deleted again and the request stops: no loop.
+#ifndef TBB_READD_OLHAR_MS
+#define TBB_READD_OLHAR_MS 3500u      // step 1: this long after the add
 #endif
-#ifndef TBB_READD_PASSO_MS
-#define TBB_READD_PASSO_MS 20000u
+#ifndef TBB_READD_TOCANDO_MS
+#define TBB_READD_TOCANDO_MS 7000u    // step 3: this long into the original's playback
 #endif
-#ifndef TBB_READD_TOTAL_MS
-#define TBB_READD_TOTAL_MS 180000u
+#ifndef TBB_READD_TOCAR_TETO_MS
+#define TBB_READD_TOCAR_TETO_MS 30000u   // playback not started by then: look anyway
 #endif
+#define TBB_READD_JANELA_MS (2u * TBB_READD_OLHAR_MS + TBB_READD_TOCAR_TETO_MS + TBB_READD_TOCANDO_MS + 5000u)
 
 static int pedidoVivo(const Pedido *p) {
   int v;
@@ -614,31 +666,357 @@ static int dormirVivo(const Pedido *p, unsigned ms) {
   return pedidoVivo(p);
 }
 
-/* 1 = a createstream answer for the re-added file is in *r / *st (the caller
- * goes on as usual: plan, playlist...); 0 = no: `motivo` says why; -1 = the
- * request was cancelled (nothing to publish). `itemVelho` 0 = the file was in
- * no list at all (then only the add-on's hash can add it). */
-static int readicionar(Pedido *p, int itemVelho, int *item, int *arquivo, int *usenet,
-                       char **r, int *st, char *motivo, unsigned mn) {
-  char h[48] = "", como[72] = "", rota[512];
-  unsigned t0, espera = TBB_READD_PRIMEIRO_MS;
-  int tid, tent;
-  *r = NULL; *st = 0;
-  if (strlen(p->hash) == 40) {
-    for (int i = 0; i <= 40; i++) h[i] = (char)tolower((unsigned char)p->hash[i]);
-  } else if (itemVelho > 0) {
-    int i2 = 0, f2 = -1, u2 = 0;
-    if (partes_achar_exato_hash(p->url, "", p->arquivo, p->bytes, &i2, &f2, &u2, como, sizeof como, h) && i2 != itemVelho) h[0] = 0;
+/* The original's playback (video_tpk.c, owner 24/11/2026): when the original
+ * file last started showing frames (its first frame, or the first after a
+ * failed switch), 0 = not playing. Under trava. */
+static struct { char url[TBB_URL_MAX]; unsigned em; } orig;
+void tbburn_original_tocando(const char *url) {
+  pthread_mutex_lock(&trava);
+  snprintf(orig.url, sizeof orig.url, "%s", url ? url : "");
+  orig.em = msAgora() ? msAgora() : 1u;
+  pthread_mutex_unlock(&trava);
+}
+void tbburn_original_parou(void) {
+  pthread_mutex_lock(&trava); orig.em = 0; orig.url[0] = 0; pthread_mutex_unlock(&trava);
+}
+static unsigned origTocando(const char *url) {
+  unsigned v;
+  pthread_mutex_lock(&trava); v = orig.em && !strcmp(orig.url, url) ? orig.em : 0u; pthread_mutex_unlock(&trava);
+  return v;
+}
+/* Waits for step 3's moment: TBB_READD_TOCANDO_MS after the original started
+ * playing, never sooner than TBB_READD_OLHAR_MS after `ultimoAdd` (0 = no
+ * add). 0 = cancelled. */
+static int esperarTocando(Pedido *p, unsigned ultimoAdd, char *quando, unsigned qn) {
+  unsigned toc, t0 = msAgora(), alvo, agora;
+  while (!(toc = origTocando(p->url)) && msAgora() - t0 < TBB_READD_TOCAR_TETO_MS)
+    if (!dormirVivo(p, 200)) return 0;
+  if (!toc) {
+    printf("[tbburn] the original did not start playing in %u s; looking anyway\n", TBB_READD_TOCAR_TETO_MS / 1000u);
+    fflush(stdout);
+    toc = msAgora();
   }
-  if (!h[0]) {
-    printf("[tbburn] re-add: no info hash for this file (%s): Nuvio draws the subtitle\n",
-           *usenet ? "a usenet download" : itemVelho > 0 ? "TorBox's list gives none" : "the add-on gave none");
+  alvo = toc + TBB_READD_TOCANDO_MS;
+  if (ultimoAdd && (int)(alvo - (ultimoAdd + TBB_READD_OLHAR_MS)) < 0) alvo = ultimoAdd + TBB_READD_OLHAR_MS;
+  agora = msAgora();
+  snprintf(quando, qn, "%u s into playback%s", TBB_READD_TOCANDO_MS / 1000u,
+           ultimoAdd && alvo == ultimoAdd + TBB_READD_OLHAR_MS ? " (3.5 s after the add)" : "");
+  if ((int)(alvo - agora) > 0 && !dormirVivo(p, alvo - agora)) return 0;
+  return pedidoVivo(p);
+}
+
+/* The file being registered after a re-add (log 12, owner 23/11/2026). A new
+ * Burn in press for the same file used to cancel the wait and look the file up
+ * in lists that didn't have the new torrent yet ("not in your TorBox"). Now a
+ * press joins the wait and asks createstream with the re-added torrent and the
+ * file index from the earlier match (a torrent re-added by its hash keeps its
+ * file list). Under trava. */
+static struct { char url[TBB_URL_MAX]; int torrent, arquivo, usenet; char hash[41]; unsigned em; } reAdd;
+static void reAddGuardar(const char *url, int torrent, int arquivo, int usenet, const char *h) {
+  pthread_mutex_lock(&trava);
+  snprintf(reAdd.url, sizeof reAdd.url, "%s", url);
+  reAdd.torrent = torrent; reAdd.arquivo = arquivo; reAdd.usenet = usenet; reAdd.em = msAgora();
+  snprintf(reAdd.hash, sizeof reAdd.hash, "%.40s", h ? h : "");
+  pthread_mutex_unlock(&trava);
+}
+static void reAddLimpar(void) {
+  pthread_mutex_lock(&trava); reAdd.url[0] = 0; reAdd.torrent = 0; pthread_mutex_unlock(&trava);
+}
+/* 1 = `url` is being registered (re-added less than the whole wait ago). */
+static int reAddPendente(const char *url, int *torrent, int *arquivo, int *usenet, char *h, unsigned *em) {
+  int v;
+  pthread_mutex_lock(&trava);
+  v = reAdd.torrent > 0 && reAdd.url[0] && !strcmp(reAdd.url, url) &&
+      msAgora() - reAdd.em < TBB_READD_JANELA_MS;
+  if (v) { *torrent = reAdd.torrent; *arquivo = reAdd.arquivo; *usenet = reAdd.usenet; *em = reAdd.em;
+           snprintf(h, 41, "%s", reAdd.hash); }
+  pthread_mutex_unlock(&trava);
+  return v;
+}
+
+/* perguntarRegistro's answers. */
+enum { REG_CANCELADO = -1, REG_NAO_LISTADO = 0, REG_PRONTO = 1, REG_PLANO = 2, REG_NAO_TOCA = 3, REG_OUTRO_TORRENT = 4 };
+/* One look for the added torrent `tid` (hash `h`): createstream with the
+ * torrent itself (file `arq`), else a fresh list (never one asked for before
+ * this look) by hash/name/size. REG_PRONTO = TorBox answered (*r);
+ * REG_PLANO = plan refused (*r); REG_NAO_TOCA = listed (item *i2) but
+ * createstream failed; REG_OUTRO_TORRENT = torrent `tid` is listed without the
+ * playing file. */
+static int perguntarRegistro(Pedido *p, const char *quando, int tid, int arq, int us, const char *h,
+                             int *i2, int *f2, int *u2, char *como, unsigned cn, char **r, int *st) {
+  char rota[512];
+  int sem = 0;
+  *r = NULL; *st = 0; *i2 = 0; *f2 = -1; *u2 = 0;
+  if (arq >= 0 && tid > 0) {   // the torrent itself: no list needed
+    tbburn_rota_criar(rota, sizeof rota, tid, arq, us, p->sub, p->audio);
+    *r = debrid_tb_api_get(rota, 30, st);
+    logCorpo("createstream", *st, 0, *r);
+    if (!pedidoVivo(p)) { free(*r); *r = NULL; return REG_CANCELADO; }
+    if (*r && *st >= 200 && *st < 300 && !tbburn_eh_item_sumido(*st, *r)) {
+      *i2 = tid; *f2 = arq; *u2 = us; snprintf(como, cn, "re-added torrent");
+      printf("[tbburn] %s: torrent %d, file %d: found, TorBox answered\n", quando, tid, arq);
+      fflush(stdout);
+      return REG_PRONTO;
+    }
+    if (tbburn_eh_recusa_plano(*st, *r)) return REG_PLANO;
+    { int sumido = tbburn_eh_item_sumido(*st, *r);
+      printf("[tbburn] %s: torrent %d, file %d: %s (HTTP %d)\n", quando, tid, arq,
+             sumido ? "not listed yet" : "no stream, looking in a fresh list", *st);
+      fflush(stdout);
+      free(*r); *r = NULL;
+      if (sumido) return REG_NAO_LISTADO; }   // not registered yet: the lists (13 MB) can't have it either
+  }
+  partes_listas_renovar();   // log 24: a list from before this look is never reused
+  if (!partes_achar_exato_x(p->url, h, p->arquivo, p->bytes, 1, i2, f2, u2, como, cn, NULL, &sem)) {
+    if (tid > 0 && sem == tid) {
+      printf("[tbburn] %s: torrent %d (hash %.8s...) is in your TorBox, but the playing file is not in it "
+             "(the hash is another torrent)\n", quando, tid, h);
+      fflush(stdout);
+      *i2 = sem;
+      return REG_OUTRO_TORRENT;
+    }
+    printf("[tbburn] %s: not listed in your fresh TorBox lists\n", quando);
+    fflush(stdout);
+    return REG_NAO_LISTADO;
+  }
+  tbburn_rota_criar(rota, sizeof rota, *i2, *f2, *u2, p->sub, p->audio);
+  *r = debrid_tb_api_get(rota, 30, st);
+  logCorpo("createstream", *st, 0, *r);
+  if (!pedidoVivo(p)) { free(*r); *r = NULL; return REG_CANCELADO; }
+  if (tbburn_eh_recusa_plano(*st, *r)) return REG_PLANO;
+  if (!*r || *st < 200 || *st >= 300 || tbburn_eh_item_sumido(*st, *r)) {
+    printf("[tbburn] %s: item %d is listed, but not playable (createstream HTTP %d%s)\n", quando, *i2, *st,
+           tbburn_eh_item_sumido(*st, *r) ? ", ITEM_NOT_FOUND" : "");
+    fflush(stdout);
+    free(*r); *r = NULL;
+    return REG_NAO_TOCA;
+  }
+  printf("[tbburn] %s: found item %d, file %d (by %s): TorBox answered\n", quando, *i2, *f2, como);
+  fflush(stdout);
+  return REG_PRONTO;
+}
+
+/* Removes `item` and adds hash `h` again (step 2): once per file per playback.
+ * The new torrent id, 0 = not done (already done, or TorBox refused the add),
+ * -1 = cancelled. */
+static int removerAdicionar(Pedido *p, int item, const char *h) {
+  int ja, ok, tid;
+  pthread_mutex_lock(&trava); ja = !strcmp(apagadoUrl, p->url); pthread_mutex_unlock(&trava);
+  if (ja) {
+    printf("[tbburn] this file was already removed and added again in this playback: not again\n");
+    fflush(stdout);
+    return 0;
+  }
+  pthread_mutex_lock(&trava); snprintf(apagadoUrl, sizeof apagadoUrl, "%s", p->url); pthread_mutex_unlock(&trava);
+  ok = item > 0 ? debrid_tb_apagar(item) : 0;
+  if (!pedidoVivo(p)) return -1;
+  if (item > 0) printf("[tbburn] remove and add: item %d %s\n", item, ok ? "removed" : "NOT removed (see the controltorrent line): adding anyway");
+  tid = debrid_tb_adicionar(h);
+  if (!pedidoVivo(p)) return -1;
+  if (tid <= 0) printf("[tbburn] remove and add: TorBox did not add hash %.8s... again (see the createtorrent line)\n", h);
+  else printf("[tbburn] remove and add: hash %.8s... added again as torrent %d\n", h, tid);
+  fflush(stdout);
+  return tid > 0 ? tid : 0;
+}
+
+/* Steps 1-3 above for torrent `tid` added at `desde` (hash `h`, file `arq`
+ * from an earlier match, -1 unknown). `agora` = a Burn in press joined the
+ * wait: it looks once now, then only the looks still to come. `podeRemover` =
+ * step 2 may remove + add (not after a stuck item was already removed). 1 = a
+ * createstream answer is in *r / *st (the caller goes on as usual); 0 = no:
+ * `motivo` says why; -1 = cancelled. */
+static int esperarRegistro(Pedido *p, int tid, int arq, int us, const char *h, unsigned desde, int agora, int podeRemover,
+                           int *item, int *arquivo, int *usenet, char **r, int *st, char *motivo, unsigned mn) {
+  char como[72] = "", quando[64];
+  int i2 = 0, f2 = -1, u2 = 0, v = REG_NAO_LISTADO;
+  unsigned ultimoAdd = desde;
+  *r = NULL; *st = 0;
+  if (agora) {
+    v = perguntarRegistro(p, "your press", tid, arq, us, h, &i2, &f2, &u2, como, sizeof como, r, st);
+    if (v == REG_CANCELADO) return -1;
+    if (v == REG_PLANO) return 1;   // the caller reports the plan refusal
+    if (v == REG_PRONTO) goto achou;
+  }
+  // Step 1: 3.5 s after the add (skipped when a press comes later than that).
+  if (!agora || (int)(desde + TBB_READD_OLHAR_MS - msAgora()) > 0) {
+    unsigned alvo = desde + TBB_READD_OLHAR_MS, t = msAgora();
+    if ((int)(alvo - t) > 0 && !dormirVivo(p, alvo - t)) return -1;
+    if (!pedidoVivo(p)) return -1;
+    v = perguntarRegistro(p, "3.5 s after the add", tid, arq, us, h, &i2, &f2, &u2, como, sizeof como, r, st);
+    if (v == REG_CANCELADO) return -1;
+    if (v == REG_PLANO) return 1;
+    if (v == REG_PRONTO) goto achou;
+  }
+  if (v == REG_OUTRO_TORRENT) {   // owner OK 24/11/2026: delete it again and stop, no loop
+    int ok = debrid_tb_apagar(i2);
+    printf("[tbburn] hash %.8s... is another torrent: item %d %s; not adding it again. Nuvio draws the subtitle "
+           "(pick Burn in to ask again)\n", h, i2, ok ? "removed from your TorBox again" : "NOT removed (see the controltorrent line)");
+    fflush(stdout);
+    reAddLimpar();
+    snprintf(motivo, mn, "the hash is another torrent");
+    return 0;
+  }
+  // Step 2: the original plays on with Nuvio's subtitles; remove + add.
+  if (!publicar(p->geracao, TBB_ESPERANDO, NULL, "TorBox is registering the added file")) return -1;
+  if (podeRemover) {
+    int novo;
+    printf("[tbburn] 3.5 s after the add: %s -> the original plays with Nuvio's subtitles; removing and adding "
+           "the hash again\n", v == REG_NAO_TOCA ? "not playable" : "not listed");
+    fflush(stdout);
+    novo = removerAdicionar(p, v == REG_NAO_TOCA && i2 > 0 ? i2 : tid, h);
+    if (novo < 0) return -1;
+    if (novo > 0) {
+      tid = novo; ultimoAdd = msAgora();
+      reAddGuardar(p->url, tid, arq, us, h);
+    }
+  } else {
+    printf("[tbburn] 3.5 s after the add: %s -> the original plays with Nuvio's subtitles (already removed and "
+           "added in this playback)\n", v == REG_NAO_TOCA ? "not playable" : "not listed");
+    fflush(stdout);
+  }
+  // Step 3: 7 s into playback.
+  if (!esperarTocando(p, ultimoAdd, quando, sizeof quando)) return -1;
+  v = perguntarRegistro(p, quando, tid, arq, us, h, &i2, &f2, &u2, como, sizeof como, r, st);
+  if (v == REG_CANCELADO) return -1;
+  if (v == REG_PLANO) return 1;
+  if (v == REG_PRONTO) {
+    printf("[tbburn] %s: found -> switching\n", quando);
+    fflush(stdout);
+    goto achou;
+  }
+  if (v == REG_OUTRO_TORRENT) {
+    int ok = debrid_tb_apagar(i2);
+    printf("[tbburn] hash %.8s... is another torrent: item %d %s\n", h, i2, ok ? "removed from your TorBox again" : "NOT removed");
+    fflush(stdout);
+  }
+  reAddLimpar();
+  printf("[tbburn] %s: still not in your TorBox: Nuvio draws the subtitle (pick Burn in to ask again)\n", quando);
+  fflush(stdout);
+  snprintf(motivo, mn, "TorBox did not register the added file");
+  return 0;
+achou:
+  *item = i2; *arquivo = f2; *usenet = u2;
+  reAddLimpar();
+  { char chave[TBB_CHAVE];
+    tbburn_chave(chave, sizeof chave, p->url, p->hash, p->arquivo, p->bytes);
+    pthread_mutex_lock(&trava);
+    snprintf(ids.url, sizeof ids.url, "%s", p->url);
+    ids.item = i2; ids.arquivo = f2; ids.usenet = u2; ids.achou = ids.procurou = 1;
+    snprintf(ids.como, sizeof ids.como, "re-added (%.40s)", como);
+    snprintf(ids.hash, sizeof ids.hash, "%.40s", h);
+    if (chave[0]) cedoGuardar(chave, 1, i2, f2, u2, ids.como, h);
+    pthread_mutex_unlock(&trava); }
+  return 1;
+}
+
+/* No hash at all (owner 24/11/2026, step 5): the first look missed; look again
+ * (fresh) 7 s into the original's playback. Same results as readicionar. */
+static int olharDeNovo(Pedido *p, int semHash, int *item, int *arquivo, int *usenet, char **r, int *st, char *motivo, unsigned mn) {
+  char como[72] = "", quando[64], rota[512];
+  *r = NULL; *st = 0;
+  if (!publicar(p->geracao, TBB_ESPERANDO, NULL, "looking again 7 s into playback")) return -1;
+  if (!esperarTocando(p, 0, quando, sizeof quando)) return -1;
+  char hItem[41] = "";
+  partes_listas_renovar();
+  /* semHash: the hash's torrent is listed without this file; looking by it
+   * again would stop there, so the file name and size are tried instead. */
+  if (!partes_achar_exato_x(p->url, semHash ? "" : p->hash, p->arquivo, p->bytes, 1, item, arquivo, usenet, como, sizeof como,
+                            hItem, NULL)) {
+    printf("[tbburn] %s: still not in your TorBox: Nuvio draws the subtitle (pick Burn in to ask again)\n", quando);
     fflush(stdout);
     snprintf(motivo, mn, "file not in your TorBox");
     return 0;
   }
-  printf("[tbburn] re-add: adding the file to your TorBox by its hash %.8s... (only if TorBox has it cached; "
-         "it stays on your dashboard)\n", h);
+  if (!pedidoVivo(p)) return -1;
+  printf("[tbburn] %s: found item %d, file %d (by %s) -> switching\n", quando, *item, *arquivo, como);
+  fflush(stdout);
+  { char chave[TBB_CHAVE];
+    tbburn_chave(chave, sizeof chave, p->url, p->hash, p->arquivo, p->bytes);
+    pthread_mutex_lock(&trava);
+    snprintf(ids.url, sizeof ids.url, "%s", p->url);
+    ids.item = *item; ids.arquivo = *arquivo; ids.usenet = *usenet; ids.achou = ids.procurou = 1;
+    snprintf(ids.como, sizeof ids.como, "%s", como);
+    snprintf(ids.hash, sizeof ids.hash, "%s", hItem);
+    if (chave[0]) cedoGuardar(chave, 1, *item, *arquivo, *usenet, como, hItem);
+    pthread_mutex_unlock(&trava); }
+  tbburn_rota_criar(rota, sizeof rota, *item, *arquivo, *usenet, p->sub, p->audio);
+  *r = debrid_tb_api_get(rota, 30, st);
+  logCorpo("createstream", *st, 0, *r);
+  if (!pedidoVivo(p)) { free(*r); *r = NULL; return -1; }
+  return 1;
+}
+
+/* The hash to add `url` by: the add-on's (or the saved link's), else the
+ * link's own 40 hex (log 24, owner 24/11/2026). "" = none. */
+static const char *hashDoLink(const Pedido *p, char out[41]) {
+  char hs[1][41];
+  out[0] = 0;
+  if (strlen(p->hash) == 40) {
+    for (int i = 0; i <= 40; i++) out[i] = (char)tolower((unsigned char)p->hash[i]);
+    return "the add-on's or the saved link's";
+  }
+  if (partes_hashes_texto(p->url, hs, 1) == 1) { snprintf(out, 41, "%s", hs[0]); return "the link's"; }
+  return "";
+}
+
+/* 1 = a createstream answer for the re-added file is in *r / *st (the caller
+ * goes on as usual: plan, playlist...); 0 = no: `motivo` says why; -1 = the
+ * request was cancelled (nothing to publish). `itemVelho` 0 = the file was in
+ * no list at all (then only the add-on's or the link's hash can add it). */
+static int readicionar(Pedido *p, int itemVelho, int arqVelho, const char *hashVelho, int *item, int *arquivo, int *usenet,
+                       char **r, int *st, char *motivo, unsigned mn) {
+  char h[48] = "", como[72] = "";
+  const char *de = "";
+  unsigned t0;
+  int tid, removeu = 0;
+  *r = NULL; *st = 0;
+  if (strlen(p->hash) == 40) {
+    de = hashDoLink(p, h);
+  } else if (hashVelho && strlen(hashVelho) == 40) {
+    // Owner 22/11/2026 (log 1, YURASUKA): the item had left TorBox's list by
+    // the time of the re-add; its hash was kept from the lookup that found it.
+    for (int i = 0; i <= 40; i++) h[i] = (char)tolower((unsigned char)hashVelho[i]);
+    de = "TorBox's list when the file was found";
+  } else if (itemVelho > 0) {
+    int i2 = 0, f2 = -1, u2 = 0;
+    if (partes_achar_exato_hash(p->url, "", p->arquivo, p->bytes, &i2, &f2, &u2, como, sizeof como, h) && i2 != itemVelho) h[0] = 0;
+    if (h[0]) de = "TorBox's list";
+  }
+  if (!h[0] && !*usenet) de = hashDoLink(p, h);
+  if (!h[0]) {
+    printf("[tbburn] re-add: no info hash for this file (%s): Nuvio draws the subtitle\n",
+           *usenet ? "a usenet download" : itemVelho > 0 ? "TorBox's list gives none" : "the add-on and the link gave none");
+    fflush(stdout);
+    snprintf(motivo, mn, "file not in your TorBox");
+    return 0;
+  }
+  /* Owner 24/11/2026 (logs 19-20, Fate PMR): an item TorBox keeps listing but
+   * whose stream never sends segment 0 is stuck; adding its hash again only
+   * gives the same item back. Removing it on the dashboard and re-adding it
+   * made TorBox's encoder work. So Nuvio deletes it first: torrents only, once
+   * per file per playback. */
+  if (p->readd && itemVelho > 0 && !*usenet) {
+    int ja;
+    pthread_mutex_lock(&trava); ja = !strcmp(apagadoUrl, p->url); pthread_mutex_unlock(&trava);
+    if (ja) {
+      printf("[tbburn] re-add: item %d is stuck, but this file was already removed and re-added in this playback: "
+             "not removing again\n", itemVelho);
+      fflush(stdout);
+    } else {
+      int ok;
+      printf("[tbburn] re-add: TorBox sent no video for item %d (still in your TorBox): removing it from your TorBox "
+             "first, then adding it again by its hash\n", itemVelho);
+      fflush(stdout);
+      ok = debrid_tb_apagar(itemVelho);
+      if (!pedidoVivo(p)) return -1;
+      pthread_mutex_lock(&trava); snprintf(apagadoUrl, sizeof apagadoUrl, "%s", p->url); pthread_mutex_unlock(&trava);
+      removeu = 1;
+      printf("[tbburn] re-add: item %d %s\n", itemVelho, ok ? "removed" : "NOT removed (see the controltorrent line): adding anyway");
+      fflush(stdout);
+    }
+  }
+  printf("[tbburn] %s: adding hash %.8s... (%s; only if TorBox has it cached; it stays on your dashboard)\n",
+         p->readd ? "re-add" : itemVelho > 0 ? "not in your TorBox any more" : "start: not in your TorBox", h, de);
   fflush(stdout);
   tid = debrid_tb_adicionar(h);
   if (!pedidoVivo(p)) return -1;
@@ -649,50 +1027,27 @@ static int readicionar(Pedido *p, int itemVelho, int *item, int *arquivo, int *u
     snprintf(motivo, mn, "not cached on TorBox");
     return 0;
   }
-  printf("[tbburn] re-add: added as torrent %d. TorBox may need a few minutes to register it: asking for the "
-         "stream every %u s for up to %u min; the original plays with Nuvio's subtitles meanwhile\n",
-         tid, TBB_READD_PASSO_MS / 1000u, TBB_READD_TOTAL_MS / 60000u);
-  fflush(stdout);
-  if (!publicar(p->geracao, TBB_ESPERANDO, NULL, "TorBox is registering the re-added file")) return -1;
-  t0 = msAgora();
-  for (tent = 1; ; tent++, espera = TBB_READD_PASSO_MS) {
-    int i2 = 0, f2 = -1, u2 = 0;
-    if (!dormirVivo(p, espera)) return -1;
-    if (msAgora() - t0 > TBB_READD_TOTAL_MS + TBB_READD_PRIMEIRO_MS) break;
-    if (!partes_achar_exato_fresco(p->url, h, p->arquivo, p->bytes, &i2, &f2, &u2, como, sizeof como)) {
-      printf("[tbburn] re-add try %d (%u s): not in your fresh TorBox lists yet\n", tent, (msAgora() - t0) / 1000u);
-      fflush(stdout);
-      continue;
-    }
-    tbburn_rota_criar(rota, sizeof rota, i2, f2, u2, p->sub, p->audio);
-    *r = debrid_tb_api_get(rota, 30, st);
-    logCorpo("createstream", *st, 0, *r);
-    if (!pedidoVivo(p)) { free(*r); *r = NULL; return -1; }
-    if (tbburn_eh_item_sumido(*st, *r) && !tbburn_eh_recusa_plano(*st, *r)) {
-      printf("[tbburn] re-add try %d (%u s): item %d is listed but TorBox still says ITEM_NOT_FOUND\n",
-             tent, (msAgora() - t0) / 1000u, i2);
-      fflush(stdout);
-      free(*r); *r = NULL;
-      continue;
-    }
-    printf("[tbburn] re-add try %d (%u s): TorBox answered for item %d, file %d (by %s)\n",
-           tent, (msAgora() - t0) / 1000u, i2, f2, como);
+  /* Log 15 (owner 23/11/2026): TorBox sent no video for an item still in the
+   * account; adding its hash gave the same item back, and asking for minutes
+   * cannot change that. The original plays (video_tpk.c waits for TorBox's
+   * encoder itself). */
+  if (p->readd && itemVelho > 0 && tid == itemVelho) {
+    printf("[tbburn] re-add: TorBox gave back the same item %d (still in your TorBox): not re-adding\n", tid);
     fflush(stdout);
-    *item = i2; *arquivo = f2; *usenet = u2;
-    { char chave[TBB_CHAVE];
-      tbburn_chave(chave, sizeof chave, p->url, p->hash, p->arquivo, p->bytes);
-      pthread_mutex_lock(&trava);
-      snprintf(ids.url, sizeof ids.url, "%s", p->url);
-      ids.item = i2; ids.arquivo = f2; ids.usenet = u2; ids.achou = ids.procurou = 1;
-      snprintf(ids.como, sizeof ids.como, "re-added (%.40s)", como);
-      if (chave[0]) cedoGuardar(chave, 1, i2, f2, u2, ids.como);
-      pthread_mutex_unlock(&trava); }
-    return 1;
+    snprintf(motivo, mn, "item still in your TorBox");
+    return 0;
   }
-  printf("[tbburn] re-add: TorBox did not register the file in %u min: Nuvio draws the subtitle\n", TBB_READD_TOTAL_MS / 60000u);
+  printf("[tbburn] added as torrent %d. Looking for it %.1f s after the add, then %u s into playback (the original "
+         "plays with Nuvio's subtitles meanwhile)\n", tid, TBB_READD_OLHAR_MS / 1000.0, TBB_READD_TOCANDO_MS / 1000u);
   fflush(stdout);
-  snprintf(motivo, mn, "TorBox did not register the re-added file");
-  return 0;
+  t0 = msAgora();
+  /* The re-added torrent keeps the file list of the item that left: the
+   * file index from that match asks for it directly (no list lag). */
+  reAddGuardar(p->url, tid, itemVelho > 0 ? arqVelho : -1, *usenet, h);
+  { int ja;
+    pthread_mutex_lock(&trava); ja = !strcmp(apagadoUrl, p->url); pthread_mutex_unlock(&trava);
+    return esperarRegistro(p, tid, itemVelho > 0 ? arqVelho : -1, *usenet, h, t0, 0, !removeu && !ja && !p->readd,
+                           item, arquivo, usenet, r, st, motivo, mn); }
 }
 
 static void *trabalhar(void *arg) {
@@ -700,22 +1055,67 @@ static void *trabalhar(void *arg) {
   char como[72] = "", rota[512], m3u8[TBB_URL_MAX], *r = NULL, *log = NULL;
   int item = 0, arquivo = -1, usenet = 0, st = 0, pico = 0;
   unsigned t0 = msAgora(), t;
-  if (!pegarIds(p, &item, &arquivo, &usenet, como, sizeof como)) {
-    char motivo[96] = "file not in your TorBox";
+  if (p->readd) {   // TorBox sent no video for the item (tbburn_readicionar)
+    char motivo[96] = "TorBox sent no video";
     int v;
-    printf("[tbburn] file not found in your TorBox by an exact match (hash/file name/size) in %u ms%s\n",
-           msAgora() - t0, strlen(p->hash) == 40 ? ": the add-on gave its hash, re-adding it" : ": Nuvio draws the subtitle");
+    printf("[tbburn] TorBox sent no video for item %d: re-adding it to your TorBox (hash %s)\n", p->readdItem,
+           strlen(p->hash) == 40 ? "from the add-on" : p->readdHash[0] ? "from TorBox's list" : "looked up");
     fflush(stdout);
-    /* Owner 19/11/2026: the add-on side adds and removes the torrent; with
-     * its hash Nuvio adds it back (cached only). */
-    v = strlen(p->hash) == 40 ? readicionar(p, 0, &item, &arquivo, &usenet, &r, &st, motivo, sizeof motivo) : 0;
+    v = readicionar(p, p->readdItem, p->readdArq, p->readdHash, &item, &arquivo, &usenet, &r, &st, motivo, sizeof motivo);
     if (v <= 0) {
       if (!v) publicar(p->geracao, TBB_FALHOU, NULL, motivo);
-      free(p);
+      free(r); free(p);
       return NULL;
     }
     goto resposta;
   }
+  { int tid = 0, arq = -1, us = 0; char h[41] = ""; unsigned desde = 0;
+    if (reAddPendente(p->url, &tid, &arq, &us, h, &desde)) {
+      char motivo[96] = "TorBox is registering the re-added file";
+      int v;
+      printf("[tbburn] press during registering: joined the wait for torrent %d (re-added %u s ago); asking with it now\n",
+             tid, (msAgora() - desde) / 1000u);
+      fflush(stdout);
+      { int ja;
+        pthread_mutex_lock(&trava); ja = !strcmp(apagadoUrl, p->url); pthread_mutex_unlock(&trava);
+        v = esperarRegistro(p, tid, arq, us, h, desde, 1, !ja, &item, &arquivo, &usenet, &r, &st, motivo, sizeof motivo); }
+      if (v <= 0) {
+        if (!v) publicar(p->geracao, TBB_FALHOU, NULL, motivo);
+        free(r); free(p);
+        return NULL;
+      }
+      goto resposta;
+    } }
+  { int sem = 0;
+  if (!pegarIds(p, &item, &arquivo, &usenet, como, sizeof como, &sem)) {
+    char motivo[96] = "file not in your TorBox", h[41];
+    const char *de = hashDoLink(p, h);
+    int v;
+    /* Owner 24/11/2026 (log 24): not in the list -> add the hash (the add-on's,
+     * the saved link's, or the link's own) right away, then look 3.5 s later
+     * and 7 s into playback (readicionar). No hash: look again 7 s into
+     * playback only. The hash's torrent already listed without this file:
+     * adding it does nothing, so the same as no hash. */
+    if (sem > 0)
+      printf("[tbburn] start: not in your TorBox (%u ms); the hash (%s) is torrent %d in your TorBox, which doesn't "
+             "have this file: not adding it; looking again %u s into playback\n", msAgora() - t0, de, sem,
+             TBB_READD_TOCANDO_MS / 1000u);
+    else if (h[0])
+      printf("[tbburn] start: not in your TorBox by an exact match (hash/file name/size) in %u ms: adding hash %.8s... (%s)\n",
+             msAgora() - t0, h, de);
+    else
+      printf("[tbburn] start: not in your TorBox by an exact match (file name/size) in %u ms, and no hash: looking again "
+             "%u s into playback\n", msAgora() - t0, TBB_READD_TOCANDO_MS / 1000u);
+    fflush(stdout);
+    v = h[0] && sem <= 0 ? readicionar(p, 0, -1, NULL, &item, &arquivo, &usenet, &r, &st, motivo, sizeof motivo)
+                         : olharDeNovo(p, sem > 0, &item, &arquivo, &usenet, &r, &st, motivo, sizeof motivo);
+    if (v <= 0) {
+      if (!v) publicar(p->geracao, TBB_FALHOU, NULL, motivo);
+      free(r); free(p);
+      return NULL;
+    }
+    goto resposta;
+  } }
   printf("[tbburn] TorBox file: item %d, file %d (by %s) in %u ms; asking for subtitle %d, audio %d\n",
          item, arquivo, como, msAgora() - t0, p->sub, p->audio);
   fflush(stdout);
@@ -727,14 +1127,34 @@ static void *trabalhar(void *arg) {
   // createstream answered ITEM_NOT_FOUND (the item was gone from the account).
   // Forget it, look the file up in fresh lists once, and ask again.
   if (tbburn_eh_item_sumido(st, r) && !tbburn_eh_recusa_plano(st, r)) {
-    char chave[TBB_CHAVE], como2[72] = "";
+    char chave[TBB_CHAVE], como2[72] = "", hVelho[41] = "";
     int item2 = 0, arquivo2 = -1, usenet2 = 0, achou2;
     unsigned t2 = msAgora();
     tbburn_chave(chave, sizeof chave, p->url, p->hash, p->arquivo, p->bytes);
     pthread_mutex_lock(&trava);
+    if (!strcmp(ids.url, p->url) && ids.item == item) snprintf(hVelho, sizeof hVelho, "%s", ids.hash);
     if (chave[0]) cedoEsquecer(chave);
     if (!strcmp(ids.url, p->url)) ids.procurou = ids.achou = 0;
     pthread_mutex_unlock(&trava);
+    /* Owner 23/11/2026 (logs 17-18: AIOStreams removes torrents from the
+     * dashboard): with the hash known, re-add at once instead of first
+     * downloading the whole list again (13 MB, ~2.5 s). TorBox gives back
+     * the torrent's current id if it's still there under another one. */
+    if (strlen(hVelho) == 40 || strlen(p->hash) == 40) {
+      char motivo[96] = "file not in your TorBox";
+      int v;
+      printf("[tbburn] TorBox says item %d is not in your account (ITEM_NOT_FOUND): re-adding it by its hash right away "
+             "(no list download)\n", item);
+      fflush(stdout);
+      free(r); r = NULL;
+      v = readicionar(p, item, arquivo, hVelho, &item, &arquivo, &usenet, &r, &st, motivo, sizeof motivo);
+      if (v <= 0) {
+        if (!v) publicar(p->geracao, TBB_FALHOU, NULL, motivo);
+        free(r); free(p);
+        return NULL;
+      }
+      goto resposta;
+    }
     printf("[tbburn] TorBox says item %d is not in your account (ITEM_NOT_FOUND): the list was out of date; "
            "looking the file up again in fresh lists\n", item);
     fflush(stdout);
@@ -746,7 +1166,7 @@ static void *trabalhar(void *arg) {
              achou2 ? "the fresh list has the same item TorBox just refused" : "not in your TorBox's fresh lists either", msAgora() - t2);
       fflush(stdout);
       free(r); r = NULL;
-      v = readicionar(p, item, &item, &arquivo, &usenet, &r, &st, motivo, sizeof motivo);
+      v = readicionar(p, item, arquivo, hVelho, &item, &arquivo, &usenet, &r, &st, motivo, sizeof motivo);
       if (v <= 0) {
         if (!v) publicar(p->geracao, TBB_FALHOU, NULL, motivo);
         free(r); free(p);
@@ -761,7 +1181,8 @@ static void *trabalhar(void *arg) {
     snprintf(ids.url, sizeof ids.url, "%s", p->url);
     ids.item = item; ids.arquivo = arquivo; ids.usenet = usenet; ids.achou = ids.procurou = 1;
     snprintf(ids.como, sizeof ids.como, "%s", como2);
-    if (chave[0]) cedoGuardar(chave, 1, item, arquivo, usenet, como2);
+    ids.hash[0] = 0;
+    if (chave[0]) cedoGuardar(chave, 1, item, arquivo, usenet, como2, NULL);
     pthread_mutex_unlock(&trava);
     free(r);
     tbburn_rota_criar(rota, sizeof rota, item, arquivo, usenet, p->sub, p->audio);
@@ -802,16 +1223,19 @@ resposta:
       return NULL;
     }
   }
-  free(r);
-  log = malloc(TBB_URL_MAX);
-  if (log) {
-    snprintf(log, TBB_URL_MAX, "%s", m3u8);
-    debrid_tb_redigir(log);
-    tbburn_log_mascarar(log);   // the host only
-    printf("[tbburn] stream ready in %u ms: %s\n", msAgora() - t0, log);
-    fflush(stdout);
-    free(log);
-  }
+  { int nt = tbburn_json_bool(r, "needs_transcoding"), it = tbburn_json_bool(r, "is_transcoding");
+    free(r);
+    log = malloc(TBB_URL_MAX);
+    if (log) {
+      snprintf(log, TBB_URL_MAX, "%s", m3u8);
+      debrid_tb_redigir(log);
+      tbburn_log_mascarar(log);   // the host only
+      // Log 15 (owner 23/11/2026): a file TorBox must encode answered slowly.
+      printf("[tbburn] stream ready in %u ms (needs_transcoding %s, is_transcoding %s): %s\n", msAgora() - t0,
+             nt < 0 ? "?" : nt ? "true" : "false", it < 0 ? "?" : it ? "true" : "false", log);
+      fflush(stdout);
+      free(log);
+    } }
   // Ready first: the player opens now. The playlist read below is for the log
   // only and used to hold the start for one more round trip to TorBox's
   // stream host (up to 10 s), on every burn-in start.
@@ -846,6 +1270,62 @@ void tbburn_pedir(const char *url, int sub, int audio) {
            b ? b + 1 : p->arquivo[0] ? p->arquivo : "-", (unsigned long long)p->bytes, p->hash[0] ? "from the add-on" : "none");
     fflush(stdout);
   }
+  if (pthread_create(&f, NULL, trabalhar, p) == 0) pthread_detach(f);
+  else { publicar(p->geracao, TBB_FALHOU, NULL, "no thread"); free(p); }
+}
+
+/* Log 15 (owner 23/11/2026): the item TorBox gave the stream for is in the
+ * account (the lookup found it; createstream answered). Re-adding it by its
+ * hash only gives the same item back (153924165 there). */
+/* The saved link keeps the hash (owner 24/11/2026, log 24): the info hash the
+ * TorBox match of `url` used or found (40 hex, lower case). 1 = known. */
+int tbburn_hash_achado(const char *url, char out[41]) {
+  int v = 0;
+  out[0] = 0;
+  if (!url || !url[0]) return 0;
+  pthread_mutex_lock(&trava);
+  if (ids.achou && !strcmp(ids.url, url) && strlen(ids.hash) == 40) { snprintf(out, 41, "%s", ids.hash); v = 1; }
+  else if (strlen(fonte.hash) == 40 && !strcmp(fonte.url, url)) {
+    for (int i = 0; i <= 40; i++) out[i] = (char)tolower((unsigned char)fonte.hash[i]);
+    v = 1;
+  }
+  pthread_mutex_unlock(&trava);
+  return v;
+}
+
+int tbburn_item_na_conta(const char *url) {
+  int v = 0;
+  if (!url || !url[0]) return 0;
+  pthread_mutex_lock(&trava);
+  if (ids.achou && ids.item > 0 && !strcmp(ids.url, url)) v = ids.item;
+  pthread_mutex_unlock(&trava);
+  return v;
+}
+
+void tbburn_readicionar(const char *url, int sub, int audio) {
+  Pedido *p = calloc(1, sizeof *p);
+  pthread_t f;
+  if (!p || !url || !url[0]) { free(p); return; }
+  pthread_mutex_lock(&trava);
+  snprintf(p->url, sizeof p->url, "%s", url);
+  if (!strcmp(url, fonte.url)) {
+    snprintf(p->hash, sizeof p->hash, "%s", fonte.hash);
+    snprintf(p->arquivo, sizeof p->arquivo, "%s", fonte.arquivo);
+    p->bytes = fonte.bytes;
+  }
+  p->readd = 1;
+  if (ids.achou && !strcmp(ids.url, url)) {
+    p->readdItem = ids.item; p->readdArq = ids.arquivo;
+    snprintf(p->readdHash, sizeof p->readdHash, "%s", ids.hash);
+  }
+  { char chave[TBB_CHAVE];   // the next request looks the file up again
+    tbburn_chave(chave, sizeof chave, p->url, p->hash, p->arquivo, p->bytes);
+    if (chave[0]) cedoEsquecer(chave);
+    if (!strcmp(ids.url, url)) ids.procurou = ids.achou = 0; }
+  p->sub = sub; p->audio = audio;
+  p->geracao = ++res.geracao;
+  res.estado = TBB_BUSCANDO; res.m3u8[0] = res.motivo[0] = 0;
+  pthread_mutex_unlock(&trava);
   if (pthread_create(&f, NULL, trabalhar, p) == 0) pthread_detach(f);
   else { publicar(p->geracao, TBB_FALHOU, NULL, "no thread"); free(p); }
 }

@@ -174,13 +174,25 @@ void partes_aquecer(void);
 // The torrents first, then the usenet downloads (owner 18/11, log 10: add-on
 // sources with no info hash were usenet downloads, never in the torrent list);
 // the cached lists first, then fresh ones.
-// 1 = found: *item, *arquivoId (TorBox file_id), *usenet and `como` set.
+// 1 = found: *item, *arquivoId (TorBox file_id), *usenet and `como` set;
+// hashItem (NULL = not wanted): the found torrent's info hash, "" for none
+// (owner 22/11/2026: burn-in keeps it for a later re-add).
 int  partes_achar_exato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
-                        int *item, int *arquivoId, int *usenet, char *como, unsigned n);
+                        int *item, int *arquivoId, int *usenet, char *como, unsigned n, char *hashItem);
 // The same, fresh lists only (owner 19/11, log 12: TorBox's own cached list
 // still had an item that createstream answered ITEM_NOT_FOUND for).
 int  partes_achar_exato_fresco(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
                                int *item, int *arquivoId, int *usenet, char *como, unsigned n);
+// All of the above in one (burn-in, owner 24/11/2026): soFresco = fresh lists
+// only. *semArquivo (NULL = not wanted): the item id when the torrent of the
+// hash is listed but the playing file is not in it (0 otherwise).
+int  partes_achar_exato_x(const char *url, const char *hash, const char *arquivo, uint64_t bytes, int soFresco,
+                          int *item, int *arquivoId, int *usenet, char *como, unsigned n, char *hashItem,
+                          int *semArquivo);
+// Burn-in after adding a torrent (owner 24/11/2026, log 24): every list asked
+// for before this call is dropped from the memory; the next lookup asks
+// TorBox again (a 10 s "fresh" copy from before the add can't have it).
+void partes_listas_renovar(void);
 // The same as partes_achar_exato (cached lists first), also giving the found
 // torrent's info hash (lower case; "" for usenet or none). Burn-in (owner
 // 19/11): TorBox's list still showed an item createstream calls gone; its

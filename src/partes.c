@@ -926,8 +926,11 @@ static void publicar(const PedidoLista *pd, const PartesLista *l) {
 // Uma leitura de rede por vez: quem chega durante uma leitura espera e usa o
 // que ela trouxe.
 #define LISTA_VALIDADE_MS 120000u
-typedef struct { char *corpo; int st; unsigned em, conta; int fresco, renovar; } ListaCache;
+typedef struct { char *corpo; int st; unsigned em, conta, ger; int fresco, renovar; } ListaCache;
 static ListaCache lcache[2];
+// Burn-in after an add (owner 24/11/2026, log 24): a list asked for before
+// the last partes_listas_renovar is never used again (its generation).
+static unsigned lcGer;
 static pthread_mutex_t lcTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t lcRede = PTHREAD_MUTEX_INITIALIZER;
 
@@ -942,6 +945,7 @@ static unsigned msAgora(void) {
 static char *copiaCache(ListaCache *c, int fresco, int *st) {
   if (c->conta != debrid_tb_geracao() || !c->corpo || msAgora() - c->em >= LISTA_VALIDADE_MS || (fresco && (!c->fresco || msAgora() - c->em >= LISTA_FRESCA_MS)))
     return NULL;
+  if (c->ger != lcGer) return NULL;   // asked for before the last add
   if (st) *st = c->st;
   return strdup(c->corpo);
 }
@@ -950,12 +954,14 @@ static char *copiaCache(ListaCache *c, int fresco, int *st) {
 // rede e saem quando a busca acaba.
 static char *listaConta(int usenet, int pagina, int fresco, int *st, int *origem) {
   char *r;
+  unsigned ger;
   int s = 0;
   unsigned t0 = msAgora();
   if (origem) *origem = 1;
   pthread_mutex_lock(&lcRede);
   pthread_mutex_lock(&lcTrava);
   if (pagina == 0 && lcache[usenet].renovar) fresco = 1;
+  ger = lcGer;   // the generation this request starts in
   r = pagina == 0 ? copiaCache(&lcache[usenet], fresco, st) : NULL;
   pthread_mutex_unlock(&lcTrava);
   if (r) { pthread_mutex_unlock(&lcRede); return r; }
@@ -973,13 +979,18 @@ static char *listaConta(int usenet, int pagina, int fresco, int *st, int *origem
     if (c) {
       free(lcache[usenet].corpo);
       lcache[usenet].corpo = c; lcache[usenet].st = s;
-      lcache[usenet].em = msAgora(); lcache[usenet].fresco = fresco;
+      lcache[usenet].em = msAgora(); lcache[usenet].ger = ger; lcache[usenet].fresco = fresco;
       lcache[usenet].conta = conta; lcache[usenet].renovar = 0;
     }
     pthread_mutex_unlock(&lcTrava);
   }
   pthread_mutex_unlock(&lcRede);
   return r;
+}
+void partes_listas_renovar(void) {
+  pthread_mutex_lock(&lcTrava);
+  lcGer++;
+  pthread_mutex_unlock(&lcTrava);
 }
 static void listaEsquecer(void) {
   pthread_mutex_lock(&lcTrava);
@@ -1729,22 +1740,27 @@ void partes_ponto_zerar(void) {
 
 static int acharExato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
                       int *item, int *arquivoId, int *usenet, char *como, unsigned n, int soFresco,
-                      char *hashItem);
+                      char *hashItem, int *semArquivo);
 int partes_achar_exato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
-                       int *item, int *arquivoId, int *usenet, char *como, unsigned n) {
-  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, 0, NULL);
+                       int *item, int *arquivoId, int *usenet, char *como, unsigned n, char *hashItem) {
+  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, 0, hashItem, NULL);
 }
 int partes_achar_exato_fresco(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
                               int *item, int *arquivoId, int *usenet, char *como, unsigned n) {
-  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, 1, NULL);
+  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, 1, NULL, NULL);
 }
 int partes_achar_exato_hash(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
                             int *item, int *arquivoId, int *usenet, char *como, unsigned n, char hashItem[41]) {
-  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, 0, hashItem);
+  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, 0, hashItem, NULL);
+}
+int partes_achar_exato_x(const char *url, const char *hash, const char *arquivo, uint64_t bytes, int soFresco,
+                         int *item, int *arquivoId, int *usenet, char *como, unsigned n, char *hashItem,
+                         int *semArquivo) {
+  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, soFresco ? 1 : 0, hashItem, semArquivo);
 }
 static int acharExato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
                       int *item, int *arquivoId, int *usenet, char *como, unsigned n, int soFresco,
-                      char *hashItem) {
+                      char *hashItem, int *semArquivo) {
   char hashes[10][41];
   int nh = 0, confiavel = 0, pg, achou = 0, tipo = 0, itensT[2] = { 0, 0 }, paginasT[2] = { 0, 0 };
   int viuNome = 0, viuTamanho = 0;   // a miss: was the name / the size anywhere in the lists?
@@ -1757,6 +1773,7 @@ static int acharExato(const char *url, const char *hash, const char *arquivo, ui
   if (usenet) *usenet = 0;
   if (como && n) como[0] = 0;
   if (hashItem) hashItem[0] = 0;
+  if (semArquivo) *semArquivo = 0;
   if (hash && strlen(hash) == 40) {
     for (int i = 0; i < 40; i++) hashes[0][i] = (char)tolower((unsigned char)hash[i]);
     hashes[0][40] = 0;
@@ -1779,8 +1796,12 @@ static int acharExato(const char *url, const char *hash, const char *arquivo, ui
         if (!r) break;
         partes_lista_limpar(&l);
         memset(&l, 0, sizeof l);
-        achou = partes_achar_n(r, tipo, hashes, nh, confiavel, nome, bytes, &l, &itens) &&
-                l.atual >= 0 && l.atual < l.n && strcmp(l.como, "best match");
+        { int hit = partes_achar_n(r, tipo, hashes, nh, confiavel, nome, bytes, &l, &itens);
+          achou = hit && l.atual >= 0 && l.atual < l.n && strcmp(l.como, "best match");
+          // The torrent of the hash is listed, but the playing file is not in
+          // it (burn-in, owner 24/11/2026: the link's hash was another torrent).
+          if (hit && !achou && semArquivo && !*semArquivo && !tipo && l.item > 0 &&
+              (!strcmp(l.como, "hash") || !strcmp(l.como, "link hash"))) *semArquivo = l.item; }
         if (!achou) {
           if (nome[0] && strstr(r, nome)) viuNome = 1;
           if (tamTxt[0] && strstr(r, tamTxt)) viuTamanho = 1;

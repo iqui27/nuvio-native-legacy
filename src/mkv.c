@@ -627,10 +627,11 @@ double mkv_creditos_ultimo(const MkvCap *caps, int n) {
 #define MKV_CAP_TETO     (2L * 1024 * 1024)
 
 // #483: o mesmo para o TRACKS que o SeekHead aponta fora da janela (remux
-// remontado, Attachments grande na frente). Teto de 4 MB: o CodecPrivate de
-// um fansub leva o Tracks a ~100 KB; acima disso e arquivo esquisito.
+// remontado, Attachments grande na frente). O CodecPrivate de um fansub leva
+// o Tracks a ~100 KB, mas ha remuxes com 4.4 e 17.1 MB (Fate/strange Fake PMR,
+// log 9, 23/11/2026): teto 32 MB (era 4; dono: a RAM sobra, lido uma vez).
 #define MKV_TRK_PRIMEIRO (64L * 1024)
-#define MKV_TRK_TETO     (4L * 1024 * 1024)
+#define MKV_TRK_TETO     (32L * 1024 * 1024)
 
 static int tracksPorPosicao(const char *url, long long pos, MkvFaixa *saida, int max, int *status) {
   long n = 0, need;

@@ -184,6 +184,9 @@ char *debrid_tb_mylist(int usenet, int id, int pagina, int fresco, int *st);
 int   debrid_tb_link(int usenet, int id, int arquivo, char *url, unsigned n);
 int   debrid_tb_adicionar(const char *hash);
 int   debrid_tb_airlock(int usenet, int item, int ligar, char *detalhe, unsigned n);
+// BLOCKS. Deletes torrent `item` from the account (controltorrent delete): only
+// before re-adding the same hash (tbburn.c, a stuck item). 1 = done.
+int   debrid_tb_apagar(int item);
 // TorBox burn-in (tbburn.h). BLOCKS. GET api.torbox.app/v1/api/<rota> with the
 // key as Bearer; body (free) or NULL, *st gets the HTTP status. Never logged.
 char *debrid_tb_api_get(const char *rota, int prazo, int *st);

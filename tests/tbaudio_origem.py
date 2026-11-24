@@ -43,6 +43,15 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200); self.send_header('Content-Length', str(len(corpo))); self.end_headers()
             self.wfile.write(corpo)
             return
+        # Log 15 (owner 23/11/2026): /tbhang/ is /tb/ behind an encoder that
+        # never answers a Range on a segment (still being encoded) but serves
+        # it whole, like TorBox did for a needs_transcoding file.
+        if caminho.startswith('/tbhang/'):
+            caminho = '/tb/' + caminho[len('/tbhang/'):]
+            if self.headers.get('Range') and caminho.endswith('.ts'):
+                log(f'HANG {caminho} {self.headers.get("Range")}')
+                threading.Event().wait(20)
+                return
         target = (root / caminho.lstrip('/')).resolve()
         if root not in target.parents or not target.is_file():
             self.send_error(404)

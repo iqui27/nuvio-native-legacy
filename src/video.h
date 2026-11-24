@@ -195,6 +195,10 @@ int    video_reconectando(void);
 // the target instead of the stale position.
 int      video_busca_em_voo(void);
 unsigned video_busca_falhas(void);
+// The player is being reopened on the same source (the local fix for hidden
+// subtitle tracks, a CDN link renewal, a reconnection) and its track list is
+// not back yet. faixas.c waits for it before deciding an early subtitle pick.
+int      video_tpk_reabrindo(void);
 // SUBTITLE CLOCK (owner 25/10). The host reads the TV's position with a query
 // that takes 50-600 ms and stamps the MIDDLE of it (CLOCK_MONOTONIC, s); half
 // the duration is the uncertainty. 1 = there is a reading; *seq changes with

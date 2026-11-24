@@ -1391,6 +1391,10 @@ fim:
 // subtitle reader to 1 connection meanwhile, so TorBox's CDN never sees more
 // than 4 (owner 13/11: sync shares the subtitle budget).
 static atomic_int emRede;
+/* Bytes the sync reference reader received (owner 24/11/2026, burn-in sound
+ * after seeks: who else reads the original file). Diagnostic only. */
+static atomic_llong legRedeBytes;
+long long legref_rede_bytes(void) { return atomic_load(&legRedeBytes); }
 int legref_em_rede(void) { return atomic_load(&emRede); }
 
 static void *trabalhar(void *u) {
@@ -1474,6 +1478,7 @@ static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, l
   *status = r.status;
   if (r.erro == REDE_OK && r.status == 206 && r.corpo) {
     b = (unsigned char *)r.corpo; r.corpo = NULL; *tam = (long)r.n_corpo;
+    atomic_fetch_add(&legRedeBytes, (long long)r.n_corpo);
     // Endereco final para os proximos Ranges (o Job guarda; nunca vai a log).
     if (r.final[0] && pu) { Job *j = pu; snprintf(j->urlFinal, sizeof j->urlFinal, "%s", r.final); }
   } else if (r.erro == REDE_CANCELADO) {
@@ -1513,6 +1518,7 @@ static int lerHttpFluxo(Job *j, long long ini, long n, int (*cb)(const unsigned 
   p.receber_corpo = fluxoHttp; p.corpo_usuario = &f;
   rede_pedir(&p, &r);
   *recebidos = f.n;
+  atomic_fetch_add(&legRedeBytes, (long long)f.n);
   if (parou(j)) j->erro = LEGREF_PARADO;
   else if (r.status == 200) j->erro = LEGREF_SEM_RANGE;     // o parser ja recusou o comeco do arquivo
   else if (f.cortou) j->erro = LEGREF_SEM_INDICE;           // lerCuesFluxo refina (memoria)

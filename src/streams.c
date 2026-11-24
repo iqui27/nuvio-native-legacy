@@ -462,6 +462,19 @@ void stream_vod_tocou(int indice) {
   atomic_fetch_add(&folhaRevisao, 1);
   if (indice >= 0 && indice < n) fontesmortas_limpar(&lista[indice]);
 }
+/* A source the open deadline called dead that then played (owner 24/11/2026,
+ * .tpk): it goes back to the automatic pick. */
+void stream_automatico_readmitir(int indice) {
+  int i;
+  pthread_mutex_lock(&autoExclTrava);
+  for (i = 0; i < nAutomaticasExcluidas; i++)
+    if (automaticasExcluidas[i] == indice) {
+      automaticasExcluidas[i] = automaticasExcluidas[--nAutomaticasExcluidas];
+      atomic_fetch_add(&folhaRevisao, 1);
+      break;
+    }
+  pthread_mutex_unlock(&autoExclTrava);
+}
 int stream_automatico_excluir(int indice) {
   int resultado = 0;
   pthread_mutex_lock(&autoExclTrava);
@@ -1676,10 +1689,12 @@ static void soltarConf(void *u) {
 __attribute__((unused))
 #endif
 static int resolverUrl(const char *url, const char *cabecalhos, int segundos,
-                        char *fim, unsigned tam, char *mime, unsigned mimeTam, long *corpo) {
+                        char *fim, unsigned tam, char *mime, unsigned mimeTam, long *corpo,
+                        int *httpFim) {
   const char *vetor[8];
   char copia[512];
   int nc = 0, http = 0;
+  if (httpFim) *httpFim = 0;
 #ifdef __EMSCRIPTEN__
   int restrito = 0;
 #endif
@@ -1698,6 +1713,7 @@ static int resolverUrl(const char *url, const char *cabecalhos, int segundos,
   // O tipo e o tamanho do corpo vem da MESMA sonda: nenhum pedido a mais.
   if (rede_url_final_tipo(url, segundos, nc ? vetor : NULL, fim, tam, &http,
                           mime, mimeTam, corpo)) return 1;
+  if (httpFim) *httpFim = http;
 #ifdef __EMSCRIPTEN__
   // XHR nao manda estes cabecalhos; AVPlay manda. A recusa nao prova que a
   // fonte morreu (mesmo contrato de playlistVazia). 5xx nao entram aqui.
@@ -1711,6 +1727,7 @@ static int resolverUrl(const char *url, const char *cabecalhos, int segundos,
 }
 
 void (*stream_cdn_lembrar)(const char *orig, const char *final, const char *cabecalhos, uint64_t sessao);
+int (*stream_cdn_resolvido)(const char *orig, char *host, unsigned hostTam);
 void (*stream_foco_demorado)(const Stream *s);
 
 static int verificarUma(int i, Conferencia *c) {
@@ -1776,12 +1793,29 @@ static int verificarUma(int i, Conferencia *c) {
 #ifdef NV_VIDAA
     int r = rede_url_final_vidaa(url, 10, fim, sizeof fim);
 #else
-    int r = resolverUrl(url, cab, 10, fim, sizeof fim, mime, sizeof mime, &corpo);
+    int httpFim = 0;
+    int r = resolverUrl(url, cab, 10, fim, sizeof fim, mime, sizeof mime, &corpo, &httpFim);
+    int curlFim = r ? 0 : rede_url_final_curl();
 #endif
     if (r < 0) {
       printf("[fonte] %d sem confirmacao (bloqueio de rede na vidaa); presumindo viva\n", i);
       ok = 1;
     } else if (!r) {
+#ifndef NV_VIDAA
+      /* Log 13 (23/11/2026): the check's own request got no answer in time,
+       * but this source already works: the player has it open (tocar enquanto
+       * confere) or its link resolved to a CDN in this session. Keep it. */
+      char cdnHost[256] = "";
+      int resolvido = stream_cdn_resolvido && stream_cdn_resolvido(url, cdnHost, sizeof cdnHost);
+      if (fa_manter_sem_resposta(curlFim, httpFim, i == c->antecipada, resolvido)) {
+        if (resolvido)
+          printf("[fonte] %d check timed out but the link already resolved (CDN %s): kept\n", i, cdnHost);
+        else
+          printf("[fonte] %d check timed out but the player has it open: kept\n", i);
+        fflush(stdout);
+        ok = 1;
+      } else
+#endif
       printf("[fonte] %d nao resolveu\n", i);
     } else if (naovideo_mime(mime, fim, corpo)) {
       // Linha de aviso do addon (doacao, Discord, "indisponivel"): a URL leva a
@@ -1817,7 +1851,7 @@ int stream_url_serve(const char *url, const char *cabecalhos) {
   char fim[NV_MEDIA_URL_MAX], mime[96];
   long corpo = -1;
   if (!url || !*url) return 0;
-  if (!resolverUrl(url, cabecalhos, 5, fim, sizeof fim, mime, sizeof mime, &corpo)) return 0;
+  if (!resolverUrl(url, cabecalhos, 5, fim, sizeof fim, mime, sizeof mime, &corpo, NULL)) return 0;
   if (naovideo_mime(mime, fim, corpo)) return 0;
   if (enderecoDeAviso(fim)) return 0;
   if (playlistVazia(fim, cabecalhos)) return 0;
@@ -2258,7 +2292,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
     } else if (s->infoHash[0]) {
       ok = debrid_resolver_cache(s->infoHash, s->fileIdx, resolvida, sizeof resolvida, &fora);
     } else if (s->url[0] && resolverUrl(s->url, s->cabecalhos, 10, fim, sizeof fim,
-                                      mime, sizeof mime, &corpo) &&
+                                      mime, sizeof mime, &corpo, NULL) &&
                !naovideo_mime(mime, fim, corpo) && !enderecoDeAviso(fim) &&
                !playlistVazia(fim, s->cabecalhos)) {
       snprintf(resolvida, sizeof resolvida, "%s", fim); ok = 1;
@@ -2557,7 +2591,7 @@ int stream_preparo_resolver(StreamPreparo *p, int (*cancelado)(void *), void *ct
       ok = debrid_resolver_servico_cache(r.servico, s->infoHash, s->fileIdx, url, sizeof url, &fora);
       if (!debrid_servico_disponivel(r.servico)) fontefalha_provedor_recusado(p->politica, r.servico);
     } else if (s->infoHash[0]) ok = debrid_resolver_cache(s->infoHash, s->fileIdx, url, sizeof url, &fora);
-    else if (s->url[0] && resolverUrl(s->url, s->cabecalhos, 10, fim, sizeof fim, mime, sizeof mime, &corpo) &&
+    else if (s->url[0] && resolverUrl(s->url, s->cabecalhos, 10, fim, sizeof fim, mime, sizeof mime, &corpo, NULL) &&
              !naovideo_mime(mime, fim, corpo) && !enderecoDeAviso(fim) && !playlistVazia(fim, s->cabecalhos)) {
       snprintf(url, sizeof url, "%s", fim); ok = 1;
     }
@@ -2591,7 +2625,7 @@ int stream_preparo_renovar(StreamPreparo *p, int indice, int (*cancelado)(void *
     ok = servico >= 0
        ? debrid_resolver_servico_cache(servico, s->infoHash, s->fileIdx, url, sizeof url, &fora)
        : debrid_resolver_cache(s->infoHash, s->fileIdx, url, sizeof url, &fora);
-  } else if (s->url[0] && resolverUrl(s->url, s->cabecalhos, 10, fim, sizeof fim, mime, sizeof mime, &corpo) &&
+  } else if (s->url[0] && resolverUrl(s->url, s->cabecalhos, 10, fim, sizeof fim, mime, sizeof mime, &corpo, NULL) &&
              !naovideo_mime(mime, fim, corpo) && !enderecoDeAviso(fim) && !playlistVazia(fim, s->cabecalhos)) {
     snprintf(url, sizeof url, "%s", fim); ok = 1;
   }

@@ -5,7 +5,7 @@
 #include "../src/partes.c"
 
 static unsigned account = 1;
-static int requests, switchDuringRequest, paginated, lastFresh, usenetMode, usenetRequests;
+static int requests, switchDuringRequest, paginated, lastFresh, usenetMode, usenetRequests, packMode;
 #define REQUESTED_HASH "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 unsigned debrid_tb_geracao(void) { return account; }
 int debrid_tb_disponivel(void) { return 1; }
@@ -13,6 +13,12 @@ char *debrid_tb_mylist(int u, int id, int p, int f, int *st) {
   (void)u; (void)id; (void)p; (void)f;
   requests++; lastFresh = f; *st = 200;
   if (switchDuringRequest) account++;
+  if (packMode) {   // a pack torrent (hash eeee...) with episodes 1-2
+    if (u) return strdup("{\"data\":[]}");
+    return strdup("{\"data\":[{\"id\":8,\"hash\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"files\":["
+                  "{\"id\":1,\"name\":\"Show/Show.S01E01.mkv\",\"short_name\":\"Show.S01E01.mkv\",\"size\":2001},"
+                  "{\"id\":2,\"name\":\"Show/Show.S01E02.mkv\",\"short_name\":\"Show.S01E02.mkv\",\"size\":2002}]}]}");
+  }
   if (usenetMode) {   // burn-in lookup: the file is a usenet download, not a torrent
     if (u) { usenetRequests++; return strdup("{\"data\":[{\"id\":777,\"name\":\"Show\",\"files\":[{\"id\":3,\"name\":\"Show/Show.S01E01.mkv\",\"short_name\":\"Show.S01E01.mkv\",\"size\":6909147632}]}]}"); }
     return strdup("{\"data\":[{\"id\":5,\"hash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"files\":[{\"id\":1,\"name\":\"Other/Other.S01E01.mkv\",\"short_name\":\"Other.S01E01.mkv\",\"size\":1234567}]}]}");
@@ -105,25 +111,47 @@ int main(void) {
   // Burn-in (owner 18/11, log 10): a usenet download is found in the usenet list.
   paginated = 0; usenetMode = 1; listaEsquecer();
   { int item = 0, arq = -1, un = -1; char como[72];
-    assert(partes_achar_exato("https://addon.test/x", "", "Show.S01E01.mkv", 6909147632ULL, &item, &arq, &un, como, sizeof como));
+    assert(partes_achar_exato("https://addon.test/x", "", "Show.S01E01.mkv", 6909147632ULL, &item, &arq, &un, como, sizeof como, NULL));
     assert(item == 777 && arq == 3 && un == 1 && strstr(como, "usenet"));
     assert(usenetRequests == 1);   // the cached pass found it: no fresh lists
     puts("PASS exact lookup finds a usenet download (type usenet)");
     usenetRequests = 0;
-    assert(partes_achar_exato("https://addon.test/y", "", "Other.S01E01.mkv", 1234567ULL, &item, &arq, &un, como, sizeof como));
+    assert(partes_achar_exato("https://addon.test/y", "", "Other.S01E01.mkv", 1234567ULL, &item, &arq, &un, como, sizeof como, NULL));
     assert(item == 5 && arq == 1 && un == 0 && usenetRequests == 0);
     puts("PASS a torrent hit never reads the usenet list");
-    assert(!partes_achar_exato("https://addon.test/z", "", "Missing.mkv", 42ULL, &item, &arq, &un, como, sizeof como));
+    assert(!partes_achar_exato("https://addon.test/z", "", "Missing.mkv", 42ULL, &item, &arq, &un, como, sizeof como, NULL));
     assert(un == 0 && item == 0 && arq == -1);
     puts("PASS a miss on both lists");
     // Log 10: a 40-hex string in the link that is not the file's hash does not
     // block the exact file name + size match...
     assert(partes_achar_exato("https://addon.test/cccccccccccccccccccccccccccccccccccccccc/play", "",
-                              "Other.S01E01.mkv", 1234567ULL, &item, &arq, &un, como, sizeof como));
+                              "Other.S01E01.mkv", 1234567ULL, &item, &arq, &un, como, sizeof como, NULL));
     assert(item == 5 && un == 0 && !strcmp(como, "filename"));
     // ...but the add-on's own hash still wins: a wrong one is not overridden by the name.
     assert(!partes_achar_exato("https://addon.test/z", "dddddddddddddddddddddddddddddddddddddddd",
-                               "Other.S01E01.mkv", 1234567ULL, &item, &arq, &un, como, sizeof como));
-    puts("PASS an untrusted link hash falls back to name/size; the add-on's hash does not"); }
+                               "Other.S01E01.mkv", 1234567ULL, &item, &arq, &un, como, sizeof como, NULL));
+    puts("PASS an untrusted link hash falls back to name/size; the add-on's hash does not");
+    // Log 24 (owner 24/11/2026): the torrent of the hash is listed (item 5)
+    // but the playing file is not in it: reported, not found.
+    { int sem = -1;
+      usenetMode = 0; packMode = 1; listaEsquecer();
+      assert(!partes_achar_exato_x("https://addon.test/z", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "Show.S01E09.mkv",
+                                   999ULL, 1, &item, &arq, &un, como, sizeof como, NULL, &sem));
+      assert(sem == 8);
+      assert(partes_achar_exato_x("https://addon.test/z", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "Show.S01E02.mkv",
+                                  2002ULL, 1, &item, &arq, &un, como, sizeof como, NULL, &sem));
+      assert(sem == 0 && item == 8 && arq == 2);
+      packMode = 0;
+      puts("PASS the hash's torrent listed without the playing file is reported (item id)"); } }
+  // Log 24: after partes_listas_renovar no list asked for before it is reused,
+  // not even a "fresh" one from the last 10 s.
+  { listaEsquecer();
+    int b0 = requests;
+    r = listaConta(0, 0, 1, &st, NULL); assert(r && requests == b0 + 1); free(r);
+    r = listaConta(0, 0, 1, &st, NULL); assert(r && requests == b0 + 1); free(r);   // fresh copy reused (10 s)
+    partes_listas_renovar();
+    r = listaConta(0, 0, 1, &st, NULL); assert(r && requests == b0 + 2); free(r);   // asked again after the add
+    r = listaConta(0, 0, 0, &st, NULL); assert(r && requests == b0 + 2); free(r);   // the new one is reused
+    puts("PASS a list from before the add is never reused after partes_listas_renovar"); }
   return 0;
 }

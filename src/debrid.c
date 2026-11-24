@@ -1587,6 +1587,31 @@ int debrid_tb_adicionar(const char *hash) {
   return tid;
 }
 
+// DELETE a torrent from the account (owner 24/11/2026, log 19/20, Fate PMR):
+// an item TorBox kept listing but whose stream never sent a segment started
+// working only after the owner removed it on the dashboard and Nuvio re-added
+// it by its hash. POST torrents/controltorrent {torrent_id, operation:delete}.
+// 1 = TorBox said yes. BLOCKS.
+int debrid_tb_apagar(int item) {
+  char url[300], auth[260], corpo[96], k[200], ok_[16];
+  const char *cab[3];
+  char *r; int st = 0, ok;
+  if (item <= 0 || !tbChave(k, sizeof k)) return 0;
+  snprintf(url, sizeof url, TB "/torrents/controltorrent");
+  snprintf(auth, sizeof auth, "Authorization: Bearer %s", k);
+  cab[0] = auth; cab[1] = "Content-Type: application/json"; cab[2] = NULL;
+  snprintf(corpo, sizeof corpo, "{\"torrent_id\":%d,\"operation\":\"delete\"}", item);
+  r = rede_postar_st(url, 15, cab, corpo, &st);
+  ok = ok2xx(r, st) && !(js_bruto(r, NULL, "success", ok_, sizeof ok_) && strncmp(ok_, "true", 4));
+  { char erro[96] = "", det[160] = "";
+    if (r) { js_texto_raiz(r, "error", erro, sizeof erro); js_texto_raiz(r, "detail", det, sizeof det); }
+    printf("[partes] TorBox controltorrent delete %d: HTTP %d, %s%s%s%s%s\n", item, st, ok ? "ok" : "refused",
+           erro[0] ? ", error=" : "", erro, det[0] ? ", detail=" : "", det);
+    fflush(stdout); }
+  free(r);
+  return ok;
+}
+
 // AIRLOCK (api.torbox.app/openapi.json, EditTorrent/EditUsenetDownload): o item
 // fica de fora da purga de 30 dias sem download. E o mesmo PUT de edicao dos
 // dois tipos, com `airlocked` e so o id — nome/tags/hashes ficam como estao

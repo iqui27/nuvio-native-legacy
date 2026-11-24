@@ -468,6 +468,14 @@ static char buscaNextAlvo[64];
 static Uint32 voltaDesde;
 static Uint32 fonteVODDesde;
 static Uint32 fonteManualDesde;   // OK na folha de Fontes: prazo ate o primeiro quadro
+#ifdef NV_TPK
+/* "The source didn't respond in time" shown by the manual-pick deadline
+ * (owner 24/11/2026): when, which source, and the position once it plays
+ * (-1 = not playing yet). The card goes when the video is really moving. */
+static Uint32 erroPrazoEm;
+static int erroPrazoIdx = -1;
+static double erroPrazoBase = -1;
+#endif
 static FonteFalhaSessao *fonteFalha;
 static unsigned fonteFalhaLista;
 static int fonteFalhaEsperando, fonteFalhaN;
@@ -1347,6 +1355,11 @@ static int tocarFonteGuardada(void) {
   voltaFonte = s;
 #ifdef NV_TPK
   tbburn_fonte_guardada(s.url, s.hashTorrent[0] ? s.hashTorrent : s.infoHash, s.arquivo, s.tamanhoBytes);
+  printf("[tbburn] saved last link record: hashTorrent %s, infoHash %s, file name %s, size %s\n",
+         strlen(s.hashTorrent) == 40 ? "yes" : s.hashTorrent[0] ? "not 40 hex" : "none",
+         strlen(s.infoHash) == 40 ? "yes" : s.infoHash[0] ? "not 40 hex" : "none",
+         s.arquivo[0] ? "yes" : "none", s.tamanhoBytes ? "yes" : "none");
+  fflush(stdout);
 #endif
   video_definir_dv(s.dolbyVision);
   video_definir_cabecalhos(s.cabecalhos);
@@ -1359,6 +1372,16 @@ static int tocarFonteGuardada(void) {
   preparoEspera = 0; // A late preflight result must not replace local resume.
   voltaAtiva = 1;
   voltaDesde = SDL_GetTicks();
+  /* Log 18 (owner 23/11/2026): an earlier Play (E03) closed while its source
+   * search was still on its way left aguardandoFonte at 1. E09 then opened
+   * from its saved link, and when E09's background search finished the
+   * automatic pick reopened the same source: E09 started over at 0 s. The
+   * saved link plays now, so nothing waits for a decision. */
+  if (aguardandoFonte) {
+    printf("[fonte] saved link plays: a source wait left from an earlier Play is cleared (no reopen when the search ends)\n");
+    fflush(stdout);
+    aguardandoFonte = 0;
+  }
   return 1;
 }
 // Test hook for tests/detail_ep_fonte.c. Same function the router calls.
@@ -2852,6 +2875,11 @@ static int tocarParteGuardada(void) {
   marco("abrir: parte guardada, sem busca");
   printf("[partes] resume: opening the saved part at %.0f s\n", p.pos);
   fflush(stdout);
+  if (aguardandoFonte) {   // log 18: same leftover as in tocarFonteGuardada
+    printf("[fonte] saved part plays: a source wait left from an earlier Play is cleared\n");
+    fflush(stdout);
+    aguardandoFonte = 0;
+  }
   return 1;
 }
 // Nao deu na parte guardada: a escolha normal assume, com a busca de fundo
@@ -3092,6 +3120,22 @@ static void vigiarAberturaManual(void) {
   if (fonteProvouTocar() || (!video_falhou() && video_pronto() && video_pos() > 0.25)) {
     fonteManualDesde = 0; return;
   }
+#ifdef NV_TPK
+  /* TorBox burn-in opening (log 21, owner 24/11/2026, Married Couple): its own
+   * deadline falls back to the original. The watchdog fired at 25 s, burn-in
+   * fell back at 30 s, the original played and "the source didn't respond"
+   * stayed on screen. The original gets its full time from the fallback. */
+  if (video_tpk_queimar_abrindo()) {
+    static Uint32 logEm;
+    if (SDL_GetTicks() - logEm > 10000u) {
+      logEm = SDL_GetTicks();
+      printf("[fonte] escolha manual: burn-in still opening (its own deadline goes back to the original): waiting\n");
+      fflush(stdout);
+    }
+    fonteManualDesde = SDL_GetTicks();
+    return;
+  }
+#endif
   desde = SDL_GetTicks() - fonteManualDesde;
   memset(&g, 0, sizeof g);
   g.falhou = video_falhou() || player_fonte_falhou();
@@ -3119,6 +3163,9 @@ static void vigiarAberturaManual(void) {
   fonteManualDesde = 0;
   marcarFonteMorta(stream_atual());
   player_erro_fonte_motivo(i18n("A fonte não respondeu a tempo."), NULL);
+#ifdef NV_TPK
+  erroPrazoEm = SDL_GetTicks() | 1u; erroPrazoIdx = stream_atual(); erroPrazoBase = -1;
+#endif
 }
 // PRAZO DE ABERTURA (#202, inicio.h): 15 s sem nenhum sinal de vida, 30 s com
 // dado chegando — e o curto so quando a proxima candidata nao e pior que esta
@@ -4856,7 +4903,37 @@ static void atualizarFolha(float dt, Uint32 agora) {
 
 // Android's live buffer end is unknown (zero). READY video that is actually
 // playing again also proves recovery; audio alone or continued buffering does not.
+#ifdef NV_TPK
+/* Samsung (.tpk): video_buffer_fim() is always 0 there (the host only gives a
+ * percent), so the check below never cleared a VOD card. Log 21 (owner
+ * 24/11/2026): "the source didn't respond" stayed while the original played.
+ * The deadline's card goes once the video is playing, not buffering, and has
+ * moved 1.5 s; the source is no longer counted as failed. Real player errors
+ * (video_falhou) keep the card. */
+static void recuperarErroPrazoTpk(void) {
+  double p;
+  if (!erroPrazoEm) return;
+  if (!player_fonte_falhou() || player_id_canal()[0] || video_falhou() ||
+      (!player_aberto() && !player_mini_ativo()) || stream_atual() != erroPrazoIdx) {
+    erroPrazoEm = 0; return;
+  }
+  if (!video_pronto() || !video_tocando() || video_bufferando_ms()) { erroPrazoBase = -1; return; }
+  p = video_pos();
+  if (erroPrazoBase < 0) { erroPrazoBase = p; return; }
+  if (p - erroPrazoBase < 1.5) return;
+  printf("[fonte] the source plays after all (%.1f s -> %.1f s, %u ms after the message): message removed, source not counted as failed\n",
+         erroPrazoBase, p, (unsigned)(SDL_GetTicks() - erroPrazoEm));
+  fflush(stdout);
+  player_limpar_erro_fonte();
+  stream_vod_tocou(erroPrazoIdx);
+  stream_automatico_readmitir(erroPrazoIdx);
+  erroPrazoEm = 0;
+}
+#endif
 static void recuperarErroFonte(void) {
+#ifdef NV_TPK
+  recuperarErroPrazoTpk();
+#endif
   if ((player_aberto() || player_mini_ativo()) && player_fonte_falhou() &&
       player_tem_video() && !video_falhou() &&
       (video_buffer_fim() > 0.5 ||

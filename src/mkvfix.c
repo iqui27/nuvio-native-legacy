@@ -609,6 +609,22 @@ void mkvfix_memoria_soltar(const char *porque) { (void)porque; }
 #else
 #define MF_NOMEAR(n) ((void)0)
 #endif
+#ifdef NV_TPK
+/* Crash breadcrumbs (queda.h, owner 23/11/2026): the previous session died
+ * in an nv-relay thread with nothing recorded. Each relay thread gets its own
+ * signal stack and says what it is doing; the crash record carries it. */
+#include "queda.h"
+#include "mkvass.h"   /* mkvass_relay_antes_limpar in sondar(), before the tap below */
+#define MF_FIO_INI()       queda_fio_iniciar()
+#define MF_FIO_FIM()       queda_fio_fim()
+#define MF_PASSO(p, a, b)  queda_passo((p), (long long)(a), (long long)(b))
+#define MF_VIGIAR()        queda_vigiar_fio()
+#else
+#define MF_FIO_INI()       ((void)0)
+#define MF_FIO_FIM()       ((void)0)
+#define MF_PASSO(p, a, b)  ((void)0)
+#define MF_VIGIAR()        ((void)0)
+#endif
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
@@ -629,7 +645,9 @@ void mkvfix_memoria_soltar(const char *porque) { (void)porque; }
 #define MF_VIVOS      8          // conexoes do player ao mesmo tempo
 #define MF_PARADO_MS  25000L     // o CDN sem mandar byte por isto: desiste da conexao
 #define MF_CAB        4096
-#define MF_TRACKS_MAX (4L * 1024 * 1024)   // Tracks maior que isto: nao esconde (nunca visto: 243 KB)
+/* Tracks bigger than this: not hidden. Was 4 MB ("never seen: 243 KB"); owner 23/11/2026: raised,
+ * Fate/strange Fake PMR remuxes carry 4.4 MB and 17.1 MB Tracks (log 9). Read once, freed after. */
+#define MF_TRACKS_MAX (32L * 1024 * 1024)
 
 typedef struct {
   unsigned id;
@@ -647,6 +665,7 @@ typedef struct {
   unsigned char conserto[512];
   int64_t oculta[MKVFIX_OCULTAS];  // byte (absoluto) do valor do TrackType de cada legenda escondida
   int nOculta;                     // publicado antes do estado final
+  uint64_t numOculta[MKVFIX_OCULTAS];  // their TrackNumbers (0 = unknown): the relay keeps their blocks (mkvass_relay_antes)
   uint64_t vazia[MKVFIX_OCULTAS];  // Void mode: track numbers whose blocks become Void (mkvfix.h)
   int nVazia;                      // publicado antes do estado final
   atomic_int estado;
@@ -755,6 +774,32 @@ static unsigned char *ler(Sess *s, int64_t ini, int64_t fim, long *n, int64_t *t
   return b;
 }
 
+/* A big element in pieces (log 12, 23/11/2026): rede_baixar_trecho64_vigiado
+ * refuses one Range of 4 MB or more, so Fate/strange Fake's 4.4 MB Tracks came
+ * back NULL and its ASS tracks were silently left to the TV ("nothing
+ * hidden"). Reads [ini, fim] in pieces of MF_PEDACO and joins them. */
+#define MF_PEDACO (2L * 1024 * 1024)
+static unsigned char *lerGrande(Sess *s, int64_t ini, int64_t fim, long *n, int *st, int *pedacos) {
+  unsigned char *tudo = NULL;
+  long tot = 0, quer = (long)(fim - ini + 1);
+  *n = 0; *pedacos = 0;
+  if (quer <= 0) return NULL;
+  tudo = (unsigned char *)malloc((size_t)quer);
+  if (!tudo) return NULL;
+  while (tot < quer) {
+    long m = 0, falta = quer - tot, pedir = falta > MF_PEDACO ? MF_PEDACO : falta;
+    unsigned char *p = ler(s, ini + tot, ini + tot + pedir - 1, &m, NULL, st);
+    (*pedacos)++;
+    if (s->cancelar || !p || m <= 0) { free(p); free(tudo); return NULL; }
+    if (m > pedir) m = pedir;
+    memcpy(tudo + tot, p, (size_t)m);
+    free(p);
+    tot += m;
+  }
+  *n = tot;
+  return tudo;
+}
+
 // A legenda de texto de um arquivo com ASS/SSA: le o Tracks e marca as
 // TrackEntry a esconder da TV (mkvfix.h). Antes do estado final.
 static void sondaLegendas(Sess *s, const unsigned char *b, long n, const MkvfixCab *c, int64_t total) {
@@ -778,8 +823,20 @@ static void sondaLegendas(Sess *s, const unsigned char *b, long n, const MkvfixC
       fflush(stdout); free(q); return;
     }
     free(q);
-    q = ler(s, tp, tp + ui + us + tam - 1, &m, NULL, &st);
-    if (s->cancelar || !q) { free(q); return; }
+    { int pedacos = 0;
+      uint64_t t0 = agoraMs();
+      q = lerGrande(s, tp, tp + ui + us + tam - 1, &m, &st, &pedacos);
+      if (s->cancelar) { free(q); return; }
+      if (!q) {
+        printf("[mkvfix] subtitles: Tracks (%lld bytes) not downloaded (HTTP %d, %d piece(s)), subtitle tracks left to the TV\n",
+               (long long)(ui + us + tam), st, pedacos);
+        fflush(stdout); return;
+      }
+      if (pedacos > 1) {
+        printf("[mkvfix] subtitles: Tracks of %lld bytes read in %d pieces (%u ms)\n",
+               (long long)(ui + us + tam), pedacos, (unsigned)(agoraMs() - t0));
+        fflush(stdout);
+      } }
     t = q;
   }
   { uint64_t num[MKVFIX_OCULTAS];
@@ -798,7 +855,7 @@ static void sondaLegendas(Sess *s, const unsigned char *b, long n, const MkvfixC
       }
     }
     if (k > 0 && modo == MKVFIX_ASS_ESCONDER) {
-      for (int i = 0; i < k; i++) s->oculta[i] = tp + off[i];
+      for (int i = 0; i < k; i++) { s->oculta[i] = tp + off[i]; s->numOculta[i] = num[i]; }
       s->nOculta = k;
       printf("[mkvfix] subtitles: %d text subtitle track(s) with ASS/SSA hidden from the TV player (the app draws them); "
              "the file plays through the local server\n", k);
@@ -810,6 +867,8 @@ static void sondaLegendas(Sess *s, const unsigned char *b, long n, const MkvfixC
 static void *fioSonda(void *u) {
   Sess *s = u;
   MF_NOMEAR("nv-relaysonda");
+  MF_FIO_INI();
+  MF_PASSO("probe: reading the header", 0, 0);
   MkvfixCab c;
   long n = 0, m = 0;
   int st = 0, nSh2, nTodas = 0, entrou = 0, est = MKVFIX_NORMAL;
@@ -878,6 +937,7 @@ static void *fioSonda(void *u) {
            (unsigned)(agoraMs() - t0));
   est = MKVFIX_PRECISA;
 legendas:
+  MF_PASSO("probe: subtitle tracks", n, total);
   sondaLegendas(s, b, n, &c, total);
   if (s->cancelar) goto fim;
   s->total = total;
@@ -894,6 +954,7 @@ legendas:
 fim:
   free(b); free(q);
   sessSoltar(s);
+  MF_FIO_FIM();
   return NULL;
 }
 
@@ -919,6 +980,9 @@ static void sondar(const char *url, const char *cabecalhos, const char *origem,
   velho = atual; atual = s;
   pthread_mutex_unlock(&G);
   if (velho) { velho->cancelar = 1; sessSoltar(velho); }
+#ifdef NV_TPK
+  mkvass_relay_antes_limpar();   // blocks kept for a later pick belong to the old file
+#endif
   if (!s->orig || !s->cab || pthread_create(&t, NULL, fioSonda, s) != 0) {
     atomic_store(&s->estado, MKVFIX_FALHOU);
     sessSoltar(s);
@@ -1011,6 +1075,7 @@ static int enviar(int sock, const void *b, size_t n, Sess *s) {
 #ifdef NV_TPK
 #include "mkvass.h"
 #include "asssinais.h"
+#include "assperf.h"
 #define MT_CLUSTER   0x1F43B675u
 #define MT_BLOCO_MAX (1L << 20)
 enum { MT_PROCURA, MT_TAMCLUSTER, MT_CAB, MT_PULA, MT_JUNTA };
@@ -1018,6 +1083,7 @@ typedef struct {
   int64_t pos;              // posicao absoluta do proximo byte
   int estado, faixa, ligado;
   int faixaS;               // Signs & Songs partner (asssinais.h, owner 19/11/2026): its blocks go there
+  const Sess *s;            // the session being served (mtOculta)
   int64_t clPos, clFim;     // Cluster atual; clFim -1 = tamanho desconhecido
   int clHdr, temTs, precisaTs;
   unsigned long clTs;
@@ -1071,14 +1137,31 @@ static long mtFaixaDo(const MfTap *t, uint32_t id) {
     return v; }
 }
 
-static void mtAlimentar(MfTap *t, int64_t pos, const unsigned char *b, size_t n) {
+/* A hidden ASS track of this file (owner 23/11/2026): its blocks are read
+ * even with no harvest on it, so a track picked later starts with what the
+ * TV's buffer already holds (mkvass_relay_antes). */
+static int mtOculta(const Sess *s, long fx) {
+  int i;
+  if (fx <= 0) return 0;
+  for (i = 0; i < s->nOculta; i++) if (s->numOculta[i] == (uint64_t)fx) return 1;
+  for (i = 0; i < s->nVazia; i++) if (s->vazia[i] == (uint64_t)fx) return 1;
+  return 0;
+}
+
+static void mtAlimentar(MfTap *t, const Sess *s, int64_t pos, const unsigned char *b, size_t n) {
   size_t i = 0;
   int faixa = mkvass_relay_faixa(), faixaS = asssinais_relay_faixa();
+  int ocultas = ASS_NOVO && (s->nOculta > 0 || s->nVazia > 0);
   if (faixaS == faixa) faixaS = 0;
-  if (!faixa) { t->ligado = 0; t->pos = pos + (int64_t)n; return; }
-  if (!t->ligado || t->pos != pos || faixa != t->faixa || faixaS != t->faixaS) {
-    // Ligou agora, pulou bytes ou trocou de faixa: procura o proximo Cluster.
-    t->ligado = 1; t->faixa = faixa; t->faixaS = faixaS; t->pos = pos; t->bufN = 0; mtProcurar(t);
+  if (!faixa && !faixaS && !ocultas) { t->ligado = 0; t->pos = pos + (int64_t)n; return; }
+  MF_PASSO("tap: walking the stream", pos, (long long)n);
+  /* The harvest's own track changing needs no new Cluster: every hidden
+   * track is read anyway and the destination is chosen per block. */
+  t->faixa = faixa; t->s = s;
+  if (!t->ligado || t->pos != pos || faixaS != t->faixaS) {
+    // Ligou agora, pulou bytes ou trocou o parceiro: procura o proximo Cluster.
+    MF_PASSO("tap: started or partner changed", faixa, faixaS);
+    t->ligado = 1; t->faixaS = faixaS; t->pos = pos; t->bufN = 0; mtProcurar(t);
   }
   while (i < n) {
     switch (t->estado) {
@@ -1150,7 +1233,7 @@ static void mtAlimentar(MfTap *t, int64_t pos, const unsigned char *b, size_t n)
       i += (size_t)k; t->pos += k;
       if (t->junta == 2 && !t->espiou) {
         long fx = mtFaixaDo(t, t->buf[0]);   // buf[0] e o ID de um byte: A0 ou A3
-        if (fx == -2 || (fx >= 0 && fx != t->faixa && (!t->faixaS || fx != t->faixaS))) {   // nao e da faixa: o resto e pulado
+        if (fx == -2 || (fx >= 0 && fx != t->faixa && (!t->faixaS || fx != t->faixaS) && !mtOculta(t->s, fx))) {   // nao e da faixa: o resto e pulado
           t->pular = t->bufTam - t->bufN; t->bufN = 0;
           t->estado = t->pular ? MT_PULA : MT_CAB;
           break;
@@ -1162,12 +1245,21 @@ static void mtAlimentar(MfTap *t, int64_t pos, const unsigned char *b, size_t n)
         unsigned long v = 0;
         for (long q = 0; q < t->bufN; q++) v = (v << 8) | t->buf[q];
         t->clTs = v; t->temTs = 1; t->precisaTs = 0;
-        if (t->faixaS) asssinais_cluster(t, v);   // the partner: this stretch of the file is passing
+        if (t->faixaS) { MF_PASSO("tap: Signs & Songs cluster", t->pos, (long long)v); asssinais_cluster(t, v); }   // the partner: this stretch of the file is passing
       } else if (t->faixaS && mtFaixaDo(t, t->buf[0]) == t->faixaS) {
+        MF_PASSO("tap: Signs & Songs block", t->elPos, t->bufN);
         asssinais_bloco(t->clTs, t->buf, t->bufN);   // the Signs & Songs partner: only for matching
       } else {
-        mkvass_relay_bloco(t->clPos, t->clHdr, t->clTs, t->temTs, t->elPos, t->buf, t->bufN);
+        long fx = mtFaixaDo(t, t->buf[0]);
+        if (t->faixa && fx == t->faixa) {
+          MF_PASSO("tap: subtitle block to mkvass", t->elPos, t->bufN);
+          mkvass_relay_bloco(t->clPos, t->clHdr, t->clTs, t->temTs, t->elPos, t->buf, t->bufN);
+        } else if (mtOculta(t->s, fx)) {
+          MF_PASSO("tap: hidden track block kept for a later pick", t->elPos, t->bufN);
+          mkvass_relay_antes(t->clPos, t->clHdr, t->clTs, t->temTs, t->elPos, t->buf, t->bufN);
+        }
       }
+      MF_PASSO("tap: walking the stream", t->pos, t->estado);
       t->bufN = 0; t->estado = MT_CAB;
       break; }
     }
@@ -1500,14 +1592,17 @@ static int ralo(void *u, const char *dados, size_t n) {
   unsigned char tmp[16384], vzOut[sizeof tmp + MKVFIX_VOID_HB];
   uint64_t t0 = agoraUs();
   if (e->fimRalo) atomic_fetch_add(&mdCdnUs, (long long)(t0 - e->fimRalo));
+  MF_VIGIAR();
   if (e->s->cancelar) return 0;
   if (!e->cabFeito && !enviarCab(e)) { e->falhouEnvio = 1; return 0; }
   while (n && e->prox <= e->fim) {
     size_t k = n > sizeof tmp ? sizeof tmp : n;
     int64_t sobra = e->fim - e->prox + 1, a, z;
     if ((int64_t)k > sobra) k = (size_t)sobra;
+    MF_PASSO("ralo: copying the chunk", e->prox, (long long)k);
     memcpy(tmp, dados, k);
-    if (e->cap) memcpy(e->cap + (e->prox - e->ini), dados, k);
+    if (e->cap) { MF_PASSO("ralo: copying into the short-request cache", e->prox - e->ini, (long long)k); memcpy(e->cap + (e->prox - e->ini), dados, k); }
+    MF_PASSO("ralo: SeekHead / hidden tracks", e->prox, e->s->nOculta);
     a = e->prox > e->s->regiao ? e->prox : e->s->regiao;
     z = e->prox + (int64_t)k < e->s->regiao + e->s->regiaoN ? e->prox + (int64_t)k : e->s->regiao + e->s->regiaoN;
     if (a < z) memcpy(tmp + (a - e->prox), e->s->conserto + (a - e->s->regiao), (size_t)(z - a));
@@ -1519,12 +1614,14 @@ static int ralo(void *u, const char *dados, size_t n) {
       // Void mode (mkvfix.h): the walker rewrites the subtitle blocks' IDs; a
       // block header still being read waits in it for the next bytes.
       MkvfixVoid antes = e->vz;
-      long w = mkvfix_void_passar(&e->vz, tmp, (long)k, vzOut);
+      long w;
+      MF_PASSO("ralo: Void walker", e->prox, (long long)k);
+      w = mkvfix_void_passar(&e->vz, tmp, (long)k, vzOut);
       vzContar(e, &antes);
       if (w > 0 && !enviarMedido(e, vzOut, (size_t)w)) { e->falhouEnvio = 1; return 0; }
-    } else if (!enviarMedido(e, tmp, k)) { e->falhouEnvio = 1; return 0; }
+    } else { MF_PASSO("ralo: sending to the TV", e->prox, (long long)k); if (!enviarMedido(e, tmp, k)) { e->falhouEnvio = 1; return 0; } }
 #ifdef NV_TPK
-    mtAlimentar(&e->tap, e->prox, tmp, k);   // the subtitle harvest reads the blocks as they were
+    mtAlimentar(&e->tap, e->s, e->prox, tmp, k);   // the subtitle harvest reads the blocks as they were
 #endif
     e->prox += (int64_t)k; dados += k; n -= k;
   }
@@ -1536,6 +1633,7 @@ static int ralo(void *u, const char *dados, size_t n) {
     if (w > 0 && !enviarMedido(e, resto, (size_t)w)) { e->falhouEnvio = 1; return 0; }
   }
   e->fimRalo = agoraUs();
+  MF_PASSO("relay: waiting for the CDN (curl)", e->prox, e->fim);
   return e->prox <= e->fim;
 }
 
@@ -1592,6 +1690,8 @@ typedef struct { int sock; } Conexao;
 static void *atender(void *u) {
   Conexao *cx = u;
   MF_NOMEAR("nv-relay");
+  MF_FIO_INI();
+  MF_PASSO("relay: reading the request", 0, 0);
   int sock = cx->sock;
   char b[MF_CAB], met[8] = "", alvo[256] = "", range[96] = "";
   size_t tot = 0;
@@ -1639,7 +1739,9 @@ static void *atender(void *u) {
   if (e.head) { enviarCab(&e); goto sai; }
   t0 = agoraMs();
   if (e.parcial && e.ini > 0 && e.fim - e.ini + 1 <= MF_CACHE_MAX && s->total >= MF_CACHE_MIN_TOTAL) {
-    unsigned char *c = cachePegar(s->total, e.ini, e.fim);
+    unsigned char *c;
+    MF_PASSO("relay: short-request cache", e.ini, e.fim);
+    c = cachePegar(s->total, e.ini, e.fim);
     if (c) {
       ralo(&e, (const char *)c, (size_t)(e.fim - e.ini + 1));
       free(c);
@@ -1653,7 +1755,9 @@ static void *atender(void *u) {
   // O seek da reabertura depois da saida do app: o comeco veio adiantado.
   if (e.parcial && e.ini > 0 && !e.cap) {
     long n = 0;
-    unsigned char *c = adiPegar(s->total, e.ini, &n);
+    unsigned char *c;
+    MF_PASSO("relay: reopen prefetch", e.ini, e.fim);
+    c = adiPegar(s->total, e.ini, &n);
     if (c) {
       if ((int64_t)n > e.fim - e.ini + 1) n = (long)(e.fim - e.ini + 1);
       ralo(&e, (const char *)c, (size_t)n);
@@ -1671,6 +1775,7 @@ static void *atender(void *u) {
     pthread_mutex_lock(&s->m);
     snprintf(up, sizeof up, "%s", s->up); semCab = s->upSemCab;
     pthread_mutex_unlock(&s->m);
+    MF_PASSO("relay: opening the CDN stream (curl)", e.prox, e.fim);
     r = rede_fluxo64(up, semCab ? "" : s->cab, e.prox, ralo, &e, &total, &st,
                      &s->cancelar, NULL, &cross, MF_PARADO_MS, &veio);
     if (e.prox > e.fim || e.falhouEnvio || s->cancelar) break;
@@ -1683,6 +1788,7 @@ static void *atender(void *u) {
     }
     break;
   }
+  MF_PASSO("relay: finishing the request", e.prox, e.fim);
   if (e.cap) {
     if (e.prox > e.fim && !e.falhouEnvio && !s->cancelar) cacheGuardar(s->total, e.ini, e.fim, e.cap);
     else free(e.cap);
@@ -1702,6 +1808,7 @@ static void *atender(void *u) {
              tocou == 2 ? " (subtitle tracks hidden)" : tocou ? " (SeekHead rewritten)" : e.falhouEnvio ? " (player closed)" : "");
     fflush(stdout); }
 sai:
+  MF_PASSO("relay: closing", e.prox, 0);
 #ifdef NV_TPK
   free(e.tap.buf);
 #endif
@@ -1709,6 +1816,7 @@ sai:
   close(sock);
   if (s) sessSoltar(s);
   atomic_fetch_sub(&vivos, 1);
+  MF_FIO_FIM();
   return NULL;
 }
 

@@ -45,15 +45,6 @@ typedef struct {
   // criterio de desempate: dois eventos no mesmo instante empilham na ordem em
   // que o fansub os escreveu, que e a ordem em que ele pensou a tela.
   int   ordem;
-  // ASS: asssinais_hash of the line's Text field (0 otherwise). With
-  // "Dialogue by libass" Off the app draws the dialogue and libass the signs
-  // & songs; a line found in the Signs & Songs track later is a sign
-  // (legenda_cue_sinal), never drawn twice.
-  unsigned assHash;
-  // ASS: 1 = libass's own sign rule matches the line's tags (\pos, \move,
-  // a drawing...). Used only while the Signs & Songs track is not known
-  // around the line (asssinais.h): then the rule decides, as libass does.
-  unsigned char assRegra;
 } LegendaCue;
 
 /* OpenSubtitles e desenhado pela UI, acima do plano de video. */
@@ -88,11 +79,6 @@ int  legenda_texto(double posSeg, int atrasoMs, char *dst, size_t tam);
 // Todos os blocos vivos em `posSeg`, ate `max`. Devolve quantos preencheu.
 // Ordem: a do arquivo (ver `ordem`), que e a ordem de empilhamento na tela.
 int  legenda_cues(double posSeg, int atrasoMs, LegendaCue *dst, int max);
-// "Dialogue by libass" Off (.tpk, owner 19/11/2026): the app draws the
-// dialogue of a styled ASS track, libass the signs & songs.
-int  legenda_dialogo_pelo_app(void);
-// That mode: the cue turned out to be a sign/song (asssinais.h): libass draws it.
-int  legenda_cue_sinal(const LegendaCue *c);
 
 /* Parser puro, tambem usado pela regressao. O chamador libera *saida.
  * RECONHECE O FORMATO SOZINHO: SRT/VTT pelo "-->" e ASS/SSA pelo cabecalho.

@@ -223,7 +223,8 @@ int nv_tpk_iniciar(const char *arte, const char *dados, int w, int h) {
   // verificacao das fontes guarda o que ja resolveu.
   { static const CdnlinkGanchos g = { cdnlink_origem_ok, cdnlink_recente, cdnlink_resolver, cdnlink_validade_ms };
     video_tpk_cdn_ganchos(&g);
-    stream_cdn_lembrar = cdnlink_lembrar; }
+    stream_cdn_lembrar = cdnlink_lembrar;
+    stream_cdn_resolvido = cdnlink_resolvido; }
   // TorBox burn-in (tbburn.h, owner 18/11): a source focused 1 s in the list is
   // looked up in the TorBox account early.
   stream_foco_demorado = tpkFonteEmFoco;

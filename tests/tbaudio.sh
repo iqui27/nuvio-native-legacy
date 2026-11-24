@@ -102,6 +102,10 @@ curl -s -o "$work/out/a2i.mp4" "$B/a2_init.mp4"; curl -s -o "$work/out/a2_2.m4s"
 cat "$work/out/a2i.mp4" "$work/out/a2_2.m4s" > "$work/out/flac.mp4"
 v2=$(inicio "$work/src/tb/s2.ts" v)
 check "AAC copied, starts with TorBox's video segment ($(inicio "$work/out/a0_2.ts" a) vs $v2)" "[ '$(codec "$work/out/a0_2.ts")' = 'aac,2' ] && perto $(inicio "$work/out/a0_2.ts" a) $v2 0.05"
+curl -s -o "$work/out/a1_6.ts" "$B/a1_6.ts"
+check "AC3 copy diagnostic: header read (bsid, 5.1 = mode 7), no gaps between consecutive segments" \
+  "grep -qE 'AC3 copy audio 1 seg 5: [0-9]+ packets, 0 without the sync word, bsid [0-9]+, channel mode 7' '$work/s.log' && grep -qE 'AC3 copy audio 1 seg 6: .*gaps 0 .*overlaps 0' '$work/s.log'"
+check "original file reader: one speed line per connection" "grep -qE '\\[dts-range\\] connection from [0-9]+ MiB ended: [0-9]+ KiB in [0-9]+ ms \\([0-9.]+ Mbit/s\\)' '$work/s.log'"
 check "AC3 5.1 copied ($(codec "$work/out/a1_2.ts"))" "[ '$(codec "$work/out/a1_2.ts")' = 'ac3,6' ] && perto $(inicio "$work/out/a1_2.ts" a) $v2 0.05"
 check "Opus as is in fMP4 (init + segment: $(codec "$work/out/opus.mp4"))" "[ '$(codec "$work/out/opus.mp4")' = 'opus,2' ] && perto $(inicio "$work/out/opus.mp4" a) $v2 0.1"
 check "Opus rendition is fMP4 in its playlist" "curl -s '$B/a3.m3u8' | grep -q '^#EXT-X-MAP:URI=\"a3_init.mp4\"' && curl -s '$B/a3.m3u8' | grep -q '^a3_0.m4s'"
@@ -143,6 +147,21 @@ check "laced Opus: the segment starts with TorBox's video ($(inicio "$work/out/l
 check "laced Opus: every packet 20 ms in the log" "grep -q 'Opus audio 0 seg 5: 100 packets, durations 20.0-20.0 ms, ' '$work/s.log'"
 fim
 
+
+# 3c. Back to 16/11 (owner 24/11/2026): segment 0's head is a 256 KB Range
+#     read, and a head that never comes (an encoder that hangs on Range) is
+#     only logged: the session still gets ready (first PTS unknown) and the
+#     TV's own segment requests go through.
+: > "$work/origem.log"
+sessao tbhang/playlist.m3u8 0 0
+for _ in $(seq 400); do grep -q 'ready in\|session failed' "$work/s.log" && break; sleep 0.1; done
+check "segment 0 head asked with Range 0-262143" "grep -q '^HANG /tb/.*bytes=0-262143' '$work/origem.log'"
+check "segment 0 head missing: logged only, session ready, first PTS unknown" \
+  "grep -q 'TorBox segment 0 head did not download (HTTP 0, .*logged only, the session goes on' '$work/s.log' && grep -q 'ready in' '$work/s.log' && ! grep -q 'session failed' '$work/s.log' && grep -q \"TorBox's first video PTS: UNKNOWN\" '$work/s.log'"
+curl -s -o "$work/out/h1.ts" "$B/v_1.ts"
+check "segment 0 head missing: the TV's segment still comes through Nuvio" \
+  "[ -s '$work/out/h1.ts' ] && grep -q 'first video segment the TV asked for: seg 1, came from TorBox' '$work/s.log'"
+fim
 
 # 4. fMP4 TorBox behind a master playlist.
 sessao tb4/master.m3u8 0 1

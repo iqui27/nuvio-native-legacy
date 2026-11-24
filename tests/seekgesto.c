@@ -124,6 +124,47 @@ int main(void) {
       seekgesto_tecla(&g, &h, 1, 5000, ep2, NULL); seekgesto_tecla(&g, &h, 1, 5100, ep2, NULL);
       CHECK(g.segurando && seekgesto_quadro(&g, &h, 5090, 0.016f) > 0.0f, "frame clock 10 ms behind the key: still gliding"); } }
 
+  // NEVER FASTER THAN THE SMART REMOTE (owner 23/11/2026, log 11). Key stream
+  // with key-press times `teclas` (ms); frames at 60 fps; returns the distance.
+  { SeekParams d = SEEKG_PADRAO; const float ep3 = 1497.0f;
+    unsigned normal[40], rajada[40]; int nN = 0, nR = 0, i;
+    float dn = 0, dr = 0, vMax = 0;
+    SeekGesto a, b;
+    // A held Smart Remote: first repeat ~360 ms, then every 100 ms, 2 s.
+    for (unsigned t = 1000; t <= 3000 && nN < 40; t = nN == 1 ? t + 360 : t + 100) normal[nN++] = t;
+    // The same hold, but the main thread stalled 300 ms at 1.8 s: the five
+    // repeats queued meanwhile are handled 2 ms apart (stamped when handled).
+    for (i = 0; i < nN; i++) {
+      unsigned t = normal[i];
+      if (t >= 1800 && t < 2100) continue;
+      if (t >= 2100 && nR && rajada[nR - 1] < 2100) { for (int k = 0; k < 5 && nR < 40; k++) rajada[nR++] = 2100 + 2u * k; }
+      if (nR < 40) rajada[nR++] = t < 2110 ? 2110 : t;
+    }
+    seekgesto_zerar(&a); seekgesto_zerar(&b);
+    { int ia = 0, ib = 0;
+      for (unsigned t = 1000; t <= 3300; t += 16) {
+        while (ia < nN && normal[ia] <= t) dn += seekgesto_tecla(&a, &d, 1, normal[ia++], ep3, NULL);
+        while (ib < nR && rajada[ib] <= t) dr += seekgesto_tecla(&b, &d, 1, rajada[ib++], ep3, NULL);
+        dn += seekgesto_quadro(&a, &d, t, 0.016f);
+        dr += seekgesto_quadro(&b, &d, t, 0.016f);
+        if (seekgesto_vel(&b, &d) > vMax) vMax = seekgesto_vel(&b, &d);
+      } }
+    printf("burst after a 300 ms stall: %.0f s vs the 100 ms stream %.0f s; glide peak %.0f s/s (step %.1f s)\n",
+           dr, dn, vMax, b.passo);
+    CHECK(dr <= dn * 1.05f, "a burst after a stall is not faster than holding: %.0f vs %.0f s", dr, dn);
+    CHECK(vMax <= b.passo * 1000.0f / SEEKG_DESLIZE_MS + 0.01f, "glide at most one step per 100 ms (%.0f s/s)", vMax);
+    // The plain 100 ms stream: every press a jump, never a glide (as before).
+    { SeekGesto c; int modo; seekgesto_zerar(&c);
+      for (i = 0; i < nN; i++) {
+        seekgesto_tecla(&c, &d, 1, normal[i], ep3, &modo);
+        CHECK(modo == SEEKG_TOQUE && !c.segurando, "100 ms stream press %d: a jump, no glide (mode %d)", i, modo);
+      } }
+    // A fast keyboard (40 ms repeats): glides, at the Smart Remote's pace.
+    { SeekGesto c; float v; seekgesto_zerar(&c);
+      seekgesto_tecla(&c, &d, 1, 1000, ep3, NULL); seekgesto_tecla(&c, &d, 1, 1040, ep3, NULL);
+      v = seekgesto_vel(&c, &d);
+      CHECK(c.segurando && PERTO(v, c.passo * 10.0f), "40 ms keyboard: glide = step per 100 ms (%.1f s/s)", v); } }
+
   if (falhas) { printf("seekgesto: %d falha(s)\n", falhas); return 1; }
   printf("seekgesto: ok\n");
   return 0;

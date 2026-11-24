@@ -16,10 +16,11 @@
 // of its own kind, from 0, in file order.
 #include <stdint.h>
 
-// TBB_ESPERANDO (owner 19/11/2026): the file was gone from the account and
-// Nuvio re-added it by its hash (cached only); TorBox may need minutes to
-// register it, so the request keeps asking (every ~20 s, up to 3 min) while
-// the original plays with Nuvio's subtitles. Ends in TBB_PRONTO or TBB_FALHOU.
+// TBB_ESPERANDO (owner 19/11/2026; schedule 24/11/2026): the file wasn't in
+// the account, Nuvio added it by its hash (cached only) and it wasn't there
+// 3.5 s later (or there is no hash at all): the original plays with Nuvio's
+// subtitles while the request looks once more, 7 s into playback. Ends in
+// TBB_PRONTO or TBB_FALHOU.
 enum { TBB_NADA = 0, TBB_BUSCANDO, TBB_PRONTO, TBB_FALHOU, TBB_ESPERANDO };
 
 // The source the player opened (player.c, after video_tocar). `url` is the
@@ -66,6 +67,24 @@ void tbburn_arquivo_tem_ass(int sim);
 void tbburn_pedir(const char *url, int sub, int audio);
 // TBB_*; on TBB_PRONTO `m3u8` holds the playlist URL (with TorBox's token: never
 // log it raw). `motivo` (may be NULL) says why on TBB_FALHOU.
+/* TorBox listed the file and gave a playlist but sent no video (owner
+ * 22/11/2026): re-add it by its hash, then ask for the stream again. Results
+ * as tbburn_pedir (TBB_ESPERANDO while TorBox registers it). */
+void tbburn_readicionar(const char *url, int sub, int audio);
+/* The TorBox item of `url` when the lookup found it in the account (> 0), else
+ * 0. Log 15 (owner 23/11/2026): no re-add then, it would give the same item. */
+int  tbburn_item_na_conta(const char *url);
+/* The info hash the TorBox match of `url` used or found (40 hex, lower case),
+ * for the saved last link (owner 24/11/2026). 1 = known. */
+int  tbburn_hash_achado(const char *url, char out[41]);
+/* video_tpk.c (owner 24/11/2026, log 24): the original file `url` started
+ * showing frames (its first frame, or the first after a failed switch to the
+ * burned stream); _parou: it stopped (the burned stream plays, the player
+ * left). The look "7 s into playback" counts from _tocando. */
+void tbburn_original_tocando(const char *url);
+void tbburn_original_parou(void);
+// A JSON true/false: 1 / 0, -1 = absent (createstream's needs_transcoding).
+int  tbburn_json_bool(const char *corpo, const char *chave);
 int  tbburn_resultado(char *m3u8, unsigned n, char *motivo, unsigned mn);
 void tbburn_cancelar(void);
 // TorBox refused the plan on the last request (not Pro there). Owner
@@ -78,12 +97,22 @@ int  tbburn_recusado(void);
 // 1 = burn-in gave up on this source (toast), 2 = Burn in turned Off; either
 // way the ASS tracks are back in Main's list (the caller re-picks Main).
 int  video_tpk_queimada(void);
+// Burn-in wanted for this title but not on (not in TorBox, failed, registering):
+// the track it would burn (menu index), else -1. faixas.c draws it when Main is "none".
+int  video_tpk_queimar_desejada(void);
 int  video_tpk_queimar_voltou(void);
+// 1 = the burned stream is opening (TorBox first hold, request in flight, or a
+// burned stream not playing yet): its own deadline falls back to the original,
+// so app.c's manual-pick watchdog waits (log 21, owner 24/11/2026).
+int  video_tpk_queimar_abrindo(void);
 // Re-added file ready mid-episode (owner 19/11/2026). _aviso, once: 1 = show
 // the "Burn-in ready" notice (OK switches), 2 = switched (Main leaves the
 // burned ASS track). _tardio_ok: OK with the controls hidden while the notice
 // is up opens the burned stream; 1 = the OK was used.
 int  video_tpk_queimar_aviso(void);
+// The burned picture just opened (TorBox first, mid-play, late OK), once: Main
+// turns off if it is an embedded ASS track (owner 22/11/2026).
+int  video_tpk_queimar_tirar_main(void);
 int  video_tpk_queimar_tardio_ok(void);
 #endif
 

@@ -203,6 +203,10 @@ namespace NuvioTpk
             // #resume: 4 = seek EXATO para idx ms (so a volta depois do fundo);
             // 5 = mudo (1) / som de volta (0) da reabertura muda.
             if (tipo == 4) { Buscar(idx, true); return; }
+            // 6 = log what the TV player itself decodes (owner 24/11/2026, log 19:
+            // Married Couple, a copied AC3 5.1 rendition with burn-in had sound
+            // for a few seconds after each seek, then none). Diagnostic only.
+            if (tipo == 6) { LogAudioDaTv(idx); return; }
             if (tipo == 5)
             {
                 try { player.Muted = idx != 0; Log("[fundo] muted=" + (idx != 0)); }
@@ -224,6 +228,26 @@ namespace NuvioTpk
                 else player.SetSubtitleOffset(idx);
             }
             catch (Exception e) { if (tipo != 2) Log("escolher " + tipo + "/" + idx + ": " + e.Message); }
+        }
+
+        // idx: 0 = after prepare, 1 = after a seek landed, 2 = periodic (10 s).
+        void LogAudioDaTv(int idx)
+        {
+            string por = idx == 0 ? "after prepare" : idx == 1 ? "after a seek" : "10s";
+            string estado = "?", codec = "?", props = "?", sel = "?", mudo = "?", vol = "?";
+            try { estado = player.State.ToString(); } catch { }
+            try { codec = player.StreamInfo.GetAudioCodec() ?? "(none)"; } catch (Exception e) { codec = e.GetType().Name; }
+            try
+            {
+                var a = player.StreamInfo.GetAudioProperties();
+                props = a.Channels + " ch, " + a.SampleRate + " Hz, " + a.BitRate + " b/s";
+            }
+            catch (Exception e) { props = e.GetType().Name; }
+            try { sel = player.AudioTrackInfo.Selected + " of " + player.AudioTrackInfo.GetCount(); } catch (Exception e) { sel = e.GetType().Name; }
+            try { mudo = player.Muted.ToString(); } catch { }
+            try { vol = player.Volume.ToString(System.Globalization.CultureInfo.InvariantCulture); } catch { }
+            Log("[audio-tv] " + por + ": state " + estado + ", codec " + codec + ", " + props + ", track " + sel +
+                ", muted " + mudo + ", player volume " + vol);
         }
 
         // VELOCIDADE (#202). A documentacao diz que SetPlaybackRate lanca

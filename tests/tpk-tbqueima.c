@@ -1,10 +1,13 @@
-// TORBOX FIRST, FASTER (owner 18/11), exercised with no TV: video_tpk.c
-// against a fake host, with burn-in possible (Pro + "Burn in ASS with TorBox").
-//   - the file's header not read yet at the open: the player is held for it
-//     (up to TB_CAB_ESPERA_MS) instead of opening the original first;
-//   - the header arrives -> TorBox is asked, and its burned stream is the
-//     first thing the host opens, at the saved point (X-Nuvio-Start);
-//   - no prefetch, Off remembered for the show, or time up -> the original.
+// BURN-IN, ORIGINAL FIRST (owner 24/11/2026: back to 16/11), exercised with no
+// TV: video_tpk.c against a fake host, with burn-in possible.
+//   - the original always opens first (at the saved point when there is one);
+//     TorBox is asked once the file's header is known;
+//   - TorBox ready -> the burned stream opens at 0, then the seek after ready;
+//   - no picture TB_LENTO_MS after the switch -> the "slow to start" notice;
+//     OK goes back to the original at the point; the notice goes when it starts;
+//   - a burned stream that never played, item in the account -> the original +
+//     remove and re-add; not in the account -> the 16/11 path;
+//   - Home during burn-in (7f26ac3e9/89c3931ed) as before.
 // The fake host/stubs are tpk-fundo.c's.
 #include <stdio.h>
 #include <string.h>
@@ -86,7 +89,7 @@ static void bombearPor(int ms) { int t; for (t = 0; t < ms; t += 20) { video_bom
 
 // A VOD title playing at `posMs`, 2 audio + 2 subtitle tracks, audio 1 and
 // subtitle 0 chosen by the person.
-static void tocarFilme(const char *url, int posMs) {
+__attribute__((unused)) static void tocarFilme(const char *url, int posMs) {
   video_definir_reconexao(1);
   video_tocar(url);
   nv_tpk_video_evento(6, 1920, 1080);
@@ -130,6 +133,14 @@ static void sairEVoltar(int hostMs, double alvoTela) {
 #define RET_PRAZO_MS 20000u
 #endif
 int video_tpk_queimar_voltou(void);
+int video_tpk_queimar_aviso(void);
+int video_tpk_queimar_tardio_ok(void);
+int video_tpk_queimar_abrindo(void);
+double video_tpk_mf_alvo(int reabrindo, double posMantida, int reconMs, unsigned buscaIdadeMs, double buscaAlvo,
+                         double agora, const char **de);
+static int itemConta, readicoes;
+int  tbburn_item_na_conta(const char *u) { (void)u; return itemConta; }
+void tbburn_readicionar(const char *u, int s, int a) { (void)u; (void)s; (void)a; readicoes++; }
 // ---- burn-in possible; the account answers what the test says --------------
 static int fase = 1, memoria, pedidos, resultado = TBB_BUSCANDO;
 static unsigned char cabMkv[256]; static long cabMkvN; static int temCab;
@@ -174,20 +185,41 @@ static void abrir(const char *url, double ponto) {
   if (ponto > 0) video_tocar_retomada(url, ponto, 0.0); else video_tocar(url);
 }
 
-// A burned stream playing (header known, TorBox ready), started at `ponto`.
-static void queimadoTocando(const char *url, double ponto) {
+// The original plays at `ponto` (header known): TorBox gets asked.
+static void originalTocando(const char *url, double ponto) {
   temCab = 1; fase = 2; memoria = 0;
   abrir(url, ponto);
-  resultado = TBB_PRONTO;
-  bombearPor(40);
+  bombearPor(MF_ESPERA_MS + 300);   // the local fix checks an ASS file before the TV opens it
   nv_tpk_video_evento(EV_PRONTO, 1425000, 0);
   if (ponto > 0) nv_tpk_video_evento(14, (int)(ponto * 1000.0), 0);
   nv_tpk_video_faixa(0, 0, "ja");
+  nv_tpk_video_faixa(1, 0, "en");
   nv_tpk_video_faixas_fim(0, -1);
   nv_tpk_video_evento(EV_TOCANDO, 0, 0);
   fakePosMs = (int)(ponto * 1000.0);
+  bombearPor(1500);   // sondaMkv looks every 500 ms; then TorBox is asked
+}
+// The switch: TorBox ready -> the burned stream opens (nothing prepared yet).
+static void trocar(void) {
+  resultado = TBB_PRONTO;
+  bombearPor(40);
+}
+// The burned stream prepares and plays.
+static void queimadoPrepara(void) {
+  nv_tpk_video_evento(EV_PRONTO, 1425000, 0);
+  nv_tpk_video_faixa(0, 0, "ja");
+  nv_tpk_video_faixas_fim(0, -1);
+  nv_tpk_video_evento(EV_TOCANDO, 0, 0);
   bombearPor(100);
-  (void)video_tpk_queimar_voltou();
+}
+// A burned stream playing, switched to at `ponto`.
+static void queimadoTocando(const char *url, double ponto) {
+  originalTocando(url, ponto);
+  trocar();
+  fakePosMs = (int)(ponto * 1000.0) + 1000;   // the burned stream shows a frame near the point
+  queimadoPrepara();
+  bombearPor(200);
+  (void)video_tpk_queimar_voltou(); (void)video_tpk_queimar_aviso();
   zerarHost(); pedidos = 0;
 }
 
@@ -197,69 +229,86 @@ int main(void) {
   video_tpk_tela_publicar(1);
   montarCabecalho();
 
-  // 1. Header late, prefetch running: held, then TorBox first at the saved point.
-  temCab = 0; fase = 1; memoria = 0;
+  // 1. Header known at the open, saved point: the original opens first, at the point.
+  temCab = 1; fase = 2; memoria = 0;
   abrir("http://x/ep1.mkv", 600.0);
-  ok("header not read: the player is held (nothing opened)", nAbrir == 0);
-  bombearPor(200);
-  ok("header not read: still held while the prefetch runs", nAbrir == 0 && pedidos == 0);
-  temCab = 1;
-  bombearPor(40);
-  ok("header arrived: TorBox asked, the original still not opened", pedidos == 1 && nAbrir == 0);
-  resultado = TBB_PRONTO;
-  bombearPor(40);
-  ok("TorBox ready: its burned stream is the first open", nAbrir == 1 && strstr(ultUrl, "tb-cdn.io") != NULL);
-  ok("TorBox ready: it opens at the saved point", strstr(ultCab, "X-Nuvio-Start: 600000") != NULL);
-  ok("TorBox ready: the app waits for the host's answer", video_retomada_inicial_estado() == 0);
+  ok("original first: nothing burned opens while the local fix checks", nAbrir == 0 || !strstr(ultUrl, "tb-cdn.io"));
+  bombearPor(MF_ESPERA_MS + 300);
+  ok("original first: the original is the first open", nAbrir == 1 && strstr(ultUrl, "http://x/ep1.mkv") != NULL);
+  ok("original first: at the saved point (host seek before Start)", strstr(ultCab, "X-Nuvio-Start: 600000") != NULL);
+  ok("original first: TorBox not asked before the open", pedidos == 0);
+  zerarHost();
   nv_tpk_video_evento(EV_PRONTO, 1425000, 0);
-  nv_tpk_video_evento(14, 600000, 0);   // EV_INICIO
+  nv_tpk_video_evento(14, 600000, 0);
+  nv_tpk_video_faixa(0, 0, "ja"); nv_tpk_video_faixa(1, 0, "en");
+  nv_tpk_video_faixas_fim(0, -1);
   nv_tpk_video_evento(EV_TOCANDO, 0, 0);
-  bombearPor(40);
-  ok("burned stream started at the point by the host", video_retomada_inicial_estado() == 1 && nBuscar == 0 && nExata == 0);
+  fakePosMs = 600000;
+  bombearPor(1500);
+  ok("original playing: TorBox asked once, nothing reopened", pedidos == 1 && nAbrir == 0);
+  fakePosMs = 612000;
+  trocar();
+  ok("TorBox ready: the burned stream opens", nAbrir == 1 && strstr(ultUrl, "tb-cdn.io") != NULL);
+  ok("TorBox ready: no saved point with it (opens at 0)", strstr(ultCab, "X-Nuvio-Start") == NULL);
+  ok("switching: the source watchdog waits (burned stream not playing yet)", video_tpk_queimar_abrindo());
+  queimadoPrepara();
+  ok("burned stream ready: the app seeks to where the original was", nBuscar >= 1);
+  ok("burned stream playing: no slow-start notice", video_tpk_queimar_aviso() == 0 && !video_tpk_queimar_abrindo());
 
-  // 2. Header already there at the open: TorBox first at once (no hold).
-  temCab = 1; fase = 2;
-  abrir("http://x/ep2.mkv", 0);
-  ok("header known: TorBox asked at the open", pedidos == 1 && nAbrir == 0);
-  resultado = TBB_PRONTO;
+  // 2. No picture after TB_LENTO_MS: the notice; OK -> the original at the point.
+  originalTocando("http://x/ep2.mkv", 0);
+  fakePosMs = 300000;
   bombearPor(40);
-  ok("header known, no saved point: burned stream from the start", nAbrir == 1 && strstr(ultCab, "X-Nuvio-Start") == NULL);
+  trocar();
+  ok("slow start: burned stream opened", nAbrir == 2 && strstr(ultUrl, "tb-cdn.io") != NULL);
+  bombearPor(TB_LENTO_MS - 300);
+  ok("slow start: no notice before TB_LENTO_MS", video_tpk_queimar_aviso() == 0);
+  bombearPor(500);
+  ok("slow start: the notice is up", video_tpk_queimar_aviso() == 3);
+  ok("slow start: OK goes back", video_tpk_queimar_tardio_ok() == 1);
+  bombearPor(MF_ESPERA_MS + 600);   // the original may wait for the local fix's probe
+  ok("slow start, OK: the original reopens", nAbrir == 3 && strstr(ultUrl, "http://x/ep2.mkv") != NULL);
+  ok("slow start, OK: burn-in off for this playback (toast)", video_tpk_queimar_voltou() == 1);
+  ok("slow start, OK: a second OK is an ordinary OK", video_tpk_queimar_tardio_ok() == 0);
 
-  // 3. No prefetch for this source: the original opens on the next frame.
-  temCab = 0; fase = 0;
-  abrir("http://x/ep3.mkv", 300.0);
-  ok("no prefetch: held for one frame only", nAbrir == 0);
+  // 3. The notice goes when the burned stream starts.
+  originalTocando("http://x/ep3.mkv", 0);
+  trocar();
+  bombearPor(TB_LENTO_MS + 200);
+  ok("late start: the notice is up", video_tpk_queimar_aviso() == 3);
+  queimadoPrepara();
+  ok("late start: it started, the notice goes", video_tpk_queimar_aviso() == 4);
+  ok("late start: OK no longer goes back", video_tpk_queimar_tardio_ok() == 0);
+
+  // 4. A burned stream that never played, item still in the account: stuck ->
+  //    the original + remove and re-add (no same-mode retry).
+  itemConta = 77; readicoes = 0;
+  originalTocando("http://x/ep4.mkv", 0);
+  trocar();
+  resultado = TBB_BUSCANDO;   // the re-add's asks: TorBox not ready yet
+  { int n0 = nAbrir;
+    nv_tpk_video_evento(EV_ERRO, -5, 0);
+    bombearPor(MF_ESPERA_MS + 600);
+    ok("stuck item: re-added once", readicoes == 1);
+    ok("stuck item: the original reopens", nAbrir == n0 + 1 && strstr(ultUrl, "http://x/ep4.mkv") != NULL); }
+  itemConta = 0;
+
+  // 5. Not in the account: the 16/11 path (TorBox's own stream fails -> original + toast).
+  readicoes = 0;
+  originalTocando("http://x/ep5.mkv", 0);
+  trocar();
+  { int n0 = nAbrir;
+    nv_tpk_video_evento(EV_ERRO, -5, 0);
+    bombearPor(MF_ESPERA_MS + 600);
+    ok("not in the account: no re-add", readicoes == 0);
+    ok("not in the account: the original, burn-in off (toast)", nAbrir == n0 + 1 && strstr(ultUrl, "http://x/ep5.mkv") != NULL &&
+       video_tpk_queimar_voltou() == 1); }
+
+  // 6. Clock: the burned stream is anchored at 0 at the open, video_pos is the player's.
+  queimadoTocando("http://x/ep6.mkv", 0);
+  fakePosMs = 15100;
   bombearPor(40);
-  ok("no prefetch: the original opens (at the saved point)", nAbrir == 1 && strstr(ultUrl, "http://x/ep3.mkv") &&
-     strstr(ultCab, "X-Nuvio-Start: 300000") != NULL && pedidos == 0);
-
-  // 4. Off remembered for the show: no waiting.
-  temCab = 0; fase = 1; memoria = 1;
-  abrir("http://x/ep4.mkv", 0);
-  bombearPor(40);
-  ok("Off remembered: the original opens at once", nAbrir == 1 && strstr(ultUrl, "http://x/ep4.mkv") && pedidos == 0);
-  memoria = 0;
-
-  // 5. Prefetch running but slow: the hold ends at TB_CAB_ESPERA_MS.
-  temCab = 0; fase = 1;
-  abrir("http://x/ep5.mkv", 0);
-  bombearPor(TB_CAB_ESPERA_MS - 200);
-  ok("slow header: still held before the limit", nAbrir == 0);
-  bombearPor(400);
-  ok("slow header: the original opens at the limit", nAbrir == 1 && strstr(ultUrl, "http://x/ep5.mkv") && pedidos == 0);
-  nv_tpk_video_evento(EV_PRONTO, 1425000, 0);
-  nv_tpk_video_faixa(1, 0, "en");
-  nv_tpk_video_faixas_fim(-1, -1);
-  nv_tpk_video_evento(EV_TOCANDO, 0, 0);
-  temCab = 1;
-  bombearPor(1500);   // sondaMkv looks every 500 ms; then TorBox's switch is asked as before
-  ok("slow header: the later switch is still asked once it arrives", pedidos == 1);
-
-  // 6. Prefetch ended without the header: no waiting.
-  temCab = 0; fase = 2;
-  abrir("http://x/ep6.mkv", 0);
-  bombearPor(40);
-  ok("prefetch ended without header: the original opens at once", nAbrir == 1 && pedidos == 0);
+  ok("burned stream: video_pos is the player's own clock", fabs(video_pos() - 15.1) < 0.3);
 
   // 7. Home during burn-in, back: the burned stream reopens at the point. It
   //    fails -> TorBox is asked once for a fresh stream at the point; that fails
@@ -278,7 +327,7 @@ int main(void) {
        strstr(ultCab, "X-Nuvio-Resume: 700000,1") != NULL);
     nv_tpk_video_evento(EV_ERRO, -5, 0);
     n0 = nAbrir;
-    bombearPor(MF_ESPERA_MS + 600);   // the original may wait for the local fix's probe
+    bombearPor(MF_ESPERA_MS + 600);
     ok("fresh stream fails too: the original file at the point, still paused", nAbrir == n0 + 1 &&
        strstr(ultUrl, "http://x/ep7.mkv") && strstr(ultCab, "X-Nuvio-Resume: 700000,1") != NULL);
     ok("fresh stream fails too: burn-in gave up (toast, ASS back in Main)", video_tpk_queimar_voltou() == 1);
@@ -303,6 +352,19 @@ int main(void) {
   bombearPor(RET_PRAZO_MS + 200);
   ok("no picture: TorBox asked for a fresh stream instead of closing", pedidos == 1 && video_tpk_retomada_evento() == 0);
 
-  printf("tpk-tbprimeiro: %s\n", falhas ? "FALHOU" : "ok");
+  // 10. Log 24 (owner 24/11/2026): the local-fix reopen right after a switch
+  //     (the probe found ASS tracks before the switch's seek landed) goes to
+  //     the switch's point, not the burned stream's 0.0 s.
+  { const char *de = NULL;
+    double a = video_tpk_mf_alvo(1, 27.1, 27100, 0xFFFFFFFFu, 0, 0.0, &de);
+    ok("local-fix reopen during a switch: at the switch's point", fabs(a - 27.1) < 0.01 && de && strstr(de, "reopen in progress"));
+    a = video_tpk_mf_alvo(0, 0, 27100, 0xFFFFFFFFu, 0, 0.3, &de);
+    ok("local-fix reopen: a pending seek wins over the clock", fabs(a - 27.1) < 0.01 && de && strstr(de, "pending seek"));
+    a = video_tpk_mf_alvo(0, 0, -1, 4000u, 600.0, 0.2, &de);
+    ok("local-fix reopen: the seek asked in the last 10 s", fabs(a - 600.0) < 0.01 && de);
+    a = video_tpk_mf_alvo(0, 0, -1, 12000u, 600.0, 42.0, &de);
+    ok("local-fix reopen: otherwise the TV's clock", fabs(a - 42.0) < 0.01 && !de); }
+
+  printf("tpk-tbqueima: %s\n", falhas ? "FALHOU" : "ok");
   return falhas ? 1 : 0;
 }

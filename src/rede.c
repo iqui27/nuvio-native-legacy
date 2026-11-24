@@ -1048,6 +1048,7 @@ int rede_url_final_tipo(const char *url, int segundos, const char *const *cab,
 int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
   return rede_url_final_cab(url, segundos, NULL, dst, tam, NULL);
 }
+int rede_url_final_curl(void) { return 0; }   // browser: no libcurl code (never a "time out")
 
 #ifdef NV_VIDAA
 // Ver rede.h. NUNCA passa pelo proxy (o proprio pedir2 evita isto por
@@ -2599,6 +2600,8 @@ int rede_url_final_tipo(const char *url, int segundos, const char *const *cab,
   }
   if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   r = performTmdb(c, url);
+  if (r == 42 && vigia.parou) r = 28;   // the watchdog's deadline is a time out too
+  redeCurlLocal = r;                    // rede_url_final_curl (log 13, 23/11/2026)
   curl_getinfo(c, INFO_RESPONSE_CODE, &http);
   curl_getinfo(c, INFO_URL_FINAL, &fim);
   if (status) *status = (int)http;
@@ -2636,6 +2639,7 @@ int rede_url_final_tipo(const char *url, int segundos, const char *const *cab,
 int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
   return rede_url_final_cab(url, segundos, NULL, dst, tam, NULL);
 }
+int rede_url_final_curl(void) { return redeCurlLocal; }
 
 // AQUECER CONEXOES (2.0.2): abre DNS + TCP + TLS de cada origem ("https://host")
 // com um HEAD em "/", SEM seguir redirecionamento e sem ler corpo, e deixa o

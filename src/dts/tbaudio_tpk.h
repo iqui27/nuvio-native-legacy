@@ -55,6 +55,8 @@ void tba_definir_audio(int audio_ordinal);
 int  tba_audio(void);
 /* A summary line for the 10 s log (counts, timings). */
 void tba_log(void);
+// A seek on Nuvio's stream: log the TV's next 16 requests with the time since it.
+void tba_marcar_busca(void);
 
 /* S2 (logging only): sockets to TorBox's hosts in /proc/net/tcp(6),
  * ESTABLISHED, including the TV player's. tba_sockets_vigiar resolves the
