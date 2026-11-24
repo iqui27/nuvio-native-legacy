@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-24T04:30:08+00:00",
+    "updatedAt": "2026-11-24T04:36:32+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-24T04:26:00+00:00",
+    "lastVpsReportedAt": "2026-11-24T04:33:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -411,7 +411,7 @@
           ],
           "deliveredGithubSourceLine": 265
         },
-        "note": "Antigravity atualizado e operacional na IBM: 18/19/17/34 retomados com Gemini Hydrogen nas worktrees preservadas; 20/15/16 em r1 cross-family com Gemini 4 Neon. Quatro implementações e três revisões nomeadas, sem nova contagem global de capacidade 6/6. Cota do claudeAgent não declarada recuperada. VPS segue pausada com 15G; r1 do 33 e r2 do 52 sem novo lançamento reportado.",
+        "note": "Quatro implementações retomadas na IBM via Gemini Hydrogen (linha 266); quatro r1 paralelas 20/15/16/33 na IBM (linha 267). Após disco VPS liberado para 39G (268), r2 do 52 lançada com Sol/Codex na VPS e r1 do 33 mantida na IBM sem duplicação (269). Cota claudeAgent não declarada recuperada; sem nova contagem global 6/6.",
         "activeSlotsInferred": false,
         "activeSlotsSource": "Quatro implementações nomeadas na linha 266; três revisões são contadas separadamente, sem novo relato global 6/6",
         "lastReportedCapacity": {
@@ -472,10 +472,25 @@
         "reviewItems": [
           "farol-20",
           "farol-15",
-          "farol-16"
+          "farol-16",
+          "farol-33"
         ],
-        "reviewCount": 3,
-        "reviewer": "Gemini 4 Neon"
+        "reviewCount": 4,
+        "reviewer": "Gemini 4 Neon",
+        "previousReviewGroup": {
+          "items": [
+            "farol-20",
+            "farol-15",
+            "farol-16"
+          ],
+          "count": 3,
+          "sourceLine": 266,
+          "reportedAt": "2026-11-24T04:26:00+00:00"
+        },
+        "reviewReportedAt": "2026-11-24T04:30:00+00:00",
+        "reviewSourceLine": 267,
+        "infrastructureContextSourceLine": 269,
+        "infrastructureContextReportedAt": "2026-11-24T04:33:00+00:00"
       },
       "capacity": {
         "swe2Pi": {
@@ -489,17 +504,37 @@
         },
         "devinAcp": "parado conforme VPS",
         "ibmClaudeAgent": "Cota de 5h informada até 08h20 UTC na linha 265; reset não confirmado. Retomada das implementações usa Antigravity/Gemini, não claudeAgent.",
-        "reportedAt": "2026-11-24T04:26:00+00:00",
-        "newBuildRoute": "IBM Antigravity para implementações 18/19/17/34 e r1 de 20/15/16; VPS permanece pausada por disco.",
+        "reportedAt": "2026-11-24T04:33:00+00:00",
+        "newBuildRoute": "FAROL52-r2 lançada na VPS com Sol/Codex; quatro r1 IBM do grupo 20/15/16/33, com 33 explicitamente mantido sem duplicação.",
         "ibmActiveSlotsReported": 6,
         "ibmTotalSlotsReported": 6,
         "ibmCapacityReportedAt": "2026-11-24T04:08:00+00:00",
         "ibmCapacitySourceLine": 262,
         "ibmCurrentActiveSlots": 4,
         "ibmCurrentActiveSlotsSource": "Quatro implementações explicitamente retomadas na linha 266; não é novo relato global 6/6",
-        "ibmAntigravity": "Atualizado e operacional conforme VPS; versão nova não informada. Quatro implementações retomadas e três revisões cross-family nomeadas.",
+        "ibmAntigravity": "Atualizado/operacional conforme linha 266; quatro implementações retomadas então e quatro revisões r1 paralelas confirmadas na linha 267. Versão nova não informada; não é nova capacidade global 6/6.",
         "ibmCurrentActiveSlotsScope": "implementações nomeadas; revisões separadas",
-        "ibmReviewTasksReported": 3
+        "ibmReviewTasksReported": 4,
+        "ibmReviewTasksSourceLine": 267,
+        "vpsReadyReviews": [],
+        "vpsReviewReadinessSourceLine": 268,
+        "vpsActiveReviews": [
+          {
+            "round": "r2",
+            "sha": "37c00b00ea",
+            "shaExplicitInLaunch": true,
+            "status": "launched_reported",
+            "reviewer": "Sol",
+            "executor": "Codex",
+            "host": "oracle-vps",
+            "diskGateSatisfiedReported": true,
+            "launchNotReported": false,
+            "verdictIssued": false,
+            "sourceLine": 269,
+            "reportedAt": "2026-11-24T04:33:00+00:00"
+          }
+        ],
+        "vpsReviewStartedSourceLine": 269
       },
       "infrastructure": {
         "codexMacbook": {
@@ -576,20 +611,16 @@
         },
         "vpsDisk": {
           "mount": "/",
-          "freeGbReported": 15,
+          "freeGbReported": 39,
           "floorGbReported": 20,
           "atFloorReported": false,
-          "reportedAt": "2026-11-24T04:26:00+00:00",
-          "sourceLine": 266,
-          "newBuildRoute": "ibm-ephemeral",
+          "reportedAt": "2026-11-24T04:33:00+00:00",
+          "sourceLine": 269,
+          "newBuildRoute": "FAROL52-r2 com Sol/Codex na VPS; FAROL33-r1 permanece na IBM sem duplicação",
           "measuredLocally": false,
-          "belowFloorReported": true,
-          "status": "BLOQUEADA",
-          "pausedScopes": [
-            "builds",
-            "runs",
-            "revisões"
-          ],
+          "belowFloorReported": false,
+          "status": "LIBERADA",
+          "pausedScopes": [],
           "previousReports": [
             {
               "mount": "/",
@@ -649,15 +680,75 @@
                 "sourceLine": 265,
                 "note": "VPS reconfirma 15G livres abaixo do piso; não é medição desta VM"
               }
+            },
+            {
+              "mount": "/",
+              "freeGbReported": 15,
+              "floorGbReported": 20,
+              "atFloorReported": false,
+              "reportedAt": "2026-11-24T04:26:00+00:00",
+              "sourceLine": 266,
+              "newBuildRoute": "ibm-ephemeral",
+              "measuredLocally": false,
+              "belowFloorReported": true,
+              "status": "BLOQUEADA",
+              "pausedScopes": [
+                "builds",
+                "runs",
+                "revisões"
+              ],
+              "lastThresholdConfirmation": {
+                "belowFloorReported": true,
+                "floorGb": 20,
+                "freeGbReported": 15,
+                "reportedAt": "2026-11-24T04:26:00+00:00",
+                "sourceLine": 266,
+                "note": "VPS reconfirma 15G e pausa; rota IBM não implica limpeza de disco"
+              }
+            },
+            {
+              "mount": "/",
+              "freeGbReported": 39,
+              "floorGbReported": 20,
+              "atFloorReported": false,
+              "reportedAt": "2026-11-24T04:33:00+00:00",
+              "sourceLine": 268,
+              "newBuildRoute": "VPS liberada para FAROL52-r2 e FAROL33-r1 no Sol; lançamento não informado",
+              "measuredLocally": false,
+              "belowFloorReported": false,
+              "status": "LIBERADA",
+              "pausedScopes": [],
+              "lastThresholdConfirmation": {
+                "belowFloorReported": false,
+                "floorGb": 20,
+                "freeGbReported": 39,
+                "reportedAt": "2026-11-24T04:33:00+00:00",
+                "sourceLine": 268,
+                "note": "VPS relata disco liberado; não é medição ou limpeza realizada nesta VM"
+              },
+              "cleanupReported": {
+                "fromFreeGb": 15,
+                "toFreeGb": 39,
+                "symlinkedToBlockVolume": [
+                  "toolchains",
+                  "ccache",
+                  "gradle-prime"
+                ],
+                "target": "/mnt/block-volume",
+                "globalRunsArchivedReported": true,
+                "performedLocally": false,
+                "sourceLine": 268,
+                "reportedAt": "2026-11-24T04:33:00+00:00"
+              }
             }
           ],
           "lastThresholdConfirmation": {
-            "belowFloorReported": true,
+            "belowFloorReported": false,
             "floorGb": 20,
-            "freeGbReported": 15,
-            "reportedAt": "2026-11-24T04:26:00+00:00",
-            "sourceLine": 266,
-            "note": "VPS reconfirma 15G e pausa; rota IBM não implica limpeza de disco"
+            "freeGbReported": 39,
+            "reportedAt": "2026-11-24T04:33:00+00:00",
+            "sourceLine": 269,
+            "note": "39G reconfirmados no lançamento da r2; limpeza reportada na linha 268, não realizada nesta VM"
           },
           "previousThresholdConfirmations": [
             {
@@ -688,8 +779,38 @@
               "reportedAt": "2026-11-24T04:19:00+00:00",
               "sourceLine": 265,
               "note": "VPS reconfirma 15G livres abaixo do piso; não é medição desta VM"
+            },
+            {
+              "belowFloorReported": true,
+              "floorGb": 20,
+              "freeGbReported": 15,
+              "reportedAt": "2026-11-24T04:26:00+00:00",
+              "sourceLine": 266,
+              "note": "VPS reconfirma 15G e pausa; rota IBM não implica limpeza de disco"
+            },
+            {
+              "belowFloorReported": false,
+              "floorGb": 20,
+              "freeGbReported": 39,
+              "reportedAt": "2026-11-24T04:33:00+00:00",
+              "sourceLine": 268,
+              "note": "VPS relata disco liberado; não é medição ou limpeza realizada nesta VM"
             }
-          ]
+          ],
+          "cleanupReported": {
+            "fromFreeGb": 15,
+            "toFreeGb": 39,
+            "symlinkedToBlockVolume": [
+              "toolchains",
+              "ccache",
+              "gradle-prime"
+            ],
+            "target": "/mnt/block-volume",
+            "globalRunsArchivedReported": true,
+            "performedLocally": false,
+            "sourceLine": 268,
+            "reportedAt": "2026-11-24T04:33:00+00:00"
+          }
         },
         "ibmClaudeAgent": {
           "status": "quota_exhausted_reported",
@@ -719,21 +840,48 @@
         "farol-52": {
           "round": "r2",
           "sha": "37c00b00ea",
-          "status": "blocked_before_start_reported",
-          "reviewer": "Sol na VPS",
-          "reportedAt": "2026-11-24T04:00:00+00:00",
-          "sourceLine": 257,
-          "blockedBy": "vps-root-disk",
+          "shaExplicitInLaunch": true,
+          "status": "launched_reported",
+          "reviewer": "Sol",
+          "executor": "Codex",
+          "host": "oracle-vps",
+          "diskGateSatisfiedReported": true,
+          "launchNotReported": false,
           "verdictIssued": false,
-          "alternative": "Codex/Antigravity na IBM, sugerida e não confirmada no relato",
+          "sourceLine": 269,
+          "reportedAt": "2026-11-24T04:33:00+00:00",
           "previousState": {
-            "round": "r1",
-            "status": "rejected_reported",
-            "route": "Sol / Codex na VPS",
-            "sourceLine": 250,
-            "completeReportSaved": true,
-            "finalTurnCyberPolicyDoesNotInvalidateVerdict": true,
-            "nextReview": "r2 planejada com claudeAgent Opus na IBM após nova entrega"
+            "round": "r2",
+            "sha": "37c00b00ea",
+            "shaSource": "última entrega conhecida; linha 268 não informa novo SHA",
+            "status": "ready_not_launched_reported",
+            "reviewer": "Sol na VPS",
+            "host": "oracle-vps",
+            "diskGateSatisfiedReported": true,
+            "launchNotReported": true,
+            "verdictIssued": false,
+            "sourceLine": 268,
+            "reportedAt": "2026-11-24T04:33:00+00:00",
+            "previousState": {
+              "round": "r2",
+              "sha": "37c00b00ea",
+              "status": "blocked_before_start_reported",
+              "reviewer": "Sol na VPS",
+              "reportedAt": "2026-11-24T04:00:00+00:00",
+              "sourceLine": 257,
+              "blockedBy": "vps-root-disk",
+              "verdictIssued": false,
+              "alternative": "Codex/Antigravity na IBM, sugerida e não confirmada no relato",
+              "previousState": {
+                "round": "r1",
+                "status": "rejected_reported",
+                "route": "Sol / Codex na VPS",
+                "sourceLine": 250,
+                "completeReportSaved": true,
+                "finalTurnCyberPolicyDoesNotInvalidateVerdict": true,
+                "nextReview": "r2 planejada com claudeAgent Opus na IBM após nova entrega"
+              }
+            }
           }
         },
         "farol-48": {
@@ -746,11 +894,81 @@
         "farol-33": {
           "round": "r1",
           "sha": "3f4279dbca",
-          "status": "blocked_before_start_reported",
-          "blockedBy": "vps-root-disk",
+          "shaExplicitInLaunch": true,
+          "status": "launched_reported",
+          "reviewer": "Gemini 4 Neon",
+          "modelId": "gemini-4-neon",
+          "executor": "Antigravity",
+          "host": "ibm-ephemeral",
+          "crossFamilySource": "Entrega Claude na linha 259 e revisão Gemini na linha 267",
+          "unblockedVia": "Rota IBM; disco VPS não declarado resolvido",
           "verdictIssued": false,
-          "sourceLine": 259,
-          "reportedAt": "2026-11-24T04:06:00+00:00"
+          "sourceLine": 267,
+          "reportedAt": "2026-11-24T04:30:00+00:00",
+          "previousVpsAlternatives": [
+            {
+              "item": "farol-33",
+              "round": "r1",
+              "reviewer": "Sol",
+              "host": "oracle-vps",
+              "status": "ready_not_launched_reported",
+              "sourceLine": 268,
+              "reportedAt": "2026-11-24T04:33:00+00:00",
+              "doesNotCancelIbmReview": true
+            }
+          ],
+          "vpsDuplicateNotLaunchedReported": true,
+          "keptOnIbmReportedAt": "2026-11-24T04:33:00+00:00",
+          "keptOnIbmSourceLine": 269,
+          "previousState": {
+            "round": "r1",
+            "sha": "3f4279dbca",
+            "shaExplicitInLaunch": true,
+            "status": "launched_reported",
+            "reviewer": "Gemini 4 Neon",
+            "modelId": "gemini-4-neon",
+            "executor": "Antigravity",
+            "host": "ibm-ephemeral",
+            "crossFamilySource": "Entrega Claude na linha 259 e revisão Gemini na linha 267",
+            "unblockedVia": "Rota IBM; disco VPS não declarado resolvido",
+            "verdictIssued": false,
+            "sourceLine": 267,
+            "reportedAt": "2026-11-24T04:30:00+00:00",
+            "vpsAlternativeReady": {
+              "item": "farol-33",
+              "round": "r1",
+              "reviewer": "Sol",
+              "host": "oracle-vps",
+              "status": "ready_not_launched_reported",
+              "sourceLine": 268,
+              "reportedAt": "2026-11-24T04:33:00+00:00",
+              "doesNotCancelIbmReview": true
+            },
+            "previousState": {
+              "round": "r1",
+              "sha": "3f4279dbca",
+              "shaExplicitInLaunch": true,
+              "status": "launched_reported",
+              "reviewer": "Gemini 4 Neon",
+              "modelId": "gemini-4-neon",
+              "executor": "Antigravity",
+              "host": "ibm-ephemeral",
+              "crossFamilySource": "Entrega Claude na linha 259 e revisão Gemini na linha 267",
+              "unblockedVia": "Rota IBM; disco VPS não declarado resolvido",
+              "verdictIssued": false,
+              "sourceLine": 267,
+              "reportedAt": "2026-11-24T04:30:00+00:00",
+              "previousState": {
+                "round": "r1",
+                "sha": "3f4279dbca",
+                "status": "blocked_before_start_reported",
+                "blockedBy": "vps-root-disk",
+                "verdictIssued": false,
+                "sourceLine": 259,
+                "reportedAt": "2026-11-24T04:06:00+00:00"
+              }
+            }
+          }
         },
         "farol-15": {
           "round": "r1",
@@ -831,41 +1049,26 @@
         "approvalStatus": "APROVADO_COM_RESSALVAS"
       },
       "vpsExecution": {
-        "status": "BLOQUEADA",
-        "reportedAt": "2026-11-24T04:26:00+00:00",
-        "sourceLine": 266,
-        "reason": "VPS segue pausada com 15G livres < piso 20G; revisões 20/15/16 desviadas para IBM, sem limpeza de disco",
-        "pausedScopes": [
-          "builds",
-          "runs",
-          "revisões"
-        ],
-        "resumeNotReported": true,
+        "status": "LIBERADA",
+        "reportedAt": "2026-11-24T04:33:00+00:00",
+        "sourceLine": 269,
+        "reason": "39G livres; FAROL52-r2 lançada com Sol/Codex na VPS. FAROL33-r1 mantida na IBM sem duplicação.",
+        "pausedScopes": [],
         "localDashboardUnaffected": true,
         "latestBlockedReview": null,
         "previousState": {
-          "status": "BLOQUEADA",
-          "reportedAt": "2026-11-24T04:19:00+00:00",
-          "sourceLine": 265,
-          "reason": "Raiz VPS segue em 15G livres < piso 20G, conforme VPS; nenhuma retomada reportada",
-          "pausedScopes": [
-            "builds",
-            "runs",
-            "revisões"
-          ],
-          "resumeNotReported": true,
+          "status": "LIBERADA",
+          "reportedAt": "2026-11-24T04:33:00+00:00",
+          "sourceLine": 268,
+          "reason": "39G livres acima do piso de 20G; VPS desbloqueada para FAROL52-r2/FAROL33-r1 no Sol, sem lançamento ou cancelamento confirmado",
+          "pausedScopes": [],
           "localDashboardUnaffected": true,
-          "latestBlockedReview": {
-            "item": "farol-16",
-            "round": "r1",
-            "reportedAt": "2026-11-24T04:12:00+00:00",
-            "sourceLine": 264
-          },
+          "latestBlockedReview": null,
           "previousState": {
             "status": "BLOQUEADA",
-            "reportedAt": "2026-11-24T04:00:00+00:00",
-            "sourceLine": 257,
-            "reason": "Raiz VPS 15G livres < piso 20G",
+            "reportedAt": "2026-11-24T04:26:00+00:00",
+            "sourceLine": 266,
+            "reason": "VPS segue pausada com 15G livres < piso 20G; revisões 20/15/16 desviadas para IBM, sem limpeza de disco",
             "pausedScopes": [
               "builds",
               "runs",
@@ -873,13 +1076,102 @@
             ],
             "resumeNotReported": true,
             "localDashboardUnaffected": true,
-            "latestBlockedReview": {
+            "latestBlockedReview": null,
+            "previousState": {
+              "status": "BLOQUEADA",
+              "reportedAt": "2026-11-24T04:19:00+00:00",
+              "sourceLine": 265,
+              "reason": "Raiz VPS segue em 15G livres < piso 20G, conforme VPS; nenhuma retomada reportada",
+              "pausedScopes": [
+                "builds",
+                "runs",
+                "revisões"
+              ],
+              "resumeNotReported": true,
+              "localDashboardUnaffected": true,
+              "latestBlockedReview": {
+                "item": "farol-16",
+                "round": "r1",
+                "reportedAt": "2026-11-24T04:12:00+00:00",
+                "sourceLine": 264
+              },
+              "previousState": {
+                "status": "BLOQUEADA",
+                "reportedAt": "2026-11-24T04:00:00+00:00",
+                "sourceLine": 257,
+                "reason": "Raiz VPS 15G livres < piso 20G",
+                "pausedScopes": [
+                  "builds",
+                  "runs",
+                  "revisões"
+                ],
+                "resumeNotReported": true,
+                "localDashboardUnaffected": true,
+                "latestBlockedReview": {
+                  "item": "farol-16",
+                  "round": "r1",
+                  "reportedAt": "2026-11-24T04:12:00+00:00",
+                  "sourceLine": 264
+                }
+              }
+            },
+            "previousBlockedReviewSnapshots": [
+              {
+                "item": "farol-16",
+                "round": "r1",
+                "reportedAt": "2026-11-24T04:12:00+00:00",
+                "sourceLine": 264
+              }
+            ],
+            "remainingBlockedReviews": [
+              "farol-52:r2"
+            ],
+            "remainingBlockedReviewsSource": "Último estado do 52 preservado; 20/15/16 lançadas na linha 266 e 33 na linha 267, sem retomada de disco VPS",
+            "previousRemainingBlockedReviews": [
+              "farol-33:r1",
+              "farol-52:r2"
+            ],
+            "remainingBlockedReviewsUpdatedAt": "2026-11-24T04:33:18+00:00",
+            "remainingBlockedReviewsSourceLine": 267
+          },
+          "previousBlockedReviewSnapshots": [
+            {
               "item": "farol-16",
               "round": "r1",
               "reportedAt": "2026-11-24T04:12:00+00:00",
               "sourceLine": 264
             }
-          }
+          ],
+          "remainingBlockedReviews": [],
+          "remainingBlockedReviewsSource": "Disco liberado na linha 268; revisão pronta não significa iniciada",
+          "previousRemainingBlockedReviews": [
+            "farol-33:r1",
+            "farol-52:r2"
+          ],
+          "remainingBlockedReviewsUpdatedAt": "2026-11-24T04:35:20+00:00",
+          "remainingBlockedReviewsSourceLine": 268,
+          "diskGateSatisfiedReported": true,
+          "executionStartedNotReported": true,
+          "readyReviews": [
+            {
+              "item": "farol-52",
+              "round": "r2",
+              "reviewer": "Sol",
+              "host": "oracle-vps",
+              "status": "ready_not_launched_reported",
+              "sourceLine": 268,
+              "reportedAt": "2026-11-24T04:33:00+00:00"
+            },
+            {
+              "item": "farol-33",
+              "round": "r1",
+              "reviewer": "Sol",
+              "host": "oracle-vps",
+              "status": "ready_not_launched_reported",
+              "sourceLine": 268,
+              "reportedAt": "2026-11-24T04:33:00+00:00"
+            }
+          ]
         },
         "previousBlockedReviewSnapshots": [
           {
@@ -889,14 +1181,89 @@
             "sourceLine": 264
           }
         ],
-        "remainingBlockedReviews": [
+        "remainingBlockedReviews": [],
+        "remainingBlockedReviewsSource": "Disco liberado na linha 268; revisão pronta não significa iniciada",
+        "previousRemainingBlockedReviews": [
           "farol-33:r1",
           "farol-52:r2"
         ],
-        "remainingBlockedReviewsSource": "Últimos estados conhecidos; linha 266 não lança revisões desses dois itens"
+        "remainingBlockedReviewsUpdatedAt": "2026-11-24T04:35:20+00:00",
+        "remainingBlockedReviewsSourceLine": 268,
+        "diskGateSatisfiedReported": true,
+        "executionStartedNotReported": false,
+        "readyReviews": [],
+        "previousReadyReviews": [
+          {
+            "item": "farol-52",
+            "round": "r2",
+            "reviewer": "Sol",
+            "host": "oracle-vps",
+            "status": "ready_not_launched_reported",
+            "sourceLine": 268,
+            "reportedAt": "2026-11-24T04:33:00+00:00"
+          },
+          {
+            "item": "farol-33",
+            "round": "r1",
+            "reviewer": "Sol",
+            "host": "oracle-vps",
+            "status": "ready_not_launched_reported",
+            "sourceLine": 268,
+            "reportedAt": "2026-11-24T04:33:00+00:00"
+          }
+        ],
+        "executionStartedReported": true,
+        "activeReviews": [
+          {
+            "round": "r2",
+            "sha": "37c00b00ea",
+            "shaExplicitInLaunch": true,
+            "status": "launched_reported",
+            "reviewer": "Sol",
+            "executor": "Codex",
+            "host": "oracle-vps",
+            "diskGateSatisfiedReported": true,
+            "launchNotReported": false,
+            "verdictIssued": false,
+            "sourceLine": 269,
+            "reportedAt": "2026-11-24T04:33:00+00:00"
+          }
+        ]
+      },
+      "parallelReviews": {
+        "items": [
+          "farol-20",
+          "farol-15",
+          "farol-16",
+          "farol-33"
+        ],
+        "count": 4,
+        "round": "r1",
+        "host": "ibm-ephemeral",
+        "status": "in_progress_reported",
+        "sourceLine": 267,
+        "reportedAt": "2026-11-24T04:30:00+00:00",
+        "verdictsIssued": false,
+        "scope": "Quatro entregas Claude da onda operacional 2; não é capacidade global IBM"
+      },
+      "reviewRouting": {
+        "vps": [
+          "farol-52:r2"
+        ],
+        "ibm": [
+          "farol-20:r1",
+          "farol-15:r1",
+          "farol-16:r1",
+          "farol-33:r1"
+        ],
+        "sourceLine": 269,
+        "reportedAt": "2026-11-24T04:33:00+00:00",
+        "ibmGroupSourceLine": 267,
+        "farol33NoDuplicationReported": true,
+        "verdictsIssued": false
       }
     },
-    "lastVpsLine": 266,
+    "lastVpsLine": 269,
     "wave2Base": {
       "branch": "agente/base-21f-farol-onda2",
       "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -2362,19 +2729,22 @@
         "farol-14"
       ],
       "allDependencies": false,
-      "status": "BLOQUEADA",
+      "status": "REVISAO",
       "wave": "C",
       "sha": "3f4279dbca",
       "batch": null,
-      "note": "Entregue na IBM por claudeAgent Sonnet em 3f4279dbca: quatro arquivos novos e farol_conserto/fachada/anel + SDL2 RC 0, conforme VPS. Commit e pai 2d26d54290 (base de trabalho da onda 2) e os quatro arquivos adicionados conferidos no GitHub; testes não reproduzidos nesta VM. Aguarda revisão r1, ainda não iniciada: disco da VPS continua abaixo do piso de 20G. Não houve parecer de aprovação nem confirmação de limpeza/retomada. Fora do candidato 21f original; sem integração ou TV física confirmadas.",
-      "source": "Relato VPS · linha 259; commit, pai e quatro arquivos novos conferidos no GitHub",
+      "note": "FAROL33-r1 em 3f4279dbca lançada na IBM com gemini-4-neon às 04h30 UTC e explicitamente mantida lá sem duplicação na linha 269. A liberação anterior da VPS não virou uma segunda revisão no Sol; FAROL52-r2 foi a revisão lançada na VPS. Quatro entregas Claude da onda 2 permanecem no último grupo de revisões IBM reportado (20/15/16/33), sem parecer do 33. Entrega/testes preservados; sem aprovação, integração ou TV física confirmadas.",
+      "source": "Relatos VPS · linha 267 (lançamento IBM) e 269 (manutenção sem duplicação)",
       "verified": false,
       "previousNotes": [
+        "FAROL33-r1 em 3f4279dbca lançada na IBM com gemini-4-neon às 04h30 UTC (linha 267), em paralelo com 20/15/16. Às 04h33, VPS informa disco liberado para 39G e rota Sol pronta também para FAROL33-r1. Esse relato libera infraestrutura: não informa lançamento no Sol, cancelamento ou substituição da r1 IBM. A revisão IBM permanece como último lançamento confirmado, sem duplicar revisões nem antecipar parecer. Entrega e testes anteriores preservados; sem aprovação, integração ou TV física confirmadas.",
+        "FAROL33-r1 lançada na IBM com gemini-4-neon em 3f4279dbca, conforme VPS. As quatro entregas Claude da onda operacional 2 (#20/#15/#16/#33) estão em revisão paralela na IBM; não é parecer de aprovação. Entrega, pai, quatro arquivos novos e testes reportados anteriormente permanecem preservados, sem reprodução dos testes nesta VM. O bloqueio de disco foi contornado pela rota IBM, não resolvido; nenhuma retomada da VPS reportada nesta linha. Sem integração ou TV física confirmadas; candidato 21f original inalterado.",
+        "Entregue na IBM por claudeAgent Sonnet em 3f4279dbca: quatro arquivos novos e farol_conserto/fachada/anel + SDL2 RC 0, conforme VPS. Commit e pai 2d26d54290 (base de trabalho da onda 2) e os quatro arquivos adicionados conferidos no GitHub; testes não reproduzidos nesta VM. Aguarda revisão r1, ainda não iniciada: disco da VPS continua abaixo do piso de 20G. Não houve parecer de aprovação nem confirmação de limpeza/retomada. Fora do candidato 21f original; sem integração ou TV física confirmadas.",
         "Implementação lançada na IBM com Sonnet, conforme VPS. Onda operacional 2 destravada pelo aceite com ressalvas da #14; base agente/base-21f-farol-onda2@2d26d54290 (21f + #14), não integrada. Ainda sem commit de entrega, revisão ou teste em TV física reportados; não confundir a base com SHA entregue da issue.",
         ""
       ],
-      "reportedAt": "2026-11-24T04:06:00+00:00",
-      "updatedAt": "2026-11-24T04:09:50+00:00",
+      "reportedAt": "2026-11-24T04:33:00+00:00",
+      "updatedAt": "2026-11-24T04:36:32+00:00",
       "integrationVerified": false,
       "operationalWave": 2,
       "approvalGate": {
@@ -2385,7 +2755,7 @@
         "reportedAt": "2026-11-24T03:53:00+00:00",
         "sourceLine": 253
       },
-      "owner": "IBM · claudeAgent / Sonnet",
+      "owner": "IBM · Antigravity / Gemini 4 Neon",
       "workBase": {
         "branch": "agente/base-21f-farol-onda2",
         "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -2416,7 +2786,7 @@
         "executor": "claudeAgent"
       },
       "latestDeliverySha": "3f4279dbca",
-      "verificationSummary": "entrega e testes RC 0 reportados pela VPS; r1 bloqueada antes de iniciar por disco; sem aprovação, integração ou TV física",
+      "verificationSummary": "r1 lançada na IBM conforme VPS, em paralelo com 20/15/16; sem parecer, integração ou TV física",
       "delivery": {
         "sha": "3f4279dbca",
         "fullSha": "3f4279dbcae21babf5b8da4ba5f57bbdf8fe39ed",
@@ -2442,19 +2812,54 @@
       "review": {
         "round": "r1",
         "sha": "3f4279dbca",
-        "status": "blocked_before_start_reported",
-        "blockedBy": "vps-root-disk",
+        "shaExplicitInLaunch": true,
+        "status": "launched_reported",
+        "reviewer": "Gemini 4 Neon",
+        "modelId": "gemini-4-neon",
+        "executor": "Antigravity",
+        "host": "ibm-ephemeral",
+        "crossFamilySource": "Entrega Claude na linha 259 e revisão Gemini na linha 267",
+        "unblockedVia": "Rota IBM; disco VPS não declarado resolvido",
         "verdictIssued": false,
-        "sourceLine": 259,
-        "reportedAt": "2026-11-24T04:06:00+00:00"
+        "sourceLine": 267,
+        "reportedAt": "2026-11-24T04:30:00+00:00",
+        "previousVpsAlternatives": [
+          {
+            "item": "farol-33",
+            "round": "r1",
+            "reviewer": "Sol",
+            "host": "oracle-vps",
+            "status": "ready_not_launched_reported",
+            "sourceLine": 268,
+            "reportedAt": "2026-11-24T04:33:00+00:00",
+            "doesNotCancelIbmReview": true
+          }
+        ],
+        "vpsDuplicateNotLaunchedReported": true,
+        "keptOnIbmReportedAt": "2026-11-24T04:33:00+00:00",
+        "keptOnIbmSourceLine": 269
       },
-      "blockers": [
+      "blockers": [],
+      "previousReviews": [
         {
-          "id": "vps-root-disk",
-          "reason": "Disco VPS abaixo do piso de 20G; r1 aguardando",
+          "round": "r1",
+          "sha": "3f4279dbca",
+          "status": "blocked_before_start_reported",
+          "blockedBy": "vps-root-disk",
+          "verdictIssued": false,
           "sourceLine": 259,
           "reportedAt": "2026-11-24T04:06:00+00:00"
         }
+      ],
+      "previousBlockers": [
+        [
+          {
+            "id": "vps-root-disk",
+            "reason": "Disco VPS abaixo do piso de 20G; r1 aguardando",
+            "sourceLine": 259,
+            "reportedAt": "2026-11-24T04:06:00+00:00"
+          }
+        ]
       ]
     },
     {
@@ -3127,14 +3532,16 @@
         "farol-44"
       ],
       "allDependencies": false,
-      "status": "BLOQUEADA",
+      "status": "REVISAO",
       "wave": "D",
       "sha": "37c00b00ea",
       "batch": null,
-      "note": "FAROL52B entregue em 37c00b00ea por claudeAgent Opus na IBM. A VPS informa correção dos 3 P1 da r1, P2 e stack-use-after-scope, com normal/ASan/TSan/SDL2 verdes na ponta e na composição com 21f; testes reportados, não reproduzidos nesta VM. A ref agente/21z-farol-52 foi conferida no GitHub. A r1 reprovada de 7a52488283 e seu parecer completo continuam no histórico: não são o veredito da entrega nova. R2 com Sol ainda não iniciada: raiz da VPS em 15G livres, abaixo do piso de 20G; builds/runs/revisões na VPS parados. Aguarda limpeza ou rota alternativa Codex/Antigravity na IBM, ainda não confirmada; a sugestão não comprova resolução da incompatibilidade Antigravity/T3 anterior. Entrega sem aprovação independente, fora do candidato 21f original e sem integração ou TV física confirmadas.",
-      "source": "Relatos VPS · linhas 256–257; ref de entrega conferida no GitHub",
+      "note": "FAROL52-r2 lançada na VPS com Sol via Codex em 37c00b00ea, conforme VPS, após disco liberado para 39G. Início agora confirmado; nenhum parecer ou novo resultado da r2 informado. FAROL33-r1 mantida na IBM com gemini-4-neon, sem duplicação. Entrega e testes anteriores permanecem somente reportados, sem reprodução nesta VM; reprovação r1 do SHA antigo 7a52488283 preservada. Sem aprovação, integração ou TV física confirmadas.",
+      "source": "Relato VPS · linha 269",
       "verified": false,
       "previousNotes": [
+        "FAROL52B entregue em 37c00b00ea; disco VPS liberado de 15G para 39G conforme relato. R2 com Sol na VPS agora liberada, mas o início não foi reportado: aguarda lançamento, sem parecer novo. A entrega e os testes normal/ASan/TSan/SDL2 permanecem reportados, não reproduzidos nesta VM. Reprovação r1 do SHA anterior 7a52488283 preservada no histórico; não é veredito de 37c00b00ea. Nenhuma aprovação, integração ou TV física confirmadas.",
+        "FAROL52B entregue em 37c00b00ea por claudeAgent Opus na IBM. A VPS informa correção dos 3 P1 da r1, P2 e stack-use-after-scope, com normal/ASan/TSan/SDL2 verdes na ponta e na composição com 21f; testes reportados, não reproduzidos nesta VM. A ref agente/21z-farol-52 foi conferida no GitHub. A r1 reprovada de 7a52488283 e seu parecer completo continuam no histórico: não são o veredito da entrega nova. R2 com Sol ainda não iniciada: raiz da VPS em 15G livres, abaixo do piso de 20G; builds/runs/revisões na VPS parados. Aguarda limpeza ou rota alternativa Codex/Antigravity na IBM, ainda não confirmada; a sugestão não comprova resolução da incompatibilidade Antigravity/T3 anterior. Entrega sem aprovação independente, fora do candidato 21f original e sem integração ou TV física confirmadas.",
         "REPROVADO r1 por Sol em 7a52488283, conforme VPS e revisao/FAROL52-r1-revisao.md: 3 P1 — título privado do Diário em gosto.ancoras sem motivo; POST durante recomenda_cabecalhos após player aberto ou perfil infantil; cN compactado troca cartazes. Parecer completo gravado antes de cyber_policy no turno final; não é revisão sem veredito. FAROL52B inicialmente despachada para Gemini Hydrogen na IBM e movida às 03h25 UTC para claudeAgent claude-opus-5-5: Antigravity 1.4.5 incompatível com T3 0.1.12-nightly naquela máquina. R2 com claudeAgent Opus na IBM planejada para depois da entrega, ainda não iniciada conforme os relatos. Não há SHA de correção entregue: 7a52488283 continua sendo a ponta reprovada. Piso de 20G na raiz da VPS: novos builds roteados para IBM. Fora do candidato 21f; sem integração ou TV física confirmadas.",
         "FAROL52-r1 lançada na VPS com Sol via Codex (main/auto/gpt-6.2-sol) em `7a52488283`. Revisão lançada conforme VPS; ainda sem parecer nesta rodada. Sem integração ou TV física inferidas.",
         "`7a52488283` concluída na IBM (Gemini Hydrogen, 8 arquivos, +3853/−58, conflito trivial de #include em src/app.c vs 21f, Poke intocado). Entrega não integrada e ainda sem revisão r1: aguardava reset do Codex main às 03h02 UTC; prazo é do relato, sem retomada automaticamente inferida. Conflito trivial de include em src/app.c versus 21f reportado, não resolvido por este painel. Fora do candidato 21f. Gate de aprovação da #40 satisfeito no pin 7e14590c2b; a reprovação r11 do delta b7106d207a não revogou esse pin conforme VPS.",
@@ -3148,9 +3555,9 @@
         "Caminho crítico. Aguarda o veredito da revisão Sol r3 do Farol 40 antes de avançar.",
         "Caminho crítico."
       ],
-      "updatedAt": "2026-11-24T04:04:37+00:00",
+      "updatedAt": "2026-11-24T04:36:32+00:00",
       "dependencyReportedAt": "2026-11-23T21:13:00+00:00",
-      "reportedAt": "2026-11-24T04:00:00+00:00",
+      "reportedAt": "2026-11-24T04:33:00+00:00",
       "dependencyReviewReportedAt": "2026-11-23T21:18:00+00:00",
       "approvalGate": {
         "satisfied": true,
@@ -3170,13 +3577,16 @@
       "review": {
         "round": "r2",
         "sha": "37c00b00ea",
-        "status": "blocked_before_start_reported",
-        "reviewer": "Sol na VPS",
-        "reportedAt": "2026-11-24T04:00:00+00:00",
-        "sourceLine": 257,
-        "blockedBy": "vps-root-disk",
+        "shaExplicitInLaunch": true,
+        "status": "launched_reported",
+        "reviewer": "Sol",
+        "executor": "Codex",
+        "host": "oracle-vps",
+        "diskGateSatisfiedReported": true,
+        "launchNotReported": false,
         "verdictIssued": false,
-        "alternative": "Codex/Antigravity na IBM, sugerida e não confirmada no relato"
+        "sourceLine": 269,
+        "reportedAt": "2026-11-24T04:33:00+00:00"
       },
       "previousReviews": [
         {
@@ -3213,10 +3623,34 @@
             "afterCompleteReport": true,
             "invalidatesSavedVerdict": false
           }
+        },
+        {
+          "round": "r2",
+          "sha": "37c00b00ea",
+          "status": "blocked_before_start_reported",
+          "reviewer": "Sol na VPS",
+          "reportedAt": "2026-11-24T04:00:00+00:00",
+          "sourceLine": 257,
+          "blockedBy": "vps-root-disk",
+          "verdictIssued": false,
+          "alternative": "Codex/Antigravity na IBM, sugerida e não confirmada no relato"
+        },
+        {
+          "round": "r2",
+          "sha": "37c00b00ea",
+          "shaSource": "última entrega conhecida; linha 268 não informa novo SHA",
+          "status": "ready_not_launched_reported",
+          "reviewer": "Sol na VPS",
+          "host": "oracle-vps",
+          "diskGateSatisfiedReported": true,
+          "launchNotReported": true,
+          "verdictIssued": false,
+          "sourceLine": 268,
+          "reportedAt": "2026-11-24T04:33:00+00:00"
         }
       ],
-      "owner": "IBM · claudeAgent / Claude Opus 5.5",
-      "verificationSummary": "nova entrega com testes verdes conforme VPS; r2 bloqueada antes de iniciar por disco da VPS; sem aprovação, integração ou TV física",
+      "owner": "VPS · Sol / Codex",
+      "verificationSummary": "r2 lançada com Sol/Codex na VPS em 37c00b00ea; sem parecer de aprovação, integração ou TV física",
       "correction": {
         "task": "FAROL52B",
         "status": "delivered_reported",
@@ -3289,13 +3723,16 @@
         "testsReported": "normal/ASan/TSan/SDL2 verdes na ponta e composição 21f",
         "testsReproducedLocally": false
       },
-      "blockers": [
-        {
-          "id": "vps-root-disk",
-          "reason": "Raiz VPS 15G livres abaixo do piso de 20G",
-          "sourceLine": 257,
-          "reportedAt": "2026-11-24T04:00:00+00:00"
-        }
+      "blockers": [],
+      "previousBlockers": [
+        [
+          {
+            "id": "vps-root-disk",
+            "reason": "Raiz VPS 15G livres abaixo do piso de 20G",
+            "sourceLine": 257,
+            "reportedAt": "2026-11-24T04:00:00+00:00"
+          }
+        ]
       ]
     },
     {
@@ -6295,6 +6732,72 @@
     }
   ],
   "events": [
+    {
+      "item": "coordenacao-oracle-vps",
+      "from": null,
+      "to": null,
+      "reportedStatus": "INFRA",
+      "report": "2026-11-24 04:33 [INFRA] oracle-vps · disco / liberado (15G -> 39G livres; toolchains, ccache e gradle-prime em /mnt/block-volume via symlink; global/runs arquivado); VPS desbloqueada para FAROL52-r2 e FAROL33-r1 no Sol",
+      "vpsLine": 268,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "at": "2026-11-24T04:33:00+00:00",
+      "appliedAt": "2026-11-24T04:35:20+00:00"
+    },
+    {
+      "item": "farol-52",
+      "from": "BLOQUEADA",
+      "to": "REVISAO",
+      "report": "Disco VPS liberado para 39G; r2 do Farol 52 com Sol liberada, aguardando lançamento não informado. Sem parecer ou aprovação.",
+      "derived": true,
+      "relatedVpsLine": 268,
+      "source": "Relato VPS · linha 268",
+      "at": "2026-11-24T04:33:00+00:00",
+      "appliedAt": "2026-11-24T04:35:20+00:00"
+    },
+    {
+      "item": "farol-33",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "Disco VPS liberado e Sol pronto para r1 do 33; nenhum lançamento no Sol ou cancelamento da r1 IBM informado. Lançamento Gemini/IBM da linha 267 preservado, sem duplicar revisão.",
+      "derived": true,
+      "relatedVpsLine": 268,
+      "source": "Relatos VPS · linhas 267–268",
+      "at": "2026-11-24T04:33:00+00:00",
+      "appliedAt": "2026-11-24T04:35:20+00:00"
+    },
+    {
+      "item": "farol-52",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "reportedStatus": "REVISAO",
+      "report": "2026-11-24 04:33 [REVISAO] farol-52 · disco VPS liberado (39G); FAROL52-r2 lançada na VPS com Sol via Codex em `37c00b00ea`. FAROL33-r1 mantida na IBM (gemini-4-neon) sem duplicação.",
+      "vpsLine": 269,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "at": "2026-11-24T04:33:00+00:00",
+      "appliedAt": "2026-11-24T04:36:32+00:00"
+    },
+    {
+      "item": "farol-33",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "R1 do Farol 33 explicitamente mantida na IBM com gemini-4-neon, sem duplicação no Sol/VPS; sem parecer ou aprovação.",
+      "derived": true,
+      "relatedVpsLine": 269,
+      "source": "Relato VPS · linha 269",
+      "at": "2026-11-24T04:33:00+00:00",
+      "appliedAt": "2026-11-24T04:36:32+00:00"
+    },
+    {
+      "item": "farol-33",
+      "from": "BLOQUEADA",
+      "to": "REVISAO",
+      "at": "2026-11-24T04:30:00+00:00",
+      "appliedAt": "2026-11-24T04:33:18+00:00",
+      "reportedStatus": "REVISAO",
+      "report": "2026-11-24 04:30 [REVISAO] farol-33 · FAROL33-r1 lançada na IBM (`gemini-4-neon`) em `3f4279dbca`. Todas as 4 entregas Claude da onda 2 (#20, #15, #16, #33) em revisão paralela na IBM.",
+      "vpsLine": 267,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log"
+    },
     {
       "item": "ibm-ephemeral",
       "from": null,
