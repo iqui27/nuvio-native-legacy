@@ -2559,6 +2559,7 @@
   { "De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "4 to 8 digits. Protects this profile’s settings on this TV." },
   { "De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "4 to 8 digits. Valid only on this TV; protects other profiles' settings." },
   { "De 50% a 300% do tamanho principal", "From 50% to 300% of the main size" },
+  { "De lado até amanhã", "Set aside until tomorrow" },
   { "De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Where the showcase gets its titles: the whole catalog, or only what's in your list and in Continue Watching." },
   { "De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "Where the showcase gets its titles: the catalog or your list." },
   { "De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "Where auto-play can pick from: all sources, installed add-ons only or enabled plugins only. Saved to your profile." },

@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "从 4 到 8 个数字。保护该电视上该配置文件的设置。"),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "4 到 8 位数字。仅在此电视上有效,用于保护其他个人资料的设置。"),
   T("De 50% a 300% do tamanho principal", "从 50% 到 300% d 主尺寸"),
+  T("De lado até amanhã", "已搁置至明天"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "展示的作品来源：整个片库，或仅限你的列表和继续观看。"),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "展示区的标题来源:目录或你的列表。"),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "自动播放可选的来源：所有来源、仅已安装的插件或仅已启用的扩展。保存在你的个人资料中。"),

@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "من 4 إلى 8 أرقام. يحمي إعدادات ملف التعريف هذا على هذا التلفزيون."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "من 4 إلى 8 أرقام. يسري على هذه التلفاز فقط ويحمي إعدادات الملفات الأخرى."),
   T("De 50% a 300% do tamanho principal", "من 50% إلى 300% من الحجم الرئيسي"),
+  T("De lado até amanhã", "جانبًا حتى الغد"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "من أين يأخذ العرض عناوينه: الكتالوج كاملًا، أو فقط ما في قائمتك وفي متابعة المشاهدة."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "من أين تأخذ الواجهة العرضية العناوين: الكتالوج أو قائمتك."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "من أين يمكن للتشغيل التلقائي أن يختار: كل المصادر، أو الإضافات المثبتة فقط أو الملحقات المفعّلة فقط. يُحفظ في ملفك الشخصي."),

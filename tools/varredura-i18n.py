@@ -639,6 +639,7 @@ IGNORAR = {
     "interface em 1080p: mede de novo", "sem-acesso", "sem-dv", "nao-mkv", "temporada",
     # Nomes de arquivo e de pasta (addonstats.c, assrender.c): nunca tela.
     "fonte-latencia.txt", "%s/fontes",
+    "fonte-quarentena.txt",        # addonstats.c: quarentena de 24 h do Farol #17
     # Listas de COMPARACAO, nao de desenho: apelidos de genero em pt/es (mapa.c,
     # GEN_CANON), palavras que denunciam resposta de addon que nao e video
     # (naovideo.c) e palavras genericas de nome de legenda (legauto.c).

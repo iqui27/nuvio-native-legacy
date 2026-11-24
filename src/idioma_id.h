@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "Dari 4 hingga 8 angka. Melindungi pengaturan profil ini di TV ini."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "4 sampai 8 angka. Hanya berlaku di TV ini; melindungi pengaturan profil lain."),
   T("De 50% a 300% do tamanho principal", "Dari 50% hingga 300% dari ukuran utama"),
+  T("De lado até amanhã", "Disisihkan sampai besok"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Dari mana etalase mengambil judul: seluruh katalog, atau hanya yang ada di daftarmu dan di Lanjutkan Menonton."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "Dari mana etalase mengambil judul: katalog atau daftar Anda."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "Sumber yang boleh dipilih putar otomatis: semua sumber, hanya addon terpasang, atau hanya plugin aktif. Tersimpan di profil."),

@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "De 4 a 8 números. Protege os ajustes deste perfil neste televisor."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "De 4 a 8 números. Vale só nesta TV e protege as definições dos outros perfis."),
   T("De 50% a 300% do tamanho principal", "De 50% a 300% do tamanho principal"),
+  T("De lado até amanhã", "Posto de lado até amanhã"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "De onde a montra tira os títulos: o catálogo inteiro, ou só o que está na tua lista e em Continuar a ver."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "De onde a montra tira os títulos: o catálogo ou a sua lista."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "De onde a reprodução automática pode escolher: todas as fontes, só add-ons instalados ou só plugins ativos. Fica no seu perfil."),

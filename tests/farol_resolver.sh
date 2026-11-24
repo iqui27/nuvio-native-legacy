@@ -103,7 +103,7 @@ PY
   -Wall -Wextra -O1 -g \
   tests/farol_resolver.c src/resolver.c src/resolverregra.c src/farolregra.c \
   src/farolerro.c src/farolanel.c src/fontesonda.c src/extplayer.c \
-  src/addonguia.c src/addonmodo.c \
+  src/addonguia.c src/addonmodo.c src/farolacao_addon.c src/addonstats.c \
   -I"$work" -Isrc $(pkg-config --cflags sdl2 2>/dev/null || echo -I/usr/include/SDL2) \
   $(pkg-config --libs sdl2 2>/dev/null || echo -lSDL2) -lm -lpthread \
   -o "$work/farol-resolver-test"

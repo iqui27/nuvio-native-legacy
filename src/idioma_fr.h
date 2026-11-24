@@ -2559,6 +2559,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "De 4 à 8 numéros. Protège les paramètres de ce profil sur ce téléviseur."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "4 à 8 chiffres. Valable sur ce téléviseur seulement; protège les réglages des autres profils."),
   T("De 50% a 300% do tamanho principal", "De 50% à 300% de la taille principale"),
+  T("De lado até amanhã", "Mis de côté jusqu'à demain"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Où la vitrine prend ses titres : tout le catalogue, ou seulement ce qui est dans votre liste et dans Reprendre la lecture."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "D'où la vitrine tire ses titres : le catalogue ou votre liste."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "D'où la lecture auto peut choisir : toutes les sources, seulement les add-ons installés ou seulement les plugins activés. Enregistré dans votre profil."),

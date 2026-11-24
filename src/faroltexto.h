@@ -47,6 +47,7 @@
   X(AUDIO_CONVERTIDO) \
   X(LEGENDA_RESSINC) \
   X(ADDON_ISOLADO) \
+  X(ADDON_DE_LADO) \
   X(VOLTOU_A_TOCAR) \
   X(REDE_RECONECTADA) \
   X(CACHE_LIMPO) \
@@ -333,6 +334,7 @@
 #define FT_AUDIO_CONVERTIDO      "Som ajustado para 5.1 compatível com esta TV."
 #define FT_LEGENDA_RESSINC       "Legenda ajustada ao tempo do vídeo."
 #define FT_ADDON_ISOLADO         "Um add-on lento ficou de fora para a lista abrir mais rápido."
+#define FT_ADDON_DE_LADO         "De lado até amanhã"   // add-on em quarentena de 24 h (farolacao_addon)
 #define FT_VOLTOU_A_TOCAR        "Voltou a tocar."
 #define FT_REDE_RECONECTADA      "Rede reconectada."
 #define FT_CACHE_LIMPO           "Cache limpo."
