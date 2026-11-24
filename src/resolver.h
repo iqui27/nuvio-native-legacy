@@ -43,13 +43,17 @@ void resolver_desenhar(Uint32 agora);
 #define RESOLVER_PEDIU_DEBRID 2   // abrir o login da conta de cache (addonguia, QR)
 #define RESOLVER_PEDIU_PLAYER_EXT 3   // despachar a fonte falha ao player externo (Android)
 int  resolver_pedido(void);
+// OK num cartaz de "Achar o que ver" (#25): devolve 1 UMA vez e escreve em
+// `indiceCatalogo` o indice vivo em cat_item() (contrato de busca_pediu_abrir).
+int  resolver_pediu_abrir(int *indiceCatalogo);
 uint64_t resolver_tentativa_externo(void);
 
 // ---- Para a captura e os testes.
 // FAROL (issue 19, PLANO 3.2): Inicio (SINTOMA), Cadeia (TESTES: a luz percorre
 // as etapas e, com a sonda ativa no ar, segura a linha em "testando…") e
 // Veredito (o cartao com a acao; o foco nasce nela). ENVIO e o do registro.
-enum { RESOLVER_FASE_SINTOMA = 0, RESOLVER_FASE_TESTES, RESOLVER_FASE_ENVIO, RESOLVER_FASE_VEREDITO };
+// ACHAR e a tela 7 ("Achados", #25).
+enum { RESOLVER_FASE_SINTOMA = 0, RESOLVER_FASE_TESTES, RESOLVER_FASE_ENVIO, RESOLVER_FASE_VEREDITO, RESOLVER_FASE_ACHAR };
 #define RESOLVER_FASE_INICIO RESOLVER_FASE_SINTOMA
 #define RESOLVER_FASE_CADEIA RESOLVER_FASE_TESTES
 // Ids de foco que nao sao cartao de sintoma (os cartoes usam o RES_S_* do
@@ -57,7 +61,13 @@ enum { RESOLVER_FASE_SINTOMA = 0, RESOLVER_FASE_TESTES, RESOLVER_FASE_ENVIO, RES
 enum {
   RESOLVER_B_BANNER = 50, RESOLVER_B_ENVIAR, RESOLVER_B_LISTA, RESOLVER_B_PRINC,
   RESOLVER_B_SEC, RESOLVER_B_OUTRO, RESOLVER_B_PRONTO, RESOLVER_B_REPETIR,
-  RESOLVER_B_ACHAR, RESOLVER_B_LIN0 = 200
+  RESOLVER_B_ACHAR,
+  RESOLVER_B_ACHAR_CURTO = RESOLVER_B_ACHAR,
+  RESOLVER_B_ACHAR_NAO_VI,
+  RESOLVER_B_ACHAR_RETOMAR,
+  RESOLVER_B_ACHAR_SURPRESA,
+  RESOLVER_B_ACHAR_VOLTAR,
+  RESOLVER_B_LIN0 = 200
 };
 int  resolver_fase(void);
 float resolver_luz(void);           // onde a luz da Cadeia esta (0..RES_T_N, em etapas)

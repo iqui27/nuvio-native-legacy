@@ -46,7 +46,8 @@ python3 tests/farol_resolver_ponte.py "$work"
 
 "$ccbin" ${flags[@]+"${flags[@]}"} -DRESOLVER_TESTE -DNV_ANDROID -DNV_SHOT_HOOKS \
   -Wall -Wextra -Wno-unused-function -O1 -g \
-  tests/farol_tela.c src/resolver.c src/resolverregra.c src/farolregra.c src/farol.c \
+  tests/farol_tela.c src/resolver.c src/farolachaui.c src/farolacha.c \
+  src/resolverregra.c src/farolregra.c src/farol.c \
   src/farolerro.c src/farolanel.c src/fontesonda.c src/extplayer.c \
   src/addonguia.c src/addonmodo.c \
   -I"$work" -Isrc -Itests $(pkg-config --cflags sdl2 2>/dev/null || echo -I/usr/include/SDL2) \
@@ -55,7 +56,8 @@ python3 tests/farol_resolver_ponte.py "$work"
 
 "$ccbin" ${flags[@]+"${flags[@]}"} -DRESOLVER_TESTE -DNV_ANDROID -DNV_SHOT_HOOKS \
   -Wall -Wextra -Wno-unused-function -O1 -g \
-  tests/farol_tela_sonda.c src/resolver.c src/resolverregra.c src/farolregra.c src/farol.c \
+  tests/farol_tela_sonda.c src/resolver.c src/farolachaui.c src/farolacha.c \
+  src/resolverregra.c src/farolregra.c src/farol.c \
   src/farolerro.c src/farolanel.c src/farolsonda.c src/fontesonda.c src/extplayer.c \
   src/addonguia.c src/addonmodo.c \
   -I"$work" -Isrc -Itests $(pkg-config --cflags sdl2 2>/dev/null || echo -I/usr/include/SDL2) \

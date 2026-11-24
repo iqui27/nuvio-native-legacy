@@ -324,6 +324,7 @@ void rec_avatar_estilo(GfxRect r, const char *u, const char *n, const char *f, f
 }
 
 float gfx_opacidade_grupo = 1.0f;
+float gfx_tex_aspect_atual = 0.0f;
 int gfx_vidro_sem_aro = 0;
 float botao_largura(const char *rot, const char *ic, int pri) { (void)rot; (void)ic; (void)pri; return 100.0f; }
 static void txt_anotar(const char *s);
@@ -331,6 +332,16 @@ void botao_pilula(GfxRect r, const char *rot, const char *ic, float f, int p, in
 float botao_cor_foco(float *r, float *g, float *b) { *r = *g = *b = 1.0f; return 1.0f; }
 void botao_luz(GfxRect r, float f, float a) { (void)r; (void)f; (void)a; }
 void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) { (void)r; (void)raio; (void)cr; (void)cg; (void)cb; (void)ca; }
+void gfx_esqueleto(GfxRect r, float raio, float cr, float cg, float cb, float ca) { (void)r; (void)raio; (void)cr; (void)cg; (void)cb; (void)ca; }
+void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco, float px, float py, float raio, float cr, float cg, float cb, float ca) {
+  (void)r; (void)tex; (void)modo; (void)foco; (void)px; (void)py; (void)raio; (void)cr; (void)cg; (void)cb; (void)ca;
+}
+GLuint tex_obter_larg(const char *caminho, float larg) { (void)caminho; (void)larg; return 0; }
+float tex_aspecto(const char *caminho) { (void)caminho; return 0.0f; }
+int tex_falhou(const char *caminho) { (void)caminho; return 0; }
+const char *posterprov_card_addon(const char *origem, const char *imdb, long tmdb, const char *tipo, const char *orig) {
+  (void)origem; (void)imdb; (void)tmdb; (void)tipo; return orig ? orig : "";
+}
 void gfx_anel(GfxRect r, float raio, float esp, float cr, float cg, float cb, float ca) { (void)r; (void)raio; (void)esp; (void)cr; (void)cg; (void)cb; (void)ca; }
 void gfx_icone(GfxRect r, const char *n, float cr, float cg, float cb, float ca) { (void)r; (void)n; (void)cr; (void)cg; (void)cb; (void)ca; }
 void gfx_luz_canto(GfxRect r, float raio, float lx, float ly, float lr, float cr, float cg, float cb, float ca) {
@@ -384,10 +395,15 @@ int cat_copiar_por_id(const char *id, const char *tipo, CatItem *dst) { (void)id
 int cat_fileira_imdb(const char *chave, char (*out)[64], int max, int stride) {
   (void)chave; (void)out; (void)max; (void)stride; return 0;
 }
+#ifndef FAROL_TESTE_CAT_PROPRIO
 const CatItem *cat_item(int i) { (void)i; return NULL; }
 int cat_n(void) { return 0; }
 unsigned cat_revisao(void) { return 0; }
+#endif
 int cat_visto(const CatItem *ci) { (void)ci; return 0; }
+#ifndef FAROL_TESTE_CAT_PROPRIO
+int cacavisto_filme(const char *imdb, long tmdb, long long *quando) { (void)imdb; (void)tmdb; if (quando) *quando = 0; return 0; }
+#endif
 int cat_remover_fileiras_prefixo(const char *d, const char *pf) { (void)d; (void)pf; return 0; }
 int farolcena_home(char *dst, size_t cap, const void *ctx, void *a, size_t b) {
   (void)dst; (void)cap; (void)ctx; (void)a; (void)b; return 0;
@@ -481,6 +497,9 @@ static void pedirTorrentEscolhido(int idx) { (void)idx; }
 static void buscarParaPlayerModo(int renovar) { c_buscarModoN++; c_buscarModoRenovar = renovar; }
 static void diagnostico_cancelar_vazao(void) {}
 static void limparFonteVOD(void) {}
+#ifndef FAROL_TESTE_CAT_PROPRIO
+static void abrirPorIndice(int idx) { (void)idx; }
+#endif
 static int travaui_abrir_espera(int idx, int t, int e) { (void)idx; (void)t; (void)e; return c_travauiBloq; }
 int cat_indice_reabrir(int idx, const CatItem *copia) {
   (void)idx;

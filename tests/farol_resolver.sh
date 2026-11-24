@@ -20,7 +20,8 @@ python3 tests/farol_resolver_ponte.py "$work"
 
 "$ccbin" ${flags[@]+"${flags[@]}"} -DRESOLVER_TESTE -DNV_ANDROID -DNV_SHOT_HOOKS \
   -Wall -Wextra -O1 -g \
-  tests/farol_resolver.c src/resolver.c src/resolverregra.c src/farolregra.c src/farol.c \
+  tests/farol_resolver.c src/resolver.c src/farolachaui.c src/farolacha.c \
+  src/resolverregra.c src/farolregra.c src/farol.c \
   src/farolerro.c src/farolanel.c src/fontesonda.c src/extplayer.c \
   src/addonguia.c src/addonmodo.c \
   -I"$work" -Isrc $(pkg-config --cflags sdl2 2>/dev/null || echo -I/usr/include/SDL2) \

@@ -5136,7 +5136,7 @@ void app_evento(const SDL_Event *e) {
   // RESOLVER UM PROBLEMA (2.1, resolver.h): tela inteira, come o teclado todo.
   // "Ver Fontes e addons" fecha a tela e abre Ajustes no lugar.
   if (resolver_aberto()) {
-    int rped;
+    int rped, ridx;
     resolver_evento(e);
     rped = resolver_pedido();
     if (rped == RESOLVER_PEDIU_FONTES) {
@@ -5180,6 +5180,9 @@ void app_evento(const SDL_Event *e) {
       // FAROL: a fonte que falhou sai para o player externo instalado,
       // vinculada a tentativa diagnosticada.
       player_abrir_externo_tentativa(resolver_tentativa_externo());
+    }
+    if (resolver_pediu_abrir(&ridx)) {
+      abrirPorIndice(ridx);
     }
     return;
   }

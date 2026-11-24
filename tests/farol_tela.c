@@ -154,8 +154,8 @@ int main(void) {
   CONFERE(escreveu("Registros enviados · 0"));
   CONFERE(!escreveu(FT_BANNER_FALHA));                       // sem falha, sem faixa
   CONFERE(!escreveu("Resolver um problema"));                // o nome antigo saiu da tela
-  // 7 cartoes + "Enviar um registro" + "Registros enviados"; "Achar o que ver" fora.
-  varredura(9, RESOLVER_FASE_INICIO, RESOLVER_B_ACHAR);
+  // 7 cartoes + 4 intencoes ("Achar o que ver") + "Enviar um registro" + "Registros enviados".
+  varredura(13, RESOLVER_FASE_INICIO, -1);
   // Voltar sai.
   tecla(SDLK_ESCAPE);
   CONFERE(!resolver_aberto());
@@ -167,7 +167,7 @@ int main(void) {
   CONFERE(resolver_foco() == RESOLVER_B_BANNER);
   desenhar();
   CONFERE(escreveu(FT_BANNER_FALHA));
-  varredura(10, RESOLVER_FASE_INICIO, RESOLVER_B_ACHAR);
+  varredura(14, RESOLVER_FASE_INICIO, -1);
   tecla(SDLK_BACKSPACE);
   CONFERE(!resolver_aberto());
   zerar();
