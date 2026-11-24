@@ -18,8 +18,10 @@
 // always link it. Token boundaries invalidate ownership without UI callbacks.
 #if defined(__APPLE__) && (defined(__GNUC__) || defined(__clang__))
 extern void perfis_invalidar_sessao(void) __attribute__((weak_import));
+extern int rede_deve_parar(void) __attribute__((weak_import));
 #elif defined(__GNUC__) || defined(__clang__)
 extern void perfis_invalidar_sessao(void) __attribute__((weak));
+extern int rede_deve_parar(void) __attribute__((weak));
 #else
 #include "perfis.h"
 #endif
@@ -405,7 +407,22 @@ static int renovarToken(const char *visto, long folga, int *stOut) {
     if (!renovar[0]) { pthread_mutex_unlock(&tokTrava); return 0; }
     if (!renovando) break;
     { unsigned minha = rodada;
-      while (renovando && rodada == minha) pthread_cond_wait(&tokCond, &tokTrava);
+      while (renovando && rodada == minha) {
+        if (rede_deve_parar && rede_deve_parar()) {
+          pthread_mutex_unlock(&tokTrava);
+          return -1;
+        }
+        {
+          struct timespec ts;
+          clock_gettime(CLOCK_REALTIME, &ts);
+          ts.tv_nsec += 50000000L;
+          if (ts.tv_nsec >= 1000000000L) {
+            ts.tv_sec += ts.tv_nsec / 1000000000L;
+            ts.tv_nsec %= 1000000000L;
+          }
+          pthread_cond_timedwait(&tokCond, &tokTrava, &ts);
+        }
+      }
       if (rodada != minha && rodadaRes <= 0) {
         // A rodada que esperei falhou: herdo o resultado em vez de bater no
         // servidor de novo com o mesmo refresh token.
@@ -416,6 +433,10 @@ static int renovarToken(const char *visto, long folga, int *stOut) {
       }
     }
     // Rodada terminou bem (ou foi de outra sessao): reavalia do topo.
+  }
+  if (rede_deve_parar && rede_deve_parar()) {
+    pthread_mutex_unlock(&tokTrava);
+    return -1;
   }
   renovando = 1;
   snprintf(r, sizeof r, "%s", renovar);

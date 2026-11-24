@@ -27,6 +27,7 @@
 #include "farol.h"
 #include "farolcena.h"      // ANTES de qualquer farolrec.h direto (cabecalho)
 #include "farolsinal.h"
+#include "farolcompor.h"
 #include "faroltexto.h"
 #include "seguro.h"
 #include "perfilinfantil.h"
@@ -50,6 +51,29 @@
 // fixtures do Farol compilam sem a UI.
 int home_fileiras_na_tela(void);
 
+// Ganchos fracos para testes isolados que compilam sem farolcompor.c.
+__attribute__((weak)) unsigned farolcompor_home_geracao(void) { return 0; }
+__attribute__((weak)) int farolcompor_cena_adotada(FarolCena *cenaOut,
+                                                   FarolComporCand *candOut,
+                                                   int *nCandOut, int maxCand,
+                                                   uint32_t *hModeloOut) {
+  (void)cenaOut; (void)candOut; (void)maxCand;
+  if (nCandOut) *nCandOut = 0;
+  if (hModeloOut) *hModeloOut = 0;
+  return 0;
+}
+__attribute__((weak)) int farolcompor_pedir_home(const FarolGosto *g,
+                                                 const FarolComporCand *cand, int nCand,
+                                                 const FarolComporAncora *ancoras, int nAncoras,
+                                                 const char *(*nomePessoaFn)(int32_t, void *),
+                                                 void *u, uint32_t hModelo) {
+  (void)g; (void)cand; (void)nCand; (void)ancoras; (void)nAncoras;
+  (void)nomePessoaFn; (void)u; (void)hModelo;
+  return 0;
+}
+__attribute__((weak)) void farolcompor_trocar_perfil(void) {}
+__attribute__((weak)) void farolcompor_zerar_gosto(void) {}
+
 #define FAROL_CAND_MAX 240          // 60 x 4 blocos; 512 era para um catalogo
 #define FAROL_SEM_MAX  16
 #define FAROL_PESSOA_T 640          // hash/id -> nome, para os argumentos p<id>
@@ -72,6 +96,7 @@ static struct {
   int       perfil;                 // perfis_ativo() da adocao
   unsigned  revCat;                 // cat_revisao() da adocao (diagnostico)
   uint32_t  hModelo;                // hash do FarolGosto — o "evento forte"
+  unsigned  comporGen;              // geracao de farolcompor adotada
   int       nFil;
   FarolHomeFil fil[2];
 } adotada;
@@ -106,6 +131,10 @@ static char          semIds[FAROL_SEM_MAX][64];   // "tt..." guardado
 static struct { int32_t id; char nome[64]; } pessoaT[FAROL_PESSOA_T];
 static int           nPessoaT;
 static FarolCena     cenaP;
+static FarolCena     llmCena;
+static FarolComporCand compCand[FAROL_COMPOR_CAND_MAX];
+static FarolComporAncora compAnc[FAROL_COMPOR_ANCORA_MAX];
+static FarolComporCand llmCand[FAROL_COMPOR_CAND_MAX];
 static char          cenaJson[FAROL_CENA_MAX + 1];
 static char          cwImdb[48][64]; static int nCwImdb;
 static char          motOut[200], titOut[96];
@@ -265,11 +294,21 @@ static const char *pessoaNome(long id) {
 
 // Resolve um argumento do modelo a NOME. NULL = nao resolve: a linha cai
 // inteira, nunca sai id cru na tela (ALMA + CONTRATO de argumentos da 44).
-static const char *argNome(const char *a, char *dst, size_t cap) {
+static const char *argNomeExt(const char *a, const FarolComporCand *sc, int nSc,
+                              char *dst, size_t cap) {
   if (!a || !a[0]) return NULL;
   if (a[0] == 'c' && a[1] >= '0' && a[1] <= '9') {
     int idx = atoi(a + 1);
     CatItem ci;
+    if (sc) {
+      if (idx < 0 || idx >= nSc) return NULL;
+      if (sc[idx].imdb[0] && cat_copiar_por_id(sc[idx].imdb, NULL, &ci) &&
+          ci.titulo[0] && !strcmp(ci.imdb, sc[idx].imdb)) {
+        snprintf(dst, cap, "%s", ci.titulo); return dst;
+      }
+      if (sc[idx].titulo[0]) { snprintf(dst, cap, "%s", sc[idx].titulo); return dst; }
+      return NULL;
+    }
     if (idx < 0 || idx >= nCandAtivo) return NULL;
     if (refC[idx].catIdx >= 0 && cat_copiar_item(refC[idx].catIdx, &ci) &&
         ci.titulo[0]) { snprintf(dst, cap, "%s", ci.titulo); return dst; }
@@ -286,6 +325,14 @@ static const char *argNome(const char *a, char *dst, size_t cap) {
     }
     if (diario_nome(a, t, sizeof t, NULL, NULL, 0) && t[0]) {
       snprintf(dst, cap, "%s", t); return dst;
+    }
+    if (sc) {
+      int k;
+      for (k = 0; k < nSc; k++) {
+        if (!strcmp(sc[k].imdb, a) && sc[k].titulo[0]) {
+          snprintf(dst, cap, "%s", sc[k].titulo); return dst;
+        }
+      }
     }
     return NULL;
   }
@@ -305,8 +352,9 @@ static const char *argNome(const char *a, char *dst, size_t cap) {
 // FarolTexto -> string pronta (i18n aplicada sobre o literal do modelo,
 // como o resto do app). 0 = sem linha honesta: sem modelo, aridade torta
 // ou argumento que nao virou nome.
-static int renderTexto(const FarolCena *c, const FarolTexto *t,
-                       char *dst, size_t cap) {
+static int renderTextoExt(const FarolCena *c, const FarolTexto *t,
+                          const FarolComporCand *sc, int nSc,
+                          char *dst, size_t cap) {
   char ordem[FAROL_ARGS + 1], buf[FAROL_ARGS][160];
   const char *sv[FAROL_ARGS];
   int dv[FAROL_ARGS], nO = 0, i, cod = 0;
@@ -328,7 +376,7 @@ static int renderTexto(const FarolCena *c, const FarolTexto *t,
   for (i = 0; i < nO; i++) {
     if (ordem[i] == 'd') { dv[i] = atoi(t->a[i]); sv[i] = NULL; }
     else {
-      const char *s = argNome(t->a[i], buf[i], sizeof buf[i]);
+      const char *s = argNomeExt(t->a[i], sc, nSc, buf[i], sizeof buf[i]);
       if (!s) return 0;
       sv[i] = s; dv[i] = 0;
     }
@@ -346,13 +394,19 @@ static int renderTexto(const FarolCena *c, const FarolTexto *t,
   case 25:                    snprintf(dst, cap, fmt, sv[0], dv[1], sv[2]); break;
   case 26:                    snprintf(dst, cap, fmt, sv[0], dv[1], dv[2]); break;
   case 37:                    snprintf(dst, cap, fmt, dv[0], sv[1], sv[2]); break;
-  case 38:                    snprintf(dst, cap, fmt, dv[0], sv[1], dv[2]); break;
+  case 38:                    snprintf(dst, cap, fmt, dv[0], sv[1], sv[2]); break;
   case 41:                    snprintf(dst, cap, fmt, dv[0], dv[1], sv[2]); break;
   case 42:                    snprintf(dst, cap, fmt, dv[0], dv[1], dv[2]); break;
   case 85:                    snprintf(dst, cap, fmt, sv[0], sv[1], sv[2], sv[3]); break;
   default:                    return 0;
   }
   return dst[0] != 0;
+}
+
+__attribute__((unused))
+static int renderTexto(const FarolCena *c, const FarolTexto *t,
+                       char *dst, size_t cap) {
+  return renderTextoExt(c, t, NULL, 0, dst, cap);
 }
 
 // --------------------------------------------------------------- sementes --
@@ -481,6 +535,203 @@ static int coletarCandidatos(int infantil) {
   return nCandAtivo;
 }
 
+static const char *comporPessoaLookup(int32_t id, void *u) {
+  (void)u;
+  return pessoaNome((long)id);
+}
+
+// Titulo de ancora SO com proveniencia publica (o catalogo). O nome que so o
+// Diario conhece e privado: nunca vira `gosto.ancoras` (PLANO-GOSTO 5.3).
+static void comporTituloPublico(const char *imdb, char *dst, size_t cap) {
+  CatItem ci;
+  dst[0] = '\0';
+  if (!imdb || !imdb[0]) return;
+  if (cat_copiar_por_id(imdb, NULL, &ci) && ci.titulo[0] &&
+      !strcmp(ci.imdb, imdb)) {
+    snprintf(dst, cap, "%s", ci.titulo);
+  }
+}
+
+static int comporMontarResumo(const FarolCenaCtx *ctx, int *nCandOut, int *nAncOut) {
+  FarolRecCtx rctx;
+  FarolRecItem rec[FAROL_COMPOR_CAND_MAX];
+  int nr, i, nc = 0, na = 0;
+
+  *nCandOut = 0;
+  *nAncOut = 0;
+  if (!ctx || !ctx->g || ctx->nCand <= 0) return 0;
+
+  memset(&rctx, 0, sizeof rctx);
+  rctx.g = ctx->g;
+  rctx.sementes = ctx->sementes;
+  rctx.nSementes = ctx->nSementes;
+  rctx.dia = ctx->dia;
+  rctx.faixaHora = ctx->faixaHora;
+  rctx.naHome = 1;
+  rctx.semente = ctx->semente;
+
+  nr = farolrec_escolher(&rctx, ctx->cand, ctx->nCand, rec, FAROL_COMPOR_CAND_MAX);
+  if (nr <= 0) return 0;
+
+  memset(compCand, 0, sizeof compCand);
+  memset(compAnc, 0, sizeof compAnc);
+
+  for (i = 0; i < nr && nc < FAROL_COMPOR_CAND_MAX; i++) {
+    int idx = rec[i].cand;
+    FarolComporCand *cc;
+    const FarolFicha *f;
+    int m, k;
+    if (idx < 0 || idx >= ctx->nCand) continue;
+    if (strncmp(refC[idx].imdb, "tt", 2) != 0) continue;
+
+    cc = &compCand[nc];
+    snprintf(cc->imdb, sizeof cc->imdb, "%s", refC[idx].imdb);
+    cc->tipo = !strcmp(refC[idx].tipo, "series") ? 1 : 0;
+    snprintf(cc->titulo, sizeof cc->titulo, "%s", refC[idx].titulo);
+    cc->nota10 = -1;
+    cc->pontos = rec[i].pontos;
+
+    f = ctx->cand[idx].ficha;
+    if (f) {
+      cc->tmdb = f->tmdb;
+      cc->ano = (int16_t)f->ano;
+      cc->minutos = (int16_t)f->minutos;
+      if (f->nota > 0 && f->nota <= 100) cc->nota10 = (int16_t)f->nota;
+      for (k = 0; k < f->nGenero && k < FAROL_FICHA_GEN && cc->nGeneros < 8; k++) {
+        if (f->genero[k] > 0) cc->generos[cc->nGeneros++] = f->genero[k];
+      }
+    }
+
+    for (m = 0; m < rec[i].nMotivo && m < FAROL_REC_MOTIVOS && cc->nMotivos < FAROL_COMPOR_MOT_MAX; m++) {
+      const FarolRecMotivo *rm = &rec[i].motivo[m];
+      if (rm->tipo == FMO_AMIGO || rm->tipo == FMO_RECOMENDADO) {
+        // Sempre anonimizado no fio HTTP.
+        cc->motivos[cc->nMotivos].tipo = rm->tipo;
+        cc->motivos[cc->nMotivos].a = 0;
+        cc->motivos[cc->nMotivos].b = 0;
+        cc->nMotivos++;
+      } else if (rm->tipo == FMO_TERMINOU) {
+        int sIdx = rm->a;
+        const char *tt = (sIdx >= 0 && sIdx < ctx->nSementes) ? ctx->sementeRef[sIdx] : NULL;
+        int ai = -1, a;
+        if (!tt || strncmp(tt, "tt", 2) != 0) continue;
+        // Entrada parcial (ou serie) nao sustenta "terminou".
+        if (!ctx->sementes[sIdx].terminou) continue;
+        for (a = 0; a < na; a++) {
+          if (!strcmp(compAnc[a].id, tt)) { ai = a; break; }
+        }
+        if (ai < 0 && na < FAROL_COMPOR_ANCORA_MAX) {
+          char tit[100];
+          comporTituloPublico(tt, tit, sizeof tit);
+          if (tit[0]) {
+            snprintf(compAnc[na].id, sizeof compAnc[na].id, "%s", tt);
+            snprintf(compAnc[na].titulo, sizeof compAnc[na].titulo, "%s", tit);
+            ai = na++;
+          }
+        }
+        if (ai >= 0) {
+          cc->motivos[cc->nMotivos].tipo = FMO_TERMINOU;
+          cc->motivos[cc->nMotivos].a = ai;
+          cc->motivos[cc->nMotivos].b = 0;
+          cc->nMotivos++;
+        }
+      } else if (rm->tipo == FMO_GENERO || rm->tipo == FMO_PESSOA ||
+                 rm->tipo == FMO_TEMA || rm->tipo == FMO_FORA_CURVA) {
+        if (rm->a <= 0) continue;
+        cc->motivos[cc->nMotivos].tipo = rm->tipo;
+        cc->motivos[cc->nMotivos].a = rm->a;
+        cc->motivos[cc->nMotivos].b = 0;
+        cc->nMotivos++;
+      } else if (rm->tipo == FMO_SALVO || rm->tipo == FMO_CABE_HOJE || rm->tipo == FMO_REVER) {
+        cc->motivos[cc->nMotivos].tipo = rm->tipo;
+        cc->motivos[cc->nMotivos].a = (rm->tipo == FMO_CABE_HOJE) ? cc->minutos : 0;
+        cc->motivos[cc->nMotivos].b = 0;
+        cc->nMotivos++;
+      }
+    }
+    nc++;
+  }
+
+  // Sem completar vagas de ancora com sementes: so vai a ancora que um
+  // motivo FMO_TERMINOU acima cita (e o corpo ainda descarta a que nenhum
+  // candidato efetivamente enviado referencia).
+
+  *nCandOut = nc;
+  *nAncOut = na;
+  return nc > 0;
+}
+
+static int popularFilDeCena(const FarolCena *cp, const FarolComporCand *sc, int nSc,
+                            int nCandRef, FarolHomeFil filOut[2]) {
+  int p, f = 0, i;
+  for (p = 0; p < cp->nPecas && f < 2; p++) {
+    const FarolPeca *pc = &cp->pecas[p];
+    FarolHomeFil *nf;
+    if (pc->tipo != FP_FILEIRA) continue;
+    if (strcmp(pc->u.fileira.id, "gosto1") && strcmp(pc->u.fileira.id, "gosto2"))
+      continue;
+    if (pc->u.fileira.nItens < 6) continue;             // o minimo da P1
+    nf = &filOut[f];
+    memset(nf, 0, sizeof *nf);
+    snprintf(nf->chave, sizeof nf->chave, "farol_%s", pc->u.fileira.id);
+    if (!renderTextoExt(cp, &pc->u.fileira.titulo, sc, nSc,
+                        nf->titulo, sizeof nf->titulo))
+      snprintf(nf->titulo, sizeof nf->titulo, "%s", i18n(FT_FIL_RECOMENDADOS));
+    renderTextoExt(cp, &pc->u.fileira.sub, sc, nSc, nf->sub, sizeof nf->sub);
+    for (i = 0; i < pc->u.fileira.nItens && i < FAROL_ITENS_MAX; i++) {
+      const FarolRef *ref = &pc->u.fileira.itens[i];
+      FarolHomeItem *hi = &nf->it[i];
+      const char *imdb = NULL, *tipo = "movie";
+      char titulo[160] = "";
+      // Um so CatItem no escopo do item: `tipo` pode apontar para ci.tipo e e
+      // lido depois dos ramos (antes, ci morria no fim do bloco do ramo).
+      CatItem ci;
+      if (sc && ref->c >= 0 && ref->c < nSc) {
+        imdb = sc[ref->c].imdb;
+        tipo = sc[ref->c].tipo ? "series" : "movie";
+        if (imdb[0] && cat_copiar_por_id(imdb, NULL, &ci) &&
+            !strcmp(ci.imdb, imdb) && ci.titulo[0]) {
+          snprintf(titulo, sizeof titulo, "%s", ci.titulo);
+          if (ci.tipo[0]) tipo = ci.tipo;
+        } else if (sc[ref->c].titulo[0]) {
+          snprintf(titulo, sizeof titulo, "%s", sc[ref->c].titulo);
+        }
+      } else if (!sc && ref->c >= 0 && ref->c < nCandRef) { // "c<n>" regras
+        imdb = refC[ref->c].imdb; tipo = refC[ref->c].tipo;
+        if (refC[ref->c].catIdx >= 0 &&
+            cat_copiar_item(refC[ref->c].catIdx, &ci) &&
+            !strcmp(ci.imdb, imdb))
+          snprintf(titulo, sizeof titulo, "%s", ci.titulo);
+        else if (refC[ref->c].titulo[0])
+          snprintf(titulo, sizeof titulo, "%s", refC[ref->c].titulo);
+      } else if (ref->s[0]) {                               // "tt<digitos>"
+        imdb = ref->s;
+        if (cat_copiar_por_id(ref->s, NULL, &ci) &&
+            !strcmp(ci.imdb, ref->s)) {
+          snprintf(titulo, sizeof titulo, "%s", ci.titulo);
+          if (ci.tipo[0]) tipo = ci.tipo;
+        } else {
+          diario_nome(ref->s, titulo, sizeof titulo, NULL, NULL, 0);
+        }
+      }
+      if (!imdb || !imdb[0]) break;                     // itens sao contiguos
+      snprintf(hi->imdb, sizeof hi->imdb, "%s", imdb);
+      snprintf(hi->tipo, sizeof hi->tipo, "%s", tipo);
+      snprintf(hi->titulo, sizeof hi->titulo, "%s", titulo);
+      nf->nItens++;
+    }
+    if (nf->nItens < 6) continue;
+    for (i = 0; i < pc->u.fileira.nMotivo; i++) {
+      const FarolMotivo *mo = &pc->u.fileira.motivo[i];
+      if (mo->item < 0 || mo->item >= nf->nItens) continue;
+      renderTextoExt(cp, &mo->t, sc, nSc,
+                     nf->it[mo->item].motivo, sizeof nf->it[mo->item].motivo);
+    }
+    f++;
+  }
+  return f;
+}
+
 // ----------------------------------------------------------------- compor --
 // Compoe, valida e ADOTA. Devolve 1 quando uma cena nova foi adotada.
 // Falhou em qualquer degrau -> 0 e quem chama decide sobre a antiga (o
@@ -489,13 +740,18 @@ static int compor(long long agora, int perfil) {
   static struct {
     int valida, nFil; FarolHomeFil fil[2];
     long long feita, valeS; int perfil; unsigned revCat; uint32_t hModelo;
+    unsigned comporGen;
   } nova;
   FarolGosto g;
   FarolCenaCtx ctx;
-  int nSem, nCand, n, rc, p, f, i, fimSem;
+  int nSem, nCand, n, rc, f = 0, fimSem;
+  int nCompCand = 0, nCompAnc = 0, nLlmCand = 0;
+  uint32_t hm, llmHm = 0;
+
   if (!farolsinal_modelo(&g)) return 0;
   if (farolrec_nivel(&g) < 1) return 0;                 // frio 0: nunca sai
   memset(&nova, 0, sizeof nova);
+  hm = hashModelo(&g);
   nSem = coletarSementes(perfil);
   nCand = coletarCandidatos(perfil_infantil_ativo());
   memset(&ctx, 0, sizeof ctx);
@@ -511,67 +767,29 @@ static int compor(long long agora, int perfil) {
   ctx.feita = agora;
   ctx.valeS = 86400;                    // a cena da Home vale 24 h (4.2)
   ctx.semente = (uint32_t)ctx.dia * 2654435761u ^ (uint32_t)(perfil + 1);
-  n = farolcena_home(cenaJson, sizeof cenaJson, &ctx, NULL, 0);
-  if (n <= 0) return 0;
-  rc = farolpeca_ler(&cenaP, cenaJson, nCand);
-  if (rc <= 0) return 0;
-  // ADOCAO: so as pecas gosto1/gosto2 viram fileira; qualquer outra peca da
-  // cena home (a dica P2) e ignorada aqui — a dica e da issue que a desenha.
-  f = 0;
-  for (p = 0; p < cenaP.nPecas && f < 2; p++) {
-    const FarolPeca *pc = &cenaP.pecas[p];
-    FarolHomeFil *nf;
-    if (pc->tipo != FP_FILEIRA) continue;
-    if (strcmp(pc->u.fileira.id, "gosto1") && strcmp(pc->u.fileira.id, "gosto2"))
-      continue;
-    if (pc->u.fileira.nItens < 6) continue;             // o minimo da P1
-    nf = &nova.fil[f];
-    memset(nf, 0, sizeof *nf);
-    snprintf(nf->chave, sizeof nf->chave, "farol_%s", pc->u.fileira.id);
-    if (!renderTexto(&cenaP, &pc->u.fileira.titulo,
-                     nf->titulo, sizeof nf->titulo))
-      snprintf(nf->titulo, sizeof nf->titulo, "%s", i18n(FT_FIL_RECOMENDADOS));
-    renderTexto(&cenaP, &pc->u.fileira.sub, nf->sub, sizeof nf->sub);
-    for (i = 0; i < pc->u.fileira.nItens && i < FAROL_ITENS_MAX; i++) {
-      const FarolRef *ref = &pc->u.fileira.itens[i];
-      FarolHomeItem *hi = &nf->it[i];
-      const char *imdb = NULL, *tipo = "movie";
-      char titulo[160] = "";
-      if (ref->c >= 0 && ref->c < nCand) {              // "c<n>"
-        CatItem ci;
-        imdb = refC[ref->c].imdb; tipo = refC[ref->c].tipo;
-        // O indice foi guardado na coleta; o catalogo pode ter trocado —
-        // so vale o titulo se o imdb bate com o candidato do ref.
-        if (refC[ref->c].catIdx >= 0 &&
-            cat_copiar_item(refC[ref->c].catIdx, &ci) &&
-            !strcmp(ci.imdb, imdb))
-          snprintf(titulo, sizeof titulo, "%s", ci.titulo);
-        else if (refC[ref->c].titulo[0])
-          snprintf(titulo, sizeof titulo, "%s", refC[ref->c].titulo);
-      } else if (ref->s[0]) {                           // "tt<digitos>"
-        CatItem ci;
-        imdb = ref->s;
-        if (cat_copiar_por_id(ref->s, NULL, &ci) &&
-            !strcmp(ci.imdb, ref->s)) {
-          snprintf(titulo, sizeof titulo, "%s", ci.titulo);
-          if (ci.tipo[0]) tipo = ci.tipo;
-        }
-      }
-      if (!imdb || !imdb[0]) break;                     // itens sao contiguos
-      snprintf(hi->imdb, sizeof hi->imdb, "%s", imdb);
-      snprintf(hi->tipo, sizeof hi->tipo, "%s", tipo);
-      snprintf(hi->titulo, sizeof hi->titulo, "%s", titulo);
-      nf->nItens++;
-    }
-    if (nf->nItens < 6) continue;
-    for (i = 0; i < pc->u.fileira.nMotivo; i++) {
-      const FarolMotivo *mo = &pc->u.fileira.motivo[i];
-      if (mo->item < 0 || mo->item >= nf->nItens) continue;
-      renderTexto(&cenaP, &mo->t,
-                  nf->it[mo->item].motivo, sizeof nf->it[mo->item].motivo);
-    }
-    f++;
+
+  if (comporMontarResumo(&ctx, &nCompCand, &nCompAnc)) {
+    farolcompor_pedir_home(&g, compCand, nCompCand, compAnc, nCompAnc,
+                           comporPessoaLookup, NULL, hm);
   }
+
+  // Preferir a cena LLM ja adotada no fio principal quando valida para o gosto
+  // atual; qualquer falha/recusa cai calado para a cena deterministica (44).
+  if (farolcompor_cena_adotada(&llmCena, llmCand, &nLlmCand,
+                               FAROL_COMPOR_CAND_MAX, &llmHm) &&
+      (llmHm == 0 || llmHm == hm)) {
+    f = popularFilDeCena(&llmCena, llmCand, nLlmCand, nLlmCand, nova.fil);
+    if (f > 0) nova.comporGen = farolcompor_home_geracao();
+  }
+
+  if (f <= 0) {
+    n = farolcena_home(cenaJson, sizeof cenaJson, &ctx, NULL, 0);
+    if (n <= 0) return 0;
+    rc = farolpeca_ler(&cenaP, cenaJson, nCand);
+    if (rc <= 0) return 0;
+    f = popularFilDeCena(&cenaP, NULL, 0, nCand, nova.fil);
+  }
+
   nova.nFil = f;
   if (!f) return 0;
   nova.valida = 1;
@@ -579,11 +797,12 @@ static int compor(long long agora, int perfil) {
   nova.valeS = ctx.valeS > 0 ? ctx.valeS : 86400;
   nova.perfil = perfil;
   nova.revCat = cat_revisao();
-  nova.hModelo = hashModelo(&g);
+  nova.hModelo = hm;
   pthread_mutex_lock(&travaCena);
   adotada.valida = nova.valida; adotada.feita = nova.feita;
   adotada.valeS = nova.valeS; adotada.perfil = nova.perfil;
   adotada.revCat = nova.revCat; adotada.hModelo = nova.hModelo;
+  adotada.comporGen = nova.comporGen;
   adotada.nFil = nova.nFil;
   memcpy(adotada.fil, nova.fil, sizeof adotada.fil);
   perfilSaiu = -1;                        // a cena do perfil esta valida
@@ -618,6 +837,7 @@ static void home_fileiras_(CatItem *lote, int *n, int cap,
   static struct {
     int valida, nFil; FarolHomeFil fil[2];
     long long feita, valeS; int perfil, perfilSaiu; uint32_t hModelo;
+    unsigned comporGen;
   } snap;
   long long agora;
   int precisa, perfil, f, marcou[2] = { 0, 0 };
@@ -634,6 +854,7 @@ static void home_fileiras_(CatItem *lote, int *n, int cap,
   snap.valida = adotada.valida; snap.nFil = adotada.nFil;
   snap.feita = adotada.feita; snap.valeS = adotada.valeS;
   snap.perfil = adotada.perfil; snap.hModelo = adotada.hModelo;
+  snap.comporGen = adotada.comporGen;
   snap.perfilSaiu = perfilSaiu;
   memcpy(snap.fil, adotada.fil, sizeof snap.fil);
   pthread_mutex_unlock(&travaCena);
@@ -643,8 +864,15 @@ static void home_fileiras_(CatItem *lote, int *n, int cap,
   precisa = !snap.valida || snap.perfil != perfil;
   if (!precisa) {
     FarolGosto g;
+    unsigned cGen = farolcompor_home_geracao();
+    // Geracao do compositor mudou: cena LLM nova a adotar, ou a projecao
+    // LLM anterior (comporGen != 0) perdeu a validade — consentimento
+    // revogado, esquecer, troca de perfil — e a deterministica volta.
     if (!farolsinal_modelo(&g) || hashModelo(&g) != snap.hModelo ||
-        agora - snap.feita >= snap.valeS) {
+        agora - snap.feita >= snap.valeS ||
+        (cGen != snap.comporGen &&
+         (snap.comporGen != 0 ||
+          farolcompor_cena_adotada(NULL, NULL, NULL, 0, NULL)))) {
       if (!homeVisivel()) precisa = 1;
     }
   } else if (snap.valida && snap.perfil != perfil && homeVisivel()) {
@@ -673,6 +901,7 @@ static void home_fileiras_(CatItem *lote, int *n, int cap,
     snap.valida = adotada.valida; snap.nFil = adotada.nFil;
     snap.feita = adotada.feita; snap.valeS = adotada.valeS;
     snap.perfil = adotada.perfil; snap.hModelo = adotada.hModelo;
+    snap.comporGen = adotada.comporGen;
     memcpy(snap.fil, adotada.fil, sizeof snap.fil);
     pthread_mutex_unlock(&travaCena);
   }
@@ -793,7 +1022,10 @@ const char *farol_fileira_titulo(const char *chaveFil) {
 }
 
 // ---------------------------------------------------------------- remocao --
-void farol_esquecer(void) { invalidar(); }
+void farol_esquecer(void) {
+  invalidar();
+  farolcompor_trocar_perfil();
+}
 
 // 1 quando a fileira do Farol pode estar publicada: "Recomendar nesta TV"
 // ligado e modo seguro fora. A descoberta confere de novo no ponto de
@@ -828,11 +1060,15 @@ void farol_gosto_zerar(const char *dirArte) {
   // zerado (FAROL45C).
   __atomic_add_fetch(&seloGosto, 1, __ATOMIC_ACQ_REL);
   farolsinal_zerar_gosto();
+  farolcompor_zerar_gosto();
 }
 
 // "Recomendar nesta TV": ao DESLIGAR, as fileiras saem primeiro e a
 // preferencia e registrada depois; ligar nao toca no catalogo.
 void farol_recomendar_definir(int ligado, const char *dirArte) {
-  if (!ligado) farol_remover_fileiras(dirArte);
+  if (!ligado) {
+    farol_remover_fileiras(dirArte);
+    farolcompor_trocar_perfil();
+  }
   farolsinal_definir_recomendar(ligado);
 }
