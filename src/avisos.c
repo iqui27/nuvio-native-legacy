@@ -37,6 +37,7 @@
 #include "ponteiro.h"
 #include "rolagemtoque.h"
 #include "telefonecartao.h"
+#include "farolenvio.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -366,6 +367,22 @@ static int idHead(const char **cab, char *aut, size_t nAut, char *via, size_t nV
   cab[0] = aut; cab[1] = via; cab[2] = "Content-Type: application/json"; cab[3] = NULL;
   return 1;
 }
+
+// O MESMO cabecalho de conta do registro para o envio do Farol (farolenvio.c,
+// issue 18). Chamado so no fio de envio: sessao_token_copiar pode renovar.
+int avisos_registro_cabecalhos(const char **cab, char *aut, size_t nAut,
+                               char *via, size_t nVia, char *chave, size_t nChave) {
+  if (!cab || !aut || !via || !chave) return 0;
+  return idHead(cab, aut, nAut, via, nVia, chave, nChave);
+}
+// O painel de envio le AvisosEnvio e FarolEnvioInfo pelos mesmos motivos.
+_Static_assert(FAROLENVIO_M_OK == AVISOS_ENVIO_OK, "motivo OK");
+_Static_assert(FAROLENVIO_M_SERVIDOR == AVISOS_ENVIO_SERVIDOR, "motivo SERVIDOR");
+_Static_assert(FAROLENVIO_M_OFFLINE == AVISOS_ENVIO_OFFLINE, "motivo OFFLINE");
+_Static_assert(FAROLENVIO_M_PRAZO == AVISOS_ENVIO_PRAZO, "motivo PRAZO");
+_Static_assert(FAROLENVIO_M_CONEXAO == AVISOS_ENVIO_CONEXAO, "motivo CONEXAO");
+_Static_assert(FAROLENVIO_M_CONTA == AVISOS_ENVIO_CONTA, "motivo CONTA");
+_Static_assert(FAROLENVIO_M_INDISPONIVEL == AVISOS_ENVIO_INDISPONIVEL, "motivo INDISPONIVEL");
 
 static void jsonEsc(char *dst, size_t tam, const char *s) {
   size_t u = 0;
