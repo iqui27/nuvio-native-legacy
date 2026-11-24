@@ -220,6 +220,15 @@ RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) {
 void rede_parar_quando(int (*parar)(void *),void *usuario){
   redeParar=parar;redePararUsuario=usuario;
 }
+int rede_deve_parar(void) {
+#if defined(NV_TPK40) || defined(NV_UM_FIO)
+  RedeFio *f = redeFio();
+  if (f == &fioReserva) return 0;
+  return f->parar && f->parar(f->pararUsuario) ? 1 : 0;
+#else
+  return redeParar && redeParar(redePararUsuario) ? 1 : 0;
+#endif
+}
 static int redeParou(void){return (redeCancelLocal&&*redeCancelLocal)||(redeParar&&redeParar(redePararUsuario));}
 static unsigned long redeAgoraMs(void);
 
