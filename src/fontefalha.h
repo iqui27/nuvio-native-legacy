@@ -79,6 +79,9 @@ FonteFalhaSessao *fontefalha_sessao_nova(const FonteFalhaConfig *cfg,
 FonteFalhaSessao *fontefalha_sessao_clonar(const FonteFalhaSessao *sessao);
 void fontefalha_sessao_liberar(FonteFalhaSessao *sessao);
 void fontefalha_sessao_filtro(const FonteFalhaSessao *sessao, FonteFiltroConfig *saida);
+// Filtro temporario DESTA sessao: soma-se ao filtro persistente, vale so ate a
+// sessao ser liberada e nunca e gravado. NULL remove. 0 se invalido.
+int fontefalha_sessao_filtro_temporario(FonteFalhaSessao *sessao, const FonteFiltroConfig *temp);
 int fontefalha_proxima(FonteFalhaSessao *sessao, const FonteFalhaCandidata *c,
                       int n, int listaCompleta, FonteFalhaRota *rota);
 // Reserva um candidato distinto antes de resolver. Falha real consome a

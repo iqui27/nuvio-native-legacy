@@ -226,6 +226,7 @@ static int ehServidor(const Stream *s) {
 #define AUTO_EXCL_MAX 32
 static int automaticasExcluidas[AUTO_EXCL_MAX];
 static int nAutomaticasExcluidas;
+static int trocaFarol = -1;           // troca pedida pelo Farol (so o fio principal)
 // #409: so Android publica estas capacidades. -1 preserva LG/Tizen/host.
 static int decoder4k[4] = { -1, -1, -1, -1 }; // HEVC, AVC, VP9, AV1
 static int decoderFalhaAltura[4];             // apenas a lista atual
@@ -541,8 +542,17 @@ void stream_filtro_atualizar(void) {
   atomic_fetch_add(&folhaRevisao, 1);
   pthread_mutex_unlock(&verTrava);
 }
+// Filtro TEMPORARIO desta reproducao (acoes de fonte do Farol, farolacao_fonte.c):
+// soma-se ao persistente, nunca o substitui nem o grava, e some com a lista.
+static int filtroTempPermite(const Stream *s) {
+  FonteFiltroConfig temp; FonteFiltroDados dados;
+  if (!farolacao_fonte_filtro_temporario(&temp)) return 1;
+  stream_filtro_dados(s, &dados);
+  return fontefiltro_permite(&temp, &dados);
+}
 int stream_filtro_permite(const Stream *s) {
   if (!s) return 0;
+  if (!filtroTempPermite(s)) return 0;
   if (!fontefalha_filtro_ativo()) return 1;
   FonteFiltroConfig cfg; FonteFiltroDados dados;
   fontefalha_filtro(&cfg); stream_filtro_dados(s, &dados);
@@ -551,7 +561,12 @@ int stream_filtro_permite(const Stream *s) {
 static int filtroPermiteStream(const FonteFiltroConfig *cfg, const Stream *s) {
   FonteFiltroDados dados;
   stream_filtro_dados(s, &dados);
-  return fontefiltro_permite(cfg, &dados);
+  return fontefiltro_permite(cfg, &dados) && filtroTempPermite(s);
+}
+// A sessao de falha herda o filtro temporario (ou o perde, se ele acabou).
+static void sessaoFiltroTemporario(FonteFalhaSessao *sessao) {
+  FonteFiltroConfig temp;
+  fontefalha_sessao_filtro_temporario(sessao, farolacao_fonte_filtro_temporario(&temp) ? &temp : NULL);
 }
 int stream_filtro_bloqueou(void) {
   if (!fontefalha_filtro_ativo()) return 0;
@@ -906,6 +921,9 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   nAutomaticasExcluidas = 0;
   memset(decoderFalhaAltura, 0, sizeof decoderFalhaAltura);
   pthread_mutex_unlock(&autoExclTrava);
+  // O filtro temporario e as tentadas do Farol valem para UMA reproducao.
+  farolacao_fonte_encerrar();
+  pthread_mutex_lock(&verTrava); trocaFarol = -1; pthread_mutex_unlock(&verTrava);
   // LISTA NOVA, INDICE VELHO NAO VALE. A preferida e uma posicao na lista
   // ANTERIOR; mantida, ela apontaria para outra fonte do episodio seguinte —
   // o tipo de defeito que toca a coisa errada sem nenhum erro no log.
@@ -2598,6 +2616,7 @@ int stream_falha_tem_proxima(const FonteFalhaSessao *sessao, unsigned geracao) {
   Stream *fontes = NULL;
   FonteFalhaRota rota;
   int nc = 0, tem = 0;
+  sessaoFiltroTemporario(copia);
   if (copia && falhaCandidatas(geracao, -1, 0, &c, &fontes, &nc, NULL))
     tem = fontefalha_proxima(copia, c, nc, 1, &rota) == FONTEFALHA_PROXIMA;
   for (int i = 0; i < nc; i++) free((void *)c[i].identidade);
@@ -2614,6 +2633,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
   if (servico) *servico = FONTEFALHA_DIRETA;
   if (url && tam) url[0] = 0;
   int nfFontes = 0;
+  sessaoFiltroTemporario(sessao);
   if (!sessao || !url || !tam || falhaCancelada(geracao, cancelado, ctx) ||
       !falhaCandidatas(geracao, escolhida, fontefalha_tentativas(sessao) == 0,
                        &c, &fontes, &nc, &nfFontes)) return FONTEFALHA_FIM;
@@ -2663,6 +2683,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
                       ? &fontes[c[r.candidata].indice] : NULL;
     if (!s) { resultado = FONTEFALHA_FIM; break; }
     if (!fontefalha_tentar(sessao, &c[r.candidata], r.servico)) { resultado = FONTEFALHA_FIM; break; }
+    farolacao_fonte_tentada_marcar(geracao, r.indice);
     if (falhaCancelada(geracao, cancelado, ctx)) { resultado = FONTEFALHA_FIM; break; }
     farol_ev(FM_FONTE, FE_FONTE_PROXIMA, 0, fontefalha_tentativas(sessao), fontefalha_teto(sessao), "proxima");
     conferenciaPublicar(r.indice, geracao, FA_CONFERINDO);
@@ -3097,7 +3118,9 @@ int stream_falha_semear_manual(FonteFalhaSessao *sessao, int indice,
                                                        : FONTEFALHA_DIRETA;
     // Semear so se nao tentada ainda: a mesma URL resolvida pela folha
     // nao pode consumir uma segunda vaga do orcamento.
+    sessaoFiltroTemporario(sessao);
     ok = fontefalha_semear(sessao, &c, servico, url);
+    if (ok) farolacao_fonte_tentada_marcar(geracao, indice);
   }
   pthread_mutex_unlock(&verTrava);
   return ok;
@@ -8052,6 +8075,57 @@ static int ehDts(const Stream *s) {
                badges_bit("a-dtshdma") | badges_bit("a-dtsx"))) != 0;
 }
 
+// Snapshot para as acoes de fonte do Farol: ORD() e a ordem de preferencia da
+// folha; a atual entra sempre (as demais cabem em max-1). `ok` = o automatico
+// poderia tocar a fonte (nada de excluida, fora de cache, aviso, decoder,
+// regra do dono ou P2P sem link) — e o mesmo crivo de proximaVOD.
+int stream_farol_fontes(FarolFonteLinha *dst, int max, unsigned *geracao) {
+  int q = 0;
+  if (geracao) *geracao = 0;
+  if (!dst || max < 2) return 0;
+  pthread_mutex_lock(&verTrava);
+  if (geracao) *geracao = listaGeracao;
+  for (int k = 0; k < n && lista; k++) {
+    int i = ORD(k);
+    const Stream *s = &lista[i];
+    int ehAtual = i == atual;
+    if (q >= max - 1 && !ehAtual) continue;
+    FarolFonteLinha *l = &dst[q++];
+    int kbps = stream_kbps(s);
+    memset(l, 0, sizeof *l);
+    l->indice = i;
+    l->altura = s->altura > 0 ? s->altura : 0;
+    l->kbps = kbps > 0 ? kbps : 0;
+    l->bytes = s->tamanhoBytes;
+    l->atual = (unsigned char)ehAtual;
+    l->ok = (unsigned char)(!ehAtual && !s->urlP2P && (s->url[0] || s->infoHash[0]) &&
+                            !foraDoAuto(i) && grupoDe(i) >= 0);
+    l->dv = (unsigned char)ehDv(s);
+    l->dts = (unsigned char)ehDts(s);
+  }
+  pthread_mutex_unlock(&verTrava);
+  return q;
+}
+// Troca pedida pelo Farol: nao passa por fontepref_guardar (so a escolha
+// manual da pessoa vira preferencia) e so vale na lista em que foi decidida.
+int stream_farol_trocar(int indice, unsigned geracao) {
+  int ok;
+  pthread_mutex_lock(&verTrava);
+  ok = geracao == listaGeracao && indice >= 0 && indice < n;
+  if (ok) trocaFarol = indice;
+  pthread_mutex_unlock(&verTrava);
+  return ok;
+}
+int stream_farol_troca_escolheu(int *indice) {
+  int i, ok;
+  pthread_mutex_lock(&verTrava);
+  i = trocaFarol; trocaFarol = -1;
+  ok = i >= 0 && i < n;
+  pthread_mutex_unlock(&verTrava);
+  if (ok && indice) *indice = i;
+  return ok;
+}
+
 void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
                         int *fonteMbps, int *fonteDebrid, int *temOutraFonte,
                         int *temFonteMenor, int *temFonteSemDv,
@@ -8061,8 +8135,7 @@ void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
   int outra = -1, menor = -1, semDv = -1, semDts = -1;
   int th = -1, td = -1, vz = -1;
   char atualUrl[NV_MEDIA_URL_MAX];
-  int kbpsAt = 0, altAt = 0;
-  uint64_t bytesAt = 0;
+  int kbpsAt = 0;
 
   atualUrl[0] = 0;
   stream_capacidades(&th, &td, NULL, NULL);
@@ -8072,8 +8145,6 @@ void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
     const Stream *s = &lista[atual];
     uint64_t gbx10 = s->tamanhoBytes / 100000000ULL;
     kbpsAt = stream_kbps(s);
-    bytesAt = s->tamanhoBytes;
-    altAt = s->altura;
     fDv = ehDv(s) ? 1 : 0;
     fHdr = ehHdr(s) ? 1 : 0;
     fGB = s->tamanhoBytes
@@ -8087,27 +8158,20 @@ void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
     fDeb = s->debridServico > 0 ? 1 : 0;
     snprintf(atualUrl, sizeof atualUrl, "%s", s->url);
   }
-  if (n > 0 && lista) {
-    int i;
-    outra = 0; menor = 0; semDv = 0; semDts = 0;
-    for (i = 0; i < n; i++) {
-      const Stream *cand = &lista[i];
-      if (i == atual || foraDoAuto(i)) continue;
-      outra = 1;
-      if (!ehDv(cand)) semDv = 1;
-      if (!ehDts(cand)) semDts = 1;
-      if (atual >= 0 && atual < n && !menor) {
-        int kI = stream_kbps(cand);
-        if (bytesAt > 0 && cand->tamanhoBytes > 0 && cand->tamanhoBytes < bytesAt)
-          menor = 1;
-        else if (kbpsAt > 0 && kI > 0 && kI < kbpsAt)
-          menor = 1;
-        else if (altAt > 0 && cand->altura > 0 && cand->altura < altAt)
-          menor = 1;
-      }
+  pthread_mutex_unlock(&verTrava);
+
+  // As quatro elegibilidades vem da MESMA regra que o executor aplica
+  // (farolacao_fonte.c): oferecer so o que a acao consegue cumprir.
+  {
+    FarolFonteLinha linhas[FAROL_FONTE_MAX];
+    unsigned ger = 0;
+    int nl = stream_farol_fontes(linhas, FAROL_FONTE_MAX, &ger);
+    if (nl > 0) {
+      FarolFonteElegib e;
+      farolacao_fonte_elegibilidade(linhas, nl, ger, &e);
+      outra = e.outra; menor = e.menor; semDv = e.semDv; semDts = e.semDts;
     }
   }
-  pthread_mutex_unlock(&verTrava);
 
   if (vazaoMbps) {
     StreamfitFoto foto;

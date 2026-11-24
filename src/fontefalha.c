@@ -338,6 +338,9 @@ typedef struct { char addon[FONTEFALHA_CHAVE]; int usadas[5]; } UsoAddon;
 typedef struct { char *identidade; int servico, addon, descontada, url; } Tentativa;
 struct FonteFalhaSessao {
   FonteFalhaConfig cfg;
+  // Filtro temporario so DESTA sessao (acoes de fonte do Farol): somado ao
+  // cfg.filtro, nunca gravado em fontefalha.txt nem visto por outra sessao.
+  FonteFiltroConfig temp; int temTemp;
   unsigned disponiveis;
   int fase, preferido, aberta, diretas, total, usadas[4];
   UsoAddon *uso; int nUso;
@@ -359,7 +362,8 @@ static int limiteAddon(const FonteFalhaSessao *s, const char *chave) {
   int i = addonIndice(&s->cfg, chave); return i >= 0 ? s->cfg.addon[i].limite : 3;
 }
 static int candidataVale(const FonteFalhaSessao *s, const FonteFalhaCandidata *c, int servico) {
-  if (c->indice < 0 || !fontefiltro_permite(&s->cfg.filtro, &c->filtro) || jaTentada(s, c, servico)) return 0;
+  if (c->indice < 0 || !fontefiltro_permite(&s->cfg.filtro, &c->filtro) ||
+      (s->temTemp && !fontefiltro_permite(&s->temp, &c->filtro)) || jaTentada(s, c, servico)) return 0;
   if (servico >= 0) {
     if (servico >= 4 || !s->cfg.provedores || !c->nativa || !(s->disponiveis & (1u << servico)) ||
         s->usadas[servico] >= s->cfg.limites[servico]) return 0;
@@ -387,6 +391,13 @@ FonteFalhaSessao *fontefalha_sessao_nova(const FonteFalhaConfig *cfg, unsigned d
 }
 void fontefalha_sessao_filtro(const FonteFalhaSessao *s, FonteFiltroConfig *saida) {
   if (saida) { if (s) *saida = s->cfg.filtro; else memset(saida, 0, sizeof *saida); }
+}
+int fontefalha_sessao_filtro_temporario(FonteFalhaSessao *s, const FonteFiltroConfig *temp) {
+  if (!s) return 0;
+  if (!temp) { memset(&s->temp, 0, sizeof s->temp); s->temTemp = 0; return 1; }
+  if (!fontefiltro_config_validar(temp)) return 0;
+  s->temp = *temp; s->temTemp = 1;
+  return 1;
 }
 void fontefalha_sessao_liberar(FonteFalhaSessao *s) {
   if (!s) return;

@@ -5756,7 +5756,7 @@ static void tocarFonteEscolhida(int fonte, int manual) {
     // preferencia: quem nunca abriu esta folha continua com a regra da
     // pontuacao para sempre, que e a condicao de nao quebrar o app de quem
     // nunca escolheu nada.
-    if (s && manual) {
+    if (s && manual == 1) {
       char base[24];
       idBaseDoTitulo(base, sizeof base);
       if (base[0]) fontepref_guardar(base, s);
@@ -7909,6 +7909,9 @@ void app_atualizar(float dt, Uint32 agora) {
     if (aguardandoFonte != 2 && stream_partes_escolheu(&pf, &pl, &pk)) abrirParte(pf, &pl, pk); }
   int fonte;
   if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) tocarFonteEscolhida(fonte, 1);
+  // Troca pedida pelo Farol (acoes de fonte): abre como escolha manual, mas sem
+  // guardar a fonte como preferencia do titulo (manual == 2).
+  if (aguardandoFonte != 2 && stream_farol_troca_escolheu(&fonte)) tocarFonteEscolhida(fonte, 2);
   juntosAbrirEFonte(agora);
   if (aguardandoFonte != 2 && (player_pediu_fontes() || juntosui_pediu_fontes())) {
     char base[24];
