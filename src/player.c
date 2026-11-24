@@ -5542,6 +5542,13 @@ void player_atualizar(float dt, Uint32 agora) {
   }
   // Com o painel no ar os controles nao somem: eles sao a saida do dono.
   if (posplay_visivel()) ultimoInput = agora;
+  // Uma folha por cima (audio, legendas, fontes, episodios) e a pessoa no
+  // controle: as teclas dela nao passam por aqui. Sem isto, fechar a folha
+  // depois de mais de PLR_ESCONDE_MS (entrar em "De outra fonte" ou "Todas as
+  // legendas") fazia a barra comecar a entrar e sumir no mesmo instante — o
+  // player "piscava" (video do dono, 24/11). Agora ela fica o prazo inteiro,
+  // como ao fechar logo.
+  if (faixas_aberta() || stream_folha_aberta() || episodios_aberto()) ultimoInput = agora;
 
   // Pausado, os controles ficam. Sumir com eles deixaria o usuario diante de um
   // quadro parado sem nenhuma pista de que foi ele quem pausou.
