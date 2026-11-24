@@ -4638,6 +4638,7 @@ void player_atualizar(float dt, Uint32 agora) {
     char falha[160], t[384];
     // Settings > Audio from another version turned off: no mark survives.
     if (!ajustes_audio_externo() && audioext_tem_marca()) audioext_limpar();
+    audioext_memoria_dono(sessao_usuario(), perfis_ativo());
     audioext_preferencias(ajustes_audio_externo_so_audio(), ajustes_audio_externo_serie());
     if (audioext_falha_consumir(falha, sizeof falha)) {
       // The debrid's placeholder clip: not a failure of the app, the version

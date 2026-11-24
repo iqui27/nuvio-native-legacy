@@ -3790,6 +3790,8 @@ int app_iniciar(const char *dirArte) {
   fontepref_iniciar();
   // "Reusar o ultimo link" ligado guarda os links no disco (fontevolta.h).
   fontevolta_definir_arquivo(dados_ler, dados_gravar, dados_apagar);
+  // "Lembrar nos proximos episodios" do audio de outra fonte, tambem no disco.
+  audioext_definir_memoria_arquivo(dados_ler, dados_gravar, dados_apagar);
   fontesmortas_iniciar();
   arranque_etapa("app_iniciar/addonstats_ler");
   addonstats_ler();   // #202: latencia de cada add-on NESTA TV (addonstats.h)
@@ -7558,6 +7560,7 @@ int app_central_pode(void) {
 
 void app_encerrar(void) {
   avisos_encerrar();   // saida limpa: apaga a marca de sessao viva
+  audioext_memoria_descarregar();   // o ultimo ajuste de sincronia ainda na espera
   preparoInvalidar();
   proximopreparo_encerrar();
   if (fioFonteVivo) {

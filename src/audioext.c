@@ -60,8 +60,32 @@ static int faixaMarca = -1;
 // that episode's number, 0 = this episode. Nothing of it goes to the series
 // memory: the next episode keeps its own numbering.
 static int epOutro;
-// One remembered series at a time (test build, not saved).
+// The series being used now: a working copy of its row in serTab below.
 static struct { char serie[64], episodio[64]; AudioExtIdent id; int offset, velocidade, ativo, temFaixa; AudioExtFaixa faixa; } memo;
+// SAVED SERIES MEMORY (owner 24/11): one row per series, account and profile,
+// AUDIOEXT_SERIE_MAX rows (the one used longest ago leaves first), in
+// audioextserie.txt through the functions of audioext_definir_memoria_arquivo.
+// No time limit: a row goes when the person goes back to the file's own audio
+// (audioext_original) or another version is remembered for that series.
+// Without the functions (tests) the rows live in memory only.
+typedef struct {
+  char serie[64], episodio[64], conta[96];
+  int perfil;
+  unsigned usado;   // bigger = used more recently (a counter, saved with the row)
+  AudioExtIdent id;
+  int offset, velocidade, temFaixa;
+  AudioExtFaixa faixa;
+} SerieMem;
+static SerieMem serTab[AUDIOEXT_SERIE_MAX];
+static int serN, serCarregado, serSujo;
+static uint64_t serSujoEm;
+static char donoConta[96];
+static int donoPerfil;
+static char *(*serLer)(const char *);
+static int (*serGravar)(const char *, const char *);
+static int (*serApagar)(const char *);
+#define SERIE_ARQUIVO "audioextserie.txt"
+#define SERIE_CABECALHO "# nuvio audio serie v1\n"
 // This episode came from the series memory with a remembered track (owner
 // 09/11: two English tracks, the one chosen): the hint for the player.
 static int dicaAtiva;
@@ -73,6 +97,176 @@ static void serieDe(const char *alvo, char *out, size_t tam) {
   const char *c = alvo ? strchr(alvo, ':') : NULL;
   snprintf(out, tam, "%.*s", c ? (int)(c - alvo) : 0, c ? alvo : "");
 }
+
+
+// --- saved series memory ------------------------------------------------------
+static size_t serEsc(char *d, size_t cap, const char *src) {
+  size_t k = 0;
+  for (; src && *src && k + 2 < cap; src++) {
+    char c = *src;
+    if (c == '\t' || c == '\n' || c == '\\' || c == '\r') {
+      d[k++] = '\\'; d[k++] = c == '\t' ? 't' : c == '\n' ? 'n' : c == '\r' ? 'r' : '\\';
+    } else d[k++] = c;
+  }
+  d[k] = 0;
+  return k;
+}
+static void serDesesc(char *d, size_t cap, const char *src) {
+  size_t k = 0;
+  for (; *src && k + 1 < cap; src++) {
+    if (*src == '\\' && src[1]) {
+      src++;
+      d[k++] = *src == 't' ? '\t' : *src == 'n' ? '\n' : *src == 'r' ? '\r' : *src;
+    } else d[k++] = *src;
+  }
+  d[k] = 0;
+}
+static char *serCampo(char **p) {
+  char *ini = *p, *t;
+  if (!ini) return (char *)"";
+  t = strchr(ini, '\t');
+  if (t) { *t = 0; *p = t + 1; } else *p = NULL;
+  return ini;
+}
+static int serDono(const SerieMem *e) { return e->perfil == donoPerfil && !strcmp(e->conta, donoConta); }
+static int serAchar(const char *serie) {
+  for (int i = 0; i < serN; i++)
+    if (serDono(&serTab[i]) && !strcmp(serTab[i].serie, serie)) return i;
+  return -1;
+}
+static void serCarregar(void) {
+  char *b, *linha, *prox;
+  if (serCarregado || !serLer) return;
+  serCarregado = 1;
+  b = serLer(SERIE_ARQUIVO);
+  if (!b) return;
+  if (strncmp(b, SERIE_CABECALHO, sizeof SERIE_CABECALHO - 1)) { free(b); return; }
+  for (linha = b; linha && *linha && serN < AUDIOEXT_SERIE_MAX; linha = prox) {
+    char *fim = strchr(linha, '\n'), *p = linha;
+    SerieMem e;
+    prox = fim ? fim + 1 : NULL;
+    if (fim) *fim = 0;
+    if (linha[0] == '#' || !linha[0]) continue;
+    memset(&e, 0, sizeof e);
+    serDesesc(e.serie, sizeof e.serie, serCampo(&p));
+    serDesesc(e.episodio, sizeof e.episodio, serCampo(&p));
+    serDesesc(e.conta, sizeof e.conta, serCampo(&p));
+    e.perfil = atoi(serCampo(&p));
+    e.usado = (unsigned)strtoul(serCampo(&p), NULL, 10);
+    serDesesc(e.id.grupo, sizeof e.id.grupo, serCampo(&p));
+    serDesesc(e.id.addon, sizeof e.id.addon, serCampo(&p));
+    serDesesc(e.id.idioma, sizeof e.id.idioma, serCampo(&p));
+    serDesesc(e.id.nome, sizeof e.id.nome, serCampo(&p));
+    e.id.altura = atoi(serCampo(&p));
+    e.id.codec = atoi(serCampo(&p));
+    e.offset = atoi(serCampo(&p));
+    e.velocidade = atoi(serCampo(&p));
+    e.temFaixa = atoi(serCampo(&p)) != 0;
+    e.faixa.stream = atoi(serCampo(&p));
+    e.faixa.canais = atoi(serCampo(&p));
+    serDesesc(e.faixa.codec, sizeof e.faixa.codec, serCampo(&p));
+    serDesesc(e.faixa.idioma, sizeof e.faixa.idioma, serCampo(&p));
+    serDesesc(e.faixa.titulo, sizeof e.faixa.titulo, serCampo(&p));
+    if (!e.serie[0]) continue;
+    if (e.offset > AUDIOEXT_OFFSET_MAX) e.offset = AUDIOEXT_OFFSET_MAX;
+    if (e.offset < -AUDIOEXT_OFFSET_MAX) e.offset = -AUDIOEXT_OFFSET_MAX;
+    { int dup = 0;
+      for (int i = 0; i < serN; i++)
+        if (serTab[i].perfil == e.perfil && !strcmp(serTab[i].conta, e.conta) && !strcmp(serTab[i].serie, e.serie)) dup = 1;
+      if (!dup) serTab[serN++] = e; }
+  }
+  free(b);
+  printf("[ext-audio] series memory: %d saved series read\n", serN); fflush(stdout);
+}
+static void serMarcarSujo(void) {
+  if (!serSujo) serSujoEm = relogio();
+  serSujo = 1;
+}
+static void serGravarAgora(void) {
+  size_t cap = sizeof SERIE_CABECALHO + (size_t)serN * 2000, k;
+  char *b;
+  serSujo = 0;
+  if (!serGravar) return;
+  if (!serN) { if (serApagar) serApagar(SERIE_ARQUIVO); return; }
+  b = malloc(cap);
+  if (!b) return;
+  k = (size_t)snprintf(b, cap, "%s", SERIE_CABECALHO);
+  for (int i = 0; i < serN && k < cap; i++) {
+    const SerieMem *e = &serTab[i];
+    char t[6][300];
+    serEsc(t[0], sizeof t[0], e->serie); serEsc(t[1], sizeof t[1], e->episodio);
+    serEsc(t[2], sizeof t[2], e->conta); serEsc(t[3], sizeof t[3], e->id.grupo);
+    serEsc(t[4], sizeof t[4], e->id.addon); serEsc(t[5], sizeof t[5], e->id.nome);
+    { char il[20], fc[50], fi[34], ft[130];
+      serEsc(il, sizeof il, e->id.idioma); serEsc(fc, sizeof fc, e->faixa.codec);
+      serEsc(fi, sizeof fi, e->faixa.idioma); serEsc(ft, sizeof ft, e->faixa.titulo);
+      int n = snprintf(b + k, cap - k, "%s\t%s\t%s\t%d\t%u\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\n",
+                       t[0], t[1], t[2], e->perfil, e->usado, t[3], t[4], il, t[5], e->id.altura, e->id.codec,
+                       e->offset, e->velocidade, e->temFaixa, e->faixa.stream, e->faixa.canais, fc, fi, ft);
+      if (n < 0) break;
+      k += (size_t)n; }
+  }
+  if (k < cap) serGravar(SERIE_ARQUIVO, b);
+  free(b);
+}
+// The working copy goes to its row (a new row for a new series: the full table
+// drops the row used longest ago).
+static void memoSalvar(void) {
+  int i, maxU = 0;
+  if (!memo.ativo || !memo.serie[0]) return;
+  serCarregar();
+  for (int j = 0; j < serN; j++) if ((int)serTab[j].usado > maxU) maxU = (int)serTab[j].usado;
+  i = serAchar(memo.serie);
+  if (i < 0) {
+    if (serN < AUDIOEXT_SERIE_MAX) i = serN++;
+    else {
+      i = 0;
+      for (int j = 1; j < serN; j++) if (serTab[j].usado < serTab[i].usado) i = j;
+      printf("[ext-audio] series memory: full (%d), %s leaves\n", AUDIOEXT_SERIE_MAX, serTab[i].serie); fflush(stdout);
+    }
+  }
+  memset(&serTab[i], 0, sizeof serTab[i]);
+  snprintf(serTab[i].serie, sizeof serTab[i].serie, "%s", memo.serie);
+  snprintf(serTab[i].episodio, sizeof serTab[i].episodio, "%s", memo.episodio);
+  snprintf(serTab[i].conta, sizeof serTab[i].conta, "%s", donoConta);
+  serTab[i].perfil = donoPerfil;
+  serTab[i].usado = (unsigned)maxU + 1;
+  serTab[i].id = memo.id;
+  serTab[i].offset = memo.offset; serTab[i].velocidade = memo.velocidade;
+  serTab[i].temFaixa = memo.temFaixa; serTab[i].faixa = memo.faixa;
+  serMarcarSujo();
+}
+// The series' row (this account and profile) becomes the working copy.
+static int memoCarregar(const char *serie) {
+  int i;
+  if (memo.ativo && !strcmp(memo.serie, serie)) return 1;
+  serCarregar();
+  i = serAchar(serie);
+  if (i < 0) return 0;
+  memset(&memo, 0, sizeof memo);
+  snprintf(memo.serie, sizeof memo.serie, "%s", serTab[i].serie);
+  snprintf(memo.episodio, sizeof memo.episodio, "%s", serTab[i].episodio);
+  memo.id = serTab[i].id;
+  memo.offset = serTab[i].offset; memo.velocidade = serTab[i].velocidade;
+  memo.temFaixa = serTab[i].temFaixa; memo.faixa = serTab[i].faixa;
+  memo.ativo = 1;
+  return 1;
+}
+void audioext_definir_memoria_arquivo(char *(*ler)(const char *), int (*gravar)(const char *, const char *),
+                                      int (*apagar)(const char *)) {
+  serLer = ler; serGravar = gravar; serApagar = apagar;
+  // The table comes from this file from now on (the app sets it once, at start).
+  serCarregado = 0; serN = 0; serSujo = 0; memo.ativo = 0;
+}
+void audioext_memoria_dono(const char *conta, int perfil) {
+  if (!conta) conta = "";
+  if (perfil == donoPerfil && !strcmp(conta, donoConta)) return;
+  snprintf(donoConta, sizeof donoConta, "%s", conta);
+  donoPerfil = perfil;
+  memo.ativo = 0;   // another person's series: read from the table on demand
+}
+void audioext_memoria_descarregar(void) { if (serSujo) serGravarAgora(); }
+int audioext_memoria_series(void) { serCarregar(); return serN; }
 
 void audioext_limpar(void) {
   resN = resProx = 0;
@@ -286,7 +480,7 @@ int audioext_offset_definir(int ms) {
   if (offsetMs < -AUDIOEXT_OFFSET_MAX) offsetMs = -AUDIOEXT_OFFSET_MAX;
   offsetGeracao++; offsetSuave = 0;
   { char sr[64]; serieDe(alvoMarca, sr, sizeof sr);
-    if (memo.ativo && !epOutro && sr[0] && !strcmp(sr, memo.serie) && memoAceita()) memo.offset = offsetMs; }
+    if (memo.ativo && !epOutro && sr[0] && !strcmp(sr, memo.serie) && memoAceita()) { memo.offset = offsetMs; memoSalvar(); } }
   return offsetMs;
 }
 unsigned audioext_offset_geracao(void) { return offsetGeracao; }
@@ -332,6 +526,7 @@ void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r) {
       if (memo.ativo && sr[0] && !strcmp(sr, memo.serie)) {
         if (!r->pozniej && !epOutro && memoAceita()) memo.offset = offsetMs;
         memo.velocidade = velocidadePpm;
+        memoSalvar();
       } }
   }
   dopasujInfo.ms = offsetMs;
@@ -486,6 +681,9 @@ int audioext_falha_consumir(char *dst, unsigned tam) {
 void audioext_preferencias(int soAudio, int serie) {
   prefSoAudio = soAudio != 0; prefSerie = serie != 0;
   if (!prefSerie) memo.ativo = 0;
+  // Called every frame: the changes of the last moments go to disk together
+  // (a run of +/- presses on the offset is one write).
+  if (serSujo && relogio() - serSujoEm >= AUDIOEXT_SERIE_GRAVAR_MS) serGravarAgora();
 }
 int audioext_so_audio(void) { return prefSoAudio; }
 static int nomeTagEpisodio(const char *w, size_t n) {
@@ -543,15 +741,16 @@ void audioext_lembrar_serie(const AudioExtIdent *id) {
   snprintf(memo.serie, sizeof memo.serie, "%s", sr);
   snprintf(memo.episodio, sizeof memo.episodio, "%s", alvoMarca[0] ? alvoMarca : alvoAtual);
   memo.id = *id; memo.offset = offsetMs; memo.velocidade = velocidadePpm; memo.ativo = 1; memo.temFaixa = 0;
+  memoSalvar();
   printf("[ext-audio] series memory: group=%s addon=%.40s name=\"%.60s\" lang=%s %dp codec=%d\n", memo.id.grupo[0] ? memo.id.grupo : "-",
          memo.id.addon, memo.id.nome, memo.id.idioma, memo.id.altura, memo.id.codec);
   fflush(stdout);
 }
 int audioext_serie_procura(const char *alvo, AudioExtIdent *id) {
   char sr[64];
-  if (!prefSerie || !memo.ativo || !alvo || !*alvo) return 0;
+  if (!prefSerie || !alvo || !*alvo) return 0;
   serieDe(alvo, sr, sizeof sr);
-  if (!sr[0] || strcmp(sr, memo.serie) || !strcmp(alvo, memo.episodio)) return 0;
+  if (!sr[0] || !memoCarregar(sr) || !strcmp(alvo, memo.episodio)) return 0;
   if (urlMarca[0] && mesmoAlvo(alvo, alvoMarca)) return 0;   /* already chosen here */
   if (id) *id = memo.id;
   return 1;
@@ -568,11 +767,26 @@ void audioext_serie_achou(const char *url, const char *cabecalhos, const char *n
   faixaMarca = -1; epOutro = 0;
   dicaAtiva = memo.temFaixa; if (dicaAtiva) dica = memo.faixa;
   offsetLembrado = 1;
+  memoSalvar();   // used now: the last one to leave a full table
   pedidoGeracao++;
   printf("[ext-audio] series memory: this episode uses %.80s, offset %d ms\n", nomeMarca, offsetMs);
   fflush(stdout);
 }
-void audioext_serie_esquecer(void) { memo.ativo = 0; }
+// Back to the file's own audio: the series on screen forgets its version.
+void audioext_serie_esquecer(void) {
+  char sr[64];
+  int i;
+  serieDe(alvoAtual, sr, sizeof sr);
+  if (!sr[0] && memo.ativo) snprintf(sr, sizeof sr, "%s", memo.serie);
+  memo.ativo = 0;
+  if (!sr[0]) return;
+  serCarregar();
+  i = serAchar(sr);
+  if (i < 0) return;
+  serTab[i] = serTab[--serN];
+  serMarcarSujo();
+  printf("[ext-audio] series memory: %s forgotten\n", sr); fflush(stdout);
+}
 void audioext_episodio_outro(int episodio) {
   if (!urlMarca[0]) return;
   epOutro = episodio > 0 ? episodio : 0;
@@ -600,6 +814,7 @@ void audioext_lembrar_faixa_serie(const AudioExtFaixa *f) {
   serieDe(alvoMarca, sr, sizeof sr);
   if (!f || !prefSerie || !memo.ativo || epOutro || !sr[0] || strcmp(sr, memo.serie)) return;
   memo.faixa = *f; memo.temFaixa = 1;
+  memoSalvar();
   printf("[ext-audio] series memory: track %d (%s %s %dch \"%.40s\")\n", f->stream, f->idioma, f->codec, f->canais, f->titulo);
   fflush(stdout);
 }

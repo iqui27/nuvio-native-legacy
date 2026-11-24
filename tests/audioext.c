@@ -4,6 +4,7 @@
 #include "../src/audioext.h"
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 static int fakeSonda(const char *url, const char *cab, AudioExtFaixa *out, int max) {
@@ -15,6 +16,33 @@ static int esperarSonda(unsigned g, AudioExtFaixa *f) {
   int n = -2; struct timespec ts = {0, 2000000};
   for (int i = 0; i < 1000 && (n = audioext_sonda_resultado(g, f, AUDIOEXT_FAIXAS_MAX)) == -2; i++) nanosleep(&ts, NULL);
   return n;
+}
+
+// A file system of one file for the saved series memory.
+static char arqConteudo[200000];
+static int arqExiste, arqGravacoes;
+static char *arqLer(const char *nome) {
+  char *d;
+  assert(!strcmp(nome, "audioextserie.txt"));
+  if (!arqExiste) return NULL;
+  d = malloc(strlen(arqConteudo) + 1); strcpy(d, arqConteudo); return d;
+}
+static int arqGravar(const char *nome, const char *c) {
+  assert(!strcmp(nome, "audioextserie.txt") && strlen(c) < sizeof arqConteudo);
+  strcpy(arqConteudo, c); arqExiste = 1; arqGravacoes++; return 1;
+}
+static int arqApagar(const char *nome) { (void)nome; arqExiste = 0; arqConteudo[0] = 0; return 1; }
+static void escolherSerie(const char *alvo, const char *grupo, int offset) {
+  AudioExtIdent i;
+  char url[64];
+  audioext_alvo(alvo);
+  snprintf(url, sizeof url, "https://x/%s.mkv", grupo);
+  audioext_escolher(url, "", grupo, "pl");
+  memset(&i, 0, sizeof i);
+  snprintf(i.grupo, sizeof i.grupo, "%s", grupo); snprintf(i.idioma, sizeof i.idioma, "pl");
+  snprintf(i.nome, sizeof i.nome, "tab\there");   // escaped on disk
+  audioext_lembrar_serie(&i);
+  audioext_offset_definir(offset);
 }
 
 static uint64_t agoraTeste;
@@ -381,6 +409,85 @@ int main(void) {
     // A new pick is this episode's again.
     audioext_escolher("https://c/pl-e4b.mkv", "", "PL", "pl");
     assert(audioext_episodio_outro_atual() == 0);
+    audioext_limpar(); }
+  // SAVED SERIES MEMORY (owner 24/11): per series, account and profile, on
+  // disk, 50 series, survives a restart and another series in between.
+  { AudioExtIdent r;
+    AudioExtFaixa f;
+    char nome[24];
+    audioext_definir_relogio(relogioTeste);
+    agoraTeste = 1000000;
+    audioext_definir_memoria_arquivo(arqLer, arqGravar, arqApagar);
+    audioext_memoria_dono("conta-a", 1);
+    audioext_preferencias(0, 1);
+    assert(audioext_memoria_series() == 0);
+    escolherSerie("tt100:1:1", "grupo-a", 700);
+    memset(&f, 0, sizeof f); f.stream = 3; f.canais = 6; snprintf(f.codec, sizeof f.codec, "eac3");
+    snprintf(f.idioma, sizeof f.idioma, "pol"); snprintf(f.titulo, sizeof f.titulo, "Lektor");
+    audioext_lembrar_faixa_serie(&f);
+    escolherSerie("tt200:1:1", "grupo-b", -300);   // another series: the first one stays
+    assert(audioext_memoria_series() == 2);
+    // Nothing on disk yet: a run of changes is one write, a moment later.
+    audioext_preferencias(0, 1);
+    assert(!arqExiste);
+    agoraTeste += AUDIOEXT_SERIE_GRAVAR_MS;
+    audioext_preferencias(0, 1);
+    assert(arqExiste && arqGravacoes == 1);
+    audioext_preferencias(0, 1);
+    assert(arqGravacoes == 1);
+    assert(audioext_serie_procura("tt100:1:2", &r) && !strcmp(r.grupo, "grupo-a") && !strcmp(r.nome, "tab\there"));
+    // "Restart": the table comes from the file again.
+    audioext_limpar();
+    audioext_definir_memoria_arquivo(arqLer, arqGravar, arqApagar);
+    audioext_alvo("tt100:1:2");
+    assert(audioext_serie_procura("tt100:1:2", &r) && !strcmp(r.grupo, "grupo-a"));
+    assert(!audioext_serie_procura("tt100:1:1", NULL));   // the episode it was chosen in
+    audioext_serie_achou("https://x/a2.mkv", "", "grupo-a E2");
+    assert(audioext_offset_ms() == 700 && audioext_offset_lembrado());
+    assert(audioext_faixa_dica(&f) && f.stream == 3 && f.canais == 6 && !strcmp(f.titulo, "Lektor"));
+    audioext_alvo("tt200:1:2");
+    assert(audioext_serie_procura("tt200:1:2", &r) && !strcmp(r.grupo, "grupo-b"));
+    audioext_serie_achou("https://x/b2.mkv", "", "grupo-b E2");
+    assert(audioext_offset_ms() == -300);
+    // Another profile, another account: none of it.
+    audioext_memoria_dono("conta-a", 2);
+    assert(!audioext_serie_procura("tt100:1:3", NULL));
+    audioext_memoria_dono("conta-b", 1);
+    assert(!audioext_serie_procura("tt100:1:3", NULL));
+    audioext_memoria_dono("conta-a", 1);
+    assert(audioext_serie_procura("tt100:1:3", NULL));
+    // Back to the file's own audio: this series forgets, the other one stays.
+    audioext_alvo("tt200:1:3");
+    audioext_original();
+    assert(!audioext_serie_procura("tt200:1:4", NULL) && audioext_serie_procura("tt100:1:3", NULL));
+    agoraTeste += AUDIOEXT_SERIE_GRAVAR_MS;
+    audioext_preferencias(0, 1);
+    audioext_definir_memoria_arquivo(arqLer, arqGravar, arqApagar);
+    assert(audioext_memoria_series() == 1 && !audioext_serie_procura("tt200:1:4", NULL));
+    // Full: the series used longest ago leaves first (tt100 was used last of
+    // the old ones, then 49 new series push it to the edge, one more drops it).
+    for (int i = 0; i < AUDIOEXT_SERIE_MAX - 1; i++) {
+      char a[32]; snprintf(a, sizeof a, "tt%d:1:1", 1000 + i); snprintf(nome, sizeof nome, "g%d", i);
+      escolherSerie(a, nome, i);
+    }
+    assert(audioext_memoria_series() == AUDIOEXT_SERIE_MAX);
+    audioext_alvo("tt100:1:5");
+    assert(audioext_serie_procura("tt100:1:5", NULL));
+    audioext_serie_achou("https://x/a5.mkv", "", "grupo-a E5");   // used now: tt1000 is the oldest
+    escolherSerie("tt5000:1:1", "novo", 0);
+    assert(audioext_memoria_series() == AUDIOEXT_SERIE_MAX);
+    assert(audioext_serie_procura("tt100:1:6", NULL) && !audioext_serie_procura("tt1000:1:2", NULL));
+    assert(audioext_serie_procura("tt1001:1:2", NULL) && audioext_serie_procura("tt5000:1:2", NULL));
+    audioext_memoria_descarregar();
+    audioext_definir_memoria_arquivo(arqLer, arqGravar, arqApagar);
+    assert(audioext_memoria_series() == AUDIOEXT_SERIE_MAX && !audioext_serie_procura("tt1000:1:2", NULL));
+    // The setting off: nothing is looked for (the rows stay for when it is on).
+    audioext_preferencias(0, 0);
+    assert(!audioext_serie_procura("tt100:1:6", NULL));
+    audioext_preferencias(0, 1);
+    assert(audioext_serie_procura("tt100:1:6", NULL));
+    audioext_definir_memoria_arquivo(NULL, NULL, NULL);
+    audioext_definir_relogio(NULL);
     audioext_limpar(); }
   puts("audioext: marks, menu requests, offsets, series memory and matching passed");
   return 0;

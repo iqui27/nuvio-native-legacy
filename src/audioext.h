@@ -71,6 +71,18 @@ int audioext_serie_procura(const char *alvo, AudioExtIdent *id);
 // the remembered sync, as if chosen in the menu.
 void audioext_serie_achou(const char *url, const char *cabecalhos, const char *nome);
 void audioext_serie_esquecer(void);
+// SAVED SERIES MEMORY: one row per series, account and profile, at most
+// AUDIOEXT_SERIE_MAX (the one used longest ago leaves first), no time limit.
+// The app gives the file functions (dados.h) once and the owner every frame;
+// changes reach the disk AUDIOEXT_SERIE_GRAVAR_MS after the last one (from
+// audioext_preferencias), or at once with audioext_memoria_descarregar.
+#define AUDIOEXT_SERIE_MAX 50
+#define AUDIOEXT_SERIE_GRAVAR_MS 1500
+void audioext_definir_memoria_arquivo(char *(*ler)(const char *), int (*gravar)(const char *, const char *),
+                                      int (*apagar)(const char *));
+void audioext_memoria_dono(const char *conta, int perfil);
+void audioext_memoria_descarregar(void);
+int audioext_memoria_series(void);   // rows in the table (all owners)
 // The marked version is another episode's (the releases number the episodes
 // differently): kept out of the series memory. 0 = this episode's.
 void audioext_episodio_outro(int episodio);
