@@ -19,7 +19,9 @@
 #include <SDL2/SDL.h>
 #include "farolacha.h"
 
-#define FAROL_ACHA_UI_MAX 3
+#define FAROL_ACHA_UI_MAX      3
+#define FAROL_ACHA_FOCO_VOLTAR (-1)
+#define FAROL_ACHA_FOCO_VOZ    (-2)
 
 // Pedido parametrizado para abrir a Tela 7 (gancho limpo para #31 e #50).
 typedef struct {
@@ -47,6 +49,7 @@ typedef struct {
 void farolachaui_reset(void);
 void farolachaui_abrir(FarolAchaTipo tipo, int maxMin, unsigned semente);
 void farolachaui_abrir_op(const FarolAchaAbrir *op);
+void farolachaui_abrir_busca(const char *titulo);
 void farolachaui_recarregar(void);
 
 // Processa evento de entrada (D-pad, OK, Voltar).
@@ -62,6 +65,8 @@ void farolachaui_desenhar(float ox, float oy, float alpha, Uint32 agora);
 // Devolve 1 UMA vez quando ha cartaz selecionado, copiando a identidade completa
 // exibida para `*pedido` (nunca um indice nu sem revisao/identidade).
 int  farolachaui_pediu_abrir(FarolAchaPedido *pedido);
+// Devolve 1 UMA vez quando a pessoa apertou OK no botao de microfone da Tela 7.
+int  farolachaui_pediu_voz(void);
 
 // Resolve `p` no catalogo vivo sob validacao coerente de `cat_revisao()` e
 // identidade (sem fallback ambiguo por nome quando nao ha IMDb/TMDB). Grava a

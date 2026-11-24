@@ -102,7 +102,9 @@ int farolbusca_selecionar(const FarolBuscaItem *it);
 int farolbusca_pediu_abrir(int *indiceCatalogo);
 
 // Preferencias de privacidade / consentimento usadas por farolbusca_pedir().
-// Consentimento nasce 0 (seguro por padrao: manda consentiu:0 explicito).
+// Sem override explicito, le seguro_perfil_ativo(), perfil_infantil_ativo(),
+// farolsinal_recomendar() e farolconsent_estado() (consentimento nasce 0 seguro).
+// Passar -1 em farolbusca_definir_* volta ao padrao vivo do app.
 void farolbusca_definir_privado(int privado);
 int  farolbusca_privado(void);
 void farolbusca_definir_consentimento(int consentiu);
