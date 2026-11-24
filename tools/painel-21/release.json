@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-24T03:10:30+00:00",
+    "updatedAt": "2026-11-24T03:28:12+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-24T03:06:00+00:00",
+    "lastVpsReportedAt": "2026-11-24T03:25:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -69,9 +69,18 @@
           "FAROL14-r3 rodando",
           "FAROL48-r7 concluída, parecer em coleta"
         ],
-        "rootFreeGbReported": 26,
+        "rootFreeGbReported": 20,
         "otherProjectsTmpGbReported": 11,
-        "capatazFixReportedAt": "2026-11-24T02:59:00+00:00"
+        "capatazFixReportedAt": "2026-11-24T02:59:00+00:00",
+        "previousDiskReports": [
+          {
+            "freeGbReported": 26,
+            "reportedAt": "2026-11-24T02:56:00+00:00",
+            "sourceLine": 243
+          }
+        ],
+        "diskReportedAt": "2026-11-24T03:24:00+00:00",
+        "otherProjectsTmpReportedAt": "2026-11-24T02:56:00+00:00"
       },
       "models": {
         "opus": {
@@ -86,21 +95,39 @@
             "unavailableUntil": "2026-11-28"
           }
         },
-        "reportedAt": "2026-11-24T03:05:00+00:00",
-        "source": "VPS 244–248; novas condições IBM separadas da cota Antigravity reportada às 02h56",
+        "reportedAt": "2026-11-24T03:25:00+00:00",
+        "source": "VPS 250–252; incompatibilidade do adaptador IBM separada da cota Antigravity anterior",
         "claudeAgentIbm": {
           "status": "liberado_reportado",
           "reportedAt": "2026-11-24T03:05:00+00:00",
           "sourceLine": 248
+        },
+        "antigravityIbm": {
+          "status": "adapter_incompatible_reported",
+          "antigravityVersion": "1.4.5",
+          "t3Version": "0.1.12-nightly",
+          "sourceLine": 252,
+          "reportedAt": "2026-11-24T03:25:00+00:00"
         }
       },
       "implementation": {
-        "status": "PAUSA",
-        "reportedAt": "2026-11-24T01:04:00+00:00",
-        "activeSlots": 1,
-        "totalSlots": 6,
+        "status": "CORRECAO",
         "activeItem": "farol-52",
-        "note": "Pausa de novos despachos no relato das 01h04: onda 2 depende do aceite da #14; Gosto depende de #19/#22/#25/#31/#52. FAROL52 foi entregue às 02h56; não foi relatada retomada geral nem nova alocação."
+        "task": "FAROL52B",
+        "host": "ibm-ephemeral",
+        "executor": "claudeAgent",
+        "model": "claude-opus-5-5",
+        "reportedAt": "2026-11-24T03:25:00+00:00",
+        "sourceLine": 252,
+        "previousState": {
+          "status": "PAUSA",
+          "reportedAt": "2026-11-24T01:04:00+00:00",
+          "activeSlots": 1,
+          "totalSlots": 6,
+          "activeItem": "farol-52",
+          "note": "Pausa de novos despachos no relato das 01h04: onda 2 depende do aceite da #14; Gosto depende de #19/#22/#25/#31/#52. FAROL52 foi entregue às 02h56; não foi relatada retomada geral nem nova alocação."
+        },
+        "note": "Correção da #52 despachada; não é retomada geral das outras implementações. Nenhuma nova contagem global de vagas foi reportada."
       },
       "capacity": {
         "swe2Pi": {
@@ -113,8 +140,9 @@
           "scope": "correção especificada e trabalho mecânico"
         },
         "devinAcp": "parado conforme VPS",
-        "ibmClaudeAgent": "Liberado para revisões/implementação/testes conforme VPS às 03h05 UTC; não confundir com a restrição antiga da rota claudeAgent/agy-bridge",
-        "reportedAt": "2026-11-24T03:05:00+00:00"
+        "ibmClaudeAgent": "FAROL52B movida para claudeAgent claude-opus-5-5 na IBM; r2 planejada após nova entrega, conforme VPS",
+        "reportedAt": "2026-11-24T03:25:00+00:00",
+        "newBuildRoute": "IBM por piso de 20G na raiz VPS"
       },
       "infrastructure": {
         "codexMacbook": {
@@ -157,13 +185,34 @@
           "testRunner": "rodar-testes.sh",
           "testRunnerReadyReported": true,
           "claudeAgent": "liberado conforme VPS; não executado nesta VM",
-          "previousLimitation": "Às 02h59, claudeAgent logado, uso só para push enquanto T3 0.1.9 não devolvia retorno; superado pela atualização das 03h05"
+          "previousLimitation": "Às 02h59, claudeAgent logado, uso só para push enquanto T3 0.1.9 não devolvia retorno; superado pela atualização das 03h05",
+          "integrations": {
+            "antigravity": {
+              "version": "1.4.5",
+              "status": "incompatible_with_t3_reported",
+              "t3Version": "0.1.12-nightly",
+              "reportedAt": "2026-11-24T03:25:00+00:00",
+              "sourceLine": 252,
+              "fallback": "claudeAgent claude-opus-5-5 para FAROL52B",
+              "scope": "Adaptador Antigravity na IBM; não invalida leitura/callbacks T3 ou claudeAgent liberados no relato anterior"
+            }
+          }
         },
         "pokeSender": {
           "status": "persistent_key_configured_reported",
           "reportedAt": "2026-11-24T02:59:00+00:00",
           "sourceLine": 244,
           "note": "poke-enviar.sh usa chave persistente e entregou linhas 163–240; nenhum valor de credencial registrado"
+        },
+        "vpsDisk": {
+          "mount": "/",
+          "freeGbReported": 20,
+          "floorGbReported": 20,
+          "atFloorReported": true,
+          "reportedAt": "2026-11-24T03:24:00+00:00",
+          "sourceLine": 251,
+          "newBuildRoute": "ibm-ephemeral",
+          "measuredLocally": false
         }
       },
       "reviews": {
@@ -175,9 +224,12 @@
         },
         "farol-52": {
           "round": "r1",
-          "status": "running_reported",
-          "route": "Sol / Codex main/auto na VPS",
-          "sourceLine": 246
+          "status": "rejected_reported",
+          "route": "Sol / Codex na VPS",
+          "sourceLine": 250,
+          "completeReportSaved": true,
+          "finalTurnCyberPolicyDoesNotInvalidateVerdict": true,
+          "nextReview": "r2 planejada com claudeAgent Opus na IBM após nova entrega"
         },
         "farol-48": {
           "round": "r7",
@@ -188,7 +240,7 @@
         }
       }
     },
-    "lastVpsLine": 249
+    "lastVpsLine": 252
   },
   "items": [
     {
@@ -1610,14 +1662,15 @@
         "farol-44"
       ],
       "allDependencies": false,
-      "status": "REVISAO",
+      "status": "CORRECAO",
       "wave": "D",
       "sha": "7a52488283",
       "batch": null,
-      "note": "FAROL52-r1 lançada na VPS com Sol via Codex (main/auto/gpt-6.2-sol) em `7a52488283`. Revisão lançada conforme VPS; ainda sem parecer nesta rodada. Sem integração ou TV física inferidas.",
-      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "note": "REPROVADO r1 por Sol em 7a52488283, conforme VPS e revisao/FAROL52-r1-revisao.md: 3 P1 — título privado do Diário em gosto.ancoras sem motivo; POST durante recomenda_cabecalhos após player aberto ou perfil infantil; cN compactado troca cartazes. Parecer completo gravado antes de cyber_policy no turno final; não é revisão sem veredito. FAROL52B inicialmente despachada para Gemini Hydrogen na IBM e movida às 03h25 UTC para claudeAgent claude-opus-5-5: Antigravity 1.4.5 incompatível com T3 0.1.12-nightly naquela máquina. R2 com claudeAgent Opus na IBM planejada para depois da entrega, ainda não iniciada conforme os relatos. Não há SHA de correção entregue: 7a52488283 continua sendo a ponta reprovada. Piso de 20G na raiz da VPS: novos builds roteados para IBM. Fora do candidato 21f; sem integração ou TV física confirmadas.",
+      "source": "Relatos VPS · linhas 250–252",
       "verified": false,
       "previousNotes": [
+        "FAROL52-r1 lançada na VPS com Sol via Codex (main/auto/gpt-6.2-sol) em `7a52488283`. Revisão lançada conforme VPS; ainda sem parecer nesta rodada. Sem integração ou TV física inferidas.",
         "`7a52488283` concluída na IBM (Gemini Hydrogen, 8 arquivos, +3853/−58, conflito trivial de #include em src/app.c vs 21f, Poke intocado). Entrega não integrada e ainda sem revisão r1: aguardava reset do Codex main às 03h02 UTC; prazo é do relato, sem retomada automaticamente inferida. Conflito trivial de include em src/app.c versus 21f reportado, não resolvido por este painel. Fora do candidato 21f. Gate de aprovação da #40 satisfeito no pin 7e14590c2b; a reprovação r11 do delta b7106d207a não revogou esse pin conforme VPS.",
         "`7a52488283` concluída na IBM (Gemini Hydrogen, 8 arquivos, +3853/−58, conflito trivial de #include em src/app.c vs 21f, Poke intocado). Entrega não integrada e ainda sem revisão r1: aguardava reset do Codex main às 03h02 UTC; prazo é do relato, sem retomada automaticamente inferida. Conflito trivial de include em src/app.c versus 21f reportado, não resolvido por este painel. Fora do candidato 21f.",
         "`7a52488283` concluída na IBM (Gemini Hydrogen, 8 arquivos, +3853/−58, conflito trivial de #include em src/app.c vs 21f, Poke intocado).",
@@ -1629,9 +1682,9 @@
         "Caminho crítico. Aguarda o veredito da revisão Sol r3 do Farol 40 antes de avançar.",
         "Caminho crítico."
       ],
-      "updatedAt": "2026-11-24T03:07:54+00:00",
+      "updatedAt": "2026-11-24T03:28:12+00:00",
       "dependencyReportedAt": "2026-11-23T21:13:00+00:00",
-      "reportedAt": "2026-11-24T03:04:00+00:00",
+      "reportedAt": "2026-11-24T03:25:00+00:00",
       "dependencyReviewReportedAt": "2026-11-23T21:18:00+00:00",
       "approvalGate": {
         "satisfied": true,
@@ -1650,10 +1703,25 @@
       "latestDeliverySha": "7a52488283",
       "review": {
         "round": "r1",
-        "status": "running_reported",
-        "reviewer": "Sol / Codex main/auto/gpt-6.2-sol na VPS",
-        "sourceLine": 246,
-        "reportedAt": "2026-11-24T03:04:00+00:00"
+        "status": "rejected_reported",
+        "reviewer": "Sol / Codex na VPS",
+        "sha": "7a52488283",
+        "reportedAt": "2026-11-24T03:24:00+00:00",
+        "sourceLine": 250,
+        "verdictIssued": true,
+        "completeReportSaved": true,
+        "reportPath": "revisao/FAROL52-r1-revisao.md",
+        "p1Count": 3,
+        "findings": [
+          "título privado do Diário em gosto.ancoras sem motivo",
+          "POST durante recomenda_cabecalhos após player aberto ou perfil infantil",
+          "cN compactado troca cartazes"
+        ],
+        "finalTurnProviderFilter": {
+          "reason": "cyber_policy",
+          "afterCompleteReport": true,
+          "invalidatesSavedVerdict": false
+        }
       },
       "previousReviews": [
         {
@@ -1661,8 +1729,40 @@
           "status": "waiting_capacity_reported",
           "reportedWaitUntil": "2026-11-24T03:02:00+00:00",
           "sourceLine": 242
+        },
+        {
+          "round": "r1",
+          "status": "running_reported",
+          "reviewer": "Sol / Codex main/auto/gpt-6.2-sol na VPS",
+          "sourceLine": 246,
+          "reportedAt": "2026-11-24T03:04:00+00:00"
         }
-      ]
+      ],
+      "owner": "IBM · claudeAgent / Claude Opus 5.5",
+      "verificationSummary": "revisão r1 reprovada com 3 P1, conforme VPS; parecer completo preservado; correção despachada e r2 ainda planejada",
+      "correction": {
+        "task": "FAROL52B",
+        "status": "dispatched_reported",
+        "host": "ibm-ephemeral",
+        "executor": "claudeAgent",
+        "model": "claude-opus-5-5",
+        "reportedAt": "2026-11-24T03:25:00+00:00",
+        "sourceLine": 252,
+        "briefPath": "revisao/correcoes/CORRECAO-FAROL52B-brief.md",
+        "previousExecutor": {
+          "name": "Gemini Hydrogen",
+          "reportedAt": "2026-11-24T03:24:00+00:00",
+          "sourceLine": 251
+        },
+        "reason": "Antigravity 1.4.5 incompatível com T3 0.1.12-nightly na IBM",
+        "newDeliveryReported": false
+      },
+      "nextReview": {
+        "round": "r2",
+        "status": "planned_after_delivery",
+        "reviewer": "claudeAgent Opus na IBM",
+        "sourceLine": 251
+      }
     },
     {
       "id": "farol-53",
@@ -4651,6 +4751,50 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-24T03:25:00+00:00",
+      "appliedAt": "2026-11-24T03:28:12+00:00",
+      "item": "coordenacao-ibm-ephemeral",
+      "from": null,
+      "to": null,
+      "reportedStatus": "INFRA",
+      "report": "2026-11-24 03:25 [INFRA] ibm-ephemeral · antigravity 1.4.5 incompatível com T3 0.1.12-nightly; FAROL52B movida para claudeAgent claude-opus-5-5 na IBM.",
+      "vpsLine": 252,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log"
+    },
+    {
+      "at": "2026-11-24T03:25:00+00:00",
+      "appliedAt": "2026-11-24T03:28:12+00:00",
+      "item": "farol-52",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "FAROL52B movida de Gemini/Antigravity para claudeAgent claude-opus-5-5 na IBM, conforme VPS. Sem entrega nova ou revisão r2 iniciada.",
+      "derived": true,
+      "relatedVpsLine": 252,
+      "source": "Relato VPS · linha 252"
+    },
+    {
+      "at": "2026-11-24T03:24:00+00:00",
+      "appliedAt": "2026-11-24T03:28:12+00:00",
+      "item": "farol-52",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "reportedStatus": "REVISAO",
+      "report": "2026-11-24 03:24 [REVISAO] farol-52 · `7a52488283` REPROVADO r1 (Sol, revisao/FAROL52-r1-revisao.md): 3 P1 (título privado do Diário em gosto.ancoras sem motivo; POST durante recomenda_cabecalhos após player aberto ou perfil infantil; cN compactado troca cartazes). Sol atingiu cyber_policy só no turno final após gravar o parecer completo.",
+      "vpsLine": 250,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log"
+    },
+    {
+      "at": "2026-11-24T03:24:00+00:00",
+      "appliedAt": "2026-11-24T03:28:12+00:00",
+      "item": "farol-52",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "reportedStatus": "CORRECAO",
+      "report": "2026-11-24 03:24 [CORRECAO] farol-52 · FAROL52B despachada para Gemini Hydrogen na ibm-ephemeral (brief revisao/correcoes/CORRECAO-FAROL52B-brief.md); r2 com claudeAgent Opus na IBM. Disco VPS `/` em 20G (piso) — novos builds roteados para IBM.",
+      "vpsLine": 251,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log"
+    },
     {
       "at": "2026-11-24T03:06:00+00:00",
       "appliedAt": "2026-11-24T03:10:30+00:00",
