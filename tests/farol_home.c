@@ -353,6 +353,55 @@ int  salvos_tem(const char *imdb) {
 }
 int salvos_mesmo_titulo(const char *a, const char *b) { return a && b && !strcmp(a, b); }
 
+__attribute__((weak)) int addons_motivo_vazio(char *dst, unsigned n) {
+  if (dst && n) dst[0] = 0; return 0;
+}
+__attribute__((weak)) int addons_ocupado(void) { return 0; }
+__attribute__((weak)) const char *atualizacao_nova(void) { return ""; }
+__attribute__((weak)) int debrid_recusa(char *dst, unsigned n) {
+  if (dst && n) dst[0] = 0; return 0;
+}
+__attribute__((weak)) int debrid_sem_plano(void) { return 0; }
+__attribute__((weak)) int dts_playback_enabled(void) { return 0; }
+__attribute__((weak)) int dts_tpk_disponivel(void) { return 0; }
+__attribute__((weak)) const char *farolregra_acao_token(int acao) { (void)acao; return "x"; }
+__attribute__((weak)) const char *farolregra_codigo_nome(int codigo) { (void)codigo; return "NENHUM"; }
+__attribute__((weak)) void farolregra_fatos_iniciar(FarolFatos *f) {
+  if (f) memset(f, 0, sizeof *f);
+}
+__attribute__((weak)) void farolregra_julgar(int sintoma, const FarolFatos *f, FarolVeredito *v) {
+  (void)sintoma; (void)f; if (v) memset(v, 0, sizeof *v);
+}
+__attribute__((weak)) int farolsonda_estado(void *out) { (void)out; return 0; }
+__attribute__((weak)) long memlog_livre_mb(void) { return -1; }
+__attribute__((weak)) int nv_webos_major(void) { return 0; }
+__attribute__((weak)) uint64_t player_ultimo_erro_seq(void) { return 0; }
+__attribute__((weak)) int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid) {
+  (void)out; if (foiDebrid) *foiDebrid = 0; return 0;
+}
+__attribute__((weak)) uint64_t player_ultimo_erro_tentativa(void) { return 0; }
+__attribute__((weak)) int player_externo_disponivel_tentativa(uint64_t tentativa) {
+  (void)tentativa; return 0;
+}
+__attribute__((weak)) int rede_saude_offline(void) { return 0; }
+__attribute__((weak)) int resolverregra_falha_recente(ResolverFalha *out, long agora) {
+  (void)out; (void)agora; return 0;
+}
+__attribute__((weak)) void stream_farol_fatos(int *a, int *b, int *c, int *d, int *e, int *f,
+                                              int *g, int *h, int *i, int *j, int *k, int *l) {
+  int *p[12] = {a, b, c, d, e, f, g, h, i, j, k, l};
+  for (int x = 0; x < 12; x++) if (p[x]) *p[x] = -1;
+}
+__attribute__((weak)) const VideoFaixa *video_audio(int i) { (void)i; return NULL; }
+__attribute__((weak)) int video_audio_atual(void) { return -1; }
+__attribute__((weak)) int video_audio_nao_suportado(void) { return 0; }
+__attribute__((weak)) int video_dts_estado(void) { return 0; }
+__attribute__((weak)) int video_faixa_dts(const VideoFaixa *f) { (void)f; return 0; }
+__attribute__((weak)) const char *video_hdr(void) { return "none"; }
+__attribute__((weak)) int video_n_audio(void) { return 0; }
+__attribute__((weak)) int video_registro_negado(void) { return 0; }
+__attribute__((weak)) int video_tem_dolby_vision(void) { return 0; }
+
 // ------------------------------------------------------------- helpers ----
 static void esperarQuieto(void) {
   int i, quieto = 0;

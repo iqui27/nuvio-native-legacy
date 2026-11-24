@@ -559,4 +559,11 @@ int  stream_escolher_indice(int indice);
 // Captured at dispatch, so a delayed worker cannot adopt another profile's list.
 int stream_canal_primeira_viva_sessao(int tentativas, uint64_t sessao);
 int stream_verificar_proxima_vod_sessao(int atualIdx, int tentativas, int *conferidas, uint64_t sessao);
+// Retrato resumido para o diagnostico do Farol (src/farol.c, sem SDL).
+// Qualquer ponteiro NULL e ignorado; campos desconhecidos ficam em -1.
+void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
+                        int *fonteMbps, int *fonteDebrid, int *temOutraFonte,
+                        int *temFonteMenor, int *temFonteSemDv,
+                        int *temFonteSemDts, int *tvHdr, int *tvDv,
+                        int *vazaoMbps);
 #endif

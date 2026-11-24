@@ -8038,3 +8038,114 @@ int vt_escolha(VtEscolha *e) {
   if (dobradas) linhaEsc(e, 1, i18n("Cópias do mesmo arquivo agrupadas: %d"), dobradas);
   return 1;
 }
+
+static int ehDv(const Stream *s) {
+  uint64_t b = s->badges;
+  return s->dolbyVision > 0 ||
+         (b & (badges_bit("v-dv") | badges_bit("a-atmos-dv") |
+               badges_bit("a-truehd-dv") | badges_bit("a-dd-dv"))) != 0;
+}
+
+static int ehDts(const Stream *s) {
+  uint64_t b = s->badges;
+  return (b & (badges_bit("a-dts") | badges_bit("a-dtshd") |
+               badges_bit("a-dtshdma") | badges_bit("a-dtsx"))) != 0;
+}
+
+void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
+                        int *fonteMbps, int *fonteDebrid, int *temOutraFonte,
+                        int *temFonteMenor, int *temFonteSemDv,
+                        int *temFonteSemDts, int *tvHdr, int *tvDv,
+                        int *vazaoMbps) {
+  int fDv = -1, fHdr = -1, fGB = -1, fMbps = -1, fDeb = -1;
+  int outra = -1, menor = -1, semDv = -1, semDts = -1;
+  int th = -1, td = -1, vz = -1;
+  char atualUrl[NV_MEDIA_URL_MAX];
+  int kbpsAt = 0, altAt = 0;
+  uint64_t bytesAt = 0;
+
+  atualUrl[0] = 0;
+  stream_capacidades(&th, &td, NULL, NULL);
+
+  pthread_mutex_lock(&verTrava);
+  if (atual >= 0 && atual < n && lista) {
+    const Stream *s = &lista[atual];
+    uint64_t gbx10 = s->tamanhoBytes / 100000000ULL;
+    kbpsAt = stream_kbps(s);
+    bytesAt = s->tamanhoBytes;
+    altAt = s->altura;
+    fDv = ehDv(s) ? 1 : 0;
+    fHdr = ehHdr(s) ? 1 : 0;
+    fGB = s->tamanhoBytes
+            ? (gbx10 > 2147483647ULL ? 2147483647 : (int)(gbx10 > 0 ? gbx10 : 1))
+            : 0;
+    fMbps = kbpsAt >= 1000 ? kbpsAt / 1000 : (kbpsAt > 0 ? 1 : 0);
+    if (fGB == 0 && fMbps == 0) {
+      fGB = -1;
+      fMbps = -1;
+    }
+    fDeb = s->debridServico > 0 ? 1 : 0;
+    snprintf(atualUrl, sizeof atualUrl, "%s", s->url);
+  }
+  if (n > 0 && lista) {
+    int i;
+    outra = 0; menor = 0; semDv = 0; semDts = 0;
+    for (i = 0; i < n; i++) {
+      const Stream *cand = &lista[i];
+      if (i == atual || foraDoAuto(i)) continue;
+      outra = 1;
+      if (!ehDv(cand)) semDv = 1;
+      if (!ehDts(cand)) semDts = 1;
+      if (atual >= 0 && atual < n && !menor) {
+        int kI = stream_kbps(cand);
+        if (bytesAt > 0 && cand->tamanhoBytes > 0 && cand->tamanhoBytes < bytesAt)
+          menor = 1;
+        else if (kbpsAt > 0 && kI > 0 && kI < kbpsAt)
+          menor = 1;
+        else if (altAt > 0 && cand->altura > 0 && cand->altura < altAt)
+          menor = 1;
+      }
+    }
+  }
+  pthread_mutex_unlock(&verTrava);
+
+  if (vazaoMbps) {
+    StreamfitFoto foto;
+    uint64_t ag = streamfit_agora_ms();
+    int sustKbps = 0;
+    streamfit_foto(&foto, ag);
+    if (atualUrl[0]) {
+      StreamfitResultado r;
+      streamfit_classificar(&foto, atualUrl, 1000000ULL, 1000.0, &r);
+      if (r.sustentadoKbps > 0) sustKbps = r.sustentadoKbps;
+    }
+    if (sustKbps <= 0) {
+      uint64_t melhorMs = 0;
+      for (int i = 0; i < foto.n && i < STREAMFIT_HOSTS_MAX; i++) {
+        const StreamfitHost *h = &foto.hosts[i];
+        if (h->amostras < 5 || h->medidaMs > foto.agoraMs ||
+            foto.agoraMs - h->medidaMs > STREAMFIT_IDADE_MS ||
+            h->sustentadoKbps <= 0)
+          continue;
+        if (!melhorMs || h->medidaMs >= melhorMs) {
+          melhorMs = h->medidaMs;
+          sustKbps = h->sustentadoKbps;
+        }
+      }
+    }
+    if (sustKbps > 0) vz = sustKbps >= 1000 ? sustKbps / 1000 : 1;
+  }
+
+  if (fonteDv) *fonteDv = fDv;
+  if (fonteHdr) *fonteHdr = fHdr;
+  if (fonteGBx10) *fonteGBx10 = fGB;
+  if (fonteMbps) *fonteMbps = fMbps;
+  if (fonteDebrid) *fonteDebrid = fDeb;
+  if (temOutraFonte) *temOutraFonte = outra;
+  if (temFonteMenor) *temFonteMenor = menor;
+  if (temFonteSemDv) *temFonteSemDv = semDv;
+  if (temFonteSemDts) *temFonteSemDts = semDts;
+  if (tvHdr) *tvHdr = th;
+  if (tvDv) *tvDv = td;
+  if (vazaoMbps) *vazaoMbps = vz;
+}

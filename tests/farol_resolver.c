@@ -80,6 +80,7 @@ static FarolErro ultimoFarol;
 static int temUltimoFarol, ultimoFarolDebrid;
 static uint64_t ultimoFarolAddonId;
 static uint64_t farolTentativaSeq, ultimaFonteTentativa, ultimoFarolTentativa;
+static uint64_t ultimoFarolSeq;   // espelho do static do player (#14)
 static char ultimaFonteUrl[NV_MEDIA_URL_MAX];
 static int ultimaFonteTemCabs;
 static int ultimaFonteTemItem, ultimaFonteIdx, ultimaFonteEpT, ultimaFonteEpE;
@@ -434,6 +435,7 @@ static void zerar(void) {
   itemSessao = c_perfilSessao = 1;
   temUltimoFarol = 0; ultimoFarolDebrid = 0; ultimoFarolAddonId = 0;
   farolTentativaSeq = ultimaFonteTentativa = ultimoFarolTentativa = 0;
+  ultimoFarolSeq = 0;
   ultimaFonteUrl[0] = 0; ultimaFonteTemCabs = 0; c_videoCabs[0] = 0;
   ultimaFonteTemItem = 0; memset(&ultimaFonteItem, 0, sizeof ultimaFonteItem);
   ultimaFonteIdx = -1; ultimaFonteEpT = 0; ultimaFonteEpE = 0; ultimaFonteSessao = 0;
