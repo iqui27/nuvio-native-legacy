@@ -90,6 +90,7 @@
 #include "ctxmenu.h"
 #include "rewatch.h"
 #include "rewatchui.h"
+#include "farolcompara.h"
 #include "ctxlista.h"
 #include "marco.h"
 #include <string.h>
@@ -5039,6 +5040,7 @@ void app_evento(const SDL_Event *e) {
   if (e->type == SDL_QUIT) { retomamorna_cancelar(); sair = 1; return; }
   if (dicascontrole_ocupado()) { dicascontrole_evento(e); return; }
   if (rewatchui_aberta()) { rewatchui_evento(e); return; }
+  if (farolcompara_aberto()) { farolcompara_evento(e); return; }
   ilhacart_validar_identidade();
   // Qualquer gesto da pessoa: a atividade ao vivo da ilha conta 30 min daqui.
   if (e->type == SDL_KEYDOWN || e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEWHEEL) {
@@ -7021,6 +7023,15 @@ void app_atualizar(float dt, Uint32 agora) {
       if (k>=0) { abrirPorIndice(k); cwTocarT=rt; cwTocarE=re; cwRewatch=1; detail_pedir_reproduzir(); }
     }
   }
+  // Comparar (P4): OK abre a pagina do titulo focado; Play toca direto.
+  farolcompara_atualizar(dt, agora);
+  { char cmpRef[FAROL_REF_TAM]; int cmpK=-1, cmpTocar=0;
+    if (farolcompara_pediu_abrir(&cmpK,cmpRef,sizeof cmpRef) ||
+        (cmpTocar=farolcompara_pediu_tocar(&cmpK,cmpRef,sizeof cmpRef))) {
+      if (cmpK<0) cmpK=cat_indice_titulo(cmpRef,-1);
+      if (cmpK>=0) { abrirPorIndice(cmpK); if (cmpTocar) detail_pedir_reproduzir(); }
+    }
+  }
 
   // Botoes do detalhe: quem sabe que existe player e biblioteca e o roteador,
   // nao a tela de detalhe.
@@ -8834,6 +8845,7 @@ void app_desenhar(Uint32 agora) {
 #endif
   player_mini_desenhar(agora);
   rewatchui_desenhar();
+  farolcompara_desenhar(agora);
   CAMADA_SE(sintro_aberto());
   if (!registro_aberto()) sintro_desenhar(agora);
   CAMADA_SE(novidades_aberto());
