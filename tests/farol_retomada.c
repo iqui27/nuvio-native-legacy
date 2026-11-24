@@ -409,6 +409,11 @@ static void teste_positivos_p2_e_controles(void) {
     { "pos_alvara",       "Walt perde o alvará do laboratório." },
     { "pos_guarana_para", "Walt toma guaraná com maracujá no Pará." },
     { "pos_ep_ponto_fim", "Walt watched the episode. 5 days later he ran." },
+    { "pos_r5_ep_later",  "The episode later shows Walt confronting Jesse." },
+    { "pos_r5_ep_depois", "O episódio depois mostra Walt confrontando Jesse." },
+    { "pos_r5_ep_tarde",  "El episodio más tarde muestra a Walt y a Jesse." },
+    { "pos_r5_ep_after",  "Walt ends the episode after confronting Jesse." },
+    { "pos_r5_cap_after", "Walt grabs his cap after confronting Jesse." },
   };
   int i;
   for (i = 0; i < (int)(sizeof casos / sizeof casos[0]); i++) {
@@ -446,13 +451,23 @@ static void teste_p2_ordinais_compostos(void) {
   puts("ok  P2-1 ordinais compostos: twenty-first (T2E21) e decimo primeiro (T2E11)");
 }
 
-// --- 3d. P1-r4: substantivo de episodio/temporada seguido de marcador temporal -> recusado ---
+// --- 3d. P1-r4 / P1-r5: plural com numero ou singular+marcador temporal -> recusado ---
 static void teste_p1_r4_marcador_temporal(void) {
   static const struct { int t; int e; const char *cen; } casos[] = {
     { 2, 21, "p1_r4_21_later" },
     { 2, 22, "p1_r4_22_depois" },
     { 2,  4, "p1_r4_4_later" },
     { 3,  4, "p1_r4_3temp_despues" },
+    { 2,  4, "p1_r5_4_from_now" },
+    { 2, 21, "p1_r5_21_from_now" },
+    { 2, 21, "p1_r5_21_pass" },
+    { 2, 22, "p1_r5_22_se_passam" },
+    { 2,  4, "p1_r5_eps_4_5" },
+    { 2,  1, "p1_r5_one_ep_later" },
+    { 2,  1, "p1_r5_1_ep_from_now" },
+    { 2,  1, "p1_r5_an_ep_later" },
+    { 2,  1, "p1_r5_um_ep_depois" },
+    { 1,  4, "p1_r5_one_seas_later" },
   };
   int i;
   for (i = 0; i < (int)(sizeof casos / sizeof casos[0]); i++) {
@@ -466,7 +481,7 @@ static void teste_p1_r4_marcador_temporal(void) {
     checaResumoRecusadoEp(casos[i].cen, casos[i].t, casos[i].e, &base, &p);
     auditarCorpos(casos[i].cen);
   }
-  puts("ok  P1-r4 marcador temporal: 21 episodes later, 22 episodios depois, 4 episodes later, 3 temporadas despues -> recusados");
+  puts("ok  P1-r4/r5 plural+numero e singular+marcador temporal -> recusados");
 }
 
 // --- 4. prazo de 6 s ----------------------------------------------------------

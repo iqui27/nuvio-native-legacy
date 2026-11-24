@@ -4643,6 +4643,10 @@ const RET_SUB_EP = new Set([
 
 const RET_SUB_TEMP = new Set(["temporada", "temporadas", "season", "seasons", "temp", "seas"]);
 
+const RET_SUB_PLURAL = new Set([
+  "episodios", "episodes", "capitulos", "chapters", "eps", "temporadas", "seasons", "seas",
+]);
+
 const RET_MARCADOR_TEMP_1 = new Set([
   "later", "after", "afterward", "afterwards", "ahead",
   "depois", "adiante", "apos", "despues", "adelante",
@@ -4675,7 +4679,7 @@ const RET_NAO_FUTURO_ARA = new Set([
   "alvará", "guaraná", "pará", "maracujá", "cajá",
   "cará", "bacará", "maná", "saará", "sahará",
 ]);
-const RET_ARTIGOS_UM = new Set(["um", "uma", "un", "una"]);
+const RET_ARTIGOS_UM = new Set(["um", "uma", "un", "una", "a", "an"]);
 
 const RET_WILL_FUTURO_SEG = new Set([
   "he", "she", "it", "they", "we", "you", "i", "there", "this", "that", "these", "those",
@@ -4861,7 +4865,8 @@ function retEhMarcadorTemp(toks, i) {
   if (RET_MARCADOR_TEMP_1.has(w)) return true;
   if (i + 1 >= toks.length || toks[i + 1].q) return false;
   const w2 = toks[i + 1].w;
-  return (w === "mais" && w2 === "tarde") ||
+  return (w === "from" && w2 === "now") ||
+         (w === "mais" && w2 === "tarde") ||
          (w === "mas" && (w2 === "tarde" || w2 === "adelante")) ||
          (w === "a" && w2 === "frente");
 }
@@ -4956,14 +4961,12 @@ export function validarResumoRetomada(bruto, ret) {
     const mEp = w.match(/^ep(\d{1,4})$/);
     if (mEp && Number(mEp[1]) !== ret.episodio) return null;
 
-    if ((RET_SUB_EP.has(w) || RET_SUB_TEMP.has(w)) && retEhMarcadorTemp(toks, i + 1)) return null;
-
     if (RET_SUB_EP.has(w)) {
       let j = i + 1;
       if (j < nt && !toks[j].q && RET_NUM_LIG.has(toks[j].w)) j++;
       if (j < nt && !toks[j].q) {
         const n = retParseNumeroExtenso(toks, j);
-        if (n && n.val !== ret.episodio) return null;
+        if (n && (RET_SUB_PLURAL.has(w) || n.val !== ret.episodio)) return null;
       }
     }
     if (RET_SUB_TEMP.has(w)) {
@@ -4971,16 +4974,22 @@ export function validarResumoRetomada(bruto, ret) {
       if (j < nt && !toks[j].q && RET_NUM_LIG.has(toks[j].w)) j++;
       if (j < nt && !toks[j].q) {
         const n = retParseNumeroExtenso(toks, j);
-        if (n && n.val !== ret.temporada) return null;
+        if (n && (RET_SUB_PLURAL.has(w) || n.val !== ret.temporada)) return null;
       }
     }
 
-    const numAntes = retParseNumeroExtenso(toks, i);
+    const numAntes = retParseNumeroExtenso(toks, i) ||
+      (RET_ARTIGOS_UM.has(w) ? { val: 1, len: 1, artigo: true } : null);
     if (numAntes && i + numAntes.len < nt && !toks[i + numAntes.len].q) {
-      if (!(numAntes.artigo && numAntes.val === 1)) {
-        const alvo = toks[i + numAntes.len].w;
-        if (RET_SUB_EP.has(alvo) && numAntes.val !== ret.episodio) return null;
-        if (RET_SUB_TEMP.has(alvo) && numAntes.val !== ret.temporada) return null;
+      const posAlvo = i + numAntes.len;
+      const alvo = toks[posAlvo].w;
+      if (RET_SUB_PLURAL.has(alvo)) return null;
+      if (RET_SUB_EP.has(alvo) || RET_SUB_TEMP.has(alvo)) {
+        if (retEhMarcadorTemp(toks, posAlvo + 1)) return null;
+        if (!(numAntes.artigo && numAntes.val === 1)) {
+          if (RET_SUB_EP.has(alvo) && numAntes.val !== ret.episodio) return null;
+          if (RET_SUB_TEMP.has(alvo) && numAntes.val !== ret.temporada) return null;
+        }
       }
     }
     if (numAntes && numAntes.len > 1) i += numAntes.len - 1;

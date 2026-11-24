@@ -93,6 +93,21 @@ RESP = {
     "p1_r4_22_depois":     (200, cena("Vinte e dois episódios depois, Walt morre.", a=("2", "22"))),
     "p1_r4_4_later":       (200, cena("Four episodes later, Walt dies.")),
     "p1_r4_3temp_despues": (200, cena("Tres temporadas después, Walt muere.", a=("3", "4"))),
+    "p1_r5_4_from_now":    (200, cena("Four episodes from now, Walt dies.")),
+    "p1_r5_21_from_now":   (200, cena("Twenty-one episodes from now, Walt dies.", a=("2", "21"))),
+    "p1_r5_21_pass":       (200, cena("Twenty-one episodes pass before Walt dies.", a=("2", "21"))),
+    "p1_r5_22_se_passam":  (200, cena("Vinte e dois episódios se passam até Walt morrer.", a=("2", "22"))),
+    "p1_r5_eps_4_5":       (200, cena("In episodes 4 and 5, Walt dies.")),
+    "p1_r5_one_ep_later":  (200, cena("One episode later, Walt dies.", a=("2", "1"))),
+    "p1_r5_1_ep_from_now": (200, cena("1 episode from now, Walt dies.", a=("2", "1"))),
+    "p1_r5_an_ep_later":   (200, cena("An episode later, Walt dies.", a=("2", "1"))),
+    "p1_r5_um_ep_depois":  (200, cena("Um episódio depois, Walt morre.", a=("2", "1"))),
+    "p1_r5_one_seas_later":(200, cena("One season later, Walt dies.", a=("1", "4"))),
+    "pos_r5_ep_later":     (200, cena("The episode later shows Walt confronting Jesse.")),
+    "pos_r5_ep_depois":    (200, cena("O episódio depois mostra Walt confrontando Jesse.")),
+    "pos_r5_ep_tarde":     (200, cena("El episodio más tarde muestra a Walt y a Jesse.")),
+    "pos_r5_ep_after":     (200, cena("Walt ends the episode after confronting Jesse.")),
+    "pos_r5_cap_after":    (200, cena("Walt grabs his cap after confronting Jesse.")),
 }
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -164,7 +179,7 @@ for l in linhas:
     assert d["modo"] == "retomada", d["modo"]
     r = d["retomada"]
     assert set(r) == {"temporada", "episodio", "sinopse"}, r
-    assert (r["temporada"], r["episodio"]) in ((2, 4), (2, 11), (2, 21), (2, 22), (3, 4)), r
+    assert (r["temporada"], r["episodio"]) in ((1, 4), (2, 1), (2, 4), (2, 11), (2, 21), (2, 22), (3, 4)), r
     assert r["sinopse"].startswith(f"SinopseVistaT{r['temporada']}E{r['episodio']}"), r
     assert [c["id"] for c in d["candidatos"]] == ["tt0903747"], d["candidatos"]
 print(f"farol_retomada: {len(linhas)} corpos auditados, so episodio visto")

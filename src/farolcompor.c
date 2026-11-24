@@ -780,7 +780,8 @@ static int retOrdinalFused(const char *s) {
 }
 
 static int retEhArtigoUm(const char *s) {
-  return !strcmp(s, "um") || !strcmp(s, "uma") || !strcmp(s, "un") || !strcmp(s, "una");
+  return !strcmp(s, "um") || !strcmp(s, "uma") || !strcmp(s, "un") || !strcmp(s, "una") ||
+         !strcmp(s, "a") || !strcmp(s, "an");
 }
 
 static int retParseNumeroExtenso(char *const *tok, const int *quebra, int nt, int i,
@@ -862,6 +863,13 @@ static int retEhSubstTemp(const char *s) {
          !strcmp(s, "temp") || !strcmp(s, "seas");
 }
 
+static int retEhSubstPlural(const char *s) {
+  return !strcmp(s, "episodios") || !strcmp(s, "episodes") ||
+         !strcmp(s, "capitulos") || !strcmp(s, "chapters") ||
+         !strcmp(s, "eps") || !strcmp(s, "temporadas") ||
+         !strcmp(s, "seasons") || !strcmp(s, "seas");
+}
+
 static int retEhProximo(const char *s) {
   return !strcmp(s, "proximo") || !strcmp(s, "proxima") ||
          !strcmp(s, "proximos") || !strcmp(s, "proximas") ||
@@ -918,7 +926,8 @@ static int retEhMarcadorTemp(char *const *tok, const int *quebra, int nt, int i)
     if (!strcmp(tok[i], m1[k])) return 1;
   }
   if (i + 1 >= nt || quebra[i + 1]) return 0;
-  return (!strcmp(tok[i], "mais") && !strcmp(tok[i + 1], "tarde")) ||
+  return (!strcmp(tok[i], "from") && !strcmp(tok[i + 1], "now")) ||
+         (!strcmp(tok[i], "mais") && !strcmp(tok[i + 1], "tarde")) ||
          (!strcmp(tok[i], "mas") && (!strcmp(tok[i + 1], "tarde") || !strcmp(tok[i + 1], "adelante"))) ||
          (!strcmp(tok[i], "a") && !strcmp(tok[i + 1], "frente"));
 }
@@ -1080,16 +1089,12 @@ static int retomadaResumoSemSpoiler(const char *s, int temporada, int episodio) 
         retParseInt(tok[i] + 2, &num) && num != episodio)
       return 0;
 
-    if ((retEhSubstEp(tok[i]) || retEhSubstTemp(tok[i])) &&
-        retEhMarcadorTemp(tok, quebra, nt, i + 1))
-      return 0;
-
     if (retEhSubstEp(tok[i])) {
       j = i + 1;
       if (j < nt && !quebra[j] && retEhNumLig(tok[j])) j++;
       if (j < nt && !quebra[j]) {
         num = retParseNumeroExtenso(tok, quebra, nt, j, &len, &art);
-        if (num > 0 && num != episodio) return 0;
+        if (num > 0 && (retEhSubstPlural(tok[i]) || num != episodio)) return 0;
       }
     }
     if (retEhSubstTemp(tok[i])) {
@@ -1097,15 +1102,26 @@ static int retomadaResumoSemSpoiler(const char *s, int temporada, int episodio) 
       if (j < nt && !quebra[j] && retEhNumLig(tok[j])) j++;
       if (j < nt && !quebra[j]) {
         num = retParseNumeroExtenso(tok, quebra, nt, j, &len, &art);
-        if (num > 0 && num != temporada) return 0;
+        if (num > 0 && (retEhSubstPlural(tok[i]) || num != temporada)) return 0;
       }
     }
 
     num = retParseNumeroExtenso(tok, quebra, nt, i, &len, &art);
+    if (num == 0 && retEhArtigoUm(tok[i])) {
+      num = 1;
+      len = 1;
+      art = 1;
+    }
     if (num > 0 && i + len < nt && !quebra[i + len]) {
-      if (!(art && num == 1)) {
-        if (retEhSubstEp(tok[i + len]) && num != episodio) return 0;
-        if (retEhSubstTemp(tok[i + len]) && num != temporada) return 0;
+      int posAlvo = i + len;
+      const char *alvo = tok[posAlvo];
+      if (retEhSubstPlural(alvo)) return 0;
+      if (retEhSubstEp(alvo) || retEhSubstTemp(alvo)) {
+        if (retEhMarcadorTemp(tok, quebra, nt, posAlvo + 1)) return 0;
+        if (!(art && num == 1)) {
+          if (retEhSubstEp(alvo) && num != episodio) return 0;
+          if (retEhSubstTemp(alvo) && num != temporada) return 0;
+        }
       }
     }
     if (num > 0 && len > 1) i += len - 1;

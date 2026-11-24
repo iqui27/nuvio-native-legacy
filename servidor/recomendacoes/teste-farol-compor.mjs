@@ -4218,6 +4218,11 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     "Walt perde o alvará do laboratório.",
     "Walt toma guaraná com maracujá no Pará.",
     "Walt watched the episode. 5 days later he ran.",
+    "The episode later shows Walt confronting Jesse.",
+    "O episódio depois mostra Walt confrontando Jesse.",
+    "El episodio más tarde muestra a Walt y a Jesse.",
+    "Walt ends the episode after confronting Jesse.",
+    "Walt grabs his cap after confronting Jesse.",
   ]) {
     const { post, kv } = cenario(t, {}, { respostaLlm: () => ({ resumo: aceito }) });
     const r = await post("/v1/farol/compor", pedidoRetomada({}, { temporada: 2, episodio: 4 }));
@@ -4235,12 +4240,22 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     null);
   assert.equal(validarResumoRetomada("No décimo primeiro episódio, Walt foge.", { temporada: 2, episodio: 4 }),
     null);
-  // P1-r4: substantivo de episodio/temporada seguido de marcador temporal futuro na mesma clausula -> rejeitado.
+  // P1-r4 / P1-r5: contagem plural com numero ou singular precedido de numero + marcador temporal -> rejeitado.
   for (const [temporada, episodio, texto] of [
     [2, 21, "Twenty-one episodes later, Walt dies."],
     [2, 22, "Vinte e dois episódios depois, Walt morre."],
     [2, 4, "Four episodes later, Walt dies."],
     [3, 4, "Tres temporadas después, Walt muere."],
+    [2, 4, "Four episodes from now, Walt dies."],
+    [2, 21, "Twenty-one episodes from now, Walt dies."],
+    [2, 21, "Twenty-one episodes pass before Walt dies."],
+    [2, 22, "Vinte e dois episódios se passam até Walt morrer."],
+    [2, 4, "In episodes 4 and 5, Walt dies."],
+    [2, 1, "One episode later, Walt dies."],
+    [2, 1, "1 episode from now, Walt dies."],
+    [2, 1, "An episode later, Walt dies."],
+    [2, 1, "Um episódio depois, Walt morre."],
+    [1, 4, "One season later, Walt dies."],
   ]) {
     assert.equal(validarResumoRetomada(texto, { temporada, episodio }), null, `T${temporada}E${episodio}: ${texto}`);
     const { post, chamadasLlm, kv } = cenario(t, {}, { respostaLlm: () => ({ resumo: texto }) });
@@ -4262,6 +4277,8 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     [3, 4, "Tres temporadas adelante, Walt muere."],
     [3, 4, "Tres temporadas más tarde, Walt muere."],
     [3, 4, "Tres temporadas más adelante, Walt muere."],
+    [1, 4, "A season later, Walt dies."],
+    [1, 4, "Una temporada después, Walt muere."],
   ]) {
     assert.equal(validarResumoRetomada(texto, { temporada, episodio }), null, `T${temporada}E${episodio}: ${texto}`);
   }
