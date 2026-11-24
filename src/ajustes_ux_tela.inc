@@ -293,6 +293,7 @@ OPC(AJ_RESOLUCAO), OPC(AJ_GPU_EFEITOS), OPC(AJ_AMPLIAR_UI), OPC(AJ_AMPLIACAO_ALG
 
   SEC("Sobre e ajuda", "Guia de uso, versão, atualização e registros", "aj_info"),
     OPC(AJ_GUIA),
+    OPC(AJ_FAROL),
     OPC(AJ_FAROL_AVISOS),
     OPC(AJ_NOVIDADES20), OPC(AJ_DICASCONTROLE),
     OPC(AJ_APOIAR),

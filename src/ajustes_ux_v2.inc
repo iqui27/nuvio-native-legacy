@@ -706,7 +706,7 @@ static void aj2TopoTexto(int t, char *b, size_t n, char *det, size_t nd) {
 }
 static const char *aj2TopoIcone(int t) {
   return t == AJ2_T_BUSCA ? "aj_search" : t == AJ2_T_AV ? (lig(AJ_AVANCADAS) ? "aj_eye" : "aj_eye-off")
-       : t == AJ2_T_PERFIL ? "aj_user-round" : t == AJ2_T_DIF ? "aj_rotate-ccw-clock" : t == AJ2_T_TOUR ? "aj_sparkles" : "aj_life-buoy";
+       : t == AJ2_T_PERFIL ? "aj_user-round" : t == AJ2_T_DIF ? "aj_rotate-ccw-clock" : t == AJ2_T_TOUR ? "aj_sparkles" : "aj_farol";
 }
 static float aj2LayoutSegW(TxtEstilo e, float ico);
 static float aj2TopoLargura(int t) {
@@ -729,7 +729,7 @@ static GfxRect aj2TopoRetratoR(int t) {
   }
   return (GfxRect){x, aj2GradeDescY() + (t == AJ2_T_TOUR ? 0.0f : AJ2_G_DESC + 20.0f), fim - x, AJ2_G_DESC};
 }
-static const char *aj2DescobertaTit(int t) { return t == AJ2_T_TOUR ? "O que o Nuvio faz?" : "Resolver um problema"; }
+static const char *aj2DescobertaTit(int t) { return t == AJ2_T_TOUR ? "O que o Nuvio faz?" : FT_NOME; }
 static const char *aj2DescobertaSub(int t) { return t == AJ2_T_TOUR ? "Tour pelas funções, com atalho para ligar cada uma" : "TV lenta, sem som, legenda errada"; }
 // tile 65 plus the paddings of aj2GradeDescoberta, and the longer text line
 static float aj2DescobertaLargura(int t) {
@@ -852,7 +852,7 @@ static void aj2GradePilula(int t) {
 static void aj2GradeDescoberta(int t) {
   float k = aj2Suave(aj2TF[t]);
   GfxRect r = aj2GradeSuperficie(aj2TopoR(t), 22.0f, k, 6.0f, 0.42f, 0);
-  const char *tit = aj2DescobertaTit(t), *sub = aj2DescobertaSub(t);
+  const char *tit = i18n(aj2DescobertaTit(t)), *sub = i18n(aj2DescobertaSub(t));
   float tile = 65.0f, x = r.x + 25, tw;
   GfxRect tr = { x, r.y + (r.h - tile) * 0.5f, tile, tile };
   gfx_cor(tr, 17.0f / tile, 1, 1, 1, 0.08f + 0.10f * k);

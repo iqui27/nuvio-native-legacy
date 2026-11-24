@@ -76,6 +76,7 @@
 #include "discord.h"
 #include "farolsinal.h"
 #include "farol.h"       // farol_remover_fileiras antes de sessao_sair (45)
+#include "faroltexto.h"
 #if defined(__APPLE__) && (defined(__GNUC__) || defined(__clang__))
 extern void farolilha_definir_ativo(int ligado) __attribute__((weak_import));
 #elif defined(__GNUC__) || defined(__clang__)
@@ -864,6 +865,9 @@ typedef enum {
   // FAROL (#27): "Avisos do Farol" em Ajustes › Sobre e ajuda.
   // 1 (padrao) = Ligado; 0 = So quando eu abrir. LOCAL, append-only.
   AJ_FAROL_AVISOS,
+  // FAROL (#23): entrada manual "Farol" em Ajustes › Sobre e ajuda.
+  // Acao, append-only.
+  AJ_FAROL,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2117,6 +2121,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Tarjas pretas no player", V_LIGA, 2),                 // local: barrasPretasLocal (#768)
   ESC("Motor de legendas ASS", V_LIGA, 2),                   // local: assMotorNovoLocal (.tpk, PR 734)
   ESC("Avisos do Farol", V_FAROL_AVISOS, 2),                 // local: farolAvisosLocal (#27)
+  ACAO(FT_NOME),                                             // acao: abre o Farol (#23)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2508,6 +2513,7 @@ static const char *CHAVE[] = {
   "barrasPretasLocal",
   "assMotorNovoLocal",
   "farolAvisosLocal",
+  "-farol",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -9107,6 +9113,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_MEDIDOR: return "Mostra quadros por segundo, o pior quadro e a memória dentro da ilha do relógio, atualizados a cada 3 s. Mínimo fica na linha da hora, Menor ganha uma segunda linha e Grande abre o painel completo. Quando a ilha mostra um aviso, o medidor se recolhe e volta depois.";
     case AJ_AVISO_LEGAL: return "Aviso legal";
     case AJ_GUIA: return "O que o Nuvio faz, em 12 capítulos. Cada recurso diz onde fica e tem um atalho para ele.";
+    case AJ_FAROL: return "O que fazer quando algo não funciona, com o ajuste que resolve.";
     case AJ_FAROL_AVISOS: return "O Farol avisa quando o vídeo falha e confirma o conserto.";
     case AJ_DICASCONTROLE: return "Dicas do controle";
     case AJ_NOVIDADES20: return "O tour do que mudou na 2.0, capítulo por capítulo, com o que vale neste aparelho. Abre do começo.";
@@ -11089,6 +11096,7 @@ static void eventoTela(const SDL_Event *e) {
     }
 #endif
     if (focoOp == AJ_GUIA) { guiaAbrir(0); return; }
+    if (focoOp == AJ_FAROL) { resolver_abrir(); return; }
     if (focoOp == AJ_DICASCONTROLE) { pediuDicasControle = 1; return; }
     if (focoOp == AJ_NOVIDADES20) { pediuNovidades20 = 1; return; }
     if (focoOp == AJ_APOIAR) { apoioAbrir(); return; }
@@ -12162,7 +12170,7 @@ static AjPreview familiaPreviaOpcao(int op) {
       return AJPV_CONTA;
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL: case AJ_DIARIO_NUVEM:
       return AJPV_RASTREIO;
-    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_FAROL_AVISOS: case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
+    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_FAROL: case AJ_FAROL_AVISOS: case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
     case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE: case AJ_DIAGNOSTICS_QR:
 #ifdef NV_ANDROID
     case AJ_BAIXAR_REGISTRO:
