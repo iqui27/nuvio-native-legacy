@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-23T22:17:28+00:00",
+    "updatedAt": "2026-11-24T03:07:54+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -10,14 +10,14 @@
       "sha": "015d181d45",
       "fullSha": "015d181d4599d0b1164e003a627e37606b816394",
       "pr": 841,
-      "checkedAt": "2026-11-23T22:17:28+00:00"
+      "checkedAt": "2026-11-24T03:05:58+00:00"
     },
     "coverageNote": "56 itens Farol informados: o #42 não consta no escopo. Inventário externo detalhado: 61 linhas da VPS, com #731 unificada; D1 e 762+720 têm cartões por issue e revisão conjunta. D1: ancestralidade não verificada. Testes isolados são identificados como tal.",
     "unknownDoneFixes": 0,
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-23T21:18:00+00:00",
+    "lastVpsReportedAt": "2026-11-24T03:05:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -36,25 +36,49 @@
     ],
     "coordination": {
       "orchestrator": {
-        "status": "CORRECAO",
-        "model": "GPT-6.2 Sol",
-        "provider": "Codex",
-        "effort": "high",
-        "previousModel": "Claude Opus",
-        "previousProvider": "Antigravity via claudeAgent/agy-bridge",
-        "claudeAgentProxy": "backoff",
+        "status": "BLOQUEADA",
+        "statusScope": "Último turno reportado; estado atual não reconfirmado pelo boletim posterior",
+        "model": "Claude Opus 5.5",
+        "provider": "Antigravity",
+        "reportedAt": "2026-11-24T02:45:00+00:00",
+        "previousState": {
+          "status": "CORRECAO",
+          "model": "GPT-6.2 Sol",
+          "provider": "Codex",
+          "effort": "high",
+          "previousModel": "Claude Opus",
+          "previousProvider": "Antigravity via claudeAgent/agy-bridge",
+          "claudeAgentProxy": "backoff",
+          "sameThread": true,
+          "childrenPreserved": true,
+          "reportedAt": "2026-11-23T19:50:00+00:00",
+          "source": "Relato VPS · oracle-vps",
+          "note": "Orquestrador movido para Sol/Codex conforme o relato das 19h50. Errata das 19h58: Opus está disponível no Antigravity; apenas claudeAgent/agy-bridge está sem cota até 28/11. Não foi informado retorno do orquestrador ao Opus; estados dos filhos preservados.",
+          "claudeAgentBridgeQuotaUnavailableUntil": "2026-11-28",
+          "quotaScopeCorrectedAt": "2026-11-23T19:58:00+00:00"
+        },
         "sameThread": true,
-        "childrenPreserved": true,
-        "reportedAt": "2026-11-23T19:50:00+00:00",
-        "source": "Relato VPS · oracle-vps",
-        "note": "Orquestrador movido para Sol/Codex conforme o relato das 19h50. Errata das 19h58: Opus está disponível no Antigravity; apenas claudeAgent/agy-bridge está sem cota até 28/11. Não foi informado retorno do orquestrador ao Opus; estados dos filhos preservados.",
-        "claudeAgentBridgeQuotaUnavailableUntil": "2026-11-28",
-        "quotaScopeCorrectedAt": "2026-11-23T19:58:00+00:00"
+        "note": "Sol recusou o turno por cyber_policy às 01h02 UTC; VPS informou mudança para Opus na mesma thread. Às 02h45 foi reportada falha do turno, provável cota/429. O boletim de 02h56 esclarece que alertas de FAROL6I, implementação anterior da #14 na VPS e FAROL48-r6 Sol eram tarefas encerradas/substituídas; isso não confirma outro turno do orquestrador nem cancela os filhos ativos. Capataz corrigido às 02h59 para não cutucar o orquestrador em falha, conforme VPS. Isso não confirma novo turno recuperado.",
+        "latestBulletinAt": "2026-11-24T02:56:00+00:00",
+        "staleTaskAlerts": [
+          "FAROL6I",
+          "FAROL14 impl VPS",
+          "FAROL48-r6 Sol"
+        ],
+        "activeIbmReported": [
+          "FAROL14-r3 rodando",
+          "FAROL48-r7 concluída, parecer em coleta"
+        ],
+        "rootFreeGbReported": 26,
+        "otherProjectsTmpGbReported": 11,
+        "capatazFixReportedAt": "2026-11-24T02:59:00+00:00"
       },
       "models": {
         "opus": {
           "antigravity": {
-            "status": "available"
+            "status": "quota_exhausted_reported",
+            "reportedAt": "2026-11-24T02:56:00+00:00",
+            "reportedResetApprox": "2026-11-24T05:11:00+00:00"
           },
           "claudeAgent/agy-bridge": {
             "status": "quota_exhausted",
@@ -62,10 +86,88 @@
             "unavailableUntil": "2026-11-28"
           }
         },
-        "reportedAt": "2026-11-23T19:58:00+00:00",
-        "source": "Errata VPS · oracle-vps"
+        "reportedAt": "2026-11-24T03:05:00+00:00",
+        "source": "VPS 244–248; novas condições IBM separadas da cota Antigravity reportada às 02h56",
+        "claudeAgentIbm": {
+          "status": "liberado_reportado",
+          "reportedAt": "2026-11-24T03:05:00+00:00",
+          "sourceLine": 248
+        }
+      },
+      "implementation": {
+        "status": "PAUSA",
+        "reportedAt": "2026-11-24T01:04:00+00:00",
+        "activeSlots": 1,
+        "totalSlots": 6,
+        "activeItem": "farol-52",
+        "note": "Pausa de novos despachos no relato das 01h04: onda 2 depende do aceite da #14; Gosto depende de #19/#22/#25/#31/#52. FAROL52 foi entregue às 02h56; não foi relatada retomada geral nem nova alocação."
+      },
+      "capacity": {
+        "swe2Pi": {
+          "availableReported": true,
+          "models": [
+            "SWE-2",
+            "SWE-2 Flash"
+          ],
+          "reportedAt": "2026-11-24T00:41:00+00:00",
+          "scope": "correção especificada e trabalho mecânico"
+        },
+        "devinAcp": "parado conforme VPS",
+        "ibmClaudeAgent": "Liberado para revisões/implementação/testes conforme VPS às 03h05 UTC; não confundir com a restrição antiga da rota claudeAgent/agy-bridge",
+        "reportedAt": "2026-11-24T03:05:00+00:00"
+      },
+      "infrastructure": {
+        "codexMacbook": {
+          "status": "login_revoked_reported",
+          "httpStatus": 401,
+          "reportedAt": "2026-11-24T02:21:00+00:00",
+          "oldFarol48R6": "substituída/cancelada"
+        },
+        "codexMain": {
+          "status": "reviews_launched_reported",
+          "httpStatus": 429,
+          "reportedResetAt": "2026-11-24T03:02:00+00:00",
+          "availabilityAfterResetNotVerified": true,
+          "reportedAt": "2026-11-24T03:04:00+00:00",
+          "launched": [
+            "FAROL14-r3",
+            "FAROL52-r1",
+            "FAROL48-r7"
+          ],
+          "note": "Lançamentos reportados às 03h04; não é sonda geral de cota/disponibilidade"
+        },
+        "antigravityClaude": {
+          "status": "quota_exhausted_reported",
+          "models": [
+            "Opus",
+            "Sonnet"
+          ],
+          "reportedResetApprox": "2026-11-24T05:11:00+00:00",
+          "reportedAt": "2026-11-24T02:56:00+00:00"
+        },
+        "source": "Relatos VPS; horários de reset não são sondas de disponibilidade",
+        "ibmT3": {
+          "version": "0.1.12-nightly",
+          "previousVersion": "0.1.9",
+          "status": "return_reading_and_callbacks_ok_reported",
+          "reportedAt": "2026-11-24T03:05:00+00:00",
+          "sourceLine": 248,
+          "dockerImage": "nuvio-build:2.1",
+          "dockerImageReadyReported": true,
+          "testRunner": "rodar-testes.sh",
+          "testRunnerReadyReported": true,
+          "claudeAgent": "liberado conforme VPS; não executado nesta VM",
+          "previousLimitation": "Às 02h59, claudeAgent logado, uso só para push enquanto T3 0.1.9 não devolvia retorno; superado pela atualização das 03h05"
+        },
+        "pokeSender": {
+          "status": "persistent_key_configured_reported",
+          "reportedAt": "2026-11-24T02:59:00+00:00",
+          "sourceLine": 244,
+          "note": "poke-enviar.sh usa chave persistente e entregou linhas 163–240; nenhum valor de credencial registrado"
+        }
       }
-    }
+    },
+    "lastVpsLine": 248
   },
   "items": [
     {
@@ -173,18 +275,28 @@
         "farol-3"
       ],
       "allDependencies": false,
-      "status": "CORRECAO",
+      "status": "LOTE",
       "wave": "A",
-      "sha": "becb865d88",
-      "batch": null,
-      "note": "Sol r4 REPROVADO: erro tardio de A autoriza B e Player externo ignora trava de série. Reproduzido na ponta e no 21e simulado; QR único e aviso passaram na VPS. FAROL6E no Gemini Hydrogen (…73c6), mesma branch; issue 14 bloqueada, TV pendente. Fixture farol_sinal usou /tmp uma vez, repetição isolada no volume passou",
-      "source": "Relato VPS",
+      "sha": "386873fc33",
+      "batch": "21f",
+      "note": "Incluído no candidato privado 21f, ainda não integrado. agente/21z-farol-6@386873fc33 · Reavaliação r8 pela POLITICA: P2 de borda no 403 terminal em VOD Xtream limitado no quadro do vencimento por stall. Recusa JNI da r7 e controles de reconexão passaram. Entra no 21f, ressalva para notas e QA, e gate de aprovação da #14 satisfeito. Cancelamento do FAROL6I solicitado no T3 (…581b).",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
       "verified": false,
       "branch": "agente/21z-farol-6",
-      "updatedAt": "2026-11-23T21:11:51+00:00",
-      "reportedAt": "2026-11-23T21:08:00+00:00",
+      "updatedAt": "2026-11-24T03:03:21+00:00",
+      "reportedAt": "2026-11-24T00:32:00+00:00",
       "integrationVerified": false,
       "previousNotes": [
+        "agente/21z-farol-6@386873fc33 · Reavaliação r8 pela POLITICA: P2 de borda no 403 terminal em VOD Xtream limitado no quadro do vencimento por stall. Recusa JNI da r7 e controles de reconexão passaram. Entra no 21f, ressalva para notas e QA, e gate de aprovação da #14 satisfeito. Cancelamento do FAROL6I solicitado no T3 (…581b).",
+        "agente/21z-farol-6@386873fc33 · Sol r8 REPROVADO. A segunda tentativa após recusa JNI da r7 passou. No VOD Xtream limitado, um 403 terminal no vencimento reabre a fonte e a ponta congela a posição pública e perde a recuperação da próxima queda. Sonda 0/0/0 no pai e 1/1/1 na ponta. Ref, pai e SHA-256 da evidência conferidos. FAROL6I despachado ao Gemini Hydrogen (…581b). Issue 14 bloqueada e TV física pendente.",
+        "agente/21z-farol-6@386873fc33 · Hydrogen entregou FAROL6H. Ref, pai, ancestral 121b2ca867 e diff-check conferidos. Relata sonda da recusa JNI 1/1/1 no pai e 0/0/0 na ponta, com retestes de falha terminal, reconexão e produtores verdes. Sol r8 lançado (…6258). Issue 14 bloqueada e TV física pendente.",
+        "agente/21z-farol-6@be06d09f45 · Sol r7 REPROVADO. A intercalação da r6 foi corrigida. Recusa JNI síncrona na primeira reabertura VOD perde a próxima tentativa e deixa o backend reconectando. Sonda 0/0/0 no pai e 1/1/1 na ponta. FAROL6H despachado ao Gemini Hydrogen (…b9e5). Issue 14 bloqueada e TV física pendente.",
+        "agente/21z-farol-6@be06d09f45 · Hydrogen entregou FAROL6G com separação de erro pendente e consumido. Ref, pai, ancestral 121b2ca867 e diff-check conferidos. Informa sonda r6 de 1/1/1 no pai para 0/0/0 na ponta, com quatro gates focais 0/0/0. Sol r7 lançado (…d1c8). Issue 14 e TV física pendentes.",
+        "agente/21z-farol-6@5a8dfa064b · Sol r6 REPROVADO. Um erro atual de B pendente durante a classificação de um erro legado de A autoriza a URL de B no player externo. Sonda com Intent dublada RC 1/1/1. Retestes da r5 e ABI passaram. FAROL6G despachado ao Gemini Hydrogen (…f4ed). Issue 14 bloqueada e TV física pendente.",
+        "agente/21z-farol-6@5a8dfa064b · Hydrogen entregou FAROL6F. Ref, pais do merge 9627d3ff5f e diff-check conferidos. Produtores TV, erro Android, Resolver e regra informados 0/0/0 em normal, ASan+UBSan e TSan. Sol r6 lançado (…c853). Issue 14 e validação em TV física pendentes.",
+        "agente/21z-farol-6@cf74408198 · Sol r5 REPROVADO. Corrida em ativo sob TSan, JNI legada tardia abre B, índice antigo permite episódio bloqueado com player aberto e fixture de produtores quebra no merge antes da adaptação. Conflito em video_android.c com 121b2ca867 tem resolução ensaiada. FAROL6F em curso com Hydrogen (…1768). Issue 14 e TV física pendentes.",
+        "agente/21z-farol-6@cf74408198 · Hydrogen entregou FAROL6E com geração JNI e trava no player externo. Ref, pai e diff-check conferidos. Conflito em src/video_android.c com o 21e tem ensaio em 1fde8822ff e ajuste de fixture a validar. Sol r5 lançado (…69ff); issue 14 e TV física pendentes.",
+        "Sol r4 REPROVADO: erro tardio de A autoriza B e Player externo ignora trava de série. Reproduzido na ponta e no 21e simulado; QR único e aviso passaram na VPS. FAROL6E no Gemini Hydrogen (…73c6), mesma branch; issue 14 bloqueada, TV pendente. Fixture farol_sinal usou /tmp uma vez, repetição isolada no volume passou",
         "FAROL6D entregue pelo Gemini Hydrogen, vincula Player externo à tentativa diagnosticada e revalida no OK. Implementador informa farol_resolver e farol_regra verdes nos três modos; merge-tree com e34f0ddc5d rc 0 confirmado. Sol r4 (…5990) revisa; 14 depende do veredito; TV física pendente",
         "Sol r3 REPROVADO: Resolver diagnostica episódio A após filme B tocar; Player externo recebe URL e título de B. Sonda confirma na ponta e no merge. FAROL6D Gemini Hydrogen (…7097) na mesma branch; retomada do QR em TV física pendente",
         "FAROL6C entregue pelo Gemini Neon; revisão r3 Sol via Codex (…cf48), em substituição a Argon para cumprir independência de família; TV pendente",
@@ -199,7 +311,22 @@
         "relançado no Antigravity puro (gemini-4-carbon); commit compila e farol_regra rc 0 em ASan/TSan/normal, ainda sem revisão",
         "relançado no Antigravity Gemini 4 Carbon (regra: Gemini só via Antigravity); continua do commit entregue, não verificado",
         "lançada (Gemini 4 Carbon via Devin), base lote 21d; sem commit ainda"
-      ]
+      ],
+      "latestDeliverySha": "386873fc33",
+      "approvedSha": "386873fc33",
+      "approval": {
+        "status": "APROVADO_COM_RESSALVAS",
+        "sha": "386873fc33",
+        "reportedAt": "2026-11-24T00:18:00+00:00",
+        "sourceLine": 205,
+        "basis": "Reavaliação pela POLITICA",
+        "note": "agente/21z-farol-6@386873fc33 · Reavaliação r8 pela POLITICA: P2 de borda no 403 terminal em VOD Xtream limitado no quadro do vencimento por stall. Recusa JNI da r7 e controles de reconexão passaram. Entra no 21f, ressalva para notas e QA, e gate de aprovação da #14 satisfeito. Cancelamento do FAROL6I solicitado no T3 (…581b)."
+      },
+      "verificationSummary": "aprovação com ressalvas reportada pela VPS na reavaliação pela POLITICA; sem reprodução local nem TV física",
+      "previousBatch": null,
+      "candidateInclusionVerified": true,
+      "candidateSha": "99be71994e",
+      "candidateInclusionSource": "git merge-base --is-ancestor; candidato não equivale a integração"
     },
     {
       "id": "farol-7",
@@ -324,24 +451,29 @@
         "farol-8"
       ],
       "allDependencies": false,
-      "status": "APROVADA",
+      "status": "LOTE",
       "wave": "B",
       "sha": "52328b164e",
-      "batch": null,
-      "note": "Opus 5.5 via Antigravity r1 APROVADO_COM_RESSALVAS, próximo lote; testes normal/ASan+UBSan/TSan e contrato TV/worker/leitor passaram, merge limpo vs 21e; 57 948 montagens dentro do teto. Ressalvas para 14/18/22 registradas no ESCOPO-2.1.md; TV física pendente",
-      "source": "Relato VPS",
+      "batch": "21f",
+      "note": "Incluído no candidato privado 21f, ainda não integrado. Opus 5.5 via Antigravity r1 APROVADO_COM_RESSALVAS, próximo lote; testes normal/ASan+UBSan/TSan e contrato TV/worker/leitor passaram, merge limpo vs 21e; 57 948 montagens dentro do teto. Ressalvas para 14/18/22 registradas no ESCOPO-2.1.md; TV física pendente",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
       "verified": false,
       "branch": "agente/21z-farol-11",
-      "updatedAt": "2026-11-23T20:14:47+00:00",
-      "reportedAt": "2026-11-23T20:13:00+00:00",
+      "updatedAt": "2026-11-24T03:03:21+00:00",
+      "reportedAt": "2026-11-24T00:32:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "Opus 5.5 via Antigravity r1 APROVADO_COM_RESSALVAS, próximo lote; testes normal/ASan+UBSan/TSan e contrato TV/worker/leitor passaram, merge limpo vs 21e; 57 948 montagens dentro do teto. Ressalvas para 14/18/22 registradas no ESCOPO-2.1.md; TV física pendente",
         "Gemini Neon entregou pacote FarolRegistro v1; Opus via Antigravity revisa (…e6eff)",
         "VPS Gemini 4 Neon (antigravity) onda B, task …a969d8f2, brief lotes/sense/briefs/farol-11.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
-      ]
+      ],
+      "previousBatch": null,
+      "candidateInclusionVerified": true,
+      "candidateSha": "99be71994e",
+      "candidateInclusionSource": "git merge-base --is-ancestor; candidato não equivale a integração"
     },
     {
       "id": "farol-12",
@@ -423,20 +555,62 @@
         "farol-10"
       ],
       "allDependencies": false,
-      "status": "BLOQUEADA",
+      "status": "REVISAO",
       "wave": "B",
-      "sha": null,
+      "sha": "1652812ef9",
       "batch": null,
-      "note": "Caminho crítico. Bloqueado pela reprovação Sol r4 do Farol 6; aguarda a correção FAROL6E no Gemini Hydrogen e novo veredito antes de avançar. TV física pendente.",
-      "source": "Relato VPS do Farol 6 às 21h08 UTC: bloqueio do 14 explícito",
+      "note": "FAROL14-r3 relançada na VPS com Sol via Codex (main/auto/gpt-6.2-sol) em `1652812ef9` (IBM em 0.1.9 não devolve texto pela API). Revisão lançada conforme VPS; ainda sem parecer nesta rodada. Sem integração ou TV física inferidas.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
       "verified": false,
       "previousNotes": [
+        "r3 com Opus na ibm-ephemeral (Codex main sem cota até 03h02). R3 com Opus na IBM ainda rodando no boletim de 02h56 UTC; sem parecer ou aprovação. Fora do candidato 21f. Gate de aprovação da #6 satisfeito no pin 386873fc33, com ressalva pela POLITICA; dependências de integração continuam separadas.",
+        "r3 com Opus na ibm-ephemeral (Codex main sem cota até 03h02). R3 com Opus na IBM ainda rodando no boletim de 02h56 UTC; sem parecer ou aprovação. Fora do candidato 21f.",
+        "r3 com Opus na ibm-ephemeral (Codex main sem cota até 03h02).",
+        "FAROL14C entregue em `1652812ef9` (SWE-2 via Pi): contrato do anel restaurado, API nova para os eventos recentes; suíte farol_* verde na ponta e com 21f. Publicado no GitHub agente/21z-farol-14 (fast-forward de 7ecfed55bb).",
+        "`3366f4cbaf` REPROVADO r2 (Sol): P1 da r1 resolvidos; regressão em farol_anel.sh (134) pela mudança em farolanel_ler_seq. → FAROL14C com o mesmo SWE-2 via Pi; r3 ao entregar.",
+        "FAROL14B entregue em `3366f4cbaf` (SWE-2 via Pi; 3 P1 e 2 P2 da r1 corrigidos, merge rc 0 com 21f, suítes verdes) → revisão r2 com Sol via Codex.",
+        "FAROL14B despachada para SWE-2 via Pi na VPS sobre 7ecfed55bb (brief revisao/correcoes/CORRECAO-FAROL14B-brief.md); r2 com Sol ao entregar.",
+        "`7ecfed55bb` REPROVADO r1 (Sol): farol_home.sh quebra por assinaturas de video_audio/video_faixa_dts; reset de sessão reaproveita erro anterior; HTTP 403 do debrid perde RECONECTAR_DEBRID. Merge rc 0 com pai e 21f.",
+        "`7ecfed55bb` entregue pela IBM (Gemini Hydrogen) → revisão r1 com Sol via Codex, composição com lote/21f@99be71994e.",
+        "Gemini Hydrogen em ibm-ephemeral · base `agente/base-21f-farol-14@386873fc3377649dc4f0587f31d5ff17e628072d` publicada e conferida. Entrega `agente/21z-farol-14`, task nuvio-21f-farol14-ibm-worktree-386873fc. Cancelamento da tarefa anterior da VPS solicitado. Build e testes na VPS. #19 tem prioridade após o aceite da fachada.",
+        "Gate de aprovação de farol-6@386873fc33 satisfeito pela POLITICA conforme a VPS; execução ainda não iniciada neste relato. Integração e TV continuam independentes.",
+        "Caminho crítico. Bloqueado pela reprovação Sol r4 do Farol 6; aguarda a correção FAROL6E no Gemini Hydrogen e novo veredito antes de avançar. TV física pendente.",
         "Caminho crítico. Aguarda o veredito da revisão Sol r4 do Farol 6 antes de avançar.",
         "Caminho crítico."
       ],
-      "updatedAt": "2026-11-23T21:11:51+00:00",
+      "updatedAt": "2026-11-24T03:07:54+00:00",
       "dependencyReportedAt": "2026-11-23T21:08:00+00:00",
-      "reportedAt": "2026-11-23T21:08:00+00:00"
+      "reportedAt": "2026-11-24T03:04:00+00:00",
+      "approvalGate": {
+        "satisfied": true,
+        "dependency": "farol-6",
+        "approvedSha": "386873fc33",
+        "reportedAt": "2026-11-24T00:18:00+00:00",
+        "sourceLine": 205
+      },
+      "workBase": {
+        "branch": "agente/base-21f-farol-14",
+        "sha": "386873fc3377649dc4f0587f31d5ff17e628072d",
+        "sourceLine": 210
+      },
+      "branch": "agente/21z-farol-14",
+      "integrationVerified": false,
+      "latestDeliverySha": "1652812ef9",
+      "review": {
+        "round": "r3",
+        "status": "running_reported",
+        "reviewer": "Sol / Codex main/auto/gpt-6.2-sol na VPS",
+        "sourceLine": 245,
+        "reportedAt": "2026-11-24T03:04:00+00:00"
+      },
+      "previousReviews": [
+        {
+          "round": "r3",
+          "reviewer": "Opus / Antigravity na IBM",
+          "status": "running_reported",
+          "sourceLine": 243
+        }
+      ]
     },
     {
       "id": "farol-15",
@@ -756,25 +930,30 @@
         "farol-29"
       ],
       "allDependencies": false,
-      "status": "APROVADA",
+      "status": "LOTE",
       "wave": "B",
       "sha": "dc6db69bb3",
-      "batch": null,
-      "note": "Opus r1 APROVADO_COM_RESSALVAS, próximo lote; 3 modos e merge vs 21e passaram; em 31/32 mover autenticação para fora da UI, aplicar filtro infantil inclusive em perfil privado, ligar preferências e validar Samsung WGT",
-      "source": "Relato VPS",
+      "batch": "21f",
+      "note": "Incluído no candidato privado 21f, ainda não integrado. Opus r1 APROVADO_COM_RESSALVAS, próximo lote; 3 modos e merge vs 21e passaram; em 31/32 mover autenticação para fora da UI, aplicar filtro infantil inclusive em perfil privado, ligar preferências e validar Samsung WGT",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
       "verified": false,
       "branch": "agente/21z-farol-30",
-      "updatedAt": "2026-11-23T20:19:10+00:00",
-      "reportedAt": "2026-11-23T20:16:00+00:00",
+      "updatedAt": "2026-11-24T03:03:21+00:00",
+      "reportedAt": "2026-11-24T00:32:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "Opus r1 APROVADO_COM_RESSALVAS, próximo lote; 3 modos e merge vs 21e passaram; em 31/32 mover autenticação para fora da UI, aplicar filtro infantil inclusive em perfil privado, ligar preferências e validar Samsung WGT",
         "Opus 5.5 via Antigravity (…8599) revisa cliente de busca e compatibilidade com lote/21e@e34f0ddc5d",
         "Gemini Neon entregou cliente farolbusca; aguarda vaga de revisão independente",
         "VPS Gemini 4 Neon (antigravity) onda B, task …fb3ec7c9, brief lotes/sense/briefs/farol-30.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
-      ]
+      ],
+      "previousBatch": null,
+      "candidateInclusionVerified": true,
+      "candidateSha": "99be71994e",
+      "candidateInclusionSource": "git merge-base --is-ancestor; candidato não equivale a integração"
     },
     {
       "id": "farol-31",
@@ -942,21 +1121,39 @@
         "farol-29"
       ],
       "allDependencies": false,
-      "status": "REVISAO",
+      "status": "LOTE",
       "wave": "B",
-      "sha": "d727bbefbf",
-      "batch": null,
-      "note": "Sol r4 (…668a) ocupa a vaga do 46, verifica os bloqueios r3 e contrato do cliente Farol 52 contra lote/21e@e34f0ddc5d. Revisão r4 ativa, ainda sem veredito; TV física permanece pendente. Bloqueio anterior do Farol 52 não foi liberado.",
-      "source": "Relato VPS",
+      "sha": "7e14590c2b",
+      "batch": "21f",
+      "note": "Incluído no candidato privado 21f, ainda não integrado. agente/21z-farol-40@7e14590c2b · Reavaliação r10 pela POLITICA: três P2 de contagem e duração em achados. Dirigido 40/40 e controles r9 passaram. SHA revisado entra no 21f com cobertura para QA. Gate de aprovação da #52 satisfeito. A correção para b7106d207a já terminou e a r11 desse delta segue. Merge simulado conjunto de 6 e 40 limpo (6831ab0459). Notas em revisao/LOTE-21F-RESSALVAS-QA.md. Delta b7106d207a reprovado na r11; o pin aprovado 7e14590c2b e o gate da #52 permanecem, conforme VPS. r11 em `b7106d207a`: os casos r10 passam. O gate de contrato encontrou duração contraditória e agregado global atribuído à lista errada também no pai. O pin da #52 segue em `7e14590c2b`. As reproduções entraram no roteiro do 21f.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
       "verified": false,
       "branch": "agente/21z-farol-40",
-      "updatedAt": "2026-11-23T21:21:16+00:00",
-      "reportedAt": "2026-11-23T21:18:00+00:00",
+      "updatedAt": "2026-11-24T03:03:21+00:00",
+      "reportedAt": "2026-11-24T00:32:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "agente/21z-farol-40@7e14590c2b · Reavaliação r10 pela POLITICA: três P2 de contagem e duração em achados. Dirigido 40/40 e controles r9 passaram. SHA revisado entra no 21f com cobertura para QA. Gate de aprovação da #52 satisfeito. A correção para b7106d207a já terminou e a r11 desse delta segue. Merge simulado conjunto de 6 e 40 limpo (6831ab0459). Notas em revisao/LOTE-21F-RESSALVAS-QA.md. Delta b7106d207a reprovado na r11; o pin aprovado 7e14590c2b e o gate da #52 permanecem, conforme VPS. r11 em `b7106d207a`: os casos r10 passam. O gate de contrato encontrou duração contraditória e agregado global atribuído à lista errada também no pai. O pin da #52 segue em `7e14590c2b`. As reproduções entraram no roteiro do 21f.",
+        "agente/21z-farol-40@7e14590c2b · Reavaliação r10 pela POLITICA: três P2 de contagem e duração em achados. Dirigido 40/40 e controles r9 passaram. SHA revisado entra no 21f com cobertura para QA. Gate de aprovação da #52 satisfeito. A correção para b7106d207a já terminou e a r11 desse delta segue. Merge simulado conjunto de 6 e 40 limpo (6831ab0459). Notas em revisao/LOTE-21F-RESSALVAS-QA.md.",
+        "agente/21z-farol-40@b7106d207a · Hydrogen entregou a correção dos três achados r10. Ref, pai, diff-check e merge-tree a3f9da9179 com 121b2ca867 conferidos. Relata dirigido 41/41, 999 resultados por variante na ponta e no merge e 1.329 cenas no C sob ASan+UBSan. Sol r11 lançado (…8323). Issue 52 bloqueada e aceite HTTP em TV pendente.",
+        "agente/21z-farol-40@7e14590c2b · Sol r10 REPROVADO. Três P2 em achados: l2 pode contradizer duração e quantidade dos cartazes, dois índices com o mesmo IMDb contam em dobro, e fatos de fora da lista sustentam ou vetam a contagem. Três casos da r9 passaram, dirigido 40/40 na ponta e no merge e 1.347 respostas renderizadas em C sob ASan+UBSan. Correção despachada ao Gemini Hydrogen (…26b3), raiz com 34G livres. Issue 52 bloqueada e aceite HTTP em TV pendente.",
+        "agente/21z-farol-40@7e14590c2b · Hydrogen entregou a correção dos três achados r9. Ref, pai, diff-check e merge-tree 3289a29cef com 121b2ca867 conferidos. Relata dirigido 37/40 no pai com testes novos e 40/40 na ponta e no merge, 662 casos por variante e 792 cenas no renderer C sob ASan+UBSan. Sol r10 lançado (…185e). Issue 52 bloqueada e aceite HTTP em TV pendente.",
+        "agente/21z-farol-40@2d96f64d13 · Sol r9 REPROVADO. Fatos contraditórios aprovam temporada e duração, e achados pode contar filme de 240 min como curto. Casos da r8 passaram e dirigido 37/37 na ponta e no merge. Correção despachada ao Gemini Hydrogen (…254b). Issue 52 bloqueada.",
+        "agente/21z-farol-40@2d96f64d13 · Sol r9 lançado (…e111) na vaga liberada do Farol 6. Revisão independente da duração, motivos e dicas episódicas no alvo 121b2ca867. Issue 52 segue bloqueada.",
+        "agente/21z-farol-40@2d96f64d13 · Hydrogen entregou a correção r8 de elegibilidade de duração e dicas episódicas. Ref, pai, diff-check e merge-tree com 121b2ca867 conferidos. Informa dirigido 37/37 na ponta e no merge, corpus 488/488 e 108 cenas na sonda C entre pai, ponta e merge. R9 aguarda primeira vaga de revisão, ocupadas por 6, 46 e 48. Issue 52 bloqueada.",
+        "agente/21z-farol-40@3c5ee2a01e · Sol r8 REPROVADO. Dica de 240 min sem evidência elegível e motivo de 120 min com limite de 60 renderizaram em miss, hit e KV semeado. Casos da r7, dirigido 34/34, corpus 488/488 e merge-tree passaram. Correção despachada ao Gemini Hydrogen (…2eae). Issue 52 bloqueada.",
+        "agente/21z-farol-40@3c5ee2a01e · Hydrogen entregou a correção r7. Ref, pai e diff-check conferidos. Relata dirigido 34/34 na ponta e no merge com 121b2ca867, sonda C com 15 cenas e corpus 488/488. Sol r8 lançado (…1564) para revisão independente. Issue 52 bloqueada.",
+        "agente/21z-farol-40@f43884bd12 · Sol r7 REPROVADO. Eixos do candidato cruzam filme e série na dica e no comparador. FT_DICA_CURTO aceita 160 min sob limite de 100 min quando a duração vem do fato. Os dois casos da r6, dirigido 32/32, corpus 488/488 e merge-tree passaram. Correção despachada ao Gemini Hydrogen (…14d0). Issue 52 bloqueada.",
+        "agente/21z-farol-40@f43884bd12 · Hydrogen entregou a correção r6. Ref, pai e diff-check conferidos. Relata dirigido 32/32 na ponta e no merge simulado com 121b2ca867, sonda C 8/8 e corpus 488/488. Sol r7 lançado (…1d63) para revisão independente. Issue 52 segue bloqueada.",
+        "agente/21z-farol-40@8528c188e8 · Sol r6 REPROVADO. Candidato sem tipo cruza fatos de filme e série na dica em miss e hit. Variação de nome público invalida âncora de IMDb único com a mesma chave. Casos originais da r5, dirigido 30/30, corpus 488/488, sonda C e merge-tree passaram. Gemini Hydrogen corrige na mesma branch (…a3da). Issue 52 bloqueada até nova aprovação independente.",
+        "agente/21z-farol-40@8528c188e8 · Hydrogen entregou resolução única de identidade por fato e chave que preserva sua precedência. Ref, pai e diff-check conferidos. Dirigido 30/30, sonda C 12/12 e merge-tree limpo com 121b2ca867 informados. Sol r6 lançado (…2736). Issue 52 segue bloqueada.",
+        "agente/21z-farol-40@14dce5607f · Sol r5 REPROVADO: aliases conflitantes cruzam obras na dica e a ordem dos fatos pode mudar a saída com a mesma chave. R4, privacidade e corpus passaram. Gemini Hydrogen corrige na mesma branch (…d3cc); issue 52 segue bloqueada.",
+        "agente/21z-farol-40@14dce5607f · Hydrogen entregou os quatro reparos da r4 com dirigido 28/28, sonda C 5/5 e merge-tree limpo contra o 21e informados. Ref, pai e diff-check conferidos. Sol r5 em execução (…afe8); issue 52 continua bloqueada.",
+        "agente/21z-farol-40@d727bbefbf · Sol r4 REPROVADO: fatos de obras diferentes na dica/comparação, fileira válida descartada no nono motivo e cache divergente para fatos equivalentes. Dirigido 24/24 e corpus 488/488 verdes. Gemini Hydrogen corrige na mesma branch (…6dee); issue 52 segue bloqueada.",
+        "Sol r4 (…668a) ocupa a vaga do 46, verifica os bloqueios r3 e contrato do cliente Farol 52 contra lote/21e@e34f0ddc5d. Revisão r4 ativa, ainda sem veredito; TV física permanece pendente. Bloqueio anterior do Farol 52 não foi liberado.",
         "Hydrogen entregou correção dos quatro bloqueios r3; informa 24/24 dirigidos, corpus 488/488 e paridade do renderer C em 31 idiomas. Confirmei merge-tree limpo com e34f0ddc5d. Aguarda primeira vaga para r4; issue 52 segue bloqueada Merge-tree confirmado pela VPS, sem revisão r4 iniciada ou aprovação inferida; TV física permanece pendente.",
         "Sol r3 REPROVADO: motivo de outra obra, duração inventada, campos livres no KV e título válido da Home regride. Cinco casos da r2 passaram. Gemini Hydrogen corrige na mesma branch (…1602); 52 segue bloqueada",
         "Gemini Hydrogen entregou correção dos cinco P1, informou 20/20 e corpus 488/488 com paridade no renderer C. Merge-tree 21e rc 0 confirmado. Sol r3 (…ca17) ocupa a vaga do 48; 52 depende deste veredito",
@@ -964,7 +1161,32 @@
         "Gemini Hydrogen entregou correção dos quatro P1 (relata dirigido 14/14 e corpus 488/488); merge-tree 21e rc 0 confirmado; Sol via Codex revisa r2 (…dc7f)",
         "Sol r1 REPROVADO: consentimento, privacidade do KV, título literal inventado e hit KV fora do pedido; Gemini Hydrogen (…ca17) corrige na mesma branch",
         "VPS Gemini 4 Neon (antigravity) onda B, task …3616b0ed, brief lotes/sense/briefs/farol-40.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
-      ]
+      ],
+      "latestDeliverySha": "b7106d207a",
+      "approvedSha": "7e14590c2b",
+      "approval": {
+        "status": "APROVADO_COM_RESSALVAS",
+        "sha": "7e14590c2b",
+        "reportedAt": "2026-11-24T00:18:00+00:00",
+        "sourceLine": 206,
+        "basis": "Reavaliação pela POLITICA",
+        "note": "agente/21z-farol-40@7e14590c2b · Reavaliação r10 pela POLITICA: três P2 de contagem e duração em achados. Dirigido 40/40 e controles r9 passaram. SHA revisado entra no 21f com cobertura para QA. Gate de aprovação da #52 satisfeito. A correção para b7106d207a já terminou e a r11 desse delta segue. Merge simulado conjunto de 6 e 40 limpo (6831ab0459). Notas em revisao/LOTE-21F-RESSALVAS-QA.md."
+      },
+      "verificationSummary": "aprovação com ressalvas reportada pela VPS na reavaliação pela POLITICA; sem reprodução local nem TV física",
+      "reviewedRevisions": [
+        {
+          "sha": "b7106d207a",
+          "verdict": "REPROVADO",
+          "reportedAt": "2026-11-24T00:28:00+00:00",
+          "note": "r11 em `b7106d207a`: os casos r10 passam. O gate de contrato encontrou duração contraditória e agregado global atribuído à lista errada também no pai. O pin da #52 segue em `7e14590c2b`. As reproduções entraram no roteiro do 21f.",
+          "sourceLine": 212,
+          "revokesApprovedPin": false
+        }
+      ],
+      "previousBatch": null,
+      "candidateInclusionVerified": true,
+      "candidateSha": "99be71994e",
+      "candidateInclusionSource": "git merge-base --is-ancestor; candidato não equivale a integração"
     },
     {
       "id": "farol-41",
@@ -1100,14 +1322,20 @@
         "farol-47"
       ],
       "allDependencies": false,
-      "status": "CORRECAO",
+      "status": "LOTE",
       "wave": "A",
-      "sha": "eeb143e572",
-      "batch": null,
-      "note": "Sol r4 REPROVADO: selo Animation em interface/catálogo EN não forma fileira, mesmo com candidato local e gênero confirmado pelo TMDB. CATREV resolvido em cópia passou nos três modos. Homônimos reproduzem também na base. FAROL46F no Gemini Hydrogen (…49e4), mesma branch; TV pendente. Resultado do CATREV limitado à cópia de validação, não à branch/lote real; testes reportados não representam aprovação geral. Falha de homônimos também reproduzida na base, sem classificá-la como regressão nova. Ressalva anterior das três chamadas da fixture sem quarto argumento preservada no histórico, sem correção específica informada.",
-      "source": "Relato VPS",
+      "sha": "3718e82674",
+      "batch": "21f",
+      "note": "Incluído no candidato privado 21f, ainda não integrado. `3718e82674` · Reavaliação r6 pela POLITICA. O D-pad voltou a mostrar Animation e Comédia com um único candidato da mesma década antes e depois do TMDB. Os dois achados remanescentes exigem ID e rótulo contraditórios na chamada ou na resposta simulada do TMDB, também no pai, e ficam como P2 para QA. A solução CATREV da revisão foi reaplicada e a árvore conferida. A resolução CATREV foi reaplicada na composição conforme VPS, sem merge na integração. TMDB real e TV física continuam pendentes.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
       "verified": false,
       "previousNotes": [
+        "Incluído no candidato privado 21f, ainda não integrado. `3718e82674` · Reavaliação r6 pela POLITICA. O D-pad voltou a mostrar Animation e Comédia com um único candidato da mesma década antes e depois do TMDB. Os dois achados remanescentes exigem ID e rótulo contraditórios na chamada ou na resposta simulada do TMDB, também no pai, e ficam como P2 para QA. A solução CATREV da revisão foi reaplicada e a árvore conferida.",
+        "`3718e82674` · Reavaliação r6 pela POLITICA. O D-pad voltou a mostrar Animation e Comédia com um único candidato da mesma década antes e depois do TMDB. Os dois achados remanescentes exigem ID e rótulo contraditórios na chamada ou na resposta simulada do TMDB, também no pai, e ficam como P2 para QA. A solução CATREV da revisão foi reaplicada e a árvore conferida.",
+        "agente/21z-farol-46@3718e82674 · Hydrogen entregou FAROL46G. Ref, pai e diff-check conferidos. Merge-tree com 121b2ca867 confirmou conflito único em src/mapa.c. Implementação relata gênero da mesma década e ID canônico RC 134→0, com CATREV e Mapa nos três modos em cópia resolvida. Sol r6 lançado (…d935) com 32G livres na raiz. Parte dos testes gráficos precisou repetir com LSan desativado após aviso Mesa/SDL EGL. TV física e TMDB real pendentes.",
+        "agente/21z-farol-46@4c98112707 · Sol r5 REPROVADO. O único candidato do gênero some da fileira do selo quando a fileira de época o reserva. Os casos Animation EN/EN da r4, homônimos e CATREV em 121b2ca867 passaram. FAROL46G despachado ao Gemini Hydrogen (…32e8). TV física pendente.",
+        "agente/21z-farol-46@4c98112707 · Hydrogen entregou FAROL46F com gênero canônico e guarda de homônimos. Ref, pai e diff-check conferidos. Relata 48/48 dirigidos na ponta e 36/36 na cópia resolvida com e34f0ddc5d. Sol r5 lançado (…d0a2) para validação independente no alvo 121b2ca867, incluindo conflito de mapa.c com CATREV. TV física pendente.",
+        "Sol r4 REPROVADO: selo Animation em interface/catálogo EN não forma fileira, mesmo com candidato local e gênero confirmado pelo TMDB. CATREV resolvido em cópia passou nos três modos. Homônimos reproduzem também na base. FAROL46F no Gemini Hydrogen (…49e4), mesma branch; TV pendente. Resultado do CATREV limitado à cópia de validação, não à branch/lote real; testes reportados não representam aprovação geral. Falha de homônimos também reproduzida na base, sem classificá-la como regressão nova. Ressalva anterior das três chamadas da fixture sem quarto argumento preservada no histórico, sem correção específica informada.",
         "Sol r4 (…e06d) ocupa a vaga do 40. Valida gênero ausente/créditos do TMDB e árvore 21e com o conflito CATREV resolvido em cópia; TV pendente Resolução CATREV limitada à cópia de validação; nenhuma resolução na branch/lote real nem novo commit informados. Ressalva anterior das três chamadas da fixture que exigem quarto argumento sem resolução informada.",
         "Hydrogen fechou provas da FAROL46E: dirigido nos três modos, 22 scripts verdes, sintaxe 10/10. No 21e confirmei conflito em src/mapa.c do CATREV e três chamadas da fixture que exigem o quarto argumento. Pronto para revisão r4 na primeira vaga; TV pendente",
         "r2 Neon encerrou sem relatório, sintaxe 10/10 informada; Gemini Hydrogen (…76c1) retoma provas e relatório usando a ponta existente",
@@ -1128,9 +1356,34 @@
         "TV física pendente."
       ],
       "branch": "agente/21z-farol-46",
-      "updatedAt": "2026-11-23T21:21:16+00:00",
-      "reportedAt": "2026-11-23T21:18:00+00:00",
-      "integrationVerified": false
+      "updatedAt": "2026-11-24T03:05:58+00:00",
+      "reportedAt": "2026-11-24T00:32:00+00:00",
+      "integrationVerified": false,
+      "latestDeliverySha": "3718e82674",
+      "reviewedRevisions": [
+        {
+          "sha": "4c98112707",
+          "verdict": "REPROVADO",
+          "reportedAt": "2026-11-24T00:18:00+00:00",
+          "note": "agente/21z-farol-46@4c98112707 · Reavaliação r5 pela POLITICA: mantém P1 no caminho principal do selo. OK pelo D-pad omite a fileira pedida com título elegível antes e depois do TMDB. Casos isolados de rótulo/ID são P2 e o conflito CATREV tem solução simples. FAROL46G 3718e82674 em r6 (…d935).",
+          "sourceLine": 207,
+          "revokesApprovedPin": null
+        }
+      ],
+      "approvedSha": "3718e82674",
+      "approval": {
+        "status": "APROVADO_COM_RESSALVAS",
+        "sha": "3718e82674",
+        "reportedAt": "2026-11-24T00:32:00+00:00",
+        "sourceLine": 213,
+        "basis": "Reavaliação pela POLITICA",
+        "note": "`3718e82674` · Reavaliação r6 pela POLITICA. O D-pad voltou a mostrar Animation e Comédia com um único candidato da mesma década antes e depois do TMDB. Os dois achados remanescentes exigem ID e rótulo contraditórios na chamada ou na resposta simulada do TMDB, também no pai, e ficam como P2 para QA. A solução CATREV da revisão foi reaplicada e a árvore conferida."
+      },
+      "verificationSummary": "aprovação com ressalvas reportada pela VPS na reavaliação pela POLITICA; sem reprodução local nem TV física",
+      "previousBatch": null,
+      "candidateInclusionVerified": true,
+      "candidateSha": "99be71994e",
+      "candidateInclusionSource": "git merge-base --is-ancestor; candidato não equivale a integração"
     },
     {
       "id": "farol-47",
@@ -1156,25 +1409,90 @@
         "farol-45"
       ],
       "allDependencies": false,
-      "status": "REVISAO",
+      "status": "APROVADA",
       "wave": "B",
-      "sha": "16e84d5fa6",
+      "sha": "ad3396b55a",
       "batch": null,
-      "note": "Neon entregou a correção dos bloqueios r1 e a ligação do teste Home com #840; dirigido verde nos três modos informado. Confirmei ancestralidade do 21e e merge-tree rc 0. Sol r2 (…e01e) revisa o fluxo da Home; TV pendente Ancestralidade e merge-tree confirmados pela VPS, não verificados localmente e sem integração inferida. Conflito em src/home.c permanece no histórico da ponta anterior d60b19b4d7; para a nova ponta a VPS relata merge-tree rc 0. Ressalva anterior das fixtures no diretório padrão preservada: o revisor limpou o que identificou e refez isolada, sem confirmação de limpeza completa.",
-      "source": "Relato VPS",
+      "note": "FAROL48-r7 em ad3396b55a recuperada na IBM como APROVADO conforme a VPS às 03h05 UTC, após atualizar o T3 de 0.1.9 para 0.1.12-nightly e restaurar a leitura de retorno. Aprovação baseada no parecer IBM recuperado; a r7 foi relançada com Sol na VPS às 03h04 e não teve outro veredito/cancelamento informado. O crash r6 por ponteiro nulo e os testes da implementação ficam no histórico. Aprovação não integra o código: Farol 48 permanece fora da composição 21f de seis itens, sem lote novo atribuído. App completo, Intent e TV física não foram validados por esta VM; TV continua pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
       "verified": false,
       "branch": "agente/21z-farol-48",
-      "updatedAt": "2026-11-23T21:17:14+00:00",
-      "reportedAt": "2026-11-23T21:12:00+00:00",
+      "updatedAt": "2026-11-24T03:07:54+00:00",
+      "reportedAt": "2026-11-24T03:05:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "FAROL48-r7 relançada na VPS com Sol via Codex (main/auto/gpt-6.2-sol) em `ad3396b55a` (IBM em 0.1.9 não devolve texto pela API). Revisão lançada conforme VPS; ainda sem parecer nesta rodada. Sem integração ou TV física inferidas.",
+        "r7 com Opus na ibm-ephemeral (antigravity), sem ocupar a VPS. R7 concluída na IBM conforme boletim de 02h56 UTC, mas o parecer ainda está sendo coletado via outputSchema; não é aprovação. FAROL48F entregue em ad3396b55a após o crash r6 por dupla leitura de catálogo; correção e testes informados pela implementação não substituem o parecer. TSan foi limitado ao núcleo no relato r5; app completo, Intent e TV física sem confirmação. Fora do candidato 21f.",
+        "r7 com Opus na ibm-ephemeral (antigravity), sem ocupar a VPS.",
+        "FAROL48F entregue em `ad3396b55a` (Gemini Hydrogen VPS): leitura única do catálogo em abrirPorIndice e chamadores; teste determinístico novo; corrida real RC 0; merge rc 0 com 21e/21f.",
+        "FAROL48F despachada para Gemini Hydrogen na VPS sobre ca22596b41 (brief revisao/correcoes/CORRECAO-FAROL48F-brief.md); r7 ao entregar.",
+        "`ca22596b41` REPROVADO r6 (Opus/Antigravity): bloqueios da r5 resolvidos; crash novo por ponteiro nulo em abrirPorIndice (dupla leitura do catálogo na republicação em outro fio), pai 0 × ponta/21f 139. Evidências revisao/evidencias/FAROL48-r6/.",
+        "`ca22596b41` → revisão r6b com Opus via Antigravity (high): bloqueios da r5 e verificação de estabilidade por ponteiro nulo no acesso ao catálogo.",
+        "Sol r6 em `ca22596b41` interrompido pelo filtro do provedor (`cyber_policy`) antes do parecer. Retestes normais da r5 confirmados pelo revisor. `farol_dica` RC 0 nos três modos na ponta e no merge com 21e. Sonda isolada de consulta ao catálogo: RC normal 0 no pai e 139 na ponta e no combinado 21f. Em ASan+UBSan, pai RC 124 e ponta/combinado RC 1 por acesso a `CatItem` nulo. Resultados parciais em `/mnt/block-volume/nuvio-runs/farol48-r6-review.eKB2E0/logs`. Alcance no app e classificação pela POLITICA pendentes. Farol 48 segue fora do candidato 21f.",
+        "Gemini Hydrogen entregou `ca22596b41768b4eb424a414e644f1f2270aa642` sobre `b52a3e764dac54498e5bec5b90255c450dbad29a`. Ref, pai e diff-check conferidos. Merges simulados limpos com 21e (`2e88379a1e`) e candidato 21f (`c4fb31678b`). Sol r6 despachado em `nuvio-farol48-r6-ca22596b` para retestar os bloqueios r5, classificar os casos herdados e conferir a combinação com o Farol 46. TV física pendente.",
+        "agente/21z-farol-48@b52a3e764d · Reavaliação r5 pela POLITICA: mantém P1 pela regressão de episódio de B aplicado a A na Ilha e pelo Play manual que inicia outro episódio no mesmo quadro da lista final. Relacionados sem arte fica como P2. Correção (…e7a0) segue pelos P1.",
+        "agente/21z-farol-48@b52a3e764d · Sol r5 REPROVADO. O link externo da r4 passou. Com B sem arte, Ilha aplica o episódio de B a A e Relacionados cancela a retomada de A. Os dois casos dão RC 0/0 no pai e 48/48 na ponta e no merge. Play manual perde para P2 no mesmo quadro da lista final nos três recortes, RC 46/46. Correção despachada ao Gemini Hydrogen (…e7a0). App completo, Intent e TV física pendentes.",
+        "agente/21z-farol-48@b52a3e764d · Hydrogen entregou a correção r4 do pedido de Play durante a espera P2. Ref, pai, diff-check e merge-tree 34ba92c5d8 com 121b2ca867 conferidos. Relata link externo e Play manual RC 46 no pai e 0 na ponta e no merge em normal e ASan+UBSan. Sol r5 lançado (…a3a7). TSan limitado ao núcleo e TV física pendente.",
+        "agente/21z-farol-48@70fc480b4c · Sol r4 REPROVADO. Link externo para B durante a espera P2 de A perde o Play, RC 0 no pai e 46 na ponta e no merge. Os três casos da r3 passaram. Correção despachada ao Gemini Hydrogen (…c5ed). TV física pendente.",
+        "agente/21z-farol-48@70fc480b4c · Hydrogen publicou a correção r3 localmente e encerrou sem a matriz final. Ref, pai e diff-check conferidos. Os binários deixados no run abortaram na adoção da dica antes do despacho em pai e ponta. Sol r4 lançado (…e2d4) para reprodução independente e merge simulado com 121b2ca867. TV física pendente.",
+        "agente/21z-farol-48@5cb329824d · Sol r3 REPROVADO: lista atrasada pode tocar outro título, disparar após Voltar ou atravessar troca de geração da sessão. Sondas rc 47 na ponta e no merge. T4E6 e Continuar comum passaram. Hydrogen corrige a espera P2 na mesma branch (…1b77). TV física pendente.",
+        "agente/21z-farol-48@5cb329824d · Hydrogen entregou o transporte de identidade e T/E até Reproduzir, inclusive na espera por metadados. Ref, pai e diff-check conferidos. Dirigido normal/ASan/TSan informado 0/0/0 na ponta. Sol r3 (…57f4) revisa o fluxo contra lote/21e@244d675c04. TV física pendente.",
+        "agente/21z-farol-48@16e84d5fa6 · Sol r2 REPROVADO: série republicada entre montagem da dica e OK perde T4E6 no despacho e não reproduz. Dirigido nos três modos e gates Home/Assistiu verdes. Hydrogen corrige na mesma branch (…7be6); prova em TV física pendente",
+        "Neon entregou a correção dos bloqueios r1 e a ligação do teste Home com #840; dirigido verde nos três modos informado. Confirmei ancestralidade do 21e e merge-tree rc 0. Sol r2 (…e01e) revisa o fluxo da Home; TV pendente Ancestralidade e merge-tree confirmados pela VPS, não verificados localmente e sem integração inferida. Conflito em src/home.c permanece no histórico da ponta anterior d60b19b4d7; para a nova ponta a VPS relata merge-tree rc 0. Ressalva anterior das fixtures no diretório padrão preservada: o revisor limpou o que identificou e refez isolada, sem confirmação de limpeza completa.",
         "Sol r1 REPROVADO: cota antes de render, Escolha sem destino, série do Diário não abre, dica vencida acionável e ligação do dirigido quebra com #840. Gemini Neon corrige na mesma branch (…a924). Sonda inicial gravou fixtures no diretório padrão, revisor limpou o que identificou e refez isolada Conflito anterior em src/home.c contra o 21e pós-#840 sem resolução informada; TV física permanece pendente.",
         "commit e relatório do Gemini Neon recuperados; Sol r1 (…4ab1) revisa. Merge-tree com o 21e pós-#840 aponta conflito em src/home.c nas gerações de Assistiu e Dica; TV física pendente",
         "VPS Gemini 4 Neon (antigravity) onda B, task …9071e0a7, brief lotes/sense/briefs/farol-48.md; não verificado Base de trabalho: lote/21e@0dea681ce8; ainda sem commit de implementação informado."
-      ]
+      ],
+      "latestDeliverySha": "ad3396b55a",
+      "reviewInterruption": {
+        "reason": "cyber_policy",
+        "reportedAt": "2026-11-24T00:56:00+00:00",
+        "verdictIssued": false,
+        "sourceLine": 219
+      },
+      "review": {
+        "round": "r7",
+        "status": "approved_reported",
+        "reviewer": "Opus / Antigravity na IBM",
+        "sourceLine": 248,
+        "reportedAt": "2026-11-24T03:05:00+00:00",
+        "parallelVpsReview": {
+          "round": "r7",
+          "status": "running_reported",
+          "reviewer": "Sol / Codex main/auto/gpt-6.2-sol na VPS",
+          "sourceLine": 247,
+          "reportedAt": "2026-11-24T03:04:00+00:00"
+        },
+        "parallelVpsReviewOutcomeNotReported": true
+      },
+      "previousReviews": [
+        {
+          "round": "r7",
+          "reviewer": "Opus / Antigravity na IBM",
+          "status": "completed_awaiting_verdict",
+          "verdictIssued": false,
+          "sourceLine": 243
+        },
+        {
+          "round": "r7",
+          "status": "running_reported",
+          "reviewer": "Sol / Codex main/auto/gpt-6.2-sol na VPS",
+          "sourceLine": 247,
+          "reportedAt": "2026-11-24T03:04:00+00:00"
+        }
+      ],
+      "approvedSha": "ad3396b55a",
+      "verificationSummary": "aprovação r7 recuperada da IBM conforme VPS; não é validação local do app completo ou TV física",
+      "approval": {
+        "status": "APROVADO",
+        "sha": "ad3396b55a",
+        "reportedAt": "2026-11-24T03:05:00+00:00",
+        "sourceLine": 248,
+        "basis": "Parecer r7 da IBM recuperado após corrigir T3, conforme VPS"
+      }
     },
     {
       "id": "farol-49",
@@ -1245,23 +1563,59 @@
         "farol-44"
       ],
       "allDependencies": false,
-      "status": "BLOQUEADA",
+      "status": "REVISAO",
       "wave": "D",
-      "sha": null,
+      "sha": "7a52488283",
       "batch": null,
-      "note": "Caminho crítico. Permanece bloqueado conforme o relato das 21h13 UTC. Sol r4 do Farol 40@d727bbefbf iniciou às 21h18 UTC e verifica os bloqueios r3 e o contrato do cliente Farol 52 contra o 21e; aguarda novo veredito antes de avançar. Não iniciado.",
-      "source": "Bloqueio conforme relato do Farol 40 às 21h13 UTC; revisão r4 ativa conforme relato das 21h18 UTC",
+      "note": "FAROL52-r1 lançada na VPS com Sol via Codex (main/auto/gpt-6.2-sol) em `7a52488283`. Revisão lançada conforme VPS; ainda sem parecer nesta rodada. Sem integração ou TV física inferidas.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
       "verified": false,
       "previousNotes": [
+        "`7a52488283` concluída na IBM (Gemini Hydrogen, 8 arquivos, +3853/−58, conflito trivial de #include em src/app.c vs 21f, Poke intocado). Entrega não integrada e ainda sem revisão r1: aguardava reset do Codex main às 03h02 UTC; prazo é do relato, sem retomada automaticamente inferida. Conflito trivial de include em src/app.c versus 21f reportado, não resolvido por este painel. Fora do candidato 21f. Gate de aprovação da #40 satisfeito no pin 7e14590c2b; a reprovação r11 do delta b7106d207a não revogou esse pin conforme VPS.",
+        "`7a52488283` concluída na IBM (Gemini Hydrogen, 8 arquivos, +3853/−58, conflito trivial de #include em src/app.c vs 21f, Poke intocado). Entrega não integrada e ainda sem revisão r1: aguardava reset do Codex main às 03h02 UTC; prazo é do relato, sem retomada automaticamente inferida. Conflito trivial de include em src/app.c versus 21f reportado, não resolvido por este painel. Fora do candidato 21f.",
+        "`7a52488283` concluída na IBM (Gemini Hydrogen, 8 arquivos, +3853/−58, conflito trivial de #include em src/app.c vs 21f, Poke intocado).",
+        "Gemini Hydrogen em ibm-ephemeral · base `agente/base-21f-farol-52@132c0de06ae92ba525ca05a8ad0a28e42b517a00` publicada e conferida, com 21e e os Faróis 30 e 40 aprovados. Entrega `agente/21z-farol-52`, task nuvio-21f-farol52-ibm-132c0de0. HTTP e build na VPS.",
+        "Gate de aprovação de farol-40@7e14590c2b satisfeito pela POLITICA conforme a VPS; execução ainda não iniciada neste relato. Integração e TV continuam independentes.",
+        "Caminho crítico. Permanece bloqueado conforme o relato das 21h13 UTC. Sol r4 do Farol 40@d727bbefbf iniciou às 21h18 UTC e verifica os bloqueios r3 e o contrato do cliente Farol 52 contra o 21e; aguarda novo veredito antes de avançar. Não iniciado.",
         "Caminho crítico. Permanece bloqueado pelo Farol 40: correção entregue em d727bbefbf, aguardando primeira vaga para revisão r4 e novo veredito antes de avançar. Não iniciado.",
         "Caminho crítico. Bloqueado pela reprovação Sol r3 do Farol 40; aguarda a correção Hydrogen e novo veredito antes de avançar.",
         "Caminho crítico. Aguarda o veredito da revisão Sol r3 do Farol 40 antes de avançar.",
         "Caminho crítico."
       ],
-      "updatedAt": "2026-11-23T21:21:16+00:00",
+      "updatedAt": "2026-11-24T03:07:54+00:00",
       "dependencyReportedAt": "2026-11-23T21:13:00+00:00",
-      "reportedAt": "2026-11-23T21:13:00+00:00",
-      "dependencyReviewReportedAt": "2026-11-23T21:18:00+00:00"
+      "reportedAt": "2026-11-24T03:04:00+00:00",
+      "dependencyReviewReportedAt": "2026-11-23T21:18:00+00:00",
+      "approvalGate": {
+        "satisfied": true,
+        "dependency": "farol-40",
+        "approvedSha": "7e14590c2b",
+        "reportedAt": "2026-11-24T00:18:00+00:00",
+        "sourceLine": 206
+      },
+      "workBase": {
+        "branch": "agente/base-21f-farol-52",
+        "sha": "132c0de06ae92ba525ca05a8ad0a28e42b517a00",
+        "sourceLine": 211
+      },
+      "branch": "agente/21z-farol-52",
+      "integrationVerified": false,
+      "latestDeliverySha": "7a52488283",
+      "review": {
+        "round": "r1",
+        "status": "running_reported",
+        "reviewer": "Sol / Codex main/auto/gpt-6.2-sol na VPS",
+        "sourceLine": 246,
+        "reportedAt": "2026-11-24T03:04:00+00:00"
+      },
+      "previousReviews": [
+        {
+          "round": "r1",
+          "status": "waiting_capacity_reported",
+          "reportedWaitUntil": "2026-11-24T03:02:00+00:00",
+          "sourceLine": 242
+        }
+      ]
     },
     {
       "id": "farol-53",
@@ -1521,18 +1875,19 @@
     {
       "id": "issue-728",
       "title": "Network Drop on Samsung Tizen 4.0 — Nuvio Legacy 2.0.8",
-      "status": "APROVADA",
+      "status": "LOTE",
       "sha": "a69626eef",
-      "batch": "21e",
-      "note": "F117-r1 (Sol GPT-6.2 via Codex, VPS) aprovou com ressalvas: ACK de B libera a amostra do Farol, mutações reprovam, merge rc 0 com lote 21d; TV não verificado",
+      "batch": "21f",
+      "note": "Incluído no candidato privado 21f, ainda não integrado. F117-r1 (Sol GPT-6.2 via Codex, VPS) aprovou com ressalvas: ACK de B libera a amostra do Farol, mutações reprovam, merge rc 0 com lote 21d; TV não verificado",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "Relato VPS",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/728",
       "number": 728,
       "previousNotes": [
+        "F117-r1 (Sol GPT-6.2 via Codex, VPS) aprovou com ressalvas: ACK de B libera a amostra do Farol, mutações reprovam, merge rc 0 com lote 21d; TV não verificado",
         "revisão F117-r1 lançada (Sol GPT-6.2 via Codex, VPS)",
         "F117 entregue (Devin SWE-2, VPS): recusa de seek legado corrigida, dirigido 18/18, merge rc 0 com lote 21d; revisão F117-r1 no Sol; TV não verificado",
         "F115-r1 reprovou (recusa de seek legado prende rastreador, Farol sem amostra); correção F117 no Devin SWE-2",
@@ -1541,103 +1896,123 @@
         "Conflito com PR 680 em src/video_tpk.c a resolver."
       ],
       "branch": "agente/21z-728",
-      "updatedAt": "2026-11-23T19:27:55+00:00",
-      "reportedAt": "2026-11-23T05:59:00+00:00",
-      "integrationVerified": false
+      "updatedAt": "2026-11-24T03:03:21+00:00",
+      "reportedAt": "2026-11-24T00:32:00+00:00",
+      "integrationVerified": false,
+      "previousBatch": "21e",
+      "candidateInclusionVerified": true,
+      "candidateSha": "99be71994e",
+      "candidateInclusionSource": "git merge-base --is-ancestor; candidato não equivale a integração"
     },
     {
       "id": "issue-772",
       "title": ".ass subtitle problem",
       "status": "APROVADA",
       "sha": "ddd128e5b",
-      "batch": "21e",
-      "note": "vai para o lote 21e",
+      "batch": null,
+      "note": "vai para o lote 21e Fora da ponta do 21e conforme o relato VPS da linha 165; aprovação anterior preservada, sem novo lote atribuído.",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "Relato VPS",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/issues/772",
       "number": 772,
       "branch": "agente/21z-772",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
-      "integrationVerified": false
+      "updatedAt": "2026-11-24T03:03:21+00:00",
+      "reportedAt": "2026-11-23T21:28:00+00:00",
+      "integrationVerified": false,
+      "previousNotes": [
+        "vai para o lote 21e"
+      ],
+      "previousBatch": "21e"
     },
     {
       "id": "pr-761",
       "title": "mkv chapters [all platforms]",
       "status": "APROVADA",
       "sha": "a6262d828",
-      "batch": "21e",
-      "note": "vai para o lote 21e",
+      "batch": null,
+      "note": "vai para o lote 21e Fora da ponta do 21e conforme o relato VPS da linha 165; aprovação anterior preservada, sem novo lote atribuído.",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "Relato VPS",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/761",
       "number": 761,
       "branch": "agente/21z-pr761",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "updatedAt": "2026-11-24T03:03:21+00:00",
+      "reportedAt": "2026-11-23T21:28:00+00:00",
       "integrationVerified": false,
       "githubState": "open",
       "githubCheckedAt": "2026-11-23T19:29:42+00:00",
       "githubHeadSha": "89752caaabe3f74f5fe9eeada210ea4efb71ddbc",
       "githubBaseBranch": "master",
       "githubUpdatedAt": "2026-11-04T20:32:02Z",
-      "githubChecks": "success"
+      "githubChecks": "success",
+      "previousNotes": [
+        "vai para o lote 21e"
+      ],
+      "previousBatch": "21e"
     },
     {
       "id": "pr-644",
       "title": "Friends: connect account profiles and fix Home card taps",
       "status": "APROVADA",
       "sha": "cfa18b3ec",
-      "batch": "21e",
-      "note": "vai para o lote 21e",
+      "batch": null,
+      "note": "vai para o lote 21e Fora da ponta do 21e conforme o relato VPS da linha 165; aprovação anterior preservada, sem novo lote atribuído.",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "Relato VPS",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/644",
       "number": 644,
       "branch": "agente/21z-pr644",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "updatedAt": "2026-11-24T03:03:21+00:00",
+      "reportedAt": "2026-11-23T21:28:00+00:00",
       "integrationVerified": false,
       "githubState": "open",
       "githubCheckedAt": "2026-11-23T19:29:42+00:00",
       "githubHeadSha": "c3b91227815e7ca77cfdcf7fd471917360f5a50b",
       "githubBaseBranch": "master",
       "githubUpdatedAt": "2026-10-23T02:59:01Z",
-      "githubChecks": "success"
+      "githubChecks": "success",
+      "previousNotes": [
+        "vai para o lote 21e"
+      ],
+      "previousBatch": "21e"
     },
     {
       "id": "pr-749",
       "title": "webOS: improve DTS/TrueHD, Dolby Vision playback and buffering",
       "status": "APROVADA",
       "sha": "ebee382e7",
-      "batch": "21e",
-      "note": "vai para o lote 21e",
+      "batch": null,
+      "note": "vai para o lote 21e Fora da ponta do 21e conforme o relato VPS da linha 165; aprovação anterior preservada, sem novo lote atribuído.",
       "group": "correcoes",
       "wave": null,
       "dependencies": [],
-      "source": "Relato VPS",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
       "verified": false,
       "url": "https://github.com/iqui27/nuvio-native-legacy/pull/749",
       "number": 749,
       "branch": "agente/21z-pr749",
-      "updatedAt": "2026-11-23T03:47:09+00:00",
-      "reportedAt": "2026-11-23T03:45:00+00:00",
+      "updatedAt": "2026-11-24T03:03:21+00:00",
+      "reportedAt": "2026-11-23T21:28:00+00:00",
       "integrationVerified": false,
       "githubState": "open",
       "githubCheckedAt": "2026-11-23T19:29:42+00:00",
       "githubHeadSha": "87f985e97eb7d07d3540ba3b02fe7a1ca89a15a9",
       "githubBaseBranch": "master",
       "githubUpdatedAt": "2026-11-16T02:21:04Z",
-      "githubChecks": "success"
+      "githubChecks": "success",
+      "previousNotes": [
+        "vai para o lote 21e"
+      ],
+      "previousBatch": "21e"
     },
     {
       "id": "issue-751",
@@ -3810,7 +4185,10 @@
       "items": [
         "farol-6"
       ],
-      "note": "Validação em TV pendente; correção FAROL6C ainda em andamento. Não confundir aprovação de testes host com TV."
+      "note": "TV física permanece pendente. Pin 386873fc33 aprovado com ressalva P2 pela POLITICA e incluído no candidato 21f, ainda não integrado; testar player externo/retorno QR e registrar o caso 403 terminal em VOD Xtream limitado. Cancelamento do FAROL6I foi solicitado, não confirmado como concluído.",
+      "previousNotes": [
+        "Validação em TV pendente; correção FAROL6C ainda em andamento. Não confundir aprovação de testes host com TV."
+      ]
     },
     {
       "id": "tv-farol8",
@@ -3873,6 +4251,21 @@
       ],
       "note": "PR #841 integrada, sem validação em TV física. Conferir Home/navegação, perfil sem login, legendas #751/#786 e eventos do player em LG, Android e Samsung. Integração e testes host não encerram este gate.",
       "source": "https://github.com/iqui27/nuvio-native-legacy/pull/841"
+    },
+    {
+      "id": "tv-21f",
+      "title": "TV física e ressalvas do candidato 21f",
+      "kind": "tv",
+      "status": "pendente",
+      "items": [
+        "farol-6",
+        "farol-11",
+        "farol-30",
+        "farol-40",
+        "farol-46",
+        "issue-728"
+      ],
+      "note": "Candidato ainda não integrado. Validar em TV sem confundir os dirigidos host com hardware. Ressalvas P2 de #6 (403 terminal/stall), #40 (contagem/duração) e #46 (IDs/rótulos contraditórios) seguem em revisao/LOTE-21F-RESSALVAS-QA.md; não bloqueiam a aprovação pela POLITICA. Tizen/webOS com SDKs e QA pendentes."
     }
   ],
   "batches": [
@@ -3919,9 +4312,10 @@
       "title": "Lote 21e · integrado",
       "status": "FEITO",
       "sha": "121b2ca867",
-      "note": "PR #841 mergeada em integracao/2.1 em 23/11 às 19h12min48s (Brasília), merge 015d181d45; ponta publicada 121b2ca867. Doze entregas com SHAs ancestrais confirmados, incluindo #751/#786 via pilha/21; o total Farol integrado passa a 24/56. Os dois commits após e34f0ddc5d alteram somente tests/addons_patch_transport.py e tests/farol_home.c, conferidos no git. Publicação concluída; não permanece bloqueada por credencial da VPS. TV física e empacotamento com SDKs continuam pendentes. A PR reporta bateria parcial e deltas dirigidos: Node 21 passaram e duas falhas iguais à base; ASan+UBSan 5/5; TSan forçado 4/5 e rc 66 em farol_home, com nFils também reproduzido na base e avisos adicionais de fils/espera da fixture. nav21 teve timeouts a 360/900 s nos dois lados; bateria ampla ainda não fechada. Testes são reportados pela VPS, não executados aqui. Cinco itens apenas previstos para 21e (728, 772 e PRs 761/644/749) não tiveram SHAs confirmados e não foram promovidos a integrados. Fixture D1 simulada de 21 modelos não verifica ancestralidade do D1 real.",
+      "note": "PR #841 mergeada em integracao/2.1 em 23/11 às 19h12min48s (Brasília), merge 015d181d45; ponta publicada 121b2ca867. Doze entregas com SHAs ancestrais confirmados, incluindo #751/#786 via pilha/21; o total Farol integrado passa a 24/56. Os dois commits após e34f0ddc5d alteram somente tests/addons_patch_transport.py e tests/farol_home.c, conferidos no git. Publicação concluída; não permanece bloqueada por credencial da VPS. TV física e empacotamento com SDKs continuam pendentes. A PR reporta bateria parcial e deltas dirigidos: Node 21 passaram e duas falhas iguais à base; ASan+UBSan 5/5; TSan forçado 4/5 e rc 66 em farol_home, com nFils também reproduzido na base e avisos adicionais de fils/espera da fixture. nav21 teve timeouts a 360/900 s nos dois lados; bateria ampla ainda não fechada. Testes são reportados pela VPS, não executados aqui. VPS informa #772 e PRs #761/#644/#749 fora da ponta (linha 165). #728 segue no candidato 21f; seu SHA é ancestral de 99be71994e, mas não de 015d181d45, conferido no git. Nenhum dos cinco foi promovido a integrado. A VPS reiterou às 00h26 UTC que a bateria ampla do 21e continua. Fixture D1 simulada de 21 modelos não verifica ancestralidade do D1 real.",
       "pr": 841,
       "previousNotes": [
+        "PR #841 mergeada em integracao/2.1 em 23/11 às 19h12min48s (Brasília), merge 015d181d45; ponta publicada 121b2ca867. Doze entregas com SHAs ancestrais confirmados, incluindo #751/#786 via pilha/21; o total Farol integrado passa a 24/56. Os dois commits após e34f0ddc5d alteram somente tests/addons_patch_transport.py e tests/farol_home.c, conferidos no git. Publicação concluída; não permanece bloqueada por credencial da VPS. TV física e empacotamento com SDKs continuam pendentes. A PR reporta bateria parcial e deltas dirigidos: Node 21 passaram e duas falhas iguais à base; ASan+UBSan 5/5; TSan forçado 4/5 e rc 66 em farol_home, com nFils também reproduzido na base e avisos adicionais de fils/espera da fixture. nav21 teve timeouts a 360/900 s nos dois lados; bateria ampla ainda não fechada. Testes são reportados pela VPS, não executados aqui. Cinco itens apenas previstos para 21e (728, 772 e PRs 761/644/749) não tiveram SHAs confirmados e não foram promovidos a integrados. Fixture D1 simulada de 21 modelos não verifica ancestralidade do D1 real.",
         "Sol retoma a bateria do 21e@e34f0ddc5d contra a base pós-#840 (integracao/2.1@96a939a5a6); resultado final ainda não informado. A tentativa Argon na montagem antiga 0dea681ce8 terminou com bloqueio do provedor e evidência parcial; não é resultado da ponta reconstruída. Validação dirigida anterior preservada: 15/15 dirigidos, ASan+UBSan 3/3, Node 21 passaram e duas falhas iguais à base. Isso não equivale a bateria atual concluída. Publicação ainda sem credencial na VPS; branch lote/21e e PR dessa origem continuam ausentes na nova consulta ao GitHub. TV física pendente; lote não integrado.",
         "Reconstruído localmente na VPS em lote/21e@e34f0ddc5d sobre integracao/2.1@96a939a5a6 (#840), preservando os dez itens e incluindo Farol 45@bae6663936. Testes reportados: dirigidos 15/15, ASan+UBSan 3/3; Node 21 passaram e duas falhas já existiam na base. Fixture D1 simulada do contrato de aparelho corrigida (21 modelos); isso não verifica a ancestralidade do D1 real. Publicação bloqueada na VPS sem escrita no GitHub; branch e PR dessa origem ausentes na consulta. Repositório local pronto para publicação e PR com merge commit. TV física pendente; lote não integrado.",
         "reconstruído localmente sobre integracao/2.1@96a939a5a6, preservados os dez itens; dirigido 15/15, ASan+UBSan 3/3, Node 21 passaram e duas falhas iguais à base; fixture D1 atualizada; relatório revisao/LOTE-21E-840.md; TV física pendente",
@@ -4080,18 +4474,109 @@
           ],
           "crossSyntax": "70/70",
           "deltas": "Validação dirigida independente; suíte ampla nos SHAs originais da matriz"
+        },
+        "latestVpsReport": {
+          "at": "2026-11-24T00:26:00+00:00",
+          "sourceLine": 209,
+          "note": "Bateria ampla continua na VPS; sem fechamento reportado"
         }
       },
       "githubState": "merged",
       "mergeSha": "015d181d4599d0b1164e003a627e37606b816394",
       "mergedAt": "2026-11-23T22:12:48Z",
-      "plannedItemsUnconfirmed": [
+      "plannedItemsUnconfirmed": [],
+      "lastVpsConfirmationAt": "2026-11-24T00:26:00+00:00",
+      "previousPlannedItemsUnconfirmed": [
         "issue-728",
         "issue-772",
         "pr-761",
         "pr-644",
         "pr-749"
-      ]
+      ],
+      "plannedItemsExcluded": [
+        "issue-772",
+        "pr-761",
+        "pr-644",
+        "pr-749",
+        "issue-728"
+      ],
+      "plannedItemDisposition": {
+        "sourceLine": 165,
+        "reportedExcluded": [
+          "issue-772",
+          "pr-761",
+          "pr-644",
+          "pr-749"
+        ],
+        "movedToCandidate21f": "issue-728"
+      }
+    },
+    {
+      "id": "21f",
+      "title": "Lote 21f · pronto localmente",
+      "status": "LOTE",
+      "branch": "lote/21f",
+      "sha": "99be71994e",
+      "fullSha": "99be71994e78b84a885a63e62b25ed4494d03f9f",
+      "treeSha": "01734938464e0a228c9fdf297aed1e467d78d602",
+      "baseBranch": "integracao/2.1",
+      "baseSha": "015d181d4599d0b1164e003a627e37606b816394",
+      "pr": null,
+      "integrationVerified": false,
+      "verified": false,
+      "items": [
+        "farol-6",
+        "farol-11",
+        "farol-30",
+        "farol-40",
+        "farol-46",
+        "issue-728"
+      ],
+      "updatedAt": "2026-11-24T03:03:21+00:00",
+      "source": "Relatos VPS 214–221 + candidato e ausência de PR conferidos no GitHub",
+      "publication": {
+        "status": "A_FAZER",
+        "githubBranchExists": false,
+        "githubPrNumber": null,
+        "githubCandidateBranchExists": true,
+        "candidateBranch": "agente/base-21f-lote",
+        "candidateSha": "99be71994e78b84a885a63e62b25ed4494d03f9f",
+        "requiredMergeMethod": "merge_commit",
+        "checkedAt": "2026-11-24T03:05:58+00:00",
+        "note": "Somente agente/base-21f-lote está publicado para revisão na IBM. lote/21f existe localmente na VPS; não há branch lote/21f nem PR no GitHub na consulta. Publicação e integração ficam com o Poke; não há bloqueio de credencial afirmado."
+      },
+      "previousBuilds": [
+        {
+          "sha": "6ba3f431a5ed4c3bafe5d104d396768131e610a6",
+          "treeSha": "671dbe7c887a140fc322a808654ccc5ed6266122",
+          "sourceLine": 214
+        }
+      ],
+      "note": "Candidato 21f pronto localmente em 99be71994e (árvore 0173493846), sobre integracao/2.1@015d181d45: Faróis 6@386873fc33, 11@52328b164e, 30@dc6db69bb3, 40@7e14590c2b, 46@3718e82674 e #728@a69626eef. SHAs confirmados como ancestrais do candidato nesta VM, não da integração. Aprovações de 6/40/46 têm ressalvas pela POLITICA; r11 do delta b7106d207a foi reprovada sem revogar o pin 7e14590c2b da #52. Dirigidos combinados fechados conforme VPS às 01h05 UTC: farol_detalhe normal/ASan/thread RC 0 após ampliar timeout de compilação; três fixtures TPK RC 0/0/0; tpk-dts-reabrir mantém 19 falhas herdadas. Dois 124 anteriores eram timeout de compilação, não falhas de teste. Delta de quatro scripts TPK aprovado independentemente conforme VPS. Isso não fecha a bateria ampla do 21e. Branch lote/21f somente local; agente/base-21f-lote publicada só para revisão IBM, sem PR nem merge na consulta ao GitHub. Faróis 14, 48 e 52 não fazem parte deste candidato. TV física, SDKs e QA das ressalvas continuam pendentes.",
+      "reportedAt": "2026-11-24T01:05:00+00:00",
+      "previousNotes": [
+        "Branch local `lote/21f@99be71994e78b84a885a63e62b25ed4494d03f9f` (árvore `01734938464e0a228c9fdf297aed1e467d78d602`) criada em `/home/ubuntu/nuvio-qa-21/global/repo` via fetch --no-tags --no-write-fetch-head de `objects.git`, sem checkout/merge/push. GitHub `integracao/2.1` segue em `015d181d45`. Publicação/merge ficam com o Poke.",
+        "Dirigidos combinados sem regressão bloqueante. `farol_detalhe` ASan/normal/thread RC 0 após reteste com timeout maior (os 124 eram estouro de compilação 300 s, não falha). TPK: 3 fixtures RC 0/0/0; `tpk-dts-reabrir` RC 1/1/1 com as mesmas 19 falhas herdadas de `sol-f115r1`. Matriz e logs em `lotes/revisao/evidencias/BATERIA-21f-99be71994e`.",
+        "SWE-2 Flash pelo Pi recebeu o acompanhamento da bateria e a montagem local de `lote/21f`, condicionada ao fechamento dos dirigidos. Task `nuvio-lote-21f-fechamento-flash-99be71994e`. Revisão independente aprovou o delta de quatro scripts TPK. `tpk728_ack` passou RC 0/0/0 e Detalhe gráfico passou no reteste normal. A publicação de lote e a integração ficam com o Poke.",
+        "Os fixtures novos do #728 retornaram RC 1 por símbolos Farol na linkedição contra 21e. Delta de quatro scripts liga `farolerro`, `farolanel` e `fontesonda` de produção e respeita `CC`. Novo candidato privado `99be71994e78b84a885a63e62b25ed4494d03f9f`, árvore `01734938464e0a228c9fdf297aed1e467d78d602`. A suíte Node do Farol 40 passou 40/40. Reteste TPK e gates combinados seguem na VPS.",
+        "Composição privada com Faróis 6, 11, 30, 40 e 46 e #728 sobre `015d181d45`. Candidato `6ba3f431a5ed4c3bafe5d104d396768131e610a6`, árvore `671dbe7c887a140fc322a808654ccc5ed6266122`, diff-check RC 0. Dirigidos em execução na VPS."
+      ],
+      "candidateAncestryVerified": true,
+      "battery": {
+        "status": "reported_closed",
+        "scope": "dirigidos combinados do candidato 21f",
+        "finalResultReported": true,
+        "sourceLine": 220,
+        "reportedAt": "2026-11-24T01:05:00+00:00",
+        "executedLocally": false,
+        "testsReported": {
+          "farolDetalhe": "normal/ASan/thread RC 0 após ampliar timeout de compilação",
+          "tpkFixtures": "três fixtures RC 0/0/0",
+          "tpkDtsReabrir": "RC 1/1/1, mesmas 19 falhas herdadas de sol-f115r1",
+          "nodeFarol40": "40/40"
+        },
+        "doesNotCloseBroad21eBattery": true
+      }
     }
   ],
   "outside": [
@@ -4109,6 +4594,939 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-24T03:05:00+00:00",
+      "appliedAt": "2026-11-24T03:07:54+00:00",
+      "item": "ibm-ephemeral",
+      "from": null,
+      "to": null,
+      "report": "2026-11-24 03:05 [CAPACIDADE] ibm-ephemeral · T3 atualizado para 0.1.12-nightly (t3_thread_read e callbacks ok); Docker nuvio-build:2.1 e rodar-testes.sh prontos; claudeAgent liberado para revisões/impl/testes na IBM; FAROL48-r7 (ad3396b55a) recuperado como APROVADO",
+      "vpsLine": 248,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reportedStatus": "CAPACIDADE"
+    },
+    {
+      "at": "2026-11-24T03:05:00+00:00",
+      "appliedAt": "2026-11-24T03:07:54+00:00",
+      "item": "farol-48",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "Farol 48@ad3396b55a aprovado na r7: parecer da IBM recuperado após atualização do T3, conforme VPS. Sem integração, lote adicional ou TV inferidos.",
+      "derived": true,
+      "relatedVpsLine": 248,
+      "source": "Relato VPS · linha 248"
+    },
+    {
+      "at": "2026-11-24T03:04:00+00:00",
+      "appliedAt": "2026-11-24T03:07:54+00:00",
+      "item": "farol-14",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-24 03:04 [REVISAO] farol-14 · FAROL14-r3 relançada na VPS com Sol via Codex (main/auto/gpt-6.2-sol) em `1652812ef9` (IBM em 0.1.9 não devolve texto pela API).",
+      "vpsLine": 245,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reportedStatus": "REVISAO"
+    },
+    {
+      "at": "2026-11-24T03:04:00+00:00",
+      "appliedAt": "2026-11-24T03:07:54+00:00",
+      "item": "farol-52",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-24 03:04 [REVISAO] farol-52 · FAROL52-r1 lançada na VPS com Sol via Codex (main/auto/gpt-6.2-sol) em `7a52488283`.",
+      "vpsLine": 246,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reportedStatus": "REVISAO"
+    },
+    {
+      "at": "2026-11-24T03:04:00+00:00",
+      "appliedAt": "2026-11-24T03:07:54+00:00",
+      "item": "farol-48",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-24 03:04 [REVISAO] farol-48 · FAROL48-r7 relançada na VPS com Sol via Codex (main/auto/gpt-6.2-sol) em `ad3396b55a` (IBM em 0.1.9 não devolve texto pela API).",
+      "vpsLine": 247,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reportedStatus": "REVISAO"
+    },
+    {
+      "at": "2026-11-24T02:59:00+00:00",
+      "appliedAt": "2026-11-24T03:07:54+00:00",
+      "item": "infra",
+      "from": null,
+      "to": null,
+      "report": "2026-11-24 02:59 [CORRECAO] infra · poke-enviar.sh trocado para chave persistente (linhas 163-240 entregues); capataz corrigido para não cutucar orquestrador em falha; claudeAgent logado na ibm-ephemeral, mas T3 0.1.9 lá impede leitura de retorno (usar só para push até atualizar)",
+      "vpsLine": 244,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reportedStatus": "CORRECAO"
+    },
+    {
+      "at": "2026-11-24T02:56:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-52",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "report": "2026-11-24 02:56 [ENTREGA] farol-52 · `7a52488283` concluída na IBM (Gemini Hydrogen, 8 arquivos, +3853/−58, conflito trivial de #include em src/app.c vs 21f, Poke intocado).",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "ENTREGA",
+      "vpsLine": 241
+    },
+    {
+      "at": "2026-11-24T02:56:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "coordenacao-antigravity/claude",
+      "from": null,
+      "to": null,
+      "report": "2026-11-24 02:56 [INFRA] antigravity/claude · cota de Opus e Sonnet no Antigravity esgotada até ~05h11 UTC. FAROL52-r1 aguarda reset do Codex main às 03h02 UTC.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "INFRA",
+      "coordination": true,
+      "vpsLine": 242
+    },
+    {
+      "at": "2026-11-24T02:56:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "capataz",
+      "from": null,
+      "to": null,
+      "report": "2026-11-24 02:56 [STATUS] capataz · alertas das 02h45 (FAROL6I, FAROL14 impl VPS, FAROL48-r6 Sol) eram tarefas antigas já encerradas/substituídas. Na IBM: FAROL48-r7 concluída (coletando parecer via outputSchema) e FAROL14-r3 rodando. Raiz VPS 26G livres (11G em /tmp de outros projetos).",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "STATUS",
+      "coordination": true,
+      "vpsLine": 243
+    },
+    {
+      "at": "2026-11-24T02:45:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "orquestrador",
+      "from": null,
+      "to": null,
+      "report": "2026-11-24 02:45 [BLOQUEADA] orquestrador · capataz · último turno FALHOU no modelo claude-opus-5-5 (provável cota/429); trocar o modelo do orquestrador (t3_thread_configure) e reenviar a ordem",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "BLOQUEADA",
+      "coordination": true,
+      "vpsLine": 240
+    },
+    {
+      "at": "2026-11-24T02:34:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-14",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-24 02:34 [CORRECAO] farol-14 · FAROL14C entregue em `1652812ef9` (SWE-2 via Pi): contrato do anel restaurado, API nova para os eventos recentes; suíte farol_* verde na ponta e com 21f. Publicado no GitHub agente/21z-farol-14 (fast-forward de 7ecfed55bb).",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 238
+    },
+    {
+      "at": "2026-11-24T02:34:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-14",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-24 02:34 [REVISAO] farol-14 · r3 com Opus na ibm-ephemeral (Codex main sem cota até 03h02).",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 239
+    },
+    {
+      "at": "2026-11-24T02:30:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "coordenacao-codex/main",
+      "from": null,
+      "to": null,
+      "report": "2026-11-24 02:30 [INFRA] codex/main · cota do Codex (rota main) esgotada até 24/11 03h02 UTC (HTTP 429); nova retentativa da antiga FAROL48-r6 caiu e foi cancelada. Revisões até lá com Opus (antigravity VPS ou IBM).",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "INFRA",
+      "coordination": true,
+      "vpsLine": 237
+    },
+    {
+      "at": "2026-11-24T02:21:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "coordenacao-codex/macbook",
+      "from": null,
+      "to": null,
+      "report": "2026-11-24 02:21 [INFRA] codex/macbook · login do Codex na rota macbook revogado (HTTP 401); a antiga FAROL48-r6 (Sol, macbook) caiu, já substituída pela r6b do Opus. Revisões Sol seguem pela rota main/auto.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "INFRA",
+      "coordination": true,
+      "vpsLine": 236
+    },
+    {
+      "at": "2026-11-24T02:10:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-24 02:10 [CORRECAO] farol-48 · FAROL48F entregue em `ad3396b55a` (Gemini Hydrogen VPS): leitura única do catálogo em abrirPorIndice e chamadores; teste determinístico novo; corrida real RC 0; merge rc 0 com 21e/21f.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 233
+    },
+    {
+      "at": "2026-11-24T02:10:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "coordenacao-GitHub",
+      "from": null,
+      "to": null,
+      "report": "2026-11-24 02:10 [PUBLICACAO] GitHub · `agente/21z-farol-48@ad3396b55a` e `agente/base-21f-lote@99be71994e` (candidato 21f, só para revisão na IBM; sem PR nem merge).",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "PUBLICACAO",
+      "coordination": true,
+      "vpsLine": 234
+    },
+    {
+      "at": "2026-11-24T02:10:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-24 02:10 [REVISAO] farol-48 · r7 com Opus na ibm-ephemeral (antigravity), sem ocupar a VPS.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 235
+    },
+    {
+      "at": "2026-11-24T01:52:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-14",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-24 01:52 [REVISAO] farol-14 · `3366f4cbaf` REPROVADO r2 (Sol): P1 da r1 resolvidos; regressão em farol_anel.sh (134) pela mudança em farolanel_ler_seq. → FAROL14C com o mesmo SWE-2 via Pi; r3 ao entregar.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 232
+    },
+    {
+      "at": "2026-11-24T01:45:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "coordenacao-ibm-ephemeral",
+      "from": null,
+      "to": null,
+      "report": "2026-11-24 01:45 [CAPACIDADE] ibm-ephemeral · antigravity com claude-opus-5-5/claude-sonnet-5-5 liberado para revisão de Gemini/SWE-2 e implementação; claudeAgent de lá ainda sem login.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CAPACIDADE",
+      "coordination": true,
+      "vpsLine": 231
+    },
+    {
+      "at": "2026-11-24T01:42:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-14",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-24 01:42 [REVISAO] farol-14 · FAROL14B entregue em `3366f4cbaf` (SWE-2 via Pi; 3 P1 e 2 P2 da r1 corrigidos, merge rc 0 com 21f, suítes verdes) → revisão r2 com Sol via Codex.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 230
+    },
+    {
+      "at": "2026-11-24T01:25:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-24 01:25 [REVISAO] farol-48 · `ca22596b41` REPROVADO r6 (Opus/Antigravity): bloqueios da r5 resolvidos; crash novo por ponteiro nulo em abrirPorIndice (dupla leitura do catálogo na republicação em outro fio), pai 0 × ponta/21f 139. Evidências revisao/evidencias/FAROL48-r6/.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 228
+    },
+    {
+      "at": "2026-11-24T01:25:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-24 01:25 [CORRECAO] farol-48 · FAROL48F despachada para Gemini Hydrogen na VPS sobre ca22596b41 (brief revisao/correcoes/CORRECAO-FAROL48F-brief.md); r7 ao entregar.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 229
+    },
+    {
+      "at": "2026-11-24T01:16:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-14",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-24 01:16 [REVISAO] farol-14 · `7ecfed55bb` REPROVADO r1 (Sol): farol_home.sh quebra por assinaturas de video_audio/video_faixa_dts; reset de sessão reaproveita erro anterior; HTTP 403 do debrid perde RECONECTAR_DEBRID. Merge rc 0 com pai e 21f.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 226
+    },
+    {
+      "at": "2026-11-24T01:16:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-14",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-24 01:16 [CORRECAO] farol-14 · FAROL14B despachada para SWE-2 via Pi na VPS sobre 7ecfed55bb (brief revisao/correcoes/CORRECAO-FAROL14B-brief.md); r2 com Sol ao entregar.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 227
+    },
+    {
+      "at": "2026-11-24T01:05:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21f",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-24 01:05 [BATERIA] lote 21f FECHADA · Dirigidos combinados sem regressão bloqueante. `farol_detalhe` ASan/normal/thread RC 0 após reteste com timeout maior (os 124 eram estouro de compilação 300 s, não falha). TPK: 3 fixtures RC 0/0/0; `tpk-dts-reabrir` RC 1/1/1 com as mesmas 19 falhas herdadas de `sol-f115r1`. Matriz e logs em `lotes/revisao/evidencias/BATERIA-21f-99be71994e`.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "BATERIA",
+      "vpsLine": 220
+    },
+    {
+      "at": "2026-11-24T01:05:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21f",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-24 01:05 [MONTAGEM] lote 21f · Branch local `lote/21f@99be71994e78b84a885a63e62b25ed4494d03f9f` (árvore `01734938464e0a228c9fdf297aed1e467d78d602`) criada em `/home/ubuntu/nuvio-qa-21/global/repo` via fetch --no-tags --no-write-fetch-head de `objects.git`, sem checkout/merge/push. GitHub `integracao/2.1` segue em `015d181d45`. Publicação/merge ficam com o Poke.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "MONTAGEM",
+      "vpsLine": 221
+    },
+    {
+      "at": "2026-11-24T01:04:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-14",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "report": "2026-11-24 01:04 [REVISAO] farol-14 · `7ecfed55bb` entregue pela IBM (Gemini Hydrogen) → revisão r1 com Sol via Codex, composição com lote/21f@99be71994e.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 223
+    },
+    {
+      "at": "2026-11-24T01:04:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-24 01:04 [REVISAO] farol-48 · `ca22596b41` → revisão r6b com Opus via Antigravity (high): bloqueios da r5 e verificação de estabilidade por ponteiro nulo no acesso ao catálogo.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 224
+    },
+    {
+      "at": "2026-11-24T01:04:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "coordenacao-implementação",
+      "from": null,
+      "to": null,
+      "report": "2026-11-24 01:04 [PAUSA] implementação · 1/6 vagas (farol-52 na IBM). Nada mais liberado: a onda 2 depende do aceite da #14 e o Gosto depende de #19, #22, #25, #31 ou #52. Lista em capataz/PAUSA até 02h30.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "PAUSA",
+      "coordination": true,
+      "vpsLine": 225
+    },
+    {
+      "at": "2026-11-24T01:02:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "orquestrador",
+      "from": null,
+      "to": null,
+      "report": "2026-11-24 01:02 [CORRECAO] orquestrador · turno no Sol recusado por cyber_policy; movido para Opus 5.5 (antigravity), mesma thread; oracle-vps",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "coordination": true,
+      "vpsLine": 222
+    },
+    {
+      "at": "2026-11-24T00:56:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-24 00:56 [REVISAO_INTERROMPIDA] farol-48 · Sol r6 em `ca22596b41` interrompido pelo filtro do provedor (`cyber_policy`) antes do parecer. Retestes normais da r5 confirmados pelo revisor. `farol_dica` RC 0 nos três modos na ponta e no merge com 21e. Sonda isolada de consulta ao catálogo: RC normal 0 no pai e 139 na ponta e no combinado 21f. Em ASan+UBSan, pai RC 124 e ponta/combinado RC 1 por acesso a `CatItem` nulo. Resultados parciais em `/mnt/block-volume/nuvio-runs/farol48-r6-review.eKB2E0/logs`. Alcance no app e classificação pela POLITICA pendentes. Farol 48 segue fora do candidato 21f.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO_INTERROMPIDA",
+      "vpsLine": 219
+    },
+    {
+      "at": "2026-11-24T00:47:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-24 00:47 [REVISAO] farol-48 · Gemini Hydrogen entregou `ca22596b41768b4eb424a414e644f1f2270aa642` sobre `b52a3e764dac54498e5bec5b90255c450dbad29a`. Ref, pai e diff-check conferidos. Merges simulados limpos com 21e (`2e88379a1e`) e candidato 21f (`c4fb31678b`). Sol r6 despachado em `nuvio-farol48-r6-ca22596b` para retestar os bloqueios r5, classificar os casos herdados e conferir a combinação com o Farol 46. TV física pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 218
+    },
+    {
+      "at": "2026-11-24T00:42:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21f",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-24 00:42 [BATERIA] lote 21f · SWE-2 Flash pelo Pi recebeu o acompanhamento da bateria e a montagem local de `lote/21f`, condicionada ao fechamento dos dirigidos. Task `nuvio-lote-21f-fechamento-flash-99be71994e`. Revisão independente aprovou o delta de quatro scripts TPK. `tpk728_ack` passou RC 0/0/0 e Detalhe gráfico passou no reteste normal. A publicação de lote e a integração ficam com o Poke.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "BATERIA",
+      "vpsLine": 216
+    },
+    {
+      "at": "2026-11-24T00:41:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "modelos",
+      "from": null,
+      "to": null,
+      "report": "2026-11-24 00:41 [CORRECAO] modelos · SWE-2 e SWE-2 Flash liberados via Pi (grátis) para correção especificada e trabalho mecânico; Devin ACP segue parado; oracle-vps",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "coordination": true,
+      "vpsLine": 217
+    },
+    {
+      "at": "2026-11-24T00:37:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21f",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-24 00:37 [RETESTE] lote 21f · Os fixtures novos do #728 retornaram RC 1 por símbolos Farol na linkedição contra 21e. Delta de quatro scripts liga `farolerro`, `farolanel` e `fontesonda` de produção e respeita `CC`. Novo candidato privado `99be71994e78b84a885a63e62b25ed4494d03f9f`, árvore `01734938464e0a228c9fdf297aed1e467d78d602`. A suíte Node do Farol 40 passou 40/40. Reteste TPK e gates combinados seguem na VPS.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "RETESTE",
+      "vpsLine": 215
+    },
+    {
+      "at": "2026-11-24T00:32:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-46",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-24 00:32 [APROVADO_COM_RESSALVAS] farol-46 · `3718e82674` · Reavaliação r6 pela POLITICA. O D-pad voltou a mostrar Animation e Comédia com um único candidato da mesma década antes e depois do TMDB. Os dois achados remanescentes exigem ID e rótulo contraditórios na chamada ou na resposta simulada do TMDB, também no pai, e ficam como P2 para QA. A solução CATREV da revisão foi reaplicada e a árvore conferida.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "APROVADO_COM_RESSALVAS",
+      "vpsLine": 213
+    },
+    {
+      "at": "2026-11-24T00:32:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21f",
+      "from": "LOTE",
+      "to": "LOTE",
+      "report": "2026-11-24 00:32 [BATERIA] lote 21f · Composição privada com Faróis 6, 11, 30, 40 e 46 e #728 sobre `015d181d45`. Candidato `6ba3f431a5ed4c3bafe5d104d396768131e610a6`, árvore `671dbe7c887a140fc322a808654ccc5ed6266122`, diff-check RC 0. Dirigidos em execução na VPS.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "BATERIA",
+      "vpsLine": 214
+    },
+    {
+      "at": "2026-11-24T00:32:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-6",
+      "from": "APROVADA",
+      "to": "LOTE",
+      "report": "farol-6 incluído na composição privada do 21f; sem publicação de lote, merge ou TV confirmados.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "derived": true,
+      "relatedVpsLine": 214
+    },
+    {
+      "at": "2026-11-24T00:32:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-11",
+      "from": "APROVADA",
+      "to": "LOTE",
+      "report": "farol-11 incluído na composição privada do 21f; sem publicação de lote, merge ou TV confirmados.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "derived": true,
+      "relatedVpsLine": 214
+    },
+    {
+      "at": "2026-11-24T00:32:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-30",
+      "from": "APROVADA",
+      "to": "LOTE",
+      "report": "farol-30 incluído na composição privada do 21f; sem publicação de lote, merge ou TV confirmados.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "derived": true,
+      "relatedVpsLine": 214
+    },
+    {
+      "at": "2026-11-24T00:32:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "APROVADA",
+      "to": "LOTE",
+      "report": "farol-40 incluído na composição privada do 21f; sem publicação de lote, merge ou TV confirmados.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "derived": true,
+      "relatedVpsLine": 214
+    },
+    {
+      "at": "2026-11-24T00:32:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-46",
+      "from": "APROVADA",
+      "to": "LOTE",
+      "report": "farol-46 incluído na composição privada do 21f; sem publicação de lote, merge ou TV confirmados.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "derived": true,
+      "relatedVpsLine": 214
+    },
+    {
+      "at": "2026-11-24T00:32:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "issue-728",
+      "from": "APROVADA",
+      "to": "LOTE",
+      "report": "issue-728 incluído na composição privada do 21f; sem publicação de lote, merge ou TV confirmados.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "derived": true,
+      "relatedVpsLine": 214
+    },
+    {
+      "at": "2026-11-24T00:28:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "APROVADA",
+      "to": "APROVADA",
+      "report": "2026-11-24 00:28 [REPROVADO] farol-40 · r11 em `b7106d207a`: os casos r10 passam. O gate de contrato encontrou duração contraditória e agregado global atribuído à lista errada também no pai. O pin da #52 segue em `7e14590c2b`. As reproduções entraram no roteiro do 21f.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REPROVADO",
+      "reviewSha": "b7106d207a",
+      "scope": "unselected_delta",
+      "vpsLine": 212
+    },
+    {
+      "at": "2026-11-24T00:27:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-14",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-24 00:27 [IMPLEMENTANDO] farol-14 · Gemini Hydrogen em ibm-ephemeral · base `agente/base-21f-farol-14@386873fc3377649dc4f0587f31d5ff17e628072d` publicada e conferida. Entrega `agente/21z-farol-14`, task nuvio-21f-farol14-ibm-worktree-386873fc. Cancelamento da tarefa anterior da VPS solicitado. Build e testes na VPS. #19 tem prioridade após o aceite da fachada.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "IMPLEMENTANDO",
+      "vpsLine": 210
+    },
+    {
+      "at": "2026-11-24T00:27:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-52",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "2026-11-24 00:27 [IMPLEMENTANDO] farol-52 · Gemini Hydrogen em ibm-ephemeral · base `agente/base-21f-farol-52@132c0de06ae92ba525ca05a8ad0a28e42b517a00` publicada e conferida, com 21e e os Faróis 30 e 40 aprovados. Entrega `agente/21z-farol-52`, task nuvio-21f-farol52-ibm-132c0de0. HTTP e build na VPS.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "IMPLEMENTANDO",
+      "vpsLine": 211
+    },
+    {
+      "at": "2026-11-24T00:26:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21e",
+      "from": "FEITO",
+      "to": "FEITO",
+      "report": "2026-11-24 00:26 [MERGEADO] lote 21e · GitHub `integracao/2.1@015d181d4599d0b1164e003a627e37606b816394` contém a #841 e o ancestral `121b2ca867`. A bateria ampla segue na VPS.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "MERGEADO",
+      "historicalOnly": true,
+      "vpsLine": 209
+    },
+    {
+      "at": "2026-11-24T00:18:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-14",
+      "from": "BLOQUEADA",
+      "to": "A_FAZER",
+      "report": "Gate de aprovação de farol-6 satisfeito; farol-14 liberado para iniciar, sem integração ou TV inferidas.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "derived": true,
+      "relatedVpsLine": 205
+    },
+    {
+      "at": "2026-11-24T00:18:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-6",
+      "from": "CORRECAO",
+      "to": "APROVADA",
+      "report": "2026-11-24 00:18 [APROVADO_COM_RESSALVAS] farol-6 · agente/21z-farol-6@386873fc33 · Reavaliação r8 pela POLITICA: P2 de borda no 403 terminal em VOD Xtream limitado no quadro do vencimento por stall. Recusa JNI da r7 e controles de reconexão passaram. Entra no 21f, ressalva para notas e QA, e gate de aprovação da #14 satisfeito. Cancelamento do FAROL6I solicitado no T3 (…581b).",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "APROVADO_COM_RESSALVAS",
+      "vpsLine": 205
+    },
+    {
+      "at": "2026-11-24T00:18:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-52",
+      "from": "BLOQUEADA",
+      "to": "A_FAZER",
+      "report": "Gate de aprovação de farol-40 satisfeito; farol-52 liberado para iniciar, sem integração ou TV inferidas.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "derived": true,
+      "relatedVpsLine": 206
+    },
+    {
+      "at": "2026-11-24T00:18:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "report": "2026-11-24 00:18 [APROVADO_COM_RESSALVAS] farol-40 · agente/21z-farol-40@7e14590c2b · Reavaliação r10 pela POLITICA: três P2 de contagem e duração em achados. Dirigido 40/40 e controles r9 passaram. SHA revisado entra no 21f com cobertura para QA. Gate de aprovação da #52 satisfeito. A correção para b7106d207a já terminou e a r11 desse delta segue. Merge simulado conjunto de 6 e 40 limpo (6831ab0459). Notas em revisao/LOTE-21F-RESSALVAS-QA.md.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "APROVADO_COM_RESSALVAS",
+      "vpsLine": 206
+    },
+    {
+      "at": "2026-11-24T00:18:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-46",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-24 00:18 [REPROVADO] farol-46 · agente/21z-farol-46@4c98112707 · Reavaliação r5 pela POLITICA: mantém P1 no caminho principal do selo. OK pelo D-pad omite a fileira pedida com título elegível antes e depois do TMDB. Casos isolados de rótulo/ID são P2 e o conflito CATREV tem solução simples. FAROL46G 3718e82674 em r6 (…d935).",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REPROVADO",
+      "reviewSha": "4c98112707",
+      "scope": "older_revision",
+      "vpsLine": 207
+    },
+    {
+      "at": "2026-11-24T00:18:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "CORRECAO",
+      "to": "CORRECAO",
+      "report": "2026-11-24 00:18 [REPROVADO] farol-48 · agente/21z-farol-48@b52a3e764d · Reavaliação r5 pela POLITICA: mantém P1 pela regressão de episódio de B aplicado a A na Ilha e pelo Play manual que inicia outro episódio no mesmo quadro da lista final. Relacionados sem arte fica como P2. Correção (…e7a0) segue pelos P1.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REPROVADO",
+      "vpsLine": 208
+    },
+    {
+      "at": "2026-11-24T00:11:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-24 00:11 [REVISAO] farol-40 · agente/21z-farol-40@b7106d207a · Hydrogen entregou a correção dos três achados r10. Ref, pai, diff-check e merge-tree a3f9da9179 com 121b2ca867 conferidos. Relata dirigido 41/41, 999 resultados por variante na ponta e no merge e 1.329 cenas no C sob ASan+UBSan. Sol r11 lançado (…8323). Issue 52 bloqueada e aceite HTTP em TV pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 204
+    },
+    {
+      "at": "2026-11-24T00:10:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-24 00:10 [CORRECAO] farol-48 · agente/21z-farol-48@b52a3e764d · Sol r5 REPROVADO. O link externo da r4 passou. Com B sem arte, Ilha aplica o episódio de B a A e Relacionados cancela a retomada de A. Os dois casos dão RC 0/0 no pai e 48/48 na ponta e no merge. Play manual perde para P2 no mesmo quadro da lista final nos três recortes, RC 46/46. Correção despachada ao Gemini Hydrogen (…e7a0). App completo, Intent e TV física pendentes.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 203
+    },
+    {
+      "at": "2026-11-24T00:02:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-46",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-24 00:02 [REVISAO] farol-46 · agente/21z-farol-46@3718e82674 · Hydrogen entregou FAROL46G. Ref, pai e diff-check conferidos. Merge-tree com 121b2ca867 confirmou conflito único em src/mapa.c. Implementação relata gênero da mesma década e ID canônico RC 134→0, com CATREV e Mapa nos três modos em cópia resolvida. Sol r6 lançado (…d935) com 32G livres na raiz. Parte dos testes gráficos precisou repetir com LSan desativado após aviso Mesa/SDL EGL. TV física e TMDB real pendentes.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 202
+    },
+    {
+      "at": "2026-11-23T23:59:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 23:59 [CORRECAO] farol-40 · agente/21z-farol-40@7e14590c2b · Sol r10 REPROVADO. Três P2 em achados: l2 pode contradizer duração e quantidade dos cartazes, dois índices com o mesmo IMDb contam em dobro, e fatos de fora da lista sustentam ou vetam a contagem. Três casos da r9 passaram, dirigido 40/40 na ponta e no merge e 1.347 respostas renderizadas em C sob ASan+UBSan. Correção despachada ao Gemini Hydrogen (…26b3), raiz com 34G livres. Issue 52 bloqueada e aceite HTTP em TV pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 201
+    },
+    {
+      "at": "2026-11-23T23:53:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 23:53 [REVISAO] farol-48 · agente/21z-farol-48@b52a3e764d · Hydrogen entregou a correção r4 do pedido de Play durante a espera P2. Ref, pai, diff-check e merge-tree 34ba92c5d8 com 121b2ca867 conferidos. Relata link externo e Play manual RC 46 no pai e 0 na ponta e no merge em normal e ASan+UBSan. Sol r5 lançado (…a3a7). TSan limitado ao núcleo e TV física pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 200
+    },
+    {
+      "at": "2026-11-23T23:48:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-6",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 23:48 [CORRECAO] farol-6 · agente/21z-farol-6@386873fc33 · Sol r8 REPROVADO. A segunda tentativa após recusa JNI da r7 passou. No VOD Xtream limitado, um 403 terminal no vencimento reabre a fonte e a ponta congela a posição pública e perde a recuperação da próxima queda. Sonda 0/0/0 no pai e 1/1/1 na ponta. Ref, pai e SHA-256 da evidência conferidos. FAROL6I despachado ao Gemini Hydrogen (…581b). Issue 14 bloqueada e TV física pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 199
+    },
+    {
+      "at": "2026-11-23T23:47:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 23:47 [REVISAO] farol-40 · agente/21z-farol-40@7e14590c2b · Hydrogen entregou a correção dos três achados r9. Ref, pai, diff-check e merge-tree 3289a29cef com 121b2ca867 conferidos. Relata dirigido 37/40 no pai com testes novos e 40/40 na ponta e no merge, 662 casos por variante e 792 cenas no renderer C sob ASan+UBSan. Sol r10 lançado (…185e). Issue 52 bloqueada e aceite HTTP em TV pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 198
+    },
+    {
+      "at": "2026-11-23T23:36:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-6",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 23:36 [REVISAO] farol-6 · agente/21z-farol-6@386873fc33 · Hydrogen entregou FAROL6H. Ref, pai, ancestral 121b2ca867 e diff-check conferidos. Relata sonda da recusa JNI 1/1/1 no pai e 0/0/0 na ponta, com retestes de falha terminal, reconexão e produtores verdes. Sol r8 lançado (…6258). Issue 14 bloqueada e TV física pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 197
+    },
+    {
+      "at": "2026-11-23T23:29:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 23:29 [CORRECAO] farol-40 · agente/21z-farol-40@2d96f64d13 · Sol r9 REPROVADO. Fatos contraditórios aprovam temporada e duração, e achados pode contar filme de 240 min como curto. Casos da r8 passaram e dirigido 37/37 na ponta e no merge. Correção despachada ao Gemini Hydrogen (…254b). Issue 52 bloqueada.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 196
+    },
+    {
+      "at": "2026-11-23T23:28:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 23:28 [CORRECAO] farol-48 · agente/21z-farol-48@70fc480b4c · Sol r4 REPROVADO. Link externo para B durante a espera P2 de A perde o Play, RC 0 no pai e 46 na ponta e no merge. Os três casos da r3 passaram. Correção despachada ao Gemini Hydrogen (…c5ed). TV física pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 195
+    },
+    {
+      "at": "2026-11-23T23:27:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-46",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 23:27 [CORRECAO] farol-46 · agente/21z-farol-46@4c98112707 · Sol r5 REPROVADO. O único candidato do gênero some da fileira do selo quando a fileira de época o reserva. Os casos Animation EN/EN da r4, homônimos e CATREV em 121b2ca867 passaram. FAROL46G despachado ao Gemini Hydrogen (…32e8). TV física pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 194
+    },
+    {
+      "at": "2026-11-23T23:20:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-6",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 23:20 [CORRECAO] farol-6 · agente/21z-farol-6@be06d09f45 · Sol r7 REPROVADO. A intercalação da r6 foi corrigida. Recusa JNI síncrona na primeira reabertura VOD perde a próxima tentativa e deixa o backend reconectando. Sonda 0/0/0 no pai e 1/1/1 na ponta. FAROL6H despachado ao Gemini Hydrogen (…b9e5). Issue 14 bloqueada e TV física pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 192
+    },
+    {
+      "at": "2026-11-23T23:20:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 23:20 [REVISAO] farol-40 · agente/21z-farol-40@2d96f64d13 · Sol r9 lançado (…e111) na vaga liberada do Farol 6. Revisão independente da duração, motivos e dicas episódicas no alvo 121b2ca867. Issue 52 segue bloqueada.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 193
+    },
+    {
+      "at": "2026-11-23T23:18:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 23:18 [REVISAO] farol-40 · agente/21z-farol-40@2d96f64d13 · Hydrogen entregou a correção r8 de elegibilidade de duração e dicas episódicas. Ref, pai, diff-check e merge-tree com 121b2ca867 conferidos. Informa dirigido 37/37 na ponta e no merge, corpus 488/488 e 108 cenas na sonda C entre pai, ponta e merge. R9 aguarda primeira vaga de revisão, ocupadas por 6, 46 e 48. Issue 52 bloqueada.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 191
+    },
+    {
+      "at": "2026-11-23T23:16:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 23:16 [REVISAO] farol-48 · agente/21z-farol-48@70fc480b4c · Hydrogen publicou a correção r3 localmente e encerrou sem a matriz final. Ref, pai e diff-check conferidos. Os binários deixados no run abortaram na adoção da dica antes do despacho em pai e ponta. Sol r4 lançado (…e2d4) para reprodução independente e merge simulado com 121b2ca867. TV física pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 190
+    },
+    {
+      "at": "2026-11-23T23:07:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-6",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 23:07 [REVISAO] farol-6 · agente/21z-farol-6@be06d09f45 · Hydrogen entregou FAROL6G com separação de erro pendente e consumido. Ref, pai, ancestral 121b2ca867 e diff-check conferidos. Informa sonda r6 de 1/1/1 no pai para 0/0/0 na ponta, com quatro gates focais 0/0/0. Sol r7 lançado (…d1c8). Issue 14 e TV física pendentes.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 189
+    },
+    {
+      "at": "2026-11-23T23:02:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 23:02 [CORRECAO] farol-40 · agente/21z-farol-40@3c5ee2a01e · Sol r8 REPROVADO. Dica de 240 min sem evidência elegível e motivo de 120 min com limite de 60 renderizaram em miss, hit e KV semeado. Casos da r7, dirigido 34/34, corpus 488/488 e merge-tree passaram. Correção despachada ao Gemini Hydrogen (…2eae). Issue 52 bloqueada.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 187
+    },
+    {
+      "at": "2026-11-23T23:02:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-46",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 23:02 [REVISAO] farol-46 · agente/21z-farol-46@4c98112707 · Hydrogen entregou FAROL46F com gênero canônico e guarda de homônimos. Ref, pai e diff-check conferidos. Relata 48/48 dirigidos na ponta e 36/36 na cópia resolvida com e34f0ddc5d. Sol r5 lançado (…d0a2) para validação independente no alvo 121b2ca867, incluindo conflito de mapa.c com CATREV. TV física pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 188
+    },
+    {
+      "at": "2026-11-23T22:51:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 22:51 [REVISAO] farol-40 · agente/21z-farol-40@3c5ee2a01e · Hydrogen entregou a correção r7. Ref, pai e diff-check conferidos. Relata dirigido 34/34 na ponta e no merge com 121b2ca867, sonda C com 15 cenas e corpus 488/488. Sol r8 lançado (…1564) para revisão independente. Issue 52 bloqueada.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 186
+    },
+    {
+      "at": "2026-11-23T22:43:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-6",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 22:43 [CORRECAO] farol-6 · agente/21z-farol-6@5a8dfa064b · Sol r6 REPROVADO. Um erro atual de B pendente durante a classificação de um erro legado de A autoriza a URL de B no player externo. Sonda com Intent dublada RC 1/1/1. Retestes da r5 e ABI passaram. FAROL6G despachado ao Gemini Hydrogen (…f4ed). Issue 14 bloqueada e TV física pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 185
+    },
+    {
+      "at": "2026-11-23T22:34:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 22:34 [CORRECAO] farol-40 · agente/21z-farol-40@f43884bd12 · Sol r7 REPROVADO. Eixos do candidato cruzam filme e série na dica e no comparador. FT_DICA_CURTO aceita 160 min sob limite de 100 min quando a duração vem do fato. Os dois casos da r6, dirigido 32/32, corpus 488/488 e merge-tree passaram. Correção despachada ao Gemini Hydrogen (…14d0). Issue 52 bloqueada.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 184
+    },
+    {
+      "at": "2026-11-23T22:28:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-6",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 22:28 [REVISAO] farol-6 · agente/21z-farol-6@5a8dfa064b · Hydrogen entregou FAROL6F. Ref, pais do merge 9627d3ff5f e diff-check conferidos. Produtores TV, erro Android, Resolver e regra informados 0/0/0 em normal, ASan+UBSan e TSan. Sol r6 lançado (…c853). Issue 14 e validação em TV física pendentes.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 183
+    },
+    {
+      "at": "2026-11-23T22:24:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 22:24 [REVISAO] farol-40 · agente/21z-farol-40@f43884bd12 · Hydrogen entregou a correção r6. Ref, pai e diff-check conferidos. Relata dirigido 32/32 na ponta e no merge simulado com 121b2ca867, sonda C 8/8 e corpus 488/488. Sol r7 lançado (…1d63) para revisão independente. Issue 52 segue bloqueada.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 182
+    },
+    {
+      "at": "2026-11-23T22:14:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 22:14 [CORRECAO] farol-40 · agente/21z-farol-40@8528c188e8 · Sol r6 REPROVADO. Candidato sem tipo cruza fatos de filme e série na dica em miss e hit. Variação de nome público invalida âncora de IMDb único com a mesma chave. Casos originais da r5, dirigido 30/30, corpus 488/488, sonda C e merge-tree passaram. Gemini Hydrogen corrige na mesma branch (…a3da). Issue 52 bloqueada até nova aprovação independente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 181
+    },
     {
       "at": "2026-11-23T22:12:48Z",
       "appliedAt": "2026-11-23T22:17:28+00:00",
@@ -4253,6 +5671,193 @@
       "mergeSha": "015d181d4599d0b1164e003a627e37606b816394"
     },
     {
+      "at": "2026-11-23T22:07:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-6",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 22:07 [CORRECAO] farol-6 · agente/21z-farol-6@cf74408198 · Sol r5 REPROVADO. Corrida em ativo sob TSan, JNI legada tardia abre B, índice antigo permite episódio bloqueado com player aberto e fixture de produtores quebra no merge antes da adaptação. Conflito em video_android.c com 121b2ca867 tem resolução ensaiada. FAROL6F em curso com Hydrogen (…1768). Issue 14 e TV física pendentes.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 180
+    },
+    {
+      "at": "2026-11-23T22:04:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 22:04 [REVISAO] farol-40 · agente/21z-farol-40@8528c188e8 · Hydrogen entregou resolução única de identidade por fato e chave que preserva sua precedência. Ref, pai e diff-check conferidos. Dirigido 30/30, sonda C 12/12 e merge-tree limpo com 121b2ca867 informados. Sol r6 lançado (…2736). Issue 52 segue bloqueada.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 179
+    },
+    {
+      "at": "2026-11-23T22:01:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 22:01 [CORRECAO] farol-48 · agente/21z-farol-48@5cb329824d · Sol r3 REPROVADO: lista atrasada pode tocar outro título, disparar após Voltar ou atravessar troca de geração da sessão. Sondas rc 47 na ponta e no merge. T4E6 e Continuar comum passaram. Hydrogen corrige a espera P2 na mesma branch (…1b77). TV física pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 178
+    },
+    {
+      "at": "2026-11-23T21:50:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21e",
+      "from": "FEITO",
+      "to": "FEITO",
+      "report": "2026-11-23 21:50 [APROVADA] lote-21e · contador do dublê da Home publicado na #841 em 121b2ca8673754d904ed25b7ee2ab40a713741b9 após revisão Sol. TSan deixou de acusar pedidosCatalogo. A sonda dirigida reproduziu nFils na base e na ponta original com a mesma carga; o Farol ainda dá rc 66 e também acusou fils e a espera da fixture na rodada completa. PR e relatório atualizados. Bateria ampla continua nos SHAs originais.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "APROVADA",
+      "historicalOnly": true,
+      "vpsLine": 177
+    },
+    {
+      "at": "2026-11-23T21:49:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 21:49 [CORRECAO] farol-40 · agente/21z-farol-40@14dce5607f · Sol r5 REPROVADO: aliases conflitantes cruzam obras na dica e a ordem dos fatos pode mudar a saída com a mesma chave. R4, privacidade e corpus passaram. Gemini Hydrogen corrige na mesma branch (…d3cc); issue 52 segue bloqueada.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 176
+    },
+    {
+      "at": "2026-11-23T21:48:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-6",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 21:48 [REVISAO] farol-6 · agente/21z-farol-6@cf74408198 · Hydrogen entregou FAROL6E com geração JNI e trava no player externo. Ref, pai e diff-check conferidos. Conflito em src/video_android.c com o 21e tem ensaio em 1fde8822ff e ajuste de fixture a validar. Sol r5 lançado (…69ff); issue 14 e TV física pendentes.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 175
+    },
+    {
+      "at": "2026-11-23T21:46:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 21:46 [REVISAO] farol-48 · agente/21z-farol-48@5cb329824d · Hydrogen entregou o transporte de identidade e T/E até Reproduzir, inclusive na espera por metadados. Ref, pai e diff-check conferidos. Dirigido normal/ASan/TSan informado 0/0/0 na ponta. Sol r3 (…57f4) revisa o fluxo contra lote/21e@244d675c04. TV física pendente.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 174
+    },
+    {
+      "at": "2026-11-23T21:43:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21e",
+      "from": "FEITO",
+      "to": "FEITO",
+      "report": "2026-11-23 21:43 [APROVADA] lote-21e · correção do teste PATCH WGT publicada na #841 em 244d675c04dc1a634a140309818b62e50b822887. Diff idêntico ao patch aprovado pelo Sol (base 0, ponta original 1, ponta corrigida 0, três mutantes reprovados e dois testes focais da sonda verdes). Corpo da PR atualizado. Bateria ampla nos SHAs originais e revisão TSan da Home continuam.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "APROVADA",
+      "historicalOnly": true,
+      "vpsLine": 173
+    },
+    {
+      "at": "2026-11-23T21:40:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "report": "2026-11-23 21:40 [REVISAO] farol-40 · agente/21z-farol-40@14dce5607f · Hydrogen entregou os quatro reparos da r4 com dirigido 28/28, sonda C 5/5 e merge-tree limpo contra o 21e informados. Ref, pai e diff-check conferidos. Sol r5 em execução (…afe8); issue 52 continua bloqueada.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "vpsLine": 172
+    },
+    {
+      "at": "2026-11-23T21:38:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21e",
+      "from": "FEITO",
+      "to": "FEITO",
+      "report": "2026-11-23 21:38 [REVISAO] lote-21e · Hydrogen tornou atômico o contador do dublê de farol_home. Normal/ASan+UBSan passaram; TSan segue rc 66 e agora acusa nFils entre a publicação parcial e a leitura do Continuar. Os dois acessos ao catálogo já existem na base; reprodução comparável ainda pendente. Sol revisa o patch e a paridade com a base (…e1be). Ponta da #841 permanece e34f0ddc5d.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "historicalOnly": true,
+      "vpsLine": 171
+    },
+    {
+      "at": "2026-11-23T21:37:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21e",
+      "from": "FEITO",
+      "to": "FEITO",
+      "report": "2026-11-23 21:37 [REVISAO] lote-21e · Hydrogen entregou patch restrito a tests/addons_patch_transport.py (correcoes/21e-teste-patch.patch). Dirigido informado base 0, ponta 1, ponta corrigida 0; mutações de rota e método falharam. Sol revisa o patch de forma independente (…1286). Ponta da #841 permanece e34f0ddc5d.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "REVISAO",
+      "historicalOnly": true,
+      "vpsLine": 170
+    },
+    {
+      "at": "2026-11-23T21:34:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21e",
+      "from": "FEITO",
+      "to": "FEITO",
+      "report": "2026-11-23 21:34 [CORRECAO] lote-21e · ponta e34f0ddc5d REPROVADA até reteste do PATCH WGT. Sol confirmou addons_pull_enabled rc 0/0 na base e 1/1 na ponta, antes das asserções. Checkpoint 21:34: 57 ok e 1.420 pendentes na base, 63 ok e 1.428 pendentes na ponta. Supervisor e finalizador da bateria ampla seguem ativos com os dois SHAs.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "historicalOnly": true,
+      "vpsLine": 169
+    },
+    {
+      "at": "2026-11-23T21:32:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21e",
+      "from": "FEITO",
+      "to": "FEITO",
+      "report": "2026-11-23 21:32 [CORRECAO] lote-21e · a bateria detectou addons_pull_enabled.sh verde na base e com falha de compilação na ponta. A #841 registra o achado. Hydrogen prepara patch do teste PATCH (…373e) e patch do dublê TSan farol_home (…113c) para revisão independente. Ponta publicada permanece e34f0ddc5d.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "historicalOnly": true,
+      "vpsLine": 168
+    },
+    {
+      "at": "2026-11-23T21:30:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21d",
+      "from": "FEITO",
+      "to": "FEITO",
+      "report": "2026-11-23 21:30 [FEITO] lote-21d · #839 mergeada às 18:52:48 UTC em ec4e6a0b52 · confirmada a ancestralidade das PRs 734/680/729, perfil sem login, Farol 44, nome da fonte desktop, reconciliação Mac e dos três commits de teste. ESCOPO e filas atualizados.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "FEITO",
+      "historicalOnly": true,
+      "vpsLine": 166
+    },
+    {
+      "at": "2026-11-23T21:30:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-40",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 21:30 [CORRECAO] farol-40 · agente/21z-farol-40@d727bbefbf · Sol r4 REPROVADO: fatos de obras diferentes na dica/comparação, fileira válida descartada no nono motivo e cache divergente para fatos equivalentes. Dirigido 24/24 e corpus 488/488 verdes. Gemini Hydrogen corrige na mesma branch (…6dee); issue 52 segue bloqueada.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 167
+    },
+    {
       "at": "2026-11-23T21:28:48Z",
       "appliedAt": "2026-11-23T22:17:28+00:00",
       "item": "lote-21e",
@@ -4261,6 +5866,92 @@
       "report": "GitHub: PR #841 aberta de lote/21e para integracao/2.1; ponta final conferida 121b2ca867. Publicação não equivale a integração ou TV validada.",
       "source": "GitHub PR #841: abertura confirmada retroativamente por createdAt; ponta final conforme headRefOid",
       "pr": 841
+    },
+    {
+      "at": "2026-11-23T21:28:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21e",
+      "from": "FEITO",
+      "to": "FEITO",
+      "report": "2026-11-23 21:28 [PR_ABERTA] lote-21e · lote/21e@e34f0ddc5d2585ccea35785ecb7d3c083b936d3f → integracao/2.1@96a939a5a6 · https://github.com/iqui27/nuvio-native-legacy/pull/841 · merge commit solicitado, #840 e dedupe da Home incluídos. Matriz parcial, corrida TSan no dublê de farol_home, bateria ampla rodando, TV física e pacotes Tizen/webOS pendentes. #751/#786 confirmados no delta de pilha/21; #772 e PRs #761/#644/#749 fora da ponta.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "PR_ABERTA",
+      "historicalOnly": true,
+      "vpsLine": 165
+    },
+    {
+      "at": "2026-11-23T21:28:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "issue-772",
+      "from": "APROVADA",
+      "to": "APROVADA",
+      "report": "issue-772 fora da ponta 21e conforme VPS; aprovação preservada, sem integração nem lote novo.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "derived": true,
+      "relatedVpsLine": 165
+    },
+    {
+      "at": "2026-11-23T21:28:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "pr-761",
+      "from": "APROVADA",
+      "to": "APROVADA",
+      "report": "pr-761 fora da ponta 21e conforme VPS; aprovação preservada, sem integração nem lote novo.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "derived": true,
+      "relatedVpsLine": 165
+    },
+    {
+      "at": "2026-11-23T21:28:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "pr-644",
+      "from": "APROVADA",
+      "to": "APROVADA",
+      "report": "pr-644 fora da ponta 21e conforme VPS; aprovação preservada, sem integração nem lote novo.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "derived": true,
+      "relatedVpsLine": 165
+    },
+    {
+      "at": "2026-11-23T21:28:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "pr-749",
+      "from": "APROVADA",
+      "to": "APROVADA",
+      "report": "pr-749 fora da ponta 21e conforme VPS; aprovação preservada, sem integração nem lote novo.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "derived": true,
+      "relatedVpsLine": 165
+    },
+    {
+      "at": "2026-11-23T21:25:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "lote-21d",
+      "from": "FEITO",
+      "to": "FEITO",
+      "report": "2026-11-23 21:25 [FEITO] lote-21d · PR #839 · mergeada 18:52 UTC (registro atrasado); credencial GitHub da VPS restaurada, lote 21e liberado para publicar; oracle-vps",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "FEITO",
+      "historicalOnly": true,
+      "vpsLine": 164
+    },
+    {
+      "at": "2026-11-23T21:23:00+00:00",
+      "appliedAt": "2026-11-24T03:03:21+00:00",
+      "item": "farol-48",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "report": "2026-11-23 21:23 [CORRECAO] farol-48 · agente/21z-farol-48@16e84d5fa6 · Sol r2 REPROVADO: série republicada entre montagem da dica e OK perde T4E6 no despacho e não reproduz. Dirigido nos três modos e gates Home/Assistiu verdes. Hydrogen corrige na mesma branch (…7be6); prova em TV física pendente",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "reconciliationRun": "vps-163-243",
+      "reportedStatus": "CORRECAO",
+      "vpsLine": 163
     },
     {
       "at": "2026-11-23T21:18:00+00:00",
