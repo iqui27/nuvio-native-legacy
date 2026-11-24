@@ -8,6 +8,7 @@
 #include "faroltexto.h"
 #include "ajustes.h"
 #include "anim.h"
+#include "arteurl.h"
 #include "botoes.h"
 #include "celular.h"
 #include "entrada_texto.h"
@@ -76,14 +77,26 @@ static struct {
   char           aviso[200];
 } V;
 
+static int modoTecladoPorVoz(void) {
+  if (forcaVoz >= 0) return 0;
+#if defined(NV_ANDROID)
+  return 0;
+#elif defined(NV_TPK) || defined(__EMSCRIPTEN__)
+  return st_voz_disponivel() ? 1 : 0;
+#else
+  return (st_voz_disponivel() && texto_sistema_voz_pelo_teclado()) ? 1 : 0;
+#endif
+}
+
 static int modoVoz(void) {
   if (forcaVoz >= 0) return forcaVoz ? 1 : 0;
+  if (modoTecladoPorVoz()) return 0;
   return (st_voz_disponivel() && !texto_sistema_voz_pelo_teclado()) ? 1 : 0;
 }
 
 static int modoIme(void) {
   if (forcaIme >= 0) return forcaIme ? 1 : 0;
-  return st_ime_disponivel() ? 1 : 0;
+  return (modoTecladoPorVoz() || st_ime_disponivel()) ? 1 : 0;
 }
 
 static int modoCel(void) {
@@ -136,20 +149,32 @@ static const char *iconeModo(FarolVozModo m) {
   return "aj_mic";
 }
 
+static void copiarUtf8Seguro(char *dst, size_t cap, const char *src) {
+  size_t n = 0;
+  if (!dst || !cap) return;
+  if (!src) { dst[0] = '\0'; return; }
+  while (src[n] && n + 1 < cap) n++;
+  if (src[n]) {
+    while (n > 0 && ((unsigned char)src[n] & 0xC0) == 0x80) n--;
+  }
+  memcpy(dst, src, n);
+  dst[n] = '\0';
+}
+
 static int normalizarFrase200(const char *src, char *dst, size_t cap) {
   char tmp[FAROL_BUSCA_FRASE_BYTES];
   size_t n;
   if (dst && cap) dst[0] = '\0';
+  if (!dst || cap < 2) return 0;
   if (!farolbusca_normalizar_frase(src, tmp, sizeof tmp)) return 0;
   n = strlen(tmp);
-  if (n > FAROL_BUSCA_FRASE_MAX) {
-    n = FAROL_BUSCA_FRASE_MAX;
+  if (n + 1 > cap) {
+    n = cap - 1;
     while (n > 0 && ((unsigned char)tmp[n] & 0xC0) == 0x80) n--;
     while (n > 0 && tmp[n - 1] == ' ') n--;
     tmp[n] = '\0';
     if (n == 0) return 0;
   }
-  if (!dst || n + 1 > cap) return 0;
   memcpy(dst, tmp, n + 1);
   return 1;
 }
@@ -260,14 +285,21 @@ static void iniciarEscuta(void) {
 }
 
 static void iniciarIme(void) {
+  int ok;
   fecharCelular();
   if (V.estado == FV_OUVINDO || V.estado == FV_DIGITANDO) st_fechar(ST_BUSCA);
   zerarFrases();
   V.modo = FV_MODO_IME;
   V.nivelVoz = 0.0f;
   V.pulsoMs = 0.0f;
-  st_ime_tipo(ST_IME_TEXTO);
-  if (st_ime_abrir(ST_BUSCA, "", FAROL_BUSCA_FRASE_MAX)) {
+  if (modoTecladoPorVoz()) {
+    st_voz_teclado_inicial("");
+    ok = st_voz_iniciar(ST_BUSCA);
+  } else {
+    st_ime_tipo(ST_IME_TEXTO);
+    ok = st_ime_abrir(ST_BUSCA, "", FAROL_BUSCA_FRASE_MAX);
+  }
+  if (ok) {
     V.estado = FV_DIGITANDO;
     V.foco = FV_FOCO_VOLTAR;
     if (ajustes_animacoes_reduzidas()) aplicarAnimacoesImediatas();
@@ -523,14 +555,14 @@ void farolvozui_atualizar(float dt, Uint32 agora, int *abriuAchados, int *pediuV
   }
 
   if (V.estado == FV_OUVINDO) {
-    char buf[FAROL_BUSCA_FRASE_BYTES];
+    char buf[NV_ARTE_URL_MAX + 1];
     int valorRec = 0;
     int r = st_ler_valor(ST_BUSCA, buf, sizeof buf, &valorRec);
     float nv = st_nivel();
     V.nivelVoz = red ? nv : anim_mola(V.nivelVoz, nv, dt, 18.0f);
 
     if (r == ST_TEXTO) {
-      if (valorRec) memcpy(V.parcial, buf, sizeof V.parcial);
+      if (valorRec) copiarUtf8Seguro(V.parcial, sizeof V.parcial, buf);
     } else if (r == ST_FIM) {
       char norm[FAROL_BUSCA_FRASE_BYTES];
       st_fechar(ST_BUSCA);
@@ -570,11 +602,11 @@ void farolvozui_atualizar(float dt, Uint32 agora, int *abriuAchados, int *pediuV
   }
 
   if (V.estado == FV_DIGITANDO) {
-    char buf[FAROL_BUSCA_FRASE_BYTES];
+    char buf[NV_ARTE_URL_MAX + 1];
     int valorRec = 0;
     int r = st_ler_valor(ST_BUSCA, buf, sizeof buf, &valorRec);
     if (r == ST_TEXTO) {
-      if (valorRec) memcpy(V.parcial, buf, sizeof V.parcial);
+      if (valorRec) copiarUtf8Seguro(V.parcial, sizeof V.parcial, buf);
     } else if (r == ST_FIM) {
       char norm[FAROL_BUSCA_FRASE_BYTES];
       st_fechar(ST_BUSCA);

@@ -151,6 +151,51 @@ assert 'ação suspense rápido' not in t, "frase QR vazou no log"
 assert 'filme curto samsung' not in t, "frase IME vazou no log"
 PY
 
+# Teste real compilado e executado com -DNV_TPK (release .tpk: Voz.cs + QR alternativo).
+tpk_strict_objs=()
+for f in src/farolvozui.c src/farolbusca.c src/farolbuscaparse.c \
+         src/resolver.c src/farolachaui.c tests/farol_frase_tv.c; do
+  o="$work/tpk_$(echo "$f" | tr / _).o"
+  "$ccbin" "${flags[@]}" -DNV_TPK -DRESOLVER_TESTE -DNV_SHOT_HOOKS \
+    -DNV_CEL_TEST_LOOPBACK -DCEL_VALIDADE_S=2 \
+    -I"$work" -Isrc -Itests $sdl_cf -c "$f" -o "$o"
+  tpk_strict_objs+=("$o")
+done
+
+"$ccbin" "${flags_base[@]}" -DNV_TPK -DNV_CEL_TEST_LOOPBACK -DCEL_VALIDADE_S=2 \
+  -Isrc $sdl_cf -c src/celular.c -o "$work/tpk_celular.o"
+
+"$ccbin" "${flags_base[@]}" -DNV_TPK -DRESOLVER_TESTE -DNV_SHOT_HOOKS \
+  "${tpk_strict_objs[@]}" "$work/extplayer.o" "$work/tpk_celular.o" \
+  src/qr.c src/farolacha.c \
+  src/resolverregra.c src/farolregra.c src/farol.c \
+  src/farolerro.c src/farolanel.c src/fontesonda.c \
+  src/addonguia.c src/addonmodo.c src/sistexto.c src/entrada_texto.c \
+  src/rede.c src/redeurl.c \
+  -I"$work" -Isrc -Itests $sdl_cf \
+  $(pkg-config --libs sdl2 2>/dev/null || echo -lSDL2) "${link_dl[@]+"${link_dl[@]}"}" -lm \
+  -o "$work/farol-frase-tv-tpk-test"
+
+rc=0
+if [ "${SANITIZE:-1}" = thread ] && command -v setarch >/dev/null 2>&1 &&
+   setarch "$(uname -m)" -R true 2>/dev/null; then
+  setarch "$(uname -m)" -R "$work/farol-frase-tv-tpk-test" "$base" "$work/count" >"$work/log-tpk" 2>&1 || rc=$?
+else
+  "$work/farol-frase-tv-tpk-test" "$base" "$work/count" >"$work/log-tpk" 2>&1 || rc=$?
+fi
+cat "$work/log-tpk"
+[ "$rc" = 0 ] || exit "$rc"
+
+python3 - "$work/log-tpk" "$base" <<'PY'
+import sys
+t = open(sys.argv[1]).read()
+assert sys.argv[2] not in t, "URL vazou no log TPK"
+assert 'sint_tok_tv32' not in t, "token vazou no log TPK"
+assert 'ação suspense tpk' not in t, "frase TPK vazou no log"
+assert 'parcial tpk' not in t, "parcial TPK vazou no log"
+assert 'suspense qr tpk' not in t, "frase QR TPK vazou no log"
+PY
+
 # Captura PNG 1920x1080 (QR celular real + previa UTF-8 + IME; limpa SDL_VIDEODRIVER=dummy).
 shot_fl=(-O1 -g -Isrc -DAJUSTES_TESTE -DAVISOS_TESTE_ENVIO -DRESOLVER_TESTE
          -DNV_FRASE_TV_SHOT -DNV_CEL_TEST_LOOPBACK -Wall -Wextra -Wno-deprecated-declarations)

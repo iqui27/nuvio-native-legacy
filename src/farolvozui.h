@@ -1,9 +1,15 @@
 // CAMADA DE ENTRADA E REVISAO DE FRASE DO FAROL (ADENDO-2.1.md #31 e #32).
 //
 // Fluxo por plataforma:
-//   - Android (voz == 1): botao "Falar" (FT_ACAO_FALAR) -> st_voz_iniciar ->
-//     FV_OUVINDO -> ST_FIM -> FV_REVISAO.
-//   - Samsung .tpk/.wgt e WASM (voz == 0 && ime == 1): botao "Teclado da TV"
+//   - Android (voz == 1 fora de TPK/WGT): botao "Falar" (FT_ACAO_FALAR) ->
+//     st_voz_iniciar -> FV_OUVINDO -> ST_FIM -> FV_REVISAO.
+//   - Samsung .tpk (release: st_voz_disponivel == 1, st_ime_disponivel == 0) e
+//     .wgt (__EMSCRIPTEN__, st_voz_disponivel == 1): botao "Teclado da TV"
+//     (FT_ACAO_TECLADO_TV) -> st_voz_iniciar(ST_BUSCA) -> FV_DIGITANDO com
+//     st_aviso() ("Aperte o microfone do controle e fale.") -> ST_FIM ->
+//     FV_REVISAO; quando celular_disponivel == 1 (.tpk), "Digitar pelo celular"
+//     (QR) segue acessivel como alternativa (FV_FOCO_ALT).
+//   - Demais plataformas com IME (voz == 0 && ime == 1): botao "Teclado da TV"
 //     (FT_ACAO_TECLADO_TV) -> st_ime_tipo(ST_IME_TEXTO) + st_ime_abrir ->
 //     FV_DIGITANDO -> ST_FIM -> FV_REVISAO.
 //   - LG webOS / QR celular (voz == 0 && cel == 1, ou alternancia quando

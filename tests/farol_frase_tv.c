@@ -380,7 +380,7 @@ static void extrair_host_path(const char *url, char *host, size_t nh,
 }
 
 static int enviar_post_celular(const char *url, int porta, const char *frase) {
-  char host[128], path[128], enc[1024], body[1100], req[2048], resp[4096];
+  char host[128], path[128], enc[3200], body[3300], req[4096], resp[4096];
   extrair_host_path(url, host, sizeof host, path, sizeof path);
   url_encode(frase, enc, sizeof enc);
   snprintf(body, sizeof body, "t=%s", enc);
@@ -406,6 +406,274 @@ static int fazer_get_celular(const char *url, int porta, char *resp, size_t cap)
   return http_loopback(porta, req, resp, cap);
 }
 
+static int contar_utf8_valido(const char *s) {
+  const unsigned char *p = (const unsigned char *)s;
+  int cps = 0;
+  if (!s) return -1;
+  while (*p) {
+    unsigned char c = *p;
+    long cp;
+    int extra, i;
+    if (c < 0x80) { p++; cps++; continue; }
+    if (c >= 0xC2 && c <= 0xDF)      { cp = c & 0x1F; extra = 1; }
+    else if (c >= 0xE0 && c <= 0xEF) { cp = c & 0x0F; extra = 2; }
+    else if (c >= 0xF0 && c <= 0xF4) { cp = c & 0x07; extra = 3; }
+    else return -1;
+    for (i = 1; i <= extra; i++) {
+      if ((p[i] & 0xC0) != 0x80) return -1;
+      cp = (cp << 6) | (p[i] & 0x3F);
+    }
+    if ((extra == 2 && cp < 0x800) || (extra == 3 && cp < 0x10000)) return -1;
+    if ((cp >= 0xD800 && cp <= 0xDFFF) || cp > 0x10FFFF) return -1;
+    p += extra + 1;
+    cps++;
+  }
+  return cps;
+}
+
+static void montar_rep_utf8(char *dst, size_t cap, char prefixo,
+                            const char *seq, int vezes) {
+  size_t pos = 0, sl = strlen(seq);
+  int i;
+  if (prefixo && pos + 1 < cap) dst[pos++] = prefixo;
+  for (i = 0; i < vezes && pos + sl < cap; i++) {
+    memcpy(dst + pos, seq, sl);
+    pos += sl;
+  }
+  dst[pos] = '\0';
+}
+
+#ifdef NV_TPK
+typedef void (*FnTpkVoz)(void);
+void nv_tpk_voz_registrar(FnTpkVoz iniciar, FnTpkVoz parar, int microfone);
+void nv_tpk_texto_valor(const char *v);
+void nv_tpk_texto_fim(int confirmou);
+int video_tpk_tizen_maior(void) { return 8; }
+
+static int T_iniciou;
+static int T_parou;
+static void hTpkIniciar(void) { T_iniciou++; }
+static void hTpkParar(void) { T_parou++; }
+
+static void bombear_tpk(void) {
+  SDL_Event ev;
+  texto_sistema_quadro();
+  while (SDL_PollEvent(&ev)) resolver_evento(&ev);
+}
+
+static int rodar_tpk_release(const char *base, const char *countFile) {
+  static const char *HINT = "Aperte o microfone do controle e fale.";
+  char rota[512];
+  long reqAntes;
+
+  CONFERE(SDL_Init(SDL_INIT_EVENTS) == 0);
+  zera_tudo();
+  seed_catalogo();
+  st_teste_ligar(0);
+  farolvozui_teste_modos(-1, -1, -1); // deteccao real da plataforma .tpk!
+  T_iniciou = 0;
+  T_parou = 0;
+
+  // Registro identico ao tizen-tpk/Voz.cs na build de release:
+  // st_ime_disponivel() == 0, st_voz_disponivel() == 1, celular_disponivel() == 1.
+  nv_tpk_voz_registrar(hTpkIniciar, hTpkParar, -1);
+  texto_sistema_mic_modo(TS_MIC_AUTO);
+  snprintf(rota, sizeof rota, "%s/misto", base);
+  farolbusca_definir_url(rota);
+
+  CONFERE(st_ime_disponivel() == 0);
+  CONFERE(st_voz_disponivel() == 1);
+  CONFERE(texto_sistema_voz_pelo_teclado() == 1);
+  CONFERE(celular_disponivel() == 1);
+  CONFERE(farolvozui_disponivel() == 1);
+  CONFERE(!strcmp(farolvozui_rotulo_botao(), FT_ACAO_TECLADO_TV));
+  CONFERE(!strcmp(farolvozui_icone_botao(), "aj_keyboard"));
+
+  resolver_abrir();
+  desenhar();
+  CONFERE(escreveu(FT_ACAO_TECLADO_TV));
+  varredura_fase(14, RESOLVER_FASE_INICIO, 0);
+
+  // OK abre via st_voz_iniciar(ST_BUSCA) -> hTpkIniciar, entra em FV_DIGITANDO com st_aviso().
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla_rep(SDLK_RETURN, 1);
+  CONFERE(!farolvozui_ativo() && T_iniciou == 0);
+  tecla_rep(SDLK_RETURN, 0);
+  CONFERE(T_iniciou == 1);
+  CONFERE(farolvozui_ativo() && farolvozui_estado() == FV_DIGITANDO);
+  CONFERE(farolvozui_modo_atual() == FV_MODO_IME);
+  CONFERE(st_estado() == ST_DIGITANDO && st_dono() == ST_BUSCA);
+  CONFERE(!strcmp(st_aviso(), HINT));
+  desenhar();
+  CONFERE(escreveu(HINT));
+  CONFERE(escreveu(FT_ACAO_DIGITAR_CELULAR));
+  varredura_fase(2, RESOLVER_FASE_SINTOMA, 1); // Cancelar + Digitar pelo celular
+
+  // Valor intermediario enquanto o teclado Samsung cobre a tela: nao dispara POST nem fecha.
+  reqAntes = ler_req_count(countFile);
+  nv_tpk_texto_valor("parcial tpk");
+  bombear_tpk();
+  desenhar();
+  CONFERE(farolvozui_estado() == FV_DIGITANDO);
+  CONFERE(!strcmp(st_aviso(), HINT));
+  CONFERE(ler_req_count(countFile) == reqAntes);
+
+  // ST_FIM -> FV_REVISAO com 0 POSTs antes do OK, st_aviso() limpo e 4 focos (com QR alternativo).
+  nv_tpk_texto_valor("  ação\n\t suspense   tpk  ");
+  nv_tpk_texto_fim(1);
+  bombear_tpk();
+  desenhar();
+  CONFERE(farolvozui_estado() == FV_REVISAO);
+  CONFERE(st_estado() == ST_PARADO);
+  CONFERE(!st_aviso()[0]);
+  CONFERE(!strcmp(farolvozui_frase(), "ação suspense tpk"));
+  CONFERE(ler_req_count(countFile) == reqAntes); // 0 POSTs!
+  CONFERE(escreveu(FT_VOCE_DISSE));
+  CONFERE(escreveu("ação suspense tpk"));
+  CONFERE(escreveu(FT_ACAO_TECLADO_TV));
+  CONFERE(escreveu(FT_ACAO_DIGITAR_CELULAR));
+  varredura_fase(4, RESOLVER_FASE_SINTOMA, 1);
+
+  // OK confirma (ignora repeat=1) -> busca -> Tela 7 (consulta A).
+  ir_foco(FV_FOCO_CONFIRMAR);
+  CONFERE(resolver_foco() == FV_FOCO_CONFIRMAR);
+  tecla_rep(SDLK_RETURN, 1);
+  CONFERE(farolvozui_estado() == FV_REVISAO && ler_req_count(countFile) == reqAntes);
+  tecla_rep(SDLK_RETURN, 0);
+  CONFERE(farolvozui_estado() == FV_BUSCANDO);
+  esperar_voz_ir_para_achados(3000);
+  CONFERE(!farolvozui_ativo() && resolver_fase() == RESOLVER_FASE_ACHAR);
+  CONFERE(farolachaui_n() == 3);
+  desenhar();
+  CONFERE(escreveu("ação suspense tpk"));
+  CONFERE(escreveu(FT_ACAO_TECLADO_TV));
+  varredura_fase(5, RESOLVER_FASE_ACHAR, 0);
+
+  // ST_CANCELOU a partir da Tela 7 fecha teclado e preserva Tela 7 intacta.
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  CONFERE(T_iniciou == 2 && farolvozui_estado() == FV_DIGITANDO);
+  nv_tpk_texto_fim(0);
+  bombear_tpk();
+  desenhar();
+  CONFERE(!farolvozui_ativo() && st_estado() == ST_PARADO && !st_aviso()[0]);
+  CONFERE(resolver_fase() == RESOLVER_FASE_ACHAR && farolachaui_n() == 3);
+  desenhar();
+  CONFERE(escreveu("ação suspense tpk"));
+
+  // Voltar do controle em FV_DIGITANDO chama st_fechar(ST_BUSCA) -> hTpkParar e preserva Tela 7!
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  CONFERE(T_iniciou == 3 && farolvozui_estado() == FV_DIGITANDO);
+  tecla(SDLK_ESCAPE);
+  bombear_tpk();
+  CONFERE(T_parou == 1);
+  CONFERE(!farolvozui_ativo() && st_estado() == ST_PARADO && !st_aviso()[0]);
+  CONFERE(resolver_fase() == RESOLVER_FASE_ACHAR && farolachaui_n() == 3);
+  desenhar();
+  CONFERE(escreveu("ação suspense tpk"));
+
+  // Alternancia FV_FOCO_ALT: Teclado da TV (st_voz_iniciar) <-> QR celular real!
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  CONFERE(T_iniciou == 4 && farolvozui_estado() == FV_DIGITANDO);
+  ir_foco(FV_FOCO_ALT);
+  tecla(SDLK_RETURN);
+  bombear_tpk();
+  CONFERE(T_parou == 2 && st_estado() == ST_PARADO);
+  CONFERE(farolvozui_estado() == FV_QR && celular_estado() == CEL_ESPERANDO);
+  varredura_fase(2, RESOLVER_FASE_ACHAR, 1); // Cancelar + Teclado da TV
+
+  // Volta do QR para Teclado da TV (st_voz_iniciar) -> fecha QR e reabre Samsung IME com st_aviso().
+  ir_foco(FV_FOCO_ALT);
+  tecla(SDLK_RETURN);
+  CONFERE(celular_estado() == CEL_PARADO);
+  CONFERE(T_iniciou == 5 && farolvozui_estado() == FV_DIGITANDO);
+  CONFERE(st_estado() == ST_DIGITANDO && !strcmp(st_aviso(), HINT));
+
+  // Volta ao QR e envia frase real por loopback HTTP -> FV_REVISAO (0 POSTs) -> Voltar preserva Tela 7.
+  ir_foco(FV_FOCO_ALT);
+  tecla(SDLK_RETURN);
+  bombear_tpk();
+  CONFERE(T_parou == 3 && farolvozui_estado() == FV_QR && celular_estado() == CEL_ESPERANDO);
+  {
+    char qrUrl[128], resp[4096];
+    int porta = celular_porta();
+    long reqQr = ler_req_count(countFile);
+    snprintf(qrUrl, sizeof qrUrl, "%s", celular_url());
+    CONFERE(fazer_get_celular(qrUrl, porta, resp, sizeof resp) == 200);
+    CONFERE(enviar_post_celular(qrUrl, porta, "suspense qr tpk") == 200);
+    desenhar();
+    CONFERE(farolvozui_estado() == FV_REVISAO && celular_estado() == CEL_PARADO);
+    CONFERE(!strcmp(farolvozui_frase(), "suspense qr tpk"));
+    CONFERE(ler_req_count(countFile) == reqQr); // 0 POSTs!
+    tecla(SDLK_ESCAPE);
+    CONFERE(!farolvozui_ativo() && resolver_fase() == RESOLVER_FASE_ACHAR);
+    CONFERE(farolachaui_n() == 3);
+  }
+
+  // Falha de abertura do host (nv_tpk_texto_fim(-1)) -> FV_AVISO sem beco (com QR alternativo).
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  CONFERE(T_iniciou == 6 && farolvozui_estado() == FV_DIGITANDO);
+  nv_tpk_texto_fim(-1);
+  bombear_tpk();
+  desenhar();
+  CONFERE(farolvozui_estado() == FV_AVISO);
+  varredura_fase(3, RESOLVER_FASE_ACHAR, 1); // Teclado da TV, Digitar pelo celular, Voltar
+  ir_foco(FV_FOCO_ALT);
+  tecla(SDLK_RETURN);
+  CONFERE(farolvozui_estado() == FV_QR && celular_estado() == CEL_ESPERANDO);
+  tecla(SDLK_ESCAPE);
+  CONFERE(!farolvozui_ativo() && celular_estado() == CEL_PARADO);
+
+  // Corte UTF-8 de 4 bytes (220 emojis -> 200 codepoints = 800 bytes) via ponte real TPK.
+  {
+    char emojis[1024];
+    long reqEmo = ler_req_count(countFile);
+    montar_rep_utf8(emojis, sizeof emojis, '\0', "\xF0\x9F\x8E\xAC", 220);
+    ir_foco(RESOLVER_B_ACHAR_VOZ);
+    tecla(SDLK_RETURN);
+    CONFERE(farolvozui_estado() == FV_DIGITANDO);
+    nv_tpk_texto_valor(emojis);
+    nv_tpk_texto_fim(1);
+    bombear_tpk();
+    desenhar();
+    CONFERE(farolvozui_estado() == FV_REVISAO);
+    CONFERE(contar_utf8_valido(farolvozui_frase()) == FAROL_BUSCA_FRASE_MAX);
+    CONFERE(strlen(farolvozui_frase()) == 800);
+    CONFERE(ler_req_count(countFile) == reqEmo);
+    tecla(SDLK_ESCAPE);
+    CONFERE(!farolvozui_ativo());
+  }
+
+  // Ajuste de microfone desligado no .tpk: cai graciosamente para QR celular.
+  texto_sistema_mic_modo(TS_MIC_DESLIGADO);
+  CONFERE(st_voz_disponivel() == 0 && st_ime_disponivel() == 0 && celular_disponivel() == 1);
+  CONFERE(farolvozui_disponivel() == 1);
+  CONFERE(!strcmp(farolvozui_rotulo_botao(), FT_ACAO_DIGITAR_CELULAR));
+  texto_sistema_mic_modo(TS_MIC_AUTO);
+
+  // Overrides de teste continuam funcionando no build -DNV_TPK.
+  farolvozui_teste_modos(0, 0, 0);
+  CONFERE(farolvozui_disponivel() == 0);
+  farolvozui_teste_modos(1, 1, 1);
+  CONFERE(!strcmp(farolvozui_rotulo_botao(), FT_ACAO_FALAR));
+  farolvozui_teste_modos(-1, -1, -1);
+
+  resolver_fechar();
+  farolbusca_encerrar();
+  SDL_Quit();
+
+  if (falhas) {
+    fprintf(stderr, "farol_frase_tv (NV_TPK): %d falha(s)\n", falhas);
+    return 1;
+  }
+  puts("farol_frase_tv (NV_TPK): Samsung .tpk release (teclado/mic + st_aviso + QR alt + UTF-8) ok");
+  return 0;
+}
+#endif
+
 int main(int argc, char **argv) {
   char rota[512];
   const char *base;
@@ -415,6 +683,12 @@ int main(int argc, char **argv) {
   if (argc != 3) return 2;
   base = argv[1];
   countFile = argv[2];
+
+#ifdef NV_TPK
+  (void)reqAntes;
+  (void)rota;
+  return rodar_tpk_release(base, countFile);
+#endif
 
   // ========================================================= 1. Tudo desligado (0, 0, 0)
   zera_tudo();
@@ -511,23 +785,78 @@ int main(int argc, char **argv) {
   CONFERE(!farolvozui_ativo());
   CONFERE(ler_req_count(countFile) == reqAntes);
 
-  // Corte UTF-8 <= 200 bytes no ST_FIM (nunca quebra sequencia multibyte!).
+  // Corte UTF-8 em 200 codepoints (nao 200 bytes): 2 bytes (acentos), 3 bytes (CJK),
+  // 4 bytes (emojis), <= 200 codepoints com > 200 bytes e espaco na fronteira 200.
   {
-    char longa[400];
-    size_t pos = 0;
-    longa[pos++] = 'D';
-    while (pos + 2 < 260) {
-      longa[pos++] = (char)0xC3; // 'é' (2 bytes UTF-8)
-      longa[pos++] = (char)0xA9;
-    }
-    longa[pos] = '\0';
+    char longa[1024];
+
+    // 150 x 'é' (300 bytes, 150 codepoints <= 200): NAO corta em 200 bytes!
+    montar_rep_utf8(longa, sizeof longa, 'D', "\xC3\xA9", 150);
     tecla(SDLK_RETURN);
     CONFERE(farolvozui_estado() == FV_DIGITANDO);
     st_teste_evento(longa);
     desenhar();
     CONFERE(farolvozui_estado() == FV_REVISAO);
-    CONFERE(strlen(farolvozui_frase()) <= 200);
-    CONFERE((strlen(farolvozui_frase()) % 2) == 0); // nao cortou 'é' no meio
+    CONFERE(contar_utf8_valido(farolvozui_frase()) == 150);
+    CONFERE(strlen(farolvozui_frase()) == 300);
+    tecla(SDLK_ESCAPE);
+    CONFERE(!farolvozui_ativo());
+
+    // 220 x 'é' (2 bytes UTF-8): corta em exatos 200 codepoints (400 bytes).
+    montar_rep_utf8(longa, sizeof longa, 'D', "\xC3\xA9", 220);
+    tecla(SDLK_RETURN);
+    CONFERE(farolvozui_estado() == FV_DIGITANDO);
+    st_teste_evento(longa);
+    desenhar();
+    CONFERE(farolvozui_estado() == FV_REVISAO);
+    CONFERE(contar_utf8_valido(farolvozui_frase()) == FAROL_BUSCA_FRASE_MAX);
+    CONFERE(strlen(farolvozui_frase()) == 400);
+    tecla(SDLK_ESCAPE);
+    CONFERE(!farolvozui_ativo());
+
+    // 220 x '漢' (3 bytes UTF-8, E6 BC A2): corta em exatos 200 codepoints (600 bytes).
+    montar_rep_utf8(longa, sizeof longa, 'D', "\xE6\xBC\xA2", 220);
+    tecla(SDLK_RETURN);
+    CONFERE(farolvozui_estado() == FV_DIGITANDO);
+    st_teste_evento(longa);
+    desenhar();
+    CONFERE(farolvozui_estado() == FV_REVISAO);
+    CONFERE(contar_utf8_valido(farolvozui_frase()) == FAROL_BUSCA_FRASE_MAX);
+    CONFERE(strlen(farolvozui_frase()) == 600);
+    tecla(SDLK_ESCAPE);
+    CONFERE(!farolvozui_ativo());
+
+    // 220 x '🎬' (4 bytes UTF-8, F0 9F 8E AC): corta em exatos 200 codepoints (800 bytes).
+    montar_rep_utf8(longa, sizeof longa, 'D', "\xF0\x9F\x8E\xAC", 220);
+    tecla(SDLK_RETURN);
+    CONFERE(farolvozui_estado() == FV_DIGITANDO);
+    st_teste_evento(longa);
+    desenhar();
+    CONFERE(farolvozui_estado() == FV_REVISAO);
+    CONFERE(contar_utf8_valido(farolvozui_frase()) == FAROL_BUSCA_FRASE_MAX);
+    CONFERE(strlen(farolvozui_frase()) == 800);
+    tecla(SDLK_ESCAPE);
+    CONFERE(!farolvozui_ativo());
+
+    // Fronteira 200 com espaco: 199 x 'é' + "   " + '漢' -> 199 codepoints (398 bytes), sem espaco no fim.
+    montar_rep_utf8(longa, sizeof longa, 'D', "\xC3\xA9", 199);
+    strncat(longa, "   \xE6\xBC\xA2", sizeof longa - strlen(longa) - 1);
+    tecla(SDLK_RETURN);
+    CONFERE(farolvozui_estado() == FV_DIGITANDO);
+    st_teste_evento(longa);
+    desenhar();
+    CONFERE(farolvozui_estado() == FV_REVISAO);
+    CONFERE(contar_utf8_valido(farolvozui_frase()) == 199);
+    CONFERE(strlen(farolvozui_frase()) == 398);
+    tecla(SDLK_ESCAPE);
+    CONFERE(!farolvozui_ativo());
+
+    // farolvozui_abrir_texto() com 220 emojis tambem respeita 200 codepoints (800 bytes).
+    montar_rep_utf8(longa, sizeof longa, '\0', "\xF0\x9F\x8E\xAC", 220);
+    CONFERE(farolvozui_abrir_texto(longa, RESOLVER_FASE_SINTOMA) == 1);
+    CONFERE(farolvozui_estado() == FV_REVISAO);
+    CONFERE(contar_utf8_valido(farolvozui_frase()) == FAROL_BUSCA_FRASE_MAX);
+    CONFERE(strlen(farolvozui_frase()) == 800);
     tecla(SDLK_ESCAPE);
     CONFERE(!farolvozui_ativo());
     CONFERE(ler_req_count(countFile) == reqAntes);
@@ -633,6 +962,36 @@ int main(int argc, char **argv) {
     tecla(SDLK_ESCAPE);
     CONFERE(!farolvozui_ativo());
     CONFERE(ler_req_count(countFile) == reqAntes);
+  }
+
+  // POST real no QR celular com mistura UTF-8 de 2, 3 e 4 bytes (> 200 codepoints):
+  // corta em exatos 200 codepoints (sem quebrar multibyte) e mantem 0 POSTs de busca!
+  tecla(SDLK_RETURN);
+  CONFERE(farolvozui_estado() == FV_QR && celular_estado() == CEL_ESPERANDO);
+  {
+    char qrUrl[128], resp[4096], mista[1024];
+    int porta = celular_porta();
+    size_t pos = 0;
+    int i;
+    reqAntes = ler_req_count(countFile);
+    snprintf(qrUrl, sizeof qrUrl, "%s", celular_url());
+    mista[pos++] = ' ';
+    for (i = 0; i < 70; i++) {
+      // 3 codepoints por iteracao: 'é' (2B) + '漢' (3B) + '🎬' (4B) = 9 bytes; 70*3 = 210 codepoints.
+      memcpy(mista + pos, "\xC3\xA9\xE6\xBC\xA2\xF0\x9F\x8E\xAC", 9);
+      pos += 9;
+    }
+    mista[pos] = '\0';
+    CONFERE(fazer_get_celular(qrUrl, porta, resp, sizeof resp) == 200);
+    CONFERE(enviar_post_celular(qrUrl, porta, mista) == 200);
+    desenhar();
+    CONFERE(farolvozui_estado() == FV_REVISAO && celular_estado() == CEL_PARADO);
+    // 66 triplas (198 cp, 594 B) + 'é' (1 cp, 2 B) + '漢' (1 cp, 3 B) = 200 codepoints, 599 bytes!
+    CONFERE(contar_utf8_valido(farolvozui_frase()) == FAROL_BUSCA_FRASE_MAX);
+    CONFERE(strlen(farolvozui_frase()) == 599);
+    CONFERE(ler_req_count(countFile) == reqAntes);
+    tecla(SDLK_ESCAPE);
+    CONFERE(!farolvozui_ativo());
   }
 
   // Novo ciclo QR -> GET + POST -> FV_REVISAO -> OK -> busca -> Tela 7 (consulta A).
