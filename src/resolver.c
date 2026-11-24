@@ -19,6 +19,8 @@
 #include "resolver.h"
 #include "resolverregra.h"
 #include "farol.h"
+#include "farolconsent.h"
+#include "farolconsentui.h"
 #include "farolenvioui.h"
 #include "farolachaui.h"
 #include "farolsonda.h"
@@ -157,6 +159,7 @@ int          resolver_teste_sec(void) { return pSecF; }
 int resolver_aberto(void) { return aberto; }
 int resolver_fase(void) { return fase; }
 int resolver_foco(void) {
+  if (farolconsentui_aberto()) return farolconsentui_foco();
   if (fase == RESOLVER_FASE_ACHAR) {
     int af = farolachaui_foco();
     return af < 0 ? B_ACHAR_VOLTAR : (B_ACHAR_0 + af);
@@ -193,9 +196,21 @@ __attribute__((weak)) void farolenvioui_desenhar(float ox_, float oy_, float a) 
   (void)ox_; (void)oy_; (void)a;
 }
 __attribute__((weak)) int  farolenvioui_foco(void) { return 0; }
+__attribute__((weak)) int  farolconsent_deve_perguntar(void) { return 0; }
+__attribute__((weak)) int  farolconsentui_aberto(void) { return 0; }
+__attribute__((weak)) void farolconsentui_abrir(void) {}
+__attribute__((weak)) void farolconsentui_fechar(void) {}
+__attribute__((weak)) void farolconsentui_esquecer(void) {}
+__attribute__((weak)) void farolconsentui_evento(const SDL_Event *e) { (void)e; }
+__attribute__((weak)) void farolconsentui_atualizar(float dt) { (void)dt; }
+__attribute__((weak)) void farolconsentui_desenhar(float ox_, float oy_, float a) {
+  (void)ox_; (void)oy_; (void)a;
+}
+__attribute__((weak)) int  farolconsentui_foco(void) { return 0; }
 __attribute__((weak)) void ajustes_abrir_no_trakt(void) {}
 
 void resolver_teste_esquecer(void) {
+  farolconsentui_esquecer();
   farolenvioui_esquecer();
   aberto = 0; entrada = 0.0f; fase = 0; foco = 0; envN = 0; envModo = 0; envNoAr = 0; rolo = 0; temFalha = 0;
   acharVoltaFoco = 0; farolachaui_reset();
@@ -961,13 +976,18 @@ static void abrir(void) {
   ir_fase(RESOLVER_FASE_SINTOMA);
 }
 
-void resolver_abrir(void) { abrir(); }
+void resolver_abrir(void) {
+  abrir();
+  if (farolconsent_deve_perguntar() == 1) farolconsentui_abrir();
+}
 void resolver_abrir_sintoma(int s) {
   abrir();
+  farolconsentui_fechar();
   if (s >= 0 && s < RES_S_N) cadeia_iniciar(s);
 }
 
 static void fechar(void) {
+  farolconsentui_fechar();
   farolenvioui_fechar();
   if (segura || sonda_no_ar()) {
     farolsonda_cancelar();
@@ -1138,6 +1158,10 @@ static void sincronizar_envioui(float dt) {
 void resolver_evento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!aberto) return;
+  if (farolconsentui_aberto()) {
+    if (e->type == SDL_KEYDOWN) farolconsentui_evento(e);
+    return;
+  }
   if (fase == RESOLVER_FASE_ACHAR) {
     if (e->type == SDL_KEYDOWN) {
       int pediuVoltar = 0, pediuAbrir = 0;
@@ -1222,6 +1246,7 @@ static void sondar_envio(void) {
 void resolver_atualizar(float dt, Uint32 agora) {
   int red = ajustes_animacoes_reduzidas();
   sonda_sincronizar();
+  farolconsentui_atualizar(dt);
   sincronizar_envioui(dt);
   if (!farolenvioui_presente()) sondar_envio();
   if (aberto) {
@@ -1624,6 +1649,11 @@ void resolver_desenhar(Uint32 agora) {
   gfx_escala_sair(resolver_escala());
   origem();
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0.051f, 0.051f, 0.051f, entrada);
+  if (farolconsentui_aberto()) {
+    farolconsentui_desenhar(ox, oy, a);
+    gfx_escala_sair(escAnt);
+    return;
+  }
   if (fase == RESOLVER_FASE_SINTOMA) desenha_sintoma(a);
   else if (fase == RESOLVER_FASE_CADEIA || fase == RESOLVER_FASE_VEREDITO) desenha_testes(a);
   else if (fase == RESOLVER_FASE_ACHAR) farolachaui_desenhar(ox, oy, a, agora);
