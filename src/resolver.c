@@ -256,6 +256,8 @@ __attribute__((weak)) void farolconsentui_desenhar(float ox_, float oy_, float a
 }
 __attribute__((weak)) int  farolconsentui_foco(void) { return 0; }
 __attribute__((weak)) void ajustes_abrir_no_trakt(void) {}
+__attribute__((weak)) int  player_eh_canal(void) { return 0; }
+static int ehCanal(void) { return player_eh_canal(); }
 
 void resolver_teste_esquecer(void) {
   farolconsentui_esquecer();
@@ -890,7 +892,9 @@ static void sonda_sincronizar(void) {
 // Inicia a sonda ativa para a ultima fonte VOD (sem logar nem por a URL no
 // anel). Sem URL valida, passa NULL e farolsonda_iniciar devolve 0.
 static int sonda_disparar(void) {
-  const Stream *st = stream_atual() >= 0 ? stream_item(stream_atual()) : NULL;
+  const Stream *st = (stream_atual() >= 0 && !ehCanal())
+                         ? stream_item(stream_atual())
+                         : NULL;
   const char *url = (st && st->url[0]) ? st->url : NULL;
   const char *cab[33];
   char copia[sizeof ((Stream *)0)->cabecalhos];
@@ -1051,6 +1055,7 @@ void resolver_abrir(void) {
   if (farolconsent_deve_perguntar() == 1) farolconsentui_abrir();
 }
 void resolver_abrir_sintoma(int s) {
+  if (ehCanal()) return;
   abrir();
   farolconsentui_fechar();
   if (s >= 0 && s < RES_S_N) cadeia_iniciar(s);
