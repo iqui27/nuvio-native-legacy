@@ -23,6 +23,7 @@
 #define NV_RESOLVER_H
 #include <SDL2/SDL.h>
 #include <stdint.h>
+#include "farolachaui.h"
 
 #define RESOLVER_ARQ "resolver-enviados.txt"
 
@@ -50,13 +51,22 @@ int  resolver_pedido(void);
 // nas outras e sempre 0. Os dois sao consumidos junto com resolver_pedido().
 int  resolver_pedido_acao(void);
 int  resolver_pedido_persistir(void);
+// OK num cartaz de "Achar o que ver" (#25): devolve 1 UMA vez com a identidade
+// completa do cartaz selecionado (`FarolAchaPedido`) para validacao no
+// catalogo vivo em `app.c` antes de abrir o detalhe e fechar o Farol.
+int  resolver_pediu_abrir(FarolAchaPedido *pedido);
+int  resolver_resolver_pedido(const FarolAchaPedido *pedido, unsigned *revisaoOut);
+int  resolver_pedido_bate(const CatItem *c, const FarolAchaPedido *pedido);
+void resolver_fechar(void);
+void resolver_recarregar_achar(void);
 uint64_t resolver_tentativa_externo(void);
 
 // ---- Para a captura e os testes.
 // FAROL (issue 19, PLANO 3.2): Inicio (SINTOMA), Cadeia (TESTES: a luz percorre
 // as etapas e, com a sonda ativa no ar, segura a linha em "testando…") e
 // Veredito (o cartao com a acao; o foco nasce nela). ENVIO e o do registro.
-enum { RESOLVER_FASE_SINTOMA = 0, RESOLVER_FASE_TESTES, RESOLVER_FASE_ENVIO, RESOLVER_FASE_VEREDITO };
+// ACHAR e a tela 7 ("Achados", #25).
+enum { RESOLVER_FASE_SINTOMA = 0, RESOLVER_FASE_TESTES, RESOLVER_FASE_ENVIO, RESOLVER_FASE_VEREDITO, RESOLVER_FASE_ACHAR };
 #define RESOLVER_FASE_INICIO RESOLVER_FASE_SINTOMA
 #define RESOLVER_FASE_CADEIA RESOLVER_FASE_TESTES
 // Ids de foco que nao sao cartao de sintoma (os cartoes usam o RES_S_* do
@@ -64,7 +74,13 @@ enum { RESOLVER_FASE_SINTOMA = 0, RESOLVER_FASE_TESTES, RESOLVER_FASE_ENVIO, RES
 enum {
   RESOLVER_B_BANNER = 50, RESOLVER_B_ENVIAR, RESOLVER_B_LISTA, RESOLVER_B_PRINC,
   RESOLVER_B_SEC, RESOLVER_B_OUTRO, RESOLVER_B_PRONTO, RESOLVER_B_REPETIR,
-  RESOLVER_B_ACHAR, RESOLVER_B_LIN0 = 200
+  RESOLVER_B_ACHAR,
+  RESOLVER_B_ACHAR_CURTO = RESOLVER_B_ACHAR,
+  RESOLVER_B_ACHAR_NAO_VI,
+  RESOLVER_B_ACHAR_RETOMAR,
+  RESOLVER_B_ACHAR_SURPRESA,
+  RESOLVER_B_ACHAR_VOLTAR,
+  RESOLVER_B_LIN0 = 200
 };
 int  resolver_fase(void);
 float resolver_luz(void);           // onde a luz da Cadeia esta (0..RES_T_N, em etapas)

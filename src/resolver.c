@@ -20,6 +20,7 @@
 #include "resolverregra.h"
 #include "farol.h"
 #include "farolenvioui.h"
+#include "farolachaui.h"
 #include "farolsonda.h"
 #include "farolanel.h"
 #include "farolregra.h"
@@ -80,6 +81,9 @@ enum {
   B_BANNER = RESOLVER_B_BANNER, B_ENVIAR = RESOLVER_B_ENVIAR, B_LISTA = RESOLVER_B_LISTA,
   B_PRINC = RESOLVER_B_PRINC, B_SEC = RESOLVER_B_SEC, B_OUTRO = RESOLVER_B_OUTRO,
   B_PRONTO = RESOLVER_B_PRONTO, B_REPETIR = RESOLVER_B_REPETIR, B_ACHAR = RESOLVER_B_ACHAR,
+  B_ACHAR_0 = RESOLVER_B_ACHAR_CURTO, B_ACHAR_1 = RESOLVER_B_ACHAR_NAO_VI,
+  B_ACHAR_2 = RESOLVER_B_ACHAR_RETOMAR, B_ACHAR_3 = RESOLVER_B_ACHAR_SURPRESA,
+  B_ACHAR_VOLTAR = RESOLVER_B_ACHAR_VOLTAR,
   B_LIN0 = RESOLVER_B_LIN0
 };
 // O que um botao do painel faz. A_DEBRID = login da conta de cache (a tela/QR
@@ -92,7 +96,7 @@ enum { M_NADA = 0, M_ENVIANDO, M_ENVIADO, M_FALHOU, M_LISTA };
 
 typedef struct { int id; GfxRect r; } Item;
 
-static int   aberto, fase, foco, sint, pedido, voltaFase;
+static int   aberto, fase, foco, sint, pedido, voltaFase, acharVoltaFoco;
 // PEDIU_FAROL: acao + modo do pedido de execucao (o persistir so vale em
 // FAROL_A_DESLIGAR_HDR). Consumidos junto com `pedido` em resolver_pedido().
 static int   pedidoAcao, pedidoPersistir;
@@ -152,7 +156,15 @@ int          resolver_teste_sec(void) { return pSecF; }
 
 int resolver_aberto(void) { return aberto; }
 int resolver_fase(void) { return fase; }
-int resolver_foco(void) { return (fase == RESOLVER_FASE_ENVIO && farolenvioui_ativo()) ? farolenvioui_foco() : foco; }
+int resolver_foco(void) {
+  if (fase == RESOLVER_FASE_ACHAR) {
+    int af = farolachaui_foco();
+    return af < 0 ? B_ACHAR_VOLTAR : (B_ACHAR_0 + af);
+  }
+  if (fase == RESOLVER_FASE_ENVIO && farolenvioui_ativo())
+    return farolenvioui_foco();
+  return foco;
+}
 int resolver_sintoma(void) { return sint; }
 int resolver_enviados_n(void) { return envN; }
 float resolver_luz(void) { return luz; }
@@ -186,6 +198,7 @@ __attribute__((weak)) void ajustes_abrir_no_trakt(void) {}
 void resolver_teste_esquecer(void) {
   farolenvioui_esquecer();
   aberto = 0; entrada = 0.0f; fase = 0; foco = 0; envN = 0; envModo = 0; envNoAr = 0; rolo = 0; temFalha = 0;
+  acharVoltaFoco = 0; farolachaui_reset();
   diagTentativa = 0; pedidoTentativa = 0; diagUsaTentativa = 0;
   luz = luzAlvo = seguraMs = respiraMs = 0.0f; segura = 0; sondaCancelada = 0;
   pendAcao = 0; pendCod = -1; pendSint = 0; falhouCod = -1; envDoFarol = 0; pFarol = 0;
@@ -209,6 +222,28 @@ int resolver_pedido(void) {
 // Validos so no turno em que resolver_pedido() devolve RESOLVER_PEDIU_FAROL.
 int resolver_pedido_acao(void) { return pedidoAcao; }
 int resolver_pedido_persistir(void) { return pedidoPersistir; }
+
+int resolver_pediu_abrir(FarolAchaPedido *pedido) {
+  return farolachaui_pediu_abrir(pedido);
+}
+
+int resolver_resolver_pedido(const FarolAchaPedido *pedido, unsigned *revisaoOut) {
+  return farolachaui_resolver_pedido(pedido, revisaoOut);
+}
+
+int resolver_pedido_bate(const CatItem *c, const FarolAchaPedido *pedido) {
+  return farolachaui_pedido_bate(c, pedido);
+}
+
+static void fechar(void);
+
+void resolver_fechar(void) {
+  fechar();
+}
+
+void resolver_recarregar_achar(void) {
+  farolachaui_recarregar();
+}
 
 uint64_t resolver_tentativa_externo(void) {
   return pedidoTentativa;
@@ -585,7 +620,7 @@ static float grade_h(void) {
 }
 // "Achar o que ver" e da #25: ate ela ligar, a coluna aparece reservada e fora
 // do foco (nada de cartao que nao faz o que promete, nem beco sem saida).
-static int achar_disponivel(void) { return 0; }
+static int achar_disponivel(void) { return 1; }
 
 static int envio_visiveis(void) { return envN - rolo < VISIVEIS ? envN - rolo : VISIVEIS; }
 
@@ -599,7 +634,11 @@ static int montar(Item *it) {
     for (i = 0; i < RES_S_FAROL_N; i++)
       poe(it, &n, resolverregra_sintoma_farol(i), MARGEM + (float)(i % 2) * (w + 24.0f),
           y0 + (float)(i / 2) * (SINT_H + SINT_GAP), w, SINT_H);
-    if (achar_disponivel()) poe(it, &n, B_ACHAR, ACHAR_X, y0, ACHAR_W, grade_h());
+    if (achar_disponivel()) {
+      for (i = 0; i < 4; i++)
+        poe(it, &n, B_ACHAR_0 + i, ACHAR_X + 28.0f,
+            y0 + 160.0f + (float)i * 64.0f, ACHAR_W - 56.0f, 52.0f);
+    }
     snprintf(lista, sizeof lista, i18n(FT_REGISTROS_ENVIADOS), envN);
     poe_botao(it, &n, B_ENVIAR, MARGEM, 944.0f, i18n("Enviar um registro"), "aj_send", 0);
     poe_botao(it, &n, B_LISTA, MARGEM + botao_largura(i18n("Enviar um registro"), "aj_send", 0) + BOTAO_GAP, 944.0f, lista, NULL, 0);
@@ -911,6 +950,8 @@ static void abrir(void) {
   pedidoTentativa = 0;
   diagTentativa = 0;
   diagUsaTentativa = 0;
+  acharVoltaFoco = 0;
+  farolachaui_reset();
   segura = 0;
   sonda_sincronizar();
   envModo = M_NADA;
@@ -1041,6 +1082,11 @@ static void ok(int longo) {
       envModo = M_LISTA; voltaFase = RESOLVER_FASE_SINTOMA; rolo = 0;
       ir_fase(RESOLVER_FASE_ENVIO);
       if (envN > 0) foco = B_LIN0;
+    } else if (foco >= B_ACHAR_0 && foco <= B_ACHAR_3) {
+      int k = foco - B_ACHAR_0;
+      acharVoltaFoco = foco;
+      farolachaui_abrir((FarolAchaTipo)k, FAROL_ACHA_CURTO_PADRAO, 0u);
+      fase = RESOLVER_FASE_ACHAR;
     }
   } else if (fase == RESOLVER_FASE_CADEIA) {
     if (!segura) veredito_entrar();   // OK adianta a luz; a sonda no ar segura
@@ -1092,6 +1138,19 @@ static void sincronizar_envioui(float dt) {
 void resolver_evento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!aberto) return;
+  if (fase == RESOLVER_FASE_ACHAR) {
+    if (e->type == SDL_KEYDOWN) {
+      int pediuVoltar = 0, pediuAbrir = 0;
+      farolachaui_evento(e, &pediuVoltar, &pediuAbrir);
+      (void)pediuAbrir;
+      if (pediuVoltar) {
+        ir_fase(RESOLVER_FASE_SINTOMA);
+        if (acharVoltaFoco >= B_ACHAR_0 && acharVoltaFoco <= B_ACHAR_3)
+          foco = acharVoltaFoco;
+      }
+    }
+    return;
+  }
   if (fase == RESOLVER_FASE_ENVIO && farolenvioui_ativo()) {
     if (e->type == SDL_KEYDOWN) {
       farolenvioui_evento(e);
@@ -1178,6 +1237,7 @@ void resolver_atualizar(float dt, Uint32 agora) {
                        (float)(agora - okDesde) / (float)NV_HOLD_MS);
       if (!okLongo && segurar_venceu(agora, okDesde, "resolver")) okLongo = 1;
     }
+    if (fase == RESOLVER_FASE_ACHAR) farolachaui_atualizar(dt, agora);
   }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
   if (red) { entrada = aberto ? 1.0f : 0.0f; return; }
@@ -1285,25 +1345,30 @@ static void desenha_sintoma(float a) {
       chip(&it[i], id, l, NULL, a);
     }
   }
-  // A coluna da #25: reservada, apagada e fora do foco enquanto nao liga.
-  { static const char *const INTENCAO[4] = { FT_INTENCAO_CURTO, FT_INTENCAO_NAO_VI, FT_INTENCAO_RETOMAR, FT_INTENCAO_SURPRESA };
+  // Coluna direita: "Achar o que ver" (#25) com as 4 intencoes focaveis.
+  { static const FarolAchaTipo TIPO[4] = { FA_CURTO, FA_NAO_VI, FA_RETOMAR, FA_SURPRESA };
     GfxRect r = { ox + ACHAR_X, oy + grade_y(), ACHAR_W, grade_h() };
-    float da = achar_disponivel() ? 1.0f : 0.55f;
     int k;
     painel(r, 28.0f, a);
-    if (achar_disponivel() && foco == B_ACHAR) botao_luz(r, 1.0f, a);
-    bola(r.x + 28.0f, r.y + 28.0f, 56.0f, "aj_compass", (Tinta){ 243, 242, 239 }, 0, da * a);
-    txt_em(TXT_ILHA_NOME, i18n(FT_ACHAR_O_QUE_VER), r.x + 28.0f, r.y + 104.0f, r.w - 56.0f, 243, 242, 239, da * a);
+    bola(r.x + 28.0f, r.y + 28.0f, 56.0f, "aj_compass", (Tinta){ 243, 242, 239 }, 0, a);
+    txt_em(TXT_ILHA_NOME, i18n(FT_ACHAR_O_QUE_VER), r.x + 28.0f, r.y + 104.0f, r.w - 56.0f, 243, 242, 239, a);
     for (k = 0; k < 4; k++) {
       GfxRect c = { r.x + 28.0f, r.y + 160.0f + (float)k * 64.0f, r.w - 56.0f, 52.0f };
-      gfx_cor(c, 0.5f, 1, 1, 1, 0.05f * a);
-      txt_em(TXT_V2_26, i18n(INTENCAO[k]), c.x + 22.0f, c.y + 10.0f, c.w - 44.0f, 186, 192, 204, da * a);
-    }
-    if (!achar_disponivel()) {
-      TxtLinha l = txt_linha(TXT_CAPTION, i18n("Em breve"), 186, 192, 204, 255);
-      txt_desenhar_alpha(l, r.x + r.w - 28.0f - (float)l.w, r.y + 40.0f, 0.8f * a);
-    }
-    if (achar_disponivel()) alvo(r, B_ACHAR); }
+      int id = B_ACHAR_0 + k;
+      int f = foco == id;
+      if (f) {
+        superficie(c, c.h * 0.5f, 1, a, &p, &s);
+      } else {
+        gfx_cor(c, 0.5f, 1, 1, 1, 0.06f * a);
+        p = (Tinta){ 243, 242, 239 };
+        s = (Tinta){ 186, 192, 204 };
+      }
+      txt_em(TXT_V2_26, i18n(farolacha_rotulo(TIPO[k])), c.x + 22.0f, c.y + 10.0f,
+             c.w - 64.0f, p.r, p.g, p.b, a);
+      icone_t((GfxRect){ c.x + c.w - 38.0f, c.y + (c.h - 20.0f) * 0.5f, 20.0f, 20.0f },
+              "aj_chevron-right", f ? p : s, (f ? 0.95f : 0.65f) * a);
+      alvo(c, id);
+    } }
   txt_em(TXT_CAPTION, i18n("Nenhum teste muda seus Ajustes."), ox + 1800.0f - 560.0f, oy + 962.0f, 560.0f, 150, 156, 168, a);
 }
 
@@ -1554,7 +1619,6 @@ float resolver_escala(void) {
 
 void resolver_desenhar(Uint32 agora) {
   float a = anim_suave(entrada);
-  (void)agora;
   if (entrada < 0.002f) return;
   float escAnt = gfx_escala();
   gfx_escala_sair(resolver_escala());
@@ -1562,6 +1626,7 @@ void resolver_desenhar(Uint32 agora) {
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0.051f, 0.051f, 0.051f, entrada);
   if (fase == RESOLVER_FASE_SINTOMA) desenha_sintoma(a);
   else if (fase == RESOLVER_FASE_CADEIA || fase == RESOLVER_FASE_VEREDITO) desenha_testes(a);
+  else if (fase == RESOLVER_FASE_ACHAR) farolachaui_desenhar(ox, oy, a, agora);
   else desenha_envio(a);
   gfx_escala_sair(escAnt);
 }

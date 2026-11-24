@@ -1186,6 +1186,43 @@ static int abrirPorIndice(int i) {
   return abrirItemPorIndice(i, cat_item(i));
 }
 
+static int abrirFarolPedido(const FarolAchaPedido *p) {
+  int tentativa;
+  if (!p) return 0;
+  for (tentativa = 0; tentativa < 6; tentativa++) {
+    unsigned rev = 0;
+    int idx = resolver_resolver_pedido(p, &rev);
+    const CatItem *c, *c2;
+    HomeItem it;
+    GfxRect tudo = { 0, 0, NV_TELA_W, NV_TELA_H };
+    int telaAntes = (int)tela;
+    int dIdx;
+    const CatItem *cd;
+    if (idx < 0) return 0;
+    c = cat_item(idx);
+    if (!c || cat_revisao() != rev || !resolver_pedido_bate(c, p)) continue;
+    memset(&it, 0, sizeof it);
+    it.indice = idx;
+    it.rect = tudo;
+    it.arte = c->backdrop[0] ? c->backdrop : (c->poster[0] ? c->poster : NULL);
+    it.titulo = c->titulo;
+    it.genero = c->genero;
+    it.meta = c->meta;
+    abrirTitulo(&it, 0, 1);
+    c2 = cat_item(idx);
+    dIdx = detail_aberto() ? detail_indice() : -1;
+    cd = dIdx >= 0 ? cat_item(dIdx) : NULL;
+    if (cat_revisao() != rev || !c2 || c2 != c || !resolver_pedido_bate(c2, p) ||
+        (detail_aberto() && (!cd || !resolver_pedido_bate(cd, p)))) {
+      if (detail_aberto()) detail_fechar_seco();
+      if ((int)tela != telaAntes) tela = telaAntes;
+      continue;
+    }
+    return detail_aberto();
+  }
+  return 0;
+}
+
 // Consume the panel request through the same title route as other screens.
 static void abrirTituloDoPainel(void) {
   if (player_aberto()) return;
@@ -5203,6 +5240,7 @@ void app_evento(const SDL_Event *e) {
   // "Ver Fontes e addons" fecha a tela e abre Ajustes no lugar.
   if (resolver_aberto()) {
     int rped;
+    FarolAchaPedido rpedAcha;
     resolver_evento(e);
     rped = resolver_pedido();
     if (rped == RESOLVER_PEDIU_FONTES) {
@@ -5256,6 +5294,13 @@ void app_evento(const SDL_Event *e) {
       // FAROL34B: o resolver so decidiu a acao; a execucao (rede, cache,
       // buffer, HDR, reabertura do video) mora toda em farolacao_rede.
       farolacao_rede_executar(resolver_pedido_acao(), resolver_pedido_persistir());
+    }
+    if (resolver_pediu_abrir(&rpedAcha)) {
+      if (abrirFarolPedido(&rpedAcha)) {
+        resolver_fechar();
+      } else {
+        resolver_recarregar_achar();
+      }
     }
     return;
   }
