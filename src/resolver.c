@@ -186,6 +186,10 @@ int resolver_resolver_pedido(const FarolAchaPedido *pedido, unsigned *revisaoOut
   return farolachaui_resolver_pedido(pedido, revisaoOut);
 }
 
+int resolver_pedido_bate(const CatItem *c, const FarolAchaPedido *pedido) {
+  return farolachaui_pedido_bate(c, pedido);
+}
+
 static void fechar(void);
 
 void resolver_fechar(void) {
@@ -1008,7 +1012,9 @@ void resolver_evento(const SDL_Event *e) {
   if (k == SDLK_UP)    { mover(0, -1); return; }
   if (k == SDLK_DOWN)  { mover(0, 1); return; }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
-    if (e->key.repeat) return;
+    if (e->key.repeat && fase == RESOLVER_FASE_INICIO &&
+        foco >= B_ACHAR_0 && foco <= B_ACHAR_3)
+      return;
     ok();
     return;
   }

@@ -49,6 +49,7 @@ int  resolver_pedido(void);
 // catalogo vivo em `app.c` antes de abrir o detalhe e fechar o Farol.
 int  resolver_pediu_abrir(FarolAchaPedido *pedido);
 int  resolver_resolver_pedido(const FarolAchaPedido *pedido, unsigned *revisaoOut);
+int  resolver_pedido_bate(const CatItem *c, const FarolAchaPedido *pedido);
 void resolver_fechar(void);
 void resolver_recarregar_achar(void);
 uint64_t resolver_tentativa_externo(void);

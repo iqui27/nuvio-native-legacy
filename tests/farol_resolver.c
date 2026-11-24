@@ -503,6 +503,7 @@ static void limparFonteVOD(void) {}
 static void player_descartar_retido(void) {}
 static void detail_abrir(const HomeItem *it) { (void)it; }
 static int  detail_aberto(void) { return 0; }
+static int  detail_indice(void) { return -1; }
 static void detail_fechar_seco(void) {}
 #endif
 static int travaui_abrir_espera(int idx, int t, int e) { (void)idx; (void)t; (void)e; return c_travauiBloq; }

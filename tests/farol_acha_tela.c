@@ -31,6 +31,7 @@ int cacavisto_filme(const char *imdb, long tmdb, long long *quando);
 static void player_descartar_retido(void);
 static void detail_abrir(const HomeItem *it);
 static int  detail_aberto(void);
+static int  detail_indice(void);
 static void detail_fechar_seco(void);
 
 #include "farol_resolver.c"
@@ -52,8 +53,21 @@ static char     A_abriuMeta[96];
 static char     A_abriuArte[NV_ARTE_URL_MAX];
 static char     A_alvoEsperado[64];
 static void   (*A_naEntradaDetailAbrir)(const HomeItem *it);
+static void   (*A_naLeituraCatItem)(int i);
+static int      A_naLeituraSkip;
+static int      A_abriuTrocadoN;
+static int      A_detailIndiceOverride = -1;
 
 const CatItem *cat_item(int i) {
+  if (i >= 0 && i < A_n && A_naLeituraCatItem) {
+    if (A_naLeituraSkip > 0) {
+      A_naLeituraSkip--;
+    } else {
+      void (*fn)(int) = A_naLeituraCatItem;
+      A_naLeituraCatItem = NULL;
+      fn(i);
+    }
+  }
   return (i >= 0 && i < A_n) ? &A_itens[i] : NULL;
 }
 int cat_n(void) { return A_n; }
@@ -94,6 +108,7 @@ static void detail_abrir(const HomeItem *it) {
     snprintf(A_abriuTipo, sizeof A_abriuTipo, "%s", c->tipo);
     snprintf(A_abriuTitulo, sizeof A_abriuTitulo, "%s", c->titulo);
     snprintf(A_abriuMeta, sizeof A_abriuMeta, "%s", c->meta);
+    if (!strcmp(c->imdb, "tt9000022")) A_abriuTrocadoN++;
   }
 }
 
@@ -101,8 +116,14 @@ static int detail_aberto(void) {
   return A_detailAberto;
 }
 
+static int detail_indice(void) {
+  if (!A_detailAberto) return -1;
+  return A_detailIndiceOverride >= 0 ? A_detailIndiceOverride : A_abriuIdx;
+}
+
 static void detail_fechar_seco(void) {
   A_detailAberto = 0;
+  A_detailIndiceOverride = -1;
   A_fechouSecoN++;
 }
 
@@ -113,6 +134,38 @@ static void hook_inverter_cat(const HomeItem *it) {
   A_itens[0] = A_itens[1];
   A_itens[1] = tmp;
   A_rev++;
+}
+
+static void hook_inverter_cat_sem_rev(const HomeItem *it) {
+  CatItem tmp = A_itens[0];
+  (void)it;
+  A_itens[0] = A_itens[1];
+  A_itens[1] = tmp;
+}
+
+static void hook_substituir_sem_rev(const HomeItem *it) {
+  (void)it;
+  A_itens[0] = A_itens[1];
+  A_n = 1;
+}
+
+static void hook_cat_item_inverter_sem_rev(int i) {
+  CatItem tmp;
+  (void)i;
+  tmp = A_itens[0];
+  A_itens[0] = A_itens[1];
+  A_itens[1] = tmp;
+}
+
+static void hook_cat_item_substituir_sem_rev(int i) {
+  (void)i;
+  A_itens[0] = A_itens[1];
+  A_n = 1;
+}
+
+static void hook_desviar_detail_indice(const HomeItem *it) {
+  (void)it;
+  A_detailIndiceOverride = 1;
 }
 
 static void hook_sumir_obra(const HomeItem *it) {
@@ -147,6 +200,10 @@ static void zera_tudo(void) {
   A_detailAberto = 0;
   A_fechouSecoN = 0;
   A_naEntradaDetailAbrir = NULL;
+  A_naLeituraCatItem = NULL;
+  A_naLeituraSkip = 0;
+  A_abriuTrocadoN = 0;
+  A_detailIndiceOverride = -1;
   A_abriuIdx = -1;
   A_abriuImdb[0] = '\0';
   A_abriuTipo[0] = '\0';
@@ -841,6 +898,105 @@ int main(void) {
   CONFERE(A_abriuN == 0 && A_detailAberto == 0 && resolver_aberto());
   tecla_app_repeat(SDLK_RETURN, 0);
   CONFERE(!resolver_aberto() && A_detailAberto == 1 && !strcmp(A_abriuImdb, "tt9000042"));
+
+  // 17. FAROL25-r3 P1: troca do item em cat_item(idx) SEM incrementar cat_revisao()
+  //     (janela de cat_definir_tudo() antes de revisaoSobe()), tanto antes quanto durante abrirTitulo.
+  //     (tt9000022 tem 120 min para que FA_CURTO escolha deterministicamente tt9000021 no foco 0.)
+  //     a) Troca (inversao) antes de abrirTitulo: nunca chama detail_abrir para tt9000022 e re-resolve tt9000021.
+  zera_tudo();
+  add_cat("tt9000021", 9021, "movie", "obra_escolhida", "Filme · Drama", "2024 · 85 min",  92, 0, 0);
+  add_cat("tt9000022", 9022, "movie", "obra_trocada",   "Filme · Drama", "2024 · 120 min", 70, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  CONFERE(farolachaui_n() == 1 && farolachaui_foco() == 0);
+  tecla(SDLK_RETURN);
+  {
+    FarolAchaPedido ped;
+    CONFERE(resolver_pediu_abrir(&ped) == 1);
+    CONFERE(!strcmp(ped.imdb, "tt9000021"));
+    A_naLeituraSkip = 1;
+    A_naLeituraCatItem = hook_cat_item_inverter_sem_rev;
+    CONFERE(abrirFarolPedido(&ped) == 1);
+    CONFERE(A_abriuTrocadoN == 0);
+    CONFERE(A_abriuN == 1 && A_fechouSecoN == 0);
+    CONFERE(A_detailAberto == 1 && !strcmp(A_abriuImdb, "tt9000021"));
+    CONFERE(!strcmp(cat_item(A_abriuIdx)->imdb, "tt9000021"));
+    resolver_fechar();
+  }
+
+  //     b) Substituicao total antes de abrirTitulo sem incrementar cat_revisao(): nunca abre tt9000022.
+  zera_tudo();
+  add_cat("tt9000021", 9021, "movie", "obra_escolhida", "Filme · Drama", "2024 · 85 min",  92, 0, 0);
+  add_cat("tt9000022", 9022, "movie", "obra_trocada",   "Filme · Drama", "2024 · 120 min", 70, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  tecla(SDLK_RETURN);
+  {
+    FarolAchaPedido ped;
+    CONFERE(resolver_pediu_abrir(&ped) == 1);
+    CONFERE(!strcmp(ped.imdb, "tt9000021"));
+    A_naLeituraSkip = 1;
+    A_naLeituraCatItem = hook_cat_item_substituir_sem_rev;
+    CONFERE(abrirFarolPedido(&ped) == 0);
+    CONFERE(A_abriuTrocadoN == 0 && A_abriuN == 0 && A_detailAberto == 0);
+    CONFERE(resolver_aberto());
+    resolver_fechar();
+  }
+
+  //     c) Troca (inversao) durante abrirTitulo sem incrementar cat_revisao(): fecha seco e re-resolve tt9000021.
+  zera_tudo();
+  add_cat("tt9000021", 9021, "movie", "obra_escolhida", "Filme · Drama", "2024 · 85 min",  92, 0, 0);
+  add_cat("tt9000022", 9022, "movie", "obra_trocada",   "Filme · Drama", "2024 · 120 min", 70, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  A_naEntradaDetailAbrir = hook_inverter_cat_sem_rev;
+  tecla_app(SDLK_RETURN);
+  CONFERE(!resolver_aberto());
+  CONFERE(A_detailAberto == 1);
+  CONFERE(A_fechouSecoN == 1);
+  CONFERE(!strcmp(A_abriuImdb, "tt9000021"));
+  CONFERE(!strcmp(cat_item(A_abriuIdx)->imdb, "tt9000021"));
+
+  //     d) Substituicao total durante abrirTitulo sem incrementar cat_revisao(): fecha seco, restaura tela e mantem Farol.
+  zera_tudo();
+  add_cat("tt9000021", 9021, "movie", "obra_escolhida", "Filme · Drama", "2024 · 85 min",  92, 0, 0);
+  add_cat("tt9000022", 9022, "movie", "obra_trocada",   "Filme · Drama", "2024 · 140 min", 70, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  tela = TELA_AJUSTES;
+  A_naEntradaDetailAbrir = hook_substituir_sem_rev;
+  tecla_app(SDLK_RETURN);
+  CONFERE(resolver_aberto() && resolver_fase() == RESOLVER_FASE_ACHAR);
+  CONFERE(A_detailAberto == 0 && A_fechouSecoN == 1);
+  CONFERE(tela == TELA_AJUSTES);
+  CONFERE(farolachaui_n() == 0);
+
+  //     e) Divergencia apenas em detail_indice() apos abrirTitulo(): fecha seco e reabre certo.
+  zera_tudo();
+  add_cat("tt9000021", 9021, "movie", "obra_escolhida", "Filme · Drama", "2024 · 85 min",  92, 0, 0);
+  add_cat("tt9000022", 9022, "movie", "obra_trocada",   "Filme · Drama", "2024 · 120 min", 70, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  A_naEntradaDetailAbrir = hook_desviar_detail_indice;
+  tecla_app(SDLK_RETURN);
+  CONFERE(!resolver_aberto());
+  CONFERE(A_detailAberto == 1 && A_fechouSecoN == 1);
+  CONFERE(!strcmp(cat_item(detail_indice())->imdb, "tt9000021"));
+
+  //     f) Bonus P2-2 r3: repeat em OK fora de RESOLVER_B_ACHAR_* (ex.: RESOLVER_FASE_ENVIO) preservado.
+  zera_tudo();
+  resolver_abrir();
+  for (i = 0; i < 6 && resolver_foco() != RESOLVER_B_LISTA; i++) tecla(SDLK_DOWN);
+  CONFERE(resolver_foco() == RESOLVER_B_LISTA);
+  tecla(SDLK_RETURN);
+  CONFERE(resolver_fase() == RESOLVER_FASE_ENVIO && resolver_foco() == RESOLVER_B_PRONTO);
+  tecla_repeat(SDLK_RETURN, 1);
+  CONFERE(resolver_fase() == RESOLVER_FASE_INICIO);
 
   // Modo vidro e animacoes ligadas (exercicio sem crashes).
   c_reduzidas = 0;

@@ -1134,13 +1134,15 @@ static int abrirFarolPedido(const FarolAchaPedido *p) {
   for (tentativa = 0; tentativa < 6; tentativa++) {
     unsigned rev = 0;
     int idx = resolver_resolver_pedido(p, &rev);
-    const CatItem *c;
+    const CatItem *c, *c2;
     HomeItem it;
     GfxRect tudo = { 0, 0, NV_TELA_W, NV_TELA_H };
     int telaAntes = (int)tela;
+    int dIdx;
+    const CatItem *cd;
     if (idx < 0) return 0;
     c = cat_item(idx);
-    if (!c || cat_revisao() != rev) continue;
+    if (!c || cat_revisao() != rev || !resolver_pedido_bate(c, p)) continue;
     memset(&it, 0, sizeof it);
     it.indice = idx;
     it.rect = tudo;
@@ -1149,7 +1151,11 @@ static int abrirFarolPedido(const FarolAchaPedido *p) {
     it.genero = c->genero;
     it.meta = c->meta;
     abrirTitulo(&it, 0, 1);
-    if (cat_revisao() != rev || cat_item(idx) != c) {
+    c2 = cat_item(idx);
+    dIdx = detail_aberto() ? detail_indice() : -1;
+    cd = dIdx >= 0 ? cat_item(dIdx) : NULL;
+    if (cat_revisao() != rev || !c2 || c2 != c || !resolver_pedido_bate(c2, p) ||
+        (detail_aberto() && (!cd || !resolver_pedido_bate(cd, p)))) {
       if (detail_aberto()) detail_fechar_seco();
       if ((int)tela != telaAntes) tela = telaAntes;
       continue;

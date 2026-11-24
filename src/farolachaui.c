@@ -648,6 +648,11 @@ void farolachaui_desenhar(float ox, float oy, float alpha, Uint32 agora) {
   ponteiro_alvo(rVoltar.x, rVoltar.y, rVoltar.w, rVoltar.h, pt_foco_acha, NULL, ACHA_FOCO_VOLTAR, 0);
 }
 
+int farolachaui_pedido_bate(const CatItem *c, const FarolAchaPedido *p) {
+  if (!c || !p || (!p->imdb[0] && p->tmdb <= 0 && !p->titulo[0])) return 0;
+  return itemBatePedido(c, p);
+}
+
 int farolachaui_resolver_pedido(const FarolAchaPedido *p, unsigned *revisaoOut) {
   int tentativa;
   char basePed[64];

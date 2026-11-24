@@ -68,6 +68,7 @@ int  farolachaui_pediu_abrir(FarolAchaPedido *pedido);
 // revisao validada em `*revisaoOut` (se nao NULL) e devolve o indice vivo, ou
 // -1 se a obra sumiu ou ficou ambigua.
 int  farolachaui_resolver_pedido(const FarolAchaPedido *p, unsigned *revisaoOut);
+int  farolachaui_pedido_bate(const CatItem *c, const FarolAchaPedido *p);
 
 // Estado observavel para testes e integracao com resolver.c / #31 / #50.
 int           farolachaui_n(void);
