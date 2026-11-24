@@ -337,6 +337,10 @@ static int cwEspera;
 static CatItem cwEsperaItem;
 static Uint32 cwEsperaDesde;
 #define CW_ESPERA_MS 15000u
+// Retomar o episodio que o card nomeou (cwEspera 2): depois disto toca com a
+// lista provisoria, ou com id IMDb pelo T/E do card, como o OK na pagina faria
+// (log do dono 24/11: a lista final nao vinha e a pagina ficava parada).
+#define CW_ESPERA_TT_MS 2500u
 static pthread_t fioFonte;
 static int fioFonteVivo;                  // 0 = canal escolheu sem o fio
 static _Atomic int fonteEscolhida = -2;   // release/acquire entre verificacao e UI
@@ -6035,13 +6039,27 @@ void app_atualizar(float dt, Uint32 agora) {
   // A ESPERA DO PROXIMO (cwEspera, acima). Pagina fechada, player aberto ou
   // prazo vencido desistem: a pagina fica aberta e nada toca.
   if (cwEspera) {
-    if (!detail_aberto() || player_aberto() ||
-        SDL_GetTicks() - cwEsperaDesde > CW_ESPERA_MS) {
-      printf("[cw] %s: lista nao chegou a tempo; fica so a pagina\n", cwEsperaItem.imdb);
+    int k = cat_indice_titulo(cwEsperaItem.imdb, detail_indice());
+    unsigned esperou = SDL_GetTicks() - cwEsperaDesde;
+    if (!detail_aberto() || player_aberto() || esperou > CW_ESPERA_MS) {
+      if (player_aberto()) printf("[cw] %s: o player ja abriu por outro caminho; espera encerrada\n", cwEsperaItem.imdb);
+      else printf("[cw] %s: lista nao chegou a tempo; fica so a pagina\n", cwEsperaItem.imdb);
       if (!player_aberto()) cwRetomar = 0;
       cwEspera = 0; cwTocarT = cwTocarE = 0;
+    } else if (cwEspera == 2 && esperou > CW_ESPERA_TT_MS &&
+               (cat_episodio_existe(k, cwEsperaItem.imdb, cwEsperaItem.temporada, cwEsperaItem.episodio) ||
+                !strncmp(cwEsperaItem.imdb, "tt", 2))) {
+      // A lista final (a que traz o id de video do addon) nao chegou em
+      // CW_ESPERA_TT_MS: toca o episodio que o card nomeou com o que ha — a
+      // lista publicada antes dos extras, ou, com id IMDb, o T/E do card —
+      // exatamente o que o OK na pagina faria.
+      int naLista = cat_episodio_existe(k, cwEsperaItem.imdb, cwEsperaItem.temporada, cwEsperaItem.episodio);
+      printf("[cw] %s: retomando T%dE%d sem a lista final (%s)\n", cwEsperaItem.imdb, cwEsperaItem.temporada,
+             cwEsperaItem.episodio, naLista ? "lista provisoria" : "id IMDb do card");
+      cwEspera = 0;
+      cwTocarT = cwEsperaItem.temporada; cwTocarE = cwEsperaItem.episodio;
+      detail_pedir_reproduzir();
     } else {
-      int k = cat_indice_titulo(cwEsperaItem.imdb, detail_indice());
       if (cat_episodios_finais(k, cwEsperaItem.imdb) &&
           (cwEspera != 2 || cat_episodio_existe_final(k, cwEsperaItem.imdb,
                              cwEsperaItem.temporada, cwEsperaItem.episodio))) {

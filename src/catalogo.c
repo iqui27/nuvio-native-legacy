@@ -1988,6 +1988,21 @@ int cat_episodio_tvdb_qualquer(int indice, const char *id, int t, int e) {
   return tvdb;
 }
 
+int cat_episodio_existe(int indice, const char *id, int t, int e) {
+  int ok = 0;
+  catTravar();
+  pthread_mutex_lock(&epTrava);
+  if (episodioFaixaValidaEx(indice, id, 0)) {
+    const CatEp *v = eps + epIni[indice];
+    int q = epQtd[indice];
+    for (int i = 0; i < q; i++)
+      if (v[i].temporada == t && v[i].episodio == e) { ok = 1; break; }
+  }
+  pthread_mutex_unlock(&epTrava);
+  pthread_mutex_unlock(&pubTrava);
+  return ok;
+}
+
 int cat_episodio_existe_final(int indice, const char *id, int t, int e) {
   int ok = 0;
   catTravar();

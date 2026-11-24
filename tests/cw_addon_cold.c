@@ -5,11 +5,13 @@
 #include <string.h>
 #include <time.h>
 
-static int cwTocarT, cwTocarE, cwEspera, requests, metadata;
+static int cwTocarT, cwTocarE, cwEspera, cwRetomar, requests, metadata;
 static CatItem cwEsperaItem;
 static unsigned cwEsperaDesde;
 #define CW_ESPERA_MS 15000u
-static unsigned SDL_GetTicks(void) { return 1000; }
+#define CW_ESPERA_TT_MS 2500u
+static unsigned agora = 1000;
+static unsigned SDL_GetTicks(void) { return agora; }
 static int ajustes_cw_concluido(void) { return 90; }
 static int detail_indice(void) { return 0; }
 static int detail_aberto(void) { return 1; }
@@ -18,7 +20,12 @@ static void abrirTitulo(const void *it, int a, int b) { (void)it; (void)a; (void
 static void desc_episodios(int i, int t) { (void)i; (void)t; assert(metadata); }
 static char requested[96];
 static void detail_pedir_reproduzir(void) {
-  assert(metadata && cat_n_episodios(0));
+  assert(metadata);
+  if (!cat_n_episodios(0)) {   // IMDb resume without a list: the card's T/E
+    assert(!strncmp(cwEsperaItem.imdb, "tt", 2) && cwTocarT > 0 && cwTocarE > 0);
+    snprintf(requested, sizeof requested, "%s:%d:%d", cwEsperaItem.imdb, cwTocarT, cwTocarE);
+    requests++; return;
+  }
   assert(cat_id_stream(0, cwTocarT, cwTocarE, requested, sizeof requested));
   requests++;
 }
@@ -69,5 +76,29 @@ int main(void) {
     assert(cat_id_stream(0, 2, 5, manual, sizeof manual));
     assert(!strcmp(requested, manual));
   }
+  // The final list never comes: after CW_ESPERA_TT_MS the card's episode
+  // plays with what there is, as OK on the page would (owner's log 24/11).
+  for (int i = 0; i < 3; i++) {
+    CatItem c = {0}; strcpy(c.imdb, ids[i]); strcpy(c.tipo, "series");
+    c.temporada = 2; c.episodio = 5; c.progresso = 42;
+    cat_definir_tudo(&c, 1, NULL, 0);
+    requests = metadata = cwEspera = 0; agora = 1000;
+    cold_open(); assert(cwEspera == 2 && !requests && cwRetomar);
+    agora = 1000 + CW_ESPERA_TT_MS - 1; cold_wait(); assert(cwEspera && !requests);
+    if (!strncmp(ids[i], "tt", 2)) {
+      // IMDb: no list at all, the card's T/E builds the episode ID.
+      agora = 1000 + CW_ESPERA_TT_MS + 1; cold_wait();
+      assert(!cwEspera && requests == 1 && !strcmp(requested, "tt1234567:2:5"));
+      continue;
+    }
+    agora = 1000 + CW_ESPERA_TT_MS + 1; cold_wait(); assert(cwEspera && !requests);   // opaque ID: still waits
+    CatEp ep = {0}; ep.temporada = 2; ep.episodio = 5;
+    snprintf(ep.vid, sizeof ep.vid, "%s:2:5", ids[i]);
+    c.epsParciais = 1;
+    cat_atualizar_item(0, &c);
+    cat_definir_episodios(0, &ep, 1);
+    cold_wait(); assert(requests == 1 && !cwEspera && !strcmp(requested, ep.vid));
+  }
+  agora = 1000;
   puts("PASS cold CW waits for metadata before requesting opaque episode IDs");
 }
