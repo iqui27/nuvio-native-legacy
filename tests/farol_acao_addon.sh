@@ -4,7 +4,8 @@
 #      relogio injetado, arquivo de quarentena real em NUVIO_DADOS, teto de 3,
 #      unico de fontes, Desfazer, ilha, pedidos de fontes/debrid ao app.
 #   2. tests/farol_acao_addon_addons.c — o addons.c real: o isolado sai da busca
-#      de fontes ate vencer ou ser desfeito, "De lado ate amanha" na lista.
+#      de fontes (tambem da consulta capturada) ate vencer ou ser desfeito,
+#      "De lado ate amanha" na lista e nos Ajustes, guarda do ultimo sob corrida.
 #
 #   bash tests/farol_acao_addon.sh
 #   SANITIZE=0 bash tests/farol_acao_addon.sh   # sem ASan+UBSan
@@ -51,7 +52,18 @@ mkdir -p "$work/dados"
   -lm -o "$work/acao-addon"
 NUVIO_DADOS="$work/dados" "$work/acao-addon"
 
-"$ccbin" "${flags[@]}" \
+# As duas funcoes dos Ajustes que mostram a quarentena (linha e painel), de
+# verdade: extraidas de src/ajustes_ux_ilha.inc para o teste com addons.c real.
+awk '/^static const char \*ajAddon(Apoio|NestaTv)\(int i\) \{$/,/^\}$/' src/ajustes_ux_ilha.inc \
+  > "$work/ajustes_addon_estado.inc"
+if [ "$(grep -c '^static const char \*ajAddon' "$work/ajustes_addon_estado.inc")" != 2 ]; then
+  echo "farol_acao_addon: ajAddonApoio/ajAddonNestaTv sumiram de src/ajustes_ux_ilha.inc" >&2; exit 1
+fi
+if ! grep -q 'ajAddonApoio(i)' src/ajustes_ux_ilha.inc || ! grep -q 'ajAddonNestaTv(foco)' src/ajustes_ux_ilha.inc; then
+  echo "farol_acao_addon: a lista ou o painel dos Ajustes nao usam o estado da quarentena" >&2; exit 1
+fi
+
+"$ccbin" "${flags[@]}" -I"$work" \
   tests/farol_acao_addon_addons.c src/farolacao_addon.c \
   src/js.c src/addonmodo.c src/jsw.c src/watchstate.c src/addonstats.c src/fontefalha.c \
   src/idcanal.c src/linguas.c src/legextras.c src/farolanel.c \

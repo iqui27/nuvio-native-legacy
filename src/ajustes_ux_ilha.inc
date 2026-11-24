@@ -1536,6 +1536,16 @@ static const char *ajAddonFornece(int i) {
   if (!b[0]) snprintf(b, sizeof b, "%s", i18n("não fornece nada que este app use"));
   return b;
 }
+// Farol #17: o add-on em quarentena de 24 h diz "De lado até amanhã" na linha
+// da lista (no lugar do que fornece) e no "Nesta TV" do painel de detalhes.
+static const char *ajAddonApoio(int i) {
+  const char *e = addons_estado_texto(i);
+  return e[0] ? e : ajAddonFornece(i);
+}
+static const char *ajAddonNestaTv(int i) {
+  const char *e = addons_estado_texto(i);
+  return !addons_ativo(i) ? i18n("Desligado") : e[0] ? e : i18n("Ligado");
+}
 static void ajRosto(const char *nome, float x, float y, float lado, float raio, float vidA, float tinta, int estilo) {
   char ini[8] = "?";
   TxtLinha l;
@@ -1690,7 +1700,7 @@ static void ajDesenharAddons(int foco) {
   if (foco < 0) foco = 0;
   { static char apoio[128][96];
     for (i = 0; i < n; i++) {
-      snprintf(apoio[i], sizeof apoio[i], "%s", ajAddonFornece(i));   // ajAddonFornece devolve um buffer so
+      snprintf(apoio[i], sizeof apoio[i], "%s", ajAddonApoio(i));   // ajAddonFornece devolve um buffer so
       L[i] = (AjSubLinha){ addons_nome(i), apoio[i], NULL, live ? addonsui_addon_ao_vivo(i) : addons_ativo(i), 0, 0 };
     } }
   L[n] = (AjSubLinha){ "Sincronizar addons", ajSyncAddonsApoio(), "aj_rotate-cw", -1, 0, 1 };
@@ -1717,7 +1727,7 @@ static void ajDesenharAddons(int foco) {
     y = ajSubInspetor(AJ_ADDONS, k, addons_nome(foco), i18n("Os addons vêm da sua conta Nuvio. Ligar e desligar aqui vale só nesta TV, até a próxima sincronização."));
     if (y + 3 * 57.0f <= ir.y + ir.h) {
       y += aj2Meta(i18n("Fornece"), forn, ir.x, y, ir.w, 1);
-      y += aj2Meta(i18n("Nesta TV"), i18n(addons_ativo(foco) ? "Ligado" : "Desligado"), ir.x, y, ir.w, 1);
+      y += aj2Meta(i18n("Nesta TV"), ajAddonNestaTv(foco), ir.x, y, ir.w, 1);
       aj2Meta(i18n("Endereço"), host, ir.x, y, ir.w, 1);
     }
   } else ajSubInspetor(AJ_ADDONS, k, "Addons", i18n("Nenhum addon nesta conta."));

@@ -91,6 +91,13 @@ int  addonstats_isolar(const char *chave, int segundos);
 // 1 = isolado; 0 = invalido/tabela cheia; -1 = ja estava de lado (prazo mantido);
 // -2 = teto atingido.
 int  addonstats_isolar_teto(const char *chave, int segundos, int teto);
+// Como addonstats_isolar_teto e, na MESMA trava, a guarda do ultimo add-on de
+// fontes: `fontes` sao as chaves dos add-ons ligados que fornecem fontes (com ou
+// sem quarentena; repetidas contam uma vez). Recusa com -3 quando, fora `chave`,
+// nenhuma delas seguiria fora da quarentena. `nFontes` < 0 = sem essa guarda.
+#define ADDONSTATS_CHAVE_N 32
+int  addonstats_isolar_guarda(const char *chave, int segundos, int teto,
+                              const char (*fontes)[ADDONSTATS_CHAVE_N], int nFontes);
 // 1 = havia quarentena viva e foi desfeita.
 int  addonstats_desisolar(const char *chave);
 // Segundos que faltam; 0 = livre (nunca isolado, desfeito ou vencido).

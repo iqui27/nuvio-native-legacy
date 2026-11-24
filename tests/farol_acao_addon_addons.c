@@ -8,7 +8,14 @@
 //   - a lista de add-ons diz "De lado ate amanha" (FT_ADDON_DE_LADO) e so ali;
 //   - teto de 3 e nunca o unico add-on de fontes (politica de farolacao_addon);
 //   - ultimo recurso: se SO restassem add-ons de lado, pergunta a eles;
-//   - addons_lento_isolavel escolhe o mudo e deixa de escolher quem ja esta de lado.
+//   - addons_lento_isolavel escolhe o mudo e deixa de escolher quem ja esta de lado;
+//   - os Ajustes (ajAddonApoio/ajAddonNestaTv, extraidos de ajustes_ux_ilha.inc
+//     pelo farol_acao_addon.sh) mostram "De lado ate amanha" na linha e no painel;
+//   - dois fios com barreira e 2 add-ons de fontes: 1 FAAD_OK, 1 FAAD_UNICO;
+//   - a consulta capturada (Agenda, preparo do proximo) segue a quarentena de
+//     AGORA: addons_consulta_atual cai e filme/consultar pulam (ou voltam a
+//     perguntar) depois de isolar, vencer as 86400 s ou Desfazer; com todos de
+//     lado, as duas rotas usam o ultimo recurso.
 #define rede_baixar_st fixture_download_st
 #define rede_baixar fixture_download
 #define NV_TEST_REDE_PEDIR_OVERLAY 1
@@ -44,27 +51,55 @@ char *rede_baixar_medido(const char *url, int seconds, const char *const *header
 
 // ------------------------------------------------------------------ dubles
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
+static pthread_mutex_t farolTrava = PTHREAD_MUTEX_INITIALIZER;   // os fios da secao 8
 int  farolAcoes, farolResultados, farolUltimoOk = -1;
-void farol_registrar_acao(int acao) { (void)acao; farolAcoes++; }
-void farol_registrar_resultado(int acao, int ok) { (void)acao; farolResultados++; farolUltimoOk = ok; }
+void farol_registrar_acao(int acao) {
+  (void)acao;
+  pthread_mutex_lock(&farolTrava); farolAcoes++; pthread_mutex_unlock(&farolTrava);
+}
+void farol_registrar_resultado(int acao, int ok) {
+  (void)acao;
+  pthread_mutex_lock(&farolTrava); farolResultados++; farolUltimoOk = ok; pthread_mutex_unlock(&farolTrava);
+}
 void ilhaacao_feita(const IlhaAcao *a) { (void)a; }
+
+// A consulta capturada sem debrid: toda fonte com URL serve.
+void debrid_contexto_capturar(DebridContexto *k) { if (k) memset(k, 0, sizeof *k); }
+void debrid_contexto_entrar(const DebridContexto *k) { (void)k; }
+void debrid_contexto_sair(void) {}
+int stream_fonte_disponivel(const Stream *f) { return f && f->url[0]; }
+
+// Os Ajustes de verdade: as duas funcoes que a linha e o painel usam.
+static const char *ajAddonFornece(int i) { (void)i; return "Fontes"; }
+#include "ajustes_addon_estado.inc"
 
 static time_t agoraFalso = 1800000000;
 static time_t relogio(void) { return agoraFalso; }
 
 #define N_HOSTS 8
 static int pedidos[N_HOSTS];   // streams pedidos a hostN.test
+static pthread_mutex_t pedidosTrava = PTHREAD_MUTEX_INITIALIZER;   // consulta capturada usa fios
 static char *rede_resposta(const char *url) {
   if (strstr(url, "/manifest.json"))
     return strdup("{\"resources\":[{\"name\":\"stream\",\"types\":[\"movie\"],\"idPrefixes\":[\"tt\"]}]}");
   for (int i = 0; i < N_HOSTS; i++) {
     char host[24];
     snprintf(host, sizeof host, "host%d.test", i);
-    if (strstr(url, host)) { pedidos[i]++; break; }
+    if (strstr(url, host)) {
+      pthread_mutex_lock(&pedidosTrava); pedidos[i]++; pthread_mutex_unlock(&pedidosTrava);
+      break;
+    }
   }
   return strdup("{\"streams\":[{\"url\":\"https://x/movie.mp4\"}]}");
 }
 char *rede_baixar(const char *url, int seconds) { (void)seconds; return rede_resposta(url); }
+char *rede_baixar_medido_controle(const char *url, int segundos, const char *const *cabecalhos,
+                                  const RedeControle *controle, RedeMedida *medida) {
+  (void)segundos; (void)cabecalhos; (void)controle;
+  memset(medida, 0, sizeof *medida);
+  medida->status = 200;
+  return rede_resposta(url);
+}
 char *rede_baixar_st(const char *url, int seconds, const char *const *headers, int *status) {
   (void)seconds; (void)headers;
   *status = 200;
@@ -97,12 +132,50 @@ static void chave(int i, char c[32]) { assert(addons_chave_estatistica(i, c)); }
 static int isola(int i) {
   char c[32];
   chave(i, c);
-  return farolacao_addon_isolar(c, addons_fontes_vivas_n());
+  return farolacao_addon_isolar(c);
 }
 static void desfaz(int i) {
   char c[32];
   chave(i, c);
   assert(farolacao_addon_desfazer(c) == 1);
+}
+
+// Barreira de dois (pthread_barrier_t nao existe no macOS).
+static pthread_mutex_t barTrava = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t barSinal = PTHREAD_COND_INITIALIZER;
+static int barChegou, barVolta;
+static void barreira(void) {
+  pthread_mutex_lock(&barTrava);
+  int v = barVolta;
+  if (++barChegou == 2) { barChegou = 0; barVolta++; pthread_cond_broadcast(&barSinal); }
+  else while (v == barVolta) pthread_cond_wait(&barSinal, &barTrava);
+  pthread_mutex_unlock(&barTrava);
+}
+typedef struct { int i, rc; } Corrida;
+static void *corrida(void *u) {
+  Corrida *k = u;
+  barreira();
+  k->rc = isola(k->i);
+  return NULL;
+}
+
+// A consulta capturada (addons_consulta_*), contando quem foi perguntado.
+static AddonsConsulta *captura(void) {
+  AddonsConsulta *k = addons_consulta_capturar();
+  assert(k);
+  return k;
+}
+static void ampla(const AddonsConsulta *k, int p0, int p1) {
+  Stream *out = NULL;
+  memset(pedidos, 0, sizeof pedidos);
+  assert(addons_consulta_consultar(k, "tt1", "movie", 2, NULL, NULL, &out) > 0);
+  free(out);
+  assert(pedidos[0] == p0 && pedidos[1] == p1);
+}
+static void filme(const AddonsConsulta *k, int p0, int p1) {
+  memset(pedidos, 0, sizeof pedidos);
+  assert(addons_consulta_filme(k, "tt1", NULL, NULL) == 1);
+  assert(pedidos[0] == p0 && pedidos[1] == p1);
 }
 
 int main(void) {
@@ -132,6 +205,10 @@ int main(void) {
   assert(!addons_estado_texto(0)[0] && !addons_estado_texto(2)[0]);
   assert(!addons_estado_texto(-1)[0] && !addons_estado_texto(99)[0]);
   puts("ok  consulta da lista: \"De lado ate amanha\" so para o isolado");
+  // os Ajustes: a linha diz o estado no lugar do que fornece; o painel, no "Nesta TV".
+  assert(!strcmp(ajAddonApoio(1), FT_ADDON_DE_LADO) && !strcmp(ajAddonApoio(0), "Fontes"));
+  assert(!strcmp(ajAddonNestaTv(1), FT_ADDON_DE_LADO) && !strcmp(ajAddonNestaTv(0), i18n("Ligado")));
+  puts("ok  Ajustes: linha e painel do isolado dizem \"De lado ate amanha\"");
 
   // --- 3. o prazo vence sozinho ------------------------------------------
   agoraFalso += FAAD_ISOLA_S - 1;
@@ -198,6 +275,63 @@ int main(void) {
   assert(isola(2) == FAAD_OK);
   assert(addons_lento_isolavel() == -1);               // quem ja esta de lado nao volta a ser escolhido
   puts("ok  addons_lento_isolavel escolhe o mudo e ignora o que ja esta de lado");
+
+  // --- 8. dois fios, duas fontes: nunca as duas de lado -------------------------
+  lista(2, 2);
+  for (int volta = 0; volta < 100; volta++) {
+    pthread_t th[2];
+    Corrida cr[2];
+    addonstats_isolar_zerar();
+    assert(addons_fontes_vivas_n() == 2);
+    for (int i = 0; i < 2; i++) { cr[i].i = i; assert(pthread_create(&th[i], NULL, corrida, &cr[i]) == 0); }
+    for (int i = 0; i < 2; i++) pthread_join(th[i], NULL);
+    assert((cr[0].rc == FAAD_OK && cr[1].rc == FAAD_UNICO) || (cr[0].rc == FAAD_UNICO && cr[1].rc == FAAD_OK));
+    assert(addons_fontes_vivas_n() == 1);
+  }
+  addonstats_isolar_zerar();
+  puts("ok  dois fios com 2 fontes: 1 FAAD_OK, 1 FAAD_UNICO, 1 fonte viva");
+
+  // --- 9. consulta capturada segue a quarentena de agora ---------------------------
+  lista(2, 2);
+  {
+    AddonsConsulta *k = captura();
+    assert(addons_consulta_atual(k));
+    assert(isola(0) == FAAD_OK);
+    assert(!addons_consulta_atual(k));                 // isolar depois da captura a deixa velha
+    ampla(k, 0, 1);
+    filme(k, 0, 1);
+    addons_consulta_liberar(k);
+    k = captura();                                     // capturada durante a quarentena
+    assert(addons_consulta_atual(k));
+    ampla(k, 0, 1);
+    filme(k, 0, 1);
+    agoraFalso += FAAD_ISOLA_S;                        // as 86400 s vencem
+    assert(!addons_consulta_atual(k));
+    ampla(k, 1, 1);
+    filme(k, 1, 0);
+    addons_consulta_liberar(k);
+    assert(isola(0) == FAAD_OK);
+    k = captura();
+    desfaz(0);                                         // Desfazer depois da captura
+    assert(!addons_consulta_atual(k));
+    ampla(k, 1, 1);
+    filme(k, 1, 0);
+    addons_consulta_liberar(k);
+    k = captura();
+    assert(isola(0) == FAAD_OK);
+    desfaz(0);                                         // ida e volta: o efetivo nao mudou
+    assert(addons_consulta_atual(k));
+    addons_consulta_liberar(k);
+    // todos de lado: as duas rotas usam o ultimo recurso (melhor perguntar que calar)
+    chave(0, c); assert(addonstats_isolar(c, FAAD_ISOLA_S));
+    chave(1, c); assert(addonstats_isolar(c, FAAD_ISOLA_S));
+    k = captura();
+    ampla(k, 1, 1);
+    filme(k, 1, 0);
+    addons_consulta_liberar(k);
+    addonstats_isolar_zerar();
+  }
+  puts("ok  consulta capturada: isolar, vencer em 86400 s e Desfazer valem na hora");
 
   puts("farol_acao_addon_addons: tudo ok");
   return 0;

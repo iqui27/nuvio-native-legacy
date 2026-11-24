@@ -316,6 +316,9 @@ int  addons_chave_estatistica(int i, char chave[32]);   // 1 = `i` existe
 int  addons_isolado_s(int i);               // segundos que faltam; 0 = livre
 const char *addons_estado_texto(int i);     // "De lado até amanhã" (i18n) ou ""
 int  addons_fontes_vivas_n(void);           // ligados, com fontes e fora da quarentena
+// Chaves de estatistica dos ligados com fontes, de lado ou nao (a guarda do
+// ultimo, em addonstats_isolar_guarda). Devolve quantas gravou em `chaves`.
+int  addons_fontes_chaves(char (*chaves)[32], int max);
 int  addons_lento_isolavel(void);           // indice do que mais segura a lista; -1 nenhum
 int  addons_base_desligada(const char *base);   // 1 = addon da lista desligado na conta
 int  addons_alternar(int i);          // devolve o estado NOVO

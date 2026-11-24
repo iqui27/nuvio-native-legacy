@@ -10,6 +10,7 @@
 #include "farolanel.h"
 #include "farolregra.h"
 #include "faroltexto.h"
+#include "farolacao_addon.h"
 #include "addons.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -53,7 +54,7 @@
 enum { B_BANNER = 50, B_ENVIAR, B_LISTA, B_PRINC, B_SEC, B_OUTRO, B_PRONTO, B_REPETIR, B_LIN0 = 200 };
 // O que um botao do painel faz. A_DEBRID = login da conta de cache (a tela/QR
 // do addonguia); A_PLAYER_EXT = a fonte falha sai para o player externo.
-enum { A_NADA = 0, A_REPETIR, A_FONTES, A_ENVIAR, A_DEBRID, A_PLAYER_EXT };
+enum { A_NADA = 0, A_REPETIR, A_FONTES, A_ENVIAR, A_DEBRID, A_PLAYER_EXT, A_ISOLAR };
 // O que a fase 2 mostra.
 enum { M_NADA = 0, M_ENVIANDO, M_ENVIADO, M_FALHOU, M_LISTA };
 
@@ -356,9 +357,16 @@ static int acao_farol_map(int a) {
     case FAROL_A_RECONECTAR_DEBRID: return A_DEBRID;
     case FAROL_A_PLAYER_EXTERNO:    return ff.externoDisponivel > 0 ? A_PLAYER_EXT : A_NADA;
     case FAROL_A_ENVIAR_REGISTRO:   return A_ENVIAR;
+    case FAROL_A_ISOLAR_ADDON:      return farolacao_addon_pode_isolar() ? A_ISOLAR : A_NADA;
     default:                        return A_NADA;
   }
 }
+
+// Fixtures que compilam o Resolver sem farolacao_addon.c (farol_android_erro):
+// sem isolamento o cartao cai na alternativa. O app e tests/farol_resolver.sh
+// linkam a implementacao de verdade, que prevalece sobre estas.
+__attribute__((weak)) int farolacao_addon_pode_isolar(void) { return 0; }
+__attribute__((weak)) int farolacao_addon_isolar_lento(void) { return FAAD_NENHUM; }
 
 // O botao principal: a acao da regra quando ela executa; senao a alternativa;
 // senao o registro. Devolve o FAROL_A_* EFETIVO e grava o A_* local em `*a`.
@@ -508,6 +516,7 @@ static const char *icone_acao(int a) {
     case A_ENVIAR:     return "aj_send";
     case A_DEBRID:     return "aj_key";
     case A_PLAYER_EXT: return "aj_external-link";
+    case A_ISOLAR:     return "aj_pause";
   }
   return NULL;
 }
@@ -692,6 +701,13 @@ static void fechar(void) { aberto = 0; }
 static void aplicar(int a, int fa) {
   const char *tok = fa > 0 ? farolregra_acao_token(fa) : "";
   pedidoTentativa = 0;
+  // Farol #17: isola o add-on lento por 24 h (anel, arquivo e ilha com Desfazer
+  // ficam com farolacao_addon). Recusado no OK (outro fio, teto): testa de novo.
+  if (a == A_ISOLAR) {
+    if (farolacao_addon_isolar_lento() == FAAD_OK) fechar();
+    else aplicar(A_REPETIR, 0);
+    return;
+  }
   if (a == A_PLAYER_EXT && diagUsaTentativa) {
     FarolEvento ev[FAROL_ANEL_N];
     int n = farolanel_ler(ev, FAROL_ANEL_N, 0);

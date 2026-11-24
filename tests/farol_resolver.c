@@ -31,6 +31,10 @@
 //   - cenario 18: A->B (sem FE_PRONTO) apos TV_FORMATO_REPETE -> alternativa.
 //   - cenario 19: Caso positivo de TV_FORMATO unico (1 falha) com player fechado.
 //   - cenario 20: Troca para B entre oferta e OK -> despacho recusa B e usa alternativa.
+//   - cenario 21 (Farol #17): ADDON_LENTO com duas fontes -> o OK isola o lento
+//     por 24 h com farolacao_addon.c e addonstats.c de verdade (anel, ilha com
+//     Desfazer), sem enviar registro e sem pedido ao app.
+//   - cenario 22: ADDON_LENTO com uma fonte so -> nao oferece isolar; cai no registro.
 
 #include "resolver.h"
 #include "resolverregra.h"
@@ -49,6 +53,9 @@
 #include "avisos.h"
 #include "celbotao.h"
 #include "ilha.h"
+#include "ilhaacao.h"
+#include "addonstats.h"
+#include "farolacao_addon.h"
 #include "p2pmotor.h"
 #include "perfis.h"
 #include "plrilha.h"
@@ -185,6 +192,55 @@ static int nv_perfil_sessao_atual(uint64_t s) { return s == c_perfilSessao; }
 const char *i18n(const char *s) { return s; }
 char *dados_ler(const char *n) { (void)n; return NULL; }
 int dados_gravar(const char *n, const char *v) { (void)n; (void)v; return 1; }
+static int c_quarentenaGravada;
+int dados_gravar_leve(const char *n, const char *v) {
+  (void)v;
+  if (n && !strcmp(n, "fonte-quarentena.txt")) c_quarentenaGravada++;
+  return 1;
+}
+void aio_resultados(AioSnapshot *s, const char *json) { (void)s; (void)json; }   // addonstats.c sem AIOStreams
+// Farol #17: o mundo de add-ons que farolacao_addon.c (o de verdade) consulta;
+// a quarentena e a de addonstats.c (tambem o de verdade).
+static int c_lento = -1;
+int addons_chave_estatistica(int i, char chave[32]) {
+  if (i < 0 || i >= c_addons) return 0;
+  snprintf(chave, 32, "fx-%d", i);
+  return 1;
+}
+static int c_isolado(int i) {
+  char c[32];
+  return addons_chave_estatistica(i, c) && addonstats_isolado_s(c) > 0;
+}
+int addons_fontes_chaves(char (*chaves)[32], int max) {
+  int k = 0;
+  for (int i = 0; i < c_addons && k < max; i++)
+    if (c_addon[i].ativo && c_addon[i].forneceStream) addons_chave_estatistica(i, chaves[k++]);
+  return k;
+}
+int addons_fontes_vivas_n(void) {
+  int k = 0;
+  for (int i = 0; i < c_addons; i++)
+    if (c_addon[i].ativo && c_addon[i].forneceStream && !c_isolado(i)) k++;
+  return k;
+}
+int addons_lento_isolavel(void) {
+  return c_lento >= 0 && c_lento < c_addons && c_addon[c_lento].forneceStream && !c_isolado(c_lento) ? c_lento : -1;
+}
+// weak: quando o teste linkar a fachada src/farol.c, valem as dela (mesmos eventos).
+__attribute__((weak)) void farol_registrar_acao(int a) { farol_ev(FM_FAROL, FE_FAROL_ACAO, 0, a, 0, farolregra_acao_token(a)); }
+__attribute__((weak)) void farol_registrar_resultado(int a, int ok) {
+  farol_ev(FM_FAROL, FE_FAROL_RESULTADO, ok ? 0 : 1, a, ok ? 1 : 0, farolregra_acao_token(a));
+}
+static IlhaAcao c_ilhaAcao;
+static char c_ilhaAcaoCtx[64];
+static int c_ilhaAcaoN;
+void ilhaacao_feita(const IlhaAcao *a) {
+  assert(a->ctxN <= sizeof c_ilhaAcaoCtx);
+  c_ilhaAcao = *a;
+  memcpy(c_ilhaAcaoCtx, a->ctx, a->ctxN);
+  c_ilhaAcao.ctx = c_ilhaAcaoCtx;
+  c_ilhaAcaoN++;
+}
 int rede_saude_offline(void) { return c_offline; }
 int addons_n(void) { return c_addons; }
 int addons_ocupado(void) { return c_ocupado; }
@@ -457,6 +513,8 @@ static void zerar(void) {
   snprintf(c_addon[2].nome, sizeof c_addon[2].nome, "MediaFusion");
   c_addon[2].ativo = 1; c_addon[2].sondado = 1; c_addon[2].forneceStream = 1;
   c_streamOrdemAddon = -1;
+  c_lento = -1; c_ilhaAcaoN = 0; c_quarentenaGravada = 0;
+  addonstats_isolar_zerar();
   c_celbDisp = 1; c_celbAbertoN = c_celbFechadoN = 0; c_celbChave[0] = 0;
   c_debridCelN = 0; c_debridCelServ[0] = c_debridCelChave[0] = 0;
   c_ilhaAvisosN = 0; c_ilhaChave[0] = c_ilhaTexto[0] = 0;
@@ -1192,6 +1250,85 @@ int main(void) {
   }
   c_catSlotCount = 0;
   mini = 0;
+
+  // ------------------------------------------------------------ cenario 21
+  // Farol #17: o OK no veredito ADDON_LENTO isola o add-on (nao envia registro).
+  {
+    FarolEvento ev[FAROL_ANEL_N];
+    char ch[32];
+    int n, acoes = 0, s;
+    zerar();
+    c_lento = 1;                                       // Torrentio lento; MediaFusion segue
+    memset(&fx, 0, sizeof fx);
+    farolregra_fatos_iniciar(&fx);
+    fx.plat = FP_WEBOS;
+    fx.addonsQtd = 2;
+    fx.addonsLentos = 1;
+    fx.addonsMudos = 0;
+    resolver_teste_fatos_farol(&fx);
+    resolver_abrir();
+    resolver_teste_testar(RES_S_TRAVA);
+    assert(resolver_teste_veredito() == FAROL_C_ADDON_LENTO);
+    assert(resolver_teste_prim() == FAROL_A_ISOLAR_ADDON);
+    farolanel_zerar();
+    apertar_ok();
+    assert(c_envioChamadas == 0);                      // nada de registro
+    assert(resolver_pedido() == RESOLVER_PEDIU_NADA);
+    assert(!resolver_aberto());                        // fecha: a ilha mostra o Desfazer
+    assert(addons_chave_estatistica(1, ch));
+    assert(addonstats_isolado_s(ch) == FAAD_ISOLA_S && !c_isolado(2));
+    assert(addons_fontes_vivas_n() == 1 && c_quarentenaGravada == 1);
+    n = farolanel_ler(ev, FAROL_ANEL_N, 0);
+    for (int i = 0; i < n; i++) {
+      if (ev[i].ev == FE_FAROL_ACAO) { assert(ev[i].a == FAROL_A_ISOLAR_ADDON); acoes++; }
+      if (ev[i].ev == FE_FAROL_RESULTADO) assert(ev[i].a == FAROL_A_ISOLAR_ADDON && ev[i].b == 1);
+    }
+    assert(acoes == 1);                                // uma acao so no anel
+    assert(c_ilhaAcaoN == 1 && c_ilhaAcao.desfazer && !strcmp(c_ilhaAcao.titulo, "Torrentio"));
+    assert(!strcmp(c_ilhaAcao.onde, FT_ADDON_DE_LADO));
+    c_ilhaAcao.desfazer(c_ilhaAcao.ctx);               // o "Desfazer" da ilha
+    assert(!c_isolado(1) && addonstats_isolado_s(ch) == 0 && c_quarentenaGravada == 2);
+    // Ja ha 3 de lado (teto): o cartao nao promete isolar.
+    zerar();
+    c_lento = 1;
+    resolver_teste_fatos_farol(&fx);
+    assert(addonstats_isolar("x-1", 600) && addonstats_isolar("x-2", 600) && addonstats_isolar("x-3", 600));
+    resolver_abrir();
+    resolver_teste_testar(RES_S_TRAVA);
+    assert(resolver_teste_veredito() == FAROL_C_ADDON_LENTO);
+    assert(resolver_teste_prim() != FAROL_A_ISOLAR_ADDON);
+    // Oferecido, mas outro fio isolou antes do OK: recusa, testa de novo, sem registro.
+    zerar();
+    c_lento = 1;
+    resolver_teste_fatos_farol(&fx);
+    resolver_abrir();
+    resolver_teste_testar(RES_S_TRAVA);
+    assert(resolver_teste_prim() == FAROL_A_ISOLAR_ADDON);
+    assert(addons_chave_estatistica(2, ch) && addonstats_isolar(ch, 600));   // MediaFusion saiu
+    apertar_ok();
+    assert(c_envioChamadas == 0 && c_ilhaAcaoN == 0 && resolver_aberto());
+    assert(!c_isolado(1));                             // o ultimo de fontes ficou
+    assert(resolver_teste_prim() != FAROL_A_ISOLAR_ADDON);
+    (void)s;
+  }
+
+  // ------------------------------------------------------------ cenario 22
+  // Uma fonte so: isolar deixaria zero; o cartao cai no registro.
+  zerar();
+  c_lento = 1;
+  c_addon[2].forneceStream = 0;
+  memset(&fx, 0, sizeof fx);
+  farolregra_fatos_iniciar(&fx);
+  fx.plat = FP_WEBOS;
+  fx.addonsQtd = 2;
+  fx.addonsLentos = 1;
+  resolver_teste_fatos_farol(&fx);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_TRAVA);
+  assert(resolver_teste_veredito() == FAROL_C_ADDON_LENTO);
+  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  apertar_ok();
+  assert(c_envioChamadas >= 1 && !c_isolado(1) && c_ilhaAcaoN == 0);
 
   puts("farol_resolver: producao ok");
   return 0;

@@ -21,8 +21,11 @@
 #ifndef NV_FAROLACAO_ADDON_H
 #define NV_FAROLACAO_ADDON_H
 
+#include "addonstats.h"
+
 #define FAAD_ISOLA_S        86400   // 24 h
 #define FAAD_TETO_ISOLADOS  3
+#define FAAD_FONTES_MAX     128     // = ADDONS_MAX (addons.h)
 
 enum {
   FAAD_OK = 0,
@@ -39,10 +42,18 @@ enum {
 #define FAAD_PEDIU_FONTES 1
 #define FAAD_PEDIU_DEBRID 2
 
-// Poe a chave de estatistica do add-on de lado por 24 h. `fontesVivas` = quantos
-// add-ons de fontes estao ligados e fora da quarentena AGORA (inclui este).
-// Persiste e registra a acao e o resultado no anel.
-int  farolacao_addon_isolar(const char *chave, int fontesVivas);
+// Poe a chave de estatistica do add-on de lado por 24 h. A guarda "nunca o
+// ultimo de fontes" desconta a quarentena de `fontes` (as chaves dos add-ons
+// ligados com fontes, addons_fontes_chaves) DENTRO da trava de addonstats, na
+// mesma passada que grava: sem contagem lida antes, dois fios concorrentes com
+// 2 fontes vivas dao 1 FAAD_OK e 1 FAAD_UNICO. Persiste e registra a acao e o
+// resultado no anel.
+int  farolacao_addon_isolar_entre(const char *chave, const char (*fontes)[ADDONSTATS_CHAVE_N], int nFontes);
+// O mesmo, com as fontes da lista de add-ons de agora.
+int  farolacao_addon_isolar(const char *chave);
+// 1 = ha um add-on lento a isolar e a politica deixaria (o cartao do Resolver so
+// oferece o botao quando ele faz o que promete; a decisao final e a de isolar).
+int  farolacao_addon_pode_isolar(void);
 // Desfaz a quarentena e persiste. 1 = havia o que desfazer.
 int  farolacao_addon_desfazer(const char *chave);
 // 1 = de lado agora; `restamS` (opcional) recebe os segundos que faltam.

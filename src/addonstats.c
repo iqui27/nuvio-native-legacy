@@ -282,15 +282,32 @@ static Isola *achaIsola(const char *chave) {
   for (int i = 0; i < nIsola; i++) if (!strcmp(isola[i].chave, chave)) return &isola[i];
   return NULL;
 }
-int addonstats_isolar_teto(const char *chave, int segundos, int teto) {
+// Quantas chaves de `fontes` (sem repetir, sem `chave`) seguem fora da
+// quarentena. Chamada com `trava` presa: e o que torna a guarda atomica.
+static int fontesVivasSemTrava(const char *chave, const char (*fontes)[ADDONSTATS_CHAVE_N], int nFontes) {
+  int k = 0;
+  for (int i = 0; i < nFontes; i++) {
+    int repetida = 0;
+    if (!fontes[i][0] || !strcmp(fontes[i], chave) || achaIsola(fontes[i])) continue;
+    for (int j = 0; j < i && !repetida; j++) repetida = !strcmp(fontes[j], fontes[i]);
+    if (!repetida) k++;
+  }
+  return k;
+}
+int addonstats_isolar_guarda(const char *chave, int segundos, int teto,
+                             const char (*fontes)[ADDONSTATS_CHAVE_N], int nFontes) {
   Isola *r;
   int rc = 0;
   if (!chave || !*chave || strlen(chave) >= sizeof isola[0].chave || segundos <= 0) return 0;
+  if (nFontes > 0 && !fontes) return 0;
   pthread_mutex_lock(&trava);
   time_t agora = agoraSemTrava();
   podarIsola(agora);
   r = achaIsola(chave);
   if (r && teto > 0) rc = -1;                       // com teto, reisolar nao renova o prazo
+  // Contar e gravar sob a MESMA trava: dois fios com 2 fontes vivas nunca
+  // isolam as duas (um passa, o outro ve a primeira ja de lado).
+  else if (!r && nFontes >= 0 && fontesVivasSemTrava(chave, fontes, nFontes) < 1) rc = -3;
   else if (!r && teto > 0 && nIsola >= teto) rc = -2;
   else {
     if (!r && nIsola < ADDONSTATS_ISOLA_CAP) {
@@ -301,6 +318,9 @@ int addonstats_isolar_teto(const char *chave, int segundos, int teto) {
   }
   pthread_mutex_unlock(&trava);
   return rc;
+}
+int addonstats_isolar_teto(const char *chave, int segundos, int teto) {
+  return addonstats_isolar_guarda(chave, segundos, teto, NULL, -1);
 }
 int addonstats_isolar(const char *chave, int segundos) {
   return addonstats_isolar_teto(chave, segundos, 0) == 1;
@@ -421,7 +441,13 @@ void addonstats_isolar_salvar(void) {
   pthread_mutex_unlock(&trava);
   if (quer) {
     addonstats_isolar_serializar(buf, sizeof buf);
-    dados_gravar_leve(ARQ_ISOLA, buf);
+    // Gravacao que falhou devolve a marca: a proxima tenta de novo, em vez de
+    // a quarentena (ou o Desfazer) ficar so na memoria ate o reinicio.
+    if (!dados_gravar_leve(ARQ_ISOLA, buf)) {
+      pthread_mutex_lock(&trava);
+      isolaSuja = 1;
+      pthread_mutex_unlock(&trava);
+    }
   }
   pthread_mutex_unlock(&salvaIsolaTrava);
 }
