@@ -34,6 +34,40 @@ base="http://127.0.0.1:$(cat "$tmp/port")"
 "$tmp/cliente" "$base" "$tmp/dados" >"$tmp/log" 2>&1 || { cat "$tmp/log"; exit 1; }
 grep '^ok  ' "$tmp/log" || true
 
+mkdir -p "$tmp/dados_sessao"
+nuvem_flags=(-O1 -g -std=gnu11 -Isrc -pthread -Wall -Wextra)
+case "${SANITIZE:-0}" in
+  1) nuvem_flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer);;
+  thread) nuvem_flags+=(-fsanitize=thread -fno-omit-frame-pointer);;
+esac
+"${CC:-cc}" "${nuvem_flags[@]}" \
+  "-DNV_SUPABASE_URL=\"$base\"" "-DNV_SUPABASE_ANON_KEY=\"anon-teste\"" \
+  -c src/nuvem.c -o "$tmp/nuvem.o"
+"${CC:-cc}" "${flags[@]}" \
+  tests/farol_compor_sessao_refresh.c \
+  tests/sessao_boundary_stub.c \
+  src/farolcompor.c \
+  src/farolgosto.c \
+  src/farolrec.c \
+  src/farolpeca.c \
+  src/faroltexto.c \
+  src/sessao.c \
+  "$tmp/nuvem.o" \
+  src/js.c \
+  src/jsw.c \
+  src/rede.c \
+  src/redeurl.c \
+  -o "$tmp/cliente_sessao"
+
+"$tmp/cliente_sessao" "$base" "$tmp/dados_sessao" >"$tmp/log_sessao" 2>&1 || { cat "$tmp/log_sessao"; exit 1; }
+grep '^ok  ' "$tmp/log_sessao" || true
+python3 - "$tmp/log_sessao" <<'PY'
+import sys
+log_text = open(sys.argv[1], encoding="utf-8").read()
+for secret in ("t0001", "t0002", "anon-teste"):
+    assert secret not in log_text, f"segredo vazou no log_sessao: {secret}"
+PY
+
 # Auditoria pos-execucao sobre corpos HTTP capturados e logs (zero canario/token/URL):
 python3 - "$tmp/log" "$base" "$tmp/capture.jsonl" <<'PY'
 import json

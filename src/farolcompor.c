@@ -1555,21 +1555,58 @@ static void *executarCompor(void *u) {
   // 2. Revalida TODOS os bloqueios imediatamente antes de abrir o POST.
   if (jobCancelado(j)) cancelado = 1;
   else if (jobBloqueou(j) || contextoMudou(j)) bloqueado = 1;
-  else if (agoraMs() >= j->fim) prazoEstourou = 1;
+  else if ((restaMs = j->fim - agoraMs()) <= 0) prazoEstourou = 1;
   else if (!authOk) transporteFalhou = 1;
-  if (!cancelado && !bloqueado && !prazoEstourou && !transporteFalhou) {
+  if (!cancelado && !bloqueado && !prazoEstourou && !transporteFalhou &&
+      j->modo == FC_MODO_HOME) {
+    int marcouMem = 0, gravouMeta = 0;
     // A cota Home (1/dia local/perfil) so e gasta quando o POST vai sair.
-    pthread_mutex_lock(&trava);
-    if (j->cancelar || j->gen != geracaoAtual) {
-      cancelado = 1;
-    } else if (j->modo == FC_MODO_HOME) {
-      homeDiaMem.perfil = j->perfil;
-      homeDiaMem.contaHash = j->contaHash;
-      homeDiaMem.diaLocal = j->diaLocal;
+    if (jobBloqueou(j) || contextoMudou(j)) {
+      bloqueado = 1;
+    } else if ((restaMs = j->fim - agoraMs()) <= 0) {
+      prazoEstourou = 1;
+    } else {
+      pthread_mutex_lock(&trava);
+      if (j->cancelar || j->gen != geracaoAtual) {
+        cancelado = 1;
+      } else if (jobBloqueou(j)) {
+        bloqueado = 1;
+      } else if (agoraMs() >= j->fim) {
+        prazoEstourou = 1;
+      } else {
+        homeDiaMem.perfil = j->perfil;
+        homeDiaMem.contaHash = j->contaHash;
+        homeDiaMem.diaLocal = j->diaLocal;
+        marcouMem = 1;
+      }
+      pthread_mutex_unlock(&trava);
     }
-    pthread_mutex_unlock(&trava);
-    if (!cancelado && j->modo == FC_MODO_HOME)
-      gravarMetaDia(j->perfil, j->diaLocal, j->quando, j->contaHash);
+    if (marcouMem) {
+      if (jobCancelado(j)) cancelado = 1;
+      else if (jobBloqueou(j) || contextoMudou(j)) bloqueado = 1;
+      else if ((restaMs = j->fim - agoraMs()) <= 0) prazoEstourou = 1;
+      else {
+        gravarMetaDia(j->perfil, j->diaLocal, j->quando, j->contaHash);
+        gravouMeta = 1;
+        if (jobCancelado(j)) cancelado = 1;
+        else if (jobBloqueou(j) || contextoMudou(j)) bloqueado = 1;
+        else if ((restaMs = j->fim - agoraMs()) <= 0) prazoEstourou = 1;
+      }
+      if (cancelado || bloqueado || prazoEstourou) {
+        pthread_mutex_lock(&trava);
+        if (homeDiaMem.perfil == j->perfil &&
+            homeDiaMem.contaHash == j->contaHash &&
+            homeDiaMem.diaLocal == j->diaLocal) {
+          memset(&homeDiaMem, 0, sizeof homeDiaMem);
+        }
+        pthread_mutex_unlock(&trava);
+        if (gravouMeta) {
+          char nomeMeta[64];
+          nomeArquivoMeta(j->perfil, nomeMeta, sizeof nomeMeta);
+          lojaApagar(nomeMeta);
+        }
+      }
+    }
   }
   restaMs = j->fim - agoraMs();
   if (!cancelado && !bloqueado && !prazoEstourou && !transporteFalhou && restaMs <= 0)

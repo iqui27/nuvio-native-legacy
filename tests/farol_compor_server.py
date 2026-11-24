@@ -38,6 +38,9 @@ STATE = {
     "hits": 0,
     "last_raw": b"",
     "last_perfil": "",
+    "refresh_delay_s": 0.0,
+    "refresh_started": 0,
+    "refresh_hits": 0,
 }
 
 def validate_request(raw_bytes):
@@ -284,6 +287,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 perfil = STATE["last_perfil"]
             self._send(200, perfil)
             return
+        if parsed.path == "/__refresh_state":
+            with LOCK:
+                out = {
+                    "started": STATE["refresh_started"],
+                    "hits": STATE["refresh_hits"],
+                }
+            self._send(200, json.dumps(out))
+            return
         self._send(404, '{"erro":"not found"}')
 
     def do_POST(self):
@@ -300,7 +311,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     STATE["delay_s"] = float(cfg["delay_s"])
                 if cfg.get("reset_hits"):
                     STATE["hits"] = 0
+                if "refresh_delay_s" in cfg:
+                    STATE["refresh_delay_s"] = float(cfg["refresh_delay_s"])
+                if cfg.get("reset_refresh"):
+                    STATE["refresh_started"] = 0
+                    STATE["refresh_hits"] = 0
             self._send(200, '{"ok":1}')
+            return
+
+        if parsed.path == "/auth/v1/token":
+            with LOCK:
+                STATE["refresh_started"] += 1
+                delay_s = STATE["refresh_delay_s"]
+            if delay_s > 0:
+                step = 0.05
+                waited = 0.0
+                while waited < delay_s:
+                    time.sleep(step)
+                    waited += step
+            with LOCK:
+                STATE["refresh_hits"] += 1
+            tok = "t0002.eyJzdWIiOiJ1MSIsImV4cCI6NDEwMjQ0NDgwMH0.s0002"
+            self._send(200, json.dumps({
+                "access_token": tok,
+                "refresh_token": "r2",
+                "token_type": "bearer",
+            }))
+            return
+
+        if parsed.path.startswith("/rest/v1/rpc/"):
+            expected = "Bearer t0002.eyJzdWIiOiJ1MSIsImV4cCI6NDEwMjQ0NDgwMH0.s0002"
+            if self.headers.get("Authorization") == expected:
+                self._send(200, "[]")
+            else:
+                self._send(401, '{"message":"JWT expired"}')
             return
 
         if parsed.path != "/v1/farol/compor":
