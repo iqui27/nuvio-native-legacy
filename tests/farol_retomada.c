@@ -277,12 +277,16 @@ static void checaResumoAceito(const char *caso, const P6 *base, const P6 *p,
   checaResumoAceitoEp(caso, 2, 4, base, p, esperado);
 }
 
-static void checaResumoRecusado(const char *caso, const P6 *base, const P6 *p) {
+static void checaResumoRecusadoEp(const char *caso, int t, int e, const P6 *base, const P6 *p) {
   char res[192];
-  int ok = farolcompor_retomada_resumo("tt0903747", 2, 4, res, sizeof res);
+  int ok = farolcompor_retomada_resumo("tt0903747", t, e, res, sizeof res);
   CHECA(ok == 0 && res[0] == '\0', "%s: farolcompor_retomada_resumo vazou [%s]", caso, res);
   CHECA(p6Igual(p, base), "%s: P6 mudou (%d linhas vs %d, linha1=[%s])",
         caso, p->n, base->n, p->n > 1 ? p->linhas[1] : "");
+}
+
+static void checaResumoRecusado(const char *caso, const P6 *base, const P6 *p) {
+  checaResumoRecusadoEp(caso, 2, 4, base, p);
 }
 
 // --- 1. caminho bom + canario anti-spoiler ----------------------------------
@@ -442,6 +446,29 @@ static void teste_p2_ordinais_compostos(void) {
   puts("ok  P2-1 ordinais compostos: twenty-first (T2E21) e decimo primeiro (T2E11)");
 }
 
+// --- 3d. P1-r4: substantivo de episodio/temporada seguido de marcador temporal -> recusado ---
+static void teste_p1_r4_marcador_temporal(void) {
+  static const struct { int t; int e; const char *cen; } casos[] = {
+    { 2, 21, "p1_r4_21_later" },
+    { 2, 22, "p1_r4_22_depois" },
+    { 2,  4, "p1_r4_4_later" },
+    { 3,  4, "p1_r4_3temp_despues" },
+  };
+  int i;
+  for (i = 0; i < (int)(sizeof casos / sizeof casos[0]); i++) {
+    int n0;
+    P6 base, p;
+    base = abrirCasoEp(casos[i].t, casos[i].e);
+    escreverCenario(casos[i].cen);
+    n0 = nCapturas();
+    p = rodarEp(casos[i].t, casos[i].e, 2500, &base);
+    CHECA(nCapturas() == n0 + 1, "%s: esperava 1 POST", casos[i].cen);
+    checaResumoRecusadoEp(casos[i].cen, casos[i].t, casos[i].e, &base, &p);
+    auditarCorpos(casos[i].cen);
+  }
+  puts("ok  P1-r4 marcador temporal: 21 episodes later, 22 episodios depois, 4 episodes later, 3 temporadas despues -> recusados");
+}
+
 // --- 4. prazo de 6 s ----------------------------------------------------------
 static void teste_prazo(void) {
   P6 base, p;
@@ -530,6 +557,7 @@ int main(int argc, char **argv) {
   teste_quedas();
   teste_positivos_p2_e_controles();
   teste_p2_ordinais_compostos();
+  teste_p1_r4_marcador_temporal();
   teste_prazo();
   teste_player_abre_depois();
   teste_imdb_composto();

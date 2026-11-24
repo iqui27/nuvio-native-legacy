@@ -4643,6 +4643,11 @@ const RET_SUB_EP = new Set([
 
 const RET_SUB_TEMP = new Set(["temporada", "temporadas", "season", "seasons", "temp", "seas"]);
 
+const RET_MARCADOR_TEMP_1 = new Set([
+  "later", "after", "afterward", "afterwards", "ahead",
+  "depois", "adiante", "apos", "despues", "adelante",
+]);
+
 const RET_PROXIMO = new Set([
   "proximo", "proxima", "proximos", "proximas",
   "seguinte", "seguintes", "siguiente", "siguientes",
@@ -4850,6 +4855,17 @@ function retParseNumeroExtenso(toks, i) {
   return null;
 }
 
+function retEhMarcadorTemp(toks, i) {
+  if (i >= toks.length || toks[i].q) return false;
+  const w = toks[i].w;
+  if (RET_MARCADOR_TEMP_1.has(w)) return true;
+  if (i + 1 >= toks.length || toks[i + 1].q) return false;
+  const w2 = toks[i + 1].w;
+  return (w === "mais" && w2 === "tarde") ||
+         (w === "mas" && (w2 === "tarde" || w2 === "adelante")) ||
+         (w === "a" && w2 === "frente");
+}
+
 function retTokenizar(s) {
   const norm = s
     .normalize("NFD")
@@ -4939,6 +4955,8 @@ export function validarResumoRetomada(bruto, ret) {
     }
     const mEp = w.match(/^ep(\d{1,4})$/);
     if (mEp && Number(mEp[1]) !== ret.episodio) return null;
+
+    if ((RET_SUB_EP.has(w) || RET_SUB_TEMP.has(w)) && retEhMarcadorTemp(toks, i + 1)) return null;
 
     if (RET_SUB_EP.has(w)) {
       let j = i + 1;

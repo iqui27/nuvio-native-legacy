@@ -4197,6 +4197,7 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     "Na temp. 3, Walt morre.",
     "In seas. 3, Walt dies.",
     "In episode nro. 5, Walt dies.",
+    "Four episodes later, Walt dies.",
   ]) {
     const { post, chamadasLlm, kv } = cenario(t, {}, { respostaLlm: () => ({ resumo: p1 }) });
     const r = await post("/v1/farol/compor", pedidoRetomada({}, { temporada: 2, episodio: 4 }));
@@ -4234,6 +4235,44 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     null);
   assert.equal(validarResumoRetomada("No décimo primeiro episódio, Walt foge.", { temporada: 2, episodio: 4 }),
     null);
+  // P1-r4: substantivo de episodio/temporada seguido de marcador temporal futuro na mesma clausula -> rejeitado.
+  for (const [temporada, episodio, texto] of [
+    [2, 21, "Twenty-one episodes later, Walt dies."],
+    [2, 22, "Vinte e dois episódios depois, Walt morre."],
+    [2, 4, "Four episodes later, Walt dies."],
+    [3, 4, "Tres temporadas después, Walt muere."],
+  ]) {
+    assert.equal(validarResumoRetomada(texto, { temporada, episodio }), null, `T${temporada}E${episodio}: ${texto}`);
+    const { post, chamadasLlm, kv } = cenario(t, {}, { respostaLlm: () => ({ resumo: texto }) });
+    const r = await post("/v1/farol/compor", pedidoRetomada({}, { temporada, episodio }));
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { origem: "regras" }, `P1 T${temporada}E${episodio} deveria cair em regras: ${texto}`);
+    assert.equal(chamadasLlm.length, 1);
+    assert.equal(kv.mapa.size, 0);
+  }
+  for (const [temporada, episodio, texto] of [
+    [2, 21, "Twenty-one episodes afterward, Walt dies."],
+    [2, 21, "Twenty-one episodes afterwards, Walt dies."],
+    [2, 21, "Twenty-one episodes ahead, Walt dies."],
+    [2, 21, "Twenty-one episodes after, Walt dies."],
+    [2, 22, "Vinte e dois episódios adiante, Walt morre."],
+    [2, 22, "Vinte e dois episódios após o caso, morre."],
+    [2, 22, "Vinte e dois episódios mais tarde, morre."],
+    [2, 22, "Vinte e dois episódios à frente, morre."],
+    [3, 4, "Tres temporadas adelante, Walt muere."],
+    [3, 4, "Tres temporadas más tarde, Walt muere."],
+    [3, 4, "Tres temporadas más adelante, Walt muere."],
+  ]) {
+    assert.equal(validarResumoRetomada(texto, { temporada, episodio }), null, `T${temporada}E${episodio}: ${texto}`);
+  }
+  assert.equal(
+    validarResumoRetomada("Walt watched the episode. Later he ran.", { temporada: 2, episodio: 4 }),
+    "Walt watched the episode. Later he ran."
+  );
+  assert.equal(
+    validarResumoRetomada("No episódio, depois Walt foge.", { temporada: 2, episodio: 4 }),
+    "No episódio, depois Walt foge."
+  );
   // Citar o proprio episodio visto e permitido; cerca de codigo e aceita.
   assert.equal(validarResumoRetomada("No T2E9 Walt e Jesse ficaram no deserto.", { temporada: 2, episodio: 9 }),
     "No T2E9 Walt e Jesse ficaram no deserto.");

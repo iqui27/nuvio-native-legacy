@@ -907,6 +907,22 @@ static int retEhAbrevPonto(const char *s) {
          !strcmp(s, "temp") || !strcmp(s, "seas");
 }
 
+static int retEhMarcadorTemp(char *const *tok, const int *quebra, int nt, int i) {
+  static const char *const m1[] = {
+    "later", "after", "afterward", "afterwards", "ahead",
+    "depois", "adiante", "apos", "despues", "adelante",
+  };
+  size_t k;
+  if (i >= nt || quebra[i]) return 0;
+  for (k = 0; k < sizeof m1 / sizeof m1[0]; k++) {
+    if (!strcmp(tok[i], m1[k])) return 1;
+  }
+  if (i + 1 >= nt || quebra[i + 1]) return 0;
+  return (!strcmp(tok[i], "mais") && !strcmp(tok[i + 1], "tarde")) ||
+         (!strcmp(tok[i], "mas") && (!strcmp(tok[i + 1], "tarde") || !strcmp(tok[i + 1], "adelante"))) ||
+         (!strcmp(tok[i], "a") && !strcmp(tok[i + 1], "frente"));
+}
+
 // Coerente com validarResumoRetomada (farolgosto.js): recusa referencias a
 // outro episodio/temporada (numericas ou por extenso) e futuro/spoiler.
 static int retomadaResumoSemSpoiler(const char *s, int temporada, int episodio) {
@@ -1062,6 +1078,10 @@ static int retomadaResumoSemSpoiler(const char *s, int temporada, int episodio) 
       return 0;
     if (tok[i][0] == 'e' && tok[i][1] == 'p' &&
         retParseInt(tok[i] + 2, &num) && num != episodio)
+      return 0;
+
+    if ((retEhSubstEp(tok[i]) || retEhSubstTemp(tok[i])) &&
+        retEhMarcadorTemp(tok, quebra, nt, i + 1))
       return 0;
 
     if (retEhSubstEp(tok[i])) {

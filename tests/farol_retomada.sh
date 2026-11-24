@@ -87,8 +87,12 @@ RESP = {
     "pos_alvara":       (200, cena("Walt perde o alvará do laboratório.")),
     "pos_guarana_para": (200, cena("Walt toma guaraná com maracujá no Pará.")),
     "pos_ep_ponto_fim": (200, cena("Walt watched the episode. 5 days later he ran.")),
-    "ep_21_en_ok":      (200, cena("In the twenty-first episode, Walt flees.", a=("2", "21"))),
-    "ep_11_pt_ok":      (200, cena("No décimo primeiro episódio, Walt foge.", a=("2", "11"))),
+    "ep_21_en_ok":         (200, cena("In the twenty-first episode, Walt flees.", a=("2", "21"))),
+    "ep_11_pt_ok":         (200, cena("No décimo primeiro episódio, Walt foge.", a=("2", "11"))),
+    "p1_r4_21_later":      (200, cena("Twenty-one episodes later, Walt dies.", a=("2", "21"))),
+    "p1_r4_22_depois":     (200, cena("Vinte e dois episódios depois, Walt morre.", a=("2", "22"))),
+    "p1_r4_4_later":       (200, cena("Four episodes later, Walt dies.")),
+    "p1_r4_3temp_despues": (200, cena("Tres temporadas después, Walt muere.", a=("3", "4"))),
 }
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -160,10 +164,10 @@ for l in linhas:
     assert d["modo"] == "retomada", d["modo"]
     r = d["retomada"]
     assert set(r) == {"temporada", "episodio", "sinopse"}, r
-    assert (r["temporada"], r["episodio"]) in ((2, 4), (2, 11), (2, 21)), r
-    assert r["sinopse"].startswith(f"SinopseVistaT2E{r['episodio']}"), r
+    assert (r["temporada"], r["episodio"]) in ((2, 4), (2, 11), (2, 21), (2, 22), (3, 4)), r
+    assert r["sinopse"].startswith(f"SinopseVistaT{r['temporada']}E{r['episodio']}"), r
     assert [c["id"] for c in d["candidatos"]] == ["tt0903747"], d["candidatos"]
-print(f"farol_retomada: {len(linhas)} corpos auditados, so T2E4 visto")
+print(f"farol_retomada: {len(linhas)} corpos auditados, so episodio visto")
 PY
 
 # Contratos: farolinfo continua puro; faroldetalhe sem alocacao nem log.
