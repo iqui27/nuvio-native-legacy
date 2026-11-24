@@ -20,7 +20,8 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=26 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST
+      NUVIO_WEBOS_HLS: '1'
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=26 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST -DNV_WEBOS_HLS_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -142,6 +143,17 @@ jobs:
           npm install --prefix .build-tools --no-audit --no-fund @webosose/ares-cli@2.4.0
           rustup toolchain install 1.88.0 --profile minimal
           rustup target add --toolchain 1.88.0 armv7-unknown-linux-gnueabi
+      - name: WebOS HLS loopback and stream checks
+        if: env.NUVIO_WEBOS_HLS == '1'
+        timeout-minutes: 20
+        env:
+          RUSTUP_TOOLCHAIN: 1.88.0
+          NUVIO_DV_TRUEHD: '1'
+          NUVIO_DTS_ROOT: /tmp/nuvio-webos-hls-ffmpeg
+          NUVIO_DTS_BUILD: /tmp/nuvio-webos-hls-ffmpeg-build
+        run: |
+          NUVIO_DTS_HOST=1 CC=gcc bash tools/build-dts-ffmpeg.sh
+          bash tests/webos_hls.sh
       - name: DV7 conversion regressions
         env:
           RUSTUP_TOOLCHAIN: 1.88.0
@@ -171,7 +183,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .build-cache/sdk.tar.zst
-          key: native-v14-fixed-audio-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
+          key: native-v14-fixed-audio-sdk-amd64-hls-${{ env.NUVIO_WEBOS_HLS }}-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
       - name: Build webOS SDK, libass, FFmpeg and Rust
         run: |
           if [ -f .build-cache/sdk.tar.zst ]; then
@@ -179,7 +191,7 @@ jobs:
           else
             cp tools/Dockerfile tools/Dockerfile.review
             python3 .github/build/sdk_links.py tools/Dockerfile.review
-            docker build -f tools/Dockerfile.review --platform linux/amd64 --build-arg NUVIO_DV_TRUEHD=1 --build-arg SDK_URL=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz -t nuvio-webos-sdk tools/
+            docker build -f tools/Dockerfile.review --platform linux/amd64 --build-arg NUVIO_DV_TRUEHD=1 --build-arg NUVIO_WEBOS_HLS="$NUVIO_WEBOS_HLS" --build-arg SDK_URL=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz -t nuvio-webos-sdk tools/
             rm tools/Dockerfile.review
             mkdir -p .build-cache
             docker save nuvio-webos-sdk | zstd -T2 -3 -o .build-cache/sdk.tar.zst
@@ -188,7 +200,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .build-cache/sdk.tar.zst
-          key: native-v14-fixed-audio-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
+          key: native-v14-fixed-audio-sdk-amd64-hls-${{ env.NUVIO_WEBOS_HLS }}-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
       - name: Restore P2P cache
         uses: actions/cache/restore@v4
         with:
