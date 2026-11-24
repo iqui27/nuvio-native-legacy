@@ -53,6 +53,7 @@ typedef struct {
   IlhaModal modal;
   char titulo[120], kicker[48], dica[64];   // o aviso v2 (ilha.h, IlhaAvisoEx)
   int acao;
+  int ponto, dispensavel;       // presenca do Farol (ilha.h, IlhaAvisoEx)
 } Aviso;
 
 #define FILA 6
@@ -130,6 +131,8 @@ static int pedido, pedidoQual;
 static IlhaCartao pedidoC;
 static int avPedido;
 static char avPedidoChave[80];
+static int avDispensou;               // ilha_aviso_dispensado (Voltar)
+static char avDispensouChave[80];
 static float modalAvisoH = 414.0f;   // altura do modal de aviso (layoutModalAviso)
 #ifdef NV_TOUCH_UI
 static ToqueRolagem toqueModal;
@@ -247,6 +250,7 @@ void ilha_avisar_ex(const IlhaAvisoEx *e) {
   snprintf(a.dica, sizeof a.dica, "%s", e->dica ? e->dica : "");
   a.acao = e->acao;
   if (a.acao) a.tecla = 1;
+  a.ponto = e->ponto; a.dispensavel = e->dispensavel;
   a.ordem = ++ordemSeq;
   // Mesma chave na tela: troca no lugar e renova o prazo.
   if (temCur && !strcmp(cur.chave, a.chave)) {
@@ -367,6 +371,13 @@ int ilha_aviso_pediu(char *chave, size_t tam) {
   avPedido = 0;
   if (chave && tam) snprintf(chave, tam, "%s", avPedidoChave);
   return o;
+}
+
+int ilha_aviso_dispensado(char *chave, size_t tam) {
+  if (!avDispensou) return 0;
+  avDispensou = 0;
+  if (chave && tam) snprintf(chave, tam, "%s", avDispensouChave);
+  return 1;
 }
 
 void ilha_acao(const char *icone, const char *texto, int tipo, const char *poster,
@@ -637,6 +648,20 @@ int ilha_evento(const SDL_Event *e) {
         teclaAzul(e->key.keysym.sym, e->key.keysym.scancode) &&
         A > 0.5f && mostra == M_AVISO && abrirDoAviso())
       return 1;
+    // VOLTAR NUM AVISO DISPENSAVEL (o do Farol, issue 20): a pilula fecha
+    // ja, e quem o pos sabe (ilha_aviso_dispensado). So com a pilula na tela
+    // DE FATO — dentro do player app.c nao desenha esta ilha, e o Voltar e
+    // do player. Sem aviso dispensavel o Voltar segue para a tela.
+    if (e->type == SDL_KEYDOWN && !e->key.repeat && temCur && curAte && cur.dispensavel &&
+        mostra == M_AVISO && !strcmp(mostraA.chave, cur.chave) && A > 0.5f &&
+        ultQuadro && SDL_GetTicks() - ultQuadro < 250u &&
+        (e->key.keysym.sym == SDLK_AC_BACK || e->key.keysym.sym == SDLK_ESCAPE ||
+         e->key.keysym.sym == SDLK_BACKSPACE || e->key.keysym.scancode == NV_SCANCODE_BACK)) {
+      avDispensou = 1;
+      snprintf(avDispensouChave, sizeof avDispensouChave, "%s", cur.chave);
+      proximo();
+      return 1;
+    }
     // AZUL/CH+ COM A BOLINHA NO RELOGIO PARADO: reabre a enquete. Quem a tem
     // (enquete.c) le o pedido por ilha_ponto_pediu e poe o convite de novo.
     if (e->type == SDL_KEYDOWN && !e->key.repeat && pontoEnquete && relogioQuer &&
@@ -892,6 +917,21 @@ static void desenharLead(const Aviso *v, float x, float yc, float a) {
   if (!strcmp(v->chave, SALVAR_CHAVE)) a *= svooIconeA;
   gfx_icone((GfxRect){ x, yc - ICONE * 0.5f, ICONE, ICONE }, iconeDo(v), cr, cg, cb,
             v->tipo == ILHA_INFO ? a * 0.86f : a);
+  // A PRESENCA DO FAROL (ALMA 4): o ponto que respira no canto de cima do
+  // icone, na cor do tipo, recortado do icone por um aro do material da
+  // pilula (#121316 no solido). Animacoes reduzidas: parado, sem mola.
+  if (v->ponto) {
+    float p = ajustes_animacoes_reduzidas() || anim_politica_reduzida ? 1.0f
+              : 0.60f + 0.40f * sinf((float)SDL_GetTicks() * (6.2831853f / 1400.0f));
+    float d = 9.0f, px = x + ICONE - d * 0.35f, py = yc - ICONE * 0.5f - d * 0.15f;
+    float fr = 0.071f, fg = 0.075f, fb = 0.086f;          // #121316
+    if (ajustes_vidro()) { fr = 0.055f; fg = 0.058f; fb = 0.068f; }
+    gfx_rect((GfxRect){ px - 3.0f, py - 3.0f, d + 6.0f, d + 6.0f }, 0, GFX_DISCO,
+             0, 0, 0, 0, fr, fg, fb, 0.92f * a);
+    gfx_rect((GfxRect){ px - 3.0f, py - 3.0f, d + 6.0f, d + 6.0f }, 0, GFX_DISCO,
+             0, 0, 0, 0, cr, cg, cb, 0.22f * a * p);
+    gfx_cor((GfxRect){ px, py, d, d }, 0.5f, cr, cg, cb, a * (0.55f + 0.45f * p));
+  }
 }
 
 // --- o aviso v2 (duas linhas / com marca) e a atividade v2 ------------------------
@@ -990,7 +1030,8 @@ static float larguraAviso(const Aviso *v, int nMais, LinhasAviso *L) {
     w += 16.0f + ((float)L->mais.w + 16.0f < 30.0f ? 30.0f : (float)L->mais.w + 16.0f);
   }
   if (v->tecla) {
-    L->abre = txt_linha(TXT_CAPTION2, i18n("abre"), 176, 180, 190, 255);
+    // `dica` troca o "abre" (o Farol: "abre o Farol", ja traduzido).
+    L->abre = txt_linha(TXT_CAPTION2, v->dica[0] ? v->dica : i18n("abre"), 176, 180, 190, 255);
     w += 18.0f + TECLA + 8.0f + (float)L->abre.w;
   }
   return w;
@@ -2351,7 +2392,7 @@ void ilha_abrir_sessao(void) {
   modalAberto = modalAviso = modalAtividade = modalFoco = modalAvisoMedido = 0;
   modalQual = -1; modalChave[0] = 0; modalDesde = 0; modalT = modalV = 0.0f;
   memset(modalFocoA, 0, sizeof modalFocoA);
-  pedido = avPedido = 0; pedidoQual = -1; avPedidoChave[0] = 0;
+  pedido = avPedido = avDispensou = 0; pedidoQual = -1; avPedidoChave[0] = avDispensouChave[0] = 0;
   memset(&pedidoC, 0, sizeof pedidoC);
   atvTexto[0] = atvTitulo[0] = atvDetalhes[0] = atvIcone[0] = 0;
   atvVisto = 0; atvV2 = atvTemCarga = 0; atvProg = -1.0f; atvBarraA = 0.0f;

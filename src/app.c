@@ -6501,6 +6501,9 @@ void app_atualizar(float dt, Uint32 agora) {
       ajustes_abrir_no_trakt();
       trocarTela(TELA_AJUSTES); menu_definir_destino(MENU_AJUSTES);
     }
+    // O aviso do Farol (issue 20): AZUL/CH+ abre o Farol ja no veredito.
+    { int s = ilhasinais_pediu_farol();
+      if (s >= 0 && !player_aberto() && !resolver_aberto()) resolver_abrir_sintoma(s); }
     // Pedidos de amizade (varios) e amigos vendo agora: a aba do painel.
     if (ilhasinais_pediu_amigos()) spainel_ir_aba(2);   // 2 = aba Amigos
     { char im[32];

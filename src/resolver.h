@@ -22,6 +22,9 @@
 
 // Abre a tela de qualquer lugar (Ajustes › Ajuda).
 void resolver_abrir(void);
+// Abre ja testando `sintoma` (RES_S_*): a tela cai no veredito, sem a pessoa
+// escolher o sintoma (o aviso do Farol na ilha, issue 20). Fora da faixa = abrir.
+void resolver_abrir_sintoma(int sintoma);
 int  resolver_aberto(void);
 float resolver_escala(void);   // fator de desenho (<1 quando a grade 1920x1080 nao cabe)
 void resolver_evento(const SDL_Event *e);
