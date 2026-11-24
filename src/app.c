@@ -35,6 +35,11 @@
 #include "dormiu.h"
 #include "farolsinal.h"
 #include "farolpeca.h"
+#include "farol.h"
+#include "faroltexto.h"
+extern __attribute__((weak)) int player_pediu_farol_acao(void);
+extern __attribute__((weak)) void farol_sessao_reiniciar(void);
+extern __attribute__((weak)) void farol_registrar_resultado(int acao, int ok);
 #include "descanso.h"
 #include "iconeapp.h"
 #include "logoapp.h"
@@ -7919,6 +7924,52 @@ void app_atualizar(float dt, Uint32 agora) {
     idBaseDoTitulo(base, sizeof base);
     stream_preferir(base[0] ? fontepref_escolher_manual(base) : -1);
     nomeParaFolha(); stream_folha_abrir();
+  }
+  if (aguardandoFonte != 2 && player_aberto() && player_pediu_farol_acao) {
+    int fa = player_pediu_farol_acao();
+    if (fa == FAROL_A_ABRIR_DEBRID || fa == FAROL_A_RECONECTAR_DEBRID) {
+      int ag = -1;
+      uint64_t aid = player_ultimo_addon_farol();
+      if (aid) {
+        for (int a = 0; a < addons_n(); a++) {
+          if (addonmodo_id(addons_base(a)) == aid && addons_fornece(a, ADD_STREAM)) {
+            ag = a;
+            break;
+          }
+        }
+      }
+      if (ag < 0 && stream_atual() >= 0) {
+        int cand = stream_ordem_addon(stream_atual());
+        if (cand >= 0 && cand < addons_n() && addons_fornece(cand, ADD_STREAM))
+          ag = cand;
+      }
+      if (addons_n() > 0) {
+        menu_fechar();
+        addonguia_reconectar_debrid(ag);
+      } else {
+        if (farol_registrar_resultado) farol_registrar_resultado(fa, 0);
+        aguardandoFonte = 0; limparFonteVOD(); novaGeracaoFonte(); limparFontePendente();
+        player_encerrar();
+        if (detail_aberto()) detail_fechar_seco();
+        ajustes_abrir_na_espera_fonte();
+        trocarTela(TELA_AJUSTES); menu_definir_destino(MENU_AJUSTES);
+      }
+    } else if (fa == FAROL_A_TENTAR_DE_NOVO && !player_id_canal()[0]) {
+      int atual = stream_atual();
+      if (farol_sessao_reiniciar) farol_sessao_reiniciar();
+      if (atual >= 0 && stream_item(atual)) {
+        tocarFonteEscolhida(atual, 2);
+      } else {
+        player_voltar_a_esperar();
+        buscarParaPlayerModo(1);
+        aguardandoFonte = 1;
+      }
+      if (farol_registrar_resultado) farol_registrar_resultado(fa, 1);
+    } else if (fa == FAROL_A_ENVIAR_REGISTRO) {
+      avisos_enviar_registro_atual();
+      player_toast(i18n(FT_ENVIANDO), 3500u);
+      if (farol_registrar_resultado) farol_registrar_resultado(fa, 1);
+    }
   }
 
   { CatItem item;char url[4096];
