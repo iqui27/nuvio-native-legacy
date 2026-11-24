@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-24T14:54:45+00:00",
+    "updatedAt": "2026-11-24T14:59:41+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -19,7 +19,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-24T12:28:00+00:00",
+    "lastVpsReportedAt": "2026-11-24T14:38:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -130,61 +130,46 @@
         "activeSlotsKnown": false,
         "activeCorrections": [
           {
-            "item": "farol-50",
-            "task": "FAROL50B",
-            "baseSha": "af944ee5c1",
+            "item": "farol-32",
+            "task": "FAROL32B",
+            "baseSha": "bf37d8bc6b",
             "sha": null,
             "status": "dispatched_reported",
+            "model": "Gemini 4 Neon",
+            "host": "ibm-ephemeral",
+            "executor": "Antigravity",
             "deliveryReported": false,
             "newReviewReported": false,
-            "model": "SWE-2",
-            "host": "oracle-vps",
-            "executor": "Pi",
-            "sourceLine": 370,
-            "reportedAt": "2026-11-24T11:52:00+00:00",
-            "source": "Relato VPS · lotes/REPORTE-POKE.log"
+            "sourceLine": 386,
+            "reportedAt": "2026-11-24T14:38:00+00:00",
+            "reportedAtPrecision": "minute",
+            "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+            "reportedSummary": "386 14:38 farol-32 REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)"
           },
           {
-            "item": "farol-51",
-            "task": "FAROL51B",
-            "baseSha": "62eee32ada",
+            "item": "farol-57",
+            "task": "FAROL57H",
+            "baseSha": "f61aa1c9fe",
             "sha": null,
             "status": "dispatched_reported",
-            "deliveryReported": false,
-            "newReviewReported": false,
             "model": "Gemini Hydrogen",
             "host": "ibm-ephemeral",
             "executor": "Antigravity",
-            "sourceLine": 373,
-            "reportedAt": "2026-11-24T12:28:00+00:00",
-            "source": "Relato VPS · lotes/REPORTE-POKE.log"
+            "deliveryReported": false,
+            "newReviewReported": false,
+            "sourceLine": 384,
+            "reportedAt": "2026-11-24T13:54:00+00:00",
+            "reportedAtPrecision": "minute",
+            "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+            "reportedSummary": "384 13:54 farol-57 REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM)"
           }
         ],
         "reviewItems": [
-          "farol-31",
-          "farol-57"
+          "farol-54"
         ],
-        "reviewCount": 2,
+        "reviewCount": 1,
         "reviewCountInferred": true,
         "approvedItems": [
-          "farol-15",
-          "farol-16",
-          "farol-17",
-          "farol-18",
-          "farol-19",
-          "farol-20",
-          "farol-21",
-          "farol-22",
-          "farol-23",
-          "farol-25",
-          "farol-27",
-          "farol-33",
-          "farol-34",
-          "farol-49",
-          "farol-52",
-          "farol-53"
-        ],
-        "deliveredReported": [
           "farol-15",
           "farol-16",
           "farol-17",
@@ -203,96 +188,99 @@
           "farol-50",
           "farol-51",
           "farol-52",
+          "farol-53"
+        ],
+        "deliveredReported": [
+          "farol-15",
+          "farol-16",
+          "farol-17",
+          "farol-18",
+          "farol-19",
+          "farol-20",
+          "farol-21",
+          "farol-22",
+          "farol-23",
+          "farol-25",
+          "farol-27",
+          "farol-31",
+          "farol-32",
+          "farol-33",
+          "farol-34",
+          "farol-49",
+          "farol-50",
+          "farol-51",
+          "farol-52",
           "farol-53",
+          "farol-54",
           "farol-57"
         ],
-        "note": "Sem implementação primária aberta neste recorte; 31/57 em revisão, 50/51 em correção. Nenhuma nova contagem global de vagas ou reset de cota informado.",
-        "sourceLine": 373,
-        "reportedAt": "2026-11-24T12:28:00+00:00",
+        "note": "32/57 em correção na IBM; 54 em revisão sem revisor reiterado no resumo. 31/50/51 aprovados com ressalvas. Sem nova contagem global.",
+        "sourceLine": 386,
+        "reportedAt": "2026-11-24T14:38:00+00:00",
         "inferredFromLatestReports": true,
-        "scope": "Somente as frentes dos relatos 272–373; não nova ocupação global nem disponibilidade de cota"
+        "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
       "capacity": {
         "ibmCurrentActiveSlots": null,
         "ibmCurrentActiveSlotsKnown": false,
-        "ibmCurrentReviewTasks": 0,
-        "ibmCurrentReviewTasksInferred": true,
         "knownIbmCorrectionDispatches": [
           {
-            "item": "farol-51",
-            "task": "FAROL51B",
-            "baseSha": "62eee32ada",
+            "item": "farol-32",
+            "task": "FAROL32B",
+            "baseSha": "bf37d8bc6b",
             "sha": null,
             "status": "dispatched_reported",
-            "deliveryReported": false,
-            "newReviewReported": false,
-            "model": "Gemini Hydrogen",
+            "model": "Gemini 4 Neon",
             "host": "ibm-ephemeral",
             "executor": "Antigravity",
-            "sourceLine": 373,
-            "reportedAt": "2026-11-24T12:28:00+00:00",
-            "source": "Relato VPS · lotes/REPORTE-POKE.log"
-          }
-        ],
-        "vpsActiveReviews": [
-          {
-            "item": "farol-31",
-            "round": "r2",
-            "sha": "0563840363",
-            "reviewer": "Opus",
-            "host": "oracle-vps",
-            "executor": "Pi",
-            "status": "launched_reported",
-            "verdict": null,
-            "verdictIssued": false,
-            "reportReadLocally": false,
-            "report": "2026-11-24T12:06:00Z farol-31 REVISAO agente/21z-farol-31@0563840363 FAROL31B Hydrogen IBM entregue; em revisao r2 Opus via Pi (FAROL31-r2.md)",
-            "sourceLine": 372,
-            "reportedAt": "2026-11-24T12:06:00+00:00",
-            "source": "Relato VPS · lotes/REPORTE-POKE.log",
-            "reportPath": "FAROL31-r2.md"
+            "deliveryReported": false,
+            "newReviewReported": false,
+            "sourceLine": 386,
+            "reportedAt": "2026-11-24T14:38:00+00:00",
+            "reportedAtPrecision": "minute",
+            "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+            "reportedSummary": "386 14:38 farol-32 REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)"
           },
           {
             "item": "farol-57",
-            "round": "r6",
-            "sha": "e47a39b06a",
-            "reviewer": "Sol",
-            "host": "oracle-vps",
-            "executor": "Pi",
+            "task": "FAROL57H",
+            "baseSha": "f61aa1c9fe",
+            "sha": null,
+            "status": "dispatched_reported",
+            "model": "Gemini Hydrogen",
+            "host": "ibm-ephemeral",
+            "executor": "Antigravity",
+            "deliveryReported": false,
+            "newReviewReported": false,
+            "sourceLine": 384,
+            "reportedAt": "2026-11-24T13:54:00+00:00",
+            "reportedAtPrecision": "minute",
+            "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+            "reportedSummary": "384 13:54 farol-57 REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM)"
+          }
+        ],
+        "activeReviews": [
+          {
+            "item": "farol-54",
+            "sha": "40a75c35d6",
+            "round": "r1",
             "status": "launched_reported",
             "verdict": null,
             "verdictIssued": false,
             "reportReadLocally": false,
-            "report": "2026-11-24T12:02:00Z farol-57 REVISAO agente/21z-farol-57@e47a39b06a FAROL57F Hydrogen IBM entregue; em revisao r6 Sol via Pi (FAROL57-r6.md)",
-            "sourceLine": 371,
-            "reportedAt": "2026-11-24T12:02:00+00:00",
-            "source": "Relato VPS · lotes/REPORTE-POKE.log",
-            "reportPath": "FAROL57-r6.md"
-          }
-        ],
-        "vpsCorrectionDispatches": [
-          {
-            "item": "farol-50",
-            "task": "FAROL50B",
-            "baseSha": "af944ee5c1",
-            "sha": null,
-            "status": "dispatched_reported",
-            "deliveryReported": false,
-            "newReviewReported": false,
-            "model": "SWE-2",
-            "host": "oracle-vps",
-            "executor": "Pi",
-            "sourceLine": 370,
-            "reportedAt": "2026-11-24T11:52:00+00:00",
-            "source": "Relato VPS · lotes/REPORTE-POKE.log"
+            "sourceLine": 385,
+            "reportedAt": "2026-11-24T14:21:00+00:00",
+            "reportedAtPrecision": "minute",
+            "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+            "reportedSummary": "385 14:21 farol-54 REVISAO r1 @40a75c35d6",
+            "reviewerNotReiteratedInSummary": true
           }
         ],
         "quotaResetReported": false,
-        "note": "Frentes conhecidas não equivalem a ocupação/capacidade global; cota anterior do claudeAgent não declarada resetada.",
-        "sourceLine": 373,
-        "reportedAt": "2026-11-24T12:28:00+00:00",
+        "sourceLine": 386,
+        "reportedAt": "2026-11-24T14:38:00+00:00",
         "inferredFromLatestReports": true,
-        "scope": "Somente as frentes dos relatos 272–373; não nova ocupação global nem disponibilidade de cota"
+        "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
       "infrastructure": {
         "codexMacbook": {
@@ -799,20 +787,20 @@
           "source": "Relato VPS · lotes/REPORTE-POKE.log"
         },
         "farol-31": {
-          "round": "r2",
           "sha": "0563840363",
+          "round": "r2",
+          "status": "approved_with_reservations_reported",
+          "verdict": "APROVADO_COM_RESSALVAS",
+          "verdictIssued": true,
+          "reportReadLocally": false,
+          "sourceLine": 375,
+          "reportedAt": "2026-11-24T12:41:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "375 12:41 farol-31 APROVADO_COM_RESSALVAS r2 @0563840363 (Opus; destrava #32)",
           "reviewer": "Opus",
           "host": "oracle-vps",
-          "executor": "Pi",
-          "status": "launched_reported",
-          "verdict": null,
-          "verdictIssued": false,
-          "reportReadLocally": false,
-          "report": "2026-11-24T12:06:00Z farol-31 REVISAO agente/21z-farol-31@0563840363 FAROL31B Hydrogen IBM entregue; em revisao r2 Opus via Pi (FAROL31-r2.md)",
-          "sourceLine": 372,
-          "reportedAt": "2026-11-24T12:06:00+00:00",
-          "source": "Relato VPS · lotes/REPORTE-POKE.log",
-          "reportPath": "FAROL31-r2.md"
+          "executor": "Pi"
         },
         "farol-34": {
           "round": "r3",
@@ -845,36 +833,32 @@
           "source": "Relato VPS · lotes/REPORTE-POKE.log"
         },
         "farol-50": {
-          "round": "r1",
-          "sha": "af944ee5c1",
-          "reviewer": "Gemini 4 Neon",
-          "host": "ibm-ephemeral",
-          "executor": null,
-          "status": "rejected_reported",
-          "verdict": "REPROVADO",
+          "sha": "7b3124a331",
+          "round": "r2",
+          "status": "approved_with_reservations_reported",
+          "verdict": "APROVADO_COM_RESSALVAS",
           "verdictIssued": true,
           "reportReadLocally": false,
-          "report": "2026-11-24T11:52:00Z farol-50 CORRECAO agente/21z-farol-50@af944ee5c1 REPROVADO r1 Neon IBM (2 P1 infantil + TOCTOU OK; 4 P2); FAROL50B delegada ao SWE-2 via Pi",
-          "sourceLine": 370,
-          "reportedAt": "2026-11-24T11:52:00+00:00",
-          "source": "Relato VPS · lotes/REPORTE-POKE.log"
+          "sourceLine": 380,
+          "reportedAt": "2026-11-24T13:21:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "380 13:21 farol-50 APROVADO_COM_RESSALVAS r2 @7b3124a331 (destrava #54)",
+          "reviewerNotReiteratedInSummary": true
         },
         "farol-51": {
-          "round": "r1",
-          "sha": "62eee32ada",
-          "reviewer": "Opus",
-          "host": "oracle-vps",
-          "executor": "Pi",
-          "status": "rejected_reported",
-          "verdict": "REPROVADO",
+          "sha": "d97d1f6c53",
+          "round": "r2",
+          "status": "approved_with_reservations_reported",
+          "verdict": "APROVADO_COM_RESSALVAS",
           "verdictIssued": true,
           "reportReadLocally": false,
-          "report": "2026-11-24T12:28:00Z farol-51 CORRECAO agente/21z-farol-51@62eee32ada REPROVADO r1 Opus (1 P1 So nesta TV invertido + ganchos farolconsent_* #53); FAROL51B delegada ao Hydrogen IBM",
-          "sourceLine": 373,
-          "reportedAt": "2026-11-24T12:28:00+00:00",
-          "source": "Relato VPS · lotes/REPORTE-POKE.log",
-          "attemptBeforeVerdict": "r1b",
-          "roundLabelNote": "Parecer chamado r1 no relato, após relançamento r1b; tentativa interrompida sem parecer preservada separadamente."
+          "sourceLine": 383,
+          "reportedAt": "2026-11-24T13:52:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "383 13:52 farol-51 APROVADO_COM_RESSALVAS r2 @d97d1f6c53 (composição real com #53 provada)",
+          "reviewerNotReiteratedInSummary": true
         },
         "farol-53": {
           "round": "r1",
@@ -892,20 +876,46 @@
           "source": "Relato VPS · lotes/REPORTE-POKE.log"
         },
         "farol-57": {
-          "round": "r6",
-          "sha": "e47a39b06a",
-          "reviewer": "Sol",
-          "host": "oracle-vps",
-          "executor": "Pi",
+          "sha": "f61aa1c9fe",
+          "round": "r7",
+          "status": "rejected_reported",
+          "verdict": "REPROVADO",
+          "verdictIssued": true,
+          "reportReadLocally": false,
+          "sourceLine": 384,
+          "reportedAt": "2026-11-24T13:54:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "384 13:54 farol-57 REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM)",
+          "reviewerNotReiteratedInSummary": true
+        },
+        "farol-32": {
+          "sha": "bf37d8bc6b",
+          "round": "r1",
+          "status": "rejected_reported",
+          "verdict": "REPROVADO",
+          "verdictIssued": true,
+          "reportReadLocally": false,
+          "sourceLine": 386,
+          "reportedAt": "2026-11-24T14:38:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "386 14:38 farol-32 REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)",
+          "reviewerNotReiteratedInSummary": true
+        },
+        "farol-54": {
+          "sha": "40a75c35d6",
+          "round": "r1",
           "status": "launched_reported",
           "verdict": null,
           "verdictIssued": false,
           "reportReadLocally": false,
-          "report": "2026-11-24T12:02:00Z farol-57 REVISAO agente/21z-farol-57@e47a39b06a FAROL57F Hydrogen IBM entregue; em revisao r6 Sol via Pi (FAROL57-r6.md)",
-          "sourceLine": 371,
-          "reportedAt": "2026-11-24T12:02:00+00:00",
-          "source": "Relato VPS · lotes/REPORTE-POKE.log",
-          "reportPath": "FAROL57-r6.md"
+          "sourceLine": 385,
+          "reportedAt": "2026-11-24T14:21:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "385 14:21 farol-54 REVISAO r1 @40a75c35d6",
+          "reviewerNotReiteratedInSummary": true
         }
       },
       "wave2ApprovalGate": {
@@ -921,117 +931,82 @@
         "diskFreeGb": 39,
         "diskSourceLine": 268,
         "diskReportedAt": "2026-11-24T04:33:00+00:00",
-        "activeReviews": [
-          {
-            "item": "farol-31",
-            "round": "r2",
-            "sha": "0563840363",
-            "reviewer": "Opus",
-            "host": "oracle-vps",
-            "executor": "Pi",
-            "status": "launched_reported",
-            "verdict": null,
-            "verdictIssued": false,
-            "reportReadLocally": false,
-            "report": "2026-11-24T12:06:00Z farol-31 REVISAO agente/21z-farol-31@0563840363 FAROL31B Hydrogen IBM entregue; em revisao r2 Opus via Pi (FAROL31-r2.md)",
-            "sourceLine": 372,
-            "reportedAt": "2026-11-24T12:06:00+00:00",
-            "source": "Relato VPS · lotes/REPORTE-POKE.log",
-            "reportPath": "FAROL31-r2.md"
-          },
-          {
-            "item": "farol-57",
-            "round": "r6",
-            "sha": "e47a39b06a",
-            "reviewer": "Sol",
-            "host": "oracle-vps",
-            "executor": "Pi",
-            "status": "launched_reported",
-            "verdict": null,
-            "verdictIssued": false,
-            "reportReadLocally": false,
-            "report": "2026-11-24T12:02:00Z farol-57 REVISAO agente/21z-farol-57@e47a39b06a FAROL57F Hydrogen IBM entregue; em revisao r6 Sol via Pi (FAROL57-r6.md)",
-            "sourceLine": 371,
-            "reportedAt": "2026-11-24T12:02:00+00:00",
-            "source": "Relato VPS · lotes/REPORTE-POKE.log",
-            "reportPath": "FAROL57-r6.md"
-          }
-        ],
-        "correctionDispatches": [
-          {
-            "item": "farol-50",
-            "task": "FAROL50B",
-            "baseSha": "af944ee5c1",
-            "sha": null,
-            "status": "dispatched_reported",
-            "deliveryReported": false,
-            "newReviewReported": false,
-            "model": "SWE-2",
-            "host": "oracle-vps",
-            "executor": "Pi",
-            "sourceLine": 370,
-            "reportedAt": "2026-11-24T11:52:00+00:00",
-            "source": "Relato VPS · lotes/REPORTE-POKE.log"
-          }
-        ],
-        "reason": "Último disco reportado: 39G na linha 268. Sem nova medição; as revisões posteriores foram lançadas.",
-        "sourceLine": 373,
-        "reportedAt": "2026-11-24T12:28:00+00:00",
+        "activeReviews": [],
+        "activeReviewsKnown": false,
+        "note": "Última medição de disco preservada, não repetida; o resumo não informa revisor/host da r1 do 54.",
+        "sourceLine": 386,
+        "reportedAt": "2026-11-24T14:38:00+00:00",
         "inferredFromLatestReports": true,
-        "scope": "Somente as frentes dos relatos 272–373; não nova ocupação global nem disponibilidade de cota"
+        "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
       "parallelReviews": {
         "items": [],
-        "count": 0,
-        "countInferred": true,
-        "note": "As quatro r1 IBM antigas tiveram parecer. Nenhuma revisão IBM ativa neste recorte; duas na VPS. Isto não é contagem global de tarefas IBM.",
-        "sourceLine": 373,
-        "reportedAt": "2026-11-24T12:28:00+00:00",
+        "count": null,
+        "countKnown": false,
+        "note": "Revisão r1 do 54 ativa; host/revisor não reiterados no resumo. Não inferir contagem global.",
+        "sourceLine": 386,
+        "reportedAt": "2026-11-24T14:38:00+00:00",
         "inferredFromLatestReports": true,
-        "scope": "Somente as frentes dos relatos 272–373; não nova ocupação global nem disponibilidade de cota"
+        "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
       "reviewRouting": {
-        "ibm": [],
-        "vps": [
-          "farol-31:r2",
-          "farol-57:r6"
+        "reviews": [
+          {
+            "item": "farol-54",
+            "sha": "40a75c35d6",
+            "round": "r1",
+            "status": "launched_reported",
+            "verdict": null,
+            "verdictIssued": false,
+            "reportReadLocally": false,
+            "sourceLine": 385,
+            "reportedAt": "2026-11-24T14:21:00+00:00",
+            "reportedAtPrecision": "minute",
+            "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+            "reportedSummary": "385 14:21 farol-54 REVISAO r1 @40a75c35d6",
+            "reviewerNotReiteratedInSummary": true
+          }
         ],
         "activeCorrections": [
           {
-            "item": "farol-50",
-            "task": "FAROL50B",
-            "baseSha": "af944ee5c1",
+            "item": "farol-32",
+            "task": "FAROL32B",
+            "baseSha": "bf37d8bc6b",
             "sha": null,
             "status": "dispatched_reported",
+            "model": "Gemini 4 Neon",
+            "host": "ibm-ephemeral",
+            "executor": "Antigravity",
             "deliveryReported": false,
             "newReviewReported": false,
-            "model": "SWE-2",
-            "host": "oracle-vps",
-            "executor": "Pi",
-            "sourceLine": 370,
-            "reportedAt": "2026-11-24T11:52:00+00:00",
-            "source": "Relato VPS · lotes/REPORTE-POKE.log"
+            "sourceLine": 386,
+            "reportedAt": "2026-11-24T14:38:00+00:00",
+            "reportedAtPrecision": "minute",
+            "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+            "reportedSummary": "386 14:38 farol-32 REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)"
           },
           {
-            "item": "farol-51",
-            "task": "FAROL51B",
-            "baseSha": "62eee32ada",
+            "item": "farol-57",
+            "task": "FAROL57H",
+            "baseSha": "f61aa1c9fe",
             "sha": null,
             "status": "dispatched_reported",
-            "deliveryReported": false,
-            "newReviewReported": false,
             "model": "Gemini Hydrogen",
             "host": "ibm-ephemeral",
             "executor": "Antigravity",
-            "sourceLine": 373,
-            "reportedAt": "2026-11-24T12:28:00+00:00",
-            "source": "Relato VPS · lotes/REPORTE-POKE.log"
+            "deliveryReported": false,
+            "newReviewReported": false,
+            "sourceLine": 384,
+            "reportedAt": "2026-11-24T13:54:00+00:00",
+            "reportedAtPrecision": "minute",
+            "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+            "reportedSummary": "384 13:54 farol-57 REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM)"
           }
         ],
-        "sourceLine": 373,
-        "reportedAt": "2026-11-24T12:28:00+00:00",
+        "sourceLine": 386,
+        "reportedAt": "2026-11-24T14:38:00+00:00",
         "inferredFromLatestReports": true,
-        "scope": "Somente as frentes dos relatos 272–373; não nova ocupação global nem disponibilidade de cota"
+        "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
       "publishedBases": {
         "base-ondaD": {
@@ -2098,6 +2073,318 @@
           },
           "supersededAt": "2026-11-24T14:54:45+00:00",
           "sourceLine": 373
+        },
+        {
+          "field": "implementation",
+          "state": {
+            "activeItems": [],
+            "activeSlots": null,
+            "activeSlotsKnown": false,
+            "activeCorrections": [
+              {
+                "item": "farol-50",
+                "task": "FAROL50B",
+                "baseSha": "af944ee5c1",
+                "sha": null,
+                "status": "dispatched_reported",
+                "deliveryReported": false,
+                "newReviewReported": false,
+                "model": "SWE-2",
+                "host": "oracle-vps",
+                "executor": "Pi",
+                "sourceLine": 370,
+                "reportedAt": "2026-11-24T11:52:00+00:00",
+                "source": "Relato VPS · lotes/REPORTE-POKE.log"
+              },
+              {
+                "item": "farol-51",
+                "task": "FAROL51B",
+                "baseSha": "62eee32ada",
+                "sha": null,
+                "status": "dispatched_reported",
+                "deliveryReported": false,
+                "newReviewReported": false,
+                "model": "Gemini Hydrogen",
+                "host": "ibm-ephemeral",
+                "executor": "Antigravity",
+                "sourceLine": 373,
+                "reportedAt": "2026-11-24T12:28:00+00:00",
+                "source": "Relato VPS · lotes/REPORTE-POKE.log"
+              }
+            ],
+            "reviewItems": [
+              "farol-31",
+              "farol-57"
+            ],
+            "reviewCount": 2,
+            "reviewCountInferred": true,
+            "approvedItems": [
+              "farol-15",
+              "farol-16",
+              "farol-17",
+              "farol-18",
+              "farol-19",
+              "farol-20",
+              "farol-21",
+              "farol-22",
+              "farol-23",
+              "farol-25",
+              "farol-27",
+              "farol-33",
+              "farol-34",
+              "farol-49",
+              "farol-52",
+              "farol-53"
+            ],
+            "deliveredReported": [
+              "farol-15",
+              "farol-16",
+              "farol-17",
+              "farol-18",
+              "farol-19",
+              "farol-20",
+              "farol-21",
+              "farol-22",
+              "farol-23",
+              "farol-25",
+              "farol-27",
+              "farol-31",
+              "farol-33",
+              "farol-34",
+              "farol-49",
+              "farol-50",
+              "farol-51",
+              "farol-52",
+              "farol-53",
+              "farol-57"
+            ],
+            "note": "Sem implementação primária aberta neste recorte; 31/57 em revisão, 50/51 em correção. Nenhuma nova contagem global de vagas ou reset de cota informado.",
+            "sourceLine": 373,
+            "reportedAt": "2026-11-24T12:28:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Somente as frentes dos relatos 272–373; não nova ocupação global nem disponibilidade de cota"
+          },
+          "supersededAt": "2026-11-24T14:59:41+00:00",
+          "sourceLine": 386
+        },
+        {
+          "field": "capacity",
+          "state": {
+            "ibmCurrentActiveSlots": null,
+            "ibmCurrentActiveSlotsKnown": false,
+            "ibmCurrentReviewTasks": 0,
+            "ibmCurrentReviewTasksInferred": true,
+            "knownIbmCorrectionDispatches": [
+              {
+                "item": "farol-51",
+                "task": "FAROL51B",
+                "baseSha": "62eee32ada",
+                "sha": null,
+                "status": "dispatched_reported",
+                "deliveryReported": false,
+                "newReviewReported": false,
+                "model": "Gemini Hydrogen",
+                "host": "ibm-ephemeral",
+                "executor": "Antigravity",
+                "sourceLine": 373,
+                "reportedAt": "2026-11-24T12:28:00+00:00",
+                "source": "Relato VPS · lotes/REPORTE-POKE.log"
+              }
+            ],
+            "vpsActiveReviews": [
+              {
+                "item": "farol-31",
+                "round": "r2",
+                "sha": "0563840363",
+                "reviewer": "Opus",
+                "host": "oracle-vps",
+                "executor": "Pi",
+                "status": "launched_reported",
+                "verdict": null,
+                "verdictIssued": false,
+                "reportReadLocally": false,
+                "report": "2026-11-24T12:06:00Z farol-31 REVISAO agente/21z-farol-31@0563840363 FAROL31B Hydrogen IBM entregue; em revisao r2 Opus via Pi (FAROL31-r2.md)",
+                "sourceLine": 372,
+                "reportedAt": "2026-11-24T12:06:00+00:00",
+                "source": "Relato VPS · lotes/REPORTE-POKE.log",
+                "reportPath": "FAROL31-r2.md"
+              },
+              {
+                "item": "farol-57",
+                "round": "r6",
+                "sha": "e47a39b06a",
+                "reviewer": "Sol",
+                "host": "oracle-vps",
+                "executor": "Pi",
+                "status": "launched_reported",
+                "verdict": null,
+                "verdictIssued": false,
+                "reportReadLocally": false,
+                "report": "2026-11-24T12:02:00Z farol-57 REVISAO agente/21z-farol-57@e47a39b06a FAROL57F Hydrogen IBM entregue; em revisao r6 Sol via Pi (FAROL57-r6.md)",
+                "sourceLine": 371,
+                "reportedAt": "2026-11-24T12:02:00+00:00",
+                "source": "Relato VPS · lotes/REPORTE-POKE.log",
+                "reportPath": "FAROL57-r6.md"
+              }
+            ],
+            "vpsCorrectionDispatches": [
+              {
+                "item": "farol-50",
+                "task": "FAROL50B",
+                "baseSha": "af944ee5c1",
+                "sha": null,
+                "status": "dispatched_reported",
+                "deliveryReported": false,
+                "newReviewReported": false,
+                "model": "SWE-2",
+                "host": "oracle-vps",
+                "executor": "Pi",
+                "sourceLine": 370,
+                "reportedAt": "2026-11-24T11:52:00+00:00",
+                "source": "Relato VPS · lotes/REPORTE-POKE.log"
+              }
+            ],
+            "quotaResetReported": false,
+            "note": "Frentes conhecidas não equivalem a ocupação/capacidade global; cota anterior do claudeAgent não declarada resetada.",
+            "sourceLine": 373,
+            "reportedAt": "2026-11-24T12:28:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Somente as frentes dos relatos 272–373; não nova ocupação global nem disponibilidade de cota"
+          },
+          "supersededAt": "2026-11-24T14:59:41+00:00",
+          "sourceLine": 386
+        },
+        {
+          "field": "parallelReviews",
+          "state": {
+            "items": [],
+            "count": 0,
+            "countInferred": true,
+            "note": "As quatro r1 IBM antigas tiveram parecer. Nenhuma revisão IBM ativa neste recorte; duas na VPS. Isto não é contagem global de tarefas IBM.",
+            "sourceLine": 373,
+            "reportedAt": "2026-11-24T12:28:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Somente as frentes dos relatos 272–373; não nova ocupação global nem disponibilidade de cota"
+          },
+          "supersededAt": "2026-11-24T14:59:41+00:00",
+          "sourceLine": 386
+        },
+        {
+          "field": "reviewRouting",
+          "state": {
+            "ibm": [],
+            "vps": [
+              "farol-31:r2",
+              "farol-57:r6"
+            ],
+            "activeCorrections": [
+              {
+                "item": "farol-50",
+                "task": "FAROL50B",
+                "baseSha": "af944ee5c1",
+                "sha": null,
+                "status": "dispatched_reported",
+                "deliveryReported": false,
+                "newReviewReported": false,
+                "model": "SWE-2",
+                "host": "oracle-vps",
+                "executor": "Pi",
+                "sourceLine": 370,
+                "reportedAt": "2026-11-24T11:52:00+00:00",
+                "source": "Relato VPS · lotes/REPORTE-POKE.log"
+              },
+              {
+                "item": "farol-51",
+                "task": "FAROL51B",
+                "baseSha": "62eee32ada",
+                "sha": null,
+                "status": "dispatched_reported",
+                "deliveryReported": false,
+                "newReviewReported": false,
+                "model": "Gemini Hydrogen",
+                "host": "ibm-ephemeral",
+                "executor": "Antigravity",
+                "sourceLine": 373,
+                "reportedAt": "2026-11-24T12:28:00+00:00",
+                "source": "Relato VPS · lotes/REPORTE-POKE.log"
+              }
+            ],
+            "sourceLine": 373,
+            "reportedAt": "2026-11-24T12:28:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Somente as frentes dos relatos 272–373; não nova ocupação global nem disponibilidade de cota"
+          },
+          "supersededAt": "2026-11-24T14:59:41+00:00",
+          "sourceLine": 386
+        },
+        {
+          "field": "vpsExecution",
+          "state": {
+            "status": "LIBERADA",
+            "diskFreeGb": 39,
+            "diskSourceLine": 268,
+            "diskReportedAt": "2026-11-24T04:33:00+00:00",
+            "activeReviews": [
+              {
+                "item": "farol-31",
+                "round": "r2",
+                "sha": "0563840363",
+                "reviewer": "Opus",
+                "host": "oracle-vps",
+                "executor": "Pi",
+                "status": "launched_reported",
+                "verdict": null,
+                "verdictIssued": false,
+                "reportReadLocally": false,
+                "report": "2026-11-24T12:06:00Z farol-31 REVISAO agente/21z-farol-31@0563840363 FAROL31B Hydrogen IBM entregue; em revisao r2 Opus via Pi (FAROL31-r2.md)",
+                "sourceLine": 372,
+                "reportedAt": "2026-11-24T12:06:00+00:00",
+                "source": "Relato VPS · lotes/REPORTE-POKE.log",
+                "reportPath": "FAROL31-r2.md"
+              },
+              {
+                "item": "farol-57",
+                "round": "r6",
+                "sha": "e47a39b06a",
+                "reviewer": "Sol",
+                "host": "oracle-vps",
+                "executor": "Pi",
+                "status": "launched_reported",
+                "verdict": null,
+                "verdictIssued": false,
+                "reportReadLocally": false,
+                "report": "2026-11-24T12:02:00Z farol-57 REVISAO agente/21z-farol-57@e47a39b06a FAROL57F Hydrogen IBM entregue; em revisao r6 Sol via Pi (FAROL57-r6.md)",
+                "sourceLine": 371,
+                "reportedAt": "2026-11-24T12:02:00+00:00",
+                "source": "Relato VPS · lotes/REPORTE-POKE.log",
+                "reportPath": "FAROL57-r6.md"
+              }
+            ],
+            "correctionDispatches": [
+              {
+                "item": "farol-50",
+                "task": "FAROL50B",
+                "baseSha": "af944ee5c1",
+                "sha": null,
+                "status": "dispatched_reported",
+                "deliveryReported": false,
+                "newReviewReported": false,
+                "model": "SWE-2",
+                "host": "oracle-vps",
+                "executor": "Pi",
+                "sourceLine": 370,
+                "reportedAt": "2026-11-24T11:52:00+00:00",
+                "source": "Relato VPS · lotes/REPORTE-POKE.log"
+              }
+            ],
+            "reason": "Último disco reportado: 39G na linha 268. Sem nova medição; as revisões posteriores foram lançadas.",
+            "sourceLine": 373,
+            "reportedAt": "2026-11-24T12:28:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Somente as frentes dos relatos 272–373; não nova ocupação global nem disponibilidade de cota"
+          },
+          "supersededAt": "2026-11-24T14:59:41+00:00",
+          "sourceLine": 386
         }
       ],
       "operationalMilestones": [
@@ -2115,7 +2402,7 @@
         }
       ]
     },
-    "lastVpsLine": 373,
+    "lastVpsLine": 386,
     "wave2Base": {
       "branch": "agente/base-21f-farol-onda2",
       "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -2138,18 +2425,17 @@
       "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
     },
     "criticalPath": {
-      "title": "Caminho crítico reportado",
-      "subtitle": "19 → 22 → 53: aceites com ressalvas; integração ainda pendente",
+      "title": "Frentes ainda abertas no relato",
+      "subtitle": "32/57 em correção; 54 em revisão · integração e TV separadas",
       "items": [
-        "farol-19",
-        "farol-22",
-        "farol-53"
+        "farol-32",
+        "farol-54",
+        "farol-57"
       ],
-      "status": "APROVADO_COM_RESSALVAS_REPORTADO",
       "sourceLines": [
-        316,
-        340,
-        355
+        386,
+        385,
+        384
       ],
       "integrationVerified": false
     }
@@ -6826,14 +7112,15 @@
         "farol-30"
       ],
       "allDependencies": false,
-      "status": "REVISAO",
+      "status": "APROVADA",
       "wave": "E",
       "sha": "0563840363",
       "batch": null,
-      "note": "agente/21z-farol-31@0563840363 FAROL31B Hydrogen IBM entregue; em revisao r2 Opus via Pi (FAROL31-r2.md) Revisão lançada, sem parecer novo; tentativa cyber_policy anterior sem relatório, quando indicada. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
-      "source": "Relato VPS · linha 372; pins novos não conferidos nesta conciliação",
+      "note": "APROVADO_COM_RESSALVAS r2 @0563840363 (Opus; destrava #32) Aceite com ressalvas: não é integração ou TV validada. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
       "verified": false,
       "previousNotes": [
+        "agente/21z-farol-31@0563840363 FAROL31B Hydrogen IBM entregue; em revisao r2 Opus via Pi (FAROL31-r2.md) Revisão lançada, sem parecer novo; tentativa cyber_policy anterior sem relatório, quando indicada. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
         "",
         "Onda E: Hydrogen IBM sobre agente/base-21f-farol-ondaE@f16ec96425 (brief sense/briefs/farol-31.md; inclui R1-R4/R8 de FAROL30-r1) Implementação lançada na base reportada, não entrega nem integração. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
         "agente/21z-farol-31@f88da9ac9c Hydrogen IBM entregou; em revisao r1 Sol via Codex (FAROL31-r1.md) Revisão lançada, sem parecer novo; tentativa cyber_policy anterior sem relatório, quando indicada. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
@@ -6885,6 +7172,15 @@
           "sourceLine": 372,
           "reportedAt": "2026-11-24T12:06:00+00:00",
           "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        },
+        {
+          "previousStatus": "REVISAO",
+          "previousSha": "0563840363",
+          "sourceLine": 375,
+          "reportedAt": "2026-11-24T12:41:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "375 12:41 farol-31 APROVADO_COM_RESSALVAS r2 @0563840363 (Opus; destrava #32)"
         }
       ],
       "workBase": {
@@ -6923,10 +7219,10 @@
       "blockers": [],
       "operationalWave": "E",
       "integrationVerified": false,
-      "reportedAt": "2026-11-24T12:06:00+00:00",
-      "updatedAt": "2026-11-24T14:54:45+00:00",
-      "owner": "VPS · Opus / Pi",
-      "verificationSummary": "Revisão lançada, sem parecer novo; tentativa cyber_policy anterior sem relatório, quando indicada.",
+      "reportedAt": "2026-11-24T12:41:00+00:00",
+      "updatedAt": "2026-11-24T14:59:41+00:00",
+      "owner": "Revisão · Opus",
+      "verificationSummary": "Aceite com ressalvas: não é integração ou TV validada.",
       "referenceHistory": [
         {
           "sha": null,
@@ -6993,20 +7289,20 @@
       ],
       "latestDeliverySha": "0563840363",
       "review": {
-        "round": "r2",
         "sha": "0563840363",
+        "round": "r2",
+        "status": "approved_with_reservations_reported",
+        "verdict": "APROVADO_COM_RESSALVAS",
+        "verdictIssued": true,
+        "reportReadLocally": false,
+        "sourceLine": 375,
+        "reportedAt": "2026-11-24T12:41:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "375 12:41 farol-31 APROVADO_COM_RESSALVAS r2 @0563840363 (Opus; destrava #32)",
         "reviewer": "Opus",
         "host": "oracle-vps",
-        "executor": "Pi",
-        "status": "launched_reported",
-        "verdict": null,
-        "verdictIssued": false,
-        "reportReadLocally": false,
-        "report": "2026-11-24T12:06:00Z farol-31 REVISAO agente/21z-farol-31@0563840363 FAROL31B Hydrogen IBM entregue; em revisao r2 Opus via Pi (FAROL31-r2.md)",
-        "sourceLine": 372,
-        "reportedAt": "2026-11-24T12:06:00+00:00",
-        "source": "Relato VPS · lotes/REPORTE-POKE.log",
-        "reportPath": "FAROL31-r2.md"
+        "executor": "Pi"
       },
       "previousBlockers": [
         [],
@@ -7083,6 +7379,22 @@
           "source": "Relato VPS · lotes/REPORTE-POKE.log",
           "attemptBeforeVerdict": "r1b",
           "roundLabelNote": "Parecer chamado r1 no relato, após relançamento r1b; tentativa interrompida sem parecer preservada separadamente."
+        },
+        {
+          "round": "r2",
+          "sha": "0563840363",
+          "reviewer": "Opus",
+          "host": "oracle-vps",
+          "executor": "Pi",
+          "status": "launched_reported",
+          "verdict": null,
+          "verdictIssued": false,
+          "reportReadLocally": false,
+          "report": "2026-11-24T12:06:00Z farol-31 REVISAO agente/21z-farol-31@0563840363 FAROL31B Hydrogen IBM entregue; em revisao r2 Opus via Pi (FAROL31-r2.md)",
+          "sourceLine": 372,
+          "reportedAt": "2026-11-24T12:06:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log",
+          "reportPath": "FAROL31-r2.md"
         }
       ],
       "latestRejectedSha": "f88da9ac9c",
@@ -7165,6 +7477,20 @@
         "sourceLine": 356,
         "reportedAt": "2026-11-24T10:00:00+00:00",
         "scope": "Destrava execução/revisão reportada, não conclusão da dependência na integração"
+      },
+      "approval": {
+        "sha": "0563840363",
+        "round": "r2",
+        "verdict": "APROVADO_COM_RESSALVAS",
+        "nextBatchReported": false,
+        "nextBatchInferredFromApprovedStatus": true,
+        "integrationVerified": false,
+        "verified": false,
+        "sourceLine": 375,
+        "reportedAt": "2026-11-24T12:41:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "375 12:41 farol-31 APROVADO_COM_RESSALVAS r2 @0563840363 (Opus; destrava #32)"
       }
     },
     {
@@ -7177,13 +7503,209 @@
         "farol-31"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "CORRECAO",
       "wave": "E",
-      "sha": null,
+      "sha": "bf37d8bc6b",
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM) Correção despachada; nenhum novo SHA entregue. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "verified": false,
+      "reportHistory": [
+        {
+          "previousStatus": "A_FAZER",
+          "previousSha": null,
+          "sourceLine": 376,
+          "reportedAt": "2026-11-24T12:42:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "376 12:42 farol-32 IMPLEMENTANDO sobre farol-31@0563840363 (Neon IBM)"
+        },
+        {
+          "previousStatus": "IMPLEMENTANDO",
+          "previousSha": null,
+          "sourceLine": 379,
+          "reportedAt": "2026-11-24T13:20:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "379 13:20 farol-32 REVISAO r1 @bf37d8bc6b"
+        },
+        {
+          "previousStatus": "REVISAO",
+          "previousSha": "bf37d8bc6b",
+          "sourceLine": 386,
+          "reportedAt": "2026-11-24T14:38:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "386 14:38 farol-32 REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)"
+        }
+      ],
+      "workBase": {
+        "branch": "agente/21z-farol-31",
+        "sha": "0563840363",
+        "component": "farol-31",
+        "refInheritedFromEarlierReport": true,
+        "integrationVerified": false,
+        "sourceLine": 376,
+        "reportedAt": "2026-11-24T12:42:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "376 12:42 farol-32 IMPLEMENTANDO sobre farol-31@0563840363 (Neon IBM)"
+      },
+      "implementation": {
+        "task": "FAROL32B",
+        "baseSha": "bf37d8bc6b",
+        "sha": null,
+        "status": "correction_dispatched_reported",
+        "model": "Gemini 4 Neon",
+        "host": "ibm-ephemeral",
+        "executor": "Antigravity",
+        "deliveryReported": false,
+        "newReviewReported": false,
+        "sourceLine": 386,
+        "reportedAt": "2026-11-24T14:38:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "386 14:38 farol-32 REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)"
+      },
+      "operationalWave": "E",
+      "integrationVerified": false,
+      "updatedAt": "2026-11-24T14:59:41+00:00",
+      "reportedAt": "2026-11-24T14:38:00+00:00",
+      "owner": "IBM · Gemini 4 Neon / Antigravity",
+      "verificationSummary": "Correção despachada; nenhum novo SHA entregue.",
+      "previousNotes": [
+        "REVISAO r1 @bf37d8bc6b Revisão lançada; sem parecer novo. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
+        "IMPLEMENTANDO sobre farol-31@0563840363 (Neon IBM) Base de trabalho, não commit de entrega nem integração. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM."
+      ],
+      "referenceHistory": [
+        {
+          "sha": null,
+          "branch": null,
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)"
+        }
+      ],
+      "latestDeliverySha": "bf37d8bc6b",
+      "delivery": {
+        "sha": "bf37d8bc6b",
+        "branch": null,
+        "deliveryReported": true,
+        "githubVerified": false,
+        "testsReproducedLocally": false,
+        "sourceLine": 379,
+        "reportedAt": "2026-11-24T13:20:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "379 13:20 farol-32 REVISAO r1 @bf37d8bc6b",
+        "model": "Gemini 4 Neon",
+        "executor": "Antigravity",
+        "host": "ibm-ephemeral"
+      },
+      "previousImplementations": [
+        {
+          "status": "launched_reported",
+          "model": "Gemini 4 Neon",
+          "host": "ibm-ephemeral",
+          "executor": "Antigravity",
+          "sourceLine": 376,
+          "reportedAt": "2026-11-24T12:42:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "376 12:42 farol-32 IMPLEMENTANDO sobre farol-31@0563840363 (Neon IBM)"
+        },
+        {
+          "status": "delivered_reported",
+          "sha": "bf37d8bc6b",
+          "model": "Gemini 4 Neon",
+          "executor": "Antigravity",
+          "host": "ibm-ephemeral",
+          "sourceLine": 379,
+          "reportedAt": "2026-11-24T13:20:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "379 13:20 farol-32 REVISAO r1 @bf37d8bc6b"
+        }
+      ],
+      "review": {
+        "sha": "bf37d8bc6b",
+        "round": "r1",
+        "status": "rejected_reported",
+        "verdict": "REPROVADO",
+        "verdictIssued": true,
+        "reportReadLocally": false,
+        "sourceLine": 386,
+        "reportedAt": "2026-11-24T14:38:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "386 14:38 farol-32 REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)",
+        "reviewerNotReiteratedInSummary": true
+      },
+      "blockers": [
+        {
+          "id": "farol-32-r1-reprovado",
+          "reason": "REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)",
+          "sourceLine": 386,
+          "reportedAt": "2026-11-24T14:38:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "386 14:38 farol-32 REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)"
+        }
+      ],
+      "previousReviews": [
+        {
+          "sha": "bf37d8bc6b",
+          "round": "r1",
+          "status": "launched_reported",
+          "verdict": null,
+          "verdictIssued": false,
+          "reportReadLocally": false,
+          "sourceLine": 379,
+          "reportedAt": "2026-11-24T13:20:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "379 13:20 farol-32 REVISAO r1 @bf37d8bc6b",
+          "reviewerNotReiteratedInSummary": true
+        }
+      ],
+      "latestRejectedSha": "bf37d8bc6b",
+      "previousBlockers": [
+        []
+      ],
+      "correction": {
+        "task": "FAROL32B",
+        "baseSha": "bf37d8bc6b",
+        "sha": null,
+        "status": "dispatched_reported",
+        "model": "Gemini 4 Neon",
+        "host": "ibm-ephemeral",
+        "executor": "Antigravity",
+        "deliveryReported": false,
+        "newReviewReported": false,
+        "sourceLine": 386,
+        "reportedAt": "2026-11-24T14:38:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "386 14:38 farol-32 REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)"
+      },
+      "dependencyHistory": [
+        {
+          "dependency": "farol-31",
+          "approvedSha": "0563840363",
+          "satisfied": true,
+          "approvalStatus": "APROVADO_COM_RESSALVAS",
+          "sourceLine": 375,
+          "scope": "Execução destravada, não integração",
+          "reportedAt": "2026-11-24T12:41:00+00:00"
+        }
+      ],
+      "approvalGate": {
+        "dependency": "farol-31",
+        "approvedSha": "0563840363",
+        "satisfied": true,
+        "approvalStatus": "APROVADO_COM_RESSALVAS",
+        "sourceLine": 375,
+        "scope": "Execução destravada, não integração",
+        "reportedAt": "2026-11-24T12:41:00+00:00"
+      }
     },
     {
       "id": "farol-33",
@@ -8754,14 +9276,16 @@
         "farol-49"
       ],
       "allDependencies": false,
-      "status": "CORRECAO",
+      "status": "APROVADA",
       "wave": "E",
-      "sha": "af944ee5c1",
+      "sha": "7b3124a331",
       "batch": null,
-      "note": "agente/21z-farol-50@af944ee5c1 REPROVADO r1 Neon IBM (2 P1 infantil + TOCTOU OK; 4 P2); FAROL50B delegada ao SWE-2 via Pi Correção despachada, sem novo SHA entregue ou aprovação. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
-      "source": "Relato VPS · linha 370; pins novos não conferidos nesta conciliação",
+      "note": "APROVADO_COM_RESSALVAS r2 @7b3124a331 (destrava #54) Aceite com ressalvas: não é integração ou TV validada. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
       "verified": false,
       "previousNotes": [
+        "REVISAO r2 @7b3124a331 (FAROL50B SWE-2, publicado) Revisão lançada; sem parecer novo. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
+        "agente/21z-farol-50@af944ee5c1 REPROVADO r1 Neon IBM (2 P1 infantil + TOCTOU OK; 4 P2); FAROL50B delegada ao SWE-2 via Pi Correção despachada, sem novo SHA entregue ou aprovação. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
         "",
         "Onda E: Opus via Pi na VPS sobre agente/base-21f-farol-ondaE@f16ec96425 (brief sense/briefs/farol-50.md) Implementação lançada na base reportada, não entrega nem integração. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
         "agente/21z-farol-50@af944ee5c1 Opus via Pi entregou e publicado no GitHub; em revisao r1 Neon IBM (FAROL50-r1.md) Revisão lançada, sem parecer novo; tentativa cyber_policy anterior sem relatório, quando indicada. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados."
@@ -8793,6 +9317,24 @@
           "sourceLine": 370,
           "reportedAt": "2026-11-24T11:52:00+00:00",
           "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        },
+        {
+          "previousStatus": "CORRECAO",
+          "previousSha": "af944ee5c1",
+          "sourceLine": 377,
+          "reportedAt": "2026-11-24T12:49:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "377 12:49 farol-50 REVISAO r2 @7b3124a331 (FAROL50B SWE-2, publicado)"
+        },
+        {
+          "previousStatus": "REVISAO",
+          "previousSha": "7b3124a331",
+          "sourceLine": 380,
+          "reportedAt": "2026-11-24T13:21:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "380 13:21 farol-50 APROVADO_COM_RESSALVAS r2 @7b3124a331 (destrava #54)"
         }
       ],
       "workBase": {
@@ -8819,56 +9361,53 @@
         "source": "Relato VPS · lotes/REPORTE-POKE.log"
       },
       "implementation": {
-        "status": "correction_dispatched_reported",
-        "task": "FAROL50B",
-        "baseSha": "af944ee5c1",
-        "sha": null,
-        "deliveryReported": false,
-        "newReviewReported": false,
+        "status": "delivered_reported",
+        "sha": "7b3124a331",
         "model": "SWE-2",
-        "host": "oracle-vps",
         "executor": "Pi",
-        "sourceLine": 370,
-        "reportedAt": "2026-11-24T11:52:00+00:00",
-        "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        "host": "oracle-vps",
+        "sourceLine": 377,
+        "reportedAt": "2026-11-24T12:49:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "377 12:49 farol-50 REVISAO r2 @7b3124a331 (FAROL50B SWE-2, publicado)"
       },
-      "blockers": [
-        {
-          "id": "farol-50-r1-reprovado",
-          "reason": "agente/21z-farol-50@af944ee5c1 REPROVADO r1 Neon IBM (2 P1 infantil + TOCTOU OK; 4 P2); FAROL50B delegada ao SWE-2 via Pi",
-          "sourceLine": 370,
-          "reportedAt": "2026-11-24T11:52:00+00:00",
-          "source": "Relato VPS · lotes/REPORTE-POKE.log"
-        }
-      ],
+      "blockers": [],
       "operationalWave": "E",
       "integrationVerified": false,
-      "reportedAt": "2026-11-24T11:52:00+00:00",
-      "updatedAt": "2026-11-24T14:54:45+00:00",
-      "owner": "VPS · SWE-2 / Pi",
-      "verificationSummary": "Correção despachada, sem novo SHA entregue ou aprovação.",
+      "reportedAt": "2026-11-24T13:21:00+00:00",
+      "updatedAt": "2026-11-24T14:59:41+00:00",
+      "owner": "Revisão · responsável não reiterado no resumo",
+      "verificationSummary": "Aceite com ressalvas: não é integração ou TV validada.",
       "referenceHistory": [
         {
           "sha": null,
           "branch": null,
           "source": "Relato VPS · linha 359; pins novos não conferidos nesta conciliação"
+        },
+        {
+          "sha": "af944ee5c1",
+          "branch": "agente/21z-farol-50",
+          "source": "Relato VPS · linha 370; pins novos não conferidos nesta conciliação"
         }
       ],
       "branch": "agente/21z-farol-50",
       "delivery": {
-        "sha": "af944ee5c1",
+        "sha": "7b3124a331",
         "branch": "agente/21z-farol-50",
         "deliveryReported": true,
         "githubVerified": false,
-        "githubPublicationReported": true,
         "testsReproducedLocally": false,
-        "report": "2026-11-24T11:19:00Z farol-50 REVISAO agente/21z-farol-50@af944ee5c1 Opus via Pi entregou e publicado no GitHub; em revisao r1 Neon IBM (FAROL50-r1.md)",
-        "model": "Opus",
-        "host": "oracle-vps",
+        "sourceLine": 377,
+        "reportedAt": "2026-11-24T12:49:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "377 12:49 farol-50 REVISAO r2 @7b3124a331 (FAROL50B SWE-2, publicado)",
+        "model": "SWE-2",
         "executor": "Pi",
-        "sourceLine": 367,
-        "reportedAt": "2026-11-24T11:19:00+00:00",
-        "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        "host": "oracle-vps",
+        "task": "FAROL50B",
+        "publicationReported": true
       },
       "previousImplementations": [
         {
@@ -8889,26 +9428,48 @@
           "sourceLine": 367,
           "reportedAt": "2026-11-24T11:19:00+00:00",
           "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        },
+        {
+          "status": "correction_dispatched_reported",
+          "task": "FAROL50B",
+          "baseSha": "af944ee5c1",
+          "sha": null,
+          "deliveryReported": false,
+          "newReviewReported": false,
+          "model": "SWE-2",
+          "host": "oracle-vps",
+          "executor": "Pi",
+          "sourceLine": 370,
+          "reportedAt": "2026-11-24T11:52:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log"
         }
       ],
-      "latestDeliverySha": "af944ee5c1",
+      "latestDeliverySha": "7b3124a331",
       "review": {
-        "round": "r1",
-        "sha": "af944ee5c1",
-        "reviewer": "Gemini 4 Neon",
-        "host": "ibm-ephemeral",
-        "executor": null,
-        "status": "rejected_reported",
-        "verdict": "REPROVADO",
+        "sha": "7b3124a331",
+        "round": "r2",
+        "status": "approved_with_reservations_reported",
+        "verdict": "APROVADO_COM_RESSALVAS",
         "verdictIssued": true,
         "reportReadLocally": false,
-        "report": "2026-11-24T11:52:00Z farol-50 CORRECAO agente/21z-farol-50@af944ee5c1 REPROVADO r1 Neon IBM (2 P1 infantil + TOCTOU OK; 4 P2); FAROL50B delegada ao SWE-2 via Pi",
-        "sourceLine": 370,
-        "reportedAt": "2026-11-24T11:52:00+00:00",
-        "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        "sourceLine": 380,
+        "reportedAt": "2026-11-24T13:21:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "380 13:21 farol-50 APROVADO_COM_RESSALVAS r2 @7b3124a331 (destrava #54)",
+        "reviewerNotReiteratedInSummary": true
       },
       "previousBlockers": [
-        []
+        [],
+        [
+          {
+            "id": "farol-50-r1-reprovado",
+            "reason": "agente/21z-farol-50@af944ee5c1 REPROVADO r1 Neon IBM (2 P1 infantil + TOCTOU OK; 4 P2); FAROL50B delegada ao SWE-2 via Pi",
+            "sourceLine": 370,
+            "reportedAt": "2026-11-24T11:52:00+00:00",
+            "source": "Relato VPS · lotes/REPORTE-POKE.log"
+          }
+        ]
       ],
       "previousReviews": [
         {
@@ -8926,22 +9487,53 @@
           "reportedAt": "2026-11-24T11:19:00+00:00",
           "source": "Relato VPS · lotes/REPORTE-POKE.log",
           "reportPath": "FAROL50-r1.md"
+        },
+        {
+          "round": "r1",
+          "sha": "af944ee5c1",
+          "reviewer": "Gemini 4 Neon",
+          "host": "ibm-ephemeral",
+          "executor": null,
+          "status": "rejected_reported",
+          "verdict": "REPROVADO",
+          "verdictIssued": true,
+          "reportReadLocally": false,
+          "report": "2026-11-24T11:52:00Z farol-50 CORRECAO agente/21z-farol-50@af944ee5c1 REPROVADO r1 Neon IBM (2 P1 infantil + TOCTOU OK; 4 P2); FAROL50B delegada ao SWE-2 via Pi",
+          "sourceLine": 370,
+          "reportedAt": "2026-11-24T11:52:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        },
+        {
+          "sha": "7b3124a331",
+          "round": "r2",
+          "status": "launched_reported",
+          "verdict": null,
+          "verdictIssued": false,
+          "reportReadLocally": false,
+          "sourceLine": 377,
+          "reportedAt": "2026-11-24T12:49:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "377 12:49 farol-50 REVISAO r2 @7b3124a331 (FAROL50B SWE-2, publicado)",
+          "reviewerNotReiteratedInSummary": true
         }
       ],
       "latestRejectedSha": "af944ee5c1",
       "correction": {
         "task": "FAROL50B",
         "baseSha": "af944ee5c1",
-        "sha": null,
-        "status": "dispatched_reported",
-        "deliveryReported": false,
-        "newReviewReported": false,
+        "sha": "7b3124a331",
+        "status": "delivered_reported",
+        "deliveryReported": true,
+        "newReviewReported": true,
         "model": "SWE-2",
         "host": "oracle-vps",
         "executor": "Pi",
         "sourceLine": 370,
         "reportedAt": "2026-11-24T11:52:00+00:00",
-        "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        "source": "Relato VPS · lotes/REPORTE-POKE.log",
+        "deliverySourceLine": 377,
+        "deliveryReportedAt": "2026-11-24T12:49:00+00:00"
       },
       "dependencyHistory": [
         {
@@ -8973,6 +9565,53 @@
         "sourceLine": 356,
         "reportedAt": "2026-11-24T10:00:00+00:00",
         "scope": "Destrava execução/revisão reportada, não conclusão da dependência na integração"
+      },
+      "previousDeliveries": [
+        {
+          "sha": "af944ee5c1",
+          "branch": "agente/21z-farol-50",
+          "deliveryReported": true,
+          "githubVerified": false,
+          "githubPublicationReported": true,
+          "testsReproducedLocally": false,
+          "report": "2026-11-24T11:19:00Z farol-50 REVISAO agente/21z-farol-50@af944ee5c1 Opus via Pi entregou e publicado no GitHub; em revisao r1 Neon IBM (FAROL50-r1.md)",
+          "model": "Opus",
+          "host": "oracle-vps",
+          "executor": "Pi",
+          "sourceLine": 367,
+          "reportedAt": "2026-11-24T11:19:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        }
+      ],
+      "previousCorrections": [
+        {
+          "task": "FAROL50B",
+          "baseSha": "af944ee5c1",
+          "sha": null,
+          "status": "dispatched_reported",
+          "deliveryReported": false,
+          "newReviewReported": false,
+          "model": "SWE-2",
+          "host": "oracle-vps",
+          "executor": "Pi",
+          "sourceLine": 370,
+          "reportedAt": "2026-11-24T11:52:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        }
+      ],
+      "approval": {
+        "sha": "7b3124a331",
+        "round": "r2",
+        "verdict": "APROVADO_COM_RESSALVAS",
+        "nextBatchReported": false,
+        "nextBatchInferredFromApprovedStatus": true,
+        "integrationVerified": false,
+        "verified": false,
+        "sourceLine": 380,
+        "reportedAt": "2026-11-24T13:21:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "380 13:21 farol-50 APROVADO_COM_RESSALVAS r2 @7b3124a331 (destrava #54)"
       }
     },
     {
@@ -8986,14 +9625,16 @@
         "farol-49"
       ],
       "allDependencies": false,
-      "status": "CORRECAO",
+      "status": "APROVADA",
       "wave": "E",
-      "sha": "62eee32ada",
+      "sha": "d97d1f6c53",
       "batch": null,
-      "note": "agente/21z-farol-51@62eee32ada REPROVADO r1 Opus (1 P1 So nesta TV invertido + ganchos farolconsent_* #53); FAROL51B delegada ao Hydrogen IBM Correção despachada, sem novo SHA entregue ou aprovação. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
-      "source": "Relato VPS · linha 373; pins novos não conferidos nesta conciliação",
+      "note": "APROVADO_COM_RESSALVAS r2 @d97d1f6c53 (composição real com #53 provada) Aceite com ressalvas: não é integração ou TV validada. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
       "verified": false,
       "previousNotes": [
+        "REVISAO r2 @d97d1f6c53 (FAROL51B) Revisão lançada; sem parecer novo. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
+        "agente/21z-farol-51@62eee32ada REPROVADO r1 Opus (1 P1 So nesta TV invertido + ganchos farolconsent_* #53); FAROL51B delegada ao Hydrogen IBM Correção despachada, sem novo SHA entregue ou aprovação. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
         "",
         "Onda E: Hydrogen IBM sobre agente/base-21f-farol-51@97ebcbec31 (brief sense/briefs/farol-51.md) Implementação lançada na base reportada, não entrega nem integração. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
         "agente/21z-farol-51@62eee32ada Hydrogen IBM entregou; em revisao r1 Sol via Pi (FAROL51-r1.md) Revisão lançada, sem parecer novo; tentativa cyber_policy anterior sem relatório, quando indicada. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
@@ -9035,6 +9676,24 @@
           "sourceLine": 373,
           "reportedAt": "2026-11-24T12:28:00+00:00",
           "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        },
+        {
+          "previousStatus": "CORRECAO",
+          "previousSha": "62eee32ada",
+          "sourceLine": 378,
+          "reportedAt": "2026-11-24T13:12:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "378 13:12 farol-51 REVISAO r2 @d97d1f6c53 (FAROL51B)"
+        },
+        {
+          "previousStatus": "REVISAO",
+          "previousSha": "d97d1f6c53",
+          "sourceLine": 383,
+          "reportedAt": "2026-11-24T13:52:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "383 13:52 farol-51 APROVADO_COM_RESSALVAS r2 @d97d1f6c53 (composição real com #53 provada)"
         }
       ],
       "workBase": {
@@ -9065,56 +9724,52 @@
         "source": "Relato VPS · lotes/REPORTE-POKE.log"
       },
       "implementation": {
-        "status": "correction_dispatched_reported",
-        "task": "FAROL51B",
-        "baseSha": "62eee32ada",
-        "sha": null,
-        "deliveryReported": false,
-        "newReviewReported": false,
+        "status": "delivered_reported",
+        "sha": "d97d1f6c53",
         "model": "Gemini Hydrogen",
-        "host": "ibm-ephemeral",
         "executor": "Antigravity",
-        "sourceLine": 373,
-        "reportedAt": "2026-11-24T12:28:00+00:00",
-        "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        "host": "ibm-ephemeral",
+        "sourceLine": 378,
+        "reportedAt": "2026-11-24T13:12:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "378 13:12 farol-51 REVISAO r2 @d97d1f6c53 (FAROL51B)"
       },
-      "blockers": [
-        {
-          "id": "farol-51-r1-reprovado",
-          "reason": "agente/21z-farol-51@62eee32ada REPROVADO r1 Opus (1 P1 So nesta TV invertido + ganchos farolconsent_* #53); FAROL51B delegada ao Hydrogen IBM",
-          "sourceLine": 373,
-          "reportedAt": "2026-11-24T12:28:00+00:00",
-          "source": "Relato VPS · lotes/REPORTE-POKE.log"
-        }
-      ],
+      "blockers": [],
       "operationalWave": "E",
       "integrationVerified": false,
-      "reportedAt": "2026-11-24T12:28:00+00:00",
-      "updatedAt": "2026-11-24T14:54:45+00:00",
-      "owner": "IBM · Gemini Hydrogen / Antigravity",
-      "verificationSummary": "Correção despachada, sem novo SHA entregue ou aprovação.",
+      "reportedAt": "2026-11-24T13:52:00+00:00",
+      "updatedAt": "2026-11-24T14:59:41+00:00",
+      "owner": "Revisão · responsável não reiterado no resumo",
+      "verificationSummary": "Aceite com ressalvas: não é integração ou TV validada.",
       "referenceHistory": [
         {
           "sha": null,
           "branch": null,
           "source": "Relato VPS · linha 352; pins novos não conferidos nesta conciliação"
+        },
+        {
+          "sha": "62eee32ada",
+          "branch": "agente/21z-farol-51",
+          "source": "Relato VPS · linha 373; pins novos não conferidos nesta conciliação"
         }
       ],
       "branch": "agente/21z-farol-51",
       "delivery": {
-        "sha": "62eee32ada",
+        "sha": "d97d1f6c53",
         "branch": "agente/21z-farol-51",
         "deliveryReported": true,
         "githubVerified": false,
-        "githubPublicationReported": false,
         "testsReproducedLocally": false,
-        "report": "2026-11-24T10:40:00Z farol-51 REVISAO agente/21z-farol-51@62eee32ada Hydrogen IBM entregou; em revisao r1 Sol via Pi (FAROL51-r1.md)",
+        "sourceLine": 378,
+        "reportedAt": "2026-11-24T13:12:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "378 13:12 farol-51 REVISAO r2 @d97d1f6c53 (FAROL51B)",
         "model": "Gemini Hydrogen",
-        "host": "ibm-ephemeral",
         "executor": "Antigravity",
-        "sourceLine": 363,
-        "reportedAt": "2026-11-24T10:40:00+00:00",
-        "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        "host": "ibm-ephemeral",
+        "task": "FAROL51B"
       },
       "previousImplementations": [
         {
@@ -9135,28 +9790,48 @@
           "sourceLine": 363,
           "reportedAt": "2026-11-24T10:40:00+00:00",
           "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        },
+        {
+          "status": "correction_dispatched_reported",
+          "task": "FAROL51B",
+          "baseSha": "62eee32ada",
+          "sha": null,
+          "deliveryReported": false,
+          "newReviewReported": false,
+          "model": "Gemini Hydrogen",
+          "host": "ibm-ephemeral",
+          "executor": "Antigravity",
+          "sourceLine": 373,
+          "reportedAt": "2026-11-24T12:28:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log"
         }
       ],
-      "latestDeliverySha": "62eee32ada",
+      "latestDeliverySha": "d97d1f6c53",
       "review": {
-        "round": "r1",
-        "sha": "62eee32ada",
-        "reviewer": "Opus",
-        "host": "oracle-vps",
-        "executor": "Pi",
-        "status": "rejected_reported",
-        "verdict": "REPROVADO",
+        "sha": "d97d1f6c53",
+        "round": "r2",
+        "status": "approved_with_reservations_reported",
+        "verdict": "APROVADO_COM_RESSALVAS",
         "verdictIssued": true,
         "reportReadLocally": false,
-        "report": "2026-11-24T12:28:00Z farol-51 CORRECAO agente/21z-farol-51@62eee32ada REPROVADO r1 Opus (1 P1 So nesta TV invertido + ganchos farolconsent_* #53); FAROL51B delegada ao Hydrogen IBM",
-        "sourceLine": 373,
-        "reportedAt": "2026-11-24T12:28:00+00:00",
-        "source": "Relato VPS · lotes/REPORTE-POKE.log",
-        "attemptBeforeVerdict": "r1b",
-        "roundLabelNote": "Parecer chamado r1 no relato, após relançamento r1b; tentativa interrompida sem parecer preservada separadamente."
+        "sourceLine": 383,
+        "reportedAt": "2026-11-24T13:52:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "383 13:52 farol-51 APROVADO_COM_RESSALVAS r2 @d97d1f6c53 (composição real com #53 provada)",
+        "reviewerNotReiteratedInSummary": true
       },
       "previousBlockers": [
-        []
+        [],
+        [
+          {
+            "id": "farol-51-r1-reprovado",
+            "reason": "agente/21z-farol-51@62eee32ada REPROVADO r1 Opus (1 P1 So nesta TV invertido + ganchos farolconsent_* #53); FAROL51B delegada ao Hydrogen IBM",
+            "sourceLine": 373,
+            "reportedAt": "2026-11-24T12:28:00+00:00",
+            "source": "Relato VPS · lotes/REPORTE-POKE.log"
+          }
+        ]
       ],
       "reviewInterruptions": [
         {
@@ -9204,22 +9879,55 @@
           "sourceLine": 365,
           "reportedAt": "2026-11-24T11:04:00+00:00",
           "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        },
+        {
+          "round": "r1",
+          "sha": "62eee32ada",
+          "reviewer": "Opus",
+          "host": "oracle-vps",
+          "executor": "Pi",
+          "status": "rejected_reported",
+          "verdict": "REPROVADO",
+          "verdictIssued": true,
+          "reportReadLocally": false,
+          "report": "2026-11-24T12:28:00Z farol-51 CORRECAO agente/21z-farol-51@62eee32ada REPROVADO r1 Opus (1 P1 So nesta TV invertido + ganchos farolconsent_* #53); FAROL51B delegada ao Hydrogen IBM",
+          "sourceLine": 373,
+          "reportedAt": "2026-11-24T12:28:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log",
+          "attemptBeforeVerdict": "r1b",
+          "roundLabelNote": "Parecer chamado r1 no relato, após relançamento r1b; tentativa interrompida sem parecer preservada separadamente."
+        },
+        {
+          "sha": "d97d1f6c53",
+          "round": "r2",
+          "status": "launched_reported",
+          "verdict": null,
+          "verdictIssued": false,
+          "reportReadLocally": false,
+          "sourceLine": 378,
+          "reportedAt": "2026-11-24T13:12:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "378 13:12 farol-51 REVISAO r2 @d97d1f6c53 (FAROL51B)",
+          "reviewerNotReiteratedInSummary": true
         }
       ],
       "latestRejectedSha": "62eee32ada",
       "correction": {
         "task": "FAROL51B",
         "baseSha": "62eee32ada",
-        "sha": null,
-        "status": "dispatched_reported",
-        "deliveryReported": false,
-        "newReviewReported": false,
+        "sha": "d97d1f6c53",
+        "status": "delivered_reported",
+        "deliveryReported": true,
+        "newReviewReported": true,
         "model": "Gemini Hydrogen",
         "host": "ibm-ephemeral",
         "executor": "Antigravity",
         "sourceLine": 373,
         "reportedAt": "2026-11-24T12:28:00+00:00",
-        "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        "source": "Relato VPS · lotes/REPORTE-POKE.log",
+        "deliverySourceLine": 378,
+        "deliveryReportedAt": "2026-11-24T13:12:00+00:00"
       },
       "dependencyHistory": [
         {
@@ -9251,6 +9959,66 @@
         "sourceLine": 350,
         "reportedAt": "2026-11-24T09:24:00+00:00",
         "scope": "Destrava execução/revisão reportada, não conclusão da dependência na integração"
+      },
+      "previousDeliveries": [
+        {
+          "sha": "62eee32ada",
+          "branch": "agente/21z-farol-51",
+          "deliveryReported": true,
+          "githubVerified": false,
+          "githubPublicationReported": false,
+          "testsReproducedLocally": false,
+          "report": "2026-11-24T10:40:00Z farol-51 REVISAO agente/21z-farol-51@62eee32ada Hydrogen IBM entregou; em revisao r1 Sol via Pi (FAROL51-r1.md)",
+          "model": "Gemini Hydrogen",
+          "host": "ibm-ephemeral",
+          "executor": "Antigravity",
+          "sourceLine": 363,
+          "reportedAt": "2026-11-24T10:40:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        }
+      ],
+      "previousCorrections": [
+        {
+          "task": "FAROL51B",
+          "baseSha": "62eee32ada",
+          "sha": null,
+          "status": "dispatched_reported",
+          "deliveryReported": false,
+          "newReviewReported": false,
+          "model": "Gemini Hydrogen",
+          "host": "ibm-ephemeral",
+          "executor": "Antigravity",
+          "sourceLine": 373,
+          "reportedAt": "2026-11-24T12:28:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        }
+      ],
+      "approval": {
+        "sha": "d97d1f6c53",
+        "round": "r2",
+        "verdict": "APROVADO_COM_RESSALVAS",
+        "nextBatchReported": false,
+        "nextBatchInferredFromApprovedStatus": true,
+        "integrationVerified": false,
+        "verified": false,
+        "sourceLine": 383,
+        "reportedAt": "2026-11-24T13:52:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "383 13:52 farol-51 APROVADO_COM_RESSALVAS r2 @d97d1f6c53 (composição real com #53 provada)"
+      },
+      "compositionValidation": {
+        "status": "proved_reported",
+        "withItems": [
+          "farol-53"
+        ],
+        "testsReproducedLocally": false,
+        "integrationVerified": false,
+        "sourceLine": 383,
+        "reportedAt": "2026-11-24T13:52:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "383 13:52 farol-51 APROVADO_COM_RESSALVAS r2 @d97d1f6c53 (composição real com #53 provada)"
       }
     },
     {
@@ -9869,13 +10637,151 @@
         "farol-52"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "REVISAO",
       "wave": "E",
-      "sha": null,
+      "sha": "40a75c35d6",
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "REVISAO r1 @40a75c35d6 Revisão lançada; sem parecer novo. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "verified": false,
+      "reportHistory": [
+        {
+          "previousStatus": "A_FAZER",
+          "previousSha": null,
+          "sourceLine": 381,
+          "reportedAt": "2026-11-24T13:25:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "381 13:25 farol-54 IMPLEMENTANDO sobre agente/base-21f-farol-54@112d1adfa2 (#50+#31+#53; Neon IBM)"
+        },
+        {
+          "previousStatus": "IMPLEMENTANDO",
+          "previousSha": null,
+          "sourceLine": 385,
+          "reportedAt": "2026-11-24T14:21:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "385 14:21 farol-54 REVISAO r1 @40a75c35d6"
+        }
+      ],
+      "workBase": {
+        "branch": "agente/base-21f-farol-54",
+        "sha": "112d1adfa2",
+        "components": [
+          {
+            "item": "farol-50",
+            "sha": "7b3124a331"
+          },
+          {
+            "item": "farol-31",
+            "sha": "0563840363"
+          },
+          {
+            "item": "farol-53",
+            "sha": "dc4df4b7ac"
+          }
+        ],
+        "componentPinsInheritedFromReports": true,
+        "integrationVerified": false,
+        "publicationNotIndependentlyChecked": true,
+        "sourceLine": 381,
+        "reportedAt": "2026-11-24T13:25:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "381 13:25 farol-54 IMPLEMENTANDO sobre agente/base-21f-farol-54@112d1adfa2 (#50+#31+#53; Neon IBM)"
+      },
+      "implementation": {
+        "status": "delivered_reported",
+        "sha": "40a75c35d6",
+        "model": "Gemini 4 Neon",
+        "executor": "Antigravity",
+        "host": "ibm-ephemeral",
+        "sourceLine": 385,
+        "reportedAt": "2026-11-24T14:21:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "385 14:21 farol-54 REVISAO r1 @40a75c35d6"
+      },
+      "operationalWave": "E",
+      "integrationVerified": false,
+      "updatedAt": "2026-11-24T14:59:41+00:00",
+      "reportedAt": "2026-11-24T14:21:00+00:00",
+      "owner": "Revisão · responsável não reiterado no resumo",
+      "verificationSummary": "Revisão lançada; sem parecer novo.",
+      "previousNotes": [
+        "IMPLEMENTANDO sobre agente/base-21f-farol-54@112d1adfa2 (#50+#31+#53; Neon IBM) Base de trabalho, não commit de entrega nem integração. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM."
+      ],
+      "referenceHistory": [
+        {
+          "sha": null,
+          "branch": null,
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)"
+        }
+      ],
+      "latestDeliverySha": "40a75c35d6",
+      "delivery": {
+        "sha": "40a75c35d6",
+        "branch": null,
+        "deliveryReported": true,
+        "githubVerified": false,
+        "testsReproducedLocally": false,
+        "sourceLine": 385,
+        "reportedAt": "2026-11-24T14:21:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "385 14:21 farol-54 REVISAO r1 @40a75c35d6",
+        "model": "Gemini 4 Neon",
+        "executor": "Antigravity",
+        "host": "ibm-ephemeral"
+      },
+      "previousImplementations": [
+        {
+          "status": "launched_reported",
+          "model": "Gemini 4 Neon",
+          "host": "ibm-ephemeral",
+          "executor": "Antigravity",
+          "sourceLine": 381,
+          "reportedAt": "2026-11-24T13:25:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "381 13:25 farol-54 IMPLEMENTANDO sobre agente/base-21f-farol-54@112d1adfa2 (#50+#31+#53; Neon IBM)"
+        }
+      ],
+      "review": {
+        "sha": "40a75c35d6",
+        "round": "r1",
+        "status": "launched_reported",
+        "verdict": null,
+        "verdictIssued": false,
+        "reportReadLocally": false,
+        "sourceLine": 385,
+        "reportedAt": "2026-11-24T14:21:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "385 14:21 farol-54 REVISAO r1 @40a75c35d6",
+        "reviewerNotReiteratedInSummary": true
+      },
+      "blockers": [],
+      "dependencyHistory": [
+        {
+          "dependency": "farol-50",
+          "approvedSha": "7b3124a331",
+          "satisfied": true,
+          "approvalStatus": "APROVADO_COM_RESSALVAS",
+          "sourceLine": 380,
+          "scope": "Execução destravada, não integração",
+          "reportedAt": "2026-11-24T13:21:00+00:00"
+        }
+      ],
+      "approvalGate": {
+        "dependency": "farol-50",
+        "approvedSha": "7b3124a331",
+        "satisfied": true,
+        "approvalStatus": "APROVADO_COM_RESSALVAS",
+        "sourceLine": 380,
+        "scope": "Execução destravada, não integração",
+        "reportedAt": "2026-11-24T13:21:00+00:00"
+      }
     },
     {
       "id": "farol-55",
@@ -9922,14 +10828,17 @@
         "farol-52"
       ],
       "allDependencies": false,
-      "status": "REVISAO",
+      "status": "CORRECAO",
       "wave": "E",
-      "sha": "e47a39b06a",
+      "sha": "f61aa1c9fe",
       "batch": null,
-      "note": "agente/21z-farol-57@e47a39b06a FAROL57F Hydrogen IBM entregue; em revisao r6 Sol via Pi (FAROL57-r6.md) Revisão lançada, sem parecer novo; tentativa cyber_policy anterior sem relatório, quando indicada. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
-      "source": "Relato VPS · linha 371; pins novos não conferidos nesta conciliação",
+      "note": "REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM) Correção despachada; nenhum novo SHA entregue. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
       "verified": false,
       "previousNotes": [
+        "REVISAO r7 @f61aa1c9fe (FAROL57G) Revisão lançada; sem parecer novo. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
+        "REPROVADO r6 @e47a39b06a (P1 sem numeral) → FAROL57G (Hydrogen IBM) Correção despachada; nenhum novo SHA entregue. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
+        "agente/21z-farol-57@e47a39b06a FAROL57F Hydrogen IBM entregue; em revisao r6 Sol via Pi (FAROL57-r6.md) Revisão lançada, sem parecer novo; tentativa cyber_policy anterior sem relatório, quando indicada. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
         "",
         "na VPS (Opus via Pi) sobre agente/base-21f-farol-57@f6ad94eada (Onda G4) Implementação lançada na base reportada, não entrega nem integração. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
         "r1 agente/21z-farol-57@e4ccdc43e3 (Sol via Codex na VPS; Onda G4) Revisão lançada, sem parecer novo; tentativa cyber_policy anterior sem relatório, quando indicada. Proveniência: VPS; testes/pareceres não reproduzidos nesta VM. TV física e deploy do worker não confirmados.",
@@ -10081,6 +10990,33 @@
           "sourceLine": 371,
           "reportedAt": "2026-11-24T12:02:00+00:00",
           "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        },
+        {
+          "previousStatus": "REVISAO",
+          "previousSha": "e47a39b06a",
+          "sourceLine": 374,
+          "reportedAt": "2026-11-24T12:34:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "374 12:34 farol-57 REPROVADO r6 @e47a39b06a (P1 sem numeral) → FAROL57G (Hydrogen IBM)"
+        },
+        {
+          "previousStatus": "CORRECAO",
+          "previousSha": "e47a39b06a",
+          "sourceLine": 382,
+          "reportedAt": "2026-11-24T13:26:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "382 13:26 farol-57 REVISAO r7 @f61aa1c9fe (FAROL57G)"
+        },
+        {
+          "previousStatus": "REVISAO",
+          "previousSha": "f61aa1c9fe",
+          "sourceLine": 384,
+          "reportedAt": "2026-11-24T13:54:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "384 13:54 farol-57 REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM)"
         }
       ],
       "workBase": {
@@ -10093,22 +11029,38 @@
         "source": "Relato VPS · lotes/REPORTE-POKE.log"
       },
       "implementation": {
-        "status": "delivered_reported",
-        "sha": "e47a39b06a",
+        "task": "FAROL57H",
+        "baseSha": "f61aa1c9fe",
+        "sha": null,
+        "status": "correction_dispatched_reported",
         "model": "Gemini Hydrogen",
         "host": "ibm-ephemeral",
         "executor": "Antigravity",
-        "sourceLine": 371,
-        "reportedAt": "2026-11-24T12:02:00+00:00",
-        "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        "deliveryReported": false,
+        "newReviewReported": false,
+        "sourceLine": 384,
+        "reportedAt": "2026-11-24T13:54:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "384 13:54 farol-57 REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM)"
       },
-      "blockers": [],
+      "blockers": [
+        {
+          "id": "farol-57-r7-reprovado",
+          "reason": "REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM)",
+          "sourceLine": 384,
+          "reportedAt": "2026-11-24T13:54:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "384 13:54 farol-57 REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM)"
+        }
+      ],
       "operationalWave": "G4",
       "integrationVerified": false,
-      "reportedAt": "2026-11-24T12:02:00+00:00",
-      "updatedAt": "2026-11-24T14:54:45+00:00",
-      "owner": "VPS · Sol / Pi",
-      "verificationSummary": "Revisão lançada, sem parecer novo; tentativa cyber_policy anterior sem relatório, quando indicada.",
+      "reportedAt": "2026-11-24T13:54:00+00:00",
+      "updatedAt": "2026-11-24T14:59:41+00:00",
+      "owner": "IBM · Gemini Hydrogen / Antigravity",
+      "verificationSummary": "Correção despachada; nenhum novo SHA entregue.",
       "referenceHistory": [
         {
           "sha": null,
@@ -10139,24 +11091,29 @@
           "sha": "94d4bbf545",
           "branch": "agente/21z-farol-57",
           "source": "Relato VPS · linha 368; pins novos não conferidos nesta conciliação"
+        },
+        {
+          "sha": "e47a39b06a",
+          "branch": "agente/21z-farol-57",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)"
         }
       ],
       "branch": "agente/21z-farol-57",
       "delivery": {
-        "sha": "e47a39b06a",
+        "sha": "f61aa1c9fe",
         "branch": "agente/21z-farol-57",
         "deliveryReported": true,
         "githubVerified": false,
-        "githubPublicationReported": false,
         "testsReproducedLocally": false,
-        "report": "2026-11-24T12:02:00Z farol-57 REVISAO agente/21z-farol-57@e47a39b06a FAROL57F Hydrogen IBM entregue; em revisao r6 Sol via Pi (FAROL57-r6.md)",
+        "sourceLine": 382,
+        "reportedAt": "2026-11-24T13:26:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "382 13:26 farol-57 REVISAO r7 @f61aa1c9fe (FAROL57G)",
         "model": "Gemini Hydrogen",
-        "host": "ibm-ephemeral",
         "executor": "Antigravity",
-        "sourceLine": 371,
-        "reportedAt": "2026-11-24T12:02:00+00:00",
-        "source": "Relato VPS · lotes/REPORTE-POKE.log",
-        "task": "FAROL57F"
+        "host": "ibm-ephemeral",
+        "task": "FAROL57G"
       },
       "previousImplementations": [
         {
@@ -10287,24 +11244,60 @@
           "sourceLine": 368,
           "reportedAt": "2026-11-24T11:21:00+00:00",
           "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        },
+        {
+          "status": "delivered_reported",
+          "sha": "e47a39b06a",
+          "model": "Gemini Hydrogen",
+          "host": "ibm-ephemeral",
+          "executor": "Antigravity",
+          "sourceLine": 371,
+          "reportedAt": "2026-11-24T12:02:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        },
+        {
+          "task": "FAROL57G",
+          "baseSha": "e47a39b06a",
+          "sha": null,
+          "status": "correction_dispatched_reported",
+          "model": "Gemini Hydrogen",
+          "host": "ibm-ephemeral",
+          "executor": "Antigravity",
+          "deliveryReported": false,
+          "newReviewReported": false,
+          "sourceLine": 374,
+          "reportedAt": "2026-11-24T12:34:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "374 12:34 farol-57 REPROVADO r6 @e47a39b06a (P1 sem numeral) → FAROL57G (Hydrogen IBM)"
+        },
+        {
+          "status": "delivered_reported",
+          "sha": "f61aa1c9fe",
+          "model": "Gemini Hydrogen",
+          "executor": "Antigravity",
+          "host": "ibm-ephemeral",
+          "sourceLine": 382,
+          "reportedAt": "2026-11-24T13:26:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "382 13:26 farol-57 REVISAO r7 @f61aa1c9fe (FAROL57G)"
         }
       ],
-      "latestDeliverySha": "e47a39b06a",
+      "latestDeliverySha": "f61aa1c9fe",
       "review": {
-        "round": "r6",
-        "sha": "e47a39b06a",
-        "reviewer": "Sol",
-        "host": "oracle-vps",
-        "executor": "Pi",
-        "status": "launched_reported",
-        "verdict": null,
-        "verdictIssued": false,
+        "sha": "f61aa1c9fe",
+        "round": "r7",
+        "status": "rejected_reported",
+        "verdict": "REPROVADO",
+        "verdictIssued": true,
         "reportReadLocally": false,
-        "report": "2026-11-24T12:02:00Z farol-57 REVISAO agente/21z-farol-57@e47a39b06a FAROL57F Hydrogen IBM entregue; em revisao r6 Sol via Pi (FAROL57-r6.md)",
-        "sourceLine": 371,
-        "reportedAt": "2026-11-24T12:02:00+00:00",
-        "source": "Relato VPS · lotes/REPORTE-POKE.log",
-        "reportPath": "FAROL57-r6.md"
+        "sourceLine": 384,
+        "reportedAt": "2026-11-24T13:54:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "384 13:54 farol-57 REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM)",
+        "reviewerNotReiteratedInSummary": true
       },
       "previousBlockers": [
         [],
@@ -10356,7 +11349,20 @@
             "reportedAt": "2026-11-24T11:21:00+00:00",
             "source": "Relato VPS · lotes/REPORTE-POKE.log"
           }
-        ]
+        ],
+        [],
+        [
+          {
+            "id": "farol-57-r6-reprovado",
+            "reason": "REPROVADO r6 @e47a39b06a (P1 sem numeral) → FAROL57G (Hydrogen IBM)",
+            "sourceLine": 374,
+            "reportedAt": "2026-11-24T12:34:00+00:00",
+            "reportedAtPrecision": "minute",
+            "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+            "reportedSummary": "374 12:34 farol-57 REPROVADO r6 @e47a39b06a (P1 sem numeral) → FAROL57G (Hydrogen IBM)"
+          }
+        ],
+        []
       ],
       "previousReviews": [
         {
@@ -10512,24 +11518,70 @@
           "sourceLine": 368,
           "reportedAt": "2026-11-24T11:21:00+00:00",
           "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        },
+        {
+          "round": "r6",
+          "sha": "e47a39b06a",
+          "reviewer": "Sol",
+          "host": "oracle-vps",
+          "executor": "Pi",
+          "status": "launched_reported",
+          "verdict": null,
+          "verdictIssued": false,
+          "reportReadLocally": false,
+          "report": "2026-11-24T12:02:00Z farol-57 REVISAO agente/21z-farol-57@e47a39b06a FAROL57F Hydrogen IBM entregue; em revisao r6 Sol via Pi (FAROL57-r6.md)",
+          "sourceLine": 371,
+          "reportedAt": "2026-11-24T12:02:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log",
+          "reportPath": "FAROL57-r6.md"
+        },
+        {
+          "sha": "e47a39b06a",
+          "round": "r6",
+          "status": "rejected_reported",
+          "verdict": "REPROVADO",
+          "verdictIssued": true,
+          "reportReadLocally": false,
+          "sourceLine": 374,
+          "reportedAt": "2026-11-24T12:34:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "374 12:34 farol-57 REPROVADO r6 @e47a39b06a (P1 sem numeral) → FAROL57G (Hydrogen IBM)",
+          "reviewer": "Sol",
+          "host": "oracle-vps",
+          "executor": "Pi"
+        },
+        {
+          "sha": "f61aa1c9fe",
+          "round": "r7",
+          "status": "launched_reported",
+          "verdict": null,
+          "verdictIssued": false,
+          "reportReadLocally": false,
+          "sourceLine": 382,
+          "reportedAt": "2026-11-24T13:26:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "382 13:26 farol-57 REVISAO r7 @f61aa1c9fe (FAROL57G)",
+          "reviewerNotReiteratedInSummary": true
         }
       ],
-      "latestRejectedSha": "94d4bbf545",
+      "latestRejectedSha": "f61aa1c9fe",
       "correction": {
-        "task": "FAROL57F",
-        "baseSha": "94d4bbf545",
-        "sha": "e47a39b06a",
-        "status": "delivered_reported",
-        "deliveryReported": true,
-        "newReviewReported": true,
+        "task": "FAROL57H",
+        "baseSha": "f61aa1c9fe",
+        "sha": null,
+        "status": "dispatched_reported",
         "model": "Gemini Hydrogen",
         "host": "ibm-ephemeral",
         "executor": "Antigravity",
-        "sourceLine": 368,
-        "reportedAt": "2026-11-24T11:21:00+00:00",
-        "source": "Relato VPS · lotes/REPORTE-POKE.log",
-        "deliverySourceLine": 371,
-        "deliveryReportedAt": "2026-11-24T12:02:00+00:00"
+        "deliveryReported": false,
+        "newReviewReported": false,
+        "sourceLine": 384,
+        "reportedAt": "2026-11-24T13:54:00+00:00",
+        "reportedAtPrecision": "minute",
+        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+        "reportedSummary": "384 13:54 farol-57 REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM)"
       },
       "previousDeliveries": [
         {
@@ -10610,6 +11662,22 @@
           "reportedAt": "2026-11-24T10:48:00+00:00",
           "source": "Relato VPS · lotes/REPORTE-POKE.log",
           "task": "FAROL57E"
+        },
+        {
+          "sha": "e47a39b06a",
+          "branch": "agente/21z-farol-57",
+          "deliveryReported": true,
+          "githubVerified": false,
+          "githubPublicationReported": false,
+          "testsReproducedLocally": false,
+          "report": "2026-11-24T12:02:00Z farol-57 REVISAO agente/21z-farol-57@e47a39b06a FAROL57F Hydrogen IBM entregue; em revisao r6 Sol via Pi (FAROL57-r6.md)",
+          "model": "Gemini Hydrogen",
+          "host": "ibm-ephemeral",
+          "executor": "Antigravity",
+          "sourceLine": 371,
+          "reportedAt": "2026-11-24T12:02:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log",
+          "task": "FAROL57F"
         }
       ],
       "previousCorrections": [
@@ -10746,6 +11814,56 @@
           "sourceLine": 368,
           "reportedAt": "2026-11-24T11:21:00+00:00",
           "source": "Relato VPS · lotes/REPORTE-POKE.log"
+        },
+        {
+          "task": "FAROL57F",
+          "baseSha": "94d4bbf545",
+          "sha": "e47a39b06a",
+          "status": "delivered_reported",
+          "deliveryReported": true,
+          "newReviewReported": true,
+          "model": "Gemini Hydrogen",
+          "host": "ibm-ephemeral",
+          "executor": "Antigravity",
+          "sourceLine": 368,
+          "reportedAt": "2026-11-24T11:21:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log",
+          "deliverySourceLine": 371,
+          "deliveryReportedAt": "2026-11-24T12:02:00+00:00"
+        },
+        {
+          "task": "FAROL57G",
+          "baseSha": "e47a39b06a",
+          "sha": null,
+          "status": "dispatched_reported",
+          "model": "Gemini Hydrogen",
+          "host": "ibm-ephemeral",
+          "executor": "Antigravity",
+          "deliveryReported": false,
+          "newReviewReported": false,
+          "sourceLine": 374,
+          "reportedAt": "2026-11-24T12:34:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "374 12:34 farol-57 REPROVADO r6 @e47a39b06a (P1 sem numeral) → FAROL57G (Hydrogen IBM)"
+        },
+        {
+          "task": "FAROL57G",
+          "baseSha": "e47a39b06a",
+          "sha": "f61aa1c9fe",
+          "status": "delivered_reported",
+          "model": "Gemini Hydrogen",
+          "host": "ibm-ephemeral",
+          "executor": "Antigravity",
+          "deliveryReported": true,
+          "newReviewReported": true,
+          "sourceLine": 374,
+          "reportedAt": "2026-11-24T12:34:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+          "reportedSummary": "374 12:34 farol-57 REPROVADO r6 @e47a39b06a (P1 sem numeral) → FAROL57G (Hydrogen IBM)",
+          "deliverySourceLine": 382,
+          "deliveryReportedAt": "2026-11-24T13:26:00+00:00"
         }
       ],
       "dependencyHistory": [
@@ -13723,6 +14841,188 @@
     }
   ],
   "events": [
+    {
+      "item": "farol-32",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "at": "2026-11-24T14:38:00+00:00",
+      "appliedAt": "2026-11-24T14:59:41+00:00",
+      "vpsLine": 386,
+      "report": "2026-11-24T14:38:00+00:00 · 386 14:38 farol-32 REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)",
+      "provenance": "parent_summary_of_vps_log",
+      "sourceLine": 386,
+      "reportedAtPrecision": "minute",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "reportedSummary": "386 14:38 farol-32 REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)"
+    },
+    {
+      "item": "farol-54",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "at": "2026-11-24T14:21:00+00:00",
+      "appliedAt": "2026-11-24T14:59:41+00:00",
+      "vpsLine": 385,
+      "report": "2026-11-24T14:21:00+00:00 · 385 14:21 farol-54 REVISAO r1 @40a75c35d6",
+      "provenance": "parent_summary_of_vps_log",
+      "sourceLine": 385,
+      "reportedAtPrecision": "minute",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "reportedSummary": "385 14:21 farol-54 REVISAO r1 @40a75c35d6"
+    },
+    {
+      "item": "farol-57",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "at": "2026-11-24T13:54:00+00:00",
+      "appliedAt": "2026-11-24T14:59:41+00:00",
+      "vpsLine": 384,
+      "report": "2026-11-24T13:54:00+00:00 · 384 13:54 farol-57 REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM)",
+      "provenance": "parent_summary_of_vps_log",
+      "sourceLine": 384,
+      "reportedAtPrecision": "minute",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "reportedSummary": "384 13:54 farol-57 REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM)"
+    },
+    {
+      "item": "farol-51",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "at": "2026-11-24T13:52:00+00:00",
+      "appliedAt": "2026-11-24T14:59:41+00:00",
+      "vpsLine": 383,
+      "report": "2026-11-24T13:52:00+00:00 · 383 13:52 farol-51 APROVADO_COM_RESSALVAS r2 @d97d1f6c53 (composição real com #53 provada)",
+      "provenance": "parent_summary_of_vps_log",
+      "sourceLine": 383,
+      "reportedAtPrecision": "minute",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "reportedSummary": "383 13:52 farol-51 APROVADO_COM_RESSALVAS r2 @d97d1f6c53 (composição real com #53 provada)"
+    },
+    {
+      "item": "farol-57",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "at": "2026-11-24T13:26:00+00:00",
+      "appliedAt": "2026-11-24T14:59:41+00:00",
+      "vpsLine": 382,
+      "report": "2026-11-24T13:26:00+00:00 · 382 13:26 farol-57 REVISAO r7 @f61aa1c9fe (FAROL57G)",
+      "provenance": "parent_summary_of_vps_log",
+      "sourceLine": 382,
+      "reportedAtPrecision": "minute",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "reportedSummary": "382 13:26 farol-57 REVISAO r7 @f61aa1c9fe (FAROL57G)"
+    },
+    {
+      "item": "farol-54",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "at": "2026-11-24T13:25:00+00:00",
+      "appliedAt": "2026-11-24T14:59:41+00:00",
+      "vpsLine": 381,
+      "report": "2026-11-24T13:25:00+00:00 · 381 13:25 farol-54 IMPLEMENTANDO sobre agente/base-21f-farol-54@112d1adfa2 (#50+#31+#53; Neon IBM)",
+      "provenance": "parent_summary_of_vps_log",
+      "sourceLine": 381,
+      "reportedAtPrecision": "minute",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "reportedSummary": "381 13:25 farol-54 IMPLEMENTANDO sobre agente/base-21f-farol-54@112d1adfa2 (#50+#31+#53; Neon IBM)"
+    },
+    {
+      "item": "farol-50",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "at": "2026-11-24T13:21:00+00:00",
+      "appliedAt": "2026-11-24T14:59:41+00:00",
+      "vpsLine": 380,
+      "report": "2026-11-24T13:21:00+00:00 · 380 13:21 farol-50 APROVADO_COM_RESSALVAS r2 @7b3124a331 (destrava #54)",
+      "provenance": "parent_summary_of_vps_log",
+      "sourceLine": 380,
+      "reportedAtPrecision": "minute",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "reportedSummary": "380 13:21 farol-50 APROVADO_COM_RESSALVAS r2 @7b3124a331 (destrava #54)"
+    },
+    {
+      "item": "farol-32",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "at": "2026-11-24T13:20:00+00:00",
+      "appliedAt": "2026-11-24T14:59:41+00:00",
+      "vpsLine": 379,
+      "report": "2026-11-24T13:20:00+00:00 · 379 13:20 farol-32 REVISAO r1 @bf37d8bc6b",
+      "provenance": "parent_summary_of_vps_log",
+      "sourceLine": 379,
+      "reportedAtPrecision": "minute",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "reportedSummary": "379 13:20 farol-32 REVISAO r1 @bf37d8bc6b"
+    },
+    {
+      "item": "farol-51",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "at": "2026-11-24T13:12:00+00:00",
+      "appliedAt": "2026-11-24T14:59:41+00:00",
+      "vpsLine": 378,
+      "report": "2026-11-24T13:12:00+00:00 · 378 13:12 farol-51 REVISAO r2 @d97d1f6c53 (FAROL51B)",
+      "provenance": "parent_summary_of_vps_log",
+      "sourceLine": 378,
+      "reportedAtPrecision": "minute",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "reportedSummary": "378 13:12 farol-51 REVISAO r2 @d97d1f6c53 (FAROL51B)"
+    },
+    {
+      "item": "farol-50",
+      "from": "CORRECAO",
+      "to": "REVISAO",
+      "at": "2026-11-24T12:49:00+00:00",
+      "appliedAt": "2026-11-24T14:59:41+00:00",
+      "vpsLine": 377,
+      "report": "2026-11-24T12:49:00+00:00 · 377 12:49 farol-50 REVISAO r2 @7b3124a331 (FAROL50B SWE-2, publicado)",
+      "provenance": "parent_summary_of_vps_log",
+      "sourceLine": 377,
+      "reportedAtPrecision": "minute",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "reportedSummary": "377 12:49 farol-50 REVISAO r2 @7b3124a331 (FAROL50B SWE-2, publicado)"
+    },
+    {
+      "item": "farol-32",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "at": "2026-11-24T12:42:00+00:00",
+      "appliedAt": "2026-11-24T14:59:41+00:00",
+      "vpsLine": 376,
+      "report": "2026-11-24T12:42:00+00:00 · 376 12:42 farol-32 IMPLEMENTANDO sobre farol-31@0563840363 (Neon IBM)",
+      "provenance": "parent_summary_of_vps_log",
+      "sourceLine": 376,
+      "reportedAtPrecision": "minute",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "reportedSummary": "376 12:42 farol-32 IMPLEMENTANDO sobre farol-31@0563840363 (Neon IBM)"
+    },
+    {
+      "item": "farol-31",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "at": "2026-11-24T12:41:00+00:00",
+      "appliedAt": "2026-11-24T14:59:41+00:00",
+      "vpsLine": 375,
+      "report": "2026-11-24T12:41:00+00:00 · 375 12:41 farol-31 APROVADO_COM_RESSALVAS r2 @0563840363 (Opus; destrava #32)",
+      "provenance": "parent_summary_of_vps_log",
+      "sourceLine": 375,
+      "reportedAtPrecision": "minute",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "reportedSummary": "375 12:41 farol-31 APROVADO_COM_RESSALVAS r2 @0563840363 (Opus; destrava #32)"
+    },
+    {
+      "item": "farol-57",
+      "from": "REVISAO",
+      "to": "CORRECAO",
+      "at": "2026-11-24T12:34:00+00:00",
+      "appliedAt": "2026-11-24T14:59:41+00:00",
+      "vpsLine": 374,
+      "report": "2026-11-24T12:34:00+00:00 · 374 12:34 farol-57 REPROVADO r6 @e47a39b06a (P1 sem numeral) → FAROL57G (Hydrogen IBM)",
+      "provenance": "parent_summary_of_vps_log",
+      "sourceLine": 374,
+      "reportedAtPrecision": "minute",
+      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
+      "reportedSummary": "374 12:34 farol-57 REPROVADO r6 @e47a39b06a (P1 sem numeral) → FAROL57G (Hydrogen IBM)"
+    },
     {
       "item": "lote-21f",
       "at": "2026-11-24T12:28:09+00:00",
