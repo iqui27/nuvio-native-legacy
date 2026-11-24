@@ -3295,7 +3295,33 @@ int ajustes_1080p(void)               { return valor[AJ_RESOLUCAO] == RES_1080 &
 int ajustes_4k(void)                  { return valor[AJ_RESOLUCAO] == RES_4K && !SEGURO; }
 int ajustes_res_auto(void)            { return valor[AJ_RESOLUCAO] == RES_AUTO && !SEGURO; }
 int ajustes_720p(void)                { return valor[AJ_RESOLUCAO] == RES_720 && !SEGURO; }
-int ajustes_dolby_vision(void)        { return lig(AJ_DV); }
+// FAROL (#34): overrides SO DESTA REPRODUCAO, em memoria — nunca gravam. O
+// Farol liga ao pedir "Buffer maior" / "Desligar o HDR" e desliga ao encerrar a
+// reproducao. As telas de Ajustes leem valor[] direto, entao seguem mostrando o
+// que a pessoa escolheu.
+static int farolBufferMaior, farolHdrOff;
+static void riscoNotar(int op, int antes);
+void ajustes_farol_buffer_maior(int on) { __atomic_store_n(&farolBufferMaior, on ? 1 : 0, __ATOMIC_RELEASE); }
+int  ajustes_farol_buffer_maior_ativo(void) { return __atomic_load_n(&farolBufferMaior, __ATOMIC_ACQUIRE); }
+void ajustes_farol_hdr_off(int on) { __atomic_store_n(&farolHdrOff, on ? 1 : 0, __ATOMIC_RELEASE); }
+int  ajustes_farol_hdr_off_ativo(void) { return __atomic_load_n(&farolHdrOff, __ATOMIC_ACQUIRE); }
+// O ajuste GRAVADO, sem o override (e o que o Desfazer devolve).
+int  ajustes_dolby_vision_gravado(void) { return lig(AJ_DV); }
+// "Desligar o HDR sempre nesta TV": grava a preferencia (com Desfazer na ilha).
+// Retorna -1 quando o disco nao confirmou: o chamador do Farol avisa em vez de
+// prometer um "sempre" que o proximo arranque esqueceria (FAROL34B, P2).
+int ajustes_dolby_vision_definir(int ligado) {
+  int a = valor[AJ_DV], ok = 0;
+  valor[AJ_DV] = ligado ? 0 : 1;
+  if (valor[AJ_DV] == a) return 0;
+  AJ_COM_ORIGEM(AJLOG_CENTRAL, ok = gravar());
+  // Disco nao confirmou: em memoria o ajuste volta ao valor gravado de
+  // verdade — o leitor nao pode ver um "ligado/desligado" que nao existe.
+  if (!ok) valor[AJ_DV] = a;
+  riscoNotar(AJ_DV, a);
+  return ok ? 0 : -1;
+}
+int ajustes_dolby_vision(void)        { return lig(AJ_DV) && !ajustes_farol_hdr_off_ativo(); }
 int ajustes_dolby_atmos(void)         { return lig(AJ_ATMOS); }
 int ajustes_pausa_overlay(void)       { return lig(AJ_PAUSA_OVERLAY); }
 int ajustes_pausa_comentarios(void)   { return lig(AJ_PAUSA_COMENTARIOS); }
@@ -3787,7 +3813,10 @@ int ajustes_player_externo(int anime) {
 const char *ajustes_player_pacote(int anime) { return ppPkg[anime ? 1 : 0]; }
 int ajustes_buffer_preset(void) {
   int v = valor[AJ_BUFFER];
-  return v >= 0 && v < 4 ? v : 0;
+  v = v >= 0 && v < 4 ? v : 0;
+  // Farol (#34): "Buffer maior" so desta reproducao = o degrau de 256 MiB, que
+  // cacheboost_buffer_mb ainda reduz pela RAM livre. O gravado nao muda.
+  return ajustes_farol_buffer_maior_ativo() ? 3 : v;
 }
 static int bufferConexoes(int op, int padrao) { return valor[op] >= 0 && valor[op] < 4 ? valor[op] + 1 : padrao; }
 int ajustes_buffer_native_connections(void) { return bufferConexoes(AJ_BUFFER_NATIVE_CONNECTIONS, 1); }
@@ -4399,8 +4428,8 @@ void ajustes_dts_definir(int v) {
   valor[AJ_DTS_AC3] = v;
   AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar());
 }
-int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
-int ajustes_dv7(void) { return lig(AJ_DV7); }
+int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV) && !ajustes_farol_hdr_off_ativo(); }
+int ajustes_dv7(void) { return lig(AJ_DV7) && !ajustes_farol_hdr_off_ativo(); }
 int ajustes_dv7_mapping(void) { return lig(AJ_DV7_MAPPING); }
 int ajustes_mp4_bd_test(void) {
 #if defined(NV_WEBOS) && defined(NV_DV7_CONVERSION) && defined(NV_MP4_BD_TEST) && !defined(NV_TPK) && !defined(NV_ANDROID)

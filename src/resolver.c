@@ -25,6 +25,8 @@
 #include "player.h"
 #include "ponteiro.h"
 #include "redesaude.h"
+#include "segurar.h"
+#include "ilha.h"
 #include "streams.h"
 #include "text.h"
 #include "video.h"
@@ -54,13 +56,22 @@
 enum { B_BANNER = 50, B_ENVIAR, B_LISTA, B_PRINC, B_SEC, B_OUTRO, B_PRONTO, B_REPETIR, B_LIN0 = 200 };
 // O que um botao do painel faz. A_DEBRID = login da conta de cache (a tela/QR
 // do addonguia); A_PLAYER_EXT = a fonte falha sai para o player externo.
-enum { A_NADA = 0, A_REPETIR, A_FONTES, A_ENVIAR, A_DEBRID, A_PLAYER_EXT, A_ISOLAR };
+// A_FAROL = a acao FAROL_A_* sai como pedido para o app executar com
+// farolacao_rede_executar (issue #34 — as 4 acoes da Onda 2).
+enum { A_NADA = 0, A_REPETIR, A_FONTES, A_ENVIAR, A_DEBRID, A_PLAYER_EXT, A_ISOLAR, A_FAROL };
 // O que a fase 2 mostra.
 enum { M_NADA = 0, M_ENVIANDO, M_ENVIADO, M_FALHOU, M_LISTA };
 
 typedef struct { int id; GfxRect r; } Item;
 
 static int   aberto, fase, foco, sint, pedido, voltaFase;
+// PEDIU_FAROL: acao + modo do pedido de execucao (o persistir so vale em
+// FAROL_A_DESLIGAR_HDR). Consumidos junto com `pedido` em resolver_pedido().
+static int   pedidoAcao, pedidoPersistir;
+// OK afundado na celula do "Desligar o HDR" (a unica com versao longa):
+// toque executa a acao desta reproducao; segurar executa a "sempre nesta TV".
+static Uint32 okDesde;
+static int   okArmado, okLongo;
 static float entrada;
 static ResolverFatos fatos;
 static ResolverResultado res;
@@ -114,8 +125,12 @@ void resolver_teste_esquecer(void) {
 int resolver_pedido(void) {
   int p = pedido;
   pedido = RESOLVER_PEDIU_NADA;
+  if (p != RESOLVER_PEDIU_FAROL) { pedidoAcao = 0; pedidoPersistir = 0; }
   return p;
 }
+// Validos so no turno em que resolver_pedido() devolve RESOLVER_PEDIU_FAROL.
+int resolver_pedido_acao(void) { return pedidoAcao; }
+int resolver_pedido_persistir(void) { return pedidoPersistir; }
 
 uint64_t resolver_tentativa_externo(void) {
   return pedidoTentativa;
@@ -355,6 +370,10 @@ static int acao_farol_map(int a) {
     case FAROL_A_ABRIR_FONTES:      return A_FONTES;
     case FAROL_A_ABRIR_DEBRID:
     case FAROL_A_RECONECTAR_DEBRID: return A_DEBRID;
+    case FAROL_A_RECONECTAR_REDE:
+    case FAROL_A_LIMPAR_CACHE:
+    case FAROL_A_BUFFER_MAIOR:
+    case FAROL_A_DESLIGAR_HDR:      return A_FAROL;   // issue #34: executa
     case FAROL_A_PLAYER_EXTERNO:    return ff.externoDisponivel > 0 ? A_PLAYER_EXT : A_NADA;
     case FAROL_A_ENVIAR_REGISTRO:   return A_ENVIAR;
     case FAROL_A_ISOLAR_ADDON:      return farolacao_addon_pode_isolar() ? A_ISOLAR : A_NADA;
@@ -509,7 +528,18 @@ static const char *rotulo_acao(int a, int fa) {
   return "";
 }
 
-static const char *icone_acao(int a) {
+static const char *icone_acao_farol(int fa) {
+  switch (fa) {
+    case FAROL_A_RECONECTAR_REDE:   return "aj_wifi";
+    case FAROL_A_LIMPAR_CACHE:      return "aj_rotate-cw";
+    case FAROL_A_BUFFER_MAIOR:      return "aj_volume-2";
+    case FAROL_A_DESLIGAR_HDR:      return "aj_tv-minimal-play";
+    default:                        return "aj_wrench";
+  }
+}
+
+static const char *icone_acao(int a, int fa) {
+  if (a == A_FAROL && fa > 0) return icone_acao_farol(fa);
   switch (a) {
     case A_REPETIR:    return "aj_rotate-cw";
     case A_FONTES:     return "aj_puzzle";
@@ -577,9 +607,9 @@ static int montar(Item *it) {
     medir_painel();
     by = painel_botoes_y();
     cy = PAINEL_Y + painel_h() + 28.0f;
-    poe_botao(it, &n, B_PRINC, x, by, rotulo_acao(pPrim, pPrimF), icone_acao(pPrim), 1);
-    if (pSec) poe_botao(it, &n, B_SEC, x + botao_largura(rotulo_acao(pPrim, pPrimF), icone_acao(pPrim), 1) + BOTAO_GAP, by + 8.0f,
-                        rotulo_acao(pSec, pSecF), icone_acao(pSec), 0);
+    poe_botao(it, &n, B_PRINC, x, by, rotulo_acao(pPrim, pPrimF), icone_acao(pPrim, pPrimF), 1);
+    if (pSec) poe_botao(it, &n, B_SEC, x + botao_largura(rotulo_acao(pPrim, pPrimF), icone_acao(pPrim, pPrimF), 1) + BOTAO_GAP, by + 8.0f,
+                        rotulo_acao(pSec, pSecF), icone_acao(pSec, pSecF), 0);
     x = PAINEL_X + 190.0f;
     if (pPrim != A_ENVIAR) {
       poe_botao(it, &n, B_ENVIAR, x, cy, i18n("Enviar um registro"), "aj_send", 0);
@@ -697,8 +727,13 @@ void resolver_abrir(void) { abrir(); }
 static void fechar(void) { aberto = 0; }
 
 // `fa` e a acao do veredito que gerou o botao (0 no cartao antigo): vai para
-// o anel como FE_FAROL_ACAO — o resultado do conserto se mede depois.
-static void aplicar(int a, int fa) {
+// o anel como FE_FAROL_ACAO — o resultado do conserto se mede depois. A_FAROL
+// sai como pedido para o app executar com farolacao_rede_executar (issue
+// #34): e o executor quem registra acao/resultado no anel, entao aqui o
+// FE_FAROL_ACAO local NAO se repete. `longo` e o OK segurado: em
+// FAROL_A_DESLIGAR_HDR pede a versao persistente ("sempre nesta TV"); nas
+// outras acoes nao muda nada.
+static void aplicar(int a, int fa, int longo) {
   const char *tok = fa > 0 ? farolregra_acao_token(fa) : "";
   pedidoTentativa = 0;
   // Farol #17: isola o add-on lento por 24 h (anel, arquivo e ilha com Desfazer
@@ -718,6 +753,13 @@ static void aplicar(int a, int fa) {
       return;
     }
   }
+  if (a == A_FAROL) {
+    pedidoAcao = fa;
+    pedidoPersistir = fa == FAROL_A_DESLIGAR_HDR && longo ? 1 : 0;
+    pedido = RESOLVER_PEDIU_FAROL;
+    fechar();
+    return;
+  }
   if (tok[0]) farol_ev(FM_FAROL, FE_FAROL_ACAO, 0, fa, 0, tok);
   if (a == A_REPETIR) { testar(sint); foco = B_PRINC; }
   else if (a == A_FONTES) { pedido = RESOLVER_PEDIU_FONTES; fechar(); }
@@ -733,7 +775,17 @@ static void aplicar(int a, int fa) {
 void resolver_teste_testar(int s) { testar(s); ir_fase(RESOLVER_FASE_TESTES); }
 #endif
 
-static void ok(void) {
+// O Desligar o HDR tem a versao duravel: toque = esta reproducao, segurar =
+// "sempre nesta TV" (FAROL34B). O segurar arma no KEYDOWN do OK com foco na
+// celula dessa acao, vence no passo (segurar_venceu) e executa no KEYUP.
+#define RES_OK_TOQUE_MS 150u   // convencao do ctxhold: passou disto, ja vira dica
+static int foco_desliga_hdr(void) {
+  return fase == RESOLVER_FASE_TESTES &&
+         ((foco == B_PRINC && pPrim == A_FAROL && pPrimF == FAROL_A_DESLIGAR_HDR) ||
+          (foco == B_SEC  && pSec  == A_FAROL && pSecF  == FAROL_A_DESLIGAR_HDR));
+}
+
+static void ok(int longo) {
   if (fase == RESOLVER_FASE_SINTOMA) {
     if (foco >= 0 && foco < RES_S_N) { testar(foco); ir_fase(RESOLVER_FASE_TESTES); }
     else if (foco == B_BANNER) { testar(RES_S_NAO_COMECA); ir_fase(RESOLVER_FASE_TESTES); }
@@ -744,8 +796,8 @@ static void ok(void) {
       if (envN > 0) foco = B_LIN0;
     }
   } else if (fase == RESOLVER_FASE_TESTES) {
-    if (foco == B_PRINC) aplicar(pPrim, pPrimF);
-    else if (foco == B_SEC) aplicar(pSec, pSecF);
+    if (foco == B_PRINC) aplicar(pPrim, pPrimF, longo);
+    else if (foco == B_SEC) aplicar(pSec, pSecF, longo);
     else if (foco == B_ENVIAR) enviar_registro(sint, RESOLVER_FASE_TESTES);
     else if (foco == B_OUTRO) ir_fase(RESOLVER_FASE_SINTOMA);
   } else {
@@ -770,15 +822,42 @@ static void voltar(void) {
   else { int v = voltaFase; envModo = M_NADA; ir_fase(v); }
 }
 
+static int tecla_ok(SDL_Keycode k) {
+  return k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE;
+}
+
 void resolver_evento(const SDL_Event *e) {
   SDL_Keycode k;
-  if (!aberto || e->type != SDL_KEYDOWN) return;
+  if (!aberto) return;
+  // O OK segurado executa no KEYUP (toque vs longo); o KEYDOWN so arma.
+  if (e->type == SDL_KEYUP) {
+    k = e->key.keysym.sym;
+    if (tecla_ok(k) && okArmado) {
+      int l = okLongo;
+      okArmado = okLongo = 0; okDesde = 0;
+      ok(l);
+    }
+    return;
+  }
+  if (e->type != SDL_KEYDOWN) return;
   k = e->key.keysym.sym;
+  if (tecla_ok(k)) {
+    // KEYDOWN repetido do mesmo OK segurando: mantem armado.
+    if (!e->key.repeat) {
+      okArmado = foco_desliga_hdr();
+      okLongo = 0;
+      { Uint32 t = SDL_GetTicks();   // 0 = nao armado para segurar_venceu;
+        if (!t) t = 1;               // ticks reais podem ser 0 no 1o quadro
+        okDesde = t; }               // (tests/farol_resolver, GCC/Clang)
+      if (!okArmado) ok(0);   // fora da celula longa, o OK continua no KEYDOWN
+    }
+    return;
+  }
+  okArmado = 0; okDesde = 0; okLongo = 0;
   if (k == SDLK_LEFT)  { mover(-1, 0); return; }
   if (k == SDLK_RIGHT) { mover(1, 0); return; }
   if (k == SDLK_UP)    { mover(0, -1); return; }
   if (k == SDLK_DOWN)  { mover(0, 1); return; }
-  if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) { ok(); return; }
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) voltar();
 }
@@ -809,12 +888,26 @@ static void sondar_envio(void) {
 
 void resolver_atualizar(float dt, Uint32 agora) {
   int red = ajustes_animacoes_reduzidas();
-  (void)agora;
   sondar_envio();
+  // Segurar OK em "Desligar o HDR": a dica sobe depois do toque e a acao
+  // duravel vence em NV_HOLD_MS (convencao segurar.h/ctxhold). A execucao e
+  // no KEYUP — segurar alem do vencido nao dispara duas vezes.
+  if (aberto && okArmado) {
+    if (okLongo) ilha_atividade(i18n(FT_ACAO_DESLIGAR_HDR_SEMPRE), 1.0f);
+    else if (agora - okDesde >= RES_OK_TOQUE_MS)
+      ilha_atividade(i18n(FT_ACAO_DESLIGAR_HDR_SEMPRE),
+                     (float)(agora - okDesde) / (float)NV_HOLD_MS);
+    if (!okLongo && segurar_venceu(agora, okDesde, "resolver")) okLongo = 1;
+  }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
   if (red) { entrada = aberto ? 1.0f : 0.0f; return; }
   entrada = anim_rampa(entrada, aberto ? 1.0f : 0.0f, dt, aberto ? ABRIR_MS : FECHAR_MS);
 }
+
+#ifdef RESOLVER_TESTE
+// Toque (0) ou OK segurado (1) no botao em foco, sem fabricar SDL_Event.
+void resolver_teste_ok(int persistir) { ok(persistir != 0); }
+#endif
 
 // ------------------------------------------------------------------- desenho
 typedef struct { int r, g, b; } Tinta;
@@ -968,8 +1061,8 @@ static void desenha_testes(float a) {
     } }
   for (i = 0; i < n; i++) {
     int id = it[i].id;
-    if (id == B_PRINC) { botao_pilula(it[i].r, rotulo_acao(pPrim, pPrimF), icone_acao(pPrim), foco == id ? 1.0f : 0.0f, 1, 0, a); alvo(it[i].r, id); }
-    else if (id == B_SEC) { botao_pilula(it[i].r, rotulo_acao(pSec, pSecF), icone_acao(pSec), foco == id ? 1.0f : 0.0f, 0, 0, a); alvo(it[i].r, id); }
+    if (id == B_PRINC) { botao_pilula(it[i].r, rotulo_acao(pPrim, pPrimF), icone_acao(pPrim, pPrimF), foco == id ? 1.0f : 0.0f, 1, 0, a); alvo(it[i].r, id); }
+    else if (id == B_SEC) { botao_pilula(it[i].r, rotulo_acao(pSec, pSecF), icone_acao(pSec, pSecF), foco == id ? 1.0f : 0.0f, 0, 0, a); alvo(it[i].r, id); }
     else if (id == B_ENVIAR) chip(&it[i], id, i18n("Enviar um registro"), "aj_send", a);
     else if (id == B_OUTRO) chip(&it[i], id, i18n("Testar outro problema"), NULL, a);
   }

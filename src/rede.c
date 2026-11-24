@@ -553,6 +553,8 @@ static _Thread_local unsigned redeFinalTam;
 #endif
 
 void rede_preparar(void) { }   // nao ha biblioteca para carregar
+void rede_zerar_cache(void) { }   // o navegador gere DNS e conexoes (#34)
+unsigned rede_cache_geracao(void) { return 0; }
 unsigned rede_pedido_capacidades(void) { return 0; }
 // WGT: somente GET publico sem redirects, em fluxo; nunca usa responseText.
 EM_JS_DEPS(nv_fluxo_deps, "$wasmTable");
@@ -1433,6 +1435,11 @@ void rede_tls_fechar(RedeTls *t) { (void)t; }
 
 #else
 
+// FAROL (#34): geracao do cache de DNS/conexoes do cliente. So existe no
+// ramo nativo: no Emscripten rede_zerar_cache e no-op e a geracao e sempre 0.
+static unsigned redeGerCache;
+unsigned rede_cache_geracao(void) { return __atomic_load_n(&redeGerCache, __ATOMIC_ACQUIRE); }
+
 #ifndef NV_TPK40   // no NV_TPK40 estes nomes sao macros da struct por fio (topo)
 // Codigo da libcurl do ultimo pedido DESTE fio (0 = transporte ok). So o
 // rede_baixar_trecho_st le: o resto do modulo segue devolvendo NULL e logando.
@@ -1765,7 +1772,18 @@ static int    pronto;
 // junta (multi primeiro: libcurl devolve as conexoes ociosas dele; easy
 // depois). O multi tem o PROPRIO cache de conexoes — o que preserva o reuso
 // entre pedidos cancelaveis e nao cancelaveis sem CURLSHARE CONNECT.
-typedef struct { void *c; void *multi; } HandlePool;
+// `ger`: a geracao do cache de rede (rede_zerar_cache) que este pool ja viu.
+typedef struct { void *c; void *multi; unsigned ger; } HandlePool;
+// FAROL (#34): rede_zerar_cache sobe a geracao (redeGerCache acima); cada fio
+// descarta o PROPRIO par easy+multi na proxima vez que pega handle (nunca no
+// meio de uma transferencia, de nenhum fio) e o handle novo pede a poda do
+// cache de DNS.
+// Pool novo nasce na geracao de agora: nada a descartar no primeiro pedido.
+static HandlePool *poolAlocar(void) {
+  HandlePool *p = (HandlePool *)calloc(1, sizeof *p);
+  if (p) p->ger = __atomic_load_n(&redeGerCache, __ATOMIC_ACQUIRE);
+  return p;
+}
 static pthread_key_t handleChave;
 static pthread_once_t handleUma = PTHREAD_ONCE_INIT;
 static void handleCriarChave(void);
@@ -1780,7 +1798,7 @@ static int redeMultiGuardar(void *m) {
   pthread_once(&handleUma, handleCriarChave);
   p = (HandlePool *)pthread_getspecific(handleChave);
   if (!p) {
-    p = (HandlePool *)calloc(1, sizeof *p);
+    p = poolAlocar();
     if (!p || pthread_setspecific(handleChave, p) != 0) { free(p); return 0; }
   }
   if (p->multi) curl_multi_cleanup(p->multi);   // nunca deveria sobrar
@@ -2043,7 +2061,11 @@ static int performV4(void *c, const char *url, CancelVigia *v) {
 // O par easy+multi viaja junto: o cache de conexoes do pre-aquecimento mora no
 // multi (performTmdb passa por ele), e o fio consumidor precisa DOS DOIS para
 // reusar o HEAD aquecido — a easy sozinha chegaria sem conexao nenhuma.
-typedef struct { void *c; void *multi; unsigned long ms; int nh; char h[REDE_ESTAC_HOSTS][96]; } Estac;
+// `ger`: a geracao do cache em que o par foi estacionado (FAROL #34). Um HEAD
+// que comecou ANTES de rede_zerar_cache e estacionou DEPOIS nao pode entregar
+// conexoes/DNS do mundo velho ao fio que o adota — sem este campo ele entrava
+// no pool ja com a geracao nova (poolAlocar) e ninguem mais o descartava.
+typedef struct { void *c; void *multi; unsigned long ms; unsigned ger; int nh; char h[REDE_ESTAC_HOSTS][96]; } Estac;
 static Estac estac[REDE_ESTAC_MAX];
 static pthread_mutex_t estacTrava = PTHREAD_MUTEX_INITIALIZER;
 // Chamar com estacTrava: joga fora os que passaram da validade.
@@ -2069,45 +2091,88 @@ static void estacionar(void *c, void *multi, char h[][96], int nh) {
   if (livre < 0) { livre = velho;
     if (estac[livre].multi && curl_multi_cleanup) curl_multi_cleanup(estac[livre].multi);
     if (curl_cleanup) curl_cleanup(estac[livre].c); }
+
   estac[livre].c = c; estac[livre].multi = multi;
   estac[livre].ms = agora; estac[livre].nh = nh;
+  // Carimbo e a geracao de NASCIMENTO do par (a do pool do fio), nao a do
+  // instante do estacionamento: e assim que um HEAD iniciado antes de
+  // rede_zerar_cache e estacionado depois ainda morre no estacTomar.
+  { HandlePool *pp = (HandlePool *)pthread_getspecific(handleChave);
+    estac[livre].ger = pp ? pp->ger : __atomic_load_n(&redeGerCache, __ATOMIC_ACQUIRE); }
   for (i = 0; i < nh && i < REDE_ESTAC_HOSTS; i++) snprintf(estac[livre].h[i], 96, "%s", h[i]);
   pthread_mutex_unlock(&estacTrava);
 }
-static void *estacTomar(const char *url, void **multi) {
+static void *estacTomar(const char *url, void **multi, unsigned *ger) {
   char h[96];
   unsigned long agora = redeAgoraMs();
   void *c = NULL;
   int i, k;
   if (multi) *multi = NULL;
+  if (ger) *ger = 0;
   hostDaUrl(url, h, sizeof h);
   if (!h[0]) return NULL;
   pthread_mutex_lock(&estacTrava);
   estacVelhos(agora);
+  // FAROL (#34): par estacionado por um job que comecou antes do reset — a
+  // conexao/DNS dele e do mundo velho mesmo tendo chegado depois. Morre na
+  // hora, como os que rede_zerar_cache apaga sob a mesma trava.
+  { unsigned gAgora = __atomic_load_n(&redeGerCache, __ATOMIC_ACQUIRE);
+    for (i = 0; i < REDE_ESTAC_MAX; i++) {
+      if (estac[i].c && estac[i].ger != gAgora) {
+        if (estac[i].multi && curl_multi_cleanup) curl_multi_cleanup(estac[i].multi);
+        if (curl_cleanup) curl_cleanup(estac[i].c);
+        estac[i].c = NULL;
+        estac[i].multi = NULL;
+      } } }
   for (i = 0; i < REDE_ESTAC_MAX && !c; i++)
     for (k = 0; estac[i].c && k < estac[i].nh; k++)
       if (!strcmp(estac[i].h[k], h)) { c = estac[i].c;
         if (multi) *multi = estac[i].multi;
+        if (ger) *ger = estac[i].ger;
         estac[i].c = NULL; estac[i].multi = NULL; break; }
   pthread_mutex_unlock(&estacTrava);
   return c;
 }
 
+// FAROL (#34, "Reconectar a rede"): joga fora o cache de DNS e as conexoes
+// ociosas do cliente SEM mexer em transferencia alguma. Os pares estacionados
+// (ninguem os usa) morrem aqui; os de cada fio morrem na proxima pegarHandle
+// daquele fio. Seguro de qualquer fio; barato (nao toca em rede).
+void rede_zerar_cache(void) {
+  int i;
+  __atomic_add_fetch(&redeGerCache, 1u, __ATOMIC_ACQ_REL);
+  pthread_mutex_lock(&estacTrava);
+  for (i = 0; i < REDE_ESTAC_MAX; i++) {
+    if (!estac[i].c) continue;
+    if (estac[i].multi && curl_multi_cleanup) curl_multi_cleanup(estac[i].multi);
+    if (curl_cleanup) curl_cleanup(estac[i].c);
+    estac[i].c = NULL;
+    estac[i].multi = NULL;
+  }
+  pthread_mutex_unlock(&estacTrava);
+}
+
 static void *pegarHandle(const char *url) {
   void *c, *multi = NULL;
   HandlePool *p;
+  unsigned gerEstac = 0;
+  int zerou = 0;
   if (!curl_reset) return curl_init();     // libcurl sem reset: como antes
   pthread_once(&handleUma, handleCriarChave);
   p = (HandlePool *)pthread_getspecific(handleChave);
   c = p ? p->c : NULL;
   if (!c) {
-    c = estacTomar(url, &multi);
+    c = estacTomar(url, &multi, &gerEstac);
     if (c) {
       if (!p) {
-        p = (HandlePool *)calloc(1, sizeof *p);
+        p = poolAlocar();
         if (p && pthread_setspecific(handleChave, p) != 0) { free(p); p = NULL; }
       }
       if (p) {
+        // FAROL34C: a geracao que o pool carrega e a do PAR, nao a do momento
+        // da adocao — sem isso um par estacionado na geracao velha era adotado
+        // com o carimbo novo e sobrevivia ao cheque de geracao logo abaixo.
+        p->ger = gerEstac;
         p->c = c;
         if (p->multi && p->multi != multi && curl_multi_cleanup)
           curl_multi_cleanup(p->multi);      // nunca deveria sobrar
@@ -2118,7 +2183,13 @@ static void *pegarHandle(const char *url) {
       }
     }
   }
-  if (c && hostOcioso(url, redeAgoraMs())) {
+  // Zerado pelo Farol: este fio ainda tem o par da geracao anterior. Nao ha
+  // transferencia em curso neste fio (quem chama pegarHandle acabou a anterior),
+  // entao o descarte e o mesmo do host ocioso, e DNS + conexoes + sessoes TLS
+  // do fio morrem juntos.
+  { unsigned g = __atomic_load_n(&redeGerCache, __ATOMIC_ACQUIRE);
+    if (p && p->ger != g) { p->ger = g; zerou = 1; } }
+  if (c && (zerou || hostOcioso(url, redeAgoraMs()))) {
     // O par inteiro vai embora: o cache de conexoes mora no multi e o socket
     // morto deste host esta la — manter o multi reusiaria essa conexao no
     // proximo pedido e o prazo inteiro seria gasto esperando resposta que
@@ -2136,7 +2207,7 @@ static void *pegarHandle(const char *url) {
     c = curl_init();
     if (c) {
       if (!p) {
-        p = (HandlePool *)calloc(1, sizeof *p);
+        p = poolAlocar();
         if (p && pthread_setspecific(handleChave, p) != 0) { free(p); p = NULL; }
       }
       if (p) p->c = c; else { curl_cleanup(c); c = NULL; }
@@ -2144,6 +2215,10 @@ static void *pegarHandle(const char *url) {
   }
   // Depois do reset: curl_easy_reset volta MAXCONNECTS ao padrao.
   if (c) curl_setopt(c, OPT_MAXCONNECTS, REDE_CONEXOES_POR_FIO);
+  // Cache de DNS zerado pelo Farol: DNS_CACHE_TIMEOUT 0 faz a libcurl podar na
+  // hora as entradas do cache (inclusive o compartilhado do .tpk); o reset do
+  // proximo pedido volta ao padrao de 60 s.
+  if (c && zerou) curl_setopt(c, 92 /* CURLOPT_DNS_CACHE_TIMEOUT */, 0L);
   return c;
 }
 // DEVOLVE SO CONEXAO LIMPA (23/09/2026). Transferencia que nao terminou bem —

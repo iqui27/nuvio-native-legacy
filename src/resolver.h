@@ -33,7 +33,13 @@ void resolver_desenhar(Uint32 agora);
 #define RESOLVER_PEDIU_FONTES 1   // abrir Ajustes › Fontes e addons
 #define RESOLVER_PEDIU_DEBRID 2   // abrir o login da conta de cache (addonguia, QR)
 #define RESOLVER_PEDIU_PLAYER_EXT 3   // despachar a fonte falha ao player externo (Android)
+#define RESOLVER_PEDIU_FAROL  4   // executar a acao do Farol (farolacao_rede_executar)
 int  resolver_pedido(void);
+// PEDIU_FAROL: a acao FAROL_A_* e o modo. O persistir so vale em
+// FAROL_A_DESLIGAR_HDR (toque: so esta reproducao; segurar: sempre nesta TV);
+// nas outras e sempre 0. Os dois sao consumidos junto com resolver_pedido().
+int  resolver_pedido_acao(void);
+int  resolver_pedido_persistir(void);
 uint64_t resolver_tentativa_externo(void);
 
 // ---- Para a captura e os testes.
@@ -63,6 +69,9 @@ int          resolver_teste_sec(void);
 // Roda a cadeia de producao inteira com o sintoma informado.
 // sem simular teclas. `sintoma` = RES_S_*.
 void resolver_teste_testar(int sintoma);
+// Simula o OK no botao em foco: `persistir` = o OK segurado que pede a
+// versao "sempre nesta TV" do Desligar o HDR (ignorado pelos demais botoes).
+void resolver_teste_ok(int persistir);
 #endif
 
 #endif

@@ -329,6 +329,20 @@ static int tela = TELA_AJUSTES;
 #define NV_FAROL_PLAT FP_ANDROID
 #define NV_FAROL_BACKEND "media3"
 
+// O bridge chama farolacao_rede_executar() no resolver_aberto() extraido do
+// app.c; o executor nao entra nesta compilacao (testa-se em farol_acao_rede).
+#include "farolacao_rede.h"
+int farolacao_rede_executar(int acao, int persistir) { (void)acao; (void)persistir; return 0; }
+
+// O resolver_atualizar() do resolver.c tambem usa o segurar do OK e a ilha;
+// aqui basta contar as vitorias do toque longo para o cenario do resolver.
+static int venceuCnt = 0;
+#define NV_HOLD_MS 700                    // mesmo valor de src/layout.h
+int segurar_venceu(Uint32 agora, Uint32 desde, const char *tela) {
+  (void)tela; return desde && agora - desde >= NV_HOLD_MS ? (venceuCnt++, 1) : 0;
+}
+void ilha_atividade(const char *texto, float progresso) { (void)texto; (void)progresso; }
+
 #include "farol_android_bridge.inc"
 
 static void abrir_titulo(const char *imdb, const char *tipo, const char *titulo,
