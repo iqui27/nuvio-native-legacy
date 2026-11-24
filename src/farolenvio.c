@@ -76,6 +76,7 @@ static EnvioJob       *jobAtual;
 static FarolEnvioInfo  info;
 static int             logPedido;         // incluir_log a entregar no passo
 static long            proximoReenvio;    // epoch; 0 = ja
+static int             reenvioAuto;       // 1 = apenas rede/offline (nunca 4xx/5xx)
 static int             offlineAntes;
 static int             temUrlOverride;
 static char            urlOverride[384];
@@ -354,12 +355,16 @@ static void publicar(EnvioJob *j, FarolEnvioEstado est, FarolEnvioMotivo mot, in
     info.conhecidoEstado[0] = info.conhecidoVersao[0] = 0;
     info.notaPt[0] = info.notaEn[0] = 0;
   }
-  if (j->tipo == J_ENVIAR) info.incluirLog = j->incluirLog;
+  if (j->tipo == J_ENVIAR || j->tipo == J_PENDENTE) info.incluirLog = j->incluirLog;
   if (est == FAROLENVIO_OK && j->incluirLog) logPedido = 1;
-  // Espera do proximo reenvio do pendente.
-  if (est == FAROLENVIO_PENDENTE) proximoReenvio = agora + FAROLENVIO_REENVIO_S;
-  else if (mot == FAROLENVIO_M_LIMITE) proximoReenvio = agora + FAROLENVIO_REENVIO_LIMITE_S;
-  else if (est == FAROLENVIO_FALHOU) proximoReenvio = agora + FAROLENVIO_REENVIO_S;
+  // Espera do proximo reenvio automatico (so offline / falha de transporte).
+  if (est == FAROLENVIO_PENDENTE) {
+    reenvioAuto = 1;
+    proximoReenvio = agora + FAROLENVIO_REENVIO_S;
+    if (mot == FAROLENVIO_M_OFFLINE) offlineAntes = 1;
+  } else {
+    reenvioAuto = 0;
+  }
   info.geracao++;
   pthread_mutex_unlock(&trava);
 }
@@ -369,6 +374,7 @@ static void marcarPendente(int tem, long criado) {
   info.temPendente = tem;
   info.pendenteCriado = tem ? criado : 0;
   info.pendenteVence = tem ? criado + FAROLENVIO_PENDENTE_VALIDADE_S : 0;
+  if (!tem) reenvioAuto = 0;
   pthread_mutex_unlock(&trava);
 }
 
@@ -397,6 +403,7 @@ static int pedir(EnvioJob *j, const char *metodo, const char *url, const char **
   long long agora = agoraMs();
   int http = 0;
   *resp = NULL; *nResp = 0; *t = T_OK;
+  if (jobCancelado(j)) { *t = T_CANCELADO; return 0; }
   if (agora >= j->fim) { *t = T_PRAZO; return 0; }
   if (agora + (long long)ms > j->fim) ms = (unsigned)(j->fim - agora);
   if (ms < 1) ms = 1;
@@ -470,8 +477,32 @@ static void enviadosAdicionar(const char *codigo, int sintoma) {
   pthread_mutex_unlock(&travaEnviados);
 }
 
+static void ultimoCodigoCarregar(void) {
+  ResolverEnviado v[RES_ENVIADOS_MAX];
+  char *s;
+  int n;
+  long agora = agoraS();
+  pthread_mutex_lock(&travaEnviados);
+  s = dados_ler(FAROLENVIO_ENVIADOS_ARQ);
+  pthread_mutex_unlock(&travaEnviados);
+  if (!s) return;
+  n = resolverregra_enviados_ler(s, agora, v, RES_ENVIADOS_MAX);
+  free(s);
+  if (n > 0 && codigoOk(v[0].codigo)) {
+    pthread_mutex_lock(&trava);
+    if (!info.codigo[0]) {
+      copiar(info.codigo, sizeof info.codigo, v[0].codigo);
+      if (!resolverregra_codigo_exibir(info.codigo, info.codigoExibir, sizeof info.codigoExibir))
+        info.codigoExibir[0] = 0;
+      info.codigoQuando = v[0].quando;
+    }
+    pthread_mutex_unlock(&trava);
+  }
+}
+
 // Envelope do pendente: o pacote vai por ULTIMO, para ser recortado sem parse.
-static int pendenteGravar(const Chave *k, int sintoma, long criado, const char *pacote, size_t n) {
+static int pendenteGravar(const Chave *k, int sintoma, long criado, int autoReenvio,
+                          int incluirLog, const char *pacote, size_t n) {
   size_t cap = FAROLENVIO_PENDENTE_MAX + 1, u;
   char *buf;
   int ok;
@@ -479,9 +510,11 @@ static int pendenteGravar(const Chave *k, int sintoma, long criado, const char *
   buf = (char *)malloc(cap);
   if (!buf) return 0;
   u = (size_t)snprintf(buf, cap,
-                       "{\"v\":1,\"criado\":%ld,\"sintoma\":%d,\"fp\":\"%s\",\"codigo\":\"%s\","
+                       "{\"v\":1,\"criado\":%ld,\"sintoma\":%d,\"auto\":%d,\"incluir_log\":%d,"
+                       "\"fp\":\"%s\",\"codigo\":\"%s\","
                        "\"plataforma\":\"%s\",\"versao\":\"%s\",\"so_maior\":%d,\"pacote\":",
-                       criado, sintoma, k->fp, k->codigo, k->plat, k->versao, k->soMaior);
+                       criado, sintoma, autoReenvio ? 1 : 0, incluirLog ? 1 : 0,
+                       k->fp, k->codigo, k->plat, k->versao, k->soMaior);
   if (u + n + 2 > FAROLENVIO_PENDENTE_MAX) { free(buf); return 0; }
   memcpy(buf + u, pacote, n);
   u += n;
@@ -495,13 +528,16 @@ static int pendenteGravar(const Chave *k, int sintoma, long criado, const char *
 
 // Le o pendente: 1 = valido (pacote em *pacote, heap); 0 = ausente; -1 = lixo
 // ou vencido (ja apagado). `soMeta` nao copia o pacote.
-static int pendenteLer(Chave *k, int *sintoma, long *criado, char **pacote, size_t *nPacote, int soMeta) {
+static int pendenteLer(Chave *k, int *sintoma, long *criado, int *autoReenvio, int *incluirLog,
+                       char **pacote, size_t *nPacote, int soMeta) {
   char *s = dados_ler(FAROLENVIO_PENDENTE_ARQ);
   const char *fim, *p;
   size_t n;
-  long v = 0, cr = 0, sint = RES_S_GERAL, so = -1;
+  long v = 0, cr = 0, sint = RES_S_GERAL, so = -1, autoR = 1, incLog = 0;
   long agora = agoraS();
   memset(k, 0, sizeof *k);
+  if (autoReenvio) *autoReenvio = 1;
+  if (incluirLog) *incluirLog = -1;
   if (pacote) *pacote = NULL;
   if (nPacote) *nPacote = 0;
   if (!s) return 0;
@@ -515,6 +551,9 @@ static int pendenteLer(Chave *k, int *sintoma, long *criado, char **pacote, size
   if (agora - cr >= FAROLENVIO_PENDENTE_VALIDADE_S || cr - agora > 3600) goto lixo;
   intChave(s, fim, "sintoma", &sint);
   intChave(s, fim, "so_maior", &so);
+  intChave(s, fim, "auto", &autoR);
+  if (autoReenvio) *autoReenvio = autoR ? 1 : 0;
+  if (incluirLog && intChave(s, fim, "incluir_log", &incLog)) *incluirLog = incLog ? 1 : 0;
   strChave(s, fim, "codigo", k->codigo, sizeof k->codigo);
   strChave(s, fim, "plataforma", k->plat, sizeof k->plat);
   strChave(s, fim, "versao", k->versao, sizeof k->versao);
@@ -560,9 +599,11 @@ static void montarConsulta(char *url, size_t cap, const char *base, const Chave 
 }
 
 // Consulta + POST. `pacote` pode vir do montador ou do pendente. Devolve 1
-// quando o pendente (se houver) deve ser APAGADO, 0 para manter, 2 para
-// GRAVAR (falha de rede num envio novo).
-static int transmitir(EnvioJob *j, const Chave *k, const char *pacote, size_t n, int sintoma) {
+// quando o pendente (se houver) deve ser APAGADO, 0 para manter (resultado ja
+// publicado), 2 para GRAVAR pendente automatico (falha de rede/prazo), 3 para
+// GRAVAR pendente manual (recusa HTTP do servidor; nunca reenvia em passo).
+static int transmitir(EnvioJob *j, const Chave *k, const char *pacote, size_t n, int sintoma,
+                      FarolEnvioMotivo *motOut, int *httpOut) {
   char base[384], url[640];
   char aut[3200], via[64], chave[160];
   const char *cab[5] = {0};
@@ -571,7 +612,11 @@ static int transmitir(EnvioJob *j, const Chave *k, const char *pacote, size_t n,
   int http, t, usouTrakt;
   Conhecido con;
 
+  *motOut = FAROLENVIO_M_NENHUM;
+  *httpOut = 0;
+  if (jobCancelado(j)) goto cancelado;
   if (!obterBaseUrl(base, sizeof base)) {
+    if (jobCancelado(j)) goto cancelado;
     publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_INDISPONIVEL, 0, NULL, NULL);
     return 0;
   }
@@ -579,29 +624,32 @@ static int transmitir(EnvioJob *j, const Chave *k, const char *pacote, size_t n,
   if (!avisos_registro_cabecalhos(cab, aut, sizeof aut, via, sizeof via, chave, sizeof chave) ||
       !cab[0] || !cab[1]) {
     memset(aut, 0, sizeof aut);
+    if (jobCancelado(j)) goto cancelado;
     publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_CONTA, 0, NULL, NULL);
     return 0;
   }
   usouTrakt = strstr(via, "trakt") != NULL;
-  if (jobCancelado(j)) { memset(aut, 0, sizeof aut); return 0; }
+  if (jobCancelado(j)) { memset(aut, 0, sizeof aut); goto cancelado; }
 
   // 1. Ja ha correcao conhecida? (melhor esforco: so `corrigido` para o envio)
   montarConsulta(url, sizeof url, base, k);
   if (url[0]) {
     const char *cabGet[4];
     cabGet[0] = cab[0]; cabGet[1] = cab[1]; cabGet[2] = NULL; cabGet[3] = NULL;
+    if (jobCancelado(j)) { memset(aut, 0, sizeof aut); goto cancelado; }
     http = pedir(j, "GET", url, cabGet, NULL, 0, j->conhecidoMs, &resp, &nResp, &t);
-    if (t == T_CANCELADO) { free(resp); memset(aut, 0, sizeof aut); goto cancelado; }
+    if (t == T_CANCELADO || jobCancelado(j)) { free(resp); memset(aut, 0, sizeof aut); goto cancelado; }
     if (t == T_TRANSPORTE) {
       free(resp); memset(aut, 0, sizeof aut);
-      publicar(j, FAROLENVIO_PENDENTE, FAROLENVIO_M_CONEXAO, 0, NULL, NULL);
+      *motOut = FAROLENVIO_M_CONEXAO;
       return 2;
     }
     if (http == 401) {
       free(resp); memset(aut, 0, sizeof aut);
       if (usouTrakt) trakt_http_recusada();
-      publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_CONTA, 401, NULL, NULL);
-      return 0;
+      *motOut = FAROLENVIO_M_CONTA;
+      *httpOut = 401;
+      return 3;
     }
     if (http == 200 && resp && lerConhecido(resp, nResp, &con) && !strcmp(con.estado, "corrigido")) {
       free(resp); memset(aut, 0, sizeof aut);
@@ -612,18 +660,18 @@ static int transmitir(EnvioJob *j, const Chave *k, const char *pacote, size_t n,
   }
 
   // 2. POST do registro.
+  if (jobCancelado(j)) { memset(aut, 0, sizeof aut); goto cancelado; }
   snprintf(url, sizeof url, "%s/v1/farol/registro", base);
 #ifdef __EMSCRIPTEN__
   cab[2] = NULL;   // o XHR do WGT poe o Content-Type do POST
 #endif
   http = pedir(j, "POST", url, cab, pacote, n, j->totalMs, &resp, &nResp, &t);
   memset(aut, 0, sizeof aut);
-  if (t == T_CANCELADO) { free(resp); goto cancelado; }
+  if (t == T_CANCELADO || jobCancelado(j)) { free(resp); goto cancelado; }
   farol_registrar_envio(http);
   if (t == T_TRANSPORTE || t == T_PRAZO) {
     free(resp);
-    publicar(j, FAROLENVIO_PENDENTE, t == T_PRAZO ? FAROLENVIO_M_PRAZO : FAROLENVIO_M_CONEXAO,
-             0, NULL, NULL);
+    *motOut = t == T_PRAZO ? FAROLENVIO_M_PRAZO : FAROLENVIO_M_CONEXAO;
     return 2;
   }
   if (http >= 200 && http < 300) {
@@ -634,8 +682,9 @@ static int transmitir(EnvioJob *j, const Chave *k, const char *pacote, size_t n,
     temCon = resp && lerConhecido(resp, nResp, &con);
     free(resp);
     if (!codigoOk(cod)) {
-      publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_SERVIDOR, http, NULL, NULL);
-      return 0;
+      *motOut = FAROLENVIO_M_SERVIDOR;
+      *httpOut = http;
+      return 3;
     }
     enviadosAdicionar(cod, sintoma);
     publicar(j, FAROLENVIO_OK, FAROLENVIO_M_OK, http, cod, temCon ? &con : NULL);
@@ -644,13 +693,15 @@ static int transmitir(EnvioJob *j, const Chave *k, const char *pacote, size_t n,
   free(resp);
   if (http == 401) {
     if (usouTrakt) trakt_http_recusada();
-    publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_CONTA, http, NULL, NULL);
-    return 0;
+    *motOut = FAROLENVIO_M_CONTA;
+    *httpOut = http;
+    return 3;
   }
-  if (http == 429) { publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_LIMITE, http, NULL, NULL); return 0; }
+  if (http == 429) { *motOut = FAROLENVIO_M_LIMITE; *httpOut = http; return 3; }
   if (http == 422) { publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_RECUSADO, http, NULL, NULL); return 1; }
-  publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_SERVIDOR, http, NULL, NULL);
-  return 0;
+  *motOut = FAROLENVIO_M_SERVIDOR;
+  *httpOut = http;
+  return 3;
 cancelado:
   publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
   return 0;
@@ -669,9 +720,14 @@ static void executarEnviar(EnvioJob *j) {
   FarolPacoteRes res;
   Chave k;
   char *json;
-  int r;
+  int r, offline, httpOut = 0;
+  FarolEnvioMotivo mot = FAROLENVIO_M_NENHUM;
   size_t cap = FAROL_JSON_MAX + 1;
 
+  if (jobCancelado(j)) {
+    publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+    return;
+  }
   if (!j->temPerfil) { farolperfil_obter(&j->perfil); j->temPerfil = 1; }
   j->in.perfil = &j->perfil;
   if (!j->eventosDoChamador) j->nEventos = farol_eventos(j->eventos, FAROL_ANEL_N);
@@ -682,7 +738,8 @@ static void executarEnviar(EnvioJob *j) {
   memset(&res, 0, sizeof res);
   if (!json || !farolpacote_montar(&j->in, json, cap, &res) || !res.bytes) {
     free(json);
-    publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_PACOTE, 0, NULL, NULL);
+    if (jobCancelado(j)) publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+    else publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_PACOTE, 0, NULL, NULL);
     return;
   }
   pthread_mutex_lock(&trava);
@@ -693,36 +750,42 @@ static void executarEnviar(EnvioJob *j) {
   pthread_mutex_unlock(&trava);
   chaveDe(&k, &res, &j->perfil, j->in.codigo);
 
-  if (rede_saude_offline()) {
-    long agora = agoraS();
-    if (pendenteGravar(&k, j->resSintoma, agora, json, res.bytes)) {
-      marcarPendente(1, agora);
-      publicar(j, FAROLENVIO_PENDENTE, FAROLENVIO_M_OFFLINE, 0, NULL, NULL);
-    } else {
-      publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_OFFLINE, 0, NULL, NULL);
-    }
+  if (jobCancelado(j)) {
+    publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
   } else {
-    r = transmitir(j, &k, json, res.bytes, j->resSintoma);
-    if (r == 2) {
+    offline = rede_saude_offline();
+    if (jobCancelado(j)) {
+      publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+    } else if (offline) {
       long agora = agoraS();
-      if (pendenteGravar(&k, j->resSintoma, agora, json, res.bytes)) {
+      if (pendenteGravar(&k, j->resSintoma, agora, 1, j->incluirLog, json, res.bytes)) {
         marcarPendente(1, agora);
+        publicar(j, FAROLENVIO_PENDENTE, FAROLENVIO_M_OFFLINE, 0, NULL, NULL);
       } else {
-        // Sem arquivo nao ha pendente: o mesmo motivo, como falha.
-        FarolEnvioMotivo mot;
-        pthread_mutex_lock(&trava);
-        mot = info.motivo;
-        pthread_mutex_unlock(&trava);
-        publicar(j, FAROLENVIO_FALHOU, mot, 0, NULL, NULL);
+        publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_OFFLINE, 0, NULL, NULL);
       }
-    } else if (r == 1) {
-      // Envio novo resolveu: um pendente antigo do MESMO fp fica redundante.
-      Chave kp;
-      int s;
-      long cr;
-      if (pendenteLer(&kp, &s, &cr, NULL, NULL, 1) == 1 && !strcmp(kp.fp, k.fp)) {
-        dados_apagar(FAROLENVIO_PENDENTE_ARQ);
-        marcarPendente(0, 0);
+    } else {
+      r = transmitir(j, &k, json, res.bytes, j->resSintoma, &mot, &httpOut);
+      if (r == 2 || r == 3) {
+        if (jobCancelado(j)) {
+          publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+        } else {
+          long agora = agoraS();
+          int autoR = (r == 2);
+          int gravou = pendenteGravar(&k, j->resSintoma, agora, autoR, j->incluirLog, json, res.bytes);
+          if (gravou) marcarPendente(1, agora);
+          if (r == 2 && gravou) publicar(j, FAROLENVIO_PENDENTE, mot, 0, NULL, NULL);
+          else publicar(j, FAROLENVIO_FALHOU, mot, httpOut, NULL, NULL);
+        }
+      } else if (r == 1) {
+        // Envio novo resolveu (ou 422): um pendente antigo do MESMO fp fica redundante.
+        Chave kp;
+        int s;
+        long cr;
+        if (pendenteLer(&kp, &s, &cr, NULL, NULL, NULL, NULL, 1) == 1 && !strcmp(kp.fp, k.fp)) {
+          dados_apagar(FAROLENVIO_PENDENTE_ARQ);
+          marcarPendente(0, 0);
+        }
       }
     }
   }
@@ -732,34 +795,64 @@ static void executarEnviar(EnvioJob *j) {
 
 static void executarPendente(EnvioJob *j, int soCarregar) {
   Chave k;
-  int sintoma = RES_S_GERAL, r;
+  int sintoma = RES_S_GERAL, r, autoR = 1, incLog = -1, offline, httpOut = 0;
   long criado = 0;
   char *pacote = NULL;
   size_t n = 0;
-  r = pendenteLer(&k, &sintoma, &criado, soCarregar ? NULL : &pacote, &n, soCarregar);
+  FarolEnvioMotivo mot = FAROLENVIO_M_NENHUM;
+  if (soCarregar) ultimoCodigoCarregar();
+  r = pendenteLer(&k, &sintoma, &criado, &autoR, &incLog, soCarregar ? NULL : &pacote, &n, soCarregar);
   if (r != 1) {
     int tinha;
     pthread_mutex_lock(&trava);
     tinha = info.temPendente;
     pthread_mutex_unlock(&trava);
     marcarPendente(0, 0);
-    if (r < 0 && tinha && !soCarregar)
-      publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_EXPIROU, 0, NULL, NULL);
+    if (!soCarregar) {
+      if (jobCancelado(j)) publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+      else if (r < 0 && tinha) publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_EXPIROU, 0, NULL, NULL);
+      else publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_PACOTE, 0, NULL, NULL);
+    }
     return;
   }
   marcarPendente(1, criado);
-  if (soCarregar) return;
+  if (soCarregar) {
+    pthread_mutex_lock(&trava);
+    reenvioAuto = autoR ? 1 : 0;
+    if (incLog >= 0) info.incluirLog = incLog;
+    pthread_mutex_unlock(&trava);
+    return;
+  }
+  if (incLog >= 0) j->incluirLog = incLog;
   pthread_mutex_lock(&trava);
   info.bytes = n;
   copiar(info.fp, sizeof info.fp, k.fp);
   pthread_mutex_unlock(&trava);
-  if (rede_saude_offline()) {
-    publicar(j, FAROLENVIO_PENDENTE, FAROLENVIO_M_OFFLINE, 0, NULL, NULL);
+  if (jobCancelado(j)) {
+    publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
   } else {
-    r = transmitir(j, &k, pacote, n, sintoma);
-    if (r == 1) {
-      dados_apagar(FAROLENVIO_PENDENTE_ARQ);
-      marcarPendente(0, 0);
+    offline = rede_saude_offline();
+    if (jobCancelado(j)) {
+      publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+    } else if (offline) {
+      if (!autoR) pendenteGravar(&k, sintoma, criado, 1, j->incluirLog, pacote, n);
+      publicar(j, FAROLENVIO_PENDENTE, FAROLENVIO_M_OFFLINE, 0, NULL, NULL);
+    } else {
+      r = transmitir(j, &k, pacote, n, sintoma, &mot, &httpOut);
+      if (r == 2 || r == 3) {
+        if (jobCancelado(j)) {
+          publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+        } else if (r == 2) {
+          if (!autoR) pendenteGravar(&k, sintoma, criado, 1, j->incluirLog, pacote, n);
+          publicar(j, FAROLENVIO_PENDENTE, mot, 0, NULL, NULL);
+        } else {
+          if (autoR) pendenteGravar(&k, sintoma, criado, 0, j->incluirLog, pacote, n);
+          publicar(j, FAROLENVIO_FALHOU, mot, httpOut, NULL, NULL);
+        }
+      } else if (r == 1) {
+        dados_apagar(FAROLENVIO_PENDENTE_ARQ);
+        marcarPendente(0, 0);
+      }
     }
   }
   if (pacote) { memset(pacote, 0, n); free(pacote); }
@@ -907,13 +1000,16 @@ int farol_enviar(const FarolPacoteEntrada *in, const FarolEnvioOpcoes *op) {
 
 int farolenvio_retentar(void) {
   EnvioJob *j;
-  int tem;
+  int tem, incLog;
   pthread_mutex_lock(&trava);
   tem = info.temPendente;
+  incLog = info.incluirLog;
   pthread_mutex_unlock(&trava);
   if (!tem || farolenvio_em_voo()) return 0;
   j = novoJob(J_PENDENTE);
-  return j ? lancar(j) : 0;
+  if (!j) return 0;
+  j->incluirLog = incLog;
+  return lancar(j);
 }
 
 int farolenvio_descartar_pendente(void) {
@@ -922,7 +1018,7 @@ int farolenvio_descartar_pendente(void) {
 }
 
 void farolenvio_passo(void) {
-  int pedirLog, tem, emVoo, offline, vencido, devido;
+  int pedirLog, tem, emVoo, offline, vencido, devido, incLog;
   long agora = agoraS();
   offline = rede_saude_offline();
   pthread_mutex_lock(&trava);
@@ -933,14 +1029,16 @@ void farolenvio_passo(void) {
   vencido = tem && agora >= info.pendenteVence;
   if (offlineAntes && !offline) proximoReenvio = 0;   // a rede voltou: tenta ja
   offlineAntes = offline;
-  devido = agora >= proximoReenvio;
+  devido = reenvioAuto && !offline && agora >= proximoReenvio;
+  incLog = info.incluirLog;
   pthread_mutex_unlock(&trava);
   if (pedirLog) avisos_enviar_registro_atual();       // opt-in, no fio da UI
   if (!tem || emVoo) return;
   // Vencido: o fio apaga (sem I/O aqui), com ou sem rede.
-  if (vencido || (!offline && devido)) {
+  if (vencido || devido) {
     EnvioJob *j = novoJob(J_PENDENTE);
     if (j) {
+      j->incluirLog = incLog;
       pthread_mutex_lock(&trava);
       proximoReenvio = agora + FAROLENVIO_REENVIO_S;
       pthread_mutex_unlock(&trava);
@@ -1006,5 +1104,6 @@ void farolenvio_teste_esquecer(void) {
   logPedido = 0;
   proximoReenvio = 0;
   offlineAntes = 0;
+  reenvioAuto = 0;
   pthread_mutex_unlock(&trava);
 }
