@@ -22,6 +22,12 @@
 //   sem internet        ERRO   fica "rede"          ate voltar
 //   internet de volta   OK      3 s "rede"          a mesma chave: troca no lugar
 //   addon fora do ar    ERRO    6 s "addon:<nome>"  uma vez por queda do addon
+//   Farol: video falhou ACENTO P1 8 s "farol"       fora do player, 2 falhas ou
+//                       2 paradas; 1 por titulo/sessao; Voltar cala 24 h; AZUL
+//                       abre o Farol no veredito (farolilha.h)
+//   Farol: conserto     OK      4 s "farol-conserto" so o que o app fez sozinho;
+//                       no player, a pilula do player (plrilha)
+//   Farol: testando     atividade, so depois de 300 ms
 // FORA, DE PROPOSITO: o PROGRESSO do torrent no debrid ("TorBox baixando Duna
 // 12%", estado 29 do mockup). Os servicos expoem o numero (TorBox mylist,
 // Real-Debrid torrents/info), mas debrid.c nao guarda o id do torrent depois
@@ -54,5 +60,9 @@ void ilhasinais_debrid_baixando(const char *servico, const char *titulo);
 int  ilhasinais_pediu_trakt(void);
 // OK no aviso agregado "N pedidos de amizade": app.c abre a aba Amigos.
 int  ilhasinais_pediu_amigos(void);
+// FAROL (issue 20): AZUL/CH+ no aviso "Algo impediu o vídeo · abre o Farol"
+// pediu o Farol ja no veredito. Devolve o sintoma RES_S_* (consumido uma vez);
+// -1 = nada. A politica de quando falar mora em farolilha.h.
+int  ilhasinais_pediu_farol(void);
 
 #endif

@@ -139,6 +139,14 @@ typedef struct {
   // 1 = a pilula cresce ate o modal sozinha, sem esperar a AZUL (a pergunta de
   // primeira vez do "+", ilhasalvar.c). Precisa de `modal`.
   int abrir;
+  // PRESENCA DO FAROL (issue 20, ALMA 4): 1 = o PONTO QUE RESPIRA na cor do
+  // tipo, no canto do icone (com a luz de canto da pilula que o tipo ja da).
+  // Animacoes reduzidas: o ponto fica parado, sem pulsar.
+  int ponto;
+  // 1 = VOLTAR com este aviso na tela o DISPENSA: sai da pilula e
+  // ilha_aviso_dispensado entrega a chave uma vez (o Farol cala o veredito
+  // por 24 h). So vale com a pilula desenhada no quadro anterior.
+  int dispensavel;
 } IlhaAvisoEx;
 void ilha_avisar_ex(const IlhaAvisoEx *a);
 // Embrulha `s` em ILHA_FORTE em `dst` (devolve dst), para passar como %s.
@@ -151,6 +159,9 @@ int  ilha_tecla_central(void);
 // Botao escolhido num modal de AVISO, entregue uma vez: devolve 1..3 (o
 // indice + 1) e copia a chave do aviso em `chave`; 0 = nada. Voltar nao conta.
 int  ilha_aviso_pediu(char *chave, size_t tam);
+// Aviso `dispensavel` tirado com VOLTAR, entregue uma vez: 1 e a chave em
+// `chave`; 0 = nada.
+int  ilha_aviso_dispensado(char *chave, size_t tam);
 // Para o teste da fila (tests/ilhafila.c) e para o log: a chave do aviso da
 // vez ("" sem aviso) e quantos esperam atras dele (o numero do "+N").
 const char *ilha_aviso_vez(void);
@@ -257,8 +268,15 @@ int  ilha_modal_abrir(void);
 void ilha_modal_fechar(int seco);   // seco = 1: some sem recolher (virou o painel)
 int  ilha_modal_aberto(void);
 int  ilha_modal_visivel(void);
-// Teclado do modal (come tudo enquanto aberto). Fora dele devolve 0.
+// Teclado do modal (come tudo enquanto aberto) e a AZUL que abre o modal
+// do aviso. Fora dele devolve 0.
 int  ilha_evento(const SDL_Event *e);
+// VOLTAR que dispensa um aviso `dispensavel` (o do Farol): fecha a pilula e
+// ilha_aviso_dispensado entrega a chave uma vez. Vai por ultimo na fila de
+// teclas do app — depois de TODAS as camadas desenhadas por cima da ilha e
+// do player — e so consome com a pilula desenhada de fato no quadro recente
+// (nunca coberta pelo painel/cartao que nasceu dela nem atras de overlay).
+int  ilha_evento_dispensar(const SDL_Event *e);
 // Acao pedida no modal, entregue uma vez (o contrato de avisos_pediu). `c`
 // recebe o cartao em que ela foi pedida.
 //

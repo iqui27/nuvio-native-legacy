@@ -969,6 +969,11 @@ int ajustes_show_skip_cena(void);
 // nem chave que ajlog_chave_sensivel marcaria — a lista e fechada e o teste
 // prova na compilacao. Pensado para a secao "ajustes" do registro tecnico.
 int ajustes_farol_diff(void (*cb)(const char *chave, int numero, const char *token, void *ctx), void *ctx);
+
+// FAROL (#27): "Avisos do Farol" em Ajustes › Sobre e ajuda.
+// 1 (padrao) = Ligado; 0 = So quando eu abrir.
+int  ajustes_farol_avisos(void);
+void ajustes_farol_avisos_definir(int ligado);
 #endif
 
 // External audio uses the webOS converter; disabled by default.
