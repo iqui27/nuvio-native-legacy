@@ -76,6 +76,7 @@ enum {
   RESOLVER_B_ACHAR_SURPRESA,
   RESOLVER_B_ACHAR_VOLTAR,
   RESOLVER_B_ACHAR_ESCOLHA,   // 5o item da coluna: o assistente P5 (#50)
+  RESOLVER_B_ACHAR_VOZ,
   RESOLVER_B_LIN0 = 200
 };
 int  resolver_fase(void);
