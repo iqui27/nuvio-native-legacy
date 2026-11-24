@@ -108,6 +108,15 @@ RESP = {
     "pos_r5_ep_tarde":     (200, cena("El episodio más tarde muestra a Walt y a Jesse.")),
     "pos_r5_ep_after":     (200, cena("Walt ends the episode after confronting Jesse.")),
     "pos_r5_cap_after":    (200, cena("Walt grabs his cap after confronting Jesse.")),
+    "p1_r6_several_later":   (200, cena("Several episodes later, Walt dies.")),
+    "p1_r6_alguns_depois":   (200, cena("Alguns episódios depois, Walt morre.")),
+    "p1_r6_varias_despues":  (200, cena("Varias temporadas después, Walt muere.")),
+    "p1_r6_ep_after_this":   (200, cena("The episode after this one ends with Walt's death.")),
+    "p1_r6_ep_depois_deste": (200, cena("O episódio depois deste termina com a morte de Walt.")),
+    "p1_r6_ep_despues_este": (200, cena("El episodio después de este termina con la muerte de Walt.")),
+    "p1_r6_several_pass":    (200, cena("Several episodes pass before Walt dies.")),
+    "p1_r6_episodes_later":  (200, cena("Episodes later, Walt dies.")),
+    "p1_r6_seasons_from_now":(200, cena("Seasons from now, Walt dies.")),
 }
 
 class H(http.server.BaseHTTPRequestHandler):

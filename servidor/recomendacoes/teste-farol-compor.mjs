@@ -4256,6 +4256,15 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     [2, 1, "An episode later, Walt dies."],
     [2, 1, "Um episódio depois, Walt morre."],
     [1, 4, "One season later, Walt dies."],
+    [2, 4, "Several episodes later, Walt dies."],
+    [2, 4, "Alguns episódios depois, Walt morre."],
+    [2, 4, "Varias temporadas después, Walt muere."],
+    [2, 4, "The episode after this one ends with Walt's death."],
+    [2, 4, "O episódio depois deste termina com a morte de Walt."],
+    [2, 4, "El episodio después de este termina con la muerte de Walt."],
+    [2, 4, "Several episodes pass before Walt dies."],
+    [2, 4, "Episodes later, Walt dies."],
+    [2, 4, "Seasons from now, Walt dies."],
   ]) {
     assert.equal(validarResumoRetomada(texto, { temporada, episodio }), null, `T${temporada}E${episodio}: ${texto}`);
     const { post, chamadasLlm, kv } = cenario(t, {}, { respostaLlm: () => ({ resumo: texto }) });

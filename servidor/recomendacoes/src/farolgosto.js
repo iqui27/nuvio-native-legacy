@@ -4647,6 +4647,22 @@ const RET_SUB_PLURAL = new Set([
   "episodios", "episodes", "capitulos", "chapters", "eps", "temporadas", "seasons", "seas",
 ]);
 
+const RET_QUANT_PLURAL = new Set([
+  "several", "few", "many", "some", "multiple", "various", "other",
+  "varios", "varias", "alguns", "algumas", "algunos", "algunas",
+  "poucos", "poucas", "pocos", "pocas", "muitos", "muitas", "muchos", "muchas",
+  "outros", "outras", "otros", "otras",
+]);
+
+const RET_AFTER_PREP = new Set(["after", "following", "depois", "apos", "despues"]);
+
+const RET_AFTER_DEMONS = new Set([
+  "this", "that", "it", "current",
+  "este", "esta", "esse", "essa", "deste", "desta", "desse", "dessa",
+  "isto", "isso", "disto", "disso", "aquele", "aquela", "daquele", "daquela",
+  "ese", "esa", "esto", "eso", "aquel", "aquella", "atual", "actual",
+]);
+
 const RET_MARCADOR_TEMP_1 = new Set([
   "later", "after", "afterward", "afterwards", "ahead",
   "depois", "adiante", "apos", "despues", "adelante",
@@ -4871,6 +4887,13 @@ function retEhMarcadorTemp(toks, i) {
          (w === "a" && w2 === "frente");
 }
 
+function retEhAfterDemonstrativo(toks, i) {
+  if (i >= toks.length || toks[i].q || !RET_AFTER_PREP.has(toks[i].w)) return false;
+  let j = i + 1;
+  if (j < toks.length && !toks[j].q && (toks[j].w === "de" || toks[j].w === "of")) j++;
+  return j < toks.length && !toks[j].q && RET_AFTER_DEMONS.has(toks[j].w);
+}
+
 function retTokenizar(s) {
   const norm = s
     .normalize("NFD")
@@ -4960,6 +4983,12 @@ export function validarResumoRetomada(bruto, ret) {
     }
     const mEp = w.match(/^ep(\d{1,4})$/);
     if (mEp && Number(mEp[1]) !== ret.episodio) return null;
+
+    if (RET_SUB_PLURAL.has(w) && retEhMarcadorTemp(toks, i + 1)) return null;
+    if (RET_QUANT_PLURAL.has(w) && i + 1 < nt && !toks[i + 1].q &&
+        RET_SUB_PLURAL.has(toks[i + 1].w)) return null;
+    if ((RET_SUB_EP.has(w) || RET_SUB_TEMP.has(w)) &&
+        retEhAfterDemonstrativo(toks, i + 1)) return null;
 
     if (RET_SUB_EP.has(w)) {
       let j = i + 1;

@@ -870,6 +870,20 @@ static int retEhSubstPlural(const char *s) {
          !strcmp(s, "seasons") || !strcmp(s, "seas");
 }
 
+static int retEhQuantPlural(const char *s) {
+  static const char *const q[] = {
+    "several", "few", "many", "some", "multiple", "various", "other",
+    "varios", "varias", "alguns", "algumas", "algunos", "algunas",
+    "poucos", "poucas", "pocos", "pocas", "muitos", "muitas", "muchos", "muchas",
+    "outros", "outras", "otros", "otras",
+  };
+  size_t i;
+  for (i = 0; i < sizeof q / sizeof q[0]; i++) {
+    if (!strcmp(s, q[i])) return 1;
+  }
+  return 0;
+}
+
 static int retEhProximo(const char *s) {
   return !strcmp(s, "proximo") || !strcmp(s, "proxima") ||
          !strcmp(s, "proximos") || !strcmp(s, "proximas") ||
@@ -930,6 +944,29 @@ static int retEhMarcadorTemp(char *const *tok, const int *quebra, int nt, int i)
          (!strcmp(tok[i], "mais") && !strcmp(tok[i + 1], "tarde")) ||
          (!strcmp(tok[i], "mas") && (!strcmp(tok[i + 1], "tarde") || !strcmp(tok[i + 1], "adelante"))) ||
          (!strcmp(tok[i], "a") && !strcmp(tok[i + 1], "frente"));
+}
+
+static int retEhAfterDemonstrativo(char *const *tok, const int *quebra, int nt, int i) {
+  static const char *const dem[] = {
+    "this", "that", "it", "current",
+    "este", "esta", "esse", "essa", "deste", "desta", "desse", "dessa",
+    "isto", "isso", "disto", "disso", "aquele", "aquela", "daquele", "daquela",
+    "ese", "esa", "esto", "eso", "aquel", "aquella", "atual", "actual",
+  };
+  size_t k;
+  int j;
+  if (i >= nt || quebra[i]) return 0;
+  if (strcmp(tok[i], "after") && strcmp(tok[i], "following") &&
+      strcmp(tok[i], "depois") && strcmp(tok[i], "apos") && strcmp(tok[i], "despues")) {
+    return 0;
+  }
+  j = i + 1;
+  if (j < nt && !quebra[j] && (!strcmp(tok[j], "de") || !strcmp(tok[j], "of"))) j++;
+  if (j >= nt || quebra[j]) return 0;
+  for (k = 0; k < sizeof dem / sizeof dem[0]; k++) {
+    if (!strcmp(tok[j], dem[k])) return 1;
+  }
+  return 0;
 }
 
 // Coerente com validarResumoRetomada (farolgosto.js): recusa referencias a
@@ -1087,6 +1124,14 @@ static int retomadaResumoSemSpoiler(const char *s, int temporada, int episodio) 
       return 0;
     if (tok[i][0] == 'e' && tok[i][1] == 'p' &&
         retParseInt(tok[i] + 2, &num) && num != episodio)
+      return 0;
+
+    if (retEhSubstPlural(tok[i]) && retEhMarcadorTemp(tok, quebra, nt, i + 1)) return 0;
+    if (retEhQuantPlural(tok[i]) && i + 1 < nt && !quebra[i + 1] &&
+        retEhSubstPlural(tok[i + 1]))
+      return 0;
+    if ((retEhSubstEp(tok[i]) || retEhSubstTemp(tok[i])) &&
+        retEhAfterDemonstrativo(tok, quebra, nt, i + 1))
       return 0;
 
     if (retEhSubstEp(tok[i])) {

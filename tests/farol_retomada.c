@@ -468,6 +468,15 @@ static void teste_p1_r4_marcador_temporal(void) {
     { 2,  1, "p1_r5_an_ep_later" },
     { 2,  1, "p1_r5_um_ep_depois" },
     { 1,  4, "p1_r5_one_seas_later" },
+    { 2,  4, "p1_r6_several_later" },
+    { 2,  4, "p1_r6_alguns_depois" },
+    { 2,  4, "p1_r6_varias_despues" },
+    { 2,  4, "p1_r6_ep_after_this" },
+    { 2,  4, "p1_r6_ep_depois_deste" },
+    { 2,  4, "p1_r6_ep_despues_este" },
+    { 2,  4, "p1_r6_several_pass" },
+    { 2,  4, "p1_r6_episodes_later" },
+    { 2,  4, "p1_r6_seasons_from_now" },
   };
   int i;
   for (i = 0; i < (int)(sizeof casos / sizeof casos[0]); i++) {
