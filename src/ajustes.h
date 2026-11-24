@@ -138,6 +138,15 @@ int ajustes_proporcao_padrao(void);
 int ajustes_descanso_estilo(void);   // ESM_ESTILO_* (esmaecer.h)
 int ajustes_descanso_fonte(void);    // DESC_FONTE_* (descanso.h)
 int ajustes_dolby_vision(void);
+// FAROL (#34): overrides so desta reproducao (memoria, nunca gravam) e o
+// ajuste gravado de Dolby Vision. ajustes_dolby_vision()/ajustes_dv_mkv()/
+// ajustes_buffer_preset() ja devolvem o efeito do override.
+void ajustes_farol_buffer_maior(int on);
+int  ajustes_farol_buffer_maior_ativo(void);
+void ajustes_farol_hdr_off(int on);
+int  ajustes_farol_hdr_off_ativo(void);
+int  ajustes_dolby_vision_gravado(void);
+void ajustes_dolby_vision_definir(int ligado);
 int ajustes_dolby_atmos(void);
 // pauseOverlayEnabled: o painel de ficha que sobe alguns segundos depois de
 // pausar o video. Ver pausao.h.

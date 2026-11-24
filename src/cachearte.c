@@ -794,6 +794,33 @@ static void *native_inventory_thread(void *unused) {
   atomic_store(&s_inventory_running, 0);
   return NULL;
 }
+/* FAROL (#34, "Limpar o cache"): apaga SO as imagens descartaveis da pasta do
+ * cache (nome hash.ext, arquivo comum, nao essencial). Nada mais do diretorio
+ * e tocado: temporarios, catalogo e qualquer arquivo de outro formato ficam.
+ * Devolve quantos arquivos apagou (bytes em *bytes quando nao NULL). */
+long cachearte_nativo_limpar(long *bytes) {
+  char dir[512]; DIR *d; struct dirent *e; long n = 0, b = 0;
+  pthread_mutex_lock(&s_native_mtx);
+  snprintf(dir, sizeof dir, "%s", s_native_dir);
+  pthread_mutex_unlock(&s_native_mtx);
+  d = dir[0] ? opendir(dir) : NULL;
+  if (d) {
+    while ((e = readdir(d)) != NULL) {
+      char path[1024]; struct stat st;
+      if (!native_image_name(e->d_name)) continue;
+      snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
+      if (lstat(path, &st) || !S_ISREG(st.st_mode)) continue;
+      if (cachearte_nativo_essencial(path)) continue;
+      if (unlink(path) && errno != ENOENT) continue;
+      cachearte_nativo_indice_remover(path);
+      n++; b += (long)st.st_size;
+    }
+    closedir(d);
+  }
+  if (n) publicar_inventario();
+  if (bytes) *bytes = b;
+  return n;
+}
 void cachearte_nativo_configurar_diretorio(const char *dir) {
   pthread_mutex_lock(&s_native_mtx);
   snprintf(s_native_dir, sizeof s_native_dir, "%s", dir ? dir : "");

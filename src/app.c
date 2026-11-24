@@ -175,6 +175,7 @@
 #include "p2p.h"
 #include "p2pmotor.h"
 #include "player.h"
+#include "farolacao_rede.h"
 #include "dvtela.h"
 #include "legsync.h"
 #include "badges.h"
@@ -5714,7 +5715,7 @@ static int juntosFontePendente = -1;
 static unsigned juntosFonteGeracao;
 static char juntosFonteAlvo[64];
 
-static void tocarFonteEscolhida(int fonte, int manual) {
+static void tocarFonteInterno(int fonte, int manual, int farolReabrir, double farolPos) {
   int navegando = juntosui_escolhendo_filme();
   int alvo = player_aberto() && !navegando ? player_indice() : detail_indice(), t = 0, e = 0;
   if (!perfilPermiteReproduzir(alvo)) { aguardandoFonte = 0; folhaParaTocar = 0; return; }
@@ -5749,6 +5750,8 @@ static void tocarFonteEscolhida(int fonte, int manual) {
         partes_sessao_parar("another source picked"); parteZerar();
       }
       novaGeracaoFonte(); limparFontePendente(); preparoEspera = 0;
+    } else if (farolReabrir) {
+      novaGeracaoFonte(); limparFontePendente(); preparoEspera = 0;
     }
     folhaParaTocar = 0;
     printf("fonte escolhida: %s\n", s ? s->rotulo : "?");
@@ -5774,14 +5777,15 @@ static void tocarFonteEscolhida(int fonte, int manual) {
       reabrirGuardar(titulo);
       int retomarSala = juntos_no_player(); // Explicit in-session source switch/retry.
       if (player_aberto()) {
-        if (manual) player_encerrar_fonte();
+        if (manual || farolReabrir) player_encerrar_fonte();
         else player_encerrar();
       }
       diagnostico_cancelar_vazao();
       if (reabrirTitulo(titulo) < 0) return;
       if (retomarSala) juntos_retomar_player(0);
       player_definir_episodio(t,e);
-      if (!manual && juntos_no_player()) {
+      if (farolReabrir && farolPos >= 0.0) player_definir_retomada_fonte(farolPos);
+      if (!manual && !farolReabrir && juntos_no_player()) {
         player_do_inicio(); // The room clock restores position after load.
         fonteVODAutomatica = 1;
         fonteVODTentativas = 1;
@@ -5802,7 +5806,7 @@ static void tocarFonteEscolhida(int fonte, int manual) {
         // Fonte direta: o torrent do motor (se havia) para de baixar.
         p2pmotor_parar_fundo();
         if (player_id_canal()[0]) canalTentativas++;
-        if (manual) abrirFonteManualDireta(s);
+        if (manual || farolReabrir) abrirFonteManualDireta(s);
         else if (player_id_canal()[0]) {
           static char viaProxy[NV_MEDIA_URL_MAX + 128];
           video_definir_mp4(stream_e_mp4(s));
@@ -5827,6 +5831,10 @@ static void tocarFonteEscolhida(int fonte, int manual) {
       }
     }
   }
+}
+
+static void tocarFonteEscolhida(int fonte, int manual) {
+  tocarFonteInterno(fonte, manual, 0, -1.0);
 }
 
 // WATCH TOGETHER: o titulo que a sala pediu (convidado entrando, ou a sala
@@ -7909,6 +7917,15 @@ void app_atualizar(float dt, Uint32 agora) {
     if (aguardandoFonte != 2 && stream_partes_escolheu(&pf, &pl, &pk)) abrirParte(pf, &pl, pk); }
   int fonte;
   if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) tocarFonteEscolhida(fonte, 1);
+  // Farol (#34): "Buffer maior" / "Desligar o HDR" pedem para reabrir a MESMA
+  // fonte na posicao atual, sem gravar preferencia manual de fonte e mantendo os
+  // overrides temporarios desta reproducao.
+  { double posFarol;
+    if (aguardandoFonte != 2 && player_aberto() && farolacao_rede_reabertura_pedida(&posFarol)) {
+      int atualFarol = stream_atual();
+      if (atualFarol >= 0 && stream_item(atualFarol))
+        tocarFonteInterno(atualFarol, 0, 1, posFarol);
+    } }
   juntosAbrirEFonte(agora);
   if (aguardandoFonte != 2 && (player_pediu_fontes() || juntosui_pediu_fontes())) {
     char base[24];

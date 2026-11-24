@@ -115,6 +115,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "plrguia.h"
 #include "episodios.h"
 #include "streams.h"
+#include "farolacao_rede.h"
 #include "addons.h"
 #include "duracaook.h"
 #include "partes.h"
@@ -3399,6 +3400,9 @@ static void fecharSessao(int manter, int trocaFonte) {
 }
 
 void player_encerrar(void) {
+  // Farol (#34): buffer maior e HDR desligado valem so para ESTA reproducao.
+  // player_encerrar_fonte (troca de fonte da mesma reproducao) os conserva.
+  farolacao_rede_encerrar();
   if (retido) player_descartar_retido(); else fecharSessao(0, 0);
 }
 

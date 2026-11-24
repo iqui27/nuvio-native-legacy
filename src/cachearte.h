@@ -96,6 +96,9 @@ long cachearte_nativo_indice_bytes(void);
  * nao esta pronto ou outra poda esta rodando. */
 long cachearte_nativo_podar(long entrada, long teto, uint64_t reserva, int forcar,
                             NvCacheProtegido protegido, void *ctx);
+/* FAROL (#34): apaga as imagens descartaveis (hash.ext, nao essenciais) da
+ * pasta do cache. So elas. Devolve quantas; *bytes (opcional) = tamanho. */
+long cachearte_nativo_limpar(long *bytes);
 #endif
 
 #endif
