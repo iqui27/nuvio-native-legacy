@@ -34,6 +34,7 @@
 #include "diariotrakt.h"
 #include "dormiu.h"
 #include "farolsinal.h"
+#include "farolpeca.h"
 #include "descanso.h"
 #include "iconeapp.h"
 #include "logoapp.h"
@@ -4806,6 +4807,24 @@ static void abrirExplorarNoTitulo(void) {
   explorar_abrir_titulo(&o);
 }
 
+// Entrada isolada do selo do Farol (FAROL46B): tema e genero abrem a toca ja
+// filtrada pelo fio que o selo carrega; sem fio cai no caminho generico. O
+// tipo do selo viaja com o fio: no Mapa, genero nao vira palavra-chave
+// (FAROL46C). Fora dos trechos reservados urlCanalRota/retentarCanal/watchdog.
+static void abrirExplorarSelo(int seloTipo, const char *seloFio, int32_t seloId) {
+  MapaObra o;
+  if ((!seloFio || !seloFio[0]) && (seloTipo != FP_SELO_GENERO || seloId <= 0)) {
+    abrirExplorarNoTitulo();
+    return;
+  }
+  if (!mapa_obra_do_catalogo(detail_indice(), &o)) return;
+  detail_fechar_seco();
+  trocarTela(TELA_EXPLORAR);
+  menu_definir_destino(MENU_EXPLORAR);
+  explorar_abrir_titulo_selo(&o, seloFio, seloTipo == FP_SELO_GENERO,
+                             seloTipo == FP_SELO_GENERO ? (long)seloId : 0L);
+}
+
 // Foco por controle na ilha: cada pagina pede somente ao ultrapassar seu
 // proprio topo. A geometria do ultimo desenho nao decide quem possui a tecla.
 static int relogioCabe(void);
@@ -5117,13 +5136,50 @@ void app_evento(const SDL_Event *e) {
   // RESOLVER UM PROBLEMA (2.1, resolver.h): tela inteira, come o teclado todo.
   // "Ver Fontes e addons" fecha a tela e abre Ajustes no lugar.
   if (resolver_aberto()) {
+    int rped;
     resolver_evento(e);
-    if (resolver_pedido() == RESOLVER_PEDIU_FONTES) {
+    rped = resolver_pedido();
+    if (rped == RESOLVER_PEDIU_FONTES) {
       menu_fechar();
       ajustes_abrir_na_espera_fonte();
       if (tela == TELA_AJUSTES) ajustes_iniciar();
       else trocarTela(TELA_AJUSTES);
       menu_definir_destino(MENU_AJUSTES);
+    } else if (rped == RESOLVER_PEDIU_DEBRID) {
+      // FAROL: "Abrir a conta de cache"/"Reconectar pelo celular" — a tela/QR
+      // de login do debrid que ja existe (AG_CONECTAR). So associa AM_DEBRID
+      // ao add-on de fontes que falhou (nunca cai no add-on 0 com lista trocada
+      // ou add-on so de catalogo); ao voltar logado, AGP_REPETIR reabre o
+      // titulo no ponto ou avisa que a conta reconectou.
+      int ag = -1;
+      uint64_t aid = player_ultimo_addon_farol();
+      if (aid) {
+        for (int a = 0; a < addons_n(); a++) {
+          if (addonmodo_id(addons_base(a)) == aid && addons_fornece(a, ADD_STREAM)) {
+            ag = a;
+            break;
+          }
+        }
+      }
+      if (ag < 0 && player_aberto() && stream_atual() >= 0) {
+        int cand = stream_ordem_addon(stream_atual());
+        if (cand >= 0 && cand < addons_n() && addons_fornece(cand, ADD_STREAM))
+          ag = cand;
+      }
+      if (addons_n() > 0) {
+        menu_fechar();
+        addonguia_reconectar_debrid(ag);
+      } else {
+        menu_fechar();
+        ajustes_abrir_na_espera_fonte();
+        if (tela == TELA_AJUSTES) ajustes_iniciar();
+        else trocarTela(TELA_AJUSTES);
+        menu_definir_destino(MENU_AJUSTES);
+      }
+    } else if (rped == RESOLVER_PEDIU_PLAYER_EXT) {
+      // FAROL: a fonte que falhou sai para o player externo instalado,
+      // vinculada a tentativa diagnosticada.
+      player_abrir_externo_tentativa(resolver_tentativa_externo());
     }
     return;
   }
@@ -5423,7 +5479,11 @@ void app_evento(const SDL_Event *e) {
     }
     { char im[24];
       if (detail_aberto() && detail_pediu_amigos(im, sizeof im)) abrirSocialNoTitulo(im); }
-    if (detail_aberto() && detail_pediu_explorar()) abrirExplorarNoTitulo();
+    { char fio[64];
+      int seloTipo = -1;
+      int32_t seloId = 0;
+      if (detail_aberto() && detail_pediu_explorar_selo_id(&seloTipo, fio, sizeof fio, &seloId))
+        abrirExplorarSelo(seloTipo, fio, seloId); }
     return;
   }
   // O MENU DO CARTAZ ABERTO PELO PAINEL (segurar OK numa linha de Salvos)
@@ -7749,6 +7809,30 @@ void app_atualizar(float dt, Uint32 agora) {
         uint64_t id = addonguia_identidade();
         guiaTorrentRepetir = addonmodo_get(id) == AM_P2P ? id : 0;
         buscarParaPlayerModo(1); aguardandoFonte = 1;
+      }
+    } else if (p == AGP_REPETIR) {
+      // FAROL (6C): reconexao de debrid pelo Resolver com o player fechado.
+      // Reabre o ultimo titulo VOD no ponto salvo; sem titulo na sessao, avisa
+      // que a conta reconectou. Sem laco: AGP_REPETIR e de uso unico.
+      static CatItem ult;
+      int ultT = 0, ultE = 0, reabriu = 0;
+      if (player_ultimo_titulo(&ult, &ultT, &ultE)) {
+        int idx = cat_indice_reabrir(-1, &ult);
+        if (idx >= 0 && !travaui_abrir_espera(idx, ultT, ultE)) {
+          menu_fechar();
+          diagnostico_cancelar_vazao();
+          limparFonteVOD();
+          player_abrir(idx, NULL);
+          if (ultE > 0) player_definir_episodio(ultT, ultE);
+          guiaTorrentRepetir = 0;
+          buscarParaPlayerModo(1);
+          aguardandoFonte = 1;
+          reabriu = 1;
+        }
+      }
+      if (!reabriu) {
+        ilha_avisar("farol-debrid", ILHA_OK, "aj_cloud",
+                    i18n("A conta voltou. Addons atualizados."), 4000u, 0);
       }
     } else if (p == AGP_FILEIRAS) {
       ajustes_abrir_fileiras(); trocarTela(TELA_AJUSTES);

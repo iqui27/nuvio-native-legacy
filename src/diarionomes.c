@@ -94,6 +94,14 @@ void diario_nome_definir(const char *idEnt, const char *titulo, int ano, const c
   pthread_mutex_unlock(&trava);
 }
 
+int diario_nomes_lido(void) {
+  int v;
+  pthread_mutex_lock(&trava);
+  v = lido;
+  pthread_mutex_unlock(&trava);
+  return v;
+}
+
 int diario_nome(const char *idEnt, char *titulo, size_t tt, int *ano, char *poster, size_t tp) {
   char id[DIARIO_ID_MAX];
   int i, ok = 0;

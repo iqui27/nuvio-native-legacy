@@ -1051,6 +1051,76 @@ const CatEp *player_proximo_episodio(void) {
 // este canal agora"). Vazio = as frases genericas. Ja traduzido por quem
 // chama; txt_linha tenta traduzir de novo, nao acha chave e deixa como esta.
 static char erroTitulo[160], erroDica[160];
+// FAROL (6B): o erro normalizado do ultimo player_erro_fonte e se a fonte que
+// falhou era debrid — o Resolver le os dois ao julgar. Vai junto da falha de
+// resolverregra_falha_registrar: limpa junto em player_limpar_erro_fonte.
+static FarolErro ultimoFarol;
+static int temUltimoFarol, ultimoFarolDebrid;
+static uint64_t ultimoFarolAddonId;
+static uint64_t farolTentativaSeq, ultimaFonteTentativa, ultimoFarolTentativa;
+// A URL da ultima fonte mandada ao pipeline (sem o proxy local) e se ela exigia
+// cabecalhos privados: e o que o "Player externo" do Resolver usa (inclusive
+// com o player fechado, quando o Resolver abre por Ajustes).
+static char ultimaFonteUrl[NV_MEDIA_URL_MAX];
+#ifdef NV_ANDROID
+static int ultimaFonteTemCabs;
+static int ultimaFonteTemItem, ultimaFonteIdx, ultimaFonteEpT, ultimaFonteEpE;
+static CatItem ultimaFonteItem;
+static uint64_t ultimaFonteSessao;
+#endif
+static void farolTentativaIniciar(void) {
+  if (!++farolTentativaSeq) farolTentativaSeq = 1;
+  ultimaFonteUrl[0] = 0;
+  ultimaFonteTentativa = 0;
+#ifdef NV_ANDROID
+  ultimaFonteTemCabs = 0;
+  ultimaFonteTemItem = 0;
+  memset(&ultimaFonteItem, 0, sizeof ultimaFonteItem);
+  ultimaFonteIdx = -1;
+  ultimaFonteEpT = 0;
+  ultimaFonteEpE = 0;
+  ultimaFonteSessao = 0;
+#endif
+}
+static void farolFonteRegistrar(const char *url, int temCabs) {
+  if (!farolTentativaSeq) farolTentativaSeq = 1;
+  snprintf(ultimaFonteUrl, sizeof ultimaFonteUrl, "%s", url ? url : "");
+#ifdef NV_ANDROID
+  ultimaFonteTemCabs = temCabs ? 1 : 0;
+  {
+    const CatItem *c = item();
+    if (c) {
+      ultimaFonteItem = *c;
+      ultimaFonteTemItem = 1;
+    } else {
+      memset(&ultimaFonteItem, 0, sizeof ultimaFonteItem);
+      ultimaFonteTemItem = 0;
+    }
+    ultimaFonteIdx = idxAtual();
+    ultimaFonteEpT = epT;
+    ultimaFonteEpE = epE;
+    if (c && !strcmp(c->tipo, "series")) {
+      if (ultimaFonteEpT < 0 || (ultimaFonteEpT == 0 && ultimaFonteEpE < 1))
+        ultimaFonteEpT = c->temporada > 0 || (c->temporada == 0 && c->episodio > 0) ? c->temporada : 1;
+      if (ultimaFonteEpE < 1)
+        ultimaFonteEpE = c->episodio > 0 ? c->episodio : 1;
+    }
+    ultimaFonteSessao = itemSessao;
+  }
+#else
+  (void)temCabs;
+#endif
+  ultimaFonteTentativa = (url && url[0]) ? farolTentativaSeq : 0;
+}
+static void farolErroRegistrar(const FarolErro *fe, int foiDebrid, uint64_t addonId) {
+  if (!fe) return;
+  ultimoFarol = *fe;
+  temUltimoFarol = 1;
+  ultimoFarolDebrid = foiDebrid ? 1 : 0;
+  ultimoFarolAddonId = addonId;
+  ultimoFarolTentativa = farolTentativaSeq;
+}
+
 // FAROL (issue 7; PLANO 2.2): o alvo compilado vira (FarolPlat, token do
 // backend) — os FE_* nao carregam texto livre, so estes tokens de enum.
 #if defined(NV_ANDROID)
@@ -1129,8 +1199,8 @@ int video_tpk_aviso_busca(void);   // video_tpk.c (mkvfix.h)
 // player ja deixa saber: servidor da fonte recusou (add-on/debrid), a conexao
 // nao chegou, ou formato/decoder (esse sim pode ser app ou TV). Nunca a URL.
 static void erroCausaDoPlayer(void) {
-  int http = 0, causa = fontesonda_causa(video_erro_texto(), &http);
   const char *err = video_erro_texto();
+  int http = 0, causa = fontesonda_causa(err, &http);
   if (xtream_url_limitada(video_url_atual()) && err &&
       (strstr(err, "403") || strstr(err, "458") || strstr(err, "509"))) {
     snprintf(erroTitulo, sizeof erroTitulo, "%s", i18n("Esta linha está em uso em outra tela"));
@@ -1153,6 +1223,10 @@ static void erroCausaDoPlayer(void) {
   }
 }
 void player_erro_fonte(void) {
+#ifdef NV_ANDROID
+  int erroFalhou = video_falhou();
+  int erroIdentificado = erroFalhou ? video_erro_identificado() : 0;
+#endif
 #ifdef NV_TPK
   // O fluxo DTS/TrueHD convertido nao fica tocando atras do cartao de erro (e da
   // tela inicial depois dele). So convertendo: o resto segue como antes.
@@ -1170,12 +1244,45 @@ void player_erro_fonte(void) {
   // FAROL: a causa classificada e o codigo normalizado; nunca a URL nem o titulo.
   // Ao anel so vai cod da lista fechada (farolcod_anel): um nome recortado de
   // texto livre, ex. dentro de uma URL, chegaria como token valido.
-  { int http = 0, causa = fontesonda_causa(video_erro_texto(), &http);
+  { const char *err = video_erro_texto();
+    int http = 0, causa = fontesonda_causa(err, &http);
     FarolErro fe; char cs[24];
-    farolerro_ler(NV_FAROL_PLAT, video_erro_texto(),
+    const Stream *st;
+    farolerro_ler(NV_FAROL_PLAT, err,
                   video_registro_negado() ? -1027 : 0, &fe);
+    st = stream_item(stream_atual());
+    ultimoFarol = fe; temUltimoFarol = 1;
+    ultimoFarolDebrid = (st && st->debridServico > 0) || fontesonda_host_debrid(ultimaFonteUrl);
     farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, causa, http,
              farolcod_anel(&fe, NV_FAROL_PLAT, cs, sizeof cs)); }
+  { const Stream *st = stream_item(stream_atual());
+    farolErroRegistrar(&ultimoFarol, ultimoFarolDebrid,
+                       st ? st->addonIdentidade : 0);
+#ifdef NV_ANDROID
+    if (erroFalhou && !erroIdentificado)
+      ultimoFarolTentativa = 0;
+#endif
+  }
+}
+int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid) {
+  if (!temUltimoFarol) return 0;
+  if (out) *out = ultimoFarol;
+  if (foiDebrid) *foiDebrid = ultimoFarolDebrid;
+  return 1;
+}
+uint64_t player_ultimo_erro_tentativa(void) {
+  return temUltimoFarol ? ultimoFarolTentativa : 0;
+}
+uint64_t player_ultimo_addon_farol(void) {
+  return temUltimoFarol ? ultimoFarolAddonId : 0;
+}
+int player_ultimo_titulo(CatItem *out, int *temporada, int *episodio) {
+  if (!temFixo || canalSessao || !itemFixo.imdb[0]) return 0;
+  if (!nv_perfil_sessao_atual(itemSessao)) return 0;
+  if (out) *out = itemFixo;
+  if (temporada) *temporada = epT;
+  if (episodio) *episodio = epE;
+  return 1;
 }
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
   player_erro_fonte();
@@ -1197,7 +1304,7 @@ static void erroSemVideo(void) {
 }
 // Desfaz o de cima quando a fonte que parecia morta volta a entregar. Ver a
 // nota no watchdog de canal em app.c.
-void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; resolverregra_falha_limpar(); } }
+void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; temUltimoFarol = 0; ultimoFarolAddonId = 0; ultimoFarolTentativa = 0; resolverregra_falha_limpar(); } }
 // Leitura do estado para o watchdog de canal do app.c: uma fonte ao vivo que
 // falhou (ou nao abre no prazo) deve trocar para a proxima da lista sozinha.
 int  player_fonte_falhou(void) { return erroFonte; }
@@ -1239,6 +1346,7 @@ void player_definir_episodio(int t, int e) {
   atualizarTipoItem();
   const CatItem *c = item();
   if (t != epT || e != epE) {
+    if (!abrindoSessao) farolTentativaIniciar();
     retomarFonteSeg = -1.0;
     memset(&scrobbleAlvo, 0, sizeof scrobbleAlvo); scrobbleAlvoPronto = 0;
     scrobbleTvdbCapturado = 0;
@@ -2010,6 +2118,7 @@ static void armarTituloGuardado(void) {
 }
 
 void player_abrir(int indiceCatalogo, const char *url) {
+  farolTentativaIniciar();
   dtsAvisoSessao++;
   saiuVisto = 0;
 #ifdef NV_TOUCH_UI
@@ -2148,6 +2257,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
     int bloqueado = c && !strcmp(c->tipo, "series") && travaui_segura(c->imdb, idxAtual(),
         c->temporada > 0 ? c->temporada : 1, c->episodio > 0 ? c->episodio : 1, NULL, NULL);
     if (url && *url && !bloqueado) {
+      farolFonteRegistrar(url, video_cabecalhos()[0] != 0);
       const char *u = directcache_preparar(url, video_cabecalhos(), dc, sizeof dc);
       comVideo = video_tocar(proxyts_resolver(u, px, sizeof px));
     } else comVideo = 0; }
@@ -2339,6 +2449,9 @@ static int travaFonte(const char *url) {
   if (!c || strcmp(c->tipo, "series") ||
       !travaui_segura(c->imdb, idxAtual(), epT, epE, NULL, NULL)) return 1;
   player_erro_fonte_motivo(i18n("Travar série"), i18n("Separados"));
+  temUltimoFarol = 0;
+  ultimoFarolTentativa = 0;
+  ultimoFarolAddonId = 0;
   return 0;
 }
 
@@ -2371,7 +2484,9 @@ static void farolRearmar(void) {
 static void tocarFonteInterno(const char *url);
 static void tocarFonteInterno(const char *url) {
   directcache_encerrar();
+  farolTentativaIniciar();
   if (!travaFonte(url)) return;
+  farolFonteRegistrar(url, video_cabecalhos()[0] != 0);
   marco("abrir: url ao pipeline");
   farolRearmar();
   skipLiberado = 0;
@@ -2427,8 +2542,70 @@ static void tocarFonteInterno(const char *url) {
   else aplicarAspecto();
 }
 #ifdef NV_ANDROID
-static void sairParaExterno(void) { saindo = 1; pediuSair = 1; }
+static void sairParaExterno(void) { if (aberto) { saindo = 1; pediuSair = 1; } }
 #endif
+int player_externo_disponivel_tentativa(uint64_t tentativa) {
+#ifdef NV_ANDROID
+  if (!tentativa || !temUltimoFarol || !ultimoFarolTentativa ||
+      ultimaFonteTentativa != tentativa || ultimoFarolTentativa != tentativa)
+    return 0;
+  if (!ultimaFonteUrl[0] || ultimaFonteTemCabs ||
+      (player_aberto() && video_cabecalhos()[0])) return 0;
+  {
+    const CatItem *c = ultimaFonteTemItem ? &ultimaFonteItem : item();
+    uint64_t sessao = ultimaFonteTemItem ? ultimaFonteSessao : itemSessao;
+    int t = ultimaFonteTemItem ? ultimaFonteEpT : epT;
+    int e = ultimaFonteTemItem ? ultimaFonteEpE : epE;
+    int ix = ultimaFonteTemItem ? ultimaFonteIdx : idxAtual();
+    if ((ultimaFonteTemItem || temFixo) && !nv_perfil_sessao_atual(sessao))
+      return 0;
+    if (c && !strcmp(c->tipo, "series")) {
+      if (c->imdb[0]) {
+        int achado = cat_indice_titulo(c->imdb, ix);
+        ix = achado >= 0 ? achado : -1;
+      } else {
+        ix = -1;
+      }
+      if (travaui_segura(c->imdb, ix, t, e, NULL, NULL))
+        return 0;
+    }
+  }
+  extplayer_atualizar_apps();
+  return extplayer_n_apps() > 0;
+#else
+  (void)tentativa;
+  return 0;
+#endif
+}
+
+int player_externo_disponivel(void) {
+  return player_externo_disponivel_tentativa(player_ultimo_erro_tentativa());
+}
+
+int player_abrir_externo_tentativa(uint64_t tentativa) {
+#ifdef NV_ANDROID
+  // O pedido veio do cartao do Resolver ("Player externo"), nao do ajuste:
+  // externo na marra, sem a pergunta "Onde reproduzir?". Vale tambem com o
+  // player fechado (Resolver aberto por Ajustes): usa a URL e o titulo
+  // guardados da tentativa diagnosticada e, sem player aberto, nunca dispara o
+  // pipeline interno em segundo plano se a Intent falhar.
+  const CatItem *c = ultimaFonteTemItem ? &ultimaFonteItem : item();
+  char url[NV_MEDIA_URL_MAX];
+  const char *cabs = aberto ? video_cabecalhos() : (ultimaFonteTemCabs ? "x" : "");
+  if (!player_externo_disponivel_tentativa(tentativa)) return 0;
+  snprintf(url, sizeof url, "%s", ultimaFonteUrl);
+  return extplayer_forcar(url, c ? c->titulo : "", cabs,
+                          aberto ? tocarFonteInterno : NULL,
+                          aberto ? sairParaExterno : NULL);
+#else
+  (void)tentativa;
+  return 0;
+#endif
+}
+
+int player_abrir_externo(void) {
+  return player_abrir_externo_tentativa(player_ultimo_erro_tentativa());
+}
 static void tocarFonte(const char *url) {
 #ifdef NV_ANDROID
   const CatItem *c = item();   // #501: Interno / Externo / Perguntar sempre
@@ -2516,6 +2693,7 @@ void player_definir_retomada_fonte(double segundos) {
 }
 void player_definir_fonte(const char *url) {
   if ((!aberto && !mini) || !url || !*url) return;
+  farolTentativaIniciar();
   if (!travaFonte(url)) return;
   intro_trocar_fonte();
   fonteAcaoInvalidar();

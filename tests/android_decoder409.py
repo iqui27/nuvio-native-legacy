@@ -124,7 +124,9 @@ object Fixture {
     fun confirmarRetomada(g: Int, a: Boolean) {}
     fun afrAplicar() {}
     val eventos = mutableListOf<Int>()
+    var ultimaGeracaoErro = -1
     fun ev(t: Int, a: Int = 0, b: Int = 0) { evento = b; eventos.add(t) }
+    fun evErro(geracao: Int, cod: Int, tipo: Int) { ultimaGeracaoErro = geracao; ev(EV_ERRO, cod, tipo) }
     fun nativeErroTexto(texto: String) {}
     fun liberar() {
         releases++; sessao++
@@ -142,6 +144,7 @@ object Fixture {
     LIBERAR_EM_FUNDO
     fun descartar(p: ExoPlayer, sv: SurfaceView?) { liberarEmFundo(p, sv) }
     fun ouvinte(minha: Int) = object : Player.Listener {
+        private val minhaGeracao = geracaoNative
         ERRO
     }
     fun abrir(u: String) { abrirMain(u, "", false, 0, 0, pedidos.get()) }
@@ -149,7 +152,7 @@ object Fixture {
         principal.itens.clear(); SystemClock.agora = 100; pedidos.set(1); pedidoAtivo = 1
         liberacoesEmCurso.set(0); criados.clear(); releases = 0; semRecriar = true; releaseMs = 0
         Log.linhas.clear(); eventos.clear(); activity = Any(); ganhoPct = 100; player = null; processador = null
-        evento = -99; preferirFfmpegAudio = false
+        evento = -99; preferirFfmpegAudio = false; geracaoNative = 0; ultimaGeracaoErro = -1
     }
 }
 fun main(args: Array<String>) {
@@ -216,6 +219,16 @@ fun main(args: Array<String>) {
         novo.onPlayerError(ExoPlaybackException(4003, 1)); check(f.evento == -99)
         check(Log.linhas.any { it.contains("renderer=audio") && it.contains("loadMs=") })
         check(Log.linhas.any { it.contains("renderer=video") })
+        // Geracao capturada no ouvinte de A nao muda mesmo se geracaoNative avancar para B.
+        f.reset(); f.preferirFfmpegAudio = true
+        f.geracaoNative = 10; f.player = ExoPlayer(listOf(C.TRACK_TYPE_VIDEO))
+        val ouvA = f.ouvinte(f.sessao)
+        f.geracaoNative = 11
+        ouvA.onPlayerError(ExoPlaybackException(4003, 0))
+        check(f.ultimaGeracaoErro == 10) { "geracao do erro vazou para B: ${f.ultimaGeracaoErro}" }
+        f.pedidos.incrementAndGet(); f.evento = -99; f.ultimaGeracaoErro = -1
+        ouvA.onPlayerError(ExoPlaybackException(4003, 0))
+        check(f.evento == -99 && f.ultimaGeracaoErro == -1) { "callback obsoleto emitiu erro" }
         println("PASS renderer: audio/video/desconhecido, 4 codigos e callback obsoleto")
         return
     }

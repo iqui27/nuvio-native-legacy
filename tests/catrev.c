@@ -362,7 +362,7 @@ int main(void) {
     idx = -1;
     confere("Voltar do Explorar reabre o Detalhe do card de Continuar",
             explorar_pediu_abrir(&idx) && idx == 5);
-    mapa_vizinhos_pedir(&o, 0, NULL);
+    mapa_vizinhos_pedir(&o, 0, NULL, 0);
     mapa_vizinhos_copiar(&viz, &vrev);
     confere("vizinhanca do card usa o item do catalogo",
             viz.foco.catIndice == 5);
@@ -423,7 +423,7 @@ int main(void) {
     alvo.imdb[0] = 0;
     alvo.tmdb = 3003;
     cat_definir_tudo(b, n, NULL, 0);
-    mapa_vizinhos_pedir(&alvo, 0, NULL);
+    mapa_vizinhos_pedir(&alvo, 0, NULL, 0);
     mapa_vizinhos_copiar(&viz, &vrev);
     confere("vizinhanca sem IMDb (tmdb:N) re-resolve e nao adota o homonimo",
             viz.foco.catIndice == 6);
@@ -433,7 +433,7 @@ int main(void) {
       snprintf(c2[4].imdb, sizeof c2[4].imdb, "tt7779994");  // homonimo na 4
       c2[8] = a[4];                                          // o real foi para a 8
       cat_definir_tudo(c2, n, NULL, 0);
-      mapa_vizinhos_pedir(&t, 0, NULL);
+      mapa_vizinhos_pedir(&t, 0, NULL, 0);
       mapa_vizinhos_copiar(&viz, &vrev);
       confere("vizinhanca com IMDb nao adota o homonimo e re-resolve",
               viz.foco.catIndice == 8);

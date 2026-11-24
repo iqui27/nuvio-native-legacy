@@ -15,3 +15,4 @@ int video_precarregar_proximo(const char *url, const char *cab, double seg, doub
 int video_precarregar_estado(unsigned token) { (void)token; return 0; }
 void video_precarregar_cancelar(unsigned token) { (void)token; }
 void video_precarregar_adotar(unsigned token) { (void)token; }
+int video_erro_identificado(void) { return 0; }

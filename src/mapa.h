@@ -181,10 +181,19 @@ typedef struct {
 } MapaVizinhos;
 
 // Pede a vizinhanca de `foco`. `pessoaPref` (id do TMDB, 0 = tanto faz) e
-// `temaPref` (palavra-chave em ingles, NULL = tanto faz) mantem o MESMO fio
-// quando a pessoa desce a toca por ele. Repetir o pedido do titulo que ja esta
-// publicado nao faz nada.
-void mapa_vizinhos_pedir(const MapaObra *foco, long pessoaPref, const char *temaPref);
+// `temaPref` (NULL = tanto faz) mantem o MESMO fio quando a pessoa desce a
+// toca por ele. `temaEhGenero` diz o que o fio carrega: 0 = palavra-chave do
+// TMDB em ingles (selo de tema ou entrada generica), 1 = nome de genero
+// local (selo ou grupo de genero) — nunca vira palavra-chave no retrato
+// remoto, so fixa a preferencia de genero (FAROL46C). Repetir o pedido do
+// titulo que ja esta publicado nao faz nada.
+void mapa_vizinhos_pedir(const MapaObra *foco, long pessoaPref, const char *temaPref,
+                         int temaEhGenero);
+// Variante com id canonico do genero (> 0 quando veio de um selo ou grupo do
+// Mapa): propaga o id TMDB diretamente sem inferir do texto localizado.
+void mapa_vizinhos_pedir_genero(const MapaObra *foco, long pessoaPref,
+                                const char *temaPref, int temaEhGenero,
+                                long generoId);
 int  mapa_vizinhos_copiar(MapaVizinhos *dst, unsigned *revisao);
 // O titulo `indice` do catalogo como MapaObra (entrada pelo Detalhe). 1 = ok.
 int  mapa_obra_do_catalogo(int indice, MapaObra *o);
@@ -321,6 +330,7 @@ void mapa_publicar_teste(const MapaSemente *s, int n, const MapaCreditos *c, int
 typedef struct {
   MapaObra obra;
   unsigned gen[MAPA_GEN_MAX];     int nGen;
+  unsigned genMasc;             // os mesmos generos por identidade (mascara MAPA_G_*)
   unsigned gente[MAPA_GENTE_MAX]; int nGente;
 } MapaVizCand;
 typedef struct { MapaObra obra; char quem[32]; } MapaVizAmigo;
@@ -338,6 +348,10 @@ typedef struct {
   const unsigned *vistos; int nVistos;   // hashes de titulo ja comecados
   unsigned pessoaPref;            // hash do nome preferido na reserva local (0 = nenhum)
   unsigned generoPref;            // hash do genero preferido na reserva local (0 = nenhum)
+  unsigned generoPrefMasc;        // o mesmo genero por identidade (mascara MAPA_G_*)
+  long generoPrefId;              // id TMDB do genero preferido (> 0 quando veio do selo)
+  const char *generoPrefNome;     // o rotulo do selo, no idioma do catalogo
+  unsigned focoGenMasc[MAPA_GEN_MAX]; // mascaras canonicas dos generos do foco (fio principal)
 } MapaVizEntrada;
 // Monta os quatro grupos. Preserva v->revisao.
 void mapa_vizinhos_montar(const MapaVizEntrada *e, MapaVizinhos *v);
@@ -360,10 +374,14 @@ int  mapa_recomendacoes_tmdb(const char *imdb, long tmdb, int serie,
 // /search/keyword: o id da palavra de nome EXATO `nome` (sem caixa). 0 = nao ha.
 long mapa_ler_keyword_id(const char *json, const char *nome);
 
-// Generos canonicos da regra dos climas (bit = 1 << MAPA_G_*).
+// Generos canonicos da regra dos climas e selos (bit = 1 << MAPA_G_*).
 enum { MAPA_G_ACAO = 1, MAPA_G_AVENTURA, MAPA_G_COMEDIA, MAPA_G_CRIME, MAPA_G_DRAMA,
        MAPA_G_FAMILIA, MAPA_G_FANTASIA, MAPA_G_FICCAO, MAPA_G_MISTERIO,
-       MAPA_G_TERROR, MAPA_G_SUSPENSE, MAPA_G_N };
+       MAPA_G_TERROR, MAPA_G_SUSPENSE,
+       MAPA_G_ANIMACAO, MAPA_G_DOCUMENTARIO, MAPA_G_HISTORIA, MAPA_G_MUSICA,
+       MAPA_G_ROMANCE, MAPA_G_GUERRA, MAPA_G_FAROESTE,
+       MAPA_G_INFANTIL, MAPA_G_NOTICIAS, MAPA_G_REALITY, MAPA_G_NOVELA,
+       MAPA_G_TALK, MAPA_G_N };
 // Mascara de um nome de genero ("Sci-Fi & Fantasy" liga dois bits). Aceita os
 // nomes em ingles, portugues e espanhol que o catalogo e o TMDB mandam.
 unsigned mapa_genero_mascara(const char *nome);

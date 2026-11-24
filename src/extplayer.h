@@ -31,6 +31,14 @@ int         extplayer_app_instalado(const char *pkg);
 // Nunca registra a URL.
 int  extplayer_tentar(const char *url, const char *titulo, int anime,
                       void (*interno)(const char *url), void (*sair)(void));
+// FAROL (6B/6C): o cartao do Resolver pediu o externo NA MARRA — sem consultar
+// o ajuste Interno/Externo/Perguntar nem abrir "Onde reproduzir?". `cabs` sao
+// os cabecalhos da fonte falha ("" = nenhum; com cabecalhos nao cabe na
+// Intent). `interno`/`sair` podem ser NULL quando chamado com o player fechado
+// (Resolver em Ajustes): nunca dispara o pipeline interno em segundo plano.
+// 1 = tratou (abriu o externo ou recuou no interno), 0 = indisponivel/falhou.
+int  extplayer_forcar(const char *url, const char *titulo, const char *cabs,
+                      void (*interno)(const char *url), void (*sair)(void));
 void extplayer_acao(const char *chave, int botao);
 void extplayer_passo(unsigned agora);
 #endif

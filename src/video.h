@@ -242,6 +242,9 @@ const char *video_tv_modelo(void);
 #ifdef NV_ANDROID
 // Codigo do erro atual apenas se o renderer e de VIDEO; 0 para audio/desconhecido.
 int video_erro_decoder_codigo(void);
+// 1 quando a falha atual foi identificada por geracao da abertura (nativeErro
+// ou erro interno sincrono da sessao); 0 para evento legado sem geracao.
+int video_erro_identificado(void);
 #endif
 // 1 depois que o decoder se anunciou (videoInfo do uMS) na fonte atual. Existe
 // para o watchdog de canal separar "abre devagar" de "chega dado e o decoder

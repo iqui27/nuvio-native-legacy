@@ -13,6 +13,12 @@ void explorar_iniciar(void);
 // Chamar DEPOIS de explorar_iniciar: Voltar no primeiro degrau pede a pagina
 // do titulo de volta (explorar_pediu_abrir).
 void explorar_abrir_titulo(const MapaObra *o);
+// Variante do selo do Farol: desce filtrada pelo fio (kw de tema ou genero).
+// `temaEhGenero` = 1 quando o fio e nome de genero local, nao palavra-chave.
+void explorar_abrir_titulo_fio(const MapaObra *o, const char *temaFio, int temaEhGenero);
+// Variante com id canonico do genero (> 0 quando conhecido pelo Detalhe).
+void explorar_abrir_titulo_selo(const MapaObra *o, const char *temaFio, int temaEhGenero,
+                                long generoId);
 void explorar_encerrar(void);
 void explorar_evento(const SDL_Event *e);
 void explorar_atualizar(float dt, Uint32 agora);
