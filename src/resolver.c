@@ -872,6 +872,10 @@ static void abrir(void) {
 }
 
 void resolver_abrir(void) { abrir(); }
+void resolver_abrir_sintoma(int s) {
+  abrir();
+  if (s >= 0 && s < RES_S_N) { testar(s); ir_fase(RESOLVER_FASE_TESTES); }
+}
 
 static void fechar(void) {
   if (segura || sonda_no_ar()) {

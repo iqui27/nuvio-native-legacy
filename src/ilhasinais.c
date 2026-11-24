@@ -22,7 +22,18 @@
 #include "rede.h"
 #include "sync.h"
 #include "traktauth.h"
+#include "dados.h"
+#include "farol.h"
+#include "farolanel.h"
+#include "farolilha.h"
+#include "farolregra.h"
+#include "farolsonda.h"
+#include "faroltexto.h"
+#include "player.h"
+#include "plrilha.h"
+#include "resolver.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define SONDA_MS 2000u
@@ -45,7 +56,38 @@ static int syncFalhaDita;
 static unsigned addonForaVisto;
 static void responderPedido(void);
 
-void ilhasinais_iniciar(void) { rede_avisar_saude(rede_saude_nota_desde); rede_avisar_host(rede_hosts_nota); }
+// --- o Farol na ilha (issue 20) ---------------------------------------------------
+// A politica (quando falar) e farolilha.c, pura; aqui so a juncao: os fatos do
+// Farol (farol_fatos_ler), a pilula e o disco das dispensas de 24 h.
+#define FAROL_CHAVE      "farol"
+#define FAROL_CONS_CHAVE "farol-conserto"
+#define FAROL_ILHA_ARQ   "farol-ilha.txt"
+// Um FE_FAROL_ACAO da mesma acao ate 2 min antes do conserto = foi a pessoa
+// (um botao do Farol), e o conserto nao e "calado".
+#define FAROL_ACAO_PESSOA_MS 120000u
+static int farolPediu = -1;        // sintoma RES_S_* pedido pela AZUL; -1 = nada
+static int farolSintomaVez = RES_S_NAO_COMECA;
+static uint64_t farolConsSeq;      // eventos do anel com seq >= este sao novos
+static int farolConsVisto;         // 0 = o anel ainda nao foi olhado
+static char farolConsFrase[200];   // a pilula do conserto dentro do player
+static Uint32 farolConsAte;
+static void farolGravar(void) {
+  char buf[FAROLILHA_DISPENSAS * 32 + 1];
+  farolilha_exportar(buf, sizeof buf);
+  dados_gravar(FAROL_ILHA_ARQ, buf);
+}
+static unsigned farolMs(void) { return SDL_GetTicks(); }
+
+void ilhasinais_iniciar(void) {
+  char *s;
+  rede_avisar_saude(rede_saude_nota_desde); rede_avisar_host(rede_hosts_nota);
+  farolilha_relogio(NULL, farolMs);
+  s = dados_ler(FAROL_ILHA_ARQ);
+  farolilha_importar(s);
+  free(s);
+}
+
+int ilhasinais_pediu_farol(void) { int p = farolPediu; farolPediu = -1; return p; }
 
 int ilhasinais_pediu_trakt(void) { int p = pediuTrakt; pediuTrakt = 0; return p; }
 
@@ -77,6 +119,7 @@ static void acoes(void) {
   }
   if (!strcmp(chave, "pedidos")) { pediuAmigos = 1; return; }
   if (!strncmp(chave, "vendo:", 6)) { ilhacart_vendo_acao(chave); return; }
+  if (!strcmp(chave, FAROL_CHAVE)) { farolPediu = farolSintomaVez; return; }
   if (!strcmp(chave, "trakt") && b == 1) pediuTrakt = 1;
 }
 
@@ -356,6 +399,9 @@ void ilhasinais_perfil_trocado(void) {
   amizadesDesde = ultSonda = syncRodandoDesde = 0;
   syncAntes = SYNC_PARADO; syncFalhaDita = traktAvisado = debridDitos = 0;
   addonForaVisto = 0;
+  farolilha_sessao_nova();        // o teto por titulo e da sessao do perfil
+  farolPediu = -1; farolConsAte = 0; farolConsFrase[0] = 0;
+  ilha_retirar(FAROL_CHAVE);
   const ContaPerfil *p = perfis_item_ativo();
   char txt[160], f[96];
   IlhaAvisoEx e;
@@ -394,8 +440,106 @@ static void addonFora(void) {
   ilha_avisar(chave, ILHA_ERRO, "aj_puzzle", txt, 6000u, 0);
 }
 
+// AVISO PROATIVO: ja fora do player, com 2 falhas seguidas ou 2 paradas em 5
+// min, uma vez por titulo por sessao (farolilha.h). P1, 8 s, a tecla AZUL/CH+
+// abre o Farol ja no veredito; Voltar dispensa o codigo por 24 h.
+static void farolProativo(void) {
+  static CatItem ult;
+  FarolFatos ff;
+  FarolVeredito v;
+  FarolIlhaFatos f;
+  IlhaAvisoEx a;
+  int t = 0, e = 0;
+  if (!farolilha_ativo() || player_aberto() || resolver_aberto() || ilha_tem(FAROL_CHAVE)) return;
+  farol_fatos_ler(&ff);
+  if (ff.falhasSeguidas < FAROLILHA_FALHAS_MIN && ff.paradas5min < FAROLILHA_PARADAS_MIN) return;
+  memset(&f, 0, sizeof f);
+  f.falhasSeguidas = ff.falhasSeguidas;
+  f.paradas5min = ff.paradas5min;
+  f.playerAberto = player_aberto();
+  // video andando = retido (saida no meio) OU o mini-player (PiP) tocando —
+  // como farolsonda, musicaui e o pre-carregar de fonte ja fazem em app.c.
+  f.videoAndando = player_retido() || player_mini_ativo();
+  f.titulo = player_ultimo_titulo(&ult, &t, &e) ? ult.imdb : "";
+  ff.sintoma = farolilha_sintoma(&f);
+  farolregra_julgar(ff.sintoma, &ff, &v);
+  f.codigo = v.regra ? (int)v.regra->codigo : FAROL_C_NADA_ACHADO;
+  if (!farolilha_proativo(&f)) return;
+  farolSintomaVez = ff.sintoma;
+  memset(&a, 0, sizeof a);
+  a.chave = FAROL_CHAVE; a.tipo = ILHA_ACENTO; a.prior = ILHA_P1;
+  a.icone = "aj_farol"; a.texto = i18n(FT_PILULA_FALHA); a.dica = i18n(FT_ABRE_O_FAROL);
+  a.ms = FAROLILHA_AVISO_MS; a.tecla = 1; a.acao = 1;
+  a.ponto = 1; a.dispensavel = 1;
+  ilha_avisar_ex(&a);
+  printf("[farol] ilha: aviso proativo (%s, falhas %d, paradas %d)\n",
+         farolregra_codigo_nome(f.codigo), f.falhasSeguidas, f.paradas5min);
+}
+
+// CONSERTO CALADO: o app aplicou a troca sozinho (FE_FAROL_CONSERTOU sem um
+// FE_FAROL_ACAO da pessoa logo antes). Pilula de 4 s, sem tecla: fora do player
+// na ilha, dentro dele na pilula do player (plrilha), pedida a cada quadro.
+static void farolConserto(Uint32 agora) {
+  uint64_t seq = farolanel_seq();
+  // O que ja estava no anel nao vira pilula; o anel zerado recomeca a conta.
+  if (!farolConsVisto || seq < farolConsSeq) { farolConsVisto = 1; farolConsSeq = seq; }
+  if (seq > farolConsSeq) {
+    static FarolEvento ev[FAROL_ANEL_N];
+    uint64_t seqFim = 0, seqIni;
+    int n = farolanel_ler_seq(ev, FAROL_ANEL_N, 0, &seqFim), i, j;
+    seqIni = seqFim - (uint64_t)n;
+    for (i = 0; i < n; i++) {
+      const char *frase;
+      int sozinho = !resolver_aberto();
+      if (seqIni + (uint64_t)i < farolConsSeq || ev[i].ev != FE_FAROL_CONSERTOU) continue;
+      for (j = i - 1; j >= 0 && sozinho; j--)
+        if (ev[j].ev == FE_FAROL_ACAO && ev[j].a == ev[i].a &&
+            ev[i].t_ms - ev[j].t_ms <= FAROL_ACAO_PESSOA_MS) sozinho = 0;
+      frase = farolilha_conserto(ev[i].a, sozinho);
+      if (!frase) continue;
+      if (player_aberto()) {
+        snprintf(farolConsFrase, sizeof farolConsFrase, "%s", i18n(frase));
+        // 0 e "desligado": no wrap de 32 bits (agora + 4 s = 0, ~49,7 dias de
+        // uptime) a pilula do conserto apagaria na hora. Sobe para 1.
+        farolConsAte = (agora ? agora : 1) + FAROLILHA_CONSERTO_MS;
+        if (!farolConsAte) farolConsAte = 1;
+      } else {
+        ilha_avisar(FAROL_CONS_CHAVE, ILHA_OK, "aj_farol", i18n(frase), FAROLILHA_CONSERTO_MS, 0);
+      }
+    }
+    farolConsSeq = seqFim;
+  }
+  if (farolConsAte && (!player_aberto() || (Sint32)(agora - farolConsAte) >= 0)) farolConsAte = 0;
+  if (farolConsAte) {
+    PlrIlhaPedido p;
+    memset(&p, 0, sizeof p);
+    p.icone = "aj_farol"; p.corIcone = 2; p.texto = farolConsFrase;
+    p.semFim = 1; p.aberta = 1; p.video = 1;
+    plrilha_pedir(&p);
+  }
+}
+
+// "Testando…" so depois de 300 ms (farolilha_atividade). Com o Farol aberto a
+// propria tela mostra o teste; a ilha fala quando a pessoa sai dele no meio.
+static void farolAtividade(void) {
+  int ocupado = !farolsonda_estado(NULL);
+  if (farolilha_atividade(ocupado) && !player_aberto() && !resolver_aberto())
+    ilha_atividade_ex(i18n(FT_SONDANDO), -1.0f, "");
+}
+
+static void farolDispensa(void) {
+  char chave[96];
+  if (!ilha_aviso_dispensado(chave, sizeof chave) || strcmp(chave, FAROL_CHAVE)) return;
+  farolilha_dispensar(farolilha_codigo_vez());
+  farolGravar();
+  printf("[farol] ilha: aviso dispensado (%s) por 24 h\n", farolregra_codigo_nome(farolilha_codigo_vez()));
+}
+
 void ilhasinais_passo(Uint32 agora) {
   acoes();
+  farolDispensa();
+  farolConserto(agora);
+  farolAtividade();
   responderPedido();
   ilhasalvar_passo(agora);
   lstesc_passo();
@@ -413,4 +557,5 @@ void ilhasinais_passo(Uint32 agora) {
   if (recomenda_ativo()) { pedidosDeAmizade(); amizadesNovas(agora); }
   trakt();
   debridSemPlano();
+  farolProativo();
 }
