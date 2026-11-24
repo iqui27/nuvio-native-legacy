@@ -38,6 +38,7 @@
 #include "farol.h"
 #include "faroltexto.h"
 #include "farolcompor.h"
+#include "farolescolha_rede.h"
 extern __attribute__((weak)) int player_pediu_farol_acao(void);
 extern __attribute__((weak)) void farol_sessao_reiniciar(void);
 extern __attribute__((weak)) void farol_registrar_resultado(int acao, int ok);
@@ -9363,6 +9364,7 @@ void app_encerrar(void) {
   diario_gravar_agora();
   farolsinal_sair();     // modelo, estado e fichas do Farol vao para o disco
   farolcompor_encerrar();
+  farolescolha_rede_encerrar();
   preparoInvalidar();
   proximopreparo_encerrar();
   if (fioFonteVivo) {
