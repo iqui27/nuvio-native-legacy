@@ -22,6 +22,9 @@
 #include "farolachaui.h"
 #include "farolescolhaui.h"
 #include "farolvozui.h"
+#include "farolconsent.h"
+#include "farolconsentui.h"
+#include "farolenvioui.h"
 #include "farolsonda.h"
 #include "farolanel.h"
 #include "farolregra.h"
@@ -185,6 +188,8 @@ int          resolver_teste_sec(void) { return pSecF; }
 int resolver_aberto(void) { return aberto; }
 int resolver_fase(void) { return fase; }
 int resolver_foco(void) {
+  if (farolconsentui_aberto()) return farolconsentui_foco();
+  if (fase == RESOLVER_FASE_ENVIO && farolenvioui_ativo()) return farolenvioui_foco();
   if (farolvozui_ativo()) return farolvozui_foco();
   if (fase == RESOLVER_FASE_ACHAR) {
     int af = farolachaui_foco();
@@ -199,7 +204,45 @@ int resolver_enviados_n(void) { return envN; }
 float resolver_luz(void) { return luz; }
 int resolver_testando(void) { return fase == RESOLVER_FASE_CADEIA && segura; }
 int resolver_mandar_registro(void) { return fase == RESOLVER_FASE_VEREDITO && pSec == A_ENVIAR && pFarol; }
+
+__attribute__((weak)) int  farolenvioui_presente(void) { return 0; }
+__attribute__((weak)) int  farolenvioui_ativo(void) { return 0; }
+__attribute__((weak)) void farolenvioui_abrir(int s, int v, int df, const FarolVeredito *vd,
+                                              const FarolFatos *f, const int *est, const char *uc) {
+  (void)s; (void)v; (void)df; (void)vd; (void)f; (void)est; (void)uc;
+}
+__attribute__((weak)) void farolenvioui_fechar(void) {}
+__attribute__((weak)) void farolenvioui_esquecer(void) {}
+__attribute__((weak)) void farolenvioui_evento(const SDL_Event *e) { (void)e; }
+__attribute__((weak)) int  farolenvioui_passo(float dt, int *op, int *of, int *ov, int *or_, int *odf) {
+  (void)dt;
+  if (op) *op = RESOLVER_PEDIU_NADA;
+  if (of) *of = 0;
+  if (ov) *ov = 0;
+  if (or_) *or_ = 0;
+  if (odf) *odf = -1;
+  return 0;
+}
+__attribute__((weak)) void farolenvioui_desenhar(float ox_, float oy_, float a) {
+  (void)ox_; (void)oy_; (void)a;
+}
+__attribute__((weak)) int  farolenvioui_foco(void) { return 0; }
+__attribute__((weak)) int  farolconsent_deve_perguntar(void) { return 0; }
+__attribute__((weak)) int  farolconsentui_aberto(void) { return 0; }
+__attribute__((weak)) void farolconsentui_abrir(void) {}
+__attribute__((weak)) void farolconsentui_fechar(void) {}
+__attribute__((weak)) void farolconsentui_esquecer(void) {}
+__attribute__((weak)) void farolconsentui_evento(const SDL_Event *e) { (void)e; }
+__attribute__((weak)) void farolconsentui_atualizar(float dt) { (void)dt; }
+__attribute__((weak)) void farolconsentui_desenhar(float ox_, float oy_, float a) {
+  (void)ox_; (void)oy_; (void)a;
+}
+__attribute__((weak)) int  farolconsentui_foco(void) { return 0; }
+__attribute__((weak)) void ajustes_abrir_no_trakt(void) {}
+
 void resolver_teste_esquecer(void) {
+  farolconsentui_esquecer();
+  farolenvioui_esquecer();
   aberto = 0; entrada = 0.0f; fase = 0; foco = 0; envN = 0; envModo = 0; envNoAr = 0; rolo = 0; temFalha = 0;
   acharVoltaFoco = 0; farolachaui_reset(); farolvozui_reset();
   if (ESCOLHA_LIGADA()) farolescolhaui_reset();
@@ -892,6 +935,18 @@ static void cadeia_cancelar(void) {
 }
 
 static void enviar_registro(int s, int volta) {
+  if (farolenvioui_presente()) {
+    const char *ult = envN > 0 ? env[0].codigo : "";
+    envSint = s;
+    voltaFase = volta;
+    envModo = M_NADA;
+    envDoFarol = 0;
+    rolo = 0;
+    farolenvioui_abrir(s, volta, 0, &vered, &ff, res.estado, ult);
+    ir_fase(RESOLVER_FASE_ENVIO);
+    return;
+  }
+  {
   AvisosEnvio i;
   avisos_envio_info(&i);
   envSint = s;
@@ -907,12 +962,22 @@ static void enviar_registro(int s, int volta) {
 #endif
   rolo = 0;
   ir_fase(RESOLVER_FASE_ENVIO);
+  }
 }
 
-// "Mandar registro" do Veredito: GANCHO DA #22 (o envio novo com o que vai e o
-// que nunca vai). Ate la, o mesmo envio de Ajustes; o resultado entra no anel
-// quando o servidor responde (sondar_envio).
+// "Mandar registro" do Veredito (#22): abre a Tela 4 com espelho e farol_enviar().
 static void mandar_registro(void) {
+  if (farolenvioui_presente()) {
+    const char *ult = envN > 0 ? env[0].codigo : "";
+    envSint = sint;
+    voltaFase = RESOLVER_FASE_VEREDITO;
+    envModo = M_NADA;
+    envDoFarol = 1;
+    rolo = 0;
+    farolenvioui_abrir(sint, RESOLVER_FASE_VEREDITO, 1, &vered, &ff, res.estado, ult);
+    ir_fase(RESOLVER_FASE_ENVIO);
+    return;
+  }
   enviar_registro(sint, RESOLVER_FASE_VEREDITO);
   envDoFarol = 1;
 }
@@ -937,13 +1002,19 @@ static void abrir(void) {
   ir_fase(RESOLVER_FASE_SINTOMA);
 }
 
-void resolver_abrir(void) { abrir(); }
+void resolver_abrir(void) {
+  abrir();
+  if (farolconsent_deve_perguntar() == 1) farolconsentui_abrir();
+}
 void resolver_abrir_sintoma(int s) {
   abrir();
+  farolconsentui_fechar();
   if (s >= 0 && s < RES_S_N) cadeia_iniciar(s);
 }
 
 static void fechar(void) {
+  farolconsentui_fechar();
+  farolenvioui_fechar();
   farolvozui_fechar();
   if (segura || sonda_no_ar()) {
     farolsonda_cancelar();
@@ -1067,6 +1138,8 @@ static void voltar(void) {
   else { int v = voltaFase; envModo = M_NADA; ir_fase(v); }
 }
 
+static void ir_fase(int f);
+
 static void voz_voltar_fase(void) {
   int vf = farolvozui_volta_fase();
   if (vf == RESOLVER_FASE_ACHAR) {
@@ -1079,9 +1152,31 @@ static void voz_voltar_fase(void) {
   }
 }
 
+static void sincronizar_envioui(float dt) {
+  int ped = RESOLVER_PEDIU_NADA, fech = 0, volt = 0, recar = 0, dfOk = -1;
+  if (!farolenvioui_presente()) return;
+  farolenvioui_passo(dt, &ped, &fech, &volt, &recar, &dfOk);
+  if (recar) enviados_ler();
+  if (dfOk >= 0) farol_registrar_resultado(FAROL_A_ENVIAR_REGISTRO, dfOk);
+  if (ped != RESOLVER_PEDIU_NADA) pedido = ped;
+  if (fech) fechar();
+  else if (volt && fase == RESOLVER_FASE_ENVIO) ir_fase(voltaFase);
+}
+
 void resolver_evento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!aberto) return;
+  if (farolconsentui_aberto()) {
+    if (e->type == SDL_KEYDOWN) farolconsentui_evento(e);
+    return;
+  }
+  if (fase == RESOLVER_FASE_ENVIO && farolenvioui_ativo()) {
+    if (e->type == SDL_KEYDOWN) {
+      farolenvioui_evento(e);
+      sincronizar_envioui(0.0f);
+    }
+    return;
+  }
   if (farolvozui_ativo()) {
     int pediuVoltar = 0, abriuAchados = 0;
     farolvozui_evento(e, &pediuVoltar, &abriuAchados);
@@ -1164,7 +1259,9 @@ static void sondar_envio(void) {
 void resolver_atualizar(float dt, Uint32 agora) {
   int red = ajustes_animacoes_reduzidas();
   sonda_sincronizar();
-  sondar_envio();
+  farolconsentui_atualizar(dt);
+  sincronizar_envioui(dt);
+  if (!farolenvioui_presente()) sondar_envio();
   if (aberto) {
     atualizar_falha_recente();
     cadeia_passo(dt > 0.0f ? dt * 1000.0f : 0.0f);
@@ -1457,6 +1554,10 @@ static const char *motivo_envio(char *buf, size_t tam) {
 }
 
 static void desenha_envio(float a) {
+  if (farolenvioui_ativo()) {
+    farolenvioui_desenhar(ox, oy, a);
+    return;
+  }
   static const char *const VAI[2] = { "Os últimos 200 KB do registro desta sessão", "Endereços cortados no host" };
   static const char *const NAO[2] = { "Senhas e chaves", "O caminho completo dos endereços" };
   Item it[MAX_ITENS];
@@ -1561,6 +1662,11 @@ void resolver_desenhar(Uint32 agora) {
   gfx_escala_sair(resolver_escala());
   origem();
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0.051f, 0.051f, 0.051f, entrada);
+  if (farolconsentui_aberto()) {
+    farolconsentui_desenhar(ox, oy, a);
+    gfx_escala_sair(escAnt);
+    return;
+  }
   if (farolvozui_ativo()) farolvozui_desenhar(ox, oy, a, agora);
   else if (fase == RESOLVER_FASE_SINTOMA) desenha_sintoma(a);
   else if (fase == RESOLVER_FASE_CADEIA || fase == RESOLVER_FASE_VEREDITO) desenha_testes(a);

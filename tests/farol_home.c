@@ -46,6 +46,8 @@ int ajustes_busca_nuvio(void) { return 0; }
 int ajustes_ocultar_nao_lancados(void) { return 0; }
 #include "../src/descoberta.c"
 #include "farolsinal.h"
+#include "farolcompor.h"
+#include "rede.h"
 #include "diario.h"
 #include "salvos.h"
 #include "jellyfin_stub.inc"
@@ -340,8 +342,47 @@ int diario_nome(const char *id, char *titulo, size_t tamTitulo, int *ano,
   if (!id || !titulo || !tamTitulo) return 0;
   // so a semente gravada tem nome conhecido
   if (!strncmp(id, "ttseed", 6)) { snprintf(titulo, tamTitulo, "Semente %s", id + 6); return 1; }
+  // Titulo que SO o Diario conhece (entrada importada, fora do catalogo).
+  if (!strcmp(id, "tt2999919")) {
+    snprintf(titulo, tamTitulo, "CANARIO_DIARIO_TITULO_NAO_REFERENCIADO"); return 1;
+  }
   return 0;
 }
+
+// ---------------------------------------- POST /v1/farol/compor (duble) ----
+// src/farolcompor.c de verdade entra no link; a rede dele e esta. Cada POST
+// fica guardado inteiro (corpo e cabecalhos) para a auditoria do canario.
+static pthread_mutex_t P_mx = PTHREAD_MUTEX_INITIALIZER;
+static int  P_posts;
+static char P_corpo[FAROL_COMPOR_CORPO_MAX + 1];
+static const char *P_resposta;            // NULL = 503
+int rede_pedir(const RedePedido *p, RedeResposta *r) {
+  memset(r, 0, sizeof *r);
+  pthread_mutex_lock(&P_mx);
+  if (p && p->metodo && !strcmp(p->metodo, "POST") && p->url &&
+      strstr(p->url, "/v1/farol/compor")) {
+    size_t n = p->n_corpo < FAROL_COMPOR_CORPO_MAX ? p->n_corpo : FAROL_COMPOR_CORPO_MAX;
+    memcpy(P_corpo, p->corpo, n);
+    P_corpo[n] = 0;
+    P_posts++;
+    if (P_resposta) {
+      r->status = 200;
+      r->n_corpo = strlen(P_resposta);
+      r->corpo = strdup(P_resposta);
+    } else {
+      r->status = 503;
+    }
+  }
+  pthread_mutex_unlock(&P_mx);
+  r->erro = REDE_OK;
+  return r->status != 0;
+}
+void rede_resposta_limpar(RedeResposta *r) {
+  if (!r) return;
+  free(r->corpo); free(r->cabecalhos);
+  r->corpo = NULL; r->cabecalhos = NULL;
+}
+// rede_parar_trocar vem de tests/jellyfin_stub.inc (fraco, sem efeito).
 // Salvos: vazio por padrao; o caso de salvo fora do catalogo monta um.
 static SalvoItem T_salvo[8]; static int T_salvoN;
 int  salvos_n(void) { return T_salvoN; }
@@ -737,6 +778,87 @@ int main(void) {
     (void)achou;
   }
   puts("ok  salvo fora do catalogo nao quebra a fileira");
+
+  // ---------- canario do Diario pela Home -> POST (FAROL52-r1, P1 #1) ----
+  // Perfil adulto, consentido, Home aquecida; o Diario tem uma entrada
+  // PARCIAL importada de um titulo fora do catalogo com nome privado. A
+  // montagem real (farol_home_fileiras) dispara o POST: o titulo privado nao
+  // pode ir em gosto.ancoras, e toda ancora enviada tem de ser citada por um
+  // motivo FMO_TERMINOU dos candidatos enviados.
+  {
+    static const char *CENA_LLM =
+      "{\"v\":1,\"tela\":\"home\",\"origem\":\"llm\",\"pecas\":[{\"t\":\"fileira\","
+      "\"id\":\"gosto1\",\"titulo\":{\"m\":\"FT_FIL_HORA\"},\"forma\":\"cartaz\","
+      "\"itens\":[\"tt0000906\",\"tt0000905\",\"tt0000904\",\"tt0000903\",\"tt0000902\",\"c0\"]}]}";
+    char det0[64], llm0[64];
+    FarolComporCand llmCandT[FAROL_COMPOR_CAND_MAX];
+    const char *a;
+    int nLlm = 0, esperas;
+    farolcompor_pasta(dirDados);
+    farolcompor_definir_url("http://compor.invalid");
+    farolcompor_definir_auth("Authorization: Bearer tok_home_teste",
+                             "X-Nuvio-Auth: nuvio", "X-Nuvio-Perfil: 1");
+    farolcompor_relogio(fakeS);
+    farolcompor_teste_home_visivel(fakeVis);
+    farolcompor_esquecer();
+    farolcompor_definir_consentimento(1);
+    memset(&T_dia[0], 0, sizeof T_dia[0]);
+    snprintf(T_dia[0].id, sizeof T_dia[0].id, "tt2999919");
+    T_dia[0].tipo = DIARIO_FILME;
+    T_dia[0].flags = DIARIO_F_PARCIAL;
+    T_dia[0].quando = base - 3600;
+    T_dia[0].hora = -1;
+    T_diaN = 1;
+    pthread_mutex_lock(&P_mx);
+    P_posts = 0; P_corpo[0] = 0; P_resposta = CENA_LLM;
+    pthread_mutex_unlock(&P_mx);
+
+    T_visivel = 0; T_g.titulos++;              // evento forte -> recompoe
+    volta();
+    for (esperas = 0; farolcompor_em_voo() && esperas < 3000; esperas++) usleep(1000);
+    assert(!farolcompor_em_voo());
+    pthread_mutex_lock(&P_mx);
+    assert(P_posts == 1 && "a montagem da Home nao chegou ao POST");
+    assert(!strstr(P_corpo, "CANARIO_DIARIO_TITULO_NAO_REFERENCIADO") &&
+           "titulo privado do Diario vazou em gosto.ancoras");
+    assert(!strstr(P_corpo, "tt2999919") && "semente parcial do Diario foi ao POST");
+    // Toda ancora publicada e citada por FMO_TERMINOU enviado.
+    a = strstr(P_corpo, "\"ancoras\":[");
+    while (a && (a = strstr(a, "{\"id\":\"")) && a < strstr(P_corpo, "\"candidatos\"")) {
+      char cita[96], id[32];
+      int k = 0;
+      a += 7;
+      while (a[k] && a[k] != '"' && k < 31) { id[k] = a[k]; k++; }
+      id[k] = 0;
+      snprintf(cita, sizeof cita, "\"tipo\":\"FMO_TERMINOU\",\"id\":\"%s\"", id);
+      assert(strstr(P_corpo, cita) && "ancora sem motivo enviado que a cite");
+    }
+    pthread_mutex_unlock(&P_mx);
+    assert(idxFil("farol_gosto1") >= 0);
+    snprintf(det0, sizeof det0, "%s",
+             cat_item(cat_fileira(idxFil("farol_gosto1"))->ini)->imdb);
+    puts("ok  canario do Diario: pela Home o titulo privado nao vai ao POST");
+
+    // ---------- revogar consentimento: a projecao LLM sai (P2) ----------
+    assert(farolcompor_passo() == 1);          // fio principal adota a cena
+    assert(farolcompor_cena_adotada(NULL, llmCandT, &nLlm, FAROL_COMPOR_CAND_MAX, NULL));
+    assert(nLlm >= 1 && !strcmp(llmCandT[0].imdb, "tt0004321"));
+    snprintf(llm0, sizeof llm0, "tt0000906");
+    volta();                                   // Home fora: readota a LLM
+    assert(idxFil("farol_gosto1") >= 0);
+    assert(!strcmp(cat_item(cat_fileira(idxFil("farol_gosto1"))->ini)->imdb, llm0));
+    assert(strcmp(llm0, det0) != 0);
+    farolcompor_definir_consentimento(0);      // revoga
+    volta();
+    assert(idxFil("farol_gosto1") >= 0);
+    assert(!strcmp(cat_item(cat_fileira(idxFil("farol_gosto1"))->ini)->imdb, det0) &&
+           "projecao LLM sobreviveu a revogacao do consentimento");
+    puts("ok  revogar consentimento: a fileira deterministica volta");
+    farolcompor_definir_consentimento(0);
+    farolcompor_esquecer();
+    T_diaN = 0;
+    T_visivel = 1;
+  }
 
   printf("farol_home: tudo ok\n");
   return 0;

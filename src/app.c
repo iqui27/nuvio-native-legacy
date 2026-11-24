@@ -35,6 +35,7 @@
 #include "dormiu.h"
 #include "farolsinal.h"
 #include "farolpeca.h"
+#include "farolcompor.h"
 #include "descanso.h"
 #include "iconeapp.h"
 #include "logoapp.h"
@@ -4386,6 +4387,7 @@ static void perfilEncerrarSessao(void) {
   ilhaacao_abrir_sessao();
   agendaviso_abrir_sessao();
   ilha_abrir_sessao();
+  farolcompor_trocar_perfil();
 }
 
 static void perfilAbrirSessao(int antes) {
@@ -4424,6 +4426,7 @@ static void perfilAbrirSessao(int antes) {
   enquete_perfil_trocado();
   juntos_perfil_trocado();
   simkl_biblioteca_iniciar();   // biblioteca Simkl: copia guardada + rede em 2o plano
+  farolcompor_carregar_cache_home();
   perfilSessaoAplicada = sessao;
 }
 
@@ -5216,6 +5219,12 @@ void app_evento(const SDL_Event *e) {
         else trocarTela(TELA_AJUSTES);
         menu_definir_destino(MENU_AJUSTES);
       }
+    } else if (rped == RESOLVER_PEDIU_CONTAS) {
+      menu_fechar();
+      ajustes_abrir_no_trakt();
+      if (tela == TELA_AJUSTES) ajustes_iniciar();
+      else trocarTela(TELA_AJUSTES);
+      menu_definir_destino(MENU_AJUSTES);
     } else if (rped == RESOLVER_PEDIU_PLAYER_EXT) {
       // FAROL: a fonte que falhou sai para o player externo instalado,
       // vinculada a tentativa diagnosticada.
@@ -6549,6 +6558,7 @@ void app_atualizar(float dt, Uint32 agora) {
     // pendencias de ficha, varredura e gravacao do gosto — o aquecimento e a
     // fila lenta so andam em momentoBom (sem player), como o caca_passo.
     farolsinal_passo(!player_aberto());
+    farolcompor_passo();
     travarede_passo(agora);
     // O "Reconectar" do Trakt (modal da ilha): Ajustes, na linha do Trakt.
     if (ilhasinais_pediu_trakt() && !player_aberto()) {
@@ -9093,6 +9103,7 @@ void app_encerrar(void) {
   avisos_encerrar();   // saida limpa: apaga a marca de sessao viva
   diario_gravar_agora();
   farolsinal_sair();     // modelo, estado e fichas do Farol vao para o disco
+  farolcompor_encerrar();
   preparoInvalidar();
   proximopreparo_encerrar();
   if (fioFonteVivo) {
