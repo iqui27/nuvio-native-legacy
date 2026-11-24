@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-24T15:50:30+00:00",
+    "updatedAt": "2026-11-24T17:48:14+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -19,7 +19,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-24T15:34:00+00:00",
+    "lastVpsReportedAt": "2026-11-24T17:27:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -130,7 +130,7 @@
         "activeSlotsKnown": false,
         "activeCorrections": [],
         "reviewItems": [
-          "farol-32"
+          "farol-55"
         ],
         "reviewCount": 1,
         "reviewCountInferred": true,
@@ -147,6 +147,7 @@
           "farol-25",
           "farol-27",
           "farol-31",
+          "farol-32",
           "farol-33",
           "farol-34",
           "farol-49",
@@ -179,11 +180,12 @@
           "farol-52",
           "farol-53",
           "farol-54",
-          "farol-57"
+          "farol-57",
+          "farol-55"
         ],
-        "note": "57 aprovado com ressalvas r8; 32 r2 Opus/Pi permanece em revisão sem parecer novo. #55 aguarda seu aceite. Sem nova contagem global.",
-        "sourceLine": 390,
-        "reportedAt": "2026-11-24T15:34:00+00:00",
+        "note": "32 aprovado r2; 55 entregue em e65b300296, r1b Opus/claudeAgent IBM sem parecer após 408 de upload no Pi. Sem nova contagem global.",
+        "sourceLine": 394,
+        "reportedAt": "2026-11-24T17:27:00+00:00",
         "inferredFromLatestReports": true,
         "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
@@ -193,26 +195,26 @@
         "knownIbmCorrectionDispatches": [],
         "activeReviews": [
           {
-            "item": "farol-32",
-            "sha": "7b17dd195c",
-            "round": "r2",
+            "item": "farol-55",
+            "sha": "e65b300296",
+            "round": "r1b",
+            "previousAttempt": "r1",
             "status": "launched_reported",
+            "reviewer": "Opus",
+            "executor": "claudeAgent",
+            "host": "ibm-ephemeral",
             "verdict": null,
             "verdictIssued": false,
-            "reviewer": "Opus",
             "reportReadLocally": false,
-            "hostNotReiteratedInSummary": true,
-            "sourceLine": 389,
-            "reportedAt": "2026-11-24T15:04:00+00:00",
-            "reportedAtPrecision": "minute",
-            "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
-            "reportedSummary": "389 15:04 farol-32 REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi)",
-            "executor": "Pi"
+            "sourceLine": 394,
+            "reportedAt": "2026-11-24T17:27:00+00:00",
+            "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa737a734b90b1dc86b38e0373)",
+            "rawVpsLine": "2026-11-24T17:27:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 r1 Pi IBM falhou em 408 upload magpie; relancado r1b com claudeAgent Opus na IBM"
           }
         ],
         "quotaResetReported": false,
-        "sourceLine": 390,
-        "reportedAt": "2026-11-24T15:34:00+00:00",
+        "sourceLine": 394,
+        "reportedAt": "2026-11-24T17:27:00+00:00",
         "inferredFromLatestReports": true,
         "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
@@ -256,7 +258,7 @@
           "dockerImageReadyReported": true,
           "testRunner": "rodar-testes.sh",
           "testRunnerReadyReported": true,
-          "claudeAgent": "Login/leitura liberados às 03h05; execução atingiu limite de 5h às 04h19, retorno informado às 08h20 UTC (linha 265), sem retomada confirmada",
+          "claudeAgent": "Revisão FAROL55-r1b lançada com Opus às 17h27 UTC (linha 394); não é confirmação geral de disponibilidade ou reset de cota.",
           "previousLimitation": "Às 02h59, claudeAgent logado, uso só para push enquanto T3 0.1.9 não devolvia retorno; superado pela atualização das 03h05",
           "integrations": {
             "antigravity": {
@@ -281,7 +283,26 @@
               "testedLocally": false
             }
           },
-          "previousClaudeAgentStatus": "liberado conforme VPS; não executado nesta VM"
+          "previousClaudeAgentStatus": "liberado conforme VPS; não executado nesta VM",
+          "previousClaudeAgentStatuses": [
+            {
+              "status": "Login/leitura liberados às 03h05; execução atingiu limite de 5h às 04h19, retorno informado às 08h20 UTC (linha 265), sem retomada confirmada",
+              "sourceLine": 248,
+              "reportedAt": "2026-11-24T03:05:00+00:00"
+            }
+          ],
+          "latestClaudeAgentDispatch": {
+            "item": "farol-55",
+            "round": "r1b",
+            "reviewer": "Opus",
+            "executor": "claudeAgent",
+            "host": "ibm-ephemeral",
+            "quotaResetReported": false,
+            "sourceLine": 394,
+            "reportedAt": "2026-11-24T17:27:00+00:00",
+            "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa737a734b90b1dc86b38e0373)",
+            "rawVpsLine": "2026-11-24T17:27:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 r1 Pi IBM falhou em 408 upload magpie; relancado r1b com claudeAgent Opus na IBM"
+          }
         },
         "pokeSender": {
           "status": "persistent_key_configured_reported",
@@ -291,16 +312,20 @@
         },
         "vpsDisk": {
           "mount": "/",
-          "freeGbReported": 39,
+          "freeGbReported": 15,
           "floorGbReported": 20,
           "atFloorReported": false,
-          "reportedAt": "2026-11-24T04:33:00+00:00",
-          "sourceLine": 269,
-          "newBuildRoute": "FAROL52-r2 com Sol/Codex na VPS; FAROL33-r1 permanece na IBM sem duplicação",
+          "reportedAt": "2026-11-24T17:11:00+00:00",
+          "sourceLine": 393,
+          "newBuildRoute": "IBM: r1 do 55 com Opus/Pi; nenhum cleanup executado nesta VM",
           "measuredLocally": false,
-          "belowFloorReported": false,
-          "status": "LIBERADA",
-          "pausedScopes": [],
+          "belowFloorReported": true,
+          "status": "BLOQUEADA",
+          "pausedScopes": [
+            "builds",
+            "runs",
+            "revisões"
+          ],
           "previousReports": [
             {
               "mount": "/",
@@ -420,16 +445,90 @@
                 "sourceLine": 268,
                 "reportedAt": "2026-11-24T04:33:00+00:00"
               }
+            },
+            {
+              "mount": "/",
+              "freeGbReported": 39,
+              "floorGbReported": 20,
+              "atFloorReported": false,
+              "reportedAt": "2026-11-24T04:33:00+00:00",
+              "sourceLine": 269,
+              "newBuildRoute": "FAROL52-r2 com Sol/Codex na VPS; FAROL33-r1 permanece na IBM sem duplicação",
+              "measuredLocally": false,
+              "belowFloorReported": false,
+              "status": "LIBERADA",
+              "pausedScopes": [],
+              "lastThresholdConfirmation": {
+                "belowFloorReported": false,
+                "floorGb": 20,
+                "freeGbReported": 39,
+                "reportedAt": "2026-11-24T04:33:00+00:00",
+                "sourceLine": 269,
+                "note": "39G reconfirmados no lançamento da r2; limpeza reportada na linha 268, não realizada nesta VM"
+              },
+              "previousThresholdConfirmations": [
+                {
+                  "belowFloorReported": true,
+                  "floorGb": 20,
+                  "reportedAt": "2026-11-24T04:06:00+00:00",
+                  "sourceLine": 259,
+                  "note": "Confirma apenas abaixo do piso; não é nova medição de 15G, que permanece datada de 04h00 UTC"
+                },
+                {
+                  "belowFloorReported": true,
+                  "floorGb": 20,
+                  "reportedAt": "2026-11-24T04:09:00+00:00",
+                  "sourceLine": 263,
+                  "note": "Confirma apenas abaixo do piso; medição de 15G permanece datada de 04h00 UTC, linha 257"
+                },
+                {
+                  "belowFloorReported": true,
+                  "floorGb": 20,
+                  "reportedAt": "2026-11-24T04:12:00+00:00",
+                  "sourceLine": 264,
+                  "note": "Confirma apenas abaixo do piso; medição de 15G permanece datada de 04h00 UTC, linha 257"
+                },
+                {
+                  "belowFloorReported": true,
+                  "floorGb": 20,
+                  "freeGbReported": 15,
+                  "reportedAt": "2026-11-24T04:19:00+00:00",
+                  "sourceLine": 265,
+                  "note": "VPS reconfirma 15G livres abaixo do piso; não é medição desta VM"
+                },
+                {
+                  "belowFloorReported": true,
+                  "floorGb": 20,
+                  "freeGbReported": 15,
+                  "reportedAt": "2026-11-24T04:26:00+00:00",
+                  "sourceLine": 266,
+                  "note": "VPS reconfirma 15G e pausa; rota IBM não implica limpeza de disco"
+                },
+                {
+                  "belowFloorReported": false,
+                  "floorGb": 20,
+                  "freeGbReported": 39,
+                  "reportedAt": "2026-11-24T04:33:00+00:00",
+                  "sourceLine": 268,
+                  "note": "VPS relata disco liberado; não é medição ou limpeza realizada nesta VM"
+                }
+              ],
+              "cleanupReported": {
+                "fromFreeGb": 15,
+                "toFreeGb": 39,
+                "symlinkedToBlockVolume": [
+                  "toolchains",
+                  "ccache",
+                  "gradle-prime"
+                ],
+                "target": "/mnt/block-volume",
+                "globalRunsArchivedReported": true,
+                "performedLocally": false,
+                "sourceLine": 268,
+                "reportedAt": "2026-11-24T04:33:00+00:00"
+              }
             }
           ],
-          "lastThresholdConfirmation": {
-            "belowFloorReported": false,
-            "floorGb": 20,
-            "freeGbReported": 39,
-            "reportedAt": "2026-11-24T04:33:00+00:00",
-            "sourceLine": 269,
-            "note": "39G reconfirmados no lançamento da r2; limpeza reportada na linha 268, não realizada nesta VM"
-          },
           "previousThresholdConfirmations": [
             {
               "belowFloorReported": true,
@@ -490,7 +589,9 @@
             "performedLocally": false,
             "sourceLine": 268,
             "reportedAt": "2026-11-24T04:33:00+00:00"
-          }
+          },
+          "pausedScopesInferredFromFloorRule": true,
+          "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa7295739780526ff8baa2d85d)"
         },
         "ibmClaudeAgent": {
           "status": "quota_exhausted_reported",
@@ -844,18 +945,23 @@
         "farol-32": {
           "sha": "7b17dd195c",
           "round": "r2",
-          "status": "launched_reported",
-          "verdict": null,
-          "verdictIssued": false,
+          "status": "approved_with_reservations_reported",
+          "verdict": "APROVADO_COM_RESSALVAS",
+          "verdictIssued": true,
           "reviewer": "Opus",
           "reportReadLocally": false,
           "hostNotReiteratedInSummary": true,
-          "sourceLine": 389,
-          "reportedAt": "2026-11-24T15:04:00+00:00",
+          "sourceLine": 391,
+          "reportedAt": "2026-11-24T16:18:00+00:00",
           "reportedAtPrecision": "minute",
-          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa70717049b4e356a2d6ea045a)",
           "reportedSummary": "389 15:04 farol-32 REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi)",
-          "executor": "Pi"
+          "executor": "Pi",
+          "findingCounts": {
+            "P0": 0,
+            "P1": 0
+          },
+          "rawVpsLine": "2026-11-24T16:18:00Z farol-32 APROVADA agente/21z-farol-32@7b17dd195c Opus r2 APROVADO_COM_RESSALVAS (0 P0/P1); #55 destravada!"
         },
         "farol-54": {
           "sha": "40a75c35d6",
@@ -876,6 +982,22 @@
             "P1": 0,
             "P2": 5
           }
+        },
+        "farol-55": {
+          "sha": "e65b300296",
+          "round": "r1b",
+          "previousAttempt": "r1",
+          "status": "launched_reported",
+          "reviewer": "Opus",
+          "executor": "claudeAgent",
+          "host": "ibm-ephemeral",
+          "verdict": null,
+          "verdictIssued": false,
+          "reportReadLocally": false,
+          "sourceLine": 394,
+          "reportedAt": "2026-11-24T17:27:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa737a734b90b1dc86b38e0373)",
+          "rawVpsLine": "2026-11-24T17:27:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 r1 Pi IBM falhou em 408 upload magpie; relancado r1b com claudeAgent Opus na IBM"
         }
       },
       "wave2ApprovalGate": {
@@ -887,51 +1009,54 @@
         "approvalStatus": "APROVADO_COM_RESSALVAS"
       },
       "vpsExecution": {
-        "status": "LIBERADA",
-        "diskFreeGb": 39,
-        "diskSourceLine": 268,
-        "diskReportedAt": "2026-11-24T04:33:00+00:00",
+        "status": "BLOQUEADA",
+        "diskFreeGb": 15,
+        "diskFloorGb": 20,
+        "diskSourceLine": 393,
+        "diskReportedAt": "2026-11-24T17:11:00+00:00",
         "activeReviews": [],
         "activeReviewsKnown": false,
-        "note": "Última medição de disco preservada, não repetida; host da r2 do 32 não reiterado.",
-        "sourceLine": 390,
-        "reportedAt": "2026-11-24T15:34:00+00:00",
+        "note": "VPS / em 15G (<20G); r1 e r1b do 55 roteadas à IBM. Nenhuma nova limpeza, liberação ou ocupação global reportada.",
+        "sourceLine": 394,
+        "reportedAt": "2026-11-24T17:27:00+00:00",
         "inferredFromLatestReports": true,
         "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
       "parallelReviews": {
-        "items": [],
+        "items": [
+          "farol-55"
+        ],
         "count": null,
         "countKnown": false,
-        "note": "32 r2 Opus/Pi permanece ativa; host não reiterado. Sem contagem global.",
-        "sourceLine": 390,
-        "reportedAt": "2026-11-24T15:34:00+00:00",
+        "note": "R1b do 55 na IBM com claudeAgent Opus; contagem global desconhecida.",
+        "sourceLine": 394,
+        "reportedAt": "2026-11-24T17:27:00+00:00",
         "inferredFromLatestReports": true,
         "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
       "reviewRouting": {
         "reviews": [
           {
-            "item": "farol-32",
-            "sha": "7b17dd195c",
-            "round": "r2",
+            "item": "farol-55",
+            "sha": "e65b300296",
+            "round": "r1b",
+            "previousAttempt": "r1",
             "status": "launched_reported",
+            "reviewer": "Opus",
+            "executor": "claudeAgent",
+            "host": "ibm-ephemeral",
             "verdict": null,
             "verdictIssued": false,
-            "reviewer": "Opus",
             "reportReadLocally": false,
-            "hostNotReiteratedInSummary": true,
-            "sourceLine": 389,
-            "reportedAt": "2026-11-24T15:04:00+00:00",
-            "reportedAtPrecision": "minute",
-            "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
-            "reportedSummary": "389 15:04 farol-32 REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi)",
-            "executor": "Pi"
+            "sourceLine": 394,
+            "reportedAt": "2026-11-24T17:27:00+00:00",
+            "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa737a734b90b1dc86b38e0373)",
+            "rawVpsLine": "2026-11-24T17:27:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 r1 Pi IBM falhou em 408 upload magpie; relancado r1b com claudeAgent Opus na IBM"
           }
         ],
         "activeCorrections": [],
-        "sourceLine": 390,
-        "reportedAt": "2026-11-24T15:34:00+00:00",
+        "sourceLine": 394,
+        "reportedAt": "2026-11-24T17:27:00+00:00",
         "inferredFromLatestReports": true,
         "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
@@ -2777,6 +2902,172 @@
           },
           "supersededAt": "2026-11-24T15:50:30+00:00",
           "sourceLine": 390
+        },
+        {
+          "field": "implementation",
+          "state": {
+            "activeItems": [],
+            "activeSlots": null,
+            "activeSlotsKnown": false,
+            "activeCorrections": [],
+            "reviewItems": [
+              "farol-32"
+            ],
+            "reviewCount": 1,
+            "reviewCountInferred": true,
+            "approvedItems": [
+              "farol-15",
+              "farol-16",
+              "farol-17",
+              "farol-18",
+              "farol-19",
+              "farol-20",
+              "farol-21",
+              "farol-22",
+              "farol-23",
+              "farol-25",
+              "farol-27",
+              "farol-31",
+              "farol-33",
+              "farol-34",
+              "farol-49",
+              "farol-50",
+              "farol-51",
+              "farol-52",
+              "farol-53",
+              "farol-54",
+              "farol-57"
+            ],
+            "deliveredReported": [
+              "farol-15",
+              "farol-16",
+              "farol-17",
+              "farol-18",
+              "farol-19",
+              "farol-20",
+              "farol-21",
+              "farol-22",
+              "farol-23",
+              "farol-25",
+              "farol-27",
+              "farol-31",
+              "farol-32",
+              "farol-33",
+              "farol-34",
+              "farol-49",
+              "farol-50",
+              "farol-51",
+              "farol-52",
+              "farol-53",
+              "farol-54",
+              "farol-57"
+            ],
+            "note": "57 aprovado com ressalvas r8; 32 r2 Opus/Pi permanece em revisão sem parecer novo. #55 aguarda seu aceite. Sem nova contagem global.",
+            "sourceLine": 390,
+            "reportedAt": "2026-11-24T15:34:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
+          },
+          "supersededAt": "2026-11-24T17:48:14+00:00",
+          "sourceLine": 394
+        },
+        {
+          "field": "capacity",
+          "state": {
+            "ibmCurrentActiveSlots": null,
+            "ibmCurrentActiveSlotsKnown": false,
+            "knownIbmCorrectionDispatches": [],
+            "activeReviews": [
+              {
+                "item": "farol-32",
+                "sha": "7b17dd195c",
+                "round": "r2",
+                "status": "launched_reported",
+                "verdict": null,
+                "verdictIssued": false,
+                "reviewer": "Opus",
+                "reportReadLocally": false,
+                "hostNotReiteratedInSummary": true,
+                "sourceLine": 389,
+                "reportedAt": "2026-11-24T15:04:00+00:00",
+                "reportedAtPrecision": "minute",
+                "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+                "reportedSummary": "389 15:04 farol-32 REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi)",
+                "executor": "Pi"
+              }
+            ],
+            "quotaResetReported": false,
+            "sourceLine": 390,
+            "reportedAt": "2026-11-24T15:34:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
+          },
+          "supersededAt": "2026-11-24T17:48:14+00:00",
+          "sourceLine": 394
+        },
+        {
+          "field": "parallelReviews",
+          "state": {
+            "items": [],
+            "count": null,
+            "countKnown": false,
+            "note": "32 r2 Opus/Pi permanece ativa; host não reiterado. Sem contagem global.",
+            "sourceLine": 390,
+            "reportedAt": "2026-11-24T15:34:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
+          },
+          "supersededAt": "2026-11-24T17:48:14+00:00",
+          "sourceLine": 394
+        },
+        {
+          "field": "reviewRouting",
+          "state": {
+            "reviews": [
+              {
+                "item": "farol-32",
+                "sha": "7b17dd195c",
+                "round": "r2",
+                "status": "launched_reported",
+                "verdict": null,
+                "verdictIssued": false,
+                "reviewer": "Opus",
+                "reportReadLocally": false,
+                "hostNotReiteratedInSummary": true,
+                "sourceLine": 389,
+                "reportedAt": "2026-11-24T15:04:00+00:00",
+                "reportedAtPrecision": "minute",
+                "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+                "reportedSummary": "389 15:04 farol-32 REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi)",
+                "executor": "Pi"
+              }
+            ],
+            "activeCorrections": [],
+            "sourceLine": 390,
+            "reportedAt": "2026-11-24T15:34:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
+          },
+          "supersededAt": "2026-11-24T17:48:14+00:00",
+          "sourceLine": 394
+        },
+        {
+          "field": "vpsExecution",
+          "state": {
+            "status": "LIBERADA",
+            "diskFreeGb": 39,
+            "diskSourceLine": 268,
+            "diskReportedAt": "2026-11-24T04:33:00+00:00",
+            "activeReviews": [],
+            "activeReviewsKnown": false,
+            "note": "Última medição de disco preservada, não repetida; host da r2 do 32 não reiterado.",
+            "sourceLine": 390,
+            "reportedAt": "2026-11-24T15:34:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
+          },
+          "supersededAt": "2026-11-24T17:48:14+00:00",
+          "sourceLine": 394
         }
       ],
       "operationalMilestones": [
@@ -2794,7 +3085,7 @@
         }
       ]
     },
-    "lastVpsLine": 390,
+    "lastVpsLine": 394,
     "wave2Base": {
       "branch": "agente/base-21f-farol-onda2",
       "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -2817,15 +3108,16 @@
       "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
     },
     "criticalPath": {
-      "title": "Uma revisão ainda aberta no relato",
-      "subtitle": "32 r2 sem parecer novo · 55 aguarda o aceite do 32",
+      "title": "Revisão em andamento na IBM",
+      "subtitle": "55 r1b sem parecer · Pi r1 interrompido por upload 408 · VPS abaixo do piso",
       "items": [
-        "farol-32"
+        "farol-55"
       ],
       "sourceLines": [
-        390,
-        389,
-        387
+        394,
+        393,
+        392,
+        391
       ],
       "integrationVerified": false
     }
@@ -7893,12 +8185,12 @@
         "farol-31"
       ],
       "allDependencies": false,
-      "status": "REVISAO",
+      "status": "APROVADA",
       "wave": "E",
       "sha": "7b17dd195c",
       "batch": null,
-      "note": "REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi) Revisão lançada; sem parecer novo. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
-      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+      "note": "Opus aprovou com ressalvas a r2 em 7b17dd195c: 0 P0/P1; #55 destravada. Contagem P2 não informada. Aceite não é integração ou TV física.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa70717049b4e356a2d6ea045a)",
       "verified": false,
       "reportHistory": [
         {
@@ -7936,6 +8228,14 @@
           "reportedAtPrecision": "minute",
           "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
           "reportedSummary": "389 15:04 farol-32 REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi)"
+        },
+        {
+          "previousStatus": "REVISAO",
+          "previousSha": "7b17dd195c",
+          "sourceLine": 391,
+          "reportedAt": "2026-11-24T16:18:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa70717049b4e356a2d6ea045a)",
+          "rawVpsLine": "2026-11-24T16:18:00Z farol-32 APROVADA agente/21z-farol-32@7b17dd195c Opus r2 APROVADO_COM_RESSALVAS (0 P0/P1); #55 destravada!"
         }
       ],
       "workBase": {
@@ -7964,11 +8264,12 @@
       },
       "operationalWave": "E",
       "integrationVerified": false,
-      "updatedAt": "2026-11-24T15:05:51+00:00",
-      "reportedAt": "2026-11-24T15:04:00+00:00",
+      "updatedAt": "2026-11-24T17:48:14+00:00",
+      "reportedAt": "2026-11-24T16:18:00+00:00",
       "owner": "Revisão · Opus / Pi (host não reiterado)",
-      "verificationSummary": "Revisão lançada; sem parecer novo.",
+      "verificationSummary": "Aprovado com ressalvas r2; integração/TV não confirmadas.",
       "previousNotes": [
+        "REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi) Revisão lançada; sem parecer novo. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
         "REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM) Correção despachada; nenhum novo SHA entregue. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
         "REVISAO r1 @bf37d8bc6b Revisão lançada; sem parecer novo. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
         "IMPLEMENTANDO sobre farol-31@0563840363 (Neon IBM) Base de trabalho, não commit de entrega nem integração. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM."
@@ -8046,18 +8347,23 @@
       "review": {
         "sha": "7b17dd195c",
         "round": "r2",
-        "status": "launched_reported",
-        "verdict": null,
-        "verdictIssued": false,
+        "status": "approved_with_reservations_reported",
+        "verdict": "APROVADO_COM_RESSALVAS",
+        "verdictIssued": true,
         "reviewer": "Opus",
         "reportReadLocally": false,
         "hostNotReiteratedInSummary": true,
-        "sourceLine": 389,
-        "reportedAt": "2026-11-24T15:04:00+00:00",
+        "sourceLine": 391,
+        "reportedAt": "2026-11-24T16:18:00+00:00",
         "reportedAtPrecision": "minute",
-        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+        "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa70717049b4e356a2d6ea045a)",
         "reportedSummary": "389 15:04 farol-32 REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi)",
-        "executor": "Pi"
+        "executor": "Pi",
+        "findingCounts": {
+          "P0": 0,
+          "P1": 0
+        },
+        "rawVpsLine": "2026-11-24T16:18:00Z farol-32 APROVADA agente/21z-farol-32@7b17dd195c Opus r2 APROVADO_COM_RESSALVAS (0 P0/P1); #55 destravada!"
       },
       "blockers": [],
       "previousReviews": [
@@ -8088,6 +8394,22 @@
           "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
           "reportedSummary": "386 14:38 farol-32 REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)",
           "reviewerNotReiteratedInSummary": true
+        },
+        {
+          "sha": "7b17dd195c",
+          "round": "r2",
+          "status": "launched_reported",
+          "verdict": null,
+          "verdictIssued": false,
+          "reviewer": "Opus",
+          "reportReadLocally": false,
+          "hostNotReiteratedInSummary": true,
+          "sourceLine": 389,
+          "reportedAt": "2026-11-24T15:04:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+          "reportedSummary": "389 15:04 farol-32 REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi)",
+          "executor": "Pi"
         }
       ],
       "latestRejectedSha": "bf37d8bc6b",
@@ -8177,7 +8499,23 @@
           "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
           "reportedSummary": "386 14:38 farol-32 REPROVADO r1 @bf37d8bc6b (P1 Samsung .tpk release perdeu teclado/mic) → FAROL32B (Neon IBM)"
         }
-      ]
+      ],
+      "approval": {
+        "sha": "7b17dd195c",
+        "round": "r2",
+        "reviewer": "Opus",
+        "verdict": "APROVADO_COM_RESSALVAS",
+        "findingCounts": {
+          "P0": 0,
+          "P1": 0
+        },
+        "integrationVerified": false,
+        "verified": false,
+        "sourceLine": 391,
+        "reportedAt": "2026-11-24T16:18:00+00:00",
+        "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa70717049b4e356a2d6ea045a)",
+        "rawVpsLine": "2026-11-24T16:18:00Z farol-32 APROVADA agente/21z-farol-32@7b17dd195c Opus r2 APROVADO_COM_RESSALVAS (0 P0/P1); #55 destravada!"
+      }
     },
     {
       "id": "farol-33",
@@ -11315,35 +11653,41 @@
         "farol-54"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "REVISAO",
       "wave": "E",
-      "sha": null,
+      "sha": "e65b300296",
       "batch": null,
-      "note": "54 aprovado com ressalvas em 40a75c35d6 (r1, Opus, 0 P0/P1 e 5 P2). #55 aguarda somente o aceite do #32; sem início de implementação reportado. Integração e TV continuam separadas.",
-      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+      "note": "Tentativa r1 com Pi na IBM interrompida por HTTP 408 no upload magpie, sem parecer e sem reprovação. R1b relançada com claudeAgent Opus na IBM sobre o mesmo e65b300296; aguarda parecer. VPS / em 15G (<20G), sem limpeza ou liberação reportada; integração e TV física pendentes.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa737a734b90b1dc86b38e0373)",
       "verified": false,
       "previousNotes": [
+        "Hydrogen IBM entregou e65b300296; r1 lançada com Opus/Pi na IBM, sem parecer. VPS / novamente em 15G, abaixo do piso de 20G; base e entrega mantidas separadas.",
+        "55 iniciado em agente/21z-farol-55 sobre agente/base-21f-farol-55@04b3f4541f (#54+#32), delegado ao Hydrogen IBM. A base não é commit de entrega ou integração.",
+        "55 destravado pelo aceite com ressalvas do 32; início ainda não reportado nesta linha.",
+        "54 aprovado com ressalvas em 40a75c35d6 (r1, Opus, 0 P0/P1 e 5 P2). #55 aguarda somente o aceite do #32; sem início de implementação reportado. Integração e TV continuam separadas.",
         "TV Samsung pendente."
       ],
       "approvalGate": {
         "dependency": "farol-32",
-        "satisfied": false,
-        "waitingOnlyOn": [
-          "farol-32"
-        ],
+        "satisfied": true,
+        "waitingOnlyOn": [],
         "resolvedDependencies": [
           {
             "item": "farol-54",
             "sha": "40a75c35d6",
             "status": "APROVADO_COM_RESSALVAS"
+          },
+          {
+            "item": "farol-32",
+            "sha": "7b17dd195c",
+            "status": "APROVADO_COM_RESSALVAS"
           }
         ],
-        "scope": "Execução aguarda aceite do 32, não integração do 54",
-        "sourceLine": 387,
-        "reportedAt": "2026-11-24T15:02:00+00:00",
-        "reportedAtPrecision": "minute",
-        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
-        "reportedSummary": "387 15:02 farol-54 APROVADO_COM_RESSALVAS r1 @40a75c35d6 (Opus; 0 P0/P1, 5 P2; #55 aguarda só #32)"
+        "scope": "Execução destravada; não confirma integração",
+        "sourceLine": 391,
+        "reportedAt": "2026-11-24T16:18:00+00:00",
+        "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa70717049b4e356a2d6ea045a)",
+        "rawVpsLine": "2026-11-24T16:18:00Z farol-32 APROVADA agente/21z-farol-32@7b17dd195c Opus r2 APROVADO_COM_RESSALVAS (0 P0/P1); #55 destravada!"
       },
       "dependencyHistory": [
         {
@@ -11365,10 +11709,199 @@
           "reportedAtPrecision": "minute",
           "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
           "reportedSummary": "387 15:02 farol-54 APROVADO_COM_RESSALVAS r1 @40a75c35d6 (Opus; 0 P0/P1, 5 P2; #55 aguarda só #32)"
+        },
+        {
+          "dependency": "farol-32",
+          "satisfied": true,
+          "waitingOnlyOn": [],
+          "resolvedDependencies": [
+            {
+              "item": "farol-54",
+              "sha": "40a75c35d6",
+              "status": "APROVADO_COM_RESSALVAS"
+            },
+            {
+              "item": "farol-32",
+              "sha": "7b17dd195c",
+              "status": "APROVADO_COM_RESSALVAS"
+            }
+          ],
+          "scope": "Execução destravada; não confirma integração",
+          "sourceLine": 391,
+          "reportedAt": "2026-11-24T16:18:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa70717049b4e356a2d6ea045a)",
+          "rawVpsLine": "2026-11-24T16:18:00Z farol-32 APROVADA agente/21z-farol-32@7b17dd195c Opus r2 APROVADO_COM_RESSALVAS (0 P0/P1); #55 destravada!"
         }
       ],
-      "updatedAt": "2026-11-24T15:05:51+00:00",
-      "reportedAt": "2026-11-24T15:02:00+00:00"
+      "updatedAt": "2026-11-24T17:48:14+00:00",
+      "reportedAt": "2026-11-24T17:27:00+00:00",
+      "previousApprovalGates": [
+        {
+          "dependency": "farol-32",
+          "satisfied": false,
+          "waitingOnlyOn": [
+            "farol-32"
+          ],
+          "resolvedDependencies": [
+            {
+              "item": "farol-54",
+              "sha": "40a75c35d6",
+              "status": "APROVADO_COM_RESSALVAS"
+            }
+          ],
+          "scope": "Execução aguarda aceite do 32, não integração do 54",
+          "sourceLine": 387,
+          "reportedAt": "2026-11-24T15:02:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+          "reportedSummary": "387 15:02 farol-54 APROVADO_COM_RESSALVAS r1 @40a75c35d6 (Opus; 0 P0/P1, 5 P2; #55 aguarda só #32)"
+        }
+      ],
+      "reportHistory": [
+        {
+          "previousStatus": "A_FAZER",
+          "previousSha": null,
+          "sourceLine": 392,
+          "reportedAt": "2026-11-24T16:20:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa7192701cb3c97a40b7fe84ee)",
+          "rawVpsLine": "2026-11-24T16:20:00Z farol-55 IMPLEMENTANDO agente/21z-farol-55 (base agente/base-21f-farol-55@04b3f4541f = #54+#32) delegada ao Hydrogen IBM"
+        },
+        {
+          "previousStatus": "IMPLEMENTANDO",
+          "previousSha": null,
+          "sourceLine": 393,
+          "reportedAt": "2026-11-24T17:11:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa7295739780526ff8baa2d85d)",
+          "rawVpsLine": "2026-11-24T17:11:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 Hydrogen IBM entregou; em revisao r1 Opus via Pi na IBM (VPS / = 15G < 20G)"
+        },
+        {
+          "previousStatus": "REVISAO",
+          "previousSha": "e65b300296",
+          "sourceLine": 394,
+          "reportedAt": "2026-11-24T17:27:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa737a734b90b1dc86b38e0373)",
+          "rawVpsLine": "2026-11-24T17:27:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 r1 Pi IBM falhou em 408 upload magpie; relancado r1b com claudeAgent Opus na IBM"
+        }
+      ],
+      "branch": "agente/21z-farol-55",
+      "operationalWave": "E",
+      "workBase": {
+        "branch": "agente/base-21f-farol-55",
+        "sha": "04b3f4541f",
+        "components": [
+          {
+            "item": "farol-54",
+            "sha": "40a75c35d6"
+          },
+          {
+            "item": "farol-32",
+            "sha": "7b17dd195c"
+          }
+        ],
+        "componentPinsInheritedFromReports": true,
+        "integrationVerified": false,
+        "sourceLine": 392,
+        "reportedAt": "2026-11-24T16:20:00+00:00",
+        "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa7192701cb3c97a40b7fe84ee)",
+        "rawVpsLine": "2026-11-24T16:20:00Z farol-55 IMPLEMENTANDO agente/21z-farol-55 (base agente/base-21f-farol-55@04b3f4541f = #54+#32) delegada ao Hydrogen IBM"
+      },
+      "implementation": {
+        "status": "delivered_reported",
+        "model": "Gemini Hydrogen",
+        "host": "ibm-ephemeral",
+        "sha": "e65b300296",
+        "sourceLine": 393,
+        "reportedAt": "2026-11-24T17:11:00+00:00",
+        "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa7295739780526ff8baa2d85d)",
+        "rawVpsLine": "2026-11-24T17:11:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 Hydrogen IBM entregou; em revisao r1 Opus via Pi na IBM (VPS / = 15G < 20G)"
+      },
+      "owner": "IBM · Opus / claudeAgent",
+      "verificationSummary": "Revisão r1b relançada após falha 408 de upload; sem parecer.",
+      "integrationVerified": false,
+      "referenceHistory": [
+        {
+          "branch": "agente/21z-farol-55",
+          "sha": null,
+          "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa7192701cb3c97a40b7fe84ee)"
+        }
+      ],
+      "latestDeliverySha": "e65b300296",
+      "delivery": {
+        "branch": "agente/21z-farol-55",
+        "sha": "e65b300296",
+        "model": "Gemini Hydrogen",
+        "host": "ibm-ephemeral",
+        "deliveryReported": true,
+        "githubVerified": false,
+        "testsReproducedLocally": false,
+        "sourceLine": 393,
+        "reportedAt": "2026-11-24T17:11:00+00:00",
+        "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa7295739780526ff8baa2d85d)",
+        "rawVpsLine": "2026-11-24T17:11:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 Hydrogen IBM entregou; em revisao r1 Opus via Pi na IBM (VPS / = 15G < 20G)"
+      },
+      "previousImplementations": [
+        {
+          "status": "launched_reported",
+          "model": "Gemini Hydrogen",
+          "host": "ibm-ephemeral",
+          "executorNotReported": true,
+          "sourceLine": 392,
+          "reportedAt": "2026-11-24T16:20:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa7192701cb3c97a40b7fe84ee)",
+          "rawVpsLine": "2026-11-24T16:20:00Z farol-55 IMPLEMENTANDO agente/21z-farol-55 (base agente/base-21f-farol-55@04b3f4541f = #54+#32) delegada ao Hydrogen IBM"
+        }
+      ],
+      "review": {
+        "sha": "e65b300296",
+        "round": "r1b",
+        "previousAttempt": "r1",
+        "status": "launched_reported",
+        "reviewer": "Opus",
+        "executor": "claudeAgent",
+        "host": "ibm-ephemeral",
+        "verdict": null,
+        "verdictIssued": false,
+        "reportReadLocally": false,
+        "sourceLine": 394,
+        "reportedAt": "2026-11-24T17:27:00+00:00",
+        "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa737a734b90b1dc86b38e0373)",
+        "rawVpsLine": "2026-11-24T17:27:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 r1 Pi IBM falhou em 408 upload magpie; relancado r1b com claudeAgent Opus na IBM"
+      },
+      "reviewInterruptions": [
+        {
+          "sha": "e65b300296",
+          "round": "r1",
+          "reviewer": "Opus",
+          "executor": "Pi",
+          "host": "ibm-ephemeral",
+          "httpStatus": 408,
+          "reason": "upload magpie",
+          "status": "interrupted_without_verdict_reported",
+          "verdict": null,
+          "verdictIssued": false,
+          "sourceLine": 394,
+          "reportedAt": "2026-11-24T17:27:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa737a734b90b1dc86b38e0373)",
+          "rawVpsLine": "2026-11-24T17:27:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 r1 Pi IBM falhou em 408 upload magpie; relancado r1b com claudeAgent Opus na IBM"
+        }
+      ],
+      "previousReviews": [
+        {
+          "sha": "e65b300296",
+          "round": "r1",
+          "status": "launched_reported",
+          "reviewer": "Opus",
+          "executor": "Pi",
+          "host": "ibm-ephemeral",
+          "verdict": null,
+          "verdictIssued": false,
+          "reportReadLocally": false,
+          "sourceLine": 393,
+          "reportedAt": "2026-11-24T17:11:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa7295739780526ff8baa2d85d)",
+          "rawVpsLine": "2026-11-24T17:11:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 Hydrogen IBM entregou; em revisao r1 Opus via Pi na IBM (VPS / = 15G < 20G)"
+        }
+      ]
     },
     {
       "id": "farol-56",
@@ -15557,6 +16090,62 @@
     }
   ],
   "events": [
+    {
+      "item": "farol-55",
+      "from": "REVISAO",
+      "to": "REVISAO",
+      "at": "2026-11-24T17:27:00+00:00",
+      "appliedAt": "2026-11-24T17:48:14+00:00",
+      "vpsLine": 394,
+      "report": "2026-11-24T17:27:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 r1 Pi IBM falhou em 408 upload magpie; relancado r1b com claudeAgent Opus na IBM",
+      "provenance": "forwarded_vps_log",
+      "sourceLine": 394,
+      "reportedAt": "2026-11-24T17:27:00+00:00",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa737a734b90b1dc86b38e0373)",
+      "rawVpsLine": "2026-11-24T17:27:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 r1 Pi IBM falhou em 408 upload magpie; relancado r1b com claudeAgent Opus na IBM"
+    },
+    {
+      "item": "farol-55",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "at": "2026-11-24T17:11:00+00:00",
+      "appliedAt": "2026-11-24T17:48:14+00:00",
+      "vpsLine": 393,
+      "report": "2026-11-24T17:11:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 Hydrogen IBM entregou; em revisao r1 Opus via Pi na IBM (VPS / = 15G < 20G)",
+      "provenance": "forwarded_vps_log",
+      "sourceLine": 393,
+      "reportedAt": "2026-11-24T17:11:00+00:00",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa7295739780526ff8baa2d85d)",
+      "rawVpsLine": "2026-11-24T17:11:00Z farol-55 REVISAO agente/21z-farol-55@e65b300296 Hydrogen IBM entregou; em revisao r1 Opus via Pi na IBM (VPS / = 15G < 20G)"
+    },
+    {
+      "item": "farol-55",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "at": "2026-11-24T16:20:00+00:00",
+      "appliedAt": "2026-11-24T17:48:14+00:00",
+      "vpsLine": 392,
+      "report": "2026-11-24T16:20:00Z farol-55 IMPLEMENTANDO agente/21z-farol-55 (base agente/base-21f-farol-55@04b3f4541f = #54+#32) delegada ao Hydrogen IBM",
+      "provenance": "forwarded_vps_log",
+      "sourceLine": 392,
+      "reportedAt": "2026-11-24T16:20:00+00:00",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa7192701cb3c97a40b7fe84ee)",
+      "rawVpsLine": "2026-11-24T16:20:00Z farol-55 IMPLEMENTANDO agente/21z-farol-55 (base agente/base-21f-farol-55@04b3f4541f = #54+#32) delegada ao Hydrogen IBM"
+    },
+    {
+      "item": "farol-32",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "at": "2026-11-24T16:18:00+00:00",
+      "appliedAt": "2026-11-24T17:48:14+00:00",
+      "vpsLine": 391,
+      "report": "2026-11-24T16:18:00Z farol-32 APROVADA agente/21z-farol-32@7b17dd195c Opus r2 APROVADO_COM_RESSALVAS (0 P0/P1); #55 destravada!",
+      "provenance": "forwarded_vps_log",
+      "sourceLine": 391,
+      "reportedAt": "2026-11-24T16:18:00+00:00",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log, encaminhado pelo Henrique (event-01a20eaa70717049b4e356a2d6ea045a)",
+      "rawVpsLine": "2026-11-24T16:18:00Z farol-32 APROVADA agente/21z-farol-32@7b17dd195c Opus r2 APROVADO_COM_RESSALVAS (0 P0/P1); #55 destravada!"
+    },
     {
       "item": "farol-57",
       "from": "REVISAO",
