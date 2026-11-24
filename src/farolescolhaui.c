@@ -1,4 +1,5 @@
-// Modo perguntas do Farol (P5 sem LLM #50 + assistente por frase #54). Ver farolescolhaui.h.
+// Modo perguntas do Farol (P5 sem LLM #50 + assistente por frase #54 + multi-TV #55).
+// Ver farolescolhaui.h. Sem estado por fio (TLS), sem log de frase/titulo/perfil/token.
 #include "farolescolhaui.h"
 #include "farolacha.h"
 #include "farolcompara.h"
@@ -6,14 +7,18 @@
 #include "faroltexto.h"
 #include "ajustes.h"
 #include "anim.h"
+#include "arteurl.h"
 #include "botoes.h"
 #include "catalogo.h"
+#include "celular.h"
+#include "entrada_texto.h"
 #include "gfx.h"
 #include "idioma.h"
 #include "layout.h"
 #include "perfilinfantil.h"
 #include "ponteiro.h"
 #include "posterprov.h"
+#include "qr.h"
 #include "sistexto.h"
 #include "tex_cache.h"
 #include "text.h"
@@ -21,6 +26,25 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+
+#if defined(RESOLVER_TESTE) && !defined(NV_VOZ_TELA_SHOT) && \
+    !defined(NV_ACHA_TELA_SHOT) && !defined(NV_FRASE_TV_SHOT) && \
+    !defined(NV_ESCOLHA_TV_SHOT) && !defined(NV_LINUX_DESKTOP)
+#define FESCUI_SEM_GL 1
+#else
+#define FESCUI_SEM_GL 0
+#include "qrtex.h"
+#endif
+
+// Ganchos fracos para testes isolados que nao linkam celular.c / qr.c / entrada_texto.c.
+__attribute__((weak)) int celular_disponivel(void) { return 0; }
+__attribute__((weak)) int celular_abrir_digitar(const char *t) { (void)t; return 0; }
+__attribute__((weak)) void celular_fechar(void) {}
+__attribute__((weak)) int celular_estado(void) { return CEL_PARADO; }
+__attribute__((weak)) const char *celular_url(void) { return ""; }
+__attribute__((weak)) int celular_pegar(char *dst, size_t n) { (void)dst; (void)n; return 0; }
+__attribute__((weak)) int qr_gerar(Qr *q, const char *texto) { (void)q; (void)texto; return 0; }
+__attribute__((weak)) int texto_sistema_voz_pelo_teclado(void) { return 0; }
 
 #define ESC_MARGEM    120.0f
 #define ESC_LARG      1680.0f
@@ -35,7 +59,20 @@
 #define ESC_PAINEL_H  320.0f
 #define ESC_VOZ_BTN_Y 680.0f
 #define ESC_PULSO_MS  1400.0f
+#define ESC_QR_LADO   248.0f
+#define ESC_QR_MOLD    12.0f
 #define ESC_SEMENTE   0x5e5d0050u   // fixa: mesmo catalogo = mesmas perguntas
+
+enum {
+  FESC_ENT_NENHUM = 0,
+  FESC_ENT_VOZ,
+  FESC_ENT_IME,
+  FESC_ENT_QR
+};
+
+static int forcaVoz = -1;
+static int forcaIme = -1;
+static int forcaCel = -1;
 
 // FALTA_TEXTO: "Nada exato…" (P5, 0 titulos) e "Achamos este" / "Achamos
 // estes" ainda nao tem chave nas tabelas src/idioma_*.h (fora da fronteira
@@ -61,19 +98,26 @@ static struct {
   int      nCand;
   unsigned rev;
   FarolEsc motor;
-  int      foco;                    // opcao/cartaz ou FESCUI_FOCO_VOLTAR
+  int      foco;                    // opcao/cartaz ou FESCUI_FOCO_*
   int      focoAntesVoltar;         // para o ↑ voltar de onde saiu
   int      escolhido[FESC_PERG_MAX];   // opcao oferecida escolhida em cada passo
   float    anim[FESC_OPC_MAX];
   float    animVoltar;
   float    animVoz;
   float    animConf;
-  // Assistente por frase (#54).
+  float    animAlt;
+  // Assistente por frase (#54/#55).
+  int      entradaModo;
+  int      celAberto;
+  int      qrPronto;
+  GLuint   qrTex;
+  char     qrUrl[QR_MAX_BYTES + 1];
   float    nivelVoz;
   float    pulsoMs;
   uint64_t redeGen;
   char     parcial[FAROL_ESCOLHA_FRASE_BYTES];
   char     frase[FAROL_ESCOLHA_FRASE_BYTES];
+  char     aviso[200];
   // Resultado (modo RESULTADO).
   FarolEscResultado res;
   int      saida;
@@ -248,16 +292,123 @@ static void garantirResultado(void) {
   if (S.foco >= S.nRes) S.foco = S.nRes > 0 ? S.nRes - 1 : FESCUI_FOCO_VOLTAR;
 }
 
+static int modoTecladoPorVoz(void) {
+  if (forcaVoz >= 0) return 0;
+#if defined(NV_ANDROID)
+  return 0;
+#elif defined(NV_TPK) || defined(__EMSCRIPTEN__)
+  return (st_voz_disponivel() &&
+          (!st_ime_disponivel() || texto_sistema_voz_pelo_teclado())) ? 1 : 0;
+#else
+  return (st_voz_disponivel() && texto_sistema_voz_pelo_teclado()) ? 1 : 0;
+#endif
+}
+
+static int modoVoz(void) {
+  if (forcaVoz >= 0) return forcaVoz ? 1 : 0;
+  if (modoTecladoPorVoz()) return 0;
+  return (st_voz_disponivel() && !texto_sistema_voz_pelo_teclado()) ? 1 : 0;
+}
+
+static int modoIme(void) {
+  if (forcaIme >= 0) return forcaIme ? 1 : 0;
+  return (modoTecladoPorVoz() || st_ime_disponivel()) ? 1 : 0;
+}
+
+static int modoCel(void) {
+  if (forcaCel >= 0) return forcaCel ? 1 : 0;
+#if defined(NV_DESKTOP_UI) || defined(NV_LINUX_DESKTOP) || defined(__APPLE__) || defined(_WIN32)
+  return 0;
+#else
+  return celular_disponivel() ? 1 : 0;
+#endif
+}
+
+static int modoPrimario(void) {
+  if (modoVoz()) return FESC_ENT_VOZ;
+  if (modoIme()) return FESC_ENT_IME;
+  if (modoCel()) return FESC_ENT_QR;
+  return FESC_ENT_NENHUM;
+}
+
+static int modoDisponivel(int m) {
+  if (m == FESC_ENT_VOZ) return modoVoz();
+  if (m == FESC_ENT_IME) return modoIme();
+  if (m == FESC_ENT_QR)  return modoCel();
+  return 0;
+}
+
+static int modoRefazer(void) {
+  if (S.entradaModo != FESC_ENT_NENHUM && modoDisponivel(S.entradaModo)) return S.entradaModo;
+  return modoPrimario();
+}
+
+static int modoAlternativo(void) {
+  int cur;
+  if (modoVoz()) return FESC_ENT_NENHUM;
+  if (!modoIme() || !modoCel()) return FESC_ENT_NENHUM;
+  cur = modoRefazer();
+  if (cur == FESC_ENT_IME) return FESC_ENT_QR;
+  if (cur == FESC_ENT_QR)  return FESC_ENT_IME;
+  return FESC_ENT_NENHUM;
+}
+
+static const char *rotuloEntrada(int m) {
+  if (m == FESC_ENT_IME) return FT_ACAO_TECLADO_TV;
+  if (m == FESC_ENT_QR)  return FT_ACAO_DIGITAR_CELULAR;
+  return FT_ACAO_FALAR;
+}
+
+static const char *iconeEntrada(int m) {
+  if (m == FESC_ENT_IME) return "aj_keyboard";
+  if (m == FESC_ENT_QR)  return "aj_smartphone";
+  return "aj_mic";
+}
+
+static void copiarUtf8Seguro(char *dst, size_t cap, const char *src) {
+  size_t n = 0;
+  if (!dst || !cap) return;
+  if (!src) { dst[0] = '\0'; return; }
+  while (src[n] && n + 1 < cap) n++;
+  if (src[n]) {
+    while (n > 0 && ((unsigned char)src[n] & 0xC0) == 0x80) n--;
+  }
+  memcpy(dst, src, n);
+  dst[n] = '\0';
+}
+
+static void destruirQrTex(void) {
+#if !FESCUI_SEM_GL
+  if (S.qrTex) {
+    glDeleteTextures(1, &S.qrTex);
+    S.qrTex = 0;
+  }
+#else
+  S.qrTex = 0;
+#endif
+  S.qrUrl[0] = '\0';
+  S.qrPronto = 0;
+}
+
+static void fecharCelular(void) {
+  if (S.celAberto) {
+    celular_fechar();
+    S.celAberto = 0;
+  }
+  destruirQrTex();
+}
+
 static void zerarFrases(void) {
   memset(S.parcial, 0, sizeof S.parcial);
   memset(S.frase, 0, sizeof S.frase);
+  memset(S.aviso, 0, sizeof S.aviso);
 }
 
 static int podeUsarVoz(void) {
   return S.modo == FESCUI_PERGUNTA &&
          farolescolha_feitas(&S.motor) == 0 &&
          S.motor.nPre == 0 &&
-         st_voz_disponivel() == 1;
+         modoPrimario() != FESC_ENT_NENHUM;
 }
 
 static void zerarAnim(void) {
@@ -266,17 +417,20 @@ static void zerarAnim(void) {
   S.animVoltar = 0.0f;
   S.animVoz = 0.0f;
   S.animConf = 0.0f;
+  S.animAlt = 0.0f;
   if (ajustes_animacoes_reduzidas()) {
     if (S.foco >= 0 && S.foco < FESC_OPC_MAX) S.anim[S.foco] = 1.0f;
     if (S.foco == FESCUI_FOCO_VOLTAR) S.animVoltar = 1.0f;
     if (S.foco == FESCUI_FOCO_VOZ) S.animVoz = 1.0f;
     if (S.foco == FESCUI_FOCO_CONFIRMAR) S.animConf = 1.0f;
+    if (S.foco == FESCUI_FOCO_ALT) S.animAlt = 1.0f;
   }
 }
 
 // O motor terminou: P4 com 2-3, cartaz com 1, "Nada exato…" com 0.
 static void concluir(void) {
   int todosImdb = 1, i;
+  fecharCelular();
   farolescolha_resultado(&S.motor, &S.res);
   S.saida = S.res.saida;
   resolverResultado();
@@ -304,7 +458,8 @@ static void concluir(void) {
 // ------------------------------------------------------------ fluxo --
 void farolescolhaui_reset(void) {
   int th = S.testeHora, ti = S.testeInfantil;
-  if (S.modo == FESCUI_OUVINDO) st_fechar(ST_BUSCA);
+  if (S.modo == FESCUI_OUVINDO || S.modo == FESCUI_DIGITANDO) st_fechar(ST_BUSCA);
+  fecharCelular();
   if (S.modo == FESCUI_ESPERA || S.redeGen != 0) farolescolha_rede_cancelar();
   memset(&S, 0, sizeof S);
   S.testeHora = th;
@@ -315,19 +470,23 @@ void farolescolhaui_reset(void) {
 static void entrarPergunta(int foco) {
   int n = farolescolha_n_opcoes(&S.motor);
   S.modo = FESCUI_PERGUNTA;
+  S.entradaModo = FESC_ENT_NENHUM;
   S.foco = (foco >= 0 && foco < n) ? foco : 0;
   S.focoAntesVoltar = S.foco;
   zerarAnim();
 }
 
 void farolescolhaui_fechar(void) {
-  if (S.modo == FESCUI_OUVINDO) st_fechar(ST_BUSCA);
+  if (S.modo == FESCUI_OUVINDO || S.modo == FESCUI_DIGITANDO) st_fechar(ST_BUSCA);
+  fecharCelular();
   if (S.modo == FESCUI_ESPERA || S.redeGen != 0) {
     farolescolha_rede_cancelar();
     S.redeGen = 0;
   }
   zerarFrases();
-  if (S.modo == FESCUI_OUVINDO || S.modo == FESCUI_PREVIA || S.modo == FESCUI_ESPERA)
+  if (S.modo == FESCUI_OUVINDO || S.modo == FESCUI_DIGITANDO ||
+      S.modo == FESCUI_QR || S.modo == FESCUI_PREVIA ||
+      S.modo == FESCUI_ESPERA || S.modo == FESCUI_AVISO)
     entrarPergunta(0);
 }
 
@@ -352,23 +511,46 @@ int farolescolhaui_pre_responder(const char *perguntaId, const char *opcaoId) {
   return 1;
 }
 
+static void entrarAviso(const char *msg) {
+  int ref = modoRefazer();
+  S.modo = FESCUI_AVISO;
+  snprintf(S.aviso, sizeof S.aviso, "%s",
+           (msg && msg[0]) ? msg : "O ditado não respondeu. Tente de novo ou digite.");
+  if (ref != FESC_ENT_NENHUM) S.foco = FESCUI_FOCO_VOZ;
+  else if (modoAlternativo() != FESC_ENT_NENHUM) S.foco = FESCUI_FOCO_ALT;
+  else S.foco = FESCUI_FOCO_VOLTAR;
+  zerarAnim();
+}
+
 int farolescolhaui_aplicar_frase(const char *frase) {
   char norm[FAROL_ESCOLHA_FRASE_BYTES];
   int eraOuvindo = (S.modo == FESCUI_OUVINDO);
-  if (S.modo != FESCUI_PERGUNTA && !eraOuvindo) return 0;
+  int eraDigitando = (S.modo == FESCUI_DIGITANDO);
+  int eraQr = (S.modo == FESCUI_QR);
+  if (S.modo != FESCUI_PERGUNTA && !eraOuvindo && !eraDigitando && !eraQr) return 0;
   if (farolescolha_feitas(&S.motor) > 0 || S.motor.nPre > 0) return 0;
   if (!farolescolha_rede_normalizar_frase(frase, norm, sizeof norm)) {
     if (eraOuvindo) {
       st_fechar(ST_BUSCA);
       zerarFrases();
       entrarPergunta(0);
+    } else if (eraDigitando) {
+      st_fechar(ST_BUSCA);
+      zerarFrases();
+      entrarAviso("Não entendi. Tente de novo.");
+    } else if (eraQr) {
+      fecharCelular();
+      zerarFrases();
+      entrarAviso("Não entendi. Tente de novo.");
     }
     return 0;
   }
-  if (eraOuvindo) st_fechar(ST_BUSCA);
+  if (eraOuvindo || eraDigitando) st_fechar(ST_BUSCA);
+  if (eraQr) fecharCelular();
   zerarFrases();
   snprintf(S.frase, sizeof S.frase, "%s", norm);
   memset(norm, 0, sizeof norm);
+  if (S.entradaModo == FESC_ENT_NENHUM) S.entradaModo = modoPrimario();
   S.modo = FESCUI_PREVIA;
   S.foco = FESCUI_FOCO_CONFIRMAR;
   zerarAnim();
@@ -376,8 +558,11 @@ int farolescolhaui_aplicar_frase(const char *frase) {
 }
 
 static void iniciarVoz(void) {
-  if (!st_voz_disponivel()) return;
+  if (!modoVoz()) return;
+  fecharCelular();
+  if (S.modo == FESCUI_DIGITANDO || S.modo == FESCUI_OUVINDO) st_fechar(ST_BUSCA);
   zerarFrases();
+  S.entradaModo = FESC_ENT_VOZ;
   S.nivelVoz = 0.0f;
   S.pulsoMs = 0.0f;
   st_voz_teclado_inicial("");
@@ -385,7 +570,69 @@ static void iniciarVoz(void) {
     S.modo = FESCUI_OUVINDO;
     S.foco = FESCUI_FOCO_VOLTAR;
     zerarAnim();
+  } else {
+    const char *av = st_aviso();
+    entrarAviso(av && av[0] ? av : "O ditado não respondeu. Tente de novo ou digite.");
   }
+}
+
+static void iniciarIme(void) {
+  int ok;
+  if (!modoIme()) return;
+  fecharCelular();
+  if (S.modo == FESCUI_OUVINDO || S.modo == FESCUI_DIGITANDO) st_fechar(ST_BUSCA);
+  zerarFrases();
+  S.entradaModo = FESC_ENT_IME;
+  S.nivelVoz = 0.0f;
+  S.pulsoMs = 0.0f;
+  if (modoTecladoPorVoz()) {
+    st_voz_teclado_inicial("");
+    ok = st_voz_iniciar(ST_BUSCA);
+  } else {
+    st_ime_tipo(ST_IME_TEXTO);
+    ok = st_ime_abrir(ST_BUSCA, "", FAROL_ESCOLHA_FRASE_MAX);
+  }
+  if (ok) {
+    S.modo = FESCUI_DIGITANDO;
+    S.foco = FESCUI_FOCO_VOLTAR;
+    zerarAnim();
+  } else {
+    const char *av = st_aviso();
+    entrarAviso(av && av[0] ? av : "O teclado do sistema não abriu.");
+  }
+}
+
+static void iniciarQr(void) {
+  const char *u;
+  Qr q;
+  if (!modoCel()) return;
+  if (S.modo == FESCUI_OUVINDO || S.modo == FESCUI_DIGITANDO) st_fechar(ST_BUSCA);
+  fecharCelular();
+  zerarFrases();
+  S.entradaModo = FESC_ENT_QR;
+  S.nivelVoz = 0.0f;
+  S.pulsoMs = 0.0f;
+  if (!celular_abrir_digitar(FT_DIGITE_CELULAR)) {
+    entrarAviso("Sem rede local. Conecte a TV ao Wi-Fi e aperte OK.");
+    return;
+  }
+  S.celAberto = 1;
+  u = celular_url();
+  if (!u || !u[0] || !qr_gerar(&q, u)) {
+    fecharCelular();
+    entrarAviso("Sem rede local. Conecte a TV ao Wi-Fi e aperte OK.");
+    return;
+  }
+  S.qrPronto = 1;
+  S.modo = FESCUI_QR;
+  S.foco = FESCUI_FOCO_VOLTAR;
+  zerarAnim();
+}
+
+static void iniciarEntrada(int m) {
+  if (m == FESC_ENT_VOZ) iniciarVoz();
+  else if (m == FESC_ENT_IME) iniciarIme();
+  else if (m == FESC_ENT_QR) iniciarQr();
 }
 
 static void confirmarPrevia(void) {
@@ -408,16 +655,29 @@ static void confirmarPrevia(void) {
   zerarAnim();
 }
 
-static int montarBotoesPrevia(int ids[3]) {
+static int montarBotoesFluxo(int ids[4]) {
   int n = 0;
-  ids[n++] = FESCUI_FOCO_CONFIRMAR;
-  if (st_voz_disponivel()) ids[n++] = FESCUI_FOCO_VOZ;
-  ids[n++] = FESCUI_FOCO_VOLTAR;
+  if (S.modo == FESCUI_OUVINDO || S.modo == FESCUI_ESPERA) {
+    ids[n++] = FESCUI_FOCO_VOLTAR;
+  } else if (S.modo == FESCUI_DIGITANDO || S.modo == FESCUI_QR) {
+    ids[n++] = FESCUI_FOCO_VOLTAR;
+    if (modoAlternativo() != FESC_ENT_NENHUM) ids[n++] = FESCUI_FOCO_ALT;
+  } else if (S.modo == FESCUI_PREVIA) {
+    ids[n++] = FESCUI_FOCO_CONFIRMAR;
+    if (modoRefazer() != FESC_ENT_NENHUM) ids[n++] = FESCUI_FOCO_VOZ;
+    if (modoAlternativo() != FESC_ENT_NENHUM) ids[n++] = FESCUI_FOCO_ALT;
+    ids[n++] = FESCUI_FOCO_VOLTAR;
+  } else if (S.modo == FESCUI_AVISO) {
+    if (modoRefazer() != FESC_ENT_NENHUM) ids[n++] = FESCUI_FOCO_VOZ;
+    if (modoAlternativo() != FESC_ENT_NENHUM) ids[n++] = FESCUI_FOCO_ALT;
+    ids[n++] = FESCUI_FOCO_VOLTAR;
+  }
   return n;
 }
 
-static void moverFocoPrevia(int dir) {
-  int ids[3], n = montarBotoesPrevia(ids), i, cur = -1;
+static void moverFocoFluxo(int dir) {
+  int ids[4], n = montarBotoesFluxo(ids), i, cur = -1;
+  if (n <= 0) return;
   for (i = 0; i < n; i++) if (ids[i] == S.foco) { cur = i; break; }
   if (cur < 0) { S.foco = ids[0]; return; }
   cur += dir;
@@ -447,7 +707,7 @@ static int nFocaveis(void) {
 static int okNoFoco(int *pediuSair) {
   if (S.foco == FESCUI_FOCO_VOLTAR) { voltarUmPasso(pediuSair); return 1; }
   if (S.foco == FESCUI_FOCO_VOZ) {
-    if (podeUsarVoz()) iniciarVoz();
+    if (podeUsarVoz()) iniciarEntrada(modoPrimario());
     return 1;
   }
   if (S.modo == FESCUI_PERGUNTA) {
@@ -467,11 +727,15 @@ int farolescolhaui_evento(const SDL_Event *e, int *pediuSair, int *pediuAbrir) {
   if (pediuSair) *pediuSair = 0;
   if (pediuAbrir) *pediuAbrir = 0;
   if (!e) return 0;
-  if (S.modo == FESCUI_OUVINDO && st_evento(e)) return 1;
+  if ((S.modo == FESCUI_OUVINDO || S.modo == FESCUI_DIGITANDO) && st_evento(e)) return 1;
+  if (S.modo == FESCUI_DIGITANDO &&
+      (e->type == SDL_TEXTINPUT || e->type == SDL_TEXTEDITING))
+    return 1;
   if (e->type != SDL_KEYDOWN) return 0;
   k = e->key.keysym.sym;
+  if (S.modo == FESCUI_DIGITANDO && k == SDLK_BACKSPACE) return 1;
 
-  // Estados de voz, previa e espera (#54): ignorar key.repeat em OK e Voltar.
+  // Estados de voz, digitacao, QR, previa, aviso e espera (#54/#55): ignorar key.repeat em OK e Voltar.
   if (S.modo == FESCUI_OUVINDO) {
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE ||
         k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
@@ -484,15 +748,45 @@ int farolescolhaui_evento(const SDL_Event *e, int *pediuSair, int *pediuAbrir) {
     }
     return 1;
   }
-  if (S.modo == FESCUI_PREVIA) {
-    if (k == SDLK_LEFT || k == SDLK_UP) { moverFocoPrevia(-1); return 1; }
-    if (k == SDLK_RIGHT || k == SDLK_DOWN) { moverFocoPrevia(1); return 1; }
+  if (S.modo == FESCUI_DIGITANDO || S.modo == FESCUI_QR) {
+    if (k == SDLK_LEFT || k == SDLK_UP) { moverFocoFluxo(-1); return 1; }
+    if (k == SDLK_RIGHT || k == SDLK_DOWN) { moverFocoFluxo(1); return 1; }
+    if (k == SDLK_RETURN || k == SDLK_KP_ENTER ||
+        (k == SDLK_SPACE && S.modo != FESCUI_DIGITANDO)) {
+      if (e->key.repeat != 0) return 1;
+      if (S.foco == FESCUI_FOCO_ALT && modoAlternativo() != FESC_ENT_NENHUM) {
+        iniciarEntrada(modoAlternativo());
+      } else {
+        if (S.modo == FESCUI_DIGITANDO) st_fechar(ST_BUSCA);
+        fecharCelular();
+        zerarFrases();
+        entrarPergunta(0);
+      }
+      return 1;
+    }
+    if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_DELETE ||
+        e->key.keysym.scancode == NV_SCANCODE_BACK ||
+        (k == SDLK_BACKSPACE && S.modo != FESCUI_DIGITANDO)) {
+      if (e->key.repeat != 0) return 1;
+      if (S.modo == FESCUI_DIGITANDO) st_fechar(ST_BUSCA);
+      fecharCelular();
+      zerarFrases();
+      entrarPergunta(0);
+      return 1;
+    }
+    return 1;
+  }
+  if (S.modo == FESCUI_PREVIA || S.modo == FESCUI_AVISO) {
+    if (k == SDLK_LEFT || k == SDLK_UP) { moverFocoFluxo(-1); return 1; }
+    if (k == SDLK_RIGHT || k == SDLK_DOWN) { moverFocoFluxo(1); return 1; }
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
       if (e->key.repeat != 0) return 1;
-      if (S.foco == FESCUI_FOCO_CONFIRMAR) {
+      if (S.modo == FESCUI_PREVIA && S.foco == FESCUI_FOCO_CONFIRMAR) {
         confirmarPrevia();
-      } else if (S.foco == FESCUI_FOCO_VOZ && st_voz_disponivel()) {
-        iniciarVoz();
+      } else if (S.foco == FESCUI_FOCO_VOZ && modoRefazer() != FESC_ENT_NENHUM) {
+        iniciarEntrada(modoRefazer());
+      } else if (S.foco == FESCUI_FOCO_ALT && modoAlternativo() != FESC_ENT_NENHUM) {
+        iniciarEntrada(modoAlternativo());
       } else {
         zerarFrases();
         entrarPergunta(0);
@@ -597,13 +891,13 @@ void farolescolhaui_atualizar(float dt, Uint32 agora) {
     S.foco = FESCUI_FOCO_VOLTAR;
 
   if (S.modo == FESCUI_OUVINDO) {
-    char buf[FAROL_ESCOLHA_FRASE_BYTES];
+    char buf[NV_ARTE_URL_MAX + 1];
     int valorRec = 0;
     int r = st_ler_valor(ST_BUSCA, buf, sizeof buf, &valorRec);
     float nv = st_nivel();
     S.nivelVoz = red ? nv : anim_mola(S.nivelVoz, nv, dt, 18.0f);
     if (r == ST_TEXTO) {
-      if (valorRec) snprintf(S.parcial, sizeof S.parcial, "%s", buf);
+      if (valorRec) copiarUtf8Seguro(S.parcial, sizeof S.parcial, buf);
     } else if (r == ST_FIM) {
       if (!farolescolhaui_aplicar_frase(buf)) {
         st_fechar(ST_BUSCA);
@@ -611,7 +905,13 @@ void farolescolhaui_atualizar(float dt, Uint32 agora) {
         entrarPergunta(0);
       }
     } else if (r == ST_PEDE_TECLADO) {
-      if (!(st_ime_disponivel() && st_ime_abrir(ST_BUSCA, S.parcial, FAROL_ESCOLHA_FRASE_MAX))) {
+      st_ime_tipo(ST_IME_TEXTO);
+      if (st_ime_disponivel() && st_ime_abrir(ST_BUSCA, S.parcial, FAROL_ESCOLHA_FRASE_MAX)) {
+        S.modo = FESCUI_DIGITANDO;
+        S.entradaModo = FESC_ENT_IME;
+        S.foco = FESCUI_FOCO_VOLTAR;
+        zerarAnim();
+      } else {
         st_fechar(ST_BUSCA);
         zerarFrases();
         entrarPergunta(0);
@@ -620,6 +920,42 @@ void farolescolhaui_atualizar(float dt, Uint32 agora) {
       st_fechar(ST_BUSCA);
       zerarFrases();
       entrarPergunta(0);
+    }
+  } else if (S.modo == FESCUI_DIGITANDO) {
+    char buf[NV_ARTE_URL_MAX + 1];
+    int valorRec = 0;
+    int r = st_ler_valor(ST_BUSCA, buf, sizeof buf, &valorRec);
+    if (r == ST_TEXTO) {
+      if (valorRec) copiarUtf8Seguro(S.parcial, sizeof S.parcial, buf);
+    } else if (r == ST_FIM) {
+      (void)farolescolhaui_aplicar_frase(buf);
+    } else if (r == ST_CANCELOU) {
+      const char *av = st_aviso();
+      st_fechar(ST_BUSCA);
+      zerarFrases();
+      if (av && av[0]) entrarAviso(av);
+      else entrarPergunta(0);
+    }
+  } else if (S.modo == FESCUI_QR) {
+    char buf[CEL_CORPO_MAX + 1];
+    if (celular_pegar(buf, sizeof buf)) {
+      (void)farolescolhaui_aplicar_frase(buf);
+      memset(buf, 0, sizeof buf);
+    } else {
+      int est = celular_estado();
+      if (est == CEL_EXPIROU) {
+        fecharCelular();
+        zerarFrases();
+        entrarAviso("O endereço expirou. Aperte OK para gerar outro.");
+      } else if (est == CEL_FALHOU) {
+        fecharCelular();
+        zerarFrases();
+        entrarAviso("Endereço bloqueado por tentativas erradas. Aperte OK para gerar outro.");
+      } else if (est == CEL_PARADO) {
+        fecharCelular();
+        zerarFrases();
+        entrarAviso("Sem rede local. Conecte a TV ao Wi-Fi e aperte OK.");
+      }
     }
   } else if (S.modo == FESCUI_ESPERA) {
     FarolEscRedeInfo info;
@@ -662,9 +998,11 @@ void farolescolhaui_atualizar(float dt, Uint32 agora) {
     float aVol  = S.foco == FESCUI_FOCO_VOLTAR    ? 1.0f : 0.0f;
     float aVoz  = S.foco == FESCUI_FOCO_VOZ       ? 1.0f : 0.0f;
     float aConf = S.foco == FESCUI_FOCO_CONFIRMAR ? 1.0f : 0.0f;
+    float aAlt  = S.foco == FESCUI_FOCO_ALT       ? 1.0f : 0.0f;
     S.animVoltar = red ? aVol  : anim_mola(S.animVoltar, aVol,  dt, aVol  > S.animVoltar ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
     S.animVoz    = red ? aVoz  : anim_mola(S.animVoz,    aVoz,  dt, aVoz  > S.animVoz    ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
     S.animConf   = red ? aConf : anim_mola(S.animConf,   aConf, dt, aConf > S.animConf   ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+    S.animAlt    = red ? aAlt  : anim_mola(S.animAlt,    aAlt,  dt, aAlt  > S.animAlt    ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
     S.pulsoMs    = red ? 0.0f : fmodf(S.pulsoMs + (dt > 0.0f ? dt * 1000.0f : 0.0f), ESC_PULSO_MS);
   }
 }
@@ -678,7 +1016,8 @@ static void txt_em(TxtEstilo est, const char *s, float x, float y, float maxW,
 
 static void pt_foco(int id, int nada) {
   (void)nada;
-  if (id == FESCUI_FOCO_VOLTAR || id == FESCUI_FOCO_VOZ || id == FESCUI_FOCO_CONFIRMAR) {
+  if (id == FESCUI_FOCO_VOLTAR || id == FESCUI_FOCO_VOZ ||
+      id == FESCUI_FOCO_CONFIRMAR || id == FESCUI_FOCO_ALT) {
     if (S.foco >= 0) S.focoAntesVoltar = S.foco;
     S.foco = id;
   } else if (id >= 0 && id < nFocaveis()) {
@@ -813,23 +1152,50 @@ static float pulso_esc(void) {
   return 0.65f + 0.35f * cosf(S.pulsoMs / ESC_PULSO_MS * 6.2831853f);
 }
 
+static int prepararQrTextura(const char *url) {
+  if (!url || !url[0]) return 0;
+  if (S.qrTex && !strcmp(S.qrUrl, url)) return 1;
+#if !FESCUI_SEM_GL
+  if (!qr_textura(&S.qrTex, url)) return 0;
+#else
+  {
+    Qr q;
+    if (!qr_gerar(&q, url)) return 0;
+    S.qrTex = 1u;
+  }
+#endif
+  snprintf(S.qrUrl, sizeof S.qrUrl, "%s", url);
+  return 1;
+}
+
 static void desenha_voz_estado(float ox, float oy, float a) {
   GfxRect pr = { ox + ESC_MARGEM, oy + ESC_PAINEL_Y, ESC_LARG, ESC_PAINEL_H };
   float ar, ag, ab;
   float bx = ox + ESC_MARGEM, by = oy + ESC_VOZ_BTN_Y;
   const char *tit = "";
   const char *sub = "";
+  int ref = modoRefazer();
+  int alt = modoAlternativo();
 
   ajustes_acento(&ar, &ag, &ab);
   if (S.modo == FESCUI_OUVINDO) {
     tit = i18n(FT_OUVINDO);
     sub = i18n(FT_BUSCA_FRASE_PROMPT);
+  } else if (S.modo == FESCUI_DIGITANDO) {
+    tit = i18n(FT_ACAO_TECLADO_TV);
+    sub = i18n(FT_BUSCA_FRASE_PROMPT);
+  } else if (S.modo == FESCUI_QR) {
+    tit = i18n(FT_DIGITE_CELULAR);
+    sub = i18n("Aponte a câmera do celular. Mesma rede Wi-Fi, vale por 5 minutos.");
   } else if (S.modo == FESCUI_PREVIA) {
     tit = i18n(FT_VOCE_DISSE);
     sub = i18n(FT_CONFIRMA_DESCARTA);
-  } else {
+  } else if (S.modo == FESCUI_ESPERA) {
     tit = i18n(FT_ESCOLHENDO);
     sub = i18n(FT_CONFIRMA_DESCARTA);
+  } else {
+    tit = i18n(FT_BUSCA_FRASE);
+    sub = i18n(FT_BUSCA_FRASE_EXEMPLO);
   }
 
   txt_em(TXT_NOV_TITULO, tit, ox + ESC_MARGEM, oy + 128.0f, ESC_LARG, 248, 249, 252, a);
@@ -858,16 +1224,59 @@ static void desenha_voz_estado(float ox, float oy, float a) {
              pr.x + 168.0f, pr.y + (pr.h - 32.0f) * 0.5f, pr.w - 220.0f,
              186, 192, 204, a);
     }
+  } else if (S.modo == FESCUI_DIGITANDO) {
+    float p = pulso_esc();
+    const char *av = st_aviso();
+    GfxRect kbBox = { pr.x + 48.0f, pr.y + (pr.h - 84.0f) * 0.5f, 84.0f, 84.0f };
+    gfx_cor(kbBox, 0.36f, ar, ag, ab, 0.18f * a);
+    gfx_anel(kbBox, 0.36f, 2.0f, ar, ag, ab, p * a);
+    gfx_icone((GfxRect){ kbBox.x + 22.0f, kbBox.y + 22.0f, 40.0f, 40.0f },
+              "aj_keyboard", 0.96f, 0.96f, 0.98f, a);
+    if (S.parcial[0]) {
+      txt_bloco(TXT_ILHA_TITULO, S.parcial, 248, 249, 252,
+                pr.x + 168.0f, pr.y + 72.0f, pr.w - 220.0f, 48.0f, a, 3);
+    } else {
+      txt_em(TXT_V2_26, i18n(FT_BUSCA_FRASE_EXEMPLO),
+             pr.x + 168.0f, pr.y + (av && av[0] ? 104.0f : (pr.h - 32.0f) * 0.5f),
+             pr.w - 220.0f, 186, 192, 204, a);
+    }
+    if (av && av[0]) {
+      txt_em(TXT_CAPTION, i18n(av),
+             pr.x + 168.0f, pr.y + pr.h - 60.0f, pr.w - 220.0f,
+             186, 192, 204, a);
+    }
+  } else if (S.modo == FESCUI_QR) {
+    const char *u = celular_url();
+    float moldLado = ESC_QR_LADO + 2.0f * ESC_QR_MOLD;
+    float qx = pr.x + 48.0f;
+    float qy = pr.y + (pr.h - moldLado) * 0.5f;
+    float tx = qx + moldLado + 48.0f;
+    float tw = pr.x + pr.w - tx - 48.0f;
+    if (u && u[0] && prepararQrTextura(u)) {
+      gfx_cor((GfxRect){ qx, qy, moldLado, moldLado }, 0.06f, 1.0f, 1.0f, 1.0f, a);
+      gfx_tex_aspect_atual = 0.0f;
+      gfx_rect((GfxRect){ qx + ESC_QR_MOLD, qy + ESC_QR_MOLD, ESC_QR_LADO, ESC_QR_LADO },
+               S.qrTex, GFX_SNAP, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0, 0, a);
+    }
+    gfx_icone((GfxRect){ tx, pr.y + 58.0f, 32.0f, 32.0f },
+              "aj_smartphone", ar, ag, ab, a);
+    txt_em(TXT_ILHA_TITULO, i18n(FT_DIGITE_CELULAR),
+           tx + 44.0f, pr.y + 52.0f, tw - 44.0f, 248, 249, 252, a);
+    if (u && u[0]) {
+      txt_em(TXT_V2_26, u, tx, pr.y + 132.0f, tw, 232, 236, 244, a);
+    }
+    txt_em(TXT_V2_26, i18n(FT_BUSCA_FRASE_EXEMPLO),
+           tx, pr.y + 196.0f, tw, 186, 192, 204, a);
   } else if (S.modo == FESCUI_PREVIA) {
     GfxRect micBox = { pr.x + 48.0f, pr.y + 52.0f, 72.0f, 72.0f };
     gfx_cor(micBox, 0.36f, 1, 1, 1, 0.08f * a);
     gfx_icone((GfxRect){ micBox.x + 18.0f, micBox.y + 18.0f, 36.0f, 36.0f },
-              "aj_mic", 0.95f, 0.95f, 0.96f, a);
+              iconeEntrada(ref), 0.95f, 0.95f, 0.96f, a);
     txt_bloco(TXT_ILHA_TITULO, S.frase, 248, 249, 252,
               pr.x + 156.0f, pr.y + 52.0f, pr.w - 208.0f, 52.0f, a, 3);
     txt_em(TXT_CAPTION, i18n(FT_CONFIRMA_DESCARTA),
            pr.x + 156.0f, pr.y + pr.h - 54.0f, pr.w - 208.0f, 166, 172, 184, a);
-  } else {
+  } else if (S.modo == FESCUI_ESPERA) {
     float p = pulso_esc();
     GfxRect dot = { pr.x + 56.0f, pr.y + 72.0f, 20.0f, 20.0f };
     gfx_cor(dot, 0.5f, ar, ag, ab, p * a);
@@ -875,6 +1284,13 @@ static void desenha_voz_estado(float ox, float oy, float a) {
            pr.x + 98.0f, pr.y + 54.0f, pr.w - 150.0f, 248, 249, 252, a);
     txt_bloco(TXT_V2_26, S.frase, 186, 192, 204,
               pr.x + 98.0f, pr.y + 132.0f, pr.w - 150.0f, 34.0f, a, 3);
+  } else {
+    GfxRect box = { pr.x + 48.0f, pr.y + 56.0f, 64.0f, 64.0f };
+    gfx_cor(box, 0.32f, 1, 1, 1, 0.07f * a);
+    gfx_icone((GfxRect){ box.x + 16.0f, box.y + 16.0f, 32.0f, 32.0f },
+              iconeEntrada(ref), 0.95f, 0.95f, 0.94f, a);
+    txt_bloco(TXT_ILHA_TITULO, i18n(S.aviso), 243, 242, 239,
+              pr.x + 144.0f, pr.y + 56.0f, pr.w - 196.0f, 48.0f, a, 3);
   }
 
   if (S.modo == FESCUI_OUVINDO || S.modo == FESCUI_ESPERA) {
@@ -882,23 +1298,80 @@ static void desenha_voz_estado(float ox, float oy, float a) {
     GfxRect rV = { bx, by, botao_largura(rotV, "aj_arrow-left", 1), BOTAO_H_PRIMARIO };
     botao_pilula(rV, rotV, "aj_arrow-left", S.animVoltar, 1, 0, a);
     ponteiro_alvo(rV.x, rV.y, rV.w, rV.h, pt_foco, NULL, FESCUI_FOCO_VOLTAR, 0);
-  } else {
+  } else if (S.modo == FESCUI_DIGITANDO || S.modo == FESCUI_QR) {
+    const char *rotV = i18n(FT_ACAO_VOLTAR);
+    GfxRect rV = { bx, by, botao_largura(rotV, "aj_arrow-left", 1), BOTAO_H_PRIMARIO };
+    float x = rV.x + rV.w + BOTAO_GAP;
+    botao_pilula(rV, rotV, "aj_arrow-left", S.animVoltar, 1, 0, a);
+    ponteiro_alvo(rV.x, rV.y, rV.w, rV.h, pt_foco, NULL, FESCUI_FOCO_VOLTAR, 0);
+    if (alt != FESC_ENT_NENHUM) {
+      const char *rotA = i18n(rotuloEntrada(alt));
+      const char *icA = iconeEntrada(alt);
+      GfxRect rA = { x, by + 8.0f, botao_largura(rotA, icA, 0), BOTAO_H_SECUNDARIO };
+      botao_pilula(rA, rotA, icA, S.animAlt, 0, 0, a);
+      ponteiro_alvo(rA.x, rA.y, rA.w, rA.h, pt_foco, NULL, FESCUI_FOCO_ALT, 0);
+    }
+  } else if (S.modo == FESCUI_PREVIA) {
     const char *rotOk = i18n(FT_ACAO_PRONTO);
-    const char *rotFal = i18n(FT_ACAO_FALAR);
     const char *rotVol = i18n(FT_ACAO_VOLTAR);
     GfxRect rOk = { bx, by, botao_largura(rotOk, "aj_check", 1), BOTAO_H_PRIMARIO };
     float x = rOk.x + rOk.w + BOTAO_GAP;
     botao_pilula(rOk, rotOk, "aj_check", S.animConf, 1, 0, a);
     ponteiro_alvo(rOk.x, rOk.y, rOk.w, rOk.h, pt_foco, NULL, FESCUI_FOCO_CONFIRMAR, 0);
-    if (st_voz_disponivel()) {
-      GfxRect rFal = { x, by + 8.0f, botao_largura(rotFal, "aj_mic", 0), BOTAO_H_SECUNDARIO };
-      botao_pilula(rFal, rotFal, "aj_mic", S.animVoz, 0, 0, a);
+    if (ref != FESC_ENT_NENHUM) {
+      const char *rotRef = i18n(rotuloEntrada(ref));
+      const char *icRef = iconeEntrada(ref);
+      GfxRect rFal = { x, by + 8.0f, botao_largura(rotRef, icRef, 0), BOTAO_H_SECUNDARIO };
+      botao_pilula(rFal, rotRef, icRef, S.animVoz, 0, 0, a);
       ponteiro_alvo(rFal.x, rFal.y, rFal.w, rFal.h, pt_foco, NULL, FESCUI_FOCO_VOZ, 0);
       x = rFal.x + rFal.w + BOTAO_GAP;
+    }
+    if (alt != FESC_ENT_NENHUM) {
+      const char *rotAlt = i18n(rotuloEntrada(alt));
+      const char *icAlt = iconeEntrada(alt);
+      GfxRect rAlt = { x, by + 8.0f, botao_largura(rotAlt, icAlt, 0), BOTAO_H_SECUNDARIO };
+      botao_pilula(rAlt, rotAlt, icAlt, S.animAlt, 0, 0, a);
+      ponteiro_alvo(rAlt.x, rAlt.y, rAlt.w, rAlt.h, pt_foco, NULL, FESCUI_FOCO_ALT, 0);
+      x = rAlt.x + rAlt.w + BOTAO_GAP;
     }
     {
       GfxRect rVol = { x, by + 8.0f, botao_largura(rotVol, "aj_arrow-left", 0), BOTAO_H_SECUNDARIO };
       botao_pilula(rVol, rotVol, "aj_arrow-left", S.animVoltar, 0, 0, a);
+      ponteiro_alvo(rVol.x, rVol.y, rVol.w, rVol.h, pt_foco, NULL, FESCUI_FOCO_VOLTAR, 0);
+    }
+  } else {
+    float x = bx;
+    const char *rotVol = i18n(FT_ACAO_VOLTAR);
+    int temAcao = (ref != FESC_ENT_NENHUM);
+    if (temAcao) {
+      const char *rotRef = i18n(rotuloEntrada(ref));
+      const char *icRef = iconeEntrada(ref);
+      GfxRect rFal = { x, by, botao_largura(rotRef, icRef, 1), BOTAO_H_PRIMARIO };
+      botao_pilula(rFal, rotRef, icRef, S.animVoz, 1, 0, a);
+      ponteiro_alvo(rFal.x, rFal.y, rFal.w, rFal.h, pt_foco, NULL, FESCUI_FOCO_VOZ, 0);
+      x = rFal.x + rFal.w + BOTAO_GAP;
+    }
+    if (alt != FESC_ENT_NENHUM) {
+      const char *rotAlt = i18n(rotuloEntrada(alt));
+      const char *icAlt = iconeEntrada(alt);
+      int prim = !temAcao;
+      GfxRect rAlt = {
+        x, prim ? by : by + 8.0f,
+        botao_largura(rotAlt, icAlt, prim),
+        prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO
+      };
+      botao_pilula(rAlt, rotAlt, icAlt, S.animAlt, prim, 0, a);
+      ponteiro_alvo(rAlt.x, rAlt.y, rAlt.w, rAlt.h, pt_foco, NULL, FESCUI_FOCO_ALT, 0);
+      x = rAlt.x + rAlt.w + BOTAO_GAP;
+      temAcao = 1;
+    }
+    {
+      GfxRect rVol = {
+        x, temAcao ? by + 8.0f : by,
+        botao_largura(rotVol, "aj_arrow-left", temAcao ? 0 : 1),
+        temAcao ? BOTAO_H_SECUNDARIO : BOTAO_H_PRIMARIO
+      };
+      botao_pilula(rVol, rotVol, "aj_arrow-left", S.animVoltar, temAcao ? 0 : 1, 0, a);
       ponteiro_alvo(rVol.x, rVol.y, rVol.w, rVol.h, pt_foco, NULL, FESCUI_FOCO_VOLTAR, 0);
     }
   }
@@ -911,12 +1384,16 @@ void farolescolhaui_desenhar(float ox, float oy, float alpha, Uint32 agora) {
   GfxRect rV;
   (void)agora;
   if (S.modo != FESCUI_PERGUNTA && S.modo != FESCUI_RESULTADO &&
-      S.modo != FESCUI_OUVINDO && S.modo != FESCUI_PREVIA && S.modo != FESCUI_ESPERA)
+      S.modo != FESCUI_OUVINDO && S.modo != FESCUI_DIGITANDO &&
+      S.modo != FESCUI_QR && S.modo != FESCUI_PREVIA &&
+      S.modo != FESCUI_ESPERA && S.modo != FESCUI_AVISO)
     return;
   garantirResultado();
   snprintf(kick, sizeof kick, "%s › %s", i18n(FT_NOME), i18n(FT_ACHAR_O_QUE_VER));
   txt_em(TXT_CAPTION, kick, ox + ESC_MARGEM, oy + 96.0f, 1500.0f, 150, 156, 168, alpha);
-  if (S.modo == FESCUI_OUVINDO || S.modo == FESCUI_PREVIA || S.modo == FESCUI_ESPERA) {
+  if (S.modo == FESCUI_OUVINDO || S.modo == FESCUI_DIGITANDO ||
+      S.modo == FESCUI_QR || S.modo == FESCUI_PREVIA ||
+      S.modo == FESCUI_ESPERA || S.modo == FESCUI_AVISO) {
     desenha_voz_estado(ox, oy, alpha);
     return;
   }
@@ -927,14 +1404,16 @@ void farolescolhaui_desenhar(float ox, float oy, float alpha, Uint32 agora) {
   botao_pilula(rV, rotV, "aj_arrow-left", S.animVoltar, primario, 0, alpha);
   ponteiro_alvo(rV.x, rV.y, rV.w, rV.h, pt_foco, NULL, FESCUI_FOCO_VOLTAR, 0);
   if (podeUsarVoz()) {
-    const char *rotFal = i18n(FT_ACAO_FALAR);
+    int prim = modoPrimario();
+    const char *rotFal = i18n(rotuloEntrada(prim));
+    const char *icFal = iconeEntrada(prim);
     GfxRect rMic = {
       rV.x + rV.w + BOTAO_GAP,
       oy + ESC_VOLTAR_Y,
-      botao_largura(rotFal, "aj_mic", 0),
+      botao_largura(rotFal, icFal, 0),
       BOTAO_H_SECUNDARIO
     };
-    botao_pilula(rMic, rotFal, "aj_mic", S.animVoz, 0, 0, alpha);
+    botao_pilula(rMic, rotFal, icFal, S.animVoz, 0, 0, alpha);
     ponteiro_alvo(rMic.x, rMic.y, rMic.w, rMic.h, pt_foco, NULL, FESCUI_FOCO_VOZ, 0);
   }
 }
@@ -965,8 +1444,17 @@ int farolescolhaui_resultado_indice(int i) {
 }
 int farolescolhaui_saida(void) { return S.saida; }
 int farolescolhaui_voz_visivel(void) { return podeUsarVoz(); }
+const char *farolescolhaui_rotulo_botao(void) { return rotuloEntrada(modoPrimario()); }
+const char *farolescolhaui_icone_botao(void) { return iconeEntrada(modoPrimario()); }
 const char *farolescolhaui_frase(void) { return S.frase; }
 const char *farolescolhaui_parcial(void) { return S.parcial; }
+const char *farolescolhaui_aviso(void) { return S.aviso; }
 
 void farolescolhaui_teste_hora(int hora) { S.testeHora = hora; }
 void farolescolhaui_teste_infantil(int infantil) { S.testeInfantil = infantil; }
+void farolescolhaui_teste_modos(int voz, int ime, int cel) {
+  forcaVoz = voz < 0 ? -1 : (voz ? 1 : 0);
+  forcaIme = ime < 0 ? -1 : (ime ? 1 : 0);
+  forcaCel = cel < 0 ? -1 : (cel ? 1 : 0);
+}
+unsigned int farolescolhaui_teste_qr_tex(void) { return (unsigned int)S.qrTex; }

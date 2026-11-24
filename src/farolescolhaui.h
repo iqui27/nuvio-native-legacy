@@ -41,10 +41,14 @@
 #define FESCUI_OUVINDO   4   // ditado ativo (#54, st_voz_iniciar + parciais)
 #define FESCUI_PREVIA    5   // previa obrigatoria ANTES de enviar (0 POSTs)
 #define FESCUI_ESPERA    6   // aguardando POST /v1/farol/escolha (cancelavel)
+#define FESCUI_DIGITANDO 7   // teclado/IME da TV ou voz pelo teclado (.tpk/.wgt) (#55)
+#define FESCUI_QR        8   // digitar pelo celular via QR + servidor local (#55)
+#define FESCUI_AVISO     9   // aviso honesto sem beco (erro/expiracao QR ou falha IME) (#55)
 
 #define FESCUI_FOCO_VOLTAR    (-1)
 #define FESCUI_FOCO_VOZ       (-2)
 #define FESCUI_FOCO_CONFIRMAR (-3)
+#define FESCUI_FOCO_ALT       (-4)
 
 void farolescolhaui_reset(void);
 void farolescolhaui_fechar(void);
@@ -80,12 +84,17 @@ const FarolEsc *farolescolhaui_motor(void);
 int  farolescolhaui_n_resultados(void);  // cartazes no modo RESULTADO
 int  farolescolhaui_resultado_indice(int i);   // indice vivo no catalogo; -1 fora
 int         farolescolhaui_saida(void);         // FESC_SAIDA_* do ultimo fim
-int         farolescolhaui_voz_visivel(void);   // 1 se botao de microfone visivel
+int         farolescolhaui_voz_visivel(void);   // 1 se botao de frase visivel (voz/IME/QR)
+const char *farolescolhaui_rotulo_botao(void);  // FT_ACAO_* do modo primario
+const char *farolescolhaui_icone_botao(void);   // icone do modo primario
 const char *farolescolhaui_frase(void);         // frase na previa/espera (ou "")
-const char *farolescolhaui_parcial(void);       // parcial enquanto ouve (ou "")
+const char *farolescolhaui_parcial(void);       // parcial enquanto ouve/digita (ou "")
+const char *farolescolhaui_aviso(void);         // ultimo aviso de entrada (ou "")
 
 // ------------------------------------------------------------ ganchos de teste
 void farolescolhaui_teste_hora(int hora);        // -2 = relogio real
 void farolescolhaui_teste_infantil(int infantil); // -1 = perfil real
+void farolescolhaui_teste_modos(int voz, int ime, int cel); // -1 = deteccao real
+unsigned int farolescolhaui_teste_qr_tex(void); // GLuint atual da textura QR (0 se destruida)
 
 #endif
