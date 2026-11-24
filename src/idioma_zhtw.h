@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "從 4 到 8 個數字。保護該電視上該設定檔的設定。"),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "4 到 8 位數字。僅在此電視上有效,用於保護其他個人檔案的設定。"),
   T("De 50% a 300% do tamanho principal", "從 50% 到 300% d 主尺寸"),
+  T("De lado até amanhã", "已擱置至明天"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "展示的作品來源：整個片庫，或僅限你的清單和繼續觀看。"),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "展示區的標題來源:目錄或你的清單。"),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "自動播放可選的來源：所有來源、僅已安裝的附加元件或僅已啟用的外掛。儲存在你的個人檔案中。"),

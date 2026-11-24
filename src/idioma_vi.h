@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "Từ 4 đến 8 số. Bảo vệ cài đặt của cấu hình này trên TV này."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "Từ 4 đến 8 chữ số. Chỉ có hiệu lực trên TV này; bảo vệ cài đặt của các hồ sơ khác."),
   T("De 50% a 300% do tamanho principal", "Từ 50% đến 300% kích thước chính"),
+  T("De lado até amanhã", "Để sang một bên đến mai"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Tủ trưng bày lấy nội dung từ đâu: toàn bộ danh mục, hoặc chỉ những gì trong danh sách của bạn và Xem tiếp."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "Nơi khung giới thiệu lấy tiêu đề: danh mục hoặc danh sách của bạn."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "Tự động phát được chọn từ đâu: mọi nguồn, chỉ tiện ích đã cài hoặc chỉ plugin đang bật. Lưu vào hồ sơ."),

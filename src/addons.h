@@ -310,6 +310,13 @@ enum { ADD_CATALOGO = 0, ADD_STREAM, ADD_LEGENDA, ADD_META };
 
 const char *addons_nome(int i);
 int  addons_ativo(int i);
+// Quarentena de 24 h do Farol (farolacao_addon.h): o add-on segue na lista, mas
+// nao e esperado nem consultado nas buscas de FONTES ate o prazo vencer.
+int  addons_chave_estatistica(int i, char chave[32]);   // 1 = `i` existe
+int  addons_isolado_s(int i);               // segundos que faltam; 0 = livre
+const char *addons_estado_texto(int i);     // "De lado até amanhã" (i18n) ou ""
+int  addons_fontes_vivas_n(void);           // ligados, com fontes e fora da quarentena
+int  addons_lento_isolavel(void);           // indice do que mais segura a lista; -1 nenhum
 int  addons_base_desligada(const char *base);   // 1 = addon da lista desligado na conta
 int  addons_alternar(int i);          // devolve o estado NOVO
 // Acrescenta um addon sem refazer a lista (ver a nota em addons.c). 1 = entrou,

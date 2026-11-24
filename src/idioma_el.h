@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "Από 4 έως 8 αριθμούς. Προστατεύει τις ρυθμίσεις αυτού του προφίλ σε αυτήν την τηλεόραση."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "4 έως 8 ψηφία. Ισχύει μόνο σε αυτή την τηλεόραση· προστατεύει τις ρυθμίσεις των άλλων προφίλ."),
   T("De 50% a 300% do tamanho principal", "Από 50% έως 300% του κύριου μεγέθους"),
+  T("De lado até amanhã", "Στην άκρη μέχρι αύριο"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Από πού παίρνει η βιτρίνα τους τίτλους: από όλο τον κατάλογο ή μόνο από τη λίστα σου και τη Συνέχεια προβολής."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "Από πού παίρνει τους τίτλους η προθήκη: ο κατάλογος ή η λίστα σας."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "Από πού διαλέγει η αυτόματη αναπαραγωγή: όλες οι πηγές, μόνο εγκατεστημένα πρόσθετα ή μόνο ενεργά plugins. Αποθηκεύεται στο προφίλ."),

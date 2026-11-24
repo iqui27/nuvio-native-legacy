@@ -251,11 +251,149 @@ void addonstats_carregar(const char *texto) {
   pthread_mutex_unlock(&trava);
 }
 
+// ------------------------------------------------------------- quarentena 24 h
+typedef struct { char chave[48]; time_t ate; } Isola;
+static Isola isola[ADDONSTATS_ISOLA_CAP];
+static int nIsola, isolaSuja;
+static time_t (*relogioFn)(void);
+
+void addonstats_relogio(time_t (*agora)(void)) {
+  pthread_mutex_lock(&trava);
+  relogioFn = agora;
+  pthread_mutex_unlock(&trava);
+}
+static time_t agoraSemTrava(void) { return relogioFn ? relogioFn() : time(NULL); }
+time_t addonstats_agora(void) {
+  time_t t;
+  pthread_mutex_lock(&trava);
+  t = agoraSemTrava();
+  pthread_mutex_unlock(&trava);
+  return t;
+}
+// Tira o vencido; o vetor continua na ordem de criacao.
+static void podarIsola(time_t agora) {
+  int i, k = 0;
+  for (i = 0; i < nIsola; i++)
+    if (isola[i].ate > agora) isola[k++] = isola[i];
+  if (k != nIsola) isolaSuja = 1;
+  nIsola = k;
+}
+static Isola *achaIsola(const char *chave) {
+  for (int i = 0; i < nIsola; i++) if (!strcmp(isola[i].chave, chave)) return &isola[i];
+  return NULL;
+}
+int addonstats_isolar_teto(const char *chave, int segundos, int teto) {
+  Isola *r;
+  int rc = 0;
+  if (!chave || !*chave || strlen(chave) >= sizeof isola[0].chave || segundos <= 0) return 0;
+  pthread_mutex_lock(&trava);
+  time_t agora = agoraSemTrava();
+  podarIsola(agora);
+  r = achaIsola(chave);
+  if (r && teto > 0) rc = -1;                       // com teto, reisolar nao renova o prazo
+  else if (!r && teto > 0 && nIsola >= teto) rc = -2;
+  else {
+    if (!r && nIsola < ADDONSTATS_ISOLA_CAP) {
+      r = &isola[nIsola++];
+      snprintf(r->chave, sizeof r->chave, "%s", chave);
+    }
+    if (r) { r->ate = agora + segundos; isolaSuja = 1; rc = 1; }
+  }
+  pthread_mutex_unlock(&trava);
+  return rc;
+}
+int addonstats_isolar(const char *chave, int segundos) {
+  return addonstats_isolar_teto(chave, segundos, 0) == 1;
+}
+int addonstats_desisolar(const char *chave) {
+  int ok = 0;
+  if (!chave || !*chave) return 0;
+  pthread_mutex_lock(&trava);
+  podarIsola(agoraSemTrava());
+  Isola *r = achaIsola(chave);
+  if (r) {
+    memmove(r, r + 1, sizeof *r * (size_t)(nIsola - 1 - (int)(r - isola)));
+    nIsola--; isolaSuja = 1; ok = 1;
+  }
+  pthread_mutex_unlock(&trava);
+  return ok;
+}
+int addonstats_isolado_s(const char *chave) {
+  int s = 0;
+  if (!chave || !*chave) return 0;
+  pthread_mutex_lock(&trava);
+  time_t agora = agoraSemTrava();
+  Isola *r = achaIsola(chave);
+  if (r && r->ate > agora) s = (int)(r->ate - agora);
+  pthread_mutex_unlock(&trava);
+  return s;
+}
+int addonstats_isolados_n(void) {
+  int n = 0;
+  pthread_mutex_lock(&trava);
+  time_t agora = agoraSemTrava();
+  for (int i = 0; i < nIsola; i++) if (isola[i].ate > agora) n++;
+  pthread_mutex_unlock(&trava);
+  return n;
+}
+int addonstats_isolar_serializar(char *dst, unsigned tam) {
+  unsigned usado = 0;
+  if (!dst || tam < 2) return 0;
+  dst[0] = 0;
+  pthread_mutex_lock(&trava);
+  time_t agora = agoraSemTrava();
+  for (int i = 0; i < nIsola; i++) {
+    if (isola[i].ate <= agora) continue;
+    int w = snprintf(dst + usado, tam - usado, "%s\t%lld\n", isola[i].chave, (long long)isola[i].ate);
+    if (w < 0 || (unsigned)w >= tam - usado) { dst[usado] = 0; break; }
+    usado += (unsigned)w;
+  }
+  pthread_mutex_unlock(&trava);
+  return (int)usado;
+}
+void addonstats_isolar_carregar(const char *texto) {
+  const char *p = texto;
+  pthread_mutex_lock(&trava);
+  time_t agora = agoraSemTrava();
+  nIsola = 0; isolaSuja = 0;
+  while (p && *p && nIsola < ADDONSTATS_ISOLA_CAP) {
+    const char *fim = strchr(p, '\n'), *tab;
+    size_t len = fim ? (size_t)(fim - p) : strlen(p);
+    char linha[160];
+    if (len >= sizeof linha) len = sizeof linha - 1;
+    memcpy(linha, p, len); linha[len] = 0;
+    tab = strchr(linha, '\t');
+    if (tab && tab > linha && (size_t)(tab - linha) < sizeof isola[0].chave) {
+      char *e;
+      long long ate = strtoll(tab + 1, &e, 10);
+      *(char *)tab = 0;
+      // So o que ainda vale e cabe no prazo: data muito a frente = relogio
+      // errado de quem gravou, e quarentena eterna e pior que nenhuma.
+      if (e != tab + 1 && (*e == 0 || *e == '\r') && ate > (long long)agora &&
+          ate <= (long long)agora + ADDONSTATS_ISOLA_S && !achaIsola(linha)) {
+        snprintf(isola[nIsola].chave, sizeof isola[nIsola].chave, "%.47s", linha);
+        isola[nIsola].ate = (time_t)ate;
+        nIsola++;
+      }
+    }
+    p = fim ? fim + 1 : NULL;
+  }
+  pthread_mutex_unlock(&trava);
+}
+void addonstats_isolar_zerar(void) {
+  pthread_mutex_lock(&trava);
+  nIsola = 0; isolaSuja = 0;
+  pthread_mutex_unlock(&trava);
+}
+
 #ifndef NV_ADDONSTATS_PURO
 #define ARQ "fonte-latencia.txt"
+#define ARQ_ISOLA "fonte-quarentena.txt"
 void addonstats_ler(void) {
   char *t = dados_ler(ARQ);
   if (t) { addonstats_carregar(t); free(t); }
+  t = dados_ler(ARQ_ISOLA);
+  if (t) { addonstats_isolar_carregar(t); free(t); }
 }
 void addonstats_salvar(void) {
   char *buf;
@@ -269,5 +407,22 @@ void addonstats_salvar(void) {
   addonstats_serializar(buf, (unsigned)ADDONSTATS_MAX * 160u);
   dados_gravar_leve(ARQ, buf);
   free(buf);
+}
+// Uma gravacao por vez: sem isto, dois fios podiam gravar fora de ordem e deixar
+// no disco a quarentena velha por cima da nova.
+static pthread_mutex_t salvaIsolaTrava = PTHREAD_MUTEX_INITIALIZER;
+void addonstats_isolar_salvar(void) {
+  char buf[ADDONSTATS_ISOLA_CAP * 80];
+  int quer;
+  pthread_mutex_lock(&salvaIsolaTrava);
+  pthread_mutex_lock(&trava);
+  podarIsola(agoraSemTrava());
+  quer = isolaSuja; isolaSuja = 0;
+  pthread_mutex_unlock(&trava);
+  if (quer) {
+    addonstats_isolar_serializar(buf, sizeof buf);
+    dados_gravar_leve(ARQ_ISOLA, buf);
+  }
+  pthread_mutex_unlock(&salvaIsolaTrava);
 }
 #endif

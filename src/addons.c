@@ -16,6 +16,7 @@
 #include "marco.h"
 #include "ondever.h"
 #include "addonstats.h"
+#include "faroltexto.h"
 #include "aionotice.h"
 #include "fontecache.h"
 #include "fontefalha.h"
@@ -112,6 +113,7 @@ typedef struct {
   uint64_t statsSession;
   char nome[64], base[NV_ADDON_URL_MAX], estatistica[32], tipoCanal[16];
   int ativo, fonte, legenda, sondado, capPresumida, soVivo, mudoSeg, aio;
+  int isolado;   // quarentena de 24 h (Farol #17): fora da busca de FONTES, nao da lista
   char streamTipos[64];
   char streamPref[ADD_PREF_MAX][ADD_PREF_TAM]; int nStreamPref;
 } AddonPedido;
@@ -1062,7 +1064,7 @@ static void registrarLatencia(const char *chave, unsigned ms, int respondeu) {
 }
 void addons_definir_espera_decisao(int ms) { espDecisaoMs = ms > 0 ? (unsigned)ms : 0; }
 static int naoSegura(const char *nome) {
-  return nome && nome[0] && addonstats_ignoravel(nome, espDecisaoMs);
+  return nome && nome[0] && (addonstats_isolado_s(nome) > 0 || addonstats_ignoravel(nome, espDecisaoMs));
 }
 
 int addons_faltam_decisivos(void) {
@@ -1862,6 +1864,66 @@ static void *buscarLegendas(void *u) {
 // ------------------------------------------------------------ lista e sonda
 
 int addons_ativo(int i)   { return (i >= 0 && i < nAddon) ? addon[i].ativo : 0; }
+
+// --- quarentena de 24 h (Farol #17, farolacao_addon.h) -------------------------
+// O prazo mora em addonstats; aqui so a ponte entre o indice da lista e a chave
+// de estatistica, e o que a tela de add-ons le.
+int addons_chave_estatistica(int i, char chave[32]) {
+  if (!chave) return 0;
+  chave[0] = 0;
+  pthread_mutex_lock(&addonTrava);
+  int ok = i >= 0 && i < nAddon;
+  if (ok) chaveEstatistica(addon[i].base, 0, chave);
+  pthread_mutex_unlock(&addonTrava);
+  return ok;
+}
+int addons_isolado_s(int i) {
+  char chave[32];
+  return addons_chave_estatistica(i, chave) ? addonstats_isolado_s(chave) : 0;
+}
+// "De lado ate amanha" quando em quarentena; "" fora dela.
+const char *addons_estado_texto(int i) {
+  return addons_isolado_s(i) > 0 ? i18n(FT_ADDON_DE_LADO) : "";
+}
+// Add-ons ligados que fornecem fontes e NAO estao de lado: o que sobra para
+// tocar. A politica nunca isola o ultimo.
+int addons_fontes_vivas_n(void) {
+  int k = 0;
+  for (int i = 0; ; i++) {
+    char chave[32];
+    int ativo, fonte;
+    pthread_mutex_lock(&addonTrava);
+    int fim = i >= nAddon;
+    ativo = !fim && addon[i].ativo; fonte = !fim && addon[i].fonte;
+    if (!fim) chaveEstatistica(addon[i].base, 0, chave);
+    pthread_mutex_unlock(&addonTrava);
+    if (fim) break;
+    if (ativo && fonte && !addonstats_isolado_s(chave)) k++;
+  }
+  return k;
+}
+// O add-on de fontes que mais segura a lista (mudo seguido ou lento) e ainda
+// nao esta de lado; -1 quando nenhum merece. Mais mudo primeiro, depois o mais lento.
+int addons_lento_isolavel(void) {
+  int melhor = -1;
+  unsigned long ponto = 0;
+  for (int i = 0; ; i++) {
+    char chave[32];
+    int ativo, fonte;
+    pthread_mutex_lock(&addonTrava);
+    int fim = i >= nAddon;
+    ativo = !fim && addon[i].ativo; fonte = !fim && addon[i].fonte;
+    if (!fim) chaveEstatistica(addon[i].base, 0, chave);
+    pthread_mutex_unlock(&addonTrava);
+    if (fim) break;
+    if (!ativo || !fonte || addonstats_isolado_s(chave)) continue;
+    int mudo = addonstats_mudo_seguidas(chave);
+    if (!(mudo >= ADDONSTATS_MUDO_IGNORA || naoSegura(chave))) continue;
+    unsigned long v = (unsigned long)mudo * 1000000UL + addonstats_mediana(chave) + 1;
+    if (v > ponto) { ponto = v; melhor = i; }
+  }
+  return melhor;
+}
 
 // O PREDICADO UNICO DE "ESTE ADDON FOI DESLIGADO NA CONTA". Todo pedido a um
 // addon por BASE (catalogo, busca, "ver tudo", guia, meta) passa por aqui. O
@@ -2807,7 +2869,8 @@ static int resolverStream(Consulta *c, int i) {
     if (consultaCancelada(c) || !nv_perfil_sessao_travar(c->sessao)) return 0;
     pthread_mutex_lock(&addonTrava);
     int atual = c->versao == versaoLista && i < nAddon && !strcmp(addon[i].base, p->base);
-    if (atual) copiarPedido(i, p);
+    int iso = p->isolado;
+    if (atual) { copiarPedido(i, p); p->isolado = iso; }
     pthread_mutex_unlock(&addonTrava);
     nv_perfil_sessao_destravar();
     if (!atual) return 0;
@@ -3407,6 +3470,8 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
   memset(&c, 0, sizeof c); c.sessao = sessao;
   c.inicio = SDL_GetTicks();
   c.origens = capturarPedidos(sessao, &c.nOrigens, &c.versao);
+  for (i = 0; i < c.nOrigens; i++)
+    c.origens[i].isolado = addonstats_isolado_s(c.origens[i].estatistica) > 0;
   // So na busca ampla: canal com origem conhecida pergunta a um addon so.
   memset(&extra, 0, sizeof extra);
   if (!(base && *base) && addons_origem_extra_ativa()) {
@@ -3468,6 +3533,11 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
     }
     // Sem origem conhecida, ou origem que nao esta (mais) na lista: todos,
     // como sempre. Melhor perguntar a mais do que nao perguntar a ninguem.
+    // O add-on em quarentena de 24 h (Farol #17) fica de fora da busca ampla
+    // ate o prazo vencer; so volta se SEM ele ninguem seria perguntado.
+    if (c.nBaldes == 0)
+      for (i = 0; i < c.nOrigens; i++)
+        if (!c.origens[i].isolado && candidatoStream(&c.origens[i], tipo, id)) c.baldes[c.nBaldes++].idx = i;
     if (c.nBaldes == 0)
       for (i = 0; i < c.nOrigens; i++)
         if (candidatoStream(&c.origens[i], tipo, id)) c.baldes[c.nBaldes++].idx = i;
@@ -3499,9 +3569,10 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
     if (!(base && *base) && (!folhaFeita || ultimaFolha != versaoLista)) {
       ultimaFolha = versaoLista; folhaFeita = 1;
       for (i = 0; i < c.nOrigens; i++) {
-        if (c.origens[i].ativo && c.origens[i].sondado && c.origens[i].fonte) continue;
+        if (c.origens[i].ativo && c.origens[i].sondado && c.origens[i].fonte && !c.origens[i].isolado) continue;
         printf("[addons] fora da busca de fontes: %s (%s)\n", c.origens[i].nome,
                !c.origens[i].ativo ? "desligado" :
+               c.origens[i].isolado ? "de lado por 24 h" :
                c.origens[i].sondado ? "o manifesto nao declara stream"
                                 : "ainda sem manifesto");
       }
@@ -3641,6 +3712,8 @@ AddonsConsulta *addons_consulta_capturar(void) {
     a->ativo = atomic_load(&fontesHabilitadas) && a->ativo;
   }
   nv_perfil_sessao_destravar();
+  for (int i = 0; i < c->n; i++)
+    c->addons[i].isolado = addonstats_isolado_s(c->addons[i].estatistica) > 0;
   // O registro e estavel na UI. Cada origem conserva somente suas copias;
   // nenhuma conta ou manifesto ativo e consultado no fio especulativo.
   c->nExtras = nOrigensExtra;
@@ -3690,7 +3763,7 @@ typedef struct {
   const AddonsConsulta *snapshot;
   const char *id, *tipo;
   int (*cancelado)(void *); void *ctx;
-  int proximo;
+  int proximo, temNaoIsolado;
   BaldeFonte *baldes;
   struct ArmFontes arm;
   pthread_mutex_t trava;
@@ -3739,7 +3812,7 @@ int addons_consulta_filme(const AddonsConsulta *c, const char *id,
     if (!nv_perfil_sessao_atual(c->sessao) || (cancelado && cancelado(ctx)) ||
         SDL_GetTicks() - inicio >= 15000u) return -1;
     const AddonCapturado *a = &c->addons[i];
-    if (!a->ativo || !a->fonte) continue;
+    if (!a->ativo || !a->fonte || a->isolado) continue;
     char url[NV_ADDON_PEDIDO_MAX], idUrl[768];
     if (!nv_addon_id(idUrl, sizeof idUrl, id) ||
         !nv_addon_url(url, sizeof url, a->base, "/stream/movie/%s.json", idUrl)) continue;
@@ -3777,7 +3850,7 @@ static void *fioConsultaCapturada(void *u) {
     if (i >= c->snapshot->n) break;
     if (!nv_perfil_sessao_atual(c->snapshot->sessao) || (c->cancelado && c->cancelado(c->ctx))) break;
     AddonPedido *a = &c->snapshot->addons[i];
-    if (!candidatoStream(a, c->tipo, c->id)) { c->baldes[i].respondeu = 1; continue; }
+    if ((c->temNaoIsolado && a->isolado) || !candidatoStream(a, c->tipo, c->id)) { c->baldes[i].respondeu = 1; continue; }
     // Use Detail's exact namespace translation, type and configured provider URL.
     BaldeFonte balde = { .idx = i };
     Consulta pedido = { .id = c->id, .tipo = c->tipo, .baldes = &balde, .nBaldes = 1,
@@ -3850,6 +3923,8 @@ int addons_consulta_consultar(const AddonsConsulta *snapshot, const char *id, co
   if (!snapshot || !id || !*id || !tipo || !*tipo) return -1;
   ConsultaCapturada c = {0};
   c.snapshot = snapshot; c.id = id; c.tipo = tipo; c.cancelado = cancelado; c.ctx = ctx;
+  for (int i = 0; i < snapshot->n; i++)
+    if (!snapshot->addons[i].isolado && candidatoStream(&snapshot->addons[i], tipo, id)) { c.temNaoIsolado = 1; break; }
   if (cancelaConsultaCapturada(&c)) return -1;
   if (snapshot->n) {
     c.baldes = calloc((size_t)snapshot->n, sizeof *c.baldes);

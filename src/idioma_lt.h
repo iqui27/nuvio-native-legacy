@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "Nuo 4 iki 8 skaičių. Apsaugo šio profilio nustatymus šiame televizoriuje."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "Nuo 4 iki 8 skaitmenų. Galioja tik šiame televizoriuje; saugo kitų profilių nustatymus."),
   T("De 50% a 300% do tamanho principal", "Nuo 50% iki 300% pagrindinio dydžio"),
+  T("De lado até amanhã", "Atidėta iki rytojaus"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Iš kur vitrina ima pavadinimus: iš viso katalogo arba tik iš jūsų sąrašo ir Tęsti žiūrėjimą."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "Iš kur vitrina ima pavadinimus: iš katalogo ar jūsų sąrašo."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "Iš kur gali rinktis automatinis paleidimas: visi šaltiniai, tik įdiegti priedai arba tik įjungti įskiepiai. Išsaugoma profilyje."),

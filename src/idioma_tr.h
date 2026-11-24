@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "4'ten 8'e kadar sayılar. Bu profilin ayarlarını bu TV'de korur."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "4 ila 8 rakam. Yalnızca bu TV'de geçerlidir; diğer profillerin ayarlarını korur."),
   T("De 50% a 300% do tamanho principal", "Ana boyutun %50'sinden %300'üne kadar"),
+  T("De lado até amanhã", "Yarına kadar kenarda"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Vitrinin yapımları nereden aldığı: tüm katalog ya da yalnızca listen ve İzlemeye devam et."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "Vitrinin yapımları nereden aldığı: katalog veya listeniz."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "Otomatik oynatmanın seçebileceği yer: tüm kaynaklar, yalnızca yüklü eklentiler veya yalnızca açık pluginler. Profilinize kaydedilir."),

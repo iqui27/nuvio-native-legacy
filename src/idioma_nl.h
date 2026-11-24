@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "Van 4 tot 8 cijfers. Beveiligt de instellingen van dit profiel op deze tv."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "4 tot 8 cijfers. Alleen geldig op deze tv; beschermt de instellingen van andere profielen."),
   T("De 50% a 300% do tamanho principal", "Van 50% tot 300% van de hoofdgrootte"),
+  T("De lado até amanhã", "Opzij tot morgen"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Waar de etalage de titels vandaan haalt: de hele catalogus, of alleen wat in je lijst en in Verder kijken staat."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "Waar de etalage de titels vandaan haalt: de catalogus of je lijst."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "Waaruit automatisch afspelen mag kiezen: alle bronnen, alleen geïnstalleerde add-ons of alleen ingeschakelde plug-ins. In je profiel bewaard."),

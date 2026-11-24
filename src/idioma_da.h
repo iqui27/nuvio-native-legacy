@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "Fra 4 til 8 numre. Beskytter indstillingerne for denne profil på dette TV."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "4 til 8 cifre. Gælder kun på dette tv og beskytter andre profilers indstillinger."),
   T("De 50% a 300% do tamanho principal", "Fra 50% til 300% af hovedstørrelsen"),
+  T("De lado até amanhã", "Lagt til side til i morgen"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Hvor udstillingen henter titlerne fra: hele kataloget, eller kun det, der er på din liste og i Fortsæt med at se."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "Hvor udstillingen henter titlerne fra: kataloget eller din liste."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "Hvorfra autoafspilning må vælge: alle kilder, kun installerede add-ons eller kun aktive plugins. Gemmes i din profil."),
