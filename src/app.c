@@ -5176,6 +5176,12 @@ void app_evento(const SDL_Event *e) {
         else trocarTela(TELA_AJUSTES);
         menu_definir_destino(MENU_AJUSTES);
       }
+    } else if (rped == RESOLVER_PEDIU_CONTAS) {
+      menu_fechar();
+      ajustes_abrir_no_trakt();
+      if (tela == TELA_AJUSTES) ajustes_iniciar();
+      else trocarTela(TELA_AJUSTES);
+      menu_definir_destino(MENU_AJUSTES);
     } else if (rped == RESOLVER_PEDIU_PLAYER_EXT) {
       // FAROL: a fonte que falhou sai para o player externo instalado,
       // vinculada a tentativa diagnosticada.

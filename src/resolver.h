@@ -42,6 +42,7 @@ void resolver_desenhar(Uint32 agora);
 #define RESOLVER_PEDIU_FONTES 1   // abrir Ajustes › Fontes e addons
 #define RESOLVER_PEDIU_DEBRID 2   // abrir o login da conta de cache (addonguia, QR)
 #define RESOLVER_PEDIU_PLAYER_EXT 3   // despachar a fonte falha ao player externo (Android)
+#define RESOLVER_PEDIU_CONTAS 4   // abrir Ajustes › Conta e servicos (Sem conta)
 int  resolver_pedido(void);
 uint64_t resolver_tentativa_externo(void);
 
