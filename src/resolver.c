@@ -23,6 +23,7 @@
 #include "farolconsentui.h"
 #include "farolenvioui.h"
 #include "farolachaui.h"
+#include "farolvozui.h"
 #include "farolsonda.h"
 #include "farolanel.h"
 #include "farolregra.h"
@@ -77,6 +78,25 @@
 #define SINT_H      104.0f
 #define SINT_GAP     18.0f
 
+// Ganchos fracos da camada de voz (#31) para manter os testes isolados do
+// Resolver e da Tela 7 sem puxar farolvozui.c / farolbusca.c / sistexto.c.
+__attribute__((weak)) int  farolvozui_disponivel(void) { return 0; }
+__attribute__((weak)) int  farolvozui_ativo(void) { return 0; }
+__attribute__((weak)) int  farolvozui_foco(void) { return 0; }
+__attribute__((weak)) int  farolvozui_volta_fase(void) { return RESOLVER_FASE_SINTOMA; }
+__attribute__((weak)) void farolvozui_reset(void) {}
+__attribute__((weak)) int  farolvozui_abrir(int voltaFase) { (void)voltaFase; return 0; }
+__attribute__((weak)) void farolvozui_fechar(void) {}
+__attribute__((weak)) void farolvozui_evento(const SDL_Event *e, int *pediuVoltar, int *abriuAchados) {
+  (void)e; if (pediuVoltar) *pediuVoltar = 0; if (abriuAchados) *abriuAchados = 0;
+}
+__attribute__((weak)) void farolvozui_atualizar(float dt, Uint32 agora, int *abriuAchados, int *pediuVoltar) {
+  (void)dt; (void)agora; if (abriuAchados) *abriuAchados = 0; if (pediuVoltar) *pediuVoltar = 0;
+}
+__attribute__((weak)) void farolvozui_desenhar(float ox, float oy, float alpha, Uint32 agora) {
+  (void)ox; (void)oy; (void)alpha; (void)agora;
+}
+
 // Ids de foco. Os cartoes de sintoma usam o RES_S_* (RES_S_CORES inclusive);
 // o resto vale por fase (resolver.h).
 enum {
@@ -86,6 +106,7 @@ enum {
   B_ACHAR_0 = RESOLVER_B_ACHAR_CURTO, B_ACHAR_1 = RESOLVER_B_ACHAR_NAO_VI,
   B_ACHAR_2 = RESOLVER_B_ACHAR_RETOMAR, B_ACHAR_3 = RESOLVER_B_ACHAR_SURPRESA,
   B_ACHAR_VOLTAR = RESOLVER_B_ACHAR_VOLTAR,
+  B_ACHAR_VOZ = RESOLVER_B_ACHAR_VOZ,
   B_LIN0 = RESOLVER_B_LIN0
 };
 // O que um botao do painel faz. A_DEBRID = login da conta de cache (a tela/QR
@@ -160,8 +181,10 @@ int resolver_aberto(void) { return aberto; }
 int resolver_fase(void) { return fase; }
 int resolver_foco(void) {
   if (farolconsentui_aberto()) return farolconsentui_foco();
+  if (farolvozui_ativo()) return farolvozui_foco();
   if (fase == RESOLVER_FASE_ACHAR) {
     int af = farolachaui_foco();
+    if (af == FAROL_ACHA_FOCO_VOZ) return B_ACHAR_VOZ;
     return af < 0 ? B_ACHAR_VOLTAR : (B_ACHAR_0 + af);
   }
   if (fase == RESOLVER_FASE_ENVIO && farolenvioui_ativo())
@@ -213,7 +236,7 @@ void resolver_teste_esquecer(void) {
   farolconsentui_esquecer();
   farolenvioui_esquecer();
   aberto = 0; entrada = 0.0f; fase = 0; foco = 0; envN = 0; envModo = 0; envNoAr = 0; rolo = 0; temFalha = 0;
-  acharVoltaFoco = 0; farolachaui_reset();
+  acharVoltaFoco = 0; farolachaui_reset(); farolvozui_reset();
   diagTentativa = 0; pedidoTentativa = 0; diagUsaTentativa = 0;
   luz = luzAlvo = seguraMs = respiraMs = 0.0f; segura = 0; sondaCancelada = 0;
   pendAcao = 0; pendCod = -1; pendSint = 0; falhouCod = -1; envDoFarol = 0; pFarol = 0;
@@ -639,6 +662,12 @@ static int achar_disponivel(void) { return 1; }
 
 static int envio_visiveis(void) { return envN - rolo < VISIVEIS ? envN - rolo : VISIVEIS; }
 
+static float voz_botao_largura(void) {
+  float w = botao_largura(i18n(FT_ACAO_FALAR), "aj_mic", 0);
+  float maxW = ACHAR_W - 28.0f - 28.0f - 56.0f - 16.0f;
+  return w > maxW ? maxW : w;
+}
+
 static int montar(Item *it) {
   int n = 0, i;
   origem();
@@ -650,6 +679,11 @@ static int montar(Item *it) {
       poe(it, &n, resolverregra_sintoma_farol(i), MARGEM + (float)(i % 2) * (w + 24.0f),
           y0 + (float)(i / 2) * (SINT_H + SINT_GAP), w, SINT_H);
     if (achar_disponivel()) {
+      if (farolvozui_disponivel()) {
+        float vw = voz_botao_largura();
+        poe(it, &n, B_ACHAR_VOZ, ACHAR_X + ACHAR_W - 28.0f - vw, y0 + 28.0f,
+            vw, BOTAO_H_SECUNDARIO);
+      }
       for (i = 0; i < 4; i++)
         poe(it, &n, B_ACHAR_0 + i, ACHAR_X + 28.0f,
             y0 + 160.0f + (float)i * 64.0f, ACHAR_W - 56.0f, 52.0f);
@@ -967,6 +1001,7 @@ static void abrir(void) {
   diagUsaTentativa = 0;
   acharVoltaFoco = 0;
   farolachaui_reset();
+  farolvozui_reset();
   segura = 0;
   sonda_sincronizar();
   envModo = M_NADA;
@@ -989,6 +1024,7 @@ void resolver_abrir_sintoma(int s) {
 static void fechar(void) {
   farolconsentui_fechar();
   farolenvioui_fechar();
+  farolvozui_fechar();
   if (segura || sonda_no_ar()) {
     farolsonda_cancelar();
     sondaCancelada = sonda_no_ar();
@@ -1107,6 +1143,9 @@ static void ok(int longo) {
       acharVoltaFoco = foco;
       farolachaui_abrir((FarolAchaTipo)k, FAROL_ACHA_CURTO_PADRAO, 0u);
       fase = RESOLVER_FASE_ACHAR;
+    } else if (foco == B_ACHAR_VOZ && farolvozui_disponivel()) {
+      acharVoltaFoco = B_ACHAR_VOZ;
+      farolvozui_abrir(RESOLVER_FASE_SINTOMA);
     }
   } else if (fase == RESOLVER_FASE_CADEIA) {
     if (!segura) veredito_entrar();   // OK adianta a luz; a sonda no ar segura
@@ -1155,6 +1194,18 @@ static void sincronizar_envioui(float dt) {
   else if (volt && fase == RESOLVER_FASE_ENVIO) ir_fase(voltaFase);
 }
 
+static void voz_voltar_fase(void) {
+  int vf = farolvozui_volta_fase();
+  if (vf == RESOLVER_FASE_ACHAR) {
+    fase = RESOLVER_FASE_ACHAR;
+  } else {
+    ir_fase(RESOLVER_FASE_SINTOMA);
+    if ((acharVoltaFoco >= B_ACHAR_0 && acharVoltaFoco <= B_ACHAR_3) ||
+        acharVoltaFoco == B_ACHAR_VOZ)
+      foco = acharVoltaFoco;
+  }
+}
+
 void resolver_evento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!aberto) return;
@@ -1162,14 +1213,26 @@ void resolver_evento(const SDL_Event *e) {
     if (e->type == SDL_KEYDOWN) farolconsentui_evento(e);
     return;
   }
+  if (farolvozui_ativo()) {
+    int pediuVoltar = 0, abriuAchados = 0;
+    farolvozui_evento(e, &pediuVoltar, &abriuAchados);
+    if (abriuAchados) fase = RESOLVER_FASE_ACHAR;
+    else if (pediuVoltar) voz_voltar_fase();
+    return;
+  }
   if (fase == RESOLVER_FASE_ACHAR) {
     if (e->type == SDL_KEYDOWN) {
       int pediuVoltar = 0, pediuAbrir = 0;
       farolachaui_evento(e, &pediuVoltar, &pediuAbrir);
       (void)pediuAbrir;
+      if (farolachaui_pediu_voz() && farolvozui_disponivel()) {
+        farolvozui_abrir(RESOLVER_FASE_ACHAR);
+        return;
+      }
       if (pediuVoltar) {
         ir_fase(RESOLVER_FASE_SINTOMA);
-        if (acharVoltaFoco >= B_ACHAR_0 && acharVoltaFoco <= B_ACHAR_3)
+        if ((acharVoltaFoco >= B_ACHAR_0 && acharVoltaFoco <= B_ACHAR_3) ||
+            acharVoltaFoco == B_ACHAR_VOZ)
           foco = acharVoltaFoco;
       }
     }
@@ -1262,7 +1325,14 @@ void resolver_atualizar(float dt, Uint32 agora) {
                        (float)(agora - okDesde) / (float)NV_HOLD_MS);
       if (!okLongo && segurar_venceu(agora, okDesde, "resolver")) okLongo = 1;
     }
-    if (fase == RESOLVER_FASE_ACHAR) farolachaui_atualizar(dt, agora);
+    if (farolvozui_ativo()) {
+      int abriuAchados = 0, pediuVoltar = 0;
+      farolvozui_atualizar(dt, agora, &abriuAchados, &pediuVoltar);
+      if (abriuAchados) fase = RESOLVER_FASE_ACHAR;
+      else if (pediuVoltar) voz_voltar_fase();
+    } else if (fase == RESOLVER_FASE_ACHAR) {
+      farolachaui_atualizar(dt, agora);
+    }
   }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
   if (red) { entrada = aberto ? 1.0f : 0.0f; return; }
@@ -1376,6 +1446,12 @@ static void desenha_sintoma(float a) {
     int k;
     painel(r, 28.0f, a);
     bola(r.x + 28.0f, r.y + 28.0f, 56.0f, "aj_compass", (Tinta){ 243, 242, 239 }, 0, a);
+    if (farolvozui_disponivel()) {
+      float vw = voz_botao_largura();
+      GfxRect rVoz = { r.x + r.w - 28.0f - vw, r.y + 28.0f, vw, BOTAO_H_SECUNDARIO };
+      botao_pilula(rVoz, i18n(FT_ACAO_FALAR), "aj_mic", foco == B_ACHAR_VOZ ? 1.0f : 0.0f, 0, 0, a);
+      alvo(rVoz, B_ACHAR_VOZ);
+    }
     txt_em(TXT_ILHA_NOME, i18n(FT_ACHAR_O_QUE_VER), r.x + 28.0f, r.y + 104.0f, r.w - 56.0f, 243, 242, 239, a);
     for (k = 0; k < 4; k++) {
       GfxRect c = { r.x + 28.0f, r.y + 160.0f + (float)k * 64.0f, r.w - 56.0f, 52.0f };
@@ -1654,7 +1730,8 @@ void resolver_desenhar(Uint32 agora) {
     gfx_escala_sair(escAnt);
     return;
   }
-  if (fase == RESOLVER_FASE_SINTOMA) desenha_sintoma(a);
+  if (farolvozui_ativo()) farolvozui_desenhar(ox, oy, a, agora);
+  else if (fase == RESOLVER_FASE_SINTOMA) desenha_sintoma(a);
   else if (fase == RESOLVER_FASE_CADEIA || fase == RESOLVER_FASE_VEREDITO) desenha_testes(a);
   else if (fase == RESOLVER_FASE_ACHAR) farolachaui_desenhar(ox, oy, a, agora);
   else desenha_envio(a);

@@ -4,6 +4,7 @@
 #include "farolacha.h"
 #include "faroltexto.h"
 #include "idbase.h"
+#include "perfilinfantil.h"
 #include "rede.h"
 #include <pthread.h>
 #include <stdio.h>
@@ -20,9 +21,9 @@
 #endif
 
 // Ganchos fracos dos modulos do app: na build completa as definicoes fortes
-// de nvbackend.c, recomenda.c, perfilinfantil.c, ajustes.c, redesaude.c e
-// trakt.c vencem; nos testes isolados os padroes seguros permitem linkar sem
-// puxar a arvore inteira nem SDL.
+// de nvbackend.c, recomenda.c, perfilinfantil.c, perfilregras.c, farolsinal.c,
+// seguro.c, ajustes.c, redesaude.c e trakt.c vencem; nos testes isolados os
+// padroes seguros permitem linkar sem puxar a arvore inteira nem SDL.
 __attribute__((weak)) size_t nv_rec_url_copiar(char *dst, size_t tam) {
   if (!dst || !tam) return 0;
   snprintf(dst, tam, "%s", FB_FALLBACK_URL);
@@ -35,6 +36,12 @@ __attribute__((weak)) int recomenda_cabecalhos(const char **cab, char *aut,
   return 0;
 }
 __attribute__((weak)) int perfil_infantil_ativo(void) { return 0; }
+__attribute__((weak)) int perfil_regra_busca(const char *certificate) {
+  return !perfil_infantil_ativo() || perfil_infantil_classif_ok(certificate);
+}
+__attribute__((weak)) int farolsinal_recomendar(void) { return 0; }
+__attribute__((weak)) int seguro_perfil_ativo(void) { return 0; }
+__attribute__((weak)) int farolconsent_estado(void) { return 0; }
 __attribute__((weak)) const char *ajustes_tmdb_idioma(void) { return "pt-BR"; }
 __attribute__((weak)) int rede_saude_offline(void) { return 0; }
 __attribute__((weak)) void trakt_http_recusada(void) {}
@@ -74,7 +81,9 @@ static int             temSementeFixa;
 static unsigned        sementeFixa;
 
 static int             privadoCfg;
+static int             temPrivadoOverride;
 static int             consentiuCfg;
+static int             temConsentOverride;
 static int             temUrlOverride;
 static char            urlOverride[384];
 static int             temAuthOverride;
@@ -82,6 +91,9 @@ static char            authOverrideAut[512];
 static char            authOverrideVia[64];
 
 static PedidoAbrir     abrirPendente;
+
+static int obterAuth(char *aut, size_t na, char *via, size_t nv,
+                     char *perfil, size_t np, int *usouTrakt);
 
 // ---------------------------------------------------------------- relogio --
 
@@ -141,66 +153,97 @@ static void *executarBusca(void *u) {
   FarolBuscaResp parsed;
   int parseOk = 0;
 
-  if (j->aut[0]) cab[nc++] = j->aut;
-  if (j->via[0]) cab[nc++] = j->via;
-  if (j->perfil[0]) cab[nc++] = j->perfil;
+  if (jobCancelado(j)) {
+    cancelado = 1;
+  } else if (agoraMs() >= j->fim) {
+    prazoEstourou = 1;
+  } else {
+    // R1: autenticacao roda fora do fio da UI, sob a mesma guarda de
+    // cancelamento e prazo total de 6 s.
+    RedePararEstado prevAuth = rede_parar_trocar(buscaParar, j);
+    int temAuth = obterAuth(j->aut, sizeof j->aut, j->via, sizeof j->via,
+                            j->perfil, sizeof j->perfil, &j->usouTrakt);
+    rede_parar_trocar(prevAuth.parar, prevAuth.usuario);
+    if (jobCancelado(j)) {
+      cancelado = 1;
+    } else if (agoraMs() >= j->fim) {
+      prazoEstourou = 1;
+    } else if (!temAuth) {
+      transporteFalhou = 1;
+    }
+  }
+
+  if (!cancelado && !prazoEstourou && !transporteFalhou) {
+    long long rest = j->fim - agoraMs();
+    if (rest <= 0) {
+      prazoEstourou = 1;
+    } else {
+      unsigned restMs = (unsigned)rest;
+      if (restMs > j->prazoMs) restMs = j->prazoMs;
+      if (restMs < 1u) restMs = 1u;
+
+      if (j->aut[0]) cab[nc++] = j->aut;
+      if (j->via[0]) cab[nc++] = j->via;
+      if (j->perfil[0]) cab[nc++] = j->perfil;
 #ifndef __EMSCRIPTEN__
-  cab[nc++] = "Content-Type: application/json";
+      cab[nc++] = "Content-Type: application/json";
 #endif
-  cab[nc] = NULL;
+      cab[nc] = NULL;
 
 #ifdef __EMSCRIPTEN__
-  {
-    RedePararEstado prev = rede_parar_trocar(buscaParar, j);
-    int seg = (int)((j->prazoMs + 999u) / 1000u);
-    if (seg < 1) seg = 1;
-    respCorpo = rede_postar_st(j->url, seg, cab, j->corpo, &http);
-    rede_parar_trocar(prev.parar, prev.usuario);
-    if (jobCancelado(j)) {
-      cancelado = 1;
-    } else if (agoraMs() >= j->fim && http == 0) {
-      prazoEstourou = 1;
-    } else if (!respCorpo || http == 0) {
-      transporteFalhou = 1;
-    } else {
-      respLen = strlen(respCorpo);
-    }
-  }
+      {
+        RedePararEstado prev = rede_parar_trocar(buscaParar, j);
+        int seg = (int)((restMs + 999u) / 1000u);
+        if (seg < 1) seg = 1;
+        respCorpo = rede_postar_st(j->url, seg, cab, j->corpo, &http);
+        rede_parar_trocar(prev.parar, prev.usuario);
+        if (jobCancelado(j)) {
+          cancelado = 1;
+        } else if (agoraMs() >= j->fim && http == 0) {
+          prazoEstourou = 1;
+        } else if (!respCorpo || http == 0) {
+          transporteFalhou = 1;
+        } else {
+          respLen = strlen(respCorpo);
+        }
+      }
 #else
-  {
-    RedePedido req;
-    RedeResposta res;
-    memset(&req, 0, sizeof req);
-    memset(&res, 0, sizeof res);
-    req.metodo = "POST";
-    req.url = j->url;
-    req.cabecalhos = cab;
-    req.corpo = j->corpo;
-    req.n_corpo = j->nCorpo;
-    req.prazo_ms = j->prazoMs;
-    req.max_bytes = 65536;
-    req.max_cabecalhos = 8192;
-    req.seguir = 0;
-    req.parar = buscaParar;
-    req.parar_usuario = j;
+      {
+        RedePedido req;
+        RedeResposta res;
+        memset(&req, 0, sizeof req);
+        memset(&res, 0, sizeof res);
+        req.metodo = "POST";
+        req.url = j->url;
+        req.cabecalhos = cab;
+        req.corpo = j->corpo;
+        req.n_corpo = j->nCorpo;
+        req.prazo_ms = restMs;
+        req.max_bytes = 65536;
+        req.max_cabecalhos = 8192;
+        req.seguir = 0;
+        req.parar = buscaParar;
+        req.parar_usuario = j;
 
-    rede_pedir(&req, &res);
-    http = res.status;
-    if (jobCancelado(j)) {
-      cancelado = 1;
-    } else if (res.erro == REDE_PRAZO ||
-               (res.erro == REDE_CANCELADO && agoraMs() >= j->fim)) {
-      prazoEstourou = 1;
-    } else if (res.erro != REDE_OK || http == 0) {
-      transporteFalhou = 1;
-    } else if (res.corpo && res.n_corpo > 0) {
-      respCorpo = res.corpo;
-      respLen = res.n_corpo;
-      res.corpo = NULL;
-    }
-    rede_resposta_limpar(&res);
-  }
+        rede_pedir(&req, &res);
+        http = res.status;
+        if (jobCancelado(j)) {
+          cancelado = 1;
+        } else if (res.erro == REDE_PRAZO ||
+                   (res.erro == REDE_CANCELADO && agoraMs() >= j->fim)) {
+          prazoEstourou = 1;
+        } else if (res.erro != REDE_OK || http == 0) {
+          transporteFalhou = 1;
+        } else if (res.corpo && res.n_corpo > 0) {
+          respCorpo = res.corpo;
+          respLen = res.n_corpo;
+          res.corpo = NULL;
+        }
+        rede_resposta_limpar(&res);
+      }
 #endif
+    }
+  }
 
   if (!cancelado && !prazoEstourou && !transporteFalhou && http == 200 && respCorpo) {
     parseOk = farolbusca_parsear_resposta(respCorpo, respLen, &parsed);
@@ -303,15 +346,37 @@ static int obterAuth(char *aut, size_t na, char *via, size_t nv,
   return 1;
 }
 
+static int privadoEfetivo(void) {
+  int tem, val;
+  pthread_mutex_lock(&trava);
+  tem = temPrivadoOverride;
+  val = privadoCfg;
+  pthread_mutex_unlock(&trava);
+  return tem ? val : (seguro_perfil_ativo() ? 1 : 0);
+}
+
+#define FAROL_CONSENT_SIM_VAL 2
+
+static int consentiuEfetivo(int priv, int inf) {
+  int tem, val;
+  if (priv || inf) return 0;
+  pthread_mutex_lock(&trava);
+  tem = temConsentOverride;
+  val = consentiuCfg;
+  pthread_mutex_unlock(&trava);
+  if (tem) return val;
+  return (farolsinal_recomendar() &&
+          (farolconsent_estado() == FAROL_CONSENT_SIM_VAL)) ? 1 : 0;
+}
+
 int farolbusca_pedir_com(const char *frase, const FarolBuscaCtx *ctx) {
   char norm[FAROL_BUSCA_FRASE_BYTES];
   char corpoBuf[FAROL_BUSCA_CORPO_MAX + 1];
   char baseUrl[384];
-  char aut[3200], via[64], perfil[64];
   size_t nCorpo;
   FarolBuscaLocal local;
   unsigned semente;
-  int usouTrakt = 0, temRede;
+  int temRede;
 
   if (!farolbusca_normalizar_frase(frase, norm, sizeof norm)) return 0;
   nCorpo = farolbusca_montar_corpo(norm, ctx, corpoBuf, sizeof corpoBuf);
@@ -322,12 +387,9 @@ int farolbusca_pedir_com(const char *frase, const FarolBuscaCtx *ctx) {
   semente = temSementeFixa ? sementeFixa : hashFrase(norm);
   pthread_mutex_unlock(&trava);
 
-  temRede = !rede_saude_offline() &&
-            obterBaseUrl(baseUrl, sizeof baseUrl) &&
-            obterAuth(aut, sizeof aut, via, sizeof via, perfil, sizeof perfil, &usouTrakt);
+  temRede = !rede_saude_offline() && obterBaseUrl(baseUrl, sizeof baseUrl);
 
   if (!temRede) {
-    memset(aut, 0, sizeof aut);
     pthread_mutex_lock(&trava);
     if (jobAtual) { jobAtual->cancelar = 1; jobAtual = NULL; }
     geracaoAtual++;
@@ -352,22 +414,17 @@ int farolbusca_pedir_com(const char *frase, const FarolBuscaCtx *ctx) {
     int attrOk, erro;
     pthread_t fio;
 
-    if (!j) { memset(aut, 0, sizeof aut); return 0; }
+    if (!j) return 0;
     j->corpo = (char *)malloc(nCorpo + 1);
-    if (!j->corpo) { memset(aut, 0, sizeof aut); limparJob(j); return 0; }
+    if (!j->corpo) { limparJob(j); return 0; }
     memcpy(j->corpo, corpoBuf, nCorpo + 1);
     j->nCorpo = nCorpo;
 
     nBase = strlen(baseUrl);
     while (nBase > 0 && baseUrl[nBase - 1] == '/') baseUrl[--nBase] = '\0';
     snprintf(j->url, sizeof j->url, "%s/v1/farol/busca", baseUrl);
-    snprintf(j->aut, sizeof j->aut, "%s", aut);
-    snprintf(j->via, sizeof j->via, "%s", via);
-    snprintf(j->perfil, sizeof j->perfil, "%s", perfil);
-    j->usouTrakt = usouTrakt;
     j->prazoMs = FAROL_BUSCA_PRAZO_MS;
     j->fim = agoraMs() + (long long)j->prazoMs;
-    memset(aut, 0, sizeof aut);
 
     attrOk = pthread_attr_init(&attr) == 0;
     if (!attrOk) { limparJob(j); return 0; }
@@ -413,12 +470,10 @@ int farolbusca_pedir_com(const char *frase, const FarolBuscaCtx *ctx) {
 int farolbusca_pedir(const char *frase) {
   FarolBuscaCtx ctx;
   memset(&ctx, 0, sizeof ctx);
-  pthread_mutex_lock(&trava);
-  ctx.privado = privadoCfg;
-  ctx.consentiu = consentiuCfg;
-  pthread_mutex_unlock(&trava);
+  ctx.privado = privadoEfetivo();
+  ctx.infantil = perfil_infantil_ativo() ? 1 : 0;
+  ctx.consentiu = consentiuEfetivo(ctx.privado, ctx.infantil);
   if (!ctx.privado) {
-    ctx.infantil = perfil_infantil_ativo();
     ctx.idioma = ajustes_tmdb_idioma();
   }
   return farolbusca_pedir_com(frase, &ctx);
@@ -562,11 +617,32 @@ static void preencherItemForaCat(FarolBuscaItem *dst, const FarolBuscaId *rem) {
   preencherPosterId(dst->poster, sizeof dst->poster, dst->imdb);
 }
 
+static int itemInfantilPermitido(const CatItem *c, int infantil) {
+  if (!infantil) return 1;
+  if (!c) return 0;
+  return perfil_regra_busca(c->classificacao) &&
+         perfil_infantil_classif_ok(c->classificacao);
+}
+
+static int filtrarAchadosInfantis(const FarolAchado *ach, int nAch, unsigned rev,
+                                    int infantil, FarolBuscaItem *out, int max) {
+  int i, k = 0;
+  for (i = 0; i < nAch && k < max; i++) {
+    const CatItem *c = farolacha_item(&ach[i], rev);
+    if (!c) return -1;
+    if (!itemInfantilPermitido(c, infantil)) continue;
+    preencherItemDeCat(&out[k++], ach[i].indice, c, NULL,
+                       ach[i].minutos, ach[i].motivo);
+  }
+  return k;
+}
+
 int farolbusca_resolver(FarolBuscaItem *out, int max, unsigned *revisaoOut) {
   FarolBuscaInfo info;
   FarolBuscaResp resp;
   unsigned semente;
   int tentativa;
+  int infantil = perfil_infantil_ativo() ? 1 : 0;
 
   if (revisaoOut) *revisaoOut = cat_revisao();
   if (!out || max < 1) return 0;
@@ -588,8 +664,15 @@ int farolbusca_resolver(FarolBuscaItem *out, int max, unsigned *revisaoOut) {
         int idx = procurarNoCatalogo(resp.ids[i].imdb, resp.ids[i].tmdb,
                                      resp.ids[i].tipo, nCat);
         const CatItem *c = idx >= 0 ? cat_item(idx) : NULL;
-        if (c) preencherItemDeCat(&out[k++], idx, c, &resp.ids[i], 0, 0);
-        else preencherItemForaCat(&out[k++], &resp.ids[i]);
+        if (c) {
+          if (!itemInfantilPermitido(c, infantil)) continue;
+          preencherItemDeCat(&out[k++], idx, c, &resp.ids[i], 0, 0);
+        } else {
+          // R2: no perfil infantil nunca devolve item fora do catalogo
+          // (sem classificacao segura confirmada).
+          if (infantil) continue;
+          preencherItemForaCat(&out[k++], &resp.ids[i]);
+        }
       }
       if (cat_revisao() == rev) {
         if (revisaoOut) *revisaoOut = rev;
@@ -604,26 +687,23 @@ int farolbusca_resolver(FarolBuscaItem *out, int max, unsigned *revisaoOut) {
   // Fallback local: delega ao farolacha com a intencao mais proxima, sem
   // guardar indices entre quadros (toda chamada revalida cat_revisao()).
   for (tentativa = 0; tentativa < 3; tentativa++) {
-    FarolAchado ach[FAROL_BUSCA_IDS_MAX];
-    int lim = max < FAROL_BUSCA_IDS_MAX ? max : FAROL_BUSCA_IDS_MAX;
+    FarolAchado ach[64];
+    int lim = infantil ? 64 : (max < FAROL_BUSCA_IDS_MAX ? max : FAROL_BUSCA_IDS_MAX);
     unsigned rev = 0;
-    int nAch, i, k = 0;
+    int nAch, k = 0;
     const char *gen = info.local.genero[0] ? info.local.genero : NULL;
 
     nAch = farolacha_listar_genero(info.local.intencao, info.local.maxMin,
                                    gen, ach, lim, semente, &rev);
-    if (nAch == 0 && gen) {
+    k = filtrarAchadosInfantis(ach, nAch, rev, infantil, out, max);
+    if (k == 0 && gen) {
       nAch = farolacha_listar_rev(info.local.intencao, info.local.maxMin,
                                   ach, lim, semente, &rev);
+      k = filtrarAchadosInfantis(ach, nAch, rev, infantil, out, max);
     }
-    if (nAch == 0 && info.local.intencao != FA_SURPRESA) {
+    if (k == 0 && info.local.intencao != FA_SURPRESA) {
       nAch = farolacha_listar_rev(FA_SURPRESA, 0, ach, lim, semente, &rev);
-    }
-    for (i = 0; i < nAch && k < max; i++) {
-      const CatItem *c = farolacha_item(&ach[i], rev);
-      if (!c) { k = -1; break; }
-      preencherItemDeCat(&out[k++], ach[i].indice, c, NULL,
-                         ach[i].minutos, ach[i].motivo);
+      k = filtrarAchadosInfantis(ach, nAch, rev, infantil, out, max);
     }
     if (k >= 0 && cat_revisao() == rev) {
       if (revisaoOut) *revisaoOut = rev;
@@ -649,6 +729,7 @@ const CatItem *farolbusca_item(const FarolBuscaItem *it, unsigned revisao) {
 
 int farolbusca_abrir_item(const FarolBuscaItem *it) {
   int idx = -1, tentativa;
+  int infantil = perfil_infantil_ativo() ? 1 : 0;
   CatItem novo;
   if (!it || (!it->imdb[0] && it->tmdb <= 0)) return -1;
 
@@ -657,11 +738,24 @@ int farolbusca_abrir_item(const FarolBuscaItem *it) {
   for (tentativa = 0; tentativa < 3; tentativa++) {
     unsigned rev = cat_revisao();
     int nCat = cat_n();
-    idx = procurarNoCatalogo(it->imdb, it->tmdb, it->tipo, nCat);
-    if (cat_revisao() == rev) break;
-    idx = -1;
+    int cand = procurarNoCatalogo(it->imdb, it->tmdb, it->tipo, nCat);
+    if (cand >= 0 && infantil) {
+      const CatItem *c = cat_item(cand);
+      if (!itemInfantilPermitido(c, 1)) {
+        if (cat_revisao() == rev) return -1;
+        continue;
+      }
+    }
+    if (cat_revisao() == rev) {
+      idx = cand;
+      break;
+    }
   }
   if (idx >= 0) return idx;
+
+  // R2: no perfil infantil, nunca acrescenta nem abre item fora do catalogo
+  // sem classificacao segura confirmada.
+  if (infantil) return -1;
 
   // Fora do catalogo: cartaz minimo pelo id (contrato de busca_pediu_abrir).
   memset(&novo, 0, sizeof novo);
@@ -677,6 +771,22 @@ int farolbusca_abrir_item(const FarolBuscaItem *it) {
 
 int farolbusca_selecionar(const FarolBuscaItem *it) {
   if (!it || (!it->imdb[0] && it->tmdb <= 0)) return 0;
+  if (perfil_infantil_ativo()) {
+    int tentativa, permitido = 0;
+    if (!it->noCatalogo) return 0;
+    for (tentativa = 0; tentativa < 3; tentativa++) {
+      unsigned rev = cat_revisao();
+      int nCat = cat_n();
+      int idx = procurarNoCatalogo(it->imdb, it->tmdb, it->tipo, nCat);
+      const CatItem *c = idx >= 0 ? cat_item(idx) : NULL;
+      int ok = itemInfantilPermitido(c, 1);
+      if (cat_revisao() == rev) {
+        permitido = ok;
+        break;
+      }
+    }
+    if (!permitido) return 0;
+  }
   pthread_mutex_lock(&trava);
   memset(&abrirPendente, 0, sizeof abrirPendente);
   abrirPendente.tem = 1;
@@ -717,30 +827,34 @@ int farolbusca_pediu_abrir(int *indiceCatalogo) {
 
 void farolbusca_definir_privado(int privado) {
   pthread_mutex_lock(&trava);
-  privadoCfg = privado ? 1 : 0;
+  if (privado < 0) {
+    temPrivadoOverride = 0;
+    privadoCfg = 0;
+  } else {
+    temPrivadoOverride = 1;
+    privadoCfg = privado ? 1 : 0;
+  }
   pthread_mutex_unlock(&trava);
 }
 
 int farolbusca_privado(void) {
-  int v;
-  pthread_mutex_lock(&trava);
-  v = privadoCfg;
-  pthread_mutex_unlock(&trava);
-  return v;
+  return privadoEfetivo();
 }
 
 void farolbusca_definir_consentimento(int consentiu) {
   pthread_mutex_lock(&trava);
-  consentiuCfg = consentiu ? 1 : 0;
+  if (consentiu < 0) {
+    temConsentOverride = 0;
+    consentiuCfg = 0;
+  } else {
+    temConsentOverride = 1;
+    consentiuCfg = consentiu ? 1 : 0;
+  }
   pthread_mutex_unlock(&trava);
 }
 
 int farolbusca_consentimento(void) {
-  int v;
-  pthread_mutex_lock(&trava);
-  v = consentiuCfg;
-  pthread_mutex_unlock(&trava);
-  return v;
+  return consentiuEfetivo(privadoEfetivo(), perfil_infantil_ativo() ? 1 : 0);
 }
 
 void farolbusca_definir_url(const char *baseUrl) {

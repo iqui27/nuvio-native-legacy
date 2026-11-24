@@ -9,7 +9,8 @@
 //      controles proibidos, sem URL).
 //   2. Montar o corpo JSON de POST /v1/farol/busca respeitando estritamente a
 //      lista fechada de 8 chaves do servidor (chave extra -> 400):
-//        - perfil privado (privado != 0): envia APENAS {"frase":"..."}.
+//        - perfil privado (privado != 0 && !infantil): envia APENAS {"frase":"..."}.
+//        - perfil privado + infantil: envia {"frase":"...","infantil":1,"consentiu":0}.
 //        - sem consentimento ou infantil: envia "consentiu":0 explicito
 //          (ausencia conta como consentido no servidor) e nunca envia
 //          generos, historico nem vistos.
