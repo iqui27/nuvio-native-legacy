@@ -419,6 +419,7 @@ const void *salvos_item(int i) { (void)i; return NULL; }
 int32_t mapa_hash_nome(const char *x) { (void)x; return -1; }
 uint32_t mapa_hash_titulo(const char *x) { (void)x; return 1; }
 const char *atualizacao_nova(void) { return ""; }
+int nv_webos_major(void) { return 0; }
 int dts_playback_enabled(void) { return 0; }
 int dts_tpk_disponivel(void) { return 0; }
 int video_audio_nao_suportado(void) { return 0; }
@@ -430,13 +431,25 @@ int video_faixa_dts(const VideoFaixa *f) { (void)f; return 0; }
 int video_dts_estado(void) { return 0; }
 int video_tem_dolby_vision(void) { return 0; }
 const char *video_hdr(void) { return ""; }
+#ifndef FAROL_SONDA_REAL
 // A sonda ativa (farolsonda.h): pronta = nada no ar.
-static int c_sondaPronta = 1, c_sondaCanceladaN;
+static int c_sondaPronta = 1, c_sondaCanceladaN, c_sondaIniciadaN, c_sondaIniciarAuto;
+int farolsonda_iniciar(const char *url, const char *const *cab) {
+  (void)cab;
+  c_sondaIniciadaN++;
+  if (!url || !*url) return 0;
+  if (c_sondaIniciarAuto && c_sondaPronta) {
+    c_sondaPronta = 0;
+    return 1;
+  }
+  return 0;
+}
 int farolsonda_estado(FarolSonda *o) {
   if (o) { memset(o, 0, sizeof *o); o->http = 0; }
   return c_sondaPronta;
 }
 void farolsonda_cancelar(void) { c_sondaCanceladaN++; c_sondaPronta = 1; }
+#endif
 // A fonte atual como o Resolver do pai lia (stream_item(stream_atual())).
 void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
                         int *fonteMbps, int *fonteDebrid, int *temOutraFonte,
@@ -568,6 +581,9 @@ static void zerar(void) {
   c_buscarModoN = 0; c_buscarModoRenovar = 0;
   c_menuFechouN = 0; c_ajustesFontesN = 0; c_travauiBloq = 0;
   c_catReabrirIdx = 7;
+#ifndef FAROL_SONDA_REAL
+  c_sondaPronta = 1; c_sondaCanceladaN = 0; c_sondaIniciadaN = 0; c_sondaIniciarAuto = 0;
+#endif
   c_perfilSlot = ++c_slotSeq;
   addonmodo_preparar("u", c_perfilSlot);
   addonguia_fechar();

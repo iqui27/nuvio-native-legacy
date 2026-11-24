@@ -53,10 +53,21 @@ python3 tests/farol_resolver_ponte.py "$work"
   $(pkg-config --libs sdl2 2>/dev/null || echo -lSDL2) -lm -lpthread \
   -o "$work/farol-tela-test"
 
+"$ccbin" ${flags[@]+"${flags[@]}"} -DRESOLVER_TESTE -DNV_ANDROID -DNV_SHOT_HOOKS \
+  -Wall -Wextra -Wno-unused-function -O1 -g \
+  tests/farol_tela_sonda.c src/resolver.c src/resolverregra.c src/farolregra.c src/farol.c \
+  src/farolerro.c src/farolanel.c src/farolsonda.c src/fontesonda.c src/extplayer.c \
+  src/addonguia.c src/addonmodo.c \
+  -I"$work" -Isrc -Itests $(pkg-config --cflags sdl2 2>/dev/null || echo -I/usr/include/SDL2) \
+  $(pkg-config --libs sdl2 2>/dev/null || echo -lSDL2) -lm -lpthread \
+  -o "$work/farol-tela-sonda-test"
+
 if [ "${SANITIZE:-1}" = thread ] && command -v setarch >/dev/null 2>&1 &&
    setarch "$(uname -m)" -R true 2>/dev/null; then
   setarch "$(uname -m)" -R "$work/farol-tela-test"
+  setarch "$(uname -m)" -R "$work/farol-tela-sonda-test"
 else
   "$work/farol-tela-test"
+  "$work/farol-tela-sonda-test"
 fi
 echo "farol_tela: tudo ok"

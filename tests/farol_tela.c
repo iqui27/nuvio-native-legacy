@@ -26,6 +26,15 @@
 static int falhas;
 #define CONFERE(c) do { if (!(c)) { fprintf(stderr, "FALHA %s:%d: %s\n", __FILE__, __LINE__, #c); falhas++; } } while (0)
 
+static time_t c_agoraTeste;
+time_t time(time_t *out) {
+  struct timespec ts;
+  clock_gettime(CLOCK_REALTIME, &ts);
+  time_t t = c_agoraTeste ? c_agoraTeste : ts.tv_sec;
+  if (out) *out = t;
+  return t;
+}
+
 static void tecla(SDL_Keycode k) {
   SDL_Event e;
   memset(&e, 0, sizeof e);
@@ -175,6 +184,23 @@ int main(void) {
     resolver_evento(&e); }
   CONFERE(!resolver_aberto());
 
+  // P2: se o erro passar de 6 h com o Inicio aberto, o banner some sem
+  // precisar fechar e reabrir a tela (e o foco sai de B_BANNER).
+  zerar();
+  c_agoraTeste = 1700000000L;
+  resolverregra_falha_registrar(RES_T_FONTE, "falha limite", "", "", c_agoraTeste - RES_REJEITA_S + 2);
+  resolver_abrir();
+  CONFERE(resolver_foco() == RESOLVER_B_BANNER);
+  desenhar();
+  CONFERE(escreveu(FT_BANNER_FALHA));
+  c_agoraTeste += 5;
+  desenhar();
+  CONFERE(!escreveu(FT_BANNER_FALHA));
+  CONFERE(resolver_foco() == resolverregra_sintoma_farol(0));
+  c_agoraTeste = 0;
+  tecla(SDLK_ESCAPE);
+  CONFERE(!resolver_aberto());
+
   // Cada cartao, pelas setas, abre o seu sintoma; Voltar do Veredito volta ao Inicio.
   for (int i = 0; i < RES_S_FAROL_N; i++) {
     int s = resolverregra_sintoma_farol(i);
@@ -225,7 +251,8 @@ int main(void) {
   CONFERE(resolver_teste_veredito() == FAROL_C_REDE_FORA);
   desenhar();
   CONFERE(escreveu(FT_SONDANDO));                              // o painel ainda testa
-  CONFERE(!escreveu(FT_A_CAUSA_ENCONTRADA));
+  CONFERE(escreveu(FT_A_CAUSA_ENCONTRADA));                    // o veredito passivo ja esta na tela
+  CONFERE(escreveu(FT_REDE_FORA_L1));
   tecla(SDLK_LEFT); tecla(SDLK_DOWN);                          // setas nao mexem
   CONFERE(resolver_fase() == RESOLVER_FASE_CADEIA);
   { float antes = resolver_luz(); int passos = 0;
@@ -274,6 +301,7 @@ int main(void) {
   desenhar();
   CONFERE(escreveu(FT_TESTANDO));
   CONFERE(escreveu(FT_SONDANDO_FONTE));
+  CONFERE(escreveu(FT_A_CAUSA_ENCONTRADA));
   tecla(SDLK_RETURN);                                          // OK nao fura a sonda
   CONFERE(resolver_fase() == RESOLVER_FASE_CADEIA);
   tecla(SDLK_ESCAPE);                                          // Voltar cancela NA HORA

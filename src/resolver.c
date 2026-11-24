@@ -100,8 +100,9 @@ static FarolFatos ff;
 static FarolVeredito vered;
 // A Cadeia: `luz` anda em etapas ate `luzAlvo` (a que quebrou + 1, ou o fim);
 // `segura` = a sonda ativa no ar prende a luz ("testando…") ha `seguraMs`.
+// `sondaCancelada` = uma sonda cancelada ainda esta encerrando: nao herda.
 static float luz, luzAlvo, seguraMs, respiraMs;
-static int   segura;
+static int   segura, sondaCancelada;
 // ADENDO C: a acao despachada fica pendente ate o proximo julgamento do mesmo
 // sintoma, que diz se ela consertou (farol_registrar_resultado). `falhouCod` =
 // o veredito cuja acao ja falhou: com escala SE_FALHAR ele ganha "Mandar
@@ -147,7 +148,7 @@ int resolver_mandar_registro(void) { return fase == RESOLVER_FASE_VEREDITO && pS
 void resolver_teste_esquecer(void) {
   aberto = 0; entrada = 0.0f; fase = 0; foco = 0; envN = 0; envModo = 0; envNoAr = 0; rolo = 0; temFalha = 0;
   diagTentativa = 0; pedidoTentativa = 0; diagUsaTentativa = 0;
-  luz = luzAlvo = seguraMs = respiraMs = 0.0f; segura = 0;
+  luz = luzAlvo = seguraMs = respiraMs = 0.0f; segura = 0; sondaCancelada = 0;
   pendAcao = 0; pendCod = -1; pendSint = 0; falhouCod = -1; envDoFarol = 0; pFarol = 0;
   memset(&fatos, 0, sizeof fatos);
   memset(&vered, 0, sizeof vered);
@@ -604,9 +605,18 @@ static void mover(int dx, int dy) {
   if (melhor >= 0) foco = it[melhor].id;
 }
 
+static void atualizar_falha_recente(void) {
+  if (temFalha && !resolverregra_falha_recente(NULL, (long)time(NULL))) {
+    temFalha = 0;
+    fatos.haFalha = 0;
+    if (fase == RESOLVER_FASE_SINTOMA && foco == B_BANNER) foco = foco_padrao();
+  }
+}
+
 // ------------------------------------------------------------------- fluxo
 static void ir_fase(int f) {
   fase = f;
+  if (f == RESOLVER_FASE_SINTOMA) atualizar_falha_recente();
   foco = foco_padrao();
 }
 
@@ -685,6 +695,36 @@ static int linha_sonda(void) {
 
 static int sonda_no_ar(void) { return !farolsonda_estado(NULL); }
 
+static void sonda_sincronizar(void) {
+  if (sondaCancelada && !sonda_no_ar()) sondaCancelada = 0;
+}
+
+// Inicia a sonda ativa para a ultima fonte VOD (sem logar nem por a URL no
+// anel). Sem URL valida, passa NULL e farolsonda_iniciar devolve 0.
+static int sonda_disparar(void) {
+  const Stream *st = stream_atual() >= 0 ? stream_item(stream_atual()) : NULL;
+  const char *url = (st && st->url[0]) ? st->url : NULL;
+  const char *cab[33];
+  char copia[sizeof ((Stream *)0)->cabecalhos];
+  int nc = 0;
+  if (url && st->cabecalhos[0]) {
+    char *p = copia;
+    snprintf(copia, sizeof copia, "%s", st->cabecalhos);
+    while (*p && nc < 32) {
+      char *fim = strchr(p, '\n');
+      size_t len;
+      if (fim) *fim = 0;
+      len = strlen(p);
+      while (len > 0 && p[len - 1] == '\r') p[--len] = 0;
+      if (*p) cab[nc++] = p;
+      if (!fim) break;
+      p = fim + 1;
+    }
+  }
+  cab[nc] = NULL;
+  return farolsonda_iniciar(url, nc ? cab : NULL);
+}
+
 static void veredito_entrar(void) {
   segura = 0;
   luz = luzAlvo;
@@ -695,12 +735,16 @@ static void veredito_entrar(void) {
 // ao fim (ou a linha em teste); sem respiro.
 static void cadeia_passo(float dt) {
   float teto;
+  sonda_sincronizar();
   if (fase != RESOLVER_FASE_CADEIA) return;
   respiraMs = fmodf(respiraMs + dt, RESPIRA_MS);
   if (segura) {
     seguraMs += dt;
     if (!sonda_no_ar() || seguraMs >= SONDA_MS) {
-      if (sonda_no_ar()) farolsonda_cancelar();   // 5 s: segue sem ela
+      if (sonda_no_ar()) {
+        farolsonda_cancelar();   // 5 s: segue sem ela
+        sondaCancelada = sonda_no_ar();
+      }
       segura = 0;
       diagnosticar(sint);                          // a sonda trouxe fatos novos
       luzAlvo = alvo_luz();
@@ -721,18 +765,27 @@ static void cadeia_passo(float dt) {
 // corrente (o erro que trouxe a pessoa ate aqui ainda vale); a fronteira nova
 // (farol_sessao_reiniciar) vem quando o Farol despacha um conserto.
 static void cadeia_iniciar(int s) {
-  diagnosticar(s);
+  int iniciou = 0;
+  sonda_sincronizar();
   luz = 0.0f; seguraMs = 0.0f; respiraMs = 0.0f;
-  luzAlvo = alvo_luz();
   fase = RESOLVER_FASE_CADEIA;
   foco = B_PRINC;
+  if (resolverregra_mascara(s)) {
+    iniciou = sonda_disparar();
+    if (iniciou) sondaCancelada = 0;
+  }
+  diagnosticar(s);
+  luzAlvo = alvo_luz();
   if (!resolverregra_mascara(s)) { veredito_entrar(); return; }   // passo a passo
-  segura = sonda_no_ar();
+  segura = iniciou || (!sondaCancelada && sonda_no_ar());
   cadeia_passo(0.0f);
 }
 
 static void cadeia_cancelar(void) {
-  if (segura || sonda_no_ar()) farolsonda_cancelar();
+  if (segura || sonda_no_ar()) {
+    farolsonda_cancelar();
+    sondaCancelada = sonda_no_ar();
+  }
   segura = 0;
   ir_fase(RESOLVER_FASE_SINTOMA);
 }
@@ -771,6 +824,7 @@ static void abrir(void) {
   diagTentativa = 0;
   diagUsaTentativa = 0;
   segura = 0;
+  sonda_sincronizar();
   envModo = M_NADA;
   rolo = 0;
   enviados_ler();
@@ -780,7 +834,14 @@ static void abrir(void) {
 
 void resolver_abrir(void) { abrir(); }
 
-static void fechar(void) { aberto = 0; }
+static void fechar(void) {
+  if (segura || sonda_no_ar()) {
+    farolsonda_cancelar();
+    sondaCancelada = sonda_no_ar();
+  }
+  segura = 0;
+  aberto = 0;
+}
 
 // O conserto sai da tela (ADENDO C): a acao vai ao anel, fica pendente para o
 // proximo julgamento medir e, como a proxima tentativa e outra, a sessao de
@@ -927,8 +988,12 @@ static void sondar_envio(void) {
 void resolver_atualizar(float dt, Uint32 agora) {
   int red = ajustes_animacoes_reduzidas();
   (void)agora;
+  sonda_sincronizar();
   sondar_envio();
-  if (aberto) cadeia_passo(dt);
+  if (aberto) {
+    atualizar_falha_recente();
+    cadeia_passo(dt);
+  }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
   if (red) { entrada = aberto ? 1.0f : 0.0f; return; }
   entrada = anim_rampa(entrada, aberto ? 1.0f : 0.0f, dt, aberto ? ABRIR_MS : FECHAR_MS);
@@ -1134,19 +1199,9 @@ static void desenha_testes(float a) {
     trilho_luz(ox + MARGEM, oy + 300.0f, a);
     for (i = 0; i < RES_T_N; i++) linha_teste(i, ox + MARGEM, oy + 300.0f + (float)i * 96.0f, 780.0f, a);
   }
-  if (cad) {
-    // A Cadeia ainda anda: o painel so diz que o Farol esta testando.
-    GfxRect pr = { ox + PAINEL_X, oy + py, PAINEL_W, 200.0f };
-    float ar, ag, ab, rp = segura ? respiro() : 1.0f;
-    painel(pr, 32.0f, a);
-    ajustes_acento(&ar, &ag, &ab);
-    gfx_cor((GfxRect){ pr.x + PAINEL_PAD, pr.y + 48.0f, 14.0f, 14.0f }, 0.5f, ar, ag, ab, rp * a);
-    txt_em(TXT_CAPTION, i18n(FT_NOME), pr.x + PAINEL_PAD + 26.0f, pr.y + 40.0f, 600.0f, 243, 242, 239, a);
-    txt_em(TXT_ILHA_TITULO, segura ? i18n(FT_SONDANDO_FONTE) : i18n(FT_SONDANDO),
-           pr.x + PAINEL_PAD, pr.y + 92.0f, pr.w - 2 * PAINEL_PAD, 248, 249, 252, rp * a);
-    return;
-  }
-  // O Veredito: selo, as duas linhas e a acao.
+  // O Veredito (tambem visivel durante a Cadeia/Sondando: selo e as duas linhas
+  // ja ficam na tela, enquanto na Cadeia a faixa dos botoes pulsa o estado).
+  medir_painel();
   { float x = ox + PAINEL_X, y = oy + py, w = PAINEL_W, h = painel_h(), ar, ag, ab;
     GfxRect pr = { x, y, w, h };
     painel(pr, 32.0f, a);
@@ -1155,6 +1210,12 @@ static void desenha_testes(float a) {
     txt_em(TXT_CAPTION, pMarca, x + PAINEL_PAD + 26.0f, y + 40.0f, 600.0f, pAcheou ? 243 : 186, pAcheou ? 242 : 192, pAcheou ? 239 : 204, a);
     txt_bloco(TXT_ILHA_TITULO, pTitulo, 248, 249, 252, x + PAINEL_PAD, y + 80.0f, w - 2 * PAINEL_PAD, 48.0f, a, 2);
     txt_bloco(TXT_V2_26, pCorpo, 200, 205, 215, x + PAINEL_PAD, oy + painel_corpo_y(), w - 2 * PAINEL_PAD, 32.0f, 0.92f * a, 6);
+    if (cad) {
+      float rp = segura ? respiro() : 1.0f, sy = oy + painel_botoes_y() + (BOTAO_H_PRIMARIO - 32.0f) * 0.5f;
+      gfx_cor((GfxRect){ x + PAINEL_PAD, sy + 10.0f, 12.0f, 12.0f }, 0.5f, ar, ag, ab, rp * a);
+      txt_em(TXT_V2_26, segura ? i18n(FT_SONDANDO_FONTE) : i18n(FT_SONDANDO),
+             x + PAINEL_PAD + 24.0f, sy, w - 2 * PAINEL_PAD - 24.0f, 186, 192, 204, rp * a);
+    }
     if (pTvAviso) {
       GfxRect r = { x + PAINEL_PAD, oy + painel_botoes_y() + BOTAO_H_PRIMARIO + 24.0f, w - 2 * PAINEL_PAD, 76.0f };
       gfx_cor(r, 20.0f / r.h, 1, 1, 1, 0.05f * a);
@@ -1163,6 +1224,7 @@ static void desenha_testes(float a) {
       { TxtLinha l = txt_linha(TXT_CAPTION, i18n("Em breve"), 186, 192, 204, 255);
         txt_desenhar_alpha(l, r.x + r.w - 24.0f - (float)l.w, r.y + (r.h - (float)l.h) * 0.5f, 0.8f * a); }
     } }
+  if (cad) return;
   for (i = 0; i < n; i++) {
     int id = it[i].id;
     if (id == B_PRINC) {

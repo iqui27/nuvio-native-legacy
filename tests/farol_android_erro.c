@@ -374,6 +374,7 @@ int dts_tpk_disponivel(void) { return 0; }
 int video_faixa_dts(const VideoFaixa *f) { (void)f; return 0; }
 int video_dts_estado(void) { return 0; }
 int nv_webos_major(void) { return 0; }
+int farolsonda_iniciar(const char *u, const char *const *c) { (void)u; (void)c; return 0; }
 int farolsonda_estado(FarolSonda *o) { if (o) memset(o, 0, sizeof *o); return 1; }
 void farolsonda_cancelar(void) {}
 void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
