@@ -104,6 +104,46 @@ int main(void) {
   assert(resolverregra_ha(7300, &n) == RES_HA_H && n == 2);
   assert(resolverregra_ha(86400 * 3, &n) == RES_HA_DIAS && n == 3);
 
+  // Farol (issue 19): a grade tem os 6 sintomas de sempre mais "Cores
+  // estranhas", cada um uma vez, e o id novo nao colide com RES_S_GERAL.
+  { int vistos[RES_S_CORES + 1] = { 0 }, i;
+    assert(RES_S_CORES != RES_S_GERAL && RES_S_CORES > RES_S_N);
+    for (i = 0; i < RES_S_FAROL_N; i++) {
+      int s = resolverregra_sintoma_farol(i);
+      assert(resolverregra_sintoma_valido(s));
+      assert(s >= 0 && s <= RES_S_CORES && !vistos[s]);
+      vistos[s] = 1;
+    }
+    for (i = 0; i < RES_S_N; i++) assert(vistos[i]);
+    assert(vistos[RES_S_CORES]);
+    assert(resolverregra_sintoma_farol(-1) == -1 && resolverregra_sintoma_farol(RES_S_FAROL_N) == -1);
+    assert(!resolverregra_sintoma_valido(RES_S_GERAL) && !resolverregra_sintoma_valido(-1));
+    assert(!resolverregra_sintoma_valido(RES_S_CORES + 1)); }
+
+  // Cores estranhas: so Fonte e Esta TV entram na cadeia, na ordem, e a
+  // parada na primeira falha vale tambem aqui.
+  f = bons();
+  assert(resolverregra_mascara(RES_S_CORES) == ((1u << RES_T_FONTE) | (1u << RES_T_TV)));
+  resolverregra_testar(RES_S_CORES, &f, &r);
+  assert(r.primeira == -1);
+  for (n = 0; n < RES_T_N; n++)
+    assert(r.testado[n] == (n == RES_T_FONTE || n == RES_T_TV));
+  assert(r.estado[RES_T_FONTE] == RES_OK && r.estado[RES_T_TV] == RES_OK);
+  assert(r.estado[RES_T_INTERNET] == RES_NAO_TESTADO);
+  f.offline = 1;                      // fora da cadeia: nao derruba Cores
+  f.haFalha = 1; snprintf(f.tvMotivo, sizeof f.tvMotivo, "%s", "x");
+  resolverregra_testar(RES_S_CORES, &f, &r);
+  assert(r.primeira == RES_T_FONTE && r.estado[RES_T_FONTE] == RES_FALHOU);
+  assert(r.estado[RES_T_TV] == RES_NAO_TESTADO && r.estado[RES_T_INTERNET] == RES_NAO_TESTADO);
+  f.haFalha = 0;
+  resolverregra_testar(RES_S_CORES, &f, &r);
+  assert(r.primeira == RES_T_TV && r.estado[RES_T_FONTE] == RES_OK);
+
+  // O sintoma novo sobrevive a ida e volta do arquivo de enviados.
+  n = resolverregra_enviados_add(v, 0, RES_ENVIADOS_MAX, "C0RE57", agora - 5, RES_S_CORES);
+  assert(resolverregra_enviados_serializar(v, n, buf, sizeof buf) > 0);
+  assert(resolverregra_enviados_ler(buf, agora, v, RES_ENVIADOS_MAX) == 1 && v[0].sintoma == RES_S_CORES);
+
   puts("resolver: regra ok");
   return 0;
 }

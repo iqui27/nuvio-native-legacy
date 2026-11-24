@@ -1,11 +1,13 @@
-// Captura da tela "Resolver um problema" (2.1) em 1920x1080, janela GL escondida
-// e desenho num FBO — como tests/novidades148_shot.c. Antes das capturas, confere
-// por evento de tecla (RESOLVER_TESTE fixa os fatos do app: sem rede, add-ons nem
+// Captura da tela "Resolver um problema" — hoje o Farol (2.1, issue 19) — em
+// 1920x1080, janela GL escondida e desenho num FBO — como
+// tests/novidades148_shot.c. Antes das capturas, confere por evento de tecla
+// (RESOLVER_TESTE fixa os fatos do app e os do Farol: sem rede, add-ons nem
 // player aqui; AVISOS_TESTE_ENVIO planta o estado do envio do registro):
 //   fase 0: foco inicial (banner so com erro recente), OK num cartao testa e vai
-//           a fase 1, Voltar fecha;
-//   fase 1: Voltar volta a fase 0; "Tentar de novo" fica na fase 1; "Abrir Fontes
-//           e addons" fecha e pede RESOLVER_PEDIU_FONTES; Legenda nao tem cadeia;
+//           a Cadeia e dela ao Veredito, Voltar fecha;
+//   Veredito: Voltar volta a fase 0; "Tentar de novo" refaz a Cadeia; "Abrir
+//           Fontes e addons" fecha e pede RESOLVER_PEDIU_FONTES; Legenda nao
+//           tem cadeia;
 //   fase 2: o codigo chega e entra na lista gravada; falha mostra "Tentar de
 //           novo"; um registro some da lista com OK e do arquivo;
 //   D-pad:  em cada estado, todo foco aparece e tem saida (nenhum beco), e a
@@ -15,6 +17,7 @@
 #endif
 #include "resolver.h"
 #include "resolverregra.h"
+#include "farolregra.h"
 #include "avisos.h"
 #include "player.h"
 #include "ajustes.h"
@@ -22,6 +25,7 @@
 #include "layout.h"
 #include "dados.h"
 #include "gfx.h"
+#include "gl_compat.h"
 #include "text.h"
 #include "tex_cache.h"
 #include <SDL2/SDL.h>
@@ -31,9 +35,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#ifdef __APPLE__
-#include <OpenGL/gl.h>
-#endif
 
 static GLuint fbo, fboTex;
 
@@ -64,6 +65,8 @@ static void quadro(float dt) {
   tex_novo_quadro();
   tex_bombear(8);      // os icones sobem do fio do cache, que anda no relogio
   gfx_novo_quadro();
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  glViewport(0, 0, 1920, 1080);
   glClearColor(0.06f, 0.08f, 0.10f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
   gfx_cor((GfxRect){ 200, 300, 600, 400 }, 0.02f, 0.35f, 0.55f, 1.0f, 1.0f);
@@ -92,12 +95,45 @@ static void captura(const char *nome, int quadros) {
   printf("captura: %s\n", nome);
 }
 
-// ---- Estados de partida.
+// ---- Estados de partida. Os fatos do Farol ficam fixos e neutros (a fachada
+// leria os add-ons de verdade, que aqui sao zero): o motor responde
+// NADA_ACHADO e o cartao sai da cadeia antiga, com os fatos fixos abaixo.
+static void fatos_farol_neutros(void) {
+  FarolFatos ff;
+  farolregra_fatos_iniciar(&ff);
+  ff.plat = FP_WEBOS;
+  ff.addonsQtd = 3;
+  resolver_teste_fatos_farol(&ff);
+}
+
 static void fatos_ok(void) {
   ResolverFatos f;
   memset(&f, 0, sizeof f);
   f.addonsQtd = 3;
   resolver_teste_fatos(&f);
+  fatos_farol_neutros();
+}
+
+static void fatos_fixos(const ResolverFatos *f) {
+  resolver_teste_fatos(f);
+  fatos_farol_neutros();
+}
+
+// A Cadeia anda em quadros com as animacoes de fabrica: espera o Veredito.
+static void ate_veredito(void) {
+  int i;
+  for (i = 0; i < 400 && resolver_fase() == RESOLVER_FASE_CADEIA; i++) quadro(1000.0f / 60.0f);
+  assert(resolver_fase() == RESOLVER_FASE_VEREDITO);
+}
+
+// Do Inicio sem faixa (foco no 1o cartao) ate o cartao do sintoma `alvo`.
+static void ir_sintoma(int alvo) {
+  int i, idx = -1;
+  for (i = 0; i < RES_S_FAROL_N; i++) if (resolverregra_sintoma_farol(i) == alvo) idx = i;
+  assert(idx >= 0);
+  for (i = 0; i < idx / 2; i++) tecla(SDLK_DOWN);
+  if (idx % 2) tecla(SDLK_RIGHT);
+  assert(resolver_foco() == alvo);
 }
 
 static void falha_fonte(void) {
@@ -137,7 +173,8 @@ static void abrir(void) {
 // Da fase 0 sem banner: desce ate a fileira de baixo e para no chip pedido
 // (B_ENVIAR = 51 ou B_LISTA = 52).
 static void ir_chip(int id) {
-  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+  int i;
+  for (i = 0; i < 8 && resolver_foco() != RESOLVER_B_ENVIAR && resolver_foco() != RESOLVER_B_LISTA; i++) tecla(SDLK_DOWN);
   if (resolver_foco() != id) tecla(id == 51 ? SDLK_LEFT : SDLK_RIGHT);
   assert(resolver_foco() == id);
 }
@@ -206,20 +243,21 @@ static void regras(void) {
     resolver_evento(&e); }
   assert(!resolver_aberto());
 
-  // ---- Fase 0 -> 1: OK num cartao testa; Voltar volta a fase 0.
+  // ---- Fase 0 -> Cadeia: OK num cartao testa; Voltar volta a fase 0.
   limpar(); fatos_ok(); abrir();
   tecla(SDLK_RETURN);
-  assert(resolver_fase() == RESOLVER_FASE_TESTES && resolver_sintoma() == RES_S_NAO_COMECA);
+  assert((resolver_fase() == RESOLVER_FASE_CADEIA || resolver_fase() == RESOLVER_FASE_VEREDITO) &&
+         resolver_sintoma() == RES_S_NAO_COMECA);
   tecla(SDLK_ESCAPE);
   assert(resolver_fase() == RESOLVER_FASE_SINTOMA && resolver_aberto());
-  // Cartao por cartao: cada um abre a fase 1 do seu sintoma e volta.
-  for (i = 0; i < RES_S_N; i++) {
+  // Cartao por cartao (os 7 da grade): cada um abre o seu sintoma e volta.
+  for (i = 0; i < RES_S_FAROL_N; i++) {
+    int s = resolverregra_sintoma_farol(i);
     limpar(); fatos_ok(); abrir();
-    { int g; for (g = 0; g < i % 3; g++) tecla(SDLK_RIGHT);
-      for (g = 0; g < i / 3; g++) tecla(SDLK_DOWN); }
-    assert(resolver_foco() == i);
+    ir_sintoma(s);
     tecla(SDLK_RETURN);
-    assert(resolver_fase() == RESOLVER_FASE_TESTES && resolver_sintoma() == i);
+    ate_veredito();
+    assert(resolver_sintoma() == s && resolver_foco() == RESOLVER_B_PRINC);
     tecla(SDLK_BACKSPACE);
     assert(resolver_fase() == RESOLVER_FASE_SINTOMA);
   }
@@ -228,27 +266,27 @@ static void regras(void) {
   limpar(); fatos_ok(); falha_fonte(); abrir();
   assert(resolver_foco() == 50);   // B_BANNER
   tecla(SDLK_RETURN);
-  assert(resolver_fase() == RESOLVER_FASE_TESTES && resolver_sintoma() == RES_S_NAO_COMECA);
+  ate_veredito();
+  assert(resolver_sintoma() == RES_S_NAO_COMECA);
   // O erro de fonte para a cadeia e o painel oferece enviar e tentar de novo.
   tecla(SDLK_RETURN);   // principal = Enviar um registro (sem servidor aqui)
   assert(resolver_fase() == RESOLVER_FASE_ENVIO);
-  tecla(SDLK_ESCAPE);   // Voltar do registro devolve a fase 1
-  assert(resolver_fase() == RESOLVER_FASE_TESTES);
+  tecla(SDLK_ESCAPE);   // Voltar do registro devolve o Veredito
+  assert(resolver_fase() == RESOLVER_FASE_VEREDITO);
 
-  // ---- Offline: o principal e "Tentar de novo" e fica na fase 1.
+  // ---- Offline: o principal e "Tentar de novo" e refaz a Cadeia.
   limpar();
-  { ResolverFatos f; memset(&f, 0, sizeof f); f.addonsQtd = 3; f.offline = 1; resolver_teste_fatos(&f); }
-  abrir(); tecla(SDLK_RETURN);
-  assert(resolver_fase() == RESOLVER_FASE_TESTES);
+  { ResolverFatos f; memset(&f, 0, sizeof f); f.addonsQtd = 3; f.offline = 1; fatos_fixos(&f); }
+  abrir(); tecla(SDLK_RETURN); ate_veredito();
   tecla(SDLK_RETURN);
-  assert(resolver_fase() == RESOLVER_FASE_TESTES && resolver_aberto());
+  ate_veredito();
+  assert(resolver_aberto());
   assert(resolver_pedido() == RESOLVER_PEDIU_NADA);
 
   // ---- Sem add-on: "Abrir Fontes e addons" fecha e pede as Fontes (uma vez).
   limpar();
-  { ResolverFatos f; memset(&f, 0, sizeof f); f.addonsQtd = 0; resolver_teste_fatos(&f); }
-  abrir(); tecla(SDLK_RETURN);
-  assert(resolver_fase() == RESOLVER_FASE_TESTES);
+  { ResolverFatos f; memset(&f, 0, sizeof f); f.addonsQtd = 0; fatos_fixos(&f); }
+  abrir(); tecla(SDLK_RETURN); ate_veredito();
   tecla(SDLK_RETURN);
   assert(!resolver_aberto());
   assert(resolver_pedido() == RESOLVER_PEDIU_FONTES);
@@ -256,13 +294,9 @@ static void regras(void) {
 
   // ---- Legenda: sem cadeia, vai direto ao passo a passo.
   limpar(); fatos_ok(); abrir();
-  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_DOWN);   // 5 = Contas
-  tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_UP);       // 0
-  tecla(SDLK_DOWN); tecla(SDLK_RIGHT);                      // 4 = Continuar errado
-  tecla(SDLK_LEFT);                                         // 3 = Legenda
-  assert(resolver_foco() == RES_S_LEGENDA);
+  ir_sintoma(RES_S_LEGENDA);
   tecla(SDLK_RETURN);
-  assert(resolver_fase() == RESOLVER_FASE_TESTES && resolver_sintoma() == RES_S_LEGENDA);
+  assert(resolver_fase() == RESOLVER_FASE_VEREDITO && resolver_sintoma() == RES_S_LEGENDA);
   tecla(SDLK_ESCAPE);
 
   // ---- Fase 2: o envio. O codigo que chega entra na lista e no arquivo.
@@ -384,29 +418,27 @@ static void regras(void) {
   resolver_teste_esquecer(); fatos_ok(); abrir();
   assert(resolver_enviados_n() == 1);
 
-  // ---- D-pad. Fase 0 com banner e lista: banner + 6 cartoes + 2 botoes = 9.
+  // ---- D-pad. Fase 0 com banner e lista: banner + 7 cartoes + 2 botoes = 10
+  // ("Achar o que ver" fica fora do foco ate a #25).
   limpar(); fatos_ok(); falha_fonte(); seed_enviados(2); abrir();
-  varredura(9, RESOLVER_FASE_SINTOMA);
+  varredura(10, RESOLVER_FASE_SINTOMA);
   limpar(); fatos_ok(); abrir();
-  varredura(8, RESOLVER_FASE_SINTOMA);          // sem banner: 6 + 2
-  // Fase 1 em cada forma do painel.
-  limpar(); fatos_ok(); abrir(); tecla(SDLK_RETURN);   // nada achado: Enviar + Tentar + Outro
-  assert(resolver_fase() == RESOLVER_FASE_TESTES);
-  varredura(3, RESOLVER_FASE_TESTES);
+  varredura(9, RESOLVER_FASE_SINTOMA);          // sem banner: 7 + 2
+  // O Veredito em cada forma do painel.
+  limpar(); fatos_ok(); abrir(); tecla(SDLK_RETURN); ate_veredito();   // nada achado: Enviar + Tentar + Outro
+  varredura(3, RESOLVER_FASE_VEREDITO);
   limpar();
-  { ResolverFatos f; memset(&f, 0, sizeof f); f.addonsQtd = 0; resolver_teste_fatos(&f); }
-  abrir(); tecla(SDLK_RETURN);                   // Fontes + Tentar + Enviar + Outro
-  varredura(4, RESOLVER_FASE_TESTES);
+  { ResolverFatos f; memset(&f, 0, sizeof f); f.addonsQtd = 0; fatos_fixos(&f); }
+  abrir(); tecla(SDLK_RETURN); ate_veredito();   // Fontes + Tentar + Enviar + Outro
+  varredura(4, RESOLVER_FASE_VEREDITO);
   limpar();
-  { ResolverFatos f; memset(&f, 0, sizeof f); f.addonsQtd = 3; f.offline = 1; resolver_teste_fatos(&f); }
-  abrir(); tecla(SDLK_RETURN);                   // Tentar + Enviar + Outro
-  varredura(3, RESOLVER_FASE_TESTES);
+  { ResolverFatos f; memset(&f, 0, sizeof f); f.addonsQtd = 3; f.offline = 1; fatos_fixos(&f); }
+  abrir(); tecla(SDLK_RETURN); ate_veredito();   // Tentar + Enviar + Outro
+  varredura(3, RESOLVER_FASE_VEREDITO);
   limpar(); fatos_ok(); abrir();
-  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);   // ainda 2 (so ha 3 colunas)
-  tecla(SDLK_DOWN); tecla(SDLK_RIGHT);          // Continuar errado... depois Legenda
-  tecla(SDLK_LEFT);
+  ir_sintoma(RES_S_LEGENDA);
   tecla(SDLK_RETURN);                            // passo a passo: Enviar + Outro
-  varredura(2, RESOLVER_FASE_TESTES);
+  varredura(2, RESOLVER_FASE_VEREDITO);
   // Fase 2: so o botao; com lista de 5 (rola ate a ultima): Pronto + 5 linhas.
   limpar(); fatos_ok(); seed_enviados(5); abrir();
   ir_chip(52);
@@ -429,8 +461,14 @@ int main(int argc, char **argv) {
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
+#if defined(__APPLE__)
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+#else
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#endif
   w = SDL_CreateWindow("resolver-shot", 0, 0, 64, 64, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
   assert(w);
   gl = SDL_GL_CreateContext(w);
@@ -448,7 +486,7 @@ int main(int argc, char **argv) {
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
   gfx_tex_esquecer(0);
-  gfx_icones_dir("deploy/app/art");
+  { char ic[4096]; if (realpath("deploy/app/art", ic)) gfx_icones_dir(ic); else gfx_icones_dir("deploy/app/art"); }
 
   regras();
 
@@ -460,6 +498,7 @@ int main(int argc, char **argv) {
 
   // 2: os testes, parados na fonte (o ultimo erro).
   tecla(SDLK_RETURN);
+  ate_veredito();
   snprintf(nome, sizeof nome, "%s-2-testes.png", saida);
   captura(nome, 40);
 
@@ -478,8 +517,8 @@ int main(int argc, char **argv) {
 
   // 5: sem add-on: o painel manda para Fontes e addons.
   limpar();
-  { ResolverFatos f; memset(&f, 0, sizeof f); f.addonsQtd = 0; resolver_teste_fatos(&f); }
-  abrir(); tecla(SDLK_RETURN);
+  { ResolverFatos f; memset(&f, 0, sizeof f); f.addonsQtd = 0; fatos_fixos(&f); }
+  abrir(); tecla(SDLK_RETURN); ate_veredito();
   snprintf(nome, sizeof nome, "%s-5-testes-addons.png", saida);
   captura(nome, 40);
 
@@ -487,20 +526,19 @@ int main(int argc, char **argv) {
   limpar();
   { ResolverFatos f; memset(&f, 0, sizeof f); f.addonsQtd = 3;
     snprintf(f.tvMotivo, sizeof f.tvMotivo, "%s", "A TV recusou abrir o player: o sistema negou a permissão de vídeo.");
-    resolver_teste_fatos(&f); }
-  abrir(); tecla(SDLK_RETURN);
+    fatos_fixos(&f); }
+  abrir(); tecla(SDLK_RETURN); ate_veredito();
   snprintf(nome, sizeof nome, "%s-6-testes-tv.png", saida);
   captura(nome, 40);
 
   // 7: nada achado (o audio aparece "sem teste").
-  limpar(); fatos_ok(); abrir(); tecla(SDLK_RETURN);
+  limpar(); fatos_ok(); abrir(); tecla(SDLK_RETURN); ate_veredito();
   snprintf(nome, sizeof nome, "%s-7-testes-nada.png", saida);
   captura(nome, 40);
 
   // 8: Legenda: sem cadeia, so os passos e o envio.
   limpar(); fatos_ok(); abrir();
-  tecla(SDLK_DOWN);                             // linha de baixo, coluna 0
-  assert(resolver_foco() == RES_S_LEGENDA);
+  ir_sintoma(RES_S_LEGENDA);
   tecla(SDLK_RETURN);
   snprintf(nome, sizeof nome, "%s-8-legenda.png", saida);
   captura(nome, 40);

@@ -18,6 +18,19 @@ unsigned resolverregra_mascara(int sintoma) {
   }
 }
 
+static const int SINTOMAS_FAROL[RES_S_FAROL_N] = {
+  RES_S_NAO_COMECA, RES_S_TRAVA, RES_S_SOM, RES_S_CORES,
+  RES_S_LEGENDA, RES_S_CONTINUAR, RES_S_CONTAS,
+};
+
+int resolverregra_sintoma_farol(int i) {
+  return i >= 0 && i < RES_S_FAROL_N ? SINTOMAS_FAROL[i] : -1;
+}
+
+int resolverregra_sintoma_valido(int s) {
+  return (s >= 0 && s < RES_S_N) || s == RES_S_CORES;
+}
+
 // 1 se o teste `t` falha com estes fatos.
 static int falha(int t, const ResolverFatos *f) {
   switch (t) {
