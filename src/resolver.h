@@ -42,7 +42,8 @@ void resolver_desenhar(Uint32 agora);
 #define RESOLVER_PEDIU_FONTES 1   // abrir Ajustes › Fontes e addons
 #define RESOLVER_PEDIU_DEBRID 2   // abrir o login da conta de cache (addonguia, QR)
 #define RESOLVER_PEDIU_PLAYER_EXT 3   // despachar a fonte falha ao player externo (Android)
-#define RESOLVER_PEDIU_FAROL  4   // executar a acao do Farol (farolacao_rede_executar)
+#define RESOLVER_PEDIU_CONTAS 4   // abrir Ajustes › Conta e servicos (Sem conta)
+#define RESOLVER_PEDIU_FAROL  5   // executar a acao do Farol (farolacao_rede_executar)
 int  resolver_pedido(void);
 // PEDIU_FAROL: a acao FAROL_A_* e o modo. O persistir so vale em
 // FAROL_A_DESLIGAR_HDR (toque: so esta reproducao; segurar: sempre nesta TV);

@@ -1,5 +1,12 @@
 // Sinais da ilha do relogio — ver ilhasinais.h.
 #include "ilhasinais.h"
+#if defined(__APPLE__) && (defined(__GNUC__) || defined(__clang__))
+extern int ajustes_farol_avisos(void) __attribute__((weak_import));
+#elif defined(__GNUC__) || defined(__clang__)
+extern int ajustes_farol_avisos(void) __attribute__((weak));
+#else
+int ajustes_farol_avisos(void);
+#endif
 #include "dormiu.h"
 #include "diarionuvem.h"
 #include "ilha.h"
@@ -82,6 +89,7 @@ void ilhasinais_iniciar(void) {
   char *s;
   rede_avisar_saude(rede_saude_nota_desde); rede_avisar_host(rede_hosts_nota);
   farolilha_relogio(NULL, farolMs);
+  if (ajustes_farol_avisos) farolilha_definir_ativo(ajustes_farol_avisos());
   s = dados_ler(FAROL_ILHA_ARQ);
   farolilha_importar(s);
   free(s);
@@ -509,6 +517,7 @@ static void farolConserto(Uint32 agora) {
     }
     farolConsSeq = seqFim;
   }
+  if (!farolilha_ativo()) { farolConsAte = 0; farolConsFrase[0] = 0; }
   if (farolConsAte && (!player_aberto() || (Sint32)(agora - farolConsAte) >= 0)) farolConsAte = 0;
   if (farolConsAte) {
     PlrIlhaPedido p;
@@ -536,6 +545,11 @@ static void farolDispensa(void) {
 }
 
 void ilhasinais_passo(Uint32 agora) {
+  if (ajustes_farol_avisos) farolilha_definir_ativo(ajustes_farol_avisos());
+  if (!farolilha_ativo()) {
+    if (ilha_tem(FAROL_CHAVE)) ilha_retirar(FAROL_CHAVE);
+    if (ilha_tem(FAROL_CONS_CHAVE)) ilha_retirar(FAROL_CONS_CHAVE);
+  }
   acoes();
   farolDispensa();
   farolConserto(agora);

@@ -76,6 +76,13 @@
 #include "discord.h"
 #include "farolsinal.h"
 #include "farol.h"       // farol_remover_fileiras antes de sessao_sair (45)
+#if defined(__APPLE__) && (defined(__GNUC__) || defined(__clang__))
+extern void farolilha_definir_ativo(int ligado) __attribute__((weak_import));
+#elif defined(__GNUC__) || defined(__clang__)
+extern void farolilha_definir_ativo(int ligado) __attribute__((weak));
+#else
+void farolilha_definir_ativo(int ligado);
+#endif
 #include "diarionuvem.h"
 #include "simkl.h"
 #include "trakt.h"
@@ -854,6 +861,9 @@ typedef enum {
   // .tpk (PR 734 etapa D): motor novo de legenda ASS (libass NEON) ligado de
   // fabrica; Desligado volta ao motor de antes de 23/10. LOCAL, append-only.
   AJ_ASS_MOTOR,
+  // FAROL (#27): "Avisos do Farol" em Ajustes › Sobre e ajuda.
+  // 1 (padrao) = Ligado; 0 = So quando eu abrir. LOCAL, append-only.
+  AJ_FAROL_AVISOS,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -910,6 +920,7 @@ static const char *V_EXT_CACHE[] = { "Mostrar apagadas", "Ocultar" };
 static const char *V_EXT_PASSO[] = { "10 ms", "50 ms", "100 ms" };
 static const char *V_EXT_MODO[] = { "Arquivo inteiro", "Só áudio" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+static const char *V_FAROL_AVISOS[] = { "Só quando eu abrir", "Ligado" };
 static const char *V_SOURCE_BADGE_POSITION[] = { "No topo", "Embaixo" };
 static const char *V_GUIA_INICIO[] = { "Ao destacar", "Ao selecionar" };
 static const char *V_GUIA_DIAS[] = { "Um dia", "Três dias", "Sete dias" };
@@ -2105,6 +2116,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Evitar legendas SDH", V_LIGA, 2),                    // local: legendaEvitarSdhLocal (#743)
   ESC("Tarjas pretas no player", V_LIGA, 2),                 // local: barrasPretasLocal (#768)
   ESC("Motor de legendas ASS", V_LIGA, 2),                   // local: assMotorNovoLocal (.tpk, PR 734)
+  ESC("Avisos do Farol", V_FAROL_AVISOS, 2),                 // local: farolAvisosLocal (#27)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2495,6 +2507,7 @@ static const char *CHAVE[] = {
   "legendaEvitarSdhLocal",
   "barrasPretasLocal",
   "assMotorNovoLocal",
+  "farolAvisosLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3722,6 +3735,18 @@ static void assMotorPublicar(void) {
   __atomic_store_n(&assMotorEspelho, lig(AJ_ASS_MOTOR), __ATOMIC_RELEASE);
 }
 int ajustes_ass_motor(void) { return __atomic_load_n(&assMotorEspelho, __ATOMIC_ACQUIRE); }
+static void farolAvisosPublicar(void) {
+  if (farolilha_definir_ativo) farolilha_definir_ativo(ajustes_farol_avisos());
+}
+int ajustes_farol_avisos(void) { return valor[AJ_FAROL_AVISOS] != 0; }
+void ajustes_farol_avisos_definir(int ligado) {
+  int v = ligado ? 1 : 0;
+  if (valor[AJ_FAROL_AVISOS] != v) {
+    valor[AJ_FAROL_AVISOS] = v;
+    AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar());
+  }
+  farolAvisosPublicar();
+}
 // #338: -1 = lembrar o ultimo tamanho; 0..2 = Completo, Compacto, Minimo.
 int ajustes_estat_tamanho(void) {
   int v = valor[AJ_ESTAT_TAMANHO];
@@ -5552,6 +5577,7 @@ void ajustes_dir(const char *dir) {
     legenda2_atualizar_offset_manual(ajustes_leg2_atraso());
     ajSombraSync();
     assMotorPublicar();
+    farolAvisosPublicar();
     return;
   }
   { int viuIdioma = 0, viuAuto = 0, idiomaGravado = IDIOMA_EN, autoGravado = 0;
@@ -5950,6 +5976,7 @@ void ajustes_dir(const char *dir) {
   previaAplicar();
   ajSombraSync();   // o que veio do disco nao e mudanca de ninguem
   assMotorPublicar();   // o espelho do motor ASS reflete o arquivo inteiro lido
+  farolAvisosPublicar();
 }
 
 static int gravar(void) {
@@ -7019,6 +7046,7 @@ static int soNaTv(int op) {
     case AJ_SELOS_PACOTE: case AJ_SELOS_PACOTE_ADD: case AJ_SELOS_PACOTE_REM:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL:
     case AJ_LOG_REDE: case AJ_DIAGNOSTICS_QR:
+    case AJ_FAROL_AVISOS:
       return 1;
     default:
       return 0;
@@ -9119,6 +9147,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_MEDIDOR: return "Mostra quadros por segundo, o pior quadro e a memória dentro da ilha do relógio, atualizados a cada 3 s. Mínimo fica na linha da hora, Menor ganha uma segunda linha e Grande abre o painel completo. Quando a ilha mostra um aviso, o medidor se recolhe e volta depois.";
     case AJ_AVISO_LEGAL: return "Aviso legal";
     case AJ_GUIA: return "O que o Nuvio faz, em 12 capítulos. Cada recurso diz onde fica e tem um atalho para ele.";
+    case AJ_FAROL_AVISOS: return "O Farol avisa quando o vídeo falha e confirma o conserto.";
     case AJ_DICASCONTROLE: return "Dicas do controle";
     case AJ_NOVIDADES20: return "O tour do que mudou na 2.0, capítulo por capítulo, com o que vale neste aparelho. Abre do começo.";
     case AJ_APOIAR: return "Se o Nuvio te ajuda e você quiser apoiar quem faz o app, aponte a câmera do celular para um dos códigos. É opcional: nada muda no app.";
@@ -10861,10 +10890,12 @@ static int definirValorDireto(int op, int novo) {
   if (op == AJ_SALVOS_DEST) bibliotecaFonteEscolhida = 1;
   valor[op] = novo;
   if (op == AJ_ASS_MOTOR) assMotorPublicar();
+  if (op == AJ_FAROL_AVISOS) farolAvisosPublicar();
   if (novo == 0) notaLigarPar(op);
   { int ok; ajOrigem = ajOrigemDireto; ok = gravar(); ajOrigem = 0;
     if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes;
       if (op == AJ_ASS_MOTOR) assMotorPublicar();
+      if (op == AJ_FAROL_AVISOS) farolAvisosPublicar();
       return 0; } }
   if ((op == AJ_DV_MKV || op == AJ_DV7 || op == AJ_DV7_MAPPING) && antes != 0 && novo == 0) video_dv_guard_reiniciar();
   if (op == AJ_LIVETV_SUGERIR) guia_sugestoes_mudaram();
@@ -12171,7 +12202,7 @@ static AjPreview familiaPreviaOpcao(int op) {
       return AJPV_CONTA;
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL: case AJ_DIARIO_NUVEM:
       return AJPV_RASTREIO;
-    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
+    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_FAROL_AVISOS: case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
     case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE: case AJ_DIAGNOSTICS_QR:
 #ifdef NV_ANDROID
     case AJ_BAIXAR_REGISTRO:
