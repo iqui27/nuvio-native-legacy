@@ -409,11 +409,8 @@ static void teste_positivos_p2_e_controles(void) {
     { "pos_alvara",       "Walt perde o alvará do laboratório." },
     { "pos_guarana_para", "Walt toma guaraná com maracujá no Pará." },
     { "pos_ep_ponto_fim", "Walt watched the episode. 5 days later he ran." },
-    { "pos_r5_ep_later",  "The episode later shows Walt confronting Jesse." },
-    { "pos_r5_ep_depois", "O episódio depois mostra Walt confrontando Jesse." },
-    { "pos_r5_ep_tarde",  "El episodio más tarde muestra a Walt y a Jesse." },
-    { "pos_r5_ep_after",  "Walt ends the episode after confronting Jesse." },
-    { "pos_r5_cap_after", "Walt grabs his cap after confronting Jesse." },
+    { "pos_ep_ends_later", "The episode ends. Later Walt runs." },
+    { "pos_ep_virg_depois", "No episódio, depois Walt foge." },
   };
   int i;
   for (i = 0; i < (int)(sizeof casos / sizeof casos[0]); i++) {
@@ -474,6 +471,11 @@ static void teste_p1_r4_marcador_temporal(void) {
     { 2,  4, "p1_r6_ep_after_this" },
     { 2,  4, "p1_r6_ep_depois_deste" },
     { 2,  4, "p1_r6_ep_despues_este" },
+    { 2,  4, "p1_r7_ep_after_current" },
+    { 2,  4, "p1_r7_ep_depois_atual" },
+    { 2,  4, "p1_r7_ep_despues_actual" },
+    { 2,  4, "p1_r7_ep_after_saw" },
+    { 2,  4, "p1_r7_couple_eps_pass" },
     { 2,  4, "p1_r6_several_pass" },
     { 2,  4, "p1_r6_episodes_later" },
     { 2,  4, "p1_r6_seasons_from_now" },

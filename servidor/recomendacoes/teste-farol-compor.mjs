@@ -4218,11 +4218,8 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     "Walt perde o alvará do laboratório.",
     "Walt toma guaraná com maracujá no Pará.",
     "Walt watched the episode. 5 days later he ran.",
-    "The episode later shows Walt confronting Jesse.",
-    "O episódio depois mostra Walt confrontando Jesse.",
-    "El episodio más tarde muestra a Walt y a Jesse.",
-    "Walt ends the episode after confronting Jesse.",
-    "Walt grabs his cap after confronting Jesse.",
+    "The episode ends. Later Walt runs.",
+    "No episódio, depois Walt foge.",
   ]) {
     const { post, kv } = cenario(t, {}, { respostaLlm: () => ({ resumo: aceito }) });
     const r = await post("/v1/farol/compor", pedidoRetomada({}, { temporada: 2, episodio: 4 }));
@@ -4262,6 +4259,11 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     [2, 4, "The episode after this one ends with Walt's death."],
     [2, 4, "O episódio depois deste termina com a morte de Walt."],
     [2, 4, "El episodio después de este termina con la muerte de Walt."],
+    [2, 4, "The episode after the current one ends with Walt's death."],
+    [2, 4, "O episódio depois do atual termina com a morte de Walt."],
+    [2, 4, "El episodio después del actual acaba con la muerte de Walt."],
+    [2, 4, "The episode after the one Walt saw ends with his death."],
+    [2, 4, "A couple of episodes pass before Walt dies."],
     [2, 4, "Several episodes pass before Walt dies."],
     [2, 4, "Episodes later, Walt dies."],
     [2, 4, "Seasons from now, Walt dies."],

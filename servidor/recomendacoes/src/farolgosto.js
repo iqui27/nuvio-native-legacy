@@ -4654,6 +4654,8 @@ const RET_QUANT_PLURAL = new Set([
   "outros", "outras", "otros", "otras",
 ]);
 
+const RET_QUANT_PAR = new Set(["couple", "pair", "par"]);
+
 const RET_AFTER_PREP = new Set(["after", "following", "depois", "apos", "despues"]);
 
 const RET_AFTER_DEMONS = new Set([
@@ -4664,7 +4666,7 @@ const RET_AFTER_DEMONS = new Set([
 ]);
 
 const RET_MARCADOR_TEMP_1 = new Set([
-  "later", "after", "afterward", "afterwards", "ahead",
+  "later", "after", "afterward", "afterwards", "ahead", "following",
   "depois", "adiante", "apos", "despues", "adelante",
 ]);
 
@@ -4985,8 +4987,14 @@ export function validarResumoRetomada(bruto, ret) {
     if (mEp && Number(mEp[1]) !== ret.episodio) return null;
 
     if (RET_SUB_PLURAL.has(w) && retEhMarcadorTemp(toks, i + 1)) return null;
+    if ((RET_SUB_EP.has(w) || RET_SUB_TEMP.has(w)) && retEhMarcadorTemp(toks, i + 1)) return null;
     if (RET_QUANT_PLURAL.has(w) && i + 1 < nt && !toks[i + 1].q &&
         RET_SUB_PLURAL.has(toks[i + 1].w)) return null;
+    if (RET_QUANT_PAR.has(w)) {
+      let j = i + 1;
+      if (j < nt && !toks[j].q && (toks[j].w === "of" || toks[j].w === "de")) j++;
+      if (j < nt && !toks[j].q && RET_SUB_PLURAL.has(toks[j].w)) return null;
+    }
     if ((RET_SUB_EP.has(w) || RET_SUB_TEMP.has(w)) &&
         retEhAfterDemonstrativo(toks, i + 1)) return null;
 

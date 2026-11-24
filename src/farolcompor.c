@@ -884,6 +884,10 @@ static int retEhQuantPlural(const char *s) {
   return 0;
 }
 
+static int retEhQuantPar(const char *s) {
+  return !strcmp(s, "couple") || !strcmp(s, "pair") || !strcmp(s, "par");
+}
+
 static int retEhProximo(const char *s) {
   return !strcmp(s, "proximo") || !strcmp(s, "proxima") ||
          !strcmp(s, "proximos") || !strcmp(s, "proximas") ||
@@ -931,7 +935,7 @@ static int retEhAbrevPonto(const char *s) {
 
 static int retEhMarcadorTemp(char *const *tok, const int *quebra, int nt, int i) {
   static const char *const m1[] = {
-    "later", "after", "afterward", "afterwards", "ahead",
+    "later", "after", "afterward", "afterwards", "ahead", "following",
     "depois", "adiante", "apos", "despues", "adelante",
   };
   size_t k;
@@ -1127,9 +1131,17 @@ static int retomadaResumoSemSpoiler(const char *s, int temporada, int episodio) 
       return 0;
 
     if (retEhSubstPlural(tok[i]) && retEhMarcadorTemp(tok, quebra, nt, i + 1)) return 0;
+    if ((retEhSubstEp(tok[i]) || retEhSubstTemp(tok[i])) &&
+        retEhMarcadorTemp(tok, quebra, nt, i + 1))
+      return 0;
     if (retEhQuantPlural(tok[i]) && i + 1 < nt && !quebra[i + 1] &&
         retEhSubstPlural(tok[i + 1]))
       return 0;
+    if (retEhQuantPar(tok[i])) {
+      j = i + 1;
+      if (j < nt && !quebra[j] && (!strcmp(tok[j], "of") || !strcmp(tok[j], "de"))) j++;
+      if (j < nt && !quebra[j] && retEhSubstPlural(tok[j])) return 0;
+    }
     if ((retEhSubstEp(tok[i]) || retEhSubstTemp(tok[i])) &&
         retEhAfterDemonstrativo(tok, quebra, nt, i + 1))
       return 0;
