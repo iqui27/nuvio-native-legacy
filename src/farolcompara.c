@@ -26,9 +26,11 @@
 #include "escala.h"
 #include "farolficha.h"
 #include "faroltexto.h"
+#include "fonteantecipa.h"
 #include "fontecache.h"
 #include "gfx.h"
 #include "horafmt.h"
+#include "idbase.h"
 #include "idioma.h"
 #include "layout.h"
 #include "linguas.h"
@@ -76,6 +78,7 @@ static struct {
   char    pedRef[FAROL_REF_TAM];
   int     consultando;
   unsigned genAtual;
+  uint64_t sessao;
 } S;
 
 static FarolCena fcCena;                 // ~26 KB: fora da pilha
@@ -86,6 +89,13 @@ static FarolCompConsulta fcFnConsulta;
 static int fcCapsHdr = -2, fcCapsDv = -2;
 static long long (*fcFnEpoch)(void);
 static int (*fcFnPlayer)(void);
+static uint64_t (*fcFnSessao)(void);
+
+// A sessao de perfil em que a tela abriu: trocar de perfil com o Comparar
+// aberto fecha a tela (os itens e a memoria sao da sessao antiga).
+static uint64_t fcmp_sessao(void) {
+  return fcFnSessao ? fcFnSessao() : nv_perfil_sessao_ler();
+}
 
 // Memoria da sessao: fontes ja consultadas por id.
 static struct { char id[64]; int n; FarolInfoFonte f[FCMP_FONTE_MAX]; } fcMem[FCMP_MEM_MAX];
@@ -241,15 +251,23 @@ static void fcmp_resumir(const Stream *s, FarolInfoFonte *f) {
   }
 }
 
+// Corta em `max` DEPOIS de priorizar quem toca: os 24 primeiros da lista
+// podem ser todos inconclusivos (toca != 1) e a fonte confirmada estar na
+// posicao 28 — truncar antes descartava exatamente a que sustentava a linha.
 static int fcmp_resumir_lista(const Stream *l, int n, FarolInfoFonte *out, int max) {
-  int i, k = 0;
-  for (i = 0; l && i < n && k < max; i++) fcmp_resumir(&l[i], &out[k++]);
+  int i, pass, k = 0;
+  if (!l || max <= 0) return 0;
+  for (pass = 0; pass < 2 && k < max; pass++)
+    for (i = 0; i < n && k < max; i++) {
+      fcmp_resumir(&l[i], &out[k]);
+      if ((pass == 0) == (out[k].toca == 1)) k++;
+    }
   return k;
 }
 
 // ------------------------------------------------------------ memoria
 static void fcmp_mem_sessao(void) {
-  uint64_t g = nv_perfil_sessao_ler();
+  uint64_t g = fcmp_sessao();
   if (fcMemSessaoOk && g == fcMemSessao) return;
   memset(fcMem, 0, sizeof fcMem);
   fcMemN = fcMemProx = 0;
@@ -306,6 +324,7 @@ static void fcmp_cel_qualidade(const FarolCompItem *it, const FarolInfoCaps *cap
   if (farolinfo_qualidade(l, 2, it->fontes, it->nFontes, caps) <= 0) return;
   if (!strcmp(l[0].m, "FT_INFO_QUALI")) audio = 2;
   else if (!strcmp(l[0].m, "FT_INFO_QUALI_AUDIO")) audio = 1;
+  else if (!strcmp(l[0].m, "FT_INFO_IDIOMA")) audio = 0;
   else if (strcmp(l[0].m, "FT_INFO_QUALI_SO")) return;
   for (i = 0; i < l[0].na && o + 1 < cap; i++) {
     char v[64];
@@ -411,7 +430,9 @@ static void *fcmp_fio(void *arg) {
     pthread_mutex_unlock(&fcTrava);
   }
   pthread_mutex_lock(&fcTrava);
-  fcFimGen = j->gen;
+  // Um fio cancelado nao carimba o fim: ele podia terminar DEPOIS do fio da
+  // consulta nova e regredir fcFimGen, deixando S.consultando preso em 1.
+  if (!fcmp_cancelado(j) && j->gen > fcFimGen) fcFimGen = j->gen;
   pthread_mutex_unlock(&fcTrava);
   addons_consulta_liberar(j->consulta);
   free(j);
@@ -480,7 +501,8 @@ static void fcmp_colher(void) {
     } else it->nFontes = 0;   // consulta sem resposta: nada a afirmar
     mudou = 1;
   }
-  if (S.consultando && fcFimGen == S.genAtual) S.consultando = 0;
+  if (S.consultando && (fcFimGen == S.genAtual || atomic_load(&fcVivos) == 0))
+    S.consultando = 0;
   pthread_mutex_unlock(&fcTrava);
   if (mudou) fcmp_celulas();
 }
@@ -546,6 +568,7 @@ int farolcompara_abrir_cena(const char *json, const FarolCompItem *itens, int nI
     fcmp_estado_limpo();
     S.n = nc;
     for (i = 0; i < nc; i++) S.it[i] = *col[i];
+    S.sessao = fcmp_sessao();
   }
   S.nEixos = 0;
   for (i = 0; i < p->u.comparar.nEixos && i < FCMP_EIXOS; i++)
@@ -641,14 +664,20 @@ static void fcmp_fontes_conhecidas(FarolCompItem *it) {
   fcmp_fontes_da_memoria(it);
   if (it->nFontes >= 0) return;
   if (stream_lista_do_alvo(id)) {
-    int k = 0;
-    for (i = 0; i < stream_n() && k < FCMP_FONTE_MAX; i++) {
-      const Stream *s = stream_item(i);
-      if (!s) continue;
-      fcmp_resumir(s, &it->fontes[k]);
-      if (stream_incompativel(i)) it->fontes[k].toca = 0;
-      k++;
-    }
+    int k = 0, pass;
+    // stream_fonte_estado (FA_OK/FA_RUIM) manda em toca, como a P6; e quem
+    // toca entra primeiro — cortar nos 24 primeiros perdia confirmadas.
+    for (pass = 0; pass < 2 && k < FCMP_FONTE_MAX; pass++)
+      for (i = 0; i < stream_n() && k < FCMP_FONTE_MAX; i++) {
+        const Stream *s = stream_item(i);
+        int est;
+        if (!s) continue;
+        est = stream_fonte_estado(i);
+        fcmp_resumir(s, &it->fontes[k]);
+        if (stream_incompativel(i) || est == FA_RUIM) it->fontes[k].toca = 0;
+        else if (est == FA_OK && stream_fonte_disponivel(s)) it->fontes[k].toca = 1;
+        if ((pass == 0) == (it->fontes[k].toca == 1)) k++;
+      }
     it->nFontes = k;
     return;
   }
@@ -661,19 +690,28 @@ static void fcmp_fontes_conhecidas(FarolCompItem *it) {
 
 int farolcompara_abrir_titulos(const int *catIndices, int n, const int32_t *pontos, int tempoMin) {
   static FarolCompItem it[FCMP_COL_MAX];
-  int i, k = 0;
+  int i, j, k = 0;
   if (!catIndices || n < 2) return 0;
+  // Deduplicar ANTES de cortar em 3: [A A B C] tem de abrir A, B e C.
   for (i = 0; i < n && k < FCMP_COL_MAX; i++) {
     const CatItem *c = cat_item(catIndices[i]);
     FarolFicha ff;
     OndeVer ov;
     FarolCompItem *x = &it[k];
     if (!c || !c->imdb[0]) continue;
+    for (j = 0; j < k; j++) if (!strcmp(it[j].ref, c->imdb)) break;
+    if (j < k) continue;
     memset(x, 0, sizeof *x);
     fcmp_copia(x->ref, sizeof x->ref, c->imdb);
     fcmp_copia(x->tipo, sizeof x->tipo, c->tipo);
+    // Serie sem episodio (catalogo, busca, salvos, Farol) consulta como
+    // "tt...:1:1" — a mesma convencao de addons_buscar; sem o carimbo o id
+    // cru "tt..." nao casa com alvo, cache VOD nem com o que o addon aceita.
     if (!strcmp(c->tipo, "series") && c->temporada > 0 && c->episodio > 0)
       snprintf(x->idFontes, sizeof x->idFontes, "%.40s:%d:%d", c->imdb, c->temporada, c->episodio);
+    else if (!strcmp(c->tipo, "series") && idbase_e_imdb(c->imdb) &&
+             !idbase_tem_episodio(c->imdb))
+      snprintf(x->idFontes, sizeof x->idFontes, "%.40s:1:1", c->imdb);
     x->catIndice = catIndices[i];
     fcmp_copia(x->titulo, sizeof x->titulo, c->titulo);
     fcmp_copia(x->poster, sizeof x->poster, c->poster);
@@ -752,7 +790,7 @@ void farolcompara_atualizar(float dt, Uint32 agora) {
   (void)agora;
   if (S.consultando || atomic_load(&fcVivos) > 0) fcmp_colher();
   if (!S.aberto) { S.entrada = t21_entrada(S.entrada, dt, 0); return; }
-  if (fcmp_player()) { farolcompara_fechar(); return; }
+  if (fcmp_player() || fcmp_sessao() != S.sessao) { farolcompara_fechar(); return; }
   if (S.focoBotao && !farolcompara_botao_visivel() && !S.consultando) S.focoBotao = 0;
   S.entrada = t21_entrada(S.entrada, dt, 1);
   for (i = 0; i < S.n; i++) {
@@ -921,6 +959,8 @@ void farolcompara_teste_consulta(FarolCompConsulta fn) { fcFnConsulta = fn; }
 void farolcompara_teste_caps(int hdr, int dv) { fcCapsHdr = hdr; fcCapsDv = dv; }
 void farolcompara_teste_relogio(long long (*epochS)(void)) { fcFnEpoch = epochS; }
 void farolcompara_teste_player(int (*aberto)(void)) { fcFnPlayer = aberto; }
+void farolcompara_teste_sessao(uint64_t (*sessao)(void)) { fcFnSessao = sessao; }
+int farolcompara_teste_fios(void) { return atomic_load(&fcVivos); }
 int farolcompara_teste_esperar(Uint32 ms) {
   Uint32 t0 = SDL_GetTicks();
   while (atomic_load(&fcVivos) > 0) {

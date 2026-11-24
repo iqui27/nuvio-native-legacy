@@ -17,8 +17,11 @@
 #include "farolcena.h"
 #include "farolcompara.h"
 #include "ajustes.h"
+#include "catalogo.h"
 #include "dados.h"
+#include "fonteantecipa.h"
 #include "gfx.h"
+#include "streams.h"
 #include "tex_cache.h"
 #include "text.h"
 
@@ -32,19 +35,40 @@
 void testar(int s);
 void testar(int s) { (void)s; }
 
+// NV_SOFT_ASSERT (so a prova de falha-na-base usa): registra e segue, para
+// provar TODAS as casas novas num unico binario da base. Sem o define,
+// CHECK e assert comum.
+static int gFalhas;
+#ifdef NV_SOFT_ASSERT
+#define NV_CHECK(x) do { if (!(x)) { gFalhas++; \
+  fprintf(stderr, "FALHA %s:%d: %s\n", __FILE__, __LINE__, #x); } } while (0)
+#else
+#define NV_CHECK(x) assert(x)
+#endif
+
 // ------------------------------------------------------------ ganchos
-static atomic_int gChamadas, gLiberar, gCanceladas;
-static int gModo;   // 0 = espera liberar, 1 = devolve na hora
+static atomic_int gChamadas, gLiberar, gCanceladas, gSeq;
+static atomic_int gBar[8];          // modo 3: barreira por chamada (ordem global)
+static char gIds[8][80];            // ids na ordem das chamadas
+static int gModo;   // 0 = espera liberar, 1 = devolve na hora, 3 = barreira/seq
 
 static int consultaTeste(const char *id, const char *tipo, int (*cancelado)(void *),
                          void *ctx, FarolInfoFonte *out, int max) {
+  int s;
   (void)tipo;
+  s = atomic_fetch_add(&gSeq, 1);
+  if (s >= 0 && s < 8) snprintf(gIds[s], sizeof gIds[0], "%s", id ? id : "");
   atomic_fetch_add(&gChamadas, 1);
-  while (gModo == 0 && !atomic_load(&gLiberar)) {
+  if (gModo == 3 && (s == 0 || s == 3)) {   // A(s=0) e o ULTIMO de B(s=3) na barreira;
+    while (!atomic_load(&gBar[s ? 1 : 0])) SDL_Delay(1);  // ignora o cancela:
     if (cancelado(ctx)) { atomic_fetch_add(&gCanceladas, 1); return -1; }
-    SDL_Delay(1);
+  } else {                          // o fio velho tem de sair da consulta por ultimo
+    while (gModo == 0 && !atomic_load(&gLiberar)) {
+      if (cancelado(ctx)) { atomic_fetch_add(&gCanceladas, 1); return -1; }
+      SDL_Delay(1);
+    }
+    if (cancelado(ctx)) { atomic_fetch_add(&gCanceladas, 1); return -1; }
   }
-  if (cancelado(ctx)) { atomic_fetch_add(&gCanceladas, 1); return -1; }
   if (max < 1) return 0;
   memset(out, 0, sizeof *out);
   out->altura = strstr(id, "2") ? 1080 : 2160;
@@ -308,6 +332,197 @@ static void provaQualidade(void) {
   puts("  qualidade: 0 consultas ao abrir, v+OK consulta, Voltar cancela, memoria da sessao");
 }
 
+// P1-2: a geracao CANCELADA termina depois da consulta nova (o fio velho
+// sai do addon ja vendo cancelado, mas so grava o carimbo de fim por
+// ultimo). fcFimGen nao pode regredir nem S.consultando ficar preso em 1.
+static void provaCorridaFim(void) {
+  int i;
+  montarItens();
+  farolcompara_teste_consulta(consultaTeste);
+  gModo = 3;
+  atomic_store(&gSeq, 0);
+  for (i = 0; i < 8; i++) atomic_store(&gBar[i], 0);
+
+  reabrir(3, 0);
+  tecla(SDLK_DOWN); tecla(SDLK_RETURN);          // consulta A (geracao 1)
+  for (i = 0; atomic_load(&gSeq) < 1 && i < 3000; i++) SDL_Delay(1);
+  NV_CHECK(atomic_load(&gSeq) >= 1);              // A ja esta dentro da consulta
+  NV_CHECK(farolcompara_consultando());
+  tecla(SDLK_ESCAPE);                           // cancela A (geracao sobe)
+  NV_CHECK(farolcompara_aberto() && !farolcompara_consultando());
+
+  tecla(SDLK_RETURN);                           // consulta B (geracao nova)
+  for (i = 0; atomic_load(&gSeq) < 4 && i < 3000; i++) SDL_Delay(1);
+  NV_CHECK(atomic_load(&gSeq) >= 4);              // B chegou na ultima chamada
+  atomic_store(&gBar[1], 1);                    // B termina inteira (fim=3)
+  for (i = 0; farolcompara_teste_fios() > 1 && i < 3000; i++) SDL_Delay(1);
+  atomic_store(&gBar[0], 1);                    // so agora A destrava
+  NV_CHECK(farolcompara_teste_esperar(3000));
+  quadro();
+  NV_CHECK(!farolcompara_consultando());          // travava em 1: fim=1 != genAtual=3
+  for (i = 0; i < 3; i++) NV_CHECK(farolcompara_qualidade_consultada(i));
+  NV_CHECK(farolcompara_tem_eixo(FP_EIXO_QUALIDADE));
+  farolcompara_fechar();
+  gModo = 1;
+  puts("  corrida: fio cancelado nao regrediu o fim; consultando zera");
+}
+
+// Item de catalogo minimo (o que farolcompara_abrir_titulos le).
+static void montarCat(CatItem *c, const char *imdb, const char *tipo, int t, int e) {
+  memset(c, 0, sizeof *c);
+  snprintf(c->imdb, sizeof c->imdb, "%s", imdb);
+  snprintf(c->tipo, sizeof c->tipo, "%s", tipo);
+  snprintf(c->titulo, sizeof c->titulo, "Titulo %s", imdb);
+  c->temporada = t;
+  c->episodio = e;
+}
+
+// P1-3a + P2-1: ids de consulta a partir do catalogo e deduplicacao antes
+// do corte em 3. P1-1: o indice guardado vale so junto com a identidade
+// (o roteador em app.c revalida com cat_indice_vivo — ver farol_compara.sh).
+static void provaTitulos(void) {
+  CatItem cat[4];
+  int idx[4];
+  stream_invalidar("teste");
+  montarCat(&cat[0], "tt4000001", "movie", 0, 0);
+  montarCat(&cat[1], "tt4000002", "series", 0, 0);   // sem episodio
+  montarCat(&cat[2], "tt4000003", "series", 2, 5);   // retomada
+  montarCat(&cat[3], "tt4000004", "movie", 0, 0);
+  cat_definir(cat, 4);
+  idx[0] = 0; idx[1] = 1; idx[2] = 2;
+
+  gModo = 1;
+  farolcompara_teste_consulta(consultaTeste);
+  farolcompara_teste_reset();
+  atomic_store(&gSeq, 0);
+  NV_CHECK(farolcompara_abrir_titulos(idx, 3, NULL, 0) == 1);
+  NV_CHECK(farolcompara_n_colunas() == 3);
+  NV_CHECK(farolcompara_botao_visivel());
+  tecla(SDLK_DOWN); tecla(SDLK_RETURN);
+  NV_CHECK(farolcompara_teste_esperar(3000));
+  quadro();
+  {                                              // fios correm fora de ordem
+    int filme = 0, semEp = 0, comEp = 0, i_;
+    for (i_ = 0; i_ < 3; i_++) {
+      filme |= !strcmp(gIds[i_], "tt4000001");      // filme: id cru
+      semEp |= !strcmp(gIds[i_], "tt4000002:1:1");  // serie sem episodio
+      comEp |= !strcmp(gIds[i_], "tt4000003:2:5");  // serie com episodio
+    }
+    NV_CHECK(filme && semEp && comEp);
+  }
+  farolcompara_fechar();
+
+  // Dedup antes do corte: A A B C abre A, B e C (antes fechava em A e B).
+  farolcompara_teste_reset();
+  idx[0] = 0; idx[1] = 0; idx[2] = 1; idx[3] = 3;
+  NV_CHECK(farolcompara_abrir_titulos(idx, 4, NULL, 0) == 1);
+  NV_CHECK(farolcompara_n_colunas() == 3);
+  {
+    char ref[FAROL_REF_TAM];
+    int cat_ = -1;
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);        // foco = terceira coluna
+    tecla(SDLK_RETURN);
+    NV_CHECK(farolcompara_pediu_abrir(&cat_, ref, sizeof ref));
+    NV_CHECK(!strcmp(ref, "tt4000004") && cat_ == 3);
+  }
+
+  // O indice vale pela identidade: catalogo deslocado, mesmo imdb.
+  cat_definir(cat + 1, 3);
+  NV_CHECK(cat_indice_vivo(0, "tt4000002") == 0);
+  NV_CHECK(cat_indice_vivo(2, "tt4000004") == 2);
+  puts("  titulos: serie sem ep consulta ':1:1', dedup antes do corte");
+}
+
+// P1-3b + P2-3: a lista do alvo nao trunca nos 24 antes de priorizar quem
+// toca (a confirmada pode estar na posicao 28) e stream_fonte_estado
+// manda em toca (FA_OK sem cache afirmado tambem sustenta a linha).
+static void provaFontesLista(void) {
+  static Stream st[30];
+  CatItem cat[3];
+  int idx[2];
+  char cel[FCMP_CEL_TAM];
+  int i;
+  montarCat(&cat[0], "tt4000001", "movie", 0, 0);
+  montarCat(&cat[1], "tt4000005", "movie", 0, 0);
+  montarCat(&cat[2], "tt4000006", "movie", 0, 0);
+  cat_definir(cat, 3);
+  farolcompara_teste_reset();
+
+  for (i = 0; i < 30; i++) {
+    memset(&st[i], 0, sizeof st[i]);
+    snprintf(st[i].url, sizeof st[i].url, "https://cdn.test/%d.mp4", i);
+    snprintf(st[i].rotulo, sizeof st[i].rotulo, "F%02d", i);
+    st[i].altura = 720;
+    st[i].emCache = 0;                          // inconclusiva: toca = -1
+  }
+  st[28].altura = 2160;
+  st[28].emCache = 1;                           // a confirmada 4K
+  stream_definir_alvo("tt4000001");
+  stream_definir_lista(st, 30);
+
+  idx[0] = 0; idx[1] = 1;
+  NV_CHECK(farolcompara_abrir_titulos(idx, 2, NULL, 0) == 1);
+  NV_CHECK(farolcompara_qualidade_consultada(0));
+  NV_CHECK(farolcompara_tem_eixo(FP_EIXO_QUALIDADE));
+  NV_CHECK(farolcompara_celula(0, FP_EIXO_QUALIDADE, cel, sizeof cel));
+  NV_CHECK(strstr(cel, "4K"));                     // o 4K da posicao 28 subiu
+  farolcompara_fechar();
+
+  // FA_OK (sondagem real) vale sem cache afirmado na fonte.
+  memset(st, 0, sizeof st[0] * 2);
+  for (i = 0; i < 2; i++) {
+    snprintf(st[i].url, sizeof st[i].url, "https://cdn.test/ok%d.mp4", i);
+    snprintf(st[i].rotulo, sizeof st[i].rotulo, "OK%d", i);
+    st[i].altura = 1080;
+    st[i].conferencia = FA_OK;
+  }
+  stream_definir_alvo("tt4000001");
+  stream_definir_lista(st, 2);
+  farolcompara_teste_reset();
+  NV_CHECK(farolcompara_abrir_titulos(idx, 2, NULL, 0) == 1);
+  NV_CHECK(farolcompara_celula(0, FP_EIXO_QUALIDADE, cel, sizeof cel));
+  NV_CHECK(strstr(cel, "1080p"));
+  farolcompara_fechar();
+
+  stream_invalidar("teste");
+  puts("  fontes: 4K alem dos 24 sobe; FA_OK sem cache sustenta a linha");
+}
+
+// P2-4: fonte so com idioma (altura desconhecida) mostra o idioma na
+// celula, nao uma celula vazia.
+static void provaIdioma(void) {
+  char cel[FCMP_CEL_TAM];
+  montarItens();
+  memset(IT[0].fontes, 0, sizeof IT[0].fontes);
+  IT[0].fontes[0].toca = 1;
+  snprintf(IT[0].fontes[0].audio, sizeof IT[0].fontes[0].audio, "pt");
+  IT[0].nFontes = 1;
+  reabrir(3, 0);
+  NV_CHECK(farolcompara_tem_eixo(FP_EIXO_QUALIDADE));
+  NV_CHECK(farolcompara_celula(0, FP_EIXO_QUALIDADE, cel, sizeof cel) && cel[0]);
+  montarItens();
+  puts("  idioma: fonte sem altura mostra o idioma, nunca celula vazia");
+}
+
+// P2-5: trocar de perfil com o Comparar aberto fecha a tela — os itens e
+// a memoria de fontes sao da sessao antiga.
+static uint64_t gSessao;
+static uint64_t sessaoTeste(void) { return gSessao; }
+
+static void provaSessao(void) {
+  montarItens();
+  gSessao = 41;
+  farolcompara_teste_sessao(sessaoTeste);
+  reabrir(2, 0);
+  NV_CHECK(farolcompara_aberto());
+  gSessao = 42;
+  quadro();
+  NV_CHECK(!farolcompara_aberto());
+  farolcompara_teste_sessao(NULL);
+  gModo = 1;
+  puts("  sessao: troca de perfil fecha o Comparar");
+}
+
 // Do estado (coluna, botao), as 4 setas: alcanca tudo, nada prende.
 static void provaDpad(int n) {
   int alcancado[4] = { 0 }, i, k;
@@ -489,12 +704,18 @@ int main(int argc, char **argv) {
   provaCena();
   provaEixos();
   provaQualidade();
+  provaTitulos();
+  provaFontesLista();
+  provaIdioma();
+  provaSessao();
+  provaCorridaFim();
   provaDpad(3);
   provaDpad(2);
 #ifdef NV_LINUX_DESKTOP
   if (dir) provaGl(dir);
 #endif
   (void)dir;
+  assert(!gFalhas);
   assert(farolcompara_teste_esperar(3000));
   SDL_Quit();
   puts("farol_compara: ok");

@@ -36,12 +36,13 @@
 #include <SDL2/SDL.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "arteurl.h"
 #include "farolinfo.h"
 #include "farolpeca.h"
 
 #define FCMP_COL_MAX    3
 #define FCMP_FONTE_MAX  24
-#define FCMP_URL_TAM    1024
+#define FCMP_URL_TAM    NV_ARTE_URL_MAX
 #define FCMP_CEL_TAM    192
 
 // Os fatos de UMA coluna, ja medidos pelo chamador (catalogo, ficha, onde
@@ -126,6 +127,10 @@ void farolcompara_teste_consulta(FarolCompConsulta fn);   // NULL = add-ons reai
 void farolcompara_teste_caps(int hdr, int dv);            // -2 = stream_capacidades
 void farolcompara_teste_relogio(long long (*epochS)(void));
 void farolcompara_teste_player(int (*aberto)(void));
+// NULL = nv_perfil_sessao_ler real. A troca de sessao com a tela aberta
+// fecha o Comparar (itens e memoria sao da sessao antiga).
+void farolcompara_teste_sessao(uint64_t (*sessao)(void));
+int  farolcompara_teste_fios(void);            // fios de consulta vivos
 // Espera o fio da consulta terminar (ms); 1 = nenhum fio vivo.
 int  farolcompara_teste_esperar(Uint32 ms);
 void farolcompara_teste_reset(void);

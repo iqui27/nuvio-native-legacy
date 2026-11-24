@@ -7028,7 +7028,7 @@ void app_atualizar(float dt, Uint32 agora) {
   { char cmpRef[FAROL_REF_TAM]; int cmpK=-1, cmpTocar=0;
     if (farolcompara_pediu_abrir(&cmpK,cmpRef,sizeof cmpRef) ||
         (cmpTocar=farolcompara_pediu_tocar(&cmpK,cmpRef,sizeof cmpRef))) {
-      if (cmpK<0) cmpK=cat_indice_titulo(cmpRef,-1);
+      cmpK=cat_indice_vivo(cmpK,cmpRef);
       if (cmpK>=0) { abrirPorIndice(cmpK); if (cmpTocar) detail_pedir_reproduzir(); }
     }
   }

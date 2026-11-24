@@ -37,6 +37,17 @@ if grep -n '_Thread_local' src/farolcompara.c src/farolcompara.h tests/farol_com
   exit 1
 fi
 
+# O roteador revalida o indice guardado pelo id: com o catalogo deslocado,
+# cmpK>=0 sem a identidade abre (e toca) outro titulo.
+if ! grep -q 'cmpK=cat_indice_vivo(cmpK,cmpRef)' src/app.c; then
+  echo "farol_compara: FALHA (app.c nao revalida cmpK pela identidade cmpRef)" >&2
+  exit 1
+fi
+if grep -q 'cmpK=cat_indice_titulo(cmpRef,-1)' src/app.c; then
+  echo "farol_compara: FALHA (app.c ignora cmpRef quando cmpK >= 0)" >&2
+  exit 1
+fi
+
 if ! pkg-config --exists sdl2 SDL2_image SDL2_ttf glesv2; then
   echo "farol_compara: SDL2/SDL2_image/SDL2_ttf/GLESv2 indisponivel" >&2
   exit 1
@@ -70,6 +81,9 @@ mkdir -p "$dados"
 export NUVIO_DADOS="$dados"
 shots="$work/shots"
 mkdir -p "$shots"
+# O driver "dummy" do SDL nao abre GL: a janela escondida precisa do X
+# (padrao de tests/farol_shot.sh — o runner exporta dummy quando nao ha X).
+if [ "${SDL_VIDEODRIVER:-}" = dummy ]; then unset SDL_VIDEODRIVER; fi
 if [ -z "${DISPLAY:-}" ] && command -v xvfb-run >/dev/null 2>&1; then
   xvfb-run -a "$work/t" "$shots"
 else
