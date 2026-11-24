@@ -20,6 +20,7 @@
 #include "resolverregra.h"
 #include "farol.h"
 #include "farolachaui.h"
+#include "farolescolhaui.h"
 #include "farolsonda.h"
 #include "farolanel.h"
 #include "farolregra.h"
@@ -71,6 +72,25 @@
 #define SINT_H      104.0f
 #define SINT_GAP     18.0f
 
+// O assistente P5 (#50). Os harnesses isolados do Farol (-DRESOLVER_TESTE com
+// lista explicita de fontes) nao ligam farolescolhaui: la os simbolos sao
+// fracos e o 5o item some, com o Inicio de sempre. No app ele sempre liga.
+#ifdef RESOLVER_TESTE
+#pragma weak farolescolhaui_reset
+#pragma weak farolescolhaui_abrir
+#pragma weak farolescolhaui_evento
+#pragma weak farolescolhaui_atualizar
+#pragma weak farolescolhaui_desenhar
+#pragma weak farolescolhaui_pediu_abrir
+#pragma weak farolescolhaui_pediu_fechar
+#define ESCOLHA_LIGADA() (farolescolhaui_abrir != NULL)
+#else
+#define ESCOLHA_LIGADA() 1
+#endif
+// FALTA_TEXTO: "Me ajude a escolher" (entrada do P5) ainda sem chave em
+// src/idioma_*.h; i18n() devolve o portugues ate a traducao entrar.
+#define ROT_ESCOLHA "Me ajude a escolher"
+
 // Ids de foco. Os cartoes de sintoma usam o RES_S_* (RES_S_CORES inclusive);
 // o resto vale por fase (resolver.h).
 enum {
@@ -79,7 +99,7 @@ enum {
   B_PRONTO = RESOLVER_B_PRONTO, B_REPETIR = RESOLVER_B_REPETIR, B_ACHAR = RESOLVER_B_ACHAR,
   B_ACHAR_0 = RESOLVER_B_ACHAR_CURTO, B_ACHAR_1 = RESOLVER_B_ACHAR_NAO_VI,
   B_ACHAR_2 = RESOLVER_B_ACHAR_RETOMAR, B_ACHAR_3 = RESOLVER_B_ACHAR_SURPRESA,
-  B_ACHAR_VOLTAR = RESOLVER_B_ACHAR_VOLTAR,
+  B_ACHAR_VOLTAR = RESOLVER_B_ACHAR_VOLTAR, B_ACHAR_ESCOLHA = RESOLVER_B_ACHAR_ESCOLHA,
   B_LIN0 = RESOLVER_B_LIN0
 };
 // O que um botao do painel faz. A_DEBRID = login da conta de cache (a tela/QR
@@ -148,6 +168,7 @@ int resolver_foco(void) {
     int af = farolachaui_foco();
     return af < 0 ? B_ACHAR_VOLTAR : (B_ACHAR_0 + af);
   }
+  if (fase == RESOLVER_FASE_ESCOLHA) return B_ACHAR_ESCOLHA;
   return foco;
 }
 int resolver_sintoma(void) { return sint; }
@@ -158,6 +179,7 @@ int resolver_mandar_registro(void) { return fase == RESOLVER_FASE_VEREDITO && pS
 void resolver_teste_esquecer(void) {
   aberto = 0; entrada = 0.0f; fase = 0; foco = 0; envN = 0; envModo = 0; envNoAr = 0; rolo = 0; temFalha = 0;
   acharVoltaFoco = 0; farolachaui_reset();
+  if (ESCOLHA_LIGADA()) farolescolhaui_reset();
   diagTentativa = 0; pedidoTentativa = 0; diagUsaTentativa = 0;
   luz = luzAlvo = seguraMs = respiraMs = 0.0f; segura = 0; sondaCancelada = 0;
   pendAcao = 0; pendCod = -1; pendSint = 0; falhouCod = -1; envDoFarol = 0; pFarol = 0;
@@ -179,7 +201,8 @@ int resolver_pedido(void) {
 }
 
 int resolver_pediu_abrir(FarolAchaPedido *pedido) {
-  return farolachaui_pediu_abrir(pedido);
+  if (farolachaui_pediu_abrir(pedido)) return 1;
+  return ESCOLHA_LIGADA() && farolescolhaui_pediu_abrir(pedido);
 }
 
 int resolver_resolver_pedido(const FarolAchaPedido *pedido, unsigned *revisaoOut) {
@@ -554,6 +577,13 @@ static float grade_h(void) {
 // do foco (nada de cartao que nao faz o que promete, nem beco sem saida).
 static int achar_disponivel(void) { return 1; }
 
+// Linhas da coluna "Achar o que ver": as 4 intencoes e, com o assistente, o
+// 5o item (mais justas para caber no painel da grade).
+static int   achar_n(void) { return ESCOLHA_LIGADA() ? 5 : 4; }
+static float achar_y(int i) {
+  return ESCOLHA_LIGADA() ? 148.0f + (float)i * 60.0f : 160.0f + (float)i * 64.0f;
+}
+
 static int envio_visiveis(void) { return envN - rolo < VISIVEIS ? envN - rolo : VISIVEIS; }
 
 static int montar(Item *it) {
@@ -567,9 +597,9 @@ static int montar(Item *it) {
       poe(it, &n, resolverregra_sintoma_farol(i), MARGEM + (float)(i % 2) * (w + 24.0f),
           y0 + (float)(i / 2) * (SINT_H + SINT_GAP), w, SINT_H);
     if (achar_disponivel()) {
-      for (i = 0; i < 4; i++)
-        poe(it, &n, B_ACHAR_0 + i, ACHAR_X + 28.0f,
-            y0 + 160.0f + (float)i * 64.0f, ACHAR_W - 56.0f, 52.0f);
+      for (i = 0; i < achar_n(); i++)
+        poe(it, &n, i < 4 ? B_ACHAR_0 + i : B_ACHAR_ESCOLHA, ACHAR_X + 28.0f,
+            y0 + achar_y(i), ACHAR_W - 56.0f, 52.0f);
     }
     snprintf(lista, sizeof lista, i18n(FT_REGISTROS_ENVIADOS), envN);
     poe_botao(it, &n, B_ENVIAR, MARGEM, 944.0f, i18n("Enviar um registro"), "aj_send", 0);
@@ -862,6 +892,7 @@ static void abrir(void) {
   diagUsaTentativa = 0;
   acharVoltaFoco = 0;
   farolachaui_reset();
+  if (ESCOLHA_LIGADA()) farolescolhaui_reset();
   segura = 0;
   sonda_sincronizar();
   envModo = M_NADA;
@@ -961,6 +992,11 @@ static void ok(void) {
       acharVoltaFoco = foco;
       farolachaui_abrir((FarolAchaTipo)k, FAROL_ACHA_CURTO_PADRAO, 0u);
       fase = RESOLVER_FASE_ACHAR;
+    } else if (foco == B_ACHAR_ESCOLHA && ESCOLHA_LIGADA()) {
+      acharVoltaFoco = foco;
+      fase = RESOLVER_FASE_ESCOLHA;
+      farolescolhaui_abrir();
+      if (farolescolhaui_pediu_fechar()) fechar();   // ja terminou no P4
     }
   } else if (fase == RESOLVER_FASE_CADEIA) {
     if (!segura) veredito_entrar();   // OK adianta a luz; a sonda no ar segura
@@ -1006,6 +1042,17 @@ void resolver_evento(const SDL_Event *e) {
     }
     return;
   }
+  if (fase == RESOLVER_FASE_ESCOLHA) {
+    int pediuSair = 0, pediuAbrir = 0;
+    farolescolhaui_evento(e, &pediuSair, &pediuAbrir);
+    (void)pediuAbrir;   // app.c consome por resolver_pediu_abrir
+    if (farolescolhaui_pediu_fechar()) { fechar(); return; }   // o P4 abriu
+    if (pediuSair) {
+      ir_fase(RESOLVER_FASE_SINTOMA);
+      foco = B_ACHAR_ESCOLHA;
+    }
+    return;
+  }
   k = e->key.keysym.sym;
   if (k == SDLK_LEFT)  { mover(-1, 0); return; }
   if (k == SDLK_RIGHT) { mover(1, 0); return; }
@@ -1013,7 +1060,7 @@ void resolver_evento(const SDL_Event *e) {
   if (k == SDLK_DOWN)  { mover(0, 1); return; }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
     if (e->key.repeat && fase == RESOLVER_FASE_INICIO &&
-        foco >= B_ACHAR_0 && foco <= B_ACHAR_3)
+        ((foco >= B_ACHAR_0 && foco <= B_ACHAR_3) || foco == B_ACHAR_ESCOLHA))
       return;
     ok();
     return;
@@ -1058,6 +1105,7 @@ void resolver_atualizar(float dt, Uint32 agora) {
     atualizar_falha_recente();
     cadeia_passo(dt > 0.0f ? dt * 1000.0f : 0.0f);
     if (fase == RESOLVER_FASE_ACHAR) farolachaui_atualizar(dt, agora);
+    if (fase == RESOLVER_FASE_ESCOLHA) farolescolhaui_atualizar(dt, agora);
   }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
   if (red) { entrada = aberto ? 1.0f : 0.0f; return; }
@@ -1167,9 +1215,9 @@ static void desenha_sintoma(float a) {
     painel(r, 28.0f, a);
     bola(r.x + 28.0f, r.y + 28.0f, 56.0f, "aj_compass", (Tinta){ 243, 242, 239 }, 0, a);
     txt_em(TXT_ILHA_NOME, i18n(FT_ACHAR_O_QUE_VER), r.x + 28.0f, r.y + 104.0f, r.w - 56.0f, 243, 242, 239, a);
-    for (k = 0; k < 4; k++) {
-      GfxRect c = { r.x + 28.0f, r.y + 160.0f + (float)k * 64.0f, r.w - 56.0f, 52.0f };
-      int id = B_ACHAR_0 + k;
+    for (k = 0; k < achar_n(); k++) {
+      GfxRect c = { r.x + 28.0f, r.y + achar_y(k), r.w - 56.0f, 52.0f };
+      int id = k < 4 ? B_ACHAR_0 + k : B_ACHAR_ESCOLHA;
       int f = foco == id;
       if (f) {
         superficie(c, c.h * 0.5f, 1, a, &p, &s);
@@ -1178,7 +1226,7 @@ static void desenha_sintoma(float a) {
         p = (Tinta){ 243, 242, 239 };
         s = (Tinta){ 186, 192, 204 };
       }
-      txt_em(TXT_V2_26, i18n(farolacha_rotulo(TIPO[k])), c.x + 22.0f, c.y + 10.0f,
+      txt_em(TXT_V2_26, i18n(k < 4 ? farolacha_rotulo(TIPO[k]) : ROT_ESCOLHA), c.x + 22.0f, c.y + 10.0f,
              c.w - 64.0f, p.r, p.g, p.b, a);
       icone_t((GfxRect){ c.x + c.w - 38.0f, c.y + (c.h - 20.0f) * 0.5f, 20.0f, 20.0f },
               "aj_chevron-right", f ? p : s, (f ? 0.95f : 0.65f) * a);
@@ -1438,6 +1486,7 @@ void resolver_desenhar(Uint32 agora) {
   if (fase == RESOLVER_FASE_SINTOMA) desenha_sintoma(a);
   else if (fase == RESOLVER_FASE_CADEIA || fase == RESOLVER_FASE_VEREDITO) desenha_testes(a);
   else if (fase == RESOLVER_FASE_ACHAR) farolachaui_desenhar(ox, oy, a, agora);
+  else if (fase == RESOLVER_FASE_ESCOLHA) farolescolhaui_desenhar(ox, oy, a, agora);
   else desenha_envio(a);
   gfx_escala_sair(escAnt);
 }
