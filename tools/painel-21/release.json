@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-24T03:28:12+00:00",
+    "updatedAt": "2026-11-24T03:56:42+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -10,14 +10,14 @@
       "sha": "015d181d45",
       "fullSha": "015d181d4599d0b1164e003a627e37606b816394",
       "pr": 841,
-      "checkedAt": "2026-11-24T03:05:58+00:00"
+      "checkedAt": "2026-11-24T03:56:42+00:00"
     },
     "coverageNote": "56 itens Farol informados: o #42 não consta no escopo. Inventário externo detalhado: 61 linhas da VPS, com #731 unificada; D1 e 762+720 têm cartões por issue e revisão conjunta. D1: ancestralidade não verificada. Testes isolados são identificados como tal.",
     "unknownDoneFixes": 0,
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-24T03:25:00+00:00",
+    "lastVpsReportedAt": "2026-11-24T03:53:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -111,23 +111,48 @@
         }
       },
       "implementation": {
-        "status": "CORRECAO",
-        "activeItem": "farol-52",
-        "task": "FAROL52B",
+        "status": "IMPLEMENTANDO",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 255,
+        "activeSlots": 6,
+        "totalSlots": 6,
+        "operationalWave": 2,
         "host": "ibm-ephemeral",
-        "executor": "claudeAgent",
-        "model": "claude-opus-5-5",
-        "reportedAt": "2026-11-24T03:25:00+00:00",
-        "sourceLine": 252,
+        "activeItems": [
+          "farol-19",
+          "farol-18",
+          "farol-20",
+          "farol-15",
+          "farol-33",
+          "farol-52"
+        ],
+        "criticalItem": "farol-19",
+        "immediateQueue": [
+          "farol-16",
+          "farol-17",
+          "farol-34"
+        ],
+        "workBase": "agente/base-21f-farol-onda2@2d26d54290",
         "previousState": {
-          "status": "PAUSA",
-          "reportedAt": "2026-11-24T01:04:00+00:00",
-          "activeSlots": 1,
-          "totalSlots": 6,
+          "status": "CORRECAO",
           "activeItem": "farol-52",
-          "note": "Pausa de novos despachos no relato das 01h04: onda 2 depende do aceite da #14; Gosto depende de #19/#22/#25/#31/#52. FAROL52 foi entregue às 02h56; não foi relatada retomada geral nem nova alocação."
+          "task": "FAROL52B",
+          "host": "ibm-ephemeral",
+          "executor": "claudeAgent",
+          "model": "claude-opus-5-5",
+          "reportedAt": "2026-11-24T03:25:00+00:00",
+          "sourceLine": 252,
+          "previousState": {
+            "status": "PAUSA",
+            "reportedAt": "2026-11-24T01:04:00+00:00",
+            "activeSlots": 1,
+            "totalSlots": 6,
+            "activeItem": "farol-52",
+            "note": "Pausa de novos despachos no relato das 01h04: onda 2 depende do aceite da #14; Gosto depende de #19/#22/#25/#31/#52. FAROL52 foi entregue às 02h56; não foi relatada retomada geral nem nova alocação."
+          },
+          "note": "Correção da #52 despachada; não é retomada geral das outras implementações. Nenhuma nova contagem global de vagas foi reportada."
         },
-        "note": "Correção da #52 despachada; não é retomada geral das outras implementações. Nenhuma nova contagem global de vagas foi reportada."
+        "note": "Cinco novas implementações mais FAROL52B ocupam 6/6 conforme VPS. Não são entregas, aprovações ou integração; a fila imediata ainda não foi lançada."
       },
       "capacity": {
         "swe2Pi": {
@@ -141,8 +166,10 @@
         },
         "devinAcp": "parado conforme VPS",
         "ibmClaudeAgent": "FAROL52B movida para claudeAgent claude-opus-5-5 na IBM; r2 planejada após nova entrega, conforme VPS",
-        "reportedAt": "2026-11-24T03:25:00+00:00",
-        "newBuildRoute": "IBM por piso de 20G na raiz VPS"
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "newBuildRoute": "IBM por piso de 20G na raiz VPS",
+        "ibmActiveSlotsReported": 6,
+        "ibmTotalSlotsReported": 6
       },
       "infrastructure": {
         "codexMacbook": {
@@ -218,9 +245,11 @@
       "reviews": {
         "farol-14": {
           "round": "r3",
-          "status": "running_reported",
-          "route": "Sol / Codex main/auto na VPS",
-          "sourceLine": 245
+          "status": "approved_with_reservations_reported",
+          "reviewer": "Sol / Codex na VPS",
+          "sourceLine": 253,
+          "reportedAt": "2026-11-24T03:53:00+00:00",
+          "reportPath": "revisao/FAROL14-r3-revisao.md"
         },
         "farol-52": {
           "round": "r1",
@@ -238,9 +267,38 @@
           "duplicateSolReview": "cancelled_reported",
           "sourceLine": 249
         }
+      },
+      "wave2ApprovalGate": {
+        "satisfied": true,
+        "dependency": "farol-14",
+        "approvedSha": "1652812ef9",
+        "sourceLine": 253,
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "approvalStatus": "APROVADO_COM_RESSALVAS"
       }
     },
-    "lastVpsLine": 252
+    "lastVpsLine": 255,
+    "wave2Base": {
+      "branch": "agente/base-21f-farol-onda2",
+      "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
+      "tree": "172cfde955277aad7f16951ea92b659de4a66f0a",
+      "parents": [
+        "99be71994e78b84a885a63e62b25ed4494d03f9f",
+        "1652812ef9797a113be96cbd8bfe76284419b123"
+      ],
+      "components": [
+        "lote/21f@99be71994e",
+        "farol-14@1652812ef9"
+      ],
+      "purpose": "Somente base de implementação da onda operacional 2",
+      "reportedAt": "2026-11-24T03:53:00+00:00",
+      "sourceLine": 254,
+      "githubCheckedAt": "2026-11-24T03:56:42+00:00",
+      "ancestryVerified": true,
+      "integrationVerified": false,
+      "matchingPrs": [],
+      "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
+    }
   },
   "items": [
     {
@@ -628,14 +686,15 @@
         "farol-10"
       ],
       "allDependencies": false,
-      "status": "REVISAO",
+      "status": "APROVADA",
       "wave": "B",
       "sha": "1652812ef9",
       "batch": null,
-      "note": "FAROL14-r3 relançada na VPS com Sol via Codex (main/auto/gpt-6.2-sol) em `1652812ef9` (IBM em 0.1.9 não devolve texto pela API). Revisão lançada conforme VPS; ainda sem parecer nesta rodada. Sem integração ou TV física inferidas.",
-      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "note": "APROVADO_COM_RESSALVAS r3 por Sol, conforme VPS e revisao/FAROL14-r3-revisao.md: anel restaurado e 33/34 farol_*.sh verdes na composição com 21f. O boletim não detalha o teste restante ou todas as ressalvas; não é bateria 34/34 aprovada. Gate de aprovação para a onda operacional 2 satisfeito. Base de trabalho publicada agente/base-21f-farol-onda2@2d26d54290 compõe 21f@99be71994e + Farol 14@1652812ef9; pais e ancestralidade conferidos no GitHub. É somente base de implementação: sem PR correspondente ou merge em integracao/2.1, que permanece em 015d181d45. O candidato 21f original continua com os mesmos seis itens e não ganha o 14. Aprovação reportada, sem validação funcional local ou em TV física.",
+      "source": "Relato VPS · linhas 253–254; base publicada conferida no GitHub",
       "verified": false,
       "previousNotes": [
+        "FAROL14-r3 relançada na VPS com Sol via Codex (main/auto/gpt-6.2-sol) em `1652812ef9` (IBM em 0.1.9 não devolve texto pela API). Revisão lançada conforme VPS; ainda sem parecer nesta rodada. Sem integração ou TV física inferidas.",
         "r3 com Opus na ibm-ephemeral (Codex main sem cota até 03h02). R3 com Opus na IBM ainda rodando no boletim de 02h56 UTC; sem parecer ou aprovação. Fora do candidato 21f. Gate de aprovação da #6 satisfeito no pin 386873fc33, com ressalva pela POLITICA; dependências de integração continuam separadas.",
         "r3 com Opus na ibm-ephemeral (Codex main sem cota até 03h02). R3 com Opus na IBM ainda rodando no boletim de 02h56 UTC; sem parecer ou aprovação. Fora do candidato 21f.",
         "r3 com Opus na ibm-ephemeral (Codex main sem cota até 03h02).",
@@ -651,9 +710,9 @@
         "Caminho crítico. Aguarda o veredito da revisão Sol r4 do Farol 6 antes de avançar.",
         "Caminho crítico."
       ],
-      "updatedAt": "2026-11-24T03:07:54+00:00",
+      "updatedAt": "2026-11-24T03:56:42+00:00",
       "dependencyReportedAt": "2026-11-23T21:08:00+00:00",
-      "reportedAt": "2026-11-24T03:04:00+00:00",
+      "reportedAt": "2026-11-24T03:53:00+00:00",
       "approvalGate": {
         "satisfied": true,
         "dependency": "farol-6",
@@ -671,10 +730,11 @@
       "latestDeliverySha": "1652812ef9",
       "review": {
         "round": "r3",
-        "status": "running_reported",
-        "reviewer": "Sol / Codex main/auto/gpt-6.2-sol na VPS",
-        "sourceLine": 245,
-        "reportedAt": "2026-11-24T03:04:00+00:00"
+        "status": "approved_with_reservations_reported",
+        "reviewer": "Sol / Codex na VPS",
+        "sourceLine": 253,
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "reportPath": "revisao/FAROL14-r3-revisao.md"
       },
       "previousReviews": [
         {
@@ -682,8 +742,30 @@
           "reviewer": "Opus / Antigravity na IBM",
           "status": "running_reported",
           "sourceLine": 243
+        },
+        {
+          "round": "r3",
+          "status": "running_reported",
+          "reviewer": "Sol / Codex main/auto/gpt-6.2-sol na VPS",
+          "sourceLine": 245,
+          "reportedAt": "2026-11-24T03:04:00+00:00"
         }
-      ]
+      ],
+      "approvedSha": "1652812ef9",
+      "verificationSummary": "aprovação r3 com ressalvas conforme VPS; 33/34 testes verdes na composição; somente base de implementação publicada, sem integração ou TV física",
+      "approval": {
+        "status": "APROVADO_COM_RESSALVAS",
+        "sha": "1652812ef9",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 253,
+        "basis": "Parecer Sol r3 reportado pela VPS",
+        "reportPath": "revisao/FAROL14-r3-revisao.md",
+        "evidenceReported": {
+          "ring": "restaurado",
+          "suite": "33/34 farol_*.sh verdes na composição com 21f"
+        },
+        "remainingTestDetailsNotReported": true
+      }
     },
     {
       "id": "farol-15",
@@ -695,13 +777,57 @@
         "farol-14"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "IMPLEMENTANDO",
       "wave": "C",
       "sha": null,
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "Implementação lançada na IBM com Sonnet, conforme VPS. Onda operacional 2 destravada pelo aceite com ressalvas da #14; base agente/base-21f-farol-onda2@2d26d54290 (21f + #14), não integrada. Ainda sem commit de entrega, revisão ou teste em TV física reportados; não confundir a base com SHA entregue da issue.",
+      "source": "Relato VPS · linha 255",
+      "verified": false,
+      "previousNotes": [
+        ""
+      ],
+      "reportedAt": "2026-11-24T03:53:00+00:00",
+      "updatedAt": "2026-11-24T03:56:42+00:00",
+      "integrationVerified": false,
+      "operationalWave": 2,
+      "approvalGate": {
+        "satisfied": true,
+        "dependency": "farol-14",
+        "approvedSha": "1652812ef9",
+        "approvalStatus": "APROVADO_COM_RESSALVAS",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 253
+      },
+      "owner": "IBM · Sonnet",
+      "workBase": {
+        "branch": "agente/base-21f-farol-onda2",
+        "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
+        "tree": "172cfde955277aad7f16951ea92b659de4a66f0a",
+        "parents": [
+          "99be71994e78b84a885a63e62b25ed4494d03f9f",
+          "1652812ef9797a113be96cbd8bfe76284419b123"
+        ],
+        "components": [
+          "lote/21f@99be71994e",
+          "farol-14@1652812ef9"
+        ],
+        "purpose": "Somente base de implementação da onda operacional 2",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 254,
+        "githubCheckedAt": "2026-11-24T03:56:42+00:00",
+        "ancestryVerified": true,
+        "integrationVerified": false,
+        "matchingPrs": [],
+        "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
+      },
+      "implementation": {
+        "status": "launched_reported",
+        "host": "ibm-ephemeral",
+        "model": "Sonnet",
+        "sourceLine": 255,
+        "reportedAt": "2026-11-24T03:53:00+00:00"
+      }
     },
     {
       "id": "farol-16",
@@ -717,9 +843,31 @@
       "wave": "C",
       "sha": null,
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "Fila imediata da onda operacional 2, posição 1, após o aceite com ressalvas da #14. Capacidade IBM 6/6 ocupada conforme VPS: cinco implementações e FAROL52B. Ainda não lançada; sem executor, entrega ou integração confirmados. TV física pendente.",
+      "source": "Relato VPS · linha 255",
+      "verified": false,
+      "previousNotes": [
+        ""
+      ],
+      "reportedAt": "2026-11-24T03:53:00+00:00",
+      "updatedAt": "2026-11-24T03:56:42+00:00",
+      "integrationVerified": false,
+      "operationalWave": 2,
+      "approvalGate": {
+        "satisfied": true,
+        "dependency": "farol-14",
+        "approvedSha": "1652812ef9",
+        "approvalStatus": "APROVADO_COM_RESSALVAS",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 253
+      },
+      "queue": {
+        "name": "onda-2-imediata",
+        "position": 1,
+        "status": "waiting_slot_reported",
+        "sourceLine": 255,
+        "reportedAt": "2026-11-24T03:53:00+00:00"
+      }
     },
     {
       "id": "farol-17",
@@ -735,9 +883,31 @@
       "wave": "C",
       "sha": null,
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "Fila imediata da onda operacional 2, posição 2, após o aceite com ressalvas da #14. Capacidade IBM 6/6 ocupada conforme VPS: cinco implementações e FAROL52B. Ainda não lançada; sem executor, entrega ou integração confirmados. TV física pendente.",
+      "source": "Relato VPS · linha 255",
+      "verified": false,
+      "previousNotes": [
+        ""
+      ],
+      "reportedAt": "2026-11-24T03:53:00+00:00",
+      "updatedAt": "2026-11-24T03:56:42+00:00",
+      "integrationVerified": false,
+      "operationalWave": 2,
+      "approvalGate": {
+        "satisfied": true,
+        "dependency": "farol-14",
+        "approvedSha": "1652812ef9",
+        "approvalStatus": "APROVADO_COM_RESSALVAS",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 253
+      },
+      "queue": {
+        "name": "onda-2-imediata",
+        "position": 2,
+        "status": "waiting_slot_reported",
+        "sourceLine": 255,
+        "reportedAt": "2026-11-24T03:53:00+00:00"
+      }
     },
     {
       "id": "farol-18",
@@ -751,13 +921,57 @@
         "farol-14"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "IMPLEMENTANDO",
       "wave": "C",
       "sha": null,
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "Implementação lançada na IBM com Opus, conforme VPS. Onda operacional 2 destravada pelo aceite com ressalvas da #14; base agente/base-21f-farol-onda2@2d26d54290 (21f + #14), não integrada. Ainda sem commit de entrega, revisão ou teste em TV física reportados; não confundir a base com SHA entregue da issue.",
+      "source": "Relato VPS · linha 255",
+      "verified": false,
+      "previousNotes": [
+        ""
+      ],
+      "reportedAt": "2026-11-24T03:53:00+00:00",
+      "updatedAt": "2026-11-24T03:56:42+00:00",
+      "integrationVerified": false,
+      "operationalWave": 2,
+      "approvalGate": {
+        "satisfied": true,
+        "dependency": "farol-14",
+        "approvedSha": "1652812ef9",
+        "approvalStatus": "APROVADO_COM_RESSALVAS",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 253
+      },
+      "owner": "IBM · Opus",
+      "workBase": {
+        "branch": "agente/base-21f-farol-onda2",
+        "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
+        "tree": "172cfde955277aad7f16951ea92b659de4a66f0a",
+        "parents": [
+          "99be71994e78b84a885a63e62b25ed4494d03f9f",
+          "1652812ef9797a113be96cbd8bfe76284419b123"
+        ],
+        "components": [
+          "lote/21f@99be71994e",
+          "farol-14@1652812ef9"
+        ],
+        "purpose": "Somente base de implementação da onda operacional 2",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 254,
+        "githubCheckedAt": "2026-11-24T03:56:42+00:00",
+        "ancestryVerified": true,
+        "integrationVerified": false,
+        "matchingPrs": [],
+        "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
+      },
+      "implementation": {
+        "status": "launched_reported",
+        "host": "ibm-ephemeral",
+        "model": "Opus",
+        "sourceLine": 255,
+        "reportedAt": "2026-11-24T03:53:00+00:00"
+      }
     },
     {
       "id": "farol-19",
@@ -770,13 +984,58 @@
         "farol-12"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "IMPLEMENTANDO",
       "wave": "C",
       "sha": null,
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "Implementação lançada na IBM com Opus, conforme VPS. Onda operacional 2 destravada pelo aceite com ressalvas da #14; base agente/base-21f-farol-onda2@2d26d54290 (21f + #14), não integrada. Caminho crítico e prioridade imediata. Ainda sem commit de entrega, revisão ou teste em TV física reportados; não confundir a base com SHA entregue da issue.",
+      "source": "Relato VPS · linha 255",
+      "verified": false,
+      "previousNotes": [
+        ""
+      ],
+      "reportedAt": "2026-11-24T03:53:00+00:00",
+      "updatedAt": "2026-11-24T03:56:42+00:00",
+      "integrationVerified": false,
+      "operationalWave": 2,
+      "approvalGate": {
+        "satisfied": true,
+        "dependency": "farol-14",
+        "approvedSha": "1652812ef9",
+        "approvalStatus": "APROVADO_COM_RESSALVAS",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 253
+      },
+      "owner": "IBM · Opus",
+      "workBase": {
+        "branch": "agente/base-21f-farol-onda2",
+        "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
+        "tree": "172cfde955277aad7f16951ea92b659de4a66f0a",
+        "parents": [
+          "99be71994e78b84a885a63e62b25ed4494d03f9f",
+          "1652812ef9797a113be96cbd8bfe76284419b123"
+        ],
+        "components": [
+          "lote/21f@99be71994e",
+          "farol-14@1652812ef9"
+        ],
+        "purpose": "Somente base de implementação da onda operacional 2",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 254,
+        "githubCheckedAt": "2026-11-24T03:56:42+00:00",
+        "ancestryVerified": true,
+        "integrationVerified": false,
+        "matchingPrs": [],
+        "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
+      },
+      "implementation": {
+        "status": "launched_reported",
+        "host": "ibm-ephemeral",
+        "model": "Opus",
+        "sourceLine": 255,
+        "reportedAt": "2026-11-24T03:53:00+00:00"
+      },
+      "priority": "critical"
     },
     {
       "id": "farol-20",
@@ -788,13 +1047,57 @@
         "farol-14"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "IMPLEMENTANDO",
       "wave": "C",
       "sha": null,
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "Implementação lançada na IBM com Opus, conforme VPS. Onda operacional 2 destravada pelo aceite com ressalvas da #14; base agente/base-21f-farol-onda2@2d26d54290 (21f + #14), não integrada. Ainda sem commit de entrega, revisão ou teste em TV física reportados; não confundir a base com SHA entregue da issue.",
+      "source": "Relato VPS · linha 255",
+      "verified": false,
+      "previousNotes": [
+        ""
+      ],
+      "reportedAt": "2026-11-24T03:53:00+00:00",
+      "updatedAt": "2026-11-24T03:56:42+00:00",
+      "integrationVerified": false,
+      "operationalWave": 2,
+      "approvalGate": {
+        "satisfied": true,
+        "dependency": "farol-14",
+        "approvedSha": "1652812ef9",
+        "approvalStatus": "APROVADO_COM_RESSALVAS",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 253
+      },
+      "owner": "IBM · Opus",
+      "workBase": {
+        "branch": "agente/base-21f-farol-onda2",
+        "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
+        "tree": "172cfde955277aad7f16951ea92b659de4a66f0a",
+        "parents": [
+          "99be71994e78b84a885a63e62b25ed4494d03f9f",
+          "1652812ef9797a113be96cbd8bfe76284419b123"
+        ],
+        "components": [
+          "lote/21f@99be71994e",
+          "farol-14@1652812ef9"
+        ],
+        "purpose": "Somente base de implementação da onda operacional 2",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 254,
+        "githubCheckedAt": "2026-11-24T03:56:42+00:00",
+        "ancestryVerified": true,
+        "integrationVerified": false,
+        "matchingPrs": [],
+        "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
+      },
+      "implementation": {
+        "status": "launched_reported",
+        "host": "ibm-ephemeral",
+        "model": "Opus",
+        "sourceLine": 255,
+        "reportedAt": "2026-11-24T03:53:00+00:00"
+      }
     },
     {
       "id": "farol-21",
@@ -1075,13 +1378,57 @@
         "farol-14"
       ],
       "allDependencies": false,
-      "status": "A_FAZER",
+      "status": "IMPLEMENTANDO",
       "wave": "C",
       "sha": null,
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "Implementação lançada na IBM com Sonnet, conforme VPS. Onda operacional 2 destravada pelo aceite com ressalvas da #14; base agente/base-21f-farol-onda2@2d26d54290 (21f + #14), não integrada. Ainda sem commit de entrega, revisão ou teste em TV física reportados; não confundir a base com SHA entregue da issue.",
+      "source": "Relato VPS · linha 255",
+      "verified": false,
+      "previousNotes": [
+        ""
+      ],
+      "reportedAt": "2026-11-24T03:53:00+00:00",
+      "updatedAt": "2026-11-24T03:56:42+00:00",
+      "integrationVerified": false,
+      "operationalWave": 2,
+      "approvalGate": {
+        "satisfied": true,
+        "dependency": "farol-14",
+        "approvedSha": "1652812ef9",
+        "approvalStatus": "APROVADO_COM_RESSALVAS",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 253
+      },
+      "owner": "IBM · Sonnet",
+      "workBase": {
+        "branch": "agente/base-21f-farol-onda2",
+        "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
+        "tree": "172cfde955277aad7f16951ea92b659de4a66f0a",
+        "parents": [
+          "99be71994e78b84a885a63e62b25ed4494d03f9f",
+          "1652812ef9797a113be96cbd8bfe76284419b123"
+        ],
+        "components": [
+          "lote/21f@99be71994e",
+          "farol-14@1652812ef9"
+        ],
+        "purpose": "Somente base de implementação da onda operacional 2",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 254,
+        "githubCheckedAt": "2026-11-24T03:56:42+00:00",
+        "ancestryVerified": true,
+        "integrationVerified": false,
+        "matchingPrs": [],
+        "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
+      },
+      "implementation": {
+        "status": "launched_reported",
+        "host": "ibm-ephemeral",
+        "model": "Sonnet",
+        "sourceLine": 255,
+        "reportedAt": "2026-11-24T03:53:00+00:00"
+      }
     },
     {
       "id": "farol-34",
@@ -1097,9 +1444,31 @@
       "wave": "C",
       "sha": null,
       "batch": null,
-      "note": "",
-      "source": "VPS · escopo 23/11 03h40 UTC",
-      "verified": false
+      "note": "Fila imediata da onda operacional 2, posição 3, após o aceite com ressalvas da #14. Capacidade IBM 6/6 ocupada conforme VPS: cinco implementações e FAROL52B. Ainda não lançada; sem executor, entrega ou integração confirmados. TV física pendente.",
+      "source": "Relato VPS · linha 255",
+      "verified": false,
+      "previousNotes": [
+        ""
+      ],
+      "reportedAt": "2026-11-24T03:53:00+00:00",
+      "updatedAt": "2026-11-24T03:56:42+00:00",
+      "integrationVerified": false,
+      "operationalWave": 2,
+      "approvalGate": {
+        "satisfied": true,
+        "dependency": "farol-14",
+        "approvedSha": "1652812ef9",
+        "approvalStatus": "APROVADO_COM_RESSALVAS",
+        "reportedAt": "2026-11-24T03:53:00+00:00",
+        "sourceLine": 253
+      },
+      "queue": {
+        "name": "onda-2-imediata",
+        "position": 3,
+        "status": "waiting_slot_reported",
+        "sourceLine": 255,
+        "reportedAt": "2026-11-24T03:53:00+00:00"
+      }
     },
     {
       "id": "farol-35",
@@ -4423,6 +4792,16 @@
         "farol-48"
       ],
       "note": "R7 aprovada na IBM conforme VPS, mas fora do candidato 21f. Validar em TV física quando disponível em um pacote: Home, Ilha/Relacionados, transporte de T/E e Play manual/externo. Testes host e merge simulado não substituem hardware."
+    },
+    {
+      "id": "tv-farol14",
+      "title": "Fachada do Farol · sessão, anel e ações",
+      "kind": "tv",
+      "status": "pendente",
+      "items": [
+        "farol-14"
+      ],
+      "note": "R3 aprovada com ressalvas segundo a VPS; 33/34 farol_*.sh verdes na composição com 21f não substituem teste em TV. O Farol 14 está apenas na base de trabalho publicada da onda 2, fora do candidato 21f original e sem merge na integração. Validar em pacote e TV física quando disponível."
     }
   ],
   "batches": [
@@ -4751,6 +5130,127 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-24T03:53:00+00:00",
+      "appliedAt": "2026-11-24T03:56:42+00:00",
+      "item": "farol-14",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "reportedStatus": "REVISAO",
+      "report": "2026-11-24 03:53 [REVISAO] farol-14 · `1652812ef9` APROVADO_COM_RESSALVAS r3 (Sol, revisao/FAROL14-r3-revisao.md): anel restaurado, 33/34 farol_*.sh verdes na composição com 21f. Onda 2 destravada.",
+      "vpsLine": 253,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log"
+    },
+    {
+      "at": "2026-11-24T03:53:00+00:00",
+      "appliedAt": "2026-11-24T03:56:42+00:00",
+      "item": "coordenacao-GitHub",
+      "from": null,
+      "to": null,
+      "reportedStatus": "PUBLICACAO",
+      "report": "2026-11-24 03:53 [PUBLICACAO] GitHub · `agente/base-21f-farol-onda2@2d26d54290` (lote/21f@99be71994e + farol-14@1652812ef9, merge limpo, só base para onda 2; sem PR nem merge).",
+      "vpsLine": 254,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log"
+    },
+    {
+      "at": "2026-11-24T03:53:00+00:00",
+      "appliedAt": "2026-11-24T03:56:42+00:00",
+      "item": "coordenacao-onda-2",
+      "from": null,
+      "to": null,
+      "reportedStatus": "IMPL",
+      "report": "2026-11-24 03:53 [IMPL] onda-2 · 5 issues lançadas na IBM (6/6 com FAROL52B): #19 (Opus, crítico), #18 (Opus), #20 (Opus), #15 (Sonnet), #33 (Sonnet) sobre agente/base-21f-farol-onda2@2d26d54290. Fila imediata: #16, #17, #34.",
+      "vpsLine": 255,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log"
+    },
+    {
+      "at": "2026-11-24T03:53:00+00:00",
+      "appliedAt": "2026-11-24T03:56:42+00:00",
+      "item": "farol-19",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "Implementação lançada na IBM com Opus, base onda 2@2d26d54290; sem commit de entrega ou integração.",
+      "derived": true,
+      "relatedVpsLine": 255,
+      "source": "Relato VPS · linha 255"
+    },
+    {
+      "at": "2026-11-24T03:53:00+00:00",
+      "appliedAt": "2026-11-24T03:56:42+00:00",
+      "item": "farol-18",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "Implementação lançada na IBM com Opus, base onda 2@2d26d54290; sem commit de entrega ou integração.",
+      "derived": true,
+      "relatedVpsLine": 255,
+      "source": "Relato VPS · linha 255"
+    },
+    {
+      "at": "2026-11-24T03:53:00+00:00",
+      "appliedAt": "2026-11-24T03:56:42+00:00",
+      "item": "farol-20",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "Implementação lançada na IBM com Opus, base onda 2@2d26d54290; sem commit de entrega ou integração.",
+      "derived": true,
+      "relatedVpsLine": 255,
+      "source": "Relato VPS · linha 255"
+    },
+    {
+      "at": "2026-11-24T03:53:00+00:00",
+      "appliedAt": "2026-11-24T03:56:42+00:00",
+      "item": "farol-15",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "Implementação lançada na IBM com Sonnet, base onda 2@2d26d54290; sem commit de entrega ou integração.",
+      "derived": true,
+      "relatedVpsLine": 255,
+      "source": "Relato VPS · linha 255"
+    },
+    {
+      "at": "2026-11-24T03:53:00+00:00",
+      "appliedAt": "2026-11-24T03:56:42+00:00",
+      "item": "farol-33",
+      "from": "A_FAZER",
+      "to": "IMPLEMENTANDO",
+      "report": "Implementação lançada na IBM com Sonnet, base onda 2@2d26d54290; sem commit de entrega ou integração.",
+      "derived": true,
+      "relatedVpsLine": 255,
+      "source": "Relato VPS · linha 255"
+    },
+    {
+      "at": "2026-11-24T03:53:00+00:00",
+      "appliedAt": "2026-11-24T03:56:42+00:00",
+      "item": "farol-16",
+      "from": "A_FAZER",
+      "to": "A_FAZER",
+      "report": "Fila imediata da onda 2, posição 1; implementação não lançada.",
+      "derived": true,
+      "relatedVpsLine": 255,
+      "source": "Relato VPS · linha 255"
+    },
+    {
+      "at": "2026-11-24T03:53:00+00:00",
+      "appliedAt": "2026-11-24T03:56:42+00:00",
+      "item": "farol-17",
+      "from": "A_FAZER",
+      "to": "A_FAZER",
+      "report": "Fila imediata da onda 2, posição 2; implementação não lançada.",
+      "derived": true,
+      "relatedVpsLine": 255,
+      "source": "Relato VPS · linha 255"
+    },
+    {
+      "at": "2026-11-24T03:53:00+00:00",
+      "appliedAt": "2026-11-24T03:56:42+00:00",
+      "item": "farol-34",
+      "from": "A_FAZER",
+      "to": "A_FAZER",
+      "report": "Fila imediata da onda 2, posição 3; implementação não lançada.",
+      "derived": true,
+      "relatedVpsLine": 255,
+      "source": "Relato VPS · linha 255"
+    },
     {
       "at": "2026-11-24T03:25:00+00:00",
       "appliedAt": "2026-11-24T03:28:12+00:00",
