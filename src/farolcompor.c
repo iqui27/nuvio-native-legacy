@@ -60,6 +60,10 @@ __attribute__((weak)) int dados_apagar(const char *nome) {
   (void)nome;
   return 0;
 }
+__attribute__((weak)) int  farolconsent_campo_autorizado(const char *caminho) { (void)caminho; return 1; }
+__attribute__((weak)) void farolconsent_sincronizar_ativo(void) {}
+__attribute__((weak)) void farolconsent_invalidar(void) {}
+__attribute__((weak)) void farolconsent_esquecer(void) {}
 
 #define DIA_EPOCA 1767225600LL
 
@@ -523,7 +527,18 @@ static void escListaAfin(Esc *e, const char *chave, const FarolComporAfin *arr,
                          int n, int maxItens, int ehGenero) {
   int escritos = 0, i, j;
   int32_t usados[FAROL_COMPOR_GEN_MAX];
+  char camBase[48], camId[56], camNome[56], camPeso[56];
+  int okNome, okPeso;
   if (!arr || n <= 0 || e->erro) return;
+  snprintf(camBase, sizeof camBase, "gosto.%s", chave);
+  snprintf(camId, sizeof camId, "gosto.%s[].id", chave);
+  if (!farolconsent_campo_autorizado(camBase) ||
+      !farolconsent_campo_autorizado(camId))
+    return;
+  snprintf(camNome, sizeof camNome, "gosto.%s[].nome", chave);
+  snprintf(camPeso, sizeof camPeso, "gosto.%s[].peso", chave);
+  okNome = farolconsent_campo_autorizado(camNome);
+  okPeso = farolconsent_campo_autorizado(camPeso);
   if (maxItens > FAROL_COMPOR_GEN_MAX) maxItens = FAROL_COMPOR_GEN_MAX;
   for (i = 0; i < n && escritos < maxItens; i++) {
     int32_t id = arr[i].id;
@@ -542,11 +557,11 @@ static void escListaAfin(Esc *e, const char *chave, const FarolComporAfin *arr,
     if (escritos == 0) { escLit(e, chave); escLit(e, "\":["); }
     escLit(e, "{\"id\":");
     escInt(e, id);
-    if (nome[0]) {
+    if (nome[0] && okNome) {
       escLit(e, ",\"nome\":");
       escStr(e, nome);
     }
-    if (arr[i].peso != 0) {
+    if (arr[i].peso != 0 && okPeso) {
       escLit(e, ",\"peso\":");
       escPesoQ8(e, arr[i].peso);
     }
@@ -624,6 +639,11 @@ static void escCandidato(Esc *e, int idx, const FarolComporCand *c,
 
   if (!idPub[0]) return;
   if (!textoSeguroLimpar(c->titulo, titulo, sizeof titulo, 118, 0)) return;
+  if (!farolconsent_campo_autorizado("candidatos[].c") ||
+      !farolconsent_campo_autorizado("candidatos[].id") ||
+      !farolconsent_campo_autorizado("candidatos[].tipo") ||
+      !farolconsent_campo_autorizado("candidatos[].titulo"))
+    return;
 
   snprintf(cTag, sizeof cTag, "c%d", idx);
   cStr = cTag;
@@ -636,97 +656,102 @@ static void escCandidato(Esc *e, int idx, const FarolComporCand *c,
   escStr(e, c->tipo ? "series" : "movie");
   escLit(e, ",\"titulo\":");
   escStr(e, titulo);
-  if (c->ano >= 1880 && c->ano <= 2100) {
+  if (c->ano >= 1880 && c->ano <= 2100 && farolconsent_campo_autorizado("candidatos[].ano")) {
     escLit(e, ",\"ano\":");
     escInt(e, c->ano);
   }
-  for (i = 0; i < c->nGeneros && i < 8; i++) {
-    if (c->generos[i] <= 0) continue; // apenas TMDB publico > 0
-    if (!hasGen) { escLit(e, ",\"generos\":["); hasGen = 1; }
-    else escLit(e, ",");
-    escInt(e, c->generos[i]);
+  if (farolconsent_campo_autorizado("candidatos[].generos")) {
+    for (i = 0; i < c->nGeneros && i < 8; i++) {
+      if (c->generos[i] <= 0) continue; // apenas TMDB publico > 0
+      if (!hasGen) { escLit(e, ",\"generos\":["); hasGen = 1; }
+      else escLit(e, ",");
+      escInt(e, c->generos[i]);
+    }
+    if (hasGen) escLit(e, "]");
   }
-  if (hasGen) escLit(e, "]");
 
-  if (c->minutos > 0 && c->minutos <= 2000) {
+  if (c->minutos > 0 && c->minutos <= 2000 && farolconsent_campo_autorizado("candidatos[].minutos")) {
     escLit(e, ",\"minutos\":");
     escInt(e, c->minutos);
   }
-  if (c->nota10 >= 0 && c->nota10 <= 100) {
+  if (c->nota10 >= 0 && c->nota10 <= 100 && farolconsent_campo_autorizado("candidatos[].nota")) {
     char nb[16];
     snprintf(nb, sizeof nb, "%d.%d", c->nota10 / 10, c->nota10 % 10);
     escLit(e, ",\"nota\":");
     escLit(e, nb);
   }
-  if (c->pontos != 0) {
+  if (c->pontos != 0 && farolconsent_campo_autorizado("candidatos[].pontos")) {
     escLit(e, ",\"pontos\":");
     escInt(e, c->pontos);
   }
 
-  for (i = 0; i < c->nMotivos && i < FAROL_COMPOR_MOT_MAX; i++) {
-    const FarolComporMotivoItem *mo = &c->motivos[i];
-    const char *tn = NULL;
-    if (!motivoTipoNome(mo->tipo, &tn)) continue;
-    if (mo->tipo == FMO_AMIGO || mo->tipo == FMO_RECOMENDADO) {
-      // REGRA ESTRITA: motivo de amigo SEMPRE anonimizado (zero quem / amigo).
-      escLit(e, !hasMot ? ",\"motivos\":[" : ",");
-      hasMot = 1;
-      escLit(e, "{\"tipo\":");
-      escStr(e, tn);
-      escLit(e, ",\"a\":0,\"b\":0}");
-    } else if (mo->tipo == FMO_TERMINOU) {
-      // So referencia ancora elegivel (nunca semente/diario fora das <=3 ancoras).
-      int k = ancoraDoMotivo(ae, mo->a);
-      if (k < 0) continue;
-      escLit(e, !hasMot ? ",\"motivos\":[" : ",");
-      hasMot = 1;
-      escLit(e, "{\"tipo\":\"FMO_TERMINOU\",\"id\":");
-      escStr(e, ae->id[k]);
-      escLit(e, "}");
-      if (usadas) *usadas |= 1u << k;
-    } else if (mo->tipo == FMO_GENERO || mo->tipo == FMO_FORA_CURVA ||
-               mo->tipo == FMO_PESSOA || mo->tipo == FMO_TEMA) {
-      if (mo->a <= 0) continue; // apenas IDs publicos TMDB > 0
-      escLit(e, !hasMot ? ",\"motivos\":[" : ",");
-      hasMot = 1;
-      escLit(e, "{\"tipo\":");
-      escStr(e, tn);
-      escLit(e, ",\"a\":");
-      escInt(e, mo->a);
-      escLit(e, ",\"b\":0}");
-    } else if (mo->tipo == FMO_CABE_HOJE) {
-      int min = mo->a > 0 ? (int)mo->a : (int)c->minutos;
-      escLit(e, !hasMot ? ",\"motivos\":[" : ",");
-      hasMot = 1;
-      escLit(e, "{\"tipo\":\"FMO_CABE_HOJE\",\"a\":");
-      escInt(e, min > 0 ? min : 0);
-      escLit(e, ",\"b\":0}");
-    } else if (mo->tipo == FMO_SALVO || mo->tipo == FMO_REVER) {
-      // Nunca enviar datas de salvo/rever.
-      escLit(e, !hasMot ? ",\"motivos\":[" : ",");
-      hasMot = 1;
-      escLit(e, "{\"tipo\":");
-      escStr(e, tn);
-      escLit(e, ",\"a\":0,\"b\":0}");
+  if (farolconsent_campo_autorizado("candidatos[].motivos")) {
+    for (i = 0; i < c->nMotivos && i < FAROL_COMPOR_MOT_MAX; i++) {
+      const FarolComporMotivoItem *mo = &c->motivos[i];
+      const char *tn = NULL;
+      if (!motivoTipoNome(mo->tipo, &tn)) continue;
+      if (mo->tipo == FMO_AMIGO || mo->tipo == FMO_RECOMENDADO) {
+        // REGRA ESTRITA: motivo de amigo SEMPRE anonimizado (zero quem / amigo).
+        escLit(e, !hasMot ? ",\"motivos\":[" : ",");
+        hasMot = 1;
+        escLit(e, "{\"tipo\":");
+        escStr(e, tn);
+        escLit(e, ",\"a\":0,\"b\":0}");
+      } else if (mo->tipo == FMO_TERMINOU) {
+        // So referencia ancora elegivel (nunca semente/diario fora das <=3 ancoras).
+        int k = ancoraDoMotivo(ae, mo->a);
+        if (k < 0) continue;
+        escLit(e, !hasMot ? ",\"motivos\":[" : ",");
+        hasMot = 1;
+        escLit(e, "{\"tipo\":\"FMO_TERMINOU\",\"id\":");
+        escStr(e, ae->id[k]);
+        escLit(e, "}");
+        if (usadas) *usadas |= 1u << k;
+      } else if (mo->tipo == FMO_GENERO || mo->tipo == FMO_FORA_CURVA ||
+                 mo->tipo == FMO_PESSOA || mo->tipo == FMO_TEMA) {
+        if (mo->a <= 0) continue; // apenas IDs publicos TMDB > 0
+        escLit(e, !hasMot ? ",\"motivos\":[" : ",");
+        hasMot = 1;
+        escLit(e, "{\"tipo\":");
+        escStr(e, tn);
+        escLit(e, ",\"a\":");
+        escInt(e, mo->a);
+        escLit(e, ",\"b\":0}");
+      } else if (mo->tipo == FMO_CABE_HOJE) {
+        int min = mo->a > 0 ? (int)mo->a : (int)c->minutos;
+        escLit(e, !hasMot ? ",\"motivos\":[" : ",");
+        hasMot = 1;
+        escLit(e, "{\"tipo\":\"FMO_CABE_HOJE\",\"a\":");
+        escInt(e, min > 0 ? min : 0);
+        escLit(e, ",\"b\":0}");
+      } else if (mo->tipo == FMO_SALVO || mo->tipo == FMO_REVER) {
+        // Nunca enviar datas de salvo/rever.
+        escLit(e, !hasMot ? ",\"motivos\":[" : ",");
+        hasMot = 1;
+        escLit(e, "{\"tipo\":");
+        escStr(e, tn);
+        escLit(e, ",\"a\":0,\"b\":0}");
+      }
     }
+    if (hasMot) escLit(e, "]");
   }
-  if (hasMot) escLit(e, "]");
 
-  if (c->faltam > 0 || c->minNoite > 0 || c->cabeHoje != 0) {
+  if ((c->faltam > 0 || c->minNoite > 0 || c->cabeHoje != 0) &&
+      farolconsent_campo_autorizado("candidatos[].eixos")) {
     int first = 1;
     escLit(e, ",\"eixos\":{");
-    if (c->faltam > 0) {
+    if (c->faltam > 0 && farolconsent_campo_autorizado("candidatos[].eixos.faltam")) {
       escLit(e, "\"faltam\":");
       escInt(e, c->faltam);
       first = 0;
     }
-    if (c->minNoite > 0) {
+    if (c->minNoite > 0 && farolconsent_campo_autorizado("candidatos[].eixos.min_noite")) {
       if (!first) escLit(e, ",");
       escLit(e, "\"min_noite\":");
       escInt(e, c->minNoite);
       first = 0;
     }
-    if (c->cabeHoje != 0) {
+    if (c->cabeHoje != 0 && farolconsent_campo_autorizado("candidatos[].eixos.cabe_hoje")) {
       if (!first) escLit(e, ",");
       escLit(e, "\"cabe_hoje\":");
       escInt(e, c->cabeHoje > 0 ? 1 : 0);
@@ -798,6 +823,19 @@ static size_t montarCorpoPassada(const FarolComporPedido *ped, const AncorasEleg
   e.erro = 0;
   dst[0] = '\0';
 
+  if (!farolconsent_campo_autorizado("v") ||
+      !farolconsent_campo_autorizado("modo") ||
+      !farolconsent_campo_autorizado("idioma") ||
+      !farolconsent_campo_autorizado("hora") ||
+      !farolconsent_campo_autorizado("infantil") ||
+      !farolconsent_campo_autorizado("consentiu") ||
+      !farolconsent_campo_autorizado("gosto") ||
+      !farolconsent_campo_autorizado("gosto.nivel") ||
+      !farolconsent_campo_autorizado("gosto.fim_semana") ||
+      !farolconsent_campo_autorizado("candidatos")) {
+    return 0;
+  }
+
   escLit(&e, "{\"v\":1,\"modo\":");
   escStr(&e, modoStr);
   escLit(&e, ",\"idioma\":");
@@ -817,17 +855,21 @@ static size_t montarCorpoPassada(const FarolComporPedido *ped, const AncorasEleg
   escListaAfin(&e, "pessoas", ped->pessoas, ped->nPessoas, FAROL_COMPOR_PESSOA_MAX, 0);
 
   // <= 3 ancoras publicas (na passada final: SO as referenciadas por motivo enviado)
-  for (k = 0; k < ae->n; k++) {
-    if (!(ancMask & (1u << k))) continue;
-    escLit(&e, nAncEsc == 0 ? ",\"ancoras\":[" : ",");
-    escLit(&e, "{\"id\":");
-    escStr(&e, ae->id[k]);
-    escLit(&e, ",\"titulo\":");
-    escStr(&e, ae->titulo[k]);
-    escLit(&e, "}");
-    nAncEsc++;
+  if (farolconsent_campo_autorizado("gosto.ancoras") &&
+      farolconsent_campo_autorizado("gosto.ancoras[].id") &&
+      farolconsent_campo_autorizado("gosto.ancoras[].titulo")) {
+    for (k = 0; k < ae->n; k++) {
+      if (!(ancMask & (1u << k))) continue;
+      escLit(&e, nAncEsc == 0 ? ",\"ancoras\":[" : ",");
+      escLit(&e, "{\"id\":");
+      escStr(&e, ae->id[k]);
+      escLit(&e, ",\"titulo\":");
+      escStr(&e, ae->titulo[k]);
+      escLit(&e, "}");
+      nAncEsc++;
+    }
+    if (nAncEsc > 0) escLit(&e, "]");
   }
-  if (nAncEsc > 0) escLit(&e, "]");
   escLit(&e, "}");
   if (e.erro) { dst[0] = '\0'; return 0; }
 
@@ -872,19 +914,23 @@ static size_t montarCorpoPassada(const FarolComporPedido *ped, const AncorasEleg
   escLit(&e, "]");
 
   // --- fatos (<= 8, inclui frase ditada opcional quando aplicavel) ---
-  if ((ped->fatos && ped->nFatos > 0) || fraseNorm[0]) {
+  if (((ped->fatos && ped->nFatos > 0) || fraseNorm[0]) &&
+      farolconsent_campo_autorizado("fatos")) {
+    int okAlvo = farolconsent_campo_autorizado("fatos[].alvo");
     for (i = 0; ped->fatos && i < ped->nFatos && fatosEscritos < FAROL_COMPOR_FATOS_MAX; i++) {
       const FarolComporFato *ft = &ped->fatos[i];
-      char val[164];
+      char val[164], camFato[64];
       size_t marcaN = e.n;
       if (!fatoChaveValida(ft->chave)) continue;
+      snprintf(camFato, sizeof camFato, "fatos[].%s", ft->chave);
+      if (!farolconsent_campo_autorizado(camFato)) continue;
       val[0] = '\0';
       if (ft->valor[0] && !textoSeguroLimpar(ft->valor, val, sizeof val, 150, 0))
         continue;
       if (!val[0] && !ft->temInteiro) continue;
       escLit(&e, fatosEscritos == 0 ? ",\"fatos\":[" : ",");
       escLit(&e, "{");
-      if (ft->alvo[0] && (imdbValido(ft->alvo) ||
+      if (okAlvo && ft->alvo[0] && (imdbValido(ft->alvo) ||
           (ft->alvo[0] == 'c' && isdigit((unsigned char)ft->alvo[1])))) {
         escLit(&e, "\"alvo\":");
         escStr(&e, ft->alvo);
@@ -904,7 +950,8 @@ static size_t montarCorpoPassada(const FarolComporPedido *ped, const AncorasEleg
       }
       fatosEscritos++;
     }
-    if (fraseNorm[0] && fatosEscritos < FAROL_COMPOR_FATOS_MAX) {
+    if (fraseNorm[0] && fatosEscritos < FAROL_COMPOR_FATOS_MAX &&
+        farolconsent_campo_autorizado("fatos[].frase")) {
       size_t marcaN = e.n;
       escLit(&e, fatosEscritos == 0 ? ",\"fatos\":[" : ",");
       escLit(&e, "{\"frase\":");
@@ -2093,6 +2140,7 @@ int farolcompor_pedir_home(const FarolGosto *g,
 
   if (!g) return 0;
   if (farolrec_nivel(g) < 1) return 0;
+  farolconsent_sincronizar_ativo();
   farolcompor_extrair_gosto(g, diaModeloDe(agora), nomePessoaFn, NULL, u,
                             gen, &ng, tem, &nt, pes, &np);
   hora = faixaLocalDe(agora, &fimSem);
@@ -2121,6 +2169,7 @@ int farolcompor_carregar_cache_home(void) {
   long long agora = agoraS();
   FarolCena c;
 
+  farolconsent_sincronizar_ativo();
   if (suprimidoAgora()) return 0;
   if (!carregarCacheHomeDisco(perfil, conta, agora, &c)) return 0;
 
@@ -2294,6 +2343,7 @@ void farolcompor_trocar_perfil(void) {
   memset(&homeDiaMem, 0, sizeof homeDiaMem);
   homeGeracao++;
   pthread_mutex_unlock(&trava);
+  farolconsent_invalidar();
 }
 
 void farolcompor_esquecer(void) {
@@ -2306,6 +2356,7 @@ void farolcompor_esquecer(void) {
     nomeArquivoMeta(p, nome, sizeof nome);
     lojaApagar(nome);
   }
+  farolconsent_esquecer();
 }
 
 void farolcompor_zerar_gosto(void) {

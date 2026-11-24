@@ -110,6 +110,7 @@ __attribute__((weak)) int farolcompor_pedir_home(const FarolGosto *g,
 }
 __attribute__((weak)) void farolcompor_trocar_perfil(void) {}
 __attribute__((weak)) void farolcompor_zerar_gosto(void) {}
+__attribute__((weak)) void farolconsent_esquecer(void) {}
 
 #define FAROL_CAND_MAX 240          // 60 x 4 blocos; 512 era para um catalogo
 #define FAROL_SEM_MAX  16
@@ -1063,6 +1064,7 @@ void farol_esquecer(void) {
   invalidar();
   farol_sessao_reiniciar();
   farolcompor_trocar_perfil();
+  farolconsent_esquecer();
 }
 
 // 1 quando a fileira do Farol pode estar publicada: "Recomendar nesta TV"

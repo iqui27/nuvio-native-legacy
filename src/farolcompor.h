@@ -148,7 +148,7 @@ typedef struct {
   uint64_t          sessao;
 } FarolComporInfo;
 
-// Costura de allowlist de consentimento para a issue #53 (UI de consentimento).
+// Costura de allowlist e tabela unica de campos de consentimento (#53).
 typedef int (*FarolComporAllowlistFn)(int perfil, void *usuario);
 
 void farolcompor_definir_consentimento(int consentiu);
