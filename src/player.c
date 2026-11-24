@@ -127,6 +127,7 @@ extern __attribute__((weak)) void farol_registrar_resultado(int acao, int ok);
 extern __attribute__((weak)) const char *farolregra_acao_texto(int acao);
 extern __attribute__((weak)) void farolacao_fonte_encerrar(void);
 #include "farolacao_rede.h"
+extern __attribute__((weak)) void farolacao_rede_encerrar(void);
 extern __attribute__((weak)) int farolacao_fonte_executar(int acao, int persistir);
 #include "addons.h"
 #include "duracaook.h"
@@ -3547,7 +3548,7 @@ void player_encerrar(void) {
   if (farolacao_fonte_encerrar) farolacao_fonte_encerrar();
   // Farol (#34): buffer maior e HDR desligado valem so para ESTA reproducao.
   // player_encerrar_fonte (troca de fonte da mesma reproducao) os conserva.
-  farolacao_rede_encerrar();
+  if (farolacao_rede_encerrar) farolacao_rede_encerrar();
   if (retido) player_descartar_retido(); else fecharSessao(0, 0);
 }
 
@@ -3667,7 +3668,7 @@ void player_descartar_retido(void) {
   // Farol (#34): a reproducao que estava suspensa morreu — os overrides
   // "so desta reproducao" (buffer maior, HDR desligado) morrem com ela, o
   // mesmo fim que player_encerrar ja garante sem retido.
-  farolacao_rede_encerrar();
+  if (farolacao_rede_encerrar) farolacao_rede_encerrar();
   // Um backend ja substituido nao pertence mais a esta sessao.
   if (strcmp(retidoUrl, video_url_atual())) comVideo = 0;
   fecharSessao(0, 0); // progresso ja gravado na suspensao, nao faz outro scrobble

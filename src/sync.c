@@ -4,6 +4,9 @@ void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's to
 #include "diario.h"
 #include "farolsinal.h"
 #include "farolcompor.h"
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((weak)) void farolcompor_esquecer(void) {}
+#endif
 #include "trava.h"
 #include <time.h>
 #include "sessao.h"

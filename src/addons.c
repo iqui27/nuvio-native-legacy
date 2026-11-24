@@ -16,6 +16,9 @@
 #include "marco.h"
 #include "ondever.h"
 #include "addonstats.h"
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((weak)) int addonstats_isolado_s(const char *chave) { (void)chave; return 0; }
+#endif
 #include "faroltexto.h"
 #include "aionotice.h"
 #include "fontecache.h"

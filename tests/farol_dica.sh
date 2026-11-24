@@ -95,7 +95,7 @@ a_fim = app.index('\nstatic int abrirPorIndice(int i) {', a_ini)
 abrir_fn = app[a_ini:a_fim]
 
 ai_ini = app.index('static int abrirPorIndice(int i) {')
-ai_fim = app.index('\n// Consume the panel request', ai_ini)
+ai_fim = app.index('\nstatic int abrirFarolPedido(', ai_ini)
 abrir_idx_fn = app[ai_ini:ai_fim]
 
 tr_ini = app.index('static void trocaDeTituloSeSolicitada(void) {')
