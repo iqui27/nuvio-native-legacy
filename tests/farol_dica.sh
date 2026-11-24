@@ -90,7 +90,7 @@ p_ini = app.index('// Pending P2 Farol Tocar execution')
 p_fim = app.index('\nstatic pthread_t fioFonte;', p_ini)
 farol_pend_blk = app[p_ini:p_fim]
 
-a_ini = app.index('static int podeAbrirPorIndice(int i) {')
+a_ini = app.index('static int podeAbrirPorIndice(const CatItem *c) {')
 a_fim = app.index('\nstatic int abrirPorIndice(int i) {', a_ini)
 abrir_fn = app[a_ini:a_fim]
 
@@ -168,6 +168,17 @@ PY
     -Wall -Wno-deprecated-declarations -Wno-unused-function \
     -o "$bin3"
   NUVIO_DADOS="$work/d3" "$bin3"
+
+  if [ "$(uname -s)" != Darwin ]; then
+    bin4="$work/toctou"
+    "$CC_BIN" ${flags[@]+"${flags[@]}"} -DNV_MAPA_PURO -DCURADORIA_TESTE \
+      -ffunction-sections -fdata-sections "${gc_flags[@]}" -Wl,--wrap=cat_item \
+      tests/farol_dica_toctou.c src/deeplink.c "${home_srcs[@]}" \
+      -I"$work" -Isrc "${sdl_inc[@]}" -O1 -g -pthread -lm \
+      -Wall -Wno-deprecated-declarations -Wno-unused-function \
+      -o "$bin4"
+    NUVIO_DADOS="$work/d4" "$bin4"
+  fi
 fi
 
 echo "farol_dica: tudo ok"

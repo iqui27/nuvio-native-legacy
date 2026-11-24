@@ -1136,8 +1136,7 @@ static Uint32 trocaPerfilDesde;
 // (caso do menu ou de um indice vindo de fora), cai para a tela inteira.
 // `exigeArte` = 0 para o pos-play e a grade (abriam mesmo sem arte);
 // `descartarRetido` = 0 so no pos-play (nunca descartou a sessao retida).
-static int podeAbrirPorIndice(int i) {
-  const CatItem *c = cat_item(i);
+static int podeAbrirPorIndice(const CatItem *c) {
   return c && (c->backdrop[0] || c->poster[0]);
 }
 
@@ -1153,9 +1152,8 @@ static int abrirTitulo(const HomeItem *it, int exigeArte, int descartarRetido) {
   return 1;
 }
 
-static int abrirPorIndice(int i) {
-  const CatItem *c = cat_item(i);
-  if (!podeAbrirPorIndice(i)) return 0;
+static int abrirItemPorIndice(int i, const CatItem *c) {
+  if (!podeAbrirPorIndice(c)) return 0;
   HomeItem it;
   GfxRect tudo = { 0, 0, NV_TELA_W, NV_TELA_H };
   // O `it` e da PILHA e esta funcao preenchia todos os campos MENOS o indice —
@@ -1175,6 +1173,10 @@ static int abrirPorIndice(int i) {
   it.genero = c->genero;
   it.meta = c->meta;
   return abrirTitulo(&it, 1, 1);
+}
+
+static int abrirPorIndice(int i) {
+  return abrirItemPorIndice(i, cat_item(i));
 }
 
 // Consume the panel request through the same title route as other screens.
@@ -5599,7 +5601,8 @@ static void marcarAssistidoSeSolicitado(void) {
 static void trocaDeTituloSeSolicitada(void) {
   int alvo = detail_pediu_abrir();
   if (alvo >= 0) {
-    if (podeAbrirPorIndice(alvo)) { detail_volta_notar(alvo); abrirPorIndice(alvo); }
+    const CatItem *c = cat_item(alvo);
+    if (podeAbrirPorIndice(c)) { detail_volta_notar(alvo); abrirItemPorIndice(alvo, c); }
     return;
   }
   // Titulo que veio de FORA do catalogo: a descoberta buscou o meta num fio e
@@ -5613,16 +5616,16 @@ static void trocaDeTituloSeSolicitada(void) {
     // Pedido de um MENU (segurar OK numa lista): o titulo chegou, abre o menu.
     if (novo >= 0 && ctxlista_tomar(novo)) novo = -1;
     if (novo >= 0) {
-      if (podeAbrirPorIndice(novo)) {
+      const CatItem *c = cat_item(novo);
+      if (podeAbrirPorIndice(c)) {
         if (player_aberto() || player_retido()) player_encerrar();
         detail_volta_notar(novo);
-        abrirPorIndice(novo);
+        abrirItemPorIndice(novo, c);
 #ifdef NV_ANDROID
-        const CatItem *linked = cat_item(novo);
-        if (tvHomePending.tipo == DL_TOCAR && linked && detail_aberto() &&
+        if (tvHomePending.tipo == DL_TOCAR && detail_aberto() &&
             tvHomePending.tvProfile == perfis_ativo() && ajustes_tv_home() && !perfil_infantil_ativo() &&
-            !strcmp(linked->imdb, tvHomePending.imdb) &&
-            !strcmp(linked->tipo, tvHomePending.serie ? "series" : "movie")) {
+            !strcmp(c->imdb, tvHomePending.imdb) &&
+            !strcmp(c->tipo, tvHomePending.serie ? "series" : "movie")) {
           cwTocarT = tvHomePending.temporada; cwTocarE = tvHomePending.episodio;
           detail_pedir_reproduzir();
         }
@@ -6458,10 +6461,12 @@ void app_atualizar(float dt, Uint32 agora) {
   if (!conquistas_aberto() || trilhas_aberta()) emblemaDaTrilha = 0;
   { CqPasso passo;
     if (trilhas_pediu_titulo(&passo)) {
-      detail_trilha_notar();
       int indice = cat_indice_por_imdb_tipo(passo.imdb, "movie");
-      if (indice >= 0 && podeAbrirPorIndice(indice)) { detail_volta_notar(indice); abrirPorIndice(indice); }
-      else if (indice < 0) {
+      if (indice >= 0) {
+        const CatItem *c = cat_item(indice);
+        if (podeAbrirPorIndice(c)) { detail_trilha_notar(); detail_volta_notar(indice); abrirItemPorIndice(indice, c); }
+      } else {
+        detail_trilha_notar();
         CatItem seed={0}; char ano[12];
         snprintf(seed.imdb,sizeof seed.imdb,"%s",passo.imdb);
         arte_metahub_preencher(&seed);
