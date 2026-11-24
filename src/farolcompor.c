@@ -418,6 +418,18 @@ static int retTemIraFuturo(const char *s) {
   return 0;
 }
 
+static int retEhNaoFuturoAra(const char *s) {
+  static const char *const exc[] = {
+    "alvar\xc3\xa1", "guaran\xc3\xa1", "par\xc3\xa1", "maracuj\xc3\xa1", "caj\xc3\xa1",
+    "car\xc3\xa1", "bacar\xc3\xa1", "man\xc3\xa1", "saar\xc3\xa1", "sahar\xc3\xa1",
+  };
+  size_t i;
+  for (i = 0; i < sizeof exc / sizeof exc[0]; i++) {
+    if (!strcmp(s, exc[i])) return 1;
+  }
+  return 0;
+}
+
 static int retTemFuturoAcentuado(const char *s) {
   const char *p = s, *fim = s + strlen(s);
   char pal[96];
@@ -468,14 +480,16 @@ static int retTemFuturoAcentuado(const char *s) {
     if (len > 0 && !temDigito) {
       size_t i;
       pal[len] = '\0';
-      for (i = 0; i < sizeof sufs / sizeof sufs[0]; i++) {
-        size_t sl = strlen(sufs[i]);
-        if (len > sl && memcmp(pal + len - sl, sufs[i], sl) == 0) {
-          size_t rad = len - sl, k, cps = 0;
-          for (k = 0; k < rad; k++) {
-            if (((unsigned char)pal[k] & 0xC0) != 0x80) cps++;
+      if (!retEhNaoFuturoAra(pal)) {
+        for (i = 0; i < sizeof sufs / sizeof sufs[0]; i++) {
+          size_t sl = strlen(sufs[i]);
+          if (len > sl && memcmp(pal + len - sl, sufs[i], sl) == 0) {
+            size_t rad = len - sl, k, cps = 0;
+            for (k = 0; k < rad; k++) {
+              if (((unsigned char)pal[k] & 0xC0) != 0x80) cps++;
+            }
+            if (cps >= 2) return 1;
           }
-          if (cps >= 2) return 1;
         }
       }
     }
@@ -839,12 +853,13 @@ static int retEhSubstEp(const char *s) {
          !strcmp(s, "episode") || !strcmp(s, "episodes") ||
          !strcmp(s, "capitulo") || !strcmp(s, "capitulos") ||
          !strcmp(s, "chapter") || !strcmp(s, "chapters") ||
-         !strcmp(s, "ep") || !strcmp(s, "eps");
+         !strcmp(s, "ep") || !strcmp(s, "eps") || !strcmp(s, "cap");
 }
 
 static int retEhSubstTemp(const char *s) {
   return !strcmp(s, "temporada") || !strcmp(s, "temporadas") ||
-         !strcmp(s, "season") || !strcmp(s, "seasons");
+         !strcmp(s, "season") || !strcmp(s, "seasons") ||
+         !strcmp(s, "temp") || !strcmp(s, "seas");
 }
 
 static int retEhProximo(const char *s) {
@@ -881,7 +896,15 @@ static int retEhPrepEspacial(const char *s) {
 
 static int retEhNumLig(const char *s) {
   return !strcmp(s, "n") || !strcmp(s, "no") || !strcmp(s, "num") ||
+         !strcmp(s, "nro") || !strcmp(s, "nr") ||
          !strcmp(s, "numero") || !strcmp(s, "number");
+}
+
+static int retEhAbrevPonto(const char *s) {
+  return !strcmp(s, "n") || !strcmp(s, "no") || !strcmp(s, "num") ||
+         !strcmp(s, "nro") || !strcmp(s, "nr") ||
+         !strcmp(s, "ep") || !strcmp(s, "eps") || !strcmp(s, "cap") ||
+         !strcmp(s, "temp") || !strcmp(s, "seas");
 }
 
 // Coerente com validarResumoRetomada (farolgosto.js): recusa referencias a
@@ -957,7 +980,22 @@ static int retomadaResumoSemSpoiler(const char *s, int temporada, int episodio) 
       }
     }
     if (ch == ',' || ch == ';' || ch == '.' || ch == '!' || ch == '?') {
-      fold[uf++] = '\x01';
+      int abrev = 0;
+      if (ch == '.' && idx > 0) {
+        size_t ini = idx;
+        while (ini > 0 && pre[ini - 1] != ' ' &&
+               pre[ini - 1] != '.' && pre[ini - 1] != ',' &&
+               pre[ini - 1] != ';' && pre[ini - 1] != '!' && pre[ini - 1] != '?') {
+          ini--;
+        }
+        if (idx > ini && idx - ini < 16) {
+          char ab[16];
+          memcpy(ab, pre + ini, idx - ini);
+          ab[idx - ini] = '\0';
+          abrev = retEhAbrevPonto(ab);
+        }
+      }
+      fold[uf++] = abrev ? ' ' : '\x01';
       idx++;
       continue;
     }
@@ -1050,6 +1088,7 @@ static int retomadaResumoSemSpoiler(const char *s, int temporada, int episodio) 
         if (retEhSubstTemp(tok[i + len]) && num != temporada) return 0;
       }
     }
+    if (num > 0 && len > 1) i += len - 1;
   }
   return 1;
 }

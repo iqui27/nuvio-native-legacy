@@ -4179,7 +4179,7 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     assert.equal(chamadasLlm.length, 1);
     assert.equal(kv.mapa.size, 0);
   }
-  // Casos P1 em T2E4 (rejeitados sem gravar KV) + controles e falsos positivos P2-1 aceitos.
+  // Casos P1 em T2E4 (rejeitados sem gravar KV) + controles e falsos positivos P2-1/P2-2 aceitos.
   for (const p1 of [
     "No episódio cinco, Walt volta ao deserto.",
     "In episode five, Walt returns to the desert.",
@@ -4189,6 +4189,14 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     "Walt chegará ao deserto.",
     "Walt will die in the desert.",
     "He will return.",
+    "In episode no. 5, Walt dies.",
+    "No episódio n. 5, Walt morre.",
+    "In season no. 3, Walt dies.",
+    "No ep. 5, Walt morre.",
+    "No cap. 5, Walt morre.",
+    "Na temp. 3, Walt morre.",
+    "In seas. 3, Walt dies.",
+    "In episode nro. 5, Walt dies.",
   ]) {
     const { post, chamadasLlm, kv } = cenario(t, {}, { respostaLlm: () => ({ resumo: p1 }) });
     const r = await post("/v1/farol/compor", pedidoRetomada({}, { temporada: 2, episodio: 4 }));
@@ -4204,6 +4212,11 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     "Walt encontrou Jesse próximo ao deserto.",
     "No episódio 4, Walter confronta Jesse no deserto.",
     "Na 2ª temporada, Walter encontrou Jesse no deserto.",
+    "In episode no. 4, Walt confronts Jesse.",
+    "No episódio n. 4, Walt confronta Jesse.",
+    "Walt perde o alvará do laboratório.",
+    "Walt toma guaraná com maracujá no Pará.",
+    "Walt watched the episode. 5 days later he ran.",
   ]) {
     const { post, kv } = cenario(t, {}, { respostaLlm: () => ({ resumo: aceito }) });
     const r = await post("/v1/farol/compor", pedidoRetomada({}, { temporada: 2, episodio: 4 }));
@@ -4212,6 +4225,15 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     assert.equal(r.body.pecas[0].itens[0].l.x, aceito);
     assert.equal(kv.mapa.size, 1);
   }
+  // P2-1: ordinais compostos (twenty-first em T2E21, decimo primeiro em T2E11) aceitos.
+  assert.equal(validarResumoRetomada("In the twenty-first episode, Walt flees.", { temporada: 2, episodio: 21 }),
+    "In the twenty-first episode, Walt flees.");
+  assert.equal(validarResumoRetomada("No décimo primeiro episódio, Walt foge.", { temporada: 2, episodio: 11 }),
+    "No décimo primeiro episódio, Walt foge.");
+  assert.equal(validarResumoRetomada("In the twenty-first episode, Walt flees.", { temporada: 2, episodio: 4 }),
+    null);
+  assert.equal(validarResumoRetomada("No décimo primeiro episódio, Walt foge.", { temporada: 2, episodio: 4 }),
+    null);
   // Citar o proprio episodio visto e permitido; cerca de codigo e aceita.
   assert.equal(validarResumoRetomada("No T2E9 Walt e Jesse ficaram no deserto.", { temporada: 2, episodio: 9 }),
     "No T2E9 Walt e Jesse ficaram no deserto.");

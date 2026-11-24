@@ -4638,10 +4638,10 @@ const RET_FUTURO_SIMPLES = new Set([
 ]);
 
 const RET_SUB_EP = new Set([
-  "episodio", "episodios", "episode", "episodes", "capitulo", "capitulos", "chapter", "chapters", "ep", "eps",
+  "episodio", "episodios", "episode", "episodes", "capitulo", "capitulos", "chapter", "chapters", "ep", "eps", "cap",
 ]);
 
-const RET_SUB_TEMP = new Set(["temporada", "temporadas", "season", "seasons"]);
+const RET_SUB_TEMP = new Set(["temporada", "temporadas", "season", "seasons", "temp", "seas"]);
 
 const RET_PROXIMO = new Set([
   "proximo", "proxima", "proximos", "proximas",
@@ -4653,15 +4653,23 @@ const RET_NEXT_ALVO = new Set([
 ]);
 
 const RET_PROX_ALVO = new Set([
-  "episodio", "episodios", "episode", "episodes", "ep", "eps",
+  "episodio", "episodios", "episode", "episodes", "ep", "eps", "cap",
   "capitulo", "capitulos", "chapter", "chapters",
-  "temporada", "temporadas", "season", "seasons",
+  "temporada", "temporadas", "season", "seasons", "temp", "seas",
   "vez", "vezes", "time", "times",
 ]);
 
 const RET_ART_PROX = new Set(["no", "na", "nos", "nas", "el", "la", "los", "las"]);
 const RET_PREP_ESPACIAL = new Set(["a", "ao", "aos", "as", "de", "da", "do", "das", "dos", "del"]);
-const RET_NUM_LIG = new Set(["n", "no", "num", "numero", "number"]);
+const RET_NUM_LIG = new Set(["n", "no", "num", "nro", "nr", "numero", "number"]);
+const RET_ABREV_PONTO = new Set([
+  "n", "no", "num", "nro", "nr",
+  "ep", "eps", "cap", "temp", "seas",
+]);
+const RET_NAO_FUTURO_ARA = new Set([
+  "alvará", "guaraná", "pará", "maracujá", "cajá",
+  "cará", "bacará", "maná", "saará", "sahará",
+]);
 const RET_ARTIGOS_UM = new Set(["um", "uma", "un", "una"]);
 
 const RET_WILL_FUTURO_SEG = new Set([
@@ -4858,12 +4866,13 @@ function retTokenizar(s) {
     if (/[\p{L}\p{N}]/u.test(ch)) {
       atual += ch;
     } else {
+      const abrev = ch === "." && atual && RET_ABREV_PONTO.has(atual);
       if (atual) {
         toks.push({ w: atual, q: qPend });
         atual = "";
         qPend = false;
       }
-      if (ch === "," || ch === ";" || ch === "." || ch === "!" || ch === "?") qPend = true;
+      if (ch === "," || ch === ";" || ch === "!" || ch === "?" || (ch === "." && !abrev)) qPend = true;
     }
   }
   if (atual) toks.push({ w: atual, q: qPend });
@@ -4884,7 +4893,8 @@ export function validarResumoRetomada(bruto, ret) {
   const sNfc = s.normalize("NFC");
   if (/(?<![\p{L}\p{N}])irá\s+[\p{L}\p{N}]/iu.test(sNfc)) return null;
   for (const m of sNfc.toLowerCase().matchAll(/[\p{L}\p{N}]+/gu)) {
-    if (/^\p{L}{2,}(?:[aei]rá|[aei]rão|[aei]rán)$/u.test(m[0])) return null;
+    if (!RET_NAO_FUTURO_ARA.has(m[0]) &&
+        /^\p{L}{2,}(?:[aei]rá|[aei]rão|[aei]rán)$/u.test(m[0])) return null;
   }
 
   // Diferencia "will"/"WILL" (futuro) de "Will" (nome proprio seguido de passado/substantivo).
@@ -4955,6 +4965,7 @@ export function validarResumoRetomada(bruto, ret) {
         if (RET_SUB_TEMP.has(alvo) && numAntes.val !== ret.temporada) return null;
       }
     }
+    if (numAntes && numAntes.len > 1) i += numAntes.len - 1;
   }
   return s;
 }
