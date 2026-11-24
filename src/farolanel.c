@@ -96,13 +96,16 @@ static int indiceMais(int i) {
 }
 
 int farolanel_ler_seq(FarolEvento *dst, int max, uint32_t desde_ms, uint64_t *seqFim) {
-  int i, n = 0;
+  int i, ini, n = 0;
   if (!dst || max <= 0) {
     if (seqFim) *seqFim = farolanel_seq();
     return 0;
   }
   pthread_mutex_lock(&trava);
-  for (i = 0; i < qtd && n < max; i++) {
+  // `dst` leva os max MAIS RECENTES, nao os primeiros do anel (farol.h:123):
+  // com qtd > max os eventos mais antigos sao pulados, preservando o rabinho.
+  ini = qtd > max ? qtd - max : 0;
+  for (i = ini; i < qtd && n < max; i++) {
     const FarolEvento *e = &anel[indiceMais(i)];
     if (!desde_ms || (int32_t)(e->t_ms - desde_ms) >= 0) dst[n++] = *e;
   }

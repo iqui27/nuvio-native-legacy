@@ -375,6 +375,7 @@ __attribute__((weak)) void farolregra_julgar(int sintoma, const FarolFatos *f, F
 __attribute__((weak)) int farolsonda_estado(void *out) { (void)out; return 0; }
 __attribute__((weak)) long memlog_livre_mb(void) { return -1; }
 __attribute__((weak)) int nv_webos_major(void) { return 0; }
+__attribute__((weak)) uint64_t player_ultimo_erro_seq(void) { return 0; }
 __attribute__((weak)) int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid) {
   (void)out; if (foiDebrid) *foiDebrid = 0; return 0;
 }
@@ -391,11 +392,11 @@ __attribute__((weak)) void stream_farol_fatos(int *a, int *b, int *c, int *d, in
   int *p[12] = {a, b, c, d, e, f, g, h, i, j, k, l};
   for (int x = 0; x < 12; x++) if (p[x]) *p[x] = -1;
 }
-__attribute__((weak)) const void *video_audio(int i) { (void)i; return NULL; }
+__attribute__((weak)) const VideoFaixa *video_audio(int i) { (void)i; return NULL; }
 __attribute__((weak)) int video_audio_atual(void) { return -1; }
 __attribute__((weak)) int video_audio_nao_suportado(void) { return 0; }
 __attribute__((weak)) int video_dts_estado(void) { return 0; }
-__attribute__((weak)) int video_faixa_dts(const void *f) { (void)f; return 0; }
+__attribute__((weak)) int video_faixa_dts(const VideoFaixa *f) { (void)f; return 0; }
 __attribute__((weak)) const char *video_hdr(void) { return "none"; }
 __attribute__((weak)) int video_n_audio(void) { return 0; }
 __attribute__((weak)) int video_registro_negado(void) { return 0; }

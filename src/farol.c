@@ -66,9 +66,12 @@ void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
 int video_registro_negado(void);
 int video_audio_nao_suportado(void);
 int video_n_audio(void);
-const void *video_audio(int i);
+// video.h puxa SDL2 (o Farol permanece puro nas fixtures); as assinaturas
+// reais usam const VideoFaixa *, aqui declarada opaca — mesma ABI, sem SDL.
+typedef struct VideoFaixa VideoFaixa;
+const VideoFaixa *video_audio(int i);
 int video_audio_atual(void);
-int video_faixa_dts(const void *f);
+int video_faixa_dts(const VideoFaixa *f);
 int video_dts_estado(void);
 int video_tem_dolby_vision(void);
 const char *video_hdr(void);
@@ -77,6 +80,7 @@ int video_tpk_tizen_maior(void);
 #endif
 int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid);
 uint64_t player_ultimo_erro_tentativa(void);
+uint64_t player_ultimo_erro_seq(void);
 int player_externo_disponivel_tentativa(uint64_t tentativa);
 const char *atualizacao_nova(void);
 
@@ -931,7 +935,8 @@ void farol_fatos_ler(FarolFatos *out) {
   FarolSonda sonda;
   char motBuf[RES_FRASE_MAX], recBuf[64];
   const char *vNova, *hdr;
-  int i, n, nAud, at, temFalha;
+  int i, n, nAud, at, temFalha, fonteAtualDeb = -1;
+  uint64_t seqErro;
   int iPronto = -1, iErro = -1, iBusca = -1, iBuscaAnt = -1;
   int falhas = 0, temAbrir = 0, erroNativoPend = 0, reconPend = 0;
   int paradas = 0, recAudioAnel = 0, lentos = 0, prontoAposErro = 0;
@@ -983,7 +988,15 @@ void farol_fatos_ler(FarolFatos *out) {
                   agora - falha.agora <= RES_REJEITA_S) ? 1 : 0;
   out->erroIdadeS = -1;
   out->fonteDebrid = -1;
-  if (out->haFalha && player_ultimo_erro_farol(&out->erro, &out->fonteDebrid)) {
+  // Erro de reproducao e falha do Resolver anteriores a fronteira da sessao
+  // (seq do anel em que o erro foi gravado <= sessaoDesdeSeq) sao da tentativa
+  // anterior: o reset nao pode reaproveita-los. seqErro 0 = sem erro gravado,
+  // e a falha recente solitaria continua contando como no pai.
+  seqErro = player_ultimo_erro_seq();
+  if (seqErro && seqErro <= desdeSeq) {
+    out->haFalha = 0;
+  } else if (out->haFalha &&
+             player_ultimo_erro_farol(&out->erro, &out->fonteDebrid)) {
     out->erroIdadeS = (int)(agora - falha.agora);
     diagTentativa = player_ultimo_erro_tentativa();
   }
@@ -1045,12 +1058,12 @@ void farol_fatos_ler(FarolFatos *out) {
   nAud = video_n_audio();
   at = video_audio_atual();
   if (nAud > 0) {
-    const void *cur = (at >= 0 && at < nAud) ? video_audio(at) : NULL;
+    const VideoFaixa *cur = (at >= 0 && at < nAud) ? video_audio(at) : NULL;
     if (cur) out->faixaDts = video_faixa_dts(cur) > 0 ? 1 : 0;
     else if (video_dts_estado() != FAROL_VIDEO_DTS_NENHUM) out->faixaDts = 1;
     out->outraFaixa = 0;
     for (i = 0; i < nAud; i++) {
-      const void *fi;
+      const VideoFaixa *fi;
       if (i == at) continue;
       fi = video_audio(i);
       if (!fi) continue;
@@ -1071,11 +1084,16 @@ void farol_fatos_ler(FarolFatos *out) {
   else
     out->conversaoPossivel = -1;
 
+  // A fonte atual entra em variavel separada: a origem do erro do player
+  // (out->fonteDebrid, 0/1) tem precedencia, e a fonte atual so completa
+  // quando o erro nao marca debrid — a mesma precedencia do Resolver do pai
+  // (resolver.c: stream_item(stream_atual()) so quando fonteDebrid < 0).
   stream_farol_fatos(&out->fonteDv, &out->fonteHdr, &out->fonteGBx10,
-                     &out->fonteMbps, &out->fonteDebrid, &out->temOutraFonte,
+                     &out->fonteMbps, &fonteAtualDeb, &out->temOutraFonte,
                      &out->temFonteMenor, &out->temFonteSemDv,
                      &out->temFonteSemDts, &out->tvHdr, &out->tvDv,
                      &out->vazaoMbps);
+  if (out->fonteDebrid < 0) out->fonteDebrid = fonteAtualDeb;
   if (out->fonteDv < 0 && video_tem_dolby_vision() > 0) out->fonteDv = 1;
   if (out->fonteHdr < 0) {
     hdr = video_hdr();

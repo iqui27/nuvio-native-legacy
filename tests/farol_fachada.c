@@ -112,6 +112,7 @@ static int c_temErro;
 static FarolErro c_erro;
 static int c_erroDebrid;
 static uint64_t c_erroTentativa = 1;
+static uint64_t c_erroSeq;
 static int c_extDisp;
 
 int rede_saude_offline(void) { return c_offline; }
@@ -136,11 +137,14 @@ int video_dts_estado(void) { return c_dtsEstado; }
 int video_registro_negado(void) { return c_videoNegado; }
 int video_audio_nao_suportado(void) { return c_audioNaoSup; }
 int video_n_audio(void) { return c_nAudio; }
-const void *video_audio(int i) {
-  return (i >= 0 && i < c_nAudio) ? &c_faixas[i] : NULL;
+// VideoFaixa e declarada opaca como em src/farol.c (sem SDL2 nesta fixture);
+// FaixaFake preenche so o campo que a fachada testa.
+typedef struct VideoFaixa VideoFaixa;
+const VideoFaixa *video_audio(int i) {
+  return (i >= 0 && i < c_nAudio) ? (const VideoFaixa *)&c_faixas[i] : NULL;
 }
 int video_audio_atual(void) { return c_audioAtual; }
-int video_faixa_dts(const void *f) { return f ? ((const FaixaFake *)f)->dts : 0; }
+int video_faixa_dts(const VideoFaixa *f) { return f ? ((const FaixaFake *)f)->dts : 0; }
 int video_tem_dolby_vision(void) { return c_videoDv; }
 const char *video_hdr(void) { return c_videoHdr; }
 int farolsonda_estado(FarolSonda *out) {
@@ -174,6 +178,9 @@ int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid) {
 }
 uint64_t player_ultimo_erro_tentativa(void) {
   return c_temErro ? c_erroTentativa : 0;
+}
+uint64_t player_ultimo_erro_seq(void) {
+  return c_temErro ? c_erroSeq : 0;
 }
 int player_externo_disponivel_tentativa(uint64_t tentativa) {
   return tentativa && tentativa == c_erroTentativa && c_extDisp;
@@ -213,6 +220,7 @@ static void resetCenario(void) {
   memset(&c_erro, 0, sizeof c_erro);
   c_erroDebrid = 0;
   c_erroTentativa = 1;
+  c_erroSeq = 0;
   c_extDisp = 0;
 }
 
@@ -222,6 +230,9 @@ static void registrarErroFormato(void) {
   c_erro.http = 0;
   c_erro.nativo = 204;
   snprintf(c_erro.cod, sizeof c_erro.cod, "ums_204");
+  // Como player.c, a seq do anel marca a sessao do erro: os FE_ ja emitidos
+  // (incluido o FE_ERRO_FONTE que o produtor grava com o erro) pertencem a ela.
+  c_erroSeq = farolanel_seq();
   resolverregra_falha_registrar(RES_T_TV, "Erro de formato", "", "",
                                 (long)time(NULL));
 }
@@ -244,10 +255,10 @@ int main(void) {
   assert(c_redeChamadas == 0);
 
   // 2. open->error->open->error (async FE_ERRO_FONTE) -> falhasSeguidas == 2 -> TV_FORMATO_REPETE.
-  registrarErroFormato();
   farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "starfish");
   c_agoraMs += 50;
   farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, 0, 0, "ums_204");
+  registrarErroFormato();   // como no player: erro registrado com o FE_ERRO_FONTE
   c_agoraMs += 50;
   farol_ev(FM_PLAYER, FE_ABRIR, 0, 2, 3, "starfish");
   c_agoraMs += 50;
@@ -293,10 +304,10 @@ int main(void) {
 
   // 4. FE_RECUSA_SINC + FE_ERRO_FONTE na mesma tentativa conta 1 falha, nao 2.
   resetCenario();
-  registrarErroFormato();
   farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "starfish");
   farol_ev(FM_FONTE, FE_RECUSA_SINC, 2, 0, 0, "ums_204");
   farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, 0, 0, "ums_204");
+  registrarErroFormato();
   assert(farol_julgar(RES_S_NAO_COMECA) == FAROL_C_TV_FORMATO);
   farol_ev(FM_PLAYER, FE_ABRIR, 0, 2, 3, "starfish");
   farol_ev(FM_FONTE, FE_RECUSA_SINC, 2, 0, 0, "ums_204");
@@ -306,11 +317,11 @@ int main(void) {
 
   // 5. FE_ERRO_NATIVO isolado (sem FE_ERRO_FONTE) tambem conta; reconexao->pronto zera.
   resetCenario();
-  registrarErroFormato();
   farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "starfish");
   farol_ev(FM_VIDEO, FE_ERRO_NATIVO, 2, 204, 0, "ums_204");
   farol_ev(FM_PLAYER, FE_ABRIR, 0, 2, 3, "starfish");
   farol_ev(FM_VIDEO, FE_ERRO_NATIVO, 2, 204, 0, "ums_204");
+  registrarErroFormato();
   farol_fatos_ler(&f);
   assert(f.falhasSeguidas == 2);
   farol_ev(FM_VIDEO, FE_RECONEXAO, 1, 1, 500, "ums_204");
@@ -426,6 +437,17 @@ int main(void) {
   int aposEv = farol_eventos(ev, FAROL_ANEL_N);
   assert(aposEv == antesEv);
 
+  // Re-julgamento logo apos o reset nao reaproveita o erro da sessao
+  // anterior (revisao FAROL14 r1): sem evento novo, o veredito tem de ser
+  // NADA_ACHADO, com haFalha=0 e nenhuma acao ligada a tentativa anterior.
+  cod = farol_julgar(RES_S_NAO_COMECA);
+  assert(cod == FAROL_C_NADA_ACHADO);
+  farol_fatos_ler(&f);
+  assert(f.haFalha == 0);
+  assert(f.erroIdadeS == -1);
+  assert(f.erro.classe == FC_NENHUMA);
+  assert(f.externoDisponivel == 0);
+
   // farol_esquecer tambem reseta o veredito e a fronteira de sessao.
   farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, 0, 0, "ums_204");
   farol_julgar(RES_S_NAO_COMECA);
@@ -462,6 +484,13 @@ int main(void) {
   assert(ev[n - 3].ev == FE_FAROL_RESULTADO && ev[n - 3].b == 1);
   assert(ev[n - 2].ev == FE_FAROL_ENVIO && ev[n - 2].a == 200);
   assert(ev[n - 1].ev == FE_FAROL_CONSERTOU && !strcmp(ev[n - 1].tok, "converter_ac3"));
+  // Leitura curta: farol_eventos(dst, 3) devolve os 3 MAIS RECENTES, em ordem
+  // (revisao FAROL14 r1: o anel devolvia o inicio, nao o rabinho).
+  n = farol_eventos(ev, 3);
+  assert(n == 3);
+  assert(ev[0].ev == FE_FAROL_RESULTADO && ev[0].b == 1);
+  assert(ev[1].ev == FE_FAROL_ENVIO && ev[1].a == 200);
+  assert(ev[2].ev == FE_FAROL_CONSERTOU && !strcmp(ev[2].tok, "converter_ac3"));
   puts("ok  FE_FAROL_* e preservacao dos 256 eventos mais recentes");
 
 #ifdef RESOLVER_TESTE
@@ -478,14 +507,77 @@ int main(void) {
   puts("ok  RESOLVER_TESTE farol_teste_fatos preservado");
 #endif
 
+  // 11a. HTTP 403 do debrid com a fonte atual desligada (player fora):
+  // a origem do erro (c_erroDebrid) prevalece sobre a fonte atual
+  // (c_stDeb = -1) — o playbook RECONECTAR_DEBRID nao pode se perder
+  // (revisao FAROL14 r1; o Resolver do pai faz o mesmo em resolver.c).
+  resetCenario();
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "starfish");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, 0, 403, "http_403");
+  c_erroSeq = farolanel_seq();
+  c_temErro = 1;
+  c_erro.classe = FC_HTTP;
+  c_erro.http = 403;
+  snprintf(c_erro.cod, sizeof c_erro.cod, "http");
+  c_erroDebrid = 1;
+  c_stDeb = -1;                     // sem fonte atual
+  resolverregra_falha_registrar(RES_T_DEBRID, "O servidor recusou o link (HTTP 403).",
+                              "", "", (long)time(NULL));
+  farol_fatos_ler(&f);
+  assert(f.haFalha == 1);
+  assert(f.fonteDebrid == 1);
+  cod = farol_julgar(RES_S_NAO_COMECA);
+  assert(cod == FAROL_C_DEBRID_DESCONECTOU);
+  assert(farol_veredito() != NULL);
+  assert(farol_veredito()->regra->acao == FAROL_A_RECONECTAR_DEBRID);
+  puts("ok  HTTP 403 debrid sem fonte atual -> DEBRID_DESCONECTOU/RECONECTAR_DEBRID");
+
+  // 11b. HTTP 401 sem fonte atual: idem — a fonte atual (-1) nunca
+  // sobrescreve a origem do erro (revisao FAROL14 r1).
+  resetCenario();
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "starfish");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, 0, 401, "http_401");
+  c_erroSeq = farolanel_seq();
+  c_temErro = 1;
+  c_erro.classe = FC_HTTP;
+  c_erro.http = 401;
+  snprintf(c_erro.cod, sizeof c_erro.cod, "http");
+  c_erroDebrid = 1;
+  c_stDeb = -1;
+  resolverregra_falha_registrar(RES_T_DEBRID, "O servidor recusou o link (HTTP 401).",
+                              "", "", (long)time(NULL));
+  cod = farol_julgar(RES_S_NAO_COMECA);
+  assert(cod == FAROL_C_DEBRID_DESCONECTOU);
+  puts("ok  HTTP 401 debrid sem fonte atual -> DEBRID_DESCONECTOU");
+
+  // 11c. Erro de debrid mas a fonte atual NAO e debrid: a origem do erro
+  // (0) prevalece sobre a folha, sem confundir com desconexao.
+  resetCenario();
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "starfish");
+  farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, 0, 403, "http_403");
+  c_erroSeq = farolanel_seq();
+  c_temErro = 1;
+  c_erro.classe = FC_HTTP;
+  c_erro.http = 403;
+  snprintf(c_erro.cod, sizeof c_erro.cod, "http");
+  c_erroDebrid = 0;
+  c_stDeb = 1;                      // folha diz que a fonte atual e debrid
+  resolverregra_falha_registrar(RES_T_FONTE, "O servidor recusou o link (HTTP 403).",
+                              "", "", (long)time(NULL));
+  farol_fatos_ler(&f);
+  assert(f.fonteDebrid == 0);
+  cod = farol_julgar(RES_S_NAO_COMECA);
+  assert(cod == FAROL_C_FONTE_RECUSOU);
+  puts("ok  HTTP 403 sem debrid no erro -> FONTE_RECUSOU (origem prevalece)");
+
 #ifdef NV_ANDROID
-  // 11. Android externoDisponivel respeita FE_PRONTO apos erro.
+  // 11d. Android externoDisponivel respeita FE_PRONTO apos erro.
   resetCenario();
   c_extDisp = 1;
   c_erroTentativa = 77;
-  registrarErroFormato();
   farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
   farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, 0, 0, "m3_4003");
+  registrarErroFormato();
   farol_fatos_ler(&f);
   assert(f.externoDisponivel == 1);
   farol_ev(FM_PLAYER, FE_PRONTO, 0, 200, 0, "media3");
