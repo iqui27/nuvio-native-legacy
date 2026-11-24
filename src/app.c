@@ -33,6 +33,7 @@
 #include "sessao.h"
 #include "perfis.h"
 #include "fontevolta.h"
+#include "audioext.h"
 #include "cacheboost.h"
 #include "retomamorna.h"
 #include "dados.h"
