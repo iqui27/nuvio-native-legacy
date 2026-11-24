@@ -137,6 +137,30 @@ static void provaCandDe(void) {
   farolescolha_cand_de(NULL, &f);
   farolescolha_cand_de(&c, NULL);
   CHECK(c.id == 0 && c.m[FESC_FORMATO] == 0);
+  // #50 revisao B (P2-4): "war" so como PALAVRA inteira e maiuscula
+  // acentuada dobra para a mesma base ascii da minuscula.
+  memset(&f, 0, sizeof f);
+  f.minutos = 95; f.ano = 2020;
+  f.genero = "Warner · Comédia";
+  farolescolha_cand_de(&c, &f);
+  CHECK(!(c.m[FESC_PESO] & (1u << FESC_INTENSO)));        // "Warner" nao e guerra
+  CHECK(c.m[FESC_PESO] & (1u << FESC_LEVE));
+  CHECK(c.m[FESC_HUMOR] & (1u << FESC_RIR));
+  f.genero = "War";
+  farolescolha_cand_de(&c, &f);
+  CHECK(c.m[FESC_PESO] & (1u << FESC_INTENSO));           // "war" solto vale
+  f.genero = "Filme · Guerra dos Mundos";
+  farolescolha_cand_de(&c, &f);
+  CHECK(c.m[FESC_PESO] & (1u << FESC_INTENSO));
+  f.genero = "AÇÃO · COMÉDIA";                          // maiuscula com acento
+  farolescolha_cand_de(&c, &f);
+  CHECK(c.m[FESC_PESO] & (1u << FESC_INTENSO));
+  CHECK(c.m[FESC_PESO] & (1u << FESC_LEVE));
+  CHECK(c.m[FESC_HUMOR] & (1u << FESC_RIR));
+  f.genero = "ACAO · COMEDIA";                          // sem acento, maiuscula
+  farolescolha_cand_de(&c, &f);
+  CHECK(c.m[FESC_PESO] & (1u << FESC_INTENSO));
+  CHECK(c.m[FESC_HUMOR] & (1u << FESC_RIR));
   puts("  cand_de: tempo aninhado, radicais PT/EN no comeco da palavra, sem dado = 0");
 }
 
@@ -338,6 +362,14 @@ static void provaPre(void) {
   CHECK(farolescolha_de(&E) <= 1);
   CHECK(farolescolha_pre_responder(&E, FESC_EPOCA, "nova"));
   CHECK(farolescolha_terminou(&E) && farolescolha_feitas(&E) == 0);   // 3 pre: encerra direto
+  // #50 revisao B (P2-1): encerrado ou no teto, a 4a pre e recusada sem
+  // tocar nos vivos.
+  {
+    int vAntes = farolescolha_vivos(&E);
+    CHECK(!farolescolha_pre_responder(&E, FESC_IDIOMA, "dublado"));
+    CHECK(!farolescolha_pre_responder(&E, FESC_PESO, "leve"));
+    CHECK(farolescolha_vivos(&E) == vAntes);
+  }
   conferirResultado(&E, n);
   // Depois da 1a resposta da pessoa o #54 nao entra mais.
   farolescolha_iniciar(&E, C, n, &x);
@@ -456,6 +488,8 @@ int main(void) {
 #include "farolcompara.h"
 #include "farolescolhaui.h"
 #include "gfx.h"
+#include "perfilinfantil.h"
+#include "perfis.h"
 #include "resolver.h"
 #include "tex_cache.h"
 #include "text.h"
@@ -477,6 +511,16 @@ static void teclaR(SDL_Keycode k, int repeat) {
   resolver_atualizar(0.016f, 1000);
 }
 static void tecla(SDL_Keycode k) { teclaR(k, 0); }
+
+// Tecla DIRETO na camada da escolha (sem passar pelo resolver): devolve se o
+// evento foi consumido; sair/abrir saem pelos ponteiros.
+static int teclaUi(SDL_Keycode k, int *sair, int *abrir) {
+  SDL_Event e;
+  memset(&e, 0, sizeof e);
+  e.type = SDL_KEYDOWN;
+  e.key.keysym.sym = k;
+  return farolescolhaui_evento(&e, sair, abrir);
+}
 
 static const char *const GENEROS[] = {
   "Filme · Comédia", "Filme · Drama · Romance", "Série · Suspense · Crime",
@@ -673,6 +717,192 @@ static void provaUmEZero(void) {
   puts("  fim com 1: cartaz e OK abre; com 0: \"Nada exato…\" e Voltar; #54 pre-responde");
 }
 
+// ======================= revisao FAROL50-B (P1/P2 da r1) =======================
+// P1-1: o perfil infantil filtra a coleta (sem classificacao conhecida fica
+// fora tambem) — tanto pelo gancho de teste quanto pelo perfil real.
+static void provaInfantilFiltra(void) {
+  CatItem it[10];
+  static const char *const CLASS[10] = { "18", "R", "TV-MA", "", "16",
+                                         "L", "10", "G", "TV-Y7", "PG" };
+  int i;
+  for (i = 0; i < 10; i++) {
+    montarCatItem(&it[i], i);
+    snprintf(it[i].classificacao, sizeof it[i].classificacao, "%s", CLASS[i]);
+  }
+  gPlayer = 1;                                   // o P4 recusa: nada abre aqui
+  farolcompara_teste_player(playerTeste);
+  cat_definir(it, 10);
+  farolescolhaui_teste_infantil(1);
+  farolescolhaui_abrir();
+  CHECK(farolescolhaui_n_candidatos() == 5);       // so L/10/G/TV-Y7/PG
+  if (farolcompara_aberto()) farolcompara_fechar();
+  farolescolhaui_reset();
+  // Perfil real (testeInfantil = -1): a mesma guarda tem de valer.
+  CHECK(perfil_infantil_definir(perfis_ativo(), 1));
+  farolescolhaui_teste_infantil(-1);
+  farolescolhaui_abrir();
+  CHECK(farolescolhaui_n_candidatos() == 5);
+  if (farolcompara_aberto()) farolcompara_fechar();
+  CHECK(perfil_infantil_definir(perfis_ativo(), 0));
+  farolescolhaui_teste_infantil(0);
+  farolescolhaui_abrir();
+  CHECK(farolescolhaui_n_candidatos() == 10);      // adulto ve tudo
+  if (farolcompara_aberto()) farolcompara_fechar();
+  farolescolhaui_reset();
+  gPlayer = 0;
+  semearCatalogo(48);
+  puts("  infantil (P1-1): 18/R/TV-MA/vazio/16 barrados na coleta; L/10/G/TV-Y7/PG passam");
+}
+
+// P1-2: OK em RESULTADO vale para o cartaz EXIBIDO sob o foco. Se o catalogo
+// trocou entre o quadro e a tecla e aquele titulo sumiu, o OK so atualiza a
+// tela — nunca abre outra obra nem dispara Voltar na mesma tecla.
+static void provaToctouOk(void) {
+  CatItem dois[2];
+  FarolAchaPedido p;
+  int sair = 0, abrir = 0, s0, s1;
+  gPlayer = 1;                                   // o P4 recusa: RESULTADO
+  farolcompara_teste_player(playerTeste);
+
+  montarCatItem(&dois[0], 0);
+  montarCatItem(&dois[1], 1);
+
+  // Caso A (1 cartaz): o unico some -> OK nao dispara Voltar nem abre nada.
+  cat_definir(dois, 1);
+  farolescolhaui_abrir();
+  CHECK(farolescolhaui_modo() == FESCUI_RESULTADO && farolescolhaui_n_resultados() == 1);
+  cat_definir(NULL, 0);
+  CHECK(teclaUi(SDLK_RETURN, &sair, &abrir));
+  CHECK(!sair && !abrir && !farolescolhaui_pediu_abrir(&p));
+  CHECK(farolescolhaui_modo() == FESCUI_RESULTADO && farolescolhaui_n_resultados() == 0);
+  CHECK(farolescolhaui_foco() == FESCUI_FOCO_VOLTAR);
+  farolescolhaui_reset();
+
+  cat_definir(dois, 2);
+  farolescolhaui_abrir();
+  CHECK(farolescolhaui_n_resultados() == 2);
+  s0 = farolescolhaui_resultado_indice(0);       // exibido no slot 0
+  s1 = farolescolhaui_resultado_indice(1);       // exibido no slot 1
+  CHECK(s0 >= 0 && s1 >= 0 && s0 != s1);
+
+  // Caso B (foco no slot 1): ele some -> OK NAO abre o slot 0.
+  CHECK(teclaUi(SDLK_RIGHT, &sair, &abrir));
+  CHECK(farolescolhaui_foco() == 1);
+  cat_definir(&dois[s0], 1);                     // so o exibido do slot 0 sobra
+  CHECK(teclaUi(SDLK_RETURN, &sair, &abrir));
+  CHECK(!sair && !abrir && !farolescolhaui_pediu_abrir(&p));
+  CHECK(farolescolhaui_n_resultados() == 1 && farolescolhaui_foco() == 0);
+  farolescolhaui_reset();
+
+  // Caso C (foco no slot 0): ele some -> OK NAO abre o ex-slot 1 (agora slot 0).
+  cat_definir(dois, 2);
+  farolescolhaui_abrir();
+  CHECK(farolescolhaui_n_resultados() == 2 && farolescolhaui_foco() == 0);
+  cat_definir(&dois[s1], 1);                     // so o exibido do slot 1 sobra
+  CHECK(teclaUi(SDLK_RETURN, &sair, &abrir));
+  CHECK(!sair && !abrir && !farolescolhaui_pediu_abrir(&p));
+  CHECK(farolescolhaui_n_resultados() == 1 && farolescolhaui_foco() == 0);
+  farolescolhaui_reset();
+
+  // Controle positivo: o exibido permaneceu (a revisao mudou, a obra nao) ->
+  // o OK abre exatamente o que a pessoa viu.
+  cat_definir(dois, 2);
+  farolescolhaui_abrir();
+  CHECK(farolescolhaui_n_resultados() == 2 && farolescolhaui_foco() == 0);
+  cat_definir(dois, 2);                          // nova revisao, mesma obra
+  CHECK(teclaUi(SDLK_RETURN, &sair, &abrir));
+  CHECK(abrir && farolescolhaui_pediu_abrir(&p));
+  CHECK(!strcmp(p.imdb, dois[s0].imdb));
+  farolescolhaui_reset();
+
+  gPlayer = 0;
+  semearCatalogo(48);
+  puts("  toctou (P1-2): OK no cartaz que sumiu so atualiza — nao abre outro, nao dispara Voltar");
+}
+
+// P2-2: vencedor so-TMDB nao some em silencio. Com 3 vencedores o P4 (que
+// exige imdb) engoliria so os 2 com imdb — a correcao segura o conjunto aqui,
+// nos cartazes, e o #1 abre pela identidade TMDB.
+static void provaSoTmdb(void) {
+  CatItem it[3];
+  FarolAchaPedido p;
+  int sair = 0, abrir = 0, i, slot = -1;
+  gPlayer = 0;
+  farolcompara_teste_player(playerTeste);
+  farolcompara_teste_reset();
+  for (i = 0; i < 3; i++) {                      // mascaras identicas: encerra
+    montarCatItem(&it[i], i);                    // ja com os 3 vencedores
+    snprintf(it[i].tipo, sizeof it[i].tipo, "movie");
+    snprintf(it[i].genero, sizeof it[i].genero, "Ação");
+    snprintf(it[i].meta, sizeof it[i].meta, "2020 · 90 min");
+  }
+  it[0].imdb[0] = '\0';                          // identidade so TMDB
+  it[0].tmdb = 555111;
+  it[0].nota = 99;                               // vencedor #1
+  it[1].nota = 80;
+  it[2].nota = 70;
+  cat_definir(it, 3);
+  farolescolhaui_abrir();
+  CHECK(farolescolhaui_modo() == FESCUI_RESULTADO && farolescolhaui_n_resultados() == 3);
+  CHECK(!farolcompara_aberto());                 // #1 sem imdb: nada de P4 com 2
+  for (i = 0; i < 3; i++) if (farolescolhaui_resultado_indice(i) == 0) slot = i;
+  CHECK(slot >= 0);                              // #1 nao foi descartado
+  for (i = 0; i < slot; i++) CHECK(teclaUi(SDLK_RIGHT, &sair, &abrir));
+  CHECK(teclaUi(SDLK_RETURN, &sair, &abrir));
+  CHECK(abrir && farolescolhaui_pediu_abrir(&p));
+  CHECK(p.tmdb == 555111 && !p.imdb[0]);
+  farolescolhaui_reset();
+  farolcompara_teste_reset();
+  semearCatalogo(48);
+  puts("  so-TMDB (P2-2): o #1 sem imdb fica no cartaz (P4 nao o engoliria) e abre por TMDB");
+}
+
+// P2-3: progresso >= 90 ja e visto (faixa de farolacha.c): sem "continuar",
+// o titulo e contado como conhecido e a pergunta nem se oferece.
+static void provaAndamento90(void) {
+  CatItem it[2];
+  const FarolEsc *m;
+  montarCatItem(&it[0], 0);
+  it[0].progresso = 95;
+  it[0].retomadoMs = 12345;
+  cat_definir(it, 1);
+  farolescolhaui_abrir();
+  m = farolescolhaui_motor();
+  CHECK(m->ctx.emAndamento == 0);                // 95% nao e "em andamento"
+  CHECK(farolescolha_origem(m, FESC_CONTINUAR) == FESC_ORIG_CONTEXTO);
+  CHECK(m->cand[0].m[FESC_CONTINUAR] == (1u << FESC_COMECAR));
+  CHECK(m->cand[0].m[FESC_NOVIDADE] == (1u << FESC_CONHECIDO));
+  farolescolhaui_reset();
+
+  montarCatItem(&it[0], 0);
+  it[0].progresso = 50;                          // faixa real de andamento
+  cat_definir(it, 1);
+  farolescolhaui_abrir();
+  m = farolescolhaui_motor();
+  CHECK(m->ctx.emAndamento == 1);
+  CHECK(m->cand[0].m[FESC_CONTINUAR] == (1u << FESC_CONT_SIM));
+  farolescolhaui_reset();
+
+  montarCatItem(&it[0], 0);
+  it[0].progresso = 0;
+  it[0].retomadoMs = 777;                        // retomada com 0% ainda conta
+  cat_definir(it, 1);
+  farolescolhaui_abrir();
+  m = farolescolhaui_motor();
+  CHECK(m->ctx.emAndamento == 1);
+  CHECK(m->cand[0].m[FESC_CONTINUAR] == (1u << FESC_CONT_SIM));
+  farolescolhaui_reset();
+  semearCatalogo(48);
+  puts("  andamento (P2-3): >=90 nao conta como em andamento; 1..89 e 0+retomadoMs contam");
+}
+
+static void provaRevisao50b(void) {
+  provaInfantilFiltra();
+  provaToctouOk();
+  provaSoTmdb();
+  provaAndamento90();
+}
+
 #ifdef NV_LINUX_DESKTOP
 static void salvarPng(const char *path, const unsigned char *rgba, int w, int h) {
   int y, pitch = w * 4;
@@ -776,6 +1006,7 @@ int main(int argc, char **argv) {
   provaDpad();
   provaComparar();
   provaUmEZero();
+  provaRevisao50b();
 #ifdef NV_LINUX_DESKTOP
   if (dir) provaGl(dir);
 #endif

@@ -122,6 +122,7 @@ static int32_t pontosDe(const CatItem *c, int naoVi, int andamento) {
 static void montarCandidatos(void) {
   int n, i, emAnd = 0;
   unsigned rev = 0;
+  int infantil = infantilAgora();
   n = farolacha_listar_rev(FA_SURPRESA, 0, achados, FESC_CAND_MAX, ESC_SEMENTE, &rev);
   S.nCand = 0;
   S.rev = rev;
@@ -131,6 +132,11 @@ static void montarCandidatos(void) {
     Ident *id;
     int andamento, naoVi;
     if (!c) continue;
+    // Perfil infantil: a lista do farolacha NAO vem filtrada por classificacao
+    // (a guarda e de cada modulo: farol.c, faroldetalhe.c). Descarta o que
+    // nao e livre/ate 10 antes de qualquer pergunta — sem classificacao
+    // conhecida tambem fica de fora (a promessa e "so").
+    if (infantil && !perfil_infantil_classif_ok(c->classificacao)) continue;
     if (!c->imdb[0] && c->tmdb <= 0) continue;   // sem identidade nao reabre
     id = &ident[S.nCand];
     memset(id, 0, sizeof *id);
@@ -138,7 +144,10 @@ static void montarCandidatos(void) {
     id->tmdb = c->tmdb;
     snprintf(id->imdb, sizeof id->imdb, "%s", c->imdb);
     snprintf(id->tipo, sizeof id->tipo, "%s", c->tipo);
-    andamento = (c->progresso > 0 && c->progresso < 100) || c->retomadoMs > 0;
+    // Em andamento = comecou e nao terminou (a mesma faixa de farolacha.c:
+    // progresso >= 90 ja conta como visto; retomadoMs so com progresso 0).
+    andamento = (c->progresso > 0 && c->progresso < 90) ||
+                (c->progresso == 0 && c->retomadoMs > 0);
     naoVi = (achados[i].motivo & FA_MOT_NAO_VI) != 0;
     memset(&f, 0, sizeof f);
     f.id = S.nCand;
@@ -236,10 +245,19 @@ static void zerarAnim(void) {
 
 // O motor terminou: P4 com 2-3, cartaz com 1, "Nada exato…" com 0.
 static void concluir(void) {
+  int todosImdb = 1, i;
   farolescolha_resultado(&S.motor, &S.res);
   S.saida = S.res.saida;
   resolverResultado();
-  if (S.nRes >= 2) {
+  // farolcompara_abrir_titulos identifica por c->imdb: um vencedor so-TMDB
+  // entraria na lista e sumiria em silencio. So vai ao P4 quando TODOS os
+  // vencedores tem imdb; senao o conjunto fica aqui, nos cartazes (que abrem
+  // por FarolAchaPedido, com identidade TMDB ou IMDb).
+  for (i = 0; i < S.nRes; i++) {
+    const CatItem *c = cat_item(S.resIdx[i]);
+    if (!c || !c->imdb[0]) { todosImdb = 0; break; }
+  }
+  if (S.nRes >= 2 && todosImdb) {
     if (farolcompara_abrir_titulos(S.resIdx, S.nRes, S.resPontos, S.res.tempoMin)) {
       S.modo = FESCUI_COMPARAR;
       S.fecharTem = 1;
@@ -308,7 +326,7 @@ static int nFocaveis(void) {
   return 0;
 }
 
-static int okNoFoco(int *pediuSair, int *pediuAbrir) {
+static int okNoFoco(int *pediuSair) {
   if (S.foco == FESCUI_FOCO_VOLTAR) { voltarUmPasso(pediuSair); return 1; }
   if (S.modo == FESCUI_PERGUNTA) {
     int passo = farolescolha_feitas(&S.motor), f = S.foco;
@@ -317,27 +335,25 @@ static int okNoFoco(int *pediuSair, int *pediuAbrir) {
     seguir(0);
     return 1;
   }
-  if (S.modo == FESCUI_RESULTADO && S.foco >= 0 && S.foco < S.nRes) {
-    unsigned r = 0;
-    FarolAchaPedido p = S.resPed[S.foco];
-    int idx = farolachaui_resolver_pedido(&p, &r);
-    if (idx < 0) { garantirResultado(); return 1; }
-    p.rev = r;
-    p.indice = idx;
-    S.pedido = p;
-    S.pedidoTem = 1;
-    if (pediuAbrir) *pediuAbrir = 1;
-  }
   return 1;
 }
 
 int farolescolhaui_evento(const SDL_Event *e, int *pediuSair, int *pediuAbrir) {
   SDL_Keycode k;
-  int n;
+  int n, okTem = 0, okVoltar = 0;
+  FarolAchaPedido okExibido;
   if (pediuSair) *pediuSair = 0;
   if (pediuAbrir) *pediuAbrir = 0;
   if (!e || e->type != SDL_KEYDOWN) return 0;
   if (S.modo != FESCUI_PERGUNTA && S.modo != FESCUI_RESULTADO) return 0;
+  // TOCTOU: o OK vale para o cartaz EXIBIDO sob o foco (o que a pessoa viu),
+  // nao para o que ocupar o slot depois de garantirResultado() recontar o
+  // catalogo vivo — captura ANTES de qualquer recomposicao.
+  if (S.modo == FESCUI_RESULTADO && S.foco >= 0 && S.foco < S.nRes) {
+    okExibido = S.resPed[S.foco];
+    okTem = 1;
+  }
+  okVoltar = (S.modo == FESCUI_RESULTADO && S.foco == FESCUI_FOCO_VOLTAR);
   garantirResultado();
   n = nFocaveis();
   k = e->key.keysym.sym;
@@ -359,8 +375,32 @@ int farolescolhaui_evento(const SDL_Event *e, int *pediuSair, int *pediuAbrir) {
     return 1;
   }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
+    unsigned r = 0;
+    int idx;
+    const CatItem *ci;
     if (e->key.repeat != 0) return 1;     // segurar o OK nunca responde duas
-    return okNoFoco(pediuSair, pediuAbrir);
+    if (okTem) {
+      // O cartaz exibido ainda existe no catalogo vivo e continua o mesmo?
+      // Sumiu ou trocou de obra: so atualiza a tela (garantirResultado ja
+      // correu acima) e consome — NUNCA abre outro titulo nem dispara Voltar.
+      idx = farolachaui_resolver_pedido(&okExibido, &r);
+      ci = idx >= 0 ? cat_item(idx) : NULL;
+      if (ci && farolachaui_pedido_bate(ci, &okExibido)) {
+        okExibido.rev = r;
+        okExibido.indice = idx;
+        S.pedido = okExibido;
+        S.pedidoTem = 1;
+        if (pediuAbrir) *pediuAbrir = 1;
+      }
+      return 1;
+    }
+    // Voltar so quando o foco JA estava nele antes do OK — nunca porque o
+    // ultimo cartaz sumiu no instante da tecla.
+    if (okVoltar && S.foco == FESCUI_FOCO_VOLTAR) {
+      voltarUmPasso(pediuSair);
+      return 1;
+    }
+    return okNoFoco(pediuSair);
   }
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) {

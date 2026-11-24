@@ -100,8 +100,11 @@ static const char *const R_LEVE[] = { "comed", "coméd", "comic", "cômic", "sit
   "anima", "famil", "famíl", "infant", "kids", "crian", "aventur", "advent", "fantas",
   "music", "músic", "romanc", "romant", "român", NULL };
 static const char *const R_INTENSO[] = { "suspen", "thrill", "terror", "horror", "crime",
-  "myster", "mistér", "polici", "drama", "guerra", "war", "action", "ação", "acao",
+  "myster", "mistér", "polici", "drama", "guerra", "action", "ação", "acao",
   "faroeste", "western", NULL };
+// Palavras INTEIRAS (sem radical): "war" nao pode casar "Warner" nem
+// "Warcraft" — a fronteira tem de valer nos dois lados.
+static const char *const R_INTENSO_PALAVRA[] = { "war", NULL };
 static const char *const R_CRIANCA[] = { "anima", "famil", "famíl", "infant", "kids",
   "crian", NULL };
 static const char *const R_ASSUSTA[] = { "terror", "horror", NULL };
@@ -126,22 +129,84 @@ static int temRadical(const char *g, const char *const *rad) {
   return 0;
 }
 
+// 1 se alguma palavra de `pal` aparece INTEIRA em `g`: fronteira de palavra
+// (inicio/fim ou nao-letra) dos dois lados do casamento.
+static int temPalavra(const char *g, const char *const *pal) {
+  int r;
+  for (r = 0; pal[r]; r++) {
+    size_t n = strlen(pal[r]);
+    const char *p = g;
+    while ((p = strstr(p, pal[r])) != NULL) {
+      if ((p == g || !letra((unsigned char)p[-1])) &&
+          !letra((unsigned char)p[n])) return 1;
+      p += n;
+    }
+  }
+  return 0;
+}
+
+// Base ascii do latim-1 U+00C0..U+00FF (À→a … Ç→c … ñ→n … ÿ→y); 0 quando o
+// ponto nao tem base simples (Æ Ð × Ø Þ ß æ ð ÷ ø þ). A mesma dobra de
+// ft_base_latim em src/faroltexto.c.
+static char baseLatim(unsigned cp) {
+  static const char T[0x40] = {
+    'a','a','a','a','a','a', 0 ,'c',  // À Á Â Ã Ä Å Æ Ç
+    'e','e','e','e','i','i','i','i',  // È É Ê Ë Ì Í Î Ï
+     0 ,'n','o','o','o','o','o', 0 ,  // Ð Ñ Ò Ó Ô Õ Ö ×
+     0 ,'u','u','u','u','y', 0 , 0 ,  // Ø Ù Ú Û Ü Ý Þ ß
+    'a','a','a','a','a','a', 0 ,'c',  // à á â ã ä å æ ç
+    'e','e','e','e','i','i','i','i',  // è é ê ë ì í î ï
+     0 ,'n','o','o','o','o','o', 0 ,  // ð ñ ò ó ô õ ö ÷
+     0 ,'u','u','u','u','y', 0 ,'y',  // ø ù ú û ü ý þ ÿ
+  };
+  return (cp >= 0xC0 && cp <= 0xFF) ? T[cp - 0xC0] : 0;
+}
+
+// g dobrada para ascii-minuscula: ASCII A-Z baixa, e o latim-1 de 2 bytes
+// (U+00C0..U+00FF) troca pela base ascii — "AÇÃO" casa "ação", "COMÉDIA"
+// casa "comédia" (antes só a forma minuscula acentuada dobrava).
+static void dobrarGenero(const char *s, char *g, size_t cap) {
+  size_t i = 0;
+  const unsigned char *p = (const unsigned char *)s;
+  while (*p && i + 1 < cap) {
+    unsigned char c = *p;
+    if (c < 0x80) {
+      g[i++] = (char)(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c);
+      p++;
+      continue;
+    }
+    if (c == 0xC3 && p[1] >= 0x80 && p[1] <= 0xBF) {
+      char b = baseLatim(0xC0u + (p[1] - 0x80));
+      p += 2;
+      if (b) { g[i++] = b; continue; }
+      // Sem base simples: seguem os dois bytes crus (continua "letra").
+      if (i + 2 >= cap) break;
+      g[i++] = (char)0xC3; g[i++] = (char)p[-1];
+      continue;
+    }
+    // UTF-8 mais longo: copia o lead e os seguidores como estao (sequencia
+    // quebrada: so o byte malformado, sem engolir o que vem depois).
+    {
+      int n = (c >= 0xF0) ? 4 : (c >= 0xE0) ? 3 : 2;
+      int j;
+      for (j = 1; j < n; j++)
+        if (!(p[j] >= 0x80 && p[j] <= 0xBF)) { n = j; break; }
+      for (j = 0; j < n && p[j] && i + 1 < cap; j++) g[i++] = (char)p[j];
+      p += j;
+    }
+  }
+  g[i] = '\0';
+}
+
 void farolescolha_cand_de(FarolEscCand *out, const FarolEscFatos *f) {
   char g[256];
-  size_t i;
   if (!out) return;
   memset(out, 0, sizeof *out);
   if (!f) return;
   out->id = f->id;
   out->pontos = f->pontos;
   g[0] = '\0';
-  if (f->genero) {
-    for (i = 0; f->genero[i] && i + 1 < sizeof g; i++) {
-      unsigned char c = (unsigned char)f->genero[i];
-      g[i] = (char)(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c);
-    }
-    g[i] = '\0';
-  }
+  if (f->genero) dobrarGenero(f->genero, g, sizeof g);
   // Tempo aninhado: "quanto tempo voce tem" — o que cabe em 45 cabe no filme.
   if (f->minutos > 0) {
     if (f->minutos <= 45) out->m[FESC_TEMPO] |= 1u << FESC_T45;
@@ -150,7 +215,8 @@ void farolescolha_cand_de(FarolEscCand *out, const FarolEscFatos *f) {
   }
   if (g[0]) {
     if (temRadical(g, R_LEVE)) out->m[FESC_PESO] |= 1u << FESC_LEVE;
-    if (temRadical(g, R_INTENSO)) out->m[FESC_PESO] |= 1u << FESC_INTENSO;
+    if (temRadical(g, R_INTENSO) || temPalavra(g, R_INTENSO_PALAVRA))
+      out->m[FESC_PESO] |= 1u << FESC_INTENSO;
     out->m[FESC_COMPANHIA] |= 1u << FESC_SO;
     if (temRadical(g, R_DOIS)) out->m[FESC_COMPANHIA] |= 1u << FESC_DOIS;
     if (temRadical(g, R_CRIANCA) && !temRadical(g, R_ASSUSTA))
@@ -261,8 +327,9 @@ void farolescolha_iniciar(FarolEsc *e, const FarolEscCand *cand, int n,
   e->ctx.emAndamento = 1;
   if (ctx) e->ctx = *ctx;
   for (p = 0; p < FESC_N; p++) e->resp[p] = FESC_SEM_RESP;
-  // O que o contexto responde sai do banco (sem filtrar: o catalogo do perfil
-  // infantil ja vem filtrado, e sem nada em andamento "continuar" nao divide).
+  // O que o contexto responde sai do banco (sem filtrar: quem monta a lista
+  // — montarCandidatos no farolescolhaui — ja barrou o que o perfil infantil
+  // nao pode ver; e sem nada em andamento "continuar" nao divide).
   if (e->ctx.infantil) {
     e->resp[FESC_COMPANHIA] = (int8_t)farolescolha_tanto(FESC_COMPANHIA);
     e->orig[FESC_COMPANHIA] = FESC_ORIG_CONTEXTO;
@@ -277,7 +344,11 @@ void farolescolha_iniciar(FarolEsc *e, const FarolEscCand *cand, int n,
 
 int farolescolha_pre_responder(FarolEsc *e, int perg, const char *opcaoId) {
   int o;
-  if (!e || e->nPilha > 0 || !pergValida(perg) || e->resp[perg] != FESC_SEM_RESP) return 0;
+  // nPre < FESC_PERG_MAX: o teto total de perguntas e 3, somando pre (#54)
+  // e feitas. Nao barra por terminou(): a pre sobre motor ja encerrado e o
+  // fluxo legitimo do #54 ("pre-resposta que nao bate" -> NADA honesto).
+  if (!e || e->nPre >= FESC_PERG_MAX || e->nPilha > 0 ||
+      !pergValida(perg) || e->resp[perg] != FESC_SEM_RESP) return 0;
   o = farolescolha_opcao_por_id(perg, opcaoId);
   if (o < 0) return 0;
   e->resp[perg] = (int8_t)o;
