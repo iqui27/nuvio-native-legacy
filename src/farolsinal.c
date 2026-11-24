@@ -40,6 +40,52 @@
 #include "fio1.h"
 #endif
 
+extern __attribute__((weak)) int perfil_ajustes_travados(int idx);
+static int gostoTravado(void) {
+  return perfil_ajustes_travados && perfil_ajustes_travados(perfis_ativo());
+}
+
+#define FSIN_NOMES_MAX 512
+static struct {
+  uint8_t dim;
+  int32_t id;
+  char nome[64];
+} nomeT[FSIN_NOMES_MAX];
+static int nNomeT, nomeTProx;
+
+static void regNomeLocked(int dim, int32_t id, const char *nome) {
+  int i;
+  if (!id || !nome || !nome[0]) return;
+  for (i = 0; i < nNomeT; i++) {
+    if (nomeT[i].dim == dim && nomeT[i].id == id) {
+      snprintf(nomeT[i].nome, sizeof nomeT[i].nome, "%s", nome);
+      return;
+    }
+  }
+  if (nNomeT < FSIN_NOMES_MAX) i = nNomeT++;
+  else { i = nomeTProx; nomeTProx = (nomeTProx + 1) % FSIN_NOMES_MAX; }
+  nomeT[i].dim = (uint8_t)dim;
+  nomeT[i].id = id;
+  snprintf(nomeT[i].nome, sizeof nomeT[i].nome, "%s", nome);
+}
+
+static void regDetalheNomes(const MapaDetalhe *tmp) {
+  int i;
+  if (!tmp) return;
+  for (i = 0; i < tmp->nGente && i < MAPA_GENTE_MAX; i++) {
+    if (!tmp->gente[i].nome[0]) continue;
+    if (tmp->gente[i].id > 0)
+      regNomeLocked(FG_DIM_PESSOA, (int32_t)tmp->gente[i].id, tmp->gente[i].nome);
+    regNomeLocked(FG_DIM_PESSOA, mapa_hash_nome(tmp->gente[i].nome),
+                  tmp->gente[i].nome);
+  }
+  for (i = 0; i < tmp->nKw && i < MAPA_KW_MAX; i++) {
+    const char *n = tmp->kw[i].nome[0] ? mapa_tema_nome(tmp->kw[i].nome) : NULL;
+    if (!tmp->kw[i].id || !tmp->kw[i].nome[0]) continue;
+    regNomeLocked(FG_DIM_TEMA, (int32_t)tmp->kw[i].id, n ? n : tmp->kw[i].nome);
+  }
+}
+
 // Dominios de sinal: o "tipo" do credito, dobrado na hb para que canais de
 // desfazer nao se cruzem (tirar dos salvos nao apaga o abandono etc.).
 enum {
@@ -1427,25 +1473,27 @@ void farolsinal_interesse(const CatItem *ci) {
   DTRAVA();
 }
 void farolsinal_mais_assim(const CatItem *ci) {
-  if (!ci || !ci->imdb[0]) return;
+  if (!ci || !ci->imdb[0] || gostoTravado()) return;
   if (!travaPronta()) return;
   if (S.rec) avulso(ci, K_MAIS, 0, FG_D_MAIS_ASSIM);
   DTRAVA();
 }
 void farolsinal_recusar(const CatItem *ci) {
-  if (!ci || !ci->imdb[0]) return;
+  if (!ci || !ci->imdb[0] || gostoTravado()) return;
   if (!travaPronta()) return;
   if (S.rec && avulso(ci, K_RECUSA, 0, FG_D_REPROVOU))
     { farolgosto_recusar(&S.g, mapa_hash_titulo(ci->imdb)); S.sujo = 1; }
   DTRAVA();
 }
 void farolsinal_desfazer_recusa(const CatItem *ci) {
-  if (!ci || !ci->imdb[0]) return;
+  if (!ci || !ci->imdb[0] || gostoTravado()) return;
   if (!travaPronta()) return;
   // a recusa sai tambem do anel — o titulo volta a aparecer nas fileiras
   // (correcao FAROL38B: "desfazer" deixava o hash para sempre).
-  if (desfazAvulso(ci, K_RECUSA, 0))
+  if (desfazAvulso(ci, K_RECUSA, 0)) {
     farolgosto_desrecusar(&S.g, mapa_hash_titulo(ci->imdb));
+    S.sujo = 1;
+  }
   DTRAVA();
 }
 void farolsinal_mostrado(const CatItem *ci) {
@@ -1519,8 +1567,13 @@ static void *fioLenta(void *u) {
     if (n > 0) {
       FarolFicha f;
       corpo[n] = 0;
-      if (farolficha_ler_tmdb(corpo, p.serie, &tmp, &f))
-        { fichaOk(p.chave, &f, p.ger); continue; }
+      if (farolficha_ler_tmdb(corpo, p.serie, &tmp, &f)) {
+        TRAVA();
+        regDetalheNomes(&tmp);
+        DTRAVA();
+        fichaOk(p.chave, &f, p.ger);
+        continue;
+      }
     }
     fichaFalhou(p.chave, p.ger);
   }
@@ -1742,6 +1795,7 @@ int  farolsinal_recomendar(void) {
   int r; if (!prontoLeve()) return 0; r = S.rec; DTRAVA(); return r;
 }
 void farolsinal_definir_recomendar(int ligado) {
+  if (gostoTravado()) return;
   if (travaPronta()) {
     if (S.rec != !!ligado) { S.rec = !!ligado; S.sujo = 1; }
     DTRAVA();
@@ -2344,6 +2398,7 @@ void farolsinal_esquecer(void) {
 // a ordem (contrato, item 5).
 void farolsinal_zerar_gosto(void) {
   char cam[1100], nome[64];
+  if (gostoTravado()) return;
   if (!travaPronta()) { TRAVA(); garante_i(); }
   if (S.perfil >= 1 && S.perfil <= CONTA_PERFIL_MAX) {
     nomeGosto(S.perfil, nome, sizeof nome);
@@ -2391,4 +2446,40 @@ void farolsinal_teste_zera(void) {
   S.trocando = S.pendTroca = S.diaFrio = S.recarrega = 0; S.esqGer++;
   fioMorre = 0;                          // "reboot" tambem do fio lento
   DTRAVA();
+}
+
+uint16_t farolsinal_dia_atual(void) {
+  return (uint16_t)diaDe(agoraS());
+}
+
+void farolsinal_registrar_nome(int dim, int32_t id, const char *nome) {
+  if (!id || !nome || !nome[0]) return;
+  TRAVA();
+  regNomeLocked(dim, id, nome);
+  DTRAVA();
+}
+
+static int buscarNomeLocked(int dim, int32_t id, char *dst, size_t cap) {
+  int i, ok = 0;
+  if (!dst || !cap) return 0;
+  dst[0] = 0;
+  if (!id) return 0;
+  TRAVA();
+  for (i = 0; i < nNomeT; i++) {
+    if (nomeT[i].dim == dim && nomeT[i].id == id && nomeT[i].nome[0]) {
+      snprintf(dst, cap, "%s", nomeT[i].nome);
+      ok = 1;
+      break;
+    }
+  }
+  DTRAVA();
+  return ok;
+}
+
+int farolsinal_pessoa_nome(int32_t id, char *dst, size_t cap) {
+  return buscarNomeLocked(FG_DIM_PESSOA, id, dst, cap);
+}
+
+int farolsinal_tema_nome(int32_t id, char *dst, size_t cap) {
+  return buscarNomeLocked(FG_DIM_TEMA, id, dst, cap);
 }

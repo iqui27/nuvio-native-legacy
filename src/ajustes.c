@@ -79,10 +79,22 @@
 #include "faroltexto.h"
 #if defined(__APPLE__) && (defined(__GNUC__) || defined(__clang__))
 extern void farolilha_definir_ativo(int ligado) __attribute__((weak_import));
+extern void farolgostoui_abrir_aprendeu(void) __attribute__((weak_import));
+extern void farolgostoui_abrir_zerar(void) __attribute__((weak_import));
+extern int  farolgostoui_llm_ativo(void) __attribute__((weak_import));
+extern int  farolgostoui_llm_definir(int ligado) __attribute__((weak_import));
 #elif defined(__GNUC__) || defined(__clang__)
 extern void farolilha_definir_ativo(int ligado) __attribute__((weak));
+extern void farolgostoui_abrir_aprendeu(void) __attribute__((weak));
+extern void farolgostoui_abrir_zerar(void) __attribute__((weak));
+extern int  farolgostoui_llm_ativo(void) __attribute__((weak));
+extern int  farolgostoui_llm_definir(int ligado) __attribute__((weak));
 #else
 void farolilha_definir_ativo(int ligado);
+void farolgostoui_abrir_aprendeu(void);
+void farolgostoui_abrir_zerar(void);
+int  farolgostoui_llm_ativo(void);
+int  farolgostoui_llm_definir(int ligado);
 #endif
 #include "diarionuvem.h"
 #include "simkl.h"
@@ -868,6 +880,11 @@ typedef enum {
   // FAROL (#23): entrada manual "Farol" em Ajustes › Sobre e ajuda.
   // Acao, append-only.
   AJ_FAROL,
+  // FAROL (#51): configuracoes do gosto em Ajustes › Sobre e ajuda. Append-only.
+  AJ_FAROL_RECOMENDAR,
+  AJ_FAROL_APRENDEU,
+  AJ_FAROL_ZERAR,
+  AJ_FAROL_LLM_SO_ESTA_TV,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2122,6 +2139,10 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Motor de legendas ASS", V_LIGA, 2),                   // local: assMotorNovoLocal (.tpk, PR 734)
   ESC("Avisos do Farol", V_FAROL_AVISOS, 2),                 // local: farolAvisosLocal (#27)
   ACAO(FT_NOME),                                             // acao: abre o Farol (#23)
+  ESC(FT_GOSTO_RECOMENDAR, V_LIGA, 2),                       // local/farolsinal: Recomendar nesta TV (#51)
+  ACAO(FT_GOSTO_APRENDEU),                                   // acao: O que o Farol aprendeu (#51)
+  ACAO(FT_GOSTO_ZERAR),                                      // acao: Zerar o gosto (#51)
+  ESC(FT_GOSTO_LLM_SO_ESTA_TV, V_LIGA, 2),                   // local/farolconsent: So nesta TV (#51)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2514,6 +2535,10 @@ static const char *CHAVE[] = {
   "assMotorNovoLocal",
   "farolAvisosLocal",
   "-farol",
+  "-farolRecomendar",
+  "-farolAprendeu",
+  "-farolZerar",
+  "-farolLlmSoEstaTv",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3744,6 +3769,10 @@ int ajustes_ass_motor(void) { return __atomic_load_n(&assMotorEspelho, __ATOMIC_
 static void farolAvisosPublicar(void) {
   if (farolilha_definir_ativo) farolilha_definir_ativo(ajustes_farol_avisos());
 }
+static void farolGostoEspelhar(void) {
+  valor[AJ_FAROL_RECOMENDAR] = farolsinal_recomendar() ? 0 : 1;
+  valor[AJ_FAROL_LLM_SO_ESTA_TV] = (farolgostoui_llm_ativo && farolgostoui_llm_ativo()) ? 1 : 0;
+}
 int ajustes_farol_avisos(void) { return valor[AJ_FAROL_AVISOS] != 0; }
 void ajustes_farol_avisos_definir(int ligado) {
   int v = ligado ? 1 : 0;
@@ -3752,6 +3781,17 @@ void ajustes_farol_avisos_definir(int ligado) {
     AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar());
   }
   farolAvisosPublicar();
+}
+int ajustes_farol_recomendar(void) {
+  return farolsinal_recomendar();
+}
+void ajustes_farol_recomendar_definir(int ligado) {
+  if (perfil_ajustes_travados(perfis_ativo())) { farolGostoEspelhar(); return; }
+  farol_recomendar_definir(ligado ? 1 : 0, NULL);
+  farolGostoEspelhar();
+}
+int ajustes_farol_llm_ativo(void) {
+  return farolgostoui_llm_ativo ? farolgostoui_llm_ativo() : 0;
 }
 // #338: -1 = lembrar o ultimo tamanho; 0..2 = Completo, Compacto, Minimo.
 int ajustes_estat_tamanho(void) {
@@ -5584,6 +5624,7 @@ void ajustes_dir(const char *dir) {
     ajSombraSync();
     assMotorPublicar();
     farolAvisosPublicar();
+    farolGostoEspelhar();
     return;
   }
   { int viuIdioma = 0, viuAuto = 0, idiomaGravado = IDIOMA_EN, autoGravado = 0;
@@ -5983,6 +6024,7 @@ void ajustes_dir(const char *dir) {
   ajSombraSync();   // o que veio do disco nao e mudanca de ninguem
   assMotorPublicar();   // o espelho do motor ASS reflete o arquivo inteiro lido
   farolAvisosPublicar();
+  farolGostoEspelhar();
 }
 
 static int gravar(void) {
@@ -7742,6 +7784,7 @@ int ajustes_iniciar(void) {
   pfEntrada();
   ajMovReiniciar();screenReveal=0;screenRoute=-1;navigationBackFocus=0;
   faRetornarFolha = 0; faAddonEditar[0] = 0; ajFalhaEspelhar(); ajLegendaEspelhar(); ajIptvEspelhar();
+  farolGostoEspelhar();
   uxVeioBusca = uxAbrirOp >= 0;
   montarTela();
   conferirTela();
@@ -8482,6 +8525,10 @@ static int inativa(int op) {
     case AJ_ADDON_POSTER:  return valor[AJ_POSTER_PROV] == PP_DESLIGADO;
     // A unica troca do logo do addon e a "Arte localizada" do TMDB.
     case AJ_ADDON_LOGO:    return !ajustes_tmdb_ligado() || !ajustes_tmdb_arte();
+    case AJ_FAROL_RECOMENDAR: case AJ_FAROL_ZERAR:
+      return perfil_ajustes_travados(perfis_ativo());
+    case AJ_FAROL_LLM_SO_ESTA_TV:
+      return perfil_infantil_ativo() || perfil_ajustes_travados(perfis_ativo());
     default: return 0;
   }
 }
@@ -9155,6 +9202,10 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_GUIA: return "O que o Nuvio faz, em 12 capítulos. Cada recurso diz onde fica e tem um atalho para ele.";
     case AJ_FAROL: return "O que fazer quando algo não funciona, com o ajuste que resolve.";
     case AJ_FAROL_AVISOS: return "O Farol avisa quando o vídeo falha e confirma o conserto.";
+    case AJ_FAROL_RECOMENDAR: return "Mostra fileiras e motivos personalizados para este perfil nesta TV. Desligar tira as fileiras na hora e para de registrar sinais.";
+    case AJ_FAROL_APRENDEU: return "Mostra os gêneros, pessoas e temas que o Farol identificou como favoritos deste perfil.";
+    case AJ_FAROL_ZERAR: return "Apaga o que o Farol aprendeu e as pendências deste perfil nesta TV.";
+    case AJ_FAROL_LLM_SO_ESTA_TV: return "Ligado por padrão: tudo do gosto fica só nesta TV. Desligar permite usar o servidor com consentimento (indisponível no perfil infantil).";
     case AJ_DICASCONTROLE: return "Dicas do controle";
     case AJ_NOVIDADES20: return "O tour do que mudou na 2.0, capítulo por capítulo, com o que vale neste aparelho. Abre do começo.";
     case AJ_APOIAR: return "Se o Nuvio te ajuda e você quiser apoiar quem faz o app, aponte a câmera do celular para um dos códigos. É opcional: nada muda no app.";
@@ -10889,6 +10940,21 @@ static int definirValorDireto(int op, int novo) {
     valor[op] = diarionuvem_ligado() ? 0 : 1;
     return 1;
   }
+  if (op == AJ_FAROL_RECOMENDAR) {
+    if (perfil_ajustes_travados(perfis_ativo())) { farolGostoEspelhar(); return 0; }
+    farol_recomendar_definir(novo == 0, NULL);
+    farolGostoEspelhar();
+    return 1;
+  }
+  if (op == AJ_FAROL_LLM_SO_ESTA_TV) {
+    if (perfil_infantil_ativo() || perfil_ajustes_travados(perfis_ativo())) {
+      farolGostoEspelhar();
+      return 0;
+    }
+    if (farolgostoui_llm_definir) farolgostoui_llm_definir(novo == 1);
+    farolGostoEspelhar();
+    return 1;
+  }
   antes = valor[op];
   if (novo == antes && !(op == AJ_LEG2_POS && posicaoAntes != 0) &&
       (op != AJ_TEX_MB || memoriaEscolhida) && (op != AJ_SALVOS_DEST || bibliotecaFonteEscolhida)) return 1;
@@ -11137,6 +11203,16 @@ static void eventoTela(const SDL_Event *e) {
 #endif
     if (focoOp == AJ_GUIA) { guiaAbrir(0); return; }
     if (focoOp == AJ_FAROL) { resolver_abrir(); return; }
+    if (focoOp == AJ_FAROL_APRENDEU) {
+      if (farolgostoui_abrir_aprendeu) farolgostoui_abrir_aprendeu();
+      return;
+    }
+    if (focoOp == AJ_FAROL_ZERAR) {
+      if (!inativa(focoOp) && !perfil_ajustes_travados(perfis_ativo()) &&
+          farolgostoui_abrir_zerar)
+        farolgostoui_abrir_zerar();
+      return;
+    }
     if (focoOp == AJ_DICASCONTROLE) { pediuDicasControle = 1; return; }
     if (focoOp == AJ_NOVIDADES20) { pediuNovidades20 = 1; return; }
     if (focoOp == AJ_APOIAR) { apoioAbrir(); return; }
@@ -12210,7 +12286,9 @@ static AjPreview familiaPreviaOpcao(int op) {
       return AJPV_CONTA;
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL: case AJ_DIARIO_NUVEM:
       return AJPV_RASTREIO;
-    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_FAROL: case AJ_FAROL_AVISOS: case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
+    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_FAROL: case AJ_FAROL_AVISOS:
+    case AJ_FAROL_RECOMENDAR: case AJ_FAROL_APRENDEU: case AJ_FAROL_ZERAR: case AJ_FAROL_LLM_SO_ESTA_TV:
+    case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
     case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE: case AJ_DIAGNOSTICS_QR:
 #ifdef NV_ANDROID
     case AJ_BAIXAR_REGISTRO:

@@ -97,6 +97,7 @@ extern __attribute__((weak)) void farol_registrar_resultado(int acao, int ok);
 #include "rewatch.h"
 #include "rewatchui.h"
 #include "farolcompara.h"
+#include "farolgostoui.h"
 #include "ctxlista.h"
 #include "marco.h"
 #include <string.h>
@@ -4401,6 +4402,7 @@ static void perfilEncerrarSessao(void) {
   // from the outgoing frame cannot activate under the destination profile.
   ponteiro_abrir_sessao();
   ctx_abrir_sessao();
+  farolgostoui_abrir_sessao();
   estatvivo_fechar();
   celb_fechar();
   preparoInvalidar();
@@ -5146,6 +5148,7 @@ void app_evento(const SDL_Event *e) {
   if (e->type == SDL_QUIT) { retomamorna_cancelar(); sair = 1; return; }
   if (dicascontrole_ocupado()) { dicascontrole_evento(e); return; }
   if (rewatchui_aberta()) { rewatchui_evento(e); return; }
+  if (farolgostoui_aberto()) { farolgostoui_evento(e); return; }
   if (farolcompara_aberto()) { farolcompara_evento(e); return; }
   ilhacart_validar_identidade();
   // Qualquer gesto da pessoa: a atividade ao vivo da ilha conta 30 min daqui.
@@ -7233,6 +7236,7 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   // Comparar (P4): OK abre a pagina do titulo focado; Play toca direto.
   farolcompara_atualizar(dt, agora);
+  farolgostoui_atualizar(dt, agora);
   { char cmpRef[FAROL_REF_TAM]; int cmpK=-1, cmpTocar=0;
     if (farolcompara_pediu_abrir(&cmpK,cmpRef,sizeof cmpRef) ||
         (cmpTocar=farolcompara_pediu_tocar(&cmpK,cmpRef,sizeof cmpRef))) {
@@ -9155,6 +9159,7 @@ void app_desenhar(Uint32 agora) {
   player_mini_desenhar(agora);
   rewatchui_desenhar();
   farolcompara_desenhar(agora);
+  farolgostoui_desenhar(agora);
   CAMADA_SE(sintro_aberto());
   if (!registro_aberto()) sintro_desenhar(agora);
   CAMADA_SE(novidades_aberto());
