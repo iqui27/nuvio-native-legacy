@@ -17,8 +17,10 @@
 #include <stdio.h>
 #include <string.h>
 
-// Ganchos fracos para manter testes de Tela 7 sem farolbusca.c / sistexto.c / perfil*.c.
-__attribute__((weak)) int st_voz_disponivel(void) { return 0; }
+// Ganchos fracos para manter testes de Tela 7 sem farolbusca.c / farolvozui.c / perfil*.c.
+__attribute__((weak)) int farolvozui_disponivel(void) { return 0; }
+__attribute__((weak)) const char *farolvozui_rotulo_botao(void) { return FT_ACAO_FALAR; }
+__attribute__((weak)) const char *farolvozui_icone_botao(void) { return "aj_mic"; }
 __attribute__((weak)) int perfil_infantil_ativo(void) { return 0; }
 __attribute__((weak)) int perfil_regra_busca(const char *certificate) {
   return !perfil_infantil_ativo() || perfil_infantil_classif_ok(certificate);
@@ -323,7 +325,7 @@ static void formatarFraseEstadoBusca(char *dst, size_t cap,
 
 static void ajustarFocoBusca(void) {
   if (S.nAchados <= 0) {
-    if (S.focoIdx != ACHA_FOCO_VOZ || !st_voz_disponivel())
+    if (S.focoIdx != ACHA_FOCO_VOZ || !farolvozui_disponivel())
       S.focoIdx = ACHA_FOCO_VOLTAR;
   } else if (S.focoIdx >= S.nAchados) {
     S.focoIdx = S.nAchados - 1;
@@ -331,6 +333,8 @@ static void ajustarFocoBusca(void) {
              S.focoIdx != ACHA_FOCO_VOZ) {
     S.focoIdx = 0;
   }
+  if (S.focoIdx == ACHA_FOCO_VOZ && !farolvozui_disponivel())
+    S.focoIdx = S.nAchados > 0 ? 0 : ACHA_FOCO_VOLTAR;
   if (S.ultimoPoster >= S.nAchados)
     S.ultimoPoster = S.nAchados > 0 ? S.nAchados - 1 : 0;
 }
@@ -832,7 +836,7 @@ static int selecionarFocado(void) {
 
 int farolachaui_evento(const SDL_Event *e, int *pediuVoltar, int *pediuAbrir) {
   SDL_Keycode k;
-  int vozDisp = st_voz_disponivel() ? 1 : 0;
+  int vozDisp = farolvozui_disponivel() ? 1 : 0;
   if (pediuVoltar) *pediuVoltar = 0;
   if (pediuAbrir) *pediuAbrir = 0;
   if (!e || e->type != SDL_KEYDOWN) return 0;
@@ -896,8 +900,12 @@ void farolachaui_atualizar(float dt, Uint32 agora) {
                                    alvo > S.animCard[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
   }
   {
-    float alvoV = (S.focoIdx == ACHA_FOCO_VOLTAR) ? 1.0f : 0.0f;
-    float alvoVoz = (S.focoIdx == ACHA_FOCO_VOZ && st_voz_disponivel()) ? 1.0f : 0.0f;
+    int vozDisp = farolvozui_disponivel() ? 1 : 0;
+    float alvoV, alvoVoz;
+    if (S.focoIdx == ACHA_FOCO_VOZ && !vozDisp)
+      S.focoIdx = S.nAchados > 0 ? 0 : ACHA_FOCO_VOLTAR;
+    alvoV = (S.focoIdx == ACHA_FOCO_VOLTAR) ? 1.0f : 0.0f;
+    alvoVoz = (S.focoIdx == ACHA_FOCO_VOZ && vozDisp) ? 1.0f : 0.0f;
     if (red) {
       S.animVoltar = alvoV;
       S.animVoz = alvoVoz;
@@ -1006,7 +1014,7 @@ static void desenha_card(int i, const CatItem *ci, float x, float y, float a) {
 void farolachaui_desenhar(float ox, float oy, float alpha, Uint32 agora) {
   char kick[160];
   int i;
-  int vozDisp = st_voz_disponivel() ? 1 : 0;
+  int vozDisp = farolvozui_disponivel() ? 1 : 0;
   float vx = ox + ACHA_MARGEM;
   float vy = oy + ACHA_VOLTAR_Y;
   const char *rotV = i18n(FT_ACAO_VOLTAR);
@@ -1061,14 +1069,15 @@ void farolachaui_desenhar(float ox, float oy, float alpha, Uint32 agora) {
   botao_pilula(rVoltar, rotV, "aj_arrow-left", S.animVoltar, S.nAchados == 0 ? 1 : 0, 0, alpha);
   ponteiro_alvo(rVoltar.x, rVoltar.y, rVoltar.w, rVoltar.h, pt_foco_acha, NULL, ACHA_FOCO_VOLTAR, 0);
   if (vozDisp) {
-    const char *rotFal = i18n(FT_ACAO_FALAR);
+    const char *rotFal = i18n(farolvozui_rotulo_botao());
+    const char *icFal = farolvozui_icone_botao();
     GfxRect rVoz = {
       rVoltar.x + rVoltar.w + BOTAO_GAP,
       vy + (rVoltar.h - BOTAO_H_SECUNDARIO) * 0.5f,
-      botao_largura(rotFal, "aj_mic", 0),
+      botao_largura(rotFal, icFal, 0),
       BOTAO_H_SECUNDARIO
     };
-    botao_pilula(rVoz, rotFal, "aj_mic", S.animVoz, 0, 0, alpha);
+    botao_pilula(rVoz, rotFal, icFal, S.animVoz, 0, 0, alpha);
     ponteiro_alvo(rVoz.x, rVoz.y, rVoz.w, rVoz.h, pt_foco_acha, NULL, ACHA_FOCO_VOZ, 0);
   }
 }
