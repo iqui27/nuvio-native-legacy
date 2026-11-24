@@ -153,6 +153,7 @@ static FarolErro ultimoFarol;
 static int temUltimoFarol, ultimoFarolDebrid;
 static uint64_t ultimoFarolAddonId;
 static uint64_t farolTentativaSeq, ultimaFonteTentativa, ultimoFarolTentativa;
+static uint64_t ultimoFarolSeq;   // espelho do static do player (#14)
 static char ultimaFonteUrl[NV_MEDIA_URL_MAX];
 static int ultimaFonteTemCabs, ultimaFonteTemItem, ultimaFonteIdx, ultimaFonteEpT, ultimaFonteEpE;
 static CatItem ultimaFonteItem;
@@ -358,6 +359,7 @@ static void zerar_farol(void) {
   aberto = 0; temFixo = 0; canalSessao = 0;
   temUltimoFarol = 0; ultimoFarolDebrid = 0; ultimoFarolAddonId = 0;
   farolTentativaSeq = ultimaFonteTentativa = ultimoFarolTentativa = 0;
+  ultimoFarolSeq = 0;
   ultimaFonteUrl[0] = 0; ultimaFonteTemCabs = 0; ultimaFonteTemItem = 0;
   c_androidAbrirN = 0; c_androidAbrirUrl[0] = 0; c_androidAbrirTit[0] = 0;
   c_envioChamadas = 0; c_tocarInternoN = 0;

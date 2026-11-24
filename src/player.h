@@ -140,6 +140,10 @@ void player_limpar_erro_fonte(void);   // fonte "morta" que voltou a entregar
 int  player_ultimo_erro_farol(FarolErro *out, int *foiDebrid);
 // FAROL (6D): identidade da tentativa em que player_ultimo_erro_farol foi gravado (0 = nenhuma).
 uint64_t player_ultimo_erro_tentativa(void);
+// FAROL (#14): sequencia do anel em que player_ultimo_erro_farol foi gravado
+// (0 = nenhum). A fachada compara com a fronteira da sessao para descartar o
+// erro de uma tentativa anterior a farol_sessao_reiniciar().
+uint64_t player_ultimo_erro_seq(void);
 // FAROL (6C): identidade do add-on da fonte que falhou (0 se desconhecida) e o
 // ultimo titulo VOD aberto nesta sessao de perfil (para reabrir no ponto apos
 // reconectar o debrid pelo Resolver com o player fechado).

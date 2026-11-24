@@ -1058,6 +1058,7 @@ static FarolErro ultimoFarol;
 static int temUltimoFarol, ultimoFarolDebrid;
 static uint64_t ultimoFarolAddonId;
 static uint64_t farolTentativaSeq, ultimaFonteTentativa, ultimoFarolTentativa;
+static uint64_t ultimoFarolSeq;      // seq do anel a que o erro pertence
 // A URL da ultima fonte mandada ao pipeline (sem o proxy local) e se ela exigia
 // cabecalhos privados: e o que o "Player externo" do Resolver usa (inclusive
 // com o player fechado, quando o Resolver abre por Ajustes).
@@ -1119,6 +1120,9 @@ static void farolErroRegistrar(const FarolErro *fe, int foiDebrid, uint64_t addo
   ultimoFarolDebrid = foiDebrid ? 1 : 0;
   ultimoFarolAddonId = addonId;
   ultimoFarolTentativa = farolTentativaSeq;
+  // O FE_ERRO_FONTE acaba de ser gravado: a seq corrente marca a sessao a que
+  // este erro pertence (farol_sessao_reiniciar descarta erros <= a fronteira).
+  ultimoFarolSeq = farolanel_seq();
 }
 
 // FAROL (issue 7; PLANO 2.2): o alvo compilado vira (FarolPlat, token do
@@ -1273,6 +1277,9 @@ int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid) {
 uint64_t player_ultimo_erro_tentativa(void) {
   return temUltimoFarol ? ultimoFarolTentativa : 0;
 }
+uint64_t player_ultimo_erro_seq(void) {
+  return temUltimoFarol ? ultimoFarolSeq : 0;
+}
 uint64_t player_ultimo_addon_farol(void) {
   return temUltimoFarol ? ultimoFarolAddonId : 0;
 }
@@ -1304,7 +1311,7 @@ static void erroSemVideo(void) {
 }
 // Desfaz o de cima quando a fonte que parecia morta volta a entregar. Ver a
 // nota no watchdog de canal em app.c.
-void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; temUltimoFarol = 0; ultimoFarolAddonId = 0; ultimoFarolTentativa = 0; resolverregra_falha_limpar(); } }
+void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; temUltimoFarol = 0; ultimoFarolAddonId = 0; ultimoFarolTentativa = 0; ultimoFarolSeq = 0; resolverregra_falha_limpar(); } }
 // Leitura do estado para o watchdog de canal do app.c: uma fonte ao vivo que
 // falhou (ou nao abre no prazo) deve trocar para a proxima da lista sozinha.
 int  player_fonte_falhou(void) { return erroFonte; }
@@ -2452,6 +2459,7 @@ static int travaFonte(const char *url) {
   temUltimoFarol = 0;
   ultimoFarolTentativa = 0;
   ultimoFarolAddonId = 0;
+  ultimoFarolSeq = 0;
   return 0;
 }
 
