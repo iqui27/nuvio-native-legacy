@@ -90,13 +90,21 @@ p_ini = app.index('// Pending P2 Farol Tocar execution')
 p_fim = app.index('\nstatic pthread_t fioFonte;', p_ini)
 farol_pend_blk = app[p_ini:p_fim]
 
-a_ini = app.index('static void abrirTitulo(const HomeItem *it, int exigeArte, int descartarRetido) {')
-a_fim = app.index('\nstatic void abrirPorIndice(int i) {', a_ini)
+a_ini = app.index('static int podeAbrirPorIndice(int i) {')
+a_fim = app.index('\nstatic int abrirPorIndice(int i) {', a_ini)
 abrir_fn = app[a_ini:a_fim]
 
-ai_ini = app.index('static void abrirPorIndice(int i) {')
+ai_ini = app.index('static int abrirPorIndice(int i) {')
 ai_fim = app.index('\n// Consume the panel request', ai_ini)
 abrir_idx_fn = app[ai_ini:ai_fim]
+
+tr_ini = app.index('static void trocaDeTituloSeSolicitada(void) {')
+tr_fim = app.index('\n// EXTRAS DE LEGENDA', tr_ini)
+troca_fn = app[tr_ini:tr_fim]
+
+il_ini = app.index('    if (o && qual == ILHA_VIVO && !ilhacart_vivo_vale(&ic))')
+il_fim = app.index('\n  }\n  { DeepLink dl;', il_ini)
+ilha_blk = app[il_ini:il_fim] + '\n'
 
 dl_ini = app.index('static void deeplinkAbrir(const DeepLink *d) {')
 dl_fim = app.index('\nstatic void spotAbrir(', dl_ini)
@@ -139,6 +147,8 @@ src = Path('tests/farol_dica_app.c').read_text()
 src = src.replace('/* APP_FAROL_PEND */', farol_pend_blk)
 src = src.replace('/* APP_ABRIR_TITULO */', abrir_fn)
 src = src.replace('/* APP_ABRIR_POR_INDICE */', abrir_idx_fn)
+src = src.replace('/* APP_TROCA_TITULO */', troca_fn)
+src = src.replace('/* APP_ILHA_DISPATCH */', ilha_blk)
 src = src.replace('/* APP_DEEPLINK_ABRIR */', deeplink_fn)
 src = src.replace('/* APP_ALVO_PLAYER */', alvo_player_fn)
 src = src.replace('/* APP_RENOVAR_LISTA */', renovar_fn)

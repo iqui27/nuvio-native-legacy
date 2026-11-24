@@ -54,6 +54,8 @@ int  detail_indice(void);
 int  detail_ep_foco(int *temporada, int *episodio);
 int  detail_pediu_reproduzir(void);   // consome o pedido
 void detail_pedir_reproduzir(void);   // arma o pedido (OK no card de retomada)
+// True while an explicit Detail-screen playback request (Play / Start Over) is pending.
+int  detail_pedido_usuario_pendente(void);
 
 // Indice do titulo que a tela pediu para ABRIR no lugar do atual, ou -1.
 // Consome o pedido. Nasce de dois lugares: um credito na filmografia de um ator

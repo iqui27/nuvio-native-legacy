@@ -1136,8 +1136,13 @@ static Uint32 trocaPerfilDesde;
 // (caso do menu ou de um indice vindo de fora), cai para a tela inteira.
 // `exigeArte` = 0 para o pos-play e a grade (abriam mesmo sem arte);
 // `descartarRetido` = 0 so no pos-play (nunca descartou a sessao retida).
-static void abrirTitulo(const HomeItem *it, int exigeArte, int descartarRetido) {
-  if (!it || (exigeArte && !it->arte)) return;
+static int podeAbrirPorIndice(int i) {
+  const CatItem *c = cat_item(i);
+  return c && (c->backdrop[0] || c->poster[0]);
+}
+
+static int abrirTitulo(const HomeItem *it, int exigeArte, int descartarRetido) {
+  if (!it || (exigeArte && !it->arte)) return 0;
   if (farolPendExec) farolPendCancelar();
   // Uma pagina nova pode abrir trailer no mesmo plano. Retomar na ilha ja
   // foi tratado antes deste caminho, sem passar pela pagina nem por fontes.
@@ -1145,11 +1150,12 @@ static void abrirTitulo(const HomeItem *it, int exigeArte, int descartarRetido) 
   // Discovery serves native tmdb: ids through Nuvio, including titles with
   // no IMDb mapping. Open the existing card and let its metadata load there.
   detail_abrir(it);
+  return 1;
 }
 
-static void abrirPorIndice(int i) {
+static int abrirPorIndice(int i) {
   const CatItem *c = cat_item(i);
-  if (!c || (!c->backdrop[0] && !c->poster[0])) return;
+  if (!podeAbrirPorIndice(i)) return 0;
   HomeItem it;
   GfxRect tudo = { 0, 0, NV_TELA_W, NV_TELA_H };
   // O `it` e da PILHA e esta funcao preenchia todos os campos MENOS o indice —
@@ -1168,7 +1174,7 @@ static void abrirPorIndice(int i) {
   it.titulo = c->titulo;
   it.genero = c->genero;
   it.meta = c->meta;
-  abrirTitulo(&it, 1, 1);
+  return abrirTitulo(&it, 1, 1);
 }
 
 // Consume the panel request through the same title route as other screens.
@@ -4663,9 +4669,10 @@ static void deeplinkAbrir(const DeepLink *d) {
   }
   cwTocarT = cwTocarE = 0; cwEspera = 0;
   if (k >= 0) {
-    if (d->tipo == DL_TOCAR && d->episodio > 0) { cwTocarT = d->temporada; cwTocarE = d->episodio; }
-    abrirPorIndice(k);
-    if (d->tipo == DL_TOCAR && detail_aberto()) detail_pedir_reproduzir();
+    if (abrirPorIndice(k) && d->tipo == DL_TOCAR) {
+      if (d->episodio > 0) { cwTocarT = d->temporada; cwTocarE = d->episodio; }
+      detail_pedir_reproduzir();
+    }
 #ifdef NV_ANDROID
     tvHomePending.tipo = DL_NENHUM;
 #endif
@@ -4701,8 +4708,7 @@ static void abrirPessoa(const SpotPedido *pp) {
   SpotPedido p = *pp;
   // A pagina do titulo de onde a pessoa veio, com a filmografia por cima.
   if (p.indice >= 0) {
-    abrirPorIndice(p.indice);
-    detail_mostrar_pessoa(p.tmdb, p.nome, p.arte);
+    if (abrirPorIndice(p.indice)) detail_mostrar_pessoa(p.tmdb, p.nome, p.arte);
     return;
   }
   // Pessoa do TMDB (spotpessoa.h): a filmografia mora na pagina de um
@@ -4714,7 +4720,9 @@ static void abrirPessoa(const SpotPedido *pp) {
       const CatItem *ci = cat_item(i);
       if (ci && ci->tmdb == p.tituloTmdb && strcmp(ci->tipo, "channel")) idx = i;
     }
-    if (idx >= 0) { abrirPorIndice(idx); detail_mostrar_pessoa(p.tmdb, p.nome, p.arte); }
+    if (idx >= 0) {
+      if (abrirPorIndice(idx)) detail_mostrar_pessoa(p.tmdb, p.nome, p.arte);
+    }
     else if (p.tituloTmdb > 0) {
       spotPessoaDepois = p;
       spotPessoaDesde = SDL_GetTicks();
@@ -5590,7 +5598,10 @@ static void marcarAssistidoSeSolicitado(void) {
 
 static void trocaDeTituloSeSolicitada(void) {
   int alvo = detail_pediu_abrir();
-  if (alvo >= 0) { farolPendCancelar(); detail_volta_notar(alvo); abrirPorIndice(alvo); return; }
+  if (alvo >= 0) {
+    if (podeAbrirPorIndice(alvo)) { detail_volta_notar(alvo); abrirPorIndice(alvo); }
+    return;
+  }
   // Titulo que veio de FORA do catalogo: a descoberta buscou o meta num fio e
   // avisa aqui quando ele entrou. Abrir no fio da rede seria mexer na tela de
   // outro fio; este e o unico lugar que abre titulo.
@@ -5602,26 +5613,28 @@ static void trocaDeTituloSeSolicitada(void) {
     // Pedido de um MENU (segurar OK numa lista): o titulo chegou, abre o menu.
     if (novo >= 0 && ctxlista_tomar(novo)) novo = -1;
     if (novo >= 0) {
-      farolPendCancelar();
-      if (player_aberto() || player_retido()) player_encerrar();
-      detail_volta_notar(novo);
-      abrirPorIndice(novo);
+      if (podeAbrirPorIndice(novo)) {
+        if (player_aberto() || player_retido()) player_encerrar();
+        detail_volta_notar(novo);
+        abrirPorIndice(novo);
 #ifdef NV_ANDROID
-      const CatItem *linked = cat_item(novo);
-      if (tvHomePending.tipo == DL_TOCAR && linked && detail_aberto() &&
-          tvHomePending.tvProfile == perfis_ativo() && ajustes_tv_home() && !perfil_infantil_ativo() &&
-          !strcmp(linked->imdb, tvHomePending.imdb) &&
-          !strcmp(linked->tipo, tvHomePending.serie ? "series" : "movie")) {
-        cwTocarT = tvHomePending.temporada; cwTocarE = tvHomePending.episodio;
-        detail_pedir_reproduzir();
+        const CatItem *linked = cat_item(novo);
+        if (tvHomePending.tipo == DL_TOCAR && linked && detail_aberto() &&
+            tvHomePending.tvProfile == perfis_ativo() && ajustes_tv_home() && !perfil_infantil_ativo() &&
+            !strcmp(linked->imdb, tvHomePending.imdb) &&
+            !strcmp(linked->tipo, tvHomePending.serie ? "series" : "movie")) {
+          cwTocarT = tvHomePending.temporada; cwTocarE = tvHomePending.episodio;
+          detail_pedir_reproduzir();
+        }
+#endif
+        if (spotPessoaDepois.tmdb > 0 &&
+            SDL_GetTicks() - spotPessoaDesde < SPOT_PESSOA_PRAZO_MS)
+          detail_mostrar_pessoa(spotPessoaDepois.tmdb, spotPessoaDepois.nome, spotPessoaDepois.arte);
       }
+#ifdef NV_ANDROID
       tvHomePending.tipo = DL_NENHUM;
 #endif
-      if (spotPessoaDepois.tmdb > 0) {
-        if (SDL_GetTicks() - spotPessoaDesde < SPOT_PESSOA_PRAZO_MS)
-          detail_mostrar_pessoa(spotPessoaDepois.tmdb, spotPessoaDepois.nome, spotPessoaDepois.arte);
-        spotPessoaDepois.tmdb = 0;
-      }
+      spotPessoaDepois.tmdb = 0;
     } }
 }
 
@@ -6447,8 +6460,8 @@ void app_atualizar(float dt, Uint32 agora) {
     if (trilhas_pediu_titulo(&passo)) {
       detail_trilha_notar();
       int indice = cat_indice_por_imdb_tipo(passo.imdb, "movie");
-      if (indice >= 0) { detail_volta_notar(indice); abrirPorIndice(indice); }
-      else {
+      if (indice >= 0 && podeAbrirPorIndice(indice)) { detail_volta_notar(indice); abrirPorIndice(indice); }
+      else if (indice < 0) {
         CatItem seed={0}; char ano[12];
         snprintf(seed.imdb,sizeof seed.imdb,"%s",passo.imdb);
         arte_metahub_preencher(&seed);
@@ -6537,17 +6550,16 @@ void app_atualizar(float dt, Uint32 agora) {
         if (menu_aberto()) menu_fechar();
         ilha_modal_fechar(1);
       } else if (idx >= 0) {
-        farolPendCancelar();
-        if (o == ILHA_PEDIU_TOCAR && qual == ILHA_VIVO && ajustes_retomada_morna()) cacheboost_backend_quadro(2);
-        // O mesmo caminho do OK no card de "Continuar assistindo" com "OK no
-        // card" = Retomar: a pagina abre e a reproducao e pedida junto, no
-        // episodio que o cartao mostrava (cwTocarT/E, issue #93).
-        cwTocarT = cwTocarE = 0; cwEspera = 0; cwRewatch = -1;
-        if (o == ILHA_PEDIU_TOCAR && ic.serie && ic.t >= 0 && ic.e > 0) { cwTocarT = ic.t; cwTocarE = ic.e; }
-        abrirPorIndice(idx);
-        if (o == ILHA_PEDIU_TOCAR) detail_pedir_reproduzir();
+        if (abrirPorIndice(idx)) {
+          if (o == ILHA_PEDIU_TOCAR && qual == ILHA_VIVO && ajustes_retomada_morna()) cacheboost_backend_quadro(2);
+          // O mesmo caminho do OK no card de "Continuar assistindo" com "OK no
+          // card" = Retomar: a pagina abre e a reproducao e pedida junto, no
+          // episodio que o cartao mostrava (cwTocarT/E, issue #93).
+          cwTocarT = cwTocarE = 0; cwEspera = 0; cwRewatch = -1;
+          if (o == ILHA_PEDIU_TOCAR && ic.serie && ic.t >= 0 && ic.e > 0) { cwTocarT = ic.t; cwTocarE = ic.e; }
+          if (o == ILHA_PEDIU_TOCAR) detail_pedir_reproduzir();
+        }
       } else {
-        farolPendCancelar();
         desc_pedir_titulo(ic.imdb);
       }
     } else if (o == ILHA_PEDIU_DISPENSAR) {
@@ -6577,11 +6589,11 @@ void app_atualizar(float dt, Uint32 agora) {
       const char *tc = agendaui_pediu_tocar(&tt, &te);
       if (tc && tc[0]) {
         int k = cat_indice_por_imdb(tc);
-        farolPendCancelar();
-        cwTocarT = cwTocarE = 0; cwEspera = 0; cwRewatch = -1;
         if (k >= 0) {
-          abrirPorIndice(k);
-          if (detail_aberto()) { cwTocarT = tt; cwTocarE = te; detail_pedir_reproduzir(); }
+          if (abrirPorIndice(k)) {
+            cwTocarT = tt; cwTocarE = te; cwEspera = 0; cwRewatch = -1;
+            detail_pedir_reproduzir();
+          }
         } else desc_pedir_titulo(tc);
       }
     }
@@ -7031,6 +7043,9 @@ void app_atualizar(float dt, Uint32 agora) {
       else { cwEspera = 0; cwTocarT = cwTocarE = 0; }
     } else if (farolPendExec && !farolPendValido()) {
       farolPendCancelar();
+    } else if (detail_pedido_usuario_pendente()) {
+      if (farolPendExec) farolPendCancelar();
+      else { cwEspera = 0; cwTocarT = cwTocarE = 0; cwRewatch = -1; }
     } else {
       int k = cat_indice_titulo(cwEsperaItem.imdb, detail_indice());
       if (cat_episodios_finais(k, cwEsperaItem.imdb) &&
@@ -7060,7 +7075,7 @@ void app_atualizar(float dt, Uint32 agora) {
   { char rwId[64]; int rt=0,re=0;
     if (rewatchui_tocar(rwId,sizeof rwId,&rt,&re)) {
       int k=cat_indice_titulo(rwId,detail_aberto() ? detail_indice() : -1);
-      if (k>=0) { farolPendCancelar(); abrirPorIndice(k); cwTocarT=rt; cwTocarE=re; cwRewatch=1; detail_pedir_reproduzir(); }
+      if (k>=0 && abrirPorIndice(k)) { cwTocarT=rt; cwTocarE=re; cwRewatch=1; detail_pedir_reproduzir(); }
     }
   }
 
@@ -7135,10 +7150,11 @@ void app_atualizar(float dt, Uint32 agora) {
     // definitivo — player_do_inicio sobrevive as re-chamadas tardias de
     // player_definir_episodio.
     int doInicio = detail_pediu_do_inicio();
+    int pedidoUsuario = detail_pedido_usuario_pendente();
     int querTocar = detail_pediu_reproduzir() || doInicio;
     if (farolPendExec) {
       unsigned cicloAtual = detail_ciclo();
-      if (doInicio) {
+      if (doInicio || pedidoUsuario) {
         cwEspera = 0; cwTocarT = cwTocarE = 0; cwRewatch = -1;
         cwEsperaDesde = 0; memset(&cwEsperaItem, 0, sizeof cwEsperaItem);
         farolPendLimpar();
@@ -8286,9 +8302,7 @@ void app_atualizar(float dt, Uint32 agora) {
   ctx_atualizar(dt, agora);
 #ifdef NV_DESKTOP_UI
   { int action,index=ctx_desktop_pedido(&action);
-    if(index>=0) {
-      farolPendCancelar();
-      abrirPorIndice(index);
+    if(index>=0 && abrirPorIndice(index)) {
       if(action==1) detail_pedir_reproduzir();
       if(action==2) { homeAcaoDet=DETAIL_BARRA_TRAILER;homeAcaoDetEm=agora; }
     }
