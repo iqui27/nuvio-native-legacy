@@ -867,6 +867,7 @@
   T("Abrir título", "Åpne tittel"),
   T("Abrir um título não baixa nada", "Å åpne en tittel laster ikke ned noe"),
   T("Abrir álbum", "Åpne album"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Jeg åpner den i den eksterne spilleren på denne TV-en — trykk OK."),
   T("Aceitando…", "Godtar…"),
   T("Aceitar", "Godta"),
   T("Aceitar pedido", "Godta forespørsel"),

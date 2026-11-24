@@ -866,6 +866,7 @@
   T("Abrir título", "Відкрити назву"),
   T("Abrir um título não baixa nada", "Відкриття назви нічого не завантажує"),
   T("Abrir álbum", "Відкрити альбом"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Відкриваю її у зовнішньому плеєрі цього телевізора — натисни OK."),
   T("Aceitando…", "Приймаємо…"),
   T("Aceitar", "Прийняти"),
   T("Aceitar pedido", "Прийняти запит"),

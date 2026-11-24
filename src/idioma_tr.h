@@ -867,6 +867,7 @@
   T("Abrir título", "Başlığı aç"),
   T("Abrir um título não baixa nada", "Bir başlığı açmak hiçbir şey indirmez"),
   T("Abrir álbum", "Albümü aç"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Bu TV'nin harici oynatıcısında açıyorum — OK'e bas."),
   T("Aceitando…", "Kabul ediliyor…"),
   T("Aceitar", "Kabul et"),
   T("Aceitar pedido", "İsteği kabul et"),

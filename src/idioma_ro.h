@@ -866,6 +866,7 @@
   T("Abrir título", "Deschide titlul"),
   T("Abrir um título não baixa nada", "Deschiderea unui titlu nu descarcă nimic"),
   T("Abrir álbum", "Deschide albumul"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "O deschid în playerul extern al acestui televizor — apasă OK."),
   T("Aceitando…", "Se acceptă…"),
   T("Aceitar", "Acceptă"),
   T("Aceitar pedido", "Acceptă cererea"),

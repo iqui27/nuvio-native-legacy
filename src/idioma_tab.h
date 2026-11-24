@@ -866,6 +866,7 @@
   { "Abrir título", "Open title" },
   { "Abrir um título não baixa nada", "Opening a title downloads nothing" },
   { "Abrir álbum", "Open album" },
+  { "Abro no player externo que esta TV tem — aperta OK.", "I'll open it in this TV's external player — press OK." },
   { "Aceitando…", "Accepting…" },
   { "Aceitar", "Accept" },
   { "Aceitar pedido", "Accept request" },

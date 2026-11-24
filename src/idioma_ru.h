@@ -866,6 +866,7 @@
   T("Abrir título", "Открыть название"),
   T("Abrir um título não baixa nada", "Открытие названия ничего не загружает"),
   T("Abrir álbum", "Открыть альбом"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Открываю её во внешнем плеере этого телевизора — нажми OK."),
   T("Aceitando…", "Принимаем…"),
   T("Aceitar", "Принять"),
   T("Aceitar pedido", "Принять запрос"),

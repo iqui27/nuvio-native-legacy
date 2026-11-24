@@ -77,16 +77,20 @@ static char pendUrl[2048], pendTitulo[160];
 static void (*pendInterno)(const char *);
 static void (*pendSair)(void);
 
-static void abrirExterno(const char *url, const char *titulo, const char *pkg,
-                         void (*interno)(const char *), void (*sair)(void)) {
+static int abrirExterno(const char *url, const char *titulo, const char *pkg,
+                        void (*interno)(const char *), void (*sair)(void)) {
   if (android_abrir_externo(nv_media_url(url), titulo, pkg)) {
     printf("[extplayer] aberto no player externo\n");
-    sair();   // sem sincronia: o item fica como iniciado
-    return;
+    if (sair) sair();   // sem sincronia: o item fica como iniciado
+    return 1;
   }
   printf("[extplayer] nenhum app abriu; player interno\n");
-  player_toast(i18n("Player externo indisponível; usando o interno"), 3500u);
-  interno(url);
+  if (interno) {
+    player_toast(i18n("Player externo indisponível; usando o interno"), 3500u);
+    interno(url);
+    return 1;
+  }
+  return 0;
 }
 
 int extplayer_tentar(const char *url, const char *titulo, int anime,
@@ -126,6 +130,23 @@ int extplayer_tentar(const char *url, const char *titulo, int anime,
     perguntaDesde = SDL_GetTicks();
     return 1;
   }
+}
+
+int extplayer_forcar(const char *url, const char *titulo, const char *cabs,
+                     void (*interno)(const char *), void (*sair)(void)) {
+  int avisar;
+  if (!url || !url[0]) return 0;
+  if (perguntaAberta) return 1;   // modal aberto: o segundo pedido espera a resposta
+  extplayer_atualizar_apps();
+  if (extplayer_decidir(EXTPLAYER_EXTERNO, cabs, &avisar) == EXTPLAYER_INTERNO) {
+    if (interno) {
+      if (avisar) player_toast(i18n("Player externo indisponível; usando o interno"), 3500u);
+      interno(url);
+      return 1;
+    }
+    return 0;
+  }
+  return abrirExterno(url, titulo, "", interno, sair);
 }
 
 static void concluir(int externo) {

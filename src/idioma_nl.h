@@ -867,6 +867,7 @@
   T("Abrir título", "Titel openen"),
   T("Abrir um título não baixa nada", "Een titel openen downloadt niets"),
   T("Abrir álbum", "Album openen"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Ik open haar in de externe speler van deze tv — druk op OK."),
   T("Aceitando…", "Accepteren…"),
   T("Aceitar", "Accepteren"),
   T("Aceitar pedido", "Verzoek accepteren"),

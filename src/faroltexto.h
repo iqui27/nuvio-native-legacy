@@ -90,6 +90,7 @@
   X(TV_FORMATO_REPETE_L2) \
   X(PLAYER_PAROU_L1) \
   X(PLAYER_PAROU_L2) \
+  X(L2_PLAYER_EXTERNO) \
   X(NADA_ACHADO_L1) \
   X(NADA_ACHADO_L2) \
   X(ACAO_TENTAR) \
@@ -376,6 +377,9 @@
 #define FT_TV_FORMATO_REPETE_L2 "Separei uma fonte em outro formato — aperta OK para tocar."
 #define FT_PLAYER_PAROU_L1      "A internet está rápida, mas o vídeo parou dentro do player."
 #define FT_PLAYER_PAROU_L2      "Aumento o buffer e reabro de onde parou."
+// Segunda linha dedicada do cartao quando a acao efetiva e PLAYER_EXTERNO: o
+// OK abre o player externo, entao a frase promete isso (CORRECAO-FAROL6B).
+#define FT_L2_PLAYER_EXTERNO    "Abro no player externo que esta TV tem — aperta OK."
 #define FT_NADA_ACHADO_L1       "Testei tudo o que dá para ver daqui e está sem erro."
 #define FT_NADA_ACHADO_L2       "Se continua, manda o registro: ele leva o que o app viu."
 

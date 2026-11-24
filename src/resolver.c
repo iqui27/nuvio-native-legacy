@@ -7,6 +7,9 @@
 // direcao. Desenho, foco por teclado e alvos do ponteiro usam a mesma lista.
 #include "resolver.h"
 #include "resolverregra.h"
+#include "farolanel.h"
+#include "farolregra.h"
+#include "faroltexto.h"
 #include "addons.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -17,13 +20,17 @@
 #include "gfx.h"
 #include "idioma.h"
 #include "layout.h"
+#include "memlog.h"
 #include "player.h"
 #include "ponteiro.h"
 #include "redesaude.h"
+#include "streams.h"
 #include "text.h"
 #include "video.h"
+#include "webosver.h"
 #define NV_ESCALA_TELA_ATIVA
 #include "escala.h"
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,8 +51,9 @@
 
 // Ids de foco. Os cartoes de sintoma sao 0..RES_S_N-1; o resto vale por fase.
 enum { B_BANNER = 50, B_ENVIAR, B_LISTA, B_PRINC, B_SEC, B_OUTRO, B_PRONTO, B_REPETIR, B_LIN0 = 200 };
-// O que um botao do painel faz.
-enum { A_NADA = 0, A_REPETIR, A_FONTES, A_ENVIAR };
+// O que um botao do painel faz. A_DEBRID = login da conta de cache (a tela/QR
+// do addonguia); A_PLAYER_EXT = a fonte falha sai para o player externo.
+enum { A_NADA = 0, A_REPETIR, A_FONTES, A_ENVIAR, A_DEBRID, A_PLAYER_EXT };
 // O que a fase 2 mostra.
 enum { M_NADA = 0, M_ENVIANDO, M_ENVIADO, M_FALHOU, M_LISTA };
 
@@ -57,9 +65,15 @@ static ResolverFatos fatos;
 static ResolverResultado res;
 static ResolverFalha falha;
 static int   temFalha;
+static uint64_t diagTentativa, pedidoTentativa;
+static int   diagUsaTentativa;
+// O motor de playbooks: os fatos dele saem do app e do anel de eventos;
+// `vered` e o que ele decidiu na ultima chamada de testar().
+static FarolFatos ff;
+static FarolVeredito vered;
 // Painel da fase 1 (montado por preparar()).
 static char  pTitulo[200], pCorpo[640], pMarca[64];
-static int   pAcheou, pPrim, pSec, pTvAviso;
+static int   pAcheou, pPrim, pSec, pPrimF, pSecF, pTvAviso;
 static float pHeadH, pBodyH;
 // Registros enviados e o envio em curso.
 static ResolverEnviado env[RES_ENVIADOS_MAX];
@@ -69,8 +83,16 @@ static char  envCodigo[8];
 static int   envNoAr;   // um envio foi pedido e ainda nao chegou: segue valendo com a tela fechada ou em outra fase
 #ifdef RESOLVER_TESTE
 static ResolverFatos fatosFixos;
-static int   usaFixos;
-void resolver_teste_fatos(const ResolverFatos *f) { fatosFixos = *f; usaFixos = 1; }
+static FarolFatos    ffFixos;
+static int   usaFixos, usaFFixos;
+void resolver_teste_fatos(const ResolverFatos *f) { usaFixos = f != NULL; if (f) fatosFixos = *f; }
+void resolver_teste_fatos_farol(const FarolFatos *f) { usaFFixos = f != NULL; if (f) ffFixos = *f; }
+int          resolver_teste_veredito(void) { return vered.regra ? vered.regra->codigo : -1; }
+const int   *resolver_teste_estados(void) { return vered.estado; }
+const char  *resolver_teste_titulo(void) { return pTitulo; }
+const char  *resolver_teste_corpo(void) { return pCorpo; }
+int          resolver_teste_prim(void) { return pPrimF; }
+int          resolver_teste_sec(void) { return pSecF; }
 #endif
 
 int resolver_aberto(void) { return aberto; }
@@ -80,9 +102,11 @@ int resolver_sintoma(void) { return sint; }
 int resolver_enviados_n(void) { return envN; }
 void resolver_teste_esquecer(void) {
   aberto = 0; entrada = 0.0f; fase = 0; foco = 0; envN = 0; envModo = 0; envNoAr = 0; rolo = 0; temFalha = 0;
+  diagTentativa = 0; pedidoTentativa = 0; diagUsaTentativa = 0;
   memset(&fatos, 0, sizeof fatos);
+  memset(&vered, 0, sizeof vered);
 #ifdef RESOLVER_TESTE
-  usaFixos = 0;
+  usaFixos = 0; usaFFixos = 0;
 #endif
 }
 
@@ -90,6 +114,10 @@ int resolver_pedido(void) {
   int p = pedido;
   pedido = RESOLVER_PEDIU_NADA;
   return p;
+}
+
+uint64_t resolver_tentativa_externo(void) {
+  return pedidoTentativa;
 }
 
 // ------------------------------------------------------------------ enviados
@@ -135,6 +163,125 @@ static void fatos_ler(void) {
   fatos.haFalha = temFalha;
 }
 
+// ------------------------------------------------------------- fatos farol
+// A leitura do motor de playbooks: o que a cadeia antiga ja tem (fatos) mais o
+// que so o Farol ve — o erro nativo normalizado, a idade dele e as contagens
+// do anel de eventos. -1 = nao sei (nenhum predicado casa com desconhecido).
+static int os_maior(void) {
+#if defined(NV_TPK)
+  return video_tpk_tizen_maior();
+#elif defined(NV_ANDROID) || defined(__EMSCRIPTEN__) || defined(NV_DESKTOP_MPV) || defined(RESOLVER_TESTE)
+  return -1;
+#else
+  return nv_webos_major();
+#endif
+}
+
+static int anel_pronto_apos_erro(const FarolEvento *ev, int n) {
+  int i, iPronto = -1, iErro = -1;
+  for (i = 0; i < n; i++) {
+    if (ev[i].ev == FE_PRONTO) iPronto = i;
+    else if (ev[i].ev == FE_ERRO_FONTE || ev[i].ev == FE_RECUSA_SINC) iErro = i;
+  }
+  return iPronto >= 0 && (iErro < 0 || iPronto > iErro);
+}
+
+static void farol_fatos(void) {
+  FarolEvento ev[FAROL_ANEL_N];
+  const Stream *ft;
+  char buf[96];
+  int i, n, iPronto = -1, iBusca = -1, iBuscaAnt = -1, lentos = 0;
+  uint32_t agoraMs = SDL_GetTicks();
+  long agora = (long)time(NULL);
+  diagTentativa = 0;
+  diagUsaTentativa = 0;
+#ifdef RESOLVER_TESTE
+  if (usaFFixos) { ff = ffFixos; return; }
+#endif
+  memset(&ff, 0, sizeof ff);
+#if defined(NV_ANDROID)
+  ff.plat = FP_ANDROID;
+#elif defined(NV_TPK)
+  ff.plat = FP_TIZEN_TPK;
+#elif defined(__EMSCRIPTEN__)
+  ff.plat = FP_TIZEN_WGT;
+#elif defined(NV_DESKTOP_MPV)
+  ff.plat = FP_OUTRA;
+#else
+  ff.plat = FP_WEBOS;
+#endif
+  ff.osMaior = os_maior();
+  ff.offline = fatos.offline;
+  ff.addonsQtd = fatos.addonsQtd;
+  ff.addonsMotivo = fatos.addonsMotivo[0] ? 1 : 0;
+  ff.debridSemPlano = debrid_sem_plano() ? 1 : 0;
+  ff.debridRecusa = debrid_recusa(buf, sizeof buf) ? 1 : 0;
+  ff.tvNegou = video_registro_negado() ? 1 : 0;
+  ff.haFalha = temFalha && agora >= falha.agora && agora - falha.agora <= RES_REJEITA_S;
+  // O erro normalizado fica com o player; so vale na janela da falha recente.
+  ff.erroIdadeS = -1;
+  ff.fonteDebrid = -1;
+  if (ff.haFalha && player_ultimo_erro_farol(&ff.erro, &ff.fonteDebrid)) {
+    ff.erroIdadeS = (int)(agora - falha.agora);
+    diagTentativa = player_ultimo_erro_tentativa();
+  }
+  diagUsaTentativa = 1;
+  // Anel: falhas seguidas = erros de fonte desde o ultimo primeiro quadro;
+  // paradas e recusas de audio contam na janela; a ultima busca de fontes da
+  // os add-ons mudos e, varrendo a busca anterior a ela, os lentos.
+  n = farolanel_ler(ev, FAROL_ANEL_N, 0);
+  for (i = 0; i < n; i++) {
+    if (ev[i].ev == FE_PRONTO) iPronto = i;
+    else if (ev[i].ev == FE_ADDON_BUSCA) { iBuscaAnt = iBusca; iBusca = i; }
+  }
+  ff.falhasSeguidas = 0;
+  for (i = iPronto + 1; i < n; i++) {
+    // Recusa sincrona emite FE_RECUSA_SINC seguido de FE_ERRO_FONTE no mesmo
+    // erro: contar os dois dobrava uma unica falha para TV_FORMATO_REPETE.
+    if (ev[i].ev == FE_ERRO_FONTE) ff.falhasSeguidas++;
+    else if (ev[i].ev == FE_RECUSA_SINC &&
+             !(i + 1 < n && ev[i + 1].ev == FE_ERRO_FONTE))
+      ff.falhasSeguidas++;
+  }
+  ff.paradas5min = farolanel_contar(FE_PARADO, 5u * 60u * 1000u, agoraMs);
+  ff.audioRecusado = farolanel_contar(FE_AUDIO_RECUSADO, (uint32_t)RES_REJEITA_S * 1000u, agoraMs);
+  ff.faixaDts = -1;
+  ff.conversaoPossivel = (ff.plat == FP_WEBOS || ff.plat == FP_TIZEN_TPK) ? 1 : -1;
+  ff.outraFaixa = -1;
+  ft = stream_atual() >= 0 ? stream_item(stream_atual()) : NULL;
+  if (ft) {
+    int kbps = stream_kbps_atual();
+    ff.fonteDv = ft->dolbyVision > 0 ? 1 : 0;
+    uint64_t tamanhoGBx10 = ft->tamanhoBytes / 100000000ULL;
+    ff.fonteGBx10 = !ft->tamanhoBytes ? -1 : tamanhoGBx10 > INT_MAX ? INT_MAX : (int)tamanhoGBx10;
+    ff.fonteMbps = kbps > 0 ? kbps / 1000 : -1;
+    if (ff.fonteDebrid < 0) ff.fonteDebrid = ft->debridServico > 0 ? 1 : 0;
+  } else {
+    ff.fonteDv = -1; ff.fonteGBx10 = -1; ff.fonteMbps = -1;
+  }
+  ff.fonteHdr = -1; ff.tvDv = -1; ff.tvHdr = -1;
+  ff.vazaoMbps = -1;
+  ff.memLivreMB = (int)memlog_livre_mb();
+  ff.temOutraFonte = ff.temFonteMenor = ff.temFonteSemDv = ff.temFonteSemDts = -1;
+  ff.sondaRange = -1;
+  ff.versaoNova = -1;
+  ff.addonsLentos = -1;
+  ff.addonsMudos = -1;
+  if (iBusca >= 0) {
+    ff.addonsLentos = 0;
+    ff.addonsMudos = ev[iBusca].b;
+    for (i = iBuscaAnt + 1; i < iBusca; i++)
+      if (ev[i].ev == FE_ADDON_LENTO && !ev[i].b) lentos++;
+    ff.addonsLentos = lentos;
+  }
+#ifdef NV_ANDROID
+  ff.externoDisponivel = (!anel_pronto_apos_erro(ev, n) && diagTentativa &&
+                          player_externo_disponivel_tentativa(diagTentativa)) ? 1 : 0;
+#else
+  ff.externoDisponivel = 0;
+#endif
+}
+
 // ------------------------------------------------------------------- textos
 static const struct { const char *tit, *desc, *icone; } SINT[RES_S_N] = {
   { "O vídeo não começa", "Tela preta, erro ou volta para a lista", "aj_play" },
@@ -176,14 +323,18 @@ static const char *detalhe_teste(int t, char *buf, size_t tam) {
     case RES_T_INTERNET: return st == RES_OK ? i18n("A TV está conectada.") : i18n("A TV está sem internet.");
     case RES_T_ADDONS:
       if (st == RES_OK) { snprintf(buf, tam, i18n("%d add-ons instalados, sem erro na última busca."), fatos.addonsQtd); return buf; }
-      return fatos.addonsQtd <= 0 ? i18n("Nenhum add-on instalado.") : fatos.addonsMotivo;
+      if (fatos.addonsQtd <= 0) return i18n("Nenhum add-on instalado.");
+      return fatos.addonsMotivo[0] ? fatos.addonsMotivo : pTitulo;
     case RES_T_DEBRID:
       if (st == RES_OK) return debrid_ativo() ? i18n("Conta de debrid sem recusa nesta sessão.") : i18n("Nenhuma conta de debrid ligada.");
-      return fatos.debridMotivo;
+      return fatos.debridMotivo[0] ? fatos.debridMotivo : pTitulo;
     case RES_T_FONTE:
       if (st == RES_OK) return i18n("Sem erro de fonte recente.");
       return falha.titulo[0] ? falha.titulo : i18n("A última fonte falhou.");
-    case RES_T_TV: return st == RES_OK ? i18n("A TV não recusou abrir o player.") : fatos.tvMotivo;
+    case RES_T_TV:
+      if (st == RES_OK) return i18n("A TV não recusou abrir o player.");
+      return fatos.tvMotivo[0] ? fatos.tvMotivo : pTitulo;
+    case RES_T_AUDIO: return pTitulo;
   }
   return "";
 }
@@ -192,12 +343,75 @@ static void juntar(char *dst, size_t tam, const char *a, const char *b) {
   snprintf(dst, tam, "%s%s%s", a, a[0] && b[0] ? "\n" : "", b);
 }
 
+// -------------------------------------------------------- acoes do veredito
+// FAROL_A_* -> acao local do cartao. A_NADA = ainda sem executor (a issue que
+// fecha cada uma esta em lotes/revisao/correcoes/CORRECAO-FAROL6B.md): o
+// cartao cai na alternativa e, sem ela, no envio do registro. Nada de botao
+// que nao faz o que promete.
+static int acao_farol_map(int a) {
+  switch (a) {
+    case FAROL_A_TENTAR_DE_NOVO:    return A_REPETIR;
+    case FAROL_A_ABRIR_FONTES:      return A_FONTES;
+    case FAROL_A_ABRIR_DEBRID:
+    case FAROL_A_RECONECTAR_DEBRID: return A_DEBRID;
+    case FAROL_A_PLAYER_EXTERNO:    return ff.externoDisponivel > 0 ? A_PLAYER_EXT : A_NADA;
+    case FAROL_A_ENVIAR_REGISTRO:   return A_ENVIAR;
+    default:                        return A_NADA;
+  }
+}
+
+// O botao principal: a acao da regra quando ela executa; senao a alternativa;
+// senao o registro. Devolve o FAROL_A_* EFETIVO e grava o A_* local em `*a`.
+static int acao_efetiva(const FarolRegra *r, int *a) {
+  int m = acao_farol_map(r->acao);
+  if (m != A_NADA) { *a = m; return r->acao; }
+  m = acao_farol_map(r->acaoAlt);
+  if (m != A_NADA) { *a = m; return r->acaoAlt; }
+  *a = A_ENVIAR;
+  return FAROL_A_ENVIAR_REGISTRO;
+}
+
+// O botao secundario: a alternativa com executor; sem ela, "Enviar um
+// registro" quando a regra escala JUNTO; senao "Tentar de novo" como nos
+// outros cartoes. FAROL_A_* efetivo na devolucao, A_* em `*a`.
+static int acao_secundaria(const FarolRegra *r, int primF, int *a) {
+  int m;
+  if (r->acaoAlt != primF && (m = acao_farol_map(r->acaoAlt)) != A_NADA) {
+    *a = m; return r->acaoAlt;
+  }
+  if (r->escala == FAROL_ESC_JUNTO && primF != FAROL_A_ENVIAR_REGISTRO) {
+    *a = A_ENVIAR; return FAROL_A_ENVIAR_REGISTRO;
+  }
+  if (primF == FAROL_A_TENTAR_DE_NOVO) { *a = A_NADA; return 0; }
+  *a = A_REPETIR; return FAROL_A_TENTAR_DE_NOVO;
+}
+
+// A segunda linha promete a acao EFETIVA — quando o cartao caiu para a
+// alternativa ou para o registro, a frase original (que prometia a acao da
+// regra) nao pode continuar.
+static const char *corpo_farol(const FarolRegra *r, int acaoF) {
+  if (acaoF == r->acao) return r->l2;
+  if (acaoF == FAROL_A_PLAYER_EXTERNO) return FT_L2_PLAYER_EXTERNO;
+  return FT_NADA_ACHADO_L2;
+}
+
+// O cartao do que o motor decidiu: as duas linhas da regra e os botoes das
+// acoes efetivas.
+static void farol_painel(const FarolRegra *r) {
+  pAcheou = 1;
+  snprintf(pMarca, sizeof pMarca, "%s", i18n(FT_A_CAUSA_ENCONTRADA));
+  snprintf(pTitulo, sizeof pTitulo, "%s", i18n(r->l1));
+  pPrimF = acao_efetiva(r, &pPrim);
+  pSecF = acao_secundaria(r, pPrimF, &pSec);
+  snprintf(pCorpo, sizeof pCorpo, "%s", i18n(corpo_farol(r, pPrimF)));
+}
+
 // Monta o painel da direita da fase 1 a partir do resultado.
 static void preparar(void) {
   int p = res.primeira;
   unsigned m = resolverregra_mascara(sint);
   pTitulo[0] = pCorpo[0] = pMarca[0] = 0;
-  pAcheou = 0; pSec = A_NADA; pTvAviso = 0;
+  pAcheou = 0; pSec = A_NADA; pPrimF = pSecF = 0; pTvAviso = 0;
   if (!m) {                                                    // Legenda / Continuar errado
     snprintf(pMarca, sizeof pMarca, "%s", i18n("Passo a passo"));
     pPrim = A_ENVIAR;
@@ -216,6 +430,12 @@ static void preparar(void) {
                i18n("3. Se voltar a errar, anote o título e o episódio."),
                i18n("Continua igual? Envie um registro."));
     }
+    return;
+  }
+  // O Farol decide primeiro. NADA_ACHADO devolve o painel da cadeia antiga —
+  // ele e a reserva onde o motor ainda nao tem playbook.
+  if (vered.regra && vered.regra->codigo != FAROL_C_NADA_ACHADO) {
+    farol_painel(vered.regra);
     return;
   }
   if (p < 0) {
@@ -267,17 +487,29 @@ static void preparar(void) {
   }
 }
 
-static const char *rotulo_acao(int a) {
+// `fa` e a acao do veredito que gerou o botao (0 = cartao da cadeia antiga):
+// o rotulo sai do vocabulario do Farol para texto e despacho combinarem.
+static const char *rotulo_acao(int a, int fa) {
+  if (fa > 0) return i18n(farolregra_acao_texto(fa));
   switch (a) {
-    case A_REPETIR: return i18n("Tentar de novo");
-    case A_FONTES:  return i18n("Abrir Fontes e addons");
-    case A_ENVIAR:  return i18n("Enviar um registro");
+    case A_REPETIR:    return i18n("Tentar de novo");
+    case A_FONTES:     return i18n("Abrir Fontes e addons");
+    case A_ENVIAR:     return i18n("Enviar um registro");
+    case A_DEBRID:     return i18n("Abrir a conta de cache");
+    case A_PLAYER_EXT: return i18n("Player externo");
   }
   return "";
 }
 
 static const char *icone_acao(int a) {
-  return a == A_REPETIR ? "aj_rotate-cw" : a == A_FONTES ? "aj_puzzle" : a == A_ENVIAR ? "aj_send" : NULL;
+  switch (a) {
+    case A_REPETIR:    return "aj_rotate-cw";
+    case A_FONTES:     return "aj_puzzle";
+    case A_ENVIAR:     return "aj_send";
+    case A_DEBRID:     return "aj_key";
+    case A_PLAYER_EXT: return "aj_external-link";
+  }
+  return NULL;
 }
 
 // ------------------------------------------------------------------- layout
@@ -336,9 +568,9 @@ static int montar(Item *it) {
     medir_painel();
     by = painel_botoes_y();
     cy = PAINEL_Y + painel_h() + 28.0f;
-    poe_botao(it, &n, B_PRINC, x, by, rotulo_acao(pPrim), icone_acao(pPrim), 1);
-    if (pSec) poe_botao(it, &n, B_SEC, x + botao_largura(rotulo_acao(pPrim), icone_acao(pPrim), 1) + BOTAO_GAP, by + 8.0f,
-                        rotulo_acao(pSec), icone_acao(pSec), 0);
+    poe_botao(it, &n, B_PRINC, x, by, rotulo_acao(pPrim, pPrimF), icone_acao(pPrim), 1);
+    if (pSec) poe_botao(it, &n, B_SEC, x + botao_largura(rotulo_acao(pPrim, pPrimF), icone_acao(pPrim), 1) + BOTAO_GAP, by + 8.0f,
+                        rotulo_acao(pSec, pSecF), icone_acao(pSec), 0);
     x = PAINEL_X + 190.0f;
     if (pPrim != A_ENVIAR) {
       poe_botao(it, &n, B_ENVIAR, x, cy, i18n("Enviar um registro"), "aj_send", 0);
@@ -401,9 +633,22 @@ static void ir_fase(int f) {
 }
 
 static void testar(int s) {
+  int etapa;
+  unsigned mascara = resolverregra_mascara(s);
   sint = s;
   fatos_ler();
-  resolverregra_testar(s, &fatos, &res);
+  farol_fatos();
+  farolregra_julgar(s, &ff, &vered);
+  if (vered.regra->codigo == FAROL_C_NADA_ACHADO) {
+    resolverregra_testar(s, &fatos, &res);
+  } else {
+    res.primeira = -1;
+    memcpy(res.estado, vered.estado, sizeof res.estado);
+    for (etapa = 0; etapa < RES_T_N; etapa++)
+      res.testado[etapa] = (mascara >> etapa) & 1u;
+  }
+  farol_ev(FM_FAROL, FE_FAROL_VEREDITO, 0, vered.regra->codigo, 0,
+           farolregra_codigo_nome(vered.regra->codigo));
   preparar();
 }
 
@@ -428,6 +673,9 @@ static void abrir(void) {
   aberto = 1;
   entrada = 0.0f;
   pedido = RESOLVER_PEDIU_NADA;
+  pedidoTentativa = 0;
+  diagTentativa = 0;
+  diagUsaTentativa = 0;
   envModo = M_NADA;
   rolo = 0;
   enviados_ler();
@@ -439,11 +687,35 @@ void resolver_abrir(void) { abrir(); }
 
 static void fechar(void) { aberto = 0; }
 
-static void aplicar(int a) {
+// `fa` e a acao do veredito que gerou o botao (0 no cartao antigo): vai para
+// o anel como FE_FAROL_ACAO — o resultado do conserto se mede depois.
+static void aplicar(int a, int fa) {
+  const char *tok = fa > 0 ? farolregra_acao_token(fa) : "";
+  pedidoTentativa = 0;
+  if (a == A_PLAYER_EXT && diagUsaTentativa) {
+    FarolEvento ev[FAROL_ANEL_N];
+    int n = farolanel_ler(ev, FAROL_ANEL_N, 0);
+    if (!diagTentativa || anel_pronto_apos_erro(ev, n) ||
+        !player_externo_disponivel_tentativa(diagTentativa)) {
+      testar(sint);
+      foco = B_PRINC;
+      return;
+    }
+  }
+  if (tok[0]) farol_ev(FM_FAROL, FE_FAROL_ACAO, 0, fa, 0, tok);
   if (a == A_REPETIR) { testar(sint); foco = B_PRINC; }
   else if (a == A_FONTES) { pedido = RESOLVER_PEDIU_FONTES; fechar(); }
-  else if (a == A_ENVIAR) enviar_registro(sint, RESOLVER_FASE_TESTES);
+  else if (a == A_DEBRID) { pedido = RESOLVER_PEDIU_DEBRID; fechar(); }
+  else if (a == A_PLAYER_EXT) {
+    pedidoTentativa = diagUsaTentativa ? diagTentativa : 0;
+    pedido = RESOLVER_PEDIU_PLAYER_EXT;
+    fechar();
+  } else if (a == A_ENVIAR) enviar_registro(sint, RESOLVER_FASE_TESTES);
 }
+
+#ifdef RESOLVER_TESTE
+void resolver_teste_testar(int s) { testar(s); ir_fase(RESOLVER_FASE_TESTES); }
+#endif
 
 static void ok(void) {
   if (fase == RESOLVER_FASE_SINTOMA) {
@@ -456,8 +728,8 @@ static void ok(void) {
       if (envN > 0) foco = B_LIN0;
     }
   } else if (fase == RESOLVER_FASE_TESTES) {
-    if (foco == B_PRINC) aplicar(pPrim);
-    else if (foco == B_SEC) aplicar(pSec);
+    if (foco == B_PRINC) aplicar(pPrim, pPrimF);
+    else if (foco == B_SEC) aplicar(pSec, pSecF);
     else if (foco == B_ENVIAR) enviar_registro(sint, RESOLVER_FASE_TESTES);
     else if (foco == B_OUTRO) ir_fase(RESOLVER_FASE_SINTOMA);
   } else {
@@ -680,8 +952,8 @@ static void desenha_testes(float a) {
     } }
   for (i = 0; i < n; i++) {
     int id = it[i].id;
-    if (id == B_PRINC) { botao_pilula(it[i].r, rotulo_acao(pPrim), icone_acao(pPrim), foco == id ? 1.0f : 0.0f, 1, 0, a); alvo(it[i].r, id); }
-    else if (id == B_SEC) { botao_pilula(it[i].r, rotulo_acao(pSec), icone_acao(pSec), foco == id ? 1.0f : 0.0f, 0, 0, a); alvo(it[i].r, id); }
+    if (id == B_PRINC) { botao_pilula(it[i].r, rotulo_acao(pPrim, pPrimF), icone_acao(pPrim), foco == id ? 1.0f : 0.0f, 1, 0, a); alvo(it[i].r, id); }
+    else if (id == B_SEC) { botao_pilula(it[i].r, rotulo_acao(pSec, pSecF), icone_acao(pSec), foco == id ? 1.0f : 0.0f, 0, 0, a); alvo(it[i].r, id); }
     else if (id == B_ENVIAR) chip(&it[i], id, i18n("Enviar um registro"), "aj_send", a);
     else if (id == B_OUTRO) chip(&it[i], id, i18n("Testar outro problema"), NULL, a);
   }

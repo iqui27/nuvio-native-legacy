@@ -11,6 +11,9 @@ unsigned resolverregra_mascara(int sintoma) {
     case RES_S_TRAVA:      return (1u << RES_T_INTERNET) | (1u << RES_T_DEBRID) | (1u << RES_T_FONTE) | (1u << RES_T_TV);
     case RES_S_SOM:        return (1u << RES_T_TV) | (1u << RES_T_AUDIO);
     case RES_S_CONTAS:     return 1u << RES_T_INTERNET;
+    // Cores estranhas: a fonte pede e a TV mostra. As outras etapas nao tem
+    // leitura para o sintoma — o veredito DV sai dos fatos, nao destes testes.
+    case RES_S_CORES:      return (1u << RES_T_FONTE) | (1u << RES_T_TV);
     default:               return 0;
   }
 }
@@ -99,7 +102,7 @@ int resolverregra_enviados_ler(const char *txt, long agora, ResolverEnviado *v, 
     if (*p == '\n') p++;
     if (sscanf(lin, "%15s %ld %d", c, &q, &s) != 3 || !codigo_ok(c)) continue;
     if (agora - q >= RES_GUARDA_S) continue;     // passou dos 30 dias
-    if (s < 0 || s > RES_S_GERAL) s = RES_S_NAO_COMECA;
+    if (s < 0 || s > RES_S_CORES) s = RES_S_NAO_COMECA;
     snprintf(v[n].codigo, sizeof v[n].codigo, "%s", c);
     v[n].quando = q;
     v[n].sintoma = s;

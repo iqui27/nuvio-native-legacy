@@ -867,6 +867,7 @@
   T("Abrir título", "Mở tựa phim"),
   T("Abrir um título não baixa nada", "Mở một tựa phim không tải gì về"),
   T("Abrir álbum", "Mở album"),
+  T("Abro no player externo que esta TV tem — aperta OK.", "Tôi mở nó trong trình phát ngoài của TV này — nhấn OK."),
   T("Aceitando…", "Đang chấp nhận…"),
   T("Aceitar", "Chấp nhận"),
   T("Aceitar pedido", "Chấp nhận lời mời"),

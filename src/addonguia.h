@@ -5,6 +5,7 @@
 enum { AG_NOVO_TORRENT=10, AG_NOVO_CATALOGO, AG_NOVO_DIRETO, AG_MODO, AG_CONECTAR, AG_INICIANDO, AG_LISTA };
 enum { AGP_NADA, AGP_FONTES, AGP_REPETIR, AGP_PROXIMA, AGP_FILEIRAS };
 void addonguia_abrir(int tela, int addon, const char *titulo);
+void addonguia_reconectar_debrid(int addon);
 void addonguia_fechar(void);
 void addonguia_configurar(int addon);
 int addonguia_aberto(void);

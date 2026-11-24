@@ -141,7 +141,15 @@ static void *callbackMedia3(void *unused) {
 int main(void) {
   FarolEvento ev[8];
   int n, i;
+  unsigned genAtual;
   fio_app = pthread_self();
+  jni.NewGlobalRef = global; jni.GetStaticMethodID = metodo;
+  jni.NewString = texto; jni.DeleteLocalRef = apagar;
+  jni.ExceptionCheck = temExcecao; jni.ExceptionClear = limparExcecao;
+  jni.CallStaticVoidMethod = chamar;
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeIniciar(&env, (jclass)(uintptr_t)3);
+  mParar = (jmethodID)(uintptr_t)4;
+  assert(video_tocar("http://example.invalid/init.mp4"));
   farolanel_zerar();
 
   // "2004 player error:2" — EV_ERRO do Media3 com o renderer de video.
@@ -160,19 +168,32 @@ int main(void) {
   chk(&ev[2], FE_ERRO_NATIVO,    2, 2000, 1, "m3_2000", "android erro 2000");
   chk(&ev[3], FE_ERRO_NATIVO,    2, 3001, 2, "m3_3001", "android erro 3001");
 
+  // JNI identificada (nativeErro): aceita geracao atual (m3_4003) e descarta obsoleta.
+  farolanel_zerar();
+  genAtual = video_android_sessao();
+  assert(genAtual != 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)genAtual, 4003, 2);
+  n = farolanel_ler(ev, (int)(sizeof ev / sizeof ev[0]), 0);
+  if (n != 1) { fprintf(stderr, "farol_produtores_tv [android]: %d eventos no nativeErro atual, esperava 1\n", n); return 1; }
+  chk(&ev[0], FE_ERRO_NATIVO, 2, 4003, 2, "m3_4003", "android nativeErro atual");
+
+  assert(video_tocar("http://example.invalid/proxima.mp4"));
+  assert(video_android_sessao() != genAtual);
+  farolanel_zerar();
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeErro(NULL, NULL, (jint)genAtual, 4003, 2);
+  n = farolanel_ler(ev, (int)(sizeof ev / sizeof ev[0]), 0);
+  if (n != 0) { fprintf(stderr, "farol_produtores_tv [android]: %d eventos no nativeErro obsoleto, esperava 0\n", n); return 1; }
+
   // Falha 2002 pendente e o JNI entregando 2004 no meio da classificacao:
   // o token da retentativa tem de ser o da falha que disparou a decisao.
   {
     pthread_t media3;
+    assert(video_tocar("http://example.invalid/test.mp4"));
     farolanel_zerar();
     nv_recon_zerar(&recon);
     falhou = 0; bufferando = 0; pausaPedida = 0; prontoLoad = 0;
     reconPermitida = 1; reconIniciou = 1;
-    snprintf(urlAtual, sizeof urlAtual, "%s", "http://example.invalid/test.mp4");
-    // Mesma publicacao do JNI, pelos campos compartilhados (serve nas duas
-    // versoes do backend: antes e depois da trava de erroTxt).
-    reconErroCod = 2002; snprintf(erroTxt, sizeof erroTxt, "2002 player error:2");
-    reconErroPend = 1;
+    assert(erroPublicarSeAtual(video_android_sessao(), 2002, 0, "2002 player error:2"));
     atomic_store(&armado, 1);
     if (pthread_create(&media3, NULL, callbackMedia3, NULL) != 0) return 2;
     video_bombear();
@@ -202,8 +223,10 @@ int main(void) {
 
   // O prazo da retentativa estoura dentro do video_bombear real:
   // "2002 player error: recovery timeout" tem de sair uma vez, no ponto real.
+  assert(video_tocar("http://example.invalid/timeout.mp4"));
   farolanel_zerar();
-  falhou = 0; prontoLoad = 0; bufferando = 0;
+  falhou = 0; prontoLoad = 0; bufferando = 0; pausaPedida = 0;
+  reconPermitida = 1; reconIniciou = 1;
   recon.tentativa = 1; recon.pendente = 0; recon.esgotou = 0; recon.abriu = relogio;
   relogio += NV_RECON_PRAZO_MS + 1;
   video_bombear();
@@ -213,6 +236,7 @@ int main(void) {
   chk(&ev[1], FE_RECONEXAO,   1, 2, (int32_t)nv_recon_espera_ms(2), "m3_parado", "android retentativa do prazo");
 
   // VOD parada em silencio (sem erro do Media3): "stalled download".
+  assert(video_tocar("http://example.invalid/stalled.mp4"));
   farolanel_zerar();
   nv_recon_zerar(&recon);
   falhou = 0; pausaPedida = 0;
