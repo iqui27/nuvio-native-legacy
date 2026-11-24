@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-24T15:05:51+00:00",
+    "updatedAt": "2026-11-24T15:50:30+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -19,7 +19,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-24T15:04:00+00:00",
+    "lastVpsReportedAt": "2026-11-24T15:34:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -130,10 +130,9 @@
         "activeSlotsKnown": false,
         "activeCorrections": [],
         "reviewItems": [
-          "farol-32",
-          "farol-57"
+          "farol-32"
         ],
-        "reviewCount": 2,
+        "reviewCount": 1,
         "reviewCountInferred": true,
         "approvedItems": [
           "farol-15",
@@ -155,7 +154,8 @@
           "farol-51",
           "farol-52",
           "farol-53",
-          "farol-54"
+          "farol-54",
+          "farol-57"
         ],
         "deliveredReported": [
           "farol-15",
@@ -181,9 +181,9 @@
           "farol-54",
           "farol-57"
         ],
-        "note": "54 aprovado com ressalvas; 57 r8 Sol/Pi e 32 r2 Opus/Pi em revisão, sem parecer novo. #55 aguarda somente o aceite do 32. Sem nova contagem global.",
-        "sourceLine": 389,
-        "reportedAt": "2026-11-24T15:04:00+00:00",
+        "note": "57 aprovado com ressalvas r8; 32 r2 Opus/Pi permanece em revisão sem parecer novo. #55 aguarda seu aceite. Sem nova contagem global.",
+        "sourceLine": 390,
+        "reportedAt": "2026-11-24T15:34:00+00:00",
         "inferredFromLatestReports": true,
         "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
@@ -208,28 +208,11 @@
             "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
             "reportedSummary": "389 15:04 farol-32 REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi)",
             "executor": "Pi"
-          },
-          {
-            "item": "farol-57",
-            "sha": "ad52d166e9",
-            "round": "r8",
-            "status": "launched_reported",
-            "verdict": null,
-            "verdictIssued": false,
-            "reviewer": "Sol",
-            "reportReadLocally": false,
-            "hostNotReiteratedInSummary": true,
-            "sourceLine": 388,
-            "reportedAt": "2026-11-24T15:03:00+00:00",
-            "reportedAtPrecision": "minute",
-            "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
-            "reportedSummary": "388 15:03 farol-57 REVISAO r8 @ad52d166e9 (FAROL57H entregue, Sol via Pi)",
-            "executor": "Pi"
           }
         ],
         "quotaResetReported": false,
-        "sourceLine": 389,
-        "reportedAt": "2026-11-24T15:04:00+00:00",
+        "sourceLine": 390,
+        "reportedAt": "2026-11-24T15:34:00+00:00",
         "inferredFromLatestReports": true,
         "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
@@ -829,18 +812,34 @@
         "farol-57": {
           "sha": "ad52d166e9",
           "round": "r8",
-          "status": "launched_reported",
-          "verdict": null,
-          "verdictIssued": false,
+          "status": "approved_with_reservations_reported",
+          "verdict": "APROVADO_COM_RESSALVAS",
+          "verdictIssued": true,
           "reviewer": "Sol",
           "reportReadLocally": false,
           "hostNotReiteratedInSummary": true,
-          "sourceLine": 388,
-          "reportedAt": "2026-11-24T15:03:00+00:00",
+          "sourceLine": 390,
+          "reportedAt": "2026-11-24T15:34:00+00:00",
           "reportedAtPrecision": "minute",
-          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log linha 390, encaminhado pelo Henrique (event-01a20e3eda9f76e787aa694fac47ff75)",
           "reportedSummary": "388 15:03 farol-57 REVISAO r8 @ad52d166e9 (FAROL57H entregue, Sol via Pi)",
-          "executor": "Pi"
+          "executor": "Pi",
+          "findingCounts": {
+            "P0": 0,
+            "P1": 0,
+            "P2": 6
+          },
+          "reportedTests": {
+            "scenariosReported": 117,
+            "officialBattery": {
+              "passedReported": 14,
+              "totalReported": 14
+            },
+            "scope": "Farol 57 r8 em ad52d166e9; não bateria ampla da release",
+            "reportedOnly": true,
+            "reproducedLocally": false
+          },
+          "rawVpsLine": "2026-11-24T15:34:00Z farol-57 APROVADA agente/21z-farol-57@ad52d166e9 Sol r8 APROVADO_COM_RESSALVAS (0 P0/P1, 6 P2; 117 cenarios + 14/14 bateria oficial)"
         },
         "farol-32": {
           "sha": "7b17dd195c",
@@ -894,9 +893,9 @@
         "diskReportedAt": "2026-11-24T04:33:00+00:00",
         "activeReviews": [],
         "activeReviewsKnown": false,
-        "note": "Última medição preservada, não repetida; o resumo não reitera os hosts das duas revisões Pi.",
-        "sourceLine": 389,
-        "reportedAt": "2026-11-24T15:04:00+00:00",
+        "note": "Última medição de disco preservada, não repetida; host da r2 do 32 não reiterado.",
+        "sourceLine": 390,
+        "reportedAt": "2026-11-24T15:34:00+00:00",
         "inferredFromLatestReports": true,
         "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
@@ -904,9 +903,9 @@
         "items": [],
         "count": null,
         "countKnown": false,
-        "note": "32 r2 Opus/Pi e 57 r8 Sol/Pi ativas; hosts não reiterados no resumo. Sem contagem global.",
-        "sourceLine": 389,
-        "reportedAt": "2026-11-24T15:04:00+00:00",
+        "note": "32 r2 Opus/Pi permanece ativa; host não reiterado. Sem contagem global.",
+        "sourceLine": 390,
+        "reportedAt": "2026-11-24T15:34:00+00:00",
         "inferredFromLatestReports": true,
         "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
@@ -928,28 +927,11 @@
             "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
             "reportedSummary": "389 15:04 farol-32 REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi)",
             "executor": "Pi"
-          },
-          {
-            "item": "farol-57",
-            "sha": "ad52d166e9",
-            "round": "r8",
-            "status": "launched_reported",
-            "verdict": null,
-            "verdictIssued": false,
-            "reviewer": "Sol",
-            "reportReadLocally": false,
-            "hostNotReiteratedInSummary": true,
-            "sourceLine": 388,
-            "reportedAt": "2026-11-24T15:03:00+00:00",
-            "reportedAtPrecision": "minute",
-            "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
-            "reportedSummary": "388 15:03 farol-57 REVISAO r8 @ad52d166e9 (FAROL57H entregue, Sol via Pi)",
-            "executor": "Pi"
           }
         ],
         "activeCorrections": [],
-        "sourceLine": 389,
-        "reportedAt": "2026-11-24T15:04:00+00:00",
+        "sourceLine": 390,
+        "reportedAt": "2026-11-24T15:34:00+00:00",
         "inferredFromLatestReports": true,
         "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
       },
@@ -2595,6 +2577,206 @@
           },
           "supersededAt": "2026-11-24T15:05:51+00:00",
           "sourceLine": 389
+        },
+        {
+          "field": "implementation",
+          "state": {
+            "activeItems": [],
+            "activeSlots": null,
+            "activeSlotsKnown": false,
+            "activeCorrections": [],
+            "reviewItems": [
+              "farol-32",
+              "farol-57"
+            ],
+            "reviewCount": 2,
+            "reviewCountInferred": true,
+            "approvedItems": [
+              "farol-15",
+              "farol-16",
+              "farol-17",
+              "farol-18",
+              "farol-19",
+              "farol-20",
+              "farol-21",
+              "farol-22",
+              "farol-23",
+              "farol-25",
+              "farol-27",
+              "farol-31",
+              "farol-33",
+              "farol-34",
+              "farol-49",
+              "farol-50",
+              "farol-51",
+              "farol-52",
+              "farol-53",
+              "farol-54"
+            ],
+            "deliveredReported": [
+              "farol-15",
+              "farol-16",
+              "farol-17",
+              "farol-18",
+              "farol-19",
+              "farol-20",
+              "farol-21",
+              "farol-22",
+              "farol-23",
+              "farol-25",
+              "farol-27",
+              "farol-31",
+              "farol-32",
+              "farol-33",
+              "farol-34",
+              "farol-49",
+              "farol-50",
+              "farol-51",
+              "farol-52",
+              "farol-53",
+              "farol-54",
+              "farol-57"
+            ],
+            "note": "54 aprovado com ressalvas; 57 r8 Sol/Pi e 32 r2 Opus/Pi em revisão, sem parecer novo. #55 aguarda somente o aceite do 32. Sem nova contagem global.",
+            "sourceLine": 389,
+            "reportedAt": "2026-11-24T15:04:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
+          },
+          "supersededAt": "2026-11-24T15:50:30+00:00",
+          "sourceLine": 390
+        },
+        {
+          "field": "capacity",
+          "state": {
+            "ibmCurrentActiveSlots": null,
+            "ibmCurrentActiveSlotsKnown": false,
+            "knownIbmCorrectionDispatches": [],
+            "activeReviews": [
+              {
+                "item": "farol-32",
+                "sha": "7b17dd195c",
+                "round": "r2",
+                "status": "launched_reported",
+                "verdict": null,
+                "verdictIssued": false,
+                "reviewer": "Opus",
+                "reportReadLocally": false,
+                "hostNotReiteratedInSummary": true,
+                "sourceLine": 389,
+                "reportedAt": "2026-11-24T15:04:00+00:00",
+                "reportedAtPrecision": "minute",
+                "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+                "reportedSummary": "389 15:04 farol-32 REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi)",
+                "executor": "Pi"
+              },
+              {
+                "item": "farol-57",
+                "sha": "ad52d166e9",
+                "round": "r8",
+                "status": "launched_reported",
+                "verdict": null,
+                "verdictIssued": false,
+                "reviewer": "Sol",
+                "reportReadLocally": false,
+                "hostNotReiteratedInSummary": true,
+                "sourceLine": 388,
+                "reportedAt": "2026-11-24T15:03:00+00:00",
+                "reportedAtPrecision": "minute",
+                "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+                "reportedSummary": "388 15:03 farol-57 REVISAO r8 @ad52d166e9 (FAROL57H entregue, Sol via Pi)",
+                "executor": "Pi"
+              }
+            ],
+            "quotaResetReported": false,
+            "sourceLine": 389,
+            "reportedAt": "2026-11-24T15:04:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
+          },
+          "supersededAt": "2026-11-24T15:50:30+00:00",
+          "sourceLine": 390
+        },
+        {
+          "field": "parallelReviews",
+          "state": {
+            "items": [],
+            "count": null,
+            "countKnown": false,
+            "note": "32 r2 Opus/Pi e 57 r8 Sol/Pi ativas; hosts não reiterados no resumo. Sem contagem global.",
+            "sourceLine": 389,
+            "reportedAt": "2026-11-24T15:04:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
+          },
+          "supersededAt": "2026-11-24T15:50:30+00:00",
+          "sourceLine": 390
+        },
+        {
+          "field": "reviewRouting",
+          "state": {
+            "reviews": [
+              {
+                "item": "farol-32",
+                "sha": "7b17dd195c",
+                "round": "r2",
+                "status": "launched_reported",
+                "verdict": null,
+                "verdictIssued": false,
+                "reviewer": "Opus",
+                "reportReadLocally": false,
+                "hostNotReiteratedInSummary": true,
+                "sourceLine": 389,
+                "reportedAt": "2026-11-24T15:04:00+00:00",
+                "reportedAtPrecision": "minute",
+                "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+                "reportedSummary": "389 15:04 farol-32 REVISAO r2 @7b17dd195c (FAROL32B entregue, Opus via Pi)",
+                "executor": "Pi"
+              },
+              {
+                "item": "farol-57",
+                "sha": "ad52d166e9",
+                "round": "r8",
+                "status": "launched_reported",
+                "verdict": null,
+                "verdictIssued": false,
+                "reviewer": "Sol",
+                "reportReadLocally": false,
+                "hostNotReiteratedInSummary": true,
+                "sourceLine": 388,
+                "reportedAt": "2026-11-24T15:03:00+00:00",
+                "reportedAtPrecision": "minute",
+                "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+                "reportedSummary": "388 15:03 farol-57 REVISAO r8 @ad52d166e9 (FAROL57H entregue, Sol via Pi)",
+                "executor": "Pi"
+              }
+            ],
+            "activeCorrections": [],
+            "sourceLine": 389,
+            "reportedAt": "2026-11-24T15:04:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
+          },
+          "supersededAt": "2026-11-24T15:50:30+00:00",
+          "sourceLine": 390
+        },
+        {
+          "field": "vpsExecution",
+          "state": {
+            "status": "LIBERADA",
+            "diskFreeGb": 39,
+            "diskSourceLine": 268,
+            "diskReportedAt": "2026-11-24T04:33:00+00:00",
+            "activeReviews": [],
+            "activeReviewsKnown": false,
+            "note": "Última medição preservada, não repetida; o resumo não reitera os hosts das duas revisões Pi.",
+            "sourceLine": 389,
+            "reportedAt": "2026-11-24T15:04:00+00:00",
+            "inferredFromLatestReports": true,
+            "scope": "Recorte dos relatos, não ocupação/capacidade global nem reset de cota"
+          },
+          "supersededAt": "2026-11-24T15:50:30+00:00",
+          "sourceLine": 390
         }
       ],
       "operationalMilestones": [
@@ -2612,7 +2794,7 @@
         }
       ]
     },
-    "lastVpsLine": 389,
+    "lastVpsLine": 390,
     "wave2Base": {
       "branch": "agente/base-21f-farol-onda2",
       "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -2635,15 +2817,14 @@
       "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
     },
     "criticalPath": {
-      "title": "Duas revisões ainda abertas no relato",
-      "subtitle": "32 r2 e 57 r8 sem parecer · 55 aguarda o aceite do 32",
+      "title": "Uma revisão ainda aberta no relato",
+      "subtitle": "32 r2 sem parecer novo · 55 aguarda o aceite do 32",
       "items": [
-        "farol-32",
-        "farol-57"
+        "farol-32"
       ],
       "sourceLines": [
+        390,
         389,
-        388,
         387
       ],
       "integrationVerified": false
@@ -11216,14 +11397,15 @@
         "farol-52"
       ],
       "allDependencies": false,
-      "status": "REVISAO",
+      "status": "APROVADA",
       "wave": "E",
       "sha": "ad52d166e9",
       "batch": null,
-      "note": "REVISAO r8 @ad52d166e9 (FAROL57H entregue, Sol via Pi) Revisão lançada; sem parecer novo. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
-      "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+      "note": "Sol aprovou com ressalvas a r8 em ad52d166e9: 0 P0/P1, 6 P2; 117 cenários e bateria oficial 14/14 reportados pela VPS, não reproduzidos nesta VM. A bateria é do Farol 57, não da release inteira. Aceite não confirma integração, QA das ressalvas ou TV física.",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log linha 390, encaminhado pelo Henrique (event-01a20e3eda9f76e787aa694fac47ff75)",
       "verified": false,
       "previousNotes": [
+        "REVISAO r8 @ad52d166e9 (FAROL57H entregue, Sol via Pi) Revisão lançada; sem parecer novo. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
         "REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM) Correção despachada; nenhum novo SHA entregue. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
         "REVISAO r7 @f61aa1c9fe (FAROL57G) Revisão lançada; sem parecer novo. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
         "REPROVADO r6 @e47a39b06a (P1 sem numeral) → FAROL57G (Hydrogen IBM) Correção despachada; nenhum novo SHA entregue. Fonte: resumo numerado do Poke sobre o log VPS; pins e pareceres não conferidos nesta VM.",
@@ -11415,6 +11597,14 @@
           "reportedAtPrecision": "minute",
           "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
           "reportedSummary": "388 15:03 farol-57 REVISAO r8 @ad52d166e9 (FAROL57H entregue, Sol via Pi)"
+        },
+        {
+          "previousStatus": "REVISAO",
+          "previousSha": "ad52d166e9",
+          "sourceLine": 390,
+          "reportedAt": "2026-11-24T15:34:00+00:00",
+          "source": "Relato VPS · lotes/REPORTE-POKE.log linha 390, encaminhado pelo Henrique (event-01a20e3eda9f76e787aa694fac47ff75)",
+          "rawVpsLine": "2026-11-24T15:34:00Z farol-57 APROVADA agente/21z-farol-57@ad52d166e9 Sol r8 APROVADO_COM_RESSALVAS (0 P0/P1, 6 P2; 117 cenarios + 14/14 bateria oficial)"
         }
       ],
       "workBase": {
@@ -11441,10 +11631,10 @@
       "blockers": [],
       "operationalWave": "G4",
       "integrationVerified": false,
-      "reportedAt": "2026-11-24T15:03:00+00:00",
-      "updatedAt": "2026-11-24T15:05:51+00:00",
+      "reportedAt": "2026-11-24T15:34:00+00:00",
+      "updatedAt": "2026-11-24T15:50:30+00:00",
       "owner": "Revisão · Sol / Pi (host não reiterado)",
-      "verificationSummary": "Revisão lançada; sem parecer novo.",
+      "verificationSummary": "Aprovado com ressalvas na r8; integração e TV física não confirmadas.",
       "referenceHistory": [
         {
           "sha": null,
@@ -11693,18 +11883,34 @@
       "review": {
         "sha": "ad52d166e9",
         "round": "r8",
-        "status": "launched_reported",
-        "verdict": null,
-        "verdictIssued": false,
+        "status": "approved_with_reservations_reported",
+        "verdict": "APROVADO_COM_RESSALVAS",
+        "verdictIssued": true,
         "reviewer": "Sol",
         "reportReadLocally": false,
         "hostNotReiteratedInSummary": true,
-        "sourceLine": 388,
-        "reportedAt": "2026-11-24T15:03:00+00:00",
+        "sourceLine": 390,
+        "reportedAt": "2026-11-24T15:34:00+00:00",
         "reportedAtPrecision": "minute",
-        "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+        "source": "Relato VPS · lotes/REPORTE-POKE.log linha 390, encaminhado pelo Henrique (event-01a20e3eda9f76e787aa694fac47ff75)",
         "reportedSummary": "388 15:03 farol-57 REVISAO r8 @ad52d166e9 (FAROL57H entregue, Sol via Pi)",
-        "executor": "Pi"
+        "executor": "Pi",
+        "findingCounts": {
+          "P0": 0,
+          "P1": 0,
+          "P2": 6
+        },
+        "reportedTests": {
+          "scenariosReported": 117,
+          "officialBattery": {
+            "passedReported": 14,
+            "totalReported": 14
+          },
+          "scope": "Farol 57 r8 em ad52d166e9; não bateria ampla da release",
+          "reportedOnly": true,
+          "reproducedLocally": false
+        },
+        "rawVpsLine": "2026-11-24T15:34:00Z farol-57 APROVADA agente/21z-farol-57@ad52d166e9 Sol r8 APROVADO_COM_RESSALVAS (0 P0/P1, 6 P2; 117 cenarios + 14/14 bateria oficial)"
       },
       "previousBlockers": [
         [],
@@ -11996,6 +12202,22 @@
           "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e0f814e7283a1f80fc8444a5da1 (não log bruto)",
           "reportedSummary": "384 13:54 farol-57 REPROVADO r7 @f61aa1c9fe → FAROL57H (Hydrogen IBM)",
           "reviewerNotReiteratedInSummary": true
+        },
+        {
+          "sha": "ad52d166e9",
+          "round": "r8",
+          "status": "launched_reported",
+          "verdict": null,
+          "verdictIssued": false,
+          "reviewer": "Sol",
+          "reportReadLocally": false,
+          "hostNotReiteratedInSummary": true,
+          "sourceLine": 388,
+          "reportedAt": "2026-11-24T15:03:00+00:00",
+          "reportedAtPrecision": "minute",
+          "source": "Poke · resumo numerado das linhas VPS; mensagem event-01a20e15ec5778b795f4b9036544e438 (não log bruto)",
+          "reportedSummary": "388 15:03 farol-57 REVISAO r8 @ad52d166e9 (FAROL57H entregue, Sol via Pi)",
+          "executor": "Pi"
         }
       ],
       "latestRejectedSha": "f61aa1c9fe",
@@ -12362,6 +12584,34 @@
         "sourceLine": 296,
         "reportedAt": "2026-11-24T05:30:30+00:00",
         "scope": "Destrava execução/revisão reportada, não conclusão da dependência na integração"
+      },
+      "approval": {
+        "sha": "ad52d166e9",
+        "round": "r8",
+        "reviewer": "Sol",
+        "executor": "Pi",
+        "verdict": "APROVADO_COM_RESSALVAS",
+        "findingCounts": {
+          "P0": 0,
+          "P1": 0,
+          "P2": 6
+        },
+        "reportedTests": {
+          "scenariosReported": 117,
+          "officialBattery": {
+            "passedReported": 14,
+            "totalReported": 14
+          },
+          "scope": "Farol 57 r8 em ad52d166e9; não bateria ampla da release",
+          "reportedOnly": true,
+          "reproducedLocally": false
+        },
+        "integrationVerified": false,
+        "verified": false,
+        "sourceLine": 390,
+        "reportedAt": "2026-11-24T15:34:00+00:00",
+        "source": "Relato VPS · lotes/REPORTE-POKE.log linha 390, encaminhado pelo Henrique (event-01a20e3eda9f76e787aa694fac47ff75)",
+        "rawVpsLine": "2026-11-24T15:34:00Z farol-57 APROVADA agente/21z-farol-57@ad52d166e9 Sol r8 APROVADO_COM_RESSALVAS (0 P0/P1, 6 P2; 117 cenarios + 14/14 bateria oficial)"
       }
     },
     {
@@ -15307,6 +15557,20 @@
     }
   ],
   "events": [
+    {
+      "item": "farol-57",
+      "from": "REVISAO",
+      "to": "APROVADA",
+      "at": "2026-11-24T15:34:00+00:00",
+      "appliedAt": "2026-11-24T15:50:30+00:00",
+      "vpsLine": 390,
+      "report": "2026-11-24T15:34:00Z farol-57 APROVADA agente/21z-farol-57@ad52d166e9 Sol r8 APROVADO_COM_RESSALVAS (0 P0/P1, 6 P2; 117 cenarios + 14/14 bateria oficial)",
+      "provenance": "forwarded_vps_log",
+      "sourceLine": 390,
+      "reportedAt": "2026-11-24T15:34:00+00:00",
+      "source": "Relato VPS · lotes/REPORTE-POKE.log linha 390, encaminhado pelo Henrique (event-01a20e3eda9f76e787aa694fac47ff75)",
+      "rawVpsLine": "2026-11-24T15:34:00Z farol-57 APROVADA agente/21z-farol-57@ad52d166e9 Sol r8 APROVADO_COM_RESSALVAS (0 P0/P1, 6 P2; 117 cenarios + 14/14 bateria oficial)"
+    },
     {
       "item": "farol-32",
       "from": "CORRECAO",
