@@ -329,11 +329,9 @@ static int envioParar(void *u) {
   return jobCancelado(j) || agoraMs() >= j->fimReq;
 }
 
-// Publica o resultado (sob trava). `cod` NULL preserva o ultimo codigo.
-static void publicar(EnvioJob *j, FarolEnvioEstado est, FarolEnvioMotivo mot, int http,
-                     const char *cod, const Conhecido *con) {
-  long agora = agoraS();
-  pthread_mutex_lock(&trava);
+// Publica o resultado (com `trava` ja presa). `cod` NULL preserva o ultimo codigo.
+static void publicarSobTrava(EnvioJob *j, FarolEnvioEstado est, FarolEnvioMotivo mot, int http,
+                             const char *cod, const Conhecido *con, long agora) {
   info.estado = est;
   info.motivo = mot;
   info.http = http;
@@ -357,15 +355,22 @@ static void publicar(EnvioJob *j, FarolEnvioEstado est, FarolEnvioMotivo mot, in
   }
   if (j->tipo == J_ENVIAR || j->tipo == J_PENDENTE) info.incluirLog = j->incluirLog;
   if (est == FAROLENVIO_OK && j->incluirLog) logPedido = 1;
-  // Espera do proximo reenvio automatico (so offline / falha de transporte).
+  // Espera do proximo reenvio automatico (so offline / falha de transporte);
+  // outros resultados preservam a pendencia existente em disco.
   if (est == FAROLENVIO_PENDENTE) {
     reenvioAuto = 1;
     proximoReenvio = agora + FAROLENVIO_REENVIO_S;
     if (mot == FAROLENVIO_M_OFFLINE) offlineAntes = 1;
-  } else {
-    reenvioAuto = 0;
   }
   info.geracao++;
+}
+
+// Publica o resultado (sob trava). `cod` NULL preserva o ultimo codigo.
+static void publicar(EnvioJob *j, FarolEnvioEstado est, FarolEnvioMotivo mot, int http,
+                     const char *cod, const Conhecido *con) {
+  long agora = ((cod && codigoOk(cod)) || est == FAROLENVIO_PENDENTE) ? agoraS() : 0;
+  pthread_mutex_lock(&trava);
+  publicarSobTrava(j, est, mot, http, cod, con, agora);
   pthread_mutex_unlock(&trava);
 }
 
@@ -374,7 +379,10 @@ static void marcarPendente(int tem, long criado) {
   info.temPendente = tem;
   info.pendenteCriado = tem ? criado : 0;
   info.pendenteVence = tem ? criado + FAROLENVIO_PENDENTE_VALIDADE_S : 0;
-  if (!tem) reenvioAuto = 0;
+  if (!tem) {
+    reenvioAuto = 0;
+    proximoReenvio = 0;
+  }
   pthread_mutex_unlock(&trava);
 }
 
@@ -716,6 +724,60 @@ static void chaveDe(Chave *k, const FarolPacoteRes *res, const FarolPerfil *p, c
   k->soMaior = p->aparelho.so_maior;
 }
 
+static void gravarResultadoPendente(EnvioJob *j, const Chave *k, int autoR, FarolEnvioMotivo mot,
+                                    int httpOut, const char *json, size_t n) {
+  long agora, agoraPub;
+  int gravou, cancelado;
+
+  if (jobCancelado(j)) {
+    publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+    return;
+  }
+  agora = agoraS();
+  if (jobCancelado(j)) {
+    publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+    return;
+  }
+  gravou = pendenteGravar(k, j->resSintoma, agora, autoR, j->incluirLog, json, n);
+  agoraPub = (autoR && gravou) ? agoraS() : 0;
+
+  pthread_mutex_lock(&trava);
+  cancelado = j->cancelar;
+  if (!cancelado) {
+    if (gravou) {
+      info.temPendente = 1;
+      info.pendenteCriado = agora;
+      info.pendenteVence = agora + FAROLENVIO_PENDENTE_VALIDADE_S;
+      if (!autoR) {
+        reenvioAuto = 0;
+        proximoReenvio = 0;
+      }
+    }
+    if (autoR && gravou) publicarSobTrava(j, FAROLENVIO_PENDENTE, mot, 0, NULL, NULL, agoraPub);
+    else publicarSobTrava(j, FAROLENVIO_FALHOU, mot, httpOut, NULL, NULL, 0);
+    pthread_mutex_unlock(&trava);
+    return;
+  }
+  if (gravou) {
+    info.temPendente = 0;
+    info.pendenteCriado = 0;
+    info.pendenteVence = 0;
+    reenvioAuto = 0;
+    proximoReenvio = 0;
+  }
+  pthread_mutex_unlock(&trava);
+
+  if (gravou) {
+    // Desfaz somente se a gravacao feita por este job continuar pertencendo a este fp.
+    Chave kp;
+    int s;
+    long cr;
+    if (pendenteLer(&kp, &s, &cr, NULL, NULL, NULL, NULL, 1) == 1 && !strcmp(kp.fp, k->fp))
+      dados_apagar(FAROLENVIO_PENDENTE_ARQ);
+  }
+  publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+}
+
 static void executarEnviar(EnvioJob *j) {
   FarolPacoteRes res;
   Chave k;
@@ -757,33 +819,21 @@ static void executarEnviar(EnvioJob *j) {
     if (jobCancelado(j)) {
       publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
     } else if (offline) {
-      long agora = agoraS();
-      if (pendenteGravar(&k, j->resSintoma, agora, 1, j->incluirLog, json, res.bytes)) {
-        marcarPendente(1, agora);
-        publicar(j, FAROLENVIO_PENDENTE, FAROLENVIO_M_OFFLINE, 0, NULL, NULL);
-      } else {
-        publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_OFFLINE, 0, NULL, NULL);
-      }
+      gravarResultadoPendente(j, &k, 1, FAROLENVIO_M_OFFLINE, 0, json, res.bytes);
     } else {
       r = transmitir(j, &k, json, res.bytes, j->resSintoma, &mot, &httpOut);
       if (r == 2 || r == 3) {
-        if (jobCancelado(j)) {
-          publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
-        } else {
-          long agora = agoraS();
-          int autoR = (r == 2);
-          int gravou = pendenteGravar(&k, j->resSintoma, agora, autoR, j->incluirLog, json, res.bytes);
-          if (gravou) marcarPendente(1, agora);
-          if (r == 2 && gravou) publicar(j, FAROLENVIO_PENDENTE, mot, 0, NULL, NULL);
-          else publicar(j, FAROLENVIO_FALHOU, mot, httpOut, NULL, NULL);
-        }
+        gravarResultadoPendente(j, &k, r == 2, mot, httpOut, json, res.bytes);
       } else if (r == 1) {
         // Envio novo resolveu (ou 422): um pendente antigo do MESMO fp fica redundante.
         Chave kp;
-        int s;
+        int s, pr;
         long cr;
-        if (pendenteLer(&kp, &s, &cr, NULL, NULL, NULL, NULL, 1) == 1 && !strcmp(kp.fp, k.fp)) {
+        pr = pendenteLer(&kp, &s, &cr, NULL, NULL, NULL, NULL, 1);
+        if (pr == 1 && !strcmp(kp.fp, k.fp)) {
           dados_apagar(FAROLENVIO_PENDENTE_ARQ);
+          marcarPendente(0, 0);
+        } else if (pr < 0) {
           marcarPendente(0, 0);
         }
       }
@@ -835,18 +885,33 @@ static void executarPendente(EnvioJob *j, int soCarregar) {
     if (jobCancelado(j)) {
       publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
     } else if (offline) {
-      if (!autoR) pendenteGravar(&k, sintoma, criado, 1, j->incluirLog, pacote, n);
-      publicar(j, FAROLENVIO_PENDENTE, FAROLENVIO_M_OFFLINE, 0, NULL, NULL);
+      int ok = autoR;
+      if (!ok && !jobCancelado(j))
+        ok = pendenteGravar(&k, sintoma, criado, 1, j->incluirLog, pacote, n);
+      if (jobCancelado(j)) publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+      else if (ok) publicar(j, FAROLENVIO_PENDENTE, FAROLENVIO_M_OFFLINE, 0, NULL, NULL);
+      else publicar(j, FAROLENVIO_FALHOU, FAROLENVIO_M_OFFLINE, 0, NULL, NULL);
     } else {
       r = transmitir(j, &k, pacote, n, sintoma, &mot, &httpOut);
       if (r == 2 || r == 3) {
         if (jobCancelado(j)) {
           publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
         } else if (r == 2) {
-          if (!autoR) pendenteGravar(&k, sintoma, criado, 1, j->incluirLog, pacote, n);
-          publicar(j, FAROLENVIO_PENDENTE, mot, 0, NULL, NULL);
+          int ok = autoR;
+          if (!ok && !jobCancelado(j))
+            ok = pendenteGravar(&k, sintoma, criado, 1, j->incluirLog, pacote, n);
+          if (jobCancelado(j)) publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+          else if (ok) publicar(j, FAROLENVIO_PENDENTE, mot, 0, NULL, NULL);
+          else publicar(j, FAROLENVIO_FALHOU, mot, 0, NULL, NULL);
         } else {
-          if (autoR) pendenteGravar(&k, sintoma, criado, 0, j->incluirLog, pacote, n);
+          if (autoR && !pendenteGravar(&k, sintoma, criado, 0, j->incluirLog, pacote, n)) {
+            dados_apagar(FAROLENVIO_PENDENTE_ARQ);
+            marcarPendente(0, 0);
+          }
+          pthread_mutex_lock(&trava);
+          reenvioAuto = 0;
+          proximoReenvio = 0;
+          pthread_mutex_unlock(&trava);
           publicar(j, FAROLENVIO_FALHOU, mot, httpOut, NULL, NULL);
         }
       } else if (r == 1) {

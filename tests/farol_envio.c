@@ -37,10 +37,24 @@ static char            dir[512];
 static int             temConta = 1, offline, logPedidos, envios, ultimoHttp, dadosNoPrincipal;
 static int             barreiraAuthArm, barreiraAuthDentro, barreiraAuthLib;
 static int             barreiraOffArm, barreiraOffDentro, barreiraOffLib;
+static int             barreiraRelArm, barreiraRelDentro, barreiraRelLib;
+static int             barreiraGravArm, barreiraGravDentro, barreiraGravLib;
 static long long       epoch = 1800000000LL;
 static uint32_t        anelMs = 1000;
 
-static long long relogioFake(void) { long long e; pthread_mutex_lock(&tv); e = epoch; pthread_mutex_unlock(&tv); return e; }
+static long long relogioFake(void) {
+  long long e;
+  pthread_mutex_lock(&tv);
+  if (barreiraRelArm && !pthread_equal(pthread_self(), fioPrincipal)) {
+    barreiraRelArm = 0;
+    barreiraRelDentro = 1;
+    pthread_cond_broadcast(&tvCond);
+    while (!barreiraRelLib) pthread_cond_wait(&tvCond, &tv);
+  }
+  e = epoch;
+  pthread_mutex_unlock(&tv);
+  return e;
+}
 static void avancar(long long s) { pthread_mutex_lock(&tv); epoch += s; pthread_mutex_unlock(&tv); }
 static uint32_t anelRelogio(void) { uint32_t v; pthread_mutex_lock(&tv); v = anelMs; pthread_mutex_unlock(&tv); return v; }
 static void setOffline(int v) { pthread_mutex_lock(&tv); offline = v; pthread_mutex_unlock(&tv); }
@@ -127,7 +141,7 @@ char *dados_ler(const char *nome) {
   return b;
 }
 int dados_gravar(const char *nome, const char *conteudo) {
-  char c[700], t[720]; FILE *f;
+  char c[700], t[720]; FILE *f; int ok;
   notarIo();
   caminho(c, sizeof c, nome);
   snprintf(t, sizeof t, "%s.tmp", c);
@@ -135,7 +149,17 @@ int dados_gravar(const char *nome, const char *conteudo) {
   if (!f) return 0;
   fputs(conteudo, f);
   fclose(f);
-  return rename(t, c) == 0;
+  ok = rename(t, c) == 0;
+  pthread_mutex_lock(&tv);
+  if (barreiraGravArm && !strcmp(nome, FAROLENVIO_PENDENTE_ARQ) &&
+      !pthread_equal(pthread_self(), fioPrincipal)) {
+    barreiraGravArm = 0;
+    barreiraGravDentro = 1;
+    pthread_cond_broadcast(&tvCond);
+    while (!barreiraGravLib) pthread_cond_wait(&tvCond, &tv);
+  }
+  pthread_mutex_unlock(&tv);
+  return ok;
 }
 int dados_apagar(const char *nome) { char c[700]; notarIo(); caminho(c, sizeof c, nome); return unlink(c) == 0; }
 
@@ -689,6 +713,126 @@ static void t_farol18b_arranque_codigo_e_log(void) {
   CHECK(lerInt(&logPedidos) == logAntes + 1);
 }
 
+static void t_farol18c_cancel_relogio_e_gravacao(void) {
+  FarolEnvioInfo i;
+  FarolPacoteEntrada in;
+  char cod[48];
+
+  // Caso P1-1A: barreira em agoraS() no ramo offline -> cancelar e liberar.
+  usar("/cancel_relogio");
+  entrada(&in, cod);
+  setOffline(1);
+  armarBarreira(&barreiraRelArm, &barreiraRelDentro, &barreiraRelLib);
+  CHECK(farol_enviar(&in, NULL) == 1);
+  esperarBarreira(&barreiraRelDentro);
+  farolenvio_cancelar();
+  liberarBarreira(&barreiraRelLib);
+  CHECK(esperar(&i, 5000) == FAROLENVIO_CANCELADO && i.motivo == FAROLENVIO_M_CANCELADO);
+  CHECK(!farolenvio_em_voo() && !i.temPendente && tamArq(FAROLENVIO_PENDENTE_ARQ) < 0);
+  setOffline(0);
+  avancar(61);
+  farolenvio_passo();
+  CHECK(!farolenvio_em_voo());
+  stats("/cancel_relogio");
+  CHECK(sInt("get") == 0 && sInt("post") == 0);
+
+  // Caso P1-1B: cancelamento durante pendenteGravar() desfaz o arquivo gravado.
+  usar("/cancel_grav");
+  entrada(&in, cod);
+  setOffline(1);
+  armarBarreira(&barreiraGravArm, &barreiraGravDentro, &barreiraGravLib);
+  CHECK(farol_enviar(&in, NULL) == 1);
+  esperarBarreira(&barreiraGravDentro);
+  farolenvio_cancelar();
+  liberarBarreira(&barreiraGravLib);
+  CHECK(esperar(&i, 5000) == FAROLENVIO_CANCELADO && i.motivo == FAROLENVIO_M_CANCELADO);
+  CHECK(!farolenvio_em_voo() && !i.temPendente && tamArq(FAROLENVIO_PENDENTE_ARQ) < 0);
+  setOffline(0);
+  avancar(61);
+  farolenvio_passo();
+  CHECK(!farolenvio_em_voo());
+  stats("/cancel_grav");
+  CHECK(sInt("get") == 0 && sInt("post") == 0);
+}
+
+static void t_farol18c_ok_outro_preserva_pendente(void) {
+  FarolEnvioInfo i;
+  FarolPacoteEntrada in;
+  char cod[48], fpA[32], tmpDir[720];
+
+  // Caso P1-2: A salvo offline (ums_204); online envia B (ums_205) com HTTP 200;
+  // apos 61 s, farolenvio_passo() reenvia A automaticamente e remove farol-pendente.json.
+  setOffline(1);
+  usar("/p18c_a");
+  entrada(&in, cod);
+  strcpy(in.erro.cod, "ums_204");
+  CHECK(farol_enviar(&in, NULL) == 1);
+  CHECK(esperar(&i, 5000) == FAROLENVIO_PENDENTE && i.motivo == FAROLENVIO_M_OFFLINE);
+  CHECK(i.temPendente && tamArq(FAROLENVIO_PENDENTE_ARQ) > 0);
+  snprintf(fpA, sizeof fpA, "%s", i.fp);
+
+  setOffline(0);
+  usar("/p18c_b");
+  entrada(&in, cod);
+  in.erro.nativo = 205;
+  strcpy(in.erro.cod, "ums_205");
+  CHECK(farol_enviar(&in, NULL) == 1);
+  CHECK(esperar(&i, 20000) == FAROLENVIO_OK && i.http == 200 && !i.doPendente);
+  CHECK(strcmp(i.fp, fpA) != 0);
+  CHECK(i.temPendente && tamArq(FAROLENVIO_PENDENTE_ARQ) > 0);
+  stats("/p18c_b");
+  CHECK(sInt("get") == 1 && sInt("post") == 1);
+
+  usar("/p18c_a");
+  avancar(61);
+  farolenvio_passo();
+  CHECK(esperar(&i, 20000) == FAROLENVIO_OK && i.doPendente == 1 && !strcmp(i.fp, fpA));
+  CHECK(!i.temPendente && tamArq(FAROLENVIO_PENDENTE_ARQ) < 0);
+  stats("/p18c_a");
+  CHECK(sInt("get") == 1 && sInt("post") == 1 && !strcmp(sStr("fp_body"), fpA));
+
+  // Cancelar envio B antes de pendenteGravar nao apaga pendencia A pre-existente de outro fp.
+  setOffline(1);
+  usar("/p18c_a");
+  entrada(&in, cod);
+  strcpy(in.erro.cod, "ums_204");
+  CHECK(farol_enviar(&in, NULL) == 1);
+  CHECK(esperar(&i, 5000) == FAROLENVIO_PENDENTE && i.temPendente);
+
+  usar("/p18c_b");
+  entrada(&in, cod);
+  in.erro.nativo = 205;
+  strcpy(in.erro.cod, "ums_205");
+  armarBarreira(&barreiraRelArm, &barreiraRelDentro, &barreiraRelLib);
+  CHECK(farol_enviar(&in, NULL) == 1);
+  esperarBarreira(&barreiraRelDentro);
+  farolenvio_cancelar();
+  liberarBarreira(&barreiraRelLib);
+  CHECK(esperar(&i, 5000) == FAROLENVIO_CANCELADO && i.temPendente && tamArq(FAROLENVIO_PENDENTE_ARQ) > 0);
+
+  setOffline(0);
+  avancar(61);
+  farolenvio_passo();
+  CHECK(esperar(&i, 20000) == FAROLENVIO_OK && i.doPendente == 1 && !strcmp(i.fp, fpA));
+  CHECK(!i.temPendente && tamArq(FAROLENVIO_PENDENTE_ARQ) < 0);
+
+  // Caso P2: se regravacao para auto=0 falhar (.tmp obstruido) apos 503 em reenvio,
+  // remove farol-pendente.json para nao reenviar sozinho apos reinicio.
+  setOffline(1);
+  CHECK(enviar("/r500", NULL, &i) == FAROLENVIO_PENDENTE && i.temPendente);
+  setOffline(0);
+  caminho(tmpDir, sizeof tmpDir, FAROLENVIO_PENDENTE_ARQ ".tmp");
+  CHECK(mkdir(tmpDir, 0700) == 0);
+  farolenvio_passo();
+  CHECK(esperar(&i, 20000) == FAROLENVIO_FALHOU && i.motivo == FAROLENVIO_M_SERVIDOR && i.http == 503);
+  CHECK(rmdir(tmpDir) == 0);
+  CHECK(!i.temPendente && tamArq(FAROLENVIO_PENDENTE_ARQ) < 0);
+  farolenvio_teste_esquecer();
+  farolenvio_iniciar();
+  esperar(&i, 5000);
+  CHECK(!i.temPendente);
+}
+
 static int modoWorker(const char *fase) {
   FarolEnvioInfo i;
   farolenvio_teste_relogio(NULL);
@@ -730,6 +874,8 @@ int main(int argc, char **argv) {
   t_farol18b_cancel_barreiras();
   t_farol18b_503_manual();
   t_farol18b_arranque_codigo_e_log();
+  t_farol18c_cancel_relogio_e_gravacao();
+  t_farol18c_ok_outro_preserva_pendente();
   farolenvio_encerrar();
   CHECK(lerInt(&dadosNoPrincipal) == 0);          // zero I/O de arquivo no fio da UI
   printf("farol_envio: cenarios locais ok\n");
