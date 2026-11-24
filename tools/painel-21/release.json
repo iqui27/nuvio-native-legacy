@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-24T03:07:54+00:00",
+    "updatedAt": "2026-11-24T03:10:30+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-24T03:05:00+00:00",
+    "lastVpsReportedAt": "2026-11-24T03:06:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -165,9 +165,30 @@
           "sourceLine": 244,
           "note": "poke-enviar.sh usa chave persistente e entregou linhas 163–240; nenhum valor de credencial registrado"
         }
+      },
+      "reviews": {
+        "farol-14": {
+          "round": "r3",
+          "status": "running_reported",
+          "route": "Sol / Codex main/auto na VPS",
+          "sourceLine": 245
+        },
+        "farol-52": {
+          "round": "r1",
+          "status": "running_reported",
+          "route": "Sol / Codex main/auto na VPS",
+          "sourceLine": 246
+        },
+        "farol-48": {
+          "round": "r7",
+          "status": "approved_reported",
+          "route": "Opus na IBM",
+          "duplicateSolReview": "cancelled_reported",
+          "sourceLine": 249
+        }
       }
     },
-    "lastVpsLine": 248
+    "lastVpsLine": 249
   },
   "items": [
     {
@@ -1413,17 +1434,18 @@
       "wave": "B",
       "sha": "ad3396b55a",
       "batch": null,
-      "note": "FAROL48-r7 em ad3396b55a recuperada na IBM como APROVADO conforme a VPS às 03h05 UTC, após atualizar o T3 de 0.1.9 para 0.1.12-nightly e restaurar a leitura de retorno. Aprovação baseada no parecer IBM recuperado; a r7 foi relançada com Sol na VPS às 03h04 e não teve outro veredito/cancelamento informado. O crash r6 por ponteiro nulo e os testes da implementação ficam no histórico. Aprovação não integra o código: Farol 48 permanece fora da composição 21f de seis itens, sem lote novo atribuído. App completo, Intent e TV física não foram validados por esta VM; TV continua pendente.",
-      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "note": "APROVADO r7 por Opus na IBM conforme VPS e revisao/FAROL48-r7-revisao.md. Crash de catálogo eliminado segundo o parecer: TOCTOU 0/0 versus 139/1 no pai; corrida 16/16 RC 0 versus 3/16 crashes no pai; P2-1 resolvida e r5 mantida, com merge RC 0 em cópias contra 21e/21f. Sol r7 cancelada conforme VPS. Próximo lote, ainda não especificado: não integra automaticamente o código nem acrescenta o Farol 48 ao candidato 21f de seis itens. Resultados reportados, não reproduzidos nesta VM. App completo/Intent e TV física continuam sem validação local; TV física permanece pendente.",
+      "source": "Relato VPS · linha 249 · parecer Opus r7 na IBM",
       "verified": false,
       "branch": "agente/21z-farol-48",
-      "updatedAt": "2026-11-24T03:07:54+00:00",
-      "reportedAt": "2026-11-24T03:05:00+00:00",
+      "updatedAt": "2026-11-24T03:10:30+00:00",
+      "reportedAt": "2026-11-24T03:06:00+00:00",
       "integrationVerified": false,
       "baseBranch": "lote/21e",
       "baseSha": "0dea681ce8",
       "owner": "VPS",
       "previousNotes": [
+        "FAROL48-r7 em ad3396b55a recuperada na IBM como APROVADO conforme a VPS às 03h05 UTC, após atualizar o T3 de 0.1.9 para 0.1.12-nightly e restaurar a leitura de retorno. Aprovação baseada no parecer IBM recuperado; a r7 foi relançada com Sol na VPS às 03h04 e não teve outro veredito/cancelamento informado. O crash r6 por ponteiro nulo e os testes da implementação ficam no histórico. Aprovação não integra o código: Farol 48 permanece fora da composição 21f de seis itens, sem lote novo atribuído. App completo, Intent e TV física não foram validados por esta VM; TV continua pendente.",
         "FAROL48-r7 relançada na VPS com Sol via Codex (main/auto/gpt-6.2-sol) em `ad3396b55a` (IBM em 0.1.9 não devolve texto pela API). Revisão lançada conforme VPS; ainda sem parecer nesta rodada. Sem integração ou TV física inferidas.",
         "r7 com Opus na ibm-ephemeral (antigravity), sem ocupar a VPS. R7 concluída na IBM conforme boletim de 02h56 UTC, mas o parecer ainda está sendo coletado via outputSchema; não é aprovação. FAROL48F entregue em ad3396b55a após o crash r6 por dupla leitura de catálogo; correção e testes informados pela implementação não substituem o parecer. TSan foi limitado ao núcleo no relato r5; app completo, Intent e TV física sem confirmação. Fora do candidato 21f.",
         "r7 com Opus na ibm-ephemeral (antigravity), sem ocupar a VPS.",
@@ -1457,16 +1479,17 @@
         "round": "r7",
         "status": "approved_reported",
         "reviewer": "Opus / Antigravity na IBM",
-        "sourceLine": 248,
-        "reportedAt": "2026-11-24T03:05:00+00:00",
+        "sourceLine": 249,
+        "reportedAt": "2026-11-24T03:06:00+00:00",
         "parallelVpsReview": {
           "round": "r7",
-          "status": "running_reported",
+          "status": "cancelled_reported",
           "reviewer": "Sol / Codex main/auto/gpt-6.2-sol na VPS",
-          "sourceLine": 247,
-          "reportedAt": "2026-11-24T03:04:00+00:00"
+          "sourceLine": 249,
+          "reportedAt": "2026-11-24T03:04:00+00:00",
+          "cancelledAt": "2026-11-24T03:06:00+00:00"
         },
-        "parallelVpsReviewOutcomeNotReported": true
+        "parallelVpsReviewOutcomeNotReported": false
       },
       "previousReviews": [
         {
@@ -1482,17 +1505,41 @@
           "reviewer": "Sol / Codex main/auto/gpt-6.2-sol na VPS",
           "sourceLine": 247,
           "reportedAt": "2026-11-24T03:04:00+00:00"
+        },
+        {
+          "round": "r7",
+          "status": "approved_reported",
+          "reviewer": "Opus / Antigravity na IBM",
+          "sourceLine": 248,
+          "reportedAt": "2026-11-24T03:05:00+00:00",
+          "parallelVpsReview": {
+            "round": "r7",
+            "status": "running_reported",
+            "reviewer": "Sol / Codex main/auto/gpt-6.2-sol na VPS",
+            "sourceLine": 247,
+            "reportedAt": "2026-11-24T03:04:00+00:00"
+          },
+          "parallelVpsReviewOutcomeNotReported": true
         }
       ],
       "approvedSha": "ad3396b55a",
-      "verificationSummary": "aprovação r7 recuperada da IBM conforme VPS; não é validação local do app completo ou TV física",
+      "verificationSummary": "aprovação r7 por Opus na IBM reportada pela VPS; sem integração ou validação em TV física",
       "approval": {
         "status": "APROVADO",
         "sha": "ad3396b55a",
-        "reportedAt": "2026-11-24T03:05:00+00:00",
-        "sourceLine": 248,
-        "basis": "Parecer r7 da IBM recuperado após corrigir T3, conforme VPS"
-      }
+        "reportedAt": "2026-11-24T03:06:00+00:00",
+        "sourceLine": 249,
+        "basis": "Parecer Opus r7 da IBM confirmado pela VPS",
+        "reportPath": "revisao/FAROL48-r7-revisao.md",
+        "evidenceReported": {
+          "toctou": "ponta 0/0 versus pai 139/1",
+          "race": "ponta 16/16 RC 0 versus pai 3/16 crashes",
+          "p2_1": "resolvida",
+          "r5": "mantida",
+          "merge": "RC 0 contra 21e e 21f"
+        }
+      },
+      "batchAssignment": "Próximo lote, ainda não especificado"
     },
     {
       "id": "farol-49",
@@ -4266,6 +4313,16 @@
         "issue-728"
       ],
       "note": "Candidato ainda não integrado. Validar em TV sem confundir os dirigidos host com hardware. Ressalvas P2 de #6 (403 terminal/stall), #40 (contagem/duração) e #46 (IDs/rótulos contraditórios) seguem em revisao/LOTE-21F-RESSALVAS-QA.md; não bloqueiam a aprovação pela POLITICA. Tizen/webOS com SDKs e QA pendentes."
+    },
+    {
+      "id": "tv-farol48",
+      "title": "Home e retomada · Farol 48",
+      "kind": "tv",
+      "status": "pendente",
+      "items": [
+        "farol-48"
+      ],
+      "note": "R7 aprovada na IBM conforme VPS, mas fora do candidato 21f. Validar em TV física quando disponível em um pacote: Home, Ilha/Relacionados, transporte de T/E e Play manual/externo. Testes host e merge simulado não substituem hardware."
     }
   ],
   "batches": [
@@ -4594,6 +4651,17 @@
     }
   ],
   "events": [
+    {
+      "at": "2026-11-24T03:06:00+00:00",
+      "appliedAt": "2026-11-24T03:10:30+00:00",
+      "item": "farol-48",
+      "from": "APROVADA",
+      "to": "APROVADA",
+      "reportedStatus": "REVISAO",
+      "report": "2026-11-24 03:06 [REVISAO] farol-48 · `ad3396b55a` APROVADO r7 (Opus na IBM, revisao/FAROL48-r7-revisao.md): crash de catálogo eliminado (TOCTOU 0/0 vs 139/1 no pai, corrida 16/16 RC 0 vs 3/16 crash), P2-1 resolvida, r5 mantida, merge rc 0 com 21e/21f. Sol r7 cancelada. Próximo lote.",
+      "vpsLine": 249,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log"
+    },
     {
       "at": "2026-11-24T03:05:00+00:00",
       "appliedAt": "2026-11-24T03:07:54+00:00",
