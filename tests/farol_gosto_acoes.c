@@ -24,6 +24,8 @@
 #include "dados.h"
 #include "farol.h"
 #include "farolcompara.h"
+#include "farolconsent.h"
+#include "farolconsentui.h"
 #include "farolgosto.h"
 #include "farolgostoui.h"
 #include "farolinfo.h"
@@ -40,25 +42,6 @@
 
 void testar(int s);
 void testar(int s) { (void)s; }
-
-// Gancho forte simulando #53 (farolconsent) para provar que o ajuste aciona os
-// simbolos reais (1=SO_TV, 2=SIM) e respeita perfil infantil/trava parental.
-enum {
-  TEST_CONSENT_NAO_PERGUNTADO = 0,
-  TEST_CONSENT_SO_TV = 1,
-  TEST_CONSENT_SIM = 2
-};
-static int gConsentEstado;
-static int gConsentChamadas;
-static int gConsentAbrir;
-int farolconsent_llm_ativo(void) { return gConsentEstado == TEST_CONSENT_SIM; }
-int farolconsent_estado(void) { return gConsentEstado; }
-int farolconsent_definir(int estado) {
-  gConsentChamadas++;
-  gConsentEstado = estado;
-  return 1;
-}
-void farolconsentui_abrir(void) { gConsentAbrir++; }
 
 static long long gEpochS = 1775077200LL; // 2026-04-01 UTC
 static uint32_t gMs = 10000u;
@@ -559,9 +542,8 @@ static void testarAjustesEGostoUI(void) {
 
   // LLM / "So nesta TV": 0 = Ligado (padrao seguro, LLM desligado),
   // 1 = Desligado (permite LLM -> grava SIM=2). Bloqueado em perfil infantil!
-  gConsentEstado = TEST_CONSENT_NAO_PERGUNTADO;
-  gConsentChamadas = 0;
-  gConsentAbrir = 0;
+  farolconsent_esquecer();
+  farolconsentui_esquecer();
   farolGostoEspelhar();
   assert(!ajustes_farol_llm_ativo());
   assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 0); // Ligado ("So nesta TV", padrao)
@@ -569,14 +551,14 @@ static void testarAjustesEGostoUI(void) {
   ajustes_iniciar();
   teclaAj(SDLK_RETURN); // 0 -> 1 (Desligado = permitir LLM)
   assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 1);
-  assert(gConsentEstado == TEST_CONSENT_SIM);
+  assert(farolconsent_estado() == FAROL_CONSENT_SIM);
   assert(ajustes_farol_llm_ativo() == 1);
-  assert(gConsentChamadas == 1 && gConsentAbrir == 1);
+  assert(farolconsentui_aberto() == 1);
   teclaAj(SDLK_RETURN); // 1 -> 0 (Ligado = so nesta TV)
   assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 0);
-  assert(gConsentEstado == TEST_CONSENT_SO_TV);
+  assert(farolconsent_estado() == FAROL_CONSENT_SO_TV);
   assert(ajustes_farol_llm_ativo() == 0);
-  assert(gConsentChamadas == 2);
+  farolconsentui_fechar();
 
   // Perfil infantil bloqueia LLM mesmo com ajustes destravados!
   assert(perfil_infantil_definir(1, 1));
@@ -588,11 +570,11 @@ static void testarAjustesEGostoUI(void) {
   teclaAj(SDLK_RETURN);
   assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 0);
   assert(ajustes_farol_llm_ativo() == 0);
-  assert(gConsentEstado == TEST_CONSENT_SO_TV);
+  assert(farolconsent_estado() == FAROL_CONSENT_SO_TV);
   assert(definirValorDireto(AJ_FAROL_LLM_SO_ESTA_TV, 1) == 0);
   assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 0);
   assert(ajustes_farol_llm_ativo() == 0);
-  assert(gConsentEstado != TEST_CONSENT_SIM);
+  assert(farolconsent_estado() != FAROL_CONSENT_SIM);
   puts("  ajustes + farolgostoui + child LLM block: ok");
 }
 
@@ -639,7 +621,7 @@ static void testarTravaParental(void) {
   assert(definirValorDireto(AJ_FAROL_LLM_SO_ESTA_TV, 1) == 0);
   assert(valor[AJ_FAROL_LLM_SO_ESTA_TV] == 0);
   assert(ajustes_farol_llm_ativo() == 0);
-  assert(gConsentEstado != TEST_CONSENT_SIM);
+  assert(farolconsent_estado() != FAROL_CONSENT_SIM);
 
   farol_gosto_zerar(NULL);
   assert(farolContem("tt0000101"));
