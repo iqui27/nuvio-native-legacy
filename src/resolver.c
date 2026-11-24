@@ -81,6 +81,7 @@
 // fracos e o 5o item some, com o Inicio de sempre. No app ele sempre liga.
 #ifdef RESOLVER_TESTE
 #pragma weak farolescolhaui_reset
+#pragma weak farolescolhaui_fechar
 #pragma weak farolescolhaui_abrir
 #pragma weak farolescolhaui_evento
 #pragma weak farolescolhaui_atualizar
@@ -1016,6 +1017,7 @@ static void fechar(void) {
   farolconsentui_fechar();
   farolenvioui_fechar();
   farolvozui_fechar();
+  if (ESCOLHA_LIGADA()) farolescolhaui_fechar();
   if (segura || sonda_no_ar()) {
     farolsonda_cancelar();
     sondaCancelada = sonda_no_ar();
@@ -1184,6 +1186,17 @@ void resolver_evento(const SDL_Event *e) {
     else if (pediuVoltar) voz_voltar_fase();
     return;
   }
+  if (fase == RESOLVER_FASE_ESCOLHA) {
+    int pediuSair = 0, pediuAbrir = 0;
+    farolescolhaui_evento(e, &pediuSair, &pediuAbrir);
+    (void)pediuAbrir;   // app.c consome por resolver_pediu_abrir
+    if (farolescolhaui_pediu_fechar()) { fechar(); return; }   // o P4 abriu
+    if (pediuSair) {
+      ir_fase(RESOLVER_FASE_SINTOMA);
+      foco = B_ACHAR_ESCOLHA;
+    }
+    return;
+  }
   if (e->type != SDL_KEYDOWN) return;
   if (fase == RESOLVER_FASE_ACHAR) {
     int pediuVoltar = 0, pediuAbrir = 0;
@@ -1198,17 +1211,6 @@ void resolver_evento(const SDL_Event *e) {
       if ((acharVoltaFoco >= B_ACHAR_0 && acharVoltaFoco <= B_ACHAR_3) ||
           acharVoltaFoco == B_ACHAR_VOZ)
         foco = acharVoltaFoco;
-    }
-    return;
-  }
-  if (fase == RESOLVER_FASE_ESCOLHA) {
-    int pediuSair = 0, pediuAbrir = 0;
-    farolescolhaui_evento(e, &pediuSair, &pediuAbrir);
-    (void)pediuAbrir;   // app.c consome por resolver_pediu_abrir
-    if (farolescolhaui_pediu_fechar()) { fechar(); return; }   // o P4 abriu
-    if (pediuSair) {
-      ir_fase(RESOLVER_FASE_SINTOMA);
-      foco = B_ACHAR_ESCOLHA;
     }
     return;
   }
@@ -1274,6 +1276,7 @@ void resolver_atualizar(float dt, Uint32 agora) {
       farolachaui_atualizar(dt, agora);
     } else if (fase == RESOLVER_FASE_ESCOLHA) {
       farolescolhaui_atualizar(dt, agora);
+      if (farolescolhaui_pediu_fechar()) fechar();
     }
   }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }

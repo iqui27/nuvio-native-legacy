@@ -128,6 +128,7 @@ typedef struct {
   int      opc[FESC_OPC_MAX];       // opcoes oferecidas (indices do banco)
   int      nOpc;
   int      de;                      // total previsto agora (<= 3)
+  int8_t   falta;                   // pergunta sugerida pelo #54 ou -1
 } FarolEsc;
 
 // ------------------------------------------------------------ banco
@@ -157,6 +158,10 @@ void farolescolha_iniciar(FarolEsc *e, const FarolEscCand *cand, int n,
 // conta no teto de 3 (o motor pergunta so o que falta, ou encerra direto).
 // 1 = aceita; 0 = id invalido, pergunta ja respondida ou a pessoa ja comecou.
 int  farolescolha_pre_responder(FarolEsc *e, int perg, const char *opcaoId);
+// Gancho do #54: prioriza a pergunta `perg` ("falta" do servidor) como proxima
+// se o motor ainda perguntar, antes da 1a resposta da pessoa, e `perg` dividir
+// os candidatos vivos (ganho > 0). 1 = aceita; 0 = ignorada.
+int  farolescolha_priorizar(FarolEsc *e, int perg);
 // Responde a pergunta atual com a opcao oferecida de indice `i` (0..nOpc-1).
 // 1 = aceita; 0 = terminado ou `i` fora.
 int  farolescolha_responder(FarolEsc *e, int i);
