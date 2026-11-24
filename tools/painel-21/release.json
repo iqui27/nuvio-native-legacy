@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-24T04:22:15+00:00",
+    "updatedAt": "2026-11-24T04:30:08+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-24T04:19:00+00:00",
+    "lastVpsReportedAt": "2026-11-24T04:26:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -116,46 +116,45 @@
         }
       },
       "implementation": {
-        "status": "BLOQUEADA",
-        "reportedAt": "2026-11-24T04:19:00+00:00",
-        "sourceLine": 265,
-        "activeSlots": null,
+        "status": "IMPLEMENTANDO",
+        "reportedAt": "2026-11-24T04:26:00+00:00",
+        "sourceLine": 266,
+        "activeSlots": 4,
         "totalSlots": 6,
         "operationalWave": 2,
         "host": "ibm-ephemeral",
-        "activeItems": [],
+        "activeItems": [
+          "farol-18",
+          "farol-19",
+          "farol-17",
+          "farol-34"
+        ],
         "criticalItem": "farol-19",
         "immediateQueue": [],
         "workBase": "agente/base-21f-farol-onda2@2d26d54290",
         "previousState": {
-          "status": "IMPLEMENTANDO",
-          "reportedAt": "2026-11-24T04:12:00+00:00",
-          "sourceLine": 264,
-          "activeSlots": 4,
+          "status": "BLOQUEADA",
+          "reportedAt": "2026-11-24T04:19:00+00:00",
+          "sourceLine": 265,
+          "activeSlots": null,
           "totalSlots": 6,
           "operationalWave": 2,
           "host": "ibm-ephemeral",
-          "activeItems": [
-            "farol-19",
-            "farol-18",
-            "farol-17",
-            "farol-34"
-          ],
+          "activeItems": [],
           "criticalItem": "farol-19",
           "immediateQueue": [],
           "workBase": "agente/base-21f-farol-onda2@2d26d54290",
           "previousState": {
             "status": "IMPLEMENTANDO",
-            "reportedAt": "2026-11-24T04:09:00+00:00",
-            "sourceLine": 263,
-            "activeSlots": 5,
+            "reportedAt": "2026-11-24T04:12:00+00:00",
+            "sourceLine": 264,
+            "activeSlots": 4,
             "totalSlots": 6,
             "operationalWave": 2,
             "host": "ibm-ephemeral",
             "activeItems": [
               "farol-19",
               "farol-18",
-              "farol-16",
               "farol-17",
               "farol-34"
             ],
@@ -164,29 +163,26 @@
             "workBase": "agente/base-21f-farol-onda2@2d26d54290",
             "previousState": {
               "status": "IMPLEMENTANDO",
-              "reportedAt": "2026-11-24T04:06:00+00:00",
-              "sourceLine": 260,
-              "activeSlots": 6,
+              "reportedAt": "2026-11-24T04:09:00+00:00",
+              "sourceLine": 263,
+              "activeSlots": 5,
               "totalSlots": 6,
               "operationalWave": 2,
               "host": "ibm-ephemeral",
               "activeItems": [
                 "farol-19",
                 "farol-18",
-                "farol-20",
-                "farol-15",
                 "farol-16",
-                "farol-17"
-              ],
-              "criticalItem": "farol-19",
-              "immediateQueue": [
+                "farol-17",
                 "farol-34"
               ],
+              "criticalItem": "farol-19",
+              "immediateQueue": [],
               "workBase": "agente/base-21f-farol-onda2@2d26d54290",
               "previousState": {
                 "status": "IMPLEMENTANDO",
-                "reportedAt": "2026-11-24T04:00:00+00:00",
-                "sourceLine": 258,
+                "reportedAt": "2026-11-24T04:06:00+00:00",
+                "sourceLine": 260,
                 "activeSlots": 6,
                 "totalSlots": 6,
                 "operationalWave": 2,
@@ -196,19 +192,18 @@
                   "farol-18",
                   "farol-20",
                   "farol-15",
-                  "farol-33",
-                  "farol-16"
+                  "farol-16",
+                  "farol-17"
                 ],
                 "criticalItem": "farol-19",
                 "immediateQueue": [
-                  "farol-17",
                   "farol-34"
                 ],
                 "workBase": "agente/base-21f-farol-onda2@2d26d54290",
                 "previousState": {
                   "status": "IMPLEMENTANDO",
-                  "reportedAt": "2026-11-24T03:53:00+00:00",
-                  "sourceLine": 255,
+                  "reportedAt": "2026-11-24T04:00:00+00:00",
+                  "sourceLine": 258,
                   "activeSlots": 6,
                   "totalSlots": 6,
                   "operationalWave": 2,
@@ -219,43 +214,103 @@
                     "farol-20",
                     "farol-15",
                     "farol-33",
-                    "farol-52"
+                    "farol-16"
                   ],
                   "criticalItem": "farol-19",
                   "immediateQueue": [
-                    "farol-16",
                     "farol-17",
                     "farol-34"
                   ],
                   "workBase": "agente/base-21f-farol-onda2@2d26d54290",
                   "previousState": {
-                    "status": "CORRECAO",
-                    "activeItem": "farol-52",
-                    "task": "FAROL52B",
+                    "status": "IMPLEMENTANDO",
+                    "reportedAt": "2026-11-24T03:53:00+00:00",
+                    "sourceLine": 255,
+                    "activeSlots": 6,
+                    "totalSlots": 6,
+                    "operationalWave": 2,
                     "host": "ibm-ephemeral",
-                    "executor": "claudeAgent",
-                    "model": "claude-opus-5-5",
-                    "reportedAt": "2026-11-24T03:25:00+00:00",
-                    "sourceLine": 252,
+                    "activeItems": [
+                      "farol-19",
+                      "farol-18",
+                      "farol-20",
+                      "farol-15",
+                      "farol-33",
+                      "farol-52"
+                    ],
+                    "criticalItem": "farol-19",
+                    "immediateQueue": [
+                      "farol-16",
+                      "farol-17",
+                      "farol-34"
+                    ],
+                    "workBase": "agente/base-21f-farol-onda2@2d26d54290",
                     "previousState": {
-                      "status": "PAUSA",
-                      "reportedAt": "2026-11-24T01:04:00+00:00",
-                      "activeSlots": 1,
-                      "totalSlots": 6,
+                      "status": "CORRECAO",
                       "activeItem": "farol-52",
-                      "note": "Pausa de novos despachos no relato das 01h04: onda 2 depende do aceite da #14; Gosto depende de #19/#22/#25/#31/#52. FAROL52 foi entregue às 02h56; não foi relatada retomada geral nem nova alocação."
+                      "task": "FAROL52B",
+                      "host": "ibm-ephemeral",
+                      "executor": "claudeAgent",
+                      "model": "claude-opus-5-5",
+                      "reportedAt": "2026-11-24T03:25:00+00:00",
+                      "sourceLine": 252,
+                      "previousState": {
+                        "status": "PAUSA",
+                        "reportedAt": "2026-11-24T01:04:00+00:00",
+                        "activeSlots": 1,
+                        "totalSlots": 6,
+                        "activeItem": "farol-52",
+                        "note": "Pausa de novos despachos no relato das 01h04: onda 2 depende do aceite da #14; Gosto depende de #19/#22/#25/#31/#52. FAROL52 foi entregue às 02h56; não foi relatada retomada geral nem nova alocação."
+                      },
+                      "note": "Correção da #52 despachada; não é retomada geral das outras implementações. Nenhuma nova contagem global de vagas foi reportada."
                     },
-                    "note": "Correção da #52 despachada; não é retomada geral das outras implementações. Nenhuma nova contagem global de vagas foi reportada."
+                    "note": "Cinco novas implementações mais FAROL52B ocupam 6/6 conforme VPS. Não são entregas, aprovações ou integração; a fila imediata ainda não foi lançada."
                   },
-                  "note": "Cinco novas implementações mais FAROL52B ocupam 6/6 conforme VPS. Não são entregas, aprovações ou integração; a fila imediata ainda não foi lançada."
+                  "note": "Seis implementações na IBM conforme VPS; FAROL52B entregue saiu das vagas e #16 entrou. #17/#34 permanecem na fila por inferência da ordem anterior, sem novos lançamentos reportados."
                 },
-                "note": "Seis implementações na IBM conforme VPS; FAROL52B entregue saiu das vagas e #16 entrou. #17/#34 permanecem na fila por inferência da ordem anterior, sem novos lançamentos reportados."
+                "note": "Seis implementações na IBM conforme VPS; Farol 33 entregue saiu das vagas e #17 entrou. #34 é a fila restante inferida dos relatos anteriores, sem lançamento reportado."
               },
-              "note": "Seis implementações na IBM conforme VPS; Farol 33 entregue saiu das vagas e #17 entrou. #34 é a fila restante inferida dos relatos anteriores, sem lançamento reportado."
+              "note": "Despacho completo da onda operacional 2 reportado às 04h08 UTC, com 6/6 naquele instante. Após entrega do #20 às 04h09, cinco implementações remanescentes são inferidas localmente (#19/#18/#16/#17/#34), sem substituto reportado; não é uma nova contagem VPS. Fila imediata esvaziada; entregas 15/20/33 aguardam r1 por disco, sem aprovação ou integração.",
+              "activeSlotsInferred": true,
+              "activeSlotsSource": "Inferência local: seis vagas na linha 262 menos entrega do Farol 20 na linha 263, sem substituto reportado",
+              "lastReportedCapacity": {
+                "activeSlots": 6,
+                "totalSlots": 6,
+                "activeItems": [
+                  "farol-19",
+                  "farol-18",
+                  "farol-20",
+                  "farol-16",
+                  "farol-17",
+                  "farol-34"
+                ],
+                "reportedAt": "2026-11-24T04:08:00+00:00",
+                "sourceLine": 262
+              },
+              "deliveredSinceLastCapacity": [
+                "farol-20"
+              ],
+              "dispatchComplete": {
+                "reported": true,
+                "operationalWave": 2,
+                "reportedAt": "2026-11-24T04:08:00+00:00",
+                "sourceLine": 262,
+                "dispatchedItems": [
+                  "farol-19",
+                  "farol-18",
+                  "farol-20",
+                  "farol-15",
+                  "farol-33",
+                  "farol-16",
+                  "farol-17",
+                  "farol-34"
+                ],
+                "integrationVerified": false
+              }
             },
-            "note": "Despacho completo da onda operacional 2 reportado às 04h08 UTC, com 6/6 naquele instante. Após entrega do #20 às 04h09, cinco implementações remanescentes são inferidas localmente (#19/#18/#16/#17/#34), sem substituto reportado; não é uma nova contagem VPS. Fila imediata esvaziada; entregas 15/20/33 aguardam r1 por disco, sem aprovação ou integração.",
+            "note": "Despacho completo da onda operacional 2 reportado às 04h08 UTC, com 6/6 naquele instante. Após entregas do #20 às 04h09 e do #16 às 04h12, quatro implementações remanescentes são inferidas localmente (#19/#18/#17/#34), sem substitutos reportados; não é nova contagem VPS. Fila imediata esvaziada; entregas 15/16/20/33 aguardam r1 por disco, sem aprovação ou integração.",
             "activeSlotsInferred": true,
-            "activeSlotsSource": "Inferência local: seis vagas na linha 262 menos entrega do Farol 20 na linha 263, sem substituto reportado",
+            "activeSlotsSource": "Inferência local: seis vagas na linha 262 menos entregas do Farol 20 na linha 263 e do Farol 16 na linha 264, sem substitutos reportados",
             "lastReportedCapacity": {
               "activeSlots": 6,
               "totalSlots": 6,
@@ -271,7 +326,8 @@
               "sourceLine": 262
             },
             "deliveredSinceLastCapacity": [
-              "farol-20"
+              "farol-20",
+              "farol-16"
             ],
             "dispatchComplete": {
               "reported": true,
@@ -291,9 +347,9 @@
               "integrationVerified": false
             }
           },
-          "note": "Despacho completo da onda operacional 2 reportado às 04h08 UTC, com 6/6 naquele instante. Após entregas do #20 às 04h09 e do #16 às 04h12, quatro implementações remanescentes são inferidas localmente (#19/#18/#17/#34), sem substitutos reportados; não é nova contagem VPS. Fila imediata esvaziada; entregas 15/16/20/33 aguardam r1 por disco, sem aprovação ou integração.",
-          "activeSlotsInferred": true,
-          "activeSlotsSource": "Inferência local: seis vagas na linha 262 menos entregas do Farol 20 na linha 263 e do Farol 16 na linha 264, sem substitutos reportados",
+          "note": "IBM claudeAgent atingiu limite de 5h; #18/#19 pausados com worktrees preservadas, retorno informado às 08h20 UTC (05h20 Brasília), sem retomada confirmada. #18 com testes verdes reportados, mas sem commit/push. #17/#34 mantêm último estado individual, sem atualização pós-cota; contagem atual de execução desconhecida. Relato 6/6 das 04h08 e inferência anterior de quatro remanescentes ficam no histórico. Entregas GitHub 52/33/15/20/16 não são aprovação ou integração; revisão VPS segue bloqueada por disco.",
+          "activeSlotsInferred": false,
+          "activeSlotsSource": "Contagem atual não reportada após limite do claudeAgent IBM. #18/#19 pausados; #17/#34 sem atualização após cota, sem inferir execução ou pausa.",
           "lastReportedCapacity": {
             "activeSlots": 6,
             "totalSlots": 6,
@@ -328,11 +384,36 @@
               "farol-34"
             ],
             "integrationVerified": false
-          }
+          },
+          "activeItemsAreConfirmedOnly": true,
+          "pausedItems": [
+            "farol-18",
+            "farol-19"
+          ],
+          "unconfirmedItems": [
+            "farol-17",
+            "farol-34"
+          ],
+          "latestKnownUnfinishedItems": [
+            "farol-19",
+            "farol-18",
+            "farol-17",
+            "farol-34"
+          ],
+          "reportedResetAt": "2026-11-24T08:20:00+00:00",
+          "availabilityAfterResetNotVerified": true,
+          "deliveredGithubReported": [
+            "farol-52",
+            "farol-33",
+            "farol-15",
+            "farol-20",
+            "farol-16"
+          ],
+          "deliveredGithubSourceLine": 265
         },
-        "note": "IBM claudeAgent atingiu limite de 5h; #18/#19 pausados com worktrees preservadas, retorno informado às 08h20 UTC (05h20 Brasília), sem retomada confirmada. #18 com testes verdes reportados, mas sem commit/push. #17/#34 mantêm último estado individual, sem atualização pós-cota; contagem atual de execução desconhecida. Relato 6/6 das 04h08 e inferência anterior de quatro remanescentes ficam no histórico. Entregas GitHub 52/33/15/20/16 não são aprovação ou integração; revisão VPS segue bloqueada por disco.",
+        "note": "Antigravity atualizado e operacional na IBM: 18/19/17/34 retomados com Gemini Hydrogen nas worktrees preservadas; 20/15/16 em r1 cross-family com Gemini 4 Neon. Quatro implementações e três revisões nomeadas, sem nova contagem global de capacidade 6/6. Cota do claudeAgent não declarada recuperada. VPS segue pausada com 15G; r1 do 33 e r2 do 52 sem novo lançamento reportado.",
         "activeSlotsInferred": false,
-        "activeSlotsSource": "Contagem atual não reportada após limite do claudeAgent IBM. #18/#19 pausados; #17/#34 sem atualização após cota, sem inferir execução ou pausa.",
+        "activeSlotsSource": "Quatro implementações nomeadas na linha 266; três revisões são contadas separadamente, sem novo relato global 6/6",
         "lastReportedCapacity": {
           "activeSlots": 6,
           "totalSlots": 6,
@@ -369,22 +450,14 @@
           "integrationVerified": false
         },
         "activeItemsAreConfirmedOnly": true,
-        "pausedItems": [
-          "farol-18",
-          "farol-19"
-        ],
-        "unconfirmedItems": [
-          "farol-17",
-          "farol-34"
-        ],
+        "pausedItems": [],
+        "unconfirmedItems": [],
         "latestKnownUnfinishedItems": [
           "farol-19",
           "farol-18",
           "farol-17",
           "farol-34"
         ],
-        "reportedResetAt": "2026-11-24T08:20:00+00:00",
-        "availabilityAfterResetNotVerified": true,
         "deliveredGithubReported": [
           "farol-52",
           "farol-33",
@@ -392,7 +465,17 @@
           "farol-20",
           "farol-16"
         ],
-        "deliveredGithubSourceLine": 265
+        "deliveredGithubSourceLine": 265,
+        "activeSlotsScope": "somente as quatro implementações explicitamente retomadas, não capacidade global",
+        "executor": "Antigravity",
+        "model": "Gemini Hydrogen",
+        "reviewItems": [
+          "farol-20",
+          "farol-15",
+          "farol-16"
+        ],
+        "reviewCount": 3,
+        "reviewer": "Gemini 4 Neon"
       },
       "capacity": {
         "swe2Pi": {
@@ -405,15 +488,18 @@
           "scope": "correção especificada e trabalho mecânico"
         },
         "devinAcp": "parado conforme VPS",
-        "ibmClaudeAgent": "Limite de 5h atingido; #18/#19 pausados com worktrees preservadas. Retorno informado 08h20 UTC (05h20 Brasília), sem disponibilidade confirmada. #18 tem testes verdes reportados, mas falta commit/push. #17/#34 sem atualização pós-cota; contagem atual de execução desconhecida.",
-        "reportedAt": "2026-11-24T04:19:00+00:00",
-        "newBuildRoute": "VPS bloqueada por disco; claudeAgent IBM com limite de 5h até 08h20 UTC conforme relato. Alternativas de revisão/execução não confirmadas.",
+        "ibmClaudeAgent": "Cota de 5h informada até 08h20 UTC na linha 265; reset não confirmado. Retomada das implementações usa Antigravity/Gemini, não claudeAgent.",
+        "reportedAt": "2026-11-24T04:26:00+00:00",
+        "newBuildRoute": "IBM Antigravity para implementações 18/19/17/34 e r1 de 20/15/16; VPS permanece pausada por disco.",
         "ibmActiveSlotsReported": 6,
         "ibmTotalSlotsReported": 6,
         "ibmCapacityReportedAt": "2026-11-24T04:08:00+00:00",
         "ibmCapacitySourceLine": 262,
-        "ibmCurrentActiveSlots": null,
-        "ibmCurrentActiveSlotsSource": "Sem contagem atual após limite; último 6/6 é de 04h08 UTC, não de 04h19"
+        "ibmCurrentActiveSlots": 4,
+        "ibmCurrentActiveSlotsSource": "Quatro implementações explicitamente retomadas na linha 266; não é novo relato global 6/6",
+        "ibmAntigravity": "Atualizado e operacional conforme VPS; versão nova não informada. Quatro implementações retomadas e três revisões cross-family nomeadas.",
+        "ibmCurrentActiveSlotsScope": "implementações nomeadas; revisões separadas",
+        "ibmReviewTasksReported": 3
       },
       "infrastructure": {
         "codexMacbook": {
@@ -459,13 +545,25 @@
           "previousLimitation": "Às 02h59, claudeAgent logado, uso só para push enquanto T3 0.1.9 não devolvia retorno; superado pela atualização das 03h05",
           "integrations": {
             "antigravity": {
-              "version": "1.4.5",
-              "status": "incompatible_with_t3_reported",
-              "t3Version": "0.1.12-nightly",
-              "reportedAt": "2026-11-24T03:25:00+00:00",
-              "sourceLine": 252,
-              "fallback": "claudeAgent claude-opus-5-5 para FAROL52B",
-              "scope": "Adaptador Antigravity na IBM; não invalida leitura/callbacks T3 ou claudeAgent liberados no relato anterior"
+              "previousState": {
+                "version": "1.4.5",
+                "status": "incompatible_with_t3_reported",
+                "t3Version": "0.1.12-nightly",
+                "reportedAt": "2026-11-24T03:25:00+00:00",
+                "sourceLine": 252,
+                "fallback": "claudeAgent claude-opus-5-5 para FAROL52B",
+                "scope": "Adaptador Antigravity na IBM; não invalida leitura/callbacks T3 ou claudeAgent liberados no relato anterior"
+              },
+              "previousVersion": "1.4.5",
+              "version": null,
+              "versionNotReported": true,
+              "status": "operational_after_update_reported",
+              "reportedAt": "2026-11-24T04:26:00+00:00",
+              "sourceLine": 266,
+              "scope": "Antigravity na IBM; não é reset da cota do claudeAgent nem da cota anterior Opus/Sonnet",
+              "implementationModel": "Gemini Hydrogen",
+              "reviewModel": "Gemini 4 Neon",
+              "testedLocally": false
             }
           },
           "previousClaudeAgentStatus": "liberado conforme VPS; não executado nesta VM"
@@ -481,8 +579,8 @@
           "freeGbReported": 15,
           "floorGbReported": 20,
           "atFloorReported": false,
-          "reportedAt": "2026-11-24T04:19:00+00:00",
-          "sourceLine": 265,
+          "reportedAt": "2026-11-24T04:26:00+00:00",
+          "sourceLine": 266,
           "newBuildRoute": "ibm-ephemeral",
           "measuredLocally": false,
           "belowFloorReported": true,
@@ -526,15 +624,40 @@
                 "sourceLine": 264,
                 "note": "Confirma apenas abaixo do piso; medição de 15G permanece datada de 04h00 UTC, linha 257"
               }
+            },
+            {
+              "mount": "/",
+              "freeGbReported": 15,
+              "floorGbReported": 20,
+              "atFloorReported": false,
+              "reportedAt": "2026-11-24T04:19:00+00:00",
+              "sourceLine": 265,
+              "newBuildRoute": "ibm-ephemeral",
+              "measuredLocally": false,
+              "belowFloorReported": true,
+              "status": "BLOQUEADA",
+              "pausedScopes": [
+                "builds",
+                "runs",
+                "revisões"
+              ],
+              "lastThresholdConfirmation": {
+                "belowFloorReported": true,
+                "floorGb": 20,
+                "freeGbReported": 15,
+                "reportedAt": "2026-11-24T04:19:00+00:00",
+                "sourceLine": 265,
+                "note": "VPS reconfirma 15G livres abaixo do piso; não é medição desta VM"
+              }
             }
           ],
           "lastThresholdConfirmation": {
             "belowFloorReported": true,
             "floorGb": 20,
             "freeGbReported": 15,
-            "reportedAt": "2026-11-24T04:19:00+00:00",
-            "sourceLine": 265,
-            "note": "VPS reconfirma 15G livres abaixo do piso; não é medição desta VM"
+            "reportedAt": "2026-11-24T04:26:00+00:00",
+            "sourceLine": 266,
+            "note": "VPS reconfirma 15G e pausa; rota IBM não implica limpeza de disco"
           },
           "previousThresholdConfirmations": [
             {
@@ -557,6 +680,14 @@
               "reportedAt": "2026-11-24T04:12:00+00:00",
               "sourceLine": 264,
               "note": "Confirma apenas abaixo do piso; medição de 15G permanece datada de 04h00 UTC, linha 257"
+            },
+            {
+              "belowFloorReported": true,
+              "floorGb": 20,
+              "freeGbReported": 15,
+              "reportedAt": "2026-11-24T04:19:00+00:00",
+              "sourceLine": 265,
+              "note": "VPS reconfirma 15G livres abaixo do piso; não é medição desta VM"
             }
           ]
         },
@@ -624,29 +755,71 @@
         "farol-15": {
           "round": "r1",
           "sha": "51f1e5b498",
-          "status": "blocked_before_start_reported",
-          "blockedBy": "vps-root-disk",
+          "shaSource": "última entrega conhecida; novo SHA não informado no lançamento",
+          "status": "launched_reported",
+          "reviewer": "Gemini 4 Neon",
+          "executor": "Antigravity",
+          "host": "ibm-ephemeral",
+          "crossFamilyReported": true,
+          "unblockedVia": "Rota IBM; disco VPS continua bloqueado",
           "verdictIssued": false,
-          "sourceLine": 261,
-          "reportedAt": "2026-11-24T04:08:00+00:00"
+          "sourceLine": 266,
+          "reportedAt": "2026-11-24T04:26:00+00:00",
+          "previousState": {
+            "round": "r1",
+            "sha": "51f1e5b498",
+            "status": "blocked_before_start_reported",
+            "blockedBy": "vps-root-disk",
+            "verdictIssued": false,
+            "sourceLine": 261,
+            "reportedAt": "2026-11-24T04:08:00+00:00"
+          }
         },
         "farol-20": {
           "round": "r1",
           "sha": "c4f3d39f5b",
-          "status": "blocked_before_start_reported",
-          "blockedBy": "vps-root-disk",
+          "shaSource": "última entrega conhecida; novo SHA não informado no lançamento",
+          "status": "launched_reported",
+          "reviewer": "Gemini 4 Neon",
+          "executor": "Antigravity",
+          "host": "ibm-ephemeral",
+          "crossFamilyReported": true,
+          "unblockedVia": "Rota IBM; disco VPS continua bloqueado",
           "verdictIssued": false,
-          "sourceLine": 263,
-          "reportedAt": "2026-11-24T04:09:00+00:00"
+          "sourceLine": 266,
+          "reportedAt": "2026-11-24T04:26:00+00:00",
+          "previousState": {
+            "round": "r1",
+            "sha": "c4f3d39f5b",
+            "status": "blocked_before_start_reported",
+            "blockedBy": "vps-root-disk",
+            "verdictIssued": false,
+            "sourceLine": 263,
+            "reportedAt": "2026-11-24T04:09:00+00:00"
+          }
         },
         "farol-16": {
           "round": "r1",
           "sha": "fd0270f902",
-          "status": "blocked_before_start_reported",
-          "blockedBy": "vps-root-disk",
+          "shaSource": "última entrega conhecida; novo SHA não informado no lançamento",
+          "status": "launched_reported",
+          "reviewer": "Gemini 4 Neon",
+          "executor": "Antigravity",
+          "host": "ibm-ephemeral",
+          "crossFamilyReported": true,
+          "unblockedVia": "Rota IBM; disco VPS continua bloqueado",
           "verdictIssued": false,
-          "sourceLine": 264,
-          "reportedAt": "2026-11-24T04:12:00+00:00"
+          "sourceLine": 266,
+          "reportedAt": "2026-11-24T04:26:00+00:00",
+          "previousState": {
+            "round": "r1",
+            "sha": "fd0270f902",
+            "status": "blocked_before_start_reported",
+            "blockedBy": "vps-root-disk",
+            "verdictIssued": false,
+            "sourceLine": 264,
+            "reportedAt": "2026-11-24T04:12:00+00:00"
+          }
         }
       },
       "wave2ApprovalGate": {
@@ -659,9 +832,9 @@
       },
       "vpsExecution": {
         "status": "BLOQUEADA",
-        "reportedAt": "2026-11-24T04:19:00+00:00",
-        "sourceLine": 265,
-        "reason": "Raiz VPS segue em 15G livres < piso 20G, conforme VPS; nenhuma retomada reportada",
+        "reportedAt": "2026-11-24T04:26:00+00:00",
+        "sourceLine": 266,
+        "reason": "VPS segue pausada com 15G livres < piso 20G; revisões 20/15/16 desviadas para IBM, sem limpeza de disco",
         "pausedScopes": [
           "builds",
           "runs",
@@ -669,17 +842,12 @@
         ],
         "resumeNotReported": true,
         "localDashboardUnaffected": true,
-        "latestBlockedReview": {
-          "item": "farol-16",
-          "round": "r1",
-          "reportedAt": "2026-11-24T04:12:00+00:00",
-          "sourceLine": 264
-        },
+        "latestBlockedReview": null,
         "previousState": {
           "status": "BLOQUEADA",
-          "reportedAt": "2026-11-24T04:00:00+00:00",
-          "sourceLine": 257,
-          "reason": "Raiz VPS 15G livres < piso 20G",
+          "reportedAt": "2026-11-24T04:19:00+00:00",
+          "sourceLine": 265,
+          "reason": "Raiz VPS segue em 15G livres < piso 20G, conforme VPS; nenhuma retomada reportada",
           "pausedScopes": [
             "builds",
             "runs",
@@ -692,11 +860,43 @@
             "round": "r1",
             "reportedAt": "2026-11-24T04:12:00+00:00",
             "sourceLine": 264
+          },
+          "previousState": {
+            "status": "BLOQUEADA",
+            "reportedAt": "2026-11-24T04:00:00+00:00",
+            "sourceLine": 257,
+            "reason": "Raiz VPS 15G livres < piso 20G",
+            "pausedScopes": [
+              "builds",
+              "runs",
+              "revisões"
+            ],
+            "resumeNotReported": true,
+            "localDashboardUnaffected": true,
+            "latestBlockedReview": {
+              "item": "farol-16",
+              "round": "r1",
+              "reportedAt": "2026-11-24T04:12:00+00:00",
+              "sourceLine": 264
+            }
           }
-        }
+        },
+        "previousBlockedReviewSnapshots": [
+          {
+            "item": "farol-16",
+            "round": "r1",
+            "reportedAt": "2026-11-24T04:12:00+00:00",
+            "sourceLine": 264
+          }
+        ],
+        "remainingBlockedReviews": [
+          "farol-33:r1",
+          "farol-52:r2"
+        ],
+        "remainingBlockedReviewsSource": "Últimos estados conhecidos; linha 266 não lança revisões desses dois itens"
       }
     },
-    "lastVpsLine": 265,
+    "lastVpsLine": 266,
     "wave2Base": {
       "branch": "agente/base-21f-farol-onda2",
       "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -1196,19 +1396,20 @@
         "farol-14"
       ],
       "allDependencies": false,
-      "status": "BLOQUEADA",
+      "status": "REVISAO",
       "wave": "C",
       "sha": "51f1e5b498",
       "batch": null,
-      "note": "Entregue na IBM por claudeAgent Sonnet em 51f1e5b498: 10 arquivos; farol_acao_fonte/fontefalha normal+ASan + SDL2 RC 0, conforme VPS. Commit, pai 2d26d54290 (base de trabalho da onda 2) e quantidade de arquivos conferidos no GitHub; testes não reproduzidos nesta VM. Aguarda revisão r1, ainda não iniciada, por disco VPS abaixo de 20G. Sem aprovação, integração ou TV física confirmadas; entrega não altera o candidato 21f original.",
-      "source": "Relato VPS · linha 261; commit, pai e quantidade de arquivos conferidos no GitHub",
+      "note": "Revisão r1 cross-family lançada na IBM com Gemini 4 Neon via Antigravity atualizado e operacional, conforme VPS. Última entrega conhecida 51f1e5b498; o relato de lançamento não especifica novo SHA. Testes da entrega anteriores continuam somente reportados, não reproduzidos nesta VM. O bloqueio de disco foi contornado pela rota IBM, não resolvido: VPS segue pausada com 15G. Revisão em execução não é aprovação, integração ou validação em TV física.",
+      "source": "Relato VPS · linha 266; entrega e conferências GitHub anteriores preservadas",
       "verified": false,
       "previousNotes": [
+        "Entregue na IBM por claudeAgent Sonnet em 51f1e5b498: 10 arquivos; farol_acao_fonte/fontefalha normal+ASan + SDL2 RC 0, conforme VPS. Commit, pai 2d26d54290 (base de trabalho da onda 2) e quantidade de arquivos conferidos no GitHub; testes não reproduzidos nesta VM. Aguarda revisão r1, ainda não iniciada, por disco VPS abaixo de 20G. Sem aprovação, integração ou TV física confirmadas; entrega não altera o candidato 21f original.",
         "Implementação lançada na IBM com Sonnet, conforme VPS. Onda operacional 2 destravada pelo aceite com ressalvas da #14; base agente/base-21f-farol-onda2@2d26d54290 (21f + #14), não integrada. Ainda sem commit de entrega, revisão ou teste em TV física reportados; não confundir a base com SHA entregue da issue.",
         ""
       ],
-      "reportedAt": "2026-11-24T04:08:00+00:00",
-      "updatedAt": "2026-11-24T04:11:57+00:00",
+      "reportedAt": "2026-11-24T04:26:00+00:00",
+      "updatedAt": "2026-11-24T04:30:08+00:00",
       "integrationVerified": false,
       "operationalWave": 2,
       "approvalGate": {
@@ -1219,7 +1420,7 @@
         "reportedAt": "2026-11-24T03:53:00+00:00",
         "sourceLine": 253
       },
-      "owner": "IBM · claudeAgent / Sonnet",
+      "owner": "IBM · Antigravity / Gemini 4 Neon",
       "workBase": {
         "branch": "agente/base-21f-farol-onda2",
         "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -1259,7 +1460,7 @@
         }
       ],
       "latestDeliverySha": "51f1e5b498",
-      "verificationSummary": "entrega e testes reportados pela VPS; r1 bloqueada antes de iniciar por disco; sem aprovação, integração ou TV física",
+      "verificationSummary": "r1 cross-family lançada na IBM conforme VPS; sem parecer de aprovação, integração ou TV física",
       "delivery": {
         "sha": "51f1e5b498",
         "fullSha": "51f1e5b49888d32de0fde764424b4ca4f7483433",
@@ -1276,19 +1477,38 @@
       "review": {
         "round": "r1",
         "sha": "51f1e5b498",
-        "status": "blocked_before_start_reported",
-        "blockedBy": "vps-root-disk",
+        "shaSource": "última entrega conhecida; novo SHA não informado no lançamento",
+        "status": "launched_reported",
+        "reviewer": "Gemini 4 Neon",
+        "executor": "Antigravity",
+        "host": "ibm-ephemeral",
+        "crossFamilyReported": true,
+        "unblockedVia": "Rota IBM; disco VPS continua bloqueado",
         "verdictIssued": false,
-        "sourceLine": 261,
-        "reportedAt": "2026-11-24T04:08:00+00:00"
+        "sourceLine": 266,
+        "reportedAt": "2026-11-24T04:26:00+00:00"
       },
-      "blockers": [
+      "blockers": [],
+      "previousReviews": [
         {
-          "id": "vps-root-disk",
-          "reason": "Disco VPS abaixo do piso de 20G; r1 aguardando",
+          "round": "r1",
+          "sha": "51f1e5b498",
+          "status": "blocked_before_start_reported",
+          "blockedBy": "vps-root-disk",
+          "verdictIssued": false,
           "sourceLine": 261,
           "reportedAt": "2026-11-24T04:08:00+00:00"
         }
+      ],
+      "previousBlockers": [
+        [
+          {
+            "id": "vps-root-disk",
+            "reason": "Disco VPS abaixo do piso de 20G; r1 aguardando",
+            "sourceLine": 261,
+            "reportedAt": "2026-11-24T04:08:00+00:00"
+          }
+        ]
       ]
     },
     {
@@ -1301,20 +1521,21 @@
         "farol-14"
       ],
       "allDependencies": false,
-      "status": "BLOQUEADA",
+      "status": "REVISAO",
       "wave": "C",
       "sha": "fd0270f902",
       "batch": null,
-      "note": "Entregue na IBM por claudeAgent Sonnet em fd0270f902: 11 arquivos, sem tocar src/app.c. Commit, pai 2d26d54290 (base de trabalho da onda 2), quantidade de arquivos e ausência de alteração em app.c conferidos no GitHub. VPS reporta farol_acao_audio/fachada/regra/home normal+ASan + SDL2 RC 0; testes não reproduzidos nesta VM. Aguarda revisão r1, ainda não iniciada por disco VPS abaixo de 20G. Sem aprovação, integração ou TV física confirmadas; entrega não altera o candidato 21f original.",
-      "source": "Relato VPS · linha 264; commit, pai, 11 arquivos e ausência de alteração em src/app.c conferidos no GitHub",
+      "note": "Revisão r1 cross-family lançada na IBM com Gemini 4 Neon via Antigravity atualizado e operacional, conforme VPS. Última entrega conhecida fd0270f902; o relato de lançamento não especifica novo SHA. Testes da entrega anteriores continuam somente reportados, não reproduzidos nesta VM. O bloqueio de disco foi contornado pela rota IBM, não resolvido: VPS segue pausada com 15G. Revisão em execução não é aprovação, integração ou validação em TV física.",
+      "source": "Relato VPS · linha 266; entrega e conferências GitHub anteriores preservadas",
       "verified": false,
       "previousNotes": [
+        "Entregue na IBM por claudeAgent Sonnet em fd0270f902: 11 arquivos, sem tocar src/app.c. Commit, pai 2d26d54290 (base de trabalho da onda 2), quantidade de arquivos e ausência de alteração em app.c conferidos no GitHub. VPS reporta farol_acao_audio/fachada/regra/home normal+ASan + SDL2 RC 0; testes não reproduzidos nesta VM. Aguarda revisão r1, ainda não iniciada por disco VPS abaixo de 20G. Sem aprovação, integração ou TV física confirmadas; entrega não altera o candidato 21f original.",
         "Implementação lançada na IBM com claudeAgent Sonnet, sobre agente/base-21f-farol-onda2@2d26d54290 (21f + Farol 14). Sai da fila imediata e ocupa a vaga liberada pela entrega FAROL52B: IBM permanece em 6/6 conforme VPS. A base publicada não é SHA entregue da issue; ainda sem commit próprio, revisão, integração ou TV física confirmados.",
         "Fila imediata da onda operacional 2, posição 1, após o aceite com ressalvas da #14. Capacidade IBM 6/6 ocupada conforme VPS: cinco implementações e FAROL52B. Ainda não lançada; sem executor, entrega ou integração confirmados. TV física pendente.",
         ""
       ],
-      "reportedAt": "2026-11-24T04:12:00+00:00",
-      "updatedAt": "2026-11-24T04:15:25+00:00",
+      "reportedAt": "2026-11-24T04:26:00+00:00",
+      "updatedAt": "2026-11-24T04:30:08+00:00",
       "integrationVerified": false,
       "operationalWave": 2,
       "approvalGate": {
@@ -1334,7 +1555,7 @@
           "reportedAt": "2026-11-24T03:53:00+00:00"
         }
       ],
-      "owner": "IBM · claudeAgent / Sonnet",
+      "owner": "IBM · Antigravity / Gemini 4 Neon",
       "workBase": {
         "branch": "agente/base-21f-farol-onda2",
         "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -1375,7 +1596,7 @@
         }
       ],
       "latestDeliverySha": "fd0270f902",
-      "verificationSummary": "entrega e testes reportados pela VPS; r1 bloqueada antes de iniciar por disco; sem aprovação, integração ou TV física",
+      "verificationSummary": "r1 cross-family lançada na IBM conforme VPS; sem parecer de aprovação, integração ou TV física",
       "delivery": {
         "sha": "fd0270f902",
         "fullSha": "fd0270f90200a7fe2c9f25063ed26b882ee5439e",
@@ -1393,19 +1614,38 @@
       "review": {
         "round": "r1",
         "sha": "fd0270f902",
-        "status": "blocked_before_start_reported",
-        "blockedBy": "vps-root-disk",
+        "shaSource": "última entrega conhecida; novo SHA não informado no lançamento",
+        "status": "launched_reported",
+        "reviewer": "Gemini 4 Neon",
+        "executor": "Antigravity",
+        "host": "ibm-ephemeral",
+        "crossFamilyReported": true,
+        "unblockedVia": "Rota IBM; disco VPS continua bloqueado",
         "verdictIssued": false,
-        "sourceLine": 264,
-        "reportedAt": "2026-11-24T04:12:00+00:00"
+        "sourceLine": 266,
+        "reportedAt": "2026-11-24T04:26:00+00:00"
       },
-      "blockers": [
+      "blockers": [],
+      "previousReviews": [
         {
-          "id": "vps-root-disk",
-          "reason": "Disco VPS abaixo do piso de 20G; r1 aguardando",
+          "round": "r1",
+          "sha": "fd0270f902",
+          "status": "blocked_before_start_reported",
+          "blockedBy": "vps-root-disk",
+          "verdictIssued": false,
           "sourceLine": 264,
           "reportedAt": "2026-11-24T04:12:00+00:00"
         }
+      ],
+      "previousBlockers": [
+        [
+          {
+            "id": "vps-root-disk",
+            "reason": "Disco VPS abaixo do piso de 20G; r1 aguardando",
+            "sourceLine": 264,
+            "reportedAt": "2026-11-24T04:12:00+00:00"
+          }
+        ]
       ]
     },
     {
@@ -1422,16 +1662,17 @@
       "wave": "C",
       "sha": null,
       "batch": null,
-      "note": "Implementação lançada na IBM com claudeAgent Sonnet sobre agente/base-21f-farol-onda2@2d26d54290. Sai da fila e ocupa a vaga liberada pela entrega do Farol 33; IBM permanece em 6/6 conforme VPS. Ainda sem commit próprio ou revisão reportados; a base não é entrega desta issue. Sem integração ou TV física confirmadas.",
-      "source": "Relato VPS · linha 260",
+      "note": "Retomado na IBM com Gemini Hydrogen via Antigravity atualizado e operacional, nas worktrees preservadas, conforme VPS. Contorna a cota anterior do claudeAgent; não confirma reset dessa cota nem limpeza da VPS. Base de trabalho da onda 2 preservada; nenhum novo SHA de entrega, parecer de aprovação, integração ou TV física reportados.",
+      "source": "Relato VPS · linha 266",
       "verified": false,
       "previousNotes": [
+        "Implementação lançada na IBM com claudeAgent Sonnet sobre agente/base-21f-farol-onda2@2d26d54290. Sai da fila e ocupa a vaga liberada pela entrega do Farol 33; IBM permanece em 6/6 conforme VPS. Ainda sem commit próprio ou revisão reportados; a base não é entrega desta issue. Sem integração ou TV física confirmadas.",
         "Fila imediata restante da onda 2, posição 1 após o início do Farol 16. Ordem relativa #17 → #34 preservada da linha 255; a posição foi recalculada pelo painel, não é nova ordem da VPS. IBM 6/6 ocupada com #19/#18/#20/#15/#33/#16, conforme linha 258. Nenhum lançamento desta issue foi reportado; sem entrega, integração ou TV física confirmadas.",
         "Fila imediata da onda operacional 2, posição 2, após o aceite com ressalvas da #14. Capacidade IBM 6/6 ocupada conforme VPS: cinco implementações e FAROL52B. Ainda não lançada; sem executor, entrega ou integração confirmados. TV física pendente.",
         ""
       ],
-      "reportedAt": "2026-11-24T04:06:00+00:00",
-      "updatedAt": "2026-11-24T04:09:50+00:00",
+      "reportedAt": "2026-11-24T04:26:00+00:00",
+      "updatedAt": "2026-11-24T04:30:08+00:00",
       "integrationVerified": false,
       "operationalWave": 2,
       "approvalGate": {
@@ -1461,7 +1702,7 @@
           "updatedAt": "2026-11-24T04:04:37+00:00"
         }
       ],
-      "owner": "IBM · claudeAgent / Sonnet",
+      "owner": "IBM · Antigravity / Gemini Hydrogen",
       "workBase": {
         "branch": "agente/base-21f-farol-onda2",
         "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -1484,13 +1725,26 @@
         "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
       },
       "implementation": {
-        "status": "launched_reported",
+        "status": "resumed_reported",
         "host": "ibm-ephemeral",
-        "executor": "claudeAgent",
-        "model": "Sonnet",
-        "sourceLine": 260,
-        "reportedAt": "2026-11-24T04:06:00+00:00"
-      }
+        "executor": "Antigravity",
+        "model": "Gemini Hydrogen",
+        "worktreePreservedReported": true,
+        "sourceLine": 266,
+        "reportedAt": "2026-11-24T04:26:00+00:00",
+        "previousQuotaBypassedNotReset": true
+      },
+      "previousImplementations": [
+        {
+          "status": "launched_reported",
+          "host": "ibm-ephemeral",
+          "executor": "claudeAgent",
+          "model": "Sonnet",
+          "sourceLine": 260,
+          "reportedAt": "2026-11-24T04:06:00+00:00"
+        }
+      ],
+      "blockers": []
     },
     {
       "id": "farol-18",
@@ -1504,19 +1758,20 @@
         "farol-14"
       ],
       "allDependencies": false,
-      "status": "BLOQUEADA",
+      "status": "IMPLEMENTANDO",
       "wave": "C",
       "sha": null,
       "batch": null,
-      "note": "Pausado na IBM por limite de 5h do claudeAgent, conforme VPS. Retorno informado para 08h20 UTC de 24/11 (05h20 em Brasília); horário previsto não confirma disponibilidade nem retomada automática. VPS informa tudo verde, faltando apenas commit e push: alterações preservadas em worktree, ainda não são entrega no GitHub nem aprovação; modos e suítes não detalhados e testes não reproduzidos nesta VM. Base de trabalho da onda 2 preservada; sem revisão, integração ou TV física confirmadas.",
-      "source": "Relato VPS · linha 265",
+      "note": "Retomado na IBM com Gemini Hydrogen via Antigravity atualizado e operacional, nas worktrees preservadas, conforme VPS. Contorna a cota anterior do claudeAgent; não confirma reset dessa cota nem limpeza da VPS. O último avanço informado (linha 265) era tudo verde, faltando commit/push; a retomada não confirma commit ou entrega. Base de trabalho da onda 2 preservada; nenhum novo SHA de entrega, parecer de aprovação, integração ou TV física reportados.",
+      "source": "Relato VPS · linha 266",
       "verified": false,
       "previousNotes": [
+        "Pausado na IBM por limite de 5h do claudeAgent, conforme VPS. Retorno informado para 08h20 UTC de 24/11 (05h20 em Brasília); horário previsto não confirma disponibilidade nem retomada automática. VPS informa tudo verde, faltando apenas commit e push: alterações preservadas em worktree, ainda não são entrega no GitHub nem aprovação; modos e suítes não detalhados e testes não reproduzidos nesta VM. Base de trabalho da onda 2 preservada; sem revisão, integração ou TV física confirmadas.",
         "Implementação lançada na IBM com Opus, conforme VPS. Onda operacional 2 destravada pelo aceite com ressalvas da #14; base agente/base-21f-farol-onda2@2d26d54290 (21f + #14), não integrada. Ainda sem commit de entrega, revisão ou teste em TV física reportados; não confundir a base com SHA entregue da issue.",
         ""
       ],
-      "reportedAt": "2026-11-24T04:19:00+00:00",
-      "updatedAt": "2026-11-24T04:22:15+00:00",
+      "reportedAt": "2026-11-24T04:26:00+00:00",
+      "updatedAt": "2026-11-24T04:30:08+00:00",
       "integrationVerified": false,
       "operationalWave": 2,
       "approvalGate": {
@@ -1527,7 +1782,7 @@
         "reportedAt": "2026-11-24T03:53:00+00:00",
         "sourceLine": 253
       },
-      "owner": "IBM · Opus",
+      "owner": "IBM · Antigravity / Gemini Hydrogen",
       "workBase": {
         "branch": "agente/base-21f-farol-onda2",
         "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -1550,15 +1805,14 @@
         "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
       },
       "implementation": {
-        "status": "paused_quota_reported",
+        "status": "resumed_reported",
         "host": "ibm-ephemeral",
-        "model": "Opus",
-        "sourceLine": 265,
-        "reportedAt": "2026-11-24T04:19:00+00:00",
-        "executor": "claudeAgent",
+        "executor": "Antigravity",
+        "model": "Gemini Hydrogen",
         "worktreePreservedReported": true,
-        "reportedResetAt": "2026-11-24T08:20:00+00:00",
-        "availabilityAfterResetNotVerified": true
+        "sourceLine": 266,
+        "reportedAt": "2026-11-24T04:26:00+00:00",
+        "previousQuotaBypassedNotReset": true
       },
       "previousImplementations": [
         {
@@ -1567,17 +1821,20 @@
           "model": "Opus",
           "sourceLine": 255,
           "reportedAt": "2026-11-24T03:53:00+00:00"
-        }
-      ],
-      "blockers": [
+        },
         {
-          "id": "ibm-claudeagent-quota",
-          "reason": "Limite de 5h atingido; retorno informado às 08h20 UTC, sem sonda de disponibilidade",
-          "reportedResetAt": "2026-11-24T08:20:00+00:00",
+          "status": "paused_quota_reported",
+          "host": "ibm-ephemeral",
+          "model": "Opus",
           "sourceLine": 265,
-          "reportedAt": "2026-11-24T04:19:00+00:00"
+          "reportedAt": "2026-11-24T04:19:00+00:00",
+          "executor": "claudeAgent",
+          "worktreePreservedReported": true,
+          "reportedResetAt": "2026-11-24T08:20:00+00:00",
+          "availabilityAfterResetNotVerified": true
         }
       ],
+      "blockers": [],
       "worktreeProgress": {
         "testsReported": "tudo verde",
         "testDetailsNotReported": true,
@@ -1587,7 +1844,18 @@
         "deliveryConfirmed": false,
         "sourceLine": 265,
         "reportedAt": "2026-11-24T04:19:00+00:00"
-      }
+      },
+      "previousBlockers": [
+        [
+          {
+            "id": "ibm-claudeagent-quota",
+            "reason": "Limite de 5h atingido; retorno informado às 08h20 UTC, sem sonda de disponibilidade",
+            "reportedResetAt": "2026-11-24T08:20:00+00:00",
+            "sourceLine": 265,
+            "reportedAt": "2026-11-24T04:19:00+00:00"
+          }
+        ]
+      ]
     },
     {
       "id": "farol-19",
@@ -1600,19 +1868,20 @@
         "farol-12"
       ],
       "allDependencies": false,
-      "status": "BLOQUEADA",
+      "status": "IMPLEMENTANDO",
       "wave": "C",
       "sha": null,
       "batch": null,
-      "note": "Pausado na IBM por limite de 5h do claudeAgent, conforme VPS. Retorno informado para 08h20 UTC de 24/11 (05h20 em Brasília); horário previsto não confirma disponibilidade nem retomada automática. Worktree preservada na IBM; nenhum SHA de entrega ou novo resultado de testes informado. Continua no caminho crítico e com prioridade imediata. Base de trabalho da onda 2 preservada; sem revisão, integração ou TV física confirmadas.",
-      "source": "Relato VPS · linha 265",
+      "note": "Retomado na IBM com Gemini Hydrogen via Antigravity atualizado e operacional, nas worktrees preservadas, conforme VPS. Contorna a cota anterior do claudeAgent; não confirma reset dessa cota nem limpeza da VPS. Prioridade crítica preservada. Base de trabalho da onda 2 preservada; nenhum novo SHA de entrega, parecer de aprovação, integração ou TV física reportados.",
+      "source": "Relato VPS · linha 266",
       "verified": false,
       "previousNotes": [
+        "Pausado na IBM por limite de 5h do claudeAgent, conforme VPS. Retorno informado para 08h20 UTC de 24/11 (05h20 em Brasília); horário previsto não confirma disponibilidade nem retomada automática. Worktree preservada na IBM; nenhum SHA de entrega ou novo resultado de testes informado. Continua no caminho crítico e com prioridade imediata. Base de trabalho da onda 2 preservada; sem revisão, integração ou TV física confirmadas.",
         "Implementação lançada na IBM com Opus, conforme VPS. Onda operacional 2 destravada pelo aceite com ressalvas da #14; base agente/base-21f-farol-onda2@2d26d54290 (21f + #14), não integrada. Caminho crítico e prioridade imediata. Ainda sem commit de entrega, revisão ou teste em TV física reportados; não confundir a base com SHA entregue da issue.",
         ""
       ],
-      "reportedAt": "2026-11-24T04:19:00+00:00",
-      "updatedAt": "2026-11-24T04:22:15+00:00",
+      "reportedAt": "2026-11-24T04:26:00+00:00",
+      "updatedAt": "2026-11-24T04:30:08+00:00",
       "integrationVerified": false,
       "operationalWave": 2,
       "approvalGate": {
@@ -1623,7 +1892,7 @@
         "reportedAt": "2026-11-24T03:53:00+00:00",
         "sourceLine": 253
       },
-      "owner": "IBM · Opus",
+      "owner": "IBM · Antigravity / Gemini Hydrogen",
       "workBase": {
         "branch": "agente/base-21f-farol-onda2",
         "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -1646,15 +1915,14 @@
         "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
       },
       "implementation": {
-        "status": "paused_quota_reported",
+        "status": "resumed_reported",
         "host": "ibm-ephemeral",
-        "model": "Opus",
-        "sourceLine": 265,
-        "reportedAt": "2026-11-24T04:19:00+00:00",
-        "executor": "claudeAgent",
+        "executor": "Antigravity",
+        "model": "Gemini Hydrogen",
         "worktreePreservedReported": true,
-        "reportedResetAt": "2026-11-24T08:20:00+00:00",
-        "availabilityAfterResetNotVerified": true
+        "sourceLine": 266,
+        "reportedAt": "2026-11-24T04:26:00+00:00",
+        "previousQuotaBypassedNotReset": true
       },
       "priority": "critical",
       "previousImplementations": [
@@ -1664,16 +1932,30 @@
           "model": "Opus",
           "sourceLine": 255,
           "reportedAt": "2026-11-24T03:53:00+00:00"
+        },
+        {
+          "status": "paused_quota_reported",
+          "host": "ibm-ephemeral",
+          "model": "Opus",
+          "sourceLine": 265,
+          "reportedAt": "2026-11-24T04:19:00+00:00",
+          "executor": "claudeAgent",
+          "worktreePreservedReported": true,
+          "reportedResetAt": "2026-11-24T08:20:00+00:00",
+          "availabilityAfterResetNotVerified": true
         }
       ],
-      "blockers": [
-        {
-          "id": "ibm-claudeagent-quota",
-          "reason": "Limite de 5h atingido; retorno informado às 08h20 UTC, sem sonda de disponibilidade",
-          "reportedResetAt": "2026-11-24T08:20:00+00:00",
-          "sourceLine": 265,
-          "reportedAt": "2026-11-24T04:19:00+00:00"
-        }
+      "blockers": [],
+      "previousBlockers": [
+        [
+          {
+            "id": "ibm-claudeagent-quota",
+            "reason": "Limite de 5h atingido; retorno informado às 08h20 UTC, sem sonda de disponibilidade",
+            "reportedResetAt": "2026-11-24T08:20:00+00:00",
+            "sourceLine": 265,
+            "reportedAt": "2026-11-24T04:19:00+00:00"
+          }
+        ]
       ]
     },
     {
@@ -1686,19 +1968,20 @@
         "farol-14"
       ],
       "allDependencies": false,
-      "status": "BLOQUEADA",
+      "status": "REVISAO",
       "wave": "C",
       "sha": "c4f3d39f5b",
       "batch": null,
-      "note": "Entregue na IBM por claudeAgent Opus em c4f3d39f5b: 14 arquivos; farol_ilha 57 checks normal+ASan, farol_fachada/textos/resolver + SDL2 RC 0, conforme VPS. Commit, pai 2d26d54290 (base de trabalho da onda 2) e quantidade de arquivos conferidos no GitHub; testes não reproduzidos nesta VM. Aguarda revisão r1, ainda não iniciada, por disco VPS abaixo de 20G. Sem aprovação, integração ou TV física confirmadas; entrega não altera o candidato 21f original.",
-      "source": "Relato VPS · linha 263; commit, pai e quantidade de arquivos conferidos no GitHub",
+      "note": "Revisão r1 cross-family lançada na IBM com Gemini 4 Neon via Antigravity atualizado e operacional, conforme VPS. Última entrega conhecida c4f3d39f5b; o relato de lançamento não especifica novo SHA. Testes da entrega anteriores continuam somente reportados, não reproduzidos nesta VM. O bloqueio de disco foi contornado pela rota IBM, não resolvido: VPS segue pausada com 15G. Revisão em execução não é aprovação, integração ou validação em TV física.",
+      "source": "Relato VPS · linha 266; entrega e conferências GitHub anteriores preservadas",
       "verified": false,
       "previousNotes": [
+        "Entregue na IBM por claudeAgent Opus em c4f3d39f5b: 14 arquivos; farol_ilha 57 checks normal+ASan, farol_fachada/textos/resolver + SDL2 RC 0, conforme VPS. Commit, pai 2d26d54290 (base de trabalho da onda 2) e quantidade de arquivos conferidos no GitHub; testes não reproduzidos nesta VM. Aguarda revisão r1, ainda não iniciada, por disco VPS abaixo de 20G. Sem aprovação, integração ou TV física confirmadas; entrega não altera o candidato 21f original.",
         "Implementação lançada na IBM com Opus, conforme VPS. Onda operacional 2 destravada pelo aceite com ressalvas da #14; base agente/base-21f-farol-onda2@2d26d54290 (21f + #14), não integrada. Ainda sem commit de entrega, revisão ou teste em TV física reportados; não confundir a base com SHA entregue da issue.",
         ""
       ],
-      "reportedAt": "2026-11-24T04:09:00+00:00",
-      "updatedAt": "2026-11-24T04:11:57+00:00",
+      "reportedAt": "2026-11-24T04:26:00+00:00",
+      "updatedAt": "2026-11-24T04:30:08+00:00",
       "integrationVerified": false,
       "operationalWave": 2,
       "approvalGate": {
@@ -1709,7 +1992,7 @@
         "reportedAt": "2026-11-24T03:53:00+00:00",
         "sourceLine": 253
       },
-      "owner": "IBM · claudeAgent / Opus",
+      "owner": "IBM · Antigravity / Gemini 4 Neon",
       "workBase": {
         "branch": "agente/base-21f-farol-onda2",
         "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -1749,7 +2032,7 @@
         }
       ],
       "latestDeliverySha": "c4f3d39f5b",
-      "verificationSummary": "entrega e testes reportados pela VPS; r1 bloqueada antes de iniciar por disco; sem aprovação, integração ou TV física",
+      "verificationSummary": "r1 cross-family lançada na IBM conforme VPS; sem parecer de aprovação, integração ou TV física",
       "delivery": {
         "sha": "c4f3d39f5b",
         "fullSha": "c4f3d39f5b83844b0bed7abfb2511a78cb4546cb",
@@ -1766,19 +2049,38 @@
       "review": {
         "round": "r1",
         "sha": "c4f3d39f5b",
-        "status": "blocked_before_start_reported",
-        "blockedBy": "vps-root-disk",
+        "shaSource": "última entrega conhecida; novo SHA não informado no lançamento",
+        "status": "launched_reported",
+        "reviewer": "Gemini 4 Neon",
+        "executor": "Antigravity",
+        "host": "ibm-ephemeral",
+        "crossFamilyReported": true,
+        "unblockedVia": "Rota IBM; disco VPS continua bloqueado",
         "verdictIssued": false,
-        "sourceLine": 263,
-        "reportedAt": "2026-11-24T04:09:00+00:00"
+        "sourceLine": 266,
+        "reportedAt": "2026-11-24T04:26:00+00:00"
       },
-      "blockers": [
+      "blockers": [],
+      "previousReviews": [
         {
-          "id": "vps-root-disk",
-          "reason": "Disco VPS abaixo do piso de 20G; r1 aguardando",
+          "round": "r1",
+          "sha": "c4f3d39f5b",
+          "status": "blocked_before_start_reported",
+          "blockedBy": "vps-root-disk",
+          "verdictIssued": false,
           "sourceLine": 263,
           "reportedAt": "2026-11-24T04:09:00+00:00"
         }
+      ],
+      "previousBlockers": [
+        [
+          {
+            "id": "vps-root-disk",
+            "reason": "Disco VPS abaixo do piso de 20G; r1 aguardando",
+            "sourceLine": 263,
+            "reportedAt": "2026-11-24T04:09:00+00:00"
+          }
+        ]
       ]
     },
     {
@@ -2169,17 +2471,18 @@
       "wave": "C",
       "sha": null,
       "batch": null,
-      "note": "Implementação lançada na IBM com claudeAgent Sonnet sobre agente/base-21f-farol-onda2@2d26d54290. Sai da fila e completa o despacho da onda operacional 2, conforme VPS; isso não é conclusão das implementações nem das ondas A–E. Relato de 04h08 UTC ocupava 6/6 com #19/#18/#20/#16/#17/#34; a entrega posterior do #20 consta separadamente. Ainda sem commit próprio, revisão, aprovação, integração ou TV física confirmados.",
-      "source": "Relato VPS · linha 262",
+      "note": "Retomado na IBM com Gemini Hydrogen via Antigravity atualizado e operacional, nas worktrees preservadas, conforme VPS. Contorna a cota anterior do claudeAgent; não confirma reset dessa cota nem limpeza da VPS. Base de trabalho da onda 2 preservada; nenhum novo SHA de entrega, parecer de aprovação, integração ou TV física reportados.",
+      "source": "Relato VPS · linha 266",
       "verified": false,
       "previousNotes": [
+        "Implementação lançada na IBM com claudeAgent Sonnet sobre agente/base-21f-farol-onda2@2d26d54290. Sai da fila e completa o despacho da onda operacional 2, conforme VPS; isso não é conclusão das implementações nem das ondas A–E. Relato de 04h08 UTC ocupava 6/6 com #19/#18/#20/#16/#17/#34; a entrega posterior do #20 consta separadamente. Ainda sem commit próprio, revisão, aprovação, integração ou TV física confirmados.",
         "Único item restante da fila imediata anterior (#16/#17/#34), após o início do 16 e do 17. Posição 1 recalculada pelo painel; não é nova ordem da VPS. IBM 6/6 ocupada com #19/#18/#20/#15/#16/#17, conforme linha 260. Esta issue continua A fazer: nenhum lançamento, entrega, aprovação, integração ou TV física reportados.",
         "Fila imediata restante da onda 2, posição 2 após o início do Farol 16. Ordem relativa #17 → #34 preservada da linha 255; a posição foi recalculada pelo painel, não é nova ordem da VPS. IBM 6/6 ocupada com #19/#18/#20/#15/#33/#16, conforme linha 258. Nenhum lançamento desta issue foi reportado; sem entrega, integração ou TV física confirmadas.",
         "Fila imediata da onda operacional 2, posição 3, após o aceite com ressalvas da #14. Capacidade IBM 6/6 ocupada conforme VPS: cinco implementações e FAROL52B. Ainda não lançada; sem executor, entrega ou integração confirmados. TV física pendente.",
         ""
       ],
-      "reportedAt": "2026-11-24T04:08:00+00:00",
-      "updatedAt": "2026-11-24T04:11:57+00:00",
+      "reportedAt": "2026-11-24T04:26:00+00:00",
+      "updatedAt": "2026-11-24T04:30:08+00:00",
       "integrationVerified": false,
       "operationalWave": 2,
       "approvalGate": {
@@ -2219,7 +2522,7 @@
           "updatedAt": "2026-11-24T04:09:50+00:00"
         }
       ],
-      "owner": "IBM · claudeAgent / Sonnet",
+      "owner": "IBM · Antigravity / Gemini Hydrogen",
       "workBase": {
         "branch": "agente/base-21f-farol-onda2",
         "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -2242,13 +2545,26 @@
         "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
       },
       "implementation": {
-        "status": "launched_reported",
+        "status": "resumed_reported",
         "host": "ibm-ephemeral",
-        "executor": "claudeAgent",
-        "model": "Sonnet",
-        "sourceLine": 262,
-        "reportedAt": "2026-11-24T04:08:00+00:00"
-      }
+        "executor": "Antigravity",
+        "model": "Gemini Hydrogen",
+        "worktreePreservedReported": true,
+        "sourceLine": 266,
+        "reportedAt": "2026-11-24T04:26:00+00:00",
+        "previousQuotaBypassedNotReset": true
+      },
+      "previousImplementations": [
+        {
+          "status": "launched_reported",
+          "host": "ibm-ephemeral",
+          "executor": "claudeAgent",
+          "model": "Sonnet",
+          "sourceLine": 262,
+          "reportedAt": "2026-11-24T04:08:00+00:00"
+        }
+      ],
+      "blockers": []
     },
     {
       "id": "farol-35",
@@ -5979,6 +6295,94 @@
     }
   ],
   "events": [
+    {
+      "item": "ibm-ephemeral",
+      "from": null,
+      "to": null,
+      "reportedStatus": "RETOMADA",
+      "report": "2026-11-24 04:26 [RETOMADA] ibm-ephemeral · antigravity atualizado e operacional! Retomadas #18, #19, #17, #34 (Gemini Hydrogen nas worktrees preservadas) e lançadas 3 revisões cross-family (Gemini 4 Neon): FAROL20-r1, FAROL15-r1 e FAROL16-r1. VPS `/` segue em 15G (pausada).",
+      "vpsLine": 266,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "at": "2026-11-24T04:26:00+00:00",
+      "appliedAt": "2026-11-24T04:30:08+00:00"
+    },
+    {
+      "item": "farol-18",
+      "from": "BLOQUEADA",
+      "to": "IMPLEMENTANDO",
+      "report": "farol-18 retomado na IBM com Gemini Hydrogen via Antigravity operacional, em worktree preservada; sem novo SHA de entrega ou aprovação. Cota do claudeAgent não declarada recuperada.",
+      "derived": true,
+      "relatedVpsLine": 266,
+      "source": "Relato VPS · linha 266",
+      "at": "2026-11-24T04:26:00+00:00",
+      "appliedAt": "2026-11-24T04:30:08+00:00"
+    },
+    {
+      "item": "farol-19",
+      "from": "BLOQUEADA",
+      "to": "IMPLEMENTANDO",
+      "report": "farol-19 retomado na IBM com Gemini Hydrogen via Antigravity operacional, em worktree preservada; sem novo SHA de entrega ou aprovação. Cota do claudeAgent não declarada recuperada.",
+      "derived": true,
+      "relatedVpsLine": 266,
+      "source": "Relato VPS · linha 266",
+      "at": "2026-11-24T04:26:00+00:00",
+      "appliedAt": "2026-11-24T04:30:08+00:00"
+    },
+    {
+      "item": "farol-17",
+      "from": "IMPLEMENTANDO",
+      "to": "IMPLEMENTANDO",
+      "report": "farol-17 retomado na IBM com Gemini Hydrogen via Antigravity operacional, em worktree preservada; sem novo SHA de entrega ou aprovação. Cota do claudeAgent não declarada recuperada.",
+      "derived": true,
+      "relatedVpsLine": 266,
+      "source": "Relato VPS · linha 266",
+      "at": "2026-11-24T04:26:00+00:00",
+      "appliedAt": "2026-11-24T04:30:08+00:00"
+    },
+    {
+      "item": "farol-34",
+      "from": "IMPLEMENTANDO",
+      "to": "IMPLEMENTANDO",
+      "report": "farol-34 retomado na IBM com Gemini Hydrogen via Antigravity operacional, em worktree preservada; sem novo SHA de entrega ou aprovação. Cota do claudeAgent não declarada recuperada.",
+      "derived": true,
+      "relatedVpsLine": 266,
+      "source": "Relato VPS · linha 266",
+      "at": "2026-11-24T04:26:00+00:00",
+      "appliedAt": "2026-11-24T04:30:08+00:00"
+    },
+    {
+      "item": "farol-20",
+      "from": "BLOQUEADA",
+      "to": "REVISAO",
+      "report": "farol-20 r1 cross-family lançada com Gemini 4 Neon na IBM via Antigravity; última entrega c4f3d39f5b, sem novo SHA informado no lançamento. Nenhum parecer; VPS permanece pausada por disco.",
+      "derived": true,
+      "relatedVpsLine": 266,
+      "source": "Relato VPS · linha 266",
+      "at": "2026-11-24T04:26:00+00:00",
+      "appliedAt": "2026-11-24T04:30:08+00:00"
+    },
+    {
+      "item": "farol-15",
+      "from": "BLOQUEADA",
+      "to": "REVISAO",
+      "report": "farol-15 r1 cross-family lançada com Gemini 4 Neon na IBM via Antigravity; última entrega 51f1e5b498, sem novo SHA informado no lançamento. Nenhum parecer; VPS permanece pausada por disco.",
+      "derived": true,
+      "relatedVpsLine": 266,
+      "source": "Relato VPS · linha 266",
+      "at": "2026-11-24T04:26:00+00:00",
+      "appliedAt": "2026-11-24T04:30:08+00:00"
+    },
+    {
+      "item": "farol-16",
+      "from": "BLOQUEADA",
+      "to": "REVISAO",
+      "report": "farol-16 r1 cross-family lançada com Gemini 4 Neon na IBM via Antigravity; última entrega fd0270f902, sem novo SHA informado no lançamento. Nenhum parecer; VPS permanece pausada por disco.",
+      "derived": true,
+      "relatedVpsLine": 266,
+      "source": "Relato VPS · linha 266",
+      "at": "2026-11-24T04:26:00+00:00",
+      "appliedAt": "2026-11-24T04:30:08+00:00"
+    },
     {
       "item": "ibm-claudeAgent",
       "from": null,
