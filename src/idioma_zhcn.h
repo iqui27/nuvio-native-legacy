@@ -8351,6 +8351,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "和我们一起观看的人越来越多。感谢每一位使用应用、提出建议并帮忙找出问题的人。"),
   T("Tem em %s %s, com áudio em %s.", "有 %s %s，音频 %s"),
   T("Tem em %s, com áudio em %s.", "有 %s，音频 %s"),
+  T("Tem em %s.", "有 %s"),
   T("Tem legenda em %s.", "有%s字幕"),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "它有专属安装包，来自 webos3 分支 — 不是同一个文件。这些电视不支持 H.265 和 HDR。"),
   T("Tem uma enquete para você", "有一份问卷等你回答"),

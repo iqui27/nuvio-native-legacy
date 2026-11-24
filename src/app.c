@@ -34,6 +34,7 @@
 #include "diariotrakt.h"
 #include "dormiu.h"
 #include "farolsinal.h"
+#include "farolpeca.h"
 #include "descanso.h"
 #include "iconeapp.h"
 #include "logoapp.h"
@@ -4806,6 +4807,24 @@ static void abrirExplorarNoTitulo(void) {
   explorar_abrir_titulo(&o);
 }
 
+// Entrada isolada do selo do Farol (FAROL46B): tema e genero abrem a toca ja
+// filtrada pelo fio que o selo carrega; sem fio cai no caminho generico. O
+// tipo do selo viaja com o fio: no Mapa, genero nao vira palavra-chave
+// (FAROL46C). Fora dos trechos reservados urlCanalRota/retentarCanal/watchdog.
+static void abrirExplorarSelo(int seloTipo, const char *seloFio, int32_t seloId) {
+  MapaObra o;
+  if ((!seloFio || !seloFio[0]) && (seloTipo != FP_SELO_GENERO || seloId <= 0)) {
+    abrirExplorarNoTitulo();
+    return;
+  }
+  if (!mapa_obra_do_catalogo(detail_indice(), &o)) return;
+  detail_fechar_seco();
+  trocarTela(TELA_EXPLORAR);
+  menu_definir_destino(MENU_EXPLORAR);
+  explorar_abrir_titulo_selo(&o, seloFio, seloTipo == FP_SELO_GENERO,
+                             seloTipo == FP_SELO_GENERO ? (long)seloId : 0L);
+}
+
 // Foco por controle na ilha: cada pagina pede somente ao ultrapassar seu
 // proprio topo. A geometria do ultimo desenho nao decide quem possui a tecla.
 static int relogioCabe(void);
@@ -5460,7 +5479,11 @@ void app_evento(const SDL_Event *e) {
     }
     { char im[24];
       if (detail_aberto() && detail_pediu_amigos(im, sizeof im)) abrirSocialNoTitulo(im); }
-    if (detail_aberto() && detail_pediu_explorar()) abrirExplorarNoTitulo();
+    { char fio[64];
+      int seloTipo = -1;
+      int32_t seloId = 0;
+      if (detail_aberto() && detail_pediu_explorar_selo_id(&seloTipo, fio, sizeof fio, &seloId))
+        abrirExplorarSelo(seloTipo, fio, seloId); }
     return;
   }
   // O MENU DO CARTAZ ABERTO PELO PAINEL (segurar OK numa linha de Salvos)

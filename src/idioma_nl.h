@@ -8351,6 +8351,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "Steeds meer mensen kijken met ons mee. Dank aan iedereen die de app gebruikt, suggesties stuurt en helpt problemen te vinden."),
   T("Tem em %s %s, com áudio em %s.", "Beschikbaar in %s %s, audio in %s."),
   T("Tem em %s, com áudio em %s.", "Beschikbaar in %s, audio in %s."),
+  T("Tem em %s.", "Beschikbaar in %s."),
   T("Tem legenda em %s.", "Heeft ondertiteling in %s."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "Het heeft een eigen pakket, uit de webos3-branch — niet hetzelfde bestand. Die tv's hebben geen H.265 en geen HDR."),
   T("Tem uma enquete para você", "Er is een peiling voor je"),

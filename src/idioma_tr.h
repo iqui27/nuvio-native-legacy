@@ -8351,6 +8351,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "Bizimle izleyen kişi sayısı artıyor. Uygulamayı kullanan, öneri gönderen ve sorunları bulmaya yardım eden herkese teşekkürler."),
   T("Tem em %s %s, com áudio em %s.", "%s %s var, ses: %s."),
   T("Tem em %s, com áudio em %s.", "%s var, ses: %s."),
+  T("Tem em %s.", "%s var."),
   T("Tem legenda em %s.", "%s altyazı var."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "webos3 dalından kendi paketi var — aynı dosya değil. O TV'lerde H.265 ve HDR yok."),
   T("Tem uma enquete para você", "Senin için bir anket var"),

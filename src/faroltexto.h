@@ -227,6 +227,7 @@
   X(DICA_CURTO) \
   X(INFO_QUALI) \
   X(INFO_QUALI_AUDIO) \
+  X(INFO_QUALI_SO) \
   X(INFO_IDIOMA) \
   X(INFO_LEGENDA) \
   X(INFO_SOBE) \
@@ -548,6 +549,8 @@
 // ------------------------------------------------------------ info (P6)
 #define FT_INFO_QUALI           "Tem em %s %s, com áudio em %s."
 #define FT_INFO_QUALI_AUDIO     "Tem em %s, com áudio em %s."
+// Mesma linha sem o trecho de audio: resolucao/formato sem trilha.
+#define FT_INFO_QUALI_SO          "Tem em %s."
 #define FT_INFO_IDIOMA          "Tem áudio em %s."
 #define FT_INFO_LEGENDA         "Tem legenda em %s."
 #define FT_INFO_SOBE            "A T%d sobe de nota. Faltam %d episódios de %d min."

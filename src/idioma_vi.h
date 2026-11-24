@@ -8351,6 +8351,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "Ngày càng nhiều người xem cùng chúng tôi. Cảm ơn tất cả những ai dùng ứng dụng, gửi góp ý và giúp tìm ra lỗi."),
   T("Tem em %s %s, com áudio em %s.", "Có ở %s %s, âm thanh %s."),
   T("Tem em %s, com áudio em %s.", "Có ở %s, âm thanh %s."),
+  T("Tem em %s.", "Có ở %s."),
   T("Tem legenda em %s.", "Có phụ đề %s."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "Có gói riêng, từ nhánh webos3 — không phải cùng một tệp. Các TV đó không có H.265 và không có HDR."),
   T("Tem uma enquete para você", "Có một cuộc thăm dò dành cho bạn"),

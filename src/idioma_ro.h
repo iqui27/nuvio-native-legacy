@@ -8350,6 +8350,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "Tot mai mulți oameni se uită cu noi. Mulțumim tuturor celor care folosesc aplicația, trimit sugestii și ajută la găsirea problemelor."),
   T("Tem em %s %s, com áudio em %s.", "Disponibil în %s %s, cu audio în %s."),
   T("Tem em %s, com áudio em %s.", "Disponibil în %s, cu audio în %s."),
+  T("Tem em %s.", "Disponibil în %s."),
   T("Tem legenda em %s.", "Are subtitrare în %s."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "Are pachet propriu, din ramura webos3 — nu este același fișier. Acele televizoare nu au H.265 și nici HDR."),
   T("Tem uma enquete para você", "Ai un sondaj"),

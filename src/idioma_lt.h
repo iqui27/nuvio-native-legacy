@@ -8351,6 +8351,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "Su mumis žiūri vis daugiau žmonių. Ačiū visiems, kurie naudojasi programa, siunčia pasiūlymus ir padeda rasti problemas."),
   T("Tem em %s %s, com áudio em %s.", "Yra %s %s, garsas: %s."),
   T("Tem em %s, com áudio em %s.", "Yra %s, garsas: %s."),
+  T("Tem em %s.", "Yra %s."),
   T("Tem legenda em %s.", "Turi subtitrus: %s."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "Jis turi savo paketą iš webos3 šakos — ne tą patį failą. Tie televizoriai neturi H.265 ir HDR."),
   T("Tem uma enquete para você", "Tau yra apklausa"),

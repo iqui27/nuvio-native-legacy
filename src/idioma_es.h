@@ -8350,6 +8350,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "Cada vez más gente ve con nosotros. Gracias a quienes usan la app, envían sugerencias y ayudan a encontrar los problemas."),
   T("Tem em %s %s, com áudio em %s.", "Disponible en %s %s, con audio en %s."),
   T("Tem em %s, com áudio em %s.", "Disponible en %s, con audio en %s."),
+  T("Tem em %s.", "Disponible en %s."),
   T("Tem legenda em %s.", "Tiene subtítulos en %s."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "Tiene paquete propio, de la rama webos3; no es el mismo archivo. Esas TV no tienen H.265 ni HDR."),
   T("Tem uma enquete para você", "Tienes una encuesta"),
