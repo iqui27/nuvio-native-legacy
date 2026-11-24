@@ -96,16 +96,13 @@ static int indiceMais(int i) {
 }
 
 int farolanel_ler_seq(FarolEvento *dst, int max, uint32_t desde_ms, uint64_t *seqFim) {
-  int i, ini, n = 0;
+  int i, n = 0;
   if (!dst || max <= 0) {
     if (seqFim) *seqFim = farolanel_seq();
     return 0;
   }
   pthread_mutex_lock(&trava);
-  // `dst` leva os max MAIS RECENTES, nao os primeiros do anel (farol.h:123):
-  // com qtd > max os eventos mais antigos sao pulados, preservando o rabinho.
-  ini = qtd > max ? qtd - max : 0;
-  for (i = ini; i < qtd && n < max; i++) {
+  for (i = 0; i < qtd && n < max; i++) {
     const FarolEvento *e = &anel[indiceMais(i)];
     if (!desde_ms || (int32_t)(e->t_ms - desde_ms) >= 0) dst[n++] = *e;
   }
@@ -116,6 +113,29 @@ int farolanel_ler_seq(FarolEvento *dst, int max, uint32_t desde_ms, uint64_t *se
 
 int farolanel_ler(FarolEvento *dst, int max, uint32_t desde_ms) {
   return farolanel_ler_seq(dst, max, desde_ms, NULL);
+}
+
+int farolanel_ler_ultimos(FarolEvento *dst, int max, uint32_t desde_ms) {
+  int i, total = 0, pulo, n = 0;
+  if (!dst || max <= 0) return 0;
+  pthread_mutex_lock(&trava);
+  // Devolve os `max` mais recentes dentre os que passam no filtro, ainda em
+  // ordem cronologica: conta primeiro quantos combinam com desde_ms para saber
+  // quantos dos mais antigos pular. Nao altera o contrato de ler/ler_seq, que
+  // seguem devolvendo a partir do mais antigo.
+  for (i = 0; i < qtd; i++) {
+    const FarolEvento *e = &anel[indiceMais(i)];
+    if (!desde_ms || (int32_t)(e->t_ms - desde_ms) >= 0) total++;
+  }
+  pulo = total > max ? total - max : 0;
+  for (i = 0; i < qtd && n < max; i++) {
+    const FarolEvento *e = &anel[indiceMais(i)];
+    if (desde_ms && (int32_t)(e->t_ms - desde_ms) < 0) continue;
+    if (pulo > 0) { pulo--; continue; }
+    dst[n++] = *e;
+  }
+  pthread_mutex_unlock(&trava);
+  return n;
 }
 
 uint64_t farolanel_seq(void) {

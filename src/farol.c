@@ -1193,7 +1193,7 @@ void farol_registrar_consertou(int acao) {
 
 int farol_eventos(FarolEvento *dst, int max) {
   if (!dst || max <= 0) return 0;
-  return farolanel_ler(dst, max > FAROL_ANEL_N ? FAROL_ANEL_N : max, 0);
+  return farolanel_ler_ultimos(dst, max > FAROL_ANEL_N ? FAROL_ANEL_N : max, 0);
 }
 
 void farol_sessao_reiniciar(void) {

@@ -74,6 +74,11 @@ void farol_ev(FarolMod mod, int ev, int sev, int32_t a, int32_t b, const char *t
 // desde_ms 0 = sem filtro. Devolve quantos copiou (<= max).
 int  farolanel_ler(FarolEvento *dst, int max, uint32_t desde_ms);
 
+// Igual a farolanel_ler, mas devolve os `max` MAIS RECENTES dentre os que
+// passam no filtro (os mais antigos combinantes sao pulados), ainda em ordem
+// cronologica. Uso: farol_eventos, cujo contrato e "os max mais recentes".
+int  farolanel_ler_ultimos(FarolEvento *dst, int max, uint32_t desde_ms);
+
 // Igual a farolanel_ler, mas tambem devolve em `*seqFim` a contagem
 // monotonica acumulada ate este retrato (cada evento copiado tem sequencia
 // seqFim - n + i), permitindo marcar fronteiras de sessao sem esvaziar os
