@@ -81,6 +81,15 @@ unsigned farol_selo(void);
 // atual antes de registrar a preferencia — ligar nao toca no catalogo.
 void farol_recomendar_definir(int ligado, const char *dirArte);
 
+// "Nao e para mim": tira `imdb` de todas as pecas do Farol na hora (cena
+// adotada + fileiras farol_* no catalogo) e guarda retrato para Desfazer.
+int  farol_recusar_titulo(const char *imdb);
+int  farol_restaurar_titulo(const char *imdb);
+
+// Top `max` nomes do gosto ativo para uma dimensao (FG_DIM_GENERO,
+// FG_DIM_PESSOA ou FG_DIM_TEMA), ja traduzidos/resolvidos (sem id cru).
+int  farol_gosto_top(int dim, char (*nomes)[64], int max);
+
 // Esquece so a cena adotada e o estado diagnostico da sessao (o catalogo ja
 // foi tratado por quem chamou). Troca de conta/perfil usa isto: a cena e o
 // diagnostico do perfil anterior nao podem vazar para o proximo.

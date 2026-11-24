@@ -13,13 +13,27 @@
 #include "sinopse.h"
 #include "idioma.h"
 #include "idiomacod.h"
+#include "linguas.h"
 #include "ajustes.h"
 #include "layout.h"
+#include "farolinfo.h"
+#include "faroltexto.h"
+#include "ondever.h"
+#include "diario.h"
+#include "streams.h"
+#include "fonteantecipa.h"
+#include "farol.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 #define NV_ESCALA_TELA   // mede pela tela virtual, como ctxmenu.c (escala.h)
 #include "escala.h"
+
+static long long (*ctxiRelogioFn)(void);
+void ctxinfo_teste_relogio(long long (*epochS)(void)) { ctxiRelogioFn = epochS; }
+static long long ctxiAgoraS(void) { return ctxiRelogioFn ? ctxiRelogioFn() : (long long)time(NULL); }
 
 #define CTXI_BORDA   48.0f   // a mesma margem minima do menu (CTX_BORDA)
 #define CTXI_AO_LADO 30.0f   // do cartaz ao menu (CTX_AO_LADO)
@@ -119,6 +133,7 @@ typedef struct {
   char meta[200], genero[200], classif[16];
   int  cru[EX_NFONTES], notasCarregando, temNotas;
   const char *sinopse;
+  char farolInfo[160];
   char prog[200]; float progFrac;
   char amigos[220], agenda[200];
   int  salvo, visto;
@@ -145,6 +160,311 @@ static int temDuracao(const char *meta) {
   for (p = meta; *p; p++)
     if (isdigit((unsigned char)p[0]) && (p[1] == 'h' || (p[1] == ' ' && p[2] == 'h'))) return 1;
   return 0;
+}
+
+static int metaMinutos(const char *s) {
+  int h = 0, min = 0;
+  const char *p = s;
+  if (!p) return 0;
+  while (*p) {
+    while (*p && !isdigit((unsigned char)*p)) p++;
+    if (!*p) break;
+    {
+      char *fim = NULL;
+      long v = strtol(p, &fim, 10);
+      p = fim;
+      while (*p == ' ') p++;
+      if (*p == 'h' && (!p[1] || p[1] == ' ' || p[1] == '\xc2') && v > 0 && v < 24)
+        h = (int)v;
+      else if (!strncmp(p, "min", 3) && v > 0 && v < 1000)
+        min = (int)v;
+    }
+  }
+  return h * 60 + min;
+}
+
+static void ctxiIdiomaMidia(const char *cod, char *dst, size_t cap) {
+  char base[12];
+  const char *nm;
+  size_t i = 0;
+  if (!dst || !cap) return;
+  dst[0] = 0;
+  if (!cod || !cod[0]) return;
+  while (cod[i] && cod[i] != '-' && cod[i] != '_' && i + 1 < sizeof base) {
+    base[i] = (char)tolower((unsigned char)cod[i]);
+    i++;
+  }
+  base[i] = 0;
+  if (!strcmp(base, "pob") || !strcmp(base, "ptb") || !strcmp(base, "br") ||
+      !strcmp(base, "por"))
+    snprintf(base, sizeof base, "pt");
+  else if (!strcmp(base, "eng")) snprintf(base, sizeof base, "en");
+  else if (!strcmp(base, "spa") || !strcmp(base, "esp")) snprintf(base, sizeof base, "es");
+  nm = i18n(ling_nome(base[0] ? base : cod));
+  snprintf(dst, cap, "%s", nm && nm[0] ? nm : cod);
+}
+
+static int ctxiMesAno(const char *s, char *dst, size_t cap) {
+  static const char *const MES_PT[12] = {
+    "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+  };
+  int ano, mes;
+  if (!s || strlen(s) != 7 || s[4] != '-') return 0;
+  ano = atoi(s); mes = atoi(s + 5);
+  if (ano < 1900 || mes < 1 || mes > 12) return 0;
+  idioma_mes_ano(ajustes_idioma(), i18n(MES_PT[mes - 1]), ano, dst, cap);
+  return dst[0] != 0;
+}
+
+static int ctxiDecorrido(const char *s, char *dst, size_t cap) {
+  char *fim = NULL;
+  long n;
+  if (!s || !isdigit((unsigned char)s[0])) return 0;
+  n = strtol(s, &fim, 10);
+  if (n <= 0 || !fim || !fim[0]) return 0;
+  if (!strcmp(fim, "min")) { snprintf(dst, cap, i18n("%d min"), (int)n); return 1; }
+  if (!strcmp(fim, "h"))   { snprintf(dst, cap, i18n("%d h"), (int)n); return 1; }
+  if ((!strcmp(fim, "d") && n == 7) || (!strcmp(fim, "w") && n == 1)) {
+    snprintf(dst, cap, "%s", i18n("7 dias")); return 1;
+  }
+  if (!strcmp(fim, "y") && n >= 2) { snprintf(dst, cap, i18n("%d anos"), (int)n); return 1; }
+  return 0;
+}
+
+static const char *ctxiModeloInfo(const char *m) {
+  static const struct { const char *k, *v; } TAB[] = {
+    { "FT_INFO_QUALI", FT_INFO_QUALI },
+    { "FT_INFO_QUALI_AUDIO", FT_INFO_QUALI_AUDIO },
+    { "FT_INFO_QUALI_SO", FT_INFO_QUALI_SO },
+    { "FT_INFO_IDIOMA", FT_INFO_IDIOMA },
+    { "FT_INFO_LEGENDA", FT_INFO_LEGENDA },
+    { "FT_INFO_SOBE", FT_INFO_SOBE },
+    { "FT_INFO_CAI", FT_INFO_CAI },
+    { "FT_INFO_FALTAM", FT_INFO_FALTAM },
+    { "FT_INFO_MESMO_NIVEL", FT_INFO_MESMO_NIVEL },
+    { "FT_INFO_TERMINA", FT_INFO_TERMINA },
+    { "FT_INFO_DUAS_NOITES", FT_INFO_DUAS_NOITES },
+    { "FT_INFO_ONDE", FT_INFO_ONDE },
+    { "FT_INFO_AMIGOS_TERM", FT_INFO_AMIGOS_TERM },
+    { "FT_INFO_AMIGO_TERM", FT_INFO_AMIGO_TERM },
+    { "FT_INFO_AMIGOS_GOST", FT_INFO_AMIGOS_GOST },
+    { "FT_INFO_SAGA", FT_INFO_SAGA },
+    { "FT_INFO_SAGA_VOCE_VIU", FT_INFO_SAGA_VOCE_VIU },
+    { "FT_INFO_REVER", FT_INFO_REVER },
+    { "FT_INFO_REVER_SIMPLES", FT_INFO_REVER_SIMPLES },
+    { "FT_INFO_RETOMADA", FT_INFO_RETOMADA },
+    { "FT_INFO_RETOMADA_SIMPLES", FT_INFO_RETOMADA_SIMPLES },
+  };
+  size_t i;
+  for (i = 0; i < sizeof TAB / sizeof *TAB; i++)
+    if (!strcmp(m, TAB[i].k)) return TAB[i].v;
+  return NULL;
+}
+
+static int ctxiFormatarInfo(const FarolInfoLinha *l, char *dst, size_t cap) {
+  FarolInfoLinha c = *l;
+  const char *lit, *p;
+  size_t o = 0;
+  int ai = 0;
+  if (!dst || !cap || !l->m[0]) return 0;
+  dst[0] = 0;
+  if (!strcmp(c.m, "FT_INFO_RETOMADA") && c.na == 3) {
+    if (!ctxiDecorrido(c.a[2], c.a[2], sizeof c.a[2])) {
+      snprintf(c.m, sizeof c.m, "FT_INFO_RETOMADA_SIMPLES");
+      c.na = 2;
+    }
+  } else if ((!strcmp(c.m, "FT_INFO_REVER") || !strcmp(c.m, "FT_INFO_REVER_SIMPLES")) && c.na >= 1) {
+    if (!ctxiMesAno(c.a[0], c.a[0], sizeof c.a[0])) return 0;
+  } else if (!strcmp(c.m, "FT_INFO_QUALI") && c.na == 3) {
+    ctxiIdiomaMidia(c.a[2], c.a[2], sizeof c.a[2]);
+  } else if (!strcmp(c.m, "FT_INFO_QUALI_AUDIO") && c.na == 2) {
+    ctxiIdiomaMidia(c.a[1], c.a[1], sizeof c.a[1]);
+  } else if ((!strcmp(c.m, "FT_INFO_IDIOMA") || !strcmp(c.m, "FT_INFO_LEGENDA")) && c.na == 1) {
+    ctxiIdiomaMidia(c.a[0], c.a[0], sizeof c.a[0]);
+  }
+  lit = ctxiModeloInfo(c.m);
+  if (!lit) return 0;
+  p = i18n(lit);
+  while (*p && o + 1 < cap) {
+    if (*p != '%') { dst[o++] = *p++; continue; }
+    p++;
+    if (*p == '%') { dst[o++] = *p++; continue; }
+    if (ai >= c.na) return 0;
+    if (*p == 'd' || *p == 'i') {
+      char num[32];
+      snprintf(num, sizeof num, "%d", atoi(c.a[ai++]));
+      snprintf(dst + o, cap - o, "%s", num);
+      o += strlen(dst + o);
+      p++;
+    } else if (*p == 's') {
+      snprintf(dst + o, cap - o, "%s", c.a[ai++]);
+      o += strlen(dst + o);
+      p++;
+    } else return 0;
+  }
+  dst[o] = 0;
+  return dst[0] != 0;
+}
+
+static void montarFarolInfo(const CatItem *ci, const Modelo *m, char *dst, size_t cap) {
+  FarolInfoLinha l;
+  int serie = ehSerie(ci);
+  long long epoch = ctxiAgoraS();
+  if (!ci || !dst || !cap) return;
+  dst[0] = 0;
+  memset(&l, 0, sizeof l);
+
+  // 1) Qualidade confirmada tocavel nesta TV (fontes ja carregadas para o titulo)
+  if (temId(ci) && stream_lista_do_alvo(ci->imdb)) {
+    FarolInfoFonte fnt[16];
+    FarolInfoLinha qLi[2];
+    FarolInfoCaps caps = { -1, -1 };
+    int hdr = -1, dv = -1, hevc = -1, av1 = -1;
+    int ns = stream_n(), nf = 0, i;
+    stream_capacidades(&hdr, &dv, &hevc, &av1);
+    caps.hdr = hdr;
+    caps.dv = dv;
+    for (i = 0; i < ns && nf < 16; i++) {
+      const Stream *s = stream_item(i);
+      int est, cacheOk;
+      if (!s) continue;
+      memset(&fnt[nf], 0, sizeof fnt[0]);
+      if (s->altura >= 2000 || (s->badges & badges_bit("r-4k"))) fnt[nf].altura = 2160;
+      else if (s->altura >= 1000 || (s->badges & badges_bit("r-1080"))) fnt[nf].altura = 1080;
+      else if (s->altura >= 700 || (s->badges & badges_bit("r-720"))) fnt[nf].altura = 720;
+      else fnt[nf].altura = s->altura;
+      fnt[nf].dv = (s->dolbyVision ||
+                    (s->badges & (badges_bit("v-dv") | badges_bit("a-atmos-dv") |
+                                  badges_bit("a-truehd-dv") | badges_bit("a-dd-dv")))) ? 1 : 0;
+      fnt[nf].hdr = (!fnt[nf].dv &&
+                     (s->badges & (badges_bit("v-hdr10plus") | badges_bit("v-hdr10") |
+                                   badges_bit("v-hdr") | badges_bit("v-hlg")))) ? 1 : 0;
+      est = stream_fonte_estado(i);
+      cacheOk = s->emCache && !s->cacheNegado && (!s->foraCache || s->cacheNativo) &&
+                !s->urlP2P && !s->naoVideo;
+      if (s->naoVideo || stream_incompativel(i) || est == FA_RUIM)
+        fnt[nf].toca = 0;
+      else if ((est == FA_OK || cacheOk) && stream_fonte_disponivel(s))
+        fnt[nf].toca = 1;
+      else
+        fnt[nf].toca = -1;
+      snprintf(fnt[nf].audio, sizeof fnt[nf].audio, "%.*s",
+               (int)strcspn(s->audioIdiomas, ","), s->audioIdiomas);
+      snprintf(fnt[nf].legenda, sizeof fnt[nf].legenda, "%.*s",
+               (int)strcspn(s->legendaIdiomas, ","), s->legendaIdiomas);
+      nf++;
+    }
+    if (nf > 0 && farolinfo_qualidade(qLi, 2, fnt, nf, &caps) > 0 &&
+        ctxiFormatarInfo(&qLi[0], dst, cap))
+      return;
+  }
+
+  // 2) Retomada no Diario (quando nao ha progresso visivel na linha acima)
+  if (serie && !m->prog[0] && ci->imdb[0] && diario_carregado(0)) {
+    int rT = 0, rE = 0;
+    long long rQ = 0;
+    if (diario_ultimo_episodio(0, ci->imdb, &rT, &rE, &rQ) &&
+        farolinfo_retomada(&l, rT, rE, rQ, epoch) == 1 &&
+        ctxiFormatarInfo(&l, dst, cap))
+      return;
+  }
+
+  // 3) Rever (filme visto no Diario)
+  if (!serie && ci->imdb[0] && diario_carregado(0)) {
+    DiarioTitulo dt;
+    memset(&dt, 0, sizeof dt);
+    if (diario_titulo(0, ci->imdb, &dt) && dt.vezes > 0 && dt.ultimo > 0) {
+      time_t tv = (time_t)dt.ultimo;
+      struct tm tmv;
+      if (localtime_r(&tv, &tmv) &&
+          farolinfo_rever(&l, tmv.tm_mon + 1, tmv.tm_year + 1900, (int)dt.nota10) == 1 &&
+          ctxiFormatarInfo(&l, dst, cap))
+        return;
+    }
+  }
+
+  // 4) Sobe/cai de temporada (serie com episodios avaliados)
+  if (serie && extras_n_temporadas() > 0) {
+    FarolInfoTemp temps[16];
+    int nt = extras_n_temporadas(), ti, nT = 0, vEp = 0, tEp = 0, falt = 0;
+    for (ti = 0; ti < nt && nT < 16; ti++) {
+      int num = extras_temporada_numero(ti), ne = extras_n_eps(ti), ei, soma = 0, cnt = 0;
+      if (num <= 0) continue;
+      for (ei = 0; ei < ne; ei++) {
+        int nt10 = extras_ep_nota(ti, ei);
+        if (nt10 > 0) { soma += nt10; cnt++; }
+      }
+      temps[nT].numero = num;
+      temps[nT].comNota = cnt;
+      temps[nT].notaX10 = cnt > 0 ? (soma + cnt / 2) / cnt : 0;
+      nT++;
+    }
+    (void)extras_progresso_serie(&vEp, &tEp);
+    if (tEp > vEp && vEp > 0) falt = tEp - vEp;
+    if (nT >= 2 && farolinfo_continuar(&l, temps, nT, falt, resumo.duracao) == 1 &&
+        ctxiFormatarInfo(&l, dst, cap))
+      return;
+  }
+
+  // 5) Saga (colecao com >= 2 filmes)
+  if (!serie && ci->tmdb > 0 && extras_n_colecao() >= 2) {
+    int ncol = extras_n_colecao(), pos = 0, vis = 0, i;
+    for (i = 0; i < ncol; i++) {
+      long ctmdb = extras_colecao_tmdb(i);
+      if (ctmdb == ci->tmdb) pos = i + 1;
+      if (diario_carregado(0) && ctmdb > 0) {
+        char idT[32];
+        DiarioTitulo dtc;
+        snprintf(idT, sizeof idT, "tmdb:%ld", ctmdb);
+        if (diario_titulo(0, idT, &dtc) && dtc.vezes > 0) vis++;
+      }
+    }
+    if (pos > 0 && farolinfo_saga(&l, pos, ncol, vis) == 1 &&
+        ctxiFormatarInfo(&l, dst, cap))
+      return;
+  }
+
+  // 6) Tempo / Termina as (quando duracao medida e relogio valido existem)
+  {
+    int min = resumo.duracao > 0 ? resumo.duracao : metaMinutos(ci->meta);
+    if (min > 0 && epoch > 1700000000LL) {
+      time_t tv = (time_t)epoch;
+      struct tm tmv;
+      if (localtime_r(&tv, &tmv) &&
+          farolinfo_tempo(&l, &tmv, ajustes_relogio_12h(), min, 0) == 1 &&
+          ctxiFormatarInfo(&l, dst, cap))
+        return;
+    }
+  }
+
+  // 7) Onde assistir
+  if (temId(ci) && ondever_n(ci->imdb) > 0) {
+    OndeVer ov;
+    if (ondever_item(ci->imdb, 0, &ov) && ov.nome[0] &&
+        farolinfo_onde(&l, ov.nome) == 1 &&
+        ctxiFormatarInfo(&l, dst, cap))
+      return;
+  }
+
+  // 8) Amigos
+  if (temId(ci)) {
+    AmigosTitulo amg;
+    if (amigostitulo_obter(ci->imdb, &amg) && amg.n > 0) {
+      FarolInfoAmigo fa[AMT_MAX];
+      int nfa = 0, i;
+      for (i = 0; i < amg.n && nfa < AMT_MAX; i++) {
+        amigostitulo_primeiro_nome(amg.a[i].nome, fa[nfa].nome, sizeof fa[0].nome);
+        if (!fa[nfa].nome[0]) continue;
+        fa[nfa].terminou = amg.a[i].terminou ? 1 : 0;
+        fa[nfa].gostou = amg.a[i].gostou ? 1 : 0;
+        nfa++;
+      }
+      if (nfa > 0 && farolinfo_amigos(&l, fa, nfa) == 1 &&
+          ctxiFormatarInfo(&l, dst, cap))
+        return;
+    }
+  }
 }
 
 static void montar(const CatItem *ci, const CtxInfoEstado *st, Modelo *m) {
@@ -214,6 +534,7 @@ static void montar(const CatItem *ci, const CtxInfoEstado *st, Modelo *m) {
   if (serie && temId(ci)) agenda_frase(ci->imdb, m->agenda, sizeof m->agenda);
   m->salvo = st && st->salvo;
   m->visto = st && st->visto == 1;
+  montarFarolInfo(ci, m, m->farolInfo, sizeof m->farolInfo);
 }
 
 // A SINOPSE QUEBRADA UMA VEZ. A chave e o texto, a largura e o idioma; o
@@ -367,6 +688,12 @@ static float fazer(const CatItem *ci, const CtxInfoEstado *st, float x, float y,
     y += NOTAS_H;
   }
 
+  // 1 LINHA P6 (farolinfo): somente quando ha dado medido; sem dado, nada.
+  if (m.farolInfo[0]) {
+    y += 8.0f;
+    y += linhaIcone("aj_farol", m.farolInfo, cx, y, cw, ca, desenhar);
+  }
+
   // SINOPSE, ate quatro linhas.
   if (m.sinopse && m.sinopse[0]) {
     int i;
@@ -437,6 +764,10 @@ void ctxinfo_texto(const CatItem *ci, const CtxInfoEstado *st, char *dst, size_t
   snprintf(dst + n, cap - n, "%s\nsynopsis: %.60s\nprogress: %s\nfriends: %s\nschedule: %s\nbadges:%s%s\n",
            m.notasCarregando ? " (loading)" : "", m.sinopse ? m.sinopse : "", m.prog,
            m.amigos, m.agenda, m.salvo ? " saved" : "", m.visto ? " watched" : "");
+  if (m.farolInfo[0]) {
+    n = strlen(dst);
+    snprintf(dst + n, cap - n, "info: %s\n", m.farolInfo);
+  }
 }
 
 // A VERSAO COMPACTA, para dentro da linha expandida do painel de Salvos: meta +

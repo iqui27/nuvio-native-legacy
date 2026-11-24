@@ -168,6 +168,12 @@ int  farolsinal_origens(uint32_t *h, uint8_t *o, uint8_t *d, int max);
 // nao enche a LRU com a ficha pobre de CatItem. A cola da Home (farol.c)
 // usa para dar tema a segunda fileira. 1 = `dst` recebeu a ficha.
 int  farolsinal_ficha_do_item(const CatItem *ci, FarolFicha *dst);
+// Dia atual do modelo (dias desde 1/1/2026) usando o relogio de farolsinal.
+uint16_t farolsinal_dia_atual(void);
+// Nomes conhecidos em RAM (nunca gravados/logados) para pessoa/tema do TMDB.
+void farolsinal_registrar_nome(int dim, int32_t id, const char *nome);
+int  farolsinal_pessoa_nome(int32_t id, char *dst, size_t cap);
+int  farolsinal_tema_nome(int32_t id, char *dst, size_t cap);
 
 // --- teste -------------------------------------------------------------------
 // Relogio injetavel: s devolve epoch em segundos, ms os milissegundos do anel

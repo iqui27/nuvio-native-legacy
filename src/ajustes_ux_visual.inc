@@ -330,7 +330,10 @@ static const char *ajVisualIcone(int op) {
     case AJ_ESPACO: return "aj_database";
     case AJ_TEX_MB: return "aj_memory-stick";
     case AJ_GUIA: return "aj_book-open";
-    case AJ_FAROL: case AJ_FAROL_AVISOS: return "aj_farol";
+    case AJ_FAROL: case AJ_FAROL_AVISOS: case AJ_FAROL_APRENDEU: return "aj_farol";
+    case AJ_FAROL_RECOMENDAR: return "aj_sliders-horizontal";
+    case AJ_FAROL_ZERAR: return "aj_rotate-cw";
+    case AJ_FAROL_LLM_SO_ESTA_TV: return "aj_shield";
     case AJ_DICASCONTROLE: return "aj_circle-dot";
     case AJ_NOVIDADES20: return "aj_sparkles";
     case AJ_APOIAR: return "aj_heart";

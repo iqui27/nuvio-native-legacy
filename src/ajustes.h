@@ -974,6 +974,10 @@ int ajustes_farol_diff(void (*cb)(const char *chave, int numero, const char *tok
 // 1 (padrao) = Ligado; 0 = So quando eu abrir.
 int  ajustes_farol_avisos(void);
 void ajustes_farol_avisos_definir(int ligado);
+// FAROL (#51): Ajustes › Sobre e ajuda › Gosto.
+int  ajustes_farol_recomendar(void);
+void ajustes_farol_recomendar_definir(int ligado);
+int  ajustes_farol_llm_ativo(void);
 #endif
 
 // External audio uses the webOS converter; disabled by default.

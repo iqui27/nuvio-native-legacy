@@ -404,3 +404,7 @@
   0, /* assMotorNovoLocal: Ligado (V_LIGA 0) — motor novo de ASS de fabrica */
   1, /* farolAvisosLocal: 1 (padrao) = Ligado; 0 = So quando eu abrir (#27) */
   0, /* Farol (Sobre e ajuda): action (#23) */
+  0, /* farolRecomendar: 0 = Ligado (#51) */
+  0, /* farolAprendeu: acao (#51) */
+  0, /* farolZerar: acao (#51) */
+  1  /* farolLlmSoEstaTv: 1 = Desligado (padrao seguro, #51) */
