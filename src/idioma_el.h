@@ -8350,6 +8350,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "Όλο και περισσότεροι βλέπουν μαζί μας. Ευχαριστούμε όσους χρησιμοποιούν την εφαρμογή, στέλνουν προτάσεις και βοηθούν να βρεθούν προβλήματα."),
   T("Tem em %s %s, com áudio em %s.", "Υπάρχει σε %s %s, ήχος: %s."),
   T("Tem em %s, com áudio em %s.", "Υπάρχει σε %s, ήχος: %s."),
+  T("Tem em %s.", "Υπάρχει σε %s."),
   T("Tem legenda em %s.", "Έχει υπότιτλους: %s."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "Έχει δικό του πακέτο, από το branch webos3 — όχι το ίδιο αρχείο. Αυτές οι τηλεοράσεις δεν έχουν H.265 ούτε HDR."),
   T("Tem uma enquete para você", "Υπάρχει μια δημοσκόπηση για εσάς"),

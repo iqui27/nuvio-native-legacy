@@ -223,6 +223,9 @@ int  diario_nuvem_ativa(int perfil);
 #define DIARIO_NOMES_MAX 4000
 void diario_nome_definir(const char *id, const char *titulo, int ano, const char *poster);
 // 1 se conhece. Qualquer saida pode ser NULL.
+// 1 quando diario-nomes.txt ja foi lido nesta sessao: consulta barata para
+// quem nao pode disparar carga fria (fio da UI do Farol, FAROL46B).
+int  diario_nomes_lido(void);
 int  diario_nome(const char *id, char *titulo, size_t tamTitulo, int *ano,
                  char *poster, size_t tamPoster);
 

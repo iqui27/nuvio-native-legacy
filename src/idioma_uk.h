@@ -8349,6 +8349,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "Дедалі більше людей дивляться разом із нами. Дякуємо всім, хто користується застосунком, надсилає пропозиції та допомагає знаходити проблеми."),
   T("Tem em %s %s, com áudio em %s.", "Є у %s %s, аудіо: %s."),
   T("Tem em %s, com áudio em %s.", "Є у %s, аудіо: %s."),
+  T("Tem em %s.", "Є у %s."),
   T("Tem legenda em %s.", "Є субтитри: %s."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "Має власний пакет із гілки webos3 — це не той самий файл. Ці телевізори не мають ні H.265, ні HDR."),
   T("Tem uma enquete para você", "Для вас є опитування"),

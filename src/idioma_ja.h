@@ -8350,6 +8350,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "一緒に観てくれる人がどんどん増えています。アプリを使い、提案を送り、問題を見つけてくださる皆さん、ありがとうございます。"),
   T("Tem em %s %s, com áudio em %s.", "%s %s である — 音声 %s"),
   T("Tem em %s, com áudio em %s.", "%s である — 音声 %s"),
+  T("Tem em %s.", "%s である"),
   T("Tem legenda em %s.", "%s 字幕あり"),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "専用のパッケージ（webos3 ブランチ）で、同じファイルではありません。これらのテレビは H.265 も HDR も非対応です。"),
   T("Tem uma enquete para você", "あなたへのアンケートがあります"),

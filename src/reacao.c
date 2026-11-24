@@ -84,6 +84,10 @@ static const char *arquivoNotas(void) {
   return nome;
 }
 
+int reacao_notas_lida(void) {
+  return notasPerfil == perfis_ativo();
+}
+
 static void carregarNotas(void) {
   char *b, *p;
   if (notasPerfil == perfis_ativo()) return;

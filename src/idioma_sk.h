@@ -8350,6 +8350,7 @@
   T("Tem cada vez mais gente assistindo com a gente. Obrigado a quem usa o app, manda sugestões e ajuda a encontrar os problemas.", "S nami sa pozerá viac ľudí. Ďakujeme všetkým, ktorí aplikáciu používajú, posielajú návrhy a pomáhajú hľadať problémy."),
   T("Tem em %s %s, com áudio em %s.", "Je v %s %s, zvuk: %s."),
   T("Tem em %s, com áudio em %s.", "Je v %s, zvuk: %s."),
+  T("Tem em %s.", "Je v %s."),
   T("Tem legenda em %s.", "Má titulky: %s."),
   T("Tem pacote próprio, do ramo webos3 — não é o mesmo arquivo. Essas TVs não têm H.265 nem HDR.", "Má vlastný balík z vetvy webos3 — nie rovnaký súbor. Tie televízory nemajú H.265 ani HDR."),
   T("Tem uma enquete para você", "Máš tu anketu"),

@@ -120,6 +120,7 @@ static int navigationMove(SDL_Keycode);
 #include "amigostitulo_ui.h"
 #include "temporadas_grafico.h"
 #include "detrotulo.h"
+#include "faroldetalhe.h"
 static void ponteiroDetalhe(int r, int c);   // ponteiro do Magic Remote (#99)
 static int moverFileira(int dy);
 static void heroReiniciar(void);
@@ -372,6 +373,9 @@ static unsigned srvAvailabilityVersion;
 static void ponteiroServidor(int p, int unused) { (void)unused; nivel = 0; focoVersao = 0; focoAmigos = 0; focoServidor = p; }
 static int  pedAmigos = 0;
 static int  pedExplorar = 0;   // circular "Explorar": o roteador abre a toca neste titulo
+static int  pedExplorarSelo = -1; // selo do Farol que pediu (FP_SELO_*), -1 = generico
+static int32_t pedExplorarSeloId = 0; // id do selo (TMDB > 0 ou hash local < 0)
+static char pedExplorarFio[64];   // fio cru do selo (kw de tema ou genero local)
 #define DET_PTR_AMIGOS 99
 #define NV_DETW_AMIGOS_H   76.0f
 #define NV_DETW_AMIGOS_GAP 18.0f
@@ -1254,7 +1258,10 @@ static void recalcularLayout(void) {
   float y=heroServidor() ? NV_TELA_H + 60 : fone ? retPt(636) :
     layout_desktop_ativo() ? NV_TELA_H * .66f + 56 : ANC(NV_DET21_FIM + 56);
 #ifdef NV_DESKTOP_UI
-  if (layout_desktop_ativo() && !heroServidor()) y=NV_TELA_H*.55f;
+  if (layout_desktop_ativo() && !heroServidor()) {
+    float hf = faroldetalhe_altura(larguraTextoHero());
+    y = NV_TELA_H * .55f + (hf > 0.0f ? hf + 16.0f : 0.0f);
+  }
 #endif
   const int *order=ordemSecoes();
   for (int r=0;r<N_SECOES;r++) {
@@ -1902,6 +1909,7 @@ static void abrirInterno(const HomeItem *it) {
       snprintf(idxImdb, sizeof idxImdb, "%s", ci0->imdb);
       idxCopia = *ci0; idxTemCopia = 1;
     } }
+  faroldetalhe_abrir(idx, SDL_GetTicks());
   { const CatItem *ci0 = cat_item(idx);
     artehero_logo_sessao_iniciar(ci0);
     const char *logo = logoDe(idx);
@@ -1996,6 +2004,7 @@ void detail_fechar(void) {
   pediuRelogio = 0;
   sinopse_fechar();
   if (!aberto || saindo) return;
+  faroldetalhe_fechar();
   pessoaAberta = 0;
   nivel = 0;
   saindo = 1;
@@ -2009,6 +2018,7 @@ void detail_fechar_seco(void) {
   pediuRelogio = 0;
   sinopse_fechar();
   if (!aberto) return;
+  faroldetalhe_fechar();
   pessoaAberta = 0;
   nivel = 0;
   saindo = 1;
@@ -3501,6 +3511,25 @@ static void detail_evento_(const SDL_Event *e) {
         ultimoEpisodio(&ut, &ue);
         amtui_abrir(&at, ut, ue, tituloDe(idx));
       }
+    } else if (nivel == 0 && faroldetalhe_focado()) {
+      long pTmdb = 0; int elCol = -1;
+      char pNome[96], pFoto[256];
+      int seloTipo = -1; int32_t seloId = 0; char seloFio[64];
+      int ac = faroldetalhe_ativar_id(&pTmdb, &elCol, pNome, sizeof pNome, pFoto,
+                                      sizeof pFoto, &seloTipo, seloFio,
+                                      sizeof seloFio, &seloId);
+      if (ac == FD_ACAO_PESSOA) {
+        const CatItem *ci = cat_item(idx);
+        if (pTmdb > 0) detail_mostrar_pessoa(pTmdb, pNome, pFoto);
+        else if (ci && elCol >= 0 && elCol < ci->nElenco) pessoaBuscar(ci, elCol);
+        else { trailer_fechar(); pedExplorar = 1; }
+      } else if (ac == FD_ACAO_EXPLORAR) {
+        trailer_fechar();
+        pedExplorar = 1;
+        pedExplorarSelo = seloTipo;
+        pedExplorarSeloId = seloId;
+        snprintf(pedExplorarFio, sizeof pedExplorarFio, "%s", seloFio);
+      }
     } else if (nivel == 0) {
       // Ordem FIXA: primario, adicionar a lista, marcar como visto, fontes.
       //
@@ -3745,6 +3774,7 @@ static void detail_evento_(const SDL_Event *e) {
     if (comPicando) comentariosVoltar();
     else if (acoesAgrupadas() && maisAcoes && nivel == 0) { maisAcoes = 0; botao = temInicio() ? 1 : 0; }
     else if (focoVersao) { focoVersao = 0; botao = 0; }
+    else if (faroldetalhe_focado()) { faroldetalhe_focar(0); botao = 0; }
 
     else if (carro && carCheia) carCheia = 0;   // tela cheia no topo -> cartao
     else if (trilhaVolta == nVolta) {
@@ -3758,6 +3788,29 @@ static void detail_evento_(const SDL_Event *e) {
     return;
   }
   if (nivel == 0) {
+    if (faroldetalhe_focado() && faroldetalhe_n_selos() <= 0) faroldetalhe_focar(0);
+    int estavaFarol = faroldetalhe_focado();
+    if (estavaFarol) {
+      if (faroldetalhe_tecla(k, &pediuMenu)) return;
+      if (k == SDLK_UP) {
+        AmigosTitulo at;
+        faroldetalhe_focar(0);
+        if ((detalheRetrato() || heroServidor()) && amigosDoTitulo(&at)) focoAmigos = 1;
+        else if (servidoresDisponiveis) {
+          for (int p = 0; p < 3; p++) if (servidoresDisponiveis & (1 << p)) { focoServidor = p; break; }
+        } else if (topoVersao() && topoFonteDisponivel()) focoVersao = 1;
+        return;
+      }
+      if (k != SDLK_DOWN) return;
+      { int temSec = 0;
+        for (int o = 0; o < N_ORDEM; o++) {
+          int r = ordemSecoes()[o];
+          if (ehSerie() && r == SEC_TEMPORADAS && secaoColunas(SEC_EPISODIOS) > 0) r = SEC_EPISODIOS;
+          if (secaoColunas(r) > 0) { temSec = 1; break; }
+        }
+        if (!temSec) return;
+        faroldetalhe_focar(0); }
+    }
     int estavaVersao=focoVersao;
     if (focoVersao && !topoFonteDisponivel()) focoVersao=0;
     if (focoVersao) {
@@ -3766,7 +3819,7 @@ static void detail_evento_(const SDL_Event *e) {
       else if (k == SDLK_RIGHT) { focoVersao = 0; botao = 1; return; }
       else return;
     }
-    if (k == SDLK_DOWN && !estavaVersao && !servidoresDisponiveis && topoVersao() && topoFonteDisponivel() && !(carro && !carCheia)) {
+    if (k == SDLK_DOWN && !estavaFarol && !estavaVersao && !servidoresDisponiveis && topoVersao() && topoFonteDisponivel() && !(carro && !carCheia)) {
       focoVersao = 1; return;
     }
     int desceuServidor = (focoServidor >= 0 || focoAmigos) && k == SDLK_DOWN;
@@ -3779,7 +3832,7 @@ static void detail_evento_(const SDL_Event *e) {
       }
       if (k != SDLK_DOWN) return;
       focoServidor = -1;
-    } else if (k == SDLK_DOWN && servidoresDisponiveis && !focoAmigos) {
+    } else if (k == SDLK_DOWN && !estavaFarol && servidoresDisponiveis && !focoAmigos) {
       for (int p = 0; p < 3; p++) if (servidoresDisponiveis & (1 << p)) { focoServidor = p; return; }
     }
     // CIMA na ilha de amigos volta ao botao em que estava; BAIXO entra nas secoes;
@@ -3793,10 +3846,12 @@ static void detail_evento_(const SDL_Event *e) {
       if (k == SDLK_LEFT) { pediuMenu = 1; return; }
       if (k != SDLK_DOWN) return;
       focoAmigos = 0;
-    } else if (k == SDLK_DOWN && !(carro && !carCheia)) {
+    } else if (k == SDLK_DOWN && !estavaFarol && !(carro && !carCheia)) {
       AmigosTitulo at;
       if ((detalheRetrato() || heroServidor()) && amigosDoTitulo(&at)) { focoAmigos = 1; return; }
     }
+    if (k == SDLK_DOWN && !estavaFarol && !heroServidor() && !(carro && !carCheia) &&
+        faroldetalhe_focar(1)) return;
     // #407: CIMA no alto da pagina NAO abre mais o painel de Salvos/Avisos.
     // O atalho de cef8c3e8 (alcançar o painel sem tecla AZUL) ficou
     // redundante com o relogio clicavel e com o CH+/AZUL, e a seta no topo da
@@ -3806,7 +3861,7 @@ static void detail_evento_(const SDL_Event *e) {
     // CARROSSEL: a primeira seta para baixo so estica o cartao (ver carCheia).
     if (k == SDLK_DOWN && carro && !carCheia) { carCheia = 1; return; }
     // After leaving a server chip or the friends card, enter sections without resolving from Play.
-    if (!estavaVersao && !desceuServidor && !(carro && !carCheia) &&
+    if (!estavaFarol && !estavaVersao && !desceuServidor && !(carro && !carCheia) &&
         (detalheRetrato() || (k != SDLK_LEFT && k != SDLK_RIGHT)) && navigationMove(k)) return;
     if (k == SDLK_DOWN) {
       sincronizarEpisodioPadrao();
@@ -3894,7 +3949,10 @@ static void detail_evento_(const SDL_Event *e) {
   else if (k == SDLK_UP) {
     if (!moverFileira(-1)) {
       nivel=0; botao=0;
-      focoVersao=topoVersao() && topoFonteDisponivel();
+      if (!heroServidor() && !(carro && !carCheia) && faroldetalhe_focar(1))
+        focoVersao=0;
+      else
+        focoVersao=topoVersao() && topoFonteDisponivel();
     }
   }
 }
@@ -4268,6 +4326,10 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     colListaScroll = anim_mola2(&colListaVel, colListaScroll, alvo, dt, NV_MOLA2_SCROLL);
   }
   revalidarIdx();
+  { int ft = 0, fe = 0;
+    if (ehSerie() && !episodioAlvo(&ft, &fe, NULL)) ft = fe = 0;
+    faroldetalhe_atualizar(idx, ft, fe, dt, agora);
+    if (faroldetalhe_focado() && faroldetalhe_n_selos() <= 0) faroldetalhe_focar(0); }
   trocaarte_atualizar(dt);
   // OK NA TELA DE ESCOLHA: a arte congelada na abertura (arteFixa/logoFixo)
   // e justamente a que a pessoa acabou de trocar. Solta e pede de novo — com a
@@ -5830,6 +5892,9 @@ static void heroWeb(float a, float desloc) {
   // 2.1 TV (owner, 25/10/2026): the info sits at the BOTTOM like 2.0.8 — logo,
   // Play + Save + More, source, synopsis and metadata — stacked up from
   // NV_DET21_FIM, just above the first section kicker.
+  float hFarol = (!heroServidor() && !(carro && !carCheia)) ?
+                 faroldetalhe_altura(larguraTextoHero()) : 0.0f;
+  float yFarol = 0.0f;
   float yVers = 716.0f;
   if (!detalheRetrato() && !heroServidor()) {
     float y = layout_desktop_ativo() ? NV_TELA_H * .66f : ANC(NV_DET21_FIM);
@@ -5839,8 +5904,16 @@ static void heroWeb(float a, float desloc) {
     yMeta1 = y - NV_DETW2_M1_H;
     ySin = yMeta1 - NV_DET21_GAP - hSin;
     float sourceHeight = layout_desktop_ativo() && topoVersao() && topoFonteDisponivel() ? fmaxf(hVai, 56) : hVai;
-    yAcoes = ySin - NV_DET21_GAP - NV_DET21_BTN_H - sourceHeight;
+    if (hFarol > 0.0f) {
+      yFarol = ySin - NV_DET21_GAP - hFarol;
+      yAcoes = yFarol - NV_DET21_GAP - NV_DET21_BTN_H - sourceHeight;
+    } else {
+      yAcoes = ySin - NV_DET21_GAP - NV_DET21_BTN_H - sourceHeight;
+    }
     yVers = yAcoes + NV_DET21_BTN_H + 12;
+  } else if (hFarol > 0.0f && detalheRetrato() && !heroServidor()) {
+    yFarol = ySin;
+    ySin += hFarol + 16.0f;
   }
 
 #ifdef NV_DESKTOP_UI
@@ -5849,6 +5922,7 @@ static void heroWeb(float a, float desloc) {
     yAcoes = NV_TELA_H * .2633f;
     yVers = yAcoes + 64;
     ySin = yAcoes + 136 + hCaption;
+    if (hFarol > 0.0f) { yFarol = ySin; ySin += hFarol + 16.0f; }
     hSin = sin ? txt_bloco_corta(TXT_G20M,sin,243,242,239,-1,0,
                                  larguraTextoHero(),30,0,3) : 90;
     yMeta1 = ySin + fmaxf(90,hSin) + 20;
@@ -6031,6 +6105,7 @@ static void heroWeb(float a, float desloc) {
 
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) {
+    int farolFoc = faroldetalhe_focado();
     float x=NV_DETW2_X;
     for (int i=0;i<nBotoes();i++) {
       int action=acaoEm(i);
@@ -6038,7 +6113,7 @@ static void heroWeb(float a, float desloc) {
         action==ACAO_LISTA ? i18n(ci && ci->naLista ? "Salvo" : "Salvar") : NULL;
       float w=label ? txt_linha(TXT_G20M,label,243,242,239,255).w + (i ? 56 : 100) : 48;
       GfxRect r={x,yAcoes,w,48};
-      desenhaBotao(r,label,action,focoBotao(i,nivel==0 && !focoVersao && botao==i),a);
+      desenhaBotao(r,label,action,focoBotao(i,nivel==0 && !focoVersao && !farolFoc && botao==i),a);
       if (action==ACAO_MAIS) maisAncora=r;
       if (a>.3f) ponteiro_alvo(r.x,r.y,r.w,r.h,ponteiroDetalhe,NULL,-1,i);
       x+=w+18;
@@ -6049,7 +6124,7 @@ static void heroWeb(float a, float desloc) {
     float x = NV_DETW2_X, p = anim_clamp(acoesVis, 0, 1);
     float step = NV_DET21_CIRC + NV_DET21_BTN_GAP;
     int extras = 1 + acoesJuntos;
-    int heroFocus = nivel == 0 && !focoVersao && !focoAmigos && focoServidor < 0;
+    int heroFocus = nivel == 0 && !focoVersao && !focoAmigos && focoServidor < 0 && !faroldetalhe_focado();
     for (int i = 0; i < 2; i++) {
       GfxRect r = {x, yAcoes, i ? NV_DET21_CIRC : larguraPrimario(rot), NV_DET21_BTN_H};
       float dy, k = heroOnda(.5f * i, &dy);
@@ -6391,6 +6466,12 @@ static void heroWeb(float a, float desloc) {
     txt_bloco(TXT_DET_META2, nome, 255, 255, 255, NV_DETW2_X,
                heroServidor() ? 412 + sobe : detalheRetrato() ? yAcoes + NV_DETW2_BTN_H + hAcoesExtra + srvH + 16.0f :
                baseLogo + 12.0f, larguraLogoHero(), 34, a, 0);
+
+  if (hFarol > 0.0f) {
+    faroldetalhe_desenhar(NV_DETW2_X, yFarol + sobe + dyS,
+                          larguraTextoHero(), a * kS,
+                          a > 0.3f ? ponteiroDetalhe : NULL, -5);
+  }
 
   // --- sinopse --------------------------------------------------------------
   { float f = 1.0f, aS = a * kS;
@@ -8777,6 +8858,8 @@ static void ponteiroDetalhe(int r, int c) {
     if(r>=0 && r<N_SECOES) toqueSec[r].livre=1;
   }
 #endif
+  if (r==-5) { nivel=0; focoVersao=0; focoAmigos=0; focoServidor=-1; faroldetalhe_ponteiro(c); return; }
+  faroldetalhe_focar(0);
   if (r==-4) { nivel=0; focoVersao=1; focoAmigos=0; focoServidor=-1; return; }
   focoVersao=0;
   if (r == -2) { ponteiroServidor(c,0); return; }
@@ -9909,7 +9992,25 @@ int detail_pediu_fontes_ep(int *t, int *e) {
   if (t) *t = tt; if (e) *e = te;
   return tt >= 0 && te > 0;
 }
-int detail_pediu_explorar(void)   { int v = pedExplorar;   pedExplorar = 0;   return v; }
+int detail_pediu_explorar(void)   { int v = pedExplorar;   pedExplorar = 0;
+                                    pedExplorarSelo = -1; pedExplorarSeloId = 0;
+                                    pedExplorarFio[0] = 0; return v; }
+// Versao com destino: devolve o tipo do selo (FP_SELO_*), o id e o fio que o
+// Farol resolveu, para o roteador abrir a toca filtrada (FAROL46B/F).
+int detail_pediu_explorar_selo_id(int *tipo, char *fio, size_t capFio, int32_t *seloId) {
+  int v = pedExplorar;
+  pedExplorar = 0;
+  if (tipo) *tipo = pedExplorarSelo;
+  if (fio && capFio) snprintf(fio, capFio, "%s", pedExplorarFio);
+  if (seloId) *seloId = pedExplorarSeloId;
+  pedExplorarSelo = -1;
+  pedExplorarSeloId = 0;
+  pedExplorarFio[0] = 0;
+  return v;
+}
+int detail_pediu_explorar_selo(int *tipo, char *fio, size_t capFio) {
+  return detail_pediu_explorar_selo_id(tipo, fio, capFio, NULL);
+}
 // "Reproduzir desde o inicio" ainda cai no mesmo caminho do primario: o
 // roteador so sabe abrir o player no ponto salvo. Consumir o pedido aqui evita
 // que ele fique pendurado.
