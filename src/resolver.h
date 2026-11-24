@@ -65,8 +65,10 @@ uint64_t resolver_tentativa_externo(void);
 // FAROL (issue 19, PLANO 3.2): Inicio (SINTOMA), Cadeia (TESTES: a luz percorre
 // as etapas e, com a sonda ativa no ar, segura a linha em "testando…") e
 // Veredito (o cartao com a acao; o foco nasce nela). ENVIO e o do registro.
-// ACHAR e a tela 7 ("Achados", #25).
-enum { RESOLVER_FASE_SINTOMA = 0, RESOLVER_FASE_TESTES, RESOLVER_FASE_ENVIO, RESOLVER_FASE_VEREDITO, RESOLVER_FASE_ACHAR };
+// ACHAR e a tela 7 ("Achados", #25); ESCOLHA e o assistente P5 (#50,
+// farolescolhaui).
+enum { RESOLVER_FASE_SINTOMA = 0, RESOLVER_FASE_TESTES, RESOLVER_FASE_ENVIO, RESOLVER_FASE_VEREDITO, RESOLVER_FASE_ACHAR,
+       RESOLVER_FASE_ESCOLHA };
 #define RESOLVER_FASE_INICIO RESOLVER_FASE_SINTOMA
 #define RESOLVER_FASE_CADEIA RESOLVER_FASE_TESTES
 // Ids de foco que nao sao cartao de sintoma (os cartoes usam o RES_S_* do
@@ -81,6 +83,7 @@ enum {
   RESOLVER_B_ACHAR_SURPRESA,
   RESOLVER_B_ACHAR_VOLTAR,
   RESOLVER_B_ACHAR_VOZ,
+  RESOLVER_B_ACHAR_ESCOLHA,   // 5o item da coluna: o assistente P5 (#50)
   RESOLVER_B_LIN0 = 200
 };
 int  resolver_fase(void);
