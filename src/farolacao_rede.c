@@ -12,6 +12,7 @@
 #include "ilhaacao.h"
 #include "player.h"
 #include "rede.h"
+#include "streams.h"
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -33,7 +34,9 @@ static pthread_cond_t fim = PTHREAD_COND_INITIALIZER;
 static int testando;                 // fio do teste de conectividade vivo
 static FarolRedeTeste testeFn;       // NULL = o real
 static atomic_int reabrirPedido;
+static atomic_int reabrindo;          // pedido consumido, reabertura em curso
 static double reabrirPos = -1;
+static int reabrirFonte = -1;         // fonte VOD a reabrir (da acao, nao do quadro)
 // "Desligar o HDR sempre nesta TV": o que a acao MUDOU, para o Desfazer
 // devolver exatamente o valor anterior (-1 = nada a desfazer).
 static int hdrAnterior = -1;
@@ -52,29 +55,59 @@ void farolacao_rede_teste_conectividade(FarolRedeTeste f) {
   pthread_mutex_unlock(&trava);
 }
 
+// Ha uma reproducao VOD que a acao pode reabrir: a aberta agora, a suspensa
+// (retida, ex.: saiu para os Ajustes) ou a ultima fonte VOD conhecida — a
+// lista de fontes e o indice do titulo sobrevivem ao fechamento do player.
+// Sem nenhuma delas a acao nao tem o que reabrir e falha honestamente (#34c).
+static int temReproducao(void) {
+  return player_aberto() || player_retido() || stream_atual() >= 0;
+}
+
 // --- reabertura na posicao atual ---------------------------------------------
 static void pedirReabertura(void) {
   double pos = player_posicao_seg();
+  int fonte = stream_atual();
   pthread_mutex_lock(&trava);
   reabrirPos = pos >= 0 ? pos : -1;
+  reabrirFonte = fonte;
   pthread_mutex_unlock(&trava);
   atomic_store(&reabrirPedido, 1);
 }
 
-int farolacao_rede_reabertura_pedida(double *posSeg) {
+int farolacao_rede_reabertura_pedida(double *posSeg, int *fonte) {
   if (!atomic_exchange(&reabrirPedido, 0)) return 0;
   pthread_mutex_lock(&trava);
   if (posSeg) *posSeg = reabrirPos;
+  if (fonte) *fonte = reabrirFonte;
   pthread_mutex_unlock(&trava);
+  // A reabertura esta a caminho: farolacao_rede_encerrar() (o descarte do
+  // retido dentro de player_abrir) NAO pode soltar os overrides que a acao
+  // acabou de armar — eles valem para a reproducao nova, nao para a que morre.
+  atomic_store(&reabrindo, 1);
   return 1;
 }
 
+void farolacao_rede_reabrir_fim(int reabriu) {
+  atomic_store(&reabrindo, 0);
+  // Reabertura impossivel: os overrides ficariam armados sem reproducao.
+  // Acabou reabrindo = a nova reproducao ja herdou os flags; encerrar limpa.
+  if (!reabriu) farolacao_rede_encerrar();
+}
+
 void farolacao_rede_encerrar(void) {
+  if (atomic_load(&reabrindo)) {
+    // Overrides preservados para a reproducao que esta reabrindo; morre o pedido.
+    atomic_store(&reabrirPedido, 0);
+    pthread_mutex_lock(&trava);
+    reabrirPos = -1; reabrirFonte = -1;
+    pthread_mutex_unlock(&trava);
+    return;
+  }
   ajustes_farol_buffer_maior(0);
   ajustes_farol_hdr_off(0);
   atomic_store(&reabrirPedido, 0);
   pthread_mutex_lock(&trava);
-  reabrirPos = -1;
+  reabrirPos = -1; reabrirFonte = -1;
   pthread_mutex_unlock(&trava);
 }
 
@@ -185,7 +218,7 @@ static int limparCache(void) {
 
 // --- BUFFER_MAIOR -------------------------------------------------------------
 static int bufferMaior(void) {
-  if (!player_aberto()) return 0;                 // sem reproducao nao ha o que reabrir
+  if (!temReproducao()) return 0;                 // sem reproducao nao ha o que reabrir
   if (ajustes_farol_buffer_maior_ativo()) return 0;   // ja esta maior; reabrir de novo nao ajuda
   ajustes_farol_buffer_maior(1);
   pedirReabertura();
@@ -218,8 +251,8 @@ static void avisarHdrPersistido(int desfazivel) {
 }
 
 static int desligarHdr(int persistir) {
-  int aberto = player_aberto();
-  if (!aberto && !persistir) return 0;
+  int tem = temReproducao();
+  if (!tem && !persistir) return 0;
   if (persistir) {
     int antes = ajustes_dolby_vision_gravado();
     // Gravacao que falhou NAO vira "sempre nesta TV": sem isto o ilha-aviso
@@ -236,7 +269,7 @@ static int desligarHdr(int persistir) {
       avisarHdrPersistido(antes != 0);
     }
   }
-  if (aberto) {
+  if (tem) {
     ajustes_farol_hdr_off(1);
     pedirReabertura();
   }

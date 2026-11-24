@@ -3315,6 +3315,9 @@ int ajustes_dolby_vision_definir(int ligado) {
   valor[AJ_DV] = ligado ? 0 : 1;
   if (valor[AJ_DV] == a) return 0;
   AJ_COM_ORIGEM(AJLOG_CENTRAL, ok = gravar());
+  // Disco nao confirmou: em memoria o ajuste volta ao valor gravado de
+  // verdade — o leitor nao pode ver um "ligado/desligado" que nao existe.
+  if (!ok) valor[AJ_DV] = a;
   riscoNotar(AJ_DV, a);
   return ok ? 0 : -1;
 }

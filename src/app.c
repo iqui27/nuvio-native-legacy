@@ -5721,9 +5721,12 @@ static char juntosFonteAlvo[64];
 
 static void tocarFonteInterno(int fonte, int manual, int farolReabrir, double farolPos) {
   int navegando = juntosui_escolhendo_filme();
-  int alvo = player_aberto() && !navegando ? player_indice() : detail_indice(), t = 0, e = 0;
+  // farolReabrir: o titulo alvo e SEMPRE o da reproducao — player_indice()
+  // devolve o ultimo titulo mesmo com o player fechado (detail pode estar
+  // apontando para outro, ex.: vindo dos Ajustes).
+  int alvo = (farolReabrir || (player_aberto() && !navegando)) ? player_indice() : detail_indice(), t = 0, e = 0;
   if (!perfilPermiteReproduzir(alvo)) { aguardandoFonte = 0; folhaParaTocar = 0; return; }
-  if (player_aberto() && !navegando) player_episodio_atual(&t, &e);
+  if (farolReabrir || (player_aberto() && !navegando)) player_episodio_atual(&t, &e);
   else detail_ep_foco(&t, &e);
   if (manual) consumirFolhaTocar(&t, &e);
   if (navegando) {
@@ -7924,11 +7927,18 @@ void app_atualizar(float dt, Uint32 agora) {
   // Farol (#34): "Buffer maior" / "Desligar o HDR" pedem para reabrir a MESMA
   // fonte na posicao atual, sem gravar preferencia manual de fonte e mantendo os
   // overrides temporarios desta reproducao.
-  { double posFarol;
-    if (aguardandoFonte != 2 && player_aberto() && farolacao_rede_reabertura_pedida(&posFarol)) {
-      int atualFarol = stream_atual();
-      if (atualFarol >= 0 && stream_item(atualFarol))
-        tocarFonteInterno(atualFarol, 0, 1, posFarol);
+  // Tambem sem player_aberto(): a sessao retida (saiu para os Ajustes) ou a
+  // ultima fonte VOD reabrem do mesmo jeito; a fonte vem da acao, nao do
+  // stream_atual() do quadro. Se nada reabriu, reabrir_fim solta os overrides.
+  { double posFarol; int fonteFarol;
+    if (aguardandoFonte != 2 && farolacao_rede_reabertura_pedida(&posFarol, &fonteFarol)) {
+      int reabriu = 0;
+      if (fonteFarol < 0) fonteFarol = stream_atual();
+      if (fonteFarol >= 0 && stream_item(fonteFarol)) {
+        tocarFonteInterno(fonteFarol, 0, 1, posFarol);
+        reabriu = player_aberto();
+      }
+      farolacao_rede_reabrir_fim(reabriu);
     } }
   juntosAbrirEFonte(agora);
   if (aguardandoFonte != 2 && (player_pediu_fontes() || juntosui_pediu_fontes())) {

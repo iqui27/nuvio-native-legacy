@@ -48,9 +48,15 @@ void fontecache_vod_limpar(void) { fontesLimpas++; }
 
 // Player.
 static int tocando;
+static int retido;                       // sessao suspensa (saiu para os Ajustes)
 static float posicao;
 int player_aberto(void) { return tocando; }
+int player_retido(void) { return retido; }
 float player_posicao_seg(void) { return posicao; }
+
+// streams.c: a ultima fonte VOD sobrevive ao fechamento do player.
+static int fonteAtual = -1;
+int stream_atual(void) { return fonteAtual; }
 
 // Ajustes: o valor GRAVADO e os overrides em memoria, como em ajustes.c.
 static int dvGravado = 1, bufferGravado = 2, escritas;
@@ -250,22 +256,23 @@ static void caso_buffer(void) {
   tocando = 0;
   ANEL_ZERAR();
   assert(farolacao_rede_executar(FAROL_A_BUFFER_MAIOR, 0) == 0);   // sem reproducao
-  assert(!bufferOverride && !farolacao_rede_reabertura_pedida(&pos));
+  assert(!bufferOverride && !farolacao_rede_reabertura_pedida(&pos, NULL));
   assert(nAnel == 2 && acaoNoAnel(1, 'R', FAROL_A_BUFFER_MAIOR, 0));
 
   tocando = 1; posicao = 1234.5f; ANEL_ZERAR();
   assert(farolacao_rede_executar(FAROL_A_BUFFER_MAIOR, 0) == 1);
   assert(bufferOverride && farolacao_rede_buffer_maior_ativo());
   assert(bufferGravado == 2 && escritas == 0);                      // ajuste da pessoa intacto
-  assert(farolacao_rede_reabertura_pedida(&pos) && pos > 1234.4 && pos < 1234.6);
-  assert(!farolacao_rede_reabertura_pedida(&pos));                  // uma vez so
+  assert(farolacao_rede_reabertura_pedida(&pos, NULL) && pos > 1234.4 && pos < 1234.6);
+  assert(!farolacao_rede_reabertura_pedida(&pos, NULL));                  // uma vez so
+  farolacao_rede_reabrir_fim(1);                                            // reabriu
   assert(nAnel == 2 && acaoNoAnel(0, 'A', FAROL_A_BUFFER_MAIOR, 0) &&
          acaoNoAnel(1, 'R', FAROL_A_BUFFER_MAIOR, 1));
 
   // Ja esta maior: nao reabre de novo.
   ANEL_ZERAR();
   assert(farolacao_rede_executar(FAROL_A_BUFFER_MAIOR, 0) == 0);
-  assert(!farolacao_rede_reabertura_pedida(&pos));
+  assert(!farolacao_rede_reabertura_pedida(&pos, NULL));
 
   // Fim da reproducao: o override some; o ajuste persistente continua o mesmo.
   farolacao_rede_encerrar();
@@ -275,7 +282,7 @@ static void caso_buffer(void) {
   // Pedido nao consumido nao sobrevive a reproducao.
   assert(farolacao_rede_executar(FAROL_A_BUFFER_MAIOR, 0) == 1);
   farolacao_rede_encerrar();
-  assert(!farolacao_rede_reabertura_pedida(&pos));
+  assert(!farolacao_rede_reabertura_pedida(&pos, NULL));
   printf("ok: BUFFER_MAIOR\n");
 }
 
@@ -289,7 +296,8 @@ static void caso_hdr(void) {
   assert(farolacao_rede_executar(FAROL_A_DESLIGAR_HDR, 0) == 1);
   assert(hdrOverride && farolacao_rede_hdr_desligado_ativo());
   assert(dvGravado == 1 && escritas == 0 && ilhaFeitas == 0);
-  assert(farolacao_rede_reabertura_pedida(&pos) && pos > 59.9 && pos < 60.1);
+  assert(farolacao_rede_reabertura_pedida(&pos, NULL) && pos > 59.9 && pos < 60.1);
+  farolacao_rede_reabrir_fim(1);                                            // reabriu
   assert(nAnel == 2 && acaoNoAnel(0, 'A', FAROL_A_DESLIGAR_HDR, 0) &&
          acaoNoAnel(1, 'R', FAROL_A_DESLIGAR_HDR, 1));
   farolacao_rede_encerrar();
@@ -307,7 +315,8 @@ static void caso_hdr(void) {
   assert(dvGravado == 0 && escritas == 1 && hdrOverride);
   assert(ilhaFeitas == 1 && ilhaUlt.desfazer != NULL);
   assert(!strcmp(ilhaFrase, "Desligar o HDR sempre nesta TV"));
-  assert(farolacao_rede_reabertura_pedida(&pos));
+  assert(farolacao_rede_reabertura_pedida(&pos, NULL));
+  farolacao_rede_reabrir_fim(1);
   // Desfazer devolve o valor ANTERIOR (ligado), e solta o override.
   ilhaDesfazer();
   assert(dvGravado == 1 && escritas == 2 && !hdrOverride);
@@ -321,7 +330,7 @@ static void caso_hdr(void) {
   assert(farolacao_rede_executar(FAROL_A_DESLIGAR_HDR, 1) == 1);     // sem player: so a preferencia
   assert(dvGravado == 0 && escritas == 0 && !hdrOverride);
   assert(ilhaFeitas == 1 && ilhaUlt.desfazer == NULL);
-  assert(!farolacao_rede_reabertura_pedida(&pos));
+  assert(!farolacao_rede_reabertura_pedida(&pos, NULL));
   assert(!farolacao_rede_desfazer_hdr() && dvGravado == 0);
 
   // FAROL34B (P2): gravacao que o disco nao confirma NAO vira "sempre nesta
@@ -334,10 +343,53 @@ static void caso_hdr(void) {
   assert(hdrOverride && farolacao_rede_hdr_desligado_ativo());
   assert(dvGravado == 1 && escritas == 0);                            // nada foi prometido
   assert(ilhaFeitas == 0);                                            // nem a ilha de sucesso
-  assert(farolacao_rede_reabertura_pedida(&pos));
+  assert(farolacao_rede_reabertura_pedida(&pos, NULL));
+  farolacao_rede_reabrir_fim(1);
   farolacao_rede_encerrar();
   assert(!hdrOverride && dvGravado == 1);
   printf("ok: DESLIGAR_HDR\n");
+}
+
+// FAROL34C P1-1: acao vinda dos Ajustes (player fechado) tem de funcionar
+// com sessao retida ou com a ultima fonte VOD — e com nada disto devolve 0.
+static void caso_reabrir_fechado(void) {
+  ANEL_ZERAR();
+  double pos = -1;
+  int fonte = -1;
+
+  // Sem reproducao, sem retido e sem fonte VOD: nao armada.
+  tocando = 0; retido = 0; fonteAtual = -1;
+  assert(farolacao_rede_executar(FAROL_A_BUFFER_MAIOR, 0) == 0);
+  assert(farolacao_rede_executar(FAROL_A_DESLIGAR_HDR, 0) == 0);
+  assert(nAnel == 4 && acaoNoAnel(3, 'R', FAROL_A_DESLIGAR_HDR, 0));   // falhas registradas
+  assert(!farolacao_rede_reabertura_pedida(&pos, &fonte));
+
+  // Sessao retida (saiu para os Ajustes): funciona e pede reabertura na fonte.
+  retido = 1; fonteAtual = 3; posicao = 42.0f;
+  assert(farolacao_rede_executar(FAROL_A_BUFFER_MAIOR, 0) == 1);
+  assert(ajustes_farol_buffer_maior_ativo());
+  assert(farolacao_rede_reabertura_pedida(&pos, &fonte) && fonte == 3 && pos > 41.9 && pos < 42.1);
+  assert(acaoNoAnel(4, 'A', FAROL_A_BUFFER_MAIOR, 0) && acaoNoAnel(5, 'R', FAROL_A_BUFFER_MAIOR, 1));
+
+  // Descarte do retido dentro do player_abrir preserva os overrides.
+  farolacao_rede_encerrar();
+  assert(ajustes_farol_buffer_maior_ativo());      // override da acao sobrevive
+  farolacao_rede_reabrir_fim(1);                  // reabriu
+  farolacao_rede_encerrar();                      // encerrar normal limpa
+  assert(!ajustes_farol_buffer_maior_ativo());
+
+  // Sem retido, mas com a ultima fonte VOD gravada: tambem funciona.
+  retido = 0; fonteAtual = 5;
+  assert(farolacao_rede_executar(FAROL_A_DESLIGAR_HDR, 0) == 1);
+  assert(ajustes_farol_hdr_off_ativo());
+  assert(farolacao_rede_reabertura_pedida(&pos, &fonte) && fonte == 5);
+
+  // Reabertura impossivel (titulo saiu do catalogo): solta os overrides.
+  farolacao_rede_reabrir_fim(0);
+  assert(!ajustes_farol_hdr_off_ativo());
+
+  fonteAtual = -1;
+  printf("ok: reabrir fechado\n");
 }
 
 static void caso_geral(void) {
@@ -361,6 +413,7 @@ int main(int argc, char **argv) {
   caso_limpar_cache();
   caso_buffer();
   caso_hdr();
+  caso_reabrir_fechado();
   printf("farol_acao_rede: tudo ok\n");
   return 0;
 }

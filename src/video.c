@@ -1068,6 +1068,22 @@ static int acbBindValido(const AcbBind *bind) {
     bind->acb == acb && !strcmp(bind->midia, midia);
 }
 
+// hdrType a publicar no bind do ACB. FAROL34C: com o SDR forcado pelo Farol
+// (override da reproducao, semDVForcado/farol_hdr_off) o bind NUNCA anuncia
+// HDR10 nem DolbyVision — nem vindo do hdrTipo de teste nem do videoInfo —
+// senao a TV liga o modo HDR num video que estamos mandando em SDR.
+static void selHtipo(char *htipo, size_t n, int sdrForcado, int *prim, int *trans, int *matriz) {
+  if (sdrForcado) { snprintf(htipo, n, "none"); *prim = *trans = *matriz = 2; return; }
+  if (strcmp(hdrTipo, "none")) { snprintf(htipo, n, "%s", hdrTipo);
+                                *prim = vuiPrim; *trans = vuiTrans; *matriz = vuiMatriz; }
+  else if (!strcasecmp(vidHdr, "DolbyVision") || vidDV) {
+                                snprintf(htipo, n, "DolbyVision"); }
+  else if (!strcasecmp(vidHdr, "HDR10")) {
+                                snprintf(htipo, n, "HDR10");
+                                *prim = vuiPrim; *trans = vuiTrans; *matriz = vuiMatriz; }
+  else                          snprintf(htipo, n, "none");
+}
+
 static void *prenderPlano(void *u) {
   AcbBind *bind = u;
   const char *minha = bind->midia;
@@ -1097,14 +1113,8 @@ static void *prenderPlano(void *u) {
     // sintoma do teste 4K.
     char htipo[24];
     int prim = 2, trans = 2, matriz = 2;
-    if (strcmp(hdrTipo, "none")) { snprintf(htipo, sizeof htipo, "%s", hdrTipo);
-                                  prim = vuiPrim; trans = vuiTrans; matriz = vuiMatriz; }
-    else if (!strcasecmp(vidHdr, "DolbyVision") || vidDV) {
-                                  snprintf(htipo, sizeof htipo, "DolbyVision"); }
-    else if (!strcasecmp(vidHdr, "HDR10")) {
-                                  snprintf(htipo, sizeof htipo, "HDR10");
-                                  prim = vuiPrim; trans = vuiTrans; matriz = vuiMatriz; }
-    else                           snprintf(htipo, sizeof htipo, "none");
+    selHtipo(htipo, sizeof htipo, semDVForcado || ajustes_farol_hdr_off_ativo(),
+             &prim, &trans, &matriz);
     char vd[2048];
     montarVideoData(vd, sizeof vd, minha, htipo, prim, trans, matriz);
     { char ad[160];
@@ -2740,7 +2750,10 @@ int video_tocar(const char *url) {
   // capitulos depois de um com nao herda as marcas do anterior.
   capmkv_zerar();
   snprintf(urlAtual, sizeof urlAtual, "%s", url ? url : "");
-  int r = tocarInterno(url, 1);   // liga o LS2 (lsPayload) antes do pedido
+  // FAROL34C: com o SDR forcado pelo Farol (semDVForcado, linha acima do
+  // ajustes_farol_hdr_off_ativo) a carga nao pede DolbyVision nem DV no ACB —
+  // passar 1 aqui religava o DV que o override acabou de desligar.
+  int r = tocarInterno(url, !semDVForcado);   // liga o LS2 (lsPayload) antes do pedido
   pedirEdid();
   return r;
 }

@@ -830,7 +830,9 @@ void resolver_evento(const SDL_Event *e) {
     if (!e->key.repeat) {
       okArmado = foco_desliga_hdr();
       okLongo = 0;
-      okDesde = SDL_GetTicks();
+      { Uint32 t = SDL_GetTicks();   // 0 = nao armado para segurar_venceu;
+        if (!t) t = 1;               // ticks reais podem ser 0 no 1o quadro
+        okDesde = t; }               // (tests/farol_resolver, GCC/Clang)
       if (!okArmado) ok(0);   // fora da celula longa, o OK continua no KEYDOWN
     }
     return;

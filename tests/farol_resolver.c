@@ -301,6 +301,14 @@ int segurar_venceu(Uint32 agora, Uint32 desde, const char *tela) {
   (void)tela;
   return desde != 0 && (Sint32)(agora - desde) >= (Sint32)NV_HOLD_MS;
 }
+// FAROL34C P1-3: -Wl,--wrap faz o resolver_evento() de src/resolver.c ler o
+// clock DAQUI. comTicksZero arma o KEYDOWN com SDL_GetTicks()==0 (1o quadro
+// de um processo real) — sem o `if (!t) t = 1` a pressao longa nunca vencia.
+static int comTicksZero;
+Uint32 __real_SDL_GetTicks(void);
+Uint32 __wrap_SDL_GetTicks(void) {
+  return comTicksZero ? 0u : __real_SDL_GetTicks();
+}
 // FAROL34B: o despacho real de app.c (farol_prod_bridge.inc) chega aqui —
 // a prova de que RESOLVER_PEDIU_FAROL executa a acao escolhida.
 static int c_farolExecN, c_farolExecAcao, c_farolExecPersistir;
@@ -1333,7 +1341,9 @@ int main(void) {
   resolver_teste_testar(FAROL_S_CORES);
   assert(resolver_teste_veredito() == FAROL_C_IMAGEM_DV);
   assert(resolver_teste_prim() == FAROL_A_DESLIGAR_HDR);
-  apertar_ok();                          // KEYDOWN: arma (nao executa)
+  comTicksZero = 1;
+  apertar_ok();                          // KEYDOWN: arma com SDL_GetTicks()==0
+  comTicksZero = 0;
   assert(resolver_aberto());
   resolver_atualizar(0.016f, SDL_GetTicks() + NV_HOLD_MS + 16);
   assert(c_ilhaAtvN >= 1);

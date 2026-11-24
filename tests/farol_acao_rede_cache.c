@@ -77,7 +77,7 @@ int main(void) {
     estacionar(e1, m1, hosts, 1);
     rede_zerar_cache();
     assert(limpos == antes + 1 && multisLimpos == antesM + 1);
-    assert(estacTomar("https://exemplo.invalid/x", NULL) == NULL);
+    assert(estacTomar("https://exemplo.invalid/x", NULL, NULL) == NULL);
   }
 
   // FAROL34B: a corrida que faltava — par nascido na geracao velha estacionado
@@ -95,9 +95,29 @@ int main(void) {
     rede_zerar_cache();
     estacionar(hc, hm, hosts, 1);        // carimbo = pp->ger (velha)
     antes = limpos; antesM = multisLimpos;
-    assert(estacTomar("https://exemplo.invalid/x", NULL) == NULL);
+    assert(estacTomar("https://exemplo.invalid/x", NULL, NULL) == NULL);
     assert(limpos == antes + 1);
     assert(multisLimpos == antesM + (hm ? 1 : 0));
+  }
+
+  // FAROL34C (P2): a geracao do pool na adocao passa a ser a do PAR, nao a do
+  // momento da adocao — sem isto um par estacionado na geracao velha e adotado
+  // depois do zerar era carimbado com a geracao nova e escapava do descarte.
+  { char hosts[1][96] = {"https://exemplo.invalid"};   // hostDaUrl guarda esquema+host
+    HandlePool *pp = (HandlePool *)pthread_getspecific(handleChave);
+    unsigned gerPar;
+    void *hc2 = init(), *hm2 = calloc(1, 8);
+    int antesC = criados, antesL = limpos;
+    assert(pp);
+    pp->ger = __atomic_load_n(&redeGerCache, __ATOMIC_ACQUIRE);
+    estacionar(hc2, hm2, hosts, 1);            // Estac carimbado com a geracao atual
+    gerPar = pp->ger;
+    pp->ger = gerPar + 1000u;                  // pool "de outra geracao"
+    pp->c = NULL;                              // sem handle: adota o estacionado
+    assert(pegarHandle("https://exemplo.invalid/z") == hc2);
+    assert(pp->ger == gerPar);                 // o PAR manda no carimbo
+    assert(pp->c == hc2);
+    assert(limpos == antesL && criados == antesC);   // sem descarte nem init novo
   }
   puts("PASS: rede_zerar_cache");
   return 0;

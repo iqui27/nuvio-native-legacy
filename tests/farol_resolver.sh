@@ -106,6 +106,7 @@ PY
   src/addonguia.c src/addonmodo.c \
   -I"$work" -Isrc $(pkg-config --cflags sdl2 2>/dev/null || echo -I/usr/include/SDL2) \
   $(pkg-config --libs sdl2 2>/dev/null || echo -lSDL2) -lm -lpthread \
+  -Wl,--wrap=SDL_GetTicks \
   -o "$work/farol-resolver-test"
 
 if [ "${SANITIZE:-1}" = thread ] && command -v setarch >/dev/null 2>&1 &&

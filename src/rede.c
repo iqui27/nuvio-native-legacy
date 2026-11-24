@@ -2102,12 +2102,13 @@ static void estacionar(void *c, void *multi, char h[][96], int nh) {
   for (i = 0; i < nh && i < REDE_ESTAC_HOSTS; i++) snprintf(estac[livre].h[i], 96, "%s", h[i]);
   pthread_mutex_unlock(&estacTrava);
 }
-static void *estacTomar(const char *url, void **multi) {
+static void *estacTomar(const char *url, void **multi, unsigned *ger) {
   char h[96];
   unsigned long agora = redeAgoraMs();
   void *c = NULL;
   int i, k;
   if (multi) *multi = NULL;
+  if (ger) *ger = 0;
   hostDaUrl(url, h, sizeof h);
   if (!h[0]) return NULL;
   pthread_mutex_lock(&estacTrava);
@@ -2127,6 +2128,7 @@ static void *estacTomar(const char *url, void **multi) {
     for (k = 0; estac[i].c && k < estac[i].nh; k++)
       if (!strcmp(estac[i].h[k], h)) { c = estac[i].c;
         if (multi) *multi = estac[i].multi;
+        if (ger) *ger = estac[i].ger;
         estac[i].c = NULL; estac[i].multi = NULL; break; }
   pthread_mutex_unlock(&estacTrava);
   return c;
@@ -2153,19 +2155,24 @@ void rede_zerar_cache(void) {
 static void *pegarHandle(const char *url) {
   void *c, *multi = NULL;
   HandlePool *p;
+  unsigned gerEstac = 0;
   int zerou = 0;
   if (!curl_reset) return curl_init();     // libcurl sem reset: como antes
   pthread_once(&handleUma, handleCriarChave);
   p = (HandlePool *)pthread_getspecific(handleChave);
   c = p ? p->c : NULL;
   if (!c) {
-    c = estacTomar(url, &multi);
+    c = estacTomar(url, &multi, &gerEstac);
     if (c) {
       if (!p) {
         p = poolAlocar();
         if (p && pthread_setspecific(handleChave, p) != 0) { free(p); p = NULL; }
       }
       if (p) {
+        // FAROL34C: a geracao que o pool carrega e a do PAR, nao a do momento
+        // da adocao — sem isso um par estacionado na geracao velha era adotado
+        // com o carimbo novo e sobrevivia ao cheque de geracao logo abaixo.
+        p->ger = gerEstac;
         p->c = c;
         if (p->multi && p->multi != multi && curl_multi_cleanup)
           curl_multi_cleanup(p->multi);      // nunca deveria sobrar

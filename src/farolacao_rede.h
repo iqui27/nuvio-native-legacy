@@ -19,7 +19,10 @@
 //
 // Os overrides temporarios acabam em farolacao_rede_encerrar(), chamado por
 // player_encerrar() (fim da reproducao; a troca de fonte da MESMA reproducao
-// usa player_encerrar_fonte e os conserva).
+// usa player_encerrar_fonte e os conserva). Reabrir com o player fechado
+// (saiu para os Ajustes com a sessao retida, ou sem retido) funciona: a acao
+// vale enquanto houver sessao retida ou ultima fonte VOD, e o descarte da
+// sessao retida dentro de player_abrir preserva os overrides da acao.
 //
 // Toda execucao registra farol_registrar_acao e farol_registrar_resultado.
 //
@@ -39,11 +42,18 @@ int farolacao_rede_acao_valida(int acao);
 int farolacao_rede_executar(int acao, int persistir);
 
 // Fim da reproducao: esquece buffer maior, HDR temporario e reabertura pedida.
+// Chamado de player_encerrar() e do descarte de sessao retida; se uma
+// reabertura Farol esta em curso, preserva os overrides para a sessao nova.
 void farolacao_rede_encerrar(void);
 
 // app.c: 1 uma unica vez quando ha reabertura pedida; *posSeg = posicao do
-// video quando foi pedida (< 0 = desconhecida).
-int farolacao_rede_reabertura_pedida(double *posSeg);
+// video quando foi pedida (< 0 = desconhecida); *fonte = indice da fonte VOD
+// a reabrir, capturado na acao (< 0 = desconhecido, usar stream_atual()).
+int farolacao_rede_reabertura_pedida(double *posSeg, int *fonte);
+
+// app.c: fim da tentativa de reabertura consumida por reabertura_pedida.
+// reabriu=0 solta os overrides que ficaram armados sem sessao.
+void farolacao_rede_reabrir_fim(int reabriu);
 
 // Desfaz o "desligar o HDR sempre nesta TV" mais recente (o que a ilha
 // oferece): devolve o ajuste anterior e solta o override. 1 se havia o que
