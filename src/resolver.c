@@ -75,6 +75,8 @@
 // Ganchos fracos da camada de voz (#31) para manter os testes isolados do
 // Resolver e da Tela 7 sem puxar farolvozui.c / farolbusca.c / sistexto.c.
 __attribute__((weak)) int  farolvozui_disponivel(void) { return 0; }
+__attribute__((weak)) const char *farolvozui_rotulo_botao(void) { return FT_ACAO_FALAR; }
+__attribute__((weak)) const char *farolvozui_icone_botao(void) { return "aj_mic"; }
 __attribute__((weak)) int  farolvozui_ativo(void) { return 0; }
 __attribute__((weak)) int  farolvozui_foco(void) { return 0; }
 __attribute__((weak)) int  farolvozui_volta_fase(void) { return RESOLVER_FASE_SINTOMA; }
@@ -580,7 +582,7 @@ static int achar_disponivel(void) { return 1; }
 static int envio_visiveis(void) { return envN - rolo < VISIVEIS ? envN - rolo : VISIVEIS; }
 
 static float voz_botao_largura(void) {
-  float w = botao_largura(i18n(FT_ACAO_FALAR), "aj_mic", 0);
+  float w = botao_largura(i18n(farolvozui_rotulo_botao()), farolvozui_icone_botao(), 0);
   float maxW = ACHAR_W - 28.0f - 28.0f - 56.0f - 16.0f;
   return w > maxW ? maxW : w;
 }
@@ -1240,7 +1242,8 @@ static void desenha_sintoma(float a) {
     if (farolvozui_disponivel()) {
       float vw = voz_botao_largura();
       GfxRect rVoz = { r.x + r.w - 28.0f - vw, r.y + 28.0f, vw, BOTAO_H_SECUNDARIO };
-      botao_pilula(rVoz, i18n(FT_ACAO_FALAR), "aj_mic", foco == B_ACHAR_VOZ ? 1.0f : 0.0f, 0, 0, a);
+      botao_pilula(rVoz, i18n(farolvozui_rotulo_botao()), farolvozui_icone_botao(),
+                   foco == B_ACHAR_VOZ ? 1.0f : 0.0f, 0, 0, a);
       alvo(rVoz, B_ACHAR_VOZ);
     }
     txt_em(TXT_ILHA_NOME, i18n(FT_ACHAR_O_QUE_VER), r.x + 28.0f, r.y + 104.0f, r.w - 56.0f, 243, 242, 239, a);
