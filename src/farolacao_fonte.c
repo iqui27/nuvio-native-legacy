@@ -22,12 +22,17 @@ extern __attribute__((weak)) void stream_filtro_atualizar(void);
 
 #define TENTADAS_MAX 64
 
+typedef struct {
+  unsigned ger;
+  int itens[TENTADAS_MAX];
+  int n;
+} IndiceSet;
+
 // Estado folha, so em memoria. Uma trava; nenhuma chamada externa com ela.
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static FonteFiltroConfig filtroTemp;
 static atomic_int filtroTempAtivo;
-static unsigned tentadaGer;
-static int tentadas[TENTADAS_MAX], nTentadas;
+static IndiceSet conjTentadas, conjAbandonadas;
 // "Esconder DV nesta TV": o que a acao ACRESCENTOU ao filtro persistente, para
 // o Desfazer tirar so isso (a pessoa pode ter mexido nos filtros depois).
 static uint64_t dvAcrescentado;
@@ -37,31 +42,40 @@ int farolacao_fonte_acao_valida(int acao) {
          acao == FAROL_A_FONTE_SEM_DTS || acao == FAROL_A_FONTE_MENOR;
 }
 
-// --- tentadas ---------------------------------------------------------------
-static int tentadaSemTrava(unsigned geracao, int indice) {
-  if (geracao != tentadaGer) return 0;
-  for (int i = 0; i < nTentadas; i++) if (tentadas[i] == indice) return 1;
+// --- tentadas / abandonadas pelo Farol --------------------------------------
+static int conjuntoTemSemTrava(const IndiceSet *c, unsigned geracao, int indice) {
+  if (geracao != c->ger) return 0;
+  for (int i = 0; i < c->n; i++) if (c->itens[i] == indice) return 1;
   return 0;
 }
-void farolacao_fonte_tentada_marcar(unsigned geracao, int indice) {
+static void conjuntoMarcar(IndiceSet *c, unsigned geracao, int indice) {
   if (indice < 0) return;
   pthread_mutex_lock(&trava);
-  if (geracao != tentadaGer) { tentadaGer = geracao; nTentadas = 0; }
-  if (!tentadaSemTrava(geracao, indice)) {
-    // Cheio: descarta a mais antiga; a tentada recente e a que importa.
-    if (nTentadas == TENTADAS_MAX) {
-      memmove(tentadas, tentadas + 1, (TENTADAS_MAX - 1) * sizeof tentadas[0]);
-      nTentadas--;
+  if (geracao != c->ger) { c->ger = geracao; c->n = 0; }
+  if (!conjuntoTemSemTrava(c, geracao, indice)) {
+    // Cheio: descarta a mais antiga; a recente e a que importa.
+    if (c->n == TENTADAS_MAX) {
+      memmove(c->itens, c->itens + 1, (TENTADAS_MAX - 1) * sizeof c->itens[0]);
+      c->n--;
     }
-    tentadas[nTentadas++] = indice;
+    c->itens[c->n++] = indice;
   }
   pthread_mutex_unlock(&trava);
 }
-int farolacao_fonte_tentada(unsigned geracao, int indice) {
+static int conjuntoTem(const IndiceSet *c, unsigned geracao, int indice) {
   pthread_mutex_lock(&trava);
-  int r = tentadaSemTrava(geracao, indice);
+  int r = conjuntoTemSemTrava(c, geracao, indice);
   pthread_mutex_unlock(&trava);
   return r;
+}
+void farolacao_fonte_tentada_marcar(unsigned geracao, int indice) {
+  conjuntoMarcar(&conjTentadas, geracao, indice);
+}
+int farolacao_fonte_tentada(unsigned geracao, int indice) {
+  return conjuntoTem(&conjTentadas, geracao, indice);
+}
+int farolacao_fonte_abandonada(unsigned geracao, int indice) {
+  return conjuntoTem(&conjAbandonadas, geracao, indice);
 }
 
 // --- filtro temporario ------------------------------------------------------
@@ -85,7 +99,8 @@ void farolacao_fonte_encerrar(void) {
   pthread_mutex_lock(&trava);
   memset(&filtroTemp, 0, sizeof filtroTemp);
   atomic_store(&filtroTempAtivo, 0);
-  nTentadas = 0; tentadaGer = 0;
+  memset(&conjTentadas, 0, sizeof conjTentadas);
+  memset(&conjAbandonadas, 0, sizeof conjAbandonadas);
   pthread_mutex_unlock(&trava);
 }
 
@@ -208,8 +223,14 @@ int farolacao_fonte_executar(int acao, int persistir) {
 
   ok = stream_farol_trocar(indice, geracao);
   if (ok) {
-    // A atual e a escolhida contam como tentadas: nenhuma das duas volta.
-    for (int i = 0; i < n; i++) if (linhas[i].atual) farolacao_fonte_tentada_marcar(geracao, linhas[i].indice);
+    // A atual e a escolhida contam como tentadas para as acoes do Farol;
+    // so a anterior abandonada sai do failover (a escolhida pode tentar outro debrid).
+    for (int i = 0; i < n; i++) {
+      if (linhas[i].atual) {
+        farolacao_fonte_tentada_marcar(geracao, linhas[i].indice);
+        conjuntoMarcar(&conjAbandonadas, geracao, linhas[i].indice);
+      }
+    }
     farolacao_fonte_tentada_marcar(geracao, indice);
     // A unica gravacao persistente e a escolha explicita, depois da troca.
     if (acao == FAROL_A_FONTE_SEM_DV && persistir) esconderDvNestaTv();

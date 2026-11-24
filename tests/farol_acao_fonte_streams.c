@@ -32,6 +32,7 @@ static int trocasFarol = 0;
 static int ilhas = 0;
 static int manualCfg = 0;
 static int resolverOk = 1;
+static unsigned servicosDisp = 1u;
 static unsigned simTicks = 1000;
 
 uint64_t perfis_sessao_geracao(void) { return 1; }
@@ -55,9 +56,9 @@ int partes_disponivel(void) { return 0; }
 
 int debrid_ativo(void) { return 1; }
 int p2p_ativo(void) { return 0; }
-const char *debrid_servico_nome(int s) { return s == 0 ? "Real-Debrid" : ""; }
+const char *debrid_servico_nome(int s) { return s == 0 ? "Real-Debrid" : s == 1 ? "TorBox" : ""; }
 int debrid_servico_por_nome(const char *n) { (void)n; return 0; }
-int debrid_servico_disponivel(int s) { return s == 0; }
+int debrid_servico_disponivel(int s) { return s >= 0 && s < 4 && (servicosDisp & (1u << s)) != 0; }
 int debrid_resolver_escolhido(const char *h, int a, char *u, unsigned t, char *sv, unsigned ns, int *p) {
   (void)h; (void)a; (void)u; (void)t; (void)sv; (void)ns; (void)p; return 0;
 }
@@ -352,6 +353,38 @@ static void verificar_p2_3_e_p2_4(void) {
   assert(stream_item(0)->filtro.naoVod == 0);
 }
 
+static void verificar_auto_multi_debrid_mesmo_torrent(void) {
+  farolacao_fonte_encerrar();
+  manualCfg = 0;
+  resolverOk = 1;
+  servicosDisp = (1u << 0) | (1u << 1);
+  FonteFalhaConfig cfg = cfgPadrao(1);
+  Stream l[1] = {
+    mkHash("2160p BluRay Remux", "hash000000000000000000000000000000000000", 2160, 4000),
+  };
+  l[0].fileIdx = 3;
+  stream_definir_lista(l, 1);
+  unsigned ger = stream_lista_geracao();
+
+  FonteFalhaSessao *s = fontefalha_sessao_nova(&cfg, servicosDisp, -1);
+  assert(s);
+  int idx = -1, serv = -1;
+  char url[NV_MEDIA_URL_MAX] = "";
+  assert(stream_falha_verificar(s, ger, -1, NULL, NULL, &idx, &serv, url, sizeof url) == FONTEFALHA_PROXIMA);
+  assert(idx == 0 && serv == 0);
+  assert(stream_falha_aplicar(idx, ger, serv, url));
+  stream_definir_atual(idx);
+  fontefalha_marcar_aberta(s);
+
+  assert(stream_falha_tem_proxima(s, ger) == 1);
+  idx = -1; serv = -1; url[0] = 0;
+  assert(stream_falha_verificar(s, ger, -1, NULL, NULL, &idx, &serv, url, sizeof url) == FONTEFALHA_PROXIMA);
+  assert(idx == 0 && serv == 1);
+
+  fontefalha_sessao_liberar(s);
+  servicosDisp = 1u;
+}
+
 int main(int argc, char **argv) {
   assert(argc == 2);
   fontefalha_dir(argv[1]);
@@ -359,7 +392,8 @@ int main(int argc, char **argv) {
   reproduzir_p1_2_acao(FAROL_A_FONTE_MENOR);
   reproduzir_p1_2_torrent_escolhida_e_failover();
   verificar_p2_3_e_p2_4();
+  verificar_auto_multi_debrid_mesmo_torrent();
   stream_definir_lista(NULL, 0);
-  puts("farol_acao_fonte_streams: PASS (P1-2 PROXIMA_FONTE/FONTE_MENOR + P2-3 + P2-4)");
+  puts("farol_acao_fonte_streams: PASS (P1-2 PROXIMA_FONTE/FONTE_MENOR + P2-3 + P2-4 + multi-debrid)");
   return 0;
 }

@@ -152,6 +152,9 @@ static void executor_e_tentadas(void) {
   assert(nResultados == 1 && resultadoOk[0] == 1);
   assert(bitsTemp(FONTEFILTRO_VISUAL) == 0 && bitsTemp(FONTEFILTRO_AUDIO) == 0);  // PROXIMA nao filtra
   assert(farolacao_fonte_tentada(geracaoLista, 0) && farolacao_fonte_tentada(geracaoLista, 1));
+  assert(farolacao_fonte_abandonada(geracaoLista, 0) && !farolacao_fonte_abandonada(geracaoLista, 1));
+  farolacao_fonte_tentada_marcar(geracaoLista, 4);
+  assert(farolacao_fonte_tentada(geracaoLista, 4) && !farolacao_fonte_abandonada(geracaoLista, 4));
 
   // A troca aconteceu: a fonte 1 e a atual agora. A antiga (0) volta a ser
   // "ok" no snapshot, mas ja foi tentada e NAO pode voltar.
@@ -171,8 +174,9 @@ static void executor_e_tentadas(void) {
   farolacao_fonte_elegibilidade(lista, nLista, geracaoLista, &e);
   assert(!e.outra && !e.menor && !e.semDv && !e.semDts);
 
-  // Tentada de outra lista nao conta.
+  // Tentada / abandonada de outra lista nao conta.
   assert(farolacao_fonte_tentada(geracaoLista, 0) && !farolacao_fonte_tentada(geracaoLista + 1, 0));
+  assert(farolacao_fonte_abandonada(geracaoLista, 0) && !farolacao_fonte_abandonada(geracaoLista + 1, 0));
   farolacao_fonte_elegibilidade(lista, nLista, geracaoLista + 1, &e);
   assert(e.outra);
 
@@ -185,8 +189,8 @@ static void executor_e_tentadas(void) {
   assert(farolacao_fonte_executar(FAROL_A_FONTE_SEM_DV, 0) == 0);
   assert(bitsTemp(FONTEFILTRO_VISUAL) == 0 && bitsTemp(FONTEFILTRO_AUDIO) == (UINT64_C(1) << 8));
   assert(nResultados == 1 && resultadoOk[0] == 0);
-  assert(!farolacao_fonte_tentada(geracaoLista, 0));
-  assert(!farolacao_fonte_tentada(geracaoLista, 2));
+  assert(!farolacao_fonte_tentada(geracaoLista, 0) && !farolacao_fonte_abandonada(geracaoLista, 0));
+  assert(!farolacao_fonte_tentada(geracaoLista, 2) && !farolacao_fonte_abandonada(geracaoLista, 2));
   puts("executor, tentadas que nao voltam e troca recusada PASS");
 }
 
@@ -206,12 +210,14 @@ static void filtro_temporario(void) {
   ruim.excluir[FONTEFILTRO_VISUAL] = UINT64_C(1) << 40;   // fora da taxonomia
   assert(!farolacao_fonte_filtro_temporario_definir(&ruim) && bitsTemp(FONTEFILTRO_VISUAL) == 0);
 
-  // Limpeza ao encerrar/trocar a reproducao: filtro e tentadas.
+  // Limpeza ao encerrar/trocar a reproducao: filtro, tentadas e abandonadas.
   farolacao_fonte_encerrar(); listaPadrao();
   assert(farolacao_fonte_executar(FAROL_A_FONTE_SEM_DV, 0) == 1);
-  assert(bitsTemp(FONTEFILTRO_VISUAL) == BITS_DV && farolacao_fonte_tentada(geracaoLista, 2));
+  assert(bitsTemp(FONTEFILTRO_VISUAL) == BITS_DV && farolacao_fonte_tentada(geracaoLista, 2) &&
+         farolacao_fonte_abandonada(geracaoLista, 0) && !farolacao_fonte_abandonada(geracaoLista, 2));
   farolacao_fonte_encerrar();
-  assert(bitsTemp(FONTEFILTRO_VISUAL) == 0 && !farolacao_fonte_tentada(geracaoLista, 2));
+  assert(bitsTemp(FONTEFILTRO_VISUAL) == 0 && !farolacao_fonte_tentada(geracaoLista, 2) &&
+         !farolacao_fonte_abandonada(geracaoLista, 0));
   FonteFiltroConfig t; assert(!farolacao_fonte_filtro_temporario(&t));
   puts("filtro temporario soma e limpa com a reproducao PASS");
 }

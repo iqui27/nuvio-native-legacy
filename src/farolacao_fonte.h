@@ -54,9 +54,10 @@ int farolacao_fonte_escolher(int acao, const FarolFonteLinha *l, int n,
 // 1 se `acao` e uma das quatro desta unidade.
 int farolacao_fonte_acao_valida(int acao);
 
-// --- Fontes ja tentadas (por reproducao: zeram com a lista) ----------------
+// --- Fontes ja tentadas / abandonadas pelo Farol (por reproducao) ----------
 void farolacao_fonte_tentada_marcar(unsigned geracao, int indice);
 int  farolacao_fonte_tentada(unsigned geracao, int indice);
+int  farolacao_fonte_abandonada(unsigned geracao, int indice);
 
 // --- Filtro temporario so desta reproducao ---------------------------------
 // 1 e copia em *out quando ha filtro temporario ativo. Barato (atomico) quando

@@ -4,7 +4,7 @@
 extern __attribute__((weak)) int farolacao_fonte_filtro_temporario(FonteFiltroConfig *out);
 extern __attribute__((weak)) void farolacao_fonte_encerrar(void);
 extern __attribute__((weak)) void farolacao_fonte_tentada_marcar(unsigned geracao, int indice);
-extern __attribute__((weak)) int farolacao_fonte_tentada(unsigned geracao, int indice);
+extern __attribute__((weak)) int farolacao_fonte_abandonada(unsigned geracao, int indice);
 extern __attribute__((weak)) void farolacao_fonte_elegibilidade(
     const FarolFonteLinha *l, int n, unsigned geracao, FarolFonteElegib *out);
 #include "farolanel.h"
@@ -600,7 +600,7 @@ int stream_filtro_bloqueou(void) {
 enum { MOT_FICA, MOT_EXCLUIDA, MOT_FILTRO, MOT_FORA_CACHE, MOT_INFORMATIVA, MOT_DECODER, MOT_MORTA, MOT_N };
 static int motivoForaDoAuto(int i, const FonteFiltroConfig *filtro) {
   if (automaticaExcluida(i) ||
-      (farolacao_fonte_tentada && farolacao_fonte_tentada(listaGeracao, i)))
+      (farolacao_fonte_abandonada && farolacao_fonte_abandonada(listaGeracao, i)))
     return MOT_EXCLUIDA;
   if (i < 0 || i >= n) return MOT_FICA;
   if (!canalFolha && (filtro ? !filtroPermiteStream(filtro, &lista[i]) : !stream_filtro_permite(&lista[i]))) return MOT_FILTRO;
@@ -2576,7 +2576,7 @@ static int falhaCandidatas(unsigned geracao, int escolhida, int primeira, FonteF
     // pelo RD/PM/AD. Hash nativo passa apenas pelo resolvedor cache-only da
     // rota escolhida. URL direta fora de cache continua fora do automatico.
     excl[q] = (unsigned char)(s->urlP2P || (s->foraCache && !s->infoHash[0]) || ehInformativa(s) || incompatOculta(s) || excedeDecoder(s) ||
-                 (farolacao_fonte_tentada && farolacao_fonte_tentada(geracao, i)) ||
+                 (farolacao_fonte_abandonada && farolacao_fonte_abandonada(geracao, i)) ||
                  (!s->infoHash[0] && (automaticaExcluida(i) || fontesmortas_idade(s) >= 0)));
     grp[q] = (signed char)grupoDe(i);
     // Escolha explicita continua podendo tocar fora das regras do automatico.
