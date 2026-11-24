@@ -6002,7 +6002,13 @@ void app_atualizar(float dt, Uint32 agora) {
             }
           }
         }
-        if (tocar && cw && !strcmp(cw->tipo, "series") &&
+        // ID IMDb: o player abre NA HORA, com a tela de carregamento dele
+        // (busca de fontes ou a fonte guardada), e nao a pagina com o botao
+        // Assistir esperando a lista (dono, 24/11). O id do episodio sai do
+        // T/E do card ("tt..:T:E", cat_id_stream), o mesmo que o OK na pagina
+        // pediria sem a lista. So id opaco de addon (tmdb:, kitsu:...) espera
+        // a lista que traz o id de video dele.
+        if (tocar && cw && !strcmp(cw->tipo, "series") && strncmp(cw->imdb, "tt", 2) &&
             !cat_episodio_existe_final(cat_indice_titulo(cw->imdb, it.indice),
                                       cw->imdb, cwTocarT, cwTocarE)) {
           cwEsperaItem = *cw;

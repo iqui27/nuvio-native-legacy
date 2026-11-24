@@ -22,8 +22,9 @@ static char requested[96];
 static void detail_pedir_reproduzir(void) {
   assert(metadata);
   if (!cat_n_episodios(0)) {   // IMDb resume without a list: the card's T/E
-    assert(!strncmp(cwEsperaItem.imdb, "tt", 2) && cwTocarT > 0 && cwTocarE > 0);
-    snprintf(requested, sizeof requested, "%s:%d:%d", cwEsperaItem.imdb, cwTocarT, cwTocarE);
+    const CatItem *c = cat_item(0);
+    assert(c && !strncmp(c->imdb, "tt", 2) && cwTocarT > 0 && cwTocarE > 0);
+    snprintf(requested, sizeof requested, "%s:%d:%d", c->imdb, cwTocarT, cwTocarE);
     requests++; return;
   }
   assert(cat_id_stream(0, cwTocarT, cwTocarE, requested, sizeof requested));
@@ -48,6 +49,11 @@ int main(void) {
     cat_definir_tudo(&c, 1, NULL, 0);
     requests = metadata = cwEspera = 0;
     cold_open();
+    if (!strncmp(ids[i], "tt", 2)) {
+      // IMDb: the player opens at once with the card's episode, no wait.
+      assert(metadata == 1 && !cwEspera && requests == 1 && cwRetomar && !strcmp(requested, "tt1234567:2:5"));
+      continue;
+    }
     assert(metadata == 1 && cwEspera && !requests);
     cold_wait(); assert(!requests);
     CatEp ep = {0}; ep.temporada = 2; ep.episodio = 5;
@@ -83,14 +89,9 @@ int main(void) {
     c.temporada = 2; c.episodio = 5; c.progresso = 42;
     cat_definir_tudo(&c, 1, NULL, 0);
     requests = metadata = cwEspera = 0; agora = 1000;
+    if (!strncmp(ids[i], "tt", 2)) continue;   // IMDb never waits (above)
     cold_open(); assert(cwEspera == 2 && !requests && cwRetomar);
     agora = 1000 + CW_ESPERA_TT_MS - 1; cold_wait(); assert(cwEspera && !requests);
-    if (!strncmp(ids[i], "tt", 2)) {
-      // IMDb: no list at all, the card's T/E builds the episode ID.
-      agora = 1000 + CW_ESPERA_TT_MS + 1; cold_wait();
-      assert(!cwEspera && requests == 1 && !strcmp(requested, "tt1234567:2:5"));
-      continue;
-    }
     agora = 1000 + CW_ESPERA_TT_MS + 1; cold_wait(); assert(cwEspera && !requests);   // opaque ID: still waits
     CatEp ep = {0}; ep.temporada = 2; ep.episodio = 5;
     snprintf(ep.vid, sizeof ep.vid, "%s:2:5", ids[i]);
