@@ -72,7 +72,7 @@ static void quadros(int n, float dt) {
 
 static void desenhar(void) {
   c_txtN = 0;
-  resolver_atualizar(16.0f, 0);
+  resolver_atualizar(0.016f, 0);
   resolver_desenhar(0);
 }
 
@@ -125,7 +125,7 @@ int main(void) {
   ultimoFarolDebrid = 1;
   falhar_fonte("O servidor recusou o link (HTTP 403).", "", FC_HTTP, 403, "http");
   resolver_abrir();
-  quadros(5, 16.0f);
+  quadros(5, 0.016f);
   tecla(SDLK_RETURN);
 
   CONFERE(esperar_pedidos(1));
@@ -149,8 +149,11 @@ int main(void) {
 
   CONFERE(esperar_sonda_pronta(&s));
   CONFERE(!s.cancelada && s.http == 206);
-  quadros(80, 16.0f);
+  for (int i = 0; i < 375 && resolver_fase() == RESOLVER_FASE_CADEIA; i++)
+    quadros(1, 0.016f);
   CONFERE(resolver_fase() == RESOLVER_FASE_VEREDITO);
+  CONFERE(resolver_foco() == RESOLVER_B_PRINC);
+  CONFERE(resolver_teste_prim() == FAROL_A_RECONECTAR_DEBRID);
 
   // 2. Voltar cancela farolsonda_iniciar; fechar e reabrir enquanto o fio
   //    cancelado ainda esta terminando NAO herda "testando…".
@@ -178,7 +181,7 @@ int main(void) {
   CONFERE(!resolver_testando());
   desenhar();
   CONFERE(!escreveu(FT_TESTANDO));
-  quadros(80, 16.0f);
+  quadros(80, 0.016f);
   CONFERE(resolver_fase() == RESOLVER_FASE_VEREDITO);
 
   // Libera o fio cancelado e confirma que uma nova abertura volta a sondar.
@@ -187,7 +190,7 @@ int main(void) {
   pthread_mutex_unlock(&t_trava);
   CONFERE(esperar_sonda_pronta(&s));
   CONFERE(s.cancelada == 1);
-  quadros(2, 16.0f);
+  quadros(2, 0.016f);
 
   tecla(SDLK_ESCAPE);
   pthread_mutex_lock(&t_trava);
@@ -201,8 +204,64 @@ int main(void) {
   t_liberar = 1;
   pthread_mutex_unlock(&t_trava);
   CONFERE(esperar_sonda_pronta(&s));
-  quadros(80, 16.0f);
+  quadros(80, 0.016f);
   CONFERE(resolver_fase() == RESOLVER_FASE_VEREDITO);
+  CONFERE(resolver_foco() == RESOLVER_B_PRINC);
+  CONFERE(resolver_teste_prim() == FAROL_A_RECONECTAR_DEBRID);
+  tecla(SDLK_RETURN);                                          // acao executavel apos HTTP 206
+  CONFERE(!resolver_aberto());
+  CONFERE(resolver_pedido() == RESOLVER_PEDIU_DEBRID);
+
+  // 3. Relogio real (dt = 0.016f, animacoes ligadas), caminho passivo:
+  //    em <= 375 quadros (6 s), chega ao Veredito com foco em B_PRINC e acao executavel.
+  zerar();
+  c_reduzidas = 0;
+  c_streamAtual = -1;
+  c_stream.url[0] = 0;
+  ultimoFarolDebrid = 1;
+  falhar_fonte("O servidor recusou o link (HTTP 403).", "", FC_HTTP, 403, "http");
+  resolver_abrir();
+  quadros(5, 0.016f);
+  tecla(SDLK_RETURN);
+  CONFERE(resolver_fase() == RESOLVER_FASE_CADEIA);
+  CONFERE(!resolver_testando());
+  for (int i = 0; i < 375 && resolver_fase() == RESOLVER_FASE_CADEIA; i++)
+    quadros(1, 0.016f);
+  CONFERE(resolver_fase() == RESOLVER_FASE_VEREDITO);
+  CONFERE(resolver_foco() == RESOLVER_B_PRINC);
+  CONFERE(resolver_teste_prim() == FAROL_A_RECONECTAR_DEBRID);
+  tecla(SDLK_RETURN);
+  CONFERE(!resolver_aberto());
+  CONFERE(resolver_pedido() == RESOLVER_PEDIU_DEBRID);
+
+  // 4. Transporte retido: em 319 quadros de 0.016f (5,104 s), dispara o timeout
+  //    de 5 s (farolsonda_cancelar()), zera resolver_testando() e chega ao Veredito.
+  pthread_mutex_lock(&t_trava);
+  t_liberar = 0;
+  t_pararVisto = 0;
+  pthread_mutex_unlock(&t_trava);
+  zerar();
+  c_reduzidas = 0;
+  c_streamAtual = 0;
+  snprintf(c_stream.url, sizeof c_stream.url, "https://cdn.example/sonda.mkv");
+  snprintf(c_stream.cabecalhos, sizeof c_stream.cabecalhos, "Referer: https://addon.example\n");
+  ultimoFarolDebrid = 1;
+  falhar_fonte("O servidor recusou o link (HTTP 403).", "", FC_HTTP, 403, "http");
+  resolver_abrir();
+  quadros(5, 0.016f);
+  tecla(SDLK_RETURN);
+  CONFERE(esperar_pedidos(4));
+  CONFERE(resolver_fase() == RESOLVER_FASE_CADEIA && resolver_testando());
+  quadros(319, 0.016f);
+  CONFERE(esperar_parar_visto());
+  CONFERE(resolver_testando() == 0);
+  CONFERE(resolver_fase() == RESOLVER_FASE_VEREDITO);
+  CONFERE(resolver_foco() == RESOLVER_B_PRINC);
+  pthread_mutex_lock(&t_trava);
+  t_liberar = 1;
+  pthread_mutex_unlock(&t_trava);
+  CONFERE(esperar_sonda_pronta(&s));
+  CONFERE(s.cancelada == 1);
 
   if (falhas) { fprintf(stderr, "farol_tela_sonda: %d falha(s)\n", falhas); return 1; }
   puts("farol_tela_sonda: sonda real na cadeia ok");

@@ -58,7 +58,7 @@ static void quadros(int n, float dt) {
 // Um quadro desenhado: zera o anel de textos e desenha a tela.
 static void desenhar(void) {
   c_txtN = 0;
-  resolver_atualizar(16.0f, 0);
+  resolver_atualizar(0.016f, 0);
   resolver_desenhar(0);
 }
 
@@ -244,7 +244,7 @@ int main(void) {
   c_reduzidas = 0;
   c_offline = 1;                                               // REDE_FORA: para na 1a
   resolver_abrir();
-  quadros(30, 16.0f);
+  quadros(30, 0.016f);
   tecla(SDLK_RETURN);
   CONFERE(resolver_fase() == RESOLVER_FASE_CADEIA);
   CONFERE(resolver_luz() < 1.0f);
@@ -253,11 +253,12 @@ int main(void) {
   CONFERE(escreveu(FT_SONDANDO));                              // o painel ainda testa
   CONFERE(escreveu(FT_A_CAUSA_ENCONTRADA));                    // o veredito passivo ja esta na tela
   CONFERE(escreveu(FT_REDE_FORA_L1));
+  CONFERE(escreveu(FT_NAO_TESTADO));                           // etapas seguintes ja exibem "nao testado"
   tecla(SDLK_LEFT); tecla(SDLK_DOWN);                          // setas nao mexem
   CONFERE(resolver_fase() == RESOLVER_FASE_CADEIA);
   { float antes = resolver_luz(); int passos = 0;
     while (resolver_fase() == RESOLVER_FASE_CADEIA && passos < 200) {
-      quadros(1, 16.0f);
+      quadros(1, 0.016f);
       CONFERE(resolver_luz() >= antes && resolver_luz() <= 1.0f + 1e-4f);   // nunca passa de onde quebrou
       antes = resolver_luz();
       passos++;
@@ -295,7 +296,7 @@ int main(void) {
   c_sondaPronta = 0; c_sondaCanceladaN = 0;
   tecla(SDLK_RETURN);                                          // faixa -> O video nao comeca
   CONFERE(resolver_fase() == RESOLVER_FASE_CADEIA && resolver_testando());
-  quadros(120, 16.0f);                                         // ~2 s
+  quadros(120, 0.016f);                                        // ~2 s
   CONFERE(resolver_fase() == RESOLVER_FASE_CADEIA && resolver_testando());
   CONFERE(resolver_luz() <= (float)RES_T_FONTE + 1.0f);
   desenhar();
@@ -311,17 +312,17 @@ int main(void) {
   c_sondaPronta = 0;
   tecla(SDLK_RETURN);
   CONFERE(resolver_testando());
-  quadros(30, 16.0f);
+  quadros(30, 0.016f);
   c_sondaPronta = 1;
-  quadros(200, 16.0f);
+  quadros(200, 0.016f);
   CONFERE(resolver_fase() == RESOLVER_FASE_VEREDITO && resolver_foco() == RESOLVER_B_PRINC);
   // 5 s sem resposta: cancela e segue.
   tecla(SDLK_ESCAPE);
   c_sondaPronta = 0; c_sondaCanceladaN = 0;
   tecla(SDLK_RETURN);
-  quadros(320, 16.0f);                                         // 5,1 s
+  quadros(319, 0.016f);                                        // 5,104 s
   CONFERE(c_sondaCanceladaN == 1);
-  quadros(200, 16.0f);
+  quadros(200, 0.016f);
   CONFERE(resolver_fase() == RESOLVER_FASE_VEREDITO);
   // Reduzidas: sem varrer, mas a sonda no ar segura igual (sem respiro).
   tecla(SDLK_ESCAPE);
@@ -360,7 +361,7 @@ int main(void) {
   CONFERE(resolver_fase() == RESOLVER_FASE_ENVIO);
   CONFERE(anel_tem(FE_FAROL_ACAO, "enviar_registro", -1) == 1);
   c_envio.estado = 2; c_envio.quando = time(NULL) + 1; snprintf(c_envio.codigo, sizeof c_envio.codigo, "%s", "4F7K92");
-  quadros(1, 16.0f);
+  quadros(1, 0.016f);
   CONFERE(anel_tem(FE_FAROL_RESULTADO, "enviar_registro", 1) == 1);
   CONFERE(resolver_enviados_n() == 1);
   tecla(SDLK_RETURN);                                          // Pronto volta ao Veredito

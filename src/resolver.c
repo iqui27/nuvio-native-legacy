@@ -992,7 +992,7 @@ void resolver_atualizar(float dt, Uint32 agora) {
   sondar_envio();
   if (aberto) {
     atualizar_falha_recente();
-    cadeia_passo(dt);
+    cadeia_passo(dt > 0.0f ? dt * 1000.0f : 0.0f);
   }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
   if (red) { entrada = aberto ? 1.0f : 0.0f; return; }
@@ -1136,7 +1136,7 @@ static void linha_teste(int t, float x, float y, float w, float a) {
   int sem = !res.testado[t] || st == RES_NAO_TESTADO || (t == RES_T_AUDIO && st == RES_OK) || !acesa;
   const char *det = !res.testado[t] ? detalhe_teste(t, buf, sizeof buf)
                   : testando ? i18n(FT_TESTANDO)
-                  : !acesa ? ""
+                  : !acesa ? (st == RES_NAO_TESTADO ? i18n(FT_NAO_TESTADO) : "")
                   : detalhe_teste(t, buf, sizeof buf);
   GfxRect c = { x, y + 6.0f, 44.0f, 44.0f };
   Tinta cl = { 243, 242, 239 }, dim = { 120, 126, 138 };

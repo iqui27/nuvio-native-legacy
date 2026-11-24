@@ -61,7 +61,7 @@ static void quadro(float dt) {
 }
 
 static void adiantar(int quadros) {
-  for (int i = 0; i < quadros; i++) { quadro(1000.0f / 60.0f); SDL_Delay(2); }
+  for (int i = 0; i < quadros; i++) { quadro(1.0f / 60.0f); SDL_Delay(2); }
 }
 
 // Grava e devolve 1 se a imagem nao e lisa (o desenho saiu de verdade).
@@ -108,7 +108,7 @@ static void limpar(void) {
 
 // Com as animacoes de fabrica a Cadeia anda em quadros: espera o Veredito.
 static void ate_veredito(void) {
-  for (int i = 0; i < 400 && resolver_fase() == RESOLVER_FASE_CADEIA; i++) quadro(1000.0f / 60.0f);
+  for (int i = 0; i < 400 && resolver_fase() == RESOLVER_FASE_CADEIA; i++) quadro(1.0f / 60.0f);
   assert(resolver_fase() == RESOLVER_FASE_VEREDITO);
 }
 
