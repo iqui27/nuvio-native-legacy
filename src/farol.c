@@ -80,6 +80,7 @@ const char *video_hdr(void);
 int video_tpk_tizen_maior(void);
 #endif
 int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid);
+const char *player_id_canal(void);
 uint64_t player_ultimo_erro_tentativa(void);
 uint64_t player_ultimo_erro_seq(void);
 int player_externo_disponivel_tentativa(uint64_t tentativa);
@@ -1069,8 +1070,11 @@ void farol_fatos_ler(FarolFatos *out) {
       const VideoFaixa *fi = video_audio(i);
       ehDts[i] = (fi && video_faixa_dts(fi) > 0) ? 1 : 0;
     }
-    out->outraFaixa = farolacao_audio_faixa_compativel(nCons, at, out->faixaDts,
-                                                       ehDts) >= 0 ? 1 : 0;
+    // Canal ao vivo: faixas_audio_trocar_compativel nao troca — o fato fica
+    // coerente com o executor (o veredito TROCAR_FAIXA nunca aparece).
+    if (player_id_canal()[0]) out->outraFaixa = 0;
+    else out->outraFaixa = farolacao_audio_faixa_compativel(nCons, at,
+        out->faixaDts, ehDts) >= 0 ? 1 : 0;
   } else if (video_dts_estado() != FAROL_VIDEO_DTS_NENHUM) {
     out->faixaDts = 1;
   }

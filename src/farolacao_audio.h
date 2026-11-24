@@ -35,9 +35,11 @@
 // Faixas de audio consideradas na consulta "ha outra faixa que esta TV toca?".
 #define FAROLACAO_FAIXAS_MAX 64
 
-// Valores gravados em AJ_DTS_AC3. .tpk: 0 desligado, 1 HLS. LG: 0 original,
-// 1 AAC estereo, 2 AC3 5.1, 3 desligado.
+// Valores gravados em AJ_DTS_AC3. .tpk: 0 desligado, 1 5.1, 2 Estereo AAC
+// (os dois ligam a conversao HLS). LG: 0 original, 1 AAC estereo, 2 AC3 5.1,
+// 3 desligado.
 #define FAROLACAO_DTS_TPK_LIGADO 1
+#define FAROLACAO_DTS_TPK_AAC    2
 #define FAROLACAO_DTS_LG_AAC     1
 #define FAROLACAO_DTS_LG_AC3     2
 
@@ -69,7 +71,11 @@ static inline int farolacao_audio_conversao_possivel(FarolPlat plat, int osMaior
 // quem ja converte (AAC/AC3 na LG) fica como esta; desligado/original vira o
 // modo provado (AAC estereo na LG, HLS no .tpk). -1 = plataforma sem conversao.
 static inline int farolacao_audio_dts_alvo(FarolPlat plat, int atual) {
-  if (plat == FP_TIZEN_TPK) return FAROLACAO_DTS_TPK_LIGADO;
+  if (plat == FP_TIZEN_TPK)
+    // .tpk 6+: 1 (5.1) e 2 (Estereo AAC) ja convertem — preserva o modo
+    // escolhido; desligado ou fora do intervalo vira 5.1.
+    return (atual == FAROLACAO_DTS_TPK_LIGADO || atual == FAROLACAO_DTS_TPK_AAC)
+               ? atual : FAROLACAO_DTS_TPK_LIGADO;
   if (plat != FP_WEBOS) return -1;
   return (atual == FAROLACAO_DTS_LG_AAC || atual == FAROLACAO_DTS_LG_AC3)
              ? atual : FAROLACAO_DTS_LG_AAC;

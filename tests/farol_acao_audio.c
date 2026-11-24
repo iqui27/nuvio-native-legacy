@@ -135,7 +135,13 @@ static void decisao_plataforma(void) {
   assert(farolacao_audio_dts_alvo(FP_WEBOS, 1) == 1);
   assert(farolacao_audio_dts_alvo(FP_WEBOS, 2) == 2);
   assert(farolacao_audio_dts_alvo(FP_WEBOS, 3) == 1);
+  // .tpk 6+: 1 (5.1) e 2 (Estereo AAC) ja convertem e sao preservados;
+  // desligado ou fora do intervalo liga o 5.1.
   assert(farolacao_audio_dts_alvo(FP_TIZEN_TPK, 0) == 1);
+  assert(farolacao_audio_dts_alvo(FP_TIZEN_TPK, 1) == 1);
+  assert(farolacao_audio_dts_alvo(FP_TIZEN_TPK, 2) == 2);
+  assert(farolacao_audio_dts_alvo(FP_TIZEN_TPK, 3) == 1);
+  assert(farolacao_audio_dts_alvo(FP_TIZEN_TPK, -1) == 1);
   assert(farolacao_audio_dts_alvo(FP_TIZEN_WGT, 0) == -1);
   assert(farolacao_audio_dts_alvo(FP_ANDROID, 0) == -1);
   puts("ok  decisao pura por plataforma (WASM, .tpk 4.0-5.5 e Android nunca convertem)");
@@ -182,11 +188,14 @@ static void converter_lg_com_desfazer(void) {
   ilhaDesfazer();
   assert(dtsValor == 2 && farolacao_audio_reabertura_consumir() == 0);
 
-  // Ja convertendo (AC3): o valor fica, so reabre, e nao ha o que desfazer.
-  zerar(); dtsValor = 2;
-  assert(farolacao_audio_executar(FAROL_A_CONVERTER_AUDIO, &f) == 1);
-  assert(dtsValor == 2 && dtsGravacoes == 0 && ilha.desfazer == NULL && nIlha == 1);
-  assert(farolacao_audio_reabertura_consumir() == 1);
+  // O ajuste recusou a restauracao do Desfazer (fora do intervalo da build):
+  // nada voltou ao que era, entao NAO se pede reabertura.
+  zerar(); dtsValor = 3;
+  assert(farolacao_audio_executar(FAROL_A_CONVERTER_AUDIO, &f) == 1 && dtsValor == 1);
+  (void)farolacao_audio_reabertura_consumir();
+  dtsAceita = 0;
+  ilhaDesfazer();
+  assert(dtsValor == 1 && farolacao_audio_reabertura_consumir() == 0);
   puts("ok  CONVERTER_AUDIO na LG: liga, reabre e Desfazer devolve o ajuste original");
 }
 
@@ -204,6 +213,22 @@ static void converter_tpk6(void) {
     zerar(); dtsValor = 0;
     assert(farolacao_audio_executar(FAROL_A_CONVERTER_AUDIO, &f) == 1 && dtsValor == 1);
   }
+
+  // Estereo AAC (2) ja converte no .tpk 6+: o valor fica, so reabre, e nao
+  // ha o que desfazer (antes do conserto o alvo pisava 2 -> 1 e o Desfazer
+  // nao devolvia o 2 — FAROL16B).
+  zerar(); dtsValor = 2;
+  assert(farolacao_audio_executar(FAROL_A_CONVERTER_AUDIO, &f) == 1);
+  assert(dtsValor == 2 && dtsGravacoes == 0 && ilha.desfazer == NULL && nIlha == 1);
+  assert(farolacao_audio_reabertura_consumir() == 1);
+
+  // A restauracao recusada pelo ajuste nao reabre nada.
+  zerar(); dtsValor = 0;
+  assert(farolacao_audio_executar(FAROL_A_CONVERTER_AUDIO, &f) == 1 && dtsValor == 1);
+  (void)farolacao_audio_reabertura_consumir();
+  dtsAceita = 0;
+  ilhaDesfazer();
+  assert(dtsValor == 1 && farolacao_audio_reabertura_consumir() == 0);
   puts("ok  CONVERTER_AUDIO no .tpk 6+");
 }
 
@@ -271,6 +296,8 @@ static void aliviar_reabrir(void) {
   memN = 1; memSeq[0] = 400;
   assert(farolacao_audio_executar(FAROL_A_ALIVIAR_REABRIR, &f) == 1);
   assert(aliviou >= 1 && reabriu == 1 && nIlha == 1);
+  // Pilula no tempo passado, nao no imperativo do botao (FAROL16B).
+  assert(!strcmp(ilha.frase, FT_MEMORIA_LIBERADA));
   assert(nAcao == 1 && evAcao[0] == FAROL_A_ALIVIAR_REABRIR && resOk[0] == 1);
 
   // Abaixo do piso, o alivio recupera: memlog_pode_reabrir autoriza.

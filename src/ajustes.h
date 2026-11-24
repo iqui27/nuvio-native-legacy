@@ -738,7 +738,7 @@ int   ajustes_cw_ordem(void);
 int   ajustes_dts_ac3(void);             // 1 = DTS convertido em AC3 5.1 (LG, e padrao no .tpk); 0 = AAC estereo (.tpk: ou desligado)
 int   ajustes_dts_original(void);        // LG: 1 = DTS goes to the TV untouched (passthrough), never converted
 int   ajustes_dts_tpk_modo(void);        // .tpk: DTSTPK_HLS, ou DTSTPK_DESLIGADO com a conversao desligada
-int   ajustes_dts_valor(void);           // Farol #16: valor CRU de AJ_DTS_AC3 (.tpk 0/1; LG 0..3)
+int   ajustes_dts_valor(void);           // Farol #16: valor CRU de AJ_DTS_AC3 (.tpk 0..2; LG 0..3)
 void  ajustes_dts_definir(int valor);    // Farol #16: grava o valor cru (fora do intervalo da build: nada)
 int   ajustes_ps_continuar(void);        // #303: 0 = sem o cartao "continuar" na escolha de perfil
 int   ajustes_ps_tamanho(void);         // 2.1: 0 pequeno, 1 medio (padrao), 2 grande — os avatares da escolha de perfil

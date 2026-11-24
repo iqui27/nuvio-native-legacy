@@ -36,4 +36,57 @@ trap 'rm -rf "$work"' EXIT
   -Isrc -lm -lpthread -o "$work/farol-acao-audio"
 "$work/farol-acao-audio"
 
+# ajustes_dts_definir REAL (extraido de src/ajustes.c, nao reescrito): no
+# .tpk o intervalo valido e 0..2 (0 desligado, 1 5.1, 2 Estereo AAC) e na LG
+# 0..3 — fd0270f902 descartava o 2 (maximo = 1), FAROL16B.
+gen="$work/farol_acao_audio_dts_gen.c"
+GEN_OUT="$gen" python3 - <<'PYEOF'
+import os, re
+aj = open("src/ajustes.c", encoding="utf-8").read()
+def hit(rx):
+    m = re.search(rx, aj, re.M | re.S)
+    if not m: raise SystemExit("farol_acao_audio: extracao falhou: " + rx)
+    return m.group(0)
+# A declaracao do intervalo por plataforma (V_DTS_SAIDA + N_DTS_SAIDA).
+ndts = hit(r"#ifdef NV_TPK\nstatic const char \*V_DTS_SAIDA.*?#endif")
+val = hit(r"int ajustes_dts_valor\(void\) \{.*?\}")
+dfn = hit(r"void ajustes_dts_definir\(int v\) \{.*?^\}")
+open(os.environ["GEN_OUT"], "w", encoding="utf-8").write(
+    "// Gerado por tests/farol_acao_audio.sh: trechos reais de src/ajustes.c.\n"
+    "#include <assert.h>\n"
+    "#include <string.h>\n"
+    "#define AJ_N 64\n"
+    "#define AJLOG_CENTRAL 1\n"
+    "static int ajOrigem;\n"
+    "static int gravar(void) { return 1; }\n"
+    "#define AJ_COM_ORIGEM(o, chamada) do { ajOrigem = (o); chamada; ajOrigem = 0; } while (0)\n"
+    "static int valor[AJ_N];\n"
+    "#define AJ_DTS_AC3 0\n"
+    + ndts + "\n"
+    + val + "\n"
+    + dfn + "\n"
+    "\nint main(void) {\n"
+    "  int i;\n"
+    "  (void)V_DTS_SAIDA;\n"
+    "  for (i = 0; i <= N_DTS_SAIDA - 1; i++) {\n"
+    "    valor[AJ_DTS_AC3] = -1;\n"
+    "    ajustes_dts_definir(i);\n"
+    "    assert(ajustes_dts_valor() == i);   // todo valor do seletor grava\n"
+    "    assert(ajOrigem == 0);\n"
+    "  }\n"
+    "  // Fora do intervalo: nao grava (nem a regravacao do mesmo valor conta).\n"
+    "  valor[AJ_DTS_AC3] = N_DTS_SAIDA - 1;\n"
+    "  ajustes_dts_definir(N_DTS_SAIDA);\n"
+    "  assert(ajustes_dts_valor() == N_DTS_SAIDA - 1);\n"
+    "  ajustes_dts_definir(-1);\n"
+    "  assert(ajustes_dts_valor() == N_DTS_SAIDA - 1);\n"
+    "  return 0;\n"
+    "}\n")
+PYEOF
+
+"$ccbin" "${flags[@]}" -DNV_TPK -Isrc "$gen" -o "$work/dts-tpk"
+"$work/dts-tpk"
+"$ccbin" "${flags[@]}" -Isrc "$gen" -o "$work/dts-webos"
+"$work/dts-webos"
+
 echo "farol_acao_audio: tudo ok"

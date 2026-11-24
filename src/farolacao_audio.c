@@ -81,7 +81,9 @@ static void desfazerConverter(const void *ctx) {
   const FarolAcaoAudioOps *o = operar();
   if (!c || o->dts_valor() != c->alvo) return;
   o->dts_definir(c->antes);
-  pedirReabertura();
+  // So reabre se a restauracao pegou de fato (o ajuste pode recusar valores
+  // fora do intervalo da build); caso contrario nada mudou.
+  if (o->dts_valor() == c->antes) pedirReabertura();
 }
 
 static int converter(const FarolFatos *f) {
@@ -124,7 +126,7 @@ static int aliviarReabrir(void) {
   o->mem_aliviar();
   if (!memlog_pode_reabrir(o->mem_livre_mb, o->mem_aliviar)) return 0;
   pedirReabertura();
-  ilhaFeita(i18n(FT_ACAO_ALIVIAR), NULL, NULL, 0);
+  ilhaFeita(i18n(FT_MEMORIA_LIBERADA), NULL, NULL, 0);
   return 1;
 }
 

@@ -4389,15 +4389,12 @@ int ajustes_dts_tpk_modo(void) {
 #endif
 }
 // Farol #16 (CONVERTER_AUDIO): o valor CRU de AJ_DTS_AC3 para o par fazer/desfazer
-// devolver exatamente o que estava. .tpk: 0 desligado, 1 HLS; LG: 0 original,
-// 1 AAC, 2 AC3, 3 desligado. Fora do intervalo da build, nao grava.
+// devolver exatamente o que estava. .tpk: 0 desligado, 1 5.1, 2 Estereo AAC
+// (os dois sao HLS); LG: 0 original, 1 AAC, 2 AC3, 3 desligado. Fora do
+// intervalo da build, nao grava.
 int ajustes_dts_valor(void) { return valor[AJ_DTS_AC3]; }
 void ajustes_dts_definir(int v) {
-#ifdef NV_TPK
-  const int maximo = 1;
-#else
-  const int maximo = 3;
-#endif
+  const int maximo = N_DTS_SAIDA - 1;   // .tpk: 2; LG: 3
   if (v < 0 || v > maximo || valor[AJ_DTS_AC3] == v) return;
   valor[AJ_DTS_AC3] = v;
   AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar());

@@ -1174,6 +1174,8 @@ int faixas_audio_compativel(void) {
   signed char dts[FAROLACAO_FAIXAS_MAX];
   int n = video_n_audio(), at = video_audio_atual(), atDts = 0, i;
   const VideoFaixa *cur;
+  // Canal ao vivo: alinhado a faixas_audio_trocar_compativel — o Farol nao mexe.
+  if (player_id_canal()[0]) return -1;
   if (n <= 0) return -1;
   if (n > FAROLACAO_FAIXAS_MAX) n = FAROLACAO_FAIXAS_MAX;
   cur = (at >= 0 && at < n) ? video_audio(at) : NULL;
