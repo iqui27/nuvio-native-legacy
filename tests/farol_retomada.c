@@ -310,6 +310,7 @@ static void teste_zero_post(void) {
 static void teste_quedas(void) {
   static const char *cenarios[] = {
     "s500", "s429", "regras", "nl", "proibida", "t2e5", "alvo_outro", "torto", "longa",
+    "ep5", "ep5_en", "temp3", "futuro",
   };
   int i;
   for (i = 0; i < (int)(sizeof cenarios / sizeof cenarios[0]); i++) {
@@ -355,6 +356,56 @@ static void teste_player_abre_depois(void) {
   puts("ok  player aberto depois: o resumo sai da P6");
 }
 
+// --- 6. abertura via Continuar assistindo com IMDb composto ("tt...:2:5") ---
+static void teste_imdb_composto(void) {
+  int n0, n;
+  P6 p;
+
+  abrirCaso();
+  pthread_mutex_lock(&g_catMu);
+  snprintf(g_itens[3].imdb, sizeof g_itens[3].imdb, "tt0903747:2:5");
+  pthread_mutex_unlock(&g_catMu);
+  g_t += 5000u;
+  atomic_store(&g_ms, g_t);
+  faroldetalhe_abrir(3, g_t);
+
+  escreverCenario("ok");
+  n0 = nCapturas();
+  p = rodar(4000);
+  n = nCapturas();
+  CHECA(n == n0 + 1, "composto: esperava 1 POST, veio %d", n - n0);
+  CHECA(p.temTempo, "composto: linha de tempo T2E4 sumiu");
+  CHECA(p.temResumo, "composto: resumo nao entrou na P6");
+  CHECA(!strcmp(p.resumo, RESUMO_OK), "composto: resumo diferente: [%s]", p.resumo);
+  auditarCorpos("imdb-composto");
+  puts("ok  IMDb composto (tt0903747:2:5): 1 POST com sinopse T2E4 + linha de tempo + resumo");
+}
+
+// --- 7. retorno apos offline (P2-3): nao marca como tentado na sessao ---------
+static void teste_offline_volta_online(void) {
+  int n0, k;
+  P6 p;
+
+  abrirCaso();
+  escreverCenario("ok");
+  atomic_store(&g_offline, 1);
+  n0 = nCapturas();
+  for (k = 0; k < 20; k++) { quadro(); usleep(4000); }
+  CHECA(nCapturas() == n0, "offline-volta: houve POST offline");
+  p = lerP6();
+  CHECA(p.temTempo && !p.temResumo, "offline-volta: estado offline incorreto");
+
+  atomic_store(&g_offline, 0);
+  g_t += 1500u;
+  atomic_store(&g_ms, g_t);
+  p = rodar(4000);
+  CHECA(nCapturas() == n0 + 1, "offline-volta: nao buscou quando a rede voltou");
+  CHECA(p.temTempo, "offline-volta: linha de tempo sumiu");
+  CHECA(p.temResumo, "offline-volta: resumo nao entrou apos reconectar");
+  auditarCorpos("offline-volta");
+  puts("ok  offline volta online: zero POST offline, busca e exibe resumo ao reconectar");
+}
+
 int main(int argc, char **argv) {
   if (argc < 4) { fprintf(stderr, "uso: %s <base> <cenario> <captura>\n", argv[0]); return 2; }
   g_cenArq = argv[2];
@@ -369,6 +420,8 @@ int main(int argc, char **argv) {
   teste_quedas();
   teste_prazo();
   teste_player_abre_depois();
+  teste_imdb_composto();
+  teste_offline_volta_online();
 
   farolcompor_encerrar();
   if (falhas) { fprintf(stderr, "farol_retomada: %d falha(s)\n", falhas); return 1; }

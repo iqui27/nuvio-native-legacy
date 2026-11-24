@@ -961,7 +961,7 @@ void faroldetalhe_fechar(void) {
 #define FD_RET_INTERVALO_MS 1000u
 void faroldetalhe_retomada(int catIndice) {
   FarolInfoEp eps[FD_RET_EPS_MAX];
-  char imdb[24];
+  char imdb[24], idCat[24], titulo[160], sinBuf[420];
   const CatItem *ci;
   const char *sin;
   int t, e, i, n = 0, total, temLinha = 0, cabe, pode;
@@ -983,7 +983,11 @@ void faroldetalhe_retomada(int catIndice) {
   if (!pode || !temLinha || !cabe || t <= 0 || e <= 0 || !imdb[0]) return;
 
   ci = cat_item(catIndice);
-  if (!ci || strcmp(ci->imdb, imdb) != 0) return;
+  if (!ci) return;
+  idbase_copiar(ci->imdb, idCat, sizeof idCat);
+  if (strcmp(idCat, imdb) != 0) return;
+  snprintf(titulo, sizeof titulo, "%s", ci->titulo);
+
   total = cat_n_episodios(catIndice);
   for (i = 0; i < total && n < FD_RET_EPS_MAX; i++) {
     const CatEp *ep = cat_episodio(catIndice, i);
@@ -994,8 +998,17 @@ void faroldetalhe_retomada(int catIndice) {
     n++;
   }
   sin = farolinfo_retomada_sinopse(t, e, eps, n);
-  if (!sin) return;
-  (void)farolcompor_pedir_retomada(imdb, ci->titulo, t, e, sin);
+  if (!sin || !sin[0]) return;
+  snprintf(sinBuf, sizeof sinBuf, "%s", sin);
+
+  // Reconfirma o IMDb base do indice apos copiar a sinopse (P2-1): se uma
+  // republicacao do catalogo trocou o dono do indice, descarta sem POST.
+  ci = cat_item(catIndice);
+  if (!ci) return;
+  idbase_copiar(ci->imdb, idCat, sizeof idCat);
+  if (strcmp(idCat, imdb) != 0) return;
+
+  (void)farolcompor_pedir_retomada(imdb, titulo, t, e, sinBuf);
 }
 
 void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,

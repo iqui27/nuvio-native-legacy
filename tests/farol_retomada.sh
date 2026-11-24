@@ -54,6 +54,10 @@ RESP = {
     "t2e5":       (200, cena(OK, a=("2", "5"))),
     "alvo_outro": (200, cena(OK, alvo="tt0000001")),
     "longa":      (200, cena("Walt e Jesse ficaram presos no deserto com o trailer sem bateria.")),
+    "ep5":        (200, cena("No episódio 5, Walt volta ao deserto.")),
+    "ep5_en":     (200, cena("In episode 5, Walt goes home.")),
+    "temp3":      (200, cena("Na terceira temporada, Walt muda de identidade.")),
+    "futuro":     (200, cena("Walt morrerá ao salvar Jesse.")),
 }
 
 class H(http.server.BaseHTTPRequestHandler):

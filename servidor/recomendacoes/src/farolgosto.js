@@ -1807,7 +1807,16 @@ export function validarRetomada(bruto) {
 export function validarPedidoCompor(corpo) {
   const comRetomada = ehObjPlano(corpo) && Object.hasOwn(corpo, "retomada");
   const base = validarPedidoComporBase(corpo);
-  if (!comRetomada) return base;
+  if (base.ok && base.pedido.modo === "retomada" &&
+      (typeof corpo.idioma !== "string" || !corpo.idioma.trim())) {
+    return { ok: false, erro: "idioma obrigatorio", status: 422 };
+  }
+  if (!comRetomada) {
+    if (!base.ok && ehObjPlano(corpo) && corpo.modo === "retomada") {
+      return { ...base, status: 422 };
+    }
+    return base;
+  }
   if (!base.ok) return { ...base, status: 422 };
   if (base.pedido.modo !== "retomada") return { ok: false, erro: "retomada fora do modo", status: 422 };
   const retomada = validarRetomada(corpo.retomada);
@@ -4625,10 +4634,29 @@ const PROMPT_RETOMADA =
 
 // Pistas de spoiler/futuro que nunca podem subir num resumo do episodio visto.
 const RX_FUTURO_RETOMADA =
-  /pr[oó]xim[oa]s?\s+(epis[oó]dios?|cap[ií]tulos?|temporadas?)|next\s+(episodes?|season)|upcoming|em\s+breve|spoiler|season\s+finale|final\s+da\s+temporada/i;
+  /\b(?:proxim[oa]s?|seguintes?|siguientes?|next\s+(?:episodes?|seasons?|chapters?|time)|futur[oa]s?|later\s+in|upcoming|em\s+breve|en\s+breve|spoilers?|season\s+finale|final\s+d[ae]\s+temporada|will\s+\w+|vai\s+\w+|va\s+a\s+\w+|(?:morrer|descobrir|descubrir|voltar|trair|revelar|acabar|mudar|escapar|vencer|perder|salvar|morir|volver|traicionar|cambiar)a)\b/;
+
+const ORDINAIS_RETOMADA = new Map([
+  ["primeira", 1], ["primeiro", 1], ["primera", 1], ["primero", 1], ["primer", 1], ["first", 1],
+  ["segunda", 2], ["segundo", 2], ["second", 2],
+  ["terceira", 3], ["terceiro", 3], ["tercera", 3], ["tercero", 3], ["tercer", 3], ["third", 3],
+  ["quarta", 4], ["quarto", 4], ["cuarta", 4], ["cuarto", 4], ["fourth", 4],
+  ["quinta", 5], ["quinto", 5], ["fifth", 5],
+  ["sexta", 6], ["sexto", 6], ["sixth", 6],
+  ["setima", 7], ["setimo", 7], ["septima", 7], ["septimo", 7], ["seventh", 7],
+  ["oitava", 8], ["oitavo", 8], ["octava", 8], ["octavo", 8], ["eighth", 8],
+  ["nona", 9], ["nono", 9], ["novena", 9], ["noveno", 9], ["ninth", 9],
+  ["decima", 10], ["decimo", 10], ["tenth", 10],
+]);
+
+const RX_ORDINAL_RETOMADA = new RegExp(
+  `\\b(${[...ORDINAIS_RETOMADA.keys()].join("|")})\\s+(temporada|season|episodio|episode|capitulo|chapter)\\b`,
+  "g"
+);
 
 // Valida o resumo (do LLM ou do cache): 1 linha, <= 62 pontos, filtro ALMA,
-// sem futuro e sem citar outro episodio "TxEy" que nao o visto. null = recusa.
+// sem futuro e sem citar outro episodio/temporada (numerico ou por extenso)
+// que nao o visto. null = recusa.
 export function validarResumoRetomada(bruto, ret) {
   if (typeof bruto !== "string") return null;
   if (/[\r\n\u0085\u2028\u2029]/.test(bruto)) return null;
@@ -4636,9 +4664,38 @@ export function validarResumoRetomada(bruto, ret) {
   if (!s || s !== bruto) return null;
   if (Array.from(s).length > FAROL_RETOMADA_RESUMO_MAX) return null;
   if (!farolTextoAceita(s)) return null;
-  if (RX_FUTURO_RETOMADA.test(s)) return null;
-  for (const m of s.matchAll(/\b[TtSs](\d{1,3})\s*[Ee](\d{1,4})\b/g)) {
+  if (/\birá\s+\S+/iu.test(s.normalize("NFC"))) return null;
+  const clean = s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ª/g, "a")
+    .replace(/[º°]/g, "o")
+    .toLowerCase()
+    .replace(/[\p{P}\p{S}\s]+/gu, " ")
+    .trim();
+  if (RX_FUTURO_RETOMADA.test(clean)) return null;
+  for (const m of clean.matchAll(/\b[ts](\d{1,3})\s*e(\d{1,4})\b/g)) {
     if (Number(m[1]) !== ret.temporada || Number(m[2]) !== ret.episodio) return null;
+  }
+  for (const m of clean.matchAll(/\b(?:episodio|episode|capitulo|chapter)\s+(?:no?\s+)?(\d{1,4})\b/g)) {
+    if (Number(m[1]) !== ret.episodio) return null;
+  }
+  for (const m of clean.matchAll(/\bep\s*(\d{1,4})\b/g)) {
+    if (Number(m[1]) !== ret.episodio) return null;
+  }
+  for (const m of clean.matchAll(/\b(\d{1,4})(?:[ao]|st|nd|rd|th)?\s+(?:episodio|episode|capitulo|chapter)\b/g)) {
+    if (Number(m[1]) !== ret.episodio) return null;
+  }
+  for (const m of clean.matchAll(/\b(?:temporada|season)\s+(?:no?\s+)?(\d{1,4})\b/g)) {
+    if (Number(m[1]) !== ret.temporada) return null;
+  }
+  for (const m of clean.matchAll(/\b(\d{1,4})(?:[ao]|st|nd|rd|th)?\s+(?:temporada|season)\b/g)) {
+    if (Number(m[1]) !== ret.temporada) return null;
+  }
+  for (const m of clean.matchAll(RX_ORDINAL_RETOMADA)) {
+    const ord = ORDINAIS_RETOMADA.get(m[1]);
+    const alvo = (m[2] === "temporada" || m[2] === "season") ? ret.temporada : ret.episodio;
+    if (ord !== alvo) return null;
   }
   return s;
 }

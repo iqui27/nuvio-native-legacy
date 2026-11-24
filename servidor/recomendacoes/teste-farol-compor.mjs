@@ -4093,6 +4093,12 @@ test("retomada: entrada invalida e 422 sem LLM e sem gastar cota", async (t) => 
     pedidoRetomada({ modo: "home" }),
     pedidoRetomada({ modo: "dica" }),
     pedidoRetomada({ idioma: "portugues" }),
+    pedidoRetomada({ idioma: "" }),
+    pedidoRetomada({ idioma: null }),
+    (() => { const p = pedidoRetomada(); delete p.idioma; return p; })(),
+    { ...pedidoHomeBase({ modo: "retomada" }), idioma: "" },
+    { ...pedidoHomeBase({ modo: "retomada" }), idioma: null },
+    (() => { const p = pedidoHomeBase({ modo: "retomada" }); delete p.idioma; return p; })(),
     pedidoRetomada({ candidatos: [] }),
     pedidoRetomada({ candidatos: [{ c: "c0", id: "tt0903747", tipo: "movie", titulo: "Breaking Bad" }] }),
     pedidoRetomada({ candidatos: [{ c: "c0", id: "tmdb", tipo: "series", titulo: "Breaking Bad" }] }),
@@ -4129,6 +4135,19 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     { resumo: "Spoiler: Walt sai do deserto." },
     { resumo: "No T2E10 Walt sai do deserto." },
     { resumo: "No S03E01 Walt sai do deserto." },
+    { resumo: "No episódio 5, Walt volta ao deserto." },
+    { resumo: "In episode 5, Walt goes home." },
+    { resumo: "Na terceira temporada, Walt muda de identidade." },
+    { resumo: "Walt morrerá ao salvar Jesse." },
+    { resumo: "No capítulo 5, Walt foge." },
+    { resumo: "In the 3rd season, Walt changes." },
+    { resumo: "Na 3ª temporada, Walt foge." },
+    { resumo: "En el quinto episodio, Walt huye." },
+    { resumo: "Walt will escape the desert." },
+    { resumo: "Walt vai voltar ao deserto." },
+    { resumo: "No episódio seguinte, Walt foge." },
+    { resumo: "Later in season 2, Walt hides." },
+    { resumo: "Walt irá fugir do deserto." },
     { resumo: 42 },
     { resumo: "Walt e Jesse no deserto.", extra: "x" },
     { texto: "Walt e Jesse no deserto." },
@@ -4147,6 +4166,12 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
   // Citar o proprio episodio visto e permitido; cerca de codigo e aceita.
   assert.equal(validarResumoRetomada("No T2E9 Walt e Jesse ficaram no deserto.", { temporada: 2, episodio: 9 }),
     "No T2E9 Walt e Jesse ficaram no deserto.");
+  assert.equal(validarResumoRetomada("No episódio 9, Walt e Jesse ficaram no deserto.", { temporada: 2, episodio: 9 }),
+    "No episódio 9, Walt e Jesse ficaram no deserto.");
+  assert.equal(validarResumoRetomada("Na segunda temporada, Walt ficou no deserto.", { temporada: 2, episodio: 9 }),
+    "Na segunda temporada, Walt ficou no deserto.");
+  assert.equal(validarResumoRetomada("A ira de Walt cresce no deserto.", { temporada: 2, episodio: 9 }),
+    "A ira de Walt cresce no deserto.");
   {
     const { post } = cenario(t, {}, { respostaLlm: () => "```json\n{\"resumo\":\"Walt e Jesse ficaram no deserto.\"}\n```" });
     const r = await post("/v1/farol/compor", pedidoRetomada());

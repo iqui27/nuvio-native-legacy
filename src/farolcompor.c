@@ -345,6 +345,293 @@ static int textoSeguroLimpar(const char *src, char *dst, size_t cap,
   return u > 0;
 }
 
+static char retBaseLatim(long cp) {
+  static const char T[0x40] = {
+    'a','a','a','a','a','a', 0 ,'c',
+    'e','e','e','e','i','i','i','i',
+     0 ,'n','o','o','o','o','o', 0 ,
+     0 ,'u','u','u','u','y', 0 , 0 ,
+    'a','a','a','a','a','a', 0 ,'c',
+    'e','e','e','e','i','i','i','i',
+     0 ,'n','o','o','o','o','o', 0 ,
+     0 ,'u','u','u','u','y', 0 ,'y',
+  };
+  return (cp >= 0xC0 && cp <= 0xFF) ? T[cp - 0xC0] : 0;
+}
+
+static int retEhCombinante(long cp) {
+  return (cp >= 0x0300 && cp <= 0x036F) ||
+         (cp >= 0x1AB0 && cp <= 0x1AFF) ||
+         (cp >= 0x20D0 && cp <= 0x20FF) ||
+         (cp >= 0xFE20 && cp <= 0xFE2F);
+}
+
+static int retEhSeparador(long cp) {
+  if (cp < 0x80) {
+    return !((cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z') ||
+             (cp >= '0' && cp <= '9'));
+  }
+  if (cp == 0xAA || cp == 0xBA || cp == 0xB0) return 0;
+  if (cp >= 0xC0 && cp <= 0xFF) return retBaseLatim(cp) == 0 && cp != 0xC6 &&
+    cp != 0xD0 && cp != 0xD8 && cp != 0xDE && cp != 0xDF && cp != 0xE6 &&
+    cp != 0xF0 && cp != 0xF8 && cp != 0xFE;
+  return cp == 0xA0 || cp == 0x2028 || cp == 0x2029 ||
+         (cp >= 0xA1 && cp <= 0xBF) ||
+         (cp >= 0x2000 && cp <= 0x206F) ||
+         (cp >= 0x3001 && cp <= 0x303F) ||
+         (cp >= 0xFF01 && cp <= 0xFF65);
+}
+
+static int retTemIraFuturo(const char *s) {
+  const char *p = s, *fim = s + strlen(s);
+  int sepAntes = 1;
+  while (p < fim) {
+    long cp = lerUtf8(&p, fim);
+    if (cp < 0) return 1;
+    if (retEhCombinante(cp)) continue;
+    if (sepAntes && (cp == 'i' || cp == 'I')) {
+      const char *q = p;
+      long c2 = lerUtf8(&q, fim);
+      if (c2 == 'r' || c2 == 'R') {
+        long c3 = lerUtf8(&q, fim);
+        int ehA = (c3 == 0xE1 || c3 == 0xC1);
+        if (!ehA && (c3 == 'a' || c3 == 'A')) {
+          const char *q2 = q;
+          if (lerUtf8(&q2, fim) == 0x0301) { ehA = 1; q = q2; }
+        }
+        if (ehA) {
+          long c4 = lerUtf8(&q, fim);
+          if (c4 == ' ' || c4 == '\t') {
+            while (q < fim) {
+              long c5 = lerUtf8(&q, fim);
+              if (c5 != ' ' && c5 != '\t') {
+                if (c5 >= 0 && !retEhSeparador(c5)) return 1;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+    sepAntes = retEhSeparador(cp);
+  }
+  return 0;
+}
+
+static int retParseInt(const char *s, int *out) {
+  long v = 0;
+  int n = 0;
+  if (!s || !*s) return 0;
+  while (s[n] >= '0' && s[n] <= '9') {
+    v = v * 10 + (s[n] - '0');
+    if (v > 100000) v = 100000;
+    n++;
+  }
+  if (!n || s[n] != '\0') return 0;
+  *out = (int)v;
+  return 1;
+}
+
+static int retParseOrdNum(const char *s, int *out) {
+  long v = 0;
+  int n = 0;
+  const char *suf;
+  if (!s || !*s) return 0;
+  while (s[n] >= '0' && s[n] <= '9') {
+    v = v * 10 + (s[n] - '0');
+    if (v > 100000) v = 100000;
+    n++;
+  }
+  if (!n) return 0;
+  suf = s + n;
+  if (!suf[0] || !strcmp(suf, "a") || !strcmp(suf, "o") ||
+      !strcmp(suf, "st") || !strcmp(suf, "nd") ||
+      !strcmp(suf, "rd") || !strcmp(suf, "th")) {
+    *out = (int)v;
+    return 1;
+  }
+  return 0;
+}
+
+static int retParseTxEy(const char *s, int *tOut, int *eOut) {
+  long tv = 0, ev = 0;
+  int nt = 0, ne = 0;
+  if (!s || (s[0] != 't' && s[0] != 's')) return 0;
+  s++;
+  while (*s >= '0' && *s <= '9') {
+    tv = tv * 10 + (*s++ - '0');
+    if (tv > 100000) tv = 100000;
+    nt++;
+  }
+  if (!nt || *s != 'e') return 0;
+  s++;
+  while (*s >= '0' && *s <= '9') {
+    ev = ev * 10 + (*s++ - '0');
+    if (ev > 100000) ev = 100000;
+    ne++;
+  }
+  if (!ne || *s != '\0') return 0;
+  *tOut = (int)tv;
+  *eOut = (int)ev;
+  return 1;
+}
+
+static int retOrdinalValor(const char *s) {
+  static const struct { const char *p; int v; } tab[] = {
+    { "primeira", 1 }, { "primeiro", 1 }, { "primera", 1 }, { "primero", 1 },
+    { "primer", 1 }, { "first", 1 },
+    { "segunda", 2 }, { "segundo", 2 }, { "second", 2 },
+    { "terceira", 3 }, { "terceiro", 3 }, { "tercera", 3 }, { "tercero", 3 },
+    { "tercer", 3 }, { "third", 3 },
+    { "quarta", 4 }, { "quarto", 4 }, { "cuarta", 4 }, { "cuarto", 4 }, { "fourth", 4 },
+    { "quinta", 5 }, { "quinto", 5 }, { "fifth", 5 },
+    { "sexta", 6 }, { "sexto", 6 }, { "sixth", 6 },
+    { "setima", 7 }, { "setimo", 7 }, { "septima", 7 }, { "septimo", 7 }, { "seventh", 7 },
+    { "oitava", 8 }, { "oitavo", 8 }, { "octava", 8 }, { "octavo", 8 }, { "eighth", 8 },
+    { "nona", 9 }, { "nono", 9 }, { "novena", 9 }, { "noveno", 9 }, { "ninth", 9 },
+    { "decima", 10 }, { "decimo", 10 }, { "tenth", 10 },
+  };
+  size_t i;
+  for (i = 0; i < sizeof tab / sizeof tab[0]; i++) {
+    if (!strcmp(s, tab[i].p)) return tab[i].v;
+  }
+  return 0;
+}
+
+static int retEhFuturoPalavra(const char *s) {
+  static const char *const ban[] = {
+    "proximo", "proxima", "proximos", "proximas",
+    "seguinte", "seguintes", "siguiente", "siguientes",
+    "futuro", "futura", "futuros", "futuras",
+    "upcoming", "spoiler", "spoilers",
+    "morrera", "descobrira", "descubrira", "voltara", "traira",
+    "revelara", "acabara", "mudara", "escapara", "vencera",
+    "perdera", "salvara", "morira", "volvera", "traicionara", "cambiara",
+  };
+  size_t i;
+  for (i = 0; i < sizeof ban / sizeof ban[0]; i++) {
+    if (!strcmp(s, ban[i])) return 1;
+  }
+  return 0;
+}
+
+static int retEhSubstEp(const char *s, int incluiEp) {
+  return !strcmp(s, "episodio") || !strcmp(s, "episode") ||
+         !strcmp(s, "capitulo") || !strcmp(s, "chapter") ||
+         (incluiEp && !strcmp(s, "ep"));
+}
+
+static int retEhSubstTemp(const char *s) {
+  return !strcmp(s, "temporada") || !strcmp(s, "season");
+}
+
+// Coerente com validarResumoRetomada (farolgosto.js): recusa referencias a
+// outro episodio/temporada (numericas ou por extenso) e futuro/spoiler.
+static int retomadaResumoSemSpoiler(const char *s, int temporada, int episodio) {
+  char fold[320];
+  char *tok[64];
+  const char *p, *fim;
+  size_t u = 0;
+  int emEspaco = 1, nt = 0, i;
+
+  if (!s || !s[0] || temporada < 1 || episodio < 1) return 0;
+  if (retTemIraFuturo(s)) return 0;
+
+  p = s;
+  fim = s + strlen(s);
+  while (p < fim && u + 5 < sizeof fold) {
+    const char *ini = p;
+    long cp = lerUtf8(&p, fim);
+    char b;
+    if (cp < 0) return 0;
+    if (retEhCombinante(cp)) continue;
+    if (retEhSeparador(cp)) { emEspaco = 1; continue; }
+    if (u > 0 && emEspaco) fold[u++] = ' ';
+    emEspaco = 0;
+    if (cp == 0xAA) { fold[u++] = 'a'; continue; }
+    if (cp == 0xBA || cp == 0xB0) { fold[u++] = 'o'; continue; }
+    if (cp >= 'A' && cp <= 'Z') { fold[u++] = (char)(cp + 32); continue; }
+    if ((cp >= 'a' && cp <= 'z') || (cp >= '0' && cp <= '9')) {
+      fold[u++] = (char)cp;
+      continue;
+    }
+    b = retBaseLatim(cp);
+    if (b) { fold[u++] = b; continue; }
+    while (ini < p && u + 1 < sizeof fold) fold[u++] = *ini++;
+  }
+  fold[u] = '\0';
+
+  {
+    char *q = fold;
+    while (*q && nt < 64) {
+      while (*q == ' ') q++;
+      if (!*q) break;
+      tok[nt++] = q;
+      while (*q && *q != ' ') q++;
+      if (*q == ' ') *q++ = '\0';
+    }
+  }
+
+  for (i = 0; i < nt; i++) {
+    int tVal = 0, eVal = 0, num = 0, ord = 0, j;
+    if (retParseTxEy(tok[i], &tVal, &eVal) &&
+        (tVal != temporada || eVal != episodio))
+      return 0;
+    if ((tok[i][0] == 't' || tok[i][0] == 's') &&
+        retParseInt(tok[i] + 1, &tVal) && i + 1 < nt &&
+        tok[i + 1][0] == 'e' && retParseInt(tok[i + 1] + 1, &eVal) &&
+        (tVal != temporada || eVal != episodio))
+      return 0;
+    if (tok[i][0] == 'e' && tok[i][1] == 'p' &&
+        retParseInt(tok[i] + 2, &num) && num != episodio)
+      return 0;
+    if (retEhFuturoPalavra(tok[i])) return 0;
+
+    if ((!strcmp(tok[i], "will") || !strcmp(tok[i], "vai")) && i + 1 < nt)
+      return 0;
+    if (!strcmp(tok[i], "va") && i + 2 < nt && !strcmp(tok[i + 1], "a"))
+      return 0;
+    if (!strcmp(tok[i], "next") && i + 1 < nt &&
+        (!strcmp(tok[i + 1], "episode") || !strcmp(tok[i + 1], "episodes") ||
+         !strcmp(tok[i + 1], "season") || !strcmp(tok[i + 1], "seasons") ||
+         !strcmp(tok[i + 1], "chapter") || !strcmp(tok[i + 1], "chapters") ||
+         !strcmp(tok[i + 1], "time")))
+      return 0;
+    if ((!strcmp(tok[i], "em") || !strcmp(tok[i], "en")) &&
+        i + 1 < nt && !strcmp(tok[i + 1], "breve"))
+      return 0;
+    if (!strcmp(tok[i], "later") && i + 1 < nt && !strcmp(tok[i + 1], "in"))
+      return 0;
+    if (!strcmp(tok[i], "season") && i + 1 < nt && !strcmp(tok[i + 1], "finale"))
+      return 0;
+    if (!strcmp(tok[i], "final") && i + 2 < nt &&
+        (!strcmp(tok[i + 1], "da") || !strcmp(tok[i + 1], "de")) &&
+        !strcmp(tok[i + 2], "temporada"))
+      return 0;
+
+    if (retEhSubstEp(tok[i], 1)) {
+      j = i + 1;
+      if (j < nt && (!strcmp(tok[j], "n") || !strcmp(tok[j], "no"))) j++;
+      if (j < nt && retParseInt(tok[j], &num) && num != episodio) return 0;
+    }
+    if (retEhSubstTemp(tok[i])) {
+      j = i + 1;
+      if (j < nt && (!strcmp(tok[j], "n") || !strcmp(tok[j], "no"))) j++;
+      if (j < nt && retParseInt(tok[j], &num) && num != temporada) return 0;
+    }
+    if (i + 1 < nt && retParseOrdNum(tok[i], &num)) {
+      if (retEhSubstTemp(tok[i + 1]) && num != temporada) return 0;
+      if (retEhSubstEp(tok[i + 1], 0) && num != episodio) return 0;
+    }
+    ord = retOrdinalValor(tok[i]);
+    if (ord > 0 && i + 1 < nt) {
+      if (retEhSubstTemp(tok[i + 1]) && ord != temporada) return 0;
+      if (retEhSubstEp(tok[i + 1], 0) && ord != episodio) return 0;
+    }
+  }
+  return 1;
+}
+
 static int idiomaValido(const char *s) {
   size_t n, i;
   if (!s || !s[0]) return 0;
@@ -1132,7 +1419,21 @@ int farolcompor_validar_resposta(FarolComporModo modo, const char *json, size_t 
         break;
       case FP_INFO:
         if (!refCandValida(&pc->u.info.alvo, cand, nCand)) return -1;
-        if (modo == FC_MODO_RETOMADA) temEsperada = 1;
+        if (modo == FC_MODO_RETOMADA) {
+          for (j = 0; j < pc->u.info.nItens; j++) {
+            const FarolInfoItem *it = &pc->u.info.itens[j];
+            if (it->k == FP_INFO_RETOMADA && it->l.usaX &&
+                strcmp(it->l.m, "FT_INFO_RETOMADA_SIMPLES") == 0 &&
+                it->l.nArgs == 2) {
+              const char *rx = farolpeca_x(&tmp, &it->l);
+              int rt = atoi(it->l.a[0]), re = atoi(it->l.a[1]);
+              if (!rx || !farolinfo_retomada_linha_ok(rx) ||
+                  !retomadaResumoSemSpoiler(rx, rt, re))
+                return -1;
+            }
+          }
+          temEsperada = 1;
+        }
         break;
       case FP_COMPARAR:
         if (pc->u.comparar.nItens < 2) return -1;
@@ -2404,15 +2705,17 @@ int farolcompor_pedir_retomada(const char *imdb, const char *titulo,
   ped.retSinopse = sinopse;
   ok = farolcompor_pedir(&ped);
 
-  pthread_mutex_lock(&trava);
-  retUltimo.tem = 1;
-  retUltimo.perfil = perfil;
-  retUltimo.sessao = sessao;
-  retUltimo.contaHash = conta;
-  snprintf(retUltimo.imdb, sizeof retUltimo.imdb, "%s", imdb);
-  retUltimo.t = temporada;
-  retUltimo.e = episodio;
-  pthread_mutex_unlock(&trava);
+  if (ok) {
+    pthread_mutex_lock(&trava);
+    retUltimo.tem = 1;
+    retUltimo.perfil = perfil;
+    retUltimo.sessao = sessao;
+    retUltimo.contaHash = conta;
+    snprintf(retUltimo.imdb, sizeof retUltimo.imdb, "%s", imdb);
+    retUltimo.t = temporada;
+    retUltimo.e = episodio;
+    pthread_mutex_unlock(&trava);
+  }
   return ok;
 }
 
@@ -2450,7 +2753,8 @@ int farolcompor_retomada_resumo(const char *imdb, int temporada, int episodio,
         snprintf(es, sizeof es, "%d", episodio);
         if (strcmp(t->a[0], ts) != 0 || strcmp(t->a[1], es) != 0) continue; }
       x = farolpeca_x(&cena, t);
-      if (!x || !farolinfo_retomada_linha_ok(x) || !faroltexto_aceita(x))
+      if (!x || !farolinfo_retomada_linha_ok(x) || !faroltexto_aceita(x) ||
+          !retomadaResumoSemSpoiler(x, temporada, episodio))
         continue;
       if (strlen(x) + 1 > cap) return 0;
       memcpy(dst, x, strlen(x) + 1);
