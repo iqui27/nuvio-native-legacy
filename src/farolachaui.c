@@ -9,6 +9,7 @@
 #include "gfx.h"
 #include "idioma.h"
 #include "layout.h"
+#include "perfilinfantil.h"
 #include "ponteiro.h"
 #include "posterprov.h"
 #include "tex_cache.h"
@@ -16,8 +17,12 @@
 #include <stdio.h>
 #include <string.h>
 
-// Ganchos fracos para manter testes de Tela 7 sem farolbusca.c / sistexto.c.
+// Ganchos fracos para manter testes de Tela 7 sem farolbusca.c / sistexto.c / perfil*.c.
 __attribute__((weak)) int st_voz_disponivel(void) { return 0; }
+__attribute__((weak)) int perfil_infantil_ativo(void) { return 0; }
+__attribute__((weak)) int perfil_regra_busca(const char *certificate) {
+  return !perfil_infantil_ativo() || perfil_infantil_classif_ok(certificate);
+}
 __attribute__((weak)) FarolBuscaEstado farolbusca_estado(FarolBuscaInfo *info) {
   if (info) memset(info, 0, sizeof *info);
   return FB_OCIOSO;
@@ -45,13 +50,14 @@ __attribute__((weak)) int farolbusca_abrir_item(const FarolBuscaItem *it) {
 static struct {
   FarolAchaTipo   tipo;
   int             modoBusca;
-  uint64_t        buscaGeracao;
+  uint64_t        buscaGenConfirmada;
   FarolBuscaItem  buscaItens[FAROL_ACHA_UI_MAX];
   int             maxMin;
   int             limEfetivo;
   char            genero[32];
   char            kicker[96];
   char            tituloOverride[200];
+  char            buscaFraseEstado[200];
   char            l1Override[200];
   char            l2Override[200];
   unsigned        semente;
@@ -296,89 +302,188 @@ static int contarSemIdExato(const FarolAchaPedido *p) {
   return -1;
 }
 
-static void recarregarBusca(void) {
+static int itemInfantilPermitido(const CatItem *c, int infantil) {
+  if (!infantil) return 1;
+  if (!c) return 0;
+  return perfil_regra_busca(c->classificacao) &&
+         perfil_infantil_classif_ok(c->classificacao);
+}
+
+static void formatarFraseEstadoBusca(char *dst, size_t cap,
+                                     const FarolBuscaInfo *info, int n) {
+  if (!dst || !cap) return;
+  if (info && info->fraseEstado && info->fraseEstado[0]) {
+    snprintf(dst, cap, "%s", i18n(info->fraseEstado));
+  } else if (n > 0) {
+    snprintf(dst, cap, i18n(n == 1 ? "%d título" : "%d títulos"), n);
+  } else {
+    snprintf(dst, cap, "%s", i18n("Nada encontrado"));
+  }
+}
+
+static void ajustarFocoBusca(void) {
+  if (S.nAchados <= 0) {
+    if (S.focoIdx != ACHA_FOCO_VOZ || !st_voz_disponivel())
+      S.focoIdx = ACHA_FOCO_VOLTAR;
+  } else if (S.focoIdx >= S.nAchados) {
+    S.focoIdx = S.nAchados - 1;
+  } else if (S.focoIdx < 0 && S.focoIdx != ACHA_FOCO_VOLTAR &&
+             S.focoIdx != ACHA_FOCO_VOZ) {
+    S.focoIdx = 0;
+  }
+  if (S.ultimoPoster >= S.nAchados)
+    S.ultimoPoster = S.nAchados > 0 ? S.nAchados - 1 : 0;
+}
+
+static void preencherCardsBusca(const FarolBuscaItem *bi, int n, unsigned r,
+                                FarolAchado *ach, FarolAchaPedido *cards,
+                                int *okOut) {
+  int i;
+  *okOut = 1;
+  for (i = 0; i < n && i < FAROL_ACHA_UI_MAX; i++) {
+    if (bi[i].noCatalogo) {
+      const CatItem *ci = cat_item(bi[i].indice);
+      if (!ci || cat_revisao() != r) { *okOut = 0; break; }
+      ach[i].indice = bi[i].indice;
+      ach[i].minutos = bi[i].minutos;
+      ach[i].motivo = bi[i].motivoAcha;
+      identidadeCardDe(&cards[i], r, bi[i].indice, ci);
+    } else {
+      ach[i].indice = -1;
+      ach[i].minutos = bi[i].minutos;
+      ach[i].motivo = 0;
+      cards[i].rev = r;
+      cards[i].indice = -1;
+      cards[i].tmdb = bi[i].tmdb;
+      snprintf(cards[i].imdb, sizeof cards[i].imdb, "%s", bi[i].imdb);
+      snprintf(cards[i].tipo, sizeof cards[i].tipo, "%s", bi[i].tipo);
+    }
+  }
+}
+
+static int carregarBuscaNova(const char *titulo, uint64_t geracaoEsperada) {
+  int red = ajustes_animacoes_reduzidas();
   int tentativa;
   for (tentativa = 0; tentativa < 3; tentativa++) {
     FarolBuscaInfo info1, info2;
     FarolBuscaItem bi[FAROL_ACHA_UI_MAX];
+    FarolAchado ach[FAROL_ACHA_UI_MAX];
+    FarolAchaPedido cards[FAROL_ACHA_UI_MAX];
     unsigned r = 0;
     int n, i, ok = 1;
 
     memset(bi, 0, sizeof bi);
-    memset(S.buscaItens, 0, sizeof S.buscaItens);
-    memset(S.achados, 0, sizeof S.achados);
-    memset(S.cards, 0, sizeof S.cards);
-    S.fallbackAtivo = 0;
+    memset(ach, 0, sizeof ach);
+    memset(cards, 0, sizeof cards);
 
-    if (farolbusca_estado(&info1) != FB_PRONTO) {
-      S.nAchados = 0;
-      S.rev = cat_revisao();
-      S.focoIdx = ACHA_FOCO_VOLTAR;
-      S.ultimoPoster = 0;
-      snprintf(S.l1Override, sizeof S.l1Override, "%s",
-               (info1.fraseEstado && info1.fraseEstado[0])
-                 ? i18n(info1.fraseEstado) : i18n("Nada encontrado"));
-      S.l2Override[0] = '\0';
-      montarTextos();
-      return;
-    }
+    if (farolbusca_estado(&info1) != FB_PRONTO) return 0;
+    if (geracaoEsperada != 0 && info1.geracao != geracaoEsperada) return 0;
 
     n = farolbusca_resolver(bi, FAROL_ACHA_UI_MAX, &r);
     if (farolbusca_estado(&info2) != FB_PRONTO || info2.geracao != info1.geracao)
       continue;
 
-    for (i = 0; i < n && i < FAROL_ACHA_UI_MAX; i++) {
-      S.buscaItens[i] = bi[i];
-      if (bi[i].noCatalogo) {
-        const CatItem *ci = cat_item(bi[i].indice);
-        if (!ci || cat_revisao() != r) { ok = 0; break; }
-        S.achados[i].indice = bi[i].indice;
-        S.achados[i].minutos = bi[i].minutos;
-        S.achados[i].motivo = bi[i].motivoAcha;
-        identidadeCardDe(&S.cards[i], r, bi[i].indice, ci);
-      } else {
-        S.achados[i].indice = -1;
-        S.achados[i].minutos = bi[i].minutos;
-        S.achados[i].motivo = 0;
-        memset(&S.cards[i], 0, sizeof S.cards[i]);
-        S.cards[i].rev = r;
-        S.cards[i].indice = -1;
-        S.cards[i].tmdb = bi[i].tmdb;
-        snprintf(S.cards[i].imdb, sizeof S.cards[i].imdb, "%s", bi[i].imdb);
-        snprintf(S.cards[i].tipo, sizeof S.cards[i].tipo, "%s", bi[i].tipo);
+    preencherCardsBusca(bi, n, r, ach, cards, &ok);
+
+    if (ok && cat_revisao() == r) {
+      memset(&S, 0, sizeof S);
+      S.modoBusca = 1;
+      S.tipo = FA_SURPRESA;
+      S.buscaGenConfirmada = info1.geracao;
+      S.rev = r;
+      S.nAchados = n;
+      S.fallbackAtivo = info1.usouLocal;
+      memcpy(S.buscaItens, bi, sizeof S.buscaItens);
+      memcpy(S.achados, ach, sizeof S.achados);
+      memcpy(S.cards, cards, sizeof S.cards);
+      snprintf(S.kicker, sizeof S.kicker, "%s › %s", i18n(FT_NOME), i18n(FT_BUSCA_FRASE));
+      snprintf(S.tituloOverride, sizeof S.tituloOverride, "%s",
+               (titulo && titulo[0]) ? titulo : i18n(FT_BUSCA_FRASE));
+      formatarFraseEstadoBusca(S.buscaFraseEstado, sizeof S.buscaFraseEstado, &info1, n);
+      snprintf(S.l1Override, sizeof S.l1Override, "%s", S.buscaFraseEstado);
+      S.l2Override[0] = '\0';
+      S.focoIdx = (S.nAchados > 0) ? 0 : ACHA_FOCO_VOLTAR;
+      S.ultimoPoster = 0;
+      if (red) {
+        for (i = 0; i < FAROL_ACHA_UI_MAX; i++)
+          S.animCard[i] = (S.nAchados > 0 && S.focoIdx == i) ? 1.0f : 0.0f;
+        S.animVoltar = (S.focoIdx == ACHA_FOCO_VOLTAR) ? 1.0f : 0.0f;
+        S.animVoz = (S.focoIdx == ACHA_FOCO_VOZ) ? 1.0f : 0.0f;
+      }
+      montarTextos();
+      return 1;
+    }
+  }
+  return 0;
+}
+
+// Revalida os cartazes ja confirmados contra o catalogo vivo sem consultar
+// outra geracao em farolbusca (ex.: quando o usuario cancelou uma 2a busca).
+static void revalidarCardsBuscaConfirmados(void) {
+  int tentativa;
+  int infantil = perfil_infantil_ativo() ? 1 : 0;
+
+  for (tentativa = 0; tentativa < 3; tentativa++) {
+    unsigned r = cat_revisao();
+    FarolBuscaItem bi[FAROL_ACHA_UI_MAX];
+    FarolAchado ach[FAROL_ACHA_UI_MAX];
+    FarolAchaPedido cards[FAROL_ACHA_UI_MAX];
+    int i, k = 0, retry = 0;
+
+    memset(bi, 0, sizeof bi);
+    memset(ach, 0, sizeof ach);
+    memset(cards, 0, sizeof cards);
+
+    for (i = 0; i < S.nAchados && i < FAROL_ACHA_UI_MAX; i++) {
+      unsigned rItem = 0;
+      int idx = farolachaui_resolver_pedido(&S.cards[i], &rItem);
+      if (rItem != r || cat_revisao() != r) { retry = 1; break; }
+      if (idx >= 0) {
+        const CatItem *ci = cat_item(idx);
+        if (!ci || cat_revisao() != r) { retry = 1; break; }
+        if (!itemInfantilPermitido(ci, infantil)) continue;
+        bi[k] = S.buscaItens[i];
+        bi[k].noCatalogo = 1;
+        bi[k].indice = idx;
+        ach[k] = S.achados[i];
+        ach[k].indice = idx;
+        identidadeCardDe(&cards[k], r, idx, ci);
+        k++;
+      } else if (!S.fallbackAtivo && !infantil &&
+                 (S.cards[i].imdb[0] || S.cards[i].tmdb > 0)) {
+        bi[k] = S.buscaItens[i];
+        bi[k].noCatalogo = 0;
+        bi[k].indice = -1;
+        ach[k] = S.achados[i];
+        ach[k].indice = -1;
+        cards[k] = S.cards[i];
+        cards[k].rev = r;
+        cards[k].indice = -1;
+        k++;
       }
     }
 
-    if (ok && cat_revisao() == r) {
-      S.nAchados = n;
+    if (!retry && cat_revisao() == r) {
+      memcpy(S.buscaItens, bi, sizeof S.buscaItens);
+      memcpy(S.achados, ach, sizeof S.achados);
+      memcpy(S.cards, cards, sizeof S.cards);
+      S.nAchados = k;
       S.rev = r;
-      S.buscaGeracao = info1.geracao;
-      S.fallbackAtivo = info1.usouLocal;
-      if (info1.fraseEstado && info1.fraseEstado[0]) {
-        snprintf(S.l1Override, sizeof S.l1Override, "%s", i18n(info1.fraseEstado));
-      } else if (n > 0) {
-        snprintf(S.l1Override, sizeof S.l1Override,
-                 i18n(n == 1 ? "%d título" : "%d títulos"), n);
-      } else {
+      if (S.nAchados <= 0) {
         snprintf(S.l1Override, sizeof S.l1Override, "%s", i18n("Nada encontrado"));
+      } else if (S.buscaFraseEstado[0]) {
+        snprintf(S.l1Override, sizeof S.l1Override, "%s", S.buscaFraseEstado);
       }
       S.l2Override[0] = '\0';
-      if (S.nAchados <= 0) {
-        if (S.focoIdx != ACHA_FOCO_VOZ || !st_voz_disponivel())
-          S.focoIdx = ACHA_FOCO_VOLTAR;
-      } else if (S.focoIdx >= S.nAchados) {
-        S.focoIdx = S.nAchados - 1;
-      } else if (S.focoIdx < 0 && S.focoIdx != ACHA_FOCO_VOLTAR &&
-                 S.focoIdx != ACHA_FOCO_VOZ) {
-        S.focoIdx = 0;
-      }
-      if (S.ultimoPoster >= S.nAchados)
-        S.ultimoPoster = S.nAchados > 0 ? S.nAchados - 1 : 0;
+      ajustarFocoBusca();
       montarTextos();
       return;
     }
   }
 
+  memset(S.buscaItens, 0, sizeof S.buscaItens);
+  memset(S.achados, 0, sizeof S.achados);
+  memset(S.cards, 0, sizeof S.cards);
   S.nAchados = 0;
   S.rev = cat_revisao();
   S.focoIdx = ACHA_FOCO_VOLTAR;
@@ -386,6 +491,66 @@ static void recarregarBusca(void) {
   snprintf(S.l1Override, sizeof S.l1Override, "%s", i18n("Nada encontrado"));
   S.l2Override[0] = '\0';
   montarTextos();
+}
+
+static void recarregarBusca(void) {
+  FarolBuscaInfo inf;
+  int tentativa;
+
+  if (S.buscaGenConfirmada == 0 ||
+      farolbusca_estado(&inf) != FB_PRONTO ||
+      inf.geracao != S.buscaGenConfirmada) {
+    revalidarCardsBuscaConfirmados();
+    return;
+  }
+
+  for (tentativa = 0; tentativa < 3; tentativa++) {
+    FarolBuscaInfo info1, info2;
+    FarolBuscaItem bi[FAROL_ACHA_UI_MAX];
+    FarolAchado ach[FAROL_ACHA_UI_MAX];
+    FarolAchaPedido cards[FAROL_ACHA_UI_MAX];
+    unsigned r = 0;
+    int n, ok = 1;
+
+    memset(bi, 0, sizeof bi);
+    memset(ach, 0, sizeof ach);
+    memset(cards, 0, sizeof cards);
+
+    if (farolbusca_estado(&info1) != FB_PRONTO ||
+        info1.geracao != S.buscaGenConfirmada) {
+      revalidarCardsBuscaConfirmados();
+      return;
+    }
+
+    n = farolbusca_resolver(bi, FAROL_ACHA_UI_MAX, &r);
+    if (farolbusca_estado(&info2) != FB_PRONTO ||
+        info2.geracao != S.buscaGenConfirmada) {
+      if (info2.geracao != S.buscaGenConfirmada) {
+        revalidarCardsBuscaConfirmados();
+        return;
+      }
+      continue;
+    }
+
+    preencherCardsBusca(bi, n, r, ach, cards, &ok);
+
+    if (ok && cat_revisao() == r) {
+      memcpy(S.buscaItens, bi, sizeof S.buscaItens);
+      memcpy(S.achados, ach, sizeof S.achados);
+      memcpy(S.cards, cards, sizeof S.cards);
+      S.nAchados = n;
+      S.rev = r;
+      S.fallbackAtivo = info1.usouLocal;
+      formatarFraseEstadoBusca(S.buscaFraseEstado, sizeof S.buscaFraseEstado, &info1, n);
+      snprintf(S.l1Override, sizeof S.l1Override, "%s", S.buscaFraseEstado);
+      S.l2Override[0] = '\0';
+      ajustarFocoBusca();
+      montarTextos();
+      return;
+    }
+  }
+
+  revalidarCardsBuscaConfirmados();
 }
 
 static void recarregar(void) {
@@ -470,9 +635,7 @@ void farolachaui_recarregar(void) {
 static void garantirRevisao(void) {
   int i;
   if (S.modoBusca) {
-    FarolBuscaInfo inf;
-    if (cat_revisao() != S.rev ||
-        (farolbusca_estado(&inf) == FB_PRONTO && inf.geracao != S.buscaGeracao)) {
+    if (cat_revisao() != S.rev) {
       recarregar();
       return;
     }
@@ -506,23 +669,24 @@ void farolachaui_reset(void) {
   S.focoIdx = ACHA_FOCO_VOLTAR;
 }
 
+int farolachaui_abrir_busca_geracao(const char *titulo, uint64_t geracao) {
+  return carregarBuscaNova(titulo, geracao);
+}
+
 void farolachaui_abrir_busca(const char *titulo) {
-  int red = ajustes_animacoes_reduzidas();
-  int i;
-  memset(&S, 0, sizeof S);
-  S.modoBusca = 1;
-  S.tipo = FA_SURPRESA;
-  snprintf(S.kicker, sizeof S.kicker, "%s › %s", i18n(FT_NOME), i18n(FT_BUSCA_FRASE));
-  snprintf(S.tituloOverride, sizeof S.tituloOverride, "%s",
-           (titulo && titulo[0]) ? titulo : i18n(FT_BUSCA_FRASE));
-  S.focoIdx = 0;
-  S.ultimoPoster = 0;
-  recarregar();
-  if (red) {
-    for (i = 0; i < FAROL_ACHA_UI_MAX; i++)
-      S.animCard[i] = (S.nAchados > 0 && S.focoIdx == i) ? 1.0f : 0.0f;
-    S.animVoltar = (S.focoIdx == ACHA_FOCO_VOLTAR) ? 1.0f : 0.0f;
-    S.animVoz = (S.focoIdx == ACHA_FOCO_VOZ) ? 1.0f : 0.0f;
+  if (carregarBuscaNova(titulo, 0)) return;
+  if (!S.modoBusca) {
+    memset(&S, 0, sizeof S);
+    S.modoBusca = 1;
+    S.tipo = FA_SURPRESA;
+    S.rev = cat_revisao();
+    snprintf(S.kicker, sizeof S.kicker, "%s › %s", i18n(FT_NOME), i18n(FT_BUSCA_FRASE));
+    snprintf(S.tituloOverride, sizeof S.tituloOverride, "%s",
+             (titulo && titulo[0]) ? titulo : i18n(FT_BUSCA_FRASE));
+    snprintf(S.buscaFraseEstado, sizeof S.buscaFraseEstado, "%s", i18n("Nada encontrado"));
+    snprintf(S.l1Override, sizeof S.l1Override, "%s", S.buscaFraseEstado);
+    S.focoIdx = ACHA_FOCO_VOLTAR;
+    montarTextos();
   }
 }
 
@@ -576,29 +740,40 @@ static int selecionarFocado(void) {
   FarolAchaPedido exibido;
   int focoAntes;
   unsigned revAtual;
+  int infantil;
   const CatItem *c;
 
   if (S.focoIdx < 0 || S.focoIdx >= S.nAchados) return 0;
   exibido = S.cards[S.focoIdx];
   focoAntes = S.focoIdx;
   revAtual = cat_revisao();
+  infantil = perfil_infantil_ativo() ? 1 : 0;
 
   if (S.modoBusca) {
-    FarolBuscaInfo inf;
-    if (farolbusca_estado(&inf) != FB_PRONTO || inf.geracao != S.buscaGeracao) {
-      recarregar();
-      return 0;
-    }
     if (!S.buscaItens[focoAntes].noCatalogo) {
-      int idx = farolbusca_abrir_item(&S.buscaItens[focoAntes]);
+      int idx, tentativa;
       unsigned revNova;
+      if (infantil) return 0;
+      idx = farolbusca_abrir_item(&S.buscaItens[focoAntes]);
       if (idx < 0) return 0;
-      revNova = cat_revisao();
-      c = cat_item(idx);
-      if (!c) return 0;
-      identidadeCardDe(&S.pedido, revNova, idx, c);
-      S.pedidoTem = 1;
-      return 1;
+      for (tentativa = 0; tentativa < 3; tentativa++) {
+        revNova = cat_revisao();
+        c = cat_item(idx);
+        if (!c || !itemBatePedido(c, &exibido)) {
+          idx = farolachaui_resolver_pedido(&exibido, &revNova);
+          if (idx < 0) return 0;
+          c = cat_item(idx);
+        }
+        if (!c || !itemBatePedido(c, &exibido)) continue;
+        if (!itemInfantilPermitido(c, infantil)) return 0;
+        identidadeCardDe(&S.pedido, revNova, idx, c);
+        if (cat_revisao() == revNova) {
+          S.pedidoTem = 1;
+          return 1;
+        }
+        memset(&S.pedido, 0, sizeof S.pedido);
+      }
+      return 0;
     }
     if (revAtual != exibido.rev) {
       recarregar();
@@ -607,12 +782,20 @@ static int selecionarFocado(void) {
       if (!exibido.imdb[0] && exibido.tmdb <= 0 &&
           contarSemIdExato(&exibido) != 1)
         return 0;
+      c = cat_item(S.buscaItens[focoAntes].indice);
+      if (!c || !itemBatePedido(c, &exibido) ||
+          !itemInfantilPermitido(c, infantil) || cat_revisao() != S.rev)
+        return 0;
       S.pedido = S.cards[focoAntes];
       S.pedidoTem = 1;
       return 1;
     }
     c = cat_item(S.buscaItens[focoAntes].indice);
     if (!c || !itemBatePedido(c, &exibido) || cat_revisao() != exibido.rev) {
+      recarregar();
+      return 0;
+    }
+    if (!itemInfantilPermitido(c, infantil)) {
       recarregar();
       return 0;
     }
@@ -628,6 +811,8 @@ static int selecionarFocado(void) {
     if (!exibido.imdb[0] && exibido.tmdb <= 0 &&
         contarSemIdExato(&exibido) != 1)
       return 0;
+    c = farolacha_item(&S.achados[focoAntes], S.rev);
+    if (!itemInfantilPermitido(c, infantil)) return 0;
     S.pedido = S.cards[focoAntes];
     S.pedidoTem = 1;
     return 1;
@@ -638,6 +823,7 @@ static int selecionarFocado(void) {
     recarregar();
     return 0;
   }
+  if (!itemInfantilPermitido(c, infantil)) return 0;
 
   S.pedido = exibido;
   S.pedidoTem = 1;

@@ -96,6 +96,7 @@ static CatItem  A_itens[CAT_CAP];
 static int      A_n;
 static unsigned A_rev = 1u;
 static int      A_acrescentados;
+static int      A_repubOnAcrescentar;
 static int      A_abriuN;
 static int      A_detailAberto;
 static int      A_abriuIdx = -1;
@@ -109,11 +110,31 @@ int cat_n(void) { return A_n; }
 unsigned cat_revisao(void) { return A_rev; }
 
 int cat_acrescentar(const CatItem *item) {
+  int idx;
   if (!item || A_n >= CAT_CAP) return -1;
+  idx = A_n;
   A_itens[A_n] = *item;
   A_rev++;
   A_acrescentados++;
-  return A_n++;
+  A_n++;
+  if (A_repubOnAcrescentar == 1) {
+    // Simula republicacao na janela pos-cat_acrescentar substituindo o item.
+    memset(&A_itens[idx], 0, sizeof A_itens[idx]);
+    snprintf(A_itens[idx].imdb, sizeof A_itens[idx].imdb, "tt8888888");
+    snprintf(A_itens[idx].tipo, sizeof A_itens[idx].tipo, "movie");
+    snprintf(A_itens[idx].titulo, sizeof A_itens[idx].titulo, "obra_outra");
+    A_rev++;
+  } else if (A_repubOnAcrescentar == 2 && A_n < CAT_CAP) {
+    // Simula republicacao deslocando o item recem-acrescentado para idx + 1.
+    A_itens[idx + 1] = A_itens[idx];
+    memset(&A_itens[idx], 0, sizeof A_itens[idx]);
+    snprintf(A_itens[idx].imdb, sizeof A_itens[idx].imdb, "tt8888888");
+    snprintf(A_itens[idx].tipo, sizeof A_itens[idx].tipo, "movie");
+    snprintf(A_itens[idx].titulo, sizeof A_itens[idx].titulo, "obra_outra");
+    A_n++;
+    A_rev++;
+  }
+  return idx;
 }
 
 int cacavisto_filme(const char *imdb, long tmdb, long long *quando) {
@@ -161,6 +182,7 @@ static void zera_tudo(void) {
   A_n = 0;
   A_rev++;
   A_acrescentados = 0;
+  A_repubOnAcrescentar = 0;
   A_abriuN = 0;
   A_detailAberto = 0;
   A_abriuIdx = -1;
@@ -443,13 +465,15 @@ int main(int argc, char **argv) {
     CONFERE(info.estado == FB_PRONTO && info.motivo == FB_MOTIVO_OK && info.http == 200);
   }
 
-  // R4: adulto nao privado -> consentiu vem de farolsinal_recomendar() && farolconsent_estado().
+  // R4 + P2-3: adulto nao privado -> consentiu:1 SO quando farolsinal_recomendar() && farolconsent_estado() == 2 (SIM).
+  // "So nesta TV" (1) NUNCA vira consentiu:1!
   zera_tudo();
   seed_catalogo();
   V_seguro = 0;
   V_infantil = 0;
   V_recomendar = 0;
-  V_consent = 1;
+  V_consent = 2;
+  CONFERE(farolbusca_consentimento() == 0);
   snprintf(rota, sizeof rota, "%s/sem-consent", base);
   farolbusca_definir_url(rota);
   {
@@ -461,6 +485,7 @@ int main(int argc, char **argv) {
 
   V_recomendar = 1;
   V_consent = 0;
+  CONFERE(farolbusca_consentimento() == 0);
   {
     FarolBuscaInfo info;
     CONFERE(farolbusca_pedir("drama r4 sem consent") == 1);
@@ -469,7 +494,18 @@ int main(int argc, char **argv) {
   }
 
   V_recomendar = 1;
-  V_consent = 1;
+  V_consent = 1; // SO_TV (1) -> consentiu:0!
+  CONFERE(farolbusca_consentimento() == 0);
+  {
+    FarolBuscaInfo info;
+    CONFERE(farolbusca_pedir("drama r4 so tv") == 1);
+    info = esperar_busca(3000);
+    CONFERE(info.estado == FB_PRONTO && info.motivo == FB_MOTIVO_OK && info.http == 200);
+  }
+
+  V_recomendar = 1;
+  V_consent = 2; // SIM (2) -> consentiu:1!
+  CONFERE(farolbusca_consentimento() == 1);
   snprintf(rota, sizeof rota, "%s/so-consent1", base);
   farolbusca_definir_url(rota);
   {
@@ -696,6 +732,250 @@ int main(int argc, char **argv) {
   desenhar();
   CONFERE(escreveu(FT_BUSCA_FRASE_OFFLINE));
   c_offline = 0;
+
+  // ========================================================= S9 (FAROL31B): re-ditado B -> 429 + Voltar antes de adotar B
+  // Tela 7 mostra consulta A ("um suspense curto", 3 titulos). Usuario aciona
+  // microfone na Tela 7, dita B ("comedia rapida") e confirma; B responde 429
+  // (motivo=5), mas usuario aperta Voltar antes da Tela 7 adotar B.
+  // garantirRevisao() NAO pode adotar B nem misturar titulo A com aviso de B!
+  zera_tudo();
+  seed_catalogo();
+  st_teste_ligar(1);
+  snprintf(rota, sizeof rota, "%s/misto", base);
+  farolbusca_definir_url(rota);
+  resolver_abrir();
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  st_teste_evento("Vum suspense curto");
+  desenhar();
+  tecla(SDLK_RETURN);
+  esperar_voz_ir_para_achados(3000);
+  CONFERE(!farolvozui_ativo() && resolver_fase() == RESOLVER_FASE_ACHAR);
+  CONFERE(farolachaui_n() == 3);
+  desenhar();
+  CONFERE(escreveu("um suspense curto"));
+
+  // Aciona microfone da Tela 7, dita B, confirma contra /429, espera B chegar
+  // no backend (FB_PRONTO motivo=5) ainda sem rodar farolvozui_atualizar, e
+  // aperta Voltar para cancelar B antes de Tela 7 adotar B.
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  CONFERE(farolvozui_estado() == FV_OUVINDO);
+  snprintf(rota, sizeof rota, "%s/429", base);
+  farolbusca_definir_url(rota);
+  st_teste_evento("Vcomedia rapida");
+  desenhar();
+  CONFERE(farolvozui_estado() == FV_REVISAO);
+  tecla(SDLK_RETURN);
+  CONFERE(farolvozui_estado() == FV_BUSCANDO);
+  {
+    FarolBuscaInfo infoB = esperar_busca(3000);
+    CONFERE(infoB.estado == FB_PRONTO && infoB.motivo == FB_MOTIVO_LIMITE);
+  }
+  tecla(SDLK_ESCAPE);
+  CONFERE(!farolvozui_ativo() && resolver_fase() == RESOLVER_FASE_ACHAR);
+  desenhar();
+  CONFERE(farolachaui_n() == 3);
+  CONFERE(escreveu("um suspense curto"));
+  CONFERE(!escreveu("comedia rapida"));
+  CONFERE(!escreveu(FT_BUSCA_FRASE_LIMITE));
+  // OK no 1o cartaz de A continua abrindo a obra de A (tt0000101).
+  ir_foco(RESOLVER_B_ACHAR_CURTO);
+  tecla_app(SDLK_RETURN);
+  CONFERE(!resolver_aberto());
+  CONFERE(A_detailAberto == 1 && A_abriuN == 1);
+  CONFERE(!strcmp(A_abriuImdb, "tt0000101"));
+
+  // Quando B (429) E adotada pela Tela 7, titulo B e aviso de limite de B
+  // atualizam juntos (nunca titulo A com resultados/aviso de B).
+  zera_tudo();
+  seed_catalogo();
+  st_teste_ligar(1);
+  snprintf(rota, sizeof rota, "%s/misto", base);
+  farolbusca_definir_url(rota);
+  resolver_abrir();
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  st_teste_evento("Vum suspense curto");
+  desenhar();
+  tecla(SDLK_RETURN);
+  esperar_voz_ir_para_achados(3000);
+  CONFERE(farolachaui_n() == 3);
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  snprintf(rota, sizeof rota, "%s/429", base);
+  farolbusca_definir_url(rota);
+  st_teste_evento("Vcomedia rapida");
+  desenhar();
+  tecla(SDLK_RETURN);
+  esperar_voz_ir_para_achados(3000);
+  CONFERE(!farolvozui_ativo() && resolver_fase() == RESOLVER_FASE_ACHAR);
+  desenhar();
+  CONFERE(escreveu("comedia rapida"));
+  CONFERE(!escreveu("um suspense curto"));
+  CONFERE(escreveu(FT_BUSCA_FRASE_LIMITE));
+
+  // ========================================================= S4 (FAROL31B): busca lenta em voo cancelada na Tela 7
+  // B e lenta (/slow); usuario cancela ainda em FV_BUSCANDO e volta para A.
+  // Tela 7 preserva os 3 cartazes e titulo de A; OK no 1o cartaz de A abre A
+  // (inclusive mesmo se cat_revisao() mudar apos o cancelamento!).
+  zera_tudo();
+  seed_catalogo();
+  st_teste_ligar(1);
+  snprintf(rota, sizeof rota, "%s/misto", base);
+  farolbusca_definir_url(rota);
+  resolver_abrir();
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  st_teste_evento("Vum suspense curto");
+  desenhar();
+  tecla(SDLK_RETURN);
+  esperar_voz_ir_para_achados(3000);
+  CONFERE(farolachaui_n() == 3);
+
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  snprintf(rota, sizeof rota, "%s/slow", base);
+  farolbusca_definir_url(rota);
+  st_teste_evento("Vfilme lento b");
+  desenhar();
+  tecla(SDLK_RETURN);
+  CONFERE(farolvozui_estado() == FV_BUSCANDO);
+  usleep(80000);
+  tecla(SDLK_ESCAPE);
+  CONFERE(!farolvozui_ativo() && resolver_fase() == RESOLVER_FASE_ACHAR);
+  CONFERE(esperar_busca(1000).estado == FB_CANCELADO);
+  desenhar();
+  CONFERE(farolachaui_n() == 3);
+  CONFERE(escreveu("um suspense curto"));
+  CONFERE(!escreveu(FT_BUSCA_FRASE_PROCURANDO));
+  // OK no 1o cartaz de A logo apos cancelar B (mesma revisao) abre tt0000101!
+  ir_foco(RESOLVER_B_ACHAR_CURTO);
+  tecla_app(SDLK_RETURN);
+  CONFERE(!resolver_aberto());
+  CONFERE(A_detailAberto == 1 && A_abriuN == 1);
+  CONFERE(A_abriuIdx == 0 && !strcmp(A_abriuImdb, "tt0000101"));
+
+  // Tambem com cat_revisao() mudando apos o cancelamento de B: A continua valida!
+  A_detailAberto = 0; A_abriuN = 0; A_abriuIdx = -1; A_abriuImdb[0] = '\0';
+  snprintf(rota, sizeof rota, "%s/misto", base);
+  farolbusca_definir_url(rota);
+  resolver_abrir();
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  st_teste_evento("Vum suspense curto");
+  desenhar();
+  tecla(SDLK_RETURN);
+  esperar_voz_ir_para_achados(3000);
+  CONFERE(farolachaui_n() == 3);
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  snprintf(rota, sizeof rota, "%s/slow", base);
+  farolbusca_definir_url(rota);
+  st_teste_evento("Vfilme lento c");
+  desenhar();
+  tecla(SDLK_RETURN);
+  CONFERE(farolvozui_estado() == FV_BUSCANDO);
+  usleep(80000);
+  tecla(SDLK_ESCAPE);
+  CONFERE(!farolvozui_ativo() && resolver_fase() == RESOLVER_FASE_ACHAR);
+  CONFERE(esperar_busca(1000).estado == FB_CANCELADO);
+  // Desloca catalogo mesmo com farolbusca em FB_CANCELADO de B: A continua valida!
+  memmove(&A_itens[1], &A_itens[0], sizeof(CatItem) * (size_t)A_n);
+  A_n++;
+  memset(&A_itens[0], 0, sizeof A_itens[0]);
+  snprintf(A_itens[0].imdb, sizeof A_itens[0].imdb, "tt9999001");
+  snprintf(A_itens[0].tipo, sizeof A_itens[0].tipo, "movie");
+  snprintf(A_itens[0].titulo, sizeof A_itens[0].titulo, "desloca_s4");
+  A_rev++;
+  desenhar();
+  CONFERE(farolachaui_revisao() == A_rev);
+  CONFERE(farolachaui_n() == 3);
+  CONFERE(escreveu("um suspense curto"));
+  ir_foco(RESOLVER_B_ACHAR_CURTO);
+  tecla_app(SDLK_RETURN);
+  CONFERE(!resolver_aberto());
+  CONFERE(A_detailAberto == 1 && A_abriuN == 1);
+  CONFERE(A_abriuIdx == 1 && !strcmp(A_abriuImdb, "tt0000101"));
+
+  // ========================================================= P2-1 (FAROL31B): janela pos-cat_acrescentar
+  // Caso 1: catalogo republicado substitui o item recem-acrescentado por outra obra -> aborta sem abrir outra obra!
+  zera_tudo();
+  seed_catalogo();
+  st_teste_ligar(1);
+  snprintf(rota, sizeof rota, "%s/misto", base);
+  farolbusca_definir_url(rota);
+  resolver_abrir();
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  st_teste_evento("Vum suspense curto");
+  desenhar();
+  tecla(SDLK_RETURN);
+  esperar_voz_ir_para_achados(3000);
+  CONFERE(farolachaui_n() == 3);
+  A_repubOnAcrescentar = 1;
+  ir_foco(RESOLVER_B_ACHAR_RETOMAR); // 3o cartaz (tt9990001, fora do catalogo)
+  tecla_app(SDLK_RETURN);
+  A_repubOnAcrescentar = 0;
+  CONFERE(resolver_aberto());
+  CONFERE(A_abriuN == 0 && A_detailAberto == 0);
+
+  // Caso 2: catalogo republicado desloca o item recem-acrescentado para idx+1 -> rebusca pela identidade e abre tt9990001!
+  zera_tudo();
+  seed_catalogo();
+  st_teste_ligar(1);
+  snprintf(rota, sizeof rota, "%s/misto", base);
+  farolbusca_definir_url(rota);
+  resolver_abrir();
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  st_teste_evento("Vum suspense curto");
+  desenhar();
+  tecla(SDLK_RETURN);
+  esperar_voz_ir_para_achados(3000);
+  CONFERE(farolachaui_n() == 3);
+  A_repubOnAcrescentar = 2;
+  ir_foco(RESOLVER_B_ACHAR_RETOMAR); // 3o cartaz (tt9990001)
+  tecla_app(SDLK_RETURN);
+  A_repubOnAcrescentar = 0;
+  CONFERE(!resolver_aberto());
+  CONFERE(A_abriuN == 1 && A_detailAberto == 1);
+  CONFERE(!strcmp(A_abriuImdb, "tt9990001"));
+
+  // ========================================================= P2-4 (FAROL31B): revalidacao infantil no OK
+  // Liga perfil infantil DEPOIS de listar em adulto e ANTES do OK no cartaz "16" catalogado.
+  zera_tudo();
+  seed_catalogo();
+  st_teste_ligar(1);
+  snprintf(rota, sizeof rota, "%s/misto", base);
+  farolbusca_definir_url(rota);
+  resolver_abrir();
+  ir_foco(RESOLVER_B_ACHAR_VOZ);
+  tecla(SDLK_RETURN);
+  st_teste_evento("Vum suspense curto");
+  desenhar();
+  tecla(SDLK_RETURN);
+  esperar_voz_ir_para_achados(3000);
+  CONFERE(farolachaui_n() == 3);
+  {
+    FarolBuscaItem itens[FAROL_BUSCA_IDS_MAX];
+    unsigned rev = 0;
+    int nr = farolbusca_resolver(itens, FAROL_BUSCA_IDS_MAX, &rev);
+    int idxAbrir = -1;
+    CONFERE(nr >= 2 && !strcmp(itens[0].imdb, "tt0000101") && itens[0].noCatalogo == 1);
+    CONFERE(!strcmp(itens[1].imdb, "tt0000105") && itens[1].noCatalogo == 1);
+    V_infantil = 1;
+    // farolbusca_selecionar bloqueia cartaz "16" catalogado, mas libera cartaz "L".
+    CONFERE(farolbusca_selecionar(&itens[0]) == 0);
+    CONFERE(farolbusca_selecionar(&itens[1]) == 1);
+    CONFERE(farolbusca_pediu_abrir(&idxAbrir) == 1 && idxAbrir == 2);
+  }
+  // selecionarFocado (via OK na Tela 7) tambem bloqueia o cartaz "16" (tt0000101).
+  ir_foco(RESOLVER_B_ACHAR_CURTO);
+  tecla_app(SDLK_RETURN);
+  CONFERE(resolver_aberto());
+  CONFERE(A_abriuN == 0 && A_detailAberto == 0);
+  V_infantil = 0;
 
   // Escala e animacoes reduzidas desligadas (exercicio sem crashes).
   c_reduzidas = 0;

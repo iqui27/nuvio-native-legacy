@@ -16,6 +16,7 @@
 #ifndef NV_FAROLACHAUI_H
 #define NV_FAROLACHAUI_H
 
+#include <stdint.h>
 #include <SDL2/SDL.h>
 #include "farolacha.h"
 
@@ -50,6 +51,7 @@ void farolachaui_reset(void);
 void farolachaui_abrir(FarolAchaTipo tipo, int maxMin, unsigned semente);
 void farolachaui_abrir_op(const FarolAchaAbrir *op);
 void farolachaui_abrir_busca(const char *titulo);
+int  farolachaui_abrir_busca_geracao(const char *titulo, uint64_t geracao);
 void farolachaui_recarregar(void);
 
 // Processa evento de entrada (D-pad, OK, Voltar).

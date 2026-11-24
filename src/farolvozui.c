@@ -85,21 +85,8 @@ static void moverFoco(int dir) {
 }
 
 static int abrirAchadosCoerente(void) {
-  int tentativa;
-  for (tentativa = 0; tentativa < 3; tentativa++) {
-    FarolBuscaInfo info1, info2;
-    FarolBuscaItem itens[FAROL_ACHA_UI_MAX];
-    unsigned rev = 0;
-    if (farolbusca_estado(&info1) != FB_PRONTO) return 0;
-    if (V.buscaGeracao != 0 && info1.geracao != V.buscaGeracao) return 0;
-    (void)farolbusca_resolver(itens, FAROL_ACHA_UI_MAX, &rev);
-    if (farolbusca_estado(&info2) != FB_PRONTO) return 0;
-    // R8: garante que cabecalho (info) e resultados vem da mesma geracao.
-    if (info1.geracao != info2.geracao) continue;
-    farolachaui_abrir_busca(V.frase);
-    return 1;
-  }
-  return 0;
+  if (V.buscaGeracao == 0) return 0;
+  return farolachaui_abrir_busca_geracao(V.frase, V.buscaGeracao);
 }
 
 static void entrarAviso(const char *msg) {

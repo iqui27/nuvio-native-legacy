@@ -355,6 +355,8 @@ static int privadoEfetivo(void) {
   return tem ? val : (seguro_perfil_ativo() ? 1 : 0);
 }
 
+#define FAROL_CONSENT_SIM_VAL 2
+
 static int consentiuEfetivo(int priv, int inf) {
   int tem, val;
   if (priv || inf) return 0;
@@ -363,7 +365,8 @@ static int consentiuEfetivo(int priv, int inf) {
   val = consentiuCfg;
   pthread_mutex_unlock(&trava);
   if (tem) return val;
-  return (farolsinal_recomendar() && farolconsent_estado()) ? 1 : 0;
+  return (farolsinal_recomendar() &&
+          (farolconsent_estado() == FAROL_CONSENT_SIM_VAL)) ? 1 : 0;
 }
 
 int farolbusca_pedir_com(const char *frase, const FarolBuscaCtx *ctx) {
@@ -735,17 +738,20 @@ int farolbusca_abrir_item(const FarolBuscaItem *it) {
   for (tentativa = 0; tentativa < 3; tentativa++) {
     unsigned rev = cat_revisao();
     int nCat = cat_n();
-    idx = procurarNoCatalogo(it->imdb, it->tmdb, it->tipo, nCat);
-    if (cat_revisao() == rev) break;
-    idx = -1;
-  }
-  if (idx >= 0) {
-    if (infantil) {
-      const CatItem *c = cat_item(idx);
-      if (!itemInfantilPermitido(c, 1)) return -1;
+    int cand = procurarNoCatalogo(it->imdb, it->tmdb, it->tipo, nCat);
+    if (cand >= 0 && infantil) {
+      const CatItem *c = cat_item(cand);
+      if (!itemInfantilPermitido(c, 1)) {
+        if (cat_revisao() == rev) return -1;
+        continue;
+      }
     }
-    return idx;
+    if (cat_revisao() == rev) {
+      idx = cand;
+      break;
+    }
   }
+  if (idx >= 0) return idx;
 
   // R2: no perfil infantil, nunca acrescenta nem abre item fora do catalogo
   // sem classificacao segura confirmada.
@@ -765,7 +771,22 @@ int farolbusca_abrir_item(const FarolBuscaItem *it) {
 
 int farolbusca_selecionar(const FarolBuscaItem *it) {
   if (!it || (!it->imdb[0] && it->tmdb <= 0)) return 0;
-  if (perfil_infantil_ativo() && !it->noCatalogo) return 0;
+  if (perfil_infantil_ativo()) {
+    int tentativa, permitido = 0;
+    if (!it->noCatalogo) return 0;
+    for (tentativa = 0; tentativa < 3; tentativa++) {
+      unsigned rev = cat_revisao();
+      int nCat = cat_n();
+      int idx = procurarNoCatalogo(it->imdb, it->tmdb, it->tipo, nCat);
+      const CatItem *c = idx >= 0 ? cat_item(idx) : NULL;
+      int ok = itemInfantilPermitido(c, 1);
+      if (cat_revisao() == rev) {
+        permitido = ok;
+        break;
+      }
+    }
+    if (!permitido) return 0;
+  }
   pthread_mutex_lock(&trava);
   memset(&abrirPendente, 0, sizeof abrirPendente);
   abrirPendente.tem = 1;
