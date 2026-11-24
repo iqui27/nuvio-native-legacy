@@ -4388,6 +4388,20 @@ int ajustes_dts_tpk_modo(void) {
   return DTSTPK_DESLIGADO;
 #endif
 }
+// Farol #16 (CONVERTER_AUDIO): o valor CRU de AJ_DTS_AC3 para o par fazer/desfazer
+// devolver exatamente o que estava. .tpk: 0 desligado, 1 HLS; LG: 0 original,
+// 1 AAC, 2 AC3, 3 desligado. Fora do intervalo da build, nao grava.
+int ajustes_dts_valor(void) { return valor[AJ_DTS_AC3]; }
+void ajustes_dts_definir(int v) {
+#ifdef NV_TPK
+  const int maximo = 1;
+#else
+  const int maximo = 3;
+#endif
+  if (v < 0 || v > maximo || valor[AJ_DTS_AC3] == v) return;
+  valor[AJ_DTS_AC3] = v;
+  AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar());
+}
 int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
 int ajustes_dv7(void) { return lig(AJ_DV7); }
 int ajustes_dv7_mapping(void) { return lig(AJ_DV7_MAPPING); }

@@ -29,6 +29,7 @@
 #include "farolsinal.h"
 #include "faroltexto.h"
 #include "dts_tv.h"
+#include "farolacao_audio.h"
 #include "farolsonda.h"
 #include "redesaude.h"
 #include "addons.h"
@@ -1058,31 +1059,32 @@ void farol_fatos_ler(FarolFatos *out) {
   nAud = video_n_audio();
   at = video_audio_atual();
   if (nAud > 0) {
+    // #16: a mesma decisao pura que o executor TROCAR_FAIXA usa (farolacao_audio.h).
+    signed char ehDts[FAROLACAO_FAIXAS_MAX];
     const VideoFaixa *cur = (at >= 0 && at < nAud) ? video_audio(at) : NULL;
+    int nCons = nAud < FAROLACAO_FAIXAS_MAX ? nAud : FAROLACAO_FAIXAS_MAX;
     if (cur) out->faixaDts = video_faixa_dts(cur) > 0 ? 1 : 0;
     else if (video_dts_estado() != FAROL_VIDEO_DTS_NENHUM) out->faixaDts = 1;
-    out->outraFaixa = 0;
-    for (i = 0; i < nAud; i++) {
-      const VideoFaixa *fi;
-      if (i == at) continue;
-      fi = video_audio(i);
-      if (!fi) continue;
-      if (out->faixaDts > 0 && video_faixa_dts(fi) > 0) continue;
-      out->outraFaixa = 1;
-      break;
+    for (i = 0; i < nCons; i++) {
+      const VideoFaixa *fi = video_audio(i);
+      ehDts[i] = (fi && video_faixa_dts(fi) > 0) ? 1 : 0;
     }
+    out->outraFaixa = farolacao_audio_faixa_compativel(nCons, at, out->faixaDts,
+                                                       ehDts) >= 0 ? 1 : 0;
   } else if (video_dts_estado() != FAROL_VIDEO_DTS_NENHUM) {
     out->faixaDts = 1;
   }
 
-  if (out->plat == FP_WEBOS)
-    out->conversaoPossivel = (dts_playback_enabled() &&
-                              video_dts_estado() != FAROL_VIDEO_DTS_FALHOU) ? 1 : 0;
-  else if (out->plat == FP_TIZEN_TPK)
-    out->conversaoPossivel = (dts_tpk_disponivel() &&
-                              video_dts_estado() != FAROL_VIDEO_DTS_FALHOU) ? 1 : 0;
-  else
-    out->conversaoPossivel = -1;
+  // #16: so LG webOS e .tpk Tizen 6+ convertem; WASM, .tpk 4.0-5.5 e Android
+  // nunca (farolacao_audio_conversao_possivel: -1 sem conversao, 0 nao serve agora).
+  {
+    int motor = 0;
+    if (out->plat == FP_WEBOS) motor = dts_playback_enabled();
+    else if (out->plat == FP_TIZEN_TPK) motor = dts_tpk_disponivel();
+    out->conversaoPossivel = farolacao_audio_conversao_possivel(
+        out->plat, out->osMaior, motor,
+        video_dts_estado() == FAROL_VIDEO_DTS_FALHOU, out->audioRecusado > 0);
+  }
 
   // A fonte atual entra em variavel separada: a origem do erro do player
   // (out->fonteDebrid, 0/1) tem precedencia, e a fonte atual so completa

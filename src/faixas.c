@@ -31,6 +31,7 @@
 #include "audioext.h"
 #include "audioextlista.h"
 #include "streams.h"
+#include "farolacao_audio.h"
 #include <stdlib.h>
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
@@ -1155,6 +1156,44 @@ static void lembrarManual(int i) {
   lembrarEscolha(&e);
 }
 
+// A escolha de audio da pessoa (folha de faixas) e a do Farol (#16) passam por aqui.
+static void escolherAudioLembrando(int i) {
+  // F06: outra faixa de audio = outras falas; a escuta em curso nao vale mais.
+  if (video_audio_atual() != i) legsync_audio_trocou();
+  // A ordem automatica (audioescolha.h) volta a esta faixa neste titulo, e
+  // nos outros episodios: gravada no perfil (audiomemoria.h), com o numero
+  // dela para a mesma release (bingeGroup).
+  { const VideoFaixa *f = video_audio(i);
+    if (f && !player_id_canal()[0])
+      audioesc_lembrar_faixa(f->idioma, f->codec, f->rotulo, f->canais,
+                            video_audio_numero_memoria(f)); }
+  video_escolher_audio(i);
+}
+
+int faixas_audio_compativel(void) {
+  signed char dts[FAROLACAO_FAIXAS_MAX];
+  int n = video_n_audio(), at = video_audio_atual(), atDts = 0, i;
+  const VideoFaixa *cur;
+  if (n <= 0) return -1;
+  if (n > FAROLACAO_FAIXAS_MAX) n = FAROLACAO_FAIXAS_MAX;
+  cur = (at >= 0 && at < n) ? video_audio(at) : NULL;
+  if (cur) atDts = video_faixa_dts(cur) > 0;
+  for (i = 0; i < n; i++) {
+    const VideoFaixa *f = video_audio(i);
+    dts[i] = (f && video_faixa_dts(f) > 0) ? 1 : 0;
+  }
+  return farolacao_audio_faixa_compativel(n, at, atDts, dts);
+}
+
+int faixas_audio_trocar_compativel(void) {
+  int i;
+  if (player_id_canal()[0]) return 0;   // canal ao vivo: o Farol nao mexe
+  i = faixas_audio_compativel();
+  if (i < 0) return 0;
+  escolherAudioLembrando(i);
+  return 1;
+}
+
 static void aplicar(void) {
   if (coluna == 0 && extEscolher(foco[0])) return;
   // Donor tracks belong to the other version, not the main source's saved
@@ -1164,16 +1203,7 @@ static void aplicar(void) {
     return;
   }
   if (coluna == 0) {
-    // F06: outra faixa de audio = outras falas; a escuta em curso nao vale mais.
-    if (video_audio_atual() != foco[0]) legsync_audio_trocou();
-    // A ordem automatica (audioescolha.h) volta a esta faixa neste titulo, e
-    // nos outros episodios: gravada no perfil (audiomemoria.h), com o numero
-    // dela para a mesma release (bingeGroup).
-    { const VideoFaixa *f = video_audio(foco[0]);
-      if (f && !player_id_canal()[0])
-        audioesc_lembrar_faixa(f->idioma, f->codec, f->rotulo, f->canais,
-                              video_audio_numero_memoria(f)); }
-    video_escolher_audio(foco[0]);
+    escolherAudioLembrando(foco[0]);
   } else {
     // A pessoa escolheu: a automatica nao mexe mais nesta sessao, nem se a
     // escolha foi "Desativada".
