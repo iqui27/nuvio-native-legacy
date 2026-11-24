@@ -49,6 +49,9 @@ int farolpeca_ler(void *p, const char *j, int nc) { (void)p; (void)j; (void)nc; 
 int farolpeca_texto_tem(const void *t) { (void)t; return 0; }
 const char *farolpeca_x(const void *c, const void *t) { (void)c; (void)t; return ""; }
 int farolrec_nivel(const void *g) { (void)g; return 0; }
+int farolrec_escolher(const void *c, const void *k, int n, void *o, int m) {
+  (void)c; (void)k; (void)n; (void)o; (void)m; return 0;
+}
 int farolficha_ler_item(const CatItem *ci, void *dst) { (void)ci; (void)dst; return 0; }
 uint32_t farolficha_chave(const void *f) { (void)f; return 0; }
 int farolsinal_modelo(void *dst) { (void)dst; return 0; }

@@ -19,6 +19,8 @@
 #include "farolredator.h"
 #include "faroltexto.h"
 #include "farol.h"
+#include "farolacha.h"
+#include "farolachaui.h"
 #include "farolsonda.h"
 #include "resolver.h"
 #include "resolverregra.h"
@@ -155,6 +157,10 @@ int farolpeca_ler(void *p, const char *j, int n) { (void)p; (void)j; (void)n; re
 int farolpeca_texto_tem(const void *t) { (void)t; return 0; }
 const char *farolpeca_x(const void *c, const void *t) { (void)c; (void)t; return ""; }
 int farolrec_nivel(const void *g) { (void)g; return 0; }
+int farolrec_escolher(const void *c, const void *k, int n, void *o, int m) {
+  (void)c; (void)k; (void)n; (void)o; (void)m; return 0;
+}
+const char *player_id_canal(void) { return ""; }
 int farolsonda_iniciar(const char *u, const char *const *c) { (void)u; (void)c; return 0; }
 int farolsonda_estado(FarolSonda *o) { if (o) memset(o, 0, sizeof *o); return 0; }
 void farolsonda_cancelar(void) {}
@@ -296,6 +302,26 @@ static void trocarTela(int t) { c_tela = t; }
 #define tela c_tela
 static void addonguia_reconectar_debrid(int a) { (void)a; }
 const char *addons_base(int i) { (void)i; return ""; }
+int farolacao_rede_executar(int acao, int persistir) { (void)acao; (void)persistir; return 0; }
+static int abrirFarolPedido(const FarolAchaPedido *p) { (void)p; return 0; }
+void ilha_atividade(const char *t, float p) { (void)t; (void)p; }
+int segurar_venceu(Uint32 a, Uint32 d, const char *t) { (void)a; (void)d; (void)t; return 0; }
+const char *farolacha_rotulo(FarolAchaTipo t) { (void)t; return ""; }
+void farolachaui_reset(void) {}
+void farolachaui_abrir(FarolAchaTipo t, int m, unsigned s) { (void)t; (void)m; (void)s; }
+void farolachaui_abrir_op(const FarolAchaAbrir *op) { (void)op; }
+void farolachaui_abrir_busca(const char *t) { (void)t; }
+int farolachaui_abrir_busca_geracao(const char *t, uint64_t g) { (void)t; (void)g; return 0; }
+void farolachaui_recarregar(void) {}
+int farolachaui_evento(const SDL_Event *e, int *pv, int *pa) { (void)e; if (pv) *pv = 0; if (pa) *pa = 0; return 0; }
+void farolachaui_atualizar(float dt, Uint32 a) { (void)dt; (void)a; }
+void farolachaui_desenhar(float ox, float oy, float a, Uint32 ag) { (void)ox; (void)oy; (void)a; (void)ag; }
+int farolachaui_pediu_abrir(FarolAchaPedido *p) { (void)p; return 0; }
+int farolachaui_pediu_voz(void) { return 0; }
+int farolachaui_resolver_pedido(const FarolAchaPedido *p, unsigned *r) { (void)p; (void)r; return 0; }
+int farolachaui_pedido_bate(const CatItem *c, const FarolAchaPedido *p) { (void)c; (void)p; return 0; }
+int farolachaui_n(void) { return 0; }
+int farolachaui_foco(void) { return 0; }
 #include "app_resolver_bridge.inc"
 #undef tela
 

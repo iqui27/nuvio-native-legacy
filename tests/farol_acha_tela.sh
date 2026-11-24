@@ -41,9 +41,10 @@ python3 tests/farol_resolver_ponte.py "$work"
   tests/farol_acha_tela.c src/resolver.c src/farolachaui.c src/farolacha.c \
   src/resolverregra.c src/farolregra.c src/farol.c \
   src/farolerro.c src/farolanel.c src/fontesonda.c src/extplayer.c \
-  src/addonguia.c src/addonmodo.c \
+  src/addonguia.c src/addonmodo.c src/farolacao_addon.c src/addonstats.c \
   -I"$work" -Isrc -Itests $(pkg-config --cflags sdl2 2>/dev/null || echo -I/usr/include/SDL2) \
   $(pkg-config --libs sdl2 2>/dev/null || echo -lSDL2) -lm -lpthread \
+  -Wl,--wrap=SDL_GetTicks \
   -o "$work/farol-acha-tela-test"
 
 if [ "${SANITIZE:-1}" = thread ] && command -v setarch >/dev/null 2>&1 &&

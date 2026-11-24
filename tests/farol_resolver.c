@@ -503,6 +503,9 @@ int farolpeca_ler(void *pc, const char *j, int nc) { (void)pc; (void)j; (void)nc
 int farolpeca_texto_tem(const void *t) { (void)t; return 0; }
 const char *farolpeca_x(const void *c, const void *t) { (void)c; (void)t; return ""; }
 int farolrec_nivel(const void *g) { (void)g; return 0; }
+int farolrec_escolher(const void *c, const void *k, int n, void *o, int m) {
+  (void)c; (void)k; (void)n; (void)o; (void)m; return 0;
+}
 int farolficha_ler_item(const CatItem *ci, void *dst) { (void)ci; (void)dst; return 0; }
 uint32_t farolficha_chave(const void *f) { (void)f; return 0; }
 int farolsinal_modelo(void *dst) { (void)dst; return 0; }
@@ -511,6 +514,7 @@ void farolsinal_mostrado(const CatItem *ci) { (void)ci; }
 int farolsinal_recomendar(void) { return 0; }
 void farolsinal_zerar_gosto(void) {}
 void farolsinal_definir_recomendar(int ligado) { (void)ligado; }
+const char *player_id_canal(void) { return ""; }
 int seguro_perfil_ativo(void) { return 0; }
 int perfil_infantil_ativo(void) { return 0; }
 int perfis_ativo(void) { return 1; }

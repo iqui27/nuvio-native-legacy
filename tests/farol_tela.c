@@ -272,7 +272,7 @@ int main(void) {
   desenhar();
   CONFERE(escreveu(FT_A_CAUSA_ENCONTRADA));
   CONFERE(escreveu(FT_NAO_TESTADO));                           // o que vem depois fica apagado
-  varredura(2, RESOLVER_FASE_VEREDITO, -1);                    // Tentar de novo + Testar outro
+  varredura(3, RESOLVER_FASE_VEREDITO, -1);                    // Tentar de novo + Reconectar rede (#34) + Testar outro
   // OK adianta a luz.
   tecla(SDLK_ESCAPE);
   c_offline = 0;

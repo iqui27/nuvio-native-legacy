@@ -23,6 +23,8 @@
 #undef FarolMotivo
 #include "faroltexto.h"
 #include "farol.h"
+#include "farolacha.h"
+#include "farolachaui.h"
 #include "farolcena.h"
 #include "farolsonda.h"
 #include "resolver.h"
@@ -244,6 +246,24 @@ float txt_tracking(TxtEstilo e, const char *s, int r, int g, int b, float x, flo
   (void)e; if (a > 0.0f) anotar_txt(s); (void)r; (void)g; (void)b; (void)x; (void)y; (void)t;
   return 0.0f;
 }
+void ilha_atividade(const char *texto, float progresso) { (void)texto; (void)progresso; }
+const char *farolacha_rotulo(FarolAchaTipo t) { (void)t; return ""; }
+void farolachaui_reset(void) {}
+void farolachaui_abrir(FarolAchaTipo t, int m, unsigned s) { (void)t; (void)m; (void)s; }
+void farolachaui_abrir_op(const FarolAchaAbrir *op) { (void)op; }
+void farolachaui_abrir_busca(const char *t) { (void)t; }
+int farolachaui_abrir_busca_geracao(const char *t, uint64_t g) { (void)t; (void)g; return 0; }
+void farolachaui_recarregar(void) {}
+int farolachaui_evento(const SDL_Event *e, int *pv, int *pa) { (void)e; if (pv) *pv = 0; if (pa) *pa = 0; return 0; }
+void farolachaui_atualizar(float dt, Uint32 a) { (void)dt; (void)a; }
+void farolachaui_desenhar(float ox, float oy, float a, Uint32 ag) { (void)ox; (void)oy; (void)a; (void)ag; }
+int farolachaui_pediu_abrir(FarolAchaPedido *p) { (void)p; return 0; }
+int farolachaui_pediu_voz(void) { return 0; }
+int farolachaui_resolver_pedido(const FarolAchaPedido *p, unsigned *r) { (void)p; (void)r; return 0; }
+int farolachaui_pedido_bate(const CatItem *c, const FarolAchaPedido *p) { (void)c; (void)p; return 0; }
+int farolachaui_n(void) { return 0; }
+int farolachaui_foco(void) { return 0; }
+const char *player_id_canal(void) { return ""; }
 
 /* --------------------- 1. Varredor JSON recursivo ------------------------ */
 typedef struct {

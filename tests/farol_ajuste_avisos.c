@@ -162,6 +162,7 @@ int main(int argc, char **argv) {
   ajustes_farol_avisos_definir(1);
   assert(ajustes_farol_avisos() == 1);
   assert(farolilha_ativo() == 1);
+  farol_teste_fatos(&ff);
   farol_registrar_consertou(FAROL_A_RECONECTAR_REDE);
   agora += 5000u;
   ilhasinais_passo(agora);

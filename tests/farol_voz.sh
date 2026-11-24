@@ -184,10 +184,11 @@ done
   src/farolacha.c \
   src/resolverregra.c src/farolregra.c src/farol.c \
   src/farolerro.c src/farolanel.c src/fontesonda.c \
-  src/addonguia.c src/addonmodo.c src/sistexto.c src/entrada_texto.c \
+  src/addonguia.c src/addonmodo.c src/farolacao_addon.c src/addonstats.c src/sistexto.c src/entrada_texto.c \
   src/rede.c src/redeurl.c \
   -I"$work" -Isrc -Itests $sdl_cf \
   $(pkg-config --libs sdl2 2>/dev/null || echo -lSDL2) "${link_dl[@]+"${link_dl[@]}"}" -lm \
+  -Wl,--wrap=SDL_GetTicks \
   -o "$work/farol-voz-test"
 
 rc=0

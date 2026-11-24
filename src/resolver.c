@@ -1285,15 +1285,13 @@ void resolver_evento(const SDL_Event *e) {
     return;
   }
   if (fase == RESOLVER_FASE_ESCOLHA) {
-    if (e->type == SDL_KEYDOWN) {
-      int pediuSair = 0, pediuAbrir = 0;
-      farolescolhaui_evento(e, &pediuSair, &pediuAbrir);
-      (void)pediuAbrir;   // app.c consome por resolver_pediu_abrir
-      if (farolescolhaui_pediu_fechar()) { fechar(); return; }   // o P4 abriu
-      if (pediuSair) {
-        ir_fase(RESOLVER_FASE_SINTOMA);
-        foco = B_ACHAR_ESCOLHA;
-      }
+    int pediuSair = 0, pediuAbrir = 0;
+    farolescolhaui_evento(e, &pediuSair, &pediuAbrir);
+    (void)pediuAbrir;   // app.c consome por resolver_pediu_abrir
+    if (farolescolhaui_pediu_fechar()) { fechar(); return; }   // o P4 abriu
+    if (pediuSair) {
+      ir_fase(RESOLVER_FASE_SINTOMA);
+      foco = B_ACHAR_ESCOLHA;
     }
     return;
   }
@@ -1317,7 +1315,9 @@ void resolver_evento(const SDL_Event *e) {
   if (e->type != SDL_KEYDOWN) return;
   k = e->key.keysym.sym;
   if (tecla_ok(k)) {
-    // KEYDOWN repetido do mesmo OK segurando: mantem armado.
+    // KEYDOWN repetido do mesmo OK segurando: mantem armado (#34).
+    // Nos cards "Achar o que ver" (#25/#31/#50), repeat em OK e ignorado;
+    // nas demais celulas sem long-press (ex.: ENVIO), repeat segue ativo.
     if (!e->key.repeat) {
       okArmado = foco_desliga_hdr();
       okLongo = 0;
@@ -1325,6 +1325,11 @@ void resolver_evento(const SDL_Event *e) {
         if (!t) t = 1;               // ticks reais podem ser 0 no 1o quadro
         okDesde = t; }               // (tests/farol_resolver, GCC/Clang)
       if (!okArmado) ok(0);   // fora da celula longa, o OK continua no KEYDOWN
+    } else if (!okArmado && !foco_desliga_hdr() &&
+               !(fase == RESOLVER_FASE_INICIO &&
+                 ((foco >= B_ACHAR_0 && foco <= B_ACHAR_3) ||
+                  foco == B_ACHAR_VOZ || foco == B_ACHAR_ESCOLHA))) {
+      ok(0);
     }
     return;
   }

@@ -53,10 +53,10 @@ mkdir -p "$work/dados"
   $(pkg-config --cflags sdl2 glesv2) \
   tests/farol_consent.c \
   src/farolconsent.c src/farolconsentui.c \
-  src/farolcompor.c src/farolgosto.c src/farolrec.c src/farolpeca.c src/faroltexto.c \
+  src/farolcompor.c src/farolgosto.c src/farolinfo.c src/farolrec.c src/farolpeca.c src/faroltexto.c \
   src/farolregra.c src/farol.c src/farolanel.c src/farolerro.c src/farolperfil.c src/farolredator.c \
   src/resolver.c src/resolverregra.c \
-  src/fontesonda.c src/extplayer.c src/addonmodo.c \
+  src/fontesonda.c src/extplayer.c src/addonmodo.c src/segurar.c \
   src/js.c src/rede.c src/redeurl.c \
   $(pkg-config --libs sdl2) -lm -lpthread -ldl \
   -o "$work/consent"
