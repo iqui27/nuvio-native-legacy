@@ -13,6 +13,7 @@
 #include <SDL2/SDL.h>
 #include "tpkteclas.h"
 #include "central.h"
+#include "resolver.h"
 #include "sdlcompat.h"
 #include <SDL2/SDL_image.h>
 #include "gl_compat.h"
@@ -538,6 +539,8 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     // "abrir:tt0121955" abre o titulo direto (app.c). Porta de teste, como
     // "guia".
     if (dp && !strncmp(linha, "abrir:", 6)) { app_abrir_titulo(dp + 1); continue; }
+    // "farol" abre o Farol de qualquer lugar (resolver.h). Porta de teste.
+    if (!strcmp(linha, "farol")) { resolver_abrir(); continue; }
     // "ime:abrir", "ime:voz", "ime:fechar": teclado do sistema direto
     // (entrada_texto.h), para medir na TV sem depender da tela que o liga.
     if (dp && !strncmp(linha, "ime:", 4)) {

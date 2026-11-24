@@ -12,7 +12,7 @@ static const GuiaCap GUIA_CAPS[] = {
   { "TV ao vivo", "aj_tv-minimal-play", "Guia de TV, zapping e provedores" },
   { "Aparência", "aj_palette", "Vidro, cor, fonte e cartazes" },
   { "Desempenho e diagnóstico", "aj_monitor-cog", "Medir e ajustar o app a esta TV" },
-  { "Problemas comuns", "aj_life-buoy", "O que fazer quando algo não funciona" },
+  { FT_NOME, "aj_farol", "O que fazer quando algo não funciona" },
 };
 static const GuiaEnt GUIA_ENT[] = {
   { 0, "Como usar este guia", "aj_compass", 0, "c-guia",
@@ -306,6 +306,9 @@ static const GuiaEnt GUIA_ENT[] = {
   { 10, "Deixar a TV mais leve", "aj_feather", 1, "d-leve",
     "Resolução da interface em Automática só usa 4K quando a TV aguenta. Em TV fraca, 720p e Efeitos visuais em Leves tiram peso. O vídeo não muda.",
     "Ajustes › Esta TV", AJ_RESOLUCAO, GT_NADA, GX_NADA, GV_NADA },
+  { 11, FT_NOME, "aj_farol", 1, "p-farol",
+    "Testa a conexão, o cache e a TV para achar por que o vídeo falhou e abrir o conserto ou envio de registro.",
+    "Ajustes › Sobre e ajuda › Farol", AJ_FAROL, GT_FAROL, GX_NADA, GV_NADA },
   { 11, "Enviar registro", "aj_send", 0, "p-registro",
     "Quando algo dá errado, mande o registro desta sessão para quem faz o app. Vai sem senhas nem chaves. Na LG, a tecla VERMELHA abre o painel do registro.",
     "Ajustes › Sobre e ajuda › Enviar registro", AJ_ENVIAR_LOG, GT_NADA, GX_NADA, GV_NADA },
@@ -332,4 +335,4 @@ static const GuiaEnt GUIA_ENT[] = {
     "Ajustes › Reprodução › Mais opções › Som e vídeo desta TV", AJ_DTS_AC3, GT_NADA, GX_NADA, GV_NADA },
 };
 #define GUIA_NCAPS 12
-#define GUIA_NENT 104
+#define GUIA_NENT 105

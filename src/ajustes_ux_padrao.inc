@@ -403,3 +403,4 @@
   1, /* barrasPretasLocal: Desligado */
   0, /* assMotorNovoLocal: Ligado (V_LIGA 0) — motor novo de ASS de fabrica */
   1, /* farolAvisosLocal: 1 (padrao) = Ligado; 0 = So quando eu abrir (#27) */
+  0, /* Farol (Sobre e ajuda): action (#23) */
