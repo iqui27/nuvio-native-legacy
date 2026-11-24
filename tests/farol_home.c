@@ -401,6 +401,7 @@ __attribute__((weak)) const char *video_hdr(void) { return "none"; }
 __attribute__((weak)) int video_n_audio(void) { return 0; }
 __attribute__((weak)) int video_registro_negado(void) { return 0; }
 __attribute__((weak)) int video_tem_dolby_vision(void) { return 0; }
+__attribute__((weak)) const char *player_id_canal(void) { return ""; }
 
 // ------------------------------------------------------------- helpers ----
 static void esperarQuieto(void) {

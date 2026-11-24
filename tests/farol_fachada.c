@@ -185,6 +185,7 @@ uint64_t player_ultimo_erro_seq(void) {
 int player_externo_disponivel_tentativa(uint64_t tentativa) {
   return tentativa && tentativa == c_erroTentativa && c_extDisp;
 }
+const char *player_id_canal(void) { return ""; }   // nunca em canal ao vivo
 
 static void resetCenario(void) {
   farolanel_zerar();

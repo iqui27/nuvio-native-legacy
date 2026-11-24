@@ -110,6 +110,11 @@ void memlog_devolver(void) {
 
 void memlog_quando_aviso(void (*cb)(void)) { avisoCb = cb; }
 
+void memlog_aliviar(void) {
+  if (avisoCb) avisoCb();
+  else memlog_devolver();
+}
+
 int memlog_pode_reabrir(long (*livre)(void), void (*aliviar)(void)) {
   long mb = livre();
   if (mb < 0 || mb >= MEMLOG_PISO_MB) return 1;
