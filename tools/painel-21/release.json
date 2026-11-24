@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "meta": {
     "title": "Nuvio 2.1",
-    "updatedAt": "2026-11-24T04:11:57+00:00",
+    "updatedAt": "2026-11-24T04:15:25+00:00",
     "source": "VPS + GitHub",
     "repository": "https://github.com/iqui27/nuvio-native-legacy",
     "integration": {
@@ -17,7 +17,7 @@
     "githubCheckedAt": "2026-11-23T19:29:42+00:00",
     "design": "Workbench; acento rosa do Nuvio (PR #812), sem efeitos de vidro no painel.",
     "inventoryUnits": 60,
-    "lastVpsReportedAt": "2026-11-24T04:09:00+00:00",
+    "lastVpsReportedAt": "2026-11-24T04:12:00+00:00",
     "integrationHistory": [
       {
         "branch": "integracao/2.1",
@@ -117,16 +117,15 @@
       },
       "implementation": {
         "status": "IMPLEMENTANDO",
-        "reportedAt": "2026-11-24T04:09:00+00:00",
-        "sourceLine": 263,
-        "activeSlots": 5,
+        "reportedAt": "2026-11-24T04:12:00+00:00",
+        "sourceLine": 264,
+        "activeSlots": 4,
         "totalSlots": 6,
         "operationalWave": 2,
         "host": "ibm-ephemeral",
         "activeItems": [
           "farol-19",
           "farol-18",
-          "farol-16",
           "farol-17",
           "farol-34"
         ],
@@ -135,29 +134,26 @@
         "workBase": "agente/base-21f-farol-onda2@2d26d54290",
         "previousState": {
           "status": "IMPLEMENTANDO",
-          "reportedAt": "2026-11-24T04:06:00+00:00",
-          "sourceLine": 260,
-          "activeSlots": 6,
+          "reportedAt": "2026-11-24T04:09:00+00:00",
+          "sourceLine": 263,
+          "activeSlots": 5,
           "totalSlots": 6,
           "operationalWave": 2,
           "host": "ibm-ephemeral",
           "activeItems": [
             "farol-19",
             "farol-18",
-            "farol-20",
-            "farol-15",
             "farol-16",
-            "farol-17"
-          ],
-          "criticalItem": "farol-19",
-          "immediateQueue": [
+            "farol-17",
             "farol-34"
           ],
+          "criticalItem": "farol-19",
+          "immediateQueue": [],
           "workBase": "agente/base-21f-farol-onda2@2d26d54290",
           "previousState": {
             "status": "IMPLEMENTANDO",
-            "reportedAt": "2026-11-24T04:00:00+00:00",
-            "sourceLine": 258,
+            "reportedAt": "2026-11-24T04:06:00+00:00",
+            "sourceLine": 260,
             "activeSlots": 6,
             "totalSlots": 6,
             "operationalWave": 2,
@@ -167,19 +163,18 @@
               "farol-18",
               "farol-20",
               "farol-15",
-              "farol-33",
-              "farol-16"
+              "farol-16",
+              "farol-17"
             ],
             "criticalItem": "farol-19",
             "immediateQueue": [
-              "farol-17",
               "farol-34"
             ],
             "workBase": "agente/base-21f-farol-onda2@2d26d54290",
             "previousState": {
               "status": "IMPLEMENTANDO",
-              "reportedAt": "2026-11-24T03:53:00+00:00",
-              "sourceLine": 255,
+              "reportedAt": "2026-11-24T04:00:00+00:00",
+              "sourceLine": 258,
               "activeSlots": 6,
               "totalSlots": 6,
               "operationalWave": 2,
@@ -190,43 +185,103 @@
                 "farol-20",
                 "farol-15",
                 "farol-33",
-                "farol-52"
+                "farol-16"
               ],
               "criticalItem": "farol-19",
               "immediateQueue": [
-                "farol-16",
                 "farol-17",
                 "farol-34"
               ],
               "workBase": "agente/base-21f-farol-onda2@2d26d54290",
               "previousState": {
-                "status": "CORRECAO",
-                "activeItem": "farol-52",
-                "task": "FAROL52B",
+                "status": "IMPLEMENTANDO",
+                "reportedAt": "2026-11-24T03:53:00+00:00",
+                "sourceLine": 255,
+                "activeSlots": 6,
+                "totalSlots": 6,
+                "operationalWave": 2,
                 "host": "ibm-ephemeral",
-                "executor": "claudeAgent",
-                "model": "claude-opus-5-5",
-                "reportedAt": "2026-11-24T03:25:00+00:00",
-                "sourceLine": 252,
+                "activeItems": [
+                  "farol-19",
+                  "farol-18",
+                  "farol-20",
+                  "farol-15",
+                  "farol-33",
+                  "farol-52"
+                ],
+                "criticalItem": "farol-19",
+                "immediateQueue": [
+                  "farol-16",
+                  "farol-17",
+                  "farol-34"
+                ],
+                "workBase": "agente/base-21f-farol-onda2@2d26d54290",
                 "previousState": {
-                  "status": "PAUSA",
-                  "reportedAt": "2026-11-24T01:04:00+00:00",
-                  "activeSlots": 1,
-                  "totalSlots": 6,
+                  "status": "CORRECAO",
                   "activeItem": "farol-52",
-                  "note": "Pausa de novos despachos no relato das 01h04: onda 2 depende do aceite da #14; Gosto depende de #19/#22/#25/#31/#52. FAROL52 foi entregue às 02h56; não foi relatada retomada geral nem nova alocação."
+                  "task": "FAROL52B",
+                  "host": "ibm-ephemeral",
+                  "executor": "claudeAgent",
+                  "model": "claude-opus-5-5",
+                  "reportedAt": "2026-11-24T03:25:00+00:00",
+                  "sourceLine": 252,
+                  "previousState": {
+                    "status": "PAUSA",
+                    "reportedAt": "2026-11-24T01:04:00+00:00",
+                    "activeSlots": 1,
+                    "totalSlots": 6,
+                    "activeItem": "farol-52",
+                    "note": "Pausa de novos despachos no relato das 01h04: onda 2 depende do aceite da #14; Gosto depende de #19/#22/#25/#31/#52. FAROL52 foi entregue às 02h56; não foi relatada retomada geral nem nova alocação."
+                  },
+                  "note": "Correção da #52 despachada; não é retomada geral das outras implementações. Nenhuma nova contagem global de vagas foi reportada."
                 },
-                "note": "Correção da #52 despachada; não é retomada geral das outras implementações. Nenhuma nova contagem global de vagas foi reportada."
+                "note": "Cinco novas implementações mais FAROL52B ocupam 6/6 conforme VPS. Não são entregas, aprovações ou integração; a fila imediata ainda não foi lançada."
               },
-              "note": "Cinco novas implementações mais FAROL52B ocupam 6/6 conforme VPS. Não são entregas, aprovações ou integração; a fila imediata ainda não foi lançada."
+              "note": "Seis implementações na IBM conforme VPS; FAROL52B entregue saiu das vagas e #16 entrou. #17/#34 permanecem na fila por inferência da ordem anterior, sem novos lançamentos reportados."
             },
-            "note": "Seis implementações na IBM conforme VPS; FAROL52B entregue saiu das vagas e #16 entrou. #17/#34 permanecem na fila por inferência da ordem anterior, sem novos lançamentos reportados."
+            "note": "Seis implementações na IBM conforme VPS; Farol 33 entregue saiu das vagas e #17 entrou. #34 é a fila restante inferida dos relatos anteriores, sem lançamento reportado."
           },
-          "note": "Seis implementações na IBM conforme VPS; Farol 33 entregue saiu das vagas e #17 entrou. #34 é a fila restante inferida dos relatos anteriores, sem lançamento reportado."
+          "note": "Despacho completo da onda operacional 2 reportado às 04h08 UTC, com 6/6 naquele instante. Após entrega do #20 às 04h09, cinco implementações remanescentes são inferidas localmente (#19/#18/#16/#17/#34), sem substituto reportado; não é uma nova contagem VPS. Fila imediata esvaziada; entregas 15/20/33 aguardam r1 por disco, sem aprovação ou integração.",
+          "activeSlotsInferred": true,
+          "activeSlotsSource": "Inferência local: seis vagas na linha 262 menos entrega do Farol 20 na linha 263, sem substituto reportado",
+          "lastReportedCapacity": {
+            "activeSlots": 6,
+            "totalSlots": 6,
+            "activeItems": [
+              "farol-19",
+              "farol-18",
+              "farol-20",
+              "farol-16",
+              "farol-17",
+              "farol-34"
+            ],
+            "reportedAt": "2026-11-24T04:08:00+00:00",
+            "sourceLine": 262
+          },
+          "deliveredSinceLastCapacity": [
+            "farol-20"
+          ],
+          "dispatchComplete": {
+            "reported": true,
+            "operationalWave": 2,
+            "reportedAt": "2026-11-24T04:08:00+00:00",
+            "sourceLine": 262,
+            "dispatchedItems": [
+              "farol-19",
+              "farol-18",
+              "farol-20",
+              "farol-15",
+              "farol-33",
+              "farol-16",
+              "farol-17",
+              "farol-34"
+            ],
+            "integrationVerified": false
+          }
         },
-        "note": "Despacho completo da onda operacional 2 reportado às 04h08 UTC, com 6/6 naquele instante. Após entrega do #20 às 04h09, cinco implementações remanescentes são inferidas localmente (#19/#18/#16/#17/#34), sem substituto reportado; não é uma nova contagem VPS. Fila imediata esvaziada; entregas 15/20/33 aguardam r1 por disco, sem aprovação ou integração.",
+        "note": "Despacho completo da onda operacional 2 reportado às 04h08 UTC, com 6/6 naquele instante. Após entregas do #20 às 04h09 e do #16 às 04h12, quatro implementações remanescentes são inferidas localmente (#19/#18/#17/#34), sem substitutos reportados; não é nova contagem VPS. Fila imediata esvaziada; entregas 15/16/20/33 aguardam r1 por disco, sem aprovação ou integração.",
         "activeSlotsInferred": true,
-        "activeSlotsSource": "Inferência local: seis vagas na linha 262 menos entrega do Farol 20 na linha 263, sem substituto reportado",
+        "activeSlotsSource": "Inferência local: seis vagas na linha 262 menos entregas do Farol 20 na linha 263 e do Farol 16 na linha 264, sem substitutos reportados",
         "lastReportedCapacity": {
           "activeSlots": 6,
           "totalSlots": 6,
@@ -242,7 +297,8 @@
           "sourceLine": 262
         },
         "deliveredSinceLastCapacity": [
-          "farol-20"
+          "farol-20",
+          "farol-16"
         ],
         "dispatchComplete": {
           "reported": true,
@@ -273,8 +329,8 @@
           "scope": "correção especificada e trabalho mecânico"
         },
         "devinAcp": "parado conforme VPS",
-        "ibmClaudeAgent": "Despacho da onda operacional 2 completo. Último relato de vagas: 6/6 às 04h08; após entrega do #20 às 04h09, cinco implementações remanescentes inferidas, sem substituto reportado. R1 de 15/20/33 e r2 do 52 aguardam disco; nenhuma limpeza ou retomada confirmada.",
-        "reportedAt": "2026-11-24T04:09:00+00:00",
+        "ibmClaudeAgent": "Despacho da onda operacional 2 completo. Último relato de vagas: 6/6 às 04h08; após entregas de 20/16 até 04h12, quatro implementações remanescentes inferidas, sem substitutos reportados. R1 de 15/16/20/33 e r2 do 52 aguardam disco; nenhuma limpeza ou retomada confirmada.",
+        "reportedAt": "2026-11-24T04:12:00+00:00",
         "newBuildRoute": "VPS com builds/runs/revisões parados por piso de disco; IBM mantém seis implementações conforme relato",
         "ibmActiveSlotsReported": 6,
         "ibmTotalSlotsReported": 6
@@ -370,8 +426,8 @@
           "lastThresholdConfirmation": {
             "belowFloorReported": true,
             "floorGb": 20,
-            "reportedAt": "2026-11-24T04:09:00+00:00",
-            "sourceLine": 263,
+            "reportedAt": "2026-11-24T04:12:00+00:00",
+            "sourceLine": 264,
             "note": "Confirma apenas abaixo do piso; medição de 15G permanece datada de 04h00 UTC, linha 257"
           },
           "previousThresholdConfirmations": [
@@ -381,6 +437,13 @@
               "reportedAt": "2026-11-24T04:06:00+00:00",
               "sourceLine": 259,
               "note": "Confirma apenas abaixo do piso; não é nova medição de 15G, que permanece datada de 04h00 UTC"
+            },
+            {
+              "belowFloorReported": true,
+              "floorGb": 20,
+              "reportedAt": "2026-11-24T04:09:00+00:00",
+              "sourceLine": 263,
+              "note": "Confirma apenas abaixo do piso; medição de 15G permanece datada de 04h00 UTC, linha 257"
             }
           ]
         }
@@ -447,6 +510,15 @@
           "verdictIssued": false,
           "sourceLine": 263,
           "reportedAt": "2026-11-24T04:09:00+00:00"
+        },
+        "farol-16": {
+          "round": "r1",
+          "sha": "fd0270f902",
+          "status": "blocked_before_start_reported",
+          "blockedBy": "vps-root-disk",
+          "verdictIssued": false,
+          "sourceLine": 264,
+          "reportedAt": "2026-11-24T04:12:00+00:00"
         }
       },
       "wave2ApprovalGate": {
@@ -470,14 +542,14 @@
         "resumeNotReported": true,
         "localDashboardUnaffected": true,
         "latestBlockedReview": {
-          "item": "farol-20",
+          "item": "farol-16",
           "round": "r1",
-          "reportedAt": "2026-11-24T04:09:00+00:00",
-          "sourceLine": 263
+          "reportedAt": "2026-11-24T04:12:00+00:00",
+          "sourceLine": 264
         }
       }
     },
-    "lastVpsLine": 263,
+    "lastVpsLine": 264,
     "wave2Base": {
       "branch": "agente/base-21f-farol-onda2",
       "sha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
@@ -1082,19 +1154,20 @@
         "farol-14"
       ],
       "allDependencies": false,
-      "status": "IMPLEMENTANDO",
+      "status": "BLOQUEADA",
       "wave": "C",
-      "sha": null,
+      "sha": "fd0270f902",
       "batch": null,
-      "note": "Implementação lançada na IBM com claudeAgent Sonnet, sobre agente/base-21f-farol-onda2@2d26d54290 (21f + Farol 14). Sai da fila imediata e ocupa a vaga liberada pela entrega FAROL52B: IBM permanece em 6/6 conforme VPS. A base publicada não é SHA entregue da issue; ainda sem commit próprio, revisão, integração ou TV física confirmados.",
-      "source": "Relato VPS · linha 258",
+      "note": "Entregue na IBM por claudeAgent Sonnet em fd0270f902: 11 arquivos, sem tocar src/app.c. Commit, pai 2d26d54290 (base de trabalho da onda 2), quantidade de arquivos e ausência de alteração em app.c conferidos no GitHub. VPS reporta farol_acao_audio/fachada/regra/home normal+ASan + SDL2 RC 0; testes não reproduzidos nesta VM. Aguarda revisão r1, ainda não iniciada por disco VPS abaixo de 20G. Sem aprovação, integração ou TV física confirmadas; entrega não altera o candidato 21f original.",
+      "source": "Relato VPS · linha 264; commit, pai, 11 arquivos e ausência de alteração em src/app.c conferidos no GitHub",
       "verified": false,
       "previousNotes": [
+        "Implementação lançada na IBM com claudeAgent Sonnet, sobre agente/base-21f-farol-onda2@2d26d54290 (21f + Farol 14). Sai da fila imediata e ocupa a vaga liberada pela entrega FAROL52B: IBM permanece em 6/6 conforme VPS. A base publicada não é SHA entregue da issue; ainda sem commit próprio, revisão, integração ou TV física confirmados.",
         "Fila imediata da onda operacional 2, posição 1, após o aceite com ressalvas da #14. Capacidade IBM 6/6 ocupada conforme VPS: cinco implementações e FAROL52B. Ainda não lançada; sem executor, entrega ou integração confirmados. TV física pendente.",
         ""
       ],
-      "reportedAt": "2026-11-24T04:00:00+00:00",
-      "updatedAt": "2026-11-24T04:04:37+00:00",
+      "reportedAt": "2026-11-24T04:12:00+00:00",
+      "updatedAt": "2026-11-24T04:15:25+00:00",
       "integrationVerified": false,
       "operationalWave": 2,
       "approvalGate": {
@@ -1137,13 +1210,56 @@
         "source": "Ref, pais e comparações de ancestralidade consultados na API GitHub; nenhuma alteração remota"
       },
       "implementation": {
-        "status": "launched_reported",
+        "status": "delivered_reported",
         "host": "ibm-ephemeral",
         "executor": "claudeAgent",
         "model": "Sonnet",
-        "reportedAt": "2026-11-24T04:00:00+00:00",
-        "sourceLine": 258
-      }
+        "reportedAt": "2026-11-24T04:12:00+00:00",
+        "sourceLine": 264
+      },
+      "previousImplementations": [
+        {
+          "status": "launched_reported",
+          "host": "ibm-ephemeral",
+          "executor": "claudeAgent",
+          "model": "Sonnet",
+          "reportedAt": "2026-11-24T04:00:00+00:00",
+          "sourceLine": 258
+        }
+      ],
+      "latestDeliverySha": "fd0270f902",
+      "verificationSummary": "entrega e testes reportados pela VPS; r1 bloqueada antes de iniciar por disco; sem aprovação, integração ou TV física",
+      "delivery": {
+        "sha": "fd0270f902",
+        "fullSha": "fd0270f90200a7fe2c9f25063ed26b882ee5439e",
+        "parentSha": "2d26d542903707b53e4b64c6edc82b8ffef6e1c9",
+        "tree": "fd2ea27a43dd31d4ab317a77efffa25f16392f17",
+        "changedFiles": 11,
+        "appCChanged": false,
+        "executor": "claudeAgent Sonnet na IBM",
+        "testsReported": "farol_acao_audio/fachada/regra/home normal+ASan + SDL2 RC 0",
+        "testsReproducedLocally": false,
+        "sourceLine": 264,
+        "reportedAt": "2026-11-24T04:12:00+00:00",
+        "githubCheckedAt": "2026-11-24T04:15:25+00:00"
+      },
+      "review": {
+        "round": "r1",
+        "sha": "fd0270f902",
+        "status": "blocked_before_start_reported",
+        "blockedBy": "vps-root-disk",
+        "verdictIssued": false,
+        "sourceLine": 264,
+        "reportedAt": "2026-11-24T04:12:00+00:00"
+      },
+      "blockers": [
+        {
+          "id": "vps-root-disk",
+          "reason": "Disco VPS abaixo do piso de 20G; r1 aguardando",
+          "sourceLine": 264,
+          "reportedAt": "2026-11-24T04:12:00+00:00"
+        }
+      ]
     },
     {
       "id": "farol-17",
@@ -5660,6 +5776,28 @@
     }
   ],
   "events": [
+    {
+      "item": "farol-16",
+      "from": "IMPLEMENTANDO",
+      "to": "REVISAO",
+      "reportedStatus": "ENTREGA",
+      "report": "2026-11-24 04:12 [ENTREGA] farol-16 · `fd0270f902` entregue na IBM (claudeAgent Sonnet; 11 arquivos, sem tocar app.c; farol_acao_audio/fachada/regra/home normal+ASan + SDL2 RC 0). Aguarda revisão r1 (disco VPS < 20G).",
+      "vpsLine": 264,
+      "source": "Relato VPS · lotes/REPORTE-POKE.log",
+      "at": "2026-11-24T04:12:00+00:00",
+      "appliedAt": "2026-11-24T04:15:25+00:00"
+    },
+    {
+      "item": "farol-16",
+      "from": "REVISAO",
+      "to": "BLOQUEADA",
+      "report": "Entrega fd0270f902 aguarda r1, não iniciada por disco VPS abaixo de 20G; sem aprovação ou integração. Quatro implementações remanescentes inferidas localmente após entregas de 20/16; último relato 6/6 às 04h08 UTC (linha 262), sem substitutos reportados.",
+      "derived": true,
+      "relatedVpsLine": 264,
+      "source": "Relato VPS · linha 264; capacidade inferida localmente a partir de 262–264",
+      "at": "2026-11-24T04:12:00+00:00",
+      "appliedAt": "2026-11-24T04:15:25+00:00"
+    },
     {
       "item": "farol-20",
       "from": "IMPLEMENTANDO",
