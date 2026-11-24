@@ -11,6 +11,7 @@
 #include "dados.h"
 #include "gfx.h"
 #include "idioma.h"
+#include "faroltexto.h"
 #include "p2p.h"
 #include "p2pmotor.h"
 #include "perfis.h"
@@ -654,7 +655,9 @@ static void corpoDesenhar(void) {
     cy+=78;
     kicker(tela==AG_NOVO_CATALOGO?i18n("Mais coisas para descobrir"):tela==AG_NOVO_DIRETO?i18n("Pronto para assistir"):i18n("Vamos deixar tudo pronto"),x,cy);cy+=30;
   } else {
-    kicker(i18n("Resolver um problema › O vídeo não começa"),x,cy);cy+=34;
+    char fk[200];
+    snprintf(fk, sizeof fk, "%s › %s", i18n(FT_NOME), i18n("O vídeo não começa"));
+    kicker(fk, x, cy); cy += 34;
     gfx_cor((GfxRect){x,cy,58,58},18/58.0f,1,1,1,0.06f);
     icone("aj_circle-play",x+15,cy+15,28,0.64f);
     texto(TXT_ILHA_TEXTO,titulo,x+76,cy+14,1000,0.64f);cy+=70;

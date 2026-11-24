@@ -25,7 +25,7 @@
 #include "buscanorm.h"
 
 typedef struct { const char *titulo, *icone, *sub; } GuiaCap;
-enum { GT_NADA = 0, GT_GUIA_TV, GT_BIBLIOTECA, GT_AGENDA, GT_EXPLORAR, GT_PERFIL };
+enum { GT_NADA = 0, GT_GUIA_TV, GT_BIBLIOTECA, GT_AGENDA, GT_EXPLORAR, GT_PERFIL, GT_FAROL };
 enum { GX_NADA = 0, GX_N180_FONTES, GX_N180_ILHA, GX_N170_ILHA, GX_N170_SPOT };
 enum { GV_NADA = 0, GV_GUIA, GV_LAYOUTS, GV_FILEIRAS, GV_FONTES, GV_ILHA, GV_ASS, GV_VIDRO,
        GV_N170_SPOT, GV_N170_ILHA };
@@ -142,6 +142,7 @@ static const char *guiaRotTela(int t) {
     case GT_AGENDA: return "Abrir a Agenda";
     case GT_EXPLORAR: return "Abrir o Explorar";
     case GT_PERFIL: return "Abrir Perfil e Stats";
+    case GT_FAROL: return "Abrir o Farol";
     default: return "";
   }
 }
@@ -151,6 +152,7 @@ static const char *guiaIcTela(int t) {
     case GT_BIBLIOTECA: return "aj_library";
     case GT_AGENDA: return "aj_calendar";
     case GT_EXPLORAR: return "aj_telescope";
+    case GT_FAROL: return "aj_farol";
     default: return "aj_chart-column";
   }
 }
@@ -1100,6 +1102,7 @@ static void guiaAgir(int b) {
   if (e < 0 || b < 0 || b >= nb) return;
   if (bs[b] == GB_EXEMPLO) { guiaExemplo = GUIA_ENT[e].exemplo; guiaExT = 0; return; }
   if (bs[b] == GB_AJUSTES) { int op = GUIA_ENT[e].alvo; guiaFechar(); focarOpcao(op); return; }
+  if (GUIA_ENT[e].tela == GT_FAROL) { guiaFechar(); focarOpcao(AJ_FAROL); resolver_abrir(); return; }
   pediuTela = GUIA_ENT[e].tela;
 }
 static int guiaVoltar(SDL_Keycode k, const SDL_Event *e) {
