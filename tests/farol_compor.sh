@@ -22,6 +22,7 @@ base="http://127.0.0.1:$(cat "$tmp/port")"
 "${CC:-cc}" "${flags[@]}" \
   tests/farol_compor.c \
   src/farolcompor.c \
+  src/farolinfo.c \
   src/farolgosto.c \
   src/farolrec.c \
   src/farolpeca.c \
@@ -47,6 +48,7 @@ esac
   tests/farol_compor_sessao_refresh.c \
   tests/sessao_boundary_stub.c \
   src/farolcompor.c \
+  src/farolinfo.c \
   src/farolgosto.c \
   src/farolrec.c \
   src/farolpeca.c \

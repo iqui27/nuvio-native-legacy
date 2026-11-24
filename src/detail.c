@@ -4329,6 +4329,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
   { int ft = 0, fe = 0;
     if (ehSerie() && !episodioAlvo(&ft, &fe, NULL)) ft = fe = 0;
     faroldetalhe_atualizar(idx, ft, fe, dt, agora);
+    faroldetalhe_retomada(idx);
     if (faroldetalhe_focado() && faroldetalhe_n_selos() <= 0) faroldetalhe_focar(0); }
   trocaarte_atualizar(dt);
   // OK NA TELA DE ESCOLHA: a arte congelada na abertura (arteFixa/logoFixo)

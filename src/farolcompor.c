@@ -4,6 +4,7 @@
 #define FarolMotivo FarolRecMotivo
 #include "farolrec.h"
 #undef FarolMotivo
+#include "farolinfo.h"
 #include "faroltexto.h"
 #include "rede.h"
 #include <ctype.h>
@@ -124,6 +125,17 @@ static struct {
   uint64_t contaHash;
   int      diaLocal;
 } homeDiaMem;
+
+// Ultimo pedido de retomada (issue 57): o mesmo (perfil, serie, t, e) nao
+// sai duas vezes na sessao, nem se a resposta caiu nas regras.
+static struct {
+  int      tem;
+  int      perfil;
+  uint64_t sessao;
+  uint64_t contaHash;
+  char     imdb[24];
+  int      t, e;
+} retUltimo;
 
 static int                    consentiuCfg;
 static FarolComporAllowlistFn allowlistFn;
@@ -805,6 +817,28 @@ static size_t montarCorpoPassada(const FarolComporPedido *ped, const AncorasEleg
   escLit(&e, ",\"hora\":");
   escInt(&e, hora);
   escLit(&e, ",\"infantil\":0,\"consentiu\":1");
+
+  // --- retomada (issue 57): SO no modo retomada, SO o episodio ja visto ---
+  // Sem nenhum dos tres campos, o modo retomada segue o pedido de cena da #52.
+  if (ped->modo == FC_MODO_RETOMADA &&
+      (ped->retTemporada || ped->retEpisodio || ped->retSinopse)) {
+    char sin[FAROL_COMPOR_SINOPSE_MAX + 4];
+    if (ped->retTemporada < 1 || ped->retTemporada > 999 ||
+        ped->retEpisodio < 1 || ped->retEpisodio > 9999 ||
+        !textoSeguroLimpar(ped->retSinopse, sin, sizeof sin,
+                           FAROL_COMPOR_SINOPSE_MAX, 1)) {
+      dst[0] = '\0';
+      return 0;
+    }
+    escLit(&e, ",\"retomada\":{\"temporada\":");
+    escInt(&e, ped->retTemporada);
+    escLit(&e, ",\"episodio\":");
+    escInt(&e, ped->retEpisodio);
+    escLit(&e, ",\"sinopse\":");
+    escStr(&e, sin);
+    escLit(&e, "}");
+    memset(sin, 0, sizeof sin);
+  }
 
   // --- gosto ---
   escLit(&e, ",\"gosto\":{\"nivel\":");
@@ -2280,6 +2314,7 @@ void farolcompor_encerrar(void) {
   memset(&adotadaHome, 0, sizeof adotadaHome);
   memset(adotadaModos, 0, sizeof adotadaModos);
   memset(&estadoAtual, 0, sizeof estadoAtual);
+  memset(&retUltimo, 0, sizeof retUltimo);
   pthread_mutex_unlock(&trava);
 }
 
@@ -2292,6 +2327,7 @@ void farolcompor_trocar_perfil(void) {
   memset(adotadaModos, 0, sizeof adotadaModos);
   memset(&estadoAtual, 0, sizeof estadoAtual);
   memset(&homeDiaMem, 0, sizeof homeDiaMem);
+  memset(&retUltimo, 0, sizeof retUltimo);
   homeGeracao++;
   pthread_mutex_unlock(&trava);
 }
@@ -2316,6 +2352,112 @@ void farolcompor_zerar_gosto(void) {
   lojaApagar(nome);
   nomeArquivoMeta(p, nome, sizeof nome);
   lojaApagar(nome);
+}
+
+// ------------------------------------------- retomada sem spoiler (57) ---
+
+int farolcompor_pedir_retomada(const char *imdb, const char *titulo,
+                               int temporada, int episodio,
+                               const char *sinopse) {
+  FarolComporPedido ped;
+  FarolComporCand c;
+  int perfil, repetido, ok;
+  uint64_t sessao, conta;
+
+  if (!imdbValido(imdb) || !titulo || !titulo[0] || !sinopse || !sinopse[0])
+    return 0;
+  if (temporada < 1 || temporada > 999 || episodio < 1 || episodio > 9999)
+    return 0;
+  // Bloqueios ANTES de qualquer coisa: nada e montado nem gravado.
+  if (suprimidoAgora()) return 0;
+  // A Home (ou outro modo) em voo tem prioridade: nao derruba, tenta depois.
+  if (farolcompor_em_voo()) return 0;
+
+  perfil = perfilAtualValido();
+  sessao = perfis_sessao_geracao();
+  conta = contaAtualHash();
+  pthread_mutex_lock(&trava);
+  repetido = retUltimo.tem && retUltimo.perfil == perfil &&
+             retUltimo.sessao == sessao && retUltimo.contaHash == conta &&
+             retUltimo.t == temporada && retUltimo.e == episodio &&
+             !strcmp(retUltimo.imdb, imdb);
+  pthread_mutex_unlock(&trava);
+  if (repetido) return 0;
+
+  memset(&c, 0, sizeof c);
+  snprintf(c.imdb, sizeof c.imdb, "%s", imdb);
+  c.tipo = 1;
+  snprintf(c.titulo, sizeof c.titulo, "%s", titulo);
+  c.nota10 = -1;
+
+  memset(&ped, 0, sizeof ped);
+  ped.modo = FC_MODO_RETOMADA;
+  ped.idioma = ajustes_tmdb_idioma();
+  ped.hora = -1;
+  ped.fimSemana = -1;
+  ped.infantil = perfil_infantil_ativo();
+  ped.consentiu = farolcompor_consentimento();
+  ped.candidatos = &c;
+  ped.nCandidatos = 1;
+  ped.retTemporada = temporada;
+  ped.retEpisodio = episodio;
+  ped.retSinopse = sinopse;
+  ok = farolcompor_pedir(&ped);
+
+  pthread_mutex_lock(&trava);
+  retUltimo.tem = 1;
+  retUltimo.perfil = perfil;
+  retUltimo.sessao = sessao;
+  retUltimo.contaHash = conta;
+  snprintf(retUltimo.imdb, sizeof retUltimo.imdb, "%s", imdb);
+  retUltimo.t = temporada;
+  retUltimo.e = episodio;
+  pthread_mutex_unlock(&trava);
+  return ok;
+}
+
+int farolcompor_retomada_resumo(const char *imdb, int temporada, int episodio,
+                                char *dst, size_t cap) {
+  FarolCena cena;
+  FarolComporCand cand[FAROL_COMPOR_CAND_MAX];
+  int nCand = 0, p, i;
+
+  if (dst && cap) dst[0] = '\0';
+  if (!dst || cap < 2 || !imdbValido(imdb) || temporada < 1 || episodio < 1)
+    return 0;
+  if (!farolcompor_cena_modo(FC_MODO_RETOMADA, &cena, cand, &nCand,
+                             FAROL_COMPOR_CAND_MAX, NULL))
+    return 0;
+  if (nCand < 1 || strcmp(cand[0].imdb, imdb) != 0) return 0;
+
+  for (p = 0; p < cena.nPecas; p++) {
+    const FarolPeca *pc = &cena.pecas[p];
+    if (pc->tipo != FP_INFO) continue;
+    // So a peca da propria serie (c0 ou o tt dela).
+    if (!(pc->u.info.alvo.c == 0 ||
+          (pc->u.info.alvo.c < 0 && !strcmp(pc->u.info.alvo.s, imdb))))
+      continue;
+    for (i = 0; i < pc->u.info.nItens; i++) {
+      const FarolInfoItem *it = &pc->u.info.itens[i];
+      const FarolTexto *t = &it->l;
+      const char *x;
+      if (it->k != FP_INFO_RETOMADA || !t->usaX) continue;
+      // O (t, e) que o servidor diz ter resumido TEM de ser o pedido.
+      if (strcmp(t->m, "FT_INFO_RETOMADA_SIMPLES") != 0 || t->nArgs != 2)
+        continue;
+      { char ts[16], es[16];
+        snprintf(ts, sizeof ts, "%d", temporada);
+        snprintf(es, sizeof es, "%d", episodio);
+        if (strcmp(t->a[0], ts) != 0 || strcmp(t->a[1], es) != 0) continue; }
+      x = farolpeca_x(&cena, t);
+      if (!x || !farolinfo_retomada_linha_ok(x) || !faroltexto_aceita(x))
+        continue;
+      if (strlen(x) + 1 > cap) return 0;
+      memcpy(dst, x, strlen(x) + 1);
+      return 1;
+    }
+  }
+  return 0;
 }
 
 // ------------------------------------------------------------ leitura UI ---

@@ -11,6 +11,8 @@
 //   - Privacidade: inspecao completa de D1, KV e logs (so contadores HMAC e cena no cache;
 //     zero linha em `pessoa`, zero corpo/frase/gosto); perfil infantil e sem consentimento;
 //   - Corpo > 12 KB -> 413 (com e sem Content-Length), 400/401/405 sem gastar cota.
+//   - Retomada sem spoiler (issue 57): objeto "retomada" estrito (422), resumo de
+//     1 linha do episodio JA VISTO, saida torta do LLM recusada, zero vazamento.
 //
 //   node servidor/recomendacoes/teste-farol-compor.mjs
 
@@ -37,7 +39,9 @@ import {
   rotaFarolEscolha,
   validarCena,
   validarCenaLlm,
+  validarResumoRetomada,
   validarRespostaEscolhaLlm,
+  validarRetomada,
 } from "./src/farolgosto.js";
 
 const MIGRACOES = [
@@ -3999,4 +4003,212 @@ test("R9-Achados: FT_ACHA_CURTOS_L1 nao permite fato agregado sobrepor item exib
     assert.deepEqual(hit.body, miss.body);
     assert.equal(chamadasLlm.length, 1);
   }
+});
+
+// =============================================================================
+// Retomada sem spoiler (issue 57)
+// =============================================================================
+
+const SINOPSE_VISTA = "Walt e Jesse ficam presos no deserto com o trailer sem bateria.";
+const CANARIO_PROXIMO = "CanarioProximoEpisodio57";
+
+function pedidoRetomada(extra = {}, ret = {}) {
+  return {
+    v: 1,
+    modo: "retomada",
+    idioma: "pt-BR",
+    hora: 2,
+    consentiu: 1,
+    gosto: { nivel: 1, fim_semana: 0 },
+    candidatos: [{ c: "c0", id: "tt0903747", tipo: "series", titulo: "Breaking Bad" }],
+    retomada: { temporada: 2, episodio: 9, sinopse: SINOPSE_VISTA, ...ret },
+    ...extra,
+  };
+}
+
+const cargaLlm = (chamada) => String(chamada?.body?.messages?.[1]?.content ?? "");
+
+test("retomada: entrada valida devolve 200 com 1 linha do episodio visto e cacheia so o resumo", async (t) => {
+  const { post, chamadasLlm, kv, sqlite } = cenario(t, {}, {
+    respostaLlm: () => ({ resumo: "Walt e Jesse ficaram presos no deserto." }),
+  });
+  const r = await post("/v1/farol/compor", pedidoRetomada(), { token: "tok-gosto-a", perfil: 1 });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.origem, "llm");
+  assert.equal(r.body.tela, "detalhe");
+  assert.equal(r.body.pecas.length, 1);
+  const it = r.body.pecas[0].itens[0];
+  assert.equal(r.body.pecas[0].alvo, "c0");
+  assert.equal(it.k, "retomada");
+  assert.deepEqual(it.l, { m: "FT_INFO_RETOMADA_SIMPLES", a: ["2", "9"], x: "Walt e Jesse ficaram presos no deserto." });
+  assert.ok(!/\n/.test(it.l.x) && Array.from(it.l.x).length <= 62);
+  assert.equal(validarCena(JSON.stringify(r.body), 1).ok, true);
+
+  // O LLM so recebeu a serie, o (t, e) visto e a sinopse daquele episodio.
+  assert.equal(chamadasLlm.length, 1);
+  const carga = JSON.parse(cargaLlm(chamadasLlm[0]));
+  assert.deepEqual(Object.keys(carga).sort(), ["episodio", "idioma", "serie", "sinopse", "temporada", "v"]);
+  assert.equal(carga.temporada, 2);
+  assert.equal(carga.episodio, 9);
+  assert.equal(carga.sinopse, SINOPSE_VISTA);
+  assert.match(String(chamadasLlm[0].body.messages[0].content), /JA VISTO/);
+  assert.match(String(chamadasLlm[0].body.messages[0].content), /Nunca mencione/);
+
+  // Outra conta, mesma entrada: cache compartilhado, sem novo LLM.
+  const r2 = await post("/v1/farol/compor", pedidoRetomada(), { token: "tok-gosto-b", perfil: 2 });
+  assert.deepEqual(r2.body, r.body);
+  assert.equal(chamadasLlm.length, 1);
+
+  // KV: uma chave opaca com SO o resumo (nem conta, nem perfil, nem sinopse).
+  assert.equal(kv.mapa.size, 1);
+  const [[chave, ent]] = [...kv.mapa.entries()];
+  assert.match(chave, /^farol:retomada:v1:[0-9a-f]{64}$/);
+  assert.deepEqual(JSON.parse(ent.valor), { resumo: "Walt e Jesse ficaram presos no deserto." });
+  assert.ok(!ent.valor.includes("conta-gosto") && !ent.valor.includes("deserto com o trailer"));
+  assert.equal(q(sqlite, "SELECT COUNT(*) AS n FROM pessoa")[0].n, 0);
+});
+
+test("retomada: entrada invalida e 422 sem LLM e sem gastar cota", async (t) => {
+  const ruins = [
+    pedidoRetomada({}, { temporada: 0 }),
+    pedidoRetomada({}, { episodio: 0 }),
+    pedidoRetomada({}, { episodio: "9" }),
+    pedidoRetomada({}, { temporada: 1000 }),
+    pedidoRetomada({}, { episodio: 1.5 }),
+    pedidoRetomada({}, { sinopse: "" }),
+    pedidoRetomada({}, { sinopse: "   " }),
+    pedidoRetomada({}, { sinopse: 42 }),
+    pedidoRetomada({}, { sinopse: "a".repeat(401) }),
+    pedidoRetomada({}, { sinopse: "ç".repeat(201) }),
+    pedidoRetomada({}, { sinopse: "Veja em https://exemplo.test o resumo." }),
+    pedidoRetomada({}, { sinopse: "Veja em exemplo.com o resumo." }),
+    pedidoRetomada({}, { sinopse: "Escreva para fulano@exemplo.test agora." }),
+    pedidoRetomada({}, { sinopse: "Ligue para +55 11 98765-4321 hoje." }),
+    pedidoRetomada({}, { sinopse: "Linha com controle \u0007 no meio." }),
+    pedidoRetomada({}, { extra: 1 }),
+    { ...pedidoRetomada(), retomada: { temporada: 2, episodio: 9 } },
+    { ...pedidoRetomada(), retomada: { episodio: 9, sinopse: SINOPSE_VISTA } },
+    { ...pedidoRetomada(), retomada: [2, 9, SINOPSE_VISTA] },
+    { ...pedidoRetomada(), retomada: null },
+    pedidoRetomada({ modo: "home" }),
+    pedidoRetomada({ modo: "dica" }),
+    pedidoRetomada({ idioma: "portugues" }),
+    pedidoRetomada({ candidatos: [] }),
+    pedidoRetomada({ candidatos: [{ c: "c0", id: "tt0903747", tipo: "movie", titulo: "Breaking Bad" }] }),
+    pedidoRetomada({ candidatos: [{ c: "c0", id: "tmdb", tipo: "series", titulo: "Breaking Bad" }] }),
+    pedidoRetomada({ candidatos: [
+      { c: "c0", id: "tt0903747", tipo: "series", titulo: "Breaking Bad" },
+      { c: "c1", id: "tt11280740", tipo: "series", titulo: "Ruptura" },
+    ] }),
+    pedidoRetomada({ fatos: [{ alvo: "tt0903747", temporada: 2, episodio: 10 }] }),
+  ];
+  for (const corpo of ruins) {
+    const { post, chamadasLlm, kv, sqlite } = cenario(t);
+    const r = await post("/v1/farol/compor", corpo);
+    assert.equal(r.status, 422, JSON.stringify(corpo).slice(0, 160));
+    assert.equal(chamadasLlm.length, 0);
+    assert.equal(kv.mapa.size, 0);
+    assert.equal(q(sqlite, "SELECT COUNT(*) AS n FROM limite")[0].n, 0);
+  }
+  assert.equal(validarRetomada({ temporada: 2, episodio: 9, sinopse: "  Dois   espacos  " }).sinopse, "Dois espacos");
+});
+
+test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", async (t) => {
+  const tortas = [
+    { resumo: "Walt e Jesse no deserto.\nE depois mais." },
+    { resumo: "Walt e Jesse no deserto.\u2028Outra linha." },
+    { resumo: "a".repeat(63) },
+    { resumo: "" },
+    { resumo: " Walt e Jesse no deserto." },
+    { resumo: "Veja o resumo em https://exemplo.test" },
+    { resumo: "Veja o resumo em exemplo.com" },
+    { resumo: "Olá! Walt e Jesse no deserto." },
+    { resumo: "Walt e Jesse no deserto 🎉" },
+    { resumo: "No próximo episódio Walt foge do deserto." },
+    { resumo: "Next episode: Walt escapes." },
+    { resumo: "Spoiler: Walt sai do deserto." },
+    { resumo: "No T2E10 Walt sai do deserto." },
+    { resumo: "No S03E01 Walt sai do deserto." },
+    { resumo: 42 },
+    { resumo: "Walt e Jesse no deserto.", extra: "x" },
+    { texto: "Walt e Jesse no deserto." },
+    "nao e json",
+    "",
+    "[\"Walt e Jesse no deserto.\"]",
+  ];
+  for (const torta of tortas) {
+    const { post, chamadasLlm, kv } = cenario(t, {}, { respostaLlm: () => torta });
+    const r = await post("/v1/farol/compor", pedidoRetomada());
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { origem: "regras" }, JSON.stringify(torta));
+    assert.equal(chamadasLlm.length, 1);
+    assert.equal(kv.mapa.size, 0);
+  }
+  // Citar o proprio episodio visto e permitido; cerca de codigo e aceita.
+  assert.equal(validarResumoRetomada("No T2E9 Walt e Jesse ficaram no deserto.", { temporada: 2, episodio: 9 }),
+    "No T2E9 Walt e Jesse ficaram no deserto.");
+  {
+    const { post } = cenario(t, {}, { respostaLlm: () => "```json\n{\"resumo\":\"Walt e Jesse ficaram no deserto.\"}\n```" });
+    const r = await post("/v1/farol/compor", pedidoRetomada());
+    assert.equal(r.body.origem, "llm");
+  }
+  // LLM fora do ar (rede ou 5xx): regras.
+  for (const op of [{ falhaRedeLlm: true }, { statusLlm: 500 }, { statusLlm: 429 }]) {
+    const { post } = cenario(t, {}, op);
+    const r = await post("/v1/farol/compor", pedidoRetomada());
+    assert.deepEqual(r.body, { origem: "regras" });
+  }
+});
+
+test("retomada: sem vazamento (gosto, ancoras, outros titulos, infantil, sem consentimento, logs)", async (t) => {
+  const logs = [];
+  const logOriginal = console.log;
+  console.log = (...a) => { logs.push(a.join(" ")); };
+  t.after(() => { console.log = logOriginal; });
+
+  const corpo = pedidoRetomada({
+    gosto: {
+      nivel: 2,
+      generos: [{ id: 53, nome: "Suspense", peso: 1.8 }],
+      ancoras: [{ id: "tt11280740", titulo: "CanarioAncoraDiario57" }],
+    },
+  });
+  const { post, chamadasLlm } = cenario(t, {}, {
+    respostaLlm: () => ({ resumo: "Walt e Jesse ficaram presos no deserto." }),
+  });
+  const r = await post("/v1/farol/compor", corpo);
+  assert.equal(r.body.origem, "llm");
+  const carga = cargaLlm(chamadasLlm[0]);
+  for (const proibido of ["CanarioAncoraDiario57", "tt11280740", "Suspense", "gosto", "conta-gosto", CANARIO_PROXIMO]) {
+    assert.ok(!carga.includes(proibido), `vazou ${proibido}`);
+  }
+  assert.ok(!JSON.stringify(r.body).includes("CanarioAncoraDiario57"));
+
+  // Infantil e sem consentimento: regras sem LLM.
+  for (const extra of [{ infantil: 1 }, { consentiu: 0 }]) {
+    const c = cenario(t, {}, { respostaLlm: () => ({ resumo: "Walt e Jesse ficaram presos no deserto." }) });
+    const rr = await c.post("/v1/farol/compor", pedidoRetomada(extra));
+    assert.deepEqual(rr.body, { origem: "regras" });
+    assert.equal(c.chamadasLlm.length, 0);
+  }
+  // Interruptor desligado.
+  {
+    const c = cenario(t, { FAROL_LLM: "0" });
+    const rr = await c.post("/v1/farol/compor", pedidoRetomada());
+    assert.deepEqual(rr.body, { origem: "regras" });
+    assert.equal(c.chamadasLlm.length, 0);
+  }
+  for (const l of logs) {
+    assert.ok(!l.includes(SINOPSE_VISTA) && !l.includes("Breaking Bad") && !l.includes("deserto"), l);
+  }
+});
+
+test("retomada: cota diaria por pessoa vale para o modo retomada (7a chamada = 429)", async (t) => {
+  const { post } = cenario(t, {}, { respostaLlm: () => ({ resumo: "Walt e Jesse ficaram presos no deserto." }) });
+  for (let i = 1; i <= FAROL_COMPOR_DIA; i++) {
+    const r = await post("/v1/farol/compor", pedidoRetomada({}, { episodio: i }));
+    assert.equal(r.status, 200, `chamada ${i}`);
+  }
+  const r = await post("/v1/farol/compor", pedidoRetomada({}, { episodio: 50 }));
+  assert.equal(r.status, 429);
 });

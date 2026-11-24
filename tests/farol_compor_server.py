@@ -16,8 +16,10 @@ CAPTURE_FILE = sys.argv[2]
 
 ALLOWED_TOP_KEYS = {
     "v", "modo", "idioma", "hora", "gosto", "candidatos", "fatos",
-    "infantil", "consentiu"
+    "infantil", "consentiu", "retomada"
 }
+# Retomada sem spoiler (issue 57): SO em modo retomada, SO estas tres chaves.
+ALLOWED_RETOMADA_KEYS = {"temporada", "episodio", "sinopse"}
 ALLOWED_GOSTO_KEYS = {
     "nivel", "fim_semana", "generos", "temas", "pessoas", "ancoras"
 }
@@ -56,6 +58,21 @@ def validate_request(raw_bytes):
         raise ValueError(f"bad v: {doc.get('v')}")
     if doc.get("modo") not in ("home", "comparar", "dica", "retomada"):
         raise ValueError(f"bad modo: {doc.get('modo')}")
+    if "retomada" in doc:
+        ret = doc["retomada"]
+        if doc.get("modo") != "retomada":
+            raise ValueError("retomada fora do modo retomada")
+        if not isinstance(ret, dict) or set(ret.keys()) != ALLOWED_RETOMADA_KEYS:
+            raise ValueError(f"bad retomada keys: {ret}")
+        for k, hi in (("temporada", 999), ("episodio", 9999)):
+            v = ret[k]
+            if not isinstance(v, int) or isinstance(v, bool) or v < 1 or v > hi:
+                raise ValueError(f"bad retomada {k}: {v}")
+        sin = ret["sinopse"]
+        if not isinstance(sin, str) or not sin.strip() or len(sin.encode("utf-8")) > 400:
+            raise ValueError("bad retomada sinopse")
+        if any(ord(ch) < 0x20 for ch in sin) or "://" in sin or "@" in sin:
+            raise ValueError("unsafe retomada sinopse")
     hora = doc.get("hora")
     if not isinstance(hora, int) or hora < 0 or hora > 7:
         raise ValueError(f"bad hora bucket: {hora}")
