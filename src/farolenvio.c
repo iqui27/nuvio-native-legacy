@@ -356,11 +356,15 @@ static void publicarSobTrava(EnvioJob *j, FarolEnvioEstado est, FarolEnvioMotivo
   if (j->tipo == J_ENVIAR || j->tipo == J_PENDENTE) info.incluirLog = j->incluirLog;
   if (est == FAROLENVIO_OK && j->incluirLog) logPedido = 1;
   // Espera do proximo reenvio automatico (so offline / falha de transporte);
-  // outros resultados preservam a pendencia existente em disco.
+  // cancelar o proprio J_PENDENTE desarma o reenvio automatico nesta sessao,
+  // mantendo o arquivo em disco para retentativa manual.
   if (est == FAROLENVIO_PENDENTE) {
     reenvioAuto = 1;
     proximoReenvio = agora + FAROLENVIO_REENVIO_S;
     if (mot == FAROLENVIO_M_OFFLINE) offlineAntes = 1;
+  } else if (est == FAROLENVIO_CANCELADO && j->tipo == J_PENDENTE) {
+    reenvioAuto = 0;
+    proximoReenvio = 0;
   }
   info.geracao++;
 }
@@ -370,6 +374,11 @@ static void publicar(EnvioJob *j, FarolEnvioEstado est, FarolEnvioMotivo mot, in
                      const char *cod, const Conhecido *con) {
   long agora = ((cod && codigoOk(cod)) || est == FAROLENVIO_PENDENTE) ? agoraS() : 0;
   pthread_mutex_lock(&trava);
+  if (est == FAROLENVIO_PENDENTE && j->tipo == J_PENDENTE && j->cancelar) {
+    est = FAROLENVIO_CANCELADO;
+    mot = FAROLENVIO_M_CANCELADO;
+    http = 0;
+  }
   publicarSobTrava(j, est, mot, http, cod, con, agora);
   pthread_mutex_unlock(&trava);
 }
@@ -534,13 +543,12 @@ static int pendenteGravar(const Chave *k, int sintoma, long criado, int autoReen
   return ok;
 }
 
-// Le o pendente: 1 = valido (pacote em *pacote, heap); 0 = ausente; -1 = lixo
-// ou vencido (ja apagado). `soMeta` nao copia o pacote.
-static int pendenteLer(Chave *k, int *sintoma, long *criado, int *autoReenvio, int *incluirLog,
-                       char **pacote, size_t *nPacote, int soMeta) {
-  char *s = dados_ler(FAROLENVIO_PENDENTE_ARQ);
+// Valida o conteudo `s` (tamanho `n`) de farol-pendente.json: 1 = valido
+// (`pacote` em *pacote, heap se !soMeta); -1 = lixo ou vencido (nao apaga).
+static int pendenteValidar(const char *s, size_t n, Chave *k, int *sintoma, long *criado,
+                           int *autoReenvio, int *incluirLog, char **pacote, size_t *nPacote,
+                           int soMeta) {
   const char *fim, *p;
-  size_t n;
   long v = 0, cr = 0, sint = RES_S_GERAL, so = -1, autoR = 1, incLog = 0;
   long agora = agoraS();
   memset(k, 0, sizeof *k);
@@ -549,14 +557,13 @@ static int pendenteLer(Chave *k, int *sintoma, long *criado, int *autoReenvio, i
   if (pacote) *pacote = NULL;
   if (nPacote) *nPacote = 0;
   if (!s) return 0;
-  n = strlen(s);
   fim = s + n;
   if (n == 0 || n > FAROLENVIO_PENDENTE_MAX || !intChave(s, fim, "v", &v) || v != 1 ||
       !intChave(s, fim, "criado", &cr) || cr <= 0 ||
       !strChave(s, fim, "fp", k->fp, sizeof k->fp) || !hex16Ok(k->fp))
-    goto lixo;
+    return -1;
   // Vencido (24 h) ou do futuro (relogio voltou): apaga.
-  if (agora - cr >= FAROLENVIO_PENDENTE_VALIDADE_S || cr - agora > 3600) goto lixo;
+  if (agora - cr >= FAROLENVIO_PENDENTE_VALIDADE_S || cr - agora > 3600) return -1;
   intChave(s, fim, "sintoma", &sint);
   intChave(s, fim, "so_maior", &so);
   intChave(s, fim, "auto", &autoR);
@@ -570,27 +577,42 @@ static int pendenteLer(Chave *k, int *sintoma, long *criado, int *autoReenvio, i
   if (!tokOk(k->versao)) k->versao[0] = 0;
   k->soMaior = (int)so;
   p = acharChave(s, fim, "pacote");
-  if (!p || *p != '{' || fim[-1] != '}') goto lixo;
+  if (!p || *p != '{' || fim[-1] != '}') return -1;
   {
     const char *pf = fimComposto(p, fim);
-    if (!pf || pf != fim - 1) goto lixo;
+    if (!pf || pf != fim - 1) return -1;
     if (!soMeta && pacote) {
       size_t np = (size_t)(pf - p);
       *pacote = (char *)malloc(np + 1);
-      if (!*pacote) { free(s); return 0; }
+      if (!*pacote) return 0;
       memcpy(*pacote, p, np);
       (*pacote)[np] = 0;
       *nPacote = np;
     }
   }
-  *sintoma = (int)sint;
-  *criado = cr;
-  free(s);
+  if (sintoma) *sintoma = (int)sint;
+  if (criado) *criado = cr;
   return 1;
-lixo:
+}
+
+// Le o pendente: 1 = valido (pacote em *pacote, heap); 0 = ausente; -1 = lixo
+// ou vencido (ja apagado). `soMeta` nao copia o pacote.
+static int pendenteLer(Chave *k, int *sintoma, long *criado, int *autoReenvio, int *incluirLog,
+                       char **pacote, size_t *nPacote, int soMeta) {
+  char *s = dados_ler(FAROLENVIO_PENDENTE_ARQ);
+  int r;
+  if (!s) {
+    memset(k, 0, sizeof *k);
+    if (autoReenvio) *autoReenvio = 1;
+    if (incluirLog) *incluirLog = -1;
+    if (pacote) *pacote = NULL;
+    if (nPacote) *nPacote = 0;
+    return 0;
+  }
+  r = pendenteValidar(s, strlen(s), k, sintoma, criado, autoReenvio, incluirLog, pacote, nPacote, soMeta);
   free(s);
-  dados_apagar(FAROLENVIO_PENDENTE_ARQ);
-  return -1;
+  if (r < 0) dados_apagar(FAROLENVIO_PENDENTE_ARQ);
+  return r;
 }
 
 // ----------------------------------------------------------- fio de envio --
@@ -726,8 +748,10 @@ static void chaveDe(Chave *k, const FarolPacoteRes *res, const FarolPerfil *p, c
 
 static void gravarResultadoPendente(EnvioJob *j, const Chave *k, int autoR, FarolEnvioMotivo mot,
                                     int httpOut, const char *json, size_t n) {
-  long agora, agoraPub;
-  int gravou, cancelado;
+  long agora, agoraPub, antCr = 0, antPendenteCriado = 0, antPendenteVence = 0, antProximoReenvio = 0;
+  int gravou, cancelado, antTemPendente = 0, antReenvioAuto = 0, antAutoFile = 0;
+  char *antBuf = NULL;
+  size_t antTam = 0;
 
   if (jobCancelado(j)) {
     publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
@@ -738,6 +762,35 @@ static void gravarResultadoPendente(EnvioJob *j, const Chave *k, int autoR, Faro
     publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
     return;
   }
+
+  // Preserva eventual pendencia pre-existente de outro fingerprint caso este job seja cancelado.
+  antBuf = dados_ler(FAROLENVIO_PENDENTE_ARQ);
+  if (antBuf) {
+    Chave antK;
+    int antS = 0;
+    antTam = strlen(antBuf);
+    if (pendenteValidar(antBuf, antTam, &antK, &antS, &antCr, &antAutoFile, NULL, NULL, NULL, 1) != 1 ||
+        !strcmp(antK.fp, k->fp)) {
+      memset(antBuf, 0, antTam);
+      free(antBuf);
+      antBuf = NULL;
+      antTam = 0;
+    }
+  }
+  pthread_mutex_lock(&trava);
+  antTemPendente = info.temPendente;
+  antPendenteCriado = info.pendenteCriado;
+  antPendenteVence = info.pendenteVence;
+  antReenvioAuto = reenvioAuto;
+  antProximoReenvio = proximoReenvio;
+  cancelado = j->cancelar;
+  pthread_mutex_unlock(&trava);
+  if (cancelado) {
+    if (antBuf) { memset(antBuf, 0, antTam); free(antBuf); }
+    publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+    return;
+  }
+
   gravou = pendenteGravar(k, j->resSintoma, agora, autoR, j->incluirLog, json, n);
   agoraPub = (autoR && gravou) ? agoraS() : 0;
 
@@ -756,26 +809,56 @@ static void gravarResultadoPendente(EnvioJob *j, const Chave *k, int autoR, Faro
     if (autoR && gravou) publicarSobTrava(j, FAROLENVIO_PENDENTE, mot, 0, NULL, NULL, agoraPub);
     else publicarSobTrava(j, FAROLENVIO_FALHOU, mot, httpOut, NULL, NULL, 0);
     pthread_mutex_unlock(&trava);
+    if (antBuf) { memset(antBuf, 0, antTam); free(antBuf); }
     return;
-  }
-  if (gravou) {
-    info.temPendente = 0;
-    info.pendenteCriado = 0;
-    info.pendenteVence = 0;
-    reenvioAuto = 0;
-    proximoReenvio = 0;
   }
   pthread_mutex_unlock(&trava);
 
-  if (gravou) {
-    // Desfaz somente se a gravacao feita por este job continuar pertencendo a este fp.
+  if (antBuf) {
+    int okRest = !gravou || dados_gravar(FAROLENVIO_PENDENTE_ARQ, antBuf);
+    if (!okRest) {
+      Chave kp;
+      int s;
+      long cr;
+      if (pendenteLer(&kp, &s, &cr, NULL, NULL, NULL, NULL, 1) == 1 && !strcmp(kp.fp, k->fp))
+        dados_apagar(FAROLENVIO_PENDENTE_ARQ);
+    }
+    memset(antBuf, 0, antTam);
+    free(antBuf);
+    pthread_mutex_lock(&trava);
+    if (okRest) {
+      info.temPendente = 1;
+      info.pendenteCriado = antTemPendente ? antPendenteCriado : antCr;
+      info.pendenteVence = antTemPendente ? antPendenteVence : (antCr + FAROLENVIO_PENDENTE_VALIDADE_S);
+      reenvioAuto = antTemPendente ? antReenvioAuto : antAutoFile;
+      proximoReenvio = antProximoReenvio;
+    } else {
+      info.temPendente = 0;
+      info.pendenteCriado = 0;
+      info.pendenteVence = 0;
+      reenvioAuto = 0;
+      proximoReenvio = 0;
+    }
+    publicarSobTrava(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL, 0);
+    pthread_mutex_unlock(&trava);
+    return;
+  }
+
+  {
     Chave kp;
     int s;
     long cr;
     if (pendenteLer(&kp, &s, &cr, NULL, NULL, NULL, NULL, 1) == 1 && !strcmp(kp.fp, k->fp))
       dados_apagar(FAROLENVIO_PENDENTE_ARQ);
   }
-  publicar(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL);
+  pthread_mutex_lock(&trava);
+  info.temPendente = 0;
+  info.pendenteCriado = 0;
+  info.pendenteVence = 0;
+  reenvioAuto = 0;
+  proximoReenvio = 0;
+  publicarSobTrava(j, FAROLENVIO_CANCELADO, FAROLENVIO_M_CANCELADO, 0, NULL, NULL, 0);
+  pthread_mutex_unlock(&trava);
 }
 
 static void executarEnviar(EnvioJob *j) {
