@@ -109,25 +109,29 @@ static int nCapturas(void) {
   return n;
 }
 
-// Linhas da P6 de agora: quantas, a de tempo (T2E4) e se o resumo esta.
-typedef struct { int n, temTempo, temResumo, posTempo, posResumo; char resumo[192]; } P6;
+// Linhas da P6 de agora: todas as linhas literais e a posicao da linha de tempo (T2E4).
+typedef struct { int n, temTempo, posTempo; char linhas[4][192]; } P6;
 
 static P6 lerP6(void) {
   P6 p;
-  char l[192];
   int i;
   memset(&p, 0, sizeof p);
-  p.posTempo = p.posResumo = -1;
+  p.posTempo = -1;
   for (i = 0; i < 4; i++) {
-    if (!faroldetalhe_linha_info(i, l, sizeof l)) break;
+    if (!faroldetalhe_linha_info(i, p.linhas[i], sizeof p.linhas[i])) break;
+    if (strstr(p.linhas[i], "T2E4")) { p.temTempo = 1; p.posTempo = i; }
     p.n++;
-    if (strstr(l, "T2E4")) { p.temTempo = 1; p.posTempo = i; }
-    if (strstr(l, "deserto")) {
-      p.temResumo = 1; p.posResumo = i;
-      snprintf(p.resumo, sizeof p.resumo, "%s", l);
-    }
   }
   return p;
+}
+
+static int p6Igual(const P6 *a, const P6 *b) {
+  int i;
+  if (a->n != b->n || a->temTempo != b->temTempo || a->posTempo != b->posTempo) return 0;
+  for (i = 0; i < a->n; i++) {
+    if (strcmp(a->linhas[i], b->linhas[i]) != 0) return 0;
+  }
+  return 1;
 }
 
 static Uint32 g_t = 1000u;
@@ -141,8 +145,8 @@ static void quadro(void) {
   (void)farolcompor_passo();
 }
 
-// Roda ate ver o resumo (ou o pedido terminar e ainda mais ~1,5 s de quadros).
-static P6 rodar(int maxMs) {
+// Roda ate entrar linha nova na P6 (ou o pedido terminar e ainda mais ~1,5 s de quadros).
+static P6 rodar(int maxMs, const P6 *base) {
   long long fim = (long long)maxMs;
   long long dec = 0;
   int calmos = 0;
@@ -150,7 +154,7 @@ static P6 rodar(int maxMs) {
   while (dec < fim) {
     quadro();
     p = lerP6();
-    if (p.temResumo) { quadro(); return lerP6(); }
+    if (p.n > base->n) { quadro(); return lerP6(); }
     if (!farolcompor_em_voo()) { if (++calmos > 90) break; }
     else calmos = 0;
     usleep(16000);
@@ -161,7 +165,8 @@ static P6 rodar(int maxMs) {
 
 // Cada caso comeca do zero: perfil "trocado" (zera o dedupe da sessao), P6
 // reaberta, diario com T2E4 visto ha 7 semanas e consentimento dado.
-static void abrirCaso(void) {
+// Devolve a P6 deterministica inicial (sem resumo) para comparacao literal.
+static P6 abrirCaso(void) {
   atomic_store(&g_player, 0);
   atomic_store(&g_offline, 0);
   atomic_store(&g_infantil, 0);
@@ -180,6 +185,10 @@ static void abrirCaso(void) {
   g_t += 5000u;
   atomic_store(&g_ms, g_t);
   faroldetalhe_abrir(3, g_t);
+  g_t += 16u;
+  atomic_store(&g_ms, g_t);
+  faroldetalhe_atualizar(3, 0, 0, 0.016f, g_t);
+  return lerP6();
 }
 
 static void auditarCorpos(const char *caso) {
@@ -227,23 +236,45 @@ static void teste_unidades(void) {
   puts("ok  unidades: sinopse por (t, e) exato e linha unica <= 62");
 }
 
+static void checaResumoAceito(const char *caso, const P6 *base, const P6 *p,
+                              const char *esperado) {
+  char res[192];
+  int ok = farolcompor_retomada_resumo("tt0903747", 2, 4, res, sizeof res);
+  CHECA(ok == 1, "%s: farolcompor_retomada_resumo devia devolver 1, veio %d", caso, ok);
+  CHECA(!strcmp(res, esperado), "%s: resumo retornado [%s] != [%s]", caso, res, esperado);
+  CHECA(p->temTempo, "%s: linha de tempo T2E4 sumiu", caso);
+  CHECA(p->n == base->n + 1, "%s: esperava %d linhas na P6, veio %d", caso, base->n + 1, p->n);
+  CHECA(p->posTempo == base->posTempo, "%s: posTempo mudou (%d vs %d)", caso, p->posTempo, base->posTempo);
+  if (p->posTempo >= 0 && p->posTempo + 1 < p->n) {
+    CHECA(!strcmp(p->linhas[p->posTempo], base->linhas[base->posTempo]),
+          "%s: linha de tempo alterada [%s]", caso, p->linhas[p->posTempo]);
+    CHECA(!strcmp(p->linhas[p->posTempo + 1], esperado),
+          "%s: linha P6 abaixo da retomada [%s] != [%s]", caso, p->linhas[p->posTempo + 1], esperado);
+  }
+}
+
+static void checaResumoRecusado(const char *caso, const P6 *base, const P6 *p) {
+  char res[192];
+  int ok = farolcompor_retomada_resumo("tt0903747", 2, 4, res, sizeof res);
+  CHECA(ok == 0 && res[0] == '\0', "%s: farolcompor_retomada_resumo vazou [%s]", caso, res);
+  CHECA(p6Igual(p, base), "%s: P6 mudou (%d linhas vs %d, linha1=[%s])",
+        caso, p->n, base->n, p->n > 1 ? p->linhas[1] : "");
+}
+
 // --- 1. caminho bom + canario anti-spoiler ----------------------------------
 static void teste_resumo_valido(void) {
   int n0, n;
   char *c;
-  P6 p;
+  P6 base, p;
 
-  abrirCaso();
+  base = abrirCaso();
   escreverCenario("ok");
   n0 = nCapturas();
-  p = rodar(4000);
+  p = rodar(4000, &base);
   n = nCapturas();
   CHECA(n == n0 + 1, "esperava 1 POST, veio %d", n - n0);
-  CHECA(p.temTempo, "linha de tempo T2E4 sumiu");
-  CHECA(p.temResumo, "resumo nao entrou na P6");
-  CHECA(p.posResumo == p.posTempo + 1, "resumo fora do lugar (%d vs %d)", p.posResumo, p.posTempo);
-  CHECA(!strcmp(p.resumo, RESUMO_OK), "resumo diferente: [%s]", p.resumo);
-  CHECA(!strchr(p.resumo, '\n'), "resumo com quebra");
+  checaResumoAceito("valido", &base, &p, RESUMO_OK);
+  CHECA(!strchr(p.linhas[p.posTempo + 1], '\n'), "resumo com quebra");
   CHECA(faroldetalhe_altura(1040.0f) > 0.0f, "bloco sem altura");
 
   c = lerCaptura(&n);
@@ -291,16 +322,20 @@ static void teste_zero_post(void) {
   escreverCenario("ok");
   for (i = 0; i < (int)(sizeof casos / sizeof casos[0]); i++) {
     int n0, k;
-    P6 p;
-    abrirCaso();
+    char res[192];
+    P6 base, p;
+    base = abrirCaso();
     casos[i].f();
     n0 = nCapturas();
     for (k = 0; k < 150; k++) { quadro(); usleep(4000); }
     p = lerP6();
     CHECA(nCapturas() == n0, "%s: houve POST", casos[i].n);
-    CHECA(!p.temResumo, "%s: resumo apareceu", casos[i].n);
+    CHECA(farolcompor_retomada_resumo("tt0903747", 2, 4, res, sizeof res) == 0 && res[0] == '\0',
+          "%s: resumo vazou [%s]", casos[i].n, res);
     if (casos[i].temTempo)
-      CHECA(p.temTempo, "%s: linha de tempo sumiu", casos[i].n);
+      CHECA(p6Igual(&p, &base), "%s: P6 mudou (%d vs %d)", casos[i].n, p.n, base.n);
+    else
+      CHECA(!p.temTempo && p.n == 0, "%s: P6 devia ficar vazia, veio %d", casos[i].n, p.n);
     auditarCorpos(casos[i].n);
   }
   puts("ok  zero POST: sem Diario, infantil, sem consentimento, player, offline, sem sinopse, ambigua, seguro");
@@ -311,47 +346,73 @@ static void teste_quedas(void) {
   static const char *cenarios[] = {
     "s500", "s429", "regras", "nl", "proibida", "t2e5", "alvo_outro", "torto", "longa",
     "ep5", "ep5_en", "temp3", "futuro",
+    "p1_ep_cinco_pt", "p1_ep_five_en", "p1_ep_cinco_es",
+    "p1_eleventh_en", "p1_3ponto_a", "p1_chegara",
+    "will_die", "he_will", "ep_21_pt", "ep_21_en", "ep_21_es",
   };
   int i;
   for (i = 0; i < (int)(sizeof cenarios / sizeof cenarios[0]); i++) {
     int n0;
-    P6 p;
-    abrirCaso();
+    P6 base, p;
+    base = abrirCaso();
     escreverCenario(cenarios[i]);
     n0 = nCapturas();
-    p = rodar(2500);
+    p = rodar(2500, &base);
     CHECA(nCapturas() == n0 + 1, "%s: esperava 1 POST", cenarios[i]);
-    CHECA(p.temTempo, "%s: linha de tempo sumiu", cenarios[i]);
-    CHECA(!p.temResumo, "%s: resumo indevido [%s]", cenarios[i], p.resumo);
+    checaResumoRecusado(cenarios[i], &base, &p);
     auditarCorpos(cenarios[i]);
   }
-  puts("ok  quedas: 500, 429, regras, \\n, ALMA, T2E5, alvo trocado, JSON torto e longa -> so a linha de tempo");
+  puts("ok  quedas: 500, 429, regras, \\n, ALMA, T2E5, P1-1..6, will/21, JSON torto e longa -> so a linha de tempo");
+}
+
+// --- 3b. positivos P2-1 e controles do proprio episodio ---------------------
+static void teste_positivos_p2_e_controles(void) {
+  static const struct { const char *cen; const char *esp; } casos[] = {
+    { "pos_revelara",   "Jesse soube que Walt revelara o segredo no deserto." },
+    { "pos_escapara",   "Jesse negó que Walt escapara del desierto." },
+    { "pos_will_found", "Will found a trail in the desert." },
+    { "pos_proximo_ao", "Walt encontrou Jesse próximo ao deserto." },
+    { "ctrl_ep4",       "No episódio 4, Walter confronta Jesse no deserto." },
+    { "ctrl_temp2",     "Na 2ª temporada, Walter encontrou Jesse no deserto." },
+  };
+  int i;
+  for (i = 0; i < (int)(sizeof casos / sizeof casos[0]); i++) {
+    int n0;
+    P6 base, p;
+    base = abrirCaso();
+    escreverCenario(casos[i].cen);
+    n0 = nCapturas();
+    p = rodar(4000, &base);
+    CHECA(nCapturas() == n0 + 1, "%s: esperava 1 POST", casos[i].cen);
+    checaResumoAceito(casos[i].cen, &base, &p, casos[i].esp);
+    auditarCorpos(casos[i].cen);
+  }
+  puts("ok  positivos P2-1 e controles: revelara, escapara, Will found, proximo ao, ep 4, 2a temporada");
 }
 
 // --- 4. prazo de 6 s ----------------------------------------------------------
 static void teste_prazo(void) {
-  P6 p;
-  abrirCaso();
+  P6 base, p;
+  base = abrirCaso();
   escreverCenario("lento");
-  p = rodar(9000);
-  CHECA(p.temTempo, "prazo: linha de tempo sumiu");
-  CHECA(!p.temResumo, "prazo: resumo chegou depois do prazo");
+  p = rodar(9000, &base);
+  checaResumoRecusado("prazo", &base, &p);
   CHECA(!farolcompor_em_voo(), "prazo: pedido ainda em voo");
   puts("ok  prazo 6 s: resposta lenta descartada, fica a linha de tempo");
 }
 
 // --- 5. player abre com o resumo na tela -> some ------------------------------
 static void teste_player_abre_depois(void) {
-  P6 p;
+  P6 base, p;
   int k;
-  abrirCaso();
+  base = abrirCaso();
   escreverCenario("ok");
-  p = rodar(4000);
-  CHECA(p.temResumo, "player-depois: resumo nao entrou");
+  p = rodar(4000, &base);
+  checaResumoAceito("player-depois-antes", &base, &p, RESUMO_OK);
   atomic_store(&g_player, 1);
   for (k = 0; k < 4; k++) quadro();
   p = lerP6();
-  CHECA(!p.temResumo, "player-depois: resumo ficou com o player aberto");
+  CHECA(p6Igual(&p, &base), "player-depois: resumo ficou com o player aberto");
   atomic_store(&g_player, 0);
   puts("ok  player aberto depois: o resumo sai da P6");
 }
@@ -359,9 +420,9 @@ static void teste_player_abre_depois(void) {
 // --- 6. abertura via Continuar assistindo com IMDb composto ("tt...:2:5") ---
 static void teste_imdb_composto(void) {
   int n0, n;
-  P6 p;
+  P6 base, p;
 
-  abrirCaso();
+  base = abrirCaso();
   pthread_mutex_lock(&g_catMu);
   snprintf(g_itens[3].imdb, sizeof g_itens[3].imdb, "tt0903747:2:5");
   pthread_mutex_unlock(&g_catMu);
@@ -371,12 +432,10 @@ static void teste_imdb_composto(void) {
 
   escreverCenario("ok");
   n0 = nCapturas();
-  p = rodar(4000);
+  p = rodar(4000, &base);
   n = nCapturas();
   CHECA(n == n0 + 1, "composto: esperava 1 POST, veio %d", n - n0);
-  CHECA(p.temTempo, "composto: linha de tempo T2E4 sumiu");
-  CHECA(p.temResumo, "composto: resumo nao entrou na P6");
-  CHECA(!strcmp(p.resumo, RESUMO_OK), "composto: resumo diferente: [%s]", p.resumo);
+  checaResumoAceito("imdb-composto", &base, &p, RESUMO_OK);
   auditarCorpos("imdb-composto");
   puts("ok  IMDb composto (tt0903747:2:5): 1 POST com sinopse T2E4 + linha de tempo + resumo");
 }
@@ -384,24 +443,23 @@ static void teste_imdb_composto(void) {
 // --- 7. retorno apos offline (P2-3): nao marca como tentado na sessao ---------
 static void teste_offline_volta_online(void) {
   int n0, k;
-  P6 p;
+  P6 base, p;
 
-  abrirCaso();
+  base = abrirCaso();
   escreverCenario("ok");
   atomic_store(&g_offline, 1);
   n0 = nCapturas();
   for (k = 0; k < 20; k++) { quadro(); usleep(4000); }
   CHECA(nCapturas() == n0, "offline-volta: houve POST offline");
   p = lerP6();
-  CHECA(p.temTempo && !p.temResumo, "offline-volta: estado offline incorreto");
+  checaResumoRecusado("offline-volta-offline", &base, &p);
 
   atomic_store(&g_offline, 0);
   g_t += 1500u;
   atomic_store(&g_ms, g_t);
-  p = rodar(4000);
+  p = rodar(4000, &base);
   CHECA(nCapturas() == n0 + 1, "offline-volta: nao buscou quando a rede voltou");
-  CHECA(p.temTempo, "offline-volta: linha de tempo sumiu");
-  CHECA(p.temResumo, "offline-volta: resumo nao entrou apos reconectar");
+  checaResumoAceito("offline-volta-online", &base, &p, RESUMO_OK);
   auditarCorpos("offline-volta");
   puts("ok  offline volta online: zero POST offline, busca e exibe resumo ao reconectar");
 }
@@ -418,6 +476,7 @@ int main(int argc, char **argv) {
   teste_resumo_valido();
   teste_zero_post();
   teste_quedas();
+  teste_positivos_p2_e_controles();
   teste_prazo();
   teste_player_abre_depois();
   teste_imdb_composto();

@@ -4148,6 +4148,22 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     { resumo: "No episódio seguinte, Walt foge." },
     { resumo: "Later in season 2, Walt hides." },
     { resumo: "Walt irá fugir do deserto." },
+    { resumo: "No episódio cinco, Walt volta ao deserto." },
+    { resumo: "In episode five, Walt returns to the desert." },
+    { resumo: "En el episodio cinco, Walt vuelve al desierto." },
+    { resumo: "In the eleventh episode, Walt returns to the desert." },
+    { resumo: "Walt vuelve al desierto en la 3.ª temporada." },
+    { resumo: "Walt chegará ao deserto." },
+    { resumo: "Walt will die in the desert." },
+    { resumo: "He will return." },
+    { resumo: "No episódio vinte e um, Walt foge." },
+    { resumo: "In the twenty-first episode, Walt escapes." },
+    { resumo: "En el episodio veintiuno, Walt huye." },
+    { resumo: "No décimo primeiro episódio, Walt foge." },
+    { resumo: "En el undécimo episodio, Walt huye." },
+    { resumo: "Twelfth episode: Walt hides." },
+    { resumo: "No próximo, Walt foge." },
+    { resumo: "Na próxima vez, Walt volta." },
     { resumo: 42 },
     { resumo: "Walt e Jesse no deserto.", extra: "x" },
     { texto: "Walt e Jesse no deserto." },
@@ -4163,6 +4179,39 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     assert.equal(chamadasLlm.length, 1);
     assert.equal(kv.mapa.size, 0);
   }
+  // Casos P1 em T2E4 (rejeitados sem gravar KV) + controles e falsos positivos P2-1 aceitos.
+  for (const p1 of [
+    "No episódio cinco, Walt volta ao deserto.",
+    "In episode five, Walt returns to the desert.",
+    "En el episodio cinco, Walt vuelve al desierto.",
+    "In the eleventh episode, Walt returns to the desert.",
+    "Walt vuelve al desierto en la 3.ª temporada.",
+    "Walt chegará ao deserto.",
+    "Walt will die in the desert.",
+    "He will return.",
+  ]) {
+    const { post, chamadasLlm, kv } = cenario(t, {}, { respostaLlm: () => ({ resumo: p1 }) });
+    const r = await post("/v1/farol/compor", pedidoRetomada({}, { temporada: 2, episodio: 4 }));
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { origem: "regras" }, `P1 T2E4 deveria cair em regras: ${p1}`);
+    assert.equal(chamadasLlm.length, 1);
+    assert.equal(kv.mapa.size, 0, `P1 T2E4 nao deve gravar KV: ${p1}`);
+  }
+  for (const aceito of [
+    "Jesse soube que Walt revelara o segredo no deserto.",
+    "Jesse negó que Walt escapara del desierto.",
+    "Will found a trail in the desert.",
+    "Walt encontrou Jesse próximo ao deserto.",
+    "No episódio 4, Walter confronta Jesse no deserto.",
+    "Na 2ª temporada, Walter encontrou Jesse no deserto.",
+  ]) {
+    const { post, kv } = cenario(t, {}, { respostaLlm: () => ({ resumo: aceito }) });
+    const r = await post("/v1/farol/compor", pedidoRetomada({}, { temporada: 2, episodio: 4 }));
+    assert.equal(r.status, 200);
+    assert.equal(r.body.origem, "llm", `Deveria aceitar em T2E4: ${aceito}`);
+    assert.equal(r.body.pecas[0].itens[0].l.x, aceito);
+    assert.equal(kv.mapa.size, 1);
+  }
   // Citar o proprio episodio visto e permitido; cerca de codigo e aceita.
   assert.equal(validarResumoRetomada("No T2E9 Walt e Jesse ficaram no deserto.", { temporada: 2, episodio: 9 }),
     "No T2E9 Walt e Jesse ficaram no deserto.");
@@ -4172,6 +4221,14 @@ test("retomada: resposta torta do LLM e recusada e cai em regras sem cache", asy
     "Na segunda temporada, Walt ficou no deserto.");
   assert.equal(validarResumoRetomada("A ira de Walt cresce no deserto.", { temporada: 2, episodio: 9 }),
     "A ira de Walt cresce no deserto.");
+  assert.equal(validarResumoRetomada("No episódio 4, Walter confronta Jesse no deserto.", { temporada: 2, episodio: 4 }),
+    "No episódio 4, Walter confronta Jesse no deserto.");
+  assert.equal(validarResumoRetomada("Na 2ª temporada, Walter encontrou Jesse no deserto.", { temporada: 2, episodio: 4 }),
+    "Na 2ª temporada, Walter encontrou Jesse no deserto.");
+  assert.equal(validarResumoRetomada("Em um episódio tenso, Walt ficou no deserto.", { temporada: 2, episodio: 4 }),
+    "Em um episódio tenso, Walt ficou no deserto.");
+  assert.equal(validarResumoRetomada("No episódio um, Walt ficou no deserto.", { temporada: 2, episodio: 4 }),
+    null);
   {
     const { post } = cenario(t, {}, { respostaLlm: () => "```json\n{\"resumo\":\"Walt e Jesse ficaram no deserto.\"}\n```" });
     const r = await post("/v1/farol/compor", pedidoRetomada());

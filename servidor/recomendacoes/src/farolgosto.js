@@ -4633,26 +4633,242 @@ const PROMPT_RETOMADA =
   "Responda SOMENTE JSON {\"resumo\":\"...\"}.";
 
 // Pistas de spoiler/futuro que nunca podem subir num resumo do episodio visto.
-const RX_FUTURO_RETOMADA =
-  /\b(?:proxim[oa]s?|seguintes?|siguientes?|next\s+(?:episodes?|seasons?|chapters?|time)|futur[oa]s?|later\s+in|upcoming|em\s+breve|en\s+breve|spoilers?|season\s+finale|final\s+d[ae]\s+temporada|will\s+\w+|vai\s+\w+|va\s+a\s+\w+|(?:morrer|descobrir|descubrir|voltar|trair|revelar|acabar|mudar|escapar|vencer|perder|salvar|morir|volver|traicionar|cambiar)a)\b/;
-
-const ORDINAIS_RETOMADA = new Map([
-  ["primeira", 1], ["primeiro", 1], ["primera", 1], ["primero", 1], ["primer", 1], ["first", 1],
-  ["segunda", 2], ["segundo", 2], ["second", 2],
-  ["terceira", 3], ["terceiro", 3], ["tercera", 3], ["tercero", 3], ["tercer", 3], ["third", 3],
-  ["quarta", 4], ["quarto", 4], ["cuarta", 4], ["cuarto", 4], ["fourth", 4],
-  ["quinta", 5], ["quinto", 5], ["fifth", 5],
-  ["sexta", 6], ["sexto", 6], ["sixth", 6],
-  ["setima", 7], ["setimo", 7], ["septima", 7], ["septimo", 7], ["seventh", 7],
-  ["oitava", 8], ["oitavo", 8], ["octava", 8], ["octavo", 8], ["eighth", 8],
-  ["nona", 9], ["nono", 9], ["novena", 9], ["noveno", 9], ["ninth", 9],
-  ["decima", 10], ["decimo", 10], ["tenth", 10],
+const RET_FUTURO_SIMPLES = new Set([
+  "futuro", "futura", "futuros", "futuras", "upcoming", "spoiler", "spoilers",
 ]);
 
-const RX_ORDINAL_RETOMADA = new RegExp(
-  `\\b(${[...ORDINAIS_RETOMADA.keys()].join("|")})\\s+(temporada|season|episodio|episode|capitulo|chapter)\\b`,
-  "g"
-);
+const RET_SUB_EP = new Set([
+  "episodio", "episodios", "episode", "episodes", "capitulo", "capitulos", "chapter", "chapters", "ep", "eps",
+]);
+
+const RET_SUB_TEMP = new Set(["temporada", "temporadas", "season", "seasons"]);
+
+const RET_PROXIMO = new Set([
+  "proximo", "proxima", "proximos", "proximas",
+  "seguinte", "seguintes", "siguiente", "siguientes",
+]);
+
+const RET_NEXT_ALVO = new Set([
+  "episode", "episodes", "ep", "eps", "season", "seasons", "chapter", "chapters", "time", "times",
+]);
+
+const RET_PROX_ALVO = new Set([
+  "episodio", "episodios", "episode", "episodes", "ep", "eps",
+  "capitulo", "capitulos", "chapter", "chapters",
+  "temporada", "temporadas", "season", "seasons",
+  "vez", "vezes", "time", "times",
+]);
+
+const RET_ART_PROX = new Set(["no", "na", "nos", "nas", "el", "la", "los", "las"]);
+const RET_PREP_ESPACIAL = new Set(["a", "ao", "aos", "as", "de", "da", "do", "das", "dos", "del"]);
+const RET_NUM_LIG = new Set(["n", "no", "num", "numero", "number"]);
+const RET_ARTIGOS_UM = new Set(["um", "uma", "un", "una"]);
+
+const RET_WILL_FUTURO_SEG = new Set([
+  "he", "she", "it", "they", "we", "you", "i", "there", "this", "that", "these", "those",
+  "anyone", "someone", "everyone", "nobody", "noone",
+  "anything", "something", "everything", "nothing",
+  "not", "never", "still", "also", "soon", "eventually", "finally", "probably", "likely",
+  "be", "have", "do", "go", "come", "see", "say", "make", "take", "know", "get", "give",
+  "find", "tell", "ask", "try", "leave", "die", "live", "kill", "save", "escape", "return",
+  "reveal", "discover", "change", "betray", "win", "lose", "survive", "fight", "hide", "flee",
+  "run", "fall", "meet", "keep", "hold", "hear", "think", "bring", "break", "speak", "help",
+  "stay", "wait", "stop", "start", "begin", "learn", "pay", "send", "move", "turn", "face",
+  "follow", "lead", "watch", "show", "use", "need", "want", "become", "happen", "end",
+]);
+
+const RET_CARDINAL_UNIDADE = new Map([
+  ["um", 1], ["uma", 1], ["one", 1], ["uno", 1], ["un", 1], ["una", 1],
+  ["dois", 2], ["duas", 2], ["two", 2], ["dos", 2],
+  ["tres", 3], ["three", 3],
+  ["quatro", 4], ["four", 4], ["cuatro", 4],
+  ["cinco", 5], ["five", 5],
+  ["seis", 6], ["six", 6],
+  ["sete", 7], ["seven", 7], ["siete", 7],
+  ["oito", 8], ["eight", 8], ["ocho", 8],
+  ["nove", 9], ["nine", 9], ["nueve", 9],
+]);
+
+const RET_CARDINAL_DEZ = new Map([
+  ["dez", 10], ["ten", 10], ["diez", 10],
+  ["onze", 11], ["eleven", 11], ["once", 11],
+  ["doze", 12], ["twelve", 12], ["doce", 12],
+  ["treze", 13], ["thirteen", 13], ["trece", 13],
+  ["catorze", 14], ["quatorze", 14], ["fourteen", 14], ["catorce", 14],
+  ["quinze", 15], ["fifteen", 15], ["quince", 15],
+  ["dezesseis", 16], ["dezasseis", 16], ["sixteen", 16], ["dieciseis", 16],
+  ["dezessete", 17], ["dezassete", 17], ["seventeen", 17], ["diecisiete", 17],
+  ["dezoito", 18], ["eighteen", 18], ["dieciocho", 18],
+  ["dezenove", 19], ["dezanove", 19], ["nineteen", 19], ["diecinueve", 19],
+  ["veintiuno", 21], ["veintiun", 21], ["veintiuna", 21],
+  ["veintidos", 22], ["veintitres", 23], ["veinticuatro", 24], ["veinticinco", 25],
+  ["veintiseis", 26], ["veintisiete", 27], ["veintiocho", 28], ["veintinueve", 29],
+]);
+
+const RET_CARDINAL_DEZENA = new Map([
+  ["vinte", 20], ["twenty", 20], ["veinte", 20],
+  ["trinta", 30], ["thirty", 30], ["treinta", 30],
+  ["quarenta", 40], ["forty", 40], ["cuarenta", 40],
+  ["cinquenta", 50], ["fifty", 50], ["cincuenta", 50],
+  ["sessenta", 60], ["sixty", 60], ["sesenta", 60],
+  ["setenta", 70], ["seventy", 70],
+  ["oitenta", 80], ["eighty", 80], ["ochenta", 80],
+  ["noventa", 90], ["ninety", 90],
+]);
+
+const RET_ORDINAL_UNIDADE = new Map([
+  ["primeiro", 1], ["primeira", 1], ["primeiros", 1], ["primeiras", 1],
+  ["primero", 1], ["primera", 1], ["primer", 1], ["primeros", 1], ["primeras", 1], ["first", 1],
+  ["segundo", 2], ["segunda", 2], ["segundos", 2], ["segundas", 2], ["second", 2],
+  ["terceiro", 3], ["terceira", 3], ["terceiros", 3], ["terceiras", 3],
+  ["tercero", 3], ["tercera", 3], ["tercer", 3], ["terceros", 3], ["terceras", 3], ["third", 3],
+  ["quarto", 4], ["quarta", 4], ["quartos", 4], ["quartas", 4],
+  ["cuarto", 4], ["cuarta", 4], ["cuartos", 4], ["cuartas", 4], ["fourth", 4],
+  ["quinto", 5], ["quinta", 5], ["quintos", 5], ["quintas", 5], ["fifth", 5],
+  ["sexto", 6], ["sexta", 6], ["sextos", 6], ["sextas", 6], ["sixth", 6],
+  ["setimo", 7], ["setima", 7], ["setimos", 7], ["setimas", 7],
+  ["septimo", 7], ["septima", 7], ["septimos", 7], ["septimas", 7], ["seventh", 7],
+  ["oitavo", 8], ["oitava", 8], ["oitavos", 8], ["oitavas", 8],
+  ["octavo", 8], ["octava", 8], ["octavos", 8], ["octavas", 8], ["eighth", 8],
+  ["nono", 9], ["nona", 9], ["nonos", 9], ["nonas", 9],
+  ["noveno", 9], ["novena", 9], ["novenos", 9], ["novenas", 9], ["ninth", 9],
+]);
+
+const RET_ORDINAL_SIMPLES = new Map([
+  ["undecimo", 11], ["undecima", 11], ["onzeno", 11], ["onzena", 11], ["eleventh", 11],
+  ["duodecimo", 12], ["duodecima", 12], ["twelfth", 12],
+  ["thirteenth", 13], ["fourteenth", 14], ["fifteenth", 15], ["sixteenth", 16],
+  ["seventeenth", 17], ["eighteenth", 18], ["nineteenth", 19],
+]);
+
+const RET_ORDINAL_DEZENA = new Map([
+  ["decimo", 10], ["decima", 10], ["decimos", 10], ["decimas", 10], ["tenth", 10],
+  ["vigesimo", 20], ["vigesima", 20], ["twentieth", 20],
+  ["trigesimo", 30], ["trigesima", 30], ["thirtieth", 30],
+  ["quadragesimo", 40], ["quadragesima", 40], ["fortieth", 40],
+  ["quinquagesimo", 50], ["quinquagesima", 50], ["fiftieth", 50],
+  ["sexagesimo", 60], ["sexagesima", 60], ["sixtieth", 60],
+  ["septuagesimo", 70], ["septuagesima", 70], ["setuagesimo", 70], ["setuagesima", 70], ["seventieth", 70],
+  ["octogesimo", 80], ["octogesima", 80], ["eightieth", 80],
+  ["nonagesimo", 90], ["nonagesima", 90], ["ninetieth", 90],
+]);
+
+const RET_ORDINAL_PREFIXO_ES = [
+  ["decimo", 10], ["decima", 10], ["vigesimo", 20], ["vigesima", 20],
+  ["trigesimo", 30], ["trigesima", 30], ["quadragesimo", 40], ["quadragesima", 40],
+  ["quinquagesimo", 50], ["quinquagesima", 50], ["sexagesimo", 60], ["sexagesima", 60],
+  ["septuagesimo", 70], ["septuagesima", 70], ["octogesimo", 80], ["octogesima", 80],
+  ["nonagesimo", 90], ["nonagesima", 90],
+];
+
+function retFoldBasico(s) {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ª/g, "a")
+    .replace(/[º°]/g, "o")
+    .toLowerCase();
+}
+
+function retOrdinalFused(tok) {
+  for (const [pref, dez] of RET_ORDINAL_PREFIXO_ES) {
+    if (tok.startsWith(pref) && tok.length > pref.length) {
+      const u = RET_ORDINAL_UNIDADE.get(tok.slice(pref.length));
+      if (u) return dez + u;
+    }
+  }
+  if (tok.startsWith("decim") && tok.length > 5) {
+    const u = RET_ORDINAL_UNIDADE.get(tok.slice(5));
+    if (u === 8) return 18;
+  }
+  return 0;
+}
+
+function retParseNumeroExtenso(toks, i) {
+  const w = toks[i].w;
+  const mNum = w.match(/^(\d{1,5})(?:[ao]|st|nd|rd|th)?$/);
+  if (mNum) return { val: Number(mNum[1]), len: 1, artigo: false };
+
+  const ordU = RET_ORDINAL_UNIDADE.get(w);
+  if (ordU) return { val: ordU, len: 1, artigo: false };
+
+  const ordS = RET_ORDINAL_SIMPLES.get(w);
+  if (ordS) return { val: ordS, len: 1, artigo: false };
+
+  const ordF = retOrdinalFused(w);
+  if (ordF) return { val: ordF, len: 1, artigo: false };
+
+  const ordDez = RET_ORDINAL_DEZENA.get(w);
+  if (ordDez) {
+    if (i + 1 < toks.length && !toks[i + 1].q) {
+      const u1 = RET_ORDINAL_UNIDADE.get(toks[i + 1].w);
+      if (u1) return { val: ordDez + u1, len: 2, artigo: false };
+      if ((toks[i + 1].w === "e" || toks[i + 1].w === "y") &&
+          i + 2 < toks.length && !toks[i + 2].q) {
+        const u2 = RET_ORDINAL_UNIDADE.get(toks[i + 2].w);
+        if (u2) return { val: ordDez + u2, len: 3, artigo: false };
+      }
+    }
+    return { val: ordDez, len: 1, artigo: false };
+  }
+
+  const cardDez = RET_CARDINAL_DEZENA.get(w);
+  if (cardDez) {
+    if (i + 1 < toks.length && !toks[i + 1].q) {
+      const u1 = RET_CARDINAL_UNIDADE.get(toks[i + 1].w) || RET_ORDINAL_UNIDADE.get(toks[i + 1].w);
+      if (u1) return { val: cardDez + u1, len: 2, artigo: false };
+      if ((toks[i + 1].w === "e" || toks[i + 1].w === "y") &&
+          i + 2 < toks.length && !toks[i + 2].q) {
+        const u2 = RET_CARDINAL_UNIDADE.get(toks[i + 2].w) || RET_ORDINAL_UNIDADE.get(toks[i + 2].w);
+        if (u2) return { val: cardDez + u2, len: 3, artigo: false };
+      }
+    }
+    return { val: cardDez, len: 1, artigo: false };
+  }
+
+  const cardD = RET_CARDINAL_DEZ.get(w);
+  if (cardD) {
+    if (w === "diez" && i + 2 < toks.length && !toks[i + 1].q &&
+        toks[i + 1].w === "y" && !toks[i + 2].q) {
+      const u2 = RET_CARDINAL_UNIDADE.get(toks[i + 2].w);
+      if (u2) return { val: 10 + u2, len: 3, artigo: false };
+    }
+    return { val: cardD, len: 1, artigo: false };
+  }
+
+  const cardU = RET_CARDINAL_UNIDADE.get(w);
+  if (cardU) return { val: cardU, len: 1, artigo: RET_ARTIGOS_UM.has(w) };
+
+  return null;
+}
+
+function retTokenizar(s) {
+  const norm = s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ª/g, "a")
+    .replace(/[º°]/g, "o")
+    .toLowerCase()
+    .replace(/(\d+)\s*\.\s*([ao])\b/g, "$1$2");
+
+  const toks = [];
+  let atual = "";
+  let qPend = false;
+  for (const ch of norm) {
+    if (/[\p{L}\p{N}]/u.test(ch)) {
+      atual += ch;
+    } else {
+      if (atual) {
+        toks.push({ w: atual, q: qPend });
+        atual = "";
+        qPend = false;
+      }
+      if (ch === "," || ch === ";" || ch === "." || ch === "!" || ch === "?") qPend = true;
+    }
+  }
+  if (atual) toks.push({ w: atual, q: qPend });
+  return toks;
+}
 
 // Valida o resumo (do LLM ou do cache): 1 linha, <= 62 pontos, filtro ALMA,
 // sem futuro e sem citar outro episodio/temporada (numerico ou por extenso)
@@ -4664,38 +4880,81 @@ export function validarResumoRetomada(bruto, ret) {
   if (!s || s !== bruto) return null;
   if (Array.from(s).length > FAROL_RETOMADA_RESUMO_MAX) return null;
   if (!farolTextoAceita(s)) return null;
-  if (/\birá\s+\S+/iu.test(s.normalize("NFC"))) return null;
-  const clean = s
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/ª/g, "a")
-    .replace(/[º°]/g, "o")
-    .toLowerCase()
-    .replace(/[\p{P}\p{S}\s]+/gu, " ")
-    .trim();
-  if (RX_FUTURO_RETOMADA.test(clean)) return null;
-  for (const m of clean.matchAll(/\b[ts](\d{1,3})\s*e(\d{1,4})\b/g)) {
-    if (Number(m[1]) !== ret.temporada || Number(m[2]) !== ret.episodio) return null;
+
+  const sNfc = s.normalize("NFC");
+  if (/(?<![\p{L}\p{N}])irá\s+[\p{L}\p{N}]/iu.test(sNfc)) return null;
+  for (const m of sNfc.toLowerCase().matchAll(/[\p{L}\p{N}]+/gu)) {
+    if (/^\p{L}{2,}(?:[aei]rá|[aei]rão|[aei]rán)$/u.test(m[0])) return null;
   }
-  for (const m of clean.matchAll(/\b(?:episodio|episode|capitulo|chapter)\s+(?:no?\s+)?(\d{1,4})\b/g)) {
-    if (Number(m[1]) !== ret.episodio) return null;
+
+  // Diferencia "will"/"WILL" (futuro) de "Will" (nome proprio seguido de passado/substantivo).
+  const palavrasOrig = Array.from(sNfc.matchAll(/[\p{L}\p{N}]+/gu), (m) => m[0]);
+  const temPergunta = sNfc.includes("?");
+  for (let i = 0; i < palavrasOrig.length; i++) {
+    const p = palavrasOrig[i];
+    if ((p === "will" || p === "WILL") && i + 1 < palavrasOrig.length) return null;
+    if (p === "Will" && i + 1 < palavrasOrig.length) {
+      if (i === 0 && temPergunta) return null;
+      if (RET_WILL_FUTURO_SEG.has(retFoldBasico(palavrasOrig[i + 1]))) return null;
+    }
   }
-  for (const m of clean.matchAll(/\bep\s*(\d{1,4})\b/g)) {
-    if (Number(m[1]) !== ret.episodio) return null;
-  }
-  for (const m of clean.matchAll(/\b(\d{1,4})(?:[ao]|st|nd|rd|th)?\s+(?:episodio|episode|capitulo|chapter)\b/g)) {
-    if (Number(m[1]) !== ret.episodio) return null;
-  }
-  for (const m of clean.matchAll(/\b(?:temporada|season)\s+(?:no?\s+)?(\d{1,4})\b/g)) {
-    if (Number(m[1]) !== ret.temporada) return null;
-  }
-  for (const m of clean.matchAll(/\b(\d{1,4})(?:[ao]|st|nd|rd|th)?\s+(?:temporada|season)\b/g)) {
-    if (Number(m[1]) !== ret.temporada) return null;
-  }
-  for (const m of clean.matchAll(RX_ORDINAL_RETOMADA)) {
-    const ord = ORDINAIS_RETOMADA.get(m[1]);
-    const alvo = (m[2] === "temporada" || m[2] === "season") ? ret.temporada : ret.episodio;
-    if (ord !== alvo) return null;
+
+  const toks = retTokenizar(s);
+  const nt = toks.length;
+  for (let i = 0; i < nt; i++) {
+    const w = toks[i].w;
+    if (RET_FUTURO_SIMPLES.has(w)) return null;
+    if (w === "vai" && i + 1 < nt && !toks[i + 1].q) return null;
+    if (w === "va" && i + 2 < nt && !toks[i + 1].q && toks[i + 1].w === "a" && !toks[i + 2].q) return null;
+    if ((w === "em" || w === "en") && i + 1 < nt && !toks[i + 1].q && toks[i + 1].w === "breve") return null;
+    if (w === "later" && i + 1 < nt && !toks[i + 1].q && toks[i + 1].w === "in") return null;
+    if (w === "season" && i + 1 < nt && !toks[i + 1].q && toks[i + 1].w === "finale") return null;
+    if (w === "final" && i + 2 < nt && !toks[i + 1].q &&
+        (toks[i + 1].w === "da" || toks[i + 1].w === "de") &&
+        !toks[i + 2].q && toks[i + 2].w === "temporada") return null;
+    if (w === "next" && i + 1 < nt && !toks[i + 1].q && RET_NEXT_ALVO.has(toks[i + 1].w)) return null;
+    if (RET_PROXIMO.has(w)) {
+      if (i > 0 && !toks[i].q && (RET_SUB_EP.has(toks[i - 1].w) || RET_SUB_TEMP.has(toks[i - 1].w))) return null;
+      if (i + 1 < nt && !toks[i + 1].q && RET_PROX_ALVO.has(toks[i + 1].w)) return null;
+      if (i > 0 && !toks[i].q && RET_ART_PROX.has(toks[i - 1].w) &&
+          (i + 1 >= nt || toks[i + 1].q || !RET_PREP_ESPACIAL.has(toks[i + 1].w))) return null;
+    }
+
+    const mTxEy = w.match(/^[ts](\d{1,3})e(\d{1,4})$/);
+    if (mTxEy && (Number(mTxEy[1]) !== ret.temporada || Number(mTxEy[2]) !== ret.episodio)) return null;
+    const mT = w.match(/^[ts](\d{1,3})$/);
+    if (mT && i + 1 < nt && !toks[i + 1].q) {
+      const mE = toks[i + 1].w.match(/^e(\d{1,4})$/);
+      if (mE && (Number(mT[1]) !== ret.temporada || Number(mE[1]) !== ret.episodio)) return null;
+    }
+    const mEp = w.match(/^ep(\d{1,4})$/);
+    if (mEp && Number(mEp[1]) !== ret.episodio) return null;
+
+    if (RET_SUB_EP.has(w)) {
+      let j = i + 1;
+      if (j < nt && !toks[j].q && RET_NUM_LIG.has(toks[j].w)) j++;
+      if (j < nt && !toks[j].q) {
+        const n = retParseNumeroExtenso(toks, j);
+        if (n && n.val !== ret.episodio) return null;
+      }
+    }
+    if (RET_SUB_TEMP.has(w)) {
+      let j = i + 1;
+      if (j < nt && !toks[j].q && RET_NUM_LIG.has(toks[j].w)) j++;
+      if (j < nt && !toks[j].q) {
+        const n = retParseNumeroExtenso(toks, j);
+        if (n && n.val !== ret.temporada) return null;
+      }
+    }
+
+    const numAntes = retParseNumeroExtenso(toks, i);
+    if (numAntes && i + numAntes.len < nt && !toks[i + numAntes.len].q) {
+      if (!(numAntes.artigo && numAntes.val === 1)) {
+        const alvo = toks[i + numAntes.len].w;
+        if (RET_SUB_EP.has(alvo) && numAntes.val !== ret.episodio) return null;
+        if (RET_SUB_TEMP.has(alvo) && numAntes.val !== ret.temporada) return null;
+      }
+    }
   }
   return s;
 }

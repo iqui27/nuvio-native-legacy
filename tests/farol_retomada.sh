@@ -58,6 +58,23 @@ RESP = {
     "ep5_en":     (200, cena("In episode 5, Walt goes home.")),
     "temp3":      (200, cena("Na terceira temporada, Walt muda de identidade.")),
     "futuro":     (200, cena("Walt morrerá ao salvar Jesse.")),
+    "p1_ep_cinco_pt":  (200, cena("No episódio cinco, Walt volta ao deserto.")),
+    "p1_ep_five_en":   (200, cena("In episode five, Walt returns to the desert.")),
+    "p1_ep_cinco_es":  (200, cena("En el episodio cinco, Walt vuelve al desierto.")),
+    "p1_eleventh_en":  (200, cena("In the eleventh episode, Walt returns to the desert.")),
+    "p1_3ponto_a":     (200, cena("Walt vuelve al desierto en la 3.ª temporada.")),
+    "p1_chegara":      (200, cena("Walt chegará ao deserto.")),
+    "will_die":        (200, cena("Walt will die in the desert.")),
+    "he_will":         (200, cena("He will return.")),
+    "ep_21_pt":        (200, cena("No episódio vinte e um, Walt foge.")),
+    "ep_21_en":        (200, cena("In the twenty-first episode, Walt escapes.")),
+    "ep_21_es":        (200, cena("En el episodio veintiuno, Walt huye.")),
+    "pos_revelara":    (200, cena("Jesse soube que Walt revelara o segredo no deserto.")),
+    "pos_escapara":    (200, cena("Jesse negó que Walt escapara del desierto.")),
+    "pos_will_found":  (200, cena("Will found a trail in the desert.")),
+    "pos_proximo_ao":  (200, cena("Walt encontrou Jesse próximo ao deserto.")),
+    "ctrl_ep4":        (200, cena("No episódio 4, Walter confronta Jesse no deserto.")),
+    "ctrl_temp2":      (200, cena("Na 2ª temporada, Walter encontrou Jesse no deserto.")),
 }
 
 class H(http.server.BaseHTTPRequestHandler):
