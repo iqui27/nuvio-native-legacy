@@ -406,6 +406,7 @@ static void trocarTela(int n) { (void)n; }
 static void player_descartar_retido(void) {}
 static void detail_abrir(const HomeItem *it) { (void)it; }
 static int  detail_aberto(void) { return 0; }
+static void detail_fechar_seco(void) {}
 int cat_indice_reabrir(int idx, const CatItem *c) { (void)idx; (void)c; return -1; }
 enum { TELA_AJUSTES = 1, MENU_AJUSTES = 5 };
 static int tela = TELA_AJUSTES;

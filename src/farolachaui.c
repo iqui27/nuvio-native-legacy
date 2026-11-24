@@ -476,6 +476,7 @@ int farolachaui_evento(const SDL_Event *e, int *pediuVoltar, int *pediuAbrir) {
     return 1;
   }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
+    if (e->key.repeat) return 1;
     if (S.focoIdx < 0) {
       if (pediuVoltar) *pediuVoltar = 1;
     } else if (selecionarFocado()) {

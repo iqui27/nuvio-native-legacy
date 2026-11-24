@@ -31,6 +31,7 @@ int cacavisto_filme(const char *imdb, long tmdb, long long *quando);
 static void player_descartar_retido(void);
 static void detail_abrir(const HomeItem *it);
 static int  detail_aberto(void);
+static void detail_fechar_seco(void);
 
 #include "farol_resolver.c"
 
@@ -42,12 +43,15 @@ static char     A_vistos[32][32];
 static int      A_vistosN;
 static int      A_abriuN;
 static int      A_detailAberto;
+static int      A_fechouSecoN;
 static int      A_abriuIdx = -1;
 static char     A_abriuImdb[64];
 static char     A_abriuTipo[8];
 static char     A_abriuTitulo[160];
 static char     A_abriuMeta[96];
 static char     A_abriuArte[NV_ARTE_URL_MAX];
+static char     A_alvoEsperado[64];
+static void   (*A_naEntradaDetailAbrir)(const HomeItem *it);
 
 const CatItem *cat_item(int i) {
   return (i >= 0 && i < A_n) ? &A_itens[i] : NULL;
@@ -68,7 +72,13 @@ int cacavisto_filme(const char *imdb, long tmdb, long long *quando) {
 static void player_descartar_retido(void) {}
 
 static void detail_abrir(const HomeItem *it) {
-  const CatItem *c = it ? cat_item(it->indice) : NULL;
+  const CatItem *c;
+  if (A_naEntradaDetailAbrir) {
+    void (*fn)(const HomeItem *) = A_naEntradaDetailAbrir;
+    A_naEntradaDetailAbrir = NULL;
+    fn(it);
+  }
+  c = it ? cat_item(it->indice) : NULL;
   A_abriuN++;
   A_detailAberto = 1;
   A_abriuIdx = it ? it->indice : -1;
@@ -91,6 +101,34 @@ static int detail_aberto(void) {
   return A_detailAberto;
 }
 
+static void detail_fechar_seco(void) {
+  A_detailAberto = 0;
+  A_fechouSecoN++;
+}
+
+static void hook_inverter_cat(const HomeItem *it) {
+  CatItem tmp = A_itens[0];
+  snprintf(A_alvoEsperado, sizeof A_alvoEsperado, "%s",
+           (it && cat_item(it->indice)) ? cat_item(it->indice)->imdb : "");
+  A_itens[0] = A_itens[1];
+  A_itens[1] = tmp;
+  A_rev++;
+}
+
+static void hook_sumir_obra(const HomeItem *it) {
+  (void)it;
+  A_n = 1;
+  memset(&A_itens[0], 0, sizeof A_itens[0]);
+  snprintf(A_itens[0].imdb, sizeof A_itens[0].imdb, "tt9000032");
+  A_itens[0].tmdb = 9032;
+  snprintf(A_itens[0].tipo, sizeof A_itens[0].tipo, "movie");
+  snprintf(A_itens[0].titulo, sizeof A_itens[0].titulo, "obra_subst");
+  snprintf(A_itens[0].genero, sizeof A_itens[0].genero, "Filme · Drama");
+  snprintf(A_itens[0].meta, sizeof A_itens[0].meta, "2025 · 82 min");
+  A_itens[0].nota = 85;
+  A_rev++;
+}
+
 static int falhas;
 #define CONFERE(c) do { \
   if (!(c)) { \
@@ -107,12 +145,15 @@ static void zera_tudo(void) {
   A_vistosN = 0;
   A_abriuN = 0;
   A_detailAberto = 0;
+  A_fechouSecoN = 0;
+  A_naEntradaDetailAbrir = NULL;
   A_abriuIdx = -1;
   A_abriuImdb[0] = '\0';
   A_abriuTipo[0] = '\0';
   A_abriuTitulo[0] = '\0';
   A_abriuMeta[0] = '\0';
   A_abriuArte[0] = '\0';
+  A_alvoEsperado[0] = '\0';
   c_reduzidas = 1;
   resolver_teste_esquecer();
 }
@@ -141,20 +182,30 @@ static void marcar_visto(const char *imdb) {
   snprintf(A_vistos[A_vistosN++], sizeof A_vistos[0], "%s", imdb);
 }
 
-static void tecla(SDL_Keycode k) {
+static void tecla_repeat(SDL_Keycode k, Uint8 rep) {
   SDL_Event e;
   memset(&e, 0, sizeof e);
   e.type = SDL_KEYDOWN;
+  e.key.repeat = rep;
   e.key.keysym.sym = k;
   resolver_evento(&e);
 }
 
-static void tecla_app(SDL_Keycode k) {
+static void tecla(SDL_Keycode k) {
+  tecla_repeat(k, 0);
+}
+
+static void tecla_app_repeat(SDL_Keycode k, Uint8 rep) {
   SDL_Event e;
   memset(&e, 0, sizeof e);
   e.type = SDL_KEYDOWN;
+  e.key.repeat = rep;
   e.key.keysym.sym = k;
   app_resolver_despachar(&e);
+}
+
+static void tecla_app(SDL_Keycode k) {
+  tecla_app_repeat(k, 0);
 }
 
 static void desenhar(void) {
@@ -697,6 +748,99 @@ int main(void) {
   CONFERE(farolachaui_n() == 1 && farolachaui_em_fallback() == 1);
   CONFERE(farolachaui_l2()[0] == '\0');
   CONFERE(!escreveu(FT_ACHA_L2_NAO_VISTO));
+
+  // 15. FAROL25-r2 P1-1: inversao do catalogo na entrada de detail_abrir()
+  //     re-resolve a obra certa sem fechar o Farol no item errado.
+  zera_tudo();
+  add_cat("tt9000021", 9021, "movie", "obra_escolhida", "Filme · Drama", "2024 · 85 min", 92, 0, 0);
+  add_cat("tt9000022", 9022, "movie", "obra_trocada",   "Filme · Drama", "2024 · 86 min", 70, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  CONFERE(farolachaui_n() == 2 && farolachaui_foco() == 0);
+  A_naEntradaDetailAbrir = hook_inverter_cat;
+  tecla_app(SDLK_RETURN);
+  CONFERE(!resolver_aberto());
+  CONFERE(A_detailAberto == 1);
+  CONFERE(A_fechouSecoN == 1);
+  CONFERE(A_alvoEsperado[0] != '\0');
+  CONFERE(!strcmp(A_abriuImdb, A_alvoEsperado));
+  CONFERE(!strcmp(cat_item(A_abriuIdx)->imdb, A_alvoEsperado));
+
+  // Se a obra escolhida sumir na entrada de detail_abrir(), desfaz a abertura errada,
+  // mantem o Farol aberto na Tela 7 e recarrega os Achados.
+  zera_tudo();
+  add_cat("tt9000031", 9031, "movie", "obra_vai_sumir", "Filme · Drama", "2024 · 84 min", 90, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  CONFERE(farolachaui_n() == 1);
+  tela = TELA_AJUSTES;
+  A_naEntradaDetailAbrir = hook_sumir_obra;
+  tecla_app(SDLK_RETURN);
+  CONFERE(resolver_aberto() && resolver_fase() == RESOLVER_FASE_ACHAR);
+  CONFERE(A_detailAberto == 0);
+  CONFERE(A_fechouSecoN == 1);
+  CONFERE(tela == TELA_AJUSTES);
+  CONFERE(farolachaui_revisao() == A_rev);
+  CONFERE(farolachaui_n() == 1);
+
+  // 16. FAROL25-r2 P1-2: SDL_KEYDOWN de OK com key.repeat=1 e ignorado ao entrar
+  //     na Tela 7 e apos troca de cartao, enquanto setas com repeat=1 continuam movendo foco.
+  zera_tudo();
+  seed_catalogo_completo();
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  // Setas com repeat=1 na Tela 1 continuam movendo foco.
+  tecla_app_repeat(SDLK_DOWN, 1);
+  CONFERE(resolver_foco() == RESOLVER_B_ACHAR_NAO_VI);
+  tecla_app_repeat(SDLK_UP, 1);
+  CONFERE(resolver_foco() == RESOLVER_B_ACHAR_CURTO);
+  // Repeat em OK na Tela 1 nao abre Tela 7.
+  tecla_app_repeat(SDLK_RETURN, 1);
+  CONFERE(resolver_fase() == RESOLVER_FASE_INICIO);
+  // Toque novo abre Tela 7, e repeat imediato de OK (segurado) NAO abre o 1o resultado.
+  tecla_app_repeat(SDLK_RETURN, 0);
+  CONFERE(resolver_aberto() && resolver_fase() == RESOLVER_FASE_ACHAR);
+  CONFERE(A_abriuN == 0 && A_detailAberto == 0);
+  tecla_app_repeat(SDLK_RETURN, 1);
+  tecla_app_repeat(SDLK_KP_ENTER, 1);
+  tecla_app_repeat(SDLK_SPACE, 1);
+  CONFERE(resolver_aberto() && resolver_fase() == RESOLVER_FASE_ACHAR);
+  CONFERE(A_abriuN == 0 && A_detailAberto == 0);
+  // Setas com repeat=1 continuam movendo foco normalmente.
+  CONFERE(farolachaui_foco() == 0);
+  tecla_app_repeat(SDLK_RIGHT, 1); CONFERE(farolachaui_foco() == 1);
+  tecla_app_repeat(SDLK_RIGHT, 1); CONFERE(farolachaui_foco() == 2);
+  tecla_app_repeat(SDLK_LEFT, 1);  CONFERE(farolachaui_foco() == 1);
+  tecla_app_repeat(SDLK_DOWN, 1);  CONFERE(farolachaui_foco() == -1);
+  // OK com repeat=1 em Voltar tambem e ignorado.
+  tecla_app_repeat(SDLK_RETURN, 1);
+  CONFERE(resolver_fase() == RESOLVER_FASE_ACHAR && farolachaui_foco() == -1);
+  tecla_app_repeat(SDLK_UP, 1);    CONFERE(farolachaui_foco() == 1);
+
+  // Repeat em OK apos troca de cartao NAO confirma o cartao substituto.
+  zera_tudo();
+  add_cat("tt9000041", 9041, "movie", "obra_original", "Filme · Drama", "2024 · 80 min", 85, 0, 0);
+  resolver_abrir();
+  ir_intencao(RESOLVER_B_ACHAR_CURTO);
+  tecla(SDLK_RETURN);
+  desenhar();
+  memset(&A_itens[0], 0, sizeof A_itens[0]);
+  snprintf(A_itens[0].imdb, sizeof A_itens[0].imdb, "tt9000042");
+  A_itens[0].tmdb = 9042;
+  snprintf(A_itens[0].tipo, sizeof A_itens[0].tipo, "movie");
+  snprintf(A_itens[0].titulo, sizeof A_itens[0].titulo, "obra_substituta");
+  snprintf(A_itens[0].genero, sizeof A_itens[0].genero, "Filme · Drama");
+  snprintf(A_itens[0].meta, sizeof A_itens[0].meta, "2024 · 82 min");
+  A_rev++;
+  tecla_app_repeat(SDLK_RETURN, 0);
+  CONFERE(A_abriuN == 0 && A_detailAberto == 0);
+  CONFERE(farolachaui_revisao() == A_rev);
+  tecla_app_repeat(SDLK_RETURN, 1);
+  CONFERE(A_abriuN == 0 && A_detailAberto == 0 && resolver_aberto());
+  tecla_app_repeat(SDLK_RETURN, 0);
+  CONFERE(!resolver_aberto() && A_detailAberto == 1 && !strcmp(A_abriuImdb, "tt9000042"));
 
   // Modo vidro e animacoes ligadas (exercicio sem crashes).
   c_reduzidas = 0;

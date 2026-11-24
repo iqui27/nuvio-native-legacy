@@ -1007,7 +1007,11 @@ void resolver_evento(const SDL_Event *e) {
   if (k == SDLK_RIGHT) { mover(1, 0); return; }
   if (k == SDLK_UP)    { mover(0, -1); return; }
   if (k == SDLK_DOWN)  { mover(0, 1); return; }
-  if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) { ok(); return; }
+  if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
+    if (e->key.repeat) return;
+    ok();
+    return;
+  }
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) voltar();
 }
