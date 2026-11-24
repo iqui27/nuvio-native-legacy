@@ -47,6 +47,7 @@ function render() {
 
 function overview() {
   const farol = data.items.filter(i => ['diagnostico','gosto'].includes(i.group));
+  const critical = data.meta.criticalPath || {title:'Dois pontos no caminho crítico',subtitle:'Destravem estes, o resto anda',items:['farol-14','farol-52']};
   const fd = done(farol), approved = data.items.filter(i=>i.status==='APROVADA').length;
   const totalDone = done(data.items), percent = Math.round(fd / farol.length * 100);
   const batchCount = data.items.filter(i=>i.status==='LOTE').length;
@@ -74,8 +75,8 @@ function overview() {
   </aside></div>
   <div class="section-heading"><div><h2>As próximas ondas</h2><span class="muted tiny">Sequência de execução</span></div><button class="text-link" data-view="waves">Ver dependências ↗</button></div>
   <div class="wave-strip">${Object.entries(WAVES).map(([key,title])=>{const list=farol.filter(i=>i.wave===key);return `<button class="wave-tile" data-wave="${key}"><span class="wave-id">ONDA ${key}</span><strong>${title}</strong><small>${list.length} itens · ${list.filter(i=>waiting(i).length===0).length} sem dependência aberta</small>${meter(done(list),list.length)}</button>`;}).join('')}</div>
-  <div class="section-heading"><h2>Dois pontos no caminho crítico</h2><span class="muted tiny">Destravem estes, o resto anda</span></div>
-  <div class="critical-list">${['farol-14','farol-52'].map(id=>{const i=itemById(id);return `<button class="critical-card" data-item="${id}"><span class="item-id">${itemLabel(i)} · ONDA ${i.wave}</span><strong>${esc(i.title)} ↗</strong><p>${waiting(i).length} dependências ainda não integradas · ${esc(STATES[i.status])}</p></button>`;}).join('')}</div>
+  <div class="section-heading"><h2>${esc(critical.title)}</h2><span class="muted tiny">${esc(critical.subtitle)}</span></div>
+  <div class="critical-list">${critical.items.map(id=>{const i=itemById(id);return `<button class="critical-card" data-item="${esc(id)}"><span class="item-id">${itemLabel(i)} · ONDA ${i.wave}</span><strong>${esc(i.title)} ↗</strong><p>${waiting(i).length} dependências ainda não integradas · ${esc(STATES[i.status])}</p></button>`;}).join('')}</div>
   <div class="notice"><strong>Transparência do escopo.</strong> ${esc(data.meta.coverageNote)} Os números são calculados do JSON, não de uma estimativa. Relato VPS e estado no GitHub não substituem validação funcional.</div>`;
 }
 
