@@ -74,6 +74,18 @@ void farol_ev(FarolMod mod, int ev, int sev, int32_t a, int32_t b, const char *t
 // desde_ms 0 = sem filtro. Devolve quantos copiou (<= max).
 int  farolanel_ler(FarolEvento *dst, int max, uint32_t desde_ms);
 
+// Igual a farolanel_ler, mas tambem devolve em `*seqFim` a contagem
+// monotonica acumulada ate este retrato (cada evento copiado tem sequencia
+// seqFim - n + i), permitindo marcar fronteiras de sessao sem esvaziar os
+// 256 eventos recentes do anel. `seqFim` pode ser NULL.
+int  farolanel_ler_seq(FarolEvento *dst, int max, uint32_t desde_ms, uint64_t *seqFim);
+
+// Sequencia monotonica atual de eventos gravados no anel.
+uint64_t farolanel_seq(void);
+
+// Relogio atual do anel em ms (a mesma base usada para carimbar t_ms).
+uint32_t farolanel_agora_ms(void);
+
 // Quantos eventos do tipo `ev` nos ultimos janela_ms terminando em `agora`
 // (mesma aritmetica com sinal). janela_ms 0 = conta todos os que estao no anel.
 int  farolanel_contar(int ev, uint32_t janela_ms, uint32_t agora);

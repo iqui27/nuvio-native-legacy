@@ -19,6 +19,7 @@ static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static FarolEvento anel[FAROL_ANEL_N];
 static int esc;                  // slot da proxima gravacao
 static int qtd;                  // slots validos (0..FAROL_ANEL_N)
+static uint64_t seqTotal;        // contagem monotonica de eventos gravados
 
 static uint32_t agoraMsInterno(void) {
   struct timespec ts;
@@ -40,6 +41,10 @@ void farolanel_relogio(uint32_t (*fn)(void)) {
 static uint32_t agoraMs(void) {
   FarolRelogio fn = atomic_load_explicit(&relogio, memory_order_acquire);
   return fn ? fn() : 0;
+}
+
+uint32_t farolanel_agora_ms(void) {
+  return agoraMs();
 }
 
 static int tokenValido(unsigned char c) {
@@ -79,6 +84,7 @@ void farol_ev(FarolMod mod, int ev, int sev, int32_t a, int32_t b, const char *t
   farolanel_token(tok, e->tok);
   esc = (esc + 1) % FAROL_ANEL_N;
   if (qtd < FAROL_ANEL_N) qtd++;
+  seqTotal++;
   pthread_mutex_unlock(&trava);
 }
 
@@ -89,16 +95,32 @@ static int indiceMais(int i) {
   return (ini + i) % FAROL_ANEL_N;
 }
 
-int farolanel_ler(FarolEvento *dst, int max, uint32_t desde_ms) {
+int farolanel_ler_seq(FarolEvento *dst, int max, uint32_t desde_ms, uint64_t *seqFim) {
   int i, n = 0;
-  if (!dst || max <= 0) return 0;
+  if (!dst || max <= 0) {
+    if (seqFim) *seqFim = farolanel_seq();
+    return 0;
+  }
   pthread_mutex_lock(&trava);
   for (i = 0; i < qtd && n < max; i++) {
     const FarolEvento *e = &anel[indiceMais(i)];
     if (!desde_ms || (int32_t)(e->t_ms - desde_ms) >= 0) dst[n++] = *e;
   }
+  if (seqFim) *seqFim = seqTotal;
   pthread_mutex_unlock(&trava);
   return n;
+}
+
+int farolanel_ler(FarolEvento *dst, int max, uint32_t desde_ms) {
+  return farolanel_ler_seq(dst, max, desde_ms, NULL);
+}
+
+uint64_t farolanel_seq(void) {
+  uint64_t s;
+  pthread_mutex_lock(&trava);
+  s = seqTotal;
+  pthread_mutex_unlock(&trava);
+  return s;
 }
 
 int farolanel_contar(int ev, uint32_t janela_ms, uint32_t agora) {

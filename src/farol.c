@@ -28,16 +28,24 @@
 #include "farolcena.h"      // ANTES de qualquer farolrec.h direto (cabecalho)
 #include "farolsinal.h"
 #include "faroltexto.h"
+#include "dts_tv.h"
+#include "farolsonda.h"
+#include "redesaude.h"
+#include "addons.h"
+#include "debrid.h"
+#include "memlog.h"
+#include "webosver.h"
+#include "dts/dts_hls_tpk.h"
+#include "dts/dts_playback.h"
 #include "seguro.h"
 #include "perfilinfantil.h"
 #include "fileiras.h"
 #include "diario.h"
 #include "salvos.h"
-#include "recomenda.h"
 #include "perfis.h"
 #include "idioma.h"
 #include "mapa.h"
-#include "app.h"
+#include <limits.h>
 #include <pthread.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -45,10 +53,35 @@
 #include <string.h>
 #include <time.h>
 
-// Declarada em home.h; aqui so o prototipo (como o tend_registrar do
-// catalogo.c): home.h puxa gfx.h e a pilha GL, que a cola nao usa — e os
-// fixtures do Farol compilam sem a UI.
+// Prototipos locais (equivalente ao home_fileiras_na_tela): esses headers puxam
+// SDL2/GL e o Farol permanece puro nos fixtures sem video/UI.
 int home_fileiras_na_tela(void);
+const char *app_tela_nome(void);
+int recomenda_pessoa_canonica(const char *id, char *dst, size_t tam);
+void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
+                        int *fonteMbps, int *fonteDebrid, int *temOutraFonte,
+                        int *temFonteMenor, int *temFonteSemDv,
+                        int *temFonteSemDts, int *tvHdr, int *tvDv,
+                        int *vazaoMbps);
+int video_registro_negado(void);
+int video_audio_nao_suportado(void);
+int video_n_audio(void);
+const void *video_audio(int i);
+int video_audio_atual(void);
+int video_faixa_dts(const void *f);
+int video_dts_estado(void);
+int video_tem_dolby_vision(void);
+const char *video_hdr(void);
+#ifdef NV_TPK
+int video_tpk_tizen_maior(void);
+#endif
+int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid);
+uint64_t player_ultimo_erro_tentativa(void);
+int player_externo_disponivel_tentativa(uint64_t tentativa);
+const char *atualizacao_nova(void);
+
+#define FAROL_VIDEO_DTS_NENHUM 0
+#define FAROL_VIDEO_DTS_FALHOU 4
 
 #define FAROL_CAND_MAX 240          // 60 x 4 blocos; 512 era para um catalogo
 #define FAROL_SEM_MAX  16
@@ -793,7 +826,10 @@ const char *farol_fileira_titulo(const char *chaveFil) {
 }
 
 // ---------------------------------------------------------------- remocao --
-void farol_esquecer(void) { invalidar(); }
+void farol_esquecer(void) {
+  invalidar();
+  farol_sessao_reiniciar();
+}
 
 // 1 quando a fileira do Farol pode estar publicada: "Recomendar nesta TV"
 // ligado e modo seguro fora. A descoberta confere de novo no ponto de
@@ -836,3 +872,333 @@ void farol_recomendar_definir(int ligado, const char *dirArte) {
   if (!ligado) farol_remover_fileiras(dirArte);
   farolsinal_definir_recomendar(ligado);
 }
+
+// --------------------------------------------------- diagnostico / fachada --
+static pthread_mutex_t travaDiag = PTHREAD_MUTEX_INITIALIZER;
+static int temVeredito;
+static FarolVeredito vereditoSessao, vereditoSaida;
+static FarolFatos fatosSessao;
+static uint64_t sessaoDesdeSeq;
+#ifdef RESOLVER_TESTE
+static int usaFatosFixos;
+static FarolFatos fatosFixos;
+#endif
+
+static FarolPlat platAtual(void) {
+#if defined(NV_ANDROID)
+  return FP_ANDROID;
+#elif defined(NV_TPK)
+  return FP_TIZEN_TPK;
+#elif defined(__EMSCRIPTEN__)
+  return FP_TIZEN_WGT;
+#elif defined(NV_DESKTOP_MPV)
+  return FP_OUTRA;
+#else
+  return FP_WEBOS;
+#endif
+}
+
+static int osMaiorAtual(FarolPlat plat) {
+  int m = 0;
+  if (plat == FP_TIZEN_TPK) {
+#ifdef NV_TPK
+    m = video_tpk_tizen_maior();
+#endif
+    return m > 0 ? m : -1;
+  }
+  if (plat == FP_WEBOS) {
+    m = nv_webos_major();
+    return m > 0 ? m : -1;
+  }
+  return -1;
+}
+
+static int evNaJanela(uint32_t agoraMs, uint32_t tMs, uint32_t janelaMs) {
+  int32_t d = (int32_t)(agoraMs - tMs);
+  return d >= 0 && (uint32_t)d <= janelaMs;
+}
+
+static const char *acaoTokenSeguro(int acao) {
+  const char *tok = farolregra_acao_token(acao);
+  if (tok && tok[0]) return tok;
+  if (acao == FAROL_A_ENVIAR_REGISTRO) return "enviar_registro";
+  return "x";
+}
+
+void farol_fatos_ler(FarolFatos *out) {
+  FarolEvento ev[FAROL_ANEL_N];
+  ResolverFalha falha;
+  FarolSonda sonda;
+  char motBuf[RES_FRASE_MAX], recBuf[64];
+  const char *vNova, *hdr;
+  int i, n, nAud, at, temFalha;
+  int iPronto = -1, iErro = -1, iBusca = -1, iBuscaAnt = -1;
+  int falhas = 0, temAbrir = 0, erroNativoPend = 0, reconPend = 0;
+  int paradas = 0, recAudioAnel = 0, lentos = 0, prontoAposErro = 0;
+  uint64_t seqFim = 0, seqIni = 0, desdeSeq = 0, diagTentativa = 0;
+  uint32_t agoraMs;
+  long agora;
+  const uint32_t ttlMs = (uint32_t)RES_REJEITA_S * 1000u;
+
+  if (!out) return;
+
+#ifdef RESOLVER_TESTE
+  {
+    int fixo = 0;
+    pthread_mutex_lock(&travaDiag);
+    if (usaFatosFixos) {
+      *out = fatosFixos;
+      fixo = 1;
+    }
+    desdeSeq = sessaoDesdeSeq;
+    pthread_mutex_unlock(&travaDiag);
+    if (fixo) return;
+  }
+#else
+  pthread_mutex_lock(&travaDiag);
+  desdeSeq = sessaoDesdeSeq;
+  pthread_mutex_unlock(&travaDiag);
+#endif
+
+  farolregra_fatos_iniciar(out);
+  agoraMs = farolanel_agora_ms();
+  agora = (long)time(NULL);
+
+  out->plat = platAtual();
+  out->osMaior = osMaiorAtual(out->plat);
+  out->offline = rede_saude_offline() ? 1 : 0;
+  out->addonsQtd = addons_n();
+  if (out->addonsQtd < 0) out->addonsQtd = 0;
+  motBuf[0] = 0;
+  if (out->addonsQtd > 0 && !addons_ocupado() &&
+      addons_motivo_vazio(motBuf, sizeof motBuf) && motBuf[0])
+    out->addonsMotivo = 1;
+  out->debridSemPlano = debrid_sem_plano() ? 1 : 0;
+  recBuf[0] = 0;
+  out->debridRecusa = debrid_recusa(recBuf, sizeof recBuf) ? 1 : 0;
+  out->tvNegou = video_registro_negado() ? 1 : 0;
+
+  temFalha = resolverregra_falha_recente(&falha, agora);
+  out->haFalha = (temFalha && agora >= falha.agora &&
+                  agora - falha.agora <= RES_REJEITA_S) ? 1 : 0;
+  out->erroIdadeS = -1;
+  out->fonteDebrid = -1;
+  if (out->haFalha && player_ultimo_erro_farol(&out->erro, &out->fonteDebrid)) {
+    out->erroIdadeS = (int)(agora - falha.agora);
+    diagTentativa = player_ultimo_erro_tentativa();
+  }
+
+  n = farolanel_ler_seq(ev, FAROL_ANEL_N, 0, &seqFim);
+  seqIni = seqFim - (uint64_t)n;
+  for (i = 0; i < n; i++) {
+    uint64_t seq = seqIni + (uint64_t)i;
+    if (seq < desdeSeq) continue;
+    if (ev[i].ev == FE_PARADO && evNaJanela(agoraMs, ev[i].t_ms, 5u * 60u * 1000u))
+      paradas++;
+    if (!evNaJanela(agoraMs, ev[i].t_ms, ttlMs)) continue;
+    if (ev[i].ev == FE_PRONTO) iPronto = i;
+    else if (ev[i].ev == FE_ERRO_FONTE || ev[i].ev == FE_RECUSA_SINC) iErro = i;
+    else if (ev[i].ev == FE_ADDON_BUSCA) { iBuscaAnt = iBusca; iBusca = i; }
+    else if (ev[i].ev == FE_AUDIO_RECUSADO) recAudioAnel++;
+  }
+
+  for (i = (iPronto >= 0 ? iPronto + 1 : 0); i < n; i++) {
+    uint64_t seq = seqIni + (uint64_t)i;
+    uint16_t tipo = ev[i].ev;
+    if (seq < desdeSeq || !evNaJanela(agoraMs, ev[i].t_ms, ttlMs)) continue;
+    if (tipo == FE_ABRIR) {
+      if (erroNativoPend && !reconPend) falhas++;
+      temAbrir = 1;
+      erroNativoPend = 0;
+      reconPend = 0;
+    } else if (tipo == FE_ERRO_FONTE) {
+      falhas++;
+      erroNativoPend = 0;
+      reconPend = 0;
+    } else if (tipo == FE_RECUSA_SINC) {
+      int seguidoErroFonte = 0;
+      for (int j = i + 1; j < n; j++) {
+        uint64_t jSeq = seqIni + (uint64_t)j;
+        if (jSeq < desdeSeq || !evNaJanela(agoraMs, ev[j].t_ms, ttlMs)) continue;
+        if (ev[j].ev == FE_ABRIR || ev[j].ev == FE_PRONTO) break;
+        if (ev[j].ev == FE_ERRO_FONTE) { seguidoErroFonte = 1; break; }
+      }
+      if (!seguidoErroFonte) {
+        falhas++;
+        erroNativoPend = 0;
+        reconPend = 0;
+      }
+    } else if (tipo == FE_ERRO_NATIVO || tipo == FE_PIPELINE_MORREU) {
+      if (temAbrir) erroNativoPend = 1;
+    } else if (tipo == FE_RECONEXAO) {
+      if (erroNativoPend) reconPend = 1;
+    }
+  }
+  if (erroNativoPend && !reconPend) falhas++;
+
+  out->falhasSeguidas = falhas;
+  out->paradas5min = paradas;
+  out->audioRecusado = recAudioAnel + (video_audio_nao_suportado() ? 1 : 0);
+
+  out->faixaDts = -1;
+  out->outraFaixa = -1;
+  nAud = video_n_audio();
+  at = video_audio_atual();
+  if (nAud > 0) {
+    const void *cur = (at >= 0 && at < nAud) ? video_audio(at) : NULL;
+    if (cur) out->faixaDts = video_faixa_dts(cur) > 0 ? 1 : 0;
+    else if (video_dts_estado() != FAROL_VIDEO_DTS_NENHUM) out->faixaDts = 1;
+    out->outraFaixa = 0;
+    for (i = 0; i < nAud; i++) {
+      const void *fi;
+      if (i == at) continue;
+      fi = video_audio(i);
+      if (!fi) continue;
+      if (out->faixaDts > 0 && video_faixa_dts(fi) > 0) continue;
+      out->outraFaixa = 1;
+      break;
+    }
+  } else if (video_dts_estado() != FAROL_VIDEO_DTS_NENHUM) {
+    out->faixaDts = 1;
+  }
+
+  if (out->plat == FP_WEBOS)
+    out->conversaoPossivel = (dts_playback_enabled() &&
+                              video_dts_estado() != FAROL_VIDEO_DTS_FALHOU) ? 1 : 0;
+  else if (out->plat == FP_TIZEN_TPK)
+    out->conversaoPossivel = (dts_tpk_disponivel() &&
+                              video_dts_estado() != FAROL_VIDEO_DTS_FALHOU) ? 1 : 0;
+  else
+    out->conversaoPossivel = -1;
+
+  stream_farol_fatos(&out->fonteDv, &out->fonteHdr, &out->fonteGBx10,
+                     &out->fonteMbps, &out->fonteDebrid, &out->temOutraFonte,
+                     &out->temFonteMenor, &out->temFonteSemDv,
+                     &out->temFonteSemDts, &out->tvHdr, &out->tvDv,
+                     &out->vazaoMbps);
+  if (out->fonteDv < 0 && video_tem_dolby_vision() > 0) out->fonteDv = 1;
+  if (out->fonteHdr < 0) {
+    hdr = video_hdr();
+    if (hdr && hdr[0] && strcmp(hdr, "none") && strcmp(hdr, "desconhecido") &&
+        strcmp(hdr, "unknown"))
+      out->fonteHdr = 1;
+  }
+
+  out->memLivreMB = (int)memlog_livre_mb();
+  out->sondaRange = -1;
+  if (farolsonda_estado(&sonda) && !sonda.cancelada && sonda.http > 0)
+    out->sondaRange = sonda.http;
+  vNova = atualizacao_nova();
+  out->versaoNova = (vNova && vNova[0]) ? 1 : 0;
+
+  out->addonsLentos = -1;
+  out->addonsMudos = -1;
+  if (iBusca >= 0) {
+    out->addonsMudos = ev[iBusca].b >= 0 ? ev[iBusca].b : 0;
+    for (i = (iBuscaAnt >= 0 ? iBuscaAnt + 1 : 0); i < iBusca; i++) {
+      uint64_t seq = seqIni + (uint64_t)i;
+      if (seq < desdeSeq || !evNaJanela(agoraMs, ev[i].t_ms, ttlMs)) continue;
+      if (ev[i].ev == FE_ADDON_LENTO && !ev[i].b) lentos++;
+    }
+    out->addonsLentos = lentos;
+  }
+
+  prontoAposErro = (iPronto >= 0 && (iErro < 0 || iPronto > iErro));
+#ifdef NV_ANDROID
+  out->externoDisponivel = (!prontoAposErro && diagTentativa &&
+                            player_externo_disponivel_tentativa(diagTentativa)) ? 1 : 0;
+#else
+  (void)prontoAposErro;
+  (void)diagTentativa;
+  out->externoDisponivel = 0;
+#endif
+}
+
+int farol_julgar(int sintoma) {
+  FarolFatos fatos;
+  FarolVeredito v;
+  int cod;
+  farol_fatos_ler(&fatos);
+  fatos.sintoma = sintoma;
+  farolregra_julgar(sintoma, &fatos, &v);
+  cod = v.regra ? (int)v.regra->codigo : FAROL_C_NADA_ACHADO;
+  pthread_mutex_lock(&travaDiag);
+  fatosSessao = fatos;
+  vereditoSessao = v;
+  temVeredito = 1;
+  pthread_mutex_unlock(&travaDiag);
+  farol_ev(FM_FAROL, FE_FAROL_VEREDITO, 0, cod, sintoma,
+           farolregra_codigo_nome(cod));
+  return cod;
+}
+
+const FarolVeredito *farol_veredito(void) {
+  const FarolVeredito *r = NULL;
+  pthread_mutex_lock(&travaDiag);
+  if (temVeredito) {
+    vereditoSaida = vereditoSessao;
+    r = &vereditoSaida;
+  }
+  pthread_mutex_unlock(&travaDiag);
+  return r;
+}
+
+int farol_veredito_copiar(FarolVeredito *veredito, FarolFatos *fatos) {
+  int ok;
+  pthread_mutex_lock(&travaDiag);
+  ok = temVeredito;
+  if (ok) {
+    if (veredito) *veredito = vereditoSessao;
+    if (fatos) *fatos = fatosSessao;
+  }
+  pthread_mutex_unlock(&travaDiag);
+  return ok;
+}
+
+void farol_registrar_acao(int acao) {
+  farol_ev(FM_FAROL, FE_FAROL_ACAO, 0, acao, 0, acaoTokenSeguro(acao));
+}
+
+void farol_registrar_resultado(int acao, int ok) {
+  farol_ev(FM_FAROL, FE_FAROL_RESULTADO, ok ? 0 : 1, acao, ok ? 1 : 0,
+           acaoTokenSeguro(acao));
+}
+
+void farol_registrar_envio(int http) {
+  int ok = http >= 200 && http < 300;
+  farol_ev(FM_FAROL, FE_FAROL_ENVIO, ok ? 0 : 2, http, 0, ok ? "ok" : "erro");
+}
+
+void farol_registrar_consertou(int acao) {
+  farol_ev(FM_FAROL, FE_FAROL_CONSERTOU, 0, acao, 1, acaoTokenSeguro(acao));
+}
+
+int farol_eventos(FarolEvento *dst, int max) {
+  if (!dst || max <= 0) return 0;
+  return farolanel_ler(dst, max > FAROL_ANEL_N ? FAROL_ANEL_N : max, 0);
+}
+
+void farol_sessao_reiniciar(void) {
+  uint64_t seq = farolanel_seq();
+  pthread_mutex_lock(&travaDiag);
+  temVeredito = 0;
+  memset(&vereditoSessao, 0, sizeof vereditoSessao);
+  memset(&vereditoSaida, 0, sizeof vereditoSaida);
+  memset(&fatosSessao, 0, sizeof fatosSessao);
+  sessaoDesdeSeq = seq;
+  pthread_mutex_unlock(&travaDiag);
+}
+
+#ifdef RESOLVER_TESTE
+void farol_teste_fatos(const FarolFatos *f) {
+  pthread_mutex_lock(&travaDiag);
+  if (f) {
+    fatosFixos = *f;
+    usaFatosFixos = 1;
+  } else {
+    usaFatosFixos = 0;
+    memset(&fatosFixos, 0, sizeof fatosFixos);
+  }
+  pthread_mutex_unlock(&travaDiag);
+}
+#endif
