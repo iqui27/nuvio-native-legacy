@@ -70,6 +70,7 @@ void player_erro_fonte_motivo(const char *titulo, const char *subtitulo) { (void
 void player_fechar_mini(void) { mini = 0; }
 int video_falhou(void) { return falhou; }
 int video_reconectando(void) { return reconectando; }
+unsigned video_abertura_geracao(void) { return 0; }
 int video_pronto(void) { return pronto; }
 int video_fonte_tocou(void) { return tocou; }
 int video_dv_ativo(void) { return dv; }

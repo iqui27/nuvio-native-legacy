@@ -3643,8 +3643,8 @@ static void *fioExtraCapturado(void *u) {
   }
   return NULL;
 }
-int addons_consulta_consultar(const AddonsConsulta *snapshot, const char *id, const char *tipo,
-                              int fios, int (*cancelado)(void *), void *ctx, void *saida) {
+static int consultaCapturadaFazer(const AddonsConsulta *snapshot, const char *id, const char *tipo,
+                                  int fios, int (*cancelado)(void *), void *ctx, void *saida, int parcial) {
   Stream **out = saida;
   if (!out) return -1;
   *out = NULL;
@@ -3676,15 +3676,18 @@ int addons_consulta_consultar(const AddonsConsulta *snapshot, const char *id, co
   if (snapshot->n && !vivos) fioConsultaCapturada(&c);
   for (int i = 0; i < vivos; i++) pthread_join(f[i], NULL);
   for (int i = 0; i < snapshot->nExtras; i++) if (extraVivo[i]) pthread_join(fe[i], NULL);
-  int total = 0, incompleta = cancelaConsultaCapturada(&c);
+  int total = 0, incompleta = cancelaConsultaCapturada(&c), faltou = 0;
   for (int i = 0; i < snapshot->n; i++) {
-    if (!c.baldes[i].respondeu) incompleta = 1;
+    if (!c.baldes[i].respondeu) faltou = 1;
     if (c.baldes[i].n > 0) total += c.baldes[i].n;
   }
   for (int i = 0; i < snapshot->nExtras; i++) {
-    if (atomic_load(&extras[i].incompleta)) incompleta = 1;
+    if (atomic_load(&extras[i].incompleta)) faltou = 1;
     if (extras[i].n > 0) total += extras[i].n;
   }
+  // Partial: what the add-ons that answered sent is enough (one add-on down
+  // must not hide the others); nothing at all with one missing is a failure.
+  if (faltou && (!parcial || !total)) incompleta = 1;
   Stream *resultado = !incompleta && total ? malloc((size_t)total * sizeof *resultado) : NULL;
   if (total && !resultado) incompleta = 1;
   int n = 0;
@@ -3707,6 +3710,14 @@ int addons_consulta_consultar(const AddonsConsulta *snapshot, const char *id, co
   pthread_mutex_destroy(&c.arm.trava);
   if (incompleta) { free(resultado); return -1; }
   *out = resultado; return n;
+}
+int addons_consulta_consultar(const AddonsConsulta *snapshot, const char *id, const char *tipo,
+                              int fios, int (*cancelado)(void *), void *ctx, void *saida) {
+  return consultaCapturadaFazer(snapshot, id, tipo, fios, cancelado, ctx, saida, 0);
+}
+int addons_consulta_consultar_parcial(const AddonsConsulta *snapshot, const char *id, const char *tipo,
+                                      int fios, int (*cancelado)(void *), void *ctx, void *saida) {
+  return consultaCapturadaFazer(snapshot, id, tipo, fios, cancelado, ctx, saida, 1);
 }
 
 // Contagens da LISTA (nao da consulta), para "nao ha a quem perguntar".

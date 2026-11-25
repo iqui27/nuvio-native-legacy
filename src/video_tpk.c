@@ -911,6 +911,7 @@ int video_tocar(const char *u) {
 
 void video_definir_reconexao(int sim) { reconProxima = sim ? 1 : 0; }
 int  video_recarregar(void) { return 0; }
+unsigned video_abertura_geracao(void) { return 0; }
 int  video_reconectando(void) {
   return nv_recon_ativa(&recon) && (recon.pendente || !pronto) ? recon.tentativa : 0;
 }

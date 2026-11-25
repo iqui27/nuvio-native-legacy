@@ -11,6 +11,7 @@
 #define NV_DTS_REMUX_H
 #include <stddef.h>
 #include <stdint.h>
+#include "dts_media.h"
 
 typedef struct DtsRemux DtsRemux;        /* probed source: track, index, segments */
 typedef struct DtsRemuxGen DtsRemuxGen;  /* one generator: own reader, codecs, muxer */
@@ -18,12 +19,13 @@ typedef struct DtsRemuxGen DtsRemuxGen;  /* one generator: own reader, codecs, m
 typedef struct {
   double duration_s;
   int width, height;
-  char video_codec[16], audio_codec[16];
+  char video_codec[16], audio_codec[16], hls_codec[48];
   char hdr[48];                /* PQ, HLG, SDR or "not in the container" (container flags) */
   int audio_ordinal, stream_index; /* k-th audio track of the file (0-based), FFmpeg index */
   int in_channels, in_rate;    /* from the container header */
   int out_channels, out_bitrate;
   char out_codec[8];           /* "ac3" or "aac" */
+  char audio_language[16], audio_title[64]; /* metadata of the selected input track */
   char decoder_path[40];       /* "DTS core only", "TrueHD 5.1 presentation", ... */
   int n_keyframes, n_segments;
   int index_complete;          /* the keyframe index reaches the end (HLS needs it): no
@@ -33,7 +35,7 @@ typedef struct {
   int mp4;                     /* source container is MP4/MOV */
   double fps;                  /* container frame rate, 0 = unknown (HLS master playlist) */
   int dv_profile;              /* Dolby Vision configuration in the container: profile, -1 = none */
-  int dv_el, dv_compat;        /* enhancement layer present; base-layer compatibility id */
+  int dv_el, dv_compat, dv_level;        /* enhancement layer present; base-layer compatibility id */
 } DtsRemuxInfo;
 
 typedef struct {
@@ -70,6 +72,40 @@ DtsRemux *dts_remux_open(const char *url, const char *headers, int audio_ordinal
 DtsRemux *dts_remux_new(volatile int *cancel);
 int dts_remux_probe(DtsRemux *, const char *url, const char *headers, int audio_ordinal, int stereo_aac,
                     double seg_target_s, char *err, size_t errn);
+/* Matroska video end verified against packets at the physical EOF. */
+typedef struct {
+  int64_t size_bytes, last_keyframe;
+  int keyframes, time_base_num, time_base_den;
+  double declared_end, track_end, verified_end;
+} DtsHlsVideoEnd;
+typedef struct {
+  int dv7, allow_dts, preserve_mapping;
+  int buffer_mib, external_buffer_mib;
+  const char *external_url, *external_headers, *external_langs;
+  const DtsTrack *external_hint;
+  int external_stream, external_only, external_offset_ms, external_speed_ppm;
+  double resume_s;
+  DtsHlsVideoEnd video_end;
+  int ts;                      /* MPEG-TS segments (as on Tizen) instead of fMP4 */
+} DtsWebosHls;
+#ifdef NV_WEBOS_HLS_TEST
+#include "dts_engine.h"
+typedef struct {
+  DtsTrack track;
+  int ordinal;                 /* position among all source audio tracks */
+} DtsHlsAudioTrack;
+/* The session copies its strings and optional track hint before starting. */
+void dts_remux_set_webos(DtsRemux *, const DtsWebosHls *);
+/* Excludes unverified or changed sources. The result contains no reader. */
+void dts_remux_webos_video_end(const DtsRemux *, DtsHlsVideoEnd *);
+/* List convertible tracks from the active audio source. selected is a row index. */
+int dts_remux_webos_audio_tracks(const DtsRemux *, DtsHlsAudioTrack *, int max, int *selected);
+/* Snapshot both source rings. The caller keeps the generator alive. */
+void dts_remux_gen_buffer_info(const DtsRemuxGen *, DtsBufferInfo *);
+/* Use another listed track of the same file from the next segment on. The
+ * AC-3 output keeps its layout, so the init segment stays valid. 1 = accepted. */
+int dts_remux_webos_select_audio(DtsRemux *, int ordinal);
+#endif
 const DtsRemuxInfo *dts_remux_info(const DtsRemux *);
 double dts_remux_segment_start(const DtsRemux *, int seg);    /* seconds; segment 0 = 0 */
 double dts_remux_segment_duration(const DtsRemux *, int seg);

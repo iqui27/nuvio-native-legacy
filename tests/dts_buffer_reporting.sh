@@ -8,6 +8,7 @@ trap 'if [ -n "$server" ]; then kill "$server" 2>/dev/null || true; fi; rm -rf "
 ffmpeg -hide_banner -loglevel error \
   -f lavfi -i 'color=size=64x64:rate=25:duration=4' \
   -f lavfi -i 'sine=frequency=440:sample_rate=48000:duration=4' \
+  -map 0:v -map 1:a -map 1:a \
   -c:v libx264 -bf 0 -g 25 -c:a dca -ac 2 -strict -2 -b:a 768k "$tmp/sdr-dts.mkv"
 python3 - "$tmp/sdr-dts.mkv" <<'PY'
 import sys

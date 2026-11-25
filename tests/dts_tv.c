@@ -18,6 +18,21 @@ int main(void) {
   CHECK(!nv_dts_converter_ja(26, 1, 0, 0));
   /* No DTS and no converter: say so instead of playing silent. */
   CHECK(nv_dts_sem_som(26, 1, 0)); CHECK(!nv_dts_sem_som(26, 1, 1));
+  /* tv.model.edidType: what the TV declares. */
+  CHECK(nv_dts_edid("{\"configs\":{\"tv.model.edidType\":\"TrueHD+dts\"},\"returnValue\":true}") == 1);
+  CHECK(nv_dts_edid("{\"tv.model.edidType\" : \"AC3+DTS\"}") == 1);
+  CHECK(nv_dts_edid("{\"configs\":{\"tv.model.edidType\":\"TrueHD\"},\"x\":\"dts\"}") == 0);
+  CHECK(nv_dts_edid("{\"configs\":{\"tv.model.edidType\":\"\"}}") == 0);
+  CHECK(nv_dts_edid("{\"returnValue\":false,\"errorText\":\"Not permitted to send to com.webos.service.config\"}") == -1);
+  CHECK(nv_dts_edid("{\"tv.model.edidType\":null}") == -1);
+  CHECK(nv_dts_edid(NULL) == -1);
+  { char v[48];
+    CHECK(nv_dts_edid_valor("{\"configs\":{\"tv.model.edidType\":\"TrueHD+dts\"}}", v, sizeof v) && !strcmp(v, "TrueHD+dts"));
+    CHECK(nv_dts_edid_valor("{\"tv.model.edidType\":\"a\\\"b<c> d\"}", v, sizeof v) && !strcmp(v, "a"));
+    CHECK(nv_dts_edid_valor("{\"tv.model.edidType\":\"\"}", v, sizeof v) && !v[0]);
+    CHECK(!nv_dts_edid_valor("{\"returnValue\":false}", v, sizeof v) && !v[0]);
+    CHECK(nv_dts_edid_erro("{\"returnValue\":false,\"errorCode\":-1}") == -1);
+    CHECK(nv_dts_edid_erro("{\"returnValue\":true}") == 0); }
   CHECK(!nv_dts_sem_som(26, 0, 0)); CHECK(!nv_dts_sem_som(4, 1, 0)); CHECK(!nv_dts_sem_som(0, 1, 0));
   if (!fails) puts("dts_tv ok");
   return fails != 0;

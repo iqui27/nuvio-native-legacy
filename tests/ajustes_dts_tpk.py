@@ -70,10 +70,10 @@ with tempfile.TemporaryDirectory() as d:
 
 # 2. The row on the .tpk: three values, its own saved key, both old keys read.
 tpk = re.search(r'#ifdef NV_TPK\nstatic const char \*V_DTS_SAIDA\[\] = \{([^}]*)\};\n#define N_DTS_SAIDA 3\n#else\n'
-                r'static const char \*V_DTS_SAIDA\[\] = \{([^}]*)\};\n#define N_DTS_SAIDA 2', src)
+                r'(?:/\*.*?\*/\n)?static const char \*V_DTS_SAIDA\[\] = \{([^}]*)\};\n#define N_DTS_SAIDA 3', src, re.S)
 confere(tpk is not None and tpk.group(1).strip() == '"Desligado", "5.1 (Dolby Digital)", "Estéreo (AAC)"',
         '.tpk values: Desligado / 5.1 (Dolby Digital) / Estereo (AAC)')
-confere(tpk is not None and tpk.group(2).strip() == '"Estéreo (AAC)", "5.1 (Dolby Digital)"', 'LG values unchanged')
+confere(tpk is not None and tpk.group(2).strip() == '"Estéreo (AAC)", "5.1 (Dolby Digital)", "Desligado"', 'LG values: AAC and 5.1 keep 0/1, Off appended as 2')
 confere(re.search(r'#ifdef NV_TPK\n  "dtsTpkLocal",[^\n]*\n#else\n  "dtsSaidaLocal",\n#endif', src) is not None,
         '.tpk saves the row as dtsTpkLocal, LG keeps dtsSaidaLocal')
 confere('if (!strcmp(chave, "dtsSaidaLocal")) { dtsSaidaAntiga = v; continue; }' in src and

@@ -7,7 +7,7 @@
  * MPEG-TS instead, restarted on seek (video_tpk.c switches by itself).
  *
  * Every function is safe from the app thread: nothing here blocks on the
- * network. Only the .tpk compiles the server; elsewhere these are stubs. */
+ * network. Shared by the .tpk and the webOS HLS test build. */
 #ifndef NV_DTS_HLS_TPK_H
 #define NV_DTS_HLS_TPK_H
 #include <stddef.h>
@@ -32,6 +32,29 @@ const char *dts_tpk_modo_nome(int modo);
  * 0 when the server cannot run. Replaces the previous session. */
 int dts_tpk_abrir(const char *url, const char *headers, int audio_ordinal, int stereo_aac,
                   int modo, double inicio, char *out, size_t n);
+#ifdef NV_WEBOS_HLS_TEST
+#include "dts_remux.h"
+/* HLS VOD with AC-3 audio. A P7 source uses fMP4 and the P8.1 converter. */
+int dts_hls_webos_open(const char *url, const char *headers, int audio_ordinal,
+                      const DtsWebosHls *options, char *out, size_t n);
+/* The old session's workers still own their reader buffers. */
+int dts_hls_webos_draining(void);
+/* Snapshot a verified end for an audio change within the same source. */
+void dts_hls_webos_video_end(const char *url, const char *headers, DtsHlsVideoEnd *);
+/* Input payload and ring occupancy, excluding local HLS output. */
+void dts_hls_webos_buffer_info(DtsBufferInfo *out);
+/* Input tracks for the audio menu. The TV receives only the selected track. */
+int dts_hls_webos_audio_tracks(DtsHlsAudioTrack *out, int max, int *selected);
+/* Change the audio track of the open session from its next segment, keeping
+ * the playlist, init segment and reader. The caller then seeks the player to
+ * flush its segments. 0 = not possible here (reopen instead). */
+int dts_hls_webos_switch_audio(const char *url, const char *headers, int audio_ordinal);
+/* Playback position (s, -1 unknown): the next segment waits while the player
+ * would be more than ~20 s ahead of it. */
+void dts_hls_webos_position(double s);
+/* End of the last segment the player fetched in full (s, -1 none). */
+double dts_hls_webos_served_until(void);
+#endif
 /* Continuous TS: the URL that restarts the stream at s (same session). */
 int dts_tpk_url_em(double s, char *out, size_t n);
 /* Ends the session: cancels the probe and every generator, logs a summary. */
@@ -39,6 +62,9 @@ void dts_tpk_fechar(void);
 int  dts_tpk_estado(void);
 const char *dts_tpk_erro(void);          /* reason of DTSTPK_FALHOU, no URL */
 double dts_tpk_duracao(void);            /* seconds, once ready */
+unsigned dts_tpk_segmentos(void);       /* media segments the player fetched in full */
+double dts_tpk_bytes_por_s(void);       /* source size / length, 0 unknown */
+double dts_tpk_segmento_max(void);      /* longest segment, s */
 int  dts_tpk_modo(void);                 /* mode of the session, -1 none */
 /* Progressive: source time of the keyframe the CURRENT stream starts at (the
  * player counts from there). -1 until the stream's request has started. */

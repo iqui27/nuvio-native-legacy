@@ -7,16 +7,24 @@
 
 #include <string.h>
 #include <ctype.h>
+#include "dts/dts_audio_codec.h"
 
+/* Settings > DTS "Off" (set by video.c per source): DTS is not converted, so
+ * the Dolby Vision path cannot feed a DTS track and picks AC-3/E-AC-3. */
+static int nv_dvaudio_sem_dts;
 // 0 = o caminho nao alimenta; 1..3 = alimenta (3 = E-AC-3, melhor).
 static inline int nv_dvaudio_nota_codec(const char *c) {
   if (!strcmp(c, "A_EAC3")) return 3;
   if (!strcmp(c, "A_AC3")) return 2;
-  if (!strncmp(c, "A_DTS", 5)) return 1;
+  /* 2: DTS off, the TV decodes DTS: it passes through (dts_audio_codec.h). */
+  if (!strncmp(c, "A_DTS", 5)) return nv_dvaudio_sem_dts == 1 ? 0 : 1;
   return 0;
 }
 
-static inline int nv_dvaudio_alimentavel(const char *c) { return nv_dvaudio_nota_codec(c) > 0; }
+static inline int nv_dvaudio_alimentavel(const char *c) {
+  /* DTS "Off" stops the TrueHD conversion too: the same-language AC-3/E-AC-3 keeps DV. */
+  return nv_dvaudio_nota_codec(c)>0 || (nv_dts_truehd_codec(c) && !nv_dvaudio_sem_dts);
+}
 
 static inline int nv_dvaudio_tem_atmos(const char *nome) {
   size_t n = strlen(nome), i, k;
@@ -83,6 +91,59 @@ static inline int nv_dvaudio_localizar(int nTv, int nMkv, int atualTv, const cha
   for (i = 0; i < nMkv; i++) if (NV_DVAUDIO_CASA(i)) { achou = i; n++; }
 #undef NV_DVAUDIO_CASA
   return n == 1 ? achou : -1;
+}
+
+typedef struct {
+  const char *codec, *idioma;
+  int canais;
+} NvDvAudioTrack;
+
+static inline int nv_dvaudio_par(const NvDvAudioTrack *a, const NvDvAudioTrack *b,
+                                int (*casa)(const char *, const char *),
+                                const char *(*familia)(const char *)) {
+  const char *ac = familia(a->codec), *bc = familia(b->codec);
+  if (!strncmp(ac, "DTS", 3)) ac = "DTS";
+  if (!strncmp(bc, "DTS", 3)) bc = "DTS";
+  return (!a->idioma[0] || !b->idioma[0] || !strcmp(a->idioma, "und") ||
+          !strcmp(b->idioma, "und") || casa(a->idioma, b->idioma)) &&
+         (!ac[0] || !bc[0] || !strcmp(ac, bc)) &&
+         (a->canais <= 0 || b->canais <= 0 || a->canais == b->canais);
+}
+
+// sourceInfo may omit unsupported tracks. Match the WHOLE ordered list: remuxes
+// often contain repeated language/codec/channel tuples. Earliest and latest
+// complete subsequence embeddings must agree for the selected row. Ambiguous or
+// reordered lists still need a unique individual match; never guess the first.
+static inline int nv_dvaudio_lista(int nTv, int nMkv, int atual,
+                                  const NvDvAudioTrack *tv, const NvDvAudioTrack *mkv,
+                                  int (*casa)(const char *, const char *),
+                                  const char *(*familia)(const char *)) {
+  int first = -1, last = -1, j = 0, complete = 1;
+  if (atual < 0 || nMkv <= 0) return -1;
+  if (nTv <= 0) return atual < nMkv ? atual : -1;
+  if (atual >= nTv) return -1;
+  for (int i = 0; i < nTv; i++) {
+    while (j < nMkv && !nv_dvaudio_par(&tv[i], &mkv[j], casa, familia)) j++;
+    if (j == nMkv) { complete = 0; break; }
+    if (i == atual) first = j;
+    j++;
+  }
+  if (complete) {
+    j = nMkv - 1;
+    for (int i = nTv - 1; i >= 0; i--) {
+      while (j >= 0 && !nv_dvaudio_par(&tv[i], &mkv[j], casa, familia)) j--;
+      if (j < 0) { complete = 0; break; }
+      if (i == atual) last = j;
+      j--;
+    }
+    if (complete && first == last) return first;
+  }
+  int found = -1;
+  for (int i = 0; i < nMkv; i++) if (nv_dvaudio_par(&tv[atual], &mkv[i], casa, familia)) {
+    if (found >= 0) return -1;
+    found = i;
+  }
+  return found;
 }
 
 // Decisao como o dvPronto a usa. A escolha vem SO da lista do MKV (nMkv faixas):

@@ -20,6 +20,9 @@ void dts_tpk_fechar(void) {}
 int dts_tpk_estado(void) { return DTSTPK_NADA; }
 const char *dts_tpk_erro(void) { return ""; }
 double dts_tpk_duracao(void) { return 0; }
+unsigned dts_tpk_segmentos(void) { return 0; }
+double dts_tpk_bytes_por_s(void) { return 0; }
+double dts_tpk_segmento_max(void) { return 0; }
 int dts_tpk_modo(void) { return -1; }
 double dts_tpk_inicio_stream(void) { return -1; }
 const char *dts_tpk_caminho(void) { return ""; }

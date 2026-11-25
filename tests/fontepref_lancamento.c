@@ -278,7 +278,10 @@ int main(void) {
   fontepref_configurar(1, 0, 1, 1);
   v[1].bingeGroup[0] = 0; v[2].bingeGroup[0] = 0;
   k = fontepref_escolher_lista_next("tt4000009:1:2", v, 3, NULL, NULL);
-  CONFERE(k == 0, "next: no source with that bingeGroup falls back to the title memory (%d)", k);
+  CONFERE(k == 1, "next: missing bingeGroup follows the exact playing release (%d)", k);
+  fonte(&v[1], "Torrentio", "", "The.Show.S01E02.1080p.WEB-DL.x264-OTHER.mkv", 1080);
+  k = fontepref_escolher_lista_next("tt4000009:1:2", v, 3, NULL, NULL);
+  CONFERE(k == 0, "next: no matching group or release falls back to title memory (%d)", k);
   // Shared groups must follow the playing release, independently of title memory.
   n = lista(v, 1, ORDENS[0]);
   fontepref_tocando("tt4000009:1:1", &v[1]); // FLUX plays; title memory below becomes NTb.
@@ -302,6 +305,39 @@ int main(void) {
   v[1] = v[0];
   CONFERE(fontepref_escolher_lista_next("tt4000009:1:2", v, 2, NULL, NULL) == 0,
           "next: equal identity keeps addon order");
+
+  // ---- 9. Continue Watching with no saved link (owner, 25/11): the next-up
+  // card follows the last episode's source like Next. In RAM if it played in
+  // this process, otherwise the person's choice for the title.
+  fontepref_definir_perfil(8);   // another profile: nothing playing in RAM
+  fonte(&v[0], "AIOStreams", "aio|NTb", "The.Show.S07E09.2160p.WEB-DL.DDP5.1.H.265-NTb.mkv", 2160);
+  fonte(&v[1], "AIOStreams", "aio|wadu", "The.Show.S07E09.2160p.WEB-DL.DDP5.1.HEVC-wadu.mkv", 2160);
+  stream_definir_lista(v, 2);
+  CONFERE(fontepref_tocando_semear("tt4000012:7:10") == 0, "cw: nothing chosen, nothing to follow");
+  CONFERE(fontepref_guardar("tt4000012:7:9", &v[1]) == 1, "cw: wadu picked by hand on E9");
+  CONFERE(fontepref_tocando_semear("tt4000012:7:10") == 2, "cw: after a restart the hand choice is followed");
+  fonte(&v[0], "AIOStreams", "aio|NTb", "The.Show.S07E10.2160p.WEB-DL.DDP5.1.H.265-NTb.mkv", 2160);
+  fonte(&v[1], "Torrentio", "", "The.Show.S07E10.1080p.WEB-DL.x264-OTHER.mkv", 1080);
+  fonte(&v[2], "AIOStreams", "aio|wadu", "The.Show.S07E10.2160p.WEB-DL.DDP5.1.HEVC-wadu.mp4", 2160);
+  stream_definir_lista(v, 3);
+  CONFERE(fontepref_binge_tocando("tt4000012:7:10") == 2, "cw: E10 follows wadu by bingeGroup, container unknown");
+  v[2].bingeGroup[0] = 0;
+  stream_definir_lista(v, 3);
+  CONFERE(fontepref_binge_tocando("tt4000012:7:10") == 2, "cw: without bingeGroup the exact release is followed");
+  fonte(&v[2], "Torrentio", "", "The.Show.S07E10.2160p.WEB-DL.x265-OTHER.mkv", 2160);
+  stream_definir_lista(v, 3);
+  CONFERE(fontepref_binge_tocando("tt4000012:7:10") == -1, "cw: no matching source, the sheet decides");
+  fonte(&v[0], "AIOStreams", "aio|NTb", "The.Show.S07E09.2160p.WEB-DL.DDP5.1.H.265-NTb.mkv", 2160);
+  fontepref_tocando("tt4000012:7:9", &v[0]);   // NTb really played in this process
+  CONFERE(fontepref_tocando_semear("tt4000012:7:10") == 1, "cw: the source that played wins over the hand choice");
+  fonte(&v[0], "AIOStreams", "aio|wadu", "The.Show.S07E10.2160p.WEB-DL.DDP5.1.HEVC-wadu.mkv", 2160);
+  fonte(&v[1], "AIOStreams", "aio|NTb", "The.Show.S07E10.2160p.WEB-DL.DDP5.1.H.265-NTb.mkv", 2160);
+  stream_definir_lista(v, 2);
+  CONFERE(fontepref_binge_tocando("tt4000012:7:10") == 1, "cw: and E10 follows NTb");
+  CONFERE(fontepref_tocando_semear("tt4000013:1:2") == 0, "cw: another title with no choice follows nothing");
+  fontepref_configurar(0, 0, 1, 1);
+  CONFERE(fontepref_tocando_semear("tt4000014:1:2") == 0, "cw: Reuse last source off reads no hand choice");
+  fontepref_configurar(1, 0, 1, 1);
 
   // the automatic memory: a bingeGroup match ignores the evidence rule (forte)
   fontepref_definir_perfil(7);
