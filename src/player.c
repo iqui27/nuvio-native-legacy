@@ -5132,7 +5132,7 @@ void player_atualizar(float dt, Uint32 agora) {
       } }
     // A legenda interpola na velocidade MEDIDA (relogio.h).
     relogio_taxa(&relLeg, velMed.efetiva / 100.0);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_ANDROID)
     /* Leitura carimbada pelo host (video.h, video_pos_amostra): a hora em que
      * a TV leu a posicao, nao a hora em que a resposta chegou aqui. */
     { double ap, ac, ai; unsigned sq; static unsigned sqAnt;

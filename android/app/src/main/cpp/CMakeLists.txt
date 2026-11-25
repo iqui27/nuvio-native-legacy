@@ -11,6 +11,7 @@ set(NUVIO_SDL_SRC "$ENV{HOME}/.cache/nuvio-android/src" CACHE PATH "fontes do SD
 set(NUVIO_ENV_CMAKE "" CACHE FILEPATH "chaves -D geradas por tools/android.sh (fora do git)")
 set(NUVIO_P2P_MOTOR "" CACHE PATH "motor P2P de tools/p2p-motor/build-android.sh (vazio = sem motor)")
 set(NUVIO_RUST_MKVCORE "" CACHE PATH "pasta <abi>/libmkvcore.a de tools/rust-mkvcore.sh --android (vazio = nucleo C)")
+set(NUVIO_LIBASS "" CACHE PATH "pasta <abi>/libass/{lib,include} de tools/android/libass.sh (vazio = sem libass)")
 
 set(SDL_DIR   "${NUVIO_SDL_SRC}/SDL2-2.30.9")
 set(IMG_DIR   "${NUVIO_SDL_SRC}/SDL2_image-2.8.2")
@@ -154,6 +155,22 @@ if(NUVIO_RUST_MKVCORE)
   endif()
   target_compile_definitions(main PRIVATE NV_RUST_MKVCORE)
   target_link_libraries(main PRIVATE "${RUST_MKV_LIB}")
+endif()
+
+# libass hybrid (tools/android/libass.sh): the .tpk's subtitle engine
+# (NV_ASS_LIBASS + NV_ASS_NOVO). libass and HarfBuzz were compiled against
+# SDL2_ttf's vendored FreeType headers and take their FT_* symbols from that
+# same target here: one FreeType in libmain.so. Empty = text cues only.
+if(NUVIO_LIBASS)
+  set(ASS_PREFIX "${NUVIO_LIBASS}/${ANDROID_ABI}/libass")
+  if(NOT EXISTS "${ASS_PREFIX}/lib/libass.a")
+    message(FATAL_ERROR "libass ausente em ${ASS_PREFIX} (rode tools/android/libass.sh)")
+  endif()
+  target_compile_definitions(main PRIVATE NV_ASS_LIBASS NV_ASS_NOVO)
+  target_include_directories(main PRIVATE "${ASS_PREFIX}/include")
+  target_link_libraries(main PRIVATE "${ASS_PREFIX}/lib/libass.a" "${ASS_PREFIX}/lib/libharfbuzz.a"
+    "${ASS_PREFIX}/lib/libfribidi.a" freetype)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ASS_PREFIX}/.stamp")
 endif()
 
 # Motor P2P embutido (src/p2pmotor.h): nuvio-engine + libtorrent + OpenSSL,

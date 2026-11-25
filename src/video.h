@@ -231,6 +231,9 @@ int    video_janela_pronta(void);   // latest native window request completed la
 int    video_superficie_estavel(void);   // 1 depois da ultima recriacao da Surface (HDR/DV)
 int    video_quadro_visto(void);   // 1 depois do primeiro quadro desenhado (antes do "pronto")
 int    video_rede_lenta(void);   // !=0: download below the declared bitrate or repeated rebuffers (redefit.h)
+// Subtitle clock (same contract as the .tpk's, above): each Media3 position
+// stamped when it reaches C; 40 ms apart while libass draws.
+int    video_pos_amostra(double *pos, double *carimbo, double *incerteza, unsigned *seq);
 #endif
 int    video_ativo(void);    // 1 assim que ha mediaId — e o que abre o furo
 int    video_falhou(void);   // 1 depois de um errorText real na fonte atual

@@ -22,9 +22,18 @@
 // texto: o Kotlin entrega os cues (nativeLegenda) e o app desenha. Legenda
 // EXTERNA (OpenSubtitles/addon) nem passa por aqui: legenda.c baixa e desenha.
 //
-// TODO: ASS com libass (NV_ASS_LIBASS nao esta definido nesta fase, entao a
-// sonda MKV segue "nao ha sonda", como no .tpk); capitulos do MKV para
-// video_creditos; passthrough fino de AC3/EAC3 por AudioCapabilities.
+// ASS/SSA EMBUTIDA (NV_ASS_LIBASS, 25/11/2026): o mesmo motor do .tpk. A sonda
+// do cabecalho do MKV (sondaMkv, abaixo) da a cada legenda do Media3 o CodecID
+// e o ordinal do arquivo (faixasmkv_aplicar); faixas.c manda a ASS ao overlay
+// do app (o texto do Media3 fica desligado) e o mkvass colhe os eventos do
+// arquivo para o libass. SRT/WebVTT seguem pelos cues do Media3
+// (nativeLegenda). Relogio da legenda: cada nativePos e carimbado aqui
+// (video_pos_amostra) e, com o libass desenhando, o Kotlin le a posicao a cada
+// 40 ms (escolher(3, 1)). currentPosition vale tambem com tunneling, quando o
+// VideoFrameMetadataListener nao dispara (o mesmo cuidado do NuvioTV).
+//
+// TODO: capitulos do MKV para video_creditos; passthrough fino de AC3/EAC3
+// por AudioCapabilities.
 #ifdef NV_ANDROID
 #include "marco.h"
 #include "streams.h"
@@ -56,6 +65,14 @@
 #include <limits.h>
 #include <stdint.h>
 #include <pthread.h>
+#include <time.h>
+#ifdef NV_ASS_LIBASS
+#include "mkv.h"
+#include "mkvass.h"
+#include "faixasmkv.h"
+#include "assrender.h"
+#include "video_dvretry.h"   // nv_url_e_mp4
+#endif
 
 // --- ponte JNI ---------------------------------------------------------------
 #define NV_CLASSE "space/nuvio/nativelegacy/NvPlayer"
@@ -628,6 +645,41 @@ static void escolherAudioPreferido(void) {
   video_escolher_audio(k);
 }
 
+// SONDA DO MKV (so com libass). mkvEstado: 0 nada a fazer, 1 procurando, 2 fio
+// na rede, 3 lido (ou desistiu). faixasNovas = o cabecalho ainda nao foi
+// aplicado a lista do Media3 (video_bombear aplica). travaFaixasMkv: a lista
+// e escrita pelo fio do Kotlin (nativeFaixasFim) e pelo fio do app (aplicar).
+#ifdef NV_ASS_LIBASS
+static MkvFaixa mkvFx[MKV_MAX_FAIXAS];
+static volatile int mkvN, mkvEstado, faixasNovas, mkvSondarJa, mkvNaoMkv;
+static volatile unsigned mkvGeracao;
+static Uint32 mkvOlhou;
+static pthread_mutex_t travaFaixasMkv = PTHREAD_MUTEX_INITIALIZER;
+static void sondaZerar(const char *u, int limitada);
+#endif
+// RELOGIO DA LEGENDA (video_pos_amostra): a posicao de cada nativePos com a
+// hora (CLOCK_MONOTONIC, s) em que chegou. A chamada JNI e sincrona com a
+// leitura do currentPosition no Kotlin: a incerteza e de microssegundos.
+static pthread_mutex_t travaAmostra = PTHREAD_MUTEX_INITIALIZER;
+static struct { double pos, carimbo; unsigned seq; int valido; } amostra;
+static unsigned amostraSeq;
+static struct { int n; } leituras;   // nativePos/nativeRelogio desde o ultimo [ass] 10s
+static double monoAgora(void) {
+  struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec + ts.tv_nsec / 1e9;
+}
+static void amostraZerar(void) {
+  pthread_mutex_lock(&travaAmostra); amostra.valido = 0; pthread_mutex_unlock(&travaAmostra);
+}
+static void amostraGuardar(int ms) {
+  double agora = monoAgora();
+  pthread_mutex_lock(&travaAmostra);
+  amostra.pos = ms / 1000.0; amostra.carimbo = agora; amostra.valido = 1;
+  amostra.seq = ++amostraSeq ? amostraSeq : ++amostraSeq;
+  leituras.n++;
+  pthread_mutex_unlock(&travaAmostra);
+}
+
 // --- natives (Kotlin -> C) ----------------------------------------------------
 // Fio principal do Kotlin, depois que o player conhece as faixas: uma chamada
 // por faixa (tipo 0 = audio, 1 = legenda) e no fim nativeFaixasFim. O contador
@@ -688,9 +740,16 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeFaixasFim(JN
   memcpy(faixaAudio, novasA, (size_t)nNovasA * sizeof *novasA);   // so as preenchidas
   audioAtual = selAudio >= 0 ? selAudio : 0;
   if (!releitura) {
+#ifdef NV_ASS_LIBASS
+    pthread_mutex_lock(&travaFaixasMkv);
+#endif
     memcpy(faixaLeg, novasL, (size_t)nNovasL * sizeof *novasL);
     legAtual = -1;   // o Kotlin sobe com legenda desligada; quem liga e o app (faixas.c)
     nLeg = nNovasL;
+#ifdef NV_ASS_LIBASS
+    faixasNovas = 1;   // video_bombear reaplica o cabecalho do MKV, se ja lido
+    pthread_mutex_unlock(&travaFaixasMkv);
+#endif
   }
   nAudio = nNovasA;
   nNovasA = nNovasL = 0;
@@ -731,6 +790,7 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativePos(JNIEnv *
     /* Media3 TIME_UNSET is not a playback position. */
     int conhecida = ms > (jlong)(INT64_MIN + 1);
     posMs = posNativoMs = !conhecida || ms < 0 ? 0 : ms > INT_MAX ? INT_MAX : (int)ms;
+    if (conhecida && !live) amostraGuardar(posNativoMs);
     liveProgressoValido = live && conhecida;
     livePosMs = conhecida ? ms : 0;
     liveBufferValido = liveProgressoValido && fimMs > (jlong)(INT64_MIN + 1) && fimMs >= ms;
@@ -738,6 +798,19 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativePos(JNIEnv *
     /* Sample allocator only: excludes decoder, textures and retained free blocks. */
     sampleBytes = memoria >= 0 ? memoria : -1;
     if (sampleBytes > samplePeakBytes) samplePeakBytes = sampleBytes;
+  }
+  pthread_mutex_unlock(&travaRetomada);
+}
+
+// Relogio rapido da legenda (40 ms, so com o libass desenhando; ligado por
+// escolher(3, 1) em video_bombear): so a posicao, sem o resto do tique.
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeRelogio(JNIEnv *env, jclass cls,
+    jlong ms, jint geracao) {
+  (void)env; (void)cls;
+  pthread_mutex_lock(&travaRetomada);
+  if (ativo && !liveProgressoValido && (unsigned)geracao == sessao && ms >= 0 && ms <= INT_MAX) {
+    posMs = posNativoMs = (int)ms;
+    amostraGuardar(posNativoMs);
   }
   pthread_mutex_unlock(&travaRetomada);
 }
@@ -1121,6 +1194,10 @@ int video_tocar_retomada(const char *u, double segundos, double pct) {
     ? (int)(pct * 100.0 + 0.5) : 0;
   snprintf(urlAtual, sizeof urlAtual, "%s", u ? u : "");
   if (limited) capmkv_zerar(); else capmkv_iniciar(urlAtual);
+#ifdef NV_ASS_LIBASS
+  sondaZerar(urlAtual, limited);
+#endif
+  amostraZerar();
   nv_recon_zerar(&recon);
   reconPermitida = reconProxima; reconProxima = 0;
   reconIniciou = 0; reconErroPend = 0;
@@ -1174,9 +1251,126 @@ int  video_reconectando(void) {
   return nv_recon_ativa(&recon) && (recon.pendente || !prontoLoad) ? recon.tentativa : 0;
 }
 
+#ifdef NV_ASS_LIBASS
+typedef struct { char url[NV_MEDIA_URL_MAX]; unsigned geracao; } PedidoMkv;
+
+static void guardarMkv(const MkvFaixa *fx, int n) {
+  int i;
+  pthread_mutex_lock(&travaFaixasMkv);
+  memcpy(mkvFx, fx, (size_t)n * sizeof *fx);
+  mkvN = n;
+  faixasNovas = 1;
+  pthread_mutex_unlock(&travaFaixasMkv);
+  for (i = 0; i < n; i++)
+    if (fx[i].tipo == 17)   // legenda (MKV_LEG de faixasmkv.c)
+      printf("[mkv] faixa num=%d legenda codec=%s idioma=%s nome=%s forcada=%d\n", fx[i].numero, fx[i].codec,
+             fx[i].idioma[0] ? fx[i].idioma : "-", fx[i].nome[0] ? fx[i].nome : "-", fx[i].forcado);
+  fflush(stdout);
+}
+
+static void *fioMkv(void *arg) {
+  PedidoMkv *p = arg;
+  MkvFaixa *fx = calloc(MKV_MAX_FAIXAS, sizeof *fx);
+  int n;
+  rede_lateral(1);   // #385: leitura LATERAL ao video, como no .tpk
+  n = fx ? mkv_faixas(p->url, fx, MKV_MAX_FAIXAS) : 0;
+  if (p->geracao == mkvGeracao) {
+    printf("[mkv] sonda pela rede: %d faixa(s)\n", n);
+    fflush(stdout);
+    if (n > 0) guardarMkv(fx, n);
+    else mkvNaoMkv = 1;
+    mkvEstado = 3;
+  }
+  free(fx); free(p);
+  return NULL;
+}
+
+// Nova fonte: so VOD por http(s) que pode ser MKV. Ao vivo, HLS/DASH e .mp4
+// nao tem TrackEntry; Xtream limitado nao recebe conexao lateral.
+static void sondaZerar(const char *u, int limitada) {
+  const char *b = u ? u : "";
+  int pode = !limitada && (!strncmp(b, "http://", 7) || !strncmp(b, "https://", 8)) &&
+             !strstr(b, ".m3u8") && !strstr(b, ".mpd") && !nv_url_e_mp4(b);
+  mkvGeracao++;
+  pthread_mutex_lock(&travaFaixasMkv);
+  mkvN = 0; faixasNovas = 0;
+  pthread_mutex_unlock(&travaFaixasMkv);
+  mkvSondarJa = 0; mkvOlhou = 0;
+  mkvNaoMkv = !pode;
+  mkvEstado = pode ? 1 : 0;
+}
+
+// Como o sondaMkv do .tpk, sem a conversao: primeiro o trecho que a pre-busca
+// do mkvass ja trouxe (sem rede); senao um Range proprio com o video andando
+// (5 s), ou ja quando a folha de legendas pede.
+static void sondaMkv(double pos) {
+  Uint32 t = SDL_GetTicks();
+  if (!ativo) return;
+  if (mkvEstado == 1 && urlAtual[0] && t - mkvOlhou >= 500) {
+    unsigned char *cab = NULL; long cabN = 0;
+    mkvOlhou = t;
+    if (liveProgressoValido) { mkvNaoMkv = 1; mkvEstado = 3; return; }
+    if (mkvass_cabecalho(urlAtual, NULL, NULL) && mkvass_cabecalho(urlAtual, &cab, &cabN)) {
+      MkvFaixa *fx = calloc(MKV_MAX_FAIXAS, sizeof *fx);
+      int n = fx ? mkv_faixas_do_trecho(cab, cabN, fx, MKV_MAX_FAIXAS, NULL, 0, NULL) : 0;
+      printf("[mkv] sonda pelo trecho da pre-busca (%ld bytes, sem rede): %d faixa(s)\n", cabN, n);
+      fflush(stdout);
+      if (n > 0) { guardarMkv(fx, n); mkvEstado = 3; }
+      free(fx); free(cab);
+    }
+    if (mkvEstado == 1 && prontoLoad && (pos >= 5.0 || mkvSondarJa)) {
+      PedidoMkv *p = malloc(sizeof *p);
+      pthread_t fio;
+      mkvEstado = 3;
+      if (p) {
+        snprintf(p->url, sizeof p->url, "%s", urlAtual);
+        p->geracao = mkvGeracao;
+        mkvEstado = 2;
+        if (pthread_create(&fio, NULL, fioMkv, p) == 0) pthread_detach(fio);
+        else { free(p); mkvEstado = 3; }
+      }
+    }
+  }
+  if (faixasNovas && mkvN > 0 && nLeg > 0) {
+    int m;
+    pthread_mutex_lock(&travaFaixasMkv);
+    faixasNovas = 0;
+    // So as legendas: o rotulo do audio (codec e canais do Format) ja e o do Media3.
+    m = faixasmkv_aplicar(NULL, 0, faixaLeg, nLeg, mkvFx, mkvN);
+    pthread_mutex_unlock(&travaFaixasMkv);
+    { int i, ass = 0;
+      for (i = 0; i < nLeg; i++) if (faixasmkv_overlay(faixaLeg[i].codec, 0) && faixaLeg[i].ordinalMkv >= 0) ass++;
+      printf("[mkv] %d rotulo(s) de legenda vindos do cabecalho; %d ASS/SSA para o libass\n", m, ass); }
+    fflush(stdout);
+  }
+}
+
+// libass desenhando: o Kotlin le a posicao a cada 40 ms (escolher(3, 1)).
+static void relogioRapido(void) {
+  static int enviado = -1;
+  static unsigned sessaoEnviada;
+  int quer = ativo && prontoLoad && assrender_ativo();
+  if (sessaoEnviada != sessao) { sessaoEnviada = sessao; enviado = -1; }   // a corrida do Kotlin e por sessao
+  if (quer == enviado || !mEscolher) return;
+  {
+    JNIEnv *env = ambiente();
+    if (!env) return;
+    (*env)->CallStaticVoidMethod(env, gCls, mEscolher, (jint)3, (jint)quer);
+    fimChamada(env);
+  }
+  enviado = quer;
+  printf("[ass] relogio da legenda: %s\n", quer ? "40 ms (libass desenhando)" : "250 ms");
+  fflush(stdout);
+}
+#endif
+
 void video_bombear(void) {
   double pos = video_pos();
   int eraRecarga = recarregarPausa >= 0;
+#ifdef NV_ASS_LIBASS
+  sondaMkv(pos);
+  relogioRapido();
+#endif
   if (recarregarPausa >= 0) {
     if (falhou || terminou || !ativo) recarregarPausa = -1;
     else if (prontoLoad && !reconErroPend && !recon.pendente) {
@@ -1262,6 +1456,10 @@ void video_bombear(void) {
 void video_parar(void) {
   novaRetomada(-1);
   capmkv_zerar();   // fio de capitulos em voo nao alimenta o proximo titulo
+#ifdef NV_ASS_LIBASS
+  sondaZerar("", 1);   // fio da sonda em voo ve a geracao mudada e descarta
+#endif
+  amostraZerar();
   nv_recon_zerar(&recon);
   reconErroPend = 0; reconErroVideo = 0; reconFaixasPend = 0; reconBuscarMs = -1; reconPausado = 0;
   recarregarPausa = -1;
@@ -1291,6 +1489,7 @@ int video_pausa_confirmada(void) {
 void video_volume(int pct) { kInt(mVolume, pct); }
 void video_buscar(double s) {
   posMs = (int)(s * 1000.0);   // a barra nao pode voltar enquanto o seek corre
+  amostraZerar();              // a leitura antes do seek nao e de onde o player vai
   acaoMs = SDL_GetTicks();
   kInt(mBuscar, posMs);
   terminou = 0;
@@ -1442,10 +1641,39 @@ int  video_n_legenda(void) { return nLeg; }
 const VideoFaixa *video_audio(int i) { return (i >= 0 && i < nAudio) ? &faixaAudio[i] : 0; }
 const VideoFaixa *video_legenda(int i) { return (i >= 0 && i < nLeg) ? &faixaLeg[i] : 0; }
 int  video_legenda_ordinal_mkv(int i) { return (i >= 0 && i < nLeg) ? faixaLeg[i].ordinalMkv : -1; }
+#ifdef NV_ASS_LIBASS
+// Como o .tpk: 2 quando a fonte nao e MKV; 0 enquanto procura ou com o
+// cabecalho lido e ainda nao aplicado (proximo video_bombear).
+int  video_mkv_sondado(void) {
+  if (!urlAtual[0] || mkvNaoMkv) return 2;
+  if (mkvEstado == 1 || mkvEstado == 2) return 0;
+  if (faixasNovas && mkvN > 0 && nLeg > 0) return 0;
+  return 1;
+}
+void video_sondar_mkv_agora(void) { if (mkvEstado == 1) mkvSondarJa = 1; }
+#else
 // "Nao ha sonda": sem libass (NV_ASS_LIBASS) a sonda de MKV nao serve a nada.
-// TODO quando o libass entrar: sonda real, como video.c.
 int  video_mkv_sondado(void) { return 2; }
 void video_sondar_mkv_agora(void) {}
+#endif
+// Ver video.h (relogio da legenda). Incerteza: a chamada JNI e sincrona.
+int video_pos_amostra(double *pos, double *carimbo, double *incerteza, unsigned *seq) {
+  int ok;
+  if (!ativo || !prontoLoad) return 0;
+  pthread_mutex_lock(&travaAmostra);
+  ok = amostra.valido;
+  if (ok) { *pos = amostra.pos; *carimbo = amostra.carimbo; *incerteza = 0.002; *seq = amostra.seq; }
+  pthread_mutex_unlock(&travaAmostra);
+  return ok;
+}
+// Leituras para o "[ass] 10s tv" (assrender.c): quantas posicoes chegaram
+// desde a ultima chamada. Nao ha consulta lenta nem leitura descartada aqui.
+void video_ass_leituras(int *n, int *fora, long *somaMs, int *maxMs) {
+  pthread_mutex_lock(&travaAmostra);
+  *n = leituras.n; leituras.n = 0;
+  pthread_mutex_unlock(&travaAmostra);
+  *fora = 0; *somaMs = 0; *maxMs = 0;
+}
 int  video_audio_atual(void) { return audioAtual; }
 int  video_legenda_atual(void) { return legAtual; }
 void video_escolher_audio(int i) {

@@ -4186,7 +4186,16 @@ void assrender_aliviar(void) {
   struct timespec agora;
   clock_gettime(CLOCK_MONOTONIC, &agora);
   pthread_mutex_lock(&assTrava);
+#ifdef NV_ANDROID
+  /* Android warns from onTrimMemory's mildest level (RUNNING_MODERATE) on:
+   * reloading the fonts (which empties every libass cache) is kept for below
+   * 100 MB free, the owner's line (25/11/2026: "start low RAM measures at
+   * 100 MB of free RAM"). Unknown memory never counts as low. */
+  { long livre = memlog_livre_mb();
+    if (assRenderer && livre >= 0 && livre < ASS_POUCA_MEM_MB) ass_aplicar_fontes_locked(); }
+#else
   if (assRenderer) ass_aplicar_fontes_locked();
+#endif
   /* The OS warning / the app's 150 MB warning: the 100 MB rule right away
    * (not only at the worker's next once-a-second look). */
   ass_pouca_memoria_ver_locked(&agora, 1);

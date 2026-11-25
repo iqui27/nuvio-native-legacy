@@ -100,6 +100,10 @@ object NvPlayer {
     private const val TELA_H = 1080
     private const val FAIXAS_MAX = 64 // NV_FAIXA_MAX do C
     private const val TIQUE_MS = 250L
+    // libass subtitle clock (src/video_android.c relogioRapido). currentPosition
+    // is used, not VideoFrameMetadataListener: with tunneling on, frame
+    // metadata never arrives (NuvioTV needed a position renderer for that).
+    private const val RELOGIO_MS = 40L
     private const val RETRY_DECODER_MS = 5000L
 
     private val principal = Handler(Looper.getMainLooper())
@@ -176,6 +180,8 @@ object NvPlayer {
     @JvmStatic external fun nativeLegenda(texto: String, durMs: Int)
     @JvmStatic external fun nativePos(ms: Long, bufferFimMs: Long, live: Boolean,
                                       sampleBytes: Int, geracao: Int)
+    // Subtitle clock while libass draws (escolher(3, 1)): position only, 40 ms.
+    @JvmStatic external fun nativeRelogio(ms: Long, geracao: Int)
     @JvmStatic external fun nativeDecoder4k(hevc: Int, avc: Int, vp9: Int, av1: Int)
     @JvmStatic external fun nativeTela(hdr: Int, dv: Int)
     @JvmStatic external fun nativeHdr(hdr: String, dv: Int, atmos: Int)
@@ -1665,6 +1671,28 @@ object NvPlayer {
         Handler(p.applicationLooper).post(corpo)
     }
 
+    // Relogio rapido da legenda ASS: so com o libass desenhando (o C liga e
+    // desliga). Uma unica corrida por vez; morre sozinho com a sessao.
+    private var relogioRapido = false
+    private var relogioSessao = -1
+    private fun relogioLigar(sim: Boolean) {
+        relogioRapido = sim
+        if (sim && relogioSessao != sessao) {
+            relogioSessao = sessao
+            principal.postDelayed(relogio(sessao), RELOGIO_MS)
+        }
+    }
+    private fun relogio(minha: Int): Runnable = object : Runnable {
+        override fun run() {
+            if (!atual(minha) || !relogioRapido) { if (relogioSessao == minha) relogioSessao = -1; return }
+            val p = player ?: run { relogioSessao = -1; return }
+            if (p.isPlaying && !p.isCurrentMediaItemLive) {
+                try { nativeRelogio(p.currentPosition, geracaoNative) } catch (e: UnsatisfiedLinkError) { }
+            }
+            principal.postDelayed(this, RELOGIO_MS)
+        }
+    }
+
     // Tique de 250 ms: a posicao que o C le sem esperar ninguem.
     private fun tique(minha: Int): Runnable = object : Runnable {
         override fun run() {
@@ -1975,6 +2003,7 @@ object NvPlayer {
 
     private fun escolherMain(tipo: Int, idx: Int) {
         if (tipo == 2) { atrasoMs = idx; return }
+        if (tipo == 3) { relogioLigar(idx != 0); return }
         val p = player ?: return
         try {
             val par = p.trackSelectionParameters.buildUpon()

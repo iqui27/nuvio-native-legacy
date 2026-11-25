@@ -1,0 +1,118 @@
+name: Build APK
+
+# Builds the Android TV debug .apk (arm64-v8a + armeabi-v7a in one APK) the
+# same way `NUVIO_P2P_MOTOR=none bash tools/android.sh --debug-only` does on
+# the owner's computer, and uploads it as a downloadable artifact.
+#
+# Runs on pushes to the Android port branches, and by hand once this file is on
+# the default branch (Actions tab -> Build APK -> Run workflow).
+# It is a DEBUG build (Gradle's debug key, no release key on CI): to install
+# it over the release APK on a TV, uninstall the release first.
+# No P2P engine on CI (it lives on the owner's disk, not in the repo).
+
+on:
+  push:
+    branches: [subtitle-rewrite-android, claude/project-thread-ngw28y]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+    inputs:
+      libass:
+        description: "Build with libass (ASS subtitles like the .tpk): 1 or 0"
+        default: "1"
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      NUVIO_P2P_MOTOR: none
+      NUVIO_LIBASS: ${{ github.event.inputs.libass || '1' }}
+      NUVIO_ANDROID_CACHE: ${{ github.workspace }}/.cache/nuvio-android
+      RUSTUP_HOME: /home/runner/.rustup
+      CARGO_HOME: /home/runner/.cargo
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # tools/android.sh checks these exact SDK pieces.
+      # Gradle distribution + dependency cache (the wrapper's own download and
+      # Maven fetches are where CI gets rate-limited).
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Android SDK pieces
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses >/dev/null || true
+          "$SDKM" --install "ndk;27.2.12479018" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0" >/dev/null
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+
+      # tizen-art.sh converts the art with ffmpeg; libass.sh runs autoreconf.
+      - name: Host tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg autoconf automake libtool pkg-config
+
+      - name: Rust targets (MKV core)
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+
+      # Native deps (curl/mbedTLS, libjpeg, libwebp, Media3 FFmpeg, libass)
+      # take long; reuse them. Each script also checks its own stamp.
+      - name: Restore native dependencies cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.NUVIO_ANDROID_CACHE }}
+          key: apk-deps-${{ hashFiles('tools/android/deps.sh', 'tools/android/ffmpeg-android.sh', 'tools/android/libass.sh', 'tools/tpk/libass-hybrid/hybrid.patch', 'tools/tpk/libass-hybrid/cflags') }}
+          restore-keys: |
+            apk-deps-
+
+      - name: Native dependencies
+        run: bash tools/android/deps.sh
+
+      - name: Build the APK
+        run: |
+          set -o pipefail
+          bash tools/android.sh --debug-only 2>&1 | tee build.log
+
+      - name: Save native dependencies cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.NUVIO_ANDROID_CACHE }}
+          key: apk-deps-${{ hashFiles('tools/android/deps.sh', 'tools/android/ffmpeg-android.sh', 'tools/android/libass.sh', 'tools/tpk/libass-hybrid/hybrid.patch', 'tools/tpk/libass-hybrid/cflags') }}
+
+      # Proof the subtitle engine is inside both libmain.so.
+      - name: Check libass in libmain.so
+        if: env.NUVIO_LIBASS == '1'
+        run: |
+          apk=$(ls build/android/Nuvio-*-android-debug.apk | head -1)
+          for abi in arm64-v8a armeabi-v7a; do
+            n=$(unzip -p "$apk" "lib/$abi/libmain.so" | strings | grep -c 'mpvNova-libass' || true)
+            echo "$abi: libass hybrid marks=$n"
+            [ "$n" -ge 1 ] || { echo "libmain.so ($abi) without the libass hybrid" >&2; exit 1; }
+          done
+
+      - name: Upload APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuvio-android-debug
+          path: |
+            build/android/Nuvio-*-android-debug.apk
+            build.log
+          if-no-files-found: warn
