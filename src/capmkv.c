@@ -172,6 +172,10 @@ double capmkv_creditos_ultimo(double dur) {
   if (b > 1.0 && dur > 1.0 && b > dur * 0.75 && dur - b >= CAPMKV_ULTIMO_FOLGA_S) return b;
   return 0.0;
 }
+double capmkv_creditos_ultimo_episodio(double dur) {
+  double b = capmkv_creditos_ultimo(dur);
+  return b > 1.0 && dur - b <= CAPMKV_ULTIMO_EPISODIO_MAX_S ? b : 0.0;
+}
 
 // Uma leitura: cabecalho da pre-busca (sem rede) ou 320 KB; Chapters fora da
 // janela vai pelo SeekHead. `*recusa` = 1 quando o servidor recusou (recuar).

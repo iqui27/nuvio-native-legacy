@@ -2657,7 +2657,20 @@ static double credEfetivo(void) {
   memset(&e, 0, sizeof e);
   e.dur = duracaoSeg;
   e.capitulo = capmkv_creditos_nomeado();
-  e.capituloUltimo = capmkv_creditos_ultimo(duracaoSeg);
+  // Episodio: o ultimo capitulo sem nome so conta se couber em creditos de
+  // serie (capmkv.h); o ultimo ato de um arquivo com capitulos a cada 10 min
+  // nao e creditos. O log diz uma vez quando um foi recusado por isso.
+  if (epE > 0) {
+    static long recusadoEm = -1;
+    double u = capmkv_creditos_ultimo(duracaoSeg);
+    e.capituloUltimo = capmkv_creditos_ultimo_episodio(duracaoSeg);
+    if (u > 1.0 && e.capituloUltimo <= 1.0 && video_pronto() && (long)u != recusadoEm) {
+      recusadoEm = (long)u;
+      printf("[credits] mkv-last-chapter at %.0fs of %.0fs leaves %.0fs: an act, not the credits (episode limit %.0fs)\n",
+             u, (double)duracaoSeg, (double)duracaoSeg - u, CAPMKV_ULTIMO_EPISODIO_MAX_S);
+      fflush(stdout);
+    }
+  } else e.capituloUltimo = capmkv_creditos_ultimo(duracaoSeg);
   { double ic = intro_creditos_seg();
     if (intro_creditos_aniskip()) e.aniskip = ic; else e.introdb = ic; }
   if (c && c->imdb[0] && epT >= 0 && epE > 0) {
