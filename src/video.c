@@ -323,6 +323,9 @@ int  video_registro_negado(void) { return 0; }
 int video_luna(const char *uri, const char *carga, void (*cb)(const char *, void *), void *ctx) {
   (void)uri; (void)carga; (void)cb; (void)ctx; return 0;
 }
+int video_luna_app(const char *uri, const char *carga, void (*cb)(const char *, void *), void *ctx) {
+  (void)uri; (void)carga; (void)cb; (void)ctx; return 0;
+}
 int  video_tocar(const char *u) { snprintf(urlAtual, sizeof urlAtual, "%s", u ? u : ""); return SIM.aceita; }
 void video_bombear(void) {}
 void video_parar(void) {}
@@ -1694,21 +1697,89 @@ static void ack_publicar(void) {
   __atomic_store_n(&ackEstado, e, __ATOMIC_RELEASE);
   pthread_mutex_unlock(&mutex);
 }
-static int aoPedidoScreensaver(LSHandle *h, LSMessage *m, void *u) {
-  const char *p = lsPayload(m);
+// HANDLE DO APP (libhelpers). O `bus` deste arquivo e com.webos.media.client.*
+// e o hub so o deixa falar com o uMS. Medido na 43UQ70 (webOS 22, 25/11/2026):
+// tvpower, applicationManager e surfacemanager respondem "Not permitted to
+// send to ..." por ele, e o screensaver da TV subia no meio do filme (~3-5 min
+// sem tecla) tomando o foco e quebrando a legenda desenhada pelo app. O
+// libhelpers da LG (o mesmo que a SDL usa no arranque, "[HLunaServiceBridge]")
+// tem handles registrados com o ID do app; pelo publico (pub=1) o
+// registerScreenSaverRequest respondeu subscribed:true, o pedido "Active"
+// chegou e o ack:false segurou o screensaver. Layout do contexto: o do
+// SDL-webOS/Kodi (24 bytes no ARM).
+typedef struct NvHCtx {
+  int (*cb)(void *sh, void *msg, struct NvHCtx *ctx);
+  void *u;
+  void *reservado;
+  int multiple;
+  int pub;
+  unsigned long token;
+} NvHCtx;
+typedef struct { void (*cb)(const char *, void *); void *ctx; } NvAppPedido;
+static int (*hCall)(const char *, const char *, NvHCtx *);
+static const char *(*hMsg)(void *);
+static int helperPronto(void) {
+  static int tentou;   // so o fio principal chega aqui
+  if (!tentou) {
+    void *L = dlopen("libhelpers.so.2", RTLD_NOW);
+    tentou = 1;
+    if (L) {
+      *(void **)(&hCall) = dlsym(L, "HLunaServiceCall");
+      *(void **)(&hMsg) = dlsym(L, "HLunaServiceMessage");
+    }
+    if (!hCall || !hMsg) {
+      hCall = NULL;
+      printf("[video] libhelpers indisponivel: luna pelo handle do app desligada\n");
+      fflush(stdout);
+    }
+  }
+  return hCall != NULL;
+}
+static int appResposta(void *sh, void *msg, NvHCtx *c) {
+  NvAppPedido *p = c->u;
+  (void)sh;
+  if (p && p->cb) p->cb(hMsg(msg), p->ctx);
+  return 1;
+}
+static int lunaApp(const char *uri, const char *carga,
+                   void (*cb)(const char *, void *), void *ctx, int multiple) {
+  NvHCtx *c;
+  NvAppPedido *p;
+  int r;
+  if (!helperPronto()) return 0;
+  c = calloc(1, sizeof *c);
+  p = calloc(1, sizeof *p);
+  if (!c || !p) { free(c); free(p); return 0; }
+  p->cb = cb; p->ctx = ctx;
+  c->cb = appResposta; c->u = p; c->pub = 1; c->multiple = multiple;
+  r = hCall(uri, carga, c);
+  if (r != 0) {
+    printf("[video] luna (app) %s falhou: %d\n", uri, r);
+    fflush(stdout);
+    free(c); free(p);
+    return 0;
+  }
+  // Contexto vivo de proposito: o libhelpers guarda o ponteiro ate a resposta
+  // (e para sempre na assinatura). Chamadas raras; o vazamento e de bytes.
+  return 1;
+}
+int video_luna_app(const char *uri, const char *carga, void (*cb)(const char *, void *), void *ctx) {
+  return lunaApp(uri, carga, cb, ctx, 0);
+}
+
+static void pedidoScreensaver(const char *p, int peloApp) {
   char estado[24], ts[64], b[192];
   int e, segurar;
-  (void)h; (void)u;
-  if (__atomic_load_n(&encerrando, __ATOMIC_ACQUIRE) || !ligado || !bus || !p ||
-      !js_texto_raiz(p, "state", estado, sizeof estado) || strcmp(estado, "Active")) return 1;
+  if (__atomic_load_n(&encerrando, __ATOMIC_ACQUIRE) || !ligado || (!peloApp && !bus) || !p ||
+      !js_texto_raiz(p, "state", estado, sizeof estado) || strcmp(estado, "Active")) return;
   // Preserva o token recebido, inclusive quando string, sem arredondar numeros
   // grandes ou responder com timestamp truncado.
-  if (!js_bruto(p, NULL, "timestamp", ts, sizeof ts)) return 1;
+  if (!js_bruto(p, NULL, "timestamp", ts, sizeof ts)) return;
   if (ts[0] != '"') {
     char *fim;
-    if (!isdigit((unsigned char)ts[0]) && ts[0] != '-') return 1;
+    if (!isdigit((unsigned char)ts[0]) && ts[0] != '-') return;
     strtod(ts, &fim);
-    if (*fim) return 1;
+    if (*fim) return;
   }
   e = __atomic_load_n(&ackEstado, __ATOMIC_ACQUIRE);
   segurar = (e & ACK_SEGURAR) ? 1 : (e & ACK_DESCANSO) ? 2 : 0;
@@ -1720,13 +1791,36 @@ static int aoPedidoScreensaver(LSHandle *h, LSMessage *m, void *u) {
          ts, !!(e & ACK_MIDIA), !!(e & ACK_TOCANDO), !!(e & ACK_PAUSA),
          !!(e & ACK_FIM), !!(e & ACK_ERRO));
   fflush(stdout);
-  lsChamar("luna://com.webos.service.tvpower/power/responseScreenSaverRequest",
-           b, NULL, NULL, "responseScreenSaverRequest");
+  if (peloApp)
+    lunaApp("luna://com.webos.service.tvpower/power/responseScreenSaverRequest",
+            b, NULL, NULL, 0);
+  else
+    lsChamar("luna://com.webos.service.tvpower/power/responseScreenSaverRequest",
+             b, NULL, NULL, "responseScreenSaverRequest");
+}
+static int aoPedidoScreensaver(LSHandle *h, LSMessage *m, void *u) {
+  (void)h; (void)u;
+  pedidoScreensaver(lsPayload(m), 0);
   return 1;
 }
+static void aoPedidoScreensaverApp(const char *p, void *u) {
+  (void)u;
+  if (p && strstr(p, "\"subscribed\"")) {
+    printf("[video] screensaver: registro pelo handle do app -> %.160s\n", p);
+    fflush(stdout);
+  }
+  pedidoScreensaver(p, 1);
+}
 static void protegerScreensaver(void) {
-  if (protetorLigado || !ligado || !bus) return;
+  if (protetorLigado || !ligado) return;
   esmaecer_protetor_publicador(ack_publicar);
+  if (lunaApp("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
+              "{\"subscribe\":true,\"clientName\":\"" NV_APP_ID "\"}",
+              aoPedidoScreensaverApp, NULL, 1)) {
+    protetorLigado = 1;
+    return;
+  }
+  if (!bus) return;
   protetorLigado = lsChamar("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
            "{\"subscribe\":true,\"clientName\":\"" NV_APP_ID "\"}",
            aoPedidoScreensaver, NULL, "registerScreenSaverRequest");
