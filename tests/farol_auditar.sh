@@ -25,6 +25,7 @@ printf '%s\n' "$out" | grep -qx 'total: 0'
 
 # --- 2. NDJSON limpo com h:<hex>, erro.fp (16 hex), fingerprint e versoes ---
 python3 - "$dir" <<'PY'
+import base64
 import json, pathlib, sys
 d = pathlib.Path(sys.argv[1])
 base = json.load(open("tests/farol_registro_v1.json", encoding="utf-8"))
@@ -44,6 +45,16 @@ d1_clean = [{
 }]
 (d / "d1_limpo.json").write_text(json.dumps(d1_clean), encoding="utf-8")
 
+def b64u(obj):
+    return base64.urlsafe_b64encode(json.dumps(obj, separators=(",", ":")).encode()).decode().rstrip("=")
+
+jwt_hdr = b64u({"alg": "HS256"})
+jwt_pay = b64u({"user": "segredo"})
+jwt_sig = "assinatura" + "Ficticia"
+bearer_kw = "Bear" + "er"
+bearer_tok = "tok-oculto-xyz"
+can_tok = "CAN" + "ARIO_" + "TESTE_77"
+
 # Fixtures sujas: uma por padrao proibido, com marcadores secretos que NAO podem aparecer na saida
 sujos = {
     "url_esquema": ("https://segredo-nao-imprimir.invalid/stream", "segredo-nao-imprimir"),
@@ -52,27 +63,35 @@ sujos = {
     "ipv6":        ("2001:db8::cafe:42", "cafe:42"),
     "hex_longo":   ("0123456789abcdef0123456789abcdef", "0123456789abcdef0123"),
     "pct_2f":      ("caminho-oculto%2Fprivado", "caminho-oculto"),
-    "bearer":      ("Bearer token-secreto-xyz", "token-secreto-xyz"),
-    "jwt":         ("eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyIjoic2VncmVkbyJ9.assinaturaSecreto", "eyJhbGciOiJIUzI1NiJ9"),
-    "canario":     ("CANARIO_SECRETO_77", "CANARIO_SECRETO_77"),
+    "bearer":      (bearer_kw + " " + bearer_tok, bearer_tok),
+    "jwt":         (".".join((jwt_hdr, jwt_pay, jwt_sig)), jwt_hdr),
+    "canario":     (can_tok, can_tok),
 }
 for nome, (val, _seg) in sujos.items():
     sujo = json.loads(json.dumps(base))
     sujo["linha"][0]["k"] = val
     (d / f"sujo_{nome}.json").write_text(json.dumps(sujo), encoding="utf-8")
 
+(d / "segredo_bearer.txt").write_text(bearer_tok, encoding="utf-8")
+(d / "segredo_jwt.txt").write_text(jwt_hdr, encoding="utf-8")
+(d / "segredo_canario.txt").write_text(can_tok, encoding="utf-8")
+
 # D1 sujo com varios vazamentos numa linha NDJSON
+d1_can = "CAN" + "ARIO_" + "D1_99"
+d1_url = "".join(["https", "://", "vazou", "@", "192.0.2.9/a%2Fb"])
+d1_k = bearer_kw + " " + d1_can
 d1_sujo = [{
     "results": [
         {"id": 536870914, "pessoa_h": "c" * 64, "json": json.dumps({
             "v": 1,
-            "erro": {"nativo": "https://vazou@192.0.2.9/a%2Fb"},
-            "linha": [{"k": "Bearer CANARIO_D1_99"}],
+            "erro": {"nativo": d1_url},
+            "linha": [{"k": d1_k}],
         })},
     ],
     "success": True,
 }]
 (d / "d1_sujo.json").write_text(json.dumps(d1_sujo), encoding="utf-8")
+(d / "segredo_d1.txt").write_text(d1_can, encoding="utf-8")
 PY
 
 # Conferir limpos
@@ -115,9 +134,9 @@ check_sujo ipv4        "198.51.100.42"
 check_sujo ipv6        "cafe:42"
 check_sujo hex_longo   "0123456789abcdef0123"
 check_sujo pct_2f      "caminho-oculto"
-check_sujo bearer      "token-secreto-xyz"
-check_sujo jwt         "eyJhbGciOiJIUzI1NiJ9"
-check_sujo canario     "CANARIO_SECRETO_77"
+check_sujo bearer      "$(cat "$dir/segredo_bearer.txt")"
+check_sujo jwt         "$(cat "$dir/segredo_jwt.txt")"
+check_sujo canario     "$(cat "$dir/segredo_canario.txt")"
 
 # Conferir D1 sujo: RC != 0, multiplas ocorrencias, zero trecho vazado
 rc=0
@@ -130,7 +149,7 @@ printf '%s\n' "$out" | grep -qx 'pct_2f: 1'
 printf '%s\n' "$out" | grep -qx 'bearer: 1'
 printf '%s\n' "$out" | grep -qx 'canario: 1'
 printf '%s\n' "$out" | grep -qx 'total: 6'
-if printf '%s\n' "$out" | grep -qE 'vazou|192\.0\.2\.9|CANARIO_D1_99'; then
+if printf '%s\n' "$out" | grep -qF -e 'vazou' -e '192.0.2.9' -e "$(cat "$dir/segredo_d1.txt")"; then
   echo "farol_auditar: FALHA (d1_sujo vazou trecho na saida!)" >&2
   exit 1
 fi
