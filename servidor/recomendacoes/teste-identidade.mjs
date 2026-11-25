@@ -71,7 +71,7 @@ function emissores(t, { trakt = {}, nuvio = {}, perfis = {}, simkl = {}, perfisF
     }
     if (u === "https://sb.test/rest/v1/rpc/sync_pull_profiles") {
       if (perfisFalha) return new Response("", { status: 500 });
-      return Response.json((perfis[tok] || [1]).map((i) => ({ profile_index: i })));
+      return Response.json((perfis[tok] || [1]).map((i) => (typeof i === "object" ? i : { profile_index: i, is_primary: i === 1 })));
     }
     if (u.startsWith("https://api.simkl.com/users/settings")) {
       // A Simkl exige client_id/app-name/app-version na query; sem eles, 412.
@@ -321,4 +321,116 @@ test("Simkl: 412/5xx do emissor nao e token recusado (502, nao 401)", async (t) 
   const { api } = cenario(t, { simkl: { "sk-1": 4242, __http: 412 }, env: { SIMKL_CLIENT_ID: "sc" } });
   await api("nuvio", "tok-a", "POST", "/v1/eu");
   assert.equal((await api("nuvio", "tok-a", "POST", "/v1/identidades/vincular", { provedor: "simkl", token: "sk-1" })).status, 502);
+});
+
+test("direct account profiles need no codes, prior registration or searchable profile", async (t) => {
+  const { sqlite, api } = cenario(t, { perfis: { "tok-a": [
+    { profile_index: 1, is_primary: true, name: "Parent" },
+    { profile_index: 2, is_primary: false, name: "Alice" },
+    { profile_index: 3, is_primary: false, name: "Bob" },
+  ] } });
+  const list = await api("nuvio", "tok-a", "GET", "/v1/contatos/perfis");
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.body.perfis.map(p => [p.indice, p.nome, p.estado]), [[2,"Alice","disponivel"],[3,"Bob","disponivel"]]);
+  assert.equal(JSON.stringify(list.body).includes("codigo"), false);
+  assert.equal(q(sqlite,"SELECT COUNT(*) AS n FROM pessoa")[0].n, 1);
+  assert.equal((await api("nuvio","tok-a","POST","/v1/contatos/perfis",{perfil:2})).status,200);
+  assert.deepEqual((await api("nuvio","tok-a","GET","/v1/contatos")).body.contatos.map(p=>p.id),["nuvio:aaa:2"]);
+  assert.deepEqual((await api("nuvio","tok-a","GET","/v1/contatos",undefined,2)).body.contatos.map(p=>p.id),["nuvio:aaa"]);
+  assert.equal((await api("nuvio","tok-a","GET","/v1/contatos",undefined,3)).body.contatos.length,0);
+  const fresh = await api("nuvio","tok-a","GET","/v1/contatos/perfis");
+  assert.equal(fresh.body.perfis[0].estado,"amigo");
+  await api("nuvio","tok-a","POST","/v1/contatos/perfis",{perfil:2});
+  assert.equal(q(sqlite,"SELECT COUNT(*) AS n FROM contato")[0].n,2);
+  assert.deepEqual(q(sqlite,"SELECT alcance,descobrivel FROM pessoa WHERE id = 'nuvio:aaa:2'").map(p=>[p.alcance,p.descobrivel]),[[-1,0]]);
+  assert.equal((await api("nuvio","tok-a","POST","/v1/contatos/perfis",{perfil:4})).status,404);
+  assert.equal((await api("nuvio","tok-a","POST","/v1/contatos/perfis",{perfil:1})).status,404);
+  assert.equal((await api("nuvio","tok-a","POST","/v1/contatos/perfis",{perfil:"2"})).status,400);
+  assert.equal((await api("trakt","tt-p","GET","/v1/contatos/perfis")).status,403);
+  assert.deepEqual((await api("nuvio","tok-b","GET","/v1/contatos/perfis")).body.perfis,[]);
+  assert.equal((await api("nuvio","tok-b","POST","/v1/contatos/perfis",{perfil:2})).status,404);
+  assert.equal(q(sqlite,"SELECT COUNT(*) AS n FROM contato")[0].n,2);
+});
+
+test("direct profile pairing fails closed when ownership cannot be verified", async (t) => {
+  const { sqlite, api }=cenario(t,{perfisFalha:true});
+  assert.equal((await api("nuvio","tok-a","POST","/v1/contatos/perfis",{perfil:2})).status,503);
+  assert.equal(q(sqlite,"SELECT COUNT(*) AS n FROM contato")[0].n,0);
+});
+
+test("contatos/perfis exige autenticacao e nao vaza perfil de outra conta", async (t) => {
+  const { env, api } = cenario(t, { perfis: { "tok-a": [
+    { profile_index: 1, is_primary: true, name: "Parent" },
+    { profile_index: 2, is_primary: false, name: "Alice" },
+  ] } });
+  // Sem Authorization e com token desconhecido: 401 antes de qualquer consulta.
+  const semToken = await worker.fetch(new Request("https://w.test/v1/contatos/perfis", { headers: { "x-nuvio-auth": "nuvio" } }), env);
+  assert.equal(semToken.status, 401);
+  assert.equal((await api("nuvio", "tok-falso", "GET", "/v1/contatos/perfis")).status, 401);
+  assert.equal((await api("nuvio", "tok-falso", "POST", "/v1/contatos/perfis", { perfil: 2 })).status, 401);
+  // A conta B pede a lista: a RPC responde com o token DELA, entao so voltam
+  // os perfis da propria conta — nunca os da conta A.
+  const b = await api("nuvio", "tok-b", "GET", "/v1/contatos/perfis");
+  assert.equal(b.status, 200);
+  assert.deepEqual(b.body.perfis, []);
+  assert.equal(JSON.stringify(b.body).includes("aaa"), false);
+});
+
+test("mesmaConta segue excluindo irmaos da conta da busca e das sugestoes", async (t) => {
+  const { sqlite, api } = cenario(t, { perfis: { "tok-a": [
+    { profile_index: 1, is_primary: true, name: "Parent" },
+    { profile_index: 2, is_primary: false, name: "Alice" },
+    { profile_index: 3, is_primary: false, name: "Dana" },
+  ] } });
+  // Dana (perfil 3 da conta A) existe, e descobrivel e virou contato da conta B.
+  await api("nuvio", "tok-a", "POST", "/v1/eu", { nome: "Dana" }, 3);
+  await api("nuvio", "tok-a", "POST", "/v1/descobrivel", { descobrivel: 1 }, 3);
+  await api("nuvio", "tok-b", "POST", "/v1/eu", { nome: "Gustavo" });
+  const cod3 = q(sqlite, "SELECT codigo FROM pessoa WHERE id = 'nuvio:aaa:3'")[0].codigo;
+  assert.equal((await api("nuvio", "tok-b", "POST", "/v1/contatos", { codigo: cod3 })).status, 200);
+  // B tambem e contato do perfil principal de A: Dana sairia como "amigo de
+  // amigo" nas sugestoes de A — e mesmaConta que a tira, nao a query.
+  const codB = q(sqlite, "SELECT codigo FROM pessoa WHERE id = 'nuvio:bbb'")[0].codigo;
+  assert.equal((await api("nuvio", "tok-a", "POST", "/v1/contatos", { codigo: codB })).status, 200);
+  // Elisa (conta E, descobrivel, contato de B) prova que a sugestao funciona.
+  await api("nuvio", "tok-e", "POST", "/v1/eu", { nome: "Elisa" });
+  await api("nuvio", "tok-e", "POST", "/v1/descobrivel", { descobrivel: 1 });
+  const codE = q(sqlite, "SELECT codigo FROM pessoa WHERE id = 'nuvio:eee'")[0].codigo;
+  assert.equal((await api("nuvio", "tok-b", "POST", "/v1/contatos", { codigo: codE })).status, 200);
+  // BUSCA pelo codigo exato da irma: B acha, A nao — mesmaConta, nao ausencia.
+  const buscaB = await api("nuvio", "tok-b", "POST", "/v1/perfis/buscar", { q: cod3 });
+  assert.equal(buscaB.status, 200, JSON.stringify(buscaB.body));
+  assert.equal(buscaB.body.resultados.length, 1);
+  const buscaA = await api("nuvio", "tok-a", "POST", "/v1/perfis/buscar", { q: cod3 });
+  assert.equal(buscaA.status, 200);
+  assert.equal(buscaA.body.resultados.length, 0);
+  // SUGESTOES de A: Elisa aparece (amigo de amigo), Dana nao.
+  const sug = await api("nuvio", "tok-a", "POST", "/v1/sugestoes", {});
+  assert.equal(sug.status, 200);
+  assert.ok(sug.body.sugestoes.some((s) => s.nome === "Elisa"), JSON.stringify(sug.body));
+  assert.equal(sug.body.sugestoes.some((s) => s.nome === "Dana" || String(s.id).includes("aaa:3")), false);
+});
+
+test("legacy registration and code pairing connect only the selected household pair", async (t) => {
+  const { sqlite, api } = cenario(t);
+  const a = await api("nuvio", "tok-a", "POST", "/v1/eu", { nome: "Parent" });
+  const b = await api("nuvio", "tok-a", "POST", "/v1/eu", { nome: "Çağrı" }, 2);
+  assert.equal(a.status, 200); assert.equal(b.status, 200);
+  assert.equal(a.body.id, "nuvio:aaa"); assert.equal(b.body.id, "nuvio:aaa:2");
+  assert.match(b.body.codigo, /^[a-zA-Z0-9]{6}$/);
+  assert.equal(q(sqlite,"SELECT COUNT(*) AS n FROM contato")[0].n,0);
+  const link = await api("nuvio", "tok-a", "POST", "/v1/contatos", { codigo: b.body.codigo });
+  assert.equal(link.status,200); assert.equal(link.body.contato.id,b.body.id);
+  assert.deepEqual((await api("nuvio","tok-a","GET","/v1/contatos")).body.contatos.map(p=>p.id),[b.body.id]);
+  assert.deepEqual((await api("nuvio","tok-a","GET","/v1/contatos",undefined,2)).body.contatos.map(p=>p.id),[a.body.id]);
+  assert.equal((await api("nuvio","tok-a","GET","/v1/contatos",undefined,3)).body.contatos.length,0);
+  // Registration/pairing do not opt either profile into discovery or activity sharing.
+  assert.deepEqual(q(sqlite,"SELECT alcance,descobrivel FROM pessoa WHERE id IN (?,?) ORDER BY id",a.body.id,b.body.id).map(p=>[p.alcance,p.descobrivel]),[[-1,0],[-1,0]]);
+  assert.equal((await api("nuvio","tok-a","POST","/v1/contatos",{codigo:b.body.codigo})).status,200);
+  assert.equal(q(sqlite,"SELECT COUNT(*) AS n FROM contato")[0].n,2);
+  // The same existing code endpoint rejects a blocked pair without unblocking it.
+  sqlite.prepare("DELETE FROM contato").run();
+  sqlite.prepare("INSERT INTO bloqueio (quem,alvo,criado) VALUES (?,?,1)").run(b.body.id,a.body.id);
+  assert.equal((await api("nuvio","tok-a","POST","/v1/contatos",{codigo:b.body.codigo})).status,404);
+  assert.equal(q(sqlite,"SELECT COUNT(*) AS n FROM contato")[0].n,0);
 });
