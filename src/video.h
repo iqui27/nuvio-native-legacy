@@ -558,5 +558,8 @@ void video_simular(const VideoSimulacao *s);
 // One-reply webOS LS2 request; callback runs on the GLib thread.
 #if !defined(NV_TPK) && !defined(NV_ANDROID)
 int video_luna(const char *uri, const char *payload, void (*callback)(const char *, void *), void *context);
+// Mesma chamada pelo handle do APP (libhelpers, pub=1): o de video_luna e o do
+// player (com.webos.media.client.*), que so fala com o uMS. 0 = nao saiu.
+int video_luna_app(const char *uri, const char *payload, void (*callback)(const char *, void *), void *context);
 #endif
 #endif

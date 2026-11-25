@@ -243,6 +243,63 @@ static double rssMB(void) {
 #endif
 }
 
+static int filmeTocandoAgora(void) {
+  return (player_aberto() || player_mini_ativo()) && player_com_video() &&
+         !player_pausado() && !player_carregando();
+}
+
+#ifdef NV_WEBOS
+#include <dirent.h>
+// SCREENSAVER INVISIVEL DA LG (webOS 22, 43UQ70, 25/11/2026): ~3-5 min sem
+// tecla o com.webos.app.screensaver sobe SEM desenhar nada por cima do filme,
+// mas toma o foco, e o compositor deixa de mostrar direito o que o app desenha
+// (a legenda atrasa e some; o plano de video segue). A defesa principal e o
+// ack:false do registro em video.c; isto so detecta o processo dele.
+static int screensaverVivo(void) {
+  DIR *d = opendir("/proc");
+  struct dirent *e;
+  int achou = 0;
+  if (!d) return 0;
+  while (!achou && (e = readdir(d))) {
+    char caminho[64], buf[512];
+    FILE *f;
+    size_t n;
+    if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
+    snprintf(caminho, sizeof caminho, "/proc/%s/cmdline", e->d_name);
+    if (!(f = fopen(caminho, "rb"))) continue;
+    n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    for (size_t i = 0; i < n; i++) if (!buf[i]) buf[i] = ' ';
+    buf[n] = 0;
+    if (strstr(buf, "com.webos.app.screensaver")) achou = 1;
+  }
+  closedir(d);
+  return achou;
+}
+static void protetorResposta(const char *carga, void *rotulo) {
+  printf("[protetor] %s -> %.200s\n", (const char *)rotulo, carga ? carga : "(nula)");
+  fflush(stdout);
+}
+// RETAGUARDA: o registro do screensaver (video.c, handle do app) recusa o
+// screensaver com filme tocando. Se ainda assim ele subir e tomar o foco, o
+// app se relanca para voltar ao primeiro plano. So com o processo do
+// screensaver vivo: menu/aviso de verdade nao e disputado.
+static void protetorFocoPerdido(void) {
+  static Uint32 ultimo;
+  Uint32 agora = SDL_GetTicks();
+  if (!filmeTocandoAgora() || !screensaverVivo()) return;
+  if (ultimo && agora - ultimo < 20000u) return;
+  ultimo = agora;
+  printf("[protetor] screensaver tomou o foco com filme tocando: relancando\n");
+  fflush(stdout);
+  if (!video_luna_app("luna://com.webos.applicationManager/launch",
+                      "{\"id\":\"" NV_APP_ID "\"}", protetorResposta, (void *)"relancar")) {
+    printf("[protetor] relancamento nao saiu\n");
+    fflush(stdout);
+  }
+}
+#endif
+
 // Captura de tela sob demanda. O framebuffer da TV nao pode ser lido nem como
 // root ("Operation not permitted") e o servico de captura da LG responde erro,
 // entao a unica forma de ver o que o app desenha e o proprio app se fotografar.
@@ -1916,6 +1973,9 @@ int main(int argc, char **argv) {
         if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST || e.window.event == SDL_WINDOWEVENT_HIDDEN)
           app_evento(&e);
         if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST || e.window.event == SDL_WINDOWEVENT_HIDDEN) {
+#ifdef NV_WEBOS
+          if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) protetorFocoPerdido();
+#endif
           player_ciclo_evento(SDL_APP_WILLENTERBACKGROUND);
           ponteiro_evento(&e, app_evento);
           quadroc_suspendeu(&quadroRel);   // suspendeu: o relogio para de valer
@@ -2199,9 +2259,7 @@ int main(int argc, char **argv) {
     // no titulo: o destaque da Home troca de trailer sem parar e a tela nunca
     // escureceria. Trailer em TELA CHEIA pausado e parado (trailer_pausado so
     // existe em tela cheia, que e onde da para pausar).
-    esmaecer_quadro(agora, dt,
-                    ((player_aberto() || player_mini_ativo()) && player_com_video() &&
-                     !player_pausado() && !player_carregando()) ||
+    esmaecer_quadro(agora, dt, filmeTocandoAgora() ||
                     (detail_aberto() && !player_aberto() && trailer_tocando() &&
                      !trailer_pausado()));
     // TELA DE DESCANSO: vitrine/relogio por cima do preto (descanso.h).
