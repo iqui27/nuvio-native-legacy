@@ -1065,6 +1065,9 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(JNIEn
 int  video_iniciar(void) {
   JNIEnv *env;
   if (!travaLeg) travaLeg = SDL_CreateMutex();
+  // PGS (owner 25/11/2026): Media3 hands bitmap cues that nativeLegenda never
+  // reads; the app decodes and draws them (imgsub), as on the .tpk and LG.
+  mkvass_aceitar_imagem(1);
   env = (JNIEnv *)SDL_AndroidGetJNIEnv();
   return env && garantirPonte(env);
 }

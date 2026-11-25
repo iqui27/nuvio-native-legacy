@@ -18,16 +18,16 @@ fi
 flags=("${base[@]}" -DMKVASS_RANGES_POR_SEG=400 -DMKVASS_ENTREGA_JANELA_MS=300L)
 FONTES="tests/mkvass_alem_teto.c src/mkvass.c src/fontefamilias.c src/imgsub.c src/pgs.c src/legenda.c src/asssinais.c tests/mkvass_i18n.c src/dados.c"
 # O assrender e um duble dentro do teste: guarda o documento que iria ao libass.
-cc "${flags[@]}" $FONTES -o "$DIR/padrao" -lm
+cc "${flags[@]}" $FONTES -o "$DIR/padrao" -lz -lm
 # Teto de corpo pequeno (1 MiB, despejo a partir de 768 KiB): a abertura do
 # arquivo de teste tem 2,5 MB, entao o despejo e obrigatorio. A entrega em
 # janela, que na TV espera 10 s, aqui espera 300 ms.
 cc "${flags[@]}" -DMKVASS_CORPO_MAX=1048576L -DMKVASS_CORPO_ALTO=786432L -DMKVASS_ENTREGA_JANELA_MS=300L \
-  $FONTES -o "$DIR/janela" -lm
+  $FONTES -o "$DIR/janela" -lz -lm
 # RITMO: o teto de Ranges e o de producao (3 por segundo), sem -D. So a pausa
 # e o recuo do CDN sao encurtados, como em tests/mkvass.sh ([11d]).
 cc "${base[@]}" -DMKVASS_ENTREGA_JANELA_MS=300L -DMKVASS_PAUSA_CDN_INI_MS=150L -DMKVASS_PAUSA_CDN_MAX_MS=600L \
-  -DMKVASS_RECUO_INI_MS=20L -DMKVASS_RECUO_MAX_MS=160L $FONTES -o "$DIR/ritmo" -lm
+  -DMKVASS_RECUO_INI_MS=20L -DMKVASS_RECUO_MAX_MS=160L $FONTES -o "$DIR/ritmo" -lz -lm
 ruim=0
 for i in $(seq 1 "${VEZES:-1}"); do
   # A prova de ritmo corre em tempo real (~40 s): so na primeira rodada.

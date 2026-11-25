@@ -111,8 +111,9 @@ int main(void) {
   assert(vaiOverlay(&faixa)); overlayAssumir(2, 7);
   assert(nativa == -1 && !legOverlayTV);
   strcpy(faixa.codec, "S_HDMV/PGS");
-#ifdef NV_TPK
-  // .tpk decodifica PGS em software: vai para o overlay, sem segurar a TV.
+#if defined(NV_TPK) || defined(NV_ANDROID)
+  // .tpk e Android decodificam PGS em software: vai para o overlay, sem segurar
+  // a TV (no Android o Media3 so entregava o bitmap, que o app nao lia).
   assert(vaiOverlay(&faixa)); overlayAssumir(2, 7);
   assert(nativa == -1 && !legOverlayTV);
 #else

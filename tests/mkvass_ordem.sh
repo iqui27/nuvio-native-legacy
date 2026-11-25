@@ -10,5 +10,5 @@ flags=(-ffunction-sections -fdata-sections)
 if [ "$(uname -s)" = Darwin ]; then flags+=(-Wl,-dead_strip); else flags+=(-Wl,--gc-sections -pthread -lm); fi
 . tests/mkvcore_flag.sh
 cc tests/mkvass_ordem.c src/fontefamilias.c -Isrc -O1 -g -Wall -Wextra -Wno-deprecated-declarations -Wno-unused-function \
-  "${flags[@]}" ${MKVCORE_CC[@]+"${MKVCORE_CC[@]}"} -o "$DIR/test"
+  "${flags[@]}" ${MKVCORE_CC[@]+"${MKVCORE_CC[@]}"} -o "$DIR/test" -lz
 "$DIR/test"

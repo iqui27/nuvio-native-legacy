@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <math.h>
 #include <limits.h>
+#include <zlib.h>
 
 // --- parametros --------------------------------------------------------------
 
@@ -555,6 +556,15 @@ typedef struct {
   int      nPend, capPend;
   size_t   bytesPend;
   int      refInvalida; // forced, letreiro, comentario ou faixa codificada
+  // ContentEncoding of the track (owner 25/11/2026: PGS failing everywhere).
+  // mkvmerge zlib-compresses PGS by default (older versions ASS/SRT too):
+  // MKVCOMP_ZLIB inflates each block, MKVCOMP_TIRA puts back the stripped
+  // header bytes (`compPre`) before the block goes to its parser.
+  int      comp;
+  unsigned char compPre[256];
+  int      compPreN;
+  long     compFalhas;  // blocks that did not inflate
+  long     pgsFalhas;   // PGS display sets the decoder rejected
   size_t   corpoTam, corpoCap;
   ClCache  cl[CL_CACHE];
   int      clProx;
@@ -1315,8 +1325,8 @@ static void soltarPendentes(Fio *f) {
 
 // Bloco "ReadOrder,Layer,Style,Name,MarginL,MarginR,MarginV,Effect,Text" ->
 // "Dialogue: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text".
-static int anexarEvento(Fio *f, const unsigned char *dados, long n,
-                        double ini, double fim) {
+static int anexarEventoCru(Fio *f, const unsigned char *dados, long n,
+                           double ini, double fim) {
   char a[24], b[24];
   char *linha;
   const char *p = (const char *)dados;
@@ -1352,6 +1362,94 @@ static int anexarEvento(Fio *f, const unsigned char *dados, long n,
   k = corpoAnexar(f, linha, w);
   free(linha);
   return (int)k;
+}
+
+// MKVCOMP_NADA is 0: a calloc'd Fio reads blocks as they are.
+enum { MKVCOMP_NADA = 0, MKVCOMP_ZLIB, MKVCOMP_TIRA, MKVCOMP_OUTRA };
+// One PGS display set inflates to a few MB at most; past this it is garbage.
+#define MKVCOMP_MAX (16L << 20)
+
+// zlib (or gzip) block -> new buffer, *saida bytes. NULL when it does not inflate.
+static unsigned char *inflarBloco(const unsigned char *d, long n, long *saida) {
+  z_stream z; unsigned char *out = NULL; long cap = n * 4 + 1024; int r;
+  *saida = 0;
+  if (n <= 0) return NULL;
+  memset(&z, 0, sizeof z);
+  if (inflateInit2(&z, 15 + 32) != Z_OK) return NULL;
+  z.next_in = (unsigned char *)d; z.avail_in = (uInt)n;
+  for (;;) {
+    unsigned char *g;
+    if (cap > MKVCOMP_MAX) cap = MKVCOMP_MAX;
+    g = realloc(out, (size_t)cap);
+    if (!g) break;
+    out = g;
+    z.next_out = out + z.total_out; z.avail_out = (uInt)(cap - (long)z.total_out);
+    r = inflate(&z, Z_NO_FLUSH);
+    if (r == Z_STREAM_END) { *saida = (long)z.total_out; inflateEnd(&z); return out; }
+    if (r != Z_OK && r != Z_BUF_ERROR) break;
+    if (z.avail_out) break;              // input ended before the stream did
+    if (cap >= MKVCOMP_MAX) break;
+    cap *= 2;
+  }
+  inflateEnd(&z); free(out);
+  return NULL;
+}
+
+// Every block of the track passes here: undo the track's ContentEncoding.
+static int anexarEvento(Fio *f, const unsigned char *dados, long n,
+                        double ini, double fim) {
+  unsigned char *b; long m; int r;
+  if (f->comp == MKVCOMP_NADA) return anexarEventoCru(f, dados, n, ini, fim);
+  if (f->comp == MKVCOMP_TIRA) {
+    if (n < 0 || n > LONG_MAX - f->compPreN || !(b = malloc((size_t)(n + f->compPreN)))) return 0;
+    memcpy(b, f->compPre, (size_t)f->compPreN); memcpy(b + f->compPreN, dados, (size_t)n);
+    m = n + f->compPreN;
+  } else if (!(b = inflarBloco(dados, n, &m))) {
+    if (f->compFalhas++ < 3) { printf("[mkvass] faixa %d: bloco %ld bytes nao descomprimiu (zlib)\n", f->faixa, n); fflush(stdout); }
+    return 0;
+  }
+  r = anexarEventoCru(f, b, m, ini, fim);
+  free(b);
+  return r;
+}
+
+// ContentEncodings of a TrackEntry. Returns the MKVCOMP_* of the frames and
+// fills the stripped header; *escopoPriv: CodecPrivate is compressed too.
+static int lerCodificacao(const unsigned char *d, long n, unsigned char *pre, int *preN,
+                          int *escopoPriv, int *cifrado) {
+  Iter it = { d, n, 0 }; unsigned long id; const unsigned char *e; long t;
+  int comp = MKVCOMP_NADA;
+  *preN = 0; *escopoPriv = 0; *cifrado = 0;
+  while (proximo(&it, &id, &e, &t)) {
+    Iter j = { e, t, 0 }; unsigned long fid; const unsigned char *fd; long ft;
+    long escopo = 1, tipo = 0, algo = 0;
+    const unsigned char *cfg = NULL; long cfgN = 0; int temComp = 0;
+    if (id != 0x6240) continue;
+    while (proximo(&j, &fid, &fd, &ft)) {
+      if (fid == 0x5032) escopo = (long)lerUint(fd, ft);
+      else if (fid == 0x5033) tipo = (long)lerUint(fd, ft);
+      else if (fid == 0x5035) *cifrado = 1;
+      else if (fid == 0x5034) {
+        Iter k = { fd, ft, 0 }; unsigned long cid; const unsigned char *cd; long ct;
+        temComp = 1;
+        while (proximo(&k, &cid, &cd, &ct)) {
+          if (cid == 0x4254) algo = (long)lerUint(cd, ct);
+          else if (cid == 0x4255) { cfg = cd; cfgN = ct; }
+        }
+      }
+    }
+    if (tipo == 1) { *cifrado = 1; continue; }
+    if (!temComp && tipo != 0) continue;
+    if (escopo & 2) *escopoPriv = 1;
+    if (!(escopo & 1)) continue;
+    if (algo == 0) comp = MKVCOMP_ZLIB;
+    else if (algo == 3 && cfgN >= 0 && cfgN <= 256) {
+      comp = MKVCOMP_TIRA;
+      if (cfgN) memcpy(pre, cfg, (size_t)cfgN);
+      *preN = (int)cfgN;
+    } else comp = MKVCOMP_OUTRA;
+  }
+  return comp;
 }
 
 // --- sidecar -----------------------------------------------------------------
@@ -1835,6 +1933,7 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
   while (proximo(&it, &id, &d, &t)) {
     Iter j; unsigned long fid; const unsigned char *fd; long ft;
     int numero = 0, tipo = 0, ehAss = 0, ehTexto = 0, ehPgs = 0, refInvalida = 0; const unsigned char *priv = NULL; long privN = 0;
+    const unsigned char *enc = NULL; long encN = 0; int privComprimido = 0;
     if (id != ID_TRACKENTRY) continue;
     j.p = d; j.n = t; j.o = 0;
     while (proximo(&j, &fid, &fd, &ft)) {
@@ -1849,7 +1948,7 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
       }
       else if (fid == ID_CODECPRIV) { priv = fd; privN = ft; }
       else if (fid == 0x55AA && lerUint(fd, ft)) refInvalida = 1;
-      else if (fid == 0x6D80) refInvalida = 1;
+      else if (fid == 0x6D80) { refInvalida = 1; enc = fd; encN = ft; }
       else if (fid == 0x536E) {
         char nome[96]; size_t k = (size_t)ft < sizeof nome - 1 ? (size_t)ft : sizeof nome - 1;
         memcpy(nome, fd, k); nome[k] = 0;
@@ -1864,6 +1963,18 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
       f->faixa = numero;
     } else if (numero != f->faixa) continue;
     f->refInvalida = refInvalida;
+    f->comp = MKVCOMP_NADA; f->compPreN = 0; f->compFalhas = 0; f->pgsFalhas = 0;
+    if (enc) {
+      int escopoPriv = 0, cifrado = 0;
+      f->comp = lerCodificacao(enc, encN, f->compPre, &f->compPreN, &escopoPriv, &cifrado);
+      printf("[mkvass] faixa %d: ContentEncoding %s%s%s\n", f->faixa,
+             f->comp == MKVCOMP_ZLIB ? "zlib" : f->comp == MKVCOMP_TIRA ? "header stripping" :
+             f->comp == MKVCOMP_OUTRA ? "algoritmo desconhecido" : "nenhum nos blocos",
+             escopoPriv ? ", CodecPrivate tambem" : "", cifrado ? ", CIFRADA" : "");
+      fflush(stdout);
+      if (cifrado || f->comp == MKVCOMP_OUTRA) return -1;
+      privComprimido = escopoPriv;
+    }
     // #421: o mesmo SubRip das externas, inclusive na pre-busca.
     if (!ehAss && ehTexto && aceitaTexto) {
       f->texto = 1;
@@ -1886,6 +1997,21 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
       return 1;
     }
     if (!ehAss || !priv) return -1;
+    // CodecPrivate inside the ContentEncoding scope (ASS header compressed).
+    if (privComprimido) {
+      unsigned char *b = NULL; long m = 0; int r;
+      if (f->comp == MKVCOMP_ZLIB) b = inflarBloco(priv, privN, &m);
+      else if (f->comp == MKVCOMP_TIRA && (b = malloc((size_t)(privN + f->compPreN)))) {
+        memcpy(b, f->compPre, (size_t)f->compPreN); memcpy(b + f->compPreN, priv, (size_t)privN);
+        m = privN + f->compPreN;
+      }
+      if (!b) return -1;
+      sinaisDoArquivo(f, p, n);
+      if (!f->independente) assrender_preaquecer();
+      r = montarCabecalho(f, b, m) ? 1 : -1;
+      free(b);
+      return r;
+    }
     sinaisDoArquivo(f, p, n);
     // O libass sobe aqui, com a faixa ASS ja achada, e nao quando o fio nasce:
     // o aquecimento le a pasta de fontes inteira para a memoria (106 MB na C9,
@@ -3568,7 +3694,17 @@ static void entregarImagens(Fio *f) {
   dec = n ? calloc((size_t)n, sizeof *dec) : NULL;
   if (n && !dec) n = 0;
   for (i = 0; i < n; i++)
-    if (!pgs_decodificar(f->pgs, f->pend[i].b, (size_t)f->pend[i].n, &dec[i])) dec[i].n = -1;
+    if (!pgs_decodificar(f->pgs, f->pend[i].b, (size_t)f->pend[i].n, &dec[i])) {
+      dec[i].n = -1;
+      // A display set the decoder rejects (owner 25/11/2026, PGS failing):
+      // the first ones and then every 100th, with the first bytes.
+      if (f->pgsFalhas++ < 3 || f->pgsFalhas % 100 == 0) {
+        const unsigned char *b = f->pend[i].b; long m = f->pend[i].n;
+        printf("[mkvass] PGS: bloco %.3f s (%ld bytes, %02x %02x %02x) recusado pelo decodificador, %ld ate agora\n",
+               f->pend[i].ini, m, m > 0 ? b[0] : 0, m > 1 ? b[1] : 0, m > 2 ? b[2] : 0, f->pgsFalhas);
+        fflush(stdout);
+      }
+    }
   for (i = 0; i < n; i++) {
     int publica;
     if (dec[i].n < 0) continue;

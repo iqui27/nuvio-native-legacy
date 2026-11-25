@@ -173,9 +173,10 @@ static int ehAss(const VideoFaixa *f) {
 #else
 #define FX_TEXTO_OVERLAY 1
 #endif
-// PGS: o app decodifica e desenha (imgsub) no .tpk e na LG; as outras seguem.
+// PGS: o app decodifica e desenha (imgsub) no .tpk, na LG e no Android (o
+// Media3 so entrega o bitmap como cue, que o nativeLegenda nao le).
 static int ehPgs(const VideoFaixa *f) {
-#if defined(NV_TPK) || defined(NV_WEBOS)
+#if defined(NV_TPK) || defined(NV_WEBOS) || defined(NV_ANDROID)
   return f && faixasmkv_imagem_overlay(f->codec);
 #else
   (void)f; return 0;
