@@ -74,14 +74,6 @@ static int forcaVoz = -1;
 static int forcaIme = -1;
 static int forcaCel = -1;
 
-// FALTA_TEXTO: "Nada exato…" (P5, 0 titulos) e "Achamos este" / "Achamos
-// estes" ainda nao tem chave nas tabelas src/idioma_*.h (fora da fronteira
-// desta issue): i18n() devolve o portugues ate a traducao entrar.
-#define FESCUI_NADA_EXATO  "Nada exato…"
-#define FESCUI_NADA_L2     "Volte uma pergunta ou escolha outra opção."
-#define FESCUI_ACHAMOS_1   "Achamos este"
-#define FESCUI_ACHAMOS_N   "Achamos estes"
-
 typedef struct {
   int  indice;          // no catalogo da revisao `rev`
   long tmdb;
@@ -1114,7 +1106,7 @@ static void desenha_resultado(float ox, float oy, float a) {
   int i;
   if (S.nRes == 0) {
     GfxRect pr = { ox + ESC_MARGEM, oy + ESC_PILULA_Y, 820.0f, 160.0f };
-    txt_em(TXT_NOV_TITULO, i18n(FESCUI_NADA_EXATO), ox + ESC_MARGEM, oy + 128.0f, ESC_LARG,
+    txt_em(TXT_NOV_TITULO, i18n(FT_ESC_NADA_EXATO), ox + ESC_MARGEM, oy + 128.0f, ESC_LARG,
            248, 249, 252, a);
     if (ajustes_vidro()) gfx_vidro_painel(pr, 28.0f / pr.h, 0.78f, a);
     else {
@@ -1124,11 +1116,11 @@ static void desenha_resultado(float ox, float oy, float a) {
     gfx_cor((GfxRect){ pr.x + 32.0f, pr.y + 52.0f, 56.0f, 56.0f }, 0.31f, 1, 1, 1, 0.07f * a);
     gfx_icone((GfxRect){ pr.x + 48.0f, pr.y + 68.0f, 24.0f, 24.0f }, "aj_compass",
               0.95f, 0.95f, 0.94f, a);
-    txt_em(TXT_V2_26, i18n(FESCUI_NADA_L2), pr.x + 112.0f, pr.y + 64.0f, pr.w - 144.0f,
+    txt_em(TXT_V2_26, i18n(FT_ESC_NADA_DICA), pr.x + 112.0f, pr.y + 64.0f, pr.w - 144.0f,
            232, 235, 242, a);
     return;
   }
-  txt_em(TXT_NOV_TITULO, i18n(S.nRes == 1 ? FESCUI_ACHAMOS_1 : FESCUI_ACHAMOS_N),
+  txt_em(TXT_NOV_TITULO, i18n(S.nRes == 1 ? FT_ESC_ACHAMOS_1 : FT_ESC_ACHAMOS_N),
          ox + ESC_MARGEM, oy + 128.0f, ESC_LARG, 248, 249, 252, a);
   for (i = 0; i < S.nRes; i++) {
     const CatItem *ci = cat_item(S.resIdx[i]);
@@ -1186,7 +1178,7 @@ static void desenha_voz_estado(float ox, float oy, float a) {
     sub = i18n(FT_BUSCA_FRASE_PROMPT);
   } else if (S.modo == FESCUI_QR) {
     tit = i18n(FT_DIGITE_CELULAR);
-    sub = i18n("Aponte a câmera do celular. Mesma rede Wi-Fi, vale por 5 minutos.");
+    sub = i18n(FT_QR_CELULAR_SUB);
   } else if (S.modo == FESCUI_PREVIA) {
     tit = i18n(FT_VOCE_DISSE);
     sub = i18n(FT_CONFIRMA_DESCARTA);

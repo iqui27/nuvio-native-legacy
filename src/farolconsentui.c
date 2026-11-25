@@ -46,7 +46,7 @@ static int montar(FcuiItem *it, float ox, float oy) {
   int n = 0;
   float x = FCUI_MARGEM;
   const char *rotSoTv = i18n(FT_GOSTO_LLM_SO_ESTA_TV);
-  const char *rotPerm = i18n(FAROLCONSENT_BTN_PERMITIR);
+  const char *rotPerm = i18n(FT_GOSTO_CONSENT_PERMITIR);
   float wSoTv = botao_largura(rotSoTv, NULL, 1);
   float wPerm = botao_largura(rotPerm, "aj_check", 0);
   poe(it, &n, FCUI_B_SO_TV, ox, oy, x, 610.0f, wSoTv, BOTAO_H_PRIMARIO);
@@ -178,7 +178,7 @@ static void desenha_espelho(float ox, float oy, float a) {
     gfx_icone((GfxRect){ px + 36.0f + colw + 36.0f, ry + 3.0f, 22.0f, 22.0f }, "aj_x", 0.6f, 0.62f, 0.66f, a);
     txt_bloco(TXT_CAPTION, i18n(nunca[i]), 170, 176, 188, px + 36.0f + colw + 36.0f + 34.0f, ry, colw - 34.0f, 26.0f, a, 2);
   }
-  txt_em(TXT_CAPTION, i18n(FAROLCONSENT_RODAPE), px + 36.0f, py + ph - 44.0f, pw - 72.0f, 150, 156, 168, a);
+  txt_em(TXT_CAPTION, i18n(FT_GOSTO_CONSENT_RODAPE), px + 36.0f, py + ph - 44.0f, pw - 72.0f, 150, 156, 168, a);
 }
 
 static void desenha_botao(FcuiItem *it, const char *rot, const char *ic, int prim, float a) {
@@ -204,14 +204,14 @@ void farolconsentui_desenhar(float ox, float oy, float a) {
   if (effA <= 0.001f) return;
 
   ajustes_acento(&ar, &ag, &ab);
-  snprintf(kick, sizeof kick, "%s › %s", i18n(FT_NOME), i18n(FAROLCONSENT_KICKER));
+  snprintf(kick, sizeof kick, "%s › %s", i18n(FT_NOME), i18n(FT_GOSTO_CONSENT_KICKER));
   txt_em(TXT_CAPTION, kick, x, oy + 96.0f, 1500.0f, 150, 156, 168, effA);
   // Ponto de luz de 10 px no acento antes do titulo.
   gfx_cor((GfxRect){ x, oy + 150.0f, 10.0f, 10.0f }, 0.5f, ar, ag, ab, effA);
-  txt_em(TXT_NOV_TITULO, i18n(FAROLCONSENT_TITULO), x + 24.0f, oy + 128.0f, 1656.0f, 248, 249, 252, effA);
-  txt_bloco(TXT_V2_26, i18n(FAROLCONSENT_SUB), 186, 192, 204, x, oy + 206.0f, 1500.0f, 34.0f, 0.9f * effA, 2);
+  txt_em(TXT_NOV_TITULO, i18n(FT_GOSTO_CONSENT_TITULO), x + 24.0f, oy + 128.0f, 1656.0f, 248, 249, 252, effA);
+  txt_bloco(TXT_V2_26, i18n(FT_GOSTO_CONSENT_SUB), 186, 192, 204, x, oy + 206.0f, 1500.0f, 34.0f, 0.9f * effA, 2);
 
-  txt_bloco(TXT_V2_26, i18n(FAROLCONSENT_NOTA_SO_TV), 186, 192, 204, x, oy + 320.0f, 740.0f, 34.0f, 0.95f * effA, 4);
+  txt_bloco(TXT_V2_26, i18n(FT_GOSTO_CONSENT_NOTA_SO_TV), 186, 192, 204, x, oy + 320.0f, 740.0f, 34.0f, 0.95f * effA, 4);
   desenha_espelho(ox, oy, effA);
 
   n = montar(it, ox, oy);
@@ -219,7 +219,7 @@ void farolconsentui_desenhar(float ox, float oy, float a) {
     if (it[i].id == FCUI_B_SO_TV) {
       desenha_botao(&it[i], i18n(FT_GOSTO_LLM_SO_ESTA_TV), NULL, 1, effA);
     } else if (it[i].id == FCUI_B_PERMITIR) {
-      desenha_botao(&it[i], i18n(FAROLCONSENT_BTN_PERMITIR), "aj_check", 0, effA);
+      desenha_botao(&it[i], i18n(FT_GOSTO_CONSENT_PERMITIR), "aj_check", 0, effA);
     }
   }
 }
