@@ -1,22 +1,18 @@
 // FAROLINFO — implementacao. O contrato esta em farolinfo.h: codigos e
 // fatos, nunca texto livre; sem dado medido, sem linha.
 //
-// Modelos citados (dono: src/faroltexto.h, issue 35):
-//   FT_INFO_QUALI / QUALI_AUDIO / IDIOMA / LEGENDA   (qualidade)
-//   FT_INFO_SOBE / FALTAM / MESMO_NIVEL              (continuar)
-//   FT_INFO_TERMINA / DUAS_NOITES                    (tempo)
-//   FT_INFO_ONDE                                     (onde)
-//   FT_INFO_AMIGOS_TERM / AMIGO_TERM / AMIGOS_GOST   (amigos)
-//   FT_INFO_SAGA / SAGA_VOCE_VIU                     (saga)
-//   FT_INFO_REVER / REVER_SIMPLES                    (rever)
-//   FT_INFO_RETOMADA / RETOMADA_SIMPLES              (retomada)
-// Modelos que a 35 ainda nao tem e esta issue ja cita (FALTA_TEXTO):
-//   FT_INFO_QUALI_SO  "Tem em %s."            (res+fmt sem audio declarado)
-//   FT_INFO_SOBE_SO   "A T%d sobe de nota."   (sobe, sem faltam/minutos)
-//   FT_INFO_AMIGO_GOST "%s gostou."           (1 amigo, so reacao)
-//   FT_INFO_NOTA_CAI  "A T%d cai de nota."    (so a queda; quem para
-//     de assistir nao e dado que este modulo recebe — a FT_INFO_CAI da
-//     35 afirma abandono e NAO pode sair daqui)
+// Modelos citados (dono: src/faroltexto.h, issues 35 e 28):
+//   FT_INFO_QUALI / QUALI_AUDIO / QUALI_SO / IDIOMA / LEGENDA (qualidade)
+//   FT_INFO_SOBE / SOBE_SO / NOTA_CAI / FALTAM / MESMO_NIVEL  (continuar)
+//   FT_INFO_TERMINA / DUAS_NOITES                             (tempo)
+//   FT_INFO_ONDE                                              (onde)
+//   FT_INFO_AMIGOS_TERM / AMIGO_TERM / AMIGOS_GOST / AMIGO_GOST (amigos)
+//   FT_INFO_SAGA / SAGA_VOCE_VIU                              (saga)
+//   FT_INFO_REVER / REVER_SIMPLES                             (rever)
+//   FT_INFO_RETOMADA / RETOMADA_SIMPLES                       (retomada)
+// Nota: FT_INFO_NOTA_CAI relata apenas a queda de nota — quem para de
+// assistir nao e dado que este modulo recebe (FT_INFO_CAI afirma abandono
+// e nao sai daqui).
 
 #include "farolinfo.h"
 #include <limits.h>

@@ -80,8 +80,8 @@ static const struct { const char *nome; const char *lit; } FC_MODS[] = {
 };
 #define FC_MODS_N (sizeof FC_MODS / sizeof *FC_MODS)
 
-// Aridade do modelo, ou -1 quando nao existe (FALTA_TEXTO da 35 — a
-// linha e omitida e anotada no relatorio).
+// Aridade do modelo, ou -1 quando nao existe em FAROL_FRASES (a linha e
+// omitida defensivamente para nao quebrar o validador).
 static int fc_modelo_args(const char *nome) {
   size_t i;
   for (i = 0; i < FC_MODS_N; i++)
@@ -865,8 +865,8 @@ int farolcena_detalhe(char *dst, size_t cap, const FarolCenaCtx *ctx,
   }
 
   // P6 "info": as linhas da 47 por ordem de utilidade (a ordem do enum),
-  // deduplicadas por k (o schema nao repete k), so as que tem modelo na
-  // 35 com aridade certa — linha sem modelo e FALTA_TEXTO, nao entra.
+  // deduplicadas por k (o schema nao repete k), so as que tem modelo
+  // conhecido em FAROL_FRASES com aridade certa.
   if (det->alvoRef && fc_ref_ok(det->alvoRef, ctx->nCand)) {
     uint32_t vistos = 0;
     nLi += farolinfo_qualidade(li + nLi, 2, det->fontes, det->nFontes,
@@ -892,7 +892,7 @@ int farolcena_detalhe(char *dst, size_t cap, const FarolCenaCtx *ctx,
       for (i = 0; i < nLi && nIt < FAROL_INFO_MAX; i++) {
         int ar = fc_modelo_args(li[i].m);
         const char *a2[FI_ARGS];
-        if (ar < 0 || ar != li[i].na) continue;        // FALTA_TEXTO
+        if (ar < 0 || ar != li[i].na) continue;        // modelo desconhecido/aridade
         if (vistos & (1u << li[i].k)) continue;        // k nao repete
         for (j = 0; j < li[i].na; j++)
           if (!fc_arg_ok(li[i].a[j])) break;

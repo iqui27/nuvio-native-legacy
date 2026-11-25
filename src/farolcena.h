@@ -41,8 +41,8 @@
 // NENHUMA PECA SEM MOTIVO VERDADEIRO LEVA LINHA DE MOTIVO: motivo que o
 // farolrec emitiu mas cujo argumento nao pode ser produzido com dado real
 // (semente sem referencia, salvo sem data) e omitido — nunca sai frase
-// generica no lugar (3.5). Linha da farolinfo cujo modelo a 35 ainda nao
-// tem (FALTA_TEXTO) tambem e omitida, porque subi-la quebraria a cena no
+// generica no lugar (3.5). Linha da farolinfo cujo modelo nao existe em
+// FAROL_FRASES tambem e omitida, porque subi-la quebraria a cena no
 // validador.
 //
 // PURO como os irmaos: sem malloc, sem SDL, sem rede, sem dados.h, sem

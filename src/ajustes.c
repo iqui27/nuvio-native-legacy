@@ -9201,11 +9201,11 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_AVISO_LEGAL: return "Aviso legal";
     case AJ_GUIA: return "O que o Nuvio faz, em 12 capítulos. Cada recurso diz onde fica e tem um atalho para ele.";
     case AJ_FAROL: return "O que fazer quando algo não funciona, com o ajuste que resolve.";
-    case AJ_FAROL_AVISOS: return "O Farol avisa quando o vídeo falha e confirma o conserto.";
-    case AJ_FAROL_RECOMENDAR: return "Mostra fileiras e motivos personalizados para este perfil nesta TV. Desligar tira as fileiras na hora e para de registrar sinais.";
-    case AJ_FAROL_APRENDEU: return "Mostra os gêneros, pessoas e temas que o Farol identificou como favoritos deste perfil.";
-    case AJ_FAROL_ZERAR: return "Apaga o que o Farol aprendeu e as pendências deste perfil nesta TV.";
-    case AJ_FAROL_LLM_SO_ESTA_TV: return "Ligado por padrão: tudo do gosto fica só nesta TV. Desligar permite usar o servidor com consentimento (indisponível no perfil infantil).";
+    case AJ_FAROL_AVISOS: return FT_AVISOS_FAROL_DESC;
+    case AJ_FAROL_RECOMENDAR: return FT_AJ_FAROL_RECOMENDAR_DESC;
+    case AJ_FAROL_APRENDEU: return FT_AJ_FAROL_APRENDEU_DESC;
+    case AJ_FAROL_ZERAR: return FT_AJ_FAROL_ZERAR_DESC;
+    case AJ_FAROL_LLM_SO_ESTA_TV: return FT_AJ_FAROL_LLM_DESC;
     case AJ_DICASCONTROLE: return "Dicas do controle";
     case AJ_NOVIDADES20: return "O tour do que mudou na 2.0, capítulo por capítulo, com o que vale neste aparelho. Abre do começo.";
     case AJ_APOIAR: return "Se o Nuvio te ajuda e você quiser apoiar quem faz o app, aponte a câmera do celular para um dos códigos. É opcional: nada muda no app.";

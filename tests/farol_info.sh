@@ -40,8 +40,8 @@ if grep -nE '"[^"]*[A-Za-z][^"]* (voc|sua|TV|est|Tem|Falta|Dá|termin)' src/faro
   exit 1
 fi
 # Frase livre fora do vocabulario: literal que FECHA como frase (pontuacao
-# final) em linha de codigo. Comentarios FALTA_TEXTO citam exemplos com
-# ponto e ficam de fora.
+# final) em linha de codigo. Comentarios que citam exemplos com ponto ficam
+# de fora.
 if grep -nE '"[^"]*[A-Za-z][.!?]"' src/farolinfo.c | grep -vE '^[0-9]+:[[:space:]]*//'; then
   echo "farol_info: FALHA (frase livre no modulo; frases sao da 35)" >&2
   exit 1

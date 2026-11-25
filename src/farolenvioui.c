@@ -776,7 +776,7 @@ void farolenvioui_desenhar(float ox, float oy, float a) {
     cabecalho(ox, oy, kick, i18n(FT_REDE_FORA_L1), i18n(FT_SEM_NET_ENVIO_L2), a);
     painel((GfxRect){ x, oy + 310.0f, 920.0f, 180.0f }, 28.0f, a);
     txt_bloco(TXT_V2_26, i18n(FT_SEM_NET_ENVIO_L2), 220, 224, 232, x + 32.0f, oy + 344.0f, 856.0f, 34.0f, a, 2);
-    txt_em(TXT_CAPTION, "farol-pendente.json · 24 h", x + 32.0f, oy + 428.0f, 856.0f, 150, 156, 168, a);
+    txt_em(TXT_CAPTION, i18n(FT_PENDENTE_24H), x + 32.0f, oy + 428.0f, 856.0f, 150, 156, 168, a);
     for (i = 0; i < n; i++) {
       if (it[i].id == FEUI_B_PRONTO) desenha_botao(&it[i], i18n(FT_ACAO_PRONTO), NULL, 1, a);
     }

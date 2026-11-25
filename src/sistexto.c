@@ -9,6 +9,7 @@
 //   I<texto>  so para o log (reconhecedor=sim permissao=nao...)
 // Um motivo depois de ":" no S diz por que caiu de degrau (S sistema:negada).
 #include "sistexto.h"
+#include "faroltexto.h"
 #include "descoberta.h"
 #include "entrada_texto.h"
 #include "arteurl.h"
@@ -157,7 +158,7 @@ int st_voz_iniciar(int d) {
 #ifndef NV_ANDROID
   if (!ok && st_ime_disponivel()) {
     ok = st_ime_abrir(d, vozTecladoBuf, 255);
-    if (ok) aviso = "Use o microfone do teclado do sistema.";
+    if (ok) aviso = FT_VOZ_MIC_TECLADO;
   }
 #endif
   if (!ok) aviso = "O ditado não respondeu. Tente de novo ou digite.";

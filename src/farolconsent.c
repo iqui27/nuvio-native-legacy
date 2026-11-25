@@ -317,58 +317,58 @@ void farolconsent_esquecer(void) {
 // --- Fonte unica da verdade ("Vai junto / Nunca vai" == farolcompor.c) ---
 
 static const char *const VAI_JUNTO[FAROLCONSENT_VAI_N] = {
-  FAROLCONSENT_VAI_IDIOMA,
-  FAROLCONSENT_VAI_HORA,
-  FAROLCONSENT_VAI_GOSTO,
-  FAROLCONSENT_VAI_CANDIDATOS,
-  FAROLCONSENT_VAI_ANCORAS,
-  FAROLCONSENT_VAI_FRASE
+  FT_GOSTO_VAI_IDIOMA,
+  FT_GOSTO_VAI_HORA,
+  FT_GOSTO_VAI_GOSTO,
+  FT_GOSTO_VAI_CANDIDATOS,
+  FT_GOSTO_VAI_ANCORAS,
+  FT_GOSTO_VAI_FRASE
 };
 
 static const char *const NUNCA_VAI[FAROLCONSENT_NUNCA_N] = {
-  FAROLCONSENT_NUNCA_DIARIO,
-  FAROLCONSENT_NUNCA_NOTAS,
-  FAROLCONSENT_NUNCA_PERFIS,
-  FAROLCONSENT_NUNCA_AMIGOS,
-  FAROLCONSENT_NUNCA_ADDONS,
-  FAROLCONSENT_NUNCA_VETOR,
-  FAROLCONSENT_NUNCA_INFANTIL
+  FT_GOSTO_NUNCA_DIARIO,
+  FT_GOSTO_NUNCA_NOTAS,
+  FT_GOSTO_NUNCA_PERFIS,
+  FT_GOSTO_NUNCA_AMIGOS,
+  FT_GOSTO_NUNCA_ADDONS,
+  FT_GOSTO_NUNCA_VETOR,
+  FT_GOSTO_NUNCA_INFANTIL
 };
 
 // Cada campo/prefixo real emitido por farolcompor_montar_corpo_mapa() em
 // src/farolcompor.c mapeia para uma linha visivel de VAI_JUNTO[].
 static const FarolConsentGrupo ESPELHO_GRUPOS[] = {
-  { "v",                           FAROLCONSENT_VAI_IDIOMA     },
-  { "modo",                        FAROLCONSENT_VAI_IDIOMA     },
-  { "idioma",                      FAROLCONSENT_VAI_IDIOMA     },
-  { "infantil",                    FAROLCONSENT_VAI_IDIOMA     },
-  { "consentiu",                   FAROLCONSENT_VAI_IDIOMA     },
-  { "hora",                        FAROLCONSENT_VAI_HORA       },
-  { "gosto.fim_semana",            FAROLCONSENT_VAI_HORA       },
-  { "gosto.nivel",                 FAROLCONSENT_VAI_GOSTO      },
-  { "gosto.generos",               FAROLCONSENT_VAI_GOSTO      },
-  { "gosto.temas",                 FAROLCONSENT_VAI_GOSTO      },
-  { "gosto.pessoas",               FAROLCONSENT_VAI_GOSTO      },
-  { "gosto.ancoras",               FAROLCONSENT_VAI_ANCORAS    },
-  { "ancoras",                     FAROLCONSENT_VAI_ANCORAS    },
-  { "candidatos[].c",              FAROLCONSENT_VAI_CANDIDATOS },
-  { "candidatos[].id",             FAROLCONSENT_VAI_CANDIDATOS },
-  { "candidatos[].tipo",           FAROLCONSENT_VAI_CANDIDATOS },
-  { "candidatos[].titulo",         FAROLCONSENT_VAI_CANDIDATOS },
-  { "candidatos[].ano",            FAROLCONSENT_VAI_CANDIDATOS },
-  { "candidatos[].generos",        FAROLCONSENT_VAI_CANDIDATOS },
-  { "candidatos[].minutos",        FAROLCONSENT_VAI_CANDIDATOS },
-  { "candidatos[].nota",           FAROLCONSENT_VAI_CANDIDATOS },
-  { "candidatos[].pontos",         FAROLCONSENT_VAI_CANDIDATOS },
-  { "candidatos[].motivos",        FAROLCONSENT_VAI_CANDIDATOS },
-  { "candidatos[].eixos",          FAROLCONSENT_VAI_CANDIDATOS },
-  { "candidatos",                  FAROLCONSENT_VAI_CANDIDATOS },
-  { "fatos[].alvo",                FAROLCONSENT_VAI_FRASE      },
-  { "fatos[].frase",               FAROLCONSENT_VAI_FRASE      },
-  { "fatos[].perguntas",           FAROLCONSENT_VAI_FRASE      },
-  { "fatos",                       FAROLCONSENT_VAI_FRASE      },
-  { "frase",                       FAROLCONSENT_VAI_FRASE      },
-  { "perguntas",                   FAROLCONSENT_VAI_FRASE      }
+  { "v",                           FT_GOSTO_VAI_IDIOMA     },
+  { "modo",                        FT_GOSTO_VAI_IDIOMA     },
+  { "idioma",                      FT_GOSTO_VAI_IDIOMA     },
+  { "infantil",                    FT_GOSTO_VAI_IDIOMA     },
+  { "consentiu",                   FT_GOSTO_VAI_IDIOMA     },
+  { "hora",                        FT_GOSTO_VAI_HORA       },
+  { "gosto.fim_semana",            FT_GOSTO_VAI_HORA       },
+  { "gosto.nivel",                 FT_GOSTO_VAI_GOSTO      },
+  { "gosto.generos",               FT_GOSTO_VAI_GOSTO      },
+  { "gosto.temas",                 FT_GOSTO_VAI_GOSTO      },
+  { "gosto.pessoas",               FT_GOSTO_VAI_GOSTO      },
+  { "gosto.ancoras",               FT_GOSTO_VAI_ANCORAS    },
+  { "ancoras",                     FT_GOSTO_VAI_ANCORAS    },
+  { "candidatos[].c",              FT_GOSTO_VAI_CANDIDATOS },
+  { "candidatos[].id",             FT_GOSTO_VAI_CANDIDATOS },
+  { "candidatos[].tipo",           FT_GOSTO_VAI_CANDIDATOS },
+  { "candidatos[].titulo",         FT_GOSTO_VAI_CANDIDATOS },
+  { "candidatos[].ano",            FT_GOSTO_VAI_CANDIDATOS },
+  { "candidatos[].generos",        FT_GOSTO_VAI_CANDIDATOS },
+  { "candidatos[].minutos",        FT_GOSTO_VAI_CANDIDATOS },
+  { "candidatos[].nota",           FT_GOSTO_VAI_CANDIDATOS },
+  { "candidatos[].pontos",         FT_GOSTO_VAI_CANDIDATOS },
+  { "candidatos[].motivos",        FT_GOSTO_VAI_CANDIDATOS },
+  { "candidatos[].eixos",          FT_GOSTO_VAI_CANDIDATOS },
+  { "candidatos",                  FT_GOSTO_VAI_CANDIDATOS },
+  { "fatos[].alvo",                FT_GOSTO_VAI_FRASE      },
+  { "fatos[].frase",               FT_GOSTO_VAI_FRASE      },
+  { "fatos[].perguntas",           FT_GOSTO_VAI_FRASE      },
+  { "fatos",                       FT_GOSTO_VAI_FRASE      },
+  { "frase",                       FT_GOSTO_VAI_FRASE      },
+  { "perguntas",                   FT_GOSTO_VAI_FRASE      }
 };
 
 // Subcaminhos exatos de folhas permitidos dentro dos grupos estruturados.
@@ -481,7 +481,7 @@ const char *farolconsent_espelho_para(const char *caminho) {
   size_t i;
   if (!normalizarCaminho(caminho, norm, sizeof norm)) return NULL;
   if (!caminhoPermitidoNorm(norm)) return NULL;
-  if (strcmp(norm, "gosto") == 0) return FAROLCONSENT_VAI_GOSTO;
+  if (strcmp(norm, "gosto") == 0) return FT_GOSTO_VAI_GOSTO;
   for (i = 0; i < sizeof ESPELHO_GRUPOS / sizeof *ESPELHO_GRUPOS; i++) {
     const char *pref = ESPELHO_GRUPOS[i].prefixo;
     size_t plen = strlen(pref);
