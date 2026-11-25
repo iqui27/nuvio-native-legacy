@@ -4091,6 +4091,17 @@ int assrender_carregar_texto(const char *corpo, size_t tamanho, unsigned geracao
   return ass_carregar(corpo, tamanho, geracao, 0, 1);
 }
 
+int assrender_atualizar_texto(const char *corpo, size_t tamanho, unsigned geracao) {
+  int mesma;
+#ifdef NV_TPK
+  ass_garantir_naskh();
+#endif
+  pthread_mutex_lock(&assTrava);
+  mesma = assTrack && assTrackGeracao == geracao && __atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE);
+  pthread_mutex_unlock(&assTrava);
+  return ass_carregar(corpo, tamanho, geracao, mesma, 1);
+}
+
 int assrender_texto_simples(void) {
   return assrender_ativo() && __atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE);
 }
@@ -4894,6 +4905,7 @@ static char assDiag[96] = "libass: backend nao compilado";
 static unsigned assGeracao;
 
 int assrender_carregar_texto(const char *corpo, size_t tamanho, unsigned geracao) { (void)corpo; (void)tamanho; (void)geracao; return 0; }
+int assrender_atualizar_texto(const char *corpo, size_t tamanho, unsigned geracao) { (void)corpo; (void)tamanho; (void)geracao; return 0; }
 int assrender_texto_simples(void) { return 0; }
 int assrender_fonte_local_transacao(const char *caminho, int (*confirmar)(void *), void *u) {
   (void)caminho; return confirmar ? confirmar(u) : 1;

@@ -988,17 +988,22 @@ static int pularExtracao(int ass, unsigned g) {
  * cai no caminho cheio: legenda desligada ou de outro dono e resposta de uma
  * faixa que ja saiu, e descarta. */
 int legenda_atualizar_corpo_se(const char *corpo, unsigned dono) {
-  LegendaCue *v=NULL; int n, i; double dur=0; int ass;
+  LegendaCue *v=NULL; int n, i; double dur=0; int ass; char *plain;
   if(!corpo||!legenda_ligada_em(dono))return 0;
   ass=legenda_eh_ass(corpo);
   if (pularExtracao(ass, dono)) { assrender_atualizar(corpo, strlen(corpo), dono); return 1; }
   n=legenda_extrair(corpo,&v);
+  /* Embedded Arabic SRT (owner 25/11/2026): mkvass sends the track in
+   * batches. The libass RTL document was built from the FIRST batch only, so
+   * later Arabic lines never showed (or came unjoined on the old overlay). */
+  plain = !ass ? documentoTexto(v, n) : NULL;
   for(i=0;i<n;i++){ double d=v[i].fim-v[i].inicio; if(d>dur)dur=d; }
   pthread_mutex_lock(&trava);
-  if(!ligada||geracao!=dono){ pthread_mutex_unlock(&trava); free(v); return 0; }
+  if(!ligada||geracao!=dono){ pthread_mutex_unlock(&trava); free(v); free(plain); return 0; }
   free(cues);cues=v;nCues=n;maiorDur=dur;docAss=ass;
   pthread_mutex_unlock(&trava);
   if (ass && !libassDesligado()) assrender_atualizar(corpo, strlen(corpo), dono);
+  if (plain) { assrender_atualizar_texto(plain, strlen(plain), dono); free(plain); }
   return 1;
 }
 
@@ -1008,19 +1013,21 @@ int legenda_atualizar_corpo_se(const char *corpo, unsigned dono) {
  * fala com outra fonte nesse intervalo) e reenviava as fontes: um pisca por
  * lote. Desligada (primeiro lote, ou apos uma troca), cai no caminho cheio. */
 void legenda_atualizar_corpo(const char *corpo) {
-  LegendaCue *v=NULL; int n, i; double dur=0; int ass, ok; unsigned g=0;
+  LegendaCue *v=NULL; int n, i; double dur=0; int ass, ok; unsigned g=0; char *plain;
   if(!corpo)return;
   ass=legenda_eh_ass(corpo);
   pthread_mutex_lock(&trava); ok=ligada; g=geracao; pthread_mutex_unlock(&trava);
   if (ok && pularExtracao(ass, g)) { assrender_atualizar(corpo, strlen(corpo), g); return; }
   n=legenda_extrair(corpo,&v);
+  plain = !ass ? documentoTexto(v, n) : NULL;   // same as legenda_atualizar_corpo_se
   for(i=0;i<n;i++){ double d=v[i].fim-v[i].inicio; if(d>dur)dur=d; }
   pthread_mutex_lock(&trava);
   ok=ligada;
   if(ok){ g=geracao; free(cues);cues=v;nCues=n;maiorDur=dur; v=NULL; docAss=ass; }
   pthread_mutex_unlock(&trava);
-  if(!ok){ free(v); legenda_definir_corpo(corpo); return; }
+  if(!ok){ free(v); free(plain); legenda_definir_corpo(corpo); return; }
   if (ass && !libassDesligado()) assrender_atualizar(corpo, strlen(corpo), g);
+  if (plain) { assrender_atualizar_texto(plain, strlen(plain), g); free(plain); }
 }
 
 void legenda_desligar(void) {
