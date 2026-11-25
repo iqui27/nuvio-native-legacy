@@ -201,7 +201,7 @@ static int desempacotar(Job *jb, const unsigned char *b, size_t n, long *grade) 
     uint32_t k = get32(b + pos) * (uint32_t)mult, len = get32(b + pos + 8);
     long pts = (long)(int32_t)get32(b + pos + 4);
     if (pos + 12 + len > n || len < 125 || len > 200000) break;
-    if ((int)k < jb->n && !jb->tiles[k].jpg) {
+    if (k < (uint32_t)jb->n && !jb->tiles[k].jpg) {   // unsigned: a damaged slot never indexes out
       unsigned char *j = malloc(len);
       if (j) { memcpy(j, b + pos + 12, len); jb->tiles[k] = (Tile){ j, (int)len, pts }; jb->feitos++; add++; }
     }
@@ -526,7 +526,8 @@ static void *trabalhar(void *u) {
       if (bf > 0.5 && bf - pos < 8.0 && !scrub) { dormirJ(j, 500); continue; } }
     // Kept on this TV as it fills, so a closed app or a Home does not lose it.
     { int nv; pthread_mutex_lock(&mu); nv = j->novos; pthread_mutex_unlock(&mu);
-      if (nv - novosSalvos >= 120 && fp[0]) { cacheSalvar(j, fp); novosSalvos = 0; } }
+      if (nv < novosSalvos) novosSalvos = 0;          // a save went through: j->novos was zeroed
+      if (nv - novosSalvos >= 120 && fp[0]) { cacheSalvar(j, fp); novosSalvos = nv; } }   // failed: next try 120 tiles on
 
     int classe = 0, k, k2 = -1, c2 = 0;
     long ph = (long)(video_pos() * 1000.0);

@@ -809,7 +809,7 @@ static void fundirCapitulos(void){
       if(!sub){trechos[j]=rede[i];casarComLog(&trechos[j],&usado);j++;}
     }
     nTrechos=j;
-    for(k=0;k<nCapTr&&nTrechos<8;k++){trechos[nTrechos]=capTr[k];trechos[nTrechos++].arquivo=1;}
+    for(k=0;k<nCapTr&&nTrechos<8;k++)trechos[nTrechos++]=capTr[k];   // arquivo: capmkv_trechos (strict names only)
     // Palpites por duracao (capitulos sem nome): anime, e so o tipo que falta.
     if(ehAnime())
       for(k=0;k<nCapPalp&&nTrechos<8;k++){

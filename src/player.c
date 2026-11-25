@@ -386,6 +386,10 @@ static void capituloPular(const MkvCap *c, int i);
 static void ponteiroCapFocar(int i, int b);
 static void ponteiroCapitulo(int i, int inteiro);
 static float capAnim;
+// Chapter starts last sent to the thumbnail maker (seekr_capitulos); reset when
+// the player closes, since seekr_desligar forgets them.
+static int capEnviadosN = -1;
+static double capEnviadosSoma = -1.0;
 static int trechoPulavel(double *fim);
 
 // UMA COR DE ACENTO SO NO PLAYER (Glass UI): ajustes_acento(), a mesma das
@@ -2973,6 +2977,7 @@ static void fecharSessao(int manter, int trocaFonte) {
     episodios_fechar();
     if (!manter) { intro_desligar(); introIdx=introT=introE=-1; }
     seekr_desligar();
+    capEnviadosN = -1; capEnviadosSoma = -1.0;   // seekr_desligar dropped the list: send it again on reopen
     // Antes do legenda_desligar: o fio do mkvass ainda entregaria um lote ao
     // overlay depois do desligamento, e o proximo titulo abriria com a legenda
     // do anterior. mkvass_parar grava o sidecar parcial com o que ja veio.
@@ -5048,11 +5053,10 @@ void player_atualizar(float dt, Uint32 agora) {
     // the first ~50 s. Sent again only when the list changes (capmkv fills it
     // from another thread as the file's head is read).
     if (d > 60.0 && !ehCanal() && ajustes_seekr_ligado()) {
-      static double somaAntes = -1.0; static int nAntes = -1;
       MkvCap cc[MKV_MAX_CAPS]; double ini[MKV_MAX_CAPS], soma = d;
       int nc = capitulosDoArquivo(cc, MKV_MAX_CAPS), i;
       for (i = 0; i < nc; i++) { ini[i] = cc[i].inicio; soma += cc[i].inicio * (i + 1); }
-      if (nc != nAntes || soma != somaAntes) { nAntes = nc; somaAntes = soma; seekr_capitulos(ini, nc, d); }
+      if (nc != capEnviadosN || soma != capEnviadosSoma) { capEnviadosN = nc; capEnviadosSoma = soma; seekr_capitulos(ini, nc, d); }
     }
     // Retomada so com o pipeline ASSENTADO: pronto + tocando (ou 2,5 s depois
     // de pronto, para quem abre pausado). Seek logo no loadCompleted e o que o
@@ -7539,10 +7543,16 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
 // OK num capitulo (tecla, clique ou dedo): busca o comeco dele e fecha a fileira.
 static void capituloPular(const MkvCap *c, int i) {
   double de = posSeg, alvo = c[i].inicio;
-  if (scrubbing) terminarSalto();
   posSeg = (float)alvo;
-  recuarAutomatico(de, alvo);
-  if (comVideo) buscarUsuario(alvo);
+  if (scrubbing) {
+    // The scrub ends AT the chapter: terminarSalto makes the only seek (two in
+    // a row are what webOS refuses with "seek Failure", #246).
+    if (!scrubToque) recuarAutomatico(scrubInicio, alvo);
+    terminarSalto();
+  } else {
+    recuarAutomatico(de, alvo);
+    if (comVideo) buscarUsuario(alvo);
+  }
   printf("[seg] capitulo %d \"%s\" em %.1fs\n", i, c[i].nome, alvo); fflush(stdout);
   capFoco = 0;
 }

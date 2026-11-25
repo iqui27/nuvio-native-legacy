@@ -948,6 +948,7 @@ int video_tocar(const char *url) {
   // Titulo novo: o marcador do anterior nao vale. Sem isto um filme sem
   // capitulos herdaria os creditos do filme de antes.
   creditosNomeado = creditosUltimo = 0.0;
+  capmkv_zerar();   // the bar, the chapter row and intro read chapters from capmkv
   roiResetTentativas = 0;
   roiAtivo = 1;   // o recorte do titulo anterior pode ter ficado no player
   snprintf(urlAtual, sizeof urlAtual, "%s", url);
@@ -1219,6 +1220,7 @@ static void lerFaixas(void) {
 // Le o cabecalho do Matroska pela rede para descobrir onde comecam os creditos.
 // O modulo mkv.c usa src/rede.c, que no alvo Tizen ja e XHR — nada aqui e
 // especifico do webOS.
+static unsigned mkvGer;   // capmkv playback the chapter read belongs to
 static void *lerMkv(void *arg) {
   MkvFaixa fx[MKV_MAX_FAIXAS];
   MkvCap   caps[MKV_MAX_CAPS];
@@ -1233,7 +1235,8 @@ static void *lerMkv(void *arg) {
     printf("[mkv] %d capitulos; creditos nomeados em %.0fs, ultimo em %.0fs\n",
            nCaps, creditosNomeado, creditosUltimo);
     fflush(stdout);
-    capmkv_aplicar(caps, nCaps);   // abertura/creditos/previa do arquivo -> modulo de intro
+    // Only if this is still the title the read started for (as video.c).
+    capmkv_aplicar_ger(caps, nCaps, mkvGer);   // -> bar, chapter row and intro
   }
   if (n < 1) marco("mkv: nenhuma faixa lida (nao e MKV, ou Range falhou)");
   else aplicarIdiomasDoMkv(fx, n);
@@ -1389,6 +1392,7 @@ void video_sondar_mkv_agora(void) {
   if (!mkvPendente || fioMkvVivo || !urlAtual[0]) return;
   mkvPendente = 0;
   fioMkvVivo = 1;
+  mkvGer = capmkv_geracao();
   if (pthread_create(&fioMkv, NULL, lerMkv, NULL) != 0) fioMkvVivo = 0;
   else pthread_detach(fioMkv);
 }
@@ -1398,6 +1402,7 @@ void video_parar(void) {
   reconFaixasPend = 0; reconBuscar = -1.0;
   recarregarPausa = -1; pausaPedida = 0;
   seekEm = 0; mkvPendente = 0;
+  capmkv_zerar();
   roiResetTentativas = 0;
   if (temAvplay) AV0("parar");
   ativo = tocando = pronto = terminou = 0;
@@ -1661,7 +1666,8 @@ double video_creditos(void) {
   double dur;
   if (creditosNomeado > 1.0) return creditosNomeado;
   dur = video_duracao();
-  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75)
+  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75 &&
+      dur - creditosUltimo >= CAPMKV_ULTIMO_FOLGA_S)   // a stub at the end is not credits
     return creditosUltimo;
   return 0.0;
 }

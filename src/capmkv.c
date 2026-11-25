@@ -83,7 +83,9 @@ int capmkv_trechos(const MkvCap *caps, int n, IntroTrecho *out, int max) {
   for (i = 0; i < ns && k < max; i++) {
     // A previa final nao e credito: so marca onde o cartao do proximo pode subir.
     double fim = seg[i].tipo == MKV_SEG_PREVIA ? 0.0 : seg[i].fim;
-    out[k++] = (IntroTrecho){ seg[i].inicio, fim, seg[i].tipo, 0 };
+    // `arquivo` only for the NuvioTV rule names (OP/ED/Credits...): a loose
+    // name ("Ending the War", "Credit Card") keeps the position checks.
+    out[k++] = (IntroTrecho){ seg[i].inicio, fim, seg[i].tipo, 0, seg[i].estrito };
   }
   return k;
 }
