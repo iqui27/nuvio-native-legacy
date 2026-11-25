@@ -1353,7 +1353,7 @@ static void aj2InspetorDiferencas(void) {
 
 // --- A TELA ---------------------------------------------------------------------
 static int ajModalAberto(void) {
-  return (uxEditor && (uxRestaurar || uxAvisoRisco || uxEditor == 2)) || riscoFolha || frAberta || hcAberta || ajVinculoAtivo() ||
+  return (uxEditor && (uxRestaurar || uxAvisoRisco || uxEditor == 2)) || riscoFolha || frAberta || capFolha || hcAberta || ajVinculoAtivo() ||
          pfTela || teclado_aberto() || registro_envio_aberto() || apoioAberto;
 }
 #ifdef NV_TOUCH_UI
@@ -1438,7 +1438,7 @@ static void ajDesenharTela(void) {
   }
   if (aj2EditorPainel()) aj2EdVisto = 1;
   else if (p.eA <= 0.003f) aj2EdVisto = 0;
-  ajPontEditor = aj2EditorPainel() && !(uxRestaurar || uxAvisoRisco) && !riscoFolha && !frAberta &&
+  ajPontEditor = aj2EditorPainel() && !(uxRestaurar || uxAvisoRisco) && !riscoFolha && !frAberta && !capFolha &&
                  p.eA > 0.997f && fabsf(p.eS - 1.0f) < 0.002f && fabsf(p.eDx) < 0.5f;
   if (p.eA > 0.003f && aj2EdVisto && uxOp >= 0) {
     GfxRect m = aj2EditorR(), fr = aj2ListaR();
@@ -1746,6 +1746,39 @@ static void desenhaFolhaPermitidos(void) {
       if (apoio[0]) txt_desenhar_alpha(c, r.x + 22 + 48 + 16, ty + t.h + 4, 0.42f); }
   }
   gfx_sem_recorte();
+  { AjDica d[2] = { { "OK", "Ligar ou desligar" }, { "Voltar", "Fechar" } };
+    ajDicas(d, 2, m.x + 44, m.y + m.h - 36, m.w - 88, 1); }
+  if (uxAviso[0]) {
+    TxtLinha t = ajTxtC(TXT_AJ_SUB, uxAviso, 1100);
+    txt_desenhar_alpha(t, (NV_VTELA_W - t.w) * 0.5f, NV_VTELA_H - 50, 0.8f);
+  }
+}
+
+// "Capítulos no player": Desligado no topo e uma chave por tipo de título.
+static void ajPontCapFolha(int i, int col) { (void)col; if (capFolha && i >= 0 && i <= 3) capFolhaFoco = i; }
+static void desenhaFolhaCapitulos(void) {
+  GfxRect m = { 460, 250, 1000, 580 };
+  float topo, y;
+  int i, v = valor[AJ_CAPITULOS] & 7;
+  ponteiro_camada();
+  ajVeuModal();
+  ajCentraModal(&m);
+  ajIlha(m, 36, 1, 1);
+  { char k[160]; const char *b = uxBloco(AJ_CAPITULOS);
+    if (b[0]) snprintf(k, sizeof k, "%s · %s", i18n(uxCaminho(AJ_CAPITULOS)), i18n(b));
+    else snprintf(k, sizeof k, "%s", i18n(uxCaminho(AJ_CAPITULOS)));
+    topo = ajCabecalhoFolha(m, k, "Capítulos no player", "", 0, 1); }
+  for (i = 0, y = topo; i < 4; i++, y += 84) {
+    GfxRect r = { m.x + 18, y, m.w - 36, 80 };
+    int f = i == capFolhaFoco, lig = i == 0 ? v == 0 : (v >> (i - 1)) & 1;
+    const char *nome = i == 0 ? "Desligado" : CAP_TIPO_NOME[i - 1];
+    float cw;
+    ponteiro_alvo(r.x, r.y, r.w, r.h, ajPontCapFolha, NULL, i, -1);
+    if (f) ajFocoLinha(r, 22, 1, 1);
+    cw = ajChipLiga(r.x + r.w - 22, y + 40, lig, 1);
+    { TxtLinha t = ajTxtC(TXT_AJ_ROTULO, nome, r.w - 44 - cw - 40);
+      txt_desenhar_alpha(t, r.x + 22, y + 40 - t.h * 0.5f, f ? 1.0f : 0.86f); }
+  }
   { AjDica d[2] = { { "OK", "Ligar ou desligar" }, { "Voltar", "Fechar" } };
     ajDicas(d, 2, m.x + 44, m.y + m.h - 36, m.w - 88, 1); }
   if (uxAviso[0]) {

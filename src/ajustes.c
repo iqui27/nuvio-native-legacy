@@ -782,6 +782,11 @@ _Static_assert(sizeof V_FUNDO_DIN_COR / sizeof *V_FUNDO_DIN_COR == sizeof FUNDO_
                "V_FUNDO_DIN_COR: um nome por linha de FUNDO_DIN_TEMA");
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+// Chapters in the player, per kind of title: the value IS the set (bit 1
+// movies, 2 shows, 4 anime; 0 off). The row shows the translated names
+// (textoValor) and OK opens a check sheet (capFolha), owner 25/11.
+static const char *V_CAP_TIPOS[]  = { "Desligado", "Filmes", "Séries", "Filmes e séries", "Anime",
+                                      "Filmes e anime", "Séries e anime", "Todos" };
 static const char *V_LIGA_AUTO[] = { "Ligado", "Desligado", "Automático" };
 // Estilo da fileira de formato do player; o indice e o PLR_FMT_* de ajustes.h
 // e o gravado em "plrFormatoLocal".
@@ -1870,7 +1875,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Suavizar degradês", V_DEGRADES, 3),
   ESC("Tamanho do destaque", V_HERO_TAMANHO, 3),       // local: heroSizeLocal
   ESC("Mostrar detalhes da pasta no destaque", V_LIGA, 2),
-  ESC("Capítulos no player", V_LIGA, 2),               // local: chaptersLocal
+  ESC("Capítulos no player", V_CAP_TIPOS, 8),         // local: chaptersKindsLocal
   ACAO("ID do Anime-Skip"),
 };
 
@@ -2205,7 +2210,7 @@ static const char *CHAVE[] = {
   "suavizarDegradesLocal",
   "heroSizeLocal",
   "heroFolderDetailsLocal",
-  "chaptersLocal",
+  "chaptersKindsLocal",   // was chaptersLocal (on/off); 0 there meant On
   // "-": o VALOR mora em animeskip.txt (dados); credencial, fora do ajustes.txt.
   "-animeSkipId",
 };
@@ -2915,7 +2920,7 @@ int ajustes_pular_resumo(void)        { return lig(AJ_PULAR_RESUMO); }
 int ajustes_proximo_auto(void)        { return lig(AJ_PROXIMO_AUTO); }
 int ajustes_proximo_contagem(void)    { int n = valor[AJ_PROXIMO_CONTAGEM]; return n < 1 ? 1 : n > 60 ? 60 : n; }
 int ajustes_pular_creditos(void)      { return lig(AJ_PULAR_CREDITOS); }
-int ajustes_capitulos(void)           { return lig(AJ_CAPITULOS); }
+int ajustes_capitulos(void)           { return valor[AJ_CAPITULOS] & 7; }
 int ajustes_medidor_desempenho(void)  { return valor[AJ_MEDIDOR]; }
 int ajustes_fonte_manual(void)        { return lig(AJ_FONTE_MANUAL); }
 int ajustes_fonte_primeira(void)      { return ajustes_fonte_prioridade() == 3 || valor[AJ_FONTE_AUTO] == 1; }
@@ -9284,6 +9289,40 @@ static void ffEvento(SDL_Keycode k) {
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) ffEscolher();
 }
 
+// --- folha "Capitulos no player" (owner 25/11) ------------------------------
+// Desligado no topo, depois Filmes, Series e Anime, cada um com a sua chave.
+// OK liga/desliga e grava na hora; Voltar fecha.
+static int capFolha, capFolhaFoco;
+static const char *const CAP_TIPO_NOME[3] = { "Filmes", "Séries", "Anime" };
+static const char *capTiposTexto(int v) {
+  static char buf[96];
+  int i, n = 0;
+  v &= 7;
+  if (!v) return i18n("Desligado");
+  buf[0] = 0;
+  for (i = 0; i < 3; i++)
+    if (v & (1 << i)) {
+      size_t l = strlen(buf);
+      snprintf(buf + l, sizeof buf - l, "%s%s", n++ ? ", " : "", i18n(CAP_TIPO_NOME[i]));
+    }
+  return buf;
+}
+static void capFolhaAbrir(void) { uxCancelar(); capFolha = 1; capFolhaFoco = 0; }
+static void capFolhaEvento(SDL_Keycode k) {
+  if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE || k == SDLK_LEFT) {
+    capFolha = 0; return;
+  }
+  if (k == SDLK_UP && capFolhaFoco > 0) capFolhaFoco--;
+  if (k == SDLK_DOWN && capFolhaFoco < 3) capFolhaFoco++;
+  if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+    if (capFolhaFoco == 0) valor[AJ_CAPITULOS] = 0;
+    else valor[AJ_CAPITULOS] = (valor[AJ_CAPITULOS] ^ (1 << (capFolhaFoco - 1))) & 7;
+    gravar();
+    protegerLocais();
+    uxNotificar("Ajuste salvo nesta TV.");
+  }
+}
+
 static int frFoco;
 static int frCol;               // folha da ordem: 0 = subir, 1 = descer
 static int frN;
@@ -9839,6 +9878,7 @@ static void eventoTela(const SDL_Event *e) {
   if (pfTela) { pfEvento(k); return; }
   if (riscoFolha) { riscoFolhaEvento(k); return; }
   if (hcAberta) { hcEvento(k); return; }
+  if (capFolha) { capFolhaEvento(k); return; }
   if (frAberta) { frEvento(k); return; }
   // A folha de fileiras e modal, como a do vinculo acima.
   if (filAberta) { eventoFileiras(k); return; }
@@ -10348,6 +10388,7 @@ static const char *textoValor(int op) {
   if (ajFonte(op)) return ajFonteNome(op, ajFonteAtual(op));
   if (op == AJ_FONTE_AUTO && ajustes_fonte_prioridade() == 3) return i18n("Primeira da lista");
   if(op==AJ_GUIA_CATEGORIAS)return i18n("Abrir");
+  if (op == AJ_CAPITULOS) return capTiposTexto(valor[op]);
   // Fora de 1080p/720p a linha mostra o valor EFETIVO, nao o gravado.
   if (op == AJ_AMPLIAR_UI && valor[op] != 2 && !ampliarUiVale()) return "Pela TV";
   if(ajIptvGerenciador(op))return i18n("Abrir");
@@ -10987,6 +11028,7 @@ static void ajDesenharTudo(Uint32 agora) {
   else if (frAberta >= 4) desenhaFolhaFalha();
   else if (frAberta == 3) desenhaFolhaOrdem();
   else if (frAberta) desenhaFolhaPermitidos();
+  if (capFolha) desenhaFolhaCapitulos();
   if (hcAberta) desenhaFolhaHeroCat();
 
   // Por cima de tudo: enquanto um vinculo esta em andamento, ele e a pergunta
@@ -11026,7 +11068,7 @@ int ajustes_relogio_cabe(void) {
 
 int ajustes_relogio_navegavel(void) {
   DisEstado da = discord_estado();
-  return ajustes_relogio_cabe() && !filAberta && !frAberta && !uxEditor &&
+  return ajustes_relogio_cabe() && !filAberta && !frAberta && !capFolha && !uxEditor &&
          !guiaAberto && !apoioAberto && !riscoFolha &&
          da != DIS_PEDINDO && da != DIS_AGUARDANDO && da != DIS_ERRO;
 }
@@ -11359,6 +11401,11 @@ void ajustes_teste_fonte_interface(int familia) {
 // #202: abre a folha de permitidos (1 add-ons, 2 plugins) com o foco na
 // linha `foco` (0 = "Todos").
 void ajustes_teste_permitidos(int qual, int foco) { frAberta = qual; frFoco = foco; }
+// Chapters sheet: focus the row, optionally open the sheet and press OK there.
+int ajustes_teste_capitulos(void) { return AJ_CAPITULOS; }
+void ajustes_teste_capitulos_tecla(SDL_Keycode k) { if (k) { if (!capFolha) capFolhaAbrir(); capFolhaEvento(k); } }
+int ajustes_teste_capitulos_valor(void) { return valor[AJ_CAPITULOS]; }
+const char *ajustes_teste_capitulos_texto(void) { return textoValor(AJ_CAPITULOS); }
 void ajustes_teste_herocat(const char *busca, int foco) {
   hcAbrir(); snprintf(hcBusca, sizeof hcBusca, "%s", busca ? busca : ""); hcMontar(); hcFoco = foco;
 }

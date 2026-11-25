@@ -353,5 +353,5 @@
   0, /* gradient smoothing: Automatic */
   0, /* hero logo and information size: Normal */
   0, /* folder hero details: On (V_LIGA 0) */
-  1, /* chapters in the player: Off (V_LIGA 1) */
+  1, /* chapters in the player: Movies (V_CAP_TIPOS bits: 1 movies, 2 shows, 4 anime; owner 25/11) */
   0, /* Anime-Skip Client ID: action, value lives in animeskip.txt */

@@ -27,8 +27,17 @@
 // ~20% faster) and is closed while paused. The tiles stay compressed in RAM
 // (~8 KB each); only the few on screen become textures.
 //
-// Nothing is kept: the set lives in RAM for the title playing and is made
-// again the next time (the Google Drive copy was dropped, owner 25/11).
+// KEPT ON THIS TV (owner 25/11, replaces the Google Drive copy): one file per
+// video in <data>/miniaturas, named by the content fingerprint (size + hash of
+// the first and last 64 KiB: the same file through any link), at most 50 MB
+// for all of them, the least recently watched deleted first; none with under
+// 200 MB free. Written when the title stops and every 120 new tiles.
+//
+// SPEED TIERS (from stremio-origin/tizen, for older TVs): after 3 tiles the
+// mean cost per tile decides how much is made beside the film: over 1.5 s
+// only the scrub point and the chapter starts; over 0.6 s also +-1 min around
+// the playhead and one every 5 min; else the whole order. And never while the
+// player's buffer is short (under 8 s ahead, where the player says).
 //
 // Logs `[miniatura]`, never URLs or keys.
 #include "seekr.h"
@@ -53,6 +62,11 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <utime.h>
+#include <sys/stat.h>
+#include <sys/statvfs.h>
+#include "dados.h"
 
 #define BASE_MS 5000L              // one slot every 5 s; the 10 s grid uses every second one
 #define DEZ 2                      // slots per 10 s
@@ -75,7 +89,9 @@
 #define MINUTO_SLOTS 12            // one every 60 s
 #define VIZINHO_SLOTS 60           // seek bar: nearest made tile up to 5 min away
 #define FATIA 0.05                 // +-5% of the runtime around the playhead
-#define SLOTS 4
+#define SLOTS 12                   // textures: the strip's 3 + the chapter row's 5 and one each side + spares
+#define CAP_MAX 64                 // chapters taken from the file (seekr_capitulos)
+#define CAP_DENTRO_MS 2000         // a chapter's picture: the first grid slot 2 s or more past its start
 
 typedef struct { unsigned char *jpg; int n; long pts; } Tile;
 
@@ -102,6 +118,10 @@ static long durAtual;
 static Uint32 batida;            // last seekr_pedir: the player still shows this title
 
 static long alvoScrub = -1; static Uint32 alvoTick;
+// CHAPTER STARTS (seekr_capitulos): made right after the scrub point, before
+// everything else, so the chapter row has its pictures within the first ~50 s
+// of playback. capFim[i] is where chapter i ends (the next start, or the end).
+static long capIni[CAP_MAX], capFim[CAP_MAX]; static int nCap;
 
 // Caller holds mu.
 static void soltarJob(Job *j) {
@@ -138,6 +158,134 @@ static long rssKB(void) {
 }
 static void dormirJ(Job *j, int ms) { while (ms > 0 && !j->parar) { int p = ms < 100 ? ms : 100; usleep((useconds_t)p * 1000); ms -= p; } }
 
+#if defined(NV_DTS_FFMPEG) || defined(NV_MINI_FFMPEG)
+// ------------------------------------------------------------------ pack (the set kept on this TV)
+// "NVMT" u32 version=1, u32 grid ms, u32 n slots, u32 count, then per tile
+// u32 slot, i32 pts ms, u32 len, JPEG bytes. Little-endian. The grid is the
+// title's own (5000 or 10000) and slots count in it, so sets saved by the
+// first 10 s-only builds read the same way.
+static void put32(unsigned char *p, uint32_t v) { p[0] = (unsigned char)v; p[1] = (unsigned char)(v >> 8); p[2] = (unsigned char)(v >> 16); p[3] = (unsigned char)(v >> 24); }
+static uint32_t get32(const unsigned char *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
+
+static unsigned char *empacotar(Job *j, size_t *n, int *conta) {
+  size_t tam = 20;
+  int c = 0;
+  pthread_mutex_lock(&mu);
+  int ps = j->passo > 0 ? j->passo : DEZ;
+  for (int k = 0; k < j->n; k += ps) if (j->tiles[k].jpg) { tam += 12 + (size_t)j->tiles[k].n; c++; }
+  unsigned char *b = c ? malloc(tam) : NULL;
+  if (b) {
+    unsigned char *p = b;
+    memcpy(p, "NVMT", 4); put32(p + 4, 1); put32(p + 8, (uint32_t)(ps * BASE_MS));
+    put32(p + 12, (uint32_t)((j->n + ps - 1) / ps)); put32(p + 16, (uint32_t)c);
+    p += 20;
+    for (int k = 0; k < j->n; k += ps) if (j->tiles[k].jpg) {
+      put32(p, (uint32_t)(k / ps)); put32(p + 4, (uint32_t)j->tiles[k].pts); put32(p + 8, (uint32_t)j->tiles[k].n);
+      memcpy(p + 12, j->tiles[k].jpg, (size_t)j->tiles[k].n); p += 12 + j->tiles[k].n;
+    }
+  }
+  pthread_mutex_unlock(&mu);
+  *n = b ? tam : 0; *conta = c;
+  return b;
+}
+
+// Adds the tiles of a pack to the set (never replaces one already made).
+// Count added; *grade = the pack's grid in ms (0 = not a pack).
+static int desempacotar(Job *jb, const unsigned char *b, size_t n, long *grade) {
+  if (grade) *grade = 0;
+  if (n < 20 || memcmp(b, "NVMT", 4) || get32(b + 4) != 1) return 0;
+  uint32_t g = get32(b + 8);
+  if (g != BASE_MS && g != DEZ * BASE_MS) return 0;
+  int mult = (int)(g / BASE_MS);
+  if (grade) *grade = (long)g;
+  uint32_t c = get32(b + 16);
+  size_t pos = 20;
+  int add = 0;
+  pthread_mutex_lock(&mu);
+  for (uint32_t i = 0; i < c && pos + 12 <= n; i++) {
+    uint32_t k = get32(b + pos) * (uint32_t)mult, len = get32(b + pos + 8);
+    long pts = (long)(int32_t)get32(b + pos + 4);
+    if (pos + 12 + len > n || len < 125 || len > 200000) break;
+    if ((int)k < jb->n && !jb->tiles[k].jpg) {
+      unsigned char *j = malloc(len);
+      if (j) { memcpy(j, b + pos + 12, len); jb->tiles[k] = (Tile){ j, (int)len, pts }; jb->feitos++; add++; }
+    }
+    pos += 12 + len;
+  }
+  if (add && jb == job) estado = SEEKR_PRONTO;
+  pthread_mutex_unlock(&mu);
+  return add;
+}
+
+// ------------------------------------------------------------------ the sets kept on this TV
+#define CACHE_MAX (50LL << 20)
+#define CACHE_LIVRE_MIN (200LL << 20)
+static int cacheDir(char *out, size_t n) {
+  const char *d = dados_dir();
+  if (!d || !*d) return 0;
+  snprintf(out, n, "%s/miniaturas", d);
+  mkdir(out, 0700);
+  return 1;
+}
+static int cacheNome(const char *fp, char *out, size_t n) {
+  char d[600];
+  if (!fp[0] || !cacheDir(d, sizeof d)) return 0;
+  snprintf(out, n, "%s/%.32s.nvmt", d, fp);
+  return 1;
+}
+// The least recently used sets go until all fit in CACHE_MAX.
+static void cacheAparar(void) {
+  char d[600];
+  if (!cacheDir(d, sizeof d)) return;
+  for (int volta = 0; volta < 200; volta++) {
+    DIR *dd = opendir(d); struct dirent *e; long long tot = 0; time_t velho = 0; char nv[300] = "";
+    if (!dd) return;
+    while ((e = readdir(dd))) {
+      char f[900]; struct stat st;
+      if (!strstr(e->d_name, ".nvmt")) continue;
+      snprintf(f, sizeof f, "%s/%s", d, e->d_name);
+      if (stat(f, &st)) continue;
+      tot += st.st_size;
+      if (!nv[0] || st.st_mtime < velho) { velho = st.st_mtime; snprintf(nv, sizeof nv, "%s", e->d_name); }
+    }
+    closedir(dd);
+    if (tot <= CACHE_MAX || !nv[0]) return;
+    { char f[900]; snprintf(f, sizeof f, "%s/%s", d, nv); unlink(f);
+      printf("[miniatura] kept sets over 50 MB: dropped the oldest\n"); fflush(stdout); }
+  }
+}
+static int cacheCarregar(Job *j, const char *fp) {
+  char fn[700]; FILE *f; long n; unsigned char *b; int add = 0; long grade = 0;
+  if (!cacheNome(fp, fn, sizeof fn) || !(f = fopen(fn, "rb"))) return 0;
+  fseek(f, 0, SEEK_END); n = ftell(f); fseek(f, 0, SEEK_SET);
+  b = n > 20 && n < (64L << 20) ? malloc((size_t)n) : NULL;
+  if (b && fread(b, 1, (size_t)n, f) == (size_t)n) add = desempacotar(j, b, (size_t)n, &grade);
+  fclose(f); free(b);
+  if (add) { utime(fn, NULL); printf("[miniatura] %d tile(s) kept on this TV (%ld s grid)\n", add, grade / 1000); fflush(stdout); }
+  return add;
+}
+static void cacheSalvar(Job *j, const char *fp) {
+  char fn[700], tmp[720], d[600]; size_t n; int c; unsigned char *b; FILE *f;
+  struct statvfs v;
+  pthread_mutex_lock(&mu); int ha = j->novos; pthread_mutex_unlock(&mu);
+  if (!ha || !cacheNome(fp, fn, sizeof fn) || !cacheDir(d, sizeof d)) return;
+  if (!statvfs(d, &v) && (long long)v.f_bavail * (long long)v.f_frsize < CACHE_LIVRE_MIN) return;
+  if (!(b = empacotar(j, &n, &c))) return;
+  snprintf(tmp, sizeof tmp, "%s.tmp", fn);
+  if ((f = fopen(tmp, "wb"))) {
+    int ok = fwrite(b, 1, n, f) == n;
+    ok = fclose(f) == 0 && ok;
+    if (ok && !rename(tmp, fn)) {
+      pthread_mutex_lock(&mu); j->novos = 0; pthread_mutex_unlock(&mu);
+      printf("[miniatura] kept %d tile(s) on this TV (%zu KB)\n", c, n / 1024); fflush(stdout);
+    } else unlink(tmp);
+  }
+  free(b);
+  cacheAparar();
+}
+
+#endif
+
 // ------------------------------------------------------------------ order of work
 static int pronto(const Job *j, int k) { return k >= 0 && k < j->n && j->tiles[k].jpg; }
 static int livre(const Job *j, int k) {
@@ -152,23 +300,53 @@ static int perto(const Job *j, int c, int raio, int passo) {
   return -1;
 }
 
-enum { E_SCRUB, E_PERTO, E_FATIA, E_TODO };
+// The grid slot that stands for chapter i: the first slot on the title's grid
+// at least CAP_DENTRO_MS past its start, still inside the chapter (else the
+// slot at its start). -1 when the grid is not known yet.
+static int capSlot(const Job *j, int i) {
+  int ps = j->passo;
+  if (ps <= 0 || i < 0 || i >= nCap) return -1;
+  long g = (long)ps * BASE_MS, t = capIni[i] + CAP_DENTRO_MS;
+  long k = (t + g - 1) / g * ps;
+  if ((k * BASE_MS) >= capFim[i]) k = capIni[i] / g * ps;
+  if (k >= j->n) k = (j->n - 1) / ps * ps;
+  return k < 0 ? 0 : (int)k;
+}
+
+// The made tile that shows chapter i: its own slot, else the nearest made
+// slot inside the same chapter (any grid). -1 = none yet. Caller holds mu.
+static int capTile(const Job *j, int i) {
+  int k = capSlot(j, i), lo, hi;
+  if (k < 0) return -1;
+  if (pronto(j, k)) return k;
+  lo = (int)(capIni[i] / BASE_MS); hi = (int)((capFim[i] - 1) / BASE_MS);
+  for (int d = 1; k - d >= lo || k + d <= hi; d++) {
+    if (k + d <= hi && pronto(j, k + d)) return k + d;
+    if (k - d >= lo && pronto(j, k - d)) return k - d;
+  }
+  return -1;
+}
+
+enum { E_SCRUB, E_CAP, E_PERTO, E_FATIA, E_TODO };
 typedef struct { int tipo, passo; } Etapa;
 // 10 s grid: scrub +-30 s, +-1 min, every 5 min, +-5%, every 60 s, every 10 s.
 static const Etapa ORDEM_10[] = {
-  { E_SCRUB, DEZ }, { E_PERTO, DEZ }, { E_TODO, GROSSO_SLOTS }, { E_FATIA, DEZ },
+  { E_SCRUB, DEZ }, { E_CAP, 0 }, { E_PERTO, DEZ }, { E_TODO, GROSSO_SLOTS }, { E_FATIA, DEZ },
   { E_TODO, MINUTO_SLOTS }, { E_TODO, DEZ } };
 // 5 s grid (owner, 23/10): scrub +-30 s every 5 s, +-1 min every 10 s, every
 // 5 min, +-1 min every 5 s, +-5% every 10 s, every 60 s, +-5% every 5 s,
 // whole film every 10 s, whole film every 5 s.
 static const Etapa ORDEM_5[] = {
-  { E_SCRUB, 1 }, { E_PERTO, DEZ }, { E_TODO, GROSSO_SLOTS }, { E_PERTO, 1 }, { E_FATIA, DEZ },
+  { E_SCRUB, 1 }, { E_CAP, 0 }, { E_PERTO, DEZ }, { E_TODO, GROSSO_SLOTS }, { E_PERTO, 1 }, { E_FATIA, DEZ },
   { E_TODO, MINUTO_SLOTS }, { E_FATIA, 1 }, { E_TODO, DEZ }, { E_TODO, 1 } };
 
 // Next slot to make (-1 = none left). *classe = the step (1-based). Caller holds mu.
+static int nivel;   // speed tier (top of the file): 0 everything, 1 up to every 5 min, 2 scrub + chapters
 static int proximo(const Job *j, long phMs, int *classe) {
   const Etapa *o = j->passo == 1 ? ORDEM_5 : ORDEM_10;
   int no = j->passo == 1 ? (int)(sizeof ORDEM_5 / sizeof *ORDEM_5) : (int)(sizeof ORDEM_10 / sizeof *ORDEM_10);
+  if (nivel == 2 && no > 2) no = 2;        // the first four stages are SCRUB, CAP, PERTO, every 5 min in both orders
+  else if (nivel == 1 && no > 4) no = 4;
   int ph = (int)((phMs + BASE_MS / 2) / BASE_MS), fatia = (int)(j->dur * FATIA / BASE_MS) + 1;
   int scrub = alvoScrub >= 0 && (Sint32)(SDL_GetTicks() - alvoTick) < 4000;
   int k0 = (int)((alvoScrub + BASE_MS / 2) / BASE_MS);
@@ -179,6 +357,13 @@ static int proximo(const Job *j, long phMs, int *classe) {
     int k = -1;
     switch (o[e].tipo) {
       case E_SCRUB: if (scrub) k = perto(j, k0, SCRUB_SLOTS, o[e].passo); break;
+      case E_CAP:   // the chapter nearest the playhead first, then outwards
+        for (int d = 0, c0 = 0; d < 2 * nCap && k < 0; d++) {
+          if (!d) while (c0 + 1 < nCap && capIni[c0 + 1] <= phMs) c0++;
+          int a = c0 + (d + 1) / 2 * ((d & 1) ? 1 : -1);
+          if (a >= 0 && a < nCap) { int ks = capSlot(j, a); if (livre(j, ks)) k = ks; }
+        }
+        break;
       case E_PERTO: k = perto(j, ph, PERTO_SLOTS, o[e].passo); break;
       case E_FATIA: k = perto(j, ph, fatia, o[e].passo); break;
       default:      k = perto(j, ph, j->n, o[e].passo); break;
@@ -252,7 +437,8 @@ static void *trabalhar(void *u) {
   Job *j = w->j;
   Leitor *l = calloc(1, sizeof *l);
   MiniMotor *m = NULL;
-  char erro[128] = "";
+  char erro[128] = "", fp[65] = "";
+  int novosSalvos = 0;
   // One decoding thread: on the TV 2-3 threads were no faster while the player
   // decodes 4K (tests 22/10) and cost more memory.
   const int threads = 1;
@@ -273,9 +459,16 @@ static void *trabalhar(void *u) {
   // The source's size: one small read at the head (the demuxer reads it next anyway).
   {
     unsigned char *cab = malloc(65536);
-    if (cab) lerFonte(l, 0, 65535, cab);
-    free(cab);
-    printf("[miniatura] source: %lld MB\n", (long long)(l->total / 1048576)); fflush(stdout);
+    unsigned char *cau = cab ? malloc(65536) : NULL;
+    long a = cau ? lerFonte(l, 0, 65535, cab) : -1, b = -1;
+    // The content fingerprint names the set kept on this TV (same file, any link).
+    if (a > 0 && l->total > 65536) b = lerFonte(l, l->total - 65536, l->total - 1, cau);
+    else if (a > 0) { memcpy(cau, cab, (size_t)a); b = a; }
+    if (a > 0 && b > 0 && l->total > 0) mini_impressao((uint64_t)l->total, cab, (size_t)a, cau, (size_t)b, fp);
+    free(cab); free(cau);
+    printf("[miniatura] source: %lld MB, fingerprint %s\n", (long long)(l->total / 1048576), fp[0] ? "read" : "unreadable");
+    fflush(stdout);
+    if (fp[0] && !j->parar) cacheCarregar(j, fp);
   }
   if (j->parar) goto fim;
   if (l->total <= 0) { printf("[miniatura] stopped: source size unknown\n"); goto semPrevia; }
@@ -331,6 +524,27 @@ static void *trabalhar(void *u) {
     }
     ultimaPausaLog = 0; pausasCaladas = 0;
 
+    // Speed tier from what tiles cost here (top of the file).
+    if (feitosAqui >= 3) {
+      unsigned long med = somaMs / (unsigned long)feitosAqui;
+      int nv = med > 1500 ? 2 : med > 600 ? 1 : 0;
+      if (nv != nivel) {
+        printf("[miniatura] %lu ms a tile: %s\n", med, nv == 2 ? "only the scrub point and the chapters"
+               : nv == 1 ? "scrub point, chapters, near the playhead, every 5 min" : "the whole film");
+        fflush(stdout);
+        pthread_mutex_lock(&mu); nivel = nv; pthread_mutex_unlock(&mu);
+      }
+    }
+    // The film first: a short buffer (where the player tells it) waits,
+    // unless someone is scrubbing and waiting for that picture.
+    { double bf = video_buffer_fim(), pos = video_pos();
+      int scrub;
+      pthread_mutex_lock(&mu); scrub = alvoScrub >= 0 && (Sint32)(SDL_GetTicks() - alvoTick) < 4000; pthread_mutex_unlock(&mu);
+      if (bf > 0.5 && bf - pos < 8.0 && !scrub) { dormirJ(j, 500); continue; } }
+    // Kept on this TV as it fills, so a closed app or a Home does not lose it.
+    { int nv; pthread_mutex_lock(&mu); nv = j->novos; pthread_mutex_unlock(&mu);
+      if (nv - novosSalvos >= 120 && fp[0]) { cacheSalvar(j, fp); novosSalvos = 0; } }
+
     int classe = 0, k, k2 = -1, c2 = 0;
     long ph = (long)(video_pos() * 1000.0);
     pthread_mutex_lock(&mu);
@@ -343,8 +557,11 @@ static void *trabalhar(void *u) {
       j->falhas[k] = f0;
     }
     long tol = (long)j->passo * BASE_MS / 2;
+    int limitado = nivel > 0;
     pthread_mutex_unlock(&mu);
-    if (k < 0) break;
+    // Nothing to make now: done, or (a slow device) waiting for a scrub point
+    // or a chapter list; the decoder's memory is let go meanwhile.
+    if (k < 0) { if (!limitado) break; mini_motor_soltar_decoder(m); dormirJ(j, 700); continue; }
     long alvo = k * BASE_MS;
     if (alvo > j->dur - 1) alvo = j->dur - 1;
     {
@@ -418,6 +635,7 @@ semPrevia:
   pthread_mutex_unlock(&mu);
 fim:
   if (m) mini_motor_fechar(m);
+  if (fp[0]) cacheSalvar(j, fp);
   fflush(stdout);
   free(l);
   pthread_mutex_lock(&mu);
@@ -483,6 +701,7 @@ void seekr_pedir(const char *imdb, int t, int e, long durMs) {
   pthread_mutex_lock(&mu);
   j->g = ++geracao;
   job = j;
+  nivel = 0;            // each title measures its own cost per tile
   estado = SEEKR_BUSCANDO;
   alvoScrub = -1;
   pthread_mutex_unlock(&mu);
@@ -511,7 +730,7 @@ void seekr_desligar(void) {
   pthread_mutex_lock(&mu);
   if (job) { job->parar = 1; soltarJob(job); job = NULL; }
   geracao++;
-  urlAtual[0] = 0; durAtual = 0;
+  urlAtual[0] = 0; durAtual = 0; nCap = 0;
   estado = SEEKR_DESLIGADO;
   pthread_mutex_unlock(&mu);
 }
@@ -659,6 +878,42 @@ int seekr_quadros(double posSeg, int n, GLuint *texs, double *cueSeg) {
     if (m >= 0) { texs[c] = slots[m].tex; achou = 1; quadroVelho = 1; }
   }
   return achou;
+}
+
+void seekr_capitulos(const double *iniSeg, int n, double durSeg) {
+  pthread_mutex_lock(&mu);
+  if (n > CAP_MAX) n = CAP_MAX;
+  nCap = n < 2 ? 0 : n;
+  for (int i = 0; i < nCap; i++) {
+    capIni[i] = (long)(iniSeg[i] * 1000.0);
+    capFim[i] = i + 1 < nCap ? (long)(iniSeg[i + 1] * 1000.0) : (long)(durSeg * 1000.0);
+  }
+  pthread_mutex_unlock(&mu);
+}
+
+// The chapter row: one texture per chapter in idx[] (0 = its picture is not
+// made yet: the row draws a plain tile, never a spinner). The tiles are tiny
+// JPEGs already in memory; at most two become textures per call, the ones
+// asked first first, so the row is filled within a few frames of opening and
+// a slide never waits (the caller asks for one card past each edge).
+int seekr_capitulo_quadros(const int *idx, int n, GLuint *texs) {
+  int kk[16], pro[16], np = 0, i, subidos = 0;
+  unsigned g;
+  if (n > 16) n = 16;
+  for (i = 0; i < n; i++) texs[i] = 0;
+  pthread_mutex_lock(&mu);
+  if (!job) { pthread_mutex_unlock(&mu); return 0; }
+  g = job->g;
+  for (i = 0; i < n; i++) { kk[i] = capTile(job, idx[i]); if (kk[i] >= 0) pro[np++] = kk[i]; }
+  pthread_mutex_unlock(&mu);
+  for (i = 0; i < n; i++) {
+    int sl;
+    if (kk[i] < 0) continue;
+    sl = slotTex(kk[i], g);
+    if (sl < 0 && subidos < 2) { subir(kk[i], g, pro, np); subidos++; sl = slotTex(kk[i], g); }
+    if (sl >= 0) { texs[i] = slots[sl].tex; slots[sl].uso = ++relogioUso; }
+  }
+  return 1;
 }
 
 GLuint seekr_quadro(double posSeg, double *cueSeg) {
