@@ -2,7 +2,7 @@
 export TMPDIR="${TMPDIR:-/tmp}"
 TMPDIR="${TMPDIR%/}"
 # Minimal static LGPL FFmpeg: DTS decode, stereo AAC and AC3 5.1 encode (no GPL/nonfree). No FFmpeg
-# network/TLS protocols or software video decoders enter the TV executable.
+# network/TLS protocols enter the TV executable. Software video decoders only on the .tpk (below).
 #
 # NUVIO_DTS_TARGET picks the build:
 #   webos (default) cross build with the LG SDK (tools/Dockerfile); output unchanged.
@@ -10,7 +10,11 @@ TMPDIR="${TMPDIR%/}"
 #                   container, from the source tree tpk.sh already downloaded and checked on the
 #                   host (NUVIO_DTS_SRC; the container has no curl). Adds what the Samsung loopback
 #                   converter needs: TrueHD/MLP
-#                   decoders, mpegts/matroska/mp4 muxers, mlp/ac3 parsers, truehd_core.
+#                   decoders, mpegts/matroska/mp4 muxers, mlp/ac3 parsers, truehd_core; and for the
+#                   seek-bar thumbnails made on the TV (src/miniatura*.c): h264/hevc decoders
+#                   (keyframes only, decoded one at a time), the mjpeg encoder (320x180 tiles) and
+#                   the mpegts demuxer (.m2ts / .ts remuxes). The webOS target gets the same
+#                   thumbnail components.
 set -eu
 VERSION=7.1.5
 SHA256=de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f
@@ -18,7 +22,9 @@ PREFIX=${NUVIO_DTS_ROOT:-/opt/nuvio-dts}
 BUILD=${NUVIO_DTS_BUILD:-${TMPDIR:-/tmp}/nuvio-dts-build}
 TARGET=${NUVIO_DTS_TARGET:-webos}
 DECODERS=dca,dvdsub,pgssub,ass,ssa,subrip,movtext,webvtt
+ENCODERS=aac,ac3
 MUXERS=
+DEMUXERS=matroska,mov
 PARSERS=dca,h264,hevc,aac
 BSFS=h264_mp4toannexb,hevc_mp4toannexb,dca_core
 ZLIB=
@@ -26,8 +32,11 @@ mkdir -p "$BUILD" "$PREFIX"
 if [ "$TARGET" = tpk ]; then
   SRC=${NUVIO_DTS_SRC:?tools/tpk.sh passes the extracted ffmpeg-$VERSION source}
   CC=${CC:-gcc}
-  DECODERS=$DECODERS,truehd,mlp
+  DECODERS=$DECODERS,truehd,mlp,h264,hevc
+  ENCODERS=$ENCODERS,mjpeg
   MUXERS=mpegts,matroska,mp4
+  # mpegts demuxer: thumbnails for Blu-ray remuxes kept as .m2ts / .ts (miniatura_motor.c).
+  DEMUXERS=$DEMUXERS,mpegts
   PARSERS=$PARSERS,mlp,ac3
   BSFS=$BSFS,truehd_core
   # zlib: Matroska tracks stored zlib-compressed (ContentCompression) and MP4
@@ -44,6 +53,12 @@ if [ "$TARGET" = tpk ]; then
       --cross-prefix=arm-linux-gnueabi-
   fi
 else
+  # LG webOS: seek-bar thumbnails made on the TV (src/miniatura*.c), like the
+  # .tpk: h264/hevc decoders (keyframes only), the mjpeg encoder (320x180
+  # tiles) and the mpegts demuxer (.m2ts / .ts remuxes).
+  DECODERS=$DECODERS,h264,hevc
+  ENCODERS=$ENCODERS,mjpeg
+  DEMUXERS=$DEMUXERS,mpegts
   CC=${CC:-arm-webos-linux-gnueabi-gcc}
   archive="$BUILD/ffmpeg-$VERSION.tar.xz"
   [ -f "$archive" ] || curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz" -o "$archive"
@@ -67,8 +82,8 @@ fi
   --disable-programs --disable-doc --disable-debug --disable-network \
   --disable-avdevice --disable-avfilter --disable-swscale --disable-postproc \
   --enable-avcodec --enable-avformat --enable-avutil --enable-swresample \
-  --enable-decoder="$DECODERS" --enable-encoder=aac,ac3 \
-  --enable-demuxer=matroska,mov --enable-parser="$PARSERS" \
+  --enable-decoder="$DECODERS" --enable-encoder="$ENCODERS" \
+  --enable-demuxer="$DEMUXERS" --enable-parser="$PARSERS" \
   --enable-bsf="$BSFS" \
   --extra-cflags="${CFLAGS:--O2}"
 make -j"${NUVIO_DTS_JOBS:-2}"

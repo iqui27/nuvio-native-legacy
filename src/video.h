@@ -284,6 +284,11 @@ int    video_terminou(void); // 1 depois do fim de fluxo (endOfStream) da fonte 
 int    video_conflito_recurso(void);
 #ifdef NV_TPK
 void   video_tpk_log_host(const char *linha);   // tpk.c repassa cada linha do host
+// A reconexao em curso e do arquivo sendo preparado pelo mkvfix (seek durante
+// a sonda, reabertura pelo servidor local), nao queda de rede: outro aviso.
+int    video_tpk_reconexao_preparo(void);
+// Ha quanto tempo (ms) um seek espera a sonda do mkvfix; 0 = nenhum segurado.
+unsigned video_tpk_seek_segurado_ms(void);
 int    video_tpk_codec_recusado(const char *codecId);  // #313: DTS/TrueHD/MLP, que a Samsung nao toca
 // Zoom/recorte do plano de video (ROI), experimental (#241): liga/desliga em
 // execucao; o padrao e NV_TPK_ZOOM_ROI (0). Loga "[trailer] tpk zoom ROI: ...".

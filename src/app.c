@@ -854,6 +854,8 @@ static int iniciarPoliticaFonte(int preferida, int manual) {
 #include "segurar.h"
 #include "servidores.h"
 #include "partes.h"
+#include "partescartao.h"
+#include "intro.h"
 #include "logrede.h"
 #include <stdio.h>
 
@@ -2719,6 +2721,17 @@ static int parteAutoEsperando;
 static int parteProx = -1, parteProxFase;   // 0 nada, 1 pedido, 2 pronto, 3 falhou, 4 ultima tentativa
 static Uint32 parteProxDesde;
 static char parteProxUrl[NV_MEDIA_URL_MAX];
+static double parteFimPos = -1;
+static Uint32 parteFimDesde;
+static Uint32 parteProxProntoEm;       // quando o link adiantado da seguinte chegou
+static int parteContagemFeita;         // a contagem desta parte ja subiu
+static int parteForcar;                // "Assistir agora" / fim da contagem: troca ja
+static int parteSalto = -1, parteSaltoUsaProx;
+static double parteSaltoPos = -1;
+static Uint32 parteSaltoDesde;
+static int parteFimArqFeito;           // a fileira do fim deste arquivo ja subiu
+static double parteSaltoDepois = -1;   // salto pela barra: abre do inicio, busca no 1o quadro
+static const char *parteFimComo = "end of stream";
 
 static void parteAviso(int k) {
   const PartesLista *l = partes_sessao_lista();
@@ -2733,6 +2746,14 @@ static int nomeMp4(const char *nome) {
 }
 static void parteZerar(void) {
   parteFase = PF_NADA; parteRetomada = 0; partePos = -1; parteRenovou = 0; parteArqK = -1;
+  parteSalto = -1; parteForcar = 0; parteContagemFeita = 0; parteFimArqFeito = 0; parteFimPos = -1;
+  parteSaltoDepois = -1;
+  // A deteccao automatica e "uma vez por link" DENTRO de uma reproducao:
+  // reabrir o mesmo filme (o mesmo link reusado) pergunta de novo (log da TV,
+  // 23/10: a 2a abertura tocou a parte 1 sem sessao e o fim dela marcou o
+  // filme como concluido).
+  parteAutoUrl[0] = 0; parteAutoEsperando = 0;
+  partescartao_fechar();
   parteUrl[0] = 0; parteProx = -1; parteProxFase = 0; parteProxUrl[0] = 0;
   partes_link_cancelar();
   partes_arquivo_limpar();
@@ -2752,11 +2773,17 @@ static void parteTocar(const char *url, double pos) {
 #endif
   parteFase = PF_ABRINDO; parteDesde = SDL_GetTicks(); parteGuardouEm = 0;
   parteProx = -1; parteProxFase = 0; parteProxUrl[0] = 0;
+  parteFimArqFeito = 0; parteFimPos = -1; parteForcar = 0;
+  // O arquivo e das partes: nao e mais a escolha do automatico.
+  fonteVODAutomatica = 0; fonteVODDesde = 0; fonteManualDesde = 0;
   // O arquivo que toca: a saida do player guarda o ponto dele (partes.h).
   if (parteArqK >= 0 && parteArqK < parteArqLista.n) {
     char a[64];
     alvoPlayer(a, sizeof a);
     partes_arquivo_definir(a, parteArqLista.usenet, parteArqLista.item, parteArqLista.arq[parteArqK].id);
+    // Especial/OVA/extra sem sessao: o fim e a fileira dos arquivos da fonte.
+    player_fim_proprio(!partes_sessao_de(a) && parteArqLista.n > 1 &&
+                       parteArqLista.arq[parteArqK].tipo != PARTE_EP);
   }
 }
 static void abrirParte(int fonte, const PartesLista *l, int k) {
@@ -2765,8 +2792,12 @@ static void abrirParte(int fonte, const PartesLista *l, int k) {
   char alvo[64], imdb[64];
   int titulo, t = 0, e = 0, serie;
   PartesPonto pt;
-  if (!s || !l || k < 0 || k >= l->n) return;
-  escolhida = *s; s = &escolhida;
+  if (!l || k < 0 || k >= l->n) return;
+  // Sem a fonte do addon (o Retomar abriu a parte guardada direto): o arquivo
+  // abre do mesmo jeito, so sem a "fonte que tocava" para voltar.
+  if (s) escolhida = *s;
+  else { memset(&escolhida, 0, sizeof escolhida); fonte = -1; }
+  s = &escolhida;
   aguardandoFonte = 0;
   limparFonteVOD();
   titulo = player_aberto() ? player_indice() : detail_indice();
@@ -2788,7 +2819,7 @@ static void abrirParte(int fonte, const PartesLista *l, int k) {
   player_abrir(cat_indice_vivo(titulo, imdb), NULL);
   player_definir_episodio(t, e);
   stream_definir_atual(fonte);
-  voltaFonte = escolhida;
+  if (fonte >= 0) voltaFonte = escolhida;
   torrentSessao++;
   p2pmotor_cancelar();
   p2pmotor_parar_fundo();
@@ -2867,6 +2898,144 @@ static void parteFalhou(const char *porque) {
   parteZerar();
   if (!player_fonte_falhou()) player_erro_fonte_motivo(i18n("Não foi possível abrir este arquivo"), NULL);
 }
+// O FIM DE UMA PARTE. O fim de fluxo da TV (video_terminou) nem sempre chega:
+// depois de um seek para o ultimo segundo a Samsung fica parada em 1532.03 de
+// 1532 s, "tocando", sem evento (log da TV, 23/10, filme em 4 partes). Vale
+// tambem a posicao parada nos ultimos 3 s por 2 s (o .tpk consulta a posicao
+// devagar: 1,3 s num log), sem pausa da pessoa; bufferizando ali, 4 s.
+static int parteNoFim(double d, double pos) {
+  Uint32 parado;
+  if (video_terminou()) {
+    parteFimComo = "end of stream";
+    return !(d > 120 && pos < d - 90);
+  }
+  if (!(d > 1.0) || !video_pronto() || video_falhou() || pos < d - 3.0 || player_pausa_pessoa()) {
+    parteFimPos = -1;
+    return 0;
+  }
+  if (parteFimPos < 0 || fabs(pos - parteFimPos) > 0.05) {
+    parteFimPos = pos; parteFimDesde = SDL_GetTicks();
+    return 0;
+  }
+  parado = SDL_GetTicks() - parteFimDesde;
+  if (parado < 2000u || (video_bufferando_ms() && parado < 4000u)) return 0;
+  parteFimComo = "stopped at the end";
+  return 1;
+}
+// A parte de verdade antes de `k` (extras fora), ou -1.
+static int parteAnterior(const PartesLista *l, int k) {
+  for (int i = k - 1; l && i >= 0; i--) if (!l->arq[i].extra) return i;
+  return -1;
+}
+// ONDE OS CREDITOS DESTA PARTE COMECAM: capitulo do proprio arquivo, ou
+// AniSkip (anime). O TheIntroDB e o do FILME inteiro e nao vale para uma
+// parte. Fora da janela (antes da metade, mais de 15 min, colado no fim): 0.
+static double parteCreditos(double d) {
+  double c = video_creditos();
+  if (c <= 1.0 && intro_creditos_aniskip()) c = intro_creditos_seg();
+  if (!(c > 1.0) || !(d > 120.0) || c < d * 0.5 || d - c > 900.0 || c >= d - 3.0) return 0;
+  return c;
+}
+// TROCA para a parte `k` da sessao, com o link na mao; `pos` dentro dela
+// (-1 = do inicio). O ponto do Retomar passa a ser dela.
+static void parteTrocarPara(const PartesLista *sl, const char *alvo, int k, const char *url, double pos) {
+  char u[NV_MEDIA_URL_MAX];
+  PartesPonto pt = { sl->usenet, sl->item, sl->arq[k].id, pos > 1.0 ? pos : 0 };
+  snprintf(u, sizeof u, "%s", url);
+  partes_sessao_ir(k);
+  partes_ponto_guardar(alvo, sessao_usuario(), perfis_ativo(), &pt);
+  parteRetomada = 0; parteRenovou = 0;
+  parteArqK = k; parteMp4 = nomeMp4(sl->arq[k].nome);
+  parteFimPos = -1; parteForcar = 0; parteContagemFeita = 0;
+  partescartao_fechar();
+  player_voltar_a_esperar();
+  // Arquivo novo, faixas novas: a legenda automatica roda de novo e aplica a
+  // escolha lembrada (log da TV, 23/10: a parte 2 mostrava a marca na
+  // legenda, mas nada na tela ate escolher de novo).
+  faixas_reiniciar();
+  // ABRE DO INICIO E BUSCA DEPOIS (log da TV, 23/10): aberto direto no meio,
+  // a TV leu 50-70 MB do comeco do arquivo antes do quadro (12-20 s); do
+  // inicio o quadro vem em ~7 s e a busca, com o indice, e rapida.
+  parteTocar(u, -1);
+  parteSaltoDepois = pos > 1.0 ? pos : -1;
+  parteAviso(k);
+}
+// SALTO PARA OUTRA PARTE (botao do OSD, ou a barra do filme inteiro): pede o
+// link dela; a parte atual segue tocando ate ele chegar. Um por vez.
+static void parteSaltar(int k, double pos, const char *motivo) {
+  const PartesLista *sl = partes_sessao_lista();
+  if (!sl || k < 0 || k >= sl->n || parteSalto >= 0) return;
+  parteSalto = k; parteSaltoPos = pos; parteSaltoDesde = SDL_GetTicks();
+  parteSaltoUsaProx = k == parteProx && parteProxFase == 2;
+  if (!parteSaltoUsaProx) {
+    // O pedido toma o lugar do link adiantado da seguinte (um so por vez).
+    partes_link_pedir(sl->usenet, sl->item, sl->arq[k].id, 0);
+    parteProxFase = 0; parteProx = -1; parteProxUrl[0] = 0;
+  }
+  printf("[partes] %s: part %d of %d%s%s\n", motivo, partes_numero(sl, k), partes_principais(sl),
+         pos > 1.0 ? " at the chosen point" : "", parteSaltoUsaProx ? " (link ready)" : "");
+  fflush(stdout);
+}
+// 1 enquanto ha salto pendente (o resto da sessao espera).
+static int parteSaltoVigiar(const PartesLista *sl, const char *alvo) {
+  static char u[NV_MEDIA_URL_MAX];
+  int r, k = parteSalto;
+  if (k < 0) return 0;
+  if (parteSaltoUsaProx) {
+    snprintf(u, sizeof u, "%s", parteProxUrl);
+    parteSalto = -1;
+    parteTrocarPara(sl, alvo, k, u, parteSaltoPos);
+    return 1;
+  }
+  r = partes_link_estado(u, sizeof u, NULL);
+  if (r == 0 && SDL_GetTicks() - parteSaltoDesde <= 30000u) return 1;
+  if (r != 1) {
+    printf("[partes] no link for part %d: staying on this part\n", partes_numero(sl, k));
+    fflush(stdout);
+    parteSalto = -1;
+    player_toast_ex(i18n("Não foi possível abrir esta parte"), 4000, "aj_triangle-alert", 1);
+    return 1;
+  }
+  parteSalto = -1;
+  parteTrocarPara(sl, alvo, k, u, parteSaltoPos);
+  return 1;
+}
+// Abre o arquivo `k` da lista que esta tocando, como a escolha em "Arquivos
+// desta fonte" (a fileira do fim de um especial).
+static void abrirParte(int fonte, const PartesLista *l, int k);
+static void abrirArquivoDaLista(int k) {
+  static PartesLista copia;
+  if (!partes_lista_copiar(&copia, &parteArqLista) || k < 0 || k >= copia.n) return;
+  printf("[partes] file %d of %d picked in the end-of-file bar\n", k + 1, copia.n);
+  fflush(stdout);
+  abrirParte(stream_atual(), &copia, k);
+}
+// FIM DE UM ESPECIAL / OVA / EXTRA aberto pela lista (sem sessao de partes):
+// nos creditos (ou 30 s antes do fim), a fileira dos outros arquivos da fonte.
+// Sem contagem e sem tocar sozinho (dono, 23/10).
+static void vigiarFimDoArquivo(void) {
+  double d = video_duracao(), pos = video_pos(), ini;
+  int resp;
+  if (parteArqK < 0 || parteArqK >= parteArqLista.n || parteArqLista.n < 2 ||
+      parteArqLista.arq[parteArqK].tipo == PARTE_EP) return;
+  resp = partescartao_pedido();
+  if (resp >= 0 && resp < parteArqLista.n && resp != parteArqK) { abrirArquivoDaLista(resp); return; }
+  if (parteFase != PF_TOCANDO || !video_pronto() || !(d > 60.0)) return;
+  ini = video_creditos();
+  if (ini <= 1.0) ini = intro_creditos_seg();
+  if (!(ini > d * 0.5) || ini >= d - 2.0 || d - ini > 900.0) ini = d - 30.0;
+  if (pos < ini - 5.0) {
+    if (partescartao_modo_arquivos()) partescartao_fechar();
+    parteFimArqFeito = 0;
+    return;
+  }
+  if (!parteFimArqFeito && pos >= ini) {
+    parteFimArqFeito = 1;
+    partescartao_arquivos(&parteArqLista, parteArqK);
+    printf("[partes] end of file %d of %d: showing the source's other files\n", parteArqK + 1, parteArqLista.n);
+    fflush(stdout);
+  }
+}
 static void vigiarPartes(void) {
   char alvo[64];
   static char url[NV_MEDIA_URL_MAX];
@@ -2875,7 +3044,7 @@ static void vigiarPartes(void) {
   if (parteFase == PF_NADA) {
     // Sessao sem player (saiu) ou de outro alvo (outro titulo/episodio).
     if (partes_sessao_lista()) {
-      if (!player_aberto()) partes_sessao_parar("player closed");
+      if (!player_aberto()) { if (!player_quer_sair()) partes_sessao_parar("player closed"); }
       else { alvoPlayer(alvo, sizeof alvo); if (!partes_sessao_de(alvo)) partes_sessao_parar("another title"); }
     }
     if (!partes_disponivel() || !player_aberto() || player_quer_sair() || player_id_canal()[0]) {
@@ -2923,7 +3092,16 @@ static void vigiarPartes(void) {
       } }
     return;
   }
-  if (!player_aberto() || player_quer_sair() || player_id_canal()[0]) {
+  // SAINDO: a saida do player ainda vai gravar o ponto da parte (partesVirt,
+  // partes_arquivo_de). Parar a sessao aqui apagava os dois antes da hora
+  // (log da TV, 23/10: "parts session off: player closed" ANTES do fechamento,
+  // e a parte 1 de 4 fechou como um filme de 25 min "concluido"). So depois
+  // que o player fechou.
+  // A animacao de saida zera player_aberto() ANTES do fecharSessao (log da
+  // TV, 23/10: "parts session off" antes do "[visto] encerramento", e a parte
+  // 2 sem ponto nem Continuar). pediuSair so cai no fecharSessao.
+  if (player_quer_sair()) return;
+  if (!player_aberto() || player_id_canal()[0]) {
     partes_sessao_parar("player closed");
     parteZerar();
     return;
@@ -2963,6 +3141,11 @@ static void vigiarPartes(void) {
     if (video_pronto() && video_pos() > 0.25 && !video_falhou()) {
       parteFase = PF_TOCANDO;
       printf("[partes] the file plays (%u ms)\n", (unsigned)(SDL_GetTicks() - parteDesde));
+      if (parteSaltoDepois > 1.0) {
+        printf("[partes] jumping to %.0f s in the part (opened from the start)\n", parteSaltoDepois);
+        player_buscar_para(parteSaltoDepois);
+      }
+      parteSaltoDepois = -1;
       fflush(stdout);
       return;
     }
@@ -3010,30 +3193,68 @@ static void vigiarPartes(void) {
       partes_ponto_guardar(alvo, sessao_usuario(), perfis_ativo(), &pt);
       parteGuardouEm = SDL_GetTicks();
     } }
-  // Daqui para baixo, so com sessao de partes.
-  if (!partes_sessao_de(alvo)) return;
+  // ESPECIAL / OVA ABERTO PELA LISTA (sem sessao de partes): no fim, a
+  // fileira com os outros arquivos da fonte (partescartao.h), sem contagem.
+  if (!partes_sessao_de(alvo)) { vigiarFimDoArquivo(); return; }
   {
     const PartesLista *sl = partes_sessao_lista();
     int k = partes_sessao_indice(), prox = partes_seguinte(sl, k);
     double d = video_duracao(), pos = video_pos();
+    // BOTOES DO OSD (Parte anterior / Proxima parte) e saltos pela barra.
+    { int pp = player_pediu_parte(), sk;
+      double sp;
+      if (pp < 0) { int ant = parteAnterior(sl, k); if (ant >= 0) parteSaltar(ant, -1, "previous part button"); }
+      else if (pp > 0 && prox >= 0) parteSaltar(prox, -1, "next part button");
+      if (player_pediu_salto_parte(&sk, &sp)) parteSaltar(sk, sp, "whole-movie bar"); }
+    // A duracao real desta parte: a barra do filme inteiro troca a estimativa.
+    if (parteFase == PF_TOCANDO && video_pronto() && d > 1.0) partes_duracao_real(k, d);
+    if (parteSaltoVigiar(sl, alvo)) return;
     if (prox < 0) return;   // ultima parte: o fim e o do filme
-    if (parteProx != prox) { parteProx = prox; parteProxFase = 0; parteProxUrl[0] = 0; }
-    // O link da seguinte sai 60 s antes do fim, para a troca nao esperar rede.
-    if (parteProxFase == 0 && d > 120 && pos > d - 60) {
+    if (parteProx != prox) {
+      parteProx = prox; parteProxFase = 0; parteProxUrl[0] = 0;
+      parteContagemFeita = 0; partescartao_fechar();
+    }
+    // O LINK DA SEGUINTE sai logo que a parte toca (os botoes e a contagem nao
+    // esperam rede); pronto ha mais de 20 min, sai de novo 60 s antes do fim
+    // (o link do TorBox vence).
+    if (parteProxFase == 0 && parteFase == PF_TOCANDO && video_pronto() && pos > 3.0) {
+      partes_link_pedir(sl->usenet, sl->item, sl->arq[prox].id, 0);
+      parteProxFase = 1; parteProxDesde = SDL_GetTicks();
+    }
+    if (parteProxFase == 2 && d > 120 && pos > d - 60 && SDL_GetTicks() - parteProxProntoEm > 20u * 60000u) {
       partes_link_pedir(sl->usenet, sl->item, sl->arq[prox].id, 0);
       parteProxFase = 1; parteProxDesde = SDL_GetTicks();
     }
     if (parteProxFase == 1 || parteProxFase == 4) {
       r = partes_link_estado(parteProxUrl, sizeof parteProxUrl, NULL);
-      if (r == 1) parteProxFase = 2;
+      if (r == 1) { parteProxFase = 2; parteProxProntoEm = SDL_GetTicks(); }
       else if (r == -1 || r == -2) {
         if (parteProxFase == 4) { parteFalhou("no link for the next part"); return; }
         parteProxFase = 3;
       }
     }
+    // CONTAGEM NOS CREDITOS DA PARTE (capitulo do arquivo ou AniSkip; o
+    // TheIntroDB descreve o filme inteiro, nao a parte). Sem marcador, nada:
+    // a troca e no fim.
+    { double cred = parteCreditos(d);
+      int resp = partescartao_pedido();
+      if (resp == PC_PEDIDO_AGORA) { parteForcar = 1; parteFimComo = "countdown"; }
+      if (cred > 0 && pos < cred - 5.0) {
+        // Voltou para antes dos creditos: a contagem pode voltar.
+        if (partescartao_modo_contagem()) partescartao_fechar();
+        parteContagemFeita = 0;
+      } else if (cred > 0 && !parteContagemFeita && !parteForcar && pos >= cred && pos < d - 3.0 &&
+                 video_pronto() && !player_carregando()) {
+        parteContagemFeita = 1;
+        partescartao_contagem(partes_numero(sl, prox), partes_principais(sl), SDL_GetTicks(),
+                              ajustes_proximo_contagem());
+        printf("[partes] part %d credits at %.0f s of %.0f s: countdown to part %d\n",
+               partes_numero(sl, k), cred, d, partes_numero(sl, prox));
+        fflush(stdout);
+      } }
     // Fim de verdade: o fluxo acabou PERTO do fim do arquivo. Um fim de fluxo
     // no meio e queda de rede, que a reconexao do video cuida.
-    if (!video_terminou() || (d > 120 && pos < d - 90)) return;
+    if (!parteForcar && !parteNoFim(d, pos)) return;
     if (parteProxFase == 0 || parteProxFase == 3) {
       // Fim sem o link (fluxo curto, ou o pedido falhou): pede agora, uma vez.
       if (parteProxFase == 3) {
@@ -3052,19 +3273,12 @@ static void vigiarPartes(void) {
       return;
     }
     // parteProxFase == 2: troca para a parte seguinte.
-    printf("[partes] part %d ended: playing part %d of %d\n", partes_numero(sl, k),
-           partes_numero(sl, prox), partes_principais(sl));
+    printf("[partes] part %d ended (%s): playing part %d of %d\n", partes_numero(sl, k),
+           parteFimComo, partes_numero(sl, prox), partes_principais(sl));
     fflush(stdout);
     { char u[NV_MEDIA_URL_MAX];
-      PartesPonto pt = { sl->usenet, sl->item, sl->arq[prox].id, 0 };
       snprintf(u, sizeof u, "%s", parteProxUrl);
-      partes_sessao_ir(prox);
-      partes_ponto_guardar(alvo, sessao_usuario(), perfis_ativo(), &pt);
-      parteRetomada = 0; parteRenovou = 0;
-      parteArqK = prox; parteMp4 = nomeMp4(sl->arq[prox].nome);
-      player_voltar_a_esperar();
-      parteTocar(u, -1);
-      parteAviso(prox); }
+      parteTrocarPara(sl, alvo, prox, u, -1); }
   }
 }
 // ESCOLHA MANUAL QUE NAO ABRE: prazo ate o primeiro quadro (fontevolta.h).
@@ -3118,6 +3332,10 @@ static int aberturaVencida(Uint32 desde) {
   static int chaveAt = -1, chaveN = -1, chaveT = -1, semPerda;
   InicioAbertura g;
   int at;
+  // Arquivo aberto pelas partes: o prazo e o delas (45 s, so erro, sem trocar
+  // de fonte). Log da TV, 23/10: a parte 3 aberta no meio levou 20 s e o
+  // prazo de 15 s do automatico trocou para outra fonte, desfazendo a sessao.
+  if (parteFase != PF_NADA) return 0;
   if (!player_carregando() || desde <= INICIO_ABRE_SEM_SINAL_MS || video_fonte_tocou()) return 0;
   // O CAMINHO DO DV ABRINDO nao e fonte muda: o nosso demux abre o arquivo de
   // novo (22,8 s numa fonte lenta da C9, 08/10) e tem o recuo proprio (fonte
@@ -3372,6 +3590,9 @@ static void tentarProximaFonteVOD(void) {
   int atual, motivo = 0;
   if (!fonteVODAutomatica || player_id_canal()[0] || !player_aberto() ||
       player_quer_sair() || aguardandoFonte != 0 || !fonteVODDesde) return;
+  // As partes cuidam do proprio arquivo (prazo, link novo, erro): trocar de
+  // fonte aqui desfaria a sessao (log da TV, 23/10).
+  if (parteFase != PF_NADA) return;
   // Warning clips already stopped their pipeline: never reconnect or retry
   // that provider. Preserve the not-cached card when no alternative remains.
   if (player_fonte_fora_cache()) {
@@ -5911,6 +6132,20 @@ void app_atualizar(float dt, Uint32 agora) {
       // A busca de fontes sai SEMPRE (renovarListaDoPlayer): com a fonte
       // guardada ela corre em segundo plano e so serve a folha e ao recuo.
       char alvoDefinitivo[64]; alvoPlayer(alvoDefinitivo, sizeof alvoDefinitivo);
+      // O ARQUIVO GUARDADO VENCE O PREPARO: um especial/OVA (ou uma parte)
+      // aberto pela lista volta no MESMO arquivo, nao na fonte que a pagina
+      // preparou para o titulo (log da TV, 23/10: o Play do especial abriu a
+      // fonte lembrada do episodio, um arquivo de 4 min).
+      { PartesPonto ptG;
+        if (!doInicio && partes_disponivel() && debrid_tb_disponivel() > 0 &&
+            partes_ponto_pegar(alvoDefinitivo, sessao_usuario(), perfis_ativo(), &ptG)) {
+          if (usouPreparo) { limparFonteVOD(); usouPreparo = 0; }
+          if (preparoEspera) {
+            printf("[partes] Play: the saved file wins over the prepared source\n");
+            fflush(stdout);
+          }
+          preparoEspera = 0;
+        } }
       if (usouPreparo && !strcmp(alvoDefinitivo, alvoPreparo)) {
         fontePedidoGeracao = novaGeracaoFonte();
         limparFontePendente();
@@ -6451,6 +6686,13 @@ void app_atualizar(float dt, Uint32 agora) {
 
   vigiarFonteGuardada();
   vigiarPartes();
+  // A FONTE QUE TOCA FOI ESCOLHA DA PESSOA: tocada a mao pela lista, a guardada
+  // (Retomar / voltafonte) ou a lembrada para o titulo (a de antes, o
+  // bingeGroup). O aviso "parece ser outra obra" e so do automatico sozinho
+  // (dono, 23/10).
+  if (player_aberto())
+    player_definir_fonte_escolhida(!fonteVODAutomatica || voltaAtiva ||
+                                   (stream_atual() >= 0 && stream_atual() == stream_preferida()));
   guardarPosicaoFonteFalha();
   registrarFonteVODTocando();
   fitDuracaoMidia();

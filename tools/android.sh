@@ -94,7 +94,13 @@ echo "[4/5] gradle"
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/27.2.12479018}"
 FFMPEG_AAR="$EST/media3-ffmpeg-16kb.aar"
 bash tools/android/ffmpeg-android.sh "$FFMPEG_AAR" arm64-v8a armeabi-v7a
-GR=(android/gradlew -p android --console=plain -Pnuvio.sdlSrc="$CACHE/src" -Pnuvio.estagio="$EST" -Pnuvio.ffmpegAar="$FFMPEG_AAR")
+# Seek-bar thumbnails made on the device: thumbnail-only FFmpeg (src/miniatura*.c).
+MINI_FF="$CACHE/mini-ffmpeg"
+bash tools/android/ffmpeg-miniaturas.sh "$MINI_FF" arm64-v8a armeabi-v7a
+# LGPL: its license text and source pin travel with the APK.
+mkdir -p "$EST/assets/licencas/ffmpeg-miniaturas"
+cp "$MINI_FF/arm64-v8a/COPYING.LGPLv2.1" "$MINI_FF/arm64-v8a/SOURCE.txt" "$EST/assets/licencas/ffmpeg-miniaturas/"
+GR=(android/gradlew -p android --console=plain -Pnuvio.sdlSrc="$CACHE/src" -Pnuvio.estagio="$EST" -Pnuvio.ffmpegAar="$FFMPEG_AAR" -Pnuvio.miniFfmpeg="$MINI_FF")
 [ "${NUVIO_ANDROID_OFFLINE:-0}" != 1 ] || GR+=(--offline)
 # Motor P2P embutido: pasta achada por tools/p2p-motor/pasta.sh (NUVIO_P2P_MOTOR,
 # ou a pasta padrao); configurada e incompleta = erro, nunca pacote sem motor calado.

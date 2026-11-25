@@ -183,8 +183,8 @@ ctr_run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
     -I$SR/usr/include -I$SR/usr/include/SDL2 > /tmp/arm-flags
   for k in NV_SUPABASE_URL NV_SUPABASE_ANON_KEY NV_TV_LOGIN_BASE NV_TRAKT_CLIENT_ID \
            NV_TRAKT_CLIENT_SECRET NV_SIMKL_CLIENT_ID NV_SIMKL_APP NV_TMDB_API_KEY NV_SEEKR_API_KEY \
-           NV_REC_URL NV_DISCORD_CLIENT_ID NV_VERSAO; do
-    v=${!k}
+           NV_REC_URL NV_DISCORD_CLIENT_ID NV_GDRIVE_CLIENT_ID NV_GDRIVE_CLIENT_SECRET NV_VERSAO; do
+    v=${!k:-}
     v=$(printf "%s" "$v" | sed "s/[\\\\\"]/\\\\&/g")
     printf "%s\n" "\"-D$k=\\\"$v\\\"\""
   done >> /tmp/arm-flags

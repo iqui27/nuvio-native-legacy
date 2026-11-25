@@ -129,7 +129,8 @@ target_compile_options(main PRIVATE -O2 -Wno-unused-result)
 # Chaves (-D) do tools/env.sh. Sem o arquivo, ou com chave vazia, o build sai
 # com strings vazias, como o tools/build-local.sh.
 set(NV_KEYS NV_SUPABASE_URL NV_SUPABASE_ANON_KEY NV_TV_LOGIN_BASE NV_TRAKT_CLIENT_ID
-    NV_TRAKT_CLIENT_SECRET NV_SIMKL_CLIENT_ID NV_SIMKL_APP NV_TMDB_API_KEY NV_SEEKR_API_KEY NV_REC_URL NV_DISCORD_CLIENT_ID NV_VERSAO)
+    NV_TRAKT_CLIENT_SECRET NV_SIMKL_CLIENT_ID NV_SIMKL_APP NV_TMDB_API_KEY NV_SEEKR_API_KEY NV_REC_URL NV_DISCORD_CLIENT_ID
+    NV_GDRIVE_CLIENT_ID NV_GDRIVE_CLIENT_SECRET NV_VERSAO)
 if(NUVIO_ENV_CMAKE AND EXISTS "${NUVIO_ENV_CMAKE}")
   include("${NUVIO_ENV_CMAKE}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${NUVIO_ENV_CMAKE}")
@@ -144,6 +145,22 @@ target_link_libraries(main PRIVATE SDL2::SDL2 SDL2_image SDL2_ttf webpdemux webp
 # sem atributo de pilha, o fio nasce com 8 MB como no glibc da LG/Tizen, e nao
 # com o ~1 MB do bionic. O nucleo tem vetores grandes na pilha dos fios.
 target_link_options(main PRIVATE "-Wl,--wrap=pthread_create" "-Wl,--wrap=fclose" "-Wl,--wrap=rename")
+
+# Seek-bar thumbnails made on the device (src/miniatura*.c): a thumbnail-only
+# static FFmpeg per ABI, built by tools/android/ffmpeg-miniaturas.sh. Without
+# the folder the app builds as before and the seek bar has no thumbnails.
+# --exclude-libs keeps its symbols private to libmain (Media3's FFmpeg audio
+# decoder is a separate .so with its own copy).
+if(NUVIO_MINI_FFMPEG)
+  set(MINI_FF "${NUVIO_MINI_FFMPEG}/${ANDROID_ABI}")
+  if(NOT EXISTS "${MINI_FF}/lib/libavcodec.a")
+    message(FATAL_ERROR "thumbnail FFmpeg missing in ${MINI_FF} (run tools/android/ffmpeg-miniaturas.sh)")
+  endif()
+  target_compile_definitions(main PRIVATE NV_MINI_FFMPEG)
+  target_include_directories(main PRIVATE "${MINI_FF}/include")
+  target_link_libraries(main PRIVATE "${MINI_FF}/lib/libavformat.a" "${MINI_FF}/lib/libavcodec.a" "${MINI_FF}/lib/libavutil.a")
+  target_link_options(main PRIVATE "-Wl,--exclude-libs,libavformat.a:libavcodec.a:libavutil.a")
+endif()
 
 # Nucleo EBML/NAL do mkv.c em Rust (piloto, docs/plans/rust-mapa.md): so com a
 # pasta informada; vazio = o caminho C de sempre.

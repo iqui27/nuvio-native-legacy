@@ -862,13 +862,22 @@ static void escolherLegenda(int i) {
       else {
         const char *motivo = motivoTV(i);
         if (f && i != legOverlayNoGo && video_url_atual()[0] && video_mkv_sondado() == 0) {
+          // FORMATO AINDA DESCONHECIDO (a sonda do cabecalho nao voltou): a TV
+          // NAO recebe a faixa por enquanto. Se for ASS/PGS o app desenha; o
+          // desenhista da TV com ASS trava (pedido do dono, 23/10). Quando a
+          // sonda voltar, faixas_atualizar decide: app ou TV.
           legOverlayEsperando = i;
           video_sondar_mkv_agora();
+          printf("[legenda] faixa %d (%s): waiting for the file check before choosing app or TV (TV subtitles off meanwhile)\n",
+                 i, f->rotulo);
+          fflush(stdout);
+          video_escolher_legenda(-1);
+        } else {
+          printf("[legenda] faixa %d (%s, codec=%s) -> TV: %s\n", i, f ? f->rotulo : "?",
+                 f && f->codec[0] ? f->codec : "?", motivo);
+          fflush(stdout);
+          video_escolher_legenda(i);
         }
-        printf("[legenda] faixa %d (%s, codec=%s) -> TV: %s\n", i, f ? f->rotulo : "?",
-               f && f->codec[0] ? f->codec : "?", motivo);
-        fflush(stdout);
-        video_escolher_legenda(i);
       }
     }
     else {
@@ -1412,19 +1421,29 @@ void faixas_atualizar(float dt, Uint32 agora) {
     int i = legOverlayEsperando;
     const VideoFaixa *f = video_legenda(i);
     video_sondar_mkv_agora();          // se o sourceInfo chegou depois da escolha
-    if (video_mkv_sondado() != 0) {
+    // Reabrindo (mkvfix pelo servidor local): espera a URL nova em vez de
+    // desistir da escolha.
+    if (video_mkv_sondado() != 0 && video_url_atual()[0]) {
       int ord = video_legenda_ordinal_mkv(i);
       legOverlayEsperando = -1;
-      if (f && vaiOverlay(f) && ord >= 0 && video_legenda_atual() == i && video_url_atual()[0]) {
+      // A TV pode ter perdido a faixa no meio (o mkvfix reabre com as
+      // legendas de texto ESCONDIDAS dela: sel=-1). Qualquer troca da pessoa
+      // passa por escolherLegenda, que zera legOverlayEsperando; entao -1 aqui
+      // nao e "desligou", e a faixa sumiu da TV (log da TV, 23/10: a legenda
+      // lembrada ficava "na TV: ?" e nao aparecia ate escolher de novo).
+      if (f && vaiOverlay(f) && ord >= 0 && (video_legenda_atual() == i || video_legenda_atual() < 0)) {
         printf("[legenda] sonda voltou: faixa %d (%s), o app assume\n", i, f->codec);
         overlayAssumir(i, ord);
       } else {
         printf("[legenda] sonda voltou: faixa %d (%s, codec=%s) fica na TV: %s\n", i,
                f ? f->rotulo : "?", f && f->codec[0] ? f->codec : "?", motivoTV(i));
         fflush(stdout);
+        // Nao e ASS/PGS (nem vai ao overlay): agora sim a TV recebe a faixa,
+        // que ficou desligada enquanto a sonda nao voltava.
+        if (f && !(vaiOverlay(f) && video_legenda_ordinal_mkv(i) >= 0) && !ehAss(f)) video_escolher_legenda(i);
         // Sem par no arquivo e uma falha do casamento, nao da TV: avisa, para
         // a pessoa poder mandar o log em vez de achar que a legenda e assim.
-        if (f && !f->codec[0] && video_mkv_sondado() == 1)
+        if (f && !f->codec[0] && !ehAss(f) && video_mkv_sondado() == 1)
           player_toast_ex(i18n("Legenda: n\xc3\xa3o deu para casar as faixas com o arquivo; a TV desenha"), 6000, "aj_triangle-alert", 1);
       }
     }

@@ -403,7 +403,11 @@ static struct {
   // quando o cabecalho ja mostrou ASS/SSA; senao, uma reabertura cedo.
   int esperando; Uint32 esperaDesde;
   int reabriuLeg;
+  Uint32 ligouEm;        // ultima reabertura pelo servidor local (mfLigar)
 } mf;
+// A reconexao em curso comecou com a sonda do mkvfix no ar (ou logo depois de
+// reabrir pelo servidor local): nao e rede, e o arquivo sendo preparado.
+static int reconPreparo;
 static char mfEspUrl[sizeof urlAtual], mfEspCab[sizeof cabecalhos];
 static int mfEsperarAntes(const char *url, const char *cab);
 static atomic_int mfRecusas;   // EV_BUSCA_FALHOU (fio do host)
@@ -684,7 +688,7 @@ static volatile int cartaoSemCover = 0;
 static void mfLigar(double alvo, const char *porque) {
   printf("[mkvfix] %s at %.1f s: reopening through the local fix\n", porque, alvo);
   fflush(stdout);
-  mf.ativo = 1; mf.pend = 0;
+  mf.ativo = 1; mf.pend = 0; mf.ligouEm = SDL_GetTicks() | 1u;
   reconAudio = audioAtual; reconLeg = legAtual; reconFaixasPend = 1;
   reconBuscarMs = alvo > 1.0 ? (int)(alvo * 1000.0) : -1;
   cv.reabrindo = 1; cv.posMantida = alvo; cv.reabriuEm = SDL_GetTicks(); cv.reabTocandoEm = 0;
@@ -708,6 +712,7 @@ static void mfSondar(void) {
 // centenas de ms) e o player ja nasce no servidor local; sem resposta em
 // MF_ESPERA_MS, abre o link como sempre e a reabertura cedo cobre depois.
 #define MF_ESPERA_MS 4000u
+#define MF_SEGURA_MS 3000u   // um seek espera a sonda no maximo isto (a sonda leva 0,2-0,4 s)
 static int mkvTemAss(void) {
   for (int i = 0; i < mkvN; i++)
     if (mkvFx[i].tipo == 17 && (!strcmp(mkvFx[i].codec, "S_TEXT/ASS") || !strcmp(mkvFx[i].codec, "S_TEXT/SSA") ||
@@ -765,11 +770,40 @@ static void mfBombear(void) {
   if (pronto && !mf.sondou) mfSondar();
   if (!mf.sondou) return;
   e = mkvfix_estado();
-  if (e == MKVFIX_SONDANDO) return;
+  // SEEK SEGURADO (video_buscar): a TV nao recebe o seek enquanto a sonda
+  // corre — num arquivo de indice escondido ela falha e vira "conexao caiu"
+  // (log da TV, 23/10: o seek do Retomar saia ~300 ms antes do fim da sonda).
+  // Sonda sem resposta em MF_SEGURA_MS: o seek vai cru, como antes.
+  if (e == MKVFIX_SONDANDO) {
+    if (mf.pend && SDL_GetTicks() - mf.pendEm >= MF_SEGURA_MS) {
+      mf.pend = 0;
+      printf("[mkvfix] no answer from the check in %u ms: seek to %.1f s goes to the TV as is\n",
+             MF_SEGURA_MS, mf.pendAlvo);
+      fflush(stdout);
+      if (ativo && !parado && hBuscar) hBuscar((int)(mf.pendAlvo * 1000.0));
+    }
+    return;
+  }
   if (mf.pend) {
+    Uint32 esperou = SDL_GetTicks() - mf.pendEm;
     mf.pend = 0;
-    if (e == MKVFIX_PRECISA && !mf.ativo && !cv.ativo && ativo && !parado && SDL_GetTicks() - mf.pendEm < 20000u)
+    if (e == MKVFIX_PRECISA && !mf.ativo && !cv.ativo && ativo && !parado && esperou < 20000u) {
+      printf("[mkvfix] seek to %.1f s held %u ms for the check\n", mf.pendAlvo, (unsigned)esperou);
       mfLigar(mf.pendAlvo, "seek asked during the check (the TV can't seek this file as served)");
+    } else if (mkvfix_ocultas() > 0 && !mf.ativo && !mf.reabriuLeg && !cv.ativo && ativo && !parado && pronto) {
+      // A reabertura que esconde as legendas vem logo abaixo e usaria a
+      // posicao de AGORA (o seek recem-mandado ainda nao chegou: 0 s). Log da
+      // TV, 23/10: o Retomar em 459 s voltava ao inicio. Reabre ja no alvo.
+      mf.reabriuLeg = 1;
+      printf("[mkvfix] seek to %.1f s held %u ms for the check\n", mf.pendAlvo, (unsigned)esperou);
+      mfLigar(mf.pendAlvo, "subtitle tracks hidden from the TV player (it hangs on some ASS drawings)");
+      return;
+    } else if (ativo && !parado && hBuscar) {
+      printf("[mkvfix] seek to %.1f s held %u ms for the check: the TV seeks it directly\n",
+             mf.pendAlvo, (unsigned)esperou);
+      fflush(stdout);
+      hBuscar((int)(mf.pendAlvo * 1000.0));
+    }
   }
   // Cabecalho sem ASS conhecido antes de abrir: a sonda de depois do pronto
   // achou legenda a esconder. Reabre cedo, uma vez, no ponto atual.
@@ -914,6 +948,8 @@ int  video_recarregar(void) { return 0; }
 int  video_reconectando(void) {
   return nv_recon_ativa(&recon) && (recon.pendente || !pronto) ? recon.tentativa : 0;
 }
+int  video_tpk_reconexao_preparo(void) { return video_reconectando() && reconPreparo; }
+unsigned video_tpk_seek_segurado_ms(void) { return mf.pend ? (SDL_GetTicks() - mf.pendEm) | 1u : 0u; }
 
 typedef struct { char url[sizeof urlAtual]; unsigned geracao; } PedidoMkv;
 
@@ -1772,11 +1808,22 @@ void video_bombear(void) {
     if (reconPermitida && urlAtual[0] && (reconIniciou || recon.tentativa) &&
         nv_recon_erro(&recon, rede, SDL_GetTicks(), alvoMs >= 0 ? alvoMs / 1000.0 : pos)) {
       if (alvoMs >= 0) recon.alvo = alvoMs / 1000.0;
-      if (!antes) { reconAudio = audioAtual; reconLeg = legAtual; }
+      if (!antes) {
+        reconAudio = audioAtual; reconLeg = legAtual;
+        // A sonda do mkvfix no ar, um seek segurado por ela, ou a reabertura
+        // pelo servidor local ha pouco: e o arquivo sendo preparado, nao rede.
+        reconPreparo = mf.pend || (mf.sondou && mkvfix_estado() == MKVFIX_SONDANDO) ||
+                       (mf.ligouEm && SDL_GetTicks() - mf.ligouEm < 8000u);
+      }
       if (recon.tentativa != antes) {
-        printf("[video] conexao caiu (0x%x): tentativa %d/%d, espera %us\n",
-               (unsigned)reconErroCod, recon.tentativa, NV_RECON_MAX,
-               nv_recon_espera_ms(recon.tentativa) / 1000u);
+        if (reconPreparo)
+          printf("[video] seek failed during the mkvfix check (0x%x): retry %d/%d in %us\n",
+                 (unsigned)reconErroCod, recon.tentativa, NV_RECON_MAX,
+                 nv_recon_espera_ms(recon.tentativa) / 1000u);
+        else
+          printf("[video] conexao caiu (0x%x): tentativa %d/%d, espera %us\n",
+                 (unsigned)reconErroCod, recon.tentativa, NV_RECON_MAX,
+                 nv_recon_espera_ms(recon.tentativa) / 1000u);
         fflush(stdout);
       }
       bufferando = 0;
@@ -1882,7 +1929,13 @@ void video_buscar(double s) {
     if (mf.sondou) {
       int e = mkvfix_estado();
       if (e == MKVFIX_PRECISA) { mfLigar(s, "seek (the TV can't seek this file as served)"); terminou = 0; return; }
-      if (e == MKVFIX_SONDANDO) { mf.pend = 1; mf.pendAlvo = s; mf.pendEm = SDL_GetTicks(); }
+      if (e == MKVFIX_SONDANDO) {
+        // Segura ate a sonda responder (mfBombear); o seek mais novo vence.
+        if (!mf.pend) mf.pendEm = SDL_GetTicks();
+        mf.pend = 1; mf.pendAlvo = s;
+        terminou = 0;
+        return;
+      }
     }
   }
   if (hBuscar) hBuscar((int)(s * 1000.0));

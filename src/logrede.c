@@ -1,4 +1,5 @@
 // Ver logrede.h para o porque e as regras.
+#include "miniplat.h"
 #include "logrede.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -148,6 +149,7 @@ const char *logrede_url(void) { return ""; }
 //   1 Source picking      — como a fonte foi escolhida
 //   2 Won't open          — o player recusou a fonte antes de tocar
 //   3 Error while playing — a fonte tocou e depois deu erro / parou
+//   4 Thumbnails          — miniaturas da barra feitas na TV (.tpk: miniatura.c)
 static const char *const F_FONTE[] = {
   "[fonte", "[voltafonte", "[addons", "[addon]", "[preparo", "[proximo", "[debrid", "[verif",
   "[next", "proximo episodio", "buscando fontes", "automatico", "auto-play", "auto pick",
@@ -166,13 +168,17 @@ static const char *const F_TOCAR[] = {
   "tocando agora", "fonte escolhida", "pipeline open", "opened ok", "[abrir-diag] started", "[fonte-cdn]", "[partes]", "[mkvfix]", "[logrede]",
   "[seek]", NULL
 };
-static const char *const *const FILTROS[4] = { NULL, F_FONTE, F_ABRIR, F_TOCAR };
-static const char *const NOMES_ARQ[4] = { "nuvio-log.txt", "nuvio-source-picking.txt", "nuvio-wont-open.txt",
-                                          "nuvio-error-while-playing.txt" };
+static const char *const F_MINI[] = {
+  "[miniatura]", "[minidrive]", "[gdrive]", "[mem]", "[dts-tpk]", "[player] pronto", "tpk evento 11",
+  "[mkvfix]", "[logrede]", NULL
+};
+static const char *const *const FILTROS[5] = { NULL, F_FONTE, F_ABRIR, F_TOCAR, F_MINI };
+static const char *const NOMES_ARQ[5] = { "nuvio-log.txt", "nuvio-source-picking.txt", "nuvio-wont-open.txt",
+                                          "nuvio-error-while-playing.txt", "nuvio-thumbnails.txt" };
 static int linhaDoFiltro(const char *l, int modo) {
   char b[1024];
   size_t i;
-  if (modo <= 0 || modo > 3) return 1;
+  if (modo <= 0 || modo > 4) return 1;
   for (i = 0; i + 1 < sizeof b && l[i]; i++) b[i] = (char)tolower((unsigned char)l[i]);
   b[i] = 0;
   for (int k = 0; FILTROS[modo][k]; k++) if (strstr(b, FILTROS[modo][k])) return 1;
@@ -257,14 +263,18 @@ static const char PAGINA[] =
 "#log{padding:8px 12px 40px;white-space:pre-wrap;word-break:break-word}"
 ".l{padding:1px 0}.f{color:var(--fonte)}.d{color:var(--diag)}.n{color:var(--next)}.e{color:var(--erro)}.a{color:var(--abrir)}.h{color:#fff;font-weight:700;margin-top:10px;border-top:1px solid #333}.x{display:none}"
 "</style></head><body><header><b>Nuvio log</b>"
-"<button id=b1 class=on>Source picking</button><button id=b2>Won't open</button><button id=b3>Error while playing</button><button id=b0>Everything</button>"
+"<button id=b1 class=on>Source picking</button><button id=b2>Won't open</button><button id=b3>Error while playing</button>"
+#ifdef NV_MINIATURAS
+"<button id=b4>Thumbnails</button>"
+#endif
+"<button id=b0>Everything</button>"
 "<input id=q placeholder='Search (e.g. REFUSED, track #, T7)'>"
 "<button id=ba class=on>Auto-scroll</button><button id=bc>Clear</button>"
 "<a class=b id=dl href='/fonte.txt?baixar=1'>Download</a><span id=st></span>"
 "</header>"
 "<div id=log></div><script>"
 "var de=-1,f=1,auto=1,q='',gen=0,L=document.getElementById('log'),S=document.getElementById('st');"
-"var ARQ=['/log.txt','/fonte.txt','/abrir.txt','/tocar.txt'],BT=[b0,b1,b2,b3];"
+"var ARQ=['/log.txt','/fonte.txt','/abrir.txt','/tocar.txt','/miniatura.txt'],BT=[b0,b1,b2,b3,window.b4||null];"
 "function cls(t){return /=====/.test(t)?'h':/REFUSED|FAILED|failed AFTER|NOT CHANGED/.test(t)?'e':/\\[abrir-diag\\]|\\[tocar-diag\\]/.test(t)?'a':/\\[fonte-diag\\]/.test(t)?'d':/next/i.test(t)?'n':/(falh|erro|error|fail|refused)/i.test(t)?'e':/\\[fonte/.test(t)?'f':''}"
 "function vis(d){return !q||d.textContent.toLowerCase().indexOf(q)>=0}"
 "function add(txt){var fr=document.createDocumentFragment();txt.split('\\n').forEach(function(t){if(!t)return;"
@@ -275,9 +285,9 @@ static const char PAGINA[] =
 "if(r.headers.get('X-Novo')==='1')L.textContent='';if(x!==null)de=+x;return r.text()}).then(function(t){if(g!==gen)return;if(t)add(t);"
 "S.textContent=(L.childNodes.length?L.childNodes.length+' lines':'no lines yet')+' • live • '+new Date().toLocaleTimeString()})"
 ".catch(function(){S.textContent='TV not answering, retrying…'}).then(function(){if(g===gen)setTimeout(puxar,1500)})}"
-"function modo(v){f=v;for(var i=0;i<4;i++)BT[i].classList.toggle('on',i===v);"
+"function modo(v){f=v;for(var i=0;i<5;i++)if(BT[i])BT[i].classList.toggle('on',i===v);"
 "dl.href=ARQ[v]+'?baixar=1';gen++;de=-1;L.textContent='';S.textContent='loading…';puxar()}"
-"b0.onclick=function(){modo(0)};b1.onclick=function(){modo(1)};b2.onclick=function(){modo(2)};b3.onclick=function(){modo(3)};"
+"b0.onclick=function(){modo(0)};b1.onclick=function(){modo(1)};b2.onclick=function(){modo(2)};b3.onclick=function(){modo(3)};if(BT[4])BT[4].onclick=function(){modo(4)};"
 "ba.onclick=function(){auto=!auto;ba.classList.toggle('on',auto)};bc.onclick=function(){L.textContent=''};"
 "document.getElementById('q').oninput=function(e){q=e.target.value.toLowerCase();filtrar()};"
 "puxar();"
@@ -285,7 +295,7 @@ static const char PAGINA[] =
 
 // Le [ini, ini+max) do arquivo, so linhas inteiras, limpas. *fim = onde parou.
 static char *lerTrecho(const char *arq, long de, long max, int filtrar, long *fim, int *novo, size_t *n) {
-  // filtrar: 0 tudo, 1..3 a aba (FILTROS)
+  // filtrar: 0 tudo, 1..4 a aba (FILTROS)
   FILE *f = fopen(arq, "rb");
   struct stat st;
   long tam, ini;
@@ -383,15 +393,17 @@ static void atender(int c) {
     return;
   }
   if (!strncmp(caminho, "/log.txt", 8) || !strncmp(caminho, "/fonte.txt", 10) ||
-      !strncmp(caminho, "/abrir.txt", 10) || !strncmp(caminho, "/tocar.txt", 10)) {
+      !strncmp(caminho, "/abrir.txt", 10) || !strncmp(caminho, "/tocar.txt", 10) ||
+      !strncmp(caminho, "/miniatura.txt", 14)) {
     const char *qs = strchr(caminho, '?'), *v;
     long de = -1, fim = 0, max = LR_PASSO;
     int novo = 0, baixar = 0, filtrar = !strncmp(caminho, "/fonte.txt", 10) ? 1 : !strncmp(caminho, "/abrir.txt", 10) ? 2
-                                      : !strncmp(caminho, "/tocar.txt", 10) ? 3 : 0;
+                                      : !strncmp(caminho, "/tocar.txt", 10) ? 3
+                                      : !strncmp(caminho, "/miniatura.txt", 14) ? 4 : 0;
     size_t n = 0;
     char *txt, extra[200];
     if (qs && (v = strstr(qs, "de="))) de = strtol(v + 3, NULL, 10);
-    if (qs && ((v = strstr(qs, "?f=")) || (v = strstr(qs, "&f=")))) { filtrar = atoi(v + 3); if (filtrar < 0 || filtrar > 3) filtrar = 0; }
+    if (qs && ((v = strstr(qs, "?f=")) || (v = strstr(qs, "&f=")))) { filtrar = atoi(v + 3); if (filtrar < 0 || filtrar > 4) filtrar = 0; }
     if (qs && strstr(qs, "baixar=1")) { baixar = 1; de = -1; max = filtrar ? LR_FILTRO_LER : LR_BAIXAR; }
     else if (de < 0) max = filtrar ? LR_FILTRO_LER : LR_INICIO;
     if (!arq[0] || !(txt = lerTrecho(arq, de, max, filtrar, &fim, &novo, &n))) {
