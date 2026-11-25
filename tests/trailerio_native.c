@@ -1,4 +1,5 @@
 #include "ajustes.h"
+#include "plrui.h"
 #include "trailer.h"
 #include "trailerio.h"
 #include "video.h"
@@ -16,9 +17,43 @@ static int appleDone, imdbDone, mp4Mode, appleOpens, imdbOpens;
 static const char *appleUrl, *imdbUrl;
 static double position, duration;
 static int seeks;
+static float uiScale = 1.0f, drawScale = 1.0f;
+static float barX, barY, barW, barScale;
+static GfxRect pauseButton;
+static int bars, buttons;
 
 Uint32 SDL_GetTicks(void) { return ticks; }
 float gfx_escala_tela_txt(void) { return 1.0f; }
+float gfx_escala_ui(void) { return uiScale; }
+float gfx_escala_entrar(void) { float anterior = drawScale; drawScale = uiScale; return anterior; }
+void gfx_escala_sair(float anterior) { drawScale = anterior; }
+void gfx_veu_css(GfxRect r, int edge, float curve, float end, float alpha) {
+  (void)r; (void)edge; (void)curve; (void)end; (void)alpha;
+  assert(0 && "No full-screen dimming over webOS trailers");
+}
+void gfx_icone(GfxRect r, const char *name, float red, float green, float blue, float a) {
+  (void)r; (void)name; (void)red; (void)green; (void)blue; (void)a;
+}
+TxtLinha txt_linha(TxtEstilo style, const char *s, int r, int g, int b, int a) {
+  (void)style; (void)r; (void)g; (void)b; (void)a;
+  return (TxtLinha){.w = (int)strlen(s) * 12, .h = 28};
+}
+TxtLinha txt_linha_corta(TxtEstilo style, const char *s, int r, int g, int b, int a, float maxW) {
+  TxtLinha line = txt_linha(style, s, r, g, b, a);
+  if (line.w > maxW) line.w = (int)maxW;
+  return line;
+}
+void txt_desenhar_alpha(TxtLinha l, float x, float y, float a) { (void)l; (void)x; (void)y; (void)a; }
+void plrui_material(GfxRect r, float radius, int modal, float a) { (void)r; (void)radius; (void)modal; (void)a; }
+void plrui_sep(float x, float y, float a) { (void)x; (void)y; (void)a; }
+int plrui_tinta(void) { return 0; }
+void plrui_pilula_foco(GfxRect r, float a) { (void)a; pauseButton = r; buttons++; }
+void plrui_tempo(char *b, size_t n, double s) { snprintf(b, n, "%.0f", s); }
+void plrui_barra(float x, float y, float w, float frac, float buf, int focus,
+                 const float *caps, int nCaps, float a) {
+  (void)frac; (void)buf; (void)focus; (void)caps; (void)nCaps; (void)a;
+  bars++; barX = x; barY = y; barW = w; barScale = drawScale;
+}
 float ajustes_trailer_zoom(void) { return 1.0f; }
 int ajustes_trailer_fonte(void) { return 0; }
 int video_iniciar_auto(void) { return 1; }
@@ -36,6 +71,7 @@ void video_bombear(void) {}
 void video_pausar(int p) { playing = !p; }
 double video_pos(void) { return position; }
 double video_duracao(void) { return duration; }
+double video_buffer_fim(void) { return duration; }
 void video_buscar(double seconds) { seeks++; position = seconds; }
 void video_volume(int volume) { (void)volume; }
 void video_janela(int x, int y, int w, int h) {
@@ -123,12 +159,25 @@ int main(void) {
   assert(trailer_evento(&left) && seeks == 1 && position == 0.0);
   assert(trailer_evento(&left) && seeks == 1 && position == 0.0);
   assert(trailer_evento(&right) && seeks == 2 && position == 10.0 && playing);
+  trailer_osd_desenhar("Test", 1.0f);
+  assert(bars == 1 && barX == 64.0f && barY == 960.0f && barW == 1792.0f && buttons == 0);
   assert(trailer_evento(&ok) && trailer_pausado() && !playing);
+  trailer_osd_desenhar("Test", 1.0f);
+  assert(bars == 2 && barY == 902.0f && buttons == 1 && pauseButton.x == barX && pauseButton.y == 940.0f);
+  uiScale = 1.25f;
+  drawScale = 1.10f;
+  trailer_osd_desenhar("Test", 1.0f);
+  assert(bars == 3 && barScale == uiScale && drawScale == 1.10f);
+  assert(barY == 686.0f && barW == 1408.0f && pauseButton.y == 724.0f);
   assert(trailer_evento(&right) && seeks == 3 && position == 20.0 && !playing);
   assert(trailer_evento(&right) && seeks == 4 && position == duration);
   right.key.repeat = 1;
   position = 10.0;
   assert(trailer_evento(&right) && seeks == 4 && position == 10.0);
+  assert(trailer_evento(&ok) && !trailer_pausado() && playing);
+  ticks += 3002;
+  trailer_osd_desenhar("Test", 1.0f);
+  assert(bars == 3 && buttons == 2 && drawScale == 1.10f);
   assert(trailer_evento(&back));
   assert(!trailer_aberto() && !active && stops == 1);
 

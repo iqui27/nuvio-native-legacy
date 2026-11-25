@@ -8,6 +8,7 @@
 #include "linguas.h"
 #include "video.h"      // trailer_osd_desenhar reads video_pos/duracao on every target
 #ifdef NV_WEBOS
+#include "escala.h"
 #include "trailerio.h"
 #include "trailerapple.h"
 #include "trailerimdb.h"
@@ -849,12 +850,31 @@ void trailer_osd_desenhar(const char *titulo, float a) {
 #endif
   if (!mostrar || a < 0.01f) return;
   double pos = video_pos(), dur = video_duracao();
+#ifdef NV_WEBOS
+  ESCALA_INI();
+  const float margem = NV_PLAYER_OSD_MARGIN, largura = NV_VTELA_W;
+  const float yBarra = NV_VTELA_H - (emPausa ? NV_PLAYER_OSD_BAR_BOTTOM : NV_PLAYER_OSD_SEEK_BOTTOM);
+  const float yBotao = yBarra + NV_PLAYER_OSD_ROW_GAP;
+  const float yTitulo = yBarra - NV_PLAYER_OSD_TITLE_GAP - 56.0f;
+  const float yTempo = yBotao + NV_PLAYER_OSD_BUTTON_SIZE * 0.5f;
+#else
+  const float margem = 96.0f, largura = NV_TELA_W;
+  const float yBarra = 1000.0f, yBotao = 896.0f, yTitulo = 48.0f;
   gfx_veu_css((GfxRect){ 0, 0, NV_TELA_W, 260.0f }, 1, 1.38f, 1.0f, 0.52f * a);
   gfx_veu_css((GfxRect){ 0, NV_TELA_H - 300.0f, NV_TELA_W, 300.0f }, 0, 1.0f, 1.0f, 0.60f * a);
-  { TxtLinha l1 = txt_linha(TXT_ILHA_NOME, "Trailer", 243, 242, 239, 255);
-    TxtLinha l2 = txt_linha_corta(TXT_ILHA_CORPO, titulo ? titulo : "", 243, 242, 239, 179, 900.0f);
+#endif
+  if (emPausa) {
+    TxtLinha l1 = txt_linha(TXT_ILHA_NOME, "Trailer", 243, 242, 239, 255);
+    float tituloMax = 900.0f;
+#ifdef NV_WEBOS
+    const float disponivel = largura - 2.0f * margem - l1.w - (24.0f + 24.0f + 12.0f + 25.0f + 24.0f);
+    if (disponivel < tituloMax) tituloMax = disponivel > 0.0f ? disponivel : 0.0f;
+#endif
+    TxtLinha l2 = tituloMax > 0.0f
+      ? txt_linha_corta(TXT_ILHA_CORPO, titulo ? titulo : "", 243, 242, 239, 179, tituloMax)
+      : (TxtLinha){0};
     float w = 24.0f + 24.0f + 12.0f + (float)l1.w + (l2.w ? 12.0f + 1.0f + 12.0f + (float)l2.w : 0.0f) + 24.0f;
-    GfxRect p = { 96.0f, 48.0f, w, 56.0f };
+    GfxRect p = { margem, yTitulo, w, 56.0f };
     float x = p.x + 24.0f, yc = p.y + 28.0f;
     plrui_material(p, 28.0f, 0, a);
     gfx_icone((GfxRect){ x, yc - 12.0f, 24.0f, 24.0f }, "pl_clapperboard", 1, 1, 1, a);
@@ -864,24 +884,38 @@ void trailer_osd_desenhar(const char *titulo, float a) {
     if (l2.w) { plrui_sep(x, yc, a); txt_desenhar_alpha(l2, x + 13.0f, yc - (float)l2.h * 0.5f, a); } }
   if (dur > 1.0) {
     char t1[24], d[24], t2[32];
-    plrui_barra(96.0f, 1000.0f, NV_TELA_W - 192.0f, (float)(pos / dur),
+    plrui_barra(margem, yBarra, largura - 2.0f * margem, (float)(pos / dur),
                 (float)(video_buffer_fim() / dur), 0, NULL, 0, a);
     plrui_tempo(t1, sizeof t1, pos); plrui_tempo(d, sizeof d, dur);
-    snprintf(t2, sizeof t2, "/ %s", d);
-    { TxtLinha l2 = txt_linha(TXT_ILHA_NOME, t2, 243, 242, 239, 128);
-      TxtLinha l1 = txt_linha(TXT_ILHA_NOME, t1, 243, 242, 239, 235);
-      float xr = NV_TELA_W - 96.0f - l2.w;
-      txt_desenhar_alpha(l2, xr, 916.0f, a);
-      txt_desenhar_alpha(l1, xr - 8.0f - l1.w, 916.0f, a); }
+    snprintf(t2, sizeof t2, emPausa ? "/ %s" : "%s", d);
+    TxtLinha l2 = txt_linha(TXT_ILHA_NOME, t2, 243, 242, 239, 128);
+    TxtLinha l1 = txt_linha(TXT_ILHA_NOME, t1, 243, 242, 239, 235);
+    const float xr = largura - margem - l2.w;
+    if (emPausa) {
+#ifdef NV_WEBOS
+      const float y = yTempo - (float)l1.h * 0.5f;
+#else
+      const float y = 916.0f;
+#endif
+      txt_desenhar_alpha(l2, xr, y, a);
+      txt_desenhar_alpha(l1, xr - 8.0f - l1.w, y, a);
+    } else {
+      const float y = yBarra + NV_PLAYER_OSD_SEEK_TIME_GAP;
+      txt_desenhar_alpha(l1, margem, y, a);
+      txt_desenhar_alpha(l2, xr, y, a);
+    }
   }
   if (emPausa) {
     TxtLinha l = txt_linha(TXT_G21B, "Continuar", 0, 0, 0, 255);
-    GfxRect b = { 96.0f, 896.0f, 22.0f + 28.0f + 12.0f + (float)l.w + 28.0f, 68.0f };
+    GfxRect b = { margem, yBotao, 22.0f + 28.0f + 12.0f + (float)l.w + 28.0f, NV_PLAYER_OSD_BUTTON_SIZE };
     float k = plrui_tinta() / 255.0f;
     plrui_pilula_foco(b, a);
     gfx_icone((GfxRect){ b.x + 22.0f, b.y + 20.0f, 28.0f, 28.0f }, "pl_play-f", k, k, k, a);
     l = txt_linha(TXT_G21B, "Continuar", plrui_tinta(), plrui_tinta(), plrui_tinta(), 255);
-    txt_desenhar_alpha(l, b.x + 22.0f + 28.0f + 12.0f, b.y + (68.0f - (float)l.h) * 0.5f, a); }
+    txt_desenhar_alpha(l, b.x + 22.0f + 28.0f + 12.0f, b.y + (b.h - (float)l.h) * 0.5f, a); }
+#ifdef NV_WEBOS
+  ESCALA_FIM();
+#endif
 }
 #ifdef NV_SHOT_HOOKS
 void trailer_shot_pausado(int sim) { aberto = cheia = sim; pausado = sim; }

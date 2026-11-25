@@ -202,24 +202,23 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 // video real entrar, a duracao vem do decodificador e esta constante morre.
 #define PLR_DUR_PADRAO   (114.0f * 60.0f)
 // GEOMETRIA DO OSD — GLASS UI (mockup aprovado em 03/10, player-mockup.html).
-// Uma margem so, 96, para titulo, barra, botoes, tempo, selos e a ilha da hora
-// (era 64 em parte disso e a barra ia de ponta a ponta). A barra tem cantos
+// A margem da ilha alinha titulo, barra, botoes, tempo e selos. A barra tem cantos
 // redondos (plrui_barra, a mesma da pausa e do ao vivo), os botoes sao discos
 // de 68 no material da ilha e o focado vira a pilula no acento com o nome.
 #define PLR_PAD_X         PLR_MARGEM
 #define PLR_PAD_Y         48.0f
-#define PLR_MARGEM        NV_ILHA_MARGEM_D   // a margem da ilha do relogio (Home e player)
-#define PLR_BTN_D         68.0f
+#define PLR_MARGEM        NV_PLAYER_OSD_MARGIN
+#define PLR_BTN_D         NV_PLAYER_OSD_BUTTON_SIZE
 #define PLR_BTN_GAP       12.0f
-#define PLR_GAP_ROW       38.0f   // topo da barra -> topo dos botoes
+#define PLR_GAP_ROW       NV_PLAYER_OSD_ROW_GAP
 #define PLR_TOQUE_CELULA  144.0f  // antes da escala UI; 48 dp numa tela de 360 dp
 // Onde a barra fica (topo do trilho): com o OSD inteiro, e na busca so com a
 // barra (#128) — mais baixa, sem nada embaixo dela alem do tempo. Com o Seekr
 // ligado a busca deixa 30 px a mais para a ilha da miniatura.
 // Ancoradas na BASE da tela do OSD: o OSD e camada ampliada (escala.h) e mede
 // pela tela virtual. Em 1080 sao 902, 960 e 930, como no mockup.
-#define PLR_BARRA_Y      (NV_VTELA_H - 178.0f)
-#define PLR_BARRA_Y_SO   (NV_VTELA_H - 120.0f)
+#define PLR_BARRA_Y      (NV_VTELA_H - NV_PLAYER_OSD_BAR_BOTTOM)
+#define PLR_BARRA_Y_SO   (NV_VTELA_H - NV_PLAYER_OSD_SEEK_BOTTOM)
 #define PLR_BARRA_Y_SEEKR (NV_VTELA_H - 150.0f)
 // De quanto o bloco desliza para baixo quando escondido. Pequeno de proposito:
 // o que faz o movimento ser lido nao e a distancia, e a mola somada ao fade.
@@ -8542,7 +8541,7 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
   // A fileira de capitulos ocupa o lugar do titulo: ele apaga enquanto ela esta aberta.
   float acSemTitulo = ac;
   ac *= 1.0f - capAnim;
-  { float yBase = yBarra - 36.0f;
+  { float yBase = yBarra - NV_PLAYER_OSD_TITLE_GAP;
     const char *marca = (!canalSessao && c) ? artehero_logo_sessao(c) : NULL;
     GLuint logo = marca ? tex_obter_larg_qualquer(marca, 480) : 0;
     if (!canalSessao && linhaEp[0]) {
@@ -8700,12 +8699,12 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
         if (ajustes_seekr_ligado()) snprintf(r, sizeof r, "%s", d);
         else { char f[24]; plrui_tempo(f, sizeof f, (filme ? bTot - bOff : duracaoSeg) - posSeg); snprintf(r, sizeof r, "\xe2\x88\x92%s", f); }
         l2 = txt_linha(TXT_ILHA_NOME, r, 243, 242, 239, 128);
-        txt_desenhar_alpha(l1, cx, yBarra + 32.0f, a * (1.0f - cheio));
+        txt_desenhar_alpha(l1, cx, yBarra + NV_PLAYER_OSD_SEEK_TIME_GAP, a * (1.0f - cheio));
 #ifdef NV_TPK
         if (vooAtivo && !scrubbing)
-          plrui_anel(cx + l1.w + 26.0f, yBarra + 32.0f + l1.h * 0.5f, 24.0f, 0, agora, a * (1.0f - cheio));
+          plrui_anel(cx + l1.w + 26.0f, yBarra + NV_PLAYER_OSD_SEEK_TIME_GAP + l1.h * 0.5f, 24.0f, 0, agora, a * (1.0f - cheio));
 #endif
-        txt_desenhar_alpha(l2, cx + cw - l2.w, yBarra + 32.0f, a * (1.0f - cheio));
+        txt_desenhar_alpha(l2, cx + cw - l2.w, yBarra + NV_PLAYER_OSD_SEEK_TIME_GAP, a * (1.0f - cheio));
       }
     }
   }
