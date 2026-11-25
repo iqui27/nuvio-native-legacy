@@ -5800,6 +5800,12 @@ void player_atualizar(float dt, Uint32 agora) {
     // Move a janela de colheita da legenda ASS embutida (#92). Barato: so
     // acorda o fio quando a posicao andou meio segundo.
     mkvass_passo(posSeg);
+    // #772: o salto de posicao (seek, reconexao, descontinuidade de PTS) e
+    // medido no numero do VIDEO — posSeg aqui e o currentTime cru do pipeline
+    // (no TPK, o alvo do seek em voo). O relogio da legenda limita a leitura
+    // (relogio_ler) e para durante a reconexao: por ele o quadro ASS velho
+    // sobreviveria a troca de cena inteira.
+    assrender_posicao_video(posSeg);
     // Folga do buffer de video para a VARREDURA pausar (webOS informa o fim
     // do buffer; no Tizen video_buffer_fim e 0 = desconhecido, sem pausa).
     { double bf = video_buffer_fim();
@@ -6786,7 +6792,8 @@ static void desenharLegendaPrincipal(float *topoPilha){
   int atraso = legsync_offset_ms(legEstilo.atrasoMs);
   // Escala/trechos aceitos: o instante na legenda, nao no video (o mesmo
   // para libass e para o desenho do app).
-  double posLeg = legsync_posicao(posLegenda());
+  double posBruta = posLegenda();
+  double posLeg = legsync_posicao(posBruta);
   assrender_aplicar_invalidacao();
   assrender_definir_cor(0, 0, 0, 0);
   if (overlay && assrender_ativo()) {
@@ -6835,6 +6842,10 @@ static void desenharLegendaPrincipal(float *topoPilha){
 #ifdef NV_TPK
     assrender_definir_fps(legimagem_fps());   // frame grid (assrender.c)
 #endif
+    // #772/F83: a guarda de divergencia do renderer compara a leitura BRUTA
+    // do relogio (antes do mapa legsync) com o numero do video — posLeg ja
+    // sai escalada pelo AutoSync e diverge dele sem salto nenhum.
+    assrender_posicao_legenda(posBruta);
     assrender_desenhar(posLeg, atraso, alpha,
                         0, 0, NV_TELA_W, NV_TELA_H);
     // R4: libass nao informa onde pintou. Estima duas linhas no tamanho da
