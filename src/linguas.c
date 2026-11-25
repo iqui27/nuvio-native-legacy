@@ -82,6 +82,16 @@ const char *ling_nome(const char *c) {
     return d; }
 }
 
+int ling_tem_nome(const char *c) {
+  char fb[8];
+  const char *f;
+  if (!c || !*c) return 0;
+  f = familia(c, fb);
+  for (int i = 0; i < NOMES_N; i++)
+    if (!strcasecmp(c, NOMES[i].cod) || !strcasecmp(f, NOMES[i].cod)) return 1;
+  return 0;
+}
+
 // Codigo canonico de FAMILIA, para que uma preferencia por "pt" aceite a faixa
 // etiquetada "pob", "por" ou "pt-BR". Pedir portugues e receber "nao ha
 // legenda" porque o arquivo diz "pob" seria absurdo para quem assiste — a

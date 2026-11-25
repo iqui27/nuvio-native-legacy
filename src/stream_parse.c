@@ -131,6 +131,7 @@ static int campoFiltro(const char *v, const char *fim, char *dst, unsigned tam) 
   return 1;
 }
 
+static void audioRotulosTexto(const char *texto, char *dst, unsigned tam);
 static void camposFiltro(const char *const *objetos, int n, const char *fim,
                           const char *const *nomes, char *dst, unsigned tam) {
   dst[0] = 0;
@@ -225,6 +226,14 @@ static void metadadosFiltro(const char *obj, const char *fim, const char *nome,
       !(raw && textoRaiz(raw, js_fim(raw), "filename", nomeCompleto, sizeof nomeCompleto)) && raw)
     textoRaiz(raw, js_fim(raw), "torrentName", nomeCompleto, sizeof nomeCompleto);
   snprintf(s->arquivo, sizeof s->arquivo, "%.*s", (int)sizeof s->arquivo - 1, nomeCompleto);
+  if(!s->audioIdiomas[0]) {
+    // Parse whole bounded fields once, before display truncation or provider
+    // fallback. Never inspect URL paths, headers or another stream's object.
+    if(strlen(nome)<1023)audioRotulosTexto(nome,s->audioRotulos,sizeof s->audioRotulos);
+    if(strlen(descricao)<2047)audioRotulosTexto(descricao,s->audioRotulos,sizeof s->audioRotulos);
+    if(strlen(titulo)<2047)audioRotulosTexto(titulo,s->audioRotulos,sizeof s->audioRotulos);
+    if(strlen(nomeCompleto)<sizeof nomeCompleto-1)audioRotulosTexto(nomeCompleto,s->audioRotulos,sizeof s->audioRotulos);
+  }
   // Mantem title e description mesmo quando ambos existem; nao usa URL,
   // cabecalhos ou nome do provedor como evidencia de formato/idioma/grupo.
   snprintf(texto, sizeof texto, "%s\n%s\n%s", nome, descricao, titulo);
@@ -780,6 +789,8 @@ static void metadadosFaixas(const char *obj, const char *fim, Stream *s) {
   faixasCampoTexto(obj, fim, "title", s);
 }
 
+#include "stream_audio_rotulos.inc"
+
 // Decimal integers only, parsed without double rounding. Numeric strings
 // are accepted for compatibility, but fractions/exponents/overflow are
 // unavailable for fit. Legacy display size remains separate below.
@@ -951,13 +962,15 @@ static void lerProxyHeaders(const char *bh, const char *fim, char *dst, unsigned
 
 // "FORA DE CACHE" DITO PELO ADDON. As marcas sao as que os addons mandam de
 // verdade: "⏳" e o que o AIOStreams poe no nome de toda fonte nao cacheada
-// (registros 1136, 2191, 2501: "⏳ UHD", "⏳ FHD"; a cacheada vem com "⚡"), o
+// (registros 1136, 2191, 2501: "⏳ UHD", "⏳ FHD"; a cacheada vem com "⚡"; e
+// "⌛" em "[TB⌛] Torrentio", log de 13/11), o
 // Torrentio escreve "[TB download]" / "[RD download]" (a cacheada e "[TB+]"),
 // e outros usam "⬇" ou a palavra "uncached". "download]" e nao "download"
 // solto: "WEB-DL"/"Download" aparecem em titulo de fonte cacheada.
 int stream_texto_fora_de_cache(const char *t) {
   if (!t) return 0;
   return strstr(t, "\xe2\x8f\xb3") != NULL          // U+23F3 ⏳
+      || strstr(t, "\xe2\x8c\x9b") != NULL          // U+231B ⌛ (AIOStreams "[TB⌛]", owner's log 13/11)
       || strstr(t, "\xe2\xac\x87") != NULL          // U+2B07 ⬇
       || contem(t, " download]") || contem(t, "uncached") || contem(t, "not cached");
 }
@@ -978,15 +991,30 @@ static int marcaEmCache(const char *p, const char *fim) {
 
 // Booleano da PROPRIA fonte, nao de cabecalhos nem da fonte seguinte.
 // 0 = ausente/invalido; -1 = false; 1 = true. Strings e numeros nao contam.
-static int cacheDeclarado(const char *p, const char *fim) {
-  const char *cr = objetoRaiz(p, fim, "clientResolve");
-  if (!cr) return 0;
-  const char *f = js_fim(cr), *v = valorRaiz(cr, f, "isCached");
+static int boolDoObjeto(const char *obj, const char *chave) {
+  if (!obj) return 0;
+  const char *f = js_fim(obj), *v = valorRaiz(obj, f, chave);
   if (!v) return 0;
   unsigned n = *v == 't' ? 4 : 5;
   if (f - v < n || memcmp(v, n == 4 ? "true" : "false", n)) return 0;
   const char *apos = faixasEspacos(v + n, f);
   return apos < f && (*apos == ',' || *apos == '}') ? (n == 4 ? 1 : -1) : 0;
+}
+// The add-on's own field, whatever its formatter writes in the name:
+// clientResolve.isCached, or AIOStreams' streamData (instances with "provide
+// stream data" on) - the service's cached flag, then a flat one.
+static int cacheDeclarado(const char *p, const char *fim, int *deStreamData) {
+  int c = boolDoObjeto(objetoRaiz(p, fim, "clientResolve"), "isCached");
+  if (deStreamData) *deStreamData = 0;
+  if (!c) {
+    const char *sd = objetoRaiz(p, fim, "streamData");
+    if (sd) {
+      c = boolDoObjeto(objetoRaiz(sd, js_fim(sd), "service"), "cached");
+      if (!c) c = boolDoObjeto(sd, "cached");
+      if (c && deStreamData) *deStreamData = 1;
+    }
+  }
+  return c;
 }
 
 // "sources": ["tracker:udp://...", "dht:<hash>"] de um stream de torrent, uma
@@ -1106,7 +1134,7 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
         fhd = fhdNoNome(nomeFonte);
       textoRaizLinhas(p, fim, "description", s.descricao, sizeof s.descricao);
       textoRaizLinhas(p, fim, "title", titulo, sizeof titulo);
-      int cache = cacheDeclarado(p, fim);
+      int cacheSD = 0, cache = cacheDeclarado(p, fim, &cacheSD);
       s.emCache = cache > 0 || (cache == 0 && marcaEmCache(p, fim));
       s.cacheNegado = cache < 0;
       metadadosFaixas(p, fim, &s);
@@ -1181,6 +1209,9 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
           !stream_texto_fora_de_cache(nomeFonte)) s.foraCache = 0;
       // AIOStreams: clientResolve.isCached e explicito; ausente nao e false.
       if (s.infoHash[0] && !s.url[0] && cache < 0) s.foraCache = 1;
+      // streamData's service flag describes this very link: false = the
+      // debrid does not have it (whatever icon the formatter uses, or none).
+      if (cacheSD && cache < 0) s.foraCache = 1;
       if (s.foraCache) s.emCache = 0;
       if (s.infoHash[0]) s.temSemeadores = lerSemeadores(texto, &s.semeadores);
       s.tamanhoBytes = bytesExatos(p, fim);

@@ -6,13 +6,16 @@
 #include <stdio.h>
 #include <dlfcn.h>
 #include <pthread.h>
-static int loads, plays, times, ends, video_info, full_events, drained_events;
+#include <math.h>
+static int loads, plays, times, ends, video_info, full_events, drained_events, seek_done;
 static void (*complete_load)(void);
 static void *finish_load(void *ctx) { (void)ctx;complete_load();return NULL; }
 static void event(void *ctx,const char *j) {
  assert(ctx==&loads);
  assert(strstr(j,"\"mediaId\":\"fake-media\"") ||
         (getenv("DTS_MEDIA_ID_PHASE") && strstr(j,"\"mediaId\":\"\"")));
+ assert(!strstr(j,"1697863"));
+ if(strstr(j,"\"seekDone\"")) seek_done++;
  if(strstr(j,"\"loadCompleted\"")) loads++;
  if(strstr(j,"\"playing\"")) plays++;
  if(strstr(j,"\"currentTime\":3000")) times++;
@@ -36,18 +39,21 @@ int main(int argc,char **argv) {
  setenv("NUVIO_DTS_ADAPTER_DIR",argv[1],1); dts_pipeline_available_esquecer();
  assert(dts_pipeline_available(0));
  void *native=dlopen("libplayerAPIs.so",RTLD_NOW|RTLD_LOCAL);assert(native);
- int (*play_calls)(void),(*pause_calls)(void);
+ int (*play_calls)(void),(*pause_calls)(void),(*seek_calls)(void);
+ void (*complete_seek)(void);
  *(void **)(&play_calls)=dlsym(native,"dts_fixture_play_calls");assert(play_calls);
  *(void **)(&pause_calls)=dlsym(native,"dts_fixture_pause_calls");assert(pause_calls);
  *(void **)(&complete_load)=dlsym(native,"dts_fixture_complete_load");assert(complete_load);
  void (*numeric_events)(void);
  *(void **)(&numeric_events)=dlsym(native,"dts_fixture_numeric_events");assert(numeric_events);
+ *(void **)(&seek_calls)=dlsym(native,"dts_fixture_seek_calls");assert(seek_calls);
+ *(void **)(&complete_seek)=dlsym(native,"dts_fixture_complete_seek");assert(complete_seek);
  assert(dts_pipeline_available(3) != dts_pipeline_available(6));
  DtsPipeline *p=dts_pipeline_create("app","\"window",0,event,&loads); assert(p);
  assert(!strcmp(dts_pipeline_media_id(p),getenv("DTS_MEDIA_ID_PHASE") ? "" : "fake-media"));
  DtsMediaInfo m={0}; strcpy(m.video_codec,"hevc"); strcpy(m.audio_codec,"aac"); m.channels=2;m.sample_rate=48000;m.width=1920;m.height=1080;
- strcpy(m.audio_codec,"ac3");m.channels=4;assert(!dts_pipeline_load(p,&m,2.5));m.channels=2;
- strcpy(m.audio_codec,"eac3");assert(!dts_pipeline_load(p,&m,2.5));strcpy(m.audio_codec,"aac");
+ strcpy(m.audio_codec,"ac3");m.channels=9;assert(!dts_pipeline_load(p,&m,2.5));m.channels=2;
+ strcpy(m.audio_codec,"eac3");m.channels=0;assert(!dts_pipeline_load(p,&m,2.5));strcpy(m.audio_codec,"aac");m.channels=2;
  m.channels=6;assert(!dts_pipeline_load(p,&m,2.5));m.channels=2;
  m.sample_rate=44100;assert(!dts_pipeline_load(p,&m,2.5));m.sample_rate=48000;
  m.dovi_profile=5; assert(!dts_pipeline_load(p,&m,2.5));m.dovi_profile=0;
@@ -86,13 +92,41 @@ int main(int argc,char **argv) {
  data[0]=1;for(int i=0;i<10;i++) assert(dts_pipeline_feed(p,&frame)==0);data[0]=2;
  for(int i=0;i<50;i++) assert(dts_pipeline_feed(p,&frame)==1);
  assert(play_calls()==2);
- assert(dts_pipeline_flush(p,5));assert(dts_pipeline_play(p));
- assert(play_calls()==3); /* Flush invalidates the previously accepted Play. */
- assert(dts_pipeline_pause(p));assert(pause_calls()==2);
- assert(dts_pipeline_flush(p,5));assert(dts_pipeline_pause(p));
- assert(pause_calls()==3); /* The same applies when scrubbing while paused. */
- assert(dts_pipeline_play(p));assert(play_calls()==4);
- assert(dts_pipeline_eos(p));assert(ends==1 && play_calls()==4);
+ // Invalid positions must never reach the firmware. Seek expects decimal ms.
+ assert(!dts_pipeline_flush(p,-1));assert(!dts_pipeline_flush(p,NAN));
+ assert(!dts_pipeline_flush(p,INFINITY));assert(seek_calls()==0);
+ int loads_before_seek=loads;
+ if(getenv("DTS_EXPECT_NO_SEEK")) {
+  assert(!dts_pipeline_flush(p,5));assert(seek_calls()==0);
+  assert(strstr(dts_pipeline_error(p),"unavailable"));
+ } else {
+  // Refusal leaves controls usable, allowing controller fresh-Load fallback.
+  setenv("DTS_REFUSE_SEEK","1",1);assert(!dts_pipeline_flush(p,5));
+  unsetenv("DTS_REFUSE_SEEK");assert(seek_calls()==1 && seek_done==0);
+  assert(dts_pipeline_flush(p,5));assert(seek_done==1 && seek_calls()==2);
+  assert(dts_pipeline_play(p));assert(play_calls()==2); // Fresh A/V preroll.
+  frame.kind=DTS_AUDIO;assert(dts_pipeline_feed(p,&frame)==1 && play_calls()==2);
+  frame.kind=DTS_VIDEO;assert(dts_pipeline_feed(p,&frame)==1 && play_calls()==3);
+  // A delayed SEEKDONE must not resume before the new segment is ready.
+  setenv("DTS_DEFER_SEEK","1",1);
+  assert(dts_pipeline_pause(p));assert(pause_calls()==2);
+  assert(dts_pipeline_flush(p,5));assert(dts_pipeline_pause(p));
+  int clocks=times;
+  frame.kind=DTS_VIDEO;assert(dts_pipeline_feed(p,&frame)==1);
+  frame.kind=DTS_AUDIO;assert(dts_pipeline_feed(p,&frame)==1);
+  assert(times==clocks && play_calls()==3 && pause_calls()==2);
+  complete_seek();assert(seek_done==2);complete_seek();assert(seek_done==2);
+  assert(dts_pipeline_pause(p));assert(pause_calls()==3 && play_calls()==3);
+  assert(dts_pipeline_play(p));assert(play_calls()==4);
+  // A deferred seek while playing needs BOTH the acknowledgement and A/V.
+  assert(dts_pipeline_flush(p,5));assert(dts_pipeline_play(p));
+  frame.kind=DTS_AUDIO;assert(dts_pipeline_feed(p,&frame)==1);
+  complete_seek();assert(seek_done==3 && play_calls()==4);
+  frame.kind=DTS_VIDEO;assert(dts_pipeline_feed(p,&frame)==1 && play_calls()==5);
+  unsetenv("DTS_DEFER_SEEK");
+ }
+ assert(loads==loads_before_seek); // No new Load / media identity / HDR setup.
+ assert(dts_pipeline_eos(p));assert(ends==1);
  data[0]=3;assert(dts_pipeline_feed(p,&frame)==-1);
  memset(data,0,sizeof data); /* native retained pointer must still point at its own copy */
  assert(strstr(dts_pipeline_error(p),"Pending"));assert(dts_pipeline_feed(p,&frame)==-1);
@@ -124,12 +158,15 @@ int main(int argc,char **argv) {
  }
  assert(full_events==initial_full && drained_events==initial_drained && play_calls()==1);
  // A paused pipeline with identical refusal must retain pause intent.
- assert(dts_pipeline_pause(p));assert(dts_pipeline_flush(p,5));
+ assert(dts_pipeline_pause(p));
+ if(!getenv("DTS_EXPECT_NO_SEEK")) assert(dts_pipeline_flush(p,5));
  complete_load();
  for(int i=0;i<20;i++) assert(dts_pipeline_feed(p,&frame)==0);
  assert(play_calls()==1 && pause_calls()==1);
- assert(dts_pipeline_play(p));assert(dts_pipeline_feed(p,&frame)==1);
- assert(play_calls()==2);
+ data[0]=2;frame.kind=DTS_AUDIO;assert(dts_pipeline_feed(p,&frame)==1);
+ frame.kind=DTS_VIDEO;assert(dts_pipeline_feed(p,&frame)==1);
+ assert(play_calls()==1); // Preroll preserves paused intent.
+ assert(dts_pipeline_play(p));assert(play_calls()==2);
  dts_pipeline_destroy(p);
  if(!was_deferred) unsetenv("DTS_DEFER_COMPLETION");
  // A synchronous Load completion can precede all feed calls. Repeated Play
@@ -150,7 +187,16 @@ int main(int argc,char **argv) {
  strcpy(m.audio_codec,"aac");m.channels=2;m.sample_rate=48000;strcpy(m.hdr,"DolbyVision");
  m.dovi_profile=7;m.dovi_bl_present=1;m.dovi_rpu_present=1;assert(!dts_pipeline_load(p,&m,2.5));
  m.dovi_profile=8;m.dovi_el_present=1;assert(!dts_pipeline_load(p,&m,2.5));
- m.dovi_el_present=0;assert(dts_pipeline_load(p,&m,2.5));dts_pipeline_destroy(p);
+ m.dovi_el_present=0;assert(dts_pipeline_load(p,&m,2.5));complete_load();
+ assert(dts_pipeline_play(p));data[0]=2;frame.kind=DTS_AUDIO;assert(dts_pipeline_feed(p,&frame)==1);
+ frame.kind=DTS_VIDEO;assert(dts_pipeline_feed(p,&frame)==1 && play_calls()==1);
+ loads_before_seek=loads;
+ if(!getenv("DTS_EXPECT_NO_SEEK")) {
+  assert(dts_pipeline_flush(p,5));assert(dts_pipeline_play(p));
+  frame.kind=DTS_VIDEO;assert(dts_pipeline_feed(p,&frame)==1 && play_calls()==1);
+  frame.kind=DTS_AUDIO;assert(dts_pipeline_feed(p,&frame)==1 && play_calls()==2);
+ }
+ assert(loads==loads_before_seek);dts_pipeline_destroy(p);
  dlclose(native);
  puts("DTS adapter ABI, native control counts, asynchronous preroll, timestamps and retained pointer tests passed");
 }

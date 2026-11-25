@@ -58,8 +58,11 @@ int faixasmkv_overlay(const char *codecId, int textoSimples);
 int faixasmkv_imagem_overlay(const char *codecId);
 int faixasmkv_tem_imagem(const MkvFaixa *fx, int n);
 // Acrescenta ao fim de `leg` (de `nLeg` entradas, ate `max`) as faixas de imagem
-// do arquivo que o player nao lista, com numero -1 (sem faixa no player) e o
+// do arquivo que o player nao lista, com numero negativo (sem faixa no player) e o
 // ordinalMkv do arquivo. Idempotente. Devolve o novo `nLeg`.
+// Each appended image track gets its own negative number (from its Matroska
+// subtitle ordinal), apart from the range of the recovered text tracks.
+#define FAIXASMKV_IMAGEM_NUMERO(ordinal) (-1000 - (ordinal))
 int faixasmkv_acrescentar_imagem(VideoFaixa *leg, int nLeg, int max, const MkvFaixa *fx, int n);
 
 // Append omitted ASS/SSA/SRT/WebVTT tracks for the LG overlay. Native entries

@@ -33,6 +33,7 @@
 #include "sessao.h"
 #include "perfis.h"
 #include "fontevolta.h"
+#include "audioext.h"
 #include "cacheboost.h"
 #include "retomamorna.h"
 #include "dados.h"
@@ -250,7 +251,7 @@ static int autoParcialPronto(void) {
       if (ultNext >= 0) {
         addons_definir_espera_decisao(prazo > 0 ? prazo : 0);
         if (stream_auto_pode_decidir(ultNext, 0, 0, prazo == 0)) {
-          autoMotivo = "next: mesmo bingeGroup da fonte que tocava";
+          autoMotivo = "next: matched playing source";
           return 1;
         }
         return 0;
@@ -2385,6 +2386,23 @@ static int escolhaDoNext(const char *base, char *prov, unsigned tam) {
   alvoPlayer(alvo, sizeof alvo);
   return !strcmp(alvo, buscaNextAlvo) && fontepref_tocando_de(base, prov, tam, NULL, 0);
 }
+// REPRODUZIR NA PAGINA DO SERIAL LOGO DEPOIS DO FIM (dono, 25/11): o episodio
+// terminou, a pagina ficou (o fim nao leva a home) e o botao aponta o
+// seguinte. O toque curto vale como o Next: uma fonte com o bingeGroup ou a
+// release EXATA da que acabou de tocar sai sozinha; sem ela, a folha de
+// sempre. So a que tocou NESTE processo (nada da escolha guardada) e so o
+// episodio seguinte ao que terminou; segurar OK no botao continua abrindo a
+// folha (detail_pediu_fontes).
+static void detalheSeguirDepoisDoFim(const char *alvo) {
+  char base[24];
+  if (!alvo || !strchr(alvo, ':') || player_id_canal()[0]) return;
+  if (!player_proximo_do_concluido(alvo)) return;
+  idBaseDoTitulo(base, sizeof base);
+  if (!base[0] || fontepref_tocando_semear(base) != 1) return;
+  snprintf(buscaNextAlvo, sizeof buscaNextAlvo, "%s", alvo);
+  printf("[detail] %s: next episode after the one that just finished: follows its source, like Next\n", alvo);
+  fflush(stdout);
+}
 static void abrirProximoEpisodio(int t, int e, int apontar) {
   uint64_t sessaoEntrada = nv_perfil_sessao_ler();
   int titulo = player_indice();
@@ -2497,8 +2515,10 @@ static void abrirProximoEpisodio(int t, int e, int apontar) {
   } else {
     nv_perfil_sessao_destravar();
     marco("proximo episodio: buscando fontes");
-    snprintf(buscaNextAlvo, sizeof buscaNextAlvo, "%s", alvo);
     buscarParaPlayer();
+    // The search resets VOD state, including buscaNextAlvo. Arm Next only
+    // afterwards so manual-source mode can follow the playing release.
+    snprintf(buscaNextAlvo, sizeof buscaNextAlvo, "%s", alvo);
     if (!tocarParteGuardada() && !(ajustes_link_reusar() && tocarFonteGuardada())) aguardandoFonte = 1;
   }
 }
@@ -3790,6 +3810,8 @@ int app_iniciar(const char *dirArte) {
   fontepref_iniciar();
   // "Reusar o ultimo link" ligado guarda os links no disco (fontevolta.h).
   fontevolta_definir_arquivo(dados_ler, dados_gravar, dados_apagar);
+  // "Lembrar nos proximos episodios" do audio de outra fonte, tambem no disco.
+  audioext_definir_memoria_arquivo(dados_ler, dados_gravar, dados_apagar);
   fontesmortas_iniciar();
   arranque_etapa("app_iniciar/addonstats_ler");
   addonstats_ler();   // #202: latencia de cada add-on NESTA TV (addonstats.h)
@@ -5921,7 +5943,10 @@ void app_atualizar(float dt, Uint32 agora) {
         if (usouPreparo) limparFonteVOD();
         renovarListaDoPlayer();
         if (tocarParteGuardada() || tocarFonteGuardada()) { preparoEspera = 0; }
-        else aguardandoFonte = 1;
+        else {
+          aguardandoFonte = 1;
+          if (!doInicio) detalheSeguirDepoisDoFim(alvoDefinitivo);
+        }
       }
     }
     if (detail_pediu_marcar()) {
@@ -6051,14 +6076,15 @@ void app_atualizar(float dt, Uint32 agora) {
       // roda exatamente como rodava antes. Quem nunca abriu a folha de fontes
       // nao ve diferenca nenhuma.
       char base[24];
-      int lembrada;
+      int lembrada, nextCorrespondente;
       idBaseDoTitulo(base, sizeof base);
       // Com "escolher a fonte ao reproduzir" ligado so vale a escolha da PESSOA:
       // a memoria do automatico (bingeGroup) nao pode tocar sozinha aqui nem
       // aparecer como "Sua escolha anterior" na folha que vai abrir.
       // NEXT: o bingeGroup exato da fonte que tocava vem antes de tudo (o Nuvio
       // faz o mesmo, tambem com a escolha manual ligada).
-      lembrada = escolhaDoNext(base, NULL, 0) ? fontepref_binge_tocando(base) : -1;
+      nextCorrespondente = escolhaDoNext(base, NULL, 0) ? fontepref_binge_tocando(base) : -1;
+      lembrada = nextCorrespondente;
       if (lembrada < 0)
         lembrada = base[0] ? (ajustes_fonte_manual() ? fontepref_escolher_manual(base)
                                                      : fontepref_escolher(base)) : -1;
@@ -6074,8 +6100,9 @@ void app_atualizar(float dt, Uint32 agora) {
       // uma folha entre um zap e outro e o oposto do que se quer de TV ao
       // vivo, e la a escolha ja e feita pela playlist que responde.
       //
-      // #667: a remembered source sets the sheet's focus, never consent to play.
-      if (ajustes_fonte_manual() && stream_n() > 0) {
+      // Initial Play remains manual. Explicit Next may follow a positive match
+      // of the source already playing; without a match the sheet still opens.
+      if (ajustes_fonte_manual() && nextCorrespondente < 0 && stream_n() > 0) {
         aguardandoFonte = 0;
         folhaParaTocar = 1;
         nomeParaFolha(); stream_folha_abrir();
@@ -6483,6 +6510,18 @@ void app_atualizar(float dt, Uint32 agora) {
     }
   }
   renovarVodInterrompido();
+  // The player opens the same source again in another way (webOS HLS: the
+  // other segment format when the first did not start): the deadlines for a
+  // source that does not open count again from there.
+  { static unsigned aberturaVista;
+    unsigned g = video_abertura_geracao();
+    if (g != aberturaVista) {
+      Uint32 agora = SDL_GetTicks() | 1u;
+      aberturaVista = g;
+      if (fonteVODDesde) fonteVODDesde = agora;
+      if (fonteManualDesde) fonteManualDesde = agora;
+      if (voltaAtiva) voltaDesde = agora;
+    } }
   tentarProximaFonteVOD();
   lembrarAutomatica();
   bingeDaFonteAtual();
@@ -7546,6 +7585,7 @@ int app_central_pode(void) {
 
 void app_encerrar(void) {
   avisos_encerrar();   // saida limpa: apaga a marca de sessao viva
+  audioext_memoria_descarregar();   // o ultimo ajuste de sincronia ainda na espera
   preparoInvalidar();
   proximopreparo_encerrar();
   if (fioFonteVivo) {

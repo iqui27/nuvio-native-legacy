@@ -48,3 +48,62 @@ HTTP payload/fallback, controller state, real HTTP faults and DTS conversion,
 P2P startup, DV7 fixtures, settings isolation and both Rust link modes.
 These checks do not replace ARM linking or physical LG/Samsung/Android tests.
 No IPK is built and no upstream pull request is opened by this branch.
+
+## Experimental HLS on webOS
+
+Under **Playback → More options → Audio and video on this TV**, set
+**HLS (experimental)** to **On** or **Off**. The switch is device-local,
+defaults to Off and applies when opening a video. Enable the existing DTS
+and Dolby Vision P7 conversion options for the formats you want to test.
+With HLS Off, those options use the existing converter.
+
+With HLS On, the enabled conversions use the Samsung loopback server and
+fMP4 with AC-3 audio, up to 5.1. P7 MKV is converted to single-layer P8.1.
+The HLS variant advertises its HEVC base as `hvc1` and signals P8.1 through
+`SUPPLEMENTAL-CODECS` and the Dolby Vision configuration in the init segment.
+Enable both conversions for a P7 source whose selected audio track is DTS.
+The stream carries one audio track, always as AC-3 5.1 (mono and stereo
+fill the front channels). Choosing another track of the same file keeps the
+HLS session: the next segments use that track and the player seeks to the
+current position, so the picture stops briefly, as for a seek. Other Dolby Vision sources (P5, P8, or P7
+without the P7 conversion) keep the existing converter when HLS is On.
+
+HLS picks its segment format by itself; there is one HLS switch. Besides
+fMP4 it can serve MPEG-TS segments as on Tizen (and as Stremio Origin does on
+LG): the player loads the media playlist, without `init.mp4`. FFmpeg's TS
+writer has no Dolby Vision signalling, so each PMT gets the DOVI registration
+and the Dolby Vision video stream descriptor (profile 8, the source's level,
+compatibility 1) in its HEVC entry. webOS 11 and newer always use fMP4 (the TV
+never starts MPEG-TS). On webOS 10 and older the first open uses fMP4; when the
+player has fetched segments for 15 s without starting, or fails before the
+first frame, the same video opens again at the same position in MPEG-TS. The
+format that starts is remembered on that TV (device-local, kept across
+restarts) and used first from then on; if it later fails the same way, the
+other one is tried and remembered. The former "HLS: MPEG-TS" switch is gone:
+a TV that had it on keeps HLS on and starts with MPEG-TS.
+
+HLS requires a seekable source with a keyframe index. If a webOS MKV's last
+indexed keyframe is far from the reported end, the probe checks a bounded
+portion of the tail for later keyframes or video that reaches the end. A long
+HLS segment can carry several fMP4 fragments to limit the muxer's memory use.
+A startup or stream error stops playback and shows an HLS error. Turn HLS Off and reopen the
+video to use the existing converter. On an LG C1 or C5, check audio, the
+TV's Dolby Vision indicator, seek/resume and memory. **Show buffer data**
+shows the HLS source buffer, HTTP readers, and measured download rate once
+playback starts. The rate measures bytes received from the source readers.
+
+With HLS On, the app's input buffer is a fixed 32 MiB, as on Tizen, whatever
+the **Buffer size** preset (which still applies with HLS Off). The TV player
+keeps its own segments, about 30 s, and that is what rides out a slow source.
+With little free memory (after 96 MiB for the remux queue and one staged fMP4
+fragment, and the usual floor) the input buffer drops to 16 MiB. With **From
+another source**, the selected audio and video share it; the **Other version
+buffer** preference sets the audio share, capped at half. **Show buffer data**
+reads `HLS buffer: <ready> / 32 MiB · HTTP: <readers> · <rate> Mbps`.
+
+For HLS with **From another source**, choose the audio source as usual.
+Enable DTS conversion and HLS for H.264/HEVC playback, or Dolby Vision P7
+conversion and HLS for interleaved P7 MKV. The selected track, saved language,
+manual offset and stored speed are used for the AC-3 stream. Changing the source,
+track or offset reloads HLS at the current position. Continuous automatic
+alignment and **Match automatically** are available with HLS Off.

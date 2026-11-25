@@ -5,7 +5,8 @@ TMPDIR="${TMPDIR%/}"
 # network/TLS protocols or software video decoders enter the TV executable.
 #
 # NUVIO_DTS_TARGET picks the build:
-#   webos (default) cross build with the LG SDK (tools/Dockerfile); output unchanged.
+#   webos (default) cross build with the LG SDK (tools/Dockerfile).
+#                   NUVIO_WEBOS_HLS=1 adds the experimental loopback muxers.
 #   tpk             Samsung .tpk (tools/tpk.sh). ARM32 build inside the selected SDK
 #                   container, from the source tree tpk.sh already downloaded and checked on the
 #                   host (NUVIO_DTS_SRC; the container has no curl). Adds what the Samsung loopback
@@ -21,7 +22,13 @@ DECODERS=dca,dvdsub,pgssub,ass,ssa,subrip,movtext,webvtt
 MUXERS=
 PARSERS=dca,h264,hevc,aac
 BSFS=h264_mp4toannexb,hevc_mp4toannexb,dca_core
-ZLIB=
+# zlib on every target: Matroska subtitle tracks are usually stored
+# zlib-compressed (mkvmerge's default for PGS/VobSub). Without it they arrive
+# still compressed, the PGS decoder skips every segment and converted playback
+# (Dolby Vision, DTS) showed no picture subtitles at all (tester's log 15/11).
+# webOS already links the SDK's libz (tools/arm.sh, epg.c), the .tpk its
+# static libz.a (tools/tpk.sh).
+ZLIB=--enable-zlib
 mkdir -p "$BUILD" "$PREFIX"
 if [ "$TARGET" = tpk ]; then
   SRC=${NUVIO_DTS_SRC:?tools/tpk.sh passes the extracted ffmpeg-$VERSION source}
@@ -30,11 +37,6 @@ if [ "$TARGET" = tpk ]; then
   MUXERS=mpegts,matroska,mp4
   PARSERS=$PARSERS,mlp,ac3
   BSFS=$BSFS,truehd_core
-  # zlib: Matroska tracks stored zlib-compressed (ContentCompression) and MP4
-  # with a compressed header (cmov) arrive raw without it ("Unsupported encoding
-  # type"). The .tpk already links the SDK's static libz.a (tools/tpk.sh, also
-  # used by epg.c), so this adds no new dependency on the TV.
-  ZLIB=--enable-zlib
   # Out of tree: the source stays clean in the host cache.
   mkdir -p "$BUILD/obj"
   cd "$BUILD/obj"
@@ -44,6 +46,23 @@ if [ "$TARGET" = tpk ]; then
       --cross-prefix=arm-linux-gnueabi-
   fi
 else
+  if [ "${NUVIO_WEBOS_HLS:-0}" = 1 ]; then
+    MUXERS=mpegts,mp4
+    PARSERS=$PARSERS,ac3
+    DECODERS=$DECODERS,ac3,eac3,aac
+  fi
+  if [ "${NUVIO_DV_TRUEHD:-1}" = 1 ]; then
+    # Support high-definition Dolby audio and transcoding donor audio on webOS.
+    # A reduced SDK can opt out with NUVIO_DV_TRUEHD=0.
+    DECODERS=$DECODERS,truehd,ac3,eac3
+    PARSERS=$PARSERS,mlp,ac3
+    # Audio from another version (external audio test): the dub of a WEB-DL
+    # is often AAC at 44.1 kHz, Opus, FLAC, Vorbis or MP3, converted like DTS.
+    DECODERS=$DECODERS,aac,opus,flac,mlp,vorbis,mp3
+    PARSERS=$PARSERS,opus,flac,vorbis,mpegaudio
+    # Small AVI and TS releases also carry dubs and voice-overs (owner, 07/11).
+    DEMUXERS=matroska,mov,avi,mpegts
+  fi
   CC=${CC:-arm-webos-linux-gnueabi-gcc}
   archive="$BUILD/ffmpeg-$VERSION.tar.xz"
   [ -f "$archive" ] || curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz" -o "$archive"
@@ -60,15 +79,14 @@ else
   fi
 fi
 # --enable-muxer must come AFTER --disable-everything and --enable-zlib after
-# --disable-autodetect (configure applies them in order). Unquoted on purpose:
-# both empty for webOS, so its configure line is unchanged.
+# --disable-autodetect (configure applies them in order). MUXERS is optional.
 "$SRC/configure" "$@" --prefix="$PREFIX" --disable-everything ${MUXERS:+--enable-muxer=$MUXERS} \
   --disable-autodetect $ZLIB --disable-shared --enable-static --enable-pic \
   --disable-programs --disable-doc --disable-debug --disable-network \
   --disable-avdevice --disable-avfilter --disable-swscale --disable-postproc \
   --enable-avcodec --enable-avformat --enable-avutil --enable-swresample \
   --enable-decoder="$DECODERS" --enable-encoder=aac,ac3 \
-  --enable-demuxer=matroska,mov --enable-parser="$PARSERS" \
+  --enable-demuxer="${DEMUXERS:-matroska,mov}" --enable-parser="$PARSERS" \
   --enable-bsf="$BSFS" \
   --extra-cflags="${CFLAGS:--O2}"
 make -j"${NUVIO_DTS_JOBS:-2}"

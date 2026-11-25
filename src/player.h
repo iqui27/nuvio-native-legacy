@@ -67,6 +67,10 @@ int player_transporte_pedido_pendente(void);
 // Libera somente uma troca ja consumida que o roteador cancelou; preserva a fila.
 void player_episodio_pedido_liberar(void);
 const CatEp *player_proximo_episodio(void);
+// 1 se `alvo` e o episodio seguinte ao que acabou de terminar neste perfil
+// (o Reproduzir da pagina logo depois do fim vale como o Next). Consome.
+int player_proximo_do_concluido(const char *alvo);
+void player_teste_concluiu(void);   // tests/app_next_manual.c
 // A REGRA DO CARTAO DE PROXIMO EPISODIO, isolada do estado do player para
 // poder ser exercitada por teste. `cred` e o segundo em que os creditos
 // comecam (0 quando nenhuma das duas fontes tem marcador). Devolve 1 quando o

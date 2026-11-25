@@ -18,7 +18,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifndef NV_TPK
+#if !defined(NV_TPK) && !defined(NV_WEBOS_HLS_TEST)
 int dts_tpk_disponivel(void) { return 0; }
 const char *dts_tpk_modo_nome(int m) { (void)m; return ""; }
 int dts_tpk_abrir(const char *u, const char *h, int t, int s, int m, double i, char *o, size_t n) {
@@ -29,6 +29,9 @@ void dts_tpk_fechar(void) {}
 int dts_tpk_estado(void) { return DTSTPK_NADA; }
 const char *dts_tpk_erro(void) { return ""; }
 double dts_tpk_duracao(void) { return 0; }
+unsigned dts_tpk_segmentos(void) { return 0; }
+double dts_tpk_bytes_por_s(void) { return 0; }
+double dts_tpk_segmento_max(void) { return 0; }
 int dts_tpk_modo(void) { return -1; }
 double dts_tpk_inicio_stream(void) { return -1; }
 const char *dts_tpk_caminho(void) { return ""; }
@@ -65,6 +68,7 @@ int dts_tpk_e_url(const char *u) { (void)u; return 0; }
 #define PREBUFFER_MS     1000          /* player prebuffer before it starts */
 #define ESPERA_SONDA_MS  30000
 #define ESPERA_GERADOR_MS 30000
+#define INIT_MP4_MAX     65536
 #define GERADORES        2             /* each one is one more connection to the source */
 
 static const char *const MODO_NOME[DTSTPK_MODOS] = { "HLS", "continuous TS", "off" };
@@ -336,6 +340,17 @@ typedef struct Sessao {
   char token[12];
   char *url, *cabs;
   int track, stereo, modo;
+  int webos, dv7;
+  int webosMp4;                   // webOS fMP4 (init.mp4 + .m4s); 0 = MPEG-TS like Tizen
+#ifdef NV_WEBOS_HLS_TEST
+  DtsWebosHls hls;
+  int retiring;
+  DtsTrack externalHint;
+  char *externalUrl, *externalHeaders;
+  char externalLangs[64];
+  int lastSegment;                // last segment sent in full (pacing)
+  struct { int seg; int64_t bytes; } sent[64];   // pacing: sizes of the last segments sent
+#endif
   volatile int cancelar;
   pthread_mutex_t m;
   pthread_cond_t c;
@@ -343,8 +358,11 @@ typedef struct Sessao {
   int estado, semIndice;
   char erro[160], caminho[40];
   double duracao;
+  double bytesPorS, segMax;       // source size / length, longest segment (s)
   DtsRemux *rx;
   DtsRemux *rxSonda;              // while the probe runs: what a close cancels
+  unsigned char *initMp4;
+  size_t initLen;
   Gerador ger[GERADORES];
   unsigned uso;
   double inicioStream;            // progressivo: keyframe do fluxo em curso
@@ -361,13 +379,20 @@ typedef struct Sessao {
 
 static pthread_mutex_t G = PTHREAD_MUTEX_INITIALIZER;
 static Sessao *atual;
+#ifdef NV_WEBOS_HLS_TEST
+static atomic_int webosRetiring;
+#endif
 static unsigned contador;
 static int sockLo = -1, portaLo;
 
 static void sessaoDestruir(Sessao *s) {
   for (int i = 0; i < GERADORES; i++) dts_remux_gen_free(s->ger[i].g);
   dts_remux_close(s->rx);
-  free(s->url); free(s->cabs);
+  free(s->url); free(s->cabs); free(s->initMp4);
+#ifdef NV_WEBOS_HLS_TEST
+  free(s->externalUrl); free(s->externalHeaders);
+  if (s->retiring) atomic_fetch_sub(&webosRetiring, 1);
+#endif
   pthread_cond_destroy(&s->c); pthread_mutex_destroy(&s->m);
   free(s);
 }
@@ -400,40 +425,62 @@ static void sessaoResumo(Sessao *s) {
   fflush(stdout);
 }
 
+static int saveInit(void *opaque, const unsigned char *data, int len) {
+  Sessao *s = opaque;
+  if ((size_t)len > INIT_MP4_MAX - s->initLen) return -1;
+  memcpy(s->initMp4 + s->initLen, data, (size_t)len);
+  s->initLen += (size_t)len;
+  return len;
+}
+
 static void *fioSonda(void *u) {
   Sessao *s = u;
   char err[160] = "";
-  // Two steps so a close during the probe (stop/back while the source is still
-  // answering) reaches its reader: encerrarAtual cancels rxSonda.
+  DtsRemuxGen *initGen = NULL;
+  // The session can cancel its reader during both the probe and fMP4 init.
   DtsRemux *rx = dts_remux_new(&s->cancelar);
+#ifdef NV_WEBOS_HLS_TEST
+  if (rx && s->webos) dts_remux_set_webos(rx, &s->hls);
+#endif
   pthread_mutex_lock(&s->m);
   s->rxSonda = rx;
   if (rx && s->cancelar) dts_remux_cancel(rx);
   pthread_mutex_unlock(&s->m);
-  if (rx && dts_remux_probe(rx, s->url, s->cabs, s->track, s->stereo, SEG_ALVO_S, err, sizeof err) < 0) {
-    pthread_mutex_lock(&s->m); s->rxSonda = NULL; pthread_mutex_unlock(&s->m);
-    dts_remux_close(rx);
-    rx = NULL;
+  int probed = rx && dts_remux_probe(rx, s->url, s->cabs, s->track, s->stereo, SEG_ALVO_S, err, sizeof err) == 0;
+  const DtsRemuxInfo *in = probed ? dts_remux_info(rx) : NULL;
+  int noIndex = in && s->modo == DTSTPK_HLS && (in->n_segments < 1 || !in->index_complete);
+  int ready = probed && !noIndex;
+  if (ready && s->webosMp4) {
+    s->initMp4 = malloc(INIT_MP4_MAX);
+    initGen = s->initMp4 ? dts_remux_gen_new(rx, err, sizeof err) : NULL;
+    ready = initGen && dts_remux_gen_run(initGen, 0, 0, "hls-init", saveInit, s,
+                                        &s->cancelar, NULL, err, sizeof err) == 0 && s->initLen > 0;
   }
-  if (!rx && !err[0]) snprintf(err, sizeof err, "Out of memory");
-  const DtsRemuxInfo *in = rx ? dts_remux_info(rx) : NULL;
   pthread_mutex_lock(&s->m);
   s->rxSonda = NULL;
-  if (s->cancelar) { if (rx) dts_remux_close(rx); rx = NULL; s->estado = DTSTPK_FALHOU; snprintf(s->erro, sizeof s->erro, "cancelled"); }
-  else if (!rx) { s->estado = DTSTPK_FALHOU; snprintf(s->erro, sizeof s->erro, "%s", err[0] ? err : "probe failed"); }
-  else if (s->modo == DTSTPK_HLS && (in->n_segments < 1 || !in->index_complete)) {
-    // HLS precisa do indice inteiro (a playlist sai dele): sem Cues nao ha HLS.
-    // video_tpk.c refaz no TS continuo, que busca por tempo.
-    s->estado = DTSTPK_FALHOU; s->semIndice = 1;
-    snprintf(s->erro, sizeof s->erro, "no keyframe index to the end (no Cues): HLS impossible");
-  } else {
-    s->rx = rx; s->estado = DTSTPK_PRONTO; s->duracao = in->duration_s;
+  if (s->cancelar) {
+    ready = 0;
+    snprintf(s->erro, sizeof s->erro, "cancelled");
+  } else if (noIndex) {
+    s->semIndice = 1;
+    snprintf(s->erro, sizeof s->erro, "%s",
+             in->n_keyframes ? "Keyframe index does not cover the end of the source"
+                             : "Source has no usable keyframe index");
+  } else if (!ready) {
+    snprintf(s->erro, sizeof s->erro, "%s", err[0] ? err : "HLS initialization failed");
+  }
+  if (ready) {
+    s->rx = rx; s->ger[0].g = initGen;
+    s->duracao = in->duration_s;
+    s->bytesPorS = in->size_bytes > 0 && in->duration_s > 0 ? in->size_bytes / in->duration_s : 0;
+    s->segMax = in->max_segment_s;
     snprintf(s->caminho, sizeof s->caminho, "%s", in->decoder_path);
   }
+  s->estado = ready ? DTSTPK_PRONTO : DTSTPK_FALHOU;
   s->prontaMs = agoraMs();
   pthread_cond_broadcast(&s->c);
   pthread_mutex_unlock(&s->m);
-  if (rx) {
+  if (probed && (ready || noIndex) && !s->cancelar) {
     char fpsTxt[24] = "?";
     if (in->fps > 0) { long f = lround(in->fps * 1000.0); snprintf(fpsTxt, sizeof fpsTxt, "%ld.%03ld", f / 1000, f % 1000); }
     char dvTxt[40] = "nao";
@@ -445,12 +492,13 @@ static void *fioSonda(void *u) {
            in->n_segments, in->max_segment_s, in->duration_s, in->size_bytes > 0 ? in->size_bytes / 1048576.0 : -1.0,
            (unsigned)(s->prontaMs - s->criadaMs));
     if (s->semIndice) {
-      printf("[dts-tpk] sessao %u: %s: o app troca para o TS continuo\n", s->id, s->erro);
-      dts_remux_close(rx);             // a sessao nao ficou com ele
+      printf("[dts-tpk] sessao %u: %s%s\n", s->id, s->erro,
+             s->webos ? "" : ": o app troca para o TS continuo");
     }
   } else if (!s->cancelar)
     printf("[dts-tpk] sessao %u: a fonte nao abriu no conversor: %s (%u ms)\n", s->id, s->erro,
            (unsigned)(s->prontaMs - s->criadaMs));
+  if (!ready) { dts_remux_gen_free(initGen); dts_remux_close(rx); }
   fflush(stdout);
   sessaoSoltar(s);
   return NULL;
@@ -485,22 +533,25 @@ static int esperarPronta(Sessao *s, int sock, int manter) {
 static Gerador *pegarGerador(Sessao *s, int seg, int *continua, char *err, size_t errn) {
   struct timespec ts;
   Gerador *esc = NULL;
-  int i;
+  int i, limit = s->webos ? 1 : GERADORES;
   *continua = 0;
   prazoEm(&ts, ESPERA_GERADOR_MS);
   pthread_mutex_lock(&s->m);
   while (!esc && !s->cancelar) {
     int esperar = 0, vaga = -1;
-    for (i = 0; i < GERADORES && seg >= 0; i++)
+    for (i = 0; i < limit && seg >= 0; i++)
       if (s->ger[i].g && !s->ger[i].ocupado && dts_remux_gen_next(s->ger[i].g) == seg) { esc = &s->ger[i]; *continua = 1; break; }
     if (esc) break;
-    for (i = 0; i < GERADORES && seg > 0; i++)
-      if (s->ger[i].ocupado && s->ger[i].seg == seg - 1 && !s->ger[i].parar) esperar = 1;
+    for (i = 0; i < limit && seg >= 0; i++) {
+      int running = s->ger[i].seg;
+      if (s->ger[i].ocupado && !s->ger[i].parar &&
+          ((seg > 0 && running == seg - 1) || (s->webos && running == seg))) esperar = 1;
+    }
     if (esperar) {
       if (pthread_cond_timedwait(&s->c, &s->m, &ts) == ETIMEDOUT) { snprintf(err, errn, "timed out waiting for segment %d", seg - 1); break; }
       continue;
     }
-    for (i = 0; i < GERADORES; i++)
+    for (i = 0; i < limit; i++)
       if (s->ger[i].g && !s->ger[i].ocupado && (!esc || s->ger[i].uso < esc->uso)) esc = &s->ger[i];
     if (esc) break;
     // Progressivo: o player le UM fluxo por vez. Pedido novo (seek, ou o player
@@ -509,7 +560,7 @@ static Gerador *pegarGerador(Sessao *s, int seg, int *continua, char *err, size_
     // conexao na fonte e reler o cabecalho; foi isso que o TorBox recusou).
     if (seg < 0) {
       Gerador *prog = NULL;
-      for (i = 0; i < GERADORES; i++) if (s->ger[i].g && s->ger[i].ocupado && s->ger[i].seg == -2) prog = &s->ger[i];
+      for (i = 0; i < limit; i++) if (s->ger[i].g && s->ger[i].ocupado && s->ger[i].seg == -2) prog = &s->ger[i];
       if (prog) {
         if (!prog->parar) {
           prog->parar = 1;
@@ -521,7 +572,7 @@ static Gerador *pegarGerador(Sessao *s, int seg, int *continua, char *err, size_
         continue;
       }
     }
-    for (i = 0; i < GERADORES; i++) if (!s->ger[i].g && !s->ger[i].ocupado) { vaga = i; break; }
+    for (i = 0; i < limit; i++) if (!s->ger[i].g && !s->ger[i].ocupado) { vaga = i; break; }
     if (vaga >= 0) {
       Gerador *nv = &s->ger[vaga];
       DtsRemuxGen *g;
@@ -539,12 +590,12 @@ static Gerador *pegarGerador(Sessao *s, int seg, int *continua, char *err, size_
     }
     // Todos ocupados: o mais antigo larga o que faz (o player desistiu dele).
     { Gerador *velho = NULL;
-      for (i = 0; i < GERADORES; i++)
+      for (i = 0; i < limit; i++)
         if (s->ger[i].ocupado && s->ger[i].g && (!velho || s->ger[i].uso < velho->uso)) velho = &s->ger[i];
       if (velho && !velho->parar) {
         velho->parar = 1;
         dts_remux_gen_interrupt(velho->g);   // preso na rede: solta ja, nao no proximo pacote
-        printf("[dts-tpk] sessao %u: %d geradores ocupados, o mais antigo (seg %d) para\n", s->id, GERADORES, velho->seg);
+        printf("[dts-tpk] sessao %u: %d geradores ocupados, o mais antigo (seg %d) para\n", s->id, limit, velho->seg);
         fflush(stdout);
       } }
     if (pthread_cond_timedwait(&s->c, &s->m, &ts) == ETIMEDOUT) { snprintf(err, errn, "no free generator"); break; }
@@ -571,7 +622,13 @@ typedef struct {
   Gerador *ger;
   int64_t bytes;
   uint64_t t0, primeiroByte;
+  int seg;                        // segment of this run (-1 progressive)
+  uint64_t paceT0;                // webOS HLS pacing: start of the current rate
+  double paceB, paceF;            // bytes sent at it, its factor
 } Saida;
+#ifdef NV_WEBOS_HLS_TEST
+static void hlsCompasso(Saida *o, int n);
+#endif
 
 static int enviarCab(Saida *o) {
   char cab[400];
@@ -587,6 +644,9 @@ static int saidaEscrever(void *u, const unsigned char *d, int n) {
   int k;
   if (!o->primeiroByte) o->primeiroByte = agoraMs();
   if (!o->cabEnviado && !enviarCab(o)) return -1;
+#ifdef NV_WEBOS_HLS_TEST
+  if (o->s->webos && o->seg >= 0) hlsCompasso(o, n);
+#endif
   k = snprintf(tam, sizeof tam, "%x\r\n", (unsigned)n);
   if (!enviarTudo(o->sock, tam, (size_t)k, &o->s->cancelar, &o->ger->parar) ||
       !enviarTudo(o->sock, d, (size_t)n, &o->s->cancelar, &o->ger->parar) ||
@@ -598,6 +658,87 @@ static int saidaEscrever(void *u, const unsigned char *d, int n) {
 
 // Um segmento (seg >= 0) ou o fluxo progressivo (seg < 0, a partir de `t`).
 // Devolve se a conexao pode seguir aberta.
+#ifdef NV_WEBOS_HLS_TEST
+/* PACING (owner 22/11): the LG player keeps ~30 s of HLS segments ahead and
+ * ignores bufferControl for HLS; with HLS Off it holds ~2 s and Nuvio's own
+ * buffer the rest. Holding a request back did not work well: the player gives
+ * up on a segment after ~3 s and asks again (restarting it), a held request
+ * outlived a seek and stopped the new one, and a held segment then left at
+ * full speed (1 s peaks near 350 Mb/s). Now every segment answers at once and
+ * its body goes out at a rate set by how far ahead the player is:
+ *   below HLS_FILL_S or HLS_FILL_MB ahead (start, seek, rebuffer): full speed;
+ *   below HLS_AHEAD_S or HLS_AHEAD_MIN_MB: 1.25x the recent content rate;
+ *   above both: 1.0x, so the player's lead stays where it is.
+ * The content rate comes from the last segments sent (bytes per second of
+ * film). The source reader only reads what the server uses, so the download
+ * from the internet follows the same steady rate. MB floors because the
+ * player resumes from a rebuffer by bytes (owner's log 22/11). */
+#define HLS_FILL_S 10.0
+#define HLS_FILL_MB 50.0
+#define HLS_AHEAD_S 20.0
+#define HLS_AHEAD_MIN_MB 100.0
+static atomic_llong hlsPosMs = -1;     /* playback position, -1 unknown (rebuffer) */
+void dts_hls_webos_position(double s) { atomic_store(&hlsPosMs, s >= 0 ? (long long)llround(s * 1000.0) : -1); }
+/* Bytes of the segments sent after the one at `pos`: what the player holds. */
+static double hlsBytesAhead(Sessao *s, double pos) {
+  int from = dts_remux_segment_at(s->rx, pos), last = s->lastSegment;
+  double b = 0;
+  pthread_mutex_lock(&s->m);
+  for (int i = from + 1; i <= last; i++)
+    if (s->sent[i & 63].seg == i) b += (double)s->sent[i & 63].bytes;
+  pthread_mutex_unlock(&s->m);
+  return b;
+}
+/* Bytes per second of film over the last segments sent (0 unknown). */
+static double hlsContentRate(Sessao *s) {
+  int last = s->lastSegment;
+  double b = 0, d = 0;
+  pthread_mutex_lock(&s->m);
+  for (int i = last; i >= 0 && i > last - 8; i--)
+    if (s->sent[i & 63].seg == i && s->sent[i & 63].bytes > 0) {
+      b += (double)s->sent[i & 63].bytes;
+      d += dts_remux_segment_duration(s->rx, i);
+    }
+  pthread_mutex_unlock(&s->m);
+  return d > 0 ? b / d : 0;
+}
+static void hlsCompasso(Saida *o, int n) {
+  Sessao *s = o->s;
+  long long p = atomic_load(&hlsPosMs);
+  int last = s->lastSegment;
+  double f = 0, rate = 0;
+  if (p >= 0 && last >= 0 && o->seg > last && o->seg <= last + 2) {   /* in order, playing */
+    double pos = p / 1000.0;
+    double ahead = dts_remux_segment_start(s->rx, last) + dts_remux_segment_duration(s->rx, last) - pos;
+    double mb = hlsBytesAhead(s, pos) / 1048576.0;
+    rate = hlsContentRate(s);
+    if (rate <= 0 || ahead < HLS_FILL_S || mb < HLS_FILL_MB || ahead > 600) f = 0;
+    else if (ahead < HLS_AHEAD_S || mb < HLS_AHEAD_MIN_MB) f = 1.25;
+    else f = 1.0;
+  }
+  if (f <= 0) { o->paceT0 = 0; return; }
+  uint64_t now = agoraMs();
+  if (!o->paceT0 || o->paceF != f) { o->paceT0 = now; o->paceB = 0; o->paceF = f; }
+  o->paceB += n;
+  double due = o->paceB / (f * rate) * 1000.0;            /* ms these bytes may take */
+  while (!s->cancelar && !o->ger->parar) {
+    double el = (double)(agoraMs() - o->paceT0);
+    if (due <= el) break;
+    double w = due - el;
+    if (w > 200) w = 200;                                /* re-check stop/cancel often */
+    usleep((useconds_t)(w * 1000));
+  }
+}
+/* End of the last segment sent in full: what the player holds. */
+double dts_hls_webos_served_until(void) {
+  double v = -1;
+  pthread_mutex_lock(&G);
+  if (atual && atual->rx && atual->lastSegment >= 0)
+    v = dts_remux_segment_start(atual->rx, atual->lastSegment) + dts_remux_segment_duration(atual->rx, atual->lastSegment);
+  pthread_mutex_unlock(&G);
+  return v;
+}
+#endif
 static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int seg, double t, const char *fmt,
                        const char *tipo, int manter) {
   char err[160] = "";
@@ -612,8 +753,10 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
     snprintf(cab, sizeof cab, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nCache-Control: no-cache\r\nConnection: %s\r\n\r\n",
              tipo, manter ? "keep-alive" : "close");
     enviarTudo(sock, cab, strlen(cab), &s->cancelar, NULL);
-    printf("[dts-tpk] #%u <- 200 HEAD (sem corpo)\n", nr);
-    fflush(stdout);
+    if (!s->webos) {
+      printf("[dts-tpk] #%u <- 200 HEAD (sem corpo)\n", nr);
+      fflush(stdout);
+    }
     return manter;
   }
   Gerador *ger = pegarGerador(s, seg < 0 ? -2 : seg, &continua, err, sizeof err);
@@ -628,11 +771,11 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
     pthread_mutex_lock(&s->m); s->inicioStream = dts_remux_keyframe_before(s->rx, t); pthread_mutex_unlock(&s->m);
   }
   memset(&o, 0, sizeof o);
-  o.sock = sock; o.manter = manter; o.tipo = tipo; o.s = s; o.ger = ger; o.t0 = t0;
-  if (pd->range[0] && strncmp(pd->range, "bytes=0-", 8))
+  o.sock = sock; o.manter = manter; o.tipo = tipo; o.s = s; o.ger = ger; o.t0 = t0; o.seg = seg;
+  if (!s->webos && pd->range[0] && strncmp(pd->range, "bytes=0-", 8))
     printf("[dts-tpk] #%u: Range ignorado (gera do inicio, 200 inteiro)\n", nr);
   rr = dts_remux_gen_run(ger->g, seg, t, fmt, saidaEscrever, &o, &ger->parar, &st, err, sizeof err);
-  soltarGerador(s, ger);
+  double streamStart = seg < 0 ? dts_remux_gen_start_s(ger->g) : 0.0;
   int status = o.status, ok = rr == 0;
   int64_t enviados = o.bytes;
   if (ok) {
@@ -647,9 +790,28 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
   }
   pthread_mutex_lock(&s->m);
   s->bytes += enviados;
-  if (seg >= 0 && ok) { s->nSegs++; if (!st.fresh) s->nContinuou++; else s->nBuscou++; }
-  if (!ok && rr != -2) s->nErros++;
+  if (seg >= 0 && ok) {
+    s->nSegs++;
+    if (!st.fresh) s->nContinuou++; else s->nBuscou++;
+  }
+  if (!ok && rr != -2) {
+    s->nErros++;
+    if (s->webos) {
+      s->estado = DTSTPK_FALHOU;
+      snprintf(s->erro, sizeof s->erro, "%s", err);
+    }
+  }
   pthread_mutex_unlock(&s->m);
+  soltarGerador(s, ger);
+#ifdef NV_WEBOS_HLS_TEST
+  if (s->webos && seg >= 0 && ok) {
+    pthread_mutex_lock(&s->m);
+    s->sent[seg & 63].seg = seg; s->sent[seg & 63].bytes = enviados;
+    pthread_mutex_unlock(&s->m);
+    s->lastSegment = seg;
+  }
+#endif
+  if (s->webos && (ok || rr == -2)) return ok && manter;
   uint64_t fim = agoraMs();
   char stTxt[8];                           // "-": nada saiu (o player fechou antes)
   if (status) snprintf(stTxt, sizeof stTxt, "%d", status); else snprintf(stTxt, sizeof stTxt, "-");
@@ -660,7 +822,7 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
            st.fresh ? "buscou" : "continuou", st.cpu_s * 1000.0, st.audio_cpu_s * 1000.0, st.range_wait_s * 1000.0,
            ok ? "" : rr == -2 ? ", player fechou" : ", ERRO: ", ok || rr == -2 ? "" : err);
   else
-    printf("[dts-tpk] #%u <- %s %s desde %.3f s: %lld B em %u ms, %s%s\n", nr, stTxt, fmt, dts_remux_gen_start_s(ger->g),
+    printf("[dts-tpk] #%u <- %s %s desde %.3f s: %lld B em %u ms, %s%s\n", nr, stTxt, fmt, streamStart,
            (long long)enviados, (unsigned)(fim - t0), ok ? "fim do arquivo" : rr == -2 ? "player fechou" : "ERRO: ",
            ok || rr == -2 ? "" : err);
   fflush(stdout);
@@ -672,12 +834,22 @@ static void playlist(Sessao *s, char *b, size_t n) {
   int k, alvo = (int)ceil(in->max_segment_s);
   size_t p = 0;
   if (alvo < 1) alvo = 1;
-  p += (size_t)snprintf(b + p, n - p, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:%d\n#EXT-X-MEDIA-SEQUENCE:0\n"
-                        "#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n", alvo);
+  p += (size_t)snprintf(b + p, n - p, "#EXTM3U\n#EXT-X-VERSION:%d\n#EXT-X-TARGETDURATION:%d\n#EXT-X-MEDIA-SEQUENCE:0\n"
+                        "#EXT-X-PLAYLIST-TYPE:VOD\n",
+                        s->webosMp4 ? 7 : 3, alvo);
+  if (s->webosMp4) p += (size_t)snprintf(b + p, n - p, "#EXT-X-MAP:URI=\"init.mp4\"\n");
+  else p += (size_t)snprintf(b + p, n - p, "#EXT-X-INDEPENDENT-SEGMENTS\n");
+#ifdef NV_WEBOS_HLS_TEST
+  if (s->webos && s->hls.resume_s >= 0.001 && s->hls.resume_s < in->duration_s) {
+    long ms = lround(s->hls.resume_s * 1000.0);
+    p += (size_t)snprintf(b + p, n - p, "#EXT-X-START:TIME-OFFSET=%ld.%03ld,PRECISE=YES\n", ms / 1000, ms % 1000);
+  }
+#endif
   for (k = 0; k < in->n_segments && p < n - 64; k++) {
     // Milissegundos inteiros: o LC_NUMERIC da TV nunca vira virgula aqui.
     long ms = lround(dts_remux_segment_duration(s->rx, k) * 1000.0);
-    p += (size_t)snprintf(b + p, n - p, "#EXTINF:%ld.%03ld,\nseg%d.ts\n", ms / 1000, ms % 1000, k);
+    p += (size_t)snprintf(b + p, n - p, "#EXTINF:%ld.%03ld,\nseg%d.%s\n", ms / 1000, ms % 1000, k,
+                          s->webosMp4 ? "m4s" : "ts");
   }
   snprintf(b + p, n - p, "#EXT-X-ENDLIST\n");
 }
@@ -692,12 +864,19 @@ static void playlistMestre(Sessao *s, char *b, size_t n) {
   long fps = lround(in->fps * 1000.0);
   size_t p = 0;
   if (bw < 1000000L) bw = 1000000L;
-  p += (size_t)snprintf(b + p, n - p, "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n");
+  p += (size_t)snprintf(b + p, n - p, "#EXTM3U\n#EXT-X-VERSION:7\n");
+  if (!s->webosMp4) p += (size_t)snprintf(b + p, n - p, "#EXT-X-INDEPENDENT-SEGMENTS\n");
   p += (size_t)snprintf(b + p, n - p, "#EXT-X-STREAM-INF:BANDWIDTH=%ld", bw);
   if (in->width > 0 && in->height > 0) p += (size_t)snprintf(b + p, n - p, ",RESOLUTION=%dx%d", in->width, in->height);
   if (fps > 0) p += (size_t)snprintf(b + p, n - p, ",FRAME-RATE=%ld.%03ld", fps / 1000, fps % 1000);
-  if (!strncmp(in->hdr, "PQ", 2) || !strcmp(in->hdr, "HLG"))
-    p += (size_t)snprintf(b + p, n - p, ",VIDEO-RANGE=%s", strncmp(in->hdr, "PQ", 2) ? "HLG" : "PQ");
+  if (s->dv7)
+    p += (size_t)snprintf(b + p, n - p, ",VIDEO-RANGE=PQ,CODECS=\"%s,ac-3\","
+                       "SUPPLEMENTAL-CODECS=\"dvh1.08.%02d/db1p\"", in->hls_codec, in->dv_level);
+  else {
+    if (!strncmp(in->hdr, "PQ", 2) || !strcmp(in->hdr, "HLG"))
+      p += (size_t)snprintf(b + p, n - p, ",VIDEO-RANGE=%s", strncmp(in->hdr, "PQ", 2) ? "HLG" : "PQ");
+    if (in->hls_codec[0]) p += (size_t)snprintf(b + p, n - p, ",CODECS=\"%s,ac-3\"", in->hls_codec);
+  }
   snprintf(b + p, n - p, "\nv.m3u8\n");
 }
 
@@ -723,10 +902,14 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
   int logAgente = !s->agente[0] && pd->agente[0];
   if (logAgente) snprintf(s->agente, sizeof s->agente, "%s", pd->agente);
   pthread_mutex_unlock(&s->m);
-  printf("[dts-tpk] #%u -> %s %s%s%s Range=%s Connection=%s (+%u ms desde a abertura)%s%s\n", nr, pd->metodo, resto,
-         pd->query[0] ? "?" : "", pd->query, pd->range[0] ? pd->range : "-", pd->conexao[0] ? pd->conexao : "-",
-         (unsigned)(agoraMs() - s->criadaMs), logAgente ? " UA=" : "", logAgente ? pd->agente : "");
-  fflush(stdout);
+  // webOS MPEG-TS: one connection per request, as Stremio Origin serves it.
+  if (s->webos && !s->webosMp4) manter = 0;
+  if (!s->webos) {
+    printf("[dts-tpk] #%u -> %s %s%s%s Range=%s Connection=%s (+%u ms desde a abertura)%s%s\n", nr, pd->metodo, resto,
+           pd->query[0] ? "?" : "", pd->query, pd->range[0] ? pd->range : "-", pd->conexao[0] ? pd->conexao : "-",
+           (unsigned)(agoraMs() - s->criadaMs), logAgente ? " UA=" : "", logAgente ? pd->agente : "");
+    fflush(stdout);
+  }
   int r = 0;
   if (!esperarPronta(s, sock, manter)) {
     if (s->semIndice) printf("[dts-tpk] #%u <- sem resposta: o app troca para o TS continuo\n", nr);
@@ -748,14 +931,24 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
                    "Content-Length: %zu\r\nCache-Control: no-cache\r\nConnection: %s\r\n\r\n", strlen(b), manter ? "keep-alive" : "close");
           enviarTudo(sock, cab, strlen(cab), NULL, NULL);
         } else responderSimples(sock, 200, "OK", "application/vnd.apple.mpegurl", b, manter);
-        if (mestre) { const char *v = strstr(b, "BANDWIDTH"); v = v ? v : "";
-                      printf("[dts-tpk] #%u <- 200 playlist mestre: %.*s\n", nr, (int)strcspn(v, "\n"), v); }
-        else printf("[dts-tpk] #%u <- 200 playlist: %d segmento(s), %zu B\n", nr, dts_remux_info(s->rx)->n_segments, strlen(b));
+        if (!s->webos) {
+          if (mestre) { const char *v = strstr(b, "BANDWIDTH"); v = v ? v : "";
+                        printf("[dts-tpk] #%u <- 200 playlist mestre: %.*s\n", nr, (int)strcspn(v, "\n"), v); }
+          else printf("[dts-tpk] #%u <- 200 playlist: %d segmento(s), %zu B\n", nr, dts_remux_info(s->rx)->n_segments, strlen(b));
+        }
         free(b);
         r = manter;
       }
     }
     fflush(stdout);
+  } else if (s->webosMp4 && !strcmp(resto, "init.mp4")) {
+    char cab[256];
+    snprintf(cab, sizeof cab, "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\n"
+             "Content-Length: %zu\r\nCache-Control: no-cache\r\nConnection: %s\r\n\r\n",
+             s->initLen, manter ? "keep-alive" : "close");
+    int sent = enviarTudo(sock, cab, strlen(cab), &s->cancelar, NULL) &&
+               (pd->head || enviarTudo(sock, s->initMp4, s->initLen, &s->cancelar, NULL));
+    r = sent && manter;
   } else if (!strncmp(resto, "seg", 3)) {
     int k = atoi(resto + 3);
     if (k < 0 || k >= dts_remux_info(s->rx)->n_segments) {
@@ -763,8 +956,11 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
       printf("[dts-tpk] #%u <- 404 segmento %d fora da playlist\n", nr, k);
       fflush(stdout);
       r = manter;
-    } else r = servirFluxo(sock, s, pd, nr, k, 0, "mpegts", "video/mp2t", manter);
-  } else if (!strcmp(resto, "prog.ts")) {
+    } else {
+      r = servirFluxo(sock, s, pd, nr, k, 0, s->webosMp4 ? "mp4" : "mpegts",
+                           s->webosMp4 ? "video/mp4" : "video/mp2t", manter);
+    }
+  } else if (!s->webos && !strcmp(resto, "prog.ts")) {
     const char *q = strstr(pd->query, "t=");
     double t = q ? atof(q + 2) : 0.0;
     r = servirFluxo(sock, s, pd, nr, -1, t, "mpegts", "video/mp2t", manter);
@@ -945,6 +1141,12 @@ static void *fioMemoria(void *u) {
 static void encerrarAtual(void) {   // sob G
   Sessao *s = atual;
   if (!s) return;
+#ifdef NV_WEBOS_HLS_TEST
+  if (s->webos) {
+    s->retiring = 1;
+    atomic_fetch_add(&webosRetiring, 1);
+  }
+#endif
   pthread_mutex_lock(&porteiroHls.m);
   atual = NULL;
   for (int i = 0; i < porteiroHls.maxVivos; i++) if (porteiroHls.conexoes[i]) {
@@ -974,6 +1176,9 @@ static int urlDe(Sessao *s, double t, char *out, size_t n) {
   int porta = portaLo;
   switch (s->modo) {
     case DTSTPK_HLS:
+      // webOS loads the master playlist in both formats: on a C5 (webOS 11)
+      // the TS media playlist alone never completed the load, with or without
+      // "HLS" named; the master's CODECS let the TV set up its decoders.
       snprintf(out, n, "http://%s:%d/%s/m.m3u8", host, porta, s->token); break;
     default: {
       long ms = lround((t > 0 ? t : 0) * 1000.0);
@@ -983,11 +1188,12 @@ static int urlDe(Sessao *s, double t, char *out, size_t n) {
   return 1;
 }
 
-int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, int modo,
-                  double inicio, char *out, size_t n) {
+static int openSession(const char *url, const char *headers, int track, int stereo, int modo,
+                       double inicio, char *out, size_t n, const DtsWebosHls *hls) {
   Sessao *s;
   pthread_t t;
   unsigned id;
+  int webos = hls != NULL;
   if (out && n) out[0] = 0;
   if (!url || !*url || !out || n < 64 || modo < 0 || modo >= DTSTPK_DESLIGADO || !dts_remux_available()) return 0;
   pthread_mutex_lock(&G);
@@ -998,8 +1204,8 @@ int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, i
     fflush(stdout);
     return 0;
   }
-  dts_remux_set_queue_budget_mib(anelMib() == 16 ? 128 : 192);
-  dts_engine_set_ring_mib(anelMib());   // ring of the readers this session opens
+  dts_remux_set_queue_budget_mib(webos ? 48 : anelMib() == 16 ? 128 : 192);
+  if (!webos) dts_engine_set_ring_mib(anelMib());   // ring of the Samsung readers
   { static int monitor;
     pthread_t tm;
     if (!monitor && pthread_create(&tm, NULL, fioMemoria, NULL) == 0) { pthread_detach(tm); monitor = 1; } }
@@ -1010,6 +1216,31 @@ int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, i
   gerarToken(s->token, 8);
   s->url = strdup(url); s->cabs = strdup(headers ? headers : "");
   s->track = track; s->stereo = stereo; s->modo = modo;
+  s->webos = webos;
+  s->webosMp4 = webos;
+#ifdef NV_WEBOS_HLS_TEST
+  if (hls) {
+    s->dv7 = hls->dv7;
+    s->hls = *hls;
+    s->webosMp4 = !hls->ts;
+    s->lastSegment = -1;
+    if (hls->external_url && *hls->external_url) {
+      s->externalUrl = strdup(hls->external_url);
+      s->externalHeaders = strdup(hls->external_headers ? hls->external_headers : "");
+      if (!s->externalUrl || !s->externalHeaders) {
+        pthread_mutex_unlock(&G); sessaoDestruir(s); return 0;
+      }
+      s->hls.external_url = s->externalUrl;
+      s->hls.external_headers = s->externalHeaders;
+      snprintf(s->externalLangs, sizeof s->externalLangs, "%s", hls->external_langs ? hls->external_langs : "");
+      s->hls.external_langs = s->externalLangs;
+      if (hls->external_hint) {
+        s->externalHint = *hls->external_hint;
+        s->hls.external_hint = &s->externalHint;
+      }
+    } else s->hls.external_url = NULL;
+  }
+#endif
   s->estado = DTSTPK_SONDANDO; s->inicioStream = -1;
   s->criadaMs = agoraMs();
   memInicio(s);
@@ -1032,6 +1263,76 @@ int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, i
   fflush(stdout);
   return 1;
 }
+
+int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, int modo,
+                  double inicio, char *out, size_t n) {
+  return openSession(url, headers, track, stereo, modo, inicio, out, n, NULL);
+}
+
+#ifdef NV_WEBOS_HLS_TEST
+int dts_hls_webos_open(const char *url, const char *headers, int track, const DtsWebosHls *options,
+                      char *out, size_t n) {
+  if (!options) return 0;
+  return openSession(url, headers, track, 0, DTSTPK_HLS, 0, out, n, options);
+}
+
+int dts_hls_webos_draining(void) { return atomic_load(&webosRetiring) > 0; }
+
+void dts_hls_webos_video_end(const char *url, const char *headers, DtsHlsVideoEnd *out) {
+  *out = (DtsHlsVideoEnd){0};
+  pthread_mutex_lock(&G);
+  Sessao *s = atual;
+  if (s && s->webos && !strcmp(s->url, url) && !strcmp(s->cabs, headers ? headers : "")) {
+    pthread_mutex_lock(&s->m);
+    if (s->estado == DTSTPK_PRONTO) dts_remux_webos_video_end(s->rx, out);
+    pthread_mutex_unlock(&s->m);
+  }
+  pthread_mutex_unlock(&G);
+}
+
+void dts_hls_webos_buffer_info(DtsBufferInfo *out) {
+  *out = (DtsBufferInfo){0};
+  pthread_mutex_lock(&G);
+  Sessao *s = atual;
+  if (s && s->webos) {
+    pthread_mutex_lock(&s->m);
+    if (s->estado == DTSTPK_PRONTO && s->ger[0].g)
+      dts_remux_gen_buffer_info(s->ger[0].g, out);
+    pthread_mutex_unlock(&s->m);
+  }
+  pthread_mutex_unlock(&G);
+}
+
+int dts_hls_webos_switch_audio(const char *url, const char *headers, int ordinal) {
+  int ok = 0;
+  pthread_mutex_lock(&G);
+  Sessao *s = atual;
+  if (s && s->webos && !s->externalUrl && url && !strcmp(s->url, url) &&
+      !strcmp(s->cabs, headers ? headers : "")) {
+    pthread_mutex_lock(&s->m);
+    if (s->estado == DTSTPK_PRONTO && s->rx) ok = dts_remux_webos_select_audio(s->rx, ordinal);
+    if (ok) s->track = ordinal;
+    pthread_mutex_unlock(&s->m);
+  }
+  pthread_mutex_unlock(&G);
+  return ok;
+}
+
+int dts_hls_webos_audio_tracks(DtsHlsAudioTrack *out, int max, int *selected) {
+  int count = 0;
+  *selected = -1;
+  pthread_mutex_lock(&G);
+  Sessao *s = atual;
+  if (s && s->webos) {
+    pthread_mutex_lock(&s->m);
+    if (s->estado == DTSTPK_PRONTO && s->rx)
+      count = dts_remux_webos_audio_tracks(s->rx, out, max, selected);
+    pthread_mutex_unlock(&s->m);
+  }
+  pthread_mutex_unlock(&G);
+  return count;
+}
+#endif
 
 int dts_tpk_prebuffer_ms(void) { return PREBUFFER_MS; }
 
@@ -1059,6 +1360,9 @@ void dts_tpk_fechar(void) {
   pthread_mutex_unlock(&G); return v;
 int dts_tpk_estado(void) { LER_ATUAL(int, estado, DTSTPK_NADA) }
 double dts_tpk_duracao(void) { LER_ATUAL(double, duracao, 0.0) }
+unsigned dts_tpk_segmentos(void) { LER_ATUAL(unsigned, nSegs, 0u) }
+double dts_tpk_bytes_por_s(void) { LER_ATUAL(double, bytesPorS, 0.0) }
+double dts_tpk_segmento_max(void) { LER_ATUAL(double, segMax, 0.0) }
 int dts_tpk_modo(void) { LER_ATUAL(int, modo, -1) }
 double dts_tpk_inicio_stream(void) { LER_ATUAL(double, inicioStream, -1.0) }
 const char *dts_tpk_erro(void) {

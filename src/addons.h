@@ -92,6 +92,11 @@ int addons_consulta_atual(const AddonsConsulta *consulta);
 // Uma consulta cancelada/incompleta devolve -1 e deixa *saida NULL.
 int addons_consulta_consultar(const AddonsConsulta *consulta, const char *id, const char *tipo,
                               int fios, int (*cancelado)(void *), void *ctx, void *saida /* Stream ** */);
+// The same, keeping what the add-ons that answered sent when another one did
+// not (-1 only cancelled, or nothing at all with one missing). For lists that
+// are only browsed (another episode's versions, audioextep.h).
+int addons_consulta_consultar_parcial(const AddonsConsulta *consulta, const char *id, const char *tipo,
+                                      int fios, int (*cancelado)(void *), void *ctx, void *saida /* Stream ** */);
 // Serial installed add-on availability probe; no plugins, retries, cache, or list publication.
 int addons_consulta_filme(const AddonsConsulta *consulta, const char *id,
                           int (*cancelado)(void *), void *ctx);

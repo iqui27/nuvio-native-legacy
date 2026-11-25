@@ -44,6 +44,9 @@ static const Item TELA[] = {
       OPC(AJ_SELOS_PACOTE), OPC(AJ_SELOS_PACOTE_ADD), OPC(AJ_SELOS_PACOTE_REM),
     ROT("Som e vídeo desta TV"),
       OPC(AJ_DTS_AC3),
+#if defined(NV_WEBOS) && defined(NV_WEBOS_HLS_TEST)
+      OPC(AJ_WEBOS_HLS_MODE),
+#endif
 #ifdef NV_ANDROID
       OPC(AJ_TUNNELING),
 #endif
@@ -51,11 +54,25 @@ static const Item TELA[] = {
       OPC(AJ_DV_MKV),
 #ifdef NV_DV7_CONVERSION
       OPC(AJ_DV7),
+#if defined(NV_DV7_MAPPING_TEST) && defined(NV_WEBOS)
+      OPC(AJ_DV7_MAPPING),
+#endif
+#endif
+#if defined(NV_MP4_BD_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
+      OPC(AJ_MP4_BD_TEST),
+#endif
+#if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
+      OPC(AJ_DV_AUDIO_FIXO),
+#endif
+#ifndef __EMSCRIPTEN__
+      // Audio from another version (owner, 07/11): right under the Dolby
+      // Vision audio output; one row, its options in its sheet (eaAbrir).
+      OPC(AJ_EXT_AUDIO),
 #endif
 #endif
       OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO), OPC(AJ_SEEKR_AJUSTE),
 #if defined(NV_ANDROID) || (!defined(NV_TPK) && !defined(__EMSCRIPTEN__))
-      OPC(AJ_BUFFER),   // webOS: DTS/Dolby Vision conversion read-ahead
+      OPC(AJ_BUFFER),   // webOS: native and conversion RAM read-ahead
 #endif
 #ifdef NV_ANDROID
       OPC(AJ_PLAYER_EXTERNO),

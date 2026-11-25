@@ -126,11 +126,21 @@ char *rede_baixar_trecho64_final(const char *url, const char *headers,
                               int64_t *total, int *status,
                               volatile int *cancelled, char *final, int *cross);
 /* Optional guard for an actively awaited range. Atomic urgent flag is owned
- * by the caller for this synchronous call. Last retry can omit this guard. */
+ * by the caller for this synchronous call: 1 = idle guard, 2 = idle plus a
+ * five-second awaited-range budget (DV TV experiment); 3 lets a confirmed gap
+ * use three seconds below 75% completion. Only awaited ranges
+ * get the budget; last retry can omit both guards. */
 char *rede_baixar_trecho64_vigiado(const char *url,const char *headers,
     int64_t start,int64_t end,long *size,int64_t *total,int *status,
     volatile int *cancelled,char *final,int *cross,volatile int *urgent,
     unsigned idle_ms,int *stalled);
+/* Same reader, with request-owned Retry-After metadata. -1 = absent, 0 =
+ * zero/past/invalid, positive = parsed seconds. Reset at every response hop;
+ * a redirect's Retry-After must never become the final response's delay. */
+char *rede_baixar_trecho64_relato(const char *url,const char *headers,
+    int64_t start,int64_t end,long *size,int64_t *total,int *status,
+    volatile int *cancelled,char *final,int *cross,volatile int *urgent,
+    unsigned idle_ms,int *stalled,int *retry_after);
 /* One streaming read "bytes=start-" for the Samsung converter: the body goes to
  * sink(opaque, data, n) as it arrives (return 0 to stop; it may block). Same
  * redirect and header rules as rede_baixar_trecho64_final. No limit on the
