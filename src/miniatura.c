@@ -34,6 +34,7 @@
 #include "seekr.h"
 #include "miniplat.h"
 #include "mediaurl.h"
+#include "tpk45.h"
 
 #ifdef NV_MINIATURAS
 #include "minidrive.h"
@@ -560,6 +561,10 @@ void seekr_pedir(const char *imdb, int t, int e, long durMs) {
   Trabalho *w;
   Job *j;
   pthread_t f;
+  // Tizen 4-5.5 (NuvioTpk40): no thumbnails. Tester logs (11/2026): ~1 s per
+  // 1080p tile on a 2020 TV, a few dozen tiles after minutes of play, none
+  // while DTS converts; their Settings rows are hidden there (ajustes_ux_tela.inc).
+  if (tpk45_ativo()) return;
   if (!url || !*url) return;
   pthread_mutex_lock(&mu);
   batida = SDL_GetTicks();

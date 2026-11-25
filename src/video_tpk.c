@@ -36,6 +36,7 @@
 #include "proxyts.h"
 #include "dts/dts_hls_tpk.h"
 #include "dts/dts_remux.h"
+#include "tpk45.h"
 #include "cdnlink.h"
 #include "debrid.h"
 #include "mkvfix.h"
@@ -1063,9 +1064,10 @@ static const MkvFaixa *mkvTrack(int numero) {
   return NULL;
 }
 
-// "Dolby Digital 5.1" / "2.0" / "AAC 2.0": o que sai para a TV.
+// "Dolby Digital 5.1" / "2.0": o que sai para a TV. "Estereo" tambem e Dolby
+// Digital (AC3 2.0) desde 11/2026; antes era AAC 2.0 (dts_remux.h).
 static const char *saidaRotulo(int canais) {
-  if (!ajustes_dts_ac3()) return "AAC 2.0";
+  if (!ajustes_dts_ac3()) return "Dolby Digital 2.0";
   return canais == 1 ? "Dolby Digital 1.0" : canais == 2 ? "Dolby Digital 2.0" : "Dolby Digital 5.1";
 }
 
@@ -1202,6 +1204,44 @@ static int convAbrirSessao(int ordinal, int modo, double pos, char *url, size_t 
 
 static int modoProg(int modo) { return modo == DTSTPK_PROG_TS; }
 
+// O video do arquivo (codec do MKV, "?" sem cabecalho): a recusa do HLS e
+// lembrada por ele.
+static const char *codecVideoMkv(void) {
+  for (int i = 0; i < mkvN; i++) if (mkvFx[i].tipo == 1) return mkvFx[i].codec;
+  return "?";
+}
+// Codecs de video cujo HLS o player recusou nesta execucao (Tizen 4/5, entrega
+// Auto). POR CODEC desde o log 1 do testador (11/2026): uma recusa de HEVC
+// mandava todo H.264 seguinte para o TS continuo (1o quadro 21.8 s, cada seek
+// um fluxo novo), e H.264 tocava bem em HLS.
+#define HLS_RECUSAS 4
+static char hlsRecusou[HLS_RECUSAS][32];
+static int hlsRecusadoNeste(void) {
+  const char *c = codecVideoMkv();
+  for (int i = 0; i < HLS_RECUSAS; i++) if (hlsRecusou[i][0] && !strcmp(hlsRecusou[i], c)) return 1;
+  return 0;
+}
+static void hlsMarcarRecusa(void) {
+  const char *c = codecVideoMkv();
+  if (hlsRecusadoNeste()) return;
+  for (int i = 0; i < HLS_RECUSAS; i++)
+    if (!hlsRecusou[i][0]) { snprintf(hlsRecusou[i], sizeof hlsRecusou[i], "%s", c); return; }
+  memmove(hlsRecusou[0], hlsRecusou[1], sizeof hlsRecusou[0] * (HLS_RECUSAS - 1));   // cheio: sai o mais velho
+  snprintf(hlsRecusou[HLS_RECUSAS - 1], sizeof hlsRecusou[0], "%s", c);
+}
+// Modo em que uma conversao NOVA abre. Nos hosts 6+ e o do ajuste (HLS). No
+// Tizen 4/5 (tpk45.h, entrega Auto): HLS ate o player recusar o HLS para este
+// codec de video nesta execucao do app.
+static int modoDeAbrir(void) {
+  int m = ajustes_dts_tpk_modo();
+  if (m == DTSTPK_DESLIGADO || !tpk45_ativo()) return m;
+  switch (tpk45_entrega()) {
+    case TPK45_ENTREGA_CONTINUO: return DTSTPK_PROG_TS;
+    case TPK45_ENTREGA_HLS: return DTSTPK_HLS;
+    default: return hlsRecusadoNeste() ? DTSTPK_PROG_TS : DTSTPK_HLS;
+  }
+}
+
 // Outro player no meio de uma fonte que ja tocou: o app ve um seek ate o
 // convertido mostrar quadro de novo (convBombear solta).
 static void convReabrir(double alvo, const char *porque) {
@@ -1238,7 +1278,7 @@ static void convTrocar(int track, int modo, double pos, const char *url) {
 
 static int convIniciar(int track, double pos, const char *motivo) {
   char url[256];
-  int modo = ajustes_dts_tpk_modo();
+  int modo = modoDeAbrir();
   const MkvFaixa *m = mkvTrack(track);
   // Parado (Voltar, cartao de erro): a lista de faixas do arquivo que parou
   // nao reabre nada; so video_tocar comeca outra fonte.
@@ -1247,6 +1287,9 @@ static int convIniciar(int track, double pos, const char *motivo) {
   printf("[dts-tpk] convertendo a faixa %d do MKV (audio %d; %s %d canais%s%s) a partir de %.1f s, modo %s, saida %s; motivo: %s\n",
          track, ordinalAudio(track), m ? m->codec : "?", m ? m->canais : 0, m && m->idioma[0] ? ", " : "", m ? m->idioma : "", pos,
          nomeModo(modo), saidaRotulo(m ? m->canais : 6), motivo);
+  if (tpk45_ativo())
+    printf("[dts-tpk] 4/5: video of the file %s; opening as %s (%s%s)\n", codecVideoMkv(), nomeModo(modo), tpk45_marca(),
+           hlsRecusadoNeste() ? "; the player refused HLS for this video codec earlier in this run" : "");
   fflush(stdout);
   convTrocar(track, modo, pos, url);
   return 1;
@@ -1255,12 +1298,13 @@ static int convIniciar(int track, double pos, const char *motivo) {
 // HLS precisa do indice de quadros-chave inteiro (a playlist sai dele). MKV sem
 // Cues nao tem: o mesmo audio sai pelo TS continuo, que busca por tempo. Uma vez
 // por fonte; o 404/503 da playlist que o player ja pediu nao conta contra ele.
-static void convRefazerProg(void) {
+// `porque` NULL: o motivo e o erro do conversor (sem indice). Senao, o do player.
+static void convRefazerProgPor(const char *porque) {
   char url[256];
   double pos = cv.inicio;
   int track = cv.track;
   printf("[dts-tpk] HLS nao serve para esta fonte (%s): refazendo no modo %s a partir de %.1f s\n",
-         dts_tpk_erro(), nomeModo(DTSTPK_PROG_TS), pos);
+         porque ? porque : dts_tpk_erro(), nomeModo(DTSTPK_PROG_TS), pos);
   fflush(stdout);
   dts_tpk_fechar();
   cv.refezProg = 1;
@@ -1272,6 +1316,28 @@ static void convRefazerProg(void) {
   }
   reconErroPend = 0;
   convTrocar(track, DTSTPK_PROG_TS, pos, url);
+}
+static void convRefazerProg(void) { convRefazerProgPor(NULL); }
+
+// Tizen 4/5, entrega Auto: o player recusou o HLS antes de tocar (erro no
+// Prepare, ou nao preparou). Uma vez por fonte, o mesmo audio sai pelo TS
+// continuo, e as proximas conversoes desta execucao ja abrem nele.
+// So com a sessao do conversor PRONTA (playlist servida): enquanto ele ainda le
+// a fonte, a demora ou o erro nao dizem nada sobre o player aceitar HLS.
+static int hlsPodeRecuar(void) {
+  return tpk45_ativo() && tpk45_entrega() == TPK45_ENTREGA_AUTO && cv.modo == DTSTPK_HLS && !cv.prog && !cv.refezProg &&
+         dts_tpk_estado() == DTSTPK_PRONTO;
+}
+static int hlsRecuar(const char *porque) {
+  if (!hlsPodeRecuar()) return 0;
+  hlsMarcarRecusa();
+  printf("[dts-tpk] 4/5: the player did not take the HLS stream (%s; video of the file %s; picture %dx%d; what it asked the "
+         "server is in the session summary below): one retry as continuous TS, and the next conversions of this run with "
+         "this video codec open in it\n",
+         porque, codecVideoMkv(), largura, altura);
+  fflush(stdout);
+  convRefazerProgPor(porque);
+  return 1;
 }
 
 // SEM CABECALHO DE FAIXAS (MP4): quem sabe se ha
@@ -1479,6 +1545,11 @@ static void escolhasPendentes(void) {
       printf("[dts-tpk] primeiro quadro do convertido %u ms depois de abrir (modo %s, %s)\n",
              (unsigned)(agora - cv.abriuEm), nomeModo(cv.modo),
              !strncmp(cv.url, "http://127.0.0.1:", 17) ? "127.0.0.1" : "IP da rede");
+    // Tizen 4/5: o tamanho que o player informa. 0x0 com som e posicao andando
+    // = o player tomou o fluxo sem o video (o caso "HEVC dentro de HLS").
+    if (cv.ativo && !cv.tocou && tpk45_ativo())
+      printf("[dts-tpk] 4/5: converted stream playing as %s; the player reports a %dx%d picture, video of the file %s (%s)\n",
+             nomeModo(cv.modo), largura, altura, codecVideoMkv(), tpk45_marca());
     if (cv.ativo) cv.tocou = cv.jaTocou = 1;
     fflush(stdout);
   }
@@ -1559,7 +1630,7 @@ static void convBombear(void) {
     naoSupPend = 0;
     if (semCabecalho()) {
       cv.naoSup = 1;
-      convSondar(ajustes_dts_tpk_modo(), "a TV acusou NotSupportedAudioCodec");
+      convSondar(modoDeAbrir(), "a TV acusou NotSupportedAudioCodec");
       if (!cv.sondando) audioNaoSup = 1;
     } else {
       int t = convPossivel() ? trilhaParaConverter(0) : 0;
@@ -1568,7 +1639,7 @@ static void convBombear(void) {
         // A sonda do cabecalho nao trouxe faixa nenhuma (host em pausa para
         // leitura lateral, rede): o conversor le o arquivo ele mesmo e decide.
         cv.naoSup = 1;
-        convSondar(ajustes_dts_tpk_modo(), "cabecalho do MKV nao lido; a TV acusou NotSupportedAudioCodec");
+        convSondar(modoDeAbrir(), "cabecalho do MKV nao lido; a TV acusou NotSupportedAudioCodec");
         if (cv.sondando) return;
       }
       printf("[dts-tpk] rescue: nothing converted (track to convert %d, header tracks %d, converter %s)\n",
@@ -1578,7 +1649,7 @@ static void convBombear(void) {
     }
   }
   if (!cv.ativo && !cv.sondando && semCabecalho() && pronto && faixasLidas && !faixasDaTv() && convPossivel())
-    convSondar(ajustes_dts_tpk_modo(), i18n("a TV nao listou audio"));
+    convSondar(modoDeAbrir(), i18n("a TV nao listou audio"));
   if (cv.sondando) {
     int e = dts_tpk_estado(), nTv = faixasDaTv();
     if (nTv > 0) {
@@ -1624,9 +1695,19 @@ static void convBombear(void) {
       char m[64];
       snprintf(m, sizeof m, i18n("o player recusou o fluxo convertido (erro 0x%08x)"), (unsigned)reconErroCod);
       reconErroPend = 0;
+      if (hlsRecuar(m)) return;
       convDesistir(m);
       return;
     }
+    // Tizen 4/5, entrega Auto: 25 s com a playlist PRONTA e o player sem
+    // preparar ja valem a troca para o TS continuo (os 45 s de baixo ficam para
+    // ele e para os hosts 6+). O relogio parte de quando o conversor ficou
+    // pronto nesta abertura, nao de quando abriu: fonte lenta nao e recusa.
+    { static Uint32 prontaEm, daAbertura;
+      if (daAbertura != cv.abriuEm) { daAbertura = cv.abriuEm; prontaEm = 0; }
+      if (!prontaEm && dts_tpk_estado() == DTSTPK_PRONTO) prontaEm = agora ? agora : 1u;
+      if (!pronto && prontaEm && (int)(agora - prontaEm) > 25000 &&
+          hlsRecuar("the playlist was ready for 25 s and the player did not prepare")) return; }
     // Com sinal: `agora` e lido no topo, e um convertido aberto neste mesmo
     // quadro (sonda, NotSupportedAudioCodec) tem abriuEm DEPOIS dele — sem
     // sinal a conta dava 4 bilhoes e desistia na hora (S95C, 16/10: "nao
@@ -1703,6 +1784,12 @@ static void reabrindoVigiar(void) {
   cv.reabrindo = 0;
 }
 
+// Tizen 4/5 (tpk45.h): a linha de memoria de 10 s enquanto ha video.
+static void tpk45Vigiar(void) {
+  if (!tpk45_ativo() || !ativo) return;
+  tpk45_tick(cv.ativo, cv.ativo ? nomeModo(cv.modo) : NULL);
+}
+
 void video_bombear(void) {
   // EOS wins over late polling errors and pending network retries.
   if (terminou) {
@@ -1714,6 +1801,7 @@ void video_bombear(void) {
   cdnBombear();
   mfBombear();
   convBombear();
+  tpk45Vigiar();
   reabrindoVigiar();
   escolhasPendentes();
   legendaVigiarSilencio(SDL_GetTicks());

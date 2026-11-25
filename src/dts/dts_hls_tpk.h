@@ -30,7 +30,7 @@ const char *dts_tpk_modo_nome(int modo);
  * probed in a thread; the URL written to `out` is what the player opens (its
  * requests wait for the probe). inicio: start of the first progressive URL.
  * 0 when the server cannot run. Replaces the previous session. */
-int dts_tpk_abrir(const char *url, const char *headers, int audio_ordinal, int stereo_aac,
+int dts_tpk_abrir(const char *url, const char *headers, int audio_ordinal, int stereo,
                   int modo, double inicio, char *out, size_t n);
 /* Continuous TS: the URL that restarts the stream at s (same session). */
 int dts_tpk_url_em(double s, char *out, size_t n);

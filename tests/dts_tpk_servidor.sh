@@ -32,7 +32,7 @@ for _ in $(seq 50); do [ -s "$work/port" ] && break; sleep 0.1; done
 port=$(cat "$work/port")
 ${CC:-gcc} -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Wno-misleading-indentation \
   -DNV_TPK -DNV_DTS_FFMPEG -I"$ROOT/include" -Isrc \
-  tests/dts_tpk_servidor.c src/dts/dts_hls_tpk.c src/dts/dts_remux.c src/dts/dts_engine.c src/rede.c src/redeurl.c \
+  tests/dts_tpk_servidor.c src/dts/dts_hls_tpk.c src/tpk45.c src/dts/dts_remux.c src/dts/dts_engine.c src/rede.c src/redeurl.c \
   "$ROOT/lib/libavformat.a" "$ROOT/lib/libavcodec.a" "$ROOT/lib/libswresample.a" "$ROOT/lib/libavutil.a" \
   -lz -lm -lpthread -ldl -o "$work/test"
 "$work/test" adiantar "$work/longo.mkv" "$work/src/adiantado.mkv" 70

@@ -74,6 +74,8 @@ void dts_remux_gen_free(DtsRemuxGen *g) { (void)g; }
 void dts_remux_gen_interrupt(DtsRemuxGen *g) { (void)g; }
 double dts_remux_gen_start_s(const DtsRemuxGen *g) { (void)g; return 0; }
 void dts_remux_set_queue_budget_mib(int mib) { (void)mib; }
+size_t dts_remux_queued_bytes(void) { return 0; }
+int dts_remux_queue_budget_mib(void) { return 0; }
 #else
 
 #include <math.h>
@@ -141,6 +143,8 @@ static atomic_size_t gBudget = (size_t)QUEUE_BUDGET_MIB << 20;
 void dts_remux_set_queue_budget_mib(int mib) {
   if (mib >= 32 && mib <= 512) atomic_store(&gBudget, (size_t)mib << 20);
 }
+size_t dts_remux_queued_bytes(void) { return atomic_load(&gQueued); }
+int dts_remux_queue_budget_mib(void) { return (int)(atomic_load(&gBudget) >> 20); }
 static const char *qFull(const Q *q, size_t add, int video) {
   switch (dtsQcapAdmit(q->bytes, q->n, add, video ? VQ_MAX_BYTES : AQ_MAX_BYTES,
                        video ? VQ_MAX_PKTS : AQ_MAX_PKTS, &gQueued, atomic_load(&gBudget))) {
@@ -185,7 +189,7 @@ struct DtsRemux {
   DtsRemuxInfo info;
   char *url, *headers;
   DtsEngine *probe;                 /* reader of dts_remux_open, handed to the 1st generator */
-  int vs, as, mov, stereo_aac;
+  int vs, as, mov, stereo;
   int audio_offset_ms;             /* stable across this source's segments and seeks */
   AVCodecParameters *vpar, *apar;
   AVRational vtb, atb, vfps;
@@ -215,7 +219,7 @@ struct DtsRemuxGen {
   AVAudioFifo *fifo;
   AVFrame *fr, *ef;
   AVPacket *pk, *op;
-  int frame;                        /* encoder frame size (1536 AC3, 1024 AAC) */
+  int frame;                        /* encoder frame size (1536 for AC3) */
   int64_t grid;                     /* 48 kHz position of the next fifo sample */
   int gridLazy;                     /* grid not known yet: set by the first audio placed */
   int64_t lo, hi, cum, off, win;    /* audio anchor, source-rate samples */
@@ -437,15 +441,15 @@ static int isCancelled(DtsRemux *r) {
   return c;
 }
 
-DtsRemux *dts_remux_open(const char *url, const char *headers, int ordinal, int stereoAac,
+DtsRemux *dts_remux_open(const char *url, const char *headers, int ordinal, int stereo,
                          double segTarget, volatile int *cancel, char *err, size_t errn) {
   DtsRemux *r = dts_remux_new(cancel);
   if (!r) { fail(err, errn, "Out of memory", 0); return NULL; }
-  if (dts_remux_probe(r, url, headers, ordinal, stereoAac, segTarget, err, errn) < 0) { dts_remux_close(r); return NULL; }
+  if (dts_remux_probe(r, url, headers, ordinal, stereo, segTarget, err, errn) < 0) { dts_remux_close(r); return NULL; }
   return r;
 }
 
-int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordinal, int stereoAac,
+int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordinal, int stereo,
                     double segTarget, char *err, size_t errn) {
   AVFormatContext *ic;
   int nAudio = 0, ordAs = -1, ordPedido = -1, primeiro = -1, primeiroOrd = -1;
@@ -454,7 +458,7 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
   if (err && errn) err[0] = 0;
   if (!r) { fail(err, errn, "No converter", 0); return -1; }
   if (!url || !*url) { fail(err, errn, "No source", 0); return -1; }
-  r->stereo_aac = stereoAac;
+  r->stereo = stereo;
   r->url = strdup(url); r->headers = strdup(headers ? headers : "");
   r->probe = dts_engine_create();
   if (!r->url || !r->headers || !r->probe) { fail(err, errn, "Out of memory", 0); goto bad; }
@@ -534,9 +538,11 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
     in->stream_index = r->as;
     in->in_channels = A->codecpar->ch_layout.nb_channels; in->in_rate = A->codecpar->sample_rate;
     int ic2 = in->in_channels;
-    in->out_channels = stereoAac ? 2 : ic2 == 1 ? 1 : ic2 == 2 ? 2 : 6;
-    snprintf(in->out_codec, sizeof in->out_codec, "%s", stereoAac ? "aac" : "ac3");
-    in->out_bitrate = in->out_channels > 2 ? 640000 : in->out_channels == 2 ? 192000 : 96000;
+    in->out_channels = stereo ? 2 : ic2 == 1 ? 1 : ic2 == 2 ? 2 : 6;
+    snprintf(in->out_codec, sizeof in->out_codec, "%s", "ac3");
+    /* 2.0 at 384 kb/s: at 192 FFmpeg's AC3 encoder couples L and R above ~12.5 kHz
+     * (ac3enc.c coupling table); from 320 up it keeps them apart. Same CPU. */
+    in->out_bitrate = in->out_channels > 2 ? 640000 : in->out_channels == 2 ? 384000 : 96000;
     if (A->codecpar->codec_id == AV_CODEC_ID_DTS) snprintf(in->decoder_path, sizeof in->decoder_path, "DTS core only");
     else if (ic2 > in->out_channels || ic2 == 0)
       snprintf(in->decoder_path, sizeof in->decoder_path, "TrueHD %s presentation", in->out_channels == 6 ? "5.1" : "2.0");
@@ -626,7 +632,7 @@ void dts_remux_close(DtsRemux *r) {
 static int openAudio(DtsRemuxGen *g, char *err, size_t errn) {
   DtsRemux *r = g->src;
   const AVCodec *dc = avcodec_find_decoder(r->apar->codec_id);
-  const AVCodec *ec = avcodec_find_encoder(r->stereo_aac ? AV_CODEC_ID_AAC : AV_CODEC_ID_AC3);
+  const AVCodec *ec = avcodec_find_encoder(AV_CODEC_ID_AC3);
   int rr;
   avcodec_free_context(&g->dec); avcodec_free_context(&g->enc);
   if (!dc || !ec) { fail(err, errn, "Decoder or encoder not in this build", 0); return -1; }
@@ -649,7 +655,6 @@ static int openAudio(DtsRemuxGen *g, char *err, size_t errn) {
   g->enc->sample_rate = 48000; g->enc->time_base = (AVRational){1, 48000};
   g->enc->sample_fmt = AV_SAMPLE_FMT_FLTP;
   g->enc->bit_rate = r->info.out_bitrate;
-  if (r->stereo_aac) { g->enc->profile = AV_PROFILE_AAC_LOW; g->enc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER; }
   if ((rr = avcodec_open2(g->enc, ec, NULL)) < 0) { fail(err, errn, "Audio encoder open", rr); return -1; }
   g->frame = g->enc->frame_size > 0 ? g->enc->frame_size : 1536;
   av_audio_fifo_free(g->fifo);
@@ -792,7 +797,7 @@ static int tagAudio(DtsRemuxGen *g, int64_t pts48) {
 }
 
 static int resetAudio(DtsRemuxGen *g, char *err, size_t errn) {
-  /* Fresh decoder and encoder: AC3/AAC encoders cannot flush. */
+  /* Fresh decoder and encoder: the AC3 encoder cannot flush. */
   if (openAudio(g, err, errn) < 0) return -1;
   g->lo = INT64_MIN; g->hi = INT64_MAX; g->cum = 0; g->off = UNSET; g->win = 0;
   g->warm = 0; g->encEof = 0;

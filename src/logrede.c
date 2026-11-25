@@ -166,11 +166,11 @@ static const char *const F_TOCAR[] = {
   "[tocar-diag]", "[host] erro", "[host] interrompido", "[video]", "[player]", "[dts-tpk]", "[dts-range]",
   "[dts]", "[audio]", "[mkv]", "[tv] ", "reconex", "reconect", "failover", "escolha manual",
   "tocando agora", "fonte escolhida", "pipeline open", "opened ok", "[abrir-diag] started", "[fonte-cdn]", "[partes]", "[mkvfix]", "[logrede]",
-  "[seek]", NULL
+  "[seek]", "[tpk45]", NULL
 };
 static const char *const F_MINI[] = {
   "[miniatura]", "[minidrive]", "[gdrive]", "[mem]", "[dts-tpk]", "[player] pronto", "tpk evento 11",
-  "[mkvfix]", "[logrede]", NULL
+  "[mkvfix]", "[logrede]", "[tpk45]", NULL
 };
 static const char *const *const FILTROS[5] = { NULL, F_FONTE, F_ABRIR, F_TOCAR, F_MINI };
 static const char *const NOMES_ARQ[5] = { "nuvio-log.txt", "nuvio-source-picking.txt", "nuvio-wont-open.txt",
@@ -270,7 +270,7 @@ static const char PAGINA[] =
 "<button id=b0>Everything</button>"
 "<input id=q placeholder='Search (e.g. REFUSED, track #, T7)'>"
 "<button id=ba class=on>Auto-scroll</button><button id=bc>Clear</button>"
-"<a class=b id=dl href='/fonte.txt?baixar=1'>Download</a><span id=st></span>"
+"<a class=b id=dl href='/fonte.txt?baixar=1'>Download</a><a class=b href='/anterior.txt'>Previous session</a><span id=st></span>"
 "</header>"
 "<div id=log></div><script>"
 "var de=-1,f=1,auto=1,q='',gen=0,L=document.getElementById('log'),S=document.getElementById('st');"
@@ -415,6 +415,25 @@ static void atender(int c) {
                          fim, novo, NOMES_ARQ[filtrar]);
     else snprintf(extra, sizeof extra, "X-Fim: %ld\r\nX-Novo: %d\r\n", fim, novo);
     responderTexto(c, 200, "text/plain; charset=utf-8", extra, txt, n);
+    free(txt);
+    return;
+  }
+  // The log of the PREVIOUS run of the app (main.c keeps it; on the .tpk the
+  // host gives its path). When the TV kills the app for memory, the lines that
+  // explain it are there, not in the log of the run that came after.
+  if (!strncmp(caminho, "/anterior.txt", 13)) {
+    const char *ant = getenv("NUVIO_LOG_ANTERIOR");
+    long fim = 0;
+    int novo = 0;
+    size_t n = 0;
+    char *txt = ant && ant[0] ? lerTrecho(ant, -1, LR_BAIXAR, 0, &fim, &novo, &n) : NULL;
+    if (!txt) {
+      static const char sem[] = "[logrede] no log of a previous session on this TV\n";
+      responderTexto(c, 200, "text/plain; charset=utf-8", NULL, sem, sizeof sem - 1);
+      return;
+    }
+    responderTexto(c, 200, "text/plain; charset=utf-8",
+                   "Content-Disposition: attachment; filename=\"nuvio-log-previous-session.txt\"\r\n", txt, n);
     free(txt);
     return;
   }
