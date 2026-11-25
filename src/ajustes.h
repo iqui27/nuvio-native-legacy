@@ -222,6 +222,7 @@ int ajustes_fonte_grupo_sessoes(void);
 // Reusar o ultimo link (fontevolta.h): 1 = ligado; e a validade em segundos.
 int ajustes_link_reusar(void);
 int ajustes_log_rede(void);   // pagina de registro na rede local (logrede.h)
+int ajustes_update_notifications(void); // automatic update card/notices; off by default
 unsigned ajustes_link_prazo_s(void);
 int ajustes_fonte_escopo(void);
 int ajustes_fonte_regex_modo(void);

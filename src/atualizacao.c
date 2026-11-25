@@ -1078,7 +1078,7 @@ static void nascer(void) {
 void atualizacao_mostrar_se_houver(void) {
   char *visto;
   int g;
-  if (aberto || !mtx) return;
+  if (!ajustes_update_notifications() || aberto || !mtx) return;
   SDL_LockMutex(mtx);
   if (!pronto || !tagNova[0] || geracaoVista == geracao) { SDL_UnlockMutex(mtx); return; }
   g = geracao;
