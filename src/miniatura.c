@@ -4,19 +4,13 @@
 // it is. seekr.c and seekrquota.c are not built into those targets.
 //
 // While a title plays, a low-priority thread makes 320x180 JPEGs from the
-// nearest keyframes (miniatura_motor.c). Slots are every 5 s; the GRID decides
-// which are made (owner, 23/10):
-//   5 s  - picture up to 1080p and runtime up to 90:00, or above 1080p and
-//          under 70:00 on a device with 2 GB of RAM or more;
-//   10 s - everything else, and every MPEG-TS / M2TS file.
-// Order on the 10 s grid: scrub point +-30 s -> +-1 min around the playhead ->
+// nearest keyframes (miniatura_motor.c). One picture every 10 s for every file
+// (owner 25/11: the 5 s grid is gone; slots stay 5 s wide so sets saved
+// before still load, and only every second one is made).
+// Order: scrub point +-30 s -> chapter starts -> +-1 min around the playhead ->
 // one every 5 min -> +-5% of the runtime -> one every 60 s -> every 10 s.
-// Order on the 5 s grid: scrub point +-30 s every 5 s -> +-1 min every 10 s ->
-// one every 5 min -> +-1 min every 5 s -> +-5% every 10 s -> one every 60 s ->
-// +-5% every 5 s -> whole film every 10 s -> whole film every 5 s.
 // Every step goes outwards from its centre, ahead first at equal distance.
-// Layered: a 10 s slot is also a 5 s slot, nothing is made twice, and a
-// keyframe that serves several slots is decoded once.
+// A keyframe that serves several slots is decoded once.
 // While a slot is not made yet, the seek bar shows the nearest made tile
 // (up to 5 min away) with ITS own time, dimmed as "still loading".
 //
@@ -33,11 +27,14 @@
 // for all of them, the least recently watched deleted first; none with under
 // 200 MB free. Written when the title stops and every 120 new tiles.
 //
-// SPEED TIERS (from stremio-origin/tizen, for older TVs): after 3 tiles the
-// mean cost per tile decides how much is made beside the film: over 1.5 s
-// only the scrub point and the chapter starts; over 0.6 s also +-1 min around
-// the playhead and one every 5 min; else the whole order. And never while the
-// player's buffer is short (under 8 s ahead, where the player says).
+// SLOW TVs (idea from stremio-origin/tizen; rules owner 25/11): one limit
+// only. When the last 8 tiles timed WITHOUT the DTS converter running average
+// over 1.5 s, the TV makes the scrub point, the chapter starts, +-1 min around
+// the playhead and one every 5 min, and stops there; every other TV makes the
+// whole film. Tiles made while DTS converts are never timed (a fast TV that is
+// busy converting is not slow), and the limit lifts by itself when recent
+// tiles get faster. Never while the player's buffer is short (under 8 s
+// ahead, where the player says).
 //
 // Logs `[miniatura]`, never URLs or keys.
 #include "seekr.h"
@@ -82,7 +79,6 @@
 #define MEDIDA_MIN_KB (20L * 1024)
 #define PAUSA_MEM_MS 1500          // memory re-check while paused
 #define INTERVALO_MS 30            // between tiles
-#define RAM_5S_4K_MB 2048          // 4K gets the 5 s grid only with this much RAM
 #define SCRUB_SLOTS 6              // +-30 s around the scrub point
 #define PERTO_SLOTS 12             // +-1 min around the playhead
 #define GROSSO_SLOTS 60            // one every 5 min
@@ -102,7 +98,7 @@ typedef struct {
   unsigned g;
   int refs;
   Tile *tiles; unsigned char *falhas; int n;   // n slots of BASE_MS
-  int passo;                 // 1 = 5 s grid, DEZ = 10 s grid, 0 = not decided yet
+  int passo;                 // DEZ = 10 s grid (the only one now), 0 = not decided yet
   int feitos, novos;
   long dur;
   volatile int parar;
@@ -333,20 +329,13 @@ typedef struct { int tipo, passo; } Etapa;
 static const Etapa ORDEM_10[] = {
   { E_SCRUB, DEZ }, { E_CAP, 0 }, { E_PERTO, DEZ }, { E_TODO, GROSSO_SLOTS }, { E_FATIA, DEZ },
   { E_TODO, MINUTO_SLOTS }, { E_TODO, DEZ } };
-// 5 s grid (owner, 23/10): scrub +-30 s every 5 s, +-1 min every 10 s, every
-// 5 min, +-1 min every 5 s, +-5% every 10 s, every 60 s, +-5% every 5 s,
-// whole film every 10 s, whole film every 5 s.
-static const Etapa ORDEM_5[] = {
-  { E_SCRUB, 1 }, { E_CAP, 0 }, { E_PERTO, DEZ }, { E_TODO, GROSSO_SLOTS }, { E_PERTO, 1 }, { E_FATIA, DEZ },
-  { E_TODO, MINUTO_SLOTS }, { E_FATIA, 1 }, { E_TODO, DEZ }, { E_TODO, 1 } };
 
 // Next slot to make (-1 = none left). *classe = the step (1-based). Caller holds mu.
-static int nivel;   // speed tier (top of the file): 0 everything, 1 up to every 5 min, 2 scrub + chapters
+static int nivel;   // 0 the whole film; 1 slow TV: scrub, chapters, +-1 min, every 5 min (top of the file)
 static int proximo(const Job *j, long phMs, int *classe) {
-  const Etapa *o = j->passo == 1 ? ORDEM_5 : ORDEM_10;
-  int no = j->passo == 1 ? (int)(sizeof ORDEM_5 / sizeof *ORDEM_5) : (int)(sizeof ORDEM_10 / sizeof *ORDEM_10);
-  if (nivel == 2 && no > 2) no = 2;        // the first four stages are SCRUB, CAP, PERTO, every 5 min in both orders
-  else if (nivel == 1 && no > 4) no = 4;
+  const Etapa *o = ORDEM_10;
+  int no = (int)(sizeof ORDEM_10 / sizeof *ORDEM_10);
+  if (nivel && no > 4) no = 4;             // the first four stages: SCRUB, CAP, PERTO, every 5 min
   int ph = (int)((phMs + BASE_MS / 2) / BASE_MS), fatia = (int)(j->dur * FATIA / BASE_MS) + 1;
   int scrub = alvoScrub >= 0 && (Sint32)(SDL_GetTicks() - alvoTick) < 4000;
   int k0 = (int)((alvoScrub + BASE_MS / 2) / BASE_MS);
@@ -375,17 +364,9 @@ static int proximo(const Job *j, long phMs, int *classe) {
 
 // The grid for this file (see the top of the file).
 static int gradeDe(const MiniInfo *i, long durMs, const char **porque) {
-  long ram = memTotalMB();
-  int hd = i->largura <= 2048 && i->altura <= 1152;
-  if (!strcmp(i->formato, "mpegts")) { *porque = "M2TS/TS"; return DEZ; }
-  if (hd) {
-    if (durMs <= 90L * 60000) { *porque = "up to 1080p, 90 min or shorter"; return 1; }
-    *porque = "up to 1080p, longer than 90 min"; return DEZ;
-  }
-  if (durMs >= 70L * 60000) { *porque = "above 1080p, 70 min or longer"; return DEZ; }
-  if (ram >= 0 && ram < RAM_5S_4K_MB) { *porque = "above 1080p, under 2 GB of RAM"; return DEZ; }
-  *porque = "above 1080p, shorter than 70 min";
-  return 1;
+  (void)i; (void)durMs;
+  *porque = "10 s for every file";
+  return DEZ;
 }
 
 typedef struct {
@@ -444,6 +425,7 @@ static void *trabalhar(void *u) {
   const int threads = 1;
   int seguidas = 0, feitosAqui = 0;
   unsigned long somaMs = 0;
+  unsigned janela[8]; int nJanela = 0, iJanela = 0;   // last tiles timed without DTS
   long medidas[MEDIDAS] = {0}; int nMedidas = 0;
   Uint32 ultimaPausaLog = 0; int pausasCaladas = 0;
   if (!l) goto fim;
@@ -482,9 +464,9 @@ static void *trabalhar(void *u) {
     pthread_mutex_lock(&mu);
     j->passo = ps;
     pthread_mutex_unlock(&mu);
-    printf("[miniatura] %s %s %dx%d %d-bit%s, %d keyframes; %s grid (%s), %d slots\n",
+    printf("[miniatura] %s %s %dx%d %d-bit%s, %d keyframes; %s, %d slots\n",
            i->formato, i->codec, i->largura, i->altura, i->bits, i->hdr ? " HDR" : "", i->chaves,
-           ps == 1 ? "5 s" : "10 s", porque, (j->n + ps - 1) / ps);
+           porque, (j->n + ps - 1) / ps);
     fflush(stdout);
   }
 
@@ -525,12 +507,14 @@ static void *trabalhar(void *u) {
     ultimaPausaLog = 0; pausasCaladas = 0;
 
     // Speed tier from what tiles cost here (top of the file).
-    if (feitosAqui >= 3) {
-      unsigned long med = somaMs / (unsigned long)feitosAqui;
-      int nv = med > 1500 ? 2 : med > 600 ? 1 : 0;
+    if (nJanela >= 3) {
+      unsigned long med = 0;
+      for (int q = 0; q < nJanela; q++) med += janela[q];
+      med /= (unsigned long)nJanela;
+      int nv = med > 1500;
       if (nv != nivel) {
-        printf("[miniatura] %lu ms a tile: %s\n", med, nv == 2 ? "only the scrub point and the chapters"
-               : nv == 1 ? "scrub point, chapters, near the playhead, every 5 min" : "the whole film");
+        printf("[miniatura] %lu ms a tile (no DTS): %s\n", med,
+               nv ? "slow TV, scrub point, chapters, near the playhead, every 5 min" : "the whole film");
         fflush(stdout);
         pthread_mutex_lock(&mu); nivel = nv; pthread_mutex_unlock(&mu);
       }
@@ -613,6 +597,9 @@ static void *trabalhar(void *u) {
     pthread_mutex_unlock(&mu);
     free(jpg);
     feitosAqui++; somaMs += q.totalMs;
+    { int de = video_dts_estado();   // timed only when DTS is not converting
+      if (de != VIDEO_DTS_PREPARANDO && de != VIDEO_DTS_CONVERTIDO) {
+        janela[iJanela] = q.totalMs; iJanela = (iJanela + 1) % 8; if (nJanela < 8) nJanela++; } }
     // One line per tile while the first window fills, then one every 20.
     if (feitosAqui <= 20 || feitosAqui % 20 == 0) {
       printf("[miniatura] slot %ld s (step %d) frame %lds decode %ums total %ums, read %ld KB in %d request(s)",

@@ -16,10 +16,10 @@
 //  - The memory lives until the seek commits (seekgesto_zerar).
 //
 // THE NUMBERS (SEEKG_PADRAO) are the owner's, tuned on the TV with a live
-// panel (20/10/2026): tap 5 s, +30% per press, cap 4% of the length, flip
-// x0.65. With hold detection at 80 ms and the Smart Remote repeating every
+// panel (20/10/2026), tap and growth changed 25/11: tap 10 s, +28% per press
+// (5 presses = 1:27, an anime opening), cap 4% of the length, flip x0.65. With hold detection at 80 ms and the Smart Remote repeating every
 // ~100-117 ms, a held key never enters the glide: every repeat is a press that
-// jumps the step and grows it 30% — stremio-web's discrete feel, which is what
+// jumps the step and grows it 28% — stremio-web's discrete feel, which is what
 // felt right. The glide stays for remotes that repeat faster than 80 ms.
 #ifndef NV_SEEKGESTO_H
 #define NV_SEEKGESTO_H
@@ -33,7 +33,7 @@ typedef struct {
   int flipPct;     // direction change: step *= flipPct/100
 } SeekParams;
 
-#define SEEKG_PADRAO { 5, 30, 40, 80, 4, 65 }
+#define SEEKG_PADRAO { 10, 28, 40, 80, 4, 65 }
 #define SEEKG_MIN_S  1.0f
 
 typedef struct {
