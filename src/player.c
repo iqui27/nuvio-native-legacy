@@ -5140,6 +5140,18 @@ void player_atualizar(float dt, Uint32 agora) {
         sqAnt = sq;
         relogio_amostra_carimbo(&relLeg, ap, ac, ai, tocando && !scrubbing);
       } }
+#elif defined(NV_WEBOS) && ASS_NOVO
+    /* webOS (new engine, 25/11/2026): uMS pushes currentTime, so every reading
+     * is late by its delivery, never early. The webOS clock (#92) keeps the
+     * least-delayed sample (relogio_amostra, max offset); it now gets the
+     * moment each event ARRIVED instead of the next frame that read it (up to
+     * a frame later). Seeks, pauses and reopens still go through the
+     * relogio_amostra below, as before. */
+    { double ap, ac, ai; unsigned sq; static unsigned sqAnt;
+      if (video_pos_amostra(&ap, &ac, &ai, &sq) && sq != sqAnt) {
+        sqAnt = sq;
+        relogio_amostra(&relLeg, ap, ac, tocando && !scrubbing);
+      } }
 #endif
     relogio_amostra(&relLeg, video_pos(), monoSeg(), tocando && !scrubbing);
     // A cada 10 s: o numero cru do pipeline e o do relogio da legenda, no

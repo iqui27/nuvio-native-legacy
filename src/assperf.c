@@ -8,7 +8,7 @@
 #include <string.h>
 #include <time.h>
 
-#ifdef NV_TPK
+#if ASS_NOVO && !defined(NV_ASSPERF_TESTE)
 #include "dados.h"
 #endif
 
@@ -29,13 +29,13 @@ static int iniciado;
 static unsigned versao;
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 
-#if defined(NV_TPK) || defined(NV_ASSPERF_TESTE)
+#if ASS_NOVO || defined(NV_ASSPERF_TESTE)
 static int valido(int id, int v) {
   if (id == AP_ESCALA) return AP_RES_AUTO(v);
   return v >= PESSOA[id].min && v <= PESSOA[id].max;
 }
 #endif
-#ifdef NV_TPK
+#if ASS_NOVO && !defined(NV_ASSPERF_TESTE)
 
 static void gravar(void) {
   char b[256]; size_t o = 0;
@@ -54,7 +54,7 @@ static void gravar(void) {
  * reads as High auto, the fixed 75 % as Medium auto. A saved Custom auto
  * (AP_RES_CUSTOM_VELHO, removed 23/11/2026) is not valid: the TV's default
  * stays, as if nothing were saved. */
-#if defined(NV_TPK) || defined(NV_ASSPERF_TESTE)
+#if ASS_NOVO || defined(NV_ASSPERF_TESTE)
 static int valorLido(int id, int v) {
   if (id == AP_ESCALA && v == AP_RES_100_VELHO) return AP_RES_ALTO;
   if (id == AP_ESCALA && v == AP_RES_75_VELHO) return AP_RES_MEDIO;
@@ -89,7 +89,7 @@ void assperf_iniciar(void) {
   if (__atomic_load_n(&iniciado, __ATOMIC_ACQUIRE)) return;
   pthread_mutex_lock(&trava);
   if (iniciado) { pthread_mutex_unlock(&trava); return; }
-#ifdef NV_TPK
+#if ASS_NOVO && !defined(NV_ASSPERF_TESTE)
   {
     char *t = dados_ler(AP_ARQ);
     int i, novo[AP_N] = {0}, velho[AP_N] = {0}, velhoV[AP_N] = {0};
@@ -139,8 +139,11 @@ int assperf_teste_lido(int id, int v) { v = valorLido(id, v); return valido(id, 
 
 int assperf_get(int id) {
 #ifdef NV_ASSPERF_TESTE
+  /* Nothing set yet: the defaults, like the file-less .tpk (the new engine's
+   * dialogue opacity of 0 would hide every dialogue line). */
+  if (id >= 0 && id < AP_N && !__atomic_load_n(&iniciado, __ATOMIC_ACQUIRE)) return PESSOA[id].padrao;
   return id >= 0 && id < AP_N ? __atomic_load_n(&val[id], __ATOMIC_RELAXED) : 0;
-#elif defined(NV_TPK)
+#elif ASS_NOVO
   if (id < 0 || id >= AP_N) return 0;
   assperf_iniciar();
   return __atomic_load_n(&val[id], __ATOMIC_RELAXED);
@@ -153,7 +156,7 @@ int assperf_get(int id) {
 unsigned assperf_versao(void) { return __atomic_load_n(&versao, __ATOMIC_ACQUIRE); }
 
 void assperf_definir(int id, int v) {
-#ifdef NV_TPK
+#if ASS_NOVO && !defined(NV_ASSPERF_TESTE)
   if (id < 0 || id >= AP_N || !valido(id, v)) return;
   assperf_iniciar();
   pthread_mutex_lock(&trava);
@@ -167,7 +170,7 @@ void assperf_definir(int id, int v) {
 }
 
 void assperf_restaurar(void) {
-#ifdef NV_TPK
+#if ASS_NOVO && !defined(NV_ASSPERF_TESTE)
   int i;
   assperf_iniciar();
   pthread_mutex_lock(&trava);

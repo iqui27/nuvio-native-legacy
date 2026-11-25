@@ -244,7 +244,7 @@ static atomic_int buscaAlvoMs = -1;
 static pthread_mutex_t amTrava = PTHREAD_MUTEX_INITIALIZER;
 static struct { unsigned seq; int valido, ms; double carimbo, incerteza; } am;
 /* Measurements for the libass log line (assrender.c, "[ass] 10s tv"): readings
- * since the last video_tpk_leituras, under amTrava. */
+ * since the last video_ass_leituras, under amTrava. */
 static struct { int n, fora, maxMs; long somaMs; } amMed;
 static double amBusca;                 // monoAgora do ultimo EV_BUSCOU (sob amTrava)
 static atomic_int posIncerta;          // 1 = seek feito, ainda sem leitura real
@@ -424,7 +424,7 @@ void nv_tpk_video_posicao(int ms, int motivo, int consultaMs, long long carimboN
 
 /* Position readings since the last call (video.h): how many arrived, how many
  * were dropped as older than the last seek, and the query time. Resets them. */
-void video_tpk_leituras(int *n, int *fora, long *somaMs, int *maxMs) {
+void video_ass_leituras(int *n, int *fora, long *somaMs, int *maxMs) {
   pthread_mutex_lock(&amTrava);
   *n = amMed.n; *fora = amMed.fora; *somaMs = amMed.somaMs; *maxMs = amMed.maxMs;
   memset(&amMed, 0, sizeof amMed);

@@ -55,13 +55,40 @@ printf '%s\n' "[binaries]" "c = '$CC'" "cpp = '$CXX'" "ar = '$AR'" "strip = '$ST
 meson setup build --cross-file "$BUILD/ass-cross.ini" --prefix="$PREFIX" -Ddefault_library=static -Dglib=disabled -Dgraphite=disabled -Dicu=disabled -Dcairo=disabled -Dtests=disabled -Ddocs=disabled -Dutilities=disabled -Dfreetype=enabled
 meson compile -C build -j2; meson install -C build
 
-fetch "https://github.com/libass/libass/releases/download/${LIBASS_VERSION}/libass-${LIBASS_VERSION}.tar.xz" libass.tar.xz
-tar -xf "$BUILD/libass.tar.xz" -C "$BUILD"
-cd "$BUILD/libass-${LIBASS_VERSION}"
+# libass for the new subtitle engine (LG port, 25/11/2026): the same libass
+# as the .tpk (tools/tpk.sh, NV_ASS_BASE=hybrid): Laskco/mpvNova-libass at
+# NOVA_REV + tools/tpk/libass-hybrid/hybrid.patch (our libass-nv 0001-0004:
+# NEON engine, blur threads, ASS_NV_API, split render) with its cflags.
+# HYBRID_DIR holds hybrid.patch and cflags (tools/Dockerfile copies them).
+# NUVIO_ASS_BASE=stock builds plain libass 0.17.5 as before.
+ASS_BASE=${NUVIO_ASS_BASE:-hybrid}
+NOVA_REV=${NOVA_REV:-b6209274415490615baa3f01f2409cb5facda674}
+HYBRID_DIR=${NUVIO_ASS_HYBRID_DIR:-/tmp/libass-hybrid}
 export CPPFLAGS="${CPPFLAGS:-} -I$PREFIX/include -I$PREFIX/include/fribidi -I$PREFIX/include/freetype2 -I$PREFIX/include/harfbuzz"
 export LDFLAGS="$LDFLAGS -L$PREFIX/lib"
-./configure --host="${CC%-gcc}" --prefix="$PREFIX" --enable-static --disable-shared --disable-fontconfig --disable-require-system-font-provider --disable-enca --disable-libunibreak --disable-asm --enable-harfbuzz
-make -j2; make install
+if [ "$ASS_BASE" = hybrid ]; then
+  [ -f "$HYBRID_DIR/hybrid.patch" ] && [ -f "$HYBRID_DIR/cflags" ] ||
+    { echo "libass hybrid: $HYBRID_DIR/hybrid.patch and cflags are required" >&2; exit 2; }
+  fetch "https://github.com/Laskco/mpvNova-libass/archive/$NOVA_REV.tar.gz" "mpvNova-libass-$NOVA_REV.tar.gz"
+  rm -rf "$BUILD/libass-hybrid"; mkdir -p "$BUILD/libass-hybrid"
+  tar -xzf "$BUILD/mpvNova-libass-$NOVA_REV.tar.gz" -C "$BUILD/libass-hybrid" --strip-components=1
+  cd "$BUILD/libass-hybrid"
+  patch -p1 -s --forward < "$HYBRID_DIR/hybrid.patch"
+  ./autogen.sh >/dev/null
+  # The cflags come after the image's -O2 (the last -O wins), as in tools/tpk/deps.sh.
+  CFLAGS="$CFLAGS $(tr -d '\n' < "$HYBRID_DIR/cflags")" \
+    ./configure --host="${CC%-gcc}" --prefix="$PREFIX" --enable-static --disable-shared --disable-fontconfig --disable-require-system-font-provider --disable-enca --disable-libunibreak --disable-asm
+  make -j2; make install
+  # What is inside, for tools/arm.sh and the [ass] tv log line.
+  { echo "$NOVA_REV"; cat "$HYBRID_DIR/hybrid.patch" "$HYBRID_DIR/cflags"; } | sha256sum | cut -d' ' -f1 > "$PREFIX/lib/.libass-hybrid"
+  grep -q "ass_nv_set_engine" "$PREFIX/include/ass/ass.h" || { echo "libass hybrid: ASS_NV_API missing from ass.h" >&2; exit 1; }
+else
+  fetch "https://github.com/libass/libass/releases/download/${LIBASS_VERSION}/libass-${LIBASS_VERSION}.tar.xz" libass.tar.xz
+  tar -xf "$BUILD/libass.tar.xz" -C "$BUILD"
+  cd "$BUILD/libass-${LIBASS_VERSION}"
+  ./configure --host="${CC%-gcc}" --prefix="$PREFIX" --enable-static --disable-shared --disable-fontconfig --disable-require-system-font-provider --disable-enca --disable-libunibreak --disable-asm --enable-harfbuzz
+  make -j2; make install
+fi
 
 test -f "$PREFIX/include/ass/ass.h"
 test -f "$PREFIX/lib/libass.a"

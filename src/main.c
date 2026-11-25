@@ -1,6 +1,7 @@
 // Bootstrap: janela, contexto GL, loop e telemetria. Toda a UI vive nos modulos.
 #include "app_id.h"
 #include "arranque.h"
+#include "assrender.h"   // assrender_fios_ambiente (webOS, new subtitle engine)
 #include "swapint.h"
 #include "quadroc.h"
 #include "streams.h"
@@ -1074,6 +1075,9 @@ int main(int argc, char **argv) {
   // lancamento (URL autenticada, tokens) naquele payload — iriam direto ao
   // registro da sessao. O sinal de ciclo chega pelo allowlist ja logado em
   // [ciclo] (nome/estado do evento de janela/app), sem payload nenhum.
+  // New subtitle engine (LG port, 25/11/2026): libass's event threads follow
+  // the CPUs this process may use. Set before any thread starts (assrender.h).
+  assrender_fios_ambiente();
 #endif
 
 #ifdef __EMSCRIPTEN__

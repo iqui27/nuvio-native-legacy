@@ -1162,7 +1162,7 @@ static int montarCabecalho(Fio *f, const unsigned char *priv, long n) {
   return corpoAnexar(f, CORPO_EVENTOS, sizeof CORPO_EVENTOS - 1);
 }
 
-#ifdef NV_TPK
+#if ASS_NOVO
 #define MKVASS_FONTES_MAX 256
 #else
 #define MKVASS_FONTES_MAX 32
@@ -1171,7 +1171,7 @@ static int montarCabecalho(Fio *f, const unsigned char *priv, long n) {
 static int extensaoFonte(const char *nome, const char *mime) {
   const char *p = nome ? strrchr(nome, '.') : NULL;
   if (mime && (!strncasecmp(mime, "font/", 5) || !strncasecmp(mime, "application/x-font", 18))) return 1;
-#ifdef NV_TPK
+#if ASS_NOVO
   if (mime && (!strcasecmp(mime, "application/vnd.ms-opentype") ||
                !strcasecmp(mime, "application/x-truetype-font") ||
                !strncasecmp(mime, "application/font-", 17))) return 1;
@@ -1381,7 +1381,7 @@ static void nomeSidecar(const char *url, int faixa, char *dst, size_t tam) {
 #define MARCA_COMPLETO_V3 "; mkvass-estado: completo-v3\n"
 #define MARCA_V3_EVENTOS  7000
 #define MARCA_PARCIAL  "; mkvass-estado: parcial-v3 "
-#ifdef NV_TPK
+#if ASS_NOVO
 /* TPK: o teto de 32 arquivos cortava fontes de fansub (Kaguya: 32 de ~40, e
  * Kozuka/Lato/PWFicelles caiam em ArialMT). A marca nova invalida os caches
  * gravados com o corte. */
@@ -3388,7 +3388,7 @@ static pthread_mutex_t entregaTrava = PTHREAD_MUTEX_INITIALIZER;
  * as fontes recem-pedidas ANTES do corpo, para o evento que as usa ja
  * nascer com elas. Fora do .tpk, todas, como sempre. Sem memoria para a
  * marcacao: todas tambem. */
-#ifdef NV_TPK
+#if ASS_NOVO
 static void anexadaNome(const char *nome, void *u) {
   FonteFamilias *s = u;
   if (!fontefam_tem(s, nome)) fontefam_por(s, nome, strlen(nome));
@@ -3422,7 +3422,7 @@ static void logarSemFonte(Fio *f) {
 static void entregarFontes(Fio *f, const char *corpo, int primeira) {
   int i, dadas = 0, novas = 0;
   double mb = 0, mbTotal = 0;
-#ifdef NV_TPK
+#if ASS_NOVO
   if (f->nFontes > 0 && !f->fonteDada) f->fonteDada = (unsigned char *)calloc((size_t)f->nFontes, 1);
   if (f->fonteDada) {
     // Every attached font already in libass: nothing left to look for in the body.
@@ -3444,7 +3444,7 @@ static void entregarFontes(Fio *f, const char *corpo, int primeira) {
   if (f->fonteDada && (primeira || novas) && f->nFontes)
     printf("[mkvass] fontes sob demanda: %d de %d anexadas no libass (%.1f de %.1f MB; %d familias pedidas)%s\n",
            dadas, f->nFontes, mb, mbTotal, f->familias.n, primeira ? "" : ", \\fn novo no lote");
-#ifdef NV_TPK
+#if ASS_NOVO
   if (f->fonteDada && f->nFontes) logarSemFonte(f);
 #endif
 }

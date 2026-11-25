@@ -1,7 +1,7 @@
 // Ver assfios.h.
 #include "assfios.h"
 
-#if defined(NV_TPK) && defined(__linux__)
+#if (defined(NV_TPK) || defined(NV_ASS_NOVO)) && defined(__linux__)   // the new engine: named threads in the [ass] 10s cpu lines
 #include <stdio.h>
 #include <sys/prctl.h>
 

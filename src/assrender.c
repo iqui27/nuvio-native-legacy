@@ -1,4 +1,4 @@
-#if defined(NV_TPK) && defined(__linux__) && !defined(_GNU_SOURCE)
+#if (defined(NV_TPK) || defined(NV_ASS_NOVO)) && defined(__linux__) && !defined(_GNU_SOURCE)
 #define _GNU_SOURCE   // pthread_getattr_np (the worker's stack in the crash log)
 #endif
 #include "assrender.h"
@@ -119,20 +119,27 @@ char *assrender_marcar_tailandes(const char *txt) {
 #include <SDL2/SDL.h>
 #include <ass/ass.h>
 #include "asssinais.h"
-/* Split passes (Auto 50/75, busy scenes) and the signs & songs flag: the .tpk's patched
- * libass only (tools/tpk/libass-nv, 0004). Elsewhere one pass, as before. */
-#if defined(NV_TPK) && defined(ASS_NV_SPLIT)
+#include "assperf.h"
+/* Guards (25/11/2026, LG/Android port): ASS_NOVO (assperf.h) is the new
+ * engine and everything it does, on every platform that turns it on (.tpk,
+ * and webOS / Android with -DNV_ASS_NOVO). NV_TPK is only what belongs to the
+ * Samsung host: the premultiplied edge (tpkborda.c), the mkvfix relay, the
+ * NUVIO_TPK_ARTE font folder and the Naskh download. */
+/* Split passes (Auto 50/75, busy scenes) and the signs & songs flag: the patched
+ * libass only (libass-nv 0004 / libass-hybrid). Elsewhere one pass, as before. */
+#if ASS_NOVO && defined(ASS_NV_SPLIT)
 #define ASS_DIVIDIR 1
 #else
 #define ASS_DIVIDIR 0
 #endif
 #include "gfx.h"
 #include "bidi.h"
-#include "assperf.h"
 #include "assfios.h"
 #include "memlog.h"   // memlog_livre_mb: the 100 MB low-memory guard
+#if ASS_NOVO
+#include "video.h"    // video_ass_leituras ("[ass] 10s tv")
+#endif
 #ifdef NV_TPK
-#include "video.h"    // video_tpk_leituras ("[ass] 10s tv")
 #include "mkvfix.h"   // mkvfix_medidas ("[mkvfix] 10s")
 #endif
 #if !defined(__EMSCRIPTEN__)
@@ -141,7 +148,7 @@ char *assrender_marcar_tailandes(const char *txt) {
 #include <signal.h>
 #endif
 
-#ifdef NV_TPK
+#if ASS_NOVO
 /* How many CPUs this process may actually run on, not how many the TV has:
  * a Tizen 4/5 sandbox starts the app inside a cpuset pinned to one CPU while
  * sysconf still reports all of them. */
@@ -170,7 +177,7 @@ static int ass_usable_cpus(void) {
  * renders events, so it is set once at startup, before any app thread, and a
  * value set by hand (tests, diagnostics) is kept. */
 void assrender_fios_ambiente(void) {
-#if defined(NV_TPK) && defined(ASS_NV_HYBRID)
+#if ASS_NOVO && defined(ASS_NV_HYBRID)
   char v[8];
   int n = ass_usable_cpus();
   if (getenv("LIBASS_RENDER_THREADS")) return;
@@ -395,7 +402,7 @@ static void ass_mensagem(int nivel, const char *fmt, va_list args, void *dados) 
   /* So ate MSGL_INFO (4), o mesmo corte do callback padrao do libass (que
    * para em 5). Os niveis 6-7 sao depuracao por quadro e por glifo. */
   if (nivel > 4) return;
-#ifdef NV_TPK
+#if ASS_NOVO
   /* Clean log: the "Glyph ... not found / selecting one more font / Trying
    * all charmaps" loop is three lines PER GLYPH (60+ in the 23/10 log). The
    * first 6 per track stay. */
@@ -1319,7 +1326,7 @@ static void ass_aplicar_assperf_locked(void) {
 #endif
       printf("[ass] hinting %s (%s)\n", h2 == ASS_HINTING_NONE ? "none" : "light", simples ? "plain text" : "authored ASS");
     } }
-#if defined(NV_TPK) && defined(ASS_NV_API)
+#if ASS_NOVO && defined(ASS_NV_API)
   { static int feito;
     if (!feito) {
       /* The blur helper threads are born inside libass and inherit the
@@ -2215,7 +2222,7 @@ static double ass_fps(void);
 static long long ass_grade_seguinte(long long t);
 static int ass_so_o_mais_novo(void);
 static long long ass_grade_desde(long long ms);
-#if defined(NV_TPK) && defined(__linux__)
+#if ASS_NOVO && defined(__linux__)
 // glibc declares this only under _GNU_SOURCE, and the define at the top of
 // this file comes too late in the .tpk build: its -include src/tpk.h has
 // already pulled in the system headers. Without a declaration the call was
@@ -2569,7 +2576,7 @@ static void ass_diag_tiras(const ASS_Image *a, const ASS_Image *b, long long t, 
 static void *ass_worker_loop(void *unused) {
   (void)unused;
   assfios_nomear("nv-assrender");
-#if defined(NV_TPK) && defined(__linux__)
+#if ASS_NOVO && defined(__linux__)
   /* Crash capture (owner 14/11: a Persian subtitle kills this thread on its
    * first frame and the reporter wrote nothing). glibc gives a thread no
    * alternate signal stack, so a fault on a full stack could not run
@@ -2808,7 +2815,7 @@ static void *ass_worker_loop(void *unused) {
       }
       cu[CU_SCAN] += ass_ms_desde(&cuT);
       cuEv = assTrack->n_events; cuAt = assIdxAtivosUlt;
-#ifdef NV_TPK
+#if ASS_NOVO
       /* Crash capture (owner 14/11): what libass is asked to draw, once per
        * track and per style change, flushed BEFORE the render. A crash right
        * after this line is inside libass on that frame. */
@@ -4291,7 +4298,7 @@ static double ass_mono(void) {
 
 /* Medidas por quadro desenhado, sob assFilaTrava. `agora` e o relogio do
  * video em ms (o mesmo que foi pedido ao libass). */
-#if defined(NV_TPK) && ASS_NOVO && defined(__linux__)
+#if ASS_NOVO && defined(__linux__)
 /* CPU EVERY 10 s (Tizen 4-6 playback damage, 16/11/2026): the whole TV (from
  * /proc/stat) and this app's threads (/proc/self/task/<tid>/stat), as % of one
  * core over the window. The TV's own player runs in other processes: what the
@@ -4394,7 +4401,7 @@ static void ass_medir_locked(long long agora, int temTexto, long long inicioMax)
       /* Uma linha por fala que entra: Start do evento, quando apareceu no
        * relogio do video, e a diferenca. E a medida do "atrasada". Not on the
        * .tpk: frame-by-frame signs start hundreds of lines a second. */
-#ifndef NV_TPK
+#if !ASS_NOVO
       printf("[ass] fala %lld.%03lld apareceu em %lld.%03lld (%+lld ms)\n",
              inicioMax / 1000, inicioMax % 1000, agora / 1000, agora % 1000, atraso);
 #endif
@@ -4439,7 +4446,7 @@ static void ass_medir_locked(long long agora, int temTexto, long long inicioMax)
       assSobreQuadros = assSobreImgsSoma = assSobreImgsMax = 0;
 #endif
     }
-#if defined(NV_TPK) && ASS_NOVO
+#if ASS_NOVO
     /* The TV's side of the same window (libass on the Tizen 4/5 .tpk, 09/11):
      * how often the position arrives and what a query costs (the 40 ms clock
      * thread gives ~25/s; without it, 4/s), free memory, and what the engine
@@ -4447,7 +4454,7 @@ static void ass_medir_locked(long long agora, int temTexto, long long inicioMax)
     { int n, fora, maxMs;
       long somaMs;
       double dt = assMed.ultimoRelatorio > 0 ? m - assMed.ultimoRelatorio : 0.0;
-      video_tpk_leituras(&n, &fora, &somaMs, &maxMs);
+      video_ass_leituras(&n, &fora, &somaMs, &maxMs);
       if (dt > 0.0)
         printf("[ass] 10s tv: position readings=%d (%.1f/s, %d dropped) query avg=%.1fms max=%dms | "
                "free RAM=%ldMB | queue=%d frames %.1fMB | textures=%d %.1fMB | scale=%d%% busy=%d "
@@ -4487,18 +4494,22 @@ static void ass_medir_locked(long long agora, int temTexto, long long inicioMax)
       { long long us = __atomic_exchange_n(&glDesUs, 0, __ATOMIC_RELAXED),
                   mx = __atomic_exchange_n(&glDesMaxUs, 0, __ATOMIC_RELAXED);
         long gn = __atomic_exchange_n(&glDesN, 0, __ATOMIC_RELAXED), gnov = __atomic_exchange_n(&glDesNovos, 0, __ATOMIC_RELAXED);
+#ifdef NV_TPK
         MkvfixMedidas md;
         mkvfix_medidas(&md);
+#endif
         if (dt > 0.0) {
           long esp = __atomic_exchange_n(&glTravaEsperas, 0, __ATOMIC_RELAXED);
           long long espMx = __atomic_exchange_n(&glTravaMaxUs, 0, __ATOMIC_RELAXED);
           printf("[ass] 10s draw: GL frames with subtitles=%ld (new %ld) avg=%.2fms max=%.1fms | lock waits %ld (max %.1f ms)\n",
                  gn, gnov, gn ? us / 1000.0 / gn : 0.0, mx / 1000.0, esp, espMx / 1000.0);
+#ifdef NV_TPK
           printf("[mkvfix] 10s: mode=%s | to the TV %.2f MB/s (%.1f Mbit/s), blocked sending %lldms, waiting on the CDN %lldms, "
                  "connections=%d | Void: %ld block(s) %.1fKB, resync %ld, lost %ld, undecided %ld\n",
                  mkvfix_modo_ass_atual() == MKVFIX_ASS_ANULAR ? "Void" : "Hidden",
                  md.bytes / 1048576.0 / dt, md.bytes * 8.0 / 1e6 / dt, md.envioMs, md.cdnMs, md.conexoes,
                  md.anulados, md.bytesAnulados / 1024.0, md.sincronias, md.perdas, md.indecisos);
+#endif
         } }
 #if defined(__linux__)
       cpu_10s(m);

@@ -2,6 +2,7 @@
 #include "video.h"
 #include "mediaurl.h"
 #include "webosver.h"
+#include "assperf.h"   // ASS_NOVO: the TV class for the new subtitle engine
 #include "audioinfo.h"
 #include "esmaecer.h"
 #include "video_escala.h"
@@ -1025,6 +1026,66 @@ static void recorteNoPrimeiroQuadro(void) {
 }
 
 // Definida junto da tela do DV (video_dv_tela), chamada no load e no playing.
+/* SUBTITLE CLOCK (LG port of the new engine, 25/11/2026). The .tpk host
+ * reads the TV's position every 40 ms and stamps each reading; the libass
+ * engine and the subtitle clock (relogio.c) use the stamp. On webOS nothing
+ * can be asked: uMS PUSHES currentTime (~5/s on the C9, the subscription's
+ * own pace), so a 40 ms polling thread would only re-read the same number.
+ * What helps is the stamp: the moment each event ARRIVED (CLOCK_MONOTONIC),
+ * not the next frame that happened to read posSeg (up to a frame late, and
+ * the same reading taken again on every frame until the next event).
+ * Readings while a seek is in flight are counted as dropped and not stamped:
+ * uMS still reports the old place until seekDone. */
+static pthread_mutex_t amTrava = PTHREAD_MUTEX_INITIALIZER;
+static struct { unsigned seq; double pos, carimbo; } am;
+static struct { int n, fora, maxMs; long somaMs; } amMed;   // since the last video_ass_leituras
+static double amUltChegada;
+static double amMono(void) {
+  struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec + ts.tv_nsec / 1e9;
+}
+static void amPublicar(double pos) {
+  double agora = amMono();
+  int emVoo = seekEm || seekEnvEm || seekRetryEm;
+  pthread_mutex_lock(&amTrava);
+  if (emVoo) amMed.fora++;
+  else {
+    am.pos = pos; am.carimbo = agora; am.seq++; if (!am.seq) am.seq = 1;
+    amMed.n++;
+    /* No query to time on webOS: the "query" numbers of [ass] 10s tv are the
+     * gap between two pushed readings (what a 40 ms clock would shorten). */
+    if (amUltChegada > 0.0) {
+      int gap = (int)((agora - amUltChegada) * 1000.0 + 0.5);
+      if (gap < 5000) { amMed.somaMs += gap; if (gap > amMed.maxMs) amMed.maxMs = gap; }
+    }
+    amUltChegada = agora;
+  }
+  pthread_mutex_unlock(&amTrava);
+}
+static void amZerar(void) {
+  pthread_mutex_lock(&amTrava);
+  am.seq = 0; amUltChegada = 0.0;
+  pthread_mutex_unlock(&amTrava);
+}
+int video_pos_amostra(double *pos, double *carimbo, double *incerteza, unsigned *seq) {
+  unsigned sq;
+  if (!pronto || fundoRet || fundoSusp || dtsSessao) return 0;
+  if (seekEm || seekEnvEm || seekRetryEm) return 0;   // uMS still reports the old place
+  pthread_mutex_lock(&amTrava);
+  sq = am.seq; *pos = am.pos; *carimbo = am.carimbo;
+  pthread_mutex_unlock(&amTrava);
+  if (!sq) return 0;
+  *incerteza = 0.0;   // the arrival is the stamp; uMS's own delay is in the offset
+  *seq = sq;
+  return 1;
+}
+void video_ass_leituras(int *n, int *fora, long *somaMs, int *maxMs) {
+  pthread_mutex_lock(&amTrava);
+  *n = amMed.n; *fora = amMed.fora; *somaMs = amMed.somaMs; *maxMs = amMed.maxMs;
+  memset(&amMed, 0, sizeof amMed);
+  pthread_mutex_unlock(&amTrava);
+}
+
 static void dvSilenciarTv(void);
 static int eventoPayload(const char *p, unsigned minhaSessao) {
   if (minhaSessao != sessao) return 1;
@@ -1503,6 +1564,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   { double v = numeroDe(p, "\"currentTime\":");
     if (v >= 0) {
       posSeg = posNativa = v / 1000.0;
+      amPublicar(v / 1000.0);
       // Primeiro quadro com avanco: o numero de inicio de verdade.
       if (cronPediu && !cronQuadro && posSeg > 0.0) {
         cronQuadro = 1;
@@ -1819,8 +1881,31 @@ int video_iniciar(void)      { mkvass_aceitar_imagem(1); return iniciar(0); }
 int video_iniciar_auto(void) { mkvass_aceitar_imagem(1); return iniciar(1); }
 int video_registro_negado(void) { return regNegado; }
 
+/* SLOW-TV RULES for the new subtitle engine (LG port, owner 25/11/2026):
+ * the same processor class as Tizen 4-6, the same rules. webOS 4 and older
+ * (2017-2019: the owner's C9 is webOS 4) count as slow: busy ASS scenes at
+ * 50 % and further ahead. The default render mode follows the Tizen table
+ * (assperf_tizen_definir): webOS 4 and older Low auto (as Tizen 4/5),
+ * 5-6 (2020-2021) Medium auto, 7+ (webOS 22 and later) High auto, unknown
+ * Medium. Once, from the first start of the player. */
+static void assTvDefinir(void) {
+#if ASS_NOVO
+  static int feito;
+  int w;
+  if (feito) return;
+  feito = 1;
+  w = nv_webos_major();
+  assperf_tv_lenta_definir(w > 0 && w <= 4);
+  assperf_tizen_definir(w <= 0 ? 0 : w <= 4 ? 4 : w <= 6 ? 6 : 7);
+  printf("[ass] webos %d: slow-TV rules %s, default render mode %s\n", w,
+         w > 0 && w <= 4 ? "on" : "off", w <= 0 ? "Medium (version unknown)" : w <= 4 ? "Low" : w <= 6 ? "Medium" : "High");
+  fflush(stdout);
+#endif
+}
+
 static int iniciar(int automatico) {
   void *L, *G, *A;
+  assTvDefinir();
   if (ligado) return 1;
   if (!lsreg_pode_tentar(&regEstado, SDL_GetTicks(), automatico)) {
     if (lsreg_desistiu(&regEstado) && !regAvisouDesistir) {
@@ -2929,6 +3014,7 @@ static int tocarInterno(const char *url, int comDV) {
   // entender no titulo seguinte, e insistir so arrisca a imagem de novo.)
   fonX = -1; dstX = dstY = dstW = dstH = -1;
   posSeg = posNativa = durSeg = bufferSeg = 0; tocando = pronto = 0; midia[0] = 0;
+  amZerar();
   ackMidia = 0; ack_publicar();
   velEnviada = 100;   // pipeline novo nasce em 1x; video_bombear reaplica
   bufferandoDesde = 0;

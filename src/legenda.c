@@ -26,7 +26,7 @@ static int docAss;   // the current document is ASS/SSA (sob trava)
 /* libass off (.tpk, Subtitles > Style): an ASS/SSA track is drawn by the app
  * as plain text, dialogue only (assDialogoSo). */
 static int libassDesligado(void) {
-#ifdef NV_TPK
+#if ASS_NOVO
   return !assperf_get(AP_LIBASS);
 #else
   return 0;

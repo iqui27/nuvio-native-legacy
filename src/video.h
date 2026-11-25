@@ -199,11 +199,6 @@ unsigned video_busca_falhas(void);
 // subtitle tracks, a CDN link renewal, a reconnection) and its track list is
 // not back yet. faixas.c waits for it before deciding an early subtitle pick.
 int      video_tpk_reabrindo(void);
-// SUBTITLE CLOCK (owner 25/10). The host reads the TV's position with a query
-// that takes 50-600 ms and stamps the MIDDLE of it (CLOCK_MONOTONIC, s); half
-// the duration is the uncertainty. 1 = there is a reading; *seq changes with
-// every new one. Same transform as video_pos (converted stream offset).
-int      video_pos_amostra(double *pos, double *carimbo, double *incerteza, unsigned *seq);
 // 1 from a seek until the first real reading of where the TV landed (the TV
 // seeks to a keyframe, seconds before the target). Subtitles hide meanwhile.
 int      video_pos_incerta(void);
@@ -212,11 +207,20 @@ int      video_tpk_quadro(double *fps, int *hdr);
 // Colour of the playing MKV's video (Colour element): MatrixCoefficients and
 // Range as in the file (0 = not stated), and HDR. 0 = no MKV video track.
 int      video_tpk_cor(int *matriz, int *faixa, int *hdr);
-// Measurements for the libass log (assrender.c): position readings since the
-// last call. n = arrived, fora = dropped (query older than the last seek),
-// somaMs / maxMs = time the query took. Resets the counters.
-void     video_tpk_leituras(int *n, int *fora, long *somaMs, int *maxMs);
 #endif
+// Measurements for the libass log (assrender.c, "[ass] 10s tv"): position
+// readings since the last call. n = arrived, fora = dropped (query older than
+// the last seek), somaMs / maxMs = time the query took. Resets the counters.
+// Every platform that builds the new engine (ASS_NOVO) has one: video_tpk.c
+// (the host's 40 ms clock), video.c on webOS (its own 40 ms clock thread).
+void     video_ass_leituras(int *n, int *fora, long *somaMs, int *maxMs);
+// SUBTITLE CLOCK (owner 25/10). The host reads the TV's position with a query
+// that takes 50-600 ms and stamps the MIDDLE of it (CLOCK_MONOTONIC, s); half
+// the duration is the uncertainty. 1 = there is a reading; *seq changes with
+// every new one. Same transform as video_pos (converted stream offset).
+// webOS (video.c): the arrival of each currentTime event, uncertainty 0; 0
+// while a seek is in flight. player.c feeds it to relogio_amostra there.
+int      video_pos_amostra(double *pos, double *carimbo, double *incerteza, unsigned *seq);
 int    video_tocando(void);
 // Pausa comprovada pelo backend da sessao atual, nao a intencao local de
 // video_pausar. Alvos sem confirmacao confiavel devolvem 0.
