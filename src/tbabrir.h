@@ -32,8 +32,23 @@
 #include <stdint.h>
 #include "streams.h"
 
-// 1 = the source looks like a TorBox one (resolved by Nuvio's TorBox, or the
-// add-on's link/label says TorBox) and a TorBox key can use the API.
+// ALLDEBRID AND REAL-DEBRID (owner 25/11/2026): the same early lookup (the
+// account list by the torrent's hash, read at most once a minute) and hold.
+// - AllDebrid has no separate cache check, so the hash is uploaded first and
+//   its `ready` is the check: only then is the stuck magnet deleted (a new
+//   ready magnet replaces it, or the same one is deleted and uploaded again);
+//   not confirmed: nothing is deleted, a fresh unlock of the file only. A
+//   magnet that is not ready is never deleted.
+// - Real-Debrid has no cache check at all: nothing is ever deleted or added;
+//   the torrent in the account gives a fresh unrestricted link only.
+// - Premiumize needs none of this: its directdl hands a fresh link of the
+//   cached file per call and nothing sits in the account to get stuck.
+
+// The service a source plays from, for all of the above: DEBRID_TB,
+// DEBRID_AD or DEBRID_RD (resolved by Nuvio with it, or the add-on's
+// link/label says it) when its key can use the API; -1 otherwise.
+int  tbabrir_servico(const Stream *s);
+// tbabrir_servico(s) == DEBRID_TB.
 int  tbabrir_fonte_torbox(const Stream *s);
 
 // The early lookup (see above). `porque` goes to the log.
@@ -47,7 +62,7 @@ void tbabrir_chave(char *out, unsigned n, const char *url, const char *hash, con
 // old). 0 = nothing to try (no hash and not found is only known later: then
 // tbabrir_resultado answers -1).
 int  tbabrir_recuperar(const Stream *s, const char *urlAtual);
-// 0 = working, 1 = done (`url` = the fresh CDN link), -1 = failed (`motivo`
+// 0 = working, 1 = done (`url` = the fresh link), -1 = failed (`motivo`
 // says why), -2 = nothing asked. 1 and -1 are consumed by the read.
 int  tbabrir_resultado(char *url, unsigned n, char *motivo, unsigned mn);
 void tbabrir_cancelar(void);

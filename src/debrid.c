@@ -50,8 +50,9 @@ static char chaveLocal[SN][200];
 static int  alvoT, alvoE;
 static pthread_mutex_t chaveTrava = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t sessaoAtual;
-static atomic_uint tbGeracao;
+static atomic_uint tbGeracao, contaGeracao[DEBRID_N];
 unsigned debrid_tb_geracao(void) { return atomic_load(&tbGeracao); }
+unsigned debrid_conta_geracao(int q) { return q >= 0 && q < DEBRID_N ? atomic_load(&contaGeracao[q]) : 0; }
 
 // RECUSA DE CONTA POR BUSCA. recusado[q] guarda o status HTTP da recusa (0 =
 // nenhuma); `geracao` sobe a cada debrid_nova_busca. Atomicos porque
@@ -124,6 +125,7 @@ void debrid_contexto_capturar(DebridContexto *c) {
   memcpy(c->chave, chave, sizeof c->chave);
   c->temporada = alvoT; c->episodio = alvoE;
   c->sessao = sessaoAtual; c->busca = atomic_load(&geracao);
+  c->conta = 0;
   pthread_mutex_unlock(&chaveTrava);
 }
 void debrid_contexto_entrar(const DebridContexto *c) {
@@ -141,7 +143,7 @@ static int contextoAbrir(DebridContexto *c) {
   return 1;
 }
 static int contextoValeSemTrava(const DebridContexto *c) {
-  return c && c->sessao == sessaoAtual && c->busca == atomic_load(&geracao);
+  return c && c->sessao == sessaoAtual && (c->conta || c->busca == atomic_load(&geracao));
 }
 static int contextoVale(void) {
   int vale;
@@ -193,6 +195,7 @@ static void efetiva(int q) {
   pthread_mutex_lock(&contaMutex);
   if (strcmp(chave[q], k)) {
     if (q == STB) atomic_fetch_add(&tbGeracao, 1u);
+    atomic_fetch_add(&contaGeracao[q], 1u);
     atomic_fetch_add(&geracao, 1u);
     atomic_store(&recusado[q], 0);
     atomic_store(&semPlano[q], 0); atomic_store(&avisado[q], 0);
@@ -860,6 +863,29 @@ static const char *escolherArquivo(const char *files, int fileIdx,
   return ep ? NULL : maior;                              // 6
 }
 
+// THE PLAYING FILE BY NAME, THEN SIZE (tbabrir.c's recovery and RD's reuse):
+// the account item is known, the add-on said the file's name and size. Exact
+// base name (case free; several = the one of that size, else the first), else
+// the only video of exactly that size. NULL = let escolherArquivo decide.
+static const char *arquivoExato(const char *files, const char *kNome, const char *kTam, const char *arquivo,
+                                uint64_t bytes) {
+  const char *p, *porNome = NULL, *porTam = NULL, *alvo = arquivo ? baseNome(arquivo) : "";
+  int nTam = 0;
+  for (p = files; p && *p == '{'; p = js_prox(js_fim(p))) {
+    char nome[600];
+    double tam;
+    if (!js_texto(p, js_fim(p), kNome, nome, sizeof nome) || !ehVideo(nome)) continue;
+    caminhoNormal(nome);
+    tam = js_num(p, js_fim(p), kTam, 0);
+    if (alvo[0] && !strcasecmp(baseNome(nome), alvo)) {
+      if (!porNome || (bytes && (uint64_t)tam == bytes)) porNome = p;
+    }
+    if (bytes && (uint64_t)tam == bytes) { porTam = p; nTam++; }
+  }
+  if (porNome) return porNome;
+  return nTam == 1 ? porTam : NULL;
+}
+
 // ---------------------------------------------------------------- Real-Debrid
 //
 // Rotas (api.real-debrid.com/rest/1.0, documentacao oficial "REST API"):
@@ -868,6 +894,18 @@ static const char *escolherArquivo(const char *files, int fileIdx,
 
 // `pct` recebe o progresso (0-100) do torrent que o RD ficou baixando, quando
 // ele nao ficou pronto nas tres olhadas; a escolha manual mostra isso.
+// A TORRENT ALREADY IN THE ACCOUNT (owner 25/11/2026). Every addMagnet makes
+// a new entry on Real-Debrid, even for a hash the account already has, so each
+// search and each reopen used to add the same torrent again. rdVisto keeps the
+// hash -> torrent id of what this app added or found in the account list
+// (debrid_conta_achar); resolverRD first asks that torrent for the file and
+// adds the magnet only when it cannot serve it (gone, another file selected).
+static int rdVisto(const char *hash, char *id, unsigned n);
+static void rdLembrar(const char *hash, const char *id);
+static void rdEsquecer(const char *hash);
+static int rdLinkDoItem(const char *id, const char *arquivo, uint64_t bytes, int fileIdx, char *url, unsigned n,
+                        int *sumiu);
+
 static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n,
                       int *pct) {
   char corpo[12400], enc[12300], magnet[4096], arquivo[512], rota[120], tid[64], status[32], link[600];
@@ -876,6 +914,14 @@ static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n,
 
   magnetMontar(infoHash, fileIdx, NULL, magnet, sizeof magnet);
   dicaDe(infoHash, fileIdx, arquivo, sizeof arquivo, NULL, 0);
+  if (rdVisto(infoHash, tid, sizeof tid)) {
+    int sumiu = 0;
+    if (rdLinkDoItem(tid, arquivo, 0, fileIdx, url, n, &sumiu) == 1) {
+      printf("[debrid] Real-Debrid: %s already in the account, no new addMagnet\n", infoHash);
+      return 1;
+    }
+    if (sumiu) rdEsquecer(infoHash);
+  }
   urlenc(enc, sizeof enc, magnet);
   snprintf(corpo, sizeof corpo, "magnet=%s", enc);
   r = post_form(RD, "torrents/addMagnet", SRD, corpo, &st);
@@ -883,6 +929,7 @@ static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n,
     int v = falha(SRD, "addMagnet", st, r); free(r); return v;
   }
   free(r);
+  rdLembrar(infoHash, tid);
 
   snprintf(rota, sizeof rota, "torrents/info/%s", tid);
   r = get_auth(RD, rota, SRD, &st);
@@ -1322,15 +1369,76 @@ static void adDescartar(const char *id) {
   free(r);
 }
 
+// link/unlock of a magnet file's link (`delayed` waited up to 3 s). 1 = `url`.
+static int adDesbloquear(const char *lnk, char *url, unsigned n) {
+  char enc[2800], corpo[2900], *r; int st = 0;
+  urlenc(enc, sizeof enc, lnk);
+  snprintf(corpo, sizeof corpo, "link=%s", enc);
+  r = adPost("v4/link/unlock", corpo, &st);
+  if (!adOk(r, st)) { falha(SAD, "unlock", st, r); free(r); return 0; }
+  if (js_texto(r, NULL, "link", url, n)) { free(r); return 1; }
+  // "delayed": links que precisam de tempo para ser gerados. Raro em torrent
+  // (o link de arquivo pronto costuma sair na hora), mas e o contrato.
+  { char did[48];
+    if (js_bruto(r, NULL, "delayed", did, sizeof did)) {
+      char *q = did; int t2;
+      while (*q == '"') q++;
+      { char *e = q; while (*e && *e != '"') e++; *e = 0; }
+      free(r);
+      for (t2 = 0; t2 < 3; t2++) {
+        snprintf(corpo, sizeof corpo, "id=%s", q);
+        r = adPost("v4/link/delayed", corpo, &st);
+        if (adOk(r, st) && js_num(r, NULL, "status", 0) == 2 && js_texto(r, NULL, "link", url, n)) {
+          free(r); return 1;
+        }
+        free(r);
+        sleep(1);
+      }
+      if (url && n) url[0] = 0;
+      return 0;
+    } }
+  falha(SAD, "unlock", st, r); free(r);
+  return 0;
+}
+
+// The file of ready magnet `id` (magnet/files, the tree flattened) and its
+// unlocked link. `bytes` > 0 = the add-on's size: name/size first
+// (arquivoExato), then the usual order. `rotulo` names the torrent in the log.
+static int adLinkDoMagnet(const char *id, int fileIdx, const char *arquivo, uint64_t bytes, char *url, unsigned n,
+                          const char *rotulo) {
+  char corpo[64], lnk[900], *r; int st = 0;
+  const char *files, *el;
+  AdBuf b = { NULL, 0, 0, 0 };
+  if (url && n) url[0] = 0;
+  snprintf(corpo, sizeof corpo, "id%%5B%%5D=%s", id);
+  r = adPost("v4/magnet/files", corpo, &st);
+  if (!adOk(r, st) || !(files = js_array(r, NULL, "files"))) {
+    int v = falha(SAD, "files", st, r); free(r); return v;
+  }
+  b.p = malloc(4096); b.cap = 4096;
+  if (b.p) { b.p[0] = '['; b.p[1] = 0; b.n = 1; }
+  adAchatar(files, &b, 0);
+  free(r);
+  if (!b.p) return 0;
+  adAdd(&b, "]", 1);
+  if (!b.p) return 0;
+  el = arquivoExato(b.p + 1, "path", "size", arquivo, bytes);
+  if (!el) el = escolherArquivo(b.p + 1, fileIdx, "path", "size", arquivo);
+  if (!el || !js_texto(el, js_fim(el), "link", lnk, sizeof lnk)) {
+    printf("[debrid] AllDebrid: sem video utilizavel em %s\n", rotulo ? rotulo : "-");
+    free(b.p); return 0;
+  }
+  free(b.p);
+  return adDesbloquear(lnk, url, n);
+}
+
 // `manual` 0 (automatico): so o que ja esta pronto (`ready`). 1: a pessoa
 // escolheu o torrent; se nao esta pronto, o AllDebrid segue baixando e devolve
 // DEBRID_BAIXANDO com o progresso, que fica na conta para a proxima escolha.
 static int resolverAD(const char *infoHash, int fileIdx, char *url, unsigned n,
                       int manual, int *pct) {
-  char corpo[12400], enc[12300], magnet[4096], arquivo[512], id[32], lnk[900], sub[16], h[80];
+  char corpo[12400], enc[12300], magnet[4096], arquivo[512], id[32], sub[16], h[80];
   char *r; int st = 0, tent, sc = -1, pronto;
-  const char *files, *el;
-  AdBuf b = { NULL, 0, 0, 0 };
 
   hashMin(h, sizeof h, infoHash);      // o servico compara TEXTO, como o TorBox
   magnetMontar(h, fileIdx, infoHash, magnet, sizeof magnet);
@@ -1389,50 +1497,7 @@ static int resolverAD(const char *infoHash, int fileIdx, char *url, unsigned n,
     return DEBRID_BAIXANDO;
   }
 
-  snprintf(corpo, sizeof corpo, "id%%5B%%5D=%s", id);
-  r = adPost("v4/magnet/files", corpo, &st);
-  if (!adOk(r, st) || !(files = js_array(r, NULL, "files"))) {
-    int v = falha(SAD, "files", st, r); free(r); return v;
-  }
-  b.p = malloc(4096); b.cap = 4096;
-  if (b.p) { b.p[0] = '['; b.p[1] = 0; b.n = 1; }
-  adAchatar(files, &b, 0);
-  free(r);
-  if (!b.p) return 0;
-  adAdd(&b, "]", 1);
-  el = escolherArquivo(b.p + 1, fileIdx, "path", "size", arquivo);
-  if (!el || !js_texto(el, js_fim(el), "link", lnk, sizeof lnk)) {
-    printf("[debrid] AllDebrid: sem video utilizavel em %s\n", infoHash);
-    free(b.p); return 0;
-  }
-  free(b.p);
-
-  urlenc(enc, sizeof enc, lnk);
-  snprintf(corpo, sizeof corpo, "link=%s", enc);
-  r = adPost("v4/link/unlock", corpo, &st);
-  if (!adOk(r, st)) { int v = falha(SAD, "unlock", st, r); free(r); return v; }
-  if (js_texto(r, NULL, "link", url, n)) { free(r); return 1; }
-  // "delayed": links que precisam de tempo para ser gerados. Raro em torrent
-  // (o link de arquivo pronto costuma sair na hora), mas e o contrato.
-  { char did[48];
-    if (js_bruto(r, NULL, "delayed", did, sizeof did)) {
-      char *q = did; int t2;
-      while (*q == '"') q++;
-      { char *e = q; while (*e && *e != '"') e++; *e = 0; }
-      free(r);
-      for (t2 = 0; t2 < 3; t2++) {
-        snprintf(corpo, sizeof corpo, "id=%s", q);
-        r = adPost("v4/link/delayed", corpo, &st);
-        if (adOk(r, st) && js_num(r, NULL, "status", 0) == 2 && js_texto(r, NULL, "link", url, n)) {
-          free(r); return 1;
-        }
-        free(r);
-        sleep(1);
-      }
-      return 0;
-    } }
-  falha(SAD, "unlock", st, r); free(r);
-  return 0;
+  return adLinkDoMagnet(id, fileIdx, arquivo, 0, url, n, infoHash);
 }
 
 // "Testar chave" (Ajustes): GET v4/user. Devolve 1 e a frase da conta em
@@ -1720,6 +1785,8 @@ int debrid_resolver_escolhido(const char *infoHash, int fileIdx, char *url,
 // Recarregar, a busca de fundo do Retomar) nao muda a conta nem a chave. A
 // chave e copiada sob a trava na hora; logout a apaga e a chamada seguinte
 // sai "sem chave".
+static int contaEntrar(DebridContexto *c);
+static void contaSair(int aberto);
 static int tbChave(char *dst, size_t n) {
   int ok;
   pthread_mutex_lock(&chaveTrava);
@@ -1808,7 +1875,12 @@ int debrid_tb_em_cache(const char *hash) {
   if (!hash || strlen(hash) < 40) return -1;
   hashMin(h, sizeof h, hash);
   snprintf(rota, sizeof rota, "torrents/checkcached?hash=%s&format=list", h);
-  r = get_auth(TB, rota, STB, &st);
+  { // get_auth needs a context: the recovery thread has none (it always
+    // answered "no answer" before, so a stuck item was never re-added).
+    DebridContexto c;
+    int aberto = contaEntrar(&c);
+    r = get_auth(TB, rota, STB, &st);
+    contaSair(aberto); }
   if (!ok2xx(r, st)) { free(r); return -1; }
   v = js_array(r, NULL, "data") != NULL;
   free(r);
@@ -1871,4 +1943,301 @@ int debrid_tb_airlock(int usenet, int item, int ligar, char *detalhe, unsigned n
   fflush(stdout);
   free(r);
   return ok;
+}
+
+// ======================================================= account items AD/RD
+//
+// tbabrir.c (owner 25/11/2026): the early lookup and the recovery of a file
+// that never shows a picture, on AllDebrid and Real-Debrid as on TorBox.
+// Account calls: a context of their own (conta = 1) so a new search started
+// meanwhile (Reload, Resume's background search) does not void them; a new
+// session (logout, other profile) does.
+static int contaEntrar(DebridContexto *c) {
+  if (contextoDoFio()) return 0;
+  debrid_contexto_capturar(c);
+  c->conta = 1;
+  debrid_contexto_entrar(c);
+  return 1;
+}
+static void contaSair(int aberto) { if (aberto) debrid_contexto_sair(); }
+
+int debrid_conta_disponivel(int q) {
+  int tem;
+  if (q < 0 || q >= SN) return 0;
+  pthread_mutex_lock(&chaveTrava);
+  tem = chave[q][0] != 0;
+  pthread_mutex_unlock(&chaveTrava);
+  if (!tem) return 0;
+  return atomic_load(&semPlano[q]) ? -1 : 1;
+}
+
+static int hashValido(const char *h, char out[41]) {
+  int i;
+  if (!h || strlen(h) < 40) return 0;
+  for (i = 0; i < 40 && isxdigit((unsigned char)h[i]); i++) out[i] = (char)tolower((unsigned char)h[i]);
+  out[i == 40 ? 40 : 0] = 0;
+  return i == 40;
+}
+
+// ---- the account list, kept 60 s (one list read serves every file lookup
+// of the source list while a person scrolls it)
+#define CONTA_LISTA_MS 60
+typedef struct { char hash[41], id[24]; char pronto; } ContaItem;
+static struct { ContaItem *v; int n; time_t em; unsigned geracao; } contaLista[SN];
+static pthread_mutex_t contaListaTrava = PTHREAD_MUTEX_INITIALIZER;
+
+static void contaListaGuardar(int q, ContaItem *v, int n) {
+  pthread_mutex_lock(&contaListaTrava);
+  free(contaLista[q].v);
+  contaLista[q].v = v; contaLista[q].n = n; contaLista[q].em = time(NULL);
+  contaLista[q].geracao = debrid_conta_geracao(q);
+  pthread_mutex_unlock(&contaListaTrava);
+}
+static void contaListaAdd(ContaItem **v, int *n, int *cap, const char *hash, const char *id, int pronto) {
+  char h[41];
+  if (!hashValido(hash, h) || !id[0]) return;
+  if (*n == *cap) {
+    int c = *cap ? *cap * 2 : 128;
+    ContaItem *q2 = realloc(*v, (size_t)c * sizeof **v);
+    if (!q2) return;
+    *v = q2; *cap = c;
+  }
+  snprintf((*v)[*n].hash, sizeof (*v)[*n].hash, "%s", h);
+  snprintf((*v)[*n].id, sizeof (*v)[*n].id, "%s", id);
+  (*v)[*n].pronto = (char)(pronto ? 1 : 0);
+  (*n)++;
+}
+
+// AllDebrid: POST v4.1/magnet/status with no id = every magnet of the account
+// (data.magnets[], each with id, hash, statusCode; 4 = Ready).
+static int adListar(ContaItem **v, int *n) {
+  char *r; int st = 0, cap = 0;
+  const char *p;
+  *v = NULL; *n = 0;
+  r = adPost("v4.1/magnet/status", "", &st);
+  if (!adOk(r, st)) { falha(SAD, "status (list)", st, r); free(r); return -1; }
+  for (p = js_array(r, NULL, "magnets"); p && *p == '{'; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    char h[64] = "", id[24];
+    double i = js_num(p, f, "id", -1);
+    if (i < 0 || !js_texto(p, f, "hash", h, sizeof h)) continue;
+    snprintf(id, sizeof id, "%.0f", i);
+    contaListaAdd(v, n, &cap, h, id, (int)js_num(p, f, "statusCode", -1) == 4);
+  }
+  free(r);
+  return 1;
+}
+
+// Real-Debrid: GET torrents?limit=1000&page=N (a root array, each with id,
+// hash, status). Up to 3 pages.
+static int rdListar(ContaItem **v, int *n) {
+  int cap = 0;
+  *v = NULL; *n = 0;
+  for (int pg = 1; pg <= 3; pg++) {
+    char rota[64], *r; int st = 0, k = 0;
+    const char *p;
+    snprintf(rota, sizeof rota, "torrents?limit=1000&page=%d", pg);
+    r = get_auth(RD, rota, SRD, &st);
+    if (st == 204) { free(r); break; }       // no (more) torrents
+    if (!ok2xx(r, st)) { falha(SRD, "torrents (list)", st, r); free(r); if (pg == 1) { free(*v); *v = NULL; return -1; } break; }
+    for (p = js_raiz_array(r); p && *p == '{'; p = js_prox(js_fim(p)), k++) {
+      const char *f = js_fim(p);
+      char h[64] = "", id[24] = "", stt[32] = "";
+      if (!js_texto(p, f, "hash", h, sizeof h) || !js_texto(p, f, "id", id, sizeof id)) continue;
+      js_texto(p, f, "status", stt, sizeof stt);
+      contaListaAdd(v, n, &cap, h, id, !strcmp(stt, "downloaded"));
+    }
+    free(r);
+    if (k < 1000) break;
+  }
+  return 1;
+}
+
+int debrid_conta_achar(int q, const char *hash, char *id, unsigned n, int *pronto) {
+  char h[41];
+  int achou = 0, i, aberto, v;
+  DebridContexto c;
+  if (id && n) id[0] = 0;
+  if (pronto) *pronto = 0;
+  if ((q != SAD && q != SRD) || !hashValido(hash, h) || debrid_conta_disponivel(q) <= 0) return -1;
+  pthread_mutex_lock(&contaListaTrava);
+  v = contaLista[q].v && time(NULL) - contaLista[q].em < CONTA_LISTA_MS &&
+      contaLista[q].geracao == debrid_conta_geracao(q);
+  pthread_mutex_unlock(&contaListaTrava);
+  if (!v) {
+    ContaItem *lst; int ln, ok;
+    aberto = contaEntrar(&c);
+    ok = q == SAD ? adListar(&lst, &ln) : rdListar(&lst, &ln);
+    contaSair(aberto);
+    if (ok < 0) return -1;
+    contaListaGuardar(q, lst, ln);
+  }
+  pthread_mutex_lock(&contaListaTrava);
+  for (i = 0; i < contaLista[q].n; i++) {
+    ContaItem *it = &contaLista[q].v[i];
+    if (strcmp(it->hash, h)) continue;
+    // several entries of the hash (RD keeps duplicates): a ready one wins
+    if (!achou || (it->pronto && !(pronto && *pronto))) {
+      if (id && n) snprintf(id, n, "%s", it->id);
+      if (pronto) *pronto = it->pronto;
+      achou = 1;
+    }
+  }
+  pthread_mutex_unlock(&contaListaTrava);
+  if (achou && q == SRD && id) rdLembrar(h, id);
+  return achou;
+}
+
+static void contaListaEsquecer(int q) {
+  pthread_mutex_lock(&contaListaTrava);
+  contaLista[q].em = 0;
+  pthread_mutex_unlock(&contaListaTrava);
+}
+
+int debrid_ad_enviar(const char *hash, char *id, unsigned n) {
+  char h[41], corpo[200], sub[16], rd[16], *r;
+  int st = 0, aberto, pronto;
+  DebridContexto c;
+  if (id && n) id[0] = 0;
+  if (!hashValido(hash, h) || debrid_conta_disponivel(SAD) <= 0) return -1;
+  snprintf(corpo, sizeof corpo, "magnets%%5B%%5D=magnet%%3A%%3Fxt%%3Durn%%3Abtih%%3A%s", h);
+  aberto = contaEntrar(&c);
+  r = adPost("v4/magnet/upload", corpo, &st);
+  if (!adOk(r, st) || js_texto(r, NULL, "code", sub, sizeof sub) || js_num(r, NULL, "id", -1) < 0) {
+    falha(SAD, "upload", st, r); free(r); contaSair(aberto); return -1;
+  }
+  if (id && n) snprintf(id, n, "%.0f", js_num(r, NULL, "id", -1));
+  pronto = js_bruto(r, NULL, "ready", rd, sizeof rd) && !strncmp(rd, "true", 4);
+  free(r);
+  contaSair(aberto);
+  contaListaEsquecer(SAD);
+  return pronto;
+}
+
+int debrid_ad_apagar(const char *id) {
+  char corpo[64], *r; int st = 0, ok, aberto;
+  DebridContexto c;
+  if (!id || !id[0] || debrid_conta_disponivel(SAD) <= 0) return 0;
+  snprintf(corpo, sizeof corpo, "id=%s", id);
+  aberto = contaEntrar(&c);
+  r = adPost("v4/magnet/delete", corpo, &st);
+  ok = adOk(r, st);
+  if (!ok) falha(SAD, "delete", st, r);
+  free(r);
+  contaSair(aberto);
+  contaListaEsquecer(SAD);
+  return ok;
+}
+
+// ---- Real-Debrid: hash -> torrent id this app added or found
+#define RD_VISTOS 64
+static struct { char hash[41], id[24]; unsigned geracao; } rdVistos[RD_VISTOS];
+static int rdVistosProx;
+static pthread_mutex_t rdVistosTrava = PTHREAD_MUTEX_INITIALIZER;
+static int rdVisto(const char *hash, char *id, unsigned n) {
+  char h[41]; int ok = 0;
+  if (!hashValido(hash, h)) return 0;
+  pthread_mutex_lock(&rdVistosTrava);
+  for (int i = 0; i < RD_VISTOS && !ok; i++)
+    if (rdVistos[i].hash[0] && !strcmp(rdVistos[i].hash, h) && rdVistos[i].geracao == debrid_conta_geracao(SRD)) {
+      snprintf(id, n, "%s", rdVistos[i].id); ok = 1;
+    }
+  pthread_mutex_unlock(&rdVistosTrava);
+  return ok;
+}
+static void rdLembrar(const char *hash, const char *id) {
+  char h[41]; int i;
+  if (!hashValido(hash, h) || !id || !id[0] || strlen(id) >= sizeof rdVistos[0].id) return;
+  pthread_mutex_lock(&rdVistosTrava);
+  for (i = 0; i < RD_VISTOS; i++) if (!strcmp(rdVistos[i].hash, h)) break;
+  if (i == RD_VISTOS) { i = rdVistosProx; rdVistosProx = (rdVistosProx + 1) % RD_VISTOS; }
+  snprintf(rdVistos[i].hash, sizeof rdVistos[i].hash, "%s", h);
+  snprintf(rdVistos[i].id, sizeof rdVistos[i].id, "%s", id);
+  rdVistos[i].geracao = debrid_conta_geracao(SRD);
+  pthread_mutex_unlock(&rdVistosTrava);
+}
+static void rdEsquecer(const char *hash) {
+  char h[41];
+  if (!hashValido(hash, h)) return;
+  pthread_mutex_lock(&rdVistosTrava);
+  for (int i = 0; i < RD_VISTOS; i++) if (!strcmp(rdVistos[i].hash, h)) rdVistos[i].hash[0] = 0;
+  pthread_mutex_unlock(&rdVistosTrava);
+}
+
+// torrents/info/<id>: a downloaded torrent's `links` follow its SELECTED files
+// in order (one link per selected file; a single link for several files is
+// RD's archive, not playable here). The playing file must be one of them.
+// 1 = `url` from unrestrict/link (a fresh link, the old one untouched); 0 =
+// the torrent cannot serve it (*sumiu = 1: RD no longer has the torrent).
+static int rdLinkDoItem(const char *id, const char *arquivo, uint64_t bytes, int fileIdx, char *url, unsigned n,
+                        int *sumiu) {
+  char rota[120], status[32], link[900], enc[2800], corpo[2900], *r, *sel = NULL;
+  int st = 0, ok = 0, k, alvo = -1, nSel = 0, nLinks = 0;
+  const char *files, *links, *el, *p;
+  size_t selN = 0;
+  if (sumiu) *sumiu = 0;
+  if (url && n) url[0] = 0;
+  snprintf(rota, sizeof rota, "torrents/info/%s", id);
+  r = get_auth(RD, rota, SRD, &st);
+  if (st == 404) { if (sumiu) *sumiu = 1; free(r); return 0; }
+  if (!ok2xx(r, st)) { int v = falha(SRD, "info", st, r); free(r); return v < 0 ? v : 0; }
+  if (!js_texto(r, NULL, "status", status, sizeof status) || strcmp(status, "downloaded") ||
+      !(files = js_array(r, NULL, "files")) || !(links = js_array(r, NULL, "links")) || *links != '"') {
+    free(r); return 0;
+  }
+  // The selected files only, as a list escolherArquivo can read.
+  sel = malloc(strlen(r) + 4);
+  if (!sel) { free(r); return 0; }
+  sel[selN++] = '[';
+  for (p = files; p && *p == '{'; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    if (js_num(p, f, "selected", 0) != 1) continue;
+    if (nSel) sel[selN++] = ',';
+    memcpy(sel + selN, p, (size_t)(f - p)); selN += (size_t)(f - p);
+    nSel++;
+  }
+  sel[selN++] = ']'; sel[selN] = 0;
+  el = nSel ? arquivoExato(sel + 1, "path", "bytes", arquivo, bytes) : NULL;
+  if (!el && nSel) {
+    // the add-on's index counts every file: pick in the whole list, then find it among the selected
+    const char *todo = escolherArquivo(files, fileIdx, "path", "bytes", arquivo);
+    if (todo && js_num(todo, js_fim(todo), "selected", 0) == 1) {
+      double fid = js_num(todo, js_fim(todo), "id", -1);
+      for (p = sel + 1, k = 0; p && *p == '{'; p = js_prox(js_fim(p)), k++)
+        if (js_num(p, js_fim(p), "id", -2) == fid) { el = p; break; }
+    }
+  }
+  if (el) for (p = sel + 1, k = 0; p && *p == '{'; p = js_prox(js_fim(p)), k++) if (p == el) { alvo = k; break; }
+  // the alvo-th link
+  for (p = links, k = 0; p && *p == '"'; k++) {
+    const char *q = p + 1;
+    while (*q && *q != '"') { if (*q == '\\' && q[1]) q++; q++; }
+    if (k == alvo && js_cadeia(p, link, sizeof link)) ok = 1;
+    nLinks++;
+    if (!*q) break;
+    p = js_prox(q + 1);
+  }
+  free(sel);
+  free(r);
+  if (!ok || nLinks != nSel) return 0;
+  urlenc(enc, sizeof enc, link);
+  snprintf(corpo, sizeof corpo, "link=%s", enc);
+  r = post_form(RD, "unrestrict/link", SRD, corpo, &st);
+  ok = ok2xx(r, st) && js_texto(r, NULL, "download", url, n) && !strncmp(url, "http", 4);
+  if (!ok) { int v = falha(SRD, "unrestrict", st, r); if (url && n) url[0] = 0; free(r); return v < 0 ? v : 0; }
+  free(r);
+  return 1;
+}
+
+int debrid_conta_link(int q, const char *id, const char *arquivo, uint64_t bytes, int fileIdx, char *url,
+                      unsigned n) {
+  int aberto, ok, sumiu = 0;
+  DebridContexto c;
+  if (url && n) url[0] = 0;
+  if ((q != SAD && q != SRD) || !id || !id[0] || debrid_conta_disponivel(q) <= 0) return 0;
+  aberto = contaEntrar(&c);
+  ok = q == SAD ? adLinkDoMagnet(id, fileIdx, arquivo, bytes, url, n, id) == 1
+                : rdLinkDoItem(id, arquivo, bytes, fileIdx, url, n, &sumiu) == 1;
+  contaSair(aberto);
+  return ok && url[0];
 }

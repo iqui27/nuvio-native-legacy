@@ -49,6 +49,7 @@ typedef struct {
   int temporada, episodio;
   uint64_t sessao;
   unsigned busca;
+  int conta;   // 1 = account call (tbabrir.c): a new search does not void it, a new session does
 } DebridContexto;
 void debrid_contexto_capturar(DebridContexto *contexto);
 void debrid_contexto_entrar(const DebridContexto *contexto);
@@ -201,5 +202,35 @@ int   debrid_tb_apagar(int item);
 // BLOCKS. 1 = the hash is cached on TorBox (checkcached), 0 = not, -1 = no
 // answer or no key (tbabrir.c, before deleting a stuck item).
 int   debrid_tb_em_cache(const char *hash);
+
+
+// ACCOUNT ITEMS ON ALLDEBRID AND REAL-DEBRID (tbabrir.c, owner 25/11/2026):
+// the early lookup and the recovery of a file that never shows a picture.
+// Like the TorBox calls above they do not depend on the running search: the
+// effective key is copied at the call; a logout or a new session voids it.
+// `servico` is DEBRID_AD or DEBRID_RD. Nothing here goes to the log with a URL.
+//   debrid_conta_disponivel: 1 = a key that can use the API, 0 = none,
+//                            -1 = the account has no plan for the API.
+//   debrid_conta_geracao:    changes with the service's effective key.
+//   debrid_conta_achar:      BLOCKS. The hash's item in the account (AD
+//                            magnet/status, RD torrents list). 1 = `id`
+//                            filled, *pronto = ready/downloaded; 0 = not in
+//                            the account; -1 = no answer.
+//   debrid_conta_link:       BLOCKS. A fresh playable link of the playing file
+//                            in item `id` (by file name, then size, then the
+//                            add-on's index / episode). AD: magnet/files +
+//                            link/unlock; RD: torrents/info + unrestrict/link.
+//   debrid_ad_enviar:        BLOCKS. AD magnet/upload of the bare hash. 1 = AD
+//                            says ready (cached; `id` = its magnet), 0 = not
+//                            ready (`id` filled: the magnet AD made or kept),
+//                            -1 = refused / no answer.
+//   debrid_ad_apagar:        BLOCKS. AD magnet/delete. 1 = done.
+int      debrid_conta_disponivel(int servico);
+unsigned debrid_conta_geracao(int servico);
+int      debrid_conta_achar(int servico, const char *hash, char *id, unsigned n, int *pronto);
+int      debrid_conta_link(int servico, const char *id, const char *arquivo, uint64_t bytes, int fileIdx,
+                           char *url, unsigned n);
+int      debrid_ad_enviar(const char *hash, char *id, unsigned n);
+int      debrid_ad_apagar(const char *id);
 
 #endif

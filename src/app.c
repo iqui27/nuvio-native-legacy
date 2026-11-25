@@ -3072,7 +3072,7 @@ static void vigiarPartes(void) {
       parteAviso(prox); }
   }
 }
-// TORBOX FILE THAT NEVER SHOWS A PICTURE (tbabrir.h, owner 25/11/2026, from
+// TORBOX / ALLDEBRID / REAL-DEBRID FILE THAT NEVER SHOWS A PICTURE (tbabrir.h, owner 25/11/2026, from
 // subtitle-rewrite's burn-in start without the transcoding): a player error
 // before the first frame, or the opening deadline, on a TorBox source. Once
 // per file per playback the source is held ("opening source") while
@@ -3083,22 +3083,22 @@ static void vigiarPartes(void) {
 // manual pick.
 #define TB_REC_PRAZO_MS 12000u
 static void guardarPosicaoFonteFalha(void);
-static struct { int fase, manual; Uint32 desde; double pos; } tbRec;
+static struct { int fase, manual, servico; Uint32 desde; double pos; } tbRec;
 static char tbTentados[8][700];
 static int tbTentadosN, tbRecForcarMotivo;
 static int tbRecuperarComecar(int manual, const char *porque) {
   int at = stream_atual();
   const Stream *s = at >= 0 ? stream_item(at) : NULL;
   char k[700];
-  if (tbRec.fase || !s || video_fonte_tocou() || !tbabrir_fonte_torbox(s)) return 0;
+  if (tbRec.fase || !s || video_fonte_tocou() || (tbRec.servico = tbabrir_servico(s)) < 0) return 0;
   tbabrir_chave(k, sizeof k, s->url, s->hashTorrent[0] ? s->hashTorrent : s->infoHash, s->arquivo, s->tamanhoBytes);
   if (!k[0]) return 0;
   for (int i = 0; i < tbTentadosN; i++) if (!strcmp(tbTentados[i], k)) return 0;
   snprintf(tbTentados[tbTentadosN % 8], sizeof tbTentados[0], "%s", k);
   if (tbTentadosN < 8) tbTentadosN++;
   if (!tbabrir_recuperar(s, video_url_atual())) return 0;
-  printf("[tbabrir] source %d (\"%s\") showed no picture (%s): asking TorBox to re-add the file, the source waits\n",
-         at, s->rotulo, porque);
+  printf("[tbabrir] source %d (\"%s\") showed no picture (%s): asking %s to recover the file, the source waits\n",
+         at, s->rotulo, porque, debrid_servico_nome(tbRec.servico));
   fflush(stdout);
   guardarPosicaoFonteFalha();
   tbRec.fase = 1; tbRec.manual = manual; tbRec.desde = SDL_GetTicks();
@@ -3123,22 +3123,24 @@ static void vigiarTbRecuperar(void) {
   if (r == 0 && SDL_GetTicks() - tbRec.desde < TB_REC_PRAZO_MS) return;
   if (r == 0 || r == -2) {
     tbabrir_cancelar();
-    snprintf(motivo, sizeof motivo, "%s", r == 0 ? "no answer from TorBox in 12 s" : "the request was lost");
+    if (r == 0) snprintf(motivo, sizeof motivo, "no answer from %s in 12 s", debrid_servico_nome(tbRec.servico));
+    else snprintf(motivo, sizeof motivo, "the request was lost");
     r = -1;
   }
   manual = tbRec.manual;
   tbRec.fase = 0;
   if (r == 1) {
-    printf("[tbabrir] reopening the source on TorBox's fresh link%s\n", tbRec.pos > 1.0 ? " at the same point" : "");
+    printf("[tbabrir] reopening the source on %s's fresh link%s\n", debrid_servico_nome(tbRec.servico),
+           tbRec.pos > 1.0 ? " at the same point" : "");
     fflush(stdout);
     if (tbRec.pos > 1.0) player_definir_retomada_fonte(tbRec.pos);
-    video_definir_cabecalhos("");   // the add-on's headers are not TorBox's CDN's
+    video_definir_cabecalhos("");   // the add-on's headers are not the debrid CDN's
     definirFonteVOD(url);
     if (manual) fonteManualDesde = SDL_GetTicks() | 1u;
     else fonteVODDesde = SDL_GetTicks() | 1u;
     return;
   }
-  printf("[tbabrir] TorBox recovery gave up (%s): the usual source failure\n", motivo);
+  printf("[tbabrir] %s recovery gave up (%s): the usual source failure\n", debrid_servico_nome(tbRec.servico), motivo);
   fflush(stdout);
   if (manual) {
     marcarFonteMorta(stream_atual());
