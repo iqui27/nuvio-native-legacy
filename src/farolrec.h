@@ -111,6 +111,23 @@ typedef struct {
   uint8_t terminou;
 } FarolRecSemente;
 
+// Parametros deterministicos da vaga de exploracao ("fora da curva", posicoes
+// 5-8 = indices 0-based 4..7):
+//   - Neutra (perfil sem historico de exploracao ou taxa intermediaria): tenta
+//     a partir da posicao 6 (indices 5..7) em toda fileira.
+//   - Recuada: apos FR_EXP_SEM_ABRIR_N (10) fileiras com vaga de exploracao
+//     vistas sem nenhuma abertura, desce para a posicao 8 (indice 7) e aparece
+//     em apenas 1 de cada 2 fileiras (expSeq par).
+//   - Promovida: apos >= FR_EXP_PROMOVE_VISTAS_MIN (2) fileiras vistas e ao menos
+//     uma abertura/toque na vaga de exploracao com taxa
+//     (expAbertas + expTocadas) / expVistas >= (normAbertas + normTocadas) / normBase,
+//     sobe para a posicao 5 (indice 4).
+#define FR_EXP_SEM_ABRIR_N        10u
+#define FR_EXP_PROMOVE_VISTAS_MIN  2u
+#define FR_EXP_POS_PROMOVIDA       4   // posicao 5 (0-based)
+#define FR_EXP_POS_NEUTRA          5   // posicao 6 (0-based)
+#define FR_EXP_POS_RECUADA         7   // posicao 8 (0-based)
+
 // Tudo que a chamada precisa, injetado — inclusive o relogio.
 typedef struct {
   const FarolGosto *g;              // modelo do perfil ativo (obrigatorio)
@@ -120,6 +137,15 @@ typedef struct {
   uint8_t faixaHora;    // faixa do dia agora (0..FG_HORA_F-1)
   uint8_t naHome;       // 1 = fileira da Home: aplica a saida do Continuar
   uint32_t semente;     // semente do sorteio (desempate deterministico)
+  // Contadores locais opcionais de engajamento na vaga "fora da curva"
+  // (zerados por omissao => comportamento neutro nas posicoes 6-8, toda fileira).
+  uint32_t expVistas;    // fileiras com vaga fora da curva vistas
+  uint32_t expAbertas;   // abertas vindas da vaga fora da curva
+  uint32_t expTocadas;   // tocadas vindas da vaga fora da curva
+  uint32_t normVistas;   // fileiras do Farol vistas no perfil
+  uint32_t normAbertas;  // abertas nas vagas normais
+  uint32_t normTocadas;  // tocadas nas vagas normais
+  uint32_t expSeq;       // indice da fileira vista/composta (alternancia 1 em 2)
 } FarolRecCtx;
 
 // Motivos estruturados (3.5). a/b: indice de titulo (semente em ctx->sementes)
@@ -148,6 +174,11 @@ typedef struct {
 // Nivel de frio pelo contador de obras com ficha do modelo (3.4):
 // < 3 -> 0, 3-9 -> 1, >= 10 -> 2.
 int farolrec_nivel(const FarolGosto *g);
+
+// Calcula deterministicamente se a fileira atual inclui vaga "fora da curva"
+// (retorno 1 = sim, 0 = pular por alternancia 1 em 2) e a faixa de indices
+// 0-based [*iniOut, *fimOut] (dentro de 4..7 = posicoes 5..8).
+int farolrec_exploracao_faixa(const FarolRecCtx *ctx, int *iniOut, int *fimOut);
 
 // Filtra (3.1), pontua (3.2) e escolhe ate `maxOut` com diversidade (3.3) e
 // motivos (3.5). Devolve o n de itens escritos em `out` (0 no nivel 0 ou sem

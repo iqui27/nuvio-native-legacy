@@ -405,6 +405,7 @@ static void zeraTudo(void) {
   for (p = 1; p <= 3; p++) {
     snprintf(cam, sizeof cam, "%s/farol-gosto-p%d.txt", T_dir, p); unlink(cam);
     snprintf(cam, sizeof cam, "%s/farol-sinal-p%d.txt", T_dir, p); unlink(cam);
+    snprintf(cam, sizeof cam, "%s/farol-medida-p%d.txt", T_dir, p); unlink(cam);
   }
   snprintf(cam, sizeof cam, "%s/farol-fichas.bin", T_dir); unlink(cam);
   pthread_mutex_lock(&T_dmtx); D_n = 0; pthread_mutex_unlock(&T_dmtx);
@@ -1152,13 +1153,78 @@ int main(void) {
     }
   }
 
+  // Contadores locais por perfil: exclusivos da TV, atomicos, isolados,
+  // desligados quando Recomendar=0, zerados por Zerar/esquecer.
+  {
+    FarolUsoContadores u;
+    CatItem c1, c2;
+    T_perfil = 1;
+    farolsinal_teste_zera();
+    zeraTudo();
+    drenaTrab();
+    farolsinal_zerar_gosto();
+    drenaTrab();
+    memset(&c1, 0, sizeof c1);
+    snprintf(c1.imdb, sizeof c1.imdb, "tt7770001");
+    snprintf(c1.tipo, sizeof c1.tipo, "movie");
+    memset(&c2, 0, sizeof c2);
+    snprintf(c2.imdb, sizeof c2.imdb, "tt7770002");
+    snprintf(c2.tipo, sizeof c2.tipo, "movie");
+
+    farolsinal_uso_cena(0);
+    farolsinal_uso_cena(1);
+    farolsinal_uso_vista(1);
+    farolsinal_uso_vista(0);
+    farolsinal_uso_aberta(&c1, 1);
+    farolsinal_uso_tocada(&c1);
+    farolsinal_saida("tt7770001", 'm', 0, 0, 0, 95.0, 100.0, 1);
+    farolsinal_uso_aberta(&c2, 0);
+    farolsinal_uso_limpar_alvo(&c2);
+    farolsinal_uso_tocada(&c2);
+    farolsinal_recusar(&c2);
+    farolsinal_definir_recomendar(0);
+    farolsinal_uso_vista(1);
+    farolsinal_uso_cena(0);
+    farolsinal_uso_aberta(&c1, 0);
+    farolsinal_definir_recomendar(1);
+
+    farolsinal_uso_obter(&u);
+    OK(u.cenasTv == 1 && u.cenasServidor == 1, "cenas contadas");
+    OK(u.vistas == 2 && u.expVistas == 1 && u.expSeq == 2, "vistas contadas");
+    OK(u.abertas == 2 && u.expAbertas == 1 && u.normAbertas == 1, "abertas");
+    OK(u.tocadas == 1 && u.expTocadas == 1 && u.normTocadas == 0, "tocadas");
+    OK(u.terminadas == 1, "terminadas");
+    OK(u.recusas == 1, "recusas");
+
+    farolsinal_gravar();
+    T_perfil = 2;
+    drenaTrab();
+    farolsinal_uso_obter(&u);
+    OK(u.vistas == 0 && u.abertas == 0 && u.recusas == 0, "isola perfil 2");
+
+    T_perfil = 1;
+    drenaTrab();
+    farolsinal_uso_obter(&u);
+    OK(u.vistas == 2 && u.abertas == 2 && u.tocadas == 1 &&
+       u.terminadas == 1 && u.recusas == 1 &&
+       u.cenasTv == 1 && u.cenasServidor == 1, "restaura perfil 1");
+
+    farolsinal_zerar_gosto();
+    farolsinal_uso_obter(&u);
+    OK(u.vistas == 0 && u.abertas == 0 && u.tocadas == 0 &&
+       u.terminadas == 0 && u.recusas == 0 &&
+       u.cenasTv == 0 && u.cenasServidor == 0, "zerar apaga contadores");
+    farolsinal_esquecer();
+  }
+
   // nada em /tmp: apaga os arquivos do perfil fake e a pasta temporaria
   {
     char cam[640];
     const char *nomes[] = { "farol-gosto-p1.txt", "farol-gosto-p2.txt",
                             "farol-gosto-p3.txt", "farol-sinal-p1.txt",
                             "farol-sinal-p2.txt", "farol-sinal-p3.txt",
-                            "farol-fichas.bin", NULL };
+                            "farol-medida-p1.txt", "farol-medida-p2.txt",
+                            "farol-medida-p3.txt", "farol-fichas.bin", NULL };
     for (i = 0; nomes[i]; i++) {
       snprintf(cam, sizeof cam, "%s/%s", T_dir, nomes[i]);
       unlink(cam);

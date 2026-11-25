@@ -52,6 +52,12 @@ const char *farol_motivo(const char *chaveFil, int coluna,
 // Home cacheia o motivo por ela e nao toma trava por quadro.
 unsigned farol_cena_geracao(void);
 
+// Hooks locais de medicao (chamados pela Home): contam exibicao da fileira
+// (dedup por geracao da cena + fileira) e abertura de cartaz distinguindo
+// vaga de exploracao ("fora da curva") vs normal.
+void farol_registrar_vista(const char *chaveFil);
+void farol_registrar_aberta(const char *chaveFil, int coluna, const CatItem *ci);
+
 // 1 quando a fileira do Farol pode estar publicada: "Recomendar nesta TV"
 // ligado e modo seguro fora. A descoberta confere de novo no ponto de
 // publicacao e na remontagem sem rede — um opt-out no meio da montagem nao

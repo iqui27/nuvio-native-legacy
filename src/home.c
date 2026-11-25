@@ -32,6 +32,9 @@
 #include "farol.h"       // fileiras do Farol: ponto de luz, motivo (45)
 #include "faroldica.h"   // cartao de dica P2 como coluna 0 da fileira Farol (48)
 #include "farolsinal.h"  // farolsinal_origem: o Play mede a recomendacao
+extern __attribute__((weak)) void farol_registrar_vista(const char *chaveFil);
+extern __attribute__((weak)) void farol_registrar_aberta(const char *chaveFil, int coluna, const CatItem *ci);
+extern __attribute__((weak)) void farolsinal_uso_limpar_alvo(const CatItem *ci);
 #include "curadoria.h"
 #include "continuar.h"
 #include "proximo.h"
@@ -2925,8 +2928,17 @@ static void home_evento_(const SDL_Event *e) {
         // em foco — o mesmo que home_pediu_abrir vai entregar.
         if (farol_fileira(fileiras[foco.fileira].chave)) {
           int idx = fileiraItemIndice(&fileiras[foco.fileira], foco.coluna);
+          int colMot = foco.coluna - (fileiras[foco.fileira].temDica ? 1 : 0);
           const CatItem *ci = idx >= 0 ? cat_item(idx) : NULL;
-          if (ci) farolsinal_origem(ci, FS_ORIGEM_FAROL);
+          if (ci) {
+            farolsinal_origem(ci, FS_ORIGEM_FAROL);
+            if (farol_registrar_aberta)
+              farol_registrar_aberta(fileiras[foco.fileira].chave, colMot, ci);
+          }
+        } else {
+          int idx = fileiraItemIndice(&fileiras[foco.fileira], foco.coluna);
+          const CatItem *ci = idx >= 0 ? cat_item(idx) : NULL;
+          if (ci && farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(ci);
         }
         farolAlvoLimpar();
         pedidoAbrir = 1;
@@ -9045,6 +9057,7 @@ static void home_desenhar_(Uint32 agora) {
         static unsigned motGer[MAX_FIL];
         static int motCol[MAX_FIL];
         float ar, ag, ab;
+        if (farol_registrar_vista) farol_registrar_vista(fileiras[r].chave);
         tfAcento(&ar, &ag, &ab);
         gfx_cor((GfxRect){ homeConteudoX() + 3.0f, y + tl.h * 0.5f - 5.0f,
                            10.0f, 10.0f }, 5.0f, ar, ag, ab,

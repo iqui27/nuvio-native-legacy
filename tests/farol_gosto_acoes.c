@@ -501,6 +501,26 @@ static void testarAjustesEGostoUI(void) {
   assert(farolgostoui_modo() == 0);
   farolgostoui_fechar();
 
+  // Navegar por D-pad ate "Voltar" (sem ESCAPE) e confirmar com RETURN fecha sem beco;
+  // Zerar o gosto também limpa contadores locais.
+  {
+    FarolUsoContadores u;
+    farolsinal_uso_cena(0);
+    farolsinal_uso_vista(1);
+    farolsinal_uso_obter(&u);
+    assert(u.cenasTv >= 1 && u.vistas >= 1);
+    farolgostoui_abrir_aprendeu();
+    assert(farolgostoui_aberto() && farolgostoui_modo() == 1);
+    teclaFgui(SDLK_DOWN, 0);
+    teclaFgui(SDLK_DOWN, 0);
+    teclaFgui(SDLK_DOWN, 0);
+    teclaFgui(SDLK_DOWN, 0); // foco -> Voltar (0)
+    assert(farolgostoui_foco() == 0);
+    teclaFgui(SDLK_RETURN, 0);
+    assert(farolgostoui_modo() == 0);
+    farolgostoui_fechar();
+  }
+
   // Lista (1): AJ_FAROL_ZERAR abre confirmacao com foco seguro (1=Cancelar);
   // OK imediato ou Voltar cancelam preservando tudo!
   valor[AJ_LAYOUT_AJUSTES] = 1;

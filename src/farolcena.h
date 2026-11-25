@@ -92,6 +92,14 @@ typedef struct {
   int64_t  feita;                      // epoch da cena (0 = omite)
   int64_t  valeS;                      // vale_s; <= 0 = omite
   uint32_t semente;                    // sorteio deterministico (desempate)
+  // Contadores locais para ajuste da vaga de exploracao ("fora da curva").
+  uint32_t expVistas;
+  uint32_t expAbertas;
+  uint32_t expTocadas;
+  uint32_t normVistas;
+  uint32_t normAbertas;
+  uint32_t normTocadas;
+  uint32_t expSeq;
 } FarolCenaCtx;
 
 // ------------------------------------------------------- dicas (P2)
