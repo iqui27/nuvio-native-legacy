@@ -2386,6 +2386,23 @@ static int escolhaDoNext(const char *base, char *prov, unsigned tam) {
   alvoPlayer(alvo, sizeof alvo);
   return !strcmp(alvo, buscaNextAlvo) && fontepref_tocando_de(base, prov, tam, NULL, 0);
 }
+// REPRODUZIR NA PAGINA DO SERIAL LOGO DEPOIS DO FIM (dono, 25/11): o episodio
+// terminou, a pagina ficou (o fim nao leva a home) e o botao aponta o
+// seguinte. O toque curto vale como o Next: uma fonte com o bingeGroup ou a
+// release EXATA da que acabou de tocar sai sozinha; sem ela, a folha de
+// sempre. So a que tocou NESTE processo (nada da escolha guardada) e so o
+// episodio seguinte ao que terminou; segurar OK no botao continua abrindo a
+// folha (detail_pediu_fontes).
+static void detalheSeguirDepoisDoFim(const char *alvo) {
+  char base[24];
+  if (!alvo || !strchr(alvo, ':') || player_id_canal()[0]) return;
+  if (!player_proximo_do_concluido(alvo)) return;
+  idBaseDoTitulo(base, sizeof base);
+  if (!base[0] || fontepref_tocando_semear(base) != 1) return;
+  snprintf(buscaNextAlvo, sizeof buscaNextAlvo, "%s", alvo);
+  printf("[detail] %s: next episode after the one that just finished: follows its source, like Next\n", alvo);
+  fflush(stdout);
+}
 static void abrirProximoEpisodio(int t, int e, int apontar) {
   uint64_t sessaoEntrada = nv_perfil_sessao_ler();
   int titulo = player_indice();
@@ -5926,7 +5943,10 @@ void app_atualizar(float dt, Uint32 agora) {
         if (usouPreparo) limparFonteVOD();
         renovarListaDoPlayer();
         if (tocarParteGuardada() || tocarFonteGuardada()) { preparoEspera = 0; }
-        else aguardandoFonte = 1;
+        else {
+          aguardandoFonte = 1;
+          if (!doInicio) detalheSeguirDepoisDoFim(alvoDefinitivo);
+        }
       }
     }
     if (detail_pediu_marcar()) {

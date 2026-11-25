@@ -1253,6 +1253,33 @@ void fontepref_tocando(const char *id, const Stream *s) {
   pthread_mutex_unlock(&travaTocando);
 }
 
+// CONTINUAR ASSISTINDO SEM LINK GUARDADO (dono, 25/11): o card do proximo
+// episodio (ou um link que venceu) segue a fonte do ultimo episodio como o
+// Next. Na RAM ela ainda esta se o episodio anterior tocou neste processo; se
+// nao (app reaberto), entra a escolha da PESSOA para o titulo — a mesma que a
+// folha mostraria como "Sua escolha anterior", com as mesmas regras (Reusar,
+// entre sessoes, validade). O contentor dela nao e conhecido: o MP4 nao entra
+// no casamento por release (tocandoMp4 = -1).
+int fontepref_tocando_semear(const char *id) {
+  char base[24];
+  const FontePref *p;
+  int ja;
+  if (!id) return 0;
+  fontepref_id_base(id, base, sizeof base);
+  if (!base[0]) return 0;
+  pthread_mutex_lock(&travaTocando);
+  ja = (tocandoPref.bingeGroup[0] || tocandoPref.lancamento[0]) && !strcmp(base, tocandoPref.id);
+  pthread_mutex_unlock(&travaTocando);
+  if (ja) return 1;
+  p = fontepref_do_titulo(base);
+  if (!p || (!p->bingeGroup[0] && !p->lancamento[0])) return 0;
+  pthread_mutex_lock(&travaTocando);
+  tocandoPref = *p;
+  tocandoMp4 = -1;
+  pthread_mutex_unlock(&travaTocando);
+  return 2;
+}
+
 int fontepref_tocando_de(const char *id, char *provedor, unsigned tamProv, char *binge, unsigned tamBinge) {
   char base[24];
   int ok;
@@ -1285,7 +1312,7 @@ static int bingeTocando(const char *id, int total, const Stream *(*item)(int, vo
     int binge = p.bingeGroup[0] && !strcmp(s->bingeGroup, p.bingeGroup);
     char audio[FONTEPREF_TRILHA]; fontepref_trilha(s, audio, sizeof audio);
     int release = p.lancamento[0] && pontosLanc(p.provedor, p.lancamento, s) >= 1000 &&
-                  s->altura == p.altura && stream_e_mp4(s) == mp4 &&
+                  s->altura == p.altura && (mp4 < 0 || stream_e_mp4(s) == mp4) &&
                   contemMarcas(audio, p.trilha);
     if ((!binge && !release) || (podeTocar && !podeTocar(i, 1, ctxPode))) continue;
     int pts = casar(&p, s, NULL);

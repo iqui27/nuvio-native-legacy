@@ -61,7 +61,25 @@ int main(void) {
   // Disabled group preference must still prevent following the playing file.
   snprintf(buscaNextAlvo,sizeof buscaNextAlvo,"%s",requested);
   fontepref_configurar(1,3600,0,1);assert(!escolhaDoNext(item.imdb,NULL,0));
+  fontepref_configurar(1,3600,1,1);
+  // Play on the title page right after E1 finished (owner, 25/11): the short
+  // press on E2 follows the source that played, like Next; once only, only the
+  // episode after the finished one, only what played in this process.
+  buscarParaPlayer();player_definir_episodio(1,1);fontepref_tocando(item.imdb,&source);
+  player_teste_concluiu();
+  player_definir_episodio(1,1);detalheSeguirDepoisDoFim("tt4000020:1:1");
+  assert(!escolhaDoNext(item.imdb,NULL,0));           // not the next episode: sheet
+  player_teste_concluiu();
+  player_definir_episodio(1,2);detalheSeguirDepoisDoFim("tt4000020:1:2");
+  assert(escolhaDoNext(item.imdb,NULL,0));             // E2 after E1: like Next
+  assert(fontepref_binge_tocando(item.imdb)==1);
+  buscarParaPlayer();detalheSeguirDepoisDoFim("tt4000020:1:2");
+  assert(!escolhaDoNext(item.imdb,NULL,0));           // consumed: the next Play is manual
+  player_definir_episodio(1,1);player_teste_concluiu();fontepref_definir_perfil(2);
+  player_definir_episodio(1,2);detalheSeguirDepoisDoFim("tt4000020:1:2");
+  assert(!escolhaDoNext(item.imdb,NULL,0));           // another profile: nothing in RAM to follow
   limparFonteVOD();player_encerrar();intro_desligar();
   puts("PASS: cold Next preserves playing-source intent through search reset; manual Play and disabled group remain manual");
+  puts("PASS: Play on the title page right after the end follows the finished episode's source once");
   return 0;
 }
