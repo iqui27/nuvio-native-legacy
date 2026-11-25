@@ -733,7 +733,7 @@ typedef enum {
   AJ_EXT_AUDIO_CACHE,
   AJ_EXT_AUDIO_PASSO,
   AJ_EXT_AUDIO_GRANDE,
-  AJ_EXT_AUDIO_MODO,  // download of the audio file: whole file (default) / audio only
+  AJ_EXT_AUDIO_MODO,  // download of the audio file: whole file / audio only (default)
   AJ_EXT_AUDIO_SERIE, // remember the chosen version for the next episodes: on
   AJ_EXT_AUDIO_SEGUIR, // another cut: follow it through the whole film: off
   AJ_EXT_AUDIO_AVISO,  // the "sync adjusted by itself" message: on
@@ -9881,7 +9881,34 @@ void ajustes_evento(const SDL_Event *e) {
   AJ_ESCALA_FIM();
 }
 
+// AUDIO FROM ANOTHER SOURCE: OK switches it, a held OK opens its options
+// (owner 25/11, beta: "clicking it should just turn it on, not show that long
+// list"). The KEYDOWN arms, the KEYUP before NV_HOLD_MS is the switch, the
+// hold crossing it (ajustes_atualizar) opens the sheet and its KEYUP is eaten.
+static void eaAbrir(void);
+static int eaHoldArmado, eaHoldComer;
+static Uint32 eaHoldDesde;
+static void eaHoldAlternar(void) {
+  int novo = lig(AJ_EXT_AUDIO) ? 1 : 0;   // V_LIGA: 0 = On, 1 = Off
+  if (!definirValorDireto(AJ_EXT_AUDIO, novo)) { uxNotificar("Não foi possível salvar. O valor anterior foi mantido."); return; }
+  printf("[ajustes] %s -> %s (OK; hold OK for its options)\n", rotuloOpcao(AJ_EXT_AUDIO), textoValor(AJ_EXT_AUDIO));
+  fflush(stdout);
+}
+static void eaHoldPasso(Uint32 agora) {
+  if (!eaHoldArmado || (Uint32)(agora - eaHoldDesde) < NV_HOLD_MS) return;
+  eaHoldArmado = 0; eaHoldComer = 1;
+  if (focoOp == AJ_EXT_AUDIO) eaAbrir();
+}
 static void eventoTela(const SDL_Event *e) {
+  if (e->type == SDL_KEYUP && (e->key.keysym.sym == SDLK_RETURN || e->key.keysym.sym == SDLK_KP_ENTER) &&
+      (eaHoldArmado || eaHoldComer)) {
+    if (eaHoldArmado && focoOp == AJ_EXT_AUDIO) eaHoldAlternar();
+    eaHoldArmado = eaHoldComer = 0;
+    return;
+  }
+  if (e->type == SDL_KEYDOWN && (eaHoldArmado || eaHoldComer) &&
+      (e->key.keysym.sym == SDLK_RETURN || e->key.keysym.sym == SDLK_KP_ENTER)) return;   // the held OK's repeats
+  if (e->type == SDL_KEYDOWN) eaHoldArmado = eaHoldComer = 0;   // any other key cancels
   // A MODAL DE DIGITACAO VEM ANTES DE TUDO, como em biblioteca.c e recenviar.c:
   // enquanto ela esta em pe, nenhuma tecla pertence a lista de opcoes atras.
   // Sem esta linha, o D-pad moveria o foco da lista por baixo da modal.
@@ -9931,6 +9958,10 @@ static void eventoTela(const SDL_Event *e) {
       // "Mais opcoes": abre (ou fecha) no lugar; o foco fica na linha e o
       // Baixo entra nas avancadas.
       if (TELA[focoItem].tipo == IT_MAIS) maisAberto[secAtual] = !maisAberto[secAtual];
+      return;
+    }
+    if (focoOp == AJ_EXT_AUDIO && ajOpcaoDisponivel(AJ_EXT_AUDIO) && !soLeitura(AJ_EXT_AUDIO)) {
+      eaHoldArmado = 1; eaHoldComer = 0; eaHoldDesde = SDL_GetTicks();
       return;
     }
     if (OPCOES[focoOp].tipo != OP_ACAO) { uxAbrirEditor(focoOp); return; }
@@ -10196,6 +10227,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   AJ_ESCALA_INI();
   guiaAtualizar(dt);
   if (uxAviso[0] && SDL_TICKS_PASSED(agora, uxAvisoAte)) uxAviso[0] = 0;
+  eaHoldPasso(agora);
   montarTela();
   valor[AJ_PERFIL_PESQ] = recomenda_pesquisavel() ? 0 : 1;   // V_LIGA: 0 = Ligado
   valor[AJ_FONTE_REGEX_MODELO] = fonteregra_modelo_atual();   // espelho do padrao (#202)

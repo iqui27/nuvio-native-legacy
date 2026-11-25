@@ -39,3 +39,9 @@ void doadorleg_iniciar(double pos) { (void)pos; }
 void doadorleg_cancelar(void) {}
 int  doadorleg_resultado(double *k, double *d, double *c, char *m, size_t n) { (void)k; (void)d; (void)c; (void)m; (void)n; return 0; }
 int  doadorleg_mapa_resultado(DoaMapa *o, char *m, size_t n) { (void)o; (void)m; (void)n; return 0; }
+/* The donor's light-mode check and the series memory of the audio match
+ * (video_tpk.c doadorLeve): no data dir and no memory reading in these tests.
+ * Weak, so a test that links dados.c / memlog.c keeps the real ones. */
+__attribute__((weak)) long memlog_livre_mb(void) { return -1; }
+__attribute__((weak)) char *dados_ler(const char *nome) { (void)nome; return 0; }
+__attribute__((weak)) int dados_gravar_leve(const char *nome, const char *conteudo) { (void)nome; (void)conteudo; return 0; }

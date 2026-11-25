@@ -2024,7 +2024,14 @@ int stream_marcar_fora_cache_url(const char *url) {
   pthread_mutex_unlock(&verTrava);
   if (achou) {
     atomic_fetch_add(&folhaRevisao, 1);
-    printf("[fonte] marked not cached by the audio of another source: %.80s\n", url);
+    // The host only: a debrid or AIOStreams path carries the download token
+    // or the add-on's config (owner 25/11, beta: no tokens in the log).
+    { const char *h = strstr(url, "://");
+      const char *f;
+      h = h ? h + 3 : url;
+      f = strchr(h, '/');
+      int nh = f ? (int)(f - h) : (int)strlen(h);
+      printf("[fonte] marked not cached by the audio of another source: %.*s/…\n", nh > 80 ? 80 : nh, h); }
     fflush(stdout);
   }
   return achou;

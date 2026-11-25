@@ -6,6 +6,7 @@
 #include "telefoneui.h"
 #include "idioma.h"
 #include "player.h"
+#include "pausao.h"
 #include "video.h"
 #include "xtream.h"
 #include "addons.h"
@@ -338,10 +339,15 @@ static void pilAtualizar(Uint32 agora) {
 }
 
 // OK na pilula de falha: o caminho de volta para a lista de legendas.
+// Only with the player's controls and pause panel down: with them up, OK is
+// theirs (owner 25/11: OK on the Audio button opened Subtitles for the 8 s
+// the "no subtitle" pill stays up — any focused button did).
 int faixas_pilula_tecla(const SDL_Event *e) {
   if (pil.estado != PIL_FALHOU || faixas_aberta() || !player_aberto()) return 0;
+  if (player_controles_visiveis() || pausao_visivel()) return 0;
   if (e->type != SDL_KEYDOWN) return 0;
   if (e->key.keysym.sym != SDLK_RETURN && e->key.keysym.sym != SDLK_KP_ENTER) return 0;
+  printf("[faixas] OK on the no-subtitle pill: the subtitle list\n"); fflush(stdout);
   pilZerar();
   faixas_abrir_em(1);
   return 1;
@@ -368,7 +374,13 @@ void faixas_shot_pilula(int estado, const char *idioma, const char *provedor, Ui
 // PONTEIRO (#99) NA PILULA DE FALHA: nada a focar (ela e o unico botao); o
 // alvo existe para o clique virar o OK que faixas_pilula_tecla ja trata — sem
 // ele o clique caia no fundo do player (pausar/tocar).
-static void ponteiroPilula(int a, int b) { (void)a; (void)b; }
+// With the controls up the OK key is theirs, so the click opens the list here.
+static void ponteiroPilula(int a, int b) {
+  (void)a; (void)b;
+  if (pil.estado != PIL_FALHOU || faixas_aberta() || !player_aberto()) return;
+  pilZerar();
+  faixas_abrir_em(1);
+}
 
 static void pilPedir(void) {
   static char texto[200], dir[48];
@@ -527,6 +539,7 @@ static int auGrupoDe(const char *l);
 static int auLinhaDoGrupo(int g);
 static int auTodos;
 static uint64_t auAssin;
+static Uint32 arqLidoEm, arqAtualEm;
 void faixas_abrir(void) { faixas_abrir_em(0); }
 
 // Abre JA NA COLUNA que o botao pediu. O player tem um icone de audio e um de
@@ -544,6 +557,7 @@ void faixas_idioma_principal_atualizar(void) {
 }
 void faixas_abrir_em(int col) {
   int n;
+  printf("[faixas] sheet opened: %s\n", col == 1 ? "subtitles" : "audio"); fflush(stdout);
   faixas_idioma_principal_atualizar();
   aberta = 1;
   modo = (col == 1) ? 1 : 0;
@@ -557,7 +571,7 @@ void faixas_abrir_em(int col) {
   if (extMenu()) {
     const VideoFaixa *fa = video_audio(video_audio_atual());
     int g, l;
-    auTodos = 0; auAssin = 1; auMontar();
+    auTodos = 0; auAssin = 1; arqLidoEm = arqAtualEm = 0; auMontar();
     g = auGrupoDe(fa ? fa->idioma : "");
     l = g >= 0 ? auLinhaDoGrupo(g) : -1;
     foco[0] = l >= 0 ? l : 0;
@@ -680,6 +694,19 @@ static void arqLer(void) {
 }
 static const VideoFaixa *arqFaixa(int i) { arqLer(); return i >= 0 && i < arqN ? &arqF[i] : NULL; }
 static int arqTotal(void) { arqLer(); return arqN; }
+// The playing one of them, read at the same pace (owner 25/11, the slow menu
+// on Fight Club: auMontar asks several times per drawn row, and every ask
+// rebuilt the file's whole track list in video_tpk.c just to hash it).
+static int arqAtualN = -1;
+static Uint32 arqAtualEm;
+static int arqAtual(void) {
+  Uint32 t = SDL_GetTicks();
+  if (!arqAtualEm || t - arqAtualEm >= 250u) {
+    arqAtualEm = t ? t : 1;
+    arqAtualN = video_audio_arquivo_atual();
+  }
+  return arqAtualN;
+}
 #define AU_GRUPOS_MAX 96
 typedef struct { char cod[8]; int nF, nV, ordem, rank; } AuGrupo;
 typedef struct { int tipo, g; } AuLinha;
@@ -722,6 +749,13 @@ static void extMontar(int forcar) {
   // placeholder), or Settings > Addons.
   if (!forcar && extGeracao == stream_lista_geracao() && extListaN == n && extRevisao == stream_revisao() &&
       extAddonsVer == audioext_addons_versao()) return;
+  // At most every 400 ms while the sheet is open (owner 25/11, Fight Club's
+  // 181 versions: every cache answer bumps the revision, and each rebuild
+  // reads every source again on the main thread).
+  { static Uint32 ultimo;
+    Uint32 t = SDL_GetTicks();
+    if (!forcar && ultimo && t - ultimo < 400u) return;
+    ultimo = t ? t : 1; }
   extGeracao = stream_lista_geracao(); extRevisao = stream_revisao(); extAddonsVer = audioext_addons_versao();
   extListaN = n; extAllN = 0;
   if (n <= 0) return;
@@ -796,7 +830,7 @@ static int auCmp(const void *pa, const void *pb) {
   return a->ordem - b->ordem;
 }
 static void auMontar(void) {
-  int nA = arqTotal(), atual = video_audio_arquivo_atual(), todas = 0;
+  int nA = arqTotal(), atual = arqAtual(), todas = 0;
   const char *p1 = ling_audio(), *p2 = ling_audio2();
   uint64_t h = (uint64_t)nA * 1000003u ^ (uint64_t)(atual + 7) * 7919u ^ (uint64_t)extAllN * 104729u ^ (uint64_t)extVersaoLista * 15485863u ^
                (uint64_t)(auTodos + 2) * 31u ^ (uint64_t)(audioext_tocando() + 3) * 131u;
@@ -1321,7 +1355,7 @@ static void aplicarFaixaArquivo(int i) {
     audioesc_lembrar_faixa(f->idioma, f->codec, f->rotulo, f->canais, video_audio_numero_memoria(f));
   if (audioext_tocando() || audioext_carregando()) player_toast(i18n("Back to this file's own audio…"), 2500);
   video_escolher_audio_arquivo(i);
-  arqLidoEm = 0;
+  arqLidoEm = 0; arqAtualEm = 0;
 }
 static void aplicar(void) {
   if (coluna == 0 && tipoLinha(foco[0], NULL) != FXA_FAIXA) return;   // the language rows open their page (faixas_evento)

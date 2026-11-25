@@ -4344,8 +4344,8 @@ static int ativarBotao(int i, int repetiu) {
     }
     case PLR_PLAY: alternarTocando(); break;
     case PLR_ASPECTO: player_aspecto_ciclar(); break;
-    case PLR_CC: pedFaixas = 2; break;
-    case PLR_AUDIO: pedFaixas = 1; break;
+    case PLR_CC: pedFaixas = 2; printf("[player] OK on Subtitles: the subtitle sheet\n"); fflush(stdout); break;
+    case PLR_AUDIO: pedFaixas = 1; printf("[player] OK on Audio: the audio sheet\n"); fflush(stdout); break;
     case PLR_FONTES: pedFontes = 1; break;
     case PLR_NESTE: nesteAberto = 1; nesteT = epT; nesteE = epE; break;
     case PLR_EPISODIOS:
@@ -4397,6 +4397,21 @@ void player_evento(const SDL_Event *e) {
     if (r) { if (r == 2) acordar(); return; } }
   if (!aberto || saindo || e->type != SDL_KEYDOWN) return;
   SDL_Keycode k = e->key.keysym.sym;
+  // LEFT/RIGHT PRESSED WHILE THE APP WAS FROZEN, on the button row (owner
+  // 25/11: "tapping Audio sometimes opens Subtitles, and the other way round").
+  // During a main-thread stall (the [parado] lines, up to 1.4 s when another
+  // source's audio comes up) the row does not move, so a second press looks
+  // needed; both arrive at once afterwards and OK lands one button past the
+  // one on screen. A move older than 450 ms is dropped: OK then acts on the
+  // button the person saw focused. The host stamps the key when it is pressed
+  // (SDL_PushEvent from the .NET thread).
+  if (visivel && !barraFoco && !skipFoco && (k == SDLK_LEFT || k == SDLK_RIGHT) && e->key.timestamp &&
+      (Sint32)(SDL_GetTicks() - e->key.timestamp) > 450) {
+    printf("[player] %s pressed %u ms ago (the app was busy): dropped, focus stays on button %d\n",
+           k == SDLK_LEFT ? "LEFT" : "RIGHT", (unsigned)(SDL_GetTicks() - e->key.timestamp), botao);
+    fflush(stdout);
+    return;
+  }
   if (e->key.repeat && confirmacaoTransporteRetida &&
       (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE)) return;
 
