@@ -10,6 +10,7 @@ static void amigosToqueEntregar(const SDL_Event *e) {
 static int amigosToqueAuditar(void) {
   int falhas=0, op=ajustes_rapido_op("friendsRowStyleLocal");assert(op>=0);
   if(!mtx)mtx=SDL_CreateMutex();assert(mtx);
+  assert(nvbackend_definir_url(NV_REC_URL));
   layout_modo_definir(1);
   socialvis_definir_feed(NULL,0);
   assert(socialvis_n_amigos()==3);
