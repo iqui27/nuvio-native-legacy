@@ -40,7 +40,6 @@
 #include "seekr.h"
 #include "miniplat.h"
 #include "mediaurl.h"
-#include "tpk45.h"
 
 #ifdef NV_MINIATURAS
 #include "miniatura_motor.h"
@@ -633,7 +632,7 @@ fim:
   return NULL;
 }
 #else
-// NuvioTpk40 (no FFmpeg): nothing can be decoded.
+// Built without FFmpeg (NV_TPK40_SEM_FFMPEG=1 / NV_TPK_SEM_DTS=1): nothing can be decoded.
 static void *trabalhar(void *u) {
   Trabalho *w = u;
   pthread_mutex_lock(&mu);
@@ -652,10 +651,8 @@ void seekr_pedir(const char *imdb, int t, int e, long durMs) {
   Trabalho *w;
   Job *j;
   pthread_t f;
-  // Tizen 4-5.5 (NuvioTpk40): no thumbnails. Tester logs (11/2026): ~1 s per
-  // 1080p tile on a 2020 TV, a few dozen tiles after minutes of play, none
-  // while DTS converts; their Settings rows are hidden there (ajustes_ux_tela.inc).
-  if (tpk45_ativo()) return;
+  // Tizen 4-5.5 (NuvioTpk40) makes thumbnails too since 25/11 (owner): those
+  // TVs are the ones the slow-TV limit (top of the file) is for.
   if (!url || !*url) return;
   pthread_mutex_lock(&mu);
   batida = SDL_GetTicks();
