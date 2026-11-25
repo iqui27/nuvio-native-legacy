@@ -112,7 +112,7 @@ static void pixels(const char *dir) {
       montar(automaticaDaFolha());
       float a=fade?.6f:1, x=FOLHA_PAD_E+FOLHA_TXT;
       // From addon: the badge row sits above the name (Top, the default).
-      float y=FOLHA_TOPO+linhaY[0]+20+(failed?FOLHA_MARCA_H:0)+(addon?FOLHA_ADDON_SELOS:0);
+      float y=FOLHA_TOPO+linhaY[0]+20+(failed?FOLHA_MARCA_H:0)+(addon?addonSelosAlt():0);
       char title[96], ep[64]="";
       if(addon) snprintf(title,sizeof title,"%s",textoAddonDa(0)->titulo);
       else tituloConteudo(&lista[0],title,sizeof title,ep,sizeof ep);

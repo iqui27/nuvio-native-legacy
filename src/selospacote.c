@@ -464,6 +464,10 @@ static void compilaPacote(Pacote *p) {
     regexBytes += regexjs_memoria(c->re);
     p->nc++;
   }
+  // The pack's real regex memory against its 16 MiB ceiling (owner 25/11/2026:
+  // 1 GB LG TVs): one line per compile, to read in a TV log.
+  printf("[selos] pack \"%s\": %d rule(s) compiled, %zu KiB of regex (ceiling 16384 KiB)\n",
+         p->nome, p->nc, regexBytes / 1024);
   fflush(stdout);
 }
 

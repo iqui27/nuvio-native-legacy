@@ -4753,89 +4753,7 @@ static GLuint smartphoneObter(void) {
   return smartphoneTex;
 }
 
-// ICONES DO FORMATADOR (Do addon): emoji, simbolos e bandeiras, centenas de
-// PNGs pequenos do pacote. Pela fila do tex_cache eles esperavam atras de
-// cartazes e fundos, e o envio para a GPU e de 3 por quadro para o app todo
-// (tex_bombear): a folha de fontes abria sem icones e eles iam pipocando.
-// Aqui sao lidos na hora, num cache proprio:
-// - por TEMPO, nao por contagem: ate ~2 ms de leitura por quadro (sempre ao
-//   menos um), o resto nos quadros seguintes. Os arquivos tem 72 px (emoji),
-//   128 px (simbolos) e 64x48 (bandeiras); a mesma conta vale numa TV lenta.
-// - GUARDADOS PEQUENOS: o desenho e de ~22 px; o lado maior fica em 48 px
-//   (tex_reduzir), entao 160 icones somam ~1,5 MB de GPU fora do orcamento do
-//   tex_cache, contra ~10 MB nos 128 px do arquivo.
-#define FMT_TEX_MAX      160
-#define FMT_LADO          48
-#define FMT_ORCAMENTO_US 2000
-static struct { char nome[64]; GLuint tex; unsigned uso; unsigned char falhou; } fmtTex[FMT_TEX_MAX];
-static unsigned fmtUso, fmtQuadro;
-static Uint32 fmtJanela;
-static Uint64 fmtGasto;
-static int fmtNovos;
-
-static GLuint fmtObter(const char *nome) {
-  int livre = -1, velho = -1, i;
-  if (!dirIcones[0] || strlen(nome) >= sizeof fmtTex[0].nome) return 0;
-  for (i = 0; i < FMT_TEX_MAX; i++) {
-    if (!fmtTex[i].nome[0]) { if (livre < 0) livre = i; continue; }
-    if (!strcmp(fmtTex[i].nome, nome)) {
-      fmtTex[i].uso = ++fmtUso;
-      return fmtTex[i].tex;
-    }
-    if (velho < 0 || fmtTex[i].uso < fmtTex[velho].uso) velho = i;
-  }
-  // Orcamento do quadro: zera a cada quadro novo (ou a cada 16 ms, para quem
-  // desenha sem gfx_novo_quadro, como os testes).
-  Uint32 agora = SDL_GetTicks();
-  if (fmtQuadro != gfx_quadro_n || agora - fmtJanela >= 16) {
-    fmtQuadro = gfx_quadro_n; fmtJanela = agora; fmtGasto = 0; fmtNovos = 0;
-  }
-  if (fmtNovos > 0 && fmtGasto * 1000000 / SDL_GetPerformanceFrequency() >= FMT_ORCAMENTO_US) return 0;
-  Uint64 t0 = SDL_GetPerformanceCounter();
-  i = livre >= 0 ? livre : velho;
-  if (fmtTex[i].tex) {
-    gfx_tex_esquecer(fmtTex[i].tex);
-    glDeleteTextures(1, &fmtTex[i].tex);
-  }
-  memset(&fmtTex[i], 0, sizeof fmtTex[i]);
-  snprintf(fmtTex[i].nome, sizeof fmtTex[i].nome, "%s", nome);
-  fmtTex[i].uso = ++fmtUso;
-  char cam[600];
-  snprintf(cam, sizeof cam, "%s/%s.png", dirIcones, nome);
-  SDL_Surface *s = IMG_Load(cam), *rgba = NULL;
-  if (s) { rgba = SDL_ConvertSurfaceFormat(s, SDL_PIXELFORMAT_ABGR8888, 0); SDL_FreeSurface(s); }
-  if (rgba && (rgba->w > FMT_LADO || rgba->h > FMT_LADO)) {
-    int lw = rgba->w >= rgba->h ? FMT_LADO : (rgba->w * FMT_LADO + rgba->h / 2) / rgba->h;
-    int lh = rgba->h >= rgba->w ? FMT_LADO : (rgba->h * FMT_LADO + rgba->w / 2) / rgba->w;
-    SDL_Surface *menor = tex_reduzir(rgba, lw > 0 ? lw : 1, lh > 0 ? lh : 1);
-    if (menor) { SDL_FreeSurface(rgba); rgba = menor; }
-  }
-  if (rgba) glGenTextures(1, &fmtTex[i].tex);
-  if (fmtTex[i].tex) {
-    glBindTexture(GL_TEXTURE_2D, fmtTex[i].tex);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rgba->w, rgba->h, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, rgba->pixels);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    gfx_tex_esquecer(0);
-  } else fmtTex[i].falhou = 1;
-  if (rgba) SDL_FreeSurface(rgba);
-  fmtGasto += SDL_GetPerformanceCounter() - t0;
-  fmtNovos++;
-  return fmtTex[i].tex;
-}
-
 static void iconesEncerrar(void) {
-  for (int i = 0; i < FMT_TEX_MAX; i++)
-    if (fmtTex[i].tex) {
-      gfx_tex_esquecer(fmtTex[i].tex);
-      glDeleteTextures(1, &fmtTex[i].tex);
-    }
-  memset(fmtTex, 0, sizeof fmtTex);
-  fmtUso = 0;
   if (smartphoneTex) {
     gfx_tex_esquecer(smartphoneTex);
     glDeleteTextures(1, &smartphoneTex);
@@ -4869,11 +4787,14 @@ void gfx_icone(GfxRect r, const char *nome, float cr, float cg, float cb, float 
 }
 
 // Icone de traco do formatador (simbolo sy_ ou Lucide do Minimalista), na
-// tinta do texto: o mesmo desenho de gfx_icone, lido pelo cache do formatador.
+// tinta do texto: o mesmo desenho de gfx_icone, pedido como icone do pacote
+// (tex_obter_icone: sem esperar atras de cartazes na fila do tex_cache).
 void gfx_icone_fmt(GfxRect r, const char *nome, float cr, float cg, float cb, float ca) {
+  char cam[600];
   GLuint t;
-  if (!nome || !nome[0] || ca <= 0.0f || r.w <= 0.0f || r.h <= 0.0f) return;
-  t = fmtObter(nome);
+  if (!nome || !nome[0] || ca <= 0.0f || r.w <= 0.0f || r.h <= 0.0f || !dirIcones[0]) return;
+  snprintf(cam, sizeof cam, "%s/%s.png", dirIcones, nome);
+  t = tex_obter_icone(cam, r.w);
   if (!t) return;
   gfx_tex_aspect_atual = 0.0f;
   gfx_rect(r, t, GFX_MARCA, 0, 0, 0, 0.0f, cr, cg, cb, ca);
@@ -4887,9 +4808,11 @@ int gfx_icone_existe(const char *nome) {
 }
 
 void gfx_icone_cor(GfxRect r, const char *nome, float ca) {
+  char cam[600];
   GLuint t;
   if (!nome || !nome[0] || ca <= 0.0f || r.w <= 0.0f || r.h <= 0.0f || !dirIcones[0]) return;
-  t = fmtObter(nome);   // so o formatador desenha icones em cores
+  snprintf(cam, sizeof cam, "%s/%s.png", dirIcones, nome);
+  t = tex_obter_icone(cam, r.w);   // so o formatador desenha icones em cores
   if (!t) return;
   gfx_tex_aspect_atual = 0.0f;
   // GFX_TEXTO preserva o RGB da textura (ver GFX_MARCA em gfx.h): e o caminho

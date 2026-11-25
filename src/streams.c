@@ -3691,7 +3691,15 @@ static int linhaAnt = -1, focoVisto = -1;
 #define FOLHA_ADDON_FECHADA 2
 #define FOLHA_ADDON_LD     28.0f
 #define FOLHA_ADDON_TD     40.0f    // altura de cada trecho do nome
-#define FOLHA_ADDON_SELOS  36.0f    // fileira de selos (Ajustes: Badge position)
+#define FOLHA_ADDON_SELOS  30.0f    // fileira de selos (Ajustes: Badge position): selo 24 + 3/3
+// THE BADGE ROW ONLY WITH AN IMPORTED PACK (owner 25/11/2026): with "Do Nuvio"
+// the From addon rows carry no badge row at all (the add-on's own text already
+// says the resolution and HDR) and lay out as before the row existed. The
+// height follows the pack CHOICE, never its matching, so a pack that matches
+// late still never moves the list.
+static float addonSelosAlt(void) { return selospacote_ativo() >= 0 ? FOLHA_ADDON_SELOS : 0.0f; }
+// No row = the name's first line stops short of the addon column, as "Bottom".
+static int addonSelosEmbaixo(void) { return selospacote_ativo() < 0 || ajustes_selos_embaixo(); }
 #define ADDON_ICONE_W      30.0f    // 22 de icone + 8
 #define ADDON_BANDEIRA_W   36.0f    // 28 de bandeira (4:3) + 8
 #define ADDON_GAP          18.0f    // depois de cada texto
@@ -3973,7 +3981,7 @@ static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
   // o nome inteiro usa a largura toda. (kw0 guarda w0: trocar o ajuste refaz
   // a quebra.)
   float wNome2 = L - (cacheConfirmado(s) ? 30.0f : 0.0f);
-  float w0 = ajustes_selos_embaixo() ? L - addonColuna(s) - (cacheConfirmado(s) ? 30.0f : 0.0f) : wNome2;
+  float w0 = addonSelosEmbaixo() ? L - addonColuna(s) - (cacheConfirmado(s) ? 30.0f : 0.0f) : wNome2;
   int fonte = (int)txt_fonte_interface();
   // O estilo muda a largura (bandeira no Padrao, "EN" no Minimalista): as
   // pecas de um estilo so entram na quebra dele (blocos S..M..E).
@@ -4694,7 +4702,7 @@ static float alturaLinha(int i, int automatica, float abertura) {
     if (abertura > .001f || linD < FOLHA_ADDON_FECHADA) addonLinhas(i, &linT, &linD);
     // A fileira de selos tem lugar fixo em toda linha (em cima ou embaixo):
     // o pacote chega depois, no fio, e a linha nao muda de altura com ele.
-    h = 20 + FOLHA_ADDON_SELOS + addonAlturaNome(linT, abertura) + addonLinhasDesc(linD, abertura) * FOLHA_ADDON_LD + 18 +
+    h = 20 + addonSelosAlt() + addonAlturaNome(linT, abertura) + addonLinhasDesc(linD, abertura) * FOLHA_ADDON_LD + 18 +
         (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
     if (h < 96) h = 96;
     // Sem as linhas "Audio:" / "Legendas:" do app: o formatador ja escreve os
@@ -6708,7 +6716,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     // texto) e QUEBRAM: a linha em foco mostra tudo (addonDesenhar).
     if(ajustes_fonte_texto_addon()) {
       int apagada=s->naoVideo || (!canalFolha && stream_vod_falhou_ha(i) >= 0);
-      int selosEmbaixo=ajustes_selos_embaixo();
+      int selosEmbaixo=addonSelosEmbaixo();
       // Em cima: na altura da coluna da direita, na largura que ela deixa.
       if(!selosEmbaixo) { addonSelos(s,tx,cy+(FOLHA_ADDON_SELOS-FOLHA_SELO_H)*.5f,txtW,sel,anim); cy+=FOLHA_ADDON_SELOS; }
       float cacheW=desenharCache(s,tx,cy,anim*(sel?1.0f:.8f));
@@ -6723,7 +6731,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       cy+=addonAlturaNome(linT,abr);   // sem desenharFaixas: ver alturaLinha
       addonDesenhar(i,1,tx,cy,tr-tx,tr-tx,sel,apagada,abr,anim);
       // Embaixo: depois da descricao a mostra (a mesma mola da altura).
-      if(selosEmbaixo)
+      if(selosEmbaixo && addonSelosAlt()>0)
         addonSelos(s,tx,cy+addonLinhasDesc(linD,abr)*FOLHA_ADDON_LD+(FOLHA_ADDON_SELOS-FOLHA_SELO_H)*.5f,tr-tx,sel,anim);
       continue;
     }
