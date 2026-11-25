@@ -94,9 +94,6 @@
 #include "rede.h"
 #include "debrid.h"
 #include "seekr.h"
-#ifdef NV_MINIATURAS
-#include "minidrive.h"
-#endif
 #include "selospacote.h"
 #include "fonteregra.h"
 #include <dirent.h>
@@ -1630,11 +1627,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Posição do relógio",              V_RELOGIO_POS, 3),   // local: relogioPosLocal
   ESC("Selo de assistido nos pôsteres",  V_SELO_VISTO, 3),    // local: seloVistoLocal
   ESC("Miniaturas na barra de tempo",    V_LIGA, 2),          // local: seekrLocal
-#ifdef NV_MINIATURAS
-  ACAO("Google Drive"),                  // .tpk: thumbnails made on the TV, saved in Drive (minidrive.h)
-#else
   ACAO("Chave do Seekr"),
-#endif
   ACAO("Testar chave do Seekr"),
   ESC("Fita de miniaturas",              V_LIGA, 2),          // local: seekrFitaLocal
   NUM("Sincronia da miniatura",          -60, 60, 1, " s"),   // local: seekrAjusteLocal
@@ -4792,9 +4785,6 @@ void ajustes_dir(const char *dir) {
   fonteregra_carregar();
   fanartCarregar();
   seekrCarregar();
-#ifdef NV_MINIATURAS
-  minidrive_carregar();
-#endif
   p2pCarregar();
   ppCarregar();
   pstCarregar();
@@ -6753,8 +6743,8 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_TRAILER_ZOOM_TPK || op == AJ_AUDIO_OFFSET) return 1;
 #endif
 #ifdef NV_MINIATURAS
-  // Thumbnails made on the device from the file itself: no key to test, no sync offset.
-  if (op == AJ_SEEKR_TESTAR || op == AJ_SEEKR_AJUSTE) return 1;
+  // Thumbnails made on the device from the file itself: no key, no test, no sync offset.
+  if (op == AJ_SEEKR_CHAVE || op == AJ_SEEKR_TESTAR || op == AJ_SEEKR_AJUSTE) return 1;
 #endif
 #ifdef NV_TPK40
   // Tizen 4-5.5: no seek-bar thumbnails, so none of their rows (ajustes_ux_tela.inc).
@@ -7213,20 +7203,7 @@ static const char *textoLeitura(int op) {
       return bufConta; }
   }
   if (op == AJ_FANART_CHAVE) return fanartMascarada();
-#ifdef NV_MINIATURAS
-  if (op == AJ_SEEKR_CHAVE) {
-    if (!minidrive_disponivel()) return i18n("indisponível nesta versão");
-    switch (minidrive_estado()) {
-      case GDR_LIGADO:     return i18n("conectado — OK desconecta");
-      case GDR_PEDINDO:    return i18n("preparando…");
-      case GDR_AGUARDANDO: return i18n("aguardando");
-      case GDR_ERRO:       return i18n("falhou");
-      default:             return minidrive_ligado() ? i18n("conectado — OK desconecta") : i18n("conectar");
-    }
-  }
-#else
   if (op == AJ_SEEKR_CHAVE) return seekrMascarada();
-#endif
   if (op == AJ_SEEKR_TESTAR) return skTesteTexto();
   if (op == AJ_SELOS_PACOTE_ADD) return spAddTexto();
   if (op == AJ_URL_M3U_ADD || op == AJ_URL_XMLTV_ADD) return urlAddTexto();
@@ -8173,8 +8150,6 @@ static const char *ajudaOpcaoBase(int op) {
 #ifdef NV_MINIATURAS
     case AJ_SEEKR_LIGADO:
       return "A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.";
-    case AJ_SEEKR_CHAVE:
-      return "Guarda as miniaturas feitas nesta TV numa pasta oculta do seu Google Drive, para não refazer ao rever. Nada fica na TV. Miniaturas sem uso por 40 dias são apagadas.";
 #else
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_CHAVE: return seekrAjuda(op);
 #endif
@@ -9795,24 +9770,12 @@ static void eventoTela(const SDL_Event *e) {
     int smkAtivo = (sa == SMK_PEDINDO || sa == SMK_AGUARDANDO || sa == SMK_ERRO);
     DisEstado da = discord_estado();
     int disAtivo = (da == DIS_PEDINDO || da == DIS_AGUARDANDO || da == DIS_ERRO);
-#ifdef NV_MINIATURAS
-    GdrEstado ga = minidrive_estado();
-    int gdrAtivo = ga == GDR_PEDINDO || ga == GDR_AGUARDANDO || ga == GDR_ERRO;
-#else
-    int gdrAtivo = 0;
-#endif
-    if (traAtivo || smkAtivo || disAtivo || gdrAtivo) {
+    if (traAtivo || smkAtivo || disAtivo) {
       if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE) {
         if (traAtivo) traktauth_cancelar();
         else if (smkAtivo) simklauth_cancelar();
-#ifdef NV_MINIATURAS
-        else if (gdrAtivo) minidrive_cancelar();
-#endif
         else discord_cancelar();
       } else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-#ifdef NV_MINIATURAS
-        if (gdrAtivo && ga == GDR_ERRO) minidrive_comecar();
-#endif
         if (disAtivo && da == DIS_ERRO) discord_comecar();
         // OK so refaz o pedido quando deu erro; com o codigo na tela ele nao
         // faz nada de proposito, para nao trocar o codigo que a pessoa acabou
@@ -9982,14 +9945,6 @@ static void eventoTela(const SDL_Event *e) {
     }
     // A grade curta guardada era da conta que saiu (#158).
     if (focoOp == AJ_XTREAM_LIMPAR) { xtream_esquecer(); xtepg_limpar(); guia_fonte_esquecer("xt"); return; }
-#ifdef NV_MINIATURAS
-    if (focoOp == AJ_SEEKR_CHAVE) {
-      if (!minidrive_disponivel()) { uxNotificar(i18n("indisponível nesta versão")); return; }
-      if (minidrive_ligado()) minidrive_desconectar();
-      else minidrive_comecar();
-      return;
-    }
-#endif
     if (focoOp == AJ_SEEKR_CHAVE) {
       // Como o fanart: a chave NUNCA volta para o campo; vazio apaga.
       stCampo = focoOp;
@@ -10989,13 +10944,6 @@ static void ajDesenharTudo(Uint32 agora) {
       desenhaVinculo("Simkl", simklauth_codigo(), simklauth_url(),
                      simklauth_erro(), sa == SMK_AGUARDANDO);
     else { DisEstado da = discord_estado();
-#ifdef NV_MINIATURAS
-      GdrEstado ga = minidrive_estado();
-      if (ga == GDR_PEDINDO || ga == GDR_AGUARDANDO || ga == GDR_ERRO)
-        desenhaVinculo("Google Drive", minidrive_codigo(), minidrive_url(),
-                       minidrive_erro(), ga == GDR_AGUARDANDO);
-      else
-#endif
       if (da == DIS_PEDINDO || da == DIS_AGUARDANDO || da == DIS_ERRO)
         desenhaVinculo("Discord", discord_codigo(), discord_url(),
                        discord_erro(), da == DIS_AGUARDANDO); } }
@@ -11014,10 +10962,6 @@ int ajustes_relogio_cabe(void) {
   if (teclado_aberto() || (ajModalAberto() && !filAberta)) return 0;
   if (!traktauth_aguardando() && (ta == TRA_PEDINDO || ta == TRA_AGUARDANDO || ta == TRA_ERRO)) return 0;
   if (sa == SMK_PEDINDO || sa == SMK_AGUARDANDO || sa == SMK_ERRO) return 0;
-#ifdef NV_MINIATURAS
-  { GdrEstado ga = minidrive_estado();
-    if (ga == GDR_PEDINDO || ga == GDR_AGUARDANDO || ga == GDR_ERRO) return 0; }
-#endif
   return 1;
 }
 

@@ -30,9 +30,9 @@ static const Item TELA[] = {
 #ifndef NV_TPK40
     // Tizen 4-5.5 (NuvioTpk40): no seek-bar thumbnails (miniatura.c, tester logs 11/2026).
     ROT("Miniatura ao avançar"),
-      OPC(AJ_SEEKR_LIGADO), OPC(AJ_SEEKR_CHAVE),
+      OPC(AJ_SEEKR_LIGADO),
 #ifndef NV_MINIATURAS
-      OPC(AJ_SEEKR_TESTAR),   // .tpk: thumbnails made on the TV, no key to test
+      OPC(AJ_SEEKR_CHAVE), OPC(AJ_SEEKR_TESTAR),   // .tpk: thumbnails made on the TV, no key
 #endif
       OPC(AJ_SEEKR_FITA),
 #endif

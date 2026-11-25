@@ -27,8 +27,8 @@
 // ~20% faster) and is closed while paused. The tiles stay compressed in RAM
 // (~8 KB each); only the few on screen become textures.
 //
-// Nothing is kept on the device: with Google Drive linked (minidrive.c) the set
-// is looked up before anything is made and saved when the title stops.
+// Nothing is kept: the set lives in RAM for the title playing and is made
+// again the next time (the Google Drive copy was dropped, owner 25/11).
 //
 // Logs `[miniatura]`, never URLs or keys.
 #include "seekr.h"
@@ -37,7 +37,6 @@
 #include "tpk45.h"
 
 #ifdef NV_MINIATURAS
-#include "minidrive.h"
 #include "miniatura_motor.h"
 #include "rede.h"
 #include "streams.h"
@@ -139,64 +138,6 @@ static long rssKB(void) {
 }
 static void dormirJ(Job *j, int ms) { while (ms > 0 && !j->parar) { int p = ms < 100 ? ms : 100; usleep((useconds_t)p * 1000); ms -= p; } }
 
-// ------------------------------------------------------------------ pack (Drive file)
-// "NVMT" u32 version=1, u32 grid ms, u32 n slots, u32 count, then per tile
-// u32 slot, i32 pts ms, u32 len, JPEG bytes. Little-endian. The grid is the
-// title's own (5000 or 10000) and slots count in it, so sets saved by the
-// first 10 s-only builds read the same way.
-static void put32(unsigned char *p, uint32_t v) { p[0] = (unsigned char)v; p[1] = (unsigned char)(v >> 8); p[2] = (unsigned char)(v >> 16); p[3] = (unsigned char)(v >> 24); }
-static uint32_t get32(const unsigned char *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
-
-static unsigned char *empacotar(Job *j, size_t *n, int *conta) {
-  size_t tam = 20;
-  int c = 0;
-  pthread_mutex_lock(&mu);
-  int ps = j->passo > 0 ? j->passo : DEZ;
-  for (int k = 0; k < j->n; k += ps) if (j->tiles[k].jpg) { tam += 12 + (size_t)j->tiles[k].n; c++; }
-  unsigned char *b = c ? malloc(tam) : NULL;
-  if (b) {
-    unsigned char *p = b;
-    memcpy(p, "NVMT", 4); put32(p + 4, 1); put32(p + 8, (uint32_t)(ps * BASE_MS));
-    put32(p + 12, (uint32_t)((j->n + ps - 1) / ps)); put32(p + 16, (uint32_t)c);
-    p += 20;
-    for (int k = 0; k < j->n; k += ps) if (j->tiles[k].jpg) {
-      put32(p, (uint32_t)(k / ps)); put32(p + 4, (uint32_t)j->tiles[k].pts); put32(p + 8, (uint32_t)j->tiles[k].n);
-      memcpy(p + 12, j->tiles[k].jpg, (size_t)j->tiles[k].n); p += 12 + j->tiles[k].n;
-    }
-  }
-  pthread_mutex_unlock(&mu);
-  *n = b ? tam : 0; *conta = c;
-  return b;
-}
-
-// Adds the tiles of a pack to the set (never replaces one already made).
-// Count added; *grade = the pack's grid in ms (0 = not a pack).
-static int desempacotar(Job *jb, const unsigned char *b, size_t n, long *grade) {
-  if (grade) *grade = 0;
-  if (n < 20 || memcmp(b, "NVMT", 4) || get32(b + 4) != 1) return 0;
-  uint32_t g = get32(b + 8);
-  if (g != BASE_MS && g != DEZ * BASE_MS) return 0;
-  int mult = (int)(g / BASE_MS);
-  if (grade) *grade = (long)g;
-  uint32_t c = get32(b + 16);
-  size_t pos = 20;
-  int add = 0;
-  pthread_mutex_lock(&mu);
-  for (uint32_t i = 0; i < c && pos + 12 <= n; i++) {
-    uint32_t k = get32(b + pos) * (uint32_t)mult, len = get32(b + pos + 8);
-    long pts = (long)(int32_t)get32(b + pos + 4);
-    if (pos + 12 + len > n || len < 125 || len > 200000) break;
-    if ((int)k < jb->n && !jb->tiles[k].jpg) {
-      unsigned char *j = malloc(len);
-      if (j) { memcpy(j, b + pos + 12, len); jb->tiles[k] = (Tile){ j, (int)len, pts }; jb->feitos++; add++; }
-    }
-    pos += 12 + len;
-  }
-  if (add && jb == job) estado = SEEKR_PRONTO;
-  pthread_mutex_unlock(&mu);
-  return add;
-}
-
 // ------------------------------------------------------------------ order of work
 static int pronto(const Job *j, int k) { return k >= 0 && k < j->n && j->tiles[k].jpg; }
 static int livre(const Job *j, int k) {
@@ -265,8 +206,6 @@ static int gradeDe(const MiniInfo *i, long durMs, const char **porque) {
 typedef struct {
   Job *j;
   char url[NV_MEDIA_URL_MAX], cab[2048];
-  char nome[512]; uint64_t bytes;
-  char imdb[24]; int t, e;
 } Trabalho;
 
 // The engine needs FFmpeg: the .tpk 6+ and LG link it for the DTS converter
@@ -308,25 +247,12 @@ static long lerFonte(void *u, int64_t ini, int64_t fim, unsigned char *dst) {
   return -1;
 }
 
-static void salvarDrive(Job *j, const MiniMeta *meta, const char *id) {
-  size_t n; int c;
-  if (!minidrive_ligado()) return;
-  pthread_mutex_lock(&mu); int ha = j->novos; pthread_mutex_unlock(&mu);
-  if (!ha) { if (id[0]) minidrive_tocar(id); return; }
-  unsigned char *b = empacotar(j, &n, &c);
-  if (!b) return;
-  MiniMeta m = *meta; m.quadros = c;
-  if (minidrive_enviar(id, &m, b, n) == 0) { pthread_mutex_lock(&mu); j->novos = 0; pthread_mutex_unlock(&mu); }
-  free(b);
-}
-
 static void *trabalhar(void *u) {
   Trabalho *w = u;
   Job *j = w->j;
   Leitor *l = calloc(1, sizeof *l);
   MiniMotor *m = NULL;
-  MiniMeta meta; memset(&meta, 0, sizeof meta);
-  char id[128] = "", erro[128] = "";
+  char erro[128] = "";
   // One decoding thread: on the TV 2-3 threads were no faster while the player
   // decodes 4K (tests 22/10) and cost more memory.
   const int threads = 1;
@@ -334,52 +260,24 @@ static void *trabalhar(void *u) {
   unsigned long somaMs = 0;
   long medidas[MEDIDAS] = {0}; int nMedidas = 0;
   Uint32 ultimaPausaLog = 0; int pausasCaladas = 0;
-  long gradePack = 0;
   if (!l) goto fim;
   l->j = j;
   snprintf(l->url, sizeof l->url, "%s", w->url);
   snprintf(l->cab, sizeof l->cab, "%s", w->cab);
-  meta.durMs = j->dur;
-  snprintf(meta.imdb, sizeof meta.imdb, "%s", w->imdb);
-  meta.temporada = w->t; meta.episodio = w->e;
-  minidrive_chave_nome(w->nome, w->bytes, meta.nk);
 
   // Let the player settle first.
   for (int k = 0; k < 30 && !j->parar && !video_pronto(); k++) dormirJ(j, 500);
   dormirJ(j, 500);
   if (j->parar) goto fim;
 
-  // Fingerprint: two 64 KiB reads.
+  // The source's size: one small read at the head (the demuxer reads it next anyway).
   {
-    unsigned char *cab = malloc(65536), *cau = malloc(65536);
-    long a = cab && cau ? lerFonte(l, 0, 65535, cab) : -1;
-    long b = -1;
-    if (a > 0 && l->total > 65536) b = lerFonte(l, l->total - 65536, l->total - 1, cau);
-    else if (a > 0) { memcpy(cau, cab, (size_t)a); b = a; }
-    if (a > 0 && b > 0 && l->total > 0) {
-      mini_impressao((uint64_t)l->total, cab, (size_t)a, cau, (size_t)b, meta.fp);
-      if (!meta.nk[0]) minidrive_chave_nome(w->nome, (uint64_t)l->total, meta.nk);
-    }
-    free(cab); free(cau);
-    printf("[miniatura] source: %lld MB, fingerprint %s, file name %s\n", (long long)(l->total / 1048576),
-           meta.fp[0] ? "read" : "unreadable", meta.nk[0] ? "known" : "unknown");
-    fflush(stdout);
+    unsigned char *cab = malloc(65536);
+    if (cab) lerFonte(l, 0, 65535, cab);
+    free(cab);
+    printf("[miniatura] source: %lld MB\n", (long long)(l->total / 1048576)); fflush(stdout);
   }
-
-  // Google Drive first: a saved set means nothing to make.
-  if (minidrive_ligado() && (meta.fp[0] || meta.nk[0]) && !j->parar) {
-    unsigned char *b = NULL; size_t n = 0;
-    if (minidrive_buscar(&meta, &b, &n, id, sizeof id) == 1) {
-      int add = desempacotar(j, b, n, &gradePack);
-      printf("[miniatura] %d tile(s) from Google Drive (%ld s grid)\n", add, gradePack / 1000); fflush(stdout);
-      minidrive_tocar(id);
-    }
-    free(b);
-    minidrive_limpeza();
-  }
-  // A complete 5 s set: nothing left to make, not even opening the file.
-  pthread_mutex_lock(&mu); int completo = gradePack == BASE_MS && j->feitos >= j->n; pthread_mutex_unlock(&mu);
-  if (completo || j->parar) goto fim;
+  if (j->parar) goto fim;
   if (l->total <= 0) { printf("[miniatura] stopped: source size unknown\n"); goto semPrevia; }
 
   m = mini_motor_abrir(lerFonte, l, l->total, erro, sizeof erro);
@@ -521,7 +419,6 @@ semPrevia:
 fim:
   if (m) mini_motor_fechar(m);
   fflush(stdout);
-  salvarDrive(j, &meta, id);
   free(l);
   pthread_mutex_lock(&mu);
   j->vivo = 0;
@@ -545,17 +442,6 @@ static void *trabalhar(void *u) {
 #endif
 
 // ------------------------------------------------------------------ title lifecycle
-static void nomeDaFonte(char *nome, size_t n, uint64_t *bytes) {
-  nome[0] = 0; *bytes = 0;
-  const PartesLista *pl = partes_sessao_lista();
-  int k = partes_sessao_indice();
-  if (pl && k >= 0 && k < pl->n && pl->arq) {      // a file opened inside a source (TorBox's name)
-    snprintf(nome, n, "%s", pl->arq[k].nome); *bytes = pl->arq[k].bytes; return;
-  }
-  const Stream *s = stream_item(stream_atual());
-  if (s) { snprintf(nome, n, "%s", s->arquivo); *bytes = s->tamanhoBytes; }
-}
-
 void seekr_pedir(const char *imdb, int t, int e, long durMs) {
   const char *url = video_url_atual();
   Trabalho *w;
@@ -593,9 +479,7 @@ void seekr_pedir(const char *imdb, int t, int e, long durMs) {
   w->j = j;
   snprintf(w->url, sizeof w->url, "%s", url);
   snprintf(w->cab, sizeof w->cab, "%s", video_cabecalhos() ? video_cabecalhos() : "");
-  nomeDaFonte(w->nome, sizeof w->nome, &w->bytes);
-  snprintf(w->imdb, sizeof w->imdb, "%s", imdb ? imdb : "");
-  w->t = t; w->e = e;
+  (void)imdb; (void)t; (void)e;
   pthread_mutex_lock(&mu);
   j->g = ++geracao;
   job = j;
@@ -610,7 +494,7 @@ void seekr_pedir(const char *imdb, int t, int e, long durMs) {
              memTotalMB(), nucleos(), memDisponivelKB() / 1024);
     }
   }
-  printf("[miniatura] new title: %ld min%s\n", durMs / 60000, minidrive_ligado() ? ", Google Drive linked" : "");
+  printf("[miniatura] new title: %ld min\n", durMs / 60000);
   fflush(stdout);
   if (pthread_create(&f, NULL, trabalhar, w) == 0) pthread_detach(f);
   else {

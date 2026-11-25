@@ -169,7 +169,7 @@ static const char *const F_TOCAR[] = {
   "[seek]", "[tpk45]", NULL
 };
 static const char *const F_MINI[] = {
-  "[miniatura]", "[minidrive]", "[gdrive]", "[mem]", "[dts-tpk]", "[player] pronto", "tpk evento 11",
+  "[miniatura]", "[mem]", "[dts-tpk]", "[player] pronto", "tpk evento 11",
   "[mkvfix]", "[logrede]", "[tpk45]", NULL
 };
 static const char *const *const FILTROS[5] = { NULL, F_FONTE, F_ABRIR, F_TOCAR, F_MINI };
