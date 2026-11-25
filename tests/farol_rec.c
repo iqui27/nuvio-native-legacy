@@ -1237,6 +1237,82 @@ static void desempenho(void) {
   assert(melhor < FR_META_NS);
 }
 
+// M17: ajuste deterministico da vaga de exploracao ("fora da curva") com
+// sequencias sinteticas guiadas pelos contadores locais.
+static void m17_exploracao_adaptativa(void) {
+  FarolGosto g;
+  FarolFicha sem[12], fc;
+  static FarolFicha fb[12];
+  FarolRecCand c[12];
+  FarolRecItem out[12];
+  FarolRecCtx x;
+  int n, i, posFc, ini = -1, fim = -1;
+
+  perfilMaduro(&g, sem);
+  for (i = 0; i < 6; i++) {
+    fb[i] = mkF(500 + i, FF_FILME, 2021, 100 + i, 85, 9000, 18, 0, 0, 0);
+    c[i] = mkC(&fb[i], 500 + i, FRC_F_CATALOGO);
+  }
+  for (i = 6; i < 11; i++) {
+    fb[i] = mkF(500 + i, FF_FILME, 2021, 100 + i, 85, 9000, 35, 0, 0, 0);
+    c[i] = mkC(&fb[i], 500 + i, FRC_F_CATALOGO);
+  }
+  fc = mkF(600, FF_FILME, 2022, 95, 80, 8000, 27, 0, 0, 0);
+  c[11] = mkC(&fc, 600, FRC_F_CATALOGO);
+
+  // 1) Neutro: sem abertura suficiente ainda -> posicao 6 (indice 5).
+  x = mkCtx(&g);
+  x.expVistas = 3;
+  x.expAbertas = 0;
+  x.normVistas = 3;
+  x.normAbertas = 1;
+  assert(farolrec_exploracao_faixa(&x, &ini, &fim) == 1);
+  assert(ini == FR_EXP_POS_NEUTRA && fim == FR_EXP_POS_RECUADA);
+  n = farolrec_escolher(&x, c, 12, out, 12);
+  posFc = -1;
+  for (i = 0; i < n; i++) if (out[i].foraCurva) posFc = i;
+  assert(posFc == FR_EXP_POS_NEUTRA);
+
+  // 2) Promocao: taxa de exploracao (abertas+tocadas / vistas) >= normal
+  // -> sobe para a posicao 5 (indice 4).
+  x = mkCtx(&g);
+  x.expVistas = 10;
+  x.expAbertas = 3;
+  x.expTocadas = 2;
+  x.normVistas = 10;
+  x.normAbertas = 3;
+  x.normTocadas = 1;
+  assert(farolrec_exploracao_faixa(&x, &ini, &fim) == 1);
+  assert(ini == FR_EXP_POS_PROMOVIDA);
+  n = farolrec_escolher(&x, c, 12, out, 12);
+  posFc = -1;
+  for (i = 0; i < n; i++) if (out[i].foraCurva) posFc = i;
+  assert(posFc == FR_EXP_POS_PROMOVIDA);
+
+  // 3) Recuo: vistas >= FR_EXP_SEM_ABRIR_N (10) sem nenhuma abertura -> desce
+  // para a posicao 8 (indice 7) em expSeq par e fica fora em expSeq impar
+  // (1 de cada 2 fileiras), deterministico.
+  x = mkCtx(&g);
+  x.expVistas = FR_EXP_SEM_ABRIR_N;
+  x.expAbertas = 0;
+  x.normVistas = 12;
+  x.normAbertas = 4;
+  x.expSeq = 0;
+  assert(farolrec_exploracao_faixa(&x, &ini, &fim) == 1);
+  assert(ini == FR_EXP_POS_RECUADA && fim == FR_EXP_POS_RECUADA);
+  n = farolrec_escolher(&x, c, 12, out, 12);
+  posFc = -1;
+  for (i = 0; i < n; i++) if (out[i].foraCurva) posFc = i;
+  assert(posFc == FR_EXP_POS_RECUADA);
+
+  x.expSeq = 1;
+  assert(farolrec_exploracao_faixa(&x, &ini, &fim) == 0);
+  n = farolrec_escolher(&x, c, 12, out, 12);
+  posFc = -1;
+  for (i = 0; i < n; i++) if (out[i].foraCurva) posFc = i;
+  assert(posFc == -1);
+}
+
 int main(void) {
   assert(sizeof(FarolRecCand) == 48);
   m1_frio0();
@@ -1255,6 +1331,7 @@ int main(void) {
   m14_contrato();
   m15_caminho_novo();
   m16_flag80();
+  m17_exploracao_adaptativa();
   propriedades();
   desempenho();
   puts("farol_rec: ok");

@@ -42,8 +42,14 @@ static int foco;          // APRENDEU: 0=Voltar; ZERAR: 0=Zerar, 1=Cancelar
 static int scrollIdx;     // APRENDEU: deslocamento vertical leve para listas
 static float entradaProg;
 static FarolGostoResumo resumoCache;
+static FarolUsoContadores usoCache;
+static int usoInfantil;
 static int llmConsentLocal;
 static int llmPerfil = -1;
+
+static int aprMaxScroll(void) {
+  return resumoCache.vazio ? 1 : 3;
+}
 
 static int backKey(const SDL_Event *e) {
   SDL_Keycode k = e->key.keysym.sym;
@@ -66,10 +72,13 @@ void farolgostoui_resumo(FarolGostoResumo *dst) {
 
 void farolgostoui_abrir_aprendeu(void) {
   farolgostoui_resumo(&resumoCache);
+  usoInfantil = perfil_infantil_ativo() ? 1 : 0;
+  if (usoInfantil) memset(&usoCache, 0, sizeof usoCache);
+  else farolsinal_uso_obter(&usoCache);
   modoAtual = FGUI_APRENDEU;
   querAberto = 1;
-  foco = 0;
   scrollIdx = 0;
+  foco = 0; // Voltar com foco inicial visivel; primeiro OK fecha como antes.
 }
 
 void farolgostoui_abrir_zerar(void) {
@@ -89,6 +98,8 @@ void farolgostoui_fechar(void) {
 void farolgostoui_abrir_sessao(void) {
   farolgostoui_fechar();
   memset(&resumoCache, 0, sizeof resumoCache);
+  memset(&usoCache, 0, sizeof usoCache);
+  usoInfantil = 0;
   llmConsentLocal = 0;
   llmPerfil = -1;
 }
@@ -173,7 +184,8 @@ void farolgostoui_evento(const SDL_Event *e) {
   if (okKey(k)) {
     if (e->key.repeat) return;
     if (modoAtual == FGUI_APRENDEU) {
-      querAberto = 0;
+      if (foco == 0) querAberto = 0;
+      else foco = 0;
     } else if (modoAtual == FGUI_ZERAR) {
       if (foco == 0) confirmarZerar();
       else querAberto = 0;
@@ -181,8 +193,16 @@ void farolgostoui_evento(const SDL_Event *e) {
     return;
   }
   if (modoAtual == FGUI_APRENDEU) {
-    if (k == SDLK_UP && scrollIdx > 0) scrollIdx--;
-    else if (k == SDLK_DOWN && scrollIdx < 2) scrollIdx++;
+    int maxSc = aprMaxScroll();
+    if (k == SDLK_UP) {
+      if (scrollIdx > 0) scrollIdx--;
+      foco = 0;
+    } else if (k == SDLK_DOWN) {
+      if (scrollIdx < maxSc) scrollIdx++;
+      foco = 0;
+    } else if (k == SDLK_LEFT || k == SDLK_RIGHT) {
+      foco = 0;
+    }
   } else if (modoAtual == FGUI_ZERAR) {
     if (k == SDLK_LEFT || k == SDLK_UP) foco = 0;
     else if (k == SDLK_RIGHT || k == SDLK_DOWN) foco = 1;
@@ -237,6 +257,70 @@ static float desenharGrupoTop(const char *titulo, const char (*itens)[64],
   return cy - y;
 }
 
+static void desenharUsoTv(float x, float y, float w, float limY, float a, int focado) {
+  typedef struct { const char *rot; uint32_t val; } UsoItem;
+  const UsoItem itens[7] = {
+    { i18n("Fileiras vistas"),            usoCache.vistas },
+    { i18n("Abertas"),                    usoCache.abertas },
+    { i18n("Tocadas"),                    usoCache.tocadas },
+    { i18n("Terminadas"),                 usoCache.terminadas },
+    { i18n("Recusas"),                    usoCache.recusas },
+    { i18n("Cenas montadas na TV"),       usoCache.cenasTv },
+    { i18n("Cenas montadas no servidor"), usoCache.cenasServidor },
+  };
+  float cy = y;
+  int tudoZero = usoInfantil ||
+    (!usoCache.vistas && !usoCache.abertas && !usoCache.tocadas &&
+     !usoCache.terminadas && !usoCache.recusas &&
+     !usoCache.cenasTv && !usoCache.cenasServidor);
+  TxtLinha th;
+  if (y + 64.0f > limY) return;
+  th = t21_texto_linha(T21_GROUP, i18n("Uso do Farol nesta TV"),
+                       T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, w);
+  t21_texto_desenhar(th, x, cy, (focado ? 1.0f : .85f) * a);
+  cy += th.h + 10.0f;
+
+  if (usoInfantil) {
+    TxtLinha vz = t21_texto_linha(T21_SUPPORT, i18n("Nada contado ainda"),
+                                  T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, w);
+    t21_texto_desenhar(vz, x, cy, T21_TEXT_SUPPORT * a);
+    return;
+  }
+  if (tudoZero) {
+    TxtLinha vz = t21_texto_linha(T21_SUPPORT, i18n("Nada contado ainda"),
+                                  T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, w);
+    t21_texto_desenhar(vz, x, cy, T21_TEXT_SUPPORT * a);
+    cy += vz.h + 12.0f;
+  } else {
+    float colW = (w - 24.0f) * 0.5f, rowH = 34.0f;
+    int i;
+    for (i = 0; i < 7; i++) {
+      int col = i & 1, row = i >> 1;
+      float rx = x + (float)col * (colW + 24.0f);
+      float ry = cy + (float)row * (rowH + 6.0f);
+      char num[24];
+      TxtLinha ll, ln;
+      if (ry + rowH > limY - 30.0f) break;
+      snprintf(num, sizeof num, "%u", (unsigned)itens[i].val);
+      gfx_cor((GfxRect){ rx, ry, colW, rowH }, T21_R_ROW * 0.5f, 1, 1, 1,
+              (focado ? .08f : .05f) * a);
+      ll = t21_texto_linha(T21_SUPPORT, itens[i].rot,
+                           T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, colW - 88.0f);
+      ln = t21_texto_linha(T21_CHIP, num,
+                           T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, 76.0f);
+      t21_texto_desenhar(ll, rx + 12.0f, ry + (rowH - ll.h) * 0.5f, .88f * a);
+      t21_texto_desenhar(ln, rx + colW - 12.0f - ln.w, ry + (rowH - ln.h) * 0.5f, a);
+    }
+    cy += 4.0f * (rowH + 6.0f) + 6.0f;
+  }
+  if (cy + 24.0f <= limY) {
+    TxtLinha nota = t21_texto_linha(T21_SUPPORT,
+      i18n("Fica só nesta TV. Zerar o gosto apaga."),
+      T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, w);
+    t21_texto_desenhar(nota, x, cy, T21_TEXT_SUPPORT * a);
+  }
+}
+
 void farolgostoui_desenhar(Uint32 agora) {
   float a, s, sw = NV_LAYOUT_REAL_W, sh = NV_LAYOUT_REAL_H;
   float sheetW, sheetH, sx, sy, px, py, pw;
@@ -278,35 +362,47 @@ void farolgostoui_desenhar(Uint32 agora) {
   py += 42.0f;
 
   if (modoAtual == FGUI_APRENDEU) {
+    float btnY = r.y + r.h - T21_SHEET_PAD - T21_CTRL_H;
+    float limY = btnY - 14.0f;
     TxtLinha tit = t21_texto_linha(T21_SHEET_TITLE, i18n(FT_GOSTO_APRENDEU),
                                    T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, pw);
     t21_texto_desenhar(tit, px, py, a);
-    py += tit.h + 22.0f;
+    py += tit.h + 18.0f;
 
     if (resumoCache.vazio) {
-      TxtLinha vz = t21_texto_linha(T21_SHEET_BODY,
-        i18n("O Farol ainda não aprendeu preferências neste perfil."),
-        T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, pw);
-      t21_texto_desenhar(vz, px, py + 12.0f, T21_TEXT_SECONDARY * a);
+      if (scrollIdx <= 0) {
+        TxtLinha vz = t21_texto_linha(T21_SHEET_BODY,
+          i18n("O Farol ainda não aprendeu preferências neste perfil."),
+          T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, pw);
+        t21_texto_desenhar(vz, px, py + 4.0f, T21_TEXT_SECONDARY * a);
+        py += vz.h + 20.0f;
+      }
+      desenharUsoTv(px, py, pw, limY, a, foco != 0);
     } else {
-      if (scrollIdx <= 0)
+      if (scrollIdx <= 0 && py < limY - 80.0f)
         py += desenharGrupoTop("Gêneros", resumoCache.generos, resumoCache.nGeneros,
                                px, py, pw, a);
-      if (scrollIdx <= 1 && py < r.y + r.h - 140.0f)
+      if (scrollIdx <= 1 && py < limY - 80.0f)
         py += desenharGrupoTop("Pessoas", resumoCache.pessoas, resumoCache.nPessoas,
                                px, py, pw, a);
-      if (scrollIdx <= 2 && py < r.y + r.h - 120.0f)
-        desenharGrupoTop("Temas", resumoCache.temas, resumoCache.nTemas,
-                         px, py, pw, a);
+      if (scrollIdx <= 2 && py < limY - 80.0f)
+        py += desenharGrupoTop("Temas", resumoCache.temas, resumoCache.nTemas,
+                               px, py, pw, a);
+      if (py < limY - 80.0f || scrollIdx >= 3)
+        desenharUsoTv(px, py, pw, limY, a, foco != 0 && scrollIdx >= 3);
     }
     {
       const char *rot = i18n("Voltar");
       TxtLinha bl = t21_texto_linha(T21_CHIP, rot, 255, 255, 255, 255, 220.0f);
       float bw = fmaxf(140.0f, bl.w + 48.0f);
-      GfxRect br = { px, r.y + r.h - T21_SHEET_PAD - T21_CTRL_H, bw, T21_CTRL_H };
-      int ink = ajustes_tinta_foco();
-      plrui_pilula_foco(br, a);
-      bl = t21_texto_linha(T21_CHIP, rot, ink, ink, ink, 255, bw);
+      GfxRect br = { px, btnY, bw, T21_CTRL_H };
+      if (foco == 0) {
+        int ink = ajustes_tinta_foco();
+        plrui_pilula_foco(br, a);
+        bl = t21_texto_linha(T21_CHIP, rot, ink, ink, ink, 255, bw);
+      } else {
+        gfx_cor(br, T21_R_PILL, 1, 1, 1, T21_CHIP_REST * a);
+      }
       t21_texto_desenhar(bl, br.x + (br.w - bl.w) * 0.5f,
                          br.y + (br.h - bl.h) * 0.5f, a);
       if (querAberto && a > 0.5f)

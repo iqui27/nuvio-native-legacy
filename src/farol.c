@@ -126,6 +126,19 @@ __attribute__((weak)) int farolcompor_pedir_home(const FarolGosto *g,
 __attribute__((weak)) void farolcompor_trocar_perfil(void) {}
 __attribute__((weak)) void farolcompor_zerar_gosto(void) {}
 __attribute__((weak)) void farolconsent_esquecer(void) {}
+__attribute__((weak)) void farolsinal_uso_obter(FarolUsoContadores *dst) {
+  if (dst) memset(dst, 0, sizeof *dst);
+}
+__attribute__((weak)) void farolsinal_uso_vista(int comExploracao, int fileiraPrincipal) {
+  (void)comExploracao;
+  (void)fileiraPrincipal;
+}
+__attribute__((weak)) void farolsinal_uso_cena(int doServidor) {
+  (void)doServidor;
+}
+__attribute__((weak)) void farolsinal_uso_aberta(const CatItem *ci, int foraCurva) {
+  (void)ci; (void)foraCurva;
+}
 
 #define FAROL_CAND_MAX 240          // 60 x 4 blocos; 512 era para um catalogo
 #define FAROL_SEM_MAX  16
@@ -136,11 +149,12 @@ __attribute__((weak)) void farolconsent_esquecer(void) {}
 typedef struct {
   char imdb[64], tipo[8], titulo[160];
   char motivo[200];                 // linha ja renderizada; "" = sem motivo
+  uint8_t foraCurva;                // 1 = vaga de exploracao ("fora da curva")
 } FarolHomeItem;
 typedef struct {
   char chave[32];                   // "farol_gosto1" | "farol_gosto2"
   char titulo[96], sub[96];
-  int  nItens, marcada;             // marcada = farolsinal_mostrado ja rodou
+  int  nItens, marcada, vistaMarcada; // marcada = mostrado; vistaMarcada = vista UI
   FarolHomeItem it[FAROL_ITENS_MAX];
 } FarolHomeFil;
 static struct {
@@ -777,6 +791,7 @@ static int popularFilDeCena(const FarolCena *cp, const FarolComporCand *sc, int 
     for (i = 0; i < pc->u.fileira.nMotivo; i++) {
       const FarolMotivo *mo = &pc->u.fileira.motivo[i];
       if (mo->item < 0 || mo->item >= nf->nItens) continue;
+      if (!strcmp(mo->t.m, "FT_MOT_FORA_CURVA")) nf->it[mo->item].foraCurva = 1;
       renderTextoExt(cp, &mo->t, sc, nSc,
                      nf->it[mo->item].motivo, sizeof nf->it[mo->item].motivo);
     }
@@ -796,6 +811,7 @@ static int compor(long long agora, int perfil) {
     unsigned comporGen;
   } nova;
   FarolGosto g;
+  FarolUsoContadores uso;
   FarolCenaCtx ctx;
   int nSem, nCand, n, rc, f = 0, fimSem;
   int nCompCand = 0, nCompAnc = 0, nLlmCand = 0;
@@ -807,6 +823,7 @@ static int compor(long long agora, int perfil) {
   hm = hashModelo(&g);
   nSem = coletarSementes(perfil);
   nCand = coletarCandidatos(perfil_infantil_ativo());
+  farolsinal_uso_obter(&uso);
   memset(&ctx, 0, sizeof ctx);
   ctx.g = &g;
   ctx.cand = cand; ctx.nCand = nCand;
@@ -820,6 +837,13 @@ static int compor(long long agora, int perfil) {
   ctx.feita = agora;
   ctx.valeS = 86400;                    // a cena da Home vale 24 h (4.2)
   ctx.semente = (uint32_t)ctx.dia * 2654435761u ^ (uint32_t)(perfil + 1);
+  ctx.expVistas = uso.expVistas;
+  ctx.expAbertas = uso.expAbertas;
+  ctx.expTocadas = uso.expTocadas;
+  ctx.normVistas = uso.vistas;
+  ctx.normAbertas = uso.normAbertas;
+  ctx.normTocadas = uso.normTocadas;
+  ctx.expSeq = uso.expSeq;
 
   if (comporMontarResumo(&ctx, &nCompCand, &nCompAnc)) {
     farolcompor_pedir_home(&g, compCand, nCompCand, compAnc, nCompAnc,
@@ -861,6 +885,7 @@ static int compor(long long agora, int perfil) {
   perfilSaiu = -1;                        // a cena do perfil esta valida
   __atomic_add_fetch(&geracaoCena, 1, __ATOMIC_RELEASE);
   pthread_mutex_unlock(&travaCena);
+  farolsinal_uso_cena(nova.comporGen != 0);
   return 1;
 }
 
@@ -1057,6 +1082,42 @@ const char *farol_motivo(const char *chaveFil, int coluna,
 // A geracao da cena adotada: cache de motivo por quadro na Home.
 unsigned farol_cena_geracao(void) {
   return __atomic_load_n(&geracaoCena, __ATOMIC_ACQUIRE);
+}
+
+void farol_registrar_vista(const char *chaveFil) {
+  int f, marcar = 0, temFc = 0;
+  if (!chaveFil || !farol_ativo()) return;
+  pthread_mutex_lock(&travaCena);
+  for (f = 0; f < adotada.nFil && f < 2; f++) {
+    if (!strcmp(adotada.fil[f].chave, chaveFil)) {
+      if (!adotada.fil[f].vistaMarcada) {
+        int i;
+        adotada.fil[f].vistaMarcada = 1;
+        for (i = 0; i < adotada.fil[f].nItens; i++)
+          if (adotada.fil[f].it[i].foraCurva) { temFc = 1; break; }
+        marcar = 1;
+      }
+      break;
+    }
+  }
+  pthread_mutex_unlock(&travaCena);
+  if (marcar) farolsinal_uso_vista(temFc, !strcmp(chaveFil, "farol_gosto1"));
+}
+
+void farol_registrar_aberta(const char *chaveFil, int coluna, const CatItem *ci) {
+  int f, fc = 0;
+  if (!chaveFil || coluna < 0 || !ci || !ci->imdb[0]) return;
+  pthread_mutex_lock(&travaCena);
+  for (f = 0; f < adotada.nFil && f < 2; f++) {
+    if (!strcmp(adotada.fil[f].chave, chaveFil)) {
+      if (coluna < adotada.fil[f].nItens &&
+          !strcmp(adotada.fil[f].it[coluna].imdb, ci->imdb))
+        fc = adotada.fil[f].it[coluna].foraCurva ? 1 : 0;
+      break;
+    }
+  }
+  pthread_mutex_unlock(&travaCena);
+  farolsinal_uso_aberta(ci, fc);
 }
 
 const char *farol_fileira_titulo(const char *chaveFil) {

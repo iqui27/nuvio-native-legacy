@@ -670,6 +670,13 @@ int farolcena_home(char *dst, size_t cap, const FarolCenaCtx *ctx,
     rc.faixaHora = ctx->faixaHora;
     rc.naHome = 1;
     rc.semente = ctx->semente;
+    rc.expVistas = ctx->expVistas;
+    rc.expAbertas = ctx->expAbertas;
+    rc.expTocadas = ctx->expTocadas;
+    rc.normVistas = ctx->normVistas;
+    rc.normAbertas = ctx->normAbertas;
+    rc.normTocadas = ctx->normTocadas;
+    rc.expSeq = ctx->expSeq;
     n = farolrec_escolher(&rc, ctx->cand, ctx->nCand, out, 24);
     n1 = n < FAROL_ITENS_MAX ? n : FAROL_ITENS_MAX;
     for (i = 0; i < n1; i++) {

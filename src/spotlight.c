@@ -1187,10 +1187,15 @@ int spot_teclado_app_aberto(void) { return kbAberto; }
 int spot_foco_campo(void) { return painel == P_CAMPO ? 1 : painel == P_MIC ? 2 : painel == P_CEL ? 3 : 0; }
 float spot_altura_corpo(void) { return corpoH; }
 
+extern __attribute__((weak)) void farolsinal_uso_limpar_alvo(const CatItem *ci);
+
 int spot_pediu(SpotPedido *p) {
   if (!temPedido) return 0;
   temPedido = 0;
   if (p) *p = pedido;
+  if ((pedido.tipo == SPOT_TITULO || pedido.tipo == SPOT_PESSOA) &&
+      farolsinal_uso_limpar_alvo)
+    farolsinal_uso_limpar_alvo(NULL);
   return 1;
 }
 

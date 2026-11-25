@@ -2,6 +2,8 @@
 // TV fits one screen; portrait stacks the same sections with touch scrolling.
 #include "menu.h"
 #include "perfil.h"
+#include "catalogo.h"
+extern __attribute__((weak)) void farolsinal_uso_limpar_alvo(const CatItem *ci);
 #include "idioma.h"
 #include "idiomacod.h"
 #include "anim.h"
@@ -369,11 +371,13 @@ int perfil_item_selecionado(PerfilDestaque *saida) {
   if (dTemPedido) {
     dTemPedido = 0;
     if (saida) *saida = dPedido;
+    if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
     return 1;
   }
   if (escolhido < 0 || escolhido >= dados.nDestaques) return 0;
   if (saida) *saida = dados.destaques[escolhido];
   escolhido = -1;
+  if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
   return 1;
 }
 

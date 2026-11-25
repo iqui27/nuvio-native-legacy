@@ -32,6 +32,9 @@
 #include "farol.h"       // fileiras do Farol: ponto de luz, motivo (45)
 #include "faroldica.h"   // cartao de dica P2 como coluna 0 da fileira Farol (48)
 #include "farolsinal.h"  // farolsinal_origem: o Play mede a recomendacao
+extern __attribute__((weak)) void farol_registrar_vista(const char *chaveFil);
+extern __attribute__((weak)) void farol_registrar_aberta(const char *chaveFil, int coluna, const CatItem *ci);
+extern __attribute__((weak)) void farolsinal_uso_limpar_alvo(const CatItem *ci);
 #include "curadoria.h"
 #include "continuar.h"
 #include "proximo.h"
@@ -2840,10 +2843,12 @@ static void home_evento_(const SDL_Event *e) {
         else if (layout_desktop_ativo()) {
           const CatItem *ci = cat_item_exato(heroAtual);
           farolAlvoLimpar();
+          if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
           if (ci && (strcmp(ci->tipo, "series") || ci->episodio > 0)) pedidoTocar = 1;
           else pedidoAbrir = 1;
         } else {
           farolAlvoLimpar();
+          if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
           pedidoAbrir = 1;
         }
         return;
@@ -2873,8 +2878,10 @@ static void home_evento_(const SDL_Event *e) {
             publicarItemFoco();
             if (ex.tipo == FD_EXEC_TOCAR) {
               farolAlvoDefinir(&dicaCache, &ex);
+              if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
               pedidoTocar = 1;
             } else {
+              if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
               pedidoAbrir = 1;
             }
           } else if (ex.ok && ex.tipo == FD_EXEC_SALVAR) {
@@ -2916,6 +2923,7 @@ static void home_evento_(const SDL_Event *e) {
                  !strcmp(fileiras[foco.fileira].chave, "continue_watching") ||
                  !strcmp(fileiras[foco.fileira].chave, "upcoming_section")) {
         farolAlvoLimpar();
+        if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
         if (ajustes_cw_ok_toca() && strcmp(fileiras[foco.fileira].chave, "upcoming_section"))
           pedidoTocar = 1;
         else pedidoAbrir = 1;
@@ -2925,8 +2933,15 @@ static void home_evento_(const SDL_Event *e) {
         // em foco — o mesmo que home_pediu_abrir vai entregar.
         if (farol_fileira(fileiras[foco.fileira].chave)) {
           int idx = fileiraItemIndice(&fileiras[foco.fileira], foco.coluna);
+          int colMot = foco.coluna - (fileiras[foco.fileira].temDica ? 1 : 0);
           const CatItem *ci = idx >= 0 ? cat_item(idx) : NULL;
-          if (ci) farolsinal_origem(ci, FS_ORIGEM_FAROL);
+          if (ci) {
+            farolsinal_origem(ci, FS_ORIGEM_FAROL);
+            if (farol_registrar_aberta)
+              farol_registrar_aberta(fileiras[foco.fileira].chave, colMot, ci);
+          }
+        } else {
+          if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
         }
         farolAlvoLimpar();
         pedidoAbrir = 1;
@@ -5623,10 +5638,10 @@ static void retAtivar(int i, int b) {
   publicarItemFoco();
   pedidoAcaoDetalhe = -1;
   switch (i) {
-    case RET_PLAY:    if (retSoAbre) pedidoAbrir = 1; else pedidoTocar = 1; break;
-    case RET_LISTA:   pedidoAbrir = 1; pedidoAcaoDetalhe = DETAIL_BARRA_LISTA; break;
-    case RET_FONTES:  pedidoAbrir = 1; pedidoAcaoDetalhe = DETAIL_BARRA_FONTES; break;
-    case RET_TRAILER: pedidoAbrir = 1; pedidoAcaoDetalhe = DETAIL_BARRA_TRAILER; break;
+    case RET_PLAY:    if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL); if (retSoAbre) pedidoAbrir = 1; else pedidoTocar = 1; break;
+    case RET_LISTA:   if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL); pedidoAbrir = 1; pedidoAcaoDetalhe = DETAIL_BARRA_LISTA; break;
+    case RET_FONTES:  if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL); pedidoAbrir = 1; pedidoAcaoDetalhe = DETAIL_BARRA_FONTES; break;
+    case RET_TRAILER: if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL); pedidoAbrir = 1; pedidoAcaoDetalhe = DETAIL_BARRA_TRAILER; break;
     default:          abrirMenuCartaz(); break;
   }
 }
@@ -9040,11 +9055,19 @@ static void home_desenhar_(Uint32 agora) {
       // item aparece sob o titulo (fade de 150 ms; animacoes reduzidas: troca
       // seca). Sem motivo verdadeiro, sem linha — nunca um texto generico.
       if (farol_fileira(fileiras[r].chave)) {
-        static char motStr[MAX_FIL][200], motImdb[MAX_FIL][64];
+        static char motStr[MAX_FIL][200], motImdb[MAX_FIL][64], vistaChave[MAX_FIL][32];
         static Uint32 motDesde[MAX_FIL];
-        static unsigned motGer[MAX_FIL];
+        static unsigned motGer[MAX_FIL], vistaGer[MAX_FIL];
         static int motCol[MAX_FIL];
         float ar, ag, ab;
+        if (farol_registrar_vista) {
+          unsigned cg = farol_cena_geracao();
+          if (cg != vistaGer[r] || strcmp(vistaChave[r], fileiras[r].chave)) {
+            farol_registrar_vista(fileiras[r].chave);
+            vistaGer[r] = cg;
+            snprintf(vistaChave[r], sizeof vistaChave[r], "%s", fileiras[r].chave);
+          }
+        }
         tfAcento(&ar, &ag, &ab);
         gfx_cor((GfxRect){ homeConteudoX() + 3.0f, y + tl.h * 0.5f - 5.0f,
                            10.0f, 10.0f }, 5.0f, ar, ag, ab,

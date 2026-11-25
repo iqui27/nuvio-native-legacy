@@ -63,6 +63,7 @@
 #include "seekprobe.h"
 #include "faixas.h"
 #include "gfx.h"
+extern __attribute__((weak)) void farolsinal_uso_tocada(const CatItem *ci);
 #include "text.h"
 #include "tex_cache.h"
 #include "anim.h"
@@ -2331,6 +2332,8 @@ void player_abrir(int indiceCatalogo, const char *url) {
     canalSessao = ci && nv_tipo_canal(ci->tipo);
     stream_folha_canal(canalSessao);
     if (canalSessao) itemCanal = *ci;
+    else if (ci && !ficaMini && !miniGuia && farolsinal_uso_tocada)
+      farolsinal_uso_tocada(ci);
     // So o CH+/- feito dentro do PiP (player_manter_mini) mantem a miniatura
     // na troca — o stream velho segue no ar ate a fonte nova chegar pelo
     // fluxo de sempre. Qualquer outra abertura (OK no guia, filme, serie)

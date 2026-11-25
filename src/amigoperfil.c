@@ -1,6 +1,8 @@
 // Perfil do amigo (tela C). Ver amigoperfil.h.
 #include "amigoperfil.h"
 #include "socialvis.h"
+#include "catalogo.h"
+extern __attribute__((weak)) void farolsinal_uso_limpar_alvo(const CatItem *ci);
 #include "svdesenho.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -98,6 +100,7 @@ int amigoperfil_pediu_titulo(char *imdb, size_t tam) {
   if (!temPedido) return 0;
   temPedido = 0;
   if (imdb && tam) snprintf(imdb, tam, "%s", pedido);
+  if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
   return 1;
 }
 

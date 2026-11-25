@@ -451,6 +451,33 @@ static void frMotivos(const FarolRecCtx *ctx, const FarolRecCand *cand,
   it->nMotivo = (uint8_t)n;
 }
 
+int farolrec_exploracao_faixa(const FarolRecCtx *ctx, int *iniOut, int *fimOut) {
+  int ini = FR_FC_INI;
+  int fim = FR_FC_FIM;
+  if (ctx && (ctx->expVistas > 0 || ctx->normVistas > 0)) {
+    ini = FR_EXP_POS_NEUTRA;
+    if (ctx->expVistas >= FR_EXP_SEM_ABRIR_N && ctx->expAbertas == 0) {
+      // Sem abertura apos N exposicoes: recua para a posicao 8 e sai em 1 de 2.
+      if (iniOut) *iniOut = FR_EXP_POS_RECUADA;
+      if (fimOut) *fimOut = FR_EXP_POS_RECUADA;
+      return (ctx->expSeq & 1u) == 0u;
+    }
+    if (ctx->expVistas >= FR_EXP_PROMOVE_VISTAS_MIN) {
+      uint64_t expEng = (uint64_t)ctx->expAbertas + (uint64_t)ctx->expTocadas;
+      uint64_t normEng = (uint64_t)ctx->normAbertas + (uint64_t)ctx->normTocadas;
+      uint64_t normDen = ctx->normVistas > 0 ? (uint64_t)ctx->normVistas
+                                             : (uint64_t)ctx->expVistas;
+      // Taxa de exploracao >= taxa normal (comparacao inteira sem float).
+      if (expEng > 0 && expEng * normDen >= normEng * (uint64_t)ctx->expVistas) {
+        ini = FR_EXP_POS_PROMOVIDA;
+      }
+    }
+  }
+  if (iniOut) *iniOut = ini;
+  if (fimOut) *fimOut = fim;
+  return 1;
+}
+
 int farolrec_escolher(const FarolRecCtx *ctx,
                       const FarolRecCand *cand, int nCand,
                       FarolRecItem *out, int maxOut) {
@@ -480,7 +507,7 @@ int farolrec_escolher(const FarolRecCtx *ctx,
                                         // e' do chamador, nao colide (r2 E1l)
   uint16_t pSem[FAROL_REC_CAND_MAX];    // semente de cada escolhido
   int32_t pGen[FR_JANELA_GEN];          // genero principal dos <= 6 primeiros
-  int nivel, nEl = 0, nOut = 0, foraPronto, i, k;
+  int nivel, nEl = 0, nOut = 0, foraPronto, fcIni = FR_FC_INI, fcFim = FR_FC_FIM, i, k;
 
   if (!ctx || !ctx->g || !cand || !out || maxOut < 1 || nCand < 1) return 0;
   nivel = farolrec_nivel(ctx->g);
@@ -575,7 +602,7 @@ int farolrec_escolher(const FarolRecCtx *ctx,
     }
     for (a = 0; a < nEl; a++) ord[a] = tmp[a];
   }
-  foraPronto = (nivel < 2);                // fora da curva so no nivel 2
+  foraPronto = (nivel < 2) || !farolrec_exploracao_faixa(ctx, &fcIni, &fcFim);
   memset(simM, 0, sizeof simM);
 
   // --- selecao gulosa MMR com regras duras (3.3) ------------------------
@@ -586,9 +613,9 @@ int farolrec_escolher(const FarolRecCtx *ctx,
     int pick = -1, fc = 0;
     int64_t best = -1;
     uint32_t bestH = 0;
-    // Vaga "fora da curva": nas posicoes 5-8, antes do melhor normal, o
-    // melhor candidato de genero com n < 3 no modelo (3.3).
-    if (!foraPronto && nOut >= FR_FC_INI && nOut <= FR_FC_FIM) {
+    // Vaga "fora da curva": faixa adaptativa dentro das posicoes 5-8, antes
+    // do melhor normal, o melhor candidato de genero com n < 3 no modelo (3.3).
+    if (!foraPronto && nOut >= fcIni && nOut <= fcFim) {
       for (i = 0; i < nEl; i++) {
         int e = ord[i];
         int64_t adj;
