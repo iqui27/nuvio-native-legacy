@@ -87,6 +87,10 @@ void assrender_preaquecer(void);
 /* #369: texto de evento com as corridas de tailandes marcadas com a fonte Noto
  * Sans Thai (malloc, ou NULL se nao ha tailandes). Exposto para o teste. */
 char *assrender_marcar_tailandes(const char *txt);
+/* Generic form for Hebrew/Arabic runs (owner 25/11/2026); NULL = nothing to mark. */
+char *assrender_marcar_escrita(const char *txt, int (*eh)(unsigned), const char *ini, const char *fim);
+int  assrender_eh_hebraico(unsigned c);
+int  assrender_eh_arabe(unsigned c);
 int  assrender_bytes_sao_fonte(const void *dados, size_t n);
 /* Le os arquivos de fonte de `dir` (so os que tem assinatura de fonte; o
  * resto conta em *ignorados) e entrega cada um a `cb`. Devolve quantos. */

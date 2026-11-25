@@ -159,7 +159,12 @@ int main(int argc, char **argv) {
     assert(r && strstr(r, "NotoSansArabic-Regular-Subset.ttf") && !strncmp(r, "reserva:arabe", 13));
     r = txt_fonte_da_linha(TXT_FAMILIA_INTER, TXT_DET_SIN, "\xef\xbb\xa3\xef\xba\xae\xef\xba\xa3\xef\xba\x92\xef\xba\x8e");
     assert(r && strstr(r, "NotoSansArabic-Regular-Subset.ttf"));
-    assert(largura(TXT_DET_SIN, "\xef\xbb\xa3\xef\xba\xae\xef\xba\xa3\xef\xba\x92\xef\xba\x8e") > 0); }
+    assert(largura(TXT_DET_SIN, "\xef\xbb\xa3\xef\xba\xae\xef\xba\xa3\xef\xba\x92\xef\xba\x8e") > 0);
+    // Hebraico (owner 25/11/2026, Android): a Noto Sans Hebrew embarcada, nao a
+    // arabe (que nao tem as letras: quadradinhos).
+    r = txt_fonte_da_linha(TXT_FAMILIA_INTER, TXT_DET_SIN, "\xd7\xa9\xd7\x9c\xd7\x95\xd7\x9d");
+    assert(r && strstr(r, "NotoSansHebrew-Regular.ttf") && !strncmp(r, "reserva:hebraico", 16));
+    assert(largura(TXT_DET_SIN, "\xd7\xa9\xd7\x9c\xd7\x95\xd7\x9d") > 0); }
   txt_encerrar();
   unsetenv("NUVIO_SEM_RESERVA_DE_SISTEMA");
   assert(txt_iniciar("deploy/app", 1));

@@ -115,6 +115,56 @@ char *assrender_marcar_tailandes(const char *txt) {
   return out;
 }
 
+/* Hebrew and Arabic in ASS (owner 25/11/2026): the same lack of fallback as
+ * Thai above. A run of the script outside override braces gets
+ * `ini` ... `fim`. One BMP codepoint at a time; NULL when nothing to mark. */
+static unsigned ass_cp_utf8(const unsigned char *p, size_t resto, int *len) {
+  *len = 1;
+  if (p[0] < 0x80) return p[0];
+  if ((p[0] & 0xE0) == 0xC0 && resto >= 2 && (p[1] & 0xC0) == 0x80) {
+    *len = 2; return ((p[0] & 31u) << 6) | (p[1] & 63u);
+  }
+  if ((p[0] & 0xF0) == 0xE0 && resto >= 3 && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) {
+    *len = 3; return ((p[0] & 15u) << 12) | ((p[1] & 63u) << 6) | (p[2] & 63u);
+  }
+  return 0;
+}
+int assrender_eh_hebraico(unsigned c) { return (c >= 0x0590 && c <= 0x05FF) || (c >= 0xFB1D && c <= 0xFB4F); }
+int assrender_eh_arabe(unsigned c) {
+  return (c >= 0x0600 && c <= 0x06FF) || (c >= 0x0750 && c <= 0x077F) || (c >= 0x0870 && c <= 0x08FF) ||
+         (c >= 0xFB50 && c <= 0xFDFF) || (c >= 0xFE70 && c <= 0xFEFC);
+}
+char *assrender_marcar_escrita(const char *txt, int (*eh)(unsigned), const char *ini, const char *fim) {
+  const unsigned char *u = (const unsigned char *)txt;
+  size_t n = strlen(txt), cap = n + 1, i, o = 0, ni = strlen(ini), nf = strlen(fim);
+  int achou = 0, chaves = 0, em = 0, l;
+  char *out;
+  for (i = 0; i < n; i += (size_t)l)
+    if (eh(ass_cp_utf8(u + i, n - i, &l))) { achou = 1; cap += ni + nf; }
+  if (!achou || !(out = (char *)malloc(cap))) return NULL;
+  for (i = 0; i < n;) {
+    unsigned c = ass_cp_utf8(u + i, n - i, &l);
+    if (txt[i] == '{') chaves = 1;
+    if (txt[i] == '}') chaves = 0;
+    if (!chaves && eh(c)) {
+      if (!em) { memcpy(out + o, ini, ni); o += ni; em = 1; }
+      memcpy(out + o, txt + i, (size_t)l); o += (size_t)l; i += (size_t)l; continue;
+    }
+    /* Spaces and marks between two words of the run stay inside it. */
+    if (em && (txt[i] == ' ' || c == 0x200C || c == 0x200D)) {
+      size_t j = i; int lj;
+      while (j < n && (txt[j] == ' ' || ass_cp_utf8(u + j, n - j, &lj) == 0x200C || ass_cp_utf8(u + j, n - j, &lj) == 0x200D))
+        j += txt[j] == ' ' ? 1 : 3;
+      if (j < n && eh(ass_cp_utf8(u + j, n - j, &lj))) { memcpy(out + o, txt + i, j - i); o += j - i; i = j; continue; }
+    }
+    if (em) { memcpy(out + o, fim, nf); o += nf; em = 0; }
+    memcpy(out + o, txt + i, (size_t)l); o += (size_t)l; i += (size_t)l;
+  }
+  if (em) { memcpy(out + o, fim, nf); o += nf; }
+  out[o] = 0;
+  return out;
+}
+
 #ifdef NV_ASS_LIBASS
 #include <SDL2/SDL.h>
 #include <ass/ass.h>
@@ -509,12 +559,14 @@ static int assUsaSistema;
 static int assVistoNaskh;          /* NotoNaskhArabic-Regular chegou ao libass nesta carga */
 static int assNaskhBold;           /* NotoNaskhArabic-Bold chegou ao libass nesta carga (#335) */
 static int assVistoThai;           /* NotoSansThai-Regular chegou ao libass nesta carga (#369) */
+static int assVistoHebraico;       /* NotoSansHebrew-Regular chegou ao libass nesta carga (owner 25/11/2026) */
 static char assPastaExtra[640];    /* NV_TPK: pasta de fontes baixadas (dados/fontes) */
 static void ass_fonte_da_pasta(const char *nome, const void *dados, size_t tam, void *u) {
   (void)u;
   if (!strcmp(nome, "NotoNaskhArabic-Regular.ttf")) assVistoNaskh = 1;
   if (!strcmp(nome, "NotoNaskhArabic-Bold.ttf")) assNaskhBold = 1;
   if (!strcmp(nome, "NotoSansThai-Regular.ttf")) assVistoThai = 1;
+  if (!strcmp(nome, "NotoSansHebrew-Regular.ttf")) assVistoHebraico = 1;
   /* The UI subset shares the family name but lacks mixed-script glyphs.
    * Plain subtitles use the verified complete face; leave UI selection intact. */
   if (!strcmp(nome, "NotoNaskhArabic-Subset.ttf")) return;
@@ -545,6 +597,7 @@ static void ass_carregar_pasta_locked(void) {
   if (!assLib || !assPastaFontes[0]) return;
   assNaskhBold = 0;
   assVistoThai = 0;
+  assVistoHebraico = 0;
   lidas = assUsaSistema ? assrender_ler_pasta_fontes(assPastaFontes, ass_fonte_da_pasta, NULL, &ignorados) : 0;
   assVistoNaskh = 0;
   if (assPastaFontesApp[0] && (!assUsaSistema || strcmp(assPastaFontesApp, assPastaFontes)))
@@ -844,14 +897,30 @@ static int ass_frame_copiar(ASS_Image *im, AssCpuFrame *out, int hashear) {
   return ass_frame_copiar2(im, NULL, 0.0f, out, hashear);
 }
 
-static void ass_trilha_tailandes(ASS_Track *t) {
+static void ass_trilha_marcar(ASS_Track *t, int de, char *(*marcar)(const char *)) {
   int i;
-  if (!assVistoThai) return;
-  for (i = 0; i < t->n_events; i++) {
+  for (i = de; i < t->n_events; i++) {
     char *novo;
-    if (!t->events[i].Text || !(novo = assrender_marcar_tailandes(t->events[i].Text))) continue;
+    if (!t->events[i].Text || !(novo = marcar(t->events[i].Text))) continue;
     free(t->events[i].Text); t->events[i].Text = novo;
   }
+}
+static char *ass_marcar_hebraico(const char *txt) {
+  return assrender_marcar_escrita(txt, assrender_eh_hebraico, "{\\fnNoto Sans Hebrew}", "{\\fn}");
+}
+/* Naskh's tall metrics: the same 1.5x as plainass.c, undone after the run. */
+static char *ass_marcar_arabe(const char *txt) {
+  return assrender_marcar_escrita(txt, assrender_eh_arabe, "{\\fnNoto Naskh Arabic\\fscx150\\fscy150}",
+                                  "{\\fn\\fscx100\\fscy100}");
+}
+/* Authored ASS (not the plain RTL document, which picks its fonts itself).
+ * Arabic only when the file attaches no font: an attached one is how fansubs
+ * bring their Arabic face, and its styling wins. */
+static void ass_trilha_escritas(ASS_Track *t, int de, int simples) {
+  if (assVistoThai) ass_trilha_marcar(t, de, assrender_marcar_tailandes);
+  if (simples) return;
+  if (assVistoHebraico) ass_trilha_marcar(t, de, ass_marcar_hebraico);
+  if (assVistoNaskh && !assNFontesAtuais) ass_trilha_marcar(t, de, ass_marcar_arabe);
 }
 
 /* The user's Border on a libass Style (owner 14/11/2026, ring 16/11/2026).
@@ -3632,13 +3701,7 @@ static size_t ass_inc_cabecalho(const char *c, size_t n) {
 }
 
 static void ass_tailandes_de(ASS_Track *t, int de) {
-  int i;
-  if (!assVistoThai) return;
-  for (i = de < 0 ? 0 : de; i < t->n_events; i++) {
-    char *novo;
-    if (!t->events[i].Text || !(novo = assrender_marcar_tailandes(t->events[i].Text))) continue;
-    free(t->events[i].Text); t->events[i].Text = novo;
-  }
+  ass_trilha_escritas(t, de < 0 ? 0 : de, 0);
 }
 
 static int ass_inc_ev_por(int n) {
@@ -3920,7 +3983,7 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
       fprintf(stderr, "[ass] attached fonts arrived after %d fallback font pick(s): font choice redone in %ld ms\n", fb,
               (long)((b.tv_sec - a.tv_sec) * 1000L + (b.tv_nsec - a.tv_nsec) / 1000000L));
     } }
-  ass_trilha_tailandes(track);
+  ass_trilha_escritas(track, 0, simples);
   plainTimingValid = 0;
   /* Authored ASS retains its own margins after a converted plain track. */
   ass_set_selective_style_override_enabled(assRenderer, 0);

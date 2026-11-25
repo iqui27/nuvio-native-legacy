@@ -504,7 +504,7 @@ static float corpoAtual(int style) {
 // primeiro arquivo que existe": a LG_Display_JP existe em toda LG e nao tem 303
 // dos hanzi simplificados, entao um titulo chines saia em quadradinhos com a
 // DroidSansFallback (que os tem) logo ali ao lado.
-typedef enum { ESC_CJK, ESC_CJK_SC, ESC_CJK_TC, ESC_ARABE, ESC_TAILANDES, ESC_CIRILICO_ETC, ESC_N } Escrita;
+typedef enum { ESC_CJK, ESC_CJK_SC, ESC_CJK_TC, ESC_ARABE, ESC_TAILANDES, ESC_HEBRAICO, ESC_CIRILICO_ETC, ESC_N } Escrita;
 #define RES_CAND 9
 static TTF_Font *reservasCam[TXT_NCAM][ESC_N][RES_CAND][TXT_NFONTES];
 static unsigned char reservaFalhouCam[TXT_NCAM][ESC_N][RES_CAND][TXT_NFONTES];
@@ -623,7 +623,11 @@ static const char *semDecorativoSemGlifo(TTF_Font *fonte, TTF_Font *alt, TTF_Fon
 // nao for arabe/hebraico nem CJK cai na terceira, que e a DroidSansFallback (ela
 // cobre cirilico, grego, tailandes e mais).
 static Escrita escritaDe(Uint32 cp) {
-  if (cp >= 0x0590 && cp <= 0x07FF) return ESC_ARABE;       // hebraico + arabe
+  // Hebrew has its own face (owner 25/11/2026): the Arabic fonts have no
+  // Hebrew letters, so Hebrew came out as boxes on Android.
+  if (cp >= 0x0590 && cp <= 0x05FF) return ESC_HEBRAICO;
+  if (cp >= 0xFB1D && cp <= 0xFB4F) return ESC_HEBRAICO;    // formas de apresentacao hebraicas
+  if (cp >= 0x0600 && cp <= 0x07FF) return ESC_ARABE;
   if (cp >= 0xFB50 && cp <= 0xFEFF) return ESC_ARABE;       // formas de apresentacao
   if (cp >= 0x0E00 && cp <= 0x0E7F) return ESC_TAILANDES;   // #369: tailandes (tofu antes)
   if (cp >= 0x2E80 && cp <= 0x9FFF) return ESC_CJK;
@@ -1004,7 +1008,7 @@ int txt_bidi_legenda(TxtFamilia familia, TxtEstilo estilo, const char *in, char 
 // mede.
 const char *txt_fonte_da_linha(TxtFamilia familia, TxtEstilo estilo, const char *s) {
   static char buf[640];
-  static const char *NOME[ESC_N] = { "CJK", "CJK-sc", "CJK-tc", "arabe", "tailandes", "resto" };
+  static const char *NOME[ESC_N] = { "CJK", "CJK-sc", "CJK-tc", "arabe", "tailandes", "hebraico", "resto" };
   camadaAtualizar();
   TTF_Font *f = (s && estilo >= 0 && estilo < TXT_NFONTES) ? fonteDe(familia, estilo, s) : NULL;
   if (!f) return NULL;
@@ -1379,6 +1383,9 @@ int txt_iniciar(const char *dirRecursos, float escala) {
   // Regular (OFL), inteira, 21 KB.
   char tailandesEmbarcada[600];
   snprintf(tailandesEmbarcada, sizeof tailandesEmbarcada, "%sfonts/NotoSansThai-Regular.ttf", base);
+  // Hebraico (owner 25/11/2026): Noto Sans Hebrew v3.001 Regular (OFL), 27 KB.
+  char hebraicoEmbarcada[600];
+  snprintf(hebraicoEmbarcada, sizeof hebraicoEmbarcada, "%sfonts/NotoSansHebrew-Regular.ttf", base);
   snprintf(arabeBoldCaminho, sizeof arabeBoldCaminho, "%sfonts/NotoSansArabic-Bold-Subset.ttf", base);
   snprintf(naskhBoldCaminho, sizeof naskhBoldCaminho, "%sfonts/NotoNaskhArabic-Bold.ttf", base);
   { const char *cand[ESC_N][RES_CAND + 1] = {
@@ -1418,13 +1425,18 @@ int txt_iniciar(const char *dirRecursos, float escala) {
                                  "/system/fonts/NotoSansThai-Regular.ttf",
                                  "/system/fonts/NotoSansThaiUI-Regular.ttf",
                                  "/System/Library/Fonts/Supplemental/Thonburi.ttc", NULL },
+      /* ESC_HEBRAICO       */ { hebraicoEmbarcada,
+                                 "/system/fonts/NotoSansHebrew-Regular.ttf",
+                                 "/usr/share/fonts/DroidSansHebrew-Regular.ttf",
+                                 "/System/Library/Fonts/Supplemental/ArialHB.ttc",
+                                 "/System/Library/Fonts/Supplemental/Arial Unicode.ttf", NULL },
       /* ESC_CIRILICO_ETC   */ { "/usr/share/fonts/DroidSansFallback.ttf",
                                  "/usr/share/fonts/DroidSans.ttf",
                                  "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
                                  "/system/fonts/NotoSansCJK-Regular.ttc",
                                  "/system/fonts/Roboto-Regular.ttf", NULL },
     };
-    const char *nomeEsc[ESC_N] = { "CJK", "CJK-sc", "CJK-tc", "arabe", "tailandes", "resto" };
+    const char *nomeEsc[ESC_N] = { "CJK", "CJK-sc", "CJK-tc", "arabe", "tailandes", "hebraico", "resto" };
     // NUVIO_SEM_RESERVA_DE_SISTEMA=1 finge o WASM da Samsung, onde so existe o
     // que vai em deploy/app/fonts: as fontes de sistema saem da lista. Serve
     // para ver, no Mac, o que aquela plataforma desenha (e para o teste).
@@ -1434,7 +1446,8 @@ int txt_iniciar(const char *dirRecursos, float escala) {
       for (int i = 0; cand[e][i] && n < RES_CAND; i++) {
         FILE *fr;
         if (soEmbarcada && cand[e][i] != cjkEmbarcada && cand[e][i] != arabeEmbarcada &&
-            cand[e][i] != naskhEmbarcada && cand[e][i] != tailandesEmbarcada) continue;
+            cand[e][i] != naskhEmbarcada && cand[e][i] != tailandesEmbarcada &&
+            cand[e][i] != hebraicoEmbarcada) continue;
         fr = fopen(cand[e][i], "rb");
         if (fr) { fclose(fr);
                   snprintf(caminhoReserva[e][n], sizeof caminhoReserva[e][n], "%s", cand[e][i]);
