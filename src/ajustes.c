@@ -10919,10 +10919,12 @@ static void desenhaGrupo(int item, float y, float f, float dx, float aPag) {
 static GLuint texQrVin;
 static char   qrVinDe[256];
 
-static void qrVinTex(const char *texto) {
+// Gera (ou mantem) o QR de `texto` na textura *tex; `de` guarda o texto atual.
+// Cada uso tem a sua (vinculo, log na rede): um nao apaga o do outro.
+static void qrTexDe(GLuint *tex, char *de, size_t nde, const char *texto) {
   Qr q; int lado, x, y; unsigned char *px;
   if (!texto || !texto[0]) return;
-  if (!strcmp(qrVinDe, texto) && texQrVin) return;
+  if (!strcmp(de, texto) && *tex) return;
   if (!qr_gerar(&q, texto)) return;
   lado = q.lado + 8;                    // 4 modulos de silencio por lado
   px = (unsigned char *)malloc((size_t)lado * lado * 3);
@@ -10934,8 +10936,8 @@ static void qrVinTex(const char *texto) {
         size_t i = ((size_t)(y + 4) * lado + (x + 4)) * 3;
         px[i] = px[i + 1] = px[i + 2] = 0;
       }
-  if (!texQrVin) glGenTextures(1, &texQrVin);
-  glBindTexture(GL_TEXTURE_2D, texQrVin);
+  if (!*tex) glGenTextures(1, tex);
+  glBindTexture(GL_TEXTURE_2D, *tex);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, lado, lado, 0, GL_RGB,
                GL_UNSIGNED_BYTE, px);
@@ -10944,8 +10946,13 @@ static void qrVinTex(const char *texto) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   free(px);
-  snprintf(qrVinDe, sizeof qrVinDe, "%s", texto);
+  snprintf(de, nde, "%s", texto);
 }
+static void qrVinTex(const char *texto) { qrTexDe(&texQrVin, qrVinDe, sizeof qrVinDe, texto); }
+
+// O QR da pagina "Log na rede local" (ajustes_ux_previa.inc ajPreviaLogRede).
+static GLuint texQrLog;
+static char   qrLogDe[256];
 
 static void desenhaVinculo(const char *servico, const char *codigo,
                            const char *endereco, const char *falha, int esperando);
