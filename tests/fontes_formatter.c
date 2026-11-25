@@ -13,6 +13,7 @@ static size_t countedClean(const char *s, char *d, size_t n, int flags) {
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <unistd.h>
+#include "source_badge_gl.inc"
 #define CARDS 60
 #define MOVES 118
 static Stream fixtures[CARDS];
@@ -72,7 +73,8 @@ static int pixelLine(const char *label, TxtEstilo style, const char *s,
   glClearColor(background/255.0f,background/255.0f,background/255.0f,1);
   glClear(GL_COLOR_BUFFER_BIT);
   if(icon) {
-    gfx_icone((GfxRect){x,y+3,22,22},icon,r/255.0f,g/255.0f,b/255.0f,alpha);
+    // The sheet draws formatter icons from the formatter icon cache (48 px).
+    gfx_icone_fmt((GfxRect){x,y+3,22,22},icon,r/255.0f,g/255.0f,b/255.0f,alpha);
     x+=30;
   }
   TxtLinha l=txt_linha(style,s,r,g,b,255);
@@ -109,7 +111,8 @@ static void pixels(const char *dir) {
       grupo=0; linhaAnt=-1; abreAnt=0; rolagem=0;
       montar(automaticaDaFolha());
       float a=fade?.6f:1, x=FOLHA_PAD_E+FOLHA_TXT;
-      float y=FOLHA_TOPO+linhaY[0]+20+(failed?FOLHA_MARCA_H:0);
+      // From addon: the badge row sits above the name (Top, the default).
+      float y=FOLHA_TOPO+linhaY[0]+20+(failed?FOLHA_MARCA_H:0)+(addon?FOLHA_ADDON_SELOS:0);
       char title[96], ep[64]="";
       if(addon) snprintf(title,sizeof title,"%s",textoAddonDa(0)->titulo);
       else tituloConteudo(&lista[0],title,sizeof title,ep,sizeof ep);
@@ -135,16 +138,173 @@ static void pixels(const char *dir) {
   assert(ok && "unfocused text and icons must preserve the previous RGB and alpha");
   tex_encerrar();
 }
+// An icon or flag only ends a line where its logical line ends: never with
+// its label, the rest of a star rating or the flag after 🔊 on the next line.
+// The filler grows a letter at a time, so every icon lands on every spot near
+// the end of the line, in both icon styles, in the name and the description.
+#define ORPHAN_ROWS 160
+static void iconStyle(const char *dir, int mini) {
+  char path[512]; snprintf(path,sizeof path,"%s/ajustes.txt",dir);
+  FILE *f=fopen(path,"w"); assert(f);
+  fprintf(f,"fonteTextoLocal 1\nfonteIconesLocal %d\nvidroLocal 1\n",mini); fclose(f);
+  ajustes_dir(dir); assert(ajustes_fonte_texto_addon()==1);
+}
+// Visual lines of row i: how many, and whether one holds only icons/flags.
+static int lineScan(const TextoAddon *t, int *iconOnly, int *orphan) {
+  int lines=0, logical=-1, onlyIcons=0, hasPiece=0; char last=0;
+  *iconOnly=*orphan=0;
+  // addonPula does not know the 4-byte V header: step over it here.
+  for(size_t q=0;q<t->nVis;q=t->vis[q]=='V'?q+4:addonPula(t->vis,q)) {
+    const char *pc=t->vis+q;
+    if(*pc=='V') {
+      int l=atoi((char[4]){pc[1],pc[2],pc[3],0});
+      if(hasPiece && l==logical && (last=='I'||last=='B')) *orphan=1;
+      if(hasPiece && onlyIcons && l==logical) *iconOnly=1;
+      logical=l; lines++; onlyIcons=1; hasPiece=0; last=0;
+      continue;
+    }
+    if(*pc=='I'||*pc=='B'||*pc=='T') { hasPiece=1; last=*pc; if(*pc=='T') onlyIcons=0; }
+  }
+  return lines;
+}
+static void orphans(const char *dir) {
+  static Stream o[ORPHAN_ROWS];
+  int checked=0, icons=0;
+  for(int mini=0;mini<2;mini++) {
+    iconStyle(dir,mini);
+    for(int i=0;i<ORPHAN_ROWS;i++) {
+      char fill[200]; int n=20+i;
+      for(int j=0;j<n;j++) fill[j]=j%7==6?' ':'a'+j%26; fill[n]=0;
+      memset(&o[i],0,sizeof o[i]); o[i].altura=1080; o[i].mp4=1; o[i].fileIdx=-1;
+      snprintf(o[i].url,sizeof o[i].url,"https://fixture.invalid/o%d.mp4",i);
+      snprintf(o[i].provedor,sizeof o[i].provedor,"AIOStreams");
+      snprintf(o[i].rotulo,sizeof o[i].rotulo,"%s 💾 TAMTARO.Release",fill);
+      // Alternate rows put the rating and the flag right after the filler.
+      if(i%2) snprintf(o[i].descricao,sizeof o[i].descricao,"%s ★★★★☆ 8.1 🔊 🇬🇧 English",fill);
+      else snprintf(o[i].descricao,sizeof o[i].descricao,"%s %s 🔊 DDP5.1 🇬🇧 English",fill,fill);
+    }
+    stream_definir_lista(o,ORPHAN_ROWS);
+    for(int i=0;i<ORPHAN_ROWS;i++) {
+      TextoAddon *t=(TextoAddon *)textoAddonDa(i);
+      addonQuebrar(i,&o[i],t); assert(t->vis);
+      int iconOnly, orphan;
+      lineScan(t,&iconOnly,&orphan);
+      if(orphan) { fprintf(stderr,"orphan icon: style=%d row=%d\n",mini,i); assert(0); }
+      for(size_t q=0;q<t->nVis;q=t->vis[q]=='V'?q+4:addonPula(t->vis,q)) {
+        icons+=t->vis[q]=='I'||t->vis[q]=='B';
+        checked++;
+      }
+    }
+  }
+  assert(icons>=2*ORPHAN_ROWS);   // at least the name's icon of every row, both styles
+  // An icon before one word wider than a whole line (no break point, like CJK
+  // with no spaces) keeps to its word too: the word is cut next to it, never
+  // leaving the icon alone at a line end or on a line of its own.
+  int lines=0;
+  iconStyle(dir,0);
+  for(int i=0;i<ORPHAN_ROWS;i++) {
+    char fill[200], word[400]; int n=20+i;
+    for(int j=0;j<n;j++) fill[j]=j%7==6?' ':'a'+j%26; fill[n]=0;
+    for(int j=0;j<180;j++) word[j]='A'+j%26; word[180]=0;
+    memset(&o[i],0,sizeof o[i]); o[i].altura=1080; o[i].mp4=1; o[i].fileIdx=-1;
+    snprintf(o[i].url,sizeof o[i].url,"https://fixture.invalid/w%d.mp4",i);
+    snprintf(o[i].provedor,sizeof o[i].provedor,"AIOStreams");
+    snprintf(o[i].rotulo,sizeof o[i].rotulo,"Long word %d",i);
+    snprintf(o[i].descricao,sizeof o[i].descricao,"%s 💾 %s",fill,word);
+  }
+  stream_definir_lista(o,ORPHAN_ROWS);
+  for(int i=0;i<ORPHAN_ROWS;i++) {
+    TextoAddon *t=(TextoAddon *)textoAddonDa(i);
+    addonQuebrar(i,&o[i],t); assert(t->vis);
+    int iconOnly, orphan;
+    lineScan(t,&iconOnly,&orphan);
+    if(iconOnly||orphan) {
+      fprintf(stderr,"long word: icon %s, row=%d\n",iconOnly?"alone on a line":"at a line end",i);
+      assert(0);
+    }
+    lines+=t->linD;
+  }
+  // A long row of language flags, wider than the line: the flags flow and
+  // fill each line. Never one flag per line with the rest on the last one
+  // (each flag moving down because "all the flags + English" did not fit).
+  static const char *many="🔊 🇬🇧🇫🇷🇩🇪🇪🇸🇮🇹🇵🇹🇯🇵🇰🇷🇨🇳🇷🇺🇳🇱🇸🇪🇳🇴🇩🇰🇫🇮🇵🇱🇹🇷🇬🇷🇮🇱🇺🇦🇧🇷🇲🇽🇮🇳🇹🇭 English";
+  for(int mini=0;mini<2;mini++) {
+    iconStyle(dir,mini);
+    for(int i=0;i<ORPHAN_ROWS;i++) {
+      char fill[200]; int n=1+i;
+      for(int j=0;j<n;j++) fill[j]=j%7==6?' ':'a'+j%26; fill[n]=0;
+      memset(&o[i],0,sizeof o[i]); o[i].altura=1080; o[i].mp4=1; o[i].fileIdx=-1;
+      snprintf(o[i].url,sizeof o[i].url,"https://fixture.invalid/f%d.mp4",i);
+      snprintf(o[i].provedor,sizeof o[i].provedor,"AIOStreams");
+      snprintf(o[i].rotulo,sizeof o[i].rotulo,"Flags %d",i);
+      snprintf(o[i].descricao,sizeof o[i].descricao,"%s %s",fill,many);
+    }
+    stream_definir_lista(o,ORPHAN_ROWS);
+    for(int i=0;i<ORPHAN_ROWS;i++) {
+      TextoAddon *t=(TextoAddon *)textoAddonDa(i);
+      addonQuebrar(i,&o[i],t); assert(t->vis);
+      // Lines of the description; a line with one icon/flag and no text
+      // that the same logical line continues after is the bug.
+      int pieces=0, text=0, logical=-1, lone=0;
+      float used=0, width=0;
+      for(size_t q=0;q<=t->nVis;q=q<t->nVis&&t->vis[q]=='V'?q+4:addonPula(t->vis,q)) {
+        const char *pc=q<t->nVis?t->vis+q:"V999";
+        if(*pc=='V') {
+          int l=atoi((char[4]){pc[1],pc[2],pc[3],0});
+          if(logical>0 && l==logical && pieces==1 && !text) lone++;
+          logical=l; pieces=text=0;
+          if(q>=t->nVis) break;
+          continue;
+        }
+        if(*pc=='I') { pieces++; width+=ADDON_ICONE_W; }
+        else if(*pc=='B') { pieces++; width+=ADDON_BANDEIRA_W; }
+        else if(*pc=='T') { pieces++; text=1; width+=(float)txt_largura(TXT_PG_FIM,pc+1)+ADDON_GAP; }
+      }
+      // At most one line more than the pieces need laid end to end.
+      used=(float)t->linD;
+      if(lone || used > ceilf(width/t->kw)+1) {
+        fprintf(stderr,"many flags: style=%d row=%d lone=%d lines=%.0f width=%.0f line=%.0f\n",
+                mini,i,lone,used,width,t->kw);
+        for(size_t z=0;z<t->nVis;z++) fputc(t->vis[z]?t->vis[z]:'|',stderr); fputc(10,stderr);
+        assert(0);
+      }
+    }
+  }
+  // The first word is measured on whole UTF-8 characters: 200 x "é" is 400
+  // bytes, cut at the 256-byte buffer on a character, never inside one.
+  { char pe[600]; size_t k=0;
+    memcpy(pe,"I000",4); k=4; pe[k++]='T';
+    for(int j=0;j<200;j++) { pe[k++]=(char)0xC3; pe[k++]=(char)0xA9; }
+    pe[k++]=0;
+    char cut[256]; size_t m=0;
+    while(m+2<sizeof cut) { cut[m]=(char)0xC3; cut[m+1]=(char)0xA9; m+=2; }
+    cut[m]=0;
+    AddonDepois d;
+    assert(addonDepois(pe,0,k,0,0,TXT_PG_FIM,&d)==1);
+    assert(d.pal==(float)txt_largura(TXT_PG_FIM,cut)); }
+  stream_definir_lista(fixtures,CARDS);
+  printf("formatter wrap: no icon alone at a line end (%d pieces, %d icons; long word: %d lines)\n",
+         checked,icons,lines);
+}
+#include "source_backdrop_gl.inc"
+
 int main(int argc,char **argv) {
   int verify=argc==1 || strcmp(argv[1],"--measure");
   char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-formatter479-XXXXXX"); assert(mkdtemp(dir));
   SDL_SetHint("SDL_MAC_BACKGROUND_APP","1");
   assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)==0); IMG_Init(IMG_INIT_PNG);
+#ifdef NV_LINUX_DESKTOP
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_ES);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,0);
+#else
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
+#endif
   SDL_Window *win=SDL_CreateWindow("formatter479",0,0,1920,1080,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN); assert(win);
   SDL_GLContext gl=SDL_GL_CreateContext(win); assert(gl); SDL_GL_SetSwapInterval(0);
   gfx_tamanho_alvo(1920,1080); assert(gfx_iniciar()); assert(txt_iniciar("deploy/app",1));
+  gfx_icones_dir("deploy/app/art");   // formatter icons and flags (orphans)
   glViewport(0,0,1920,1080);
+  importedBadgePixels(dir);   // imported pack chips (2.0.8.x, Matis)
   for(int i=0;i<CARDS;i++) {
     Stream *s=&fixtures[i]; s->altura=1080; s->mp4=1; s->fileIdx=-1;
     snprintf(s->url,sizeof s->url,"https://fixture.invalid/%d.mp4",i);
@@ -173,7 +333,9 @@ int main(int argc,char **argv) {
   setting(dir,1); montar(automaticaDaFolha());
   cleans=cleanCalls; montar(automaticaDaFolha()); assert(cleanCalls==cleans);
   puts("formatter cache: append, replacement and setting changes OK");
+  orphans(dir);
   pixels(dir);
+  sourceBackdropPixels();
   txt_encerrar(); stream_definir_lista(NULL,0);
   SDL_GL_DeleteContext(gl); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit();
   char path[512]; snprintf(path,sizeof path,"%s/ajustes.txt",dir); unlink(path); rmdir(dir);

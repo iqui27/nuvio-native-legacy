@@ -2,7 +2,9 @@
 # Fonte: claude/formatter-icons-TODO.md (2026-11-16). Uma linha por sequencia.
 # seq (hex, sem FE0F)  tipo  lucide  glifo  significado
 #   tipo cor   = emoji colorido: Twemoji no Padrao, Lucide no Minimalista
-#   tipo mono  = simbolo monocromatico: glifo Noto (cor do texto) no Padrao, Lucide no Minimalista
+#   tipo mono  = simbolo monocromatico: glifo Noto (cor do texto) no Padrao, Lucide no Minimalista;
+#                lucide "-" = o glifo Noto nos dois (as estrelas de nota: cheia, meia e vazia
+#                precisam ficar do mesmo desenho, e o Lucide nao tem estrela cheia)
 #   tipo texto = a fonte da interface ja desenha: fica texto nos dois
 26a1	cor	zap	⚡	cached / instant
 1f4be	cor	hard-drive	💾	size
@@ -230,9 +232,9 @@
 25bd	mono	triangle	▽	not cached, preloading (Chad)
 2687	mono	puzzle	⚇	addon (Askeladd)
 27a0	mono	arrow-right	➠	cached (Askeladd 1.4)
-2bea	mono	star-half	⯪	half star
-2606	mono	star	☆	empty star
-2605	texto	-	★	score star
+2bea	mono	-	⯪	half star
+2606	mono	-	☆	empty star
+2605	mono	-	★	score star (AIOStreams ::star: ★ cheia, ⯪ meia, ☆ vazia)
 25b0	mono	rectangle-horizontal	▰	score bar filled
 2654	mono	crown	♔	SeaDex alt / tier 1 (Askeladd)
 2655	mono	crown	♕	SeaDex best (Askeladd)

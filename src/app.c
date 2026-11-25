@@ -7055,6 +7055,8 @@ static void desenharAtrasDoPainel(void *ctx) {
     home_holofote_desenhar(agora);
 }
 
+#include "source_backdrop.inc"
+
 static void desenharTelas(Uint32 agora) {
   if (tela == TELA_LOGIN)          { login_desenhar(agora);     return; }
   if (tela == TELA_ESCOLHA_PERFIL) { perfilsel_desenhar(agora); return; }
@@ -7115,7 +7117,7 @@ static void desenharTelas(Uint32 agora) {
     { int podeParar = tela == TELA_HOME && !detail_aberto() && !vertudo_aberta() &&
                       (!ctx_aberto() || ctx_do_painel()) && !menu_aberto() &&
                       !player_mini_ativo();
-      spainel_fundo(podeParar, cat_revisao(), desenharAtrasDoPainel, &agora); }
+      fontes_fundo(podeParar, cat_revisao(), desenharAtrasDoPainel, &agora); }
     // Depois do menu: as duas camadas de "Salvos" escurecem a tela inteira e
     // tem de ficar por cima de tudo que a home desenhou, inclusive da rail.
     CAMADA_SE(spainel_aberto());

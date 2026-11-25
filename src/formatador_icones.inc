@@ -227,8 +227,9 @@
 { "\xE2\x96\xBD", "formatador/sy_25bd", "aj_triangle", 0 },   // ▽ not cached, preloading (Chad)
 { "\xE2\x9A\x87", "formatador/sy_2687", "aj_puzzle", 0 },   // ⚇ addon (Askeladd)
 { "\xE2\x9E\xA0", "formatador/sy_27a0", "aj_arrow-right", 0 },   // ➠ cached (Askeladd 1.4)
-{ "\xE2\xAF\xAA", "formatador/sy_2bea", "aj_star-half", 0 },   // ⯪ half star
-{ "\xE2\x98\x86", "formatador/sy_2606", "aj_star", 0 },   // ☆ empty star
+{ "\xE2\xAF\xAA", "formatador/sy_2bea", "formatador/sy_2bea", 0 },   // ⯪ half star
+{ "\xE2\x98\x86", "formatador/sy_2606", "formatador/sy_2606", 0 },   // ☆ empty star
+{ "\xE2\x98\x85", "formatador/sy_2605", "formatador/sy_2605", 0 },   // ★ score star (AIOStreams ::star: ★ cheia, ⯪ meia, ☆ vazia)
 { "\xE2\x96\xB0", "formatador/sy_25b0", "aj_rectangle-horizontal", 0 },   // ▰ score bar filled
 { "\xE2\x99\x94", "formatador/sy_2654", "aj_crown", 0 },   // ♔ SeaDex alt / tier 1 (Askeladd)
 { "\xE2\x99\x95", "formatador/sy_2655", "aj_crown", 0 },   // ♕ SeaDex best (Askeladd)

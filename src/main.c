@@ -1811,6 +1811,9 @@ int main(int argc, char **argv) {
   int    txtNQuadro = 0, piorTxtN = 0;
   int quadros = 0, janks = 0; double pior = 0;
   int playerUiPrevious = 0;
+#ifndef NV_SEM_WEBOS
+  int sourceLoadingVsyncFailed = 0;
+#endif
   SwapInt swapInt = {0};   // intervalo real entre swaps (swapint.h)
 
   // TELEMETRIA POR FASE. O quadro pior custava 22ms num alvo de 20ms e nao
@@ -2299,16 +2302,32 @@ int main(int argc, char **argv) {
     gputempo_quadro_fim();
     t0 = NV_T0();
     int playerUi = player_ui_frame(player_aberto(), gfx_n_rect, gfx_n_outros);
-    if (playerUi != playerUiPrevious) {
-#if !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
-      SDL_GL_SetSwapInterval(playerUi ? 0 : 1);
+    int playerClockUi = playerUi;
+#ifndef NV_SEM_WEBOS
+    playerClockUi = player_source_ui_unpaced(playerUi, stream_folha_aberta(), player_carregando(),
+                                            player_tem_video() || player_retido());
+    if (playerClockUi == playerUi) sourceLoadingVsyncFailed = 0;
+    else if (sourceLoadingVsyncFailed) playerClockUi = playerUi;
 #endif
-      playerUiPrevious = playerUi;
+    if (playerClockUi != playerUiPrevious) {
+#if !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+      if (SDL_GL_SetSwapInterval(playerClockUi ? 0 : 1) != 0) {
+#ifndef NV_SEM_WEBOS
+        // Retry only on the next sheet/loading session; retain the old limiter.
+        if (playerClockUi != playerUi) {
+          sourceLoadingVsyncFailed = 1;
+          playerClockUi = playerUi;
+          SDL_GL_SetSwapInterval(0);
+        }
+#endif
+      }
+#endif
+      playerUiPrevious = playerClockUi;
     }
     if (!nvPrimeiroQuadroFeito) arranque_etapa("primeiro SwapWindow");
     SDL_GL_SwapWindow(win);
 #ifndef __EMSCRIPTEN__
-    { unsigned wait = player_frame_wait(playerUi, SDL_GetTicks() - frameStarted);
+    { unsigned wait = player_frame_wait(playerClockUi, SDL_GetTicks() - frameStarted);
       if (wait) SDL_Delay(wait); }
 #else
     (void)frameStarted;

@@ -515,6 +515,23 @@ static void rIcones(void) {
   }
 }
 
+// POSICAO DOS SELOS NO "DO ADDON": a mesma fonte duas vezes, a fileira de
+// selos acima do nome (Em cima) e abaixo da descricao (Embaixo). A coluna do
+// addon (barra curta a direita) fica sempre no alto da linha.
+static void rSelosPosicao(void) {
+  int v = rInt(AJ_SOURCE_BADGE_POSITION, 1), i;
+  for (i = 0; i < 2; i++) {
+    float y = 60 + i * 130, al = i == v ? 1.0f : 0.3f;
+    float ys = i == 0 ? y + 12 : y + 66, yt = i == 0 ? y + 48 : y + 16;
+    ajc_neutro(40, y, 560, 100, 14, al);
+    ajcSelo("4K", 66, ys, 12, 0, al); ajcSelo("HDR", 108, ys, 12, 0, al); ajcSelo("DV", 164, ys, 12, 0, al);
+    ajc_barra(66, yt, 260, al * 0.8f);
+    ajc_barra(66, yt + 22, 200, al * 0.45f);
+    ajc_barra(500, y + 16, 70, al * 0.45f);
+    if (i == v) ajc_foco(40, y, 560, 100, 14, 0.6f + 0.4f * ajc_onda(2.2f));
+  }
+}
+
 // --- selos -----------------------------------------------------------------------------
 static void rSelosCores(int op) {
   static const char *T[6] = { "4K", "HDR", "DV", "ATMOS", "x265", "RD" };
@@ -882,6 +899,7 @@ static int ajcNovaReproducao(int sec, int op) {
     case AJ_FONTE_ORDEM_ADDON: rOrdemFontes(); return 1;
     case AJ_FONTE_TEXTO: rTexto(); return 1;
     case AJ_FONTE_ICONES: rIcones(); return 1;
+    case AJ_SOURCE_BADGE_POSITION: rSelosPosicao(); return 1;
     case AJ_SELOS_CORES: rSelosCores(op); return 1;
     case AJ_SELOS_PACOTE: rPacote(); return 1;
     case AJ_SELOS_PACOTE_ADD: rPacoteAdd(); return 1;

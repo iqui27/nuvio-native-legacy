@@ -67,6 +67,12 @@ def ler_tabela():
             if l.startswith('#') or not l.strip():
                 continue
             seq, tipo, luc, glifo, sig = l.rstrip('\n').split('\t')
+            # '-' (sem Lucide) = o glifo Noto tambem no Minimalista, na cor do
+            # texto: so serve para simbolo mono. Num emoji em cores ele viraria
+            # uma silhueta lisa (o Minimalista desenha sem as cores do PNG).
+            if luc == '-' and tipo == 'cor':
+                sys.exit('icones-formatador.tsv: %s %s e "cor" sem Lucide ("-"); '
+                         'so simbolos "mono" podem ficar sem' % (seq, glifo))
             linhas.append(dict(seq=seq, tipo=tipo, lucide=None if luc == '-' else luc, glifo=glifo, sig=sig))
     return linhas
 
@@ -226,7 +232,9 @@ def main():
                 pad, cor = 'formatador/tw_' + t['seq'], 1
             else:
                 pad, cor = 'formatador/sy_' + t['seq'], 0
-            f.write('{ "%s", "%s", "aj_%s", %d },   // %s %s\n' % (utf8_c(t['seq']), pad, t['lucide'], cor, t['glifo'], t['sig']))
+            # Simbolo sem Lucide: o mesmo glifo Noto no Minimalista (na cor do texto).
+            mini = 'aj_' + t['lucide'] if t['lucide'] else pad
+            f.write('{ "%s", "%s", "%s", %d },   // %s %s\n' % (utf8_c(t['seq']), pad, mini, cor, t['glifo'], t['sig']))
     print('table: %s' % INC)
 
 

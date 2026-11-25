@@ -17,7 +17,9 @@
 //   Padrao       emoji -> Twemoji em cores (icones/formatador/tw_<seq>.png);
 //                simbolo monocromatico (☆ ⯪ ⛊ ✦ ♬ ◈...) -> o glifo Noto, na cor do
 //                texto (icones/formatador/sy_<cp>.png)
-//   Minimalista  os dois -> Lucide na cor do texto (icones/aj_<nome>.png)
+//   Minimalista  os dois -> Lucide na cor do texto (icones/aj_<nome>.png); as
+//                estrelas de nota (★ ⯪ ☆), sem estrela cheia no Lucide, ficam com o
+//                glifo Noto nos dois estilos
 // Bandeiras (par de indicadores regionais, e 🏴 Inglaterra/Escocia/Gales) ->
 // flagpack no Padrao (icones/formatador/fl_<CC>.png); no Minimalista, e sem o
 // PNG, o codigo de idioma de sempre (nv_limpar_texto).

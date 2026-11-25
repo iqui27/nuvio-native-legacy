@@ -91,7 +91,10 @@ int main(int argc, char **argv) {
   for (int i = 0; i < formatador_icones_n(); i++) {
     int cor;
     const char *a = formatador_icone_nome(i, 0, &cor), *b = formatador_icone_nome(i, 1, &cor);
-    assert(a && !strncmp(a, "formatador/", 11) && b && !strncmp(b, "aj_", 3) && cor == 0);
+    // Minimalista: Lucide, ou (simbolo sem Lucide, as estrelas de nota) o
+    // mesmo glifo Noto do Padrao.
+    assert(a && !strncmp(a, "formatador/", 11) && b && cor == 0 &&
+           (!strncmp(b, "aj_", 3) || (!strncmp(a, "formatador/sy_", 14) && !strcmp(a, b))));
   }
   // Formatador de verdade (AIOStreams): pecas, separadores aparados.
   {
@@ -157,10 +160,20 @@ int main(int argc, char **argv) {
     }
     k = 0; formatador_pecas("🇿🇿 x", strlen("🇿🇿 x"), o, sizeof o, &k, existe); legivel(o, k, d, sizeof d);
     if (strcmp(d, "[ZZ x]")) { printf("FALHA sem png: %s\n", d); ok = 0; }
-    // Simbolos do Tamtaro (monocromaticos) viram icone; ★ e ✓ ficam texto.
+    // Simbolos do Tamtaro (monocromaticos) viram icone; ✓ fica texto. ★ e
+    // icone tambem: a nota do AIOStreams (::star) mistura ★ com ☆ e ⯪, e as
+    // cinco estrelas precisam do mesmo desenho.
     pecas("⯪☆ ✦ HDR ★ ✓", o, sizeof o, &k); legivel(o, k, d, sizeof d);
     printf("tamtaro: %s\n", d);
-    assert(d[0] == '{' && strstr(d, "[HDR ★ ✓]"));
+    { char esp[128];
+      snprintf(esp, sizeof esp, "{%03d}{%03d}{%03d}[HDR]{%03d}[✓]", formatador_icone_em("⯪", &len),
+               formatador_icone_em("☆", &len), formatador_icone_em("✦", &len), formatador_icone_em("★", &len));
+      if (strcmp(d, esp)) { printf("FALHA tamtaro: %s\n", d); ok = 0; } }
+    // Nota de 4 de 5 (AIOStreams ::star): cinco icones Noto, nenhum texto.
+    pecas("★★★★☆", o, sizeof o, &k); legivel(o, k, d, sizeof d);
+    { char esp[128]; int cheia = formatador_icone_em("★", &len), vazia = formatador_icone_em("☆", &len);
+      snprintf(esp, sizeof esp, "{%03d}{%03d}{%03d}{%03d}{%03d}", cheia, cheia, cheia, cheia, vazia);
+      if (strcmp(d, esp)) { printf("FALHA nota: %s\n", d); ok = 0; } }
     // Saida cheia: nunca corta peca no meio.
     char pequeno[12]; k = 0;
     int np = formatador_pecas("💾 11.1 GB | 30.1 Mbps", strlen("💾 11.1 GB | 30.1 Mbps"), pequeno, sizeof pequeno, &k, NULL);
