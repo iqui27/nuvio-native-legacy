@@ -11,6 +11,9 @@ double cred_escolher(const CredEntrada *e, int *fonte) {
   if (e->capitulo > 1.0) { s = e->capitulo; f = CRED_FONTE_CAPITULO; goto fim; }
   if (e->introdb > 1.0)  { s = e->introdb;  f = CRED_FONTE_INTRODB;  goto fim; }
   if (e->aniskip > 1.0)  { s = e->aniskip;  f = CRED_FONTE_ANISKIP;  goto fim; }
+  // "Ultimo capitulo" (2.0.3) e um palpite sobre capitulos SEM nome: abaixo do
+  // que as fontes e o casamento com capitulos dizem (log da C9, 04/11).
+  if (e->capituloUltimo > 1.0) { s = e->capituloUltimo; f = CRED_FONTE_ULTIMO; goto fim; }
   if (e->vizInicio > 1.0) {
     // Com a duracao do vizinho a conta e por "quanto falta"; sem ela, assume a
     // mesma duracao e o inicio vale como veio.
@@ -31,6 +34,7 @@ const char *cred_fonte_nome(int f) {
   switch (f) {
     case CRED_FONTE_CAPITULO: return "mkv-chapter";
     case CRED_FONTE_INTRODB:  return "introdb";
+    case CRED_FONTE_ULTIMO:   return "mkv-last-chapter";
     case CRED_FONTE_ANISKIP:  return "aniskip";
     case CRED_FONTE_VIZINHO:  return "neighbour-episode";
     case CRED_FONTE_APRENDIDO: return "learned-offset";

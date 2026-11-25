@@ -396,6 +396,8 @@ double video_pos(void) { return position; }
 double video_pos_amostra(Uint64 *ticks) { if (ticks) *ticks=sampleAt; return position; }
 double video_duracao(void) { return duration; }
 double video_creditos(void) { return 0; }
+double video_creditos_nomeado(void) { return 0; }
+double video_creditos_ultimo(double dur) { (void)dur; return 0; }
 double video_buffer_fim(void) { return bufferEnd; }
 unsigned video_bufferando_ms(void) { return bufferingAt ? (unsigned)(SDL_GetTicks64()-bufferingAt) : 0; }
 int video_tocando(void) { return active && ready && !paused && !bufferingAt; }

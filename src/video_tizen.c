@@ -965,9 +965,24 @@ static Uint32 seekEm;
 // o bufferRange do uMS informa; o AVPlay nao informa instante nenhum de buffer,
 // so porcentagem. Aqui o gatilho e "a posicao ja andou 5 s de verdade", que e o
 // mesmo sinal indireto — se o tempo corre, a fonte esta entregando.
-static double creditosNomeado, creditosUltimo;
 static pthread_t fioMkv;
 static int       fioMkvVivo, mkvPendente;
+// Geracao do capmkv no DISPARO da sonda (video_sondar_mkv_agora), entregue ao
+// fio pelo argumento. Captura-la na primeira instrucao do fio abria uma
+// janela: o fio de a.mkv podia acordar depois de video_tocar("b.mp4") avancar
+// a geracao e antes de trocar urlAtual — lia a geracao nova com a URL antiga
+// e capmkv_aplicar_ger aceitava os capitulos do MKV dentro da reproducao do
+// MP4 (painel de creditos aos 950 s num video de 1200 s). Mesmo papel do
+// mkvFioCapGer da LG (src/video.c).
+static unsigned  mkvFioCapGer;
+
+// Fonte nova ou fim da reproducao: os marcadores do arquivo anterior nao
+// valem — nem os locais (video_creditos*) nem os publicados (a lista de
+// capitulos da barra e os trechos de intro saem do capmkv). Mesma limpeza que
+// video_tocar/video_parar fazem na LG (capmkv_zerar, src/video.c).
+static void limparCreditosCapitulos(void) {
+  capmkv_zerar();
+}
 
 static VideoLegendaEstilo estilo = { 120, 0, 0, 3, 1, 0, 0, 0 };
 static int temEstilo;
@@ -1001,7 +1016,7 @@ int video_tocar(const char *url) {
 
   // Titulo novo: o marcador do anterior nao vale. Sem isto um filme sem
   // capitulos herdaria os creditos do filme de antes.
-  creditosNomeado = creditosUltimo = 0.0;
+  limparCreditosCapitulos();
   roiResetTentativas = 0;
   roiAtivo = 1;   // o recorte do titulo anterior pode ter ficado no player
   snprintf(urlAtual, sizeof urlAtual, "%s", url);
@@ -1280,19 +1295,24 @@ static void *lerMkv(void *arg) {
   MkvCap   caps[MKV_MAX_CAPS];
   char url[NV_MEDIA_URL_MAX];
   int n, nCaps = 0;
-  (void)arg;
+  // arg traz a geracao congelada no disparo; arg==NULL so em ensaio que chama
+  // o fio direto, onde vale a captura no inicio como antes.
+  unsigned capGer = arg ? *(const unsigned *)arg : capmkv_geracao();
   snprintf(url, sizeof url, "%s", urlAtual);
   n = mkv_faixas_e_caps(url, fx, MKV_MAX_FAIXAS, caps, MKV_MAX_CAPS, &nCaps);
-  if (nCaps > 0) {
-    creditosNomeado = mkv_creditos_nomeados(caps, nCaps);
-    creditosUltimo  = mkv_creditos_ultimo(caps, nCaps);
+  // A fonte pode ter trocado enquanto o fio lia: os capitulos e os idiomas do
+  // arquivo anterior nao valem para o que esta tocando agora. Mesma checagem
+  // por strcmp que a LG faz junto da sessao (mkvFioSessao, src/video.c).
+  if (nCaps > 0 && !strcmp(url, urlAtual)) {
+    double creditosNomeado = mkv_creditos_nomeados(caps, nCaps);
+    double creditosUltimo  = mkv_creditos_ultimo(caps, nCaps);
     printf("[mkv] %d capitulos; creditos nomeados em %.0fs, ultimo em %.0fs\n",
            nCaps, creditosNomeado, creditosUltimo);
     fflush(stdout);
-    capmkv_aplicar(caps, nCaps);   // abertura/creditos/previa do arquivo -> modulo de intro
+    capmkv_aplicar_ger(caps, nCaps, capGer);   // abertura/creditos/previa do arquivo -> modulo de intro
   }
   if (n < 1) marco("mkv: nenhuma faixa lida (nao e MKV, ou Range falhou)");
-  else aplicarIdiomasDoMkv(fx, n);
+  else if (!strcmp(url, urlAtual)) aplicarIdiomasDoMkv(fx, n);
   fioMkvVivo = 0;
   return NULL;
 }
@@ -1485,12 +1505,14 @@ void video_sondar_mkv_agora(void) {
   if (!mkvPendente || fioMkvVivo || !urlAtual[0]) return;
   mkvPendente = 0;
   fioMkvVivo = 1;
-  if (pthread_create(&fioMkv, NULL, lerMkv, NULL) != 0) fioMkvVivo = 0;
+  mkvFioCapGer = capmkv_geracao();   // depois do capmkv_zerar de video_tocar
+  if (pthread_create(&fioMkv, NULL, lerMkv, &mkvFioCapGer) != 0) fioMkvVivo = 0;
   else pthread_detach(fioMkv);
 }
 
 void video_parar(void) {
   nv_recon_zerar(&recon);
+  limparCreditosCapitulos();   // fio de capitulos em voo nao alimenta o proximo titulo
   reconFaixasPend = 0; reconBuscar = -1.0;
   recarregarPausa = -1; pausaPedida = 0;
   seekEm = 0; mkvPendente = 0;
@@ -1771,10 +1793,24 @@ int    video_terminou(void)   { return terminou; }
 int    video_conflito_recurso(void) { return 0; }
 
 double video_creditos(void) {
+  double creditosNomeado = capmkv_creditos_nomeado();
+  double creditosUltimo = capmkv_creditos_ultimo(video_duracao());
   double dur;
   if (creditosNomeado > 1.0) return creditosNomeado;
   dur = video_duracao();
-  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75)
+  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75 &&
+      dur - creditosUltimo >= CAPMKV_ULTIMO_FOLGA_S)   // toco no fim nao e creditos
+    return creditosUltimo;
+  return 0.0;
+}
+
+double video_creditos_nomeado(void) {
+  return capmkv_creditos_nomeado();
+}
+double video_creditos_ultimo(double dur) {
+  double creditosUltimo = capmkv_creditos_ultimo(dur);
+  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75 &&
+      dur - creditosUltimo >= CAPMKV_ULTIMO_FOLGA_S)   // toco no fim nao e creditos
     return creditosUltimo;
   return 0.0;
 }

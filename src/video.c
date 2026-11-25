@@ -399,6 +399,8 @@ double video_duracao(void) { return SIM.duracao; }
 // no plano B dos ultimos minutos, que e o mesmo caminho de um MKV sem
 // capitulos. Melhor um stub honesto que um numero inventado.
 double video_creditos(void) { return 0.0; }
+double video_creditos_nomeado(void) { return 0.0; }
+double video_creditos_ultimo(double dur) { (void)dur; return 0.0; }
 double video_buffer_fim(void) { return SIM.bufferFim; }
 void video_buffer_test_text(char *out, size_t n) {
   if (out && n) snprintf(out, n, "%s", i18n("Buffer: sistema"));
@@ -2353,7 +2355,18 @@ double video_creditos(void) {
   dur = video_duracao();
   // O ultimo capitulo so vale como creditos se comecar no ultimo quarto: em
   // disco com um capitulo a cada cinco minutos, o ultimo e uma cena qualquer.
-  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75)
+  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75 &&
+      dur - creditosUltimo >= CAPMKV_ULTIMO_FOLGA_S)   // toco no fim nao e creditos
+    return creditosUltimo;
+  return 0.0;
+}
+
+double video_creditos_nomeado(void) {
+  return creditosNomeado > 1.0 ? creditosNomeado : 0.0;
+}
+double video_creditos_ultimo(double dur) {
+  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75 &&
+      dur - creditosUltimo >= CAPMKV_ULTIMO_FOLGA_S)   // toco no fim nao e creditos
     return creditosUltimo;
   return 0.0;
 }

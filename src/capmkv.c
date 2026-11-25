@@ -153,10 +153,37 @@ unsigned capmkv_geracao(void) {
 }
 
 double capmkv_creditos(double dur) {
-  double a, b;
-  pthread_mutex_lock(&trava); a = nomeado; b = ultimo; pthread_mutex_unlock(&trava);
-  if (a > 1.0) return a;
-  if (b > 1.0 && dur > 1.0 && b > dur * 0.75) return b;
+  double a = capmkv_creditos_nomeado();
+  return a > 1.0 ? a : capmkv_creditos_ultimo(dur);
+}
+double capmkv_creditos_nomeado(void) {
+  double a;
+  pthread_mutex_lock(&trava); a = nomeado; pthread_mutex_unlock(&trava);
+  return a > 1.0 ? a : 0.0;
+}
+// "Ultimo capitulo = creditos" (2.0.3): so depois de 75% e deixando ao menos
+// CAPMKV_ULTIMO_FOLGA_S. Um toco no fim do arquivo (Ch07 1420 de 1421 s, log da
+// C9 em 04/11) nao e creditos: o cartao ficava com 1 s.
+double capmkv_creditos_ultimo(double dur) {
+  double b;
+  pthread_mutex_lock(&trava); b = ultimo; pthread_mutex_unlock(&trava);
+  if (b > 1.0 && dur > 1.0 && b > dur * 0.75 && dur - b >= CAPMKV_ULTIMO_FOLGA_S) return b;
+  return 0.0;
+}
+
+// Implementacao FRACA de video_creditos_nomeado/ultimo (video.h): cobre alvo
+// sem versao propria e teste/ensaio que linka este arquivo sem backend — ali
+// `video_creditos` resolve para a versao local do ensaio (fraco-indefinido:
+// ausente, devolve 0 em vez de quebrar o link). O nomeado "cai" no composto
+// porque nao ha como separar sem o backend; o ultimo fica em 0 (conservador:
+// palpite nenhum em vez de palpite errado). webOS, .wgt, HTML5, .tpk e
+// Android tem a versao forte ao lado do proprio video_creditos.
+extern double video_creditos(void) __attribute__((weak));
+__attribute__((weak)) double video_creditos_nomeado(void) {
+  return video_creditos ? video_creditos() : 0.0;
+}
+__attribute__((weak)) double video_creditos_ultimo(double dur) {
+  (void)dur;
   return 0.0;
 }
 

@@ -129,6 +129,14 @@ double video_duracao(void);  // 0 enquanto desconhecida
 // baixado para descobrir o idioma das faixas — ver mkv.h. Vale so para MKV com
 // capitulos; quem chama precisa de um plano B.
 double video_creditos(void);
+// As duas metades de video_creditos, para quem ordena fontes (player/posplay):
+// o capitulo que SE CHAMA creditos (conclusivo, acima dos provedores) e o
+// "ultimo capitulo depois de 75% com folga" (palpite, abaixo deles). Cada
+// backend responde pelo proprio estado — .wgt/HTML5 pelos valores locais,
+// .tpk/Android pelo capmkv — para um titulo nao herdar marcador do anterior.
+// A implementacao fraca em capmkv.c cobre alvos sem versao propria.
+double video_creditos_nomeado(void);
+double video_creditos_ultimo(double dur);
 double video_buffer_fim(void); // ate onde o buffer cobre (s); 0 se desconhecido
 // "Dados do buffer" row (Ajustes): measured fill/capacity, byte range, time
 // ahead and session HTTP limit, already translated; unknown parts say so.

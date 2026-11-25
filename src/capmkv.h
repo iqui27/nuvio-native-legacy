@@ -13,7 +13,8 @@
 // Nada disso toca na reproducao: so o fio lateral espera.
 //
 // ORDEM de fonte dos creditos (credfonte.c): capitulo DESTE arquivo > TheIntroDB
-// /AniSkip (validado pela duracao real) > vizinho > aprendido > tempo fixo.
+// /AniSkip (validado pela duracao real) > ultimo capitulo (palpite) > vizinho >
+// aprendido > tempo fixo.
 #ifndef NV_CAPMKV_H
 #define NV_CAPMKV_H
 #include "mkv.h"
@@ -28,6 +29,19 @@ void capmkv_zerar(void);
 // 0 = ainda desconhecida): o capitulo NOMEADO vale sempre; o ultimo capitulo so
 // vale se comecar no ultimo quarto (mesma regra da LG).
 double capmkv_creditos(double dur);
+// As duas metades de capmkv_creditos, para quem ordena fontes (player.c): o
+// capitulo que SE CHAMA creditos (0 = nao ha), e o "ultimo capitulo depois de
+// 75%" com folga minima ate o fim (0 = nao vale).
+#define CAPMKV_ULTIMO_FOLGA_S 10.0
+double capmkv_creditos_nomeado(void);
+double capmkv_creditos_ultimo(double dur);
+// As mesmas duas metades, lidas do BACKEND (a declaracao canonica mora em
+// video.h; repetidas aqui porque e a saida que testes e ensaios enxergam sem
+// puxar video.h inteiro com SDL): .wgt/HTML5/webOS respondem pelos valores
+// locais, .tpk/Android pelo estado acima — assim um titulo nao herda o
+// marcador do anterior por caminho nenhum. Fraca em capmkv.c.
+double video_creditos_nomeado(void);
+double video_creditos_ultimo(double dur);
 // Entrega capitulos ja lidos (LG/.wgt): guarda para capmkv_creditos e alimenta
 // o modulo de intro (abertura/creditos/previa).
 void capmkv_aplicar(const MkvCap *caps, int n);
