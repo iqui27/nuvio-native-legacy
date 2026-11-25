@@ -121,6 +121,7 @@ static int dvAudioMkvOrd = -1;
 // audio). Session snapshot of the converter route, for later track changes.
 static int dvTruehd, dtsRotaTruehd, dtsRotaOff;
 static int dvHabilitado, dtsModoDv, dvRecuoAviso;
+
 // O player ainda nao pediu o ponto salvo ao player da TV (video_dv_segurar):
 // a troca para o caminho espera, para nascer na posicao certa.
 static int dvSegurar;
@@ -160,6 +161,16 @@ int video_fonte_tocou(void) { return fonteTocou; }
 static int dvLiberadoNestaTv(void);
 static int dvPronto(void);
 const char *video_dts_saida(void) { return dtsSaida; }
+#ifdef NV_DV_TRUEHD_TEST
+int video_truehd_convertido(void) {
+  const VideoFaixa *f=video_audio(video_audio_atual());
+  if(!dtsSessao || !dtsModoDv || !f || !nv_dts_truehd_codec(f->codec) ||
+     strncmp(dtsSaida,"TrueHD → ",strlen("TrueHD → ")) ||
+     video_falhou() || video_terminou())return 0;
+  DtsPlaybackStatus s;dts_playback_status(dtsSessao,&s);
+  return s.prepared && !s.failed && s.info.audio_stream==f->stream_index;
+}
+#endif
 
 int video_faixa_dts(const VideoFaixa *f) {
   char s[96];
@@ -501,6 +512,10 @@ int  video_velocidade_bloqueada(void) { return cacheboost_ganho_estado() == CB_G
 typedef struct LSHandle LSHandle;
 typedef struct LSMessage LSMessage;
 typedef int (*Filtro)(LSHandle *, LSMessage *, void *);
+
+static int  dvAudioDtsKind[16];      // mkv_dts.h NV_DTS_KIND_* de cada faixa DO MKV (0 = comum/desconhecido)
+// P8.1 kept off our path only because the probe saw no frame with RPU.
+static int dvRpuIncerto;
 
 // LSError, na forma do luna-service2 (include/public/luna-service2/
 // lunaservice.h). Nao ha header C no SDK, entao a struct e repetida aqui — e a
@@ -2491,6 +2506,9 @@ static void *lerMkv(void *arg) {
   }
 
   completarAudioMkv(fx, n);
+  // DTS tracks the prefetched head could not tell apart (no frames in it):
+  // one longer read before dvAudioDtsKind below reads mkv_dts_kind().
+  mkv_dts_alem(url, fx, n);
   { int na = 0, achouVideo = 0;
     for (j = 0; j < n; j++) {
       if (fx[j].tipo == 1 && !achouVideo) {
@@ -2504,6 +2522,7 @@ static void *lerMkv(void *arg) {
         snprintf(dvAudioIdioma[na], sizeof dvAudioIdioma[0], "%s", fx[j].idioma);
         snprintf(dvAudioNome[na], sizeof dvAudioNome[0], "%s", fx[j].nome);
         dvAudioCanais[na] = fx[j].canais;
+        dvAudioDtsKind[na] = nv_audio_mkv_dts(fx[j].codec) ? mkv_dts_kind(fx[j].numero) : 0;
         snprintf(dvAudioCodec[na++], sizeof dvAudioCodec[0], "%s", fx[j].codec);
       }
     }
@@ -2538,7 +2557,7 @@ static void *lerMkv(void *arg) {
     // admitting unprobed files (see docs/reviews/c9-dv-crash-2.md).
     if (fx[j].dvPerfil == 8 && fx[j].dvCompat == 1 &&
         (d->rpu != 1 || d->quadros < 1)) {
-      dvMkvRpu = 0;
+      dvMkvRpu = 0; dvRpuIncerto = 1;
       printf("[dv] HDR10: profile 8.1 in-band RPU unconfirmed (rpu=%d frames=%d)\n",
              d->rpu, d->quadros);
     }
@@ -2737,7 +2756,7 @@ int video_tocar(const char *url) {
   mp4TestPending=0;
 #endif
   printf("[dts] fallback %s\n", dtsHabilitado ? "available" : "unavailable");
-  dvSondado = dvMkvPerfil = dvAudios = 0; __atomic_store_n(&audioMkvPronto, 0, __ATOMIC_RELEASE); dtsModoDv = 0; dvAudioMkvOrd = -1; dvTruehd = 0; dvSegurar = 0;
+  dvSondado = dvMkvPerfil = dvAudios = 0; dvRpuIncerto = 0; __atomic_store_n(&audioMkvPronto, 0, __ATOMIC_RELEASE); dtsModoDv = 0; dvAudioMkvOrd = -1; dvTruehd = 0; dvSegurar = 0;
   mkvNaoMkv = 0;
   dvNao = 0; dvSessaoN++; dvFonteAberta = 0; dvAudioDe[0] = 0;
   nv_dvsonda_zerar(&mkvRetry); mkvRetryEm = 0; dvEntradaSeg = 0.0;
@@ -2883,25 +2902,41 @@ static void aplicarOrdemAudioMkv(void) {
 static void audioMkvOmitidas(void) {
   static int antes = -1;
   static unsigned sessaoVista;
-  if (!dtsHabilitado || ajustes_dts_desligado() ||
-      !__atomic_load_n(&audioMkvPronto, __ATOMIC_ACQUIRE)) return;
+  static int rotulou;
+  if (!dtsHabilitado || !__atomic_load_n(&audioMkvPronto, __ATOMIC_ACQUIRE)) return;
+  if (dvSessaoN != sessaoVista) { sessaoVista = dvSessaoN; antes = -1; rotulou = 0; }
+  NvAudioMkvTrack fx[16];
+  for (int i = 0; i < dvAudios; i++) {
+    snprintf(fx[i].codec, sizeof fx[i].codec, "%s", dvAudioCodec[i]);
+    snprintf(fx[i].idioma, sizeof fx[i].idioma, "%s", dvAudioIdioma[i]);
+    snprintf(fx[i].nome, sizeof fx[i].nome, "%s", dvAudioNome[i]);
+    fx[i].numero = -1; fx[i].canais = dvAudioCanais[i]; fx[i].dts_kind = dvAudioDtsKind[i];
+  }
+  /* DTS "Off": the recovered DTS rows could not be played; keep the TV's list,
+   * but the rows paired with a DTS-HD track of the file still say so
+   * (tester 16/11: both "DTS 5.1" with DTS off). Labels only. */
+  if (ajustes_dts_desligado()) {
+    int k = nv_audio_mkv_rotular(faixaAudio, nAudio, fx, dvAudios);
+    if (k != rotulou) {
+      rotulou = k;
+      if (k) { printf("[audio-mkv] DTS off: %d DTS-HD label(s) on the TV's rows\n", k); fflush(stdout); }
+    }
+    return;
+  }
   int n = nv_audio_mkv_omitidas(faixaAudio, nAudio, NV_FAIXA_MAX, dvAudios,
                                 (const char (*)[16])dvAudioCodec, (const char (*)[8])dvAudioIdioma,
                                 dvAudioCanais, (const char (*)[48])dvAudioNome, ling_casa, audioinfo_codec);
+  /* A DTS track the TV plays itself: its line too says DTS-HD / Master Audio. */
+  nv_audio_mkv_rotular(faixaAudio, n, fx, dvAudios);
   for (int i = 0; i < n; i++) {
     VideoFaixa *f = &faixaAudio[i];
     if (!nv_audio_mkv_recuperado(f)) continue;
     const char *lang = f->idioma[0] ? i18n(ling_nome(f->idioma)) : i18n("Faixa");
     char sub[40];
-    if (!audioinfo_texto(dvAudioCodec[f->ordinalMkv], f->canais, 0, sub, sizeof sub)) snprintf(sub, sizeof sub, "DTS");
+    if (!audioinfo_texto(nv_audio_mkv_rotulo_codec(&fx[f->ordinalMkv]), f->canais, 0, sub, sizeof sub)) snprintf(sub, sizeof sub, "DTS");
     nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, lang, lang, sub);
   }
   { int mudou = n != antes;
-    if (dvSessaoN != sessaoVista) {
-      sessaoVista = dvSessaoN;
-      antes = -1;
-      mudou = 1;
-    }
     if (mudou) {
       printf("[dts] MKV omitted DTS tracks recovered: %d of %d rows\n", n - nativasAudio(), n);
       fflush(stdout);
@@ -3578,7 +3613,8 @@ static int dvPronto(void) {
     }
     // Sem perfil: o arquivo nao tem dvcC, ou a sonda desistiu de ler o
     // cabecalho (tres falhas) — sao notas diferentes para a pessoa.
-    dvNao = dvMkvPerfil ? VIDEO_DV_NAO_PERFIL : mkvNaoMkv ? VIDEO_DV_NAO_CONTENTOR
+    dvNao = dvMkvPerfil ? (dvRpuIncerto ? VIDEO_DV_NAO_RPU : VIDEO_DV_NAO_PERFIL)
+          : mkvNaoMkv ? VIDEO_DV_NAO_CONTENTOR
           : mkvRetry.desistiu ? VIDEO_DV_NAO_SONDA : VIDEO_DV_NAO_SEM_DV;
     dvHabilitado = 0; dvVoltarEntrada(); return 0;
   }

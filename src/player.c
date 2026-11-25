@@ -183,6 +183,7 @@ extern __attribute__((weak)) int farolacao_fonte_executar(int acao, int persisti
 #include "plrui.h"
 #include "escala.h"
 #include "plrilha.h"
+#include "player_dts_notice.h"
 #include "miniatura_android.h"
 #include "neste.h"
 #include "cacheboost.h"
@@ -336,6 +337,11 @@ static int    posVisSolto;   // 1 = ainda deslizando ate o alvo
 
 static int   aberto = 0, saindo = 0, pediuSair = 0;
 static unsigned dtsAvisoSessao; // New player session, not seek/retry/track change.
+#ifdef NV_DV_TRUEHD_TEST
+static NvDtsNotice truehdConvertedNotice;
+static Uint32 truehdDesde;
+static int truehdVisto, truehdTrack=-1;
+#endif
 static int   idx = 0;
 // UI-thread ownership of this exact player source/session.
 static unsigned fonteAcaoGeracao;
@@ -2269,6 +2275,9 @@ static void armarTituloGuardado(void) {
 void player_abrir(int indiceCatalogo, const char *url) {
   farolTentativaIniciar();
   dtsAvisoSessao++;
+#ifdef NV_DV_TRUEHD_TEST
+  truehdConvertedNotice=(NvDtsNotice){0};truehdDesde=0;truehdVisto=0;truehdTrack=-1;
+#endif
   saiuVisto = 0;
 #ifdef NV_TOUCH_UI
   avToqueCanal[0] = 0;
@@ -2801,6 +2810,9 @@ static void dvTelaNota(int recusa, int perfil) {
     snprintf(t, sizeof t, "%s", i18n("Não deu para ler o arquivo. Tocando em HDR10."));
   // VIDEO_DV_NAO_CONTENTOR (o arquivo nao e Matroska): sem nota. O player da TV
   // segue tocando o MP4/TS como tocaria sem a tela — no MP4 o DV e o da TV.
+  // VIDEO_DV_NAO_RPU (P8.1 cujos quadros DV a sonda nao alcancou): sem nota
+  // tambem. A TV toca do jeito dela, muitas vezes em Dolby Vision (log do
+  // testador 15/11: "profile 8 doesn't play" com a imagem em DV).
   if (!t[0]) return;
   // No relogio do quadro (como o aviso do audio que a TV nao toca): a nota
   // nasce no mesmo quadro em que a tela comeca a esvair.
@@ -7626,6 +7638,34 @@ static void capaReabertura(GfxRect furo, const CatItem *c, Uint32 agora) {
 }
 #endif
 
+#ifdef NV_DV_TRUEHD_TEST
+static void avisarTruehd(Uint32 agora) {
+  const VideoFaixa *track=video_audio(video_audio_atual());
+  // Unknown metadata during a seek/reload does not represent a new selection.
+  // Demux indices identify the selected source track, not the output codec.
+  if(track && track->stream_index>=0 && track->stream_index!=truehdTrack) {
+    truehdTrack=track->stream_index;
+    truehdConvertedNotice=(NvDtsNotice){0};truehdVisto=0;truehdDesde=0;
+  }
+  int eligible=!player_carregando() && !ehCanal() && video_truehd_convertido() &&
+               video_tocando() && !video_iniciando();
+  if(!eligible) {
+    truehdVisto=0;nv_dts_notice_show(&truehdConvertedNotice,0,agora);return;
+  }
+  if(!truehdVisto) { truehdVisto=1;truehdDesde=agora; }
+  if(pgDesde && (float)(agora-pgDesde)/1000.0f<PG_SEG_TOTAL) truehdDesde=agora;
+  if(!nv_dts_notice_show(&truehdConvertedNotice,agora-truehdDesde>=1500u,agora))return;
+  // Reuse the existing localized conversion sentence, changing only its
+  // internationally named codec token. All current translations contain DTS.
+  static char text[256];
+  const char *localized=i18n("Áudio DTS convertido nesta TV"),*codec=strstr(localized,"DTS");
+  if(codec)snprintf(text,sizeof text,"%.*sTrueHD%s",(int)(codec-localized),localized,codec+3);
+  else snprintf(text,sizeof text,"TrueHD audio converted on this TV");
+  PlrIlhaPedido pd={0};pd.icone="aj_audio-lines";pd.texto=text;
+  pd.semFim=1;pd.aberta=1;plrilha_pedir(&pd);
+}
+#endif
+
 void player_desenhar(Uint32 agora) {
   if (!player_visivel()) return;
   // Keep the established reading windows while their island content is hidden.
@@ -7842,21 +7882,36 @@ void player_desenhar(Uint32 agora) {
     static char dtsAvisoFonte[NV_MEDIA_URL_MAX];
     static unsigned dtsAvisados, dtsSessaoVista;
     static int dtsAvisoVivo = -1;
+    // O AVISO DE CONVERSAO PERTENCE A FAIXA (dono 09/11): outra faixa de audio
+    // escolhida a mao anuncia de novo — de DTS para AC-3 e de volta, ou de uma
+    // faixa DTS para outra — depois do repouso dela. Seek e recarga mantem a
+    // faixa e anunciam uma vez. A identidade e a de memoria: uma faixa
+    // recuperada do MKV tem indice nativo -1 e ainda assim identidade propria.
+    static int dtsAvisoFaixa = -1;
+    static NvDtsNotice dtsConvertidoAviso;
     int e = player_carregando() || ehCanal() ? VIDEO_DTS_NENHUM : video_dts_estado();
+    { const VideoFaixa *ft = video_audio(video_audio_atual());
+      if (nv_dts_notice_track(&dtsConvertidoAviso, &dtsAvisoFaixa,
+                              ft ? video_audio_numero_memoria(ft) : -1)) dtsDesde = agora; }
     if (dtsSessaoVista != dtsAvisoSessao || strcmp(dtsAvisoFonte, video_url_atual())) {
       dtsSessaoVista = dtsAvisoSessao;
       snprintf(dtsAvisoFonte, sizeof dtsAvisoFonte, "%s", video_url_atual());
-      dtsAvisados = 0; dtsAvisoVivo = -1; dtsVisto = -1;
+      dtsAvisados = 0; dtsAvisoVivo = -1; dtsVisto = -1; dtsAvisoFaixa = -1;
+      dtsConvertidoAviso = (NvDtsNotice){0};
     }
     if (e != dtsVisto) { dtsVisto = e; dtsDesde = agora; dtsAvisoVivo = -1; }
     // The opening guide comes first: DTS notices wait for its reading window.
     if (pgDesde && (float)(agora - pgDesde) / 1000.0f < PG_SEG_TOTAL) dtsDesde = agora;
+    int convertidoVivo = nv_dts_notice_show(&dtsConvertidoAviso,
+        e == VIDEO_DTS_CONVERTIDO && agora - dtsDesde >= 1500u, agora);
     if (e != VIDEO_DTS_NENHUM && e != VIDEO_DTS_PREPARANDO && agora - dtsDesde >= 1500u) {
       Uint32 dur = e == VIDEO_DTS_FALHOU || e == VIDEO_DTS_SEM_SOM ? 10000u : 5000u;
-      if (dtsAvisoVivo != e && !(dtsAvisados & (1u << e)) && agora - dtsDesde < 1500u + dur) {
+      if (e != VIDEO_DTS_CONVERTIDO && dtsAvisoVivo != e &&
+          !(dtsAvisados & (1u << e)) && agora - dtsDesde < 1500u + dur) {
         dtsAvisados |= 1u << e; dtsAvisoVivo = e;
       }
-      if (dtsAvisoVivo == e && agora - dtsDesde < 1500u + dur) {
+      if (e == VIDEO_DTS_CONVERTIDO ? convertidoVivo
+          : dtsAvisoVivo == e && agora - dtsDesde < 1500u + dur) {
         PlrIlhaPedido pd;
         memset(&pd, 0, sizeof pd);
         pd.icone = "dts";
@@ -7869,6 +7924,9 @@ void player_desenhar(Uint32 agora) {
         plrilha_pedir(&pd);
       }
     } }
+#ifdef NV_DV_TRUEHD_TEST
+  avisarTruehd(agora);
+#endif
   // MINIATURAS FEITAS NO APARELHO (miniatura_android.h): o conjunto do titulo ficou completo.
   int thumbnailMilestone = miniatura_status_agora();
   if (thumbnailMilestone) {

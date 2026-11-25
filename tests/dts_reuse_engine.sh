@@ -8,7 +8,7 @@ flags=(-std=gnu11 -O1 -g -Wall -Wextra -Werror -Wno-misleading-indentation)
 if [[ $(uname -s) == Darwin ]]; then flags+=(-Wno-implicit-const-int-float-conversion); fi
 if [[ ${SANITIZE:-0} == 1 ]]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc "${flags[@]}" -DNV_DTS_WEBOS_RECOVERY -I"$prefix/include" tests/dts_reuse_engine.c \
-  -o "$task_tmp/test" -L"$prefix/lib" -lavformat -lavcodec -lswresample -lavutil -lm -lpthread -ldl
+  -o "$task_tmp/test" -L"$prefix/lib" -lavformat -lavcodec -lswresample -lavutil -lz -lm -lpthread -ldl
 ffmpeg -hide_banner -loglevel error \
   -f lavfi -i 'color=size=64x64:rate=25:duration=4' \
   -f lavfi -i 'sine=frequency=300:sample_rate=44100:duration=4' \

@@ -281,6 +281,10 @@ int dts_pipeline_feed(DtsPipeline *p,const DtsFrame *f) {
    pthread_mutex_lock(&fixture);feeds++;pthread_mutex_unlock(&fixture);return 0;
   }
  }
+ if(scenario==SUSTAINED && atomic_load(&jam_native)) {
+  atomic_fetch_add(&native_full,1);
+  pthread_mutex_lock(&fixture);feeds++;pthread_mutex_unlock(&fixture);return 0;
+ }
  pthread_mutex_lock(&fixture);feeds++;
  if(backpressure_left) {
   if(pending_serial && pending_serial!=f->data[0]) bad_retry=1;
@@ -539,6 +543,22 @@ int main(int argc,char **argv) {
   dts_playback_status(p,&s);assert(!s.failed);dts_playback_close(p);
   puts("DTS refill pauses and resumes after contiguous bytes recover.");return 0;
  }
+ if(!strcmp(argv[1],"refillfull")) {
+  /* Native queue persistently full below the 2 s fed goal (PR aee8639fc):
+   * with the preroll complete and >= 0.25 s of both streams fed, the wait
+   * ends once contiguous bytes return — it does not wait for the 2 s goal,
+   * and native fullness alone never skips an unfilled network gap. */
+  scenario=SUSTAINED;p=start(0,4,NULL,0,0);wait_count(&accepted,26);
+  emit("{\"currentTime\":{\"currentTime\":1000}}");
+  atomic_store(&buffer_contiguous,0);atomic_store(&jam_native,1);
+  wait_count(&pauses,1);
+  for(int i=0;i<1500 && atomic_load(&native_full)<20;i++)nap();
+  assert(atomic_load(&native_full)>=20 && count(&plays)==1);
+  atomic_store(&buffer_contiguous,20*1048576LL);
+  wait_count(&plays,2);
+  dts_playback_status(p,&s);assert(!s.failed);dts_playback_close(p);
+  puts("DTS refill resumes on a persistently full native queue once contiguous bytes return.");return 0;
+ }
  if(!strcmp(argv[1],"latedv")) {
   // Probe missed RPU; the opened source is single-layer P8 (Matis94 614176d73).
   late_dv_fixture=1;scenario=NORMAL;dts_playback_next_dv(0);p=start(0,4,NULL,0,0);
@@ -627,7 +647,8 @@ int main(int argc,char **argv) {
   dts_playback_next_seamless(1);p=start(0,4,NULL,0,0);wait_count(&accepted,4);
   emit("{\"currentTime\":{\"currentTime\":1000}}");atomic_store(&reposition_barrier,1);
   dts_playback_audio_at(p,9,12.5);
-  for(int n=0;n<1500 && !atomic_load(&reposition_entered);n++)nap();assert(atomic_load(&reposition_entered));
+  for(int n=0;n<1500 && !atomic_load(&reposition_entered);n++)nap();
+  assert(atomic_load(&reposition_entered));
   dts_playback_close(p);assert(count(&creates)==1 && count(&opens)==1 && count(&flushes)==0);
   assert(count(&destroys)==1);
  } else if(!strcmp(argv[1],"seamlesspaused")) {
