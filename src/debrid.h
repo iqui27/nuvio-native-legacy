@@ -195,5 +195,11 @@ char *debrid_tb_mylist(int usenet, int id, int pagina, int fresco, int *st);
 int   debrid_tb_link(int usenet, int id, int arquivo, char *url, unsigned n);
 int   debrid_tb_adicionar(const char *hash);
 int   debrid_tb_airlock(int usenet, int item, int ligar, char *detalhe, unsigned n);
+// BLOCKS. Deletes torrent `item` from the account (controltorrent delete): only
+// before re-adding the same hash (tbabrir.c, a stuck item). 1 = done.
+int   debrid_tb_apagar(int item);
+// BLOCKS. 1 = the hash is cached on TorBox (checkcached), 0 = not, -1 = no
+// answer or no key (tbabrir.c, before deleting a stuck item).
+int   debrid_tb_em_cache(const char *hash);
 
 #endif
