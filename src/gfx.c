@@ -3,6 +3,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include "gfx_smartphone_png.h"
+#include <unistd.h>   /* access: gfx_icone_existe */
 #include "layout.h"
 #include <stdio.h>
 #include <string.h>
@@ -4783,6 +4784,26 @@ void gfx_icone(GfxRect r, const char *nome, float cr, float cg, float cb, float 
   if (!t) return;
   gfx_tex_aspect_atual = 0.0f;   // o arquivo ja e quadrado
   gfx_rect(r, t, GFX_MARCA, 0, 0, 0, 0.0f, cr, cg, cb, ca);
+}
+
+int gfx_icone_existe(const char *nome) {
+  char cam[600];
+  if (!nome || !nome[0] || !dirIcones[0]) return 0;
+  snprintf(cam, sizeof cam, "%s/%s.png", dirIcones, nome);
+  return access(cam, R_OK) == 0;
+}
+
+void gfx_icone_cor(GfxRect r, const char *nome, float ca) {
+  char cam[600];
+  GLuint t;
+  if (!nome || !nome[0] || ca <= 0.0f || r.w <= 0.0f || r.h <= 0.0f || !dirIcones[0]) return;
+  snprintf(cam, sizeof cam, "%s/%s.png", dirIcones, nome);
+  t = tex_obter_larg(cam, r.w);
+  if (!t) return;
+  gfx_tex_aspect_atual = 0.0f;
+  // GFX_TEXTO preserva o RGB da textura (ver GFX_MARCA em gfx.h): e o caminho
+  // da logo de titulo clara, a mesma imagem colorida sem tinta.
+  gfx_rect(r, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1.0f, 1.0f, 1.0f, ca);
 }
 
 void gfx_recorte(float x, float y, float w, float h) {

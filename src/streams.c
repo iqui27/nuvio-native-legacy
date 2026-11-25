@@ -16,6 +16,7 @@
 #include "tex_cache.h"
 #include "catalogo.h"
 #include "limpa.h"
+#include "formatador.h"
 #include "vazao.h"
 #include <ctype.h>
 #include <arpa/inet.h>
@@ -691,6 +692,13 @@ void stream_definir_lista(const Stream *l, int qtd) {
 static int selosPacoteDa(Stream *s);
 static void selosAgendar(int ini, int qtd);
 static void textoAddonLimpar(void);
+// O que o addon disse do torrent (nome do arquivo, trackers) vai para o
+// resolvedor do debrid, que monta o magnet e escolhe o arquivo como o NuvioTV.
+static void dicasDebrid(const Stream *v, int qtd) {
+  for (int i = 0; i < qtd; i++)
+    if (v[i].infoHash[0])
+      debrid_dica_fonte(v[i].infoHash, v[i].fileIdx, v[i].arquivoReal ? v[i].arquivo : "", v[i].fontes);
+}
 void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   int i, k = 0;
   Stream *nova = l && qtd > 0 ? malloc(sizeof(Stream) * (size_t)qtd) : NULL;
@@ -709,6 +717,7 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
     // "ligue o P2P", nunca fingir que o addon nao mandou nada.
     if (!fonteOferecida(&l[i])) contarDescartada(&l[i]);
   for (i = 0; i < k && nova; i++) { nova[i].selosPacoteVer = 0; filtroCompletar(&nova[i]); filtroEscopo(&nova[i]); }   // os selos saem do fio de fundo (selosAgendar)
+  if (nova) dicasDebrid(nova, k);
   pthread_mutex_lock(&verTrava);
   free(lista); lista = nova; n = nova ? k : 0; atual = -1;
   textoAddonLimpar();
@@ -801,6 +810,7 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
     return;
   }
   memcpy(lista + n, nova, sizeof(Stream) * (size_t)k);
+  dicasDebrid(nova, k);
   for (i = 0; i < k; i++)
     chave[n + i] = ((unsigned)(ordemAddon < 0 ? 0 : ordemAddon) << 16) | (unsigned)(i & 0xFFFF);
   // Insercao ordenada das novas em `exib`: as de antes ja estao em ordem, e
@@ -3639,17 +3649,27 @@ static int linhaAnt = -1, focoVisto = -1;
 
 // MODO "DO ADDON" (Ajustes > Texto das fontes; dono, 02/10: "tem que ter a
 // opcao de receber pronto o texto que alguns addons mandam"). O titulo e o
-// `name` do addon numa linha so, e embaixo a `description` linha a linha, como
-// veio — o AIOStreams do dono manda "11.1 GB | 30.1 Mbps |", o grupo, os
-// idiomas e o arquivo, cada um numa linha. Glifo que a Inter nao tem (o ⚡ e o
-// ⚑ do formatador) cai fora em text.c, sem virar quadrado.
-#define FOLHA_ADDON_LINHAS 5
-// Fora do foco a linha mostra so as 2 primeiras linhas do addon; a linha em
-// foco abre (mola abreFoco) e mostra todas, ate FOLHA_ADDON_LINHAS. Com 5
-// linhas em todas as fontes a lista caberia em 3 telas; assim ela continua
-// densa e a que se esta lendo abre inteira.
+// `name` do addon, e embaixo a `description` linha a linha, como veio — o
+// AIOStreams do dono manda "11.1 GB | 30.1 Mbps |", o grupo, os idiomas e o
+// arquivo, cada um numa linha.
+//
+// TUDO A MOSTRA NA LINHA EM FOCO (dono, 17/11: "remove row limitation so all
+// info can be seen"). Antes: 5 linhas de descricao, 6 pecas por linha, 96 bytes
+// por peca e cada linha cortada na borda. Agora a linha em foco abre o nome e
+// a descricao inteiros, e a linha comprida QUEBRA em vez de ser cortada; fora
+// do foco ficam o primeiro trecho do nome e as 2 primeiras linhas, como antes.
+// O limite que sobra e o do parser (Stream.rotulo / Stream.descricao).
+//
+// ICONES (formatador.h): os emojis e simbolos dos formatadores viram icone em
+// qualquer lugar do nome e da descricao, no estilo dos Ajustes (Padrao:
+// Twemoji em cores e o glifo dos simbolos; Minimalista: Lucide na cor do
+// texto). Bandeiras viram a bandeira. Emoji fora da lista some, como antes.
 #define FOLHA_ADDON_FECHADA 2
 #define FOLHA_ADDON_LD     28.0f
+#define FOLHA_ADDON_TD     40.0f    // altura de cada trecho do nome
+#define ADDON_ICONE_W      30.0f    // 22 de icone + 8
+#define ADDON_BANDEIRA_W   36.0f    // 28 de bandeira (4:3) + 8
+#define ADDON_GAP          18.0f    // depois de cada texto
 static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   size_t k = 0;
   while (n && (*ini == ' ' || *ini == '\t')) { ini++; n--; }
@@ -3660,77 +3680,47 @@ static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   }
   d[k] = 0;
 }
-// Emoji do formatador -> icone Lucide (aj_<nome>.png). A TV nao tem emoji
-// colorido; o que nao esta aqui sai limpo em nv_limpar_texto (sem quadrado).
-// Um emoji pode vir com o seletor de variacao U+FE0F (EF B8 8F) colado.
-static const struct { const char *emoji, *icone; } EMOJI_ICONE[] = {
-  { "\xF0\x9F\x92\xBE", "aj_hard-drive" },   // 💾
-  { "\xF0\x9F\x91\xA4", "aj_users" },        // 👤
-  { "\xF0\x9F\x8E\x9E", "aj_film" },         // 🎞
-  { "\xF0\x9F\x94\x8A", "aj_volume-2" },     // 🔊
-  { "\xF0\x9F\x8C\x90", "aj_globe" },        // 🌐
-  { "\xE2\x9A\x99",     "aj_settings-2" },  // ⚙
-  { "\xE2\x9A\xA1",     "aj_zap" },         // ⚡
-  { "\xF0\x9F\x93\xA6", "aj_package" },      // 📦
-  { "\xF0\x9F\x8F\xB7", "aj_tag" },          // 🏷
-  { "\xE2\x8F\xB1",     "aj_clock" },       // ⏱
-};
-#define ADDON_PECAS 6
-typedef struct { int n; const char *ic[ADDON_PECAS]; char tx[ADDON_PECAS][96]; } LinhaAddon;
-static const char *emojiIcone(const char *p, size_t *len) {
-  for (size_t k = 0; k < sizeof EMOJI_ICONE / sizeof EMOJI_ICONE[0]; k++) {
-    size_t n = strlen(EMOJI_ICONE[k].emoji);
-    if (strncmp(p, EMOJI_ICONE[k].emoji, n)) continue;
-    if (!strncmp(p + n, "\xEF\xB8\x8F", 3)) n += 3;
-    *len = n;
-    return EMOJI_ICONE[k].icone;
+static void legendaProvedor(const Stream *s, char *buf, size_t tam);
+// ARTE QUE NAO VEIO. A atualizacao pelo app do .tpk troca so a libnuvio.so e a
+// arte fica a da instalacao: sem os PNGs novos, cada icone ocupava o seu lugar
+// e nao desenhava nada (buracos no meio do texto). Bandeira sem PNG volta ao
+// codigo do idioma; icone sem PNG usa o do outro estilo, ou some como antes
+// desta mudanca. Na .apk e no .ipk a arte vem sempre inteira e isto so confirma.
+// O disco e consultado uma vez por nome (a arte nao muda com o app aberto).
+static int bandeiraExiste(const char *cc) {
+  static struct { char cc[8]; signed char tem; } visto[400];
+  static int nVisto;
+  char nome[32];
+  for (int i = 0; i < nVisto; i++)
+    if (!strcmp(visto[i].cc, cc)) return visto[i].tem;
+  snprintf(nome, sizeof nome, "formatador/fl_%s", cc);
+  int tem = gfx_icone_existe(nome);
+  if (nVisto < (int)(sizeof visto / sizeof *visto) && strlen(cc) < sizeof visto[0].cc) {
+    snprintf(visto[nVisto].cc, sizeof visto[nVisto].cc, "%s", cc);
+    visto[nVisto++].tem = (signed char)tem;
   }
+  return tem;
+}
+#define ADDON_ICONES_MAX 512
+static const char *addonIcone(int idx, int minimal, int *cor) {
+  static signed char tem[2][ADDON_ICONES_MAX];   // 0 = nao visto, 1 = existe, -1 = falta
+  if (idx < 0 || idx >= ADDON_ICONES_MAX) { if (cor) *cor = 0; return NULL; }
+  for (int vez = 0; vez < 2; vez++) {
+    int m = vez ? !minimal : minimal;
+    const char *nome = formatador_icone_nome(idx, m, cor);
+    if (!nome || !nome[0]) continue;
+    if (!tem[m][idx]) tem[m][idx] = gfx_icone_existe(nome) ? 1 : -1;
+    if (tem[m][idx] > 0) return nome;
+  }
+  if (cor) *cor = 0;
   return NULL;
 }
-// Uma linha crua do addon vira pecas "[icone] texto". O texto de cada peca
-// passa pelo limpador do #144 (versalete, subscrito, glifo que a fonte nao
-// tem) antes de ir para a tela, como o resto da folha.
-static void pecasAddon(const char *ini, size_t n, LinhaAddon *L) {
-  char cru[1024];
-  const char *p, *ate;
-  size_t len;
-  L->n = 0;
-  linhaLimpa(cru, sizeof cru, ini, n);
-  p = cru;
-  ate = cru + strlen(cru);
-  while (p < ate && L->n < ADDON_PECAS) {
-    const char *ic = NULL, *q = p;
-    char seg[512];
-    size_t k;
-    // O icone (se a peca abre com um) e o texto ate o proximo emoji conhecido.
-    if (!(ic = emojiIcone(p, &len))) len = 0;
-    q = p + len;
-    for (k = 0; q + k < ate; k++) { size_t l2; if (emojiIcone(q + k, &l2)) break; }
-    snprintf(seg, sizeof seg, "%.*s", (int)(k < sizeof seg - 1 ? k : sizeof seg - 1), q);
-    nv_limpar_texto(seg, L->tx[L->n], sizeof L->tx[0], NV_LIMPA_UMA_LINHA);
-    nv_aparar_separadores(L->tx[L->n]);   // "31.4 GB | 43.2 Mbps |" -> sem o | solto
-    if (ic || L->tx[L->n][0]) L->ic[L->n++] = ic;
-    p = q + k;
-  }
-}
-static int linhasAddon(const Stream *s, LinhaAddon *out, int max) {
-  const char *p = s->descricao;
-  int nl = 0;
-  while (*p && nl < max) {
-    const char *f = strchr(p, '\n');
-    size_t n = f ? (size_t)(f - p) : strlen(p);
-    pecasAddon(p, n, &out[nl]);
-    if (out[nl].n) nl++;
-    if (!f) break;
-    p = f + 1;
-  }
-  return nl;
-}
-static void tituloAddon(const Stream *s, char *buf, size_t tam) {
-  char t[sizeof s->rotulo], lim[sizeof s->rotulo];
+// O nome numa linha so (espacos e quebras viram um espaco). O ⚡ do comeco sai
+// quando o app ja desenha o proprio raio de "em cache" (#499).
+static const char *nomeAddon(const Stream *s, char *t, size_t tam) {
   size_t k = 0;
   int esp = 0;
-  for (const char *p = s->rotulo; *p && k + 1 < sizeof t; p++) {
+  for (const char *p = s->rotulo; *p && k + 1 < tam; p++) {
     unsigned char c = (unsigned char)*p;
     if (c < 33) { esp = k > 0; continue; }
     if (esp) { t[k++] = ' '; esp = 0; }
@@ -3743,7 +3733,12 @@ static void tituloAddon(const Stream *s, char *buf, size_t tam) {
     if (!strncmp(nome, "\xEF\xB8\x8F", 3)) nome += 3;
     while (*nome == ' ') nome++;
   }
-  nv_limpar_texto(nome, lim, sizeof lim, NV_LIMPA_UMA_LINHA);
+  return nome;
+}
+// So o texto do nome, sem icones (teste #499 e log).
+static void tituloAddon(const Stream *s, char *buf, size_t tam) {
+  char t[sizeof s->rotulo], lim[sizeof s->rotulo];
+  nv_limpar_texto(nomeAddon(s, t, sizeof t), lim, sizeof lim, NV_LIMPA_UMA_LINHA);
   snprintf(buf, tam, "%s", lim[0] ? lim : s->provedor);
 }
 
@@ -3751,34 +3746,310 @@ static void tituloAddon(const Stream *s, char *buf, size_t tam) {
 // O texto cru nao muda com foco/altura; cada indice e limpo uma vez. Acrescentar
 // preserva as cartas prontas, trocar a lista libera tudo. Texturas continuam
 // no cache de text.c (nao guardar GLuint que o LRU pode despejar).
+//
+// `pecas`: as linhas LOGICAS (0 = nome, 1.. = descricao), cada uma uma fila de
+// pecas de formatador_pecas, separadas por '\n'. `vis`: as linhas VISUAIS
+// (depois da quebra), cada uma aberta por "Vddd" (ddd = a linha logica) e
+// seguida das mesmas pecas; recalculada so quando a largura ou a fonte muda.
+// A quebra so MEDE (txt_largura): desenhar a linha em foco reusa os mesmos
+// trechos ja rasterizados fora do foco.
 typedef struct {
-  char titulo[96];
+  char titulo[sizeof ((Stream *)0)->rotulo];
   int nl;
-  LinhaAddon linhas[FOLHA_ADDON_LINHAS];
+  char *pecas; size_t nPecas;
+  char *vis; size_t nVis;
+  float kw0, kw; int kFonte, kMin, linT, linD;
 } TextoAddon;
 static TextoAddon *textoAddon;
 static int textoAddonN, textoAddonCap;
+static float addonLargura = 0.0f;   // tr - tx do ultimo desenho; 0 = ainda nao desenhou
+static void textoAddonSoltar(TextoAddon *t) {
+  free(t->pecas); free(t->vis);
+  t->pecas = t->vis = NULL; t->nPecas = t->nVis = 0;
+}
 static void textoAddonLimpar(void) {
+  for (int i = 0; i < textoAddonN; i++) textoAddonSoltar(&textoAddon[i]);
   free(textoAddon); textoAddon = NULL; textoAddonN = textoAddonCap = 0;
+}
+static void textoAddonMontar(const Stream *s, TextoAddon *t) {
+  // Bandeira e lista de idiomas crescem o texto (bloco S..M..E leva os dois
+  // estilos: ate ~2x). Monta com folga de 3x e devolve o que sobrou: com
+  // R + 2D o nome cheio de bandeiras perdia o fim quando a descricao era curta.
+  size_t cap = 3 * (strlen(s->rotulo) + strlen(s->descricao)) + 64, k = 0;
+  char *o = malloc(cap + 1);
+  char nm[sizeof s->rotulo];
+  memset(t, 0, sizeof *t);
+  tituloAddon(s, t->titulo, sizeof t->titulo);
+  if (!o) return;
+  o[0] = 0;
+  { const char *nome = nomeAddon(s, nm, sizeof nm);
+    size_t k0 = k;
+    formatador_pecas(nome, strlen(nome), o, cap, &k, bandeiraExiste);
+    if (k == k0) {   // so enfeite, ou vazio: o nome do addon
+      size_t l = strlen(s->provedor);
+      if (k + l + 3 <= cap) { o[k++] = 'T'; memcpy(o + k, s->provedor, l + 1); k += l + 1; }
+    } }
+  for (const char *p = s->descricao; *p; ) {
+    const char *f = strchr(p, '\n');
+    size_t n = f ? (size_t)(f - p) : strlen(p), k0;
+    char cru[2048];
+    linhaLimpa(cru, sizeof cru, p, n);
+    if (k + 2 > cap) break;
+    o[k++] = '\n'; k0 = k;
+    if (formatador_pecas(cru, strlen(cru), o, cap, &k, bandeiraExiste) > 0) t->nl++;
+    else k = k0 - 1;   // linha so de enfeite: nao conta
+    if (!f) break;
+    p = f + 1;
+  }
+  o[k] = 0;
+  { char *justo = realloc(o, k + 1); if (justo) o = justo; }
+  t->pecas = o; t->nPecas = k;
 }
 static const TextoAddon *textoAddonDa(int i) {
   static TextoAddon reserva;
   if (textoAddonCap < n) {
     TextoAddon *t = realloc(textoAddon, (size_t)n * sizeof *t);
     if (!t) {
-      reserva.nl = linhasAddon(&lista[i], reserva.linhas, FOLHA_ADDON_LINHAS);
-      tituloAddon(&lista[i], reserva.titulo, sizeof reserva.titulo);
+      textoAddonSoltar(&reserva);
+      textoAddonMontar(&lista[i], &reserva);
       return &reserva;
     }
     textoAddon = t; textoAddonCap = n;
   }
   while (textoAddonN <= i) {
-    TextoAddon *t = &textoAddon[textoAddonN];
-    t->nl = linhasAddon(&lista[textoAddonN], t->linhas, FOLHA_ADDON_LINHAS);
-    tituloAddon(&lista[textoAddonN], t->titulo, sizeof t->titulo);
+    textoAddonMontar(&lista[textoAddonN], &textoAddon[textoAddonN]);
     textoAddonN++;
   }
   return &textoAddon[i];
+}
+
+// Pula uma peca e devolve o inicio da seguinte.
+static size_t addonPula(const char *o, size_t i) {
+  if (o[i] == 'S' || o[i] == 'M' || o[i] == 'E') return i + 1;   // bloco de estilo
+  return o[i] == 'I' ? i + 4 : i + 1 + strlen(o + i + 1) + 1;
+}
+// O primeiro icone e o primeiro texto de uma linha logica (teste #479).
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))   // so o teste #479 chama
+#endif
+static int addonPrimeiraPeca(const TextoAddon *t, int linha, int *icone, const char **texto) {
+  size_t i = 0;
+  int l = 0;
+  *icone = -1; *texto = NULL;
+  if (!t->pecas) return 0;
+  while (i < t->nPecas && l < linha) { if (t->pecas[i] == '\n') { l++; i++; } else i = addonPula(t->pecas, i); }
+  if (l != linha) return 0;
+  for (; i < t->nPecas && t->pecas[i] != '\n'; i = addonPula(t->pecas, i)) {
+    if (t->pecas[i] == 'I' && *icone < 0 && !*texto) *icone = atoi((char[4]){ t->pecas[i+1], t->pecas[i+2], t->pecas[i+3], 0 });
+    if (t->pecas[i] == 'T' && !*texto) *texto = t->pecas + i + 1;
+  }
+  return 1;
+}
+
+// QUEBRA. O maior comeco de `s` que cabe em `w`, de preferencia depois de um
+// espaco ou de . - _ / | (nome de arquivo nao tem espaco). Ao menos um
+// caractere, para nunca travar numa coluna estreita demais.
+// `meio` = 1 quando o corte cai DENTRO de uma palavra (nenhuma quebra no que
+// cabe). No meio da linha (`inicio` 0) qualquer quebra serve; no comeco dela
+// so a dos ultimos 2/3, para a linha nao ficar quase vazia.
+static int addonQuebraEm(char c) { return c == ' ' || c == '.' || c == '-' || c == '_' || c == '/' || c == '|'; }
+static size_t addonCorte(TxtEstilo est, const char *s, float w, int inicio, int *meio) {
+  size_t n = strlen(s), lo = 0, hi = n, melhor;
+  char tmp[2048];
+  if (n >= sizeof tmp) n = hi = sizeof tmp - 1;
+  while (lo < hi) {   // busca binaria em fronteira de codepoint
+    size_t m = (lo + hi + 1) / 2;
+    while (m > lo && ((unsigned char)s[m] & 0xC0) == 0x80) m--;
+    if (m == lo) { size_t q = lo + 1; while (q < hi && ((unsigned char)s[q] & 0xC0) == 0x80) q++; m = q; }
+    memcpy(tmp, s, m); tmp[m] = 0;
+    if (txt_largura(est, tmp) <= w) { if (m == lo) break; lo = m; } else hi = m - 1;
+    if (hi < lo) hi = lo;
+  }
+  *meio = 0;
+  if (!lo) {
+    lo = 1; while (lo < n && ((unsigned char)s[lo] & 0xC0) == 0x80) lo++;
+    *meio = lo < n && s[lo] != ' ' && !addonQuebraEm(s[lo - 1]);
+    return lo;
+  }
+  if (lo >= n) return n;
+  melhor = lo;
+  *meio = s[lo] != ' ';
+  for (size_t j = lo; j > (inicio ? lo / 3 : 0); j--)
+    if (addonQuebraEm(s[j - 1])) { melhor = j; *meio = 0; break; }
+  return melhor;
+}
+static int addonPoe(char **v, size_t *k, size_t *cap, const char *src, size_t n) {
+  if (*k + n + 2 > *cap) {
+    size_t nc = (*cap + n + 2) * 2;
+    char *x = realloc(*v, nc);
+    if (!x) return 0;
+    *v = x; *cap = nc;
+  }
+  memcpy(*v + *k, src, n); *k += n; (*v)[*k] = 0;
+  return 1;
+}
+// Larguras: o nome divide a linha com a coluna do addon (direita) e o raio de
+// cache; a descricao usa a largura toda. As mesmas contas do desenho.
+static float addonColuna(const Stream *s) {
+  char pv[160];
+  float w;
+  legendaProvedor(s, pv, sizeof pv);
+  w = (float)txt_largura(TXT_PG_FIM, pv);
+  return (w > 340.0f ? 340.0f : w) + 28.0f;
+}
+static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
+  float L = addonLargura > 0 ? addonLargura
+          : FOLHA_W - FOLHA_PAD_E - FOLHA_PAD_D - 2 * FOLHA_TXT;
+  // So a 1a linha do nome divide espaco com a coluna do addon (uma linha de
+  // altura); da 2a em diante o nome usa a largura toda, menos o raio de cache.
+  float wNome2 = L - (cacheConfirmado(s) ? 30.0f : 0.0f);
+  float w0 = L - addonColuna(s) - (cacheConfirmado(s) ? 30.0f : 0.0f);
+  int fonte = (int)txt_fonte_interface();
+  // O estilo muda a largura (bandeira no Padrao, "EN" no Minimalista): as
+  // pecas de um estilo so entram na quebra dele (blocos S..M..E).
+  int minimal = ajustes_fonte_icones_minimalista(), estilo = 0;
+  char *v = NULL;
+  size_t k = 0, cap = 0, j = 0;
+  int logica = 0, linT = 0, linD = 0;
+  (void)i;
+  if (w0 < 120.0f) w0 = 120.0f;
+  if (t->vis && t->kw0 == w0 && t->kw == L && t->kFonte == fonte && t->kMin == minimal) return;
+  if (!t->pecas) return;
+  while (j <= t->nPecas) {
+    // Uma linha logica: [j, fim)
+    size_t fim = j;
+    TxtEstilo est = logica ? TXT_PG_FIM : TXT_CALLOUT;
+    float w = logica ? L : w0, x = 0;
+    char cab[8];
+    while (fim < t->nPecas && t->pecas[fim] != '\n') fim = addonPula(t->pecas, fim);
+    snprintf(cab, sizeof cab, "V%03d", logica > 999 ? 999 : logica);
+    if (!addonPoe(&v, &k, &cap, cab, 4)) break;
+    if (logica) linD++; else linT++;
+    for (size_t q = j; q < fim; q = addonPula(t->pecas, q)) {
+      const char *pc = t->pecas + q;
+      if (*pc == 'S') { estilo = 1; continue; }
+      if (*pc == 'M') { estilo = 2; continue; }
+      if (*pc == 'E') { estilo = 0; continue; }
+      if ((estilo == 1 && minimal) || (estilo == 2 && !minimal)) continue;
+      if (*pc == 'I' && !addonIcone(atoi((char[4]){ pc[1], pc[2], pc[3], 0 }), minimal, NULL))
+        continue;   // sem PNG em nenhum estilo: nem lugar ocupa (ver addonIcone)
+      if (*pc == 'I' || *pc == 'B') {
+        float lw = *pc == 'I' ? ADDON_ICONE_W : ADDON_BANDEIRA_W;
+        if (x > 0 && x + lw - 8 > w) { addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else { linT++; w = wNome2; } x = 0; }
+        addonPoe(&v, &k, &cap, pc, *pc == 'I' ? 4 : strlen(pc) + 1);
+        x += lw;
+        continue;
+      }
+      const char *r = pc + 1;
+      while (*r) {
+        float lw = (float)txt_largura(est, r);
+        if (x + lw <= w) { addonPoe(&v, &k, &cap, "T", 1); addonPoe(&v, &k, &cap, r, strlen(r) + 1); x += lw + ADDON_GAP; break; }
+        int meio = 0;
+        size_t c = x > 0 && w - x < 80.0f ? 0 : addonCorte(est, r, w - x, x <= 0, &meio);
+        // Pouco espaco sobrando, ou a palavra nao cabe inteira no resto da
+        // linha ("TAMTAR|O", "TrueH|D"): ela comeca na linha de baixo. Cortar
+        // dentro da palavra so quando ela sozinha passa da linha toda.
+        if (x > 0 && (!c || meio)) {
+          addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else { linT++; w = wNome2; } x = 0; continue;
+        }
+        size_t ce = c;
+        while (ce > 0 && r[ce - 1] == ' ') ce--;
+        if (ce) { addonPoe(&v, &k, &cap, "T", 1); addonPoe(&v, &k, &cap, r, ce); addonPoe(&v, &k, &cap, "", 1); }
+        addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else { linT++; w = wNome2; } x = 0;
+        r += c;
+        while (*r == ' ') r++;
+      }
+    }
+    if (fim >= t->nPecas) break;
+    j = fim + 1; logica++;
+  }
+  free(t->vis);
+  t->vis = v; t->nVis = k;
+  t->kw0 = w0; t->kw = L; t->kFonte = fonte; t->kMin = minimal;
+  t->linT = linT ? linT : 1; t->linD = linD;
+}
+// Quantos trechos de nome e de descricao a linha `i` tem na largura atual.
+static void addonLinhas(int i, int *linT, int *linD) {
+  const TextoAddon *c = textoAddonDa(i);
+  TextoAddon *t = (TextoAddon *)c;
+  addonQuebrar(i, &lista[i], t);
+  *linT = t->vis ? t->linT : 1;
+  *linD = t->vis ? t->linD : t->nl;
+}
+// Altura do nome (secao 0) com `abr` (0..1) abrindo o 2o trecho em diante.
+static float addonAlturaNome(int linT, float abr) {
+  return FOLHA_ADDON_TD + (linT > 1 ? (linT - 1) * FOLHA_ADDON_TD * abr : 0.0f);
+}
+// Linhas de descricao a mostra: as 2 primeiras sempre, o resto com `abr`.
+static float addonLinhasDesc(int linD, float abr) {
+  return linD > FOLHA_ADDON_FECHADA ? FOLHA_ADDON_FECHADA + (linD - FOLHA_ADDON_FECHADA) * abr : (float)linD;
+}
+// Desenha uma secao (0 = nome, 1 = descricao) a partir de `y`. `abr` (0..1)
+// abre o que passa do fechado: o 2o trecho do nome em diante e a descricao
+// depois da 2a linha. Fora do foco o nome mostra o 1o trecho sem "…": o mesmo
+// trecho que a linha em foco desenha (#479: foco nao rasteriza texto novo).
+// `maxw2`: largura das linhas do nome depois da 1a (a coluna do addon so
+// divide a 1a; ver addonQuebrar). Na descricao, igual a `maxw`.
+static void addonDesenhar(int i, int secao, float tx, float y, float maxw, float maxw2,
+                          int sel, int apagada, float abr, float anim) {
+  const TextoAddon *t = textoAddonDa(i);
+  int minimal = ajustes_fonte_icones_minimalista();
+  int nVis = 0, base = 255, c = 0, pula = 1, logica = -1;
+  float x = tx, ly = y, ak = anim, lim = maxw;
+  if (!t->vis) return;
+  for (size_t q = 0; q < t->nVis; ) {
+    const char *pc = t->vis + q;
+    if (*pc == 'V') {
+      logica = atoi((char[4]){ pc[1], pc[2], pc[3], 0 });
+      q += 4;
+      if ((logica == 0) != (secao == 0)) { pula = 1; continue; }
+      if (secao == 0) {
+        ly = y + nVis * FOLHA_ADDON_TD;
+        lim = nVis ? maxw2 : maxw;
+        base = 255;
+        c = apagada ? (sel ? 150 : 105) : (sel ? 255 : 205);
+        ak = nVis >= 1 ? anim * abr : anim;
+        pula = nVis >= 1 && abr < .02f;
+      } else {
+        ly = y + nVis * FOLHA_ADDON_LD;
+        // A primeira linha do addon costuma ser a de numeros (tamanho, taxa):
+        // um degrau mais clara. As outras no cinza da especificacao.
+        base = logica == 1 ? 215 : 170;
+        c = logica == 1 ? (sel ? 215 : 180) : (sel ? 170 : 130);
+        ak = nVis >= FOLHA_ADDON_FECHADA ? anim * abr : anim;
+        pula = nVis >= FOLHA_ADDON_FECHADA && abr < .02f;
+      }
+      nVis++;
+      x = tx;
+      continue;
+    }
+    if (pula) { q = addonPula(t->vis, q); continue; }
+    if (*pc == 'I') {
+      int cor = 0, idx = atoi((char[4]){ pc[1], pc[2], pc[3], 0 });
+      const char *nome = addonIcone(idx, minimal, &cor);
+      float iy = ly + (secao == 0 ? 9 : 3);   // na altura do texto
+      if (!nome) { q = addonPula(t->vis, q); continue; }
+      // Emoji em cores fora do foco: um degrau mais apagado, como o texto.
+      if (cor) gfx_icone_cor((GfxRect){x, iy, 22, 22}, nome, ak * (sel ? 1.0f : .8f));
+      else gfx_icone((GfxRect){x, iy, 22, 22}, nome, c / 255.0f, c / 255.0f, c / 255.0f, ak);
+      x += ADDON_ICONE_W;
+    } else if (*pc == 'B') {
+      char nome[32];
+      snprintf(nome, sizeof nome, "formatador/fl_%s", pc + 1);
+      gfx_icone_cor((GfxRect){x, ly + (secao == 0 ? 10 : 4), 28, 21}, nome, ak * (sel ? 1.0f : .8f));
+      x += ADDON_BANDEIRA_W;
+    } else if (*pc == 'T') {
+      float resto = lim - (x - tx);
+      if (resto > 20) {
+        TxtLinha lp = secao == 0 ? txt_linha_corta(TXT_CALLOUT, pc + 1, 255, 255, 253, 255, resto)
+                                 : txt_linha_corta(TXT_PG_FIM, pc + 1, base, base, base, 255, resto);
+        if (secao == 0) txt_desenhar_tom(lp, x, ly, c / 255.0f, c / 255.0f, (c - 2) / 253.0f, ak);
+        else txt_desenhar_tom(lp, x, ly, (float)c / base, (float)c / base, (float)c / base, ak);
+        x += lp.w + ADDON_GAP;
+      }
+    }
+    q = addonPula(t->vis, q);
+  }
 }
 
 // O mesmo indicador nas duas apresentacoes, sem depender de emoji na fonte
@@ -4228,10 +4499,18 @@ static int temMarca(int i, int automatica) {
 static float alturaLinha(int i, int automatica, float abertura) {
   float h = FOLHA_LINHA_H + (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
   if (ajustes_fonte_texto_addon()) {
-    int nl = textoAddonDa(i)->nl;
-    float vis = nl > FOLHA_ADDON_FECHADA ? FOLHA_ADDON_FECHADA + (nl - FOLHA_ADDON_FECHADA) * abertura : (float)nl;
-    h = 20 + 40 + vis * FOLHA_ADDON_LD + 18 + (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
+    // So mede (quebra) o que precisa: fechada, com 2+ linhas logicas, a altura
+    // ja e nome + 2 linhas. Medir as ~300 fontes de uma lista longa ao abrir a
+    // folha custaria a abertura inteira na TV; a quebra das linhas a mostra
+    // acontece no desenho (addonLinhas tem cache por largura).
+    int linT = 1, linD = textoAddonDa(i)->nl;
+    if (abertura > .001f || linD < FOLHA_ADDON_FECHADA) addonLinhas(i, &linT, &linD);
+    h = 20 + addonAlturaNome(linT, abertura) + addonLinhasDesc(linD, abertura) * FOLHA_ADDON_LD + 18 +
+        (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
     if (h < 96) h = 96;
+    // Sem as linhas "Audio:" / "Legendas:" do app: o formatador ja escreve os
+    // idiomas do jeito dele (dono, 17/11).
+    return h;
   } else {
     // The connection line opens with the focused row even without a file name.
     float extra = (arquivoDa(&lista[i])[0] ? FOLHA_ARQ_H : 0) + FOLHA_FIT_H * fitLinhas(i);
@@ -5760,6 +6039,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   float lx=x+FOLHA_PAD_E, rw=w-FOLHA_PAD_E-FOLHA_PAD_D;
   float tx=lx+FOLHA_TXT, tr=lx+rw-FOLHA_TXT;
   const float oy=folhaOY;
+  addonLargura=tr-tx;   // a quebra do texto do addon mede nesta largura (alturaLinha)
   GfxRect ilhaR={x,0,w,NV_TELA_H};
   ajustes_acento(&ar,&ag,&ab);
   ai=(int)(ar*255.0f+.5f);
@@ -6079,14 +6359,28 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     // O SELO "MELHOR PARA ESTA TV" vai ao lado do titulo, so na fonte de maior
     // pontuacao (stream_automatico: MP4/DV que a LG toca primeiro). E a unica
     // forma cheia da lista inteira, e por isso o olho vai nela.
+    // NO MODO DO ADDON o nome e a descricao vem em pecas (icones, bandeiras,
+    // texto) e QUEBRAM: a linha em foco mostra tudo (addonDesenhar).
+    if(ajustes_fonte_texto_addon()) {
+      int apagada=s->naoVideo || (!canalFolha && stream_vod_falhou_ha(i) >= 0);
+      float cacheW=desenharCache(s,tx,cy,anim*(sel?1.0f:.8f));
+      // abertura da linha: a mesma mola da altura (alturaLinha)
+      float abr = grupo==1 && row==foco ? abreFoco : row==linhaAnt ? abreAnt : 0.0f;
+      int linT, linD;
+      tira=0;
+      addonLinhas(i,&linT,&linD);
+      addonDesenhar(i,0,tx+cacheW,cy,txtW-cacheW,(tr-tx)-cacheW,sel,apagada,abr,anim);
+      cy+=addonAlturaNome(linT,abr);   // sem desenharFaixas: ver alturaLinha
+      addonDesenhar(i,1,tx,cy,tr-tx,tr-tx,sel,apagada,abr,anim);
+      continue;
+    }
     { char nome[96];
       int c=(s->naoVideo || (!canalFolha && stream_vod_falhou_ha(i) >= 0))?(sel?150:105):(sel?255:205);   // apagada: aviso ou fonte falhada
       char ep[64]="";
       float cacheW=desenharCache(s,tx,cy,anim*(sel?1.0f:.8f));
       float nx=tx+cacheW, nw=txtW-cacheW;
       tira=0;
-      if(ajustes_fonte_texto_addon()) snprintf(nome,sizeof nome,"%s",textoAddonDa(i)->titulo);
-      else tituloConteudo(s,nome,sizeof nome,ep,sizeof ep);
+      tituloConteudo(s,nome,sizeof nome,ep,sizeof ep);
       { TxtLinha l=txt_linha_corta(TXT_CALLOUT,nome,255,255,253,255,nw);
         // LOGO DO TITULO no lugar do nome (ajuste em teste): a mesma logo do
         // hero/detalhe, encostada a esquerda numa caixa da altura do nome.
@@ -6113,36 +6407,6 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
           // Na linha de base do nome, nao no meio da altura dele.
           if(l.w+14+le.w<=nw) txt_desenhar_tom(le,nx+l.w+14,cy+l.h-le.h-3,ce/175.0f,ce/175.0f,ce/175.0f,anim); } } }
     cy+=40;
-    if(ajustes_fonte_texto_addon()) {
-      cy+=desenharFaixas(s,tx,cy,tr-tx,sel,anim);
-      const TextoAddon *t=textoAddonDa(i);
-      const LinhaAddon *ls=t->linhas;
-      int nl=t->nl;
-      // abertura da linha: a mesma mola da altura (alturaLinha)
-      float abr = grupo==1 && row==foco ? abreFoco : row==linhaAnt ? abreAnt : 0.0f;
-      for(int k=0;k<nl;k++){
-        float ak = anim;
-        if(k>=FOLHA_ADDON_FECHADA){ if(abr<.02f) break; ak = anim*abr; }
-        // A primeira linha do addon costuma ser a de numeros (tamanho, taxa):
-        // um degrau mais clara. As outras no cinza da especificacao.
-        int c = k==0 ? (sel?215:180) : (sel?170:130);
-        float px=tx, maxw=k==0?txtW:tr-tx, ly=cy+k*FOLHA_ADDON_LD;
-        for(int pc=0;pc<ls[k].n && maxw-(px-tx)>30;pc++){
-          if(ls[k].ic[pc]){
-            // O icone na altura do texto, na mesma tinta; so vale se couber.
-            gfx_icone((GfxRect){px,ly+3,22,22},ls[k].ic[pc],c/255.0f,c/255.0f,c/255.0f,ak);
-            px+=22+8;
-          }
-          if(ls[k].tx[pc][0] && maxw-(px-tx)>30){
-            int base=k==0?215:170;
-            TxtLinha lp=txt_linha_corta(TXT_PG_FIM,ls[k].tx[pc],base,base,base,255,maxw-(px-tx));
-            txt_desenhar_tom(lp,px,ly,(float)c/base,(float)c/base,(float)c/base,ak);
-            px+=lp.w+18;
-          }
-        }
-      }
-      continue;
-    }
     // FILEIRA DE LOGOS: o pacote branco que o app ja embarca (deploy/app/art/
     // badges, o mesmo "Ghost" do Xperience), tingido no cinza da linha. MP4
     // no acento no fim:

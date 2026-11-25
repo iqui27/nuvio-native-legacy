@@ -40,6 +40,7 @@ time_t debrid_test_time(time_t *dst) {
 
 static int   pmEmCache = 1, tbEmCache = 1;     // o que a consulta de cache diz
 static char  corpoSelectRD[100];               // files=<id> do Real-Debrid
+static char  corpoAddRD[4096];                 // magnet=<...> do addMagnet
 static char  ctCriarTB[120];                   // Content-Type do createtorrent
 static char  urlRequestdl[900];                // a URL com o token na query
 static char  corpoCacheCheckPM[600], corpoDirectdlPM[600];
@@ -191,7 +192,8 @@ char *rede_postar_st(const char *url, int s, const char *const *cab,
   // --- Real-Debrid
   if (strstr(url, "real-debrid.com")) {
     assert(strstr(ct, "x-www-form-urlencoded"));
-    if (strstr(url, "addMagnet"))   { *st = 201; return dup2s("{\"id\":\"ABC123\",\"uri\":\"x\"}"); }
+    if (strstr(url, "addMagnet"))   { *st = 201; snprintf(corpoAddRD, sizeof corpoAddRD, "%s", corpo);
+                                      return dup2s("{\"id\":\"ABC123\",\"uri\":\"x\"}"); }
     if (strstr(url, "selectFiles")) { *st = 204;
       snprintf(corpoSelectRD, sizeof corpoSelectRD, "%s", corpo); return dup2s(""); }
     if (strstr(url, "unrestrict"))  { *st = 200; bateuRDUnrestrict = 1;
@@ -381,6 +383,54 @@ static void realDebrid(void) {
     assert(strstr(pub, "x.download.real-debrid.com"));  // o host fica: e o que diagnostica
     assert(strstr(pub, "/...")); }
   OK("o link do Real-Debrid nao vai inteiro para o log");
+}
+
+// COMO O NuvioTV (Stream.kt, DebridMagnetBuilder.kt, DebridFileSelection.kt):
+// torrent em magnet/"torrent:"/clientResolve.magnetUri entra; o magnet que vai
+// ao servico leva &dn= e os trackers; o nome do arquivo do addon vem antes do
+// SxxEyy na escolha do arquivo.
+static void comoNuvioTV(void) {
+  Stream *v = NULL;
+  char url[4096] = "";
+  int n = stream_extrair(
+    "{\"streams\":["
+    "{\"name\":\"M\",\"url\":\"magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567&dn=Show&tr=udp%3A%2F%2Ft.example%3A1337%2Fannounce\"},"
+    "{\"name\":\"T\",\"url\":\"torrent://89abcdef0123456789abcdef0123456789abcdef/3\"},"
+    "{\"name\":\"C\",\"clientResolve\":{\"type\":\"debrid\",\"service\":\"torbox\",\"magnetUri\":\"magnet:?xt=urn:btih:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"fileIdx\":4,\"filename\":\"Show.S01E02.mkv\"}},"
+    "{\"name\":\"E\",\"externalUrl\":\"magnet:?xt=urn:btih:fedcba9876543210fedcba9876543210fedcba98\"}]}",
+    "Addon", &v);
+  assert(n == 4);
+  assert(!v[0].url[0] && !strcmp(v[0].infoHash, "0123456789abcdef0123456789abcdef01234567") && v[0].fileIdx == -1);
+  assert(strstr(v[0].fontes, "tracker:udp://t.example:1337/announce"));
+  assert(!strcmp(v[1].infoHash, "89abcdef0123456789abcdef0123456789abcdef") && v[1].fileIdx == 3);
+  assert(!strcmp(v[2].infoHash, "0000000000000000000000000000000000000000") && v[2].fileIdx == 4);   // base32 -> hex
+  assert(v[2].arquivoReal && !strcmp(v[2].arquivo, "Show.S01E02.mkv"));
+  assert(!strcmp(v[3].infoHash, "fedcba9876543210fedcba9876543210fedcba98"));
+  free(v);
+  OK("como o NuvioTV: torrent em magnet, torrent://, externalUrl e clientResolve.magnetUri (base32 vira hex)");
+
+  debrid_esquecer();
+  debrid_definir_chave("real-debrid", K_RD);
+  debrid_dica_fonte("DEADBEEF", -1, "Show.S02E04.1080p.mkv", "tracker:udp://t.example:1337/announce\ndht:xyz");
+  debrid_definir_episodio(2, 5);
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  // o nome que o addon deu vence o SxxEyy (o S02E05 seria o id 2)
+  assert(!strcmp(corpoSelectRD, "files=1"));
+  assert(strstr(corpoAddRD, "magnet=magnet%3A%3Fxt%3Durn%3Abtih%3ADEADBEEF%26dn%3DShow.S02E04.1080p.mkv"));
+  assert(strstr(corpoAddRD, "%26tr%3Dudp%253A%252F%252Ft.example%253A1337%252Fannounce"));
+  assert(!strstr(corpoAddRD, "dht"));
+  // nome que nao casa: o SxxEyy decide
+  debrid_dica_fonte("DEADBEEF", -1, "Outro.S09E09.mkv", "");
+  debrid_nova_busca();
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url) && !strcmp(corpoSelectRD, "files=2"));
+  // filme (sem episodio), nome que nao existe, sem fileIdx: nenhum arquivo,
+  // em vez do maior (como o NuvioTV)
+  debrid_definir_episodio(0, 0);
+  debrid_nova_busca();
+  assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  debrid_dica_fonte("DEADBEEF", -1, "", "");
+  debrid_esquecer();
+  OK("como o NuvioTV: magnet com dn e trackers, arquivo pelo nome do addon antes do SxxEyy");
 }
 
 static void especiais(void) {
@@ -1152,6 +1202,7 @@ int main(void) {
   assert(dup2(f, 1) >= 0);
 
   semChaves();
+  comoNuvioTV();
   especiais();
   realDebrid();
   torbox();

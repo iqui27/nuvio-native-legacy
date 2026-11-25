@@ -24,7 +24,9 @@ static void frame(void) {
 static void setting(const char *dir, int addon) {
   char path[512]; snprintf(path,sizeof path,"%s/ajustes.txt",dir);
   FILE *f=fopen(path,"w"); assert(f);
-  fprintf(f,"fonteTextoLocal %d\nvidroLocal 1\n",addon);
+  // Minimalista: a peca de icone e o Lucide tingido que esta conferencia de
+  // pixel sempre comparou (o Padrao desenha o Twemoji com as cores do PNG).
+  fprintf(f,"fonteTextoLocal %d\nfonteIconesLocal 1\nvidroLocal 1\n",addon);
   fclose(f); ajustes_dir(dir);
   assert(ajustes_fonte_texto_addon()==addon);
 }
@@ -120,10 +122,11 @@ static void pixels(const char *dir) {
         if(line==0) ok &= pixelLine(failed?"failed title":"title",TXT_CALLOUT,title,
                                    failed?105:205,failed?105:205,failed?103:203,x,y,a,bg,NULL);
         else {
-          const LinhaAddon *l=&textoAddonDa(0)->linhas[line-1];
-          ok &= pixelLine(line==1?"numbers + icon":"secondary + icon",TXT_PG_FIM,l->tx[0],
+          int ic; const char *tx; int cor;
+          assert(addonPrimeiraPeca(textoAddonDa(0),line,&ic,&tx) && tx && ic>=0);
+          ok &= pixelLine(line==1?"numbers + icon":"secondary + icon",TXT_PG_FIM,tx,
                           line==1?180:130,line==1?180:130,line==1?180:130,
-                          x,y+40+(line-1)*FOLHA_ADDON_LD,a,bg,l->ic[0]);
+                          x,y+40+(line-1)*FOLHA_ADDON_LD,a,bg,formatador_icone_nome(ic,1,&cor));
         }
       }
       stream_vod_tocou(0);

@@ -85,6 +85,17 @@ int  debrid_testar_conta(int servico, char *msg, unsigned n, char *data, unsigne
 // Episodio alvo da proxima resolucao (0,0 = filme). Serve para escolher o
 // arquivo certo dentro de um torrent de temporada inteira.
 void debrid_definir_episodio(int temporada, int episodio);
+
+// O QUE O ADDON DISSE DE CADA TORRENT, para resolver como o NuvioTV
+// (DirectDebridResolver.kt / DebridMagnetBuilder.kt / DebridFileSelection.kt):
+//   arquivo  behaviorHints.filename / clientResolve.filename ("" = nao disse):
+//            escolhe o arquivo do pacote por nome antes do SxxEyy e do indice,
+//            e vai no magnet como &dn=
+//   fontes   "sources" (uma por linha, "tracker:..."/"dht:..."), incluindo os
+//            &tr= de um magnet: vao no magnet como &tr= (dht: fica de fora)
+// Chave: hash + fileIdx (um pacote de temporada tem o mesmo hash para cada
+// episodio). Guardado ao montar a lista de fontes; o resolvedor so le.
+void debrid_dica_fonte(const char *infoHash, int fileIdx, const char *arquivo, const char *fontes);
 // O mesmo par, de volta: o P2P (p2p.c) escolhe o arquivo do episodio com ele.
 void debrid_episodio(int *temporada, int *episodio);
 

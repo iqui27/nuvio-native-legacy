@@ -34,6 +34,10 @@ static const char *idiomaDe(char a, char b, char *bufPais) {
   bufPais[0] = a; bufPais[1] = b; bufPais[2] = 0;
   return bufPais;
 }
+const char *nv_bandeira_idioma(const char *pais, char buf[4]) {
+  if (!pais || !pais[0] || !pais[1]) { buf[0] = 0; return buf; }
+  return idiomaDe(pais[0], pais[1], buf);
+}
 
 // Decodificador UTF-8 ESTRITO: sequencia invalida, curta, sobre-longa ou
 // substituta devolve U+FFFD com n=1, e o laco avanca um byte. Assim a saida

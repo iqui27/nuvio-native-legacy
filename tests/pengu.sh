@@ -11,7 +11,7 @@ cc "${flags[@]}" -DPENGU_ADDONS tests/pengu.c src/js.c src/watchstate.c -lpthrea
 "$dir/manifest"
 
 # Includes streams.c; everything outside the offer filter is dead-stripped.
-srcs=(tests/pengu.c src/stream_parse.c src/streams.c src/fontesmortas.c src/js.c src/badges.c src/streamfit.c src/naovideo.c)
+srcs=(tests/pengu.c src/stream_parse.c src/cachemarca.c src/dobra.c src/streams.c src/fontesmortas.c src/js.c src/badges.c src/streamfit.c src/naovideo.c)
 cc "${flags[@]}" "${srcs[@]}" -o "$dir/streams"
 "$dir/streams"
 
@@ -71,7 +71,7 @@ int main(void) {
   return hidden == 27 ? 1 : 0;
 }
 C
-cc "${flags[@]}" "$dir/pengu206.c" src/stream_parse.c src/fontesmortas.c src/js.c src/badges.c src/streamfit.c src/naovideo.c src/fontefiltro.c src/linguas.c -o "$dir/pengu206"
+cc "${flags[@]}" "$dir/pengu206.c" src/stream_parse.c src/cachemarca.c src/dobra.c src/fontesmortas.c src/js.c src/badges.c src/streamfit.c src/naovideo.c src/fontefiltro.c src/linguas.c -o "$dir/pengu206"
 if "$dir/pengu206"; then
   echo "FAIL: copied v2.0.6 predicate now passes" >&2
   exit 1

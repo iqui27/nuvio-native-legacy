@@ -21,7 +21,10 @@
 // A lista cresce conforme a resposta dos addons; a UI virtualiza as linhas.
 
 typedef struct Stream {
-  char rotulo[192];     // Nome curto da fonte
+  // Nome da fonte como o addon manda. 512 (era 192): formatadores tipo Tamtaro
+  // escrevem o nome em versalete/sobrescrito (2-3 bytes por letra) com emoji, e
+  // a folha "Do addon" mostra o nome inteiro na linha em foco.
+  char rotulo[512];
   char provedor[96];
   // Origem real da instancia do addon, sem URL/token nem inferencia pelo nome.
   char addonChave[FONTEFALHA_CHAVE];
@@ -62,6 +65,10 @@ typedef struct Stream {
   int filtroLido;       // 1 = classificado pelo parser; 0 = origem sintetica
   char descricao[2048];
   char arquivo[512];
+  // 1 = `arquivo` veio de um campo filename (behaviorHints/clientResolve/raw),
+  // 0 = do torrentName ou vazio. So o primeiro escolhe o arquivo do pacote no
+  // debrid (debrid_dica_fonte): o nome do torrent nao e o de arquivo nenhum.
+  int arquivoReal;
   // O QUE O ADDON DECLARA COMO "a mesma fonte" entre episodios:
   // behaviorHints.bingeGroup, a convencao do Stremio. Quem manda o campo
   // resolve o casamento entre episodios SEM heuristica nenhuma — e o proprio

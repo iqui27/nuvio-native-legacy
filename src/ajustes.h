@@ -186,6 +186,10 @@ int ajustes_fonte_primeira(void);
 int ajustes_fonte_ordem_addon(void);
 // 1 = a folha de Fontes mostra o nome e a descricao do addon como vieram.
 int ajustes_fonte_texto_addon(void);
+// Icones do texto "Do addon": 1 = Minimalista (Lucide na cor do texto), 0 = Padrao
+// (Twemoji em cores e os simbolos monocromaticos como glifo). Bandeiras so no
+// Padrao; o Minimalista mostra o codigo do idioma.
+int ajustes_fonte_icones_minimalista(void);
 int ajustes_fonte_texto_logo(void);
 // "Outra fonte se falhar": quantas OUTRAS fontes o automatico tenta quando a
 // escolhida nao abre (0..3; 0 = nenhuma). Nao vale para escolha manual nem

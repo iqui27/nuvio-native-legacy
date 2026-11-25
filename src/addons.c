@@ -2680,6 +2680,24 @@ static int prazoDoAddon(const Consulta *c, int i) {
   return s;
 }
 
+// AIOSTREAMS DIZ O CACHE EXATO (streamData.service.cached / .library) SO A
+// QUEM PEDE COM User-Agent "AIO..." (packages/server/src/routes/stremio/
+// stream.ts: PROVIDE_STREAM_DATA ausente = decide pelo User-Agent). O cabecalho
+// so acrescenta o campo streamData: nome e descricao formatados saem iguais.
+// Vai so para AIOStreams (nome ou endereco com "aiostreams"); os outros addons
+// recebem o pedido de sempre. Dono, 17/11 (claude/formatter-cached-markers.md).
+static const char *const CAB_AIOSTREAMS[] = { "User-Agent: AIOStreams-NuvioLN/1.0", NULL };
+static int ehAiostreams(const char *nome, const char *url) {
+  const char *t[2] = { nome, url };
+  for (int k = 0; k < 2; k++)
+    for (const char *p = t[k]; p && *p; p++)
+      if (!strncasecmp(p, "aiostreams", 10)) return 1;
+  return 0;
+}
+static const char *const *cabStream(const char *nome, const char *url) {
+  return ehAiostreams(nome, url) ? CAB_AIOSTREAMS : NULL;
+}
+
 // Diagnose stream failures without logging provider URLs or payloads.
 // `semRecurso` (quando nao NULL) recebe 1 = HTTP ok mas o corpo nao traz o
 // array "streams" — resposta valida de quem nao serve esse endpoint, e nao
@@ -2687,7 +2705,6 @@ static int prazoDoAddon(const Consulta *c, int i) {
 static char *baixarStream(const char *nome, const char *url, int segundos,
                           int *semRecurso) {
   int status = 0;
-  (void)nome;
   if (semRecurso) *semRecurso = -1;
   char host[256];
   const char *h = strstr(url, "://");
@@ -2696,7 +2713,7 @@ static char *baixarStream(const char *nome, const char *url, int segundos,
   const char *at = memchr(h, '@', len);
   if (at) { len -= (size_t)(at + 1 - h); h = at + 1; }
   snprintf(host, sizeof host, "%.*s", (int)len, h);
-  char *corpo = rede_baixar_st(url, segundos, NULL, &status);
+  char *corpo = rede_baixar_st(url, segundos, cabStream(nome, url), &status);
   printf("[addons] stream host=%s HTTP %d\n", host, status);
   if (status >= 400) {
     free(corpo); return NULL;
@@ -3553,7 +3570,7 @@ int addons_consulta_filme(const AddonsConsulta *c, const char *id,
     // incomplete array) instead of growing memory during playback.
     RedeControle teto = { 2L * 1024 * 1024, NULL };
     RedeMedida medida;
-    char *corpo = rede_baixar_medido_controle(url, restante < 5 ? restante : 5, NULL, &teto, &medida);
+    char *corpo = rede_baixar_medido_controle(url, restante < 5 ? restante : 5, cabStream(a->nome, url), &teto, &medida);
     if (!nv_perfil_sessao_atual(c->sessao) || (cancelado && cancelado(ctx))) { free(corpo); return -1; }
     if (medida.limitado || !arrayDeFontesCompleto(corpo)) { free(corpo); resultado = -1; continue; }
     Stream *fontes = NULL;

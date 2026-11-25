@@ -415,6 +415,16 @@ Settings icons: [Lucide](https://lucide.dev), ISC license. The unmodified SVGs
 and the license text are in `deploy/app/art/icones/lucide/`; the `aj_*.png` next
 to them are rasterized by `tools/icones-lucide.sh`.
 
+Formatter icons in the source list ("Source text: From the addon"), made by
+`tools/icones-formatador.py` into `deploy/app/art/icones/formatador/`, with each
+license text next to them:
+[Twemoji](https://github.com/jdecked/twemoji) graphics © Twitter, Inc and other
+contributors, [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) (Standard
+style); [Noto Sans Symbols / Symbols 2 / Math](https://fonts.google.com/noto)
+glyphs, SIL Open Font License 1.1; country flags from
+[flagpack](https://github.com/Yummygum/flagpack-core), MIT. The Minimalistic
+style uses Lucide, as above.
+
 DTS-enabled builds use libraries from the [FFmpeg project](https://ffmpeg.org/)
 under **LGPL 2.1 or later**. `tools/build-dts-ffmpeg.sh` records the exact release
 source URL and checksum; `tools/arm.sh` includes its license and provenance in

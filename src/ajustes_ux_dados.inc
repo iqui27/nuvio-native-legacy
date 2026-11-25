@@ -261,6 +261,7 @@ static const char *uxSinonimos(int op) {
       return "falha erro provedor debrid trocar ordem prioridade limite links timeout failover fallback retry real-debrid torbox premiumize alldebrid";
     case AJ_FALHA_ADDONS: case AJ_FALHA_ADDON_ORDEM: case AJ_FALHA_ADDON_LIMITE:
       return "falha erro provedor debrid addon add-on trocar ordem prioridade limite links timeout failover fallback retry";
+    case AJ_FONTE_ICONES: return "icones emoji emojis formatador addon aiostreams bandeiras twemoji lucide minimalista padrao icon style emoji formatter flags minimalistic standard";
     case AJ_FONTE_ORDEM_ADDON: return "ordem fontes qualidade addon aiostreams resolucao tamanho instalacao source order quality";
     case AJ_P2P_LIMITE: return "limite espaco p2p torrent armazenamento disco cheio memoria buffer cache tamanho maximo gb space limit storage full";
     case AJ_P2P_DESTINO: return "cache p2p pendrive usb armazenamento interno disco externo flash drive storage location";
@@ -331,7 +332,7 @@ static const char *uxCaminhoAntigo(int op) {
     case AJ_FONTE_MANUAL: case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_PRIORIDADE: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR:
     case AJ_FONTE_GRUPO: case AJ_FONTE_GRUPO_SESSOES:
     case AJ_LINK_REUSAR: case AJ_LINK_PRAZO:
-    case AJ_FONTE_HDR: case AJ_FONTE_PRAZO: case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_TAM_MAX: case AJ_TAM_MIN:
+    case AJ_FONTE_HDR: case AJ_FONTE_PRAZO: case AJ_FONTE_TEXTO: case AJ_FONTE_ICONES: case AJ_FONTE_ORDEM_ADDON: case AJ_TAM_MAX: case AJ_TAM_MIN:
     case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:
     case AJ_FONTE_ORDEM: case AJ_FONTE_ORDEM_USO: case AJ_FONTE_IDIOMA_AUDIO:

@@ -12,5 +12,5 @@ flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc ${flags[@]+"${flags[@]}"} -O1 -g -Wall -Wextra -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -Wno-deprecated-declarations -Wno-macro-redefined \
-  src/p2p.c src/p2pmotor.c src/p2pmotor_motor.c src/stream_parse.c src/fontefiltro.c src/linguas.c src/js.c tests/p2p.c -o ${TMPDIR:-/tmp}/nuvio-p2p-tests
+  src/p2p.c src/p2pmotor.c src/p2pmotor_motor.c src/stream_parse.c src/cachemarca.c src/dobra.c src/fontefiltro.c src/linguas.c src/js.c tests/p2p.c -o ${TMPDIR:-/tmp}/nuvio-p2p-tests
 ${TMPDIR:-/tmp}/nuvio-p2p-tests

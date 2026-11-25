@@ -451,6 +451,67 @@ static void urlenc(char *dst, unsigned n, const char *s) {
   dst[k] = 0;
 }
 
+// ---------------------------------------------------------------- dicas (ver debrid.h)
+#define DICAS_N 512
+typedef struct { char hash[48]; int idx; char arquivo[512]; char fontes[640]; } Dica;
+static Dica dicas[DICAS_N];
+static int dicaProx;
+static pthread_mutex_t dicaTrava = PTHREAD_MUTEX_INITIALIZER;
+
+void debrid_dica_fonte(const char *infoHash, int fileIdx, const char *arquivo, const char *fontes) {
+  if (!infoHash || !*infoHash) return;
+  pthread_mutex_lock(&dicaTrava);
+  Dica *d = NULL;
+  for (int i = 0; i < DICAS_N; i++)
+    if (dicas[i].hash[0] && dicas[i].idx == fileIdx && !strcasecmp(dicas[i].hash, infoHash)) { d = &dicas[i]; break; }
+  if (!d) { d = &dicas[dicaProx]; dicaProx = (dicaProx + 1) % DICAS_N; }
+  snprintf(d->hash, sizeof d->hash, "%s", infoHash);
+  d->idx = fileIdx;
+  snprintf(d->arquivo, sizeof d->arquivo, "%s", arquivo ? arquivo : "");
+  snprintf(d->fontes, sizeof d->fontes, "%s", fontes ? fontes : "");
+  pthread_mutex_unlock(&dicaTrava);
+}
+static void dicaDe(const char *infoHash, int fileIdx, char *arq, size_t na, char *fon, size_t nf) {
+  if (arq && na) arq[0] = 0;
+  if (fon && nf) fon[0] = 0;
+  if (!infoHash) return;
+  pthread_mutex_lock(&dicaTrava);
+  for (int i = 0; i < DICAS_N; i++)
+    if (dicas[i].hash[0] && dicas[i].idx == fileIdx && !strcasecmp(dicas[i].hash, infoHash)) {
+      if (arq && na) snprintf(arq, na, "%s", dicas[i].arquivo);
+      if (fon && nf) snprintf(fon, nf, "%s", dicas[i].fontes);
+      break;
+    }
+  pthread_mutex_unlock(&dicaTrava);
+}
+
+// MAGNET COMO O NuvioTV (DebridMagnetBuilder): hash + &dn=<arquivo> + um &tr=
+// por tracker de "sources" ("tracker:" tirado, "dht:" fora). Tracker que nao
+// cabe inteiro fica de fora. Sem dica, o magnet pelado de antes.
+static void magnetMontar(const char *h, int fileIdx, const char *hashDica, char *dst, size_t n) {
+  char arq[512], fon[640], enc[1600];
+  size_t k;
+  dicaDe(hashDica ? hashDica : h, fileIdx, arq, sizeof arq, fon, sizeof fon);
+  k = (size_t)snprintf(dst, n, "magnet:?xt=urn:btih:%s", h);
+  if (k >= n) { dst[n - 1] = 0; return; }
+  if (arq[0]) {
+    urlenc(enc, sizeof enc, arq);
+    if (k + 4 + strlen(enc) < n) k += (size_t)snprintf(dst + k, n - k, "&dn=%s", enc);
+  }
+  for (char *p = fon; *p; ) {
+    char *f = strchr(p, '\n');
+    if (f) *f = 0;
+    if (!strncasecmp(p, "tracker:", 8) || !strncmp(p, "udp://", 6) || !strncmp(p, "http", 4)) {
+      const char *tr = !strncasecmp(p, "tracker:", 8) ? p + 8 : p;
+      while (*tr == ' ') tr++;
+      urlenc(enc, sizeof enc, tr);
+      if (*tr && k + 4 + strlen(enc) < n) k += (size_t)snprintf(dst + k, n - k, "&tr=%s", enc);
+    }
+    if (!f) break;
+    p = f + 1;
+  }
+}
+
 // Os tres servicos aceitam a chave como "Authorization: Bearer" — e o que a
 // documentacao de cada um recomenda, inclusive a do Premiumize, que ainda
 // aceita ?apikey= por compatibilidade e diz em texto que o cabecalho existe
@@ -651,42 +712,104 @@ static int ehVideo(const char *nome) {
   return 0;
 }
 
-// Mesma ordem do selectDebridFile do web: padrao SxxEyy > fileIdx > maior
-// video. Devolve o ELEMENTO escolhido (ponteiro para o '{' dele, dentro de
-// `files`) ou NULL.
+// ESCOLHA DO ARQUIVO, na ordem do NuvioTV (DebridFileSelection.kt
+// selectDebridFile), so entre os videos:
+//   1. o nome que o addon deu (behaviorHints/clientResolve.filename): caminho
+//      igual, ou terminando em "/<nome>", depois so o nome do arquivo; com e
+//      depois sem diferenca de caixa. Mais de um igual = nenhum.
+//   2. o episodio: s<T>e<E> ou <T>x<E> (zeros a esquerda livres) no nome do
+//      arquivo, sem letra/numero colado antes nem numero depois. Mais de um =
+//      nenhum.
+//   3. se 1 ou 2 havia o que procurar e nada casou: o fileIdx publicado, ou
+//      nenhum (a falha deixa outra fonte tentar, em vez de tocar o episodio
+//      errado de um pacote).
+//   4. o fileIdx do addon (posicao na lista inteira), se for video.
+//   5. o maior video.
+// Devolve o ELEMENTO escolhido (ponteiro para o '{' dele, dentro de `files`)
+// ou NULL.
 //
-// POR QUE DEVOLVE O ELEMENTO E NAO UM id. Os tres servicos nomeiam os campos a
-// sua maneira — o RD manda "path"/"bytes" e o arquivo tem "id"; o TorBox manda
+// POR QUE DEVOLVE O ELEMENTO E NAO UM id. Os servicos nomeiam os campos a sua
+// maneira — o RD manda "path"/"bytes" e o arquivo tem "id"; o TorBox manda
 // "name"/"size" com "id"; o Premiumize manda "path"/"size" e NAO tem id
 // nenhum, o link direto vem dentro do proprio elemento. Devolvendo o elemento,
-// cada resolvedor tira dali o que o seu servico usa e a ORDEM DE ESCOLHA — que
-// e a unica coisa que nao pode divergir entre os tres — fica escrita uma vez
-// so. Os nomes dos campos entram por parametro pelo mesmo motivo.
+// cada resolvedor tira dali o que o seu servico usa e a ORDEM DE ESCOLHA fica
+// escrita uma vez so. Os nomes dos campos entram por parametro.
+static const char *baseNome(const char *c) {
+  const char *b = strrchr(c, '/');
+  return b ? b + 1 : c;
+}
+static void caminhoNormal(char *c) {
+  for (char *p = c; *p; p++) if (*p == '\\') *p = '/';
+  while (*c == ' ' || *c == '/') memmove(c, c + 1, strlen(c));
+  size_t n = strlen(c);
+  while (n && c[n - 1] == ' ') c[--n] = 0;
+}
+static int igual(const char *a, const char *b, int ci) { return ci ? !strcasecmp(a, b) : !strcmp(a, b); }
+static int terminaEm(const char *c, const char *sufixo, int ci) {
+  size_t a = strlen(c), b = strlen(sufixo);
+  return a > b && c[a - b - 1] == '/' && igual(c + a - b, sufixo, ci);
+}
+static int numeroEm(const char *p, int valor, const char **fim) {
+  // zeros a esquerda livres, depois exatamente `valor`
+  long v = 0; int d = 0;
+  while (*p == '0' && isdigit((unsigned char)p[1])) p++;
+  while (isdigit((unsigned char)*p) && d < 6) { v = v * 10 + (*p++ - '0'); d++; }
+  *fim = p;
+  return d && v == valor;
+}
+static int casaEpisodio(const char *nome, int t, int e) {
+  for (const char *p = nome; *p; p++) {
+    const char *q, *r;
+    if (p > nome && isalnum((unsigned char)p[-1])) continue;
+    if ((*p == 's' || *p == 'S') && numeroEm(p + 1, t, &q) && (*q == 'e' || *q == 'E') &&
+        numeroEm(q + 1, e, &r) && !isdigit((unsigned char)*r)) return 1;
+    if (isdigit((unsigned char)*p) && numeroEm(p, t, &q) && (*q == 'x' || *q == 'X') &&
+        numeroEm(q + 1, e, &r) && !isdigit((unsigned char)*r)) return 1;
+  }
+  return 0;
+}
 static const char *escolherArquivo(const char *files, int fileIdx,
-                                   const char *kNome, const char *kTam) {
-  char pad1[16] = "", pad2[16] = "";
-  const char *p, *melhor = NULL; int idx = 0, porIndice = 0; double melhorTam = -1;
-  int temporada = 0, episodio = 0;
+                                   const char *kNome, const char *kTam, const char *dica) {
+  const char *p, *maior = NULL, *noIndice = NULL;
+  int idx = 0, temporada = -1, episodio = 0, ep;
+  double maiorTam = -1;
+  char alvo[512] = "";
   debrid_episodio(&temporada, &episodio);
-  if (temporada >= 0 && episodio > 0) {
-    snprintf(pad1, sizeof pad1, "s%02de%02d", temporada, episodio);
-    snprintf(pad2, sizeof pad2, "%dx%02d", temporada, episodio);
+  ep = temporada >= 0 && episodio > 0;
+  if (dica && *dica) { snprintf(alvo, sizeof alvo, "%s", dica); caminhoNormal(alvo); }
+  // 1. pelo nome: quatro passadas (caminho / nome do arquivo x caixa)
+  for (int modo = 0; alvo[0] && modo < 4; modo++) {
+    const char *achado = NULL; int quantos = 0, ci = modo & 1, soBase = modo >> 1;
+    for (p = files; p && *p == '{'; p = js_prox(js_fim(p))) {
+      char nome[600];
+      if (!js_texto(p, js_fim(p), kNome, nome, sizeof nome) || !ehVideo(nome)) continue;
+      caminhoNormal(nome);
+      int ok = soBase ? igual(baseNome(nome), baseNome(alvo), ci)
+                      : igual(nome, alvo, ci) || (strchr(alvo, '/') && terminaEm(nome, alvo, ci));
+      if (ok) { achado = p; quantos++; }
+    }
+    if (quantos) return quantos == 1 ? achado : NULL;
   }
-  for (p = files; p && *p == '{'; p = js_prox(js_fim(p)), idx++) {
-    const char *f = js_fim(p);
-    char nome[600]; double tam;
-    if (!js_texto(p, f, kNome, nome, sizeof nome)) continue;
-    tam = js_num(p, f, kTam, 0);
-    minusc(nome);
-    if (!ehVideo(nome)) continue;
-    if (pad1[0] && (strstr(nome, pad1) || strstr(nome, pad2))) return p;
-    if (idx == fileIdx && fileIdx >= 0) { melhor = p; melhorTam = 1e18; porIndice = 1; continue; }
-    if (tam > melhorTam) { melhor = p; melhorTam = tam; }
+  // 2. pelo episodio; 4/5 na mesma volta
+  {
+    const char *achado = NULL; int quantos = 0;
+    for (p = files, idx = 0; p && *p == '{'; p = js_prox(js_fim(p)), idx++) {
+      char nome[600];
+      if (!js_texto(p, js_fim(p), kNome, nome, sizeof nome) || !ehVideo(nome)) continue;
+      caminhoNormal(nome);
+      if (ep && casaEpisodio(baseNome(nome), temporada, episodio)) { achado = p; quantos++; }
+      if (idx == fileIdx) noIndice = p;
+      double tam = js_num(p, js_fim(p), kTam, 0);
+      if (tam > maiorTam) { maior = p; maiorTam = tam; }
+    }
+    if (quantos) return quantos == 1 ? achado : NULL;
   }
-  // Sem correspondencia ou indice publicado, nao trocar um especial pelo
-  // maior episodio regular de um pacote. A falha permite outra fonte.
-  if (temporada == 0 && episodio > 0 && !porIndice) return NULL;
-  return melhor;
+  // 3. Diferenca de proposito com o NuvioTV: se o addon PUBLICOU o fileIdx,
+  // ele vale mesmo sem o nome casar (#556: pacote com "Show - 05.mkv", sem
+  // SxxEyy). O NuvioTV falha ai; aqui toca o arquivo que o addon apontou.
+  if (alvo[0] || ep) return fileIdx >= 0 ? noIndice : NULL;
+  if (fileIdx >= 0) return noIndice;                     // 4
+  return maior;                                          // 5
 }
 
 // ---------------------------------------------------------------- Real-Debrid
@@ -699,12 +822,13 @@ static const char *escolherArquivo(const char *files, int fileIdx,
 // ele nao ficou pronto nas tres olhadas; a escolha manual mostra isso.
 static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n,
                       int *pct) {
-  char corpo[700], enc[600], rota[120], tid[64], status[32], link[600];
+  char corpo[12400], enc[12300], magnet[4096], arquivo[512], rota[120], tid[64], status[32], link[600];
   char *r; int st = 0, id, tent;
   const char *files, *links, *el;
 
-  snprintf(corpo, sizeof corpo, "magnet:?xt=urn:btih:%s", infoHash);
-  urlenc(enc, sizeof enc, corpo);
+  magnetMontar(infoHash, fileIdx, NULL, magnet, sizeof magnet);
+  dicaDe(infoHash, fileIdx, arquivo, sizeof arquivo, NULL, 0);
+  urlenc(enc, sizeof enc, magnet);
   snprintf(corpo, sizeof corpo, "magnet=%s", enc);
   r = post_form(RD, "torrents/addMagnet", SRD, corpo, &st);
   if (!ok2xx(r, st) || !js_texto(r, NULL, "id", tid, sizeof tid)) {
@@ -717,7 +841,7 @@ static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n,
   if (!ok2xx(r, st) || !(files = js_array(r, NULL, "files"))) {
     int v = falha(SRD, "info", st, r); free(r); return v;
   }
-  el = escolherArquivo(files, fileIdx, "path", "bytes");
+  el = escolherArquivo(files, fileIdx, "path", "bytes", arquivo);
   id = el ? (int)js_num(el, js_fim(el), "id", -1) : -1;
   free(r);
   if (id < 0) { printf("[debrid] torrent sem video utilizavel\n"); return 0; }
@@ -789,7 +913,7 @@ static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n,
 // `soCache` 1 = add_only_if_cached (o automatico); 0 = a pessoa escolheu o
 // torrent fora de cache e o TorBox deve BAIXAR — e o "P2P" do TorBox.
 static char *tbCriarCom(const char *chaveTB, const char *magnet, int soCache, int *st) {
-  char url[300], auth[260], corpo[1200];
+  char url[300], auth[260], corpo[5400];   // magnet com dn e trackers: ate 4 KB
   const char *cab[3];
   snprintf(url, sizeof url, TB "/torrents/createtorrent");
   snprintf(auth, sizeof auth, "Authorization: Bearer %s", chaveTB);
@@ -803,6 +927,8 @@ static char *tbCriarCom(const char *chaveTB, const char *magnet, int soCache, in
   snprintf(corpo, sizeof corpo,
            "--" BND "\r\nContent-Disposition: form-data; name=\"magnet\"\r\n\r\n%s\r\n"
            "--" BND "\r\nContent-Disposition: form-data; name=\"add_only_if_cached\"\r\n\r\n%s\r\n"
+           // allow_zip=false: como o NuvioTV (TorboxDirectDebridResolver.kt)
+           "--" BND "\r\nContent-Disposition: form-data; name=\"allow_zip\"\r\n\r\nfalse\r\n"
            "--" BND "--\r\n", magnet, soCache ? "true" : "false");
   return rede_postar_st(url, 15, cab, corpo, st);
 }
@@ -827,7 +953,7 @@ static int tbPronto(const char *r) {
 // torrent ainda esta baixando.
 static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n,
                       int baixar, int *pct) {
-  char h[80], magnet[300], rota[600];
+  char h[80], magnet[4096], arquivo[512], rota[600];
   char *r; int st = 0, fid = -1, tent, tid, pronto = !baixar;
   const char *files, *el;
 
@@ -849,7 +975,8 @@ static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n,
   free(r);
 
 criar:
-  snprintf(magnet, sizeof magnet, "magnet:?xt=urn:btih:%s", h);
+  magnetMontar(h, fileIdx, infoHash, magnet, sizeof magnet);
+  dicaDe(infoHash, fileIdx, arquivo, sizeof arquivo, NULL, 0);
   r = tb_criar(magnet, !baixar, &st);
   tid = ok2xx(r, st) ? (int)js_num(r, NULL, "torrent_id", -1) : -1;
   // O 403 DO REGISTRO 1541 SAI AQUI. A linha continua comecando por
@@ -899,7 +1026,7 @@ criar:
           js_texto(r, NULL, "download_state", estado, sizeof estado);
         }
         if ((files = js_array(r, NULL, "files"))
-            && (el = escolherArquivo(files, fileIdx, "name", "size")) != NULL)
+            && (el = escolherArquivo(files, fileIdx, "name", "size", arquivo)) != NULL)
           fid = (int)js_num(el, js_fim(el), "id", -1);
       } else if (r) {
         int v = falha(STB, "mylist", st, r); free(r); return v;
@@ -945,11 +1072,12 @@ criar:
 // os arquivos do torrent com o link direto de cada um, e a escolha e local.
 
 static int resolverPM(const char *infoHash, int fileIdx, char *url, unsigned n) {
-  char magnet[300], enc[500], corpo[600], bruto[64];
+  char magnet[4096], arquivo[512], enc[12300], corpo[12400], bruto[64];
   char *r; int st = 0, emCache;
   const char *cont, *el;
 
-  snprintf(magnet, sizeof magnet, "magnet:?xt=urn:btih:%s", infoHash);
+  magnetMontar(infoHash, fileIdx, NULL, magnet, sizeof magnet);
+  dicaDe(infoHash, fileIdx, arquivo, sizeof arquivo, NULL, 0);
   urlenc(enc, sizeof enc, magnet);
 
   // O magnet inteiro como item, e nao o hash pelado: a documentacao descreve o
@@ -984,7 +1112,7 @@ static int resolverPM(const char *infoHash, int fileIdx, char *url, unsigned n) 
   if (!ok2xx(r, st) || !(cont = js_array(r, NULL, "content"))) {
     int v = falha(SPM, "directdl", st, r); free(r); return v;
   }
-  el = escolherArquivo(cont, fileIdx, "path", "size");
+  el = escolherArquivo(cont, fileIdx, "path", "size", arquivo);
   // "link" e nao "stream_link": o segundo e a versao transcodificada, que nem
   // sempre existe e nem sempre e o arquivo que se pediu.
   if (!el || !js_texto(el, js_fim(el), "link", url, n)) {
@@ -1093,14 +1221,15 @@ static void adDescartar(const char *id) {
 // DEBRID_BAIXANDO com o progresso, que fica na conta para a proxima escolha.
 static int resolverAD(const char *infoHash, int fileIdx, char *url, unsigned n,
                       int manual, int *pct) {
-  char corpo[700], enc[600], id[32], lnk[900], sub[16], h[80];
+  char corpo[12400], enc[12300], magnet[4096], arquivo[512], id[32], lnk[900], sub[16], h[80];
   char *r; int st = 0, tent, sc = -1, pronto;
   const char *files, *el;
   AdBuf b = { NULL, 0, 0, 0 };
 
   hashMin(h, sizeof h, infoHash);      // o servico compara TEXTO, como o TorBox
-  snprintf(corpo, sizeof corpo, "magnet:?xt=urn:btih:%s", h);
-  urlenc(enc, sizeof enc, corpo);
+  magnetMontar(h, fileIdx, infoHash, magnet, sizeof magnet);
+  dicaDe(infoHash, fileIdx, arquivo, sizeof arquivo, NULL, 0);
+  urlenc(enc, sizeof enc, magnet);
   snprintf(corpo, sizeof corpo, "magnets%%5B%%5D=%s", enc);
   r = adPost("v4/magnet/upload", corpo, &st);
   if (!adOk(r, st)) { int v = falha(SAD, "upload", st, r); free(r); return v; }
@@ -1165,7 +1294,7 @@ static int resolverAD(const char *infoHash, int fileIdx, char *url, unsigned n,
   free(r);
   if (!b.p) return 0;
   adAdd(&b, "]", 1);
-  el = escolherArquivo(b.p + 1, fileIdx, "path", "size");
+  el = escolherArquivo(b.p + 1, fileIdx, "path", "size", arquivo);
   if (!el || !js_texto(el, js_fim(el), "link", lnk, sizeof lnk)) {
     printf("[debrid] AllDebrid: sem video utilizavel em %s\n", infoHash);
     free(b.p); return 0;
