@@ -543,6 +543,9 @@ static void prov_pedir(const SeekrFonte *f) {
   Trabalho *w;
   Job *j;
   pthread_t ft;
+  // Tizen 4-5.5 (NuvioTpk40): no on-device thumbnails (~1 s per 1080p tile on a
+  // 2020 TV, none while DTS converts; tester logs 11/2026).
+  if (tpk45_ativo()) return;
   if (!f || !f->url || !*f->url) return;
   pthread_mutex_lock(&mu);
   estadoPublicar(f);

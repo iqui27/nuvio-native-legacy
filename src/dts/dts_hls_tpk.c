@@ -37,6 +37,7 @@ int dts_tpk_e_url(const char *u) { (void)u; return 0; }
 #else
 
 #include "dts_engine.h"
+#include "../tpk45.h"
 #include <arpa/inet.h>
 #include <dlfcn.h>
 #include <errno.h>
@@ -838,14 +839,21 @@ static int tizenMaior(void) {
 }
 
 // Anel do leitor da fonte, MiB: abaixo do 8 (menos RAM) cai de 32 para 16.
+// Tizen 4/5 (NuvioTpk40): o perfil de tpk45.h, tirado da memoria livre de agora.
 static int anelMib(void) {
   int t = tizenMaior();
+  if (tpk45_ativo()) return tpk45_anel_mib();
   return t >= 6 && t < 8 ? 16 : 32;
 }
+static int filaMib(void) {
+  if (tpk45_ativo()) return tpk45_fila_mib();
+  return anelMib() == 16 ? 128 : 192;
+}
 
-// Tizen 6 em diante: os tres pacotes 6+ (NuvioTpk60/65/NuvioTpk) carregam a
-// mesma .so, e as TVs de 2021/2022 (6.0/6.5) tambem nao tocam DTS (especificacao
-// de video da Samsung de cada ano).
+// As TVs de 2018 em diante nao tocam DTS (especificacao de video da Samsung de
+// cada ano). Tizen 6+: os tres pacotes 6+ (NuvioTpk60/65/NuvioTpk) carregam a
+// mesma .so. Tizen 4/5 (2018-2020): o NuvioTpk40, desde que a .so dele leve o
+// FFmpeg (tools/tpk.sh; dts_remux_available responde por isso).
 int dts_tpk_disponivel(void) {
   static int c = -1;   // os Ajustes perguntam a cada quadro: decide uma vez
   if (c < 0) {
@@ -940,6 +948,19 @@ static void *fioMemoria(void *u) {
       if (agoraMs() - s->memLogMs >= 120000) { s->memLogMs = agoraMs(); linha = 1; }
       pthread_mutex_unlock(&s->m);
       if (linha) memLinha(s, 0);   // a running line every 2 min: an OOM kill leaves no final one
+      // Tizen 4/5: one line when the TV goes under the app's floor with a
+      // conversion running, and one when it is back (tpk45.h: it only warns).
+      { static int apertado;
+        int a = tpk45_aperto(livre, &apertado);
+        if (a) {
+          DtsEngineRings rg;
+          dts_engine_rings(&rg, 0);
+          printf("[dts-tpk] 4/5: %s: MemAvailable %ld MB, app RSS %ld MB, rings %d = %lld MiB, queue %lld of %d MiB (%s)\n",
+                 a > 0 ? "LOW MEMORY while converting" : "memory is back", livre / 1024, rss / 1024, rg.alive,
+                 rg.bytes >> 20, (long long)(dts_remux_queued_bytes() >> 20), dts_remux_queue_budget_mib(), tpk45_marca());
+          fflush(stdout);
+          if (a > 0) memLinha(s, 0);
+        } }
     }
     pthread_mutex_unlock(&G);
   }
@@ -1002,8 +1023,14 @@ int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, i
     fflush(stdout);
     return 0;
   }
-  dts_remux_set_queue_budget_mib(anelMib() == 16 ? 128 : 192);
-  dts_engine_set_ring_mib(anelMib());   // ring of the readers this session opens
+  { int anel = anelMib(), fila = filaMib();   // one reading: the 4/5 profile follows free memory
+    dts_remux_set_queue_budget_mib(fila);
+    dts_engine_set_ring_mib(anel);   // ring of the readers this session opens
+    if (tpk45_ativo()) {
+      printf("[dts-tpk] 4/5: this conversion opens with ring %d MiB, queue cap %d MiB, MemAvailable %ld MB (%s)\n",
+             anel, fila, lerKb("/proc/meminfo", "MemAvailable") / 1024, tpk45_marca());
+      fflush(stdout);
+    } }
   { static int monitor;
     pthread_t tm;
     if (!monitor && pthread_create(&tm, NULL, fioMemoria, NULL) == 0) { pthread_detach(tm); monitor = 1; } }
@@ -1031,7 +1058,7 @@ int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, i
   id = s->id;   // s may go once G is released (a close from another thread)
   pthread_mutex_unlock(&G);
   printf("[dts-tpk] sessao %u: %s em 127.0.0.1, audio %d do arquivo, saida %s; player abre %s; segmentos de %.0f s\n",
-         id, MODO_NOME[modo], track, stereo ? "AAC 2.0" : "AC3",
+         id, MODO_NOME[modo], track, stereo ? "AC3 2.0" : "AC3",
          strstr(out, ".m3u8") ? "a playlist HLS" : "o fluxo progressivo", SEG_ALVO_S);
   fflush(stdout);
   return 1;

@@ -1,7 +1,10 @@
 /* DTS / TrueHD -> Dolby Digital remux for the Samsung .tpk
  * (docs/features/dts/README.md). Video packets are copied untouched; ONE
- * DTS/TrueHD/MLP track is decoded and re-encoded as AC3 (5.1 640 kb/s, or 2.0
- * 192 kb/s for stereo sources) or, with the "Stereo" setting, AAC 2.0. Output
+ * DTS/TrueHD/MLP track is decoded and re-encoded as AC3: 5.1 640 kb/s, or 2.0
+ * 384 kb/s for stereo sources and with the "Stereo" setting (192 kb/s until
+ * 11/2026; at 192 the encoder merges left and right above ~12.5 kHz). (Stereo was AAC
+ * 2.0 until 11/2026: FFmpeg's AAC encoder cost ~10x the AC3 one and a 2020 TV
+ * could not keep up; the S95C log showed the same ratio.) Output
  * goes to a writer callback: MPEG-TS segments for HLS, or one progressive
  * MPEG-TS / Matroska / fragmented MP4 stream.
  *
@@ -23,7 +26,7 @@ typedef struct {
   int audio_ordinal, stream_index; /* k-th audio track of the file (0-based), FFmpeg index */
   int in_channels, in_rate;    /* from the container header */
   int out_channels, out_bitrate;
-  char out_codec[8];           /* "ac3" or "aac" */
+  char out_codec[8];           /* "ac3" */
   char decoder_path[40];       /* "DTS core only", "TrueHD 5.1 presentation", ... */
   int n_keyframes, n_segments;
   int index_complete;          /* the keyframe index reaches the end (HLS needs it): no
@@ -50,6 +53,9 @@ typedef int (*DtsRemuxWrite)(void *opaque, const unsigned char *data, int n);
 int dts_remux_available(void);
 /* Shared packet budget across generators: 192 MiB, 128 MiB on older TVs. */
 void dts_remux_set_queue_budget_mib(int mib);
+/* Read-only, for log lines: bytes queued now across generators, and the budget. */
+size_t dts_remux_queued_bytes(void);
+int dts_remux_queue_budget_mib(void);
 /* Device offset, snapshotted by each new source. Positive delays audio only. */
 void dts_remux_set_audio_offset_ms(int ms);
 /* #605: strip HDR10+ dynamic SEI from HEVC video packets of the next open. */
@@ -59,18 +65,18 @@ void dts_remux_set_hdr10p_strip(int on);
  * Cues lazily). audio_ordinal: which audio track to convert, counted among the
  * file's audio tracks in container order from 0 (FFmpeg does not expose the
  * Matroska TrackNumber; its streams follow the TrackEntry order), or -1 for the
- * first DTS/TrueHD/MLP track. stereo_aac: 1 = AAC 2.0 (Settings
- * "Stereo (AAC)"), 0 = AC3. seg_target_s: HLS segments group keyframes to at
+ * first DTS/TrueHD/MLP track. stereo: 1 = AC3 2.0 (Settings
+ * "Stereo"), 0 = AC3 at the source's width (5.1 at most). seg_target_s: HLS segments group keyframes to at
  * least this length. *cancel (may be NULL) aborts the network waits. NULL on
  * failure with the reason in err (no URL in it). */
-DtsRemux *dts_remux_open(const char *url, const char *headers, int audio_ordinal, int stereo_aac,
+DtsRemux *dts_remux_open(const char *url, const char *headers, int audio_ordinal, int stereo,
                          double seg_target_s, volatile int *cancel, char *err, size_t errn);
 /* The same in two steps, so another thread can stop a probe that waits on the
  * network: dts_remux_new() returns an empty source that dts_remux_cancel()
  * already accepts (*cancel, may be NULL, is also read as in dts_remux_open); dts_remux_probe() fills it (0) or fails (-1, reason in err,
  * "Cancelled" after a cancel). Either way the caller closes it. */
 DtsRemux *dts_remux_new(volatile int *cancel);
-int dts_remux_probe(DtsRemux *, const char *url, const char *headers, int audio_ordinal, int stereo_aac,
+int dts_remux_probe(DtsRemux *, const char *url, const char *headers, int audio_ordinal, int stereo,
                     double seg_target_s, char *err, size_t errn);
 const DtsRemuxInfo *dts_remux_info(const DtsRemux *);
 double dts_remux_segment_start(const DtsRemux *, int seg);    /* seconds; segment 0 = 0 */

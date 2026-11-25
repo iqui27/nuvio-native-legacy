@@ -242,7 +242,7 @@
   1, /* also in Continue watching (2.0.2): Desligado (V_LIGA: 1 = Desligado) = one title, one place */
   0, /* continue on the profile picker (#303): Ligado (V_LIGA: 0 = Ligado) = as before */
 #ifdef NV_TPK
-  1, /* DTS/TrueHD on the Samsung .tpk: 5.1 (Dolby Digital) (0 = off, 2 = stereo AAC) */
+  1, /* DTS/TrueHD on the Samsung .tpk: 5.1 (Dolby Digital) (0 = off, 2 = stereo, Dolby Digital 2.0) */
 #else
   1, /* DTS converted to: Estereo (AAC) = the proven path (0 = Original, 2 = 5.1) */
 #endif

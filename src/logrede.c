@@ -166,7 +166,7 @@ static const char *const F_TOCAR[] = {
   "[tocar-diag]", "[host] erro", "[host] interrompido", "[video]", "[player]", "[dts-tpk]", "[dts-range]",
   "[dts]", "[audio]", "[mkv]", "[tv] ", "reconex", "reconect", "failover", "escolha manual",
   "tocando agora", "fonte escolhida", "pipeline open", "opened ok", "[abrir-diag] started", "[fonte-cdn]", "[partes]", "[mkvfix]", "[logrede]",
-  "[seek]", NULL
+  "[seek]", "[tpk45]", NULL
 };
 static const char *const F_MINI[] = {
   "[miniatura]", "[mem]", "[dts-tpk]", "[player] pronto", "tpk evento 11",
@@ -270,7 +270,7 @@ static const char PAGINA[] =
 "<button id=b0>Everything</button><button id=b5>Previous session</button>"
 "<input id=q placeholder='Search (e.g. REFUSED, track #, T7)'>"
 "<button id=ba class=on>Auto-scroll</button><button id=bc>Clear</button>"
-"<a class=b id=dl href='/fonte.txt?baixar=1'>Download</a><span id=st></span>"
+"<a class=b id=dl href='/fonte.txt?baixar=1'>Download</a><a class=b href='/anterior.txt'>Previous session</a><span id=st></span>"
 "</header>"
 "<div id=log></div><script>"
 "var de=-1,f=1,auto=1,q='',gen=0,L=document.getElementById('log'),S=document.getElementById('st');"
