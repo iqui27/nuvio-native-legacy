@@ -452,36 +452,76 @@ static void urlenc(char *dst, unsigned n, const char *s) {
 }
 
 // ---------------------------------------------------------------- dicas (ver debrid.h)
-#define DICAS_N 512
-typedef struct { char hash[48]; int idx; char arquivo[512]; char fontes[640]; } Dica;
-static Dica dicas[DICAS_N];
-static int dicaProx;
+// Tabela de espalhamento por hash + fileIdx, do tamanho da lista. Era um anel
+// fixo de 512 (616 KB parados): com mais de 512 torrents na lista, os primeiros
+// perdiam nome e trackers. Agora cada dica guarda so o que tem (texto do
+// tamanho real) e a tabela cresce; passou de DICAS_MAX, recomeca vazia (a lista
+// seguinte repoe as suas).
+#define DICAS_MAX 8192
+typedef struct { char hash[48]; int idx; char *arquivo, *fontes; } Dica;
+static Dica *dicas;
+static unsigned dicasCap, dicasN;
 static pthread_mutex_t dicaTrava = PTHREAD_MUTEX_INITIALIZER;
 
+static unsigned dicaChave(const char *h, int idx) {
+  unsigned x = 2166136261u;
+  for (; *h; h++) { x ^= (unsigned char)tolower((unsigned char)*h); x *= 16777619u; }
+  return x ^ (unsigned)idx * 2654435761u;
+}
+// Posicao de (h, idx) na tabela: a dele, ou a vazia onde entraria.
+static Dica *dicaLugar(Dica *t, unsigned cap, const char *h, int idx) {
+  unsigned i = dicaChave(h, idx) & (cap - 1);
+  while (t[i].hash[0] && !(t[i].idx == idx && !strcasecmp(t[i].hash, h))) i = (i + 1) & (cap - 1);
+  return &t[i];
+}
+static void dicasLimpar(void) {
+  for (unsigned i = 0; i < dicasCap; i++) { free(dicas[i].arquivo); free(dicas[i].fontes); }
+  free(dicas); dicas = NULL; dicasCap = dicasN = 0;
+}
+// Cabe mais uma? Dobra a tabela (carga ate 1/2) ou, no teto, recomeca.
+static int dicasEspaco(void) {
+  if ((dicasN + 1) * 2 <= dicasCap) return 1;
+  if (dicasN >= DICAS_MAX) dicasLimpar();
+  unsigned nc = dicasCap ? dicasCap * 2 : 1024;
+  Dica *nt = calloc(nc, sizeof *nt);
+  if (!nt) return 0;
+  for (unsigned i = 0; i < dicasCap; i++)
+    if (dicas[i].hash[0]) *dicaLugar(nt, nc, dicas[i].hash, dicas[i].idx) = dicas[i];
+  free(dicas); dicas = nt; dicasCap = nc;
+  return 1;
+}
+static char *dicaTexto(char *velho, const char *s) {
+  free(velho);
+  return s && *s ? strdup(s) : NULL;
+}
+
 void debrid_dica_fonte(const char *infoHash, int fileIdx, const char *arquivo, const char *fontes) {
-  if (!infoHash || !*infoHash) return;
+  if (!infoHash || !*infoHash || strlen(infoHash) >= sizeof dicas[0].hash) return;
   pthread_mutex_lock(&dicaTrava);
-  Dica *d = NULL;
-  for (int i = 0; i < DICAS_N; i++)
-    if (dicas[i].hash[0] && dicas[i].idx == fileIdx && !strcasecmp(dicas[i].hash, infoHash)) { d = &dicas[i]; break; }
-  if (!d) { d = &dicas[dicaProx]; dicaProx = (dicaProx + 1) % DICAS_N; }
-  snprintf(d->hash, sizeof d->hash, "%s", infoHash);
-  d->idx = fileIdx;
-  snprintf(d->arquivo, sizeof d->arquivo, "%s", arquivo ? arquivo : "");
-  snprintf(d->fontes, sizeof d->fontes, "%s", fontes ? fontes : "");
+  Dica *d = dicasCap ? dicaLugar(dicas, dicasCap, infoHash, fileIdx) : NULL;
+  if (!d || !d->hash[0]) {
+    if (!dicasEspaco()) { pthread_mutex_unlock(&dicaTrava); return; }
+    d = dicaLugar(dicas, dicasCap, infoHash, fileIdx);
+    snprintf(d->hash, sizeof d->hash, "%s", infoHash);
+    d->idx = fileIdx;
+    dicasN++;
+  }
+  d->arquivo = dicaTexto(d->arquivo, arquivo);
+  d->fontes = dicaTexto(d->fontes, fontes);
   pthread_mutex_unlock(&dicaTrava);
 }
 static void dicaDe(const char *infoHash, int fileIdx, char *arq, size_t na, char *fon, size_t nf) {
   if (arq && na) arq[0] = 0;
   if (fon && nf) fon[0] = 0;
-  if (!infoHash) return;
+  if (!infoHash || !*infoHash) return;
   pthread_mutex_lock(&dicaTrava);
-  for (int i = 0; i < DICAS_N; i++)
-    if (dicas[i].hash[0] && dicas[i].idx == fileIdx && !strcasecmp(dicas[i].hash, infoHash)) {
-      if (arq && na) snprintf(arq, na, "%s", dicas[i].arquivo);
-      if (fon && nf) snprintf(fon, nf, "%s", dicas[i].fontes);
-      break;
+  if (dicasCap) {
+    const Dica *d = dicaLugar(dicas, dicasCap, infoHash, fileIdx);
+    if (d->hash[0]) {
+      if (arq && na && d->arquivo) snprintf(arq, na, "%s", d->arquivo);
+      if (fon && nf && d->fontes) snprintf(fon, nf, "%s", d->fontes);
     }
+  }
   pthread_mutex_unlock(&dicaTrava);
 }
 
@@ -713,18 +753,23 @@ static int ehVideo(const char *nome) {
 }
 
 // ESCOLHA DO ARQUIVO, na ordem do NuvioTV (DebridFileSelection.kt
-// selectDebridFile), so entre os videos:
+// selectDebridFile) enquanto ele acha algo, so entre os videos:
 //   1. o nome que o addon deu (behaviorHints/clientResolve.filename): caminho
 //      igual, ou terminando em "/<nome>", depois so o nome do arquivo; com e
-//      depois sem diferenca de caixa. Mais de um igual = nenhum.
+//      depois sem diferenca de caixa.
 //   2. o episodio: s<T>e<E> ou <T>x<E> (zeros a esquerda livres) no nome do
-//      arquivo, sem letra/numero colado antes nem numero depois. Mais de um =
-//      nenhum.
-//   3. se 1 ou 2 havia o que procurar e nada casou: o fileIdx publicado, ou
-//      nenhum (a falha deixa outra fonte tentar, em vez de tocar o episodio
-//      errado de um pacote).
-//   4. o fileIdx do addon (posicao na lista inteira), se for video.
-//   5. o maior video.
+//      arquivo, sem letra/numero colado antes nem numero depois.
+//   3. o fileIdx do addon (posicao na lista inteira), se for video.
+// Onde o NuvioTV desiste, aqui ainda toca (decisao do dono, 2026-11-18: "tocar
+// todos"):
+//   - em 1 e 2, mais de um igual = o MAIOR deles (o arquivo principal, nao o
+//     sample), em vez de nenhum;
+//   4. o episodio so no nome da PASTA ("Show.S01E05/video.mkv");
+//   5. um video so no torrent: ele (torrent de um arquivo, "Show - 05.mkv"
+//      sem SxxEyy nem fileIdx);
+//   6. sem episodio procurado (filme): o maior video, como antes do NuvioTV.
+// Episodio de PACOTE em que nada aponta o arquivo continua sem nenhum: o maior
+// seria quase sempre o episodio errado, e a falha deixa outra fonte tentar.
 // Devolve o ELEMENTO escolhido (ponteiro para o '{' dele, dentro de `files`)
 // ou NULL.
 //
@@ -768,48 +813,51 @@ static int casaEpisodio(const char *nome, int t, int e) {
   }
   return 0;
 }
+// O maior entre os que casaram: `*el` fica com o maior visto ate aqui.
+static void ficaMaior(const char **el, double *tamEl, const char *p, double tam) {
+  if (!*el || tam > *tamEl) { *el = p; *tamEl = tam; }
+}
 static const char *escolherArquivo(const char *files, int fileIdx,
                                    const char *kNome, const char *kTam, const char *dica) {
-  const char *p, *maior = NULL, *noIndice = NULL;
-  int idx = 0, temporada = -1, episodio = 0, ep;
-  double maiorTam = -1;
+  const char *p, *maior = NULL, *noIndice = NULL, *epNome = NULL, *epPasta = NULL;
+  int idx = 0, temporada = -1, episodio = 0, ep, videos = 0;
+  double maiorTam = -1, epNomeTam = -1, epPastaTam = -1;
   char alvo[512] = "";
   debrid_episodio(&temporada, &episodio);
   ep = temporada >= 0 && episodio > 0;
   if (dica && *dica) { snprintf(alvo, sizeof alvo, "%s", dica); caminhoNormal(alvo); }
   // 1. pelo nome: quatro passadas (caminho / nome do arquivo x caixa)
   for (int modo = 0; alvo[0] && modo < 4; modo++) {
-    const char *achado = NULL; int quantos = 0, ci = modo & 1, soBase = modo >> 1;
+    const char *achado = NULL; double achadoTam = -1; int ci = modo & 1, soBase = modo >> 1;
     for (p = files; p && *p == '{'; p = js_prox(js_fim(p))) {
       char nome[600];
       if (!js_texto(p, js_fim(p), kNome, nome, sizeof nome) || !ehVideo(nome)) continue;
       caminhoNormal(nome);
       int ok = soBase ? igual(baseNome(nome), baseNome(alvo), ci)
                       : igual(nome, alvo, ci) || (strchr(alvo, '/') && terminaEm(nome, alvo, ci));
-      if (ok) { achado = p; quantos++; }
+      if (ok) ficaMaior(&achado, &achadoTam, p, js_num(p, js_fim(p), kTam, 0));
     }
-    if (quantos) return quantos == 1 ? achado : NULL;
+    if (achado) return achado;
   }
-  // 2. pelo episodio; 4/5 na mesma volta
-  {
-    const char *achado = NULL; int quantos = 0;
-    for (p = files, idx = 0; p && *p == '{'; p = js_prox(js_fim(p)), idx++) {
-      char nome[600];
-      if (!js_texto(p, js_fim(p), kNome, nome, sizeof nome) || !ehVideo(nome)) continue;
-      caminhoNormal(nome);
-      if (ep && casaEpisodio(baseNome(nome), temporada, episodio)) { achado = p; quantos++; }
-      if (idx == fileIdx) noIndice = p;
-      double tam = js_num(p, js_fim(p), kTam, 0);
-      if (tam > maiorTam) { maior = p; maiorTam = tam; }
-    }
-    if (quantos) return quantos == 1 ? achado : NULL;
+  // 2-6 numa volta so
+  for (p = files, idx = 0; p && *p == '{'; p = js_prox(js_fim(p)), idx++) {
+    char nome[600];
+    if (!js_texto(p, js_fim(p), kNome, nome, sizeof nome) || !ehVideo(nome)) continue;
+    caminhoNormal(nome);
+    double tam = js_num(p, js_fim(p), kTam, 0);
+    videos++;
+    if (ep && casaEpisodio(baseNome(nome), temporada, episodio)) ficaMaior(&epNome, &epNomeTam, p, tam);
+    else if (ep && casaEpisodio(nome, temporada, episodio)) ficaMaior(&epPasta, &epPastaTam, p, tam);
+    if (idx == fileIdx) noIndice = p;
+    if (tam > maiorTam) { maior = p; maiorTam = tam; }
   }
-  // 3. Diferenca de proposito com o NuvioTV: se o addon PUBLICOU o fileIdx,
-  // ele vale mesmo sem o nome casar (#556: pacote com "Show - 05.mkv", sem
-  // SxxEyy). O NuvioTV falha ai; aqui toca o arquivo que o addon apontou.
-  if (alvo[0] || ep) return fileIdx >= 0 ? noIndice : NULL;
-  if (fileIdx >= 0) return noIndice;                     // 4
-  return maior;                                          // 5
+  if (epNome) return epNome;                             // 2
+  // 3. #556: o fileIdx publicado vale mesmo sem nome/episodio casar (pacote
+  // com "Show - 05.mkv", sem SxxEyy). O NuvioTV falha ai.
+  if (fileIdx >= 0 && noIndice) return noIndice;
+  if (epPasta) return epPasta;                           // 4
+  if (videos == 1) return maior;                         // 5
+  return ep ? NULL : maior;                              // 6
 }
 
 // ---------------------------------------------------------------- Real-Debrid
@@ -951,6 +999,48 @@ static int tbPronto(const char *r) {
 // TorBox deve baixar o que nao tem — sem checkcached (quem chama ja
 // perguntou) e sem add_only_if_cached. `pct` recebe o progresso quando o
 // torrent ainda esta baixando.
+// FALLBACK DO PAINEL (owner 19/11/2026): the normal resolve had an issue
+// (createtorrent refused, the file list not there yet, requestdl failed).
+// The file is looked up as it is on the TorBox dashboard: the account's
+// torrents (fresh lists, up to 10 pages) by this hash, then its file and a
+// requestdl. Not in the account -> 0 and the source is dropped, as before:
+// something not cached is never downloaded. `tidVisto` = the item the normal
+// resolve already tried (its files are read again, fresh).
+static int tbRequestdl(int tid, int fid, char *url, unsigned n);
+static int tbDoPainel(const char *h, int fileIdx, const char *arquivo, int tidVisto, const char *porque,
+                      char *url, unsigned n) {
+  int pg, tid = -1, fid = -1, st = 0;
+  char *r = NULL;
+  for (pg = 0; pg < 10 && tid < 0 && contextoVale(); pg++) {
+    const char *el; int itens = 0;
+    r = debrid_tb_mylist(0, 0, pg, 1, &st);
+    if (!ok2xx(r, st)) { free(r); r = NULL; break; }
+    for (el = js_array(r, NULL, "data"); el && *el == '{'; el = js_prox(js_fim(el)), itens++) {
+      char hh[64] = "";
+      if (js_texto_raiz_em(el, js_fim(el), "hash", hh, sizeof hh) && !strcasecmp(hh, h)) {
+        const char *files = js_array(el, js_fim(el), "files"), *f;
+        tid = (int)js_num(el, js_fim(el), "id", -1);
+        if (files && (f = escolherArquivo(files, fileIdx, "name", "size", arquivo)) != NULL)
+          fid = (int)js_num(f, js_fim(f), "id", -1);
+        break;
+      }
+    }
+    free(r); r = NULL;
+    if (itens < DEBRID_TB_PAGINA) break;
+  }
+  if (tid < 0) {
+    printf("[debrid] TorBox: %s %s; not on your TorBox dashboard either: source dropped\n", h, porque);
+    return 0;
+  }
+  if (fid < 0) {
+    printf("[debrid] TorBox: %s %s; on your dashboard (item %d%s) but no usable video yet: source dropped\n",
+           h, porque, tid, tid == tidVisto ? ", the one just added" : "");
+    return 0;
+  }
+  printf("[debrid] TorBox: %s %s; found on your TorBox dashboard (item %d, file %d): playing that\n", h, porque, tid, fid);
+  return tbRequestdl(tid, fid, url, n);
+}
+
 static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n,
                       int baixar, int *pct) {
   char h[80], magnet[4096], arquivo[512], rota[600];
@@ -1003,6 +1093,7 @@ criar:
     // cache entre as duas chamadas) e fora de cache tambem, nao falha.
     int foraC = !baixar && r && (contem(r, "not cached") || contem(r, "not_cached"));
     int v = falha(STB, "createtorrent", st, r); free(r);
+    if (!baixar && !foraC && v == 0 && tbDoPainel(h, fileIdx, arquivo, -1, "createtorrent had an issue", url, n)) return 1;
     return v == 0 && foraC ? FORA : v;
   }
   free(r);
@@ -1029,7 +1120,9 @@ criar:
             && (el = escolherArquivo(files, fileIdx, "name", "size", arquivo)) != NULL)
           fid = (int)js_num(el, js_fim(el), "id", -1);
       } else if (r) {
-        int v = falha(STB, "mylist", st, r); free(r); return v;
+        int v = falha(STB, "mylist", st, r); free(r);
+        if (!baixar && v == 0 && tbDoPainel(h, fileIdx, arquivo, tid, "the new item's file list failed", url, n)) return 1;
+        return v;
       }
       free(r);
       if (fid < 0 || !pronto) sleep(1);
@@ -1043,12 +1136,23 @@ criar:
       return DEBRID_BAIXANDO;
     }
   }
-  if (fid < 0) { printf("[debrid] TorBox: sem video utilizavel em %s\n", h); return 0; }
+  if (fid < 0) {
+    printf("[debrid] TorBox: sem video utilizavel em %s\n", h);
+    // TorBox may need a while to list a just-added torrent's files.
+    return !baixar && tbDoPainel(h, fileIdx, arquivo, tid, "no file list in 3 s", url, n) ? 1 : 0;
+  }
+  { int v = tbRequestdl(tid, fid, url, n);
+    if (v == 0 && !baixar && tbDoPainel(h, fileIdx, arquivo, tid, "requestdl failed", url, n)) return 1;
+    return v; }
+}
 
-  // 4) ESTA E A UNICA ROTA QUE LEVA A CHAVE NA QUERY, e nao por escolha nossa:
-  //    request_download_link poe `token` em add_query, nao em cabecalho. Logo,
-  //    esta URL nunca pode ir para log nem inteira nem em pedaco — o que sai
-  //    no fim de debrid_resolver e so a resposta passada por rede_url_publica.
+// 4) ESTA E A UNICA ROTA QUE LEVA A CHAVE NA QUERY, e nao por escolha nossa:
+//    request_download_link poe `token` em add_query, nao em cabecalho. Logo,
+//    esta URL nunca pode ir para log nem inteira nem em pedaco — o que sai
+//    no fim de debrid_resolver e so a resposta passada por rede_url_publica.
+// 1 = `url` pronta; outro valor = o de falha().
+static int tbRequestdl(int tid, int fid, char *url, unsigned n) {
+  char *r; int st = 0;
   { char u[1200]; const char *cab[1];
     cab[0] = NULL;
     snprintf(u, sizeof u, TB "/torrents/requestdl?token=%s&torrent_id=%d&file_id=%d&redirect=false",
@@ -1056,7 +1160,9 @@ criar:
     r = contextoVale() ? rede_baixar_st(u, 15, cab, &st) : NULL; }
   if (!ok2xx(r, st) || !js_texto_raiz(r, "data", url, n)) {
     // "requestdl" e nao a URL: a URL leva o token (ver acima)
-    int v = falha(STB, "requestdl", st, r); free(r); return v;
+    int v = falha(STB, "requestdl", st, r); free(r);
+    if (url && n) url[0] = 0;
+    return v;
   }
   free(r);
   return 1;

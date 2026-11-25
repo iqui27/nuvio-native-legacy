@@ -36,6 +36,7 @@ int vazao_url_aviso(const char *url) { (void)url; return 0; }
 int ajustes_fonte_ordem_addon(void) { return 0; }
 int ajustes_fonte_texto_addon(void) { return 0; }
 int debrid_ativo(void) { return debrid; }
+void debrid_dica_fonte(const char *h, int i, const char *a, const char *f) { (void)h; (void)i; (void)a; (void)f; }
 int p2p_ativo(void) { return p2pLig; }
 // Conta cada pergunta: no .tpk isso e um dlopen perto do fio que pergunta.
 int p2pmotor_disponivel(void) {
