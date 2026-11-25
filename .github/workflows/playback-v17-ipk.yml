@@ -1,12 +1,10 @@
-name: Build buffer DTS DV connection test 2.0.8
+name: Build LG .ipk (lg-donor)
 on:
-  push:
-    branches: [buffer-dts-dv-test-2.0.8]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: buffer-dts-dv-test-2.0.8
+  group: lg-ipk-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
@@ -21,7 +19,7 @@ jobs:
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
       NUVIO_WEBOS_HLS: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=26 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST -DNV_WEBOS_HLS_TEST
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST -DNV_WEBOS_HLS_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -268,7 +266,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: buffer-dts-dv-test-2.0.8-full-arm-ipk
+          name: lg-donor-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
