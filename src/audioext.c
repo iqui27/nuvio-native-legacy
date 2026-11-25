@@ -38,6 +38,7 @@ static uint64_t relogioPadrao(void) {
 static uint64_t (*relogio)(void) = relogioPadrao;
 void audioext_definir_relogio(uint64_t (*fn)(void)) { relogio = fn ? fn : relogioPadrao; }
 static unsigned pedidoGeracao;
+static unsigned autoGeracao;
 static int prefSoAudio, prefSerie = 1;
 // SAFETY NET (owner, 07/11): a start with this mark began and the other
 // version's audio never played (it failed, hung, or the person backed out
@@ -531,7 +532,11 @@ void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r) {
   }
   dopasujInfo.ms = offsetMs;
   dopasujAviso = ok ? 1 : -1;
+  if (ok) autoGeracao++;
 }
+// Bumped by every match result applied: the sync editor's Cancel goes back to
+// the newest automatic offset, not to one from before it (owner's log 9).
+unsigned audioext_auto_geracao(void) { return autoGeracao; }
 int audioext_dopasuj_aviso_consumir(AudioExtDopasuj *out) {
   int a = dopasujAviso;
   dopasujAviso = 0;
@@ -576,11 +581,13 @@ void audioext_reconexao_marcar(void) { reconexao = 1; }
 static int seguirAviso, seguirMs;
 void audioext_seguir_evento(int tipo, int ms) {
   if (!urlMarca[0]) return;
-  if (tipo == 2 || tipo == 4) {   // resumed / a small shift corrected: the converter's new offset
+  // resumed / a small shift corrected / the playhead entered another stretch
+  // of the edit map (5, quiet): the converter's new offset
+  if (tipo == 2 || tipo == 4 || tipo == 5) {
     offsetMs = ms > AUDIOEXT_OFFSET_MAX ? AUDIOEXT_OFFSET_MAX : ms < -AUDIOEXT_OFFSET_MAX ? -AUDIOEXT_OFFSET_MAX : ms;
     offsetGeracao++; offsetSuave = 0;   // the converter already moved: the live apply finds it equal
   }
-  seguirAviso = tipo; seguirMs = offsetMs;
+  if (tipo != 5) { seguirAviso = tipo; seguirMs = offsetMs; }
 }
 int audioext_seguir_aviso_consumir(int *ms) { int a = seguirAviso; seguirAviso = 0; *ms = seguirMs; return a; }
 int audioext_reconexao_consumir(void) { int r = reconexao; reconexao = 0; return r; }
@@ -823,4 +830,105 @@ int audioext_faixa_dica(AudioExtFaixa *out) {
   if (!dicaAtiva || !urlMarca[0] || faixaMarca >= 0) return 0;
   if (out) *out = dica;
   return 1;
+}
+
+// ---- "Scan again": the file track the donor is matched against, per show ----
+// (owner 18/11). Kept in audio_match.txt: "show\tlanguage\tcodec\tchannels"
+// lines, the most recent last, at most AUDIOEXT_MATCH_MAX shows.
+#define AUDIOEXT_MATCH_MAX 200
+typedef struct { char serie[64], lingua[16], codec[24]; int canais; } MatchSerie;
+static MatchSerie matchS[AUDIOEXT_MATCH_MAX];
+static int matchN, matchLido;
+static char *(*matchLer)(const char *);
+static int (*matchGravar)(const char *, const char *);
+void audioext_match_io(char *(*ler)(const char *), int (*gravar)(const char *, const char *)) {
+  matchLer = ler; matchGravar = gravar; matchLido = 0; matchN = 0;
+}
+const char *audioext_alvo_atual(void) { return alvoAtual; }
+int audioext_serie_chave(const char *alvo, char *o, size_t n) {
+  const char *c;
+  size_t k;
+  if (!o || !n) return 0;
+  o[0] = 0;
+  if (!alvo || !*alvo) return 0;
+  c = strchr(alvo, ':');
+  // "tt123:1:2" -> "tt123"; "kitsu:47192:1", "tmdb:123:1:2" -> "kitsu:47192", "tmdb:123".
+  if (c && strncmp(alvo, "tt", 2)) c = strchr(c + 1, ':');
+  k = c ? (size_t)(c - alvo) : strlen(alvo);
+  if (k >= n) k = n - 1;
+  memcpy(o, alvo, k); o[k] = 0;
+  return 1;
+}
+static void matchCarregar(void) {
+  char *t, *l, *prox;
+  if (matchLido) return;
+  matchLido = 1; matchN = 0;
+  if (!matchLer || !(t = matchLer("audio_match.txt"))) return;
+  for (l = t; l && *l; l = prox) {
+    MatchSerie m;
+    char *c[4];
+    int i;
+    prox = strchr(l, '\n');
+    if (prox) *prox++ = 0;
+    c[0] = l;
+    for (i = 1; i < 4; i++) { c[i] = c[i - 1] ? strchr(c[i - 1], '\t') : NULL; if (c[i]) *c[i]++ = 0; }
+    if (!c[3] || !c[0][0] || matchN >= AUDIOEXT_MATCH_MAX) continue;
+    memset(&m, 0, sizeof m);
+    snprintf(m.serie, sizeof m.serie, "%s", c[0]); snprintf(m.lingua, sizeof m.lingua, "%s", c[1]);
+    snprintf(m.codec, sizeof m.codec, "%s", c[2]); m.canais = atoi(c[3]);
+    matchS[matchN++] = m;
+  }
+  free(t);
+}
+static void matchSalvar(void) {
+  char *b;
+  size_t cap = (size_t)matchN * 140 + 1, k = 0;
+  int i;
+  if (!matchGravar || !(b = malloc(cap))) return;
+  b[0] = 0;
+  for (i = 0; i < matchN; i++) {
+    int w = snprintf(b + k, cap - k, "%s\t%s\t%s\t%d\n", matchS[i].serie, matchS[i].lingua, matchS[i].codec, matchS[i].canais);
+    if (w < 0 || (size_t)w >= cap - k) break;
+    k += (size_t)w;
+  }
+  matchGravar("audio_match.txt", b);
+  free(b);
+}
+void audioext_match_definir(const char *lingua, const char *codec, int canais) {
+  char serie[64];
+  int i;
+  if (!audioext_serie_chave(alvoAtual, serie, sizeof serie)) return;
+  matchCarregar();
+  for (i = 0; i < matchN; i++) if (!strcmp(matchS[i].serie, serie)) break;
+  if (i < matchN) { memmove(&matchS[i], &matchS[i + 1], sizeof *matchS * (size_t)(matchN - i - 1)); matchN--; }
+  if (lingua && lingua[0]) {
+    if (matchN == AUDIOEXT_MATCH_MAX) { memmove(&matchS[0], &matchS[1], sizeof *matchS * (size_t)(matchN - 1)); matchN--; }
+    memset(&matchS[matchN], 0, sizeof matchS[matchN]);
+    snprintf(matchS[matchN].serie, sizeof matchS[matchN].serie, "%s", serie);
+    snprintf(matchS[matchN].lingua, sizeof matchS[matchN].lingua, "%s", lingua);
+    snprintf(matchS[matchN].codec, sizeof matchS[matchN].codec, "%s", codec ? codec : "");
+    matchS[matchN].canais = canais;
+    matchN++;
+  }
+  printf("[ext-audio] match against for %s: %s%s%s\n", serie, lingua && lingua[0] ? lingua : "Auto", codec && codec[0] ? " " : "",
+         codec ? codec : "");
+  fflush(stdout);
+  matchSalvar();
+}
+int audioext_match_faixa(char *lingua, size_t nl, char *codec, size_t nc, int *canais) {
+  char serie[64];
+  int i;
+  if (lingua && nl) lingua[0] = 0;
+  if (codec && nc) codec[0] = 0;
+  if (canais) *canais = 0;
+  if (!audioext_serie_chave(alvoAtual, serie, sizeof serie)) return 0;
+  matchCarregar();
+  for (i = matchN - 1; i >= 0; i--)
+    if (!strcmp(matchS[i].serie, serie)) {
+      if (lingua && nl) snprintf(lingua, nl, "%s", matchS[i].lingua);
+      if (codec && nc) snprintf(codec, nc, "%s", matchS[i].codec);
+      if (canais) *canais = matchS[i].canais;
+      return 1;
+    }
+  return 0;
 }

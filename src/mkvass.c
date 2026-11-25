@@ -133,6 +133,14 @@ static int conexaoRecusada(int e) { return e == 6 || e == 7 || e == 35; }
 // legenda — ffmpeg e mkvmerge escrevem BlockGroup — mas um valor e melhor que
 // um evento de zero segundos que nunca aparece.
 #define MKVASS_DUR_PADRAO  3.0
+// After a jump the window starts MKVASS_ATRAS_SEG behind the playhead, but
+// what is on screen NOW comes first: points from this far behind the playhead
+// onward are fetched before the older ones (owner 16/11, Love Is War: the
+// reader read 8 s of the past first and lines came up to 2.3 s late on
+// TorBox's CDN, 0.4-4 s per Range).
+#ifndef MKVASS_PERTO_SEG
+#define MKVASS_PERTO_SEG   3.0
+#endif
 // Fala que comeca ate isto a frente do playhead e URGENTE: o lote vai ao
 // overlay assim que chega, sem esperar a passada (que custa 1-2 s pelo teto
 // de Ranges). Com a entrega sem pisca (legenda_atualizar_corpo) isto e barato.
@@ -560,6 +568,8 @@ typedef struct {
   int      eventosEntregues, primeiraFala;
   double   posRef;         // playhead quando o grupo foi pedido (medida)
   int      atrasados, perdidos, palpites, palpitesFalhos;
+  int      tardeLinhas;        // "colhida TARDE" lines printed (one per start time)
+  double   tardeIni;           // start of the last one printed
   long     redeMs, redeMaxMs, redeN;   // latencia dos Ranges (medida)
   struct Job *pre[MKVASS_PREBUSCA];     // pre-busca: Ranges ja pedidos ao pool
   struct Job *jobFontes;               // Attachments, lidos em segundo plano
@@ -2352,9 +2362,13 @@ static long lerBloco(Fio *f, const unsigned char *p, long n, const ClCache *cl,
           if (f->posRef > 0 && fim <= f->posRef) f->perdidos++;
           else if (f->posRef > 0 && ini < f->posRef) {
             f->atrasados++;
-            if (f->atrasados <= 20)
+            // A typeset sign is many events with the same start (owner 16/11:
+            // the same line 20 times): one line per start time.
+            if (f->tardeLinhas < 20 && (!f->tardeLinhas || ini != f->tardeIni)) {
+              f->tardeLinhas++; f->tardeIni = ini;
               printf("[mkvass] fala %.3f-%.3f colhida TARDE: playhead %.3f (%+.0f ms)\n",
                      ini, fim, f->posRef, (f->posRef - ini) * 1000.0);
+            }
           }
         }
         off += tams[fi];
@@ -3395,9 +3409,12 @@ static double alcanceFrente(const Fio *f) {
 // Proximo ponto pendente pela prioridade do laco (ver trabalhar). -1 quando
 // nao ha nenhum. *noJanela diz se ele esta em [ini, fim]. Com o corpo em
 // janela (#384) so vale o que esta em [ini, fim]: o resto seria despejado.
+// Na janela, primeiro o que comeca de MKVASS_PERTO_SEG antes do playhead em
+// diante (o que esta na tela agora e o que vem); o resto de [ini, perto) por
+// ultimo.
 static int proximoPendente(const Fio *f, double ini, double fim, int *noJanela) {
-  int i, frente = -1, atras = -1;
-  double pos = ini + MKVASS_ATRAS_SEG;
+  int i, frente = -1, atras = -1, antigo = -1;
+  double pos = ini + MKVASS_ATRAS_SEG, perto = pos - MKVASS_PERTO_SEG;
   int pausa = f->folgaJan >= 0.0 && f->folgaJan < MKVASS_VARRE_FOLGA_SEG;
   *noJanela = 0;
   for (i = 0; i < f->nPontos; i++) {
@@ -3409,11 +3426,17 @@ static int proximoPendente(const Fio *f, double ini, double fim, int *noJanela) 
     // com folga de buffer. O resto da faixa continua em segundo plano.
     if (f->pontos[i].rel < 0 &&
         (pausa || t > pos + MKVASS_VARRE_JANELA_SEG || t < pos - MKVASS_VARRE_ATRAS_SEG)) continue;
-    if (t >= ini && t <= fim) { *noJanela = 1; return i; }
+    if (t >= ini && t <= fim) {
+      if (t >= perto) { *noJanela = 1; return i; }
+      if (antigo < 0) antigo = i;  // [ini, perto): depois do que esta na tela
+      continue;
+    }
+    if (t > fim && antigo >= 0) break;   // ordenado por tempo: nada mais perto adiante
     if (f->janela || f->lateral) { if (t > fim) break; continue; }
     if (t > fim) { if (frente < 0) frente = i; }
     else atras = i;               // o ultimo antes de ini: o mais perto
   }
+  if (antigo >= 0) { *noJanela = 1; return antigo; }
   return frente >= 0 ? frente : atras;
 }
 

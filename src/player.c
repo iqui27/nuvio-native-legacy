@@ -44,6 +44,7 @@
 #include "idioma.h"
 #include "fontesonda.h"
 #include "posplay.h"
+#include "partescartao.h"
 #include "extras.h"
 #include "video.h"
 #include "player_dts_notice.h"
@@ -239,7 +240,8 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 // IDs estaveis: a ordem visual e de navegacao vem de transporteAcoes.
 // Na serie, Anterior/Proximo ficam ao lado do Play; o restante conserva a ordem.
 enum { PLR_PLAY, PLR_CC, PLR_AUDIO, PLR_ASPECTO,
-       PLR_FONTES, PLR_EPISODIOS, PLR_PROXIMO, PLR_REINICIAR, PLR_NESTE, PLR_NBTNS };
+       PLR_FONTES, PLR_EPISODIOS, PLR_PROXIMO, PLR_REINICIAR, PLR_NESTE,
+       PLR_PARTE_ANT, PLR_PARTE_PROX, PLR_NBTNS };
 
 // Avanco em curso: enquanto vale, posSeg e do DONO e nao do pipeline.
 static int    scrubbing, scrubPassos, scrubTocava, scrubDir, scrubToque;
@@ -927,6 +929,17 @@ void player_definir_motivo_inicio(const char *texto) {
 int player_pediu_ajustes_fonte(void) { int v = pedAjFonte; pedAjFonte = 0; return v; }
 Uint32 player_aberto_ha_ms(void) { return aberto && abertoEm ? SDL_GetTicks() - abertoEm : 0; }
 int player_pediu_fontes(void) { int p = pedFontes; pedFontes = 0; return p; }
+// FILME EM PARTES: o botao Parte anterior (-1) / Proxima parte (+1) pedido;
+// app.c (vigiarPartes) consome e troca de arquivo.
+static int pedParte;
+int player_pediu_parte(void) { int v = pedParte; pedParte = 0; return v; }
+// O FIM DESTE ARQUIVO E DO APP (especial/OVA aberto pela lista: a fileira dos
+// arquivos da fonte, partescartao.h): sem o pos-reproducao, sem "o que achou"
+// e sem sair sozinho enquanto a fileira esta no ar.
+static int fimProprio;
+void player_fim_proprio(int sim) { fimProprio = sim ? 1 : 0; }
+static int fonteEscolhida;
+void player_definir_fonte_escolhida(int sim) { fonteEscolhida = sim ? 1 : 0; }
 int player_pediu_proximo(int *t,int *e) {
   if(pedProxT<0||pedProxE<=0)return 0;
   if(t)*t=pedProxT;if(e)*e=pedProxE;pedProxT=pedProxE=0;return 1;
@@ -1951,6 +1964,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
     if (canalSessao) { guia_carregar(); epg_iniciar(); } }
   tocando = 1; pausaPessoa = 0; retomandoSalto = 0; visivel = 1; anim = 0.0f; entrada = 0.0f; soBarra = 0; cheio = 1.0f; fileira = 1.0f;
   pedFontes = erroFonte = pedFaixas = pedProxT = pedProxE = trocaEpisodio = 0; inicioImagem = 0;
+  pedParte = 0; fimProprio = 0; partescartao_zerar();
   durFonteAvisada = durFontePulou = pedProximaFonte = durFonteCurta = durFonteForaCache = 0;
   durFonteAcaoAte = 0; durFonteSkipEm = 0; durFonteManter = 0;
   abrindoExp = 0; abrindoT = 0.0f; abrindoDesde = 0;
@@ -2567,6 +2581,71 @@ static int partesAtiva(void) {
 }
 // Uma parte que NAO e a ultima: o fim dela nao e o fim do filme.
 static int partesMeio(void) { double a, b; int u = 1; return partesVirt(&a, &b, &u) && !u; }
+// A sessao de partes deste titulo tem parte antes / depois da que toca?
+static int partesVizinhas(int *ant, int *prox) {
+  const PartesLista *sl;
+  int k;
+  *ant = *prox = 0;
+  if (ehCanal() || !comVideo || !partesAtiva()) return 0;
+  sl = partes_sessao_lista(); k = partes_sessao_indice();
+  if (!sl || k < 0) return 0;
+  *prox = partes_seguinte(sl, k) >= 0;
+  *ant = partes_numero(sl, k) > 1;
+  return 1;
+}
+// "Parte 2 de 4" para a linha sob o titulo; "" fora de uma sessao de partes.
+static const char *partesRotulo(void) {
+  static char r[48];
+  const PartesLista *sl;
+  int k;
+  r[0] = 0;
+  if (ehCanal() || !comVideo || !partesAtiva()) return r;
+  sl = partes_sessao_lista(); k = partes_sessao_indice();
+  if (sl && k >= 0 && partes_numero(sl, k) > 0)
+    snprintf(r, sizeof r, i18n("Parte %d de %d"), partes_numero(sl, k), partes_principais(sl));
+  return r;
+}
+// A BARRA DO FILME INTEIRO (partes_barra): o OSD mostra o filme todo e o
+// avanco anda por ele; posSeg continua sendo da PARTE que toca (pode passar
+// de 0 / da duracao so durante o avanco). off = onde a parte comeca no filme.
+static int barraFilme(double *off, double *tot) {
+  char alvo[64];
+  // Abrindo uma parte, a duracao ainda nao e dela: a barra da parte ate o pronto.
+  if (ehCanal() || !comVideo || duracaoSeg <= 1.0f || !video_pronto() || !partesAtiva()) return 0;
+  alvoStream(alvo, sizeof alvo);
+  return partes_barra(alvo, duracaoSeg, duracaoCatalogo(), off, tot);
+}
+static float barraMin(void) { double o, t; return barraFilme(&o, &t) ? (float)-o : 0.0f; }
+static float barraMax(void) { double o, t; return barraFilme(&o, &t) ? (float)(t - o) : duracaoSeg; }
+// O alvo do avanco caiu em OUTRA parte: o app troca de arquivo (vigiarPartes,
+// player_pediu_salto_parte) e a parte que toca nao busca. 1 = pedido feito.
+static int pedSaltoK = -1;
+static double pedSaltoPos;
+int player_pediu_salto_parte(int *k, double *pos) {
+  if (pedSaltoK < 0) return 0;
+  *k = pedSaltoK; *pos = pedSaltoPos; pedSaltoK = -1;
+  return 1;
+}
+static void buscarUsuario(double alvo);
+// Busca pedida pelo app (salto para um ponto de outra parte, ja aberta).
+void player_buscar_para(double s) {
+  if (!aberto || !comVideo || ehCanal() || !(s > 0.0)) return;
+  if (duracaoSeg > 1.0f && s > duracaoSeg - 1.0f) s = duracaoSeg - 1.0f;
+  posSeg = posVis = (float)s; posVisV = 0.0f; posVisSolto = 0;
+  buscarUsuario(s);
+}
+static int saltoOutraParte(double alvo) {
+  double off, tot, p;
+  int k;
+  if (alvo >= 0.0 && alvo <= duracaoSeg - 1.0) return 0;
+  if (!barraFilme(&off, &tot) || !partes_barra_achar(off + alvo, duracaoSeg, &k, &p) ||
+      k == partes_sessao_indice()) return 0;
+  pedSaltoK = k; pedSaltoPos = p;
+  posSeg = posVis = anim_clamp((float)alvo, 0.0f, duracaoSeg); posVisV = 0.0f; posVisSolto = 0;
+  printf("[partes] bar seek to %.0f s of the movie: part file %d at %.0f s\n", off + alvo, k + 1, p);
+  fflush(stdout);
+  return 1;
+}
 
 // ONDE OS CREDITOS COMECAM, pelas fontes de credfonte.h (capitulo, TheIntroDB,
 // episodio vizinho, o que o dono ensinou). 0 = nenhuma: vale a estimativa.
@@ -2764,8 +2843,18 @@ static void fecharSessao(int manter, int trocaFonte) {
   { PartesPonto pt; char alvoA[64];
     alvoStream(alvoA, sizeof alvoA);
     if (!jaRetido && comVideo && !ehCanal() && partes_arquivo_de(alvoA, &pt)) {
+      const PartesLista *sl = partes_sessao_de(alvoA) ? partes_sessao_lista() : NULL;
+      int k = partes_sessao_indice(), nx = sl ? partes_seguinte(sl, k) : -1;
       if (assistiu) partes_ponto_esquecer(alvoA, sessao_usuario(), perfis_ativo());
-      else if (video_pronto() && posSeg > 1.0f) {
+      else if (nx >= 0 && sl && pt.arquivo == sl->arq[k].id && duracaoSeg > 1.0f &&
+               posSeg >= duracaoSeg - 3.0f) {
+        // Saiu no fim de uma parte do meio: o Retomar abre a SEGUINTE do inicio.
+        pt.arquivo = sl->arq[nx].id; pt.pos = 0;
+        partes_ponto_guardar(alvoA, sessao_usuario(), perfis_ativo(), &pt);
+        printf("[partes] closing at the end of part %d: Resume opens part %d\n",
+               partes_numero(sl, k), partes_numero(sl, nx));
+        fflush(stdout);
+      } else if (video_pronto() && posSeg > 1.0f) {
         pt.pos = posSeg;
         partes_ponto_guardar(alvoA, sessao_usuario(), perfis_ativo(), &pt);
       }
@@ -3417,6 +3506,14 @@ static int transporteAcoes(PlrAcao a[PLR_NBTNS]) {
   int pronto = serie && !trocaEpisodio && !pedRecarregar && !player_carregando() && !erroFonte && !saindo;
   a[n++] = (PlrAcao){PLR_PLAY, 1};
   if (serie) a[n++] = (PlrAcao){PLR_PROXIMO, pronto && player_proximo_episodio() != NULL};
+  // FILME EM PARTES: Parte anterior / Proxima parte ao lado do Play, so
+  // quando existem (a primeira nao tem anterior; a ultima, proxima).
+  { int ant = 0, prox = 0;
+    if (partesVizinhas(&ant, &prox)) {
+      int livre = !saindo && !erroFonte && !player_carregando();
+      if (ant) a[n++] = (PlrAcao){PLR_PARTE_ANT, livre};
+      if (prox) a[n++] = (PlrAcao){PLR_PARTE_PROX, livre};
+    } }
   if (!ehCanal()) a[n++] = (PlrAcao){PLR_REINICIAR,
       player_recarregar_contexto() != 0 && video_duracao() > 0.5};
   a[n++] = (PlrAcao){PLR_CC, 1};
@@ -3652,6 +3749,21 @@ static void durFonteAtualizar(double real, Uint32 agora) {
   if (partesAtiva()) return;
   { char alvoA[64]; alvoStream(alvoA, sizeof alvoA);
     if (partes_arquivo_de(alvoA, NULL)) return; }
+  // Fonte escolhida pela pessoa ou a lembrada para o titulo: a duracao
+  // diferente nao vira aviso nem pulo (so o automatico sozinho avisa).
+  if (fonteEscolhida) {
+    double esp = duracaoFonteEsperada();
+    if (esp > 0 && fabs(real - esp) > 600 && (real > esp * 2 || real < esp * .5)) {
+      durFonteAvisada = 1;
+      // Bem mais curto: pode ser uma parte de um filme em partes
+      // (player_parece_parte pergunta ao TorBox pelas outras).
+      durFonteCurta = real < esp * .5;
+      printf("[fonte] duration %.0fs vs expected %.0fs: kept without a warning (a source you picked or the remembered one)\n",
+             real, esp);
+      fflush(stdout);
+    }
+    return;
+  }
   { unsigned ver = cat_versao_episodios(), rev = cat_revisao();
     if (!durFonteEsperadaOk || durFonteEsperadaVer != ver || durFonteEsperadaRev != rev) {
       durFonteEsperadaOk = 1; durFonteEsperadaVer = ver; durFonteEsperadaRev = rev;
@@ -4196,7 +4308,7 @@ static void saltar(int dir, int repeticao) {
     if (s != 0.0f) {
       double de = posSeg;
       scrubPassos++;
-      posSeg = anim_clamp(posSeg + s, 0.0f, duracaoSeg);
+      posSeg = anim_clamp(posSeg + s, barraMin(), barraMax());
       recuarAutomatico(de, posSeg);
     }
     return; }
@@ -4209,7 +4321,7 @@ static void saltar(int dir, int repeticao) {
   scrubPassos++;
   double de = posSeg;
   posSeg += dir * passo;
-  posSeg = anim_clamp(posSeg, 0.0f, duracaoSeg);
+  posSeg = anim_clamp(posSeg, barraMin(), barraMax());
   recuarAutomatico(de, posSeg);
 }
 
@@ -4226,7 +4338,10 @@ static void terminarSalto(void) {
 #ifdef NV_TPK
   seekgesto_zerar(&gesto);   // the memory lives until the commit
 #endif
-  if (comVideo) {
+  if (comVideo && saltoOutraParte(posSeg)) {
+    if (scrubTocava) { video_pausar(0); tocando = 1; }
+  } else if (comVideo) {
+    posSeg = anim_clamp(posSeg, 0.0f, duracaoSeg);
     if (posSeg >= scrubInicio) creditosauto_buscar(&creditosAuto, posSeg);
     buscarUsuario(posSeg);
     if (scrubTocava) { video_pausar(0); tocando = 1; }
@@ -4240,6 +4355,13 @@ static int ativarBotao(int i, int repetiu) {
   // So uma confirmacao nova pode aciona-lo depois de trocar de episodio.
   if (repetiu && confirmacaoTransporteRetida) return 0;
   switch (i) {
+    case PLR_PARTE_ANT:
+    case PLR_PARTE_PROX:
+      if (repetiu || confirmacaoTransporteRetida || pedParte) return 0;
+      pedParte = i == PLR_PARTE_ANT ? -1 : 1;
+      confirmacaoTransporteRetida = 1;
+      posplay_troca_manual();
+      return 1;
     case PLR_PROXIMO: {
       Uint32 agora = SDL_GetTicks();
       const CatEp *ep;
@@ -4280,8 +4402,8 @@ static int ativarBotao(int i, int repetiu) {
     }
     case PLR_PLAY: alternarTocando(); break;
     case PLR_ASPECTO: player_aspecto_ciclar(); break;
-    case PLR_CC: pedFaixas = 2; break;
-    case PLR_AUDIO: pedFaixas = 1; break;
+    case PLR_CC: pedFaixas = 2; printf("[player] OK on Subtitles: the subtitle sheet\n"); fflush(stdout); break;
+    case PLR_AUDIO: pedFaixas = 1; printf("[player] OK on Audio: the audio sheet\n"); fflush(stdout); break;
     case PLR_FONTES: pedFontes = 1; break;
     case PLR_NESTE: nesteAberto = 1; nesteT = epT; nesteE = epE; break;
     case PLR_EPISODIOS:
@@ -4339,10 +4461,27 @@ void player_evento(const SDL_Event *e) {
     if (r != DVT_EV_NADA) return;
   }
   if (reacao_evento(e, visivel)) return;
+  { int r = partescartao_evento(e);
+    if (r) { if (r == 2) acordar(); return; } }
   { int r = posplay_evento(e);
     if (r) { if (r == 2) acordar(); return; } }
   if (!aberto || saindo || e->type != SDL_KEYDOWN) return;
   SDL_Keycode k = e->key.keysym.sym;
+  // LEFT/RIGHT PRESSED WHILE THE APP WAS FROZEN, on the button row (owner
+  // 25/11: "tapping Audio sometimes opens Subtitles, and the other way round").
+  // During a main-thread stall (the [parado] lines, up to 1.4 s when another
+  // source's audio comes up) the row does not move, so a second press looks
+  // needed; both arrive at once afterwards and OK lands one button past the
+  // one on screen. A move older than 450 ms is dropped: OK then acts on the
+  // button the person saw focused. The host stamps the key when it is pressed
+  // (SDL_PushEvent from the .NET thread).
+  if (visivel && !barraFoco && !skipFoco && (k == SDLK_LEFT || k == SDLK_RIGHT) && e->key.timestamp &&
+      (Sint32)(SDL_GetTicks() - e->key.timestamp) > 450) {
+    printf("[player] %s pressed %u ms ago (the app was busy): dropped, focus stays on button %d\n",
+           k == SDLK_LEFT ? "LEFT" : "RIGHT", (unsigned)(SDL_GetTicks() - e->key.timestamp), botao);
+    fflush(stdout);
+    return;
+  }
   if (e->key.repeat && confirmacaoTransporteRetida &&
       (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE)) return;
 
@@ -4431,6 +4570,11 @@ void player_evento(const SDL_Event *e) {
     }
   }
 
+#ifdef NV_TPK
+  // AUDIO FROM ANOTHER SOURCE: no CH+/CH- sync any more (owner 17/11). The
+  // sync is automatic (subtitles, then audio) and the audio menu's Audio sync
+  // row sets it by hand.
+#else
   // TEST BUILD, AUDIO FROM ANOTHER SOURCE (audioext.h): while it plays, CH+/CH-
   // (PgUp/PgDn) move that audio later/earlier (faster while held). The
   // converter applies the latest offset shortly after the last press (video.c), live.
@@ -4449,6 +4593,7 @@ void player_evento(const SDL_Event *e) {
       return;
     }
   }
+#endif
 
   // PAINEL DE PAUSA: com ele de pe, a tecla e DELE. Vem antes de tudo o que
   // sobra (inclusive da tecla de proporcao) porque e o que o web faz — la o
@@ -4691,6 +4836,8 @@ void player_atualizar(float dt, Uint32 agora) {
       } else if (a > 0 && !d.automatico) { snprintf(t, sizeof t, i18n("Matched automatically: %s"), v); player_toast(t, 4000); }
       /* a > 0 && automatico: the match at start (Settings) set it quietly; only a failure is said (owner, 08/11). */
       /* ...unless the offset is the series memory's (owner, 11/11): kept, nothing to say. */
+      /* The audio refine (como 7) after the subtitles placed it: not sure = the subtitles' offset stays, quietly. */
+      else if (a < 0 && d.como == 7) { printf("[ext-audio] audio refine not sure: the subtitles' offset stays\n"); fflush(stdout); }
       else if (a < 0 && d.automatico && audioext_offset_lembrado()) {
         printf("[ext-audio] automatic match not sure: the series memory's offset stays\n"); fflush(stdout); }
       /* A series episode whose lengths differ and nothing matched (owner's log
@@ -4708,30 +4855,50 @@ void player_atualizar(float dt, Uint32 agora) {
         player_toast_ex(i18n("Could not match for sure: try the candidates in Audio sync (audio menu, OK on Audio sync)."), 7000, "aj_triangle-alert", 1);
       else if (a < 0 && d.pesado)
         player_toast_ex(i18n("Could not match automatically: a wider search would download too much of the other version. Set the sync by hand in the audio menu."), 7000, "aj_triangle-alert", 1);
+#ifdef NV_TPK
+      else if (a < 0) player_toast_ex(i18n("Could not sync this version by itself: set it in the audio menu (Audio sync)."), 5000, "aj_triangle-alert", 1); }
+#else
       else if (a < 0) player_toast_ex(i18n("Could not match automatically: use the manual sync (CH+/CH-)."), 5000, "aj_triangle-alert", 1); }
+#endif
     { int ms, a = audioext_seguir_aviso_consumir(&ms);
       char v[48];
       audioext_formatar_offset(ms, v, sizeof v, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
       if (a == 1) player_toast(i18n("A scene the other version does not have: this file's own audio plays."), 4000);
       else if (a == 2) { snprintf(t, sizeof t, i18n("The other version's audio is back (%s)."), v); player_toast(t, 3500); }
+#ifdef NV_TPK
+      else if (a == 3) player_toast_ex(i18n("Lost the other version's sync: set it in the audio menu (Audio sync)."), 6000, "aj_triangle-alert", 1);
+#else
       else if (a == 3) player_toast_ex(i18n("Lost the other version: use Match automatically in the audio menu."), 6000, "aj_triangle-alert", 1);
+#endif
       else if (a == 4 && ajustes_audio_externo_aviso()) {   // Settings: the message can be hidden (the fix still happens)
         snprintf(t, sizeof t, i18n("Audio sync adjusted by itself (%s)."), v); player_toast(t, 3000); } }
     if (audioext_reconexao_consumir())
       player_toast(i18n("The source slowed down: reconnecting…"), 3500);
     { int l = audioext_lento_consumir();
       if (l == 1) player_toast(i18n("The other version downloads slowly: opening it again…"), 3500);
+#ifdef NV_TPK
+      else if (l == 2) player_toast_ex(i18n("This version downloads too slowly. Pick another one in the audio menu."), 7000, "aj_triangle-alert", 1);
+#else
       else if (l == 2) player_toast_ex(i18n("This version downloads too slowly. Pick another one in the audio menu (From another source)."), 7000, "aj_triangle-alert", 1);
+#endif
       else if (l == 3) player_toast_ex(i18n("This version doesn't respond. Pick another one in the audio menu."), 7000, "aj_triangle-alert", 1); }
     if (audioext_voltou_padrao_consumir())
       player_toast(i18n("The other version's audio did not start last time. Playing this file's own audio."), 5000);
     if (audioext_tocando() && !extVisto) {
+#ifdef NV_TPK
+      snprintf(t, sizeof t, i18n("Audio from: %s"), audioext_nome());
+#else
       snprintf(t, sizeof t, i18n("Audio from: %s · CH+/CH- to sync"), audioext_nome());
+#endif
       player_toast(t, 4000);
     }
     { int corte, vel;
       if (audioext_diferenca_consumir(&corte, &vel)) {
+#ifdef NV_TPK
+        if (vel) snprintf(t, sizeof t, "%s", i18n("This version plays at another speed: the sync corrects it."));
+#else
         if (vel) snprintf(t, sizeof t, "%s", i18n("This version plays at another speed: Match automatically (audio menu) corrects it."));
+#endif
         else snprintf(t, sizeof t, i18n(corte > 0 ? "This version is %d s longer (another cut): the sync may drift."
                                                   : "This version is %d s shorter (another cut): the sync may drift."),
                       corte > 0 ? corte : -corte);
@@ -4781,11 +4948,33 @@ void player_atualizar(float dt, Uint32 agora) {
   { static int reconVisto;
     int t = comVideo ? video_reconectando() : 0;
     if (t && t != reconVisto) {
-      snprintf(toastTexto, sizeof toastTexto, "%s", i18n("Conexão caiu, reconectando…"));
-      snprintf(toastIcone, sizeof toastIcone, "aj_wifi-off"); toastCor = 1;
+      int preparo = 0;
+#ifdef NV_TPK
+      preparo = video_tpk_reconexao_preparo();
+#endif
+      // Arquivo sendo preparado para o seek (mkvfix): nao e a rede.
+      if (preparo) {
+        snprintf(toastTexto, sizeof toastTexto, "%s", i18n("Preparando o arquivo para avançar…"));
+        snprintf(toastIcone, sizeof toastIcone, "aj_loader"); toastCor = 0;
+      } else {
+        snprintf(toastTexto, sizeof toastTexto, "%s", i18n("Conexão caiu, reconectando…"));
+        snprintf(toastIcone, sizeof toastIcone, "aj_wifi-off"); toastCor = 1;
+      }
       toastAte = agora + 5000;
     }
     reconVisto = t; }
+#ifdef NV_TPK
+  // SEEK SEGURADO pela sonda do mkvfix (normalmente 0,2-0,4 s): passou de
+  // meio segundo, diz o que esta acontecendo em vez de parecer travado.
+  { static int segVisto;
+    unsigned seg = comVideo ? video_tpk_seek_segurado_ms() : 0;
+    if (seg >= 500u && !segVisto) {
+      snprintf(toastTexto, sizeof toastTexto, "%s", i18n("Preparando o arquivo para avançar…"));
+      snprintf(toastIcone, sizeof toastIcone, "aj_loader"); toastCor = 0;
+      toastAte = agora + 2500;
+    }
+    segVisto = seg >= 500u; }
+#endif
   janelaPasso(agora);
   if (!aberto) return;
 
@@ -4952,7 +5141,12 @@ void player_atualizar(float dt, Uint32 agora) {
     // da folha por ela) e uma vez por titulo — seekr_pedir ignora o repetido.
     if (d > 60.0 && video_pronto() && !ehCanal() && ajustes_seekr_ligado()) {
       const CatItem *cs = item();
+#ifdef NV_MINIATURAS
+      // Made on this TV from the file itself (miniatura.c): no IMDb id needed.
+      if (cs)
+#else
       if (cs && !strncmp(cs->imdb, "tt", 2))
+#endif
         seekr_pedir(cs->imdb, strcmp(cs->tipo, "series") ? 0 : epT,
                     strcmp(cs->tipo, "series") ? 0 : epE, (long)(d * 1000.0));
     }
@@ -5067,10 +5261,10 @@ void player_atualizar(float dt, Uint32 agora) {
     posVisSolto = 1;
     double de = posSeg;
 #ifdef NV_TPK
-    posSeg = anim_clamp(posSeg + seekgesto_quadro(&gesto, &seekPar, agora, dt), 0.0f, duracaoSeg);
+    posSeg = anim_clamp(posSeg + seekgesto_quadro(&gesto, &seekPar, agora, dt), barraMin(), barraMax());
 #else
     posSeg = anim_clamp(posSeg + salto_quadro(&scrubSalto, scrubDir, agora, dt, duracaoSeg),
-                        0.0f, duracaoSeg);
+                        barraMin(), barraMax());
 #endif
     if (!scrubToque) recuarAutomatico(de, posSeg);
   }
@@ -5238,7 +5432,7 @@ void player_atualizar(float dt, Uint32 agora) {
     // programacao.
     // O fim de uma parte do meio nao e o fim do filme: sem relacionados nem
     // "o que achou"; a parte seguinte entra sozinha (app.c, vigiarPartes).
-    int meio = partesMeio();
+    int meio = partesMeio() || fimProprio;
     if (meio && posplay_visivel()) posplay_fechar();
     if (!ehCanal() && !meio) {
       posplay_atualizar(dt, agora, posSeg, duracaoSeg, eSerie, idxAtual(),
@@ -5262,7 +5456,7 @@ void player_atualizar(float dt, Uint32 agora) {
     } else reacao_player_atualizar(dt, agora, NULL, 0, 0, 0, 0, 0, 0);
     // webOS conserva terminou depois de buscar: confira o fim e o recuo.
     // Espera a lista so enquanto carrega, por no maximo 8 s no EOF.
-    int noFim = !meio && !saindo && fontePrincipal() && video_ativo() && video_terminou() &&
+    int noFim = !partesMeio() && !saindo && fontePrincipal() && video_ativo() && video_terminou() &&
       !ehCanal() && !scrubbing && !retomandoSalto && !aguardaBusca &&
       duracaoSeg > 1.0f && posSeg >= duracaoSeg - 1.0f && video_pos() >= duracaoSeg - 1.0;
     double agoraEof = monoSeg();
@@ -5270,7 +5464,8 @@ void player_atualizar(float dt, Uint32 agora) {
     else {
       if (eofDesde < 0.0) eofDesde = agoraEof;
       if ((!eSerie || !desc_episodios_carregando(idxAtual()) || agoraEof - eofDesde >= 8.0) &&
-          (!player_proximo_episodio() || !posplay_aguarda_escolha())) { saindo = 1; pediuSair = 1; }
+          (!player_proximo_episodio() || !posplay_aguarda_escolha()) &&
+          !(fimProprio && partescartao_visivel())) { saindo = 1; pediuSair = 1; }
     }
   }
   // Com o painel no ar os controles nao somem: eles sao a saida do dono.
@@ -5337,6 +5532,9 @@ void player_atualizar(float dt, Uint32 agora) {
   // O painel de pos-reproducao tambem toma o rodape para si. BAIXO devolve os
   // controles (posplay_evento responde 2), que e a saida documentada.
   if (posplay_visivel()) visivel = 0;
+  // O cartao das partes (contagem / arquivos da fonte) tambem.
+  partescartao_atualizar(dt, agora);
+  if (partescartao_visivel()) { visivel = 0; ultimoInput = agora; }
 
   anim = anim_mola(anim, visivel ? 1.0f : 0.0f, dt,
                    visivel ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
@@ -5447,6 +5645,10 @@ static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a
   float x, y, tot, xs[3];
   Uint32 agora = SDL_GetTicks();
   if (ehCanal() || !(scrubbing || posVisSolto) || a < 0.05f || !ajustes_seekr_habilitado()) return;
+  // Barra do filme inteiro sobre OUTRA parte: as miniaturas sao do arquivo
+  // aberto; ali, so o tempo.
+  { float pv0 = posVisSolto ? posVis : posSeg;
+    if (pv0 < 0.0f || pv0 > duracaoSeg) return; }
   est = seekr_tem_chave() ? seekr_estado() : SEEKR_DESLIGADO;
   if (est != SEEKR_PRONTO && est != SEEKR_BUSCANDO) {
     seekrStatus(bx, bw, frac, yBarra, a, est);
@@ -5531,6 +5733,8 @@ static const char *iconeBotao(int i) {
     case PLR_ASPECTO:   return "pl_ratio";
     case PLR_FONTES:    return "pl_layers";
     case PLR_PROXIMO:   return "pl_chevron-right";
+    case PLR_PARTE_ANT: return "pl_chevron-left";
+    case PLR_PARTE_PROX: return "pl_skip-forward";
     case PLR_REINICIAR: return "pl_rotate-ccw";
     case PLR_NESTE:     return "pl_users";
     default:            return epE > 0 ? "pl_list-video" : "pl_film";
@@ -5544,6 +5748,8 @@ static const char *rotuloBotao(int i) {
     case PLR_ASPECTO:   return "Propor\xc3\xa7\xc3\xa3o";
     case PLR_FONTES:    return "Fontes";
     case PLR_PROXIMO:   return "Próximo episódio";
+    case PLR_PARTE_ANT: return "Parte anterior";
+    case PLR_PARTE_PROX: return "Próxima parte";
     case PLR_REINICIAR: return "Assistir do começo";
     case PLR_NESTE:     return "Neste episódio";
     default:            return ehCanal() ? "Guia" : epE > 0 ? "Epis\xc3\xb3""dios" : "Relacionados";
@@ -5951,13 +6157,15 @@ static void ponteiroBuscar(int a, int b) {
     // de PLR_SCRUB_FIM_MS sem movimento).
     if (!scrubbing) iniciarSalto(1);
     barraFoco = 1; skipFoco = 0;
-    posSeg = f * duracaoSeg;
+    posSeg = barraMin() + f * (barraMax() - barraMin());
     scrubUltimo = SDL_GetTicks();
     return;
   }
   double de = comVideo ? video_pos() : posSeg;
   posplay_busca_usuario();
-  posSeg = f * duracaoSeg;
+  posSeg = barraMin() + f * (barraMax() - barraMin());
+  if (comVideo && saltoOutraParte(posSeg)) return;
+  posSeg = anim_clamp(posSeg, 0.0f, duracaoSeg);
   recuarAutomatico(de, posSeg);
   if (comVideo) {
     if (posSeg >= de) creditosauto_buscar(&creditosAuto, posSeg);
@@ -6971,6 +7179,7 @@ void player_desenhar(Uint32 agora) {
   // se abriu. Ancorar acima da barra desperdicaria a faixa que o recuo existe
   // para criar.
   posplay_desenhar(agora, NV_VTELA_H - PLR_PAD_Y);   // camada ampliada: tela virtual
+  partescartao_desenhar(agora);
   // Acima do pos-reproducao quando ele esta no ar (posplay_topo), senao na
   // mesma margem inferior.
   // "O que achou?" na margem de 96 (mockup) ou acima do pos-reproducao.
@@ -7415,8 +7624,11 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
   float cw = bw;
   int transporteCurto = transporteCompacto();
   float cyTempo = transporteCurto ? yRowTopo - 16.0f : cyBotoes;
+  double bOff = 0, bTot = 0;
+  int filme = barraFilme(&bOff, &bTot);
   float frac = ehCanal()
              ? fracCanal()
+             : filme ? anim_clamp((float)((bOff + posVis) / bTot), 0.0f, 1.0f)
              : (duracaoSeg > 0.0f ? anim_clamp(posVis / duracaoSeg, 0.0f, 1.0f) : 0.0f);
 
   // --- barra de progresso: a MESMA de todo o player (plrui_barra) -----------
@@ -7426,7 +7638,8 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
     ponteiro_alvo(bx, yBarra - folga, bw, 6.0f + folga * 2.0f, ponteiroBarra, ponteiroBuscar, 0, 0);
     ponteiro_alvo_arrastavel();
   }
-  { float bufFrac = (!ehCanal() && duracaoSeg > 0.0f) ? anim_clamp(video_buffer_fim() / duracaoSeg, 0.0f, 1.0f) : 0.0f;
+  { float bufFrac = filme ? anim_clamp((float)((bOff + video_buffer_fim()) / bTot), 0.0f, 1.0f)
+                  : (!ehCanal() && duracaoSeg > 0.0f) ? anim_clamp(video_buffer_fim() / duracaoSeg, 0.0f, 1.0f) : 0.0f;
     // OS CORTES DO TheIntroDB (abertura, resumo, creditos) que o player ja
     // tem: onde cada trecho comeca e acaba, discretos sobre o trilho.
     float caps[16];
@@ -7434,9 +7647,13 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
     if (!ehCanal() && duracaoSeg > 0.0f) {
       IntroTrecho tr[8];
       int nt = intro_trechos(tr, 8), i;
+      // Filme inteiro: os cortes desta parte no lugar dela, e um corte em
+      // cada fronteira entre as partes.
+      double ko = filme ? bOff : 0.0, kt = filme ? bTot : duracaoSeg;
+      if (filme) nCaps = partes_barra_limites(duracaoSeg, caps, 7);
       for (i = 0; i < nt && nCaps < 15; i++) {
-        caps[nCaps++] = (float)(tr[i].inicio / duracaoSeg);
-        if (tr[i].fim > 0.0) caps[nCaps++] = (float)(tr[i].fim / duracaoSeg);
+        caps[nCaps++] = (float)((ko + tr[i].inicio) / kt);
+        if (tr[i].fim > 0.0 && nCaps < 16) caps[nCaps++] = (float)((ko + tr[i].fim) / kt);
       }
       for (i = 0; i < nCaps; i++) if (caps[i] <= 0.0f || caps[i] >= 1.0f) caps[i--] = caps[--nCaps];
     }
@@ -7467,14 +7684,17 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
         txt_desenhar_alpha(l1, cx, yBase, ac);
         if (sep) txt_desenhar_alpha(l2, cx + l1.w + 8.0f, yBase, ac);
         yBase -= 16.0f; }
-    } else if (!canalSessao && c && c->meta[0]) {
+    } else if (!canalSessao && c && (c->meta[0] || partesRotulo()[0])) {
       // "2026 · 2h 37min · Aventura": os campos do catalogo separados por um
-      // ponto de 4 px a 40%, 21/400 a 66%.
-      char m[sizeof c->meta];
+      // ponto de 4 px a 40%, 21/400 a 66%. Filme em partes: "Parte 2 de 4"
+      // na frente.
+      char m[sizeof c->meta + 64];
       char *q = m, *fimp;
       float x = cx, h = (float)txt_linha(TXT_CAPTION2, "Ag", 243, 242, 239, 168).h;
       int prim = 1;
-      snprintf(m, sizeof m, "%s", c->meta);
+      { const char *pr = partesRotulo();
+        if (pr[0]) snprintf(m, sizeof m, "%s%s%s", pr, c->meta[0] ? " \xc2\xb7 " : "", c->meta);
+        else snprintf(m, sizeof m, "%s", c->meta); }
       yBase -= h;
       while (q && *q) {
         fimp = strstr(q, " \xc2\xb7 ");
@@ -7563,8 +7783,8 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
     }
     if (transporteCurto && !barraFoco && transporteHabilitado(botao)) {
       char atual[24], dur[24], total[32];
-      plrui_tempo(atual, sizeof atual, posVisSolto ? posVis : posSeg);
-      plrui_tempo(dur, sizeof dur, duracaoSeg); snprintf(total, sizeof total, "/ %s", dur);
+      plrui_tempo(atual, sizeof atual, (float)(bOff + (posVisSolto ? posVis : posSeg)));
+      plrui_tempo(dur, sizeof dur, filme ? (float)bTot : duracaoSeg); snprintf(total, sizeof total, "/ %s", dur);
       float reserva = txt_largura(TXT_G22M, atual) + txt_largura(TXT_G22M, total) + 32.0f;
       if (cw > reserva) {
         TxtLinha l = txt_linha_corta(TXT_G21B, rotuloBotao(botao), 243, 242, 239, 235, cw - reserva);
@@ -7584,8 +7804,8 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
       TxtLinha l = txt_linha(TXT_ILHA_NOME, i18n("AO VIVO"), 243, 242, 239, 235);
       txt_desenhar_alpha(l, cx + cw - l.w, cyTempo - (float)l.h * 0.5f, a);
     } else {
-      plrui_tempo(t1, sizeof t1, posVisSolto ? posVis : posSeg);
-      plrui_tempo(d, sizeof d, duracaoSeg);
+      plrui_tempo(t1, sizeof t1, (float)(bOff + (posVisSolto ? posVis : posSeg)));
+      plrui_tempo(d, sizeof d, filme ? (float)bTot : duracaoSeg);
       snprintf(t2, sizeof t2, "/ %s", d);
       if (cheio > 0.01f) {
         TxtEstilo estilo = transporteCurto ? TXT_G22M : TXT_ILHA_NOME;
@@ -7602,7 +7822,7 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
         char r[32];
         TxtLinha l1 = txt_linha(TXT_ILHA_NOME, t1, 243, 242, 239, 235), l2;
         if (ajustes_seekr_ligado()) snprintf(r, sizeof r, "%s", d);
-        else { char f[24]; plrui_tempo(f, sizeof f, duracaoSeg - posSeg); snprintf(r, sizeof r, "\xe2\x88\x92%s", f); }
+        else { char f[24]; plrui_tempo(f, sizeof f, (filme ? bTot - bOff : duracaoSeg) - posSeg); snprintf(r, sizeof r, "\xe2\x88\x92%s", f); }
         l2 = txt_linha(TXT_ILHA_NOME, r, 243, 242, 239, 128);
         txt_desenhar_alpha(l1, cx, yBarra + 32.0f, a * (1.0f - cheio));
 #ifdef NV_TPK
@@ -7616,7 +7836,7 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
 
   // A PILULA DA ILHA (plrilha.h): a hora e "termina as" moram nela agora, no
   // canto da Posicao do relogio. O canal nao tem fim.
-  plrilha_relogio(ac, ehCanal() ? -1.0 : vel_tempo_real((double)(duracaoSeg - posSeg), velMed.efetiva));
+  plrilha_relogio(ac, ehCanal() ? -1.0 : vel_tempo_real((filme ? bTot - bOff : (double)duracaoSeg) - posSeg, velMed.efetiva));
 
   // POSICAO "canto" da fileira de formato (Ajustes > Posicao do formato no
   // player): no alto, no canto OPOSTO ao da ilha, centrada na altura dela, no

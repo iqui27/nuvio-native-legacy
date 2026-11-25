@@ -183,6 +183,8 @@ int audioext_dopasuj_ativo(void);
 // become the series memory's offset.
 typedef struct { int ms, ppm, como, dica_ms, pesado, nkand, kand_ms[3], kand_pct[3], automatico, pozniej; } AudioExtDopasuj;
 void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r);
+/* Changes with every match result applied (the sync editor follows it). */
+unsigned audioext_auto_geracao(void);
 // Once, for a toast: 1 found, -1 not trusted, 0 nothing.
 int audioext_dopasuj_aviso_consumir(AudioExtDopasuj *out);
 // The other version's speed from a match (ppm; 0 the same): the webOS player
@@ -239,4 +241,13 @@ int audioext_voltou_padrao_consumir(void);
 // is a different cut: the player says once that the sync may drift.
 void audioext_diferenca(int corteSeg, int velocidade);
 int audioext_diferenca_consumir(int *corteSeg, int *velocidade);
+// "SCAN AGAIN" (owner 18/11): the file track the donor is matched against,
+// picked in Audio sync > Scan again and kept per show (the target without its
+// season/episode: "tt123", "kitsu:47192"); lingua "" = Auto (forgets it).
+// The platform passes its data store (dados_ler / dados_gravar_leve).
+void audioext_match_io(char *(*ler)(const char *), int (*gravar)(const char *, const char *));
+void audioext_match_definir(const char *lingua, const char *codec, int canais);
+int  audioext_match_faixa(char *lingua, size_t nl, char *codec, size_t nc, int *canais);   // 1 picked for this show
+int  audioext_serie_chave(const char *alvo, char *o, size_t n);
+const char *audioext_alvo_atual(void);
 #endif

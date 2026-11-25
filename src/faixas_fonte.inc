@@ -1,15 +1,42 @@
+#ifdef NV_TPK
+// THE LANGUAGE PAGE inside the audio island (included by faixas.c; owner
+// 17/11/2026: the audio sheet works like the subtitles' one).
+#else
 // FROM ANOTHER SOURCE: the pages inside the audio island (included by faixas.c).
+#endif
 //
+#ifdef NV_TPK
+//  EXP_LISTA   one language: this file's own tracks in it first, from the
+//              file whatever plays (DTS/TrueHD too: they convert), "In this
+//              file" (like the embedded subtitles), a divider, then the other
+//              sources' versions: with subtitles first (the sync matches by
+//              them), audio-only containers first, DTS/TrueHD last, at most 24
+//              (the preference's languages) or 6 (audioextlista.h).
+#else
 //  EXP_LISTA   a language bar (LEFT/RIGHT): the preferred language, the second
 //              one, "Unknown" (versions without a language), then the others,
 //              most versions first; under it every version of the language on
 //              the bar, the most likely to play well first (audioextlista.h).
+#endif
 //  EXP_FAIXAS  the audio tracks of one version (hold OK on it), read from its
 //              header like the source list's "Choose audio track…".
 //
+#ifdef NV_TPK
+// OK uses the track or the version (audioext_escolher) and closes the sheet;
+// Back goes one page up. The picture keeps playing all along.
+#else
 // OK uses the version (audioext_escolher) and closes the sheet; Back goes one
 // page up. The picture keeps playing all along.
+#endif
 enum { EXP_NADA = 0, EXP_LISTA, EXP_FAIXAS };
+#ifdef NV_TPK
+#define EX_SEP_H 34.0f   // the divider between this file's tracks and the other sources' versions
+#define EX_LIN_MAX 160
+static int exPag, exFoco, exRol, exVoltar;
+// The page's language (its group code, "" = Unknown) and its rows: this
+// file's tracks (indexes in arqF, video_audio_arquivo), then versions
+// (indexes in extAll).
+#else
 #define EX_BAL_MAX 48
 #define EX_SEG_H   54.0f   /* plrui_seg: SEG_IH + 2 * SEG_PAD */
 // One language of the bar: its versions are extAll[ini .. ini + cont - 1].
@@ -20,7 +47,12 @@ static int exBalN, exLinN;
 // The language on the bar, found again when the list is rebuilt (add-ons
 // arriving late add languages before it). -1: the first one.
 static int exLingGrupo = -1;
+#endif
 static char exLingCod[8];
+#ifdef NV_TPK
+static int exRowF[EX_LIN_MAX], exRowV[EX_LIN_MAX], exNF, exNV, exLinN;
+#else
+#endif
 static CtxHold exHold;
 static unsigned exFxGer;
 static int exFxN = -2, exFxFoco;
@@ -29,6 +61,8 @@ static int exFxN = -2, exFxFoco;
 static int exFxTentativa;
 static Uint32 exFxDe;
 static AudioExtFaixa exFx[AUDIOEXT_FAIXAS_MAX];
+#ifdef NV_TPK
+#else
 // THE EPISODE ROW (owner's log 21/11, Farscape: IMDb numbers the episodes in
 // broadcast order, the Polish releases in production order, so the audio of
 // episode 2 is in episode 3's list). Above the language bar on a series
@@ -80,18 +114,42 @@ static void exEpMudar(int d) {
   printf("[ext-audio] another episode: the versions of episode %d%s\n", ep, exEpN ? "" : " (this one)"); fflush(stdout);
   extMontar(1);
 }
+#endif
 static char exFxRot[AUDIOEXT_FAIXAS_MAX][120];
 static AudioExtCand exFxCand;
 
+#ifdef NV_TPK
+#else
 static int exMesmoBalde(const AudioExtCand *a, const AudioExtCand *b) {
   if (a->grupo != b->grupo) return 0;
   return a->grupo != AEXT_G_OUTRA || !strcasecmp(a->idioma, b->idioma) || ling_casa(a->idioma, b->idioma);
 }
+#endif
 static int exFocavel(int i) { return i >= 0 && i < exLinN; }
 static const AudioExtCand *exCandDaLinha(int i) {
+#ifdef NV_TPK
+  if (!exFocavel(i) || i < exNF) return NULL;
+  return &extAll[exRowV[i - exNF]];
+#else
   if (!exFocavel(i) || exLingua < 0 || exLingua >= exBalN) return NULL;
   return &extAll[exBal[exLingua].ini + i];
+#endif
 }
+#ifdef NV_TPK
+static int exFaixaDaLinha(int i) { return exFocavel(i) && i < exNF ? exRowF[i] : -1; }
+// The rows of the page. The focus stays on the same track / version when the
+// list grows (versions arrive with the add-ons).
+static void exMontarLinhas(int focF, int focIdx) {
+  int nA = arqTotal();
+  exNF = exNV = 0;
+  for (int i = 0; i < nA && exNF < EX_LIN_MAX; i++) {
+    const VideoFaixa *f = arqFaixa(i);
+    if (auMesmo(f ? f->idioma : "", exLingCod)) exRowF[exNF++] = i;
+  }
+  for (int i = 0; i < extAllN && exNV < EX_LIN_MAX; i++)
+    if (auMesmo(auCandCod(&extAll[i]), exLingCod)) exRowV[exNV++] = i;
+  exLinN = exNF + exNV;
+#else
 // The languages of the list, in bar order: the list's own (preferred,
 // second, unknown) then the other languages by their count, the list's
 // (alphabetical) order on a tie.
@@ -128,27 +186,58 @@ static void exMontarLinhas(int focIdx) {
     }
   }
   exLinN = exBalN ? exBal[exLingua].cont : 0;
+#endif
   exFoco = 0;
+#ifdef NV_TPK
+  for (int i = 0; i < exLinN; i++) {
+    const AudioExtCand *c = exCandDaLinha(i);
+    if ((focF >= 0 && exFaixaDaLinha(i) == focF) || (focIdx >= 0 && c && c->indice == focIdx)) { exFoco = i; break; }
+  }
+#else
   for (int i = 0; i < exLinN; i++) { const AudioExtCand *c = exCandDaLinha(i); if (c && c->indice == focIdx) { exFoco = i; break; } }
   // Nothing to list (another episode's versions on their way): the episode row.
   if (!exLinN && exEpVisivel()) exFoco = -1;
+#endif
   if (exRol > exFoco) exRol = exFoco;
+#ifdef NV_TPK
+#else
   if (exRol < 0) exRol = 0;
+#endif
 }
+#ifdef NV_TPK
+// The track / version in focus, to find it again after a rebuild.
+#else
 // The version in focus (-1 none), to find it again after a rebuild.
 static int exFocoIndice(void) { const AudioExtCand *c = exCandDaLinha(exFoco); return c ? c->indice : -1; }
+#endif
 static void exReconstruir(void) {
+#ifdef NV_TPK
+  const AudioExtCand *c = exCandDaLinha(exFoco);
+  if (exPag == EXP_NADA) return;
+  exMontarLinhas(exFaixaDaLinha(exFoco), c ? c->indice : -1);
+#else
   int naLinhaEp = exFoco < 0 && exEpVisivel();
   exMontarLinhas(exFocoIndice());
   if (naLinhaEp) exFoco = -1;
+#endif
 }
 static int exPagAtiva(void) { return exPag != EXP_NADA; }
+#ifdef NV_TPK
+#else
 static float exAreaMax(void) { return IL_VIS * (IL_LN_H + IL_LN_VAO) - IL_LN_VAO; }
+#endif
 static void exAjustar(void) {
   if (exRol > exFoco) exRol = exFoco;
   if (exFoco - exRol >= IL_VIS) exRol = exFoco - IL_VIS + 1;
   if (exRol < 0) exRol = 0;
 }
+#ifdef NV_TPK
+// Language group `g` of the sheet's rows: its page, on the playing track
+// when it is in that language.
+static void exAbrir(int g) {
+  if (g < 0 || g >= auGN) return;
+  snprintf(exLingCod, sizeof exLingCod, "%s", auG[g].cod);
+#else
 static void exIr(int pag) {
   exPag = pag; exRol = 0; exFoco = 0;
   ctxhold_cancelar(&exHold);
@@ -156,21 +245,42 @@ static void exIr(int pag) {
 }
 static void exAbrir(void) {
   exLingGrupo = -1; exLingCod[0] = 0;
+#endif
   extMontar(1);
+#ifdef NV_TPK
+  exPag = EXP_LISTA; exRol = 0;
+  ctxhold_cancelar(&exHold);
+  { int fa = video_audio_arquivo_atual();
+    // Another source plays: the focus on its version (one check, there).
+    const char *u = audioext_url();
+    int vi = -1;
+    if (fa < 0 && u && u[0])
+      for (int i = 0; i < extAllN && vi < 0; i++) { const Stream *st = extFonteIdx(extAll[i].indice); if (st && !strcmp(st->url, u)) vi = extAll[i].indice; }
+    exMontarLinhas(fa, vi); }
+  exAjustar();
+  printf("[ext-audio] language page: %s, %d track(s) of this file, %d version(s) of other sources\n",
+         exLingCod[0] ? exLingCod : "unknown", exNF, exNV);
+  fflush(stdout);
+#else
   exIr(EXP_LISTA);
   exGuardarLingua();
   printf("[ext-audio] from another source: opened, %d versions in %d languages%s\n", extAllN, exBalN,
          exEpN > 0 ? " (another episode)" : ""); fflush(stdout);
+#endif
 }
 static void exFechar(void) {
   exPag = EXP_NADA;
   ctxhold_cancelar(&exHold);
 }
 static int exAceitaSegurar(void) {
+#ifdef NV_TPK
+  return exPag == EXP_LISTA && exCandDaLinha(exFoco) && audioext_sonda_disponivel();
+#else
   return exPag == EXP_LISTA && exFoco >= 0 && exCandDaLinha(exFoco) && audioext_sonda_disponivel();
 }
 static const char *exIdiomaFaixa(const AudioExtFaixa *f) {
   return !ling_tem_nome(f->idioma) && ling_tem_nome(exFxCand.idioma) ? exFxCand.idioma : f->idioma;
+#endif
 }
 // "Polski · E-AC-3 5.1 · Dubbing": language, codec and channels, the track
 // name when short; "used for sync" on this file's language.
@@ -180,9 +290,17 @@ static void exMontarFaixas(void) {
   for (int k = 0; k < exFxN && k < AUDIOEXT_FAIXAS_MAX; k++) {
     const AudioExtFaixa *f = &exFx[k];
     /* No language in the file ("und"): the version's own from the list. */
+#ifdef NV_TPK
+    const char *li = !ling_tem_nome(f->idioma) && ling_tem_nome(exFxCand.idioma) ? exFxCand.idioma : f->idioma;
+#else
     const char *li = exIdiomaFaixa(f);
+#endif
     const char *lg = li[0] ? i18n(ling_nome(li)) : i18n("Faixa"), *cd = f->codec;
+#ifdef NV_TPK
+    char ch[16] = "";
+#else
     char ch[8] = "";
+#endif
     for (size_t j = 0; j < sizeof m / sizeof *m; j++) if (!strcmp(f->codec, m[j][0])) cd = m[j][1];
     if (f->canais == 8) snprintf(ch, sizeof ch, " 7.1");
     else if (f->canais == 6) snprintf(ch, sizeof ch, " 5.1");
@@ -216,24 +334,45 @@ static void exOk(void) {
     } else if (exFxN != -2) exPag = exVoltar;
     return;
   }
+#ifdef NV_TPK
+  { int f = exFaixaDaLinha(exFoco);
+    const AudioExtCand *c = exCandDaLinha(exFoco);
+    if (f >= 0) { aplicarFaixaArquivo(f); exFechar(); aberta = 0; return; }
+#else
   { const AudioExtCand *c = exCandDaLinha(exFoco);
+#endif
     if (!c) return;
     extUsar(c, NULL);
     exFechar(); aberta = 0; }
 }
 static void exVoltarPagina(void) {
   if (exPag == EXP_FAIXAS) { exPag = exVoltar; return; }
+#ifdef NV_TPK
+  // Back on the language rows, on this language's row.
+#else
   // Back on the audio list, on the "From another source" row.
+#endif
   exFechar();
+#ifdef NV_TPK
+  { int g = auGrupoDe(exLingCod), l;
+    auMontar();
+    l = g >= 0 ? auLinhaDoGrupo(g) : -1;
+    if (l >= 0) foco[0] = l;
+    else if (foco[0] >= nLinhas(0)) foco[0] = nLinhas(0) > 0 ? nLinhas(0) - 1 : 0; }
+#else
   foco[0] = nLinhas(0) - 1;
+#endif
   ajustarRolagem();
 }
+#ifdef NV_TPK
+#else
 static void exMudarLingua(int d) {
   int l = exLingua + d;
   if (l < 0 || l >= exBalN) return;
   exLingua = l; exGuardarLingua();
   exRol = 0; exMontarLinhas(-1); exAjustar();
 }
+#endif
 static void exTecla(SDL_Keycode k) {
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) { exVoltarPagina(); return; }
   if (exPag == EXP_FAIXAS) {
@@ -243,6 +382,9 @@ static void exTecla(SDL_Keycode k) {
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) exOk();
     return;
   }
+#ifdef NV_TPK
+  if (k == SDLK_UP) { if (exFoco > 0) exFoco--; exAjustar(); return; }
+#else
   if (k == SDLK_LEFT || k == SDLK_RIGHT) {
     if (exFoco < 0) exEpMudar(k == SDLK_RIGHT ? 1 : -1);
     else exMudarLingua(k == SDLK_RIGHT ? 1 : -1);
@@ -253,8 +395,13 @@ static void exTecla(SDL_Keycode k) {
     else if (exFoco == 0 && exEpVisivel()) exFoco = -1;
     exAjustar(); return;
   }
+#endif
   if (k == SDLK_DOWN) { if (exFoco < exLinN - 1) exFoco++; exAjustar(); return; }
+#ifdef NV_TPK
+  if (k == SDLK_RETURN || k == SDLK_KP_ENTER) exOk();
+#else
   if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && exFoco >= 0) exOk();
+#endif
 }
 static void exEvento(const SDL_Event *e) {
   if (exPag == EXP_LISTA) {
@@ -271,7 +418,10 @@ static void exEvento(const SDL_Event *e) {
 // Per frame: the hold crossing its threshold, and the header read coming back.
 static void exPasso(Uint32 agora) {
   if (!aberta) { if (exPag) exFechar(); return; }
+#ifdef NV_TPK
+#else
   if (exEpDe && agora - exEpDe >= EX_EP_ESPERA_MS) { exEpDe = 0; exEpPedir(); extMontar(1); }
+#endif
   if (exPag == EXP_LISTA && ctxhold_passo(&exHold, agora, 1)) exAbrirFaixas();
   if (exPag == EXP_FAIXAS && exFxN == -2 && exFxDe && agora - exFxDe >= AUDIOEXT_ESPERA_MS) {
     const Stream *st = extFonteIdx(exFxCand.indice);
@@ -307,19 +457,30 @@ static float exConteudoH(void) {
   }
   if (!exLinN) return 60.0f;
   n = exLinN < IL_VIS ? exLinN : IL_VIS;
+#ifdef NV_TPK
+  return n * IL_LN_H + (n - 1) * IL_LN_VAO + (exNF && exNV ? EX_SEP_H : 0.0f);
+#else
   return n * IL_LN_H + (n - 1) * IL_LN_VAO;
+#endif
 }
 static float alturaExt(void) {
   float h = IL_PAD_Y + IL_TIT_H + 14.0f;
+#ifdef NV_TPK
+#else
   if (exPag == EXP_LISTA && exEpVisivel()) h += EX_EP_H + 12.0f;
   if (exPag == EXP_LISTA && exBalN) h += EX_SEG_H + 12.0f;
+#endif
   return h + exConteudoH() + 14.0f + IL_PE_H + IL_PAD_Y;
 }
 static void exLinhaCand(const AudioExtCand *c, float x, float y, float w, int sel, float a) {
   const Stream *st = extFonteIdx(c->indice);
   char sub[224];
   int dim = 0, cc = sel ? 255 : 219, cs = 122;
+#ifdef NV_TPK
+  int ativo = st && (audioext_tocando() || audioext_carregando()) && audioext_marcada(st->url);
+#else
   int ativo = st && (audioext_tocando() || audioext_carregando()) && audioext_marcada_nome(st->url, st->rotulo);
+#endif
   float da, dir = x + w - 22.0f;
   extDetalhes(c->indice, c->idioma, sub, sizeof sub, &dim);
   da = dim ? a * 0.5f : a;
@@ -349,6 +510,33 @@ static void exLinhaCand(const AudioExtCand *c, float x, float y, float w, int se
     gfx_icone((GfxRect){ x + w - 22.0f - 28.0f, y + (IL_LN_H - 28.0f) * 0.5f, 28.0f, 28.0f }, "pl_check", ar, ag, ab, a);
   }
 }
+#ifdef NV_TPK
+// One of this file's own tracks on a language page (like an embedded
+// subtitle): its label, "In this file", the check when it is what plays (never
+// while another source's audio plays: that version's row has the check).
+static void exLinhaFaixa(int k, float x, float y, float w, int sel, float a) {
+  const VideoFaixa *f = arqFaixa(k);
+  char nome[64], sub[160], t[96];
+  int cc = sel ? 255 : 219, cs = 122, ativo = k == video_audio_arquivo_atual();
+  float dir = x + w - 22.0f;
+  partirRotulo(f ? f->rotulo : "", nome, sizeof nome, t, sizeof t);
+  sub[0] = 0;
+  extJuntar(sub, sizeof sub, i18n("In this file"));
+  extJuntar(sub, sizeof sub, t);
+  if (sel) plrui_linha_foco((GfxRect){ x, y, w, IL_LN_H }, 22.0f, a);
+  rostoIdioma((GfxRect){ x + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f }, f && auCod(f->idioma)[0] ? f->idioma : "?", NULL, sel, a);
+  if (ativo) dir -= 46.0f;
+  { float tx = x + 22.0f + 52.0f + 18.0f, tw = dir - tx;
+    TxtLinha ln = txt_linha_corta(TXT_ILHA_FORTE, nome[0] ? nome : (f ? f->rotulo : ""), cc, cc, cc - 2, 255, tw);
+    TxtLinha ls = txt_linha_corta(TXT_ILHA_GENERO, sub, cs, cs, cs - 2, 255, tw);
+    float th = (float)ln.h + (sub[0] ? 5.0f + (float)ls.h : 0.0f), ty = y + (IL_LN_H - th) * 0.5f;
+    txt_desenhar_alpha(ln, tx, ty, a);
+    if (sub[0]) txt_desenhar_alpha(ls, tx, ty + (float)ln.h + 5.0f, a); }
+  if (ativo) {
+    float ar, ag, ab;
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_icone((GfxRect){ x + w - 22.0f - 28.0f, y + (IL_LN_H - 28.0f) * 0.5f, 28.0f, 28.0f }, "pl_check", ar, ag, ab, a);
+#else
 // The episode (t, e) of the series playing, from its metadata: its title and
 // still. The titles follow the catalogue's numbering (IMDb), not the other
 // release's, so with episodes numbered differently the title may not be the
@@ -433,28 +621,42 @@ static void exBarraLinguas(float x, float y, float w, float a) {
       for (int i = a0; i < a1; i++) { rot[i - a0] = exNomeBalde(i); cont[i - a0] = exBal[i].cont; }
       if (plrui_seg(rot, cont, a1 - a0, (float)(exLingua - a0), 0, -1.0f, 0, a) <= w) { ini = a0; fim = a1; cresceu = 1; }
     }
+#endif
   }
+#ifdef NV_TPK
+#else
   for (int i = ini; i < fim; i++) { rot[i - ini] = exNomeBalde(i); cont[i - ini] = exBal[i].cont; }
   // More languages past either end: the bar takes the whole width, no empty
   // strip that looks like the end of the list (owner 17/11).
   plrui_seg_largura(rot, cont, fim - ini, (float)(exLingua - ini), 0, x, y, a, (ini > 0 || fim < exBalN) ? w : 0.0f);
+#endif
 }
 static void corpoExt(GfxRect c, float a) {
   float x0 = c.x + IL_PAD_X, w = c.w - IL_PAD_X * 2.0f, y = c.y + IL_PAD_Y;
   char q[96];
+#ifdef NV_TPK
+  const char *titulo = exPag == EXP_FAIXAS ? "Choose audio track…" : extNomeIdioma(exLingCod);
+#else
   const char *titulo = exPag == EXP_FAIXAS ? "Choose audio track…" : "From another source";
+#endif
   { TxtLinha t = txt_linha(TXT_ILHA_PERGUNTA, titulo, 243, 242, 239, 255);
     int on = 0, tot = 0, filtro = exPag != EXP_FAIXAS && audioext_addons_resumo(&on, &tot);
     txt_desenhar_alpha(t, x0 + 10.0f, y, a);
     // Settings > Addons leaves some out: said here, or versions seem missing.
     if (exPag == EXP_FAIXAS) snprintf(q, sizeof q, "%s", extNomeIdioma(exFxCand.idioma));
     else if (filtro) snprintf(q, sizeof q, i18n("Addons: %d of %d"), on, tot);
+#ifdef NV_TPK
+    else snprintf(q, sizeof q, i18n("%d versions"), exNV);
+#else
     else snprintf(q, sizeof q, i18n("%d versions"), extAllN);
+#endif
     { TxtLinha l = txt_linha_corta(TXT_G18R, q, 243, 242, 239, 115, w * 0.45f);
       float lx = x0 + w - 10.0f - l.w, ly = y + (float)t.h - (float)l.h - 8.0f;
       txt_desenhar_alpha(l, lx, ly, a);
       if (filtro) gfx_icone((GfxRect){ lx - 26.0f, ly + ((float)l.h - 20.0f) * 0.5f, 20.0f, 20.0f }, "aj_funnel", 1, 1, 1, 0.6f * a); } }
   y += IL_TIT_H + 14.0f;
+#ifdef NV_TPK
+#else
   if (exPag == EXP_LISTA && exEpVisivel()) {
     exLinhaEp(x0, y, w, a);
     y += EX_EP_H + 12.0f;
@@ -463,6 +665,7 @@ static void corpoExt(GfxRect c, float a) {
     exBarraLinguas(x0 + 10.0f, y, w - 20.0f, a);
     y += EX_SEG_H + 12.0f;
   }
+#endif
   { float area = exConteudoH(), y0 = y;
     if (exPag == EXP_FAIXAS) {
       int n = exFxN > 0 ? exFxN : 1, r = 0, vis = IL_VIS;
@@ -478,15 +681,24 @@ static void corpoExt(GfxRect c, float a) {
                            : exFxN == 0 ? "No audio track this TV can play"
                            : exFxN < 0 ? "Could not read the audio tracks" : exFxRot[i];
         if (sel) plrui_linha_foco((GfxRect){ x0, y, w, IL_LN_H }, 22.0f, a);
+#ifdef NV_TPK
+        rostoIdioma((GfxRect){ x0 + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f }, NULL,
+                    exFxN > 0 || exFxN == -2 ? "pl_audio-lines" : "aj_triangle-alert", sel, a);
+#else
         const char *lang = exFxN > 0 ? exIdiomaFaixa(&exFx[i]) : "";
         int hasLanguage = ling_tem_nome(lang);
         rostoIdioma((GfxRect){ x0 + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f },
                     hasLanguage ? lang : NULL, hasLanguage ? NULL :
                     (exFxN > 0 || exFxN == -2 ? "pl_audio-lines" : "aj_triangle-alert"), sel, a);
+#endif
         { TxtLinha l = txt_linha_corta(TXT_ILHA_FORTE, rotulo, cc, cc, cc - 2, 255, w - 92.0f - 22.0f);
           txt_desenhar_alpha(l, x0 + 92.0f, y + (IL_LN_H - (float)l.h) * 0.5f, a); }
       }
     } else if (!exLinN) {
+#ifdef NV_TPK
+      txt_bloco(TXT_ILHA_TEXTO, "No track and no other version in this language.", 160, 160, 158,
+                x0 + 10.0f, y + 12.0f, w - 20.0f, 28, a, 2);
+#else
       char vazio[160];
       int st = exEpN > 0 ? audioextep_estado() : AEXTEP_NADA;
       if (exEpN > 0 && (exEpDe || st == AEXTEP_BUSCANDO))
@@ -497,11 +709,32 @@ static void corpoExt(GfxRect c, float a) {
         snprintf(vazio, sizeof vazio, i18n("No version of episode %d can lend its audio."), exEpN);
       else snprintf(vazio, sizeof vazio, "%s", i18n("No other version of this title can lend its audio."));
       txt_bloco(TXT_ILHA_TEXTO, vazio, 160, 160, 158, x0 + 10.0f, y + 12.0f, w - 20.0f, 28, a, 2);
+#endif
     } else {
       exAjustar();
       for (int i = exRol; i < exLinN && i < exRol + IL_VIS; i++, y += IL_LN_H + IL_LN_VAO) {
         const AudioExtCand *cd = exCandDaLinha(i);
+#ifdef NV_TPK
+        // THE DIVIDER (owner 18/11): this file's tracks above, the other
+        // sources' versions below, with the words for them.
+        if (i == exNF && exNF && exNV) {
+          if (i > exRol) {
+            TxtLinha l = txt_linha(TXT_ILHA_APOIO, i18n("Other sources"), 243, 242, 239, 115);
+            float ly = y + (EX_SEP_H - (float)l.h) * 0.5f - IL_LN_VAO * 0.5f;
+            gfx_cor((GfxRect){ x0 + 22.0f, ly + (float)l.h * 0.5f, 18.0f, 1.0f }, 0.0f, 1, 1, 1, 0.14f * a);
+            txt_desenhar_alpha(l, x0 + 22.0f + 18.0f + 12.0f, ly, a);
+            gfx_cor((GfxRect){ x0 + 22.0f + 18.0f + 24.0f + (float)l.w, ly + (float)l.h * 0.5f,
+                               w - 44.0f - 18.0f - 24.0f - (float)l.w, 1.0f }, 0.0f, 1, 1, 1, 0.14f * a);
+          }
+          y += EX_SEP_H;
+        }
+#else
+#endif
         if (cd) exLinhaCand(cd, x0, y, w, i == exFoco, a);
+#ifdef NV_TPK
+        else if (exFaixaDaLinha(i) >= 0) exLinhaFaixa(exFaixaDaLinha(i), x0, y, w, i == exFoco, a);
+#else
+#endif
       }
     }
     y = y0 + area + 14.0f; }
@@ -518,19 +751,32 @@ static void corpoExt(GfxRect c, float a) {
       const char *k[2] = { "OK", "Voltar" }, *rt[2] = { "Use", "Cancel" };
       plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
     } else {
+#ifdef NV_TPK
+      // Back (one page up) is the remote's own; the hold's hint goes first
+      // when the words do not fit.
+#else
       // Back (one page up) is the remote's own. LEFT/RIGHT only with more than
       // one language; when long words do not fit, the bar above already says
       // what LEFT/RIGHT does, so that hint goes first, then the hold's.
+#endif
       const char *k[3], *rt[3];
       int n = 0, ini = 0;
       float livre = w - 20.0f - (float)txt_largura(TXT_ILHA_APOIO, q) - 24.0f;
+#ifdef NV_TPK
+      if (exCandDaLinha(exFoco) || exFaixaDaLinha(exFoco) >= 0) { k[n] = "OK"; rt[n] = "Use"; n++; }
+#else
       if (exFoco < 0) { k[n] = "\xe2\x86\x90 \xe2\x86\x92"; rt[n] = "Episódio"; n++; }
       else if (exBalN > 1) { k[n] = "\xe2\x86\x90 \xe2\x86\x92"; rt[n] = "Language"; n++; }
       if (exCandDaLinha(exFoco)) { k[n] = "OK"; rt[n] = "Use"; n++; }
+#endif
       if (exCandDaLinha(exFoco) && audioext_sonda_disponivel()) { k[n] = "Hold OK"; rt[n] = "Pick track"; n++; }
       /* x < 0: measured only */
       while (n - ini > 1 && plrui_dicas(k + ini, rt + ini, n - ini, -1.0f, yc, 1, a) > livre) {
+#ifdef NV_TPK
+        n--;
+#else
         if (ini == 0 && (exBalN > 1 || exFoco < 0)) ini = 1; else n--;
+#endif
       }
       if (n - ini > 0) plrui_dicas(k + ini, rt + ini, n - ini, x0 + w - 10.0f, yc, 1, a);
     } }

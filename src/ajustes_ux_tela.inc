@@ -27,8 +27,15 @@ static const Item TELA[] = {
       OPC(AJ_PAUSA_OVERLAY), OPC(AJ_PAUSA_COMENTARIOS), OPC(AJ_PAUSA_NOTAS), OPC(AJ_PAUSA_ELENCO), OPC(AJ_TELA_ABERTURA), OPC(AJ_ABERTURA_ADDON), OPC(AJ_ABERTURA_FUNDO), OPC(AJ_ABERTURA_ESTILO), OPC(AJ_ESTAT_TAMANHO), OPC(AJ_ESTAT_LADO), OPC(AJ_PLR_CLASSIF), OPC(AJ_PULAR_ABERTURA), OPC(AJ_PULAR_RESUMO),
       OPC(AJ_PULAR_CREDITOS), OPC(AJ_PROXIMO_AUTO), OPC(AJ_PROXIMO_CONTAGEM), OPC(AJ_REACAO_CREDITOS), OPC(AJ_CW_CONCLUIDO), OPC(AJ_CW_MINIMO),
       OPC(AJ_PLR_FORMATO), OPC(AJ_PLR_FORMATO_POS), OPC(AJ_PLR_CODEC), OPC(AJ_SAIDA_PLAYER), OPC(AJ_PROPORCAO_PADRAO), OPC(AJ_BRILHO_PLAYER), OPC(AJ_HDR_UI),
+#ifndef NV_TPK40
+    // Tizen 4-5.5 (NuvioTpk40): no seek-bar thumbnails (miniatura.c, tester logs 11/2026).
     ROT("Miniatura ao avançar"),
-      OPC(AJ_SEEKR_LIGADO), OPC(AJ_SEEKR_CHAVE), OPC(AJ_SEEKR_TESTAR), OPC(AJ_SEEKR_FITA),
+      OPC(AJ_SEEKR_LIGADO),
+#ifndef NV_MINIATURAS
+      OPC(AJ_SEEKR_CHAVE), OPC(AJ_SEEKR_TESTAR),   // .tpk: thumbnails made on the TV, no key
+#endif
+      OPC(AJ_SEEKR_FITA),
+#endif
     MAIS(),
     ROT("Escolha da fonte"),
       // #310: o "Auto-play streams" do oficial (fonteregra.h).
@@ -64,13 +71,17 @@ static const Item TELA[] = {
 #if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
       OPC(AJ_DV_AUDIO_FIXO),
 #endif
-#ifndef __EMSCRIPTEN__
-      // Audio from another version (owner, 07/11): right under the Dolby
-      // Vision audio output; one row, its options in its sheet (eaAbrir).
+#endif
+#if defined(NV_TPK) || (!defined(NV_ANDROID) && !defined(__EMSCRIPTEN__))
+      // Audio from another source (owner, 07/11): one row, its options in its
+      // sheet (eaAbrir). webOS: right under the Dolby Vision audio output;
+      // .tpk: right under the DTS output.
       OPC(AJ_EXT_AUDIO),
 #endif
+      OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO),
+#ifndef NV_MINIATURAS
+      OPC(AJ_SEEKR_AJUSTE),   // .tpk: frames come from the file itself, never out of sync
 #endif
-      OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO), OPC(AJ_SEEKR_AJUSTE),
 #if defined(NV_ANDROID) || (!defined(NV_TPK) && !defined(__EMSCRIPTEN__))
       OPC(AJ_BUFFER),   // webOS: native and conversion RAM read-ahead
 #endif

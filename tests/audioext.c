@@ -48,6 +48,9 @@ static void escolherSerie(const char *alvo, const char *grupo, int offset) {
 static uint64_t agoraTeste;
 static uint64_t relogioTeste(void) { return agoraTeste; }
 
+static char memArq[65536];
+static char *lerMem(const char *nome) { char *r; (void)nome; if (!memArq[0]) return NULL; r = malloc(strlen(memArq) + 1); if (r) strcpy(r, memArq); return r; }
+static int gravarMem(const char *nome, const char *t) { (void)nome; snprintf(memArq, sizeof memArq, "%s", t); return 1; }
 int main(void) {
   AudioExtIdent id, got;
   // Version names as the series memory compares them (owner's log 16/11).
@@ -489,6 +492,36 @@ int main(void) {
     audioext_definir_memoria_arquivo(NULL, NULL, NULL);
     audioext_definir_relogio(NULL);
     audioext_limpar(); }
-  puts("audioext: marks, menu requests, offsets, series memory and matching passed");
+  // "Scan again" per show (owner 18/11): the show key, kept across episodes,
+  // through the data store, Auto forgets it, at most 200 shows.
+  { char k[64], l[16], c[24];
+    int ch;
+    assert(audioext_serie_chave("tt0137523", k, sizeof k) && !strcmp(k, "tt0137523"));
+    assert(audioext_serie_chave("tt123:1:2", k, sizeof k) && !strcmp(k, "tt123"));
+    assert(audioext_serie_chave("kitsu:47192:1", k, sizeof k) && !strcmp(k, "kitsu:47192"));
+    assert(audioext_serie_chave("tmdb:55:2:7", k, sizeof k) && !strcmp(k, "tmdb:55"));
+    assert(!audioext_serie_chave("", k, sizeof k));
+    audioext_match_io(lerMem, gravarMem);
+    audioext_alvo("kitsu:47192:1");
+    assert(!audioext_match_faixa(l, sizeof l, c, sizeof c, &ch));
+    audioext_match_definir("jpn", "flac", 2);
+    audioext_alvo("kitsu:47192:2");
+    assert(audioext_match_faixa(l, sizeof l, c, sizeof c, &ch) && !strcmp(l, "jpn") && !strcmp(c, "flac") && ch == 2);
+    assert(strstr(memArq, "kitsu:47192\tjpn\tflac\t2\n"));
+    audioext_match_io(lerMem, gravarMem);   // read back from the store
+    assert(audioext_match_faixa(l, sizeof l, c, sizeof c, &ch) && !strcmp(l, "jpn"));
+    audioext_alvo("tt999:1:1");
+    assert(!audioext_match_faixa(l, sizeof l, c, sizeof c, &ch));
+    for (int i = 0; i < 205; i++) {
+      char a[32]; snprintf(a, sizeof a, "tt%d:1:1", 1000 + i); audioext_alvo(a); audioext_match_definir("eng", "ac3", 6);
+    }
+    audioext_alvo("kitsu:47192:3");
+    assert(!audioext_match_faixa(l, sizeof l, c, sizeof c, &ch));   // the oldest went
+    audioext_alvo("tt1204:1:9");
+    assert(audioext_match_faixa(l, sizeof l, c, sizeof c, &ch) && ch == 6);
+    audioext_match_definir("", "", 0);
+    assert(!audioext_match_faixa(l, sizeof l, c, sizeof c, &ch));
+    audioext_alvo(""); }
+  puts("audioext: marks, menu requests, offsets, series memory and matching, Scan again per show passed");
   return 0;
 }
