@@ -130,9 +130,9 @@ char *assrender_marcar_tailandes(const char *txt) {
 #include "bidi.h"
 #include "assperf.h"
 #include "assfios.h"
+#include "memlog.h"   // memlog_livre_mb: the 100 MB low-memory guard
 #ifdef NV_TPK
 #include "video.h"    // video_tpk_leituras ("[ass] 10s tv")
-#include "memlog.h"
 #include "mkvfix.h"   // mkvfix_medidas ("[mkvfix] 10s")
 #endif
 #if !defined(__EMSCRIPTEN__)
@@ -162,6 +162,22 @@ static int ass_usable_cpus(void) {
   return onln > 0 ? (int)onln : 1;
 }
 #endif
+
+/* mpvNova's event pool (libass hybrid, ASS_EVENT_THREADS) sizes itself from
+ * sysconf(_SC_NPROCESSORS_ONLN): in the 1-core Tizen 4/5 sandbox that is 4,
+ * so each of the two renderers started 3 workers on the one core the app
+ * has. LIBASS_RENDER_THREADS caps it; it is read when a renderer first
+ * renders events, so it is set once at startup, before any app thread, and a
+ * value set by hand (tests, diagnostics) is kept. */
+void assrender_fios_ambiente(void) {
+#if defined(NV_TPK) && defined(ASS_NV_HYBRID)
+  char v[8];
+  int n = ass_usable_cpus();
+  if (getenv("LIBASS_RENDER_THREADS")) return;
+  snprintf(v, sizeof v, "%d", n < 1 ? 1 : n > 4 ? 4 : n);
+  setenv("LIBASS_RENDER_THREADS", v, 0);
+#endif
+}
 
 #define ASS_TEX_INICIAL 64
 
@@ -1022,6 +1038,57 @@ static void ass_rigid_clear(void) {
   pthread_mutex_unlock(&assRigidTrava);
 }
 
+/* LOW MEMORY (owner 25/11/2026: "don't make RAM too restrictive, start low
+ * RAM measures at 100 MB of free RAM"). Above 100 MB MemAvailable the 22/11
+ * caps stand (libass 96/64 MB, rigid layers 96 MB, textures 64 MB). Below it,
+ * checked once a second on the worker between frames:
+ *   - the rigid layer cache is emptied (again at most every 10 s while low),
+ *   - the GL thread drops the subtitle textures (assTexResetar, after the
+ *     worker lets go of assTrava: no lock nesting),
+ *   - the libass bitmap caches go back to the pre-22/11 32/24 MB (libass
+ *     trims them on the next render).
+ * Above 150 MB again (MEMLOG_PISO_MB, the app's own warning) the full caps
+ * come back. Unknown memory (-1) never counts as low. */
+#define ASS_POUCA_MEM_MB 100
+static int assPoucaMem;               // worker only (under assTrava)
+static int assPoucaMemTex;            // set under assTrava, taken (atomic) after unlocking it
+static long long assPoucaMemVisto = LLONG_MIN, assPoucaMemSolto = LLONG_MIN;
+static void ass_pouca_memoria_ver_locked(const struct timespec *agora, int forcar) {
+  long long ms = (long long)agora->tv_sec * 1000LL + agora->tv_nsec / 1000000LL;
+  long livre;
+  if (!forcar && assPoucaMemVisto != LLONG_MIN && ms - assPoucaMemVisto < 1000) return;
+  assPoucaMemVisto = ms;
+  livre = memlog_livre_mb();
+  if (livre >= 0 && livre < ASS_POUCA_MEM_MB) {
+    size_t rigido;
+    if (!assPoucaMem || assPoucaMemSolto == LLONG_MIN || ms - assPoucaMemSolto >= 10000) {
+      pthread_mutex_lock(&assRigidTrava); rigido = assRigidBytes; pthread_mutex_unlock(&assRigidTrava);
+      ass_rigid_clear();
+      __atomic_store_n(&assPoucaMemTex, 1, __ATOMIC_RELEASE);
+      assPoucaMemSolto = ms;
+      printf("[ass] low memory: %ld MB free (< %d): layer cache %.1f MB freed, subtitle textures dropped, "
+             "libass caches 32/24 MB%s\n", livre, ASS_POUCA_MEM_MB, rigido / 1048576.0, assPoucaMem ? " (still low)" : "");
+      fflush(stdout);
+    }
+    if (assRenderer) ass_set_cache_limits(assRenderer, 0, 32);
+    if (assRendererB) ass_set_cache_limits(assRendererB, 0, 24);
+    assPoucaMem = 1;
+  } else if (assPoucaMem && livre >= MEMLOG_PISO_MB) {
+    if (assRenderer) ass_set_cache_limits(assRenderer, 0, 96);
+    if (assRendererB) ass_set_cache_limits(assRendererB, 0, 64);
+    assPoucaMem = 0;
+    printf("[ass] memory back: %ld MB free, full subtitle caches\n", livre);
+    fflush(stdout);
+  }
+}
+/* After the worker unlocks assTrava. */
+static void ass_pouca_memoria_texturas(void) {
+  if (!__atomic_exchange_n(&assPoucaMemTex, 0, __ATOMIC_ACQ_REL)) return;
+  pthread_mutex_lock(&assFilaTrava);
+  assTexResetar = 1;
+  pthread_mutex_unlock(&assFilaTrava);
+}
+
 static int ass_rigid_should_cache(uint64_t sig, long long nowMs) {
   unsigned slot = (unsigned)((sig ^ (sig >> 32)) & (ASS_RIGID_SEEN_MAX - 1));
   int hit = 0;
@@ -1273,12 +1340,20 @@ static void ass_aplicar_assperf_locked(void) {
        * "[ass] 10s" lines are read against its cores and memory. */
       printf("[ass] tv: cores=%ld online of %ld (usable=%d) | RAM=%ldMB total, %ldMB free | "
              "bitmap engine=%s, blur threads=%d | render ahead=%dms, lines dropped after=%lds, "
-             "attached fonts up to=%luMB, relay park=%ldMB\n",
+             "attached fonts up to=%luMB, relay park=%ldMB | libass=%s%s, event threads=%s\n",
              sysconf(_SC_NPROCESSORS_ONLN), sysconf(_SC_NPROCESSORS_CONF), usable,
              memlog_total_mb(), memlog_livre_mb(),
              ass_nv_get_engine(assRenderer) ? "NEON" : "C", ass_nv_get_threads(),
              (int)ASSPERF_ADIANTE_MS, (long)(ASSPERF_PODA_MS / 1000L),
-             (unsigned long)(ASSPERF_FONTES_TETO >> 20), (long)(ASSPERF_PARQUE >> 20));
+             (unsigned long)(ASSPERF_FONTES_TETO >> 20), (long)(ASSPERF_PARQUE >> 20),
+#ifdef ASS_NV_HYBRID
+             ASS_NV_HYBRID,   /* libass-hybrid-test */
+             ass_nv_armv7_engine() == 2 ? ", armv7 engine mpvNova" :
+             ass_nv_armv7_engine() == 1 ? ", armv7 engine neon32" : ""
+#else
+             "0.17.5 + libass-nv", ""
+#endif
+             , getenv("LIBASS_RENDER_THREADS") ? getenv("LIBASS_RENDER_THREADS") : "libass default");
       fflush(stdout);
     } }
   /* Dialogue opacity (Subtitles > Style): only lines without \pos, \move,
@@ -2616,6 +2691,7 @@ static void *ass_worker_loop(void *unused) {
     clock_gettime(CLOCK_MONOTONIC, &a);
     pthread_mutex_lock(&assTrava);
     clock_gettime(CLOCK_MONOTONIC, &c0);
+    ass_pouca_memoria_ver_locked(&c0, 0);
     if (generation == __atomic_load_n(&assGeracao, __ATOMIC_ACQUIRE) &&
         generation == assTrackGeracao &&
         assTrack && assRenderer) {
@@ -2887,6 +2963,7 @@ static void *ass_worker_loop(void *unused) {
       if (ASS_NOVO && pronto && assperf_pesado()) ass_diag_tiras(images, imagesB, t, resol, dividir ? resolB : 0.0, baseH * k, k);
     }
     pthread_mutex_unlock(&assTrava);
+    ass_pouca_memoria_texturas();
 #if ASS_NOVO
     /* Read atomically: the GL thread writes these when the viewer picks a color. */
     int flatR = -1, imgsAntes = 0;
@@ -4099,9 +4176,15 @@ void assrender_limpar_fontes(void) {
 // refeito, o que tambem encerra o loop de fallback). Custa uma releitura
 // da pasta de fontes; aceitavel porque so roda no aviso.
 void assrender_aliviar(void) {
+  struct timespec agora;
+  clock_gettime(CLOCK_MONOTONIC, &agora);
   pthread_mutex_lock(&assTrava);
   if (assRenderer) ass_aplicar_fontes_locked();
+  /* The OS warning / the app's 150 MB warning: the 100 MB rule right away
+   * (not only at the worker's next once-a-second look). */
+  ass_pouca_memoria_ver_locked(&agora, 1);
   pthread_mutex_unlock(&assTrava);
+  ass_pouca_memoria_texturas();
 }
 
 int assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanho) {
@@ -4804,6 +4887,7 @@ void assrender_definir_fps(double fps) { (void)fps; }
 void assrender_definir_cor_video(int matriz, int faixa, int hdr, int altura) { (void)matriz; (void)faixa; (void)hdr; (void)altura; }
 void assrender_limpar_fontes(void) {}
 void assrender_aliviar(void) {}
+void assrender_fios_ambiente(void) {}
 int assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanho) {
   (void)nome; (void)dados; (void)tamanho; return 0;
 }

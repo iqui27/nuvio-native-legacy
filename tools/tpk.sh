@@ -76,19 +76,43 @@ tpk_sdk
 # $CACHE/src/libass-nv; deps.sh builds a copy of that tree. The stamp is the
 # hash of the patches: change a patch and libass (only libass) is rebuilt.
 # Extra CFLAGS for libass only (tools/tpk/libass-nv/cflags, plan Step 2) are part of the stamp.
-NV_ASS_STAMP=$(cat tools/tpk/libass-nv/patches/*.patch tools/tpk/libass-nv/cflags | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)
+# libass-hybrid-test branch: NV_ASS_BASE=hybrid (default here) builds
+# Laskco/mpvNova-libass (libass 0.17.5 fork used by NuvioMedia/NuvioTV, pinned
+# commit below) + tools/tpk/libass-hybrid/hybrid.patch (our 0001-0004 ported
+# onto it: neon32 engine + blur threads, ASS_NV_API, split render). Needs
+# autoreconf on the host (the fork is a git tree, no ./configure).
+# NV_ASS_BASE=nv keeps the old 0.17.5 + tools/tpk/libass-nv/patches.
+NV_ASS_BASE=${NV_ASS_BASE:-hybrid}
+NOVA_REV=b6209274415490615baa3f01f2409cb5facda674
+if [ "$NV_ASS_BASE" = hybrid ]; then
+  NV_ASS_STAMP=$( { echo "$NOVA_REV"; cat tools/tpk/libass-hybrid/hybrid.patch tools/tpk/libass-hybrid/cflags; } | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)
+else
+  NV_ASS_STAMP=$(cat tools/tpk/libass-nv/patches/*.patch tools/tpk/libass-nv/cflags | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)
+fi
 if [ "$(cat "$CACHE/src/libass-nv/.nv-stamp" 2>/dev/null)" != "$NV_ASS_STAMP" ]; then
-  echo "[deps] libass 0.17.5 + tools/tpk/libass-nv/patches"
   mkdir -p "$CACHE/src"
-  [ -f "$CACHE/src/libass-0.17.5.tar.xz" ] ||
-    { curl -fsSL https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz -o "$CACHE/src/libass-0.17.5.tar.xz.tmp" &&
-      mv "$CACHE/src/libass-0.17.5.tar.xz.tmp" "$CACHE/src/libass-0.17.5.tar.xz"; }
   rm -rf "$CACHE/src/libass-nv"; mkdir -p "$CACHE/src/libass-nv"
-  tar xJf "$CACHE/src/libass-0.17.5.tar.xz" -C "$CACHE/src/libass-nv" --strip-components=1
-  for p in tools/tpk/libass-nv/patches/*.patch; do
-    patch -d "$CACHE/src/libass-nv" -p1 -s --forward < "$p" || { echo "libass patch falhou: $p" >&2; exit 1; }
-  done
-  tr -d '\n' < tools/tpk/libass-nv/cflags > "$CACHE/src/libass-nv/.nv-cflags"
+  if [ "$NV_ASS_BASE" = hybrid ]; then
+    echo "[deps] mpvNova-libass ${NOVA_REV%${NOVA_REV#????????}} + tools/tpk/libass-hybrid/hybrid.patch"
+    command -v autoreconf >/dev/null || { echo "libass hybrid: autoreconf missing (apt install autoconf automake libtool)" >&2; exit 1; }
+    [ -f "$CACHE/src/mpvNova-libass-$NOVA_REV.tar.gz" ] ||
+      { curl -fsSL "https://github.com/Laskco/mpvNova-libass/archive/$NOVA_REV.tar.gz" -o "$CACHE/src/nova.tmp" &&
+        mv "$CACHE/src/nova.tmp" "$CACHE/src/mpvNova-libass-$NOVA_REV.tar.gz"; } || exit 1
+    tar xzf "$CACHE/src/mpvNova-libass-$NOVA_REV.tar.gz" -C "$CACHE/src/libass-nv" --strip-components=1
+    patch -d "$CACHE/src/libass-nv" -p1 -s --forward < tools/tpk/libass-hybrid/hybrid.patch || { echo "libass hybrid patch falhou" >&2; exit 1; }
+    ( cd "$CACHE/src/libass-nv" && ./autogen.sh >/dev/null 2>&1 ) || { echo "libass hybrid: autogen falhou" >&2; exit 1; }
+    tr -d '\n' < tools/tpk/libass-hybrid/cflags > "$CACHE/src/libass-nv/.nv-cflags"
+  else
+    echo "[deps] libass 0.17.5 + tools/tpk/libass-nv/patches"
+    [ -f "$CACHE/src/libass-0.17.5.tar.xz" ] ||
+      { curl -fsSL https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz -o "$CACHE/src/libass-0.17.5.tar.xz.tmp" &&
+        mv "$CACHE/src/libass-0.17.5.tar.xz.tmp" "$CACHE/src/libass-0.17.5.tar.xz"; }
+    tar xJf "$CACHE/src/libass-0.17.5.tar.xz" -C "$CACHE/src/libass-nv" --strip-components=1
+    for p in tools/tpk/libass-nv/patches/*.patch; do
+      patch -d "$CACHE/src/libass-nv" -p1 -s --forward < "$p" || { echo "libass patch falhou: $p" >&2; exit 1; }
+    done
+    tr -d '\n' < tools/tpk/libass-nv/cflags > "$CACHE/src/libass-nv/.nv-cflags"
+  fi
   printf "%s" "$NV_ASS_STAMP" > "$CACHE/src/libass-nv/.nv-stamp"
 fi
 

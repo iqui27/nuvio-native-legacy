@@ -21,7 +21,7 @@ fi
 # assrender.c is included verbatim by the fixture so internal cache invariants can be checked.
 # shellcheck disable=SC2046
 "${CC:-cc}" "${flags[@]}" $(pkg-config --cflags libass fribidi sdl2 SDL2_ttf) \
-  tests/ass_fontes_tarde.c src/assperf.c src/assfios.c src/legfontes.c src/bidi.c src/plainass.c \
+  tests/ass_fontes_tarde.c src/assperf.c src/assfios.c src/memlog.c src/legfontes.c src/bidi.c src/plainass.c \
   -o "$work/test" $(pkg-config --libs libass fribidi sdl2 SDL2_ttf) "${platform[@]}"
 # The late font must be one the system's font provider does not know (as on
 # the TV, which has none): the CC0 fixture.

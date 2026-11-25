@@ -26,6 +26,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <locale.h>
+#include "assrender.h"
 #include "video.h"
 #include "logrede.h"   // nv_tpk_log_net: logrede_limpar
 #include "player.h"
@@ -231,6 +232,7 @@ int nv_tpk_iniciar(const char *arte, const char *dados, int w, int h) {
   setenv("NUVIO_LOG", log, 1);
   setenv("HOME", dados, 1);
   setenv("SDL_VIDEODRIVER", "dummy", 1);
+  assrender_fios_ambiente();   // libass event threads = usable CPUs (1-core 4/5 sandbox)
   nv_tpk40_etapa("ok native-environment");
   pthread_attr_init(&at);
   // O main() e o laco usam pilha como um processo normal (buffers de 4-8 KB

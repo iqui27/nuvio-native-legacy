@@ -58,7 +58,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.NUVIO_TPK_CACHE }}
-          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh', 'tools/tpk/libass-nv/patches/*', 'tools/tpk/libass-nv/cflags') }}
+          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh', 'tools/tpk/libass-nv/patches/*', 'tools/tpk/libass-nv/cflags', 'tools/tpk/libass-hybrid/hybrid.patch', 'tools/tpk/libass-hybrid/cflags') }}
           # Only the libass patches changed: the rest still comes back, and
           # tools/tpk.sh rebuilds just libass (its stamp is the patches' hash).
           restore-keys: |
@@ -85,8 +85,9 @@ jobs:
           dotnet workload list
 
       # tools/tizen-art.sh converts the art from webp to png and needs ffmpeg.
+      # libass-hybrid-test: autoreconf for the mpvNova-libass git tree.
       - name: Install ffmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg autoconf automake libtool
 
       # Same workaround used on the owner's computer: the arm/v5 platform name
       # is not accepted by the emulation, plain linux/arm is.
@@ -104,7 +105,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.NUVIO_TPK_CACHE }}
-          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh', 'tools/tpk/libass-nv/patches/*', 'tools/tpk/libass-nv/cflags') }}
+          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh', 'tools/tpk/libass-nv/patches/*', 'tools/tpk/libass-nv/cflags', 'tools/tpk/libass-hybrid/hybrid.patch', 'tools/tpk/libass-hybrid/cflags') }}
 
       # Only a finished FFmpeg build (tpk.sh writes .carimbo last) is cached.
       - name: Check FFmpeg (DTS) build
@@ -151,6 +152,9 @@ jobs:
           ok=1
           docker run --rm --platform linux/arm -v "$NUVIO_TPK_CACHE:/w" -v "$PWD:/work" -w /work \
             nuvio-tpk-sdk sh tools/tpk/libass-nv/verify.sh 2>&1 | tee verify-libass.log || ok=0
+          # libass-hybrid-test: the same checks on mpvNova's armv7 engine.
+          docker run --rm --platform linux/arm -e ASS_NV_ARMV7=nova -v "$NUVIO_TPK_CACHE:/w" -v "$PWD:/work" -w /work \
+            nuvio-tpk-sdk sh tools/tpk/libass-nv/verify.sh 2>&1 | sed 's/^/[nova engine] /' | tee -a verify-libass.log || ok=0
           {
             echo '### libass NEON engine + blur threads (qemu-arm)'
             echo '```'

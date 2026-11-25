@@ -11,7 +11,7 @@ if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists libass; then
 fi
 SDLI="${NV_SDL_INC:-$(pkg-config --cflags-only-I sdl2 2>/dev/null | sed 's#/SDL2##') -I/opt/homebrew/include}"
 cc -DNV_ASS_LIBASS -DNV_ASS_NOVO -DNV_ASSPERF_TESTE -include tests/ass_matriz_gl.h \
-  -Isrc $SDLI tests/ass_trava_gl.c src/asssinais.c src/assperf.c src/assfios.c tests/ass_render_stub.c \
+  -Isrc $SDLI tests/ass_trava_gl.c src/asssinais.c src/assperf.c src/assfios.c src/memlog.c tests/ass_render_stub.c \
   -o "$TMPDIR/nuvio-ass-trava-gl-test" \
   $(pkg-config --cflags --libs libass) -lSDL2 -lpthread -lm -Wno-deprecated-declarations
 "$TMPDIR/nuvio-ass-trava-gl-test"
