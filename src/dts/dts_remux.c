@@ -206,6 +206,7 @@ struct DtsRemux {
   pthread_mutex_t lock;
   DtsEngine *engines[ENGINES_MAX]; int nEngines;
   volatile int *extCancel;
+  int idxCapped;                    /* the index read hit IDX_BUDGET: no index */
   int cancelled;
 };
 
@@ -466,6 +467,17 @@ DtsRemux *dts_remux_new(volatile int *cancel) {
   return r;
 }
 
+/* The probe's index read, counted (see IDX_BUDGET). */
+#define IDX_BUDGET (12 << 20)
+typedef struct { int (*fn)(void *, uint8_t *, int); int64_t (*sk)(void *, int64_t, int); void *op; int64_t n; } IdxCap;
+static int idxCapRead(void *o, uint8_t *b, int n) {
+  IdxCap *c = o;
+  if (c->n > IDX_BUDGET) return AVERROR_EXIT;
+  int k = c->fn(c->op, b, n);
+  if (k > 0) c->n += k;
+  return k;
+}
+static int64_t idxCapSeek(void *o, int64_t off, int whence) { IdxCap *c = o; return c->sk(c->op, off, whence); }
 static int isCancelled(DtsRemux *r) {
   int c;
   pthread_mutex_lock(&r->lock);
@@ -585,7 +597,24 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
     in->mp4 = r->mov;
     /* Matroska parses Cues only on the first seek (design 2.2-6). */
     int64_t t0 = V->start_time != AV_NOPTS_VALUE ? V->start_time : 0;
-    avformat_seek_file(ic, r->vs, INT64_MIN, t0, t0, AVSEEK_FLAG_BACKWARD);
+    /* Capped at IDX_BUDGET of reads (as stremio-origin/tizen does): Cues at
+     * the end come through the SeekHead in a few MiB, but with no Cues at all
+     * Matroska's seek reads the WHOLE file collecting keyframes (a 40 GB
+     * remux). Past the cap the seek stops; the file then counts as having no
+     * index (continuous TS; its seeks find a Cluster by bytes). */
+    { IdxCap cap = { ic->pb->read_packet, ic->pb->seek, ic->pb->opaque, 0 };
+      int mkv = !r->mov && ic->pb->read_packet && ic->pb->seek;
+      if (mkv) { ic->pb->read_packet = idxCapRead; ic->pb->seek = idxCapSeek; ic->pb->opaque = &cap; }
+      avformat_seek_file(ic, r->vs, INT64_MIN, t0, t0, AVSEEK_FLAG_BACKWARD);
+      if (mkv) {
+        ic->pb->read_packet = cap.fn; ic->pb->seek = cap.sk; ic->pb->opaque = cap.op;
+        if (cap.n > IDX_BUDGET) {
+          ic->pb->error = 0; ic->pb->eof_reached = 0;
+          r->idxCapped = 1;
+          printf("[dts-tpk] no Cues found within %d MiB of reads: the file counts as having no index\n", IDX_BUDGET >> 20);
+          fflush(stdout);
+        }
+      } }
     if (isCancelled(r)) { fail(err, errn, "Cancelled", 0); goto bad; }
     int n = avformat_index_get_entries_count(V);
     r->kf = n > 0 ? malloc((size_t)n * sizeof *r->kf) : NULL;
@@ -603,7 +632,7 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
     /* A GOP is seconds long: an index whose last keyframe is a minute before
      * the end does not cover the file (partial Cues, fragmented MP4 indexed
      * only as far as the probe read). The playlist would end there. */
-    in->index_complete = r->nkf > 0 && r->kf[r->nkf - 1] * av_q2d(r->vtb) >= r->endS - 60.0;
+    in->index_complete = !r->idxCapped && r->nkf > 0 && r->kf[r->nkf - 1] * av_q2d(r->vtb) >= r->endS - 60.0;
     buildSegments(r, segTarget > 0.5 ? segTarget : 6.0);
     in->n_segments = r->nseg;
     in->size_bytes = dts_engine_size(r->probe);
@@ -1176,6 +1205,81 @@ static int emitAudio(DtsRemuxGen *g, int target, DtsRemuxStats *st, char *err, s
   return 0;
 }
 
+/* MATROSKA WITHOUT CUES: a time past the index, found by bytes (adapted from
+ * stremio-origin/tizen, tools/dts/sbdts.c). FFmpeg's own seek by time reads
+ * the file from the last keyframe it knows up to the target, so a jump an
+ * hour into a remux without Cues read gigabytes. Here: guess the byte from
+ * the time, scan 1 MiB there for a Cluster (its ID 1F 43 B6 75, its size, an
+ * optional CRC-32, then its Timestamp E7), correct the guess from the time
+ * found a few times, and hand the demuxer that Cluster as a one-entry index:
+ * its seek then starts there and reads on only to the next keyframe (Cluster
+ * timestamps are in the track time base, TimestampScale). 1 found (entry
+ * added), 0 not (the seek goes on by time, as before). */
+#define LOC_SCAN (1 << 20)
+static int clusterAt(AVIOContext *pb, uint8_t *b, int64_t from, int64_t *pos, int64_t *ts) {
+  if (from < 0) from = 0;
+  if (avio_seek(pb, from, SEEK_SET) < 0) return 0;
+  int got = 0;
+  while (got < LOC_SCAN) { int k = avio_read(pb, b + got, LOC_SCAN - got); if (k <= 0) break; got += k; }
+  for (int i = 0; i + 16 < got; i++) {
+    if (b[i] != 0x1F || b[i + 1] != 0x43 || b[i + 2] != 0xB6 || b[i + 3] != 0x75) continue;
+    int o = i + 4, l = 1; unsigned m = 0x80;
+    while (l <= 8 && !(b[o] & m)) { l++; m >>= 1; }
+    if (l > 8) continue;
+    o += l;                                                     /* the Cluster's size */
+    if (o + 6 < got && b[o] == 0xBF && b[o + 1] == 0x84) o += 6; /* a CRC-32 first */
+    if (o + 2 >= got || b[o] != 0xE7) continue;
+    int n = b[o + 1] & 0x7F;
+    if (!(b[o + 1] & 0x80) || n < 1 || n > 8 || o + 2 + n > got) continue;
+    uint64_t v = 0;
+    for (int j = 0; j < n; j++) v = v << 8 | b[o + 2 + j];
+    *pos = from + i; *ts = (int64_t)v;
+    return 1;
+  }
+  return 0;
+}
+static int locateCluster(DtsRemuxGen *g, int64_t want) {
+  DtsRemux *r = g->src;
+  AVIOContext *pb = g->ic->pb;
+  AVStream *V = g->ic->streams[r->vs];
+  double tb = av_q2d(r->vtb), at = want * tb, dur = r->endS > 0 ? r->endS : 0;
+  int64_t size = pb ? avio_size(pb) : -1, cp = 0, ct = 0, pos = -1, pts = 0;
+  if (size <= 0) size = dts_engine_size(g->eng);
+  if (size <= 0) size = r->info.size_bytes;
+  if (r->mov || !pb || size <= (8 << 20) || dur <= 1 || at <= 1) {
+    printf("[dts-tpk] no-Cues seek to %.0f s: by time (%s)\n", at, r->mov ? "MP4" : size <= (8 << 20) ? "size unknown" : "no duration");
+    fflush(stdout);
+    return 0;
+  }
+  uint8_t *b = av_malloc(LOC_SCAN);
+  if (!b) return 0;
+  double t0 = now_s(CLOCK_MONOTONIC);
+  int64_t guess = (int64_t)(at / dur * (double)size);
+  int tries = 0;
+  for (; tries < 6; tries++) {
+    if (guess > size - (2 << 20)) guess = size - (2 << 20);
+    if (guess < 0) guess = 0;
+    if (!clusterAt(pb, b, guess, &cp, &ct)) { guess -= LOC_SCAN; if (guess < 0) break; continue; }
+    double t = ct * tb;
+    if (t <= at) { pos = cp; pts = ct; }                       /* at or before: its keyframes follow */
+    if (t <= at && at - t < 6) break;
+    int64_t np = guess + (int64_t)((at - t - 2) / dur * (double)size);
+    if (llabs(np - guess) < (256 << 10)) { if (t > at && guess > LOC_SCAN) np = guess - LOC_SCAN; else break; }
+    guess = np;
+  }
+  av_free(b);
+  if (pos < 0) {
+    printf("[dts-tpk] no-Cues seek to %.0f s: no Cluster found in %d look(s), seeking by time\n", at, tries + 1);
+    fflush(stdout);
+    return 0;
+  }
+  av_add_index_entry(V, pos, pts, 0, 0, AVINDEX_KEYFRAME);
+  printf("[dts-tpk] no-Cues seek to %.0f s: Cluster at %.1f s (byte %lld MiB) in %d look(s), %.0f ms\n",
+         at, pts * tb, (long long)(pos >> 20), tries + 1, (now_s(CLOCK_MONOTONIC) - t0) * 1000.0);
+  fflush(stdout);
+  return 1;
+}
+
 /* Seek to the keyframe `kf` (video time base); audio grid from b48. */
 static int freshStart(DtsRemuxGen *g, int64_t kf, int64_t b48, char *err, size_t errn) {
   int rr;
@@ -1276,6 +1380,7 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
     g->progKf = pastIdx ? INT64_MIN : kf; g->progStartS = kf * av_q2d(r->vtb);
     g->progB48 = startS <= 0.05 ? UNSET : pastIdx ? GRID_LAZY : llround(g->progStartS * 48000.0);
     if (g->progStartS < 0) g->progStartS = 0;
+    if (pastIdx && startS > 1) locateCluster(g, want);   /* MKV without Cues: by bytes, not by reading on */
     if (freshStart(g, kf, g->progB48, err, errn) < 0) { rr = -1; goto out; }
     if (openMux(g, fmt && *fmt ? fmt : "mpegts", err, errn) < 0) { rr = g->wfail ? -2 : -1; goto out; }
   }

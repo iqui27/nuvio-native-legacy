@@ -51,7 +51,9 @@ int dts_tpk_e_url(const char *u) { (void)u; return 0; }
 #include <stdint.h>
 #include <stdlib.h>
 #include <strings.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
@@ -787,6 +789,13 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
 static void *atender(void *u) {
   Conexao *c = u;
   int sock = c->sock;
+  // The conversion runs on this thread: a step behind the drawing thread
+  // (nice 5, as stremio-origin/tizen's proxy threads), so the menus and the
+  // subtitles keep their frame on 2018-2020 TVs. AC3 costs a few % of a core,
+  // so the segments stay well ahead of the player.
+#ifdef SYS_gettid
+  setpriority(PRIO_PROCESS, (id_t)syscall(SYS_gettid), 5);
+#endif
   size_t ja = c->n;
   char cab[CAB_MAX], resto[CAB_MAX];
   memcpy(cab, c->cab, ja + 1);
@@ -1042,7 +1051,11 @@ int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, i
   gerarToken(s->token, 8);
   s->url = strdup(url); s->cabs = strdup(headers ? headers : "");
   s->track = track; s->stereo = stereo; s->modo = modo;
-  s->nGer = track == DTS_REMUX_NO_AUDIO ? GERADORES_SO_VIDEO : GERADORES;
+  // Tizen 4/5: one generator, as stremio-origin/tizen runs one conversion at a
+  // time. A request for another segment stops the running one and reuses its
+  // reader (one source connection, one decoder), instead of a second seek
+  // beside it on a slower CPU.
+  s->nGer = track == DTS_REMUX_NO_AUDIO || tpk45_ativo() ? GERADORES_SO_VIDEO : GERADORES;
   s->estado = DTSTPK_SONDANDO; s->inicioStream = -1;
   s->criadaMs = agoraMs();
   memInicio(s);

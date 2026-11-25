@@ -101,6 +101,7 @@ struct DtsEngine {
   char error[160], *url, *headers, *cache;
   char *source_public_headers;
   int64_t pos, total, cache_start;
+  int64_t fx_total;   /* the streaming request's size, from its headers (rede_fluxo64), -1 unknown */
   long cache_size;
   volatile int cancelled;
   pthread_mutex_t range_lock;
@@ -490,10 +491,11 @@ static void *fx_worker(void *opaque) {
     if(e->source_stream)__atomic_store_n(&e->source_cancel,0,__ATOMIC_RELAXED);
     pthread_mutex_unlock(&e->range_lock);
     uint64_t t0=fx_now_ms();
-    int r=rede_fluxo64(target,strip?(e->source_stream && e->final_cross!=2?e->source_public_headers:""):e->headers,at,fx_sink,e,&total,&status,
+    int r=rede_fluxo64(target,strip?(e->source_stream && e->final_cross!=2?e->source_public_headers:""):e->headers,at,fx_sink,e,&e->fx_total,&status,
       e->source_stream?&e->source_cancel:&e->cancelled,fin,&cross,FX_STALL_MS,&got);
     uint64_t ms=fx_now_ms()-t0;
     pthread_mutex_lock(&e->range_lock);
+    total=__atomic_load_n(&e->fx_total,__ATOMIC_RELAXED);
     e->metrics.range_requests++;
     if(total>=0) e->total=total;
     if(!direct && got>0 && fin[0]) { snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; }
@@ -833,7 +835,7 @@ static void close_media(DtsEngine *e) {
 }
 DtsEngine *dts_engine_create(void) {
   DtsEngine *e=calloc(1,sizeof(*e));
-  if(e) { e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
+  if(e) { e->total=-1; e->fx_total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
   return e;
 }
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
@@ -956,7 +958,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
 #ifdef NV_DTS_DEBUG
   memset(&e->logged_metrics,0,sizeof(e->logged_metrics)); e->logged_at_ns=0;
 #endif
-  e->pos=0; e->total=-1; e->cache_size=0; e->has_core=0;
+  e->pos=0; e->total=-1; e->fx_total=-1; e->cache_size=0; e->has_core=0;
   e->range_bytes=e->dv?RANGE_BYTES_DV:RANGE_BYTES; e->range_slots=e->dv?RANGE_SLOTS_DV:RANGE_SLOTS;
   if(g_ahead_mib>0) { e->range_bytes=RANGE_BYTES_DV; e->range_slots=(g_ahead_mib+3)/4; }
   e->final_url[0]=0; e->final_cross=0; e->passthrough=0; e->remux=0; e->opening=1;
@@ -1103,7 +1105,7 @@ int dts_engine_open_demux(DtsEngine *e,const char *url,const char *headers) {
   __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
   close_media(e); memset(&e->info,0,sizeof(e->info)); e->error[0]=0;
   memset(&e->metrics,0,sizeof(e->metrics));
-  e->pos=0; e->total=-1; e->cache_size=0; e->has_core=0;
+  e->pos=0; e->total=-1; e->fx_total=-1; e->cache_size=0; e->has_core=0;
   e->remux=1; e->range_bytes=RANGE_BYTES_DV; e->range_slots=RANGE_SLOTS_DV;
   e->final_url[0]=0; e->final_cross=0; e->passthrough=0;
   e->demux_eof=e->decoder_eof=e->resampler_eof=e->encoder_sent_eof=e->timeline=0;
@@ -1173,7 +1175,11 @@ void dts_engine_final_host(DtsEngine *e,char *h,int n) {
   pthread_mutex_unlock(&e->range_lock);
 }
 /* Total size of the source, -1 while unknown (first range not answered). */
-int64_t dts_engine_size(DtsEngine *e) { return e?e->total:-1; }
+int64_t dts_engine_size(DtsEngine *e) {
+  if(!e) return -1;
+  if(e->total>=0) return e->total;
+  return __atomic_load_n(&e->fx_total,__ATOMIC_RELAXED);   /* the streaming request's, while it runs */
+}
 static int resample(DtsEngine *e,AVFrame *f) {
   int r;
   if(f && (!e->swr || e->input_rate!=f->sample_rate || e->input_format!=f->format || av_channel_layout_compare(&e->input_layout,&f->ch_layout))) {
