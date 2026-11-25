@@ -48,7 +48,7 @@ Execute sequencialmente em uma TV limpa (pasta de dados nova ou após **Zerar o 
    - Em perfil virgem, confirmar estado vazio `"Nada contado ainda"` e nota `"Fica só nesta TV. Zerar o gosto apaga."`.
 2. Na Home, exibir a fileira do Farol (`Fileiras vistas` +1), abrir OK num cartaz (`Abertas` +1), iniciar Play a partir dele (`Tocadas` +1), concluir ≥ 90 % (`Terminadas` +1), recusar um item (`Recusas` +1) e conferir `Cenas montadas na TV` vs. `Cenas montadas no servidor` (quando `"Só nesta TV"` desligado e LLM habilitado).
 3. Desligar **"Recomendar nesta TV"**: validar que os contadores **param** de subir; relugar / trocar de perfil: confirmar isolamento estrito entre perfis; fazer logout: confirmar limpeza completa; em perfil infantil: nada conta e nada é mostrado; sob trava parental: **Zerar o gosto** e recusa exigem desbloqueio.
-4. Após ≥ 10 exposições da vaga **"Fora do seu costume"** sem nenhuma abertura, validar recuo para a última posição elegível (posição 8) e alternância em 1 de cada 2 fileiras; após aberturas/toques acima da taxa normal, validar promoção para a posição 5.
+4. Após ≥ 10 exposições da vaga **"Fora do seu costume"** sem nenhuma abertura, validar recuo para a última posição elegível (posição 8) e alternância em 1 de cada 2 fileiras; após aberturas/toques acima da taxa normal, validar promoção para a posição 5 (**nota:** o ajuste adaptativo da vaga vale somente para cenas montadas localmente na TV; cenas montadas no servidor/LLM seguem a ordem devolvida pelo servidor).
 
 ---
 

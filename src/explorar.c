@@ -27,6 +27,7 @@
 #include "mapa.h"
 #include "posterprov.h"
 #include "catalogo.h"
+extern __attribute__((weak)) void farolsinal_uso_limpar_alvo(const CatItem *ci);
 #include "idbase.h"
 #include "descoberta.h"
 #include "tex_cache.h"
@@ -1608,5 +1609,6 @@ int explorar_pediu_abrir(int *indice) {
   if (!pediuAbrir) return 0;
   pediuAbrir = 0;
   if (indice) *indice = pediuIndice;
+  if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
   return 1;
 }

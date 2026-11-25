@@ -129,8 +129,9 @@ __attribute__((weak)) void farolconsent_esquecer(void) {}
 __attribute__((weak)) void farolsinal_uso_obter(FarolUsoContadores *dst) {
   if (dst) memset(dst, 0, sizeof *dst);
 }
-__attribute__((weak)) void farolsinal_uso_vista(int comExploracao) {
+__attribute__((weak)) void farolsinal_uso_vista(int comExploracao, int fileiraPrincipal) {
   (void)comExploracao;
+  (void)fileiraPrincipal;
 }
 __attribute__((weak)) void farolsinal_uso_cena(int doServidor) {
   (void)doServidor;
@@ -1100,7 +1101,7 @@ void farol_registrar_vista(const char *chaveFil) {
     }
   }
   pthread_mutex_unlock(&travaCena);
-  if (marcar) farolsinal_uso_vista(temFc);
+  if (marcar) farolsinal_uso_vista(temFc, !strcmp(chaveFil, "farol_gosto1"));
 }
 
 void farol_registrar_aberta(const char *chaveFil, int coluna, const CatItem *ci) {

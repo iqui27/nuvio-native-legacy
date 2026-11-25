@@ -1,7 +1,9 @@
 // Cliente assincrono da busca por frase do Farol — ver farolbusca.h.
 // Sem SDL, sem _Thread_local (compativel com NV_TPK40), sem log de frase/token/URL.
 #include "farolbusca.h"
+#include "catalogo.h"
 #include "farolacha.h"
+extern __attribute__((weak)) void farolsinal_uso_limpar_alvo(const CatItem *ci);
 #include "faroltexto.h"
 #include "idbase.h"
 #include "perfilinfantil.h"
@@ -819,6 +821,7 @@ int farolbusca_pediu_abrir(int *indiceCatalogo) {
   snprintf(it.poster, sizeof it.poster, "%s", p.poster);
   idx = farolbusca_abrir_item(&it);
   if (idx < 0) return 0;
+  if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
   if (indiceCatalogo) *indiceCatalogo = idx;
   return 1;
 }

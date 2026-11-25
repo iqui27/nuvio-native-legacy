@@ -198,8 +198,9 @@ typedef struct {
 
 // Le copia dos contadores do perfil ativo (em perfil infantil devolve zeros).
 void farolsinal_uso_obter(FarolUsoContadores *dst);
-// Registra exibicao da fileira do Farol na Home (comExploracao = 1 se ha item foraCurva).
-void farolsinal_uso_vista(int comExploracao);
+// Registra exibicao da fileira do Farol na Home (comExploracao = 1 se ha item foraCurva;
+// fileiraPrincipal = 1 em `farol_gosto1` para a alternancia 1 em 2 da vaga recuada).
+void farolsinal_uso_vista(int comExploracao, int fileiraPrincipal);
 // Registra origem da cena adotada (doServidor = 1 para LLM, 0 para regras locais).
 void farolsinal_uso_cena(int doServidor);
 // Registra abertura de cartaz da fileira do Farol (foraCurva = 1 se veio da vaga de exploracao).

@@ -38,7 +38,7 @@ enum { FGUI_FECHADO = 0, FGUI_APRENDEU = 1, FGUI_ZERAR = 2 };
 
 static int modoAtual = FGUI_FECHADO;
 static int querAberto;
-static int foco;          // APRENDEU: 0=Voltar, 1=Secao uso/lista; ZERAR: 0=Zerar, 1=Cancelar
+static int foco;          // APRENDEU: 0=Voltar; ZERAR: 0=Zerar, 1=Cancelar
 static int scrollIdx;     // APRENDEU: deslocamento vertical leve para listas
 static float entradaProg;
 static FarolGostoResumo resumoCache;
@@ -78,7 +78,7 @@ void farolgostoui_abrir_aprendeu(void) {
   modoAtual = FGUI_APRENDEU;
   querAberto = 1;
   scrollIdx = 0;
-  foco = 1; // Inicia no topo da folha; DOWN alcanca Voltar (0) sem beco.
+  foco = 0; // Voltar com foco inicial visivel; primeiro OK fecha como antes.
 }
 
 void farolgostoui_abrir_zerar(void) {
@@ -195,18 +195,11 @@ void farolgostoui_evento(const SDL_Event *e) {
   if (modoAtual == FGUI_APRENDEU) {
     int maxSc = aprMaxScroll();
     if (k == SDLK_UP) {
-      if (foco == 0) {
-        foco = 1;
-        scrollIdx = maxSc;
-      } else if (scrollIdx > 0) {
-        scrollIdx--;
-      }
+      if (scrollIdx > 0) scrollIdx--;
+      foco = 0;
     } else if (k == SDLK_DOWN) {
-      if (foco != 0 && scrollIdx < maxSc) {
-        scrollIdx++;
-      } else {
-        foco = 0;
-      }
+      if (scrollIdx < maxSc) scrollIdx++;
+      foco = 0;
     } else if (k == SDLK_LEFT || k == SDLK_RIGHT) {
       foco = 0;
     }
@@ -267,13 +260,13 @@ static float desenharGrupoTop(const char *titulo, const char (*itens)[64],
 static void desenharUsoTv(float x, float y, float w, float limY, float a, int focado) {
   typedef struct { const char *rot; uint32_t val; } UsoItem;
   const UsoItem itens[7] = {
-    { "Fileiras vistas",            usoCache.vistas },
-    { "Abertas",                    usoCache.abertas },
-    { "Tocadas",                    usoCache.tocadas },
-    { "Terminadas",                 usoCache.terminadas },
-    { "Recusas",                    usoCache.recusas },
-    { "Cenas montadas na TV",       usoCache.cenasTv },
-    { "Cenas montadas no servidor", usoCache.cenasServidor },
+    { i18n("Fileiras vistas"),            usoCache.vistas },
+    { i18n("Abertas"),                    usoCache.abertas },
+    { i18n("Tocadas"),                    usoCache.tocadas },
+    { i18n("Terminadas"),                 usoCache.terminadas },
+    { i18n("Recusas"),                    usoCache.recusas },
+    { i18n("Cenas montadas na TV"),       usoCache.cenasTv },
+    { i18n("Cenas montadas no servidor"), usoCache.cenasServidor },
   };
   float cy = y;
   int tudoZero = usoInfantil ||
@@ -311,7 +304,7 @@ static void desenharUsoTv(float x, float y, float w, float limY, float a, int fo
       snprintf(num, sizeof num, "%u", (unsigned)itens[i].val);
       gfx_cor((GfxRect){ rx, ry, colW, rowH }, T21_R_ROW * 0.5f, 1, 1, 1,
               (focado ? .08f : .05f) * a);
-      ll = t21_texto_linha(T21_SUPPORT, i18n(itens[i].rot),
+      ll = t21_texto_linha(T21_SUPPORT, itens[i].rot,
                            T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, colW - 88.0f);
       ln = t21_texto_linha(T21_CHIP, num,
                            T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, 76.0f);

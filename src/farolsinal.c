@@ -115,6 +115,7 @@ enum {
 #define FSIN_ALIAS_N  64    // chave pedida -> chave real da ficha
 #define FSIN_ORI_N    64    // origens de Play recentes
 #define FSIN_TEMP_N   8     // temporadas esperando conferida de "completa"
+#define FSIN_USO_ALVO_PRAZO_MS (10u * 60u * 1000u) // prazo de 10 min para tocar apos abrir do Farol
 #define FSIN_ABAND_MIN_S  60.0     // parou antes de 1 min: nem sinal
 #define FSIN_ABAND_PCT    20.0     // largou antes de 20%: abandono cedo
 #define FSIN_JANELA_FALHA (5u*60u*1000u)   // ms; falha de fonte anula abandono
@@ -197,8 +198,7 @@ static struct {
   struct { uint32_t h; uint8_t o, dia; } ori[FSIN_ORI_N];
   int    nOri, oriProx;
   FarolUsoContadores uso;
-  struct { uint32_t h; uint8_t fc, st; } usoAcomp[FSIN_ORI_N]; // st: 1=aberta, 2=tocada, 3=terminada
-  int    nUsoAcomp, usoAcompProx;
+  struct { uint32_t h; uint32_t abertaMs; uint8_t fc, st; } usoAlvo; // st: 0=vazio, 1=aberta, 2=tocada
   int    usoSujo;
   int    sujo;                      // modelo/estado com gravacao pendente
   int    fichaSujo;
@@ -1045,8 +1045,7 @@ static void fioTrocaPerfil(void) {
     S.nTempChk = S.nOri = S.oriProx = 0;
     if (!soLer) {
       memset(&S.uso, 0, sizeof S.uso);
-      memset(S.usoAcomp, 0, sizeof S.usoAcomp);
-      S.nUsoAcomp = S.usoAcompProx = 0;
+      memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
       S.usoSujo = 0;
     }
     S.cur = 0; S.curSeq = 0; S.curRest = 0; S.varDe = 0;
@@ -1536,19 +1535,15 @@ void farolsinal_saida(const char *id, char tipo, int temporada, int episodio,
     int atingiuTerm = (durSeg > 0.0)
       ? ((long long)posSeg * 10 >= (long long)durSeg * 9)
       : (concluiu != 0);
-    if (atingiuTerm && !infantilAtivo()) {
+    if (!infantilAtivo()) {
       uint32_t h = baseImdbHash(id);
       if (h && travaPronta()) {
-        if (S.rec) {
-          int k;
-          for (k = 0; k < S.nUsoAcomp; k++) {
-            if (S.usoAcomp[k].h == h && S.usoAcomp[k].st >= 1 && S.usoAcomp[k].st < 3) {
-              S.usoAcomp[k].st = 3;
-              S.uso.terminadas = satInc(S.uso.terminadas);
-              S.usoSujo = 1;
-              break;
-            }
+        if (S.rec && S.usoAlvo.h == h && S.usoAlvo.st == 2) {
+          if (atingiuTerm) {
+            S.uso.terminadas = satInc(S.uso.terminadas);
+            S.usoSujo = 1;
           }
+          memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
         }
         DTRAVA();
       }
@@ -1662,12 +1657,12 @@ void farolsinal_uso_obter(FarolUsoContadores *dst) {
   DTRAVA();
 }
 
-void farolsinal_uso_vista(int comExploracao) {
+void farolsinal_uso_vista(int comExploracao, int fileiraPrincipal) {
   if (infantilAtivo()) return;
   if (!travaPronta()) return;
   if (S.rec) {
     S.uso.vistas = satInc(S.uso.vistas);
-    S.uso.expSeq = satInc(S.uso.expSeq);
+    if (fileiraPrincipal) S.uso.expSeq = satInc(S.uso.expSeq);
     if (comExploracao) S.uso.expVistas = satInc(S.uso.expVistas);
     S.usoSujo = 1;
   }
@@ -1686,49 +1681,39 @@ void farolsinal_uso_cena(int doServidor) {
 }
 
 void farolsinal_uso_aberta(const CatItem *ci, int foraCurva) {
-  uint32_t h;
-  int i, achou = -1;
+  uint32_t h, agora;
   if (!ci || !ci->imdb[0] || infantilAtivo()) return;
   h = baseImdbHash(ci->imdb);
+  agora = agoraMs();
   if (!h || !travaPronta()) return;
   if (S.rec) {
     S.uso.abertas = satInc(S.uso.abertas);
     if (foraCurva) S.uso.expAbertas = satInc(S.uso.expAbertas);
     else S.uso.normAbertas = satInc(S.uso.normAbertas);
-    for (i = 0; i < S.nUsoAcomp; i++) {
-      if (S.usoAcomp[i].h == h) { achou = i; break; }
-    }
-    if (achou < 0) {
-      if (S.nUsoAcomp < FSIN_ORI_N) achou = S.nUsoAcomp++;
-      else {
-        achou = S.usoAcompProx;
-        S.usoAcompProx = (S.usoAcompProx + 1) % FSIN_ORI_N;
-      }
-    }
-    S.usoAcomp[achou].h = h;
-    S.usoAcomp[achou].fc = (uint8_t)!!foraCurva;
-    S.usoAcomp[achou].st = 1;
+    S.usoAlvo.h = h;
+    S.usoAlvo.abertaMs = agora;
+    S.usoAlvo.fc = (uint8_t)!!foraCurva;
+    S.usoAlvo.st = 1;
     S.usoSujo = 1;
   }
   DTRAVA();
 }
 
 void farolsinal_uso_tocada(const CatItem *ci) {
-  uint32_t h;
-  int i;
+  uint32_t h, agora;
   if (!ci || !ci->imdb[0] || infantilAtivo()) return;
   h = baseImdbHash(ci->imdb);
+  agora = agoraMs();
   if (!h || !travaPronta()) return;
-  if (S.rec) {
-    for (i = 0; i < S.nUsoAcomp; i++) {
-      if (S.usoAcomp[i].h == h && S.usoAcomp[i].st == 1) {
-        S.usoAcomp[i].st = 2;
-        S.uso.tocadas = satInc(S.uso.tocadas);
-        if (S.usoAcomp[i].fc) S.uso.expTocadas = satInc(S.uso.expTocadas);
-        else S.uso.normTocadas = satInc(S.uso.normTocadas);
-        S.usoSujo = 1;
-        break;
-      }
+  if (S.rec && S.usoAlvo.st == 1 && S.usoAlvo.h == h) {
+    if ((uint32_t)(agora - S.usoAlvo.abertaMs) <= FSIN_USO_ALVO_PRAZO_MS) {
+      S.usoAlvo.st = 2;
+      S.uso.tocadas = satInc(S.uso.tocadas);
+      if (S.usoAlvo.fc) S.uso.expTocadas = satInc(S.uso.expTocadas);
+      else S.uso.normTocadas = satInc(S.uso.normTocadas);
+      S.usoSujo = 1;
+    } else {
+      memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
     }
   }
   DTRAVA();
@@ -1736,15 +1721,12 @@ void farolsinal_uso_tocada(const CatItem *ci) {
 
 void farolsinal_uso_limpar_alvo(const CatItem *ci) {
   uint32_t h;
-  int i;
-  if (!ci || !ci->imdb[0]) return;
-  h = baseImdbHash(ci->imdb);
-  if (!h || !travaPronta()) return;
-  for (i = 0; i < S.nUsoAcomp; i++) {
-    if (S.usoAcomp[i].h == h) {
-      S.usoAcomp[i].st = 0;
-      break;
-    }
+  if (!travaPronta()) return;
+  if (!ci || !ci->imdb[0]) {
+    memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
+  } else {
+    h = baseImdbHash(ci->imdb);
+    if (!h || S.usoAlvo.h == h) memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
   }
   DTRAVA();
 }
@@ -2619,8 +2601,7 @@ void farolsinal_esquecer(void) {
   S.nCred = S.nPend = S.nObra = S.obraProx = S.nAli = 0;
   S.nPed = S.nTempChk = S.nOri = S.oriProx = 0;
   memset(&S.uso, 0, sizeof S.uso);
-  memset(S.usoAcomp, 0, sizeof S.usoAcomp);
-  S.nUsoAcomp = S.usoAcompProx = 0;
+  memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
   S.usoSujo = 0;
   S.cur = 0; S.curSeq = 0; S.curRest = 0; S.varDe = 0; S.varCur = 0;
   S.varSeq = 0; S.varrer = 1; S.varGer++; S.nVarId = 0;
@@ -2659,8 +2640,7 @@ void farolsinal_zerar_gosto(void) {
   S.nCred = S.nPend = S.nObra = S.obraProx = S.nAli = 0;
   S.nPed = S.nTempChk = S.nOri = S.oriProx = 0;
   memset(&S.uso, 0, sizeof S.uso);
-  memset(S.usoAcomp, 0, sizeof S.usoAcomp);
-  S.nUsoAcomp = S.usoAcompProx = 0;
+  memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
   S.usoSujo = 0;
   S.cur = 0; S.curSeq = 0; S.curRest = 0; S.varDe = 0; S.varCur = 0;
   S.varSeq = 0; S.varrer = 1; S.varGer++; S.nVarId = 0;
@@ -2696,8 +2676,7 @@ void farolsinal_teste_zera(void) {
   S.nCred = S.nPend = S.nObra = S.obraProx = S.nAli = 0;
   S.nPed = S.nTempChk = S.nOri = S.oriProx = 0;
   memset(&S.uso, 0, sizeof S.uso);
-  memset(S.usoAcomp, 0, sizeof S.usoAcomp);
-  S.nUsoAcomp = S.usoAcompProx = 0;
+  memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
   S.usoSujo = 0;
   S.sujo = S.fichaSujo = 0; S.ultGrav = 0;
   S.trocando = S.pendTroca = S.diaFrio = S.recarrega = 0; S.esqGer++;

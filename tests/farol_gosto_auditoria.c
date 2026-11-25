@@ -247,7 +247,7 @@ static void rodarCanariosRede(const char *baseUrl) {
 
   for (i = 0; i < 7; i++) {
     farolsinal_uso_cena(i & 1);
-    farolsinal_uso_vista(1);
+    farolsinal_uso_vista(1, 1);
   }
   farolsinal_uso_aberta(&cCan, 1);
   farolsinal_uso_tocada(&cCan);
@@ -420,13 +420,116 @@ static void *fioEstresseUso(void *arg) {
   snprintf(ci.tipo, sizeof ci.tipo, "movie");
   for (i = 0; i < 120; i++) {
     farolsinal_uso_cena(i & 1);
-    farolsinal_uso_vista(i & 1);
+    farolsinal_uso_vista(i & 1, 1);
     farolsinal_uso_aberta(&ci, i & 1);
     farolsinal_uso_tocada(&ci);
     farolsinal_saida(ci.imdb, 'm', 0, 0, 0, 95.0, 100.0, 1);
     farolsinal_uso_obter(&u);
   }
   return NULL;
+}
+
+// Regressao P1-1 pelo caminho real: com duas fileiras (farol_gosto1 +
+// farol_gosto2) no estado recuado (expVistas >= 10, expAbertas == 0),
+// `expSeq` sobe +1 por cena e a vaga alterna 1,0,1,0 (par) e 0,1,0,1 (impar),
+// voltando a aparecer em farolrec_escolher em vez de sumir para sempre.
+static void testarRegressaoParidadeExpSeq(void) {
+  FarolGosto g;
+  static FarolFicha fb[12];
+  FarolFicha fc;
+  FarolRecCand c[12];
+  FarolRecItem out[12];
+  FarolUsoContadores u;
+  FarolRecCtx ctx;
+  int i, s, n, ini, fim, posFc, esperadosPar[4] = { 1, 0, 1, 0 }, esperadosImpar[4] = { 0, 1, 0, 1 };
+
+  G_infantil = 0;
+  G_perfil = 1;
+  farolsinal_passo(1);
+  esperarSinal();
+  farolsinal_zerar_gosto();
+  esperarSinal();
+
+  // Perfil nivel 2 + candidatos com 1 item fora da curva (genero 27 nao visto).
+  farolgosto_iniciar(&g, 1);
+  g.titulos = 20;
+  g.diaBase = farolsinal_dia_atual();
+  g.genero[0].id = 18; g.genero[0].n = 6; g.genero[0].peso = 300; g.genero[0].dia = g.diaBase;
+  g.genero[1].id = 35; g.genero[1].n = 4; g.genero[1].peso = 200; g.genero[1].dia = g.diaBase;
+  assert(farolrec_nivel(&g) == 2);
+
+  for (i = 0; i < 11; i++) {
+    memset(&fb[i], 0, sizeof fb[i]);
+    fb[i].tmdb = 7000 + i; fb[i].tipo = FF_FILME; fb[i].ano = 2022;
+    fb[i].minutos = 100; fb[i].nota = 85; fb[i].votos = 5000;
+    fb[i].nGenero = 1; fb[i].genero[0] = (i < 6) ? 18 : 35;
+    memset(&c[i], 0, sizeof c[i]);
+    c[i].chave = fb[i].tmdb; c[i].h = (uint32_t)(8000 + i);
+    c[i].ficha = &fb[i]; c[i].semente = FRC_SEM_SEMENTE;
+    c[i].flags = FRC_FL_TEM_IMDB; c[i].fontes = FRC_F_CATALOGO;
+  }
+  memset(&fc, 0, sizeof fc);
+  fc.tmdb = 7999; fc.tipo = FF_FILME; fc.ano = 2023;
+  fc.minutos = 95; fc.nota = 82; fc.votos = 4000;
+  fc.nGenero = 1; fc.genero[0] = 27;
+  memset(&c[11], 0, sizeof c[11]);
+  c[11].chave = fc.tmdb; c[11].h = 8999u;
+  c[11].ficha = &fc; c[11].semente = FRC_SEM_SEMENTE;
+  c[11].flags = FRC_FL_TEM_IMDB; c[11].fontes = FRC_F_CATALOGO;
+
+  // Atinge estado recuado com 10 cenas (expSeq == 10, par; expVistas == 10, expAbertas == 0).
+  for (s = 0; s < (int)FR_EXP_SEM_ABRIR_N; s++) {
+    farolsinal_uso_vista(1, 1);
+    farolsinal_uso_vista(0, 0);
+  }
+  farolsinal_uso_obter(&u);
+  assert(u.expVistas == FR_EXP_SEM_ABRIR_N && u.expAbertas == 0 && u.expSeq == 10u);
+
+  // 4 cenas seguidas com duas fileiras partindo de expSeq par -> 1, 0, 1, 0.
+  for (s = 0; s < 4; s++) {
+    int temFc;
+    farolsinal_uso_obter(&u);
+    memset(&ctx, 0, sizeof ctx);
+    ctx.g = &g; ctx.dia = g.diaBase; ctx.naHome = 1; ctx.semente = 42u + (uint32_t)s;
+    ctx.expVistas = u.expVistas; ctx.expAbertas = u.expAbertas; ctx.expTocadas = u.expTocadas;
+    ctx.normVistas = u.vistas; ctx.normAbertas = u.normAbertas; ctx.normTocadas = u.normTocadas;
+    ctx.expSeq = u.expSeq;
+    temFc = farolrec_exploracao_faixa(&ctx, &ini, &fim);
+    assert(temFc == esperadosPar[s]);
+    n = farolrec_escolher(&ctx, c, 12, out, 12);
+    assert(n == 12);
+    posFc = -1;
+    for (i = 0; i < n; i++) if (out[i].foraCurva) posFc = i;
+    if (temFc) assert(posFc == FR_EXP_POS_RECUADA);
+    else assert(posFc == -1);
+    farolsinal_uso_vista(temFc, 1);
+    farolsinal_uso_vista(0, 0);
+  }
+
+  // Avanca +1 cena para iniciar com expSeq impar (15) -> 0, 1, 0, 1 (vaga volta!).
+  farolsinal_uso_vista(1, 1);
+  farolsinal_uso_vista(0, 0);
+  farolsinal_uso_obter(&u);
+  assert((u.expSeq & 1u) == 1u);
+  for (s = 0; s < 4; s++) {
+    int temFc;
+    farolsinal_uso_obter(&u);
+    memset(&ctx, 0, sizeof ctx);
+    ctx.g = &g; ctx.dia = g.diaBase; ctx.naHome = 1; ctx.semente = 100u + (uint32_t)s;
+    ctx.expVistas = u.expVistas; ctx.expAbertas = u.expAbertas; ctx.expTocadas = u.expTocadas;
+    ctx.normVistas = u.vistas; ctx.normAbertas = u.normAbertas; ctx.normTocadas = u.normTocadas;
+    ctx.expSeq = u.expSeq;
+    temFc = farolrec_exploracao_faixa(&ctx, &ini, &fim);
+    assert(temFc == esperadosImpar[s]);
+    n = farolrec_escolher(&ctx, c, 12, out, 12);
+    assert(n == 12);
+    posFc = -1;
+    for (i = 0; i < n; i++) if (out[i].foraCurva) posFc = i;
+    if (temFc) assert(posFc == FR_EXP_POS_RECUADA);
+    else assert(posFc == -1);
+    farolsinal_uso_vista(temFc, 1);
+    farolsinal_uso_vista(0, 0);
+  }
 }
 
 static void rodarConcorrenciaFios(void) {
@@ -462,6 +565,7 @@ int main(int argc, char **argv) {
 #endif
 
   rodarCanariosRede(baseUrl);
+  testarRegressaoParidadeExpSeq();
   rodarConcorrenciaFios();
   farolcompor_encerrar();
   farolbusca_encerrar();

@@ -1,6 +1,8 @@
 // Tela Caca. Ver cacaui.h.
 #include "cacaui.h"
 #include "caca.h"
+#include "catalogo.h"
+extern __attribute__((weak)) void farolsinal_uso_limpar_alvo(const CatItem *ci);
 #include "conquista.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -98,6 +100,7 @@ int cacaui_pediu_titulo(char *imdb, size_t tam) {
   if (!temPedido) return 0;
   temPedido = 0;
   if (imdb && tam) snprintf(imdb, tam, "%s", pedido);
+  if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
   return 1;
 }
 int cacaui_filme_pedido(CacaFilme *f) { if (!f) return 0; *f=pedidoFilme; return pedidoFilme.imdb[0]!=0; }

@@ -1173,8 +1173,8 @@ int main(void) {
 
     farolsinal_uso_cena(0);
     farolsinal_uso_cena(1);
-    farolsinal_uso_vista(1);
-    farolsinal_uso_vista(0);
+    farolsinal_uso_vista(1, 1);
+    farolsinal_uso_vista(0, 0);
     farolsinal_uso_aberta(&c1, 1);
     farolsinal_uso_tocada(&c1);
     farolsinal_saida("tt7770001", 'm', 0, 0, 0, 95.0, 100.0, 1);
@@ -1183,18 +1183,53 @@ int main(void) {
     farolsinal_uso_tocada(&c2);
     farolsinal_recusar(&c2);
     farolsinal_definir_recomendar(0);
-    farolsinal_uso_vista(1);
+    farolsinal_uso_vista(1, 1);
     farolsinal_uso_cena(0);
     farolsinal_uso_aberta(&c1, 0);
     farolsinal_definir_recomendar(1);
 
     farolsinal_uso_obter(&u);
     OK(u.cenasTv == 1 && u.cenasServidor == 1, "cenas contadas");
-    OK(u.vistas == 2 && u.expVistas == 1 && u.expSeq == 2, "vistas contadas");
+    OK(u.vistas == 2 && u.expVistas == 1 && u.expSeq == 1, "vistas contadas (expSeq +1 por cena)");
     OK(u.abertas == 2 && u.expAbertas == 1 && u.normAbertas == 1, "abertas");
     OK(u.tocadas == 1 && u.expTocadas == 1 && u.normTocadas == 0, "tocadas");
     OK(u.terminadas == 1, "terminadas");
     OK(u.recusas == 1, "recusas");
+
+    // P2-1: prazo de 10 min, alvo unico, terminada exige tocada, saida precoce limpa alvo.
+    farolsinal_uso_aberta(&c1, 1);
+    avanca(601); // > 10 min monotônicos: expira o alvo aberto
+    farolsinal_uso_tocada(&c1);
+    farolsinal_saida("tt7770001", 'm', 0, 0, 0, 95.0, 100.0, 1);
+    farolsinal_uso_obter(&u);
+    OK(u.abertas == 3 && u.tocadas == 1 && u.terminadas == 1, "expirado >10min nao conta tocada/terminada");
+
+    // Terminada sem tocada (mesmo dentro do prazo) nao sobe.
+    farolsinal_uso_aberta(&c1, 1);
+    farolsinal_saida("tt7770001", 'm', 0, 0, 0, 95.0, 100.0, 1);
+    farolsinal_uso_obter(&u);
+    OK(u.abertas == 4 && u.tocadas == 1 && u.terminadas == 1, "terminada sem tocada nao sobe");
+
+    // Apenas o ultimo alvo aberto permanece ativo.
+    farolsinal_uso_aberta(&c1, 1);
+    farolsinal_uso_aberta(&c2, 0);
+    farolsinal_uso_tocada(&c1);
+    farolsinal_uso_obter(&u);
+    OK(u.abertas == 6 && u.tocadas == 1, "alvo anterior sobrescrito nao conta tocada");
+
+    // Saida precoce apos tocada limpa o alvo para nao creditar terminada depois.
+    farolsinal_uso_tocada(&c2);
+    farolsinal_saida("tt7770002", 'm', 0, 0, 0, 30.0, 100.0, 0);
+    farolsinal_saida("tt7770002", 'm', 0, 0, 0, 95.0, 100.0, 1);
+    farolsinal_uso_obter(&u);
+    OK(u.tocadas == 2 && u.normTocadas == 1 && u.terminadas == 1, "saida precoce desarma terminada futura");
+
+    // Limpar alvo com NULL desarma qualquer alvo pendente.
+    farolsinal_uso_aberta(&c1, 1);
+    farolsinal_uso_limpar_alvo(NULL);
+    farolsinal_uso_tocada(&c1);
+    farolsinal_uso_obter(&u);
+    OK(u.abertas == 7 && u.tocadas == 2, "limpar_alvo(NULL) desarma");
 
     farolsinal_gravar();
     T_perfil = 2;
@@ -1205,7 +1240,7 @@ int main(void) {
     T_perfil = 1;
     drenaTrab();
     farolsinal_uso_obter(&u);
-    OK(u.vistas == 2 && u.abertas == 2 && u.tocadas == 1 &&
+    OK(u.vistas == 2 && u.abertas == 7 && u.tocadas == 2 &&
        u.terminadas == 1 && u.recusas == 1 &&
        u.cenasTv == 1 && u.cenasServidor == 1, "restaura perfil 1");
 
