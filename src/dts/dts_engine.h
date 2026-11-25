@@ -74,4 +74,13 @@ int64_t dts_engine_size(DtsEngine *);
 /* Remux: on = 1 makes the read in progress (and the next ones) fail until it
  * is set back to 0; unlike cancel it is not permanent. Any thread. */
 void dts_engine_interrupt(DtsEngine *, int on);
+/* Remux reader: hangs up on the source and frees its ring; the container,
+ * its index and the position stay, and the next read connects again from
+ * there (a Range request). For a reader that sits idle (the audio of one
+ * source while another one plays): the connection goes back to the budget.
+ * Not while another thread reads this engine. */
+void dts_engine_release(DtsEngine *);
+/* The host the reader ended up on behind the add-on's redirects ("" none
+ * yet), for counting connections per host. Host only: no path, no token. */
+void dts_engine_final_host(DtsEngine *, char *host, int n);
 #endif

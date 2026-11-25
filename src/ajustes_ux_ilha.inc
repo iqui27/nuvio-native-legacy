@@ -2065,6 +2065,106 @@ static void desenhaFolhaFiltros(void) {
   }
 }
 
+// --- "AUDIO FROM ANOTHER VERSION": ITS SHEET (frAberta 9, eaAbrir) -------------------
+static void eaPont(int i, int b) {
+  (void)b;
+  if (frAberta != 9) return;
+  if (eaSub) { if (i >= 0 && i < eaAddN) eaAddFoco = i; }
+  else if (i >= 0 && i < EA_N) eaFoco = i;
+}
+static void eaPontMudar(int i, int b) {
+  (void)b;
+  if (frAberta != 9) return;
+  if (eaSub) { if (i >= 0 && i < eaAddN) { eaAddFoco = i; eaAddonAlternar(); } }
+  else if (i >= 0 && i < EA_N) { eaFoco = i; eaMudar(1); }
+}
+static void eaPontVoltar(int a, int b) { (void)a; (void)b; if (frAberta == 9) { if (eaSub) eaSub = 0; else frAberta = 0; } }
+// The "Addons" list (eaSub): the installed add-ons that give sources, each
+// switched on or off for "From another source", saved per profile.
+static void desenhaFolhaExtAudioAddons(GfxRect m) {
+  const float passo = 74.0f;
+  float topo = ajCabecalhoFolha(m, rotuloOpcao(AJ_EXT_AUDIO), "Addons",
+                                "Versions for the audio come only from the add-ons switched on. "
+                                "The Sources list for the picture stays the same.", 0, 1);
+  float base = m.y + m.h - 96.0f, y = topo;
+  int r0 = 0, vis = (int)((base - topo) / passo);
+  if (vis < 1) vis = 1;
+  if (eaAddFoco >= vis) r0 = eaAddFoco - vis + 1;
+  if (!eaAddN) {
+    TxtLinha t = ajTxtC(TXT_AJ_SUB, "No add-on with sources is installed.", m.w - 120.0f);
+    txt_desenhar_alpha(t, m.x + 60.0f, topo + 20.0f, 0.8f);
+  }
+  for (int i = r0; i < eaAddN && i < r0 + vis; i++, y += passo) {
+    GfxRect r = {m.x + 18.0f, y, m.w - 36.0f, passo - 6.0f};
+    int f = i == eaAddFoco, on = audioext_addon_ligado(eaAdd[i].chave);
+    ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, eaPont, eaPontMudar, i, 0);
+    if (f) ajFocoLinha(r, 22.0f, 1.0f, 1.0f);
+    TxtLinha nome = ajTxtC(TXT_AJ_ROTULO, eaAdd[i].nome, r.w - 360.0f);
+    TxtLinha host = txt_linha_corta(TXT_ILHA_GENERO, eaAdd[i].host, AJ_TX, r.w - 360.0f);
+    float th = (float)nome.h + 4.0f + (float)host.h, ty = y + (r.h - th) * 0.5f;
+    txt_desenhar_alpha(nome, r.x + 36.0f, ty, (f ? 1.0f : 0.86f) * (on ? 1.0f : 0.6f));
+    txt_desenhar_alpha(host, r.x + 36.0f, ty + (float)nome.h + 4.0f, (f ? 0.8f : 0.55f) * (on ? 1.0f : 0.7f));
+    TxtLinha v = txt_linha_corta(TXT_ILHA_GENERO, on ? "Ligado" : "Desligado", AJ_TX, 300.0f);
+    txt_desenhar_alpha(v, r.x + r.w - 36.0f - v.w, y + (r.h - v.h) * 0.5f, f ? 1.0f : 0.70f);
+  }
+}
+static void desenhaFolhaExtAudio(void) {
+  GfxRect m = {460.0f, 90.0f, 1000.0f, 900.0f};
+  const float passo = 52.0f;   /* 12 rows fit above the hints */
+  float topo, base, y;
+  int ligado = ajustes_audio_externo();
+  ponteiro_camada(); ajVeuModal(); ajCentraModal(&m); ajIlha(m, 36.0f, 1.0f, 1.0f);
+  if (eaSub) {
+    desenhaFolhaExtAudioAddons(m);
+    goto rodape;
+  }
+  // The focused option says what it does, under the title.
+  // The main row's own help is long (the list shows it in full); here a short one fits two lines.
+  topo = ajCabecalhoFolha(m, "Reprodução", rotuloOpcao(AJ_EXT_AUDIO),
+                          eaFoco == 0 ? "Picture from one source, audio from another version of the same title. "
+                                        "Pick it in the player's audio menu: From another source."
+                                      : EA_OPS[eaFoco] == EA_ADDONS
+                                        ? "Which add-ons list versions in the player's audio menu. Saved for this profile."
+                                        : ajudaOpcao(EA_OPS[eaFoco]), 0, 1);
+  base = m.y + m.h - 96.0f;
+  y = topo;
+  for (int i = 0; i < EA_N; i++, y += passo) {
+    GfxRect r = {m.x + 18.0f, y, m.w - 36.0f, passo - 6.0f};
+    int op = EA_OPS[i], f = i == eaFoco;
+    float apag = (i > 0 && !ligado) ? 0.45f : 1.0f;   /* off: the rest only applies once it is on */
+    if (y + r.h > base) break;
+    ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, eaPont, eaPontMudar, i, 0);
+    if (f) ajFocoLinha(r, 22.0f, 1.0f, 1.0f);
+    char addonsValor[32];
+    if (op == EA_ADDONS) eaAddonsValor(addonsValor, sizeof addonsValor);
+    TxtLinha nome = ajTxtC(TXT_AJ_ROTULO, op == EA_ADDONS ? "Addons" : rotuloOpcao(op), r.w - 360.0f);
+    txt_desenhar_alpha(nome, r.x + 36.0f, y + (r.h - nome.h) * 0.5f, (f ? 1.0f : 0.86f) * apag);
+    TxtLinha v = txt_linha_corta(TXT_ILHA_GENERO, op == EA_ADDONS ? addonsValor : textoValor(op), AJ_TX, 300.0f);
+    float vx = r.x + r.w - 36.0f - v.w;
+    if (f) {   /* the arrows of the focused row: LEFT/RIGHT change it */
+      ajIcone("aj_chevron-right", r.x + r.w - 54.0f, y + (r.h - 24.0f) * 0.5f, 24.0f, apag);
+      vx -= 30.0f;
+    }
+    txt_desenhar_alpha(v, vx, y + (r.h - v.h) * 0.5f, (f ? 1.0f : 0.70f) * apag);
+  }
+rodape:;
+  TxtLinha fechar = ajTxt(TXT_V2_SEG, eaSub ? "Voltar" : "Fechar");
+  GfxRect botao = {m.x + m.w - fechar.w - 84.0f, m.y + m.h - 76.0f, fechar.w + 40.0f, 48.0f};
+  ajNeutro(botao, 24.0f, 0.10f, AJ_CHIP_SOL, 1.0f);
+  txt_desenhar_alpha(fechar, botao.x + 20.0f, botao.y + (botao.h - fechar.h) * 0.5f, 0.9f);
+  ponteiro_alvo(botao.x, botao.y, botao.w, botao.h, NULL, eaPontVoltar, 0, 0);
+  if (!ajTelaCheia()) {
+    AjDica d[2] = {{"OK", "Ajustar"}, {"Voltar", "Fechar"}};
+    if (eaSub) { d[0].l = "On / Off"; d[1].l = "Voltar"; }
+    ajDicasLinha(d, 2, m.x + 44.0f, m.y + m.h - 66.0f, 1.0f);
+  }
+  if (uxAviso[0]) {
+    TxtLinha aviso = ajTxtC(TXT_AJ_SUB, uxAviso, NV_VTELA_W - 80.0f);
+    txt_desenhar_alpha(aviso, (NV_VTELA_W - aviso.w) * 0.5f, NV_VTELA_H - 50.0f, 0.8f);
+  }
+}
+
+
 // --- PLUGINS (pluginsui.c, F09) NO MESMO ARRANJO ----------------------------------
 // Indice com Contas aberta, a folha com o liga/desliga, "Adicionar" e os
 // repositorios (ou os scrapers de um), e o inspetor do item focado. Sem motor

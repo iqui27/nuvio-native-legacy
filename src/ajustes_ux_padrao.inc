@@ -353,3 +353,15 @@
   0, /* gradient smoothing: Automatic */
   0, /* hero logo and information size: Normal */
   0, /* folder hero details: On (V_LIGA 0) */
+  1, /* Audio from another source: Off by default (owner, 07/11); the .tpk donor server */
+  0, /* Versions not in cache: Show dimmed */
+  1, /* Audio sync step: 50 ms */
+  0, /* Warn about large files: On */
+  0, /* Download of the audio file: Whole file */
+  0, /* Remember for the next episodes: On */
+  1, /* Follow through the whole movie (another cut): Off */
+  0, /* Sync adjusted message: On */
+  0, /* Match automatically at start: On */
+  0, /* Hide duplicates: On */
+  1, /* Sort like the addons: Off (V_LIGA) */
+  0, /* Other version buffer: 8 MB */

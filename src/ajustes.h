@@ -159,6 +159,18 @@ int ajustes_pular_resumo(void);
 int ajustes_proximo_auto(void);
 int ajustes_proximo_contagem(void);
 // Pula os creditos sozinho, so com inicio e fim reais do marcador (desligado de fabrica).
+int   ajustes_audio_externo(void);                     // audio from another source (.tpk donor server), default on
+int   ajustes_audio_externo_ocultar_fora_cache(void); // 1 = hide versions not in the debrid cache
+int   ajustes_audio_externo_passo(void);              // sync step in ms: 10, 50 (default) or 100
+int   ajustes_audio_externo_avisar_grande(void);      // warn when the audio file is over 20 GB
+int   ajustes_audio_externo_so_audio(void);           // 1 = fetch only the audio where the file allows it
+int   ajustes_audio_externo_serie(void);              // remember the version for the next episodes
+int   ajustes_audio_externo_seguir(void);             // another cut: follow it through the whole film
+int   ajustes_audio_externo_aviso(void);              // show "sync adjusted by itself" (default on)
+int   ajustes_audio_externo_ocultar_copias(void);    // "From another source": one row per file (default on)
+int   ajustes_audio_externo_ordem_addon(void);       // "Sort like the addons" (default off: sorted for audio)
+int   ajustes_audio_externo_bufor_mib(void);         // "Other version buffer": 8 (default), 16 or 32 MiB
+int   ajustes_audio_externo_auto(void);               // match automatically when the other version starts (default on)
 int ajustes_pular_creditos(void);
 // Medidor de desempenho na ilha do relogio (desempenho.h): Desempenho desta TV,
 // local. 0 = desligado, 1 = Minimo, 2 = Menor, 3 = Grande (DS_* de desempenho.h).

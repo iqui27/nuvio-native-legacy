@@ -67,6 +67,10 @@ int dts_tpk_e_url(const char *u) { (void)u; return 0; }
 #define ESPERA_SONDA_MS  30000
 #define ESPERA_GERADOR_MS 30000
 #define GERADORES        2             /* each one is one more connection to the source */
+/* Video only (the audio from another source, doador_tpk.c): ONE generator,
+ * so the source holds one connection for the picture; the audio side holds
+ * another. A seek stops the running one and reuses its reader. */
+#define GERADORES_SO_VIDEO 1
 
 static const char *const MODO_NOME[DTSTPK_MODOS] = { "HLS", "continuous TS", "off" };
 const char *dts_tpk_modo_nome(int m) { return m >= 0 && m < DTSTPK_MODOS ? MODO_NOME[m] : "?"; }
@@ -337,6 +341,7 @@ typedef struct Sessao {
   char token[12];
   char *url, *cabs;
   int track, stereo, modo;
+  int nGer;                       // generators this session may open (GERADORES or GERADORES_SO_VIDEO)
   volatile int cancelar;
   pthread_mutex_t m;
   pthread_cond_t c;
@@ -492,16 +497,16 @@ static Gerador *pegarGerador(Sessao *s, int seg, int *continua, char *err, size_
   pthread_mutex_lock(&s->m);
   while (!esc && !s->cancelar) {
     int esperar = 0, vaga = -1;
-    for (i = 0; i < GERADORES && seg >= 0; i++)
+    for (i = 0; i < s->nGer && seg >= 0; i++)
       if (s->ger[i].g && !s->ger[i].ocupado && dts_remux_gen_next(s->ger[i].g) == seg) { esc = &s->ger[i]; *continua = 1; break; }
     if (esc) break;
-    for (i = 0; i < GERADORES && seg > 0; i++)
+    for (i = 0; i < s->nGer && seg > 0; i++)
       if (s->ger[i].ocupado && s->ger[i].seg == seg - 1 && !s->ger[i].parar) esperar = 1;
     if (esperar) {
       if (pthread_cond_timedwait(&s->c, &s->m, &ts) == ETIMEDOUT) { snprintf(err, errn, "timed out waiting for segment %d", seg - 1); break; }
       continue;
     }
-    for (i = 0; i < GERADORES; i++)
+    for (i = 0; i < s->nGer; i++)
       if (s->ger[i].g && !s->ger[i].ocupado && (!esc || s->ger[i].uso < esc->uso)) esc = &s->ger[i];
     if (esc) break;
     // Progressivo: o player le UM fluxo por vez. Pedido novo (seek, ou o player
@@ -510,7 +515,7 @@ static Gerador *pegarGerador(Sessao *s, int seg, int *continua, char *err, size_
     // conexao na fonte e reler o cabecalho; foi isso que o TorBox recusou).
     if (seg < 0) {
       Gerador *prog = NULL;
-      for (i = 0; i < GERADORES; i++) if (s->ger[i].g && s->ger[i].ocupado && s->ger[i].seg == -2) prog = &s->ger[i];
+      for (i = 0; i < s->nGer; i++) if (s->ger[i].g && s->ger[i].ocupado && s->ger[i].seg == -2) prog = &s->ger[i];
       if (prog) {
         if (!prog->parar) {
           prog->parar = 1;
@@ -522,7 +527,7 @@ static Gerador *pegarGerador(Sessao *s, int seg, int *continua, char *err, size_
         continue;
       }
     }
-    for (i = 0; i < GERADORES; i++) if (!s->ger[i].g && !s->ger[i].ocupado) { vaga = i; break; }
+    for (i = 0; i < s->nGer; i++) if (!s->ger[i].g && !s->ger[i].ocupado) { vaga = i; break; }
     if (vaga >= 0) {
       Gerador *nv = &s->ger[vaga];
       DtsRemuxGen *g;
@@ -540,12 +545,12 @@ static Gerador *pegarGerador(Sessao *s, int seg, int *continua, char *err, size_
     }
     // Todos ocupados: o mais antigo larga o que faz (o player desistiu dele).
     { Gerador *velho = NULL;
-      for (i = 0; i < GERADORES; i++)
+      for (i = 0; i < s->nGer; i++)
         if (s->ger[i].ocupado && s->ger[i].g && (!velho || s->ger[i].uso < velho->uso)) velho = &s->ger[i];
       if (velho && !velho->parar) {
         velho->parar = 1;
         dts_remux_gen_interrupt(velho->g);   // preso na rede: solta ja, nao no proximo pacote
-        printf("[dts-tpk] sessao %u: %d geradores ocupados, o mais antigo (seg %d) para\n", s->id, GERADORES, velho->seg);
+        printf("[dts-tpk] sessao %u: %d geradores ocupados, o mais antigo (seg %d) para\n", s->id, s->nGer, velho->seg);
         fflush(stdout);
       } }
     if (pthread_cond_timedwait(&s->c, &s->m, &ts) == ETIMEDOUT) { snprintf(err, errn, "no free generator"); break; }
@@ -1037,6 +1042,7 @@ int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, i
   gerarToken(s->token, 8);
   s->url = strdup(url); s->cabs = strdup(headers ? headers : "");
   s->track = track; s->stereo = stereo; s->modo = modo;
+  s->nGer = track == DTS_REMUX_NO_AUDIO ? GERADORES_SO_VIDEO : GERADORES;
   s->estado = DTSTPK_SONDANDO; s->inicioStream = -1;
   s->criadaMs = agoraMs();
   memInicio(s);
@@ -1053,6 +1059,10 @@ int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, i
   urlDe(s, inicio, out, n);
   id = s->id;   // s may go once G is released (a close from another thread)
   pthread_mutex_unlock(&G);
+  if (track == DTS_REMUX_NO_AUDIO)
+    printf("[dts-tpk] sessao %u: %s em 127.0.0.1, VIDEO ONLY (the audio comes from the donor server), %d generator(s); player opens %s\n",
+           id, MODO_NOME[modo], GERADORES_SO_VIDEO, strstr(out, ".m3u8") ? "the HLS playlist" : "the progressive stream");
+  else
   printf("[dts-tpk] sessao %u: %s em 127.0.0.1, audio %d do arquivo, saida %s; player abre %s; segmentos de %.0f s\n",
          id, MODO_NOME[modo], track, stereo ? "AC3 2.0" : "AC3",
          strstr(out, ".m3u8") ? "a playlist HLS" : "o fluxo progressivo", SEG_ALVO_S);

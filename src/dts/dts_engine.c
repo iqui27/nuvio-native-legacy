@@ -53,6 +53,8 @@ int dts_engine_open_demux(DtsEngine *e,const char *u,const char *h) { (void)e;(v
 void *dts_engine_avformat(DtsEngine *e) { (void)e; return NULL; }
 int64_t dts_engine_size(DtsEngine *e) { (void)e; return -1; }
 void dts_engine_interrupt(DtsEngine *e,int on) { (void)e; (void)on; }
+void dts_engine_release(DtsEngine *e) { (void)e; }
+void dts_engine_final_host(DtsEngine *e, char *h, int n) { (void)e; if (h && n > 0) h[0] = 0; }
 #else
 #include "../rede.h"
 #include <limits.h>
@@ -65,6 +67,8 @@ void dts_engine_interrupt(DtsEngine *e,int on) { (void)e; (void)on; }
 #include <libavutil/audio_fifo.h>
 #include <libavutil/opt.h>
 #include <libavutil/dovi_meta.h>
+#include <libavutil/time.h>
+#include "../mkvfix.h"
 #include <libswresample/swresample.h>
 #define RANGE_BYTES (1024 * 1024)
 /* Dolby Vision path (dts_engine_dv): 4K sources of 25-30 Mbit/s starved on
@@ -128,6 +132,15 @@ struct DtsEngine {
   int64_t fx_lo, fx_hi;      /* bytes [fx_lo, fx_hi) of the file are in the ring */
   int64_t fx_req;            /* restart the read at this offset (-1: none) */
   int64_t fx_from;           /* where the current read started (read-ahead grows from it) */
+  /* Matroska attachments (fonts) skipped by the demux opens (owner 18/11, log
+   * 13: a donor with 25.3 MB of fonts took the whole 10 s deadline and +77 MB
+   * RSS). The SeekHead says where the Attachments element starts; its first
+   * 9 bytes reach libavformat as an EBML Void of the same length, which it
+   * skips with a seek: the fonts are never downloaded. Nothing here reads
+   * them (engAnexos only freed their copy); libass reads the file's own. */
+  int att_st;                /* 0 off, 1 SeekHead not read yet, 2 element known, 3 Void ready, 4 nothing to do */
+  int64_t att_at, att_len;   /* where the element starts and its whole length */
+  unsigned char att_void[9];
   uint64_t fx_resolved_ms;   /* last time the final address was dropped for the add-on's */
   char final_url[8192];
   AVFormatContext *fmt;
@@ -161,6 +174,46 @@ static uint64_t clock_ns(clockid_t clock) {
 }
 void dts_engine_metrics(DtsEngine *e,DtsEngineMetrics *out) {
   if(out) { if(e) *out=e->metrics; else memset(out,0,sizeof(*out)); }
+}
+// MEMORY PER OPEN (owner's log 5, 17/11: RSS 140 -> 571 MB and MemAvailable
+// 45 MB while an 18-subtitle anime MKV was opened three times at once). The
+// Matroska demuxer copies every attachment (fonts) into its stream's
+// extradata, beside its own copy: nothing here reads them, so that copy goes
+// right after the open, and the log says what each open cost.
+static long engKB(const char *arq, const char *chave) {
+  char l[256]; long v = -1; size_t n = strlen(chave);
+  FILE *f = fopen(arq, "r");
+  if (!f) return -1;
+  while (fgets(l, sizeof l, f)) if (!strncmp(l, chave, n)) { v = strtol(l + n, NULL, 10); break; }
+  fclose(f);
+  return v;
+}
+static void engMem(long *rss, long *livre) { *rss = engKB("/proc/self/status", "VmRSS:"); *livre = engKB("/proc/meminfo", "MemAvailable:"); }
+static void engAnexos(DtsEngine *e, const char *qual, long rss0, double t0ms) {
+  long rss1, livre; int n = 0; int64_t bytes = 0;
+  for (unsigned i = 0; e->fmt && i < e->fmt->nb_streams; i++) {
+    AVCodecParameters *p = e->fmt->streams[i]->codecpar;
+    if (p->codec_type != AVMEDIA_TYPE_ATTACHMENT) continue;
+    n++; bytes += p->extradata_size;
+    av_freep(&p->extradata); p->extradata_size = 0;
+  }
+  engMem(&rss1, &livre);
+  printf("[dts-engine] %s open: %u streams, %d attachment(s) %.1f MB (their copy freed); RSS %.0f -> %.0f MB, MemAvailable %.0f MB, %.0f ms\n",
+         qual, e->fmt ? e->fmt->nb_streams : 0, n, bytes / 1048576.0, rss0 / 1024.0, rss1 / 1024.0, livre / 1024.0,
+         (double)(av_gettime_relative() / 1000) - t0ms);
+  fflush(stdout);
+}
+// A file that did not open: what its first bytes say it is (owner's log 6: a
+// Fight Club REMUX that was neither MKV nor MP4; this FFmpeg reads only those).
+static void engPrimeiros(DtsEngine *e, const char *qual) {
+  const unsigned char *b = e->io ? e->io->buffer : NULL;
+  long n = e->io && e->io->buf_end > e->io->buffer ? (long)(e->io->buf_end - e->io->buffer) : 0;
+  char hx[40]; size_t u = 0;
+  if (!b || n <= 0) return;
+  for (int i = 0; i < 16 && i < n && u + 3 < sizeof hx; i++) u += (size_t)snprintf(hx + u, sizeof hx - u, "%02x", b[i]);
+  printf("[dts-engine] %s did not open: its first bytes %s look like %s (this FFmpeg opens MKV and MP4)\n", qual, hx,
+         mkvfix_conteiner_nome(mkvfix_conteiner_de(b, n)));
+  fflush(stdout);
 }
 static int fail(DtsEngine *e,const char *msg,int code) {
   char detail[64] = "";
@@ -483,6 +536,65 @@ static void *fx_worker(void *opaque) {
   pthread_mutex_unlock(&e->range_lock);
   return NULL;
 }
+/* EBML: an ID (raw, with its length marker) or a size (marker removed);
+ * 0 = no room / invalid. */
+static int ebml_le(const unsigned char *b,int64_t n,int64_t i,int id,uint64_t *v,int *len) {
+  if(i<0 || i>=n || !b[i]) return 0;
+  int l=1; while(!(b[i]&(0x80>>(l-1)))) l++;
+  if(l>(id?4:8) || i+l>n) return 0;
+  uint64_t x=id?b[i]:(b[i]&(0xFFu>>l));
+  for(int j=1;j<l;j++) x=(x<<8)|b[i+j];
+  if(!id && x==(((uint64_t)1<<(7*l))-1)) x=UINT64_MAX;   /* unknown size */
+  *v=x; *len=l; return 1;
+}
+/* The first SeekHead (in the file's first bytes): where Attachments starts. */
+static void att_seekhead(DtsEngine *e,const unsigned char *b,int64_t n) {
+  uint64_t id,sz; int l1,l2; int64_t i=0,seg;
+  e->att_st=4;
+  if(!ebml_le(b,n,i,1,&id,&l1) || id!=0x1A45DFA3u || !ebml_le(b,n,i+l1,0,&sz,&l2) || sz==UINT64_MAX) return;
+  i+=l1+l2+(int64_t)sz;
+  if(!ebml_le(b,n,i,1,&id,&l1) || id!=0x18538067u || !ebml_le(b,n,i+l1,0,&sz,&l2)) return;
+  seg=i=i+l1+l2;
+  while(ebml_le(b,n,i,1,&id,&l1) && ebml_le(b,n,i+l1,0,&sz,&l2) && sz!=UINT64_MAX) {
+    int64_t c=i+l1+l2, fim=c+(int64_t)sz;
+    if(id==0xEC) { i=fim; continue; }                     /* Void before the SeekHead */
+    if(id!=0x114D9B74u) return;                           /* no SeekHead first: leave it */
+    if(fim>n) fim=n;
+    while(ebml_le(b,fim,c,1,&id,&l1) && ebml_le(b,fim,c+l1,0,&sz,&l2) && sz!=UINT64_MAX) {
+      int64_t d=c+l1+l2, dfim=d+(int64_t)sz; uint64_t sid=0,pos=UINT64_MAX;
+      if(dfim>fim) return;
+      if(id==0x4DBB) {
+        while(ebml_le(b,dfim,d,1,&id,&l1) && ebml_le(b,dfim,d+l1,0,&sz,&l2) && sz!=UINT64_MAX && sz<=8) {
+          int64_t v=d+l1+l2; uint64_t x=0;
+          if(v+(int64_t)sz>dfim) break;
+          for(uint64_t j=0;j<sz;j++) x=(x<<8)|b[v+(int64_t)j];
+          if(id==0x53AB) sid=x; else if(id==0x53AC) pos=x;
+          d=v+(int64_t)sz;
+        }
+        if(sid==0x1941A469u && pos!=UINT64_MAX && pos<(uint64_t)INT64_MAX-(uint64_t)seg) {
+          e->att_at=seg+(int64_t)pos; e->att_st=2; return;
+        }
+      }
+      c=dfim;
+    }
+    return;
+  }
+}
+/* The element's header from the ring (12 bytes there): its Void stand-in. */
+static void att_preparar(DtsEngine *e) {
+  unsigned char h[12]; uint64_t id,sz; int l1,l2;
+  for(int j=0;j<12;j++) h[j]=e->fx_buf[(size_t)((e->att_at+j)%FX_CAP)];
+  e->att_st=4;
+  if(!ebml_le(h,12,0,1,&id,&l1) || id!=0x1941A469u || !ebml_le(h,12,l1,0,&sz,&l2) || sz==UINT64_MAX) return;
+  e->att_len=l1+l2+(int64_t)sz;
+  if(e->att_len<9 || e->att_len-9>=((int64_t)1<<56)-1) return;
+  uint64_t v=(uint64_t)(e->att_len-9);
+  e->att_void[0]=0xEC; e->att_void[1]=0x01;              /* Void, 8-byte size */
+  for(int j=0;j<7;j++) e->att_void[2+j]=(unsigned char)(v>>(8*(6-j)));
+  e->att_st=3;
+  printf("[dts-engine] attachments at %.1f MiB, %.1f MB: skipped, not downloaded\n",e->att_at/1048576.0,e->att_len/1048576.0);
+  fflush(stdout);
+}
 static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   DtsEngine *e=opaque;
   uint64_t wait_started=0;
@@ -499,15 +611,30 @@ static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
     if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED) ||
        (pending_fd>=0 && poll(&pending,1,0)>0)) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
     if(e->total>=0 && e->pos>=e->total) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
-    if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<e->fx_hi) {
+    if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<e->fx_hi) do {
       int64_t k=e->fx_hi-e->pos; if(k>n) k=n;
       size_t at=(size_t)(e->pos%FX_CAP); if((int64_t)(FX_CAP-at)<k) k=FX_CAP-at;
+      if(e->att_st==1) {                                  /* the SeekHead: the first 64 KiB */
+        int64_t want=e->total>=0 && e->total<65536?e->total:65536;
+        if(e->pos!=0 || e->fx_lo!=0) e->att_st=4;
+        else if(e->fx_hi<want && !e->fx_eof) break;
+        else att_seekhead(e,e->fx_buf,e->fx_hi<65536?e->fx_hi:65536);
+      }
+      if(e->att_st==2 && e->pos<=e->att_at && e->pos+k>e->att_at) {
+        if(e->pos<e->att_at) k=e->att_at-e->pos;          /* up to the element; it comes whole next */
+        else if(e->fx_hi-e->att_at>=12) att_preparar(e);
+        else if(e->fx_eof) e->att_st=4;
+        else break;
+      }
+      int64_t p0=e->pos;
       memcpy(dst,e->fx_buf+at,(size_t)k); e->pos+=k;
+      if(e->att_st==3 && p0<e->att_at+9 && p0+k>e->att_at)
+        for(int64_t q=p0>e->att_at?p0:e->att_at;q<p0+k && q<e->att_at+9;q++) dst[q-p0]=e->att_void[q-e->att_at];
       if(wait_started) { uint64_t w=clock_ns(CLOCK_MONOTONIC); if(w>=wait_started) e->metrics.range_blocked_ns+=w-wait_started; }
       pthread_cond_broadcast(&e->range_wake);         /* room for the stream */
       pthread_mutex_unlock(&e->range_lock);
       return (int)k;
-    }
+    } while(0);
     if(e->fx_req<0 && e->fx_eof && e->pos>=e->fx_hi) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
     if(e->fx_req<0 && e->fx_err) { pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO); }
     /* Outside what the stream has or will soon have: start over there. */
@@ -852,8 +979,11 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   av_dict_set(&opts,"format_whitelist","matroska,webm,mov",0);
   av_dict_set(&opts,"probesize","4194304",0);
   av_dict_set(&opts,"analyzeduration","5000000",0);
+  long rss0, livre0; engMem(&rss0, &livre0);
+  double t0ms = (double)(av_gettime_relative() / 1000);
   int r=avformat_open_input(&e->fmt,NULL,NULL,&opts); av_dict_free(&opts);
-  if(r<0) return fail(e,"Container open",r);
+  if(r<0) { engPrimeiros(e, "the converter's file"); return fail(e,"Container open",r); }
+  engAnexos(e, "converter", rss0, t0ms);
   r=avformat_find_stream_info(e->fmt,NULL);
   e->opening=0;
   if(r<0) return fail(e,"Container metadata",r);
@@ -983,6 +1113,7 @@ int dts_engine_open_demux(DtsEngine *e,const char *url,const char *headers) {
   unsigned char *buffer=av_malloc(65536);
   if (!e->url || !e->headers || !e->fmt || !buffer) { av_free(buffer); return fail(e,"Demux allocation",0); }
   e->fx_req=-1;
+  e->att_st=e->source_stream?0:1; e->att_at=e->att_len=0;
   e->io=avio_alloc_context(buffer,65536,0,e,read_fluxo,NULL,seek_fluxo);
   if (!e->io) { av_free(buffer); return fail(e,"IO allocation",0); }
   e->fmt->pb=e->io; e->fmt->flags|=AVFMT_FLAG_CUSTOM_IO;
@@ -990,8 +1121,11 @@ int dts_engine_open_demux(DtsEngine *e,const char *url,const char *headers) {
   AVDictionary *opts=NULL;
   av_dict_set(&opts,"format_whitelist","matroska,webm,mov",0);
   av_dict_set(&opts,"probesize","1048576",0);
+  long rss0, livre0; engMem(&rss0, &livre0);
+  double t0ms = (double)(av_gettime_relative() / 1000);
   int r=avformat_open_input(&e->fmt,NULL,NULL,&opts); av_dict_free(&opts);
-  if(r<0) return fail(e,"Container open",r);
+  if(r<0) { engPrimeiros(e, "the file"); return fail(e,"Container open",r); }
+  engAnexos(e, "demux", rss0, t0ms);
   if(e->fmt->duration==AV_NOPTS_VALUE || e->fmt->duration<=0) {
     /* MOV fills only the stream durations (the container's comes from
      * find_stream_info, which this path skips because it reads packets). */
@@ -1017,6 +1151,25 @@ void dts_engine_interrupt(DtsEngine *e,int on) {
    * tries, from the run's own seek. */
   if(!on && e->fx_err) { e->fx_err=0; e->fx_attempts=0; e->fx_req=e->pos; }
   pthread_cond_broadcast(&e->range_wake);
+  pthread_mutex_unlock(&e->range_lock);
+}
+void dts_engine_release(DtsEngine *e) {
+  if(!e || !e->remux) return;
+  fx_close(e);                        /* joins the stream thread: its connection ends with it */
+}
+void dts_engine_final_host(DtsEngine *e,char *h,int n) {
+  if(!h || n<=0) return;
+  h[0]=0;
+  if(!e) return;
+  pthread_mutex_lock(&e->range_lock);
+  const char *p=strstr(e->final_url[0]?e->final_url:(e->url?e->url:""),"://");
+  if(p) {
+    p+=3;
+    size_t k=strcspn(p,"/?#:");
+    const char *at=memchr(p,'@',k);
+    if(at) { k-=(size_t)(at+1-p); p=at+1; }
+    snprintf(h,(size_t)n,"%.*s",(int)k,p);
+  }
   pthread_mutex_unlock(&e->range_lock);
 }
 /* Total size of the source, -1 while unknown (first range not answered). */

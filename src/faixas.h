@@ -58,5 +58,8 @@ void faixas_escolher_embutida(int i);
 void faixas_escolher_externa(const Legenda *copia);
 // The ASS/collector state label of embedded track `i` (NULL = nothing to say).
 const char *faixas_legenda_marca(int i);
+// Notes the playing file's own audio language (audioext_idioma_principal),
+// not while another version plays.
+void faixas_idioma_principal_atualizar(void);
 
 #endif

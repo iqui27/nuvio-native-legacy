@@ -26,7 +26,8 @@ const char *dts_tpk_modo_nome(int modo);
 
 /* New session for `url` (raw "Name: value" header lines): converts the k-th
  * audio track of the file, counted from 0 in container order (-1 = the first
- * DTS/TrueHD/MLP). The source is
+ * DTS/TrueHD/MLP; DTS_REMUX_NO_AUDIO = the video alone, for the audio from
+ * another source, src/dts/doador_tpk.c). The source is
  * probed in a thread; the URL written to `out` is what the player opens (its
  * requests wait for the probe). inicio: start of the first progressive URL.
  * 0 when the server cannot run. Replaces the previous session. */

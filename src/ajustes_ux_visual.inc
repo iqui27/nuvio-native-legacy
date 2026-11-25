@@ -190,6 +190,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_CW_CONCLUIDO: return "aj_circle-play";
     case AJ_CW_MINIMO: return "aj_circle-play";
     case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "aj_circle-play";
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR: return "pl_audio-lines";
     case AJ_SAIDA_PLAYER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: return "aj_circle-play";
     case AJ_SEEKR_LIGADO: return "aj_film";
     case AJ_SEEKR_CHAVE: return "aj_film";

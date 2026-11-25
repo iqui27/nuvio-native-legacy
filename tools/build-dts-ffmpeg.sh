@@ -15,6 +15,11 @@ TMPDIR="${TMPDIR%/}"
 #                   (keyframes only, decoded one at a time), the mjpeg encoder (320x180 tiles) and
 #                   the mpegts demuxer (.m2ts / .ts remuxes). The webOS target gets the same
 #                   thumbnail components.
+#                   Audio from another source (src/dts/doador_tpk.c) adds the decoders
+#                   of the audio a donor carries (AC3, E-AC3, AAC, Opus, FLAC, Vorbis,
+#                   MP3/MP2) and their parsers: the automatic match decodes both
+#                   versions to compare them, a PAL version is converted at its
+#                   speed, FLAC can be converted.
 set -eu
 VERSION=7.1.5
 SHA256=de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f
@@ -32,12 +37,19 @@ mkdir -p "$BUILD" "$PREFIX"
 if [ "$TARGET" = tpk ]; then
   SRC=${NUVIO_DTS_SRC:?tools/tpk.sh passes the extracted ffmpeg-$VERSION source}
   CC=${CC:-gcc}
-  DECODERS=$DECODERS,truehd,mlp,h264,hevc
-  ENCODERS=$ENCODERS,mjpeg
+  DECODERS=$DECODERS,truehd,mlp,ac3,eac3,aac,opus,flac,vorbis,mp3float,mp2float,h264,hevc
+  # PCM (Matroska A_PCM/INT, MP4 lpcm/sowt/twos): the donor server serves a
+  # file's PCM track as lossless FLAC in fMP4 (owner 17/11; PCM has no normal
+  # HLS carrier) and the audio match can read it.
+  DECODERS=$DECODERS,pcm_s16le,pcm_s24le,pcm_s32le,pcm_s16be,pcm_s24be,pcm_s32be
+  # eac3: the donor server pads a copied E-AC3 rendition with E-AC3 silence
+  # where the donor's audio has not started yet (owner 18/11: an empty first
+  # segment kept the TV player from starting).
+  ENCODERS=$ENCODERS,flac,eac3,mjpeg
   MUXERS=mpegts,matroska,mp4
   # mpegts demuxer: thumbnails for Blu-ray remuxes kept as .m2ts / .ts (miniatura_motor.c).
   DEMUXERS=$DEMUXERS,mpegts
-  PARSERS=$PARSERS,mlp,ac3
+  PARSERS=$PARSERS,mlp,ac3,opus,flac,vorbis,mpegaudio
   BSFS=$BSFS,truehd_core
   # zlib: Matroska tracks stored zlib-compressed (ContentCompression) and MP4
   # with a compressed header (cmov) arrive raw without it ("Unsupported encoding
