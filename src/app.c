@@ -2498,8 +2498,10 @@ static void abrirProximoEpisodio(int t, int e, int apontar) {
   } else {
     nv_perfil_sessao_destravar();
     marco("proximo episodio: buscando fontes");
-    snprintf(buscaNextAlvo, sizeof buscaNextAlvo, "%s", alvo);
     buscarParaPlayer();
+    // The search resets VOD state, including buscaNextAlvo. Arm Next only
+    // afterwards so manual-source mode can follow the playing release.
+    snprintf(buscaNextAlvo, sizeof buscaNextAlvo, "%s", alvo);
     if (!tocarParteGuardada() && !(ajustes_link_reusar() && tocarFonteGuardada())) aguardandoFonte = 1;
   }
 }
