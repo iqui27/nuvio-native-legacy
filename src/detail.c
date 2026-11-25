@@ -45,6 +45,9 @@ static TituloTempo detalheTempo;
 #include "trailerimdb.h"
 #include "trailerapple.h"
 #include "trailerfonte.h"
+#ifdef NV_WEBOS
+#include "trailerio.h"
+#endif
 #include "player.h"
 #include "agenda.h"
 #include "agendaui.h"
@@ -2608,6 +2611,10 @@ static int temArte(void) {
 static int temTrailer(void) {
   const CatItem *ci = cat_item(idx);
   if (!ci || (strcmp(ci->tipo, "movie") && strcmp(ci->tipo, "series"))) return 0;
+#ifdef NV_WEBOS
+  if (trailerfonte_ajuste() == TRF_TRAILERIO &&
+      trailerio_id(ci->imdb, ci->tipo)) return 1;
+#endif
   if (trailer_suportado() && trailerFonte(0, NULL, 1)) return 1;
   return extras_n_trailers() > 0;
 }
@@ -2694,6 +2701,15 @@ static int acaoEm(int n) {
 // "Assistir trailer" da linha de acoes passam por aqui). Voltar fecha o trailer
 // (trailer_evento) e a pagina continua com o mesmo foco.
 static void tocarTrailerCheio(int k) {
+#ifdef NV_WEBOS
+  if (trailerfonte_ajuste() == TRF_TRAILERIO) {
+    const CatItem *ci = cat_item(idx);
+    if (ci && trailerio_id(ci->imdb, ci->tipo)) {
+      GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+      if (trailer_abrir_trailerio(ci->imdb, ci->tipo, tela, ajustes_trailer_som())) return;
+    }
+  }
+#endif
   int qual = 0;
   const char *u = trailer_suportado() ? trailerFonte(k, &qual, 1) : NULL;
   if (u) {

@@ -176,6 +176,9 @@ const char *video_cabecalhos(void);
 // transmitindo, e num MP4 ela e trabalho garantidamente perdido — o proprio
 // log dizia "nenhuma faixa lida" toda vez.
 void video_definir_mp4(int ehMp4);
+#ifdef NV_WEBOS
+int video_tocar_trailerio(const char *url, int hls);
+#endif
 // RECONEXAO quando a rede cai no meio da reproducao (video_reconexao.h). Chamar
 // ANTES de video_tocar, como video_definir_dv; vale so para a proxima fonte
 // (video_tocar consome). Quem nao pede — trailer, canal ao vivo, que tem o

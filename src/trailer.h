@@ -35,6 +35,9 @@ int  trailer_suportado(void);
 // `cheia` marca o modo de tela
 // cheia com teclado proprio.
 void trailer_abrir(const char *fonte, GfxRect r, int som, int cheia);
+#ifdef NV_WEBOS
+int trailer_abrir_trailerio(const char *id, const char *tipo, GfxRect r, int som);
+#endif
 void trailer_rect(GfxRect r);
 // O proximo trailer_abrir (e os trailer_rect dele) toca DENTRO DE UM CARTAZ da
 // home (modo "No card"). So muda algo no .tpk: la o recorte de fonte vira um

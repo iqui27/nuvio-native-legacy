@@ -336,29 +336,34 @@ int js_texto_raiz(const char *corpo, const char *chave, char *dst, size_t tam) {
 // da issue #24 parecer "catalogo que so responde com parametro".
 int js_texto_raiz_em(const char *ini, const char *fim, const char *chave,
                      char *dst, size_t tam) {
+  if (!ini || !chave || !dst || !tam) return 0;
+  dst[0] = 0;
+  if (!fim) fim = ini + strlen(ini);
+  const char *v = js_valor_raiz_em(ini, fim, chave);
+  return v && lerTextoEm(v, fim, dst, tam);
+}
+
+const char *js_valor_raiz_em(const char *ini, const char *fim, const char *chave) {
   const char *p;
   size_t nChave;
   int prof = 0;
-  if (!ini || !chave || !dst || tam == 0) return 0;
-  dst[0] = 0;
+  if (!ini || !chave) return NULL;
   if (!fim) fim = ini + strlen(ini);
   nChave = strlen(chave);
-  if (fim <= ini) return 0;
+  if (fim <= ini) return NULL;
   p = memchr(ini, '{', (size_t)(fim - ini));
-  if (!p) return 0;
+  if (!p) return NULL;
   for (; p < fim && *p; p++) {
     if (*p == '"') {
       const char *ini2 = p + 1;
       const char *q = fimTextoEm(p, fim);
-      if (!q) return 0;
+      if (!q) return NULL;
       if (prof == 1 && (size_t)(q - ini2) == nChave &&
           !strncmp(ini2, chave, nChave)) {
         const char *v = pulaEm(q + 1, fim);
         if (v >= fim || *v != ':') { p = q; continue; }
         v = pulaEm(v + 1, fim);
-        // Valor nao-string (numero, null, objeto) devolve 0 em vez de meia
-        // leitura: quem chama decide o que fazer com a ausencia.
-        return lerTextoEm(v, fim, dst, tam);
+        return v < fim && *v ? v : NULL;
       }
       p = q;
       continue;
@@ -366,5 +371,5 @@ int js_texto_raiz_em(const char *ini, const char *fim, const char *chave,
     if (*p == '{' || *p == '[') prof++;
     else if (*p == '}' || *p == ']') { prof--; if (prof <= 0) break; }
   }
-  return 0;
+  return NULL;
 }

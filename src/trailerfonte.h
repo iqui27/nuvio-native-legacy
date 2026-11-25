@@ -10,6 +10,7 @@
 //   1 Apple TV, 2 IMDb, 3 YouTube  SO aquela. Sem ela para o titulo (ou sem
 //                 ela nesta TV), sem trailer — com uma linha de log dizendo
 //                 por que, para "o trailer sumiu" nao virar adivinhacao.
+// LG: slot 3 is Trailerio (manual playback on the title page).
 //
 // A escolha mora aqui, e nao duplicada em detail.c e home.c, porque sao dois
 // consumidores (pagina de titulo e destaque) x dois alvos, e a mesma regra
@@ -20,7 +21,7 @@
 
 // Valores do ajuste = indice gravado em ajustes.txt ("trailerFonteLocal N").
 // NAO reordenar: o arquivo guarda o numero.
-enum { TRF_AUTO = 0, TRF_APPLE = 1, TRF_IMDB = 2, TRF_YOUTUBE = 3 };
+enum { TRF_AUTO = 0, TRF_APPLE = 1, TRF_IMDB = 2, TRF_YOUTUBE = 3, TRF_TRAILERIO = 4 };
 
 // O que cada fonte tem para o titulo agora. `*_respondeu` = a busca terminou
 // (com ou sem trailer); enquanto 0, a fonte ainda pode chegar. YouTube nao tem

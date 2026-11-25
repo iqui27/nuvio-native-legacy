@@ -7,6 +7,11 @@
 #include "extras.h"
 #include "linguas.h"
 #include "video.h"      // trailer_osd_desenhar reads video_pos/duracao on every target
+#ifdef NV_WEBOS
+#include "trailerio.h"
+#include "salto.h"
+#include <math.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +32,12 @@ static int    dono;       // TRAILER_DONO_* (trailer.h)
 static int    noCartao;   // trailer_no_cartao: quadro inteiro encaixado no .tpk
 static char   donoImdb[32];
 static int    falso;      // trailer_teste_falso: 0 off, 1 open without image, 2 playing
+#ifdef NV_WEBOS
+enum { TIO_INATIVO, TIO_CONSULTANDO, TIO_ABRINDO, TIO_TOCANDO };
+static int tioEstado, tioFonte;
+static Uint32 tioOsdAte;
+static TrailerioLista *tioLista;
+#endif
 
 void trailer_teste_falso(int tocando) { falso = tocando < 0 ? 0 : 1 + (tocando != 0); }
 
@@ -412,10 +423,57 @@ static GfxRect naTela(GfxRect r) {
 
 static int bloqueadoMusica;
 void trailer_bloquear_musica(int sim) { bloqueadoMusica = sim; }
+#ifndef __EMSCRIPTEN__
+static void nativoResetar(void) {
+  tocouFonte = 0;
+  volumePendente = 1; recortePendente = 1; pausado = 0; reaplicarAte = 0;
+  tocandoDesde = 0; quadroInteiroEnviado = 0;
+#ifdef NV_TPK
+  recorteEnviadoEm = 0; mostraLogado = 0; imagemVista = 0; tocandoVisto = 0;
+  volumeTocandoEnviado = 0;
+#endif
+}
+#endif
+
+#ifdef NV_WEBOS
+int trailer_abrir_trailerio(const char *id, const char *tipo, GfxRect r, int som) {
+  if (bloqueadoMusica || !trailer_suportado()) return 0;
+  if (aberto) trailer_fechar();
+  if (!trailerio_iniciar(id, tipo)) return 0;
+  tioEstado = TIO_CONSULTANDO;
+  tioFonte = 0;
+  falhouUltima = pausado = 0;
+  abertoEm = SDL_GetTicks();
+  geracao++;
+  rect = naTela(r);
+  aberto = cheia = 1;
+  comSom = som;
+  return 1;
+}
+
+static void trailerioProximaFonte(void) {
+  while (tioLista && tioFonte < tioLista->n) {
+    const TrailerioFonte *fonte = &tioLista->fontes[tioFonte++];
+    tioEstado = TIO_ABRINDO;
+    if (video_tocar_trailerio(fonte->url, fonte->hls)) {
+      nativoResetar();
+      abertoEm = SDL_GetTicks();
+      video_janela((int)rect.x, (int)rect.y, (int)rect.w, (int)rect.h);
+      return;
+    }
+  }
+  falhouUltima = 1;
+  trailer_fechar();
+}
+#endif
+
 void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
   int nova;
   if (bloqueadoMusica) return;
   if (!trailer_suportado() || !fonte || !fonte[0]) return;
+#ifdef NV_WEBOS
+  if (tioEstado != TIO_INATIVO) trailer_fechar();
+#endif
   r = naTela(r);
   // SAMSUNG E SEMPRE MUDO, tambem em tela cheia (dono, 22/09/2026: "trailer
   // fica mudo"). A trava fica AQUI, no unico caminho ate o elemento, e nao so
@@ -450,13 +508,7 @@ void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
 #ifdef NV_TPK
     video_tpk_trailer_marcar(1);
 #endif
-    tocouFonte = 0;
-    volumePendente = 1; recortePendente = 1; pausado = 0; reaplicarAte = 0;
-    tocandoDesde = 0; quadroInteiroEnviado = 0;
-#ifdef NV_TPK
-    recorteEnviadoEm = 0; mostraLogado = 0; imagemVista = 0; tocandoVisto = 0;
-    volumeTocandoEnviado = 0;
-#endif
+    nativoResetar();
   } else if (comSom != som) volumePendente = 1;
   video_janela((int)r.x, (int)r.y, (int)r.w, (int)r.h);
   if (!nova) recortePendente = 1;
@@ -484,6 +536,9 @@ void trailer_rect(GfxRect r) {
 #ifdef __EMSCRIPTEN__
   trailer_js_abrir(fonteAtual, r.x, r.y, r.w, r.h, comSom, ajustes_trailer_zoom(), NV_REC_URL);
 #else
+#ifdef NV_WEBOS
+  if (tioEstado == TIO_CONSULTANDO) return;
+#endif
   video_janela((int)r.x, (int)r.y, (int)r.w, (int)r.h);
   recortePendente = 1;
   nativoAplicar();
@@ -498,7 +553,22 @@ void trailer_fechar(void) {
 #ifdef __EMSCRIPTEN__
   trailer_js_fechar();
 #else
+#ifdef NV_WEBOS
+  if (tioEstado == TIO_CONSULTANDO) {
+    trailerio_cancelar();
+  } else {
+    video_parar();
+    if (tioEstado != TIO_INATIVO) video_definir_mp4(0);
+  }
+  if (tioEstado != TIO_INATIVO) {
+    free(tioLista);
+    tioLista = NULL;
+    tioEstado = TIO_INATIVO;
+    tioOsdAte = 0;
+  }
+#else
   video_parar();
+#endif
 #endif
   aberto = 0; cheia = 0; fonteAtual[0] = 0;
 #ifndef __EMSCRIPTEN__
@@ -548,6 +618,9 @@ int trailer_tocando(void) {
 #endif
 }
 int trailer_mostra_video(void) {
+#ifdef NV_WEBOS
+  if (tioEstado == TIO_CONSULTANDO || tioEstado == TIO_ABRINDO) return 0;
+#endif
 #ifdef NV_ANDROID
   if (noCartao && !video_janela_pronta()) return 0;
 #endif
@@ -607,10 +680,26 @@ int trailer_evento(const SDL_Event *e) {
   k = e->key.keysym.sym;
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE || k == SDLK_DELETE ||
       e->key.keysym.scancode == NV_SCANCODE_BACK) { trailer_fechar(); return 1; }
+#ifdef NV_WEBOS
+  if (tioEstado == TIO_TOCANDO && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
+    const double dur = video_duracao(), pos = video_pos();
+    if (!e->key.repeat && isfinite(dur) && dur > 0.0 && isfinite(pos)) {
+      double alvo = pos + (k == SDLK_RIGHT ? SALTO_SEG : -SALTO_SEG);
+      if (alvo < 0.0) alvo = 0.0;
+      if (alvo > dur) alvo = dur;
+      if (alvo != pos) video_buscar(alvo);
+      tioOsdAte = (SDL_GetTicks() + 3000u) | 1u;
+    }
+    return 1;
+  }
+#endif
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
 #ifdef __EMSCRIPTEN__
     trailer_js_cmd(trailer_js_pausado() ? "playVideo" : "pauseVideo");
 #else
+#ifdef NV_WEBOS
+    if (tioEstado == TIO_CONSULTANDO || tioEstado == TIO_ABRINDO) return 1;
+#endif
     pausado = !pausado;
     video_pausar(pausado);
 #endif
@@ -643,9 +732,27 @@ void trailer_atualizar(Uint32 agora) {
     trailer_fechar();
   } else if (aberto && trailer_js_estado() == 0) trailer_fechar();
 #else
+#ifdef NV_WEBOS
+  if (tioEstado == TIO_CONSULTANDO) {
+    if (!trailerio_resultado(&tioLista)) return;
+    trailerioProximaFonte();
+  }
+#endif
   if (!aberto) return;
   video_bombear();
   nativoAplicar();
+#ifdef NV_WEBOS
+  if (tioEstado == TIO_ABRINDO && !video_conflito_recurso()) {
+    if (video_tocando()) {
+      tioEstado = TIO_TOCANDO;
+      free(tioLista);
+      tioLista = NULL;
+    } else if (video_falhou() || video_terminou() || (Sint32)(agora - abertoEm) >= 8000) {
+      trailerioProximaFonte();
+      return;
+    }
+  }
+#endif
   // Acabou ou a fonte falhou: fecha e a pagina volta a arte.
   // conflito: outro app (YouTube) tomou o plano de video — fecha, fica a arte.
   if (video_terminou() || video_falhou() || video_conflito_recurso()) {
@@ -658,10 +765,8 @@ void trailer_atualizar(Uint32 agora) {
 int trailer_falhou(void) { return falhouUltima; }
 
 // O OSD DO TRAILER EM TELA CHEIA (Glass UI, mockup de 03/10, proposta
-// aprovada): so com o trailer PAUSADO — o trailer e o proprio heroi. A pilula
-// da ilha diz o que e ("Trailer · titulo"), a barra fina do player embaixo e
-// o tempo; o unico botao e Continuar (o que o OK faz). Quem desenha a tela
-// cheia (detail.c) chama isto por cima do furo.
+// aprovada): a barra fina mostra tempo e buffer. Pausar mostra Continuar.
+// Em Trailerio, buscar tambem mostra a barra durante alguns segundos.
 int trailer_pausado(void) {
 #ifdef __EMSCRIPTEN__
   return aberto && cheia && trailer_js_pausado();
@@ -680,8 +785,14 @@ int trailer_medidor_esconde(void) {
   return trailer_aberto() && trailer_tocando() && !trailer_pausado();
 }
 void trailer_osd_desenhar(const char *titulo, float a) {
+  const int emPausa = trailer_pausado();
+  int mostrar = emPausa;
+#ifdef NV_WEBOS
+  if (tioOsdAte && (Sint32)(SDL_GetTicks() - tioOsdAte) >= 0) tioOsdAte = 0;
+  mostrar |= tioEstado == TIO_TOCANDO && tioOsdAte != 0;
+#endif
+  if (!mostrar || a < 0.01f) return;
   double pos = video_pos(), dur = video_duracao();
-  if (!trailer_pausado() || a < 0.01f) return;
   gfx_veu_css((GfxRect){ 0, 0, NV_TELA_W, 260.0f }, 1, 1.38f, 1.0f, 0.52f * a);
   gfx_veu_css((GfxRect){ 0, NV_TELA_H - 300.0f, NV_TELA_W, 300.0f }, 0, 1.0f, 1.0f, 0.60f * a);
   { TxtLinha l1 = txt_linha(TXT_ILHA_NOME, "Trailer", 243, 242, 239, 255);
@@ -707,7 +818,8 @@ void trailer_osd_desenhar(const char *titulo, float a) {
       txt_desenhar_alpha(l2, xr, 916.0f, a);
       txt_desenhar_alpha(l1, xr - 8.0f - l1.w, 916.0f, a); }
   }
-  { TxtLinha l = txt_linha(TXT_G21B, "Continuar", 0, 0, 0, 255);
+  if (emPausa) {
+    TxtLinha l = txt_linha(TXT_G21B, "Continuar", 0, 0, 0, 255);
     GfxRect b = { 96.0f, 896.0f, 22.0f + 28.0f + 12.0f + (float)l.w + 28.0f, 68.0f };
     float k = plrui_tinta() / 255.0f;
     plrui_pilula_foco(b, a);

@@ -1070,9 +1070,14 @@ static const char *texValorTexto(int i, char *buf, size_t tam) {
 static const char *V_QUALIMG[]   = { "Baixa", "Padrão", "Alta" };
 static const char *V_QUALTRAIL[] = { "Máxima", "1080p", "720p", "480p" };
 static const char *V_ASPTRAIL[]  = { "Zoom cinema", "Zoom leve", "Zoom ultra", "Original" };
-// Fonte do trailer (trailerfonte.h). O indice e o gravado e o TRF_* do
-// modulo: 0 Automatico, 1 Apple, 2 IMDb, 3 YouTube — nao reordenar.
-static const char *V_TRAILFONTE[] = { "Automático", "Apple TV", "IMDb", "YouTube" };
+// Preserve the local order. Slot 3 is platform-specific.
+static const char *V_TRAILFONTE[] = { "Automático", "Apple TV", "IMDb",
+#ifdef NV_WEBOS
+  "Trailerio",
+#else
+  "YouTube",
+#endif
+};
 // Nomes NATIVOS, sem i18n: quem trocou para um idioma que nao le precisa achar o seu.
 // A ordem e a de IDIOMA_* (idiomacod.h) e a do valor gravado: so acrescentar no fim.
 // EXCECAO: o primeiro rotulo, "Automático", e o unico que passa por i18n (os
@@ -4050,7 +4055,13 @@ const char *ajustes_trailer_audio(void) {
   int v = valor[AJ_TRAILER_AUDIO];
   return (v > 0 && v < nTrAud) ? TRAUD_COD[v] : "";
 }
-int   ajustes_trailer_fonte(void)     { int v = valor[AJ_TRAILER_FONTE]; return (v >= 0 && v < nValores(AJ_TRAILER_FONTE)) ? v : 0; }
+int ajustes_trailer_fonte(void) {
+  int v = valor[AJ_TRAILER_FONTE];
+#ifdef NV_WEBOS
+  if (v == 3) return TRF_TRAILERIO;
+#endif
+  return (v >= 0 && v < nValores(AJ_TRAILER_FONTE)) ? v : TRF_AUTO;
+}
 int  ajustes_envio_auto(void)         { return lig(AJ_ENVIO_AUTO); }
 int  ajustes_menu_explorar(void)      { return lig(AJ_MENU_EXPLORAR); }
 int  ajustes_menu_guia(void)          { return lig(AJ_MENU_GUIA); }
@@ -10903,7 +10914,7 @@ static int nValores(int op) {
   if (op == AJ_PLAYER_EXTERNO) return 3 + ppN();
   if (op == AJ_PLAYER_ANIME) return 4 + ppN();
   if (op == AJ_URL_LISTA) return 1 + urlN;
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__) && !defined(NV_WEBOS)
   // "YouTube" (o 4o valor) so toca no .wgt da Samsung (trailerfonte.c, existe).
   // Aqui ele era escolhivel e deixava a TV sem trailer nenhum: sem trailer no
   // destaque e sem botao Trailer na pagina (#204, log da 1.6.5: "detalhe: sem

@@ -850,6 +850,7 @@ static int dtsHabilitado, dtsTentou, dtsRevisao, dtsLoadRevisao, dtsFalhaLogada;
 static int mp4TestEnabled,mp4TestPending,mp4TestStarted;
 #endif
 static int modoLoad;   // video_modo_live_consumir do load em curso
+enum { VIDEO_TRAILERIO_HLS = 3, VIDEO_TRAILERIO_MP4 = 4 };
 static int dtsLegAntes = -1, dtsLegCount;
 static VideoFaixa dtsLegFaixa;
 static int dtsNativePending;
@@ -3303,7 +3304,7 @@ static int dvPodeIniciar(void) {
   return 0;
 #endif
 }
-int video_tocar(const char *url) {
+static int tocarFonte(const char *url, int modoTrailer) {
   fundoZerar();
   tbq_tocar(); tbqSegura = -1;
 #ifdef NV_WEBOS_HLS_TEST
@@ -3350,6 +3351,7 @@ int video_tocar(const char *url) {
   fflush(stdout);
   // O modo vale para esta fonte e para os recarregar dela (tocarInterno).
   modoLoad = video_modo_live_consumir();
+  if (modoTrailer) modoLoad = modoTrailer;
   nv_recon_zerar(&recon);
   reconPermitida = reconProxima; reconProxima = 0;
   reconIniciou = 0; reconErroPend = 0; fonteTocou = 0;
@@ -3370,6 +3372,18 @@ int video_tocar(const char *url) {
   edidPedir();
   return r;
 }
+
+int video_tocar(const char *url) { return tocarFonte(url, 0); }
+
+#ifdef NV_WEBOS
+int video_tocar_trailerio(const char *url, int hls) {
+  video_definir_cabecalhos(NULL);
+  video_definir_dv(0);
+  video_definir_mp4(!hls);
+  // Explicit seekable VOD transport without the movie read-ahead buffer.
+  return tocarFonte(url, hls ? VIDEO_TRAILERIO_HLS : VIDEO_TRAILERIO_MP4);
+}
+#endif
 
 // Chamado uma vez por quadro. So existe para o prazo acima: sem ele o recuo
 // dependeria de o usuario perceber que nao ha imagem e sair da tela.
@@ -4050,7 +4064,7 @@ static void montarCarga(char *dst, size_t tam, const char *url, int modo,
              "\"bufferMinLevel\":%u,\"bufferMaxLevel\":%u},",
              bytes / 8, bytes / 4, bytes);
   }
-  if (modo == 2 || modo == 3) {
+  if (modo == 2 || modo == 3 || modo == VIDEO_TRAILERIO_MP4) {
     snprintf(dst, tam,
         "{\"payload\":{\"option\":{"
         "\"appId\":\"" NV_APP_ID "\","
@@ -4058,8 +4072,8 @@ static void montarCarga(char *dst, size_t tam, const char *url, int modo,
         "\"mediaTransportType\":\"%s\","
         "\"windowId\":\"%s\"}},"
         "\"uri\":\"%s\",\"type\":\"media\"}",
-        dolby, hh, modo == 3 ? "\"useSeekableRanges\":true," : "",
-        strstr(url, ".m3u8") ? "HLS" : "URI", janela, url);
+        dolby, hh, modo != 2 ? "\"useSeekableRanges\":true," : "",
+        modo != VIDEO_TRAILERIO_MP4 && strstr(url, ".m3u8") ? "HLS" : "URI", janela, url);
   } else {
     snprintf(dst, tam,
         "{\"payload\":{\"option\":{\"useSeekableRanges\":true,"
