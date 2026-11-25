@@ -1,4 +1,7 @@
 #include "../src/ajustes.c"
+#ifdef NV_TPK
+int doa_disponivel(void) { return 0; }   /* the .tpk donor server (dts/doador_tpk.c) is not linked here */
+#endif
 #include <assert.h>
 int main(void) {
   assert(AJ_DV7_MAPPING==AJ_MP4_BD_TEST+1 && AJ_N>AJ_DV7_MAPPING);
