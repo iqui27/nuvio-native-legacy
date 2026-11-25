@@ -120,5 +120,12 @@ int main(int argc, char **argv) {
   tecla(SDLK_RETURN);
   quadros(40); salvar("7-after-ok");
   printf("after OK: posSeg %.1f capFoco %d scrubbing %d\n", posSeg, capFoco, scrubbing);
+  // v6.1: at the last and first chapters the row reaches both margins.
+  tecla(SDLK_UP); quadros(40);
+  for (i = 0; i < 7; i++) { tecla(SDLK_RIGHT); quadros(3); }
+  quadros(40); salvar("8-last");
+  for (i = 0; i < 7; i++) { tecla(SDLK_LEFT); quadros(3); }
+  quadros(40); salvar("9-first");
+  printf("row centre at the first chapter: capCx %.0f\n", capCx);
   return 0;
 }

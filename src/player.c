@@ -386,6 +386,12 @@ static void capituloPular(const MkvCap *c, int i);
 static void ponteiroCapFocar(int i, int b);
 static void ponteiroCapitulo(int i, int inteiro);
 static float capAnim;
+// The chapter row's centre x (v6.1, owner 25/11): it leans a little toward the
+// knob and is held so the row reaches both bar margins at the first and last
+// chapters. While the row is closed it rests where the scrub strip is, so UP
+// slides the row out of the strip instead of from the screen centre.
+static float capCx = -1.0f, capCxV;
+#define CAP_SEGUE 0.35f               // share of the way from the centre to the knob
 // Chapter starts last sent to the thumbnail maker (seekr_capitulos); reset when
 // the player closes, since seekr_desligar forgets them.
 static int capEnviadosN = -1;
@@ -5607,10 +5613,10 @@ static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a
   if (est == SEEKR_PRONTO) seekr_quadros(pv, n, t, cue);
   if (cue[n == 1 ? 0 : 1] < 0.0) cue[n == 1 ? 0 : 1] = pv + ajustes_seekr_ajuste_s(); }
   // The strip follows the knob like before, kept inside the screen; in chapter
-  // mode the row is centred (desenharFileiraCap), so the strip glides there.
+  // mode it glides to where the row is (capCx, desenharFileiraCap).
   { float tot = fita ? CAP_W1 * 2.0f + CAP_MW + CAP_VAO * 2.0f : CAP_MW;
     float xk = bx + bw * frac, lo = PLR_MARGEM + tot * 0.5f, hi = bx + bw - tot * 0.5f;
-    cx = anim_mistura(anim_clamp(xk, lo, hi), NV_VTELA_W * 0.5f, capAnim); }
+    cx = anim_mistura(anim_clamp(xk, lo, hi), capCx >= 0.0f ? capCx : NV_VTELA_W * 0.5f, capAnim); }
   top = yBarra - 24.0f - CAP_LINHA - CAP_MH - CAP_SUBIDA * capAnim;
   for (k = 0; k < n; k++) {
     int atual = (n == 1 || k == 1);
@@ -5644,14 +5650,14 @@ static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a
 }
 
 // THE CHAPTER ROW. Drawn while capAnim > 0 (UP on the bar, scrubbing or not).
-static void desenharFileiraCap(Uint32 agora, float yBarra, float a) {
+static void desenharFileiraCap(Uint32 agora, float bx, float bw, float frac, float yBarra, float a) {
   static Uint32 capT;
   MkvCap c[MKV_MAX_CAPS];
   float dt = capT ? (float)(agora - capT) / 1000.0f : 0.0f;
-  int n = duracaoSeg > 1.0f ? capitulosDoArquivo(c, MKV_MAX_CAPS) : 0, i, idx[9], ni = 0, base;
-  GLuint tex[9] = { 0 };
+  int n = duracaoSeg > 1.0f ? capitulosDoArquivo(c, MKV_MAX_CAPS) : 0, i, idx[13], ni = 0, base;
+  GLuint tex[13] = { 0 };
   char buf[32];
-  float cx = NV_VTELA_W * 0.5f, top, up, pont;
+  float cx, top, up, pont;
   capT = agora;
   if (dt > 0.1f) dt = 0.1f;
   // Another file with fewer chapters while the row is open: the focus comes
@@ -5663,33 +5669,54 @@ static void desenharFileiraCap(Uint32 agora, float yBarra, float a) {
   // leave it, it is let go for good and that chapter shows its own picture.
   if (capHeldCap >= 0 && capSel != capHeldCap) capHeldCap = -1;
   capHeld = anim_mola(capHeld, capFoco && capHeldCap >= 0 ? 1.0f : 0.0f, dt, 14.0f);
+  // Closed: the row rests on the scrub strip's spot (the same clamp as
+  // seekrMiniatura's 3-card strip), so it opens out of it.
+  if (capAnim <= 0.005f || n < 2) {
+    float tot = CAP_W1 * 2.0f + CAP_MW + CAP_VAO * 2.0f;
+    capCx = anim_clamp(bx + bw * frac, PLR_MARGEM + tot * 0.5f, bx + bw - tot * 0.5f); capCxV = 0.0f;
+  } else {
+    // Open: lean toward the focused chapter's start on the bar, then hold the
+    // row so it reaches both margins (no empty side at the first or last
+    // chapter); a row narrower than the bar stays inside it.
+    float s = (float)capSel, r = (float)(n - 1 - capSel);
+    float xk = bx + bw * anim_clamp((float)(c[capSel].inicio / duracaoSeg), 0.0f, 1.0f);
+    float alvo = NV_VTELA_W * 0.5f + CAP_SEGUE * (xk - NV_VTELA_W * 0.5f);
+    float cMax = bx - capX(0.0f, -s) + capLarg(s) * 0.5f;            // first card's left edge on the margin
+    float cMin = bx + bw - capX(0.0f, r) - capLarg(r) * 0.5f;        // last card's right edge on the margin
+    alvo = anim_clamp(alvo, fminf(cMin, cMax), fmaxf(cMin, cMax));
+    if (capCx < 0.0f) capCx = alvo;
+    capCx = anim_mola2(&capCxV, capCx, alvo, dt, NV_MOLA2_SCROLL);
+  }
   if (n < 2 || capAnim <= 0.005f || a <= 0.01f) return;
+  cx = capCx;
   up = capAnim;
   top = yBarra - 24.0f - CAP_LINHA - CAP_MH - CAP_SUBIDA * up;
   // Pictures: the cards on screen and one past each edge (a slide never
   // shows a card that is still uploading). At most two uploads per frame.
   base = (int)floorf(capPos);
-  { int ord[9] = { 0, 1, -1, 2, -2, 3, -3, 4, -4 };   // nearest first
-    for (i = 0; i < 9; i++) { int j = base + ord[i]; if (j >= 0 && j < n) idx[ni++] = j; } }
+  // (Up to six each side: at the first or last chapter the row fills the bar.)
+  { int ord[13] = { 0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6 };   // nearest first
+    for (i = 0; i < 13; i++) { int j = base + ord[i]; if (j >= 0 && j < n) idx[ni++] = j; } }
   if (!seekr_capitulo_quadros(idx, ni, tex)) memset(tex, 0, sizeof tex);
   pont = ponteiroNoPlayer() && a > 0.3f && capFoco && up > 0.9f;
   for (i = 0; i < n; i++) {
     float d = (float)i - capPos, ad = fabsf(d), w, h, x, y, ca, na;
     GLuint t = 0;
     int k;
-    if (ad > 3.6f) continue;
-    for (k = 0; k < ni; k++) if (idx[k] == i) t = tex[k];
     w = capLarg(ad); h = w * 9.0f / 16.0f;
     x = capX(cx, d) + (ad > 1.5f ? (d < 0 ? -1.0f : 1.0f) * (1.0f - up) * 30.0f : 0.0f);
+    if (x + w * 0.5f <= 0.0f || x - w * 0.5f >= NV_VTELA_W) continue;   // off screen
+    for (k = 0; k < ni; k++) if (idx[k] == i) t = tex[k];
     y = top + CAP_MH * 0.5f + capCurva(d) * up;
-    // Opacity: centre 1, beside it .8, then .5 (as approved); the last ones
-    // stay at .45 instead of vanishing (owner 25/11), fading only as they leave.
+    // Opacity: centre 1, beside it .8, then .5 (as approved); the rest stay
+    // at .45 (owner 25/11: no empty space), fading only where a card leaves
+    // the screen.
     ca = ad < 1.0f ? anim_mistura(1.0f, 0.8f, ad) : ad < 2.0f ? anim_mistura(0.8f, 0.5f, ad - 1.0f)
-       : ad < 3.0f ? anim_mistura(0.5f, 0.45f, ad - 2.0f)
-       : fmaxf(0.0f, anim_mistura(0.45f, 0.0f, (ad - 3.0f) / 0.6f));
+       : ad < 3.0f ? anim_mistura(0.5f, 0.45f, ad - 2.0f) : 0.45f;
     na = ad < 1.0f ? anim_mistura(1.0f, 0.75f, ad) : ad < 2.0f ? anim_mistura(0.75f, 0.45f, ad - 1.0f)
-       : ad < 3.0f ? anim_mistura(0.45f, 0.4f, ad - 2.0f)
-       : fmaxf(0.0f, anim_mistura(0.4f, 0.0f, (ad - 3.0f) / 0.4f));
+       : ad < 3.0f ? anim_mistura(0.45f, 0.4f, ad - 2.0f) : 0.4f;
+    { float dentro = (fminf(x + w * 0.5f, NV_VTELA_W) - fmaxf(x - w * 0.5f, 0.0f)) / w;   // share on screen
+      ca *= anim_clamp(dentro, 0.0f, 1.0f); na *= anim_clamp(dentro * 1.5f - 0.5f, 0.0f, 1.0f); }
     { GfxRect q = { x - w * 0.5f, y - h * 0.5f, w, h };
       capCartao(q, t, a * ca * up);
       // The frame you were scrubbing, over the centre card until let go.
@@ -7764,7 +7791,7 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
   ac = acSemTitulo;
   // Depois do titulo: a miniatura fica POR CIMA dele enquanto a pessoa procura.
   seekrMiniatura(bx, bw, frac, yBarra, a);
-  desenharFileiraCap(agora, yBarra, a);
+  desenharFileiraCap(agora, bx, bw, frac, yBarra, a);
 
   // --- fileira de BOTOES ---------------------------------------------------
   // Discos de 68 no material da ilha; o focado vira PILULA cheia no acento com
