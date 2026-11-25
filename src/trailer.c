@@ -13,6 +13,9 @@
 #include "trailerapple.h"
 #include "trailerimdb.h"
 #include "salto.h"
+// Trailer seek step: trailers last 1-3 minutes, so left/right moves 5 s here.
+// The player's own step (SALTO_SEG) stays 10 s.
+#define TRAILER_SALTO_SEG 5.0
 #include <math.h>
 #endif
 #include <stdio.h>
@@ -725,7 +728,7 @@ int trailer_evento(const SDL_Event *e) {
   if (tioEstado == TIO_TOCANDO && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
     const double dur = video_duracao(), pos = video_pos();
     if (!e->key.repeat && isfinite(dur) && dur > 0.0 && isfinite(pos)) {
-      double alvo = pos + (k == SDLK_RIGHT ? SALTO_SEG : -SALTO_SEG);
+      double alvo = pos + (k == SDLK_RIGHT ? TRAILER_SALTO_SEG : -TRAILER_SALTO_SEG);
       if (alvo < 0.0) alvo = 0.0;
       if (alvo > dur) alvo = dur;
       if (alvo != pos) video_buscar(alvo);

@@ -158,7 +158,7 @@ int main(void) {
   duration = 26.0;
   assert(trailer_evento(&left) && seeks == 1 && position == 0.0);
   assert(trailer_evento(&left) && seeks == 1 && position == 0.0);
-  assert(trailer_evento(&right) && seeks == 2 && position == 10.0 && playing);
+  assert(trailer_evento(&right) && seeks == 2 && position == 5.0 && playing);
   trailer_osd_desenhar("Test", 1.0f);
   assert(bars == 1 && barX == 64.0f && barY == 960.0f && barW == 1792.0f && buttons == 0);
   assert(trailer_evento(&ok) && trailer_pausado() && !playing);
@@ -169,7 +169,8 @@ int main(void) {
   trailer_osd_desenhar("Test", 1.0f);
   assert(bars == 3 && barScale == uiScale && drawScale == 1.10f);
   assert(barY == 686.0f && barW == 1408.0f && pauseButton.y == 724.0f);
-  assert(trailer_evento(&right) && seeks == 3 && position == 20.0 && !playing);
+  assert(trailer_evento(&right) && seeks == 3 && position == 10.0 && !playing);
+  position = 23.0;
   assert(trailer_evento(&right) && seeks == 4 && position == duration);
   right.key.repeat = 1;
   position = 10.0;
