@@ -233,7 +233,7 @@ static float desenharGrupoTop(const char *titulo, const char (*itens)[64],
   cy += th.h + 10.0f;
   ajustes_acento(&ar, &ag, &ab);
   if (n <= 0) {
-    TxtLinha vz = t21_texto_linha(T21_SUPPORT, i18n("Nenhum ainda"),
+    TxtLinha vz = t21_texto_linha(T21_SUPPORT, i18n(FT_GOSTO_NENHUM_AINDA),
                                   T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, w);
     t21_texto_desenhar(vz, x, cy, T21_TEXT_SUPPORT * a);
     return (cy + vz.h + 18.0f) - y;
@@ -260,13 +260,13 @@ static float desenharGrupoTop(const char *titulo, const char (*itens)[64],
 static void desenharUsoTv(float x, float y, float w, float limY, float a, int focado) {
   typedef struct { const char *rot; uint32_t val; } UsoItem;
   const UsoItem itens[7] = {
-    { i18n("Fileiras vistas"),            usoCache.vistas },
-    { i18n("Abertas"),                    usoCache.abertas },
-    { i18n("Tocadas"),                    usoCache.tocadas },
-    { i18n("Terminadas"),                 usoCache.terminadas },
-    { i18n("Recusas"),                    usoCache.recusas },
-    { i18n("Cenas montadas na TV"),       usoCache.cenasTv },
-    { i18n("Cenas montadas no servidor"), usoCache.cenasServidor },
+    { i18n(FT_GOSTO_USO_VISTAS),     usoCache.vistas },
+    { i18n(FT_GOSTO_USO_ABERTAS),    usoCache.abertas },
+    { i18n(FT_GOSTO_USO_TOCADAS),    usoCache.tocadas },
+    { i18n(FT_GOSTO_USO_TERMINADAS), usoCache.terminadas },
+    { i18n(FT_GOSTO_USO_RECUSAS),    usoCache.recusas },
+    { i18n(FT_GOSTO_USO_CENAS_TV),   usoCache.cenasTv },
+    { i18n(FT_GOSTO_USO_CENAS_SERV), usoCache.cenasServidor },
   };
   float cy = y;
   int tudoZero = usoInfantil ||
@@ -275,19 +275,19 @@ static void desenharUsoTv(float x, float y, float w, float limY, float a, int fo
      !usoCache.cenasTv && !usoCache.cenasServidor);
   TxtLinha th;
   if (y + 64.0f > limY) return;
-  th = t21_texto_linha(T21_GROUP, i18n("Uso do Farol nesta TV"),
+  th = t21_texto_linha(T21_GROUP, i18n(FT_GOSTO_USO_TITULO),
                        T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, w);
   t21_texto_desenhar(th, x, cy, (focado ? 1.0f : .85f) * a);
   cy += th.h + 10.0f;
 
   if (usoInfantil) {
-    TxtLinha vz = t21_texto_linha(T21_SUPPORT, i18n("Nada contado ainda"),
+    TxtLinha vz = t21_texto_linha(T21_SUPPORT, i18n(FT_GOSTO_USO_VAZIO),
                                   T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, w);
     t21_texto_desenhar(vz, x, cy, T21_TEXT_SUPPORT * a);
     return;
   }
   if (tudoZero) {
-    TxtLinha vz = t21_texto_linha(T21_SUPPORT, i18n("Nada contado ainda"),
+    TxtLinha vz = t21_texto_linha(T21_SUPPORT, i18n(FT_GOSTO_USO_VAZIO),
                                   T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, w);
     t21_texto_desenhar(vz, x, cy, T21_TEXT_SUPPORT * a);
     cy += vz.h + 12.0f;
@@ -315,7 +315,7 @@ static void desenharUsoTv(float x, float y, float w, float limY, float a, int fo
   }
   if (cy + 24.0f <= limY) {
     TxtLinha nota = t21_texto_linha(T21_SUPPORT,
-      i18n("Fica só nesta TV. Zerar o gosto apaga."),
+      i18n(FT_GOSTO_USO_NOTA),
       T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, w);
     t21_texto_desenhar(nota, x, cy, T21_TEXT_SUPPORT * a);
   }
@@ -372,7 +372,7 @@ void farolgostoui_desenhar(Uint32 agora) {
     if (resumoCache.vazio) {
       if (scrollIdx <= 0) {
         TxtLinha vz = t21_texto_linha(T21_SHEET_BODY,
-          i18n("O Farol ainda não aprendeu preferências neste perfil."),
+          i18n(FT_GOSTO_APRENDEU_VAZIO),
           T21_TEXT_R, T21_TEXT_G, T21_TEXT_B, 255, pw);
         t21_texto_desenhar(vz, px, py + 4.0f, T21_TEXT_SECONDARY * a);
         py += vz.h + 20.0f;
@@ -386,7 +386,7 @@ void farolgostoui_desenhar(Uint32 agora) {
         py += desenharGrupoTop("Pessoas", resumoCache.pessoas, resumoCache.nPessoas,
                                px, py, pw, a);
       if (scrollIdx <= 2 && py < limY - 80.0f)
-        py += desenharGrupoTop("Temas", resumoCache.temas, resumoCache.nTemas,
+        py += desenharGrupoTop(FT_GOSTO_TEMAS, resumoCache.temas, resumoCache.nTemas,
                                px, py, pw, a);
       if (py < limY - 80.0f || scrollIdx >= 3)
         desenharUsoTv(px, py, pw, limY, a, foco != 0 && scrollIdx >= 3);
