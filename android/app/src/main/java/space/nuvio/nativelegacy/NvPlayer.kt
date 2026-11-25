@@ -177,6 +177,7 @@ object NvPlayer {
     @JvmStatic external fun nativeIniciar()
     @JvmStatic external fun nativeLimitedStatus(): Int
     @JvmStatic external fun nativeTunneling(): Boolean
+    @JvmStatic external fun nativeFrameRateMatch(): Int
     @JvmStatic external fun nativeStereoDownmix(): Boolean
     @JvmStatic external fun nativeEvento(tipo: Int, a: Int, b: Int)
     // flags (#287): 1 = forcada (SELECTION_FLAG_FORCED), 2 = SDH
@@ -1172,7 +1173,9 @@ object NvPlayer {
 
     @JvmStatic fun pausar(p: Int) {
         principal.post {
-            pausaPedida = p != 0; player?.playWhenReady = !pausaPedida
+            pausaPedida = p != 0
+            if (!segurandoTaxa) player?.playWhenReady = !pausaPedida
+            else if (pausaPedida) ev(EV_PAUSADO)
             if(pausaPedida) AudioFeedDiagnostics.resetContinuity()
         }
     }
@@ -1527,6 +1530,7 @@ object NvPlayer {
         val espera = if (esperaInicio < 0) SystemClock.elapsedRealtime() else esperaInicio
         if (esperaInicio < 0) {
             liberar()
+            principal.removeCallbacks(restaurarTaxa)
             // O C envia ganho/pausa depois de abrir; a espera nao pode apaga-los.
             ganhoPct = 100
             if (!reabrindo) pausaPedida = false
@@ -1574,6 +1578,10 @@ object NvPlayer {
             val p = r.p
             recursosAtuais = r
             player = p
+            modoTaxa = try { nativeFrameRateMatch() } catch (_: UnsatisfiedLinkError) { TaxaQuadros.SEMPRE }
+            taxaDecidida = false
+            if (modoTaxa == TaxaQuadros.DESLIGADO)
+                p.setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
             thumbnailSourceOpen = true
             thumbnailSourceEpoch++
             thumbnailHeadroomSample = null
@@ -1657,7 +1665,7 @@ object NvPlayer {
                 ouv.onTracksChanged(p.currentTracks)
                 ouv.onVideoSizeChanged(p.videoSize)
                 ouv.onPlaybackStateChanged(p.playbackState)
-                p.playWhenReady = true
+                if (!segurandoTaxa) p.playWhenReady = true
                 Log.i(TAG, "[preparo] adotado token=${preparada.token} estado=${p.playbackState}")
             }
             principal.postDelayed(tique(minha), TIQUE_MS)
@@ -1673,6 +1681,8 @@ object NvPlayer {
     // morre na conferencia do numero.
     private fun liberar() {
         AudioFeedDiagnostics.report(force=true)
+        soltarTaxa(false)
+        if (taxaPedida != 0) { principal.removeCallbacks(restaurarTaxa); principal.postDelayed(restaurarTaxa, RESTAURAR_TAXA_MS) }
         recuperacaoLive?.cancel()
         recuperacaoLive = null
         sessao++
@@ -2115,6 +2125,106 @@ object NvPlayer {
         if (recriando || recriaAgendada) return
         principal.postDelayed(estavelRun, 150L)
     }
+    // --- igualar taxa de quadros (ajuste "Igualar taxa de quadros", TaxaQuadros.kt) ---
+    // Always: ask the window for the display mode that fits the video and hold
+    // playback while the HDMI link re-syncs (1-2 s dark on most boxes), so the
+    // opening seconds and passthrough audio are not lost. The mode returns to
+    // the system default a moment after the player closes; an episode that
+    // opens within that time keeps it when its rate is the same.
+    private const val RESTAURAR_TAXA_MS = 2500L
+    private const val SEGURAR_TAXA_MAX_MS = 5000L
+    private const val SEGURAR_TAXA_FOLGA_MS = 400L
+    private var modoTaxa = TaxaQuadros.SEMPRE
+    private var taxaDecidida = false
+    private var taxaPedida = 0          // preferredDisplayModeId this app set; 0 = system default
+    @Volatile private var segurandoTaxa = false
+    private var taxaAlvo = 0
+    private var ouvinteTela: android.hardware.display.DisplayManager.DisplayListener? = null
+    private val soltarTaxaRun = Runnable { soltarTaxa(true) }
+    private val restaurarTaxa = Runnable { if (player == null) pedirModo(0, "restaura") }
+
+    private fun tela(): android.view.Display? = try {
+        @Suppress("DEPRECATION") activity?.windowManager?.defaultDisplay
+    } catch (_: Exception) { null }
+
+    private fun pedirModo(id: Int, motivo: String): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < 23) return false
+        val w = activity?.window ?: return false
+        return try {
+            val lp = w.attributes
+            if (lp.preferredDisplayModeId == id) { taxaPedida = id; return false }
+            lp.preferredDisplayModeId = id
+            w.attributes = lp
+            taxaPedida = id
+            Log.i(TAG, "[quadro] modo pedido=$id ($motivo)")
+            true
+        } catch (e: Exception) { Log.w(TAG, "[quadro] modo $id recusado: $e"); false }
+    }
+
+    private fun decidirTaxa(minha: Int, fps: Float) {
+        if (!atual(minha) || taxaDecidida) return
+        if (android.os.Build.VERSION.SDK_INT < 23) { taxaDecidida = true; return }
+        if (modoTaxa != TaxaQuadros.SEMPRE) {
+            taxaDecidida = true
+            if (taxaPedida != 0 && pedirModo(0, "ajuste ${modoTaxa}")) segurarTaxa(-1)
+            return
+        }
+        if (!TaxaQuadros.fpsValido(fps)) return   // tracks may not know yet; the first frame tries again
+        taxaDecidida = true
+        val d = tela() ?: return
+        try {
+            val m = d.mode
+            val atual = TaxaQuadros.Modo(m.modeId, m.physicalWidth, m.physicalHeight, m.refreshRate)
+            val modos = d.supportedModes.map { TaxaQuadros.Modo(it.modeId, it.physicalWidth, it.physicalHeight, it.refreshRate) }
+            val alvo = TaxaQuadros.escolher(modos, atual, fps)
+            Log.i(TAG, "[quadro] video=${fps}fps tela=${m.modeId}@${m.refreshRate} alvo=${alvo?.let { "${it.id}@${it.hz}" } ?: "nenhum"}")
+            if (alvo == null) {                 // already fits, or the panel has nothing better
+                if (taxaPedida != 0 && !TaxaQuadros.casa(atual.hz, fps) && pedirModo(0, "sem modo para ${fps}fps")) segurarTaxa(-1)
+                return
+            }
+            if (pedirModo(alvo.id, "video ${fps}fps")) segurarTaxa(alvo.id)
+        } catch (e: Exception) { Log.w(TAG, "[quadro] decidir: $e") }
+    }
+
+    // alvo < 0: back to the system default, whose id the app does not know.
+    private fun segurarTaxa(alvo: Int) {
+        val p = player ?: return
+        val act = activity ?: return
+        taxaAlvo = alvo
+        segurandoTaxa = true
+        p.playWhenReady = false
+        val dm = act.getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager
+        if (dm != null && ouvinteTela == null) {
+            val o = object : android.hardware.display.DisplayManager.DisplayListener {
+                override fun onDisplayAdded(id: Int) {}
+                override fun onDisplayRemoved(id: Int) {}
+                override fun onDisplayChanged(id: Int) {
+                    if (segurandoTaxa && (taxaAlvo < 0 || tela()?.mode?.modeId == taxaAlvo)) {
+                        principal.removeCallbacks(soltarTaxaRun)
+                        principal.postDelayed(soltarTaxaRun, SEGURAR_TAXA_FOLGA_MS)
+                    }
+                }
+            }
+            try { dm.registerDisplayListener(o, principal); ouvinteTela = o } catch (_: Exception) {}
+        }
+        principal.removeCallbacks(soltarTaxaRun)
+        principal.postDelayed(soltarTaxaRun, SEGURAR_TAXA_MAX_MS)
+    }
+
+    private fun soltarTaxa(retomar: Boolean) {
+        principal.removeCallbacks(soltarTaxaRun)
+        ouvinteTela?.let { o ->
+            try { (activity?.getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager)?.unregisterDisplayListener(o) } catch (_: Exception) {}
+        }
+        ouvinteTela = null
+        if (!segurandoTaxa) return
+        segurandoTaxa = false
+        if (retomar) {
+            Log.i(TAG, "[quadro] tela=${tela()?.mode?.modeId} alvo=$taxaAlvo: retoma")
+            player?.playWhenReady = !pausaPedida
+        }
+    }
+
     // Evidencia para "a TV nao acompanha o fps do filme": fps do video, modos que o
     // painel oferece e o ativo. TCL do dono (06/10): so existe 3840x2160@60, entao
     // nao ha modo para trocar; o Media3 ja vota Surface.setFrameRate sozinho.
@@ -2219,7 +2329,7 @@ object NvPlayer {
             if (!atual(minha)) return
             val p = player ?: return
             relatarAudio(minha, "playWhenReady=$playWhenReady reason=$reason")
-            if (!playWhenReady && !p.isPlaying && p.playbackState != Player.STATE_ENDED) ev(EV_PAUSADO)
+            if (!playWhenReady && !segurandoTaxa && !p.isPlaying && p.playbackState != Player.STATE_ENDED) ev(EV_PAUSADO)
             medirEstado(p)
         }
 
@@ -2237,7 +2347,7 @@ object NvPlayer {
             miniaturaTocando = isPlaying
             if (isPlaying) { miniaturaTocou = true; if (pronto) ev(EV_TOCANDO) }
             // Parar de tocar por buffer nao e pausa (o evento 7 ja disse).
-            else if (!p.playWhenReady && p.playbackState != Player.STATE_ENDED) ev(EV_PAUSADO)
+            else if (!p.playWhenReady && !segurandoTaxa && p.playbackState != Player.STATE_ENDED) ev(EV_PAUSADO)
         }
 
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
@@ -2277,6 +2387,11 @@ object NvPlayer {
             esconderQuadro()
             ev(EV_PRIMEIRO_QUADRO)
             quadroVisto = true
+            decidirTaxa(minha, player?.videoFormat?.frameRate ?: Format.NO_VALUE.toFloat())
+            if (!taxaDecidida) {   // no frame rate anywhere: leave the previous video's mode
+                taxaDecidida = true
+                if (taxaPedida != 0 && pedirModo(0, "fps desconhecido")) segurarTaxa(-1)
+            }
             logTaxaDeQuadros()
             hdrNaSuperficie()
             avaliarEstavel()
@@ -2294,6 +2409,9 @@ object NvPlayer {
         override fun onTracksChanged(tracks: Tracks) {
             if (!atual(minha)) return
             publicarFaixas(tracks)
+            tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.isSelected }?.let { g ->
+                for (i in 0 until g.length) if (g.isTrackSelected(i)) { decidirTaxa(minha, g.getTrackFormat(i).frameRate); break }
+            }
             recursosAtuais?.reserva?.controlador?.onAudioTrackSelected(tracks.selectedAudioFormat())
             for (g in tracks.groups) if (g.type == C.TRACK_TYPE_AUDIO) {
                 for (i in 0 until g.length) if (g.isTrackSelected(i)) {

@@ -743,6 +743,9 @@ typedef enum {
   // miniatura_android.c). Ligar/desligar continua sendo AJ_SEEKR_LIGADO. LOCAL, append-only.
   AJ_PREVIA_PROVEDOR,
   AJ_MINIATURA_RES,
+  // Match frame rate (Android): switch the display to the video's refresh rate.
+  // 0 Always (default), 1 Only if seamless (Media3's own vote), 2 Off. LOCAL, append-only.
+  AJ_QUADROS_TAXA,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -796,6 +799,7 @@ static const char *V_LIGA[]      = { "Ligado", "Desligado" };
 // Plano do TorBox (tbburn.h): so o Pro converte video, o que a legenda queimada precisa.
 static const char *V_TB_PLANO[]  = { "Standard", "Pro" };
 static const char *V_TB_AUDIO[]  = { "Passthrough", "Áudio do TorBox" };
+static const char *V_QUADROS_TAXA[] = { "Sempre", "Só sem interrupção", "Desligado" };
 static const char *V_LIGA_AUTO[] = { "Ligado", "Desligado", "Automático" };
 // Estilo da fileira de formato do player; o indice e o PLR_FMT_* de ajustes.h
 // e o gravado em "plrFormatoLocal".
@@ -1905,6 +1909,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Áudio original com a queima", V_TB_AUDIO, 2),     // local: torboxAudioModoLocal
   ESC("Provedor das miniaturas", V_PREVIA_PROV, NV_PREVIA_N),          // local: previaProvedorLocal
   NUM("Resolução das miniaturas", 0, 3, 1, NULL),
+  ESC("Igualar taxa de quadros", V_QUADROS_TAXA, 3),   // local: frameRateMatchLocal (Android)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2245,6 +2250,7 @@ static const char *CHAVE[] = {
   // LOCAL (sem "-"): o web nao tem.
   "previaProvedorLocal",
   "miniaturaResolutionLocal",
+  "frameRateMatchLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3003,6 +3009,14 @@ int ajustes_tunneling(void) {
   return 0;
 #endif
 }
+int ajustes_quadros_taxa(void) {
+#ifdef NV_ANDROID
+  int v = valor[AJ_QUADROS_TAXA];
+  return v < 0 || v > 2 ? 0 : v;
+#else
+  return 2;
+#endif
+}
 int ajustes_hdr_ui(void)            { return valor[AJ_HDR_UI] != 1; }   // 1 = Desligado
 int ajustes_brilho_player(void)    { int v = valor[AJ_BRILHO_PLAYER]; return v < 0 || v > 3 ? 1 : v; }
 void ajustes_espelhar_enquetes(int ligado) { int n = ligado ? 0 : 1; if (valor[AJ_ENQUETES] != n) { valor[AJ_ENQUETES] = n; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); } }
@@ -3259,7 +3273,7 @@ static int ajOpcaoDisponivel(int op) {
   if (op == AJ_FALHA_ADDON_LIMITE) return faAddonEditar[0] != 0;
   if (op == AJ_HDR_INTERFACE) return 0;
 #ifndef NV_ANDROID
-  if (op == AJ_FONTE_PRECARREGAR || op == AJ_TUNNELING) return 0;
+  if (op == AJ_FONTE_PRECARREGAR || op == AJ_TUNNELING || op == AJ_QUADROS_TAXA) return 0;
 #endif
 #ifndef NV_TOUCH_UI
   if (op == AJ_INTERFACE_MODO) return 0;
@@ -6248,6 +6262,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LOGO_TRAILER:   /* so a protecao de OLED desta TV */
     case AJ_LEG_MOSTRAR:
     case AJ_TUNNELING:     /* Hardware playback capabilities belong to this device. */
+    case AJ_QUADROS_TAXA:  /* the display modes belong to this panel */
     case AJ_HDR_INTERFACE: /* HDR output belongs to this panel. */
     case AJ_HDR_UI:         /* o painel e desta TV */
     case AJ_LEG_SYNC_AUTO: /* escolha local desta TV */
@@ -6327,7 +6342,7 @@ static int soNaTv(int op) {
     case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
-    case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
+    case AJ_TUNNELING: case AJ_QUADROS_TAXA: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
     case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_VIDRO_QUALIDADE:
     case AJ_DET_SO_CINEMETA: case AJ_BUSCA_CINEMETA:
     case AJ_FONTE_MANUAL: case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_PRAZO:
@@ -6909,7 +6924,7 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_DV7) return 1;
 #endif
 #ifndef NV_ANDROID
-  if (op == AJ_MINIATURA_RES || op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_LEG_SYNC_AUDIO_MOVEL || op == AJ_TUNNELING) return 1;
+  if (op == AJ_MINIATURA_RES || op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_LEG_SYNC_AUDIO_MOVEL || op == AJ_TUNNELING || op == AJ_QUADROS_TAXA) return 1;
 #endif
 #ifndef NV_TPK
   // TorBox burn-in plays TorBox's HLS on the Samsung .tpk player only (tbburn.h).
@@ -8217,6 +8232,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_FONTE_REGEX_MODELO: return "Padrões prontos: idiomas como os add-ons escrevem, áudio MULTI ou DUAL, 4K e Remux. Escolher um troca o padrão da regex.";
     case AJ_ESPACO_FILEIRAS: return "O espaço vertical entre uma fileira da Home e a seguinte. Com menos cabem mais fileiras na tela, com mais a Home fica mais arejada.";
     case AJ_ESPACO_TITULOS: return "O espaço horizontal entre os cartazes de uma fileira da Home.";
+    case AJ_QUADROS_TAXA: return "Troca a frequência da tela para a do vídeo (24, 25, 50 ou 60 Hz), sem trancos no movimento. Sempre: a tela pode apagar 1 ou 2 segundos ao trocar. Só sem interrupção: só troca quando a TV não apaga. Vale a partir do próximo vídeo.";
     case AJ_TUNNELING: return "Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.";
     case AJ_HDR_INTERFACE: return "HDR experimental para os menus. Branco limitado a 203 nits. Reinicie o app após mudar. Sem suporte, usa SDR.";
     case AJ_AMPLIAR_UI: return "Só vale com a resolução em 1080p ou 720p: o app amplia a interface para a tela (usa mais GPU). Na Automática e na 4K quem amplia é a TV. Reinicie o app depois de mudar.";

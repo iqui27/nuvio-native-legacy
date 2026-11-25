@@ -986,6 +986,12 @@ JNIEXPORT jboolean JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeTunnelin
   return ajustes_tunneling();
 }
 
+// Match frame rate: 0 Always (window display mode), 1 Only if seamless, 2 Off.
+JNIEXPORT jint JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeFrameRateMatch(JNIEnv *env, jclass cls) {
+  (void)env; (void)cls;
+  return ajustes_quadros_taxa();
+}
+
 JNIEXPORT jint JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeLimitedStatus(JNIEnv *env, jclass cls) {
   XtreamConta c;
   (void)env; (void)cls;

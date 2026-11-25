@@ -360,4 +360,5 @@
   0, /* seek preview provider: Seekr.tv (existing installs unchanged) */
 
   0, // miniaturaResolutionLocal: Auto
+  0, // frameRateMatchLocal: Always (V_QUADROS_TAXA 0)
 

@@ -47,6 +47,7 @@ static const Item TELA[] = {
       OPC(AJ_DTS_AC3),
 #ifdef NV_ANDROID
       OPC(AJ_TUNNELING),
+      OPC(AJ_QUADROS_TAXA),
 #endif
 #if !defined(NV_TPK) && !defined(NV_ANDROID)
       OPC(AJ_DV_MKV),
