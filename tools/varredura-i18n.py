@@ -278,6 +278,7 @@ IGNORAR = {
     "ltv-fontes.txt", "ltv-fontes-p%d.txt",  # ltv.c: preference filenames, never UI labels
     "daqui em diante",  # episodios.c nomeModo: so no log [visto] menu, nunca rotulo
     "fechar",  # main.c: nome do evento de janela so no log "[ciclo] janela="
+    "tela",  # miniatura_android.c: nome do metodo Kotlin (GetStaticMethodID), nunca texto de tela
     "ime-sem-osk",  # entrada_texto.c #642: motivo de terminar(), so no log [texto]
     # legsync.c autoPasso: motivo de autoEncerrar(), so no log [legsync]. O
     # ";" do outro ramo do ternario corta o contexto antes do autoEncerrar(.

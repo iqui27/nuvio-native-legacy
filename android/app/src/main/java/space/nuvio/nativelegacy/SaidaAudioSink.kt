@@ -6,6 +6,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.ForwardingAudioSink
+import java.nio.ByteBuffer
 
 // O AudioSink de sempre (DefaultAudioSink do DefaultRenderersFactory) com duas
 // coisas na ENTRADA:
@@ -17,7 +18,12 @@ import androidx.media3.exoplayer.audio.ForwardingAudioSink
 // escuta dela (PlaybackAudioTap) dentro deste sink.
 @androidx.annotation.OptIn(UnstableApi::class)
 class SaidaAudioSink(sink: AudioSink, private val estado: (Int) -> Unit,
-                     private val forcePcm: () -> Boolean = { false }) : ForwardingAudioSink(sink) {
+                     private val forcePcm: () -> Boolean = { false },
+                     private val adopted: () -> Boolean = { true }) : ForwardingAudioSink(sink) {
+    // Contributor's audio-feed tracing (AudioFeedDiagnostics, off by default):
+    // times each sink write of the adopted player. Reshaped's tap is the inner
+    // PlaybackAudioTap, so its time is inside "NuvioAudioSink" here.
+    private val feedTiming = if (AudioFeedDiagnostics.enabled) AudioFeedTiming() else null
     companion object {
         const val FMT_NENHUM = 0
         const val FMT_PCM = 1
@@ -44,5 +50,23 @@ class SaidaAudioSink(sink: AudioSink, private val estado: (Int) -> Unit,
         }
         estado(if (pcm) FMT_PCM else if (raw) FMT_NENHUM else FMT_BITSTREAM)
         super.configure(inputFormat, specifiedBufferSize, outputChannels)
+    }
+
+    override fun handleBuffer(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
+        val timing = feedTiming
+        if (AudioFeedDiagnostics.enabled && timing != null && adopted()) {
+            AudioFeedDiagnostics.select(timing)
+            val start = System.nanoTime(); val position = buffer.position()
+            android.os.Trace.beginSection("NuvioAudioSink")
+            val result = try { super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount) } finally { android.os.Trace.endSection() }
+            timing.record(start, start, System.nanoTime(), (buffer.position() - position).coerceAtLeast(0), result)
+            return result
+        }
+        return super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
+    }
+
+    override fun flush() {
+        feedTiming?.resetContinuity()
+        super.flush()
     }
 }

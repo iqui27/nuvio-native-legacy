@@ -798,6 +798,30 @@ class NuvioActivity : SDLActivity() {
         fun env(k: String, v: String) = Os.setenv(k, v, true)
         env("NUVIO_INTERFACE_AUTO", if (automaticMobile) "1" else "0")
         env("NUVIO_DADOS", dados.path)
+        AudioFeedDiagnostics.enabled = getExternalFilesDir(null)?.let { File(it,"audio-feed-trace.enabled").isFile } == true
+        if(AudioFeedDiagnostics.enabled) getExternalFilesDir(null)?.let {
+            env("NUVIO_AUDIO_TRACE_COLD_MARKER",File(it,"audio-trace-cold.enabled").path)
+            env("NUVIO_AUDIO_TRACE_CONTROL_MARKER",File(it,"audio-trace-no-thumbnails.enabled").path)
+            Log.i("AudioFeedTrace","enabled coldCacheBypass=${File(it,"audio-trace-cold.enabled").isFile} thumbnailsSuppressed=${File(it,"audio-trace-no-thumbnails.enabled").isFile}")
+        }
+        getExternalFilesDir(null)?.let {
+            env("NUVIO_THUMBNAIL_SIZE_PROBE_MARKER", File(it, "thumbnail-size-probe.enabled").path)
+            // Source-scoped local A/B switches, sampled before native playback starts.
+            // Both fixes are enabled normally; local markers independently retain either baseline.
+            val sharedHeadroom = !File(it, "thumbnail-shared-headroom.disabled").isFile
+            val savedSourceContext = !File(it, "saved-source-context.disabled").isFile
+            env("NUVIO_THUMBNAIL_SHARED_HEADROOM", if (sharedHeadroom) "1" else "0")
+            env("NUVIO_SAVED_SOURCE_CONTEXT", if (savedSourceContext) "1" else "0")
+            Log.i("ThumbnailPolicy", "sharedHeadroom=$sharedHeadroom savedSourceContext=$savedSourceContext")
+            val currentRanges = File(it, "thumbnail-current-ranges.enabled").isFile
+            val denseHeaders = File(it, "thumbnail-dense-headers.enabled").isFile
+            env("NUVIO_THUMB_CURRENT_RANGES", if (currentRanges) "1" else "0")
+            env("NUVIO_THUMB_DENSE_HEADER_HINTS", if (denseHeaders) "1" else "0")
+            Log.i("ThumbnailPolicy", "currentRanges=$currentRanges denseHeaders=$denseHeaders")
+            val coverageAudit = File(it, "thumbnail-coverage-audit.enabled").isFile
+            env("NUVIO_THUMBNAIL_COVERAGE_AUDIT", if (coverageAudit) "1" else "0")
+            Log.i("ThumbnailPolicy", "coverageAudit=$coverageAudit")
+        }
         val regenerable = File(cacheDir, "regenerable").apply { mkdirs() }
         ApkCache.prune(File(regenerable, "atualizacao"), installedVersion(), null, ::apkVersion)
         val p2pCache = File(cacheDir, "engine").apply { mkdirs() }

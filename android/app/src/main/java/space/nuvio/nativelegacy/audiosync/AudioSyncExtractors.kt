@@ -15,6 +15,7 @@ import androidx.media3.extractor.PositionHolder
 import androidx.media3.extractor.SeekMap
 import androidx.media3.extractor.SniffFailure
 import androidx.media3.extractor.TrackOutput
+import androidx.media3.extractor.text.SubtitleParser
 import java.io.EOFException
 
 /** Receives compressed audio samples as the player downloads and demuxes them, ahead of playback. */
@@ -42,6 +43,25 @@ internal class AudioSyncExtractorsFactory(
 
     override fun createExtractors(uri: Uri, responseHeaders: Map<String, List<String>>): Array<Extractor> =
         wrap(delegate.createExtractors(uri, responseHeaders))
+
+    // DefaultMediaSourceFactory configures subtitle parsing through these; the
+    // interface defaults are no-ops, so pass them on to the real factory.
+    override fun setSubtitleParserFactory(subtitleParserFactory: SubtitleParser.Factory): ExtractorsFactory {
+        delegate.setSubtitleParserFactory(subtitleParserFactory)
+        return this
+    }
+
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun experimentalSetTextTrackTranscodingEnabled(textTrackTranscodingEnabled: Boolean): ExtractorsFactory {
+        @Suppress("DEPRECATION")
+        delegate.experimentalSetTextTrackTranscodingEnabled(textTrackTranscodingEnabled)
+        return this
+    }
+
+    override fun experimentalSetCodecsToParseWithinGopSampleDependencies(codecsToParseWithinGopSampleDependencies: Int): ExtractorsFactory {
+        delegate.experimentalSetCodecsToParseWithinGopSampleDependencies(codecsToParseWithinGopSampleDependencies)
+        return this
+    }
 
     private fun wrap(extractors: Array<Extractor>): Array<Extractor> =
         Array(extractors.size) { index -> AudioTapExtractor(extractors[index], sink) }

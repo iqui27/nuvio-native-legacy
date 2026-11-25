@@ -74,7 +74,8 @@ int main(void) {
   M("yue", IDIOMA_ZHTW);
   // o que NAO e um dos trinta, ou nem e idioma
   M(NULL, -1);   M("", -1);   M("none", -1);  M("off", -1);  M("DEVICE", -1);
-  M("ko", -1);   M("ko-KR", -1);  M("hr", -1);  M("ar", -1);  M("he", -1);  M("th", -1);
+  M("ar", IDIOMA_AR); M("ar-SA", IDIOMA_AR);
+  M("ko", -1);   M("ko-KR", -1);  M("hr", -1);  M("he", -1);  M("th", -1);
   M("C", -1);  M("POSIX", -1);  M("-", -1);  M("e", -1);
   M("portugues", -1);   // nome por extenso nao e codigo
   M("xxxxxxxxxxxxxxxxxxxxxxxx", -1);   // muito longo: nao estoura o buffer
@@ -99,7 +100,7 @@ int main(void) {
   R("nb", "swe", "en-US",    IDIOMA_NO, IDA_TMDB);
   // uma fonte que existe mas nao e um dos trinta passa a vez para a proxima
   R("ko", "spa", "de-DE",    IDIOMA_ES, IDA_LEGENDA);
-  R("ar", "none", "fr-FR",   IDIOMA_FR, IDA_SISTEMA);
+  R("ar", "none", "fr-FR",   IDIOMA_AR, IDA_TMDB);
   R("ko", "th", "hr",        IDIOMA_EN, IDA_PADRAO);
   R("he", "off", "C",        IDIOMA_EN, IDA_PADRAO);
   // fonte NULL no ponteiro de saida e aceita

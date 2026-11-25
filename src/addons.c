@@ -3938,15 +3938,28 @@ static void buscarPedido(const char *imdb, const char *tipo, int forcar) {
       snprintf(pendTipo, sizeof pendTipo, "%s", tipo ? tipo : "movie");
       pendRenovar = forcar;
       snprintf(pendBase, sizeof pendBase, "%s", alvoBase);
+      printf("[addons] alvo pendente %s enquanto %s esta no ar\n", imdb, alvoId);
+      fflush(stdout);
       // The running search is now obsolete; its partial list must not feed
       // Play while the new target waits for this worker to finish (#413).
       stream_invalidar("pending source target");
-    } else if (progLigado && !pendId[0] && !stream_lista_do_alvo(id))
+    } else {
+      // THE NEWEST REQUEST WINS (09/11/2026). The running search is what was just asked for, so an older pending
+      // target is dead: left in place it started when this search ended, and Film B's sources landed in a list
+      // stamped for Film A (Se7en received Dune's 81 sources; the sheet and the thumbnails' copy hunt read them).
+      if (pendId[0]) {
+        printf("[addons] alvo pendente %s descartado: o pedido novo e o %s, ja no ar\n", pendId, alvoId);
+        fflush(stdout);
+        pendId[0] = 0;
+        pendRenovar = 0;
+        pendBase[0] = 0;
+      }
       // O MESMO alvo, com a busca dele no ar, e a lista da tela nao e mais
       // dela: devolve o que ja chegou em vez de esperar (ou perder) — senao so
       // as fontes que chegarem daqui em diante entram (as de plugin, quase
       // sempre as mais lentas) e o automatico escolhe entre elas.
-      progRepublicar();
+      if (progLigado && !stream_lista_do_alvo(id)) progRepublicar();
+    }
     return;
   }
   // Um pedido novo desfaz a espera pelo prefetch do anterior; o prefetch em si

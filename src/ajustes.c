@@ -94,6 +94,7 @@
 #include "rede.h"
 #include "debrid.h"
 #include "seekr.h"
+#include "miniatura_android.h"
 #include "selospacote.h"
 #include "fonteregra.h"
 #include <dirent.h>
@@ -737,6 +738,11 @@ typedef enum {
   // Passthrough (default: TorBox's video + the file's audio through Nuvio),
   // TorBox audio (TorBox's stream as is) = TBA_*. LOCAL, append-only; .tpk.
   AJ_TB_AUDIO,
+  // MINIATURAS: QUEM as fornece (seekr.h). 0 = Seekr.tv (o de sempre:
+  // instalacoes antigas nao mudam), 1 = feitas neste aparelho (Android,
+  // miniatura_android.c). Ligar/desligar continua sendo AJ_SEEKR_LIGADO. LOCAL, append-only.
+  AJ_PREVIA_PROVEDOR,
+  AJ_MINIATURA_RES,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -834,6 +840,11 @@ static const char *V_BRILHO_PLAYER[] = { "100%", "80%", "65%", "50%" };
 #ifdef NV_TPK
 static const char *V_DTS_SAIDA[] = { "Desligado", "5.1 (Dolby Digital)", "Estéreo (AAC)" };
 #define N_DTS_SAIDA 3
+#elif defined(NV_ANDROID)
+// Android: o FFmpeg do app ja decodifica o DTS em PCM. 0 = Original (todos os
+// canais), 1 = Estereo (StereoDownmixProcessor do NvPlayer, ajustes_android_estereo).
+static const char *V_DTS_SAIDA[] = { "Original", "Estéreo" };
+#define N_DTS_SAIDA 2
 #else
 static const char *V_DTS_SAIDA[] = { "Estéreo (AAC)", "5.1 (Dolby Digital)" };
 #define N_DTS_SAIDA 2
@@ -896,7 +907,9 @@ static const char *V_P2P_DESTINO[] = { "Interno", "Pendrive USB" };
 static int dtsConversaoExiste(void) {
 #if defined(NV_TPK)
   return dts_tpk_disponivel();
-#elif defined(__APPLE__) || defined(NV_LINUX_DESKTOP) || defined(NV_ANDROID) || defined(__EMSCRIPTEN__)
+#elif defined(NV_ANDROID)
+  return 1;   // FFmpeg de audio no APK; a linha escolhe Original ou Estereo
+#elif defined(__APPLE__) || defined(NV_LINUX_DESKTOP) || defined(__EMSCRIPTEN__)
   return 0;
 #else
   return 1;
@@ -1374,6 +1387,13 @@ static const char *JF_ALFA_URL =
 static const char *JF_ALFA_SENHA =
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-@!#$%&*+=?/ ";
 
+static const char *V_PREVIA_PROV[] = { "Seekr.tv", "No aparelho (teste)" };
+// "No aparelho" (miniatura_android.c) so existe no Android.
+#ifdef NV_ANDROID
+#define NV_PREVIA_N 2
+#else
+#define NV_PREVIA_N 1
+#endif
 static const char *V_MANTER_PRAZO[] = { "2 min", "5 min", "10 min", "30 min", "Sem limite" };
 static const char *V_AMIGOS_ESTILO[] = { "Feed de cartões", "Ao vivo em destaque", "Histórias com cartaz", "Faixa de presença", "Cartaz primeiro", "Rostos clássicos" };
 static const char *V_CONEXOES[] = { "Automático", "Ligado", "Desligado" };
@@ -1883,6 +1903,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Plano do TorBox", V_TB_PLANO, 2),                 // local: torboxPlanoLocal
   ESC("Queimar ASS pelo TorBox", V_LIGA, 2),             // local: legendaQueimarLocal
   ESC("Áudio original com a queima", V_TB_AUDIO, 2),     // local: torboxAudioModoLocal
+  ESC("Provedor das miniaturas", V_PREVIA_PROV, NV_PREVIA_N),          // local: previaProvedorLocal
+  NUM("Resolução das miniaturas", 0, 3, 1, NULL),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2220,6 +2242,9 @@ static const char *CHAVE[] = {
   "torboxPlanoLocal",
   "legendaQueimarLocal",
   "torboxAudioModoLocal",   /* was torboxAudioLocal (4 values, 13-14/11): new key, everyone starts on Passthrough */
+  // LOCAL (sem "-"): o web nao tem.
+  "previaProvedorLocal",
+  "miniaturaResolutionLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2845,9 +2870,30 @@ static void hcAbrir(void);
 static void desenhaFolhaHeroCat(void);
 
 static char seekrChave[96];
+// As miniaturas sao feitas neste aparelho (miniatura_android.c)?
+static int previaLocal(void) {
+#ifdef NV_ANDROID
+  return valor[AJ_PREVIA_PROVEDOR] == 1;
+#else
+  return 0;
+#endif
+}
+// "Tem credencial" do provedor ativo: a chave do Seekr, o pareamento, ou nada a pedir (no aparelho).
+static int previaCredencial(void) {
+  return previaLocal() ? 1 : seekrChave[0] != 0;
+}
 static int lig(int op) {
   if (op == AJ_FALHA_PROVEDORES || op == AJ_FALHA_ADDONS) return ajFalhaValor(op) == 0;
-  return valor[op] == 0 && (op != AJ_SEEKR_LIGADO || seekrChave[0]);
+  return valor[op] == 0 && (op != AJ_SEEKR_LIGADO || previaCredencial());
+}
+// Registra (ou tira) o provedor do aparelho no seekr.c. So chama quando MUDA: com o Seekr
+// (o padrao, NULL no seekr.c) nada de novo e tocado.
+static void previaAplicar(void) {
+  static int aplicado;
+  int quer = previaLocal();
+  if (quer == aplicado) return;
+  aplicado = quer;
+  seekr_usar_provedor(quer ? miniatura_provedor() : NULL);
 }
 // #311: "Buscar no Cinemeta" so governa a BUSCA (o add-on Cinemeta e a reserva
 // do catalogo do Nuvio). Sem o add-on instalado e com o ajuste no padrao ele nao
@@ -2943,6 +2989,13 @@ int ajustes_descanso_fonte(void)   { int v = valor[AJ_DESCANSO_FONTE]; return v 
 int ajustes_proporcao_padrao(void) { int v = valor[AJ_PROPORCAO_PADRAO]; return v < 1 || v > 8 ? -1 : v - 1; }
 // Experimental HDR menus left the menu: off everywhere, even if saved as on.
 int ajustes_hdr_interface(void) { return 0; }
+int ajustes_android_estereo(void) {
+#ifdef NV_ANDROID
+  return valor[AJ_DTS_AC3] == 1;   // "DTS convertido em": Estereo
+#else
+  return 0;
+#endif
+}
 int ajustes_tunneling(void) {
 #ifdef NV_ANDROID
   return valor[AJ_TUNNELING] == 1;
@@ -4243,6 +4296,11 @@ static const char *fanartMascarada(void) {
 static const char *seekrPedirChave(void) {
   return i18n("Use sua própria chave do Seekr, gratuita em seekr.tv.");
 }
+// O que falta para ligar as miniaturas pelo provedor escolhido.
+static const char *previaPedirCredencial(void) {
+  if (previaLocal()) return "";
+  return seekrPedirChave();
+}
 static int seekrSalvarFalhou;
 static const char *SEEKR_ALFA =
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
@@ -4282,8 +4340,9 @@ static const char *seekrMascarada(void) {
 }
 int ajustes_seekr_habilitado(void) { return valor[AJ_SEEKR_LIGADO] == 0; }
 int ajustes_seekr_ligado(void) { return lig(AJ_SEEKR_LIGADO); }
+int ajustes_miniatura_largura(void) { static const int w[] = {0,320,480,640}; int i=valor[AJ_MINIATURA_RES]; return w[i >= 0 && i <= 3 ? i : 0]; }
 int ajustes_seekr_fita(void)   { return lig(AJ_SEEKR_FITA); }
-int ajustes_seekr_ajuste_s(void) { return valor[AJ_SEEKR_AJUSTE]; }
+int ajustes_seekr_ajuste_s(void) { return previaLocal() ? 0 : valor[AJ_SEEKR_AJUSTE]; }
 
 // ENDERECO DO SERVIDOR P2P (p2p.h). Mora em p2p.txt na pasta de dados, por
 // aparelho: e o IP de um PC/NAS da casa desta TV, sem sentido em outra.
@@ -5283,6 +5342,7 @@ void ajustes_dir(const char *dir) {
   ajEpgMemoriaAplicar();
   legenda2_atualizar_offset_manual(ajustes_leg2_atraso());
   ppReconciliar();
+  previaAplicar();
   ajSombraSync();   // o que veio do disco nao e mudanca de ninguem
 }
 
@@ -6231,6 +6291,8 @@ static int somenteDesteAparelho(int op) {
     case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_CONTAGEM: /* idem: local desta TV */
     case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC: /* o web nao tem a fileira de formato */
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE: /* o web nao tem o Seekr */
+    case AJ_MINIATURA_RES:
+    case AJ_PREVIA_PROVEDOR: /* idem: o servidor proprio e da casa desta TV */
     case AJ_MENU_EXPLORAR: case AJ_MENU_GUIA: case AJ_MENU_AGENDA: case AJ_MENU_PERFIL:
     // Linha do titulo: o web nao tem, e nenhuma conta pode desliga-las aqui.
     case AJ_NT_IMDB: case AJ_NT_TOMATES: case AJ_NT_AUDIENCIA: case AJ_NT_META:
@@ -6847,7 +6909,7 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_DV7) return 1;
 #endif
 #ifndef NV_ANDROID
-  if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_LEG_SYNC_AUDIO_MOVEL || op == AJ_TUNNELING) return 1;
+  if (op == AJ_MINIATURA_RES || op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_LEG_SYNC_AUDIO_MOVEL || op == AJ_TUNNELING) return 1;
 #endif
 #ifndef NV_TPK
   // TorBox burn-in plays TorBox's HLS on the Samsung .tpk player only (tbburn.h).
@@ -6858,6 +6920,8 @@ static int foraDestaPlataforma(int op) {
 #endif
 #ifdef __EMSCRIPTEN__
   if (op == AJ_P2P_LIGADO || op == AJ_P2P_URL || op == AJ_P2P_TESTAR || op == AJ_P2P_LIMITE || op == AJ_P2P_DESTINO) return 1;
+  // No web nao ha miniaturas feitas no aparelho: o provedor e sempre o Seekr.
+  if (op == AJ_PREVIA_PROVEDOR) return 1;
 #endif
   return 0;
 }
@@ -7657,6 +7721,11 @@ static int visivel(int i) {
     if (!ajOpcaoDisponivel(op) || !ajIptvLinhaVisivel(op)) return 0;
     // #205: o fundo so existe no layout Dinamica; a cor, so com o fundo "Cor".
     if ((op == AJ_FUNDO_DIN || op == AJ_FUNDO_DIN_COR) && ajustes_home_layout() != HOME_LAYOUT_DINAMICA) return 0;
+    if (op == AJ_MINIATURA_RES && !previaLocal()) return 0;
+    if (op == AJ_PREVIA_PROVEDOR && NV_PREVIA_N < 2) return 0;   // so o Seekr: nada a escolher
+    // Miniaturas: so as opcoes do provedor escolhido. A sincronia manual existe
+    // para a folha do Seekr tirada de OUTRA versao; a do aparelho e do proprio video.
+    if ((op == AJ_SEEKR_CHAVE || op == AJ_SEEKR_TESTAR || op == AJ_SEEKR_AJUSTE) && previaLocal()) return 0;
     if (op == AJ_FUNDO_DIN_COR && ajustes_fundo_din() != 1) return 0;
     if ((op == AJ_PERFIL_PESQ || op == AJ_PERFIL_EDITAR) && !recomenda_ativo()) return 0;
     if (op == AJ_BUSCA_CINEMETA && valor[op] == 0 && !cinemetaInstalado()) return 0;
@@ -8155,7 +8224,9 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_AMPLIACAO_ALGO: return "Como o app amplia a interface para a tela. Automático escolhe sozinho; SGSR nítido e FSR 1 usam mais GPU. Vale na hora.";
     case AJ_AMPLIACAO_NITIDEZ: return "Reforço de contorno do SGSR nítido e do FSR 1. 0 desliga.";
     case AJ_TAM_MIN: return "Na escolha automática, fontes menores que este tamanho ficam para o fim da fila. Se for maior que o tamanho máximo, o mínimo é ignorado. Só vale para arquivos com tamanho conhecido; se só houver fontes fora da faixa, a melhor delas ainda toca.";
-#ifdef NV_TPK
+#ifdef NV_ANDROID
+    case AJ_DTS_AC3: return "O som DTS é decodificado no próprio app. Original mantém todos os canais para barra de som e receiver. Estéreo mistura tudo em dois canais para os alto-falantes da TV; vale também para outro som surround decodificado no app e desliga a passagem direta e a reprodução em túnel. Vale a partir do próximo vídeo.";
+#elif defined(NV_TPK)
     case AJ_DTS_AC3: return "Esta TV não toca DTS nem TrueHD: o app converte o som na hora. 5.1 (Dolby Digital) mantém o surround para barra de som e receiver; 7.1, Atmos e DTS:X viram 5.1, sem os objetos. Estéreo (AAC) serve qualquer TV. Desligado: esses vídeos tocam sem som, como antes. Vale a partir do próximo vídeo.";
 #else
     case AJ_DTS_AC3: return "Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC; vale a partir do próximo vídeo.";
@@ -8243,9 +8314,11 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_MDB_LIGADO: return "O MDBList junta notas de várias fontes na página do título. Desligar esconde a fileira inteira.";
     case AJ_MDB_CHAVE: return "A chave vem da sua conta Nuvio ou do arquivo do pacote. Não dá para digitar nesta TV.";
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_CHAVE: return seekrAjuda(op);
+    case AJ_MINIATURA_RES: return "Tamanho das miniaturas feitas neste aparelho. Automático mantém o perfil recomendado. Vale no próximo vídeo; resoluções maiores usam mais recursos.";
     case AJ_SEEKR_FITA: return "Mostra o quadro anterior e o seguinte ao lado da miniatura, com o tempo de cada um. Deixa claro que há um quadro a cada 10 segundos.";
     case AJ_SEEKR_AJUSTE: return "Use quando a miniatura mostra sempre a cena de alguns segundos antes ou depois. Acontece quando a sua versão do título é diferente da usada pelo Seekr (outro corte, abertura mais longa). Vale para todos os títulos; volte a 0 ao trocar de filme.";
     case AJ_SEEKR_TESTAR: return seekrAjuda(op);
+    case AJ_PREVIA_PROVEDOR: return "Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. No aparelho: a própria TV tira os quadros do vídeo que está tocando (ou de uma cópia menor do mesmo título).";
     case AJ_FANART_CHAVE: return "Sua chave pessoal do fanart.tv, gratuita em fanart.tv/get-an-api-key. Com ela a fonte fanart.tv entra no Background do hero. Fica só nesta TV e aparece mascarada.";
     case AJ_MDB_TRAKT: case AJ_MDB_IMDB: case AJ_MDB_TMDB:
     case AJ_MDB_LETTER: case AJ_MDB_TOMATES: case AJ_MDB_AUDIENCIA:
@@ -8267,6 +8340,13 @@ static const char *ajudaOpcao(int op) {
   // O endereco da pagina vai junto da ajuda, ao vivo (muda com o IP da TV).
   if (op == AJ_LOG_REDE && logrede_url()[0]) {
     snprintf(b, sizeof b, "%s\n%s", i18n(base), logrede_url());
+    return b;
+  }
+  // Copy-first (miniatura_android.c): a 4K title's previews come from a smaller copy in the source list, so the
+  // person's add-on filters decide how fast they are. Shown only when the previews are made on this device.
+  if ((op == AJ_PREVIA_PROVEDOR || op == AJ_MINIATURA_RES) && previaLocal()) {
+    snprintf(b, sizeof b, "%s\n%s", i18n(base),
+      i18n("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme."));
     return b;
   }
   if (op == AJ_AMPLIAR_UI && saidaLimitada && ampliarUiVale()) {
@@ -9709,8 +9789,8 @@ static int definirValorDireto(int op, int novo) {
     if(ok && op==AJ_IPTV_ATIVA)guia_recarregar(1);
     return ok;
   }
-  if (op == AJ_SEEKR_LIGADO && novo == 0 && !seekrChave[0]) {
-    uxNotificar(seekrPedirChave());
+  if (op == AJ_SEEKR_LIGADO && novo == 0 && !previaCredencial()) {
+    uxNotificar(previaPedirCredencial());
     return 0;
   }
   if (op == AJ_XTREAM_CONEXOES) {
@@ -9750,6 +9830,7 @@ static int definirValorDireto(int op, int novo) {
   }
   if (op == AJ_LEG_LINGUA || op == AJ_LEG_LINGUA2 || op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2) aplicarIdioma(op);
   if (op == AJ_IDIOMA) { idiomaEscolhido(); desc_repetir(); }
+  if (op == AJ_PREVIA_PROVEDOR) previaAplicar();
   if (op == AJ_TAMANHO_UI) gfx_escala_ui_definir(ajustes_tamanho_ui());
   if (op == AJ_ESCALA_TEXTO) gfx_escala_txt_definir(ajustes_escala_texto());
   if (op == AJ_INTERFACE_MODO) {
@@ -10376,6 +10457,7 @@ static int nValores(int op) {
 // por vez dentro de desenhaLinha.
 static const char *textoValor(int op) {
   if (ajFonte(op)) return ajFonteNome(op, ajFonteAtual(op));
+  if (op == AJ_MINIATURA_RES) { static const char *labels[] = {"Automático", "180p (320 x 180)", "270p (480 x 270)", "360p (640 x 360)"}; return i18n(labels[valor[op] >= 0 && valor[op] <= 3 ? valor[op] : 0]); }
   if (op == AJ_FONTE_AUTO && ajustes_fonte_prioridade() == 3) return i18n("Primeira da lista");
   if(op==AJ_GUIA_CATEGORIAS)return i18n("Abrir");
   // Fora de 1080p/720p a linha mostra o valor EFETIVO, nao o gravado.
@@ -10395,7 +10477,7 @@ static const char *textoValor(int op) {
   }
   const Opcao *o = &OPCOES[op];
   if (o->tipo == OP_LEITURA || o->tipo == OP_ACAO) return textoLeitura(op);
-  if (op == AJ_SEEKR_LIGADO && !seekrChave[0]) return i18n("Desligado");
+  if (op == AJ_SEEKR_LIGADO && !previaCredencial()) return i18n("Desligado");
   if (op == AJ_HERO_TRAILER_ESPERA) {
     // Decimos de segundo: 22 le "2,2 s".
     int v = valor[op];

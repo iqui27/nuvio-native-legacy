@@ -150,6 +150,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "escala.h"
 #include "plrilha.h"
 #include "neste.h"
+#include "miniatura_android.h"
 #include "cacheboost.h"
 #include "audioinfo.h"
 #include "legendasui.h"   /* F04: second subtitle band */
@@ -300,6 +301,10 @@ static void fonteAcaoInvalidar(void) { if (!++fonteAcaoGeracao) ++fonteAcaoGerac
 static int   tocando = 1;
 static int   pausaPessoa;   // pausa pedida pela pessoa (player_pausa_pessoa, #302)
 static int retomandoSalto; // seek requested playback; buffering is not user pause
+#ifdef NV_ANDROID
+#include "seekpreview.h"
+static SeekPreview seekPreviewAudit;
+#endif
 static CreditosAuto creditosAuto;
 // Uma unica sessao VOD pausada, por no maximo dois minutos. Nao abre conexao
 // especulativa: e o pipeline que ja estava exibindo este titulo.
@@ -4321,6 +4326,9 @@ static void vooPasso(Uint32 agora) {
 #endif
 
 static void iniciarSalto(int toque) {
+#ifdef NV_ANDROID
+  memset(&seekPreviewAudit, 0, sizeof seekPreviewAudit);
+#endif
   scrubInicio = comVideo ? video_pos() : posSeg;
 #ifdef NV_TPK
   // A seek still in flight: start from where the person sent it, not from the
@@ -4387,6 +4395,24 @@ static void saltar(int dir, int repeticao, Uint32 quando) {
 // Fim do avanco: manda a posicao escolhida e devolve o estado de antes.
 static void terminarSalto(void) {
   if (!scrubbing) return;
+#ifdef NV_ANDROID
+  double cursorTarget = posSeg;
+  if (!seekr_provedor_e(miniatura_provedor()) || !miniatura_direto()) seekPreviewAudit.direct = 0;
+  double pictureTarget = seekpreview_confirmar(&seekPreviewAudit, cursorTarget, duracaoSeg,
+                                               fonteAcaoGeracao, SDL_GetTicks());
+  if (pictureTarget != cursorTarget) {
+    posSeg = (float)pictureTarget;
+    posVis = posSeg; posVisV = 0.0f; posVisSolto = 0;
+    printf("[seek-audit] align cursorMs=%.0f pictureMs=%.0f deltaMs=%.0f\n",
+           cursorTarget * 1000.0, pictureTarget * 1000.0, (pictureTarget - cursorTarget) * 1000.0);
+  }
+  printf("[seek-audit] commit targetMs=%.0f visualMs=%.0f previewShown=%d previewCursorMs=%.0f previewPtsMs=%.0f previewAgeMs=%u stale=%d sameSource=%d\n",
+         posSeg * 1000.0, posVis * 1000.0, seekPreviewAudit.shown,
+         seekPreviewAudit.cursor * 1000.0, seekPreviewAudit.pts * 1000.0,
+         seekPreviewAudit.shown ? SDL_GetTicks() - seekPreviewAudit.when : 0,
+         seekPreviewAudit.stale, seekPreviewAudit.generation == fonteAcaoGeracao);
+  fflush(stdout);
+#endif
   scrubbing = 0;
   // No toque, o gesto inteiro decide a direcao. Ajustar um destino adiantado
   // alguns segundos para tras nao e pedir para rever o episodio.
@@ -5023,13 +5049,30 @@ void player_atualizar(float dt, Uint32 agora) {
       if (durFonteForaCache) return;
     }
     durFonteContagem(agora);
+    // MINIATURAS NO APARELHO: enquanto o titulo ABRE (antes do audio), o decoder das miniaturas ja nasce.
+    if (!video_pronto() && !ehCanal() && ajustes_seekr_ligado() && seekr_provedor_e(miniatura_provedor()))
+      miniatura_preaquecer(video_url_atual(), video_cabecalhos());
     // MINIATURAS DO SEEKR: so com a duracao REAL (o servico escolhe a versao
     // da folha por ela) e uma vez por titulo — seekr_pedir ignora o repetido.
     if (d > 60.0 && video_pronto() && !ehCanal() && ajustes_seekr_ligado()) {
       const CatItem *cs = item();
-      if (cs && !strncmp(cs->imdb, "tt", 2))
-        seekr_pedir(cs->imdb, strcmp(cs->tipo, "series") ? 0 : epT,
-                    strcmp(cs->tipo, "series") ? 0 : epE, (long)(d * 1000.0));
+      if (!seekr_provedor_alternativo()) {
+        if (cs && !strncmp(cs->imdb, "tt", 2))
+          seekr_pedir(cs->imdb, strcmp(cs->tipo, "series") ? 0 : epT,
+                      strcmp(cs->tipo, "series") ? 0 : epE, (long)(d * 1000.0));
+      } else {
+        // PROVEDOR ALTERNATIVO (miniaturas feitas no aparelho, miniatura_android.c):
+        // recebe a URL e os cabecalhos do que esta tocando. Barato a cada passo:
+        // so copia o que mudou; o trabalho e de outro fio.
+        const Stream *st = stream_item(stream_atual());
+        int serie = cs && !strcmp(cs->tipo, "series");
+        SeekrFonte f = { cs ? cs->imdb : "", serie ? epT : 0, serie ? epE : 0,
+                         (long)(d * 1000.0), video_url_atual(), video_cabecalhos(),
+                         st ? st->tamanhoBytes : 0, st ? st->videoHash : "",
+                         st ? st->arquivo : "", (long)(posSeg * 1000.0f),
+                         (long)(video_pos() * 1000.0), scrubbing };
+        seekr_pedir_fonte(&f);
+      }
     }
     // Retomada so com o pipeline ASSENTADO: pronto + tocando (ou 2,5 s depois
     // de pronto, para quem abre pausado). Seek logo no loadCompleted e o que o
@@ -5484,7 +5527,9 @@ static int seekrStatusLinhas(int est, const SeekrUso *uso, int temChave,
   if (est == SEEKR_PRONTO || est == SEEKR_BUSCANDO ||
       (est == SEEKR_DESLIGADO && temChave) ||
       est < SEEKR_DESLIGADO || est > SEEKR_RELOGIO_INDISPONIVEL) return 0;
-  if (est == SEEKR_DESLIGADO)
+  if (est == SEEKR_DESLIGADO && seekr_provedor_alternativo())   // provedor do aparelho
+    snprintf(linhas[0], 192, "%s", i18n(seekr_estado_rotulo(est)));
+  else if (est == SEEKR_DESLIGADO)
     snprintf(linhas[0], 192, "Seekr · %s", i18n("sem chave"));
   else snprintf(linhas[0], 192, "%s", i18n(seekr_estado_rotulo(est)));
   if (est == SEEKR_LIMITE_LOCAL && uso) {
@@ -5542,6 +5587,9 @@ static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a
   const float w = 384.0f, h = 216.0f, ws = 256.0f, hs = 144.0f, vao = 12.0f, linha = 52.0f;
   float x, y, tot, xs[3];
   Uint32 agora = SDL_GetTicks();
+#ifdef NV_ANDROID
+  if (scrubbing) seekPreviewAudit.shown = 0;
+#endif
   if (ehCanal() || !(scrubbing || posVisSolto) || a < 0.05f || !ajustes_seekr_habilitado()) return;
   est = seekr_tem_chave() ? seekr_estado() : SEEKR_DESLIGADO;
   if (est != SEEKR_PRONTO && est != SEEKR_BUSCANDO) {
@@ -5552,7 +5600,20 @@ static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a
   fita = ajustes_seekr_fita();
   n = fita ? 3 : 1;
   { float pv = posVisSolto ? posVis : posSeg;
+#ifdef NV_ANDROID
+  if (scrubbing && seekr_provedor_e(miniatura_provedor()) && miniatura_direto()) pv = posSeg;
+#endif
   if (est == SEEKR_PRONTO) seekr_quadros(pv, n, t, cue);
+#ifdef NV_ANDROID
+  { int centre = n == 1 ? 0 : 1;
+    if (scrubbing && t[centre] && cue[centre] >= 0.0) {
+      seekPreviewAudit.cursor = pv; seekPreviewAudit.pts = cue[centre];
+      seekPreviewAudit.when = agora; seekPreviewAudit.generation = fonteAcaoGeracao;
+      seekPreviewAudit.stale = seekr_quadro_velho(); seekPreviewAudit.shown = 1;
+      seekPreviewAudit.direct = seekr_provedor_e(miniatura_provedor()) && miniatura_direto();
+    } else if (scrubbing) seekPreviewAudit.shown = 0;
+  }
+#endif
   // A sincronia ja entra no tempo do quadro; sem cue ainda (a folha chegando),
   // a posicao com o mesmo ajuste.
   if (cue[n == 1 ? 0 : 1] < 0.0) cue[n == 1 ? 0 : 1] = pv + ajustes_seekr_ajuste_s(); }
@@ -5587,6 +5648,14 @@ static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a
       if (atual) plrui_anel(qx + qw * 0.5f, qy + qh * 0.5f, 44.0f, 1, agora, a);
     }
     plrui_tempo(rot, sizeof rot, cue[k]);
+#ifdef NV_ANDROID
+    if (atual && seekPreviewAudit.shown && seekPreviewAudit.direct &&
+        (seekPreviewAudit.stale || fabs(cue[k] - seekPreviewAudit.cursor) > SEEKPREVIEW_MAX_S)) {
+      char approximate[sizeof rot];
+      snprintf(approximate, sizeof approximate, "~ %.*s", (int)sizeof rot - 3, rot);
+      snprintf(rot, sizeof rot, "%s", approximate);
+    }
+#endif
     { float yc = y + 10.0f + h + linha * 0.5f;
       if (atual) {
         TxtLinha lt = txt_linha(TXT_G26B, rot, 243, 242, 239, 255), lr = { 0 };
@@ -7008,6 +7077,18 @@ void player_desenhar(Uint32 agora) {
         plrilha_pedir(&pd);
       }
     } }
+  // MINIATURAS FEITAS NO APARELHO (miniatura_android.h): o conjunto do titulo ficou completo.
+  int thumbnailMilestone = miniatura_status_agora();
+  if (thumbnailMilestone) {
+    PlrIlhaPedido pd;
+    memset(&pd, 0, sizeof pd);
+    pd.icone = "aj_film";
+    pd.texto = thumbnailMilestone == 4 ? i18n("Miniaturas em cache")
+             : thumbnailMilestone == 1 ? i18n("Miniaturas iniciadas")
+             : thumbnailMilestone == 2 ? i18n("Miniaturas 50%") : i18n("Miniaturas geradas");
+    pd.semFim = 1; pd.aberta = 1;
+    plrilha_pedir(&pd);
+  }
   if (player_carregando() && ehCanal()) {
     // CANAL SINTONIZANDO: a versao COMPACTA, uma linha na propria ilha do
     // relogio (dono, 03/10: "no player do live tv vamos usar a versao compacta

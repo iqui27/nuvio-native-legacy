@@ -357,3 +357,7 @@
   0, /* TorBox plan: Standard (V_TB_PLANO 0) */
   0, /* burn embedded ASS in with TorBox: On (V_LIGA 0); only acts with plan Pro */
   0, /* original audio with burn-in: Passthrough (V_TB_AUDIO 0) */
+  0, /* seek preview provider: Seekr.tv (existing installs unchanged) */
+
+  0, // miniaturaResolutionLocal: Auto
+

@@ -37,12 +37,22 @@ int main(void) {
   assert(stream_n() == 1 && stream_lista_do_alvo(alvoId));
   assert(!strcmp(stream_item(0)->url, old.url));
 
+  // Asked for Film B, then back to the running Film A: B must not start afterwards under A's stamp.
+  stream_definir_alvo("tt90000414");
+  addons_buscar("tt90000414", "movie");
+  assert(!strcmp(pendId, "tt90000414") && stream_n() == 0);
+  stream_definir_alvo(alvoId);
+  addons_buscar(alvoId, "movie");
+  assert(!pendId[0] && !pendRenovar && !pendBase[0]);
+  assert(stream_n() == 1 && stream_lista_do_alvo(alvoId));
+  assert(!strcmp(stream_item(0)->url, old.url));
+
   // The personal-server path also queues behind an addon worker.
   stream_definir_alvo("jf:fixture:item");
   addons_buscar("jf:fixture:item", "movie");
   assert(stream_n() == 0);
   progLimpar(); stream_definir_lista(NULL, 0); fioVivo = 0;
   SDL_Quit();
-  puts("PASS: pending title retires old sources; same-title recovery keeps them");
+  puts("PASS: pending title retires old sources; same-title recovery keeps them; the newest request wins");
   return 0;
 }
