@@ -8,8 +8,12 @@
 static const char id[] = "tt33764258";
 static const char mp4[] = "https://video.example.net/trailer.mp4";
 static const char hls[] = "https://video.example.net/playlist.m3u8";
+static const char apple[] = "file:///tmp/apple-trailer.m3u8";
+static const char imdb[] = "https://video.example.net/imdb.mp4";
 static Uint32 ticks = 100;
-static int request, result, cancels, opens, stops, active, playing, failed;
+static int request, result, cancels, opens, stops, active, playing, failed, ended;
+static int appleDone, imdbDone, mp4Mode, appleOpens, imdbOpens;
+static const char *appleUrl, *imdbUrl;
 static double position, duration;
 static int seeks;
 
@@ -21,7 +25,7 @@ int video_iniciar_auto(void) { return 1; }
 int video_ativo(void) { return active; }
 int video_pronto(void) { return playing; }
 int video_tocando(void) { return playing; }
-int video_terminou(void) { return 0; }
+int video_terminou(void) { return ended; }
 int video_falhou(void) { return failed; }
 int video_conflito_recurso(void) { return 0; }
 int video_largura(void) { return 0; }
@@ -43,13 +47,32 @@ void video_janela_fonte(int sx, int sy, int sw, int sh, int x, int y, int w, int
 int video_tocar_trailerio(const char *url, int ehHls) {
   assert(!strcmp(url, ehHls ? hls : mp4));
   opens++;
-  failed = playing = 0;
+  failed = playing = ended = 0;
   active = 1;
   return 1;
 }
-void video_definir_mp4(int ehMp4) { assert(!ehMp4); }
-void video_parar(void) { stops++; active = playing = 0; }
+int video_tocar(const char *url) {
+  if (!strcmp(url, apple)) { assert(!mp4Mode); appleOpens++; }
+  else { assert(!strcmp(url, imdb) && mp4Mode); imdbOpens++; }
+  failed = playing = ended = 0;
+  active = 1;
+  return 1;
+}
+void video_definir_cabecalhos(const char *headers) { assert(!headers); }
+void video_definir_dv(int dv) { assert(!dv); }
+void video_definir_mp4(int ehMp4) { mp4Mode = ehMp4; }
+void video_parar(void) { stops++; active = playing = failed = ended = 0; }
+const char *trailerapple_url(const char *imdbId) { assert(!strcmp(imdbId, id)); return appleUrl; }
+const char *trailerimdb_url(const char *imdbId, const char **name) {
+  assert(!strcmp(imdbId, id) && !name);
+  return imdbUrl;
+}
+int trailerapple_respondeu(const char *imdbId) { assert(!strcmp(imdbId, id)); return appleDone; }
+int trailerimdb_respondeu(const char *imdbId) { assert(!strcmp(imdbId, id)); return imdbDone; }
 
+int trailerio_id(const char *imdbId, const char *tipo) {
+  return !strcmp(imdbId, id) && !strcmp(tipo, "movie");
+}
 int trailerio_iniciar(const char *imdb, const char *tipo) {
   assert(!request && !strcmp(imdb, id) && !strcmp(tipo, "movie"));
   request = 1;
@@ -77,14 +100,14 @@ int main(void) {
   SDL_Event left = { .key = { .type = SDL_KEYDOWN, .keysym.sym = SDLK_LEFT } };
   SDL_Event right = { .key = { .type = SDL_KEYDOWN, .keysym.sym = SDLK_RIGHT } };
   SDL_Event ok = { .key = { .type = SDL_KEYDOWN, .keysym.sym = SDLK_RETURN } };
-  assert(trailer_abrir_trailerio(id, "movie", tela, 1));
+  assert(trailer_abrir_webos(id, "movie", tela, 1, 0));
   trailer_atualizar(++ticks);
   assert(trailer_cheia() && !trailer_mostra_video() && !opens);
   assert(trailer_evento(&right) && seeks == 0);
   assert(trailer_evento(&back));
   assert(!trailer_aberto() && cancels == 1 && !stops);
 
-  assert(trailer_abrir_trailerio(id, "movie", tela, 1));
+  assert(trailer_abrir_webos(id, "movie", tela, 1, 0));
   result = 1;
   trailer_atualizar(++ticks);
   assert(opens == 1 && active && !trailer_mostra_video());
@@ -109,12 +132,12 @@ int main(void) {
   assert(trailer_evento(&back));
   assert(!trailer_aberto() && !active && stops == 1);
 
-  assert(trailer_abrir_trailerio(id, "movie", tela, 1));
+  assert(trailer_abrir_webos(id, "movie", tela, 1, 0));
   result = -1;
   trailer_atualizar(++ticks);
   assert(!trailer_aberto() && trailer_falhou() && opens == 2);
 
-  assert(trailer_abrir_trailerio(id, "movie", tela, 1));
+  assert(trailer_abrir_webos(id, "movie", tela, 1, 0));
   result = 1;
   trailer_atualizar(++ticks);
   ticks += 8000;
@@ -123,4 +146,53 @@ int main(void) {
   ticks += 8000;
   trailer_atualizar(ticks);
   assert(!trailer_aberto() && trailer_falhou() && opens == 4 && stops == 2);
+
+  assert(trailer_abrir_webos(id, "movie", tela, 1, 1));
+  imdbUrl = imdb;
+  trailer_atualizar(++ticks);
+  assert(trailer_cheia() && !request && !appleOpens && !imdbOpens);
+  assert(trailer_evento(&back));
+  assert(!trailer_aberto() && !request);
+
+  assert(trailer_abrir_webos(id, "movie", tela, 1, 1));
+  appleUrl = apple;
+  trailer_atualizar(++ticks);
+  assert(appleOpens == 1 && !imdbOpens && !request);
+  ticks += 8000;
+  trailer_atualizar(ticks);
+  assert(appleOpens == 1 && !imdbOpens && !request); // Primary playback keeps its existing timeout.
+  failed = 1;
+  trailer_atualizar(++ticks);
+  assert(imdbOpens == 1 && !request && mp4Mode);
+  playing = 1;
+  trailer_atualizar(++ticks);
+  failed = 1;
+  trailer_atualizar(++ticks);
+  assert(request && !active && !mp4Mode);
+  result = 1;
+  trailer_atualizar(++ticks);
+  assert(opens == 5 && !request);
+  assert(trailer_evento(&back));
+
+  appleUrl = NULL;
+  appleDone = imdbDone = 1;
+  assert(trailer_abrir_webos(id, "movie", tela, 1, 1));
+  trailer_atualizar(++ticks);
+  assert(!request && active && appleOpens == 1 && imdbOpens == 2);
+  assert(trailer_evento(&back));
+
+  imdbUrl = NULL;
+  assert(trailer_abrir_webos(id, "movie", tela, 1, 1));
+  trailer_atualizar(++ticks);
+  assert(request && !active && appleOpens == 1 && imdbOpens == 2);
+  assert(trailer_evento(&back));
+
+  appleUrl = apple;
+  assert(trailer_abrir_webos(id, "movie", tela, 1, 1));
+  trailer_atualizar(++ticks);
+  playing = 1;
+  trailer_atualizar(++ticks);
+  ended = 1;
+  trailer_atualizar(++ticks);
+  assert(!trailer_aberto() && !request && !trailer_falhou());
 }

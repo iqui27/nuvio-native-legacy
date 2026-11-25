@@ -8427,6 +8427,9 @@ static const char *ajudaOpcaoBase(int op) {
       return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV e, sem ela, o IMDb; no botão de trailer, que toca com som, o IMDb vem primeiro, porque o da Apple toca sem som nesta TV. Uma fonte escolhida é a única tentada. O YouTube não toca nesta TV.";
 #endif
 #else
+#ifdef NV_WEBOS
+      if (ajustes_trailer_fonte() == TRF_AUTO) return "Apple TV → IMDb → Trailerio";
+#endif
       return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV e, sem ela, o IMDb; uma fonte escolhida é a única tentada. O YouTube não toca nesta TV.";
 #endif
 

@@ -2612,7 +2612,8 @@ static int temTrailer(void) {
   const CatItem *ci = cat_item(idx);
   if (!ci || (strcmp(ci->tipo, "movie") && strcmp(ci->tipo, "series"))) return 0;
 #ifdef NV_WEBOS
-  if (trailerfonte_ajuste() == TRF_TRAILERIO &&
+  const int ajuste = trailerfonte_ajuste();
+  if ((ajuste == TRF_AUTO || ajuste == TRF_TRAILERIO) &&
       trailerio_id(ci->imdb, ci->tipo)) return 1;
 #endif
   if (trailer_suportado() && trailerFonte(0, NULL, 1)) return 1;
@@ -2702,11 +2703,15 @@ static int acaoEm(int n) {
 // (trailer_evento) e a pagina continua com o mesmo foco.
 static void tocarTrailerCheio(int k) {
 #ifdef NV_WEBOS
-  if (trailerfonte_ajuste() == TRF_TRAILERIO) {
+  const int ajuste = trailerfonte_ajuste();
+  if (ajuste == TRF_AUTO || ajuste == TRF_TRAILERIO) {
     const CatItem *ci = cat_item(idx);
     if (ci && trailerio_id(ci->imdb, ci->tipo)) {
       GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-      if (trailer_abrir_trailerio(ci->imdb, ci->tipo, tela, ajustes_trailer_som())) return;
+      if (trailer_abrir_webos(ci->imdb, ci->tipo, tela, ajustes_trailer_som(), ajuste == TRF_AUTO)) {
+        trailerTentado = 1;
+        return;
+      }
     }
   }
 #endif

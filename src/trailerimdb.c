@@ -204,7 +204,7 @@ void trailerimdb_pedir(const char *imdb) {
   e->emVoo = 1; e->respondeu = 0;
   destrancar();
   arg = strdup(imdb);
-  if (!arg) return;
+  if (!arg) { trancar(); e->emVoo = 0; destrancar(); return; }
   if (pthread_create(&f, NULL, buscar, arg) == 0) pthread_detach(f);
   else { free(arg); trancar(); e->emVoo = 0; destrancar(); }
 }
@@ -239,7 +239,7 @@ int trailerimdb_respondeu(const char *imdb) {
   if (!imdb || !imdb[0]) return 1;
   trancar();
   e = achar(imdb);
-  r = !e || e->respondeu;
+  r = !e || !e->emVoo || e->respondeu;
   destrancar();
   return r;
 }

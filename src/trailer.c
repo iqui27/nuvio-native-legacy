@@ -9,6 +9,8 @@
 #include "video.h"      // trailer_osd_desenhar reads video_pos/duracao on every target
 #ifdef NV_WEBOS
 #include "trailerio.h"
+#include "trailerapple.h"
+#include "trailerimdb.h"
 #include "salto.h"
 #include <math.h>
 #endif
@@ -33,8 +35,9 @@ static int    noCartao;   // trailer_no_cartao: quadro inteiro encaixado no .tpk
 static char   donoImdb[32];
 static int    falso;      // trailer_teste_falso: 0 off, 1 open without image, 2 playing
 #ifdef NV_WEBOS
-enum { TIO_INATIVO, TIO_CONSULTANDO, TIO_ABRINDO, TIO_TOCANDO };
-static int tioEstado, tioFonte;
+enum { TIO_INATIVO, TIO_PRIMARIOS, TIO_CONSULTANDO, TIO_ABRINDO, TIO_TOCANDO };
+static int tioEstado, tioFonte, tioProximoProvedor;
+static char tioId[32], tioTipo[8];
 static Uint32 tioOsdAte;
 static TrailerioLista *tioLista;
 #endif
@@ -436,11 +439,14 @@ static void nativoResetar(void) {
 #endif
 
 #ifdef NV_WEBOS
-int trailer_abrir_trailerio(const char *id, const char *tipo, GfxRect r, int som) {
-  if (bloqueadoMusica || !trailer_suportado()) return 0;
+int trailer_abrir_webos(const char *id, const char *tipo, GfxRect r, int som, int automatico) {
+  if (bloqueadoMusica || !trailerio_id(id, tipo) || !trailer_suportado()) return 0;
   if (aberto) trailer_fechar();
-  if (!trailerio_iniciar(id, tipo)) return 0;
-  tioEstado = TIO_CONSULTANDO;
+  if (!automatico && !trailerio_iniciar(id, tipo)) return 0;
+  snprintf(tioId, sizeof tioId, "%s", id);
+  snprintf(tioTipo, sizeof tioTipo, "%s", tipo);
+  tioEstado = automatico ? TIO_PRIMARIOS : TIO_CONSULTANDO;
+  tioProximoProvedor = automatico ? TRF_APPLE : 0;
   tioFonte = 0;
   falhouUltima = pausado = 0;
   abertoEm = SDL_GetTicks();
@@ -451,14 +457,47 @@ int trailer_abrir_trailerio(const char *id, const char *tipo, GfxRect r, int som
   return 1;
 }
 
+static void webosFonteAberta(void) {
+  tioEstado = TIO_ABRINDO;
+  nativoResetar();
+  abertoEm = SDL_GetTicks();
+  video_janela((int)rect.x, (int)rect.y, (int)rect.w, (int)rect.h);
+}
+
+static void webosConsultarPrimarios(void) {
+  while (tioProximoProvedor == TRF_APPLE || tioProximoProvedor == TRF_IMDB) {
+    const int apple = tioProximoProvedor == TRF_APPLE;
+    const int respondeu = apple ? trailerapple_respondeu(tioId) : trailerimdb_respondeu(tioId);
+    const char *url = apple ? trailerapple_url(tioId) : trailerimdb_url(tioId, NULL);
+    if ((!url || !*url) && !respondeu) return;
+    tioProximoProvedor = apple ? TRF_IMDB : TRF_TRAILERIO;
+    if (url && *url) {
+      video_definir_cabecalhos(NULL);
+      video_definir_dv(0);
+      video_definir_mp4(!apple);
+      if (video_tocar(url)) {
+        webosFonteAberta();
+        return;
+      }
+      video_parar();
+      video_definir_mp4(0);
+    }
+  }
+  tioProximoProvedor = 0;
+  if (trailerio_iniciar(tioId, tioTipo)) {
+    tioEstado = TIO_CONSULTANDO;
+  } else {
+    falhouUltima = 1;
+    trailer_fechar();
+  }
+}
+
 static void trailerioProximaFonte(void) {
   while (tioLista && tioFonte < tioLista->n) {
     const TrailerioFonte *fonte = &tioLista->fontes[tioFonte++];
     tioEstado = TIO_ABRINDO;
     if (video_tocar_trailerio(fonte->url, fonte->hls)) {
-      nativoResetar();
-      abertoEm = SDL_GetTicks();
-      video_janela((int)rect.x, (int)rect.y, (int)rect.w, (int)rect.h);
+      webosFonteAberta();
       return;
     }
   }
@@ -537,7 +576,7 @@ void trailer_rect(GfxRect r) {
   trailer_js_abrir(fonteAtual, r.x, r.y, r.w, r.h, comSom, ajustes_trailer_zoom(), NV_REC_URL);
 #else
 #ifdef NV_WEBOS
-  if (tioEstado == TIO_CONSULTANDO) return;
+  if (tioEstado == TIO_PRIMARIOS || tioEstado == TIO_CONSULTANDO) return;
 #endif
   video_janela((int)r.x, (int)r.y, (int)r.w, (int)r.h);
   recortePendente = 1;
@@ -556,7 +595,7 @@ void trailer_fechar(void) {
 #ifdef NV_WEBOS
   if (tioEstado == TIO_CONSULTANDO) {
     trailerio_cancelar();
-  } else {
+  } else if (tioEstado != TIO_PRIMARIOS) {
     video_parar();
     if (tioEstado != TIO_INATIVO) video_definir_mp4(0);
   }
@@ -564,6 +603,7 @@ void trailer_fechar(void) {
     free(tioLista);
     tioLista = NULL;
     tioEstado = TIO_INATIVO;
+    tioProximoProvedor = 0;
     tioOsdAte = 0;
   }
 #else
@@ -619,7 +659,7 @@ int trailer_tocando(void) {
 }
 int trailer_mostra_video(void) {
 #ifdef NV_WEBOS
-  if (tioEstado == TIO_CONSULTANDO || tioEstado == TIO_ABRINDO) return 0;
+  if (tioEstado != TIO_INATIVO && tioEstado != TIO_TOCANDO) return 0;
 #endif
 #ifdef NV_ANDROID
   if (noCartao && !video_janela_pronta()) return 0;
@@ -698,7 +738,7 @@ int trailer_evento(const SDL_Event *e) {
     trailer_js_cmd(trailer_js_pausado() ? "playVideo" : "pauseVideo");
 #else
 #ifdef NV_WEBOS
-    if (tioEstado == TIO_CONSULTANDO || tioEstado == TIO_ABRINDO) return 1;
+    if (tioEstado != TIO_INATIVO && tioEstado != TIO_TOCANDO) return 1;
 #endif
     pausado = !pausado;
     video_pausar(pausado);
@@ -733,6 +773,10 @@ void trailer_atualizar(Uint32 agora) {
   } else if (aberto && trailer_js_estado() == 0) trailer_fechar();
 #else
 #ifdef NV_WEBOS
+  if (tioEstado == TIO_PRIMARIOS) {
+    webosConsultarPrimarios();
+    if (tioEstado != TIO_ABRINDO) return;
+  }
   if (tioEstado == TIO_CONSULTANDO) {
     if (!trailerio_resultado(&tioLista)) return;
     trailerioProximaFonte();
@@ -741,13 +785,25 @@ void trailer_atualizar(Uint32 agora) {
   if (!aberto) return;
   video_bombear();
   nativoAplicar();
+  const int terminou = video_terminou();
+  const int falhou = video_falhou();
+  const int conflito = video_conflito_recurso();
 #ifdef NV_WEBOS
-  if (tioEstado == TIO_ABRINDO && !video_conflito_recurso()) {
-    if (video_tocando()) {
+  if (tioEstado >= TIO_ABRINDO && !conflito) {
+    if (tioProximoProvedor && (falhou || (tioEstado == TIO_ABRINDO && terminou))) {
+      video_parar();
+      video_definir_mp4(0);
+      tioOsdAte = 0;
+      tioEstado = TIO_PRIMARIOS;
+      webosConsultarPrimarios();
+      return;
+    }
+    if (tioEstado == TIO_ABRINDO && video_tocando()) {
       tioEstado = TIO_TOCANDO;
       free(tioLista);
       tioLista = NULL;
-    } else if (video_falhou() || video_terminou() || (Sint32)(agora - abertoEm) >= 8000) {
+    } else if (tioEstado == TIO_ABRINDO && !tioProximoProvedor &&
+               (falhou || terminou || (Sint32)(agora - abertoEm) >= 8000)) {
       trailerioProximaFonte();
       return;
     }
@@ -755,8 +811,8 @@ void trailer_atualizar(Uint32 agora) {
 #endif
   // Acabou ou a fonte falhou: fecha e a pagina volta a arte.
   // conflito: outro app (YouTube) tomou o plano de video — fecha, fica a arte.
-  if (video_terminou() || video_falhou() || video_conflito_recurso()) {
-    falhouUltima = video_falhou() || video_conflito_recurso() ? 1 : 0;
+  if (terminou || falhou || conflito) {
+    falhouUltima = falhou || conflito;
     trailer_fechar();
   }
 #endif
@@ -766,7 +822,7 @@ int trailer_falhou(void) { return falhouUltima; }
 
 // O OSD DO TRAILER EM TELA CHEIA (Glass UI, mockup de 03/10, proposta
 // aprovada): a barra fina mostra tempo e buffer. Pausar mostra Continuar.
-// Em Trailerio, buscar tambem mostra a barra durante alguns segundos.
+// No fluxo webOS, buscar tambem mostra a barra durante alguns segundos.
 int trailer_pausado(void) {
 #ifdef __EMSCRIPTEN__
   return aberto && cheia && trailer_js_pausado();

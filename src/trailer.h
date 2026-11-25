@@ -36,7 +36,7 @@ int  trailer_suportado(void);
 // cheia com teclado proprio.
 void trailer_abrir(const char *fonte, GfxRect r, int som, int cheia);
 #ifdef NV_WEBOS
-int trailer_abrir_trailerio(const char *id, const char *tipo, GfxRect r, int som);
+int trailer_abrir_webos(const char *id, const char *tipo, GfxRect r, int som, int automatico);
 #endif
 void trailer_rect(GfxRect r);
 // O proximo trailer_abrir (e os trailer_rect dele) toca DENTRO DE UM CARTAZ da
