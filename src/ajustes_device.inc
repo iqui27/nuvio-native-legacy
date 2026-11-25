@@ -315,7 +315,7 @@ static int ajustesDeviceAplicar(const char *json) {
   // Reload only when something changed; unchanged snapshots need no side effects.
   if (!changed) return 0;
   player_dir(dados_dir()); player_leg_estilo_carregar();
-  ppCarregar(); fanartCarregar(); seekrCarregar(); p2pCarregar(); pstCarregar();
+  ppCarregar(); fanartCarregar(); animeskipCarregar(); seekrCarregar(); p2pCarregar(); pstCarregar();
   ajustes_provedores_abrir_sessao();
   fil_recarregar(); fonteregra_carregar(); fontefalha_config_ler();
   ltv_pref_carregar(perfis_ativo()); ltv_urls_carregar(perfis_ativo());

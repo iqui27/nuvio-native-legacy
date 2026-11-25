@@ -40,6 +40,7 @@ void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's to
 #include "contapend.h"
 #include "ajustes.h"
 #include "idioma.h"
+#include "segfontes.h"
 #include "catordem.h"
 #include "catordemcache.h"
 #include "contacache.h"
@@ -143,6 +144,10 @@ static int  temTraktRem;
 // porque a RPC e a mesma e a linha aparece assim que o app web a escrever.
 static char tmdbKey[120], mdbKey[120];
 static int  temTmdb, temMdb;
+// Client ID do Anime-Skip da conta (credential_json.client_id, como o Nuvio TV:
+// ProviderCredentialIds.ANIMESKIP). O ajuste digitado nesta TV vence (segfontes).
+static char animeskipId[96];
+static int  temAnimeskip;
 static DebridConta debridDoCiclo;
 static int temDebridRem;
 
@@ -772,6 +777,10 @@ static void puxarCredenciais(void) {
     else if (!strcmp(prov, "mdblist")) {
       if (js_texto(cred, cred + strlen(cred), "api_key", mdbKey, sizeof mdbKey))
         temMdb = 1;
+    }
+    else if (!strcmp(prov, "animeskip")) {
+      if (js_texto(cred, cred + strlen(cred), "client_id", animeskipId, sizeof animeskipId))
+        temAnimeskip = 1;
     }
     else if (!strncmp(prov, "debrid:", 7)) {
       // A chave solta serve para resolver torrent sem url (debrid.c). Quem tem
@@ -1705,7 +1714,7 @@ void sync_passo(unsigned agoraMs) {
     fflush(stdout);
     temAddonsRem = 0;
     temTraktRem = 0; traktTok[0] = 0;
-    temTmdb = temMdb = temDebridRem = 0;
+    temTmdb = temMdb = temDebridRem = temAnimeskip = 0;
     free(catHomeBlob); catHomeBlob = NULL; temCatHomeBlob = 0;
     free(colBlob);     colBlob = NULL;     temColBlob = 0;
     free(bibBlob);     bibBlob = NULL;     temBibBlob = 0;
@@ -1776,6 +1785,7 @@ void sync_passo(unsigned agoraMs) {
       temDebridRem = 0;
   }
   if (temTmdb)      { desc_tmdb_definir(tmdbKey);   temTmdb = 0; }
+  if (temAnimeskip) { segfontes_animeskip_id_conta(animeskipId); temAnimeskip = 0; }
   if (temMdb)       { extras_definir_chave(mdbKey); temMdb = 0; }
   spMarcar(SP_CRED);
   // A mesma aplicacao que pode ter ocorrido cedo: as caixas consumidas
@@ -2457,6 +2467,8 @@ void sync_esquecer_usuario(void) {
   traktTok[0] = 0; temTraktRem = 0;
   memset(tmdbKey, 0, sizeof tmdbKey); temTmdb = 0;
   memset(mdbKey, 0, sizeof mdbKey);   temMdb = 0;
+  memset(animeskipId, 0, sizeof animeskipId); temAnimeskip = 0;
+  segfontes_animeskip_id_conta("");
   cVistos = cBiblio = cColecoes = 0;
   temAjustesPerfil = temCatHome = 0;
   estado = SYNC_PARADO;

@@ -790,7 +790,7 @@ static int ajCusto(int op) {
     case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR: case AJ_TRAILER_QUAL: case AJ_DET_TRAILER_AUTO:
       return 2;
     case AJ_SEEKR_LIGADO: return 2 | 4;
-    case AJ_P2P_LIGADO: case AJ_FANART_CHAVE: case AJ_SEEKR_CHAVE: case AJ_MDB_CHAVE: case AJ_POSTER_CHAVE:
+    case AJ_P2P_LIGADO: case AJ_FANART_CHAVE: case AJ_SEEKR_CHAVE: case AJ_MDB_CHAVE: case AJ_POSTER_CHAVE: case AJ_ANIMESKIP_ID:
     case AJ_DEBRID_RD: case AJ_DEBRID_TB: case AJ_DEBRID_PM: case AJ_DEBRID_AD:
       return 4;
     default: return 0;

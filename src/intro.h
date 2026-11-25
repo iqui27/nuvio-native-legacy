@@ -19,8 +19,13 @@
 // `fim` ZERO QUER DIZER "ATE O FIM DA MIDIA", que e como a API representa o
 // `end_ms: null` dos creditos. Quem consome tem de tratar esse caso — ver
 // intro_ativo.
-typedef struct { double inicio,fim; int tipo; int ani; } IntroTrecho; // ani 1 = veio do AniSkip
-enum { INTRO_ABERTURA=1, INTRO_RESUMO=2, INTRO_CREDITOS=3, INTRO_PREVIA=4 };
+// ani 1 = veio do AniSkip. arquivo 1 = o proprio arquivo confirma (capitulo com
+// nome, ou trecho da fonte casado com capitulo de mesma duracao): sem a guarda
+// de "parte final" (intro_janela_ok_de).
+typedef struct { double inicio,fim; int tipo; int ani; int arquivo; } IntroTrecho;
+// INTRO_POS_CREDITOS: cena depois dos creditos (capitulo "Post-Credits" ou
+// IntroDB post_credits). Marcada na barra e nunca pulada (feat/mkv-chapter-segments).
+enum { INTRO_ABERTURA=1, INTRO_RESUMO=2, INTRO_CREDITOS=3, INTRO_PREVIA=4, INTRO_POS_CREDITOS=5 };
 // `temporada` e `episodio` ZERO = filme: a consulta sai so com o imdb.
 void intro_pedir(const char *imdb,int temporada,int episodio);
 // Igual a intro_pedir, mas diz a duracao (s) dos episodios E-1 e E+1 quando o
@@ -64,6 +69,30 @@ long intro_kitsu_mal(const char *json);
 void intro_definir_capitulos(const IntroTrecho *v,int n);
 void intro_desligar(void);
 int  intro_ativo(double posSeg,double *fim,int *tipo);
+// CENA DEPOIS DOS CREDITOS (feat/mkv-chapter-segments, followingPostCreditsScene
+// do Nuvio TV): 1 quando o ultimo trecho de creditos ACEITO e seguido por uma
+// cena — explicita (INTRO_POS_CREDITOS: capitulo "Post-Credits" ou IntroDB
+// post_credits) ou deduzida (mais de INTRO_CENA_FOLGA_S entre o fim explicito
+// dos creditos, ja emendado com a previa, e o fim da midia). `ini`/`fim` da
+// cena, `explicita` 1/0. Creditos "ate o fim" nunca tem cena. `dur` em s.
+#define INTRO_CENA_FOLGA_S 5.0
+// CENA DEDUZIDA (nada diz o que vem depois do encerramento): so com pelo menos
+// isto. Logo de estudio, preto, cartao de patrocinio ou um toco de capitulo
+// depois do ED nao sao cena (log da C9, 04/11: 11 s viravam "cena" e seguravam
+// o cartao); gag de verdade tem ~30 s (dono: 17 s).
+#define INTRO_CENA_DEDUZIDA_MIN_S 17.0
+// Uma PREVIA marcada depois da cena ("ED - Part C - Next time") fecha a cena:
+// `fim` = inicio da previa, e o cartao do proximo sobe nela, nao no fim do arquivo.
+int intro_cena_pos(double dur,double *ini,double *fim,int *explicita);
+// PALPITES por duracao (capitulos sem nome util, mkv_segmentos_palpite): so
+// para anime (evidencia TMDB, ou AniSkip/Anime-Skip responderam) e so nos tipos
+// que nem capitulo com nome nem a rede deram. n=0 limpa.
+void intro_definir_capitulos_palpite(const IntroTrecho *v,int n);
+// Inicio de cada capitulo do arquivo (capmkv). Um trecho da rede com a MESMA
+// duracao (+-5 s) de um capitulo que comeca perto (+-30 s) passa a usar os
+// tempos exatos do capitulo; o tipo continua o da fonte. Abertura, encerramento
+// e previa; o resumo fica com os tempos da fonte. n=0 limpa.
+void intro_definir_capitulos_marcas(const double *v,int n);
 // Segundo em que os creditos comecam, ou 0 quando nao ha marcador. Serve ao
 // posplay.c, que precisa do INSTANTE e nao de "estou dentro".
 double intro_creditos_seg(void);
@@ -79,6 +108,12 @@ void intro_definir_duracao(double dur,int filme);
 // trecho com fim explicito alem da duracao (marcador de outro corte). `motivo`
 // (opcional) diz o porque.
 int  intro_janela_ok(int tipo,double ini,double fim,double dur,int filme,const char **motivo);
+// O mesmo, com `arquivo` 1 = trecho que o proprio arquivo confirma: so as
+// guardas de dado impossivel (duracao, alem do fim, janela longa) valem.
+int  intro_janela_ok_de(int tipo,double ini,double fim,double dur,int filme,int arquivo,const char **motivo);
+// O cartao do proximo (player.c/posplay.c) usa o MESMO veredito do botao: 1 se
+// ha um trecho de creditos aceito comecando em `ini` (+-0.5 s).
+int  intro_creditos_aceito(double ini);
 
 // ONDE OS CREDITOS DE UM EPISODIO PODEM COMECAR (2.0.3). Um marcador de creditos
 // so vale se sobrar ate esta janela de episodio depois dele: 15% da duracao,
@@ -154,6 +189,7 @@ int  intro_trechos(IntroTrecho *saida,int max);
 // resposta atual. Sem fim, vizinhos, capitulos e estimativas nao entram.
 int  intro_creditos_limitados(IntroTrecho *saida,int max);
 #ifdef NV_SHOT_HOOKS
-void intro_shot_definir(const IntroTrecho *v,int n);   // capturas: trechos fixos
+void intro_shot_definir(const IntroTrecho *v,int n);
+void intro_shot_rede(const IntroTrecho *v,int n,const IntroTrecho *lim,int nl);   // teste: trechos da rede   // capturas: trechos fixos
 #endif
 #endif

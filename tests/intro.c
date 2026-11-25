@@ -39,6 +39,13 @@ void dados_fs_travar(void){}
 void dados_fs_liberar(void){}
 void dados_marcar_sujo(int leve){(void)leve;}
 static int fakeBuscar(const char *,char **,int *);
+// Simkl desligado (client_id vazio) em todo o teste, menos no caso que o liga.
+#include "../src/segfontes.h"
+static const char *simklCid = "";
+const char *nuvem_simkl_cliente(void){return simklCid;}
+static int simklPedidos;
+static int simklFake(const char *url,char **corpo,int *st){
+  (void)url;__atomic_add_fetch(&simklPedidos,1,__ATOMIC_SEQ_CST);*corpo=NULL;*st=404;return 404;}
 static const char *fribbFonte;
 int rede_pedir(const RedePedido *p, RedeResposta *r) {
   char *j=NULL;memset(r,0,sizeof *r);
@@ -203,19 +210,23 @@ static void testarBackup(void){
   assert(intro_extrair_backup("{\"imdb_id\":\"tt0460681\"","tt0460681",1,1,v,8)==-1);
   const char *movie="{\"imdb_id\":\"tt1375666\",\"media_type\":\"movie\",\"is_movie\":true,"
     "\"outro\":{\"start_sec\":8000,\"end_sec\":8500},\"post_credits\":{\"start_sec\":8300,\"end_sec\":8400}}";
-  assert(intro_extrair_backup(movie,"tt1375666",0,0,v,8)==1&&v[0].fim==8300);
+  assert(intro_extrair_backup(movie,"tt1375666",0,0,v,8)==2&&v[0].fim==8300&&
+         v[1].tipo==INTRO_POS_CREDITOS&&v[1].inicio==8300&&v[1].fim==8400);
   const char *invalid="{\"imdb_id\":\"tt0460681\",\"media_type\":\"tv\",\"is_movie\":false,\"season\":1,\"episode\":1,"
     "\"intro\":{\"start_sec\":-1,\"end_sec\":20},\"recap\":{\"start_sec\":20,\"end_sec\":20},\"outro\":{\"start_sec\":2700,\"end_sec\":null}}";
   assert(intro_extrair_backup(invalid,"tt0460681",1,1,v,8)==0);
   puts("ok  IntroDB /segments: identidade, segundos/ms, especiais, intervalos e cena pos-creditos");
 
   intro_definir_buscador(fakeBuscar);
+  // ORDEM DO NUVIO TV (feat/mkv-chapter-segments): IntroDB primeiro; com as tres
+  // categorias dele, o TheIntroDB nem e consultado.
+  pthread_mutex_lock(&fakeTrava);int db0=dbPedidos;pthread_mutex_unlock(&fakeTrava);
   intro_pedir_ids_mapeados("tt9900001",9900001,4,92,1,2,0,0);
   assert(esperar(3)==3);n=intro_trechos(v,8);
-  assert(achar(v,n,INTRO_ABERTURA)->inicio==10); // prioridade do principal
+  assert(achar(v,n,INTRO_ABERTURA)->inicio==20); // IntroDB vence o TheIntroDB
   assert(achar(v,n,INTRO_RESUMO)->fim==8&&achar(v,n,INTRO_CREDITOS)->fim==2960);
   pthread_mutex_lock(&fakeTrava);
-  assert(strstr(ultimaUrl,"tmdb_id=9900001&season=4&episode=92"));
+  assert(dbPedidos==db0);
   assert(strstr(ultimaBackup,"imdb_id=tt9900001&season=1&episode=2"));antes=backupPedidos;
   pthread_mutex_unlock(&fakeTrava);
   intro_definir_duracao(3000,0);usleep(200000);
@@ -230,7 +241,7 @@ static void testarBackup(void){
   intro_pedir_ids("tt9900002",0,1,2,0,0);assert(esperar(3)==3);
   n=intro_trechos(v,8);assert(achar(v,n,INTRO_ABERTURA)->inicio==20);
   intro_pedir_ids("tt9900003",0,1,2,0,0);assert(esperar(3)==3);usleep(100000);
-  pthread_mutex_lock(&fakeTrava);assert(backupPedidos==antes+1);backupErro=500;pthread_mutex_unlock(&fakeTrava);
+  pthread_mutex_lock(&fakeTrava);assert(backupPedidos==antes+2);backupErro=500;pthread_mutex_unlock(&fakeTrava);
   intro_pedir_ids("tt9900004",0,1,2,0,0);assert(esperar(1)==1);usleep(100000);
   pthread_mutex_lock(&fakeTrava);backupErro=0;pthread_mutex_unlock(&fakeTrava);
   intro_pedir_ids("tt9900004",0,1,2,0,0);assert(esperar(3)==3);
@@ -238,11 +249,10 @@ static void testarBackup(void){
   intro_pedir_ids("tt9900005",0,1,2,0,0);assert(esperar(1)==1);usleep(100000);
   pthread_mutex_lock(&fakeTrava);backupErro=0;pthread_mutex_unlock(&fakeTrava);
   intro_pedir_ids("tt9900005",0,1,2,0,0);assert(esperar(3)==3);
-  puts("ok  backup preenche tipos ausentes; principal/capitulos preservados; cache e falhas recuperaveis");
+  puts("ok  IntroDB primeiro, TheIntroDB so pelo que falta; capitulos preservados; cache e falhas recuperaveis");
 
   pthread_mutex_lock(&fakeTrava);backupBloquear=1;backupLiberar=backupEntrou=0;pthread_mutex_unlock(&fakeTrava);
   intro_pedir_ids("tt9900006",0,1,2,0,0);
-  assert(esperar(1)==1); // principal ja disponivel durante GET do backup
   pthread_mutex_lock(&fakeTrava);
   while(!backupEntrou)pthread_cond_wait(&backupCond,&fakeTrava);
   pthread_mutex_unlock(&fakeTrava);
@@ -250,7 +260,20 @@ static void testarBackup(void){
   pthread_mutex_lock(&fakeTrava);backupLiberar=1;pthread_cond_broadcast(&backupCond);pthread_mutex_unlock(&fakeTrava);
   usleep(200000);assert(intro_trechos(v,8)==0);
   pthread_mutex_lock(&fakeTrava);backupBloquear=0;pthread_mutex_unlock(&fakeTrava);
-  puts("ok  backup lento nao atrasa marcadores existentes nem publica depois de sair do video");
+  puts("ok  IntroDB lento nao publica depois de sair do video");
+
+  // FILME (D6/D13, como o Nuvio TV): com algo da rede, a rede vence inteira e o
+  // capitulo de creditos do arquivo nao a substitui. Sem nada da rede, vale.
+  { // Inception: o TheIntroDB so tem a abertura (0-38 s).
+    intro_pedir_ids("tt1375666",0,0,0,0,0);assert(esperar(1)>=1);
+    n=intro_trechos(v,8);assert(achar(v,n,INTRO_ABERTURA)&&!achar(v,n,INTRO_CREDITOS));
+    IntroTrecho capf={8000,0,INTRO_CREDITOS,0};intro_definir_capitulos(&capf,1);
+    n=intro_trechos(v,8);assert(achar(v,n,INTRO_ABERTURA)&&!achar(v,n,INTRO_CREDITOS));
+    intro_pedir_ids("tt7777777",0,0,0,0,0);usleep(200000);
+    intro_definir_capitulos(&capf,1);
+    n=intro_trechos(v,8);assert(n==1&&achar(v,n,INTRO_CREDITOS)->inicio==capf.inicio);
+    intro_desligar(); }
+  puts("ok  filme: a rede vence os capitulos quando trouxe algo; sem rede, valem os capitulos");
 }
 
 int main(int argc,char **argv) {
@@ -557,7 +580,7 @@ int main(int argc,char **argv) {
     assert(intro_resposta_confere("{\"season\":0,\"episode\":1}", 0, 1));
     assert(!intro_resposta_confere("{\"season\":1,\"episode\":1}", 0, 1));
     intro_montar_url_aniskip(url, sizeof url, 21, 1, 1500.0);
-    assert(strstr(url, "skip-times/21/1?types[]=op&types[]=ed&types[]=recap&episodeLength=1500"));
+    assert(strstr(url, "skip-times/21/1?types[]=op&types[]=ed&types[]=recap&types[]=mixed-op&types[]=mixed-ed&episodeLength=1500"));
     puts("ok  URLs: tmdb_id + par do TMDB + duration_ms; imdb sozinho no filme; AniSkip");
   }
   intro_definir_buscador(fakeBuscar);
@@ -725,14 +748,90 @@ int main(int argc,char **argv) {
     assert(n == 1 && v[0].tipo == INTRO_ABERTURA && mesmoSeg(v[0].fim, 53.0));
     puts("ok  filme: janela de creditos 12% (5-15 min), abertura so no comeco, 3 min/90 s fixos");
   }
-  // PREVIA: emendada nos creditos, o "Pular creditos" pula as duas; sem
+  // PREVIA: emendada nos creditos, "Pular encerramento" cai NELA (quem pula o
+  // encerramento quer ver a previa; o cartao cuida de quem nao quer); sem
   // creditos, ela marca o fim para o cartao.
 #ifdef NV_SHOT_HOOKS
   { double fim; int tipo;
     n = intro_extrair(fixture("onepiece_s01e01.json"), v, 8);
     intro_shot_definir(v, n);
     intro_definir_duracao(1500.0, 0);
-    assert(intro_botao(1400.0, 9000.0, 0, 0, &fim, &tipo) && tipo == INTRO_CREDITOS && mesmoSeg(fim, 1500.0));
+    assert(intro_botao(1400.0, 9000.0, 0, 0, &fim, &tipo) && tipo == INTRO_CREDITOS && mesmoSeg(fim, 1459.0));
+    assert(!intro_cena_pos(1500.0, NULL, NULL, NULL));   // previa emendada nao e cena
+    // "ED - Part C - Next time": a parte depois do ED e cena (o botao cai nela,
+    // rotulo "Post credits"); a previa marcada a fecha e o cartao sobe nela.
+    { IntroTrecho t[2] = {{1300.0, 1380.0, INTRO_CREDITOS, 0}, {1410.0, 0.0, INTRO_PREVIA, 0}};
+      double a0 = 0, b0 = 0; int ex = 1;
+      intro_shot_definir(t, 2); intro_definir_duracao(1440.0, 0);
+      assert(intro_cena_pos(1440.0, &a0, &b0, &ex) && mesmoSeg(a0, 1380.0) && mesmoSeg(b0, 1410.0) && !ex);
+      assert(intro_botao(1310.0, 9100.0, 0, 0, &fim, &tipo) && tipo == INTRO_CREDITOS && mesmoSeg(fim, 1380.0)); }
+    // Sobra sem nada dizendo o que e (AniSkip, 42 s): na duvida e cena (gag de
+    // 30 s existe). So nome ou fonte faz dela uma previa.
+    { IntroTrecho t[1] = {{1320.0, 1410.0, INTRO_CREDITOS, 1}};
+      intro_shot_definir(t, 1); intro_definir_duracao(1452.0, 0);
+      assert(intro_cena_pos(1452.0, NULL, NULL, NULL)); }
+    puts("ok  previa: Pular encerramento cai nela; ED-Part C-Next time = cena fechada pela previa; sobra sem sinal = cena");
+    // CASAR COM O CAPITULO: a fonte diz o tipo, o capitulo de mesma duracao
+    // (+-5 s) que comeca perto (+-30 s) diz o tempo exato deste arquivo.
+    { static const double aot[] = {0, 10, 102, 1320, 1410};
+      IntroTrecho r[3] = {{12, 101, INTRO_ABERTURA, 0}, {1322, 1408, INTRO_CREDITOS, 0}, {1411, 1450, INTRO_PREVIA, 0}};
+      IntroTrecho t[8]; double fim2; int tp2, nt2;
+      intro_desligar(); intro_definir_capitulos(NULL, 0); intro_definir_capitulos_palpite(NULL, 0);
+      intro_definir_duracao(1452.0, 0);
+      intro_definir_capitulos_marcas(aot, 5);
+      intro_shot_rede(r, 3, &r[1], 1);
+      nt2 = intro_trechos(t, 8);
+      assert(achar(t, nt2, INTRO_ABERTURA)->inicio == 10 && achar(t, nt2, INTRO_ABERTURA)->fim == 102);
+      assert(achar(t, nt2, INTRO_CREDITOS)->inicio == 1320 && achar(t, nt2, INTRO_CREDITOS)->fim == 1410);
+      assert(achar(t, nt2, INTRO_PREVIA)->inicio == 1410 && mesmoSeg(achar(t, nt2, INTRO_PREVIA)->fim, 1452));
+      // O pulo automatico do encerramento continua valendo no trecho casado.
+      assert(intro_auto_ativo(1330.0, &fim2, &tp2) && tp2 == INTRO_CREDITOS && fim2 == 1410);
+      // Previa "ate o fim" casa so pelo inicio (+-5 s) com o ultimo capitulo.
+      { IntroTrecho pv = {1412, 0, INTRO_PREVIA, 0};
+        intro_shot_rede(&pv, 1, NULL, 0); nt2 = intro_trechos(t, 8);
+        assert(achar(t, nt2, INTRO_PREVIA)->inicio == 1410 && achar(t, nt2, INTRO_PREVIA)->fim == 0); }
+      // Longe demais (inicio 50 s fora) ou duracao diferente (70 x 92 s): fica a fonte.
+      { IntroTrecho op[2] = {{60, 150, INTRO_ABERTURA, 0}, {1322, 1342, INTRO_CREDITOS, 0}};
+        intro_shot_rede(op, 2, NULL, 0); nt2 = intro_trechos(t, 8);
+        assert(achar(t, nt2, INTRO_ABERTURA)->inicio == 60 && achar(t, nt2, INTRO_ABERTURA)->fim == 150);
+        assert(achar(t, nt2, INTRO_CREDITOS)->inicio == 1322 && achar(t, nt2, INTRO_CREDITOS)->fim == 1342); }
+      // O RESUMO fica com os tempos da fonte; a abertura casa.
+      { static const double rc[] = {0, 45, 135, 600};
+        IntroTrecho rr[2] = {{1, 44, INTRO_RESUMO, 0}, {46, 134, INTRO_ABERTURA, 0}};
+        intro_definir_capitulos_marcas(rc, 4);
+        intro_shot_rede(rr, 2, NULL, 0); nt2 = intro_trechos(t, 8);
+        assert(achar(t, nt2, INTRO_RESUMO)->inicio == 1 && achar(t, nt2, INTRO_RESUMO)->fim == 44);
+        assert(achar(t, nt2, INTRO_ABERTURA)->inicio == 45 && achar(t, nt2, INTRO_ABERTURA)->fim == 135); }
+      intro_definir_capitulos_marcas(NULL, 0); intro_desligar();
+      puts("ok  casar com capitulo: OP/ED/previa da fonte viram o capitulo de mesma duracao; resumo fica"); }
+    // LOG DA C9 (tt1655610 S01E02): Intro 0, OP 30.9, Part A, Part B, ED 1204,
+    // Part C 1294, Next Time 1416, fim 1436. O ED sobra 232 s (> janela de 215 s)
+    // e era recusado: sem botao, e o cartao caia na estimativa (1386 s).
+    { IntroTrecho cap[3] = {{30.9, 120.8, INTRO_ABERTURA, 0, 0}, {1204, 1294, INTRO_CREDITOS, 0, 0},
+                            {1416, 0, INTRO_PREVIA, 0, 0}};
+      double a0 = 0, b0 = 0; int ex = 1;
+      intro_desligar(); intro_definir_duracao(1436.0, 0);
+      intro_definir_capitulos(cap, 3);
+      assert(intro_ativo(1210.0, &fim, &tipo) && tipo == INTRO_CREDITOS && fim == 1294);   // botao no ED
+      assert(intro_creditos_aceito(1204.0));                                                // o cartao aceita
+      assert(intro_cena_pos(1436.0, &a0, &b0, &ex) && a0 == 1294 && b0 == 1416);             // Part C ate o Next Time
+      intro_definir_capitulos(NULL, 0); intro_desligar(); }
+    // Fonte sozinha (sem capitulo que confirme): medida pelo FIM do encerramento.
+    { IntroTrecho r1 = {1204, 1294, INTRO_CREDITOS, 0, 0}, r2 = {1100, 1150, INTRO_CREDITOS, 0, 0},
+                  r3 = {300, 400, INTRO_CREDITOS, 0, 0};
+      intro_definir_duracao(1436.0, 0);
+      intro_shot_rede(&r1, 1, NULL, 0); assert(intro_creditos_aceito(1204.0));    // fim 142 s antes: aceito
+      intro_shot_rede(&r2, 1, NULL, 0); assert(!intro_creditos_aceito(1100.0));   // fim 286 s antes: recusado
+      intro_shot_rede(&r3, 1, NULL, 0); assert(!intro_creditos_aceito(300.0));    // meio do episodio
+      intro_desligar(); }
+    // Cena DEDUZIDA so com 17 s ou mais (log 04/11: 11 s depois do ED viravam cena).
+    { IntroTrecho t1 = {1320, 1410, INTRO_CREDITOS, 0, 0};
+      intro_shot_definir(&t1, 1); intro_definir_duracao(1421.0, 0);
+      assert(!intro_cena_pos(1421.0, NULL, NULL, NULL));     // 11 s: logo/toco, nao cena
+      intro_definir_duracao(1427.0, 0);
+      assert(intro_cena_pos(1427.0, NULL, NULL, NULL));      // 17 s: cena
+      intro_desligar(); }
+    puts("ok  encerramento: capitulo do arquivo sem guarda; fonte medida pelo fim (ED - Part C - Next time)");
     assert(!intro_botao(1470.0, 9020.0, 0, 0, &fim, &tipo) || tipo != INTRO_PREVIA);
     n = intro_extrair(fixture("aot_s01e01.json"), v, 8);
     intro_shot_definir(v, n);
@@ -740,7 +839,7 @@ int main(int argc,char **argv) {
     assert(mesmoSeg(intro_creditos_seg(), 1432.0));
     // trecho com inicio e fim nulos e descartado (como o plugin oficial)
     assert(intro_extrair("{\"intro\":[{\"start_ms\":null,\"end_ms\":null}]}", v, 8) == 0);
-    puts("ok  previa: emendada pula junto com os creditos; sozinha marca o fim");
+    puts("ok  previa: emendada, o pulo cai nela; sozinha marca o fim");
   }
 #endif
 #ifdef NV_SHOT_HOOKS
@@ -787,6 +886,32 @@ int main(int argc,char **argv) {
     assert(na == 2 && a[0].ani == 1 && a[0].inicio == 10.0);   // OP do AniSkip fica
     assert(a[1].tipo == INTRO_CREDITOS && a[1].ani == 0);      // ED vem do TheIntroDB
     puts("ok  fontes completam por tipo, com origem por trecho"); }
+  // Simkl so para serie com evidencia de anime do TMDB: sem ela o TheIntroDB
+  // (a fonte de quem nao e anime) esperava a busca no Simkl a cada temporada.
+  { simklCid = "cid-teste"; segfontes_definir_buscador(simklFake); segfontes_limpar_cache();
+    intro_pedir_ids("tt9800001", 0, 1, 1, 0, 0); usleep(300000);
+    assert(__atomic_load_n(&simklPedidos, __ATOMIC_SEQ_CST) == 0);
+    // Palpite por duracao (capitulos sem nome): so em anime, e so o tipo que
+    // nenhuma fonte deu.
+    { IntroTrecho op = {10.0, 102.0, INTRO_ABERTURA, 0}, t[8]; int k, n2, achou = 0;
+      intro_definir_capitulos_palpite(&op, 1);
+      n2 = intro_trechos(t, 8);
+      for (k = 0; k < n2; k++) if (t[k].tipo == INTRO_ABERTURA && t[k].inicio == 10.0) achou = 1;
+      assert(!achou); }
+    intro_registrar_tmdb("tt9800002", 0, "{\"original_language\":\"ja\",\"genres\":[{\"id\":16}]}");
+    intro_pedir_ids("tt9800002", 0, 1, 1, 0, 0); usleep(300000);
+    assert(__atomic_load_n(&simklPedidos, __ATOMIC_SEQ_CST) > 0);
+    { IntroTrecho op = {10.0, 102.0, INTRO_ABERTURA, 0}, t[8]; int k, n2, achou = 0;
+      intro_definir_capitulos_palpite(&op, 1);
+      n2 = intro_trechos(t, 8);
+      for (k = 0; k < n2; k++) if (t[k].tipo == INTRO_ABERTURA && t[k].inicio == 10.0) achou = 1;
+      assert(achou);
+      intro_definir_capitulos_palpite(NULL, 0); }
+    puts("ok  palpite por duracao: so anime");
+    simklCid = ""; segfontes_definir_buscador(NULL);
+    { char c[NVT_MAX]; usleep(300000);   // o anime sem MAL caiu na Fribb, que grava o indice
+      if (dados_caminho(c, sizeof c, "anime-fribb.idx")) unlink(c); }
+    puts("ok  Simkl: serie sem evidencia de anime nao pergunta; anime pergunta"); }
   assert(!rmdir(dadosTeste));
   puts("intro: tudo ok");
   // #329/#331: pular sozinho. Assinatura: (tipo, fim, dur, abertura, resumo, creditos).

@@ -309,6 +309,15 @@ void plrui_barra(float x, float y, float w, float frac, float buf, int foco,
   }
 }
 
+void plrui_barra_capitulos(float x, float y, float w, int foco, const float *ticks, int n, float a) {
+  float h = foco ? 10.0f : 6.0f, yy = foco ? y - 2.0f : y;
+  int i;
+  if (a <= 0.002f) return;
+  for (i = 0; i < n; i++)
+    if (ticks[i] > 0.0f && ticks[i] < 1.0f)
+      gfx_cor((GfxRect){ x + w * ticks[i] - 1.0f, yy, 2.0f, h }, 0.0f, 0.06f, 0.06f, 0.07f, 0.85f * a);
+}
+
 void plrui_trilho(GfxRect r, float frac, float cr, float cg, float cb, float a) {
   if (cr < 0.0f) ajustes_acento(&cr, &cg, &cb);
   if (ajustes_vidro()) gfx_vidro_chip(r, 0.5f, 0.55f, a);
