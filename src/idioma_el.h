@@ -4281,6 +4281,7 @@
   T("Jellyfin, Emby e Plex na Home.", "Jellyfin, Emby και Plex στην Αρχική."),
   T("Jellyfin, Emby e Plex viram fileiras na Home, com a retomada e os vistos enviados de volta.", "Τα Jellyfin, Emby και Plex γίνονται σειρές στην αρχική, με τη συνέχιση και τα προβεβλημένα να στέλνονται πίσω."),
   T("Jellyfin, Emby e Plex: as suas bibliotecas dentro do Nuvio.", "Jellyfin, Emby και Plex: οι βιβλιοθήκες σας μέσα στο Nuvio."),
+  T("Jogo no canal certo", "Ο αγώνας στο σωστό κανάλι"),
   T("Jogos aparecem quando o guia mostra uma partida nos canais de esportes.", "Οι αγώνες εμφανίζονται όταν ο οδηγός δείχνει αγώνα στα αθλητικά κανάλια."),
   T("Jogos das ligas carregadas. Abra Por liga para consultar qualquer competição.", "Games from loaded leagues. Open By league to browse any competition."),
   T("Jogos e placares por competição", "Games and scores by competition"),

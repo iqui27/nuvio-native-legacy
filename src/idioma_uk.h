@@ -4280,6 +4280,7 @@
   T("Jellyfin, Emby e Plex na Home.", "Jellyfin, Emby і Plex на головній."),
   T("Jellyfin, Emby e Plex viram fileiras na Home, com a retomada e os vistos enviados de volta.", "Jellyfin, Emby і Plex стають рядами на головній, з продовженням і переглянутим, що надсилаються назад."),
   T("Jellyfin, Emby e Plex: as suas bibliotecas dentro do Nuvio.", "Jellyfin, Emby та Plex: ваші бібліотеки в Nuvio."),
+  T("Jogo no canal certo", "Матч на потрібному каналі"),
   T("Jogos aparecem quando o guia mostra uma partida nos canais de esportes.", "Матчі з’являються, коли програма показує матч на спортивних каналах."),
   T("Jogos das ligas carregadas. Abra Por liga para consultar qualquer competição.", "Games from loaded leagues. Open By league to browse any competition."),
   T("Jogos e placares por competição", "Games and scores by competition"),

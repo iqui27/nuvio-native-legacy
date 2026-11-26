@@ -4281,6 +4281,7 @@
   T("Jellyfin, Emby e Plex na Home.", "首頁顯示 Jellyfin、Emby 和 Plex。"),
   T("Jellyfin, Emby e Plex viram fileiras na Home, com a retomada e os vistos enviados de volta.", "Jellyfin、Emby 和 Plex 會變成首頁的列，繼續播放和已看狀態會同步回去。"),
   T("Jellyfin, Emby e Plex: as suas bibliotecas dentro do Nuvio.", "Jellyfin、Emby 和 Plex：Nuvio 中的函式庫。"),
+  T("Jogo no canal certo", "賽事對應正確頻道"),
   T("Jogos aparecem quando o guia mostra uma partida nos canais de esportes.", "節目表在體育頻道列出比賽時，比賽會顯示在這裡。"),
   T("Jogos das ligas carregadas. Abra Por liga para consultar qualquer competição.", "Games from loaded leagues. Open By league to browse any competition."),
   T("Jogos e placares por competição", "Games and scores by competition"),

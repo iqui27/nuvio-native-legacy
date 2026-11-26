@@ -4281,6 +4281,7 @@
   T("Jellyfin, Emby e Plex na Home.", "Jellyfin, Emby és Plex a kezdőlapon."),
   T("Jellyfin, Emby e Plex viram fileiras na Home, com a retomada e os vistos enviados de volta.", "A Jellyfin, az Emby és a Plex sorok lesznek a kezdőlapon, a folytatást és a megnézést visszaküldve."),
   T("Jellyfin, Emby e Plex: as suas bibliotecas dentro do Nuvio.", "Jellyfin, Emby és Plex: az Ön könyvtárai a Nuvióban."),
+  T("Jogo no canal certo", "Meccs a megfelelő csatornán"),
   T("Jogos aparecem quando o guia mostra uma partida nos canais de esportes.", "A meccsek akkor jelennek meg, ha a műsor meccset mutat a sportcsatornákon."),
   T("Jogos das ligas carregadas. Abra Por liga para consultar qualquer competição.", "Games from loaded leagues. Open By league to browse any competition."),
   T("Jogos e placares por competição", "Games and scores by competition"),

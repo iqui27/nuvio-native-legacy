@@ -4281,6 +4281,7 @@
   T("Jellyfin, Emby e Plex na Home.", "Jellyfin, Emby ir Plex pradžioje."),
   T("Jellyfin, Emby e Plex viram fileiras na Home, com a retomada e os vistos enviados de volta.", "Jellyfin, Emby ir Plex tampa eilutėmis pradžioje, o tęsimas ir peržiūrėta siunčiami atgal."),
   T("Jellyfin, Emby e Plex: as suas bibliotecas dentro do Nuvio.", "Jellyfin, Emby ir Plex: jūsų bibliotekos Nuvio viduje."),
+  T("Jogo no canal certo", "Rungtynės tinkamame kanale"),
   T("Jogos aparecem quando o guia mostra uma partida nos canais de esportes.", "Rungtynės atsiranda, kai programa rodo rungtynes sporto kanaluose."),
   T("Jogos das ligas carregadas. Abra Por liga para consultar qualquer competição.", "Games from loaded leagues. Open By league to browse any competition."),
   T("Jogos e placares por competição", "Games and scores by competition"),

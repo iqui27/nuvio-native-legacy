@@ -4281,6 +4281,7 @@
   T("Jellyfin, Emby e Plex na Home.", "Jellyfin, Emby i Plex na Početnoj."),
   T("Jellyfin, Emby e Plex viram fileiras na Home, com a retomada e os vistos enviados de volta.", "Jellyfin, Emby i Plex postaju redovi na početnoj, s nastavkom i odgledanim poslanim nazad."),
   T("Jellyfin, Emby e Plex: as suas bibliotecas dentro do Nuvio.", "Jellyfin, Emby i Plex: vaše biblioteke unutar Nuvio-a."),
+  T("Jogo no canal certo", "Utakmica na pravom kanalu"),
   T("Jogos aparecem quando o guia mostra uma partida nos canais de esportes.", "Utakmice se pojavljuju kada vodič prikaže utakmicu na sportskim kanalima."),
   T("Jogos das ligas carregadas. Abra Por liga para consultar qualquer competição.", "Games from loaded leagues. Open By league to browse any competition."),
   T("Jogos e placares por competição", "Games and scores by competition"),
