@@ -371,16 +371,16 @@ static void desenharCodigoAjuda(float yQr) {
   if (!cod[0] || !pag[0] || NV_TELA_H > NV_TELA_W || larg < 360.0f) return;
   if (larg > 520.0f) larg = 520.0f;
   y += txt_bloco_corta(TXT_HEADLINE, i18n("Alguém vai configurar esta TV de longe?"),
-                       236, 238, 244, x, y, larg, 52.0f, 1.0f, 2) + 20.0f;
+                       243, 242, 239, x, y, larg, 52.0f, 1.0f, 2) + 20.0f;
   y += txt_bloco_corta(TXT_BODY, i18n("Diga estes números para a pessoa:"),
-                       176, 178, 186, x, y, larg, 44.0f, 1.0f, 2) + 14.0f;
+                       163, 161, 156, x, y, larg, 44.0f, 1.0f, 2) + 14.0f;
   // Os numeros nao sao texto traduzivel; TITULO1 e o maior tamanho da tela.
   l = txt_linha(TXT_TITULO1, cod, 255, 255, 255, 255);
   txt_desenhar_alpha(l, x, y, 1.0f);
   y += l.h + 26.0f;
   y += txt_bloco_corta(TXT_BODY, i18n("Ela digita os números neste endereço e entra com a conta que vai ficar nesta TV:"),
-                       176, 178, 186, x, y, larg, 44.0f, 1.0f, 3) + 10.0f;
-  l = txt_linha_corta(TXT_HEADLINE, pag, 236, 238, 244, 255, larg);
+                       163, 161, 156, x, y, larg, 44.0f, 1.0f, 3) + 10.0f;
+  l = txt_linha_corta(TXT_HEADLINE, pag, 243, 242, 239, 255, larg);
   txt_desenhar_alpha(l, x, y, 1.0f);
 }
 
