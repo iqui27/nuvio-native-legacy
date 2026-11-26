@@ -159,6 +159,9 @@ int ajustes_pausa_comentarios(void);
 int ajustes_pausa_notas(void);
 // Elenco (fotos, nomes, papeis) no painel de pausa. Desligado de fabrica.
 int ajustes_pausa_elenco(void);
+// Tela ambiente (ambiente.h): a arte do titulo em tela cheia por baixo do
+// painel de pausa, numa pausa longa. Ligado de fabrica.
+int ajustes_pausa_ambiente(void);
 int ajustes_classif_player(void);   // 1 = mostra a classificacao/guia parental no player (padrao)
 // "O que achou?" nos creditos (reacao.h). Ligado de fabrica.
 int ajustes_reacao_creditos(void);
