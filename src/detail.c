@@ -7247,7 +7247,7 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
                       (ep && ep->sinopse[0]) ? ep->sinopse : NULL;
   int epNum = ep ? ep->episodio : c + 1;
 
-  if (!epCartao4A() && epModerno() && !detalheRetrato()) {
+  if ((resumo || !epCartao4A()) && epModerno() && !detalheRetrato()) {
     int col=nivel>=1 && foco.fileira==SEC_EPISODIOS ? foco.coluna : foco.colunaLembrada[SEC_EPISODIOS];
     if (!resumo) { if (c!=col) return; }
     if (ep && serie && serie->temporada==ep->temporada && serie->episodio==ep->episodio && serie->progresso>0) {
