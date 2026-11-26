@@ -5207,7 +5207,7 @@ void ajustes_dir(const char *dir) {
     int focoAntigo = -1, viuFoco = 0;
     int sinopseAntiga = -1, sinopseQuatro = -1, viuSinopse = 0;
     int dtsSaidaAntiga = -1, dtsModoAntigo = -1, viuDtsTpk = 0, viuHlsMode = 0;
-    int leg2TamanhoAntigo = -1, viuLeg2Escala = 0, leg2OpacAntiga = -1, viuLeg2Opac = 0;
+    int leg2TamanhoAntigo = -1, viuLeg2Escala = 0, leg2OpacAntiga = -1, viuLeg2Opac = 0, leg2OpacFina = -1;
   while (fgets(linha, sizeof linha, f)) {
     char chave[64]; int v, i, inicio = 0;
     if (sscanf(linha, "%63s%n", chave, &inicio) != 1) continue;
@@ -5300,6 +5300,11 @@ void ajustes_dir(const char *dir) {
       if (v >= 0 && v <= 4) leg2OpacAntiga = v;
       continue;
     }
+    // The 5 % steps of some 2.0.8.9 test builds: 0 Same, n = 100 - (n - 1) * 5 %.
+    if (!strcmp(chave, "legenda2OpacidadeFinaLocal")) {
+      if (v >= 0 && v <= 20) leg2OpacFina = v;
+      continue;
+    }
     // Outline is aesthetic: migrate its removed Automatic value to On.
     if (!strcmp(chave, "vidroContornoLocal") && v == 2) v = 0;
     for (i = 0; i < AJ_N; i++) {
@@ -5341,7 +5346,9 @@ void ajustes_dir(const char *dir) {
     else if (sinopseAntiga >= 0) valor[AJ_HERO_SINOPSE_TAM] = sinopseAntiga > 0;
   }
   /* Rounded up to the grid like the main (video_legenda_opac_antiga). */
-  if (!viuLeg2Opac && leg2OpacAntiga >= 0)
+  if (!viuLeg2Opac && leg2OpacFina >= 0)   // rounded up to the 10 % steps
+    valor[AJ_LEG2_OPACIDADE] = leg2OpacFina ? (100 - (leg2OpacFina - 1) * 5 + 9) / 10 : 0;
+  else if (!viuLeg2Opac && leg2OpacAntiga >= 0)
     valor[AJ_LEG2_OPACIDADE] = leg2OpacAntiga ? video_legenda_opac_antiga(leg2OpacAntiga - 1) / 10 : 0;
   if (!viuLeg2Escala && leg2TamanhoAntigo >= 0) {
     static const int pct[] = {0,60,80,100,120,140,160,170,180,190,200,210,220,230,240,250,260,270,280,290,300};

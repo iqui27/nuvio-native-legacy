@@ -1535,14 +1535,19 @@ static void prefsLer(void) {
     // Opacity: % since 14/11/2026 (leg_opac_pct); the old index only if the
     // file has no % yet, rounded up (video_legenda_opac_antiga).
     else if (!strcmp(chave, "leg_opac_pct") && v >= VIDEO_LEG_OPAC_MIN && v <= VIDEO_LEG_OPAC_MAX && v % 10 == 0) opacPct = v;
-    else if (!strcmp(chave, "leg_opacidade") && v >= 0 && v <= 3) opacAntiga = v;
+    // 0..3 everywhere; 4..19 = the 5 % steps of some 2.0.8.9 test builds.
+    else if (!strcmp(chave, "leg_opacidade") && v >= 0 && v <= 19) opacAntiga = v;
     else if (!strcmp(chave, "leg_familia") && v >= 0 && v < TXT_FAMILIA_N) legEstilo.familia = v;
     else if (!strcmp(chave, "leg_negrito") && (v == 0 || v == 1)) legEstilo.negrito = v;
     else if (!strcmp(chave, "leg_tocado")  && v >= 0) legTocado = v;
   }
   fclose(f);
   if (opacPct >= 0) legEstilo.opacidade = opacPct;
-  else if (opacAntiga >= 0) legEstilo.opacidade = video_legenda_opac_antiga(opacAntiga);
+  else if (opacAntiga >= 4) {   // 95, 90, 85, 80, 70 ... 5 %, rounded up to the 10 % steps
+    static const unsigned char fina[16] = { 95,90,85,80,70,65,60,55,45,40,35,30,20,15,10,5 };
+    int p = (fina[opacAntiga - 4] + 9) / 10 * 10;
+    legEstilo.opacidade = p < VIDEO_LEG_OPAC_MIN ? VIDEO_LEG_OPAC_MIN : p;
+  } else if (opacAntiga >= 0) legEstilo.opacidade = video_legenda_opac_antiga(opacAntiga);
   // New default font (owner 14/11/2026: keep saved choices): a font nobody
   // picked was the old default, Inter; it becomes Plus Jakarta Sans. A font
   // the person picked (PLR_LEG_FONTE) stays.
