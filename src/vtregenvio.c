@@ -62,8 +62,8 @@ int vtregenvio_enviar(const VtRegEntrada *e) {
 #include "video.h"
 #if defined(NV_WEBOS)
 #include "avisos.h"
-#elif !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
-#include <sys/utsname.h>
+#elif !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__) && !defined(_WIN32)
+#include <sys/utsname.h>   // Windows (MinGW) nao tem: la modelo e firmware saem "?"
 #endif
 
 void vtregenvio_aparelho(const char **plataforma, const char **modelo, const char **firmware) {
@@ -92,10 +92,12 @@ void vtregenvio_aparelho(const char **plataforma, const char **modelo, const cha
   plat = "tizen";   // modelo e firmware ainda nao chegam aqui: saem "?"
 #elif defined(__APPLE__)
   plat = "macos";
+#elif defined(_WIN32)
+  plat = "outro";   // fora do vocabulario do Worker; modelo e firmware saem "?"
 #else
   plat = "linux";
 #endif
-#if !defined(NV_ANDROID) && !defined(NV_WEBOS) && !defined(NV_TPK) && !defined(__EMSCRIPTEN__)
+#if !defined(NV_ANDROID) && !defined(NV_WEBOS) && !defined(NV_TPK) && !defined(__EMSCRIPTEN__) && !defined(_WIN32)
   if (!lido) {
     struct utsname u;
     if (uname(&u) == 0) { snprintf(mod, sizeof mod, "%s", u.machine); snprintf(fw, sizeof fw, "%s", u.release); }

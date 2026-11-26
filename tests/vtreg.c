@@ -62,6 +62,37 @@ int main(void) {
   { char longo[200]; memset(longo, 'Z', sizeof longo - 1); longo[sizeof longo - 1] = 0;
     assert(vtreg_texto_seguro(longo, t, sizeof t) && strlen(t) == sizeof t - 1); }
 
+  // GRAMATICA ESTRITA (P1 da auditoria de #856): modelo e UM token tecnico com
+  // letra e digito; firmware e so versao numerica. Texto livre vira "?".
+  {
+    static const char *const MOD_OK[][2] = {
+      { "OLED55C9PSA", "OLED55C9PSA" }, { "TCL 55C735", "TCL-55C735" }, { "Sony \"BRAVIA\" 4K (VH2)", "Sony-BRAVIA-4K-VH2" },
+      { "x86_64", "x86_64" }, { "Xiaomi MiTV-MOOQ1", "Xiaomi-MiTV-MOOQ1" }, { NULL, NULL }
+    };
+    static const char *const MOD_RUIM[] = {
+      "Joao Silva", "Sala", "Chromecast", "SHIELD Android TV", "12345678", "tel11987654321",
+      "Modelo com um nome bem comprido 2024 de mais", "joao@exemplo.com", "-55C735", "", NULL
+    };
+    static const char *const FW_OK[][2] = {
+      { "05.30.25", "05.30.25" }, { "11", "11" }, { "6.18.44-fc-v880", "6.18.44" }, { "03.21.30.1", "03.21.30.1" },
+      { "6.", "6" }, { "1.2.3.4.5", "1.2.3.4" }, { NULL, NULL }
+    };
+    static const char *const FW_RUIM[] = {
+      "versao nova", "v1.2", "1234", "192.168.100.24", "joao@exemplo.com", "", NULL
+    };
+    int i;
+    for (i = 0; MOD_OK[i][0]; i++) assert(vtreg_modelo_tecnico(MOD_OK[i][0], t, sizeof t) && !strcmp(t, MOD_OK[i][1]));
+    for (i = 0; MOD_RUIM[i]; i++) assert(!vtreg_modelo_tecnico(MOD_RUIM[i], t, sizeof t) && !strcmp(t, "?"));
+    assert(!vtreg_modelo_tecnico(NULL, t, sizeof t) && !strcmp(t, "?"));
+    for (i = 0; FW_OK[i][0]; i++) assert(vtreg_firmware_tecnico(FW_OK[i][0], t, sizeof t) && !strcmp(t, FW_OK[i][1]));
+    for (i = 0; FW_RUIM[i]; i++) assert(!vtreg_firmware_tecnico(FW_RUIM[i], t, sizeof t) && !strcmp(t, "?"));
+    assert(!vtreg_firmware_tecnico(NULL, t, sizeof t) && !strcmp(t, "?"));
+    r = norm((VtRegEntrada){ "android", "Joao Silva", "versao nova", "mkv", "hevc", "aac", "sdr", 2147483647, 1080, VTR_TOCOU, 0 });
+    assert(!strcmp(r.modelo, "?") && !strcmp(r.firmware, "?") && r.mbps == 999);
+    r = norm((VtRegEntrada){ "linux", "x86_64", "6.18.44-fc-v880", "mkv", "hevc", "aac", "sdr", 1001, 1080, VTR_TOCOU, 0 });
+    assert(!strcmp(r.modelo, "x86_64") && !strcmp(r.firmware, "6.18.44") && r.mbps == 2);
+  }
+
   // Classificacao da falha.
   assert(vtreg_classificar(&(VtRegSinais){ 1, 0, 0 }) == VTR_NAO_ABRIU);
   assert(vtreg_classificar(&(VtRegSinais){ 1, 1, 0 }) == VTR_CAIU);

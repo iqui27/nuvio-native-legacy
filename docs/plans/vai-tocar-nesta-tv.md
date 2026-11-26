@@ -25,8 +25,12 @@ próxima"; tirar o aviso é decisão de produto e ficou como está.
 O que sai: plataforma, modelo, firmware, contêiner, codec de vídeo, codec de
 áudio, HDR, faixa de bitrate, faixa de altura, resultado e se veio depois de
 uma troca. Título, hash, endereço, nome de fonte, conta e perfil não têm campo.
-O servidor não guarda linha por pessoa nem IP (o IP só entra, como SHA-256
-truncado, na cota de 60 pedidos por hora).
+Modelo e firmware seguem gramática estrita (no app e no Worker): modelo é um
+token técnico curto com letra e dígito (espaços viram `-`), firmware é só
+versão numérica (até 4 grupos de até 3 dígitos); o resto vira `?`. O
+servidor não guarda linha por pessoa nem IP: nem em hash. A cota de 60
+pedidos por hora por IP vive só na memória do Worker; no D1 fica apenas um
+teto global por hora numa chave fixa.
 
 Quando registra: `tocou` quando a fonte prova que tocou
 (`registrarFonteVODTocando`); a falha em `tentarProximaFonteVOD`
@@ -40,10 +44,9 @@ a rota recebendo os corpos que o app gera) e `bash tests/i18n.sh`.
 ## Falta
 
 - Publicar: aplicar a migração 022 e o Worker (só o dono).
+- Windows: envia com plataforma `outro` e modelo/firmware `?` (sem `uname`).
 - Samsung: `.wgt` (WASM) não envia — falta o POST sem thread; `.tpk` envia
   mas sem modelo e firmware (`?`).
 - `sem_audio` existe no vocabulário e não tem sinal automático.
-- As 28 tabelas de idioma receberam o texto em inglês nas 9 chaves novas
-  (pt-PT em português); falta traduzir.
 - Etapa 3, o veredito por fonte, depois de haver dados: rota de leitura
   agregada e o selo na lista de fontes (`src/vaitocar.c` já desenha o chip).

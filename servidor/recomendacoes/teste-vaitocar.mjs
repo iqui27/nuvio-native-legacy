@@ -6,7 +6,8 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import worker from "./src/index.js";
-import { limparVaiTocar, textoSeguro, validarVaiTocar, VAITOCAR_RETENCAO_DIAS } from "./src/vtreg.js";
+import { firmwareTecnico, limparVaiTocar, modeloTecnico, vaitocarZerarCota, validarVaiTocar,
+  VAITOCAR_GLOBAL_HORA, VAITOCAR_RETENCAO_DIAS } from "./src/vtreg.js";
 
 // O MESMO texto que tests/vtreg.c exige de vtreg_json: se o app mudar o
 // formato, os dois testes tem de mudar juntos.
@@ -15,6 +16,7 @@ const DO_APP = '{"v":1,"plataforma":"webos","modelo":"OLED55C9PSA","firmware":"0
   '"altura":2160,"resultado":"tocou","trocou":0}';
 
 function ambiente(t) {
+  vaitocarZerarCota();
   const sqlite = new DatabaseSync(":memory:");
   t.after(() => sqlite.close());
   sqlite.exec("CREATE TABLE limite (chave TEXT PRIMARY KEY, janela INTEGER NOT NULL, n INTEGER NOT NULL, expira INTEGER NOT NULL)");
@@ -40,9 +42,11 @@ test("aceita o registro do app e guarda so contagem", async (t) => {
   assert.equal(linhas[0].n, 3);
   assert.deepEqual(Object.keys(linhas[0]).sort(), ["altura", "audio", "container", "dia", "firmware", "hdr",
     "mbps", "modelo", "n", "plataforma", "resultado", "trocou", "video"]);
-  // O IP nao esta em lugar nenhum, nem na cota.
+  // O IP nao esta em lugar nenhum do D1, nem em hash: a unica chave de cota
+  // gravada e a global, fixa.
   const tudo = JSON.stringify(linhas) + JSON.stringify(sqlite.prepare("SELECT * FROM limite").all());
   assert.ok(!tudo.includes("192.0.2.7"));
+  assert.deepEqual(sqlite.prepare("SELECT chave FROM limite").all().map((l) => l.chave), ["vaitocar:global"]);
   // Outro resultado e outra linha.
   assert.equal((await pedir(env, { ...JSON.parse(DO_APP), resultado: "nao_abriu", trocou: 1 })).status, 200);
   assert.equal(sqlite.prepare("SELECT COUNT(*) c FROM vaitocar").get().c, 2);
@@ -53,9 +57,7 @@ test("recusa titulo, hash, endereco e qualquer chave a mais", async (t) => {
   const base = JSON.parse(DO_APP);
   const ruins = [
     { ...base, titulo: "Filme" }, { ...base, url: "http://a/b.mkv" }, { ...base, hash: "abc" },
-    { ...base, modelo: "http://servidor/filme.mkv" }, { ...base, modelo: "0123456789abcdef0123456789abcdef01234567" },
-    { ...base, modelo: "192.168.100.24" }, { ...base, firmware: "joao@exemplo.com" }, { ...base, modelo: "Filme (2024)" },
-    { ...base, modelo: "x".repeat(48) }, { ...base, video: "Filme.2024.HEVC" }, { ...base, container: "mkv " },
+    { ...base, modelo: "x".repeat(65) }, { ...base, firmware: 11 }, { ...base, video: "Filme.2024.HEVC" }, { ...base, container: "mkv " },
     { ...base, hdr: "DolbyVision" }, { ...base, resultado: "ok" }, { ...base, mbps: 23 }, { ...base, altura: 2161 },
     { ...base, trocou: 2 }, { ...base, v: 2 }, { ...base, modelo: 5 }, [base], "x", null,
     (() => { const c = { ...base }; delete c.audio; return c; })(),
@@ -65,10 +67,44 @@ test("recusa titulo, hash, endereco e qualquer chave a mais", async (t) => {
   assert.equal((await pedir(env, JSON.stringify({ ...base, modelo: "a" }) + " ".repeat(2000))).status, 413);
   assert.equal(sqlite.prepare("SELECT COUNT(*) c FROM vaitocar").get().c, 0);
   assert.equal(validarVaiTocar({ ...base, modelo: "?", firmware: "03.21.30.1" })?.length, 11);
-  assert.ok(textoSeguro("Sony BRAVIA 4K VH2", 47) && !textoSeguro("a  b", 47) && !textoSeguro("", 47));
 });
 
-test("cota por IP e retencao", async (t) => {
+test("modelo e firmware: so valor tecnico; texto livre vira ? e nao entra no agregado", async (t) => {
+  const { sqlite, env } = ambiente(t);
+  const base = JSON.parse(DO_APP);
+  const livres = [
+    { modelo: "http://servidor/filme.mkv" }, { modelo: "0123456789abcdef0123456789abcdef01234567" },
+    { modelo: "192.168.100.24" }, { firmware: "joao@exemplo.com" }, { modelo: "Filme (2024)" },
+    { modelo: "Joao Silva" }, { modelo: "Sala" }, { modelo: "Joao-Silva" }, { modelo: "x".repeat(48) },
+    { modelo: "tel11987654321" }, { firmware: "versao nova" }, { firmware: "192.168.100.24" },
+    { firmware: "6.18.44-generic" }, { firmware: "1234" }, { modelo: "", firmware: "" },
+  ];
+  for (const l of livres) assert.equal((await pedir(env, { ...base, ...l })).status, 200, JSON.stringify(l));
+  const guardado = sqlite.prepare("SELECT DISTINCT modelo, firmware FROM vaitocar").all();
+  for (const g of guardado) {
+    assert.ok(g.modelo === "?" || g.modelo === base.modelo, JSON.stringify(g));
+    assert.ok(g.firmware === "?" || g.firmware === base.firmware, JSON.stringify(g));
+  }
+  assert.ok(!JSON.stringify(guardado).match(/joao|Joao|Sala|Filme|http|192\.168|abcdef|generic|nova/));
+  // O que e tecnico passa como veio.
+  for (const m of ["OLED55C9PSA", "TCL-55C735", "Sony-BRAVIA-4K-VH2", "x86_64", "MiTV-MOOQ1", "QN65Q80BAGXZD"])
+    assert.equal(modeloTecnico(m), m);
+  for (const f of ["05.30.25", "11", "6.18.44", "03.21.30.1", "10.0.0.1"]) assert.equal(firmwareTecnico(f), f);
+  for (const m of ["Chromecast", "SHIELD Android TV", "12345678", "a"]) assert.equal(modeloTecnico(m), "?");
+  for (const f of ["6.", "1.2.3.4.5", "255.255.255.0", "v1.2"]) assert.equal(firmwareTecnico(f), "?");
+});
+
+test("teto global por hora no D1, sem chave de IP", async (t) => {
+  const { sqlite, env } = ambiente(t);
+  const janela = Math.floor(Date.now() / 1000 / 3600);
+  // A tabela `limite` ja no teto global: qualquer IP novo recebe 429.
+  sqlite.prepare("INSERT INTO limite (chave, janela, n, expira) VALUES (?, ?, ?, ?)")
+    .run("vaitocar:global", janela, VAITOCAR_GLOBAL_HORA, Math.floor(Date.now() / 1000) + 7200);
+  assert.equal((await pedir(env, DO_APP, "198.51.100.9")).status, 429);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) c FROM vaitocar").get().c, 0);
+});
+
+test("cota por IP (so em memoria) e retencao", async (t) => {
   const { sqlite, env } = ambiente(t);
   let ultimo = 0;
   for (let i = 0; i < 61; i++) ultimo = (await pedir(env, DO_APP)).status;

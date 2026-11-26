@@ -95,6 +95,63 @@ nao:
   return 0;
 }
 
+// MODELO (P1 da auditoria de #856): UM token tecnico curto. Depois do filtro
+// acima, espacos viram '-' ("Sony BRAVIA 4K VH2" -> "Sony-BRAVIA-4K-VH2"); o
+// token tem de ter letra E digito (codigo de modelo, nao nome de pessoa nem
+// de sala), no maximo VTR_MODELO_MAX caracteres e nenhuma sequencia de 7+
+// digitos (telefone, serial). Qualquer outra coisa vira "?".
+int vtreg_modelo_tecnico(const char *s, char *out, size_t cap) {
+  char t[64];
+  size_t i, n;
+  int letra = 0, dig = 0, seq = 0;
+  if (!cap) return 0;
+  if (!vtreg_texto_seguro(s, t, sizeof t)) goto nao;
+  n = strlen(t);
+  if (n > VTR_MODELO_MAX || !(ehDig((unsigned char)t[0]) || ((t[0] | 32) >= 'a' && (t[0] | 32) <= 'z'))) goto nao;
+  for (i = 0; i < n; i++) {
+    unsigned char c = (unsigned char)t[i];
+    if (c == ' ') t[i] = '-';
+    if (ehDig(c)) { dig = 1; if (++seq >= 7) goto nao; } else seq = 0;
+    if ((c | 32) >= 'a' && (c | 32) <= 'z') letra = 1;
+  }
+  if (!letra || !dig || n + 1 > cap) goto nao;
+  memcpy(out, t, n + 1);
+  return 1;
+nao:
+  snprintf(out, cap, "?");
+  return 0;
+}
+
+// FIRMWARE: so versao numerica, 1 a 4 grupos de 1 a 3 digitos ("05.30.25",
+// "11", "6.18.44"). Do texto cru vale o prefixo numerico ("6.18.44-generic"
+// -> "6.18.44"); grupo com 4+ digitos, nada numerico no comeco ou quatro
+// grupos com cara de IPv4 viram "?".
+int vtreg_firmware_tecnico(const char *s, char *out, size_t cap) {
+  char t[VTR_FIRMWARE_MAX + 1];
+  int g = 0, grande = 0;
+  size_t n = 0;
+  if (!cap) return 0;
+  if (!s) goto nao;
+  while (g < 4) {
+    int d = 0, v = 0;
+    while (ehDig((unsigned char)*s)) { if (++d > 3) goto nao; v = v * 10 + (*s - '0'); t[n++] = *s++; }
+    if (!d) { if (g == 0) goto nao; n--; break; }   // "6." sem digito depois: tira o ponto
+    g++;
+    if (v > 99) grande = 1;
+    if (*s != '.' || g == 4) break;
+    t[n++] = *s++;
+  }
+  if (ehDig((unsigned char)*s)) goto nao;
+  t[n] = 0;
+  if (g == 4 && grande) goto nao;
+  if (n + 1 > cap) goto nao;
+  memcpy(out, t, n + 1);
+  return 1;
+nao:
+  snprintf(out, cap, "?");
+  return 0;
+}
+
 static int faixa(int v, const int *tetos, int n) {
   int i;
   if (v <= 0) return 0;
@@ -128,13 +185,14 @@ int vtreg_normalizar(const VtRegEntrada *e, VtRegRegistro *r) {
   snprintf(r->plataforma, sizeof r->plataforma, "outro");
   for (i = 0; PLAT[i]; i++)
     if (e->plataforma && !strcmp(e->plataforma, PLAT[i])) snprintf(r->plataforma, sizeof r->plataforma, "%s", PLAT[i]);
-  vtreg_texto_seguro(e->modelo, r->modelo, sizeof r->modelo);
-  vtreg_texto_seguro(e->firmware, r->firmware, sizeof r->firmware);
+  vtreg_modelo_tecnico(e->modelo, r->modelo, sizeof r->modelo);
+  vtreg_firmware_tecnico(e->firmware, r->firmware, sizeof r->firmware);
   vocab(e->container, CONTAINER, r->container, sizeof r->container);
   vocab(e->video, VIDEO, r->video, sizeof r->video);
   vocab(e->audio, AUDIO, r->audio, sizeof r->audio);
   vocab(e->hdr, HDR, r->hdr, sizeof r->hdr);
-  r->mbps = faixa((e->kbps + 999) / 1000, MBPS, 7);
+  // Sem `+ 999` em int: kbps perto de INT_MAX estourava (P2 da auditoria).
+  r->mbps = faixa(e->kbps / 1000 + (e->kbps % 1000 != 0), MBPS, 7);
   if (e->kbps <= 0) r->mbps = 0;
   r->altura = faixa(e->altura, ALT, 6);
   r->resultado = e->resultado;
