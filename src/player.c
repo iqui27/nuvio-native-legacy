@@ -967,7 +967,7 @@ static long tmdbDoTocando(int *tt, int *te) {
 #if defined(NV_ANDROID) || defined(NV_NATIVE_SEEK_TEST)
 static double retomarSeg;
 #endif
-#if defined(NV_ANDROID) || defined(NV_TPK)
+#if defined(NV_ANDROID) || defined(NV_TPK) || defined(NV_NATIVE_SEEK_TEST)
 static int retomadaNaPreparacao;
 #endif
 // "Assistir do comeco" (issue #46): trava da sessao, armada por
