@@ -186,7 +186,7 @@ static void ajcCenaLayouts(void) {
     gfx_recorte(ajc_x(0), ajc_y(0), ajc_px(640), ajc_px(360));
     if (i == atual) ajc_foco(x, y, w, h, 12, 1);
     ajc_ret(x + w * 0.5f - 30, y + h + 32, 60, 6, 3, i == atual ? 1 : 0.6f, i == atual ? 1 : 0.6f, i == atual ? 1 : 0.6f, i == atual ? 0.9f : 0.35f);
-    if (i == atual) ajc_acento_ret(x + w * 0.5f - 30, y + h + 32, 60, 6, 3, 1);
+    if (i == atual) ajc_ret(x + w * 0.5f - 30, y + h + 32, 60, 6, 3, 1, 1, 1, 0.9f);
   }
 }
 static void ajcCenaHome(int op) {

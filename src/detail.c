@@ -2561,6 +2561,15 @@ static int epApple(void) {
 #endif
   return ajustes_home_layout() != HOME_LAYOUT_PADRAO;
 }
+// 2.1 4A: o CARTAO de episodio e o mesmo na TV em Padrao/Moderna/Dinamica,
+// mas os layouts continuam donos das posicoes da pagina. Nao misturar os dois
+// testes: epApple/epModerno falam de pagina; epCartao4A fala do cartao.
+static int epCartao4A(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return 0;
+#endif
+  return 1;
+}
 static float epTempH(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return 48;
@@ -2571,27 +2580,27 @@ static float epCardW(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return (NV_TELA_W-NV_DETP_X-ANC(48)-3*24)/4;
 #endif
-  return epApple() ? 420.0f : NV_DETP_EP_W;
+  return epCartao4A() ? 420.0f : NV_DETP_EP_W;
 }
 static float epCardH(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return epCardW()*9/16+200;
 #endif
-  return epModerno() ? 530 : epApple() ? 414 : NV_DETP_EP_H;   // 4A: miniatura + duas linhas
+  return epCartao4A() ? 414 : NV_DETP_EP_H;   // 4A: miniatura + duas linhas
 }
 static float epCardPasso(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return epCardW()+24;
 #endif
-  return epModerno() ? 448 : epApple() ? 452 : NV_DETP_EP_PASSO;
+  return epCartao4A() ? 452 : NV_DETP_EP_PASSO;
 }
 static float epThumbH(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return epCardW()*9/16;
 #endif
-  return epApple() ? 236.0f : NV_DETP_EP_THUMB_H;
+  return epCartao4A() ? 236.0f : NV_DETP_EP_THUMB_H;
 }
-static float epAppleExtra(void) { return epApple() ? epCardH() - 414.0f : 0.0f; }
+static float epAppleExtra(void) { return epCartao4A() ? epCardH() - 414.0f : 0.0f; }
 // Bloco das Notas na serie (cabecalho + fileira + vao), que empurra abas e
 // elenco; 0 enquanto as notas nao chegaram.
 // Topo do cabecalho: fundo dos cartoes de episodio + o vao antes das notas (60,
@@ -6933,10 +6942,10 @@ static void desenhaShuffle(GfxRect r, float f, float a) {
 // 14% / #34363E, texto branco) e FOCADA (pilula cheia no acento com a luz,
 // tinta de contraste). A contagem de episodios vai ao lado, em 16 a 35%.
 static float temporadaBrilho(int sel) {
-  return !sel ? 0.0f : epApple() && !epModerno() && nivel >= 1 && foco.fileira == SEC_EPISODIOS ? 1.0f : .6f;
+  return !sel ? 0.0f : epCartao4A() && nivel >= 1 && foco.fileira == SEC_EPISODIOS ? 1.0f : .6f;
 }
 static float temporadaFocoVisual(int sel, float f) {
-  return sel && epApple() && !epModerno() && nivel >= 1 && foco.fileira == SEC_EPISODIOS ? 1.0f : f;
+  return sel && epCartao4A() && nivel >= 1 && foco.fileira == SEC_EPISODIOS ? 1.0f : f;
 }
 static void desenhaTemporada(GfxRect r, int c, float f, float a) {
   char rot[32]; rotuloTemporada(c,rot,sizeof rot);
@@ -7130,7 +7139,7 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
   // EPISODIO EM FOCO COMO NO 2.1 4A (tv.css .cz.foco): a miniatura SOBE, com
   // escala 1.08 e a sombra caida, sem placa atras e sem aro. So no cartao
   // epApple da TV (o moderno e o desktop tem o foco deles logo abaixo).
-  int ep4a = epApple() && !(epModerno() && !detalheRetrato()) && !layout_desktop_ativo();
+  int ep4a = epCartao4A();
   if (ep4a && f > .005f) {
     float k = .08f * anim_clamp(f, 0, 1);
     th.x -= th.w * k * .5f; th.y -= th.h * k * .5f; th.w *= 1.0f + k; th.h *= 1.0f + k;
@@ -7140,8 +7149,8 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
   if (layout_desktop_ativo()) th=detalheFoco(th,raioTh,f,.025f,a);
   else
 #endif
-  if (epModerno() && !detalheRetrato()) th=detalheFoco(th,raioTh,f,.05f,a);
-  else if (!epApple()) { foco_anel(th, raioTh, f, a); th = foco_zoom(th, f); }
+  if (!epCartao4A() && epModerno() && !detalheRetrato()) th=detalheFoco(th,raioTh,f,.05f,a);
+  else if (!epCartao4A()) { foco_anel(th, raioTh, f, a); th = foco_zoom(th, f); }
 
   const CatItem *serie = cat_item(idx);
   const char *arte = (ep && ep->thumb[0]) ? ep->thumb
@@ -7238,7 +7247,7 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
                       (ep && ep->sinopse[0]) ? ep->sinopse : NULL;
   int epNum = ep ? ep->episodio : c + 1;
 
-  if (epModerno() && !detalheRetrato()) {
+  if ((resumo || !epCartao4A()) && epModerno() && !detalheRetrato()) {
     int col=nivel>=1 && foco.fileira==SEC_EPISODIOS ? foco.coluna : foco.colunaLembrada[SEC_EPISODIOS];
     if (!resumo) { if (c!=col) return; }
     if (ep && serie && serie->temporada==ep->temporada && serie->episodio==ep->episodio && serie->progresso>0) {
@@ -7306,7 +7315,7 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
     return;
   }
 #endif
-  if (epApple()) {
+  if (epCartao4A()) {
     // O CARTAO DO 2.1 4A (design/2.1/titulo.html): sob a miniatura so "N · Nome"
     // e a linha "47 min" com os selos de pular; o progresso e um trilho no
     // realce dentro da miniatura e o visto e o selo no canto dela (acima). Sem
@@ -7317,7 +7326,11 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
       vistoep_estado(serie->imdb, ep->temporada, ep->episodio) == 1;
     int current = serie && ep && serie->temporada == ep->temporada &&
       serie->episodio == ep->episodio;
-    int progress = current && !watched ? serie->progresso : 0;
+    int progress = 0;
+    if (!watched && ep) {
+      progress = current && serie ? serie->progresso
+                                  : extras_ep_progresso(ep->temporada, ep->episodio);
+    }
     int tint = 204 + (int)(39.0f * anim_clamp(f, 0, 1));   // 80% em repouso, cheio em foco
     char title[240], line[96] = "";
     if (progress > 0 && progress < 100) {
@@ -7325,19 +7338,22 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
       GfxRect z = { th.x - th.w * k * .5f, th.y - th.h * k * .5f, th.w * (1.0f + k), th.h * (1.0f + k) };
       GfxRect track = { z.x + 12.0f, z.y + z.h - 10.0f - 5.0f, z.w - 24.0f, 5.0f };
       ajustes_acento(&ar, &ag, &ab);
+      // 4A (.cz::after): o trilho fica sobre um veu escuro da base. Sem ele a
+      // parte vazia some quando a still e clara.
+      gfx_veu_base(z, raioTh, .30f, .55f * a);
       gfx_cor(track, .5f, 1, 1, 1, .22f * a);
       track.w *= progress / 100.0f; gfx_cor(track, .5f, ar, ag, ab, a);
     }
     if (epNome) snprintf(title, sizeof title, "%d · %s", epNum, epNome);
     else snprintf(title, sizeof title, i18n("Episódio %d"), epNum);
-    txt_desenhar_alpha(txt_linha_corta(TXT_DET_META2, title, tint, tint, tint, 255, textW),
+    txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_ITEM, title, tint, tint, tint, 255, textW),
                        textX, textY, a);
     if (epNaoExibido(ep)) {
       const char *date = epData;
       if (date && !ajustes_data_completa() && strlen(date) >= 4) date += strlen(date) - 4;
       if (date) snprintf(line, sizeof line, i18n("sai %s"), date);
       else snprintf(line, sizeof line, "%s", i18n("NÃO EXIBIDO"));
-    } else if (progress > 0 && progress < 100 && serie->restanteMin > 0)
+    } else if (current && progress > 0 && progress < 100 && serie && serie->restanteMin > 0)
       snprintf(line, sizeof line, i18n("faltam %d min"), serie->restanteMin);
     else if (epDur) snprintf(line, sizeof line, "%s", epDur);
     { TxtLinha l = txt_linha_corta(TXT_CAPTION, line, 243, 242, 239, 255, textW);
@@ -8696,7 +8712,6 @@ static void desenhaComentarios(float x, float y, float a) {
     if (group) gfx_transformar(cx+COM_CARD_W*.5f,y+COM_CARD_H*.5f,zoom.w/card.w,0,0);
     moldura(card,20,a);
     plrui_linha_foco(card,20,fc*a);
-    foco_anel(card,20.0f/COM_CARD_H,fc,a);
     if (i==n) {
       gfx_icone((GfxRect){cx+COM_CARD_W*.5f-18,y+52,36,36},"aj_chevron-right",.9f,.92f,.96f,a);
       TxtLinha more=txt_linha(TXT_ILHA_NOME,i18n("Ver todos os comentários"),243,242,239,255);
@@ -9056,7 +9071,7 @@ static void desenhaRodape(int r,float a) {
       GfxRect zoom=foco_zoom(card,f);
       int group=!gfx_transformado();
       if (group) gfx_transformar(card.x+380,y+150,zoom.w/card.w,0,0);
-      moldura(card,22,a); plrui_linha_foco(card,22,f*a); foco_anel(card,22.0f/300,f,a);
+      moldura(card,22,a); plrui_linha_foco(card,22,f*a);
       char text[1200],credit[256];
       snprintf(text,sizeof text,"“%s”",seriefrases_texto(i)); quoteCredit(i,credit,sizeof credit);
       txt_bloco_corta(TXT_LOG_T34,text,243,242,239,card.x+32,y+30,696,44,a,4);

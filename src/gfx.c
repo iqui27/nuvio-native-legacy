@@ -4235,7 +4235,7 @@ void gfx_vidro_elevacao(GfxRect r, float foco, float a) {
   float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco);
   GfxRect s = { r.x - 44.0f, r.y - 44.0f + 18.0f, r.w + 88.0f, r.h + 88.0f };
   if (f <= 0.01f || a <= 0.001f || layout_desktop_ativo()) return;
-  gfx_rect(s, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.60f * f * a);
+  gfx_rect(s, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.82f * f * a);
 }
 
 // OS CANAIS DE FUNDO DA LUZ ASSADA (fundo.c: "Arte borrada" e "Frost" de tela
@@ -4527,7 +4527,6 @@ void gfx_vidro_foco(GfxRect r, float raio, float foco, float a) {
   gfx_vidro_elevacao(r, f, a);
   if (ajustes_vidro()) gfx_cor(r, raio, 1, 1, 1, 0.14f * f * a);
   else gfx_cor(r, raio, NV_COR_FOCO_RGB, f * a);
-  gfx_vidro_aro(r, raio, 2.0f, 1, 1, 1, 0.90f * f * a);
 }
 // Accent focus keeps the caller's geometry and light foreground. Without glass,
 // use an opaque dark tint, limited by the accent's contrast ink. With glass,
@@ -4562,15 +4561,13 @@ int gfx_foco_placa(GfxRect r, float raio, float foco, float a) {
   return 1;
 }
 void gfx_vidro_cartao(GfxRect r, float raio, float foco, float a) {
-  float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco), cr, cg, cb;
+  float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco);
   if (f <= 0.01f || a <= 0.001f) return;
   if (layout_desktop_ativo()) return;
-  ajustes_acento(&cr, &cg, &cb);
-  // CARTAZ EM FOCO (tv.css .cz.foco): a sombra caida de quem subiu, e nao um
-  // fio. Nem toda tela cresce o cartaz ainda, entao fica o halo fraco do realce
-  // por fora, igual com "Contorno do vidro" ligado ou nao: nunca o anel duro.
+  (void)raio;
+  // CARTAZ EM FOCO (tv.css .cz.foco): sombra caida e escala. Sem halo nem
+  // anel, de acento ou nao — o realce colorido ficou so para controles.
   gfx_vidro_elevacao(r, f, a);
-  gfx_anel_fora(r, raio, 1.0f, 9.0f, cr, cg, cb, 0.22f * f * a);
 }
 void gfx_vidro_pilula_cheia(GfxRect r, float raio, float foco, float a) {
   float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco), cr, cg, cb;

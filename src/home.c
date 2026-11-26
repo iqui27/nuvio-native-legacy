@@ -1832,7 +1832,7 @@ static float escalaDe(TipoFileira t) {
   // O cartão Herói já é a fileira inteira: crescer no foco o tiraria da
   // tela. Quem diz que ele está em foco é o anel, como no redondo.
   if (t == FILEIRA_HEROI || t == FILEIRA_FICHA) return 0.0f;
-  return layout_desktop_ativo() ? .025f : ajustes_borda_foco() ? 0.0f : 0.06f;
+  return layout_desktop_ativo() ? .025f : 0.06f;
 }
 // --- MEDIDA POR FILEIRA, e nao por tipo -------------------------------------
 //
@@ -1858,7 +1858,7 @@ static float limita43(float fator, float e) {
   hMax = NV_TELA_H - (topoFileiras() + NV_LEGACY_ROW_HEAD_H) - NV_43_FOLGA_BASE;
   // O foco cresce para BAIXO no 4:3 (cardY), e o anel fica por fora.
   hMax = hMax / (1.0f + escalaDe(FILEIRA_DESTAQUE_QUADRADO))
-       - (ajustes_borda_foco() ? NV_ANEL_FOCO : 0.0f);
+;
   eMax = hMax / (NV_DESTAQUE_QUADRADO_H * gfx_poster_k());
   if (eMax < 1.0f) eMax = 1.0f;
   teto = fator >= fil_tipo_fator(FIL_TIPO_DESTAQUE_QUADRADO_G)
@@ -1883,7 +1883,7 @@ static float limitaPosterG(float e) {
   if (layoutHome() == HOME_LAYOUT_DINAMICA) return e;
   hMax = NV_TELA_H - (topoFileiras() + NV_LEGACY_ROW_HEAD_H) - NV_43_FOLGA_BASE;
   hMax = hMax / (1.0f + escalaDe(FILEIRA_POSTER_GRANDE))
-       - (ajustes_borda_foco() ? NV_ANEL_FOCO : 0.0f);
+;
   return e * (NV_POSTER_G_H * gfx_poster_k()) > hMax ? hMax / (NV_POSTER_G_H * gfx_poster_k()) : e;
 }
 // A fileira do Pôster grande, ou a pasta vestida dele. A pasta so entra nos
@@ -2061,7 +2061,7 @@ static float sobraDireitaFoco(int r, float abre) {
   if (abre > 0.0f)
     w += (alturaFil(r) * esc * NV_EXP_ASPECTO - lw * esc) * abre;
   return (w - lw * esc) * 0.5f + w * 0.5f - lw * 0.5f
-       + (ajustes_borda_foco() ? NV_ANEL_FOCO : 0.0f);
+;
 }
 
 // Alvo da rolagem horizontal da fileira `r` com a coluna `col` em foco, a
@@ -8204,21 +8204,8 @@ static void pintarCartao(const CartaoFoco *k, float raio) {
                      f, varreFoco);
     return;
   }
-          if (f > 0.01f && ajustes_borda_foco()) {
-            GfxRect borda = { px - NV_ANEL_FOCO, py - NV_ANEL_FOCO,
-                              w + NV_ANEL_FOCO * 2, h + NV_ANEL_FOCO * 2 };
-            float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-            // RAIO DE FORA = raio do cartaz + espessura do anel, em pixels,
-            // normalizado pelo lado menor DA BORDA. Passar o `raio` do cartaz
-            // direto dava um canto de fora mais fechado que o de dentro — as
-            // "pontas feias" da foto do dono (21/09/2026); e a conta que a
-            // fileira de colecoes ja fazia.
-            { float menor = w < h ? w : h;
-              if (ajustes_vidro()) gfx_vidro_cartao((GfxRect){px, py, w, h}, raio, f, 1.0f);
-              else
-              gfx_cor(borda, (raio * menor + NV_ANEL_FOCO) / (menor + 2 * NV_ANEL_FOCO),
-                      ar, ag, ab, f); }
-          }
+          // 2.1: a arte em foco sobe com sombra + escala, sem aro no acento.
+          if (f > 0.01f) gfx_vidro_elevacao((GfxRect){px, py, w, h}, f, 1.0f);
           GfxRect card = { px, py, w, h };
           if (layout_desktop_ativo() && f>.01f && !ponteiro_mouse()) foco_anel(card,raio,f,1);
           // TRAILER NO CARTAZ (modo No card): o furo arredondado DEPOIS do anel
