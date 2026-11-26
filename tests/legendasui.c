@@ -37,8 +37,19 @@ void ajustes_leg_contorno_rgb(int *r, int *g, int *b) { *r = *g = *b = 0; }
 int video_n_legenda(void) { return nEmb; }
 const VideoFaixa *video_legenda(int i) { return i >= 0 && i < nEmb ? &emb[i] : NULL; }
 const char *player_id_canal(void) { return ""; }
+// The real list bumps a counter on every change; the tests edit add[] in
+// place, so the stub version is a fingerprint of what a copy would return.
+static int copias;
+unsigned addons_legendas_versao(void) {
+  const unsigned char *b = (const unsigned char *)add;
+  size_t k, n = (size_t)(nAdd > 0 ? nAdd : 0) * sizeof *add;
+  unsigned h = 2166136261u ^ (unsigned)nAdd;
+  for (k = 0; k < n; k++) h = (h ^ b[k]) * 16777619u;
+  return h;
+}
 int addons_legendas_copiar(Legenda *d, int max, unsigned *g, int *p) {
   int i, n = nAdd < max ? nAdd : max;
+  copias++;
   for (i = 0; i < n; i++) d[i] = add[i];
   if (g) *g = 1;
   if (p) *p = 1;
@@ -183,6 +194,17 @@ int main(void) {
   assert(linhas[1].tipo == LR_IDIOMA && linhas[2].tipo == LR_IDIOMA && linhas[3].tipo == LR_MAIS);
   assert(mesmoGrupo(linhas[1].idioma, "pt") && mesmoGrupo(linhas[2].idioma, "en"));
   assert(linhas[1].n == 5 && linhas[2].n == 3);            // pt: 2 embutidas + 3 addons; en: 1 + 2
+  // Every frame rebuilds the rows; the list is copied again only when it changed.
+  { int c0 = copias, n0 = nGruposV;
+    montarLinhas(); montarLinhas();
+    assert(copias == c0 && nGruposV == n0);
+    snprintf(add[5].url, sizeof add[5].url, "https://h.invalid/6b");   // a revision in place
+    montarLinhas(); assert(copias == c0 + 1 && !strcmp(cand[nCand - 1].leg.url, "https://h.invalid/6b"));
+    snprintf(emb[2].idioma, sizeof emb[2].idioma, "es");               // an embedded track changed
+    montarLinhas(); assert(copias == c0 + 2);
+    snprintf(emb[2].idioma, sizeof emb[2].idioma, "en");
+    snprintf(add[5].url, sizeof add[5].url, "https://h.invalid/6");
+    montarLinhas(); assert(copias == c0 + 3 && nGruposV == n0); }
   { char gk[96]; snprintf(gk, sizeof gk, "g|%s", chaveIdioma("pt"));
     assert(!strcmp(linhas[foco].chave, gk));                 // abre no grupo da que toca
     subDe(gk, sub, sizeof sub); assert(strstr(sub, "Embutida"));

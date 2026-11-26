@@ -291,6 +291,10 @@ const Legenda *addons_legenda(int i);
 // (optional) the same answer as addons_legendas_prontas(), from the same lock.
 // Returns how many entries were copied.
 int  addons_legendas_copiar(Legenda *dst, int max, unsigned *geracao, int *prontas);
+// Moves on every change of the subtitle list (and only then), so a caller
+// that redraws every frame can skip addons_legendas_copiar when it has not
+// moved.
+unsigned addons_legendas_versao(void);
 #ifdef NV_SHOT_HOOKS
 void addons_shot_legendas(const Legenda *v, int n);
 #endif

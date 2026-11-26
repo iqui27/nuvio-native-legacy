@@ -1150,6 +1150,9 @@ static pthread_t fioLeg;
 static int fioLegVivo, fioLegCriado, legParar;
 static char legId[64], legTipo[16];
 static unsigned legGeracao;
+// Bumped on every change of legs/nLegs (under legTrava): the subtitle sheet
+// (legendasui.c) rebuilds its candidates only when this moves.
+static unsigned legVersao;
 static uint64_t legSessao;
 // Extras do Stremio do arquivo que toca (#201). Valem so para `id`: o titulo
 // seguinte nao herda o nome nem o hash do anterior.
@@ -1202,6 +1205,14 @@ const Legenda *addons_legenda(int i) {
   return r;
 }
 
+unsigned addons_legendas_versao(void) {
+  unsigned v;
+  pthread_mutex_lock(&legTrava);
+  v = legVersao;
+  pthread_mutex_unlock(&legTrava);
+  return v;
+}
+
 int addons_legendas_copiar(Legenda *dst, int max, unsigned *geracao, int *prontas) {
   int n, i;
   pthread_mutex_lock(&legTrava);
@@ -1222,7 +1233,7 @@ void addons_shot_legendas(const Legenda *v, int n) {
   if (n < 0) n = 0;
   memcpy(legs, v, (size_t)n * sizeof *v);
   nLegs = n;
-  legGeracao++;
+  legGeracao++; legVersao++;
   pthread_mutex_unlock(&legTrava);
 }
 #endif
@@ -1454,6 +1465,7 @@ static void publicarLegendas(LegBusca *B, int final) {
       memcpy(legs, achadas, sizeof legs);
       nLegs = n;
     }
+    legVersao++;
   }
   pthread_mutex_unlock(&legTrava);
   if (atual) nv_perfil_sessao_destravar();
@@ -2358,7 +2370,7 @@ void addons_legendas_reiniciar(void) {
   // Zerar o alvo e o que desarma a guarda de "mesmo pedido" logo abaixo; a
   // geracao nova faz o fio vivo, se houver, descartar o que ja tinha juntado.
   legId[0] = 0; legTipo[0] = 0;
-  nLegs = 0;
+  nLegs = 0; legVersao++;
   legGeracao++;
   pthread_mutex_unlock(&legTrava);
   if (id[0]) addons_buscar_legendas(id, tp[0] ? tp : "movie");
@@ -2386,7 +2398,7 @@ void addons_buscar_legendas(const char *imdb, const char *tipo) {
   snprintf(legTipo, sizeof legTipo, "%s", tp);
   legGeracao++; legSessao = nv_perfil_sessao_ler();
   legManter = 0;
-  nLegs = 0;
+  nLegs = 0; legVersao++;
   if (fioLegVivo) { pthread_mutex_unlock(&legTrava); return; }
   juntar = fioLegCriado;
   pthread_mutex_unlock(&legTrava);
@@ -2431,7 +2443,7 @@ void addons_legendas_fonte(const char *imdb, const char *tipo, const char *arqui
   snprintf(legTipo, sizeof legTipo, "%s", tp);
   legGeracao++; legSessao = nv_perfil_sessao_ler();
   legManter = manter;
-  if (!manter) nLegs = 0;
+  if (!manter) { nLegs = 0; legVersao++; }
   printf("[legendas] fonte conhecida: refazendo a busca com extras%s\n",
          manter ? " (soma a lista atual)" : "");
   fflush(stdout);
@@ -4085,7 +4097,7 @@ void addons_encerrar(void) {
   pthread_mutex_unlock(&legTrava);
   if (juntarLeg) pthread_join(fioLeg, NULL);
   pthread_mutex_lock(&legTrava);
-  fioLegCriado = fioLegVivo = 0; nLegs = 0;
+  fioLegCriado = fioLegVivo = 0; nLegs = 0; legVersao++;
   pthread_mutex_unlock(&legTrava);
   free(resultado); resultado = NULL; nResultado = 0;
   estado = ADD_PARADO;
@@ -4202,7 +4214,7 @@ void addons_abrir_sessao(void) {
   }
   stream_invalidar("profile opened");
   pthread_mutex_lock(&legTrava);
-  legId[0] = legTipo[0] = 0; nLegs = legManter = 0;
+  legId[0] = legTipo[0] = 0; nLegs = legManter = 0; legVersao++;
   memset(legs, 0, sizeof legs); memset(&legExt, 0, sizeof legExt);
   hashDeUrl[0] = hashMedido[0] = 0; hashTam = 0;
   legGeracao++; legSessao = sessao;

@@ -29,8 +29,19 @@ int faixas_estilo_topo(void) { return 0; }
 int video_n_legenda(void) { return nEmb; }
 const VideoFaixa *video_legenda(int i) { return i >= 0 && i < nEmb ? &emb[i] : NULL; }
 const char *player_id_canal(void) { return ""; }
+// The real list bumps a counter on every change; the tests edit add[] in
+// place, so the stub version is a fingerprint of what a copy would return.
+static int copias;
+unsigned addons_legendas_versao(void) {
+  const unsigned char *b = (const unsigned char *)add;
+  size_t k, n = (size_t)(nAdd > 0 ? nAdd : 0) * sizeof *add;
+  unsigned h = 2166136261u ^ (unsigned)nAdd;
+  for (k = 0; k < n; k++) h = (h ^ b[k]) * 16777619u;
+  return h;
+}
 int addons_legendas_copiar(Legenda *d, int max, unsigned *g, int *p) {
   int i, n = nAdd < max ? nAdd : max;
+  copias++;
   for (i = 0; i < n; i++) d[i] = add[i];
   if (g) *g = 1;
   if (p) *p = 1;

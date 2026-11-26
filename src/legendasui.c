@@ -150,22 +150,37 @@ static LegUiCand cand[LEGUI_MAX_CAND];
 static int nCand;
 
 static int nEmbVivo(void) { int n = video_n_legenda(); return n > NV_FAIXA_MAX ? NV_FAIXA_MAX : n < 0 ? 0 : n; }
-// Copia por quadro (montarLinhas roda todo quadro): buffer estatico, e nao um
-// malloc de LEG_MAX (256 x 1,5 KB passaria do limiar do mmap a cada quadro).
+// montarLinhas roda todo quadro. A lista so e copiada e remontada quando muda:
+// a versao da lista dos addons (addons_legendas_versao), o canal ao vivo ou as
+// faixas embutidas (impressao dos campos que legendasui_montar le). Antes, cada
+// quadro copiava ate LEG_MAX legendas (256 x 1,5 KB) e remontava tudo, como a
+// aba de fontes e a de audio faziam antes de ler so o que mudou.
 static Legenda capturaAdd[LEG_MAX];
+static int capOk, capCanal, candSujo = 1, gruposSujos = 1;
+static unsigned capVersao;
+static uint64_t capEmb;
+static uint64_t capHash(uint64_t h, const char *s) { while (s && *s) h = (h ^ (unsigned char)*s++) * 1099511628211ull; return h * 1099511628211ull; }
 static void capturar(void) {
   const VideoFaixa *emb[NV_FAIXA_MAX];
-  int nE = nEmbVivo(), nA = 0, i;
+  int nE = nEmbVivo(), nA = 0, i, canal = player_id_canal()[0] != 0;
+  unsigned versao = canal ? 0 : addons_legendas_versao();
+  uint64_t h = 1469598103934665603ull ^ (uint64_t)nE;
   for (i = 0; i < nE; i++) {
-    emb[i] = video_legenda(i);
+    const VideoFaixa *f = emb[i] = video_legenda(i);
 #ifdef NV_TB_QUEIMA
     // Burned in (tbburn.h): every burnable ASS track is out of Main/Second.
-    if (video_tpk_leg_oculta(i)) emb[i] = NULL;
+    if (video_tpk_leg_oculta(i)) emb[i] = f = NULL;
 #endif
+    if (!f) { h = (h ^ 0xffu) * 1099511628211ull; continue; }
+    h = (h ^ (uint64_t)(f->letreiro ? 1 : 0) ^ ((uint64_t)f->tipoLeg << 1)) * 1099511628211ull;
+    h = capHash(h, f->idioma); h = capHash(h, f->rotulo); h = capHash(h, f->nome); h = capHash(h, f->codec);
   }
+  if (capOk && versao == capVersao && canal == capCanal && h == capEmb) return;
   // Live channels have no addon subtitles (faixas.c, tests/faixas_canal).
-  if (!player_id_canal()[0]) nA = addons_legendas_copiar(capturaAdd, LEG_MAX, NULL, NULL);
+  if (!canal) nA = addons_legendas_copiar(capturaAdd, LEG_MAX, NULL, NULL);
   nCand = legendasui_montar(emb, nE, capturaAdd, nA, cand, LEGUI_MAX_CAND);
+  capOk = 1; capVersao = versao; capCanal = canal; capEmb = h;
+  candSujo = gruposSujos = 1;
 }
 
 static void idPrimario(char out[24]) {
@@ -300,21 +315,25 @@ static int recomendada(const char *pref, int secundaria) {
 // mesmo resultado. Cache por assinatura dos candidatos (e das entradas que
 // entram na decisao: preferencias, idiomas, tipos e a fonte atual).
 static uint64_t recHashStr(uint64_t h, const char *s) { while (*s) h = h * 33u + (unsigned char)*s++; return h; }
+static uint64_t candAssin;   // the candidates' part, recomputed only after capturar rebuilt them
 static uint64_t recAssinatura(void) {
   uint64_t h = 5381u;
   int i;
   h = recHashStr(h, prefLinha(0)); h = recHashStr(h, prefLinha(1));
   h = recHashStr(h, legauto_midia(video_url_atual()));
-  h = h * 33u + (uint64_t)nCand;
-  for (i = 0; i < nCand; i++) {
-    h = h * 33u + (uint64_t)(cand[i].embutida ? 1 : 0) * 3u + (uint64_t)(cand[i].tipo + 1);
-    h = recHashStr(h, cand[i].idioma); h = recHashStr(h, cand[i].id);
-    if (!cand[i].embutida) {
-      h = recHashStr(h, cand[i].leg.url); h = recHashStr(h, cand[i].leg.arquivo);
-      h = recHashStr(h, cand[i].formato);
+  if (candSujo) {
+    uint64_t c = (uint64_t)nCand;
+    for (i = 0; i < nCand; i++) {
+      c = c * 33u + (uint64_t)(cand[i].embutida ? 1 : 0) * 3u + (uint64_t)(cand[i].tipo + 1);
+      c = recHashStr(c, cand[i].idioma); c = recHashStr(c, cand[i].id);
+      if (!cand[i].embutida) {
+        c = recHashStr(c, cand[i].leg.url); c = recHashStr(c, cand[i].leg.arquivo);
+        c = recHashStr(c, cand[i].formato);
+      }
     }
+    candAssin = c; candSujo = 0;
   }
-  return h;
+  return h * 33u + candAssin;
 }
 
 static int temPreferencia(void) {
@@ -360,8 +379,17 @@ static int cmpGrupo(const void *a, const void *b) {
   c = strcasecmp(nomeGrupo(x->cod), nomeGrupo(y->cod));
   return c ? c : x->ordem - y->ordem;
 }
+// Os grupos dependem dos candidatos, das duas preferencias (rankGrupo) e do
+// idioma da interface (nomeGrupo ordena pelo nome traduzido): refeitos so
+// quando um deles muda.
 static void agrupar(void) {
+  static char p0[64], p1[64];
+  static const char *lingua;
+  const char *desc = i18n("Desconhecido");
   int i, g;
+  if (!gruposSujos && desc == lingua && !strcmp(p0, prefLinha(0)) && !strcmp(p1, prefLinha(1))) return;
+  gruposSujos = 0; lingua = desc;
+  snprintf(p0, sizeof p0, "%s", prefLinha(0)); snprintf(p1, sizeof p1, "%s", prefLinha(1));
   nGruposV = 0;
   for (i = 0; i < nCand; i++) {
     for (g = 0; g < nGruposV; g++) if (mesmoGrupo(grupos[g].cod, cand[i].idioma)) break;
