@@ -172,7 +172,7 @@ static void capturar(void) {
     if (video_tpk_leg_oculta(i)) emb[i] = f = NULL;
 #endif
     if (!f) { h = (h ^ 0xffu) * 1099511628211ull; continue; }
-    h = (h ^ (uint64_t)(f->letreiro ? 1 : 0) ^ ((uint64_t)f->tipoLeg << 1)) * 1099511628211ull;
+    h = (h ^ (uint64_t)(f->letreiro ? 1 : 0) ^ ((uint64_t)f->tipoLeg << 1) ^ ((uint64_t)(unsigned)f->numero << 8)) * 1099511628211ull;
     h = capHash(h, f->idioma); h = capHash(h, f->rotulo); h = capHash(h, f->nome); h = capHash(h, f->codec);
   }
   if (capOk && versao == capVersao && canal == capCanal && h == capEmb) return;
