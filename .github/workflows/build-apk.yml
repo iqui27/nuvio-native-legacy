@@ -115,11 +115,14 @@ jobs:
       - name: Server keys (optional)
         env:
           PROPS: ${{ secrets.LOCAL_PROPERTIES || secrets.NUVIO_LOCAL_PROPERTIES }}
+          RELEASE_RUN: ${{ github.workflow == 'Release' }}
         run: |
           if [ -n "$PROPS" ]; then
             printf '%s\n' "$PROPS" > local.properties
             echo "local.properties from the secret ($(grep -c '=' local.properties) keys)"
             grep -q '^NUVIO_SUPABASE_URL=.' local.properties || echo "::warning::the secret has no NUVIO_SUPABASE_URL: login stays off"
+          elif [ "$RELEASE_RUN" = true ]; then
+            echo "::error::no LOCAL_PROPERTIES secret: a release build needs the server keys"; exit 1
           else
             echo "::warning::no LOCAL_PROPERTIES secret: the APK has no server keys (test build only)"
           fi
@@ -161,7 +164,13 @@ jobs:
         if: env.NUVIO_LIBASS == '1'
         run: |
           for apk in build/android/Nuvio-*.apk; do
-            for abi in arm64-v8a armeabi-v7a; do
+            # The lite APKs carry one ABI each (tools/android.sh).
+            case "$apk" in
+              *-lite-armv7*) abis="armeabi-v7a" ;;
+              *-lite-arm64*) abis="arm64-v8a" ;;
+              *) abis="arm64-v8a armeabi-v7a" ;;
+            esac
+            for abi in $abis; do
               n=$(unzip -p "$apk" "lib/$abi/libmain.so" | strings | grep -c 'mpvNova-libass' || true)
               echo "$(basename "$apk") $abi: libass hybrid marks=$n"
               [ "$n" -ge 1 ] || { echo "libmain.so ($abi) without the libass hybrid" >&2; exit 1; }

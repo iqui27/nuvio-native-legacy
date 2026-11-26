@@ -68,12 +68,16 @@ jobs:
 
       # Optional: keys that tools/env.sh reads from local.properties
       # (NUVIO_SUPABASE_URL, TRAKT_CLIENT_ID, TMDB_API_KEY, ...). Repository secret LOCAL_PROPERTIES = the file contents.
+      # A Release run (release.yml) refuses to build without them.
       - name: Write local.properties (if secret set)
         env:
-          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES || secrets.NUVIO_LOCAL_PROPERTIES }}
+          RELEASE_RUN: ${{ github.workflow == 'Release' }}
         run: |
           if [ -n "$LOCAL_PROPERTIES" ]; then
             printf '%s\n' "$LOCAL_PROPERTIES" > local.properties
+          elif [ "$RELEASE_RUN" = true ]; then
+            echo "::error::no LOCAL_PROPERTIES secret: a release build needs the server keys"; exit 1
           else
             echo "No LOCAL_PROPERTIES secret: building without API keys"
           fi

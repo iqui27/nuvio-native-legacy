@@ -115,16 +115,23 @@ jobs:
           sha256sum -c SHA256SUMS
           { echo "### Nuvio $VER draft"; echo '```'; ls -la; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
-      # A draft is created (or refilled, if a draft for this tag already
-      # exists); a published release is never touched.
+      # A draft is created, or an existing draft for this tag is refilled: it
+      # moves to this commit and keeps exactly this run's files. A published
+      # release is never touched.
       - name: Draft release
         run: |
           set -euo pipefail
           tag="v$VER"
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft > draft.txt 2>/dev/null; then
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft > draft.txt 2> view.err; then
             [ "$(cat draft.txt)" = "true" ] || { echo "::error::$tag is already published"; exit 1; }
+            gh release edit "$tag" --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY"
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' | while read -r old; do
+              [ -f "dist/$old" ] || gh release delete-asset "$tag" "$old" --yes --repo "$GITHUB_REPOSITORY"
+            done
             gh release upload "$tag" dist/* --clobber --repo "$GITHUB_REPOSITORY"
-          else
+          elif grep -qi "release not found" view.err; then
             gh release create "$tag" dist/* --draft --target "$GITHUB_SHA" \
               --title "Nuvio $VER" --notes "Nuvio $VER" --repo "$GITHUB_REPOSITORY"
+          else
+            cat view.err >&2; echo "::error::could not check for an existing $tag release"; exit 1
           fi

@@ -83,11 +83,14 @@ jobs:
       - name: Server keys
         env:
           PROPS: ${{ secrets.LOCAL_PROPERTIES || secrets.NUVIO_LOCAL_PROPERTIES }}
+          RELEASE_RUN: ${{ github.workflow == 'Release' }}
         run: |
           if [ -n "$PROPS" ]; then
             printf '%s\n' "$PROPS" > local.properties
             echo "local.properties from the secret ($(grep -c '=' local.properties) keys)"
             grep -q '^NUVIO_SUPABASE_URL=.' local.properties || echo "::warning::the secret has no NUVIO_SUPABASE_URL: login stays off"
+          elif [ "$RELEASE_RUN" = true ]; then
+            echo "::error::no LOCAL_PROPERTIES secret: a release build needs the server keys"; exit 1
           else
             echo "::warning::no LOCAL_PROPERTIES secret: the .ipk has no server keys (test build only)"
           fi
