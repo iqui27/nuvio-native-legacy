@@ -793,6 +793,31 @@ static int extAllN;
 static AudioExtEntrada *extEnt;
 static char (*extVersao)[40];
 static int extEntN;
+// Reading a source (stream_audioext_entrada + its version name) scans its
+// name, description and file name; with 1000+ sources every cache answer or
+// add-on batch read all of them again on the main thread and the audio tab
+// stuttered. Each entry keeps a fingerprint of the fields a revision can
+// change in place (link, cache state, size); within one source list only new
+// or changed sources are read again. Same idea as the source cards' lazy
+// parsing (Matis94 ccae01dff), here for the audio tab.
+static uint32_t *extImpressao;
+static unsigned char *extLido;
+static unsigned extCacheChave;
+static uint32_t extImpressaoDe(const Stream *s) {
+  uint32_t h = 2166136261u;
+  if (!s) return 0;
+  for (const unsigned char *p = (const unsigned char *)s->url; *p; p++) h = (h ^ *p) * 16777619u;
+  for (const unsigned char *p = (const unsigned char *)s->infoHash; *p; p++) h = (h ^ *p) * 16777619u;
+  // The label and the declared languages can change in place too (a source
+  // replaced by its resolved copy); the description by its length only.
+  for (const unsigned char *p = (const unsigned char *)s->rotulo; *p; p++) h = (h ^ *p) * 16777619u;
+  for (const unsigned char *p = (const unsigned char *)s->audioIdiomas; *p; p++) h = (h ^ *p) * 16777619u;
+  h = (h ^ (uint32_t)strnlen(s->descricao, sizeof s->descricao)) * 16777619u;
+  { const int v[] = { s->foraCache, s->emCache, s->cacheNegado, s->cacheNativo, s->naoVideo, s->tsContinuo,
+                      s->notWebReady, s->addonOrdem, s->fileIdx, (int)(s->tamanhoBytes >> 20) };
+    for (size_t k = 0; k < sizeof v / sizeof *v; k++) h = (h ^ (uint32_t)v[k]) * 16777619u; }
+  return h ? h : 1;
+}
 #ifdef NV_TPK
 static unsigned extGeracao, extRevisao, extAddonsVer, extVersaoLista;
 #else
@@ -880,17 +905,34 @@ static void extMontar(int forcar) {
     { char (*v2)[40] = realloc(extVersao, (size_t)n * sizeof *v2);
       if (!v2) return;
       extVersao = v2; }
+    { uint32_t *h2 = realloc(extImpressao, (size_t)n * sizeof *h2);
+      if (!h2) return;
+      extImpressao = h2; }
+    { unsigned char *l2 = realloc(extLido, (size_t)n);
+      if (!l2) return;
+      memset(l2 + extEntN, 0, (size_t)(n - extEntN));
+      extLido = l2; }
     extEntN = n;
   }
+  // Another source list (title, episode list, add-ons): everything is read again.
+  { unsigned chave = (unsigned)stream_lista_geracao() * 2654435761u ^ (unsigned)audioext_addons_versao() * 40503u;
+#ifndef NV_TPK
+    chave ^= (unsigned)exEpN * 97u ^ (unsigned)audioextep_geracao() * 7919u;
+#endif
+    if (chave != extCacheChave) { if (extLido) memset(extLido, 0, (size_t)extEntN); extCacheChave = chave; } }
   for (int i = 0; i < n; i++) {
 #ifdef NV_TPK
     const Stream *st = stream_item(i);
 #else
     const Stream *st = extFonte(i);
 #endif
-    stream_audioext_entrada(st, &extEnt[i]);
+    { uint32_t h = extImpressaoDe(st);
+      if (!extLido[i] || extImpressao[i] != h) {
+        stream_audioext_entrada(st, &extEnt[i]);
+        stream_audioext_versao(st, extVersao[i], sizeof extVersao[i]);
+        extImpressao[i] = h; extLido[i] = 1;
+      } }
     extEnt[i].atual = i == atual || (st && urlVideo && urlVideo[0] && !strcmp(st->url, urlVideo));
-    stream_audioext_versao(st, extVersao[i], sizeof extVersao[i]);
     extEnt[i].foraFiltro = st && !audioext_addon_ligado(st->addonChave);
   }
   memset(&o, 0, sizeof o);
