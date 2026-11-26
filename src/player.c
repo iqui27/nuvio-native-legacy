@@ -145,6 +145,7 @@ extern __attribute__((weak)) int farolacao_fonte_executar(int acao, int persisti
 #include "idiomacod.h"
 #include "proximo.h"
 #include "creditosauto.h"
+#include "legtemp.h"
 #include "credfonte.h"
 #include "credaprende.h"
 #include "seekr.h"
@@ -467,6 +468,11 @@ static Uint32 pgDesde, pgQuadro;
 // AS DUAS VARIAVEIS DE MIDIA. Todo o resto do arquivo le so daqui — quando o
 // video real entrar, sao elas que passam a ser preenchidas pelo decodificador.
 static int   comVideo = 0;
+// Legenda temporaria (legtemp.h; a logica esta junto de recuarAutomatico).
+static LegTemp legTemp;
+static int legTempPendente;      // LIGAR ainda nao aplicado (a automatica do comeco nao fechou)
+static Uint32 legTempMudoEm;     // proxima consulta do mudo ao aparelho
+static void legTempZerar(void);
 #ifdef NV_SHOT_HOOKS
 static int   shotSemFuro, shotBusca;
 static int   shotEpgOk, shotNumero, shotAtras, shotFav;   // shotFav: 1 = botao, 2 = nos favoritos
@@ -2285,6 +2291,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
 #endif
   retomamorna_cancelar();
   creditosauto_zerar(&creditosAuto);
+  legTempZerar();
   memset(&scrobbleAlvo, 0, sizeof scrobbleAlvo); scrobbleAlvoPronto = 0;
   scrobbleTvdbCapturado = 0;
   quadroCapturado = 0;
@@ -2649,6 +2656,7 @@ static void tocarFonteInterno(const char *url) {
   directcache_encerrar();
   farolTentativaIniciar();
   if (!travaFonte(url)) return;
+  legTempZerar();
   farolFonteRegistrar(url, video_cabecalhos()[0] != 0);
   marco("abrir: url ao pipeline");
   farolRearmar();
@@ -2903,6 +2911,7 @@ int player_recarregar_vod(void) {
 
 void player_voltar_a_esperar(void) {
   if (!aberto) return;
+  legTempZerar();
   fonteAcaoInvalidar();
   legenda_pre_descartar(i18n("fonte descartada"));
   // A fonte foi descartada: a tela do DV sai e o cartao de sempre conta a
@@ -3234,6 +3243,7 @@ static void fecharSessao(int manter, int trocaFonte) {
   // every frame; queda.h).
   queda_conferir("Back");
 #endif
+  if (!manter || trocaFonte) legTempZerar();
   directcache_encerrar();
   juntos_ao_voltar();
   saiuVisto = 0;
@@ -4783,6 +4793,41 @@ static void avTecla(SDL_Keycode k) {
 //    mexia no pipeline com o video correndo. Agora o video PAUSA ao comecar o
 //    avanco e volta a tocar sozinho ao terminar, se estava tocando — e o
 //    pipeline recebe UMA posicao, no fim, em vez de uma por toque.
+// LEGENDA TEMPORARIA (legtemp.h): sem legenda ligada, ela aparece sozinha ao
+// mutar e ao voltar alguns segundos, e some quando o motivo acaba. A regra e
+// de legtemp.c; quem liga, escolhe a faixa e desliga e faixas.c.
+static void legTempAplicar(int acao) {
+  if (acao == LEGTEMP_LIGAR) legTempPendente = 1;
+  else if (acao == LEGTEMP_DESLIGAR) { legTempPendente = 0; faixas_legenda_temporaria(0, ""); }
+}
+static void legTempZerar(void) {
+  legTempAplicar(LEGTEMP_DESLIGAR);
+  legtemp_zerar(&legTemp);
+  legTempPendente = 0;
+  legTempMudoEm = 0;
+}
+static void legTempBusca(double de, double para) {
+  if (de != para && ajustes_legenda_temporaria() && comVideo && !ehCanal())
+    legTempAplicar(legtemp_busca(&legTemp, de, para));
+}
+static void legTempQuadro(Uint32 agora) {
+  if (!ajustes_legenda_temporaria() || !comVideo || ehCanal()) {
+    if (legTemp.motivos || legTemp.longa || legTempPendente) legTempZerar();
+    return;
+  }
+#ifdef NV_ANDROID
+  if ((Sint32)(agora - legTempMudoEm) >= 0) {
+    legTempMudoEm = agora + 500u;
+    legTempAplicar(legtemp_mudo(&legTemp, video_mudo()));
+  }
+#else
+  (void)agora; (void)legTempMudoEm;
+#endif
+  if (!scrubbing && video_pronto()) legTempAplicar(legtemp_quadro(&legTemp, video_pos()));
+  if (!scrubbing && legTempPendente && faixas_legenda_temporaria(1, idioma_iso(ajustes_idioma())) != 0)
+    legTempPendente = 0;
+}
+
 static void recuarAutomatico(double de, double para) {
   if (!isfinite(de) || !isfinite(para) || para >= de) return;
   intro_auto_recuar(de, para);
@@ -4946,7 +4991,11 @@ static void terminarSalto(void) {
   seekr_ocioso();   // solta a folha decodificada (~22 MB), fica o JPEG
   // Com a sala aberta o seek e da sala: o motor busca aqui e o play volta pelo
   // relogio comum (play agendado), nao pelo estado de antes do avanco.
-  if (comVideo && juntos_ao_buscar(posSeg)) { retomandoSalto = 0; return; }
+  if (comVideo && juntos_ao_buscar(posSeg)) {
+    legTempBusca(scrubInicio, posSeg);
+    retomandoSalto = 0;
+    return;
+  }
 #ifdef NV_TPK
   seekgesto_zerar(&gesto);   // the memory lives until the commit
 #endif
@@ -4954,6 +5003,7 @@ static void terminarSalto(void) {
     if (scrubTocava) { video_pausar(0); tocando = 1; }
   } else if (comVideo) {
     posSeg = anim_clamp(posSeg, 0.0f, duracaoSeg);
+    legTempBusca(scrubInicio, posSeg);
     if (posSeg >= scrubInicio) creditosauto_buscar(&creditosAuto, posSeg);
     buscarUsuario(posSeg);
     if (scrubTocava) { video_pausar(0); tocando = 1; }
@@ -5001,6 +5051,7 @@ static int ativarBotao(int i, int repetiu) {
       posplay_busca_usuario();
       recuarAutomatico(de, 0.0);
       scrubbing = scrubToque = scrubTocava = 0; scrubInicio = 0.0;
+      legTempBusca(de, 0.0);
       if (retomar) retomandoSalto = 1;
       pausao_fechar(); seekr_ocioso();
       posSeg = posVis = posVisV = 0.0f; posVisSolto = 0;
@@ -6141,6 +6192,7 @@ void player_atualizar(float dt, Uint32 agora) {
     desc_episodios_pendente(); }
 
   if (comVideo) creditosauto_fonte(&creditosAuto, video_url_atual());
+  legTempQuadro(SDL_GetTicks());
   // PULAR SOZINHO (#329/#331): abertura/resumo/creditos com marcador e ajuste ligado. Uma vez por
   // trecho (voltar de proposito para dentro dele nao pula de novo), so tocando de verdade.
   if (!ehCanal() && comVideo && tocando && video_ativo() && video_pronto() && !partesAtiva() &&
@@ -6993,6 +7045,7 @@ static void ponteiroBuscar(int a, int b) {
   posSeg = anim_clamp(posSeg, 0.0f, duracaoSeg);
   recuarAutomatico(de, posSeg);
   if (comVideo) {
+    legTempBusca(de, posSeg);
     if (posSeg >= de) creditosauto_buscar(&creditosAuto, posSeg);
     buscarUsuario(posSeg);
   }
@@ -8495,11 +8548,15 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
 // fileira de capitulos no lugar do titulo, ESQUERDA/DIREITA e OK.
 // OK num capitulo (tecla, clique ou dedo): busca o comeco dele e fecha a fileira.
 static void capituloPular(const MkvCap *c, int i) {
-  double de = posSeg, alvo = c[i].inicio;
+  double alvo = c[i].inicio;
   if (scrubbing) terminarSalto();
+  double de = posSeg;
   posSeg = (float)alvo;
   recuarAutomatico(de, alvo);
-  if (comVideo) buscarUsuario(alvo);
+  if (comVideo) {
+    legTempBusca(de, alvo);
+    buscarUsuario(alvo);
+  }
   printf("[seg] capitulo %d \"%s\" em %.1fs\n", i, c[i].nome, alvo); fflush(stdout);
   capFoco = 0;
 }

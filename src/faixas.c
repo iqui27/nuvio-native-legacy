@@ -24,6 +24,7 @@
 #include "legendasui.h"
 #include "legsync.h"
 #include "legauto.h"
+#include "legtemp.h"
 #include "legmemoria.h"
 #include "cacheboost.h"
 #include "velocidade.h"
@@ -239,6 +240,10 @@ enum { PIL_OFF = LEGSYNC_PIL_OFF, PIL_PROCURANDO, PIL_SINCRONIZANDO, PIL_APLICAD
 // ilha diz "Sincronizando…" uns segundos, volta para o relogio e fica fechada
 // enquanto o plano trabalha; so o aviso final reabre (legsync_pil_passo).
 static int emTroca;
+// Legenda temporaria (legtemp.h): legTempDona = a legenda ligada agora foi
+// ligada por faixas_legenda_temporaria e ainda e dela para desligar. Qualquer
+// outra escolha (a mao, a automatica) toma a posse: a legenda fica.
+static int legTempDona, legTempMexendo;
 // pil.final: 0 externa nao sincronizada, 1 externa sincronizada (offset aceito
 // em vigor), 2 embutida (acompanha o video por natureza).
 static LegSyncPil pil;
@@ -436,6 +441,7 @@ static void reiniciarFaixas(int preservarPrebusca) {
   if (!preservarPrebusca) mkvass_parar();
   legenda_desligar(); legenda_pre_reiniciar();
   legAuto = 1; legAutoDesde = 0; pilZerar(); pil.espera = 0;
+  legTempDona = 0;
   legendasui_reiniciar();   // F04: the second subtitle belongs to the session too
   // #202: speed is per playback: a new title starts at 1x.
   velFoco = 0; velPedidaUi = VEL_NORMAL; video_velocidade(VEL_NORMAL);
@@ -1025,6 +1031,7 @@ static const char *rotuloLegenda(int i, const char **marca) {
 // dois tem de passar pelo mesmo caminho, senao uma faixa ASS escolhida sozinha
 // iria a TV sem o overlay e sem a linha de log que a folha deixa.
 static void escolherLegenda(int i) {
+  if (!legTempMexendo) legTempDona = 0;
   {
     int emb = video_n_legenda();
     const VideoFaixa *fe = (i >= 0 && i < emb) ? video_legenda(i) : NULL;
@@ -2497,6 +2504,72 @@ static void faixas_desenharCorpo_(Uint32 agora) {
       plrilha_pedir(&p); } }
 }
 
+// --- Legenda temporaria (mudo / voltar alguns segundos; legtemp.h) ----------
+// ligar: 1 ligou; 0 ainda nao da (a escolha automatica do comeco nao fechou:
+// chame de novo); -1 nada a fazer (ja ha legenda, canal ao vivo, ou o titulo
+// nao tem legenda completa em nenhum dos idiomas). Nao grava na memoria de
+// legendas: a escolha da pessoa continua sendo "sem legenda".
+// desligar (ligar = 0): so desliga a que ESTA funcao ligou e ninguem trocou.
+int faixas_legenda_temporaria(int ligar, const char *idiomaApp) {
+  const char *emb[NV_FAIXA_MAX], *add[LEG_MAX], *lista[3], *audio;
+  const VideoFaixa *fa;
+  const CatItem *ci;
+  char tit[64], addIdiomas[LEG_MAX][sizeof ((Legenda *)0)->idioma];
+  int tipos[NV_FAIXA_MAX], nEmb, nAdd = 0, nl, i, k, r = LING_AUTO_NADA, origem, evitaSdh;
+  if (!ligar) {
+    if (!legTempDona) return -1;
+    legTempDona = 0;
+    printf("[legenda] temporaria: desliga\n"); fflush(stdout);
+    escolherLegenda(-1);
+    return 1;
+  }
+  if (!player_aberto() || player_id_canal()[0]) return -1;
+  // Video ainda abrindo (ex.: comecou ja mudo) ou a automatica do comeco nao fechou: espera.
+  if (!player_com_video()) return 0;
+  if (legTempDona || legendaAtiva() >= 0 || video_legenda_atual() >= 0 || legOverlayEsperando >= 0) return -1;
+  if (legAuto) return 0;
+  ci = cat_item(player_indice());
+  evitaSdh = ajustes_legenda_evitar_sdh();
+  tituloAtual(tit, sizeof tit);
+  fa = video_audio(video_audio_atual());
+  audio = fa ? fa->idioma : "";
+  nl = legtemp_idiomas(legmem_preferencia(ling_legenda(), tit[0] ? legmem_do_titulo(tit) : NULL,
+                                          legmem_ultima(), &origem),
+                       idiomaApp, audio, lista);
+  nEmb = video_n_legenda();
+  if (nEmb > NV_FAIXA_MAX) nEmb = NV_FAIXA_MAX;
+  for (i = 0; i < nEmb; i++) {
+    const VideoFaixa *f = video_legenda(i);
+    emb[i] = f ? f->idioma : "";
+    tipos[i] = !f ? LING_LEG_COMUM : f->tipoLeg ? f->tipoLeg : f->letreiro ? LING_LEG_LETREIROS : LING_LEG_COMUM;
+  }
+  if (ci && ci->imdb[0]) {
+    nAdd = addons_n_legendas();
+    if (nAdd > LEG_MAX) nAdd = LEG_MAX;
+    for (i = 0; i < nAdd; i++) {
+      const Legenda *l = addons_legenda(i);
+      // #743 "Evitar SDH" vale aqui tambem: a de addon marcada SDH no nome fica fora.
+      int fora = !l || (evitaSdh && (ling_nome_sdh(l->arquivo) || ling_nome_sdh(l->rotulo)));
+      snprintf(addIdiomas[i], sizeof addIdiomas[i], "%s", fora ? "" : l->idioma);
+      add[i] = addIdiomas[i];
+    }
+  }
+  // A legenda INTEIRA do idioma (forcadaAuto 0: com o som mudo a pessoa nao
+  // ouve o dialogo, a forcada nao serve), com as listas como estao agora.
+  for (k = 0; k < nl && r < 0; k++)
+    r = ling_legenda_auto_tipo2(lista[k], "", 0, evitaSdh, emb, tipos, nEmb, 1, add, nAdd, 1);
+  if (r < 0) {
+    printf("[legenda] temporaria: nada a ligar (%d embutida(s), %d de addon)\n", nEmb, nAdd); fflush(stdout);
+    return -1;
+  }
+  printf("[legenda] temporaria: liga %s %d ('%s')\n", r < nEmb ? "embutida" : "addon",
+         r < nEmb ? r : r - nEmb, lista[k - 1]);
+  fflush(stdout);
+  legTempMexendo = 1; escolherLegenda(r); legTempMexendo = 0;
+  legTempDona = 1;
+  return 1;
+}
+
 // --- F04: the selector (legendasui.c) acts on the primary through these -------
 int faixas_legenda_ativa(void) { return legendaAtiva(); }
 const char *faixas_legenda_externa_id(void) { return legExternaId; }
@@ -2514,6 +2587,7 @@ void faixas_escolher_externa(const Legenda *l) {
   char id[24], idv[24];
   int n, j;
   if (!l || !l->url[0]) return;
+  if (!emTroca) legTempDona = 0;
   legAuto = 0;
   mkvass_parar();
   legOverlay = -1; legOverlayEsperando = -1; legOverlayRetomar = 0; legOverlayTV = 0;

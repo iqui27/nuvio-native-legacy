@@ -49,6 +49,10 @@ int  faixas_estilo_controle(void);
 // F04: what the subtitle selector (legendasui.c) needs from the primary.
 // Combined index of the active primary (embedded first, then addons; -1 none).
 int  faixas_legenda_ativa(void);
+// Legenda temporaria (legtemp.h): liga uma legenda completa quando nao ha
+// nenhuma (1 ligou, 0 tente de novo, -1 nada a fazer) ou desliga a que ela
+// mesma ligou. Nao mexe na memoria de escolhas. `idiomaApp` = ISO da interface.
+int  faixas_legenda_temporaria(int ligar, const char *idiomaApp);
 // Primary collector rendering waits until native fallback hands over ownership.
 int  faixas_legenda_overlay(void);
 // Opaque identity of the active external primary ("" = none).

@@ -890,6 +890,9 @@ typedef enum {
   // Tela ambiente ao pausar (ambiente.h, NuvioTV#4142): a arte do titulo por
   // baixo do painel de pausa. LOCAL, ligado de fabrica, append-only.
   AJ_PAUSA_AMBIENTE,
+  // Legenda temporaria (legtemp.h): sem legenda ligada, ela aparece sozinha ao
+  // mutar e ao voltar alguns segundos. LOCAL, ligado, append-only.
+  AJ_LEG_TEMPORARIA,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2150,6 +2153,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC(FT_GOSTO_LLM_SO_ESTA_TV, V_LIGA, 2),                   // local/farolconsent: So nesta TV (#51)
   ACAO("Perfis desta conta"),
   ESC("Tela ambiente ao pausar", V_LIGA, 2),                 // local: pausaAmbienteLocal
+  ESC("Legenda ao silenciar ou voltar", V_LIGA, 2),          // local: legendaTemporariaLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2548,6 +2552,7 @@ static const char *CHAVE[] = {
   "-farolLlmSoEstaTv",
   "-amigosPerfis",
   "pausaAmbienteLocal",
+  "legendaTemporariaLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3765,6 +3770,7 @@ int ajustes_legenda_sync_audio(void) { return 0; }   // escondida fora do Androi
 #endif
 int ajustes_legenda_forcada_auto(void) { return lig(AJ_LEG_FORCADA); }   // #287, padrao Ligado
 int ajustes_legenda_evitar_sdh(void) { return lig(AJ_LEG_EVITAR_SDH); }   // #743, padrao Desligado
+int ajustes_legenda_temporaria(void) { return lig(AJ_LEG_TEMPORARIA); }   // legtemp.h, padrao Ligado
 // Motor novo de legendas ASS do .tpk (assperf.h): 1 = ligado (padrao), 0 = o
 // motor de antes de 23/10. Lido pelo ass_novo_ligado via ass_novo_registrar.
 // A thread de render NAO le valor[]: ela recebe este ESPELHO, publicado com
@@ -7028,6 +7034,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LEG_SYNC_AUDIO: /* PCM e passthrough sao desta TV; o web nao tem */
     case AJ_LEG_FORCADA:    /* #287: o web nao tem esta escolha */
     case AJ_LEG_EVITAR_SDH: /* #743: idem */
+    case AJ_LEG_TEMPORARIA: /* idem */
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA: /* estilo da legenda e desta TV */
     case AJ_LEG_CONTORNO_COR: /* #475: idem */
     case AJ_CACHE_SEEK:     /* F07: o disco e o player sao desta TV */
@@ -7927,6 +7934,7 @@ static const char *rotuloNovo(int op) {
     case AJ_CACHE_SEEK: return "Guardar o trecho baixado no disco";
     case AJ_LEG_FORCADA: return "Legenda forçada automática";
     case AJ_LEG_EVITAR_SDH: return "Evitar legendas SDH";
+    case AJ_LEG_TEMPORARIA: return "Legenda ao silenciar ou voltar";
     case AJ_TMDB_IDIOMA: return "Idioma dos dados do título";
     case AJ_HERO_FUNDO: return "Imagem de fundo do destaque";
     case AJ_GRAD_CLASSICO: return "Realce antigo no cartaz em foco";
@@ -8784,6 +8792,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_LEG_SYNC_AUDIO: return "Compara as falas do áudio com a legenda externa para acertar o atraso. Só onde o player entrega o áudio decodificado e sem passthrough; vale só nesta TV.";
     case AJ_LEG_FORCADA: return "Quando o áudio já está no idioma da legenda, liga só a legenda forçada desse idioma (falas em outra língua e placas), ou nenhuma se o arquivo não tiver. Desligado, liga a legenda completa como antes.";
     case AJ_LEG_EVITAR_SDH: return "A escolha automática passa a ignorar legendas para surdos (SDH/CC), que trazem descrições como [porta batendo] e o nome de quem fala. A escolha manual continua mostrando todas; vale só nesta TV.";
+    case AJ_LEG_TEMPORARIA: return "Sem legenda ligada, ela aparece sozinha quando você volta alguns segundos ou silencia o som, e some quando a cena passa do ponto em que você estava ou o som volta. Não muda a legenda que você escolheu. O silenciar só vale onde o aparelho informa; vale só nesta TV.";
     case AJ_LEG_MOSTRAR: return valor[op] ? "Todas as legendas, com detalhes" : "Recomendadas";
     case AJ_LEG_LINGUA2: return "Segunda legenda, mostrada no alto da tela junto com a principal. Só arquivos SRT/VTT dos addons. \"Da conta\" segue o que está no seu perfil.";
     case AJ_LEG2_POS: return "No topo, a segunda legenda fica no alto da tela. Junto da principal, ela fica logo acima da principal, no pé da tela.";
@@ -9497,6 +9506,7 @@ static const char *beneficioProprio(int op) {
     case AJ_SAIDA_PLAYER: return "O filme pode ficar na ilha do relógio para você voltar depois.";
     case AJ_LEG_FORCADA: return "Placas e falas em outra língua aparecem; o resto, não.";
     case AJ_LEG_EVITAR_SDH: return "Legendas sem descrições de som são preferidas nas escolhas automáticas.";
+    case AJ_LEG_TEMPORARIA: return "A legenda aparece sozinha quando você volta alguns segundos ou silencia o som.";
     case AJ_BUSCA_CINEMETA: return "A busca também consulta o Cinemeta se o catálogo do Nuvio falhar.";
     case AJ_HOME_LAYOUT: return "Como a Home se organiza: Moderna, Padrão ou Dinâmica.";
     case AJ_MENU_TOPO: return "Onde fica o menu: na esquerda ou no alto da tela.";
@@ -12236,6 +12246,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_DV_MKV:
     case AJ_LEG_FORCADA:
     case AJ_LEG_EVITAR_SDH:
+    case AJ_LEG_TEMPORARIA:
     case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO: case AJ_PAUSA_AMBIENTE:
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: case AJ_FONTE_MANUAL:
     case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC:
