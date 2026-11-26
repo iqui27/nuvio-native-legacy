@@ -17,53 +17,36 @@
 #ifndef NV_FAROLCONSENT_H
 #define NV_FAROLCONSENT_H
 
+#include "faroltexto.h"
 #include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// FALTA_TEXTO: incluir em src/faroltexto.h e nas 29 tabelas src/idioma_*.h:
-//   FT_GOSTO_CONSENT_KICKER     = "Gosto"
-//   FT_GOSTO_CONSENT_TITULO     = "Recomendações com o servidor?"
-//   FT_GOSTO_CONSENT_SUB        = "Você escolhe se o Farol pode montar fileiras e dicas usando o servidor."
-//   FT_GOSTO_CONSENT_PERMITIR   = "Permitir"
-//   FT_GOSTO_CONSENT_NOTA_SO_TV = "\"Só nesta TV\" mantém tudo calculado só no aparelho e não pergunta de novo."
-//   FT_GOSTO_CONSENT_RODAPE     = "Você pode mudar isso depois em Ajustes › Gosto."
-//   FT_GOSTO_VAI_IDIOMA         = "Idioma da interface"
-//   FT_GOSTO_VAI_HORA           = "Hora local em faixa"
-//   FT_GOSTO_VAI_GOSTO          = "Resumo do gosto: até 6 gêneros, 6 temas e 4 pessoas"
-//   FT_GOSTO_VAI_CANDIDATOS     = "Até 24 candidatos"
-//   FT_GOSTO_VAI_ANCORAS        = "Até 3 títulos-âncora"
-//   FT_GOSTO_VAI_FRASE          = "Frase ditada quando houver"
-//   FT_GOSTO_NUNCA_DIARIO       = "O Diário"
-//   FT_GOSTO_NUNCA_NOTAS        = "Notas e datas"
-//   FT_GOSTO_NUNCA_PERFIS       = "Perfis e nomes"
-//   FT_GOSTO_NUNCA_AMIGOS       = "Amigos (motivo de amigo vai como \"um amigo\")"
-//   FT_GOSTO_NUNCA_ADDONS       = "Add-ons e fontes"
-//   FT_GOSTO_NUNCA_VETOR        = "O vetor inteiro"
-//   FT_GOSTO_NUNCA_INFANTIL     = "Qualquer coisa de perfil infantil"
-#define FAROLCONSENT_KICKER          "Gosto"
-#define FAROLCONSENT_TITULO          "Recomendações com o servidor?"
-#define FAROLCONSENT_SUB             "Você escolhe se o Farol pode montar fileiras e dicas usando o servidor."
-#define FAROLCONSENT_BTN_PERMITIR    "Permitir"
-#define FAROLCONSENT_NOTA_SO_TV      "\"Só nesta TV\" mantém tudo calculado só no aparelho e não pergunta de novo."
-#define FAROLCONSENT_RODAPE          "Você pode mudar isso depois em Ajustes › Gosto."
+// Aliases de compatibilidade (testes antigos usam FAROLCONSENT_*): a fonte
+// unica das frases esta em src/faroltexto.h (FT_GOSTO_*).
+#define FAROLCONSENT_KICKER          FT_GOSTO_CONSENT_KICKER
+#define FAROLCONSENT_TITULO          FT_GOSTO_CONSENT_TITULO
+#define FAROLCONSENT_SUB             FT_GOSTO_CONSENT_SUB
+#define FAROLCONSENT_BTN_PERMITIR    FT_GOSTO_CONSENT_PERMITIR
+#define FAROLCONSENT_NOTA_SO_TV      FT_GOSTO_CONSENT_NOTA_SO_TV
+#define FAROLCONSENT_RODAPE          FT_GOSTO_CONSENT_RODAPE
 
-#define FAROLCONSENT_VAI_IDIOMA      "Idioma da interface"
-#define FAROLCONSENT_VAI_HORA        "Hora local em faixa"
-#define FAROLCONSENT_VAI_GOSTO       "Resumo do gosto: até 6 gêneros, 6 temas e 4 pessoas"
-#define FAROLCONSENT_VAI_CANDIDATOS  "Até 24 candidatos"
-#define FAROLCONSENT_VAI_ANCORAS     "Até 3 títulos-âncora"
-#define FAROLCONSENT_VAI_FRASE       "Frase ditada quando houver"
+#define FAROLCONSENT_VAI_IDIOMA      FT_GOSTO_VAI_IDIOMA
+#define FAROLCONSENT_VAI_HORA        FT_GOSTO_VAI_HORA
+#define FAROLCONSENT_VAI_GOSTO       FT_GOSTO_VAI_GOSTO
+#define FAROLCONSENT_VAI_CANDIDATOS  FT_GOSTO_VAI_CANDIDATOS
+#define FAROLCONSENT_VAI_ANCORAS     FT_GOSTO_VAI_ANCORAS
+#define FAROLCONSENT_VAI_FRASE       FT_GOSTO_VAI_FRASE
 
-#define FAROLCONSENT_NUNCA_DIARIO    "O Diário"
-#define FAROLCONSENT_NUNCA_NOTAS     "Notas e datas"
-#define FAROLCONSENT_NUNCA_PERFIS    "Perfis e nomes"
-#define FAROLCONSENT_NUNCA_AMIGOS    "Amigos (motivo de amigo vai como \"um amigo\")"
-#define FAROLCONSENT_NUNCA_ADDONS    "Add-ons e fontes"
-#define FAROLCONSENT_NUNCA_VETOR     "O vetor inteiro"
-#define FAROLCONSENT_NUNCA_INFANTIL  "Qualquer coisa de perfil infantil"
+#define FAROLCONSENT_NUNCA_DIARIO    FT_GOSTO_NUNCA_DIARIO
+#define FAROLCONSENT_NUNCA_NOTAS     FT_GOSTO_NUNCA_NOTAS
+#define FAROLCONSENT_NUNCA_PERFIS    FT_GOSTO_NUNCA_PERFIS
+#define FAROLCONSENT_NUNCA_AMIGOS    FT_GOSTO_NUNCA_AMIGOS
+#define FAROLCONSENT_NUNCA_ADDONS    FT_GOSTO_NUNCA_ADDONS
+#define FAROLCONSENT_NUNCA_VETOR     FT_GOSTO_NUNCA_VETOR
+#define FAROLCONSENT_NUNCA_INFANTIL  FT_GOSTO_NUNCA_INFANTIL
 
 enum {
   FAROL_CONSENT_NAO_PERGUNTADO = 0,

@@ -9958,7 +9958,14 @@ int detail_pediu_reproduzir(void) { int v = pedReproduzir; pedReproduzir = 0; pe
 // Preserve an already-queued Detail user Play over router requests.
 void detail_pedir_reproduzir(void) { if (aberto && !saindo && !pedReproduzir) { pedReproduzir = 1; pedReproduzirExterno = 1; } }
 int detail_pedido_usuario_pendente(void) { return aberto && !saindo && ((pedReproduzir && !pedReproduzirExterno) || pedDoInicio); }
-int detail_pediu_abrir(void) { int v = pedAbrir; pedAbrir = -1; return v; }
+extern __attribute__((weak)) void farolsinal_uso_limpar_alvo(const CatItem *ci);
+
+int detail_pediu_abrir(void) {
+  int v = pedAbrir;
+  pedAbrir = -1;
+  if (v >= 0 && farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
+  return v;
+}
 void detail_trilha_notar(void) { trilhaPendente = 1; }
 void detail_volta_notar(int novo) {
   int trilha = trilhaPendente;

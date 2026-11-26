@@ -175,6 +175,41 @@ void farolsinal_registrar_nome(int dim, int32_t id, const char *nome);
 int  farolsinal_pessoa_nome(int32_t id, char *dst, size_t cap);
 int  farolsinal_tema_nome(int32_t id, char *dst, size_t cap);
 
+// --- contadores locais de uso nesta TV (por perfil, nunca sobem) ------------
+// Numeros saturados persistidos em farol-medida-p<n>.txt; nunca entram em
+// FarolRegistro nem no corpo do LLM.
+typedef struct {
+  uint32_t vistas;         // fileiras do Farol vistas na Home
+  uint32_t abertas;        // OK em cartazes da fileira
+  uint32_t tocadas;        // play iniciado vindo do Farol
+  uint32_t terminadas;     // reproducoes concluidas (>= 90%) vindas do Farol
+  uint32_t recusas;        // "Nao e para mim"
+  uint32_t cenasTv;        // cenas da Home montadas localmente na TV
+  uint32_t cenasServidor;  // cenas da Home montadas pelo servidor (LLM)
+  // Campos internos da vaga de exploracao ("fora da curva") para ajustar a
+  // posicao da vaga localmente:
+  uint32_t expVistas;      // fileiras entregues/vistas com vaga fora da curva
+  uint32_t expAbertas;     // abertas vindas da vaga fora da curva
+  uint32_t expTocadas;     // tocadas vindas da vaga fora da curva
+  uint32_t normAbertas;    // abertas nas vagas normais
+  uint32_t normTocadas;    // tocadas nas vagas normais
+  uint32_t expSeq;         // sequencia para alternancia 1 em 2
+} FarolUsoContadores;
+
+// Le copia dos contadores do perfil ativo (em perfil infantil devolve zeros).
+void farolsinal_uso_obter(FarolUsoContadores *dst);
+// Registra exibicao da fileira do Farol na Home (comExploracao = 1 se ha item foraCurva;
+// fileiraPrincipal = 1 em `farol_gosto1` para a alternancia 1 em 2 da vaga recuada).
+void farolsinal_uso_vista(int comExploracao, int fileiraPrincipal);
+// Registra origem da cena adotada (doServidor = 1 para LLM, 0 para regras locais).
+void farolsinal_uso_cena(int doServidor);
+// Registra abertura de cartaz da fileira do Farol (foraCurva = 1 se veio da vaga de exploracao).
+void farolsinal_uso_aberta(const CatItem *ci, int foraCurva);
+// Registra play iniciado (incrementa apenas se `ci` tiver abertura recente do Farol).
+void farolsinal_uso_tocada(const CatItem *ci);
+// Desarma rastreio de abertura do Farol quando o usuario abre o item por outro lugar.
+void farolsinal_uso_limpar_alvo(const CatItem *ci);
+
 // --- teste -------------------------------------------------------------------
 // Relogio injetavel: s devolve epoch em segundos, ms os milissegundos do anel
 // (mesma base de farolanel). NULL volta ao relogio real.

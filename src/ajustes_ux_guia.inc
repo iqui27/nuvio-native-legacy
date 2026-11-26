@@ -142,7 +142,7 @@ static const char *guiaRotTela(int t) {
     case GT_AGENDA: return "Abrir a Agenda";
     case GT_EXPLORAR: return "Abrir o Explorar";
     case GT_PERFIL: return "Abrir Perfil e Stats";
-    case GT_FAROL: return "Abrir o Farol";
+    case GT_FAROL: return FT_ABRIR_FAROL;
     default: return "";
   }
 }

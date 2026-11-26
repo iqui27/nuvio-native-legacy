@@ -28,6 +28,7 @@
 // no maximo 5+6 toques e ~5 em media.
 #include "menu.h"
 #include "busca.h"
+extern __attribute__((weak)) void farolsinal_uso_limpar_alvo(const CatItem *ci);
 #include "posterprov.h"
 #include "idioma.h"
 #include "gfx.h"
@@ -1051,6 +1052,7 @@ int busca_relogio_navegavel(void) { return !teclado_aberto() && st_estado() == S
 int busca_pediu_abrir(int *indiceCatalogo) {
   if (pedido < 0) return 0;
   if (indiceCatalogo) *indiceCatalogo = pedido;
+  if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
   pedido = -1;
   return 1;
 }
@@ -1058,6 +1060,7 @@ int busca_pediu_abrir(int *indiceCatalogo) {
 int busca_pediu_pessoa(SpotPedido *p) {
   if (!pedidoPessoa) return 0;
   pedidoPessoa = 0;
+  if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
   if (p) *p = pedidoP;
   return 1;
 }

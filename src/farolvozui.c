@@ -752,7 +752,7 @@ void farolvozui_desenhar(float ox, float oy, float alpha, Uint32 agora) {
     sub = i18n(FT_BUSCA_FRASE_PROMPT);
   } else if (V.estado == FV_QR) {
     tit = i18n(FT_DIGITE_CELULAR);
-    sub = i18n("Aponte a câmera do celular. Mesma rede Wi-Fi, vale por 5 minutos.");
+    sub = i18n(FT_QR_CELULAR_SUB);
   } else if (V.estado == FV_REVISAO) {
     tit = i18n(FT_VOCE_DISSE);
     sub = i18n(FT_CONFIRMA_DESCARTA);

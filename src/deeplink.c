@@ -1,6 +1,8 @@
 #include "deeplink.h"
+#include "catalogo.h"
 #include <pthread.h>
 #include <string.h>
+extern __attribute__((weak)) void farolsinal_uso_limpar_alvo(const CatItem *ci);
 
 static int cmpPrefixo(const char *s, const char *p) {
   for (; *p; s++, p++) {
@@ -174,6 +176,8 @@ int deeplink_pegar(DeepLink *out) {
   ok = pendente.tipo != DL_NENHUM;
   if (ok) { *out = pendente; memset(&pendente, 0, sizeof pendente); }
   pthread_mutex_unlock(&trava);
+  if (ok && out->tipo != DL_BUSCA && farolsinal_uso_limpar_alvo)
+    farolsinal_uso_limpar_alvo(NULL);
   return ok;
 }
 

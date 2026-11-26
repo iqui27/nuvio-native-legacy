@@ -527,7 +527,13 @@ int main(void) {
     FAROL_FRASES(X)
 #undef X
   };
+  static const char *LONGOS[] = {
+#define X(nome) FT_##nome,
+    FAROL_TEXTOS_LONGOS(X)
+#undef X
+  };
   size_t n = sizeof FRASES / sizeof *FRASES;
+  size_t n_longos = sizeof LONGOS / sizeof *LONGOS;
 
   // A mestra tem de estar ordenada para a busca binaria valer (e para o
   // proprio i18n); o idiomas.py confere de novo, aqui e pre-condicao.
@@ -557,6 +563,15 @@ int main(void) {
       printf("FALHOU: en \"%s\" reprovada por faroltexto_aceita\n", en);
       falhas++;
     }
+  }
+
+  for (size_t i = 0; i < n_longos; i++) {
+    const char *pt = LONGOS[i];
+    const char *en = en_de(pt);
+    if (!en) { printf("FALHOU: longo \"%s\" nao e chave da mestra\n", pt); falhas++; continue; }
+    if (!*en) { printf("FALHOU: longo \"%s\" sem ingles\n", pt); falhas++; }
+    confere_proibidas(pt, pt);
+    confere_proibidas(pt, en);
   }
 
   // A chave antiga fica ate a issue 23 trocar o rotulo visivel.

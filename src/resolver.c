@@ -95,9 +95,6 @@
 #else
 #define ESCOLHA_LIGADA() 1
 #endif
-// FALTA_TEXTO: "Me ajude a escolher" (entrada do P5) ainda sem chave em
-// src/idioma_*.h; i18n() devolve o portugues ate a traducao entrar.
-#define ROT_ESCOLHA "Me ajude a escolher"
 
 // Ganchos fracos da camada de voz (#31) para manter os testes isolados do
 // Resolver e da Tela 7 sem puxar farolvozui.c / farolbusca.c / sistexto.c.
@@ -1532,7 +1529,7 @@ static void desenha_sintoma(float a) {
         p = (Tinta){ 243, 242, 239 };
         s = (Tinta){ 186, 192, 204 };
       }
-      txt_em(TXT_V2_26, i18n(k < 4 ? farolacha_rotulo(TIPO[k]) : ROT_ESCOLHA), c.x + 22.0f, c.y + 10.0f,
+      txt_em(TXT_V2_26, i18n(k < 4 ? farolacha_rotulo(TIPO[k]) : FT_ESC_ABRIR), c.x + 22.0f, c.y + 10.0f,
              c.w - 64.0f, p.r, p.g, p.b, a);
       icone_t((GfxRect){ c.x + c.w - 38.0f, c.y + (c.h - 20.0f) * 0.5f, 20.0f, 20.0f },
               "aj_chevron-right", f ? p : s, (f ? 0.95f : 0.65f) * a);

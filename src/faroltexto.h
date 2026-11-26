@@ -25,6 +25,8 @@
 
 #define FAROL_FRASES(X) \
   X(NOME) \
+  X(ABRIR_FAROL) \
+  X(GUIA_FAROL_ONDE) \
   X(ACHAR_O_QUE_VER) \
   X(AJUDA_KICKER) \
   X(BANNER_FALHA) \
@@ -130,10 +132,13 @@
   X(VAI_JUNTO) \
   X(NUNCA_VAI) \
   X(VAI_MODELO) \
+  X(VAI_REDE) \
   X(VAI_VERSAO) \
   X(VAI_FORMATO) \
   X(VAI_PONTO) \
   X(VAI_AJUSTES) \
+  X(VAI_ADDONS) \
+  X(VAI_SERVICOS) \
   X(VAI_EVENTOS) \
   X(NUNCA_TITULOS) \
   X(NUNCA_PERFIL) \
@@ -153,6 +158,7 @@
   X(SONDANDO_FONTE) \
   X(ENVIANDO) \
   X(SEM_NET_ENVIO_L2) \
+  X(PENDENTE_24H) \
   X(RECUSOU_L1) \
   X(RECUSOU_L2) \
   X(LIMITE_L1) \
@@ -179,6 +185,7 @@
   X(BUSCA_FRASE_LIMITE) \
   X(DIGITE_CELULAR) \
   X(OUVINDO) \
+  X(VOZ_MIC_TECLADO) \
   X(AVISOS_FAROL) \
   X(AVISOS_FAROL_DESC) \
   X(CARTAO_FAROL) \
@@ -232,7 +239,9 @@
   X(INFO_IDIOMA) \
   X(INFO_LEGENDA) \
   X(INFO_SOBE) \
+  X(INFO_SOBE_SO) \
   X(INFO_CAI) \
+  X(INFO_NOTA_CAI) \
   X(INFO_FALTAM) \
   X(INFO_MESMO_NIVEL) \
   X(INFO_TERMINA) \
@@ -241,6 +250,7 @@
   X(INFO_AMIGOS_TERM) \
   X(INFO_AMIGO_TERM) \
   X(INFO_AMIGOS_GOST) \
+  X(INFO_AMIGO_GOST) \
   X(INFO_SAGA) \
   X(INFO_SAGA_VOCE_VIU) \
   X(INFO_REVER) \
@@ -279,6 +289,11 @@
   X(ESC_COMECAR) \
   X(ESC_TANTO_FAZ) \
   X(ESC_PASSO) \
+  X(ESC_ABRIR) \
+  X(ESC_NADA_EXATO) \
+  X(ESC_NADA_DICA) \
+  X(ESC_ACHAMOS_1) \
+  X(ESC_ACHAMOS_N) \
   X(CMP_TITULO) \
   X(CMP_DURACAO) \
   X(CMP_NOTA) \
@@ -304,10 +319,56 @@
   X(NAO_MOSTRO_MAIS) \
   X(ANOTADO) \
   X(ESCOLHENDO) \
-  X(PORQUE_TITULO)
+  X(PORQUE_TITULO) \
+  X(GOSTO_NENHUM_AINDA) \
+  X(GOSTO_TEMAS) \
+  X(GOSTO_APRENDEU_VAZIO) \
+  X(GOSTO_CONSENT_KICKER) \
+  X(GOSTO_CONSENT_TITULO) \
+  X(GOSTO_CONSENT_PERMITIR) \
+  X(GOSTO_CONSENT_RODAPE) \
+  X(GOSTO_VAI_IDIOMA) \
+  X(GOSTO_VAI_HORA) \
+  X(GOSTO_VAI_GOSTO) \
+  X(GOSTO_VAI_CANDIDATOS) \
+  X(GOSTO_VAI_ANCORAS) \
+  X(GOSTO_VAI_FRASE) \
+  X(GOSTO_NUNCA_DIARIO) \
+  X(GOSTO_NUNCA_NOTAS) \
+  X(GOSTO_NUNCA_PERFIS) \
+  X(GOSTO_NUNCA_AMIGOS) \
+  X(GOSTO_NUNCA_ADDONS) \
+  X(GOSTO_NUNCA_VETOR) \
+  X(GOSTO_NUNCA_INFANTIL) \
+  X(GOSTO_USO_TITULO) \
+  X(GOSTO_USO_VISTAS) \
+  X(GOSTO_USO_ABERTAS) \
+  X(GOSTO_USO_TOCADAS) \
+  X(GOSTO_USO_TERMINADAS) \
+  X(GOSTO_USO_RECUSAS) \
+  X(GOSTO_USO_CENAS_TV) \
+  X(GOSTO_USO_CENAS_SERV) \
+  X(GOSTO_USO_VAZIO) \
+  X(GOSTO_USO_NOTA)
+
+// Textos longos de ajuda, guia e consentimento (quebrados em multiplas linhas
+// por txt_bloco; fora de FAROL_FRASES porque nao sao falas curtas de 62 chars
+// da Ilha nem modelos "m" de FarolCena). Conferidos em idioma_tab.h, nas 29
+// tabelas irmas e na lista "nunca diz" do ALMA por tests/farol_textos.{c,sh}.
+#define FAROL_TEXTOS_LONGOS(X) \
+  X(GUIA_FAROL_DESC) \
+  X(QR_CELULAR_SUB) \
+  X(AJ_FAROL_RECOMENDAR_DESC) \
+  X(AJ_FAROL_APRENDEU_DESC) \
+  X(AJ_FAROL_ZERAR_DESC) \
+  X(AJ_FAROL_LLM_DESC) \
+  X(GOSTO_CONSENT_SUB) \
+  X(GOSTO_CONSENT_NOTA_SO_TV)
 
 // ---------------------------------------------------------- nome e entradas
 #define FT_NOME                "Farol"                 // en: "Beacon"
+#define FT_ABRIR_FAROL         "Abrir o Farol"
+#define FT_GUIA_FAROL_ONDE     "Ajustes › Sobre e ajuda › Farol"
 #define FT_ACHAR_O_QUE_VER     "Achar o que ver"
 #define FT_AJUDA_KICKER        "Ajustes › Ajuda"       // ja existe
 #define FT_BANNER_FALHA        "O último vídeo não abriu · ver o motivo"
@@ -425,10 +486,13 @@
 #define FT_VAI_JUNTO       "Vai junto"               // ja existe
 #define FT_NUNCA_VAI       "Nunca vai"
 #define FT_VAI_MODELO      "Modelo e sistema desta TV"
+#define FT_VAI_REDE        "Estado da rede (sem IP)"
 #define FT_VAI_VERSAO      "Versão do Nuvio"
 #define FT_VAI_FORMATO     "Formato técnico do vídeo (codec, HDR, áudio)"
 #define FT_VAI_PONTO       "Onde a reprodução parou"
 #define FT_VAI_AJUSTES     "Ajustes que você mudou"
+#define FT_VAI_ADDONS      "Add-ons (contagem e tipos)"
+#define FT_VAI_SERVICOS    "Serviços ligados (debrid, Trakt, Simkl — sem a sua conta)"
 #define FT_VAI_EVENTOS     "Os últimos 5 minutos em eventos técnicos"
 #define FT_NUNCA_TITULOS   "Nome de filme ou série"
 #define FT_NUNCA_PERFIL    "Seu perfil, conta e amigos"
@@ -452,6 +516,7 @@
 #define FT_SONDANDO_FONTE   "Testando fonte…"
 #define FT_ENVIANDO         "Mandando o registro…"
 #define FT_SEM_NET_ENVIO_L2 "Guardo o registro e mando sozinho quando ela voltar."
+#define FT_PENDENTE_24H     "Fica guardado por até 24 h nesta TV."
 #define FT_RECUSOU_L1       "Não consegui entregar o registro agora."
 #define FT_RECUSOU_L2       "Ele fica guardado; tento de novo quando você pedir."
 #define FT_LIMITE_L1        "Já recebi registros demais desta TV hoje."
@@ -482,6 +547,7 @@
 #define FT_BUSCA_FRASE_LIMITE    "A busca por frase já encheu hoje — mostrei o mais perto daqui."
 #define FT_DIGITE_CELULAR        "Digite a frase no celular"
 #define FT_OUVINDO               "Ouvindo…"               // ja existe
+#define FT_VOZ_MIC_TECLADO       "Use o microfone do teclado do sistema."
 
 // ----------------------------------------------------- ajustes e novidades
 #define FT_AVISOS_FAROL      "Avisos do Farol"
@@ -556,7 +622,9 @@
 #define FT_INFO_IDIOMA          "Tem áudio em %s."
 #define FT_INFO_LEGENDA         "Tem legenda em %s."
 #define FT_INFO_SOBE            "A T%d sobe de nota. Faltam %d episódios de %d min."
+#define FT_INFO_SOBE_SO         "A T%d sobe de nota."
 #define FT_INFO_CAI             "A T%d cai bastante; muita gente para aqui."
+#define FT_INFO_NOTA_CAI        "A T%d cai de nota."
 #define FT_INFO_FALTAM          "Faltam %d episódios de %d min."
 #define FT_INFO_MESMO_NIVEL     "As temporadas seguem no mesmo nível."
 #define FT_INFO_TERMINA         "Termina às %s."
@@ -565,6 +633,7 @@
 #define FT_INFO_AMIGOS_TERM     "%s e %s terminaram."
 #define FT_INFO_AMIGO_TERM      "%s terminou."
 #define FT_INFO_AMIGOS_GOST     "%s e %s gostaram."   // mesmo literal de FT_MOT_AMIGOS
+#define FT_INFO_AMIGO_GOST      "%s gostou."
 #define FT_INFO_SAGA            "É o %dº de %d."
 #define FT_INFO_SAGA_VOCE_VIU   "É o %dº de %d — você viu %d."
 #define FT_INFO_REVER           "Você viu em %s e deu %d estrelas."
@@ -605,6 +674,11 @@
 #define FT_ESC_COMECAR          "Começar do zero"
 #define FT_ESC_TANTO_FAZ        "Tanto faz"
 #define FT_ESC_PASSO            "%d de %d"
+#define FT_ESC_ABRIR            "Me ajude a escolher"
+#define FT_ESC_NADA_EXATO       "Nada exato…"
+#define FT_ESC_NADA_DICA        "Volte uma pergunta ou escolha outra opção."
+#define FT_ESC_ACHAMOS_1        "Achamos este"
+#define FT_ESC_ACHAMOS_N        "Achamos estes"
 
 // -------------------------------------------------------- comparar (P4)
 #define FT_CMP_TITULO           "Comparar"
@@ -637,6 +711,50 @@
 #define FT_ANOTADO              "Anotado."
 #define FT_ESCOLHENDO           "Escolhendo…"
 #define FT_PORQUE_TITULO        "Por que você vai gostar"   // mesmo literal de FT_CMP_PORQUE
+#define FT_GOSTO_NENHUM_AINDA   "Nenhum ainda"
+#define FT_GOSTO_TEMAS          "Temas"
+#define FT_GOSTO_APRENDEU_VAZIO "O Farol ainda não aprendeu preferências neste perfil."
+
+// ----------------------------------------- consentimento do gosto (issue 53)
+#define FT_GOSTO_CONSENT_KICKER     "Gosto"
+#define FT_GOSTO_CONSENT_TITULO     "Recomendações com o servidor?"
+#define FT_GOSTO_CONSENT_PERMITIR   "Permitir"
+#define FT_GOSTO_CONSENT_RODAPE     "Você pode mudar isso depois em Ajustes › Gosto."
+#define FT_GOSTO_VAI_IDIOMA         "Idioma da interface"
+#define FT_GOSTO_VAI_HORA           "Hora local em faixa"
+#define FT_GOSTO_VAI_GOSTO          "Resumo do gosto: até 6 gêneros, 6 temas e 4 pessoas"
+#define FT_GOSTO_VAI_CANDIDATOS     "Até 24 candidatos"
+#define FT_GOSTO_VAI_ANCORAS        "Até 3 títulos-âncora"
+#define FT_GOSTO_VAI_FRASE          "Frase ditada quando houver"
+#define FT_GOSTO_NUNCA_DIARIO       "O Diário"
+#define FT_GOSTO_NUNCA_NOTAS        "Notas e datas"
+#define FT_GOSTO_NUNCA_PERFIS       "Perfis e nomes"
+#define FT_GOSTO_NUNCA_AMIGOS       "Amigos (motivo de amigo vai como \"um amigo\")"
+#define FT_GOSTO_NUNCA_ADDONS       "Add-ons e fontes"          // ja existe
+#define FT_GOSTO_NUNCA_VETOR        "O vetor inteiro"
+#define FT_GOSTO_NUNCA_INFANTIL     "Qualquer coisa de perfil infantil"
+
+// ----------------------------------------- auditoria de uso local (issue 56)
+#define FT_GOSTO_USO_TITULO         "Uso do Farol nesta TV"
+#define FT_GOSTO_USO_VISTAS         "Fileiras vistas"
+#define FT_GOSTO_USO_ABERTAS        "Abertas"
+#define FT_GOSTO_USO_TOCADAS        "Tocadas"
+#define FT_GOSTO_USO_TERMINADAS     "Terminadas"
+#define FT_GOSTO_USO_RECUSAS        "Recusas"
+#define FT_GOSTO_USO_CENAS_TV       "Cenas montadas na TV"
+#define FT_GOSTO_USO_CENAS_SERV     "Cenas montadas no servidor"
+#define FT_GOSTO_USO_VAZIO          "Nada contado ainda"
+#define FT_GOSTO_USO_NOTA           "Fica só nesta TV. Zerar o gosto apaga."
+
+// --------------------------- textos longos de ajuda, guia e consentimento
+#define FT_GUIA_FAROL_DESC          "Testa a conexão, o cache e a TV para achar por que o vídeo falhou e abrir o conserto ou envio de registro."
+#define FT_QR_CELULAR_SUB           "Aponte a câmera do celular. Mesma rede Wi-Fi, vale por 5 minutos."   // ja existe
+#define FT_AJ_FAROL_RECOMENDAR_DESC "Mostra fileiras e motivos personalizados para este perfil nesta TV. Desligar tira as fileiras na hora e para de registrar sinais."
+#define FT_AJ_FAROL_APRENDEU_DESC   "Mostra os gêneros, pessoas e temas que o Farol identificou como favoritos deste perfil."
+#define FT_AJ_FAROL_ZERAR_DESC      "Apaga o que o Farol aprendeu e as pendências deste perfil nesta TV."
+#define FT_AJ_FAROL_LLM_DESC        "Ligado por padrão: tudo do gosto fica só nesta TV. Desligar permite usar o servidor com consentimento (indisponível no perfil infantil)."
+#define FT_GOSTO_CONSENT_SUB        "Você escolhe se o Farol pode montar fileiras e dicas usando o servidor."
+#define FT_GOSTO_CONSENT_NOTA_SO_TV "\"Só nesta TV\" mantém tudo calculado só no aparelho e não pergunta de novo."
 
 // faroltexto_aceita (src/faroltexto.c): o filtro do texto livre "x" que o LLM
 // manda na cena (PLANO-GOSTO 4.1/5.1). Devolve 1 se a frase pode subir na

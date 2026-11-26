@@ -1391,9 +1391,12 @@ void biblioteca_alternar_lista(int i) {
 int biblioteca_quer_sair(void) { return sair && animTela < .005f; }
 int biblioteca_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return v; }
 
+extern __attribute__((weak)) void farolsinal_uso_limpar_alvo(const CatItem *ci);
+
 int biblioteca_pediu_abrir(int *indiceCatalogo) {
   if (pedido < 0) return 0;
   if (indiceCatalogo) *indiceCatalogo = pedido;
+  if (farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
   pedido = -1;
   return 1;
 }
@@ -1401,6 +1404,7 @@ int biblioteca_pediu_abrir(int *indiceCatalogo) {
 int biblioteca_pediu_torbox_play(int *usenet, int *item, int *arquivo, const char **titulo) {
   int v = pediuTorbox;
   pediuTorbox = 0;
+  if (v && farolsinal_uso_limpar_alvo) farolsinal_uso_limpar_alvo(NULL);
 #ifdef NV_TPK
   if (usenet) *usenet = torboxUsenet;
   if (item) *item = torboxItem;

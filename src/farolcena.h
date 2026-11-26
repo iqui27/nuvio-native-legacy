@@ -41,8 +41,8 @@
 // NENHUMA PECA SEM MOTIVO VERDADEIRO LEVA LINHA DE MOTIVO: motivo que o
 // farolrec emitiu mas cujo argumento nao pode ser produzido com dado real
 // (semente sem referencia, salvo sem data) e omitido — nunca sai frase
-// generica no lugar (3.5). Linha da farolinfo cujo modelo a 35 ainda nao
-// tem (FALTA_TEXTO) tambem e omitida, porque subi-la quebraria a cena no
+// generica no lugar (3.5). Linha da farolinfo cujo modelo nao existe em
+// FAROL_FRASES tambem e omitida, porque subi-la quebraria a cena no
 // validador.
 //
 // PURO como os irmaos: sem malloc, sem SDL, sem rede, sem dados.h, sem
@@ -92,6 +92,14 @@ typedef struct {
   int64_t  feita;                      // epoch da cena (0 = omite)
   int64_t  valeS;                      // vale_s; <= 0 = omite
   uint32_t semente;                    // sorteio deterministico (desempate)
+  // Contadores locais para ajuste da vaga de exploracao ("fora da curva").
+  uint32_t expVistas;
+  uint32_t expAbertas;
+  uint32_t expTocadas;
+  uint32_t normVistas;
+  uint32_t normAbertas;
+  uint32_t normTocadas;
+  uint32_t expSeq;
 } FarolCenaCtx;
 
 // ------------------------------------------------------- dicas (P2)

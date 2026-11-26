@@ -18,7 +18,9 @@
 #endif
 
 #include "../src/ajustes.c"
+#include "busca.h"
 #include "catalogo.h"
+#include "deeplink.h"
 #include "ctxinfo.h"
 #include "ctxmenu.h"
 #include "dados.h"
@@ -501,6 +503,36 @@ static void testarAjustesEGostoUI(void) {
   assert(farolgostoui_modo() == 0);
   farolgostoui_fechar();
 
+  // Folha "O que o Farol aprendeu" (P2-2): foco inicial visivel em Voltar (0),
+  // 1o OK fecha como antes, D-pad rola ate Uso sem beco e RETURN fecha.
+  {
+    FarolUsoContadores u;
+    farolsinal_uso_cena(0);
+    farolsinal_uso_vista(1, 1);
+    farolsinal_uso_obter(&u);
+    assert(u.cenasTv >= 1 && u.vistas >= 1);
+    farolgostoui_abrir_aprendeu();
+    assert(farolgostoui_aberto() && farolgostoui_modo() == 1);
+    assert(farolgostoui_foco() == 0);
+    teclaFgui(SDLK_RETURN, 0); // 1o OK fecha direto como antes
+    assert(farolgostoui_modo() == 0);
+    farolgostoui_fechar();
+
+    farolgostoui_abrir_aprendeu();
+    assert(farolgostoui_aberto() && farolgostoui_modo() == 1);
+    assert(farolgostoui_foco() == 0);
+    teclaFgui(SDLK_DOWN, 0);
+    teclaFgui(SDLK_DOWN, 0);
+    teclaFgui(SDLK_DOWN, 0);
+    teclaFgui(SDLK_DOWN, 0);
+    teclaFgui(SDLK_UP, 0);
+    teclaFgui(SDLK_DOWN, 0);
+    assert(farolgostoui_foco() == 0);
+    teclaFgui(SDLK_RETURN, 0);
+    assert(farolgostoui_modo() == 0);
+    farolgostoui_fechar();
+  }
+
   // Lista (1): AJ_FAROL_ZERAR abre confirmacao com foco seguro (1=Cancelar);
   // OK imediato ou Voltar cancelam preservando tudo!
   valor[AJ_LAYOUT_AJUSTES] = 1;
@@ -634,6 +666,53 @@ static void testarTravaParental(void) {
   puts("  trava parental (bloqueia todas mutacoes): ok");
 }
 
+static void testarBuscaDeepLinkLimpaAlvo(void) {
+  FarolUsoContadores uAntes, uDepois;
+  CatItem cBus;
+  SDL_Event ev;
+  int idxBus = -1;
+  DeepLink dl;
+
+  farol_recomendar_definir(1, NULL);
+  farol_gosto_zerar(NULL);
+  esperarFiosSinal();
+  montarCatalogoComFarol();
+
+  cBus = *cat_item(8); // tt0000101 ("Filme Um") na fileira farol_gosto1
+  farolsinal_uso_obter(&uAntes);
+  farolsinal_uso_aberta(&cBus, 0);
+  farolsinal_uso_obter(&uDepois);
+  assert(uDepois.abertas == uAntes.abertas + 1);
+
+  assert(busca_iniciar() == 1);
+  busca_definir_consulta("Filme Um");
+  memset(&ev, 0, sizeof ev);
+  ev.type = SDL_KEYDOWN;
+  ev.key.keysym.sym = SDLK_TAB;
+  busca_evento(&ev);
+  ev.type = SDL_KEYDOWN;
+  ev.key.keysym.sym = SDLK_RETURN;
+  busca_evento(&ev);
+  ev.type = SDL_KEYUP;
+  ev.key.keysym.sym = SDLK_RETURN;
+  busca_evento(&ev);
+  assert(busca_pediu_abrir(&idxBus) == 1 && idxBus >= 0);
+  busca_encerrar();
+
+  farolsinal_uso_tocada(cat_item(idxBus));
+  farolsinal_uso_obter(&uDepois);
+  assert(uDepois.tocadas == uAntes.tocadas);
+
+  // Deep link tambem limpa alvo pendente do Farol.
+  farolsinal_uso_aberta(&cBus, 1);
+  deeplink_postar("nuvio-legacy://play/movie/tt0000101");
+  assert(deeplink_pegar(&dl) == 1);
+  farolsinal_uso_tocada(&cBus);
+  farolsinal_uso_obter(&uDepois);
+  assert(uDepois.tocadas == uAntes.tocadas);
+  puts("  P2-1 busca + deeplink limpam alvo do Farol: ok");
+}
+
 #ifdef NV_LINUX_DESKTOP
 static void testarGlRender(const char *dir) {
   const int W = 1920, H = 1080;
@@ -705,6 +784,7 @@ int main(int argc, char **argv) {
   testarCtxInfoP6();
   testarAjustesEGostoUI();
   testarTravaParental();
+  testarBuscaDeepLinkLimpaAlvo();
 #ifdef NV_LINUX_DESKTOP
   testarGlRender(argc > 1 ? argv[1] : dir);
   tex_encerrar();

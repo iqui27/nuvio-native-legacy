@@ -41,9 +41,15 @@
 #endif
 
 extern __attribute__((weak)) int perfil_ajustes_travados(int idx);
+extern __attribute__((weak)) int perfil_infantil_ativo(void);
 static int gostoTravado(void) {
   return perfil_ajustes_travados && perfil_ajustes_travados(perfis_ativo());
 }
+static int infantilAtivo(void) {
+  return perfil_infantil_ativo && perfil_infantil_ativo();
+}
+static uint32_t satInc(uint32_t v) { return v < UINT32_MAX ? v + 1u : UINT32_MAX; }
+static uint32_t satDec(uint32_t v) { return v > 0u ? v - 1u : 0u; }
 
 #define FSIN_NOMES_MAX 512
 static struct {
@@ -109,6 +115,7 @@ enum {
 #define FSIN_ALIAS_N  64    // chave pedida -> chave real da ficha
 #define FSIN_ORI_N    64    // origens de Play recentes
 #define FSIN_TEMP_N   8     // temporadas esperando conferida de "completa"
+#define FSIN_USO_ALVO_PRAZO_MS (10u * 60u * 1000u) // prazo de 10 min para tocar apos abrir do Farol
 #define FSIN_ABAND_MIN_S  60.0     // parou antes de 1 min: nem sinal
 #define FSIN_ABAND_PCT    20.0     // largou antes de 20%: abandono cedo
 #define FSIN_JANELA_FALHA (5u*60u*1000u)   // ms; falha de fonte anula abandono
@@ -190,6 +197,9 @@ static struct {
   int    nTempChk;
   struct { uint32_t h; uint8_t o, dia; } ori[FSIN_ORI_N];
   int    nOri, oriProx;
+  FarolUsoContadores uso;
+  struct { uint32_t h; uint32_t abertaMs; uint8_t fc, st; } usoAlvo; // st: 0=vazio, 1=aberta, 2=tocada
+  int    usoSujo;
   int    sujo;                      // modelo/estado com gravacao pendente
   int    fichaSujo;
   long long ultGrav;
@@ -280,6 +290,9 @@ static void nomeNotas(char *dst, size_t cap) {
 }
 static void nomeEstado(int perfil, char *dst, size_t cap) {
   snprintf(dst, cap, "farol-sinal-p%d.txt", perfil);
+}
+static void nomeMedida(int perfil, char *dst, size_t cap) {
+  snprintf(dst, cap, "farol-medida-p%d.txt", perfil);
 }
 static void nomeGosto(int perfil, char *dst, size_t cap) {
   farolgosto_nome((uint16_t)perfil, dst, cap);
@@ -847,6 +860,75 @@ static void aplicaEstado(char *b, size_t n) {   // com a trava tomada
                 S.pend[i].tmdb);
 }
 
+static uint32_t baseImdbHash(const char *id) {
+  char base[64];
+  size_t n = 0;
+  if (!id || !id[0]) return 0;
+  while (id[n] && id[n] != ':' && n + 1 < sizeof base) {
+    base[n] = id[n];
+    n++;
+  }
+  base[n] = 0;
+  return mapa_hash_titulo(base);
+}
+
+static char *textoMedida(size_t *np) {   // com a trava tomada; malloc
+  char *b = malloc(512);
+  int n;
+  if (!b) return NULL;
+  n = snprintf(b, 512,
+               "FM 1 %d\n"
+               "v %u\na %u\nt %u\ne %u\nr %u\nl %u\ns %u\n"
+               "xv %u\nxa %u\nxt %u\nna %u\nnt %u\nxq %u\n",
+               S.perfil,
+               S.uso.vistas, S.uso.abertas, S.uso.tocadas, S.uso.terminadas,
+               S.uso.recusas, S.uso.cenasTv, S.uso.cenasServidor,
+               S.uso.expVistas, S.uso.expAbertas, S.uso.expTocadas,
+               S.uso.normAbertas, S.uso.normTocadas, S.uso.expSeq);
+  if (n <= 0 || n >= 512) { free(b); return NULL; }
+  *np = (size_t)n;
+  return b;
+}
+
+static void aplicaMedida(char *b, size_t n) {   // com a trava tomada
+  char *s = b, *fim = b + n, *nl;
+  FarolUsoContadores u;
+  int p = 0, mal = 0;
+  char resto[8] = "";
+  memset(&u, 0, sizeof u);
+  nl = memchr(s, '\n', (size_t)(fim - s));
+  if (!nl) return;
+  *nl = 0;
+  if (sscanf(s, "FM 1 %d %7s", &p, resto) != 1 || p != S.perfil) return;
+  for (s = nl + 1; s < fim; s = nl + 1) {
+    unsigned val = 0;
+    nl = memchr(s, '\n', (size_t)(fim - s));
+    if (!nl) { mal = 1; break; }
+    *nl = 0;
+    if (s[0] == 'x') {
+      if (sscanf(s + 2, "%u %7s", &val, resto) != 1 || !s[1]) { mal = 1; break; }
+      if (s[1] == 'v') u.expVistas = (uint32_t)val;
+      else if (s[1] == 'a') u.expAbertas = (uint32_t)val;
+      else if (s[1] == 't') u.expTocadas = (uint32_t)val;
+      else if (s[1] == 'q') u.expSeq = (uint32_t)val;
+    } else if (s[0] == 'n') {
+      if (sscanf(s + 2, "%u %7s", &val, resto) != 1 || !s[1]) { mal = 1; break; }
+      if (s[1] == 'a') u.normAbertas = (uint32_t)val;
+      else if (s[1] == 't') u.normTocadas = (uint32_t)val;
+    } else if (s[0] && s[1] == ' ') {
+      if (sscanf(s + 2, "%u %7s", &val, resto) != 1) { mal = 1; break; }
+      if (s[0] == 'v') u.vistas = (uint32_t)val;
+      else if (s[0] == 'a') u.abertas = (uint32_t)val;
+      else if (s[0] == 't') u.tocadas = (uint32_t)val;
+      else if (s[0] == 'e') u.terminadas = (uint32_t)val;
+      else if (s[0] == 'r') u.recusas = (uint32_t)val;
+      else if (s[0] == 'l') u.cenasTv = (uint32_t)val;
+      else if (s[0] == 's') u.cenasServidor = (uint32_t)val;
+    } else { mal = 1; break; }
+  }
+  if (!mal) S.uso = u;
+}
+
 // Arma uma varredura do diario de volta ao comeco — cursor zerado e o
 // conjunto de titulos contados esvaziado junto: a leva cobre os
 // FSIN_AQUECE_TITULOS titulos mais novos (issue 43, PLANO-GOSTO 1.3), nao
@@ -906,9 +988,9 @@ static long long marcaDiario(int perfil) {
 // perfil mudou de novo, esquecer ou sair descartam o resultado.
 static void fioTrocaPerfil(void) {
   char cam[1100], nome[64];
-  char *gm = NULL, *ge = NULL, *bG = NULL, *bE = NULL;
+  char *gm = NULL, *ge = NULL, *gu = NULL, *bG = NULL, *bE = NULL, *bU = NULL;
   unsigned char *gf = NULL, *bF = NULL;
-  size_t nGm = 0, nGe = 0, nGf = 0, nBG = 0, nBE = 0, nBF = 0;
+  size_t nGm = 0, nGe = 0, nGu = 0, nGf = 0, nBG = 0, nBE = 0, nBU = 0, nBF = 0;
   int pAnt, pNovo, ger, eGer, leF, soLer;
 
   TRAVA();
@@ -919,9 +1001,12 @@ static void fioTrocaPerfil(void) {
   // senao a versao velha em memoria pisava no arquivo recem-restaurado.
   soLer = S.recarrega && pNovo == pAnt;
   S.recarrega = 0;
-  if (pAnt > 0 && !soLer) { gm = textoModelo(&nGm); ge = textoEstado(&nGe); }
+  if (pAnt > 0 && !soLer) {
+    gm = textoModelo(&nGm); ge = textoEstado(&nGe);
+    if (S.usoSujo) gu = textoMedida(&nGu);
+  }
   if (S.fc.sujo && !soLer) gf = textoFichas(&nGf);
-  if (!soLer) { S.sujo = 0; S.fichaSujo = 0; }
+  if (!soLer) { S.sujo = 0; S.fichaSujo = 0; S.usoSujo = 0; }
   DTRAVA();
 
   if (pAnt > 0) {
@@ -929,16 +1014,22 @@ static void fioTrocaPerfil(void) {
       if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, gm, nGm, 0, eGer); }
     if (ge) { nomeEstado(pAnt, nome, sizeof nome);
       if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, ge, nGe, 0, eGer); }
+    if (gu) { nomeMedida(pAnt, nome, sizeof nome);
+      if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, gu, nGu, 0, eGer); }
   }
   if (gf && caminho("farol-fichas.bin", cam, sizeof cam))
     gravaBuf(cam, gf, nGf, 0, eGer);
-  free(gm); free(ge); free(gf);
+  free(gm); free(ge); free(gu); free(gf);
 
   if (!fioMorre && pNovo > 0) {
     nomeGosto(pNovo, nome, sizeof nome);
     if (caminho(nome, cam, sizeof cam)) bG = (char *)lerArq(cam, &nBG);
     nomeEstado(pNovo, nome, sizeof nome);
     if (caminho(nome, cam, sizeof cam)) bE = (char *)lerArq(cam, &nBE);
+    if (!soLer) {
+      nomeMedida(pNovo, nome, sizeof nome);
+      if (caminho(nome, cam, sizeof cam)) bU = (char *)lerArq(cam, &nBU);
+    }
     if (leF && caminho("farol-fichas.bin", cam, sizeof cam))
       bF = lerArq(cam, &nBF);
   } else if (!fioMorre && leF && caminho("farol-fichas.bin", cam, sizeof cam))
@@ -952,6 +1043,11 @@ static void fioTrocaPerfil(void) {
     memset(&S.g, 0, sizeof S.g);
     S.nCred = S.nPend = S.nObra = S.obraProx = 0;
     S.nTempChk = S.nOri = S.oriProx = 0;
+    if (!soLer) {
+      memset(&S.uso, 0, sizeof S.uso);
+      memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
+      S.usoSujo = 0;
+    }
     S.cur = 0; S.curSeq = 0; S.curRest = 0; S.varDe = 0;
     S.varCur = 0; S.varSeq = 0;
     S.varrer = 1; S.varGer++; S.nVarId = 0;
@@ -961,6 +1057,7 @@ static void fioTrocaPerfil(void) {
       farolgosto_iniciar(&S.g, (uint16_t)pNovo);
       if (bG) farolgosto_ler(&S.g, bG, nBG);
       if (bE) aplicaEstado(bE, nBE);
+      if (!soLer && bU) aplicaMedida(bU, nBU);
       // Modelo quente sem anel de creds (o backup so carrega o modelo —
       // secao 2.3): a dupla cursor-no-fundo + grupo-consumido persiste
       // como "o diario inteiro ja esta dentro dele" — repassar dobraria
@@ -980,7 +1077,7 @@ static void fioTrocaPerfil(void) {
   }
   pthread_cond_broadcast(&condTroca);
   DTRAVA();
-  free(bG); free(bE); free(bF);
+  free(bG); free(bE); free(bU); free(bF);
 }
 
 // ---------------------------------------------------------------- garante --
@@ -1433,7 +1530,26 @@ void farolsinal_saida(const char *id, char tipo, int temporada, int episodio,
   Cred c;
   long long agora;
   (void)temporada; (void)episodio;   // o abandono e da obra inteira
-  if (!id || !id[0] || concluiu || posSeg < FSIN_ABAND_MIN_S ||
+  if (!id || !id[0]) return;
+  {
+    int atingiuTerm = (durSeg > 0.0)
+      ? ((long long)posSeg * 10 >= (long long)durSeg * 9)
+      : (concluiu != 0);
+    if (!infantilAtivo()) {
+      uint32_t h = baseImdbHash(id);
+      if (h && travaPronta()) {
+        if (S.rec && S.usoAlvo.h == h && S.usoAlvo.st == 2) {
+          if (atingiuTerm) {
+            S.uso.terminadas = satInc(S.uso.terminadas);
+            S.usoSujo = 1;
+          }
+          memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
+        }
+        DTRAVA();
+      }
+    }
+  }
+  if (concluiu || posSeg < FSIN_ABAND_MIN_S ||
       durSeg <= 0 || posSeg * 100.0 >= durSeg * FSIN_ABAND_PCT) return;
   // Sono confirmado ou suspeito recente neste titulo: a saida era descanso,
   // nao desgosto (secao 1.3: "adormeceu nao e dislike"). A suspeita precisa
@@ -1481,8 +1597,14 @@ void farolsinal_mais_assim(const CatItem *ci) {
 void farolsinal_recusar(const CatItem *ci) {
   if (!ci || !ci->imdb[0] || gostoTravado()) return;
   if (!travaPronta()) return;
-  if (S.rec && avulso(ci, K_RECUSA, 0, FG_D_REPROVOU))
-    { farolgosto_recusar(&S.g, mapa_hash_titulo(ci->imdb)); S.sujo = 1; }
+  if (S.rec && avulso(ci, K_RECUSA, 0, FG_D_REPROVOU)) {
+    farolgosto_recusar(&S.g, mapa_hash_titulo(ci->imdb));
+    S.sujo = 1;
+    if (!infantilAtivo()) {
+      S.uso.recusas = satInc(S.uso.recusas);
+      S.usoSujo = 1;
+    }
+  }
   DTRAVA();
 }
 void farolsinal_desfazer_recusa(const CatItem *ci) {
@@ -1493,6 +1615,10 @@ void farolsinal_desfazer_recusa(const CatItem *ci) {
   if (desfazAvulso(ci, K_RECUSA, 0)) {
     farolgosto_desrecusar(&S.g, mapa_hash_titulo(ci->imdb));
     S.sujo = 1;
+    if (!infantilAtivo() && S.rec) {
+      S.uso.recusas = satDec(S.uso.recusas);
+      S.usoSujo = 1;
+    }
   }
   DTRAVA();
 }
@@ -1517,6 +1643,91 @@ void farolsinal_origem(const CatItem *ci, int origem) {
   S.ori[i].o = (uint8_t)origem;
   S.ori[i].dia = (uint8_t)(diaDe(agoraS()) & 0xff);
   S.sujo = 1;
+  DTRAVA();
+}
+
+static int prontoLeve(void);
+
+void farolsinal_uso_obter(FarolUsoContadores *dst) {
+  if (!dst) return;
+  memset(dst, 0, sizeof *dst);
+  if (infantilAtivo()) return;
+  if (!prontoLeve()) return;
+  *dst = S.uso;
+  DTRAVA();
+}
+
+void farolsinal_uso_vista(int comExploracao, int fileiraPrincipal) {
+  if (infantilAtivo()) return;
+  if (!travaPronta()) return;
+  if (S.rec) {
+    S.uso.vistas = satInc(S.uso.vistas);
+    if (fileiraPrincipal) S.uso.expSeq = satInc(S.uso.expSeq);
+    if (comExploracao) S.uso.expVistas = satInc(S.uso.expVistas);
+    S.usoSujo = 1;
+  }
+  DTRAVA();
+}
+
+void farolsinal_uso_cena(int doServidor) {
+  if (infantilAtivo()) return;
+  if (!travaPronta()) return;
+  if (S.rec) {
+    if (doServidor) S.uso.cenasServidor = satInc(S.uso.cenasServidor);
+    else S.uso.cenasTv = satInc(S.uso.cenasTv);
+    S.usoSujo = 1;
+  }
+  DTRAVA();
+}
+
+void farolsinal_uso_aberta(const CatItem *ci, int foraCurva) {
+  uint32_t h, agora;
+  if (!ci || !ci->imdb[0] || infantilAtivo()) return;
+  h = baseImdbHash(ci->imdb);
+  agora = agoraMs();
+  if (!h || !travaPronta()) return;
+  if (S.rec) {
+    S.uso.abertas = satInc(S.uso.abertas);
+    if (foraCurva) S.uso.expAbertas = satInc(S.uso.expAbertas);
+    else S.uso.normAbertas = satInc(S.uso.normAbertas);
+    S.usoAlvo.h = h;
+    S.usoAlvo.abertaMs = agora;
+    S.usoAlvo.fc = (uint8_t)!!foraCurva;
+    S.usoAlvo.st = 1;
+    S.usoSujo = 1;
+  }
+  DTRAVA();
+}
+
+void farolsinal_uso_tocada(const CatItem *ci) {
+  uint32_t h, agora;
+  if (!ci || !ci->imdb[0] || infantilAtivo()) return;
+  h = baseImdbHash(ci->imdb);
+  agora = agoraMs();
+  if (!h || !travaPronta()) return;
+  if (S.rec && S.usoAlvo.st == 1 && S.usoAlvo.h == h) {
+    if ((uint32_t)(agora - S.usoAlvo.abertaMs) <= FSIN_USO_ALVO_PRAZO_MS) {
+      S.usoAlvo.st = 2;
+      S.uso.tocadas = satInc(S.uso.tocadas);
+      if (S.usoAlvo.fc) S.uso.expTocadas = satInc(S.uso.expTocadas);
+      else S.uso.normTocadas = satInc(S.uso.normTocadas);
+      S.usoSujo = 1;
+    } else {
+      memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
+    }
+  }
+  DTRAVA();
+}
+
+void farolsinal_uso_limpar_alvo(const CatItem *ci) {
+  uint32_t h;
+  if (!travaPronta()) return;
+  if (!ci || !ci->imdb[0]) {
+    memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
+  } else {
+    h = baseImdbHash(ci->imdb);
+    if (!h || S.usoAlvo.h == h) memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
+  }
   DTRAVA();
 }
 
@@ -1879,19 +2090,20 @@ void farolsinal_restaura_marcar(void) {
 // trava, grava fora dela. Chamavel de qualquer fio.
 void farolsinal_gravar(void) {
   char cam[1100], nome[64];
-  char *gm = NULL, *ge = NULL;
+  char *gm = NULL, *ge = NULL, *gu = NULL;
   unsigned char *gf = NULL;
-  size_t nGm = 0, nGe = 0, nGf = 0;
+  size_t nGm = 0, nGe = 0, nGu = 0, nGf = 0;
   int p, eGer;
   if (!travaPronta()) return;
   p = S.perfil; eGer = S.esqGer;
   // `recarrega` alto = uma restauracao trocando o arquivo embaixo da RAM:
   // descarregar agora pisaria nele — modelo/estado ficam para a troca que
   // so le (ressalva R5 da r1). O cache de fichas nao entra no backup e
-  // desce normal.
+  // desce normal. Contadores locais (`farol-medida`) descem sempre.
   if (p > 0 && S.sujo && !S.recarrega) {
     gm = textoModelo(&nGm); ge = textoEstado(&nGe); S.sujo = 0;
   }
+  if (p > 0 && S.usoSujo) { gu = textoMedida(&nGu); S.usoSujo = 0; }
   if (S.fichaSujo) { gf = textoFichas(&nGf); S.fichaSujo = 0; }
   S.ultGrav = agoraS();
   DTRAVA();
@@ -1900,10 +2112,12 @@ void farolsinal_gravar(void) {
       if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, gm, nGm, 0, eGer); }
     if (ge) { nomeEstado(p, nome, sizeof nome);
       if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, ge, nGe, 0, eGer); }
+    if (gu) { nomeMedida(p, nome, sizeof nome);
+      if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, gu, nGu, 0, eGer); }
   }
   if (gf && caminho("farol-fichas.bin", cam, sizeof cam))
     gravaBuf(cam, gf, nGf, 0, eGer);
-  free(gm); free(ge); free(gf);
+  free(gm); free(ge); free(gu); free(gf);
 }
 
 void farolsinal_iniciar(void) {
@@ -2157,7 +2371,8 @@ static int trabPendente(long long agora) {   // com a trava tomada
   return S.trocando || S.diaFrio ||
          (S.perfil > 0 &&
           (S.nTempChk > 0 || !S.largadaVarrida ||
-           ((S.sujo || S.fichaSujo) && agora - S.ultGrav >= FSIN_GRAVA_S)));
+           ((S.sujo || S.fichaSujo || S.usoSujo) &&
+            agora - S.ultGrav >= FSIN_GRAVA_S)));
 }
 static void trabFatia(void) {
   char id[DIARIO_ID_MAX]; int t, p, ger;
@@ -2213,10 +2428,10 @@ static void trabFatia(void) {
   // gravacoes juntas, com folga de 60 s — a serializacao sai sob a trava e
   // a E/S vai sem ela (correcao FAROL38D: nem este fio segura a trava no
   // disco; a fronteira do esquecer/sair e conferida no rename).
-  if ((S.sujo || S.fichaSujo) && agora - S.ultGrav >= FSIN_GRAVA_S) {
+  if ((S.sujo || S.fichaSujo || S.usoSujo) && agora - S.ultGrav >= FSIN_GRAVA_S) {
     char cam[1100], nome[64];
-    char *gm = NULL, *ge = NULL; unsigned char *gf = NULL;
-    size_t nGm = 0, nGe = 0, nGf = 0;
+    char *gm = NULL, *ge = NULL, *gu = NULL; unsigned char *gf = NULL;
+    size_t nGm = 0, nGe = 0, nGu = 0, nGf = 0;
     int pGrav = S.perfil, eGer = S.esqGer;
     S.ultGrav = agora;
     // `recarrega` alto = restauracao pisando o arquivo: a gravacao da RAM
@@ -2224,6 +2439,7 @@ static void trabFatia(void) {
     if (S.sujo && !S.recarrega) {
       gm = textoModelo(&nGm); ge = textoEstado(&nGe); S.sujo = 0;
     }
+    if (S.usoSujo) { gu = textoMedida(&nGu); S.usoSujo = 0; }
     if (S.fichaSujo) { gf = textoFichas(&nGf); S.fichaSujo = 0; }
     DTRAVA();
     if (pGrav > 0) {
@@ -2231,10 +2447,12 @@ static void trabFatia(void) {
         if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, gm, nGm, 0, eGer); }
       if (ge) { nomeEstado(pGrav, nome, sizeof nome);
         if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, ge, nGe, 0, eGer); }
+      if (gu) { nomeMedida(pGrav, nome, sizeof nome);
+        if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, gu, nGu, 0, eGer); }
     }
     if (gf && caminho("farol-fichas.bin", cam, sizeof cam))
       gravaBuf(cam, gf, nGf, 0, eGer);
-    free(gm); free(ge); free(gf);
+    free(gm); free(ge); free(gu); free(gf);
     return;
   }
   DTRAVA();
@@ -2301,9 +2519,9 @@ void farolsinal_passo(int momentoBom) {
 
 void farolsinal_sair(void) {
   char cam[1100], nome[64];
-  char *gm = NULL, *ge = NULL;
+  char *gm = NULL, *ge = NULL, *gu = NULL;
   unsigned char *gf = NULL;
-  size_t nGm = 0, nGe = 0, nGf = 0;
+  size_t nGm = 0, nGe = 0, nGu = 0, nGf = 0;
   int vivo, tvivo, p;
   TRAVA();
   garante_i();
@@ -2320,19 +2538,24 @@ void farolsinal_sair(void) {
   pthread_cond_broadcast(&condTroca);
   vivo = fioVivo; fioVivo = 0;
   tvivo = fioTrabVivo; fioTrabVivo = 0;
-  if (p > 0) { gm = textoModelo(&nGm); ge = textoEstado(&nGe); }
+  if (p > 0) {
+    gm = textoModelo(&nGm); ge = textoEstado(&nGe);
+    if (S.usoSujo) gu = textoMedida(&nGu);
+  }
   if (S.fc.sujo || S.fc.n) gf = textoFichas(&nGf);
-  S.fc.sujo = 0; S.sujo = 0; S.trocando = 0;
+  S.fc.sujo = 0; S.sujo = 0; S.usoSujo = 0; S.trocando = 0;
   DTRAVA();
   if (p > 0) {
     if (gm) { nomeGosto(p, nome, sizeof nome);
       if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, gm, nGm, 1, 0); }
     if (ge) { nomeEstado(p, nome, sizeof nome);
       if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, ge, nGe, 1, 0); }
+    if (gu) { nomeMedida(p, nome, sizeof nome);
+      if (caminho(nome, cam, sizeof cam)) gravaBuf(cam, gu, nGu, 1, 0); }
   }
   if (gf && caminho("farol-fichas.bin", cam, sizeof cam))
     gravaBuf(cam, gf, nGf, 1, 0);
-  free(gm); free(ge); free(gf);
+  free(gm); free(ge); free(gu); free(gf);
   if (vivo) pthread_detach(fioId);
   if (tvivo) pthread_detach(fioTrabId);
 }
@@ -2357,6 +2580,8 @@ void farolsinal_esquecer(void) {
     if (caminho(nome, cam, sizeof cam)) remove(cam);
     nomeEstado(p, nome, sizeof nome);
     if (caminho(nome, cam, sizeof cam)) remove(cam);
+    nomeMedida(p, nome, sizeof nome);
+    if (caminho(nome, cam, sizeof cam)) remove(cam);
   }
   // A marca das notas e por CONTA (hash do usuario) — e o logout de verdade
   // limpa a sessao ANTES do esquecer (ajustes.c), entao o nome nao pode
@@ -2375,6 +2600,9 @@ void farolsinal_esquecer(void) {
   farolficha_cache_iniciar(&S.fc);
   S.nCred = S.nPend = S.nObra = S.obraProx = S.nAli = 0;
   S.nPed = S.nTempChk = S.nOri = S.oriProx = 0;
+  memset(&S.uso, 0, sizeof S.uso);
+  memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
+  S.usoSujo = 0;
   S.cur = 0; S.curSeq = 0; S.curRest = 0; S.varDe = 0; S.varCur = 0;
   S.varSeq = 0; S.varrer = 1; S.varGer++; S.nVarId = 0;
   S.largadaVarrida = 0; S.rec = 1;
@@ -2405,10 +2633,15 @@ void farolsinal_zerar_gosto(void) {
     if (caminho(nome, cam, sizeof cam)) remove(cam);
     nomeEstado(S.perfil, nome, sizeof nome);
     if (caminho(nome, cam, sizeof cam)) remove(cam);
+    nomeMedida(S.perfil, nome, sizeof nome);
+    if (caminho(nome, cam, sizeof cam)) remove(cam);
   }
   farolgosto_iniciar(&S.g, (uint16_t)S.perfil);
   S.nCred = S.nPend = S.nObra = S.obraProx = S.nAli = 0;
   S.nPed = S.nTempChk = S.nOri = S.oriProx = 0;
+  memset(&S.uso, 0, sizeof S.uso);
+  memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
+  S.usoSujo = 0;
   S.cur = 0; S.curSeq = 0; S.curRest = 0; S.varDe = 0; S.varCur = 0;
   S.varSeq = 0; S.varrer = 1; S.varGer++; S.nVarId = 0;
   S.largadaVarrida = 0; S.rec = 1;
@@ -2442,6 +2675,9 @@ void farolsinal_teste_zera(void) {
   S.momentoBom = 1;
   S.nCred = S.nPend = S.nObra = S.obraProx = S.nAli = 0;
   S.nPed = S.nTempChk = S.nOri = S.oriProx = 0;
+  memset(&S.uso, 0, sizeof S.uso);
+  memset(&S.usoAlvo, 0, sizeof S.usoAlvo);
+  S.usoSujo = 0;
   S.sujo = S.fichaSujo = 0; S.ultGrav = 0;
   S.trocando = S.pendTroca = S.diaFrio = S.recarrega = 0; S.esqGer++;
   fioMorre = 0;                          // "reboot" tambem do fio lento

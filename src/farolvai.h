@@ -20,24 +20,22 @@
 extern "C" {
 #endif
 
-// FALTA_TEXTO: incluir em src/faroltexto.h e nas 29 tabelas src/idioma_*.h:
-//   FT_VAI_REDE     = "Estado da rede (sem IP)"
-//   FT_VAI_ADDONS   = "Add-ons (contagem e tipos)"
-//   FT_VAI_SERVICOS = "Serviços ligados (debrid, Trakt, Simkl — sem a sua conta)"
-#define FAROLVAI_REDE     "Estado da rede (sem IP)"
-#define FAROLVAI_ADDONS   "Add-ons (contagem e tipos)"
-#define FAROLVAI_SERVICOS "Serviços ligados (debrid, Trakt, Simkl — sem a sua conta)"
+// Aliases de compatibilidade (testes antigos usam FAROLVAI_*): a fonte unica
+// das frases agora esta em src/faroltexto.h (FT_VAI_*).
+#define FAROLVAI_REDE     FT_VAI_REDE
+#define FAROLVAI_ADDONS   FT_VAI_ADDONS
+#define FAROLVAI_SERVICOS FT_VAI_SERVICOS
 
 enum { FAROLVAI_N_LINHAS = 9 };
 
 static inline const FarolEspelhoGrupo *farolvai_grupos(size_t *n) {
   static const FarolEspelhoGrupo GRUPOS[] = {
-    { "aparelho.rede",   FAROLVAI_REDE     },
+    { "aparelho.rede",   FT_VAI_REDE       },
     { "aparelho",        FT_VAI_MODELO     },
     { "cliente.ajustes", FT_VAI_AJUSTES    },
-    { "cliente.addons",  FAROLVAI_ADDONS   },
-    { "cliente.debrid",  FAROLVAI_SERVICOS },
-    { "cliente.contas",  FAROLVAI_SERVICOS },
+    { "cliente.addons",  FT_VAI_ADDONS     },
+    { "cliente.debrid",  FT_VAI_SERVICOS   },
+    { "cliente.contas",  FT_VAI_SERVICOS   },
     { "cliente",         FT_VAI_VERSAO     },
     { "midia",           FT_VAI_FORMATO    },
     { "v",               FT_VAI_PONTO      },
@@ -54,10 +52,10 @@ static inline const FarolEspelhoGrupo *farolvai_grupos(size_t *n) {
 
 static inline const char *farolvai_para(const char *caminho) {
   static const FarolEspelhoGrupo ESPECIFICOS[] = {
-    { "aparelho.rede",  FAROLVAI_REDE     },
-    { "cliente.addons", FAROLVAI_ADDONS   },
-    { "cliente.debrid", FAROLVAI_SERVICOS },
-    { "cliente.contas", FAROLVAI_SERVICOS }
+    { "aparelho.rede",  FT_VAI_REDE     },
+    { "cliente.addons", FT_VAI_ADDONS   },
+    { "cliente.debrid", FT_VAI_SERVICOS },
+    { "cliente.contas", FT_VAI_SERVICOS }
   };
   size_t i;
   if (!caminho || !*caminho) return NULL;
@@ -76,13 +74,13 @@ static inline const char *farolvai_para(const char *caminho) {
 static inline const char *const *farolvai_vai_junto(size_t *n) {
   static const char *const VAI[FAROLVAI_N_LINHAS] = {
     FT_VAI_MODELO,
-    FAROLVAI_REDE,
+    FT_VAI_REDE,
     FT_VAI_VERSAO,
     FT_VAI_FORMATO,
     FT_VAI_PONTO,
     FT_VAI_AJUSTES,
-    FAROLVAI_ADDONS,
-    FAROLVAI_SERVICOS,
+    FT_VAI_ADDONS,
+    FT_VAI_SERVICOS,
     FT_VAI_EVENTOS
   };
   if (n) *n = FAROLVAI_N_LINHAS;
