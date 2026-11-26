@@ -1038,7 +1038,7 @@ export default {
     // VAI TOCAR NESTA TV (4.2): registro anonimo de compatibilidade. Sem sessao
     // de proposito (nao pode ser ligado a conta); so contagem. Regras em vtreg.js.
     if (rota === "/v1/vaitocar" && req.method === "POST")
-      return rotaVaiTocar(req, env, limitar, await corpoLimitado(req, VAITOCAR_CORPO_MAX));
+      return rotaVaiTocar(req, env, await corpoLimitado(req, VAITOCAR_CORPO_MAX));
 
     // SUGESTAO DE CATEGORIA DE CANAL AO VIVO (Jev): so nomes de canal, sem
     // sessao, como /v1/xtream. Cache em KV e limite por IP; o Jev usa

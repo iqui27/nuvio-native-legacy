@@ -16,7 +16,7 @@ export const VAITOCAR_RETENCAO_DIAS = 180;
 const LIMITE_PEDIDOS = 60, JANELA_SEGUNDOS = 3600;
 export const VAITOCAR_GLOBAL_HORA = 20000;
 const COTA_MAX_IPS = 20000;   // teto de memoria do Map; cheio, a janela recusa IP novo
-export const VAITOCAR_MODELO_MAX = 32, VAITOCAR_FIRMWARE_MAX = 15;
+export const VAITOCAR_MODELO_MAX = 32, VAITOCAR_FIRMWARE_MAX = 11;
 
 const PLATAFORMA = ["webos", "tizen", "android", "linux", "macos", "outro"];
 const CONTAINER = ["mkv", "webm", "mp4", "ts", "hls", "dash", "avi", "flv", "outro", "?"];
@@ -33,24 +33,47 @@ const CHAVES = ["v", "plataforma", "modelo", "firmware", "container", "video", "
 // de vtreg_modelo_tecnico / vtreg_firmware_tecnico em src/vtreg.c). Fora da
 // gramatica o valor vira "?" — o registro tecnico continua valendo, mas nada
 // de texto livre entra no agregado de 180 dias.
-//   modelo: UM token curto com letra E digito ("OLED55C9PSA", "TCL-55C735"),
-//           sem 7+ digitos seguidos, sem hash, sem cara de endereco.
-//   firmware: so versao numerica, 1 a 4 grupos de 1 a 3 digitos ("05.30.25"),
-//           e nunca quatro grupos com cara de IPv4.
-export function modeloTecnico(s) {
+//   modelo, por plataforma (auditoria r2 de #856):
+//     webos   codigo LG: [LG-][OLED|QNED|NANO] + 2 digitos + alfanumerico;
+//     tizen   codigo Samsung: [Samsung-] + QN/UN/UE/... + 2 digitos + alfanumerico;
+//     android "<FABRICANTE>-<MODELO>" com fabricante na lista fechada MARCAS e
+//             modelo com digito ou nome de produto conhecido (RE_PRODUTO);
+//     linux/macos so a arquitetura; outro: sempre "?".
+//     Sempre <= 32, sem 7+ digitos seguidos.
+//   firmware: so versao numerica, 1 a 3 grupos de 1 a 3 digitos ("05.30.25").
+export const MARCAS = ["LG", "Samsung", "TCL", "Hisense", "Sony", "Philips", "TPV", "Xiaomi", "Google",
+  "Amazon", "NVIDIA", "Apple", "Roku", "Mecool", "onn", "Panasonic", "Sharp", "Vizio", "AOC", "Philco",
+  "Semp", "Motorola", "Toshiba", "Skyworth", "Haier", "Thomson", "Nokia", "Xgimi", "Formuler", "Homatics",
+  "Ugoos", "Zidoo", "Dune", "Realme", "OnePlus", "Multilaser", "Positivo", "Britania", "JVC", "Grundig",
+  "Metz", "Loewe", "Bang-Olufsen", "Chromecast"];
+const ARQS = ["x86_64", "aarch64", "arm64", "armv7l", "armv8l", "i686"];
+const RE_LG = /^(?:LG-)?(?:OLED|QNED|NANO)?[0-9]{2}[A-Za-z0-9]{3,}$/i;
+const RE_PRODUTO = /^(?:AFT[A-Za-z0-9]{1,8}|SHIELD(?:-Android-TV)?|Chromecast(?:-HD|-Ultra)?|Google-TV-Streamer)$/i;
+const RE_SAMSUNG = /^(?:Samsung-)?(?:QN|UN|UE|QE|GQ|GU|KU|KQ|UA|QA|LS|LH|TU)[0-9]{2}[A-Za-z0-9]{3,}$/i;
+
+export function modeloTecnico(s, plataforma) {
   if (typeof s !== "string" || s.length > VAITOCAR_MODELO_MAX) return "?";
-  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(s)) return "?";
-  if (!/[A-Za-z]/.test(s) || !/[0-9]/.test(s) || /[0-9]{7,}/.test(s)) return "?";
+  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(s) || /[0-9]{7,}/.test(s)) return "?";
   if (/[0-9a-f]{16,}/i.test(s) || /www\.|http|magnet/i.test(s)) return "?";
-  return s;
+  let ok = false;
+  if (plataforma === "webos") ok = RE_LG.test(s);
+  else if (plataforma === "tizen") ok = RE_SAMSUNG.test(s);
+  else if (plataforma === "android") {
+    // O resto depois da marca precisa ter digito (codigo de modelo) ou ser um
+    // nome de produto conhecido sem digito (Fire TV "AFTMM", SHIELD, Chromecast).
+    const ls = s.toLowerCase();
+    if (ls === "chromecast") ok = true;
+    else ok = MARCAS.some((m) => { const lm = m.toLowerCase();
+      if (m === "Chromecast" || !ls.startsWith(lm + "-")) return false;
+      const resto = s.slice(lm.length + 1);
+      return resto.length > 0 && (/[0-9]/.test(resto) || RE_PRODUTO.test(resto)); });
+  } else if (plataforma === "linux" || plataforma === "macos") ok = ARQS.includes(s);
+  return ok ? s : "?";
 }
 
 export function firmwareTecnico(s) {
   if (typeof s !== "string" || s.length > VAITOCAR_FIRMWARE_MAX) return "?";
-  const m = /^(\d{1,3})(?:\.(\d{1,3}))?(?:\.(\d{1,3}))?(?:\.(\d{1,3}))?$/.exec(s);
-  if (!m) return "?";
-  if (m[4] !== undefined && m.slice(1).some((g) => Number(g) > 99)) return "?";
-  return s;
+  return /^\d{1,3}(?:\.\d{1,3}){0,2}$/.test(s) ? s : "?";
 }
 
 export function validarVaiTocar(c) {
@@ -63,7 +86,7 @@ export function validarVaiTocar(c) {
   if (!MBPS.includes(c.mbps) || !ALTURA.includes(c.altura) || (c.trocou !== 0 && c.trocou !== 1)) return null;
   if (typeof c.modelo !== "string" || typeof c.firmware !== "string" ||
       c.modelo.length > 64 || c.firmware.length > 64) return null;
-  return [c.plataforma, modeloTecnico(c.modelo), firmwareTecnico(c.firmware), c.container, c.video, c.audio, c.hdr, c.mbps, c.altura, c.resultado, c.trocou];
+  return [c.plataforma, modeloTecnico(c.modelo, c.plataforma), firmwareTecnico(c.firmware), c.container, c.video, c.audio, c.hdr, c.mbps, c.altura, c.resultado, c.trocou];
 }
 
 const resp = (dados, status = 200) => new Response(JSON.stringify(dados), {
@@ -86,18 +109,37 @@ function cotaMemoria(ip, agoraSeg) {
 // Para os testes: zera a cota em memoria.
 export function vaitocarZerarCota() { cotaJanela = -1; cotaIps = new Map(); }
 
+// TETO GLOBAL POR HORA no D1, numa chave FIXA (nada do IP, nem hash). O
+// incremento e CONDICIONAL (auditoria r2 de #856): o UPSERT so soma enquanto
+// a janela vigente esta abaixo do teto; cheio, o WHERE barra a escrita, nao
+// volta linha e o pedido e recusado sem mexer no contador. Virada de janela
+// zera na mesma instrucao. Atomico no D1.
+const CHAVE_GLOBAL = "vaitocar:global";
+async function tetoGlobal(env, agoraSeg) {
+  const j = Math.floor(agoraSeg / JANELA_SEGUNDOS);
+  const r = await env.DB.prepare(
+    "INSERT INTO limite (chave, janela, n, expira) VALUES (?, ?, 1, ?) " +
+    "ON CONFLICT(chave) DO UPDATE SET " +
+    "n = CASE WHEN limite.janela >= excluded.janela THEN limite.n + 1 ELSE 1 END, " +
+    "janela = MAX(limite.janela, excluded.janela), " +
+    "expira = MAX(limite.expira, excluded.expira) " +
+    "WHERE limite.janela < excluded.janela OR limite.n < ? RETURNING n"
+  ).bind(CHAVE_GLOBAL, j, (j + 1) * JANELA_SEGUNDOS, VAITOCAR_GLOBAL_HORA).first();
+  return !!r;
+}
+
 // `cru` e o corpo ja lido com teto (corpoLimitado em index.js); null = grande demais.
-export async function rotaVaiTocar(req, env, limite, cru, agoraSeg = Math.floor(Date.now() / 1000)) {
+// Ordem: cota por IP em memoria -> JSON e validacao -> so entao o teto global
+// no D1, para que 400 (lixo, ataque) nao gaste o orcamento global.
+export async function rotaVaiTocar(req, env, cru, agoraSeg = Math.floor(Date.now() / 1000)) {
   if (cru === null || cru.length > VAITOCAR_CORPO_MAX) return resp({ erro: "corpo grande" }, 413);
   const ip = req.headers.get("cf-connecting-ip") || "0.0.0.0";
   if (!cotaMemoria(ip, agoraSeg)) return resp({ erro: "muitos pedidos" }, 429);
-  // Chave FIXA: nada do IP (nem hash) entra na tabela `limite`.
-  if (limite && !(await limite(env, "vaitocar:global", VAITOCAR_GLOBAL_HORA, JANELA_SEGUNDOS, agoraSeg)))
-    return resp({ erro: "muitos pedidos" }, 429);
   let corpo;
   try { corpo = JSON.parse(cru); } catch { return resp({ erro: "json invalido" }, 400); }
   const v = validarVaiTocar(corpo);
   if (!v) return resp({ erro: "registro invalido" }, 400);
+  if (!(await tetoGlobal(env, agoraSeg))) return resp({ erro: "muitos pedidos" }, 429);
   await env.DB.prepare(
     "INSERT INTO vaitocar (dia, plataforma, modelo, firmware, container, video, audio, hdr, mbps, altura, resultado, trocou, n) " +
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1) " +

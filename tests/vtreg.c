@@ -62,28 +62,36 @@ int main(void) {
   { char longo[200]; memset(longo, 'Z', sizeof longo - 1); longo[sizeof longo - 1] = 0;
     assert(vtreg_texto_seguro(longo, t, sizeof t) && strlen(t) == sizeof t - 1); }
 
-  // GRAMATICA ESTRITA (P1 da auditoria de #856): modelo e UM token tecnico com
-  // letra e digito; firmware e so versao numerica. Texto livre vira "?".
+  // GRAMATICA ESTRITA (P1 das auditorias r1/r2 de #856): modelo conferido por
+  // plataforma; firmware so versao numerica de ate 3 grupos. Resto vira "?".
   {
-    static const char *const MOD_OK[][2] = {
-      { "OLED55C9PSA", "OLED55C9PSA" }, { "TCL 55C735", "TCL-55C735" }, { "Sony \"BRAVIA\" 4K (VH2)", "Sony-BRAVIA-4K-VH2" },
-      { "x86_64", "x86_64" }, { "Xiaomi MiTV-MOOQ1", "Xiaomi-MiTV-MOOQ1" }, { NULL, NULL }
+    static const char *const MOD_OK[][3] = {
+      { "webos", "OLED55C9PSA", "OLED55C9PSA" }, { "webos", "50NANO80ASA", "50NANO80ASA" },
+      { "webos", "43UK6300PSB", "43UK6300PSB" }, { "tizen", "QN65Q80BAGXZD", "QN65Q80BAGXZD" },
+      { "android", "TCL 55C735", "TCL-55C735" }, { "android", "Sony \"BRAVIA\" 4K (VH2)", "Sony-BRAVIA-4K-VH2" },
+      { "android", "Xiaomi MiTV-MOOQ1", "Xiaomi-MiTV-MOOQ1" }, { "android", "NVIDIA SHIELD Android TV", "NVIDIA-SHIELD-Android-TV" },
+      { "android", "Amazon AFTMM", "Amazon-AFTMM" }, { "android", "Google Chromecast", "Google-Chromecast" },
+      { "linux", "x86_64", "x86_64" }, { "macos", "arm64", "arm64" }, { NULL, NULL, NULL }
     };
-    static const char *const MOD_RUIM[] = {
-      "Joao Silva", "Sala", "Chromecast", "SHIELD Android TV", "12345678", "tel11987654321",
-      "Modelo com um nome bem comprido 2024 de mais", "joao@exemplo.com", "-55C735", "", NULL
+    static const char *const MOD_RUIM[][2] = {
+      { "webos", "Joao Silva" }, { "webos", "TV da Ana 2" }, { "webos", "TCL 55C735" }, { "tizen", "OLED55C9PSA" },
+      { "android", "Joao Silva" }, { "android", "Sony TV da Ana" }, { "android", "Amazon Sala" }, { "android", "OLED55C9PSA" },
+      { "android", "Sony" }, { "android", "Sony 12345678" }, { "android", "Chromecast da Ana" }, { "linux", "meu-pc" },
+      { "outro", "OLED55C9PSA" }, { "android", "joao@exemplo.com" }, { "webos", "" }, { NULL, NULL }
     };
     static const char *const FW_OK[][2] = {
-      { "05.30.25", "05.30.25" }, { "11", "11" }, { "6.18.44-fc-v880", "6.18.44" }, { "03.21.30.1", "03.21.30.1" },
-      { "6.", "6" }, { "1.2.3.4.5", "1.2.3.4" }, { NULL, NULL }
+      { "05.30.25", "05.30.25" }, { "11", "11" }, { "6.18.44-fc-v880", "6.18.44" }, { "6.", "6" }, { NULL, NULL }
     };
     static const char *const FW_RUIM[] = {
-      "versao nova", "v1.2", "1234", "192.168.100.24", "joao@exemplo.com", "", NULL
+      "versao nova", "v1.2", "1234", "192.168.100.24", "10.0.0.1", "03.21.30.1", "1.2.3.4.5", "joao@exemplo.com", "", NULL
     };
     int i;
-    for (i = 0; MOD_OK[i][0]; i++) assert(vtreg_modelo_tecnico(MOD_OK[i][0], t, sizeof t) && !strcmp(t, MOD_OK[i][1]));
-    for (i = 0; MOD_RUIM[i]; i++) assert(!vtreg_modelo_tecnico(MOD_RUIM[i], t, sizeof t) && !strcmp(t, "?"));
-    assert(!vtreg_modelo_tecnico(NULL, t, sizeof t) && !strcmp(t, "?"));
+    for (i = 0; MOD_OK[i][0]; i++)
+      assert(vtreg_modelo_tecnico(MOD_OK[i][0], MOD_OK[i][1], t, sizeof t) && !strcmp(t, MOD_OK[i][2]));
+    for (i = 0; MOD_RUIM[i][0]; i++)
+      assert(!vtreg_modelo_tecnico(MOD_RUIM[i][0], MOD_RUIM[i][1], t, sizeof t) && !strcmp(t, "?"));
+    assert(!vtreg_modelo_tecnico("android", NULL, t, sizeof t) && !strcmp(t, "?"));
+    assert(!vtreg_modelo_tecnico(NULL, "OLED55C9PSA", t, sizeof t) && !strcmp(t, "?"));
     for (i = 0; FW_OK[i][0]; i++) assert(vtreg_firmware_tecnico(FW_OK[i][0], t, sizeof t) && !strcmp(t, FW_OK[i][1]));
     for (i = 0; FW_RUIM[i]; i++) assert(!vtreg_firmware_tecnico(FW_RUIM[i], t, sizeof t) && !strcmp(t, "?"));
     assert(!vtreg_firmware_tecnico(NULL, t, sizeof t) && !strcmp(t, "?"));
@@ -91,6 +99,11 @@ int main(void) {
     assert(!strcmp(r.modelo, "?") && !strcmp(r.firmware, "?") && r.mbps == 999);
     r = norm((VtRegEntrada){ "linux", "x86_64", "6.18.44-fc-v880", "mkv", "hevc", "aac", "sdr", 1001, 1080, VTR_TOCOU, 0 });
     assert(!strcmp(r.modelo, "x86_64") && !strcmp(r.firmware, "6.18.44") && r.mbps == 2);
+    // A plataforma decide: codigo LG fora do webOS nao passa.
+    r = norm((VtRegEntrada){ "android", "OLED55C9PSA", "11", "mkv", "hevc", "aac", "sdr", 1, 1080, VTR_TOCOU, 0 });
+    assert(!strcmp(r.modelo, "?") && !strcmp(r.firmware, "11"));
+    // IPv4 com digitos sem fim nao estoura o sscanf (largura limitada).
+    assert(vtreg_texto_seguro("123456789012.1.1.1", t, sizeof t) && !vtreg_firmware_tecnico(t, t, sizeof t));
   }
 
   // Classificacao da falha.

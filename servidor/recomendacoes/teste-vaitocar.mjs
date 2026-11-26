@@ -75,9 +75,10 @@ test("modelo e firmware: so valor tecnico; texto livre vira ? e nao entra no agr
   const livres = [
     { modelo: "http://servidor/filme.mkv" }, { modelo: "0123456789abcdef0123456789abcdef01234567" },
     { modelo: "192.168.100.24" }, { firmware: "joao@exemplo.com" }, { modelo: "Filme (2024)" },
-    { modelo: "Joao Silva" }, { modelo: "Sala" }, { modelo: "Joao-Silva" }, { modelo: "x".repeat(48) },
-    { modelo: "tel11987654321" }, { firmware: "versao nova" }, { firmware: "192.168.100.24" },
-    { firmware: "6.18.44-generic" }, { firmware: "1234" }, { modelo: "", firmware: "" },
+    { modelo: "Joao Silva" }, { modelo: "Sala" }, { modelo: "Joao-Silva" }, { modelo: "TV-da-Ana-2" },
+    { modelo: "x".repeat(48) }, { modelo: "tel11987654321" }, { firmware: "versao nova" },
+    { firmware: "192.168.100.24" }, { firmware: "10.0.0.1" }, { firmware: "6.18.44-generic" },
+    { firmware: "1234" }, { modelo: "", firmware: "" },
   ];
   for (const l of livres) assert.equal((await pedir(env, { ...base, ...l })).status, 200, JSON.stringify(l));
   const guardado = sqlite.prepare("SELECT DISTINCT modelo, firmware FROM vaitocar").all();
@@ -85,23 +86,41 @@ test("modelo e firmware: so valor tecnico; texto livre vira ? e nao entra no agr
     assert.ok(g.modelo === "?" || g.modelo === base.modelo, JSON.stringify(g));
     assert.ok(g.firmware === "?" || g.firmware === base.firmware, JSON.stringify(g));
   }
-  assert.ok(!JSON.stringify(guardado).match(/joao|Joao|Sala|Filme|http|192\.168|abcdef|generic|nova/));
-  // O que e tecnico passa como veio.
-  for (const m of ["OLED55C9PSA", "TCL-55C735", "Sony-BRAVIA-4K-VH2", "x86_64", "MiTV-MOOQ1", "QN65Q80BAGXZD"])
-    assert.equal(modeloTecnico(m), m);
-  for (const f of ["05.30.25", "11", "6.18.44", "03.21.30.1", "10.0.0.1"]) assert.equal(firmwareTecnico(f), f);
-  for (const m of ["Chromecast", "SHIELD Android TV", "12345678", "a"]) assert.equal(modeloTecnico(m), "?");
-  for (const f of ["6.", "1.2.3.4.5", "255.255.255.0", "v1.2"]) assert.equal(firmwareTecnico(f), "?");
+  assert.ok(!JSON.stringify(guardado).match(/joao|Joao|Ana|Sala|Filme|http|192\.168|10\.0|abcdef|generic|nova/));
+  // O que e tecnico passa como veio, conferido pela plataforma.
+  const ok = [["webos", "OLED55C9PSA"], ["webos", "50NANO80ASA"], ["webos", "43UK6300PSB"], ["tizen", "QN65Q80BAGXZD"],
+    ["tizen", "UN55TU7000"], ["android", "TCL-55C735"], ["android", "Sony-BRAVIA-4K-VH2"], ["android", "Google-Chromecast"],
+    ["android", "NVIDIA-SHIELD-Android-TV"], ["android", "Xiaomi-MiTV-MOOQ1"], ["android", "Amazon-AFTMM"], ["android", "Chromecast"], ["linux", "x86_64"], ["macos", "arm64"]];
+  for (const [p, m] of ok) assert.equal(modeloTecnico(m, p), m, p + " " + m);
+  const ruim = [["webos", "Joao-Silva"], ["webos", "TV-da-Ana-2"], ["webos", "TCL-55C735"], ["tizen", "OLED55C9PSA"],
+    ["android", "Joao-Silva"], ["android", "Chromecast-da-Ana"], ["android", "OLED55C9PSA"], ["android", "Sony"],
+    ["linux", "meu-pc"], ["outro", "OLED55C9PSA"], ["android", "Sony-12345678"], ["android", "Sony-TV-da-Ana"], ["android", "Amazon-Sala"]];
+  for (const [p, m] of ruim) assert.equal(modeloTecnico(m, p), "?", p + " " + m);
+  for (const f of ["05.30.25", "11", "6.18.44"]) assert.equal(firmwareTecnico(f), f);
+  for (const f of ["6.", "1.2.3.4", "03.21.30.1", "10.0.0.1", "255.255.255.0", "v1.2", "1234"]) assert.equal(firmwareTecnico(f), "?");
 });
 
-test("teto global por hora no D1, sem chave de IP", async (t) => {
+test("teto global por hora no D1: condicional, sem chave de IP, e 400 nao gasta", async (t) => {
   const { sqlite, env } = ambiente(t);
   const janela = Math.floor(Date.now() / 1000 / 3600);
-  // A tabela `limite` ja no teto global: qualquer IP novo recebe 429.
-  sqlite.prepare("INSERT INTO limite (chave, janela, n, expira) VALUES (?, ?, ?, ?)")
-    .run("vaitocar:global", janela, VAITOCAR_GLOBAL_HORA, Math.floor(Date.now() / 1000) + 7200);
+  const global = () => sqlite.prepare("SELECT n FROM limite WHERE chave = 'vaitocar:global'").get()?.n ?? 0;
+  // Pedidos invalidos (400) nao debitam o teto global.
+  assert.equal((await pedir(env, "{", "198.51.100.1")).status, 400);
+  assert.equal((await pedir(env, { ...JSON.parse(DO_APP), titulo: "x" }, "198.51.100.1")).status, 400);
+  assert.equal(global(), 0);
+  assert.equal((await pedir(env, DO_APP, "198.51.100.1")).status, 200);
+  assert.equal(global(), 1);
+  // No teto: recusa, e o contador NAO passa do teto (incremento condicional).
+  sqlite.prepare("UPDATE limite SET n = ? WHERE chave = 'vaitocar:global'").run(VAITOCAR_GLOBAL_HORA);
   assert.equal((await pedir(env, DO_APP, "198.51.100.9")).status, 429);
-  assert.equal(sqlite.prepare("SELECT COUNT(*) c FROM vaitocar").get().c, 0);
+  assert.equal((await pedir(env, DO_APP, "198.51.100.10")).status, 429);
+  assert.equal(global(), VAITOCAR_GLOBAL_HORA);
+  assert.equal(sqlite.prepare("SELECT SUM(n) s FROM vaitocar").get().s, 1);
+  // Janela seguinte: o UPSERT zera e volta a aceitar.
+  sqlite.prepare("UPDATE limite SET janela = ? WHERE chave = 'vaitocar:global'").run(janela - 1);
+  assert.equal((await pedir(env, DO_APP, "198.51.100.11")).status, 200);
+  assert.equal(global(), 1);
+  assert.deepEqual(sqlite.prepare("SELECT chave FROM limite").all().map((l) => l.chave), ["vaitocar:global"]);
 });
 
 test("cota por IP (so em memoria) e retencao", async (t) => {

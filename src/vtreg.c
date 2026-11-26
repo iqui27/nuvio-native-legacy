@@ -74,7 +74,7 @@ int vtreg_texto_seguro(const char *s, char *out, size_t cap) {
   // Quatro grupos de digitos e nada mais: IPv4.
   if (soDigPonto && pontos == 3) {
     int a, b, c, d;
-    if (sscanf(s, "%d.%d.%d.%d", &a, &b, &c, &d) == 4 && a <= 255 && b <= 255 && c <= 255 && d <= 255 &&
+    if (sscanf(s, "%3d.%3d.%3d.%3d", &a, &b, &c, &d) == 4 && a <= 255 && b <= 255 && c <= 255 && d <= 255 &&
         strlen(s) >= 7 && (a > 99 || b > 99 || c > 99 || d > 99)) goto nao;
   }
   for (i = 0; s[i] && n + 1 < cap; i++) {
@@ -95,26 +95,103 @@ nao:
   return 0;
 }
 
-// MODELO (P1 da auditoria de #856): UM token tecnico curto. Depois do filtro
-// acima, espacos viram '-' ("Sony BRAVIA 4K VH2" -> "Sony-BRAVIA-4K-VH2"); o
-// token tem de ter letra E digito (codigo de modelo, nao nome de pessoa nem
-// de sala), no maximo VTR_MODELO_MAX caracteres e nenhuma sequencia de 7+
-// digitos (telefone, serial). Qualquer outra coisa vira "?".
-int vtreg_modelo_tecnico(const char *s, char *out, size_t cap) {
+// MODELO (P1 das auditorias r1/r2 de #856): so codigo tecnico de aparelho,
+// conferido por PLATAFORMA. Depois do filtro acima, espacos viram '-'.
+//   webos: codigo de modelo da LG ("OLED55C9PSA", "50NANO80ASA", "43UK6300PSB"):
+//          [OLED|QNED|NANO]? + 2 digitos de polegada + letras/digitos;
+//   tizen: codigo de modelo da Samsung ("QN65Q80BAGXZD", "UN55TU7000");
+//   android: "<FABRICANTE>-<MODELO>" com o fabricante numa LISTA FECHADA de
+//          marcas de TV/box (Build.MANUFACTURER nao e editavel pela pessoa);
+//   linux/macos: so a arquitetura (x86_64, aarch64, arm64, armv7l, i686);
+//   outro, ou qualquer coisa fora disso: "?".
+// Sempre ate VTR_MODELO_MAX, sem 7+ digitos seguidos (telefone, serial).
+static const char *const MARCAS[] = {
+  "LG", "Samsung", "TCL", "Hisense", "Sony", "Philips", "TPV", "Xiaomi", "Google", "Amazon", "NVIDIA",
+  "Apple", "Roku", "Mecool", "onn", "Panasonic", "Sharp", "Vizio", "AOC", "Philco", "Semp", "Motorola",
+  "Toshiba", "Skyworth", "Haier", "Thomson", "Nokia", "Xgimi", "Formuler", "Homatics", "Ugoos", "Zidoo",
+  "Dune", "Realme", "OnePlus", "Multilaser", "Positivo", "Britania", "JVC", "Grundig", "Metz", "Loewe",
+  "Bang-Olufsen", "Chromecast", NULL
+};
+static const char *const ARQS[] = { "x86_64", "aarch64", "arm64", "armv7l", "armv8l", "i686", NULL };
+
+static int soAlnum(const char *s, size_t de, size_t ate) {
+  size_t i;
+  for (i = de; i < ate; i++) {
+    unsigned char c = (unsigned char)s[i];
+    if (!(ehDig(c) || ((c | 32) >= 'a' && (c | 32) <= 'z'))) return 0;
+  }
+  return ate > de;
+}
+static int prefixoSemCaixa(const char *s, const char *p) {
+  size_t i;
+  for (i = 0; p[i]; i++) if (!s[i] || minusc((unsigned char)s[i]) != minusc((unsigned char)p[i])) return 0;
+  return (int)i;
+}
+static int modeloLg(const char *t) {
+  size_t n = strlen(t), i = 0;
+  int k = prefixoSemCaixa(t, "LG-");
+  if (k) i = (size_t)k;
+  if ((k = prefixoSemCaixa(t + i, "OLED")) || (k = prefixoSemCaixa(t + i, "QNED")) || (k = prefixoSemCaixa(t + i, "NANO"))) i += (size_t)k;
+  if (n < i + 5 || !ehDig((unsigned char)t[i]) || !ehDig((unsigned char)t[i + 1])) return 0;
+  return soAlnum(t, i + 2, n);
+}
+static int modeloSamsung(const char *t) {
+  static const char *const P[] = { "QN", "UN", "UE", "QE", "GQ", "GU", "KU", "KQ", "UA", "QA", "LS", "LH", "TU", NULL };
+  size_t n = strlen(t), i = 0;
+  int k = prefixoSemCaixa(t, "Samsung-"), j;
+  if (k) i = (size_t)k;
+  for (j = 0; P[j]; j++) if (prefixoSemCaixa(t + i, P[j])) break;
+  if (!P[j]) return 0;
+  i += 2;
+  if (n < i + 5 || !ehDig((unsigned char)t[i]) || !ehDig((unsigned char)t[i + 1])) return 0;
+  return soAlnum(t, i + 2, n);
+}
+// Depois da marca: codigo com digito, ou nome de produto conhecido sem
+// digito (Fire TV "AFTMM", SHIELD, Chromecast). Espelho de RE_PRODUTO.
+static int produtoSemDigito(const char *r) {
+  static const char *const P[] = { "SHIELD", "SHIELD-Android-TV", "Chromecast", "Chromecast-HD",
+                                   "Chromecast-Ultra", "Google-TV-Streamer", NULL };
+  size_t n = strlen(r);
+  int j;
+  for (j = 0; P[j]; j++) if (prefixoSemCaixa(r, P[j]) == (int)n && strlen(P[j]) == n) return 1;
+  return prefixoSemCaixa(r, "AFT") && n >= 4 && n <= 11 && soAlnum(r, 3, n);
+}
+static int modeloAndroid(const char *t) {
+  int j, k;
+  if (prefixoSemCaixa(t, "Chromecast") == (int)strlen(t) && strlen(t) == 10) return 1;
+  for (j = 0; MARCAS[j]; j++) {
+    const char *r;
+    size_t i;
+    int dig = 0;
+    if (!strcmp(MARCAS[j], "Chromecast")) continue;
+    k = prefixoSemCaixa(t, MARCAS[j]);
+    if (!k || t[k] != '-' || !t[k + 1]) continue;
+    r = t + k + 1;
+    for (i = 0; r[i]; i++) if (ehDig((unsigned char)r[i])) dig = 1;
+    if (dig || produtoSemDigito(r)) return 1;
+  }
+  return 0;
+}
+
+int vtreg_modelo_tecnico(const char *plataforma, const char *s, char *out, size_t cap) {
   char t[64];
   size_t i, n;
-  int letra = 0, dig = 0, seq = 0;
+  int seq = 0, ok = 0, j;
   if (!cap) return 0;
-  if (!vtreg_texto_seguro(s, t, sizeof t)) goto nao;
+  if (!plataforma || !vtreg_texto_seguro(s, t, sizeof t)) goto nao;
   n = strlen(t);
-  if (n > VTR_MODELO_MAX || !(ehDig((unsigned char)t[0]) || ((t[0] | 32) >= 'a' && (t[0] | 32) <= 'z'))) goto nao;
+  if (n > VTR_MODELO_MAX) goto nao;
   for (i = 0; i < n; i++) {
     unsigned char c = (unsigned char)t[i];
     if (c == ' ') t[i] = '-';
-    if (ehDig(c)) { dig = 1; if (++seq >= 7) goto nao; } else seq = 0;
-    if ((c | 32) >= 'a' && (c | 32) <= 'z') letra = 1;
+    if (ehDig(c)) { if (++seq >= 7) goto nao; } else seq = 0;
   }
-  if (!letra || !dig || n + 1 > cap) goto nao;
+  if (!strcmp(plataforma, "webos")) ok = modeloLg(t);
+  else if (!strcmp(plataforma, "tizen")) ok = modeloSamsung(t);
+  else if (!strcmp(plataforma, "android")) ok = modeloAndroid(t);
+  else if (!strcmp(plataforma, "linux") || !strcmp(plataforma, "macos"))
+    for (j = 0; ARQS[j]; j++) if (!strcmp(t, ARQS[j])) ok = 1;
+  if (!ok || n + 1 > cap) goto nao;
   memcpy(out, t, n + 1);
   return 1;
 nao:
@@ -122,28 +199,27 @@ nao:
   return 0;
 }
 
-// FIRMWARE: so versao numerica, 1 a 4 grupos de 1 a 3 digitos ("05.30.25",
+// FIRMWARE: so versao numerica, 1 a 3 grupos de 1 a 3 digitos ("05.30.25",
 // "11", "6.18.44"). Do texto cru vale o prefixo numerico ("6.18.44-generic"
-// -> "6.18.44"); grupo com 4+ digitos, nada numerico no comeco ou quatro
-// grupos com cara de IPv4 viram "?".
+// -> "6.18.44"); um quarto grupo numerico (cara de IPv4) ou grupo com 4+
+// digitos viram "?".
 int vtreg_firmware_tecnico(const char *s, char *out, size_t cap) {
   char t[VTR_FIRMWARE_MAX + 1];
-  int g = 0, grande = 0;
+  int g = 0;
   size_t n = 0;
   if (!cap) return 0;
   if (!s) goto nao;
-  while (g < 4) {
-    int d = 0, v = 0;
-    while (ehDig((unsigned char)*s)) { if (++d > 3) goto nao; v = v * 10 + (*s - '0'); t[n++] = *s++; }
+  for (;;) {
+    int d = 0;
+    while (ehDig((unsigned char)*s)) { if (++d > 3) goto nao; t[n++] = *s++; }
     if (!d) { if (g == 0) goto nao; n--; break; }   // "6." sem digito depois: tira o ponto
     g++;
-    if (v > 99) grande = 1;
-    if (*s != '.' || g == 4) break;
+    if (*s != '.') break;
+    if (g == 3) { if (ehDig((unsigned char)s[1])) goto nao; break; }   // quarto grupo: nunca
     t[n++] = *s++;
   }
   if (ehDig((unsigned char)*s)) goto nao;
   t[n] = 0;
-  if (g == 4 && grande) goto nao;
   if (n + 1 > cap) goto nao;
   memcpy(out, t, n + 1);
   return 1;
@@ -185,7 +261,7 @@ int vtreg_normalizar(const VtRegEntrada *e, VtRegRegistro *r) {
   snprintf(r->plataforma, sizeof r->plataforma, "outro");
   for (i = 0; PLAT[i]; i++)
     if (e->plataforma && !strcmp(e->plataforma, PLAT[i])) snprintf(r->plataforma, sizeof r->plataforma, "%s", PLAT[i]);
-  vtreg_modelo_tecnico(e->modelo, r->modelo, sizeof r->modelo);
+  vtreg_modelo_tecnico(r->plataforma, e->modelo, r->modelo, sizeof r->modelo);
   vtreg_firmware_tecnico(e->firmware, r->firmware, sizeof r->firmware);
   vocab(e->container, CONTAINER, r->container, sizeof r->container);
   vocab(e->video, VIDEO, r->video, sizeof r->video);

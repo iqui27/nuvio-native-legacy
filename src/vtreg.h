@@ -9,9 +9,10 @@
 //   - conteiner, codecs, HDR e resultado saem de vocabulario FECHADO; texto
 //     que nao casa vira "outro", nunca o texto cru;
 //   - modelo e firmware sao os unicos campos livres, e passam por uma
-//     gramatica estrita: modelo e UM token tecnico curto com letra e digito,
-//     firmware e so versao numerica; o resto (nome, endereco, caminho,
-//     e-mail, hash, IP) vira "?";
+//     gramatica estrita: modelo e codigo tecnico conferido por plataforma
+//     (codigo LG/Samsung, fabricante Android de lista fechada, arquitetura),
+//     firmware e so versao numerica de ate 3 grupos; o resto (nome,
+//     endereco, caminho, e-mail, hash, IP) vira "?";
 //   - bitrate e altura viram faixas (o valor exato ajudaria a reconhecer o
 //     arquivo);
 //   - nao ha campo de texto livre na estrutura de saida.
@@ -78,8 +79,9 @@ int  vtreg_texto_seguro(const char *s, char *out, size_t cap);
 // firmwareTecnico em servidor/recomendacoes/src/vtreg.js): devolve 1 e o
 // valor tecnico em `out`, ou 0 e "?".
 #define VTR_MODELO_MAX   32
-#define VTR_FIRMWARE_MAX 15
-int  vtreg_modelo_tecnico(const char *s, char *out, size_t cap);
+#define VTR_FIRMWARE_MAX 11
+// `plataforma` e o token ja normalizado (webos, tizen, android, linux, macos, outro).
+int  vtreg_modelo_tecnico(const char *plataforma, const char *s, char *out, size_t cap);
 int  vtreg_firmware_tecnico(const char *s, char *out, size_t cap);
 // Impressao digital da combinacao (FNV-1a), para nao mandar a mesma duas vezes.
 unsigned vtreg_chave(const VtRegRegistro *r);

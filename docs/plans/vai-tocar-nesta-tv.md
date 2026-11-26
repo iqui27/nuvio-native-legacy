@@ -25,12 +25,15 @@ próxima"; tirar o aviso é decisão de produto e ficou como está.
 O que sai: plataforma, modelo, firmware, contêiner, codec de vídeo, codec de
 áudio, HDR, faixa de bitrate, faixa de altura, resultado e se veio depois de
 uma troca. Título, hash, endereço, nome de fonte, conta e perfil não têm campo.
-Modelo e firmware seguem gramática estrita (no app e no Worker): modelo é um
-token técnico curto com letra e dígito (espaços viram `-`), firmware é só
-versão numérica (até 4 grupos de até 3 dígitos); o resto vira `?`. O
-servidor não guarda linha por pessoa nem IP: nem em hash. A cota de 60
-pedidos por hora por IP vive só na memória do Worker; no D1 fica apenas um
-teto global por hora numa chave fixa.
+Modelo e firmware seguem gramática estrita (no app e no Worker). Modelo é
+conferido pela plataforma: código de modelo LG no webOS (nunca o
+`device_name`, que a pessoa edita), código Samsung no Tizen,
+`<fabricante>-<modelo>` com fabricante numa lista fechada de marcas no
+Android, arquitetura no Linux/macOS. Firmware é só versão numérica de 1 a 3
+grupos. O resto vira `?`. O servidor não guarda linha por pessoa nem IP: nem
+em hash. A cota de 60 pedidos por hora por IP vive só na memória do Worker;
+no D1 fica apenas um teto global por hora numa chave fixa, debitado só
+depois de o registro ser válido e com incremento condicional.
 
 Quando registra: `tocou` quando a fonte prova que tocou
 (`registrarFonteVODTocando`); a falha em `tentarProximaFonteVOD`
