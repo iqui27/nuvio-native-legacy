@@ -596,7 +596,16 @@ class NuvioActivity : SDLActivity() {
     // para falhar. Chamado de fios de rede do C (nunca do fio de UI). Volta
     // [status 4 bytes big-endian][Retry-After seconds 4 bytes][body].
     fun httpPedir(metodo: String, url: String, cabs: String, corpo: ByteArray?, prazoMs: Int): ByteArray {
-        return httpPedirInterno(metodo, url, cabs, corpo, prazoMs, false)
+        return httpPedirInterno(metodo, url, cabs, corpo, prazoMs, false, 0)
+    }
+
+    // Variante COM TETO (src/android.c android_http_teto): mesmo contrato do
+    // httpPedir, mas le no maximo teto + 1 bytes de corpo e solta a conexao.
+    // Sem isto um servidor desconhecido (kit de Home, catalogo) enchia a
+    // memoria antes do C poder recusar pelo tamanho. O byte a mais so avisa o
+    // C que havia mais; o corte exato no teto e no rede.c (viaAndroid).
+    fun httpPedirTeto(metodo: String, url: String, cabs: String, corpo: ByteArray?, prazoMs: Int, teto: Int): ByteArray {
+        return httpPedirInterno(metodo, url, cabs, corpo, prazoMs, false, teto)
     }
 
     // Variante VERIFICADA (F94, src/android.c android_http_seguro): reserva do
@@ -607,10 +616,24 @@ class NuvioActivity : SDLActivity() {
     // salto — e aplica a lista oficial de anexos — e o C (viaAndroidSeguro,
     // src/rede.c), um salto por chamada.
     fun httpPedirSeguro(metodo: String, url: String, cabs: String, corpo: ByteArray?, prazoMs: Int): ByteArray {
-        return httpPedirInterno(metodo, url, cabs, corpo, prazoMs, true)
+        return httpPedirInterno(metodo, url, cabs, corpo, prazoMs, true, 0)
     }
 
-    private fun httpPedirInterno(metodo: String, url: String, cabs: String, corpo: ByteArray?, prazoMs: Int, seguro: Boolean): ByteArray {
+    // Le o corpo inteiro (teto <= 0) ou no maximo teto + 1 bytes.
+    private fun lerCorpo(ent: java.io.InputStream, teto: Int): ByteArray {
+        if (teto <= 0) return ent.readBytes()
+        val max = if (teto >= Int.MAX_VALUE - 1) Int.MAX_VALUE - 1 else teto + 1
+        val saida = java.io.ByteArrayOutputStream(minOf(max, 64 * 1024))
+        val buf = ByteArray(16 * 1024)
+        while (saida.size() < max) {
+            val k = ent.read(buf, 0, minOf(buf.size, max - saida.size()))
+            if (k < 0) break
+            saida.write(buf, 0, k)
+        }
+        return saida.toByteArray()
+    }
+
+    private fun httpPedirInterno(metodo: String, url: String, cabs: String, corpo: ByteArray?, prazoMs: Int, seguro: Boolean, teto: Int): ByteArray {
         var con: java.net.HttpURLConnection? = null
         return try {
             if (seguro && !url.startsWith("https://")) {
@@ -648,7 +671,7 @@ class NuvioActivity : SDLActivity() {
                 }
             } else {
                 val ent = if (st >= 400) con.errorStream else con.inputStream
-                ent?.use { it.readBytes() } ?: ByteArray(0)
+                ent?.use { lerCorpo(it, teto) } ?: ByteArray(0)
             }
             val raw = con.getHeaderField("Retry-After")?.trim().orEmpty()
             val retry = if (raw.isNotEmpty() && raw.all { it in '0'..'9' }) {

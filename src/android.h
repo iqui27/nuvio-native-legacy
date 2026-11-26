@@ -69,6 +69,13 @@ void android_etapa(const char *nome);
 char *android_http(const char *verbo, const char *url, const char *cabs,
                    const char *corpo, int prazoMs, int *status, int *retryAfter, long *n,
                    char *erro, size_t nErro);
+// Variante COM TETO (NuvioActivity.httpPedirTeto): mesmo contrato, mas o Java
+// le no maximo teto + 1 bytes de corpo e solta a conexao. O byte a mais so diz
+// ao rede.c que havia mais; o corte no teto exato (e o "limitado") e la, igual
+// ao recebedor da libcurl. teto <= 0 = android_http.
+char *android_http_teto(const char *verbo, const char *url, const char *cabs,
+                        const char *corpo, int prazoMs, long teto, int *status,
+                        int *retryAfter, long *n, char *erro, size_t nErro);
 // Variante VERIFICADA (F94, NuvioActivity.httpPedirSeguro): mesmo contrato, mas
 // o redirect fica DESLIGADO no Java e, numa resposta 3xx, o "corpo" devolvido
 // e o Location ja resolvido contra a URL do salto (vazio sem Location). O

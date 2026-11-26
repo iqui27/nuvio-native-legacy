@@ -3115,13 +3115,28 @@ static int abrir(void) { return abrirAte(20000); }
 // nunca depende so da nossa libcurl. The session latch requires transport
 // failures recovered by Android on three distinct hostnames.
 static int curlRuim;
+// TETO NA RESERVA, igual ao recebedor da libcurl (receber): com teto > 0 o
+// corpo fica com no maximo `teto` bytes e o pedido conta como limitado. O
+// android_http_teto ja parou de ler em teto + 1 (o byte a mais so diz que
+// havia mais); aqui e o corte exato, para os dois caminhos devolverem o mesmo.
+static long redeCortarTeto(char *r, long bytes, long teto) {
+  if (!r || teto <= 0 || bytes <= teto) return bytes;
+  r[teto] = 0;
+  redeLimitouLocal = 1;
+  return teto;
+}
+#ifdef NV_ANDROID
+#define redeHttpHost(v, u, c, b, p, t, s, ra, n, e, ne) android_http_teto(v, u, c, b, p, t, s, ra, n, e, ne)
+#else   // iOS: nv_host_http sem teto na leitura; o corte abaixo vale igual
+#define redeHttpHost(v, u, c, b, p, t, s, ra, n, e, ne) ((void)(t), android_http(v, u, c, b, p, s, ra, n, e, ne))
+#endif
 static char *viaAndroid(const char *verbo, const char *url, int segundos,
                         const char *const *cab, const char *corpo, int *status,
                         long *tam, int *retryAfter, const char *porque) {
   char *cabs, *r, erro[200], h[96];
   size_t n = 1;
   int k, st = 0, temCt = 0;
-  long bytes = 0;
+  long bytes = 0, teto = redeLimiteAtual();
   unsigned long t0 = redeAgoraMs();
   static int logados;
   redeBytesLocal = 0;
@@ -3138,11 +3153,11 @@ static char *viaAndroid(const char *verbo, const char *url, int segundos,
   // Mesmo padrao do postarNativo: JSON, salvo quem mandou o proprio.
   if (corpo && !temCt) strcat(cabs, "Content-Type: application/json\n");
   char *alias = __atomic_load_n(&tmdbAlternativo, __ATOMIC_ACQUIRE) ? tmdbUrl(url) : NULL;
-  r = android_http(verbo, alias ? alias : url, cabs, corpo, (segundos > 0 ? segundos : 20) * 1000,
-                   &st, retryAfter, &bytes, erro, sizeof erro);
+  r = redeHttpHost(verbo, alias ? alias : url, cabs, corpo, (segundos > 0 ? segundos : 20) * 1000,
+                   teto, &st, retryAfter, &bytes, erro, sizeof erro);
   if (!r && !st && !alias && !redeCancelouLocal && (alias = tmdbUrl(url))) {
-    r = android_http(verbo, alias, cabs, corpo, (segundos > 0 ? segundos : 20) * 1000,
-                     &st, retryAfter, &bytes, erro, sizeof erro);
+    r = redeHttpHost(verbo, alias, cabs, corpo, (segundos > 0 ? segundos : 20) * 1000,
+                     teto, &st, retryAfter, &bytes, erro, sizeof erro);
     if (r) tmdbLigou();
   }
   free(alias); free(cabs);
@@ -3154,6 +3169,7 @@ static char *viaAndroid(const char *verbo, const char *url, int segundos,
   }
   if (!r) { snprintf(redeErroTxt, sizeof redeErroTxt, "android: %.180s", erro); return NULL; }
   redeErroTxt[0] = 0;
+  bytes = redeCortarTeto(r, bytes, teto);
   // Os wrappers medidos leem este contador mesmo sem pedir `tam`.
   redeBytesLocal = bytes;
   if (st == 401 && aviso401) aviso401(url);

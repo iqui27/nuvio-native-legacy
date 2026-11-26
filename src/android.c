@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <limits.h>
 #include <poll.h>
 #include <android/api-level.h>
 #include "nvbackend.h"
@@ -542,9 +543,11 @@ int android_abrir_loja(const char *pacote, const char *nome) {
 
 // Ver android.h. A resposta vem como byte[]: 4 bytes de status (big-endian) e
 // 4 bytes de Retry-After em segundos e o corpo; status 0 = falha de transporte.
+// teto > 0 chama a variante com teto (httpPedirTeto): o Java para de ler em
+// teto + 1 bytes de corpo, e quem corta no teto exato e o rede.c.
 static char *httpJni(const char *metodoJni, const char *verbo, const char *url,
-                     const char *cabs, const char *corpo, int prazoMs, int *status,
-                     int *retryAfter, long *n, char *erro, size_t nErro) {
+                     const char *cabs, const char *corpo, int prazoMs, long teto,
+                     int *status, int *retryAfter, long *n, char *erro, size_t nErro) {
   JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
   jobject act = env ? (jobject)SDL_AndroidGetActivity() : NULL;
   jclass cls = NULL;
@@ -563,7 +566,9 @@ static char *httpJni(const char *metodoJni, const char *verbo, const char *url,
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
     return NULL;
   }
-  m = metodo(env, act, &cls, metodoJni, "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[BI)[B");
+  m = metodo(env, act, &cls, metodoJni, teto > 0
+             ? "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[BII)[B"
+             : "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[BI)[B");
   if (m && !(*env)->ExceptionCheck(env)) {
     // Cada chamada JNI so vale sem excecao pendente: um NewStringUTF que
     // estoura (OOM) invalida o proximo — cria na sequencia conferindo.
@@ -577,8 +582,13 @@ static char *httpJni(const char *metodoJni, const char *verbo, const char *url,
       jcorpo = (*env)->NewByteArray(env, k);
       if (jcorpo) (*env)->SetByteArrayRegion(env, jcorpo, 0, k, (const jbyte *)corpo);
     }
-    if (jm && ju && jc && (!corpo || jcorpo) && !(*env)->ExceptionCheck(env))
-      jr = (jbyteArray)(*env)->CallObjectMethod(env, act, m, jm, ju, jc, jcorpo, (jint)prazoMs);
+    if (jm && ju && jc && (!corpo || jcorpo) && !(*env)->ExceptionCheck(env)) {
+      if (teto > 0)
+        jr = (jbyteArray)(*env)->CallObjectMethod(env, act, m, jm, ju, jc, jcorpo, (jint)prazoMs,
+                                                  (jint)(teto < INT_MAX - 1 ? teto : INT_MAX - 1));
+      else
+        jr = (jbyteArray)(*env)->CallObjectMethod(env, act, m, jm, ju, jc, jcorpo, (jint)prazoMs);
+    }
   }
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); jr = NULL; }
   if (jr) {
@@ -616,7 +626,16 @@ static char *httpJni(const char *metodoJni, const char *verbo, const char *url,
 char *android_http(const char *verbo, const char *url, const char *cabs,
                    const char *corpo, int prazoMs, int *status, int *retryAfter, long *n,
                    char *erro, size_t nErro) {
-  return httpJni("httpPedir", verbo, url, cabs, corpo, prazoMs, status, retryAfter, n,
+  return httpJni("httpPedir", verbo, url, cabs, corpo, prazoMs, 0, status, retryAfter, n,
+                 erro, nErro);
+}
+// Ver android.h: mesma reserva, com o corpo lido no maximo ate teto + 1 bytes.
+char *android_http_teto(const char *verbo, const char *url, const char *cabs,
+                        const char *corpo, int prazoMs, long teto, int *status,
+                        int *retryAfter, long *n, char *erro, size_t nErro) {
+  if (teto <= 0) return android_http(verbo, url, cabs, corpo, prazoMs, status, retryAfter, n,
+                                     erro, nErro);
+  return httpJni("httpPedirTeto", verbo, url, cabs, corpo, prazoMs, teto, status, retryAfter, n,
                  erro, nErro);
 }
 // RESERVA VERIFICADA (F94, android.h): NuvioActivity.httpPedirSeguro faz UM
@@ -626,7 +645,7 @@ char *android_http(const char *verbo, const char *url, const char *cabs,
 char *android_http_seguro(const char *verbo, const char *url, const char *cabs,
                           const char *corpo, int prazoMs, int *status, int *retryAfter,
                           long *n, char *erro, size_t nErro) {
-  return httpJni("httpPedirSeguro", verbo, url, cabs, corpo, prazoMs, status, retryAfter, n,
+  return httpJni("httpPedirSeguro", verbo, url, cabs, corpo, prazoMs, 0, status, retryAfter, n,
                  erro, nErro);
 }
 

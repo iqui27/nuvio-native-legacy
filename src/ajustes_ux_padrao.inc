@@ -413,3 +413,4 @@
   0, /* legendaTemporariaLocal: Ligado */
   0, /* oQuePerdiLocal: Ligado (sem chave do Gemini o botao nao aparece) */
   0, /* chave do Gemini: acao (o valor mora em gemini.txt) */
+  0, /* Kit de Home: acao; o kit mora em kit-home-p<N>.json */
