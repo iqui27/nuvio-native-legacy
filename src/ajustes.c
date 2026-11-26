@@ -1993,7 +1993,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Estilo dos ícones", V_FONTE_ICONES, 2),   // local: fonteIconesLocal
   ESC("Posição dos selos", V_SOURCE_BADGE_POSITION, 2),   // local: sourceBadgePositionLocal
   ESC("Sincronia por áudio em rede móvel", V_LIGA, 2),   // local: legendaSyncAudioMovelLocal (Android)
-  LER("Plano do TorBox"),                                // read from TorBox (debrid_tb_plano)
+  LER("Plano do TorBox"),                                // no row since 26/11/2026: the TorBox key test shows the plan
   ESC("Queimar ASS pelo TorBox", V_LIGA, 2),             // local: legendaQueimarLocal
   ESC("Áudio original com a queima", V_TB_AUDIO, 2),     // local: torboxAudioModoLocal
   ESC("Igualar taxa de quadros", V_QUADROS_TAXA, 3),   // local: frameRateMatchLocal (Android)
@@ -4919,11 +4919,18 @@ static const char *adTesteTexto(int servico) {
   }
   if (e == 0 || servico != adTesteServico) return debrid_origem(debrid_servico_id(servico)) ? i18n("OK testa") : i18n("informe a chave primeiro");
   if (e == 1 || e == 3) return i18n("testando…");
-  if (adTesteOk && adTesteData[0]) {
-    snprintf(buf, sizeof buf, i18n("premium até %s"), adTesteData);
+  {
+    // TorBox: the test also names the plan read from user/me (owner 26/11/2026).
+    static const char *const PLANOS[] = { "Free", "Essential", "Pro", "Standard" };
+    int p = servico == DEBRID_TB ? debrid_tb_plano() : -1;
+    const char *nome = p >= 0 && p < 4 ? PLANOS[p] : NULL;
+    char base[48];
+    if (adTesteOk && adTesteData[0]) snprintf(base, sizeof base, i18n("premium até %s"), adTesteData);
+    else snprintf(base, sizeof base, "%s", i18n(adTesteMsg));
+    if (nome) snprintf(buf, sizeof buf, "%s · %s", nome, base);
+    else snprintf(buf, sizeof buf, "%s", base);
     return buf;
   }
-  return i18n(adTesteMsg);
 }
 
 // "TESTAR CHAVE DO SEEKR": GET /v1/keys/validate, em fio proprio como o do
@@ -7626,13 +7633,6 @@ static const char *textoLeitura(int op) {
     return r;
   }
   if(op==AJ_IPTV_NOME)return ajIptvNome(iptv_conta_indice());
-  if (op == AJ_TB_PLANO) {
-    static const char *const NOMES[] = { "Free", "Essential", "Pro", "Standard" };
-    int p = debrid_tb_plano();
-    if (debrid_tb_disponivel() == 0) return "No TorBox key";
-    if (p >= 0 && p < 4) return NOMES[p];
-    return p == -1 ? "Checking..." : p == -2 ? "Couldn't check" : "Unknown plan";
-  }
   static char buf[64];
   // MASCARADO, sempre. Esta tela e fotografada e colada em issue — foi assim
   // que chegou o relato do painel de Tracking. O portal sai sem esquema e o MAC

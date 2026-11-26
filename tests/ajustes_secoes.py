@@ -57,6 +57,8 @@ RETIRADAS = {
     # webOS HLS: the old DTS/DV7 switches folded into AJ_WEBOS_HLS_MODE (slots
     # kept for the saved valor[]); AJ_WEBOS_HLS_TS is learned by the player.
     "AJ_WEBOS_HLS_DTS", "AJ_WEBOS_HLS_DV7", "AJ_WEBOS_HLS_TS",
+    # TorBox plan: read from TorBox; the "Test TorBox key" result names it.
+    "AJ_TB_PLANO",
 }
 opcoes = [op for op in opcoes if op not in RETIRADAS]
 
