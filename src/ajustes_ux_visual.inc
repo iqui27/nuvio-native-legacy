@@ -192,6 +192,8 @@ static const char *ajVisualIcone(int op) {
     case AJ_CW_CONCLUIDO: return "aj_circle-play";
     case AJ_CW_MINIMO: return "aj_circle-play";
     case AJ_ANIMESKIP_ID: return "aj_key-round";
+    case AJ_PERDI: return "aj_sparkles";
+    case AJ_PERDI_CHAVE: return "aj_key-round";
     case AJ_CAPITULOS:
     case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PULAR_CREDITOS: case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS: case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "aj_circle-play";
     case AJ_SAIDA_PLAYER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: return "aj_circle-play";

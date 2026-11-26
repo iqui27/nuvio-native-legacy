@@ -661,6 +661,10 @@ int ajustes_leg2_atraso(void);
 int ajustes_leg2_definir_atraso(int ms);
 int   ajustes_legenda_forcada_auto(void);    // #287: 1 = audio in the subtitle language -> only the forced track (local, default on)
 int   ajustes_legenda_temporaria(void);      // legtemp.h: 1 = subtitles turn on by themselves on mute / short rewind (local, default on)
+// "O que eu perdi?": 1 = ligado E com chave do Gemini (local, padrao Ligado).
+int   ajustes_perdi(void);
+// A chave pessoal do Gemini ("" sem chave). Credencial: nunca registrar.
+const char *ajustes_perdi_chave(void);
 int   ajustes_legenda_evitar_sdh(void);      // #743: 1 = auto-pick skips SDH/CC tracks (local, default off)
 int   ajustes_ass_motor(void);               // .tpk: 1 = motor novo de ASS (padrao), 0 = motor antigo
 int   ajustes_legenda_sync_auto(void);       // local, ligada por padrão

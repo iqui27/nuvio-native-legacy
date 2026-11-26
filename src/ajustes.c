@@ -9,6 +9,7 @@
 #include "ios.h"
 #endif
 #include "segfontes.h"
+#include "perdi.h"
 #include "legfontes.h"
 #include "logrede.h"
 #include "jsw.h"
@@ -893,6 +894,13 @@ typedef enum {
   // Legenda temporaria (legtemp.h): sem legenda ligada, ela aparece sozinha ao
   // mutar e ao voltar alguns segundos. LOCAL, ligado, append-only.
   AJ_LEG_TEMPORARIA,
+  // "O que eu perdi?" (pesquisa 4.3): botao no player que resume o titulo ate
+  // o minuto atual a partir da legenda, com o Gemini e a chave DO USUARIO.
+  // AJ_PERDI liga/desliga (LOCAL, V_LIGA, padrao Ligado; sem chave o botao
+  // nao aparece). AJ_PERDI_CHAVE e acao: o valor mora em gemini.txt (dados),
+  // por aparelho, nunca no ajustes.txt nem na conta. Append-only.
+  AJ_PERDI,
+  AJ_PERDI_CHAVE,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2154,6 +2162,8 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Perfis desta conta"),
   ESC("Tela ambiente ao pausar", V_LIGA, 2),                 // local: pausaAmbienteLocal
   ESC("Legenda ao silenciar ou voltar", V_LIGA, 2),          // local: legendaTemporariaLocal
+  ESC("O que eu perdi?", V_LIGA, 2),                         // local: oQuePerdiLocal
+  ACAO("Chave do Gemini"),                                   // valor em gemini.txt
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2553,6 +2563,9 @@ static const char *CHAVE[] = {
   "-amigosPerfis",
   "pausaAmbienteLocal",
   "legendaTemporariaLocal",
+  "oQuePerdiLocal",
+  // "-": o VALOR mora em gemini.txt (dados); credencial, fora do ajustes.txt.
+  "-geminiChave",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -4925,6 +4938,30 @@ static const char *animeskipMascarado(void) {
   return m;
 }
 
+// Chave PESSOAL do Gemini ("O que eu perdi?"): gemini.txt (dados), por
+// aparelho, como a do fanart.tv. Nunca no ajustes.txt, na conta nem em log;
+// so sai daqui no cabecalho do pedido ao Google (perdifio.c).
+static char geminiChave[96];
+static void geminiCarregar(void) {
+  char *t = dados_ler("gemini.txt");
+  perdi_chave_limpar(t, geminiChave, sizeof geminiChave);
+  free(t);
+}
+static void geminiDefinir(const char *txt) {
+  perdi_chave_limpar(txt, geminiChave, sizeof geminiChave);
+  if (geminiChave[0]) dados_gravar("gemini.txt", geminiChave);
+  else dados_apagar("gemini.txt");
+}
+static const char *geminiMascarada(void) {
+  static char m[24];
+  size_t n = strlen(geminiChave);
+  if (!n) return i18n("Não configurado");
+  snprintf(m, sizeof m, "····%s", n > 4 ? geminiChave + n - 4 : "");
+  return m;
+}
+int ajustes_perdi(void) { return valor[AJ_PERDI] == 0 && geminiChave[0] != 0; }
+const char *ajustes_perdi_chave(void) { return geminiChave; }
+
 // Somente a chave propria em seekr.txt, local e mascarada. Remover a chave
 // desliga o uso efetivo; os limites sao os do plano da pessoa no Seekr.
 static const char *seekrPedirChave(void) {
@@ -5606,6 +5643,7 @@ void ajustes_dir(const char *dir) {
   ass_novo_registrar(ajustes_ass_motor);   // o motor de ASS le a chave daqui (assperf.h)
 #endif
   animeskipCarregar();
+  geminiCarregar();
   seekrCarregar();
   p2pCarregar();
   ppCarregar();
@@ -8222,6 +8260,7 @@ static const char *textoLeitura(int op) {
   }
   if (op == AJ_FANART_CHAVE) return fanartMascarada();
   if (op == AJ_ANIMESKIP_ID) return animeskipMascarado();
+  if (op == AJ_PERDI_CHAVE) return geminiMascarada();
   if (op == AJ_SEEKR_CHAVE) return seekrMascarada();
   if (op == AJ_SEEKR_TESTAR) return skTesteTexto();
   if (op >= AJ_OPENSEEK_SERVIDOR && op <= AJ_OPENSEEK_ULT) return openseekTexto(op);
@@ -8807,6 +8846,8 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_PULAR_RESUMO: return "Pula o resumo do episódio anterior sozinho quando o episódio tem o trecho marcado, e avisa na tela. Sem marcador, nada é pulado.";
     case AJ_PULAR_CREDITOS: return "Pula o encerramento sozinho, de série ou de filme, e avisa na tela, só quando o marcador diz onde ele começa e onde acaba. Com uma cena pós-créditos depois, para no começo da cena. Sem marcador completo, nada é pulado.";
     case AJ_CAPITULOS: return "Mostra os capítulos do arquivo no player: uma marca na barra em cada capítulo, o nome do capítulo atual e, com Para cima na barra, a fileira de capítulos para pular com Esquerda/Direita. Abertura, resumo, encerramento e pós-créditos aparecem na barra mesmo desligado.";
+    case AJ_PERDI: return "Botão no player que resume o que aconteceu até o minuto atual. Envia ao Google Gemini, com a sua chave, só o texto da legenda até esse ponto. Precisa da Chave do Gemini e de uma legenda de texto.";
+    case AJ_PERDI_CHAVE: return "Sua chave pessoal do Google Gemini: aistudio.google.com/apikey. O uso conta na sua cota. Fica só nesta TV, aparece mascarada e só é enviada ao Google.";
     case AJ_ANIMESKIP_ID: return "Seu Client ID do Anime-Skip, mais uma fonte de abertura e encerramento de anime. Vazio usa o da sua conta Nuvio. Fica só nesta TV e aparece mascarado.";
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: {
       static char b[512];
@@ -11381,6 +11422,14 @@ static void eventoTela(const SDL_Event *e) {
       if (a >= 0 && selospacote_da_tv(a)) { selospacote_remover(a); spResultado = -1; spEspelhar(); }
       return;
     }
+    if (focoOp == AJ_PERDI_CHAVE) {
+      // Como a chave do fanart: nunca volta para o campo; vazio apaga.
+      stCampo = focoOp;
+      teclado_abrir_com("Chave do Gemini", "Chave pessoal: aistudio.google.com/apikey. Vazio apaga.",
+                        80, PST_ALFA_CHAVE, NULL);
+      teclado_permitir_vazio(1);
+      return;
+    }
     if (focoOp == AJ_ANIMESKIP_ID) {
       // Como a chave do fanart: o ID nao volta para o campo; vazio usa o da conta.
       stCampo = focoOp;
@@ -11570,6 +11619,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
       else if (stCampo == PF_CAMPO) { if (pfDigitado(teclado_texto())) r = TECLADO_NADA; }
       else if (stCampo == AJ_FANART_CHAVE)    fanartDefinir(teclado_texto());
       else if (stCampo == AJ_ANIMESKIP_ID)    animeskipDefinir(teclado_texto());
+      else if (stCampo == AJ_PERDI_CHAVE)     geminiDefinir(teclado_texto());
       else if (stCampo == AJ_SEEKR_CHAVE)     { seekrDefinir(teclado_texto()); atomic_store_explicit(&skTeste, 0, memory_order_release); }
       else if (stCampo == AJ_SELOS_PACOTE_ADD) spAdicionar(teclado_texto());
       else if (stCampo == AJ_URL_M3U_ADD || stCampo == AJ_URL_XMLTV_ADD)
@@ -12256,7 +12306,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR: case AJ_FONTE_IDIOMA_AUDIO:
     case AJ_SELOS_PACOTE:
     case AJ_REACAO_CREDITOS: case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS: case AJ_PROXIMO_CONTAGEM:
-    case AJ_CAPITULOS: case AJ_ANIMESKIP_ID:
+    case AJ_CAPITULOS: case AJ_ANIMESKIP_ID: case AJ_PERDI: case AJ_PERDI_CHAVE:
     case AJ_FONTE_PRAZO: case AJ_TAM_MAX: case AJ_TAM_MIN: case AJ_PROPORCAO_PADRAO: case AJ_DTS_AC3:
     case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:

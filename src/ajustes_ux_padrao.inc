@@ -411,3 +411,5 @@
   0, /* direct account-profile friends action */
   0, // pausaAmbienteLocal: Ligado (V_LIGA 0)
   0, /* legendaTemporariaLocal: Ligado */
+  0, /* oQuePerdiLocal: Ligado (sem chave do Gemini o botao nao aparece) */
+  0, /* chave do Gemini: acao (o valor mora em gemini.txt) */

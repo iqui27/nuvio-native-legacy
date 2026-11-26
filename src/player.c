@@ -187,6 +187,8 @@ extern __attribute__((weak)) int farolacao_fonte_executar(int acao, int persisti
 #include "player_dts_notice.h"
 #include "miniatura_android.h"
 #include "neste.h"
+#include "perdi.h"
+#include "perdifio.h"
 #include "cacheboost.h"
 #include "directcache.h"
 #include "audioinfo.h"
@@ -293,7 +295,7 @@ static int modoCanal(const char *url) {
 // Na serie, Anterior/Proximo ficam ao lado do Play; o restante conserva a ordem.
 enum { PLR_PLAY, PLR_CC, PLR_AUDIO, PLR_ASPECTO,
        PLR_FONTES, PLR_EPISODIOS, PLR_PROXIMO, PLR_REINICIAR, PLR_NESTE, PLR_OPTIONS,
-       PLR_PARTE_ANT, PLR_PARTE_PROX, PLR_NBTNS };
+       PLR_PARTE_ANT, PLR_PARTE_PROX, PLR_PERDI, PLR_NBTNS };
 
 // Avanco em curso: enquanto vale, posSeg e do DONO e nao do pipeline.
 static int    scrubbing, scrubPassos, scrubTocava, scrubDir, scrubToque;
@@ -562,6 +564,8 @@ static float duracaoSeg = PLR_DUR_PADRAO;
 // fim+0.25 ai seria um salto para o COMECO do arquivo — o alvo resolve o nulo.
 static double puloDestino(double fim) { return fim > 0.0 ? fim + .25 : duracaoSeg; }
 static const CatItem *item(void);
+// "O que eu perdi?": zera cartao, pedido e historico (fim/troca de sessao).
+static void perdiResetarSessao(void);
 // #494: diario local de marcadores pulados (AniSkip / TheIntroDB, futuro).
 // `ini` e a posicao onde o trecho comecou a ser pulado (posSeg antes do seek);
 // `intro_botao_visivel` devolve o FIM do marcador, nao o inicio — reutiliza-lo
@@ -1509,6 +1513,7 @@ void player_definir_episodio(int t, int e) {
   const CatItem *c = item();
   if (t != epT || e != epE) {
     if (!abrindoSessao) farolTentativaIniciar();
+    perdiResetarSessao();
     retomarFonteSeg = -1.0;
     memset(&scrobbleAlvo, 0, sizeof scrobbleAlvo); scrobbleAlvoPronto = 0;
     scrobbleTvdbCapturado = 0;
@@ -2281,6 +2286,7 @@ static void armarTituloGuardado(void) {
 
 void player_abrir(int indiceCatalogo, const char *url) {
   farolTentativaIniciar();
+  perdiResetarSessao();
   dtsAvisoSessao++;
 #ifdef NV_DV_TRUEHD_TEST
   truehdConvertedNotice=(NvDtsNotice){0};truehdDesde=0;truehdVisto=0;truehdTrack=-1;
@@ -2869,6 +2875,7 @@ void player_definir_fonte(const char *url) {
   if ((!aberto && !mini) || !url || !*url) return;
   farolTentativaIniciar();
   if (!travaFonte(url)) return;
+  perdiResetarSessao();   // outra fonte: outra faixa embutida, outro relogio
   intro_trocar_fonte();
   fonteAcaoInvalidar();
   // A primeira fonte ainda pode aproveitar a legenda antecipada na espera.
@@ -2912,6 +2919,7 @@ int player_recarregar_vod(void) {
 void player_voltar_a_esperar(void) {
   if (!aberto) return;
   legTempZerar();
+  perdiResetarSessao();
   fonteAcaoInvalidar();
   legenda_pre_descartar(i18n("fonte descartada"));
   // A fonte foi descartada: a tela do DV sai e o cartao de sempre conta a
@@ -3245,6 +3253,7 @@ static void fecharSessao(int manter, int trocaFonte) {
 #endif
   if (!manter || trocaFonte) legTempZerar();
   directcache_encerrar();
+  perdiResetarSessao();   // fecha o cartao, cancela o POST ao Gemini e solta o historico
   juntos_ao_voltar();
   saiuVisto = 0;
   imgsub_gl_limpar();
@@ -4064,6 +4073,170 @@ static void corpoNeste(GfxRect r, float a, void *u) {
   }
 }
 
+// O QUE EU PERDI? (pesquisa 4.3): cartao da ilha com o resumo ate o minuto
+// atual, feito pelo Gemini a partir da legenda ativa (perdi.h). So o texto que
+// JA passou sai do aparelho; a chave e a do usuario (Ajustes).
+static int perdiAberto, perdiModo, perdiT, perdiE;
+static unsigned perdiId;
+// IDENTIDADE POR VALOR, nao por ponteiro: item() devolve &itemFixo, o mesmo
+// endereco para todo titulo. A geracao `perdiSessao` muda a cada
+// perdiResetarSessao (abrir, trocar fonte/episodio, voltar a esperar, fechar).
+static unsigned perdiSessao = 1, perdiCartaoSessao, perdiHistSessao;
+static char perdiImdb[sizeof(((CatItem *)0)->imdb)], perdiHistImdb[sizeof(((CatItem *)0)->imdb)];
+static char perdiAte[32], perdiTexto[PERDI_RESUMO_MAX];
+// LEGENDA EMBUTIDA (Android/Media3 SRT/VTT, AVPlay, .tpk): o player nativo so
+// entrega a fala em vigor e legenda_documento_ativo() fica vazio. Cada quadro
+// anota a fala nativa no historico (perdi.h) com o MESMO relogio do perdiAbrir;
+// o historico vale para a sessao, o titulo, o episodio e a faixa em que foi
+// colhido.
+static PerdiHist perdiHist;
+static int perdiHistT, perdiHistE, perdiHistFaixa = -2;
+// SEM SPOILER NO SEEK: logo depois de um salto (ou enquanto o video nao esta
+// pronto, a fonte nao chegou ou a pessoa arrasta a barra) a fala nativa ainda
+// pode ser a de ANTES do salto; anotada com o instante novo, uma fala do
+// minuto 50 entraria como se fosse do minuto 10. A colheita para ate o relogio
+// assentar PERDI_ASSENTA_MS.
+#define PERDI_ASSENTA_MS 1500u
+static Uint32 perdiAssentaAte;
+static double perdiUltPos = -1.0;
+static const char *perdiImdbAtual(void) {
+  const CatItem *c = item();
+  return c ? c->imdb : "";
+}
+static void perdiColher(void) {
+  char fala[sizeof perdiHist.ultimo];
+  const char *imdb;
+  int faixa;
+  double pos;
+  Uint32 agora;
+  if (!aberto || saindo || ehCanal() || !ajustes_perdi()) {
+    if (perdiHist.cap) perdi_hist_zerar(&perdiHist);
+    perdiHistFaixa = -2;
+    return;
+  }
+  imdb = perdiImdbAtual();
+  faixa = video_legenda_atual();
+  if (perdiHistSessao != perdiSessao || strcmp(imdb, perdiHistImdb) ||
+      epT != perdiHistT || epE != perdiHistE || faixa != perdiHistFaixa) {
+    perdi_hist_zerar(&perdiHist);
+    perdiHistSessao = perdiSessao;
+    snprintf(perdiHistImdb, sizeof perdiHistImdb, "%s", imdb);
+    perdiHistT = epT; perdiHistE = epE; perdiHistFaixa = faixa;
+    perdiUltPos = -1.0;
+  }
+  agora = SDL_GetTicks();
+  if (!comVideo || esperandoFonte || !video_pronto() || scrubbing) {
+    perdiAssentaAte = agora + PERDI_ASSENTA_MS;
+    perdiHist.ultimo[0] = 0;
+    perdiUltPos = -1.0;
+    return;
+  }
+  pos = legsync_posicao(posLegenda());
+  // Salto: para tras mais de 1 s, ou para frente mais do que um quadro lento.
+  if (perdiUltPos >= 0.0 && (pos < perdiUltPos - 1.0 || pos > perdiUltPos + 5.0)) {
+    perdiAssentaAte = agora + PERDI_ASSENTA_MS;
+    perdiHist.ultimo[0] = 0;
+  }
+  perdiUltPos = pos;
+  if ((Sint32)(perdiAssentaAte - agora) > 0) return;
+  if (!player_texto_legenda_nativa(fala, sizeof fala)) fala[0] = 0;
+  perdi_hist_anotar(&perdiHist, pos, fala);
+}
+static const char *perdiMensagem(int *pronto) {
+  PerdiResultado res = PERDI_ERRO;
+  *pronto = 0;
+  if (perdiModo == PERDI_MODO_SEM_LEGENDA) return i18n("Ative uma legenda de texto para usar O que eu perdi?");
+  if (perdiModo == PERDI_MODO_POUCO) return i18n("Ainda há pouca fala para resumir.");
+  // Embutida ligada, sem documento: dizer o que de fato acontece, nunca o
+  // "ative uma legenda" (a pessoa ja ativou).
+  if (perdiModo == PERDI_MODO_EMBUTIDA_SEM_TEXTO)
+    return i18n("Esta legenda embutida ainda não entregou falas ao app. Se for de imagem (PGS), escolha uma legenda de texto.");
+  if (perdiModo == PERDI_MODO_EMBUTIDA_POUCO)
+    return i18n("Com legenda embutida, o resumo usa só as falas exibidas desde que você começou a assistir. Ainda há pouca fala.");
+  switch (perdifio_estado(perdiId, &res, perdiTexto, sizeof perdiTexto)) {
+    case PERDIFIO_CARREGANDO: return i18n("Resumindo até aqui…");
+    case PERDIFIO_NADA: return i18n("Não foi possível resumir agora.");
+    default: break;
+  }
+  switch (res) {
+    case PERDI_OK: *pronto = 1; return perdiTexto;
+    case PERDI_CHAVE: return i18n("O Gemini recusou a chave. Confira a Chave do Gemini em Ajustes.");
+    case PERDI_COTA: return i18n("A cota da sua chave do Gemini acabou por agora. Tente mais tarde.");
+    case PERDI_BLOQUEADO: return i18n("O Gemini não quis resumir este trecho.");
+    case PERDI_REDE: return i18n("Sem resposta do Gemini. Confira a internet.");
+    default: return i18n("Não foi possível resumir agora.");
+  }
+}
+#define PERDI_UI_W 900.0f
+#define PERDI_UI_LINHA 32.0f
+static float perdiAltura(void) {
+  int pronto;
+  const char *m = perdiMensagem(&pronto);
+  float h = txt_bloco_bruto(TXT_ILHA_TEXTO, m, 0, 0, 0, 0, 0, PERDI_UI_W - 72.0f, PERDI_UI_LINHA, 0.0f, 9);
+  return 18.0f + h + (pronto ? 14.0f + 26.0f : 0.0f) + 22.0f;
+}
+static void corpoPerdi(GfxRect r, float a, void *u) {
+  int pronto;
+  const char *m = perdiMensagem(&pronto);
+  float x = r.x + 36.0f, w = r.w - 72.0f, y = r.y + 18.0f;
+  (void)u;
+  if (pronto) y += txt_bloco_bruto(TXT_ILHA_TEXTO, m, 243, 242, 239, x, y, w, PERDI_UI_LINHA, a, 9);
+  else y += txt_bloco_bruto(TXT_ILHA_TEXTO, m, 158, 157, 155, x, y, w, PERDI_UI_LINHA, a, 9);
+  if (pronto)
+    txt_bloco_corta(TXT_G18M, i18n("Feito pelo Gemini com a legenda até este ponto. Pode conter erros."),
+                    158, 157, 155, x, y + 14.0f, w, 26.0f, a * 0.8f, 1);
+}
+static void perdiFechar(void) {
+  if (!perdiAberto) return;
+  perdiAberto = 0;
+  perdifio_cancelar();
+}
+static void perdiResetarSessao(void) {
+  perdiFechar();
+  perdifio_cancelar();
+  perdi_hist_zerar(&perdiHist);
+  perdiHistFaixa = -2; perdiHistImdb[0] = 0;
+  perdiUltPos = -1.0; perdiAssentaAte = 0;
+  if (!++perdiSessao) perdiSessao = 1;
+}
+static void perdiAbrir(void) {
+  static const LegendaDocumentoInfo info = {0};
+  const CatItem *c = item();
+  LegendaDocumento *doc = legenda_documento_ativo(legenda_geracao(), &info);
+  // O MESMO relogio do desenho da legenda: o que esta na tela e o limite.
+  double pos = legsync_posicao(posLegenda());
+  int atraso = legsync_offset_ms(legEstilo.atrasoMs), n = 0, falasDoc = -1, falasHist = 0;
+  const LegendaCue *v = doc ? legenda_documento_dados(doc, &n) : NULL;
+  char *trecho = NULL, *corpo = NULL, ep[32] = "";
+  long s = posSeg > 0 ? (long)posSeg : 0;
+  if (v && n > 0) {
+    falasDoc = 0;
+    trecho = perdi_trecho(v, n, pos, atraso, PERDI_TRECHO_MAX, &falasDoc);
+  } else {
+    // Sem documento: a embutida que o player nativo desenha (Android/Media3).
+    // O historico ja esta no relogio da tela (o atraso foi aplicado antes de
+    // a fala chegar), entao atraso 0.
+    perdiColher();
+    if (perdiHist.n > 0) trecho = perdi_trecho(perdiHist.v, perdiHist.n, pos, 0, PERDI_TRECHO_MAX, &falasHist);
+  }
+  perdifio_cancelar();
+  perdiAberto = 1; perdiId = 0; perdiTexto[0] = 0;
+  perdiCartaoSessao = perdiSessao; perdiT = epT; perdiE = epE;
+  snprintf(perdiImdb, sizeof perdiImdb, "%s", c ? c->imdb : "");
+  snprintf(perdiAte, sizeof perdiAte, "%ld:%02ld:%02ld", s / 3600, (s / 60) % 60, s % 60);
+  if (!ehCanal() && epT >= 0 && epE > 0) snprintf(ep, sizeof ep, "S%02dE%02d", epT, epE);
+  perdiModo = perdi_modo(falasDoc, video_legenda_atual() >= 0, falasHist);
+  printf("[perdi] modo %d: documento %d fala(s), embutida %d, historico %d/%d fala(s)\n",
+         perdiModo, falasDoc, video_legenda_atual() >= 0, falasHist, perdiHist.n);
+  fflush(stdout);
+  if (trecho && (perdiModo == PERDI_MODO_PEDIR_DOC || perdiModo == PERDI_MODO_PEDIR_HIST)) {
+    corpo = perdi_pedido(c ? c->titulo : "", ep, posSeg, idioma_iso(ajustes_idioma()), trecho);
+    perdiId = perdifio_pedir(ajustes_perdi_chave(), corpo);
+  }
+  free(trecho);
+  legenda_documento_liberar(doc);
+}
+
 typedef struct { int id, habilitada; } PlrAcao;
 static int transporteSerie(void) { return !ehCanal() && epT >= 0 && epE > 0; }
 static int transporteAcoes(PlrAcao a[PLR_NBTNS]) {
@@ -4087,6 +4260,7 @@ static int transporteAcoes(PlrAcao a[PLR_NBTNS]) {
   a[n++] = (PlrAcao){PLR_FONTES, 1};
   if (temUltimoBotao()) a[n++] = (PlrAcao){PLR_EPISODIOS, 1};
   if (serie) a[n++] = (PlrAcao){PLR_NESTE, 1};
+  if (!ehCanal() && ajustes_perdi()) a[n++] = (PlrAcao){PLR_PERDI, 1};
   a[n++] = (PlrAcao){PLR_OPTIONS, 1};
   return n;
 }
@@ -5070,6 +5244,7 @@ static int ativarBotao(int i, int repetiu) {
     case PLR_OPTIONS: central_abrir(); break;
     case PLR_FONTES: pedFontes = 1; break;
     case PLR_NESTE: nesteAberto = 1; nesteT = epT; nesteE = epE; break;
+    case PLR_PERDI: perdiAbrir(); break;
     case PLR_EPISODIOS:
       if (ehCanal()) pedGuia = 1;
       else if (epE > 0) episodios_abrir(idxAtual(), epT, epE);
@@ -5163,6 +5338,7 @@ void player_evento(const SDL_Event *e) {
   // away. Called before any handler returns.
   pausao_activity();
   if (nesteAberto) { nesteAberto = 0; return; }
+  if (perdiAberto) { perdiFechar(); return; }
 
   // DIGITAR O NUMERO DO CANAL (M7): 1-9 (e o 0 com digitacao em curso) montam o
   // numero; 1,5 s sem tecla ou OK confirma; Voltar cancela so o numero.
@@ -6567,6 +6743,7 @@ static const char *iconeBotao(int i) {
     case PLR_PARTE_PROX: return "pl_skip-forward";
     case PLR_REINICIAR: return "pl_rotate-ccw";
     case PLR_NESTE:     return "pl_users";
+    case PLR_PERDI:     return "aj_sparkles";
     case PLR_OPTIONS:   return "aj_ellipsis";
     default:            return epE > 0 ? "pl_list-video" : "pl_film";
   }
@@ -6583,6 +6760,7 @@ static const char *rotuloBotao(int i) {
     case PLR_PARTE_PROX: return "Próxima parte";
     case PLR_REINICIAR: return "Assistir do começo";
     case PLR_NESTE:     return "Neste episódio";
+    case PLR_PERDI:     return "O que eu perdi?";
     case PLR_OPTIONS:   return "Opções";
     default:            return ehCanal() ? "Guia" : epE > 0 ? "Epis\xc3\xb3""dios" : "Relacionados";
   }
@@ -8071,6 +8249,18 @@ void player_desenhar(Uint32 agora) {
     pd.icone = "pl_users"; pd.texto = i18n("Neste episódio");
     pd.semFim = 1; pd.aberta = 1; pd.video = 1;
     pd.w = 640.0f; pd.h = 36.0f + 34.0f * NESTE_MAX; pd.corpo = corpoNeste;
+    plrilha_pedir(&pd);
+  }
+  perdiColher();
+  if (perdiAberto && (perdiCartaoSessao != perdiSessao || strcmp(perdiImdbAtual(), perdiImdb) ||
+                      epT != perdiT || epE != perdiE || !aberto || saindo)) perdiFechar();
+  if (perdiAberto) {
+    PlrIlhaPedido pd;
+    memset(&pd, 0, sizeof pd);
+    pd.icone = "aj_sparkles"; pd.texto = i18n("O que eu perdi?");
+    pd.direita = perdiAte;
+    pd.semFim = 1; pd.aberta = 1; pd.video = 1;
+    pd.w = PERDI_UI_W; pd.h = perdiAltura(); pd.corpo = corpoPerdi;
     plrilha_pedir(&pd);
   }
 

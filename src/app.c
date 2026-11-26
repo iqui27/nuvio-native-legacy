@@ -184,6 +184,7 @@ extern __attribute__((weak)) void farol_registrar_resultado(int acao, int ok);
 #include "fontefalha.h"
 #include "p2p.h"
 #include "p2pmotor.h"
+#include "perdifio.h"
 #include "player.h"
 #include "farolacao_rede.h"
 #include "dvtela.h"
@@ -9390,6 +9391,7 @@ void app_encerrar(void) {
   aguardandoFonte = 0;
   limparFonteVOD();
   player_encerrar();
+  perdifio_encerrar();   // "O que eu perdi?": cancela o POST ao Gemini e junta o fio
   simkl_scrobble_drenar(3000);   // stop sem resposta fica em disco para retry
   legsync_destruir();   // F05: join dos fios do AutoSync, depois do player
   discord_encerrar();   // a atividade some na hora, sem esperar o Discord notar a queda

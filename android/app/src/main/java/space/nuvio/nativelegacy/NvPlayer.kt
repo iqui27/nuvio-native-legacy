@@ -1299,7 +1299,11 @@ object NvPlayer {
     @Volatile private var thumbnailSeekAtMs = Long.MIN_VALUE
     @JvmStatic fun thumbnailSeekRecent(): Boolean =
         SystemClock.elapsedRealtime() - thumbnailSeekAtMs in 0..15_000
+    // Muda a cada seek: os cues adiados (onCues com atraso) de antes do seek
+    // nao sao mais entregues ao nucleo.
+    private val cueGeracao = java.util.concurrent.atomic.AtomicInteger()
     @JvmStatic fun buscar(ms: Int) {
+        cueGeracao.incrementAndGet()
         val pedido = pedidos.get()
         principal.post {
             if (pedido == pedidos.get()) {
@@ -2555,8 +2559,12 @@ object NvPlayer {
             // O Media3 nao diz quando o cue acaba: estimativa pelo tamanho, e o
             // proximo grupo (inclusive o vazio) substitui antes disso.
             val dur = if (texto.isEmpty()) 0 else (800 + texto.length * 60).coerceIn(2000, 7000)
+            // Cue adiado pelo atraso da legenda: um seek no meio o invalida
+            // (era da posicao de antes; entregue depois, valeria no instante novo).
+            val geracaoCue = cueGeracao.get()
             val entregar = Runnable {
-                if (atual(minha)) try { nativeLegenda(texto, dur) } catch (e: UnsatisfiedLinkError) { }
+                if (atual(minha) && geracaoCue == cueGeracao.get())
+                    try { nativeLegenda(texto, dur) } catch (e: UnsatisfiedLinkError) { }
             }
             if (atrasoMs > 0) principal.postDelayed(entregar, atrasoMs.toLong()) else entregar.run()
         }
