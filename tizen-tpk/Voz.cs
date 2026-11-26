@@ -115,8 +115,14 @@ namespace NuvioTpk
             // before the user requests the optional microphone keyboard (#558).
             nv_tpk_voz_registrar(Marshal.GetFunctionPointerForDelegate(fIniciar),
                                  Marshal.GetFunctionPointerForDelegate(fParar), -1);
+            // An older libnuvio.so (e.g. one the in-app update installed) may have
+            // neither text entry point: keep the microphone, skip system typing.
             try { nv_tpk_voz_registrar_texto_tipo(Marshal.GetFunctionPointerForDelegate(fAbrirTextoTipo)); }
-            catch (EntryPointNotFoundException) { nv_tpk_voz_registrar_texto(Marshal.GetFunctionPointerForDelegate(fAbrirTexto)); }
+            catch (EntryPointNotFoundException)
+            {
+                try { nv_tpk_voz_registrar_texto(Marshal.GetFunctionPointerForDelegate(fAbrirTexto)); }
+                catch (EntryPointNotFoundException) { Log("libnuvio.so without system typing: microphone only"); }
+            }
             Log("microphone registered; Samsung IME deferred until requested");
         }
 
@@ -344,7 +350,7 @@ namespace NuvioTpk
                     imf.SetCursorPosition((uint)q);
                     imf.NotifyCursorPosition();
                 }
-                Log("cursor " + p + " -> " + q + " de " + n);
+                Log("cursor " + (q - p));   // no position or length: the field may be a password
                 EnviarCursor();
             }
             catch (Exception e) { Log("cursor: " + e.GetType().Name + ": " + e.Message); }
