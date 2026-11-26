@@ -210,6 +210,7 @@ static const char *uxSinonimos(int op) {
     case AJ_BRILHO_PLAYER: return "brilho interface player controles barra escurecer forte claro oled hdr osd luz";
     case AJ_DICASCONTROLE: return "controle dicas atalhos remote tips CH+ CH- toque";
     case AJ_NOVIDADES20: return "novidades novo versao 2.0 tour guia o que mudou mudancas whats new";
+    case AJ_SESSAO_SALA: return "sessao sala celular qr escolher filme grupo votar sim nao deslizar movie night session phone vote swipe";
     case AJ_DTS_AC3: return "dts truehd convertido ac3 aac dolby digital 5.1 surround estereo audio som barra de som receiver arc earc conversao lg samsung desligado converted stereo off original passthrough";
     case AJ_PS_CONTINUAR: return "continuar escolha perfil cartao card tela abertura inicial assistindo retomar remover esconder desligar quem esta assistindo continue watching profile picker";
     case AJ_DV_MKV: return "dolby vision dv dovi mkv matroska perfil 8 5 hdr hdr10 experimental imagem cores";
@@ -240,6 +241,7 @@ static const char *uxSinonimos(int op) {
     case AJ_LEG_LINGUA2: return "idioma legenda secundaria segunda dupla dual second subtitle subtitles";
     case AJ_TRAILER_ZOOM_TPK: return "trailer zoom barras pretas tarja ampliar recorte tela preta samsung experimental";
     case AJ_TECLADO_ANDROID: return "teclado android app grade ime sistema digitar keyboard virtual tela";
+    case AJ_PECA: case AJ_PECA_PAREAR: return "peca como fala pedir falar celular telefone qr parear pareamento recomendar recomendacao sugestao ia inteligencia artificial gemini google ask phone voice";
     case AJ_MIC_BUSCA: return "microfone mic voz falar ditar ditado busca buscar teclado samsung controle remoto voice";
     case AJ_FONTE_ORDEM: case AJ_FONTE_ORDEM_USO:
       return "ordem ordenar subir descer prioridade add-on addon plugin primeiro desempate estrita auto-play autoplay automatico order priority tie strict";
@@ -292,6 +294,7 @@ static const char *uxSinonimos(int op) {
     case AJ_RAM_OVERLAY: return "ram overlay memoria tv uso pico livre system";
     case AJ_RAM_VERDE: return "botao verde green controle remoto buffer dados memoria";
     case AJ_BUFFER_RAM_REDUZ: return "reduzir buffer pouca memoria automatico seguranca tamanho";
+    case AJ_MODO_NOITE: return "modo noite noturno dialogo voz vozes clareza baixo alto explosao volume compressao drc estereo downmix night mode dialogue speech clarity loud quiet";
     case AJ_CACHE_SEEK: return "cache seek buffer disco armazenamento voltar avancar travando carregando";
     case AJ_TMDB_IDIOMA: return "idioma metadados titulo sinopse traducao tmdb";
     case AJ_HERO_GENERO: return "genero destaque hero logo titulo categoria esconder mostrar card genre";
@@ -369,7 +372,7 @@ static const char *uxCaminhoAntigo(int op) {
     case AJ_DEBRID_RD_TESTAR: case AJ_DEBRID_TB_TESTAR: case AJ_DEBRID_PM_TESTAR:
     case AJ_MDB_CHAVE: case AJ_FANART_CHAVE:
       return "Chaves";
-    case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR: case AJ_P2P_LIMITE: case AJ_P2P_DESTINO:
+    case AJ_CASA_USAR: case AJ_CASA_AJUDAR: case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR: case AJ_P2P_LIMITE: case AJ_P2P_DESTINO:
     case AJ_JF_LIGADO: case AJ_JF_SERVIDOR: case AJ_JF_ENTRAR: case AJ_JF_SAIR:
     case AJ_EM_SERVIDOR: case AJ_EM_ENTRAR: case AJ_EM_SAIR:
     case AJ_PX_ENTRAR: case AJ_PX_SERVIDOR: case AJ_PX_SAIR:

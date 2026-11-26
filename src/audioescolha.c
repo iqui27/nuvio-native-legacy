@@ -31,6 +31,7 @@ const char *audioesc_origem_nome(int o) {
     case AUDIOESC_PREF1:    return "preferred language";
     case AUDIOESC_PREF2:    return "second language";
     case AUDIOESC_ORIGINAL: return "original language";
+    case AUDIOESC_ESTEREO:  return "night mode: stereo track of the same language";
     default:                return "no rule";
   }
 }
@@ -198,8 +199,48 @@ int audioesc_escolher_binge(const AudioCand *c, int n, const AudioLembrada *m, c
   return -1;
 }
 
+static int preferirEstereo;
+void audioesc_preferir_estereo(int ligado) { preferirEstereo = ligado ? 1 : 0; }
+
+// Comentario do diretor e audiodescricao tambem sao estereo: nao servem.
+static int extra(const char *rotulo) {
+  static const char *const P[] = { "comment", "coment", "descri", "director", "diretor" };
+  char b[96];
+  size_t i;
+  if (!rotulo) return 0;
+  for (i = 0; i + 1 < sizeof b && rotulo[i]; i++) b[i] = (char)tolower((unsigned char)rotulo[i]);
+  b[i] = 0;
+  for (i = 0; i < sizeof P / sizeof *P; i++) if (strstr(b, P[i])) return 1;
+  return 0;
+}
+
+int audioesc_estereo(const AudioCand *c, int n, int escolhida, int origem) {
+  const char *id;
+  int i, exata;
+  if (!c || escolhida < 0 || escolhida >= n || origem == AUDIOESC_LEMBRADA) return escolhida;
+  if (c[escolhida].canais >= 1 && c[escolhida].canais <= 2) return escolhida;
+  id = c[escolhida].idioma;
+  if (!id || !id[0]) return escolhida;
+  // The same tag first (es-419 stays es-419), then the same language.
+  for (exata = 1; exata >= 0; exata--) for (i = 0; i < n; i++) {
+    if (i == escolhida || !c[i].pode || c[i].dts || c[i].canais < 1 || c[i].canais > 2) continue;
+    if (!c[i].idioma || !c[i].idioma[0] || !ling_casa(c[i].idioma, id) || !ling_casa(id, c[i].idioma)) continue;
+    if (exata && strcasecmp(c[i].idioma, id)) continue;
+    if (extra(c[i].rotulo)) continue;
+    return i;
+  }
+  return escolhida;
+}
+
 int audioesc_escolher(const AudioCand *c, int n, int *origem) {
-  return audioesc_escolher_binge(c, n, temLembrada ? &lembrada : NULL, bingeAtual(),
-                                 ling_audio_preferido(), ling_prefere_original()?ling_audio():ling_audio2(),
-                                 ling_prefere_original()?ling_audio2():ling_original(), origem);
+  int o = AUDIOESC_NADA;
+  int k = audioesc_escolher_binge(c, n, temLembrada ? &lembrada : NULL, bingeAtual(),
+                                  ling_audio_preferido(), ling_prefere_original()?ling_audio():ling_audio2(),
+                                  ling_prefere_original()?ling_audio2():ling_original(), &o);
+  if (preferirEstereo) {
+    int e = audioesc_estereo(c, n, k, o);
+    if (e != k) { k = e; o = AUDIOESC_ESTEREO; }
+  }
+  if (origem) *origem = o;
+  return k;
 }

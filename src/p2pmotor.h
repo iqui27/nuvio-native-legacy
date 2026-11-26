@@ -108,6 +108,8 @@ typedef struct {
   uint64_t total, livre, cache, limite;
 } P2pmUsbInfo;
 void p2pmotor_usb_info(P2pmUsbInfo *o);
+// Pasta do pendrive gravavel para o timeshift, com ou sem P2P ligado. 0 = nenhum.
+int p2pmotor_usb_volume(char *out, size_t n);
 // A conta acima, pura (testes).
 uint64_t p2pmotor_teto_duro(uint64_t livre, unsigned escolhaMb);
 // #334: janela de streaming que o motor recebe para um teto duro (0 = sem

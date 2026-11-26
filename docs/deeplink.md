@@ -8,6 +8,7 @@ Parser: `src/deeplink.c` (test: `bash tests/deeplink.sh`).
 | `nuvio-legacy://meta/{movie\|series}/{id}` | title page |
 | `nuvio-legacy://play/{movie\|series}/{id}` | title page, then Play |
 | `nuvio-legacy://play/series/{id}/{season}/{episode}` | title page, Play on that episode |
+| `nuvio-legacy://play/...?t={seconds}` | same, and playback starts at that second (marked scene; needs an IMDb `tt` id) |
 | `nuvio-legacy://search?q=text` | Search screen with `text` |
 | `stremio:///detail/{type}/{id}[/{videoId}]` | title page (`videoId` ignored) |
 | `https://[www.\|m.]imdb.com/title/tt...` | title page |

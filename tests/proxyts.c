@@ -55,6 +55,49 @@ int main(void) {
     assert(proxyts_url("http://127.0.0.1:8765/live/u/p/105.ts", url, sizeof url));
     n = baixar(velha, 3, &b, cab, sizeof cab); free(b);
     OK(strstr(cab, "404"), "sessao trocada: a URL antiga da 404"); }
+  // TIMESHIFT LOCAL: a mesma ingestao HLS tambem grava em disco e um GET com
+  // &atras=N devolve a gravacao a partir do comeco de um segmento.
+  { char dir[300], tsu[240];
+    unsigned char *vivo, *atras;
+    long nv, na, i, bons = 0;
+    int jan = 0, k;
+    snprintf(dir, sizeof dir, "%s/nuvio-proxyts-timeshift", nvt_dir());
+    OK(!proxyts_timeshift_url(10, tsu, sizeof tsu) && proxyts_timeshift_janela_s() == 0, "sem pasta definida: sem timeshift");
+    proxyts_definir_timeshift(dir);
+    assert(proxyts_url("http://127.0.0.1:8765/live/u/p/105.ts", url, sizeof url));
+    nv = baixar(url, 8, &vivo, cab, sizeof cab);
+    jan = proxyts_timeshift_janela_s();
+    printf("    timeshift: %ld KB ao vivo em 8 s, janela gravada %d s\n", nv / 1024, jan);
+    OK(nv > 1000000 && jan >= 1 && jan <= 12, "ao vivo segue igual e a gravacao tem janela");
+    jan = proxyts_timeshift_janela_s();
+    OK(proxyts_timeshift_url(jan, tsu, sizeof tsu) && strstr(tsu, "&atras=") && proxyts_e_url(tsu), "URL do timeshift e da mesma sessao");
+    na = baixar(tsu, 4, &atras, cab, sizeof cab);
+    OK(strstr(cab, "200 OK") && strstr(cab, "video/mp2t"), "GET atrasado: 200 video/mp2t");
+    for (i = 0; i + 188 <= na; i += 188) if (atras[i] == 0x47) bons++;
+    OK(na > 1000000 && bons == na / 188 && pxPid(atras) == 0, "gravacao: TS alinhado, abre com PAT");
+    // O que foi gravado e o que foi ao ar: o comeco do ao vivo esta na gravacao.
+    { long j, achou = -1;
+      for (j = 0; j + 188 * 64 <= na && achou < 0; j += 188)
+        if (!memcmp(atras + j, vivo + 188 * 2000, 188 * 64)) achou = j;
+      OK(achou >= 0, "o trecho visto ao vivo esta na gravacao, byte a byte"); }
+    printf("    timeshift: %ld KB em 4 s pedindo %d s atras (o atraso entra de uma vez)\n", na / 1024, jan);
+    free(vivo); free(atras);
+    OK(proxyts_timeshift_url(0, tsu, sizeof tsu) && strstr(tsu, "&atras=0"), "atras 0 pede a ponta");
+    // Trocar de canal apaga a gravacao.
+    proxyts_definir_timeshift("");
+    proxyts_parar();
+    for (k = 0; k < 30; k++) { DIR *p = opendir(dir); struct dirent *e; int n2 = 0;
+      while (p && (e = readdir(p)) != NULL) if (!strncmp(e->d_name, "ts-", 3)) n2++;
+      if (p) closedir(p);
+      if (!n2) break;
+      usleep(200 * 1000); }
+    OK(k < 30, "parar o canal apaga os segmentos do disco");
+    rmdir(dir);
+    // Sem timeshift, &atras= cai no ao vivo de sempre.
+    assert(proxyts_url("http://127.0.0.1:8765/live/u/p/105.ts", url, sizeof url));
+    snprintf(tsu, sizeof tsu, "%s&atras=30", url);
+    na = baixar(tsu, 8, &atras, cab, sizeof cab); free(atras);
+    OK(strstr(cab, "200 OK") && na > 500000 && proxyts_timeshift_janela_s() == 0, "desligado: &atras= serve o ao vivo, nada gravado"); }
   // CANAL DE ADDON COM CABECALHO (#283)
   OK(proxyts_candidata("https://cdn/x/canal.m3u8", 0), "candidata: m3u8");
   OK(proxyts_candidata("http://painel:80/live/1", 0), "candidata: sem extensao");

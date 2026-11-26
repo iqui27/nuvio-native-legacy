@@ -675,6 +675,7 @@ static int nLinhas(int col) {
 // personalizacoes abaixo usam somente metodos presentes no firmware. A ultima
 // linha restaura o conjunto inteiro sem exigir dezenas de toques no controle.
 enum { EST_FONTE = 1, EST_COR = 2, EST_RESTAURAR = 9, EST_COR_BORDA = 10,
+       EST_ESPACO, EST_FUNDO_OPAC,
 #ifdef NV_TPK
        /* ASS/SSA tracks on the .tpk (owner 26-27/10): with libass on, the
         * column is size and opacity of the dialogue, delay, contrast, gamma,
@@ -686,7 +687,7 @@ enum { EST_FONTE = 1, EST_COR = 2, EST_RESTAURAR = 9, EST_COR_BORDA = 10,
        EST_TOTAL };
 static const char *const EST_ROT[EST_TOTAL] = {
   "Tamanho", "Fonte OpenSubtitles", "Cor", "Opacidade", "Fundo", "Posição", "Borda", "Atraso",
-  "Negrito", "Restaurar padrão", "Cor da borda"
+  "Negrito", "Restaurar padrão", "Cor da borda", "Espaçamento", "Opacidade do fundo"
 #ifdef NV_TPK
   , "libass", "Tamanho", "Opacidade", "Contraste", "Gama", "Resolução das legendas", "Sincronia com a imagem"
 #endif
@@ -718,13 +719,13 @@ static void estMapa(void) {
       return;
     }
     /* Restore defaults stays the last cell (owner 27/10), after libass. */
-    for (i = 0; i <= EST_COR_BORDA; i++) if (i != EST_RESTAURAR) estLinhas[estNLinhas++] = i;
+    for (i = 0; i <= EST_FUNDO_OPAC; i++) if (i != EST_RESTAURAR) estLinhas[estNLinhas++] = i;
     estLinhas[estNLinhas++] = EST_LIBASS;
     estLinhas[estNLinhas++] = EST_RESTAURAR;
     return;
   }
 #endif
-  for (i = 0; i <= EST_COR_BORDA; i++) estLinhas[estNLinhas++] = i;
+  for (i = 0; i <= EST_FUNDO_OPAC; i++) estLinhas[estNLinhas++] = i;
 }
 static int nEst(void) { estMapa(); return estNLinhas; }
 static int estId(int pos) { estMapa(); return pos >= 0 && pos < estNLinhas ? estLinhas[pos] : -1; }
@@ -736,8 +737,6 @@ static int estPos(int id) {
   return 0;
 }
 #endif
-static const char *const EST_FUNDO[5] = { "Nenhum", "Escuro 25%", "Escuro 50%",
-                                          "Escuro 75%", "Escuro 100%" };
 static const char *const EST_BORDA[3] = { "Nenhuma", "Contorno", "Sombra" };
 
 /* Com o ASS desenhado pelo libass, fonte, cor, fundo, posicao, borda, negrito
@@ -750,6 +749,7 @@ static int estCampoAss(int linha) {
     case EST_FONTE: return PLR_LEG_FONTE;
     case EST_COR: return PLR_LEG_COR;
     case 4: return PLR_LEG_FUNDO;
+    case EST_FUNDO_OPAC: return PLR_LEG_FUNDO;
     case 5: return PLR_LEG_POSICAO;
     case 6: return PLR_LEG_BORDA;
     case 8: return PLR_LEG_NEGRITO;
@@ -783,7 +783,7 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
     case 1: snprintf(dst, tam, "%s", legfontes_selecionada(0) >= 0 ? legfontes_nome(legfontes_selecionada(0)) : TXT_FAMILIAS_PT[e->familia >= 0 && e->familia < TXT_FAMILIA_N ? e->familia : 0]); break;
     case 2: snprintf(dst, tam, "%s", VIDEO_LEG_CORES_PT[e->cor % VIDEO_LEG_NCORES]); break;
     case 3: snprintf(dst, tam, "%d%%", leg_opacidade_pct(e->opacidade)); break;
-    case 4: snprintf(dst, tam, "%s", EST_FUNDO[e->fundo > 4 ? 4 : e->fundo]); break;
+    case 4: snprintf(dst, tam, "%s", i18n(e->fundo ? "Preto" : "Nenhum")); break;
     // O uMS aceita -3..4; a folha mostra 1..8 porque "posicao -3" nao diz nada
     // a quem esta olhando a tela.
     case 5: snprintf(dst, tam, i18n("%d de 8"), e->posicao + 1); break;
@@ -817,6 +817,8 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
       else snprintf(dst, tam, "%d / %d ms", lv, ps);
       break; }
 #endif
+    case EST_ESPACO: snprintf(dst, tam, "%d px", video_leg_espaco(e)); break;
+    case EST_FUNDO_OPAC: snprintf(dst, tam, "%d%%", video_leg_fundo_opacidade(e)); break;
     default: dst[0] = 0; break;   // "Restaurar padrao" e acao, nao valor
   }
 }
@@ -827,7 +829,7 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
 static void ciclarEstilo(int linha) {
   VideoLegendaEstilo *e = player_leg_estilo();
   switch (linha) {
-    case 4: e->fundo   = (e->fundo + 1) % 5; player_leg_estilo_tocou(PLR_LEG_FUNDO); break;
+    case 4: e->fundo   = e->fundo ? 0 : 1; player_leg_estilo_tocou(PLR_LEG_FUNDO); break;
     case 6: e->borda   = (e->borda + 1) % 3; player_leg_estilo_tocou(PLR_LEG_BORDA); break;
     case 8: e->negrito = !e->negrito; player_leg_estilo_tocou(PLR_LEG_NEGRITO); break;
     case EST_RESTAURAR:
@@ -879,6 +881,8 @@ static const EstSlider EST_SL[EST_TOTAL] = {
   [EST_CONTRASTE] = { 0, 30, 1, 1, 1 },                           // the TV's numbers
   [EST_GAMA] = { -5, 5, 1, 1, 1 },
 #endif
+  [EST_ESPACO] = { VIDEO_LEG_ESPACO_MIN, VIDEO_LEG_ESPACO_MAX, 1, 5, 4 },  // Espacamento: 1 px / 5 px
+  [EST_FUNDO_OPAC] = { 0, 100, 5, 10, 4 },                        // Opacidade do fundo: 5% / 10%
 };
 static int estSlider(int i) { return i >= 0 && i < EST_TOTAL && EST_SL[i].max > EST_SL[i].min; }
 // 0 = sem controle, 1 = slider, 2 = paleta, 3 = lista de fontes, 4 = picture sync.
@@ -908,6 +912,8 @@ static int estLer(int i) {
     case 0: return e->tamanho;
     case 3: return leg_opacidade_pct(e->opacidade);
     case 5: return e->posicao;
+    case EST_ESPACO: return video_leg_espaco(e);
+    case EST_FUNDO_OPAC: return video_leg_fundo_opacidade(e);
     default: return e->atrasoMs;
   }
 }
@@ -925,6 +931,11 @@ static void estGravar(int i, int v) {
     case 0: e->tamanho = v; break;
     case 3: e->opacidade = leg_opacidade_modo(v); break;
     case 5: if (e->posicao != v) player_leg_estilo_tocou(PLR_LEG_POSICAO); e->posicao = v; break;
+    case EST_ESPACO: e->espacamento = v; break;
+    case EST_FUNDO_OPAC:
+      if (e->fundoOpacidade != v) player_leg_estilo_tocou(PLR_LEG_FUNDO);
+      e->fundoOpacidade = v;
+      break;
     default: e->atrasoMs = v; break;
   }
   player_leg_estilo_mudou();
@@ -2291,6 +2302,7 @@ static void sliderCtl(int i, GfxRect r, float a, int ativo) {
     else if (i == EST_CONTRASTE) { snprintf(lo, sizeof lo, "0"); snprintf(hi, sizeof hi, "30"); }
     else if (i == EST_GAMA) { snprintf(lo, sizeof lo, "-5"); snprintf(hi, sizeof hi, "+5"); }
 #endif
+    else if (i == EST_ESPACO) { snprintf(lo, sizeof lo, "%d px", EST_SL[i].min); snprintf(hi, sizeof hi, "%d px", EST_SL[i].max); }
     else { snprintf(lo, sizeof lo, "%d%%", i == 3 ? 25 : EST_SL[i].min); snprintf(hi, sizeof hi, "%d%%", i == 3 ? 100 : EST_SL[i].max); }
     { TxtLinha tl = txt_linha(TXT_G16B, lo, 243, 242, 239, 150), th = txt_linha(TXT_G16B, hi, 243, 242, 239, 150);
       txt_desenhar_alpha(tl, x1, cy - (float)tl.h * 0.5f, a);

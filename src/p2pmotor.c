@@ -663,6 +663,38 @@ int p2pmotor_usb_presente(void) {
   return r;
 }
 
+// Timeshift (#820): acha o pendrive gravavel SEM depender do ajuste de P2P.
+// Com o P2P ligado reaproveita a sonda de sempre; desligado, faz o mesmo scan
+// (criar=0: espiar nao cria pasta) com memo proprio de ~2 s, sem mexer na raiz
+// do cache P2P. Devolve a pasta do volume (mae da raiz p2p) ou 0.
+int p2pmotor_usb_volume(char *out, size_t n) {
+  static char memo[700];
+  static double quando = -10.0;
+  char tmp[600];
+  int ok = 0;
+  if (!out || !n) return 0;
+  out[0] = 0;
+  if (ajustes_p2p_ligado()) {
+    P2pmUsbInfo u;
+    p2pmotor_usb_info(&u);
+    if (u.estado != 1 || !u.gravavel || !u.caminho[0]) return 0;
+    return snprintf(out, n, "%s", u.caminho) < (int)n;
+  }
+  pthread_mutex_lock(&usbTrava);
+  if (agora() - quando >= 2.0) {
+    memo[0] = 0;
+    if (usbEscanear(tmp, sizeof tmp, 0)) {
+      char *b = strrchr(tmp, '/');
+      if (b && b != tmp) *b = 0;
+      if (access(tmp, W_OK) == 0) snprintf(memo, sizeof memo, "%s", tmp);
+    }
+    quando = agora();
+  }
+  if (memo[0]) ok = snprintf(out, n, "%s", memo) < (int)n;
+  pthread_mutex_unlock(&usbTrava);
+  return ok;
+}
+
 P2pmUsbMotivo p2pmotor_usb_motivo(void) {
   return ajustes_p2p_ligado() ? (P2pmUsbMotivo)atomic_load(&usbMotivo) : P2PM_USB_DISABLED;
 }

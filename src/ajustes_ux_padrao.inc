@@ -418,3 +418,11 @@
   1, /* abrirTocandoLocal: Desligado (opt-in) */
   0, /* sign-in helper code: On (V_LIGA 0) */
   1, /* vaiTocarLocal: Desligado ate o consentimento (4.2) */
+  1, /* timeshiftLocal: Desligado (grava no pendrive) */
+  0, /* pecaComoFalaLocal: Ligado (nada acontece ate parear o celular) */
+  0, /* parear celular: acao */
+  0, /* night mode: Off */
+  0, /* marcarCenaLocal: Ligado */
+  0, // Sessao pelo celular: acao, sem valor
+  0, /* Nuvio Casa, use a helper: On */
+  1, /* Nuvio Casa, help other TVs: Off */

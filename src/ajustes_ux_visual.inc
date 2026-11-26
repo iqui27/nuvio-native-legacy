@@ -53,6 +53,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_MENU_ESPORTES: case AJ_MENU_PERFIL: return "aj_panel-left";
     case AJ_RAIL_BLUR: return "aj_panel-left";
     case AJ_MIC_BUSCA: return "aj_mic";
+    case AJ_PECA: case AJ_PECA_PAREAR: return "aj_smartphone";
     case AJ_DESCOBRIR: return "aj_panel-left";
     case AJ_PS_FUNDO: return "aj_users";
     case AJ_PS_CONTINUAR: case AJ_PS_TAMANHO: return "aj_users";
@@ -221,6 +222,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_LEG_ESTILO_LIGADO: return "aj_captions";
     case AJ_LEG_MOSTRAR: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_LEG_FORCADA: case AJ_LEG_EVITAR_SDH: case AJ_LEG_TEMPORARIA: case AJ_LEG_ASS_PESO: return "aj_captions";
     case AJ_CACHE_SEEK: return "aj_database";
+    case AJ_MODO_NOITE: return "aj_moon";
     case AJ_TAM_MAX: case AJ_TAM_MIN: return "aj_database";
     case AJ_TMDB_IDIOMA: return "aj_file-text";
     case AJ_TEMA: return "aj_palette";
@@ -288,6 +290,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_LIVETV_FORMATO: return "aj_stethoscope";
     case AJ_LIVETV_MODO: return "aj_stethoscope";
     case AJ_LIVETV_PROXY: return "aj_stethoscope";
+    case AJ_TIMESHIFT_LOCAL: return "aj_layers";
     case AJ_LIVETV_SUGERIR: case AJ_LIVETV_AGRUPAR: return "aj_layers";
     case AJ_REMEMBER_PROFILE: case AJ_PERFIL_ATIVO: return "aj_user-round";
     case AJ_SYNC: return "aj_cloud";
@@ -316,6 +319,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_MDB_CHAVE: return "aj_key-round";
     case AJ_FANART_CHAVE: return "aj_key-round";
     case AJ_P2P_LIGADO: return "aj_user-round";
+    case AJ_CASA_USAR: case AJ_CASA_AJUDAR: return "aj_link";
     case AJ_P2P_URL: return "aj_user-round";
     case AJ_P2P_TESTAR: return "aj_user-round";
     case AJ_P2P_LIMITE: return "aj_database";
@@ -343,6 +347,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_FAROL_LLM_SO_ESTA_TV: return "aj_shield";
     case AJ_DICASCONTROLE: return "aj_circle-dot";
     case AJ_NOVIDADES20: return "aj_sparkles";
+    case AJ_SESSAO_SALA: return "aj_smartphone";
     case AJ_APOIAR: return "aj_heart";
     case AJ_VERSAO_I: return "aj_info";
     case AJ_ATUALIZAR: return "aj_download";
