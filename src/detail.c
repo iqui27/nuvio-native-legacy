@@ -7353,7 +7353,7 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
       if (date && !ajustes_data_completa() && strlen(date) >= 4) date += strlen(date) - 4;
       if (date) snprintf(line, sizeof line, i18n("sai %s"), date);
       else snprintf(line, sizeof line, "%s", i18n("NÃO EXIBIDO"));
-    } else if (progress > 0 && progress < 100 && serie->restanteMin > 0)
+    } else if (current && progress > 0 && progress < 100 && serie && serie->restanteMin > 0)
       snprintf(line, sizeof line, i18n("faltam %d min"), serie->restanteMin);
     else if (epDur) snprintf(line, sizeof line, "%s", epDur);
     { TxtLinha l = txt_linha_corta(TXT_CAPTION, line, 243, 242, 239, 255, textW);
