@@ -285,10 +285,14 @@ static struct { float x, y, s, h, ar, ag, ab; int op; } ajc;
 #define CICON(n,a,b,d,al) ajIcone(n, CX(a), CY(b), (d) * ajc.s, al)
 #define CIMG(c,a,b,cw,ch,r,al) ajImg(c, CR(a,b,cw,ch), (r) * ajc.s, al)
 #define ON(o) (lig(o) ? 1.0f : 0.3f)
-// O anel do acento em volta da peca de `o`, quando `o` e a opcao em foco.
+// A peca de `o` na previa sobe um degrau neutro quando `o` e a opcao em foco.
+// Sem aro nem acento: a previa mostra a regra de foco do 2.1, nao a linguagem
+// antiga de contorno colorido.
 static void ajcFoco(int o, float a, float b, float c, float d, float raio) {
   if (o != ajc.op) return;
-  gfx_anel_fora(CR(a, b, c, d), raio / d, 3.0f * ajc.s, 2.5f * ajc.s, ajc.ar, ajc.ag, ajc.ab, 1);
+  GfxRect r = CR(a, b, c, d);
+  gfx_vidro_elevacao(r, 1.0f, 0.55f);
+  gfx_cor(r, raio / d, 1, 1, 1, 0.14f);
 }
 // Texto (traduzido) que cabe em `maxW`; devolve a largura no quadro 640.
 static float ajcTxt(const char *t, float px, int forte, float a, float b, float maxW, float al) {

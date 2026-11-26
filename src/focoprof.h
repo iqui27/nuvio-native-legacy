@@ -15,10 +15,10 @@
 
 #define FOCO_ZOOM 0.06f   // o mesmo 6 % da Home com o anel desligado
 
-// Caixa do cartao em foco: cresce em volta do centro so com o anel desligado.
+// Caixa do cartao em foco: cresce em volta do centro; a elevacao e o foco.
 static inline GfxRect foco_zoom(GfxRect r, float f) {
   float s;
-  if (ajustes_borda_foco() || f <= 0.0f) return r;
+  if (f <= 0.0f) return r;
   s = (layout_desktop_ativo() ? .025f : FOCO_ZOOM) * f;
   return (GfxRect){ r.x - r.w * s * 0.5f, r.y - r.h * s * 0.5f,
                     r.w * (1.0f + s), r.h * (1.0f + s) };

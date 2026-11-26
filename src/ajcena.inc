@@ -162,7 +162,9 @@ static void ajc_cartaz(float x, float y, float w, float h, int matiz, float a) {
 }
 static void ajc_foco(float x, float y, float w, float h, float raio, float a) {
   GfxRect q = ajc_r(x, y, w, h);
-  gfx_anel_fora(q, raio * C.s / q.h, 2.5f * C.s, 3.0f * C.s, C.ar, C.ag, C.ab, a * C.a);
+  gfx_rect((GfxRect){ q.x - 8.0f * C.s, q.y - 2.0f * C.s, q.w + 16.0f * C.s, q.h + 14.0f * C.s },
+           0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.55f * a * C.a);
+  gfx_cor(q, raio * C.s / q.h, 1, 1, 1, 0.14f * a * C.a);
 }
 // "Video" tocando: o fundo no acento escuro, duas manchas de cor que derivam e
 // a faixa de luz atravessando. 4 quads.

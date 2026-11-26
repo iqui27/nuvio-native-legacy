@@ -2553,13 +2553,13 @@ static int epModerno(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return 0;
 #endif
-  return ajustes_home_layout() == HOME_LAYOUT_MODERNA;
+  return 0;   // 2.1 4A: a mesma fileira de episodios em todos os layouts
 }
 static int epApple(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return 1;
 #endif
-  return ajustes_home_layout() != HOME_LAYOUT_PADRAO;
+  return 1;   // 2.1 4A: cartao de episodio unico (Padrao/Moderna/Dinamica)
 }
 static float epTempH(void) {
 #ifdef NV_DESKTOP_UI
@@ -7325,12 +7325,15 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
       GfxRect z = { th.x - th.w * k * .5f, th.y - th.h * k * .5f, th.w * (1.0f + k), th.h * (1.0f + k) };
       GfxRect track = { z.x + 12.0f, z.y + z.h - 10.0f - 5.0f, z.w - 24.0f, 5.0f };
       ajustes_acento(&ar, &ag, &ab);
+      // 4A (.cz::after): o trilho fica sobre um veu escuro da base. Sem ele a
+      // parte vazia some quando a still e clara.
+      gfx_veu_base(z, raioTh, .30f, .55f * a);
       gfx_cor(track, .5f, 1, 1, 1, .22f * a);
       track.w *= progress / 100.0f; gfx_cor(track, .5f, ar, ag, ab, a);
     }
     if (epNome) snprintf(title, sizeof title, "%d · %s", epNum, epNome);
     else snprintf(title, sizeof title, i18n("Episódio %d"), epNum);
-    txt_desenhar_alpha(txt_linha_corta(TXT_DET_META2, title, tint, tint, tint, 255, textW),
+    txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_ITEM, title, tint, tint, tint, 255, textW),
                        textX, textY, a);
     if (epNaoExibido(ep)) {
       const char *date = epData;
@@ -8696,7 +8699,6 @@ static void desenhaComentarios(float x, float y, float a) {
     if (group) gfx_transformar(cx+COM_CARD_W*.5f,y+COM_CARD_H*.5f,zoom.w/card.w,0,0);
     moldura(card,20,a);
     plrui_linha_foco(card,20,fc*a);
-    foco_anel(card,20.0f/COM_CARD_H,fc,a);
     if (i==n) {
       gfx_icone((GfxRect){cx+COM_CARD_W*.5f-18,y+52,36,36},"aj_chevron-right",.9f,.92f,.96f,a);
       TxtLinha more=txt_linha(TXT_ILHA_NOME,i18n("Ver todos os comentários"),243,242,239,255);
@@ -9056,7 +9058,7 @@ static void desenhaRodape(int r,float a) {
       GfxRect zoom=foco_zoom(card,f);
       int group=!gfx_transformado();
       if (group) gfx_transformar(card.x+380,y+150,zoom.w/card.w,0,0);
-      moldura(card,22,a); plrui_linha_foco(card,22,f*a); foco_anel(card,22.0f/300,f,a);
+      moldura(card,22,a); plrui_linha_foco(card,22,f*a);
       char text[1200],credit[256];
       snprintf(text,sizeof text,"“%s”",seriefrases_texto(i)); quoteCredit(i,credit,sizeof credit);
       txt_bloco_corta(TXT_LOG_T34,text,243,242,239,card.x+32,y+30,696,44,a,4);
