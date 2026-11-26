@@ -8428,9 +8428,10 @@ static const char *ajudaOpcaoBase(int op) {
 #endif
 #else
 #ifdef NV_WEBOS
-      if (ajustes_trailer_fonte() == TRF_AUTO) return "Apple TV → IMDb → Trailerio";
-#endif
+      return "Where the trailer on the title page and in the hero comes from. Automatic tries Apple TV, then IMDb, then Trailerio; a chosen source is the only one tried.";
+#else
       return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV e, sem ela, o IMDb; uma fonte escolhida é a única tentada. O YouTube não toca nesta TV.";
+#endif
 #endif
 
     // --- Posteres e cards

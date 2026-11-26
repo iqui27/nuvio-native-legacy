@@ -445,6 +445,22 @@ static void nativoResetar(void) {
 #ifdef NV_WEBOS
 int trailer_abrir_webos(const char *id, const char *tipo, GfxRect r, int som, int automatico) {
   if (bloqueadoMusica || !trailerio_id(id, tipo) || !trailer_suportado()) return 0;
+  // This title's trailer is already playing in the background (autoplay):
+  // go full screen and keep playing, as trailer_abrir does for the same source,
+  // instead of closing it and looking it up again from the start.
+  if (aberto && !cheia) {
+    const char *a = trailerapple_url(id), *m = trailerimdb_url(id, NULL);
+    int mesmo = tioEstado != TIO_INATIVO ? !strcmp(tioId, id)
+              : fonteAtual[0] && ((a && !strcmp(fonteAtual, a)) || (m && !strcmp(fonteAtual, m)));
+    if (mesmo) {
+      if (comSom != som) volumePendente = 1;
+      rect = naTela(r); cheia = 1; comSom = som;
+      video_janela((int)rect.x, (int)rect.y, (int)rect.w, (int)rect.h);
+      recortePendente = 1;
+      nativoAplicar();
+      return 1;
+    }
+  }
   if (aberto) trailer_fechar();
   if (!automatico && !trailerio_iniciar(id, tipo)) return 0;
   snprintf(tioId, sizeof tioId, "%s", id);
