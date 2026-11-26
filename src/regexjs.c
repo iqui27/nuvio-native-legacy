@@ -13,7 +13,7 @@ typedef struct { unsigned lo, hi; } Faixa;
 // ja aplicados), montada ao compilar. O "[\s\S]*" de cada lookahead passa por
 // todo o texto, e conferir as ~20 faixas de \s/\S a cada caractere era quase
 // metade do tempo de uma regex longa.
-typedef struct { Faixa *f; int n, cap; int neg; unsigned char ascii[16]; int pronta; } Classe;
+typedef struct { Faixa *f; int n, cap; int neg; unsigned char ascii[16]; int pronta, flags; } Classe;
 
 enum { N_VAZIO, N_BYTE, N_ANY, N_CLASSE, N_SEQ, N_ALT, N_REP, N_ASSERT, N_LOOK };
 enum { A_BOL, A_EOL, A_WB, A_NWB };
@@ -21,7 +21,7 @@ enum { A_BOL, A_EOL, A_WB, A_NWB };
 typedef struct No {
   int tipo;
   int a, b;          // N_BYTE: byte; N_REP: min,max (-1 = infinito); N_LOOK: atras,neg; N_ASSERT: tipo
-  int lazy;
+  int lazy, flags;
   int classe;        // N_CLASSE: indice
   int f1, f2;        // filhos (N_SEQ/N_ALT: esquerda e direita; N_REP/N_LOOK: f1)
 } No;
@@ -30,10 +30,10 @@ enum { O_BYTE, O_ANY, O_CLASSE, O_SPLIT, O_JMP, O_MARK, O_CHK, O_BOL, O_EOL, O_W
        O_LOOK, O_STAR, O_MATCH };
 // `neg`: em O_LOOK, lookaround negativo; em O_BYTE/O_ANY/O_CLASSE, 1 = consome
 // PARA TRAS (corpo de lookbehind, ver emiteNo). `lazy`: em O_STAR.
-typedef struct { unsigned char op, neg, lazy; int x, y; } Ins;
+typedef struct { unsigned char op, neg, lazy, flags; int x, y; } Ins;
 
 struct RegexJs {
-  Ins *prog; int nprog, capprog;
+  Ins *prog; int nprog, capprog, maxprog;
   Classe *cls; int ncls, capcls;
   int nreg;
   int flags;
@@ -49,7 +49,7 @@ struct RegexJs {
   // consumir primeiro (seg[in->y - 1]; y = 0 = sem filtro). Recuando o
   // "[\s\S]*" de "(?![\s\S]*\bDTS)", so as posicoes com "D"/"d" chamam a
   // continuacao, e nao cada byte do texto.
-  unsigned char (*seg)[32]; int nseg;
+  unsigned char (*seg)[32]; int nseg, capseg;
   // "^" logo no inicio (sem a flag m): so a posicao 0 pode casar.
   int ancorado;
 };
@@ -73,6 +73,7 @@ static int novoNo(Pr *pr, int tipo) {
   }
   memset(&pr->no[pr->nno], 0, sizeof(No));
   pr->no[pr->nno].tipo = tipo;
+  pr->no[pr->nno].flags = pr->flags;
   pr->no[pr->nno].f1 = pr->no[pr->nno].f2 = -1;
   return pr->nno++;
 }
@@ -85,6 +86,7 @@ static int novaClasse(Pr *pr) {
     pr->cls = n; pr->capcls = c;
   }
   memset(&pr->cls[pr->ncls], 0, sizeof(Classe));
+  pr->cls[pr->ncls].flags = pr->flags;
   return pr->ncls++;
 }
 
@@ -226,7 +228,7 @@ static int parseClasse(Pr *pr) {   // depois do '['
 static int parseAtomo(Pr *pr, int prof) {
   int c = (unsigned char)*pr->p, n, l;
   if (c == '(') {
-    int look = 0, atras = 0, neg = 0, filho;
+    int look = 0, atras = 0, neg = 0, filho, outerFlags = pr->flags;
     pr->p++;
     if (pr->fim - pr->p >= 2 && pr->p[0] == '?') {
       char k = pr->p[1];
@@ -234,6 +236,19 @@ static int parseAtomo(Pr *pr, int prof) {
       else if (k == '=' || k == '!') { look = 1; neg = k == '!'; pr->p += 2; }
       else if (k == '<' && pr->fim - pr->p >= 3 && (pr->p[2] == '=' || pr->p[2] == '!')) {
         look = 1; atras = 1; neg = pr->p[2] == '!'; pr->p += 3; }
+      else if (strchr("ims-", k)) {
+        const char *q = pr->p + 1;
+        int enable = 0, disable = 0, minus = 0, seen = 0, lastMinus = 0;
+        for (; q < pr->fim && *q != ':'; q++) {
+          int flag = *q == 'i' ? REGEXJS_I : *q == 'm' ? REGEXJS_M : *q == 's' ? REGEXJS_S : 0;
+          if (*q == '-' && !minus) { minus = lastMinus = 1; continue; }
+          if (!flag || (seen & flag)) return falha(pr, "bad scoped flags");
+          seen |= flag; lastMinus = 0;
+          if (minus) disable |= flag; else enable |= flag;
+        }
+        if (!seen || lastMinus || q >= pr->fim || *q != ':') return falha(pr, "bad scoped flags");
+        pr->flags = (outerFlags | enable) & ~disable; pr->p = q + 1;
+      }
       else if (k == '<') {   // bad group name: (?<nome>...)
         const char *q = pr->p + 2;
         while (q < pr->fim && *q != '>') q++;
@@ -242,6 +257,7 @@ static int parseAtomo(Pr *pr, int prof) {
       } else return falha(pr, "unknown group");
     }
     filho = parseAlt(pr, prof + 1);
+    pr->flags = outerFlags;
     if (filho < 0) return -1;
     if (pr->p >= pr->fim || *pr->p != ')') return falha(pr, "unclosed group");
     pr->p++;
@@ -373,13 +389,13 @@ static int parseTermo(Pr *pr, int prof) {
 // padrao). Em cadeia, uma regex de 500 caracteres tinha 500 niveis de N_SEQ, e
 // emiteNo / minlen / primeiros recursavam 500 vezes (~45 KB de pilha, quase tudo
 // de um fio de 64 KB); equilibrada sao 9 niveis.
-static int seqEquilibrada(Pr *pr, const int *t, int a, int b) {
+static int nosEquilibrados(Pr *pr, const int *t, int a, int b, int tipo) {
   int m, l, r, s;
   if (b - a == 1) return t[a];
   m = a + (b - a) / 2;
-  if ((l = seqEquilibrada(pr, t, a, m)) < 0) return -1;
-  if ((r = seqEquilibrada(pr, t, m, b)) < 0) return -1;
-  if ((s = novoNo(pr, N_SEQ)) < 0) return -1;
+  if ((l = nosEquilibrados(pr, t, a, m, tipo)) < 0) return -1;
+  if ((r = nosEquilibrados(pr, t, m, b, tipo)) < 0) return -1;
+  if ((s = novoNo(pr, tipo)) < 0) return -1;
   pr->no[s].f1 = l; pr->no[s].f2 = r;
   return s;
 }
@@ -396,27 +412,35 @@ static int parseSeq(Pr *pr, int prof) {
     }
     t[n++] = termo;
   }
-  r = n ? seqEquilibrada(pr, t, 0, n) : novoNo(pr, N_VAZIO);
+  r = n ? nosEquilibrados(pr, t, 0, n, N_SEQ) : novoNo(pr, N_VAZIO);
   free(t);
   return r;
 }
 
 static int parseAlt(Pr *pr, int prof) {
-  int e;
+  int first, *terms = NULL, n = 1, cap = 0, result;
   if (prof > 100) return falha(pr, "nested too deep");
-  e = parseSeq(pr, prof);
-  if (e < 0) return -1;
+  first = parseSeq(pr, prof);
+  if (first < 0 || pr->p >= pr->fim || *pr->p != '|') return first;
+  // Keep left-to-right alternative priority, with logarithmic compiler stack
+  // depth even for imported release-group lists containing thousands of names.
   while (pr->p < pr->fim && *pr->p == '|') {
-    int d, a;
+    int next;
+    if (n + 1 > cap) {
+      int newcap = cap ? cap * 2 : 16;
+      int *grown = realloc(terms, (size_t)newcap * sizeof *terms);
+      if (!grown) { free(terms); return falha(pr, "out of memory"); }
+      terms = grown; cap = newcap;
+      if (n == 1) terms[0] = first;
+    }
     pr->p++;
-    d = parseSeq(pr, prof);
-    if (d < 0) return -1;
-    a = novoNo(pr, N_ALT);
-    if (a < 0) return -1;
-    pr->no[a].f1 = e; pr->no[a].f2 = d;
-    e = a;
+    next = parseSeq(pr, prof);
+    if (next < 0) { free(terms); return -1; }
+    terms[n++] = next;
   }
-  return e;
+  result = nosEquilibrados(pr, terms, 0, n, N_ALT);
+  free(terms);
+  return result;
 }
 
 // ---- emissao ---------------------------------------------------------------
@@ -426,7 +450,7 @@ static int parseAlt(Pr *pr, int prof) {
 // (pc, posicao): o corpo de uma repeticao que pode casar vazio (entre O_MARK e
 // O_CHK). Nada ali e memorizado. `atras` = emitindo o corpo de um lookbehind.
 typedef struct { int ini, fim; } Trecho;
-typedef struct { RegexJs *re; Pr *pr; int erro; int atras; Trecho *tr; int ntr, captr; } Em;
+typedef struct { RegexJs *re; Pr *pr; int erro; int atras, flags; Trecho *tr; int ntr, captr; } Em;
 
 static void marcaTrecho(Em *em, int ini, int fim) {
   if (em->erro || fim < ini) return;
@@ -441,7 +465,7 @@ static void marcaTrecho(Em *em, int ini, int fim) {
 
 static int emite(Em *em, int op, int neg, int x, int y) {
   RegexJs *re = em->re;
-  if (re->nprog >= PROG_MAX) { em->erro = 1; return 0; }
+  if (re->nprog >= re->maxprog) { em->erro = 1; return 0; }
   if (re->nprog == re->capprog) {
     int c = re->capprog ? re->capprog * 2 : 64;
     Ins *n = realloc(re->prog, (size_t)c * sizeof *n);
@@ -451,6 +475,7 @@ static int emite(Em *em, int op, int neg, int x, int y) {
   re->prog[re->nprog].op = (unsigned char)op;
   re->prog[re->nprog].neg = (unsigned char)neg;
   re->prog[re->nprog].lazy = 0;
+  re->prog[re->nprog].flags = (unsigned char)em->flags;
   re->prog[re->nprog].x = x; re->prog[re->nprog].y = y;
   return re->nprog++;
 }
@@ -523,8 +548,9 @@ static void emiteRep(Em *em, const No *o) {
 static void emiteNo(Em *em, int n) {
   RegexJs *re = em->re;
   const No *o = &em->pr->no[n];
-  int a, b;
+  int a, b, outerFlags = em->flags;
   if (em->erro) return;
+  em->flags = o->flags;
   switch (o->tipo) {
     case N_VAZIO: break;
     case N_BYTE: emite(em, O_BYTE, em->atras, o->a, 0); break;
@@ -566,6 +592,7 @@ static void emiteNo(Em *em, int n) {
       if (!em->erro) re->prog[a].x = re->nprog;
       break; }
   }
+  em->flags = outerFlags;
 }
 
 // Bytes que podem abrir o casamento do no `n` (em `c`); devolve 1 se o no pode
@@ -576,6 +603,7 @@ static int noClasse(const Classe *c, unsigned cp, int icase);
 static int primeiros(const Pr *pr, const Classe *cls, int flags, int n, unsigned char *c) {
   const No *o = &pr->no[n];
   int b;
+  flags = o->flags;
   switch (o->tipo) {
     case N_BYTE:
       POE(c, o->a);
@@ -655,15 +683,15 @@ static int primeirosProg(const RegexJs *re, int pc, unsigned char *c, unsigned c
       case O_BYTE:
         if (in->neg) return 1;
         POE(c, in->x);
-        if ((re->flags & REGEXJS_I) && isalpha(in->x)) { POE(c, tolower(in->x)); POE(c, toupper(in->x)); }
+        if ((in->flags & REGEXJS_I) && isalpha(in->x)) { POE(c, tolower(in->x)); POE(c, toupper(in->x)); }
         return 0;
       case O_ANY:
         if (in->neg) return 1;
-        for (b = 0; b < 256; b++) if ((re->flags & REGEXJS_S) || (b != '\n' && b != '\r')) POE(c, b);
+        for (b = 0; b < 256; b++) if ((in->flags & REGEXJS_S) || (b != '\n' && b != '\r')) POE(c, b);
         return 0;
       case O_CLASSE:
         if (in->neg) return 1;
-        for (b = 0; b < 128; b++) if (noClasse(&re->cls[in->x], (unsigned)b, re->flags & REGEXJS_I)) POE(c, b);
+        for (b = 0; b < 128; b++) if (noClasse(&re->cls[in->x], (unsigned)b, in->flags & REGEXJS_I)) POE(c, b);
         for (b = 128; b < 256; b++) POE(c, b);
         return 0;
       case O_STAR:   // o corpo (pc + 1) ou, com zero repeticoes, a continuacao
@@ -685,6 +713,7 @@ static int montaSeg(RegexJs *re) {
   for (i = 0; i < re->nprog; i++) if (re->prog[i].op == O_STAR) k++;
   if (!k) return 1;
   if (!(re->seg = malloc((size_t)k * sizeof *re->seg))) return 0;
+  re->capseg = k;
   if (!(visto = malloc((size_t)re->nprog + 1))) return 0;
   for (i = 0; i < re->nprog; i++) {
     Ins *in = &re->prog[i];
@@ -700,7 +729,7 @@ static int montaSeg(RegexJs *re) {
   return 1;
 }
 
-RegexJs *regexjs_compilar(const char *padrao, int flags, char *erro, size_t errotam) {
+static RegexJs *compilarTeto(const char *padrao, int flags, char *erro, size_t errotam, int teto) {
   Pr pr; Em em; RegexJs *re; int raiz;
   if (erro && errotam) erro[0] = 0;
   if (!padrao) return NULL;
@@ -717,7 +746,7 @@ RegexJs *regexjs_compilar(const char *padrao, int flags, char *erro, size_t erro
   }
   re = calloc(1, sizeof *re);
   if (!re) { free(pr.no); free(pr.cls); return NULL; }
-  re->flags = flags;
+  re->flags = flags; re->maxprog = teto;
   memset(&em, 0, sizeof em);
   em.re = re; em.pr = &pr;
   emiteNo(&em, raiz);
@@ -729,7 +758,7 @@ RegexJs *regexjs_compilar(const char *padrao, int flags, char *erro, size_t erro
       memset(c->ascii, 0, sizeof c->ascii);
       c->pronta = 0;
       for (cp = 0; cp < 128; cp++)
-        if (noClasse(c, cp, flags & REGEXJS_I)) c->ascii[cp >> 3] |= (unsigned char)(1u << (cp & 7));
+        if (noClasse(c, cp, c->flags & REGEXJS_I)) c->ascii[cp >> 3] |= (unsigned char)(1u << (cp & 7));
       c->pronta = 1;
     } }
   if (!em.erro) {
@@ -739,7 +768,7 @@ RegexJs *regexjs_compilar(const char *padrao, int flags, char *erro, size_t erro
   free(pr.no);
   if (!em.erro && !montaSlots(re, &em)) em.erro = 1;
   if (!em.erro && !montaSeg(re)) em.erro = 1;
-  if (!em.erro) re->ancorado = re->nprog > 0 && re->prog[0].op == O_BOL && !(flags & REGEXJS_M);
+  if (!em.erro) re->ancorado = re->nprog > 0 && re->prog[0].op == O_BOL && !(re->prog[0].flags & REGEXJS_M);
   free(em.tr);
   if (em.erro) {
     if (erro && errotam) snprintf(erro, errotam, "pattern too large");
@@ -749,7 +778,11 @@ RegexJs *regexjs_compilar(const char *padrao, int flags, char *erro, size_t erro
   return re;
 }
 
-RegexJs *regexjs_compilar_web(const char *padrao, char *erro, size_t errotam) {
+RegexJs *regexjs_compilar(const char *padrao, int flags, char *erro, size_t errotam) {
+  return compilarTeto(padrao, flags, erro, errotam, PROG_MAX);
+}
+
+static RegexJs *compilarWebTeto(const char *padrao, char *erro, size_t errotam, int teto) {
   int flags = 0;
   const char *p = padrao;
   while (p && p[0] == '(' && p[1] == '?') {
@@ -763,7 +796,26 @@ RegexJs *regexjs_compilar_web(const char *padrao, char *erro, size_t errotam) {
     flags |= f;
     p = q + 1;
   }
-  return regexjs_compilar(p, flags, erro, errotam);
+  return compilarTeto(p, flags, erro, errotam, teto);
+}
+
+RegexJs *regexjs_compilar_web(const char *padrao, char *erro, size_t errotam) {
+  return compilarWebTeto(padrao, erro, errotam, PROG_MAX);
+}
+RegexJs *regexjs_compilar_badge(const char *padrao, char *erro, size_t errotam) {
+  if (!padrao || strlen(padrao) > REGEXJS_BADGE_MAX) {
+    if (erro && errotam) snprintf(erro, errotam, "pattern too long");
+    return NULL;
+  }
+  return compilarWebTeto(padrao, erro, errotam, REGEXJS_BADGE_MAX);
+}
+size_t regexjs_memoria(const RegexJs *re) {
+  if (!re) return 0;
+  size_t bytes = sizeof *re + (size_t)re->capprog * sizeof *re->prog +
+    (size_t)re->capcls * sizeof *re->cls + ((size_t)re->nprog + 1) * sizeof *re->slot +
+    (size_t)re->capseg * sizeof *re->seg;
+  for (int i = 0; i < re->ncls; i++) bytes += (size_t)re->cls[i].cap * sizeof *re->cls[i].f;
+  return bytes;
 }
 
 // ---- casamento -------------------------------------------------------------
@@ -843,13 +895,13 @@ static int consome(const Ctx *cx, const Ins *in, int sp) {
     int b;
     if (in->neg ? sp <= 0 : sp >= cx->n) return -1;
     b = cx->s[in->neg ? sp - 1 : sp];
-    if (b != in->x && (!(re->flags & REGEXJS_I) || !isalpha(in->x) || tolower(b) != tolower(in->x))) return -1;
+    if (b != in->x && (!(in->flags & REGEXJS_I) || !isalpha(in->x) || tolower(b) != tolower(in->x))) return -1;
     return sp + (in->neg ? -1 : 1);
   }
   // ASCII para frente (quase todo o texto de uma fonte): sem decodificar UTF-8.
   if (!in->neg && sp < cx->n && cx->s[sp] < 0x80) {
     unsigned b = cx->s[sp];
-    if (in->op == O_ANY) return (!(re->flags & REGEXJS_S) && (b == '\n' || b == '\r')) ? -1 : sp + 1;
+    if (in->op == O_ANY) return (!(in->flags & REGEXJS_S) && (b == '\n' || b == '\r')) ? -1 : sp + 1;
     if (re->cls[in->x].pronta) return (re->cls[in->x].ascii[b >> 3] >> (b & 7)) & 1 ? sp + 1 : -1;
   }
   if (in->neg) {
@@ -861,8 +913,8 @@ static int consome(const Ctx *cx, const Ins *in, int sp) {
     if (sp >= cx->n) return -1;
     c = decodifica(cx->s + sp, cx->s + cx->n, &l);
   }
-  if (in->op == O_ANY) { if (!(re->flags & REGEXJS_S) && ehQuebra(c)) return -1; }
-  else if (!noClasse(&re->cls[in->x], c, re->flags & REGEXJS_I)) return -1;
+  if (in->op == O_ANY) { if (!(in->flags & REGEXJS_S) && ehQuebra(c)) return -1; }
+  else if (!noClasse(&re->cls[in->x], c, in->flags & REGEXJS_I)) return -1;
   return in->neg ? sp - l : sp + l;
 }
 
@@ -1020,10 +1072,10 @@ segue:
         if (cx->reg[in->x] == sp) goto falha;
         pc++; break;
       case O_BOL:
-        if (sp == 0 || ((re->flags & REGEXJS_M) && (cx->s[sp - 1] == '\n' || cx->s[sp - 1] == '\r'))) { pc++; break; }
+        if (sp == 0 || ((in->flags & REGEXJS_M) && (cx->s[sp - 1] == '\n' || cx->s[sp - 1] == '\r'))) { pc++; break; }
         goto falha;
       case O_EOL:
-        if (sp == cx->n || ((re->flags & REGEXJS_M) && (cx->s[sp] == '\n' || cx->s[sp] == '\r'))) { pc++; break; }
+        if (sp == cx->n || ((in->flags & REGEXJS_M) && (cx->s[sp] == '\n' || cx->s[sp] == '\r'))) { pc++; break; }
         goto falha;
       case O_WB: case O_NWB: {
         int a = sp > 0 && ehPalavra(cx->s[sp - 1]), b = sp < cx->n && ehPalavra(cx->s[sp]);

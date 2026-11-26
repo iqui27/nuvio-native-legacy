@@ -9,11 +9,22 @@
 // acento) conta como separador, para "🇬🇧English" casar "english".
 static int prende(unsigned char c) { return c < 0x80 && isalnum(c); }
 
+// Skip bytes which cannot start the term before doing a case-insensitive
+// comparison. The old scans called strncasecmp at EVERY byte for every token
+// (including long filenames/emoji). Keep libc's comparison and word rules.
+static const char *termoEm(const char *de, const char *termo, size_t n) {
+  if (!n) return *de ? de : NULL;
+  unsigned char c = (unsigned char)termo[0];
+  char iniciais[] = { (char)tolower(c), (char)toupper(c), 0 };
+  for (const char *q = strpbrk(de, iniciais); q; q = strpbrk(q + 1, iniciais))
+    if (!strncasecmp(q, termo, n)) return q;
+  return NULL;
+}
+
 // Posicao do termo como palavra (sem caixa), a partir de `de`; NULL = nao ha.
 static const char *palavraEm(const char *t, const char *de, const char *termo) {
   size_t n = strlen(termo);
-  for (const char *q = de; *q; q++) {
-    if (strncasecmp(q, termo, n)) continue;
+  for (const char *q = termoEm(de, termo, n); q; q = termoEm(q + 1, termo, n)) {
     if (q > t && prende((unsigned char)q[-1])) continue;
     if (prende((unsigned char)q[n])) continue;
     return q;
@@ -22,9 +33,7 @@ static const char *palavraEm(const char *t, const char *de, const char *termo) {
 }
 static int palavra(const char *t, const char *termo) { return palavraEm(t, t, termo) != NULL; }
 static int contem(const char *t, const char *termo) {
-  size_t n = strlen(termo);
-  for (const char *q = t; *q; q++) if (!strncasecmp(q, termo, n)) return 1;
-  return 0;
+  return termoEm(t, termo, strlen(termo)) != NULL;
 }
 static int algum(const char *t, const char *const *termos, int comoPalavra) {
   for (int i = 0; termos[i]; i++)

@@ -40,12 +40,14 @@ time_t debrid_test_time(time_t *dst) {
 
 static int   pmEmCache = 1, tbEmCache = 1;     // o que a consulta de cache diz
 static char  corpoSelectRD[100];               // files=<id> do Real-Debrid
+static char  corpoAddRD[4096];                 // magnet=<...> do addMagnet
 static char  ctCriarTB[120];                   // Content-Type do createtorrent
 static char  urlRequestdl[900];                // a URL com o token na query
 static char  corpoCacheCheckPM[600], corpoDirectdlPM[600];
 static int   bateuTB[4];        // checkcached, createtorrent, mylist, requestdl
 static int   bateuPM[2];        // cache/check, directdl
-static int   bateuRDUnrestrict;
+static int   bateuRDUnrestrict, rdListas, adListas;
+static char  corpoUnrestrictRD[2000];
 static int   pedidosServico[DEBRID_N];
 static int contaModo, contaPedidos[3]; // 0 active, 1 expired, 2 bad key, 3 malformed, 4 offline, 5 free
 static int contaTrocarChave;
@@ -84,8 +86,12 @@ static int   pmSemPlano;
 // "P2P" do TorBox: o valor de add_only_if_cached do ultimo createtorrent
 // (1 = "true") e se o mylist diz que o torrent ainda esta baixando.
 static int   tbSoCache = -1, tbBaixando;
+// Owner 19/11/2026, the dashboard fallback: tbItemVazio = mylist?id=77 lists
+// no files yet; tbPainel = the account list (mylist?offset=) has deadbeef as
+// item 55 with its files (0 = not in the account); bateuPainel counts those.
+static int   tbItemVazio, tbPainel, bateuPainel;
 
-static int arquivosEspeciais, arquivoAnime;
+static int arquivosEspeciais, arquivoAnime, arquivosPastas;
 static char *dup2s(const char *s) {
   char *c = strdup(s);
   if (arquivosEspeciais) {
@@ -132,6 +138,13 @@ static char *adResp(const char *url, const char *const *cab, const char *corpo, 
     return dup2s(adUploadModo == 1
       ? "{\"status\":\"success\",\"data\":{\"magnets\":[{\"magnet\":\"x\",\"hash\":\"deadbeef\",\"name\":\"Show S02\",\"size\":1000,\"ready\":false,\"id\":555}]}}"
       : "{\"status\":\"success\",\"data\":{\"magnets\":[{\"magnet\":\"x\",\"hash\":\"deadbeef\",\"name\":\"Show S02\",\"size\":3900000000,\"ready\":true,\"id\":555}]}}");
+  }
+  if (strstr(url, "/v4.1/magnet/status") && corpo && !corpo[0]) {
+    // the whole account (tbabrir.c's lookup): no id
+    adRegistra(1); adListas++;
+    return dup2s("{\"status\":\"success\",\"data\":{\"magnets\":["
+      "{\"id\":321,\"hash\":\"aaaa000000000000000000000000000000000000\",\"statusCode\":4},"
+      "{\"id\":555,\"hash\":\"DEADBEEF00000000000000000000000000000000\",\"statusCode\":4}]}}");
   }
   if (strstr(url, "/v4.1/magnet/status")) {
     int sc = adSeqStatus[adIdxStatus < adNSeq ? adIdxStatus : adNSeq - 1];
@@ -191,10 +204,12 @@ char *rede_postar_st(const char *url, int s, const char *const *cab,
   // --- Real-Debrid
   if (strstr(url, "real-debrid.com")) {
     assert(strstr(ct, "x-www-form-urlencoded"));
-    if (strstr(url, "addMagnet"))   { *st = 201; return dup2s("{\"id\":\"ABC123\",\"uri\":\"x\"}"); }
+    if (strstr(url, "addMagnet"))   { *st = 201; snprintf(corpoAddRD, sizeof corpoAddRD, "%s", corpo);
+                                      return dup2s("{\"id\":\"ABC123\",\"uri\":\"x\"}"); }
     if (strstr(url, "selectFiles")) { *st = 204;
       snprintf(corpoSelectRD, sizeof corpoSelectRD, "%s", corpo); return dup2s(""); }
     if (strstr(url, "unrestrict"))  { *st = 200; bateuRDUnrestrict = 1;
+      snprintf(corpoUnrestrictRD, sizeof corpoUnrestrictRD, "%s", corpo);
       return dup2s("{\"download\":\"https://x.download.real-debrid.com/d/QQ/Show.S02E05.mkv\","
                    "\"filename\":\"Show.S02E05.mkv\"}"); }
   }
@@ -219,6 +234,8 @@ char *rede_postar_st(const char *url, int s, const char *const *cab,
     if (tbCriar403 == 2) { *st = 403;
       return dup2s("{\"success\":false,\"error\":\"DOWNLOAD_NOT_CACHED\","
                    "\"detail\":\"Torrent is not cached.\",\"data\":null}"); }
+    if (tbCriar403 == 4) { *st = 200;   // an issue that is neither the account nor the cache
+      return dup2s("{\"success\":false,\"error\":\"UNKNOWN_ERROR\",\"detail\":\"Something went wrong.\",\"data\":null}"); }
     *st = 201;
     return dup2s("{\"success\":true,\"error\":null,\"detail\":\"Found cached torrent\","
                  "\"data\":{\"hash\":\"deadbeef\",\"torrent_id\":77,\"auth_id\":\"z\"}}");
@@ -259,9 +276,28 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   registrarServico(url);
 
   if (strstr(url, "api.alldebrid.com")) return adResp(url, cab, NULL, st);
+  if (strstr(url, "real-debrid.com") && strstr(url, "/torrents?limit=1000&page=")) {
+    rdListas++;
+    assert(strstr(url, "page=1"));
+    return strdup("[{\"id\":\"OLD1\",\"hash\":\"deadbeef00000000000000000000000000000000\",\"status\":\"error\",\"links\":[]},"
+                  "{\"id\":\"RDL1\",\"hash\":\"DEADBEEF00000000000000000000000000000000\",\"status\":\"downloaded\","
+                  "\"links\":[\"https://real-debrid.com/d/L4\",\"https://real-debrid.com/d/L5\"]}]");
+  }
+  if (strstr(url, "real-debrid.com") && strstr(url, "torrents/info/RDL1"))
+    return strdup("{\"id\":\"RDL1\",\"status\":\"downloaded\",\"files\":["
+      "{\"id\":1,\"path\":\"/Show.S02E03.1080p.mkv\",\"bytes\":2100000000,\"selected\":0},"
+      "{\"id\":2,\"path\":\"/Show.S02E04.1080p.mkv\",\"bytes\":2000000000,\"selected\":1},"
+      "{\"id\":3,\"path\":\"/Show.S02E05.1080p.mkv\",\"bytes\":1900000000,\"selected\":1}],"
+      "\"links\":[\"https://real-debrid.com/d/L4\",\"https://real-debrid.com/d/L5\"]}");
+  if (strstr(url, "real-debrid.com") && strstr(url, "torrents/info/GONE")) { *st = 404; return strdup("{\"error\":\"unknown_ressource\"}"); }
   if (strstr(url, "real-debrid.com")) {
     assert(strstr(url, "torrents/info/ABC123"));
     if (arquivoAnime) return strdup("{\"files\":[{\"id\":1,\"path\":\"[SubsPlease] Mushoku Tensei - 05 (1080p).mkv\",\"bytes\":1900000000}],\"status\":\"downloaded\",\"links\":[\"https://real-debrid.com/d/LINK1\"]}");
+    if (arquivosPastas) return strdup("{\"files\":["
+      "{\"id\":1,\"path\":\"/Show.S02E04.1080p/video.mkv\",\"bytes\":2000000000},"
+      "{\"id\":2,\"path\":\"/Show.S02E05.1080p/video.mkv\",\"bytes\":1900000000},"
+      "{\"id\":3,\"path\":\"/Show.S02E05.1080p/sample.mkv\",\"bytes\":30000000}],"
+      "\"status\":\"downloaded\",\"links\":[\"https://real-debrid.com/d/LINK1\"]}");
     return dup2s("{\"id\":\"ABC123\",\"status\":\"downloaded\",\"files\":["
       "{\"id\":1,\"path\":\"/Show.S02E04.1080p.mkv\",\"bytes\":2000000000,\"selected\":0},"
       "{\"id\":2,\"path\":\"/Show.S02E05.1080p.mkv\",\"bytes\":1900000000,\"selected\":0},"
@@ -278,9 +314,21 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
           "[{\"name\":\"Show S02\",\"size\":3900000000,\"hash\":\"deadbeef\"}]}"
         : "{\"success\":true,\"error\":null,\"data\":[]}");
     }
+    if (strstr(url, "torrents/mylist") && strstr(url, "offset=")) {
+      bateuPainel++;
+      assert(strstr(url, "bypass_cache=true"));
+      if (!tbPainel) return dup2s("{\"success\":true,\"data\":[{\"id\":9,\"hash\":\"0123456789\",\"files\":[]}]}");
+      return dup2s("{\"success\":true,\"data\":["
+        "{\"id\":9,\"hash\":\"0123456789\",\"files\":[{\"id\":0,\"hash\":\"deadbeef\",\"name\":\"x.mkv\",\"size\":5}]},"
+        "{\"id\":55,\"hash\":\"DEADBEEF\",\"name\":\"Show S02\",\"files\":["
+        "{\"id\":3,\"name\":\"Show S02/Show.S02E04.1080p.mkv\",\"size\":2000000000},"
+        "{\"id\":4,\"name\":\"Show S02/Show.S02E05.1080p.mkv\",\"size\":1900000000}]}]}");
+    }
     if (strstr(url, "torrents/mylist")) {
       bateuTB[2]++;
       assert(strstr(url, "id=77"));
+      if (tbItemVazio)
+        return dup2s("{\"success\":true,\"data\":{\"id\":77,\"name\":\"Show S02\",\"files\":[]}}");
       // Baixando: o TorBox ja listou os arquivos (leu os metadados), mas o
       // download nao terminou — o requestdl falharia.
       if (tbBaixando)
@@ -383,6 +431,73 @@ static void realDebrid(void) {
   OK("o link do Real-Debrid nao vai inteiro para o log");
 }
 
+// COMO O NuvioTV (Stream.kt, DebridMagnetBuilder.kt, DebridFileSelection.kt):
+// torrent em magnet/"torrent:"/clientResolve.magnetUri entra; o magnet que vai
+// ao servico leva &dn= e os trackers; o nome do arquivo do addon vem antes do
+// SxxEyy na escolha do arquivo.
+static void comoNuvioTV(void) {
+  Stream *v = NULL;
+  char url[4096] = "";
+  int n = stream_extrair(
+    "{\"streams\":["
+    "{\"name\":\"M\",\"url\":\"magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567&dn=Show&tr=udp%3A%2F%2Ft.example%3A1337%2Fannounce\"},"
+    "{\"name\":\"T\",\"url\":\"torrent://89abcdef0123456789abcdef0123456789abcdef/3\"},"
+    "{\"name\":\"C\",\"clientResolve\":{\"type\":\"debrid\",\"service\":\"torbox\",\"magnetUri\":\"magnet:?xt=urn:btih:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"fileIdx\":4,\"filename\":\"Show.S01E02.mkv\"}},"
+    "{\"name\":\"E\",\"externalUrl\":\"magnet:?xt=urn:btih:fedcba9876543210fedcba9876543210fedcba98\"}]}",
+    "Addon", &v);
+  assert(n == 4);
+  assert(!v[0].url[0] && !strcmp(v[0].infoHash, "0123456789abcdef0123456789abcdef01234567") && v[0].fileIdx == -1);
+  assert(strstr(v[0].fontes, "tracker:udp://t.example:1337/announce"));
+  assert(!strcmp(v[1].infoHash, "89abcdef0123456789abcdef0123456789abcdef") && v[1].fileIdx == 3);
+  assert(!strcmp(v[2].infoHash, "0000000000000000000000000000000000000000") && v[2].fileIdx == 4);   // base32 -> hex
+  assert(v[2].arquivoReal && !strcmp(v[2].arquivo, "Show.S01E02.mkv"));
+  assert(!strcmp(v[3].infoHash, "fedcba9876543210fedcba9876543210fedcba98"));
+  free(v);
+  OK("como o NuvioTV: torrent em magnet, torrent://, externalUrl e clientResolve.magnetUri (base32 vira hex)");
+
+  debrid_esquecer();
+  debrid_definir_chave("real-debrid", K_RD);
+  debrid_dica_fonte("DEADBEEF", -1, "Show.S02E04.1080p.mkv", "tracker:udp://t.example:1337/announce\ndht:xyz");
+  // lista grande: as dicas de outros 600 torrents nao apagam a primeira (era
+  // um anel de 512)
+  for (int d = 0; d < 600; d++) {
+    char h[48]; snprintf(h, sizeof h, "%040d", d);
+    debrid_dica_fonte(h, d % 3 - 1, "outro.mkv", "tracker:udp://o.example:1/announce");
+  }
+  debrid_definir_episodio(2, 5);
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  // o nome que o addon deu vence o SxxEyy (o S02E05 seria o id 2)
+  assert(!strcmp(corpoSelectRD, "files=1"));
+  assert(strstr(corpoAddRD, "magnet=magnet%3A%3Fxt%3Durn%3Abtih%3ADEADBEEF%26dn%3DShow.S02E04.1080p.mkv"));
+  assert(strstr(corpoAddRD, "%26tr%3Dudp%253A%252F%252Ft.example%253A1337%252Fannounce"));
+  assert(!strstr(corpoAddRD, "dht"));
+  // nome que nao casa: o SxxEyy decide
+  debrid_dica_fonte("DEADBEEF", -1, "Outro.S09E09.mkv", "");
+  debrid_nova_busca();
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url) && !strcmp(corpoSelectRD, "files=2"));
+  // filme (sem episodio), nome que nao existe, sem fileIdx: o maior video
+  // (o NuvioTV nao toca nada aqui; decisao de 2026-11-18: tocar todos)
+  debrid_definir_episodio(0, 0);
+  debrid_nova_busca();
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url) && !strcmp(corpoSelectRD, "files=1"));
+  debrid_dica_fonte("DEADBEEF", -1, "", "");
+  OK("como o NuvioTV: magnet com dn e trackers, arquivo pelo nome do addon antes do SxxEyy");
+
+  // Onde o NuvioTV desiste e aqui toca:
+  // torrent de UM video, sem SxxEyy, sem fileIdx, sem nome do addon
+  debrid_definir_episodio(1, 5);
+  arquivoAnime = 1; debrid_nova_busca();
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url) && !strcmp(corpoSelectRD, "files=1"));
+  arquivoAnime = 0;
+  // SxxEyy so na pasta: a pasta do episodio, e o video principal, nao o sample
+  debrid_definir_episodio(2, 5);
+  arquivosPastas = 1; debrid_nova_busca();
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url) && !strcmp(corpoSelectRD, "files=2"));
+  arquivosPastas = 0;
+  debrid_esquecer();
+  OK("tocar todos: torrent de um video sem SxxEyy, e SxxEyy so no nome da pasta");
+}
+
 static void especiais(void) {
   static const char *const servicos[] = {"realdebrid", "torbox", "premiumize"};
   static const char *const chaves[] = {K_RD, K_TB, K_PM};
@@ -436,6 +551,43 @@ static void torbox(void) {
   assert(bateuTB[0] == 1 && bateuTB[1] == 0 && bateuTB[2] == 0 && bateuTB[3] == 0);
   OK("TorBox fora de cache devolve 0 sem criar torrent");
   tbEmCache = 1;
+
+  // Owner 19/11/2026: the normal resolve had an issue -> the file as it is on
+  // the TorBox dashboard (the account list, fresh, by the hash).
+  // a) createtorrent answers an error that is neither the account nor "not cached".
+  memset(bateuTB, 0, sizeof bateuTB); bateuPainel = 0; url[0] = 0;
+  tbCriar403 = 4; tbPainel = 1;
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  assert(!strcmp(url, "https://store-1.torbox.app/dl/ZZZ/Show.S02E05.1080p.mkv"));
+  assert(bateuPainel == 1 && bateuTB[3] == 1);
+  assert(strstr(urlRequestdl, "torrent_id=55") && strstr(urlRequestdl, "file_id=4"));   // the item's own hash, not a file's
+  OK("TorBox: createtorrent issue -> found on the dashboard (item 55), plays its S02E05");
+  // b) not on the dashboard either: dropped.
+  memset(bateuTB, 0, sizeof bateuTB); bateuPainel = 0; url[0] = 0;
+  tbPainel = 0;
+  assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url) && !url[0]);
+  assert(bateuPainel == 1 && bateuTB[3] == 0);
+  OK("TorBox: createtorrent issue, not on the dashboard -> source dropped");
+  // c) "not cached" in createtorrent: never the dashboard, dropped as before.
+  memset(bateuTB, 0, sizeof bateuTB); bateuPainel = 0;
+  tbCriar403 = 2; tbPainel = 1;
+  assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  assert(bateuPainel == 0);
+  OK("TorBox: not cached -> no dashboard lookup, dropped");
+  // d) an account refusal (plan): no dashboard lookup either.
+  memset(bateuTB, 0, sizeof bateuTB); bateuPainel = 0;
+  tbCriar403 = 1;
+  assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  assert(bateuPainel == 0);
+  OK("TorBox: account refusal -> no dashboard lookup");
+  debrid_esquecer(); debrid_definir_chave("torbox", K_TB);   // the refusal kept TorBox out for the session
+  // e) added, but its file list is not there in 3 s: the dashboard has it.
+  memset(bateuTB, 0, sizeof bateuTB); bateuPainel = 0;
+  tbCriar403 = 0; tbItemVazio = 1;
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  assert(bateuTB[2] == 3 && bateuPainel == 1 && strstr(urlRequestdl, "torrent_id=55"));
+  OK("TorBox: added but no file list in 3 s -> dashboard item plays");
+  tbItemVazio = 0; tbPainel = 0; tbCriar403 = 0;
 }
 
 // O "P2P" DO TORBOX (relato do Reddit, 1.4.4: "TorBox P2P videos don't work,
@@ -1118,6 +1270,77 @@ static void airlock(void) {
   OK("Airlock do TorBox: torrent/usenet, sem chave, recusa de plano e success:false");
 }
 
+// tbabrir.c's account calls (owner 25/11/2026): AllDebrid and Real-Debrid
+// items found by hash, a fresh link of the playing file, AD upload/delete,
+// and RD reusing a torrent it already has instead of a duplicate addMagnet.
+#define H40 "deadbeef00000000000000000000000000000000"
+static void contasAdRd(void) {
+  char id[24], url[4096];
+  int pronto, r;
+  debrid_esquecer();
+  debrid_definir_chave_local("alldebrid", "");
+  assert(debrid_conta_disponivel(DEBRID_AD) == 0 && debrid_conta_achar(DEBRID_AD, H40, id, sizeof id, &pronto) == -1);
+  debrid_definir_chave("realdebrid", K_RD);
+  debrid_definir_chave_local("alldebrid", K_AD_LOCAL);
+  assert(debrid_conta_disponivel(DEBRID_AD) == 1 && debrid_conta_disponivel(DEBRID_RD) == 1);
+
+  // AllDebrid: the account list by hash (case free), read once a minute
+  adNOrdem = 0; memset(bateuAD, 0, sizeof bateuAD); adListas = 0;
+  assert(debrid_conta_achar(DEBRID_AD, H40, id, sizeof id, &pronto) == 1 && !strcmp(id, "555") && pronto);
+  assert(debrid_conta_achar(DEBRID_AD, "aaaa000000000000000000000000000000000000", id, sizeof id, &pronto) == 1 &&
+         !strcmp(id, "321") && adListas == 1);
+  assert(debrid_conta_achar(DEBRID_AD, "bbbb000000000000000000000000000000000000", id, sizeof id, &pronto) == 0);
+  assert(debrid_conta_achar(DEBRID_AD, "deadbeef", id, sizeof id, &pronto) == -1);   // not a hash
+  OK("AllDebrid account lookup by hash, one list read for several files");
+
+  // the playing file by name, unlocked fresh; no search context needed
+  debrid_definir_episodio(0, 0);
+  assert(debrid_conta_link(DEBRID_AD, "555", "Show.S02E05.1080p.mkv", 0, -1, url, sizeof url));
+  assert(strstr(adCorpoUnlock, "%2Ff%2FBBB") && strstr(url, "/UNL5/"));
+  assert(debrid_conta_link(DEBRID_AD, "555", "other-name.mkv", 2000000000ULL, -1, url, sizeof url));
+  assert(strstr(adCorpoUnlock, "%2Ff%2FAAA"));   // by size
+  OK("AllDebrid fresh link of the playing file (by name, then size)");
+
+  // upload: ready = cached; the list is read again afterwards
+  adUploadModo = 0;
+  assert(debrid_ad_enviar(H40, id, sizeof id) == 1 && !strcmp(id, "555"));
+  adUploadModo = 1;
+  assert(debrid_ad_enviar(H40, id, sizeof id) == 0 && !strcmp(id, "555"));
+  adUploadModo = 4;
+  assert(debrid_ad_enviar(H40, id, sizeof id) == -1);
+  adUploadModo = 0;
+  assert(debrid_ad_apagar("555") && bateuAD[4] >= 1);
+  assert(debrid_conta_achar(DEBRID_AD, H40, id, sizeof id, &pronto) == 1 && adListas == 2);
+  OK("AllDebrid upload says cached / not cached / refused; delete");
+
+  // Real-Debrid: a downloaded entry wins over an errored duplicate
+  rdListas = 0;
+  assert(debrid_conta_achar(DEBRID_RD, H40, id, sizeof id, &pronto) == 1 && !strcmp(id, "RDL1") && pronto && rdListas == 1);
+  bateuRDUnrestrict = 0; corpoUnrestrictRD[0] = 0;
+  assert(debrid_conta_link(DEBRID_RD, "RDL1", "Show.S02E05.1080p.mkv", 0, -1, url, sizeof url));
+  assert(strstr(corpoUnrestrictRD, "link=https%3A%2F%2Freal-debrid.com%2Fd%2FL5"));   // 2nd selected file
+  assert(debrid_conta_link(DEBRID_RD, "RDL1", "x.mkv", 2000000000ULL, -1, url, sizeof url));
+  assert(strstr(corpoUnrestrictRD, "%2Fd%2FL4"));
+  assert(!debrid_conta_link(DEBRID_RD, "RDL1", "Show.S02E03.1080p.mkv", 2100000000ULL, -1, url, sizeof url) && !url[0]);
+  assert(!debrid_conta_link(DEBRID_RD, "GONE", "Show.S02E05.1080p.mkv", 0, -1, url, sizeof url));
+  OK("Real-Debrid fresh link of a selected file only; an unselected one is not served");
+
+  // the account hit is remembered: resolving the hash reuses RDL1, no addMagnet
+  corpoAddRD[0] = 0; bateuRDUnrestrict = 0;
+  debrid_dica_fonte(H40, -1, "Show.S02E05.1080p.mkv", NULL);
+  { int fora = 0;
+    r = debrid_resolver_servico_cache(DEBRID_RD, H40, -1, url, sizeof url, &fora); }
+  assert(r == 1 && !corpoAddRD[0] && bateuRDUnrestrict && strstr(corpoUnrestrictRD, "%2Fd%2FL5"));
+  OK("Real-Debrid resolves a torrent already in the account without a new addMagnet");
+  // TorBox's cache check from a thread with no search context (the recovery's
+  // thread): it used to answer "no answer" there, so a stuck item was never re-added.
+  debrid_definir_chave("torbox", K_TB);
+  tbEmCache = 1; assert(debrid_tb_em_cache(H40) == 1);
+  tbEmCache = 0; assert(debrid_tb_em_cache(H40) == 0);
+  OK("TorBox cache check works outside a search (the recovery's thread)");
+  debrid_definir_chave_local("alldebrid", "");
+}
+
 int main(void) {
   unsigned scope = debrid_tb_geracao();
   debrid_abrir_sessao(100);
@@ -1152,6 +1375,7 @@ int main(void) {
   assert(dup2(f, 1) >= 0);
 
   semChaves();
+  comoNuvioTV();
   especiais();
   realDebrid();
   torbox();
@@ -1168,6 +1392,7 @@ int main(void) {
   servicoEspecifico();
   parser();
   airlock();
+  contasAdRd();
 
   fflush(stdout);
   assert(dup2(velho, 1) >= 0);

@@ -32,6 +32,7 @@ int vazao_url_aviso(const char *url) { (void)url; return 0; }
 int ajustes_fonte_ordem_addon(void) { return modo; }
 int ajustes_fonte_texto_addon(void) { return 0; }
 int debrid_ativo(void) { return 1; }
+void debrid_dica_fonte(const char *h, int i, const char *a, const char *f) { (void)h; (void)i; (void)a; (void)f; }
 int p2p_ativo(void) { return 0; }
 const char *ajustes_p2p_url(void) { return ""; }
 float gfx_escala_ui(void) { return 1; }

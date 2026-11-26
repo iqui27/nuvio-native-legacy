@@ -16,6 +16,10 @@ static double durFonteEsperadaCache, expected = 2580;
 static int kept, parts, stopped, failed, requested, reconnecting;
 static int fonteVODAutomatica = 1, aguardandoFonte, fonteVODTentativas;
 static unsigned fonteVODDesde = 1, fonteFalhaLista;
+// The TorBox recovery holding a source (app.c, tbabrir.h): none in this test.
+static struct { int fase; } tbRec;
+static int fonteEscolhida;   // player.c: the source picked by hand (durFonteAtualizar)
+enum { PF_NADA = 0 }; static int parteFase;   // app.c: files-in-parts session (tentarProximaFonteVOD)
 static FonteFalhaSessao *fonteFalha;
 static int current, n = 5, excluded[5], refused = -1;
 static Stream lista[5];

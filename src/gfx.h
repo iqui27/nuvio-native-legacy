@@ -418,6 +418,16 @@ void gfx_recorte(float x, float y, float w, float h);
 // Carga preguiçosa, uma textura de 128x128; gfx_encerrar devolve a textura.
 void gfx_icones_dir(const char *dirArte);
 void gfx_icone(GfxRect r, const char *nome, float cr, float cg, float cb, float ca);
+// O mesmo arquivo de icones/, mas com as CORES DO PNG (emoji em cores, bandeira):
+// o RGB passa inteiro, `ca` so esmaece. Sem o PNG (arte antiga do .tpk) nao desenha.
+// O retangulo manda no aspecto: a bandeira 4:3 vai num retangulo 4:3.
+void gfx_icone_cor(GfxRect r, const char *nome, float ca);
+// Icone de traco do formatador (simbolo sy_ ou Lucide do Minimalista) na tinta
+// do texto, como icone do pacote (tex_obter_icone, o mesmo de gfx_icone_cor).
+void gfx_icone_fmt(GfxRect r, const char *nome, float cr, float cg, float cb, float ca);
+// 1 se icones/<nome>.png existe no pacote (bandeira sem PNG volta ao codigo de
+// idioma). Consulta o disco: chamar ao montar o texto, nunca por quadro.
+int gfx_icone_existe(const char *nome);
 void gfx_sem_recorte(void);
 
 int  gfx_snap_iniciar(int w, int h);

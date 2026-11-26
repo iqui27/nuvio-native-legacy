@@ -490,6 +490,48 @@ static void rTexto(void) {   // Do Nuvio / Do addon / Logo do titulo
   }
 }
 
+// ICONES DO "DO ADDON": as duas linhas de uma fonte como o AIOStreams manda,
+// em cima no Padrao (emoji em cores, os desenhos de verdade) e embaixo no
+// Minimalista (Lucide na cor do texto). Bandeira so no Padrao (o Minimalista mostra o codigo do idioma).
+static void rIcones(void) {
+  static const char *const PAD[3] = { "formatador/tw_1f4fa", "formatador/tw_1f3a7", "formatador/tw_1f4ac" };
+  static const char *const MIN[3] = { "aj_tv", "aj_headphones", "aj_message-square" };
+  int v = rInt(AJ_FONTE_ICONES, 1), i, j;
+  for (i = 0; i < 2; i++) {
+    float y = 60 + i * 130, al = i == v ? 1.0f : 0.3f;
+    ajc_neutro(40, y, 560, 100, 14, al);
+    for (j = 0; j < 3; j++) {
+      float x = 70 + j * 170;
+      if (i == 0) gfx_icone_cor(ajc_r(x, y + 22, 24, 24), PAD[j], al * C.a);
+      else ajc_icone(MIN[j], x + 12, y + 34, 24, 0.75f * al);
+      ajc_barra(x + 34, y + 30, 90, al * 0.6f);
+    }
+    // Bandeira so no Padrao; o Minimalista escreve o codigo do idioma ("EN"),
+    // aqui uma barra curta, como o texto das outras linhas.
+    if (i == 0) gfx_icone_cor(ajc_r(70, y + 58, 24, 24), "formatador/fl_GB", al * C.a);
+    else ajc_barra(70, y + 68, 28, al * 0.6f);
+    ajc_barra(108, y + 68, 200, al * 0.45f);
+    if (i == v) ajc_foco(40, y, 560, 100, 14, 0.6f + 0.4f * ajc_onda(2.2f));
+  }
+}
+
+// POSICAO DOS SELOS NO "DO ADDON": a mesma fonte duas vezes, a fileira de
+// selos acima do nome (Em cima) e abaixo da descricao (Embaixo). A coluna do
+// addon (barra curta a direita) fica sempre no alto da linha.
+static void rSelosPosicao(void) {
+  int v = rInt(AJ_SOURCE_BADGE_POSITION, 1), i;
+  for (i = 0; i < 2; i++) {
+    float y = 60 + i * 130, al = i == v ? 1.0f : 0.3f;
+    float ys = i == 0 ? y + 12 : y + 66, yt = i == 0 ? y + 48 : y + 16;
+    ajc_neutro(40, y, 560, 100, 14, al);
+    ajcSelo("4K", 66, ys, 12, 0, al); ajcSelo("HDR", 108, ys, 12, 0, al); ajcSelo("DV", 164, ys, 12, 0, al);
+    ajc_barra(66, yt, 260, al * 0.8f);
+    ajc_barra(66, yt + 22, 200, al * 0.45f);
+    ajc_barra(500, y + 16, 70, al * 0.45f);
+    if (i == v) ajc_foco(40, y, 560, 100, 14, 0.6f + 0.4f * ajc_onda(2.2f));
+  }
+}
+
 // --- selos -----------------------------------------------------------------------------
 static void rSelosCores(int op) {
   static const char *T[6] = { "4K", "HDR", "DV", "ATMOS", "x265", "RD" };
@@ -854,6 +896,8 @@ static int ajcNovaReproducao(int sec, int op) {
       rMemoria(op); return 1;
     case AJ_FONTE_ORDEM_ADDON: rOrdemFontes(); return 1;
     case AJ_FONTE_TEXTO: rTexto(); return 1;
+    case AJ_FONTE_ICONES: rIcones(); return 1;
+    case AJ_SOURCE_BADGE_POSITION: rSelosPosicao(); return 1;
     case AJ_SELOS_CORES: rSelosCores(op); return 1;
     case AJ_SELOS_PACOTE: rPacote(); return 1;
     case AJ_SELOS_PACOTE_ADD: rPacoteAdd(); return 1;

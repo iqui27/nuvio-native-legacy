@@ -93,6 +93,11 @@ GLuint tex_obter_logo_larg_qualquer(const char *caminho, float largLayout);
 // por volta varrem do cache as fileiras que a pessoa ainda vai rever. Ver a
 // nota em despejar(), tex_cache.c.
 GLuint tex_obter_passageira(const char *caminho, float largLayout);
+// ICONE PEQUENO DO PACOTE (formatador: emoji, simbolos, bandeiras), caminho
+// local. Mesmo cache, mas sem esperar atras da arte de rede: fura o teto de
+// itens em voo, a fila de decode e o teto de envios por quadro, e decodifica
+// no tamanho de desenho (32-128 px). Ver a nota em tex_cache.c.
+GLuint tex_obter_icone(const char *caminho, float largLayout);
 
 // Caminho do ARQUIVO local de uma URL, ou NULL enquanto ele nao chegou. Um
 // caminho que ja e local volta como veio. Nunca bloqueia: quando o arquivo

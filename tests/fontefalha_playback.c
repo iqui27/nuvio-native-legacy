@@ -157,6 +157,7 @@ const char *sessao_usuario(void) { return ""; }
 void debrid_contexto_capturar(DebridContexto *c) { if (c) memset(c, 0, sizeof *c); }
 void debrid_contexto_entrar(const DebridContexto *c) { (void)c; }
 void debrid_contexto_sair(void) {}
+void debrid_dica_fonte(const char *h, int i, const char *a, const char *f) { (void)h; (void)i; (void)a; (void)f; }
 unsigned fonteregra_versao(void) { return 0; }
 int detail_aberto(void) { return 0; }
 int detail_indice(void) { return 0; }

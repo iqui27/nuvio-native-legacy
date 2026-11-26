@@ -20,6 +20,7 @@
 #include "tex_cache.h"
 #include "catalogo.h"
 #include "limpa.h"
+#include "formatador.h"
 #include "vazao.h"
 #include <ctype.h>
 #include <arpa/inet.h>
@@ -133,7 +134,9 @@ static Stream *lista;
 static int n = 0;
 // Workers publish source mutations; UI caches consume this revision.
 static _Atomic unsigned folhaRevisao;
+static _Atomic unsigned audioFiltroRevisao;
 static void folhaDados(void);
+static void audioFiltroDescartar(void);
 static float linhaTopo(int row);
 static int cacheConfirmado(const Stream *s) {
   return s->emCache && !s->cacheNegado && (!s->foraCache || s->cacheNativo) && !s->urlP2P && !s->naoVideo;
@@ -797,7 +800,17 @@ static void audioextSerie(void) {
 
 static int selosPacoteDa(Stream *s);
 static void selosAgendar(int ini, int qtd);
+static void selosVistaLimpar(void);
+static void selosAquecerPasso(void);
+static void selosAquecerVizinhos(void);
 static void textoAddonLimpar(void);
+// O que o addon disse do torrent (nome do arquivo, trackers) vai para o
+// resolvedor do debrid, que monta o magnet e escolhe o arquivo como o NuvioTV.
+static void dicasDebrid(const Stream *v, int qtd) {
+  for (int i = 0; i < qtd; i++)
+    if (v[i].infoHash[0])
+      debrid_dica_fonte(v[i].infoHash, v[i].fileIdx, v[i].arquivoReal ? v[i].arquivo : "", v[i].fontes);
+}
 void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   int i, k = 0;
   Stream *nova = l && qtd > 0 ? malloc(sizeof(Stream) * (size_t)qtd) : NULL;
@@ -816,9 +829,11 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
     // "ligue o P2P", nunca fingir que o addon nao mandou nada.
     if (!fonteOferecida(&l[i])) contarDescartada(&l[i]);
   for (i = 0; i < k && nova; i++) { nova[i].selosPacoteVer = 0; filtroCompletar(&nova[i]); filtroEscopo(&nova[i]); }   // os selos saem do fio de fundo (selosAgendar)
+  if (nova) dicasDebrid(nova, k);
   pthread_mutex_lock(&verTrava);
   free(lista); lista = nova; n = nova ? k : 0; atual = -1;
   textoAddonLimpar();
+  selosVistaLimpar();
   fitN = 0; // raw identities have been replaced; preserve an open snapshot
   free(chave); free(exib); chave = NULL; exib = NULL;
   if (n > 0) {
@@ -852,6 +867,7 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
 #else
   audioextSerie();
 #endif
+  if (!n) audioFiltroDescartar();
 }
 
 void stream_invalidar(const char *porque) {
@@ -878,6 +894,28 @@ static _Atomic int foraCacheFoco = -1;
 static void atualizarProvedores(void);
 static int aberta, foco, grupo;
 static float rolagem, velRol;
+
+// Existing addon keys are sorted. A normal response contributes one sorted
+// run, so merge it backwards instead of shifting the old list for every row.
+// Equal keys keep the old rows first, exactly like the former stable insert.
+static void ordemAcrescentar(int antes, int qtd) {
+  if (qtd <= 65536) {
+    int old = antes - 1, next = qtd - 1, out = antes + qtd - 1;
+    while (next >= 0) {
+      int i = antes + next;
+      if (old >= 0 && chave[exib[old]] > chave[i]) exib[out--] = exib[old--];
+      else { exib[out--] = i; next--; }
+    }
+    return;
+  }
+  // The legacy 16-bit row key wraps for exceptionally large responses.
+  // Retain the original behavior rather than assuming that run is sorted.
+  for (int k = 0; k < qtd; k++) {
+    int i = antes + k, pos = i;
+    while (pos > 0 && chave[exib[pos - 1]] > chave[i]) { exib[pos] = exib[pos - 1]; pos--; }
+    exib[pos] = i;
+  }
+}
 
 void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   int i, k = 0, focoIdx = -1, linhaAntes = -1, total;
@@ -916,15 +954,10 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
     return;
   }
   memcpy(lista + n, nova, sizeof(Stream) * (size_t)k);
+  dicasDebrid(nova, k);
   for (i = 0; i < k; i++)
     chave[n + i] = ((unsigned)(ordemAddon < 0 ? 0 : ordemAddon) << 16) | (unsigned)(i & 0xFFFF);
-  // Insercao ordenada das novas em `exib`: as de antes ja estao em ordem, e
-  // uma nova entra depois de toda chave menor OU IGUAL (estavel).
-  for (i = 0; i < k; i++) {
-    int idx = n + i, pos = n + i;
-    while (pos > 0 && chave[exib[pos - 1]] > chave[idx]) { exib[pos] = exib[pos - 1]; pos--; }
-    exib[pos] = idx;
-  }
+  ordemAcrescentar(n, k);
   n = total;
   atomic_fetch_add(&folhaRevisao, 1);
   if (!temRecebidaEm) { recebidaEm = SDL_GetTicks(); temRecebidaEm = 1; }
@@ -1857,6 +1890,7 @@ static int resolverUrl(const char *url, const char *cabecalhos, int segundos,
 }
 
 void (*stream_cdn_lembrar)(const char *orig, const char *final, const char *cabecalhos, uint64_t sessao);
+void (*stream_foco_demorado)(const Stream *s);
 
 static int verificarUma(int i, Conferencia *c) {
   char fim[NV_MEDIA_URL_MAX], url[NV_MEDIA_URL_MAX], cab[512], mime[96], addon[sizeof lista->provedor];
@@ -2506,7 +2540,8 @@ int stream_vod_renovada_aplicar(int indice, unsigned geracao, const Stream *font
   if (!fonte || !fonte->url[0] || !nv_perfil_sessao_travar(sessao)) return 0;
   pthread_mutex_lock(&verTrava);
   int ok = geracao == listaGeracao && indice >= 0 && indice < n;
-  if (ok) { lista[indice] = *fonte; atomic_fetch_add(&folhaRevisao, 1); }
+  if (ok) { lista[indice] = *fonte; atomic_fetch_add(&folhaRevisao, 1);
+    atomic_fetch_add(&audioFiltroRevisao, 1); }
   pthread_mutex_unlock(&verTrava);
   nv_perfil_sessao_destravar();
   return ok;
@@ -3822,17 +3857,36 @@ static int linhaAnt = -1, focoVisto = -1;
 
 // MODO "DO ADDON" (Ajustes > Texto das fontes; dono, 02/10: "tem que ter a
 // opcao de receber pronto o texto que alguns addons mandam"). O titulo e o
-// `name` do addon numa linha so, e embaixo a `description` linha a linha, como
-// veio — o AIOStreams do dono manda "11.1 GB | 30.1 Mbps |", o grupo, os
-// idiomas e o arquivo, cada um numa linha. Glifo que a Inter nao tem (o ⚡ e o
-// ⚑ do formatador) cai fora em text.c, sem virar quadrado.
-#define FOLHA_ADDON_LINHAS 5
-// Fora do foco a linha mostra so as 2 primeiras linhas do addon; a linha em
-// foco abre (mola abreFoco) e mostra todas, ate FOLHA_ADDON_LINHAS. Com 5
-// linhas em todas as fontes a lista caberia em 3 telas; assim ela continua
-// densa e a que se esta lendo abre inteira.
+// `name` do addon, e embaixo a `description` linha a linha, como veio — o
+// AIOStreams do dono manda "11.1 GB | 30.1 Mbps |", o grupo, os idiomas e o
+// arquivo, cada um numa linha.
+//
+// TUDO A MOSTRA NA LINHA EM FOCO (dono, 17/11: "remove row limitation so all
+// info can be seen"). Antes: 5 linhas de descricao, 6 pecas por linha, 96 bytes
+// por peca e cada linha cortada na borda. Agora a linha em foco abre o nome e
+// a descricao inteiros, e a linha comprida QUEBRA em vez de ser cortada; fora
+// do foco ficam o primeiro trecho do nome e as 2 primeiras linhas, como antes.
+// O limite que sobra e o do parser (Stream.rotulo / Stream.descricao).
+//
+// ICONES (formatador.h): os emojis e simbolos dos formatadores viram icone em
+// qualquer lugar do nome e da descricao, no estilo dos Ajustes (Padrao:
+// Twemoji em cores e o glifo dos simbolos; Minimalista: Lucide na cor do
+// texto). Bandeiras viram a bandeira. Emoji fora da lista some, como antes.
 #define FOLHA_ADDON_FECHADA 2
 #define FOLHA_ADDON_LD     28.0f
+#define FOLHA_ADDON_TD     40.0f    // altura de cada trecho do nome
+#define FOLHA_ADDON_SELOS  30.0f    // fileira de selos (Ajustes: Badge position): selo 24 + 3/3
+// THE BADGE ROW ONLY WITH AN IMPORTED PACK (owner 25/11/2026): with "Do Nuvio"
+// the From addon rows carry no badge row at all (the add-on's own text already
+// says the resolution and HDR) and lay out as before the row existed. The
+// height follows the pack CHOICE, never its matching, so a pack that matches
+// late still never moves the list.
+static float addonSelosAlt(void) { return selospacote_ativo() >= 0 ? FOLHA_ADDON_SELOS : 0.0f; }
+// No row = the name's first line stops short of the addon column, as "Bottom".
+static int addonSelosEmbaixo(void) { return selospacote_ativo() < 0 || ajustes_selos_embaixo(); }
+#define ADDON_ICONE_W      30.0f    // 22 de icone + 8
+#define ADDON_BANDEIRA_W   30.0f    // 22 de bandeira (Twemoji, quadrada) + 8
+#define ADDON_GAP          18.0f    // depois de cada texto
 static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   size_t k = 0;
   while (n && (*ini == ' ' || *ini == '\t')) { ini++; n--; }
@@ -3843,77 +3897,47 @@ static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   }
   d[k] = 0;
 }
-// Emoji do formatador -> icone Lucide (aj_<nome>.png). A TV nao tem emoji
-// colorido; o que nao esta aqui sai limpo em nv_limpar_texto (sem quadrado).
-// Um emoji pode vir com o seletor de variacao U+FE0F (EF B8 8F) colado.
-static const struct { const char *emoji, *icone; } EMOJI_ICONE[] = {
-  { "\xF0\x9F\x92\xBE", "aj_hard-drive" },   // 💾
-  { "\xF0\x9F\x91\xA4", "aj_users" },        // 👤
-  { "\xF0\x9F\x8E\x9E", "aj_film" },         // 🎞
-  { "\xF0\x9F\x94\x8A", "aj_volume-2" },     // 🔊
-  { "\xF0\x9F\x8C\x90", "aj_globe" },        // 🌐
-  { "\xE2\x9A\x99",     "aj_settings-2" },  // ⚙
-  { "\xE2\x9A\xA1",     "aj_zap" },         // ⚡
-  { "\xF0\x9F\x93\xA6", "aj_package" },      // 📦
-  { "\xF0\x9F\x8F\xB7", "aj_tag" },          // 🏷
-  { "\xE2\x8F\xB1",     "aj_clock" },       // ⏱
-};
-#define ADDON_PECAS 6
-typedef struct { int n; const char *ic[ADDON_PECAS]; char tx[ADDON_PECAS][96]; } LinhaAddon;
-static const char *emojiIcone(const char *p, size_t *len) {
-  for (size_t k = 0; k < sizeof EMOJI_ICONE / sizeof EMOJI_ICONE[0]; k++) {
-    size_t n = strlen(EMOJI_ICONE[k].emoji);
-    if (strncmp(p, EMOJI_ICONE[k].emoji, n)) continue;
-    if (!strncmp(p + n, "\xEF\xB8\x8F", 3)) n += 3;
-    *len = n;
-    return EMOJI_ICONE[k].icone;
+static void legendaProvedor(const Stream *s, char *buf, size_t tam);
+// ARTE QUE NAO VEIO. A atualizacao pelo app do .tpk troca so a libnuvio.so e a
+// arte fica a da instalacao: sem os PNGs novos, cada icone ocupava o seu lugar
+// e nao desenhava nada (buracos no meio do texto). Bandeira sem PNG volta ao
+// codigo do idioma; icone sem PNG usa o do outro estilo, ou some como antes
+// desta mudanca. Na .apk e no .ipk a arte vem sempre inteira e isto so confirma.
+// O disco e consultado uma vez por nome (a arte nao muda com o app aberto).
+static int bandeiraExiste(const char *cc) {
+  static struct { char cc[8]; signed char tem; } visto[400];
+  static int nVisto;
+  char nome[32];
+  for (int i = 0; i < nVisto; i++)
+    if (!strcmp(visto[i].cc, cc)) return visto[i].tem;
+  snprintf(nome, sizeof nome, "formatador/fl_%s", cc);
+  int tem = gfx_icone_existe(nome);
+  if (nVisto < (int)(sizeof visto / sizeof *visto) && strlen(cc) < sizeof visto[0].cc) {
+    snprintf(visto[nVisto].cc, sizeof visto[nVisto].cc, "%s", cc);
+    visto[nVisto++].tem = (signed char)tem;
   }
+  return tem;
+}
+#define ADDON_ICONES_MAX 512
+static const char *addonIcone(int idx, int minimal, int *cor) {
+  static signed char tem[2][ADDON_ICONES_MAX];   // 0 = nao visto, 1 = existe, -1 = falta
+  if (idx < 0 || idx >= ADDON_ICONES_MAX) { if (cor) *cor = 0; return NULL; }
+  for (int vez = 0; vez < 2; vez++) {
+    int m = vez ? !minimal : minimal;
+    const char *nome = formatador_icone_nome(idx, m, cor);
+    if (!nome || !nome[0]) continue;
+    if (!tem[m][idx]) tem[m][idx] = gfx_icone_existe(nome) ? 1 : -1;
+    if (tem[m][idx] > 0) return nome;
+  }
+  if (cor) *cor = 0;
   return NULL;
 }
-// Uma linha crua do addon vira pecas "[icone] texto". O texto de cada peca
-// passa pelo limpador do #144 (versalete, subscrito, glifo que a fonte nao
-// tem) antes de ir para a tela, como o resto da folha.
-static void pecasAddon(const char *ini, size_t n, LinhaAddon *L) {
-  char cru[1024];
-  const char *p, *ate;
-  size_t len;
-  L->n = 0;
-  linhaLimpa(cru, sizeof cru, ini, n);
-  p = cru;
-  ate = cru + strlen(cru);
-  while (p < ate && L->n < ADDON_PECAS) {
-    const char *ic = NULL, *q = p;
-    char seg[512];
-    size_t k;
-    // O icone (se a peca abre com um) e o texto ate o proximo emoji conhecido.
-    if (!(ic = emojiIcone(p, &len))) len = 0;
-    q = p + len;
-    for (k = 0; q + k < ate; k++) { size_t l2; if (emojiIcone(q + k, &l2)) break; }
-    snprintf(seg, sizeof seg, "%.*s", (int)(k < sizeof seg - 1 ? k : sizeof seg - 1), q);
-    nv_limpar_texto(seg, L->tx[L->n], sizeof L->tx[0], NV_LIMPA_UMA_LINHA);
-    nv_aparar_separadores(L->tx[L->n]);   // "31.4 GB | 43.2 Mbps |" -> sem o | solto
-    if (ic || L->tx[L->n][0]) L->ic[L->n++] = ic;
-    p = q + k;
-  }
-}
-static int linhasAddon(const Stream *s, LinhaAddon *out, int max) {
-  const char *p = s->descricao;
-  int nl = 0;
-  while (*p && nl < max) {
-    const char *f = strchr(p, '\n');
-    size_t n = f ? (size_t)(f - p) : strlen(p);
-    pecasAddon(p, n, &out[nl]);
-    if (out[nl].n) nl++;
-    if (!f) break;
-    p = f + 1;
-  }
-  return nl;
-}
-static void tituloAddon(const Stream *s, char *buf, size_t tam) {
-  char t[sizeof s->rotulo], lim[sizeof s->rotulo];
+// O nome numa linha so (espacos e quebras viram um espaco). O ⚡ do comeco sai
+// quando o app ja desenha o proprio raio de "em cache" (#499).
+static const char *nomeAddon(const Stream *s, char *t, size_t tam) {
   size_t k = 0;
   int esp = 0;
-  for (const char *p = s->rotulo; *p && k + 1 < sizeof t; p++) {
+  for (const char *p = s->rotulo; *p && k + 1 < tam; p++) {
     unsigned char c = (unsigned char)*p;
     if (c < 33) { esp = k > 0; continue; }
     if (esp) { t[k++] = ' '; esp = 0; }
@@ -3926,7 +3950,12 @@ static void tituloAddon(const Stream *s, char *buf, size_t tam) {
     if (!strncmp(nome, "\xEF\xB8\x8F", 3)) nome += 3;
     while (*nome == ' ') nome++;
   }
-  nv_limpar_texto(nome, lim, sizeof lim, NV_LIMPA_UMA_LINHA);
+  return nome;
+}
+// So o texto do nome, sem icones (teste #499 e log).
+static void tituloAddon(const Stream *s, char *buf, size_t tam) {
+  char t[sizeof s->rotulo], lim[sizeof s->rotulo];
+  nv_limpar_texto(nomeAddon(s, t, sizeof t), lim, sizeof lim, NV_LIMPA_UMA_LINHA);
   snprintf(buf, tam, "%s", lim[0] ? lim : s->provedor);
 }
 
@@ -3934,34 +3963,457 @@ static void tituloAddon(const Stream *s, char *buf, size_t tam) {
 // O texto cru nao muda com foco/altura; cada indice e limpo uma vez. Acrescentar
 // preserva as cartas prontas, trocar a lista libera tudo. Texturas continuam
 // no cache de text.c (nao guardar GLuint que o LRU pode despejar).
+//
+// `pecas`: as linhas LOGICAS (0 = nome, 1.. = descricao), cada uma uma fila de
+// pecas de formatador_pecas, separadas por '\n'. `vis`: as linhas VISUAIS
+// (depois da quebra), cada uma aberta por "Vddd" (ddd = a linha logica) e
+// seguida das mesmas pecas; recalculada so quando a largura ou a fonte muda.
+// A quebra so MEDE (txt_largura): desenhar a linha em foco reusa os mesmos
+// trechos ja rasterizados fora do foco.
 typedef struct {
-  char titulo[96];
+  char titulo[sizeof ((Stream *)0)->rotulo];
   int nl;
-  LinhaAddon linhas[FOLHA_ADDON_LINHAS];
+  char *pecas; size_t nPecas;
+  char *vis; size_t nVis;
+  float kw0, kw; int kFonte, kMin, linT, linD;
+  int pronto;     // nl/titulo read; pecas may have been let go since
+  int linhasOk;   // linT/linD of the last wrap (kw0/kw/kFonte/kMin) kept without the pieces
+  unsigned uso;   // last use, for the bounded piece cache
 } TextoAddon;
 static TextoAddon *textoAddon;
-static int textoAddonN, textoAddonCap;
+static int textoAddonCap;
+// At most TEXTO_ADDON_CACHE sources keep their pieces (pecas/vis); the others
+// keep only nl, the title and the line counts of their last wrap, so a
+// 2000-source list does not hold 2000 parsed cards. Idea from Matis94's
+// rich formatter cards (ccae01dff: bounded LRU, lazy parsing per index).
+#define TEXTO_ADDON_CACHE 64
+static int textoAddonCom[TEXTO_ADDON_CACHE], textoAddonComN;
+static unsigned textoAddonRelogio;
+static float addonLargura = 0.0f;   // tr - tx do ultimo desenho; 0 = ainda nao desenhou
+static void textoAddonSoltar(TextoAddon *t) {
+  free(t->pecas); free(t->vis);
+  t->pecas = t->vis = NULL; t->nPecas = t->nVis = 0;
+}
 static void textoAddonLimpar(void) {
-  free(textoAddon); textoAddon = NULL; textoAddonN = textoAddonCap = 0;
+  for (int i = 0; i < textoAddonCap; i++) textoAddonSoltar(&textoAddon[i]);
+  free(textoAddon); textoAddon = NULL; textoAddonCap = 0; textoAddonComN = 0;
+}
+// `i` now holds pieces: past the cap, the least recently used other source
+// lets go of its pieces (its nl, title and line counts stay).
+static void textoAddonGuardar(int i) {
+  int v = -1;
+  for (int k = 0; k < textoAddonComN; k++) if (textoAddonCom[k] == i) return;
+  if (textoAddonComN < TEXTO_ADDON_CACHE) { textoAddonCom[textoAddonComN++] = i; return; }
+  for (int k = 0; k < textoAddonComN; k++)
+    if (v < 0 || textoAddon[textoAddonCom[k]].uso < textoAddon[textoAddonCom[v]].uso) v = k;
+  { TextoAddon *o = &textoAddon[textoAddonCom[v]];
+    o->linhasOk = o->vis != NULL;
+    textoAddonSoltar(o); }
+  textoAddonCom[v] = i;
+}
+static void textoAddonMontar(const Stream *s, TextoAddon *t) {
+  // Bandeira e lista de idiomas crescem o texto (bloco S..M..E leva os dois
+  // estilos: ate ~2x). Monta com folga de 3x e devolve o que sobrou: com
+  // R + 2D o nome cheio de bandeiras perdia o fim quando a descricao era curta.
+  size_t cap = 3 * (strlen(s->rotulo) + strlen(s->descricao)) + 64, k = 0;
+  char *o = malloc(cap + 1);
+  char nm[sizeof s->rotulo];
+  memset(t, 0, sizeof *t);
+  tituloAddon(s, t->titulo, sizeof t->titulo);
+  if (!o) return;
+  o[0] = 0;
+  { const char *nome = nomeAddon(s, nm, sizeof nm);
+    size_t k0 = k;
+    formatador_pecas(nome, strlen(nome), o, cap, &k, bandeiraExiste);
+    if (k == k0) {   // so enfeite, ou vazio: o nome do addon
+      size_t l = strlen(s->provedor);
+      if (k + l + 3 <= cap) { o[k++] = 'T'; memcpy(o + k, s->provedor, l + 1); k += l + 1; }
+    } }
+  for (const char *p = s->descricao; *p; ) {
+    const char *f = strchr(p, '\n');
+    size_t n = f ? (size_t)(f - p) : strlen(p), k0;
+    char cru[2048];
+    linhaLimpa(cru, sizeof cru, p, n);
+    if (k + 2 > cap) break;
+    o[k++] = '\n'; k0 = k;
+    if (formatador_pecas(cru, strlen(cru), o, cap, &k, bandeiraExiste) > 0) t->nl++;
+    else k = k0 - 1;   // linha so de enfeite: nao conta
+    if (!f) break;
+    p = f + 1;
+  }
+  o[k] = 0;
+  { char *justo = realloc(o, k + 1); if (justo) o = justo; }
+  t->pecas = o; t->nPecas = k;
 }
 static const TextoAddon *textoAddonDa(int i) {
   static TextoAddon reserva;
   if (textoAddonCap < n) {
     TextoAddon *t = realloc(textoAddon, (size_t)n * sizeof *t);
     if (!t) {
-      reserva.nl = linhasAddon(&lista[i], reserva.linhas, FOLHA_ADDON_LINHAS);
-      tituloAddon(&lista[i], reserva.titulo, sizeof reserva.titulo);
+      textoAddonSoltar(&reserva);
+      textoAddonMontar(&lista[i], &reserva);
       return &reserva;
     }
+    memset(t + textoAddonCap, 0, (size_t)(n - textoAddonCap) * sizeof *t);
     textoAddon = t; textoAddonCap = n;
   }
-  while (textoAddonN <= i) {
-    TextoAddon *t = &textoAddon[textoAddonN];
-    t->nl = linhasAddon(&lista[textoAddonN], t->linhas, FOLHA_ADDON_LINHAS);
-    tituloAddon(&lista[textoAddonN], t->titulo, sizeof t->titulo);
-    textoAddonN++;
+  // Only the source asked for is read (not every index before it).
+  { TextoAddon *t = &textoAddon[i];
+    if (!t->pronto || !t->pecas) {
+      textoAddonMontar(&lista[i], t);
+      t->pronto = 1;
+      if (t->pecas) textoAddonGuardar(i);
+    }
+    t->uso = ++textoAddonRelogio;
+    return t; }
+}
+// Description line count without bringing the pieces back.
+static int textoAddonNl(int i) {
+  if (i >= 0 && i < textoAddonCap && textoAddon[i].pronto) return textoAddon[i].nl;
+  return textoAddonDa(i)->nl;
+}
+// Line counts only (row heights): a source whose pieces were let go answers
+// from its last wrap when the width, font and icon style are the same.
+static int textoAddonLinhasGuardadas(int i, float w0, float L, int fonte, int minimal, int *linT, int *linD) {
+  const TextoAddon *t;
+  if (i < 0 || i >= textoAddonCap) return 0;
+  t = &textoAddon[i];
+  if (!t->pronto || t->pecas || !t->linhasOk) return 0;
+  if (t->kw0 != w0 || t->kw != L || t->kFonte != fonte || t->kMin != minimal) return 0;
+  *linT = t->linT; *linD = t->linD;
+  return 1;
+}
+
+// Pula uma peca e devolve o inicio da seguinte.
+static size_t addonPula(const char *o, size_t i) {
+  if (o[i] == 'S' || o[i] == 'M' || o[i] == 'E') return i + 1;   // bloco de estilo
+  return o[i] == 'I' ? i + 4 : i + 1 + strlen(o + i + 1) + 1;
+}
+// O primeiro icone e o primeiro texto de uma linha logica (teste #479).
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))   // so o teste #479 chama
+#endif
+static int addonPrimeiraPeca(const TextoAddon *t, int linha, int *icone, const char **texto) {
+  size_t i = 0;
+  int l = 0;
+  *icone = -1; *texto = NULL;
+  if (!t->pecas) return 0;
+  while (i < t->nPecas && l < linha) { if (t->pecas[i] == '\n') { l++; i++; } else i = addonPula(t->pecas, i); }
+  if (l != linha) return 0;
+  for (; i < t->nPecas && t->pecas[i] != '\n'; i = addonPula(t->pecas, i)) {
+    if (t->pecas[i] == 'I' && *icone < 0 && !*texto) *icone = atoi((char[4]){ t->pecas[i+1], t->pecas[i+2], t->pecas[i+3], 0 });
+    if (t->pecas[i] == 'T' && !*texto) *texto = t->pecas + i + 1;
   }
-  return &textoAddon[i];
+  return 1;
+}
+
+// QUEBRA. O maior comeco de `s` que cabe em `w`, de preferencia depois de um
+// espaco ou de . - _ / | (nome de arquivo nao tem espaco). Ao menos um
+// caractere, para nunca travar numa coluna estreita demais.
+// `meio` = 1 quando o corte cai DENTRO de uma palavra (nenhuma quebra no que
+// cabe). No meio da linha (`inicio` 0) qualquer quebra serve; no comeco dela
+// so a dos ultimos 2/3, para a linha nao ficar quase vazia.
+static int addonQuebraEm(char c) { return c == ' ' || c == '.' || c == '-' || c == '_' || c == '/' || c == '|'; }
+static size_t addonCorte(TxtEstilo est, const char *s, float w, int inicio, int *meio) {
+  size_t n = strlen(s), lo = 0, hi = n, melhor;
+  char tmp[2048];
+  if (n >= sizeof tmp) n = hi = sizeof tmp - 1;
+  while (lo < hi) {   // busca binaria em fronteira de codepoint
+    size_t m = (lo + hi + 1) / 2;
+    while (m > lo && ((unsigned char)s[m] & 0xC0) == 0x80) m--;
+    if (m == lo) { size_t q = lo + 1; while (q < hi && ((unsigned char)s[q] & 0xC0) == 0x80) q++; m = q; }
+    memcpy(tmp, s, m); tmp[m] = 0;
+    if (txt_largura(est, tmp) <= w) { if (m == lo) break; lo = m; } else hi = m - 1;
+    if (hi < lo) hi = lo;
+  }
+  *meio = 0;
+  if (!lo) {
+    lo = 1; while (lo < n && ((unsigned char)s[lo] & 0xC0) == 0x80) lo++;
+    *meio = lo < n && s[lo] != ' ' && !addonQuebraEm(s[lo - 1]);
+    return lo;
+  }
+  if (lo >= n) return n;
+  melhor = lo;
+  *meio = s[lo] != ' ';
+  for (size_t j = lo; j > (inicio ? lo / 3 : 0); j--)
+    if (addonQuebraEm(s[j - 1])) { melhor = j; *meio = 0; break; }
+  return melhor;
+}
+static int addonPoe(char **v, size_t *k, size_t *cap, const char *src, size_t n) {
+  if (*k + n + 2 > *cap) {
+    size_t nc = (*cap + n + 2) * 2;
+    char *x = realloc(*v, nc);
+    if (!x) return 0;
+    *v = x; *cap = nc;
+  }
+  memcpy(*v + *k, src, n); *k += n; (*v)[*k] = 0;
+  return 1;
+}
+// Larguras: o nome divide a linha com a coluna do addon (direita) e o raio de
+// cache; a descricao usa a largura toda. As mesmas contas do desenho.
+static float addonColuna(const Stream *s) {
+  char pv[160];
+  float w;
+  legendaProvedor(s, pv, sizeof pv);
+  w = (float)txt_largura(TXT_PG_FIM, pv);
+  return (w > 340.0f ? 340.0f : w) + 28.0f;
+}
+// Largura da 1a palavra de `r`: ate o 1o espaco, ou ate (e com) o 1o ponto em
+// que addonCorte quebraria. Palavra maior que o buffer e cortada no comeco de
+// um caractere, para nao medir meio UTF-8 (CJK sem espaco passa de 255 bytes);
+// a essa altura ela ja e mais larga que qualquer linha.
+static float addonPalavra(TxtEstilo est, const char *r) {
+  char pal[256];
+  size_t n = 0;
+  while (r[n] && n + 1 < sizeof pal && r[n] != ' ') {
+    pal[n] = r[n];
+    if (addonQuebraEm(r[n++])) break;
+  }
+  while (n > 0 && ((unsigned char)r[n] & 0xC0) == 0x80) n--;
+  pal[n] = 0;
+  return (float)txt_largura(est, pal);
+}
+// O que vem depois do icone/bandeira em `q`, ate o fim da linha logica:
+// `run` = largura dos icones e bandeiras colados a ele (★★★★☆, 🔊 🇬🇧);
+// `pal` = a 1a palavra do texto que vem depois (ate o 1o ponto em que
+// addonCorte quebraria), `tudo` = esse texto inteiro. Devolve 1 quando ha
+// texto depois da sequencia, 0 quando ela termina a linha logica.
+typedef struct { float run, pal, tudo; } AddonDepois;
+static int addonDepois(const char *p, size_t q, size_t fim, int estilo, int minimal,
+                       TxtEstilo est, AddonDepois *d) {
+  d->run = d->pal = d->tudo = 0;
+  for (q = addonPula(p, q); q < fim; q = addonPula(p, q)) {
+    const char *pc = p + q;
+    if (*pc == 'S') { estilo = 1; continue; }
+    if (*pc == 'M') { estilo = 2; continue; }
+    if (*pc == 'E') { estilo = 0; continue; }
+    if ((estilo == 1 && minimal) || (estilo == 2 && !minimal)) continue;
+    if (*pc == 'I') {
+      if (addonIcone(atoi((char[4]){ pc[1], pc[2], pc[3], 0 }), minimal, NULL)) d->run += ADDON_ICONE_W;
+      continue;
+    }
+    if (*pc == 'B') { d->run += ADDON_BANDEIRA_W; continue; }
+    if (*pc != 'T') return 0;
+    d->pal = addonPalavra(est, pc + 1);
+    d->tudo = (float)txt_largura(est, pc + 1);
+    return 1;
+  }
+  return 0;
+}
+static void addonLarguras(const Stream *s, float *Lp, float *w0p);
+static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
+  float L = addonLargura > 0 ? addonLargura
+          : FOLHA_W - FOLHA_PAD_E - FOLHA_PAD_D - 2 * FOLHA_TXT;
+  // So a 1a linha do nome divide espaco com a coluna do addon (uma linha de
+  // altura); da 2a em diante o nome usa a largura toda, menos o raio de cache.
+  // Com os selos em cima, quem fica ao lado da coluna e a fileira de selos:
+  // o nome inteiro usa a largura toda. (kw0 guarda w0: trocar o ajuste refaz
+  // a quebra.)
+  float wNome2 = L - (cacheConfirmado(s) ? 30.0f : 0.0f);
+  float w0 = addonSelosEmbaixo() ? L - addonColuna(s) - (cacheConfirmado(s) ? 30.0f : 0.0f) : wNome2;
+  int fonte = (int)txt_fonte_interface();
+  // O estilo muda a largura (bandeira no Padrao, "EN" no Minimalista): as
+  // pecas de um estilo so entram na quebra dele (blocos S..M..E).
+  int minimal = ajustes_fonte_icones_minimalista(), estilo = 0;
+  char *v = NULL;
+  size_t k = 0, cap = 0, j = 0;
+  int logica = 0, linT = 0, linD = 0;
+  (void)i;
+  if (w0 < 120.0f) w0 = 120.0f;
+  if (t->vis && t->kw0 == w0 && t->kw == L && t->kFonte == fonte && t->kMin == minimal) return;
+  if (!t->pecas) return;
+  while (j <= t->nPecas) {
+    // Uma linha logica: [j, fim)
+    size_t fim = j;
+    TxtEstilo est = logica ? TXT_PG_FIM : TXT_CALLOUT;
+    float w = logica ? L : w0, x = 0;
+    int temTexto = 0;   // a linha visual ja tem texto (ou so icones/bandeiras)
+#define ADDON_NOVA_LINHA() do { addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; \
+                                else { linT++; w = wNome2; } x = 0; temTexto = 0; } while (0)
+    char cab[8];
+    while (fim < t->nPecas && t->pecas[fim] != '\n') fim = addonPula(t->pecas, fim);
+    snprintf(cab, sizeof cab, "V%03d", logica > 999 ? 999 : logica);
+    if (!addonPoe(&v, &k, &cap, cab, 4)) break;
+    if (logica) linD++; else linT++;
+    for (size_t q = j; q < fim; q = addonPula(t->pecas, q)) {
+      const char *pc = t->pecas + q;
+      if (*pc == 'S') { estilo = 1; continue; }
+      if (*pc == 'M') { estilo = 2; continue; }
+      if (*pc == 'E') { estilo = 0; continue; }
+      if ((estilo == 1 && minimal) || (estilo == 2 && !minimal)) continue;
+      if (*pc == 'I' && !addonIcone(atoi((char[4]){ pc[1], pc[2], pc[3], 0 }), minimal, NULL))
+        continue;   // sem PNG em nenhum estilo: nem lugar ocupa (ver addonIcone)
+      if (*pc == 'I' || *pc == 'B') {
+        float lw = *pc == 'I' ? ADDON_ICONE_W : ADDON_BANDEIRA_W;
+        // O icone vai junto com o que ele rotula: a sequencia de icones e
+        // bandeiras colados a ele e a 1a palavra do texto seguinte. Se essa
+        // unidade nao cabe no resto da linha (no texto: a palavra nao cabe, ou
+        // sobram menos de 80 px, quando ele quebraria de qualquer jeito), o
+        // icone ja comeca a linha de baixo em vez de ficar sozinho no fim
+        // desta. So quando a unidade cabe na linha de baixo: uma fileira de
+        // bandeiras mais larga que a linha (muitos idiomas) so corre e enche
+        // cada linha — senao cada bandeira desceria sozinha, uma por linha.
+        // Palavra mais larga que a linha toda nao conta: ela vai cortada ao
+        // lado do icone (ver `temTexto` abaixo).
+        AddonDepois d;
+        int texto = addonDepois(t->pecas, q, fim, estilo, minimal, est, &d);
+        float xt = x + lw + d.run;   // onde o texto comecaria
+        float wBaixo = logica ? L : wNome2;
+        float unidade = lw + d.run + (!texto ? -8.0f : d.pal <= wBaixo ? d.pal : 0.0f);
+        // E so com texto antes na linha: numa linha so de icones eles sao a
+        // mesma fileira, e descer partiria a fileira em vez de junta-la.
+        int sozinho = temTexto && unidade <= wBaixo &&
+                      (texto ? xt + d.tudo > w && (xt + d.pal > w || w - xt < 80.0f)
+                             : d.run > 0 && xt - 8 > w);
+        if (x > 0 && (x + lw - 8 > w || sozinho)) { ADDON_NOVA_LINHA(); }
+        addonPoe(&v, &k, &cap, pc, *pc == 'I' ? 4 : strlen(pc) + 1);
+        x += lw;
+        continue;
+      }
+      const char *r = pc + 1;
+      while (*r) {
+        float lw = (float)txt_largura(est, r);
+        if (x + lw <= w) { addonPoe(&v, &k, &cap, "T", 1); addonPoe(&v, &k, &cap, r, strlen(r) + 1); x += lw + ADDON_GAP; temTexto = 1; break; }
+        int meio = 0;
+        size_t c = x > 0 && w - x < 80.0f ? 0 : addonCorte(est, r, w - x, x <= 0, &meio);
+        // Pouco espaco sobrando, ou a palavra nao cabe inteira no resto da
+        // linha ("TAMTAR|O", "TrueH|D"): ela comeca na linha de baixo. Cortar
+        // dentro da palavra so quando ela sozinha passa da linha toda — e
+        // entao ja aqui se a linha so tem icones: ela seria cortada na linha
+        // de baixo de todo jeito, e os icones ficariam sozinhos nesta.
+        if (x > 0 && !temTexto && (!c || meio) && addonPalavra(est, r) > (logica ? L : wNome2)) {
+          c = addonCorte(est, r, w - x, 0, &meio);
+          meio = 0;
+        }
+        if (x > 0 && (!c || meio)) {
+          ADDON_NOVA_LINHA(); continue;
+        }
+        size_t ce = c;
+        while (ce > 0 && r[ce - 1] == ' ') ce--;
+        if (ce) { addonPoe(&v, &k, &cap, "T", 1); addonPoe(&v, &k, &cap, r, ce); addonPoe(&v, &k, &cap, "", 1); temTexto = 1; }
+        ADDON_NOVA_LINHA();
+        r += c;
+        while (*r == ' ') r++;
+      }
+    }
+    if (fim >= t->nPecas) break;
+    j = fim + 1; logica++;
+  }
+  free(t->vis);
+  t->vis = v; t->nVis = k;
+  t->kw0 = w0; t->kw = L; t->kFonte = fonte; t->kMin = minimal;
+  t->linT = linT ? linT : 1; t->linD = linD;
+#undef ADDON_NOVA_LINHA
+}
+// Quantos trechos de nome e de descricao a linha `i` tem na largura atual.
+static void addonLarguras(const Stream *s, float *Lp, float *w0p) {
+  // The same widths addonQuebrar uses (keep the two in step).
+  float L = addonLargura > 0 ? addonLargura
+          : FOLHA_W - FOLHA_PAD_E - FOLHA_PAD_D - 2 * FOLHA_TXT;
+  float wNome2 = L - (cacheConfirmado(s) ? 30.0f : 0.0f);
+  float w0 = addonSelosEmbaixo() ? L - addonColuna(s) - (cacheConfirmado(s) ? 30.0f : 0.0f) : wNome2;
+  if (w0 < 120.0f) w0 = 120.0f;
+  *Lp = L; *w0p = w0;
+}
+static void addonLinhas(int i, int *linT, int *linD) {
+  { float L, w0;
+    addonLarguras(&lista[i], &L, &w0);
+    if (textoAddonLinhasGuardadas(i, w0, L, (int)txt_fonte_interface(), ajustes_fonte_icones_minimalista(), linT, linD)) return; }
+  const TextoAddon *c = textoAddonDa(i);
+  TextoAddon *t = (TextoAddon *)c;
+  addonQuebrar(i, &lista[i], t);
+  *linT = t->vis ? t->linT : 1;
+  *linD = t->vis ? t->linD : t->nl;
+}
+// Altura do nome (secao 0) com `abr` (0..1) abrindo o 2o trecho em diante.
+static float addonAlturaNome(int linT, float abr) {
+  return FOLHA_ADDON_TD + (linT > 1 ? (linT - 1) * FOLHA_ADDON_TD * abr : 0.0f);
+}
+// Linhas de descricao a mostra: as 2 primeiras sempre, o resto com `abr`.
+static float addonLinhasDesc(int linD, float abr) {
+  return linD > FOLHA_ADDON_FECHADA ? FOLHA_ADDON_FECHADA + (linD - FOLHA_ADDON_FECHADA) * abr : (float)linD;
+}
+// Desenha uma secao (0 = nome, 1 = descricao) a partir de `y`. `abr` (0..1)
+// abre o que passa do fechado: o 2o trecho do nome em diante e a descricao
+// depois da 2a linha. Fora do foco o nome mostra o 1o trecho sem "…": o mesmo
+// trecho que a linha em foco desenha (#479: foco nao rasteriza texto novo).
+// `maxw2`: largura das linhas do nome depois da 1a (a coluna do addon so
+// divide a 1a; ver addonQuebrar). Na descricao, igual a `maxw`.
+// Text already snaps to the drawable pixel grid (text.c); icons, flags and
+// badges did not, so while scrolling they slid by a fraction of a pixel
+// against the text (shimmer). Drawing only: heights, scrolling and hit tests
+// stay float. From Matis94 d28b426bd.
+static float addonPixel(float v) {
+  float px = gfx_px_por_unidade() * gfx_escala();
+  return px > 0 ? roundf(v * px) / px : v;
+}
+static void addonDesenhar(int i, int secao, float tx, float y, float maxw, float maxw2,
+                          int sel, int apagada, float abr, float anim) {
+  TextoAddon *t = (TextoAddon *)textoAddonDa(i);
+  int minimal = ajustes_fonte_icones_minimalista();
+  // The height came from the kept line counts: wrap again now that it shows.
+  if (!t->vis) addonQuebrar(i, &lista[i], t);
+  int nVis = 0, base = 255, c = 0, pula = 1, logica = -1;
+  float x = tx, ly = y, ak = anim, lim = maxw;
+  if (!t->vis) return;
+  for (size_t q = 0; q < t->nVis; ) {
+    const char *pc = t->vis + q;
+    if (*pc == 'V') {
+      logica = atoi((char[4]){ pc[1], pc[2], pc[3], 0 });
+      q += 4;
+      if ((logica == 0) != (secao == 0)) { pula = 1; continue; }
+      if (secao == 0) {
+        ly = y + nVis * FOLHA_ADDON_TD;
+        lim = nVis ? maxw2 : maxw;
+        base = 255;
+        c = apagada ? (sel ? 150 : 105) : (sel ? 255 : 205);
+        ak = nVis >= 1 ? anim * abr : anim;
+        pula = nVis >= 1 && abr < .02f;
+      } else {
+        ly = y + nVis * FOLHA_ADDON_LD;
+        // A primeira linha do addon costuma ser a de numeros (tamanho, taxa):
+        // um degrau mais clara. As outras no cinza da especificacao.
+        base = logica == 1 ? 215 : 170;
+        c = logica == 1 ? (sel ? 215 : 180) : (sel ? 170 : 130);
+        ak = nVis >= FOLHA_ADDON_FECHADA ? anim * abr : anim;
+        pula = nVis >= FOLHA_ADDON_FECHADA && abr < .02f;
+      }
+      // Lines outside the list clip are never seen: skip their text lookups
+      // and draws. The margin keeps partly visible text/icons, also at large
+      // UI scales; lines only go down, so the first one below ends the row.
+      if (ly > folhaBase) return;
+      if (ly + fmaxf(64.0f, 64.0f * gfx_escala_ui()) < FOLHA_TOPO - 8.0f) pula = 1;
+      nVis++;
+      x = tx;
+      continue;
+    }
+    if (pula) { q = addonPula(t->vis, q); continue; }
+    if (*pc == 'I') {
+      int cor = 0, idx = atoi((char[4]){ pc[1], pc[2], pc[3], 0 });
+      const char *nome = addonIcone(idx, minimal, &cor);
+      float iy = ly + (secao == 0 ? 9 : 3);   // na altura do texto
+      if (!nome) { q = addonPula(t->vis, q); continue; }
+      // Emoji em cores fora do foco: um degrau mais apagado, como o texto.
+      if (cor) gfx_icone_cor((GfxRect){addonPixel(x), addonPixel(iy), 22, 22}, nome, ak * (sel ? 1.0f : .8f));
+      else gfx_icone_fmt((GfxRect){addonPixel(x), addonPixel(iy), 22, 22}, nome, c / 255.0f, c / 255.0f, c / 255.0f, ak);
+      x += ADDON_ICONE_W;
+    } else if (*pc == 'B') {
+      char nome[32];
+      snprintf(nome, sizeof nome, "formatador/fl_%s", pc + 1);
+      gfx_icone_cor((GfxRect){addonPixel(x), addonPixel(ly + (secao == 0 ? 9 : 3)), 22, 22}, nome, ak * (sel ? 1.0f : .8f));
+      x += ADDON_BANDEIRA_W;
+    } else if (*pc == 'T') {
+      float resto = lim - (x - tx);
+      if (resto > 20) {
+        TxtLinha lp = secao == 0 ? txt_linha_corta(TXT_CALLOUT, pc + 1, 255, 255, 253, 255, resto)
+                                 : txt_linha_corta(TXT_PG_FIM, pc + 1, base, base, base, 255, resto);
+        if (secao == 0) txt_desenhar_tom(lp, x, ly, c / 255.0f, c / 255.0f, (c - 2) / 253.0f, ak);
+        else txt_desenhar_tom(lp, x, ly, (float)c / base, (float)c / base, (float)c / base, ak);
+        x += lp.w + ADDON_GAP;
+      }
+    }
+    q = addonPula(t->vis, q);
+  }
 }
 
 // O mesmo indicador nas duas apresentacoes, sem depender de emoji na fonte
@@ -4174,7 +4626,10 @@ static int audioDeclaradoEm(const Stream *s, const char *pref) {
     while (ate > p && isspace((unsigned char)ate[-1])) ate--;
     size_t len = (size_t)(ate - p);
     memcpy(raw, p, len); raw[len] = 0;
-    const char *cod = faixaIdiomaDoNome(raw);
+    // Parser hints normally already contain short ISO codes. Do not search
+    // every translated language name before accepting those same tags.
+    const char *cod = len <= 3 && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo) ? codigo : NULL;
+    if (!cod) cod = faixaIdiomaDoNome(raw);
     if (!cod && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo)) cod = codigo;
     if (cod && ling_casa(cod, pref)) return 1;
     p = f ? f + 1 : fim;
@@ -4474,8 +4929,7 @@ static const char *idiomaDa(const Stream *s) {
   if (temNoTexto(s, "legendado") || temNoTexto(s, "leg")) return "Legendado";
   return NULL;
 }
-static int temAudioPreferido(const Stream *s) {
-  const char *pref = idiomaFiltroAudio();
+static int temAudioPreferidoSemCache(const Stream *s, const char *pref) {
   // An explicit "All" (or an unresolved "Original") is not a guessed
   // language. Declared audio wins; release-label hints (audioRotulos: flags
   // and language codes outside subtitle sections) are the fallback only when
@@ -4494,6 +4948,48 @@ static int temAudioPreferido(const Stream *s) {
     p = f ? f + 1 : fim;
   }
   return 0;
+}
+// Raw indices survive addon appends. Audio comes from the parser; a renewed
+// source invalidates this cache through audioFiltroRevisao. One byte per source:
+// 0=unknown, 1=no match, 2=match. Never cache external/temporary Stream values.
+static struct {
+  unsigned char *match;
+  int cap, total;
+  unsigned generation, revision;
+  char language[96];
+} audioFiltroCache;
+static void audioFiltroDescartar(void) {
+  free(audioFiltroCache.match);
+  memset(&audioFiltroCache, 0, sizeof audioFiltroCache);
+}
+static int temAudioPreferido(const Stream *s) {
+  const char *pref = idiomaFiltroAudio();
+  if (!aberta || !lista || !n || strlen(pref) >= sizeof audioFiltroCache.language)
+    return temAudioPreferidoSemCache(s, pref);
+  // Integer range checks also support a temporary Stream from outside lista.
+  uintptr_t offset = (uintptr_t)s - (uintptr_t)lista;
+  if ((uintptr_t)s < (uintptr_t)lista || offset / sizeof *s >= (size_t)n || offset % sizeof *s)
+    return temAudioPreferidoSemCache(s, pref);
+  if (audioFiltroCache.cap < n) {
+    unsigned char *next = realloc(audioFiltroCache.match, (size_t)n);
+    if (!next) return temAudioPreferidoSemCache(s, pref);
+    audioFiltroCache.match = next; audioFiltroCache.cap = n;
+  }
+  unsigned revision = atomic_load(&audioFiltroRevisao);
+  if (audioFiltroCache.generation != listaGeracao || audioFiltroCache.revision != revision ||
+      strcmp(audioFiltroCache.language, pref) ||
+      audioFiltroCache.total > n) {
+    audioFiltroCache.total = 0; audioFiltroCache.generation = listaGeracao;
+    audioFiltroCache.revision = revision;
+    snprintf(audioFiltroCache.language, sizeof audioFiltroCache.language, "%s", pref);
+  }
+  if (audioFiltroCache.total < n) {
+    memset(audioFiltroCache.match + audioFiltroCache.total, 0, (size_t)(n - audioFiltroCache.total));
+    audioFiltroCache.total = n;
+  }
+  unsigned char *match = &audioFiltroCache.match[offset / sizeof *s];
+  if (!*match) *match = (unsigned char)(1 + temAudioPreferidoSemCache(s, pref));
+  return *match == 2;
 }
 static const char *ajudaFiltroAudio(void) {
   static char ajuda[512];
@@ -4560,76 +5056,114 @@ static void selosCalcular(Stream *s) {
 }
 // FORA DA THREAD PRINCIPAL. Sao centenas de regex por fonte: feito aqui dentro,
 // na chegada de cada addon, a pagina do titulo parava ~2 s por resposta (TCL,
-// 05/10/2026: "[quadro] upd=1667.5" com 20 fontes, 2052 com 46). O fio leva uma
-// COPIA do trecho da lista e devolve so os tres campos, sob verTrava e so se a
-// lista ainda e a mesma (listaGeracao; acrescentar nao muda indice). Ate
-// chegar, selosPacoteDa devolve 0 e a fileira usa a deteccao embutida.
-typedef struct { unsigned ger; int ini, k; Stream v[]; } SelosLote;
+// 05/10/2026: "[quadro] upd=1667.5" com 20 fontes, 2052 com 46).
+// Copy one row at a time on the worker, under verTrava: copying every Stream
+// on the UI thread paused arrivals and duplicated large URL/header payloads.
+// Appends keep raw indices; replacement/pack changes cancel the old job.
+// One heap scratch row keeps memory and worker stack use independent of k.
+// Pending rows reserve space and only display the selected pack when ready.
+typedef struct { unsigned ger, ver; int ini, k; Stream v[1]; } SelosLote;
 static unsigned selosPedVer, selosPedGer;
 static void *selosFio(void *u) {
   SelosLote *L = u;
   int i;
-  for (i = 0; i < L->k; i++) selosCalcular(&L->v[i]);
-  pthread_mutex_lock(&verTrava);
-  if (L->ger == listaGeracao)
-    for (i = 0; i < L->k && L->ini + i < n; i++) {
+  for (i = 0; i < L->k; i++) {
+    pthread_mutex_lock(&verTrava);
+    int atual = L->ger == listaGeracao && L->ver == selospacote_versao() && L->ini + i < n;
+    if (atual) L->v[0] = lista[L->ini + i];
+    pthread_mutex_unlock(&verTrava);
+    if (!atual) break;
+    selosCalcular(&L->v[0]);
+    // Publish each completed row: visible cards must not wait for a whole
+    // large addon response. An older pack worker cannot overwrite new results.
+    pthread_mutex_lock(&verTrava);
+    atual = L->ger == listaGeracao && L->ver == selospacote_versao() && L->ini + i < n;
+    if (atual && L->v[0].selosPacoteVer == L->ver) {
       Stream *d = &lista[L->ini + i];
-      memcpy(d->selosPacote, L->v[i].selosPacote, sizeof d->selosPacote);
-      d->nSelosPacote = L->v[i].nSelosPacote;
-      d->selosPacoteVer = L->v[i].selosPacoteVer;
+      memcpy(d->selosPacote, L->v[0].selosPacote, sizeof d->selosPacote);
+      d->nSelosPacote = L->v[0].nSelosPacote;
+      d->selosPacoteVer = L->v[0].selosPacoteVer;
     }
-  pthread_mutex_unlock(&verTrava);
+    pthread_mutex_unlock(&verTrava);
+    if (!atual) break;
+  }
   free(L);
   return NULL;
+}
+// If no background job can start, complete an empty result rather than leave
+// every card pending forever. Never substitute a different per-card style.
+static void selosSemTrabalho(int ini, int qtd, unsigned ger, unsigned ver) {
+  pthread_mutex_lock(&verTrava);
+  if (ger == listaGeracao && ver == selospacote_versao())
+    for (int i = ini; i < ini + qtd && i < n; i++)
+      if (lista[i].selosPacoteVer != ver) {
+        lista[i].nSelosPacote = 0;
+        lista[i].selosPacoteVer = ver;
+      }
+  pthread_mutex_unlock(&verTrava);
 }
 static void selosAgendar(int ini, int qtd) {
   SelosLote *L;
   pthread_t fio;
   pthread_attr_t at;
   selosPedVer = selospacote_versao(); selosPedGer = listaGeracao;
-  if (qtd <= 0 || ini < 0 || ini + qtd > n) return;
+  if (qtd <= 0 || ini < 0 || ini > n || qtd > n - ini) return;
   selospacote_colorido(ajustes_selos_coloridos());
   if (selospacote_ativo() < 0 && !selospacote_embutidos_ok()) return;
   selosPedVer = selospacote_versao();
-  L = malloc(sizeof *L + sizeof(Stream) * (size_t)qtd);
-  if (!L) return;
-  L->ger = listaGeracao; L->ini = ini; L->k = qtd;
-  memcpy(L->v, lista + ini, sizeof(Stream) * (size_t)qtd);
+  L = malloc(sizeof *L);
+  if (!L) { selosSemTrabalho(ini, qtd, listaGeracao, selosPedVer); return; }
+  L->ger = listaGeracao; L->ver = selosPedVer; L->ini = ini; L->k = qtd;
   pthread_attr_init(&at);
   pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
-  if (pthread_create(&fio, &at, selosFio, L)) free(L);
+  if (pthread_create(&fio, &at, selosFio, L)) {
+    selosSemTrabalho(ini, qtd, L->ger, selosPedVer);
+    free(L);
+  }
   pthread_attr_destroy(&at);
 }
-static int selosPacoteDa(Stream *s) {
+// ready distinguishes a pending calculation from a completed empty match.
+// Neither state substitutes unrelated badge artwork for the selected pack.
+static int selosPacoteEstado(Stream *s, int *ready) {
   unsigned ver;
   int nSelos = 0, daLista;
   // O modo colorido vale para a lista inteira: ligar/desligar nos Ajustes
   // sobe a versao do pacote e a lista e recalculada (no fio) na proxima olhada.
   selospacote_colorido(ajustes_selos_coloridos());
+  if (ready) *ready = 1;
   if (selospacote_ativo() < 0 && !selospacote_embutidos_ok()) return 0;
+  if (ready) *ready = 0;
   ver = selospacote_versao();
   // verTrava: episode changed frees lista on the UI thread while this sheet
   // still draws. The pointer check and the walk have to see the same block.
   pthread_mutex_lock(&verTrava);
   daLista = s >= lista && s < lista + n;
-  if (daLista && s->selosPacoteVer == ver) nSelos = s->nSelosPacote;
+  if (daLista && s->selosPacoteVer == ver) {
+    nSelos = s->nSelosPacote;
+    if (ready) *ready = 1;
+  }
   else if (daLista && (selosPedVer != ver || selosPedGer != listaGeracao)) {
     pthread_mutex_unlock(&verTrava);
     selosAgendar(0, n);
     return 0;
   } else if (!daLista) {
-    int j;
+    int j, found = 0;
     for (j = 0; j < n; j++)
-      if (lista[j].selosPacoteVer == ver && !strcmp(lista[j].url, s->url) && !strcmp(lista[j].rotulo, s->rotulo)) {
+      if (!strcmp(lista[j].url, s->url) && !strcmp(lista[j].rotulo, s->rotulo)) {
+        found = 1;
+        if (lista[j].selosPacoteVer != ver) continue;
         memcpy(s->selosPacote, lista[j].selosPacote, sizeof s->selosPacote);
         s->nSelosPacote = lista[j].nSelosPacote; s->selosPacoteVer = ver;
         nSelos = s->nSelosPacote;
+        if (ready) *ready = 1;
         break;
       }
+    if (!found && ready) *ready = 1;
   }
   pthread_mutex_unlock(&verTrava);
   return nSelos;
 }
+static int selosPacoteDa(Stream *s) { return selosPacoteEstado(s, NULL); }
 
 // Quantos selos do pacote a FILEIRA desenha: com os pacotes embutidos a
 // resolucao e o grupo da folha e nao entra nela (como em logosDa), e uma fonte
@@ -4711,10 +5245,20 @@ static int temMarca(int i, int automatica) {
 static float alturaLinha(int i, int automatica, float abertura) {
   float h = FOLHA_LINHA_H + (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
   if (ajustes_fonte_texto_addon()) {
-    int nl = textoAddonDa(i)->nl;
-    float vis = nl > FOLHA_ADDON_FECHADA ? FOLHA_ADDON_FECHADA + (nl - FOLHA_ADDON_FECHADA) * abertura : (float)nl;
-    h = 20 + 40 + vis * FOLHA_ADDON_LD + 18 + (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
+    // So mede (quebra) o que precisa: fechada, com 2+ linhas logicas, a altura
+    // ja e nome + 2 linhas. Medir as ~300 fontes de uma lista longa ao abrir a
+    // folha custaria a abertura inteira na TV; a quebra das linhas a mostra
+    // acontece no desenho (addonLinhas tem cache por largura).
+    int linT = 1, linD = textoAddonNl(i);
+    if (abertura > .001f || linD < FOLHA_ADDON_FECHADA) addonLinhas(i, &linT, &linD);
+    // A fileira de selos tem lugar fixo em toda linha (em cima ou embaixo):
+    // o pacote chega depois, no fio, e a linha nao muda de altura com ele.
+    h = 20 + addonSelosAlt() + addonAlturaNome(linT, abertura) + addonLinhasDesc(linD, abertura) * FOLHA_ADDON_LD + 18 +
+        (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
     if (h < 96) h = 96;
+    // Sem as linhas "Audio:" / "Legendas:" do app: o formatador ja escreve os
+    // idiomas do jeito dele (dono, 17/11).
+    return h;
   } else {
     // The connection line opens with the focused row even without a file name.
     float extra = (arquivoDa(&lista[i])[0] ? FOLHA_ARQ_H : 0) + FOLHA_FIT_H * fitLinhas(i);
@@ -4733,6 +5277,22 @@ static void porLinha(int i, float *y, int automatica) {
 }
 // Tamanho para ordenar: desconhecido (0) vai para o fim do grupo.
 static long tamanhoOrdem(int i) { return lista[i].tamanhoMB > 0 ? lista[i].tamanhoMB : -1; }
+
+// Stable descending merge sort, reusing the StreamFit scratch array. Ties
+// retain addon order, unknown sizes remain last, and source indices never move.
+static void ordenarTamanho(int *ids, int *tmp, int count) {
+  if (count < 2) return;
+  int mid = count / 2;
+  ordenarTamanho(ids, tmp, mid);
+  ordenarTamanho(ids + mid, tmp + mid, count - mid);
+  if (tamanhoOrdem(ids[mid - 1]) >= tamanhoOrdem(ids[mid])) return;
+  int left = 0, right = mid, out = 0;
+  while (left < mid && right < count)
+    tmp[out++] = tamanhoOrdem(ids[left]) >= tamanhoOrdem(ids[right]) ? ids[left++] : ids[right++];
+  while (left < mid) tmp[out++] = ids[left++];
+  while (right < count) tmp[out++] = ids[right++];
+  memcpy(ids, tmp, (size_t)count * sizeof *ids);
+}
 
 // POR QUALIDADE (dono, 02/10): a fonte "Melhor para esta TV" e a PRIMEIRA linha,
 // sozinha e sem cabecalho — o selo dela ja diz o que ela e —, e cada grupo
@@ -4826,12 +5386,7 @@ static void montarBase(int automatica) {
       i = ORD(k);
       if (i != m && !lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g) grupoTmp[nt++] = i;
     }
-    // Insercao estavel: em tamanho igual vale a ordem do addon.
-    for (k = 1; k < nt; k++) {
-      int v = grupoTmp[k], j = k - 1;
-      while (j >= 0 && tamanhoOrdem(grupoTmp[j]) < tamanhoOrdem(v)) { grupoTmp[j + 1] = grupoTmp[j]; j--; }
-      grupoTmp[j + 1] = v;
-    }
+    ordenarTamanho(grupoTmp, grupoFitTmp, nt);
     // Preserve the approved quality groups and descending-size base order.
     // Only measured-heavy sources move back within their own group.
     streamfit_particionar(grupoTmp, nt, fitClasses, fitN, grupoFitTmp);
@@ -4861,7 +5416,8 @@ static void folhaDados(void) {
     char audio[96], qualidade[32];
     FonteFalhaConfig falhas;
     int decoder[8];
-  } anterior;
+  } anterior, anteriorAuto;
+  static int autoValid;
   if (busy) return;
   struct FolhaChave key = {0};
   key.revisao = atomic_load(&folhaRevisao);
@@ -4899,7 +5455,17 @@ static void folhaDados(void) {
   }
   folhaBloqueada = stream_filtro_bloqueou();
   folhaVisiveis = filtrosVisiveisCalcular();
-  folhaAuto = automaticoDaFolhaModoCalcular();
+  // Tabs/chips only decide what the sheet displays. The automatic candidate
+  // still comes from the complete list, so keep it across those UI changes.
+  // All source, exclusion, decoder, rule and preference revisions remain in
+  // this key; playback selection itself continues to use the live rules.
+  struct FolhaChave autoKey = key;
+  autoKey.abas = 0;
+  for (int i = 2; i <= 5; i++) autoKey.valores[i] = 0;
+  if (!autoValid || memcmp(&autoKey, &anteriorAuto, sizeof autoKey)) {
+    folhaAuto = automaticoDaFolhaModoCalcular();
+    anteriorAuto = autoKey; autoValid = 1;
+  }
   key.valores[2] = filtro; // Provider arrivals can move the selected tab.
   anterior = key; valid = 1; folhaDadosVersao++;
   busy = 0;
@@ -5022,6 +5588,7 @@ static void desenharAudioBars(float x, float y, float alt, float alfa, Uint32 ag
 }
 
 void stream_folha_abrir(void) {
+  selosVistaLimpar();
   // A busca nova pode estar na fila enquanto a lista ainda e do episodio
   // anterior. A folha fica vazia ate chegarem fontes do alvo pedido (#513).
   if (alvoPedido[0] && n > 0 && !stream_lista_do_alvo(alvoPedido))
@@ -5868,7 +6435,28 @@ void stream_folha_evento(const SDL_Event *e) {
     else okNaLinha();
   }
 }
+// A SOURCE FOCUSED 1 s (owner 18/11, subtitle-rewrite): the app's hook runs
+// once for that row (the early TorBox lookup, tbabrir.h). The row is followed
+// by its source (URL + file name), not by its index: the list grows and
+// reorders while add-ons answer.
+#define FOCO_DEMORADO_MS 1000u
+static void focoDemorado(Uint32 agora) {
+  static char chave[640];
+  static int feito;
+  static Uint32 desde;
+  char k[640] = "";
+  int i = aberta && grupo == 1 && !detAberto && !ptAberto ? filtrado(foco) : -1;
+  const Stream *s = i >= 0 ? stream_item(i) : NULL;
+  if (s) snprintf(k, sizeof k, "%.511s|%.120s", s->url[0] ? s->url : s->infoHash, s->arquivo);
+  if (strcmp(k, chave)) { snprintf(chave, sizeof chave, "%s", k); desde = agora; feito = 0; return; }
+  if (!s || feito || agora - desde < FOCO_DEMORADO_MS || !stream_foco_demorado) return;
+  feito = 1;
+  stream_foco_demorado(s);
+}
 void stream_folha_atualizar(float dt, Uint32 agora) {
+  focoDemorado(agora);
+  if (!aberta && anim <= .001f) selosVistaLimpar();
+  selosAquecerPasso();
   int nf;
   medirCabecalho();
   if (aberta || anim > 0.001f) folhaGeometria();
@@ -6049,6 +6637,18 @@ static void desenharOnde(GfxRect r, float tx, float tr, const OndeVer *o, int se
 
 // Texto em maiusculas espacadas da linha de marca e dos cabecalhos de grupo.
 // i18n antes da caixa alta: a tabela de idioma guarda a frase normal.
+// Imported chips follow Android/Smart TV: only filled has a background,
+// border is independent, and image pixels are never tinted. Builtins keep
+// their established presentation. The tiny metadata cache owns no textures.
+static float selosAspectos[SELOS_MAX_FILTROS];
+static unsigned selosAspectosVer;
+static void selosFundoImportado(const SeloFiltro *f, GfxRect p, float a) {
+  float raio = 6.0f / p.h;
+  if (f->preenchido && f->temTag && f->tag[3] > .001f)
+    gfx_cor(p, raio, f->tag[0], f->tag[1], f->tag[2], f->tag[3] * a);
+  if (f->temBorda && f->borda[3] > .001f)
+    gfx_anel(p, raio, 1.5f, f->borda[0], f->borda[1], f->borda[2], f->borda[3] * a);
+}
 // A FILEIRA DO PACOTE DE SELOS (selospacote.h): cada filtro que casou, na ordem
 // do pacote. A imagem sai COMO O PACOTE A FEZ (textura normal, sem tinta e sem
 // a marca clara — o pacote e colorido), na altura `h` e com a proporcao dela;
@@ -6060,16 +6660,24 @@ static float selosDesenhar(const unsigned short *ids, int n, float x, float y, f
   const float gap = 8.0f, padX = 9.0f, imgMaxW = 220.0f;
   float x0 = x;
   int k, colorido = ajustes_selos_coloridos();
+  unsigned ver = selospacote_versao();
+  if (selosAspectosVer != ver) {
+    memset(selosAspectos, 0, sizeof selosAspectos); selosAspectosVer = ver;
+  }
   for (k = 0; k < n; k++) {
     const SeloFiltro *f = selospacote_filtro(ids[k]);
     float w, r, g, b, al;
-    int pronta = 0;
+    float reserva = 0;
     if (!f) continue;
     // A resolucao e o grupo da folha (e o titulo da fonte): fora da fileira.
     if (semResolucao && f->resolucao) continue;
     if (f->imagem[0]) {
-      GLuint t = tex_obter_larg(f->imagem, 128);
+      GLuint t = tex_obter_larg_qualquer(f->imagem, 128);
       float asp = t ? tex_aspecto(f->imagem) : 0.0f;
+      if (f->arte == SELO_ARTE_PACOTE && ids[k] < SELOS_MAX_FILTROS) {
+        if (asp > .01f) selosAspectos[ids[k]] = asp;
+        else asp = selosAspectos[ids[k]];
+      }
       if (t && asp > 0.01f && f->arte != SELO_ARTE_PACOTE) {
         // PACOTES EMBUTIDOS (selospacote.h). Padrao: a arte e branca e a forma
         // mora no alfa, entao tinge no cinza da linha como os logos de sempre.
@@ -6105,22 +6713,25 @@ static float selosDesenhar(const unsigned short *ids, int n, float x, float y, f
         }
         continue;
       }
-      if (t && asp > 0.01f) {
+      if (asp > 0.01f) {
+        const float pad = 3.0f;
         float ih = h;
         w = ih * asp;
-        if (w > imgMaxW) { w = imgMaxW; ih = w / asp; }
-        if (x + w > x0 + maxW) break;
-        if (!medir) {
-          gfx_tex_aspect_atual = 0.0f;
-          gfx_rect((GfxRect){x, y + (h - ih) * .5f, w, ih}, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1, 1, 1, a);
+        if (w > imgMaxW - pad * 2) { w = imgMaxW - pad * 2; ih = w / asp; }
+        reserva = w + pad * 2;
+        if (x + reserva > x0 + maxW) break;
+        if (t) {
+          if (!medir) {
+            selosFundoImportado(f, (GfxRect){x, y - 3, reserva, h + 6}, a);
+            gfx_tex_aspect_atual = 0.0f;
+            gfx_rect((GfxRect){x + pad, y + (h - ih) * .5f, w, ih}, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1, 1, 1, a);
+          }
+          x += reserva + gap;
+          continue;
         }
-        x += w + gap;
-        continue;
-      }
-      // Ainda baixando: guarda o lugar (a fileira nao pula quando chega) e nao
-      // desenha. Se falhou, mostra o nome.
-      pronta = tex_falhou(f->imagem);
-      if (!pronta) {
+        // Evicted image: keep its measured slot and a readable label while
+        // the existing asynchronous cache restores it; never blank the row.
+      } else if (!tex_falhou(f->imagem)) {
         w = h * 2.0f;
         if (x + w > x0 + maxW) break;
         x += w + gap;
@@ -6131,24 +6742,114 @@ static float selosDesenhar(const unsigned short *ids, int n, float x, float y, f
     { int tr = f->temTexto ? (int)(f->texto[0] * 255.0f + .5f) : 235,
           tg = f->temTexto ? (int)(f->texto[1] * 255.0f + .5f) : 235,
           tb = f->temTexto ? (int)(f->texto[2] * 255.0f + .5f) : 238;
-      TxtLinha l = txt_linha_corta(TXT_MINI, f->nome, tr, tg, tb, 255, 200.0f);
+      float pad = reserva > 0 ? 3.0f : padX;
+      TxtLinha l = txt_linha_corta(TXT_MINI, f->nome, tr, tg, tb, 255,
+                                    reserva > 0 ? fmaxf(1, reserva - pad * 2) : 200.0f);
       float ph = h + 6.0f, raio = 6.0f / ph;
       GfxRect p;
-      w = (float)l.w + padX * 2.0f;
+      w = reserva > 0 ? reserva : (float)l.w + pad * 2.0f;
       if (x + w > x0 + maxW) break;
       if (!medir) {
         p = (GfxRect){x, y - 3.0f, w, ph};
-        if (f->temTag) { r = f->tag[0]; g = f->tag[1]; b = f->tag[2]; al = f->tag[3]; }
-        else { r = .10f; g = .11f; b = .13f; al = .88f; }
-        if (al > 0.01f) gfx_cor(p, raio, r, g, b, al * a);
-        if (f->temBorda && f->borda[3] > 0.01f)
-          gfx_anel(p, raio, 1.5f, f->borda[0], f->borda[1], f->borda[2], f->borda[3] * a);
-        else if (!f->temTag) gfx_anel(p, raio, 1.5f, .35f, .36f, .40f, .60f * a);
-        txt_desenhar_alpha(l, x + padX, y + (h - (float)l.h) * .5f, a);
+        if (f->arte == SELO_ARTE_PACOTE) selosFundoImportado(f, p, a);
+        else {
+          if (f->temTag) { r = f->tag[0]; g = f->tag[1]; b = f->tag[2]; al = f->tag[3]; }
+          else { r = .10f; g = .11f; b = .13f; al = .88f; }
+          if (al > 0.01f) gfx_cor(p, raio, r, g, b, al * a);
+          if (f->temBorda && f->borda[3] > 0.01f)
+            gfx_anel(p, raio, 1.5f, f->borda[0], f->borda[1], f->borda[2], f->borda[3] * a);
+          else if (!f->temTag) gfx_anel(p, raio, 1.5f, .35f, .36f, .40f, .60f * a);
+        }
+        txt_desenhar_alpha(l, x + (w - l.w) * .5f, y + (h - (float)l.h) * .5f,
+                           a * (f->temTexto ? f->texto[3] : 1));
       }
       x += w + gap; }
   }
   return x > x0 ? x - x0 - gap : 0.0f;
+}
+// Warm only the bounded badge set of a visible card. Show the final row when
+// its images are ready, so late texture widths cannot shuffle existing icons.
+// A failed image is terminal and keeps the existing text-label fallback.
+static int selosImagensProntas(const Stream *s, int semResolucao) {
+  int ready = 1;
+  for (int k = 0; k < (int)s->nSelosPacote; k++) {
+    const SeloFiltro *f = selospacote_filtro(s->selosPacote[k]);
+    if (!f || (semResolucao && f->resolucao && f->arte != SELO_ARTE_PACOTE)) continue;
+    if (f->imagem[0] && !tex_obter_larg_qualquer(f->imagem, 128) && !tex_falhou(f->imagem)) ready = 0;
+  }
+  return ready;
+}
+// Cache completed readiness only. A pending pack must never become a legacy
+// style decision: that permanently mixed two visual styles on the same page.
+enum { SELOS_VISTA_PENDENTE = 0, SELOS_VISTA_LEGADO = 1,
+       SELOS_VISTA_PACOTE = 2, SELOS_VISTA_VAZIO = 3, SELOS_VISTA_AQUECIDO = 4 };
+static unsigned char *selosVista;
+static int selosVistaCap, selosVistaSemMemoria;
+static unsigned selosVistaVer;
+static void selosVistaLimpar(void) {
+  free(selosVista); selosVista = NULL; selosVistaCap = 0;
+  selosVistaVer = 0; selosVistaSemMemoria = 0;
+}
+static int selosVistaDa(Stream *s, int semResolucao) {
+  selospacote_colorido(ajustes_selos_coloridos());
+  unsigned ver = selospacote_versao();
+  if (ver != selosVistaVer) { selosVistaLimpar(); selosVistaVer = ver; }
+  // Legacy artwork is allowed only when no selected/bundled pack is available,
+  // consistently for the page, never because one particular card is slower.
+  if (selospacote_ativo() < 0 && !selospacote_embutidos_ok()) return SELOS_VISTA_LEGADO;
+  // Drawing callers use the live source list; other consumers retain the
+  // original selosPacoteDa API and do not allocate this presentation cache.
+  if (s < lista || s >= lista + n) return SELOS_VISTA_PENDENTE;
+  int index = (int)(s - lista);
+  if (index >= selosVistaCap && !selosVistaSemMemoria) {
+    int cap = n > selosVistaCap * 2 ? n : selosVistaCap * 2;
+    unsigned char *next = realloc(selosVista, (size_t)cap);
+    if (!next) selosVistaSemMemoria = 1;
+    else {
+      memset(next + selosVistaCap, 0, (size_t)(cap - selosVistaCap));
+      selosVista = next; selosVistaCap = cap;
+    }
+  }
+  unsigned char uncached = 0;
+  unsigned char *view = index < selosVistaCap ? &selosVista[index] : &uncached;
+  if (*view & SELOS_VISTA_AQUECIDO) return *view & 3;
+  int ready = 0, count = selosPacoteEstado(s, &ready);
+  if (!ready) return SELOS_VISTA_PENDENTE;
+  if (count > 0 && !selosImagensProntas(s, semResolucao)) return SELOS_VISTA_PENDENTE;
+  *view = (count > 0 ? SELOS_VISTA_PACOTE : SELOS_VISTA_VAZIO) | SELOS_VISTA_AQUECIDO;
+  return *view & 3;
+}
+// Prepare a small prefix while the source sheet is still closed. Regex results
+// are read, never calculated here. Texture requests remain asynchronous and
+// inside the existing cache budget; no scan of all 1000+ sources on each frame.
+static void selosAquecerPasso(void) {
+  static unsigned ger, ver;
+  static int next;
+  if (aberta || anim > .001f || n <= 0) return;
+  selospacote_colorido(ajustes_selos_coloridos());
+  unsigned current = selospacote_versao();
+  if (ger != listaGeracao || ver != current) { ger = listaGeracao; ver = current; next = 0; }
+  int limit = n < 8 ? n : 8;
+  for (int budget = 0; budget < 2 && next < limit; budget++) {
+    int ready = 0, count = selosPacoteEstado(&lista[next], &ready);
+    if (!ready || (count > 0 && !selosImagensProntas(&lista[next], 0))) return;
+    next++;
+  }
+}
+// Only the two immediate offscreen neighbours; no full-list matching,
+// preload or extra texture ownership. This also rewarms evicted custom art
+// before a card scrolls into view.
+static void selosAquecerVizinhos(void) {
+  if (!aberta || nOrdem <= 0) return;
+  int rows[2] = { primeiraVisivel(rolagem) - 1,
+                 primeiraVisivel(rolagem + areaLista()) + 1 };
+  for (int k = 0; k < 2; k++) {
+    int row = rows[k], ready = 0;
+    if (row < 0 || row >= nOrdem) continue;
+    Stream *s = &lista[ordem[row]];
+    int count = selosPacoteEstado(s, &ready);
+    if (ready && count > 0) (void)selosImagensProntas(s, 0);
+  }
 }
 static float desenharSelosPacote(const Stream *s, float x, float y, float maxW, float h, float a,
                                  float tom, int semResolucao) {
@@ -6159,7 +6860,7 @@ int stream_selos_ha(const Stream *s) { return s && selosPacoteDa((Stream *)s) > 
 float stream_selos_fileira(const Stream *s, float x, float y, float maxW, float h, float tom, float a) {
   if (!s || !selosPacoteDa((Stream *)s)) return 0.0f;
   return desenharSelosPacote(s, x, y, maxW, h,
-                             ajustes_selos_coloridos() ? a * 0.9f : a, tom, 0);
+                             ajustes_selos_coloridos() && selospacote_ativo() < 0 ? a * 0.9f : a, tom, 0);
 }
 
 // SELOS DO QUE ESTA TOCANDO (OSD do player): o pacote ativo casado com um
@@ -6181,7 +6882,7 @@ float stream_selos_medidos(const char *texto, float x, float y, float maxW, floa
     n = ult[0] ? selospacote_casar(campos, 1, ids, SELOS_MAX_CASADOS) : 0;
   }
   if (!n) return 0.0f;
-  return selosDesenhar(ids, n, x, y, maxW, h, ajustes_selos_coloridos() ? a * 0.9f : a, tom, 0, medir);
+  return selosDesenhar(ids, n, x, y, maxW, h, ajustes_selos_coloridos() && selospacote_ativo() < 0 ? a * 0.9f : a, tom, 0, medir);
 }
 
 static float caixaAlta(const char *s, int r, int g, int b, float x, float y, float a) {
@@ -6642,12 +7343,30 @@ static float trocaEase(Uint32 agora) {
   if(ajustes_animacoes_reduzidas()||t>=1.0f) return 1.0f;
   t=1.0f-t; return 1.0f-t*t*t;
 }
+// SELOS NO MODO "DO ADDON" (as linhas do 2.0.8.x): a fileira inteira do
+// pacote escolhido, ou os logos do app quando nao ha pacote, com a resolucao
+// (o grupo da folha nao aparece no texto do addon). Mesma regra das linhas
+// "Do Nuvio" (selosVistaDa): ate o pacote ficar pronto a fileira fica vazia,
+// sem trocar de estilo no meio da pagina; sem pacote, os logos do app.
+static void addonSelos(const Stream *s, float x, float y, float w, int sel, float anim) {
+  int vista=selosVistaDa((Stream *)s,0);
+  if(vista==SELOS_VISTA_PACOTE)
+    desenharSelosPacote(s,x,y,w,FOLHA_SELO_H,anim*(sel || selospacote_ativo()>=0?1:.85f),sel?1:.85f,0);
+  else if(vista==SELOS_VISTA_LEGADO) {
+    uint64_t mask=logosDa(s,0) | (s->badges & (badges_bit("r-4k")|badges_bit("r-1080")|badges_bit("r-720")|badges_bit("r-sd")));
+    float usado=ajustes_selos_coloridos() ? badges_desenhar_selos(mask,x,y,w,FOLHA_SELO_H,anim) :
+      badges_desenhar_tom(mask,x,y,w,FOLHA_SELO_H,.85f,.85f,.85f,anim);
+    if(!s->dolbyVision && badges_fonte_hdr_marca(s->badges)<0 && usado+64<w)
+      marca_formato(FMT_SDR,x+usado+(usado?12:0),y,FOLHA_SELO_H,.7f,.7f,.7f,anim);
+  }
+}
 static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   float ar, ag, ab;
   int ai, nf, automatica, melhor;
   float lx=x+FOLHA_PAD_E, rw=w-FOLHA_PAD_E-FOLHA_PAD_D;
   float tx=lx+FOLHA_TXT, tr=lx+rw-FOLHA_TXT;
   const float oy=folhaOY;
+  addonLargura=tr-tx;   // a quebra do texto do addon mede nesta largura (alturaLinha)
   GfxRect ilhaR={x,0,w,NV_TELA_H};
   ajustes_acento(&ar,&ag,&ab);
   ai=(int)(ar*255.0f+.5f);
@@ -6814,6 +7533,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   automatica = automaticaDaFolha();
   melhor = melhorFolha = automaticoDaFolhaModo();
   montar(automatica);
+  selosAquecerVizinhos();
   nf=nOrdem;
   { float cy = FOLHA_TOPO - (rolagem > 1.0f ? 0.0f : 8.0f);   // scrolled: no sliver of a cut row above the first card
 #ifdef NV_SHOT_HOOKS
@@ -6976,14 +7696,38 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     // O SELO "MELHOR PARA ESTA TV" vai ao lado do titulo, so na fonte de maior
     // pontuacao (stream_automatico: MP4/DV que a LG toca primeiro). E a unica
     // forma cheia da lista inteira, e por isso o olho vai nela.
+    // NO MODO DO ADDON o nome e a descricao vem em pecas (icones, bandeiras,
+    // texto) e QUEBRAM: a linha em foco mostra tudo (addonDesenhar).
+    if(ajustes_fonte_texto_addon()) {
+      int apagada=s->naoVideo || (!canalFolha && stream_vod_falhou_ha(i) >= 0);
+      // One pixel-grid origin for the whole card (text, icons, flags, badges).
+      cy=addonPixel(cy);
+      int selosEmbaixo=addonSelosEmbaixo();
+      // Em cima: na altura da coluna da direita, na largura que ela deixa.
+      if(!selosEmbaixo) { addonSelos(s,tx,cy+(FOLHA_ADDON_SELOS-FOLHA_SELO_H)*.5f,txtW,sel,anim); cy+=FOLHA_ADDON_SELOS; }
+      float cacheW=desenharCache(s,tx,cy,anim*(sel?1.0f:.8f));
+      // abertura da linha: a mesma mola da altura (alturaLinha)
+      float abr = grupo==1 && row==foco ? abreFoco : row==linhaAnt ? abreAnt : 0.0f;
+      int linT, linD;
+      tira=0;
+      addonLinhas(i,&linT,&linD);
+      // A mesma largura da quebra (addonQuebrar): em cima, a coluna fica ao
+      // lado dos selos e a 1a linha do nome vai ate a borda.
+      addonDesenhar(i,0,tx+cacheW,cy,(selosEmbaixo?txtW:tr-tx)-cacheW,(tr-tx)-cacheW,sel,apagada,abr,anim);
+      cy+=addonAlturaNome(linT,abr);   // sem desenharFaixas: ver alturaLinha
+      addonDesenhar(i,1,tx,cy,tr-tx,tr-tx,sel,apagada,abr,anim);
+      // Embaixo: depois da descricao a mostra (a mesma mola da altura).
+      if(selosEmbaixo && addonSelosAlt()>0)
+        addonSelos(s,tx,cy+addonLinhasDesc(linD,abr)*FOLHA_ADDON_LD+(FOLHA_ADDON_SELOS-FOLHA_SELO_H)*.5f,tr-tx,sel,anim);
+      continue;
+    }
     { char nome[96];
       int c=(s->naoVideo || (!canalFolha && stream_vod_falhou_ha(i) >= 0))?(sel?150:105):(sel?255:205);   // apagada: aviso ou fonte falhada
       char ep[64]="";
       float cacheW=desenharCache(s,tx,cy,anim*(sel?1.0f:.8f));
       float nx=tx+cacheW, nw=txtW-cacheW;
       tira=0;
-      if(ajustes_fonte_texto_addon()) snprintf(nome,sizeof nome,"%s",textoAddonDa(i)->titulo);
-      else tituloConteudo(s,nome,sizeof nome,ep,sizeof ep);
+      tituloConteudo(s,nome,sizeof nome,ep,sizeof ep);
       { TxtLinha l=txt_linha_corta(TXT_CALLOUT,nome,255,255,253,255,nw);
         // LOGO DO TITULO no lugar do nome (ajuste em teste): a mesma logo do
         // hero/detalhe, encostada a esquerda numa caixa da altura do nome.
@@ -7010,36 +7754,6 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
           // Na linha de base do nome, nao no meio da altura dele.
           if(l.w+14+le.w<=nw) txt_desenhar_tom(le,nx+l.w+14,cy+l.h-le.h-3,ce/175.0f,ce/175.0f,ce/175.0f,anim); } } }
     cy+=40;
-    if(ajustes_fonte_texto_addon()) {
-      cy+=desenharFaixas(s,tx,cy,tr-tx,sel,anim);
-      const TextoAddon *t=textoAddonDa(i);
-      const LinhaAddon *ls=t->linhas;
-      int nl=t->nl;
-      // abertura da linha: a mesma mola da altura (alturaLinha)
-      float abr = grupo==1 && row==foco ? abreFoco : row==linhaAnt ? abreAnt : 0.0f;
-      for(int k=0;k<nl;k++){
-        float ak = anim;
-        if(k>=FOLHA_ADDON_FECHADA){ if(abr<.02f) break; ak = anim*abr; }
-        // A primeira linha do addon costuma ser a de numeros (tamanho, taxa):
-        // um degrau mais clara. As outras no cinza da especificacao.
-        int c = k==0 ? (sel?215:180) : (sel?170:130);
-        float px=tx, maxw=k==0?txtW:tr-tx, ly=cy+k*FOLHA_ADDON_LD;
-        for(int pc=0;pc<ls[k].n && maxw-(px-tx)>30;pc++){
-          if(ls[k].ic[pc]){
-            // O icone na altura do texto, na mesma tinta; so vale se couber.
-            gfx_icone((GfxRect){px,ly+3,22,22},ls[k].ic[pc],c/255.0f,c/255.0f,c/255.0f,ak);
-            px+=22+8;
-          }
-          if(ls[k].tx[pc][0] && maxw-(px-tx)>30){
-            int base=k==0?215:170;
-            TxtLinha lp=txt_linha_corta(TXT_PG_FIM,ls[k].tx[pc],base,base,base,255,maxw-(px-tx));
-            txt_desenhar_tom(lp,px,ly,(float)c/base,(float)c/base,(float)c/base,ak);
-            px+=lp.w+18;
-          }
-        }
-      }
-      continue;
-    }
     // FILEIRA DE LOGOS: o pacote branco que o app ja embarca (deploy/app/art/
     // badges, o mesmo "Ghost" do Xperience), tingido no cinza da linha. MP4
     // no acento no fim:
@@ -7073,18 +7787,19 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       // SELOS COLORIDOS (Ajustes, #198): o dono manteve a opcao (03/10). Ligada,
       // cada selo na peca da cor do seu grupo; desligada (o padrao do Glass
       // UI), todos na mesma tinta branca.
-      if(selosPacoteVisiveis((Stream *)s)) {
+      int selosView = selosVistaDa((Stream *)s, 1);
+      if(selosView == SELOS_VISTA_PACOTE && selosPacoteVisiveis((Stream *)s)) {
         lw=desenharSelosPacote(s,tx0,cy,txtW0-mpW,FOLHA_SELO_H,
-                               ajustes_selos_coloridos()?anim*(sel?1.0f:.85f):anim,t,1);
+                               ajustes_selos_coloridos() && selospacote_ativo()<0?anim*(sel?1.0f:.85f):anim,t,1);
         // O Crave (servico canadense) nao esta em nenhum dos dois pacotes
         // embutidos: sai pela arte antiga para nao ser perdido.
         if(selospacote_ativo()<0 && (logos&badges_bit("p-crave"))) {
           float cw=badges_desenhar_tom(badges_bit("p-crave"),tx0+(lw>0?lw+16:0),cy,txtW0-mpW-lw-16,FOLHA_SELO_H,t,t,t,anim);
           if(cw>0) lw+=(lw>0?16:0)+cw; }
-      } else if(logos) lw=ajustes_selos_coloridos()
+      } else if(selosView == SELOS_VISTA_LEGADO && logos) lw=ajustes_selos_coloridos()
         ? badges_desenhar_selos(logos,tx0,cy,txtW0-mpW,FOLHA_SELO_H,anim*(sel?1.0f:.85f))
         : badges_desenhar_tom(logos,tx0,cy,txtW0-mpW,FOLHA_SELO_H,t,t,t,anim);
-      else if(!ehMp4){ char d[sizeof s->descricao];
+      else if(selosView == SELOS_VISTA_LEGADO && !ehMp4){ char d[sizeof s->descricao];
         snprintf(d,sizeof d,"%s",s->descricao);
         for(char *p=d;*p;p++)if((unsigned char)*p<32)*p=' ';
         int c=sel?180:130;

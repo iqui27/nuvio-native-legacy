@@ -23,6 +23,7 @@ int perfis_sessao_travar(uint64_t geracao) { return geracao == 1; }
 void perfis_sessao_destravar(void) {}
 Uint32 SDL_GetTicks(void) { return 1000; }
 int debrid_ativo(void) { return 1; }
+void debrid_dica_fonte(const char *h, int i, const char *a, const char *f) { (void)h; (void)i; (void)a; (void)f; }
 int p2p_ativo(void) { return p2pHabilitado; }
 const char *debrid_servico_nome(int s) {
   static const char *const nomes[] = {"Real-Debrid", "TorBox", "Premiumize", "AllDebrid"};

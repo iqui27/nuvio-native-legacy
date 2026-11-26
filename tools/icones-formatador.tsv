@@ -1,0 +1,308 @@
+# Emojis e simbolos dos formatadores de fonte (folha "Do addon").
+# Fonte: claude/formatter-icons-TODO.md (2026-11-16). Uma linha por sequencia.
+# seq (hex, sem FE0F)  tipo  lucide  glifo  significado
+#   tipo cor   = emoji colorido: Twemoji no Padrao, Lucide no Minimalista
+#   tipo mono  = simbolo monocromatico: glifo Noto (cor do texto) no Padrao, Lucide no Minimalista;
+#                lucide "-" = o glifo Noto nos dois (as estrelas de nota: cheia, meia e vazia
+#                precisam ficar do mesmo desenho, e o Lucide nao tem estrela cheia)
+#   tipo texto = a fonte da interface ja desenha: fica texto nos dois
+26a1	cor	zap	⚡	cached / instant
+1f4be	cor	hard-drive	💾	size
+1f50a	cor	volume-2	🔊	audio
+1f310	cor	globe	🌐	languages
+1f39e	cor	film	🎞	encode / codec
+1f4e6	cor	package	📦	size
+1f3f7	cor	tag	🏷	release group
+23f1	cor	clock	⏱	duration / age
+1f464	cor	users	👤	seeders
+2699	cor	settings-2	⚙	tracker / indexer
+23f3	cor	hourglass	⏳	not cached / downloading
+1f4e1	cor	satellite-dish	📡	indexer / network / tracker
+2601	cor	cloud	☁	cloud / library / your media
+1f9f2	cor	magnet	🧲	torrent / P2P
+25b6	cor	play	▶	YouTube / play
+1f4f0	cor	newspaper	📰	Usenet
+1f511	cor	key-round	🔑	private tracker
+1f517	cor	link	🔗	direct link / source site
+1f512	cor	lock	🔒	proxied / private
+1f680	cor	rocket	🚀	cached (Orion) / FHD (Prism)
+1f39f	cor	ticket	🎟	not cached (Minimalistic) / title or episode
+1f4bb	cor	laptop	💻	web link (http)
+1f37f	cor	popcorn	🍿	addon brand / quality
+1f9e9	cor	puzzle	🧩	add-on / variant
+2b07	cor	arrow-down	⬇	not cached (Comet, Jackettio progress)
+1f513	cor	lock-open	🔓	public / not proxied
+1f575	cor	venetian-mask	🕵	proxied (MediaFlow)
+1f5c4	cor	archive	🗄	library / store
+1f6e1	cor	shield	🛡	proxied / protected
+1f193	cor	badge-dollar-sign	🆓	freeleech
+1f3db	cor	landmark	🏛	archive / addon
+1f4f1	cor	smartphone	📱	Telegram (MediaFusion)
+1f510	cor	lock-keyhole	🔐	private / encrypted
+1f575-1f3fc-200d-2642	cor	venetian-mask	🕵🏼‍♂	proxied (MediaFlow)
+1f575-200d-2642	cor	venetian-mask	🕵‍♂	proxied (MediaFlow)
+1f5c3	cor	archive	🗃	library (AIOStreams built-in)
+1f6f0	cor	satellite	🛰	satellite / source (PenguPlay)
+1fa90	cor	orbit	🪐	Orion addon
+2611	cor	square-check	☑	cached (Askeladd)
+1f327	cor	cloud-rain	🌧	not cached (MLA)
+1f3ab	cor	ticket-check	🎫	cached (Minimalistic GDrive)
+1f422	cor	turtle	🐢	slow (WebStreamr)
+1f427	cor	bird	🐧	PenguPlay
+1f4ab	cor	sparkles	💫	Usenet (skz)
+1f4eb	cor	mailbox	📫	Usenet (Meteor)
+1f50c	cor	plug	🔌	addon
+1f5dd	cor	key	🗝	private
+1f5de	cor	newspaper	🗞	Usenet
+1f6a6	cor	traffic-cone	🚦	rate-limited (WebStreamr)
+203c	cor	circle-alert	‼	error stream
+231b	cor	hourglass	⌛	not cached
+26f5	cor	sailboat	⛵	addon / P2P (Chad)
+1f4fa	cor	tv	📺	resolution / visual tags / TV
+1f3a5	cor	video	🎥	quality (WEB-DL, BluRay ...)
+1f3ac	cor	clapperboard	🎬	title / remux
+2728	cor	sparkles	✨	QHD / special
+2b50	cor	star	⭐	quality (Comet) / score / SeaDex alt
+1f4bf	cor	disc	💿	quality / 720p
+1f3c6	cor	trophy	🏆	editions / SeaDex best
+1f4c0	cor	disc-3	📀	2K / quality
+1f4fc	cor	cassette-tape	📼	quality (remux, tape)
+1f525	cor	flame	🔥	4K
+1f48e	cor	gem	💎	4K / top tier
+1f4bd	cor	disc-2	💽	quality / disc
+1f39a	cor	sliders-vertical	🎚	tier / regex match (Prism)
+1f3af	cor	target	🎯	score / smart play / SEL match
+1f342	cor	leaf	🍂	seasons (Prism)
+1f3a6	cor	projector	🎦	quality
+1f3ad	cor	drama	🎭	network (Prism)
+1f4a9	cor	thumbs-down	💩	low quality (Prism)
+1f4cc	cor	pin	📌	library / pinned
+1f4fd	cor	projector	📽	quality
+1f5a5	cor	monitor	🖥	resolution (Core)
+1f610	cor	circle-minus	😐	tier 4 / SD
+1f381	cor	gift	🎁	special edition
+1f389	cor	party-popper	🎉	anniversary edition
+1f440	cor	eye	👀	preview cut
+1f451	cor	crown	👑	top tier
+1f500	cor	shuffle	🔀	alternate edition
+1f642	cor	circle-check	🙂	tier 3
+1f947	cor	medal	🥇	tier 1 / SeaDex best
+1f948	cor	medal	🥈	tier 2 / SeaDex alt
+1f9ea	cor	flask-conical	🧪	workprint
+23e9	cor	fast-forward	⏩	extended cut / episodes
+267b	cor	recycle	♻	repack
+1f311	cor	circle	🌑	score empty
+1f315	cor	circle-dot	🌕	score full
+1f317	cor	contrast	🌗	score half
+1f31f	cor	star	🌟	score / tier
+1f338	cor	flower	🌸	anime / absolute episode
+1f38c	cor	flag	🎌	anime
+1f396	cor	award	🎖	collector's edition
+1f4a3	cor	bomb	💣	bad release group
+1f4db	cor	badge-alert	📛	release group (Omni)
+1f52c	cor	microscope	🔬	tier / analysis
+1f573	cor	circle-dashed	🕳	lowest quality
+1f5d1	cor	trash	🗑	tier 8 / trash
+1f60d	cor	heart	😍	QHD/FHD (Chad)
+1f60e	cor	glasses	😎	HD (Chad)
+1f615	cor	circle-alert	😕	tier 5
+1f62c	cor	circle-alert	😬	LD (Chad)
+1f914	cor	circle-question-mark	🤔	unknown resolution (Chad)
+1f929	cor	star	🤩	4K (Chad)
+1f937-200d-2642	cor	circle-question-mark	🤷‍♂	tier 4
+1f949	cor	medal	🥉	tier 3
+1f9ff	cor	eye	🧿	1080p (Minimalistic)
+1f3a8	cor	palette	🎨	HDR formats
+1f308	cor	rainbow	🌈	HDR
+1f506	cor	sun	🔆	HDR / visual tags
+1f4f9	cor	video	📹	video codec (Comet)
+1f441	cor	eye	👁	Dolby Vision
+1f30c	cor	sparkles	🌌	HDR / DV
+1f324	cor	cloud-sun	🌤	SDR / HDR10
+1f518	cor	circle-dot	🔘	bullet / encode
+1f537	cor	diamond	🔷	codec / tier
+1f538	cor	diamond	🔸	bullet
+1f539	cor	diamond	🔹	codec / bullet
+1f9ec	cor	dna	🧬	bit depth / encode
+1fa78	cor	droplet	🩸	bit depth
+2600	cor	sun	☀	HDR
+1f3a7	cor	headphones	🎧	audio tags
+1f5e3	cor	speech	🗣	dubbed / audio language
+1f399	cor	mic	🎙	audio language / commentary
+1f3b5	cor	music	🎵	audio formats
+1f509	cor	volume-1	🔉	dual audio
+1f39b	cor	sliders-horizontal	🎛	audio channels
+1f3b6	cor	music-2	🎶	audio / atmos
+1f442	cor	ear	👂	audio language (Orion)
+1f4e3	cor	megaphone	📣	audio tags (skz)
+1f508	cor	volume	🔈	audio (single)
+1f9bb	cor	ear	🦻	SDH / hearing impaired
+1f4ac	cor	message-square	💬	subtitles
+1f4dd	cor	notebook-pen	📝	subtitles
+1f30e	cor	earth	🌎	languages / multi
+1f30d	cor	earth	🌍	languages
+1f483-1f3fb	cor	languages	💃🏻	Latino (Comet, AIOStreams)
+1f483	cor	languages	💃	Latino
+1f524	cor	case-sensitive	🔤	multi subs (StremThru)
+1f64a	cor	volume-x	🙊	no audio language (PenguPlay)
+1f4ca	cor	chart-column	📊	bitrate
+1f5c2	cor	folders	🗂	folder size / pack
+1f4c8	cor	trending-up	📈	bitrate / score up
+1f4f6	cor	signal	📶	bitrate
+1f4c9	cor	trending-down	📉	bitrate / score down
+303d	cor	activity	〽	bitrate (StremThru)
+1f4c5	cor	calendar	📅	age / date
+1f331	cor	sprout	🌱	seeders
+1f552	cor	clock-3	🕒	age
+1f465	cor	users	👥	seeders
+1f5d3	cor	calendar-days	🗓	date
+1f50d	cor	search	🔍	indexer / addon
+1f4c1	cor	folder	📁	folder / filename
+1f4c4	cor	file-text	📄	file name
+1f4c2	cor	folder-open	📂	folder (MediaFusion)
+1f4da	cor	library	📚	pack / collection
+1f50e	cor	search	🔎	tracker (Comet)
+1f6e0	cor	wrench	🛠	group / tools
+1f9d1-200d-1f4bb	cor	user	🧑‍💻	uploader (MediaFusion)
+26a0	cor	triangle-alert	⚠	warning / unverified / P2P
+1f6ab	cor	ban	🚫	blocked / NZB broken
+2139	cor	info	ℹ	message / info
+2705	cor	circle-check	✅	OK / NZB healthy / verified
+274c	cor	circle-x	❌	error / not ready
+1f9dd	cor	shield-check	🧝	NZB healthy (Zyclops)
+1f49a	cor	heart	💚	NZB available (AvailNZB)
+1f534	cor	circle	🔴	colour tag
+1f504	cor	refresh-cw	🔄	sync / info (Comet)
+1f7e0	cor	circle	🟠	colour tag / partial
+1f7e2	cor	circle	🟢	colour tag / success
+26d4	cor	circle-minus	⛔	blocked
+1f51e	cor	eye-off	🔞	adult
+1f7e1	cor	circle	🟡	colour tag
+1f7e3	cor	circle	🟣	colour tag
+1f7e9	cor	square	🟩	colour tag
+1f44e	cor	thumbs-down	👎	rating down
+1f7e6	cor	square	🟦	colour tag
+1f7e7	cor	square	🟧	colour tag
+1f7e8	cor	square	🟨	colour tag
+1f7ea	cor	square	🟪	colour tag
+26aa	cor	circle	⚪	colour tag
+2714	cor	check	✔	OK
+2754	cor	circle-question-mark	❔	unknown
+2b1b	cor	square	⬛	colour tag
+1f33f	cor	leaf	🌿	NZB healthy (skz)
+1f44d	cor	thumbs-up	👍	rating up
+1f4cb	cor	clipboard-list	📋	details (scrape summary)
+1f535	cor	circle	🔵	colour tag
+1f6a9	cor	flag	🚩	flagged
+26ab	cor	circle	⚫	colour tag
+2b1c	cor	square	⬜	colour tag / no service
+1f341	cor	leaf	🍁	CBC
+1f34a	cor	citrus	🍊	Crunchyroll
+1f34f	cor	apple	🍏	Apple TV+
+1f393	cor	graduation-cap	🎓	OViD
+1f3d4	cor	mountain-snow	🏔	Paramount+
+1f3f0	cor	castle	🏰	Disney+
+1f4d6	cor	book-open	📖	U-NEXT
+1f579	cor	gamepad-2	🕹	VRV
+1f6cd	cor	shopping-bag	🛍	Mercado Play
+1f6d2	cor	shopping-cart	🛒	Prime Video
+1f99a	cor	bird	🦚	Peacock
+23ef	cor	circle-play	⏯	NOW
+270f	cor	pencil	✏	edit / not in library
+25aa	cor	square	▪	bullet
+1f405	cor	cat	🐅	decoration / separator
+1f527	cor	wrench	🔧	release group / tools
+1f52e	cor	sparkle	🔮	tier / Zyclops health
+1f9d1-200d-1f9d1-200d-1f9d2-200d-1f9d2	cor	users-round	🧑‍🧑‍🧒‍🧒	multi audio / family
+2197	cor	arrow-up-right	↗	decoration / separator
+25c0	cor	play	◀	bracket
+25fc	cor	square	◼	decoration / separator
+2702	cor	scissors	✂	decoration / separator
+270e	mono	pencil	✎	not in library (Tamtaro)
+26c9	mono	shield-off	⛉	not proxied (Tamtaro)
+26ca	mono	shield	⛊	proxied (Tamtaro)
+27a4	mono	chevron-right	➤	preloading / arrow
+26bf	mono	key-round	⚿	private (Tamtaro)
+21cb	mono	arrow-left-right	⇋	P2P / swarm
+25ba	mono	play	►	cached / play
+25bc	mono	triangle	▼	not cached (Chad)
+2612	mono	square-x	☒	not cached (Askeladd)
+2295	mono	circle-plus	⊕	service / addon
+25bb	mono	play	▻	preloading (Chad)
+25bd	mono	triangle	▽	not cached, preloading (Chad)
+2687	mono	puzzle	⚇	addon (Askeladd)
+27a0	mono	arrow-right	➠	cached (Askeladd 1.4)
+2bea	mono	-	⯪	half star
+2606	mono	-	☆	empty star
+2605	mono	-	★	score star (AIOStreams ::star: ★ cheia, ⯪ meia, ☆ vazia)
+25b0	mono	rectangle-horizontal	▰	score bar filled
+2654	mono	crown	♔	SeaDex alt / tier 1 (Askeladd)
+2655	mono	crown	♕	SeaDex best (Askeladd)
+273f	mono	flower-2	✿	resolution (Askeladd)
+239a	mono	monitor	⎚	quality (Askeladd)
+25b1	mono	rectangle-horizontal	▱	score bar empty
+2740	mono	flower-2	❀	SeaDex best/alt
+2726	mono	sparkle	✦	HDR present (Tamtaro)
+25a3	mono	square-dot	▣	encode (Tamtaro)
+2727	mono	sparkle	✧	SDR (Tamtaro)
+25c6	mono	diamond	◆	visual tag
+25e7	mono	square-split-horizontal	◧	visual (luckynumb3rs)
+23e3	mono	hexagon	⏣	codec
+260a	mono	headphones	☊	audio tags
+266c	mono	music-2	♬	audio tags (Tamtaro)
+266f	mono	hash	♯	channels (Tamtaro)
+2690	mono	flag	⚐	languages (Askeladd)
+25c8	mono	diamond	◈	single file size (Tamtaro)
+2756	mono	layers	❖	season pack size (Tamtaro)
+25a4	mono	text-align-justify	▤	size (Askeladd)
+21cc	mono	arrow-left-right	⇌	bitrate (Askeladd)
+29c9	mono	copy	⧉	season pack
+2191	texto	-	↑	seeders (Chad)
+274f	mono	file	❏	single file
+21c4	mono	arrow-left-right	⇄	seeders (Tamtaro)
+25a6	mono	calendar	▦	air date (Tamtaro)
+25f7	mono	clock	◷	duration
+26ff	mono	circle-alert	⛿	media info missing (Tamtaro)
+24d8	mono	info	ⓘ	info / title line
+2713	texto	-	✓	verified
+2718	mono	x	✘	NZB bad
+2630	mono	menu	☰	list / languages
+27a5	mono	corner-down-right	➥	download stream (Tamtaro)
+2329	mono	chevron-left	〈	decoration / separator
+232a	mono	chevron-right	〉	decoration / separator
+2691	mono	flag	⚑	language (MLA, Core Syntax)
+2766	mono	heart	❦	seeders end mark (Tamtaro)
+300c	texto	-	「	bracket
+300d	texto	-	」	bracket
+300e	texto	-	『	bracket
+300f	texto	-	』	bracket
+2192	texto	-	→	arrow
+2193	texto	-	↓	size / download
+21ea	mono	arrow-big-up	⇪	decoration / separator
+2298	mono	circle-slash	⊘	decoration / separator
+2301	mono	zap	⌁	decoration / separator
+2315	mono	search	⌕	decoration / separator
+2317	mono	hash	⌗	decoration / separator
+231c	mono	corner-up-left	⌜	decoration / separator
+231f	mono	corner-down-right	⌟	decoration / separator
+2349	mono	circle-slash	⍉	decoration / separator
+25b2	mono	triangle	▲	decoration / separator
+25b9	mono	chevron-right	▹	rseMatched bullet (Tamtaro)
+25c7	mono	diamond	◇	decoration / separator
+25e9	mono	square	◩	decoration / separator
+2632	mono	menu	☲	decoration / separator
+267a	mono	recycle	♺	decoration / separator
+269d	mono	star	⚝	decoration / separator
+26a8	mono	venus	⚨	decoration / separator
+26c1	mono	database	⛁	decoration / separator
+26e8	mono	shield-plus	⛨	decoration / separator
+26f6	mono	scan	⛶	decoration / separator
+2704	mono	scissors	✄	decoration / separator
+272a	mono	star	✪	decoration / separator
+276f	mono	chevron-right	❯	separator
+294f	mono	arrow-up-down	⥏	decoration / separator
+2951	mono	arrow-up-down	⥑	decoration / separator
+2b16	mono	diamond	⬖	decoration / separator
+2b24	mono	circle	⬤	decoration / separator
+3008	texto	-	〈	quality bracket (Tamtaro built-in)
+3009	texto	-	〉	quality bracket (Tamtaro built-in)

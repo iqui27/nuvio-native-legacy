@@ -148,6 +148,7 @@
 #include "legsync.h"
 #include "badges.h"
 #include "streams.h"
+#include "tbabrir.h"
 #include "streamfitdur.h"
 #include "streamfitpassiva.h"
 #include "vazao.h"
@@ -529,6 +530,10 @@ static void definirFonteVOD(const char *url) {
   // Waiting until the next frame can still expose the previous episode's group.
   bingeDaFonteAtual();
   provaZerar(); player_definir_fonte(url);
+  // The early TorBox lookup at Play (tbabrir.h): the item is known if this
+  // file never shows a picture. Nothing for a source that is not TorBox's.
+  { const Stream *s = stream_atual() >= 0 ? stream_item(stream_atual()) : NULL;
+    if (s && url && !strcmp(s->url, url)) tbabrir_procurar_cedo(s, "Play"); }
 }
 #define CANAL_FONTE_PRAZO_MS 25000
 // PRAZO CURTO para fonte que JA PROVOU estar ruim. A conferencia de playlist
@@ -3364,6 +3369,82 @@ static void vigiarPartes(void) {
       parteTrocarPara(sl, alvo, prox, u, -1); }
   }
 }
+// TORBOX / ALLDEBRID / REAL-DEBRID FILE THAT NEVER SHOWS A PICTURE (tbabrir.h, owner 25/11/2026, from
+// subtitle-rewrite's burn-in start without the transcoding): a player error
+// before the first frame, or the opening deadline, on a TorBox source. Once
+// per file per playback the source is held ("opening source") while
+// tbabrir.c removes the stuck item, adds the hash again and asks for a fresh
+// link; that link reopens at the same point. Anything else (not TorBox, no
+// hash and not in the account, TorBox refusing, 12 s without an answer) goes
+// back to the usual path: the automatic's next source, or the error card of a
+// manual pick.
+#define TB_REC_PRAZO_MS 12000u
+static void guardarPosicaoFonteFalha(void);
+static struct { int fase, manual, servico; Uint32 desde; double pos; } tbRec;
+static char tbTentados[8][700];
+static int tbTentadosN, tbRecForcarMotivo;
+static int tbRecuperarComecar(int manual, const char *porque) {
+  int at = stream_atual();
+  const Stream *s = at >= 0 ? stream_item(at) : NULL;
+  char k[700];
+  if (tbRec.fase || !s || video_fonte_tocou() || (tbRec.servico = tbabrir_servico(s)) < 0) return 0;
+  tbabrir_chave(k, sizeof k, s->url, s->hashTorrent[0] ? s->hashTorrent : s->infoHash, s->arquivo, s->tamanhoBytes);
+  if (!k[0]) return 0;
+  for (int i = 0; i < tbTentadosN; i++) if (!strcmp(tbTentados[i], k)) return 0;
+  snprintf(tbTentados[tbTentadosN % 8], sizeof tbTentados[0], "%s", k);
+  if (tbTentadosN < 8) tbTentadosN++;
+  if (!tbabrir_recuperar(s, video_url_atual())) return 0;
+  printf("[tbabrir] source %d (\"%s\") showed no picture (%s): asking %s to recover the file, the source waits\n",
+         at, s->rotulo, porque, debrid_servico_nome(tbRec.servico));
+  fflush(stdout);
+  guardarPosicaoFonteFalha();
+  tbRec.fase = 1; tbRec.manual = manual; tbRec.desde = SDL_GetTicks();
+  tbRec.pos = fonteFalhaPos > 1.0 ? fonteFalhaPos : -1.0;
+  player_voltar_a_esperar();
+  return 1;
+}
+static void vigiarTbRecuperar(void) {
+  char url[4096], motivo[160] = "";
+  int r, manual;
+  if (!player_aberto()) {
+    if (tbRec.fase) tbabrir_cancelar();
+    tbRec.fase = 0; tbTentadosN = 0; tbRecForcarMotivo = 0;
+    return;
+  }
+  if (!tbRec.fase) return;
+  if (player_quer_sair() || player_id_canal()[0]) { tbabrir_cancelar(); tbRec.fase = 0; return; }
+  r = tbabrir_resultado(url, sizeof url, motivo, sizeof motivo);
+  // 12 s (owner 25/11: the 30 s of burn-in was for TorBox's transcoder; a
+  // direct file needs none). Delete + add + the 3.5 s look + one fresh list
+  // read is ~6-8 s; an early lookup hit skips the first list read.
+  if (r == 0 && SDL_GetTicks() - tbRec.desde < TB_REC_PRAZO_MS) return;
+  if (r == 0 || r == -2) {
+    tbabrir_cancelar();
+    if (r == 0) snprintf(motivo, sizeof motivo, "no answer from %s in 12 s", debrid_servico_nome(tbRec.servico));
+    else snprintf(motivo, sizeof motivo, "the request was lost");
+    r = -1;
+  }
+  manual = tbRec.manual;
+  tbRec.fase = 0;
+  if (r == 1) {
+    printf("[tbabrir] reopening the source on %s's fresh link%s\n", debrid_servico_nome(tbRec.servico),
+           tbRec.pos > 1.0 ? " at the same point" : "");
+    fflush(stdout);
+    if (tbRec.pos > 1.0) player_definir_retomada_fonte(tbRec.pos);
+    video_definir_cabecalhos("");   // the add-on's headers are not the debrid CDN's
+    definirFonteVOD(url);
+    if (manual) fonteManualDesde = SDL_GetTicks() | 1u;
+    else fonteVODDesde = SDL_GetTicks() | 1u;
+    return;
+  }
+  printf("[tbabrir] %s recovery gave up (%s): the usual source failure\n", debrid_servico_nome(tbRec.servico), motivo);
+  fflush(stdout);
+  if (manual) {
+    marcarFonteMorta(stream_atual());
+    player_erro_fonte_motivo(i18n("A fonte não respondeu a tempo."), NULL);
+  } else tbRecForcarMotivo = 1;
+}
+
 // ESCOLHA MANUAL QUE NAO ABRE: prazo ate o primeiro quadro (fontevolta.h).
 // Vence -> o erro de fonte do player, com "A fonte nao respondeu" e as saidas
 // de sempre. O automatico ja tem o proprio prazo (tentarProximaFonteVOD).
@@ -3371,7 +3452,7 @@ static void vigiarAberturaManual(void) {
   FontevoltaSinais g;
   Uint32 desde;
   registrarFonteVODTocando();
-  if (!fonteManualDesde) return;
+  if (!fonteManualDesde || tbRec.fase) return;
   if (!player_aberto() || player_quer_sair() || player_id_canal()[0] ||
       fonteVODAutomatica || aguardandoFonte != 0) {
     fonteManualDesde = 0; return;
@@ -3395,6 +3476,7 @@ static void vigiarAberturaManual(void) {
     fontesonda_recusa(video_url_atual(), video_erro_texto(), 0);
     fflush(stdout);
     sondarAposRecusa();
+    if (tbRecuperarComecar(1, video_erro_texto()[0] ? video_erro_texto() : "player error")) return;
     fonteManualDesde = 0;
     marcarFonteMorta(stream_atual());
     if (!player_fonte_falhou()) player_erro_fonte();   // the cause comes from the player error
@@ -3402,6 +3484,7 @@ static void vigiarAberturaManual(void) {
   }
   if (!fontevolta_abertura_vencida(&g, FONTE_MANUAL_PRAZO_MS) &&
       !(desde > FONTE_MANUAL_PRAZO_MS && !g.pronto)) return;
+  if (tbRecuperarComecar(1, "opening deadline")) return;
   printf("[fonte] escolha manual nao abriu em %u ms: erro de fonte\n", (unsigned)desde);
   fflush(stdout);
   fonteManualDesde = 0;
@@ -3670,7 +3753,7 @@ static void tentarProximaFonteVOD(void) {
   Uint32 desde;
   int atual, motivo = 0;
   if (!fonteVODAutomatica || player_id_canal()[0] || !player_aberto() ||
-      player_quer_sair() || aguardandoFonte != 0 || !fonteVODDesde) return;
+      player_quer_sair() || aguardandoFonte != 0 || !fonteVODDesde || tbRec.fase) return;
   // As partes cuidam do proprio arquivo (prazo, link novo, erro): trocar de
   // fonte aqui desfaria a sessao (log da TV, 23/10).
   if (parteFase != PF_NADA) return;
@@ -3732,6 +3815,8 @@ static void tentarProximaFonteVOD(void) {
                        : fonteVODTentativas < VOD_FONTE_MAX_TENTATIVAS &&
                          stream_proxima_vod(stream_atual()) >= 0)) motivo = 4;
 #endif
+  // The TorBox recovery gave up (vigiarTbRecuperar): the failure it held.
+  if (tbRecForcarMotivo) { motivo = tbRecForcarMotivo; tbRecForcarMotivo = 0; }
   if (!motivo) return;
   // #415 (LG G4, webOS 9): erro 600 com 4K tocando, 92 MB livres, e o app
   // reabria a fonte no mesmo instante — o webOS o fechou por memoria. Antes de
@@ -3745,6 +3830,9 @@ static void tentarProximaFonteVOD(void) {
   }
 
   atual = stream_atual();
+  if ((motivo == 1 || motivo == 2) &&
+      tbRecuperarComecar(0, motivo == 2 ? "opening deadline" : video_erro_texto()[0] ? video_erro_texto() : "player error"))
+    return;
   if (fonteFalha) {
 #ifdef NV_ANDROID
     if (atual >= 0 && motivo == 1)
@@ -4017,7 +4105,9 @@ static void perfilAbrirSessao(int antes) {
   perfilSessaoAplicada = sessao;
 }
 
+static void fonteEmFoco(const Stream *s) { tbabrir_procurar_cedo(s, "source focused 1 s"); }
 int app_iniciar(const char *dirArte) {
+  stream_foco_demorado = fonteEmFoco;   // the early TorBox lookup (tbabrir.h)
   // #415: MemAvailable abaixo do piso -> despeja texturas, mkvass, texto,
   // libass e heap; sem isto o aviso so rodava malloc_trim.
   memlog_quando_aviso(aliviarMemoria);
@@ -6854,6 +6944,7 @@ void app_atualizar(float dt, Uint32 agora) {
       if (fonteManualDesde) fonteManualDesde = agora;
       if (voltaAtiva) voltaDesde = agora;
     } }
+  vigiarTbRecuperar();
   tentarProximaFonteVOD();
   lembrarAutomatica();
   bingeDaFonteAtual();
@@ -7426,6 +7517,8 @@ static void desenharAtrasDoPainel(void *ctx) {
     home_holofote_desenhar(agora);
 }
 
+#include "source_backdrop.inc"
+
 static void desenharTelas(Uint32 agora) {
   if (tela == TELA_LOGIN)          { login_desenhar(agora);     return; }
   if (tela == TELA_ESCOLHA_PERFIL) { perfilsel_desenhar(agora); return; }
@@ -7486,7 +7579,7 @@ static void desenharTelas(Uint32 agora) {
     { int podeParar = tela == TELA_HOME && !detail_aberto() && !vertudo_aberta() &&
                       (!ctx_aberto() || ctx_do_painel()) && !menu_aberto() &&
                       !player_mini_ativo();
-      spainel_fundo(podeParar, cat_revisao(), desenharAtrasDoPainel, &agora); }
+      fontes_fundo(podeParar, cat_revisao(), desenharAtrasDoPainel, &agora); }
     // Depois do menu: as duas camadas de "Salvos" escurecem a tela inteira e
     // tem de ficar por cima de tudo que a home desenhou, inclusive da rail.
     CAMADA_SE(spainel_aberto());

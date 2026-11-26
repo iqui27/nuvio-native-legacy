@@ -155,13 +155,14 @@ static const char *ajVisualIcone(int op) {
     case AJ_FONTE_PRAZO: return "aj_list-video";
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR: return "aj_list-video";
     case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: return "aj_list-video";
+    case AJ_FONTE_ICONES: return "aj_sparkles";
     case AJ_FONTE_ESCOPO: case AJ_FONTE_OUTROS: return "aj_list-video";
     case AJ_FONTE_ADDONS_PERM: return "aj_puzzle";
     case AJ_FONTE_PLUGINS_PERM: return "aj_plug";
     case AJ_FONTE_ORDEM: return "aj_arrow-up-down";
     case AJ_FONTE_ORDEM_USO: return "aj_list-video";
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO: return "aj_search";
-    case AJ_SELOS_CORES: return "aj_list-video";
+    case AJ_SOURCE_BADGE_POSITION: case AJ_SELOS_CORES: return "aj_list-video";
     case AJ_SELOS_PACOTE: return "aj_list-video";
     case AJ_SELOS_PACOTE_ADD: return "aj_list-video";
     case AJ_SELOS_PACOTE_REM: return "aj_list-video";

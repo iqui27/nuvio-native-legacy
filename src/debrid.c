@@ -50,8 +50,9 @@ static char chaveLocal[SN][200];
 static int  alvoT, alvoE;
 static pthread_mutex_t chaveTrava = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t sessaoAtual;
-static atomic_uint tbGeracao;
+static atomic_uint tbGeracao, contaGeracao[DEBRID_N];
 unsigned debrid_tb_geracao(void) { return atomic_load(&tbGeracao); }
+unsigned debrid_conta_geracao(int q) { return q >= 0 && q < DEBRID_N ? atomic_load(&contaGeracao[q]) : 0; }
 
 // RECUSA DE CONTA POR BUSCA. recusado[q] guarda o status HTTP da recusa (0 =
 // nenhuma); `geracao` sobe a cada debrid_nova_busca. Atomicos porque
@@ -124,6 +125,7 @@ void debrid_contexto_capturar(DebridContexto *c) {
   memcpy(c->chave, chave, sizeof c->chave);
   c->temporada = alvoT; c->episodio = alvoE;
   c->sessao = sessaoAtual; c->busca = atomic_load(&geracao);
+  c->conta = 0;
   pthread_mutex_unlock(&chaveTrava);
 }
 void debrid_contexto_entrar(const DebridContexto *c) {
@@ -141,7 +143,7 @@ static int contextoAbrir(DebridContexto *c) {
   return 1;
 }
 static int contextoValeSemTrava(const DebridContexto *c) {
-  return c && c->sessao == sessaoAtual && c->busca == atomic_load(&geracao);
+  return c && c->sessao == sessaoAtual && (c->conta || c->busca == atomic_load(&geracao));
 }
 static int contextoVale(void) {
   int vale;
@@ -193,6 +195,7 @@ static void efetiva(int q) {
   pthread_mutex_lock(&contaMutex);
   if (strcmp(chave[q], k)) {
     if (q == STB) atomic_fetch_add(&tbGeracao, 1u);
+    atomic_fetch_add(&contaGeracao[q], 1u);
     atomic_fetch_add(&geracao, 1u);
     atomic_store(&recusado[q], 0);
     atomic_store(&semPlano[q], 0); atomic_store(&avisado[q], 0);
@@ -451,6 +454,107 @@ static void urlenc(char *dst, unsigned n, const char *s) {
   dst[k] = 0;
 }
 
+// ---------------------------------------------------------------- dicas (ver debrid.h)
+// Tabela de espalhamento por hash + fileIdx, do tamanho da lista. Era um anel
+// fixo de 512 (616 KB parados): com mais de 512 torrents na lista, os primeiros
+// perdiam nome e trackers. Agora cada dica guarda so o que tem (texto do
+// tamanho real) e a tabela cresce; passou de DICAS_MAX, recomeca vazia (a lista
+// seguinte repoe as suas).
+#define DICAS_MAX 8192
+typedef struct { char hash[48]; int idx; char *arquivo, *fontes; } Dica;
+static Dica *dicas;
+static unsigned dicasCap, dicasN;
+static pthread_mutex_t dicaTrava = PTHREAD_MUTEX_INITIALIZER;
+
+static unsigned dicaChave(const char *h, int idx) {
+  unsigned x = 2166136261u;
+  for (; *h; h++) { x ^= (unsigned char)tolower((unsigned char)*h); x *= 16777619u; }
+  return x ^ (unsigned)idx * 2654435761u;
+}
+// Posicao de (h, idx) na tabela: a dele, ou a vazia onde entraria.
+static Dica *dicaLugar(Dica *t, unsigned cap, const char *h, int idx) {
+  unsigned i = dicaChave(h, idx) & (cap - 1);
+  while (t[i].hash[0] && !(t[i].idx == idx && !strcasecmp(t[i].hash, h))) i = (i + 1) & (cap - 1);
+  return &t[i];
+}
+static void dicasLimpar(void) {
+  for (unsigned i = 0; i < dicasCap; i++) { free(dicas[i].arquivo); free(dicas[i].fontes); }
+  free(dicas); dicas = NULL; dicasCap = dicasN = 0;
+}
+// Cabe mais uma? Dobra a tabela (carga ate 1/2) ou, no teto, recomeca.
+static int dicasEspaco(void) {
+  if ((dicasN + 1) * 2 <= dicasCap) return 1;
+  if (dicasN >= DICAS_MAX) dicasLimpar();
+  unsigned nc = dicasCap ? dicasCap * 2 : 1024;
+  Dica *nt = calloc(nc, sizeof *nt);
+  if (!nt) return 0;
+  for (unsigned i = 0; i < dicasCap; i++)
+    if (dicas[i].hash[0]) *dicaLugar(nt, nc, dicas[i].hash, dicas[i].idx) = dicas[i];
+  free(dicas); dicas = nt; dicasCap = nc;
+  return 1;
+}
+static char *dicaTexto(char *velho, const char *s) {
+  free(velho);
+  return s && *s ? strdup(s) : NULL;
+}
+
+void debrid_dica_fonte(const char *infoHash, int fileIdx, const char *arquivo, const char *fontes) {
+  if (!infoHash || !*infoHash || strlen(infoHash) >= sizeof dicas[0].hash) return;
+  pthread_mutex_lock(&dicaTrava);
+  Dica *d = dicasCap ? dicaLugar(dicas, dicasCap, infoHash, fileIdx) : NULL;
+  if (!d || !d->hash[0]) {
+    if (!dicasEspaco()) { pthread_mutex_unlock(&dicaTrava); return; }
+    d = dicaLugar(dicas, dicasCap, infoHash, fileIdx);
+    snprintf(d->hash, sizeof d->hash, "%s", infoHash);
+    d->idx = fileIdx;
+    dicasN++;
+  }
+  d->arquivo = dicaTexto(d->arquivo, arquivo);
+  d->fontes = dicaTexto(d->fontes, fontes);
+  pthread_mutex_unlock(&dicaTrava);
+}
+static void dicaDe(const char *infoHash, int fileIdx, char *arq, size_t na, char *fon, size_t nf) {
+  if (arq && na) arq[0] = 0;
+  if (fon && nf) fon[0] = 0;
+  if (!infoHash || !*infoHash) return;
+  pthread_mutex_lock(&dicaTrava);
+  if (dicasCap) {
+    const Dica *d = dicaLugar(dicas, dicasCap, infoHash, fileIdx);
+    if (d->hash[0]) {
+      if (arq && na && d->arquivo) snprintf(arq, na, "%s", d->arquivo);
+      if (fon && nf && d->fontes) snprintf(fon, nf, "%s", d->fontes);
+    }
+  }
+  pthread_mutex_unlock(&dicaTrava);
+}
+
+// MAGNET COMO O NuvioTV (DebridMagnetBuilder): hash + &dn=<arquivo> + um &tr=
+// por tracker de "sources" ("tracker:" tirado, "dht:" fora). Tracker que nao
+// cabe inteiro fica de fora. Sem dica, o magnet pelado de antes.
+static void magnetMontar(const char *h, int fileIdx, const char *hashDica, char *dst, size_t n) {
+  char arq[512], fon[640], enc[1600];
+  size_t k;
+  dicaDe(hashDica ? hashDica : h, fileIdx, arq, sizeof arq, fon, sizeof fon);
+  k = (size_t)snprintf(dst, n, "magnet:?xt=urn:btih:%s", h);
+  if (k >= n) { dst[n - 1] = 0; return; }
+  if (arq[0]) {
+    urlenc(enc, sizeof enc, arq);
+    if (k + 4 + strlen(enc) < n) k += (size_t)snprintf(dst + k, n - k, "&dn=%s", enc);
+  }
+  for (char *p = fon; *p; ) {
+    char *f = strchr(p, '\n');
+    if (f) *f = 0;
+    if (!strncasecmp(p, "tracker:", 8) || !strncmp(p, "udp://", 6) || !strncmp(p, "http", 4)) {
+      const char *tr = !strncasecmp(p, "tracker:", 8) ? p + 8 : p;
+      while (*tr == ' ') tr++;
+      urlenc(enc, sizeof enc, tr);
+      if (*tr && k + 4 + strlen(enc) < n) k += (size_t)snprintf(dst + k, n - k, "&tr=%s", enc);
+    }
+    if (!f) break;
+    p = f + 1;
+  }
+}
+
 // Os tres servicos aceitam a chave como "Authorization: Bearer" — e o que a
 // documentacao de cada um recomenda, inclusive a do Premiumize, que ainda
 // aceita ?apikey= por compatibilidade e diz em texto que o cabecalho existe
@@ -651,42 +755,135 @@ static int ehVideo(const char *nome) {
   return 0;
 }
 
-// Mesma ordem do selectDebridFile do web: padrao SxxEyy > fileIdx > maior
-// video. Devolve o ELEMENTO escolhido (ponteiro para o '{' dele, dentro de
-// `files`) ou NULL.
+// ESCOLHA DO ARQUIVO, na ordem do NuvioTV (DebridFileSelection.kt
+// selectDebridFile) enquanto ele acha algo, so entre os videos:
+//   1. o nome que o addon deu (behaviorHints/clientResolve.filename): caminho
+//      igual, ou terminando em "/<nome>", depois so o nome do arquivo; com e
+//      depois sem diferenca de caixa.
+//   2. o episodio: s<T>e<E> ou <T>x<E> (zeros a esquerda livres) no nome do
+//      arquivo, sem letra/numero colado antes nem numero depois.
+//   3. o fileIdx do addon (posicao na lista inteira), se for video.
+// Onde o NuvioTV desiste, aqui ainda toca (decisao do dono, 2026-11-18: "tocar
+// todos"):
+//   - em 1 e 2, mais de um igual = o MAIOR deles (o arquivo principal, nao o
+//     sample), em vez de nenhum;
+//   4. o episodio so no nome da PASTA ("Show.S01E05/video.mkv");
+//   5. um video so no torrent: ele (torrent de um arquivo, "Show - 05.mkv"
+//      sem SxxEyy nem fileIdx);
+//   6. sem episodio procurado (filme): o maior video, como antes do NuvioTV.
+// Episodio de PACOTE em que nada aponta o arquivo continua sem nenhum: o maior
+// seria quase sempre o episodio errado, e a falha deixa outra fonte tentar.
+// Devolve o ELEMENTO escolhido (ponteiro para o '{' dele, dentro de `files`)
+// ou NULL.
 //
-// POR QUE DEVOLVE O ELEMENTO E NAO UM id. Os tres servicos nomeiam os campos a
-// sua maneira — o RD manda "path"/"bytes" e o arquivo tem "id"; o TorBox manda
+// POR QUE DEVOLVE O ELEMENTO E NAO UM id. Os servicos nomeiam os campos a sua
+// maneira — o RD manda "path"/"bytes" e o arquivo tem "id"; o TorBox manda
 // "name"/"size" com "id"; o Premiumize manda "path"/"size" e NAO tem id
 // nenhum, o link direto vem dentro do proprio elemento. Devolvendo o elemento,
-// cada resolvedor tira dali o que o seu servico usa e a ORDEM DE ESCOLHA — que
-// e a unica coisa que nao pode divergir entre os tres — fica escrita uma vez
-// so. Os nomes dos campos entram por parametro pelo mesmo motivo.
+// cada resolvedor tira dali o que o seu servico usa e a ORDEM DE ESCOLHA fica
+// escrita uma vez so. Os nomes dos campos entram por parametro.
+static const char *baseNome(const char *c) {
+  const char *b = strrchr(c, '/');
+  return b ? b + 1 : c;
+}
+static void caminhoNormal(char *c) {
+  for (char *p = c; *p; p++) if (*p == '\\') *p = '/';
+  while (*c == ' ' || *c == '/') memmove(c, c + 1, strlen(c));
+  size_t n = strlen(c);
+  while (n && c[n - 1] == ' ') c[--n] = 0;
+}
+static int igual(const char *a, const char *b, int ci) { return ci ? !strcasecmp(a, b) : !strcmp(a, b); }
+static int terminaEm(const char *c, const char *sufixo, int ci) {
+  size_t a = strlen(c), b = strlen(sufixo);
+  return a > b && c[a - b - 1] == '/' && igual(c + a - b, sufixo, ci);
+}
+static int numeroEm(const char *p, int valor, const char **fim) {
+  // zeros a esquerda livres, depois exatamente `valor`
+  long v = 0; int d = 0;
+  while (*p == '0' && isdigit((unsigned char)p[1])) p++;
+  while (isdigit((unsigned char)*p) && d < 6) { v = v * 10 + (*p++ - '0'); d++; }
+  *fim = p;
+  return d && v == valor;
+}
+static int casaEpisodio(const char *nome, int t, int e) {
+  for (const char *p = nome; *p; p++) {
+    const char *q, *r;
+    if (p > nome && isalnum((unsigned char)p[-1])) continue;
+    if ((*p == 's' || *p == 'S') && numeroEm(p + 1, t, &q) && (*q == 'e' || *q == 'E') &&
+        numeroEm(q + 1, e, &r) && !isdigit((unsigned char)*r)) return 1;
+    if (isdigit((unsigned char)*p) && numeroEm(p, t, &q) && (*q == 'x' || *q == 'X') &&
+        numeroEm(q + 1, e, &r) && !isdigit((unsigned char)*r)) return 1;
+  }
+  return 0;
+}
+// O maior entre os que casaram: `*el` fica com o maior visto ate aqui.
+static void ficaMaior(const char **el, double *tamEl, const char *p, double tam) {
+  if (!*el || tam > *tamEl) { *el = p; *tamEl = tam; }
+}
 static const char *escolherArquivo(const char *files, int fileIdx,
-                                   const char *kNome, const char *kTam) {
-  char pad1[16] = "", pad2[16] = "";
-  const char *p, *melhor = NULL; int idx = 0, porIndice = 0; double melhorTam = -1;
-  int temporada = 0, episodio = 0;
+                                   const char *kNome, const char *kTam, const char *dica) {
+  const char *p, *maior = NULL, *noIndice = NULL, *epNome = NULL, *epPasta = NULL;
+  int idx = 0, temporada = -1, episodio = 0, ep, videos = 0;
+  double maiorTam = -1, epNomeTam = -1, epPastaTam = -1;
+  char alvo[512] = "";
   debrid_episodio(&temporada, &episodio);
-  if (temporada >= 0 && episodio > 0) {
-    snprintf(pad1, sizeof pad1, "s%02de%02d", temporada, episodio);
-    snprintf(pad2, sizeof pad2, "%dx%02d", temporada, episodio);
+  ep = temporada >= 0 && episodio > 0;
+  if (dica && *dica) { snprintf(alvo, sizeof alvo, "%s", dica); caminhoNormal(alvo); }
+  // 1. pelo nome: quatro passadas (caminho / nome do arquivo x caixa)
+  for (int modo = 0; alvo[0] && modo < 4; modo++) {
+    const char *achado = NULL; double achadoTam = -1; int ci = modo & 1, soBase = modo >> 1;
+    for (p = files; p && *p == '{'; p = js_prox(js_fim(p))) {
+      char nome[600];
+      if (!js_texto(p, js_fim(p), kNome, nome, sizeof nome) || !ehVideo(nome)) continue;
+      caminhoNormal(nome);
+      int ok = soBase ? igual(baseNome(nome), baseNome(alvo), ci)
+                      : igual(nome, alvo, ci) || (strchr(alvo, '/') && terminaEm(nome, alvo, ci));
+      if (ok) ficaMaior(&achado, &achadoTam, p, js_num(p, js_fim(p), kTam, 0));
+    }
+    if (achado) return achado;
   }
-  for (p = files; p && *p == '{'; p = js_prox(js_fim(p)), idx++) {
-    const char *f = js_fim(p);
-    char nome[600]; double tam;
-    if (!js_texto(p, f, kNome, nome, sizeof nome)) continue;
-    tam = js_num(p, f, kTam, 0);
-    minusc(nome);
-    if (!ehVideo(nome)) continue;
-    if (pad1[0] && (strstr(nome, pad1) || strstr(nome, pad2))) return p;
-    if (idx == fileIdx && fileIdx >= 0) { melhor = p; melhorTam = 1e18; porIndice = 1; continue; }
-    if (tam > melhorTam) { melhor = p; melhorTam = tam; }
+  // 2-6 numa volta so
+  for (p = files, idx = 0; p && *p == '{'; p = js_prox(js_fim(p)), idx++) {
+    char nome[600];
+    if (!js_texto(p, js_fim(p), kNome, nome, sizeof nome) || !ehVideo(nome)) continue;
+    caminhoNormal(nome);
+    double tam = js_num(p, js_fim(p), kTam, 0);
+    videos++;
+    if (ep && casaEpisodio(baseNome(nome), temporada, episodio)) ficaMaior(&epNome, &epNomeTam, p, tam);
+    else if (ep && casaEpisodio(nome, temporada, episodio)) ficaMaior(&epPasta, &epPastaTam, p, tam);
+    if (idx == fileIdx) noIndice = p;
+    if (tam > maiorTam) { maior = p; maiorTam = tam; }
   }
-  // Sem correspondencia ou indice publicado, nao trocar um especial pelo
-  // maior episodio regular de um pacote. A falha permite outra fonte.
-  if (temporada == 0 && episodio > 0 && !porIndice) return NULL;
-  return melhor;
+  if (epNome) return epNome;                             // 2
+  // 3. #556: o fileIdx publicado vale mesmo sem nome/episodio casar (pacote
+  // com "Show - 05.mkv", sem SxxEyy). O NuvioTV falha ai.
+  if (fileIdx >= 0 && noIndice) return noIndice;
+  if (epPasta) return epPasta;                           // 4
+  if (videos == 1) return maior;                         // 5
+  return ep ? NULL : maior;                              // 6
+}
+
+// THE PLAYING FILE BY NAME, THEN SIZE (tbabrir.c's recovery and RD's reuse):
+// the account item is known, the add-on said the file's name and size. Exact
+// base name (case free; several = the one of that size, else the first), else
+// the only video of exactly that size. NULL = let escolherArquivo decide.
+static const char *arquivoExato(const char *files, const char *kNome, const char *kTam, const char *arquivo,
+                                uint64_t bytes) {
+  const char *p, *porNome = NULL, *porTam = NULL, *alvo = arquivo ? baseNome(arquivo) : "";
+  int nTam = 0;
+  for (p = files; p && *p == '{'; p = js_prox(js_fim(p))) {
+    char nome[600];
+    double tam;
+    if (!js_texto(p, js_fim(p), kNome, nome, sizeof nome) || !ehVideo(nome)) continue;
+    caminhoNormal(nome);
+    tam = js_num(p, js_fim(p), kTam, 0);
+    if (alvo[0] && !strcasecmp(baseNome(nome), alvo)) {
+      if (!porNome || (bytes && (uint64_t)tam == bytes)) porNome = p;
+    }
+    if (bytes && (uint64_t)tam == bytes) { porTam = p; nTam++; }
+  }
+  if (porNome) return porNome;
+  return nTam == 1 ? porTam : NULL;
 }
 
 // ---------------------------------------------------------------- Real-Debrid
@@ -697,27 +894,49 @@ static const char *escolherArquivo(const char *files, int fileIdx,
 
 // `pct` recebe o progresso (0-100) do torrent que o RD ficou baixando, quando
 // ele nao ficou pronto nas tres olhadas; a escolha manual mostra isso.
+// A TORRENT ALREADY IN THE ACCOUNT (owner 25/11/2026). Every addMagnet makes
+// a new entry on Real-Debrid, even for a hash the account already has, so each
+// search and each reopen used to add the same torrent again. rdVisto keeps the
+// hash -> torrent id of what this app added or found in the account list
+// (debrid_conta_achar); resolverRD first asks that torrent for the file and
+// adds the magnet only when it cannot serve it (gone, another file selected).
+static int rdVisto(const char *hash, char *id, unsigned n);
+static void rdLembrar(const char *hash, const char *id);
+static void rdEsquecer(const char *hash);
+static int rdLinkDoItem(const char *id, const char *arquivo, uint64_t bytes, int fileIdx, char *url, unsigned n,
+                        int *sumiu);
+
 static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n,
                       int *pct) {
-  char corpo[700], enc[600], rota[120], tid[64], status[32], link[600];
+  char corpo[12400], enc[12300], magnet[4096], arquivo[512], rota[120], tid[64], status[32], link[600];
   char *r; int st = 0, id, tent;
   const char *files, *links, *el;
 
-  snprintf(corpo, sizeof corpo, "magnet:?xt=urn:btih:%s", infoHash);
-  urlenc(enc, sizeof enc, corpo);
+  magnetMontar(infoHash, fileIdx, NULL, magnet, sizeof magnet);
+  dicaDe(infoHash, fileIdx, arquivo, sizeof arquivo, NULL, 0);
+  if (rdVisto(infoHash, tid, sizeof tid)) {
+    int sumiu = 0;
+    if (rdLinkDoItem(tid, arquivo, 0, fileIdx, url, n, &sumiu) == 1) {
+      printf("[debrid] Real-Debrid: %s already in the account, no new addMagnet\n", infoHash);
+      return 1;
+    }
+    if (sumiu) rdEsquecer(infoHash);
+  }
+  urlenc(enc, sizeof enc, magnet);
   snprintf(corpo, sizeof corpo, "magnet=%s", enc);
   r = post_form(RD, "torrents/addMagnet", SRD, corpo, &st);
   if (!ok2xx(r, st) || !js_texto(r, NULL, "id", tid, sizeof tid)) {
     int v = falha(SRD, "addMagnet", st, r); free(r); return v;
   }
   free(r);
+  rdLembrar(infoHash, tid);
 
   snprintf(rota, sizeof rota, "torrents/info/%s", tid);
   r = get_auth(RD, rota, SRD, &st);
   if (!ok2xx(r, st) || !(files = js_array(r, NULL, "files"))) {
     int v = falha(SRD, "info", st, r); free(r); return v;
   }
-  el = escolherArquivo(files, fileIdx, "path", "bytes");
+  el = escolherArquivo(files, fileIdx, "path", "bytes", arquivo);
   id = el ? (int)js_num(el, js_fim(el), "id", -1) : -1;
   free(r);
   if (id < 0) { printf("[debrid] torrent sem video utilizavel\n"); return 0; }
@@ -789,7 +1008,7 @@ static int resolverRD(const char *infoHash, int fileIdx, char *url, unsigned n,
 // `soCache` 1 = add_only_if_cached (o automatico); 0 = a pessoa escolheu o
 // torrent fora de cache e o TorBox deve BAIXAR — e o "P2P" do TorBox.
 static char *tbCriarCom(const char *chaveTB, const char *magnet, int soCache, int *st) {
-  char url[300], auth[260], corpo[1200];
+  char url[300], auth[260], corpo[5400];   // magnet com dn e trackers: ate 4 KB
   const char *cab[3];
   snprintf(url, sizeof url, TB "/torrents/createtorrent");
   snprintf(auth, sizeof auth, "Authorization: Bearer %s", chaveTB);
@@ -803,6 +1022,8 @@ static char *tbCriarCom(const char *chaveTB, const char *magnet, int soCache, in
   snprintf(corpo, sizeof corpo,
            "--" BND "\r\nContent-Disposition: form-data; name=\"magnet\"\r\n\r\n%s\r\n"
            "--" BND "\r\nContent-Disposition: form-data; name=\"add_only_if_cached\"\r\n\r\n%s\r\n"
+           // allow_zip=false: como o NuvioTV (TorboxDirectDebridResolver.kt)
+           "--" BND "\r\nContent-Disposition: form-data; name=\"allow_zip\"\r\n\r\nfalse\r\n"
            "--" BND "--\r\n", magnet, soCache ? "true" : "false");
   return rede_postar_st(url, 15, cab, corpo, st);
 }
@@ -825,9 +1046,51 @@ static int tbPronto(const char *r) {
 // TorBox deve baixar o que nao tem — sem checkcached (quem chama ja
 // perguntou) e sem add_only_if_cached. `pct` recebe o progresso quando o
 // torrent ainda esta baixando.
+// FALLBACK DO PAINEL (owner 19/11/2026): the normal resolve had an issue
+// (createtorrent refused, the file list not there yet, requestdl failed).
+// The file is looked up as it is on the TorBox dashboard: the account's
+// torrents (fresh lists, up to 10 pages) by this hash, then its file and a
+// requestdl. Not in the account -> 0 and the source is dropped, as before:
+// something not cached is never downloaded. `tidVisto` = the item the normal
+// resolve already tried (its files are read again, fresh).
+static int tbRequestdl(int tid, int fid, char *url, unsigned n);
+static int tbDoPainel(const char *h, int fileIdx, const char *arquivo, int tidVisto, const char *porque,
+                      char *url, unsigned n) {
+  int pg, tid = -1, fid = -1, st = 0;
+  char *r = NULL;
+  for (pg = 0; pg < 10 && tid < 0 && contextoVale(); pg++) {
+    const char *el; int itens = 0;
+    r = debrid_tb_mylist(0, 0, pg, 1, &st);
+    if (!ok2xx(r, st)) { free(r); r = NULL; break; }
+    for (el = js_array(r, NULL, "data"); el && *el == '{'; el = js_prox(js_fim(el)), itens++) {
+      char hh[64] = "";
+      if (js_texto_raiz_em(el, js_fim(el), "hash", hh, sizeof hh) && !strcasecmp(hh, h)) {
+        const char *files = js_array(el, js_fim(el), "files"), *f;
+        tid = (int)js_num(el, js_fim(el), "id", -1);
+        if (files && (f = escolherArquivo(files, fileIdx, "name", "size", arquivo)) != NULL)
+          fid = (int)js_num(f, js_fim(f), "id", -1);
+        break;
+      }
+    }
+    free(r); r = NULL;
+    if (itens < DEBRID_TB_PAGINA) break;
+  }
+  if (tid < 0) {
+    printf("[debrid] TorBox: %s %s; not on your TorBox dashboard either: source dropped\n", h, porque);
+    return 0;
+  }
+  if (fid < 0) {
+    printf("[debrid] TorBox: %s %s; on your dashboard (item %d%s) but no usable video yet: source dropped\n",
+           h, porque, tid, tid == tidVisto ? ", the one just added" : "");
+    return 0;
+  }
+  printf("[debrid] TorBox: %s %s; found on your TorBox dashboard (item %d, file %d): playing that\n", h, porque, tid, fid);
+  return tbRequestdl(tid, fid, url, n);
+}
+
 static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n,
                       int baixar, int *pct) {
-  char h[80], magnet[300], rota[600];
+  char h[80], magnet[4096], arquivo[512], rota[600];
   char *r; int st = 0, fid = -1, tent, tid, pronto = !baixar;
   const char *files, *el;
 
@@ -849,7 +1112,8 @@ static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n,
   free(r);
 
 criar:
-  snprintf(magnet, sizeof magnet, "magnet:?xt=urn:btih:%s", h);
+  magnetMontar(h, fileIdx, infoHash, magnet, sizeof magnet);
+  dicaDe(infoHash, fileIdx, arquivo, sizeof arquivo, NULL, 0);
   r = tb_criar(magnet, !baixar, &st);
   tid = ok2xx(r, st) ? (int)js_num(r, NULL, "torrent_id", -1) : -1;
   // O 403 DO REGISTRO 1541 SAI AQUI. A linha continua comecando por
@@ -876,6 +1140,7 @@ criar:
     // cache entre as duas chamadas) e fora de cache tambem, nao falha.
     int foraC = !baixar && r && (contem(r, "not cached") || contem(r, "not_cached"));
     int v = falha(STB, "createtorrent", st, r); free(r);
+    if (!baixar && !foraC && v == 0 && tbDoPainel(h, fileIdx, arquivo, -1, "createtorrent had an issue", url, n)) return 1;
     return v == 0 && foraC ? FORA : v;
   }
   free(r);
@@ -899,10 +1164,12 @@ criar:
           js_texto(r, NULL, "download_state", estado, sizeof estado);
         }
         if ((files = js_array(r, NULL, "files"))
-            && (el = escolherArquivo(files, fileIdx, "name", "size")) != NULL)
+            && (el = escolherArquivo(files, fileIdx, "name", "size", arquivo)) != NULL)
           fid = (int)js_num(el, js_fim(el), "id", -1);
       } else if (r) {
-        int v = falha(STB, "mylist", st, r); free(r); return v;
+        int v = falha(STB, "mylist", st, r); free(r);
+        if (!baixar && v == 0 && tbDoPainel(h, fileIdx, arquivo, tid, "the new item's file list failed", url, n)) return 1;
+        return v;
       }
       free(r);
       if (fid < 0 || !pronto) sleep(1);
@@ -916,12 +1183,23 @@ criar:
       return DEBRID_BAIXANDO;
     }
   }
-  if (fid < 0) { printf("[debrid] TorBox: sem video utilizavel em %s\n", h); return 0; }
+  if (fid < 0) {
+    printf("[debrid] TorBox: sem video utilizavel em %s\n", h);
+    // TorBox may need a while to list a just-added torrent's files.
+    return !baixar && tbDoPainel(h, fileIdx, arquivo, tid, "no file list in 3 s", url, n) ? 1 : 0;
+  }
+  { int v = tbRequestdl(tid, fid, url, n);
+    if (v == 0 && !baixar && tbDoPainel(h, fileIdx, arquivo, tid, "requestdl failed", url, n)) return 1;
+    return v; }
+}
 
-  // 4) ESTA E A UNICA ROTA QUE LEVA A CHAVE NA QUERY, e nao por escolha nossa:
-  //    request_download_link poe `token` em add_query, nao em cabecalho. Logo,
-  //    esta URL nunca pode ir para log nem inteira nem em pedaco — o que sai
-  //    no fim de debrid_resolver e so a resposta passada por rede_url_publica.
+// 4) ESTA E A UNICA ROTA QUE LEVA A CHAVE NA QUERY, e nao por escolha nossa:
+//    request_download_link poe `token` em add_query, nao em cabecalho. Logo,
+//    esta URL nunca pode ir para log nem inteira nem em pedaco — o que sai
+//    no fim de debrid_resolver e so a resposta passada por rede_url_publica.
+// 1 = `url` pronta; outro valor = o de falha().
+static int tbRequestdl(int tid, int fid, char *url, unsigned n) {
+  char *r; int st = 0;
   { char u[1200]; const char *cab[1];
     cab[0] = NULL;
     snprintf(u, sizeof u, TB "/torrents/requestdl?token=%s&torrent_id=%d&file_id=%d&redirect=false",
@@ -929,7 +1207,9 @@ criar:
     r = contextoVale() ? rede_baixar_st(u, 15, cab, &st) : NULL; }
   if (!ok2xx(r, st) || !js_texto_raiz(r, "data", url, n)) {
     // "requestdl" e nao a URL: a URL leva o token (ver acima)
-    int v = falha(STB, "requestdl", st, r); free(r); return v;
+    int v = falha(STB, "requestdl", st, r); free(r);
+    if (url && n) url[0] = 0;
+    return v;
   }
   free(r);
   return 1;
@@ -945,11 +1225,12 @@ criar:
 // os arquivos do torrent com o link direto de cada um, e a escolha e local.
 
 static int resolverPM(const char *infoHash, int fileIdx, char *url, unsigned n) {
-  char magnet[300], enc[500], corpo[600], bruto[64];
+  char magnet[4096], arquivo[512], enc[12300], corpo[12400], bruto[64];
   char *r; int st = 0, emCache;
   const char *cont, *el;
 
-  snprintf(magnet, sizeof magnet, "magnet:?xt=urn:btih:%s", infoHash);
+  magnetMontar(infoHash, fileIdx, NULL, magnet, sizeof magnet);
+  dicaDe(infoHash, fileIdx, arquivo, sizeof arquivo, NULL, 0);
   urlenc(enc, sizeof enc, magnet);
 
   // O magnet inteiro como item, e nao o hash pelado: a documentacao descreve o
@@ -984,7 +1265,7 @@ static int resolverPM(const char *infoHash, int fileIdx, char *url, unsigned n) 
   if (!ok2xx(r, st) || !(cont = js_array(r, NULL, "content"))) {
     int v = falha(SPM, "directdl", st, r); free(r); return v;
   }
-  el = escolherArquivo(cont, fileIdx, "path", "size");
+  el = escolherArquivo(cont, fileIdx, "path", "size", arquivo);
   // "link" e nao "stream_link": o segundo e a versao transcodificada, que nem
   // sempre existe e nem sempre e o arquivo que se pediu.
   if (!el || !js_texto(el, js_fim(el), "link", url, n)) {
@@ -1088,19 +1369,81 @@ static void adDescartar(const char *id) {
   free(r);
 }
 
+// link/unlock of a magnet file's link (`delayed` waited up to 3 s). 1 = `url`.
+static int adDesbloquear(const char *lnk, char *url, unsigned n) {
+  char enc[2800], corpo[2900], *r; int st = 0;
+  urlenc(enc, sizeof enc, lnk);
+  snprintf(corpo, sizeof corpo, "link=%s", enc);
+  r = adPost("v4/link/unlock", corpo, &st);
+  if (!adOk(r, st)) { falha(SAD, "unlock", st, r); free(r); return 0; }
+  if (js_texto(r, NULL, "link", url, n)) { free(r); return 1; }
+  // "delayed": links que precisam de tempo para ser gerados. Raro em torrent
+  // (o link de arquivo pronto costuma sair na hora), mas e o contrato.
+  { char did[48];
+    if (js_bruto(r, NULL, "delayed", did, sizeof did)) {
+      char *q = did; int t2;
+      while (*q == '"') q++;
+      { char *e = q; while (*e && *e != '"') e++; *e = 0; }
+      free(r);
+      for (t2 = 0; t2 < 3; t2++) {
+        snprintf(corpo, sizeof corpo, "id=%s", q);
+        r = adPost("v4/link/delayed", corpo, &st);
+        if (adOk(r, st) && js_num(r, NULL, "status", 0) == 2 && js_texto(r, NULL, "link", url, n)) {
+          free(r); return 1;
+        }
+        free(r);
+        sleep(1);
+      }
+      if (url && n) url[0] = 0;
+      return 0;
+    } }
+  falha(SAD, "unlock", st, r); free(r);
+  return 0;
+}
+
+// The file of ready magnet `id` (magnet/files, the tree flattened) and its
+// unlocked link. `bytes` > 0 = the add-on's size: name/size first
+// (arquivoExato), then the usual order. `rotulo` names the torrent in the log.
+static int adLinkDoMagnet(const char *id, int fileIdx, const char *arquivo, uint64_t bytes, char *url, unsigned n,
+                          const char *rotulo) {
+  char corpo[64], lnk[900], *r; int st = 0;
+  const char *files, *el;
+  AdBuf b = { NULL, 0, 0, 0 };
+  if (url && n) url[0] = 0;
+  snprintf(corpo, sizeof corpo, "id%%5B%%5D=%s", id);
+  r = adPost("v4/magnet/files", corpo, &st);
+  if (!adOk(r, st) || !(files = js_array(r, NULL, "files"))) {
+    int v = falha(SAD, "files", st, r); free(r); return v;
+  }
+  b.p = malloc(4096); b.cap = 4096;
+  if (b.p) { b.p[0] = '['; b.p[1] = 0; b.n = 1; }
+  adAchatar(files, &b, 0);
+  free(r);
+  if (!b.p) return 0;
+  adAdd(&b, "]", 1);
+  if (!b.p) return 0;
+  el = arquivoExato(b.p + 1, "path", "size", arquivo, bytes);
+  if (!el) el = escolherArquivo(b.p + 1, fileIdx, "path", "size", arquivo);
+  if (!el || !js_texto(el, js_fim(el), "link", lnk, sizeof lnk)) {
+    printf("[debrid] AllDebrid: sem video utilizavel em %s\n", rotulo ? rotulo : "-");
+    free(b.p); return 0;
+  }
+  free(b.p);
+  return adDesbloquear(lnk, url, n);
+}
+
 // `manual` 0 (automatico): so o que ja esta pronto (`ready`). 1: a pessoa
 // escolheu o torrent; se nao esta pronto, o AllDebrid segue baixando e devolve
 // DEBRID_BAIXANDO com o progresso, que fica na conta para a proxima escolha.
 static int resolverAD(const char *infoHash, int fileIdx, char *url, unsigned n,
                       int manual, int *pct) {
-  char corpo[700], enc[600], id[32], lnk[900], sub[16], h[80];
+  char corpo[12400], enc[12300], magnet[4096], arquivo[512], id[32], sub[16], h[80];
   char *r; int st = 0, tent, sc = -1, pronto;
-  const char *files, *el;
-  AdBuf b = { NULL, 0, 0, 0 };
 
   hashMin(h, sizeof h, infoHash);      // o servico compara TEXTO, como o TorBox
-  snprintf(corpo, sizeof corpo, "magnet:?xt=urn:btih:%s", h);
-  urlenc(enc, sizeof enc, corpo);
+  magnetMontar(h, fileIdx, infoHash, magnet, sizeof magnet);
+  dicaDe(infoHash, fileIdx, arquivo, sizeof arquivo, NULL, 0);
+  urlenc(enc, sizeof enc, magnet);
   snprintf(corpo, sizeof corpo, "magnets%%5B%%5D=%s", enc);
   r = adPost("v4/magnet/upload", corpo, &st);
   if (!adOk(r, st)) { int v = falha(SAD, "upload", st, r); free(r); return v; }
@@ -1154,50 +1497,7 @@ static int resolverAD(const char *infoHash, int fileIdx, char *url, unsigned n,
     return DEBRID_BAIXANDO;
   }
 
-  snprintf(corpo, sizeof corpo, "id%%5B%%5D=%s", id);
-  r = adPost("v4/magnet/files", corpo, &st);
-  if (!adOk(r, st) || !(files = js_array(r, NULL, "files"))) {
-    int v = falha(SAD, "files", st, r); free(r); return v;
-  }
-  b.p = malloc(4096); b.cap = 4096;
-  if (b.p) { b.p[0] = '['; b.p[1] = 0; b.n = 1; }
-  adAchatar(files, &b, 0);
-  free(r);
-  if (!b.p) return 0;
-  adAdd(&b, "]", 1);
-  el = escolherArquivo(b.p + 1, fileIdx, "path", "size");
-  if (!el || !js_texto(el, js_fim(el), "link", lnk, sizeof lnk)) {
-    printf("[debrid] AllDebrid: sem video utilizavel em %s\n", infoHash);
-    free(b.p); return 0;
-  }
-  free(b.p);
-
-  urlenc(enc, sizeof enc, lnk);
-  snprintf(corpo, sizeof corpo, "link=%s", enc);
-  r = adPost("v4/link/unlock", corpo, &st);
-  if (!adOk(r, st)) { int v = falha(SAD, "unlock", st, r); free(r); return v; }
-  if (js_texto(r, NULL, "link", url, n)) { free(r); return 1; }
-  // "delayed": links que precisam de tempo para ser gerados. Raro em torrent
-  // (o link de arquivo pronto costuma sair na hora), mas e o contrato.
-  { char did[48];
-    if (js_bruto(r, NULL, "delayed", did, sizeof did)) {
-      char *q = did; int t2;
-      while (*q == '"') q++;
-      { char *e = q; while (*e && *e != '"') e++; *e = 0; }
-      free(r);
-      for (t2 = 0; t2 < 3; t2++) {
-        snprintf(corpo, sizeof corpo, "id=%s", q);
-        r = adPost("v4/link/delayed", corpo, &st);
-        if (adOk(r, st) && js_num(r, NULL, "status", 0) == 2 && js_texto(r, NULL, "link", url, n)) {
-          free(r); return 1;
-        }
-        free(r);
-        sleep(1);
-      }
-      return 0;
-    } }
-  falha(SAD, "unlock", st, r); free(r);
-  return 0;
+  return adLinkDoMagnet(id, fileIdx, arquivo, 0, url, n, infoHash);
 }
 
 // "Testar chave" (Ajustes): GET v4/user. Devolve 1 e a frase da conta em
@@ -1485,6 +1785,8 @@ int debrid_resolver_escolhido(const char *infoHash, int fileIdx, char *url,
 // Recarregar, a busca de fundo do Retomar) nao muda a conta nem a chave. A
 // chave e copiada sob a trava na hora; logout a apaga e a chamada seguinte
 // sai "sem chave".
+static int contaEntrar(DebridContexto *c);
+static void contaSair(int aberto);
 static int tbChave(char *dst, size_t n) {
   int ok;
   pthread_mutex_lock(&chaveTrava);
@@ -1563,6 +1865,53 @@ int debrid_tb_adicionar(const char *hash) {
   return tid;
 }
 
+// IS THE HASH CACHED ON TORBOX (tbabrir.c, owner 25/11/2026): asked before a
+// stuck item is deleted, so a file TorBox no longer has cached is never taken
+// out of the account (the re-add is cached only and would be refused).
+// 1 cached, 0 not cached, -1 no answer / no key. BLOCKS.
+int debrid_tb_em_cache(const char *hash) {
+  char h[80], rota[200];
+  char *r; int st = 0, v;
+  if (!hash || strlen(hash) < 40) return -1;
+  hashMin(h, sizeof h, hash);
+  snprintf(rota, sizeof rota, "torrents/checkcached?hash=%s&format=list", h);
+  { // get_auth needs a context: the recovery thread has none (it always
+    // answered "no answer" before, so a stuck item was never re-added).
+    DebridContexto c;
+    int aberto = contaEntrar(&c);
+    r = get_auth(TB, rota, STB, &st);
+    contaSair(aberto); }
+  if (!ok2xx(r, st)) { free(r); return -1; }
+  v = js_array(r, NULL, "data") != NULL;
+  free(r);
+  return v;
+}
+
+// DELETE a torrent from the account (owner 24/11/2026, log 19/20, Fate PMR):
+// an item TorBox kept listing but whose stream never sent a segment started
+// working only after the owner removed it on the dashboard and Nuvio re-added
+// it by its hash. POST torrents/controltorrent {torrent_id, operation:delete}.
+// 1 = TorBox said yes. BLOCKS.
+int debrid_tb_apagar(int item) {
+  char url[300], auth[260], corpo[96], k[200], ok_[16];
+  const char *cab[3];
+  char *r; int st = 0, ok;
+  if (item <= 0 || !tbChave(k, sizeof k)) return 0;
+  snprintf(url, sizeof url, TB "/torrents/controltorrent");
+  snprintf(auth, sizeof auth, "Authorization: Bearer %s", k);
+  cab[0] = auth; cab[1] = "Content-Type: application/json"; cab[2] = NULL;
+  snprintf(corpo, sizeof corpo, "{\"torrent_id\":%d,\"operation\":\"delete\"}", item);
+  r = rede_postar_st(url, 15, cab, corpo, &st);
+  ok = ok2xx(r, st) && !(js_bruto(r, NULL, "success", ok_, sizeof ok_) && strncmp(ok_, "true", 4));
+  { char erro[96] = "", det[160] = "";
+    if (r) { js_texto_raiz(r, "error", erro, sizeof erro); js_texto_raiz(r, "detail", det, sizeof det); }
+    printf("[partes] TorBox controltorrent delete %d: HTTP %d, %s%s%s%s%s\n", item, st, ok ? "ok" : "refused",
+           erro[0] ? ", error=" : "", erro, det[0] ? ", detail=" : "", det);
+    fflush(stdout); }
+  free(r);
+  return ok;
+}
+
 // AIRLOCK (api.torbox.app/openapi.json, EditTorrent/EditUsenetDownload): o item
 // fica de fora da purga de 30 dias sem download. E o mesmo PUT de edicao dos
 // dois tipos, com `airlocked` e so o id — nome/tags/hashes ficam como estao
@@ -1594,4 +1943,301 @@ int debrid_tb_airlock(int usenet, int item, int ligar, char *detalhe, unsigned n
   fflush(stdout);
   free(r);
   return ok;
+}
+
+// ======================================================= account items AD/RD
+//
+// tbabrir.c (owner 25/11/2026): the early lookup and the recovery of a file
+// that never shows a picture, on AllDebrid and Real-Debrid as on TorBox.
+// Account calls: a context of their own (conta = 1) so a new search started
+// meanwhile (Reload, Resume's background search) does not void them; a new
+// session (logout, other profile) does.
+static int contaEntrar(DebridContexto *c) {
+  if (contextoDoFio()) return 0;
+  debrid_contexto_capturar(c);
+  c->conta = 1;
+  debrid_contexto_entrar(c);
+  return 1;
+}
+static void contaSair(int aberto) { if (aberto) debrid_contexto_sair(); }
+
+int debrid_conta_disponivel(int q) {
+  int tem;
+  if (q < 0 || q >= SN) return 0;
+  pthread_mutex_lock(&chaveTrava);
+  tem = chave[q][0] != 0;
+  pthread_mutex_unlock(&chaveTrava);
+  if (!tem) return 0;
+  return atomic_load(&semPlano[q]) ? -1 : 1;
+}
+
+static int hashValido(const char *h, char out[41]) {
+  int i;
+  if (!h || strlen(h) < 40) return 0;
+  for (i = 0; i < 40 && isxdigit((unsigned char)h[i]); i++) out[i] = (char)tolower((unsigned char)h[i]);
+  out[i == 40 ? 40 : 0] = 0;
+  return i == 40;
+}
+
+// ---- the account list, kept 60 s (one list read serves every file lookup
+// of the source list while a person scrolls it)
+#define CONTA_LISTA_MS 60
+typedef struct { char hash[41], id[24]; char pronto; } ContaItem;
+static struct { ContaItem *v; int n; time_t em; unsigned geracao; } contaLista[SN];
+static pthread_mutex_t contaListaTrava = PTHREAD_MUTEX_INITIALIZER;
+
+static void contaListaGuardar(int q, ContaItem *v, int n) {
+  pthread_mutex_lock(&contaListaTrava);
+  free(contaLista[q].v);
+  contaLista[q].v = v; contaLista[q].n = n; contaLista[q].em = time(NULL);
+  contaLista[q].geracao = debrid_conta_geracao(q);
+  pthread_mutex_unlock(&contaListaTrava);
+}
+static void contaListaAdd(ContaItem **v, int *n, int *cap, const char *hash, const char *id, int pronto) {
+  char h[41];
+  if (!hashValido(hash, h) || !id[0]) return;
+  if (*n == *cap) {
+    int c = *cap ? *cap * 2 : 128;
+    ContaItem *q2 = realloc(*v, (size_t)c * sizeof **v);
+    if (!q2) return;
+    *v = q2; *cap = c;
+  }
+  snprintf((*v)[*n].hash, sizeof (*v)[*n].hash, "%s", h);
+  snprintf((*v)[*n].id, sizeof (*v)[*n].id, "%s", id);
+  (*v)[*n].pronto = (char)(pronto ? 1 : 0);
+  (*n)++;
+}
+
+// AllDebrid: POST v4.1/magnet/status with no id = every magnet of the account
+// (data.magnets[], each with id, hash, statusCode; 4 = Ready).
+static int adListar(ContaItem **v, int *n) {
+  char *r; int st = 0, cap = 0;
+  const char *p;
+  *v = NULL; *n = 0;
+  r = adPost("v4.1/magnet/status", "", &st);
+  if (!adOk(r, st)) { falha(SAD, "status (list)", st, r); free(r); return -1; }
+  for (p = js_array(r, NULL, "magnets"); p && *p == '{'; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    char h[64] = "", id[24];
+    double i = js_num(p, f, "id", -1);
+    if (i < 0 || !js_texto(p, f, "hash", h, sizeof h)) continue;
+    snprintf(id, sizeof id, "%.0f", i);
+    contaListaAdd(v, n, &cap, h, id, (int)js_num(p, f, "statusCode", -1) == 4);
+  }
+  free(r);
+  return 1;
+}
+
+// Real-Debrid: GET torrents?limit=1000&page=N (a root array, each with id,
+// hash, status). Up to 3 pages.
+static int rdListar(ContaItem **v, int *n) {
+  int cap = 0;
+  *v = NULL; *n = 0;
+  for (int pg = 1; pg <= 3; pg++) {
+    char rota[64], *r; int st = 0, k = 0;
+    const char *p;
+    snprintf(rota, sizeof rota, "torrents?limit=1000&page=%d", pg);
+    r = get_auth(RD, rota, SRD, &st);
+    if (st == 204) { free(r); break; }       // no (more) torrents
+    if (!ok2xx(r, st)) { falha(SRD, "torrents (list)", st, r); free(r); if (pg == 1) { free(*v); *v = NULL; return -1; } break; }
+    for (p = js_raiz_array(r); p && *p == '{'; p = js_prox(js_fim(p)), k++) {
+      const char *f = js_fim(p);
+      char h[64] = "", id[24] = "", stt[32] = "";
+      if (!js_texto(p, f, "hash", h, sizeof h) || !js_texto(p, f, "id", id, sizeof id)) continue;
+      js_texto(p, f, "status", stt, sizeof stt);
+      contaListaAdd(v, n, &cap, h, id, !strcmp(stt, "downloaded"));
+    }
+    free(r);
+    if (k < 1000) break;
+  }
+  return 1;
+}
+
+int debrid_conta_achar(int q, const char *hash, char *id, unsigned n, int *pronto) {
+  char h[41];
+  int achou = 0, i, aberto, v;
+  DebridContexto c;
+  if (id && n) id[0] = 0;
+  if (pronto) *pronto = 0;
+  if ((q != SAD && q != SRD) || !hashValido(hash, h) || debrid_conta_disponivel(q) <= 0) return -1;
+  pthread_mutex_lock(&contaListaTrava);
+  v = contaLista[q].v && time(NULL) - contaLista[q].em < CONTA_LISTA_MS &&
+      contaLista[q].geracao == debrid_conta_geracao(q);
+  pthread_mutex_unlock(&contaListaTrava);
+  if (!v) {
+    ContaItem *lst; int ln, ok;
+    aberto = contaEntrar(&c);
+    ok = q == SAD ? adListar(&lst, &ln) : rdListar(&lst, &ln);
+    contaSair(aberto);
+    if (ok < 0) return -1;
+    contaListaGuardar(q, lst, ln);
+  }
+  pthread_mutex_lock(&contaListaTrava);
+  for (i = 0; i < contaLista[q].n; i++) {
+    ContaItem *it = &contaLista[q].v[i];
+    if (strcmp(it->hash, h)) continue;
+    // several entries of the hash (RD keeps duplicates): a ready one wins
+    if (!achou || (it->pronto && !(pronto && *pronto))) {
+      if (id && n) snprintf(id, n, "%s", it->id);
+      if (pronto) *pronto = it->pronto;
+      achou = 1;
+    }
+  }
+  pthread_mutex_unlock(&contaListaTrava);
+  if (achou && q == SRD && id) rdLembrar(h, id);
+  return achou;
+}
+
+static void contaListaEsquecer(int q) {
+  pthread_mutex_lock(&contaListaTrava);
+  contaLista[q].em = 0;
+  pthread_mutex_unlock(&contaListaTrava);
+}
+
+int debrid_ad_enviar(const char *hash, char *id, unsigned n) {
+  char h[41], corpo[200], sub[16], rd[16], *r;
+  int st = 0, aberto, pronto;
+  DebridContexto c;
+  if (id && n) id[0] = 0;
+  if (!hashValido(hash, h) || debrid_conta_disponivel(SAD) <= 0) return -1;
+  snprintf(corpo, sizeof corpo, "magnets%%5B%%5D=magnet%%3A%%3Fxt%%3Durn%%3Abtih%%3A%s", h);
+  aberto = contaEntrar(&c);
+  r = adPost("v4/magnet/upload", corpo, &st);
+  if (!adOk(r, st) || js_texto(r, NULL, "code", sub, sizeof sub) || js_num(r, NULL, "id", -1) < 0) {
+    falha(SAD, "upload", st, r); free(r); contaSair(aberto); return -1;
+  }
+  if (id && n) snprintf(id, n, "%.0f", js_num(r, NULL, "id", -1));
+  pronto = js_bruto(r, NULL, "ready", rd, sizeof rd) && !strncmp(rd, "true", 4);
+  free(r);
+  contaSair(aberto);
+  contaListaEsquecer(SAD);
+  return pronto;
+}
+
+int debrid_ad_apagar(const char *id) {
+  char corpo[64], *r; int st = 0, ok, aberto;
+  DebridContexto c;
+  if (!id || !id[0] || debrid_conta_disponivel(SAD) <= 0) return 0;
+  snprintf(corpo, sizeof corpo, "id=%s", id);
+  aberto = contaEntrar(&c);
+  r = adPost("v4/magnet/delete", corpo, &st);
+  ok = adOk(r, st);
+  if (!ok) falha(SAD, "delete", st, r);
+  free(r);
+  contaSair(aberto);
+  contaListaEsquecer(SAD);
+  return ok;
+}
+
+// ---- Real-Debrid: hash -> torrent id this app added or found
+#define RD_VISTOS 64
+static struct { char hash[41], id[24]; unsigned geracao; } rdVistos[RD_VISTOS];
+static int rdVistosProx;
+static pthread_mutex_t rdVistosTrava = PTHREAD_MUTEX_INITIALIZER;
+static int rdVisto(const char *hash, char *id, unsigned n) {
+  char h[41]; int ok = 0;
+  if (!hashValido(hash, h)) return 0;
+  pthread_mutex_lock(&rdVistosTrava);
+  for (int i = 0; i < RD_VISTOS && !ok; i++)
+    if (rdVistos[i].hash[0] && !strcmp(rdVistos[i].hash, h) && rdVistos[i].geracao == debrid_conta_geracao(SRD)) {
+      snprintf(id, n, "%s", rdVistos[i].id); ok = 1;
+    }
+  pthread_mutex_unlock(&rdVistosTrava);
+  return ok;
+}
+static void rdLembrar(const char *hash, const char *id) {
+  char h[41]; int i;
+  if (!hashValido(hash, h) || !id || !id[0] || strlen(id) >= sizeof rdVistos[0].id) return;
+  pthread_mutex_lock(&rdVistosTrava);
+  for (i = 0; i < RD_VISTOS; i++) if (!strcmp(rdVistos[i].hash, h)) break;
+  if (i == RD_VISTOS) { i = rdVistosProx; rdVistosProx = (rdVistosProx + 1) % RD_VISTOS; }
+  snprintf(rdVistos[i].hash, sizeof rdVistos[i].hash, "%s", h);
+  snprintf(rdVistos[i].id, sizeof rdVistos[i].id, "%s", id);
+  rdVistos[i].geracao = debrid_conta_geracao(SRD);
+  pthread_mutex_unlock(&rdVistosTrava);
+}
+static void rdEsquecer(const char *hash) {
+  char h[41];
+  if (!hashValido(hash, h)) return;
+  pthread_mutex_lock(&rdVistosTrava);
+  for (int i = 0; i < RD_VISTOS; i++) if (!strcmp(rdVistos[i].hash, h)) rdVistos[i].hash[0] = 0;
+  pthread_mutex_unlock(&rdVistosTrava);
+}
+
+// torrents/info/<id>: a downloaded torrent's `links` follow its SELECTED files
+// in order (one link per selected file; a single link for several files is
+// RD's archive, not playable here). The playing file must be one of them.
+// 1 = `url` from unrestrict/link (a fresh link, the old one untouched); 0 =
+// the torrent cannot serve it (*sumiu = 1: RD no longer has the torrent).
+static int rdLinkDoItem(const char *id, const char *arquivo, uint64_t bytes, int fileIdx, char *url, unsigned n,
+                        int *sumiu) {
+  char rota[120], status[32], link[900], enc[2800], corpo[2900], *r, *sel = NULL;
+  int st = 0, ok = 0, k, alvo = -1, nSel = 0, nLinks = 0;
+  const char *files, *links, *el, *p;
+  size_t selN = 0;
+  if (sumiu) *sumiu = 0;
+  if (url && n) url[0] = 0;
+  snprintf(rota, sizeof rota, "torrents/info/%s", id);
+  r = get_auth(RD, rota, SRD, &st);
+  if (st == 404) { if (sumiu) *sumiu = 1; free(r); return 0; }
+  if (!ok2xx(r, st)) { int v = falha(SRD, "info", st, r); free(r); return v < 0 ? v : 0; }
+  if (!js_texto(r, NULL, "status", status, sizeof status) || strcmp(status, "downloaded") ||
+      !(files = js_array(r, NULL, "files")) || !(links = js_array(r, NULL, "links")) || *links != '"') {
+    free(r); return 0;
+  }
+  // The selected files only, as a list escolherArquivo can read.
+  sel = malloc(strlen(r) + 4);
+  if (!sel) { free(r); return 0; }
+  sel[selN++] = '[';
+  for (p = files; p && *p == '{'; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    if (js_num(p, f, "selected", 0) != 1) continue;
+    if (nSel) sel[selN++] = ',';
+    memcpy(sel + selN, p, (size_t)(f - p)); selN += (size_t)(f - p);
+    nSel++;
+  }
+  sel[selN++] = ']'; sel[selN] = 0;
+  el = nSel ? arquivoExato(sel + 1, "path", "bytes", arquivo, bytes) : NULL;
+  if (!el && nSel) {
+    // the add-on's index counts every file: pick in the whole list, then find it among the selected
+    const char *todo = escolherArquivo(files, fileIdx, "path", "bytes", arquivo);
+    if (todo && js_num(todo, js_fim(todo), "selected", 0) == 1) {
+      double fid = js_num(todo, js_fim(todo), "id", -1);
+      for (p = sel + 1, k = 0; p && *p == '{'; p = js_prox(js_fim(p)), k++)
+        if (js_num(p, js_fim(p), "id", -2) == fid) { el = p; break; }
+    }
+  }
+  if (el) for (p = sel + 1, k = 0; p && *p == '{'; p = js_prox(js_fim(p)), k++) if (p == el) { alvo = k; break; }
+  // the alvo-th link
+  for (p = links, k = 0; p && *p == '"'; k++) {
+    const char *q = p + 1;
+    while (*q && *q != '"') { if (*q == '\\' && q[1]) q++; q++; }
+    if (k == alvo && js_cadeia(p, link, sizeof link)) ok = 1;
+    nLinks++;
+    if (!*q) break;
+    p = js_prox(q + 1);
+  }
+  free(sel);
+  free(r);
+  if (!ok || nLinks != nSel) return 0;
+  urlenc(enc, sizeof enc, link);
+  snprintf(corpo, sizeof corpo, "link=%s", enc);
+  r = post_form(RD, "unrestrict/link", SRD, corpo, &st);
+  ok = ok2xx(r, st) && js_texto(r, NULL, "download", url, n) && !strncmp(url, "http", 4);
+  if (!ok) { int v = falha(SRD, "unrestrict", st, r); if (url && n) url[0] = 0; free(r); return v < 0 ? v : 0; }
+  free(r);
+  return 1;
+}
+
+int debrid_conta_link(int q, const char *id, const char *arquivo, uint64_t bytes, int fileIdx, char *url,
+                      unsigned n) {
+  int aberto, ok, sumiu = 0;
+  DebridContexto c;
+  if (url && n) url[0] = 0;
+  if ((q != SAD && q != SRD) || !id || !id[0] || debrid_conta_disponivel(q) <= 0) return 0;
+  aberto = contaEntrar(&c);
+  ok = q == SAD ? adLinkDoMagnet(id, fileIdx, arquivo, bytes, url, n, id) == 1
+                : rdLinkDoItem(id, arquivo, bytes, fileIdx, url, n, &sumiu) == 1;
+  contaSair(aberto);
+  return ok && url[0];
 }

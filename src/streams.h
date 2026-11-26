@@ -21,7 +21,10 @@
 // A lista cresce conforme a resposta dos addons; a UI virtualiza as linhas.
 
 typedef struct Stream {
-  char rotulo[192];     // Nome curto da fonte
+  // Nome da fonte como o addon manda. 512 (era 192): formatadores tipo Tamtaro
+  // escrevem o nome em versalete/sobrescrito (2-3 bytes por letra) com emoji, e
+  // a folha "Do addon" mostra o nome inteiro na linha em foco.
+  char rotulo[512];
   char provedor[96];
   // Origem real da instancia do addon, sem URL/token nem inferencia pelo nome.
   char addonChave[FONTEFALHA_CHAVE];
@@ -63,6 +66,10 @@ typedef struct Stream {
   int filtroLido;       // 1 = classificado pelo parser; 0 = origem sintetica
   char descricao[2048];
   char arquivo[512];
+  // 1 = `arquivo` veio de um campo filename (behaviorHints/clientResolve/raw),
+  // 0 = do torrentName ou vazio. So o primeiro escolhe o arquivo do pacote no
+  // debrid (debrid_dica_fonte): o nome do torrent nao e o de arquivo nenhum.
+  int arquivoReal;
   // O QUE O ADDON DECLARA COMO "a mesma fonte" entre episodios:
   // behaviorHints.bingeGroup, a convencao do Stremio. Quem manda o campo
   // resolve o casamento entre episodios SEM heuristica nenhuma — e o proprio
@@ -374,6 +381,9 @@ int  stream_url_serve(const char *url, const char *cabecalhos);
 // endereco final, para o .tpk entregar o link do CDN ao player sem pedir de
 // novo. NULL fora do .tpk (o tpk.c liga) e nos testes.
 extern void (*stream_cdn_lembrar)(const char *orig, const char *final, const char *cabecalhos, uint64_t sessao);
+// A source focused 1 s in the source list (owner 18/11): once per focused row.
+// app.c sets it (the early TorBox lookup, tbabrir.h); NULL in the tests.
+extern void (*stream_foco_demorado)(const Stream *s);
 
 // 1 quando o texto da fonte diz "fora de cache" (ver Stream.foraCache).
 // Publica para o parser e o teste; a lista ja vem com o campo preenchido.

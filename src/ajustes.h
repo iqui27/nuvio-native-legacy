@@ -204,6 +204,10 @@ int ajustes_fonte_primeira(void);
 int ajustes_fonte_ordem_addon(void);
 // 1 = a folha de Fontes mostra o nome e a descricao do addon como vieram.
 int ajustes_fonte_texto_addon(void);
+// Icones do texto "Do addon": 1 = Minimalista (Lucide na cor do texto), 0 = Padrao
+// (Twemoji em cores e os simbolos monocromaticos como glifo). Bandeiras so no
+// Padrao; o Minimalista mostra o codigo do idioma.
+int ajustes_fonte_icones_minimalista(void);
 int ajustes_fonte_texto_logo(void);
 // "Outra fonte se falhar": quantas OUTRAS fontes o automatico tenta quando a
 // escolhida nao abre (0..3; 0 = nenhuma). Nao vale para escolha manual nem
@@ -519,6 +523,7 @@ int   ajustes_logo_addon(void);
 int   ajustes_col_arte_conta(void);
 // Selos da folha de fontes em peca colorida por tipo (#198). Padrao ligado.
 int   ajustes_selos_coloridos(void);
+int   ajustes_selos_embaixo(void); // From addon rows: badge row at the bottom (default Top)
 int   ajustes_trailer_som(void);         // UM ajuste de som para todo trailer que toca sozinho (Samsung .wgt sempre mudo)
 Uint32 ajustes_trailer_hero_espera_ms(void); // repouso no titulo antes do trailer do destaque
 int   ajustes_trailer_qualidade(void); // teto em linhas (1080/720/480); 0 = a maior
