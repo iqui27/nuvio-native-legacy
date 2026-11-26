@@ -3423,6 +3423,7 @@ static void extReabrir(void) {
   int quer;
   if (!urlAtual[0] || modoLoad || falhou || terminou) { extReabrirPend = 0; return; }
   if (bindAtivo()) return;   // next pump
+  if (tbq_ativo()) return;   // TorBox's burned stream plays: applied after it stops
   quer = audioext_pedido(urlAtual);
 #ifdef NV_WEBOS_HLS_TEST
   if (hls.pending) return;

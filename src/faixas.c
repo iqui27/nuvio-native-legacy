@@ -863,17 +863,22 @@ static unsigned extGeracao, extRevisao, extAddonsVer;
 #endif
 static int extListaN = -1;
 // Original audio with TorBox burn-in (tbburn.h): rows under the audio tracks
-// (.tpk only; tbqueima.c answers 0 elsewhere). While they show, the audio
-// sheet is the plain track list: the donor's language pages do not apply to
-// TorBox's stream.
+// (.tpk only; tbqueima.c answers 0 elsewhere). While the burned stream plays
+// (or is starting) the audio sheet is the plain track list: the donor's
+// language pages do not apply to TorBox's stream. Otherwise the donor pages
+// win and the rows stay in Settings; tbaVis() = the rows are in the sheet.
 #ifdef NV_TB_QUEIMA
 static int nTba(void) { return video_tpk_tba_linhas(); }
+static int queimando(void) { return video_tpk_queimada() >= 0; }
 #else
 static int nTba(void) { return 0; }
+static int queimando(void) { return 0; }
 #endif
+static int extMenu(void);
+static int tbaVis(void) { return nTba() && !extMenu(); }
 #if defined(NV_TPK) || defined(NV_WEBOS)
 static int extMenu(void) {
-  if (nTba()) return 0;
+  if (queimando()) return 0;
 #if defined(NV_TPK) || defined(NV_WEBOS)   /* the donor server (dts/doador_tpk.h; doador_webos.c on LG) */
   // The donor server opens MKV and MP4 only: a playing file of another kind
   // (owner's log 6, a TS/M2TS REMUX) gets no "other source" versions.
@@ -1166,7 +1171,7 @@ static int nLinhas(int col) {
   if (col == FX_COL_ESTILO) return nEst();
 #if defined(NV_TPK) || defined(NV_WEBOS)
   // Original audio with TorBox burn-in: its row under the tracks (extMenu() is 0 then).
-  if (col == 0) { if (extMenu()) { auMontar(); return auLN; } return video_n_audio() + nTba(); }
+  if (col == 0) { if (extMenu()) { auMontar(); return auLN; } return video_n_audio() + tbaVis(); }
 #else
   if (col == 0) { int n = video_n_audio(); return n + nExtras(); }
 #endif
@@ -1863,7 +1868,7 @@ static void aplicarFaixaArquivo(int i) {
 }
 static void aplicar(void) {
 #ifdef NV_TB_QUEIMA
-  if (coluna == 0 && nTba() && foco[0] >= video_n_audio()) { video_tpk_tba_ok(foco[0] - video_n_audio()); return; }
+  if (coluna == 0 && tbaVis() && foco[0] >= video_n_audio()) { video_tpk_tba_ok(foco[0] - video_n_audio()); return; }
 #endif
   if (coluna == 0 && tipoLinha(foco[0], NULL) != FXA_FAIXA) return;   // the language rows open their page (faixas_evento)
 #else
@@ -2426,7 +2431,7 @@ void faixas_evento(const SDL_Event *e) {
 #ifdef NV_TB_QUEIMA
   // Original audio row (tbburn.h): Left/Right change the value shown,
   // OK applies it (aplicar).
-  if (!modo && coluna == 0 && nTba() && foco[0] >= video_n_audio() && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
+  if (!modo && coluna == 0 && tbaVis() && foco[0] >= video_n_audio() && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
     video_tpk_tba_passo(foco[0] - video_n_audio(), k == SDLK_RIGHT ? 1 : -1);
     return;
   }
@@ -3073,7 +3078,7 @@ static void linhaLista(int col, int i, float x, float y, float w, float a) {
   int ativo;
   GfxRect lr = { x, y, w, IL_LN_H };
   nome[0] = sub[0] = 0;
-  if (!col && nTba() && i >= video_n_audio()) {
+  if (!col && tbaVis() && i >= video_n_audio()) {
 #ifdef NV_TB_QUEIMA
     video_tpk_tba_rotulo(i - video_n_audio(), nome, sizeof nome, sub, sizeof sub);
 #endif

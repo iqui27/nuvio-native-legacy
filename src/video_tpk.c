@@ -1573,7 +1573,8 @@ static void tbBombear(void) {
   // (faixasmkv_aplicar). Deciding on the bare player list found no ASS track,
   // and the file never burned by itself (log_11, owner 14/11).
   if (!tb.decidido && !tb.ativo && !tb.pend && !tb.desistiu && ativo && pronto && faixasLidas && !faixasNovas && mkvN > 0 &&
-      mkvTemAss() && ajustes_leg_queimar() && tbburn_pode() && reconPermitida && !emTrailer) {
+      mkvTemAss() && ajustes_leg_queimar() && tbburn_pode() && reconPermitida && !emTrailer &&
+      !dv.ativo /* another source's audio plays: burn-in waits until it stops */) {
     const char *porque = "";
     int k = tbAutoFaixa(1, &porque);
     tb.decidido = 1;
@@ -2571,6 +2572,7 @@ static void extReabrir(void) {
   if (!urlAtual[0] || parado || emTrailer || terminou) { extReabrirPend = 0; preAbandonar("playback ended"); return; }
   if (!dv.ativo && !pronto) return;   // the TV player is still loading this source
   if (cv.reabrindo) return;           // a reopen in flight: next tick
+  if (tb.ativo || tb.pend) return;    // TorBox's burned stream plays: applied after it stops
   extReabrirPend = 0;
   quer = audioext_pedido(urlAtual) && reconPermitida && doadorFonteServe();
   p = video_pos();
