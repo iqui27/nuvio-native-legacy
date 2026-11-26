@@ -397,6 +397,7 @@ int   ajustes_hero_notas(void);        // heroNotasLocal: nota do IMDb no destaq
 int   ajustes_hero_ano(void);          // heroAnoLocal: ano no destaque
 int   ajustes_hero_duracao(void);      // heroDuracaoLocal: duracao no destaque
 int   ajustes_hero_pasta_detalhes(void); // folder group, metadata and explore hint
+int   ajustes_login_codigo(void);       // loginHelpCodeLocal: codigo de 6 digitos na tela de login
 int   ajustes_hero_sinopse_grande(void); // Normal (22/30) ou Grande (24/32)
 int   ajustes_hero_tamanho(void);       // heroSizeLocal: 0 Normal, 1 Grande, 2 Muito grande (logo + informacoes)
 float ajustes_hero_escala_logo(void);   // hero logo scale for ajustes_hero_tamanho: 1, 1.25, 1.5
@@ -561,6 +562,9 @@ const char *ajustes_trailer_audio(void);  // "" auto (idioma da UI), "~" origina
 int   ajustes_trailer_fonte(void);     // TRF_* de trailerfonte.h; 0 = automatico
 float ajustes_trailer_zoom(void);      // ampliacao do trailer (1.0 = quadro inteiro)
 void  ajustes_definir_envio_auto(int ligado);
+// Vai tocar nesta TV (4.2): registro anonimo de compatibilidade; padrao desligado.
+int  ajustes_vaitocar(void);
+void ajustes_definir_vaitocar(int ligado);
 // N3: "Receber enquetes" (padrao ligado). O espelho local do opt-out da conta:
 // enquete.c grava aqui o que o servidor disse, sem refazer o pedido.
 int   ajustes_enquetes(void);

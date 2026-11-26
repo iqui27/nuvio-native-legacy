@@ -761,7 +761,9 @@ static int tvWebosLinha(char *linha, size_t cap, char *modeloOut, size_t capMode
     fclose(f);
   }
   if (!buf[0][0] && !buf[1][0]) { snprintf(linha, cap, "[tv] webos: /var/run/nyx ilegivel"); if (modeloOut) snprintf(modeloOut, capModelo, "webos"); return 0; }
-  if (!nyxCampo(buf[0], "product_id", modelo, sizeof modelo)) nyxCampo(buf[0], "device_name", modelo, sizeof modelo);
+  // `device_name` NAO: e o nome que a pessoa da a TV ("TV da Ana"), dado
+  // pessoal (auditoria r2 de #856). So o codigo de fabrica, ou nada.
+  if (!nyxCampo(buf[0], "product_id", modelo, sizeof modelo)) nyxCampo(buf[0], "model_name", modelo, sizeof modelo);
   nyxCampo(buf[0], "hardware_id", placa, sizeof placa);
   nyxCampo(buf[1], "webos_release", versao, sizeof versao);
   nyxCampo(buf[1], "webos_manufacturing_version", build, sizeof build);

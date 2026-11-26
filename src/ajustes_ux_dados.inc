@@ -260,6 +260,7 @@ static const char *uxSinonimos(int op) {
     case AJ_FONTE_PREPARAR: return "preparar fonte ao abrir titulo antecipar resolver antecipado play instantaneo inicio rapido debrid painel arquivo prepare source ahead instant start";
     case AJ_KIT_HOME: return "kit home importar link url endereco json fileiras colecoes comunidade pronto starter import rows collections community";
     case AJ_COLECAO_EXIBICAO: return "colecao colecoes exibicao padrao automatico grade linha tempo ranking saga decadas mural vitrine global collection collections default view automatic grid timeline showcase";
+    case AJ_VAITOCAR: return "compatibilidade vai tocar nesta tv registro anonimo codec hdr modelo privacidade compartilhar compatibility will it play anonymous share privacy";
     case AJ_LOG_REDE: return "registro rede local pagina log ip navegador local network log page browser seek";
     case AJ_DIAGNOSTICS_QR: return "baixar registro qr cartao diagnostico endereco download log qr card diagnostics address";
     case AJ_LINK_REUSAR: case AJ_LINK_PRAZO: return "reusar ultimo link sem busca retomar validade cache horas reuse last link cache duration";
@@ -299,6 +300,7 @@ static const char *uxSinonimos(int op) {
     case AJ_HERO_SINOPSE_TAM: return "sinopse tamanho destaque hero texto grande normal synopsis size";
     case AJ_HERO_NOTAS: return "nota notas imdb destaque hero avaliacao rating ratings esconder mostrar";
     case AJ_HERO_ANO: return "ano destaque hero lancamento year data esconder mostrar";
+    case AJ_LOGIN_CODIGO: return "codigo seis digitos login entrar ajuda parente configurar outra tv qr code pair help sign in remote";
     case AJ_HERO_PASTA_DETALHES: return "pasta colecao detalhes destaque hero folder collection details title";
     case AJ_HERO_DURACAO: return "duracao tempo destaque hero runtime minutos horas esconder mostrar";
     case AJ_HERO_TRAILER: return "trailer trailers destaque topo hero autoplay automatico";

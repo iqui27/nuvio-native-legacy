@@ -26,7 +26,7 @@ static int ajustePortavel(int op) {
     case AJ_LIVETV_RES: case AJ_LIVETV_FORMATO: case AJ_LIVETV_ESPERA:
     case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY: case AJ_LIVETV_SUGERIR:
     case AJ_EPG_MEMORIA:
-    case AJ_ENVIO_AUTO: case AJ_MEDIDOR: case AJ_ESTAT_TAMANHO: case AJ_ESTAT_LADO:
+    case AJ_ENVIO_AUTO: case AJ_VAITOCAR: case AJ_MEDIDOR: case AJ_ESTAT_TAMANHO: case AJ_ESTAT_LADO:
     case AJ_VIDRO_QUALIDADE: case AJ_ICONE_APP: case AJ_LOGO_APP: case AJ_ABERTURA:
       return 0;
     default: return 1;
