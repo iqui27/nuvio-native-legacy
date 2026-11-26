@@ -158,11 +158,12 @@ target_link_options(main PRIVATE "-Wl,--wrap=pthread_create" "-Wl,--wrap=fclose"
 # the folder the app builds as before and the seek bar has no thumbnails.
 # --exclude-libs keeps its symbols private to libmain (Media3's FFmpeg audio
 # decoder is a separate .so with its own copy).
-if(NUVIO_MINI_FFMPEG)
-  set(MINI_FF "${NUVIO_MINI_FFMPEG}/${ANDROID_ABI}")
-  if(NOT EXISTS "${MINI_FF}/lib/libavcodec.a")
-    message(FATAL_ERROR "thumbnail FFmpeg missing in ${MINI_FF} (run tools/android/ffmpeg-miniaturas.sh)")
-  endif()
+# Gradle passes the default cache folder whenever it exists, so an ABI missing
+# from it (a cache built for one ABI) builds that ABI without thumbnails.
+set(MINI_FF "${NUVIO_MINI_FFMPEG}/${ANDROID_ABI}")
+if(NUVIO_MINI_FFMPEG AND NOT EXISTS "${MINI_FF}/lib/libavcodec.a")
+  message(WARNING "thumbnail FFmpeg missing in ${MINI_FF} (run tools/android/ffmpeg-miniaturas.sh): ${ANDROID_ABI} without seek thumbnails")
+elseif(NUVIO_MINI_FFMPEG)
   target_compile_definitions(main PRIVATE NV_MINI_FFMPEG)
   target_include_directories(main PRIVATE "${MINI_FF}/include")
   target_link_libraries(main PRIVATE "${MINI_FF}/lib/libavformat.a" "${MINI_FF}/lib/libavcodec.a" "${MINI_FF}/lib/libavutil.a")
