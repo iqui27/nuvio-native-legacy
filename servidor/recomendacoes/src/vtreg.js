@@ -34,12 +34,13 @@ const CHAVES = ["v", "plataforma", "modelo", "firmware", "container", "video", "
 // gramatica o valor vira "?" — o registro tecnico continua valendo, mas nada
 // de texto livre entra no agregado de 180 dias.
 //   modelo, por plataforma (auditoria r2 de #856):
-//     webos   codigo LG: [LG-][OLED|QNED|NANO] + 2 digitos + alfanumerico;
+//     webos   codigo LG: familia OLED/QNED/NANO antes ou depois de 2 digitos,
+//             ou 2 digitos seguidos de serie com 2+ letras e digito; LG-55C1PSA avulso;
 //     tizen   codigo Samsung: [Samsung-] + QN/UN/UE/... + 2 digitos + alfanumerico;
 //     android "<FABRICANTE>-<MODELO>" com fabricante na lista fechada MARCAS e
 //             modelo com digito ou nome de produto conhecido (RE_PRODUTO);
 //     linux/macos so a arquitetura; outro: sempre "?".
-//     Sempre <= 32, sem 7+ digitos seguidos.
+//     Sempre <= 32, sem ponto nem 7+ digitos seguidos.
 //   firmware: so versao numerica, 1 a 3 grupos de 1 a 3 digitos ("05.30.25").
 export const MARCAS = ["LG", "Samsung", "TCL", "Hisense", "Sony", "Philips", "TPV", "Xiaomi", "Google",
   "Amazon", "NVIDIA", "Apple", "Roku", "Mecool", "onn", "Panasonic", "Sharp", "Vizio", "AOC", "Philco",
@@ -47,16 +48,16 @@ export const MARCAS = ["LG", "Samsung", "TCL", "Hisense", "Sony", "Philips", "TP
   "Ugoos", "Zidoo", "Dune", "Realme", "OnePlus", "Multilaser", "Positivo", "Britania", "JVC", "Grundig",
   "Metz", "Loewe", "Bang-Olufsen", "Chromecast"];
 const ARQS = ["x86_64", "aarch64", "arm64", "armv7l", "armv8l", "i686"];
-const RE_LG = /^(?:LG-)?(?:OLED|QNED|NANO)?[0-9]{2}[A-Za-z0-9]{3,}$/i;
+const RE_LG = /^(?:LG-)?(?:(?:OLED|QNED|NANO)[0-9]{2}[A-Za-z0-9]{2,}|[0-9]{2}(?:NANO|QNED|OLED|[A-Za-z]{2,}[0-9])[A-Za-z0-9]*)$/i;
 const RE_PRODUTO = /^(?:AFT[A-Za-z0-9]{1,8}|SHIELD(?:-Android-TV)?|Chromecast(?:-HD|-Ultra)?|Google-TV-Streamer)$/i;
 const RE_SAMSUNG = /^(?:Samsung-)?(?:QN|UN|UE|QE|GQ|GU|KU|KQ|UA|QA|LS|LH|TU)[0-9]{2}[A-Za-z0-9]{3,}$/i;
 
 export function modeloTecnico(s, plataforma) {
   if (typeof s !== "string" || s.length > VAITOCAR_MODELO_MAX) return "?";
-  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(s) || /[0-9]{7,}/.test(s)) return "?";
+  if (!/^[A-Za-z0-9][A-Za-z0-9_+-]*$/.test(s) || /[0-9]{7,}/.test(s)) return "?";
   if (/[0-9a-f]{16,}/i.test(s) || /www\.|http|magnet/i.test(s)) return "?";
   let ok = false;
-  if (plataforma === "webos") ok = RE_LG.test(s);
+  if (plataforma === "webos") ok = RE_LG.test(s) || s.toLowerCase() === "lg-55c1psa";
   else if (plataforma === "tizen") ok = RE_SAMSUNG.test(s);
   else if (plataforma === "android") {
     // O resto depois da marca precisa ter digito (codigo de modelo) ou ser um

@@ -67,7 +67,11 @@ int main(void) {
   {
     static const char *const MOD_OK[][3] = {
       { "webos", "OLED55C9PSA", "OLED55C9PSA" }, { "webos", "50NANO80ASA", "50NANO80ASA" },
-      { "webos", "43UK6300PSB", "43UK6300PSB" }, { "tizen", "QN65Q80BAGXZD", "QN65Q80BAGXZD" },
+      { "webos", "43UK6300PSB", "43UK6300PSB" }, { "webos", "55UM7470PSA", "55UM7470PSA" },
+      { "webos", "LG-55C1PSA", "LG-55C1PSA" }, { "webos", "65QNED80SRA", "65QNED80SRA" },
+      { "webos", "49SM8000PSA", "49SM8000PSA" }, { "webos", "lg-oled55A1", "lg-oled55A1" },
+      { "webos", "49nAnO", "49nAnO" }, { "webos", "lg-55c1psa", "lg-55c1psa" },
+      { "tizen", "QN65Q80BAGXZD", "QN65Q80BAGXZD" },
       { "android", "TCL 55C735", "TCL-55C735" }, { "android", "Sony \"BRAVIA\" 4K (VH2)", "Sony-BRAVIA-4K-VH2" },
       { "android", "Xiaomi MiTV-MOOQ1", "Xiaomi-MiTV-MOOQ1" }, { "android", "NVIDIA SHIELD Android TV", "NVIDIA-SHIELD-Android-TV" },
       { "android", "Amazon AFTMM", "Amazon-AFTMM" }, { "android", "Google Chromecast", "Google-Chromecast" },
@@ -77,7 +81,10 @@ int main(void) {
       { "webos", "Joao Silva" }, { "webos", "TV da Ana 2" }, { "webos", "TCL 55C735" }, { "tizen", "OLED55C9PSA" },
       { "android", "Joao Silva" }, { "android", "Sony TV da Ana" }, { "android", "Amazon Sala" }, { "android", "OLED55C9PSA" },
       { "android", "Sony" }, { "android", "Sony 12345678" }, { "android", "Chromecast da Ana" }, { "linux", "meu-pc" },
-      { "outro", "OLED55C9PSA" }, { "android", "joao@exemplo.com" }, { "webos", "" }, { NULL, NULL }
+      { "outro", "OLED55C9PSA" }, { "android", "joao@exemplo.com" }, { "webos", "" },
+      { "android", "Samsung-10.0.0.1" }, { "android", "Google-192.168.1.1" }, { "android", "Sony-4K.VH2" },
+      { "webos", "12joao" }, { "webos", "99maria" }, { "webos", "LG-12foo" },
+      { "webos", "OLED55A" }, { "webos", "12A34" }, { "webos", "LG-55C1PSAX" }, { NULL, NULL }
     };
     static const char *const FW_OK[][2] = {
       { "05.30.25", "05.30.25" }, { "11", "11" }, { "6.18.44-fc-v880", "6.18.44" }, { "6.", "6" }, { NULL, NULL }

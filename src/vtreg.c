@@ -98,13 +98,14 @@ nao:
 // MODELO (P1 das auditorias r1/r2 de #856): so codigo tecnico de aparelho,
 // conferido por PLATAFORMA. Depois do filtro acima, espacos viram '-'.
 //   webos: codigo de modelo da LG ("OLED55C9PSA", "50NANO80ASA", "43UK6300PSB"):
-//          [OLED|QNED|NANO]? + 2 digitos de polegada + letras/digitos;
+//          familia OLED/QNED/NANO antes ou depois de 2 digitos de polegada,
+//          ou 2 digitos seguidos de serie com 2+ letras e digito; LG-55C1PSA avulso;
 //   tizen: codigo de modelo da Samsung ("QN65Q80BAGXZD", "UN55TU7000");
 //   android: "<FABRICANTE>-<MODELO>" com o fabricante numa LISTA FECHADA de
 //          marcas de TV/box (Build.MANUFACTURER nao e editavel pela pessoa);
 //   linux/macos: so a arquitetura (x86_64, aarch64, arm64, armv7l, i686);
 //   outro, ou qualquer coisa fora disso: "?".
-// Sempre ate VTR_MODELO_MAX, sem 7+ digitos seguidos (telefone, serial).
+// Sempre ate VTR_MODELO_MAX, sem ponto nem 7+ digitos seguidos (telefone, serial).
 static const char *const MARCAS[] = {
   "LG", "Samsung", "TCL", "Hisense", "Sony", "Philips", "TPV", "Xiaomi", "Google", "Amazon", "NVIDIA",
   "Apple", "Roku", "Mecool", "onn", "Panasonic", "Sharp", "Vizio", "AOC", "Philco", "Semp", "Motorola",
@@ -127,13 +128,21 @@ static int prefixoSemCaixa(const char *s, const char *p) {
   for (i = 0; p[i]; i++) if (!s[i] || minusc((unsigned char)s[i]) != minusc((unsigned char)p[i])) return 0;
   return (int)i;
 }
+static int familiaLg(const char *t) {
+  return prefixoSemCaixa(t, "OLED") || prefixoSemCaixa(t, "QNED") || prefixoSemCaixa(t, "NANO");
+}
 static int modeloLg(const char *t) {
-  size_t n = strlen(t), i = 0;
-  int k = prefixoSemCaixa(t, "LG-");
-  if (k) i = (size_t)k;
-  if ((k = prefixoSemCaixa(t + i, "OLED")) || (k = prefixoSemCaixa(t + i, "QNED")) || (k = prefixoSemCaixa(t + i, "NANO"))) i += (size_t)k;
-  if (n < i + 5 || !ehDig((unsigned char)t[i]) || !ehDig((unsigned char)t[i + 1])) return 0;
-  return soAlnum(t, i + 2, n);
+  size_t n, i;
+  int k = prefixoSemCaixa(t, "LG-55C1PSA");
+  if (k && !t[k]) return 1;
+  t += prefixoSemCaixa(t, "LG-");
+  n = strlen(t);
+  if (familiaLg(t))
+    return n >= 8 && ehDig((unsigned char)t[4]) && ehDig((unsigned char)t[5]) && soAlnum(t, 6, n);
+  if (n < 5 || !ehDig((unsigned char)t[0]) || !ehDig((unsigned char)t[1]) || !soAlnum(t, 2, n)) return 0;
+  if (familiaLg(t + 2)) return 1;
+  for (i = 2; i < n && !ehDig((unsigned char)t[i]); i++) {}
+  return i >= 4 && i < n;
 }
 static int modeloSamsung(const char *t) {
   static const char *const P[] = { "QN", "UN", "UE", "QE", "GQ", "GU", "KU", "KQ", "UA", "QA", "LS", "LH", "TU", NULL };
@@ -183,6 +192,7 @@ int vtreg_modelo_tecnico(const char *plataforma, const char *s, char *out, size_
   if (n > VTR_MODELO_MAX) goto nao;
   for (i = 0; i < n; i++) {
     unsigned char c = (unsigned char)t[i];
+    if (c == '.') goto nao;
     if (c == ' ') t[i] = '-';
     if (ehDig(c)) { if (++seq >= 7) goto nao; } else seq = 0;
   }

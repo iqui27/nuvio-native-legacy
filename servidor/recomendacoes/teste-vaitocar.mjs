@@ -79,6 +79,8 @@ test("modelo e firmware: so valor tecnico; texto livre vira ? e nao entra no agr
     { modelo: "x".repeat(48) }, { modelo: "tel11987654321" }, { firmware: "versao nova" },
     { firmware: "192.168.100.24" }, { firmware: "10.0.0.1" }, { firmware: "6.18.44-generic" },
     { firmware: "1234" }, { modelo: "", firmware: "" },
+    { plataforma: "android", modelo: "Samsung-10.0.0.1" }, { plataforma: "android", modelo: "Google-192.168.1.1" },
+    { modelo: "12joao" }, { modelo: "99maria" }, { modelo: "LG-12foo" },
   ];
   for (const l of livres) assert.equal((await pedir(env, { ...base, ...l })).status, 200, JSON.stringify(l));
   const guardado = sqlite.prepare("SELECT DISTINCT modelo, firmware FROM vaitocar").all();
@@ -88,13 +90,18 @@ test("modelo e firmware: so valor tecnico; texto livre vira ? e nao entra no agr
   }
   assert.ok(!JSON.stringify(guardado).match(/joao|Joao|Ana|Sala|Filme|http|192\.168|10\.0|abcdef|generic|nova/));
   // O que e tecnico passa como veio, conferido pela plataforma.
-  const ok = [["webos", "OLED55C9PSA"], ["webos", "50NANO80ASA"], ["webos", "43UK6300PSB"], ["tizen", "QN65Q80BAGXZD"],
-    ["tizen", "UN55TU7000"], ["android", "TCL-55C735"], ["android", "Sony-BRAVIA-4K-VH2"], ["android", "Google-Chromecast"],
+  const ok = [["webos", "OLED55C9PSA"], ["webos", "50NANO80ASA"], ["webos", "43UK6300PSB"], ["webos", "55UM7470PSA"],
+    ["webos", "LG-55C1PSA"], ["webos", "65QNED80SRA"], ["webos", "49SM8000PSA"], ["webos", "lg-oled55A1"],
+    ["webos", "49nAnO"], ["webos", "lg-55c1psa"],
+    ["tizen", "QN65Q80BAGXZD"], ["tizen", "UN55TU7000"], ["android", "TCL-55C735"], ["android", "Sony-BRAVIA-4K-VH2"], ["android", "Google-Chromecast"],
     ["android", "NVIDIA-SHIELD-Android-TV"], ["android", "Xiaomi-MiTV-MOOQ1"], ["android", "Amazon-AFTMM"], ["android", "Chromecast"], ["linux", "x86_64"], ["macos", "arm64"]];
   for (const [p, m] of ok) assert.equal(modeloTecnico(m, p), m, p + " " + m);
   const ruim = [["webos", "Joao-Silva"], ["webos", "TV-da-Ana-2"], ["webos", "TCL-55C735"], ["tizen", "OLED55C9PSA"],
     ["android", "Joao-Silva"], ["android", "Chromecast-da-Ana"], ["android", "OLED55C9PSA"], ["android", "Sony"],
-    ["linux", "meu-pc"], ["outro", "OLED55C9PSA"], ["android", "Sony-12345678"], ["android", "Sony-TV-da-Ana"], ["android", "Amazon-Sala"]];
+    ["linux", "meu-pc"], ["outro", "OLED55C9PSA"], ["android", "Sony-12345678"], ["android", "Sony-TV-da-Ana"], ["android", "Amazon-Sala"],
+    ["android", "Samsung-10.0.0.1"], ["android", "Google-192.168.1.1"], ["android", "Sony-4K.VH2"],
+    ["webos", "12joao"], ["webos", "99maria"], ["webos", "LG-12foo"], ["webos", "OLED55A"], ["webos", "12A34"],
+    ["webos", "LG-55C1PSAX"]];
   for (const [p, m] of ruim) assert.equal(modeloTecnico(m, p), "?", p + " " + m);
   for (const f of ["05.30.25", "11", "6.18.44"]) assert.equal(firmwareTecnico(f), f);
   for (const f of ["6.", "1.2.3.4", "03.21.30.1", "10.0.0.1", "255.255.255.0", "v1.2", "1234"]) assert.equal(firmwareTecnico(f), "?");
