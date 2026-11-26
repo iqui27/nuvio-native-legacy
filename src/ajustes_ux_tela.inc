@@ -104,6 +104,9 @@ static const Item TELA[] = {
     ROT("Idiomas"),
       OPC(AJ_IDIOMA), OPC(AJ_AUD_LINGUA), OPC(AJ_AUD_ORIGINAL), OPC(AJ_AUD_LINGUA2), OPC(AJ_LEG_LINGUA), OPC(AJ_LEG_FORCADA),
       OPC(AJ_LEG_EVITAR_SDH), OPC(AJ_LEG_TEMPORARIA),
+#if AJ_ASS_PESO_AQUI   /* webOS e .wgt: ver ajustes.c */
+      OPCA(AJ_LEG_ASS_PESO),
+#endif
       OPC(AJ_LEG_MOSTRAR), OPC(AJ_LEG_SYNC_AUTO), OPCA(AJ_TMDB_IDIOMA),
 #ifdef NV_ANDROID
       // Sincronia pelo audio (F06): so o player do Android entrega o PCM. Na LG e
@@ -183,6 +186,7 @@ static const Item TELA[] = {
       OPC(AJ_CURADORIA_URL),
       OPCA(AJ_ROTULOS), OPCA(AJ_NOME_ADDON), OPCA(AJ_SUFIXO_TIPO),
     ROT("Coleções"), OPC(AJ_COLECAO_EXIBICAO),
+      OPC(AJ_KIT_HOME),
     ROT("Continuar assistindo"),
       OPC(AJ_CW_LIGADO), OPC(AJ_CW_OK), OPC(AJ_CW_ESTILO), OPC(AJ_CW_THUMB),
       OPC(AJ_CW_BLUR_PROX), OPC(AJ_CW_ORDEM), OPC(AJ_CW_NAO_EXIBIDOS),

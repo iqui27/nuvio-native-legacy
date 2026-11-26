@@ -3,6 +3,7 @@ static const char *ajVisualIcone(int op) {
   if (ajLegendaPrincipal(op) || op == AJ_LEG1_RESTAURAR || ajLegendaSecundaria(op)) return "aj_captions";
   switch (op) {
     case AJ_COLECAO_EXIBICAO: return "aj_layout-dashboard";
+    case AJ_KIT_HOME: return "aj_layout-dashboard";
     case AJ_HOME_LAYOUT: return "aj_layout-dashboard";
     case AJ_LANDSCAPE: return "aj_layout-dashboard";
     case AJ_HERO: return "aj_layout-dashboard";
@@ -217,7 +218,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_DEBRID_LIGADO: return "aj_key";
     case AJ_ADDONS_LIGADO: return "aj_puzzle";
     case AJ_LEG_ESTILO_LIGADO: return "aj_captions";
-    case AJ_LEG_MOSTRAR: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_LEG_FORCADA: case AJ_LEG_EVITAR_SDH: case AJ_LEG_TEMPORARIA: return "aj_captions";
+    case AJ_LEG_MOSTRAR: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_LEG_FORCADA: case AJ_LEG_EVITAR_SDH: case AJ_LEG_TEMPORARIA: case AJ_LEG_ASS_PESO: return "aj_captions";
     case AJ_CACHE_SEEK: return "aj_database";
     case AJ_TAM_MAX: case AJ_TAM_MIN: return "aj_database";
     case AJ_TMDB_IDIOMA: return "aj_file-text";

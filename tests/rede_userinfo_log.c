@@ -16,6 +16,12 @@ char *android_http(const char *v, const char *u, const char *c, const char *b, i
   if (androidErro) { snprintf(erro, ne, "falha de transporte"); *st = 0; return NULL; }
   *st = 200; return strdup("{}");
 }
+/* Variante com teto (android_http_teto): o double ignora o teto; o corte e do rede.c. */
+char *android_http_teto(const char *v, const char *u, const char *c, const char *b, int p,
+                        long teto, int *st, int *retry, long *n, char *e, size_t ne) {
+  (void)teto;
+  return android_http(v, u, c, b, p, st, retry, n, e, ne);
+}
 char *android_http_seguro(const char *v, const char *u, const char *c, const char *b, int p,
                           int *st, int *retryAfter, long *n, char *erro, size_t ne) {
   return android_http(v, u, c, b, p, st, retryAfter, n, erro, ne);

@@ -12,5 +12,5 @@ elif [ "${SANITIZE:-0}" = thread ]; then
   flags+=(-fsanitize=thread -fno-omit-frame-pointer)
 fi
 cc "${flags[@]}" -Isrc -O2 -g -Wall -Wextra src/autosync.c src/legenda.c \
-  src/assrender.c src/assperf.c src/assfios.c tests/autosync.c -pthread -lm -o "$AS_DIR/test"
+  src/assrender.c src/assperf.c src/asspeso.c src/assfios.c tests/autosync.c -pthread -lm -o "$AS_DIR/test"
 "$AS_DIR/test"

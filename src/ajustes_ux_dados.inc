@@ -258,6 +258,7 @@ static const char *uxSinonimos(int op) {
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "proximo episodio automatico autoplay creditos contagem netflix sozinho next episode auto play countdown";
     case AJ_CW_MINIMO: return "minimo continuar assistindo porcentagem percentual entrar fileira retomada progresso quanto assistir comecou piso minimum percent continue watching threshold row";
     case AJ_FONTE_PREPARAR: return "preparar fonte ao abrir titulo antecipar resolver antecipado play instantaneo inicio rapido debrid painel arquivo prepare source ahead instant start";
+    case AJ_KIT_HOME: return "kit home importar link url endereco json fileiras colecoes comunidade pronto starter import rows collections community";
     case AJ_COLECAO_EXIBICAO: return "colecao colecoes exibicao padrao automatico grade linha tempo ranking saga decadas mural vitrine global collection collections default view automatic grid timeline showcase";
     case AJ_LOG_REDE: return "registro rede local pagina log ip navegador local network log page browser seek";
     case AJ_DIAGNOSTICS_QR: return "baixar registro qr cartao diagnostico endereco download log qr card diagnostics address";
@@ -309,6 +310,7 @@ static const char *uxSinonimos(int op) {
     case AJ_HERO_TRAILER_ESPERA: return "trailer trailers espera tempo demora atraso";
     case AJ_LEG_FORCADA: return "legenda forcada forcadas forced letreiros placas audio idioma automatica subtitle so os letreiros quando o audio ja e no seu idioma";
     case AJ_LEG_TEMPORARIA: return "legenda temporaria sozinha automatica mudo mutar silenciar sem som voltar segundos o que ele disse rewind mute subtitle";
+    case AJ_LEG_ASS_PESO: return "legenda ass ssa anime estilo libass styled subtitles karaoke placas efeitos travando lenta pesada texto simples nitidez";
     case AJ_LEG_EVITAR_SDH: return "sdh cc surdos surdo hearing impaired descricao som legenda sem descricoes evitar nao escolher";
     case AJ_LEG_SYNC_AUTO: case AJ_LEG_SYNC_AUDIO: return "sincronia sincronizar legenda audio fala falas atraso automatico sync subtitle speech";
     case AJ_AVANCADAS: return "avancado avancada avancados avancadas tecnico tecnica opcoes ocultas mostrar esconder advanced";

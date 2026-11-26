@@ -134,6 +134,7 @@ static void navigationRange(float,float,float,float,float,float,PonteiroFn,Ponte
 #include "fundo.h"
 #include "p2p.h"
 #include "curadoria.h"
+#include "homekitapp.h"
 #include "nvbackend.h"
 #include "p2pmotor.h"
 #include "pessoas.h"
@@ -901,6 +902,15 @@ typedef enum {
   // por aparelho, nunca no ajustes.txt nem na conta. Append-only.
   AJ_PERDI,
   AJ_PERDI_CHAVE,
+  // Kit de Home importavel por URL (homekit.h). ACAO: um endereco; vazio
+  // remove o kit. Por perfil, nesta TV (kit-home-p<N>.json). Append-only.
+  AJ_KIT_HOME,
+  // Legenda ASS com estilo em TV fraca, FORA do .tpk (asspeso.h; no .tpk o
+  // assperf ja responde por resolucao e libass, entao fica escondido).
+  // Automatico = o libass perde resolucao enquanto a cena pesa; Sempre
+  // completo = como era antes; Texto simples = sem libass para o ASS do
+  // autor. LOCAL, append-only.
+  AJ_LEG_ASS_PESO,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -957,6 +967,16 @@ static const char *V_EXT_CACHE[] = { "Mostrar apagadas", "Ocultar" };
 static const char *V_EXT_PASSO[] = { "10 ms", "50 ms", "100 ms" };
 static const char *V_EXT_MODO[] = { "Arquivo inteiro", "Só áudio" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+/* "Legenda ASS com estilo" so existe onde o libass desenha E o assperf nao
+ * responde: webOS e .wgt. Sem libass (Android, builds de mesa) nao ha o que
+ * pesar; no .tpk/.tpk40 (e nos testes NV_ASS_NOVO) o Estilo da faixa ASS ja
+ * tem resolucao e libass. O enum e as tabelas ficam iguais em toda build. */
+#if defined(NV_ASS_LIBASS) && !defined(NV_TPK) && !defined(NV_TPK40) && !defined(NV_ASS_NOVO)
+#define AJ_ASS_PESO_AQUI 1
+#else
+#define AJ_ASS_PESO_AQUI 0
+#endif
+static const char *V_ASS_PESO[]  = { "Automático", "Sempre completo", "Texto simples" };   // = ASSPESO_*
 static const char *V_FAROL_AVISOS[] = { "Só quando eu abrir", "Ligado" };
 static const char *V_SOURCE_BADGE_POSITION[] = { "No topo", "Embaixo" };
 static const char *V_GUIA_INICIO[] = { "Ao destacar", "Ao selecionar" };
@@ -2164,6 +2184,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Legenda ao silenciar ou voltar", V_LIGA, 2),          // local: legendaTemporariaLocal
   ESC("O que eu perdi?", V_LIGA, 2),                         // local: oQuePerdiLocal
   ACAO("Chave do Gemini"),                                   // valor em gemini.txt
+  ACAO("Kit de Home"),   // homekitapp.c: o kit mora em kit-home-p<N>.json
+  ESC("Legenda ASS com estilo", V_ASS_PESO, 3),              // local: legendaAssPesoLocal (fora do .tpk)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2566,6 +2588,8 @@ static const char *CHAVE[] = {
   "oQuePerdiLocal",
   // "-": o VALOR mora em gemini.txt (dados); credencial, fora do ajustes.txt.
   "-geminiChave",
+  "-kitHome",   // nunca vai para a conta: o kit e deste perfil nesta TV
+  "legendaAssPesoLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3753,6 +3777,7 @@ static int ajOpcaoDisponivel(int op) {
   if(op==AJ_IPTV_ORDEM)return iptv_contas(NULL,0)>0;
   if (op == AJ_FALHA_ADDON_LIMITE) return faAddonEditar[0] != 0;
   if (op == AJ_HDR_INTERFACE) return 0;
+  if (op == AJ_LEG_ASS_PESO && !AJ_ASS_PESO_AQUI) return 0;   // .tpk/.tpk40, sem libass: ver AJ_ASS_PESO_AQUI
 #ifndef NV_ANDROID
 #ifndef AJUSTES_TESTE
   if (op == AJ_FONTE_PRECARREGAR || op == AJ_TUNNELING || op == AJ_AFR || op == AJ_BARRAS_PRETAS) return 0;
@@ -3784,6 +3809,10 @@ int ajustes_legenda_sync_audio(void) { return 0; }   // escondida fora do Androi
 int ajustes_legenda_forcada_auto(void) { return lig(AJ_LEG_FORCADA); }   // #287, padrao Ligado
 int ajustes_legenda_evitar_sdh(void) { return lig(AJ_LEG_EVITAR_SDH); }   // #743, padrao Desligado
 int ajustes_legenda_temporaria(void) { return lig(AJ_LEG_TEMPORARIA); }   // legtemp.h, padrao Ligado
+int ajustes_legenda_ass_peso(void) {   // ASSPESO_*; onde o ajuste nao existe, sempre Automatico
+  int v = valor[AJ_LEG_ASS_PESO];
+  return !AJ_ASS_PESO_AQUI || v < 0 || v > 2 ? 0 : v;
+}
 // Motor novo de legendas ASS do .tpk (assperf.h): 1 = ligado (padrao), 0 = o
 // motor de antes de 23/10. Lido pelo ass_novo_ligado via ass_novo_registrar.
 // A thread de render NAO le valor[]: ela recebe este ESPELHO, publicado com
@@ -7073,6 +7102,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LEG_FORCADA:    /* #287: o web nao tem esta escolha */
     case AJ_LEG_EVITAR_SDH: /* #743: idem */
     case AJ_LEG_TEMPORARIA: /* idem */
+    case AJ_LEG_ASS_PESO:   /* o peso do libass e desta TV */
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA: /* estilo da legenda e desta TV */
     case AJ_LEG_CONTORNO_COR: /* #475: idem */
     case AJ_CACHE_SEEK:     /* F07: o disco e o player sao desta TV */
@@ -7746,6 +7776,7 @@ static int foraDestaPlataforma(int op) {
 #if !defined(NV_TPK) && !defined(NV_ASS_NOVO) && !defined(AJUSTES_TESTE)
   if (op == AJ_ASS_MOTOR) return 1;   // so o .tpk tem o motor novo de ASS
 #endif
+  if (op == AJ_LEG_ASS_PESO && !AJ_ASS_PESO_AQUI) return 1;   // ver AJ_ASS_PESO_AQUI (e fora da TELA tambem)
 #if defined(NV_TPK) || defined(NV_ANDROID) || !defined(NV_DV7_CONVERSION)
   if (op == AJ_DV7) return 1;
   if (op == AJ_DV7_MAPPING) return 1;
@@ -7973,6 +8004,7 @@ static const char *rotuloNovo(int op) {
     case AJ_LEG_FORCADA: return "Legenda forçada automática";
     case AJ_LEG_EVITAR_SDH: return "Evitar legendas SDH";
     case AJ_LEG_TEMPORARIA: return "Legenda ao silenciar ou voltar";
+    case AJ_LEG_ASS_PESO: return "Legenda ASS com estilo";
     case AJ_TMDB_IDIOMA: return "Idioma dos dados do título";
     case AJ_HERO_FUNDO: return "Imagem de fundo do destaque";
     case AJ_GRAD_CLASSICO: return "Realce antigo no cartaz em foco";
@@ -8292,6 +8324,11 @@ static const char *textoLeitura(int op) {
   if (op >= AJ_PX_ENTRAR && op <= AJ_PX_SAIR) return pxTexto(op);
   if (op == AJ_P2P_URL) return p2pEndereco[0] ? p2pEndereco : i18n("Não configurado");
   if (op == AJ_CURADORIA_URL) return curadoria_url()[0] ? curadoria_url() : i18n("Não configurado");
+  if (op == AJ_KIT_HOME) {
+    const char *e = homekit_estado_texto();
+    if (e) return i18n(e);
+    return homekit_tem() ? homekit_nome() : i18n("Não configurado");
+  }
   if (op == AJ_NUVIO_BACKEND_URL) {
     static char recUrl[400];
     return nv_rec_url_copiar(recUrl, sizeof recUrl) ? recUrl : i18n("Não configurado");
@@ -8830,6 +8867,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_LEG_SYNC_AUTO: return "Ajusta a legenda automaticamente. Desligue para manter a escolhida. Vale só nesta TV.";
     case AJ_LEG_SYNC_AUDIO: return "Compara as falas do áudio com a legenda externa para acertar o atraso. Só onde o player entrega o áudio decodificado e sem passthrough; vale só nesta TV.";
     case AJ_LEG_FORCADA: return "Quando o áudio já está no idioma da legenda, liga só a legenda forçada desse idioma (falas em outra língua e placas), ou nenhuma se o arquivo não tiver. Desligado, liga a legenda completa como antes.";
+    case AJ_LEG_ASS_PESO: return "Legendas ASS trazem posição, cores, fontes e efeitos do autor, comuns em anime. Automático mantém o estilo e baixa só a nitidez enquanto uma cena pesa demais para a TV. Sempre completo nunca baixa a nitidez. Texto simples mostra só o texto, com o estilo que você escolheu nos Ajustes.";
     case AJ_LEG_EVITAR_SDH: return "A escolha automática passa a ignorar legendas para surdos (SDH/CC), que trazem descrições como [porta batendo] e o nome de quem fala. A escolha manual continua mostrando todas; vale só nesta TV.";
     case AJ_LEG_TEMPORARIA: return "Sem legenda ligada, ela aparece sozinha quando você volta alguns segundos ou silencia o som, e some quando a cena passa do ponto em que você estava ou o som volta. Não muda a legenda que você escolheu. O silenciar só vale onde o aparelho informa; vale só nesta TV.";
     case AJ_LEG_MOSTRAR: return valor[op] ? "Todas as legendas, com detalhes" : "Recomendadas";
@@ -9182,6 +9220,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_ESPACO_FILEIRAS: return "O espaço vertical entre uma fileira da Home e a seguinte. Com menos cabem mais fileiras na tela, com mais a Home fica mais arejada.";
     case AJ_ESPACO_TITULOS: return "O espaço horizontal entre os cartazes de uma fileira da Home.";
     case AJ_TUNNELING: return "Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.";
+    case AJ_KIT_HOME: return "Um kit é um conjunto pronto de fileiras de coleções, feito por alguém e publicado num link. Ele só acrescenta fileiras à Home deste perfil nesta TV: não instala addon nem muda ajuste. Fonte de addon que você não tem fica de fora. Endereço vazio remove o kit.";
     case AJ_BARRAS_PRETAS: return "Pinta de preto a área fora do vídeo (tarjas). Útil em HDR/Dolby Vision quando o fundo vaza cor. Vale no player Android TV.";
     case AJ_ASS_MOTOR: return "Motor de legendas ASS desta TV. Ligado usa o motor novo (libass NEON); Desligado volta ao motor anterior. Vale para arquivos com legenda ASS/SSA.";
     case AJ_TV_HOME: return "Mostra Continuar assistindo e o canal Nuvio no Android TV. Perfis infantis ficam ocultos. Desligar remove os itens publicados. Vale só nesta TV.";
@@ -9548,6 +9587,7 @@ static const char *beneficioProprio(int op) {
     case AJ_LEG_FORCADA: return "Placas e falas em outra língua aparecem; o resto, não.";
     case AJ_LEG_EVITAR_SDH: return "Legendas sem descrições de som são preferidas nas escolhas automáticas.";
     case AJ_LEG_TEMPORARIA: return "A legenda aparece sozinha quando você volta alguns segundos ou silencia o som.";
+    case AJ_LEG_ASS_PESO: return "Como as legendas ASS de anime são desenhadas quando a cena pesa para a TV.";
     case AJ_BUSCA_CINEMETA: return "A busca também consulta o Cinemeta se o catálogo do Nuvio falhar.";
     case AJ_HOME_LAYOUT: return "Como a Home se organiza: Moderna, Padrão ou Dinâmica.";
     case AJ_MENU_TOPO: return "Onde fica o menu: na esquerda ou no alto da tela.";
@@ -11453,6 +11493,14 @@ static void eventoTela(const SDL_Event *e) {
                         64, ST_ALFA_PORTAL, p2pEndereco[0] ? p2pEndereco : NULL);
       return;
     }
+    if (focoOp == AJ_KIT_HOME) {
+      if (homekit_baixando()) return;
+      stCampo = focoOp;
+      teclado_abrir_com("Kit de Home", "O link do JSON do kit (https://…). Vazio remove o kit.",
+                        NV_HK_URL_MAX - 1, SP_ALFA_URL, NULL);
+      if (homekit_tem()) teclado_permitir_vazio(1);
+      return;
+    }
     if (focoOp == AJ_CURADORIA_URL) {
       stCampo = focoOp;
       teclado_abrir_com("Endereço da curadoria", "Endereço de um JSON com uma recomendação de filme. Vazio apaga.",
@@ -11629,6 +11677,11 @@ void ajustes_atualizar(float dt, Uint32 agora) {
         if (!openseek_definir_endereco(teclado_texto())) uxNotificar("endereço inválido");
       } else if (stCampo == AJ_OPENSEEK_PAREAR) {
         if (!openseek_parear(teclado_texto())) uxNotificar("código ou convite inválido");
+      }
+      else if (stCampo == AJ_KIT_HOME) {
+        int tinha = homekit_tem();
+        homekit_importar(teclado_texto());
+        if (tinha && !homekit_tem()) uxNotificar("Kit de Home removido.");
       }
       else if (stCampo == AJ_CURADORIA_URL) {
         int e = curadoria_definir_url(teclado_texto());
@@ -12298,6 +12351,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_LEG_EVITAR_SDH:
     case AJ_LEG_TEMPORARIA:
     case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO: case AJ_PAUSA_AMBIENTE:
+    case AJ_LEG_ASS_PESO:
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: case AJ_FONTE_MANUAL:
     case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC:
     case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_SELOS_CORES: case AJ_SOURCE_BADGE_POSITION: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR:

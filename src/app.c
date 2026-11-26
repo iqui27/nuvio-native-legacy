@@ -121,6 +121,7 @@ extern __attribute__((weak)) void farol_registrar_resultado(int acao, int ok);
 #include "agendaviso.h"
 #include "perfil.h"
 #include "caca.h"
+#include "homekitapp.h"
 #include "cacaui.h"
 #include "salvos.h"
 #include "contapend.h"
@@ -4542,6 +4543,7 @@ int app_iniciar(const char *dirArte) {
   arranque_etapa("app_iniciar/perfil_iniciar");
   perfil_iniciar();
   caca_iniciar();
+  homekit_iniciar();
   // ANTES do primeiro sync e da primeira descoberta: salvos_aplicar_catalogo
   // marca `naLista` no catalogo do cache, entao o painel e a Biblioteca ja
   // abrem certos no primeiro quadro. Ler depois faria a lista local piscar.
@@ -8610,6 +8612,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // A Caca anda em toda tela: o aviso de conquista sai sem player (depois
   // dos creditos, na volta a Home), nunca durante o filme.
   caca_passo(agora, !player_aberto());
+  homekit_passo();
   if (tela == TELA_CACA) cacaui_atualizar(dt, agora);
   spainel_atualizar(dt, agora);
   recomenda_atualizar(dt, agora);
