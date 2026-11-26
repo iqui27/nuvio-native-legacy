@@ -121,6 +121,10 @@ float ajustes_acento_tinta(float *r, float *g, float *b) { *r = *g = *b = 1.0f; 
 void ajustes_abrir_no_trakt(void) {}
 void ajustes_abrir_na_espera_fonte(void) {}
 void ajustes_iniciar(void) {}
+// Vai tocar nesta TV (4.2): o ajuste que a linha da tela de consentimento muda.
+static int c_vaitocar, c_vaitocar_gravou;
+int  ajustes_vaitocar(void) { return c_vaitocar; }
+void ajustes_definir_vaitocar(int ligado) { c_vaitocar = ligado ? 1 : 0; c_vaitocar_gravou++; }
 
 int rede_saude_offline(void) { return 0; }
 int addons_n(void) { return 2; }
@@ -226,6 +230,7 @@ void botao_pilula(GfxRect r, const char *rot, const char *ic, float f, int p, in
 }
 float botao_cor_foco(float *r, float *g, float *b) { *r = *g = *b = 1.0f; return 1.0f; }
 void botao_luz(GfxRect r, float f, float a) { (void)r; (void)f; (void)a; }
+int botao_superficie(GfxRect r, float f, float a) { (void)r; (void)a; return f > 0.5f ? 17 : 235; }
 void ponteiro_alvo(float x, float y, float w, float h, PonteiroFn fo, PonteiroFn at, int a, int b) {
   (void)x; (void)y; (void)w; (void)h; (void)fo; (void)at; (void)a; (void)b;
 }
@@ -700,6 +705,74 @@ static void testar_dpad_resolver(void) {
   puts("ok  D-pad Resolver: key.repeat ignorado, Voltar=0, So nesta TV=1, Permitir=2");
 }
 
+// Vai tocar nesta TV (4.2) unificado no consentimento do Farol: uma linha
+// "Compartilhar compatibilidade" acima dos botoes; OK so marca; a marca vale
+// quando a pessoa decide; Voltar descarta; foco inicial nunca liga nada.
+static void testar_vaitocar_unificado(void) {
+  farolconsent_esquecer();
+  farolconsent_teste_zera();
+  farolcompor_teste_zera();
+  resolver_teste_esquecer();
+  farolconsent_pasta(dadosDir);
+  c_perfil = 3; c_infantil = 0; memset(c_travado, 0, sizeof c_travado); c_recomendar = 1;
+  c_vidro = 1; c_reduzidas = 1; c_vaitocar = 0; c_vaitocar_gravou = 0;
+  farolconsent_trocar_perfil(3);
+
+  // A linha aparece e o foco inicial continua em "So nesta TV".
+  resolver_abrir();
+  CONFERE(farolconsentui_aberto() == 1);
+  CONFERE(resolver_foco() == FCUI_B_SO_TV);
+  CONFERE(farolconsentui_vaitocar_pendente() == 0);
+  desenhar();
+  CONFERE(escreveu("Compartilhar compatibilidade"));
+
+  // Cima chega na linha; OK marca sem gravar; Voltar descarta.
+  tecla(SDLK_UP, 0);
+  CONFERE(resolver_foco() == FCUI_B_VAITOCAR);
+  tecla(SDLK_RETURN, 0);
+  CONFERE(farolconsentui_vaitocar_pendente() == 1);
+  CONFERE(farolconsentui_aberto() == 1);
+  CONFERE(c_vaitocar_gravou == 0);
+  tecla(SDLK_DOWN, 0);
+  CONFERE(resolver_foco() == FCUI_B_SO_TV || resolver_foco() == FCUI_B_PERMITIR);
+  tecla(SDLK_ESCAPE, 0);
+  CONFERE(farolconsentui_aberto() == 0);
+  CONFERE(c_vaitocar == 0 && c_vaitocar_gravou == 0);
+  tecla(SDLK_ESCAPE, 0);
+
+  // Reabrir: marca de novo e decide "So nesta TV": o ajuste liga junto.
+  resolver_abrir();
+  CONFERE(farolconsentui_aberto() == 1);
+  CONFERE(farolconsentui_vaitocar_pendente() == 0);
+  tecla(SDLK_UP, 0);
+  tecla(SDLK_RETURN, 0);
+  CONFERE(farolconsentui_vaitocar_pendente() == 1);
+  tecla(SDLK_DOWN, 0);
+  if (resolver_foco() != FCUI_B_SO_TV) tecla(SDLK_LEFT, 0);
+  CONFERE(resolver_foco() == FCUI_B_SO_TV);
+  tecla(SDLK_RETURN, 0);
+  CONFERE(farolconsentui_aberto() == 0);
+  CONFERE(farolconsent_estado() == FAROL_CONSENT_SO_TV);
+  CONFERE(c_vaitocar == 1 && c_vaitocar_gravou == 1);
+  tecla(SDLK_ESCAPE, 0);
+
+  // Perfil 4, sem mexer na linha: "Permitir" mantem o ajuste como estava.
+  c_perfil = 4;
+  farolconsent_trocar_perfil(4);
+  c_vaitocar = 0; c_vaitocar_gravou = 0;
+  resolver_abrir();
+  CONFERE(farolconsentui_aberto() == 1);
+  tecla(SDLK_RIGHT, 0);
+  CONFERE(resolver_foco() == FCUI_B_PERMITIR);
+  tecla(SDLK_RETURN, 0);
+  CONFERE(farolconsent_estado() == FAROL_CONSENT_SIM);
+  CONFERE(c_vaitocar == 0);
+  tecla(SDLK_ESCAPE, 0);
+
+  farolconsent_esquecer();
+  puts("ok  Vai tocar no consentimento do Farol: OK marca, decisao grava, Voltar descarta");
+}
+
 int main(int argc, char **argv) {
   const char *dir = argc > 1 ? argv[1] : "";
   CONFERE(dir[0] != '\0');
@@ -708,6 +781,7 @@ int main(int argc, char **argv) {
   testar_lista_tela_igual_corpo();
   testar_estados_persistencia_e_bloqueios();
   testar_dpad_resolver();
+  testar_vaitocar_unificado();
 
   if (falhas) {
     fprintf(stderr, "farol_consent: %d falha(s)\n", falhas);

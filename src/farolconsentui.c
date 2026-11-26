@@ -20,6 +20,18 @@
 #define FCUI_ABRIR_MS 320.0f
 #define FCUI_FECHAR_MS 180.0f
 #define FCUI_MAX_IT   4
+#define FCUI_VT_Y     462.0f
+#define FCUI_VT_W     740.0f
+#define FCUI_VT_H     116.0f
+
+// VAI TOCAR NESTA TV (4.2), unificado aqui: um consentimento so, na tela do
+// Farol, em vez de um segundo cartao no arranque. Fraco porque o teste do
+// Farol (tests/farol_consent.sh) liga esta tela sem ajustes.c: sem o ajuste,
+// a linha some e a tela fica exatamente como era.
+extern int  ajustes_vaitocar(void) __attribute__((weak));
+extern void ajustes_definir_vaitocar(int ligado) __attribute__((weak));
+#define FCUI_TEXTO_VT     "Compartilhar compatibilidade"
+#define FCUI_TEXTO_VT_SUB "Conta, sem título nem endereço, se o vídeo tocou neste aparelho."
 
 typedef struct {
   int     id;
@@ -29,6 +41,14 @@ typedef struct {
 static int   aberto;
 static int   focoAtual = FCUI_B_SO_TV;
 static float entrada;
+static int   vtPendente;
+
+static int vt_presente(void) { return ajustes_vaitocar && ajustes_definir_vaitocar; }
+
+// A decisao da tela leva junto a escolha da linha de compatibilidade.
+static void vt_aplicar(void) {
+  if (vt_presente()) ajustes_definir_vaitocar(vtPendente);
+}
 
 static int foco_padrao(void) {
   return (farolconsent_estado() == FAROL_CONSENT_SIM) ? FCUI_B_PERMITIR : FCUI_B_SO_TV;
@@ -49,6 +69,7 @@ static int montar(FcuiItem *it, float ox, float oy) {
   const char *rotPerm = i18n(FT_GOSTO_CONSENT_PERMITIR);
   float wSoTv = botao_largura(rotSoTv, NULL, 1);
   float wPerm = botao_largura(rotPerm, "aj_check", 0);
+  if (vt_presente()) poe(it, &n, FCUI_B_VAITOCAR, ox, oy, x, FCUI_VT_Y, FCUI_VT_W, FCUI_VT_H);
   poe(it, &n, FCUI_B_SO_TV, ox, oy, x, 610.0f, wSoTv, BOTAO_H_PRIMARIO);
   poe(it, &n, FCUI_B_PERMITIR, ox, oy, x + wSoTv + BOTAO_GAP, 618.0f, wPerm, BOTAO_H_SECUNDARIO);
   return n;
@@ -77,11 +98,15 @@ static void mover(int dx, int dy) {
 }
 
 static void acionar_ok(void) {
-  if (focoAtual == FCUI_B_SO_TV) {
+  if (focoAtual == FCUI_B_VAITOCAR) {
+    vtPendente = !vtPendente;
+  } else if (focoAtual == FCUI_B_SO_TV) {
+    vt_aplicar();
     (void)farolconsent_definir(FAROL_CONSENT_SO_TV);
     farolcompor_definir_consentimento(0);
     farolconsentui_fechar();
   } else if (focoAtual == FCUI_B_PERMITIR) {
+    vt_aplicar();
     (void)farolconsent_definir(FAROL_CONSENT_SIM);
     farolconsentui_fechar();
   }
@@ -90,10 +115,12 @@ static void acionar_ok(void) {
 int farolconsentui_presente(void) { return 1; }
 int farolconsentui_aberto(void) { return aberto; }
 int farolconsentui_foco(void) { return focoAtual; }
+int farolconsentui_vaitocar_pendente(void) { return vtPendente; }
 
 void farolconsentui_abrir(void) {
   aberto = 1;
   focoAtual = foco_padrao();
+  vtPendente = vt_presente() ? (ajustes_vaitocar() != 0) : 0;
   entrada = ajustes_animacoes_reduzidas() ? 1.0f : 0.0f;
 }
 
@@ -104,6 +131,7 @@ void farolconsentui_fechar(void) {
 void farolconsentui_esquecer(void) {
   aberto = 0;
   focoAtual = FCUI_B_SO_TV;
+  vtPendente = 0;
   entrada = 0.0f;
 }
 
@@ -192,6 +220,29 @@ static void desenha_botao(FcuiItem *it, const char *rot, const char *ic, int pri
   alvo(it->r, it->id);
 }
 
+// A linha de compatibilidade: superficie de botao (mesmo foco de todo o app),
+// caixa de marcar, o nome do ajuste e o que vai, sem titulo nem endereco.
+static void desenha_vaitocar(FcuiItem *it, float a) {
+  float f = focoAtual == it->id ? 1.0f : 0.0f, ar, ag, ab;
+  GfxRect cx = { it->r.x + 28.0f, it->r.y + (it->r.h - 36.0f) * 0.5f, 36.0f, 36.0f };
+  // Em repouso, o painel neutro da tela (nao o primario rosado, que parece
+  // foco); em foco, a superficie de botao de todo o app.
+  int tx = 235;
+  if (f > 0.5f) tx = botao_superficie(it->r, f, a);
+  else painel(it->r, it->r.h * 0.5f, a);
+  float tx0 = cx.x + cx.w + 24.0f, tw = it->r.w - (tx0 - it->r.x) - 28.0f;
+  ajustes_acento(&ar, &ag, &ab);
+  if (vtPendente) {
+    gfx_cor(cx, 0.28f, ar, ag, ab, a);
+    gfx_icone((GfxRect){ cx.x + 6.0f, cx.y + 6.0f, 24.0f, 24.0f }, "aj_check", 1, 1, 1, a);
+  } else {
+    gfx_anel(cx, 0.28f, 2.0f, tx / 255.0f, tx / 255.0f, tx / 255.0f, 0.7f * a);
+  }
+  txt_em(TXT_V2_26, i18n(FCUI_TEXTO_VT), tx0, it->r.y + 14.0f, tw, tx, tx, tx, a);
+  txt_bloco(TXT_CAPTION, i18n(FCUI_TEXTO_VT_SUB), tx, tx, tx, tx0, it->r.y + 50.0f, tw, 26.0f, 0.72f * a, 2);
+  alvo(it->r, it->id);
+}
+
 void farolconsentui_desenhar(float ox, float oy, float a) {
   FcuiItem it[FCUI_MAX_IT];
   char kick[160];
@@ -216,7 +267,9 @@ void farolconsentui_desenhar(float ox, float oy, float a) {
 
   n = montar(it, ox, oy);
   for (i = 0; i < n; i++) {
-    if (it[i].id == FCUI_B_SO_TV) {
+    if (it[i].id == FCUI_B_VAITOCAR) {
+      desenha_vaitocar(&it[i], effA);
+    } else if (it[i].id == FCUI_B_SO_TV) {
       desenha_botao(&it[i], i18n(FT_GOSTO_LLM_SO_ESTA_TV), NULL, 1, effA);
     } else if (it[i].id == FCUI_B_PERMITIR) {
       desenha_botao(&it[i], i18n(FT_GOSTO_CONSENT_PERMITIR), "aj_check", 0, effA);

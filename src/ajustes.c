@@ -915,6 +915,10 @@ typedef enum {
   // noite em vez da Home. Decisao do dono: opcional. LOCAL, desligado, append-only.
   AJ_ABRIR_TOCANDO,
   AJ_LOGIN_CODIGO, // 2.1: 6-digit helper code on the sign-in screen. LOCAL, append-only; on by default.
+  // Vai tocar nesta TV (4.2): registro anonimo de compatibilidade. LOCAL,
+  // desligado ate a pessoa aceitar na tela de consentimento do Farol
+  // (farolconsentui.c, linha "Compartilhar compatibilidade"). Append-only.
+  AJ_VAITOCAR,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2192,6 +2196,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Legenda ASS com estilo", V_ASS_PESO, 3),              // local: legendaAssPesoLocal (fora do .tpk)
   ESC("Abrir tocando", V_LIGA, 2),                           // local: abrirTocandoLocal
   ESC("Código de ajuda no login", V_LIGA, 2),             // local: loginHelpCodeLocal
+  ESC("Compartilhar compatibilidade", V_LIGA, 2),            // local: vaiTocarLocal (4.2)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2598,6 +2603,7 @@ static const char *CHAVE[] = {
   "legendaAssPesoLocal",
   "abrirTocandoLocal",
   "loginHelpCodeLocal",
+  "vaiTocarLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -4468,6 +4474,7 @@ const char *ajustes_trailer_audio(void) {
 }
 int   ajustes_trailer_fonte(void)     { int v = valor[AJ_TRAILER_FONTE]; return (v >= 0 && v < nValores(AJ_TRAILER_FONTE)) ? v : 0; }
 int  ajustes_envio_auto(void)         { return lig(AJ_ENVIO_AUTO); }
+int  ajustes_vaitocar(void)           { return lig(AJ_VAITOCAR); }
 int  ajustes_menu_explorar(void)      { return lig(AJ_MENU_EXPLORAR); }
 int  ajustes_menu_guia(void)          { return lig(AJ_MENU_GUIA); }
 int  ajustes_menu_agenda(void)        { return lig(AJ_MENU_AGENDA); }
@@ -4512,6 +4519,7 @@ static int focoTrailerMigrar(int antigo) {
   return (lig(AJ_EXPANDIR) || valor[AJ_LANDSCAPE] == 0) ? AJ_TRAILER_CARTAZ_CHEIA
                                                        : AJ_TRAILER_CARTAZ_DESLIGADO;
 }
+void ajustes_definir_vaitocar(int ligado) { valor[AJ_VAITOCAR] = ligado ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 void ajustes_definir_envio_auto(int ligado) { valor[AJ_ENVIO_AUTO] = ligado ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 // ARTE DO DESTAQUE ESCOLHIDA PELO DIAGNOSTICO, e so depois de a pessoa ver a
 // proposta na tela e apertar OK no botao (diagnostico.c): nunca sozinho. Os
@@ -6970,6 +6978,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_TEX_MB:         /* teto de memoria de imagem: depende da RAM */
     case AJ_QUALIDADE_IMG:  /* resolucao da arte decodificada: idem */
     case AJ_ENVIO_AUTO:     /* consentimento de envio de registro deste aparelho */
+    case AJ_VAITOCAR:       /* consentimento do registro de compatibilidade deste aparelho */
     case AJ_LOG_REDE:       /* pagina de registro na rede desta casa */
     case AJ_DIAGNOSTICS_QR: /* cartao de download do registro, so desta TV */
     case AJ_ANIM:           /* animacoes reduzidas: acessibilidade nesta TV */
@@ -7170,7 +7179,7 @@ static int soNaTv(int op) {
     case AJ_ICONE_APP: case AJ_LOGO_APP: case AJ_ABERTURA:
     case AJ_IDIOMA: case AJ_FONTE_UI: case AJ_ANIM:
     case AJ_RESOLUCAO: case AJ_TEX_MB: case AJ_QUALIDADE_IMG: case AJ_GPU_EFEITOS:
-    case AJ_MEDIDOR: case AJ_ENVIO_AUTO: case AJ_AVANCADAS: case AJ_ITENS_FILEIRA:
+    case AJ_MEDIDOR: case AJ_ENVIO_AUTO: case AJ_VAITOCAR: case AJ_AVANCADAS: case AJ_ITENS_FILEIRA:
     case AJ_FIL_LIMITE: case AJ_FIL_ORDEM:
     case AJ_ESMAECER: case AJ_BRILHO_PLAYER: case AJ_PROPORCAO_PADRAO: case AJ_MANTER_VIDEO:
     case AJ_DESCANSO_ESTILO: case AJ_DESCANSO_FONTE:
@@ -9331,6 +9340,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_DIAGNOSTICS_QR: return "Ativa o cartão de baixar o registro no painel do registro (Azul/F10). Desligado por padrão. O registro normal continua ativo. A cópia temporária só é criada ao abrir.";
     case AJ_ENVIAR_LOG: return "Manda os últimos 200 KB do registro desta sessão (sem senhas nem chaves) para quem faz o app. Use quando algo estiver errado agora.";
     case AJ_LOGIN_CODIGO: return "Na tela de entrar, mostra 6 números ao lado do QR. Quem vai configurar esta TV de longe digita os números no endereço indicado e entra com a conta que vai ficar nesta TV. Desligado, a tela mostra só o QR.";
+    case AJ_VAITOCAR: return "Ligado, o app conta para o servidor do Nuvio se o vídeo tocou ou falhou neste aparelho: modelo, sistema, formato do arquivo, codecs, HDR e resultado. Nunca o título, o endereço ou a fonte. Serve para um dia avisar o que toca em cada TV. Desligado, nada é enviado.";
     case AJ_ENVIO_AUTO: return "Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.";
     case AJ_DIAGNOSTICO: return "Testa manifestos, fontes e artes dos addons, mede os tempos e aplica um perfil seguro de Qualidade ou Desempenho. O teste não marca títulos como assistidos.";
     case AJ_MENU_EXPLORAR: case AJ_MENU_GUIA: case AJ_MENU_AGENDA: case AJ_MENU_PERFIL: case AJ_MENU_ESPORTES:
@@ -9584,6 +9594,7 @@ static const char *beneficioProprio(int op) {
     case AJ_VER_REGISTRO: return "Abre o registro do app ao vivo, por cima desta tela.";
     case AJ_ENVIAR_LOG: return "Manda o registro desta sessão, sem senhas, para quem faz o app.";
     case AJ_ENVIO_AUTO: return "O app manda o registro sozinho, sem você pedir.";
+    case AJ_VAITOCAR: return "Conta, sem título nem endereço, se o vídeo tocou neste aparelho.";
     case AJ_LOG_REDE: return "Mostra o registro numa página da sua rede, no celular ou no PC.";
     case AJ_QUALIDADE: return "O teto de resolução das fontes que o Nuvio escolhe.";
     case AJ_FONTE_HDR: return "Se fontes com HDR ou Dolby Vision passam na frente das outras.";
@@ -12438,7 +12449,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_FAROL: case AJ_FAROL_AVISOS:
     case AJ_FAROL_RECOMENDAR: case AJ_FAROL_APRENDEU: case AJ_FAROL_ZERAR: case AJ_FAROL_LLM_SO_ESTA_TV:
     case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
-    case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE: case AJ_DIAGNOSTICS_QR:
+    case AJ_ENVIO_AUTO: case AJ_VAITOCAR: case AJ_VER_REGISTRO: case AJ_LOG_REDE: case AJ_DIAGNOSTICS_QR:
 #ifdef NV_ANDROID
     case AJ_BAIXAR_REGISTRO:
 #endif

@@ -16,7 +16,12 @@ extern "C" {
 
 enum {
   FCUI_B_SO_TV = 300,
-  FCUI_B_PERMITIR
+  FCUI_B_PERMITIR,
+  // Vai tocar nesta TV (4.2): a mesma tela pergunta o registro anonimo de
+  // compatibilidade, numa linha acima dos botoes. So aparece quando o app
+  // tem o ajuste (ajustes_vaitocar); nunca no perfil infantil, porque esta
+  // tela nao abre nele. Append-only.
+  FCUI_B_VAITOCAR
 };
 
 int  farolconsentui_presente(void);
@@ -30,6 +35,9 @@ void farolconsentui_desenhar(float ox, float oy, float a);
 
 // Inspecao / testes
 int  farolconsentui_foco(void);
+// Escolha pendente da linha "Compartilhar compatibilidade" (1 = ligar). So
+// vale quando a pessoa decide (So nesta TV ou Permitir); Voltar descarta.
+int  farolconsentui_vaitocar_pendente(void);
 
 #ifdef __cplusplus
 }

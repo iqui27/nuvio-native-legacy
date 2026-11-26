@@ -562,6 +562,9 @@ const char *ajustes_trailer_audio(void);  // "" auto (idioma da UI), "~" origina
 int   ajustes_trailer_fonte(void);     // TRF_* de trailerfonte.h; 0 = automatico
 float ajustes_trailer_zoom(void);      // ampliacao do trailer (1.0 = quadro inteiro)
 void  ajustes_definir_envio_auto(int ligado);
+// Vai tocar nesta TV (4.2): registro anonimo de compatibilidade; padrao desligado.
+int  ajustes_vaitocar(void);
+void ajustes_definir_vaitocar(int ligado);
 // N3: "Receber enquetes" (padrao ligado). O espelho local do opt-out da conta:
 // enquete.c grava aqui o que o servidor disse, sem refazer o pedido.
 int   ajustes_enquetes(void);

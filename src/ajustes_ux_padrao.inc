@@ -417,3 +417,4 @@
   0, /* legendaAssPesoLocal: Automatico (ASSPESO_AUTO, fora do .tpk) */
   1, /* abrirTocandoLocal: Desligado (opt-in) */
   0, /* sign-in helper code: On (V_LIGA 0) */
+  1, /* vaiTocarLocal: Desligado ate o consentimento (4.2) */

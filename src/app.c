@@ -161,6 +161,7 @@ extern __attribute__((weak)) void farol_registrar_resultado(int acao, int ok);
 #include "addonguia.h"
 #include "apoio.h"
 #include "telemetria.h"
+#include "vtregenvio.h"
 #include "avisos.h"
 #include "ilha.h"
 #include "ilhasalvar.h"
@@ -3149,12 +3150,18 @@ static int pedirProximaFonteVOD(int depoisDe) {
 // O titulo tocando desmente a marca, mesmo depois de o vigia vencer.
 // A duracao real desta sessao rejeita clipes de aviso e o trailer do detalhe.
 // Clipe de aviso (duracao conhecida e curta) tambem anda, mas nao e o titulo.
+// Vai tocar (4.2): este resultado veio depois de uma troca automatica de fonte?
+static int vtregTrocou(void) {
+  // Os dois contadores incluem a tentativa atual: a primeira fonte vale 1.
+  return fonteFalha ? fontefalha_tentativas(fonteFalha) > 1 : fonteVODTentativas > 1;
+}
 static void registrarFonteVODTocando(void) {
   double d = video_duracao();
   if (player_quer_sair() || video_falhou() || !fonteProvouTocar() || provaLimpa ||
       (d > 1.0 && d < 120.0)) return;
   provaLimpa = 1;
   stream_vod_tocou(stream_atual());
+  vtregenvio_resultado(VTR_TOCOU, vtregTrocou());
 }
 
 // SONDA DEPOIS DA RECUSA DO PLAYER (#364, fontesonda.h). O player nativo
@@ -4196,6 +4203,12 @@ static void tentarProximaFonteVOD(void) {
                          stream_proxima_vod(stream_atual()) >= 0)) motivo = 4;
 #endif
   if (!motivo) return;
+  // Vai tocar (4.2): o registro anonimo desta falha, antes de o pipeline parar.
+  { int dec = 0;
+#ifdef NV_ANDROID
+    if (motivo == 1) dec = video_erro_decoder_codigo();
+#endif
+    vtregenvio_falha(motivo, video_fonte_tocou(), dec, vtregTrocou()); }
   // #415 (LG G4, webOS 9): erro 600 com 4K tocando, 92 MB livres, e o app
   // reabria a fonte no mesmo instante — o webOS o fechou por memoria. Antes de
   // outro pipeline, solta o que der; ainda abaixo do piso, mostra o erro.
