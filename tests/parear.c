@@ -97,6 +97,7 @@ int main(void) {
     // A pessoa aperta "Novo codigo" no segundo 1100, longe do vencimento (1571).
     OK(parear_ctl_renovar(&c, 1100));
     OK(!c.codigo[0] && c.novo && c.geracao != g);                 // some da tela JA
+    OK(!strcmp(c.anterior, "111111"));
     OK(parear_ctl_quer_pedir(&c, 1100, 0));                       // e o pedido sai no mesmo segundo
     OK(c.novo);                                                   // ... com "novo":1
     // A resposta atrasada do pedido ANTIGO nao traz o codigo velho de volta.
@@ -104,6 +105,7 @@ int main(void) {
     OK(!c.codigo[0]);
     parear_ctl_resposta(&c, c.geracao, 1, "222222", 600, 200, 1101);
     OK(!strcmp(c.codigo, "222222") && c.expira == 1701 && !c.novo);
+    OK(!c.anterior[0]);
     // Apertar de novo antes do intervalo minimo e ignorado; depois, vale.
     OK(!parear_ctl_renovar(&c, 1101));
     OK(!strcmp(c.codigo, "222222"));
@@ -113,6 +115,7 @@ int main(void) {
     OK(parear_ctl_quer_pedir(&c, 1104, 0));
     parear_ctl_resposta(&c, c.geracao, 0, "", 0, 0, 1104);
     OK(c.novo && !c.codigo[0] && c.proxima == 1109);
+    OK(!parear_ctl_falhou(&c, 0));
     OK(!parear_ctl_quer_pedir(&c, 1105, 0));
     OK(parear_ctl_quer_pedir(&c, 1109, 0) && c.novo);
     // Fio de um pedido antigo ainda vivo: espera ele acabar.
@@ -120,9 +123,18 @@ int main(void) {
     // Depois de desistir (503), o botao ainda tenta de novo.
     parear_ctl_resposta(&c, c.geracao, 0, "", 0, 503, 1109);
     OK(c.proxima == -1 && !parear_ctl_quer_pedir(&c, 1300, 0));
+    OK(parear_ctl_falhou(&c, 0) && !parear_ctl_falhou(&c, 1));
     OK(parear_ctl_renovar(&c, 1300) && parear_ctl_quer_pedir(&c, 1300, 0));
+    OK(!parear_ctl_falhou(&c, 0) && !strcmp(c.anterior, "222222"));
+    parear_ctl_resposta(&c, c.geracao, 0, "", 0, 500, 1300);
+    OK(parear_ctl_quer_pedir(&c, 1305, 0));
+    parear_ctl_resposta(&c, c.geracao, 0, "", 0, 500, 1305);
+    OK(parear_ctl_quer_pedir(&c, 1325, 0));
+    parear_ctl_resposta(&c, c.geracao, 0, "", 0, 500, 1325);
+    OK(parear_ctl_falhou(&c, 0));
     // Vencendo (menos de 30 s): some e pede outro, sem "novo".
     parear_ctl_zerar(&c);
+    OK(!c.anterior[0] && !parear_ctl_falhou(&c, 0));
     OK(parear_ctl_quer_pedir(&c, 2000, 0));
     parear_ctl_resposta(&c, c.geracao, 1, "333333", 600, 200, 2000);
     OK(!parear_ctl_quer_pedir(&c, 2570, 0));

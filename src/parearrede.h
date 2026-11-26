@@ -14,6 +14,7 @@ void parear_rede_passo(const char *urlLogin, int ligado);
 const char *parear_rede_codigo(void);
 // "exemplo.com/c": onde quem ajuda digita o codigo.
 const char *parear_rede_pagina(void);
+int parear_rede_falhou(void);
 // Esquece codigo e tentativas (a tela de login abriu de novo).
 void parear_rede_esquecer(void);
 // "Novo codigo" (botao da tela de login): o codigo mostrado some na hora e a

@@ -45,6 +45,7 @@ int parear_vencendo(long agora, long expira);
 #define PAREAR_RENOVAR_INTERVALO 3   // segundos minimos entre dois "Novo codigo"
 typedef struct {
   char codigo[16];
+  char anterior[8];
   long expira, proxima, renovadoEm;   // segundos; proxima = -1: desistiu
   int tentativa, novo;
   unsigned geracao;
@@ -54,6 +55,7 @@ void parear_ctl_zerar(ParearCtl *c);
 // "Novo codigo": apaga o codigo da tela JA e marca o proximo pedido como novo.
 // Vale mesmo depois de desistir. 0 = ignorado (antes do intervalo minimo).
 int parear_ctl_renovar(ParearCtl *c, long agora);
+int parear_ctl_falhou(const ParearCtl *c, int fioVivo);
 // 1 = hora de soltar um pedido (o chamador ja sabe se ha fio vivo). Codigo
 // vencendo some aqui. Ao devolver 1, conta a tentativa.
 int parear_ctl_quer_pedir(ParearCtl *c, long agora, int fioVivo);

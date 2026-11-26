@@ -19,7 +19,7 @@
 //     simultaneo, recebe 404.
 //   - corpo: lido com teto de bytes ANTES de JSON e de gastar cota; acima, 413.
 //   - "Novo codigo" na TV (POST /v1/parear com "novo":1): o codigo vivo do
-//     endereco e apagado no mesmo comando e sai outro, diferente, na hora.
+//     endereco e substituido na mesma transacao por outro codigo.
 //     Gasta a mesma cota de 20 por hora.
 //   - adivinhar codigo: 10 tentativas por IP a cada 10 minutos, e o codigo
 //     vale 10 minutos. Acertar um codigo alheio so leva a pagina de
@@ -100,27 +100,38 @@ async function rotaCriar(req, env, h, limitar, ip, origem) {
   const pagina = String(env.PAREAR_PAGINA || "").trim() || `${origem}/c`;
   const pronto = (codigo, expira) => h.json({ ok: 1, codigo, validade: Math.max(1, expira - t), pagina });
   const antigos = new Set();
+  const anterior = corpo?.anterior;
+  if (typeof anterior === "string" && /^\d{6}$/.test(anterior)) antigos.add(anterior);
+  const vigente = () => env.DB.prepare("SELECT codigo, expira FROM parear WHERE url = ? AND expira > ?")
+    .bind(endereco, t + 60).first();
   if (novo) {
-    // Apaga e devolve no mesmo comando: um /abrir ao mesmo tempo ou pega a
-    // linha antes (e a usa uma vez) ou nao a acha mais.
-    const { results } = await env.DB.prepare("DELETE FROM parear WHERE url = ? RETURNING codigo")
-      .bind(endereco).all();
-    for (const l of results || []) antigos.add(l.codigo);
+    const atual = await env.DB.prepare("SELECT codigo FROM parear WHERE url = ?")
+      .bind(endereco).first();
+    if (atual) antigos.add(atual.codigo);
   } else {
-    const ja = await env.DB.prepare("SELECT codigo, expira FROM parear WHERE url = ? AND expira > ?")
-      .bind(endereco, t + 60).first();
+    const ja = await vigente();
     if (ja) return pronto(ja.codigo, ja.expira);
   }
+  const expira = t + PAREAR_VALIDADE;
   for (let i = 0; i < 8; i++) {
     const codigo = codigoDe();
     if (antigos.has(codigo)) continue;   // o novo nunca repete o que a TV mostrava
-    // Linha vencida com o mesmo codigo e reaproveitada; viva, tenta outro.
-    const r = await env.DB.prepare(
-      "INSERT INTO parear (codigo, url, expira) VALUES (?, ?, ?) " +
-      "ON CONFLICT(codigo) DO UPDATE SET url = excluded.url, expira = excluded.expira " +
-      "WHERE parear.expira <= ?"
-    ).bind(codigo, endereco, t + PAREAR_VALIDADE, t).run();
-    if (r?.meta?.changes) return pronto(codigo, t + PAREAR_VALIDADE);
+    try {
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM parear WHERE codigo = ? AND expira <= ?").bind(codigo, t),
+        novo ? env.DB.prepare("DELETE FROM parear WHERE url = ?").bind(endereco)
+             : env.DB.prepare("DELETE FROM parear WHERE url = ? AND expira <= ?").bind(endereco, t + 60),
+        env.DB.prepare("INSERT INTO parear (codigo, url, expira) VALUES (?, ?, ?)").bind(codigo, endereco, expira),
+      ]);
+      return pronto(codigo, expira);
+    } catch (erro) {
+      const detalhe = `${erro?.code} ${erro?.message} ${erro?.cause?.message}`;
+      if (!/SQLITE_CONSTRAINT(?:_UNIQUE|_PRIMARYKEY)?\b|UNIQUE constraint failed/i.test(detalhe)) throw erro;
+      if (!novo) {
+        const ja = await vigente();
+        if (ja) return pronto(ja.codigo, ja.expira);
+      }
+    }
   }
   return h.erro("sem codigo livre", 503);
 }

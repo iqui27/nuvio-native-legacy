@@ -91,6 +91,7 @@ void parear_ctl_zerar(ParearCtl *c) {
 int parear_ctl_renovar(ParearCtl *c, long agora) {
   if (c->renovadoEm && agora - c->renovadoEm < PAREAR_RENOVAR_INTERVALO) return 0;
   c->geracao++;
+  if (c->codigo[0]) memcpy(c->anterior, c->codigo, sizeof c->anterior);
   c->codigo[0] = 0;
   c->expira = 0;
   c->proxima = 0;
@@ -98,6 +99,10 @@ int parear_ctl_renovar(ParearCtl *c, long agora) {
   c->novo = 1;
   c->renovadoEm = agora;
   return 1;
+}
+
+int parear_ctl_falhou(const ParearCtl *c, int fioVivo) {
+  return !c->codigo[0] && !fioVivo && c->proxima < 0;
 }
 
 int parear_ctl_quer_pedir(ParearCtl *c, long agora, int fioVivo) {
@@ -113,6 +118,7 @@ void parear_ctl_resposta(ParearCtl *c, unsigned g, int ok, const char *codigo,
   if (g != c->geracao) return;
   if (ok && parear_codigo_valido(codigo) && validade > 0) {
     snprintf(c->codigo, sizeof c->codigo, "%s", codigo);
+    c->anterior[0] = 0;
     c->expira = agora + validade;
     c->tentativa = 0;
     c->proxima = 0;

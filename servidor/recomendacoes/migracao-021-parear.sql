@@ -19,4 +19,4 @@ CREATE TABLE IF NOT EXISTS parear (
   url    TEXT NOT NULL,
   expira INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS parear_url ON parear (url);
+CREATE UNIQUE INDEX IF NOT EXISTS parear_url ON parear (url);

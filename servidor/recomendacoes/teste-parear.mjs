@@ -22,15 +22,31 @@ function cenario(t, extra = {}) {
     }
   const stmt = (sql, v) => {
     const st = sqlite.prepare(sql);
+    const run = () => {
+      const r = st.run(...v);
+      return { meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) } };
+    };
     return {
       first: async () => st.get(...v) ?? null,
       all: async () => ({ results: st.all(...v) }),
-      run: async () => { const r = st.run(...v);
-        return { meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) } }; },
+      run,
     };
   };
   const env = { PAREAR_BASES: BASE, ...extra.env,
-    DB: { prepare: (sql) => ({ ...stmt(sql, []), bind: (...v) => stmt(sql, v) }) } };
+    DB: {
+      prepare: (sql) => ({ ...stmt(sql, []), bind: (...v) => stmt(sql, v) }),
+      batch: async (stmts) => {
+        sqlite.exec("BEGIN IMMEDIATE");
+        try {
+          const results = stmts.map((st) => st.run());
+          sqlite.exec("COMMIT");
+          return results;
+        } catch (err) {
+          sqlite.exec("ROLLBACK");
+          throw err;
+        }
+      },
+    } };
   const pedir = async (rota, corpo, ip = "1.1.1.1", metodo = "POST") => {
     const res = await worker.fetch(new Request("https://w.test" + rota, {
       method: metodo, headers: { "cf-connecting-ip": ip },
@@ -144,6 +160,73 @@ test("Novo codigo gasta a mesma cota de 20 por hora", async (t) => {
   const { pedir } = cenario(t);
   for (let i = 0; i < 20; i++) assert.equal((await pedir("/v1/parear", { url: U(3), novo: 1 }, "7.7.7.8")).status, 200);
   assert.equal((await pedir("/v1/parear", { url: U(3), novo: 1 }, "7.7.7.8")).status, 429);
+});
+
+test("oito colisoes na renovacao preservam o codigo anterior", async (t) => {
+  const { pedir, sqlite } = cenario(t);
+  const inserir = sqlite.prepare("INSERT INTO parear VALUES (?, ?, ?)");
+  const expira = Math.floor(Date.now() / 1000) + PAREAR_VALIDADE;
+  inserir.run("111111", U(1), expira);
+  inserir.run("222222", U(2), expira);
+  const sorteio = t.mock.method(crypto, "getRandomValues", (dados) => {
+    dados[0] = 222222;
+    return dados;
+  });
+
+  assert.equal((await pedir("/v1/parear", { url: U(1), novo: 1 })).status, 503);
+  assert.equal(sorteio.mock.callCount(), 8);
+  const antigo = sqlite.prepare("SELECT codigo, expira FROM parear WHERE url = ?").get(U(1));
+  assert.deepEqual({ ...antigo }, { codigo: "111111", expira });
+});
+
+test("renovacoes concorrentes deixam um unico codigo ativo por URL", async (t) => {
+  const { pedir, sqlite } = cenario(t);
+  const url = U(1);
+  let codigo = 111110;
+  t.mock.method(crypto, "getRandomValues", (dados) => {
+    dados[0] = ++codigo;
+    return dados;
+  });
+  assert.equal((await pedir("/v1/parear", { url })).body.codigo, "111111");
+
+  const respostas = await Promise.all([1, 2].map((i) =>
+    pedir("/v1/parear", { url, novo: 1 }, `4.4.4.${i}`)));
+  assert.deepEqual(respostas.map((r) => r.status), [200, 200]);
+  const ativos = sqlite.prepare("SELECT codigo FROM parear WHERE url = ? AND expira > ?")
+    .all(url, Math.floor(Date.now() / 1000));
+  assert.equal(ativos.length, 1);
+  assert.ok(respostas.some((r) => r.body.codigo === ativos[0].codigo));
+});
+
+test("criacao concorrente reutiliza o codigo emitido para a mesma URL", async (t) => {
+  const { pedir, sqlite } = cenario(t);
+  const url = U(1);
+  let codigo = 111110;
+  t.mock.method(crypto, "getRandomValues", (dados) => {
+    dados[0] = ++codigo;
+    return dados;
+  });
+  const respostas = await Promise.all([1, 2].map((i) => pedir("/v1/parear", { url }, `4.4.4.${i}`)));
+  assert.deepEqual(respostas.map((r) => r.status), [200, 200]);
+  assert.equal(respostas[0].body.codigo, respostas[1].body.codigo);
+  assert.equal(sqlite.prepare("SELECT count(*) AS n FROM parear WHERE url = ?").get(url).n, 1);
+});
+
+test("a renovacao exclui o codigo anterior ja consumido por /abrir", async (t) => {
+  const { pedir, sqlite } = cenario(t);
+  const url = U(1);
+  sqlite.prepare("INSERT INTO parear VALUES (?, ?, ?)")
+    .run("000042", url, Math.floor(Date.now() / 1000) + PAREAR_VALIDADE);
+  assert.equal((await pedir("/v1/parear/abrir", { codigo: "000042" })).status, 200);
+  const fila = [42, 43];
+  t.mock.method(crypto, "getRandomValues", (dados) => {
+    dados[0] = fila.shift();
+    return dados;
+  });
+
+  const renovado = await pedir("/v1/parear", { url, novo: 1, anterior: "000042" });
+  assert.equal(renovado.status, 200);
+  assert.equal(renovado.body.codigo, "000043");
 });
 
 test("uso unico mesmo com dois pedidos ao mesmo tempo", async (t) => {

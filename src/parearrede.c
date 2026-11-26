@@ -23,7 +23,7 @@ static char urlAtual[420];
 static char pagina[200];
 static char codigoTela[16], paginaTela[200];   // copias do laco de desenho
 
-typedef struct { unsigned geracao; int novo; char url[420]; } Pedido;
+typedef struct { unsigned geracao; int novo; char url[420], anterior[8]; } Pedido;
 
 static const char *base(void) {
 #ifdef NV_LINUX_DESKTOP
@@ -46,7 +46,10 @@ static int fio(void *u) {
   jsw_obj_ini(&w);
   jsw_cs(&w, "url", p->url);
   // "Novo codigo": o servidor apaga o codigo vivo deste endereco e da outro.
-  if (p->novo) jsw_ci(&w, "novo", 1);
+  if (p->novo) {
+    jsw_ci(&w, "novo", 1);
+    if (p->anterior[0]) jsw_cs(&w, "anterior", p->anterior);
+  }
   jsw_obj_fim(&w);
   r = rede_postar_st(destino, PAREAR_TEMPO_REDE, cab, jsw_texto_final(&w), &st);
   jsw_livre(&w);
@@ -106,6 +109,7 @@ void parear_rede_passo(const char *urlLogin, int ligado) {
       p->geracao = ctl.geracao;
       p->novo = ctl.novo;
       snprintf(p->url, sizeof p->url, "%s", urlAtual);
+      memcpy(p->anterior, ctl.anterior, sizeof p->anterior);
       fioVivo = 1;
     }
   }
@@ -134,4 +138,12 @@ const char *parear_rede_pagina(void) {
   snprintf(paginaTela, sizeof paginaTela, "%s", pagina);
   SDL_AtomicUnlock(&trava);
   return paginaTela;
+}
+
+int parear_rede_falhou(void) {
+  int falhou;
+  SDL_AtomicLock(&trava);
+  falhou = parear_ctl_falhou(&ctl, fioVivo);
+  SDL_AtomicUnlock(&trava);
+  return falhou;
 }

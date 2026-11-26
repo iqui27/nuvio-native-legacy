@@ -9,3 +9,6 @@ flags=(-O1 -g -Isrc -Wall -Wextra -Werror)
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc "${flags[@]}" src/parear.c src/js.c tests/parear.c -o "$tmp/parear" -lm
 "$tmp/parear"
+cc "${flags[@]}" -ffunction-sections -fdata-sections $(pkg-config --cflags sdl2 SDL2_image) \
+  tests/parear_login.c -Wl,--gc-sections -o "$tmp/parear-login" -lm
+"$tmp/parear-login"
