@@ -3932,6 +3932,7 @@
   T("Ganhas %d", "Conseguidas %d"),
   T("Ganho", "Conseguida"),
   T("Gargalo principal", "Cuello de botella principal"),
+  T("Gerando um código novo…", "Generando un código nuevo…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Gestionar"),
   T("Gerenciar add-ons", "Administrar add-ons"),

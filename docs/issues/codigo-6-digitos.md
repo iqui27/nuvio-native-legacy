@@ -14,6 +14,11 @@ A conta que entrar ali é a que fica na TV.
 
 - TV: `POST {NV_REC_URL}/v1/parear {url}` com o `web_url` do login → `{codigo, pagina, validade}`.
 - Quem ajuda: `GET /c` (página) → `POST /v1/parear/abrir {codigo}` → `{url}` → redireciona.
+  O código vale **uma vez**: o primeiro `/abrir` que acerta o apaga (`DELETE … RETURNING`).
+- **Novo código**: botão na coluna do código (D-pad: direita/cima a partir da pílula do
+  e-mail). A TV apaga o código da tela na hora e manda `POST /v1/parear {url, novo:1}`;
+  o Worker apaga o código vivo daquele endereço e devolve outro, diferente, na mesma
+  resposta. Gasta a mesma cota de 20/h; no aparelho, no mínimo 3 s entre dois toques.
 - O Worker só guarda `codigo → endereço` por 10 minutos. Não autoriza nada: a
   autorização continua na página da conta, e a TV continua no polling de sempre.
 - Regras puras em `src/parear.c` (teste `tests/parear.sh`); rede em
@@ -22,8 +27,10 @@ A conta que entrar ali é a que fica na TV.
 
 ## Segurança
 
-- O endereço guardado tem de começar por `PAREAR_BASES` (fronteira de caminho),
+- O endereço guardado tem de ser a forma canônica da rota exata de uma
+  `PAREAR_BASES` (mesma origem e mesmo caminho, só `?code=<32 hex>`, sem `#`),
   então o código nunca leva a um site de terceiros.
+- Corpo com teto de bytes antes de JSON e de cota (413); respostas `no-store`.
 - 10 tentativas de abrir por IP a cada 10 min; 20 códigos por IP por hora;
   código vale 10 min e a TV pede outro antes de vencer.
 - Endereço e código não vão para o log do app.

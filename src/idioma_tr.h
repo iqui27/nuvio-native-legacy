@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "Kazanılan %d"),
   T("Ganho", "Kazanıldı"),
   T("Gargalo principal", "Ana darboğaz"),
+  T("Gerando um código novo…", "Yeni kod oluşturuluyor…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Yönet"),
   T("Gerenciar add-ons", "Eklentileri yönet"),

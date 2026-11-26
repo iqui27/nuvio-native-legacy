@@ -81,3 +81,45 @@ int parear_espera(int status, int tentativa) {
 }
 
 int parear_vencendo(long agora, long expira) { return expira - agora < 30; }
+
+void parear_ctl_zerar(ParearCtl *c) {
+  unsigned g = c->geracao + 1;
+  memset(c, 0, sizeof *c);
+  c->geracao = g;
+}
+
+int parear_ctl_renovar(ParearCtl *c, long agora) {
+  if (c->renovadoEm && agora - c->renovadoEm < PAREAR_RENOVAR_INTERVALO) return 0;
+  c->geracao++;
+  c->codigo[0] = 0;
+  c->expira = 0;
+  c->proxima = 0;
+  c->tentativa = 0;
+  c->novo = 1;
+  c->renovadoEm = agora;
+  return 1;
+}
+
+int parear_ctl_quer_pedir(ParearCtl *c, long agora, int fioVivo) {
+  // Codigo vencendo: some da tela e pede outro (o servidor devolve um novo).
+  if (c->codigo[0] && parear_vencendo(agora, c->expira)) { c->codigo[0] = 0; c->proxima = 0; }
+  if (c->codigo[0] || fioVivo || c->proxima < 0 || agora < c->proxima) return 0;
+  c->tentativa++;
+  return 1;
+}
+
+void parear_ctl_resposta(ParearCtl *c, unsigned g, int ok, const char *codigo,
+                         int validade, int status, long agora) {
+  if (g != c->geracao) return;
+  if (ok && parear_codigo_valido(codigo) && validade > 0) {
+    snprintf(c->codigo, sizeof c->codigo, "%s", codigo);
+    c->expira = agora + validade;
+    c->tentativa = 0;
+    c->proxima = 0;
+    c->novo = 0;
+  } else {
+    int espera = parear_espera(status, c->tentativa);
+    c->codigo[0] = 0;
+    c->proxima = espera < 0 ? -1 : agora + espera;
+  }
+}

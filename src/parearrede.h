@@ -16,5 +16,9 @@ const char *parear_rede_codigo(void);
 const char *parear_rede_pagina(void);
 // Esquece codigo e tentativas (a tela de login abriu de novo).
 void parear_rede_esquecer(void);
+// "Novo codigo" (botao da tela de login): o codigo mostrado some na hora e a
+// TV pede ja outro para o MESMO endereco; o servidor mata o antigo. 1 = aceito,
+// 0 = sem endereco em uso ou cedo demais (PAREAR_RENOVAR_INTERVALO).
+int parear_rede_renovar(void);
 
 #endif

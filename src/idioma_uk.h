@@ -3932,6 +3932,7 @@
   T("Ganhas %d", "Отримано %d"),
   T("Ganho", "Отримано"),
   T("Gargalo principal", "Основне вузьке місце"),
+  T("Gerando um código novo…", "Створюємо новий код…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Керувати"),
   T("Gerenciar add-ons", "Керувати аддонами"),

@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "已获得 %d"),
   T("Ganho", "已获得"),
   T("Gargalo principal", "主要瓶颈"),
+  T("Gerando um código novo…", "正在生成新代码…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "管理"),
   T("Gerenciar add-ons", "管理附加组件"),

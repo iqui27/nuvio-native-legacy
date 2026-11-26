@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "Behaald %d"),
   T("Ganho", "Behaald"),
   T("Gargalo principal", "Grootste knelpunt"),
+  T("Gerando um código novo…", "Nieuwe code maken…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Beheren"),
   T("Gerenciar add-ons", "Add-ons beheren"),

@@ -18,6 +18,9 @@
 //     no mesmo comando (DELETE ... RETURNING); um segundo pedido, mesmo
 //     simultaneo, recebe 404.
 //   - corpo: lido com teto de bytes ANTES de JSON e de gastar cota; acima, 413.
+//   - "Novo codigo" na TV (POST /v1/parear com "novo":1): o codigo vivo do
+//     endereco e apagado no mesmo comando e sai outro, diferente, na hora.
+//     Gasta a mesma cota de 20 por hora.
 //   - adivinhar codigo: 10 tentativas por IP a cada 10 minutos, e o codigo
 //     vale 10 minutos. Acertar um codigo alheio so leva a pagina de
 //     autorizacao de uma TV alheia — poria a conta DE QUEM ADIVINHOU naquela
@@ -52,7 +55,8 @@ function baseCanonica(b) {
 // so `?code=<32 hex>` na query, sem #.
 export function enderecoAceito(endereco, permitidos) {
   if (typeof endereco !== "string" || !endereco || endereco.length > URL_MAX) return false;
-  if (/[\s<>"'\\]/.test(endereco)) return false;
+  // "#" nunca entra, nem vazio: new URL("...#") devolve hash "" e passaria.
+  if (/[\s<>"'\\#]/.test(endereco)) return false;
   let u;
   try { u = new URL(endereco); } catch { return false; }
   if (u.href !== endereco || u.username || u.password || u.hash) return false;
@@ -87,15 +91,29 @@ async function rotaCriar(req, env, h, limitar, ip, origem) {
   if (falha) return falha;
   const endereco = corpo?.url;
   if (!enderecoAceito(endereco, bases(env))) return h.erro("endereco recusado", 400);
+  // "Novo codigo" na TV: o codigo vivo deste endereco morre e sai outro, na
+  // hora. Gasta a MESMA cota de 20 por hora.
+  const novo = corpo?.novo === 1 || corpo?.novo === true;
+  if (!(await limitar(env, `parear:${ip}`, 20, 3600, h.agora()))) return h.erro("limite", 429);
+  // A hora e lida DEPOIS da cota: o limitar() espera o banco.
   const t = h.agora();
-  if (!(await limitar(env, `parear:${ip}`, 20, 3600, t))) return h.erro("limite", 429);
   const pagina = String(env.PAREAR_PAGINA || "").trim() || `${origem}/c`;
   const pronto = (codigo, expira) => h.json({ ok: 1, codigo, validade: Math.max(1, expira - t), pagina });
-  const ja = await env.DB.prepare("SELECT codigo, expira FROM parear WHERE url = ? AND expira > ?")
-    .bind(endereco, t + 60).first();
-  if (ja) return pronto(ja.codigo, ja.expira);
+  const antigos = new Set();
+  if (novo) {
+    // Apaga e devolve no mesmo comando: um /abrir ao mesmo tempo ou pega a
+    // linha antes (e a usa uma vez) ou nao a acha mais.
+    const { results } = await env.DB.prepare("DELETE FROM parear WHERE url = ? RETURNING codigo")
+      .bind(endereco).all();
+    for (const l of results || []) antigos.add(l.codigo);
+  } else {
+    const ja = await env.DB.prepare("SELECT codigo, expira FROM parear WHERE url = ? AND expira > ?")
+      .bind(endereco, t + 60).first();
+    if (ja) return pronto(ja.codigo, ja.expira);
+  }
   for (let i = 0; i < 8; i++) {
     const codigo = codigoDe();
+    if (antigos.has(codigo)) continue;   // o novo nunca repete o que a TV mostrava
     // Linha vencida com o mesmo codigo e reaproveitada; viva, tenta outro.
     const r = await env.DB.prepare(
       "INSERT INTO parear (codigo, url, expira) VALUES (?, ?, ?) " +
@@ -110,8 +128,9 @@ async function rotaCriar(req, env, h, limitar, ip, origem) {
 async function rotaAbrir(req, env, h, limitar, ip) {
   const { corpo, r: falha } = await lerCorpo(req, h, ABRIR_CORPO_MAX);
   if (falha) return falha;
+  if (!(await limitar(env, `parear-abrir:${ip}`, 10, 600, h.agora()))) return h.erro("limite", 429);
+  // A hora e lida DEPOIS da cota: o limitar() espera o banco.
   const t = h.agora();
-  if (!(await limitar(env, `parear-abrir:${ip}`, 10, 600, t))) return h.erro("limite", 429);
   const codigo = soDigitos(corpo?.codigo);
   if (codigo.length !== 6) return h.erro("codigo invalido", 400);
   // USO UNICO e atomico: o mesmo comando confere e apaga. Dois pedidos ao

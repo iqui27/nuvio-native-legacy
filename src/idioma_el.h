@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "Κερδισμένα %d"),
   T("Ganho", "Κερδισμένο"),
   T("Gargalo principal", "Κύριο σημείο συμφόρησης"),
+  T("Gerando um código novo…", "Δημιουργία νέου κωδικού…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Διαχείριση"),
   T("Gerenciar add-ons", "Διαχείριση πρόσθετων"),

@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "Earned %d"),
   T("Ganho", "Earned"),
   T("Gargalo principal", "عنق الزجاجة الرئيسي"),
+  T("Gerando um código novo…", "جارٍ إنشاء رمز جديد…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Manage"),
   T("Gerenciar add-ons", "إدارة الإضافات"),

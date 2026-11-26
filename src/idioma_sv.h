@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "Uppnådda %d"),
   T("Ganho", "Uppnådd"),
   T("Gargalo principal", "Främsta flaskhals"),
+  T("Gerando um código novo…", "Skapar en ny kod…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Hantera"),
   T("Gerenciar add-ons", "Hantera add-ons"),

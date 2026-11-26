@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "Đã giành %d"),
   T("Ganho", "Đã giành"),
   T("Gargalo principal", "Điểm nghẽn chính"),
+  T("Gerando um código novo…", "Đang tạo mã mới…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Quản lý"),
   T("Gerenciar add-ons", "Quản lý tiện ích"),

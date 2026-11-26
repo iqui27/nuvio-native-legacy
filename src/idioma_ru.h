@@ -3932,6 +3932,7 @@
   T("Ganhas %d", "Получено %d"),
   T("Ganho", "Получено"),
   T("Gargalo principal", "Главное узкое место"),
+  T("Gerando um código novo…", "Создаём новый код…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Управлять"),
   T("Gerenciar add-ons", "Управление аддонами"),

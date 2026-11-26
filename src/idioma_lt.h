@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "Gauta %d"),
   T("Ganho", "Gauta"),
   T("Gargalo principal", "Pagrindinė kliūtis"),
+  T("Gerando um código novo…", "Kuriamas naujas kodas…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Tvarkyti"),
   T("Gerenciar add-ons", "Tvarkyti papildinius"),

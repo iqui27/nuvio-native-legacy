@@ -14,17 +14,16 @@
 #define PAREAR_TEMPO_REDE 12
 
 // Tudo abaixo e lido pelo laco de desenho e escrito pelo fio: sob a trava.
-// `geracao` muda quando o endereco muda ou a tela esquece; resposta de um
-// pedido antigo e descartada.
+// As regras (geracao, vencimento, "Novo codigo", espera) moram em ParearCtl
+// (parear.c, testadas em tests/parear.c); aqui so a trava, o fio e a pagina.
 static SDL_SpinLock trava;
-static unsigned geracao;
-static int  fioVivo, tentativa;
-static long expira, proxima;          // segundos; proxima = -1: desistiu
+static ParearCtl ctl;
+static int  fioVivo;
 static char urlAtual[420];
-static char codigo[16], pagina[200];
+static char pagina[200];
 static char codigoTela[16], paginaTela[200];   // copias do laco de desenho
 
-typedef struct { unsigned geracao; char url[420]; } Pedido;
+typedef struct { unsigned geracao; int novo; char url[420]; } Pedido;
 
 static const char *base(void) {
 #ifdef NV_LINUX_DESKTOP
@@ -46,29 +45,19 @@ static int fio(void *u) {
   jsw_iniciar(&w);
   jsw_obj_ini(&w);
   jsw_cs(&w, "url", p->url);
+  // "Novo codigo": o servidor apaga o codigo vivo deste endereco e da outro.
+  if (p->novo) jsw_ci(&w, "novo", 1);
   jsw_obj_fim(&w);
   r = rede_postar_st(destino, PAREAR_TEMPO_REDE, cab, jsw_texto_final(&w), &st);
   jsw_livre(&w);
   ok = parear_ler_resposta(st, r, cod, sizeof cod, pag, sizeof pag, &validade);
   free(r);
   // O endereco e o codigo nao vao para o log: quem le o registro nao entra na TV.
-  printf("[parear] HTTP %d%s\n", st, ok ? " codigo recebido" : "");
+  printf("[parear] HTTP %d%s%s\n", st, p->novo ? " (novo)" : "", ok ? " codigo recebido" : "");
   fflush(stdout);
   SDL_AtomicLock(&trava);
-  if (p->geracao == geracao) {
-    long agora = (long)time(NULL);
-    if (ok) {
-      snprintf(codigo, sizeof codigo, "%s", cod);
-      parear_pagina_curta(pag, pagina, sizeof pagina);
-      expira = agora + validade;
-      tentativa = 0;
-      proxima = 0;
-    } else {
-      int espera = parear_espera(st, tentativa);
-      codigo[0] = 0;
-      proxima = espera < 0 ? -1 : agora + espera;
-    }
-  }
+  if (ok && p->geracao == ctl.geracao) parear_pagina_curta(pag, pagina, sizeof pagina);
+  parear_ctl_resposta(&ctl, p->geracao, ok, cod, validade, st, (long)time(NULL));
   fioVivo = 0;
   SDL_AtomicUnlock(&trava);
   free(p);
@@ -76,10 +65,8 @@ static int fio(void *u) {
 }
 
 static void zerar(void) {
-  geracao++;
-  codigo[0] = pagina[0] = urlAtual[0] = 0;
-  expira = proxima = 0;
-  tentativa = 0;
+  parear_ctl_zerar(&ctl);
+  pagina[0] = urlAtual[0] = 0;
 }
 
 void parear_rede_esquecer(void) {
@@ -88,12 +75,23 @@ void parear_rede_esquecer(void) {
   SDL_AtomicUnlock(&trava);
 }
 
+int parear_rede_renovar(void) {
+  int r = 0;
+  SDL_AtomicLock(&trava);
+  // So ha o que renovar com um endereco em uso (QR na tela, ajuste ligado).
+  if (urlAtual[0]) r = parear_ctl_renovar(&ctl, (long)time(NULL));
+  SDL_AtomicUnlock(&trava);
+  // O pedido sai no proximo parear_rede_passo (no maximo um quadro depois),
+  // ou assim que o fio de um pedido antigo terminar (a resposta dele e jogada fora).
+  return r;
+}
+
 void parear_rede_passo(const char *urlLogin, int ligado) {
   Pedido *p = NULL;
   long agora = (long)time(NULL);
   if (!ligado || !base()[0] || !parear_endereco_ok(urlLogin)) {
     SDL_AtomicLock(&trava);
-    if (urlAtual[0] || codigo[0]) zerar();
+    if (urlAtual[0] || ctl.codigo[0]) zerar();
     SDL_AtomicUnlock(&trava);
     return;
   }
@@ -102,15 +100,13 @@ void parear_rede_passo(const char *urlLogin, int ligado) {
     zerar();
     snprintf(urlAtual, sizeof urlAtual, "%s", urlLogin);
   }
-  // Codigo vencendo: some da tela e pede outro (o servidor devolve um novo).
-  if (codigo[0] && parear_vencendo(agora, expira)) { codigo[0] = 0; proxima = 0; }
-  if (!codigo[0] && !fioVivo && proxima >= 0 && agora >= proxima) {
+  if (parear_ctl_quer_pedir(&ctl, agora, fioVivo)) {
     p = malloc(sizeof *p);
     if (p) {
-      p->geracao = geracao;
+      p->geracao = ctl.geracao;
+      p->novo = ctl.novo;
       snprintf(p->url, sizeof p->url, "%s", urlAtual);
       fioVivo = 1;
-      tentativa++;
     }
   }
   SDL_AtomicUnlock(&trava);
@@ -118,7 +114,7 @@ void parear_rede_passo(const char *urlLogin, int ligado) {
     SDL_Thread *t = SDL_CreateThread(fio, "parear", p);
     if (t) SDL_DetachThread(t);
     else {
-      SDL_AtomicLock(&trava); fioVivo = 0; proxima = -1; SDL_AtomicUnlock(&trava);
+      SDL_AtomicLock(&trava); fioVivo = 0; ctl.proxima = -1; SDL_AtomicUnlock(&trava);
       free(p);
     }
   }
@@ -127,7 +123,7 @@ void parear_rede_passo(const char *urlLogin, int ligado) {
 const char *parear_rede_codigo(void) {
   char c[16];
   SDL_AtomicLock(&trava);
-  snprintf(c, sizeof c, "%s", codigo);
+  snprintf(c, sizeof c, "%s", ctl.codigo);
   SDL_AtomicUnlock(&trava);
   parear_formatar(c, codigoTela, sizeof codigoTela);
   return codigoTela;

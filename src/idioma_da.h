@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "Optjent %d"),
   T("Ganho", "Optjent"),
   T("Gargalo principal", "Primær flaskehals"),
+  T("Gerando um código novo…", "Laver en ny kode…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Administrer"),
   T("Gerenciar add-ons", "Administrer add-ons"),

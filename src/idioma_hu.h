@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "Megszerzett %d"),
   T("Ganho", "Megszerzett"),
   T("Gargalo principal", "Fő szűk keresztmetszet"),
+  T("Gerando um código novo…", "Új kód létrehozása…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Kezelés"),
   T("Gerenciar add-ons", "Bővítmények kezelése"),

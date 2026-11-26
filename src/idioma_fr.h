@@ -3932,6 +3932,7 @@
   T("Ganhas %d", "Obtenus %d"),
   T("Ganho", "Obtenu"),
   T("Gargalo principal", "Principal goulot d'étranglement"),
+  T("Gerando um código novo…", "Génération d’un nouveau code…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Gérer"),
   T("Gerenciar add-ons", "Gérer les add-ons"),

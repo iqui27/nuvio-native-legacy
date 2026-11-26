@@ -3932,6 +3932,7 @@
   { "Ganhas %d", "Earned %d" },
   { "Ganho", "Earned" },
   { "Gargalo principal", "Main bottleneck" },
+  { "Gerando um código novo…", "Generating a new code…" },
   { "Gerar novo QR", "Generate new QR code" },
   { "Gerenciar", "Manage" },
   { "Gerenciar add-ons", "Manage add-ons" },

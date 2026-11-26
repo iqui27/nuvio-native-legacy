@@ -24,6 +24,7 @@ function cenario(t, extra = {}) {
     const st = sqlite.prepare(sql);
     return {
       first: async () => st.get(...v) ?? null,
+      all: async () => ({ results: st.all(...v) }),
       run: async () => { const r = st.run(...v);
         return { meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) } }; },
     };
@@ -65,6 +66,7 @@ test("enderecoAceito: origem e caminho exatos, query canonica, sem prefixo", () 
   assert.ok(!enderecoAceito(BASE + "?code=" + c + "&next=https://golpe.net", b));
   assert.ok(!enderecoAceito(BASE + "?code=" + c + "&code=" + c, b));
   assert.ok(!enderecoAceito(BASE + "?code=" + c + "#x", b));
+  assert.ok(!enderecoAceito(BASE + "?code=" + c + "#", b));   // fragmento vazio tambem
   assert.ok(!enderecoAceito(BASE + "?Code=" + c, b));
   assert.ok(!enderecoAceito(BASE + "?code=" + "g".repeat(32), b));
   // Base suja nao libera nada; credencial e esquema estranho tambem nao.
@@ -105,6 +107,43 @@ test("TV pede o codigo, quem ajuda abre: devolve o mesmo endereco", async (t) =>
   const c = await pedir("/v1/parear/abrir", { codigo: a.body.codigo }, "3.3.3.3");
   assert.equal(c.status, 404);
   assert.equal(c.res.headers.get("cache-control"), "no-store");
+});
+
+test("Novo codigo: a TV pede outro para o MESMO endereco e recebe na hora; o antigo morre", async (t) => {
+  const { pedir, sqlite } = cenario(t);
+  const u = U(0x5eed);
+  const a = await pedir("/v1/parear", { url: u });
+  assert.equal(a.status, 200);
+  // Sem "novo" o mesmo endereco devolve o mesmo codigo (a TV que so reabriu a tela).
+  assert.equal((await pedir("/v1/parear", { url: u })).body.codigo, a.body.codigo);
+  // Com "novo": codigo valido, diferente, validade cheia, na mesma resposta.
+  const b = await pedir("/v1/parear", { url: u, novo: 1 });
+  assert.equal(b.status, 200);
+  assert.match(b.body.codigo, /^\d{6}$/);
+  assert.notEqual(b.body.codigo, a.body.codigo);
+  assert.equal(b.body.validade, PAREAR_VALIDADE);
+  assert.equal(b.res.headers.get("cache-control"), "no-store");
+  assert.equal(sqlite.prepare("SELECT count(*) AS n FROM parear WHERE url = ?").get(u).n, 1);
+  // O antigo nao abre mais; o novo abre o mesmo endereco, uma vez.
+  assert.equal((await pedir("/v1/parear/abrir", { codigo: a.body.codigo }, "6.6.6.1")).status, 404);
+  const c = await pedir("/v1/parear/abrir", { codigo: b.body.codigo }, "6.6.6.2");
+  assert.deepEqual([c.status, c.body.url], [200, u]);
+  assert.equal((await pedir("/v1/parear/abrir", { codigo: b.body.codigo }, "6.6.6.3")).status, 404);
+  // Renovar seguidas vezes: sempre um codigo que abre, nunca repete o anterior.
+  let ant = null;
+  for (let i = 0; i < 5; i++) {
+    const r = await pedir("/v1/parear", { url: u, novo: true }, "6.6.6.9");
+    assert.equal(r.status, 200);
+    assert.notEqual(r.body.codigo, ant);
+    ant = r.body.codigo;
+  }
+  assert.equal(sqlite.prepare("SELECT count(*) AS n FROM parear WHERE url = ?").get(u).n, 1);
+});
+
+test("Novo codigo gasta a mesma cota de 20 por hora", async (t) => {
+  const { pedir } = cenario(t);
+  for (let i = 0; i < 20; i++) assert.equal((await pedir("/v1/parear", { url: U(3), novo: 1 }, "7.7.7.8")).status, 200);
+  assert.equal((await pedir("/v1/parear", { url: U(3), novo: 1 }, "7.7.7.8")).status, 429);
 });
 
 test("uso unico mesmo com dois pedidos ao mesmo tempo", async (t) => {

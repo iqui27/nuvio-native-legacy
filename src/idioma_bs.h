@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "Zarađeno %d"),
   T("Ganho", "Zarađeno"),
   T("Gargalo principal", "Glavno usko grlo"),
+  T("Gerando um código novo…", "Pravi se novi kod…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Upravljaj"),
   T("Gerenciar add-ons", "Upravljaj dodacima"),

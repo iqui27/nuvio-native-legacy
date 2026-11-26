@@ -3932,6 +3932,7 @@
   T("Ganhas %d", "Câștigate %d"),
   T("Ganho", "Câștigat"),
   T("Gargalo principal", "Blocajul principal"),
+  T("Gerando um código novo…", "Se generează un cod nou…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Gestionează"),
   T("Gerenciar add-ons", "Gestionează addon-urile"),

@@ -36,4 +36,29 @@ int parear_espera(int status, int tentativa);
 // 1 quando falta pouco (menos de 30 s) para o codigo vencer: hora de pedir outro.
 int parear_vencendo(long agora, long expira);
 
+// O ESTADO DO CODIGO NA TV, sem rede nem trava (parearrede.c guarda um destes
+// sob a trava; tests/parear.c o exercita direto).
+//   - `geracao` muda a cada zerar/renovar: resposta de pedido antigo e jogada fora;
+//   - `novo` = o proximo POST leva "novo":1 e o servidor troca o codigo do
+//     MESMO endereco na hora (o antigo morre). Fica ligado ate um sucesso,
+//     porque um novo pedido sem ele traria o codigo antigo de volta.
+#define PAREAR_RENOVAR_INTERVALO 3   // segundos minimos entre dois "Novo codigo"
+typedef struct {
+  char codigo[16];
+  long expira, proxima, renovadoEm;   // segundos; proxima = -1: desistiu
+  int tentativa, novo;
+  unsigned geracao;
+} ParearCtl;
+// Esquece tudo (endereco mudou, tela reabriu).
+void parear_ctl_zerar(ParearCtl *c);
+// "Novo codigo": apaga o codigo da tela JA e marca o proximo pedido como novo.
+// Vale mesmo depois de desistir. 0 = ignorado (antes do intervalo minimo).
+int parear_ctl_renovar(ParearCtl *c, long agora);
+// 1 = hora de soltar um pedido (o chamador ja sabe se ha fio vivo). Codigo
+// vencendo some aqui. Ao devolver 1, conta a tentativa.
+int parear_ctl_quer_pedir(ParearCtl *c, long agora, int fioVivo);
+// Resposta do pedido feito na geracao `g`. ok = parear_ler_resposta deu 1.
+void parear_ctl_resposta(ParearCtl *c, unsigned g, int ok, const char *codigo,
+                         int validade, int status, long agora);
+
 #endif

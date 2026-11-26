@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "獲得 %d"),
   T("Ganho", "獲得済み"),
   T("Gargalo principal", "主なボトルネック"),
+  T("Gerando um código novo…", "新しいコードを作成中…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "管理"),
   T("Gerenciar add-ons", "アドオンを管理"),

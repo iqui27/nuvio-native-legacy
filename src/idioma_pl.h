@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "Zdobyte %d"),
   T("Ganho", "Zdobyte"),
   T("Gargalo principal", "Główne wąskie gardło"),
+  T("Gerando um código novo…", "Generowanie nowego kodu…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Zarządzaj"),
   T("Gerenciar add-ons", "Zarządzaj dodatkami"),

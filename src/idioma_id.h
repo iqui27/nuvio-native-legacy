@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "Diperoleh %d"),
   T("Ganho", "Diperoleh"),
   T("Gargalo principal", "Hambatan utama"),
+  T("Gerando um código novo…", "Membuat kode baru…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Kelola"),
   T("Gerenciar add-ons", "Kelola addon"),

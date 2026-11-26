@@ -3933,6 +3933,7 @@
   T("Ganhas %d", "Získáno %d"),
   T("Ganho", "Získáno"),
   T("Gargalo principal", "Hlavní úzké místo"),
+  T("Gerando um código novo…", "Vytváříme nový kód…"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Spravovat"),
   T("Gerenciar add-ons", "Spravovat doplňky"),
