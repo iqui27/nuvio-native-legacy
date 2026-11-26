@@ -101,7 +101,7 @@ object NvPlayer {
     private const val RETRY_DECODER_MS = 5000L
 
     private val principal = Handler(Looper.getMainLooper())
-    private var activity: Activity? = null
+    @Volatile private var activity: Activity? = null
     // isLowRamDevice/memoryClass medidos no criarPlayer (true = pouca RAM;
     // false tambem antes de medir). CargaPlayer le sem Context.
     @Volatile internal var poucaRamAparelho = false
@@ -1381,6 +1381,19 @@ object NvPlayer {
     @Volatile private var janelaAplicada = -1
     @Volatile private var janelaSuperficieAplicada: SurfaceView? = null
     private var janelaUltimoPedido: List<Any?>? = null
+    // Legenda temporaria (src/legtemp.h): 1 = o som de midia do aparelho esta
+    // mudo (ou no zero), 0 = com som, -1 = nao da para saber. Uma TV que muta
+    // no proprio painel (CEC, soundbar) nao aparece aqui.
+    @JvmStatic fun mudo(): Int = try {
+        val audio = activity?.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager
+        when {
+            audio == null -> -1
+            audio.isStreamMute(android.media.AudioManager.STREAM_MUSIC) -> 1
+            audio.isVolumeFixed -> 0
+            audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) == 0 -> 1
+            else -> 0
+        }
+    } catch (_: Throwable) { -1 }
     @JvmStatic fun janelaPronta(): Boolean {
         val sv = superficie ?: return false
         return !sv.isLayoutRequested && sv.visibility == View.VISIBLE &&

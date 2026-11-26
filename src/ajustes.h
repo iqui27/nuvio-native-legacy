@@ -660,6 +660,7 @@ int ajustes_leg2_posicao(void); // -1 keeps the existing Top/Stacked placement
 int ajustes_leg2_atraso(void);
 int ajustes_leg2_definir_atraso(int ms);
 int   ajustes_legenda_forcada_auto(void);    // #287: 1 = audio in the subtitle language -> only the forced track (local, default on)
+int   ajustes_legenda_temporaria(void);      // legtemp.h: 1 = subtitles turn on by themselves on mute / short rewind (local, default on)
 // "O que eu perdi?": 1 = ligado E com chave do Gemini (local, padrao Ligado).
 int   ajustes_perdi(void);
 // A chave pessoal do Gemini ("" sem chave). Credencial: nunca registrar.
