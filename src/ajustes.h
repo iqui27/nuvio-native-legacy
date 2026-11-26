@@ -312,6 +312,9 @@ void ajustes_definir_vidro(int ligado);
 void ajustes_definir_servidores(int ligado);
 int  ajustes_jellyfin_ligado(void);   // F11: personal servers on AND strict HTTP here
 int  ajustes_p2p_ligado(void);
+// Nuvio Casa (casa.h): procurar um ajudante na rede / ser o ajudante.
+int  ajustes_casa_usar(void);
+int  ajustes_casa_ajudar(void);
 void ajustes_definir_p2p_ligado(int ligado);
 int ajustes_debrid_celular(const char *servico, const char *chave);
 // Endereco ja normalizado ("http://192.168.1.5:11470"); "" quando nao ha.

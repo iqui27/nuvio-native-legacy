@@ -421,3 +421,5 @@
   0, /* night mode: Off */
   0, /* marcarCenaLocal: Ligado */
   0, // Sessao pelo celular: acao, sem valor
+  0, /* Nuvio Casa, use a helper: On */
+  1, /* Nuvio Casa, help other TVs: Off */

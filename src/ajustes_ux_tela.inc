@@ -98,6 +98,7 @@ static const Item TELA[] = {
 #if !defined(NV_ANDROID) || defined(NV_P2P_MOTOR)
     OPC(AJ_P2P_LIMITE), OPC(AJ_P2P_DESTINO), OPC(AJ_P2P_PRAZO_META), OPC(AJ_DIRECT_CACHE_USB),
 #endif
+    OPC(AJ_CASA_USAR), OPC(AJ_CASA_AJUDAR),
 #endif
 
   SEC("Idiomas e legendas", "Idioma da interface, áudio, legenda e metadados", "aj_languages"),

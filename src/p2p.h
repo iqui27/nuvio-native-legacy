@@ -67,6 +67,12 @@ int p2p_ativo(void);
 // 1 quando o P2P ligado vai pelo motor embutido (sem endereco, com motor).
 int p2p_usa_motor(void);
 
+// NUVIO CASA (casa.h): `base` devolve 1 e o endereco do ajudante achado na rede
+// (sem bloquear), ou 0. So vale sem endereco digitado e sem motor neste build.
+void p2p_definir_casa(int (*base)(char *, unsigned));
+// 1 quando o P2P ligado vai pelo ajudante da casa.
+int p2p_usa_casa(void);
+
 // 40 caracteres hexadecimais.
 int p2p_hash_valido(const char *hash);
 

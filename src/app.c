@@ -1027,6 +1027,7 @@ static int armarPoliticaFonteAberta(int indice, int manual, const char *url) {
 #include "extras.h"
 #include "perfilinfantil.h"
 #include "perfilregras.h"
+#include "casa_app.h"
 #include <stdio.h>
 
 static Tela tela = TELA_HOME;
@@ -6151,6 +6152,7 @@ void app_atualizar(float dt, Uint32 agora) {
   perfis_lembrar_ultimo_configurar(ajustes_lembrar_perfil());
   // Pagina de registro na rede local (logrede.h): Ajustes > Sobre e ajuda > Registro.
   logrede_configurar(ajustes_log_rede(), registro_arquivo());
+  casa_app_quadro();
   fontevolta_configurar(ajustes_link_reusar(), ajustes_link_prazo_s());
   // Pausa entre quadros medida uma vez, antes de qualquer tela perguntar se o
   // OK segurado venceu (segurar.h, #387).
