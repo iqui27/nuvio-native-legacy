@@ -124,6 +124,7 @@ static const FarolAjItem FAROL_AJ_LISTA[] = {
   FA_B("legendaSyncAutoLocal",          "legenda_auto_sync"),
   FA_B("legendaForcadaLocal",           "legenda_forcada"),
   FA_B("legendaEvitarSdhLocal",         "legenda_evitar_sdh"),
+  FA_B("legendaTemporariaLocal",        "legenda_temporaria"),
   FA_E("legendaMostrarLocal",           "legendas",             FA_LEG_MOSTRAR),
   FA_B("audioOriginalLocal",            "audio_original"),
   FA_B("audioNormalizarLocal",          "audio_normalizar"),

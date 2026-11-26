@@ -27,6 +27,7 @@
 #include "ajustes.h"
 #include "webosver.h"
 #undef __APPLE__
+#undef NV_LINUX_DESKTOP
 #include "../src/video.c"
 
 static int pedidos, aceita = 1, assinaturas, respostas;
@@ -36,6 +37,24 @@ static double seekPosition;
 
 static Filtro screensaverCallback;
 static void *screensaverCtx;
+static NvHCtx *appAssinatura;
+static int assinaturasApp;
+
+static int fakeAppCall(const char *uri, const char *carga, NvHCtx *ctx) {
+  assert(strstr(uri, "registerScreenSaverRequest") && strstr(carga, "\"subscribe\":true"));
+  assert(ctx->pub == 1 && ctx->multiple == 1);
+  assinaturasApp++;
+  appAssinatura = ctx;
+  return 0;
+}
+
+static const char *fakeAppPayload(void *msg) { return msg; }
+
+static void *fakeAppReply(void *payload) {
+  appAssinatura->cb(NULL, payload, appAssinatura);
+  return NULL;
+}
+
 static int fakeCall(LSHandle *h, const char *uri, const char *carga, Filtro cb,
                     void *ctx, unsigned long *tok, void *erro) {
   (void)h; (void)uri; (void)carga; (void)cb; (void)ctx; (void)tok; (void)erro;
@@ -58,6 +77,47 @@ static void evento(const char *p, unsigned geracao) {
   aoEvento(NULL, (LSMessage *)p, (void *)(uintptr_t)geracao);
 }
 static void *fakeLoop(void *u) { return u; }
+
+static void testarFallbackAssinaturaApp(int falhasAnteriores) {
+  int antesApp = assinaturasApp, antesLS2 = assinaturas;
+  char recusa[96];
+  pthread_t callback;
+
+  __atomic_store_n(&encerrando, 0, __ATOMIC_RELEASE);
+  bus = (LSHandle *)(uintptr_t)1;
+  ligado = 1;
+  hCall = fakeAppCall;
+  hMsg = fakeAppPayload;
+  for (int tentativa = 0; tentativa < falhasAnteriores; tentativa++)
+    lsreg_falhou(&protetorReg, LSR_EAGAIN, SDL_GetTicks());
+  protetorReg.proximaMs = SDL_GetTicks() - 1;
+  video_bombear();
+  assert(assinaturasApp == antesApp + 1 && appAssinatura);
+  assert(assinaturas == antesLS2 && protetorPendente && !protetorLigado);
+
+  snprintf(recusa, sizeof recusa, "{\"returnValue\":false,\"errorCode\":%d}", LSR_PERMISSION);
+  assert(pthread_create(&callback, NULL, fakeAppReply, recusa) == 0);
+  assert(pthread_join(callback, NULL) == 0);
+  assert(assinaturas == antesLS2 && !protetorPendente && !protetorLigado);
+  video_bombear();
+  assert(assinaturasApp == antesApp + 1 && assinaturas == antesLS2);
+
+  protetorReg.proximaMs = SDL_GetTicks() - 1;
+  video_bombear();
+  assert(assinaturasApp == antesApp + 1 && assinaturas == antesLS2 + 1);
+  assert(protetorPendente && !protetorLigado);
+  screensaverCallback(NULL,
+      (LSMessage *)"{\"returnValue\":true,\"subscribed\":true}", screensaverCtx);
+  assert(!protetorPendente && protetorLigado && protetorReg.falhas == 0);
+
+  free(appAssinatura->u);
+  free(appAssinatura);
+  appAssinatura = NULL;
+  assert(pthread_create(&fio, NULL, fakeLoop, NULL) == 0);
+  video_encerrar();
+  hCall = NULL;
+}
+
 static int windowCalls;
 static int fakeWindow(long handle, long x, long y, long w, long h, int full, long *task) {
   (void)handle; (void)x; (void)y; (void)w; (void)h; (void)full; (void)task;
@@ -155,6 +215,8 @@ int main(void) {
   }
 
   // Registro no caminho real de um load valido, nunca no caminho de erro LS2.
+  helperPronto();
+  hCall = NULL;
   aceita = 1; sessao = 17; bus = (LSHandle *)(uintptr_t)1;
   midia[0] = 0; tocando = pausaPedida = terminou = falhou = 0;
   aoCarregar(NULL, (LSMessage *)"{\"mediaId\":\"fixture-load\"}",
@@ -169,53 +231,55 @@ int main(void) {
   evento("{\"playing\":true}", sessao);
   video_bombear(); // ultimo quadro: tocando; os proximos eventos nao desenham
   screensaverCallback(NULL, (LSMessage *)active, NULL);
+  assert(respostas == 0);
+  screensaverCallback(NULL, (LSMessage *)active, screensaverCtx);
   assert(respostas == 1 && strstr(resposta, "\"ack\":false") &&
          strstr(resposta, "\"timestamp\":1700000000123456}"));
   // Sem a tela de descanso do Nuvio (esmaecer real, linkado): ela segura o protetor da TV.
   esmaecer_estilo(ESM_ESTILO_ESCURECER);
   video_pausar(1);
-  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  screensaverCallback(NULL, (LSMessage *)active, screensaverCtx);
   assert(strstr(resposta, "\"ack\":true"));
   video_pausar(0); video_bombear();
   evento("{\"paused\":true}", sessao); // pausa do pipeline, sem quadro
-  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  screensaverCallback(NULL, (LSMessage *)active, screensaverCtx);
   assert(strstr(resposta, "\"ack\":true"));
   evento("{\"playing\":true}", sessao); video_bombear();
   evento("{\"errorCode\":100,\"errorText\":\"Playing error\"}", sessao);
-  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  screensaverCallback(NULL, (LSMessage *)active, screensaverCtx);
   assert(strstr(resposta, "\"ack\":true"));
   evento("{\"playing\":true}", sessao); // retomada publicada sem quadro
-  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  screensaverCallback(NULL, (LSMessage *)active, screensaverCtx);
   assert(strstr(resposta, "\"ack\":false"));
   evento("{\"errorCode\":200,\"errorText\":\"Audio Codec Not Supported\"}", sessao);
-  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  screensaverCallback(NULL, (LSMessage *)active, screensaverCtx);
   assert(strstr(resposta, "\"ack\":false")); // aviso nao para o video
   evento("{\"endOfStream\":true}", sessao);
-  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  screensaverCallback(NULL, (LSMessage *)active, screensaverCtx);
   assert(strstr(resposta, "\"ack\":true"));
   video_parar();
   evento("{\"playing\":true}", sessao - 1); // sessao encerrada nao revive ACK
-  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  screensaverCallback(NULL, (LSMessage *)active, screensaverCtx);
   assert(strstr(resposta, "\"ack\":true"));
   // A politica tambem muda sem quadros (sem filme).
   esmaecer_estilo(ESM_ESTILO_VITRINE);
   esmaecer_escolha(ESM_PADRAO);
-  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  screensaverCallback(NULL, (LSMessage *)active, screensaverCtx);
   assert(strstr(resposta, "\"ack\":false"));
   esmaecer_escolha(0);
-  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  screensaverCallback(NULL, (LSMessage *)active, screensaverCtx);
   assert(strstr(resposta, "\"ack\":true"));
   esmaecer_escolha(ESM_PADRAO);
   esmaecer_estilo(ESM_ESTILO_ESCURECER);
-  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  screensaverCallback(NULL, (LSMessage *)active, screensaverCtx);
   assert(strstr(resposta, "\"ack\":true"));
   int antes = respostas;
-  screensaverCallback(NULL, (LSMessage *)"{\"state\":\"Inactive\",\"text\":\"Active\",\"timestamp\":1}", NULL);
-  screensaverCallback(NULL, (LSMessage *)"{\"state\":\"Active\"}", NULL);
-  screensaverCallback(NULL, (LSMessage *)"{\"state\":\"Active\",\"timestamp\":null}", NULL);
-  screensaverCallback(NULL, (LSMessage *)"{\"state\":\"Active\",\"timestamp\":\"1234567890123456789012345678901234567890123456789012345678901234567890\"}", NULL);
-  assert(respostas == antes);
-  screensaverCallback(NULL, (LSMessage *)"{ \"state\" : \"Active\", \"timestamp\" : \"exact,stamp\" }", NULL);
+  screensaverCallback(NULL, (LSMessage *)"{\"state\":\"Inactive\",\"text\":\"Active\",\"timestamp\":1}", screensaverCtx);
+  screensaverCallback(NULL, (LSMessage *)"{\"state\":\"Active\"}", screensaverCtx);
+  screensaverCallback(NULL, (LSMessage *)"{\"state\":\"Active\",\"timestamp\":null}", screensaverCtx);
+  screensaverCallback(NULL, (LSMessage *)"{\"state\":\"Active\",\"timestamp\":\"1234567890123456789012345678901234567890123456789012345678901234567890\"}", screensaverCtx);
+  assert(respostas == antes && protetorLigado);
+  screensaverCallback(NULL, (LSMessage *)"{ \"state\" : \"Active\", \"timestamp\" : \"exact,stamp\" }", screensaverCtx);
   assert(strstr(resposta, "\"timestamp\":\"exact,stamp\"}"));
   protetorLigado = 0; aceita = 0;
   protegerScreensaver(); assert(!protetorLigado && assinaturas == 2);
@@ -240,8 +304,14 @@ int main(void) {
   assert(pthread_create(&fio, NULL, fakeLoop, NULL) == 0);
   video_encerrar(); assert(!protetorLigado);
   antes = respostas;
-  screensaverCallback(NULL, (LSMessage *)active, NULL); assert(respostas == antes);
+  screensaverCallback(NULL, (LSMessage *)active, screensaverCtx);
+  assert(respostas == antes);
   puts("video_screensaver_lg: load, assinatura, timestamp, pausas, fim, erro e ciclo ok");
+
+  assert(appResposta(NULL, NULL, NULL) == 1);
+  testarFallbackAssinaturaApp(0);
+  testarFallbackAssinaturaApp(4);
+  puts("video_screensaver_lg: recusa assíncrona do app -> fallback LS2 no pump");
 
   // A reload seek refused by firmware must retry the reload position, even
   // when the previous manual seek differs or the reload starts at zero.

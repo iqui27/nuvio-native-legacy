@@ -409,4 +409,6 @@
   0, /* farolZerar: acao (#51) */
   0, /* farolLlmSoEstaTv: 0 = Ligado ("So nesta TV", padrao seguro, #51) */
   0, /* direct account-profile friends action */
+  0, // pausaAmbienteLocal: Ligado (V_LIGA 0)
+  0, /* legendaTemporariaLocal: Ligado */
   0, /* sign-in helper code: On (V_LIGA 0) */

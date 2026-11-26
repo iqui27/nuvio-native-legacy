@@ -502,4 +502,7 @@ void video_dv_segurar(int v) { (void)v; }
 int video_luna(const char *u,const char *p,void (*cb)(const char *,void *),void *ctx) {
   (void)u;(void)p;(void)cb;(void)ctx; return 0;
 }
+int video_luna_app(const char *uri, const char *carga, void (*cb)(const char *, void *), void *ctx) {
+  (void)uri; (void)carga; (void)cb; (void)ctx; return 0;
+}
 #endif
