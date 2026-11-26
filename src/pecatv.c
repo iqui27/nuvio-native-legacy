@@ -189,6 +189,7 @@ void pecatv_atualizar(float dt, int podeMostrar) {
   if (pecaserv_pegar_chave(txt, sizeof txt)) {
     peca_chave_limpar(txt, chave, sizeof chave);
     if (chave[0]) dados_gravar(ARQ_CHAVE, chave); else dados_apagar(ARQ_CHAVE);
+    ajustes_gemini_recarregar();   // mesma chave do "O que eu perdi?" (gemini.txt)
     memset(txt, 0, sizeof txt);
     if (res == PECA_SEM_CHAVE || res == PECA_CHAVE) { estado = "livre"; res = PECA_OK; if (tela == T_ERRO) pecatv_fechar(); }
     publicar();

@@ -5009,6 +5009,9 @@ static const char *geminiMascarada(void) {
 }
 int ajustes_perdi(void) { return valor[AJ_PERDI] == 0 && geminiChave[0] != 0; }
 const char *ajustes_perdi_chave(void) { return geminiChave; }
+// Outra tela gravou gemini.txt (a pagina do "Peca como fala" no celular):
+// relê para o "O que eu perdi?" usar a mesma chave sem reabrir o app.
+void ajustes_gemini_recarregar(void) { geminiCarregar(); }
 
 // Somente a chave propria em seekr.txt, local e mascarada. Remover a chave
 // desliga o uso efetivo; os limites sao os do plano da pessoa no Seekr.

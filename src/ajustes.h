@@ -668,6 +668,7 @@ int   ajustes_legenda_temporaria(void);      // legtemp.h: 1 = subtitles turn on
 int   ajustes_perdi(void);
 // A chave pessoal do Gemini ("" sem chave). Credencial: nunca registrar.
 const char *ajustes_perdi_chave(void);
+void ajustes_gemini_recarregar(void);   // gemini.txt mudou por outra tela (pecatv)
 int   ajustes_legenda_ass_peso(void);        // ASSPESO_* (asspeso.h): 0 Automatico, 1 Sempre completo, 2 Texto simples (local, fora do .tpk)
 int   ajustes_legenda_evitar_sdh(void);      // #743: 1 = auto-pick skips SDH/CC tracks (local, default off)
 int   ajustes_ass_motor(void);               // .tpk: 1 = motor novo de ASS (padrao), 0 = motor antigo
