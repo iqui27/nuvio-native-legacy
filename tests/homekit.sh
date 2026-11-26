@@ -9,3 +9,5 @@ cc src/homekit.c src/js.c tests/homekit.c -Isrc -o "$out" \
   -O1 -g -Wall -Wextra -fsanitize=address,undefined
 "$out"
 rm -f "$out"
+# O download do kit pela reserva do Android respeita o teto (rede_android_teto).
+SANITIZE=1 bash tests/rede_android_teto.sh

@@ -23,6 +23,12 @@ static const char *scriptCorpo[MAX_SALTOS];
 static int scriptN, seguroCalls, androidCalls;
 static char urlsVistas[MAX_SALTOS][2200];
 
+/* Variante com teto (android_http_teto): o double ignora o teto; o corte e do rede.c. */
+char *android_http_teto(const char *v, const char *u, const char *c, const char *b, int p,
+                        long teto, int *st, int *retry, long *n, char *e, size_t ne) {
+  (void)teto;
+  return android_http(v, u, c, b, p, st, retry, n, e, ne);
+}
 char *android_http_seguro(const char *v, const char *u, const char *c, const char *b,
                           int p, int *st, int *retryAfter, long *n, char *erro, size_t ne) {
   int i = seguroCalls++;
