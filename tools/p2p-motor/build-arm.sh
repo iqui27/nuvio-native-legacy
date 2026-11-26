@@ -16,7 +16,8 @@ if [ ! -d "$W/nuvio-engine/.git" ]; then
   git clone -q https://github.com/NuvioMedia/nuvio-engine "$W/nuvio-engine"
 fi
 nv_p2p_fonte "$W/nuvio-engine"
-cp tools/p2p-motor/poc.c "$W/poc.c"
+sed "s#\.\./\.\./tests/nvtmp\.h#nvtmp.h#" tools/p2p-motor/poc.c > "$W/poc.c"
+cp tests/nvtmp.h "$W/nvtmp.h"   # o poc.c inclui o helper de pasta temporaria dos testes
 # -j baixo: com -j$(nproc) o cc1plus do libtorrent estoura a RAM do container (Killed).
 ctr_run --rm --platform linux/arm64 -e NV_JOBS="${NV_JOBS:-2}" -v "$W":/w nuvio-webos-sdk sh -c '
   set -e

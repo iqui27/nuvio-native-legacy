@@ -61,6 +61,7 @@ int dts_playback_event(DtsPlayback *p,char *out,size_t n) { (void)p;if (pump_rea
 void dts_playback_close(DtsPlayback *p) { (void)p;assert(0); }
 void dts_playback_pause(DtsPlayback *p,int paused) { (void)p;(void)paused;assert(0); }
 void mkvass_aceitar_imagem(int sim) { (void)sim; }
+void capmkv_zerar(void) {}   // video_parar (chapters reader of the MKV pick), not under test here
 static int seek_commands;
 void dts_playback_seek(DtsPlayback *p,double t) { assert(p && t>=0);seek_commands++; }
 void dts_playback_audio(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
