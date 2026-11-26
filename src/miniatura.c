@@ -15,11 +15,22 @@
 // (up to 5 min away) with ITS own time, dimmed as "still loading".
 //
 // MEMORY (owner: never run out of memory, at all costs). Before every frame
-// MemAvailable must cover a 150 MB floor plus what the next frame costs
-// (measured on the device after the first one). One decoded frame at a time,
-// one decoding thread; the decoder stays open between frames (TV tests 22/10:
-// ~20% faster) and is closed while paused. The tiles stay compressed in RAM
-// (~8 KB each); only the few on screen become textures.
+// MemAvailable must cover a 120 MB floor (owner 26/11) plus what the next
+// frame costs. That cost comes from what the decoder really holds
+// (mini_motor_memoria: a warm decoder needs only a few MB more; opening it
+// costs what it held last time), not from MemAvailable before -> after a tile:
+// with DTS converting, that swing is the converter's segments, and it grew the
+// "cost" to 122 MB in the owner's log (26/11) for tiles that took ~1 MB.
+// One decoded frame at a time, one decoding thread; the decoder stays open
+// between frames (TV tests 22/10: ~20% faster) and through a low-memory pause
+// while MemAvailable is above the floor; under the floor it is closed and its
+// memory goes back to the TV. The tiles stay compressed in RAM (~8 KB each);
+// only the few on screen become textures.
+//
+// The player first: nothing is made while it opens, buffers, reconnects or
+// reopens the same source, and for 8 s after a reconnect or reopen (owner's
+// log 26/11: the TV player froze twice right after reopening while 4K tiles
+// were decoding back to back).
 //
 // KEPT ON THIS TV (owner 25/11, replaces the Google Drive copy): one file per
 // video in <data>/miniaturas, named by the content fingerprint (size + hash of
@@ -66,17 +77,12 @@
 
 #define BASE_MS 5000L              // one slot every 5 s; the 10 s grid uses every second one
 #define DEZ 2                      // slots per 10 s
-// MEMORY GATE (values from the TV tests of 22-23/10, Tizen 9 / 1774 MB):
-// MemAvailable must cover the floor plus the next tile's cost. A 4K tile costs
-// 35-45 MB of MemAvailable; before one is measured the cost is 60 MB scaled by
-// picture size, after it the largest of the last MEDIDAS measured costs x 1.25.
-// With the DTS converter running the TV went down to 155 MB with no trouble.
-#define PISO_KB (150L * 1024)
-#define CUSTO_4K_KB (60L * 1024)
-#define MARGEM_PCT 125
-#define MEDIDAS 8
-#define MEDIDA_MIN_KB (20L * 1024)
+// MEMORY GATE: MemAvailable must cover the floor plus the next tile's cost
+// (mini_motor_memoria). The DTS converter alone took a Tizen 9 / 1774 MB TV
+// down to 122 MB (owner's log 26/11).
+#define PISO_KB (120L * 1024)
 #define PAUSA_MEM_MS 1500          // memory re-check while paused
+#define ASSENTAR_MS 8000           // after a reconnect / reopen of the player
 #define INTERVALO_MS 30            // between tiles
 #define SCRUB_SLOTS 6              // +-30 s around the scrub point
 #define PERTO_SLOTS 12             // +-1 min around the playhead
@@ -412,6 +418,16 @@ static long lerFonte(void *u, int64_t ini, int64_t fim, unsigned char *dst) {
   return -1;
 }
 
+// The player reconnecting or reopening the same source (reconnect, CDN link
+// renewal, DTS converter reopen, resume after Home).
+static int playerReabrindo(void) {
+  if (video_reconectando()) return 1;
+#ifdef NV_TPK
+  if (video_tpk_reabrindo()) return 1;
+#endif
+  return 0;
+}
+
 static void *trabalhar(void *u) {
   Trabalho *w = u;
   Job *j = w->j;
@@ -425,8 +441,9 @@ static void *trabalhar(void *u) {
   int seguidas = 0, feitosAqui = 0;
   unsigned long somaMs = 0;
   unsigned janela[8]; int nJanela = 0, iJanela = 0;   // last tiles timed without DTS
-  long medidas[MEDIDAS] = {0}; int nMedidas = 0;
   Uint32 ultimaPausaLog = 0; int pausasCaladas = 0;
+  Uint32 reabriuEm = 0;            // last time the player was reconnecting / reopening
+  long decLogKB = 0;               // decoder size last logged
   if (!l) goto fim;
   l->j = j;
   snprintf(l->url, sizeof l->url, "%s", w->url);
@@ -472,31 +489,28 @@ static void *trabalhar(void *u) {
   while (!j->parar) {
     // Pauses: the player is not showing this title, or is buffering / opening.
     if ((Sint32)(SDL_GetTicks() - batida) > 6000) { mini_motor_soltar_decoder(m); dormirJ(j, 500); continue; }
-    if (video_bufferando_ms() > 0 || !video_pronto()) { mini_motor_soltar_decoder(m); dormirJ(j, 700); continue; }
+    if (video_bufferando_ms() > 0 || !video_pronto() || playerReabrindo()) {
+      if (playerReabrindo()) reabriuEm = SDL_GetTicks() | 1u;
+      mini_motor_soltar_decoder(m); dormirJ(j, 700); continue;
+    }
+    if (reabriuEm && SDL_GetTicks() - reabriuEm < ASSENTAR_MS) { dormirJ(j, 500); continue; }
+    reabriuEm = 0;
     // Memory before every frame.
     long disp = memDisponivelKB();
     long precisa = (long)(mini_motor_memoria(m, threads) / 1024);
-    {
-      // Guess until measured: 60 MB for a 4K frame, scaled by picture size.
-      const MiniInfo *mi = mini_motor_info(m);
-      double px = (double)mi->largura * (double)mi->altura / (3840.0 * 2160.0);
-      long g = (long)(CUSTO_4K_KB * (px > 0.05 ? px : 0.05));
-      if (g < precisa) precisa = g;
-    }
-    if (nMedidas >= 1) {
-      long maior = 0;
-      for (int i = 0; i < nMedidas && i < MEDIDAS; i++) if (medidas[i] > maior) maior = medidas[i];
-      maior = maior * MARGEM_PCT / 100;
-      if (maior < MEDIDA_MIN_KB) maior = MEDIDA_MIN_KB;
-      precisa = maior;
-    }
     if (disp >= 0 && disp < PISO_KB + precisa) {
       int dts = video_dts_estado() == VIDEO_DTS_PREPARANDO || video_dts_estado() == VIDEO_DTS_CONVERTIDO;
-      mini_motor_soltar_decoder(m);
+      // Under the floor itself the decoder's memory goes back to the TV; above
+      // it the decoder stays open (reopening costs its whole set again).
+      MiniDecMem dm; mini_motor_decoder_mem(m, &dm);
+      int fecha = disp < PISO_KB && dm.aberto;
+      if (fecha) mini_motor_soltar_decoder(m);
       // One line when it starts, then at most one every 30 s.
       if (!ultimaPausaLog || SDL_GetTicks() - ultimaPausaLog > 30000) {
-        printf("[miniatura] paused: low memory (free %ld MB, needs %ld MB + floor %ld MB%s)%s\n",
-               disp / 1024, precisa / 1024, PISO_KB / 1024, dts ? ", DTS converting" : "", pausasCaladas ? ", still waiting" : "");
+        printf("[miniatura] paused: low memory (free %ld MB, next tile needs %ld MB + floor %ld MB, decoder %s%s)%s\n",
+               disp / 1024, precisa / 1024, PISO_KB / 1024,
+               fecha ? "closed" : dm.aberto ? "kept open" : "not open",
+               dts ? ", DTS converting" : "", pausasCaladas ? ", still waiting" : "");
         fflush(stdout);
         ultimaPausaLog = SDL_GetTicks(); pausasCaladas = 0;
       } else pausasCaladas++;
@@ -608,8 +622,14 @@ static void *trabalhar(void *u) {
       printf(", free %ld->%ld MB, rss %ld MB, %d/%d done\n", antes / 1024, depois / 1024, rssKB() / 1024, f, n);
     }
     fflush(stdout);
-    // What this tile really cost (MemAvailable before -> after, decoder open).
-    if (antes >= 0 && depois >= 0 && antes > depois) medidas[nMedidas++ % MEDIDAS] = antes - depois;
+    // What the decoder holds, counted (logged when it changes by 1 MB or more).
+    { MiniDecMem dm; mini_motor_decoder_mem(m, &dm);
+      long t = (long)((dm.quadros + dm.tabelas) / 1024);
+      if (dm.aberto && t > 0 && labs(t - decLogKB) >= 1024) {
+        printf("[miniatura] decoder holds %ld MB: pictures %ld MB (counted), tables ~%ld MB, %d placeholder reference(s)\n",
+               t / 1024, (long)(dm.quadros / 1048576), (long)(dm.tabelas / 1048576), dm.falsas);
+        decLogKB = t;
+      } }
     dormirJ(j, INTERVALO_MS);
   }
   if (feitosAqui)

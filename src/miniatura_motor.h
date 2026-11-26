@@ -10,8 +10,9 @@
 //   (with PQ/HLG -> SDR) -> encode JPEG -> free the frame and flush.
 //
 // So at most one decoded source frame is ever in memory (a 4K 10-bit frame is
-// ~25 MB). mini_motor_memoria() estimates what the next frame needs, for the
-// caller's free-memory check before every frame.
+// ~25 MB). mini_motor_memoria() says what the next frame needs, for the
+// caller's free-memory check before every frame: from what the open decoder
+// really holds (mini_motor_decoder_mem), not from free-memory swings.
 //
 // Built where miniplat.h says thumbnails are made on the device and FFmpeg is
 // linked (the .c is empty elsewhere).
@@ -67,8 +68,15 @@ const MiniInfo *mini_motor_info(const MiniMotor *m);
 // nearest keyframe within `tolMs`, else the one before. -1 when the index does
 // not know. Two targets with the same answer share one decode.
 long mini_motor_chave(MiniMotor *m, long alvoMs, long tolMs);
-// Bytes one more decoded frame needs (frame + decoder working set), estimate.
+// Bytes the next frame needs on top of what is in use now: a few MB with the
+// decoder open and warm, what it held last time when it is closed (an estimate
+// of one picture + one placeholder before it ever opened).
 size_t mini_motor_memoria(const MiniMotor *m, int threads);
+// What the open decoder holds: picture buffers counted as they are handed out,
+// tables estimated (~0.75 byte per pixel per picture alive + 0.5 decoder-wide).
+// All zero when it is closed or has not decoded yet.
+typedef struct { size_t quadros, tabelas; int falsas; int aberto; } MiniDecMem;
+void mini_motor_decoder_mem(const MiniMotor *m, MiniDecMem *d);
 // Makes the JPEG for `alvoMs`. `threads` = 1..3 decoding threads (slice/WPP
 // threading only; frame threading is never used). Returns 0 and a malloc'd
 // JPEG in *jpg (caller frees), or -1 with `erro` set. `cancelar` (optional)

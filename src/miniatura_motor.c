@@ -46,6 +46,16 @@ struct MiniMotor {
   int64_t jpts;
   int buffersNoPacote;              // get_buffer2 calls since the packet was sent
   AVFrame *cinza;                   // the ONE buffer every placeholder reference shares
+  // What the open decoder holds (owner 26/11: find out, do not guess): every
+  // distinct picture buffer get_buffer2 hands it is counted once (its pools
+  // keep them between frames, so a warm decoder asks for no new memory).
+  const uint8_t *decVistos[16]; int nDecVistos;
+  size_t decQuadros;                // bytes of those picture buffers
+  int decFalsas;                    // most placeholder references one keyframe made
+  int decFeitos;                    // frames decoded since the decoder opened
+  int decCresceu;                   // the last frame (not the first) needed a new buffer
+  size_t decUltimo;                 // what the decoder held when it was last closed
+  int ultimoPacote;                 // size of the last keyframe packet
   int semIndice;                    // MPEG-TS / M2TS: no keyframe index, seek by byte position
   // MPEG-TS: (byte position, time) of every keyframe found so far, sorted by
   // position. Byte guesses interpolate between the two nearest, so the map gets
@@ -453,15 +463,46 @@ long mini_motor_chave(MiniMotor *m, long alvoMs, long tolMs) {
   return msDe(m, ts);
 }
 
+static size_t bytesQuadro(const MiniMotor *m) {
+  size_t px = (size_t)m->info.largura * (size_t)m->info.altura;
+  return px * 3 / 2 * (m->info.bits > 8 ? 2 : 1);
+}
+// Tables FFmpeg keeps beside the pictures (not handed out through get_buffer2,
+// so estimated): ~0.75 byte per pixel for each picture alive (HEVC motion
+// fields, pooled like the pictures) and ~0.5 byte per pixel decoder-wide.
+static size_t tabelasDe(const MiniMotor *m, int vivos) {
+  size_t px = (size_t)m->info.largura * (size_t)m->info.altura;
+  return (size_t)vivos * px * 3 / 4 + px / 2;
+}
+static size_t decTotal(const MiniMotor *m) {
+  return m->nDecVistos ? m->decQuadros + tabelasDe(m, 1 + m->decFalsas) : 0;
+}
+
+void mini_motor_decoder_mem(const MiniMotor *m, MiniDecMem *d) {
+  if (!d) return;
+  memset(d, 0, sizeof *d);
+  if (!m) return;
+  d->aberto = m->cc != NULL;
+  if (!d->aberto || !m->nDecVistos) return;
+  d->quadros = m->decQuadros;
+  d->tabelas = tabelasDe(m, 1 + m->decFalsas);
+  d->falsas = m->decFalsas;
+}
+
 size_t mini_motor_memoria(const MiniMotor *m, int threads) {
   if (!m) return 0;
-  size_t px = (size_t)m->info.largura * (size_t)m->info.altura;
-  size_t quadro = px * 3 / 2 * (m->info.bits > 8 ? 2 : 1);
-  // One frame being decoded, the frame handed out, decoder tables and per-thread
-  // buffers, the packet, the read cache.
-  // Current picture + the shared placeholder + the picture handed out (pool) +
-  // per-picture tables + per-thread buffers + packet + read cache.
-  return quadro * 3 + px / 2 + (size_t)threads * (2u << 20) + MAX_PACOTE / 2 + BLOCOS * BLOCO;
+  // The packet read next, the shrunk picture and the JPEG encoder.
+  size_t margem = (2u << 20) + (size_t)(m->ultimoPacote > 0 ? m->ultimoPacote : (1 << 20));
+  // Warm decoder: its pools already hold what a frame needs. One more picture
+  // only while the last frame still needed a new one.
+  if (m->cc && m->nDecVistos)
+    return margem + (m->decCresceu ? bytesQuadro(m) + tabelasDe(m, 1) - tabelasDe(m, 0) : 0);
+  // Closed: opening costs what it held last time in this title.
+  if (m->decUltimo) return m->decUltimo + margem;
+  // Never opened yet: the picture, one shared placeholder and the tables of
+  // up to 5 placeholder references (an open-GOP HEVC keyframe; host test
+  // 26/11, 4K 10-bit: 4 placeholders, 80 MB counted, RSS +83..90 MB).
+  return 2 * bytesQuadro(m) + tabelasDe(m, 6) + (size_t)threads * (2u << 20) + margem;
 }
 
 // ------------------------------------------------------------------ decoder
@@ -473,9 +514,31 @@ size_t mini_motor_memoria(const MiniMotor *m, int threads) {
 // sent), so every placeholder gets the SAME buffer. The first buffer asked for
 // after a packet is the real picture (hevc_frame_start: set_new_ref before
 // frame_rps), and gets its own.
+static void anotarBuffer(MiniMotor *m, const AVFrame *f) {
+  if (!f->buf[0]) return;
+  const uint8_t *p = f->buf[0]->data;
+  for (int i = 0; i < m->nDecVistos; i++) if (m->decVistos[i] == p) return;
+  size_t b = 0;
+  for (int i = 0; i < AV_NUM_DATA_POINTERS && f->buf[i]; i++) b += f->buf[i]->size;
+  // Past 16 distinct buffers they are still added, just not recognised again
+  // (counts high, never low).
+  if (m->nDecVistos < (int)(sizeof m->decVistos / sizeof m->decVistos[0])) m->decVistos[m->nDecVistos++] = p;
+  m->decQuadros += b;
+}
+static void decZerar(MiniMotor *m) {
+  size_t t = decTotal(m);
+  if (t > m->decUltimo) m->decUltimo = t;
+  m->nDecVistos = 0; m->decQuadros = 0; m->decFalsas = 0; m->decFeitos = 0; m->decCresceu = 0;
+}
+
 static int obterBuffer(AVCodecContext *c, AVFrame *f, int flags) {
   MiniMotor *m = c->opaque;
-  if (!m || m->buffersNoPacote++ == 0) return avcodec_default_get_buffer2(c, f, flags);
+  if (!m) return avcodec_default_get_buffer2(c, f, flags);
+  if (m->buffersNoPacote++ == 0) {
+    int r = avcodec_default_get_buffer2(c, f, flags);
+    if (r >= 0) anotarBuffer(m, f);
+    return r;
+  }
   if (m->cinza && (m->cinza->width != f->width || m->cinza->height != f->height ||
                    m->cinza->format != f->format))
     av_frame_free(&m->cinza);
@@ -486,6 +549,7 @@ static int obterBuffer(AVCodecContext *c, AVFrame *f, int flags) {
     int r = avcodec_default_get_buffer2(c, t, flags);
     if (r < 0) { av_frame_free(&t); return r; }
     m->cinza = t;
+    anotarBuffer(m, t);
   }
   for (int i = 0; i < AV_NUM_DATA_POINTERS; i++) {
     f->data[i] = m->cinza->data[i];
@@ -501,6 +565,7 @@ static int obterBuffer(AVCodecContext *c, AVFrame *f, int flags) {
 
 static int abrirDecoder(MiniMotor *m, int threads) {
   if (m->cc && m->ccThreads == threads) return 0;
+  decZerar(m);
   avcodec_free_context(&m->cc);
   m->cc = avcodec_alloc_context3(m->codec);
   if (!m->cc) return -1;
@@ -520,6 +585,7 @@ static int abrirDecoder(MiniMotor *m, int threads) {
 
 void mini_motor_soltar_decoder(MiniMotor *m) {
   if (!m) return;
+  decZerar(m);
   avcodec_free_context(&m->cc);
   m->ccThreads = 0;
   av_frame_free(&m->cinza);
@@ -718,8 +784,10 @@ int mini_motor_quadro(MiniMotor *m, long alvoMs, long tolMs, int threads, volati
     }
     if (m->pkt->size > MAX_PACOTE) { av_packet_unref(m->pkt); erroDe(erro, nerro, "keyframe too big"); goto fim; }
     q->bytesPacote = m->pkt->size;
+    m->ultimoPacote = m->pkt->size;
     unsigned d0 = agoraMs();
     m->buffersNoPacote = 0;
+    int vistos0 = m->nDecVistos; size_t bytes0 = m->decQuadros;
     preIniciar(m);                              // the next keyframe downloads while this one decodes
     int s1 = avcodec_send_packet(m->cc, m->pkt);
     av_packet_unref(m->pkt);
@@ -727,6 +795,9 @@ int mini_motor_quadro(MiniMotor *m, long alvoMs, long tolMs, int threads, volati
     avcodec_send_packet(m->cc, NULL);           // drain: the keyframe comes out now
     int rf = avcodec_receive_frame(m->cc, m->quadro);
     td = agoraMs() - d0;
+    if (m->buffersNoPacote - 1 > m->decFalsas) m->decFalsas = m->buffersNoPacote - 1;
+    m->decCresceu = m->decFeitos > 0 && (m->nDecVistos != vistos0 || m->decQuadros != bytes0);
+    m->decFeitos++;
     if (rf < 0) { erroDe(erro, nerro, "keyframe did not decode"); goto fim; }
     if (m->quadro->width > 4096 || m->quadro->height > 2304) { erroDe(erro, nerro, "picture size not supported (above 4K)"); goto fim; }
     if (m->semIndice) { m->info.largura = m->quadro->width; m->info.altura = m->quadro->height; }  // TS: now known
