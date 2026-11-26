@@ -1832,7 +1832,7 @@ static void prefsLer(void) {
   prefsLidas = 1;
   legEstilo.corBorda = -1;
   FILE *f = fopen(prefsArquivo(), "r");
-  char chave[64]; int v, sinalNovo = 0, temAtraso = 0, bordaExplicita = 0;
+  char chave[64]; int v, sinalNovo = 0, temAtraso = 0, bordaExplicita = 0, temFundoOpac = 0;
   if (!f) return;
   while (fscanf(f, "%63s %d", chave, &v) == 2) {
     // Valor de outra versao (ou arquivo editado a mao) cai no padrao em vez de
@@ -1854,12 +1854,16 @@ static void prefsLer(void) {
     else if (!strcmp(chave, "leg_cor_borda_explicita") && v == 1) bordaExplicita = 1;
     else if (!strcmp(chave, "leg_opacidade") && v >= 0 && v < LEG_OPAC_N) legEstilo.opacidade = v;
     else if (!strcmp(chave, "leg_espaco") && v >= VIDEO_LEG_ESPACO_MIN && v <= VIDEO_LEG_ESPACO_MAX) legEstilo.espacamento = v;
-    else if (!strcmp(chave, "leg_fundo_opac") && v >= 0 && v <= 100) legEstilo.fundoOpacidade = v;
+    else if (!strcmp(chave, "leg_fundo_opac") && v >= 0 && v <= 100) { legEstilo.fundoOpacidade = v; temFundoOpac = 1; }
     else if (!strcmp(chave, "leg_familia") && v >= 0 && v < TXT_FAMILIA_N) legEstilo.familia = v;
     else if (!strcmp(chave, "leg_negrito") && (v == 0 || v == 1)) legEstilo.negrito = v;
     else if (!strcmp(chave, "leg_tocado")  && v >= 0) legTocado = v;
   }
   fclose(f);
+  // Arquivo de antes da opacidade do fundo: o nivel 1..4 era a escuridao
+  // (16% por nivel). Mantem a mesma aparencia em vez de saltar para 75%.
+  if (!temFundoOpac && legEstilo.fundo >= 1 && legEstilo.fundo <= 4)
+    legEstilo.fundoOpacidade = legEstilo.fundo * 16;
   // Older players wrote default Black even when no border colour was chosen.
   if (!bordaExplicita && legEstilo.corBorda == 0 && !(legTocado & PLR_LEG_COR_BORDA))
     legEstilo.corBorda = -1;
