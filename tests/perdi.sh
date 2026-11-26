@@ -6,3 +6,7 @@ out="${TMPDIR:-/tmp}/nuvio-perdi-test"
 cc -Wall -Wextra -O2 -fsanitize=address,undefined tests/perdi.c src/perdi.c src/js.c src/jsw.c -Isrc -o "$out"
 "$out"
 rm -f "$out"
+# O fio do pedido: cancelamento real e join na saida (rede falsa).
+cc -Wall -Wextra -O2 -fsanitize=address,undefined -pthread tests/perdifio.c src/perdifio.c src/perdi.c src/js.c src/jsw.c -Isrc -o "$out"
+"$out"
+rm -f "$out"

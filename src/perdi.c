@@ -17,6 +17,21 @@ size_t perdi_chave_limpar(const char *txt, char *dst, size_t tam) {
   return k;
 }
 
+size_t perdi_utf8_aparar(char *s) {
+  size_t len, i, quer;
+  unsigned char l;
+  if (!s) return 0;
+  len = strlen(s);
+  // Volta ate o byte que inicia a ultima sequencia (no maximo 3 continuacoes).
+  for (i = len; i > 0 && len - i < 4 && ((unsigned char)s[i - 1] & 0xC0) == 0x80; i--) {}
+  if (!i) return len;
+  l = (unsigned char)s[i - 1];
+  if (l < 0x80) return len;                       // ASCII: nada a aparar
+  quer = l >= 0xF0 ? 4 : l >= 0xE0 ? 3 : l >= 0xC0 ? 2 : 1;
+  if (len - (i - 1) < quer) { s[i - 1] = 0; return i - 1; }
+  return len;
+}
+
 static void tempo(char *b, size_t n, double seg) {
   long s = seg > 0 ? (long)seg : 0;
   snprintf(b, n, "%ld:%02ld:%02ld", s / 3600, (s / 60) % 60, s % 60);
@@ -31,6 +46,8 @@ static size_t achatar(const char *s, char *dst, size_t tam) {
     if (c <= ' ') { if (!espaco) { dst[k++] = ' '; espaco = 1; } continue; }
     dst[k++] = (char)c; espaco = 0;
   }
+  dst[k] = 0;
+  k = perdi_utf8_aparar(dst);                       // o teto pode partir um caractere
   while (k && dst[k - 1] == ' ') k--;
   dst[k] = 0;
   return k;
@@ -176,12 +193,7 @@ PerdiResultado perdi_resposta(int http, const char *corpo, char *dst, size_t tam
   }
   free(parte);
   // Corte no meio de um caractere UTF-8: volta ao inicio dele.
-  while (len && ((unsigned char)dst[len - 1] & 0xC0) == 0x80) len--;
-  if (len && ((unsigned char)dst[len - 1] & 0x80)) {
-    unsigned char l = (unsigned char)dst[len - 1];
-    size_t quer = l >= 0xF0 ? 4 : l >= 0xE0 ? 3 : 2, tem = strlen(dst + len - 1);
-    if (tem < quer) dst[len - 1] = 0;
-  }
+  perdi_utf8_aparar(dst);
   limpar(dst);
   if (dst[0]) return PERDI_OK;
   if (contem(corpo, "blockReason") || contem(corpo, "SAFETY") || contem(corpo, "RECITATION") ||
@@ -197,18 +209,22 @@ void perdi_hist_zerar(PerdiHist *h) {
 }
 
 int perdi_hist_anotar(PerdiHist *h, double posSeg, const char *texto) {
+  char fala[sizeof h->ultimo];
   int i, j;
   if (!h) return 0;
   if (!texto || !texto[0]) { h->ultimo[0] = 0; return 0; }
   if (!(posSeg >= 0) || posSeg > 1e7) return 0;            // NaN e relogio invalido
-  if (!strncmp(texto, h->ultimo, sizeof h->ultimo - 1)) return 0;   // a mesma fala ainda na tela
-  snprintf(h->ultimo, sizeof h->ultimo, "%s", texto);
+  // Mesmo teto e mesmo corte UTF-8 que a fala guardada: comparar igual com igual.
+  snprintf(fala, sizeof fala, "%s", texto);
+  perdi_utf8_aparar(fala);
+  if (!fala[0] || !strcmp(fala, h->ultimo)) return 0;      // a mesma fala ainda na tela
+  memcpy(h->ultimo, fala, sizeof fala);
   // Posicao em ordem de tempo (quase sempre o fim; antes so depois de voltar).
   for (i = h->n; i > 0 && h->v[i - 1].inicio > posSeg; i--) {}
   for (j = i - 1; j >= 0 && posSeg - h->v[j].inicio < 2.0; j--)
-    if (!strncmp(h->v[j].texto, texto, sizeof h->v[j].texto - 1)) return 0;
+    if (!strcmp(h->v[j].texto, fala)) return 0;
   for (j = i; j < h->n && h->v[j].inicio - posSeg < 2.0; j++)
-    if (!strncmp(h->v[j].texto, texto, sizeof h->v[j].texto - 1)) return 0;
+    if (!strcmp(h->v[j].texto, fala)) return 0;
   if (h->n >= PERDI_HIST_MAX) {                             // cai o quarto mais antigo
     int fora = PERDI_HIST_MAX / 4;
     memmove(h->v, h->v + fora, (size_t)(h->n - fora) * sizeof *h->v);
@@ -227,7 +243,7 @@ int perdi_hist_anotar(PerdiHist *h, double posSeg, const char *texto) {
   memset(&h->v[i], 0, sizeof h->v[i]);
   h->v[i].inicio = posSeg; h->v[i].fim = posSeg + 2.0;
   h->v[i].cor = -1; h->v[i].posX = h->v[i].posY = -1.f;
-  snprintf(h->v[i].texto, sizeof h->v[i].texto, "%s", texto);
+  memcpy(h->v[i].texto, fala, sizeof fala);
   h->n++;
   return 1;
 }

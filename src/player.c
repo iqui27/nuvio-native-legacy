@@ -558,6 +558,8 @@ static float duracaoSeg = PLR_DUR_PADRAO;
 // fim+0.25 ai seria um salto para o COMECO do arquivo — o alvo resolve o nulo.
 static double puloDestino(double fim) { return fim > 0.0 ? fim + .25 : duracaoSeg; }
 static const CatItem *item(void);
+// "O que eu perdi?": zera cartao, pedido e historico (fim/troca de sessao).
+static void perdiResetarSessao(void);
 // #494: diario local de marcadores pulados (AniSkip / TheIntroDB, futuro).
 // `ini` e a posicao onde o trecho comecou a ser pulado (posSeg antes do seek);
 // `intro_botao_visivel` devolve o FIM do marcador, nao o inicio — reutiliza-lo
@@ -1505,6 +1507,7 @@ void player_definir_episodio(int t, int e) {
   const CatItem *c = item();
   if (t != epT || e != epE) {
     if (!abrindoSessao) farolTentativaIniciar();
+    perdiResetarSessao();
     retomarFonteSeg = -1.0;
     memset(&scrobbleAlvo, 0, sizeof scrobbleAlvo); scrobbleAlvoPronto = 0;
     scrobbleTvdbCapturado = 0;
@@ -2277,6 +2280,7 @@ static void armarTituloGuardado(void) {
 
 void player_abrir(int indiceCatalogo, const char *url) {
   farolTentativaIniciar();
+  perdiResetarSessao();
   dtsAvisoSessao++;
 #ifdef NV_DV_TRUEHD_TEST
   truehdConvertedNotice=(NvDtsNotice){0};truehdDesde=0;truehdVisto=0;truehdTrack=-1;
@@ -2863,6 +2867,7 @@ void player_definir_fonte(const char *url) {
   if ((!aberto && !mini) || !url || !*url) return;
   farolTentativaIniciar();
   if (!travaFonte(url)) return;
+  perdiResetarSessao();   // outra fonte: outra faixa embutida, outro relogio
   intro_trocar_fonte();
   fonteAcaoInvalidar();
   // A primeira fonte ainda pode aproveitar a legenda antecipada na espera.
@@ -2905,6 +2910,7 @@ int player_recarregar_vod(void) {
 
 void player_voltar_a_esperar(void) {
   if (!aberto) return;
+  perdiResetarSessao();
   fonteAcaoInvalidar();
   legenda_pre_descartar(i18n("fonte descartada"));
   // A fonte foi descartada: a tela do DV sai e o cartao de sempre conta a
@@ -3237,6 +3243,7 @@ static void fecharSessao(int manter, int trocaFonte) {
   queda_conferir("Back");
 #endif
   directcache_encerrar();
+  perdiResetarSessao();   // fecha o cartao, cancela o POST ao Gemini e solta o historico
   juntos_ao_voltar();
   saiuVisto = 0;
   imgsub_gl_limpar();
@@ -4061,30 +4068,69 @@ static void corpoNeste(GfxRect r, float a, void *u) {
 // JA passou sai do aparelho; a chave e a do usuario (Ajustes).
 static int perdiAberto, perdiModo, perdiT, perdiE;
 static unsigned perdiId;
-static const void *perdiItem;
+// IDENTIDADE POR VALOR, nao por ponteiro: item() devolve &itemFixo, o mesmo
+// endereco para todo titulo. A geracao `perdiSessao` muda a cada
+// perdiResetarSessao (abrir, trocar fonte/episodio, voltar a esperar, fechar).
+static unsigned perdiSessao = 1, perdiCartaoSessao, perdiHistSessao;
+static char perdiImdb[sizeof(((CatItem *)0)->imdb)], perdiHistImdb[sizeof(((CatItem *)0)->imdb)];
 static char perdiAte[32], perdiTexto[PERDI_RESUMO_MAX];
 // LEGENDA EMBUTIDA (Android/Media3 SRT/VTT, AVPlay, .tpk): o player nativo so
 // entrega a fala em vigor e legenda_documento_ativo() fica vazio. Cada quadro
 // anota a fala nativa no historico (perdi.h) com o MESMO relogio do perdiAbrir;
-// o historico vale para o titulo, o episodio e a faixa em que foi colhido.
+// o historico vale para a sessao, o titulo, o episodio e a faixa em que foi
+// colhido.
 static PerdiHist perdiHist;
-static const void *perdiHistItem;
 static int perdiHistT, perdiHistE, perdiHistFaixa = -2;
+// SEM SPOILER NO SEEK: logo depois de um salto (ou enquanto o video nao esta
+// pronto, a fonte nao chegou ou a pessoa arrasta a barra) a fala nativa ainda
+// pode ser a de ANTES do salto; anotada com o instante novo, uma fala do
+// minuto 50 entraria como se fosse do minuto 10. A colheita para ate o relogio
+// assentar PERDI_ASSENTA_MS.
+#define PERDI_ASSENTA_MS 1500u
+static Uint32 perdiAssentaAte;
+static double perdiUltPos = -1.0;
+static const char *perdiImdbAtual(void) {
+  const CatItem *c = item();
+  return c ? c->imdb : "";
+}
 static void perdiColher(void) {
   char fala[sizeof perdiHist.ultimo];
-  const void *c = item();
-  int faixa = video_legenda_atual();
+  const char *imdb;
+  int faixa;
+  double pos;
+  Uint32 agora;
   if (!aberto || saindo || ehCanal() || !ajustes_perdi()) {
     if (perdiHist.cap) perdi_hist_zerar(&perdiHist);
     perdiHistFaixa = -2;
     return;
   }
-  if (c != perdiHistItem || epT != perdiHistT || epE != perdiHistE || faixa != perdiHistFaixa) {
+  imdb = perdiImdbAtual();
+  faixa = video_legenda_atual();
+  if (perdiHistSessao != perdiSessao || strcmp(imdb, perdiHistImdb) ||
+      epT != perdiHistT || epE != perdiHistE || faixa != perdiHistFaixa) {
     perdi_hist_zerar(&perdiHist);
-    perdiHistItem = c; perdiHistT = epT; perdiHistE = epE; perdiHistFaixa = faixa;
+    perdiHistSessao = perdiSessao;
+    snprintf(perdiHistImdb, sizeof perdiHistImdb, "%s", imdb);
+    perdiHistT = epT; perdiHistE = epE; perdiHistFaixa = faixa;
+    perdiUltPos = -1.0;
   }
+  agora = SDL_GetTicks();
+  if (!comVideo || esperandoFonte || !video_pronto() || scrubbing) {
+    perdiAssentaAte = agora + PERDI_ASSENTA_MS;
+    perdiHist.ultimo[0] = 0;
+    perdiUltPos = -1.0;
+    return;
+  }
+  pos = legsync_posicao(posLegenda());
+  // Salto: para tras mais de 1 s, ou para frente mais do que um quadro lento.
+  if (perdiUltPos >= 0.0 && (pos < perdiUltPos - 1.0 || pos > perdiUltPos + 5.0)) {
+    perdiAssentaAte = agora + PERDI_ASSENTA_MS;
+    perdiHist.ultimo[0] = 0;
+  }
+  perdiUltPos = pos;
+  if ((Sint32)(perdiAssentaAte - agora) > 0) return;
   if (!player_texto_legenda_nativa(fala, sizeof fala)) fala[0] = 0;
-  perdi_hist_anotar(&perdiHist, legsync_posicao(posLegenda()), fala);
+  perdi_hist_anotar(&perdiHist, pos, fala);
 }
 static const char *perdiMensagem(int *pronto) {
   PerdiResultado res = PERDI_ERRO;
@@ -4135,6 +4181,14 @@ static void perdiFechar(void) {
   perdiAberto = 0;
   perdifio_cancelar();
 }
+static void perdiResetarSessao(void) {
+  perdiFechar();
+  perdifio_cancelar();
+  perdi_hist_zerar(&perdiHist);
+  perdiHistFaixa = -2; perdiHistImdb[0] = 0;
+  perdiUltPos = -1.0; perdiAssentaAte = 0;
+  if (!++perdiSessao) perdiSessao = 1;
+}
 static void perdiAbrir(void) {
   static const LegendaDocumentoInfo info = {0};
   const CatItem *c = item();
@@ -4157,7 +4211,8 @@ static void perdiAbrir(void) {
   }
   perdifio_cancelar();
   perdiAberto = 1; perdiId = 0; perdiTexto[0] = 0;
-  perdiItem = c; perdiT = epT; perdiE = epE;
+  perdiCartaoSessao = perdiSessao; perdiT = epT; perdiE = epE;
+  snprintf(perdiImdb, sizeof perdiImdb, "%s", c ? c->imdb : "");
   snprintf(perdiAte, sizeof perdiAte, "%ld:%02ld:%02ld", s / 3600, (s / 60) % 60, s % 60);
   if (!ehCanal() && epT >= 0 && epE > 0) snprintf(ep, sizeof ep, "S%02dE%02d", epT, epE);
   perdiModo = perdi_modo(falasDoc, video_legenda_atual() >= 0, falasHist);
@@ -8144,7 +8199,8 @@ void player_desenhar(Uint32 agora) {
     plrilha_pedir(&pd);
   }
   perdiColher();
-  if (perdiAberto && (item() != perdiItem || epT != perdiT || epE != perdiE || !aberto || saindo)) perdiFechar();
+  if (perdiAberto && (perdiCartaoSessao != perdiSessao || strcmp(perdiImdbAtual(), perdiImdb) ||
+                      epT != perdiT || epE != perdiE || !aberto || saindo)) perdiFechar();
   if (perdiAberto) {
     PlrIlhaPedido pd;
     memset(&pd, 0, sizeof pd);

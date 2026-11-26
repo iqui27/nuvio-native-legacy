@@ -1311,6 +1311,10 @@ void video_parar(void) {
   }
   prontoLoad = primeiroQuadro = tocando = 0; superficieEstavel = 0;
   pausaPedida = pausaVista = 0;
+  // A faixa e a fala embutidas eram desta sessao: o proximo titulo nao herda
+  // a legenda ligada nem a fala em vigor (o "O que eu perdi?" anotaria).
+  legAtual = -1;
+  if (travaLeg) { SDL_LockMutex(travaLeg); legTexto[0] = 0; legAte = 0; SDL_UnlockMutex(travaLeg); }
   tex_pressao_reproducao(0);
 }
 void video_pausar(int p) {
@@ -1328,6 +1332,9 @@ void video_volume(int pct) { kInt(mVolume, pct); }
 void video_buscar(double s) {
   posMs = (int)(s * 1000.0);   // a barra nao pode voltar enquanto o seek corre
   acaoMs = SDL_GetTicks();
+  // A fala em vigor era da posicao de antes: nao vale no instante novo (o
+  // Kotlin tambem descarta os cues adiados, NvPlayer.buscar).
+  if (travaLeg) { SDL_LockMutex(travaLeg); legTexto[0] = 0; legAte = 0; SDL_UnlockMutex(travaLeg); }
   kInt(mBuscar, posMs);
   terminou = 0;
 }

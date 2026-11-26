@@ -38,6 +38,10 @@ typedef enum {
   PERDI_ERRO        // qualquer outra coisa
 } PerdiResultado;
 
+// Corte de texto em buffer fixo pode partir um caractere UTF-8 no meio:
+// apara a sequencia incompleta do FIM, no lugar. Devolve o novo tamanho.
+size_t perdi_utf8_aparar(char *s);
+
 // Chave digitada -> so [A-Za-z0-9_-] (o formato das chaves do Google). Assim
 // uma linha torta nunca vira um segundo cabecalho. Devolve o tamanho.
 size_t perdi_chave_limpar(const char *txt, char *dst, size_t tam);

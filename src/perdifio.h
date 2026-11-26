@@ -13,6 +13,11 @@ typedef enum { PERDIFIO_NADA, PERDIFIO_CARREGANDO, PERDIFIO_PRONTO } PerdiFioEst
 unsigned perdifio_pedir(const char *chave, char *corpo);
 // PRONTO preenche *res e, se PERDI_OK, dst. Outro `id` que o corrente = NADA.
 PerdiFioEstado perdifio_estado(unsigned id, PerdiResultado *res, char *dst, size_t tam);
+// Descarta o pedido corrente: o fio dele aborta a transferencia (rede_parar_quando)
+// e e juntado num perdifio_pedir/perdifio_cancelar seguinte.
 void perdifio_cancelar(void);
+// Saida do app: cancela tudo e junta todos os fios (pthread_join). Depois disso
+// nenhum pedido novo dispara.
+void perdifio_encerrar(void);
 
 #endif

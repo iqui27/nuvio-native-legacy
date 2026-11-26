@@ -127,10 +127,45 @@ int main(void) {
   assert(perdi_modo(-1, 1, 0) == PERDI_MODO_EMBUTIDA_SEM_TEXTO);
   assert(perdi_modo(-1, 1, 2) == PERDI_MODO_EMBUTIDA_POUCO);
   assert(perdi_modo(-1, 1, PERDI_FALAS_MIN) == PERDI_MODO_PEDIR_HIST);
-  assert(perdi_modo(-1, 0, PERDI_FALAS_MIN) == PERDI_MODO_PEDIR_HIST);   // desligou depois: o ja visto vale
+  // Regra pura: historico com falas manda mesmo sem embutida ligada. No player
+  // isso nao acontece (perdiColher zera o historico ao trocar ou desligar a faixa).
+  assert(perdi_modo(-1, 0, PERDI_FALAS_MIN) == PERDI_MODO_PEDIR_HIST);
   for (int e = 0; e <= 1; e++)
     for (int f = 0; f < 8; f++)
       if (e || f) assert(perdi_modo(-1, e, f) != PERDI_MODO_SEM_LEGENDA);
+
+  // UTF-8: corte em buffer fixo nunca deixa meio caractere no fim.
+  {
+    char u[16];
+    strcpy(u, "ab\xc3\xa9"); assert(perdi_utf8_aparar(u) == 4);            // "abé" inteiro
+    strcpy(u, "ab\xc3"); assert(perdi_utf8_aparar(u) == 2 && !strcmp(u, "ab"));
+    strcpy(u, "a\xe2\x80"); assert(perdi_utf8_aparar(u) == 1 && !strcmp(u, "a"));
+    strcpy(u, "a\xf0\x9f\x98"); assert(perdi_utf8_aparar(u) == 1);
+    strcpy(u, "a\xf0\x9f\x98\x80"); assert(perdi_utf8_aparar(u) == 5);   // emoji inteiro
+    strcpy(u, ""); assert(perdi_utf8_aparar(u) == 0);
+    assert(perdi_utf8_aparar(NULL) == 0);
+    // Fala maior que o teto de LegendaCue.texto, feita de "é": o historico e o
+    // trecho guardam so caracteres inteiros, e a mesma fala longa nao reentra.
+    PerdiHist h;
+    char longa[2000];
+    memset(&h, 0, sizeof h);
+    for (int i = 0; i + 2 < (int)sizeof longa; i += 2) { longa[i] = (char)0xC3; longa[i + 1] = (char)0xA9; }
+    longa[sizeof longa - 2] = 0;
+    longa[767 - 1] = 0;                       // 766 bytes: o teto (767) cairia no meio
+    char tmp[2100];
+    snprintf(tmp, sizeof tmp, "xy%s", longa); // 768 bytes: o teto de 767 parte o ultimo "é"
+    strcat(tmp, "\xc3\xa9\xc3\xa9");        // passa do teto: o corte cai no meio de um "é"
+    assert(perdi_hist_anotar(&h, 1.0, tmp) == 1);
+    assert(perdi_hist_anotar(&h, 1.1, tmp) == 0);          // a mesma, ainda na tela
+    size_t L = strlen(h.v[0].texto);
+    assert(L < sizeof h.v[0].texto && ((unsigned char)h.v[0].texto[L - 1] == 0xA9));
+    char *tr = perdi_trecho(h.v, h.n, 5.0, 0, PERDI_TRECHO_MAX, &falas);
+    assert(tr && falas == 1);
+    size_t T = strlen(tr);
+    assert(tr[T - 1] == '\n' && (unsigned char)tr[T - 2] == 0xA9);
+    free(tr);
+    perdi_hist_zerar(&h);
+  }
   puts("perdi ok");
   return 0;
 }
