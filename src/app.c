@@ -4360,7 +4360,10 @@ static char   zapDe[80], zapPara[80];
 
 // Conta e perfil escolhidos (ou o preview de interface, que nao tem conta).
 static int mnAppPronto(void) {
-  return uiPreview || (login_concluido() && perfilsel_concluido());
+#if defined(NV_LINUX_DESKTOP) || defined(NV_DESKTOP_RELEASE)
+  if (uiPreview) return 1;   // uiPreview so existe no desktop
+#endif
+  return login_concluido() && perfilsel_concluido();
 }
 
 static void zapMarcar(const char *de, const char *para) {
@@ -4517,6 +4520,11 @@ static int mnEvento(const SDL_Event *e) {
   return 1;   // a folha e modal
 }
 
+// Tokens da UI 2.0 (design/2.1/tv.css): tinta --fg #f3f2ef, rotulo mudo
+// #a3a19c e superficie neutra/quente, sem o azul fixo nem o fundo azulado.
+#define MN_TINTA 243, 242, 239
+#define MN_MUDO  163, 161, 156
+#define MN_SUPERFICIE .071f, .069f, .067f
 // Por cima do player: o aviso de sintonia e a folha do OK.
 static void mnDesenhar(Uint32 agora) {
   float a = 1.0f;
@@ -4528,10 +4536,10 @@ static void mnDesenhar(Uint32 agora) {
     TxtLinha t1, t2;
     int i;
     rot[0] = i18n("Assistir do início"); rot[1] = i18n("Assistir daqui");
-    gfx_vidro_ou_solido(painel, 28.0f / h, GFX_VIDRO_DENS_MODAL, a, .071f, .075f, .086f, .98f);
-    t1 = txt_linha(TXT_CAPTION, i18n("Minha noite"), 148, 200, 255, 255);
+    gfx_vidro_ou_solido(painel, 28.0f / h, GFX_VIDRO_DENS_MODAL, a, MN_SUPERFICIE, .98f);
+    t1 = txt_linha(TXT_CAPTION, i18n("Minha noite"), MN_MUDO, 255);
     txt_desenhar_alpha(t1, x + 32.0f, y + 24.0f, a);
-    t2 = txt_linha_corta_bruta(TXT_HEADLINE, mnTitulo, 242, 243, 247, 255, w - 64.0f);
+    t2 = txt_linha_corta_bruta(TXT_HEADLINE, mnTitulo, MN_TINTA, 255, w - 64.0f);
     txt_desenhar_alpha(t2, x + 32.0f, y + 24.0f + t1.h + 6.0f, a);
     bw = (w - 64.0f - 16.0f) * 0.5f; bx = x + 32.0f;
     for (i = 0; i < 2; i++) {
@@ -4539,8 +4547,8 @@ static void mnDesenhar(Uint32 agora) {
       int foco = i == mnOfertaFoco;
       TxtLinha t;
       if (foco) plrui_pilula_foco(b, a); else plrui_botao_repouso(b, a);
-      t = txt_linha_corta_bruta(TXT_PG_ROTULO, rot[i], foco ? 16 : 232, foco ? 17 : 234,
-                                foco ? 20 : 240, 255, bw - 32.0f);
+      t = txt_linha_corta_bruta(TXT_PG_ROTULO, rot[i], foco ? 16 : 243, foco ? 17 : 242,
+                                foco ? 20 : 239, 255, bw - 32.0f);
       txt_desenhar_alpha(t, b.x + (b.w - t.w) * 0.5f, b.y + (b.h - t.h) * 0.5f, a);
     }
     return;
@@ -4554,9 +4562,9 @@ static void mnDesenhar(Uint32 agora) {
     a = d > 7400 ? (8000 - d) / 600.0f : 1.0f;
     snprintf(linha, sizeof linha, "%s  \xc2\xb7  %s  \xc2\xb7  OK: %s", i18n("Minha noite"), mnTitulo,
              i18n("Assistir do início"));
-    t = txt_linha_corta_bruta(TXT_PG_ROTULO, linha, 242, 243, 247, 255, NV_TELA_W - 2.0f * 96.0f - 48.0f);
+    t = txt_linha_corta_bruta(TXT_PG_ROTULO, linha, MN_TINTA, 255, NV_TELA_W - 2.0f * 96.0f - 48.0f);
     r = (GfxRect){ 96.0f, 64.0f, t.w + 48.0f, 56.0f };
-    gfx_vidro_ou_solido(r, 0.5f, GFX_VIDRO_DENS, a, .071f, .075f, .086f, .92f);
+    gfx_vidro_ou_solido(r, 0.5f, GFX_VIDRO_DENS, a, MN_SUPERFICIE, .92f);
     txt_desenhar_alpha(t, r.x + 24.0f, r.y + (r.h - t.h) * 0.5f, a);
   }
 }
