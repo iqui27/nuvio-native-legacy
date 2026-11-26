@@ -1199,6 +1199,7 @@ static void *buscar(void *arg) {
           free(corpo);
           return NULL;
         }
+        if (idT > 0 && tmdbPedido <= 0) tmdbPedido = idT;
         const char *fimC = corpo + strlen(corpo);
         intro_registrar_tmdb(id,idT,corpo);
         // CENA POS-CREDITOS (TMDB 179430/179431), no mesmo corpo da ficha.
@@ -1825,9 +1826,21 @@ static void zerarPublicado(void) {
 // "Mais como este", as produtoras e a ficha do filme aberto antes. Com o fio
 // ainda no ar, idPedido vazio faz cada bloco de publicacao (strcmp com
 // idPedido) recusar o que chegar.
+static void exrId(const char *imdb, char *dst, size_t cap) {
+  const char *dp;
+  size_t n;
+  dst[0] = 0;
+  if (!imdb || imdb[0] != 't' || imdb[1] != 't') return;
+  dp = strchr(imdb, ':');
+  n = dp ? (size_t)(dp - imdb) : strlen(imdb);
+  if (n >= cap) n = cap - 1;
+  memcpy(dst, imdb, n); dst[n] = 0;
+}
+
 static void esquecerPedido(void) {
   pthread_mutex_lock(&trava);
   idPedido[0] = 0;
+  tmdbPedido = 0;
   zerarPublicado();
   pthread_mutex_unlock(&trava);
 }
@@ -2183,6 +2196,18 @@ int extras_status_titulo(const char *imdb, char *dst, unsigned cap) {
     if (extras_resumo_obter(imdb, &resumo)) snprintf(dst, cap, "%s", resumo.status);
   }
   return dst[0] != 0;
+}
+int extras_do_titulo(const char *imdb, long tmdbId) {
+  char id[24] = "";
+  int ok = 0;
+  exrId(imdb, id, sizeof id);
+  pthread_mutex_lock(&trava);
+  if (id[0] && idPedido[0])
+    ok = !strcmp(id, idPedido);
+  else if (tmdbId > 0 && tmdbPedido > 0)
+    ok = (tmdbId == tmdbPedido);
+  pthread_mutex_unlock(&trava);
+  return ok;
 }
 const char *extras_ficha_status(void)        { return fichaStatus; }
 const char *extras_agenda_status(void)       { return agStatus; }
@@ -2654,17 +2679,6 @@ static NvPerfilSessao exrSessao;
 static pthread_mutex_t exrTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t exrCv = PTHREAD_COND_INITIALIZER;
 
-static void exrId(const char *imdb, char *dst, size_t cap) {
-  const char *dp;
-  size_t n;
-  dst[0] = 0;
-  if (!imdb || imdb[0] != 't' || imdb[1] != 't') return;
-  dp = strchr(imdb, ':');
-  n = dp ? (size_t)(dp - imdb) : strlen(imdb);
-  if (n >= cap) n = cap - 1;
-  memcpy(dst, imdb, n); dst[n] = 0;
-}
-
 // Vaga do id (com a trava). `criar` recicla a mais antiga.
 static ExrVaga *exrVaga(const char *id, int criar) {
   int i;
@@ -2877,6 +2891,7 @@ void extras_abrir_sessao(void) {
   snprintf(mdbChave, sizeof mdbChave, "%s", mdbChavePacote);
   pthread_mutex_lock(&trava);
   idPedido[0] = idEmCurso[0] = 0;
+  tmdbPedido = tmdbEmCurso = 0;
   sessaoPedido = nv_perfil_sessao_ler();
   gerPedida++;
   gerFeita[0] = gerFeita[1] = gerPedida;

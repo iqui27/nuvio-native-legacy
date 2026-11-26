@@ -19,6 +19,8 @@ void partirMeta(const char *meta, char *ano, size_t na, char *resto, size_t nr);
 // nao faz nada; Voltar fecha o painel e deixa a pagina do titulo.
 void detail_mostrar_pessoa(long tmdb, const char *nome, const char *foto);
 int  detail_aberto(void);
+// Active open cycle of the Detail screen (0 when closed or exiting).
+unsigned detail_ciclo(void);
 // Fecha a pagina pela mesma saida animada do Voltar (Spotlight: uma colecao ou
 // um catalogo escolhido com a pagina aberta abriria POR TRAS dela).
 void detail_fechar(void);
@@ -52,6 +54,8 @@ int  detail_indice(void);
 int  detail_ep_foco(int *temporada, int *episodio);
 int  detail_pediu_reproduzir(void);   // consome o pedido
 void detail_pedir_reproduzir(void);   // arma o pedido (OK no card de retomada)
+// True while an explicit Detail-screen playback request (Play / Start Over) is pending.
+int  detail_pedido_usuario_pendente(void);
 
 // Indice do titulo que a tela pediu para ABRIR no lugar do atual, ou -1.
 // Consome o pedido. Nasce de dois lugares: um credito na filmografia de um ator

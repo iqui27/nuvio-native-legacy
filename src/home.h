@@ -52,9 +52,20 @@ typedef struct {
   const char *meta;
 } HomeItem;
 
+typedef struct {
+  int  indice;
+  char imdb[64];
+  char tipo[8];
+  int  temporada;
+  int  episodio;
+} HomeFarolAlvo;
+
 int  home_iniciar(const char *dirArte);
 int  home_cartao_foco_por_cima(int indice); // repinta o cartao focado (menu do cartaz)
 int  home_item_focado(HomeItem *out);      // 0 se o foco ainda nao foi desenhado
+// Alvo validado do cartao P2 do Farol no ultimo OK de Tocar (0 = cartao comum,
+// 1 = alvo Farol valido, -1 = pedido Farol invalidado entre OK e despacho).
+int  home_farol_alvo(const HomeItem *it, HomeFarolAlvo *out);
 // Retangulo (tela real) do cartao focado de qualquer fileira, pilha e pasta
 // inclusas. 0 sem cartao focado neste quadro (destaque, fileira vazia).
 int  home_ancora_foco(GfxRect *out);

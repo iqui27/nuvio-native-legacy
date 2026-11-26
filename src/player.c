@@ -115,6 +115,20 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "plrguia.h"
 #include "episodios.h"
 #include "streams.h"
+#include "farol.h"
+#include "faroltexto.h"
+#include "farolacao_fonte.h"
+// Fixtures de teste podem compilar player.c sem farol.c / farolacao_fonte.c: opcionais.
+extern __attribute__((weak)) int farol_julgar(int sintoma);
+extern __attribute__((weak)) const FarolVeredito *farol_veredito(void);
+extern __attribute__((weak)) void farol_sessao_reiniciar(void);
+extern __attribute__((weak)) void farol_registrar_acao(int acao);
+extern __attribute__((weak)) void farol_registrar_resultado(int acao, int ok);
+extern __attribute__((weak)) const char *farolregra_acao_texto(int acao);
+extern __attribute__((weak)) void farolacao_fonte_encerrar(void);
+#include "farolacao_rede.h"
+extern __attribute__((weak)) void farolacao_rede_encerrar(void);
+extern __attribute__((weak)) int farolacao_fonte_executar(int acao, int persistir);
 #include "addons.h"
 #include "duracaook.h"
 #include "partes.h"
@@ -1005,6 +1019,8 @@ void player_definir_motivo_inicio(const char *texto) {
 int player_pediu_ajustes_fonte(void) { int v = pedAjFonte; pedAjFonte = 0; return v; }
 Uint32 player_aberto_ha_ms(void) { return aberto && abertoEm ? SDL_GetTicks() - abertoEm : 0; }
 int player_pediu_fontes(void) { int p = pedFontes; pedFontes = 0; return p; }
+static int pedFarolAcao;
+int player_pediu_farol_acao(void) { int v = pedFarolAcao; pedFarolAcao = 0; return v; }
 // FILME EM PARTES: o botao Parte anterior (-1) / Proxima parte (+1) pedido;
 // app.c (vigiarPartes) consome e troca de arquivo.
 static int pedParte;
@@ -1058,6 +1074,7 @@ static FarolErro ultimoFarol;
 static int temUltimoFarol, ultimoFarolDebrid;
 static uint64_t ultimoFarolAddonId;
 static uint64_t farolTentativaSeq, ultimaFonteTentativa, ultimoFarolTentativa;
+static uint64_t ultimoFarolSeq;      // seq do anel a que o erro pertence
 // A URL da ultima fonte mandada ao pipeline (sem o proxy local) e se ela exigia
 // cabecalhos privados: e o que o "Player externo" do Resolver usa (inclusive
 // com o player fechado, quando o Resolver abre por Ajustes).
@@ -1119,6 +1136,9 @@ static void farolErroRegistrar(const FarolErro *fe, int foiDebrid, uint64_t addo
   ultimoFarolDebrid = foiDebrid ? 1 : 0;
   ultimoFarolAddonId = addonId;
   ultimoFarolTentativa = farolTentativaSeq;
+  // O FE_ERRO_FONTE acaba de ser gravado: a seq corrente marca a sessao a que
+  // este erro pertence (farol_sessao_reiniciar descarta erros <= a fronteira).
+  ultimoFarolSeq = farolanel_seq();
 }
 
 // FAROL (issue 7; PLANO 2.2): o alvo compilado vira (FarolPlat, token do
@@ -1179,9 +1199,115 @@ static float abrindoFundo;   // o preto da abertura, que sai junto com o cartao
 static Uint32 abrindoFundoUlt;
 // A TELA CINEMA da abertura (#205, abrecine.h): no lugar do cartao, por padrao.
 static AbreCine cine;
-// O botao em foco no modal do erro: 0 = Abrir Fontes, 1 = Voltar.
-static int erroBotao;
+// O botao em foco no modal do erro:
+//   2 botoes (sem acao do Farol): 0 = Abrir Fontes, 1 = Voltar.
+//   3 botoes (com acao do Farol): 0 = [acao do Farol], 1 = Abrir Fontes, 2 = Voltar.
+static int erroBotao, erroFarolAcao;
+static int erroBotoesN(void) { return erroFarolAcao != FAROL_A_NENHUMA ? 3 : 2; }
+static int erroAcaoExecutavel(int acao) {
+  switch (acao) {
+    case FAROL_A_PROXIMA_FONTE:
+    case FAROL_A_FONTE_SEM_DV:
+    case FAROL_A_FONTE_SEM_DTS:
+    case FAROL_A_FONTE_MENOR:
+    case FAROL_A_PLAYER_EXTERNO:
+    case FAROL_A_ABRIR_DEBRID:
+    case FAROL_A_RECONECTAR_DEBRID:
+    case FAROL_A_TENTAR_DE_NOVO:
+    case FAROL_A_ENVIAR_REGISTRO:
+      return 1;
+    default:
+      return 0;
+  }
+}
+static int erroAcaoDoVeredito(const FarolRegra *r) {
+  int acao = FAROL_A_NENHUMA;
+  if (!r || !farolregra_acao_texto) return FAROL_A_NENHUMA;
+  if (erroAcaoExecutavel(r->acao)) acao = r->acao;
+  else if (erroAcaoExecutavel(r->acaoAlt)) acao = r->acaoAlt;
+  if (acao != FAROL_A_NENHUMA) {
+    const char *rot = farolregra_acao_texto(acao);
+    if (!rot || !rot[0]) acao = FAROL_A_NENHUMA;
+  }
+  return acao;
+}
+static const char *erroFarolChave(void) {
+  if (erroFarolAcao == FAROL_A_NENHUMA || !farolregra_acao_texto) return "";
+  return farolregra_acao_texto(erroFarolAcao);
+}
+static const char *erroFarolIcone(int acao) {
+  switch (acao) {
+    case FAROL_A_PROXIMA_FONTE:     return "pl_skip-forward";
+    case FAROL_A_FONTE_SEM_DV:      return "pl_eye-off";
+    case FAROL_A_FONTE_SEM_DTS:     return "pl_audio-lines";
+    case FAROL_A_FONTE_MENOR:       return "pl_layers";
+    case FAROL_A_PLAYER_EXTERNO:    return "aj_external-link";
+    case FAROL_A_ABRIR_DEBRID:
+    case FAROL_A_RECONECTAR_DEBRID: return "aj_key";
+    case FAROL_A_TENTAR_DE_NOVO:    return "aj_rotate-cw";
+    case FAROL_A_ENVIAR_REGISTRO:   return "aj_send";
+    default:                        return NULL;
+  }
+}
+static const char *erroBotaoChave(int i) {
+  if (erroFarolAcao != FAROL_A_NENHUMA) {
+    if (i == 0) return erroFarolChave();
+    return i == 1 ? "Abrir Fontes" : "Voltar";
+  }
+  return i == 0 ? "Abrir Fontes" : "Voltar";
+}
+static const char *erroBotaoIcone(int i) {
+  if (erroFarolAcao != FAROL_A_NENHUMA) {
+    if (i == 0) return erroFarolIcone(erroFarolAcao);
+    return i == 1 ? "pl_layers" : NULL;
+  }
+  return i == 0 ? "pl_layers" : NULL;
+}
+static void erroExecutarFarol(void) {
+  int acao = erroFarolAcao;
+  if (acao == FAROL_A_NENHUMA) return;
+  if (acao == FAROL_A_PROXIMA_FONTE || acao == FAROL_A_FONTE_SEM_DV ||
+      acao == FAROL_A_FONTE_SEM_DTS || acao == FAROL_A_FONTE_MENOR) {
+    if (farolacao_fonte_executar && farolacao_fonte_executar(acao, 0)) {
+      if (farol_sessao_reiniciar) farol_sessao_reiniciar();
+      player_voltar_a_esperar();
+    }
+    return;
+  }
+  if (acao == FAROL_A_PLAYER_EXTERNO) {
+    int ok;
+    if (farol_registrar_acao) farol_registrar_acao(acao);
+    ok = player_abrir_externo();
+    if (farol_registrar_resultado) farol_registrar_resultado(acao, ok);
+    if (ok) {
+      if (farol_sessao_reiniciar) farol_sessao_reiniciar();
+      erroFonte = 0;
+      erroFarolAcao = FAROL_A_NENHUMA;
+      erroBotao = 0;
+      erroTitulo[0] = erroDica[0] = 0;
+    }
+    return;
+  }
+  if (farol_registrar_acao) farol_registrar_acao(acao);
+  pedFarolAcao = acao;
+}
 static void erroEscolher(int i) {
+  if (erroFarolAcao != FAROL_A_NENHUMA) {
+    if (i == 0) { erroExecutarFarol(); return; }
+    if (i == 1) {
+#ifdef NV_ANDROID
+      player_voltar_a_esperar();
+#endif
+      pedFontes = 1;
+      return;
+    }
+#ifdef NV_ANDROID
+    player_voltar_a_esperar(); pedFontes = 1; // Abrir Fontes e Voltar dispensam o erro (#409)
+#else
+    saindo = 1; pediuSair = 1;
+#endif
+    return;
+  }
 #ifdef NV_ANDROID
   (void)i;
   player_voltar_a_esperar(); pedFontes = 1; // Abrir Fontes e Voltar dispensam o erro (#409)
@@ -1206,6 +1332,20 @@ static void erroCausaDoPlayer(void) {
     snprintf(erroTitulo, sizeof erroTitulo, "%s", i18n("Esta linha está em uso em outra tela"));
     snprintf(erroDica, sizeof erroDica, "%s", i18n("Feche o Xtream em outro aparelho e tente de novo."));
     return;
+  }
+  if (!ehCanal() && farol_julgar && farol_veredito) {
+    int cod = farol_julgar(RES_S_NAO_COMECA);
+    const FarolVeredito *v = cod != FAROL_C_NADA_ACHADO ? farol_veredito() : NULL;
+    if (v && v->regra && v->regra->codigo != FAROL_C_NADA_ACHADO &&
+        v->regra->l1 && v->regra->l1[0] && v->regra->l2 && v->regra->l2[0]) {
+      int acao = erroAcaoDoVeredito(v->regra);
+      const char *l2 = (acao == FAROL_A_PLAYER_EXTERNO && v->regra->acao != FAROL_A_PLAYER_EXTERNO)
+                         ? FT_L2_PLAYER_EXTERNO : v->regra->l2;
+      snprintf(erroTitulo, sizeof erroTitulo, "%s", i18n(v->regra->l1));
+      snprintf(erroDica, sizeof erroDica, "%s", i18n(l2));
+      erroFarolAcao = acao;
+      return;
+    }
   }
   if (causa == FS_CAUSA_NENHUMA) return;
   printf("[fonte] causa do erro: %d http=%d\n", causa, http);
@@ -1238,9 +1378,10 @@ void player_erro_fonte(void) {
 #endif
   esperandoFonte = 0; erroFonte = 1; visivel = 0; tocando = 0; soBarra = 0;
   erroBotao = 0;
+  erroFarolAcao = FAROL_A_NENHUMA;
+  pedFarolAcao = 0;
   erroTitulo[0] = erroDica[0] = 0;   // erro sem motivo nao herda o do anterior
   resolverregra_falha_registrar(RES_T_FONTE, i18n("Não foi possível abrir a fonte"), "", linhaEp, (long)time(NULL));
-  erroCausaDoPlayer();
   // FAROL: a causa classificada e o codigo normalizado; nunca a URL nem o titulo.
   // Ao anel so vai cod da lista fechada (farolcod_anel): um nome recortado de
   // texto livre, ex. dentro de uma URL, chegaria como token valido.
@@ -1263,6 +1404,7 @@ void player_erro_fonte(void) {
       ultimoFarolTentativa = 0;
 #endif
   }
+  erroCausaDoPlayer();
 }
 int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid) {
   if (!temUltimoFarol) return 0;
@@ -1272,6 +1414,9 @@ int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid) {
 }
 uint64_t player_ultimo_erro_tentativa(void) {
   return temUltimoFarol ? ultimoFarolTentativa : 0;
+}
+uint64_t player_ultimo_erro_seq(void) {
+  return temUltimoFarol ? ultimoFarolSeq : 0;
 }
 uint64_t player_ultimo_addon_farol(void) {
   return temUltimoFarol ? ultimoFarolAddonId : 0;
@@ -1286,6 +1431,9 @@ int player_ultimo_titulo(CatItem *out, int *temporada, int *episodio) {
 }
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
   player_erro_fonte();
+  erroFarolAcao = FAROL_A_NENHUMA;
+  erroBotao = 0;
+  pedFarolAcao = 0;
   snprintf(erroTitulo, sizeof erroTitulo, "%s", titulo ? titulo : "");
   snprintf(erroDica, sizeof erroDica, "%s", dica ? dica : "");
   // Guarda o ultimo erro para o "Resolver um problema" (resolverregra.h): so
@@ -1304,7 +1452,7 @@ static void erroSemVideo(void) {
 }
 // Desfaz o de cima quando a fonte que parecia morta volta a entregar. Ver a
 // nota no watchdog de canal em app.c.
-void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; temUltimoFarol = 0; ultimoFarolAddonId = 0; ultimoFarolTentativa = 0; resolverregra_falha_limpar(); } }
+void player_limpar_erro_fonte(void) { if (erroFonte) { erroFonte = 0; tocando = 1; erroBotao = 0; erroFarolAcao = FAROL_A_NENHUMA; pedFarolAcao = 0; erroTitulo[0] = erroDica[0] = 0; temUltimoFarol = 0; ultimoFarolAddonId = 0; ultimoFarolTentativa = 0; ultimoFarolSeq = 0; resolverregra_falha_limpar(); } }
 // Leitura do estado para o watchdog de canal do app.c: uma fonte ao vivo que
 // falhou (ou nao abre no prazo) deve trocar para a proxima da lista sozinha.
 int  player_fonte_falhou(void) { return erroFonte; }
@@ -2204,6 +2352,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
     if (canalSessao) { guia_carregar(); epg_iniciar(); } }
   tocando = 1; pausaPessoa = 0; retomandoSalto = 0; visivel = 1; anim = 0.0f; entrada = 0.0f; soBarra = 0; cheio = 1.0f; fileira = 1.0f;
   pedFontes = erroFonte = pedFaixas = pedProxT = pedProxE = trocaEpisodio = 0; inicioImagem = 0;
+  erroBotao = 0; erroFarolAcao = FAROL_A_NENHUMA; pedFarolAcao = 0;
   pedParte = 0; fimProprio = 0; partescartao_zerar();
   durFonteAvisada = durFontePulou = pedProximaFonte = durFonteCurta = durFonteForaCache = 0;
   durFonteAcaoAte = 0; durFonteSkipEm = 0; durFonteManter = 0;
@@ -2452,6 +2601,7 @@ static int travaFonte(const char *url) {
   temUltimoFarol = 0;
   ultimoFarolTentativa = 0;
   ultimoFarolAddonId = 0;
+  ultimoFarolSeq = 0;
   return 0;
 }
 
@@ -2746,6 +2896,7 @@ void player_voltar_a_esperar(void) {
   mkvass_parar();
   mkvass_video_aberto(0);
   esperandoFonte = 1; erroFonte = 0; tocando = 1; pausaPessoa = 0;
+  erroBotao = 0; erroFarolAcao = FAROL_A_NENHUMA; pedFarolAcao = 0;
   erroTitulo[0] = erroDica[0] = 0;
   retomadaAplicada = 0; inicioImagem = 0; prontoAnel = 0;
 }
@@ -3378,6 +3529,7 @@ static void fecharSessao(int manter, int trocaFonte) {
   retido = manter; if (!manter) retidoVoo = 0;
   prepararRetencao = 0; saidaIlhaDesde = 0;
   esperandoFonte = 0; aberto = 0; saindo = 0; pediuSair = 0;
+  erroBotao = 0; erroFarolAcao = FAROL_A_NENHUMA; pedFarolAcao = 0;
   cinemaArteIniciar(NULL);
   pedProxT = pedProxE = trocaEpisodio = pedRecarregar = 0;
   scrubbing = scrubToque = 0; scrubInicio = 0.0;
@@ -3391,6 +3543,12 @@ static void fecharSessao(int manter, int trocaFonte) {
 }
 
 void player_encerrar(void) {
+  // O filtro temporario das acoes de fonte do Farol vale para ESTA reproducao.
+  // player_encerrar_fonte (troca de fonte da mesma reproducao) o conserva.
+  if (farolacao_fonte_encerrar) farolacao_fonte_encerrar();
+  // Farol (#34): buffer maior e HDR desligado valem so para ESTA reproducao.
+  // player_encerrar_fonte (troca de fonte da mesma reproducao) os conserva.
+  if (farolacao_rede_encerrar) farolacao_rede_encerrar();
   if (retido) player_descartar_retido(); else fecharSessao(0, 0);
 }
 
@@ -3507,6 +3665,10 @@ int player_retido_so_voo(void) { return retido && retidoVoo; }
 
 void player_descartar_retido(void) {
   if (!retido) return;
+  // Farol (#34): a reproducao que estava suspensa morreu — os overrides
+  // "so desta reproducao" (buffer maior, HDR desligado) morrem com ela, o
+  // mesmo fim que player_encerrar ja garante sem retido.
+  if (farolacao_rede_encerrar) farolacao_rede_encerrar();
   // Um backend ja substituido nao pertence mais a esta sessao.
   if (strcmp(retidoUrl, video_url_atual())) comVideo = 0;
   fecharSessao(0, 0); // progresso ja gravado na suspensao, nao faz outro scrobble
@@ -4986,8 +5148,9 @@ void player_evento(const SDL_Event *e) {
   // DIREITA escolhem entre Abrir Fontes e Voltar; OK aciona. Voltar fecha o
   // player como o BACK (tratado acima); no Android ambos voltam as fontes (#409).
   if (erroFonte && !ehCanal()) {
-    if (k == SDLK_LEFT) erroBotao = 0;
-    else if (k == SDLK_RIGHT) erroBotao = 1;
+    int n = erroBotoesN();
+    if (k == SDLK_LEFT) { if (erroBotao > 0) erroBotao--; }
+    else if (k == SDLK_RIGHT) { if (erroBotao + 1 < n) erroBotao++; }
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
       erroEscolher(erroBotao);
     }
@@ -7093,10 +7256,21 @@ static void corpoCarregando(GfxRect r, float a, void *u) {
   motivoDesenhar(r, a);
 }
 
-// O MODAL DO ERRO: o motivo (36/700), a dica e os dois botoes. ESQUERDA e
-// DIREITA andam, OK aciona (player_evento).
+// O MODAL DO ERRO: o motivo (36/700), a dica e os botoes (2 sem Farol, 3 com
+// acao do Farol em 0). ESQUERDA e DIREITA andam, OK aciona (player_evento).
 static float erroLargura(void) {
-  return telefoneui_largura(880, NV_VTELA_W, 96);
+  float base = telefoneui_largura(880, NV_VTELA_W, 96);
+  if (erroFarolAcao != FAROL_A_NENHUMA && !telefoneui_ativo()) {
+    const char *rot = erroFarolChave();
+    if (rot[0]) {
+      float w = plrui_botao_largura(rot, erroFarolIcone(erroFarolAcao)) + 12.0f +
+                plrui_botao_largura("Abrir Fontes", "pl_layers") + 12.0f +
+                plrui_botao_largura("Voltar", NULL) + 72.0f;
+      float maxW = NV_VTELA_W - 96.0f;
+      if (w > base) base = w < maxW ? w : maxW;
+    }
+  }
+  return base;
 }
 
 #ifdef NV_TOUCH_UI
@@ -7139,10 +7313,23 @@ static int erroToquePode(void) {
 }
 static void erroToqueAcao(int i, int b) {
   (void)b;
-  if (!erroToquePode() || i < 0 || i > 1) return;
+  if (!erroToquePode() || i < 0 || i >= erroBotoesN()) return;
   erroBotao = i; erroEscolher(i);
 }
 #endif
+static void erroPonteiroFocar(int i, int b) {
+  (void)b;
+  if (i >= 0 && i < erroBotoesN()) erroBotao = i;
+}
+static void erroPonteiroAcao(int i, int b) {
+  (void)b;
+  if (!aberto || mini || saindo || !erroFonte || ehCanal() ||
+      stream_folha_aberta() || faixas_aberta() || episodios_aberto() ||
+      addonguia_aberto() || i < 0 || i >= erroBotoesN())
+    return;
+  erroBotao = i;
+  erroEscolher(i);
+}
 static float alturaErro(void) {
   TxtLinha t = txt_linha(TXT_ILHA_PERGUNTA, "Ag", 0, 0, 0, 255);
   float h = 18.0f + 4.0f;
@@ -7157,6 +7344,7 @@ static void corpoErro(GfxRect r, float a, void *u) {
   TxtLinha t = txt_linha(TXT_ILHA_PERGUNTA, "Ag", 0, 0, 0, 255);
   const char *tit = erroTitulo[0] ? erroTitulo : "Não foi possível abrir a fonte";
   const char *dica = erroDica[0] ? erroDica : "Abra Fontes para escolher outra opção ou recarregar.";
+  int n = erroBotoesN();
   (void)u;
   y += txt_bloco_corta(TXT_ILHA_PERGUNTA, tit, 243, 242, 239, x, y, w, (float)t.h + 7.0f, a, 3);
   y += 14.0f;
@@ -7165,14 +7353,15 @@ static void corpoErro(GfxRect r, float a, void *u) {
 #ifdef NV_TOUCH_UI
   if (telefoneui_ativo()) {
     int pont = a > .99f && erroToquePode();
+    float bw = (w - 12.0f * (float)(n - 1)) / (float)n;
     if (pont) {
       ponteiro_camada();
       ponteiro_alvo(0, 0, NV_VTELA_W, NV_VTELA_H, NULL, NULL, 0, 0);
     }
-    for (int i = 0; i < 2; i++) {
-      GfxRect b = {x + i * (w + 12) * .5f, y, (w - 12) * .5f, 76};
+    for (int i = 0; i < n; i++) {
+      GfxRect b = {x + (float)i * (bw + 12.0f), y, bw, 76};
       int foco = erroBotao == i, tinta = foco ? plrui_tinta() : 225;
-      const char *rot = i18n(i ? "Voltar" : "Abrir Fontes");
+      const char *rot = i18n(erroBotaoChave(i));
       if (foco) plrui_pilula_foco_video(b, a); else plrui_botao_repouso_video(b, a);
       float th = txt_bloco_corta(TXT_G21B, rot, tinta, tinta, tinta, 0, 0, b.w - 32, 28, 0, 2);
       txt_bloco_corta(TXT_G21B, rot, tinta, tinta, tinta, b.x + 16, b.y + (b.h - th) * .5f, b.w - 32, 28, a, 2);
@@ -7181,8 +7370,13 @@ static void corpoErro(GfxRect r, float a, void *u) {
     return;
   }
 #endif
-  x += plrui_botao_video(x, y, "Abrir Fontes", "pl_layers", erroBotao == 0 ? 1.0f : 0.0f, a) + 12.0f;
-  plrui_botao_video(x, y, "Voltar", NULL, erroBotao == 1 ? 1.0f : 0.0f, a);
+  for (int i = 0; i < n; i++) {
+    float bw = plrui_botao_video(x, y, erroBotaoChave(i), erroBotaoIcone(i),
+                                 erroBotao == i ? 1.0f : 0.0f, a);
+    if (a > 0.99f && erroFonte && !ehCanal() && !addonguia_aberto())
+      ponteiro_alvo(x, y, bw, 60.0f, erroPonteiroFocar, erroPonteiroAcao, i, 0);
+    x += bw + 12.0f;
+  }
 }
 
 static void corpoDurFonte(GfxRect r, float a, void *u) {

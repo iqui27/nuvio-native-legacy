@@ -270,8 +270,10 @@ size_t farolbusca_montar_corpo(const char *frase, const FarolBuscaCtx *ctx,
   escLit(&e, "{\"frase\":");
   escStr(&e, norm);
 
-  // Perfil privado: nao manda NADA alem da frase (ADENDO:15).
+  // Perfil privado: nao manda NADA pessoal. Quando tambem e infantil (R3),
+  // envia infantil:1 e consentiu:0 explicito; adulto privado manda SO "frase".
   if (ctx && ctx->privado) {
+    if (ctx->infantil) escLit(&e, ",\"infantil\":1,\"consentiu\":0");
     escLit(&e, "}");
     if (e.erro) { dst[0] = '\0'; return 0; }
     return e.n;

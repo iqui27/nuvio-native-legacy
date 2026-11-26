@@ -334,6 +334,18 @@ static const char *uxSinonimos(int op) {
       return "selos badges posicao topo embaixo formatter addon icons cima baixo gora dol polozenie ikon";
     case AJ_ASS_MOTOR:
       return "ass ssa legenda legenda estilizada typeset motor novo antigo libass travando lentidao subtitle engine";
+    case AJ_FAROL:
+      return "farol problema erro registro diagnostico video beacon resolver um problema log";
+    case AJ_FAROL_AVISOS:
+      return "farol avisos notificacoes silenciar ajuda beacon alerts";
+    case AJ_FAROL_RECOMENDAR:
+      return "farol gosto recomendar tv recomendacoes beacon";
+    case AJ_FAROL_APRENDEU:
+      return "farol gosto aprendeu generos pessoas temas preferencias";
+    case AJ_FAROL_ZERAR:
+      return "farol gosto zerar apagar limpar resetar";
+    case AJ_FAROL_LLM_SO_ESTA_TV:
+      return "farol gosto llm ia privacidade tv consentimento infantil";
     default: return "";
   }
 }

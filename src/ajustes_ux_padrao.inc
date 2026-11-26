@@ -402,3 +402,9 @@
   1, // legendaEvitarSdhLocal: Desligado (V_LIGA 1)
   1, /* barrasPretasLocal: Desligado */
   0, /* assMotorNovoLocal: Ligado (V_LIGA 0) — motor novo de ASS de fabrica */
+  1, /* farolAvisosLocal: 1 (padrao) = Ligado; 0 = So quando eu abrir (#27) */
+  0, /* Farol (Sobre e ajuda): action (#23) */
+  0, /* farolRecomendar: 0 = Ligado (#51) */
+  0, /* farolAprendeu: acao (#51) */
+  0, /* farolZerar: acao (#51) */
+  0  /* farolLlmSoEstaTv: 0 = Ligado ("So nesta TV", padrao seguro, #51) */

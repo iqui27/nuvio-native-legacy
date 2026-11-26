@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+# Gera farol_prod_bridge.inc: os trechos REAIS de src/player.c e src/app.c
+# que tests/farol_resolver.c e tests/farol_tela.c compilam. Uso:
+#   python3 tests/farol_resolver_ponte.py <dir-de-saida>
+from pathlib import Path
+import re, sys
+
+out = Path(sys.argv[1]) / "farol_prod_bridge.inc"
+player = Path("src/player.c").read_text(encoding="utf-8")
+app = Path("src/app.c").read_text(encoding="utf-8")
+
+def extract_fn(src, sig_re, name, required=True):
+    m = re.search(sig_re + r".*?^\}", src, re.M | re.S)
+    if not m:
+        if required:
+            raise SystemExit(f"falha ao extrair {name}")
+        return ""
+    return m.group(0)
+
+def extract_brace_block(src, start_marker, name):
+    i = src.index(start_marker)
+    j = src.index("{", i)
+    depth = 0
+    k = j
+    while k < len(src):
+        c = src[k]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return src[i:k + 1]
+        k += 1
+    raise SystemExit(f"bloco nao fechado: {name}")
+
+sair = re.search(r"^static void sairParaExterno\(void\) \{[^\n]*\}", player, re.M)
+if not sair:
+    raise SystemExit("falha ao extrair sairParaExterno")
+tent_ini = extract_fn(player, r"^static void farolTentativaIniciar\(void\) \{", "farolTentativaIniciar", required=False)
+fonte_reg = extract_fn(player, r"^static void farolFonteRegistrar\(const char \*url, int temCabs\) \{", "farolFonteRegistrar", required=False)
+erro_reg = extract_fn(player, r"^static void farolErroRegistrar\(const FarolErro \*fe, int foiDebrid, uint64_t addonId\) \{", "farolErroRegistrar", required=False)
+trava_fonte = extract_fn(player, r"^static int travaFonte\(const char \*url\) \{", "travaFonte", required=False)
+def_fonte = extract_fn(player, r"^void player_definir_fonte\(const char \*url\) \{", "player_definir_fonte", required=False)
+def_fonte_pref = ""
+if def_fonte and "if (!travaFonte(url)) return;" in def_fonte:
+    head = def_fonte.split("if (!travaFonte(url)) return;", 1)[0] + "if (!travaFonte(url)) return;\n}"
+    def_fonte_pref = head.replace("void player_definir_fonte(", "static void farol_test_definir_fonte_prefixo(", 1)
+ult_erro = extract_fn(player, r"^int player_ultimo_erro_farol\(FarolErro \*out, int \*foiDebrid\) \{", "player_ultimo_erro_farol", required=False)
+ult_tent = extract_fn(player, r"^uint64_t player_ultimo_erro_tentativa\(void\) \{", "player_ultimo_erro_tentativa", required=False)
+ult_seq = extract_fn(player, r"^uint64_t player_ultimo_erro_seq\(void\) \{", "player_ultimo_erro_seq", required=False)
+ext_disp_t = extract_fn(player, r"^int player_externo_disponivel_tentativa\(uint64_t tentativa\) \{", "player_externo_disponivel_tentativa", required=False)
+ext_disp = extract_fn(player, r"^int player_externo_disponivel\(void\) \{", "player_externo_disponivel")
+ext_abrir_t = extract_fn(player, r"^int player_abrir_externo_tentativa\(uint64_t tentativa\) \{", "player_abrir_externo_tentativa", required=False)
+ext_abrir = extract_fn(player, r"^int player_abrir_externo\(void\) \{", "player_abrir_externo")
+ult_addon = extract_fn(player, r"^uint64_t player_ultimo_addon_farol\(void\) \{", "player_ultimo_addon_farol", required=False)
+ult_tit = extract_fn(player, r"^int player_ultimo_titulo\(CatItem \*out, int \*temporada, int \*episodio\) \{", "player_ultimo_titulo", required=False)
+
+app_abrir_titulo = extract_fn(app, r"^static (?:void|int) abrirTitulo\(const HomeItem \*it, int exigeArte, int descartarRetido\) \{", "abrirTitulo em app.c")
+app_abrir_farol = extract_fn(app, r"^static int abrirFarolPedido\(const FarolAchaPedido \*p\) \{", "abrirFarolPedido em app.c")
+app_res = extract_brace_block(app, "  if (resolver_aberto()) {", "resolver_aberto em app.c")
+app_agp = extract_brace_block(app, "  {\n    int p = addonguia_pedido();", "addonguia_pedido em app.c")
+
+parts = [
+    "// Gerado por tests/farol_resolver.sh a partir de src/player.c e src/app.c.",
+    "#define FAROL_BRIDGE_TEM_TENTATIVA 1" if ult_tent else "",
+    "void ajustes_abrir_no_trakt(void);",
+    "static int farolPendExec;\nstatic void farolPendCancelar(void) {}" if "farolPendCancelar" in app_abrir_titulo else "",
+    sair.group(0),
+    tent_ini,
+    fonte_reg,
+    erro_reg,
+    trava_fonte,
+    def_fonte_pref,
+    ult_erro if ult_tent else "",
+    ult_tent,
+    ult_seq,
+    ext_disp_t,
+    ext_disp,
+    ext_abrir_t,
+    ext_abrir,
+    ult_addon,
+    ult_tit,
+    app_abrir_titulo,
+    app_abrir_farol,
+    "static void app_resolver_despachar(const SDL_Event *e) {",
+    app_res,
+    "}",
+    "static void app_addonguia_consumir(void) {",
+    app_agp,
+    "}",
+]
+out.write_text("\n\n".join(p for p in parts if p) + "\n", encoding="utf-8")

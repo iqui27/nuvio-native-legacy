@@ -138,6 +138,16 @@ int ajustes_proporcao_padrao(void);
 int ajustes_descanso_estilo(void);   // ESM_ESTILO_* (esmaecer.h)
 int ajustes_descanso_fonte(void);    // DESC_FONTE_* (descanso.h)
 int ajustes_dolby_vision(void);
+// FAROL (#34): overrides so desta reproducao (memoria, nunca gravam) e o
+// ajuste gravado de Dolby Vision. ajustes_dolby_vision()/ajustes_dv_mkv()/
+// ajustes_buffer_preset() ja devolvem o efeito do override.
+void ajustes_farol_buffer_maior(int on);
+int  ajustes_farol_buffer_maior_ativo(void);
+void ajustes_farol_hdr_off(int on);
+int  ajustes_farol_hdr_off_ativo(void);
+int  ajustes_dolby_vision_gravado(void);
+// 0 = ok ou sem mudanca; -1 = a gravacao falhou (a memoria mudou, o disco nao).
+int  ajustes_dolby_vision_definir(int ligado);
 int ajustes_dolby_atmos(void);
 // pauseOverlayEnabled: o painel de ficha que sobe alguns segundos depois de
 // pausar o video. Ver pausao.h.
@@ -738,6 +748,8 @@ int   ajustes_cw_ordem(void);
 int   ajustes_dts_ac3(void);             // 1 = DTS convertido em AC3 5.1 (LG, e padrao no .tpk); 0 = AAC estereo (.tpk: ou desligado)
 int   ajustes_dts_original(void);        // LG: 1 = DTS goes to the TV untouched (passthrough), never converted
 int   ajustes_dts_tpk_modo(void);        // .tpk: DTSTPK_HLS, ou DTSTPK_DESLIGADO com a conversao desligada
+int   ajustes_dts_valor(void);           // Farol #16: valor CRU de AJ_DTS_AC3 (.tpk 0..2; LG 0..3)
+void  ajustes_dts_definir(int valor);    // Farol #16: grava o valor cru (fora do intervalo da build: nada)
 int   ajustes_ps_continuar(void);        // #303: 0 = sem o cartao "continuar" na escolha de perfil
 int   ajustes_ps_tamanho(void);         // 2.1: 0 pequeno, 1 medio (padrao), 2 grande — os avatares da escolha de perfil
 int   ajustes_hist_conta(void);          // 1 = this profile's history goes to the Nuvio account (per profile, default on)
@@ -969,6 +981,15 @@ int ajustes_show_skip_cena(void);
 // nem chave que ajlog_chave_sensivel marcaria — a lista e fechada e o teste
 // prova na compilacao. Pensado para a secao "ajustes" do registro tecnico.
 int ajustes_farol_diff(void (*cb)(const char *chave, int numero, const char *token, void *ctx), void *ctx);
+
+// FAROL (#27): "Avisos do Farol" em Ajustes › Sobre e ajuda.
+// 1 (padrao) = Ligado; 0 = So quando eu abrir.
+int  ajustes_farol_avisos(void);
+void ajustes_farol_avisos_definir(int ligado);
+// FAROL (#51): Ajustes › Sobre e ajuda › Gosto.
+int  ajustes_farol_recomendar(void);
+void ajustes_farol_recomendar_definir(int ligado);
+int  ajustes_farol_llm_ativo(void);
 #endif
 
 // External audio uses the webOS converter; disabled by default.

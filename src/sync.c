@@ -3,6 +3,10 @@ void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's to
 #include "idioma.h"
 #include "diario.h"
 #include "farolsinal.h"
+#include "farolcompor.h"
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((weak)) void farolcompor_esquecer(void) {}
+#endif
 #include "trava.h"
 #include <time.h>
 #include "sessao.h"
@@ -2417,6 +2421,7 @@ void sync_esquecer_usuario(void) {
   // O gosto do Farol: modelo, estado de processamento, cache de fichas e a
   // marca "notas do Trakt ja lidas" — tudo e da conta que saiu (issue 43).
   farolsinal_esquecer();
+  farolcompor_esquecer();
   trava_esquecer();
   trava_definir_conta("");
   // O jornal da conta sai da MEMORIA; o arquivo (por usuario, so ids) fica

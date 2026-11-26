@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "Od 4 do 8 čísel. Chráni nastavenia tohto profilu na tomto televízore."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "4 až 8 číslic. Platí len na tomto televízore; chráni nastavenia ostatných profilov."),
   T("De 50% a 300% do tamanho principal", "Od 50% do 300% hlavnej veľkosti"),
+  T("De lado até amanhã", "Bokom do zajtra"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Odkiaľ vitrína berie tituly: z celého katalógu, alebo iba z vášho zoznamu a z Pokračovať v sledovaní."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "Odkiaľ vitrína berie tituly: z katalógu, alebo z vášho zoznamu."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "Odkiaľ môže automatika vyberať: všetky zdroje, len nainštalované doplnky alebo len zapnuté pluginy. Uloží sa do profilu."),

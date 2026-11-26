@@ -31,6 +31,13 @@
 //   - cenario 18: A->B (sem FE_PRONTO) apos TV_FORMATO_REPETE -> alternativa.
 //   - cenario 19: Caso positivo de TV_FORMATO unico (1 falha) com player fechado.
 //   - cenario 20: Troca para B entre oferta e OK -> despacho recusa B e usa alternativa.
+//   - cenario 21 (Farol #17): ADDON_LENTO com duas fontes -> o OK isola o lento
+//     por 24 h com farolacao_addon.c e addonstats.c de verdade (anel, ilha com
+//     Desfazer), sem enviar registro e sem pedido ao app.
+//   - cenario 22: ADDON_LENTO com uma fonte so -> nao oferece isolar; cai no registro.
+//   - cenarios FAROL34B (issue #34): as 4 acoes de rede saem como PEDIU_FAROL
+//     para farolacao_rede_executar (toque vs segurar no Desligar o HDR),
+//     e o cartao IMAGEM_DV que antes caia no envio do registro agora executa.
 
 #include "resolver.h"
 #include "resolverregra.h"
@@ -38,23 +45,33 @@
 #include "farolerro.h"
 #include "farolanel.h"
 #include "faroltexto.h"
+#include "farolsonda.h"
+#include "farol.h"
 #include "fontesonda.h"
 #include "extplayer.h"
 #include "addonguia.h"
 #include "addonmodo.h"
 #include "addons.h"
 #include "catalogo.h"
+#include "home.h"
+#include "layout.h"
 #include "mediaurl.h"
 #include "streams.h"
 #include "avisos.h"
 #include "celbotao.h"
 #include "ilha.h"
+#include "ilhaacao.h"
+#include "addonstats.h"
+#include "farolacao_addon.h"
 #include "p2pmotor.h"
 #include "perfis.h"
 #include "plrilha.h"
 #include "gfx.h"
 #include "text.h"
 #include "ponteiro.h"
+#include "layout.h"
+#include "segurar.h"
+#include "farolacao_rede.h"
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -80,6 +97,7 @@ static FarolErro ultimoFarol;
 static int temUltimoFarol, ultimoFarolDebrid;
 static uint64_t ultimoFarolAddonId;
 static uint64_t farolTentativaSeq, ultimaFonteTentativa, ultimoFarolTentativa;
+static uint64_t ultimoFarolSeq;   // espelho do static do player (#14)
 static char ultimaFonteUrl[NV_MEDIA_URL_MAX];
 static int ultimaFonteTemCabs;
 static int ultimaFonteTemItem, ultimaFonteIdx, ultimaFonteEpT, ultimaFonteEpE;
@@ -184,6 +202,55 @@ static int nv_perfil_sessao_atual(uint64_t s) { return s == c_perfilSessao; }
 const char *i18n(const char *s) { return s; }
 char *dados_ler(const char *n) { (void)n; return NULL; }
 int dados_gravar(const char *n, const char *v) { (void)n; (void)v; return 1; }
+static int c_quarentenaGravada;
+int dados_gravar_leve(const char *n, const char *v) {
+  (void)v;
+  if (n && !strcmp(n, "fonte-quarentena.txt")) c_quarentenaGravada++;
+  return 1;
+}
+void aio_resultados(AioSnapshot *s, const char *json) { (void)s; (void)json; }   // addonstats.c sem AIOStreams
+// Farol #17: o mundo de add-ons que farolacao_addon.c (o de verdade) consulta;
+// a quarentena e a de addonstats.c (tambem o de verdade).
+static int c_lento = -1;
+int addons_chave_estatistica(int i, char chave[32]) {
+  if (i < 0 || i >= c_addons) return 0;
+  snprintf(chave, 32, "fx-%d", i);
+  return 1;
+}
+static int c_isolado(int i) {
+  char c[32];
+  return addons_chave_estatistica(i, c) && addonstats_isolado_s(c) > 0;
+}
+int addons_fontes_chaves(char (*chaves)[32], int max) {
+  int k = 0;
+  for (int i = 0; i < c_addons && k < max; i++)
+    if (c_addon[i].ativo && c_addon[i].forneceStream) addons_chave_estatistica(i, chaves[k++]);
+  return k;
+}
+int addons_fontes_vivas_n(void) {
+  int k = 0;
+  for (int i = 0; i < c_addons; i++)
+    if (c_addon[i].ativo && c_addon[i].forneceStream && !c_isolado(i)) k++;
+  return k;
+}
+int addons_lento_isolavel(void) {
+  return c_lento >= 0 && c_lento < c_addons && c_addon[c_lento].forneceStream && !c_isolado(c_lento) ? c_lento : -1;
+}
+// weak: quando o teste linkar a fachada src/farol.c, valem as dela (mesmos eventos).
+__attribute__((weak)) void farol_registrar_acao(int a) { farol_ev(FM_FAROL, FE_FAROL_ACAO, 0, a, 0, farolregra_acao_token(a)); }
+__attribute__((weak)) void farol_registrar_resultado(int a, int ok) {
+  farol_ev(FM_FAROL, FE_FAROL_RESULTADO, ok ? 0 : 1, a, ok ? 1 : 0, farolregra_acao_token(a));
+}
+static IlhaAcao c_ilhaAcao;
+static char c_ilhaAcaoCtx[64];
+static int c_ilhaAcaoN;
+void ilhaacao_feita(const IlhaAcao *a) {
+  assert(a->ctxN <= sizeof c_ilhaAcaoCtx);
+  c_ilhaAcao = *a;
+  memcpy(c_ilhaAcaoCtx, a->ctx, a->ctxN);
+  c_ilhaAcao.ctx = c_ilhaAcaoCtx;
+  c_ilhaAcaoN++;
+}
 int rede_saude_offline(void) { return c_offline; }
 int addons_n(void) { return c_addons; }
 int addons_ocupado(void) { return c_ocupado; }
@@ -246,8 +313,10 @@ void ajustes_definir_p2p_ligado(int on) { (void)on; }
 int ajustes_p2p_ligado(void) { return 0; }
 const char *ajustes_p2p_url(void) { return ""; }
 const char *ajustes_idioma(void) { return "pt"; }
-int ajustes_vidro(void) { return 0; }
-int ajustes_animacoes_reduzidas(void) { return 1; }
+// tests/farol_tela.c mexe nestes dois: Interface de vidro e animacoes.
+static int c_vidro, c_reduzidas = 1, c_vidroPaineis;
+int ajustes_vidro(void) { return c_vidro; }
+int ajustes_animacoes_reduzidas(void) { return c_reduzidas; }
 int ajustes_animacoes_reduzidas_usuario(void) { return 1; }
 void ajustes_acento(float *r, float *g, float *b) { *r = 0.4f; *g = 0.7f; *b = 1.0f; }
 float ajustes_acento_tinta(float *r, float *g, float *b) { *r = *g = *b = 1.0f; return 1.0f; }
@@ -282,6 +351,33 @@ void ilha_avisar_ex(const IlhaAvisoEx *a) { (void)a; }
 int ilha_tem(const char *chave) { (void)chave; return 0; }
 int ilha_modal_aberto(void) { return 0; }
 int ilha_modal_visivel(void) { return 0; }
+// FAROL34B: a dica do OK segurado ("sempre nesta TV") e o vencer do segurar.
+static int c_ilhaAtvN;
+static char c_ilhaAtvTxt[256];
+void ilha_atividade(const char *texto, float progresso) {
+  (void)progresso;
+  c_ilhaAtvN++;
+  snprintf(c_ilhaAtvTxt, sizeof c_ilhaAtvTxt, "%s", texto ? texto : "");
+}
+int segurar_venceu(Uint32 agora, Uint32 desde, const char *tela) {
+  (void)tela;
+  return desde != 0 && (Sint32)(agora - desde) >= (Sint32)NV_HOLD_MS;
+}
+// FAROL34C P1-3: -Wl,--wrap faz o resolver_evento() de src/resolver.c ler o
+// clock DAQUI. comTicksZero arma o KEYDOWN com SDL_GetTicks()==0 (1o quadro
+// de um processo real) — sem o `if (!t) t = 1` a pressao longa nunca vencia.
+static int comTicksZero;
+Uint32 __real_SDL_GetTicks(void);
+Uint32 __wrap_SDL_GetTicks(void) {
+  return comTicksZero ? 0u : __real_SDL_GetTicks();
+}
+// FAROL34B: o despacho real de app.c (farol_prod_bridge.inc) chega aqui —
+// a prova de que RESOLVER_PEDIU_FAROL executa a acao escolhida.
+static int c_farolExecN, c_farolExecAcao, c_farolExecPersistir;
+int farolacao_rede_executar(int acao, int persistir) {
+  c_farolExecN++; c_farolExecAcao = acao; c_farolExecPersistir = persistir;
+  return 1;
+}
 
 int stream_atual(void) { return c_streamAtual; }
 const Stream *stream_item(int i) { return i >= 0 ? &c_stream : NULL; }
@@ -319,12 +415,24 @@ void rec_avatar_estilo(GfxRect r, const char *u, const char *n, const char *f, f
 }
 
 float gfx_opacidade_grupo = 1.0f;
+float gfx_tex_aspect_atual = 0.0f;
 int gfx_vidro_sem_aro = 0;
 float botao_largura(const char *rot, const char *ic, int pri) { (void)rot; (void)ic; (void)pri; return 100.0f; }
-void botao_pilula(GfxRect r, const char *rot, const char *ic, float f, int p, int al, float a) { (void)r; (void)rot; (void)ic; (void)f; (void)p; (void)al; (void)a; }
+static void txt_anotar(const char *s);
+void botao_pilula(GfxRect r, const char *rot, const char *ic, float f, int p, int al, float a) { (void)r; (void)ic; (void)f; (void)p; (void)al; (void)a; txt_anotar(rot); }
 float botao_cor_foco(float *r, float *g, float *b) { *r = *g = *b = 1.0f; return 1.0f; }
 void botao_luz(GfxRect r, float f, float a) { (void)r; (void)f; (void)a; }
 void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) { (void)r; (void)raio; (void)cr; (void)cg; (void)cb; (void)ca; }
+void gfx_esqueleto(GfxRect r, float raio, float cr, float cg, float cb, float ca) { (void)r; (void)raio; (void)cr; (void)cg; (void)cb; (void)ca; }
+void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco, float px, float py, float raio, float cr, float cg, float cb, float ca) {
+  (void)r; (void)tex; (void)modo; (void)foco; (void)px; (void)py; (void)raio; (void)cr; (void)cg; (void)cb; (void)ca;
+}
+GLuint tex_obter_larg(const char *caminho, float larg) { (void)caminho; (void)larg; return 0; }
+float tex_aspecto(const char *caminho) { (void)caminho; return 0.0f; }
+int tex_falhou(const char *caminho) { (void)caminho; return 0; }
+const char *posterprov_card_addon(const char *origem, const char *imdb, long tmdb, const char *tipo, const char *orig) {
+  (void)origem; (void)imdb; (void)tmdb; (void)tipo; return orig ? orig : "";
+}
 void gfx_anel(GfxRect r, float raio, float esp, float cr, float cg, float cb, float ca) { (void)r; (void)raio; (void)esp; (void)cr; (void)cg; (void)cb; (void)ca; }
 void gfx_icone(GfxRect r, const char *n, float cr, float cg, float cb, float ca) { (void)r; (void)n; (void)cr; (void)cg; (void)cb; (void)ca; }
 void gfx_luz_canto(GfxRect r, float raio, float lx, float ly, float lr, float cr, float cg, float cb, float ca) {
@@ -349,12 +457,130 @@ float gfx_escala_txt(void) { return 1.0f; }
 float gfx_escala_txt_entrar(void) { return 1.0f; }
 int ponteiro_ativo(void) { return 0; }
 void ponteiro_alvo(float x, float y, float w, float h, PonteiroFn fo, PonteiroFn at, int a, int b) { (void)x; (void)y; (void)w; (void)h; (void)fo; (void)at; (void)a; (void)b; }
-TxtLinha txt_linha(TxtEstilo e, const char *s, int r, int g, int b, int a) { TxtLinha l; memset(&l, 0, sizeof l); (void)e; (void)s; (void)r; (void)g; (void)b; (void)a; return l; }
-TxtLinha txt_linha_corta(TxtEstilo e, const char *s, int r, int g, int b, int a, float mw) { TxtLinha l; memset(&l, 0, sizeof l); (void)e; (void)s; (void)r; (void)g; (void)b; (void)a; (void)mw; return l; }
+// O que o desenho escreveu no quadro (tests/farol_tela.c confere textos).
+static char c_txt[160][200];
+static int c_txtN;
+static void txt_anotar(const char *s) {
+  if (s && c_txtN < (int)(sizeof c_txt / sizeof c_txt[0]))
+    snprintf(c_txt[c_txtN++], sizeof c_txt[0], "%s", s);
+}
+TxtLinha txt_linha(TxtEstilo e, const char *s, int r, int g, int b, int a) { TxtLinha l; memset(&l, 0, sizeof l); (void)e; (void)r; (void)g; (void)b; (void)a; txt_anotar(s); return l; }
+TxtLinha txt_linha_corta(TxtEstilo e, const char *s, int r, int g, int b, int a, float mw) { TxtLinha l; memset(&l, 0, sizeof l); (void)e; (void)r; (void)g; (void)b; (void)a; (void)mw; txt_anotar(s); return l; }
 void txt_desenhar_alpha(TxtLinha l, float x, float y, float a) { (void)l; (void)x; (void)y; (void)a; }
-float txt_bloco(TxtEstilo e, const char *s, int r, int g, int b, float x, float y, float w, float ld, float a, int ml) { (void)e; (void)s; (void)r; (void)g; (void)b; (void)x; (void)y; (void)w; (void)ld; (void)a; (void)ml; return 0.0f; }
+float txt_bloco(TxtEstilo e, const char *s, int r, int g, int b, float x, float y, float w, float ld, float a, int ml) { (void)e; if (a > 0.0f) txt_anotar(s); (void)r; (void)g; (void)b; (void)x; (void)y; (void)w; (void)ld; (void)a; (void)ml; return 0.0f; }
 float txt_bloco_corta(TxtEstilo e, const char *s, int r, int g, int b, float x, float y, float w, float ld, float a, int ml) { (void)e; (void)s; (void)r; (void)g; (void)b; (void)x; (void)y; (void)w; (void)ld; (void)a; (void)ml; return 0.0f; }
 float txt_tracking(TxtEstilo e, const char *s, int r, int g, int b, float x, float y, float a, float t) { (void)e; (void)s; (void)r; (void)g; (void)b; (void)x; (void)y; (void)a; (void)t; return 0.0f; }
+
+// ------------------------------------------- fachada do Farol (issue 19)
+// src/farol.c entra de verdade: o Resolver julga por farol_julgar. O lado da
+// Home (cena, catalogo, gosto) fica mudo como em tests/farol_fachada.c; os
+// produtores que a cadeia le saem dos mesmos espelhos do cenario.
+int home_fileiras_na_tela(void) { return 0; }
+const char *app_tela_nome(void) { return "resolver"; }
+int recomenda_pessoa_canonica(const char *id, char *dst, size_t tam) {
+  (void)id; if (dst && tam) dst[0] = 0; return 0;
+}
+int cat_indice_por_imdb(const char *imdb) { (void)imdb; return -1; }
+int cat_copiar_item(int idx, CatItem *dst) { (void)idx; (void)dst; return 0; }
+int cat_copiar_por_id(const char *id, const char *tipo, CatItem *dst) { (void)id; (void)tipo; (void)dst; return 0; }
+int cat_fileira_imdb(const char *chave, char (*out)[64], int max, int stride) {
+  (void)chave; (void)out; (void)max; (void)stride; return 0;
+}
+#ifndef FAROL_TESTE_CAT_PROPRIO
+const CatItem *cat_item(int i) { (void)i; return NULL; }
+int cat_n(void) { return 0; }
+unsigned cat_revisao(void) { return 0; }
+#endif
+int cat_visto(const CatItem *ci) { (void)ci; return 0; }
+#ifndef FAROL_TESTE_CAT_PROPRIO
+int cacavisto_filme(const char *imdb, long tmdb, long long *quando) { (void)imdb; (void)tmdb; if (quando) *quando = 0; return 0; }
+#endif
+int cat_remover_fileiras_prefixo(const char *d, const char *pf) { (void)d; (void)pf; return 0; }
+int farolcena_home(char *dst, size_t cap, const void *ctx, void *a, size_t b) {
+  (void)dst; (void)cap; (void)ctx; (void)a; (void)b; return 0;
+}
+int farolpeca_ler(void *pc, const char *j, int nc) { (void)pc; (void)j; (void)nc; return 0; }
+int farolpeca_texto_tem(const void *t) { (void)t; return 0; }
+const char *farolpeca_x(const void *c, const void *t) { (void)c; (void)t; return ""; }
+int farolrec_nivel(const void *g) { (void)g; return 0; }
+int farolrec_escolher(const void *c, const void *k, int n, void *o, int m) {
+  (void)c; (void)k; (void)n; (void)o; (void)m; return 0;
+}
+int farolficha_ler_item(const CatItem *ci, void *dst) { (void)ci; (void)dst; return 0; }
+uint32_t farolficha_chave(const void *f) { (void)f; return 0; }
+int farolsinal_modelo(void *dst) { (void)dst; return 0; }
+int farolsinal_ficha_do_item(const CatItem *ci, void *dst) { (void)ci; (void)dst; return 0; }
+void farolsinal_mostrado(const CatItem *ci) { (void)ci; }
+int farolsinal_recomendar(void) { return 0; }
+void farolsinal_zerar_gosto(void) {}
+void farolsinal_definir_recomendar(int ligado) { (void)ligado; }
+const char *player_id_canal(void) { return ""; }
+int seguro_perfil_ativo(void) { return 0; }
+int perfil_infantil_ativo(void) { return 0; }
+int perfis_ativo(void) { return 1; }
+int fil_oculta(const char *chave) { (void)chave; return 0; }
+int diario_n(int perfil) { (void)perfil; return 0; }
+int diario_entrada(int perfil, int i, void *dst) { (void)perfil; (void)i; (void)dst; return 0; }
+int diario_titulo(int perfil, const char *id, void *dst) { (void)perfil; (void)id; (void)dst; return 0; }
+int diario_nome(const char *id, char *t, size_t nt, int *a, char *pn, size_t np) {
+  (void)id; if (t && nt) t[0] = 0; (void)a; if (pn && np) pn[0] = 0; return 0;
+}
+int salvos_n(void) { return 0; }
+const void *salvos_item(int i) { (void)i; return NULL; }
+int32_t mapa_hash_nome(const char *x) { (void)x; return -1; }
+uint32_t mapa_hash_titulo(const char *x) { (void)x; return 1; }
+const char *atualizacao_nova(void) { return ""; }
+int nv_webos_major(void) { return 0; }
+int dts_playback_enabled(void) { return 0; }
+int dts_tpk_disponivel(void) { return 0; }
+int video_audio_nao_suportado(void) { return 0; }
+int video_n_audio(void) { return 0; }
+typedef struct VideoFaixa VideoFaixa;
+const VideoFaixa *video_audio(int i) { (void)i; return NULL; }
+int video_audio_atual(void) { return -1; }
+int video_faixa_dts(const VideoFaixa *f) { (void)f; return 0; }
+int video_dts_estado(void) { return 0; }
+int video_tem_dolby_vision(void) { return 0; }
+const char *video_hdr(void) { return ""; }
+#ifndef FAROL_SONDA_REAL
+// A sonda ativa (farolsonda.h): pronta = nada no ar.
+static int c_sondaPronta = 1, c_sondaCanceladaN, c_sondaIniciadaN, c_sondaIniciarAuto;
+int farolsonda_iniciar(const char *url, const char *const *cab) {
+  (void)cab;
+  c_sondaIniciadaN++;
+  if (!url || !*url) return 0;
+  if (c_sondaIniciarAuto && c_sondaPronta) {
+    c_sondaPronta = 0;
+    return 1;
+  }
+  return 0;
+}
+int farolsonda_estado(FarolSonda *o) {
+  if (o) { memset(o, 0, sizeof *o); o->http = 0; }
+  return c_sondaPronta;
+}
+void farolsonda_cancelar(void) { c_sondaCanceladaN++; c_sondaPronta = 1; }
+#endif
+// A fonte atual como o Resolver do pai lia (stream_item(stream_atual())).
+void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
+                        int *fonteMbps, int *fonteDebrid, int *temOutraFonte,
+                        int *temFonteMenor, int *temFonteSemDv,
+                        int *temFonteSemDts, int *tvHdr, int *tvDv,
+                        int *vazaoMbps) {
+  const Stream *ft = stream_atual() >= 0 ? stream_item(stream_atual()) : NULL;
+  *fonteDv = *fonteHdr = *fonteGBx10 = *fonteMbps = *fonteDebrid = -1;
+  *temOutraFonte = *temFonteMenor = *temFonteSemDv = *temFonteSemDts = -1;
+  *tvHdr = *tvDv = *vazaoMbps = -1;
+  if (ft) {
+    uint64_t g = ft->tamanhoBytes / 100000000ULL;
+    int kbps = stream_kbps_atual();
+    *fonteDv = ft->dolbyVision > 0 ? 1 : 0;
+    *fonteGBx10 = !ft->tamanhoBytes ? -1 : g > INT32_MAX ? INT32_MAX : (int)g;
+    *fonteMbps = kbps > 0 ? kbps / 1000 : -1;
+    *fonteDebrid = ft->debridServico > 0 ? 1 : 0;
+  }
+}
+void gfx_vidro_painel(GfxRect r, float raio, float fundo, float a) { (void)r; (void)raio; (void)fundo; (void)a; c_vidroPaineis++; }
 
 // Helpers referenciados pelos blocos extraidos de src/app.c
 static void menu_fechar(void) { c_menuFechouN++; }
@@ -366,6 +592,13 @@ static void pedirTorrentEscolhido(int idx) { (void)idx; }
 static void buscarParaPlayerModo(int renovar) { c_buscarModoN++; c_buscarModoRenovar = renovar; }
 static void diagnostico_cancelar_vazao(void) {}
 static void limparFonteVOD(void) {}
+#ifndef FAROL_TESTE_CAT_PROPRIO
+static void player_descartar_retido(void) {}
+static void detail_abrir(const HomeItem *it) { (void)it; }
+static int  detail_aberto(void) { return 0; }
+static int  detail_indice(void) { return -1; }
+static void detail_fechar_seco(void) {}
+#endif
 static int travaui_abrir_espera(int idx, int t, int e) { (void)idx; (void)t; (void)e; return c_travauiBloq; }
 int cat_indice_reabrir(int idx, const CatItem *copia) {
   (void)idx;
@@ -434,6 +667,7 @@ static void zerar(void) {
   itemSessao = c_perfilSessao = 1;
   temUltimoFarol = 0; ultimoFarolDebrid = 0; ultimoFarolAddonId = 0;
   farolTentativaSeq = ultimaFonteTentativa = ultimoFarolTentativa = 0;
+  ultimoFarolSeq = 0;
   ultimaFonteUrl[0] = 0; ultimaFonteTemCabs = 0; c_videoCabs[0] = 0;
   ultimaFonteTemItem = 0; memset(&ultimaFonteItem, 0, sizeof ultimaFonteItem);
   ultimaFonteIdx = -1; ultimaFonteEpT = 0; ultimaFonteEpE = 0; ultimaFonteSessao = 0;
@@ -455,9 +689,13 @@ static void zerar(void) {
   snprintf(c_addon[2].nome, sizeof c_addon[2].nome, "MediaFusion");
   c_addon[2].ativo = 1; c_addon[2].sondado = 1; c_addon[2].forneceStream = 1;
   c_streamOrdemAddon = -1;
+  c_lento = -1; c_ilhaAcaoN = 0; c_quarentenaGravada = 0;
+  addonstats_isolar_zerar();
   c_celbDisp = 1; c_celbAbertoN = c_celbFechadoN = 0; c_celbChave[0] = 0;
   c_debridCelN = 0; c_debridCelServ[0] = c_debridCelChave[0] = 0;
   c_ilhaAvisosN = 0; c_ilhaChave[0] = c_ilhaTexto[0] = 0;
+  c_ilhaAtvN = 0; c_ilhaAtvTxt[0] = 0;
+  c_farolExecN = 0; c_farolExecAcao = 0; c_farolExecPersistir = 0;
   tela = TELA_AJUSTES;
   guiaTorrentRepetir = 0; torrentSessao = 0; torrentPendente = -1; aguardandoFonte = 0;
   c_playerAbrirN = 0; c_playerAbrirIdx = -1; c_playerDoInicioN = 0;
@@ -465,6 +703,9 @@ static void zerar(void) {
   c_buscarModoN = 0; c_buscarModoRenovar = 0;
   c_menuFechouN = 0; c_ajustesFontesN = 0; c_travauiBloq = 0;
   c_catReabrirIdx = 7;
+#ifndef FAROL_SONDA_REAL
+  c_sondaPronta = 1; c_sondaCanceladaN = 0; c_sondaIniciadaN = 0; c_sondaIniciarAuto = 0;
+#endif
   c_perfilSlot = ++c_slotSeq;
   addonmodo_preparar("u", c_perfilSlot);
   addonguia_fechar();
@@ -481,6 +722,10 @@ static void zerar(void) {
 static void falhar_fonte(const char *titulo, const char *dica,
                          FarolClasse classe, int http, const char *cod) {
   FarolErro fe;
+  // Como no player, o erro e gravado DEPOIS de um evento da tentativa no anel
+  // (a fonte abriu): a fachada (issue 19) descarta erro com seq na fronteira
+  // da sessao, e sem evento nenhum a seq do erro seria a propria fronteira.
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, 1, 3, "media3");
   resolverregra_falha_registrar(RES_T_FONTE, titulo, dica, "T2:E5", (long)time(NULL));
   memset(&fe, 0, sizeof fe);
   fe.classe = classe;
@@ -506,6 +751,20 @@ static void apertar_ok_app(void) {
   app_resolver_despachar(&evento);
 }
 
+// O OK longo executa no KEYUP: depois de apertar_ok(), soltar conclui o
+// toque (ou a versao duravel, se o segurar ja venceu no atualizar).
+static void soltar_ok(void) {
+  SDL_Event evento = { .type = SDL_KEYUP };
+  evento.key.keysym.sym = SDLK_RETURN;
+  resolver_evento(&evento);
+}
+
+static void soltar_ok_app(void) {
+  SDL_Event evento = { .type = SDL_KEYUP };
+  evento.key.keysym.sym = SDLK_RETURN;
+  app_resolver_despachar(&evento);
+}
+
 static void avancar_addonguia(void) {
   for (int i = 0; i < 40; i++) {
     addonguia_shot_passo(0.05f);
@@ -513,6 +772,7 @@ static void avancar_addonguia(void) {
   }
 }
 
+#ifndef FAROL_RESOLVER_SEM_MAIN
 int main(void) {
   const int *est;
   FarolFatos fx;
@@ -565,8 +825,18 @@ int main(void) {
   resolver_teste_testar(FAROL_S_CORES);
   assert(resolver_teste_veredito() == FAROL_C_IMAGEM_DV);
   assert(strstr(resolver_teste_titulo(), FT_IMAGEM_DV_L1) != NULL);
+  // FAROL34B (issue #34): "Desligar o HDR" executa de verdade. O toque (sem
+  // segurar vencer) sai como PEDIU_FAROL com persistir=0 — e NAO mais cai no
+  // envio do registro, que era o botao morto apontado na revisao.
+  assert(resolver_teste_prim() == FAROL_A_DESLIGAR_HDR);
   apertar_ok();
-  assert(c_envioChamadas >= 1);
+  assert(resolver_aberto());           // toque ainda nao acabou: falta o KEYUP
+  soltar_ok();
+  assert(resolver_pedido() == RESOLVER_PEDIU_FAROL);
+  assert(resolver_pedido_acao() == FAROL_A_DESLIGAR_HDR);
+  assert(resolver_pedido_persistir() == 0);
+  assert(!resolver_aberto());
+  assert(c_envioChamadas == 0);
 
   // ------------------------------------------------------------ cenario 4
   zerar();
@@ -693,7 +963,9 @@ int main(void) {
   assert(player_externo_disponivel() == 0);
   resolver_abrir();
   resolver_teste_testar(RES_S_NAO_COMECA);
-  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  // FAROL34B: TV_FORMATO_REPETE sem player externo cai na alternativa
+  // LIMPAR_CACHE — que agora executa (antes cairia no registro).
+  assert(resolver_teste_prim() == FAROL_A_LIMPAR_CACHE);
 
   ultimaFonteTemCabs = 0;
   c_androidApps[0] = 0;
@@ -927,10 +1199,12 @@ int main(void) {
   resolver_abrir();
   resolver_teste_testar(RES_S_NAO_COMECA);
   assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO_REPETE);
-  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  // FAROL34B: a alternativa LIMPAR_CACHE executa — nao cai mais no registro.
+  assert(resolver_teste_prim() == FAROL_A_LIMPAR_CACHE);
   apertar_ok_app();
   assert(c_androidAbrirN == 0);
-  assert(c_envioChamadas >= 1);
+  assert(c_farolExecN == 1 && c_farolExecAcao == FAROL_A_LIMPAR_CACHE);
+  assert(c_envioChamadas == 0);
 
   // ----------------------------------------------------------- cenario 19
   // Cenario positivo (1 falha de formato, TV_FORMATO -> acaoAlt PLAYER_EXTERNO)
@@ -1069,11 +1343,12 @@ int main(void) {
   apertar_ok_app();
   assert(c_androidAbrirN == 0);
   assert(resolver_aberto());
-  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  assert(resolver_teste_prim() == FAROL_A_LIMPAR_CACHE);
   assert(player_abrir_externo_tentativa(tentSinc) == 0);
   assert(c_androidAbrirN == 0);
   apertar_ok_app();
-  assert(c_envioChamadas >= 1);
+  // FAROL34B: a alternativa LIMPAR_CACHE executa (era Mandar registro).
+  assert(c_farolExecN == 1 && c_farolExecAcao == FAROL_A_LIMPAR_CACHE);
   assert(c_androidAbrirN == 0);
 
   // ----------------------------------------------------------- cenario 23
@@ -1191,6 +1466,183 @@ int main(void) {
   c_catSlotCount = 0;
   mini = 0;
 
+  // ------------------------------------------------------------ cenario 21
+  // Farol #17: o OK no veredito ADDON_LENTO isola o add-on (nao envia registro).
+  {
+    FarolEvento ev[FAROL_ANEL_N];
+    char ch[32];
+    int n, acoes = 0, s;
+    zerar();
+    c_lento = 1;                                       // Torrentio lento; MediaFusion segue
+    memset(&fx, 0, sizeof fx);
+    farolregra_fatos_iniciar(&fx);
+    fx.plat = FP_WEBOS;
+    fx.addonsQtd = 2;
+    fx.addonsLentos = 1;
+    fx.addonsMudos = 0;
+    resolver_teste_fatos_farol(&fx);
+    resolver_abrir();
+    resolver_teste_testar(RES_S_TRAVA);
+    assert(resolver_teste_veredito() == FAROL_C_ADDON_LENTO);
+    assert(resolver_teste_prim() == FAROL_A_ISOLAR_ADDON);
+    farolanel_zerar();
+    apertar_ok();
+    assert(c_envioChamadas == 0);                      // nada de registro
+    assert(resolver_pedido() == RESOLVER_PEDIU_NADA);
+    assert(!resolver_aberto());                        // fecha: a ilha mostra o Desfazer
+    assert(addons_chave_estatistica(1, ch));
+    assert(addonstats_isolado_s(ch) == FAAD_ISOLA_S && !c_isolado(2));
+    assert(addons_fontes_vivas_n() == 1 && c_quarentenaGravada == 1);
+    n = farolanel_ler(ev, FAROL_ANEL_N, 0);
+    for (int i = 0; i < n; i++) {
+      if (ev[i].ev == FE_FAROL_ACAO) { assert(ev[i].a == FAROL_A_ISOLAR_ADDON); acoes++; }
+      if (ev[i].ev == FE_FAROL_RESULTADO) assert(ev[i].a == FAROL_A_ISOLAR_ADDON && ev[i].b == 1);
+    }
+    assert(acoes == 1);                                // uma acao so no anel
+    assert(c_ilhaAcaoN == 1 && c_ilhaAcao.desfazer && !strcmp(c_ilhaAcao.titulo, "Torrentio"));
+    assert(!strcmp(c_ilhaAcao.onde, FT_ADDON_DE_LADO));
+    c_ilhaAcao.desfazer(c_ilhaAcao.ctx);               // o "Desfazer" da ilha
+    assert(!c_isolado(1) && addonstats_isolado_s(ch) == 0 && c_quarentenaGravada == 2);
+    // Ja ha 3 de lado (teto): o cartao nao promete isolar.
+    zerar();
+    c_lento = 1;
+    resolver_teste_fatos_farol(&fx);
+    assert(addonstats_isolar("x-1", 600) && addonstats_isolar("x-2", 600) && addonstats_isolar("x-3", 600));
+    resolver_abrir();
+    resolver_teste_testar(RES_S_TRAVA);
+    assert(resolver_teste_veredito() == FAROL_C_ADDON_LENTO);
+    assert(resolver_teste_prim() != FAROL_A_ISOLAR_ADDON);
+    // Oferecido, mas outro fio isolou antes do OK: recusa, testa de novo, sem registro.
+    zerar();
+    c_lento = 1;
+    resolver_teste_fatos_farol(&fx);
+    resolver_abrir();
+    resolver_teste_testar(RES_S_TRAVA);
+    assert(resolver_teste_prim() == FAROL_A_ISOLAR_ADDON);
+    assert(addons_chave_estatistica(2, ch) && addonstats_isolar(ch, 600));   // MediaFusion saiu
+    apertar_ok();
+    assert(c_envioChamadas == 0 && c_ilhaAcaoN == 0 && resolver_aberto());
+    assert(!c_isolado(1));                             // o ultimo de fontes ficou
+    assert(resolver_teste_prim() != FAROL_A_ISOLAR_ADDON);
+    (void)s;
+  }
+
+  // ------------------------------------------------------------ cenario 22
+  // Uma fonte so: isolar deixaria zero; o cartao cai no registro.
+  zerar();
+  c_lento = 1;
+  c_addon[2].forneceStream = 0;
+  memset(&fx, 0, sizeof fx);
+  farolregra_fatos_iniciar(&fx);
+  fx.plat = FP_WEBOS;
+  fx.addonsQtd = 2;
+  fx.addonsLentos = 1;
+  resolver_teste_fatos_farol(&fx);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_TRAVA);
+  assert(resolver_teste_veredito() == FAROL_C_ADDON_LENTO);
+  assert(resolver_teste_prim() == FAROL_A_ENVIAR_REGISTRO);
+  apertar_ok();
+  assert(c_envioChamadas >= 1 && !c_isolado(1) && c_ilhaAcaoN == 0);
+
+  // ----------------------------------------------------------- cenario 25
+  // FAROL34B (issue #34): REDE_NAO_CHEGA (erro FC_REDE recente, sem offline)
+  // -> prim "Reconectar a rede" -> PEDIU_FAROL -> app.c chama
+  // farolacao_rede_executar(RECONECTAR_REDE, 0). Prova o despacho de producao
+  // inteiro (o bloco extraido em farol_prod_bridge.inc).
+  zerar();
+  memset(&fx, 0, sizeof fx);
+  farolregra_fatos_iniciar(&fx);
+  fx.plat = FP_WEBOS;
+  fx.offline = 0;
+  fx.erro.classe = FC_REDE;
+  fx.erroIdadeS = 30;
+  resolver_teste_fatos_farol(&fx);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_REDE_NAO_CHEGA);
+  assert(resolver_teste_prim() == FAROL_A_RECONECTAR_REDE);
+  apertar_ok_app();                     // nao e celula longa: executa no KEYDOWN
+  assert(!resolver_aberto());
+  assert(c_farolExecN == 1);
+  assert(c_farolExecAcao == FAROL_A_RECONECTAR_REDE);
+  assert(c_farolExecPersistir == 0);
+
+  // ----------------------------------------------------------- cenario 26
+  // FAROL34B: PLAYER_PAROU com vazao suficiente -> prim "Buffer maior" ->
+  // executar(BUFFER_MAIOR, 0); secundario escala JUNTO = Mandar registro.
+  zerar();
+  memset(&fx, 0, sizeof fx);
+  farolregra_fatos_iniciar(&fx);
+  fx.plat = FP_WEBOS;
+  fx.erro.classe = FC_PARADO;
+  fx.erroIdadeS = 30;
+  fx.fonteMbps = 5;
+  fx.fonteGBx10 = 0;
+  fx.vazaoMbps = 5;
+  resolver_teste_fatos_farol(&fx);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_PLAYER_PAROU);
+  assert(resolver_teste_prim() == FAROL_A_BUFFER_MAIOR);
+  assert(resolver_teste_sec() == FAROL_A_ENVIAR_REGISTRO);
+  apertar_ok_app();
+  assert(!resolver_aberto());
+  assert(c_farolExecN == 1);
+  assert(c_farolExecAcao == FAROL_A_BUFFER_MAIOR);
+  assert(c_farolExecPersistir == 0);
+
+  // ----------------------------------------------------------- cenario 27
+  // FAROL34B: TV_FORMATO_REPETE sem player externo (webOS): a regra oferece
+  // FONTE_OUTRO_FORMATO (sem executor) e o cartao cai na ALTERNATIVA
+  // LIMPAR_CACHE — que executa, nao vai mais para o envio de registro.
+  zerar();
+  memset(&fx, 0, sizeof fx);
+  farolregra_fatos_iniciar(&fx);
+  fx.plat = FP_WEBOS;
+  fx.erro.classe = FC_FORMATO;
+  fx.erroIdadeS = 30;
+  fx.falhasSeguidas = 2;
+  resolver_teste_fatos_farol(&fx);
+  resolver_abrir();
+  resolver_teste_testar(RES_S_NAO_COMECA);
+  assert(resolver_teste_veredito() == FAROL_C_TV_FORMATO_REPETE);
+  assert(resolver_teste_prim() == FAROL_A_LIMPAR_CACHE);
+  apertar_ok_app();
+  assert(!resolver_aberto());
+  assert(c_farolExecN == 1);
+  assert(c_farolExecAcao == FAROL_A_LIMPAR_CACHE);
+  assert(c_farolExecPersistir == 0);
+
+  // ----------------------------------------------------------- cenario 28
+  // FAROL34B: segurar OK em "Desligar o HDR" sobe a dica da versao duravel
+  // e o KEYUP depois do vencido executa persistir=1 ("sempre nesta TV").
+  // O toque do cenario 3 provou persistir=0.
+  zerar();
+  memset(&fx, 0, sizeof fx);
+  farolregra_fatos_iniciar(&fx);
+  fx.plat = FP_WEBOS;
+  fx.fonteDv = 1;
+  fx.tvDv = 0;
+  resolver_teste_fatos_farol(&fx);
+  resolver_abrir();
+  resolver_teste_testar(FAROL_S_CORES);
+  assert(resolver_teste_veredito() == FAROL_C_IMAGEM_DV);
+  assert(resolver_teste_prim() == FAROL_A_DESLIGAR_HDR);
+  comTicksZero = 1;
+  apertar_ok();                          // KEYDOWN: arma com SDL_GetTicks()==0
+  comTicksZero = 0;
+  assert(resolver_aberto());
+  resolver_atualizar(0.016f, SDL_GetTicks() + NV_HOLD_MS + 16);
+  assert(c_ilhaAtvN >= 1);
+  assert(strstr(c_ilhaAtvTxt, "sempre") != NULL);
+  soltar_ok();                           // KEYUP depois do vencido: duravel
+  assert(resolver_pedido() == RESOLVER_PEDIU_FAROL);
+  assert(resolver_pedido_acao() == FAROL_A_DESLIGAR_HDR);
+  assert(resolver_pedido_persistir() == 1);
+  assert(!resolver_aberto());
+
   puts("farol_resolver: producao ok");
   return 0;
 }
+#endif

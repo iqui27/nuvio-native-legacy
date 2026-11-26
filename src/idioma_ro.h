@@ -2559,6 +2559,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "De la 4 la 8 numere. Protejează setările acestui profil pe acest televizor."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "Între 4 și 8 cifre. Valabil doar pe acest TV; protejează setările celorlalte profiluri."),
   T("De 50% a 300% do tamanho principal", "De la 50% la 300% din dimensiunea principală"),
+  T("De lado até amanhã", "Pus deoparte până mâine"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "De unde ia vitrina titlurile: tot catalogul, sau doar ce e în lista ta și în Continuă vizionarea."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "De unde ia vitrina titlurile: catalogul sau lista ta."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "De unde poate porni redarea automată: toate sursele, doar add-on-urile instalate sau doar pluginurile activate. Se salvează în profil."),

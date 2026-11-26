@@ -47,6 +47,7 @@ void ctx_desktop_ancorar(float x,float y) { desktopX=x;desktopY=y; }
 int ctx_desktop_pedido(int *action) { int i=desktopIndex;desktopIndex=-1;*action=desktopAction;return i; }
 #endif
 #include "ctxinfo.h"
+#include "faroltexto.h"
 #include "rewatch.h"
 #include "rewatchui.h"
 #include <pthread.h>
@@ -62,6 +63,23 @@ int ctx_desktop_pedido(int *action) { int i=desktopIndex;desktopIndex=-1;*action
 // Optional imports belong to consumers: public declarations keep producers strong.
 extern int tirarremoto_capturar(TirarRemotoPedido *, const char *) NV_PERFIL_OPCIONAL;
 extern void tirarremoto_executar_pedido(const TirarRemotoPedido *, const char *, int) NV_PERFIL_OPCIONAL;
+extern int  farolsinal_recomendar(void) NV_PERFIL_OPCIONAL;
+extern void farolsinal_mais_assim(const CatItem *ci) NV_PERFIL_OPCIONAL;
+extern void farolsinal_recusar(const CatItem *ci) NV_PERFIL_OPCIONAL;
+extern void farolsinal_desfazer_recusa(const CatItem *ci) NV_PERFIL_OPCIONAL;
+extern int  farol_recusar_titulo(const char *imdb) NV_PERFIL_OPCIONAL;
+extern int  farol_restaurar_titulo(const char *imdb) NV_PERFIL_OPCIONAL;
+extern int  farolcompara_abrir_titulos(const int *catIndices, int n,
+                                       const int32_t *pontos, int tempoMin) NV_PERFIL_OPCIONAL;
+extern int  perfil_ajustes_travados(int idx) NV_PERFIL_OPCIONAL;
+
+static void desfazerNaoEParaMim(const void *p) {
+  const CatItem *item = p;
+  if (!item || !item->imdb[0]) return;
+  if (perfil_ajustes_travados && perfil_ajustes_travados(perfis_ativo())) return;
+  if (farolsinal_desfazer_recusa) farolsinal_desfazer_recusa(item);
+  if (farol_restaurar_titulo) farol_restaurar_titulo(item->imdb);
+}
 
 // Mantem o header publico de Trakt estavel: estas leituras sao o contrato
 // interno entre a modal e as escritas assincronas do proprio port.
@@ -263,19 +281,31 @@ static int observarHold(void *u, SDL_Event *e) {
 // era exatamente o que deixava o Destaque 4:3 e a faixa com titulo de fora do
 // menu. Agora elas moram em estLin[FIL_TIPO_N], do tamanho do enum.
 #ifdef NV_DESKTOP_UI
-#define CTX_MAX 16
+#define CTX_MAX 20
 #else
-#define CTX_MAX 10
+#define CTX_MAX 16
 #endif
 static struct { const char *rot; int acao; } ops[CTX_MAX];
 static int nOps;
 static float focoAnim[CTX_MAX];
 static int holdObservador;
 enum { OP_LISTA = 1, OP_ASSISTIDO, OP_TIRAR_CONTINUAR, OP_RECOMENDAR, OP_DISPENSAR,
+       OP_MAIS_ASSIM, OP_NAO_E_PARA_MIM, OP_COMPARAR_COM,
        OP_ESTILO, OP_CATEGORIA, OP_DETALHES, OP_L_ABRIR, OP_L_FIXAR, OP_L_HOME,
        OP_F_MENU, OP_F_FIXAR, OP_F_SUBIR, OP_F_DESCER, OP_F_OCULTAR, OP_F_VISTOS, OP_F_ORDEM,
        OP_ADD_LISTA, OP_REWATCH, OP_TRAVA, OP_DESKTOP_PLAY, OP_DESKTOP_TRAILER, OP_DESKTOP_COPY, OP_PICK_LISTA = 50,   // OP_PICK_LISTA + k = a k-esima lista da pessoa
        OP_EXTRA = 100 };   // OP_EXTRA + k = extras[k] (modo social)
+#define CTX_CMP_MAX 3
+static struct { int catIdx; char imdb[64]; } cmpSel[CTX_CMP_MAX];
+static int nCmpSel, cmpPerfil = -1;
+int ctx_comparar_contar(void) {
+  int p = perfis_ativo();
+  if (cmpPerfil != p) { nCmpSel = 0; memset(cmpSel, 0, sizeof cmpSel); cmpPerfil = p; }
+  return nCmpSel;
+}
+void ctx_comparar_limpar(void) {
+  nCmpSel = 0; memset(cmpSel, 0, sizeof cmpSel); cmpPerfil = -1;
+}
 // "Mover para categoria" pedido no modo painel: o IMDb do titulo, consumido
 // uma vez pelo painel (ctx_pediu_categoria), que abre a escolha dele.
 static char pedCategoriaImdb[24];
@@ -600,6 +630,14 @@ static void montar(void) {
   // antiga nunca o oferecia; sem a opcao ele nao saia da fileira.
   if (!doPainel && !ci->rewatch && (ci->progresso > 0 || itemASeguir(ci)) && ci->imdb[0]) {
     juntar("Tirar de Continuar assistindo", OP_TIRAR_CONTINUAR);
+  }
+  if (!doPainel && ci->imdb[0] &&
+      (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series"))) {
+    if (farolsinal_recomendar && farolsinal_recomendar()) {
+      juntar(FT_MAIS_ASSIM, OP_MAIS_ASSIM);
+      juntar(FT_NAO_E_PARA_MIM, OP_NAO_E_PARA_MIM);
+    }
+    juntar(FT_COMPARAR_COM, OP_COMPARAR_COM);
   }
   // SO EXISTE SE O PACOTE TEM O SERVICO. Sem NUVIO_REC_URL compilada,
   // recomenda_ativo() e 0 e esta linha nunca aparece — o dono publica builds
@@ -1285,6 +1323,77 @@ static void aplicar(void) {
         a.titulo = tit;
         a.tipo = ILHA_INFO;
         ilhaacao_feita(&a); }
+      aberto = 0;
+      pagina = 0;
+      break;
+    }
+    case OP_MAIS_ASSIM: {
+      if (perfil_ajustes_travados && perfil_ajustes_travados(perfis_ativo())) break;
+      if (!(farolsinal_recomendar && farolsinal_recomendar())) break;
+      {
+        CatItem item = *ci;
+        if (farolsinal_mais_assim) farolsinal_mais_assim(&item);
+      }
+      ilha_avisar("farol-gosto", ILHA_OK, "check", i18n(FT_ANOTADO), 4000u, 0);
+      aberto = 0;
+      pagina = 0;
+      break;
+    }
+    case OP_NAO_E_PARA_MIM: {
+      static CatItem recusaUndo;
+      IlhaAcao a;
+      if (perfil_ajustes_travados && perfil_ajustes_travados(perfis_ativo())) break;
+      if (!(farolsinal_recomendar && farolsinal_recomendar())) break;
+      recusaUndo = *ci;
+      if (farolsinal_recusar) farolsinal_recusar(&recusaUndo);
+      if (farol_recusar_titulo) farol_recusar_titulo(recusaUndo.imdb);
+      memset(&a, 0, sizeof a);
+      a.icone = "aj_x";
+      a.frase = i18n(FT_NAO_MOSTRO_MAIS);
+      a.titulo = recusaUndo.titulo;
+      a.thumb = recusaUndo.poster;
+      a.arte = recusaUndo.backdrop;
+      a.tipo = ILHA_INFO;
+      a.desfazer = desfazerNaoEParaMim;
+      a.ctx = &recusaUndo;
+      a.ctxN = sizeof recusaUndo;
+      ilhaacao_feita(&a);
+      aberto = 0;
+      pagina = 0;
+      break;
+    }
+    case OP_COMPARAR_COM: {
+      int pAt = perfis_ativo(), ja = 0, i;
+      if (cmpPerfil != pAt) { nCmpSel = 0; memset(cmpSel, 0, sizeof cmpSel); cmpPerfil = pAt; }
+      for (i = 0; i < nCmpSel; i++) {
+        if (!strcmp(cmpSel[i].imdb, ci->imdb)) {
+          cmpSel[i].catIdx = atual;
+          ja = 1;
+          break;
+        }
+      }
+      if (!ja) {
+        if (nCmpSel >= CTX_CMP_MAX) { nCmpSel = 0; memset(cmpSel, 0, sizeof cmpSel); }
+        cmpSel[nCmpSel].catIdx = atual;
+        snprintf(cmpSel[nCmpSel].imdb, sizeof cmpSel[nCmpSel].imdb, "%s", ci->imdb);
+        nCmpSel++;
+      }
+      if (nCmpSel >= 2 && farolcompara_abrir_titulos) {
+        int idxs[CTX_CMP_MAX], ni = 0;
+        for (i = 0; i < nCmpSel; i++) {
+          int ciIdx = cat_indice_por_imdb(cmpSel[i].imdb);
+          if (ciIdx < 0) ciIdx = cmpSel[i].catIdx;
+          if (ciIdx >= 0) {
+            int dup = 0, j;
+            for (j = 0; j < ni; j++) if (idxs[j] == ciIdx) { dup = 1; break; }
+            if (!dup) idxs[ni++] = ciIdx;
+          }
+        }
+        if (ni >= 2) farolcompara_abrir_titulos(idxs, ni, NULL, 0);
+      } else {
+        ilha_avisar("farol-compara", ILHA_INFO, "aj_scale",
+                    i18n(FT_COMPARAR_COM), 4000u, 0);
+      }
       aberto = 0;
       pagina = 0;
       break;
@@ -2660,6 +2769,9 @@ static void ctx_desenharCorpo_(Uint32 agora) {
       case OP_ASSISTIDO: icone = historicoDe(ci) == 1
                                  ? "aj_eye-off" : "aj_eye"; break;
       case OP_TIRAR_CONTINUAR: icone = "aj_x"; break;
+      case OP_MAIS_ASSIM:      icone = "aj_thumbs-up"; break;
+      case OP_NAO_E_PARA_MIM:  icone = "aj_x"; break;
+      case OP_COMPARAR_COM:    icone = "aj_scale"; break;
       case OP_DISPENSAR:  icone = "aj_x"; break;
       case OP_RECOMENDAR: icone = "aj_users"; break;
       case OP_REWATCH: icone = "aj_rotate-ccw-clock"; break;
@@ -2707,6 +2819,7 @@ void ctx_abrir_sessao(void) {
   pedCategoriaImdb[0] = 0;
   detalhesOk = detalhesPend = deOutraTela = 0;
   dispensarPend = dispensarOp = 0;
+  ctx_comparar_limpar();
   filChave[0] = filTitulo[0] = 0;
   nOps = 0;
   memset(ops, 0, sizeof ops);

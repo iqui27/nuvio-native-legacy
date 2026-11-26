@@ -55,6 +55,12 @@ int  faixas_legenda_overlay(void);
 const char *faixas_legenda_externa_id(void);
 // Choose the primary: embedded track `i` (-1 = off) / an addon entry COPY.
 void faixas_escolher_embutida(int i);
+// Farol #16: "ha outra faixa de audio que esta TV toca?" Indice da faixa que
+// o player oferece e a TV toca (se a atual e DTS, uma nao-DTS), ou -1.
+int  faixas_audio_compativel(void);
+// Troca para ela do mesmo jeito que a folha de faixas (memoria do perfil
+// inclusa). 1 = trocou; 0 = sem faixa ou canal ao vivo.
+int  faixas_audio_trocar_compativel(void);
 void faixas_escolher_externa(const Legenda *copia);
 // The ASS/collector state label of embedded track `i` (NULL = nothing to say).
 const char *faixas_legenda_marca(int i);

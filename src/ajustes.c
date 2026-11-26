@@ -76,6 +76,26 @@
 #include "discord.h"
 #include "farolsinal.h"
 #include "farol.h"       // farol_remover_fileiras antes de sessao_sair (45)
+#include "faroltexto.h"
+#if defined(__APPLE__) && (defined(__GNUC__) || defined(__clang__))
+extern void farolilha_definir_ativo(int ligado) __attribute__((weak_import));
+extern void farolgostoui_abrir_aprendeu(void) __attribute__((weak_import));
+extern void farolgostoui_abrir_zerar(void) __attribute__((weak_import));
+extern int  farolgostoui_llm_ativo(void) __attribute__((weak_import));
+extern int  farolgostoui_llm_definir(int ligado) __attribute__((weak_import));
+#elif defined(__GNUC__) || defined(__clang__)
+extern void farolilha_definir_ativo(int ligado) __attribute__((weak));
+extern void farolgostoui_abrir_aprendeu(void) __attribute__((weak));
+extern void farolgostoui_abrir_zerar(void) __attribute__((weak));
+extern int  farolgostoui_llm_ativo(void) __attribute__((weak));
+extern int  farolgostoui_llm_definir(int ligado) __attribute__((weak));
+#else
+void farolilha_definir_ativo(int ligado);
+void farolgostoui_abrir_aprendeu(void);
+void farolgostoui_abrir_zerar(void);
+int  farolgostoui_llm_ativo(void);
+int  farolgostoui_llm_definir(int ligado);
+#endif
 #include "diarionuvem.h"
 #include "simkl.h"
 #include "trakt.h"
@@ -854,6 +874,17 @@ typedef enum {
   // .tpk (PR 734 etapa D): motor novo de legenda ASS (libass NEON) ligado de
   // fabrica; Desligado volta ao motor de antes de 23/10. LOCAL, append-only.
   AJ_ASS_MOTOR,
+  // FAROL (#27): "Avisos do Farol" em Ajustes › Sobre e ajuda.
+  // 1 (padrao) = Ligado; 0 = So quando eu abrir. LOCAL, append-only.
+  AJ_FAROL_AVISOS,
+  // FAROL (#23): entrada manual "Farol" em Ajustes › Sobre e ajuda.
+  // Acao, append-only.
+  AJ_FAROL,
+  // FAROL (#51): configuracoes do gosto em Ajustes › Sobre e ajuda. Append-only.
+  AJ_FAROL_RECOMENDAR,
+  AJ_FAROL_APRENDEU,
+  AJ_FAROL_ZERAR,
+  AJ_FAROL_LLM_SO_ESTA_TV,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -910,6 +941,7 @@ static const char *V_EXT_CACHE[] = { "Mostrar apagadas", "Ocultar" };
 static const char *V_EXT_PASSO[] = { "10 ms", "50 ms", "100 ms" };
 static const char *V_EXT_MODO[] = { "Arquivo inteiro", "Só áudio" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+static const char *V_FAROL_AVISOS[] = { "Só quando eu abrir", "Ligado" };
 static const char *V_SOURCE_BADGE_POSITION[] = { "No topo", "Embaixo" };
 static const char *V_GUIA_INICIO[] = { "Ao destacar", "Ao selecionar" };
 static const char *V_GUIA_DIAS[] = { "Um dia", "Três dias", "Sete dias" };
@@ -2105,6 +2137,12 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Evitar legendas SDH", V_LIGA, 2),                    // local: legendaEvitarSdhLocal (#743)
   ESC("Tarjas pretas no player", V_LIGA, 2),                 // local: barrasPretasLocal (#768)
   ESC("Motor de legendas ASS", V_LIGA, 2),                   // local: assMotorNovoLocal (.tpk, PR 734)
+  ESC("Avisos do Farol", V_FAROL_AVISOS, 2),                 // local: farolAvisosLocal (#27)
+  ACAO(FT_NOME),                                             // acao: abre o Farol (#23)
+  ESC(FT_GOSTO_RECOMENDAR, V_LIGA, 2),                       // local/farolsinal: Recomendar nesta TV (#51)
+  ACAO(FT_GOSTO_APRENDEU),                                   // acao: O que o Farol aprendeu (#51)
+  ACAO(FT_GOSTO_ZERAR),                                      // acao: Zerar o gosto (#51)
+  ESC(FT_GOSTO_LLM_SO_ESTA_TV, V_LIGA, 2),                   // local/farolconsent: So nesta TV (#51)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2495,6 +2533,12 @@ static const char *CHAVE[] = {
   "legendaEvitarSdhLocal",
   "barrasPretasLocal",
   "assMotorNovoLocal",
+  "farolAvisosLocal",
+  "-farol",
+  "-farolRecomendar",
+  "-farolAprendeu",
+  "-farolZerar",
+  "-farolLlmSoEstaTv",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3295,7 +3339,33 @@ int ajustes_1080p(void)               { return valor[AJ_RESOLUCAO] == RES_1080 &
 int ajustes_4k(void)                  { return valor[AJ_RESOLUCAO] == RES_4K && !SEGURO; }
 int ajustes_res_auto(void)            { return valor[AJ_RESOLUCAO] == RES_AUTO && !SEGURO; }
 int ajustes_720p(void)                { return valor[AJ_RESOLUCAO] == RES_720 && !SEGURO; }
-int ajustes_dolby_vision(void)        { return lig(AJ_DV); }
+// FAROL (#34): overrides SO DESTA REPRODUCAO, em memoria — nunca gravam. O
+// Farol liga ao pedir "Buffer maior" / "Desligar o HDR" e desliga ao encerrar a
+// reproducao. As telas de Ajustes leem valor[] direto, entao seguem mostrando o
+// que a pessoa escolheu.
+static int farolBufferMaior, farolHdrOff;
+static void riscoNotar(int op, int antes);
+void ajustes_farol_buffer_maior(int on) { __atomic_store_n(&farolBufferMaior, on ? 1 : 0, __ATOMIC_RELEASE); }
+int  ajustes_farol_buffer_maior_ativo(void) { return __atomic_load_n(&farolBufferMaior, __ATOMIC_ACQUIRE); }
+void ajustes_farol_hdr_off(int on) { __atomic_store_n(&farolHdrOff, on ? 1 : 0, __ATOMIC_RELEASE); }
+int  ajustes_farol_hdr_off_ativo(void) { return __atomic_load_n(&farolHdrOff, __ATOMIC_ACQUIRE); }
+// O ajuste GRAVADO, sem o override (e o que o Desfazer devolve).
+int  ajustes_dolby_vision_gravado(void) { return lig(AJ_DV); }
+// "Desligar o HDR sempre nesta TV": grava a preferencia (com Desfazer na ilha).
+// Retorna -1 quando o disco nao confirmou: o chamador do Farol avisa em vez de
+// prometer um "sempre" que o proximo arranque esqueceria (FAROL34B, P2).
+int ajustes_dolby_vision_definir(int ligado) {
+  int a = valor[AJ_DV], ok = 0;
+  valor[AJ_DV] = ligado ? 0 : 1;
+  if (valor[AJ_DV] == a) return 0;
+  AJ_COM_ORIGEM(AJLOG_CENTRAL, ok = gravar());
+  // Disco nao confirmou: em memoria o ajuste volta ao valor gravado de
+  // verdade — o leitor nao pode ver um "ligado/desligado" que nao existe.
+  if (!ok) valor[AJ_DV] = a;
+  riscoNotar(AJ_DV, a);
+  return ok ? 0 : -1;
+}
+int ajustes_dolby_vision(void)        { return lig(AJ_DV) && !ajustes_farol_hdr_off_ativo(); }
 int ajustes_dolby_atmos(void)         { return lig(AJ_ATMOS); }
 int ajustes_pausa_overlay(void)       { return lig(AJ_PAUSA_OVERLAY); }
 int ajustes_pausa_comentarios(void)   { return lig(AJ_PAUSA_COMENTARIOS); }
@@ -3696,6 +3766,33 @@ static void assMotorPublicar(void) {
   __atomic_store_n(&assMotorEspelho, lig(AJ_ASS_MOTOR), __ATOMIC_RELEASE);
 }
 int ajustes_ass_motor(void) { return __atomic_load_n(&assMotorEspelho, __ATOMIC_ACQUIRE); }
+static void farolAvisosPublicar(void) {
+  if (farolilha_definir_ativo) farolilha_definir_ativo(ajustes_farol_avisos());
+}
+static void farolGostoEspelhar(void) {
+  valor[AJ_FAROL_RECOMENDAR] = farolsinal_recomendar() ? 0 : 1;
+  valor[AJ_FAROL_LLM_SO_ESTA_TV] = (farolgostoui_llm_ativo && farolgostoui_llm_ativo()) ? 1 : 0;
+}
+int ajustes_farol_avisos(void) { return valor[AJ_FAROL_AVISOS] != 0; }
+void ajustes_farol_avisos_definir(int ligado) {
+  int v = ligado ? 1 : 0;
+  if (valor[AJ_FAROL_AVISOS] != v) {
+    valor[AJ_FAROL_AVISOS] = v;
+    AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar());
+  }
+  farolAvisosPublicar();
+}
+int ajustes_farol_recomendar(void) {
+  return farolsinal_recomendar();
+}
+void ajustes_farol_recomendar_definir(int ligado) {
+  if (perfil_ajustes_travados(perfis_ativo())) { farolGostoEspelhar(); return; }
+  farol_recomendar_definir(ligado ? 1 : 0, NULL);
+  farolGostoEspelhar();
+}
+int ajustes_farol_llm_ativo(void) {
+  return farolgostoui_llm_ativo ? farolgostoui_llm_ativo() : 0;
+}
 // #338: -1 = lembrar o ultimo tamanho; 0..2 = Completo, Compacto, Minimo.
 int ajustes_estat_tamanho(void) {
   int v = valor[AJ_ESTAT_TAMANHO];
@@ -3787,7 +3884,10 @@ int ajustes_player_externo(int anime) {
 const char *ajustes_player_pacote(int anime) { return ppPkg[anime ? 1 : 0]; }
 int ajustes_buffer_preset(void) {
   int v = valor[AJ_BUFFER];
-  return v >= 0 && v < 4 ? v : 0;
+  v = v >= 0 && v < 4 ? v : 0;
+  // Farol (#34): "Buffer maior" so desta reproducao = o degrau de 256 MiB, que
+  // cacheboost_buffer_mb ainda reduz pela RAM livre. O gravado nao muda.
+  return ajustes_farol_buffer_maior_ativo() ? 3 : v;
 }
 static int bufferConexoes(int op, int padrao) { return valor[op] >= 0 && valor[op] < 4 ? valor[op] + 1 : padrao; }
 int ajustes_buffer_native_connections(void) { return bufferConexoes(AJ_BUFFER_NATIVE_CONNECTIONS, 1); }
@@ -4388,8 +4488,19 @@ int ajustes_dts_tpk_modo(void) {
   return DTSTPK_DESLIGADO;
 #endif
 }
-int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
-int ajustes_dv7(void) { return lig(AJ_DV7); }
+// Farol #16 (CONVERTER_AUDIO): o valor CRU de AJ_DTS_AC3 para o par fazer/desfazer
+// devolver exatamente o que estava. .tpk: 0 desligado, 1 5.1, 2 Estereo AAC
+// (os dois sao HLS); LG: 0 original, 1 AAC, 2 AC3, 3 desligado. Fora do
+// intervalo da build, nao grava.
+int ajustes_dts_valor(void) { return valor[AJ_DTS_AC3]; }
+void ajustes_dts_definir(int v) {
+  const int maximo = N_DTS_SAIDA - 1;   // .tpk: 2; LG: 3
+  if (v < 0 || v > maximo || valor[AJ_DTS_AC3] == v) return;
+  valor[AJ_DTS_AC3] = v;
+  AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar());
+}
+int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV) && !ajustes_farol_hdr_off_ativo(); }
+int ajustes_dv7(void) { return lig(AJ_DV7) && !ajustes_farol_hdr_off_ativo(); }
 int ajustes_dv7_mapping(void) { return lig(AJ_DV7_MAPPING); }
 int ajustes_mp4_bd_test(void) {
 #if defined(NV_WEBOS) && defined(NV_DV7_CONVERSION) && defined(NV_MP4_BD_TEST) && !defined(NV_TPK) && !defined(NV_ANDROID)
@@ -5512,6 +5623,8 @@ void ajustes_dir(const char *dir) {
     legenda2_atualizar_offset_manual(ajustes_leg2_atraso());
     ajSombraSync();
     assMotorPublicar();
+    farolAvisosPublicar();
+    farolGostoEspelhar();
     return;
   }
   { int viuIdioma = 0, viuAuto = 0, idiomaGravado = IDIOMA_EN, autoGravado = 0;
@@ -5910,6 +6023,8 @@ void ajustes_dir(const char *dir) {
   previaAplicar();
   ajSombraSync();   // o que veio do disco nao e mudanca de ninguem
   assMotorPublicar();   // o espelho do motor ASS reflete o arquivo inteiro lido
+  farolAvisosPublicar();
+  farolGostoEspelhar();
 }
 
 static int gravar(void) {
@@ -6979,6 +7094,7 @@ static int soNaTv(int op) {
     case AJ_SELOS_PACOTE: case AJ_SELOS_PACOTE_ADD: case AJ_SELOS_PACOTE_REM:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL:
     case AJ_LOG_REDE: case AJ_DIAGNOSTICS_QR:
+    case AJ_FAROL_AVISOS:
       return 1;
     default:
       return 0;
@@ -7668,6 +7784,7 @@ int ajustes_iniciar(void) {
   pfEntrada();
   ajMovReiniciar();screenReveal=0;screenRoute=-1;navigationBackFocus=0;
   faRetornarFolha = 0; faAddonEditar[0] = 0; ajFalhaEspelhar(); ajLegendaEspelhar(); ajIptvEspelhar();
+  farolGostoEspelhar();
   uxVeioBusca = uxAbrirOp >= 0;
   montarTela();
   conferirTela();
@@ -8408,6 +8525,10 @@ static int inativa(int op) {
     case AJ_ADDON_POSTER:  return valor[AJ_POSTER_PROV] == PP_DESLIGADO;
     // A unica troca do logo do addon e a "Arte localizada" do TMDB.
     case AJ_ADDON_LOGO:    return !ajustes_tmdb_ligado() || !ajustes_tmdb_arte();
+    case AJ_FAROL_RECOMENDAR: case AJ_FAROL_ZERAR:
+      return perfil_ajustes_travados(perfis_ativo());
+    case AJ_FAROL_LLM_SO_ESTA_TV:
+      return perfil_infantil_ativo() || perfil_ajustes_travados(perfis_ativo());
     default: return 0;
   }
 }
@@ -9079,6 +9200,12 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_MEDIDOR: return "Mostra quadros por segundo, o pior quadro e a memória dentro da ilha do relógio, atualizados a cada 3 s. Mínimo fica na linha da hora, Menor ganha uma segunda linha e Grande abre o painel completo. Quando a ilha mostra um aviso, o medidor se recolhe e volta depois.";
     case AJ_AVISO_LEGAL: return "Aviso legal";
     case AJ_GUIA: return "O que o Nuvio faz, em 12 capítulos. Cada recurso diz onde fica e tem um atalho para ele.";
+    case AJ_FAROL: return "O que fazer quando algo não funciona, com o ajuste que resolve.";
+    case AJ_FAROL_AVISOS: return "O Farol avisa quando o vídeo falha e confirma o conserto.";
+    case AJ_FAROL_RECOMENDAR: return "Mostra fileiras e motivos personalizados para este perfil nesta TV. Desligar tira as fileiras na hora e para de registrar sinais.";
+    case AJ_FAROL_APRENDEU: return "Mostra os gêneros, pessoas e temas que o Farol identificou como favoritos deste perfil.";
+    case AJ_FAROL_ZERAR: return "Apaga o que o Farol aprendeu e as pendências deste perfil nesta TV.";
+    case AJ_FAROL_LLM_SO_ESTA_TV: return "Ligado por padrão: tudo do gosto fica só nesta TV. Desligar permite usar o servidor com consentimento (indisponível no perfil infantil).";
     case AJ_DICASCONTROLE: return "Dicas do controle";
     case AJ_NOVIDADES20: return "O tour do que mudou na 2.0, capítulo por capítulo, com o que vale neste aparelho. Abre do começo.";
     case AJ_APOIAR: return "Se o Nuvio te ajuda e você quiser apoiar quem faz o app, aponte a câmera do celular para um dos códigos. É opcional: nada muda no app.";
@@ -10813,6 +10940,21 @@ static int definirValorDireto(int op, int novo) {
     valor[op] = diarionuvem_ligado() ? 0 : 1;
     return 1;
   }
+  if (op == AJ_FAROL_RECOMENDAR) {
+    if (perfil_ajustes_travados(perfis_ativo())) { farolGostoEspelhar(); return 0; }
+    farol_recomendar_definir(novo == 0, NULL);
+    farolGostoEspelhar();
+    return 1;
+  }
+  if (op == AJ_FAROL_LLM_SO_ESTA_TV) {
+    if (perfil_infantil_ativo() || perfil_ajustes_travados(perfis_ativo())) {
+      farolGostoEspelhar();
+      return 0;
+    }
+    if (farolgostoui_llm_definir) farolgostoui_llm_definir(novo == 1);
+    farolGostoEspelhar();
+    return 1;
+  }
   antes = valor[op];
   if (novo == antes && !(op == AJ_LEG2_POS && posicaoAntes != 0) &&
       (op != AJ_TEX_MB || memoriaEscolhida) && (op != AJ_SALVOS_DEST || bibliotecaFonteEscolhida)) return 1;
@@ -10821,10 +10963,12 @@ static int definirValorDireto(int op, int novo) {
   if (op == AJ_SALVOS_DEST) bibliotecaFonteEscolhida = 1;
   valor[op] = novo;
   if (op == AJ_ASS_MOTOR) assMotorPublicar();
+  if (op == AJ_FAROL_AVISOS) farolAvisosPublicar();
   if (novo == 0) notaLigarPar(op);
   { int ok; ajOrigem = ajOrigemDireto; ok = gravar(); ajOrigem = 0;
     if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes;
       if (op == AJ_ASS_MOTOR) assMotorPublicar();
+      if (op == AJ_FAROL_AVISOS) farolAvisosPublicar();
       return 0; } }
   if ((op == AJ_DV_MKV || op == AJ_DV7 || op == AJ_DV7_MAPPING) && antes != 0 && novo == 0) video_dv_guard_reiniciar();
   if (op == AJ_LIVETV_SUGERIR) guia_sugestoes_mudaram();
@@ -11058,6 +11202,17 @@ static void eventoTela(const SDL_Event *e) {
     }
 #endif
     if (focoOp == AJ_GUIA) { guiaAbrir(0); return; }
+    if (focoOp == AJ_FAROL) { resolver_abrir(); return; }
+    if (focoOp == AJ_FAROL_APRENDEU) {
+      if (farolgostoui_abrir_aprendeu) farolgostoui_abrir_aprendeu();
+      return;
+    }
+    if (focoOp == AJ_FAROL_ZERAR) {
+      if (!inativa(focoOp) && !perfil_ajustes_travados(perfis_ativo()) &&
+          farolgostoui_abrir_zerar)
+        farolgostoui_abrir_zerar();
+      return;
+    }
     if (focoOp == AJ_DICASCONTROLE) { pediuDicasControle = 1; return; }
     if (focoOp == AJ_NOVIDADES20) { pediuNovidades20 = 1; return; }
     if (focoOp == AJ_APOIAR) { apoioAbrir(); return; }
@@ -12131,7 +12286,9 @@ static AjPreview familiaPreviaOpcao(int op) {
       return AJPV_CONTA;
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL: case AJ_DIARIO_NUVEM:
       return AJPV_RASTREIO;
-    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
+    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_FAROL: case AJ_FAROL_AVISOS:
+    case AJ_FAROL_RECOMENDAR: case AJ_FAROL_APRENDEU: case AJ_FAROL_ZERAR: case AJ_FAROL_LLM_SO_ESTA_TV:
+    case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
     case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE: case AJ_DIAGNOSTICS_QR:
 #ifdef NV_ANDROID
     case AJ_BAIXAR_REGISTRO:

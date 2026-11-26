@@ -39,10 +39,10 @@ static void t2_montar_corpo_privacidade(void) {
   FarolBuscaCtx ctx;
   size_t n;
 
-  // Perfil privado: APENAS {"frase":"..."} — mesmo se todos os outros campos vierem cheios.
+  // Perfil privado (adulto): APENAS {"frase":"..."} — mesmo se outros campos vierem cheios.
   memset(&ctx, 0, sizeof ctx);
   ctx.privado = 1;
-  ctx.infantil = 1;
+  ctx.infantil = 0;
   ctx.consentiu = 1;
   ctx.idioma = "pt-BR";
   ctx.generos = gens; ctx.nGeneros = 5;
@@ -51,6 +51,14 @@ static void t2_montar_corpo_privacidade(void) {
   n = farolbusca_montar_corpo("um \"suspense\" curto\\hoje", &ctx, buf, sizeof buf);
   assert(n > 0);
   assert(!strcmp(buf, "{\"frase\":\"um \\\"suspense\\\" curto\\\\hoje\"}"));
+
+  // R3: Perfil privado + infantil envia infantil:1 e consentiu:0 explicito, sem pessoal.
+  ctx.privado = 1;
+  ctx.infantil = 1;
+  ctx.consentiu = 1;
+  n = farolbusca_montar_corpo("desenho privado", &ctx, buf, sizeof buf);
+  assert(n > 0);
+  assert(!strcmp(buf, "{\"frase\":\"desenho privado\",\"infantil\":1,\"consentiu\":0}"));
 
   // Sem contexto: consentiu:0 explicito.
   n = farolbusca_montar_corpo("algo leve", NULL, buf, sizeof buf);

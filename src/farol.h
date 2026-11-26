@@ -23,6 +23,8 @@
 #ifndef NV_FAROL_H
 #define NV_FAROL_H
 #include "catalogo.h"          // CatItem, CatFileira, CAT_PREFIXO_FAROL
+#include "farolregra.h"        // FarolFatos, FarolVeredito
+#include "farolanel.h"         // FarolEvento, FAROL_ANEL_N
 
 // Itens que a Home ganha no lote numa volta: 2 fileiras x ate 12 cartazes.
 #define FAROL_HOME_ITENS 24
@@ -79,14 +81,66 @@ unsigned farol_selo(void);
 // atual antes de registrar a preferencia — ligar nao toca no catalogo.
 void farol_recomendar_definir(int ligado, const char *dirArte);
 
-// Esquece so a cena adotada (o catalogo ja foi tratado por quem chamou).
-// Troca de conta/perfil usa isto: a cena do perfil anterior nao pode vazar
-// para a Home do proximo.
+// "Nao e para mim": tira `imdb` de todas as pecas do Farol na hora (cena
+// adotada + fileiras farol_* no catalogo) e guarda retrato para Desfazer.
+int  farol_recusar_titulo(const char *imdb);
+int  farol_restaurar_titulo(const char *imdb);
+
+// Top `max` nomes do gosto ativo para uma dimensao (FG_DIM_GENERO,
+// FG_DIM_PESSOA ou FG_DIM_TEMA), ja traduzidos/resolvidos (sem id cru).
+int  farol_gosto_top(int dim, char (*nomes)[64], int max);
+
+// Esquece so a cena adotada e o estado diagnostico da sessao (o catalogo ja
+// foi tratado por quem chamou). Troca de conta/perfil usa isto: a cena e o
+// diagnostico do perfil anterior nao podem vazar para o proximo.
 void farol_esquecer(void);
 
 // Relogio injetado para teste: `s` devolve epoch em segundos (NULL = time()).
 void farol_teste_relogio(long long (*s)(void));
 // Relogio de visibilidade da Home para teste: `v` 1 = Home na tela.
 void farol_teste_home_visivel(int (*v)(void));
+
+// --- Diagnostico e veredito (issue 14, PLANO Onda 2, ADENDO 2.1 C) ---------
+// Contratos:
+//   - Zero rede; leitura puramente em memoria / cache / anel (< 1 ms).
+//   - Fio: chamar farol_fatos_ler, farol_julgar e farol_veredito no fio principal
+//     (ou usar farol_veredito_copiar fora dele). Nenhum outro modulo e chamado
+//     com travas internas do Farol tomadas.
+//   - UI/navegacao em resolver.c pertencem a #19; acoes/envio a #15-#18, #20,
+//     #33, #34; redator/montador de evidencias a #11 (preserva ate 256 eventos).
+
+// Coleta todos os fatos atuais do app, reproducao, audio, streaming e anel
+// em `*out` (sem rede, < 1 ms). Respeita fatos fixos se RESOLVER_TESTE ativo.
+void farol_fatos_ler(FarolFatos *out);
+
+// Le os fatos, julga `sintoma` (RES_S_*), guarda o veredito da sessao e
+// registra FE_FAROL_VEREDITO no anel. Devolve o codigo FAROL_C_* resultante.
+int  farol_julgar(int sintoma);
+
+// Ultimo veredito julgado na sessao (NULL se nenhum ainda ou apos reset).
+// Consumir no fio principal; para copia segura entre fios use
+// farol_veredito_copiar().
+const FarolVeredito *farol_veredito(void);
+int  farol_veredito_copiar(FarolVeredito *veredito, FarolFatos *fatos);
+
+// Registro dos demais eventos FE_FAROL_* no anel com token saneado.
+void farol_registrar_acao(int acao);
+void farol_registrar_resultado(int acao, int ok);
+void farol_registrar_envio(int http);
+void farol_registrar_consertou(int acao);
+
+// Copia ate `max` eventos mais recentes (ate FAROL_ANEL_N = 256) em ordem
+// cronologica para alimentar o montador de evidencias (#11).
+int  farol_eventos(FarolEvento *dst, int max);
+
+// Limpa o veredito guardado e avanca a fronteira de falhas consecutivas para
+// uma nova sessao sem apagar os 256 eventos recentes do anel.
+void farol_sessao_reiniciar(void);
+
+#ifdef RESOLVER_TESTE
+// Fixa os fatos devolvidos por farol_fatos_ler() e usados em farol_julgar().
+// Passar NULL restaura a coleta ao vivo.
+void farol_teste_fatos(const FarolFatos *f);
+#endif
 
 #endif

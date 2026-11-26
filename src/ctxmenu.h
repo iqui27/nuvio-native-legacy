@@ -168,4 +168,7 @@ void  ctx_menu_linha(GfxRect r, const char *rot, const char *icone, float f, flo
 float ctx_menu_passo(void);   // altura de uma linha + o vao
 // Centro horizontal da barra "Segure OK para opções"; negativo = centro da tela.
 void ctx_centro_dica(float cx);
+// Titulos marcados para "Comparar com..." (ate 3 distintos).
+int  ctx_comparar_contar(void);
+void ctx_comparar_limpar(void);
 #endif

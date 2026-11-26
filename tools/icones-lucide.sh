@@ -65,7 +65,13 @@ ellipsis
 hard-drive volume-2 package tag
 tv layout-grid unplug chevron-down chevron-up arrow-left arrow-right
 bug crop repeat wand-sparkles network contact gamepad-2 scale square-dashed bold terminal
+farol
 "
+# DESENHO PROPRIO, no MESMO estilo (grade 24, traco 2, ponta e junta redondas):
+# o Lucide nao tem farol. O SVG mora em $SVG ao lado dos do upstream, nao e
+# baixado e passa pela mesma rasterizacao. "farol" e o icone do Farol na ilha
+# (issue 20, ilhasinais.c): a lanterna, a torre com a faixa, a base e os raios.
+LOCAIS="farol"
 # A linha que comeca em "clock" e da ILHA DO RELOGIO (02/10, mockup aprovado em design/ilha):
 # os icones dos avisos (alerta, wifi, debrid baixando, Trakt desconectado...) e
 # dos botoes dos modais (Depois, Salvar, Reconectar).
@@ -96,6 +102,7 @@ mkdir -p "$SVG"
 if [ "$1" != "--offline" ]; then
   curl -fsSL -o "$SVG/LICENSE" "https://raw.githubusercontent.com/lucide-icons/lucide/$TAG/LICENSE"
   for n in $NOMES; do
+    case " $LOCAIS " in *" $n "*) continue ;; esac
     curl -fsSL -o "$SVG/$n.svg" "$BASE/$n.svg" || { echo "icones-lucide: $n nao existe em $TAG" >&2; exit 1; }
   done
 fi

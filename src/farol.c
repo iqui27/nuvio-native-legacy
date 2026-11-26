@@ -27,17 +27,27 @@
 #include "farol.h"
 #include "farolcena.h"      // ANTES de qualquer farolrec.h direto (cabecalho)
 #include "farolsinal.h"
+#include "farolcompor.h"
 #include "faroltexto.h"
+#include "dts_tv.h"
+#include "farolacao_audio.h"
+#include "farolsonda.h"
+#include "redesaude.h"
+#include "addons.h"
+#include "debrid.h"
+#include "memlog.h"
+#include "webosver.h"
+#include "dts/dts_hls_tpk.h"
+#include "dts/dts_playback.h"
 #include "seguro.h"
 #include "perfilinfantil.h"
 #include "fileiras.h"
 #include "diario.h"
 #include "salvos.h"
-#include "recomenda.h"
 #include "perfis.h"
 #include "idioma.h"
 #include "mapa.h"
-#include "app.h"
+#include <limits.h>
 #include <pthread.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -45,10 +55,77 @@
 #include <string.h>
 #include <time.h>
 
-// Declarada em home.h; aqui so o prototipo (como o tend_registrar do
-// catalogo.c): home.h puxa gfx.h e a pilha GL, que a cola nao usa — e os
-// fixtures do Farol compilam sem a UI.
+// Prototipos locais (equivalente ao home_fileiras_na_tela): esses headers puxam
+// SDL2/GL e o Farol permanece puro nos fixtures sem video/UI.
+extern __attribute__((weak)) int perfil_ajustes_travados(int idx);
+extern __attribute__((weak)) int cat_n_fileiras(void);
+extern __attribute__((weak)) const CatFileira *cat_fileira(int r);
+extern __attribute__((weak)) int cat_tirar_item_da_fileira(int indice);
+extern __attribute__((weak)) void cat_definir_tudo(const CatItem *lista, int qtd,
+                                                   const CatFileira *fils, int nFils);
+extern __attribute__((weak)) uint16_t farolsinal_dia_atual(void);
+extern __attribute__((weak)) int farolsinal_pessoa_nome(int32_t id, char *dst, size_t cap);
+extern __attribute__((weak)) int farolsinal_tema_nome(int32_t id, char *dst, size_t cap);
+extern __attribute__((weak)) int32_t farolgosto_peso(const FarolGosto *g, int dim,
+                                                     int32_t id, uint16_t dia);
+extern __attribute__((weak)) const char *mapa_tema_nome(const char *kw);
+extern __attribute__((weak)) void ilhaacao_abrir_sessao(void);
 int home_fileiras_na_tela(void);
+const char *app_tela_nome(void);
+int recomenda_pessoa_canonica(const char *id, char *dst, size_t tam);
+void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
+                        int *fonteMbps, int *fonteDebrid, int *temOutraFonte,
+                        int *temFonteMenor, int *temFonteSemDv,
+                        int *temFonteSemDts, int *tvHdr, int *tvDv,
+                        int *vazaoMbps);
+int video_registro_negado(void);
+int video_audio_nao_suportado(void);
+int video_n_audio(void);
+// video.h puxa SDL2 (o Farol permanece puro nas fixtures); as assinaturas
+// reais usam const VideoFaixa *, aqui declarada opaca — mesma ABI, sem SDL.
+typedef struct VideoFaixa VideoFaixa;
+const VideoFaixa *video_audio(int i);
+int video_audio_atual(void);
+int video_faixa_dts(const VideoFaixa *f);
+int video_dts_estado(void);
+int video_tem_dolby_vision(void);
+const char *video_hdr(void);
+#ifdef NV_TPK
+int video_tpk_tizen_maior(void);
+#endif
+int player_ultimo_erro_farol(FarolErro *out, int *foiDebrid);
+const char *player_id_canal(void);
+uint64_t player_ultimo_erro_tentativa(void);
+uint64_t player_ultimo_erro_seq(void);
+int player_externo_disponivel_tentativa(uint64_t tentativa);
+const char *atualizacao_nova(void);
+
+#define FAROL_VIDEO_DTS_NENHUM 0
+#define FAROL_VIDEO_DTS_FALHOU 4
+
+// Ganchos fracos para testes isolados que compilam sem farolcompor.c.
+__attribute__((weak)) unsigned farolcompor_home_geracao(void) { return 0; }
+__attribute__((weak)) int farolcompor_cena_adotada(FarolCena *cenaOut,
+                                                   FarolComporCand *candOut,
+                                                   int *nCandOut, int maxCand,
+                                                   uint32_t *hModeloOut) {
+  (void)cenaOut; (void)candOut; (void)maxCand;
+  if (nCandOut) *nCandOut = 0;
+  if (hModeloOut) *hModeloOut = 0;
+  return 0;
+}
+__attribute__((weak)) int farolcompor_pedir_home(const FarolGosto *g,
+                                                 const FarolComporCand *cand, int nCand,
+                                                 const FarolComporAncora *ancoras, int nAncoras,
+                                                 const char *(*nomePessoaFn)(int32_t, void *),
+                                                 void *u, uint32_t hModelo) {
+  (void)g; (void)cand; (void)nCand; (void)ancoras; (void)nAncoras;
+  (void)nomePessoaFn; (void)u; (void)hModelo;
+  return 0;
+}
+__attribute__((weak)) void farolcompor_trocar_perfil(void) {}
+__attribute__((weak)) void farolcompor_zerar_gosto(void) {}
+__attribute__((weak)) void farolconsent_esquecer(void) {}
 
 #define FAROL_CAND_MAX 240          // 60 x 4 blocos; 512 era para um catalogo
 #define FAROL_SEM_MAX  16
@@ -72,6 +149,7 @@ static struct {
   int       perfil;                 // perfis_ativo() da adocao
   unsigned  revCat;                 // cat_revisao() da adocao (diagnostico)
   uint32_t  hModelo;                // hash do FarolGosto — o "evento forte"
+  unsigned  comporGen;              // geracao de farolcompor adotada
   int       nFil;
   FarolHomeFil fil[2];
 } adotada;
@@ -106,6 +184,10 @@ static char          semIds[FAROL_SEM_MAX][64];   // "tt..." guardado
 static struct { int32_t id; char nome[64]; } pessoaT[FAROL_PESSOA_T];
 static int           nPessoaT;
 static FarolCena     cenaP;
+static FarolCena     llmCena;
+static FarolComporCand compCand[FAROL_COMPOR_CAND_MAX];
+static FarolComporAncora compAnc[FAROL_COMPOR_ANCORA_MAX];
+static FarolComporCand llmCand[FAROL_COMPOR_CAND_MAX];
 static char          cenaJson[FAROL_CENA_MAX + 1];
 static char          cwImdb[48][64]; static int nCwImdb;
 static char          motOut[200], titOut[96];
@@ -265,11 +347,21 @@ static const char *pessoaNome(long id) {
 
 // Resolve um argumento do modelo a NOME. NULL = nao resolve: a linha cai
 // inteira, nunca sai id cru na tela (ALMA + CONTRATO de argumentos da 44).
-static const char *argNome(const char *a, char *dst, size_t cap) {
+static const char *argNomeExt(const char *a, const FarolComporCand *sc, int nSc,
+                              char *dst, size_t cap) {
   if (!a || !a[0]) return NULL;
   if (a[0] == 'c' && a[1] >= '0' && a[1] <= '9') {
     int idx = atoi(a + 1);
     CatItem ci;
+    if (sc) {
+      if (idx < 0 || idx >= nSc) return NULL;
+      if (sc[idx].imdb[0] && cat_copiar_por_id(sc[idx].imdb, NULL, &ci) &&
+          ci.titulo[0] && !strcmp(ci.imdb, sc[idx].imdb)) {
+        snprintf(dst, cap, "%s", ci.titulo); return dst;
+      }
+      if (sc[idx].titulo[0]) { snprintf(dst, cap, "%s", sc[idx].titulo); return dst; }
+      return NULL;
+    }
     if (idx < 0 || idx >= nCandAtivo) return NULL;
     if (refC[idx].catIdx >= 0 && cat_copiar_item(refC[idx].catIdx, &ci) &&
         ci.titulo[0]) { snprintf(dst, cap, "%s", ci.titulo); return dst; }
@@ -286,6 +378,14 @@ static const char *argNome(const char *a, char *dst, size_t cap) {
     }
     if (diario_nome(a, t, sizeof t, NULL, NULL, 0) && t[0]) {
       snprintf(dst, cap, "%s", t); return dst;
+    }
+    if (sc) {
+      int k;
+      for (k = 0; k < nSc; k++) {
+        if (!strcmp(sc[k].imdb, a) && sc[k].titulo[0]) {
+          snprintf(dst, cap, "%s", sc[k].titulo); return dst;
+        }
+      }
     }
     return NULL;
   }
@@ -305,8 +405,9 @@ static const char *argNome(const char *a, char *dst, size_t cap) {
 // FarolTexto -> string pronta (i18n aplicada sobre o literal do modelo,
 // como o resto do app). 0 = sem linha honesta: sem modelo, aridade torta
 // ou argumento que nao virou nome.
-static int renderTexto(const FarolCena *c, const FarolTexto *t,
-                       char *dst, size_t cap) {
+static int renderTextoExt(const FarolCena *c, const FarolTexto *t,
+                          const FarolComporCand *sc, int nSc,
+                          char *dst, size_t cap) {
   char ordem[FAROL_ARGS + 1], buf[FAROL_ARGS][160];
   const char *sv[FAROL_ARGS];
   int dv[FAROL_ARGS], nO = 0, i, cod = 0;
@@ -328,7 +429,7 @@ static int renderTexto(const FarolCena *c, const FarolTexto *t,
   for (i = 0; i < nO; i++) {
     if (ordem[i] == 'd') { dv[i] = atoi(t->a[i]); sv[i] = NULL; }
     else {
-      const char *s = argNome(t->a[i], buf[i], sizeof buf[i]);
+      const char *s = argNomeExt(t->a[i], sc, nSc, buf[i], sizeof buf[i]);
       if (!s) return 0;
       sv[i] = s; dv[i] = 0;
     }
@@ -346,13 +447,19 @@ static int renderTexto(const FarolCena *c, const FarolTexto *t,
   case 25:                    snprintf(dst, cap, fmt, sv[0], dv[1], sv[2]); break;
   case 26:                    snprintf(dst, cap, fmt, sv[0], dv[1], dv[2]); break;
   case 37:                    snprintf(dst, cap, fmt, dv[0], sv[1], sv[2]); break;
-  case 38:                    snprintf(dst, cap, fmt, dv[0], sv[1], dv[2]); break;
+  case 38:                    snprintf(dst, cap, fmt, dv[0], sv[1], sv[2]); break;
   case 41:                    snprintf(dst, cap, fmt, dv[0], dv[1], sv[2]); break;
   case 42:                    snprintf(dst, cap, fmt, dv[0], dv[1], dv[2]); break;
   case 85:                    snprintf(dst, cap, fmt, sv[0], sv[1], sv[2], sv[3]); break;
   default:                    return 0;
   }
   return dst[0] != 0;
+}
+
+__attribute__((unused))
+static int renderTexto(const FarolCena *c, const FarolTexto *t,
+                       char *dst, size_t cap) {
+  return renderTextoExt(c, t, NULL, 0, dst, cap);
 }
 
 // --------------------------------------------------------------- sementes --
@@ -481,6 +588,203 @@ static int coletarCandidatos(int infantil) {
   return nCandAtivo;
 }
 
+static const char *comporPessoaLookup(int32_t id, void *u) {
+  (void)u;
+  return pessoaNome((long)id);
+}
+
+// Titulo de ancora SO com proveniencia publica (o catalogo). O nome que so o
+// Diario conhece e privado: nunca vira `gosto.ancoras` (PLANO-GOSTO 5.3).
+static void comporTituloPublico(const char *imdb, char *dst, size_t cap) {
+  CatItem ci;
+  dst[0] = '\0';
+  if (!imdb || !imdb[0]) return;
+  if (cat_copiar_por_id(imdb, NULL, &ci) && ci.titulo[0] &&
+      !strcmp(ci.imdb, imdb)) {
+    snprintf(dst, cap, "%s", ci.titulo);
+  }
+}
+
+static int comporMontarResumo(const FarolCenaCtx *ctx, int *nCandOut, int *nAncOut) {
+  FarolRecCtx rctx;
+  FarolRecItem rec[FAROL_COMPOR_CAND_MAX];
+  int nr, i, nc = 0, na = 0;
+
+  *nCandOut = 0;
+  *nAncOut = 0;
+  if (!ctx || !ctx->g || ctx->nCand <= 0) return 0;
+
+  memset(&rctx, 0, sizeof rctx);
+  rctx.g = ctx->g;
+  rctx.sementes = ctx->sementes;
+  rctx.nSementes = ctx->nSementes;
+  rctx.dia = ctx->dia;
+  rctx.faixaHora = ctx->faixaHora;
+  rctx.naHome = 1;
+  rctx.semente = ctx->semente;
+
+  nr = farolrec_escolher(&rctx, ctx->cand, ctx->nCand, rec, FAROL_COMPOR_CAND_MAX);
+  if (nr <= 0) return 0;
+
+  memset(compCand, 0, sizeof compCand);
+  memset(compAnc, 0, sizeof compAnc);
+
+  for (i = 0; i < nr && nc < FAROL_COMPOR_CAND_MAX; i++) {
+    int idx = rec[i].cand;
+    FarolComporCand *cc;
+    const FarolFicha *f;
+    int m, k;
+    if (idx < 0 || idx >= ctx->nCand) continue;
+    if (strncmp(refC[idx].imdb, "tt", 2) != 0) continue;
+
+    cc = &compCand[nc];
+    snprintf(cc->imdb, sizeof cc->imdb, "%s", refC[idx].imdb);
+    cc->tipo = !strcmp(refC[idx].tipo, "series") ? 1 : 0;
+    snprintf(cc->titulo, sizeof cc->titulo, "%s", refC[idx].titulo);
+    cc->nota10 = -1;
+    cc->pontos = rec[i].pontos;
+
+    f = ctx->cand[idx].ficha;
+    if (f) {
+      cc->tmdb = f->tmdb;
+      cc->ano = (int16_t)f->ano;
+      cc->minutos = (int16_t)f->minutos;
+      if (f->nota > 0 && f->nota <= 100) cc->nota10 = (int16_t)f->nota;
+      for (k = 0; k < f->nGenero && k < FAROL_FICHA_GEN && cc->nGeneros < 8; k++) {
+        if (f->genero[k] > 0) cc->generos[cc->nGeneros++] = f->genero[k];
+      }
+    }
+
+    for (m = 0; m < rec[i].nMotivo && m < FAROL_REC_MOTIVOS && cc->nMotivos < FAROL_COMPOR_MOT_MAX; m++) {
+      const FarolRecMotivo *rm = &rec[i].motivo[m];
+      if (rm->tipo == FMO_AMIGO || rm->tipo == FMO_RECOMENDADO) {
+        // Sempre anonimizado no fio HTTP.
+        cc->motivos[cc->nMotivos].tipo = rm->tipo;
+        cc->motivos[cc->nMotivos].a = 0;
+        cc->motivos[cc->nMotivos].b = 0;
+        cc->nMotivos++;
+      } else if (rm->tipo == FMO_TERMINOU) {
+        int sIdx = rm->a;
+        const char *tt = (sIdx >= 0 && sIdx < ctx->nSementes) ? ctx->sementeRef[sIdx] : NULL;
+        int ai = -1, a;
+        if (!tt || strncmp(tt, "tt", 2) != 0) continue;
+        // Entrada parcial (ou serie) nao sustenta "terminou".
+        if (!ctx->sementes[sIdx].terminou) continue;
+        for (a = 0; a < na; a++) {
+          if (!strcmp(compAnc[a].id, tt)) { ai = a; break; }
+        }
+        if (ai < 0 && na < FAROL_COMPOR_ANCORA_MAX) {
+          char tit[100];
+          comporTituloPublico(tt, tit, sizeof tit);
+          if (tit[0]) {
+            snprintf(compAnc[na].id, sizeof compAnc[na].id, "%s", tt);
+            snprintf(compAnc[na].titulo, sizeof compAnc[na].titulo, "%s", tit);
+            ai = na++;
+          }
+        }
+        if (ai >= 0) {
+          cc->motivos[cc->nMotivos].tipo = FMO_TERMINOU;
+          cc->motivos[cc->nMotivos].a = ai;
+          cc->motivos[cc->nMotivos].b = 0;
+          cc->nMotivos++;
+        }
+      } else if (rm->tipo == FMO_GENERO || rm->tipo == FMO_PESSOA ||
+                 rm->tipo == FMO_TEMA || rm->tipo == FMO_FORA_CURVA) {
+        if (rm->a <= 0) continue;
+        cc->motivos[cc->nMotivos].tipo = rm->tipo;
+        cc->motivos[cc->nMotivos].a = rm->a;
+        cc->motivos[cc->nMotivos].b = 0;
+        cc->nMotivos++;
+      } else if (rm->tipo == FMO_SALVO || rm->tipo == FMO_CABE_HOJE || rm->tipo == FMO_REVER) {
+        cc->motivos[cc->nMotivos].tipo = rm->tipo;
+        cc->motivos[cc->nMotivos].a = (rm->tipo == FMO_CABE_HOJE) ? cc->minutos : 0;
+        cc->motivos[cc->nMotivos].b = 0;
+        cc->nMotivos++;
+      }
+    }
+    nc++;
+  }
+
+  // Sem completar vagas de ancora com sementes: so vai a ancora que um
+  // motivo FMO_TERMINOU acima cita (e o corpo ainda descarta a que nenhum
+  // candidato efetivamente enviado referencia).
+
+  *nCandOut = nc;
+  *nAncOut = na;
+  return nc > 0;
+}
+
+static int popularFilDeCena(const FarolCena *cp, const FarolComporCand *sc, int nSc,
+                            int nCandRef, FarolHomeFil filOut[2]) {
+  int p, f = 0, i;
+  for (p = 0; p < cp->nPecas && f < 2; p++) {
+    const FarolPeca *pc = &cp->pecas[p];
+    FarolHomeFil *nf;
+    if (pc->tipo != FP_FILEIRA) continue;
+    if (strcmp(pc->u.fileira.id, "gosto1") && strcmp(pc->u.fileira.id, "gosto2"))
+      continue;
+    if (pc->u.fileira.nItens < 6) continue;             // o minimo da P1
+    nf = &filOut[f];
+    memset(nf, 0, sizeof *nf);
+    snprintf(nf->chave, sizeof nf->chave, "farol_%s", pc->u.fileira.id);
+    if (!renderTextoExt(cp, &pc->u.fileira.titulo, sc, nSc,
+                        nf->titulo, sizeof nf->titulo))
+      snprintf(nf->titulo, sizeof nf->titulo, "%s", i18n(FT_FIL_RECOMENDADOS));
+    renderTextoExt(cp, &pc->u.fileira.sub, sc, nSc, nf->sub, sizeof nf->sub);
+    for (i = 0; i < pc->u.fileira.nItens && i < FAROL_ITENS_MAX; i++) {
+      const FarolRef *ref = &pc->u.fileira.itens[i];
+      FarolHomeItem *hi = &nf->it[i];
+      const char *imdb = NULL, *tipo = "movie";
+      char titulo[160] = "";
+      // Um so CatItem no escopo do item: `tipo` pode apontar para ci.tipo e e
+      // lido depois dos ramos (antes, ci morria no fim do bloco do ramo).
+      CatItem ci;
+      if (sc && ref->c >= 0 && ref->c < nSc) {
+        imdb = sc[ref->c].imdb;
+        tipo = sc[ref->c].tipo ? "series" : "movie";
+        if (imdb[0] && cat_copiar_por_id(imdb, NULL, &ci) &&
+            !strcmp(ci.imdb, imdb) && ci.titulo[0]) {
+          snprintf(titulo, sizeof titulo, "%s", ci.titulo);
+          if (ci.tipo[0]) tipo = ci.tipo;
+        } else if (sc[ref->c].titulo[0]) {
+          snprintf(titulo, sizeof titulo, "%s", sc[ref->c].titulo);
+        }
+      } else if (!sc && ref->c >= 0 && ref->c < nCandRef) { // "c<n>" regras
+        imdb = refC[ref->c].imdb; tipo = refC[ref->c].tipo;
+        if (refC[ref->c].catIdx >= 0 &&
+            cat_copiar_item(refC[ref->c].catIdx, &ci) &&
+            !strcmp(ci.imdb, imdb))
+          snprintf(titulo, sizeof titulo, "%s", ci.titulo);
+        else if (refC[ref->c].titulo[0])
+          snprintf(titulo, sizeof titulo, "%s", refC[ref->c].titulo);
+      } else if (ref->s[0]) {                               // "tt<digitos>"
+        imdb = ref->s;
+        if (cat_copiar_por_id(ref->s, NULL, &ci) &&
+            !strcmp(ci.imdb, ref->s)) {
+          snprintf(titulo, sizeof titulo, "%s", ci.titulo);
+          if (ci.tipo[0]) tipo = ci.tipo;
+        } else {
+          diario_nome(ref->s, titulo, sizeof titulo, NULL, NULL, 0);
+        }
+      }
+      if (!imdb || !imdb[0]) break;                     // itens sao contiguos
+      snprintf(hi->imdb, sizeof hi->imdb, "%s", imdb);
+      snprintf(hi->tipo, sizeof hi->tipo, "%s", tipo);
+      snprintf(hi->titulo, sizeof hi->titulo, "%s", titulo);
+      nf->nItens++;
+    }
+    if (nf->nItens < 6) continue;
+    for (i = 0; i < pc->u.fileira.nMotivo; i++) {
+      const FarolMotivo *mo = &pc->u.fileira.motivo[i];
+      if (mo->item < 0 || mo->item >= nf->nItens) continue;
+      renderTextoExt(cp, &mo->t, sc, nSc,
+                     nf->it[mo->item].motivo, sizeof nf->it[mo->item].motivo);
+    }
+    f++;
+  }
+  return f;
+}
+
 // ----------------------------------------------------------------- compor --
 // Compoe, valida e ADOTA. Devolve 1 quando uma cena nova foi adotada.
 // Falhou em qualquer degrau -> 0 e quem chama decide sobre a antiga (o
@@ -489,13 +793,18 @@ static int compor(long long agora, int perfil) {
   static struct {
     int valida, nFil; FarolHomeFil fil[2];
     long long feita, valeS; int perfil; unsigned revCat; uint32_t hModelo;
+    unsigned comporGen;
   } nova;
   FarolGosto g;
   FarolCenaCtx ctx;
-  int nSem, nCand, n, rc, p, f, i, fimSem;
+  int nSem, nCand, n, rc, f = 0, fimSem;
+  int nCompCand = 0, nCompAnc = 0, nLlmCand = 0;
+  uint32_t hm, llmHm = 0;
+
   if (!farolsinal_modelo(&g)) return 0;
   if (farolrec_nivel(&g) < 1) return 0;                 // frio 0: nunca sai
   memset(&nova, 0, sizeof nova);
+  hm = hashModelo(&g);
   nSem = coletarSementes(perfil);
   nCand = coletarCandidatos(perfil_infantil_ativo());
   memset(&ctx, 0, sizeof ctx);
@@ -511,67 +820,29 @@ static int compor(long long agora, int perfil) {
   ctx.feita = agora;
   ctx.valeS = 86400;                    // a cena da Home vale 24 h (4.2)
   ctx.semente = (uint32_t)ctx.dia * 2654435761u ^ (uint32_t)(perfil + 1);
-  n = farolcena_home(cenaJson, sizeof cenaJson, &ctx, NULL, 0);
-  if (n <= 0) return 0;
-  rc = farolpeca_ler(&cenaP, cenaJson, nCand);
-  if (rc <= 0) return 0;
-  // ADOCAO: so as pecas gosto1/gosto2 viram fileira; qualquer outra peca da
-  // cena home (a dica P2) e ignorada aqui — a dica e da issue que a desenha.
-  f = 0;
-  for (p = 0; p < cenaP.nPecas && f < 2; p++) {
-    const FarolPeca *pc = &cenaP.pecas[p];
-    FarolHomeFil *nf;
-    if (pc->tipo != FP_FILEIRA) continue;
-    if (strcmp(pc->u.fileira.id, "gosto1") && strcmp(pc->u.fileira.id, "gosto2"))
-      continue;
-    if (pc->u.fileira.nItens < 6) continue;             // o minimo da P1
-    nf = &nova.fil[f];
-    memset(nf, 0, sizeof *nf);
-    snprintf(nf->chave, sizeof nf->chave, "farol_%s", pc->u.fileira.id);
-    if (!renderTexto(&cenaP, &pc->u.fileira.titulo,
-                     nf->titulo, sizeof nf->titulo))
-      snprintf(nf->titulo, sizeof nf->titulo, "%s", i18n(FT_FIL_RECOMENDADOS));
-    renderTexto(&cenaP, &pc->u.fileira.sub, nf->sub, sizeof nf->sub);
-    for (i = 0; i < pc->u.fileira.nItens && i < FAROL_ITENS_MAX; i++) {
-      const FarolRef *ref = &pc->u.fileira.itens[i];
-      FarolHomeItem *hi = &nf->it[i];
-      const char *imdb = NULL, *tipo = "movie";
-      char titulo[160] = "";
-      if (ref->c >= 0 && ref->c < nCand) {              // "c<n>"
-        CatItem ci;
-        imdb = refC[ref->c].imdb; tipo = refC[ref->c].tipo;
-        // O indice foi guardado na coleta; o catalogo pode ter trocado —
-        // so vale o titulo se o imdb bate com o candidato do ref.
-        if (refC[ref->c].catIdx >= 0 &&
-            cat_copiar_item(refC[ref->c].catIdx, &ci) &&
-            !strcmp(ci.imdb, imdb))
-          snprintf(titulo, sizeof titulo, "%s", ci.titulo);
-        else if (refC[ref->c].titulo[0])
-          snprintf(titulo, sizeof titulo, "%s", refC[ref->c].titulo);
-      } else if (ref->s[0]) {                           // "tt<digitos>"
-        CatItem ci;
-        imdb = ref->s;
-        if (cat_copiar_por_id(ref->s, NULL, &ci) &&
-            !strcmp(ci.imdb, ref->s)) {
-          snprintf(titulo, sizeof titulo, "%s", ci.titulo);
-          if (ci.tipo[0]) tipo = ci.tipo;
-        }
-      }
-      if (!imdb || !imdb[0]) break;                     // itens sao contiguos
-      snprintf(hi->imdb, sizeof hi->imdb, "%s", imdb);
-      snprintf(hi->tipo, sizeof hi->tipo, "%s", tipo);
-      snprintf(hi->titulo, sizeof hi->titulo, "%s", titulo);
-      nf->nItens++;
-    }
-    if (nf->nItens < 6) continue;
-    for (i = 0; i < pc->u.fileira.nMotivo; i++) {
-      const FarolMotivo *mo = &pc->u.fileira.motivo[i];
-      if (mo->item < 0 || mo->item >= nf->nItens) continue;
-      renderTexto(&cenaP, &mo->t,
-                  nf->it[mo->item].motivo, sizeof nf->it[mo->item].motivo);
-    }
-    f++;
+
+  if (comporMontarResumo(&ctx, &nCompCand, &nCompAnc)) {
+    farolcompor_pedir_home(&g, compCand, nCompCand, compAnc, nCompAnc,
+                           comporPessoaLookup, NULL, hm);
   }
+
+  // Preferir a cena LLM ja adotada no fio principal quando valida para o gosto
+  // atual; qualquer falha/recusa cai calado para a cena deterministica (44).
+  if (farolcompor_cena_adotada(&llmCena, llmCand, &nLlmCand,
+                               FAROL_COMPOR_CAND_MAX, &llmHm) &&
+      (llmHm == 0 || llmHm == hm)) {
+    f = popularFilDeCena(&llmCena, llmCand, nLlmCand, nLlmCand, nova.fil);
+    if (f > 0) nova.comporGen = farolcompor_home_geracao();
+  }
+
+  if (f <= 0) {
+    n = farolcena_home(cenaJson, sizeof cenaJson, &ctx, NULL, 0);
+    if (n <= 0) return 0;
+    rc = farolpeca_ler(&cenaP, cenaJson, nCand);
+    if (rc <= 0) return 0;
+    f = popularFilDeCena(&cenaP, NULL, 0, nCand, nova.fil);
+  }
+
   nova.nFil = f;
   if (!f) return 0;
   nova.valida = 1;
@@ -579,11 +850,12 @@ static int compor(long long agora, int perfil) {
   nova.valeS = ctx.valeS > 0 ? ctx.valeS : 86400;
   nova.perfil = perfil;
   nova.revCat = cat_revisao();
-  nova.hModelo = hashModelo(&g);
+  nova.hModelo = hm;
   pthread_mutex_lock(&travaCena);
   adotada.valida = nova.valida; adotada.feita = nova.feita;
   adotada.valeS = nova.valeS; adotada.perfil = nova.perfil;
   adotada.revCat = nova.revCat; adotada.hModelo = nova.hModelo;
+  adotada.comporGen = nova.comporGen;
   adotada.nFil = nova.nFil;
   memcpy(adotada.fil, nova.fil, sizeof adotada.fil);
   perfilSaiu = -1;                        // a cena do perfil esta valida
@@ -618,6 +890,7 @@ static void home_fileiras_(CatItem *lote, int *n, int cap,
   static struct {
     int valida, nFil; FarolHomeFil fil[2];
     long long feita, valeS; int perfil, perfilSaiu; uint32_t hModelo;
+    unsigned comporGen;
   } snap;
   long long agora;
   int precisa, perfil, f, marcou[2] = { 0, 0 };
@@ -634,6 +907,7 @@ static void home_fileiras_(CatItem *lote, int *n, int cap,
   snap.valida = adotada.valida; snap.nFil = adotada.nFil;
   snap.feita = adotada.feita; snap.valeS = adotada.valeS;
   snap.perfil = adotada.perfil; snap.hModelo = adotada.hModelo;
+  snap.comporGen = adotada.comporGen;
   snap.perfilSaiu = perfilSaiu;
   memcpy(snap.fil, adotada.fil, sizeof snap.fil);
   pthread_mutex_unlock(&travaCena);
@@ -643,8 +917,15 @@ static void home_fileiras_(CatItem *lote, int *n, int cap,
   precisa = !snap.valida || snap.perfil != perfil;
   if (!precisa) {
     FarolGosto g;
+    unsigned cGen = farolcompor_home_geracao();
+    // Geracao do compositor mudou: cena LLM nova a adotar, ou a projecao
+    // LLM anterior (comporGen != 0) perdeu a validade — consentimento
+    // revogado, esquecer, troca de perfil — e a deterministica volta.
     if (!farolsinal_modelo(&g) || hashModelo(&g) != snap.hModelo ||
-        agora - snap.feita >= snap.valeS) {
+        agora - snap.feita >= snap.valeS ||
+        (cGen != snap.comporGen &&
+         (snap.comporGen != 0 ||
+          farolcompor_cena_adotada(NULL, NULL, NULL, 0, NULL)))) {
       if (!homeVisivel()) precisa = 1;
     }
   } else if (snap.valida && snap.perfil != perfil && homeVisivel()) {
@@ -673,6 +954,7 @@ static void home_fileiras_(CatItem *lote, int *n, int cap,
     snap.valida = adotada.valida; snap.nFil = adotada.nFil;
     snap.feita = adotada.feita; snap.valeS = adotada.valeS;
     snap.perfil = adotada.perfil; snap.hModelo = adotada.hModelo;
+    snap.comporGen = adotada.comporGen;
     memcpy(snap.fil, adotada.fil, sizeof snap.fil);
     pthread_mutex_unlock(&travaCena);
   }
@@ -793,7 +1075,65 @@ const char *farol_fileira_titulo(const char *chaveFil) {
 }
 
 // ---------------------------------------------------------------- remocao --
-void farol_esquecer(void) { invalidar(); }
+static int farolTravado(void) {
+  return perfil_ajustes_travados && perfil_ajustes_travados(perfis_ativo());
+}
+
+typedef struct {
+  int valida;
+  long long feita, valeS;
+  int perfil, perfilSaiu;
+  unsigned revCat;
+  uint32_t hModelo;
+  int nFil;
+  FarolHomeFil fil[2];
+} FarolUndoCena;
+
+typedef struct {
+  char imdb[64];
+  int temCena;
+  FarolUndoCena cena;
+  int nFils;
+  CatFileira fils[2];
+  CatItem *itens;
+  int nItens;
+} FarolUndoRecusa;
+
+static FarolUndoRecusa undoRec;
+static pthread_mutex_t travaUndo = PTHREAD_MUTEX_INITIALIZER;
+
+static void limparUndoRecusaLocked(void) {
+  free(undoRec.itens);
+  memset(&undoRec, 0, sizeof undoRec);
+}
+
+static void limparUndoRecusa(void) {
+  int tinha;
+  pthread_mutex_lock(&travaUndo);
+  tinha = undoRec.imdb[0] != 0;
+  limparUndoRecusaLocked();
+  pthread_mutex_unlock(&travaUndo);
+  if (tinha && ilhaacao_abrir_sessao) ilhaacao_abrir_sessao();
+}
+
+static int mesmaObraImdb(const char *a, const char *b) {
+  const char *pa, *pb;
+  size_t la, lb;
+  if (!a || !a[0] || !b || !b[0]) return 0;
+  pa = strchr(a, ':');
+  pb = strchr(b, ':');
+  la = pa ? (size_t)(pa - a) : strlen(a);
+  lb = pb ? (size_t)(pb - b) : strlen(b);
+  return la == lb && !strncmp(a, b, la);
+}
+
+void farol_esquecer(void) {
+  limparUndoRecusa();
+  invalidar();
+  farol_sessao_reiniciar();
+  farolcompor_trocar_perfil();
+  farolconsent_esquecer();
+}
 
 // 1 quando a fileira do Farol pode estar publicada: "Recomendar nesta TV"
 // ligado e modo seguro fora. A descoberta confere de novo no ponto de
@@ -821,6 +1161,8 @@ unsigned farol_selo(void) {
 }
 
 void farol_gosto_zerar(const char *dirArte) {
+  if (farolTravado()) return;
+  limparUndoRecusa();
   farol_remover_fileiras(dirArte);
   // O bump vem depois da remocao (que ja invalidou a cena): uma emissao
   // inteira dentro do reset carimba o selo velho e e podada na publicacao;
@@ -828,11 +1170,657 @@ void farol_gosto_zerar(const char *dirArte) {
   // zerado (FAROL45C).
   __atomic_add_fetch(&seloGosto, 1, __ATOMIC_ACQ_REL);
   farolsinal_zerar_gosto();
+  farolcompor_zerar_gosto();
 }
 
 // "Recomendar nesta TV": ao DESLIGAR, as fileiras saem primeiro e a
 // preferencia e registrada depois; ligar nao toca no catalogo.
 void farol_recomendar_definir(int ligado, const char *dirArte) {
-  if (!ligado) farol_remover_fileiras(dirArte);
+  if (farolTravado()) return;
+  if (!ligado) {
+    limparUndoRecusa();
+    farol_remover_fileiras(dirArte);
+    farolcompor_trocar_perfil();
+  }
   farolsinal_definir_recomendar(ligado);
 }
+
+int farol_recusar_titulo(const char *imdb) {
+  int f, r, tirouCena = 0, tirouCat = 0;
+  int totCatItens = 0;
+  CatItem *snapItens = NULL;
+  CatFileira snapFils[2];
+  int nSnapFils = 0, posSnap = 0;
+  FarolUndoRecusa novo;
+  if (!imdb || !imdb[0] || farolTravado()) return 0;
+
+  memset(&novo, 0, sizeof novo);
+  snprintf(novo.imdb, sizeof novo.imdb, "%s", imdb);
+
+  pthread_mutex_lock(&travaCompor);
+
+  pthread_mutex_lock(&travaCena);
+  if (adotada.valida) {
+    novo.temCena = 1;
+    novo.cena.valida = adotada.valida;
+    novo.cena.feita = adotada.feita;
+    novo.cena.valeS = adotada.valeS;
+    novo.cena.perfil = adotada.perfil;
+    novo.cena.perfilSaiu = perfilSaiu;
+    novo.cena.revCat = adotada.revCat;
+    novo.cena.hModelo = adotada.hModelo;
+    novo.cena.nFil = adotada.nFil;
+    memcpy(novo.cena.fil, adotada.fil, sizeof adotada.fil);
+
+    for (f = adotada.nFil - 1; f >= 0; f--) {
+      FarolHomeFil *hf = &adotada.fil[f];
+      int i;
+      for (i = hf->nItens - 1; i >= 0; i--) {
+        if (!mesmaObraImdb(hf->it[i].imdb, imdb)) continue;
+        if (i + 1 < hf->nItens)
+          memmove(&hf->it[i], &hf->it[i + 1],
+                  sizeof hf->it[0] * (size_t)(hf->nItens - i - 1));
+        hf->nItens--;
+        tirouCena = 1;
+      }
+      if (hf->nItens < 6) {
+        if (f + 1 < adotada.nFil)
+          memmove(&adotada.fil[f], &adotada.fil[f + 1],
+                  sizeof adotada.fil[0] * (size_t)(adotada.nFil - f - 1));
+        adotada.nFil--;
+      }
+    }
+    if (adotada.nFil == 0) adotada.valida = 0;
+    if (tirouCena) __atomic_add_fetch(&geracaoCena, 1, __ATOMIC_RELEASE);
+  }
+  pthread_mutex_unlock(&travaCena);
+
+  if (cat_n_fileiras && cat_fileira && cat_tirar_item_da_fileira) {
+    for (r = 0; r < cat_n_fileiras(); r++) {
+      const CatFileira *cf = cat_fileira(r);
+      if (!cf || strncmp(cf->chave, CAT_PREFIXO_FAROL, sizeof CAT_PREFIXO_FAROL - 1))
+        continue;
+      if (nSnapFils < 2) {
+        snapFils[nSnapFils++] = *cf;
+        totCatItens += cf->n;
+      }
+    }
+    if (nSnapFils > 0 && totCatItens > 0) {
+      snapItens = malloc(sizeof(CatItem) * (size_t)totCatItens);
+      if (snapItens) {
+        for (f = 0; f < nSnapFils; f++) {
+          int k, copiados = 0;
+          for (k = 0; k < snapFils[f].n; k++) {
+            if (cat_copiar_item(snapFils[f].ini + k, &snapItens[posSnap + copiados]))
+              copiados++;
+          }
+          snapFils[f].ini = posSnap;
+          snapFils[f].n = copiados;
+          posSnap += copiados;
+        }
+        novo.nFils = nSnapFils;
+        memcpy(novo.fils, snapFils, sizeof snapFils);
+        novo.itens = snapItens;
+        novo.nItens = posSnap;
+      }
+    }
+
+    for (r = cat_n_fileiras() - 1; r >= 0; r--) {
+      const CatFileira *cf = cat_fileira(r);
+      int k;
+      if (!cf || strncmp(cf->chave, CAT_PREFIXO_FAROL, sizeof CAT_PREFIXO_FAROL - 1))
+        continue;
+      for (k = cf->ini + cf->n - 1; k >= cf->ini; k--) {
+        CatItem ci;
+        if (cat_copiar_item(k, &ci) && mesmaObraImdb(ci.imdb, imdb)) {
+          if (cat_tirar_item_da_fileira(k)) tirouCat = 1;
+        }
+      }
+    }
+  }
+  if (!tirouCena && !tirouCat) {
+    free(novo.itens);
+    limparUndoRecusa();
+  } else {
+    pthread_mutex_lock(&travaUndo);
+    limparUndoRecusaLocked();
+    undoRec = novo;
+    pthread_mutex_unlock(&travaUndo);
+  }
+  pthread_mutex_unlock(&travaCompor);
+  return tirouCena || tirouCat;
+}
+
+int farol_restaurar_titulo(const char *imdb) {
+  int restaurou = 0;
+  FarolUndoRecusa local;
+  if (!imdb || !imdb[0] || farolTravado()) return 0;
+
+  pthread_mutex_lock(&travaCompor);
+  pthread_mutex_lock(&travaUndo);
+  if (!mesmaObraImdb(undoRec.imdb, imdb)) {
+    pthread_mutex_unlock(&travaUndo);
+    pthread_mutex_unlock(&travaCompor);
+    return 0;
+  }
+  local = undoRec;
+  memset(&undoRec, 0, sizeof undoRec);
+  pthread_mutex_unlock(&travaUndo);
+
+  if (local.temCena) {
+    pthread_mutex_lock(&travaCena);
+    adotada.valida = local.cena.valida;
+    adotada.feita = local.cena.feita;
+    adotada.valeS = local.cena.valeS;
+    adotada.perfil = local.cena.perfil;
+    adotada.revCat = local.cena.revCat;
+    adotada.hModelo = local.cena.hModelo;
+    adotada.nFil = local.cena.nFil;
+    memcpy(adotada.fil, local.cena.fil, sizeof adotada.fil);
+    perfilSaiu = local.cena.perfilSaiu;
+    __atomic_add_fetch(&geracaoCena, 1, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&travaCena);
+    restaurou = 1;
+  }
+
+  if (local.nFils > 0 && local.itens && local.nItens > 0 &&
+      cat_n_fileiras && cat_fileira && cat_definir_tudo) {
+    int nfAt = cat_n_fileiras(), capFils = nfAt + local.nFils;
+    int capItens = cat_n() + local.nItens;
+    CatItem *lote = capItens > 0 ? malloc(sizeof(CatItem) * (size_t)capItens) : NULL;
+    CatFileira *nfils = capFils > 0 ? malloc(sizeof(CatFileira) * (size_t)capFils) : NULL;
+    if (lote && nfils) {
+      int r, f, outI = 0, outF = 0;
+      unsigned selo = farol_selo();
+      for (r = 0; r < nfAt; r++) {
+        const CatFileira *cf = cat_fileira(r);
+        CatFileira dst;
+        int k;
+        if (!cf || !strncmp(cf->chave, CAT_PREFIXO_FAROL, sizeof CAT_PREFIXO_FAROL - 1))
+          continue;
+        dst = *cf;
+        dst.ini = outI;
+        dst.n = 0;
+        for (k = 0; k < cf->n && outI < capItens; k++) {
+          if (cat_copiar_item(cf->ini + k, &lote[outI])) { outI++; dst.n++; }
+        }
+        if (dst.n > 0 && outF < capFils) nfils[outF++] = dst;
+      }
+      for (f = 0; f < local.nFils && outF < capFils; f++) {
+        CatFileira dst = local.fils[f];
+        int baseIni = local.fils[f].ini, k, para = outF;
+        dst.ini = outI;
+        dst.n = 0;
+        dst.farolSelo = selo;
+        for (k = 0; k < local.fils[f].n && outI < capItens; k++) {
+          lote[outI++] = local.itens[baseIni + k];
+          dst.n++;
+        }
+        if (dst.n <= 0) continue;
+        if (!strcmp(dst.chave, "farol_gosto1")) {
+          para = 0;
+          for (r = 0; r < outF; r++)
+            if (!strcmp(nfils[r].chave, "continue_watching")) { para = r + 1; break; }
+        } else if (!strcmp(dst.chave, "farol_gosto2")) {
+          para = outF < 5 ? outF : 5;
+        }
+        if (para < outF)
+          memmove(&nfils[para + 1], &nfils[para],
+                  sizeof nfils[0] * (size_t)(outF - para));
+        nfils[para] = dst;
+        outF++;
+      }
+      if (outI > 0 && outF > 0) {
+        cat_definir_tudo(lote, outI, nfils, outF);
+        restaurou = 1;
+      }
+    }
+    free(lote);
+    free(nfils);
+  }
+
+  free(local.itens);
+  pthread_mutex_unlock(&travaCompor);
+  return restaurou;
+}
+
+static int nomePessoaDeCatalogo(int32_t id, char *dst, size_t cap) {
+  int i, j, nc;
+  const char *p = pessoaNome(id);
+  if (p && p[0]) { snprintf(dst, cap, "%s", p); return 1; }
+  if (farolsinal_pessoa_nome && farolsinal_pessoa_nome(id, dst, cap) && dst[0]) return 1;
+  nc = cat_n();
+  for (i = 0; i < nc; i++) {
+    CatItem ci;
+    if (!cat_copiar_item(i, &ci)) continue;
+    if (ci.direcao[0] && mapa_hash_nome(ci.direcao) == id) {
+      snprintf(dst, cap, "%.*s", (int)(cap > 1 ? cap - 1 : 0), ci.direcao);
+      return 1;
+    }
+    for (j = 0; j < CAT_ELENCO_MAX && ci.elenco[j].nome[0]; j++) {
+      if ((ci.elenco[j].tmdb > 0 && (int32_t)ci.elenco[j].tmdb == id) ||
+          mapa_hash_nome(ci.elenco[j].nome) == id) {
+        snprintf(dst, cap, "%.*s", (int)(cap > 1 ? cap - 1 : 0), ci.elenco[j].nome);
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
+
+typedef struct { int32_t peso; uint16_t n; char nome[64]; } FarolTopCand;
+
+int farol_gosto_top(int dim, char (*nomes)[64], int max) {
+  FarolGosto g;
+  const FarolAfin *v = NULL;
+  int cap = 0, i, j, nCand = 0;
+  uint16_t dia;
+  FarolTopCand candTop[FG_TEMA_N];
+  if (!nomes || max <= 0) return 0;
+  if (!farolsinal_modelo(&g) || !farolgosto_peso) return 0;
+  dia = farolsinal_dia_atual ? farolsinal_dia_atual() : 0;
+  if (dim == FG_DIM_GENERO)      { v = g.genero; cap = FG_GENERO_N; }
+  else if (dim == FG_DIM_PESSOA) { v = g.pessoa; cap = FG_PESSOA_N; }
+  else if (dim == FG_DIM_TEMA)   { v = g.tema;   cap = FG_TEMA_N; }
+  else return 0;
+
+  for (i = 0; i < cap; i++) {
+    int32_t w;
+    char nome[64] = "";
+    int dup = -1;
+    if (!v[i].id) continue;
+    w = farolgosto_peso(&g, dim, v[i].id, dia);
+    if (w <= 0) continue;
+    if (dim == FG_DIM_GENERO) {
+      const char *gn = generoNome(v[i].id);
+      if (!gn || !gn[0]) continue;
+      snprintf(nome, sizeof nome, "%s", gn);
+    } else if (dim == FG_DIM_PESSOA) {
+      if (!nomePessoaDeCatalogo(v[i].id, nome, sizeof nome) || !nome[0]) continue;
+    } else {
+      if (!farolsinal_tema_nome || !farolsinal_tema_nome(v[i].id, nome, sizeof nome) || !nome[0])
+        continue;
+      if (mapa_tema_nome) {
+        const char *pt = mapa_tema_nome(nome);
+        if (pt && pt[0]) snprintf(nome, sizeof nome, "%s", i18n(pt));
+      }
+    }
+    for (j = 0; j < nCand; j++)
+      if (!strcmp(candTop[j].nome, nome)) { dup = j; break; }
+    if (dup >= 0) {
+      if (w > candTop[dup].peso) {
+        candTop[dup].peso = w;
+        candTop[dup].n = v[i].n;
+      }
+      continue;
+    }
+    if (nCand < (int)(sizeof candTop / sizeof candTop[0])) {
+      candTop[nCand].peso = w;
+      candTop[nCand].n = v[i].n;
+      snprintf(candTop[nCand].nome, sizeof candTop[nCand].nome, "%s", nome);
+      nCand++;
+    }
+  }
+  for (i = 0; i < nCand - 1; i++) {
+    for (j = i + 1; j < nCand; j++) {
+      if (candTop[j].peso > candTop[i].peso ||
+          (candTop[j].peso == candTop[i].peso && candTop[j].n > candTop[i].n)) {
+        FarolTopCand tmp = candTop[i];
+        candTop[i] = candTop[j];
+        candTop[j] = tmp;
+      }
+    }
+  }
+  if (nCand > max) nCand = max;
+  for (i = 0; i < nCand; i++)
+    snprintf(nomes[i], 64, "%s", candTop[i].nome);
+  return nCand;
+}
+
+// --------------------------------------------------- diagnostico / fachada --
+static pthread_mutex_t travaDiag = PTHREAD_MUTEX_INITIALIZER;
+static int temVeredito;
+static FarolVeredito vereditoSessao, vereditoSaida;
+static FarolFatos fatosSessao;
+static uint64_t sessaoDesdeSeq;
+#ifdef RESOLVER_TESTE
+static int usaFatosFixos;
+static FarolFatos fatosFixos;
+#endif
+
+static FarolPlat platAtual(void) {
+#if defined(NV_ANDROID)
+  return FP_ANDROID;
+#elif defined(NV_TPK)
+  return FP_TIZEN_TPK;
+#elif defined(__EMSCRIPTEN__)
+  return FP_TIZEN_WGT;
+#elif defined(NV_DESKTOP_MPV)
+  return FP_OUTRA;
+#else
+  return FP_WEBOS;
+#endif
+}
+
+static int osMaiorAtual(FarolPlat plat) {
+  int m = 0;
+  if (plat == FP_TIZEN_TPK) {
+#ifdef NV_TPK
+    m = video_tpk_tizen_maior();
+#endif
+    return m > 0 ? m : -1;
+  }
+  if (plat == FP_WEBOS) {
+    m = nv_webos_major();
+    return m > 0 ? m : -1;
+  }
+  return -1;
+}
+
+static int evNaJanela(uint32_t agoraMs, uint32_t tMs, uint32_t janelaMs) {
+  int32_t d = (int32_t)(agoraMs - tMs);
+  return d >= 0 && (uint32_t)d <= janelaMs;
+}
+
+static const char *acaoTokenSeguro(int acao) {
+  const char *tok = farolregra_acao_token(acao);
+  if (tok && tok[0]) return tok;
+  if (acao == FAROL_A_ENVIAR_REGISTRO) return "enviar_registro";
+  return "x";
+}
+
+void farol_fatos_ler(FarolFatos *out) {
+  FarolEvento ev[FAROL_ANEL_N];
+  ResolverFalha falha;
+  FarolSonda sonda;
+  char motBuf[RES_FRASE_MAX], recBuf[64];
+  const char *vNova, *hdr;
+  int i, n, nAud, at, temFalha, fonteAtualDeb = -1;
+  uint64_t seqErro;
+  int iPronto = -1, iErro = -1, iBusca = -1, iBuscaAnt = -1;
+  int falhas = 0, temAbrir = 0, erroNativoPend = 0, reconPend = 0;
+  int paradas = 0, recAudioAnel = 0, lentos = 0, prontoAposErro = 0;
+  uint64_t seqFim = 0, seqIni = 0, desdeSeq = 0, diagTentativa = 0;
+  uint32_t agoraMs;
+  long agora;
+  const uint32_t ttlMs = (uint32_t)RES_REJEITA_S * 1000u;
+
+  if (!out) return;
+
+#ifdef RESOLVER_TESTE
+  {
+    int fixo = 0;
+    pthread_mutex_lock(&travaDiag);
+    if (usaFatosFixos) {
+      *out = fatosFixos;
+      fixo = 1;
+    }
+    desdeSeq = sessaoDesdeSeq;
+    pthread_mutex_unlock(&travaDiag);
+    if (fixo) return;
+  }
+#else
+  pthread_mutex_lock(&travaDiag);
+  desdeSeq = sessaoDesdeSeq;
+  pthread_mutex_unlock(&travaDiag);
+#endif
+
+  farolregra_fatos_iniciar(out);
+  agoraMs = farolanel_agora_ms();
+  agora = (long)time(NULL);
+
+  out->plat = platAtual();
+  out->osMaior = osMaiorAtual(out->plat);
+  out->offline = rede_saude_offline() ? 1 : 0;
+  out->addonsQtd = addons_n();
+  if (out->addonsQtd < 0) out->addonsQtd = 0;
+  motBuf[0] = 0;
+  if (out->addonsQtd > 0 && !addons_ocupado() &&
+      addons_motivo_vazio(motBuf, sizeof motBuf) && motBuf[0])
+    out->addonsMotivo = 1;
+  out->debridSemPlano = debrid_sem_plano() ? 1 : 0;
+  recBuf[0] = 0;
+  out->debridRecusa = debrid_recusa(recBuf, sizeof recBuf) ? 1 : 0;
+  out->tvNegou = video_registro_negado() ? 1 : 0;
+
+  temFalha = resolverregra_falha_recente(&falha, agora);
+  out->haFalha = (temFalha && agora >= falha.agora &&
+                  agora - falha.agora <= RES_REJEITA_S) ? 1 : 0;
+  out->erroIdadeS = -1;
+  out->fonteDebrid = -1;
+  // Erro de reproducao e falha do Resolver anteriores a fronteira da sessao
+  // (seq do anel em que o erro foi gravado <= sessaoDesdeSeq) sao da tentativa
+  // anterior: o reset nao pode reaproveita-los. seqErro 0 = sem erro gravado,
+  // e a falha recente solitaria continua contando como no pai.
+  seqErro = player_ultimo_erro_seq();
+  if (seqErro && seqErro <= desdeSeq) {
+    out->haFalha = 0;
+  } else if (out->haFalha &&
+             player_ultimo_erro_farol(&out->erro, &out->fonteDebrid)) {
+    out->erroIdadeS = (int)(agora - falha.agora);
+    diagTentativa = player_ultimo_erro_tentativa();
+  }
+
+  n = farolanel_ler_seq(ev, FAROL_ANEL_N, 0, &seqFim);
+  seqIni = seqFim - (uint64_t)n;
+  for (i = 0; i < n; i++) {
+    uint64_t seq = seqIni + (uint64_t)i;
+    if (seq < desdeSeq) continue;
+    if (ev[i].ev == FE_PARADO && evNaJanela(agoraMs, ev[i].t_ms, 5u * 60u * 1000u))
+      paradas++;
+    if (!evNaJanela(agoraMs, ev[i].t_ms, ttlMs)) continue;
+    if (ev[i].ev == FE_PRONTO) iPronto = i;
+    else if (ev[i].ev == FE_ERRO_FONTE || ev[i].ev == FE_RECUSA_SINC) iErro = i;
+    else if (ev[i].ev == FE_ADDON_BUSCA) { iBuscaAnt = iBusca; iBusca = i; }
+    else if (ev[i].ev == FE_AUDIO_RECUSADO) recAudioAnel++;
+  }
+
+  for (i = (iPronto >= 0 ? iPronto + 1 : 0); i < n; i++) {
+    uint64_t seq = seqIni + (uint64_t)i;
+    uint16_t tipo = ev[i].ev;
+    if (seq < desdeSeq || !evNaJanela(agoraMs, ev[i].t_ms, ttlMs)) continue;
+    if (tipo == FE_ABRIR) {
+      if (erroNativoPend && !reconPend) falhas++;
+      temAbrir = 1;
+      erroNativoPend = 0;
+      reconPend = 0;
+    } else if (tipo == FE_ERRO_FONTE) {
+      falhas++;
+      erroNativoPend = 0;
+      reconPend = 0;
+    } else if (tipo == FE_RECUSA_SINC) {
+      int seguidoErroFonte = 0;
+      for (int j = i + 1; j < n; j++) {
+        uint64_t jSeq = seqIni + (uint64_t)j;
+        if (jSeq < desdeSeq || !evNaJanela(agoraMs, ev[j].t_ms, ttlMs)) continue;
+        if (ev[j].ev == FE_ABRIR || ev[j].ev == FE_PRONTO) break;
+        if (ev[j].ev == FE_ERRO_FONTE) { seguidoErroFonte = 1; break; }
+      }
+      if (!seguidoErroFonte) {
+        falhas++;
+        erroNativoPend = 0;
+        reconPend = 0;
+      }
+    } else if (tipo == FE_ERRO_NATIVO || tipo == FE_PIPELINE_MORREU) {
+      if (temAbrir) erroNativoPend = 1;
+    } else if (tipo == FE_RECONEXAO) {
+      if (erroNativoPend) reconPend = 1;
+    }
+  }
+  if (erroNativoPend && !reconPend) falhas++;
+
+  out->falhasSeguidas = falhas;
+  out->paradas5min = paradas;
+  out->audioRecusado = recAudioAnel + (video_audio_nao_suportado() ? 1 : 0);
+
+  out->faixaDts = -1;
+  out->outraFaixa = -1;
+  nAud = video_n_audio();
+  at = video_audio_atual();
+  if (nAud > 0) {
+    // #16: a mesma decisao pura que o executor TROCAR_FAIXA usa (farolacao_audio.h).
+    signed char ehDts[FAROLACAO_FAIXAS_MAX];
+    const VideoFaixa *cur = (at >= 0 && at < nAud) ? video_audio(at) : NULL;
+    int nCons = nAud < FAROLACAO_FAIXAS_MAX ? nAud : FAROLACAO_FAIXAS_MAX;
+    if (cur) out->faixaDts = video_faixa_dts(cur) > 0 ? 1 : 0;
+    else if (video_dts_estado() != FAROL_VIDEO_DTS_NENHUM) out->faixaDts = 1;
+    for (i = 0; i < nCons; i++) {
+      const VideoFaixa *fi = video_audio(i);
+      ehDts[i] = (fi && video_faixa_dts(fi) > 0) ? 1 : 0;
+    }
+    // Canal ao vivo: faixas_audio_trocar_compativel nao troca — o fato fica
+    // coerente com o executor (o veredito TROCAR_FAIXA nunca aparece).
+    if (player_id_canal()[0]) out->outraFaixa = 0;
+    else out->outraFaixa = farolacao_audio_faixa_compativel(nCons, at,
+        out->faixaDts, ehDts) >= 0 ? 1 : 0;
+  } else if (video_dts_estado() != FAROL_VIDEO_DTS_NENHUM) {
+    out->faixaDts = 1;
+  }
+
+  // #16: so LG webOS e .tpk Tizen 6+ convertem; WASM, .tpk 4.0-5.5 e Android
+  // nunca (farolacao_audio_conversao_possivel: -1 sem conversao, 0 nao serve agora).
+  {
+    int motor = 0;
+    if (out->plat == FP_WEBOS) motor = dts_playback_enabled();
+    else if (out->plat == FP_TIZEN_TPK) motor = dts_tpk_disponivel();
+    out->conversaoPossivel = farolacao_audio_conversao_possivel(
+        out->plat, out->osMaior, motor,
+        video_dts_estado() == FAROL_VIDEO_DTS_FALHOU, out->audioRecusado > 0);
+  }
+
+  // A fonte atual entra em variavel separada: a origem do erro do player
+  // (out->fonteDebrid, 0/1) tem precedencia, e a fonte atual so completa
+  // quando o erro nao marca debrid — a mesma precedencia do Resolver do pai
+  // (resolver.c: stream_item(stream_atual()) so quando fonteDebrid < 0).
+  stream_farol_fatos(&out->fonteDv, &out->fonteHdr, &out->fonteGBx10,
+                     &out->fonteMbps, &fonteAtualDeb, &out->temOutraFonte,
+                     &out->temFonteMenor, &out->temFonteSemDv,
+                     &out->temFonteSemDts, &out->tvHdr, &out->tvDv,
+                     &out->vazaoMbps);
+  if (out->fonteDebrid < 0) out->fonteDebrid = fonteAtualDeb;
+  if (out->fonteDv < 0 && video_tem_dolby_vision() > 0) out->fonteDv = 1;
+  if (out->fonteHdr < 0) {
+    hdr = video_hdr();
+    if (hdr && hdr[0] && strcmp(hdr, "none") && strcmp(hdr, "desconhecido") &&
+        strcmp(hdr, "unknown"))
+      out->fonteHdr = 1;
+  }
+
+  out->memLivreMB = (int)memlog_livre_mb();
+  out->sondaRange = -1;
+  if (farolsonda_estado(&sonda) && !sonda.cancelada && sonda.http > 0)
+    out->sondaRange = sonda.http;
+  vNova = atualizacao_nova();
+  out->versaoNova = (vNova && vNova[0]) ? 1 : 0;
+
+  out->addonsLentos = -1;
+  out->addonsMudos = -1;
+  if (iBusca >= 0) {
+    out->addonsMudos = ev[iBusca].b >= 0 ? ev[iBusca].b : 0;
+    for (i = (iBuscaAnt >= 0 ? iBuscaAnt + 1 : 0); i < iBusca; i++) {
+      uint64_t seq = seqIni + (uint64_t)i;
+      if (seq < desdeSeq || !evNaJanela(agoraMs, ev[i].t_ms, ttlMs)) continue;
+      if (ev[i].ev == FE_ADDON_LENTO && !ev[i].b) lentos++;
+    }
+    out->addonsLentos = lentos;
+  }
+
+  prontoAposErro = (iPronto >= 0 && (iErro < 0 || iPronto > iErro));
+#ifdef NV_ANDROID
+  out->externoDisponivel = (!prontoAposErro && diagTentativa &&
+                            player_externo_disponivel_tentativa(diagTentativa)) ? 1 : 0;
+#else
+  (void)prontoAposErro;
+  (void)diagTentativa;
+  out->externoDisponivel = 0;
+#endif
+}
+
+int farol_julgar(int sintoma) {
+  FarolFatos fatos;
+  FarolVeredito v;
+  int cod;
+  farol_fatos_ler(&fatos);
+  fatos.sintoma = sintoma;
+  farolregra_julgar(sintoma, &fatos, &v);
+  cod = v.regra ? (int)v.regra->codigo : FAROL_C_NADA_ACHADO;
+  pthread_mutex_lock(&travaDiag);
+  fatosSessao = fatos;
+  vereditoSessao = v;
+  temVeredito = 1;
+  pthread_mutex_unlock(&travaDiag);
+  farol_ev(FM_FAROL, FE_FAROL_VEREDITO, 0, cod, sintoma,
+           farolregra_codigo_nome(cod));
+  return cod;
+}
+
+const FarolVeredito *farol_veredito(void) {
+  const FarolVeredito *r = NULL;
+  pthread_mutex_lock(&travaDiag);
+  if (temVeredito) {
+    vereditoSaida = vereditoSessao;
+    r = &vereditoSaida;
+  }
+  pthread_mutex_unlock(&travaDiag);
+  return r;
+}
+
+int farol_veredito_copiar(FarolVeredito *veredito, FarolFatos *fatos) {
+  int ok;
+  pthread_mutex_lock(&travaDiag);
+  ok = temVeredito;
+  if (ok) {
+    if (veredito) *veredito = vereditoSessao;
+    if (fatos) *fatos = fatosSessao;
+  }
+  pthread_mutex_unlock(&travaDiag);
+  return ok;
+}
+
+void farol_registrar_acao(int acao) {
+  farol_ev(FM_FAROL, FE_FAROL_ACAO, 0, acao, 0, acaoTokenSeguro(acao));
+}
+
+void farol_registrar_resultado(int acao, int ok) {
+  farol_ev(FM_FAROL, FE_FAROL_RESULTADO, ok ? 0 : 1, acao, ok ? 1 : 0,
+           acaoTokenSeguro(acao));
+}
+
+void farol_registrar_envio(int http) {
+  int ok = http >= 200 && http < 300;
+  farol_ev(FM_FAROL, FE_FAROL_ENVIO, ok ? 0 : 2, http, 0, ok ? "ok" : "erro");
+}
+
+void farol_registrar_consertou(int acao) {
+  farol_ev(FM_FAROL, FE_FAROL_CONSERTOU, 0, acao, 1, acaoTokenSeguro(acao));
+}
+
+int farol_eventos(FarolEvento *dst, int max) {
+  if (!dst || max <= 0) return 0;
+  return farolanel_ler_ultimos(dst, max > FAROL_ANEL_N ? FAROL_ANEL_N : max, 0);
+}
+
+void farol_sessao_reiniciar(void) {
+  uint64_t seq = farolanel_seq();
+  pthread_mutex_lock(&travaDiag);
+  temVeredito = 0;
+  memset(&vereditoSessao, 0, sizeof vereditoSessao);
+  memset(&vereditoSaida, 0, sizeof vereditoSaida);
+  memset(&fatosSessao, 0, sizeof fatosSessao);
+  sessaoDesdeSeq = seq;
+  pthread_mutex_unlock(&travaDiag);
+}
+
+#ifdef RESOLVER_TESTE
+void farol_teste_fatos(const FarolFatos *f) {
+  pthread_mutex_lock(&travaDiag);
+  if (f) {
+    fatosFixos = *f;
+    usaFatosFixos = 1;
+  } else {
+    usaFatosFixos = 0;
+    memset(&fatosFixos, 0, sizeof fatosFixos);
+  }
+  pthread_mutex_unlock(&travaDiag);
+}
+#endif

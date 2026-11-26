@@ -293,6 +293,7 @@ void rede_parar_quando(int (*parar)(void *), void *usuario);
 typedef struct { int (*parar)(void *); void *usuario; int instalado; } RedePararEstado;
 /* Replace the worker/fiber hook and return the previous hook for restoration. */
 RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario);
+int rede_deve_parar(void);
 
 // Teto de bytes da transferencia corrente (0 = sem teto). E interno ao modulo;
 // esta exposto so porque rede_baixar_trecho o usa. Nao mexer de fora.
@@ -560,6 +561,11 @@ int rede_tls_tentar_enviar(RedeTls *t, const void *buf, size_t n, size_t *foi);
 // >0 bytes lidos, 0 nada chegou, -1 conexao caiu ou fechou.
 int rede_tls_receber(RedeTls *t, void *buf, size_t n, int esperaMs);
 void rede_tls_fechar(RedeTls *t);
+// FAROL (#34): zera o cache de DNS e as conexoes ociosas do cliente. Nao
+// interrompe transferencia: cada fio descarta o proprio handle ocioso na
+// proxima vez que pedir um (e o DNS compartilhado e podado ai). Qualquer fio.
+void rede_zerar_cache(void);
+unsigned rede_cache_geracao(void);   // sobe a cada rede_zerar_cache (testes/log)
 // Login TLS falhou: sonda CONNECT_ONLY (bundle/sistema/semca) so para log (#737).
 int rede_sonda_tls(const char *url);
 

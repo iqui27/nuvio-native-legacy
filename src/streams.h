@@ -17,6 +17,7 @@
 #include "mediaurl.h"
 #include "fontefalha.h"
 #include "fontefiltro.h"
+#include "farolacao_fonte.h"
 
 // A lista cresce conforme a resposta dos addons; a UI virtualiza as linhas.
 
@@ -559,4 +560,20 @@ int  stream_escolher_indice(int indice);
 // Captured at dispatch, so a delayed worker cannot adopt another profile's list.
 int stream_canal_primeira_viva_sessao(int tentativas, uint64_t sessao);
 int stream_verificar_proxima_vod_sessao(int atualIdx, int tentativas, int *conferidas, uint64_t sessao);
+// Retrato resumido para o diagnostico do Farol (src/farol.c, sem SDL).
+// Qualquer ponteiro NULL e ignorado; campos desconhecidos ficam em -1.
+void stream_farol_fatos(int *fonteDv, int *fonteHdr, int *fonteGBx10,
+                        int *fonteMbps, int *fonteDebrid, int *temOutraFonte,
+                        int *temFonteMenor, int *temFonteSemDv,
+                        int *temFonteSemDts, int *tvHdr, int *tvDv,
+                        int *vazaoMbps);
+// Snapshot das fontes em ORDEM DE PREFERENCIA para as acoes de fonte do Farol
+// (farolacao_fonte.h). A fonte atual entra sempre; as demais ate `max`-1.
+// Devolve quantas linhas escreveu (0 = sem lista) e a geracao da lista.
+int stream_farol_fontes(FarolFonteLinha *dst, int max, unsigned *geracao);
+// Pede a troca para `indice` SEM guardar preferencia (o Farol conserta, nao
+// reescreve a escolha da pessoa): vale so se a lista ainda e a `geracao`.
+// app.c consome com stream_farol_troca_escolheu no quadro seguinte.
+int stream_farol_trocar(int indice, unsigned geracao);
+int stream_farol_troca_escolheu(int *indice);
 #endif

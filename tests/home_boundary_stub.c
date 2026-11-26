@@ -2,6 +2,7 @@
 #include "gfx.h"
 #include "menu.h"
 #include "farol.h"
+#include "faroldica.h"
 #include "homeassistiu.h"
 static float scale = 1.0f;
 __attribute__((weak)) float gfx_escala(void) { return scale; }
@@ -27,6 +28,22 @@ __attribute__((weak)) int farol_fileira(const char *chave) { (void)chave; return
 __attribute__((weak)) unsigned farol_cena_geracao(void) { return 0; }
 __attribute__((weak)) const char *farol_motivo(const char *chaveFil, int coluna, const char *imdb) {
   (void)chaveFil; (void)coluna; (void)imdb; return NULL;
+}
+__attribute__((weak)) unsigned faroldica_geracao(void) { return 0; }
+__attribute__((weak)) int faroldica_dia_atual(void) { return 0; }
+__attribute__((weak)) int faroldica_atual(FarolDica *out) { (void)out; return 0; }
+__attribute__((weak)) int faroldica_focavel(const FarolDica *d) { (void)d; return 0; }
+__attribute__((weak)) int faroldica_preparar(void) { return 0; }
+__attribute__((weak)) int faroldica_dispensar(void) { return 0; }
+__attribute__((weak)) FarolDicaExec faroldica_executar(const FarolDica *d) {
+  (void)d;
+  FarolDicaExec ex = { FD_EXEC_NADA, 0, -1, "" };
+  return ex;
+}
+__attribute__((weak)) void faroldica_esquecer(void) {}
+__attribute__((weak)) void faroldica_desenhar(const FarolDica *d, GfxRect r, float raio,
+                                              float foco, float alpha, int reduzido, int salvo) {
+  (void)d; (void)r; (void)raio; (void)foco; (void)alpha; (void)reduzido; (void)salvo;
 }
 
 #include "addons.h"

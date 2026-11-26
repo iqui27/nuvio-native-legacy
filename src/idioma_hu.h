@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "4-től 8 számig. Megvédi a profil beállításait ezen a tévén."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "4–8 számjegy. Csak ezen a tévén érvényes; védi a többi profil beállításait."),
   T("De 50% a 300% do tamanho principal", "A fő méret 50-300%-a"),
+  T("De lado até amanhã", "Holnapig félretéve"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Honnan veszi a kirakat a címeket: a teljes katalógusból, vagy csak a listádból és a Folytatásból."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "Honnan veszi a kirakat a címeket: a katalógusból vagy a listájából."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "Honnan választhat az automatikus lejátszás: minden forrás, csak telepített bővítmények vagy csak bekapcsolt pluginok. A profilban tárolódik."),

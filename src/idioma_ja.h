@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "4から8までの数字。このテレビのこのプロファイルの設定を保護します。"),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "4-8桁。このテレビでのみ有効で、他のプロフィールの設定を保護します。"),
   T("De 50% a 300% do tamanho principal", "メインサイズの50%から300%まで"),
+  T("De lado até amanhã", "明日まで保留"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "ショーケースの作品の取得元：カタログ全体、またはリストと続きを見るの作品のみ。"),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "ショーケースがタイトルを取得する場所:カタログまたはあなたのリスト。"),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "自動再生の選択元: すべてのソース、インストール済みアドオンのみ、または有効なプラグインのみ。プロフィールに保存。"),

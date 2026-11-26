@@ -29,6 +29,7 @@ int ajustes_dv7(void) { return 0; }
 int ajustes_dv7_mapping(void) { return 0; }
 int ajustes_dv_audio(void) { return 0; }
 int ajustes_hdr10p_strip(void) { return 0; }
+int ajustes_farol_hdr_off_ativo(void) { return 0; }
 void dts_engine_set_ac3(int on) { (void)on; }
 void dts_engine_set_normalize(int on) { (void)on; }
 void dts_engine_set_hdr10p_strip(int on) { (void)on; }

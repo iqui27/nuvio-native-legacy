@@ -71,10 +71,50 @@ int  addonstats_serializar(char *dst, unsigned tam);
 void addonstats_carregar(const char *texto);
 void addonstats_zerar(void);
 
+// QUARENTENA DE 24 h (Farol #17, FAROL_A_ISOLAR_ADDON). O add-on lento ou mudo
+// que o Farol pos "de lado" deixa de ser esperado e de ser consultado nas
+// buscas de FONTES ate o prazo vencer (ou ate a pessoa desfazer). Vale por
+// identidade de configuracao (a mesma chave opaca de addonstats_registrar) e
+// fica num arquivo pequeno ao lado da latencia. O relogio e injetavel: os
+// testes trocam addonstats_agora() sem esperar 24 h de verdade.
+// A POLITICA (teto de 3, nunca o unico de fontes) vive em farolacao_addon.c;
+// aqui so mora o prazo.
+#define ADDONSTATS_ISOLA_S 86400      // 24 h
+#define ADDONSTATS_ISOLA_CAP 16       // linhas do arquivo (o teto da politica e menor)
+void   addonstats_relogio(time_t (*agora)(void));   // NULL = time(NULL)
+time_t addonstats_agora(void);
+// Poe a chave de lado por `segundos` a partir de agora. 1 = gravado; 0 = chave
+// invalida ou tabela cheia de quarentenas vivas. Reisolar renova o prazo.
+int  addonstats_isolar(const char *chave, int segundos);
+// Como addonstats_isolar, mas recusa de forma ATOMICA (sem janela entre contar e
+// gravar) quando ja ha `teto` quarentenas vivas e a chave e nova.
+// 1 = isolado; 0 = invalido/tabela cheia; -1 = ja estava de lado (prazo mantido);
+// -2 = teto atingido.
+int  addonstats_isolar_teto(const char *chave, int segundos, int teto);
+// Como addonstats_isolar_teto e, na MESMA trava, a guarda do ultimo add-on de
+// fontes: `fontes` sao as chaves dos add-ons ligados que fornecem fontes (com ou
+// sem quarentena; repetidas contam uma vez). Recusa com -3 quando, fora `chave`,
+// nenhuma delas seguiria fora da quarentena. `nFontes` < 0 = sem essa guarda.
+#define ADDONSTATS_CHAVE_N 32
+int  addonstats_isolar_guarda(const char *chave, int segundos, int teto,
+                              const char (*fontes)[ADDONSTATS_CHAVE_N], int nFontes);
+// 1 = havia quarentena viva e foi desfeita.
+int  addonstats_desisolar(const char *chave);
+// Segundos que faltam; 0 = livre (nunca isolado, desfeito ou vencido).
+int  addonstats_isolado_s(const char *chave);
+int  addonstats_isolados_n(void);                    // quarentenas vivas
+// Arquivo de texto: "chave\tate_epoch" por linha. Carregar descarta o vencido.
+int  addonstats_isolar_serializar(char *dst, unsigned tam);
+void addonstats_isolar_carregar(const char *texto);
+void addonstats_isolar_zerar(void);
+
 #ifndef NV_ADDONSTATS_PURO
 // Le/grava dados_dir()/fonte-latencia.txt. Ler uma vez no arranque; salvar e
 // barato e so escreve quando algo mudou desde a ultima.
 void addonstats_ler(void);
 void addonstats_salvar(void);
+// Quarentena: dados_dir()/fonte-quarentena.txt. addonstats_ler() ja le os dois;
+// isolar_salvar grava na hora quando algo mudou.
+void addonstats_isolar_salvar(void);
 #endif
 #endif

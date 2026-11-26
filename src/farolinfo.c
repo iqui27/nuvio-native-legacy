@@ -340,3 +340,51 @@ int farolinfo_retomada(FarolInfoLinha *sai, int t, int e,
   argNum(sai, 0, t); argNum(sai, 1, e); arg(sai, 2, cod);
   return 1;
 }
+
+// --------------------------------------------- retomada sem spoiler (57) ---
+
+const char *farolinfo_retomada_sinopse(int t, int e,
+                                       const FarolInfoEp *eps, int n) {
+  const char *achou = NULL;
+  int i, vistos = 0;
+
+  if (t <= 0 || e <= 0 || !eps || n <= 0) return NULL;
+  for (i = 0; i < n; i++) {
+    if (eps[i].temporada != t || eps[i].episodio != e) continue;
+    vistos++;
+    achou = eps[i].sinopse;
+  }
+  // Repetido: a lista nao diz qual e o visto. Sem chute.
+  if (vistos != 1 || !achou || !achou[0]) return NULL;
+  return achou;
+}
+
+int farolinfo_retomada_linha_ok(const char *s) {
+  const unsigned char *p = (const unsigned char *)s;
+  int pontos = 0;
+
+  if (!s || !s[0]) return 0;
+  if (*p == ' ') return 0;
+  while (*p) {
+    unsigned c = *p;
+    int extra, k;
+    if (c < 0x20 || c == 0x7f) return 0;          // \n, \r, \t e controle
+    if (c < 0x80) extra = 0;
+    else if ((c & 0xe0) == 0xc0 && c >= 0xc2) extra = 1;
+    else if ((c & 0xf0) == 0xe0) extra = 2;
+    else if ((c & 0xf8) == 0xf0 && c <= 0xf4) extra = 3;
+    else return 0;
+    for (k = 1; k <= extra; k++)
+      if ((p[k] & 0xc0) != 0x80) return 0;
+    if (extra == 1 && c == 0xc2 && p[1] < 0xa0) return 0;      // C1 (NEL...)
+    if (extra == 2 && c == 0xe0 && p[1] < 0xa0) return 0;      // sobrelongo
+    if (extra == 2 && c == 0xed && p[1] >= 0xa0) return 0;     // surrogate
+    if (extra == 3 && c == 0xf0 && p[1] < 0x90) return 0;      // sobrelongo
+    if (extra == 3 && c == 0xf4 && p[1] >= 0x90) return 0;     // > U+10FFFF
+    if (extra == 2 && c == 0xe2 && p[1] == 0x80 &&
+        (p[2] == 0xa8 || p[2] == 0xa9)) return 0;               // LS / PS
+    if (++pontos > FI_RESUMO_PONTOS) return 0;
+    p += extra + 1;
+  }
+  return p[-1] != ' ';
+}

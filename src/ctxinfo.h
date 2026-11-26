@@ -89,4 +89,6 @@ float ctxinfo_compacto(const CatItem *ci, const CtxInfoEstado *st, float x, floa
 // retangulo do cartao; ctxinfo_sobre_altura e a altura que isso pede.
 float ctxinfo_sobre_altura(const CatItem *ci, const CtxInfoEstado *st, float w);
 void  ctxinfo_sobre_arte(const CatItem *ci, const CtxInfoEstado *st, GfxRect r, float raioPx, float ca);
+// Relogio injetavel para teste de farolinfo no painel (NULL = time(NULL)).
+void ctxinfo_teste_relogio(long long (*epochS)(void));
 #endif

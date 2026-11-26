@@ -1068,6 +1068,22 @@ static int acbBindValido(const AcbBind *bind) {
     bind->acb == acb && !strcmp(bind->midia, midia);
 }
 
+// hdrType a publicar no bind do ACB. FAROL34C: com o SDR forcado pelo Farol
+// (override da reproducao, semDVForcado/farol_hdr_off) o bind NUNCA anuncia
+// HDR10 nem DolbyVision — nem vindo do hdrTipo de teste nem do videoInfo —
+// senao a TV liga o modo HDR num video que estamos mandando em SDR.
+static void selHtipo(char *htipo, size_t n, int sdrForcado, int *prim, int *trans, int *matriz) {
+  if (sdrForcado) { snprintf(htipo, n, "none"); *prim = *trans = *matriz = 2; return; }
+  if (strcmp(hdrTipo, "none")) { snprintf(htipo, n, "%s", hdrTipo);
+                                *prim = vuiPrim; *trans = vuiTrans; *matriz = vuiMatriz; }
+  else if (!strcasecmp(vidHdr, "DolbyVision") || vidDV) {
+                                snprintf(htipo, n, "DolbyVision"); }
+  else if (!strcasecmp(vidHdr, "HDR10")) {
+                                snprintf(htipo, n, "HDR10");
+                                *prim = vuiPrim; *trans = vuiTrans; *matriz = vuiMatriz; }
+  else                          snprintf(htipo, n, "none");
+}
+
 static void *prenderPlano(void *u) {
   AcbBind *bind = u;
   const char *minha = bind->midia;
@@ -1097,14 +1113,8 @@ static void *prenderPlano(void *u) {
     // sintoma do teste 4K.
     char htipo[24];
     int prim = 2, trans = 2, matriz = 2;
-    if (strcmp(hdrTipo, "none")) { snprintf(htipo, sizeof htipo, "%s", hdrTipo);
-                                  prim = vuiPrim; trans = vuiTrans; matriz = vuiMatriz; }
-    else if (!strcasecmp(vidHdr, "DolbyVision") || vidDV) {
-                                  snprintf(htipo, sizeof htipo, "DolbyVision"); }
-    else if (!strcasecmp(vidHdr, "HDR10")) {
-                                  snprintf(htipo, sizeof htipo, "HDR10");
-                                  prim = vuiPrim; trans = vuiTrans; matriz = vuiMatriz; }
-    else                           snprintf(htipo, sizeof htipo, "none");
+    selHtipo(htipo, sizeof htipo, semDVForcado || ajustes_farol_hdr_off_ativo(),
+             &prim, &trans, &matriz);
     char vd[2048];
     montarVideoData(vd, sizeof vd, minha, htipo, prim, trans, matriz);
     { char ad[160];
@@ -2728,8 +2738,10 @@ int video_tocar(const char *url) {
   reconAudio = reconLeg = -1; reconLegUrl[0] = 0;
   falhou = 0; terminou = 0; audioNaoSup = 0;
   ack_publicar();
-  // FONTE NOVA, decisao nova: o "sem HDR" era sobre o arquivo anterior.
-  semDVForcado = 0;
+  // FONTE NOVA, decisao nova: o "sem HDR" era sobre o arquivo anterior — a
+  // menos que seja o override do Farol (#34), que e sobre ESTA REPRODUCAO: o
+  // recarregar desta sessao e a reabertura seguinte voltam sem DV igual.
+  semDVForcado = ajustes_farol_hdr_off_ativo() ? 1 : 0;
   // Titulo novo: o marcador do anterior nao vale. Sem isto um filme sem
   // capitulos herdaria os creditos do filme de antes — e o painel subiria numa
   // hora sem relacao nenhuma com o que esta tocando.
@@ -2738,7 +2750,10 @@ int video_tocar(const char *url) {
   // capitulos depois de um com nao herda as marcas do anterior.
   capmkv_zerar();
   snprintf(urlAtual, sizeof urlAtual, "%s", url ? url : "");
-  int r = tocarInterno(url, 1);   // liga o LS2 (lsPayload) antes do pedido
+  // FAROL34C: com o SDR forcado pelo Farol (semDVForcado, linha acima do
+  // ajustes_farol_hdr_off_ativo) a carga nao pede DolbyVision nem DV no ACB —
+  // passar 1 aqui religava o DV que o override acabou de desligar.
+  int r = tocarInterno(url, !semDVForcado);   // liga o LS2 (lsPayload) antes do pedido
   pedirEdid();
   return r;
 }
@@ -3246,8 +3261,9 @@ static int tocarInterno(const char *url, int comDV) {
   seiBrancoX = seiBrancoY = seiMinLum = seiMaxLum = seiMaxCLL = seiMaxFALL = 0;
   vuiPrim = vuiTrans = vuiMatriz = 2;
   // A afirmacao de DV da fonte escolhida sobrevive ao reset: e ela que o bind
-  // descreve ao tv.display. Sem ela, toda sessao nasceria "none".
-  vidDV = dvPedido;
+  // descreve ao tv.display. Sem ela, toda sessao nasceria "none". E respeita
+  // o comDV: recarregar "sem HDR" nao pode voltar a afirmar DV no bind.
+  vidDV = dvPedido && comDV ? 1 : 0;
   cronPediu = 1; cronLoad = 0; cronQuadro = 0;
   clock_gettime(CLOCK_MONOTONIC, &t0Pedido);
   // windowId "window_id_dummy" NAO e enfeite: com string vazia o load responde
@@ -4539,7 +4555,12 @@ void video_forcar_sdr(void) {
   fflush(stdout);
 }
 
-void video_definir_dv(int dv) { dvPedido = dv ? 1 : 0; }
+void video_definir_dv(int dv) {
+  // Override do Farol "Desligar o HDR nesta reproducao" (#34): enquanto estiver
+  // ativo, nenhuma afirmacao de DV da fonte volta a ligar — a reabertura pedida
+  // pelo farolacao_rede reafirmaria o DV pelo dolbyVision gravado no Stream.
+  dvPedido = (dv && !ajustes_farol_hdr_off_ativo()) ? 1 : 0;
+}
 
 void video_escolher_audio(int i) {
   char b[192];

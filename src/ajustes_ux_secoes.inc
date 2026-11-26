@@ -267,7 +267,9 @@ static int ajCenaSecao(int op) {
       return AJC_CON_SERVIDORES;
 case AJ_AMPLIAR_UI: case AJ_AMPLIACAO_ALGO: case AJ_AMPLIACAO_NITIDEZ: case AJ_HDR_INTERFACE: case AJ_RESOLUCAO: case AJ_QUALIDADE_IMG: case AJ_GPU_EFEITOS: case AJ_NAV_RAPIDA: return AJC_DES_TELA;
     case AJ_MEDIDOR: case AJ_DIAGNOSTICO: case AJ_VELOCIDADE: return AJC_DES_DIAG;
-    case AJ_GUIA: return AJC_SOB_GUIA;
+    case AJ_GUIA: case AJ_FAROL: case AJ_FAROL_AVISOS:
+    case AJ_FAROL_RECOMENDAR: case AJ_FAROL_APRENDEU: case AJ_FAROL_ZERAR: case AJ_FAROL_LLM_SO_ESTA_TV:
+      return AJC_SOB_GUIA;
     case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: return AJC_SOB_APP;
     default: return -1;
   }

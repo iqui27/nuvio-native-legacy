@@ -16,6 +16,9 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-farol-android-erro.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
 ndk="${ANDROID_NDK_HOME:-${ANDROID_HOME:-/home/ubuntu/nuvio-qa-21/global/toolchains/android-sdk}/ndk/27.2.12479018}"
+if [ ! -d "$ndk/toolchains" ] && [ -d /home/ubuntu/nuvio-rev/fake-ndk/toolchains ]; then
+  ndk="/home/ubuntu/nuvio-rev/fake-ndk"
+fi
 mkdir -p "$work/include"
 cp "$ndk"/toolchains/llvm/prebuilt/*/sysroot/usr/include/jni.h "$work/include/"
 if [ -d "${NUVIO_ANDROID_CACHE:-$HOME/.cache/nuvio-android}/src/SDL2-2.30.9/include" ]; then
@@ -68,11 +71,14 @@ parts = [
     extract_fn(player, r"^void player_erro_fonte\(void\) \{", "player_erro_fonte"),
     extract_fn(player, r"^int player_ultimo_erro_farol\(FarolErro \*out, int \*foiDebrid\) \{", "player_ultimo_erro_farol"),
     extract_fn(player, r"^uint64_t player_ultimo_erro_tentativa\(void\) \{", "player_ultimo_erro_tentativa"),
+    extract_fn(player, r"^uint64_t player_ultimo_erro_seq\(void\) \{", "player_ultimo_erro_seq"),
     extract_fn(player, r"^uint64_t player_ultimo_addon_farol\(void\) \{", "player_ultimo_addon_farol"),
     extract_fn(player, r"^int player_externo_disponivel_tentativa\(uint64_t tentativa\) \{", "player_externo_disponivel_tentativa"),
     extract_fn(player, r"^int player_externo_disponivel\(void\) \{", "player_externo_disponivel"),
     extract_fn(player, r"^int player_abrir_externo_tentativa\(uint64_t tentativa\) \{", "player_abrir_externo_tentativa"),
     extract_fn(player, r"^int player_abrir_externo\(void\) \{", "player_abrir_externo"),
+    extract_fn(app, r"^static void abrirTitulo\(const HomeItem \*it, int exigeArte, int descartarRetido\) \{", "abrirTitulo em app.c"),
+    extract_fn(app, r"^static int abrirFarolPedido\(const FarolAchaPedido \*p\) \{", "abrirFarolPedido em app.c"),
     "static void app_resolver_despachar(const SDL_Event *e) {",
     extract_brace_block(app, "  if (resolver_aberto()) {", "resolver_aberto em app.c"),
     "}",
@@ -84,7 +90,8 @@ PY
   -Wall -Wextra -O1 -g -Wno-deprecated-declarations -Wno-macro-redefined \
   -I"$work/include" -I"$work" -Isrc \
   -Wl,--wrap=farol_ev \
-  tests/farol_android_erro.c src/resolver.c src/resolverregra.c src/farolregra.c \
+  tests/farol_android_erro.c src/resolver.c src/farolachaui.c src/farolacha.c \
+  src/resolverregra.c src/farolregra.c src/farol.c \
   src/farolerro.c src/farolanel.c src/fontesonda.c src/extplayer.c \
   src/addonguia.c src/addonmodo.c src/video_modo.c src/capmkv.c src/mkv.c tests/capmkv_stub.c \
   -lm -lpthread -o "$work/farol-android-erro-test"

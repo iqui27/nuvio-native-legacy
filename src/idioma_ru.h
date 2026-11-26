@@ -2559,6 +2559,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "От 4 до 8 номеров. Защищает настройки этого профиля на этом телевизоре."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "От 4 до 8 цифр. Действует только на этом телевизоре; защищает настройки других профилей."),
   T("De 50% a 300% do tamanho principal", "От 50% до 300% от основного размера"),
+  T("De lado até amanhã", "Отложено до завтра"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Откуда витрина берёт названия: весь каталог или только то, что есть в вашем списке и в Продолжить просмотр."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "Откуда витрина берёт тайтлы: из каталога или из вашего списка."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "Откуда может играть автоматика: все источники, только установленные аддоны или только включённые плагины. Хранится в профиле."),

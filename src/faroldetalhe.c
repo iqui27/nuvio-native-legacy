@@ -13,6 +13,7 @@
 //      titulo, perfil ou gosto.
 #include "faroldetalhe.h"
 #include "farolcena.h"
+#include "farolcompor.h"
 #include "faroltexto.h"
 #include "farolsinal.h"
 #include "ajustes.h"
@@ -149,6 +150,12 @@ static struct {
   DiarioTitulo diaTit;
   int       diaRetT, diaRetE;
   long long diaRetQ;
+  // Retomada sem spoiler (issue 57): o (t, e) JA VISTO da linha retomada da
+  // P6 deste quadro, o resumo adotado dele e o controle do pedido.
+  int       retT, retE;
+  char      retResumo[192];
+  Uint32    retTentouMs;
+  int       retTentou;
   Uint32    aberturaMs;
   Uint32    ultMs;
   uint64_t  assinatura;
@@ -761,6 +768,19 @@ static void fd_consumir_cena_locked(const FarolCena *c, const FdResolCtx *rc) {
     }
   }
 
+  // Resumo sem spoiler (issue 57): logo abaixo da linha retomada, so se ela
+  // esta na P6 e ainda ha vaga. Sem resumo, a linha de tempo fica sozinha.
+  if (S.retResumo[0] && nInfo < FAROL_INFO_MAX) {
+    for (i = 0; i < nInfo; i++) {
+      if (info[i].k != FP_INFO_RETOMADA) continue;
+      memmove(&info[i + 2], &info[i + 1], (size_t)(nInfo - i - 1) * sizeof info[0]);
+      info[i + 1].k = FP_INFO_RETOMADA;
+      snprintf(info[i + 1].texto, sizeof info[0].texto, "%s", S.retResumo);
+      nInfo++;
+      break;
+    }
+  }
+
   S.snap.nPorque = nPorque;
   memcpy(S.snap.porque, porque, sizeof porque);
   S.snap.nSelos = nSelos;
@@ -904,6 +924,9 @@ void faroldetalhe_abrir(int catIndice, Uint32 agoraMs) {
   S.qualBloqueada = 0;
   S.cenaManual = 0;
   S.seloLembrado = 0;
+  S.retT = S.retE = 0;
+  S.retResumo[0] = 0;
+  S.retTentou = 0;
   memset(&S.borda, 0, sizeof S.borda);
   memset(&S.snap, 0, sizeof S.snap);
   S.snap.blocoAlpha = 1.0f;
@@ -921,9 +944,71 @@ void faroldetalhe_fechar(void) {
   S.diaTemTit = S.diaTemEp = 0;
   S.assinatura = 0;
   S.cenaManual = 0;
+  S.retT = S.retE = 0;
+  S.retResumo[0] = 0;
+  S.retTentou = 0;
   memset(&S.borda, 0, sizeof S.borda);
   memset(&S.snap, 0, sizeof S.snap);
   FD_UNLOCK();
+}
+
+// RETOMADA SEM SPOILER (issue 57). A sinopse que sai e SO a do episodio que o
+// Diario deu como o ultimo visto (S.retT/S.retE, de diario_ultimo_episodio):
+// a lista do catalogo e filtrada pela temporada vista e o casamento EXATO
+// (t, e) fica em farolinfo_retomada_sinopse. Sem linha retomada na P6, sem
+// vaga ou sem sinopse daquele episodio: nada e pedido.
+#define FD_RET_EPS_MAX 128
+#define FD_RET_INTERVALO_MS 1000u
+void faroldetalhe_retomada(int catIndice) {
+  FarolInfoEp eps[FD_RET_EPS_MAX];
+  char imdb[24], idCat[24], titulo[160], sinBuf[420];
+  const CatItem *ci;
+  const char *sin;
+  int t, e, i, n = 0, total, temLinha = 0, cabe, pode;
+
+  FD_LOCK();
+  t = S.retT;
+  e = S.retE;
+  idbase_copiar(S.imdb, imdb, sizeof imdb);
+  for (i = 0; i < S.snap.nInfo; i++)
+    if (S.snap.info[i].k == FP_INFO_RETOMADA) temLinha = 1;
+  cabe = S.snap.nInfo < FAROL_INFO_MAX;
+  pode = S.aberto && S.catIdx == catIndice && !S.retResumo[0] &&
+         (!S.retTentou || S.ultMs - S.retTentouMs >= FD_RET_INTERVALO_MS);
+  if (pode && temLinha && cabe && t > 0 && e > 0) {
+    S.retTentou = 1;
+    S.retTentouMs = S.ultMs;
+  }
+  FD_UNLOCK();
+  if (!pode || !temLinha || !cabe || t <= 0 || e <= 0 || !imdb[0]) return;
+
+  ci = cat_item(catIndice);
+  if (!ci) return;
+  idbase_copiar(ci->imdb, idCat, sizeof idCat);
+  if (strcmp(idCat, imdb) != 0) return;
+  snprintf(titulo, sizeof titulo, "%s", ci->titulo);
+
+  total = cat_n_episodios(catIndice);
+  for (i = 0; i < total && n < FD_RET_EPS_MAX; i++) {
+    const CatEp *ep = cat_episodio(catIndice, i);
+    if (!ep || ep->temporada != t) continue;
+    eps[n].temporada = ep->temporada;
+    eps[n].episodio = ep->episodio;
+    eps[n].sinopse = ep->sinopse;
+    n++;
+  }
+  sin = farolinfo_retomada_sinopse(t, e, eps, n);
+  if (!sin || !sin[0]) return;
+  snprintf(sinBuf, sizeof sinBuf, "%s", sin);
+
+  // Reconfirma o IMDb base do indice apos copiar a sinopse (P2-1): se uma
+  // republicacao do catalogo trocou o dono do indice, descarta sem POST.
+  ci = cat_item(catIndice);
+  if (!ci) return;
+  idbase_copiar(ci->imdb, idCat, sizeof idCat);
+  if (strcmp(idCat, imdb) != 0) return;
+
+  (void)farolcompor_pedir_retomada(imdb, titulo, t, e, sinBuf);
 }
 
 void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
@@ -948,6 +1033,7 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
   int reverAno = 0, reverMes = 0, reverNota10 = 0;
   int retT = 0, retE = 0;
   long long retQuando = 0;
+  char retResumo[192] = "";
   int jaVisto = 0, salvo = 0;
   uint16_t diaHoje;
   struct tm tmAgora;
@@ -1286,6 +1372,12 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
     if (jaVisto) { retT = 0; retE = 0; retQuando = 0; }
   }
 
+  // Resumo adotado do episodio JA VISTO (issue 57); os bloqueios da #52 ficam
+  // dentro de farolcompor_retomada_resumo.
+  if (retT > 0 && retE > 0 && !infantil)
+    (void)farolcompor_retomada_resumo(ciCopia.imdb, retT, retE,
+                                      retResumo, sizeof retResumo);
+
   if (ondever_n(ciCopia.imdb) > 0 && ondever_item(ciCopia.imdb, 0, &ov) && ov.nome[0])
     snprintf(ondeNome, sizeof ondeNome, "%s", ov.nome);
 
@@ -1348,6 +1440,7 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
   sig = fd_fnv(sig, &reverNota10, sizeof reverNota10);
   sig = fd_fnv(sig, &retT, sizeof retT);
   sig = fd_fnv(sig, &retE, sizeof retE);
+  sig = fd_fnv(sig, retResumo, strlen(retResumo));
   sig = fd_fnv(sig, &idioma, sizeof idioma);
   sig = fd_fnv(sig, &h12, sizeof h12);
   {
@@ -1357,6 +1450,9 @@ void faroldetalhe_atualizar(int catIndice, int epTemp, int epNum,
 
   FD_LOCK();
   S.ultMs = relMs;
+  S.retT = retT;
+  S.retE = retE;
+  snprintf(S.retResumo, sizeof S.retResumo, "%s", retResumo);
   if (sig != S.assinatura) {
     FarolCenaCtx ctx;
     FarolCenaDet det;

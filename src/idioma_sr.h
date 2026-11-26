@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "Od 4 do 8 brojeva. Štiti podešavanja ovog profila na ovom TV-u."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "Od 4 do 8 cifara. Važi samo na ovom televizoru; štiti podešavanja ostalih profila."),
   T("De 50% a 300% do tamanho principal", "Od 50% do 300% glavne veličine"),
+  T("De lado até amanhã", "Sa strane do sutra"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Odakle izlog uzima naslove: iz celog kataloga ili samo iz vaše liste i Nastavi gledanje."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "Odakle izlog uzima naslove: iz kataloga ili vaše liste."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "Odakle automatika može da bira: svi izvori, samo instalirani dodaci ili samo uključeni plugini. Čuva se u profilu."),

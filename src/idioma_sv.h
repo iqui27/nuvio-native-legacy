@@ -2560,6 +2560,7 @@
   T("De 4 a 8 números. Protege os ajustes deste perfil nesta TV.", "Från 4 till 8 nummer. Skyddar inställningarna för denna profil på denna TV."),
   T("De 4 a 8 números. Vale só nesta TV e protege os ajustes dos outros perfis.", "4 till 8 siffror. Gäller bara på den här TV:n och skyddar andra profilers inställningar."),
   T("De 50% a 300% do tamanho principal", "Från 50% till 300% av huvudstorleken"),
+  T("De lado até amanhã", "Åsidosatt till i morgon"),
   T("De onde a vitrine tira os títulos: o catálogo inteiro, ou só o que está na sua lista e em Continuar assistindo.", "Var skyltfönstret hämtar titlarna: hela katalogen, eller bara det som finns i din lista och i Fortsätt titta."),
   T("De onde a vitrine tira os títulos: o catálogo ou a sua lista.", "Varifrån skyltfönstret hämtar titlarna: katalogen eller din lista."),
   T("De onde o automático pode tocar: todas as fontes, só os add-ons instalados ou só os plugins ligados. Fica no seu perfil.", "Varifrån autouppspelning får välja: alla källor, bara installerade tillägg eller bara aktiva plugin. Sparas i profilen."),
