@@ -888,6 +888,7 @@ static void atualizarIdentidade(void) {
 // titulo. Enquanto durar, a sessao nao tem identidade para progresso, visto,
 // scrobble nem atividade — identidadeValida() e o portao de todos eles.
 static int sessaoPassiva, sessaoMinhaNoite;
+static int proxPassiva;
 static int passivaPct, passivaT, passivaE;
 static int identidadeValida(void) {
   return temFixo && !sessaoPassiva && nv_perfil_sessao_atual(itemSessao) &&
@@ -1508,6 +1509,9 @@ void player_do_inicio(void) {
 }
 // Entra no programa onde a grade esta (fracao da duracao), sem retomada e sem
 // registro. So vale em filme/episodio ja aberto; canal ao vivo nao passa aqui.
+void player_passivo_armar(void) {
+  proxPassiva = 1;
+}
 void player_passivo_abrir(double fracao) {
   if ((!aberto && !mini) || ehCanal()) return;
   player_do_inicio();
@@ -1523,6 +1527,7 @@ void player_passivo_abrir(double fracao) {
 void player_passivo_assumir(int doInicio) {
   if (!sessaoPassiva) return;
   sessaoPassiva = 0;
+  if (temFixo && !canalSessao && farolsinal_uso_tocada) farolsinal_uso_tocada(&itemFixo);
   assistidoSeg = 0.0; baseTocou = 0;
   if (doInicio && video_pronto()) video_buscar(0.0);
   else if (doInicio) retomarPct = 0;
@@ -2326,6 +2331,8 @@ static void armarTituloGuardado(void) {
 }
 
 void player_abrir(int indiceCatalogo, const char *url) {
+  int abrindoPassivo = proxPassiva;
+  proxPassiva = 0;
   farolTentativaIniciar();
   perdiResetarSessao();
   dtsAvisoSessao++;
@@ -2396,7 +2403,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
     canalSessao = ci && nv_tipo_canal(ci->tipo);
     stream_folha_canal(canalSessao);
     if (canalSessao) itemCanal = *ci;
-    else if (ci && !ficaMini && !miniGuia && farolsinal_uso_tocada)
+    else if (ci && !ficaMini && !miniGuia && !abrindoPassivo && farolsinal_uso_tocada)
       farolsinal_uso_tocada(ci);
     // So o CH+/- feito dentro do PiP (player_manter_mini) mantem a miniatura
     // na troca — o stream velho segue no ar ate a fonte nova chegar pelo
@@ -3315,7 +3322,7 @@ static void fecharSessao(int manter, int trocaFonte) {
   // PERSONAL-SERVER END OF SESSION (Jellyfin/Emby/Plex): stop check-in (and
   // transcode release) for the URL this session played; addon URLs never match.
   // Before video_parar so the last position is still the pipeline's.
-  if (!jaRetido && comVideo) servidores_reproducao_fim(video_url_atual(), posSeg, duracaoSeg);
+  if (!jaRetido && comVideo && !sessaoPassiva) servidores_reproducao_fim(video_url_atual(), posSeg, duracaoSeg);
   // Salvar ANTES de parar: video_parar descarrega o pipeline e a posicao some
   // junto. Titulo quase no fim conta como visto por inteiro — voltar a um card
   // marcando "2 min restantes" que na verdade acabou e pior que arredondar.

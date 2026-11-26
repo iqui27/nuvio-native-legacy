@@ -33,6 +33,7 @@ void player_do_inicio(void);
 int  player_sem_retomada(void);
 // Minha noite (minhanoite.h): sessao aberta pelo canal pessoal. Passiva = nao
 // grava progresso, visto, scrobble nem atividade ate player_passivo_assumir.
+void player_passivo_armar(void);
 void player_passivo_abrir(double fracao);
 void player_passivo_assumir(int doInicio);
 void player_passivo_repor(int minhaNoite, int passiva);       // depois de player_abrir

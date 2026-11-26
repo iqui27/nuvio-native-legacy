@@ -2891,7 +2891,11 @@ static int reabrirTitulo(int titulo) {
   int mn = reabrirMn, passiva = reabrirPassiva;
   // Reabrir a mesma sessao nao e um gesto; a marca vale para UMA reabertura.
   reabrirMn = reabrirPassiva = 0;
-  if (i >= 0) { player_abrir(i, NULL); if (mn) player_passivo_repor(mn, passiva); }
+  if (i >= 0) {
+    if (mn && passiva) player_passivo_armar();
+    player_abrir(i, NULL);
+    if (mn) player_passivo_repor(mn, passiva);
+  }
   return i;
 }
 static void abrirProximoEpisodio(int t, int e, int apontar) {
@@ -4479,10 +4483,9 @@ void app_minha_noite(int oferta) {
 
 // O player acabou de abrir pelo caminho da pagina do titulo: se foi a Minha
 // noite que pediu, a sessao nasce passiva e entra no meio do programa.
-static void mnAoAbrirPlayer(void) {
-  if (!mnArmado) return;
+static void mnAoAbrirPlayer(int abrindoPassivo) {
   mnArmado = 0;
-  if (SDL_GetTicks() - mnArmadoEm > 5000) return;   // pedido velho: outra abertura
+  if (!abrindoPassivo) return;
   player_passivo_abrir(mnFracao);
   mnOferta = 0; mnOfertaFoco = 0; mnSintonizouEm = SDL_GetTicks();
 }
@@ -7697,6 +7700,8 @@ void app_atualizar(float dt, Uint32 agora) {
         preparoEspera = 1; preparoLembradaPlay = lembradaPreparo;
       }
       diagnostico_cancelar_vazao();
+      int abrindoPassivo = mnArmado && SDL_GetTicks() - mnArmadoEm <= 5000;
+      if (abrindoPassivo) player_passivo_armar();
       player_abrir(detail_indice(), NULL);
       episodioDoDetalhe();
       // CW direto (issue #93): o episodio que o card anunciava vale sobre o
@@ -7708,7 +7713,7 @@ void app_atualizar(float dt, Uint32 agora) {
       }
       if (cwRewatch >= 0) { player_rewatch(cwRewatch); cwRewatch=-1; }
       if (doInicio) player_do_inicio();
-      mnAoAbrirPlayer();
+      mnAoAbrirPlayer(abrindoPassivo);
       // O episodio so fica definitivo DEPOIS de abrir o player. Refaça sempre
       // o pedido de legenda nesse ponto; a busca de prefetch pode ter comecado
       // no episodio anteriormente focado e o worker agora troca para o pedido
