@@ -31,6 +31,7 @@
 #define PECA_CTX_MAX     40    // titulos por grupo do historico
 #define PECA_ERROS_MAX   30    // caminhos errados antes de a porta se calar
 #define PECA_CASTIGO_S   600
+#define PECA_LEITURA_MS  4000  // prazo total para ler um pedido (conexao lenta solta a porta)
 
 typedef struct {
   char titulo[160];    // no idioma da pessoa (o que a TV mostra)

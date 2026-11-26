@@ -44,6 +44,23 @@ ok abrir-fora-ignorado "$(diz a)" "A -"
 head -c 3000 /dev/zero | tr '\0' 'x' > "$tmp/grande"
 ok grande "$(cod -X POST -H "Origin: $orig" --data-binary "@$tmp/grande" "$url/p")" 413
 ok metodo "$(cod -X DELETE "$url")" 400
+# Conexao lenta (um byte a cada 2 s) nao segura a porta: o prazo e total.
+python3 - "${url#http://}" <<'PY' &
+import socket, sys, time
+h, _, p = sys.argv[1].split('/')[0].partition(':')
+s = socket.create_connection((h, int(p)))
+try:
+    for b in b'GET /':
+        s.send(bytes([b])); time.sleep(2)
+except OSError:
+    pass
+PY
+lento=$!
+sleep 0.5
+t0=$(date +%s)
+ok lento-nao-segura "$(cod --max-time 8 "$url")" 200
+ok lento-prazo "$(( $(date +%s) - t0 <= 6 ))" 1
+kill $lento 2>/dev/null || true
 # Muitos caminhos errados: a porta se cala (nem o token certo responde).
 for _ in $(seq 30); do cod "$orig/bbbbbbbbbbbb" > /dev/null || true; done
 ok calada "$(cod "$url" || true)" 000

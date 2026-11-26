@@ -138,8 +138,18 @@ static void atender(int c) {
   char tk[PECA_TOKEN_N + 1], hs[48];
   if (!req) return;
   // Le ate ter cabecalhos e o corpo anunciado (ou estourar o prazo/tamanho).
+  // Prazo TOTAL de PECA_LEITURA_MS por conexao: o laco atende uma por vez, e
+  // um vizinho que pinga um byte a cada 2,9 s seguraria a porta por horas.
   req[0] = 0;
-  while (n < REQ_MAX && esperar(c, 3000)) {
+  {
+  struct timespec t0;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  for (;;) {
+    struct timespec ag;
+    long gasto;
+    clock_gettime(CLOCK_MONOTONIC, &ag);
+    gasto = (ag.tv_sec - t0.tv_sec) * 1000L + (ag.tv_nsec - t0.tv_nsec) / 1000000L;
+    if (n >= REQ_MAX || gasto >= PECA_LEITURA_MS || !esperar(c, (int)(PECA_LEITURA_MS - gasto))) break;
     ssize_t k = recv(c, req + n, REQ_MAX - n, 0);
     if (k <= 0) break;
     n += (size_t)k; req[n] = 0;
@@ -153,6 +163,7 @@ static void atender(int c) {
       if (r != PECA_R_INVALIDO) break;        // completo, ou recusado por outro motivo
       if (n - (size_t)(fim + 4 - req) > PECA_CORPO_MAX) break;
     }
+  }
   }
   pthread_mutex_lock(&mtx);
   snprintf(tk, sizeof tk, "%s", token); snprintf(hs, sizeof hs, "%s", host);
