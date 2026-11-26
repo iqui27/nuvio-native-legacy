@@ -3821,7 +3821,7 @@ static int ajOpcaoDisponivel(int op) {
   // Sessao: needs the LAN phone server (none on the .wgt, as in celular.c),
   // and is one room, not a per-profile value.
 #if defined(__EMSCRIPTEN__) || defined(_WIN32)
-  if (op == AJ_SESSAO_SALA) return 0;
+  if (op == AJ_SESSAO_SALA || op == AJ_CASA_USAR || op == AJ_CASA_AJUDAR) return 0;
 #endif
   if (op == AJ_SESSAO_SALA) return !edPerfil;
   if (op == AJ_ARTE_TOM) return valor[AJ_TEMA] == AJ_TEMA_DINAMICA;
@@ -7890,6 +7890,8 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_P2P_LIGADO || op == AJ_P2P_URL || op == AJ_P2P_TESTAR || op == AJ_P2P_LIMITE || op == AJ_P2P_DESTINO) return 1;
   // Sem rede_pedir com pino no WASM: nada de OpenSeek (SR-3/SR-4).
   if (op == AJ_PREVIA_PROVEDOR || (op >= AJ_OPENSEEK_SERVIDOR && op <= AJ_OPENSEEK_ULT)) return 1;
+#endif
+#if defined(__EMSCRIPTEN__) || defined(_WIN32)
   if (op == AJ_CASA_USAR || op == AJ_CASA_AJUDAR) return 1;
 #endif
   return 0;

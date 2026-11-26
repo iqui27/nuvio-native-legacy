@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__) || defined(_WIN32)
 void casa_configurar(int usar, int ajudar, const CasaMotor *motor) { (void)usar; (void)ajudar; (void)motor; }
 int  casa_ajudante_base(char *out, unsigned n) { if (out && n) out[0] = 0; return 0; }
 int  casa_procurar(int ms) { (void)ms; return 0; }
