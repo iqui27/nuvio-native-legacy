@@ -119,7 +119,7 @@ jobs:
 
       - name: Release signing key (optional)
         env:
-          KS_B64: ${{ secrets.NUVIO_KEYSTORE_BASE64 }}
+          KS_B64: ${{ secrets.NUVIO_ANDROID_KEYSTORE_B64 || secrets.NUVIO_KEYSTORE_BASE64 }}
           KS_PASS: ${{ secrets.NUVIO_KEYSTORE_PASS }}
           KEY_ALIAS: ${{ secrets.NUVIO_KEY_ALIAS }}
           KEY_PASS: ${{ secrets.NUVIO_KEY_PASS }}

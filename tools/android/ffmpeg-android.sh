@@ -46,9 +46,10 @@ baixar() {
 }
 AAR_CAMINHO='org/jellyfin/media3/media3-ffmpeg-decoder/1.8.0%2B1/media3-ffmpeg-decoder-1.8.0%2B1.aar'
 if [ ! -f "$ORIGINAL" ]; then
-  baixar "$ORIGINAL" "https://repo.maven.apache.org/maven2/$AAR_CAMINHO" \
-    "https://maven-central.storage-download.googleapis.com/maven2/$AAR_CAMINHO" \
-    "https://repo1.maven.org/maven2/$AAR_CAMINHO"
+  # Google's Maven Central mirror first: Maven Central answers 429 to CI runners.
+  baixar "$ORIGINAL" "https://maven-central.storage-download.googleapis.com/maven2/$AAR_CAMINHO" \
+    "https://repo1.maven.org/maven2/$AAR_CAMINHO" \
+    "https://repo.maven.apache.org/maven2/$AAR_CAMINHO"
 fi
 python3 - "$ORIGINAL" "$AAR_HASH" <<'PY'
 import hashlib, sys

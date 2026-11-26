@@ -129,9 +129,9 @@ static void at_sha256_hex(const unsigned char *buf, size_t n, char *hex65) {
 }
 #endif
 
-#define AT_URL   "https://api.github.com/repos/iqui27/nuvio-native-legacy/releases/latest"
+#define AT_URL   "https://api.github.com/repos/Namer03/NuvioLN-prebuilds/releases/latest"
 #define AT_ARQ   "atualizacao-vista.txt"
-#define AT_PAGINA "https://github.com/iqui27/nuvio-native-legacy/releases"
+#define AT_PAGINA "https://github.com/Namer03/NuvioLN-prebuilds/releases"
 #define AT_APPID  NV_APP_ID
 #define AT_LUNA_PUB "/usr/bin/luna-send-pub"
 #define AT_LOG_INST "/tmp/nuvio-instalar.log"
