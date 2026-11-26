@@ -416,3 +416,5 @@
   0, /* Kit de Home: acao; o kit mora em kit-home-p<N>.json */
   0, /* legendaAssPesoLocal: Automatico (ASSPESO_AUTO, fora do .tpk) */
   1, /* timeshiftLocal: Desligado (grava no pendrive) */
+  0, /* pecaComoFalaLocal: Ligado (nada acontece ate parear o celular) */
+  0, /* parear celular: acao */

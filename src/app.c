@@ -14,6 +14,7 @@
 #include "mediaurl.h"
 #include "arranque.h"
 #include "celbotao.h"
+#include "pecatv.h"
 #include "central.h"
 #include "estatvivoui.h"
 #include "playinfo.h"
@@ -5216,6 +5217,7 @@ void app_evento(const SDL_Event *e) {
   if (glem_evento(e)) return;
   // O CARTAO DO CELULAR (celbotao.h), aberto de qualquer campo de texto: come
   // o teclado todo ate fechar.
+  if (pecatv_evento(e)) return;
   if (celb_evento(e)) return;
   if (aioui_aberto()) { aioui_evento(e); return; }
   // O AVISO DAS CONQUISTAS (depois dos creditos) nao toma o foco: so o Voltar e
@@ -6147,6 +6149,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // OK segurado em "Buscar" (menu.c) abre por aqui, no quadro em que cruza.
   spot_atualizar(dt, agora);
   celb_atualizar(dt);
+  pecatv_atualizar(dt, !player_aberto() && tela != TELA_LOGIN && !novidades20_aberto() && !comecar_aberto());
   if (menu_pediu_spotlight() && spotPode()) spotAbrir(0);
   if (spot_aberto() && !spotPode()) spot_fechar();
   cancelarFonteSeSaiu();
@@ -9013,7 +9016,7 @@ static int miniToquePermitido(void) {
 void app_desenhar(Uint32 agora) {
   if (aioui_opaco() && !registro_aberto() && !player_aberto()) {
     // Opaque dashboard: avoid rendering Settings, title and sources underneath.
-    gfx_sem_recorte(); ponteiro_camada(); aioui_desenhar(agora); celb_desenhar();
+    gfx_sem_recorte(); ponteiro_camada(); aioui_desenhar(agora); celb_desenhar(); pecatv_desenhar();
     return;
   }
   // O COMECAR da 2.1 e tela inteira e opaco, como o guia da 2.0.
@@ -9322,6 +9325,7 @@ void app_desenhar(Uint32 agora) {
 #endif
     if (aioui_aberto()) { ponteiro_camada(); aioui_desenhar(agora); }
     celb_desenhar();
+    pecatv_desenhar();
   }
   CAMADA_SE(diagnostico_intro_aberto());
   if (!registro_aberto()) diagnostico_intro_desenhar(agora);

@@ -5,6 +5,7 @@
 #include "ajustes.h"
 #include "assperf.h"   // ass_novo_registrar: a chave do motor ASS mora aqui
 #include "assrender.h" // assrender_aplicar_invalidacao na troca do motor
+#include "pecatv.h"
 #ifdef NV_IOS
 #include "ios.h"
 #endif
@@ -915,6 +916,12 @@ typedef enum {
   // proxy de TS tambem e gravado no pendrive, para pausar e voltar. LOCAL,
   // desligado (grava no disco da pessoa), append-only.
   AJ_TIMESHIFT_LOCAL,
+  // "Peca como fala" (pesquisa 4.5): o celular pareado pede em texto livre e a
+  // TV mostra tres titulos (pecatv.h). AJ_PECA liga/desliga (LOCAL, V_LIGA,
+  // padrao Ligado: nada acontece ate parear). AJ_PECA_PAREAR e acao: abre o
+  // cartao do QR. Append-only.
+  AJ_PECA,
+  AJ_PECA_PAREAR,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2191,6 +2198,8 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Kit de Home"),   // homekitapp.c: o kit mora em kit-home-p<N>.json
   ESC("Legenda ASS com estilo", V_ASS_PESO, 3),              // local: legendaAssPesoLocal (fora do .tpk)
   ESC("Pausar e voltar a TV ao vivo", V_LIGA, 2),            // local: timeshiftLocal
+  ESC("Peça como fala", V_LIGA, 2),                          // local: pecaComoFalaLocal
+  ACAO("Parear celular"),                                    // pecatv_parear
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2596,6 +2605,8 @@ static const char *CHAVE[] = {
   "-kitHome",   // nunca vai para a conta: o kit e deste perfil nesta TV
   "legendaAssPesoLocal",
   "timeshiftLocal",
+  "pecaComoFalaLocal",
+  "-pecaParear",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3805,6 +3816,7 @@ static void ajPenFeaturesApply(void) {
 int ajustes_audio_offset_ms(void) { return audsync_offset_ms(valor[AJ_AUDIO_OFFSET]); }
 int ajustes_legenda_sync_auto(void) { return lig(AJ_LEG_SYNC_AUTO); }
 int ajustes_teclado_android(void) { int v = valor[AJ_TECLADO_ANDROID]; return v < 0 || v > 2 ? 0 : v; }   // 0 auto, 1 do app, 2 do Android
+int ajustes_peca(void) { return valor[AJ_PECA] == 0; }
 int ajustes_mic_busca(void) { return valor[AJ_MIC_BUSCA]; }   // 0 auto, 1 ligado, 2 desligado
 int ajustes_trailer_zoom_tpk(void) { return lig(AJ_TRAILER_ZOOM_TPK); }   // 1 = Ligado
 #ifdef NV_ANDROID
@@ -7104,6 +7116,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_TITULO_FIL:    /* local row title presentation */
     case AJ_MURAL_TITULOS: /* #521: idem */
     case AJ_MIC_BUSCA:     /* o microfone e o controle sao desta TV */
+    case AJ_PECA:          /* a porta na rede local e desta TV */
     case AJ_TECLADO_ANDROID: /* o web nao tem; o teclado e deste aparelho */
     case AJ_LEG_SYNC_AUDIO: /* PCM e passthrough sao desta TV; o web nao tem */
     case AJ_LEG_FORCADA:    /* #287: o web nao tem esta escolha */
@@ -7179,7 +7192,7 @@ static int soNaTv(int op) {
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_BUFFER_RAM_REDUZ:
-    case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
+    case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID: case AJ_PECA:
     case AJ_TUNNELING: case AJ_BARRAS_PRETAS: case AJ_ASS_MOTOR: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO: case AJ_AFR:
     case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_VIDRO_QUALIDADE:
     case AJ_DET_SO_CINEMETA: case AJ_BUSCA_CINEMETA:
@@ -7773,6 +7786,8 @@ static int foraDestaPlataforma(int op) {
 #if !(defined(NV_TPK) || defined(__EMSCRIPTEN__)) || defined(NV_TPK40)
   if (op == AJ_MIC_BUSCA) return 1;
 #endif
+  if ((op == AJ_PECA || op == AJ_PECA_PAREAR) && !pecatv_disponivel()) return 1;
+  if (op == AJ_PECA_PAREAR && valor[AJ_PECA] != 0) return 1;
 #ifndef NV_TECLADO_SIS
   if (op == AJ_TECLADO_ANDROID) return 1;
 #endif
@@ -9032,6 +9047,8 @@ static const char *ajudaOpcaoTv(int op) {
 #else
     case AJ_TECLADO_ANDROID: return "Automático: o teclado do Android abre sozinho em e-mail, senha e busca. Do app: a grade do Nuvio; o teclado do Android só pelo botão Teclado da TV. Do Android: abre direto em todo campo; Voltar mostra a grade. Vale só neste aparelho.";
 #endif
+    case AJ_PECA: return "Peça pelo celular algo para assistir e veja três títulos na TV. O pedido e os nomes do que você já viu e salvou vão ao Google Gemini com a sua chave. A TV só atende na rede local depois de parear.";
+    case AJ_PECA_PAREAR: return "Aponte a câmera do celular e diga o que quer assistir. Mesma rede Wi-Fi. O endereço não muda: salve a página.";
     case AJ_MIC_BUSCA: return "Mostra nas buscas um microfone ao lado de Digitar pelo celular: ele abre o teclado da Samsung para você falar pelo microfone do controle. Automático esconde o botão se a TV disser que não tem microfone; Ligado mostra sempre; Desligado esconde.";
     case AJ_HERO: return "O bloco grande no topo da Home, com a arte e o nome de um título em destaque.";
     case AJ_HERO_CATALOGOS: return "De onde vêm os títulos do destaque: os primeiros do catálogo, um sorteio, ou uma fileira da Home. OK troca.";
@@ -11433,6 +11450,7 @@ static void eventoTela(const SDL_Event *e) {
                         64, ST_ALFA_PORTAL, openseek_endereco()[0] ? openseek_endereco() + 8 : NULL);
       return;
     }
+    if (focoOp == AJ_PECA_PAREAR) { pecatv_parear(); return; }
     if (focoOp == AJ_OPENSEEK_PAREAR) {
       if (!openseek_endereco()[0]) { uxNotificar(previaPedirCredencial()); return; }
       if (openseek_status(NULL, 0) == OSU_PAREANDO) return;
@@ -12386,7 +12404,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_HERO_LISTA:
     case AJ_ADDON_FUNDO: case AJ_ADDON_LOGO:
     case AJ_FIL_ORDEM: case AJ_RAIL: case AJ_RAIL_MODERNA: case AJ_MENU_TOPO: case AJ_ABAS_ESTILO:
-    case AJ_RAIL_BLUR: case AJ_MIC_BUSCA: case AJ_HERO: case AJ_HERO_CATALOGOS: case AJ_HERO_GENERO:
+    case AJ_RAIL_BLUR: case AJ_MIC_BUSCA: case AJ_PECA: case AJ_PECA_PAREAR: case AJ_HERO: case AJ_HERO_CATALOGOS: case AJ_HERO_GENERO:
     case AJ_HERO_SINOPSE: case AJ_HERO_NOTAS: case AJ_HERO_ANO: case AJ_HERO_DURACAO:
     case AJ_PS_FUNDO: case AJ_PS_CONTINUAR: case AJ_PS_TAMANHO: case AJ_DESCOBRIR: case AJ_ROTULOS:
     case AJ_NOME_ADDON: case AJ_SUFIXO_TIPO: case AJ_OCULTAR_NLANC: case AJ_MURAL_TITULOS:

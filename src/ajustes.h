@@ -259,6 +259,8 @@ int ajustes_direct_cache_usb(void);
 
 // Idioma da interface: um IDIOMA_* de idiomacod.h (pt, en, ro, uk, ru, fr, de, es). Valor
 // gravado fora do intervalo (arquivo editado a mao) cai em portugues.
+// "Peça como fala" (pecatv.h): 1 = ligado (local, padrao Ligado).
+int ajustes_peca(void);
 int ajustes_idioma(void);
 // 1 so quando e ingles. Os textos montados com "%d.%d" e o formato de data
 // americano usam isto; romeno, ucraniano, russo, frances, alemao e espanhol usam virgula decimal e data
