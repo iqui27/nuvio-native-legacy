@@ -144,7 +144,9 @@ int doa_match_somar(const double *oa, const double *sa, int na, const double *ob
   return n < max ? n : max;
 }
 
-#if !defined(NV_DTS_FFMPEG) || !(defined(NV_TPK) || defined(NV_DOADOR_TEST))
+#if defined(NV_WEBOS) && defined(NV_DTS_FFMPEG) && !defined(NV_TPK) && !defined(NV_DOADOR_TEST)
+// LG: the same calls over its converter, in doador_webos.c (owner 26/11).
+#elif !defined(NV_DTS_FFMPEG) || !(defined(NV_TPK) || defined(NV_DOADOR_TEST))
 int  doa_disponivel(void) { return 0; }
 int  doa_abrir(const DoaAbrir *o, char *out, size_t n) { (void)o; if (out && n) out[0] = 0; return 0; }
 void doa_fechar(void) {}

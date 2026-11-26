@@ -67,6 +67,12 @@ void dts_playback_external_offset_quiet(DtsPlayback *p, int offset_ms);
  * trusted or failed (details in DtsMatchInfo, dts_engine.h). A find can also
  * come later on its own: the second look (how 5) measured another speed. */
 void dts_playback_external_match(DtsPlayback *p);
+/* LG (owner 26/11): the audio refine (+-1 s, dts_engine_external_match_fine);
+ * this file's track the match compares (container index, -1 Auto); the edit
+ * map (n stretches from ini_s, this file's time, each with its offset ms). */
+void dts_playback_external_match_fine(DtsPlayback *p);
+void dts_playback_external_match_track(DtsPlayback *p, int stream);
+void dts_playback_external_map(DtsPlayback *p, int n, const double *ini_s, const int *ms);
 int dts_playback_external_match_result(DtsPlayback *p, DtsMatchInfo *out);
 /* Main thread: the other version's speed for the next swap (a match's
  * ratio_ppm; 0 the same speed). And before a start, consumed by it. */

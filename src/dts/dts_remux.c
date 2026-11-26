@@ -2224,6 +2224,8 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
     printf("[webos-hls] input rings: video=%d MiB external=%d MiB, external track=%d offset=%d ms speed=%.6f\n",
            r->videoMib, r->audioMib, r->as, offset, r->donorRatio);
     fflush(stdout);
+    // The subtitle match reads both indexes (doador_webos.c, owner 26/11).
+    dts_engine_external_open_notify(ic, audioFmt, 1);
   } else if (r->webos) {
     printf("[webos-hls] input ring: video=%d MiB\n", r->videoMib);
     fflush(stdout);

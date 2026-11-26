@@ -1,5 +1,8 @@
 #define NV_WEBOS 1
 #include "../src/ajustes.c"
+#if defined(NV_TPK) || defined(NV_WEBOS)
+int doa_disponivel(void) { return 0; }   /* the donor server (dts/doador_tpk.c, doador_webos.c on LG) is not linked here */
+#endif
 #include <assert.h>
 int main(void) {
   assert(AJ_MP4_BD_TEST==AJ_DV7_MAPPING-1 && AJ_MP4_BD_TEST==AJ_RAM_VERDE+1);

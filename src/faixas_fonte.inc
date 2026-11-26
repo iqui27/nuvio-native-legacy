@@ -1,11 +1,11 @@
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // THE LANGUAGE PAGE inside the audio island (included by faixas.c; owner
 // 17/11/2026: the audio sheet works like the subtitles' one).
 #else
 // FROM ANOTHER SOURCE: the pages inside the audio island (included by faixas.c).
 #endif
 //
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 //  EXP_LISTA   one language: this file's own tracks in it first, from the
 //              file whatever plays (DTS/TrueHD too: they convert), "In this
 //              file" (like the embedded subtitles), a divider, then the other
@@ -21,7 +21,7 @@
 //  EXP_FAIXAS  the audio tracks of one version (hold OK on it), read from its
 //              header like the source list's "Choose audio track…".
 //
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // OK uses the track or the version (audioext_escolher) and closes the sheet;
 // Back goes one page up. The picture keeps playing all along.
 #else
@@ -29,7 +29,7 @@
 // page up. The picture keeps playing all along.
 #endif
 enum { EXP_NADA = 0, EXP_LISTA, EXP_FAIXAS };
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #define EX_SEP_H 34.0f   // the divider between this file's tracks and the other sources' versions
 #define EX_LIN_MAX 160
 static int exPag, exFoco, exRol, exVoltar;
@@ -49,7 +49,7 @@ static int exBalN, exLinN;
 static int exLingGrupo = -1;
 #endif
 static char exLingCod[8];
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static int exRowF[EX_LIN_MAX], exRowV[EX_LIN_MAX], exNF, exNV, exLinN;
 #else
 #endif
@@ -61,7 +61,7 @@ static int exFxN = -2, exFxFoco;
 static int exFxTentativa;
 static Uint32 exFxDe;
 static AudioExtFaixa exFx[AUDIOEXT_FAIXAS_MAX];
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
 // THE EPISODE ROW (owner's log 21/11, Farscape: IMDb numbers the episodes in
 // broadcast order, the Polish releases in production order, so the audio of
@@ -118,7 +118,7 @@ static void exEpMudar(int d) {
 static char exFxRot[AUDIOEXT_FAIXAS_MAX][120];
 static AudioExtCand exFxCand;
 
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
 static int exMesmoBalde(const AudioExtCand *a, const AudioExtCand *b) {
   if (a->grupo != b->grupo) return 0;
@@ -127,7 +127,7 @@ static int exMesmoBalde(const AudioExtCand *a, const AudioExtCand *b) {
 #endif
 static int exFocavel(int i) { return i >= 0 && i < exLinN; }
 static const AudioExtCand *exCandDaLinha(int i) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   if (!exFocavel(i) || i < exNF) return NULL;
   return &extAll[exRowV[i - exNF]];
 #else
@@ -135,7 +135,7 @@ static const AudioExtCand *exCandDaLinha(int i) {
   return &extAll[exBal[exLingua].ini + i];
 #endif
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static int exFaixaDaLinha(int i) { return exFocavel(i) && i < exNF ? exRowF[i] : -1; }
 // The rows of the page. The focus stays on the same track / version when the
 // list grows (versions arrive with the add-ons).
@@ -188,7 +188,7 @@ static void exMontarLinhas(int focIdx) {
   exLinN = exBalN ? exBal[exLingua].cont : 0;
 #endif
   exFoco = 0;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   for (int i = 0; i < exLinN; i++) {
     const AudioExtCand *c = exCandDaLinha(i);
     if ((focF >= 0 && exFaixaDaLinha(i) == focF) || (focIdx >= 0 && c && c->indice == focIdx)) { exFoco = i; break; }
@@ -199,19 +199,19 @@ static void exMontarLinhas(int focIdx) {
   if (!exLinN && exEpVisivel()) exFoco = -1;
 #endif
   if (exRol > exFoco) exRol = exFoco;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   if (exRol < 0) exRol = 0;
 #endif
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // The track / version in focus, to find it again after a rebuild.
 #else
 // The version in focus (-1 none), to find it again after a rebuild.
 static int exFocoIndice(void) { const AudioExtCand *c = exCandDaLinha(exFoco); return c ? c->indice : -1; }
 #endif
 static void exReconstruir(void) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   const AudioExtCand *c = exCandDaLinha(exFoco);
   if (exPag == EXP_NADA) return;
   exMontarLinhas(exFaixaDaLinha(exFoco), c ? c->indice : -1);
@@ -222,7 +222,7 @@ static void exReconstruir(void) {
 #endif
 }
 static int exPagAtiva(void) { return exPag != EXP_NADA; }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
 static float exAreaMax(void) { return IL_VIS * (IL_LN_H + IL_LN_VAO) - IL_LN_VAO; }
 #endif
@@ -231,7 +231,7 @@ static void exAjustar(void) {
   if (exFoco - exRol >= IL_VIS) exRol = exFoco - IL_VIS + 1;
   if (exRol < 0) exRol = 0;
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // Language group `g` of the sheet's rows: its page, on the playing track
 // when it is in that language.
 static void exAbrir(int g) {
@@ -247,7 +247,7 @@ static void exAbrir(void) {
   exLingGrupo = -1; exLingCod[0] = 0;
 #endif
   extMontar(1);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   exPag = EXP_LISTA; exRol = 0;
   ctxhold_cancelar(&exHold);
   { int fa = video_audio_arquivo_atual();
@@ -273,7 +273,7 @@ static void exFechar(void) {
   ctxhold_cancelar(&exHold);
 }
 static int exAceitaSegurar(void) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   return exPag == EXP_LISTA && exCandDaLinha(exFoco) && audioext_sonda_disponivel();
 #else
   return exPag == EXP_LISTA && exFoco >= 0 && exCandDaLinha(exFoco) && audioext_sonda_disponivel();
@@ -290,13 +290,13 @@ static void exMontarFaixas(void) {
   for (int k = 0; k < exFxN && k < AUDIOEXT_FAIXAS_MAX; k++) {
     const AudioExtFaixa *f = &exFx[k];
     /* No language in the file ("und"): the version's own from the list. */
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     const char *li = !ling_tem_nome(f->idioma) && ling_tem_nome(exFxCand.idioma) ? exFxCand.idioma : f->idioma;
 #else
     const char *li = exIdiomaFaixa(f);
 #endif
     const char *lg = li[0] ? i18n(ling_nome(li)) : i18n("Faixa"), *cd = f->codec;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     char ch[16] = "";
 #else
     char ch[8] = "";
@@ -334,7 +334,7 @@ static void exOk(void) {
     } else if (exFxN != -2) exPag = exVoltar;
     return;
   }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   { int f = exFaixaDaLinha(exFoco);
     const AudioExtCand *c = exCandDaLinha(exFoco);
     if (f >= 0) { aplicarFaixaArquivo(f); exFechar(); aberta = 0; return; }
@@ -347,13 +347,13 @@ static void exOk(void) {
 }
 static void exVoltarPagina(void) {
   if (exPag == EXP_FAIXAS) { exPag = exVoltar; return; }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // Back on the language rows, on this language's row.
 #else
   // Back on the audio list, on the "From another source" row.
 #endif
   exFechar();
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   { int g = auGrupoDe(exLingCod), l;
     auMontar();
     l = g >= 0 ? auLinhaDoGrupo(g) : -1;
@@ -364,7 +364,7 @@ static void exVoltarPagina(void) {
 #endif
   ajustarRolagem();
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
 static void exMudarLingua(int d) {
   int l = exLingua + d;
@@ -382,7 +382,7 @@ static void exTecla(SDL_Keycode k) {
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) exOk();
     return;
   }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   if (k == SDLK_UP) { if (exFoco > 0) exFoco--; exAjustar(); return; }
 #else
   if (k == SDLK_LEFT || k == SDLK_RIGHT) {
@@ -397,7 +397,7 @@ static void exTecla(SDL_Keycode k) {
   }
 #endif
   if (k == SDLK_DOWN) { if (exFoco < exLinN - 1) exFoco++; exAjustar(); return; }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) exOk();
 #else
   if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && exFoco >= 0) exOk();
@@ -418,7 +418,7 @@ static void exEvento(const SDL_Event *e) {
 // Per frame: the hold crossing its threshold, and the header read coming back.
 static void exPasso(Uint32 agora) {
   if (!aberta) { if (exPag) exFechar(); return; }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   if (exEpDe && agora - exEpDe >= EX_EP_ESPERA_MS) { exEpDe = 0; exEpPedir(); extMontar(1); }
 #endif
@@ -457,7 +457,7 @@ static float exConteudoH(void) {
   }
   if (!exLinN) return 60.0f;
   n = exLinN < IL_VIS ? exLinN : IL_VIS;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   return n * IL_LN_H + (n - 1) * IL_LN_VAO + (exNF && exNV ? EX_SEP_H : 0.0f);
 #else
   return n * IL_LN_H + (n - 1) * IL_LN_VAO;
@@ -465,7 +465,7 @@ static float exConteudoH(void) {
 }
 static float alturaExt(void) {
   float h = IL_PAD_Y + IL_TIT_H + 14.0f;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   if (exPag == EXP_LISTA && exEpVisivel()) h += EX_EP_H + 12.0f;
   if (exPag == EXP_LISTA && exBalN) h += EX_SEG_H + 12.0f;
@@ -476,7 +476,7 @@ static void exLinhaCand(const AudioExtCand *c, float x, float y, float w, int se
   const Stream *st = extFonteIdx(c->indice);
   char sub[224];
   int dim = 0, cc = sel ? 255 : 219, cs = 122;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   int ativo = st && (audioext_tocando() || audioext_carregando()) && audioext_marcada(st->url);
 #else
   int ativo = st && (audioext_tocando() || audioext_carregando()) && audioext_marcada_nome(st->url, st->rotulo);
@@ -510,7 +510,7 @@ static void exLinhaCand(const AudioExtCand *c, float x, float y, float w, int se
     gfx_icone((GfxRect){ x + w - 22.0f - 28.0f, y + (IL_LN_H - 28.0f) * 0.5f, 28.0f, 28.0f }, "pl_check", ar, ag, ab, a);
   }
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // One of this file's own tracks on a language page (like an embedded
 // subtitle): its label, "In this file", the check when it is what plays (never
 // while another source's audio plays: that version's row has the check).
@@ -623,7 +623,7 @@ static void exBarraLinguas(float x, float y, float w, float a) {
     }
 #endif
   }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   for (int i = ini; i < fim; i++) { rot[i - ini] = exNomeBalde(i); cont[i - ini] = exBal[i].cont; }
   // More languages past either end: the bar takes the whole width, no empty
@@ -634,7 +634,7 @@ static void exBarraLinguas(float x, float y, float w, float a) {
 static void corpoExt(GfxRect c, float a) {
   float x0 = c.x + IL_PAD_X, w = c.w - IL_PAD_X * 2.0f, y = c.y + IL_PAD_Y;
   char q[96];
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   const char *titulo = exPag == EXP_FAIXAS ? "Choose audio track…" : extNomeIdioma(exLingCod);
 #else
   const char *titulo = exPag == EXP_FAIXAS ? "Choose audio track…" : "From another source";
@@ -645,7 +645,7 @@ static void corpoExt(GfxRect c, float a) {
     // Settings > Addons leaves some out: said here, or versions seem missing.
     if (exPag == EXP_FAIXAS) snprintf(q, sizeof q, "%s", extNomeIdioma(exFxCand.idioma));
     else if (filtro) snprintf(q, sizeof q, i18n("Addons: %d of %d"), on, tot);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     else snprintf(q, sizeof q, i18n("%d versions"), exNV);
 #else
     else snprintf(q, sizeof q, i18n("%d versions"), extAllN);
@@ -655,7 +655,7 @@ static void corpoExt(GfxRect c, float a) {
       txt_desenhar_alpha(l, lx, ly, a);
       if (filtro) gfx_icone((GfxRect){ lx - 26.0f, ly + ((float)l.h - 20.0f) * 0.5f, 20.0f, 20.0f }, "aj_funnel", 1, 1, 1, 0.6f * a); } }
   y += IL_TIT_H + 14.0f;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   if (exPag == EXP_LISTA && exEpVisivel()) {
     exLinhaEp(x0, y, w, a);
@@ -681,7 +681,7 @@ static void corpoExt(GfxRect c, float a) {
                            : exFxN == 0 ? "No audio track this TV can play"
                            : exFxN < 0 ? "Could not read the audio tracks" : exFxRot[i];
         if (sel) plrui_linha_foco((GfxRect){ x0, y, w, IL_LN_H }, 22.0f, a);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
         rostoIdioma((GfxRect){ x0 + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f }, NULL,
                     exFxN > 0 || exFxN == -2 ? "pl_audio-lines" : "aj_triangle-alert", sel, a);
 #else
@@ -695,7 +695,7 @@ static void corpoExt(GfxRect c, float a) {
           txt_desenhar_alpha(l, x0 + 92.0f, y + (IL_LN_H - (float)l.h) * 0.5f, a); }
       }
     } else if (!exLinN) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       txt_bloco(TXT_ILHA_TEXTO, "No track and no other version in this language.", 160, 160, 158,
                 x0 + 10.0f, y + 12.0f, w - 20.0f, 28, a, 2);
 #else
@@ -714,7 +714,7 @@ static void corpoExt(GfxRect c, float a) {
       exAjustar();
       for (int i = exRol; i < exLinN && i < exRol + IL_VIS; i++, y += IL_LN_H + IL_LN_VAO) {
         const AudioExtCand *cd = exCandDaLinha(i);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
         // THE DIVIDER (owner 18/11): this file's tracks above, the other
         // sources' versions below, with the words for them.
         if (i == exNF && exNF && exNV) {
@@ -731,7 +731,7 @@ static void corpoExt(GfxRect c, float a) {
 #else
 #endif
         if (cd) exLinhaCand(cd, x0, y, w, i == exFoco, a);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
         else if (exFaixaDaLinha(i) >= 0) exLinhaFaixa(exFaixaDaLinha(i), x0, y, w, i == exFoco, a);
 #else
 #endif
@@ -751,7 +751,7 @@ static void corpoExt(GfxRect c, float a) {
       const char *k[2] = { "OK", "Voltar" }, *rt[2] = { "Use", "Cancel" };
       plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
     } else {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       // Back (one page up) is the remote's own; the hold's hint goes first
       // when the words do not fit.
 #else
@@ -762,7 +762,7 @@ static void corpoExt(GfxRect c, float a) {
       const char *k[3], *rt[3];
       int n = 0, ini = 0;
       float livre = w - 20.0f - (float)txt_largura(TXT_ILHA_APOIO, q) - 24.0f;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       if (exCandDaLinha(exFoco) || exFaixaDaLinha(exFoco) >= 0) { k[n] = "OK"; rt[n] = "Use"; n++; }
 #else
       if (exFoco < 0) { k[n] = "\xe2\x86\x90 \xe2\x86\x92"; rt[n] = "Episódio"; n++; }
@@ -772,7 +772,7 @@ static void corpoExt(GfxRect c, float a) {
       if (exCandDaLinha(exFoco) && audioext_sonda_disponivel()) { k[n] = "Hold OK"; rt[n] = "Pick track"; n++; }
       /* x < 0: measured only */
       while (n - ini > 1 && plrui_dicas(k + ini, rt + ini, n - ini, -1.0f, yc, 1, a) > livre) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
         n--;
 #else
         if (ini == 0 && (exBalN > 1 || exFoco < 0)) ini = 1; else n--;

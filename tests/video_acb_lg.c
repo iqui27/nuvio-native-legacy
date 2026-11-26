@@ -12,6 +12,19 @@ static int fake_sleep(const struct timespec *, struct timespec *);
  * remembered-address reset of the other version. */
 int mkv_dts_kind(int numero) { (void)numero; return 0; }
 void dts_engine_forget_final(const char *u, const char *h) { (void)u; (void)h; }
+/* The LG donor sync (doador_webos.c, doadorleg.c): not linked here. */
+void dts_engine_set_external_open_hook(void (*f)(void *, void *, int)) { (void)f; }
+void doaw_fontes_abertas(void *m, void *d, int h) { (void)m; (void)d; (void)h; }
+unsigned doaw_geracao(void) { return 0; }
+int doaw_ms(double k, double d, int *ms) { (void)k; (void)d; (void)ms; return 0; }
+int doaw_faixa_si(const char *l, const char *c, int n) { (void)l; (void)c; (void)n; return -1; }
+void doadorleg_iniciar(double p) { (void)p; }
+void doadorleg_cancelar(void) {}
+int doadorleg_resultado(double *k, double *d, double *c, char *m, size_t n) { (void)k; (void)d; (void)c; (void)m; (void)n; return 0; }
+int doadorleg_mapa_resultado(DoaMapa *o, char *m, size_t n) { (void)o; (void)m; (void)n; return 0; }
+void dts_playback_external_match_fine(DtsPlayback *p) { (void)p; }
+void dts_playback_external_match_track(DtsPlayback *p, int s) { (void)p; (void)s; }
+void dts_playback_external_map(DtsPlayback *p, int n, const double *i, const int *m) { (void)p; (void)n; (void)i; (void)m; }
 /* External audio: the hold-OK menu's track reader (unused here). */
 int dts_playback_enabled(void) { return 0; }
 int dts_engine_probe_audio(const char *u, const char *h, DtsTrack *t, int m) { (void)u; (void)h; (void)t; (void)m; return -1; }

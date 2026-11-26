@@ -163,6 +163,19 @@ typedef struct {
   int cand_ms[3], cand_score[3];
 } DtsMatchInfo;
 int dts_engine_external_match_arm(DtsEngine *);
+/* LG (owner 26/11, the .tpk's way): the audio refine, +-1 s around the
+ * offset in force and nothing wider (how 7, automatic); the file's track the
+ * match compares, picked by hand (container index; -1 Auto); the edit map
+ * (n stretches from ini_ns, this file's time, each with its offset in ms; the
+ * one under the picture being read is applied live; n < 2 clears it). */
+#define DTS_ENGINE_MAP_MAX 12
+int dts_engine_external_match_fine(DtsEngine *);
+void dts_engine_external_match_track(DtsEngine *, int stream);
+void dts_engine_external_map(DtsEngine *, int n, const int64_t *ini_ns, const int *ms);
+/* Any thread, set once: called on the worker when both files of an external
+ * session are open (AVFormatContexts as void *; hls 1 for the HLS remux). */
+void dts_engine_set_external_open_hook(void (*fn)(void *main_fmt, void *donor_fmt, int hls));
+void dts_engine_external_open_notify(void *main_fmt, void *donor_fmt, int hls);
 int dts_engine_external_match_poll(DtsEngine *, DtsMatchInfo *out);
 /* Before open (or replace): play the other version at this speed
  * (ratio_ppm from a match). Not 0: its audio is decoded, resampled to the

@@ -3,6 +3,9 @@
 #include "ajustes.h"
 #define NV_WEBOS 1
 #include "../src/ajustes.c"
+#if defined(NV_TPK) || defined(NV_WEBOS)
+int doa_disponivel(void) { return 0; }   /* the donor server (dts/doador_tpk.c, doador_webos.c on LG) is not linked here */
+#endif
 #include <assert.h>
 int main(void) {
   assert(AJ_DV_AUDIO_FIXO==AJ_MP4_BD_TEST-4 && valor[AJ_DV_AUDIO_FIXO]==0);

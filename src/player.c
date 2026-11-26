@@ -4640,7 +4640,7 @@ void player_evento(const SDL_Event *e) {
     }
   }
 
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // AUDIO FROM ANOTHER SOURCE: no CH+/CH- sync any more (owner 17/11). The
   // sync is automatic (subtitles, then audio) and the audio menu's Audio sync
   // row sets it by hand.
@@ -4925,7 +4925,7 @@ void player_atualizar(float dt, Uint32 agora) {
         player_toast_ex(i18n("Could not match for sure: try the candidates in Audio sync (audio menu, OK on Audio sync)."), 7000, "aj_triangle-alert", 1);
       else if (a < 0 && d.pesado)
         player_toast_ex(i18n("Could not match automatically: a wider search would download too much of the other version. Set the sync by hand in the audio menu."), 7000, "aj_triangle-alert", 1);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       else if (a < 0) player_toast_ex(i18n("Could not sync this version by itself: set it in the audio menu (Audio sync)."), 5000, "aj_triangle-alert", 1); }
 #else
       else if (a < 0) player_toast_ex(i18n("Could not match automatically: use the manual sync (CH+/CH-)."), 5000, "aj_triangle-alert", 1); }
@@ -4935,7 +4935,7 @@ void player_atualizar(float dt, Uint32 agora) {
       audioext_formatar_offset(ms, v, sizeof v, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
       if (a == 1) player_toast(i18n("A scene the other version does not have: this file's own audio plays."), 4000);
       else if (a == 2) { snprintf(t, sizeof t, i18n("The other version's audio is back (%s)."), v); player_toast(t, 3500); }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       else if (a == 3) player_toast_ex(i18n("Lost the other version's sync: set it in the audio menu (Audio sync)."), 6000, "aj_triangle-alert", 1);
 #else
       else if (a == 3) player_toast_ex(i18n("Lost the other version: use Match automatically in the audio menu."), 6000, "aj_triangle-alert", 1);
@@ -4946,7 +4946,7 @@ void player_atualizar(float dt, Uint32 agora) {
       player_toast(i18n("The source slowed down: reconnecting…"), 3500);
     { int l = audioext_lento_consumir();
       if (l == 1) player_toast(i18n("The other version downloads slowly: opening it again…"), 3500);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       else if (l == 2) player_toast_ex(i18n("This version downloads too slowly. Pick another one in the audio menu."), 7000, "aj_triangle-alert", 1);
 #else
       else if (l == 2) player_toast_ex(i18n("This version downloads too slowly. Pick another one in the audio menu (From another source)."), 7000, "aj_triangle-alert", 1);
@@ -4955,7 +4955,7 @@ void player_atualizar(float dt, Uint32 agora) {
     if (audioext_voltou_padrao_consumir())
       player_toast(i18n("The other version's audio did not start last time. Playing this file's own audio."), 5000);
     if (audioext_tocando() && !extVisto) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       snprintf(t, sizeof t, i18n("Audio from: %s"), audioext_nome());
 #else
       snprintf(t, sizeof t, i18n("Audio from: %s · CH+/CH- to sync"), audioext_nome());
@@ -4964,7 +4964,7 @@ void player_atualizar(float dt, Uint32 agora) {
     }
     { int corte, vel;
       if (audioext_diferenca_consumir(&corte, &vel)) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
         if (vel) snprintf(t, sizeof t, "%s", i18n("This version plays at another speed: the sync corrects it."));
 #else
         if (vel) snprintf(t, sizeof t, "%s", i18n("This version plays at another speed: Match automatically (audio menu) corrects it."));

@@ -362,14 +362,14 @@
   0, /* ordinary native buffering: Standard / one sequential connection */
   0, /* DTS/TrueHD/DV7: Standard (1), Tizen method (owner, 06/11/2026) */
   1, /* Audio from another source: Off by default (owner, 07/11); webOS converter, .tpk donor server */
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   1, /* Versions not in cache: Hide (owner 25/11, beta: they mostly fail to load) */
 #else
   0, /* Versions not in cache: Show dimmed */
 #endif
   1, /* Audio sync step: 50 ms */
   0, /* Warn about large files: On */
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   1, /* Download of the audio file: Audio only (owner 25/11; MKV is still read whole) */
 #else
   0, /* Download of the audio file: Whole file */

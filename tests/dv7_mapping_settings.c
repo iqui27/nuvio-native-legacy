@@ -1,6 +1,6 @@
 #include "../src/ajustes.c"
-#ifdef NV_TPK
-int doa_disponivel(void) { return 0; }   /* the .tpk donor server (dts/doador_tpk.c) is not linked here */
+#if defined(NV_TPK) || defined(NV_WEBOS)
+int doa_disponivel(void) { return 0; }   /* the donor server (dts/doador_tpk.c, doador_webos.c on LG) is not linked here */
 #endif
 #include <assert.h>
 int main(void) {

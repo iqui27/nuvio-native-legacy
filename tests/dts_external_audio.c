@@ -880,8 +880,9 @@ int main(int argc, char **argv) {
     fprintf(stderr, "follow, small shift: %d shift(s), first %d ms at %.1f s, own audio %d\n", shifts, shift_ms, shift_at / 1e9, fills);
     assert(got == 0 && fills == 0 && shifts >= 1 && shift_ms < -550 && shift_ms > -650 && shift_at > 70e9 && shift_at < 90e9); }
   dts_engine_destroy(e);
-  /* The second look, same frame rate, a gap 0.5 s longer at 200 s: an
-   * offset move (how 1, no speed), never a speed change (how 5). */
+  /* A gap 0.5 s longer at 200 s, same frame rate: no second look any more
+   * (owner 26/11, CPU; the subtitles' edit map places each stretch in the
+   * app): the one find, no speed change. */
   e = dts_engine_create();
   dts_engine_external_audio(e, gap_dub, HEADERS, "en", 0);
   assert(dts_engine_open(e, gap_main, HEADERS, -1, 0, 0) == 0);
@@ -894,15 +895,41 @@ int main(int argc, char **argv) {
         if (results >= 2) { moved = 1; moved_ms = mi.offset_ms; }
       }
     }
-    fprintf(stderr, "second look, same frame rate: %d result(s), speed %d, moved to %d ms\n", results, speed, moved_ms);
-    assert(got == 0 && !speed && moved && moved_ms < -450 && moved_ms > -550); }
+    fprintf(stderr, "no second look, same frame rate: %d result(s), speed %d, moved %d\n", results, speed, moved);
+    assert(got == 0 && results == 1 && !speed && !moved); (void)moved_ms; }
+  dts_engine_destroy(e);
+  /* LG like the .tpk (owner 26/11): the EDIT MAP from the subtitles gives
+   * the stretch after the 0.5 s longer gap at 200 s its own offset, applied
+   * live when the picture being read gets there (event 5); then the AUDIO
+   * REFINE (+-1 s, how 7) confirms the offset in force there. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, gap_dub, HEADERS, "en", 0);
+  assert(dts_engine_open(e, gap_main, HEADERS, -1, 0, 0) == 0);
+  { DtsFrame f; int got, base = 99999, mapped = 0, map_ms = 0, fine = 0, fine_ms = 0, fine_how = 0, state, ms; int64_t last = INT64_MIN, map_at = 0;
+    DtsMatchInfo mi;
+    assert(dts_engine_external_match_arm(e) == 0);
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      if (f.kind == DTS_VIDEO) last = f.pts_ns;
+      int r = dts_engine_external_match_poll(e, &mi), k = dts_engine_external_follow_poll(e, &state, &ms);
+      if (r == 1 && base == 99999) {
+        int64_t ini[2] = { 0, 200000000000LL }; int mm[2];
+        base = mi.offset_ms; mm[0] = base; mm[1] = base - 500;
+        assert(dts_engine_external_shift(e, base) == 0);
+        dts_engine_external_map(e, 2, ini, mm);
+      } else if (r == 1 && fine == 1) { fine = 2; fine_ms = mi.offset_ms; fine_how = mi.how; }
+      else if (r == -1 && fine == 1) fine = 3;
+      if (k == 5 && !mapped) { mapped = 1; map_ms = ms; map_at = last; }
+      if (mapped && !fine && last > 240000000000LL) { fine = 1; assert(dts_engine_external_match_fine(e) == 0); }
+    }
+    fprintf(stderr, "edit map: first find %d ms, stretch 2 at %.1f s with %d ms, refine %d: %d ms how %d\n", base, map_at / 1e9,
+            map_ms, fine, fine_ms, fine_how);
+    assert(got == 0 && base != 99999 && mapped && map_ms == base - 500 && map_at >= 200e9 && map_at < 202e9);
+    assert(fine == 2 && fine_how == 7 && abs(fine_ms - map_ms) <= 60); }
   dts_engine_destroy(e);
   /* Versions whose gaps differ at each break (owner's log 16/11, Chicago
-   * Fire): the lengths 1 s apart, so the small-shift follow starts with the
-   * first find and the sync is also checked every few minutes. Each move
-   * (0.5 s at 200 s and at 470 s) is found within seconds of its break, made
-   * at pauses in steps, and the next one measured from it (-1000 ms, not the
-   * first one again). */
+   * Fire), the lengths 1 s apart: the sync is no longer checked through the
+   * film nor followed in small shifts by itself (owner 26/11: the edit map
+   * from the subtitles does it in the app). One find, no later move. */
   e = dts_engine_create();
   dts_engine_external_audio(e, step_dub, HEADERS, "en", 0);
   assert(dts_engine_open(e, step_main, HEADERS, -1, 0, 0) == 0);
@@ -922,9 +949,7 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "versions whose gaps differ: first find %d, moves %d (%d ms at %.0f s, %d ms at %.0f s)\n",
             first, nm, moves[0], at[0] / 1e9, moves[1], at[1] / 1e9);
-    assert(got == 0 && first == 1 && nm == 2);
-    assert(moves[0] < -450 && moves[0] > -550 && at[0] > 200e9 && at[0] < 230e9);
-    assert(moves[1] < -950 && moves[1] > -1050 && at[1] > 470e9 && at[1] < 500e9); }
+    assert(got == 0 && first == 1 && nm == 0); }
   dts_engine_destroy(e);
   /* A real missing scene between two languages: found later (the slower
    * check), and the other version still resumes 25 s on. */

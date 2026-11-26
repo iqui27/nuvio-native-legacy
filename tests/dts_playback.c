@@ -107,6 +107,9 @@ static int ext_track=-2;
 void dts_engine_external_track(DtsEngine *e,int t) { (void)e;pthread_mutex_lock(&fixture);ext_track=t;pthread_mutex_unlock(&fixture); }
 void dts_engine_external_mismatch(DtsEngine *e,int *c,int *s,int *r) { (void)e; *c=26; *s=0; if(r) *r=0; }
 int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return 0; }
+int dts_engine_external_match_fine(DtsEngine *e) { (void)e; return 0; }
+void dts_engine_external_match_track(DtsEngine *e,int s) { (void)e; (void)s; }
+void dts_engine_external_map(DtsEngine *e,int n,const int64_t *i,const int *m) { (void)e; (void)n; (void)i; (void)m; }
 int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) { (void)e; memset(o,0,sizeof *o); return 0; }
 static int ext_speed_set, prefetches;
 int dts_engine_prefetch(DtsEngine *e,double s) { (void)e; (void)s; pthread_mutex_lock(&fixture); prefetches++; pthread_mutex_unlock(&fixture); return 0; }

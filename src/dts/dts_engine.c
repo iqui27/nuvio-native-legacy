@@ -130,6 +130,11 @@ int dts_engine_external_shift(DtsEngine *e,int o) { (void)e;(void)o; return -1; 
 int dts_engine_external_shift_quiet(DtsEngine *e,int o) { (void)e;(void)o; return -1; }
 int dts_engine_probe_audio(const char *u,const char *h,DtsTrack *t,int m) { (void)u;(void)h;(void)t;(void)m; return -1; }
 int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return -1; }
+int dts_engine_external_match_fine(DtsEngine *e) { (void)e; return -1; }
+void dts_engine_external_match_track(DtsEngine *e,int s) { (void)e;(void)s; }
+void dts_engine_external_map(DtsEngine *e,int n,const int64_t *i,const int *m) { (void)e;(void)n;(void)i;(void)m; }
+void dts_engine_set_external_open_hook(void (*f)(void *,void *,int)) { (void)f; }
+void dts_engine_external_open_notify(void *m,void *d,int h) { (void)m;(void)d;(void)h; }
 int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) { (void)e; memset(o,0,sizeof *o); return -1; }
 void dts_engine_external_speed(DtsEngine *e,int p) { (void)e;(void)p; }
 int dts_engine_prefetch(DtsEngine *e,double s) { (void)e;(void)s; return -1; }
@@ -423,6 +428,14 @@ struct DtsEngine {
    * each break's 0.6 s heard for minutes). */
   int fw_small;
   int mt_main_pref;      /* this file's track that compared best, +1 (0: none; see match_alt) */
+  int mt_main_force;     /* this file's track picked in Audio sync > Scan again, +1 (0: Auto) */
+  int mt_fine;           /* the capture is the audio refine (+-1 s, no wider search; owner 26/11) */
+  int mt_fine_again;     /* that refine was cut short by a jump: it starts again from there */
+  /* THE EDIT MAP (owner 26/11, as on the .tpk): each stretch of this file
+   * (from ini, this file's time) has its own offset; the one under the
+   * picture being read is applied live, no seek of this source. */
+  int map_n, map_at;
+  int64_t map_ini_ns[DTS_ENGINE_MAP_MAX]; int map_ms[DTS_ENGINE_MAP_MAX];
   int ext_automatch;     /* Settings: "Match automatically" by itself when the other version starts */
   int mt_retry;          /* automatic captures started again after a jump cut them short */
   struct Follow *fw;
@@ -2936,10 +2949,10 @@ static int configure_external(DtsEngine *e,double start) {
     e->mt_watch=e->mt_same=e->mt_stepped=0;
     if(x->fmt->duration>0 && e->fmt->duration>0) {
       double d=((double)x->fmt->duration*ext_k(e)-(double)e->fmt->duration)/1e6;
-      if(fabs(d)>=0.5 && fabs(d)<=10.0) {
-        e->mt_watch=1;
-        printf("[ext-audio] the lengths differ by %.1f s: the sync is checked all through\n",d);
-      }
+      /* Not checked all through any more (owner 26/11: like the .tpk, the
+       * offset is set once; the edit map covers a different stretch). */
+      if(fabs(d)>=0.5 && fabs(d)<=10.0)
+        printf("[ext-audio] the lengths differ by %.1f s: the subtitles' edit map places each stretch\n",d);
     }
     printf("[ext-audio] main fps=%.3f duration=%.1fs, other fps=%.3f duration=%.1fs%s\n",fa,
       e->fmt->duration/1e6,fb,x->fmt->duration/1e6,
@@ -2969,6 +2982,8 @@ static int configure_external(DtsEngine *e,double start) {
   }
   e->ext_base_ns=(e->fmt->start_time!=AV_NOPTS_VALUE?av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS):0)
                  -(x->fmt->start_time!=AV_NOPTS_VALUE?av_rescale_q(x->fmt->start_time,AV_TIME_BASE_Q,NS):0);
+  e->map_n=0; e->map_at=-1;   /* a map belongs to one version */
+  dts_engine_external_open_notify(e->fmt,x->fmt,0);
   AVStream *as=x->fmt->streams[k]; AVCodecParameters *ap=as->codecpar;
   e->ext_stream=k; e->ext_have=e->ext_eof=0; e->ext_clock_ns=INT64_MIN;
   e->ext_last_end_ns=e->ext_floor_ns=INT64_MIN;
@@ -3027,7 +3042,7 @@ static int configure_external(DtsEngine *e,double start) {
   e->target_ns=(int64_t)(start*1000000000.0);
   printf("[ext-audio] ready codec=%s ch=%d rate=%d stream=%d%s\n",e->info.audio_codec,e->info.channels,
     e->info.sample_rate,k,follow?" (following another cut)":"");
-  e->fw_autoarm=follow || e->ext_automatch; e->mt_main_pref=0; e->mt_retry=0;
+  e->fw_autoarm=follow || e->ext_automatch; e->mt_main_pref=0; e->mt_retry=0; e->mt_fine=e->mt_fine_again=0;
   fflush(stdout);
   return start>0?dts_engine_seek(e,start):0;
 }
@@ -3981,7 +3996,7 @@ static void match_report(DtsEngine *e,double off_raw,double ratio,double score,i
   e->mt_state=2; e->mt_offset_ms=(int)user; e->mt_score=(int)lround(score*100.0);
   e->mt_ratio_ppm=ratio>0?(int)llrint((ratio-1.0)*1e6):0; e->mt_how=how;
   /* Another cut, with "Follow through the whole film" on: from this find on. */
-  if(how!=5 && e->fw_on && abs(e->ext_cut_s)>10) follow_start(e,score);
+  if(how!=5 && how!=7 && e->fw_on && abs(e->ext_cut_s)>10) follow_start(e,score);
   /* Versions whose gaps differ: the small-shift follow, by itself. */
   else if(how!=5 && e->mt_watch && !e->fw && abs(e->ext_cut_s)<=10) { e->fw_small=1; follow_start(e,score); if(!e->fw) e->fw_small=0; }
 }
@@ -4097,6 +4112,18 @@ static void match_finish(DtsEngine *e) {
     fflush(stdout);
     e->mt_main_pref=mc->main_stream+1;
   }
+  if(e->mt_fine) {
+    DtsMatchResult r;
+    int got=dts_match_search(&sm,&sd,k0,center,1.0,&r);
+    if(got && !r.confident) match_try_verify(&sm,&sd,k0,&r);
+    e->mt_fine=0; e->mt_ncand=0;
+    printf("[ext-audio] match: audio refine: %s offset %d ms (was %d) score %.2f margin %.2f\n",got && r.confident?"found":"not trusted,",
+      got?(int)lround(r.offset_s*1000.0-base*1000.0):0,(int)(e->ext_offset_ns/1000000),got?r.score:0.0,got?r.margin:0.0);
+    fflush(stdout);
+    if(got && r.confident) match_report(e,r.offset_s,k0==1.0?0:k0,r.score,7);
+    else match_fail(e,0);
+    match_disarm(e); return;
+  }
   double ks[2]={k0,e->ext_fps_ratio}; int nk=e->ext_fps_ratio>0 && fabs(e->ext_fps_ratio-k0)>0.0005?2:1;
   DtsMatchResult best={0}; double bk=k0; int found=0;
   e->mt_ncand=0;
@@ -4173,7 +4200,7 @@ static void match_feed(DtsEngine *e,int side,AVPacket *pkt,AVRational tb) {
   struct MatchCap *mc=e->mt;
   if(!mc || match_side_full(&mc->s[side])) return;
   if(match_side_feed(&mc->s[side],pkt,tb)<0) { mc->s[side].ev.max=mc->s[side].ev.n=1; }
-  if(!mc->early && !e->mt_check && (mc->alt_stream<0 || mc->alt_same) && abs(e->ext_cut_s)<=10 &&
+  if(!mc->early && !e->mt_check && !e->mt_fine && (mc->alt_stream<0 || mc->alt_same) && abs(e->ext_cut_s)<=10 &&
      mc->s[0].ev.n>=MATCH_EARLY_S*DTS_MATCH_HZ && mc->s[1].ev.n>=MATCH_EARLY_S*DTS_MATCH_HZ &&
      !match_side_full(&mc->s[0]) && !match_side_full(&mc->s[1])) {
     mc->early=1;
@@ -4195,6 +4222,8 @@ static void match_cancel(DtsEngine *e) {
    * reports its interruption. */
   if(e->mt_auto) {
     e->mt_auto=0; e->mt_state=0;
+    /* The audio refine starts again as a refine, never as the wide search. */
+    if(e->mt_fine) { e->mt_fine=0; e->mt_fine_again=e->mt_retry<3; }
     if(e->mt_retry<3) { e->mt_retry++; e->fw_autoarm=1; }
     printf("[ext-audio] match: interrupted by a jump (automatic)%s\n",e->fw_autoarm?": again from there":"");
     fflush(stdout);
@@ -4280,6 +4309,16 @@ static void match_pair(DtsEngine *e,int alt,int *mains,int *donor,int *shared) {
     int p=e->mt_main_pref-1;
     if(p>=0 && (unsigned)p<mf->nb_streams && match_rank(mf->streams[p])) m=p;
   }
+  /* Picked by hand (Scan again): that track, against the donor's track in its
+   * language when there is one. */
+  { int f=e->mt_main_force-1;
+    if(f>=0 && (unsigned)f<mf->nb_streams && match_rank(mf->streams[f])) {
+      char lf[16]="";
+      copy_metadata(lf,sizeof lf,mf->streams[f]->metadata,"language");
+      int k=lf[0]?match_track_lang(df,lf):-1;
+      m=f; if(k>=0) d=k;
+      if(shared) *shared=k>=0;
+    } }
   *mains=m; *donor=d;
 }
 static int lang_is_en(const char *l) {
@@ -4343,7 +4382,7 @@ static int match_arm(DtsEngine *e,int check) {
   if(match_side_open(&mc->s[0],e->fmt->streams[best],DTS_MATCH_MAX)<0 ||
      match_side_open(&mc->s[1],e->ext->fmt->streams[donor],DTS_MATCH_MAX)<0) { match_disarm(e); return -1; }
   e->fmt->streams[best]->discard=AVDISCARD_DEFAULT;
-  if(shared && !check && !e->mt_main_pref) {
+  if(shared && !check && !e->mt_main_pref && !e->mt_main_force && !e->mt_fine) {
     int a=match_alt_same(e,best);
     if(a>=0 && match_side_open(&mc->s[2],e->fmt->streams[a],DTS_MATCH_MAX)==0) {
       char la[16]="";
@@ -4353,7 +4392,7 @@ static int match_arm(DtsEngine *e,int check) {
              avcodec_get_name(e->fmt->streams[a]->codecpar->codec_id),la[0]?la:"-");
     }
   }
-  if(!shared && !check && !e->mt_main_pref) {
+  if(!shared && !check && !e->mt_main_pref && !e->mt_main_force && !e->mt_fine) {
     int a=match_alt(e,best), same=0;
     /* No other language in this file (owner's log 21/11: a Polish AVI with
      * no language tag against a 4K file with three English tracks): another
@@ -4382,20 +4421,64 @@ static int match_arm(DtsEngine *e,int check) {
 int dts_engine_external_match_arm(DtsEngine *e) {
   if(!e) return -1;
   match_job_stop(e); e->mt_t1=-1; e->mt_auto=0;   /* a click; the automatic callers set it after */
-  e->mt_heavy=e->mt_hint_ms=e->mt_how=e->mt_ncand=0;
+  e->mt_heavy=e->mt_hint_ms=e->mt_how=e->mt_ncand=0; e->mt_fine=0;
   if(match_arm(e,0)<0) { match_fail(e,0); return -1; }
   e->mt_state=1; e->mt_started_ms=clock_ns(CLOCK_MONOTONIC)/1000000u;
   return 0;
 }
+/* Both files of an external session open (the converter here, the HLS remux
+ * in dts_remux.c): the app's hook reads their indexes (doador_webos.c). */
+static void (*g_ext_open_hook)(void *,void *,int);
+void dts_engine_set_external_open_hook(void (*fn)(void *,void *,int)) { g_ext_open_hook=fn; }
+void dts_engine_external_open_notify(void *main_fmt,void *donor_fmt,int hls) {
+  if(g_ext_open_hook && main_fmt && donor_fmt) g_ext_open_hook(main_fmt,donor_fmt,hls);
+}
+/* THE AUDIO REFINE (owner 26/11, as on the .tpk): after the subtitles placed
+ * the other version, ~40 s of both audios refine the offset in force within
+ * +-1 s; nothing wider. Reported as automatic, how 7. */
+int dts_engine_external_match_fine(DtsEngine *e) {
+  if(!e) return -1;
+  match_job_stop(e); e->mt_t1=-1;
+  e->mt_heavy=e->mt_hint_ms=e->mt_how=e->mt_ncand=0; e->mt_fine=1;
+  if(match_arm(e,0)<0) { e->mt_fine=0; match_fail(e,0); return -1; }
+  e->mt_auto=1; e->mt_state=1; e->mt_started_ms=clock_ns(CLOCK_MONOTONIC)/1000000u;
+  printf("[ext-audio] match: audio refine within +-1 s of %d ms\n",(int)(e->ext_offset_ns/1000000));
+  fflush(stdout);
+  return 0;
+}
+void dts_engine_external_match_track(DtsEngine *e,int stream) { if(e) e->mt_main_force=stream>=0?stream+1:0; }
+/* The edit map: stretches from ini_ns (this file's time; the first from the
+ * start), each with its offset (the app's ms). n < 2 clears it. */
+void dts_engine_external_map(DtsEngine *e,int n,const int64_t *ini_ns,const int *ms) {
+  if(!e) return;
+  e->map_n=0; e->map_at=-1;
+  if(n<2 || !ini_ns || !ms) { printf("[ext-audio] edit map cleared: one offset\n"); fflush(stdout); return; }
+  if(n>DTS_ENGINE_MAP_MAX) n=DTS_ENGINE_MAP_MAX;
+  for(int i=0;i<n;i++) { e->map_ini_ns[i]=i?ini_ns[i]:INT64_MIN; e->map_ms[i]=ms[i]; }
+  e->map_n=n;
+  printf("[ext-audio] edit map in force: %d stretches",n);
+  for(int i=0;i<n;i++) printf("%s%.0f s %+d ms",i?", ":": ",i?ini_ns[i]/1e9:0.0,ms[i]);
+  printf("\n"); fflush(stdout);
+}
+static int external_shift_now(DtsEngine *e,int offset_ms);
+/* The picture being read entered another stretch: its offset, live. */
+static void map_due(DtsEngine *e,int64_t t_ns) {
+  int i=0;
+  if(e->map_n<2 || t_ns==INT64_MIN || !e->ext || e->ext_failed) return;
+  while(i+1<e->map_n && t_ns>=e->map_ini_ns[i+1]) i++;
+  if(i==e->map_at) return;
+  e->map_at=i;
+  if(e->map_ms[i]==(int)(e->ext_offset_ns/1000000)) return;
+  printf("[ext-audio] edit map: stretch %d at %.1f s, offset %+d ms\n",i+1,t_ns/1e9,e->map_ms[i]); fflush(stdout);
+  if(external_shift_now(e,e->map_ms[i])<0) external_offset_set(e,e->map_ms[i]);
+  e->fw_event=5; e->fw_event_ms=e->map_ms[i];
+}
 /* The second look starts on its own once playback is 5 minutes away from
  * the first find (called with this file's picture time). */
 static void match_second_look_due(DtsEngine *e,int64_t t_ns) {
-  if(e->mt_t1<0 || e->mt || e->mj || t_ns==INT64_MIN) return;
-  /* Checking all through: 3 min, 2 once the offset has moved (its moves come
-   * at each break), 6 once it held twice. */
-  double gap=e->mt_watch?(e->mt_same>=2?360.0:e->mt_stepped?120.0:180.0):300.0;
-  if(fabs(t_ns/1e9-e->mt_t1)<gap) return;
-  if(match_arm(e,1)<0) e->mt_t1=-1;
+  /* No second look nor checks through the film (owner 26/11, CPU): the speed
+   * comes from the frame rates and the subtitles, as on the .tpk. */
+  (void)t_ns; e->mt_t1=-1;
 }
 int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) {
   memset(o,0,sizeof *o);
@@ -5185,6 +5268,12 @@ static void quiet_poll(DtsEngine *e) {
  * jumps by the change. Heard once the audio queued in the TV has played. */
 int dts_engine_external_shift(DtsEngine *e,int offset_ms) {
   if(!e) return -1;
+  /* With an edit map, a change by hand or a refine moves every stretch. */
+  if(e->map_n>=2 && e->map_at>=0 && offset_ms!=e->map_ms[e->map_at]) {
+    int d=offset_ms-e->map_ms[e->map_at];
+    for(int i=0;i<e->map_n;i++) e->map_ms[i]+=d;
+    printf("[ext-audio] edit map moved by %+d ms\n",d); fflush(stdout);
+  }
   /* The change waiting for quiet moments, asked again: it goes on. Another
    * value (a press of CH+/CH-) is made at once. */
   if(e->qs) { if(offset_ms==e->qs_offset_ms) return 0; quiet_free(e); }
@@ -5288,8 +5377,13 @@ static int next_frame_passthrough(DtsEngine *e,DtsFrame *f) {
       video_demux_diag(e);
 #endif
       if(e->mt_t1>=0) match_second_look_due(e,ns(e->in->pts!=AV_NOPTS_VALUE?e->in->pts:e->in->dts,tb));
+      if(e->map_n>=2 && e->in->pts!=AV_NOPTS_VALUE) map_due(e,ns(e->in->pts,tb));
       /* Follow on, another cut: the first match starts by itself. */
-      if(e->fw_autoarm && !e->mt && !e->mj) { e->fw_autoarm=0; dts_engine_external_match_arm(e); e->mt_auto=1; }
+      if(e->fw_autoarm && !e->mt && !e->mj) {
+        e->fw_autoarm=0;
+        if(e->mt_fine_again) { e->mt_fine_again=0; dts_engine_external_match_fine(e); }
+        else { dts_engine_external_match_arm(e); e->mt_auto=1; }
+      }
       if(!e->bsf) {
         if(e->hevc_annexb.sets && (r=hevc_annexb_packet(e))<0) { av_packet_unref(e->in); return fail(e,"Compressed video output",r); }
         av_packet_move_ref(e->out,e->in); return ext_video_out(e,f,tb);

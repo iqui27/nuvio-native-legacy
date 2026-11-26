@@ -1,5 +1,5 @@
 #include "streams.h"
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #include "mkvfix.h"
 #else
 #endif
@@ -56,7 +56,7 @@
 #include "rolagemtoque.h"
 #include "player.h"
 #include "audioext.h"
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #include "dts/doador_tpk.h"
 #else
 #endif
@@ -690,7 +690,7 @@ void stream_preparar_dica_p2p(const Stream *l, int qtd) {
   for (int i = 0; i < qtd; i++) {
     if (l[i].url[0] || !l[i].infoHash[0]) continue;
     atomic_store(&motorP2pParaDica, p2pmotor_disponivel());
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     return;
   }
 }
@@ -711,7 +711,7 @@ static int (*filtroAddonAudioext)(const char *chave);
 void stream_audioext_filtro_addon(int (*fn)(const char *chave)) { filtroAddonAudioext = fn; }
 static void audioextSerie(void) {
   AudioExtIdent id;
-#if defined(NV_TPK)   /* the donor server (dts/doador_tpk.h) */
+#if defined(NV_TPK) || defined(NV_WEBOS)   /* the donor server (dts/doador_tpk.h; doador_webos.c on LG) */
   if (!doa_disponivel() || !ajustes_audio_externo() || !alvoLista[0] || strcmp(alvoLista, alvoPedido)) return;
   if (!audioext_serie_procura(alvoPedido, &id)) return;
   int achou = -1, nivel = 0;
@@ -848,7 +848,7 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   // resposta chega. O carimbo vem de quem pediu, em app.c, e e ele que permite
   // a qualquer consumidor perguntar "esta lista e do episodio que eu quero?".
   snprintf(alvoLista, sizeof alvoLista, "%s", alvoPedido);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   audioextSerie();
 #endif
@@ -858,7 +858,7 @@ void stream_invalidar(const char *porque) {
   if (n > 0) {
     printf("[fonte] %d fontes de %s descartadas: %s\n", n,
            alvoLista[0] ? alvoLista : "(sem alvo)", porque ? porque : "");
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   audioextSerie();
 #else
 #endif
@@ -937,7 +937,7 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   // A linha em foco muda de lugar quando entra fonte acima dela (os grupos tem
   // altura variavel): guardada aqui e reposta no proximo montar().
   if (focoIdx >= 0) { focoFixo = focoIdx; focoFixoY = linhaAntes < nOrdem ? linhaTopo(linhaAntes) : 0; }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   audioextSerie();
 #endif
@@ -955,7 +955,7 @@ const Stream *stream_item(int i) {
   return i >= 0 && i < n ? &lista[i] : NULL;
 }
 
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
 int stream_lista_tem_addon(const char *k) {
   if (!k || !*k) return 0;
@@ -985,7 +985,7 @@ static int alturaMax(void) {
   if (!q || !q[0]) return 0;
   if (!strcmp(q, "4K"))    return 2160;
   if (!strcmp(q, "1080p")) return 1080;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   audioextSerie();
 #else
 #endif
@@ -1001,7 +1001,7 @@ static int cabeNaAltura(const Stream *s) {
   return !teto || !s->altura || s->altura <= teto;
 }
 
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // 1 when the list on hand has a source from add-on `k` (audioextaddons.c).
 int stream_lista_tem_addon(const char *k) {
   if (!k || !*k) return 0;
@@ -1013,7 +1013,7 @@ int stream_lista_tem_addon(const char *k) {
 #endif
 #ifdef NV_VIDAA
 // TABELA DE REGRAS DA VIDAA (Hisense) -----------------------------------------
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 
 #else
 #endif
@@ -2118,7 +2118,7 @@ int stream_marcar_fora_cache_url(const char *url) {
   pthread_mutex_unlock(&verTrava);
   if (achou) {
     atomic_fetch_add(&folhaRevisao, 1);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     // The host only: a debrid or AIOStreams path carries the download token
     // or the add-on's config (owner 25/11, beta: no tokens in the log).
     { const char *h = strstr(url, "://");
@@ -4160,7 +4160,7 @@ static float desenharFaixas(const Stream *s, float x, float y, float w, int sel,
   }
   return altura;
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
 static int audioDeclaradoEm(const Stream *s, const char *pref) {
   const char *p = s->audioIdiomas;
@@ -4190,7 +4190,7 @@ static int filtroTem(const Stream *s, int cat, const char *nome) {
     if (!strcmp(fontefiltro_opcao(cat, i), nome)) return (s->filtro.valores[cat] & fontefiltro_bit(cat, i)) != 0;
   return 0;
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // LANGUAGES FROM THE LABELS (owner 17/11: "181 versions in 2 languages" for
 // Fight Club, the add-ons' declared lists alone). Flags (regional indicator
 // pairs) in the source's name/description, skipping what is about subtitles:
@@ -4260,14 +4260,14 @@ static int grupoBenTheMen(const Stream *s) {
     if (strstr(t, "benthemen")) return 1;
 #endif
   }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   return 0;
 #endif
 }
 void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
   const char *lista, *p, *fim;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   int semBengali;
 #endif
@@ -4286,7 +4286,7 @@ void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
       if (ln > le && !strcasecmp(nome + ln - le, fora[k])) e->hls = 1;
     } }
   e->naoVideo = s->naoVideo;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // The declared list first; the labels' hints are added below.
   lista = s->audioIdiomas;
   limite = sizeof s->audioIdiomas;
@@ -4308,14 +4308,14 @@ void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
     cod = len <= 3 && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo) ? codigo : NULL;
     if (!cod) cod = faixaIdiomaDoNome(raw);
     if (!cod && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo)) cod = codigo;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
     if (cod && semBengali && (!strcasecmp(cod, "ben") || !strcasecmp(cod, "bn"))) cod = NULL;
 #endif
     if (cod && faixaIdiomaInformado(raw, len) && strcasecmp(cod, "mul")) {
       int dup = 0;
       for (int j = 0; j < e->nIdiomas; j++) if (!strcasecmp(e->idiomas[j], cod)) dup = 1;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       if (!dup) snprintf(e->idiomas[e->nIdiomas++], sizeof e->idiomas[0], "%.7s", cod);
 #else
       if (!dup) snprintf(e->idiomas[e->nIdiomas++], sizeof e->idiomas[0], "%s", cod);
@@ -4323,7 +4323,7 @@ void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
     }
     p = f ? f + 1 : fim;
   }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // The labels' languages too: the source list's language filter (names,
   // codes, flags it already reads) and every flag outside the subtitles.
   { static const struct { const char *opc, *cod; } LF[] = {
@@ -4354,7 +4354,7 @@ void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
   if (filtroTem(s, FONTEFILTRO_AUDIO, "DD+")) e->codec = AEXT_DDP;
   else if (filtroTem(s, FONTEFILTRO_AUDIO, "DD")) e->codec = AEXT_DD;
   else if (filtroTem(s, FONTEFILTRO_AUDIO, "AAC")) e->codec = AEXT_AAC;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   else if (filtroTem(s, FONTEFILTRO_AUDIO, "FLAC")) e->codec = AEXT_FLAC;
   else if (filtroTem(s, FONTEFILTRO_AUDIO, "OPUS")) e->codec = AEXT_OPUS;
 #else
@@ -4363,7 +4363,7 @@ void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
   else if (filtroTem(s, FONTEFILTRO_AUDIO, "DTS:X") || filtroTem(s, FONTEFILTRO_AUDIO, "DTS-HD MA") ||
            filtroTem(s, FONTEFILTRO_AUDIO, "DTS-HD") || filtroTem(s, FONTEFILTRO_AUDIO, "DTS-ES") ||
            filtroTem(s, FONTEFILTRO_AUDIO, "DTS")) e->codec = AEXT_DTS;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   else if (filtroTem(s, FONTEFILTRO_AUDIO, "OPUS") || filtroTem(s, FONTEFILTRO_AUDIO, "FLAC")) e->codec = AEXT_OUTRO;
 #endif
@@ -4435,7 +4435,7 @@ void stream_audioext_versao(const Stream *s, char *out, unsigned tam) {
     size_t n = strlen(out);
     if (ed && n + 4 < tam) snprintf(out + n, tam - n, "%s%s", n ? " \xc2\xb7 " : "", ed); }
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static int audioDeclaradoEm(const Stream *s, const char *pref) {
   const char *p = s->audioIdiomas;
   const char *fim = p + strnlen(p, sizeof s->audioIdiomas);
@@ -4699,7 +4699,7 @@ static int temMarca(int i, int automatica) {
   (void)automatica;
   // StreamFit (F03): a measured-heavy source carries its reason on the mark line.
   return i >= 0 && (i == atual || i == preferida || (i == melhorFolha && nFiltrados() > 1) ||
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
                     audioext_marcada(lista[i].url) ||
 #else
                     audioext_marcada_nome(lista[i].url, lista[i].rotulo) ||
@@ -5409,7 +5409,7 @@ static int fmIndice = -1;   // the source the menu is for
 // "Choose audio track…": the version's header is read on a thread
 // (audioext_sondar); its tracks become the menu's rows.
 static int fmModoFaixas, fmSondaN = -2;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static unsigned fmSondaGer;
 static AudioExtFaixa fmFaixas[AUDIOEXT_FAIXAS_MAX];
 static char fmRotFaixa[AUDIOEXT_FAIXAS_MAX][120];
@@ -5417,11 +5417,13 @@ static float fmAnim;
 static char fmUrl[NV_MEDIA_URL_MAX];   // the source by its link: the list can grow while the menu is open
 
 static int fonteAceitaAudio(int i) {
-#if defined(NV_TPK)   /* the donor server (dts/doador_tpk.h) */
+#if defined(NV_TPK) || defined(NV_WEBOS)   /* the donor server (dts/doador_tpk.h; doador_webos.c on LG) */
   AudioExtEntrada e;
   if (!doa_disponivel() || !ajustes_audio_externo() || canalFolha || i < 0 || i >= n) return 0;
   // Playing a file the donor server cannot open (not MKV/MP4): no audio rows.
+#ifdef NV_TPK   /* LG: the converter also opens AVI and MPEG-TS pictures */
   if (player_aberto() && !mkvfix_conteiner_doador_ok(mkvfix_conteiner())) return 0;
+#endif
   stream_audioext_entrada(&lista[i], &e);
   return e.temUrl && !e.hls && !e.naoVideo;
 #else
@@ -5448,7 +5450,7 @@ static int fonteAceitaAudio(int i) {
 #endif
 }
 static int fonteSegurarAceita(int i) { return linhaAceitaPartes(i) || fonteAceitaAudio(i); }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // The source the player is showing right now: its own audio is already what
 // plays, so it is never offered "as audio" (owner's log 8, 17/11: a pick in the
 // then invisible menu marked the playing source as its own audio source).
@@ -5474,7 +5476,7 @@ static void fonteMarcarAudio(int i) {
     if (player_aberto()) player_toast(i18n("This source can't be used as audio."), 2600);
     return;
   }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   if (fonteTocando(i) && !audioext_marcada(s->url)) {
     printf("[ext-audio] hold menu: source #%d is the one playing, not marked as audio\n", i); fflush(stdout);
     player_toast(i18n("This source is already playing."), 2600);
@@ -5501,7 +5503,7 @@ static void fonteMarcarAudio(int i) {
     memset(&id, 0, sizeof id);
     snprintf(id.grupo, sizeof id.grupo, "%s", s->bingeGroup);
     snprintf(id.addon, sizeof id.addon, "%s", s->provedor);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
     audioext_nome_versao(s->rotulo, id.nome, sizeof id.nome);
 #endif
@@ -5519,7 +5521,7 @@ static void fonteMarcarAudio(int i) {
 static void fonteMenuAbrir(int i) {
   fmAberto = 1; fmFoco = 0; fmN = 0; fmAnim = 0;
   snprintf(fmUrl, sizeof fmUrl, "%s", lista[i].url);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   fmMarcada = audioext_marcada(lista[i].url);
 #else
   fmMarcada = audioext_marcada_nome(lista[i].url, lista[i].rotulo);
@@ -5527,7 +5529,7 @@ static void fonteMenuAbrir(int i) {
   fmIndice = i;
   faixas_idioma_principal_atualizar();
   fmModoFaixas = 0; fmSondaN = -2;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // Owner 17/11: "Files in source" on top, the audio rows under it. The
   // source already playing gets no audio rows (only "Stop using as audio"
   // if it somehow carries the mark).
@@ -5536,7 +5538,7 @@ static void fonteMenuAbrir(int i) {
   if (audioext_sonda_disponivel()) fmAcoes[fmN++] = FM_FAIXAS;
 #endif
   if (linhaAceitaPartes(i)) fmAcoes[fmN++] = FM_ARQUIVOS;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   { int tocando = fonteTocando(i);
     if (!tocando || fmMarcada) fmAcoes[fmN++] = FM_AUDIO;
     if (!tocando && audioext_sonda_disponivel()) fmAcoes[fmN++] = FM_FAIXAS;
@@ -5551,7 +5553,7 @@ static void fonteMenuAbrir(int i) {
 }
 // The hold crossed its threshold on source `i`.
 static void fonteSegurou(int i) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // The source playing has no audio rows: straight to its files (as before).
   int audio = fonteAceitaAudio(i) && (!fonteTocando(i) || audioext_marcada(lista[i].url));
   if (audio) fonteMenuAbrir(i);
@@ -5559,7 +5561,7 @@ static void fonteSegurou(int i) {
   if (fonteAceitaAudio(i)) fonteMenuAbrir(i);
 #endif
   else if (linhaAceitaPartes(i)) partesAbrirPainel(i);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   printf("[ext-audio] hold OK on source #%d: %s\n", i, audio ? "source menu" : linhaAceitaPartes(i) ? "files in source" : "nothing to open");
   fflush(stdout);
 #else
@@ -5581,7 +5583,7 @@ static void fmMontarFaixas(void) {
   for (int k = 0; k < fmSondaN && k < AUDIOEXT_FAIXAS_MAX; k++) {
     const AudioExtFaixa *f = &fmFaixas[k];
     const char *lg = f->idioma[0] ? i18n(ling_nome(f->idioma)) : i18n("Faixa");
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     char ch[16] = "";
 #else
     char ch[8] = "";
@@ -5608,7 +5610,7 @@ static int fmLinhas(void) {
 static void fonteMarcarFaixa(int i, const AudioExtFaixa *f) {
   const Stream *s = &lista[i];
   if (!fonteAceitaAudio(i)) return;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   if (fonteTocando(i)) {
     printf("[ext-audio] hold menu: source #%d is the one playing, track not marked\n", i); fflush(stdout);
     player_toast(i18n("This source is already playing."), 2600);
@@ -5624,7 +5626,7 @@ static void fonteMarcarFaixa(int i, const AudioExtFaixa *f) {
     memset(&id, 0, sizeof id);
     snprintf(id.grupo, sizeof id.grupo, "%s", s->bingeGroup);
     snprintf(id.addon, sizeof id.addon, "%s", s->provedor);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
     audioext_nome_versao(s->rotulo, id.nome, sizeof id.nome);
 #endif
@@ -5650,7 +5652,7 @@ static void fonteMenuEscolher(void) {
     return;
   }
   int acao = fmFoco >= 0 && fmFoco < fmN ? fmAcoes[fmFoco] : -1;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   printf("[ext-audio] hold menu: row %d (%s) on source #%d\n", fmFoco,
          acao == FM_ARQUIVOS ? "files" : acao == FM_FAIXAS ? "choose track" : acao == FM_AUDIO ? (fmMarcada ? "stop as audio" : "use as audio") : "-", i);
   fflush(stdout);
@@ -5674,7 +5676,7 @@ static const char *fonteMenuRotulo(int r, const char **icone) {
     return fmRotFaixa[r];
   }
   if (fmAcoes[r] == FM_FAIXAS) { *icone = "aj_list-video"; return "Choose audio track…"; }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   if (fmAcoes[r] == FM_ARQUIVOS) { *icone = "aj_folders"; return "Files in source"; }
 #else
   if (fmAcoes[r] == FM_ARQUIVOS) { *icone = "aj_folders"; return "Files of this version"; }
@@ -5709,8 +5711,8 @@ static int fonteMenuEvento(const SDL_Event *e) {
   if (k == SDLK_UP && fmFoco > 0) fmFoco--;
   else if (k == SDLK_DOWN && fmFoco < fmLinhas() - 1) fmFoco++;
   else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) fonteMenuEscolher();
-#ifdef NV_TPK
-#if defined(NV_TPK)   /* the donor server (dts/doador_tpk.h) */
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#if defined(NV_TPK) || defined(NV_WEBOS)   /* the donor server (dts/doador_tpk.h; doador_webos.c on LG) */
   else if (!fmModoFaixas && ((int)e->key.keysym.scancode == NV_SCANCODE_BLUE || k == SDLK_F4)) {
     for (int r = 0; r < fmN; r++) if (fmAcoes[r] == FM_AUDIO) { fmFoco = r; fonteMenuEscolher(); break; }
   }
@@ -5775,13 +5777,13 @@ void stream_folha_evento(const SDL_Event *e) {
   if(!aberta || e->type!=SDL_KEYDOWN) return;
   SDL_Keycode k=e->key.keysym.sym;
   if (recarregarFonteConfirmacao && k != recarregarFonteConfirmacao)
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     recarregarFonteConfirmacao = 0;
   if(k==SDLK_ESCAPE || k==SDLK_AC_BACK || k==SDLK_BACKSPACE || k==SDLK_DELETE) {aberta=0;return;}
   if(k==SDLK_r) {recarregar=1;return;}
   // Test build: BLUE (or F4) = "Use as audio" of the hold-OK menu on the
   // source in focus (fonteMarcarAudio). Only the webOS converter plays it.
-#if defined(NV_TPK)   /* the donor server (dts/doador_tpk.h) */
+#if defined(NV_TPK) || defined(NV_WEBOS)   /* the donor server (dts/doador_tpk.h; doador_webos.c on LG) */
   if(grupo==1 && !canalFolha && !e->key.repeat && doa_disponivel() && ajustes_audio_externo() &&
      ((int)e->key.keysym.scancode==NV_SCANCODE_BLUE || k==SDLK_F4)) {
     int i=filtrado(foco);
@@ -6954,7 +6956,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
         mx += caixaAlta(dica,135,130,125,mx,cy,anim)+18;
       }
       if(s->foraCache && !cacheConfirmado(s)) mx += caixaAlta("Fora do cache",185,179,171,mx,cy,anim)+18;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       if(audioext_marcada(s->url)){
 #else
       if(audioext_marcada_nome(s->url, s->rotulo)){
@@ -7166,7 +7168,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     // Com servicos de streaming na lista, a frase vem DEPOIS deles.
     txt_bloco(TXT_PG_FIM,s,196,199,204,tx,FOLHA_TOPO+20,rw-52,28,anim,3);
   }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // The hold-OK source menu over the list. It sat inside the empty-list block
   // above, so with sources listed it was open (taking every key) but never
   // drawn: "shows nothing, frozen, Back exits" (owner's log 8, 17/11).
@@ -7185,7 +7187,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     desenhaPartes(x,w,ptr && ptAberto,agora);
     if (ilha) gfx_recorte(ilhaR.x,ilhaR.y,ilhaR.w,ilhaR.h);
   }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   if (fmAnim > .01f) desenhaFonteMenu(x,w,lx+rw,ptr && fmAberto);
 #endif

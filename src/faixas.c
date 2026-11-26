@@ -1,5 +1,5 @@
 #include "faixas.h"
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #include "mkvfix.h"
 #else
 #endif
@@ -9,7 +9,7 @@
 #include "telefoneui.h"
 #include "idioma.h"
 #include "player.h"
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #include "pausao.h"
 #else
 #endif
@@ -38,7 +38,7 @@
 #include "velocidade.h"
 #include "faixasmkv.h"
 #include "audioext.h"
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #include "passo.h"
 #include "dts/doador_tpk.h"
 #include "dts/dts_hls_tpk.h"
@@ -46,7 +46,7 @@
 #endif
 #include "audioextlista.h"
 #include "audioextaddons.h"
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
 #include "audioextep.h"
 #include "tex_cache.h"
@@ -92,7 +92,7 @@ static void ajustarRolagem(void);
 // "From another source" pages (faixas_fonte.inc).
 static void exReconstruir(void);
 static void exFechar(void);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static void exAbrir(int g);
 #else
 static void exAbrir(void);
@@ -100,7 +100,7 @@ static void exAbrir(void);
 static int exPagAtiva(void);
 static void exEvento(const SDL_Event *e);
 static void exPasso(Uint32 agora);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
 static void exEpPreparar(void);
 #endif
@@ -361,7 +361,7 @@ static void pilAtualizar(Uint32 agora) {
 }
 
 // OK na pilula de falha: o caminho de volta para a lista de legendas.
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // Only with the player's controls and pause panel down: with them up, OK is
 // theirs (owner 25/11: OK on the Audio button opened Subtitles for the 8 s
 // the "no subtitle" pill stays up — any focused button did).
@@ -369,13 +369,13 @@ static void pilAtualizar(Uint32 agora) {
 #endif
 int faixas_pilula_tecla(const SDL_Event *e) {
   if (pil.estado != PIL_FALHOU || faixas_aberta() || !player_aberto()) return 0;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   if (player_controles_visiveis() || pausao_visivel()) return 0;
 #else
 #endif
   if (e->type != SDL_KEYDOWN) return 0;
   if (e->key.keysym.sym != SDLK_RETURN && e->key.keysym.sym != SDLK_KP_ENTER) return 0;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   printf("[faixas] OK on the no-subtitle pill: the subtitle list\n"); fflush(stdout);
 #else
 #endif
@@ -405,7 +405,7 @@ void faixas_shot_pilula(int estado, const char *idioma, const char *provedor, Ui
 // PONTEIRO (#99) NA PILULA DE FALHA: nada a focar (ela e o unico botao); o
 // alvo existe para o clique virar o OK que faixas_pilula_tecla ja trata — sem
 // ele o clique caia no fundo do player (pausar/tocar).
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // With the controls up the OK key is theirs, so the click opens the list here.
 static void ponteiroPilula(int a, int b) {
   (void)a; (void)b;
@@ -541,21 +541,21 @@ static int volFoco;
 // the Audio sync row of another version replaces the list with rows. UP/DOWN
 // pick a row, LEFT/RIGHT change it, OK confirms and closes, Back cancels and
 // puts the offset back. Every change is heard at once (live).
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 enum { SED_OFFSET, SED_PASSO, SED_KAND, SED_DICA, SED_AQUI, SED_ZERAR, SED_SCAN };
 #else
 enum { SED_OFFSET, SED_PASSO, SED_KAND, SED_DICA, SED_AQUI, SED_ZERAR };
 #endif
 #define SED_MAXL 8
 static int sincEd, sincFoco, sincRep, sincPasso = 1, sincOrig;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static unsigned sincAutoVisto;
 // SCAN AGAIN'S PICKER (owner 18/11): OK on "Scan again" opens a small overlay
 // over the editor (not a page) with Auto and the file's own audio tracks; OK
 // on one keeps it for this show (audioext) and scans with it. Back closes it.
 #define SCAN_MAX 12
 static int scanPag, scanFoco, scanN;
-#if defined(NV_TPK)
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static DoaRendicao scanF[SCAN_MAX];
 #endif
 #else
@@ -575,7 +575,7 @@ static int velVisivel(void) { return video_velocidade_suportada() && !player_id_
 static int velFocavel(void) { return velVisivel() && !video_velocidade_bloqueada(); }
 
 static void extMontar(int forcar);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static int extMenu(void);
 static void auMontar(void);
 static int auGrupoDe(const char *l);
@@ -602,7 +602,7 @@ void faixas_idioma_principal_atualizar(void) {
 }
 void faixas_abrir_em(int col) {
   int n;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   printf("[faixas] sheet opened: %s\n", col == 1 ? "subtitles" : "audio"); fflush(stdout);
 #else
 #endif
@@ -611,19 +611,19 @@ void faixas_abrir_em(int col) {
   modo = (col == 1) ? 1 : 0;
   coluna = modo;                 // audio -> col 0; legenda -> col 1
   ctl = -1;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   volFoco = 0; velFoco = 0; sincEd = 0; scanPag = 0;
 #else
   volFoco = 0; velFoco = 0; sincEd = 0;
 #endif
   exFechar();
   foco[0] = video_audio_atual();
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   exEpPreparar();
 #endif
   if (!modo) extMontar(1);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // The language rows: open on the playing track's language.
   if (extMenu()) {
     const VideoFaixa *fa = video_audio(video_audio_atual());
@@ -710,7 +710,7 @@ static int linhaDaLeg(int i) {
   return i;
 }
 
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // THE AUDIO SHEET, LIKE THE SUBTITLES' (owner 17/11/2026). Where audio from
 // another source is possible (the .tpk donor server), the sheet lists
 // LANGUAGES, not tracks: one row per language of this file's own tracks
@@ -729,7 +729,7 @@ enum { FXA_FAIXA = 0, FXA_SINC, FXA_IDIOMA, FXA_TODOS };
 // while another source's audio plays (video_tpk.c DOA_REND_LIMITE), so the
 // player's list then holds that one track and none of the file's.
 #define ARQ_MAX 64
-#if defined(NV_TPK)   /* video_tpk.c */
+#if defined(NV_TPK) || defined(NV_WEBOS)   /* video_tpk.c; video.c on LG */
 int  video_audio_arquivo(VideoFaixa *out, int max);
 int  video_audio_arquivo_atual(void);
 void video_escolher_audio_arquivo(int i);
@@ -818,17 +818,18 @@ static uint32_t extImpressaoDe(const Stream *s) {
     for (size_t k = 0; k < sizeof v / sizeof *v; k++) h = (h ^ (uint32_t)v[k]) * 16777619u; }
   return h ? h : 1;
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static unsigned extGeracao, extRevisao, extAddonsVer, extVersaoLista;
 #else
 static unsigned extGeracao, extRevisao, extAddonsVer;
 #endif
 static int extListaN = -1;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static int extMenu(void) {
-#if defined(NV_TPK)   /* the donor server (dts/doador_tpk.h) */
+#if defined(NV_TPK) || defined(NV_WEBOS)   /* the donor server (dts/doador_tpk.h; doador_webos.c on LG) */
   // The donor server opens MKV and MP4 only: a playing file of another kind
   // (owner's log 6, a TS/M2TS REMUX) gets no "other source" versions.
+#ifdef NV_TPK   /* LG: the converter also opens AVI and MPEG-TS pictures */
   static int ditoCont = -1;
   int k = mkvfix_conteiner();
   if (!mkvfix_conteiner_doador_ok(k)) {
@@ -836,6 +837,7 @@ static int extMenu(void) {
     return 0;
   }
   ditoCont = -1;
+#endif
   return doa_disponivel() && ajustes_audio_externo() && !player_id_canal()[0];
 #else
   return 0;
@@ -858,7 +860,7 @@ static int extMenu(void) {
 #endif
 }
 static void extMontar(int forcar) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   int n = stream_n(), atual = stream_atual();
   const char *urlVideo = video_url_atual();
 #else
@@ -867,7 +869,7 @@ static void extMontar(int forcar) {
 #endif
   AudioExtOpcoes o;
   if (!extMenu() || !stream_lista_do_alvo_atual()) { extAllN = 0; extListaN = -1; return; }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   if (exEpN > 0) audioextep_estado();   // takes in the list that came back
   n = extFontesN();
@@ -875,7 +877,7 @@ static void extMontar(int forcar) {
   // A source's state changed too (marked not cached after a debrid
   // placeholder), or Settings > Addons.
   if (!forcar && extGeracao == stream_lista_geracao() && extListaN == n && extRevisao == stream_revisao() &&
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       extAddonsVer == audioext_addons_versao()) return;
   // At most every 400 ms while the sheet is open (owner 25/11, Fight Club's
   // 181 versions: every cache answer bumps the revision, and each rebuild
@@ -888,12 +890,12 @@ static void extMontar(int forcar) {
       extAddonsVer == audioext_addons_versao() && extEpVisto == exEpN && extEpGerVisto == audioextep_geracao()) return;
 #endif
   extGeracao = stream_lista_geracao(); extRevisao = stream_revisao(); extAddonsVer = audioext_addons_versao();
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
   extEpVisto = exEpN; extEpGerVisto = audioextep_geracao();
 #endif
   extListaN = n; extAllN = 0;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   if (n <= 0) return;
 #else
   if (n <= 0) { exReconstruir(); return; }
@@ -916,12 +918,12 @@ static void extMontar(int forcar) {
   }
   // Another source list (title, episode list, add-ons): everything is read again.
   { unsigned chave = (unsigned)stream_lista_geracao() * 2654435761u ^ (unsigned)audioext_addons_versao() * 40503u;
-#ifndef NV_TPK
+#if !defined(NV_TPK) && !defined(NV_WEBOS)
     chave ^= (unsigned)exEpN * 97u ^ (unsigned)audioextep_geracao() * 7919u;
 #endif
     if (chave != extCacheChave) { if (extLido) memset(extLido, 0, (size_t)extEntN); extCacheChave = chave; } }
   for (int i = 0; i < n; i++) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     const Stream *st = stream_item(i);
 #else
     const Stream *st = extFonte(i);
@@ -941,15 +943,18 @@ static void extMontar(int forcar) {
   o.pref1 = ling_audio();
   if (!o.pref1[0]) o.pref1 = idioma_iso(ajustes_idioma());
   o.pref2 = ling_audio2();
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   o.pref3 = "en";                // like the subtitles: main, second and English get 24
   o.capPref = 24; o.capOutro = 6;
 #else
 #endif
   o.ocultarForaCache = ajustes_audio_externo_ocultar_fora_cache();
-#ifdef NV_TPK
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#if defined(NV_TPK)
   o.semDts = ajustes_dts_tpk_modo() == DTSTPK_DESLIGADO;   // DTS conversion off (Settings)
+#elif defined(NV_WEBOS)
+  // DTS conversion off: another version's DTS only on a TV that decodes it.
+  o.semDts = ajustes_dts_desligado() && !video_tv_dts();
 #else
   o.semDts = 0;
 #endif
@@ -961,13 +966,13 @@ static void extMontar(int forcar) {
   o.ordemAddon = ajustes_audio_externo_ordem_addon();
   o.casa = ling_casa;
   extAllN = audioext_lista(extEnt, n, &o, extAll, AUDIOEXT_LISTA_MAX);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   extVersaoLista++;
 #else
 #endif
   exReconstruir();
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // --- THE LANGUAGE ROWS ------------------------------------------------------
 // A track's language as a group code: "" for none ("und", "mis", "zxx").
 static const char *auCod(const char *l) {
@@ -983,7 +988,7 @@ static int extEntradaVisivel(void) {
   return extMenu() && (extAllN > 0 || exEpN > 0 || audioext_tocando() || audioext_carregando());
 #endif
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static int auGrupoDe(const char *l) {
   for (int g = 0; g < auGN; g++) if (auMesmo(auG[g].cod, l)) return g;
   return -1;
@@ -993,7 +998,7 @@ static int nExtras(void) {
   return (audioext_tocando() ? 3 : 0) + (extEntradaVisivel() ? 1 : 0);
 #endif
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static int auAdd(const char *l) {
   int g = auGrupoDe(l);
   if (g >= 0 || auGN >= AU_GRUPOS_MAX) return g;
@@ -1058,7 +1063,7 @@ static int tipoLinha(int i, int *k) {
     i -= 3;
 #endif
   }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // Recommended: this file's languages and the preferred ones; the rest
   // behind "All languages" (subtitles: "All subtitles").
   for (int g = 0; g < auGN; g++) {
@@ -1079,7 +1084,7 @@ static int tipoLinha(int i, int *k) {
 #else
 #endif
   if (k) *k = i;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   if (!extMenu()) return FXA_FAIXA;
   auMontar();
   if (i < 0 || i >= auLN) return FXA_FAIXA;
@@ -1090,7 +1095,7 @@ static int tipoLinha(int i, int *k) {
 #endif
 }
 static const Stream *extFonteIdx(int indice) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   return indice >= 0 && indice < extEntN && indice < stream_n() ? stream_item(indice) : NULL;
 #else
   return indice >= 0 && indice < extEntN && indice < extFontesN() ? extFonte(indice) : NULL;
@@ -1110,7 +1115,7 @@ static int extGrandeIdx(int indice) {
 
 static int nLinhas(int col) {
   if (col == FX_COL_ESTILO) return FX_N_ESTILO;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   if (col == 0) { if (extMenu()) { auMontar(); return auLN; } return video_n_audio(); }
 #else
   if (col == 0) { int n = video_n_audio(); return n + nExtras(); }
@@ -1488,7 +1493,7 @@ static void lembrarManual(int i) {
   lembrarEscolha(&e);
 }
 
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #else
 static void aplicarExterno(int tipo, int k) {
   (void)k;
@@ -1511,7 +1516,7 @@ static void extUsar(const AudioExtCand *c, const AudioExtFaixa *faixa) {
   legsync_audio_trocou();
   // The pick first: the series memory takes the series from the mark it sets
   // (the first pick of an episode had none, and nothing was remembered).
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   audioext_escolher(st->url, st->cabecalhos, st->rotulo, c->idioma);
 #else
   const char *idioma = faixa && ling_tem_nome(faixa->idioma) ? faixa->idioma : c->idioma;
@@ -1523,7 +1528,7 @@ static void extUsar(const AudioExtCand *c, const AudioExtFaixa *faixa) {
     memset(&id, 0, sizeof id);
     snprintf(id.grupo, sizeof id.grupo, "%s", st->bingeGroup);
     snprintf(id.addon, sizeof id.addon, "%s", st->provedor);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     snprintf(id.idioma, sizeof id.idioma, "%.7s", faixa && faixa->idioma[0] ? faixa->idioma : c->idioma);
 #else
     audioext_nome_versao(st->rotulo, id.nome, sizeof id.nome);
@@ -1553,7 +1558,7 @@ static void extUsar(const AudioExtCand *c, const AudioExtFaixa *faixa) {
   } else player_toast(i18n("Loading the audio of the other version…"), 2500);
 }
 
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // One of the player's audio tracks (`i` in video_audio): this file's own, or,
 // while another source's audio plays, a rendition of the donor server.
 static void aplicarFaixa(int i) {
@@ -1576,7 +1581,7 @@ static void aplicar(void) {
     if (foco[0] != video_audio_atual()) {
 #endif
       legsync_audio_trocou();
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       video_escolher_audio(i);
 #else
       video_escolher_audio(foco[0]);
@@ -1585,7 +1590,7 @@ static void aplicar(void) {
     }
     return;
   }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // F06: outra faixa de audio = outras falas; a escuta em curso nao vale mais.
   if (video_audio_atual() != i) legsync_audio_trocou();
   // A ordem automatica (audioescolha.h) volta a esta faixa neste titulo, e
@@ -1616,7 +1621,7 @@ static void aplicar(void) {
 #else
 #endif
   if (coluna == 0) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     aplicarFaixa(foco[0]);
 #else
     // F06: outra faixa de audio = outras falas; a escuta em curso nao vale mais.
@@ -1884,7 +1889,7 @@ static int sincLinhas(int *tipo, int *arg) {
   tipo[n] = SED_PASSO; arg[n++] = 0;
   for (int i = 0; i < nk; i++) { tipo[n] = SED_KAND; arg[n++] = i; }
   if (audioext_dica_ms()) { tipo[n] = SED_DICA; arg[n++] = 0; }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // No "Match here" (owner 17/11): the sync runs by itself (subtitles, then
   // audio); this editor is for setting the time by hand. "Scan again" (owner
   // 18/11) runs that whole sync once more from where the picture is.
@@ -1898,7 +1903,7 @@ static int sincLinhas(int *tipo, int *arg) {
 static void sincFmt(int ms, char *v, unsigned tam) {
   audioext_formatar_offset(ms, v, tam, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // An automatic result while the editor is open (the refine landing after the
 // subtitles): it becomes what Cancel goes back to.
 static void sincSeguirAuto(void) {
@@ -1914,14 +1919,14 @@ static void sincSeguirAuto(void) {
 #else
 #endif
 static void sincAbrir(void) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   sincEd = 1; sincFoco = 0; sincRep = 0; sincOrig = audioext_offset_ms(); sincAutoVisto = audioext_auto_geracao();
 #else
   sincEd = 1; sincFoco = 0; sincRep = 0; sincOrig = audioext_offset_ms();
 #endif
   printf("[ext-audio] sync editor: open at %d ms\n", sincOrig); fflush(stdout);
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static void scanRotulo(int i, char *nome, size_t nn, char *val, size_t nv) {
   nome[0] = val[0] = 0;
   if (i <= 0) {
@@ -1929,7 +1934,7 @@ static void scanRotulo(int i, char *nome, size_t nn, char *val, size_t nv) {
     snprintf(val, nv, "%s", i18n("Original language first"));
     return;
   }
-#if defined(NV_TPK)
+#if defined(NV_TPK) || defined(NV_WEBOS)
   { const DoaRendicao *r = &scanF[i - 1];
     const char *c = r->codec;
     snprintf(nome, nn, "%s", r->lingua[0] ? i18n(ling_nome(r->lingua)) : r->nome[0] ? r->nome : i18n("Áudio"));
@@ -1943,7 +1948,7 @@ static int scanAtual(void) {
   char l[16], c[24];
   int ch = 0, i;
   if (!audioext_match_faixa(l, sizeof l, c, sizeof c, &ch)) return 0;
-#if defined(NV_TPK)
+#if defined(NV_TPK) || defined(NV_WEBOS)
   for (i = 0; i < scanN; i++) if (!strcmp(scanF[i].lingua, l) && (!c[0] || !strcmp(scanF[i].codec, c)) && (!ch || scanF[i].canais == ch)) return i + 1;
   for (i = 0; i < scanN; i++) if (!strcmp(scanF[i].lingua, l)) return i + 1;
 #else
@@ -1952,7 +1957,7 @@ static int scanAtual(void) {
   return 0;
 }
 static void scanAbrir(void) {
-#if defined(NV_TPK)
+#if defined(NV_TPK) || defined(NV_WEBOS)
   scanN = doa_faixas_arquivo(scanF, SCAN_MAX);
 #else
   scanN = 0;
@@ -1966,7 +1971,7 @@ static void scanTecla(SDL_Keycode k) {
   if (k == SDLK_DOWN) { if (scanFoco < scanN) scanFoco++; return; }
   if (k != SDLK_RETURN && k != SDLK_KP_ENTER) return;
   if (scanFoco <= 0) audioext_match_definir("", "", 0);
-#if defined(NV_TPK)
+#if defined(NV_TPK) || defined(NV_WEBOS)
   else audioext_match_definir(scanF[scanFoco - 1].lingua, scanF[scanFoco - 1].codec, scanF[scanFoco - 1].canais);
 #endif
   printf("[ext-audio] sync editor: scan again from %d ms, matching against row %d\n", audioext_offset_ms(), scanFoco); fflush(stdout);
@@ -1981,12 +1986,12 @@ static void scanTecla(SDL_Keycode k) {
 static void sincTecla(SDL_Keycode k, int repeat) {
   int tipo[SED_MAXL], arg[SED_MAXL], n = sincLinhas(tipo, arg);
   char v[48];
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   if (scanPag) { scanTecla(k); return; }
 #else
 #endif
   if (sincFoco >= n) sincFoco = n - 1;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   sincSeguirAuto();
 #else
 #endif
@@ -2033,7 +2038,7 @@ static void sincTecla(SDL_Keycode k, int repeat) {
       printf("[ext-audio] sync editor: reset\n"); fflush(stdout);
       sincFoco = 0; return;
     }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     if (t == SED_SCAN) {
       // Its picker overlay: which audio to match against (Auto or one of the file's tracks).
       if (audioext_dopasuj_ativo()) { player_toast(i18n("The sync is already scanning…"), 2500); return; }
@@ -2082,7 +2087,7 @@ void faixas_evento(const SDL_Event *e) {
   // ESTILO: Voltar fecha antes o controle aberto (slider, paleta, fontes).
   if (coluna == FX_COL_ESTILO && estiloTecla(k, e->key.repeat)) return;
   if (sincEd) { sincTecla(k, e->key.repeat); return; }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) {
     // All languages: back to the recommended rows, on "All languages".
     if (!modo && coluna == 0 && auTodos && !volFoco && !velFoco) {
@@ -2140,7 +2145,7 @@ void faixas_evento(const SDL_Event *e) {
     if (!modo && coluna == 0 && tipoLinha(foco[0], NULL) == FXA_SINC) {
       sincAbrir(); return;
     }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     // A language: its page (this file's tracks, then other sources') opens
     // in the same island. "All languages": every language.
     if (!modo && coluna == 0) {
@@ -2192,7 +2197,7 @@ static void avisarQueda(int e) {
 }
 
 void faixas_atualizar(float dt, Uint32 agora) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   NV_PASSO("faixas_atualizar");
 #else
 #endif
@@ -2200,14 +2205,14 @@ void faixas_atualizar(float dt, Uint32 agora) {
   // in Settings > Addons too (streams.c has no link to the settings).
   { static int filtroPosto;
     if (!filtroPosto) { stream_audioext_filtro_addon(audioext_addon_ligado); filtroPosto = 1; } }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // Steps named for the stall watchdog (owner 18/11, log 13: 1384 ms "in
   // faixas_atualizar" when a donor came up, with no hint which part).
   NV_PASSO("faixas_atualizar: legendasui");
 #else
 #endif
   if (aberta && modo && coluna == 1) legendasui_atualizar(dt);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   NV_PASSO("faixas_atualizar: exPasso");
 #else
 #endif
@@ -2215,7 +2220,7 @@ void faixas_atualizar(float dt, Uint32 agora) {
   // Other versions arrive with the add-ons (AIOStreams after 15-20 s): the
   // list follows them while the sheet is open; the focus stays on its row.
   if (aberta && !modo) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     NV_PASSO("faixas_atualizar: extMontar");
 #else
 #endif
@@ -2224,7 +2229,7 @@ void faixas_atualizar(float dt, Uint32 agora) {
   }
   // #202: the platform refused the speed (LG/.tpk answer after the request):
   // the row is gone and playback is back at 1x; say it once.
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   NV_PASSO("faixas_atualizar: speed");
 #else
 #endif
@@ -2249,23 +2254,23 @@ void faixas_atualizar(float dt, Uint32 agora) {
   // Fechando a partir da barra, ela sai como barra: sem isto a folha inteira
   // piscaria no caminho de volta.
   if (aberta || anim < .01f) animTopo = anim_mola(animTopo, faixas_estilo_topo() ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   NV_PASSO("faixas_atualizar: legendaPreDownload");
 #else
 #endif
   legendaPreDownload();
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   NV_PASSO("faixas_atualizar: legendaAutomatica");
 #else
 #endif
   legendaAutomatica(agora);
   if (!legAuto) legenda_pre_descartar("automatica encerrada");
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   NV_PASSO("faixas_atualizar: pilAtualizar");
 #else
 #endif
   pilAtualizar(agora);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   NV_PASSO("faixas_atualizar: mkvass");
 #else
 #endif
@@ -2360,7 +2365,7 @@ void faixas_atualizar(float dt, Uint32 agora) {
     }
   }
   // A sonda voltou para uma faixa escolhida antes dela: agora da para decidir.
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   NV_PASSO("faixas_atualizar: sonda");
 #else
 #endif
@@ -2556,7 +2561,7 @@ static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
     snprintf(sub, sizeof sub, "%s", i18n(o > 0 ? "Audio later" : o < 0 ? "Audio earlier" : "In sync with the file"));
     audioext_formatar_offset(o, val, sizeof val, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
     icone = "pl_audio-lines";
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   } else if (tipo == FXA_IDIOMA && k >= 0 && k < auGN) {
     // A language: its name, what is playing in it or how much it has.
     const AuGrupo *g = &auG[k];
@@ -2575,7 +2580,7 @@ static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
   } else {
 #endif
     entrada = 1;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     idioma = g->cod[0] ? g->cod : "?";
     snprintf(nome, sizeof nome, "%s", extNomeIdioma(g->cod));
     if (fa && auMesmo(fa->idioma, g->cod)) {
@@ -2594,7 +2599,7 @@ static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
       snprintf(sub, sizeof sub, i18n("Now: %s"), q);
 #endif
     } else {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       char q[64];
       if (g->nF) { snprintf(q, sizeof q, i18n("%d in this file"), g->nF); extJuntar(sub, sizeof sub, q); }
       if (g->nV) { snprintf(q, sizeof q, i18n("%d versions"), g->nV); extJuntar(sub, sizeof sub, q); }
@@ -2604,7 +2609,7 @@ static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
       if (extAllN > 0) snprintf(val, sizeof val, "%d", extAllN);
 #endif
     }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     snprintf(val, sizeof val, "%d", g->nF + g->nV);
   } else {
     // "All languages" (the subtitles' "All subtitles").
@@ -2618,14 +2623,14 @@ static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
   if (entrada) {
     float yc = y + IL_LN_H * 0.5f;
     if (sel) plrui_linha_foco(lr, 22.0f, a);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     rostoIdioma((GfxRect){ x + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f }, idioma, icone, sel, a);
 #else
     rostoIdioma((GfxRect){ x + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f }, NULL, icone, sel, a);
 #endif
     gfx_icone((GfxRect){ dir - 24.0f, yc - 12.0f, 24.0f, 24.0f }, "pl_chevron-right", 1, 1, 1, (sel ? 1.0f : 0.55f) * a);
     dir -= 24.0f + 10.0f;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     if (ativo) {
       float ar, ag, ab;
       ajustes_acento(&ar, &ag, &ab);
@@ -2649,7 +2654,7 @@ static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
   }
   if (sel) plrui_linha_foco(lr, 22.0f, a);
   rostoIdioma((GfxRect){ x + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f }, idioma, icone, sel, da);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   if (tipo == FXA_SINC) {
     // OK opens the sync editor (owner 18/11: rows that open a page say so,
     // like the language rows).
@@ -2661,7 +2666,7 @@ static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
   if (val[0]) {
     float yc = y + IL_LN_H * 0.5f, ar, ag, ab;
     TxtLinha lv;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     if (tipo == FXA_SINC && audioext_offset_ms()) {
 #else
     if (audioext_offset_ms()) {
@@ -2705,7 +2710,7 @@ static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
 static void linhaLista(int col, int i, float x, float y, float w, float a) {
   int sel = col == coluna && i == foco[col] && !(col == 0 && (volFoco || velFoco));
   const char *marca = NULL, *icone = NULL, *idioma = NULL;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   char nome[64], sub[96];
 #else
   char nome[112], sub[96];
@@ -2939,7 +2944,7 @@ static void corpoLista(GfxRect c, float a) {
           if (strcmp(few, "%d faixas (2-4)")) fq = few;
         }
         snprintf(q, sizeof q, fq, na); }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       // The language rows: the view, not the track count.
       if (extMenu()) snprintf(q, sizeof q, "%s", auTodos ? i18n("All languages") : i18n("Idiomas"));
 #else
@@ -3018,7 +3023,7 @@ static void corpoLista(GfxRect c, float a) {
     } else if (!modo && tipoLinha(foco[0], NULL) == FXA_SINC) {
       const char *k[3] = { "\xe2\x86\x90 \xe2\x86\x92", "OK", "Voltar" }, *rt[3] = { "Ajustar", "Set exactly", "Fechar" };
       plrui_dicas(k, rt, 3, x0 + w - 10.0f, yc, 1, a);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     } else if (!modo && (tipoLinha(foco[0], NULL) == FXA_IDIOMA || tipoLinha(foco[0], NULL) == FXA_TODOS)) {
       const char *k[2] = { "OK", "Voltar" }, *rt[2] = { "Open", auTodos ? "Voltar" : "Fechar" };
 #else
@@ -3324,7 +3329,7 @@ static float alturaSinc(void) {
   int tipo[SED_MAXL], arg[SED_MAXL], n = sincLinhas(tipo, arg);
   return IL_PAD_Y + IL_TIT_H + 14.0f + n * SED_LN_H + (n - 1) * SED_LN_VAO + 14.0f + IL_PE_H + IL_PAD_Y;
 }
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 #define SCAN_LN_H 58.0f
 #define SCAN_W 470.0f
 static void overlayScan(GfxRect c, GfxRect linha, float a) {
@@ -3365,7 +3370,7 @@ static void overlayScan(GfxRect c, GfxRect linha, float a) {
 #endif
 static void corpoSinc(GfxRect c, float a) {
   float x0 = c.x + IL_PAD_X, w = c.w - IL_PAD_X * 2.0f, y = c.y + IL_PAD_Y;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   GfxRect linhaScan = { 0, 0, 0, 0 };
 #else
 #endif
@@ -3374,7 +3379,7 @@ static void corpoSinc(GfxRect c, float a) {
   float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
   audioext_kandydatos(km, kp, 3);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   sincSeguirAuto();
 #else
 #endif
@@ -3387,7 +3392,7 @@ static void corpoSinc(GfxRect c, float a) {
   y += IL_TIT_H + 14.0f;
   for (int i = 0; i < n; i++, y += SED_LN_H + SED_LN_VAO) {
     GfxRect r = { x0, y, w, SED_LN_H };
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     int sel = i == sincFoco, c = sel ? 255 : 219, setas = 0, marca = 0, pagina = 0;
     if (tipo[i] == SED_SCAN) linhaScan = r;
 #else
@@ -3418,7 +3423,7 @@ static void corpoSinc(GfxRect c, float a) {
         snprintf(val, sizeof val, "%s", v);
         icone = "aj_wand"; marca = audioext_dica_ms() == o; break; }
       case SED_AQUI: snprintf(nome, sizeof nome, "%s", i18n("Match here")); icone = "aj_zap"; break;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
       case SED_SCAN: {
         char l[16], cd[24];
         int ch = 0;
@@ -3436,7 +3441,7 @@ static void corpoSinc(GfxRect c, float a) {
     { TxtLinha l = txt_linha(TXT_ILHA_FORTE, nome, c, c, c - 2, 255);
       txt_desenhar_alpha(l, r.x + 58.0f, r.y + (SED_LN_H - (float)l.h) * 0.5f, a); }
     float dir = r.x + r.w - 18.0f;
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
     if (pagina) {   // opens a page (owner 18/11: the ">" marker)
       gfx_icone((GfxRect){ dir - 22.0f, r.y + (SED_LN_H - 22.0f) * 0.5f, 22.0f, 22.0f }, "pl_chevron-right", 1, 1, 1, (sel ? 1.0f : 0.55f) * a);
       dir -= 22.0f + 10.0f;
@@ -3460,7 +3465,7 @@ static void corpoSinc(GfxRect c, float a) {
     }
     if (setas && sel)
       gfx_icone((GfxRect){ dir - 22.0f, r.y + (SED_LN_H - 22.0f) * 0.5f, 22.0f, 22.0f }, "pl_chevron-left", 1, 1, 1, a);
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   }
   if (scanPag && linhaScan.w > 0) {
     float yc = c.y + c.h - IL_PAD_Y - IL_PE_H * 0.5f;

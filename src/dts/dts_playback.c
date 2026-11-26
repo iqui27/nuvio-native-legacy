@@ -111,7 +111,9 @@ struct DtsPlayback {
   int ext_swap, ext_swap_now, ext_swap_track, ext_swap_only, ext_failed_said;
   int ext_offset_live;   /* the pending offset applies without a seek */
   int ext_offset_quiet;  /* ...at a quiet moment (an automatic check while playing) */
-  int match_req, match_result;   /* "Match automatically" */
+  int match_req, match_result;   /* "Match automatically" (2: the audio refine) */
+  int match_track, match_track_dirty;   /* this file's track for the match (Scan again), -1 Auto */
+  int map_n, map_dirty; int64_t map_ini_ns[DTS_ENGINE_MAP_MAX]; int map_ms[DTS_ENGINE_MAP_MAX];   /* the edit map */
   double prefetch_req;           /* a coming jump target (dts_playback_prefetch) */
   DtsMatchInfo match_info;
   int ext_speed_ppm, ext_now_speed;   /* other version's speed (from a match) */
@@ -826,8 +828,15 @@ static void *run(void *user) {
     { double pf; pthread_mutex_lock(&p->lock); pf = p->prefetch_req; p->prefetch_req = 0; pthread_mutex_unlock(&p->lock);
       if (pf > 0) dts_engine_prefetch(p->engine, pf);
       dts_engine_prefetch_tidy(p->engine); }
+    { int mt = -2, mn = -1; int64_t mi[DTS_ENGINE_MAP_MAX]; int mm[DTS_ENGINE_MAP_MAX];
+      pthread_mutex_lock(&p->lock);
+      if (p->match_track_dirty) { p->match_track_dirty = 0; mt = p->match_track; }
+      if (p->map_dirty) { p->map_dirty = 0; mn = p->map_n; memcpy(mi, p->map_ini_ns, sizeof mi); memcpy(mm, p->map_ms, sizeof mm); }
+      pthread_mutex_unlock(&p->lock);
+      if (mt != -2) dts_engine_external_match_track(p->engine, mt);
+      if (mn >= 0) dts_engine_external_map(p->engine, mn, mi, mm); }
     { int req; pthread_mutex_lock(&p->lock); req = p->match_req; p->match_req = 0; pthread_mutex_unlock(&p->lock);
-      if (req && dts_engine_external_match_arm(p->engine) < 0) {
+      if (req && (req == 2 ? dts_engine_external_match_fine(p->engine) : dts_engine_external_match_arm(p->engine)) < 0) {
         pthread_mutex_lock(&p->lock); p->match_result = -1; pthread_mutex_unlock(&p->lock);
       } }
     { int fs = 0, fo = 0, fk = dts_engine_external_follow_poll(p->engine, &fs, &fo);
@@ -1524,6 +1533,27 @@ void dts_playback_external_match(DtsPlayback *p) {
   if (!p || !p->external) return;
   pthread_mutex_lock(&p->lock);
   p->match_req = 1; p->match_result = 0;
+  pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
+}
+void dts_playback_external_match_fine(DtsPlayback *p) {
+  if (!p || !p->external) return;
+  pthread_mutex_lock(&p->lock);
+  p->match_req = 2; p->match_result = 0;
+  pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
+}
+void dts_playback_external_match_track(DtsPlayback *p, int stream) {
+  if (!p || !p->external) return;
+  pthread_mutex_lock(&p->lock);
+  p->match_track = stream < 0 ? -1 : stream; p->match_track_dirty = 1;
+  pthread_mutex_unlock(&p->lock);
+}
+void dts_playback_external_map(DtsPlayback *p, int n, const double *ini_s, const int *ms) {
+  if (!p || !p->external) return;
+  if (n > DTS_ENGINE_MAP_MAX) n = DTS_ENGINE_MAP_MAX;
+  pthread_mutex_lock(&p->lock);
+  p->map_n = n < 2 || !ini_s || !ms ? 0 : n;
+  for (int i = 0; i < p->map_n; i++) { p->map_ini_ns[i] = (int64_t)llround(ini_s[i] * 1e9); p->map_ms[i] = ms[i]; }
+  p->map_dirty = 1;
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
 int dts_playback_external_match_result(DtsPlayback *p, DtsMatchInfo *out) {

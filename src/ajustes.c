@@ -6951,8 +6951,8 @@ static int foraDestaPlataforma(int op) {
       op == AJ_EXT_AUDIO_MODO || op == AJ_EXT_AUDIO_SERIE || op == AJ_EXT_AUDIO_SEGUIR || op == AJ_EXT_AUDIO_AVISO || op == AJ_EXT_AUDIO_AUTO || op == AJ_EXT_AUDIO_COPIAS || op == AJ_EXT_AUDIO_ORDEM || op == AJ_EXT_AUDIO_BUFOR) return 1;
   // Child of AJ_BUFFER's editor, intentionally not a standalone Settings row.
   if(op==AJ_BUFFER_DADOS || op==AJ_RAM_OVERLAY || op==AJ_RAM_VERDE || uxBufferConexao(op))return 1;
-#ifdef NV_TPK
-  // Only the .tpk with FFmpeg plays it (the donor server, dts/doador_tpk.h).
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  // Only the .tpk and LG built with FFmpeg play it (dts/doador_tpk.h; doador_webos.c on LG).
   if ((op == AJ_EXT_AUDIO || op == AJ_EXT_AUDIO_CACHE || op == AJ_EXT_AUDIO_PASSO || op == AJ_EXT_AUDIO_GRANDE || op == AJ_EXT_AUDIO_MODO || op == AJ_EXT_AUDIO_SERIE || op == AJ_EXT_AUDIO_SEGUIR || op == AJ_EXT_AUDIO_AVISO || op == AJ_EXT_AUDIO_AUTO || op == AJ_EXT_AUDIO_COPIAS || op == AJ_EXT_AUDIO_ORDEM || op == AJ_EXT_AUDIO_BUFOR) && !doa_disponivel()) return 1;
 #endif
   // Os limites dos provedores sao editados dentro da folha de ordem.
@@ -9515,7 +9515,7 @@ static void ffVoltar(void) {
 // EA_ADDONS: the "Addons" row (audioextaddons.h), a list of its own (eaSub)
 // with the add-ons whose versions the audio pages list, per profile.
 #define EA_ADDONS (-1)
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 // AJ_EXT_AUDIO_AUTO is no longer a row on the .tpk (owner 17/11): the sync is
 // always automatic (the subtitle match, then the audio refine). Its slot stays.
 static const int EA_OPS[] = { AJ_EXT_AUDIO, AJ_EXT_AUDIO_SEGUIR, AJ_EXT_AUDIO_AVISO, AJ_EXT_AUDIO_SERIE, AJ_EXT_AUDIO_MODO,
