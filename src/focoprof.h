@@ -1,8 +1,7 @@
 // FOCO COMUM DOS CARTOES (Home e Detalhe): a mesma regra, os mesmos Ajustes.
 //
-//  - Anel ligado (Ajustes > Foco no cartaz): o cartao mantem a caixa e leva o
-//    anel de NV_ANEL_FOCO no realce (ou o cartao de vidro). Desligado: nenhum
-//    contorno, e quem marca o foco e o crescimento (FOCO_ZOOM).
+//  - Nenhum anel na TV 2.1: o foco do cartaz e sombra + crescimento
+//    (FOCO_ZOOM). A opcao antiga fica gravada so por compatibilidade.
 //  - Profundidade (AJ_PROF + AJ_PROF_BRILHO): o reflexo que passa e o clarear
 //    do cartao em foco, no proprio GFX_CARD (gfx.c), em todo tipo de cartao.
 // `f` e a animacao de foco 0..1 que cada tela ja tem; nada aqui guarda estado.
@@ -34,13 +33,12 @@ static inline void foco_anel(GfxRect r, float raio, float f, float a) {
     }
     return;
   }
-  if (f <= 0.01f || !ajustes_borda_foco()) return;
-  if (ajustes_vidro()) { gfx_vidro_cartao(r, raio, f, a); return; }
-  ajustes_acento(&ar, &ag, &ab);
-  gfx_cor((GfxRect){ r.x - NV_ANEL_FOCO, r.y - NV_ANEL_FOCO,
-                     r.w + 2 * NV_ANEL_FOCO, r.h + 2 * NV_ANEL_FOCO },
-          (raio * menor + NV_ANEL_FOCO) / (menor + 2 * NV_ANEL_FOCO),
-          ar, ag, ab, f * a);
+  if (f <= 0.01f) return;
+  // 2.1: cartaz em foco sobe por sombra + escala, sem aro — nem no acento nem
+  // branco. A opcao antiga "Borda no cartaz em foco" permanece gravada para
+  // compatibilidade, mas nao reintroduz contorno na linguagem nova.
+  (void)raio; (void)menor; (void)ar; (void)ag; (void)ab;
+  gfx_vidro_elevacao(r, f, a);
 }
 
 #endif

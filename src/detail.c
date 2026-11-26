@@ -2553,13 +2553,22 @@ static int epModerno(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return 0;
 #endif
-  return 0;   // 2.1 4A: a mesma fileira de episodios em todos os layouts
+  return ajustes_home_layout() == HOME_LAYOUT_MODERNA;
 }
 static int epApple(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return 1;
 #endif
-  return 1;   // 2.1 4A: cartao de episodio unico (Padrao/Moderna/Dinamica)
+  return ajustes_home_layout() != HOME_LAYOUT_PADRAO;
+}
+// 2.1 4A: o CARTAO de episodio e o mesmo na TV em Padrao/Moderna/Dinamica,
+// mas os layouts continuam donos das posicoes da pagina. Nao misturar os dois
+// testes: epApple/epModerno falam de pagina; epCartao4A fala do cartao.
+static int epCartao4A(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return 0;
+#endif
+  return 1;
 }
 static float epTempH(void) {
 #ifdef NV_DESKTOP_UI
@@ -2571,27 +2580,27 @@ static float epCardW(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return (NV_TELA_W-NV_DETP_X-ANC(48)-3*24)/4;
 #endif
-  return epApple() ? 420.0f : NV_DETP_EP_W;
+  return epCartao4A() ? 420.0f : NV_DETP_EP_W;
 }
 static float epCardH(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return epCardW()*9/16+200;
 #endif
-  return epModerno() ? 530 : epApple() ? 414 : NV_DETP_EP_H;   // 4A: miniatura + duas linhas
+  return epCartao4A() ? 414 : NV_DETP_EP_H;   // 4A: miniatura + duas linhas
 }
 static float epCardPasso(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return epCardW()+24;
 #endif
-  return epModerno() ? 448 : epApple() ? 452 : NV_DETP_EP_PASSO;
+  return epCartao4A() ? 452 : NV_DETP_EP_PASSO;
 }
 static float epThumbH(void) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) return epCardW()*9/16;
 #endif
-  return epApple() ? 236.0f : NV_DETP_EP_THUMB_H;
+  return epCartao4A() ? 236.0f : NV_DETP_EP_THUMB_H;
 }
-static float epAppleExtra(void) { return epApple() ? epCardH() - 414.0f : 0.0f; }
+static float epAppleExtra(void) { return epCartao4A() ? epCardH() - 414.0f : 0.0f; }
 // Bloco das Notas na serie (cabecalho + fileira + vao), que empurra abas e
 // elenco; 0 enquanto as notas nao chegaram.
 // Topo do cabecalho: fundo dos cartoes de episodio + o vao antes das notas (60,
@@ -6933,10 +6942,10 @@ static void desenhaShuffle(GfxRect r, float f, float a) {
 // 14% / #34363E, texto branco) e FOCADA (pilula cheia no acento com a luz,
 // tinta de contraste). A contagem de episodios vai ao lado, em 16 a 35%.
 static float temporadaBrilho(int sel) {
-  return !sel ? 0.0f : epApple() && !epModerno() && nivel >= 1 && foco.fileira == SEC_EPISODIOS ? 1.0f : .6f;
+  return !sel ? 0.0f : epCartao4A() && nivel >= 1 && foco.fileira == SEC_EPISODIOS ? 1.0f : .6f;
 }
 static float temporadaFocoVisual(int sel, float f) {
-  return sel && epApple() && !epModerno() && nivel >= 1 && foco.fileira == SEC_EPISODIOS ? 1.0f : f;
+  return sel && epCartao4A() && nivel >= 1 && foco.fileira == SEC_EPISODIOS ? 1.0f : f;
 }
 static void desenhaTemporada(GfxRect r, int c, float f, float a) {
   char rot[32]; rotuloTemporada(c,rot,sizeof rot);
@@ -7130,7 +7139,7 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
   // EPISODIO EM FOCO COMO NO 2.1 4A (tv.css .cz.foco): a miniatura SOBE, com
   // escala 1.08 e a sombra caida, sem placa atras e sem aro. So no cartao
   // epApple da TV (o moderno e o desktop tem o foco deles logo abaixo).
-  int ep4a = epApple() && !(epModerno() && !detalheRetrato()) && !layout_desktop_ativo();
+  int ep4a = epCartao4A();
   if (ep4a && f > .005f) {
     float k = .08f * anim_clamp(f, 0, 1);
     th.x -= th.w * k * .5f; th.y -= th.h * k * .5f; th.w *= 1.0f + k; th.h *= 1.0f + k;
@@ -7140,8 +7149,8 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
   if (layout_desktop_ativo()) th=detalheFoco(th,raioTh,f,.025f,a);
   else
 #endif
-  if (epModerno() && !detalheRetrato()) th=detalheFoco(th,raioTh,f,.05f,a);
-  else if (!epApple()) { foco_anel(th, raioTh, f, a); th = foco_zoom(th, f); }
+  if (!epCartao4A() && epModerno() && !detalheRetrato()) th=detalheFoco(th,raioTh,f,.05f,a);
+  else if (!epCartao4A()) { foco_anel(th, raioTh, f, a); th = foco_zoom(th, f); }
 
   const CatItem *serie = cat_item(idx);
   const char *arte = (ep && ep->thumb[0]) ? ep->thumb
@@ -7238,7 +7247,7 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
                       (ep && ep->sinopse[0]) ? ep->sinopse : NULL;
   int epNum = ep ? ep->episodio : c + 1;
 
-  if (epModerno() && !detalheRetrato()) {
+  if (!epCartao4A() && epModerno() && !detalheRetrato()) {
     int col=nivel>=1 && foco.fileira==SEC_EPISODIOS ? foco.coluna : foco.colunaLembrada[SEC_EPISODIOS];
     if (!resumo) { if (c!=col) return; }
     if (ep && serie && serie->temporada==ep->temporada && serie->episodio==ep->episodio && serie->progresso>0) {
@@ -7306,7 +7315,7 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
     return;
   }
 #endif
-  if (epApple()) {
+  if (epCartao4A()) {
     // O CARTAO DO 2.1 4A (design/2.1/titulo.html): sob a miniatura so "N · Nome"
     // e a linha "47 min" com os selos de pular; o progresso e um trilho no
     // realce dentro da miniatura e o visto e o selo no canto dela (acima). Sem
