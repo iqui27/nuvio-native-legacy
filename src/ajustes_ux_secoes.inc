@@ -254,7 +254,7 @@ static int ajCenaSecao(int op) {
       return AJC_TV_PROVEDOR;
     case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: case AJ_SYNC:
     case AJ_AMIGOS_PERFIS:
-    case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
+    case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR: case AJ_LOGIN_CODIGO:
       return AJC_CON_PERFIS;
     case AJ_ADDONS: case AJ_PLUGINS: case AJ_ADDONS_PRINCIPAL: return AJC_FON_ADDONS;
     case AJ_ENQUETES: return AJC_CON_AVISOS;

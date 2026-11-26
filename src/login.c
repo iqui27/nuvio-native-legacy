@@ -14,6 +14,7 @@
 #include "idioma.h"
 #include "botoes.h"
 #include "plrui.h"
+#include "parearrede.h"
 #include <SDL2/SDL_image.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -193,6 +194,7 @@ void login_iniciar(void) {
   // Pedir o codigo JA, sem esperar o OK: a pessoa que acabou de instalar o app
   // nao tem nada para decidir nesta tela, e um botao "entrar" antes do codigo
   // so acrescenta um toque e uns segundos de espera depois dele.
+  parear_rede_esquecer();
   if (!sessao_logada()) sessao_login_comecar();
 }
 
@@ -233,6 +235,10 @@ void login_evento(const SDL_Event *e) {
 void login_atualizar(float dt, Uint32 agora) {
   int i, r;
   sessao_passo((unsigned)agora);
+  // O codigo de 6 digitos so existe enquanto o QR esta na tela; fora disso o
+  // passo recebe "" e esquece o que tinha.
+  parear_rede_passo(sessao_estado() == SES_AGUARDANDO ? sessao_url_login() : "",
+                    ajustes_login_codigo());
   animBotao = anim_mola(animBotao, 1.0f, dt, NV_MOLA_FOCO);
   pulso += dt;
   teclado_atualizar(dt, agora);
@@ -353,6 +359,31 @@ static void desenharEmail(float y, Uint32 agora) {
   }
 }
 
+// CODIGO DE 6 DIGITOS (parear.h), a direita do QR: para quem vai configurar
+// esta TV de longe. A pessoa na frente da TV so precisa DITAR seis numeros.
+// So aparece com o codigo em maos; sem ele a tela e a de sempre. Em retrato
+// (celular/tablet) nao ha lado direito, e ali a propria pessoa ja digita.
+static void desenharCodigoAjuda(float yQr) {
+  const char *cod = parear_rede_codigo(), *pag = parear_rede_pagina();
+  float x = (NV_TELA_W + LG_QR_LADO) * 0.5f + 16.0f + 72.0f;
+  float larg = NV_TELA_W - NV_MARGEM_X - x, y = yQr + 40.0f;
+  TxtLinha l;
+  if (!cod[0] || !pag[0] || NV_TELA_H > NV_TELA_W || larg < 360.0f) return;
+  if (larg > 520.0f) larg = 520.0f;
+  y += txt_bloco_corta(TXT_HEADLINE, i18n("Alguém vai configurar esta TV de longe?"),
+                       236, 238, 244, x, y, larg, 52.0f, 1.0f, 2) + 20.0f;
+  y += txt_bloco_corta(TXT_BODY, i18n("Diga estes números para a pessoa:"),
+                       176, 178, 186, x, y, larg, 44.0f, 1.0f, 2) + 14.0f;
+  // Os numeros nao sao texto traduzivel; TITULO1 e o maior tamanho da tela.
+  l = txt_linha(TXT_TITULO1, cod, 255, 255, 255, 255);
+  txt_desenhar_alpha(l, x, y, 1.0f);
+  y += l.h + 26.0f;
+  y += txt_bloco_corta(TXT_BODY, i18n("Ela digita os números neste endereço e entra com a conta que vai ficar nesta TV:"),
+                       176, 178, 186, x, y, larg, 44.0f, 1.0f, 3) + 10.0f;
+  l = txt_linha_corta(TXT_HEADLINE, pag, 236, 238, 244, 255, larg);
+  txt_desenhar_alpha(l, x, y, 1.0f);
+}
+
 void login_desenhar(Uint32 agora) {
   SesEstado st = sessao_estado();
   float y;
@@ -417,6 +448,7 @@ void login_desenhar(Uint32 agora) {
         linhaCentrada(TXT_HEADLINE, "não consegui desenhar o código",
                       236, 108, 108, y + 100.0f, 1.0f);
       }
+      desenharCodigoAjuda(y);
       y += LG_QR_LADO + 42.0f;
 
       // O endereco em texto e a saida de emergencia de quem nao tem camera —

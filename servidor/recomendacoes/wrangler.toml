@@ -60,6 +60,14 @@ JUNTOS_URL = "https://nuvio-juntos.henriquef29.workers.dev"
 # FAROL_LLM_PROVEDOR = "openai" | "anthropic" | "gemini"
 # FAROL_LLM_MODELO   = "gpt-4o-mini" (ou equivalente do provedor)
 FAROL_LLM = "1"
+# CODIGO DE 6 DIGITOS DO LOGIN DA TV (parear.js). Desligado enquanto
+# PAREAR_BASES nao existir: as rotas /v1/parear* respondem 503 e a TV nao mostra
+# o codigo. PAREAR_BASES = prefixos (separados por virgula) da pagina de
+# autorizacao do login da TV, o mesmo valor de TV_LOGIN_WEB_BASE_URL do app.
+# PAREAR_PAGINA (opcional) = endereco curto que a TV mostra para quem ajuda;
+# sem ela, <este worker>/c.
+# PAREAR_BASES = "https://<site-da-conta>/tv-login"
+# PAREAR_PAGINA = "https://<dominio-curto>/c"
 
 # Limpeza da retencao de 90 dias.
 [triggers]
