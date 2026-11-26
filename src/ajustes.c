@@ -4904,7 +4904,7 @@ static void adTesteRecolher(void) {
 // O texto vem de debrid_testar_alldebrid como CHAVE de i18n (frases fixas,
 // listadas em idioma_tab.h); a de "premium até %s" leva a data a parte.
 static const char *adTesteTexto(int servico) {
-  static char buf[64];
+  static char buf[128];
   int e = atomic_load_explicit(&adTeste, memory_order_acquire);
   if (e == 2) {
     DebridContexto atual;
@@ -4924,7 +4924,7 @@ static const char *adTesteTexto(int servico) {
     static const char *const PLANOS[] = { "Free", "Essential", "Pro", "Standard" };
     int p = servico == DEBRID_TB ? debrid_tb_plano() : -1;
     const char *nome = p >= 0 && p < 4 ? PLANOS[p] : NULL;
-    char base[48];
+    char base[96];   // the longest translated result is 62 bytes (el)
     if (adTesteOk && adTesteData[0]) snprintf(base, sizeof base, i18n("premium até %s"), adTesteData);
     else snprintf(base, sizeof base, "%s", i18n(adTesteMsg));
     if (nome) snprintf(buf, sizeof buf, "%s · %s", nome, base);

@@ -1166,7 +1166,15 @@ static int tbIdxAudioDe(const VideoFaixa *f, int porLista) {
     }
   return porLista;
 }
+static int ordinalAudio(int numero);
 static int tbIdxAudio(void) {
+  // Another source's audio on the converter's picture: the menu is the donor
+  // master's renditions (no stream ids), so its position is not a file track.
+  // The file's track is the one that session offers (doadorSessaoV).
+  if (dv.ativo && !dv.tb) {
+    int o = doadorTrackAntes >= 0 ? ordinalAudio(doadorTrackAntes) : 0;
+    return o < 0 ? 0 : o;
+  }
   return audioAtual >= 0 && audioAtual < nAudio ? tbIdxAudioDe(&faixaAudio[audioAtual], audioAtual) : 0;
 }
 static void tbFaixaDe(int i, TbFaixa *t) {
@@ -2800,6 +2808,19 @@ static void doadorBombear(void) {
     snprintf(t, sizeof t, i18n("the file did not open for the audio server (%s)"), m);
     doadorDesistir(t);
     return;
+  }
+  // On TorBox's burned picture (convBombear does this on the converter's):
+  // 15 s with the audio server ready, the player not prepared and no audio
+  // segment asked for = the burned stream with this file's audio.
+  if (dv.tb) {
+    if (!dv.prontoEm && doa_pronto()) dv.prontoEm = agora ? agora : 1;
+    if (!pronto && !dv.semAudioFeito && dv.prontoEm && (int)(agora - dv.prontoEm) > 15000 && doa_pedidos_audio() == 0) {
+      dv.semAudioFeito = 1;
+      snprintf(m, sizeof m, "the TV player asked for no audio segment in 15 s on the burned picture (%d request(s) to the audio server)",
+               doa_pedidos());
+      doadorSemComecar(m);
+      return;
+    }
   }
   if (!dv.avisos && doa_estado(m, sizeof m) < 0) {
     char t[220];

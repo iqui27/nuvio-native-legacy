@@ -532,7 +532,6 @@ int  tba_rendicao_de(int o) { (void)o; return -1; }
 void tba_definir_audio(int o) { (void)o; }
 int  tba_audio(void) { return -1; }
 int  tba_abrir_video(const char *t, const char *o, char *out, size_t n) { (void)t; (void)o; if (out && n) out[0] = 0; return 0; }
-int  tba_so_video(void) { return 0; }
 int  tba_linha(double *i, double *d, long *b, char *r, size_t n) { (void)i; (void)d; (void)b; (void)r; (void)n; return 0; }
 void tba_log(void) {}
 void tba_marcar_busca(void) {}
@@ -1753,7 +1752,6 @@ int tba_abrir_video(const char *tbUrl, const char *orig, char *out, size_t n) {
   fflush(stdout);
   return 1;
 }
-int tba_so_video(void) { Sessao *s = pegar(); int v = s && s->soVideo; soltar(s); return v; }
 int tba_linha(double *inicio, double *dur, long *banda, char *res, size_t nres) {
   Sessao *s = pegar();
   int v = 0;

@@ -96,9 +96,26 @@ int debrid_tb_plano(void) { return atomic_load(&tbPlano); }
 // reads the plan through debrid_testar_conta itself.
 #if !defined(__EMSCRIPTEN__) && !defined(DEBRID_TB_PLANO_SEM_FIO)
 #define TB_PLANO_FIO 1
+// No answer (the TV's network not up yet when the key loads): two more tries,
+// 20 s apart, past the 5 min account cache. A refused key or a new key stops it.
 static void *tbPlanoFio(void *u) {
+  unsigned g = atomic_load(&contaGeracao[STB]);
+  int i, semResposta;
   (void)u;
-  debrid_testar_conta(STB, NULL, 0, NULL, 0);
+  for (i = 0; i < 3; i++) {
+    debrid_testar_conta(STB, NULL, 0, NULL, 0);
+    if (atomic_load(&tbPlano) != -2 || i == 2) break;
+    pthread_mutex_lock(&contaMutex);
+    semResposta = contaEstado[STB] == 0;
+    pthread_mutex_unlock(&contaMutex);
+    if (!semResposta) break;
+    sleep(20);
+    if (atomic_load(&contaGeracao[STB]) != g) break;   // a new key has its own check
+    pthread_mutex_lock(&contaMutex);
+    if (contaEstado[STB] == 0) contaConsultada[STB] = 0;
+    pthread_mutex_unlock(&contaMutex);
+    printf("[debrid] TorBox plan: no answer, trying again\n"); fflush(stdout);
+  }
   return NULL;
 }
 // A new TorBox key (typed on this TV or brought by the Nuvio account) reads
