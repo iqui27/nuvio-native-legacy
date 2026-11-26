@@ -2,6 +2,7 @@
 # Build do Nuvio para Android TV/Mobile (SDL2 + GLES2, nucleo C em libmain.so).
 #
 #   NUVIO_APK_LITE=1 tools/android.sh --release-only -> signed APK without the P2P motor
+#   NUVIO_APK_LITE_TAMBEM=1 (com chave) -> tambem os dois lite assinados (padrao: so o completo)
 #   tools/android.sh --debug-only -> debug only, never read release signing keys
 #   tools/android.sh            -> APK debug em build/android/Nuvio-<v>-android-debug.apk
 #   NUVIO_RUST_MKVCORE=0 tools/android.sh -> nucleo mkv em C (padrao: Rust, ligado em 14/10/2026)
@@ -161,12 +162,15 @@ if [ "$DEBUG_ONLY" = 0 ] && [ -n "${NUVIO_KEYSTORE:-}" ]; then
   if [ "$LITE" != 1 ]; then
     cp "$APP_BUILD/outputs/apk/release/app-release.apk" "$SAIDA/Nuvio-$VER-android.apk"
     APKS+=("$SAIDA/Nuvio-$VER-android.apk")
-    "${GR[@]}" -Pnuvio.apkLite=1 assembleRelease
+    # Lite (sem motor P2P) so a pedido: o dono nao publica lite desde a 2.0.9.
+    [ "${NUVIO_APK_LITE_TAMBEM:-0}" = 1 ] && "${GR[@]}" -Pnuvio.apkLite=1 assembleRelease
   fi
-  for pair in armeabi-v7a:armv7 arm64-v8a:arm64; do
-    cp "android/app/build-lite/outputs/apk/release/app-${pair%:*}-release.apk" "$SAIDA/Nuvio-$VER-android-lite-${pair#*:}.apk"
-    APKS+=("$SAIDA/Nuvio-$VER-android-lite-${pair#*:}.apk")
-  done
+  if [ "$LITE" = 1 ] || [ "${NUVIO_APK_LITE_TAMBEM:-0}" = 1 ]; then
+    for pair in armeabi-v7a:armv7 arm64-v8a:arm64; do
+      cp "android/app/build-lite/outputs/apk/release/app-${pair%:*}-release.apk" "$SAIDA/Nuvio-$VER-android-lite-${pair#*:}.apk"
+      APKS+=("$SAIDA/Nuvio-$VER-android-lite-${pair#*:}.apk")
+    done
+  fi
 else
   echo "  release fora: sem NUVIO_KEYSTORE"
 fi
@@ -193,12 +197,14 @@ for a in "${APKS[@]}"; do
       m=$(unzip -p "$a" "lib/$abi/libmain.so" | strings | grep -c 'Nuvio Engine/' || true)
       [ "$m" = 0 ] || { echo "android.sh: $a contains the P2P motor" >&2; exit 1; }
     done
-  elif [ -n "$NV_P2P_DIR" ]; then   # motor pedido: o simbolo da API C tem de estar nas DUAS libmain.so
+  elif [ -n "$NV_P2P_DIR" ]; then   # motor pedido: a marca tem de estar nas DUAS ABIs
     for abi in arm64-v8a armeabi-v7a; do
-      m=$(unzip -p "$a" "lib/$abi/libmain.so" | strings | grep -c 'Nuvio Engine/' || true)
-      [ "$m" -ge 1 ] || { echo "android.sh: $a lib/$abi/libmain.so SEM o motor P2P (marca "Nuvio Engine/")" >&2; exit 1; }
+      alvo="lib/$abi/libmain.so"   # estatico (build-android.sh) ou a .so do NuvioTV (fetch-android.sh, dlopen)
+      [ -s "$NV_P2P_DIR/lib/$abi/libnuvio_engine.so" ] && alvo="lib/$abi/libnuvio_engine.so"
+      m=$(unzip -p "$a" "$alvo" | strings | grep -c 'Nuvio Engine/' || true)
+      [ "$m" -ge 1 ] || { echo "android.sh: $a $alvo SEM o motor P2P (marca "Nuvio Engine/")" >&2; exit 1; }
     done
-    echo "  motor P2P dentro das duas libmain.so"
+    echo "  motor P2P nas duas ABIs"
   fi
   n=$(printf '%s\n' "$L" | grep -c -E "$SEGREDO" || true)
   [ "$n" = "0" ] || { echo "android.sh: $a leva $n arquivo(s) de pessoa:" >&2; printf '%s\n' "$L" | grep -E "$SEGREDO" >&2; exit 1; }

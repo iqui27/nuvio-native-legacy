@@ -110,6 +110,10 @@ android {
         java.srcDir("build/sdl-java")                 // classes org.libsdl.app copiadas do SDL
         assets.srcDir("$estagio/assets")              // art/ e fonts/ (tools/android.sh)
         jniLibs.srcDir("$estagio/jnilibs")            // libcurl.so/libjpeg.so, se existirem
+        // Motor P2P pronto do NuvioTV (tools/p2p-motor/fetch-android.sh): <motor>/lib/<abi>/libnuvio_engine.so
+        (findProperty("nuvio.p2pMotor") as String?)?.takeIf { it.isNotEmpty() && !lite }
+            ?.let { File(it, "lib") }?.takeIf { File(it, "arm64-v8a/libnuvio_engine.so").isFile }
+            ?.let { jniLibs.srcDir(it) }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

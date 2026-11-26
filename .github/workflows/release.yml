@@ -10,9 +10,9 @@ name: Release
 # Samsung .wgt, which is not built here):
 #   Build TPK  NuvioTpk40/60/65 and NuvioTpk .tpk, libnuvio-<v>-tpk-arm.so and
 #              libnuvio-<v>-tpk40-arm.so (the Samsung in-app update's download)
-#   Build APK  Nuvio-<v>-android.apk and the two one-ABI lite APKs (signed only
-#              when the NUVIO_ANDROID_KEYSTORE_B64 secret is set; without it the
-#              draft has no APKs and the run says so)
+#   Build APK  Nuvio-<v>-android.apk, with the P2P engine; no lite APKs (signed
+#              only when the NUVIO_ANDROID_KEYSTORE_B64 secret is set; without it
+#              the draft has no APK and the run says so)
 #   Build IPK  space.nuvio.native.legacy_<v>_arm.ipk and _arm-highcache.ipk
 #   here       repo.json and webosbrew.manifest.json (tools/hb-repo.sh, the
 #              Homebrew Channel repository, still on iqui27/nuvio-native-legacy)
@@ -93,7 +93,7 @@ jobs:
             "Nuvio-${VER}-NuvioTpk65.tpk" "Nuvio-${VER}-NuvioTpk.tpk"
             "libnuvio-${VER}-tpk-arm.so" "libnuvio-${VER}-tpk40-arm.so"
           )
-          apks=("Nuvio-${VER}-android.apk" "Nuvio-${VER}-android-lite-armv7.apk" "Nuvio-${VER}-android-lite-arm64.apk")
+          apks=("Nuvio-${VER}-android.apk")
           take() { f=$(find artifacts -type f -name "$1" | head -1); [ -n "$f" ] && cp "$f" dist/; }
           for n in "${need[@]}"; do take "$n" || { echo "::error::missing $n"; exit 1; }; done
           nApk=0

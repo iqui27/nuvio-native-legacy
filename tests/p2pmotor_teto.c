@@ -59,7 +59,7 @@ int main(void) {
       for (i = 1; i < 5; i++) assert(p2pmotor_teto_duro(l, e[i]) >= p2pmotor_teto_duro(l, e[i - 1]));
   }
   // #334, janela: teto duro menos 32 MB; arquivo maior que o teto toca se a
-  // janela tiver ao menos 160 MB, senao e recusado antes de tocar.
+  // janela tiver ao menos 176 MB, senao e recusado antes de tocar.
   assert(p2pmotor_janela(MB(689)) == MB(657));               // a TV do #334
   assert(p2pmotor_janela(MB(20)) == 0);
   assert(p2pmotor_cabe(GB(15), p2pmotor_teto_duro(MB(1379), 0)));   // 4K de 15 GB na TV do #334: toca
@@ -67,7 +67,7 @@ int main(void) {
   assert(p2pmotor_cabe(GB(4), p2pmotor_teto_duro(MB(461), 0)));     // LG 43AU801 (461 MB livres): toca
   assert(!p2pmotor_cabe(GB(4), p2pmotor_teto_duro(MB(300), 0)));     // 150 MB de teto: recusa
   assert(p2pmotor_cabe(MB(200), p2pmotor_teto_duro(MB(500), 0)));    // ... mas o que cabe toca
-  assert(p2pmotor_cabe(GB(4), MB(192)) && !p2pmotor_cabe(GB(4), MB(191)));   // borda: 160 MB de janela
+  assert(p2pmotor_cabe(GB(4), MB(208)) && !p2pmotor_cabe(GB(4), MB(207)));   // borda: 176 MB de janela
 #endif
   puts("p2pmotor_teto: ok");
   return 0;

@@ -1,0 +1,118 @@
+name: Build P2P engine
+
+# The torrent engine (nuvio-engine v0.1.7 + libtorrent + OpenSSL, pinned in
+# tools/p2p-motor/pasta.sh) for the TV packages, built from source with the
+# webOS toolchain (tools/Dockerfile image, aarch64 host, so an arm64 runner
+# runs it natively):
+#   part arm -> static libraries linked into the LG .ipk (tools/p2p-motor/build-arm.sh)
+#   part tpk -> libnuvio_engine.so for the Samsung Tizen 6+ .tpk packages (build-tpk.sh)
+# The result is cached on the engine pin and the build scripts, so only the
+# first run (or a new pin) compiles; later runs restore it in about a minute.
+# It is uploaded as the artifact named by `artifact`, laid out as tools/p2p-motor/pasta.sh
+# expects under <root>/<part>. The Android APK does not use this: build-apk.yml
+# takes NuvioTV's ready-made libnuvio_engine.so (tools/p2p-motor/fetch-android.sh).
+
+on:
+  workflow_call:
+    inputs:
+      part:
+        type: string
+        required: true
+      artifact:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      part:
+        type: choice
+        options: [arm, tpk]
+        default: arm
+      artifact:
+        type: string
+        default: p2p-engine
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 150
+    env:
+      P2P_ROOT: /home/runner/p2p-motor
+      NV_JOBS: '4'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore engine cache
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/p2p-motor/${{ inputs.part }}
+          key: p2p-engine-${{ inputs.part }}-${{ hashFiles('tools/p2p-motor/pasta.sh', format('tools/p2p-motor/build-{0}.sh', inputs.part), 'tools/Dockerfile') }}
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+
+      # Same image and cache scope as build-ipk.yml, so this is a cache load.
+      - name: Build the webOS SDK image
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: tools
+          file: tools/Dockerfile
+          platforms: linux/arm64
+          tags: nuvio-webos-sdk
+          load: true
+          cache-from: type=gha,scope=webos-sdk
+
+      - name: Build the engine
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          PART: ${{ inputs.part }}
+        run: |
+          set -o pipefail
+          mkdir -p "$P2P_ROOT"
+          NUVIO_P2P_MOTOR="$P2P_ROOT" bash "tools/p2p-motor/build-$PART.sh" "$P2P_ROOT/$PART" 2>&1 | tee engine.log
+          W="$P2P_ROOT/$PART"
+          # Keep only what tools/arm.sh / tools/tpk.sh read (pasta.sh checks the same list).
+          if [ "$PART" = arm ]; then
+            K="$RUNNER_TEMP/keep"; rm -rf "$K"; mkdir -p "$K/build-arm/_deps/nuvio_libtorrent-build" "$K/nuvio-engine"
+            sudo cp "$W/build-arm/libnuvio_engine.a" "$K/build-arm/"
+            sudo cp "$W/build-arm/_deps/nuvio_libtorrent-build/libtorrent-rasterbar.a" "$K/build-arm/_deps/nuvio_libtorrent-build/"
+            sudo cp -R "$W/nuvio-engine/include" "$K/nuvio-engine/"
+          else
+            K="$RUNNER_TEMP/keep"; rm -rf "$K"; mkdir -p "$K"
+            sudo cp "$W/libnuvio_engine.so" "$K/"
+            sudo cp -R "$W/include" "$K/"
+          fi
+          sudo rm -rf "$W"; mv "$K" "$W"; sudo chown -R "$USER" "$W"
+          find "$W" -type f | sed 's/^/  /'
+          NUVIO_P2P_MOTOR="$P2P_ROOT" bash -c ". tools/p2p-motor/pasta.sh; nv_p2p_resolver $PART"
+          grep -q 'NUVIO_ENGINE_API_VERSION 3U' "$(find "$W" -name nuvio_engine.h | head -1)"
+
+      - name: Save engine cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/p2p-motor/${{ inputs.part }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
+      - name: Show build error summary
+        if: failure()
+        run: |
+          {
+            echo '### P2P engine build failed - last 60 lines'
+            echo '```'
+            tail -n 60 engine.log 2>/dev/null
+            for f in /home/runner/p2p-motor/${{ inputs.part }}/cmake-*.log; do [ -f "$f" ] && { echo "== $f"; tail -n 40 "$f"; }; done
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload engine
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact }}
+          path: /home/runner/p2p-motor/${{ inputs.part }}
+          if-no-files-found: error
+          retention-days: 3
