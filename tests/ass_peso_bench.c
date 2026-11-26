@@ -15,6 +15,10 @@
 #include <sys/resource.h>
 #include "../src/pgs.h"
 
+/* Soma de um byte de cada copia: impressa no fim, para o -O2 nao apagar as
+ * copias que o benchmark mede. */
+static volatile unsigned long sumidouro;
+
 static double agora_ms(void) {
   struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
   return t.tv_sec * 1000.0 + t.tv_nsec / 1e6;
@@ -116,11 +120,17 @@ static void mede_ass(const char *fonte) {
         double a = agora_ms(), m;
         ASS_Image *im0 = ass_render_frame(ren, trk, (long long)(f * 1000 / 24), &mudou), *im;
         size_t b = 0; int k = 0;
-        for (im = im0; im; im = im->next) {    /* a copia que ass_frame_copiar faz */
-          size_t s = (size_t)im->stride * (size_t)im->h;
-          if (!s) continue;
-          copia = malloc(s); memcpy(copia, im->bitmap, s); free(copia);
-          b += (size_t)im->w * im->h * 4; k++; /* RGBA que vai para a textura */
+        for (im = im0; im; im = im->next) {    /* a copia que ass_frame_copiar faz: linha a linha, w bytes */
+          size_t s = (size_t)im->w * (size_t)im->h;
+          int y;
+          if (!s || !im->bitmap || im->stride < im->w) continue;
+          copia = malloc(s);
+          if (!copia) continue;
+          for (y = 0; y < im->h; y++)
+            memcpy(copia + (size_t)y * (size_t)im->w, im->bitmap + (size_t)y * (size_t)im->stride, (size_t)im->w);
+          sumidouro += copia[s / 2];           /* observavel: o -O2 nao apaga a copia */
+          free(copia);
+          b += s * 4; k++;                     /* RGBA que vai para a textura */
         }
         m = agora_ms();
         v[n] = m - a; soma += v[n]; n++;
@@ -131,6 +141,7 @@ static void mede_ass(const char *fonte) {
           unsigned char *rgba;
           if (!px) continue;
           rgba = malloc(px * 4);
+          if (!rgba) continue;
           for (y = 0; y < im->h; y++) {
             const unsigned char *src = im->bitmap + (size_t)y * im->stride;
             for (x = 0; x < (size_t)im->w; x++) {
@@ -138,6 +149,7 @@ static void mede_ass(const char *fonte) {
               d[0] = 255; d[1] = 200; d[2] = 100; d[3] = (unsigned char)((src[x] * 255u + 127u) / 255u);
             }
           }
+          sumidouro += rgba[px * 4 - 1];       /* observavel no -O2 */
           free(rgba);
         }
         tex += agora_ms() - m;
@@ -223,5 +235,6 @@ int main(int argc, char **argv) {
   mede_pgs();
   getrusage(RUSAGE_SELF, &ru);
   printf("\npico de memoria do processo (RSS): %ld MiB\n", ru.ru_maxrss / 1024);
+  printf("(controle das copias: %lu)\n", (unsigned long)sumidouro);
   return 0;
 }

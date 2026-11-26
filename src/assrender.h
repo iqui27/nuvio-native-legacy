@@ -23,6 +23,9 @@ void assrender_definir_texto_estilo(const PlainAssStyle *style);
  * apagar o quadro em tela. Com geracao diferente ou sem faixa, e carregar. */
 int  assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao);
 void assrender_limpar(void);
+/* So limpa se a faixa ainda for da geracao `g` (1 = limpou). Para avisos
+ * tardios (troca de motor, Texto simples): nao apaga a faixa seguinte. */
+int  assrender_limpar_geracao(unsigned g);
 void assrender_limpar_fontes(void);
 /* Private, validated subtitle font. NULL restores the bundled fallback. */
 /* Admission and local preference commit are serialized with a rare selector

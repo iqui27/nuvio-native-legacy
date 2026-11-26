@@ -249,6 +249,7 @@ int  assrender_carregar(const char *corpo, size_t tamanho, unsigned g) { (void)g
 int  assrender_atualizar(const char *corpo, size_t tamanho, unsigned g) { (void)g; return guardar(corpo, tamanho); }
 int  assrender_carregar_texto(const char *corpo, size_t tamanho, unsigned g) { (void)corpo; (void)tamanho; (void)g; return 0; }
 void assrender_limpar(void) {}
+int  assrender_limpar_geracao(unsigned g) { (void)g; return 0; }
 void assrender_limpar_fontes(void) {}
 int  assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanho) { (void)nome; (void)dados; (void)tamanho; return 1; }
 void assrender_geracao(unsigned g) { (void)g; }

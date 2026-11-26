@@ -28,9 +28,13 @@ static int docAss;   // the current document is ASS/SSA (sob trava)
  * letreiro entra ou sai) e o corpo volta ao libass — sem mexer na geracao,
  * na posicao nem na pausa. */
 static char *corpoDoc;
+/* Revisao do corpo guardado (sob trava): sobe a cada corpoGuardar. Com a
+ * geracao, diz ao motorTrocou se o documento que ele reextraiu ainda e o da
+ * faixa aberta (um lote novo do mkvass troca o corpo sem mudar a geracao). */
+static unsigned corpoRev;
 static void corpoGuardar(const char *corpo, int ass) {
   char *c = (corpo && ass) ? strdup(corpo) : NULL;
-  free(corpoDoc); corpoDoc = c;
+  free(corpoDoc); corpoDoc = c; corpoRev++;
 }
 
 /* libass off (.tpk, Subtitles > Style): an ASS/SSA track is drawn by the app
@@ -54,22 +58,29 @@ static int libassDesligado(void) {
  * guardado ao motor que entrou, sem mexer na geracao: posicao, pausa e o
  * dono do mkvass ficam. */
 static void motorTrocou(void) {
-  LegendaCue *v=NULL; char *doc; unsigned g; int n, i; double dur=0;
+  LegendaCue *v=NULL; char *doc; unsigned g, rev; int n, i, vale; double dur=0;
   pthread_mutex_lock(&trava);
   doc = (ligada && docAss && corpoDoc) ? strdup(corpoDoc) : NULL;
-  g = geracao;
+  g = geracao; rev = corpoRev;
   pthread_mutex_unlock(&trava);
   if (!doc) return;
   n = legenda_extrair(doc, &v);   // dialogoSo rele a chave do motor que entrou
   for(i=0;i<n;i++){ double d=v[i].fim-v[i].inicio; if(d>dur)dur=d; }
+  /* A extracao corre sem a trava: se outra faixa abriu, a legenda fechou ou
+   * chegou outro corpo, os cues e o documento daqui ja sao velhos — nem
+   * entram, nem tiram a faixa nova do libass. */
   pthread_mutex_lock(&trava);
-  if (ligada && docAss && geracao==g) {
-    free(cues); cues=v; nCues=n; maiorDur=dur; v=NULL;
-  }
+  vale = ligada && docAss && geracao==g && corpoRev==rev;
+  if (vale) { free(cues); cues=v; nCues=n; maiorDur=dur; v=NULL; }
   pthread_mutex_unlock(&trava);
   free(v);
-  if (libassDesligado()) assrender_limpar();
-  else assrender_atualizar(doc, strlen(doc), g);
+  if (vale) {
+    /* So a faixa da geracao g: se outra entrou entre a checagem e aqui, o
+     * assrender ja tem a geracao nova e nada e apagado; o atualizar tambem
+     * recusa uma geracao velha. */
+    if (libassDesligado()) assrender_limpar_geracao(g);
+    else assrender_atualizar(doc, strlen(doc), g);
+  }
   free(doc);
 }
 /* A sign / typesetting line: positioned, moving, clipped, rotated around an

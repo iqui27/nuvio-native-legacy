@@ -11,5 +11,7 @@ if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists libass; then
 fi
 DIR=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-ass-peso.XXXXXX")
 trap 'rm -rf "$DIR"' EXIT
-cc -O2 -Wall -Wextra tests/ass_peso_bench.c src/pgs.c -o "$DIR/bench" $(pkg-config --cflags --libs libass)
+flags=()
+if [ "${SANITIZE:-0}" = 1 ]; then flags=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
+cc -O2 -g -Wall -Wextra "${flags[@]}" tests/ass_peso_bench.c src/pgs.c -o "$DIR/bench" $(pkg-config --cflags --libs libass)
 "$DIR/bench" "$@"

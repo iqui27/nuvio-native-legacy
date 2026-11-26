@@ -955,6 +955,15 @@ static const char *V_EXT_CACHE[] = { "Mostrar apagadas", "Ocultar" };
 static const char *V_EXT_PASSO[] = { "10 ms", "50 ms", "100 ms" };
 static const char *V_EXT_MODO[] = { "Arquivo inteiro", "Só áudio" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+/* "Legenda ASS com estilo" so existe onde o libass desenha E o assperf nao
+ * responde: webOS e .wgt. Sem libass (Android, builds de mesa) nao ha o que
+ * pesar; no .tpk/.tpk40 (e nos testes NV_ASS_NOVO) o Estilo da faixa ASS ja
+ * tem resolucao e libass. O enum e as tabelas ficam iguais em toda build. */
+#if defined(NV_ASS_LIBASS) && !defined(NV_TPK) && !defined(NV_TPK40) && !defined(NV_ASS_NOVO)
+#define AJ_ASS_PESO_AQUI 1
+#else
+#define AJ_ASS_PESO_AQUI 0
+#endif
 static const char *V_ASS_PESO[]  = { "Automático", "Sempre completo", "Texto simples" };   // = ASSPESO_*
 static const char *V_FAROL_AVISOS[] = { "Só quando eu abrir", "Ligado" };
 static const char *V_SOURCE_BADGE_POSITION[] = { "No topo", "Embaixo" };
@@ -3749,6 +3758,7 @@ static int ajOpcaoDisponivel(int op) {
   if(op==AJ_IPTV_ORDEM)return iptv_contas(NULL,0)>0;
   if (op == AJ_FALHA_ADDON_LIMITE) return faAddonEditar[0] != 0;
   if (op == AJ_HDR_INTERFACE) return 0;
+  if (op == AJ_LEG_ASS_PESO && !AJ_ASS_PESO_AQUI) return 0;   // .tpk/.tpk40, sem libass: ver AJ_ASS_PESO_AQUI
 #ifndef NV_ANDROID
 #ifndef AJUSTES_TESTE
   if (op == AJ_FONTE_PRECARREGAR || op == AJ_TUNNELING || op == AJ_AFR || op == AJ_BARRAS_PRETAS) return 0;
@@ -3780,7 +3790,10 @@ int ajustes_legenda_sync_audio(void) { return 0; }   // escondida fora do Androi
 int ajustes_legenda_forcada_auto(void) { return lig(AJ_LEG_FORCADA); }   // #287, padrao Ligado
 int ajustes_legenda_evitar_sdh(void) { return lig(AJ_LEG_EVITAR_SDH); }   // #743, padrao Desligado
 int ajustes_legenda_temporaria(void) { return lig(AJ_LEG_TEMPORARIA); }   // legtemp.h, padrao Ligado
-int ajustes_legenda_ass_peso(void) { int v = valor[AJ_LEG_ASS_PESO]; return v < 0 || v > 2 ? 0 : v; }   // ASSPESO_*
+int ajustes_legenda_ass_peso(void) {   // ASSPESO_*; onde o ajuste nao existe, sempre Automatico
+  int v = valor[AJ_LEG_ASS_PESO];
+  return !AJ_ASS_PESO_AQUI || v < 0 || v > 2 ? 0 : v;
+}
 // Motor novo de legendas ASS do .tpk (assperf.h): 1 = ligado (padrao), 0 = o
 // motor de antes de 23/10. Lido pelo ass_novo_ligado via ass_novo_registrar.
 // A thread de render NAO le valor[]: ela recebe este ESPELHO, publicado com
@@ -7719,9 +7732,7 @@ static int foraDestaPlataforma(int op) {
 #if !defined(NV_TPK) && !defined(NV_ASS_NOVO) && !defined(AJUSTES_TESTE)
   if (op == AJ_ASS_MOTOR) return 1;   // so o .tpk tem o motor novo de ASS
 #endif
-#if defined(NV_TPK) || defined(NV_ASS_NOVO)
-  if (op == AJ_LEG_ASS_PESO) return 1;   // .tpk: o assperf ja tem resolucao e libass (Estilo da faixa ASS)
-#endif
+  if (op == AJ_LEG_ASS_PESO && !AJ_ASS_PESO_AQUI) return 1;   // ver AJ_ASS_PESO_AQUI (e fora da TELA tambem)
 #if defined(NV_TPK) || defined(NV_ANDROID) || !defined(NV_DV7_CONVERSION)
   if (op == AJ_DV7) return 1;
   if (op == AJ_DV7_MAPPING) return 1;

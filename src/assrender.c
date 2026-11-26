@@ -265,6 +265,8 @@ static AssPeso assPeso;
 static int assPesoModo = ASSPESO_AUTO;
 static unsigned assPesoGeracao;
 static int assProduzidoDiv = 1;
+static unsigned assPesoSerie;   /* sobe a cada zerada de fora do worker: amostra de antes nao conta */
+static void ass_peso_zerar_locked(void) { asspeso_zerar(&assPeso); assPesoSerie++; }
 #endif
 /* Textura: serial do quadro cujas imagens estao nas texturas e a cor usada.
  * Reenviar tudo a cada quadro (o que se fazia) custa a conversao RGBA de
@@ -884,6 +886,7 @@ static void *ass_worker_loop(void *unused) {
     int lw, lh, vw, vh, plainValid, k;
 #if ASS_PESO_LIGA
     int div, pesoModo, estouro = 0;
+    unsigned pesoSerie;
 #endif
     PlainAssStyle plain;
     struct timespec a, b, c0;
@@ -929,7 +932,8 @@ static void *ass_worker_loop(void *unused) {
     /* Fora do .tpk (asspeso): com a cena pesada demais para a TV, 1/div da
      * resolucao, no mesmo `resol` (o desenho amplia por frame.esc). O
      * documento de texto simples (SRT/VTT em RTL) e leve: sempre 1:1. */
-    if (generation != assPesoGeracao) { asspeso_zerar(&assPeso); assPesoGeracao = generation; }
+    if (generation != assPesoGeracao) { ass_peso_zerar_locked(); assPesoGeracao = generation; }
+    pesoSerie = assPesoSerie;
     pesoModo = __atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE) ? ASSPESO_COMPLETO
              : __atomic_load_n(&assPesoModo, __ATOMIC_ACQUIRE);
     if (pesoModo != ASSPESO_AUTO) asspeso_amostra(&assPeso, pesoModo, 0.0, 0, 0);
@@ -1060,7 +1064,12 @@ static void *ass_worker_loop(void *unused) {
       /* Quadro igual ao publicado sai do cache do libass: nao mede a cena. Se
        * contasse, a placa parada "ficava leve" e o render subia so para
        * estourar de novo. */
-      if (!igual && generation == assPesoGeracao && div == asspeso_divisor(&assPeso) &&
+      /* E so a amostra desta faixa, deste modo e desta epoca (limpar, fontes,
+       * troca de modo zeram o peso no meio do render). */
+      if (!igual && generation == assPesoGeracao && pesoSerie == assPesoSerie && epoch == assEpoch &&
+          pesoModo == (__atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE) ? ASSPESO_COMPLETO
+                       : __atomic_load_n(&assPesoModo, __ATOMIC_ACQUIRE)) &&
+          div == asspeso_divisor(&assPeso) &&
           asspeso_amostra(&assPeso, pesoModo, us / 1000.0, pronto ? frame.bytes : 0, estouro)) {
         printf("[ass] peso: render em 1/%d (ultimo quadro %.1f ms, %zu KiB%s)\n",
                asspeso_divisor(&assPeso), us / 1000.0, (pronto ? frame.bytes : 0) / 1024,
@@ -1931,6 +1940,43 @@ int assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao) {
   return ass_carregar(corpo, tamanho, geracao, mesma, 0);
 }
 
+/* Como assrender_limpar, mas so se a faixa ainda for a da geracao `g` (aviso
+ * de troca de motor / Texto simples em legenda.c): uma reextracao atrasada
+ * nao apaga a faixa que ja entrou depois. Devolve 1 quando limpou. */
+int assrender_limpar_geracao(unsigned g) {
+  if (__atomic_load_n(&assGeracao, __ATOMIC_ACQUIRE) != g) return 0;
+  pthread_mutex_lock(&assTrava);
+  if (__atomic_load_n(&assGeracao, __ATOMIC_ACQUIRE) != g || (assTrack && assTrackGeracao != g)) {
+    pthread_mutex_unlock(&assTrava);
+    return 0;
+  }
+  ass_authored_styles_free();
+  if (assTrack) { ass_free_track(assTrack); assTrack = NULL; }
+  assEventos = 0;
+  assCoberturaIni = assCoberturaFim = 0;
+  __atomic_store_n(&assTrackGeracao, 0, __ATOMIC_RELEASE);
+  __atomic_store_n(&assTrackAtivo, 0, __ATOMIC_RELEASE);
+  ass_diag("libass: sem faixa");
+  pthread_mutex_unlock(&assTrava);
+  pthread_mutex_lock(&incTrava);
+  if (incGeracao == g) { incPronto = 0; incEvN = 0; incCab = 0; ass_pod_soltar(); }
+  pthread_mutex_unlock(&incTrava);
+  assperf_escala_reset();
+  pthread_mutex_lock(&assFilaTrava);
+  if (__atomic_load_n(&assGeracao, __ATOMIC_ACQUIRE) == g) {
+    assPedidoPendente = 0; ++assEpoch; ++assSerial; assPedidoSerial = assSerial;
+    ass_fila_limpar_locked();
+    ass_frame_liberar(&assAtual); assAtualValido = 0;
+    assTemUltimoPedido = 0; assUltimoRenderUs = 0; assBytesQuadro = 0;
+    assTexResetar = 1;
+#if ASS_PESO_LIGA
+    ass_peso_zerar_locked();
+#endif
+  }
+  pthread_mutex_unlock(&assFilaTrava);
+  return 1;
+}
+
 void assrender_limpar(void) {
   ass_inc_esquecer();
   assperf_escala_reset();   // Render resolution Auto: a new track starts at 100 %
@@ -1949,6 +1995,9 @@ void assrender_limpar(void) {
   ass_frame_liberar(&assAtual); assAtualValido = 0;
   assTemUltimoPedido = 0; assUltimoRenderUs = 0; assBytesQuadro = 0;
   assTexResetar = 1;
+#if ASS_PESO_LIGA
+  ass_peso_zerar_locked();   /* faixa nova comeca 1:1, sem amostra da anterior */
+#endif
   pthread_mutex_unlock(&assFilaTrava);
 }
 
@@ -1976,6 +2025,9 @@ void assrender_limpar_fontes(void) {
   ass_frame_liberar(&assAtual); assAtualValido = 0;
   assTemUltimoPedido = 0; assUltimoRenderUs = 0; assBytesQuadro = 0;
   assTexResetar = 1;
+#if ASS_PESO_LIGA
+  ass_peso_zerar_locked();   /* outras fontes, outro custo: mede de novo */
+#endif
   pthread_mutex_unlock(&assFilaTrava);
 }
 
@@ -2035,7 +2087,13 @@ int assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanh
     }
     assFontes++;
   }
-  { int ok = assLib != NULL; pthread_mutex_unlock(&assTrava); return ok; }
+  { int ok = assLib != NULL; pthread_mutex_unlock(&assTrava);
+#if ASS_PESO_LIGA
+    pthread_mutex_lock(&assFilaTrava);
+    ass_peso_zerar_locked();   /* fonte nova muda o custo: as amostras antigas nao valem */
+    pthread_mutex_unlock(&assFilaTrava);
+#endif
+    return ok; }
 }
 
 /* #335: o layout do app e sempre 1920x1080. Com a interface em 4K o alvo tem
@@ -2482,6 +2540,7 @@ void assrender_definir_peso(int modo) {
   if (__atomic_load_n(&assPesoModo, __ATOMIC_ACQUIRE) == modo) return;
   pthread_mutex_lock(&assFilaTrava);
   antes = __atomic_exchange_n(&assPesoModo, modo, __ATOMIC_ACQ_REL);
+  ass_peso_zerar_locked();   /* Auto -> Texto simples -> Auto recomeca 1:1, sem amostra do modo anterior */
   assTemUltimoPedido = 0;   /* o proximo desenhar pede um render no modo novo */
   pthread_mutex_unlock(&assFilaTrava);
   /* Entrou ou saiu do Texto simples: legenda.c redecide a faixa aberta (so o
@@ -2580,6 +2639,7 @@ void assrender_definir_texto_estilo(const PlainAssStyle *style) { (void)style; }
 int assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao) { (void)corpo; (void)tamanho; (void)geracao; return 0; }
 int assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao) { (void)corpo; (void)tamanho; (void)geracao; return 0; }
 void assrender_limpar(void) { assGeracao++; }
+int assrender_limpar_geracao(unsigned g) { if (assGeracao != g) return 0; assGeracao++; return 1; }
 void assrender_definir_fps(double fps) { (void)fps; }
 void assrender_limpar_fontes(void) {}
 void assrender_aliviar(void) {}
