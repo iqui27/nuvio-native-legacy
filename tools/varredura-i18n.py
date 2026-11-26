@@ -273,6 +273,8 @@ def contexto(txt, i):
 # virar teste ela nao impede a proxima regressao.
 IGNORAR = {
     "real-debrid.com", "alldebrid.com",
+    # homekit.c: tileShape value written back to the kit JSON, not a label.
+    "POSTER",
     # mkv.c: chapter language code aliases used for matching, not labels.
     "pt,por,pob", "de,ger,deu", "da,dan",
     # Guide v5 internal screen routes, never rendered as labels.

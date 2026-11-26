@@ -409,3 +409,4 @@
   0, /* farolZerar: acao (#51) */
   0, /* farolLlmSoEstaTv: 0 = Ligado ("So nesta TV", padrao seguro, #51) */
   0, /* direct account-profile friends action */
+  0, /* Kit de Home: acao; o kit mora em kit-home-p<N>.json */

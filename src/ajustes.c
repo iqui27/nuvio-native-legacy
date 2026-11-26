@@ -133,6 +133,7 @@ static void navigationRange(float,float,float,float,float,float,PonteiroFn,Ponte
 #include "fundo.h"
 #include "p2p.h"
 #include "curadoria.h"
+#include "homekitapp.h"
 #include "nvbackend.h"
 #include "p2pmotor.h"
 #include "pessoas.h"
@@ -887,6 +888,9 @@ typedef enum {
   AJ_FAROL_ZERAR,
   AJ_FAROL_LLM_SO_ESTA_TV,
   AJ_AMIGOS_PERFIS, // Account-profile friends action; append-only.
+  // Kit de Home importavel por URL (homekit.h). ACAO: um endereco; vazio
+  // remove o kit. Por perfil, nesta TV (kit-home-p<N>.json). Append-only.
+  AJ_KIT_HOME,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2146,6 +2150,7 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO(FT_GOSTO_ZERAR),                                      // acao: Zerar o gosto (#51)
   ESC(FT_GOSTO_LLM_SO_ESTA_TV, V_LIGA, 2),                   // local/farolconsent: So nesta TV (#51)
   ACAO("Perfis desta conta"),
+  ACAO("Kit de Home"),   // homekitapp.c: o kit mora em kit-home-p<N>.json
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2543,6 +2548,7 @@ static const char *CHAVE[] = {
   "-farolZerar",
   "-farolLlmSoEstaTv",
   "-amigosPerfis",
+  "-kitHome",   // nunca vai para a conta: o kit e deste perfil nesta TV
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -8238,6 +8244,11 @@ static const char *textoLeitura(int op) {
   if (op >= AJ_PX_ENTRAR && op <= AJ_PX_SAIR) return pxTexto(op);
   if (op == AJ_P2P_URL) return p2pEndereco[0] ? p2pEndereco : i18n("Não configurado");
   if (op == AJ_CURADORIA_URL) return curadoria_url()[0] ? curadoria_url() : i18n("Não configurado");
+  if (op == AJ_KIT_HOME) {
+    const char *e = homekit_estado_texto();
+    if (e) return i18n(e);
+    return homekit_tem() ? homekit_nome() : i18n("Não configurado");
+  }
   if (op == AJ_NUVIO_BACKEND_URL) {
     static char recUrl[400];
     return nv_rec_url_copiar(recUrl, sizeof recUrl) ? recUrl : i18n("Não configurado");
@@ -9123,6 +9134,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_ESPACO_FILEIRAS: return "O espaço vertical entre uma fileira da Home e a seguinte. Com menos cabem mais fileiras na tela, com mais a Home fica mais arejada.";
     case AJ_ESPACO_TITULOS: return "O espaço horizontal entre os cartazes de uma fileira da Home.";
     case AJ_TUNNELING: return "Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.";
+    case AJ_KIT_HOME: return "Um kit é um conjunto pronto de fileiras de coleções, feito por alguém e publicado num link. Ele só acrescenta fileiras à Home deste perfil nesta TV: não instala addon nem muda ajuste. Fonte de addon que você não tem fica de fora. Endereço vazio remove o kit.";
     case AJ_BARRAS_PRETAS: return "Pinta de preto a área fora do vídeo (tarjas). Útil em HDR/Dolby Vision quando o fundo vaza cor. Vale no player Android TV.";
     case AJ_ASS_MOTOR: return "Motor de legendas ASS desta TV. Ligado usa o motor novo (libass NEON); Desligado volta ao motor anterior. Vale para arquivos com legenda ASS/SSA.";
     case AJ_TV_HOME: return "Mostra Continuar assistindo e o canal Nuvio no Android TV. Perfis infantis ficam ocultos. Desligar remove os itens publicados. Vale só nesta TV.";
@@ -11384,6 +11396,14 @@ static void eventoTela(const SDL_Event *e) {
                         64, ST_ALFA_PORTAL, p2pEndereco[0] ? p2pEndereco : NULL);
       return;
     }
+    if (focoOp == AJ_KIT_HOME) {
+      if (homekit_baixando()) return;
+      stCampo = focoOp;
+      teclado_abrir_com("Kit de Home", "O link do JSON do kit (https://…). Vazio remove o kit.",
+                        NV_HK_URL_MAX - 1, SP_ALFA_URL, NULL);
+      if (homekit_tem()) teclado_permitir_vazio(1);
+      return;
+    }
     if (focoOp == AJ_CURADORIA_URL) {
       stCampo = focoOp;
       teclado_abrir_com("Endereço da curadoria", "Endereço de um JSON com uma recomendação de filme. Vazio apaga.",
@@ -11559,6 +11579,11 @@ void ajustes_atualizar(float dt, Uint32 agora) {
         if (!openseek_definir_endereco(teclado_texto())) uxNotificar("endereço inválido");
       } else if (stCampo == AJ_OPENSEEK_PAREAR) {
         if (!openseek_parear(teclado_texto())) uxNotificar("código ou convite inválido");
+      }
+      else if (stCampo == AJ_KIT_HOME) {
+        int tinha = homekit_tem();
+        homekit_importar(teclado_texto());
+        if (tinha && !homekit_tem()) uxNotificar("Kit de Home removido.");
       }
       else if (stCampo == AJ_CURADORIA_URL) {
         int e = curadoria_definir_url(teclado_texto());

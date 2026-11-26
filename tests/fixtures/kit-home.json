@@ -1,0 +1,29 @@
+{
+  "nuvioKit": 1,
+  "name": "Kit de exemplo",
+  "author": "Nuvio Legacy",
+  "collections": [
+    {
+      "title": "Streamings",
+      "folders": [
+        { "title": "Netflix", "tileShape": "LANDSCAPE",
+          "sources": [
+            { "provider": "tmdb", "title": "Séries", "tmdbSourceType": "NETWORK", "tmdbId": 213, "mediaType": "TV", "sortBy": "popularity.desc" },
+            { "provider": "tmdb", "title": "Filmes", "tmdbSourceType": "COMPANY", "tmdbId": 178464, "mediaType": "MOVIE", "sortBy": "popularity.desc" } ] },
+        { "title": "HBO", "tileShape": "LANDSCAPE",
+          "sources": [ { "provider": "tmdb", "title": "Séries", "tmdbSourceType": "NETWORK", "tmdbId": 49, "mediaType": "TV", "sortBy": "popularity.desc" } ] },
+        { "title": "Apple TV+", "tileShape": "LANDSCAPE",
+          "sources": [ { "provider": "tmdb", "title": "Séries", "tmdbSourceType": "NETWORK", "tmdbId": 2552, "mediaType": "TV", "sortBy": "popularity.desc" } ] }
+      ]
+    },
+    {
+      "title": "Do Cinemeta",
+      "folders": [
+        { "title": "Filmes em alta", "tileShape": "POSTER",
+          "sources": [ { "provider": "addon", "addonId": "com.linvo.cinemeta", "type": "movie", "catalogId": "top" } ] },
+        { "title": "Séries em alta", "tileShape": "POSTER",
+          "sources": [ { "provider": "addon", "addonId": "com.linvo.cinemeta", "type": "series", "catalogId": "top" } ] }
+      ]
+    }
+  ]
+}
