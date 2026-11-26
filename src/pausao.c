@@ -18,6 +18,7 @@
 #include "imdbnota.h"
 #include "agendaui.h"
 #include "comentordem.h"
+#include "ambiente.h"
 #include "idiomacod.h"
 #include "tex_cache.h"
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
@@ -78,6 +79,10 @@ static char   idItem[64];      // o titulo de idxItem (#190; ver pausao.h)
 static char   epLinha[220];
 static int    epTemp, epEp;  // temporada/episodio em cena (0 = filme)
 static char   epSinopse[420];  // sinopse do EPISODIO; vazia cai na da serie
+// TELA AMBIENTE (ambiente.h): a arte do titulo por baixo da ficha. `ambAlfa`
+// fica com o ultimo valor enquanto o painel sai, para a arte sair junto dele.
+static Ambiente amb;
+static float    ambAlfa;
 
 // See pausao.h. Clearing `desdeQuando` makes pausao_atualizar re-arm from NOW
 // on the next frame, which is exactly what the web's schedulePauseOverlay() does.
@@ -90,6 +95,7 @@ void pausao_fechar(void) {
   anim = 0.0f;
   desdeQuando = 0;
   idxItem = -1;
+  ambiente_zerar(&amb); ambAlfa = 0.0f;
   idItem[0] = 0;
   epLinha[0] = 0;
   epSinopse[0] = 0;
@@ -142,6 +148,21 @@ void pausao_atualizar(float dt, Uint32 agora, int podeSubir, int idx,
   anim = anim_mola(anim, visivel ? 1.0f : 0.0f, dt,
                    visivel ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
   if (!visivel && anim < 0.004f) anim = 0.0f;
+
+  // TELA AMBIENTE. A mesma url e o mesmo pedido da tela de carga do player
+  // (tex_obter_hero(artehero_url)): no caso comum a textura ja esta no cache e
+  // nada novo e decodificado com o filme parado.
+  if (visivel) {
+    const CatItem *c = cat_item(pausao_indice());
+    const char *arte = c && c->backdrop[0] ? artehero_url(c) : NULL;
+    unsigned ms = agora - comT0;
+    int liga = ajustes_pausa_ambiente();
+    GLuint t = ambiente_pedir(ms, liga, arte && arte[0]) ? tex_obter_hero(arte) : 0;
+    ambAlfa = ambiente_passo(&amb, agora, ms, liga, t != 0);
+  } else {
+    ambiente_zerar(&amb);
+    if (anim <= 0.0f) ambAlfa = 0.0f;
+  }
 }
 
 // Enquanto o painel ainda esta saindo ele continua desenhado, mas ja NAO e
@@ -246,6 +267,21 @@ static void pausao_desenharCorpo_(Uint32 agora, const PausaoCena *cena) {
     idxItem = i; }
   c = cat_item(idxItem);
   if (!c) return;
+
+  // --- TELA AMBIENTE: a arte do titulo cobre o quadro congelado, PARADA (o
+  // movimento lento tremia na TV, ver descanso.c). Os veus de baixo sao os
+  // mesmos, entao a ficha le igual sobre o quadro ou sobre a arte.
+  if (ambAlfa > 0.004f && c->backdrop[0]) {
+    const char *arte = artehero_url(c);
+    GLuint t = arte && arte[0] ? tex_obter_hero(arte) : 0;
+    if (t) {
+      gfx_tex_aspect_atual = tex_aspecto(arte);
+      gfx_card_forcar_cover_atual = 1.0f;
+      gfx_rect((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, t, GFX_CARD, 0, 0, 0, 0.0f, 1, 1, 1, ambAlfa * a);
+      gfx_card_forcar_cover_atual = 0.0f;
+      gfx_tex_aspect_atual = 0.0f;
+    }
+  }
 
   // --- VEUS: o degrade da esquerda (.78 -> 0 a 80%) e o leve de baixo, pelo
   // shader com dither. A arte continua viva a direita.

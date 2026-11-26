@@ -47,6 +47,7 @@ static void salvar(const char *nome) {
 // Luminancia media de uma faixa horizontal do quadro salvo (para provar que o
 // veu cobre a tela inteira e nao so a faixa de baixo).
 static Uint32 relogio = 100000;
+static int nPainel;
 static void quadros(int n) {
   int i;
   for (i = 0; i < n; i++) {
@@ -89,6 +90,8 @@ int main(int argc, char **argv) {
     snprintf(caminho, sizeof caminho, "%s/ajustes.txt", getenv("NUVIO_DADOS"));
     f = fopen(caminho, "w"); assert(f);
     fprintf(f, "idioma %d\nselected_theme %d\n", en && *en == '1', tema && *tema ? atoi(tema) : 2);
+    // NUVIO_SHOT_SEM_AMBIENTE=1: a tela ambiente desligada no ajuste (V_LIGA 1).
+    if (getenv("NUVIO_SHOT_SEM_AMBIENTE")) fprintf(f, "pausaAmbienteLocal 1\n");
     fclose(f);
     ajustes_dir(getenv("NUVIO_DADOS")); }
   ajustes_iniciar();
@@ -121,6 +124,22 @@ int main(int argc, char **argv) {
   quadros(90);
   assert(pausao_visivel());
   snprintf(nome, sizeof nome, "%s-painel.bmp", saida); salvar(nome);
+  { int antes = gfx_n_rect; quadros(1); nPainel = gfx_n_rect - antes; }
+  // TELA AMBIENTE (ambiente.h): mais 10 s de painel e os 3 s da entrada. Com o
+  // ajuste ligado a arte do titulo cobre a "cena clara"; desligado
+  // (NUVIO_SHOT_SEM_AMBIENTE=1) o quadro e o mesmo de -painel.
+  { int i; for (i = 0; i < 11; i++) { relogio += 1000; quadros(1); } }
+  quadros(100);
+  snprintf(nome, sizeof nome, "%s-ambiente-meio.bmp", saida); salvar(nome);
+  quadros(120);
+  assert(pausao_visivel());
+  snprintf(nome, sizeof nome, "%s-ambiente.bmp", saida); salvar(nome);
+  // A arte do harness e a mesma que o player sem video ja desenha, entao o
+  // quadro salvo nao muda: a prova e a contagem de desenhos, um a mais (a arte
+  // em tela cheia) com o ajuste ligado e nenhum com ele desligado.
+  { int antes = gfx_n_rect, nAmb; quadros(1); nAmb = gfx_n_rect - antes;
+    printf("desenhos gfx: painel %d, ambiente %d\n", nPainel, nAmb);
+    assert(nAmb == nPainel + (getenv("NUVIO_SHOT_SEM_AMBIENTE") ? 0 : 1)); }
   puts("player_pausa_shot: ok");
   return 0;
 }

@@ -448,7 +448,7 @@ static void testarAjustesEGostoUI(void) {
   assert(AJ_FAROL_APRENDEU == AJ_FAROL + 2);
   assert(AJ_FAROL_ZERAR == AJ_FAROL + 3);
   assert(AJ_FAROL_LLM_SO_ESTA_TV == AJ_FAROL + 4);
-  assert(AJ_FAROL_LLM_SO_ESTA_TV + 1 == AJ_N);
+  assert(AJ_FAROL_LLM_SO_ESTA_TV < AJ_N);
   assert(escopoDe(AJ_FAROL_RECOMENDAR) == ESC_NENHUM);
   assert(escopoDe(AJ_FAROL_APRENDEU) == ESC_NENHUM);
   assert(escopoDe(AJ_FAROL_ZERAR) == ESC_NENHUM);

@@ -27,6 +27,10 @@ static int    foco;                 // 0 = Assistir, 1 = Dispensar
 static int    engolirOkUp;
 static char   aCanal[80], aNome[120], aTitulo[120], aBase[600], aTexto[300];
 static int    pedAssistir;
+static int  (*canalDoJogo)(const Lembrete *, char *, size_t, char *, size_t, char *, size_t);
+void glem_canal_do_jogo(int (*acha)(const Lembrete *, char *, size_t, char *, size_t, char *, size_t)) {
+  canalDoJogo = acha;
+}
 
 void glem_abrir_sessao(void) {
   modo = ultimoModo = foco = engolirOkUp = pedAssistir = 0;
@@ -82,6 +86,8 @@ void glem_passo(float dt, Uint32 agora) {
       snprintf(aTitulo, sizeof aTitulo, "%s", l->titulo);
       snprintf(aBase, sizeof aBase, "%s", l->base);
       int sport=!strncmp(aCanal,"sport:",6)||!strncmp(aBase,"sports|",7);
+      // Jogo com canal achado: deixa de ser aviso e segue como programa do guia.
+      if(sport&&canalDoJogo&&canalDoJogo(l,aCanal,sizeof aCanal,aNome,sizeof aNome,aBase,sizeof aBase))sport=0;
       if(sport){snprintf(aTexto,sizeof aTexto,"%s · %s",aTitulo,aNome);aCanal[0]=aBase[0]=0;}
       else snprintf(aTexto, sizeof aTexto, i18n("%s começa agora no %s"), aTitulo, aNome);
       lembrete_marcar_avisado(i);

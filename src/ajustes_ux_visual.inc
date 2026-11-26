@@ -177,6 +177,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_PAUSA_COMENTARIOS: return "aj_message-square";
     case AJ_PAUSA_NOTAS: return "aj_star";
     case AJ_PAUSA_ELENCO: return "aj_users";
+    case AJ_PAUSA_AMBIENTE: return "aj_image";
     case AJ_PLR_CLASSIF: return "aj_shield";
     case AJ_TELA_ABERTURA: return "aj_clapperboard";
     case AJ_ABERTURA_ADDON: return "aj_clapperboard";
