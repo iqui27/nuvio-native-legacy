@@ -420,10 +420,8 @@ Formatter icons in the source list ("Source text: From the addon"), made by
 license text next to them:
 [Twemoji](https://github.com/jdecked/twemoji) graphics © Twitter, Inc and other
 contributors, [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) (Standard
-style); [Noto Sans Symbols / Symbols 2 / Math](https://fonts.google.com/noto)
-glyphs, SIL Open Font License 1.1; country flags from
-[flagpack](https://github.com/Yummygum/flagpack-core), MIT. The Minimalistic
-style uses Lucide, as above.
+style, country flags included); [Noto Sans Symbols / Symbols 2 / Math](https://fonts.google.com/noto)
+glyphs, SIL Open Font License 1.1. The Minimalistic style uses Lucide, as above.
 
 DTS-enabled builds use libraries from the [FFmpeg project](https://ffmpeg.org/)
 under **LGPL 2.1 or later**. `tools/build-dts-ffmpeg.sh` records the exact release

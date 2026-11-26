@@ -21,7 +21,7 @@
 //                estrelas de nota (★ ⯪ ☆), sem estrela cheia no Lucide, ficam com o
 //                glifo Noto nos dois estilos
 // Bandeiras (par de indicadores regionais, e 🏴 Inglaterra/Escocia/Gales) ->
-// flagpack no Padrao (icones/formatador/fl_<CC>.png); no Minimalista, e sem o
+// Twemoji no Padrao (icones/formatador/fl_<CC>.png); no Minimalista, e sem o
 // PNG, o codigo de idioma de sempre (nv_limpar_texto).
 // Emoji que nao esta na lista: some, como antes (nv_limpar_texto).
 //

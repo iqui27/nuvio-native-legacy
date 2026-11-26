@@ -8,7 +8,7 @@ Reads tools/icones-formatador.tsv and writes:
   deploy/app/art/icones/formatador/tw_<seq>.png   Standard, colour emoji: Twemoji 72 px, as shipped
   deploy/app/art/icones/formatador/sy_<cp>.png    Standard, monochrome symbol: Noto glyph, 128 px,
                                                   white, shape in alpha (tinted with the text colour)
-  deploy/app/art/icones/formatador/fl_<CC>.png    flags (both styles): flagpack-core, 64x48
+  deploy/app/art/icones/formatador/fl_<CC>.png    flags (Standard): Twemoji 72 px, as shipped
   deploy/app/art/icones/formatador/LICENSE-*      licence texts (no .txt: tizen-art.sh refuses *.txt)
   src/formatador_icones.inc                       the lookup table compiled into streams.c
 
@@ -16,11 +16,11 @@ Sources are pinned (same reason as tools/icones-lucide.sh: main changes without 
   Lucide           lucide-icons/lucide      tag 1.48.0  (ISC)
   Twemoji          jdecked/twemoji          tag v17.0.3 (graphics CC-BY 4.0) -- the maintained fork of
                    twitter/twemoji; twitter's set lacks the Emoji 15.1 family sequence on the list.
-  flagpack         Yummygum/flagpack-core   main @ 2026-06-18 (MIT)
   Noto Sans Symbols / Symbols 2 / Math      @fontsource 5.3.0 npm packages (OFL 1.1)
 
 Needs: git, npm, rsvg-convert, ImageMagick (convert), Python Pillow + fontTools.
-Usage: python3 tools/icones-formatador.py [--fontes DIR]   (DIR: where to fetch sources, default /tmp)
+Usage: python3 tools/icones-formatador.py [--fontes DIR] [--so-bandeiras]
+       (DIR: where to fetch sources, default /tmp; --so-bandeiras: redo only the flags)
 """
 import argparse, glob, json, os, shutil, subprocess, sys, tarfile
 
@@ -31,7 +31,6 @@ INC = os.path.join(RAIZ, 'src/formatador_icones.inc')
 
 LUCIDE = ('https://github.com/lucide-icons/lucide', '1.48.0')
 TWEMOJI = ('https://github.com/jdecked/twemoji', 'v17.0.3')
-FLAGPACK = ('https://github.com/Yummygum/flagpack-core', 'main')
 NPM_FONTES = ['@fontsource/noto-sans-symbols@5.3.0', '@fontsource/noto-sans-symbols-2@5.3.0',
               '@fontsource/noto-sans-math@5.3.0']
 
@@ -150,12 +149,44 @@ def utf8_c(seq):
     return ''.join('\\x%02X' % b for b in ''.join(chr(int(c, 16)) for c in seq.split('-')).encode('utf-8'))
 
 
+SUBDIVISOES = {'GB-ENG': 'e0067-e0062-e0065-e006e-e0067', 'GB-SCT': 'e0067-e0062-e0073-e0063-e0074',
+               'GB-WLS': 'e0067-e0062-e0077-e006c-e0073'}
+
+
+def bandeiras(dt, disp):
+    """Every flag Twemoji ships: regional-indicator pairs -> fl_<CC>, plus the three UK nations."""
+    nomes = {}
+    for n in disp:
+        cps = n[:-4].split('-')
+        if len(cps) == 2 and all(0x1F1E6 <= int(c, 16) <= 0x1F1FF for c in cps):
+            nomes[''.join(chr(int(c, 16) - 0x1F1E6 + 65) for c in cps)] = n[:-4]
+    for cc, tag in SUBDIVISOES.items():
+        n = '1f3f4-%s-e007f' % tag
+        if n + '.png' in disp:
+            nomes[cc] = n
+    pegar(dt, ['assets/72x72/%s.png' % n for n in nomes.values()] + ['LICENSE-GRAPHICS'])
+    for velho in glob.glob(os.path.join(FMT, 'fl_*.png')):
+        os.remove(velho)
+    for cc, n in nomes.items():
+        sh('convert', os.path.join(dt, 'assets/72x72', n + '.png'), '-strip', 'PNG32:' + os.path.join(FMT, 'fl_%s.png' % cc))
+    shutil.copy(os.path.join(dt, 'LICENSE-GRAPHICS'), os.path.join(FMT, 'LICENSE-twemoji'))
+    lic = os.path.join(FMT, 'LICENSE-flagpack')
+    if os.path.exists(lic):
+        os.remove(lic)
+    print('twemoji flags: %d' % len(nomes))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--fontes', default='/tmp/nuvio-icones-formatador')
+    ap.add_argument('--so-bandeiras', action='store_true')
     a = ap.parse_args()
     os.makedirs(a.fontes, exist_ok=True)
     os.makedirs(FMT, exist_ok=True)
+    if a.so_bandeiras:
+        dt = repo(a.fontes, *TWEMOJI)
+        bandeiras(dt, arvore(dt, 'assets/72x72'))
+        return
     tab = ler_tabela()
 
     # --- Lucide (Minimalistic) ---
@@ -189,6 +220,7 @@ def main():
         sh('convert', os.path.join(dt, 'assets/72x72', n + '.png'), '-strip', 'PNG32:' + os.path.join(FMT, 'tw_%s.png' % seq))
     shutil.copy(os.path.join(dt, 'LICENSE-GRAPHICS'), os.path.join(FMT, 'LICENSE-twemoji'))
     print('twemoji: %d' % len(tw))
+    bandeiras(dt, disp)
 
     # --- Noto glyphs (Standard, monochrome) ---
     fontes, dn = fontes_noto(a.fontes)
@@ -204,21 +236,6 @@ def main():
     if lic:
         shutil.copy(lic[0], os.path.join(FMT, 'LICENSE-noto'))
     print('noto: %d' % len(sy))
-
-    # --- flagpack (flags, both styles) ---
-    df = repo(a.fontes, *FLAGPACK)
-    todas = arvore(df, 'lib/flags/m')
-    cods = sorted(n[:-4] for n in todas if len(n) == 6 and n[:2].isupper() and n[:2].isalpha())
-    sub = ['GB-ENG', 'GB-SCT', 'GB-WLS']
-    pegar(df, ['lib/flags/m/%s.svg' % c for c in cods + sub + ['GB-UKM']] + ['LICENSE'])
-    for c in cods + sub + ['GB-UKM']:
-        nome = {'GB-UKM': 'GB'}.get(c, c)
-        if c == 'GB':
-            continue   # flagpack's own "GB" is absent; GB-UKM is the Union flag
-        sh('rsvg-convert', '-w', '64', '-h', '48', '-o', os.path.join(FMT, 'fl_%s.png' % nome),
-           os.path.join(df, 'lib/flags/m', c + '.svg'))
-    shutil.copy(os.path.join(df, 'LICENSE'), os.path.join(FMT, 'LICENSE-flagpack'))
-    print('flagpack: %d' % (len(cods) + len(sub)))
 
     # --- lookup table ---
     with open(INC, 'w', encoding='utf-8') as f:

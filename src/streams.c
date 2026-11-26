@@ -3702,7 +3702,7 @@ static float addonSelosAlt(void) { return selospacote_ativo() >= 0 ? FOLHA_ADDON
 // No row = the name's first line stops short of the addon column, as "Bottom".
 static int addonSelosEmbaixo(void) { return selospacote_ativo() < 0 || ajustes_selos_embaixo(); }
 #define ADDON_ICONE_W      30.0f    // 22 de icone + 8
-#define ADDON_BANDEIRA_W   36.0f    // 28 de bandeira (4:3) + 8
+#define ADDON_BANDEIRA_W   30.0f    // 22 de bandeira (Twemoji, quadrada) + 8
 #define ADDON_GAP          18.0f    // depois de cada texto
 static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   size_t k = 0;
@@ -4150,7 +4150,7 @@ static void addonDesenhar(int i, int secao, float tx, float y, float maxw, float
     } else if (*pc == 'B') {
       char nome[32];
       snprintf(nome, sizeof nome, "formatador/fl_%s", pc + 1);
-      gfx_icone_cor((GfxRect){x, ly + (secao == 0 ? 10 : 4), 28, 21}, nome, ak * (sel ? 1.0f : .8f));
+      gfx_icone_cor((GfxRect){x, ly + (secao == 0 ? 9 : 3), 22, 22}, nome, ak * (sel ? 1.0f : .8f));
       x += ADDON_BANDEIRA_W;
     } else if (*pc == 'T') {
       float resto = lim - (x - tx);

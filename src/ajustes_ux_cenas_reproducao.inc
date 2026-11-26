@@ -508,7 +508,7 @@ static void rIcones(void) {
     }
     // Bandeira so no Padrao; o Minimalista escreve o codigo do idioma ("EN"),
     // aqui uma barra curta, como o texto das outras linhas.
-    if (i == 0) gfx_icone_cor(ajc_r(70, y + 62, 28, 21), "formatador/fl_GB", al * C.a);
+    if (i == 0) gfx_icone_cor(ajc_r(70, y + 58, 24, 24), "formatador/fl_GB", al * C.a);
     else ajc_barra(70, y + 68, 28, al * 0.6f);
     ajc_barra(108, y + 68, 200, al * 0.45f);
     if (i == v) ajc_foco(40, y, 560, 100, 14, 0.6f + 0.4f * ajc_onda(2.2f));
