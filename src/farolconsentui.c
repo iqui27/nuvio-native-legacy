@@ -20,7 +20,7 @@
 #define FCUI_ABRIR_MS 320.0f
 #define FCUI_FECHAR_MS 180.0f
 #define FCUI_MAX_IT   4
-#define FCUI_VT_Y     480.0f
+#define FCUI_VT_Y     462.0f
 #define FCUI_VT_W     740.0f
 #define FCUI_VT_H     116.0f
 
@@ -225,7 +225,11 @@ static void desenha_botao(FcuiItem *it, const char *rot, const char *ic, int pri
 static void desenha_vaitocar(FcuiItem *it, float a) {
   float f = focoAtual == it->id ? 1.0f : 0.0f, ar, ag, ab;
   GfxRect cx = { it->r.x + 28.0f, it->r.y + (it->r.h - 36.0f) * 0.5f, 36.0f, 36.0f };
-  int tx = botao_superficie(it->r, f, a);
+  // Em repouso, o painel neutro da tela (nao o primario rosado, que parece
+  // foco); em foco, a superficie de botao de todo o app.
+  int tx = 235;
+  if (f > 0.5f) tx = botao_superficie(it->r, f, a);
+  else painel(it->r, it->r.h * 0.5f, a);
   float tx0 = cx.x + cx.w + 24.0f, tw = it->r.w - (tx0 - it->r.x) - 28.0f;
   ajustes_acento(&ar, &ag, &ab);
   if (vtPendente) {
