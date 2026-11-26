@@ -132,6 +132,7 @@ void player_toast(const char *texto, unsigned ms);
 // O mesmo aviso com o icone (art/icones) e, `ambar` = 1, a cor de aviso: a
 // pilula da ilha abre com ele (plrilha.h). player_toast e o informativo.
 void player_toast_ex(const char *texto, unsigned ms, const char *icone, int ambar);
+void player_toast_apagar_se(const char *texto);
 void player_limpar_erro_fonte(void);   // fonte "morta" que voltou a entregar
 // A tentativa do automatico de fontes ("Fonte 2 de 3" na ilha ao abrir):
 // `n` = qual (1 = a primeira), `max` = o teto. 0, 0 = nenhuma.
@@ -194,6 +195,10 @@ void player_definir_retomada_fonte(double segundos);
 // fechar e abrir.
 void player_voltar_a_esperar(void);
 
+// An app-drawn text subtitle (main or second) is on screen or about to be
+// (tpkborda.c: the premultiplied layer). Marked by whoever draws one.
+void player_legenda_app_marcar(void);
+int  player_legenda_app_quer(void);
 int  player_aberto(void);   // 1 enquanto a tela existe, inclusive durante o fade de saida
 // Pedidos que so existem com um CANAL no ar (tipo "channel"/"tv"):
 // Live OK without controls, DOWN or BLUE requested the mini guide.
@@ -238,6 +243,16 @@ int  player_retido(void);
 int  player_retido_so_voo(void);
 int  player_retomar_retido(const char *imdb, int temporada, int episodio);
 void player_validar_retido(Uint32 agora);
+#ifdef NV_TPK
+// Saida/volta do app no .tpk: a cada quadro, tela aberta e avisos da reabertura.
+void player_tpk_fundo_passo(void);
+#endif
+#ifdef NV_WEBOS
+// Saida/volta do app na LG: main.c avisa (saiu=1 escondido, 0 de volta) e
+// app.c chama o passo a cada quadro.
+void player_webos_janela(int saiu, const char *porque);
+void player_webos_fundo_passo(void);
+#endif
 void player_descartar_retido(void);
 void player_ciclo_evento(Uint32 tipo);
 

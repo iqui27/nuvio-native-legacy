@@ -232,5 +232,11 @@ int      debrid_conta_link(int servico, const char *id, const char *arquivo, uin
                            char *url, unsigned n);
 int      debrid_ad_enviar(const char *hash, char *id, unsigned n);
 int      debrid_ad_apagar(const char *id);
+// TorBox burn-in (tbburn.h). BLOCKS. GET api.torbox.app/v1/api/<rota> with the
+// key as Bearer; body (free) or NULL, *st gets the HTTP status. Never logged.
+char *debrid_tb_api_get(const char *rota, int prazo, int *st);
+// Replaces every copy of the TorBox key in `texto` (in place) with "***", so a
+// response or a playlist URL (?token=<key>) can be logged.
+void  debrid_tb_redigir(char *texto);
 
 #endif

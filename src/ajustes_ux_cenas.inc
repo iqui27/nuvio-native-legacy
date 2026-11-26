@@ -1013,11 +1013,11 @@ static void ajcCenaLegenda(int op) {
       ajc_foco(320 - lw * 0.5f, yb - 32 * tam * 0.9f, lw, 32 * tam * 0.9f, 6, 0.4f + 0.6f * ajc_onda(2.0f));
     }
   }
-  if (op == AJ_LEG_LINGUA || op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2 || op == AJ_LEG_SYNC_AUTO || op == AJ_LEG_SYNC_AUDIO) {
+  if (op == AJ_LEG_LINGUA || op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2 || op == AJ_LEG_SYNC_AUTO || op == AJ_LEG_SYNC_AUDIO || op == AJ_LEG_SYNC_AUDIO_MOVEL || op == AJ_LEG_QUEIMAR || op == AJ_TB_AUDIO) {
     static const char *L[3] = { "PT", "EN", "ES" };
     int i, a = ajc_passo(1.6f, 3);
     ajc_vidro(430, 30, 180, 60, 16, 1);
-    ajc_icone(op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2 ? "aj_audio-lines" : "aj_captions", 458, 60, 22, 0.9f);
+    ajc_icone(op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2 || op == AJ_TB_AUDIO ? "aj_audio-lines" : "aj_captions", 458, 60, 22, 0.9f);
     for (i = 0; i < 3; i++) ajcSeloVivo(L[i], 482 + i * 42, 46, 12, i == a ? 1.0f : 0, 1);
   }
 }
@@ -1157,7 +1157,7 @@ static void ajcCenaOpcao(int sec, int op) {
     case AJ_ADDONS: case AJ_PLUGINS: case AJ_ADDONS_PRINCIPAL: case AJ_BUSCA_CINEMETA: case AJ_BUSCA_NUVIO: case AJ_BUSCA_ORIGEM: ajcCenaAddons(op); return;
     case AJ_IDIOMA: case AJ_TMDB_IDIOMA: ajcCenaIdioma(op); return;
     case AJ_DEBRID_RD: case AJ_DEBRID_TB: case AJ_DEBRID_PM: case AJ_DEBRID_AD: case AJ_DEBRID_AD_TESTAR:
-    case AJ_DEBRID_RD_TESTAR: case AJ_DEBRID_TB_TESTAR: case AJ_DEBRID_PM_TESTAR:
+    case AJ_DEBRID_RD_TESTAR: case AJ_DEBRID_TB_TESTAR: case AJ_DEBRID_PM_TESTAR: case AJ_TB_PLANO:
       ajcCenaServico(op, "aj_zap"); return;
 #ifndef __EMSCRIPTEN__
     case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR: case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: ajcCenaServico(op, "aj_link"); return;

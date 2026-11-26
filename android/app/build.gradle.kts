@@ -1,3 +1,9 @@
+import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
+import java.util.zip.ZipEntry
+import java.io.ByteArrayOutputStream
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -41,9 +47,13 @@ android {
                     "-DNUVIO_RAIZ=$raiz",
                     "-DNUVIO_SDL_SRC=$sdlSrc",
                     "-DNUVIO_ENV_CMAKE=$estagio/nuvio-env.cmake",
+                    "-DNV_VERSAO_APP=$versao",   // a versao COMPILADA vem sempre do appinfo.json (o arquivo de chaves pode estar velho)
                     "-DNUVIO_P2P_MOTOR=${(findProperty("nuvio.p2pMotor") as String?) ?: ""}",
                     "-DNUVIO_RUST_MKVCORE=${(findProperty("nuvio.rustMkvcore") as String?) ?: ""}",
-                    "-DNUVIO_MINI_FFMPEG=${(findProperty("nuvio.miniFfmpeg") as String?) ?: ""}",
+                    "-DNUVIO_LIBASS=${(findProperty("nuvio.libass") as String?) ?: ""}",
+                    // FFmpeg so das miniaturas (tools/android/ffmpeg-miniaturas.sh); sem a pasta, a rota de CPU fica de fora
+                    "-DNUVIO_MINI_FFMPEG=${(findProperty("nuvio.miniFfmpeg") as String?)
+                        ?: File(System.getProperty("user.home"), ".cache/nuvio-android/mini-ffmpeg").takeIf { it.isDirectory }?.path?.replace('\\', '/') ?: ""}",
                 )
                 arguments += "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
             }
@@ -129,10 +139,54 @@ val copiaSdlJava = tasks.register<Copy>("copiaSdlJava") {
 }
 tasks.named("preBuild") { dependsOn(copiaSdlJava) }
 
+// Version-locked HLS source overlay. Remove only HlsChunkSource and its nested
+// classes from the upstream AAR; the Apache-licensed replacement in src/main/java
+// backports upstream's empty-segment-list fix without changing decoder ABI.
+val hlsOriginal by configurations.creating
+val patchedHls = layout.buildDirectory.file("patched-hls/media3-exoplayer-hls-1.8.0.aar")
+val patchHls by tasks.registering {
+    inputs.files(hlsOriginal)
+    outputs.file(patchedHls)
+    doLast {
+        val original = hlsOriginal.singleFile
+        val output = patchedHls.get().asFile
+        output.parentFile.mkdirs()
+        ZipFile(original).use { aar ->
+            ZipOutputStream(output.outputStream()).use { out ->
+                for (entry in aar.entries()) {
+                    out.putNextEntry(ZipEntry(entry.name))
+                    if (entry.name == "classes.jar") {
+                        val bytes = ByteArrayOutputStream()
+                        ZipInputStream(aar.getInputStream(entry)).use { jar ->
+                            ZipOutputStream(bytes).use { patched ->
+                                var item = jar.nextEntry
+                                while (item != null) {
+                                    val name = item!!.name
+                                    if (!name.matches(Regex("androidx/media3/exoplayer/hls/HlsChunkSource(\\$.*)?\\.class"))) {
+                                        patched.putNextEntry(ZipEntry(name))
+                                        jar.copyTo(patched)
+                                        patched.closeEntry()
+                                    }
+                                    item = jar.nextEntry
+                                }
+                            }
+                        }
+                        out.write(bytes.toByteArray())
+                    } else aar.getInputStream(entry).use { it.copyTo(out) }
+                    out.closeEntry()
+                }
+            }
+        }
+    }
+}
+
 dependencies {
+    compileOnly("org.checkerframework:checker-qual:3.33.0")
+    hlsOriginal("androidx.media3:media3-exoplayer-hls:1.8.0@aar") { isTransitive = false }
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // Video (NvPlayer.kt, de outro agente): Media3 ExoPlayer.
     implementation("androidx.media3:media3-exoplayer:1.8.0")
-    implementation("androidx.media3:media3-exoplayer-hls:1.8.0")
+    implementation(files(patchedHls).builtBy(patchHls))
     implementation("androidx.media3:media3-exoplayer-dash:1.8.0")
     // Decodificador de AUDIO por FFmpeg (DTS, DTS-HD, TrueHD, E-AC-3...) para
     // quando a TV nao tem o decodificador nem passa o bitstream adiante: sem
@@ -148,5 +202,7 @@ dependencies {
     }
     implementation("androidx.core:core-ktx:1.13.1")
     testImplementation("junit:junit:4.13.2")
+    // Audio sync tests ported from NuvioTV-Reshaped use kotlin.test (on JUnit 4).
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.0.21")
 }
 

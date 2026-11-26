@@ -345,7 +345,7 @@ Requirement: every configured preference returns after logout/login or reinstall
 | `AJ_LEG1_COR_BORDA` | `-legenda1CorBorda` | (d) outside ajustes.txt | player.txt; style already uploaded/restored in c_settings_v1 |
 | `AJ_LEG1_RESTAURAR` | `-legenda1Restaurar` | (d) external store or action | See inventory below; action/status rows have no persistent value |
 | `AJ_LEG2_FONTE` | `legenda2FonteLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |
-| `AJ_LEG2_OPACIDADE` | `legenda2OpacidadeLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |
+| `AJ_LEG2_OPACIDADE` | `legenda2OpacidadePctLocal` (was `legenda2OpacidadeLocal`, 0..4, until 14/11/2026) | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |
 | `AJ_LEG2_POSICAO` | `legenda2PosicaoLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |
 | `AJ_LEG2_ATRASO` | `legenda2AtrasoLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |
 | `AJ_LEG2_NEGRITO` | `legenda2NegritoLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |

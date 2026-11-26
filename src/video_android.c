@@ -22,9 +22,18 @@
 // texto: o Kotlin entrega os cues (nativeLegenda) e o app desenha. Legenda
 // EXTERNA (OpenSubtitles/addon) nem passa por aqui: legenda.c baixa e desenha.
 //
-// TODO: ASS com libass (NV_ASS_LIBASS nao esta definido nesta fase, entao a
-// sonda MKV segue "nao ha sonda", como no .tpk); capitulos do MKV para
-// video_creditos; passthrough fino de AC3/EAC3 por AudioCapabilities.
+// ASS/SSA EMBUTIDA (NV_ASS_LIBASS, 25/11/2026): o mesmo motor do .tpk. A sonda
+// do cabecalho do MKV (sondaMkv, abaixo) da a cada legenda do Media3 o CodecID
+// e o ordinal do arquivo (faixasmkv_aplicar); faixas.c manda a ASS ao overlay
+// do app (o texto do Media3 fica desligado) e o mkvass colhe os eventos do
+// arquivo para o libass. SRT/WebVTT seguem pelos cues do Media3
+// (nativeLegenda). Relogio da legenda: cada nativePos e carimbado aqui
+// (video_pos_amostra) e, com o libass desenhando, o Kotlin le a posicao a cada
+// 40 ms (escolher(3, 1)). currentPosition vale tambem com tunneling, quando o
+// VideoFrameMetadataListener nao dispara (o mesmo cuidado do NuvioTV).
+//
+// TODO: capitulos do MKV para video_creditos; passthrough fino de AC3/EAC3
+// por AudioCapabilities.
 #ifdef NV_ANDROID
 #include "marco.h"
 #include "streams.h"
@@ -39,11 +48,18 @@
 #include "linguas.h"
 #include "audioescolha.h"
 #include "streamfitpassiva.h"
-#include "audsync.h"
+#include "legsync.h"
+#include "legenda.h"
+#include "addons.h"
+#include "rede.h"
+#include <stdlib.h>
 #include "cacheboost.h"
 #include "tex_cache.h"
 #include "velocidade.h"
 #include "redefit.h"
+#include "tbqueima.h"   // TorBox burn-in (owner 26/11/2026)
+#include "tbrelogio.h"
+#include "mkvass.h"
 #include <SDL2/SDL.h>
 #include <jni.h>
 #include <stdio.h>
@@ -52,6 +68,14 @@
 #include <limits.h>
 #include <stdint.h>
 #include <pthread.h>
+#include <time.h>
+#ifdef NV_ASS_LIBASS
+#include "mkv.h"
+#include "mkvass.h"
+#include "faixasmkv.h"
+#include "assrender.h"
+#include "video_dvretry.h"   // nv_url_e_mp4
+#endif
 
 // --- ponte JNI ---------------------------------------------------------------
 #define NV_CLASSE "space/nuvio/nativelegacy/NvPlayer"
@@ -74,6 +98,10 @@ static jmethodID mTitulo, mDescartar, mMorno, mQuadro;
 // #202 (opcional, como os de cima): velocidade(centesimos). Casca sem ele =
 // sem a linha da velocidade.
 static jmethodID mVelocidade;
+// Reserva por audio da sincronia de legenda (06/11, opcional): casca sem
+// estes metodos = plataforma sem audio (o plano so tem a faixa embutida).
+static jmethodID mAudioSyncArmar, mAudioSyncAssumir, mAudioSyncParar;
+static void ligarReservaAudio(void);
 
 static int resolverMetodos(JNIEnv *env) {
   mAbrir    = (*env)->GetStaticMethodID(env, gCls, "abrir", "(Ljava/lang/String;Ljava/lang/String;)V");
@@ -123,6 +151,14 @@ static int resolverMetodos(JNIEnv *env) {
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mAbrirPreparada = NULL; }
   mPararMantendoPreparo = (*env)->GetStaticMethodID(env, gCls, "pararMantendoPreparo", "(I)V");
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mPararMantendoPreparo = NULL; }
+  mAudioSyncArmar = (*env)->GetStaticMethodID(env, gCls, "audioSyncArmar", "(I)V");
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mAudioSyncArmar = NULL; }
+  mAudioSyncAssumir = (*env)->GetStaticMethodID(env, gCls, "audioSyncAssumir",
+                                                "(Ljava/lang/String;Ljava/lang/String;[J[J[Ljava/lang/String;)V");
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mAudioSyncAssumir = NULL; }
+  mAudioSyncParar = (*env)->GetStaticMethodID(env, gCls, "audioSyncParar", "()V");
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mAudioSyncParar = NULL; }
+  ligarReservaAudio();
   return mAbrir && mParar && mPausar && mBuscar && mVolume && mJanela && mEscolher;
 }
 
@@ -135,18 +171,12 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeIniciar(JNIE
   fflush(stdout);
 }
 
-// --- F06: PCM do audio tocando (AudioSyncTap.kt) -----------------------------
-// O tap so existe numa casca que o anuncia: o primeiro nativeAudioEstado
-// registra o backend. Casca antiga = plataforma sem PCM (o ajuste diz isso).
-static void ligarTap(int on);
+// --- formato na entrada do AudioSink (SaidaAudioSink.kt) ---------------------
+// 0 nenhum, 1 PCM, 2 bitstream (passthrough/offload). Ate 06/11 isto tambem
+// ligava a sincronia por audio em C (audsync.c, apagado); hoje so decide o
+// reforco de volume (F07): com bitstream o processador nao ve amostras.
 JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioEstado(JNIEnv *env, jclass cls, jint fmt) {
-  static int registrado;
   (void)env; (void)cls;
-  if (!registrado) { registrado = 1; audsync_backend(ligarTap); }
-  audsync_formato((int)fmt);
-  // F07: the same sink-input format decides the boost. AudioSyncTap FMT_*
-  // (0 none, 1 PCM, 2 bitstream) maps 1:1 to CB_GANHO_* (unknown, PCM,
-  // passthrough): with bitstream the gain processor never sees samples.
   { static int ultimoGanho = -1;
     int g = fmt == 1 ? CB_GANHO_PCM : fmt == 2 ? CB_GANHO_PASSTHROUGH : CB_GANHO_DESCONHECIDO;
     cacheboost_ganho_relato(g);
@@ -155,16 +185,6 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioEstado(
       fflush(stdout);
     }
     ultimoGanho = g; }
-}
-// Fio de reproducao do ExoPlayer. Copia para a pilha e entrega ao anel
-// limitado do audsync.c: nenhuma alocacao, nunca espera o analisador.
-JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioPcm(JNIEnv *env, jclass cls, jshortArray pcm, jint n, jlong ptsUs) {
-  jshort b[2048];
-  (void)cls;
-  if (!pcm || n <= 0 || n > (jint)(sizeof b / sizeof *b)) return;
-  (*env)->GetShortArrayRegion(env, pcm, 0, n, b);
-  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return; }
-  audsync_pcm((const int16_t *)b, (int)n, (int64_t)ptsUs);
 }
 
 // Plano B se o Kotlin nao chamou nativeIniciar antes do primeiro uso (lib
@@ -323,12 +343,212 @@ void video_precarregar_cancelar(unsigned token) {
 }
 void video_precarregar_adotar(unsigned token) { preparoAdotar = token <= INT_MAX ? token : 0; }
 
-// escolher(3, on): liga/desliga o tap no Kotlin (so posta ao fio principal).
-static void ligarTap(int on) {
+// --- RESERVA POR AUDIO DA SINCRONIA DE LEGENDA (06/11; legsync.h) -----------
+// A sincronia por audio do NuvioTV-Reshaped mora na casca (ReservaAudio.kt).
+// legsync chama estas tres no fio do player, fora do proprio lock; o Kotlin so
+// posta ao fio principal. As falas da legenda vao prontas: o C ja baixou e leu.
+static void raArmar(int dadosMoveis) {
   JNIEnv *env = ambiente();
-  if (!env) return;
-  (*env)->CallStaticVoidMethod(env, gCls, mEscolher, (jint)3, (jint)(on ? 1 : 0));
+  if (!env || !mAudioSyncArmar) return;
+  (*env)->CallStaticVoidMethod(env, gCls, mAudioSyncArmar, (jint)(dadosMoveis ? 1 : 0));
   fimChamada(env);
+}
+
+// UTF-8 longo -> jstring (paraJString tem teto de URL).
+static jstring jstringLongo(JNIEnv *env, const char *s) {
+  size_t n = s ? strlen(s) : 0, k = 0;
+  jchar *buf = malloc((n + 1) * sizeof *buf);
+  const unsigned char *p = (const unsigned char *)(s ? s : "");
+  jstring r;
+  if (!buf) return NULL;
+  while (*p) {
+    unsigned c = *p++, extra = 0;
+    if (c >= 0xF0) { c &= 0x07; extra = 3; }
+    else if (c >= 0xE0) { c &= 0x0F; extra = 2; }
+    else if (c >= 0xC0) { c &= 0x1F; extra = 1; }
+    else if (c >= 0x80) c = 0xFFFD;
+    while (extra-- && (*p & 0xC0) == 0x80) c = (c << 6) | (*p++ & 0x3F);
+    if (c >= 0x10000) { c -= 0x10000; buf[k++] = (jchar)(0xD800 + (c >> 10)); buf[k++] = (jchar)(0xDC00 + (c & 0x3FF)); }
+    else buf[k++] = (jchar)c;
+  }
+  r = (*env)->NewString(env, buf, (jsize)k);
+  free(buf);
+  return r;
+}
+
+static void raAssumir(const char *chave, const char *idioma, const LegendaDocumento *doc) {
+  JNIEnv *env = ambiente();
+  const LegendaCue *v;
+  int n = 0, i;
+  jlongArray ini = NULL, fim = NULL;
+  jobjectArray txt = NULL;
+  jclass cStr;
+  jstring jc = NULL, ji = NULL;
+  if (!env || !mAudioSyncAssumir || !doc) return;
+  v = legenda_documento_dados(doc, &n);
+  if (n < 0) n = 0;
+  cStr = (*env)->FindClass(env, "java/lang/String");
+  ini = (*env)->NewLongArray(env, n);
+  fim = (*env)->NewLongArray(env, n);
+  txt = cStr ? (*env)->NewObjectArray(env, n, cStr, NULL) : NULL;
+  jc = jstringLongo(env, chave); ji = paraJString(env, idioma ? idioma : "");
+  if (ini && fim && txt && jc && ji) {
+    jlong *a = malloc((size_t)(n ? n : 1) * sizeof *a), *b = malloc((size_t)(n ? n : 1) * sizeof *b);
+    if (a && b) {
+      for (i = 0; i < n; i++) {
+        jstring t = jstringLongo(env, v[i].texto);
+        a[i] = (jlong)llround(v[i].inicio * 1000.0); b[i] = (jlong)llround(v[i].fim * 1000.0);
+        if (t) { (*env)->SetObjectArrayElement(env, txt, i, t); (*env)->DeleteLocalRef(env, t); }
+      }
+      (*env)->SetLongArrayRegion(env, ini, 0, n, a);
+      (*env)->SetLongArrayRegion(env, fim, 0, n, b);
+      (*env)->CallStaticVoidMethod(env, gCls, mAudioSyncAssumir, jc, ji, ini, fim, txt);
+    }
+    free(a); free(b);
+  }
+  fimChamada(env);
+  if (jc) (*env)->DeleteLocalRef(env, jc);
+  if (ji) (*env)->DeleteLocalRef(env, ji);
+  if (ini) (*env)->DeleteLocalRef(env, ini);
+  if (fim) (*env)->DeleteLocalRef(env, fim);
+  if (txt) (*env)->DeleteLocalRef(env, txt);
+  if (cStr) (*env)->DeleteLocalRef(env, cStr);
+}
+
+static void raParar(void) {
+  JNIEnv *env = ambiente();
+  if (!env || !mAudioSyncParar) return;
+  (*env)->CallStaticVoidMethod(env, gCls, mAudioSyncParar);
+  fimChamada(env);
+}
+
+static const LegSyncAudio reservaAudio = { raArmar, raAssumir, raParar };
+static void ligarReservaAudio(void) {
+  legsync_audio_backend(mAudioSyncArmar && mAudioSyncAssumir && mAudioSyncParar ? &reservaAudio : NULL);
+}
+
+// Do Kotlin (fio principal, a cada mudanca do mapa).
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncModelo(JNIEnv *env, jclass cls,
+    jstring chave, jlongArray de, jdoubleArray escala, jdoubleArray desloc, jboolean estimado) {
+  char k[1024];
+  LegSyncAudioTrecho t[LEGSYNC_AUDIO_TRECHOS];
+  jsize n, i;
+  (void)cls;
+  deJString(env, chave, k, sizeof k);
+  n = de ? (*env)->GetArrayLength(env, de) : 0;
+  if (escala && (*env)->GetArrayLength(env, escala) < n) n = (*env)->GetArrayLength(env, escala);
+  if (desloc && (*env)->GetArrayLength(env, desloc) < n) n = (*env)->GetArrayLength(env, desloc);
+  if (!escala || !desloc) n = 0;
+  if (n > LEGSYNC_AUDIO_TRECHOS) n = LEGSYNC_AUDIO_TRECHOS;
+  for (i = 0; i < n; i++) {
+    jlong d; jdouble e, s;
+    (*env)->GetLongArrayRegion(env, de, i, 1, &d);
+    (*env)->GetDoubleArrayRegion(env, escala, i, 1, &e);
+    (*env)->GetDoubleArrayRegion(env, desloc, i, 1, &s);
+    t[i].deMs = (long long)d; t[i].escala = (double)e; t[i].deslocMs = (double)s;
+  }
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return; }
+  legsync_audio_modelo(k, t, (int)n, estimado ? 1 : 0);
+}
+
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncFalhou(JNIEnv *env, jclass cls,
+    jstring chave, jstring motivo) {
+  char k[1024], m[128];
+  (void)cls;
+  deJString(env, chave, k, sizeof k); deJString(env, motivo, m, sizeof m);
+  legsync_audio_falhou(k, m);
+}
+
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncTrocar(JNIEnv *env, jclass cls,
+    jstring chave, jstring url) {
+  char k[1024], u[1024];
+  (void)cls;
+  deJString(env, chave, k, sizeof k); deJString(env, url, u, sizeof u);
+  legsync_audio_trocar(k, u);
+}
+
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncLog(JNIEnv *env, jclass cls, jstring texto) {
+  char t[512];
+  (void)cls;
+  deJString(env, texto, t, sizeof t);
+  printf("%s\n", t);
+  fflush(stdout);
+}
+
+// Separadores das listas que voltam ao Kotlin (ReservaAudio.kt): registro
+// 0x1E, campo 0x1F; tirados do texto, que nunca os tem de proposito.
+static void raJuntar(char **buf, size_t *n, size_t *cap, const char *s, int limpar) {
+  size_t k = strlen(s ? s : "");
+  if (*n + k + 2 > *cap) {
+    size_t novo = (*cap ? *cap * 2 : 4096); char *b;
+    while (novo < *n + k + 2) novo *= 2;
+    b = realloc(*buf, novo);
+    if (!b) return;
+    *buf = b; *cap = novo;
+  }
+  for (size_t i = 0; i < k; i++) {
+    char c = s[i];
+    if (limpar && (c == 0x1E || c == 0x1F)) c = ' ';
+    (*buf)[(*n)++] = c;
+  }
+  (*buf)[*n] = 0;
+}
+
+// As legendas dos add-ons desta sessao (candidatas da troca): url, idioma, nome.
+JNIEXPORT jstring JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncCandidatas(JNIEnv *env, jclass cls) {
+  Legenda *v = malloc(sizeof *v * LEG_MAX);
+  char *buf = NULL; size_t n = 0, cap = 0;
+  int nv, i;
+  jstring r;
+  (void)cls;
+  if (!v) return NULL;
+  nv = addons_legendas_copiar(v, LEG_MAX, NULL, NULL);
+  for (i = 0; i < nv; i++) {
+    if (!v[i].url[0]) continue;
+    if (n) raJuntar(&buf, &n, &cap, "\x1e", 0);
+    raJuntar(&buf, &n, &cap, v[i].url, 1); raJuntar(&buf, &n, &cap, "\x1f", 0);
+    raJuntar(&buf, &n, &cap, legenda_idioma(v[i].idioma, v[i].arquivo), 1); raJuntar(&buf, &n, &cap, "\x1f", 0);
+    raJuntar(&buf, &n, &cap, v[i].provedor[0] ? v[i].provedor : v[i].rotulo, 1);
+  }
+  free(v);
+  r = jstringLongo(env, buf ? buf : "");
+  free(buf);
+  return r;
+}
+
+// Baixa e le uma legenda pelo caminho de sempre (rede, charset, SRT/ASS/VTT):
+// "inicioMs 0x1F fimMs 0x1F texto" por registro. Bloqueante: so dos fios do
+// controlador Kotlin, nunca do principal.
+JNIEXPORT jstring JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncFalas(JNIEnv *env, jclass cls, jstring url) {
+  char u[1024], num[48];
+  long nb = 0;
+  char *bruto, *buf = NULL; size_t n = 0, cap = 0;
+  LegendaDocumentoInfo info;
+  LegendaDocumento *doc;
+  const LegendaCue *v;
+  int nc = 0, i;
+  jstring r;
+  (void)cls;
+  deJString(env, url, u, sizeof u);
+  if (!u[0]) return NULL;
+  bruto = rede_baixar_bin(u, 20, &nb);
+  if (!bruto) return NULL;
+  memset(&info, 0, sizeof info);
+  info.flags = LEGENDA_DOC_COMPLETO;
+  doc = legenda_documento_bytes(bruto, nb, &info);
+  free(bruto);
+  if (!doc) return NULL;
+  v = legenda_documento_dados(doc, &nc);
+  for (i = 0; i < nc; i++) {
+    if (n) raJuntar(&buf, &n, &cap, "\x1e", 0);
+    snprintf(num, sizeof num, "%lld\x1f%lld\x1f", (long long)llround(v[i].inicio * 1000.0), (long long)llround(v[i].fim * 1000.0));
+    raJuntar(&buf, &n, &cap, num, 0);
+    raJuntar(&buf, &n, &cap, v[i].texto, 1);
+  }
+  legenda_documento_liberar(doc);
+  r = buf ? jstringLongo(env, buf) : NULL;
+  free(buf);
+  return r;
 }
 
 // --- estado ------------------------------------------------------------------
@@ -379,6 +599,7 @@ static int bufferPreset, bufferEnviado;
 // unknown), sent sticky to Kotlin for the buffer size; last seek/track switch
 // so their BUFFERING is not counted as a rebuffer. State under travaStats.
 static int redeKbps, kbpsEnviado = -1;
+static int fonteKbpsSessao; // pinned at source open, retained across reconnects
 static volatile Uint32 acaoMs;
 static int cacheArmado = -1, cacheSessao, cacheEnviado, playerSessao;
 // Warm resume (#492): id of the title the player armed for the next open, the
@@ -400,6 +621,9 @@ static int reconBuscarMs = -1;
 static int reconPausado;
 static int recarregarPausa = -1, recarregarPosMs;
 static char erroTxt[64];
+// TorBox burn-in reopen landing (tbq_host_reabrir): the point video_pos holds
+// until the new player plays (-1 none).
+static double tbqSegura = -1;
 
 // Media3 I/O failures, including HTTP rejection and premature EOF. Recovery
 // is bounded; the app can renew the addon URL after reopening fails.
@@ -426,6 +650,41 @@ static void escolherAudioPreferido(void) {
   if (k < 0 || k == audioAtual) return;
   printf("[video] audio pela ordem (%s): %s (faixa %d de %d)\n", audioesc_origem_nome(o), faixaAudio[k].rotulo, k + 1, nAudio);
   video_escolher_audio(k);
+}
+
+// SONDA DO MKV (so com libass). mkvEstado: 0 nada a fazer, 1 procurando, 2 fio
+// na rede, 3 lido (ou desistiu). faixasNovas = o cabecalho ainda nao foi
+// aplicado a lista do Media3 (video_bombear aplica). travaFaixasMkv: a lista
+// e escrita pelo fio do Kotlin (nativeFaixasFim) e pelo fio do app (aplicar).
+#ifdef NV_ASS_LIBASS
+static MkvFaixa mkvFx[MKV_MAX_FAIXAS];
+static volatile int mkvN, mkvEstado, faixasNovas, mkvSondarJa, mkvNaoMkv;
+static volatile unsigned mkvGeracao;
+static Uint32 mkvOlhou;
+static pthread_mutex_t travaFaixasMkv = PTHREAD_MUTEX_INITIALIZER;
+static void sondaZerar(const char *u, int limitada);
+#endif
+// RELOGIO DA LEGENDA (video_pos_amostra): a posicao de cada nativePos com a
+// hora (CLOCK_MONOTONIC, s) em que chegou. A chamada JNI e sincrona com a
+// leitura do currentPosition no Kotlin: a incerteza e de microssegundos.
+static pthread_mutex_t travaAmostra = PTHREAD_MUTEX_INITIALIZER;
+static struct { double pos, carimbo; unsigned seq; int valido; } amostra;
+static unsigned amostraSeq;
+static struct { int n; } leituras;   // nativePos/nativeRelogio desde o ultimo [ass] 10s
+static double monoAgora(void) {
+  struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec + ts.tv_nsec / 1e9;
+}
+static void amostraZerar(void) {
+  pthread_mutex_lock(&travaAmostra); amostra.valido = 0; pthread_mutex_unlock(&travaAmostra);
+}
+static void amostraGuardar(int ms) {
+  double agora = monoAgora();
+  pthread_mutex_lock(&travaAmostra);
+  amostra.pos = ms / 1000.0; amostra.carimbo = agora; amostra.valido = 1;
+  amostra.seq = ++amostraSeq ? amostraSeq : ++amostraSeq;
+  leituras.n++;
+  pthread_mutex_unlock(&travaAmostra);
 }
 
 // --- natives (Kotlin -> C) ----------------------------------------------------
@@ -485,17 +744,26 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeFaixasFim(JN
   // ja escolheu fica.
   int releitura = (nAudio || nLeg) && !nNovasL && nLeg;
   (void)env; (void)cls; (void)selLeg;
-  memcpy(faixaAudio, novasA, sizeof novasA);
+  memcpy(faixaAudio, novasA, (size_t)nNovasA * sizeof *novasA);   // so as preenchidas
   audioAtual = selAudio >= 0 ? selAudio : 0;
   if (!releitura) {
-    memcpy(faixaLeg, novasL, sizeof novasL);
+#ifdef NV_ASS_LIBASS
+    pthread_mutex_lock(&travaFaixasMkv);
+#endif
+    memcpy(faixaLeg, novasL, (size_t)nNovasL * sizeof *novasL);
     legAtual = -1;   // o Kotlin sobe com legenda desligada; quem liga e o app (faixas.c)
     nLeg = nNovasL;
+#ifdef NV_ASS_LIBASS
+    faixasNovas = 1;   // video_bombear reaplica o cabecalho do MKV, se ja lido
+    pthread_mutex_unlock(&travaFaixasMkv);
+#endif
   }
   nAudio = nNovasA;
   nNovasA = nNovasL = 0;
   printf("[video] faixas: %d audio, %d legenda\n", nAudio, nLeg);
   fflush(stdout);
+  // TorBox's burned stream: the menus keep the file's tracks (tbqueima.h).
+  if (tbq_ativo()) { reconFaixasPend = 0; return; }
   // Recarregar de reconexao: devolve as faixas que a pessoa tinha.
   if (reconFaixasPend) {
     if (!releitura && reconLeg >= -1 && reconLeg < nLeg) video_escolher_legenda(reconLeg);
@@ -531,6 +799,7 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativePos(JNIEnv *
     /* Media3 TIME_UNSET is not a playback position. */
     int conhecida = ms > (jlong)(INT64_MIN + 1);
     posMs = posNativoMs = !conhecida || ms < 0 ? 0 : ms > INT_MAX ? INT_MAX : (int)ms;
+    if (conhecida && !live) amostraGuardar(posNativoMs);
     liveProgressoValido = live && conhecida;
     livePosMs = conhecida ? ms : 0;
     liveBufferValido = liveProgressoValido && fimMs > (jlong)(INT64_MIN + 1) && fimMs >= ms;
@@ -538,6 +807,19 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativePos(JNIEnv *
     /* Sample allocator only: excludes decoder, textures and retained free blocks. */
     sampleBytes = memoria >= 0 ? memoria : -1;
     if (sampleBytes > samplePeakBytes) samplePeakBytes = sampleBytes;
+  }
+  pthread_mutex_unlock(&travaRetomada);
+}
+
+// Relogio rapido da legenda (40 ms, so com o libass desenhando; ligado por
+// escolher(3, 1) em video_bombear): so a posicao, sem o resto do tique.
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeRelogio(JNIEnv *env, jclass cls,
+    jlong ms, jint geracao) {
+  (void)env; (void)cls;
+  pthread_mutex_lock(&travaRetomada);
+  if (ativo && !liveProgressoValido && (unsigned)geracao == sessao && ms >= 0 && ms <= INT_MAX) {
+    posMs = posNativoMs = (int)ms;
+    amostraGuardar(posNativoMs);
   }
   pthread_mutex_unlock(&travaRetomada);
 }
@@ -702,9 +984,20 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeCache(JNIEnv
   }
 }
 
+JNIEXPORT jboolean JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeStereoDownmix(JNIEnv *env, jclass cls) {
+  (void)env; (void)cls;
+  return ajustes_android_estereo();
+}
+
 JNIEXPORT jboolean JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeTunneling(JNIEnv *env, jclass cls) {
   (void)env; (void)cls;
   return ajustes_tunneling();
+}
+
+// Match frame rate: 0 Always (window display mode), 1 Only if seamless, 2 Off.
+JNIEXPORT jint JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeFrameRateMatch(JNIEnv *env, jclass cls) {
+  (void)env; (void)cls;
+  return ajustes_quadros_taxa();
 }
 
 JNIEXPORT jint JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeLimitedStatus(JNIEnv *env, jclass cls) {
@@ -780,6 +1073,9 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(JNIEn
 int  video_iniciar(void) {
   JNIEnv *env;
   if (!travaLeg) travaLeg = SDL_CreateMutex();
+  // PGS (owner 25/11/2026): Media3 hands bitmap cues that nativeLegenda never
+  // reads; the app decodes and draws them (imgsub), as on the .tpk and LG.
+  mkvass_aceitar_imagem(1);
   env = (JNIEnv *)SDL_AndroidGetJNIEnv();
   return env && garantirPonte(env);
 }
@@ -799,7 +1095,7 @@ static int abrirSessao(int inicioMs, int fracao) {
   hdrAtual = "none"; dvAtual = atmosAtual = 0;
   pthread_mutex_lock(&travaStats); statsValido = 0;
   redeMbps = -1; redeMinMs = redeMaxMs = redeMaxMb = -1;
-  memset(&redeFit, 0, sizeof redeFit); redeKbps = playerSessao ? stream_kbps_atual() : 0;
+  memset(&redeFit, 0, sizeof redeFit); redeKbps = playerSessao ? fonteKbpsSessao : 0;
   pthread_mutex_unlock(&travaStats);
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; legAte = 0;
   nNovasA = nNovasL = 0;
@@ -837,8 +1133,11 @@ static int abrirSessao(int inicioMs, int fracao) {
     }
   }
   {
-    jstring u = paraJString(env, nv_media_url(urlAtual));
-    jstring c = u && !(*env)->ExceptionCheck(env) ? paraJString(env, cabecalhos) : NULL;
+    // TorBox burn-in (tbqueima.h): the player reads TorBox's playlist (its
+    // token is in the URL, no add-on headers); urlAtual stays the original.
+    const char *tbu = tbq_url_player();
+    jstring u = paraJString(env, tbu ? tbu : nv_media_url(urlAtual));
+    jstring c = u && !(*env)->ExceptionCheck(env) ? paraJString(env, tbu ? "" : cabecalhos) : NULL;
     if (!u || !c) {
       if (u) (*env)->DeleteLocalRef(env, u);
       if (c) (*env)->DeleteLocalRef(env, c);
@@ -919,7 +1218,12 @@ int video_tocar_retomada(const char *u, double segundos, double pct) {
   // Centesimos de ponto percentual; segundos exatos vencem (abrirPosicao).
   int fracao = !inicioMs && isfinite(pct) && pct > 0.0 && pct < 100.0
     ? (int)(pct * 100.0 + 0.5) : 0;
+  tbq_tocar(); tbqSegura = -1;
   snprintf(urlAtual, sizeof urlAtual, "%s", u ? u : "");
+#ifdef NV_ASS_LIBASS
+  sondaZerar(urlAtual, limited);
+#endif
+  amostraZerar();
   nv_recon_zerar(&recon);
   reconPermitida = reconProxima; reconProxima = 0;
   // Canal ao vivo (player.c: !ehCanal()) ou Xtream limitado: sem leitura
@@ -930,6 +1234,12 @@ int video_tocar_retomada(const char *u, double segundos, double pct) {
   reconAudio = reconLeg = -1; reconFaixasPend = 0; reconBuscarMs = -1; reconPausado = 0;
   recarregarPausa = -1;
   playerSessao = cacheArmado >= 0;
+  // Saved-link resume intentionally has no sheet index. Use its URL-scoped
+  // source metadata rather than treating that real source as unknown bitrate.
+  // Pin this value for reconnects: a background source refresh can replace the
+  // sheet list while the same playback session is still using this URL.
+  const Stream *fonte = stream_fonte_reproducao(urlAtual, cabecalhos);
+  fonteKbpsSessao = playerSessao ? stream_kbps(fonte) : 0;
   cacheSessao = cacheArmado > 0 ? cacheArmado : 0;
   cacheArmado = -1;
   snprintf(tituloSessao, sizeof tituloSessao, "%s", playerSessao ? tituloArmado : "");
@@ -978,9 +1288,147 @@ int  video_reconectando(void) {
   return nv_recon_ativa(&recon) && (recon.pendente || !prontoLoad) ? recon.tentativa : 0;
 }
 
+// TorBox burn-in (tbqueima.h): the player reopens at `alvo` on TorBox's
+// playlist (burned) or the original; `audio` = the file track to pick there.
+void tbq_host_reabrir(double alvo, int audio) {
+  int ms = isfinite(alvo) && alvo > 1.0 && alvo <= INT_MAX / 1000.0 ? (int)(alvo * 1000.0) : 0;
+  int pausado = pausaPedida;   // abrirSessao clears it: the new player pauses again
+  nv_recon_zerar(&recon);
+  reconErroPend = 0; reconBuscarMs = -1; recarregarPausa = -1;
+  reconAudio = audio; reconLeg = -1; reconFaixasPend = audio >= 0;
+  // The file's text tracks are the app's while burned (faixas.c FX_TEXTO_OVERLAY).
+  mkvass_aceitar_texto(tbq_ativo());
+  tbqSegura = alvo > 0 ? alvo : 0;
+  if (!ambiente() || !abrirSessao(ms, 0)) { tbqSegura = -1; reconErroCod = -1; reconErroPend = 1; return; }
+  if (pausado) video_pausar(1);
+}
+
+#ifdef NV_ASS_LIBASS
+typedef struct { char url[NV_MEDIA_URL_MAX]; unsigned geracao; } PedidoMkv;
+
+static void guardarMkv(const MkvFaixa *fx, int n) {
+  int i;
+  pthread_mutex_lock(&travaFaixasMkv);
+  memcpy(mkvFx, fx, (size_t)n * sizeof *fx);
+  mkvN = n;
+  faixasNovas = 1;
+  pthread_mutex_unlock(&travaFaixasMkv);
+  for (i = 0; i < n; i++)
+    if (fx[i].tipo == 17)   // legenda (MKV_LEG de faixasmkv.c)
+      printf("[mkv] faixa num=%d legenda codec=%s idioma=%s nome=%s forcada=%d\n", fx[i].numero, fx[i].codec,
+             fx[i].idioma[0] ? fx[i].idioma : "-", fx[i].nome[0] ? fx[i].nome : "-", fx[i].forcado);
+  fflush(stdout);
+}
+
+static void *fioMkv(void *arg) {
+  PedidoMkv *p = arg;
+  MkvFaixa *fx = calloc(MKV_MAX_FAIXAS, sizeof *fx);
+  int n;
+  rede_lateral(1);   // #385: leitura LATERAL ao video, como no .tpk
+  n = fx ? mkv_faixas(p->url, fx, MKV_MAX_FAIXAS) : 0;
+  if (p->geracao == mkvGeracao) {
+    printf("[mkv] sonda pela rede: %d faixa(s)\n", n);
+    fflush(stdout);
+    if (n > 0) guardarMkv(fx, n);
+    else mkvNaoMkv = 1;
+    mkvEstado = 3;
+  }
+  free(fx); free(p);
+  return NULL;
+}
+
+// Nova fonte: so VOD por http(s) que pode ser MKV. Ao vivo, HLS/DASH e .mp4
+// nao tem TrackEntry; Xtream limitado nao recebe conexao lateral.
+static void sondaZerar(const char *u, int limitada) {
+  const char *b = u ? u : "";
+  int pode = !limitada && (!strncmp(b, "http://", 7) || !strncmp(b, "https://", 8)) &&
+             !strstr(b, ".m3u8") && !strstr(b, ".mpd") && !nv_url_e_mp4(b);
+  mkvGeracao++;
+  pthread_mutex_lock(&travaFaixasMkv);
+  mkvN = 0; faixasNovas = 0;
+  pthread_mutex_unlock(&travaFaixasMkv);
+  mkvSondarJa = 0; mkvOlhou = 0;
+  mkvNaoMkv = !pode;
+  mkvEstado = pode ? 1 : 0;
+}
+
+// Como o sondaMkv do .tpk, sem a conversao: primeiro o trecho que a pre-busca
+// do mkvass ja trouxe (sem rede); senao um Range proprio com o video andando
+// (5 s), ou ja quando a folha de legendas pede.
+static void sondaMkv(double pos) {
+  Uint32 t = SDL_GetTicks();
+  if (!ativo) return;
+  if (mkvEstado == 1 && urlAtual[0] && t - mkvOlhou >= 500) {
+    unsigned char *cab = NULL; long cabN = 0;
+    mkvOlhou = t;
+    if (liveProgressoValido) { mkvNaoMkv = 1; mkvEstado = 3; return; }
+    if (mkvass_cabecalho(urlAtual, NULL, NULL) && mkvass_cabecalho(urlAtual, &cab, &cabN)) {
+      MkvFaixa *fx = calloc(MKV_MAX_FAIXAS, sizeof *fx);
+      int n = fx ? mkv_faixas_do_trecho(cab, cabN, fx, MKV_MAX_FAIXAS, NULL, 0, NULL) : 0;
+      printf("[mkv] sonda pelo trecho da pre-busca (%ld bytes, sem rede): %d faixa(s)\n", cabN, n);
+      fflush(stdout);
+      if (n > 0) { guardarMkv(fx, n); mkvEstado = 3; }
+      free(fx); free(cab);
+    }
+    if (mkvEstado == 1 && prontoLoad && (pos >= 5.0 || mkvSondarJa)) {
+      PedidoMkv *p = malloc(sizeof *p);
+      pthread_t fio;
+      mkvEstado = 3;
+      if (p) {
+        snprintf(p->url, sizeof p->url, "%s", urlAtual);
+        p->geracao = mkvGeracao;
+        mkvEstado = 2;
+        if (pthread_create(&fio, NULL, fioMkv, p) == 0) pthread_detach(fio);
+        else { free(p); mkvEstado = 3; }
+      }
+    }
+  }
+  if (faixasNovas && mkvN > 0 && nLeg > 0) {
+    int m;
+    pthread_mutex_lock(&travaFaixasMkv);
+    faixasNovas = 0;
+    // So as legendas: o rotulo do audio (codec e canais do Format) ja e o do Media3.
+    m = faixasmkv_aplicar(NULL, 0, faixaLeg, nLeg, mkvFx, mkvN);
+    pthread_mutex_unlock(&travaFaixasMkv);
+    { int i, ass = 0;
+      for (i = 0; i < nLeg; i++) if (faixasmkv_overlay(faixaLeg[i].codec, 0) && faixaLeg[i].ordinalMkv >= 0) ass++;
+      printf("[mkv] %d rotulo(s) de legenda vindos do cabecalho; %d ASS/SSA para o libass\n", m, ass); }
+    fflush(stdout);
+  }
+}
+
+// libass desenhando: o Kotlin le a posicao a cada 40 ms (escolher(3, 1)).
+static void relogioRapido(void) {
+  static int enviado = -1;
+  static unsigned sessaoEnviada;
+  int quer = ativo && prontoLoad && assrender_ativo();
+  if (sessaoEnviada != sessao) { sessaoEnviada = sessao; enviado = -1; }   // a corrida do Kotlin e por sessao
+  if (quer == enviado || !mEscolher) return;
+  {
+    JNIEnv *env = ambiente();
+    if (!env) return;
+    (*env)->CallStaticVoidMethod(env, gCls, mEscolher, (jint)3, (jint)quer);
+    fimChamada(env);
+  }
+  enviado = quer;
+  printf("[ass] relogio da legenda: %s\n", quer ? "40 ms (libass desenhando)" : "250 ms");
+  fflush(stdout);
+}
+#endif
+
 void video_bombear(void) {
   double pos = video_pos();
   int eraRecarga = recarregarPausa >= 0;
+  if (tbqSegura >= 0 && (!ativo || falhou || (prontoLoad && (tocando || posMs > 0)))) tbqSegura = -1;
+  { TbqVista v;
+    v.ativo = ativo && !falhou && !terminou; v.pronto = video_pronto(); v.tocando = tocando;
+    v.permitido = reconPermitida; v.trailer = !playerSessao || liveProgressoValido;
+    v.pos = pos; v.dur = video_duracao();
+    tbq_bombear(&v); }
+#ifdef NV_ASS_LIBASS
+  sondaMkv(pos);
+  relogioRapido();
+#endif
   if (recarregarPausa >= 0) {
     if (falhou || terminou || !ativo) recarregarPausa = -1;
     else if (prontoLoad && !reconErroPend && !recon.pendente) {
@@ -1020,6 +1468,8 @@ void video_bombear(void) {
     reconErroCod = 2002; reconErroPend = 1;
     snprintf(erroTxt, sizeof erroTxt, "2002 player error: stalled download");
   }
+  // An error (or stall) on TorBox's burned stream: back to the original.
+  if (reconErroPend && tbq_ativo()) { reconErroPend = 0; nv_recon_zerar(&recon); (void)tbq_erro_player(reconErroCod); }
   if (reconErroPend) {
     int antes = recon.tentativa;
     int rede = erroDeRede(reconErroCod);
@@ -1065,7 +1515,12 @@ void video_bombear(void) {
 }
 void video_parar(void) {
   novaRetomada(-1);
+  tbq_tocar(); tbqSegura = -1;
   capmkv_zerar();   // fio de capitulos em voo nao alimenta o proximo titulo
+#ifdef NV_ASS_LIBASS
+  sondaZerar("", 1);   // fio da sonda em voo ve a geracao mudada e descarta
+#endif
+  amostraZerar();
   nv_recon_zerar(&recon);
   reconErroPend = 0; reconErroVideo = 0; reconFaixasPend = 0; reconBuscarMs = -1; reconPausado = 0;
   recarregarPausa = -1;
@@ -1095,7 +1550,9 @@ int video_pausa_confirmada(void) {
 void video_volume(int pct) { kInt(mVolume, pct); }
 void video_buscar(double s) {
   posMs = (int)(s * 1000.0);   // a barra nao pode voltar enquanto o seek corre
+  amostraZerar();              // a leitura antes do seek nao e de onde o player vai
   acaoMs = SDL_GetTicks();
+  tbq_buscar(s);   // the subtitle clock on TorBox's burned stream
   kInt(mBuscar, posMs);
   terminou = 0;
 }
@@ -1170,6 +1627,7 @@ void video_escala_definir(int sw, int sh) { (void)sw; (void)sh; }
 
 const char *video_url_atual(void) { return urlAtual; }
 double video_pos(void) {
+  if (tbqSegura >= 0) return tbqSegura;   // a burn-in switch still landing
   // Reopening clears native position until READY; never publish zero as the
   // resume point to the source-renewal worker during that interval.
   return recon.tentativa && (!prontoLoad || reconBuscarMs >= 0 || recon.esgotou)
@@ -1241,18 +1699,49 @@ int video_erro_decoder_codigo(void) { return falhou && reconErroVideo ? reconErr
 // O Media3 nao da o sinal de decoder anunciado: valem os neutros do .tpk.
 int  video_decoder_anunciou(void) { return 1; }
 
-int  video_n_audio(void) { return nAudio; }
-int  video_n_legenda(void) { return nLeg; }
-const VideoFaixa *video_audio(int i) { return (i >= 0 && i < nAudio) ? &faixaAudio[i] : 0; }
-const VideoFaixa *video_legenda(int i) { return (i >= 0 && i < nLeg) ? &faixaLeg[i] : 0; }
-int  video_legenda_ordinal_mkv(int i) { return (i >= 0 && i < nLeg) ? faixaLeg[i].ordinalMkv : -1; }
+// While burned the menus are the file's tracks (tbqueima.h).
+int  video_n_audio(void) { return tbq_ativo() ? tbq_n_audio() : nAudio; }
+int  video_n_legenda(void) { return tbq_ativo() ? tbq_n_legenda() : nLeg; }
+const VideoFaixa *video_audio(int i) { if (tbq_ativo()) return tbq_audio(i); return (i >= 0 && i < nAudio) ? &faixaAudio[i] : 0; }
+const VideoFaixa *video_legenda(int i) { if (tbq_ativo()) return tbq_legenda(i); return (i >= 0 && i < nLeg) ? &faixaLeg[i] : 0; }
+int  video_legenda_ordinal_mkv(int i) { const VideoFaixa *f = video_legenda(i); return f ? f->ordinalMkv : -1; }
+#ifdef NV_ASS_LIBASS
+// Como o .tpk: 2 quando a fonte nao e MKV; 0 enquanto procura ou com o
+// cabecalho lido e ainda nao aplicado (proximo video_bombear).
+int  video_mkv_sondado(void) {
+  if (!urlAtual[0] || mkvNaoMkv) return 2;
+  if (mkvEstado == 1 || mkvEstado == 2) return 0;
+  if (faixasNovas && mkvN > 0 && nLeg > 0) return 0;
+  return 1;
+}
+void video_sondar_mkv_agora(void) { if (mkvEstado == 1) mkvSondarJa = 1; }
+#else
 // "Nao ha sonda": sem libass (NV_ASS_LIBASS) a sonda de MKV nao serve a nada.
-// TODO quando o libass entrar: sonda real, como video.c.
 int  video_mkv_sondado(void) { return 2; }
 void video_sondar_mkv_agora(void) {}
-int  video_audio_atual(void) { return audioAtual; }
-int  video_legenda_atual(void) { return legAtual; }
+#endif
+// Ver video.h (relogio da legenda). Incerteza: a chamada JNI e sincrona.
+int video_pos_amostra(double *pos, double *carimbo, double *incerteza, unsigned *seq) {
+  int ok;
+  if (!ativo || !prontoLoad) return 0;
+  pthread_mutex_lock(&travaAmostra);
+  ok = amostra.valido;
+  if (ok) { *pos = amostra.pos; *carimbo = amostra.carimbo; *incerteza = 0.002; *seq = amostra.seq; }
+  pthread_mutex_unlock(&travaAmostra);
+  return ok;
+}
+// Leituras para o "[ass] 10s tv" (assrender.c): quantas posicoes chegaram
+// desde a ultima chamada. Nao ha consulta lenta nem leitura descartada aqui.
+void video_ass_leituras(int *n, int *fora, long *somaMs, int *maxMs) {
+  pthread_mutex_lock(&travaAmostra);
+  *n = leituras.n; leituras.n = 0;
+  pthread_mutex_unlock(&travaAmostra);
+  *fora = 0; *somaMs = 0; *maxMs = 0;
+}
+int  video_audio_atual(void) { return tbq_ativo() ? tbq_audio_atual() : audioAtual; }
+int  video_legenda_atual(void) { return tbq_ativo() ? -1 : legAtual; }
 void video_escolher_audio(int i) {
+  if (tbq_escolher_audio(i) || tbq_ativo()) return;   // burned: another TorBox stream
   if (i < 0 || i >= nAudio) return;
   audioAtual = i;
   acaoMs = SDL_GetTicks();   // the switch rebuffers: not a network stall
@@ -1264,6 +1753,8 @@ void video_escolher_audio(int i) {
   }
 }
 void video_escolher_legenda(int i) {
+  // TorBox's burned stream has no subtitle tracks: nothing goes to the player.
+  if (tbq_ativo()) { legAtual = -1; return; }
   if (i >= nLeg) return;
   legAtual = i;
   if (travaLeg) { SDL_LockMutex(travaLeg); legTexto[0] = 0; legAte = 0; SDL_UnlockMutex(travaLeg); }

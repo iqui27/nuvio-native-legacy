@@ -14,6 +14,7 @@ typedef struct {
   uint64_t range_blocked_ns; /* Time the demux worker actually waits for ranges. */
 } DtsEngineMetrics;
 void dts_engine_metrics(DtsEngine *, DtsEngineMetrics *out);
+void dts_engine_ring(DtsEngine *, long long *ahead, long long *pos);
 /* Samsung remux readers: rings alive now and the most alive at once since the
  * last reset (count and bytes), for the per-playback memory line of the .tpk.
  * reset_peak sets the peak back to what is alive now. */

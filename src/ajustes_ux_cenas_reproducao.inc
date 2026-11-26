@@ -591,7 +591,11 @@ static void rPacoteRem(void) {   // um pacote sai e os outros fecham o espaco
 
 // --- som e video desta TV ---------------------------------------------------------------
 static void rDts(void) {   // DTS -> estereo (2 caixas) ou 5.1 (6 caixas); .tpk desligado: so a TV
+#ifdef NV_ANDROID
+  int s51 = valor[AJ_DTS_AC3] == 0, i;   // Android: 0 = Original (todos os canais), 1 = Estereo
+#else
   int s51 = valor[AJ_DTS_AC3] == 1, i;
+#endif
   float o = ajc_onda(1.2f);
   ajcSelo("DTS", 90, 26, 16, 0, 1);
   if (ajustes_dts_desligado()) {   // Off: no DTS/TrueHD conversion; the source reaches the TV player as is
@@ -602,7 +606,11 @@ static void rDts(void) {   // DTS -> estereo (2 caixas) ou 5.1 (6 caixas); .tpk 
     return;
   }
   ajc_icone("aj_chevron-right", 190, 43, 24, 0.7f);
+#ifdef NV_ANDROID
+  ajcSelo(s51 ? "5.1" : "2.0", 232, 26, 16, 1, 1);
+#else
   ajcSelo(s51 ? "5.1" : "AAC", 232, 26, 16, 1, 1);
+#endif
   ajc_tv(250, 110, 140, 78, 1);
   ajc_ret(256, 116, 128, 66, 6, 0.06f, 0.06f, 0.08f, 1);
   for (i = 0; i < (s51 ? 6 : 2); i++) {

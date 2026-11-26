@@ -155,6 +155,8 @@ void mkvass_preparo_cancelar(MkvassPreparo **preparo);
 
 // 0 = nenhuma pre-busca; 1 = correndo; 2 = acabou (pronta, desistiu ou nao
 // havia faixa ASS a colher). Apenas diagnostico; nao segura o video.
+// Subtitle reader's network use so far (bytes, requests in flight, requests): diagnostics.
+void mkvass_rede_uso(long long *bytes, int *emVoo, int *pedidos);
 int  mkvass_prebusca_fase(void);
 // Copia do INICIO do arquivo que a pre-busca leu (o mesmo trecho em que a
 // sonda do cabecalho procura Tracks), para a sonda de video.c nao pedir de
@@ -198,5 +200,24 @@ int  mkvass_ocupado(void);
 // inteira) os blocos que sairam do corpo continuam na conta, entao o numero
 // so cresce — e pode passar de `total` depois de varios seeks.
 void mkvass_estatisticas(long *pedidos, long *bytes, int *colhidos, int *total);
+
+// assperf "Read subs from local relay" (.tpk, mkvfix): o numero da faixa que a
+// colheita quer agora (0 = nenhuma ou chave desligada) e cada bloco dessa faixa
+// visto no fluxo que o mkvfix entrega ao player. `clPos`/`blkPos` sao posicoes
+// absolutas no arquivo, `clHdr` a largura do cabecalho do Cluster, `clTs` o
+// Timestamp dele; `b` e o elemento inteiro (BlockGroup ou SimpleBlock).
+int  mkvass_relay_faixa(void);
+void mkvass_relay_bloco(long long clPos, int clHdr, unsigned long clTs, int temTs,
+                        long long blkPos, const unsigned char *b, long n);
+// A block of a hidden ASS track with no harvest on it now (owner 23/11/2026):
+// kept (the newest 4 MB) so a track picked later starts with what the TV's
+// buffer already holds. _limpar: a new file.
+void mkvass_relay_antes(long long clPos, int clHdr, unsigned long clTs, int temTs,
+                        long long blkPos, const unsigned char *b, long n);
+void mkvass_relay_antes_limpar(void);
+
+// TorBox burn-in: the reader's connections in total (own read + prefetches)
+// while TorBox's stream plays; 0 = no cap. video_tpk.c sets it every frame.
+void mkvass_teto_conexoes(int n);
 
 #endif

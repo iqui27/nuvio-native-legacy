@@ -20,6 +20,9 @@ void faixas_reiniciar_preparada(void);
 #endif
 
 void faixas_abrir(void);
+// The main subtitle chosen again (TorBox burn-in switched On/Off in the
+// Subtitles menu): it burns in, or goes back to Nuvio's renderer.
+void faixas_legenda_reaplicar(void);
 // Abre com o foco JA na coluna pedida: 0 = audio, 1 = legenda. O player tem um
 // icone para cada, e abrir sempre no audio fazia os dois parecerem o mesmo
 // botao.

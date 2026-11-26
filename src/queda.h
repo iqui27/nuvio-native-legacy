@@ -49,4 +49,50 @@ int  queda_relatar(const char *arquivo);
 void queda_espelho(const char *arquivo);
 // O mesmo que queda_relatar, escrevendo em `saida` (ex.: open_memstream).
 int  queda_relatar_em(const char *arquivo, FILE *saida);
+// Modo encadeado: o tratador de SIGSEGV (e dos outros sinais) ainda e o
+// nosso? Outro sigaction depois do armar (biblioteca do host, player, runtime)
+// tirava o relato sem aviso (28/10). Trocado: loga quem trocou ("[queda]
+// signal N handler replaced (<quando>) by <modulo>+0x..", no maximo 8 linhas
+// por sessao), poe o nosso de volta por cima e passa a encadear para quem
+// entrou; se ele nos chamar de volta, a reentrada segue a cadeia original.
+// 1 = nada trocado (ou nao armado); 0 = rearmado. Fora do tratador.
+int  queda_conferir(const char *quando);
+// Todo quadro (.tpk): confere o SIGSEGV com UMA chamada de sistema (os outros
+// sinais a cada ~1 s) e rearma na hora se alguem trocou o nosso.
+void queda_vigiar(void);
+
+// MODO REGISTRO (.tpk): encadeado como acima, mas TODA falha vira um
+// registro, sem filtro: "tipo=net" (o pc caiu em codigo do .NET, que a
+// transforma em NullReferenceException) ou "tipo=nativo", com o tempo de
+// sessao (`sessaoMs` = SDL_GetTicks agora, a mesma base do "t=" do ultimo
+// sinal de vida). As 16 primeiras ficam no arquivo; dali em diante cada uma
+// sobrescreve `arquivo`.ult, entao a que matou o processo sempre fica
+// completa. Cada falha tambem poe "[queda] fault #n t=.. signal .. (.NET|
+// native) pc modulo+0x.." no log, na hora (no maximo 20 por sessao).
+// Apaga o que houver: chamar depois de queda_relatar_sessao.
+void queda_armar_registro(const char *arquivo, unsigned sessaoMs);
+// Na abertura seguinte: le e apaga os registros da sessao anterior. `caiu` =
+// ela nao se despediu, `caiuS` = o "t=" do ultimo sinal de vida (-1 sem).
+// Caiu: todas as falhas, a ULTIMA completa e marcada; as .NET anteriores numa
+// linha cada. Nao caiu: as nativas completas, as .NET numa linha (ate 10).
+// 1 = havia registro.
+int  queda_relatar_sessao(const char *arquivo, int caiu, long caiuS, FILE *saida);
+
+/* WORKER THREADS (.tpk relay, owner 23/11/2026). The previous session died in
+ * an "nv-relay" thread (the mkvfix local server) with no record: .NET's
+ * handler ran, ours left nothing. These give such a thread what the record
+ * needs:
+ *  - queda_fio_iniciar: at the start of the thread. Its own signal stack (64
+ *    KB, so a stack overflow there still reaches the handler) and a
+ *    breadcrumb slot. queda_fio_fim before the thread returns.
+ *  - queda_passo: what the thread is doing now (`passo` must be a string
+ *    literal; a/b any two numbers, e.g. a byte position and a size). The
+ *    crash record and the live "[queda] fault" line carry the last one.
+ *  - queda_vigiar_fio: queda_vigiar from that thread, at most every 100 ms,
+ *    so a handler that replaced ours is caught there too, not only once per
+ *    frame on the app thread. */
+void queda_fio_iniciar(void);
+void queda_fio_fim(void);
+void queda_passo(const char *passo, long long a, long long b);
+void queda_vigiar_fio(void);
 #endif

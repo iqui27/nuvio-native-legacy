@@ -1,6 +1,7 @@
 // Bootstrap: janela, contexto GL, loop e telemetria. Toda a UI vive nos modulos.
 #include "app_id.h"
 #include "arranque.h"
+#include "assrender.h"   // assrender_fios_ambiente (webOS, new subtitle engine)
 #include "swapint.h"
 #include "quadroc.h"
 #include "streams.h"
@@ -73,6 +74,7 @@
 #include "androidcache.h"
 #include "negcache.h"
 #include "p2pmotor.h"
+#include "telalag.h"   // every target: off the .tpk the calls are no-ops (telalag.c)
 #include <pthread.h>
 #include <stdatomic.h>
 #include <time.h>
@@ -91,6 +93,7 @@
 #include "desempenho.h"
 #include "atualizacao.h"
 #include "avisos.h"
+#include "queda.h"
 #include "passo.h"
 #include "seguro.h"
 #include "video.h"
@@ -1074,6 +1077,9 @@ int main(int argc, char **argv) {
   // lancamento (URL autenticada, tokens) naquele payload — iriam direto ao
   // registro da sessao. O sinal de ciclo chega pelo allowlist ja logado em
   // [ciclo] (nome/estado do evento de janela/app), sem payload nenhum.
+  // New subtitle engine (LG port, 25/11/2026): libass's event threads follow
+  // the CPUs this process may use. Set before any thread starts (assrender.h).
+  assrender_fios_ambiente();
 #endif
 
 #ifdef __EMSCRIPTEN__
@@ -1970,6 +1976,16 @@ int main(int argc, char **argv) {
           ponteiro_evento(&e, app_evento);
           quadroc_suspendeu(&quadroRel);   // suspendeu: o relogio para de valer
         }
+#ifdef NV_WEBOS
+        // SAIDA E VOLTA DO APP (player.c / video.c): so a janela escondida ou
+        // minimizada solta o video; foco perdido (barra da Home, menu da TV
+        // por cima) nao. Qualquer sinal de volta reabre.
+        if (e.window.event == SDL_WINDOWEVENT_HIDDEN) player_webos_janela(1, "window hidden");
+        else if (e.window.event == SDL_WINDOWEVENT_MINIMIZED) player_webos_janela(1, "window minimized");
+        else if (e.window.event == SDL_WINDOWEVENT_SHOWN) player_webos_janela(0, "window shown");
+        else if (e.window.event == SDL_WINDOWEVENT_RESTORED) player_webos_janela(0, "window restored");
+        else if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) player_webos_janela(0, "focus gained");
+#endif
 #ifdef NV_TOUCH_UI
         if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
             e.window.event == SDL_WINDOWEVENT_RESIZED) {
@@ -2022,6 +2038,14 @@ int main(int argc, char **argv) {
       }
       player_ciclo_evento(e.type);
       if (e.type == SDL_APP_DIDENTERFOREGROUND) { atualizacao_retomou(); quadroc_suspendeu(&quadroRel); }
+#ifdef NV_WEBOS
+      if (e.type == SDL_APP_WILLENTERBACKGROUND || e.type == SDL_APP_DIDENTERBACKGROUND)
+        player_webos_janela(1, "app to background");
+      else if (e.type == SDL_APP_DIDENTERFOREGROUND) player_webos_janela(0, "app to foreground");
+      // Reserva: o relaunch do webOS nem sempre vira evento de janela
+      // (atualizacao.c). Uma tecla com o video solto e o app de volta.
+      else if (e.type == SDL_KEYDOWN && !e.key.repeat) player_webos_janela(0, "key pressed");
+#endif
       // PONTEIRO (Magic Remote, issue #99): mouse, rodinha e os avisos 484/485
       // de cursor do webOS ficam la; o que ele traduz em tecla chega a
       // app_evento como se viesse do D-pad.
@@ -2227,6 +2251,10 @@ int main(int argc, char **argv) {
     Uint64 t0 = NV_T0();
     tex_upl_n = 0; tex_upl_bytes = 0;
     gputempo_quadro_inicio();   // the GPU clock brackets uploads + draw
+    telalag_quadro_inicio();    // .tpk: the GPU queue limit (Auto at 75 %)
+#ifdef NV_TPK
+    queda_vigiar();             // .tpk: our SIGSEGV handler stays on top (one syscall; queda.h)
+#endif
     NV_PASSO("tex_bombear");
     tex_bombear(3);
     fBomb = NV_DT(t0);
@@ -2352,6 +2380,7 @@ int main(int argc, char **argv) {
     capturaSeSolicitado();
     fAux = NV_DT(t0);
     gputempo_quadro_fim();
+    telalag_quadro_fim();
     t0 = NV_T0();
     int playerUi = player_ui_frame(player_aberto(), gfx_n_rect, gfx_n_outros);
     int playerClockUi = playerUi;

@@ -18,7 +18,10 @@
 #ifndef NV_MKV_H
 #define NV_MKV_H
 
-#define MKV_MAX_FAIXAS 64
+// 64 ate 17/11: o remux de Fight Club 4K do dono tem 145 faixas (137
+// legendas) e a legenda sueca de texto era a 93 — nunca entrava no menu.
+// So o que o arquivo tem e preenchido: o resto dos vetores nao e tocado.
+#define MKV_MAX_FAIXAS 192
 
 typedef struct {
   int  numero;        // TrackNumber (NAO e o `trackNum` da LG: ver mkv_casar_legendas)
@@ -41,6 +44,15 @@ typedef struct {
   long cpN;
   int  hvccNal62, bamN, nalTam, entradaInteira;
   unsigned long bamTipo;
+  // Video (25/10, subtitle correction per frame rate): DefaultDuration (ns per
+  // frame, 0 = not in the file) and Colour > TransferCharacteristics (16 PQ,
+  // 18 HLG; 0 = not stated).
+  unsigned long long quadroNs;
+  int  transferencia;
+  // Colour > MatrixCoefficients (1 BT.709, 5/6 BT.601, 9 BT.2020; 0 = not in
+  // the file, as 2 = unspecified) and Colour > Range (1 TV, 2 PC; 0 = not
+  // stated): the colour matrix of ASS subtitles (assrender.c, 16/11/2026).
+  int  matriz, faixaCor;
 } MkvFaixa;
 
 // O que a ultima sonda (mkv_faixas_e_caps / mkv_faixas_do_trecho) viu. Estado
@@ -112,6 +124,8 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
 #define MKV_CONT_OUTRO 5   // binario que nao e nenhum dos acima: tambem nao e Matroska
 int mkv_contentor(const unsigned char *p, long n);   // puro
 int mkv_ultimo_contentor(void);
+// Segment > Info > Duration (seconds) of the last header read; 0 = not in it.
+double mkv_ultima_duracao(void);
 // 1 quando o contentor lido encerra a pergunta "e MKV?" sem nova tentativa.
 int mkv_contentor_definitivo(int contentor);
 const char *mkv_contentor_nome(int contentor);

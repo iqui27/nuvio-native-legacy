@@ -53,6 +53,10 @@ int main(int argc, char **argv) {
 
   printf("[2] a sonda de verdade, pela rede local\n");
   ok(sonda(argv[1], "a.mkv") > 0 && mkv_ultimo_contentor() == MKV_CONT_MKV, "MKV real: faixas lidas, contentor MKV");
+  { double d = mkv_ultima_duracao();
+    printf("     (Info Duration %.3f s)\n", d);
+    ok(d > 0.9 && d < 1.2, "MKV real: Info Duration lida (o arquivo tem 1 s)"); }
+  ok(sonda(argv[1], "a.mp4") == 0 && mkv_ultima_duracao() == 0, "MP4: sem Duration de MKV");
   ok(sonda(argv[1], "a.mp4") == 0 && mkv_ultimo_contentor() == MKV_CONT_MP4, "MP4 real (ffmpeg): 0 faixas, contentor MP4");
   ok(sonda(argv[1], "a.ts") == 0 && mkv_ultimo_contentor() == MKV_CONT_TS, "MPEG-TS real (ffmpeg): 0 faixas, contentor TS");
   { char url[512]; MkvFaixa fx[4];

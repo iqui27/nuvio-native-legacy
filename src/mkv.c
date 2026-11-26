@@ -172,6 +172,12 @@ static void lerTexto(const unsigned char *p, long n, char *dst, size_t tam) {
 #define ID_FLAGHEARING 0x55ABUL      // FlagHearingImpaired: SDH (#287)
 #define ID_AUDIO       0xE1UL        // Audio (mestre dentro da TrackEntry)
 #define ID_CHANNELS    0x9FUL        // Audio > Channels
+#define ID_DEFAULTDUR  0x23E383UL    // TrackEntry > DefaultDuration (ns por quadro)
+#define ID_VIDEO       0xE0UL        // TrackEntry > Video
+#define ID_COLOUR      0x55B0UL      // Video > Colour
+#define ID_TRANSFER    0x55BAUL      // Colour > TransferCharacteristics
+#define ID_MATRIZ      0x55B1UL      // Colour > MatrixCoefficients
+#define ID_FAIXACOR    0x55B9UL      // Colour > Range
 #define ID_BLOCKADDMAP 0x41E4UL      // BlockAdditionMapping (Dolby Vision config)
 #define ID_BLOCKADDTYPE 0x41E7UL     // BlockAddIDType: 'dvcC' / 'dvvC'
 #define ID_BLOCKADDDATA 0x41EDUL     // BlockAddIDExtraData: the DOVI record
@@ -235,6 +241,37 @@ static int lerTracks(const unsigned char *p, long n, MkvFaixa *saida, int max) {
           else if (fid == ID_CODECID) lerTexto(v, ftam, f.codec, sizeof f.codec);
           else if (fid == ID_CODECPRIV) { f.cpN = ftam; lerHvcc(v, ftam, &f); }
           else if (fid == ID_FLAGFORCED) f.forcado = lerUint(v, ftam) != 0;
+          else if (fid == ID_DEFAULTDUR) f.quadroNs = (unsigned long long)lerUint(v, ftam);
+          // Video > Colour > TransferCharacteristics: PQ/HLG = HDR (correcao da legenda).
+          else if (fid == ID_VIDEO) {
+            long r = 0;
+            while (r < ftam) {
+              int ai = 0, at = 0;
+              unsigned long aid = lerId(v + r, ftam - r, &ai);
+              long atam;
+              if (!aid) break;
+              atam = lerTam(v + r + ai, ftam - r - ai, &at);
+              if (atam < 0 || r + ai + at + atam > ftam) break;
+              r += ai + at;
+              if (aid == ID_COLOUR) {
+                long c = 0;
+                while (c < atam) {
+                  int ci = 0, ct = 0;
+                  unsigned long cid = lerId(v + r + c, atam - c, &ci);
+                  long ctam;
+                  if (!cid) break;
+                  ctam = lerTam(v + r + c + ci, atam - c - ci, &ct);
+                  if (ctam < 0 || c + ci + ct + ctam > atam) break;
+                  c += ci + ct;
+                  if (cid == ID_TRANSFER) f.transferencia = (int)lerUint(v + r + c, ctam);
+                  else if (cid == ID_MATRIZ) f.matriz = (int)lerUint(v + r + c, ctam);
+                  else if (cid == ID_FAIXACOR) f.faixaCor = (int)lerUint(v + r + c, ctam);
+                  c += ctam;
+                }
+              }
+              r += atam;
+            }
+          }
           else if (fid == ID_FLAGHEARING) f.sdh = lerUint(v, ftam) != 0;
           // Channels mora um nivel abaixo, em Audio. O .tpk nao tem outra
           // fonte para "5.1" (o Tizen.Multimedia.Player so da o idioma, #206).
@@ -554,6 +591,60 @@ static int acharTracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
 }
 #endif  // NV_RUST_MKVCORE
 
+// Segment > Info > Duration (owner 14/11): TorBox lists every HLS segment as
+// 5 s, so its burned stream reports up to 5 s more than the file; video_tpk.c
+// uses the file's own length. Self-contained (the C and Rust cores alike).
+static double ultimaDuracao;
+double mkv_ultima_duracao(void) { return ultimaDuracao; }
+static int dVint(const unsigned char *p, long n, int tiraMarca, unsigned long long *v) {
+  int k = 1;
+  unsigned long long x;
+  if (n < 1 || !p[0]) return 0;
+  while (k <= 8 && !(p[0] & (0x80 >> (k - 1)))) k++;
+  if (k > 8 || k > n) return 0;
+  x = tiraMarca ? (p[0] & (0xFFu >> k)) : p[0];
+  for (int i = 1; i < k; i++) x = (x << 8) | p[i];
+  if (tiraMarca && x == (1ULL << (7 * k)) - 1) x = ~0ULL;   // unknown size
+  *v = x;
+  return k;
+}
+static void lerDuracao(const unsigned char *p, long n) {
+  long o = 0;
+  ultimaDuracao = 0;
+  while (o < n) {
+    unsigned long long id, tam;
+    int ki = dVint(p + o, n - o, 0, &id), kt;
+    if (!ki) return;
+    kt = dVint(p + o + ki, n - o - ki, 1, &tam);
+    if (!kt) return;
+    o += ki + kt;
+    if (id == 0x18538067ULL) continue;                      // Segment: inside
+    if (tam == ~0ULL || (unsigned long long)o + tam > (unsigned long long)n) return;
+    if (id == 0x1549A966ULL) {                              // Info
+      long q = o, fim = o + (long)tam;
+      double dur = 0;
+      unsigned long long escala = 1000000ULL;
+      while (q < fim) {
+        unsigned long long fid, ft, b = 0;
+        int a = dVint(p + q, fim - q, 0, &fid), c;
+        if (!a) break;
+        c = dVint(p + q + a, fim - q - a, 1, &ft);
+        if (!c || ft == ~0ULL || (unsigned long long)(q + a + c) + ft > (unsigned long long)fim) break;
+        q += a + c;
+        for (unsigned long long k = 0; k < ft && k < 8; k++) b = (b << 8) | p[q + (long)k];
+        if (fid == 0x2AD7B1ULL) escala = b;
+        else if (fid == 0x4489ULL && ft == 4) { unsigned v = (unsigned)b; float f; memcpy(&f, &v, 4); dur = f; }
+        else if (fid == 0x4489ULL && ft == 8) { double d; memcpy(&d, &b, 8); dur = d; }
+        q += (long)ft;
+      }
+      if (dur > 0 && escala > 0) ultimaDuracao = dur * (double)escala / 1e9;
+      return;
+    }
+    if (id == 0x1654AE6BULL || id == 0x1F43B675ULL) return;  // Tracks / Cluster: Info comes first
+    o += (long)tam;
+  }
+}
+
 // O capitulo dos creditos: primeiro pelo NOME, depois pela posicao.
 //
 // Pelo nome cobre os lancamentos que etiquetam ("End Credits", "Creditos",
@@ -768,10 +859,11 @@ int mkv_segmentos_palpite(const MkvCap *caps, int n, MkvSeg *out, int max) {
 #define MKV_CAP_TETO     (2L * 1024 * 1024)
 
 // #483: o mesmo para o TRACKS que o SeekHead aponta fora da janela (remux
-// remontado, Attachments grande na frente). Teto de 4 MB: o CodecPrivate de
-// um fansub leva o Tracks a ~100 KB; acima disso e arquivo esquisito.
+// remontado, Attachments grande na frente). O CodecPrivate de um fansub leva
+// o Tracks a ~100 KB, mas ha remuxes com 4.4 e 17.1 MB (Fate/strange Fake PMR,
+// log 9, 23/11/2026): teto 32 MB (era 4; dono: a RAM sobra, lido uma vez).
 #define MKV_TRK_PRIMEIRO (64L * 1024)
-#define MKV_TRK_TETO     (4L * 1024 * 1024)
+#define MKV_TRK_TETO     (32L * 1024 * 1024)
 
 static int tracksPorPosicao(const char *url, long long pos, MkvFaixa *saida, int max, int *status) {
   long n = 0, need;
@@ -1165,6 +1257,7 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
   int achou;
   ultimoContentor = MKV_CONT_NADA;
   if (!url || !url[0] || !saida || max < 1) return 0;
+  ultimaDuracao = 0;
   buf = rede_baixar_trecho(url, 20, 0, MKV_TRECHO - 1, &n);
   if (!buf) return 0;
   ultimoContentor = mkv_contentor((const unsigned char *)buf, n);
@@ -1175,6 +1268,7 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
     free(buf);
     return 0;
   }
+  lerDuracao((const unsigned char *)buf, n);
   achou = acharTracks((const unsigned char *)buf, n, saida, max,
                       caps, maxCaps, nCaps);
   diagTrecho((const unsigned char *)buf, n, saida, achou);
@@ -1208,8 +1302,10 @@ int mkv_faixas_do_trecho(const unsigned char *buf, long n, MkvFaixa *saida, int 
                          MkvCap *caps, int maxCaps, int *nCaps) {
   int achou;
   if (nCaps) *nCaps = 0;
+  ultimaDuracao = 0;
   if (!buf || n < 64 || !saida || max < 1 || buf[0] != 0x1A || buf[1] != 0x45 ||
       buf[2] != 0xDF || buf[3] != 0xA3) return 0;
+  lerDuracao(buf, n);
   achou = acharTracks(buf, n, saida, max, caps, maxCaps, nCaps);
   diagTrecho(buf, n, saida, achou);
   dtsTrecho(buf, n, saida, achou);

@@ -198,6 +198,26 @@ int main(int argc, char **argv) {
 
   { int n, semRel; LegRefPonto *p; unsigned char lixo[8] = { 0xBB, 0x84, 0xB3, 0x81, 0x01, 0xB7, 0x80, 0 };
     n = legref_cues(lixo, 7, 2, 1e-3, &p, &semRel); assert(n == 0); free(p); casos++; }
+
+  // 9. MODO SO INDICE (.tpk 6+): os mesmos arquivos, sem ler bloco nenhum.
+  //    SRT e ASS do mkvmerge (CueDuration em todo ponto): os tempos do arquivo,
+  //    nada estimado, ate 4 Ranges; o ASS antes custava um Range por fala.
+  legref_modo_indice(1);
+  { Leitor li; memset(&li, 0, sizeof li); pthread_mutex_init(&li.m, NULL);
+    LegRef *ri = legref_criar(lerArquivo, &li); assert(ri);
+    d = colher(ri, "ff.mkv", "en", NULL, 0, LEGREF_OK, &s); assert(d && s.faixa == 2 && s.pedidos <= 4);
+    assert(!(legenda_documento_info(d)->flags & LEGENDA_DOC_FIM_ESTIMADO));
+    conferirIgual(d, emb, 0, 1); legenda_documento_liberar(d); casos++;
+    d = colher(ri, "mm.mkv", "en", NULL, 0, LEGREF_OK, &s);
+    assert(d && s.faixa == 3 && !strcmp(s.codec, "S_TEXT/ASS") && s.pedidos <= 4);
+    printf("indice mm.mkv ASS: %d pedidos, %lld bytes, %d outra(s)\n", s.pedidos, s.bytes, s.alternativas);
+    assert(s.alternativas == 1);   // a portuguesa tambem serviria; o letreiro nao
+    conferirIgual(d, emb, 1, 1); legenda_documento_liberar(d); casos++;
+    assert(!colher(ri, "semcues.mkv", "en", NULL, 0, LEGREF_SEM_INDICE, NULL)); casos++;
+    assert(!colher(ri, "soforced.mkv", "en", NULL, 0, LEGREF_SEM_FAIXA, NULL)); casos++;
+    assert(!colher(ri, "video.mkv", "en", NULL, 0, LEGREF_SEM_FAIXA, NULL)); casos++;
+    legref_destruir(ri); pthread_mutex_destroy(&li.m); }
+  legref_modo_indice(0);
   legenda_documento_liberar(emb);
   printf("legref: %d casos ok\n", casos);
   return 0;

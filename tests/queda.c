@@ -9,12 +9,72 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <pthread.h>
+#include <sys/prctl.h>
 
 // Modo encadeado (Android): o tratador anterior (o debuggerd, no aparelho)
 // tem de rodar depois do relato, com o mesmo sinal.
 static void anterior(int sig, siginfo_t *si, void *ctx) { (void)si; (void)ctx; _exit(40 + sig % 10); }
 static int marcou;
 static void antesDeEncadear(void) { marcou = 1; if (write(2, "", 0) < 0) {} }
+
+/* WORKER THREAD (nv-relay, 23/11/2026): breadcrumb in the record, its own
+ * signal stack (a stack overflow still reaches the handler). */
+static volatile int fundo;
+static int recursar(int n) { volatile char b[1024]; b[0] = (char)n; fundo++; return recursar(n + 1) + b[0]; }
+static void *fioRelay(void *u) {
+  int estouro = u != NULL;
+  prctl(PR_SET_NAME, (unsigned long)"nv-relay", 0, 0, 0);
+  queda_fio_iniciar();
+  queda_passo(estouro ? "deep call" : "ralo: copy", 123, 7157914937LL);
+  if (estouro) recursar(0);
+  else { volatile int *nulo = (volatile int *)(long)0x24; *nulo = 1; }
+  queda_fio_fim();
+  return NULL;
+}
+static void testeFio(const char *arq, int estouro) {
+  char sai[300], tudo[16384] = "", *b;
+  int st = 0;
+  pid_t f;
+  snprintf(sai, sizeof sai, "%s.vivo", arq);
+  remove(arq); remove(sai);
+  f = fork();
+  if (f == 0) {
+    struct sigaction sa;
+    pthread_t t; pthread_attr_t at;
+    FILE *g = fopen(sai, "wb");
+    dup2(fileno(g), 1);
+    memset(&sa, 0, sizeof sa);
+    sa.sa_sigaction = anterior; sa.sa_flags = SA_SIGINFO; sigemptyset(&sa.sa_mask);
+    sigaction(SIGSEGV, &sa, NULL); sigaction(SIGBUS, &sa, NULL);
+    queda_armar_registro(arq, 0);
+    pthread_attr_init(&at); pthread_attr_setstacksize(&at, 256 * 1024);
+    pthread_create(&t, &at, fioRelay, estouro ? (void *)1 : NULL);
+    pthread_join(t, NULL);
+    _exit(0);
+  }
+  waitpid(f, &st, 0);
+  assert(WIFEXITED(st) && WEXITSTATUS(st) >= 40 && WEXITSTATUS(st) < 50);   // ours ran, then the previous one
+  { FILE *g = fopen(sai, "rb"); assert(g); fread(tudo, 1, sizeof tudo - 1, g); fclose(g); remove(sai); }
+  assert(strstr(tudo, "[queda] fault #1 caught: signal "));
+  assert(strstr(tudo, estouro ? " step deep call a=123 b=7157914937 fio=" : " step ralo: copy a=123 b=7157914937 fio="));
+  assert(strstr(tudo, "nv-relay\n"));
+  { FILE *g = fopen(arq, "rb"); size_t n; assert(g); b = calloc(1, 1 << 20); n = fread(b, 1, (1 << 20) - 1, g); fclose(g); b[n] = 0; }
+  assert(strstr(b, "registro n=1 "));
+  assert(strstr(b, estouro ? "\npasso=deep call a=123 b=7157914937\n" : "\npasso=ralo: copy a=123 b=7157914937\n"));
+  free(b);
+  { char out[300]; FILE *g; int fd, velho;
+    snprintf(out, sizeof out, "%s.out", arq);
+    fflush(stdout);
+    velho = dup(1); g = fopen(out, "wb"); fd = fileno(g); dup2(fd, 1);
+    assert(queda_relatar_sessao(arq, 1, 5, stdout));
+    fflush(stdout); dup2(velho, 1); close(velho); fclose(g);
+    memset(tudo, 0, sizeof tudo);
+    g = fopen(out, "rb"); fread(tudo, 1, sizeof tudo - 1, g); fclose(g); remove(out); }
+  assert(strstr(tudo, "previous session CRASHED"));
+  assert(strstr(tudo, "\"nv-relay\""));
+  assert(strstr(tudo, estouro ? "[queda] step deep call a=123 b=7157914937" : "[queda] step ralo: copy a=123 b=7157914937"));
+}
 
 int main(void) {
   char arq[256];
@@ -111,6 +171,8 @@ int main(void) {
     assert(strstr(tudo, "[queda] #00 libmain.so+0x124000"));
     assert(strstr(tudo, "[queda] #01 libstagefright.so+0x2000"));
     assert(strstr(tudo, "[queda] pilha libmain.so+0x124000")); }
+  testeFio(arq, 0);
+  testeFio(arq, 1);
   (void)marcou;
   puts("queda: relato gravado no sinal, traduzido para modulo+deslocamento e apagado; encadeado chama o tratador anterior");
   return 0;

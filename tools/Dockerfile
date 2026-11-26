@@ -15,7 +15,7 @@ ARG SDK_URL=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a3
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl file xz-utils \
-     autoconf automake libtool make gcc g++ meson ninja-build pkg-config python3 \
+     autoconf automake libtool make gcc g++ meson ninja-build pkg-config python3 patch \
   && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL "$SDK_URL" -o /tmp/sdk.tar.gz \
@@ -30,11 +30,15 @@ ENV NUVIO_SYSROOT=/opt/arm-webos-linux-gnueabi_sdk-buildroot/arm-webos-linux-gnu
 # O firmware nao fornece libass. O renderer completo e os seus componentes de
 # texto entram estaticos no prefixo da imagem e sao ligados pelo tools/arm.sh.
 ENV NUVIO_ASS_ROOT=/opt/nuvio-ass
+# libass = the .tpk's hybrid (mpvNova-libass + tools/tpk/libass-hybrid), for
+# the new subtitle engine (NV_ASS_NOVO in tools/arm.sh). Change the patch or
+# its cflags and this layer (only from here on) is rebuilt.
 COPY build-ass-arm.sh /tmp/build-ass-arm.sh
+COPY tpk/libass-hybrid/hybrid.patch tpk/libass-hybrid/cflags /tmp/libass-hybrid/
 RUN chmod +x /tmp/build-ass-arm.sh \
   && CC=arm-webos-linux-gnueabi-gcc NUVIO_SYSROOT="$NUVIO_SYSROOT" \
      NUVIO_ASS_ROOT="$NUVIO_ASS_ROOT" /tmp/build-ass-arm.sh \
-  && rm -f /tmp/build-ass-arm.sh
+  && rm -rf /tmp/build-ass-arm.sh /tmp/libass-hybrid
 
 # Local DTS conversion is part of the normal webOS build. Specialized images
 # can omit the dependency with --build-arg NUVIO_DTS_FFMPEG=0.

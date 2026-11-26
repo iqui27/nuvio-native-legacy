@@ -191,6 +191,9 @@ namespace NuvioTpk
         GLWindow gl;
 #if NV_API11
         GLView glView;
+        object GlViewOuNulo() { return glView; }
+#else
+        object GlViewOuNulo() { return null; }   // GLView so existe na API11 (Exibe.cs: premult)
 #endif
         volatile bool fim;
         NuiTimer vigia, prime;
@@ -235,7 +238,7 @@ namespace NuvioTpk
             // Rastro nunca derruba o arranque: sem esses eventos, o app segue.
             try
             {
-                janela.VisibilityChanged += (s, e) => { if (!e.Visibility) { try { nv_tpk_ciclo(0); } catch (EntryPointNotFoundException) { } } principalVisivel = e.Visibility; Etapa("note main-window visible=" + e.Visibility + Contagem()); Janela("principal visivel=" + e.Visibility, false); };
+                janela.VisibilityChanged += (s, e) => { if (!e.Visibility) { try { nv_tpk_ciclo(0); } catch (EntryPointNotFoundException) { } } principalVisivel = e.Visibility; Etapa("note main-window visible=" + e.Visibility + Contagem()); Janela("principal visivel=" + e.Visibility, false); if (e.Visibility) VoltarSePendente("main-window visible"); };
                 janela.FocusChanged += (s, e) => { Etapa("note main-window focus=" + e.FocusGained + Contagem()); if (e.FocusGained) SobeGlSePreciso("main-window focus"); };
             }
             catch (Exception e) { Etapa("note main-window events unavailable " + e.GetType().Name + ": " + e.Message); }
@@ -352,6 +355,9 @@ namespace NuvioTpk
             Etapa("begin apps-init");
             try { Apps.Registrar(a => { if (principal != null) principal.Post(_ => a(), null); else a(); }); } catch (Exception e) { Etapa("note apps-init " + e.GetType().Name); }
             Etapa("ok apps-init");
+            // Borda das legendas: premult do GLView so enquanto o libass desenha (Exibe.cs, src/tpkborda.c).
+            try { Exibe.Registrar(a => { if (principal != null) principal.Post(_ => a(), null); else a(); }, () => new object[] { NuiWindow.Instance, gl, GlViewOuNulo() }); }
+            catch (Exception e) { Etapa("note display-test-init " + e.GetType().Name); }
             NvCarga.LimparAntigos(dados);
             // Prova no log (#184): >0 = os DllImport passaram pelo resolvedor e
             // cairam na encenada; o "[atualizacao] instalada X" do C deve dizer
@@ -585,7 +591,7 @@ namespace NuvioTpk
             NuiWindow.Instance.KeyEvent += (s, e) => Tecla(e.Key, "main");
             try
             {
-                gl.VisibilityChanged += (s, e) => { if (!e.Visibility) { try { nv_tpk_ciclo(0); } catch (EntryPointNotFoundException) { } } glVisivel = e.Visibility; Etapa("note gl-window visible=" + e.Visibility + Contagem()); Janela("gl visivel=" + e.Visibility, false); };
+                gl.VisibilityChanged += (s, e) => { if (!e.Visibility) { try { nv_tpk_ciclo(0); } catch (EntryPointNotFoundException) { } } glVisivel = e.Visibility; Etapa("note gl-window visible=" + e.Visibility + Contagem()); Janela("gl visivel=" + e.Visibility, false); if (e.Visibility) VoltarSePendente("gl-window visible"); };
                 gl.FocusChanged += (s, e) => Etapa("note gl-window focus=" + e.FocusGained + Contagem());
             }
             catch (Exception e) { Etapa("note gl-window events unavailable " + e.GetType().Name + ": " + e.Message); }
@@ -622,6 +628,11 @@ namespace NuvioTpk
                 return true;
             };
             vigia.Start();
+            // Subtitle clock (owner 25/10): the TV position every 40 ms instead of
+            // every 250 ms (a reading costs ~1 ms), on its own thread (Video.cs):
+            // the main thread starved this timer on heavy signs. One query in
+            // flight, only while Playing, so this is idle otherwise.
+            video.IniciaRelogio(() => fim);
 
             AgendaPrime();
         }
@@ -1017,6 +1028,11 @@ namespace NuvioTpk
 #if !NV_TEXTO
             try { voz?.Cancelar(); } catch { }
 #endif
+            // #resume: o C sabe onde o player estava ANTES do ciclo e do Parar.
+            // (Segurar o player pausado no fundo foi tentado: a Home da Samsung
+            // toma o decodificador em < 1 s — logs 10/11 —, entao sempre para.)
+            voltaPendente = false;
+            video?.AvisarFundo();
             try { nv_tpk_ciclo(0); } catch (EntryPointNotFoundException) { }
             video?.PausarPeloSistema();
             base.OnPause();
@@ -1051,7 +1067,21 @@ namespace NuvioTpk
             pausado = false;
             Etapa("note resume" + Contagem() + " mainVisible=" + principalVisivel + (JanelaUnica ? " (glview)" : " glVisible=" + glVisivel));
             base.OnResume();
+            Voltar("resume");
         }
+
+        // #resume: o player parado no OnPause reabre so com o app NA TELA. Sem
+        // janela visivel (AppControl sem OnResume e sem janela, D1 15660), a
+        // volta espera o VisibilityChanged; o C ignora uma volta sem nada parado.
+        bool voltaPendente;
+        void Voltar(string deOnde)
+        {
+            if (video == null) return;
+            if (principalVisivel || (!JanelaUnica && glVisivel)) { voltaPendente = false; video.Voltou(deOnde); return; }
+            if (!voltaPendente) Etapa("note resume waits for a visible window (" + deOnde + ")" + Contagem());
+            voltaPendente = true;
+        }
+        void VoltarSePendente(string deOnde) { if (voltaPendente) Voltar(deOnde); }
 
         protected override void OnTerminate()
         {
@@ -1076,6 +1106,9 @@ namespace NuvioTpk
                 Exit();
                 return;
             }
+            // Relancamento (Shard do sono, lista de apps): alguns firmwares nao
+            // mandam OnResume. Sem player parado, o C nao faz nada.
+            Voltar("appcontrol");
             if (JanelaUnica) { Janela("appcontrol: janela unica (GLView), nada a subir"); return; }
             if (!JANELA_SOBE_GL_APPCONTROL || gl == null) return;
 #if NV_API8
@@ -1273,6 +1306,8 @@ namespace NuvioTpk
             }
             catch (Exception e) { Console.Error.WriteLine("Startup trace unavailable: " + e.Message); }
             AppDomain.CurrentDomain.UnhandledException += (s, e) => Etapa("note unhandled " + e.ExceptionObject);
+            // .NET errors into the app log too, with the session time of the native fault records (NetLog.cs).
+            try { NetLog.Registrar(); } catch (Exception e) { Etapa("note netlog " + e.GetType().Name); }
             Etapa("note entry host=" + Host + " process=" + RuntimeInformation.ProcessArchitecture + " os=" + RuntimeInformation.OSArchitecture);
             try
             {

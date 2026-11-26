@@ -366,6 +366,23 @@ int fontevolta_pegar(const char *alvo, const char *conta, int perfil,
   return 1;
 }
 
+/* The saved link keeps the hash (owner 24/11/2026, log 24): an entry for `url`
+ * with no hash at all gets `hash` (the one TorBox burn-in used or found). */
+void fontevolta_completar_hash(const char *url, const char *hash) {
+  int i, n = 0;
+  if (!url || !*url || !hash || strlen(hash) != 40) return;
+  pthread_mutex_lock(&trava);
+  carregarSemTrava();
+  for (i = 0; i < nEnt; i++)
+    if (!strcmp(url, ent[i].s.url) && !ent[i].s.hashTorrent[0] && !ent[i].s.infoHash[0]) {
+      snprintf(ent[i].s.hashTorrent, sizeof ent[i].s.hashTorrent, "%s", hash);
+      n++;
+    }
+  if (n) gravarSemTrava();
+  pthread_mutex_unlock(&trava);
+  if (n) { printf("[voltafonte] saved link had no hash: kept TorBox's %.8s...\n", hash); fflush(stdout); }
+}
+
 int fontevolta_tem_url(const char *url) {
   int r = 0, i;
   if (!url || !*url) return 0;

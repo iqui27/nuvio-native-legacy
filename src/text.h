@@ -226,6 +226,9 @@ typedef enum {
   TXT_FAMILIA_ROBOTO,
   TXT_FAMILIA_ATKINSON,
   TXT_FAMILIA_JETBRAINS,
+  // Plus Jakarta Sans (owner 14/11/2026): Stremio's font, the subtitle default.
+  // Appended: the IDs above are saved in existing data.
+  TXT_FAMILIA_JAKARTA,
   TXT_FAMILIA_N,
   // Imported identities; never persisted as bundled family IDs.
   TXT_FAMILIA_IMPORTADA1 = 100, TXT_FAMILIA_IMPORTADA2, TXT_FAMILIA_IMPORTADA_UI
@@ -313,6 +316,14 @@ TxtLinha txt_linha_corta_familia(TxtEstilo estilo, const char *s, int r, int g,
 // arquivo de fonte de verdade — nao use isto para dar negrito a um titulo.
 #define TXT_ENF_NEGRITO 1
 #define TXT_ENF_ITALICO 2
+// SUBTITLE OUTLINE, Stremio's look (owner 14/11/2026, ring 16/11/2026): the
+// line comes back as Stremio's 8-shadow RING (`±0.15rem ±0.15rem 0.15rem`:
+// 2.25 px out at 1080p, Gaussian sigma 1.125 px), with txt_suave_margem() of
+// empty border on every side. Only for the border line of a subtitle
+// (txt_desenhar_borda).
+#define TXT_ENF_SUAVE 4
+// The empty border of a TXT_ENF_SUAVE line, in layout units, for `estilo`.
+float txt_suave_margem(TxtEstilo estilo);
 TxtLinha txt_linha_corta_enfase(TxtEstilo estilo, const char *s, int r, int g,
                                 int b, int a, float maxW, TxtFamilia familia,
                                 int enfase);
@@ -321,9 +332,12 @@ TxtLinha txt_linha_corta_enfase(TxtEstilo estilo, const char *s, int r, int g,
 void txt_desenhar(TxtLinha l, float x, float y);
 void txt_desenhar_alpha(TxtLinha l, float x, float y, float alpha);
 void txt_desenhar_peso(TxtLinha l, float x, float y, float alpha, float peso);
-// Borda da legenda (b = textura na cor da borda): 1 = contorno opaco nas 8
-// direcoes, 2 = sombra deslocada. Desenhar ANTES do texto.
-void txt_desenhar_borda(TxtLinha b, float x, float y, int borda, float alpha);
+// Borda da legenda (b = textura na cor da borda), desenhada ANTES do texto:
+// 1 = Outline, Stremio's ring (b made with TXT_ENF_SUAVE, `margem` =
+// txt_suave_margem of its style; x, y are the TEXT's corner), 2 = sombra
+// deslocada (margem unused). The fade of the whole subtitle is the caller's
+// group (gfx_grupo_comecar): border and text at 1, then one alpha.
+void txt_desenhar_borda(TxtLinha b, float x, float y, int borda, float margem, float alpha);
 // Multiplica so o RGB da textura (0..1); preserva o alpha e o encaixe no pixel.
 void txt_desenhar_tom(TxtLinha l, float x, float y, float cr, float cg, float cb, float alpha);
 

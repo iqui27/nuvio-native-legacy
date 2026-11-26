@@ -60,6 +60,14 @@ pub struct MkvFaixa {
     nal_tam: c_int,
     entrada_inteira: c_int,
     bam_tipo: c_ulong,
+    /// DefaultDuration (ns per frame, 0 = not in the file).
+    quadro_ns: u64,
+    /// Video > Colour > TransferCharacteristics (16 PQ, 18 HLG; 0 = not stated).
+    transferencia: c_int,
+    /// Video > Colour > MatrixCoefficients (1 BT.709, 5/6 BT.601, 9 BT.2020; 0 = not stated).
+    matriz: c_int,
+    /// Video > Colour > Range (1 TV, 2 PC; 0 = not stated).
+    faixa_cor: c_int,
 }
 
 /// `MkvCap` of src/mkv.h.
@@ -97,7 +105,7 @@ pub struct NvDiagOut {
 // Layout contract with src/mkvcore.h (which has the same numbers as
 // _Static_assert): LP64 vs ILP32 `long`.
 const LONG8: bool = core::mem::size_of::<c_long>() == 8;
-const _: () = assert!(core::mem::size_of::<MkvFaixa>() == if LONG8 { 160 } else { 148 });
+const _: () = assert!(core::mem::size_of::<MkvFaixa>() == if LONG8 { 184 } else { 176 });
 const _: () = assert!(core::mem::size_of::<MkvCap>() == 72);
 const _: () = assert!(core::mem::size_of::<NvMkvScan>() == 56);
 const _: () = assert!(core::mem::size_of::<NvDiagOut>() == 32);
@@ -125,6 +133,10 @@ impl MkvFaixa {
             nal_tam: 0,
             entrada_inteira: 0,
             bam_tipo: 0,
+            quadro_ns: 0,
+            transferencia: 0,
+            matriz: 0,
+            faixa_cor: 0,
         }
     }
 }
@@ -294,6 +306,12 @@ const ID_FLAGFORCED: u32 = 0x55AA;
 const ID_FLAGHEARING: u32 = 0x55AB;
 const ID_AUDIO: u32 = 0xE1;
 const ID_CHANNELS: u32 = 0x9F;
+const ID_DEFAULTDUR: u32 = 0x23_E383;
+const ID_VIDEO: u32 = 0xE0;
+const ID_COLOUR: u32 = 0x55B0;
+const ID_TRANSFER: u32 = 0x55BA;
+const ID_MATRIZ: u32 = 0x55B1;
+const ID_FAIXACOR: u32 = 0x55B9;
 const ID_BLOCKADDMAP: u32 = 0x41E4;
 const ID_BLOCKADDTYPE: u32 = 0x41E7;
 const ID_BLOCKADDDATA: u32 = 0x41ED;
@@ -383,6 +401,22 @@ fn ler_entrada(e: &[u8]) -> MkvFaixa {
         }
         ID_FLAGFORCED => f.forcado = c_int::from(ler_uint(v) != 0),
         ID_FLAGHEARING => f.sdh = c_int::from(ler_uint(v) != 0),
+        ID_DEFAULTDUR => f.quadro_ns = ler_uint(v),
+        // Video > Colour > TransferCharacteristics: PQ/HLG = HDR.
+        ID_VIDEO => {
+            filhos(v, |vid, vv| {
+                if vid == ID_COLOUR {
+                    filhos(vv, |cid, cv| {
+                        match cid {
+                            ID_TRANSFER => f.transferencia = ler_uint(cv) as u32 as c_int,
+                            ID_MATRIZ => f.matriz = ler_uint(cv) as u32 as c_int,
+                            ID_FAIXACOR => f.faixa_cor = ler_uint(cv) as u32 as c_int,
+                            _ => {}
+                        }
+                    });
+                }
+            });
+        }
         ID_AUDIO => {
             filhos(v, |aid, av| {
                 if aid == ID_CHANNELS {

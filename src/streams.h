@@ -162,6 +162,10 @@ int stream_filtro_permite(const Stream *fonte);
 int stream_filtro_bloqueou(void);
 void stream_definir_atual(int indice);
 int stream_atual(void);
+// Android saved-link resume has no selection in the source sheet. Keep its
+// real Stream outside that list; only its exact playback URL may use it.
+void stream_contexto_guardado(const Stream *fonte); // copies; NULL clears
+const Stream *stream_fonte_reproducao(const char *url, const char *cabecalhos);
 int stream_kbps(const Stream *s);
 int stream_kbps_atual(void);   // declared kbps of stream_atual() (0 = unknown)
 void stream_folha_contexto(const char *texto);
@@ -329,6 +333,7 @@ void stream_vod_falhou(int indice);
 void stream_vod_tocou(int indice);
 long stream_vod_falhou_ha(int indice);
 int  stream_automatico_excluir(int indice);
+void stream_automatico_readmitir(int indice);
 // A warning clip ends this provider's attempts for the current list.
 int  stream_automatico_excluir_aviso(int indice);
 // Exclui tambem as IRMAS da candidata (mesmo addon e mesmo rotulo), mas so
@@ -381,8 +386,12 @@ int  stream_url_serve(const char *url, const char *cabecalhos);
 // endereco final, para o .tpk entregar o link do CDN ao player sem pedir de
 // novo. NULL fora do .tpk (o tpk.c liga) e nos testes.
 extern void (*stream_cdn_lembrar)(const char *orig, const char *final, const char *cabecalhos, uint64_t sessao);
+// The add-on link already resolved to a CDN in this session (cdnlink_resolvido,
+// .tpk only; NULL elsewhere). The source check keeps a timed-out source with it.
+extern int (*stream_cdn_resolvido)(const char *orig, char *host, unsigned hostTam);
 // A source focused 1 s in the source list (owner 18/11): once per focused row.
-// app.c sets it (the early TorBox lookup, tbabrir.h); NULL in the tests.
+// app.c sets it (the early TorBox lookup, tbabrir.h; on the .tpk also the
+// burn-in lookup, tbburn.h); NULL in the tests.
 extern void (*stream_foco_demorado)(const Stream *s);
 
 // 1 quando o texto da fonte diz "fora de cache" (ver Stream.foraCache).

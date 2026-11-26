@@ -57,12 +57,20 @@ with tempfile.TemporaryDirectory(prefix="nuvio-streamfit-passive-", dir=os.envir
     deps.append(aar_jar("androidx.core", "core", "1.13.1", tmp))
     deps.append(jar("androidx.annotation", "annotation-jvm", "1.6.0"))
     deps.append(aar_jar("androidx.annotation", "annotation-experimental", "1.4.0", tmp))
+    deps.append(aar_jar("org.jellyfin.media3", "media3-ffmpeg-decoder", "1.8.0+1", tmp))
     deps.append(jar("com.google.guava", "guava", "33.3.1-android"))
     sources = [kt / "NvPlayer.kt", kt / "ParaleloDataSource.kt", kt / "PassivoMedidor.kt", kt / "NuvioActivity.kt",
-               kt / "AudioSyncTap.kt", kt / "AudioSyncSink.kt", kt / "RecriaHdr.kt",
+               kt / "SaidaAudioSink.kt", kt / "ReservaAudio.kt", kt / "RecriaHdr.kt",
                kt / "ArranqueVigia.kt", kt / "TouchViewport.kt", kt / "Tombstone.kt",
                # F07: NvPlayer layers the seek cache and the gain processor
                kt / "CacheSessao.kt", kt / "CacheMidia.kt", kt / "GanhoMath.kt", kt / "GanhoAudioProcessor.kt"]
+    # 06/11: the audio subtitle sync ported from NuvioTV-Reshaped (ReservaAudio.kt uses it).
+    sources += [kt / "audiosync" / n for n in ("AudioSpotSampler.kt", "AudioSubtitleSyncController.kt", "AudioSyncDecoder.kt",
+                                   "AudioSyncExtractors.kt", "AudioSyncTracker.kt", "DialogueSpotPlanner.kt", "Fft.kt",
+                                   "PlaybackAudioTap.kt", "SileroVad.kt", "SpeechAnalyzer.kt", "SpeechTimeline.kt",
+                                   "SubtitleAudioAligner.kt", "SubtitleCandidatePool.kt", "SubtitleSpeechTrack.kt",
+                                   "SyncLog.kt")] + \
+        [kt.parents[2] / "androidx" / "media3" / "decoder" / "ffmpeg" / "AudioSyncFfmpegDecoder.kt"]
     java_roots = []
     if sdl.is_dir():
         java_roots = ["-Xjava-source-roots=" + str(sdl)]

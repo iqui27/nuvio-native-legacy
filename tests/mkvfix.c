@@ -150,6 +150,144 @@ int main(void) {
     ok(mkvfix_cab_fora_da_tv("User-Agent: x\nOrigin: https://a.b\nCookie: c") == 1,
        "headers: one unsupported among supported -> relay"); }
 
+  // Void mode (16/11/2026): subtitle blocks of tracks 3 and 4 become Void, nothing else changes.
+  { static unsigned char m[4096], o[4096 + MKVFIX_VOID_HB], tmp[64 + MKVFIX_VOID_HB];
+    long n = 0, n1, cl2, cl3;
+    int64_t pos[12]; int np = 0;   // where each subtitle block's ID byte is
+    uint64_t fx[2] = { 3, 4 };
+    MkvfixVoid v;
+    unsigned char dados[40]; memset(dados, 0x55, sizeof dados);
+    unsigned char sb1[12] = { 0x81, 0, 0, 0x80 }, sb3[12] = { 0x83, 0, 0, 0x80 }, sb4[12] = { 0x84, 0, 0, 0x80 };
+    // EBML header (1A45DFA3, empty) + Segment of unknown size (01 FF.. FF)
+    m[n++] = 0x1A; m[n++] = 0x45; m[n++] = 0xDF; m[n++] = 0xA3; m[n++] = 0x80;
+    m[n++] = 0x18; m[n++] = 0x53; m[n++] = 0x80; m[n++] = 0x67;
+    m[n++] = 0x01; for (int i = 0; i < 7; i++) m[n++] = 0xFF;
+    n += el(m + n, 0x1549A966, dados, 8);   // Info (skipped by size)
+    // Cluster 1 (known size, 2-byte size field): CRC-32, Timestamp, blocks
+    { unsigned char c[600]; long k = 0, bg = 0; unsigned char g[80];
+      unsigned char crc[4] = { 1, 2, 3, 4 }, ts[2] = { 0, 10 }, dur[1] = { 42 };
+      k += el(c + k, 0xBF, crc, 4);
+      k += el(c + k, 0xE7, ts, 2);
+      k += el(c + k, 0xA3, sb1, 12);                       // video: kept
+      pos[np++] = k; k += el(c + k, 0xA3, sb3, 12);        // subtitle 3: Void
+      bg += el(g + bg, 0x9B, dur, 1);                      // BlockDuration BEFORE the Block
+      bg += el(g + bg, 0xA1, sb4, 12);
+      pos[np++] = k; k += el(c + k, 0xA0, g, bg);          // BlockGroup of track 4: Void
+      bg = el(g, 0xA1, sb1, 12);
+      k += el(c + k, 0xA0, g, bg);                         // BlockGroup of track 1: kept
+      m[n++] = 0x1F; m[n++] = 0x43; m[n++] = 0xB6; m[n++] = 0x75;
+      m[n++] = (unsigned char)(0x40 | (k >> 8)); m[n++] = (unsigned char)k;
+      for (int i = 0; i < np; i++) pos[i] += n;
+      memcpy(m + n, c, (size_t)k); n += k; }
+    n1 = n;
+    // Cluster 2: unknown size -> not followed (left as is), rescanned at cluster 3
+    cl2 = n;
+    m[n++] = 0x1F; m[n++] = 0x43; m[n++] = 0xB6; m[n++] = 0x75; m[n++] = 0xFF;
+    { unsigned char ts[1] = { 20 }; n += el(m + n, 0xE7, ts, 1); }
+    n += el(m + n, 0xA3, sb3, 12);                         // in the unknown-size cluster: kept
+    // Cluster 3: 1-byte size, Timestamp first
+    cl3 = n;
+    { unsigned char c[200]; long k = 0; unsigned char ts[1] = { 30 };
+      int64_t p3;
+      k += el(c + k, 0xE7, ts, 1);
+      p3 = k; k += el(c + k, 0xA3, sb4, 12);
+      k += el(c + k, 0xA3, sb1, 12);
+      m[n++] = 0x1F; m[n++] = 0x43; m[n++] = 0xB6; m[n++] = 0x75; m[n++] = (unsigned char)(0x80 | k);
+      pos[np++] = n + p3;
+      memcpy(m + n, c, (size_t)k); n += k; }
+
+    for (int passo = 0; passo < 2; passo++) {   // all at once, then one byte at a time
+      long w = 0, dif = 0, certos = 0;
+      mkvfix_void_iniciar(&v, fx, 2, 0);
+      if (passo == 0) w = mkvfix_void_passar(&v, m, n, o);
+      else for (long i = 0; i < n; i++) { long q = mkvfix_void_passar(&v, m + i, 1, tmp); memcpy(o + w, tmp, (size_t)q); w += q; }
+      w += mkvfix_void_fim(&v, o + w);
+      for (long i = 0; i < n; i++) if (o[i] != m[i]) dif++;
+      for (int i = 0; i < np; i++) if (o[pos[i]] == 0xEC) certos++;
+      ok(w == n, passo ? "void: 1-byte chunks keep the size" : "void: one chunk keeps the size");
+      ok(certos == np && dif == np, passo ? "void: 1-byte chunks void exactly the 3 subtitle blocks"
+                                          : "void: exactly the 3 subtitle blocks (SimpleBlock, BlockGroup with BlockDuration first, next cluster)");
+      ok(v.anulados == 3 && v.perdas == 1 && v.sincronias == 1,
+         "void: unknown-size cluster is not followed, the next cluster is found again");
+    }
+    // A Range starting inside cluster 1: nothing before the next cluster is touched.
+    { long ini = n1 - 20, w;
+      mkvfix_void_iniciar(&v, fx, 2, ini);
+      w = mkvfix_void_passar(&v, m + ini, n - ini, o);
+      w += mkvfix_void_fim(&v, o + w);
+      long dif = 0; for (long i = 0; i < n - ini; i++) if (o[i] != m[ini + i]) dif++;
+      ok(w == n - ini && dif == 1 && o[pos[2] - ini] == 0xEC, "void: mid-cluster start changes only blocks after a resync"); }
+    // A Range starting exactly at cluster 3 (a seek through the Cues).
+    { long w;
+      mkvfix_void_iniciar(&v, fx, 2, cl3);
+      w = mkvfix_void_passar(&v, m + cl3, n - cl3, o);
+      ok(w == n - cl3 && o[pos[2] - cl3] == 0xEC && v.sincronias == 1, "void: a Range at a cluster start resyncs at once"); }
+    (void)cl2; }
+
+  // The Tracks parser also gives the track numbers.
+  { unsigned char e1[64], e2[64], tr[200], tracks[256];
+    long k1 = 0, k2 = 0, kt = 0, n2;
+    unsigned char num3[1] = { 3 }, num7[1] = { 7 }, t11[1] = { 0x11 };
+    int64_t off[MKVFIX_OCULTAS]; uint64_t num[MKVFIX_OCULTAS];
+    k1 += el(e1 + k1, 0xD7, num3, 1); k1 += el(e1 + k1, 0x83, t11, 1); k1 += el(e1 + k1, 0x86, (const unsigned char *)"S_TEXT/ASS", 10);
+    k2 += el(e2 + k2, 0xD7, num7, 1); k2 += el(e2 + k2, 0x83, t11, 1); k2 += el(e2 + k2, 0x86, (const unsigned char *)"S_TEXT/UTF8", 11);
+    kt += el(tr + kt, 0xAE, e1, k1); kt += el(tr + kt, 0xAE, e2, k2);
+    n2 = el(tracks, 0x1654AE6B, tr, kt);
+    ok(mkvfix_legendas_texto_num(tracks, n2, off, num, MKVFIX_OCULTAS) == 2 && num[0] == 3 && num[1] == 7,
+       "tracks: numbers of the text subtitles (ASS + SRT in an ASS file)"); }
+  // ---- the point in the index (prefetch on leaving the app, 09/11) ----------
+  // Cues: video track 1 at 0/2000/4000/6000 ms; subtitle track 3 at 3000 ms
+  // (fewer points: never the chosen track). Positions relative to the Segment.
+  { unsigned char cu[512]; int k = 0, ini;
+    struct { unsigned t, faixa; unsigned pos; } pt[] = {
+      {0, 1, 1000}, {2000, 1, 900000}, {3000, 3, 777777}, {4000, 1, 1800000}, {6000, 1, 2700000} };
+    int64_t cueMs, maxMs, r;
+    cu[k++] = 0x1C; cu[k++] = 0x53; cu[k++] = 0xBB; cu[k++] = 0x6B;
+    cu[k++] = 0x01; cu[k++] = 0; cu[k++] = 0; cu[k++] = 0; cu[k++] = 0; cu[k++] = 0; cu[k++] = 0; cu[k++] = 0; // 8-byte size, set below
+    ini = k;
+    for (unsigned i = 0; i < sizeof pt / sizeof pt[0]; i++) {
+      // CuePoint { CueTime(4 B) CueTrackPositions { CueTrack(1 B) CueClusterPosition(4 B) } }
+      cu[k++] = 0xBB; cu[k++] = 0x80 | 17;
+      cu[k++] = 0xB3; cu[k++] = 0x84;
+      cu[k++] = (unsigned char)(pt[i].t >> 24); cu[k++] = (unsigned char)(pt[i].t >> 16); cu[k++] = (unsigned char)(pt[i].t >> 8); cu[k++] = (unsigned char)pt[i].t;
+      cu[k++] = 0xB7; cu[k++] = 0x80 | 9;
+      cu[k++] = 0xF7; cu[k++] = 0x81; cu[k++] = (unsigned char)pt[i].faixa;
+      cu[k++] = 0xF1; cu[k++] = 0x84;
+      cu[k++] = (unsigned char)(pt[i].pos >> 24); cu[k++] = (unsigned char)(pt[i].pos >> 16); cu[k++] = (unsigned char)(pt[i].pos >> 8); cu[k++] = (unsigned char)pt[i].pos;
+    }
+    cu[11] = (unsigned char)(k - ini);
+    r = mkvfix_cues_posicao(cu, k, 3500, &cueMs, &maxMs);
+    ok(r == 900000 && cueMs == 2000, "index point: 3.5 s -> the video cue at 2 s (not the subtitle cue at 3 s)");
+    ok(maxMs == 6000, "index point: the last video cue time is reported (scale check)");
+    ok(mkvfix_cues_posicao(cu, k, 6000, &cueMs, NULL) == 2700000 && cueMs == 6000, "index point: exactly on a cue");
+    ok(mkvfix_cues_posicao(cu, k, 10, &cueMs, NULL) == 1000 && cueMs == 0, "index point: before the second cue -> the first");
+    ok(mkvfix_cues_posicao(cu, k - 10, 99999, &cueMs, NULL) == 1800000, "index point: a cut index still gives the points that came");
+    ok(mkvfix_cues_posicao(cu + 4, k - 4, 3500, NULL, NULL) < 0, "index point: not a Cues element -> -1");
+    { unsigned char v[600]; memset(v, 0, sizeof v);
+      v[0] = 0xEC; v[1] = 0x80 | 20;               // a Void before the Cues
+      memcpy(v + 22, cu, (size_t)k);
+      ok(mkvfix_cues_posicao(v, 22 + k, 3500, &cueMs, NULL) == 900000, "index point: the Cues after another element is found"); }
+    { int64_t pm = 0, pp = 0;
+      ok(mkvfix_cues_ponto(cu, k, 3500, &cueMs, NULL, &pm, &pp) == 900000 && pm == 4000 && pp == 1800000,
+         "index point: the next video cue is reported (4 s, not the subtitle cue)");
+      ok(mkvfix_cues_ponto(cu, k, 7000, &cueMs, NULL, &pm, &pp) == 2700000 && pm == -1 && pp == -1,
+         "index point: after the last cue there is no next one"); }
+    // The window (log 13): the TV asks for the Cluster that CONTAINS the second,
+    // 9.9 MB after the cue in run 1 and 6.4 MB in run 2. Between two cues the
+    // local rate places the estimate; the window starts 3 MiB before it.
+    { const int64_t M = 1024 * 1024;
+      int64_t j1 = mkvfix_janela_ini(335240, 0, 340710, 40 * M, 336465, 0, 3 * M);
+      int64_t j2 = mkvfix_janela_ini(340710, 0, 345000, 30 * M, 341914, 0, 3 * M);
+      ok(j1 <= 9884000 && j1 + 8 * M > 9884000, "window: run 1's request (9.9 MB after the cue) falls inside");
+      ok(j2 <= 6357680 && j2 + 8 * M > 6357680, "window: run 2's request (6.4 MB after the cue) falls inside");
+      ok(mkvfix_janela_ini(1000, 5 * M, 3000, 6 * M, 1100, 0, 3 * M) == 5 * M, "window: never before the cue");
+      ok(mkvfix_janela_ini(1000, 0, 2000, 10 * M, 1999, 0, 0) <= 10 * M, "window: never after the next cue");
+      ok(mkvfix_janela_ini(1000, 0, -1, -1, 3000, 2000.0, 1 * M) == 4000000 - M, "window: no next cue -> the file's average rate");
+      ok(mkvfix_janela_ini(-1, -1, -1, -1, 3000, 0, M) == -1, "window: no cue -> -1");
+      { int64_t j = mkvfix_janela_ini(0, 0, -1, -1, 1000000, 1e15, 3 * M);   // corrupt index / rate
+        ok(j > 0 && j <= 4000000000000000000LL, "window: absurd values stay in range (no int64 overflow)"); } }
+  }
+
   printf(falhas ? "mkvfix: %d FAIL(S)\n" : "mkvfix: ok\n", falhas);
   return falhas != 0;
 }

@@ -5,6 +5,7 @@
 void *SDL_AndroidGetJNIEnv(void);
 void *SDL_AndroidGetActivity(void);
 #include "../src/video_android.c"
+#include "video_android_reserva_stub.h"
 #include "../src/cacheboost.c"   // F07: video_android reads the session volume
 #include <assert.h>
 #include "../src/livestall.h"

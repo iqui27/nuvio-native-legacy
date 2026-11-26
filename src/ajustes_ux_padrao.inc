@@ -209,7 +209,7 @@
   2, /* Settings size: 100%, independent of global UI zoom */
   1, /* hide corner logo during trailer: Desligado (V_LIGA: 1 = Desligado) */
   0, /* second subtitle language: Da conta (F04) */
-  1, /* subtitle sync by audio: Desligado (V_LIGA: 1 = Desligado) (F06) */
+  0, /* subtitle sync by audio (Android fallback, Reshaped): Ligado (V_LIGA 0) since 06/11; old Desligado migrates once */
   0, /* seek cache on disk: Desligado (F07; free disk is unknown until the player opens) */
   1, /* experimental trailer zoom, .tpk only: Desligado (V_LIGA: 1 = Desligado) (#241) */
   0, /* plugins: action (state lives in plugins.c, F09) */
@@ -302,7 +302,7 @@
   0, /* Baixar registro: acao local, sem preferencia gravada */
 #endif
   0, 0, 0, /* shared exclusions parent, max-size view, release-group editor */
-  120, 0, 0, 0, 0, 3, 1, 0, 1, 0, 0, /* primary style views; player.txt is authoritative */
+  120, TXT_FAMILIA_JAKARTA, 0, 100, 0, 3, 1, 0, 1, 0, 0, /* primary style views; player.txt is authoritative */
   0, 0, 0, 0, 0, 0, 0, /* secondary appearance inherits primary, manual delay0 */
   0, /* collection default view (#362): Automatic, existing layout */
   0, /* external player (#501): Internal */
@@ -394,3 +394,9 @@
   0, /* Anime-Skip Client ID: action, value lives in animeskip.txt */
   0, /* formatter icons (From addon): Standard */
   0, /* From addon badge position: Top */
+  1, /* audio sync samples the film on mobile data too: Off (V_LIGA 1) */
+  0, /* TorBox plan: Standard (V_TB_PLANO 0) */
+  0, /* burn embedded ASS in with TorBox: On (V_LIGA 0); only acts with plan Pro */
+  0, /* original audio with burn-in: Passthrough (V_TB_AUDIO 0) */
+  0, // frameRateMatchLocal: Always (V_QUADROS_TAXA 0)
+

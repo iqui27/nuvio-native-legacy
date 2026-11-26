@@ -5,6 +5,7 @@
 #   tools/android.sh --debug-only -> debug only, never read release signing keys
 #   tools/android.sh            -> APK debug em build/android/Nuvio-<v>-android-debug.apk
 #   NUVIO_RUST_MKVCORE=0 tools/android.sh -> nucleo mkv em C (padrao: Rust, ligado em 14/10/2026)
+#   NUVIO_LIBASS=0 tools/android.sh -> sem libass (padrao: libass hybrid, legendas ASS como no .tpk)
 #   NUVIO_P2P_MOTOR=<raiz> tools/android.sh -> motor P2P (padrao: pasta achada por tools/p2p-motor/pasta.sh; =none desliga)
 #   NUVIO_KEYSTORE=... NUVIO_KEYSTORE_PASS=... NUVIO_KEY_ALIAS=... NUVIO_KEY_PASS=... tools/android.sh
 #                               -> tambem o release assinado, Nuvio-<v>-android.apk
@@ -118,6 +119,12 @@ if [ "${NUVIO_RUST_MKVCORE:-1}" = 1 ]; then
   NV_RUST_MKV_DIR="$EST/rust-mkvcore"
   tools/rust-mkvcore.sh --android "$NV_RUST_MKV_DIR" >&2
   GR+=(-Pnuvio.rustMkvcore="$NV_RUST_MKV_DIR")
+fi
+# libass hybrid (o mesmo motor de legendas ASS do .tpk), ligado por padrao
+# (dono 25/11/2026); NUVIO_LIBASS=0 volta aos cues de texto do Media3 so.
+if [ "${NUVIO_LIBASS:-1}" = 1 ]; then
+  bash tools/android/libass.sh arm64-v8a armeabi-v7a >&2
+  GR+=(-Pnuvio.libass="$CACHE/prefix")
 fi
 TAREFAS=()
 [ "$RELEASE_ONLY" = 1 ] || TAREFAS=(assembleDebug)

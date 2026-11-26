@@ -898,6 +898,23 @@ static void *trabalhar(void *u) {
     AutoSyncResultado resultado=autosync_alinhar(doc,ref,&cfg,vigente,&token,&mapa);
     pthread_mutex_lock(&s->trava);
     int publicado=!s->parar&&s->sessao==token.sessao&&slot->epoch==token.epoch;
+    /* Owner 24/11/2026 (log 19, Horimiya): an accepted stretch/pieces result
+     * was ~1 s off at the start. Where the map puts the subtitle at five
+     * points of the reference, and which subtitle it was (diagnostic). */
+    char amostra[320]="",origem[128]="";
+    if(publicado&&resultado.estado==AUTOSYNC_ACCEPTED&&resultado.tipo!=AUTOSYNC_T_OFFSET&&mapa) {
+      int nr=0;const LegendaCue *rc=legenda_documento_dados(ref,&nr);
+      const LegendaDocumentoInfo *di=legenda_documento_info(doc);
+      if(di)snprintf(origem,sizeof origem,"%.60s%s%.60s",di->origem,di->identidade[0]?" | ":"",di->identidade);
+      if(rc&&nr>1) {
+        double a=rc[0].inicio,b=rc[nr-1].inicio,fr[5]={0,.25,.5,.75,1};size_t u=0;
+        for(int k=0;k<5&&u<sizeof amostra-40;k++) {
+          double t=a+(b-a)*fr[k],m=autosync_mapa_tempo(mapa,t);
+          if(m<=AUTOSYNC_SEM_LEGENDA/2)u+=(size_t)snprintf(amostra+u,sizeof amostra-u,"%s%.0f s: none",k?", ":"",t);
+          else u+=(size_t)snprintf(amostra+u,sizeof amostra-u,"%s%.0f s: %+.0f ms",k?", ":"",t,(t-m)*1000.0);
+        }
+      }
+    }
     if(publicado) {
       slot->resultado=resultado;
       if(resultado.estado==AUTOSYNC_ACCEPTED) {
@@ -921,6 +938,8 @@ static void *trabalhar(void *u) {
         tipos[resultado.tipo],resultado.offsetMs,resultado.escala,resultado.trechos,resultado.ancoras,
         resultado.casadas,resultado.cobertura,resultado.confianca,resultado.alternativa,resultado.mantida,
         resultado.regioes,resultado.erroMs,resultado.tempoMs);
+      if(amostra[0])fprintf(stderr,"[autosync] slot=%d map (video time: subtitle shift) %s | subtitle: %s\n",k,amostra,
+        origem[0]?origem:"(no name)");
     }
     legenda_documento_liberar(doc);legenda_documento_liberar(ref);
   }

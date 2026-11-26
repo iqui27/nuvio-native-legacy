@@ -79,7 +79,7 @@ fun main() {
             else -> error("Unexpected call: ${method.name}")
         }
     } as AudioSink
-    val sink = AudioSyncSink(delegate, AudioSyncTap({ _, _, _ -> }, { }), { forcePcm })
+    val sink = SaidaAudioSink(delegate, { }, { forcePcm })
     val encoded = listOf(MimeTypes.AUDIO_AC3, MimeTypes.AUDIO_E_AC3, MimeTypes.AUDIO_DTS)
         .map { Format.Builder().setSampleMimeType(it).build() }
     val pcm = Format.Builder().setSampleMimeType(MimeTypes.AUDIO_RAW).build()
@@ -101,7 +101,7 @@ with tempfile.TemporaryDirectory(prefix="nuvio-speed-android-") as work:
     for name in ("media3-common", "media3-exoplayer"):
         deps.append(aar_jar("androidx.media3", name, "1.8.0", work))
     deps.append(jar("com.google.guava", "guava", "33.3.1-android"))
-    sources = [kt / "AudioSyncSink.kt", kt / "AudioSyncTap.kt"]
+    sources = [kt / "SaidaAudioSink.kt"]
     for name, content in {
         "Replay.kt": fixture,
         "Log.kt": "package android.util\nobject Log { @JvmStatic fun i(tag: String, message: String) = 0 }",

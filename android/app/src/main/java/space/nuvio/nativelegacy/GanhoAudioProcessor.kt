@@ -13,7 +13,7 @@ import java.nio.ByteOrder
 // needs no audio session effect support from the TV, and its math is testable
 // (GanhoMath). DefaultAudioSink hands processors 16-bit or float PCM; anything
 // else leaves it inactive. Passthrough/offload never reaches processors: the
-// boost is then unavailable; the sink-input format (F06 AudioSyncSink -> nativeAudioEstado) tells C.
+// boost is then unavailable; the sink-input format (SaidaAudioSink -> nativeAudioEstado) tells C.
 //
 // The gain is a volatile read per buffer: changes apply live, no reconfigure.
 @androidx.annotation.OptIn(UnstableApi::class)

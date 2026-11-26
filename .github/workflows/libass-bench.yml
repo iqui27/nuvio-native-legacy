@@ -1,0 +1,47 @@
+name: libass bench (hybrid test)
+
+# libass-hybrid-test branch only, never for master: times stock libass 0.17.5,
+# ours (tools/tpk/libass-nv), Laskco/mpvNova-libass and the hybrid
+# (tools/tpk/libass-hybrid) on a real ARM CPU (GitHub's arm64 runner; armv7
+# too when that CPU runs 32-bit code), byte-compares every frame against
+# stock and runs verify.c on the hybrid. Results: the run's summary page and
+# the "libass-bench" artifact.
+
+on:
+  push:
+    branches: [libass-hybrid-test]
+    paths:
+      - "tools/tpk/libass-hybrid/**"
+      - "tools/tpk/libass-nv/**"
+      - ".github/workflows/libass-bench.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools and libass dependencies
+        run: |
+          sudo dpkg --add-architecture armhf
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq meson ninja-build libfreetype-dev libharfbuzz-dev libfribidi-dev \
+            gcc-arm-linux-gnueabihf libfreetype-dev:armhf libharfbuzz-dev:armhf libfribidi-dev:armhf || \
+          sudo apt-get install -y -qq meson ninja-build libfreetype-dev libharfbuzz-dev libfribidi-dev gcc-arm-linux-gnueabihf
+          lscpu
+      - name: Bench
+        run: |
+          bash tools/tpk/libass-hybrid/bench/run.sh . "$RUNNER_TEMP/bench" 2>&1 | tee bench.log
+          cat "$RUNNER_TEMP/bench/results.md" >> "$GITHUB_STEP_SUMMARY"
+          cp "$RUNNER_TEMP/bench/results.md" .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: libass-bench
+          path: |
+            results.md
+            bench.log

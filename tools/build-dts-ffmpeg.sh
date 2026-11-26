@@ -21,6 +21,13 @@ TMPDIR="${TMPDIR%/}"
 #                   MP3/MP2) and their parsers: the automatic match decodes both
 #                   versions to compare them, a PAL version is converted at its
 #                   speed, FLAC can be converted.
+#                   The opus parser: Matroska-laced Opus without DefaultDuration
+#                   (mkvmerge) only has a timestamp on each block's first frame;
+#                   the parser gives every frame its length, so FFmpeg fills
+#                   the rest (without it 15 of 100 packets per 2 s: no sound).
+#                   Original audio with TorBox burn-in (src/dts/tbaudio_tpk.c): the adts
+#                   muxer (the MPEG-TS muxer wraps copied AAC with it). TorBox's
+#                   segments are stripped by hand (tba_ts_sem_audio), never demuxed.
 set -eu
 VERSION=7.1.5
 SHA256=de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f
@@ -53,7 +60,7 @@ if [ "$TARGET" = tpk ]; then
   # where the donor's audio has not started yet (owner 18/11: an empty first
   # segment kept the TV player from starting).
   ENCODERS=$ENCODERS,flac,eac3,mjpeg
-  MUXERS=mpegts,matroska,mp4
+  MUXERS=mpegts,matroska,mp4,adts
   # mpegts demuxer: thumbnails for Blu-ray remuxes kept as .m2ts / .ts (miniatura_motor.c).
   DEMUXERS=$DEMUXERS,mpegts
   PARSERS=$PARSERS,mlp,ac3,opus,flac,vorbis,mpegaudio

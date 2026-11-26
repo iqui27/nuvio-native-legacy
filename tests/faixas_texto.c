@@ -52,6 +52,13 @@ int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
   (void)pref; (void)audio; (void)forcadaAuto; (void)emb; (void)tipoEmb; (void)nEmb;
   (void)embFechado; (void)add; (void)nAdd; (void)addFechado; return LING_AUTO_NADA;
 }
+int ling_legenda_auto_fmt(const char *pref, const char *audio, int forcadaAuto,
+                          const char *const *emb, const int *tipoEmb, const int *fmtEmb,
+                          int nEmb, int embFechado, const char *const *add, int nAdd, int addFechado) {
+  (void)fmtEmb;
+  return ling_legenda_auto_tipo(pref, audio, forcadaAuto, emb, tipoEmb, nEmb, embFechado, add, nAdd, addFechado);
+}
+int ling_formato_legenda(const char *c) { (void)c; return 1; }
 int legauto_escolher(const Legenda *v, int n, const char *pref, const char *midia,
                      const uint64_t *excl, int nExcl, uint64_t lembrada) {
   (void)v; (void)n; (void)pref; (void)midia; (void)excl; (void)nExcl; (void)lembrada; return -1;
@@ -88,11 +95,17 @@ void video_sondar_mkv_agora(void) {}
 int video_velocidade_bloqueada(void) { return 0; }
 int video_velocidade_atual(void) { return VEL_NORMAL; }
 int video_velocidade_suportada(void) { return 1; }
+#ifdef NV_ANDROID
+// TorBox burn-in (tbqueima.h): burned, the file's text tracks come to the app.
+static int tbqAtivoT;
+int tbq_ativo(void) { return tbqAtivoT; }
+#endif
 
 int main(void) {
   strcpy(faixa.codec, "S_TEXT/UTF8");
 #ifdef NV_ANDROID
   assert(!vaiOverlay(&faixa)); // Media3 ja fornece o texto.
+  tbqAtivoT = 1; assert(vaiOverlay(&faixa)); tbqAtivoT = 0;   // TorBox's stream has no text tracks
 #else
   assert(vaiOverlay(&faixa));
   overlayAssumir(2, 7);
@@ -104,8 +117,9 @@ int main(void) {
   assert(vaiOverlay(&faixa)); overlayAssumir(2, 7);
   assert(nativa == -1 && !legOverlayTV);
   strcpy(faixa.codec, "S_HDMV/PGS");
-#ifdef NV_TPK
-  // .tpk decodifica PGS em software: vai para o overlay, sem segurar a TV.
+#if defined(NV_TPK) || defined(NV_ANDROID)
+  // .tpk e Android decodificam PGS em software: vai para o overlay, sem segurar
+  // a TV (no Android o Media3 so entregava o bitmap, que o app nao lia).
   assert(vaiOverlay(&faixa)); overlayAssumir(2, 7);
   assert(nativa == -1 && !legOverlayTV);
 #else

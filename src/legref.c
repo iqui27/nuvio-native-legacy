@@ -3,6 +3,7 @@
 #include "legref.h"
 #include "rede.h"
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,12 +19,17 @@ static int contemSemCaixa(const char *h, const char *n) {
 
 #define LR_CABECA   (64L * 1024L)        // inicio do arquivo: EBML, SeekHead, Info, Tracks
 #define LR_TRACKS_MAX (2L * 1024L * 1024L)
-#define LR_CUES_MAX (8L * 1024L * 1024L)
+// Modo so indice: o Cues chega EM FLUXO (cuesComer) e nunca fica inteiro na
+// memoria, entao o teto e de rede, nao de RAM. 17/11 (dono): o 4K remux de
+// Fight Club (145 faixas, 137 de legenda) tem Cues de 9,35 MB e parava no
+// teto antigo de 8 MB (reason=budget) sem baixar nada.
+#define LR_CUES_MAX (16L * 1024L * 1024L)
+#define LR_CUES_BUF_MAX (8L * 1024L * 1024L)   // modo de sempre: Cues inteiro no buffer
 #define LR_BLOCO    2048L                // janela de um BlockGroup de legenda
 #define LR_BLOCO_MAX (64L * 1024L)
 #define LR_VAO      (8L * 1024L)         // junta Ranges vizinhos a menos disto
 #define LR_LEITURA_MAX (128L * 1024L)
-#define LR_FAIXAS   64
+#define LR_FAIXAS   192   // 64 ate 17/11 (remux com 145 faixas): ver mkv.h
 #define LR_EVENTOS_MAX 7999              // acima disto o AutoSync recusa de qualquer jeito
 
 // --- EBML -------------------------------------------------------------------
@@ -118,8 +124,10 @@ static int lerTracks(const unsigned char *p, long n, Faixa *v, int max) {
   return k;
 }
 
-int legref_cues(const unsigned char *p, long n, int faixa, double escala,
-                LegRefPonto **saida, int *semRel) {
+// soTempo: o modo so indice aceita ponto sem posicao de bloco (nao busca o
+// bloco) e ate `max` pontos; o modo de sempre exige pos + rel e LR_EVENTOS_MAX.
+static int lerCues(const unsigned char *p, long n, int faixa, double escala,
+                   LegRefPonto **saida, int *semRel, int soTempo, int max) {
   It it = { p, 0, n };
   unsigned long id;
   const unsigned char *d;
@@ -149,11 +157,14 @@ int legref_cues(const unsigned char *p, long n, int faixa, double escala,
         else if (id3 == 0xF0) rel = (int)lerUint(d3, t3);
         else if (id3 == 0xB2) dur = (double)lerUint(d3, t3) * escala;
       }
-      if (tr != faixa || pos < 0) continue;
-      if (rel < 0) { if (semRel) (*semRel)++; continue; }
+      if (tr != faixa) continue;
+      if (!soTempo) {
+        if (pos < 0) continue;
+        if (rel < 0) { if (semRel) (*semRel)++; continue; }
+      }
       if (k == cap) {
         LegRefPonto *nv;
-        if (cap >= LR_EVENTOS_MAX + 1) { free(v); return -1; }
+        if (cap >= max) { free(v); return -1; }
         cap = cap ? cap * 2 : 256;
         nv = realloc(v, (size_t)cap * sizeof *v);
         if (!nv) { free(v); return -1; }
@@ -164,6 +175,16 @@ int legref_cues(const unsigned char *p, long n, int faixa, double escala,
   }
   *saida = v;
   return k;
+}
+
+int legref_cues(const unsigned char *p, long n, int faixa, double escala,
+                LegRefPonto **saida, int *semRel) {
+  return lerCues(p, n, faixa, escala, saida, semRel, 0, LR_EVENTOS_MAX + 1);
+}
+
+int legref_cues_tempos(const unsigned char *p, long n, int faixa, double escala,
+                       int max, LegRefPonto **saida) {
+  return lerCues(p, n, faixa, escala, saida, NULL, 1, max > 0 ? max : 1);
 }
 
 // --- O MODULO -----------------------------------------------------------------
@@ -232,26 +253,34 @@ static void progresso(Job *j, int feitos, int total) {
   pthread_mutex_unlock(&r->m);
 }
 
-// Um Range, respeitando pausa, ritmo e orcamento. NULL com j->erro preenchido.
-static unsigned char *ler(Job *j, long long ini, long n, long *tam) {
-  LegRef *r = j->r; unsigned char *b; int st = 0;
+// Antes de cada Range: pausa, ritmo e orcamento. 1 = pode pedir (ja contado);
+// 0 com j->erro preenchido.
+static int porta(Job *j, long n) {
+  LegRef *r = j->r;
   long intervalo = j->p.orc.pedidosPorSeg > 0 ? 1000 / j->p.orc.pedidosPorSeg : 0;
   for (;;) {   // PAUSA: seek/buffer curto. Nao conta prazo nem orcamento.
     int pausa;
     pthread_mutex_lock(&r->m); pausa = r->pausado; pthread_mutex_unlock(&r->m);
     if (!pausa) break;
-    if (esperar(j, 200)) { j->erro = LEGREF_PARADO; return NULL; }
+    if (esperar(j, 200)) { j->erro = LEGREF_PARADO; return 0; }
   }
   if (j->temUltimo && intervalo > 0) {
     long passou = msDesde(&j->ultimo);
-    if (passou < intervalo && esperar(j, intervalo - passou)) { j->erro = LEGREF_PARADO; return NULL; }
+    if (passou < intervalo && esperar(j, intervalo - passou)) { j->erro = LEGREF_PARADO; return 0; }
   }
-  if (parou(j)) { j->erro = LEGREF_PARADO; return NULL; }
+  if (parou(j)) { j->erro = LEGREF_PARADO; return 0; }
   if (j->pedidos >= j->p.orc.maxPedidos || j->bytes + n > j->p.orc.maxBytes) {
-    j->erro = LEGREF_ORCAMENTO; return NULL;
+    j->erro = LEGREF_ORCAMENTO; return 0;
   }
   j->pedidos++;
   clock_gettime(CLOCK_MONOTONIC, &j->ultimo); j->temUltimo = 1;
+  return 1;
+}
+
+// Um Range, respeitando pausa, ritmo e orcamento. NULL com j->erro preenchido.
+static unsigned char *ler(Job *j, long long ini, long n, long *tam) {
+  LegRef *r = j->r; unsigned char *b; int st = 0;
+  if (!porta(j, n)) return NULL;
   *tam = 0;
   b = r->ler(r->lerU, j->urlFinal, ini, n, tam, &st, parou, j);
   if (b) j->bytes += *tam;
@@ -437,9 +466,9 @@ static int cmpPonto(const void *a, const void *b) {
 // So TEMPOS (Cues do MKV com CueDuration, tabela de amostras do MP4): o
 // texto e um rotulo distinto por fala, sem pretensao de texto (o AutoSync so
 // usa o tempo; o rotulo passa nos filtros de "fala de verdade").
-typedef struct { double inicio, fim; } Tempo;
+typedef LegRefFala Tempo;   // { inicio, fim }: o mesmo do modo so indice
 static LegendaDocumento *montarTempos(const Tempo *v, int n, const char *idioma, const char *ident,
-                                      int forced, uint64_t sessao) {
+                                      int forced, uint64_t sessao, unsigned extra) {
   LegendaCue *c = calloc((size_t)(n ? n : 1), sizeof *c); LegendaDocumento *d;
   LegendaDocumentoInfo info;
   if (!c) return NULL;
@@ -448,7 +477,7 @@ static LegendaDocumento *montarTempos(const Tempo *v, int n, const char *idioma,
     snprintf(c[i].texto, sizeof c[i].texto, "fala %04d", i + 1);
   }
   memset(&info, 0, sizeof info);
-  info.sessao = sessao; info.flags = LEGENDA_DOC_COMPLETO | (forced ? LEGENDA_DOC_FORCED : 0);
+  info.sessao = sessao; info.flags = LEGENDA_DOC_COMPLETO | (forced ? LEGENDA_DOC_FORCED : 0) | extra;
   snprintf(info.idioma, sizeof info.idioma, "%s", idioma);
   snprintf(info.origem, sizeof info.origem, "Embedded");
   snprintf(info.identidade, sizeof info.identidade, "%s", ident);
@@ -737,10 +766,412 @@ static LegendaDocumento *coletarMp4(Job *j, LegRefStatus *st, const unsigned cha
   else {
     char ident[32]; snprintf(ident, sizeof ident, "mp4-track:%d", fx[escolhida].numero);
     progresso(j, k, k);
-    doc = montarTempos(tv, k, fx[escolhida].idioma, ident, 0, j->p.sessao);
+    doc = montarTempos(tv, k, fx[escolhida].idioma, ident, 0, j->p.sessao, 0);
     if (!doc) j->erro = LEGREF_MEMORIA;
   }
   free(tv); free(moov);
+  return doc;
+}
+
+// --- MODO SO INDICE (.tpk 6+) -----------------------------------------------------
+// Porte do EmbeddedSubtitleTimelineLoader do NuvioTV (Android): a referencia
+// sai so do Cues. Ler um bloco por fala (o modo de sempre para ASS e SRT sem
+// CueDuration) custava ~1300 Ranges num longa e 15 mil num ASS de fansub, no
+// ritmo de 8/s, disputando a conexao do video: foi isso que segurou o legref
+// desligado no .tpk desde a #462. Aqui sao 2-4 Ranges e acabou.
+#define LR_IDX_PONTOS_MAX 65536   // pontos lidos por faixa (o filtro ainda corta)
+#define LR_IDX_MIN_FALAS  8
+#define LR_IDX_MIN_SPAN   30.0
+#define LR_IDX_FIM_ULTIMA 2.0     // ultima fala sem CueDuration
+#define LR_IDX_FIM_MAX    4.0     // fim estimado: no maximo isto depois do inicio
+#define LR_ASS_MIN        20      // abaixo disto o filtro de dialogo nao corta nada
+#define LR_ASS_DUR_MIN    0.300
+#define LR_ASS_DUR_MAX    12.0
+#define LR_ASS_RAJADA     1.0     // +-1 s
+#define LR_ASS_RAJADA_N   5       // 5 inicios nessa janela = karaoke/efeito
+
+// 06/11 (dono): o que e melhor no Tizen vale para a LG e o Android tambem,
+// e para o .tpk 4/5 (Tizen 4.0-5.5) igual ao 6+.
+static int modoIndice =
+#if defined(NV_TPK) || defined(NV_WEBOS) || defined(NV_ANDROID)
+  1;
+#else
+  0;
+#endif
+void legref_modo_indice(int ligado) { modoIndice = ligado != 0; }
+int legref_modo_indice_ativo(void) { return modoIndice; }
+
+static int cmpPontoTempo(const void *a, const void *b) {
+  const LegRefPonto *x = a, *y = b;
+  return x->inicio < y->inicio ? -1 : x->inicio > y->inicio;
+}
+
+// Quantos inicios (ordenados) ficam a ate `raio` do de indice i, ele incluso.
+static int iniciosPerto(const LegRefFala *v, int n, int i, double raio) {
+  int a = i, b = i;
+  while (a > 0 && v[i].inicio - v[a - 1].inicio <= raio) a--;
+  while (b < n - 1 && v[b + 1].inicio - v[i].inicio <= raio) b++;
+  return b - a + 1;
+}
+
+int legref_indice_linha(const LegRefPonto *v, int n, int tipo, int pares,
+                        LegRefFala **saida, int *estimado, int *filtradas) {
+  LegRefPonto *s; LegRefFala *o; char *est; int m = 0, k = 0, i, parear = 0;
+  *saida = NULL; if (estimado) *estimado = 0; if (filtradas) *filtradas = 0;
+  if (n <= 0) return 0;
+  s = malloc((size_t)n * sizeof *s); o = malloc((size_t)n * sizeof *o); est = calloc((size_t)n, 1);
+  if (!s || !o || !est) { free(s); free(o); free(est); return -1; }
+  memcpy(s, v, (size_t)n * sizeof *s);
+  qsort(s, (size_t)n, sizeof *s, cmpPontoTempo);
+  for (i = 0; i < n; i++)   // inicio repetido (camadas, dois CuePoints): um so
+    if (!m || s[i].inicio - s[m - 1].inicio > 1e-6) s[m++] = s[i];
+  if (tipo == LEGREF_IDX_PGS) {
+    // PGS indexa a exibicao E a limpeza seguinte. Parear so quando a contagem
+    // das faixas de texto do arquivo diz que sao pares (melhora material, nao
+    // coincidencia); sem faixa de texto, CueDuration na maioria dos pontos diz
+    // que o indice ja e de falas visiveis.
+    int metade = m / 2, explicitos = 0;
+    for (i = 0; i < m; i++) if (s[i].dur > 0) explicitos++;
+    if (m < 2) goto fim;
+    if (pares > 0) {
+      long cru = m > pares ? m - pares : pares - m, par = metade > pares ? metade - pares : pares - metade;
+      parear = par * 3 <= cru * 2;
+    } else parear = (long)explicitos * 4 < (long)m * 3;
+    if (parear) {
+      for (i = 0; i + 1 < m; i += 2) {
+        double ini = s[i].inicio, lim = s[i + 1].inicio, f = lim;
+        if (lim <= ini) continue;
+        if (s[i].dur > 0 && ini + s[i].dur < lim) f = ini + s[i].dur;
+        if (f > ini) { o[k].inicio = ini; o[k].fim = f; k++; }
+      }
+      goto fim;
+    }
+  }
+  for (i = 0; i < m; i++) {
+    double d = s[i].dur;
+    if (!(d > 0)) {
+      est[k] = 1;
+      if (i + 1 < m) { d = s[i + 1].inicio - s[i].inicio; if (d > LR_IDX_FIM_MAX) d = LR_IDX_FIM_MAX; if (d < .001) d = .001; }
+      else d = LR_IDX_FIM_ULTIMA;
+    }
+    o[k].inicio = s[i].inicio; o[k].fim = s[i].inicio + d; k++;
+  }
+  if (tipo == LEGREF_IDX_ASS && k >= LR_ASS_MIN) {
+    // So tempo, sem estilo nem texto: karaoke/efeito sao rajadas de inicios,
+    // placa/titulo fica na tela mais que uma fala. Fim estimado nao diz nada da
+    // duracao, entao so a rajada vale para ele.
+    char *fica = malloc((size_t)k); int q = 0;
+    if (!fica) { free(s); free(o); free(est); return -1; }
+    for (i = 0; i < k; i++) {
+      double d = o[i].fim - o[i].inicio;
+      fica[i] = !(!est[i] && (d < LR_ASS_DUR_MIN || d > LR_ASS_DUR_MAX)) &&
+                iniciosPerto(o, k, i, LR_ASS_RAJADA) < LR_ASS_RAJADA_N;
+      q += fica[i];
+    }
+    if (q >= LR_ASS_MIN) {
+      int w = 0;
+      for (i = 0; i < k; i++) if (fica[i]) { o[w] = o[i]; est[w] = est[i]; w++; }
+      if (filtradas) *filtradas = k - w;
+      k = w;
+    }
+    free(fica);
+  }
+fim:
+  if (estimado) for (i = 0; i < k; i++) if (est[i]) { *estimado = 1; break; }
+  free(s); free(est);
+  if (!k) { free(o); return 0; }
+  *saida = o;
+  return k;
+}
+
+static int pgsFaixa(const Faixa *f) { return f->tipo == 0x11 && !strcmp(f->codec, "S_HDMV/PGS"); }
+// No modo so indice o bloco nunca e lido: compressao (o mkvmerge comprime PGS
+// com zlib) nao atrapalha.
+static int textoIndice(const Faixa *f) {
+  return f->tipo == 0x11 && (!strcmp(f->codec, "S_TEXT/UTF8") || !strcmp(f->codec, "S_TEXT/ASS") ||
+                             !strcmp(f->codec, "S_TEXT/SSA"));
+}
+static int tipoIndice(const Faixa *f) {
+  return pgsFaixa(f) ? LEGREF_IDX_PGS : strcmp(f->codec, "S_TEXT/UTF8") ? LEGREF_IDX_ASS : LEGREF_IDX_TEXTO;
+}
+static int cmpInt(const void *a, const void *b) { int x = *(const int *)a, y = *(const int *)b; return x < y ? -1 : x > y; }
+
+// --- CUES EM FLUXO (modo so indice) ---------------------------------------------
+// O Cues chega pedaco a pedaco e so os pontos das faixas que interessam ficam:
+// a contagem das faixas de texto de dialogo (a mediana do par do PGS) e as
+// linhas das LR_IDX_GUARDA primeiras candidatas. Um Range so, na mesma conexao,
+// sem esperar entre pedacos: a memoria e um CuePoint + as linhas, nunca o Cues.
+#define LR_IDX_GUARDA      12        // candidatas cujas linhas o fluxo guarda (o laco usa ate 8)
+#define LR_IDX_PONTOS_SOMA 131072    // soma das linhas guardadas (16 B cada: 2 MB no pior caso)
+#define LR_CUEPONTO_MAX    (64L * 1024L)   // um CuePoint; maior que isto e pulado
+#ifndef LR_FLUXO_PEDACO   // tests/legref.sh tambem roda com 7 bytes: costuras do fluxo
+#define LR_FLUXO_PEDACO    (256L * 1024L)  // leitor sem fluxo (testes): Range por pedaco
+#endif
+typedef struct { double inicio, dur; } PontoIdx;
+typedef struct {
+  int numero, contar, guardar, estourou, n, k, cap;
+  PontoIdx *v;
+} CuesFaixa;
+typedef struct {
+  double escala;
+  CuesFaixa f[LR_FAIXAS]; int nF;
+  long soma;                       // linhas guardadas, todas as faixas
+  unsigned char resto[LR_CUEPONTO_MAX + 16]; long nResto;
+  long long pular;                 // bytes de um elemento pulado ainda por vir
+  long long lidos;
+  int ruim, semMemoria, pulados;
+} CuesFluxo;
+
+static CuesFaixa *cuesFaixa(CuesFluxo *s, int numero) {
+  int i;
+  for (i = 0; i < s->nF; i++) if (s->f[i].numero == numero) return &s->f[i];
+  return NULL;
+}
+static void cuesLiberar(CuesFluxo *s) {
+  int i;
+  for (i = 0; i < s->nF; i++) { free(s->f[i].v); s->f[i].v = NULL; }
+}
+// Um CuePoint inteiro: o mesmo que lerCues(soTempo) faz, para todas as faixas
+// de uma vez.
+static void cuesPonto(CuesFluxo *s, const unsigned char *d, long t) {
+  It cp = { d, 0, t }, tp; unsigned long id2, id3; const unsigned char *d2, *d3; long t2, t3;
+  double tempo = -1;
+  while (prox(&cp, &id2, &d2, &t2)) if (id2 == 0xB3) tempo = (double)lerUint(d2, t2) * s->escala;
+  if (tempo < 0) return;
+  cp.o = 0;
+  while (prox(&cp, &id2, &d2, &t2)) {
+    int tr = 0; double dur = -1; CuesFaixa *f;
+    if (id2 != 0xB7) continue;
+    tp = (It){ d2, 0, t2 };
+    while (prox(&tp, &id3, &d3, &t3)) {
+      if (id3 == 0xF7) tr = (int)lerUint(d3, t3);
+      else if (id3 == 0xB2) dur = (double)lerUint(d3, t3) * s->escala;
+    }
+    f = cuesFaixa(s, tr);
+    if (!f || f->estourou) continue;
+    if (++f->n > LR_IDX_PONTOS_MAX) {   // como lerCues: faixa grande demais nao serve
+      f->estourou = 1; s->soma -= f->k; free(f->v); f->v = NULL; f->k = f->cap = 0; continue;
+    }
+    if (!f->guardar) continue;
+    if (s->soma >= LR_IDX_PONTOS_SOMA) {
+      f->estourou = 1; s->soma -= f->k; free(f->v); f->v = NULL; f->k = f->cap = 0; continue;
+    }
+    if (f->k == f->cap) {
+      int cap = f->cap ? f->cap * 2 : 256; PontoIdx *nv;
+      if (cap > LR_IDX_PONTOS_MAX) cap = LR_IDX_PONTOS_MAX;
+      nv = realloc(f->v, (size_t)cap * sizeof *nv);
+      if (!nv) { s->semMemoria = 1; return; }
+      f->v = nv; f->cap = cap;
+    }
+    f->v[f->k++] = (PontoIdx){ tempo, dur };
+    s->soma++;
+  }
+}
+// Elementos completos em b[0..n). Devolve os bytes consumidos; -1 = nao e um
+// Cues (lixo, tamanho desconhecido ou outro elemento: um 200 com o comeco do
+// arquivo cai aqui). O que sobra e um elemento ainda incompleto.
+static long cuesElementos(CuesFluxo *s, const unsigned char *b, long n) {
+  long o = 0;
+  while (o < n && !s->pular) {
+    unsigned long id; long long t; int a, c; long hdr, tem;
+    int la = largura(b[o]), lc;
+    if (la < 1 || la > 4) { s->ruim = 1; return -1; }
+    if (o + la >= n) break;
+    lc = largura(b[o + la]);
+    if (lc < 1 || lc > 8) { s->ruim = 1; return -1; }
+    if (o + la + lc > n) break;
+    a = lerId(b + o, n - o, &id); c = lerTam(b + o + a, n - o - a, &t);
+    if (!a || !c || t < 0 || (id != 0xBB && id != 0xEC && id != 0xBF)) { s->ruim = 1; return -1; }
+    hdr = a + c;
+    if (id != 0xBB || t > LR_CUEPONTO_MAX) {      // Void/CRC, ou CuePoint absurdo: pula
+      if (id == 0xBB) s->pulados++;
+      tem = n - o - hdr;
+      if (tem >= t) { o += hdr + (long)t; continue; }
+      s->pular = t - tem; return n;
+    }
+    if (n - o - hdr < t) break;
+    cuesPonto(s, b + o + hdr, (long)t);
+    if (s->semMemoria) return -1;
+    o += hdr + (long)t;
+  }
+  return o;
+}
+static int cuesComer(const unsigned char *p, long n, void *u) {
+  CuesFluxo *s = u;
+  s->lidos += n;
+  while (n > 0) {
+    long usado;
+    if (s->pular > 0) {
+      long k = s->pular < n ? (long)s->pular : n;
+      s->pular -= k; p += k; n -= k; continue;
+    }
+    if (s->nResto) {
+      long cabe = (long)sizeof s->resto - s->nResto, k = n < cabe ? n : cabe;
+      memcpy(s->resto + s->nResto, p, (size_t)k); s->nResto += k; p += k; n -= k;
+      usado = cuesElementos(s, s->resto, s->nResto);
+      if (usado < 0) return 0;
+      if (!usado && s->nResto == (long)sizeof s->resto) { s->ruim = 1; return 0; }
+      memmove(s->resto, s->resto + usado, (size_t)(s->nResto - usado)); s->nResto -= usado;
+      continue;
+    }
+    usado = cuesElementos(s, p, n);
+    if (usado < 0) return 0;
+    p += usado; n -= usado;
+    if (n > 0 && !s->pular) {           // cauda incompleta: no maximo um CuePoint
+      if (n > (long)sizeof s->resto) { s->ruim = 1; return 0; }
+      memcpy(s->resto, p, (size_t)n); s->nResto = n; n = 0;
+    }
+  }
+  return 1;
+}
+
+static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, long *tam,
+                              int *status, int (*parar)(void *), void *pu);
+static int lerHttpFluxo(Job *j, long long ini, long n, int (*cb)(const unsigned char *, long, void *),
+                        void *u, long *recebidos);
+
+// Um Range entregue em pedacos a cb (que devolve 0 para parar). Conta como UM
+// pedido no orcamento, com os n bytes reservados antes. O leitor de verdade
+// (lerHttp) le em fluxo; um leitor injetado (testes) e servido em pedacos.
+static int lerFluxo(Job *j, long long ini, long n, int (*cb)(const unsigned char *, long, void *), void *u) {
+  LegRef *r = j->r; long feito = 0;
+  if (!porta(j, n)) return 0;
+  if (r->ler == lerHttp) {
+    int ok = lerHttpFluxo(j, ini, n, cb, u, &feito);
+    j->bytes += feito;
+    return ok;
+  }
+  while (feito < n) {
+    long k = n - feito < LR_FLUXO_PEDACO ? n - feito : LR_FLUXO_PEDACO, tam = 0; int st = 0, ok;
+    unsigned char *b = r->ler(r->lerU, j->urlFinal, ini + feito, k, &tam, &st, parou, j);
+    if (b) j->bytes += tam;
+    if (parou(j)) { free(b); j->erro = LEGREF_PARADO; return 0; }
+    if (!b) { if (j->erro != LEGREF_PARADO) j->erro = st == 200 ? LEGREF_SEM_RANGE : LEGREF_REDE; return 0; }
+    if (st != 206) { free(b); j->erro = LEGREF_SEM_RANGE; return 0; }
+    if (tam <= 0) { free(b); j->erro = LEGREF_INCOMPLETO; return 0; }
+    if (tam > k) tam = k;
+    ok = cb(b, tam, u); free(b);
+    if (!ok) { j->erro = LEGREF_SEM_INDICE; return 0; }
+    feito += tam;
+  }
+  return 1;
+}
+
+// O Cues em `abs`: o cabecalho (16 bytes) e depois o corpo em fluxo para s.
+static int lerCuesFluxo(Job *j, long long abs, CuesFluxo *s) {
+  long tam = 0; unsigned long id; long long t; int a, b;
+  unsigned char *h = ler(j, abs, 16, &tam);
+  if (!h) return 0;
+  a = lerId(h, tam, &id); b = a ? lerTam(h + a, tam - a, &t) : 0;
+  free(h);
+  if (!a || !b || id != 0x1C53BB6B || t < 0) { j->erro = LEGREF_SEM_INDICE; return 0; }
+  if (t > LR_CUES_MAX) {
+    fprintf(stderr, "[legref] cues size=%lld bytes over the %ld MB cap: not read\n", t, LR_CUES_MAX >> 20);
+    j->erro = LEGREF_ORCAMENTO; return 0;
+  }
+  if (!lerFluxo(j, abs + a + b, (long)t, cuesComer, s)) {
+    if (j->erro == LEGREF_ORCAMENTO)
+      fprintf(stderr, "[legref] cues size=%lld bytes over this read's budget (%lld bytes left): not read\n",
+              t, j->p.orc.maxBytes - j->bytes);
+    if (s->semMemoria) j->erro = LEGREF_MEMORIA;
+    else if (s->ruim && j->erro != LEGREF_PARADO && j->erro != LEGREF_SEM_RANGE) j->erro = LEGREF_SEM_INDICE;
+    return 0;
+  }
+  if (s->lidos != t || s->nResto || s->pular) { j->erro = LEGREF_INCOMPLETO; return 0; }
+  fprintf(stderr, "[legref] cues size=%lld bytes streamed in 1 range: %d track(s) followed, %ld line(s) kept%s\n",
+          t, s->nF, s->soma, s->pulados ? " (oversized CuePoints skipped)" : "");
+  return 1;
+}
+
+static LegendaDocumento *coletarIndice(Job *j, LegRefStatus *st, const Faixa *fx, int nF,
+                                       long long segData, long long posCues, double escala) {
+  const char *ids[LR_FAIXAS], *nms[LR_FAIXAS]; int ok[LR_FAIXAS], cand[LR_FAIXAS], nCand = 0, i, x;
+  int contagens[LR_FAIXAS], nCont = 0, pares = 0, nv = 0, foraGuarda = 0;
+  CuesFluxo *cf = NULL; LegendaDocumento *doc = NULL;
+  Tempo *tv[8] = { 0 }; int nt[8] = { 0 }, est[8] = { 0 }, filt[8] = { 0 }, qual[8] = { 0 }, brutos[8] = { 0 };
+  // Texto antes de PGS: a duracao de uma fala de texto vem do arquivo; a do
+  // PGS sai do par exibe/limpa.
+  for (int pass = 0; pass < 2; pass++) {
+    for (i = 0; i < nF; i++) {
+      ids[i] = fx[i].idioma; nms[i] = fx[i].nome;
+      ok[i] = (pass ? pgsFaixa(&fx[i]) : textoIndice(&fx[i])) && !letreiro(&fx[i]) && !comentario(fx[i].nome);
+      for (int e = 0; e < j->p.nExcl; e++) if (j->p.excl[e] == fx[i].numero) ok[i] = 0;
+    }
+    nCand += ordenar(ids, nms, ok, nF, j->p.idioma, cand + nCand);
+  }
+  if (!nCand) { j->erro = LEGREF_SEM_FAIXA; return NULL; }
+  anunciar(j, st, fx[cand[0]].numero, fx[cand[0]].idioma, fx[cand[0]].codec);
+  if (posCues < 0) { j->erro = LEGREF_SEM_INDICE; return NULL; }
+  // As faixas que o fluxo segue: contagem das de texto de dialogo; linhas das
+  // LR_IDX_GUARDA primeiras candidatas, na ordem de preferencia.
+  cf = calloc(1, sizeof *cf);
+  if (!cf) { j->erro = LEGREF_MEMORIA; return NULL; }
+  cf->escala = escala;
+  for (i = 0; i < nF && cf->nF < LR_FAIXAS; i++)
+    if (textoIndice(&fx[i]) && !fx[i].forced && !comentario(fx[i].nome)) {
+      cf->f[cf->nF].numero = fx[i].numero; cf->f[cf->nF++].contar = 1;
+    }
+  for (x = 0; x < nCand && x < LR_IDX_GUARDA; x++) {
+    CuesFaixa *g = cuesFaixa(cf, fx[cand[x]].numero);
+    if (!g && cf->nF < LR_FAIXAS) { g = &cf->f[cf->nF++]; g->numero = fx[cand[x]].numero; }
+    if (g) g->guardar = 1;
+  }
+  if (!lerCuesFluxo(j, segData + posCues, cf)) { cuesLiberar(cf); free(cf); return NULL; }
+  // Mediana das faixas de texto de dialogo (para o par do PGS), como no NuvioTV.
+  for (i = 0; i < cf->nF; i++)
+    if (cf->f[i].contar && !cf->f[i].estourou && cf->f[i].n >= LR_IDX_MIN_FALAS) contagens[nCont++] = cf->f[i].n;
+  if (nCont) { qsort(contagens, (size_t)nCont, sizeof *contagens, cmpInt); pares = contagens[nCont / 2]; }
+  // As linhas das candidatas (ate 8), na ordem de preferencia; as que nao
+  // servem (poucas falas, span curto, falas demais para a engine) saem.
+  for (x = 0; x < nCand && nv < 8; x++) {
+    const Faixa *f = &fx[cand[x]]; LegRefPonto *pp = NULL; LegRefFala *fl = NULL; int np, k, e = 0, fi = 0;
+    CuesFaixa *g = cuesFaixa(cf, f->numero);
+    if (!g || !g->guardar) { foraGuarda++; continue; }
+    if (g->estourou) continue;
+    np = g->k;
+    if (np > 0) {
+      int q;
+      pp = malloc((size_t)np * sizeof *pp);
+      if (!pp) { cuesLiberar(cf); free(cf); for (i = 0; i < nv; i++) free(tv[i]); j->erro = LEGREF_MEMORIA; return NULL; }
+      for (q = 0; q < np; q++) pp[q] = (LegRefPonto){ -1, -1, g->v[q].inicio, g->v[q].dur };
+    }
+    free(g->v); g->v = NULL; g->k = g->cap = 0;   // a linha desta faixa ja saiu do fluxo
+    k = legref_indice_linha(pp, np, tipoIndice(f), pares, &fl, &e, &fi);
+    free(pp);
+    if (k < LR_IDX_MIN_FALAS || k > LR_EVENTOS_MAX || fl[k - 1].inicio - fl[0].inicio < LR_IDX_MIN_SPAN) {
+      if (np > 0) fprintf(stderr, "[legref] index track=%d codec=%s skipped: points=%d cues=%d\n", f->numero, f->codec, np, k);
+      free(fl); continue;
+    }
+    tv[nv] = (Tempo *)fl;   // LegRefFala e Tempo: o mesmo { inicio, fim }
+    nt[nv] = k; est[nv] = e; filt[nv] = fi; qual[nv] = cand[x]; brutos[nv] = np; nv++;
+  }
+  cuesLiberar(cf); free(cf);
+  if (foraGuarda && nv < 8)
+    fprintf(stderr, "[legref] index: %d candidate(s) past the first %d were not followed\n", foraGuarda, LR_IDX_GUARDA);
+  if (!nv) { j->erro = LEGREF_SEM_INDICE; return NULL; }
+  {
+    int desc = 0;
+    x = nv > 1 ? validar(tv, nt, nv, &desc) : 0;
+    if (desc) fprintf(stderr, "[legref] cross_check dropped track=%d (shifted against two agreeing tracks) using=%d\n",
+                      fx[qual[0]].numero, fx[qual[x]].numero);
+  }
+  {
+    const Faixa *f = &fx[qual[x]]; char ident[32];
+    anunciar(j, st, f->numero, f->idioma, f->codec);
+    // "Outra referencia" so aparece no menu quando ainda ha outra faixa boa.
+    pthread_mutex_lock(&j->r->m);
+    if (j->r->st.pedido == j->id) j->r->st.alternativas = nv - 1;
+    pthread_mutex_unlock(&j->r->m);
+    snprintf(ident, sizeof ident, "mkv-track:%d", f->numero);
+    progresso(j, nt[x], nt[x]);
+    doc = montarTempos(tv[x], nt[x], f->idioma, ident, f->forced, j->p.sessao, est[x] ? LEGENDA_DOC_FIM_ESTIMADO : 0);
+    if (!doc) j->erro = LEGREF_MEMORIA;
+    fprintf(stderr, "[legref] index track=%d codec=%s lang=%s points=%d cues=%d estimated_ends=%d ass_dropped=%d "
+                    "pgs_pairs=%s candidates=%d requests=%d bytes=%lld\n",
+            f->numero, f->codec, f->idioma, brutos[x], nt[x], est[x], filt[x],
+            tipoIndice(f) == LEGREF_IDX_PGS ? (nt[x] * 2 <= brutos[x] + 1 ? "yes" : "no") : "-", nv, j->pedidos, j->bytes);
+  }
+  for (i = 0; i < nv; i++) free(tv[i]);
   return doc;
 }
 
@@ -814,6 +1245,8 @@ static LegendaDocumento *coletar(Job *j, LegRefStatus *st) {
     nF = lerTracks(tracks + oTr, nTr, fx, LR_FAIXAS);
   }
   (void)posInfo;
+  // .tpk 6+: a referencia sai so do indice (ver coletarIndice).
+  if (modoIndice) { doc = coletarIndice(j, st, fx, nF, segData, posCues, escala); goto fim; }
   // 2. As faixas candidatas: texto, nao letreiro, nao comentario, nao
   // excluidas; em ordem de preferencia (ordenar).
   {
@@ -831,7 +1264,7 @@ static LegendaDocumento *coletar(Job *j, LegRefStatus *st) {
   anunciar(j, st, fx[escolhida].numero, fx[escolhida].idioma, fx[escolhida].codec);
   // 3. O indice.
   if (posCues < 0) { j->erro = LEGREF_SEM_INDICE; goto fim; }
-  cues = lerElemento(j, segData + posCues, 0x1C53BB6B, LR_CUES_MAX, &oCu, &nCu);
+  cues = lerElemento(j, segData + posCues, 0x1C53BB6B, LR_CUES_BUF_MAX, &oCu, &nCu);
   if (!cues) goto fim;
   // 3b. Validacao cruzada: o mesmo Cues traz os tempos das outras faixas de
   // texto (com CueDuration). Custa zero Range a mais.
@@ -877,7 +1310,7 @@ static LegendaDocumento *coletar(Job *j, LegRefStatus *st) {
       qsort(tv, (size_t)nP, sizeof *tv, cmpTempo);
       snprintf(ident, sizeof ident, "mkv-track:%d", fx[escolhida].numero);
       progresso(j, nP, nP);
-      doc = montarTempos(tv, nP, fx[escolhida].idioma, ident, fx[escolhida].forced, j->p.sessao);
+      doc = montarTempos(tv, nP, fx[escolhida].idioma, ident, fx[escolhida].forced, j->p.sessao, 0);
       free(tv);
       if (!doc) j->erro = LEGREF_MEMORIA;
       goto fim;
@@ -954,6 +1387,16 @@ fim:
   return doc;
 }
 
+// Jobs on the network right now (all LegRef instances): video_tpk.c caps the
+// subtitle reader to 1 connection meanwhile, so TorBox's CDN never sees more
+// than 4 (owner 13/11: sync shares the subtitle budget).
+static atomic_int emRede;
+/* Bytes the sync reference reader received (owner 24/11/2026, burn-in sound
+ * after seeks: who else reads the original file). Diagnostic only. */
+static atomic_llong legRedeBytes;
+long long legref_rede_bytes(void) { return atomic_load(&legRedeBytes); }
+int legref_em_rede(void) { return atomic_load(&emRede); }
+
 static void *trabalhar(void *u) {
   LegRef *r = u;
   for (;;) {
@@ -966,7 +1409,10 @@ static void *trabalhar(void *u) {
     snprintf(j.urlFinal, sizeof j.urlFinal, "%s", j.p.url);
     pthread_mutex_unlock(&r->m);
     memset(&st, 0, sizeof st);
-    doc = j.p.local ? j.p.local(j.p.url, j.p.sessao, j.p.excl, j.p.nExcl) : NULL;
+    // Modo so indice: o indice ja da a faixa INTEIRA em 2-4 Ranges; a janela
+    // local do mkvass (so um trecho) fica para o modo de sempre.
+    atomic_fetch_add(&emRede, 1);
+    doc = j.p.local && !modoIndice ? j.p.local(j.p.url, j.p.sessao, j.p.excl, j.p.nExcl) : NULL;
     if (doc) {
       const LegendaDocumentoInfo *info = legenda_documento_info(doc);
       int n = 0, faixa = 0; legenda_documento_dados(doc, &n);
@@ -974,6 +1420,12 @@ static void *trabalhar(void *u) {
       anunciar(&j, &st, faixa, info->idioma, "S_TEXT/ASS");
       progresso(&j, n, n);
     } else doc = coletar(&j, &st);
+    atomic_fetch_sub(&emRede, 1);
+#ifdef NV_TPK
+    // 2-4 Ranges and done: the connection does not stay open all film (its
+    // keepalive held a socket on TorBox's CDN, which falls over at 5).
+    rede_fio_fechar();
+#endif
     pthread_mutex_lock(&r->m);
     if (r->st.pedido == j.id && r->ped.id == j.id && !r->sair) {
       r->st.bytes = j.bytes; r->st.pedidos = j.pedidos;
@@ -994,21 +1446,28 @@ static void *trabalhar(void *u) {
 }
 
 // --- HTTP -------------------------------------------------------------------------
-static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, long *tam,
-                              int *status, int (*parar)(void *), void *pu) {
-  char range[80], linhas[2048]; const char *cab[18]; RedePedido p; RedeResposta r; unsigned char *b = NULL;
+// Range + os mesmos cabecalhos com que o player abre a fonte (proxyHeaders do
+// addon). range[80] e linhas[2048] sao do chamador. Devolve quantos.
+static int montarCabs(const Job *jb, long long ini, long n, char *range, char *linhas, const char **cab) {
   int k = 0; char *s, *nl;
-  (void)u;
-  snprintf(range, sizeof range, "Range: bytes=%lld-%lld", ini, ini + n - 1);
+  snprintf(range, 80, "Range: bytes=%lld-%lld", ini, ini + n - 1);
   cab[k++] = range;
-  // Os mesmos cabecalhos com que o player abre a fonte (proxyHeaders do addon).
-  snprintf(linhas, sizeof linhas, "%s", pu ? ((Job *)pu)->p.cabs : "");
+  snprintf(linhas, 2048, "%s", jb ? jb->p.cabs : "");
   for (s = linhas; *s && k < 17; s = nl) {
     nl = strchr(s, '\n');
     if (nl) *nl++ = 0; else nl = s + strlen(s);
     if (*s && strchr(s, ':') && strncasecmp(s, "Range:", 6)) cab[k++] = s;
   }
   cab[k] = NULL;
+  return k;
+}
+
+static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, long *tam,
+                              int *status, int (*parar)(void *), void *pu) {
+  char range[80], linhas[2048]; const char *cab[18]; RedePedido p; RedeResposta r; unsigned char *b = NULL;
+  int k;
+  (void)u;
+  k = montarCabs(pu, ini, n, range, linhas, cab);
   memset(&p, 0, sizeof p);
   p.url = url; p.cabecalhos = cab; p.seguir = 1; p.rebaixar_midia = 1;
   p.prazo_ms = 20000u + (unsigned)(n / 64);
@@ -1019,6 +1478,7 @@ static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, l
   *status = r.status;
   if (r.erro == REDE_OK && r.status == 206 && r.corpo) {
     b = (unsigned char *)r.corpo; r.corpo = NULL; *tam = (long)r.n_corpo;
+    atomic_fetch_add(&legRedeBytes, (long long)r.n_corpo);
     // Endereco final para os proximos Ranges (o Job guarda; nunca vai a log).
     if (r.final[0] && pu) { Job *j = pu; snprintf(j->urlFinal, sizeof j->urlFinal, "%s", r.final); }
   } else if (r.erro == REDE_CANCELADO) {
@@ -1037,10 +1497,50 @@ static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, l
   return b;
 }
 
+// Fluxo do lerFluxo: o corpo do Range vai direto ao parser, sem buffer.
+typedef struct { int (*cb)(const unsigned char *, long, void *); void *u; long n; int cortou; } FluxoHttp;
+static int fluxoHttp(const void *d, size_t n, void *u) {
+  FluxoHttp *f = u;
+  f->n += (long)n;
+  if (!f->cb((const unsigned char *)d, (long)n, f->u)) { f->cortou = 1; return 0; }
+  return 1;
+}
+static int lerHttpFluxo(Job *j, long long ini, long n, int (*cb)(const unsigned char *, long, void *),
+                        void *u, long *recebidos) {
+  char range[80], linhas[2048]; const char *cab[18]; RedePedido p; RedeResposta r;
+  FluxoHttp f = { cb, u, 0, 0 }; int k, ok = 0;
+  k = montarCabs(j, ini, n, range, linhas, cab);
+  memset(&p, 0, sizeof p);
+  p.url = j->urlFinal; p.cabecalhos = cab; p.seguir = 1; p.rebaixar_midia = 1;
+  p.prazo_ms = 20000u + (unsigned)(n / 64);
+  p.max_bytes = (size_t)n;
+  p.parar = parou; p.parar_usuario = j;
+  p.receber_corpo = fluxoHttp; p.corpo_usuario = &f;
+  rede_pedir(&p, &r);
+  *recebidos = f.n;
+  atomic_fetch_add(&legRedeBytes, (long long)f.n);
+  if (parou(j)) j->erro = LEGREF_PARADO;
+  else if (r.status == 200) j->erro = LEGREF_SEM_RANGE;     // o parser ja recusou o comeco do arquivo
+  else if (f.cortou) j->erro = LEGREF_SEM_INDICE;           // lerCuesFluxo refina (memoria)
+  else if (r.erro != REDE_OK || r.status != 206) {
+    j->erro = r.erro == REDE_CANCELADO ? LEGREF_PARADO : LEGREF_REDE;
+    fprintf(stderr, "[legref] stream failed reason=%s http=%d rede_error=%d curl_error=%d request_headers=%d bytes=%ld of %ld\n",
+            r.erro == REDE_PRAZO ? "deadline" : r.erro == REDE_LIMITE_CORPO ? "body_limit" :
+            r.erro == REDE_OK ? "invalid_range_response" : "request_failed",
+            r.status, (int)r.erro, r.curl_erro, k - 1, f.n, n);
+  } else if (f.n < n) j->erro = LEGREF_INCOMPLETO;
+  else ok = 1;
+  rede_resposta_limpar(&r);
+  return ok;
+}
+
 int legref_disponivel(void) {
-  // Samsung: desligado ate provar em TV. -DNV_LEGREF_TPK liga no .tpk 6+
-  // (canario; o 4/5 fica fora: rede sem TLS por fio, outro carregador).
-#if defined(__EMSCRIPTEN__) || defined(NV_TPK40) || (defined(NV_TPK) && !defined(NV_LEGREF_TPK))
+  // Samsung .tpk (4/5 e 6+): ligado, no MODO SO INDICE (2-4 Ranges, nada
+  // durante o filme). O canario da #462 lia os blocos e ficou desligado por isso.
+  // O 4/5 tambem: o estado por fio da rede ja e pthread_key (rede.c, #137/#180),
+  // o rede_pedir e o mesmo que Plex/Jellyfin usam la, e esta unidade nao tem TLS
+  // (nao cita NV_TPK40, entao o tools/tpk.sh reusa o objeto comum; tpk40_tls.sh).
+#if defined(__EMSCRIPTEN__)
   return 0;
 #else
   return (rede_pedido_capacidades() & REDE_CAP_JOB) != 0;

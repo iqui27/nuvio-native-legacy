@@ -220,6 +220,44 @@ static void armarRelatorDeQueda(void) {
   fflush(stdout);
 }
 
+// LEGENDAS ASS (libass hybrid, como no .tpk). Antes de qualquer fio do app:
+//  - os fios de evento do libass seguem os CPUs que o app pode usar
+//    (assrender_fios_ambiente);
+//  - armv7 (TVs de 32 bits, como a TCL do dono) = TV lenta (dono 25/11/2026):
+//    as regras de TV lenta do .tpk (resolucao 50 % nas cenas pesadas, pedido
+//    adiante pelo pico) e o modo de desempenho do mpvNova
+//    (LIBASS_EXPERIMENTAL_EDGES=1: no teste do NuvioTV num Android TV armv7,
+//    85 -> 48 ms por quadro na mediana; muda alguns pixels), e o modo de
+//    resolucao padrao Low auto (o do Tizen 4/5). arm64 fica com a saida exata
+//    e High auto. Um valor posto a mao (teste) ou salvo na folha vence.
+#ifdef NV_ASS_LIBASS
+#include "assrender.h"
+#include "assperf.h"
+#endif
+static void assAmbiente(void) {
+#ifdef NV_ASS_LIBASS
+  assrender_fios_ambiente();
+#if defined(__arm__)
+  setenv("LIBASS_EXPERIMENTAL_EDGES", "1", 0);
+  assperf_tv_lenta_definir(1);
+  assperf_tizen_definir(4);   // default render mode Low auto, as Tizen 4/5 (a saved choice wins)
+#else
+  assperf_tizen_definir(7);   // High auto: arm64 keeps full quality
+#endif
+  printf("[ass] android: abi=%s, tv lenta=%d, modo de desempenho=%s, fios de evento=%s\n",
+#if defined(__aarch64__)
+         "arm64-v8a",
+#elif defined(__arm__)
+         "armeabi-v7a",
+#else
+         "outra",
+#endif
+         assperf_tv_lenta(), getenv("LIBASS_EXPERIMENTAL_EDGES") ? getenv("LIBASS_EXPERIMENTAL_EDGES") : "0",
+         getenv("LIBASS_RENDER_THREADS") ? getenv("LIBASS_RENDER_THREADS") : "padrao do libass");
+  fflush(stdout);
+#endif
+}
+
 void android_iniciar(void) {
   // Mesma pilha para os fios criados pelo SDL (SDL_CreateThread).
   SDL_SetHint(SDL_HINT_THREAD_STACK_SIZE, "8388608");
@@ -229,6 +267,7 @@ void android_iniciar(void) {
   espelharNoLogcat();
   logaTv();
   armarRelatorDeQueda();
+  assAmbiente();
 }
 
 // SUPERFICIE 4K. A TCL Smart TV Pro (Android 14) tem painel 3840x2160 mas poe

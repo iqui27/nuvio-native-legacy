@@ -140,7 +140,14 @@ ctr_run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
   ASS_LIBS=""
   if [ "${NUVIO_ASS_LIBASS:-1}" = "1" ]; then
     [ -f "$ASS/include/ass/ass.h" ] || { echo "libass ARM ausente na imagem; reconstrua tools/Dockerfile ou use NUVIO_ASS_LIBASS=0" >&2; exit 2; }
-    ASS_CFLAGS="-DNV_ASS_LIBASS -I$ASS/include"
+    # -DNV_ASS_NOVO: the new subtitle engine (src/assperf.h), as on the .tpk.
+    # It wants the hybrid libass (ASS_NV_API); an image built before
+    # 25/11/2026 still has stock 0.17.5 and gets the engine without the NEON
+    # engine, blur threads, dialogue opacity or split render.
+    ASS_CFLAGS="-DNV_ASS_LIBASS -DNV_ASS_NOVO -I$ASS/include"
+    if [ ! -f "$ASS/lib/.libass-hybrid" ]; then
+      echo "==> ATENCAO: libass da imagem nao e o hibrido (tools/Dockerfile de 25/11/2026); reconstrua: docker build --platform linux/arm64 -t nuvio-webos-sdk tools/" >&2
+    fi
     ASS_LIBS="-L$ASS/lib -Wl,--start-group -lass -lharfbuzz -lfribidi -lfreetype -Wl,--end-group"
   fi
   DTS_CFLAGS=""

@@ -646,7 +646,7 @@ static void *lerMkv(void *arg);
 static unsigned mkvGer;   // capmkv playback the chapter read belongs to
 #endif
 
-static VideoLegendaEstilo estilo = { 120, 0, 0, 3, 1, 0, 0, 0 };
+static VideoLegendaEstilo estilo = { 120, 0, 0, 3, 1, 0, 100, 0 };
 static int temEstilo;
 
 // Definida bem abaixo: video_bombear() a chama a cada transicao para

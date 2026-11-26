@@ -30,9 +30,25 @@ JNI="$EST/jni"
 ORIGINAL="$CACHE/src/media3-ffmpeg-decoder-1.8.0+1.aar"
 JOBS="${NUVIO_ANDROID_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
 mkdir -p "$CACHE/src" "$JNI" "$(dirname "$SAIDA")"
+# baixar <saida> <url> [url...]: cada endereco com espera crescente (Maven
+# Central e o GitHub respondem 429 a runners do CI em rajada); o proximo
+# endereco e um espelho. O SHA256 do AAR (abaixo) confere o que veio.
+baixar() {
+  local out="$1" u; shift
+  for u in "$@"; do
+    if curl -fsSL --retry 6 --retry-delay 10 --retry-max-time 240 --retry-all-errors "$u" -o "$out.part"; then
+      mv "$out.part" "$out"; return 0
+    fi
+    echo "ffmpeg-android.sh: falhou $u, tentando o proximo" >&2
+    sleep 20
+  done
+  rm -f "$out.part"; return 1
+}
+AAR_CAMINHO='org/jellyfin/media3/media3-ffmpeg-decoder/1.8.0%2B1/media3-ffmpeg-decoder-1.8.0%2B1.aar'
 if [ ! -f "$ORIGINAL" ]; then
-  curl -fsSL --retry 3 'https://repo.maven.apache.org/maven2/org/jellyfin/media3/media3-ffmpeg-decoder/1.8.0%2B1/media3-ffmpeg-decoder-1.8.0%2B1.aar' -o "$ORIGINAL.part"
-  mv "$ORIGINAL.part" "$ORIGINAL"
+  baixar "$ORIGINAL" "https://repo.maven.apache.org/maven2/$AAR_CAMINHO" \
+    "https://maven-central.storage-download.googleapis.com/maven2/$AAR_CAMINHO" \
+    "https://repo1.maven.org/maven2/$AAR_CAMINHO"
 fi
 python3 - "$ORIGINAL" "$AAR_HASH" <<'PY'
 import hashlib, sys
@@ -41,13 +57,14 @@ if hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest() != sys.argv[2]:
     raise SystemExit('ffmpeg-android.sh: AAR publicado nao confere com o SHA256 esperado')
 PY
 if [ ! -d "$FF" ]; then
-  curl -fsSL --retry 3 "https://github.com/FFmpeg/FFmpeg/archive/$FFMPEG_PIN.tar.gz" | tar xz -C "$CACHE/src"
+  baixar "$CACHE/src/ffmpeg-$FFMPEG_PIN.tar.gz" "https://github.com/FFmpeg/FFmpeg/archive/$FFMPEG_PIN.tar.gz" \
+    "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/$FFMPEG_PIN"
+  tar xzf "$CACHE/src/ffmpeg-$FFMPEG_PIN.tar.gz" -C "$CACHE/src" && rm -f "$CACHE/src/ffmpeg-$FFMPEG_PIN.tar.gz"
   mv "$CACHE/src/FFmpeg-$FFMPEG_PIN" "$FF"
 fi
 for f in CMakeLists.txt ffmpeg_jni.cc; do
   if [ ! -s "$JNI/$f" ]; then
-    curl -fsSL --retry 3 "https://raw.githubusercontent.com/androidx/media/$MEDIA_PIN/libraries/decoder_ffmpeg/src/main/jni/$f" -o "$JNI/$f.part"
-    mv "$JNI/$f.part" "$JNI/$f"
+    baixar "$JNI/$f" "https://raw.githubusercontent.com/androidx/media/$MEDIA_PIN/libraries/decoder_ffmpeg/src/main/jni/$f"
   fi
 done
 ln -sfn "$FF" "$JNI/ffmpeg"

@@ -58,6 +58,10 @@ void cdnlink_lembrar(const char *orig, const char *final, const char *cabecalhos
 // 1 e `dst` = final guardado para `orig` ha no maximo `maxMs`; `*idadeMs`
 // (opcional) recebe a idade.
 int cdnlink_recente(const char *orig, const char *cabecalhos, unsigned maxMs, char *dst, unsigned tam, unsigned *idadeMs);
+// The add-on link `orig` already resolved to a CDN in this session, within the
+// link's validity, whatever headers asked (log 13, 23/11/2026: the source check
+// timed out on a link the player had just resolved). `host` gets the CDN host.
+int cdnlink_resolvido(const char *orig, char *host, unsigned hostTam);
 
 // Resolve agora (bloqueia ate `segundos`): segue os redirecionamentos de
 // `orig` com os cabecalhos do addon (linhas "Nome: valor" separadas por \n).

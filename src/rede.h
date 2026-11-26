@@ -94,6 +94,9 @@ typedef struct {
 unsigned rede_pedido_capacidades(void);
 int rede_pedir(const RedePedido *pedido, RedeResposta *resposta);
 void rede_resposta_limpar(RedeResposta *resposta);
+/* Closes this thread's cached connections (its curl handle): a thread that
+ * reads a little and then idles (legref) holds no socket open afterwards. */
+void rede_fio_fechar(void);
 
 /* Grupo vive fora do request: avancar ao trocar conta/perfil/titulo invalida
  * todos os jobs anteriores. Jobs retidos impedem UAF; nenhuma geracao volta
@@ -256,6 +259,9 @@ int rede_resto_recusado(void);
 // conexao. O primeiro Range lateral que da certo solta a pausa. Vale para o
 // fio inteiro: chamar no comeco de um fio proprio.
 void rede_lateral(int sim);
+// Nuvio's own requests in flight to TorBox hosts now; *pico (may be NULL)
+// gets the most since the last call (tbburn logs). The TV player is not counted.
+int rede_torbox_em_voo(int *pico);
 
 // Teto de bytes da transferencia corrente (0 = sem teto). E interno ao modulo;
 // esta exposto so porque rede_baixar_trecho o usa. Nao mexer de fora.
@@ -297,6 +303,10 @@ int rede_url_final_cab(const char *url, int segundos, const char *const *cabecal
 int rede_url_final_tipo(const char *url, int segundos, const char *const *cabecalhos,
                         char *dst, unsigned tam, int *status,
                         char *mime, unsigned mimeTam, long *corpo);
+// The libcurl code of THIS thread's last rede_url_final_tipo (28 = timed out,
+// the watchdog included; 0 = transport ok). Browser builds: always 0. Lets the
+// source check tell "no answer in time" from a real failure (log 13).
+int rede_url_final_curl(void);
 
 #ifdef NV_VIDAA
 // VARIANTE PARA A VIDAA. rede_url_final so devolve 0/1, e na VIDAA um 0 pode

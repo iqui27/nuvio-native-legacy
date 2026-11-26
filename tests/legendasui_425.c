@@ -47,6 +47,7 @@ void faixas_escolher_externa(const Legenda *l) {
 }
 const char *faixas_legenda_marca(int i) { (void)i; return NULL; }
 const char *i18n(const char *s) { return s; }
+const char *legenda_idioma(const char *i, const char *a) { (void)a; return i ? i : ""; }
 static const char *tocando = "https://h.invalid/Show.S01E01.WEB.mkv";
 const char *video_url_atual(void) { return tocando; }
 uint64_t legsync_hash_url(const char *u) { uint64_t h = 1469598103934665603ull; while (*u) h = (h ^ (unsigned char)*u++) * 1099511628211ull; return h; }
@@ -140,23 +141,39 @@ int main(int argc, char **argv) {
   addon(3, "fr", "SubDL", "Film.srt", "https://h.invalid/4");
   ling_local_legenda("pt"); ling_local_legenda2("en");
   legendasui_abrir();
+  // 06/11: Off + the pt GROUP + the en GROUP + All. OK on a group opens its
+  // sources; picking happens there. Rows 2.. of a source list are the sources.
   if (!strcmp(caso, "lista")) {
-    assert(nLinhasV == 4); // Off + best pt + best en + All
-    assert(linhas[0].tipo == LR_NENHUMA && linhas[3].tipo == LR_MAIS);
+    assert(nLinhasV == 4);
+    assert(linhas[0].tipo == LR_NENHUMA && linhas[1].tipo == LR_IDIOMA && linhas[2].tipo == LR_IDIOMA && linhas[3].tipo == LR_MAIS);
+    // 06/11: from Recommended the row decides the slot: no "Usar como",
+    // only Delay above the sources (main language rows pick the main).
     focar(1); tecla(SDLK_RETURN);
-    assert(escolhidaEmb == 0 && !ver);
-    focar(2); tecla(SDLK_RETURN);
+    assert(ver && escolhidaEmb == -99 && nLinhasV == 1 + 3);            // pt: 2 embedded + 1 add-on
+    assert(linhas[0].tipo == LR_ATRASO && linhaDe("v|alvo") < 0 && alvo == 0);
+    assert(cand[linhas[1].cand].embutida && cand[linhas[1].cand].indice == 0);
+    focar(1); tecla(SDLK_RETURN); assert(escolhidaEmb == 0 && ver);
+    tecla(SDLK_ESCAPE); assert(!ver && foco == 1);
+    // The Settings secondary language (en) is a MAIN row: it only orders lists.
+    focar(2); tecla(SDLK_RETURN); assert(ver && alvo == 0 && nLinhasV == 1 + 2);   // en: two add-ons
+    // The top source is the automatic pick (release name), listed once.
+    assert(linhas[1].cand >= 0 && !strcmp(cand[linhas[1].cand].leg.url, add[2].url));
+    focar(1); agoraMs += 1000; tecla(SDLK_RETURN);
     assert(escolhidasExt == 1 && !strcmp(escolhidaExtUrl, add[2].url));
+    tecla(SDLK_ESCAPE); assert(!ver);
   } else if (!strcmp(caso, "direita")) {
     // Right goes to the Style tab, never to the actions menu.
     focar(1); assert(tecla(SDLK_RIGHT) == LEGUI_ESTILO && !menu);
     focar(0); assert(tecla(SDLK_RIGHT) == LEGUI_ESTILO && !menu);
-    // Hold OK opens the dropdown instead.
+    // Holding OK on a language opens its sources, never a menu.
+    focar(2); segurar(); assert(!menu && ver);
+    // Hold OK on a source opens the dropdown instead.
     focar(1); segurar(); assert(menu);
     tecla(SDLK_DOWN); tecla(SDLK_RETURN);
     assert(secEscolhas == 1 && escolhidaEmb == -99 && escolhidasExt == 0);
   } else if (!strcmp(caso, "segurar")) {
     SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RETURN;
+    focar(2); tecla(SDLK_RETURN); assert(ver);
     focar(1); legendasui_evento(&e);
     assert(escolhidaEmb == -99 && escolhidasExt == 0 && !menu);
     agoraMs += 701; legendasui_evento(&e); // TV repeat=0
@@ -170,9 +187,11 @@ int main(int argc, char **argv) {
     tecla(SDLK_DOWN); tecla(SDLK_RETURN);
     assert(secEscolhas == 1 && escolhidaEmb == -99);
   } else if (!strcmp(caso, "voltar")) {
-    // Back closes the dropdown first, then the panel.
+    // Back closes the dropdown first, then the source list, then the panel.
+    focar(2); tecla(SDLK_RETURN); assert(ver);
     focar(1); segurar(); assert(menu);
-    assert(tecla(SDLK_ESCAPE) == LEGUI_TRATADO && !menu && aberto);
+    assert(tecla(SDLK_ESCAPE) == LEGUI_TRATADO && !menu && aberto && ver);
+    assert(tecla(SDLK_ESCAPE) == LEGUI_TRATADO && !ver && aberto);
     assert(tecla(SDLK_ESCAPE) == LEGUI_FECHAR && !aberto);
   } else if (!strcmp(caso, "atraso")) {
     alvo = 0; mudarAtraso(15000); assert(estilo.atrasoMs == 15000);
@@ -184,29 +203,32 @@ int main(int argc, char **argv) {
   }
   if (!strcmp(caso, "ponteiro")) {
     // Same row-hover, chevron and menu activation callbacks registered for Magic Remote.
-    ponteiroLinha(1, 0); assert(foco == 1);
-    ponteiroMenuAbrir(1, 0); assert(menu);
+    ponteiroLinha(2, 0); assert(foco == 2);
+    ponteiroMenuAbrir(2, 0); assert(!menu);              // a language row has no menu
+    tecla(SDLK_RETURN); assert(ver);
+    ponteiroLinha(2, 0); ponteiroMenuAbrir(2, 0); assert(menu);
     ponteiroMenu(1, 0); ponteiroMenuEscolher(1, 0);
     assert(!menu && secEscolhas == 1 && escolhidaEmb == -99 && !escolhidasExt);
-    ponteiroMenuAbrir(1, 0); ponteiroMenuEscolher(2, 0);
-    assert(ver && !menu);
+    ponteiroMenuAbrir(2, 0); ponteiroMenuEscolher(2, 0);  // "see all of this language" does nothing in the list
+    assert(ver && !menu && !strcmp(verGrupo, "g|Inglês"));
     tecla(SDLK_ESCAPE); assert(!ver);
   }
   if (!strcmp(caso, "lista")) {
-    // Pair is a fourth recommendation; accepting it does not reload either slot.
-    char id[24]; legendasui_id_addon(&add[1], id);
+    // 06/11: the second's language row (here en, so it stands in for the
+    // Settings en row); opening it reloads neither slot.
+    char id[24], s2[96]; legendasui_id_addon(&add[1], id);
+    snprintf(s2, sizeof s2, "s|g|%s", chaveIdioma("en"));
     snprintf(sec, sizeof sec, "%s", id); montarLinhas();
-    assert(nLinhasV == 5 && linhaDe("par") >= 0);
-    int before = escolhidasExt; focarChave("par"); tecla(SDLK_RETURN);
-    assert(escolhidasExt == before && !strcmp(sec, id));
+    assert(nLinhasV == 4 && linhaDe(s2) >= 0);
+    int before = escolhidasExt; focarChave(s2); tecla(SDLK_RETURN);
+    assert(escolhidasExt == before && !strcmp(sec, id) && ver && alvo == 1);
+    tecla(SDLK_ESCAPE);
     ativaEmb = -1; extId[0] = 0; montarLinhas();
-    assert(linhaDe("par") >= 0); // second slot remains visible with primary off
-    // Language menu includes all providers and returns to its recommendation.
-    focarChave("rec|p"); segurar(); tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RETURN);
-    assert(ver && !mais && nLinhasV == 6);
-    tecla(SDLK_ESCAPE); assert(!ver && !strcmp(linhas[foco].chave, "rec|p"));
+    assert(linhaDe(s2) >= 0); // second slot remains visible with primary off
+    sec[0] = 0; montarLinhas();
     // Pending short OK retains the chosen file across late addon replacements.
-    focarChave("rec|s"); SDL_Event ev = {0};
+    focar(2); tecla(SDLK_RETURN); assert(ver);
+    focar(1); SDL_Event ev = {0};
     ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_RETURN; legendasui_evento(&ev);
     snprintf(add[2].url, sizeof add[2].url, "https://h.invalid/new");
     agoraMs += NV_HOLD_MS - 1; // short release, past the duplicate guard

@@ -16,7 +16,6 @@
 // TV tocando o mesmo arquivo: e o que comprovadamente funciona.
 #ifndef NV_VIDEO_H
 #define NV_VIDEO_H
-#include "legopacidade.h"
 
 // Registra no barramento e sobe o laco de eventos. 1 se deu certo.
 // Falhar aqui nao e fatal: o app segue sem video.
@@ -45,6 +44,12 @@ int  video_tocar_posicao(const char *url, double segundos);
 // Initial seconds, or an account percentage resolved with container duration.
 // Android applies it in Media3; the webOS experiment applies it to the first
 // DTS Load. State: 0 preparing, 1 applied, -1 use the ordinary native seek.
+int  video_tocar_retomada(const char *url, double segundos, double pct);
+int  video_retomada_inicial_estado(void);
+#endif
+#ifdef NV_TPK
+// .tpk (owner 18/11): the point goes with the open; the host seeks in Ready,
+// before Start. Same estado (0 waiting, 1 applied, -1 the seek after ready).
 int  video_tocar_retomada(const char *url, double segundos, double pct);
 int  video_retomada_inicial_estado(void);
 #endif
@@ -199,7 +204,32 @@ unsigned video_abertura_geracao(void);
 // the target instead of the stale position.
 int      video_busca_em_voo(void);
 unsigned video_busca_falhas(void);
+// The player is being reopened on the same source (the local fix for hidden
+// subtitle tracks, a CDN link renewal, a reconnection) and its track list is
+// not back yet. faixas.c waits for it before deciding an early subtitle pick.
+int      video_tpk_reabrindo(void);
+// 1 from a seek until the first real reading of where the TV landed (the TV
+// seeks to a keyframe, seconds before the target). Subtitles hide meanwhile.
+int      video_pos_incerta(void);
+// Frame rate and HDR of the playing file (MKV header); 0 = unknown.
+int      video_tpk_quadro(double *fps, int *hdr);
+// Colour of the playing MKV's video (Colour element): MatrixCoefficients and
+// Range as in the file (0 = not stated), and HDR. 0 = no MKV video track.
+int      video_tpk_cor(int *matriz, int *faixa, int *hdr);
 #endif
+// Measurements for the libass log (assrender.c, "[ass] 10s tv"): position
+// readings since the last call. n = arrived, fora = dropped (query older than
+// the last seek), somaMs / maxMs = time the query took. Resets the counters.
+// Every platform that builds the new engine (ASS_NOVO) has one: video_tpk.c
+// (the host's 40 ms clock), video.c on webOS (its own 40 ms clock thread).
+void     video_ass_leituras(int *n, int *fora, long *somaMs, int *maxMs);
+// SUBTITLE CLOCK (owner 25/10). The host reads the TV's position with a query
+// that takes 50-600 ms and stamps the MIDDLE of it (CLOCK_MONOTONIC, s); half
+// the duration is the uncertainty. 1 = there is a reading; *seq changes with
+// every new one. Same transform as video_pos (converted stream offset).
+// webOS (video.c): the arrival of each currentTime event, uncertainty 0; 0
+// while a seek is in flight. player.c feeds it to relogio_amostra there.
+int      video_pos_amostra(double *pos, double *carimbo, double *incerteza, unsigned *seq);
 int    video_tocando(void);
 // Pausa comprovada pelo backend da sessao atual, nao a intencao local de
 // video_pausar. Alvos sem confirmacao confiavel devolvem 0.
@@ -210,6 +240,9 @@ int    video_janela_pronta(void);   // latest native window request completed la
 int    video_superficie_estavel(void);   // 1 depois da ultima recriacao da Surface (HDR/DV)
 int    video_quadro_visto(void);   // 1 depois do primeiro quadro desenhado (antes do "pronto")
 int    video_rede_lenta(void);   // !=0: download below the declared bitrate or repeated rebuffers (redefit.h)
+// Subtitle clock (same contract as the .tpk's, above): each Media3 position
+// stamped when it reaches C; 40 ms apart while libass draws.
+int    video_pos_amostra(double *pos, double *carimbo, double *incerteza, unsigned *seq);
 #endif
 int    video_ativo(void);    // 1 assim que ha mediaId — e o que abre o furo
 int    video_falhou(void);   // 1 depois de um errorText real na fonte atual
@@ -369,7 +402,8 @@ void video_simular_estatisticas(const VideoStats *s);   // capturas; NULL zera
 // total do arquivo nunca casa pelo ordinal (mkv_casar_legendas exige contagem
 // igual) — nenhuma faixa ASS ia ao overlay do app, todas ficavam com a TV. O
 // lado do arquivo (MKV_MAX_FAIXAS) ja era 64.
-#define NV_FAIXA_MAX 64
+// 192 (17/11): remux com 145 faixas, 137 legendas (ver mkv.h).
+#define NV_FAIXA_MAX 192
 
 typedef struct {
   char rotulo[112];  // "Ingles · Atmos 5.1" ou "Legenda 3"; 112: the full file track title (the menu cuts by width)
@@ -470,11 +504,27 @@ typedef struct {
   int posicao;    // 0..7  -> position -3..4 no uMS
   int borda;      // 0 nenhuma, 1 contorno, 2 sombra
   int atrasoMs;   // negativo adianta
-  int opacidade;  // stable ID: legopacidade.h; 20 levels from 5% to 100%
+  int opacidade;  // text opacity %, 10..100 in steps of 10 (owner 14/11/2026; was 0..3 = 100/75/50/25)
   int familia;    // TxtFamilia; aplicada ao overlay externo (OpenSubtitles)
   int negrito;    // 1 = peso negrito no overlay (so o que o app desenha)
   int corBorda;   // -1 unset (legacy outline); 0 Black, 1 White, 2 Yellow, 3 Green, 4 Blue, 5 Red
 } VideoLegendaEstilo;
+
+// Subtitle opacity: VideoLegendaEstilo.opacidade as a fraction. Old saved
+// values were an index 0..3 (100/75/50/25 %): VIDEO_LEG_OPAC_ANTIGA maps them,
+// rounded up to the 10 % grid (owner 14/11/2026: 75 -> 80, 25 -> 30).
+#define VIDEO_LEG_OPAC_MIN 10
+#define VIDEO_LEG_OPAC_MAX 100
+static inline int video_legenda_opac_antiga(int indice) {
+  static const int pct[4] = { 100, 80, 50, 30 };
+  return indice >= 0 && indice < 4 ? pct[indice] : 100;
+}
+static inline float video_legenda_opacidade(const VideoLegendaEstilo *e) {
+  int p = e ? e->opacidade : 100;
+  if (p < VIDEO_LEG_OPAC_MIN) p = VIDEO_LEG_OPAC_MIN;
+  if (p > VIDEO_LEG_OPAC_MAX) p = VIDEO_LEG_OPAC_MAX;
+  return (float)p / 100.0f;
+}
 
 #define VIDEO_LEG_NCORES 6
 // A borda tem preto puro como padrao; as demais amostras usam a paleta do texto.

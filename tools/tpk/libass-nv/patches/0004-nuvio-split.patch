@@ -1,0 +1,360 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: nv <noreply@anthropic.com>
+Date: Thu, 19 Nov 2026 05:00:00 +0100
+Subject: [PATCH 4/4] libass: Nuvio split render (sharp/soft passes), sign
+ flag, skip dialogue
+
+
+diff --git a/libass/ass.h b/libass/ass.h
+index 3e9695b..0319ae5 100644
+--- a/libass/ass.h
++++ b/libass/ass.h
+@@ -877,6 +877,37 @@ int ass_nv_get_threads(void);
+  */
+ void ass_nv_set_dialogue_alpha(ASS_Renderer *priv, int alpha);
+ 
++/*
++ * Split render (Nuvio "Custom auto", 0004). Two renderers on ONE track draw
++ * the same frame at two resolutions: the sharp pass at the text resolution,
++ * the soft pass at the blur resolution, and the app merges the two image
++ * lists by ass_nv_image_key. Every event is laid out in both passes, so
++ * positions and collisions match; only the parts drawn differ.
++ *   sharp: text fills, unblurred outlines and shadows, BorderStyle 4 boxes;
++ *   soft:  blurred outlines and shadows (the fill of that text stays sharp),
++ *          blurred fills, and drawings (\p).
++ * "Blurred" = \be >= 1 or \blur >= ASS_NV_SPLIT_BLUR.
++ * pass: 0 = everything (the default, as before), 1 = sharp parts, 2 = soft parts.
++ * slot: 0 or 1, one per renderer sharing the track (each keeps its own
++ * collision memory on the events; the default 0 is what libass always did).
++ */
++#define ASS_NV_SPLIT 1
++#define ASS_NV_SPLIT_BLUR 1.0
++void ass_nv_set_split(ASS_Renderer *priv, int pass, int slot);
++
++/*
++ * Stacking key of an image of the last ass_render_frame (any pass): layer,
++ * ReadOrder, part (shadow < outline < fill) and the run index. Sorting the
++ * images of the two passes by it (stable) gives libass's own order.
++ */
++unsigned long long ass_nv_image_key(const ASS_Image *img);
++
++/*
++ * 1 = dialogue lines are not drawn (the app draws them as its own text);
++ * signs and songs (libass's rule or ASS_Event.nv_sign) still are.
++ */
++void ass_nv_set_skip_dialogue(ASS_Renderer *priv, int skip);
++
+ #undef ASS_DEPRECATED
+ #undef ASS_DEPRECATED_ENUM
+ 
+diff --git a/libass/ass_render.c b/libass/ass_render.c
+index 3b24a68..b4989ba 100644
+--- a/libass/ass_render.c
++++ b/libass/ass_render.c
+@@ -231,6 +231,7 @@ static ASS_Image *my_draw_bitmap(unsigned char *bitmap, int bitmap_w,
+     ass_cache_inc_ref(source);
+     img->buffer = source ? NULL : bitmap;
+     img->ref_count = 0;
++    img->nv_key = 0;
+ 
+     return &img->result;
+ }
+@@ -817,6 +818,18 @@ static void blend_vector_clip(RenderContext *state, ASS_Image *head)
+  * \brief Convert TextInfo struct to ASS_Image list
+  * Splits glyphs in halves when needed (for \kf karaoke).
+  */
++/* Nuvio 0004: the stacking key on the images render_glyph just added. */
++static ASS_Image **nv_key_images(RenderContext *state, ASS_Image **from,
++                                 ASS_Image **tail, unsigned part, unsigned i)
++{
++    unsigned long long key = state->nv_event_key |
++        ((unsigned long long) (part & 3) << 14) | (i < 0x3FFF ? i : 0x3FFF);
++    *tail = NULL;
++    for (ASS_Image **p = from; *p; p = &(*p)->next)
++        ((ASS_ImagePriv *) *p)->nv_key = key;
++    return tail;
++}
++
+ static ASS_Image *render_text(RenderContext *state)
+ {
+     ASS_Image *head;
+@@ -826,33 +839,38 @@ static ASS_Image *render_text(RenderContext *state)
+ 
+     for (unsigned i = 0; i < n_bitmaps; i++) {
+         CombinedBitmapInfo *info = &bitmaps[i];
+-        if (!info->bm_s || state->border_style == 4)
++        if (!info->bm_s || state->border_style == 4 || !(info->nv_parts & 4))
+             continue;
+ 
++        ASS_Image **from = tail;
+         tail =
+             render_glyph(state, info->bm_s, info->x, info->y, info->c[3], 0,
+                          1000000, tail, IMAGE_TYPE_SHADOW, info->image);
++        tail = nv_key_images(state, from, tail, 0, i);
+     }
+ 
+     for (unsigned i = 0; i < n_bitmaps; i++) {
+         CombinedBitmapInfo *info = &bitmaps[i];
+-        if (!info->bm_o)
++        if (!info->bm_o || !(info->nv_parts & 2))
+             continue;
+ 
+         if ((info->effect_type == EF_KARAOKE_KO)
+                 && (info->effect_timing <= 0)) {
+             // do nothing
+         } else {
++            ASS_Image **from = tail;
+             tail =
+                 render_glyph(state, info->bm_o, info->x, info->y, info->c[2],
+                              0, 1000000, tail, IMAGE_TYPE_OUTLINE, info->image);
++            tail = nv_key_images(state, from, tail, 1, i);
+         }
+     }
+ 
+     for (unsigned i = 0; i < n_bitmaps; i++) {
+         CombinedBitmapInfo *info = &bitmaps[i];
+-        if (!info->bm)
++        if (!info->bm || !(info->nv_parts & 1))
+             continue;
++        ASS_Image **from = tail;
+ 
+         if ((info->effect_type == EF_KARAOKE)
+                 || (info->effect_type == EF_KARAOKE_KO)) {
+@@ -875,6 +893,7 @@ static ASS_Image *render_text(RenderContext *state)
+             tail =
+                 render_glyph(state, info->bm, info->x, info->y, info->c[0],
+                              0, 1000000, tail, IMAGE_TYPE_CHARACTER, info->image);
++        tail = nv_key_images(state, from, tail, 2, i);
+     }
+ 
+     *tail = 0;
+@@ -927,7 +946,7 @@ static ASS_Style *handle_selective_style_overrides(RenderContext *state,
+     *new = *rstyle;
+ 
+     state->apply_font_scale =
+-        !explicit || !(requested & ASS_OVERRIDE_BIT_SELECTIVE_FONT_SCALE);
++        !state->nv_sign || !(requested & ASS_OVERRIDE_BIT_SELECTIVE_FONT_SCALE);
+ 
+     // On positioned events, do not apply most overrides.
+     if (explicit)
+@@ -1146,6 +1165,15 @@ init_render_context(RenderContext *state, ASS_Event *event)
+     ass_apply_transition_effects(state);
+     state->explicit = state->evt_type != EVENT_NORMAL ||
+                       ass_event_has_hard_overrides(event->Text);
++    /* Nuvio 0004: a sign for the app's dialogue settings (opacity, size,
++     * skip): app says sign (> 0), else libass's rule unless app says dialogue (-1). */
++    state->nv_sign = event->nv_sign > 0 || (state->explicit && event->nv_sign != -1);
++    {
++        long long layer = (long long) event->Layer + 32768;
++        layer = layer < 0 ? 0 : layer > 0xFFFF ? 0xFFFF : layer;
++        state->nv_event_key = ((unsigned long long) layer << 48) |
++                              ((unsigned long long) ((unsigned) event->ReadOrder ^ 0x80000000u) << 16);
++    }
+ 
+     ass_reset_render_context(state, NULL);
+     state->alignment = state->style->Alignment;
+@@ -2487,6 +2515,24 @@ static void render_and_combine_glyphs(RenderContext *state,
+                 flags |= FILTER_FILL_IN_BORDER;
+ 
+             if (new_run) {
++                /* Nuvio 0004: which parts of this run each split pass draws
++                 * (see ass_nv_set_split). soft = parts that go to the blur
++                 * resolution. A blurred border/shadow around text: only
++                 * those go soft, the fill stays sharp. */
++                unsigned nv_soft;
++                {
++                    bool blurred = info->be >= 1 || info->blur >= ASS_NV_SPLIT_BLUR;
++                    if (info->drawing_text.str)
++                        nv_soft = 7;
++                    else if (!blurred)
++                        nv_soft = 0;
++                    else if ((flags & FILTER_NONZERO_BORDER) &&
++                             !(flags & FILTER_BORDER_STYLE_3))
++                        nv_soft = 6;
++                    else
++                        nv_soft = 7;
++                }
++
+                 if (nb_bitmaps >= text_info->max_bitmaps) {
+                     size_t new_size = 2 * text_info->max_bitmaps;
+                     if (!ASS_REALLOC_ARRAY(text_info->combined_bitmaps, new_size))
+@@ -2505,6 +2551,10 @@ static void render_and_combine_glyphs(RenderContext *state,
+                 current_info->effect_timing = info->effect_timing;
+                 current_info->leftmost_x = OUTLINE_MAX;
+ 
++                current_info->nv_parts =
++                    render_priv->nv_split_pass == 1 ? (7u & ~nv_soft) :
++                    render_priv->nv_split_pass == 2 ? nv_soft : 7u;
++
+                 FilterDesc *filter = &current_info->filter;
+                 filter->flags = flags;
+                 filter->be = info->be;
+@@ -2542,8 +2592,16 @@ static void render_and_combine_glyphs(RenderContext *state,
+             ASS_Vector pos, pos_o;
+             info->pos.x = double_to_d6(device_x + d6_to_double(info->pos.x) * render_priv->par_scale_x);
+             info->pos.y = double_to_d6(device_y) + info->pos.y;
++            /* Nuvio 0004: the other split pass draws this run; or, in the
++             * sharp pass of blurred-border text, the fill alone: no border
++             * bitmaps (flags 0 here), the same filter, so the composite's
++             * fill is byte for byte the full render's (libass blurs only
++             * the border when there is one; \be pads the fill the same). */
++            if (!current_info->nv_parts)
++                continue;
+             get_bitmap_glyph(state, info, &current_info->leftmost_x, &pos, &pos_o,
+-                             &offset, !current_info->bitmap_count, flags);
++                             &offset, !current_info->bitmap_count,
++                             current_info->nv_parts == 1 ? 0 : flags);
+ 
+             if (!info->bm && !info->bm_o)
+                 continue;
+@@ -2784,6 +2842,7 @@ static void add_background(RenderContext *state, EventImages *event_images)
+     ASS_Image *img = my_draw_bitmap(nbuffer, w, h, w, left, top,
+                                     clr, NULL);
+     if (img) {
++        ((ASS_ImagePriv *) img)->nv_key = state->nv_event_key;   // Nuvio 0004: below its text
+         img->next = event_images->imgs;
+         event_images->imgs = img;
+     }
+@@ -2812,6 +2871,12 @@ ass_render_event(RenderContext *state, ASS_Event *event,
+     free_render_context(state);
+     init_render_context(state, event);
+ 
++    /* Nuvio 0004: dialogue drawn by the app. */
++    if (render_priv->nv_skip_dialogue && !state->nv_sign) {
++        free_render_context(state);
++        return false;
++    }
++
+     if (!parse_events(state, event))
+         return false;
+ 
+@@ -3006,13 +3071,15 @@ ass_render_event(RenderContext *state, ASS_Event *event,
+     event_images->event = event;
+     event_images->imgs = render_text(state);
+ 
+-    if (state->border_style == 4)
++    /* Nuvio 0004: the BorderStyle 4 box is a hard rectangle: sharp pass. */
++    if (state->border_style == 4 && render_priv->nv_split_pass != 2) {
+         add_background(state, event_images);
++    }
+ 
+     /* Nuvio: the app's subtitle opacity for dialogue only. Lines with \pos,
+      * \move, \clip, \org or a drawing (the signs and typesetting) keep the
+      * author's alpha. */
+-    if (render_priv->nv_dialogue_fade && !state->explicit) {
++    if (render_priv->nv_dialogue_fade && !state->nv_sign) {
+         unsigned keep = 255u - (unsigned) render_priv->nv_dialogue_fade;
+         for (ASS_Image *im = event_images->imgs; im; im = im->next) {
+             unsigned a = im->color & 0xFF;   // 0 = opaque, 255 = transparent
+@@ -3126,17 +3193,21 @@ static int cmp_event_layer(const void *p1, const void *p2)
+ static ASS_RenderPriv *get_render_priv(ASS_Renderer *render_priv,
+                                        ASS_Event *event)
+ {
++    /* Nuvio 0004: two slots, one per renderer of a split render, so the two
++     * renderers sharing the track don't reset each other's collision memory
++     * on every frame (render_id differs). Slot 0 is the old single one. */
+     if (!event->render_priv) {
+-        event->render_priv = calloc(1, sizeof(ASS_RenderPriv));
++        event->render_priv = calloc(2, sizeof(ASS_RenderPriv));
+         if (!event->render_priv)
+             return NULL;
+     }
+-    if (render_priv->render_id != event->render_priv->render_id) {
+-        memset(event->render_priv, 0, sizeof(ASS_RenderPriv));
+-        event->render_priv->render_id = render_priv->render_id;
++    ASS_RenderPriv *slot = event->render_priv + (render_priv->nv_slot ? 1 : 0);
++    if (render_priv->render_id != slot->render_id) {
++        memset(slot, 0, sizeof(ASS_RenderPriv));
++        slot->render_id = render_priv->render_id;
+     }
+ 
+-    return event->render_priv;
++    return slot;
+ }
+ 
+ static int overlap(Rect *s1, Rect *s2)
+diff --git a/libass/ass_render.h b/libass/ass_render.h
+index 6da045d..64f8b8e 100644
+--- a/libass/ass_render.h
++++ b/libass/ass_render.h
+@@ -54,6 +54,7 @@ typedef struct {
+     CompositeHashValue *source;
+     unsigned char *buffer;
+     size_t ref_count;
++    unsigned long long nv_key;      // ass_nv_image_key (0004)
+ } ASS_ImagePriv;
+ 
+ typedef struct {
+@@ -115,6 +116,7 @@ typedef struct {
+     int x, y;
+     Bitmap *bm, *bm_o, *bm_s;   // glyphs, outline, shadow bitmaps
+     CompositeHashValue *image;
++    unsigned nv_parts;          // 0004: parts this pass draws: 1 fill, 2 outline, 4 shadow
+ } CombinedBitmapInfo;
+ 
+ typedef struct {
+@@ -285,6 +287,8 @@ struct render_context {
+     int apply_font_scale;
+     // whether this is assumed to be explicitly positioned
+     int explicit;
++    int nv_sign;                // 0004: explicit, or the app marked the event a sign/song
++    unsigned long long nv_event_key;   // 0004: layer + ReadOrder part of ass_nv_image_key
+ 
+     double screen_scale_x;
+     double screen_scale_y;
+@@ -340,6 +344,9 @@ struct ass_renderer {
+     ASS_Style user_override_style;
+ 
+     int nv_dialogue_fade;           // ass_nv_set_dialogue_alpha: 0 = as authored, 255 = invisible
++    int nv_split_pass;              // ass_nv_set_split: 0 all, 1 sharp, 2 soft
++    int nv_slot;                    // ass_nv_set_split: collision memory slot (0/1)
++    int nv_skip_dialogue;           // ass_nv_set_skip_dialogue
+ };
+ 
+ typedef struct render_priv {
+diff --git a/libass/ass_render_api.c b/libass/ass_render_api.c
+index a3118ca..e0bf1c0 100644
+--- a/libass/ass_render_api.c
++++ b/libass/ass_render_api.c
+@@ -224,6 +224,23 @@ void ass_nv_set_dialogue_alpha(ASS_Renderer *priv, int alpha)
+     priv->nv_dialogue_fade = 255 - alpha;
+ }
+ 
++void ass_nv_set_split(ASS_Renderer *priv, int pass, int slot)
++{
++    pass = pass < 0 || pass > 2 ? 0 : pass;
++    priv->nv_split_pass = pass;
++    priv->nv_slot = slot ? 1 : 0;
++}
++
++unsigned long long ass_nv_image_key(const ASS_Image *img)
++{
++    return img ? ((const ASS_ImagePriv *) img)->nv_key : 0;
++}
++
++void ass_nv_set_skip_dialogue(ASS_Renderer *priv, int skip)
++{
++    priv->nv_skip_dialogue = skip ? 1 : 0;
++}
++
+ int ass_nv_simd_available(void)
+ {
+     return ass_get_cpu_flags(ASS_CPU_FLAG_ALL) != ASS_CPU_FLAG_NONE;
+diff --git a/libass/ass_types.h b/libass/ass_types.h
+index 4d9e0ec..db72816 100644
+--- a/libass/ass_types.h
++++ b/libass/ass_types.h
+@@ -152,6 +152,13 @@ typedef struct ass_event {
+     char *Text;
+ 
+     ASS_RenderPriv *render_priv;
++
++    /* Nuvio TPK (tools/tpk/libass-nv, 0004): > 0 = the app knows this line
++     * is a sign or song (it is in the file's "Signs & Songs" track): no dialogue
++     * opacity, size or skipping, whatever its tags. -1 = the app knows it is
++     * dialogue (that track was read there and lacks it), whatever its tags.
++     * Other values (app bookkeeping) = libass's rule (\pos, \move, drawing...). */
++    int nv_sign;
+ } ASS_Event;
+ 
+ /**
