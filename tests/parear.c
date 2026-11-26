@@ -46,6 +46,14 @@ int main(void) {
   OK(!strcmp(cod, "antes") && v == -7);
   OK(!parear_ler_resposta(200, "{\"codigo\":\"483921\",\"validade\":0,\"pagina\":\"https://w.test/c\"}", cod, sizeof cod, pag, sizeof pag, &v));
   OK(!parear_ler_resposta(200, "{\"codigo\":\"483921\",\"validade\":600}", cod, sizeof cod, pag, sizeof pag, &v));
+  // validade fora da faixa ou nao inteira: recusada ANTES do cast para int.
+  OK(!parear_ler_resposta(200, "{\"codigo\":\"483921\",\"validade\":1e300,\"pagina\":\"https://w.test/c\"}", cod, sizeof cod, pag, sizeof pag, &v));
+  OK(!parear_ler_resposta(200, "{\"codigo\":\"483921\",\"validade\":-1e300,\"pagina\":\"https://w.test/c\"}", cod, sizeof cod, pag, sizeof pag, &v));
+  OK(!parear_ler_resposta(200, "{\"codigo\":\"483921\",\"validade\":3601,\"pagina\":\"https://w.test/c\"}", cod, sizeof cod, pag, sizeof pag, &v));
+  OK(!parear_ler_resposta(200, "{\"codigo\":\"483921\",\"validade\":0.5,\"pagina\":\"https://w.test/c\"}", cod, sizeof cod, pag, sizeof pag, &v));
+  OK(!parear_ler_resposta(200, "{\"codigo\":\"483921\",\"validade\":59.5,\"pagina\":\"https://w.test/c\"}", cod, sizeof cod, pag, sizeof pag, &v));
+  OK(!parear_ler_resposta(200, "{\"codigo\":\"4839210\",\"validade\":600,\"pagina\":\"https://w.test/c\"}", cod, sizeof cod, pag, sizeof pag, &v));
+  OK(parear_ler_resposta(200, "{\"codigo\":\"483921\",\"validade\":3600,\"pagina\":\"https://w.test/c\"}", cod, sizeof cod, pag, sizeof pag, &v) && v == 3600);
   OK(!parear_ler_resposta(200, "{\"codigo\":\"483921\",\"validade\":600,\"pagina\":\"javascript:x\"}", cod, sizeof cod, pag, sizeof pag, &v));
   OK(!parear_ler_resposta(200, "{\"codigo\":\"483921\",\"validade\":600,\"pagina\":\"https://w.test/c\"}", cod, 6, pag, sizeof pag, &v));
   OK(!parear_ler_resposta(200, "{\"codigo\":\"483921\",\"validade\":600,\"pagina\":\"https://w.test/c\"}", cod, sizeof cod, pag, 8, &v));

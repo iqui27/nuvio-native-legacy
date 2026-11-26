@@ -62,7 +62,7 @@ JUNTOS_URL = "https://nuvio-juntos.henriquef29.workers.dev"
 FAROL_LLM = "1"
 # CODIGO DE 6 DIGITOS DO LOGIN DA TV (parear.js). Desligado enquanto
 # PAREAR_BASES nao existir: as rotas /v1/parear* respondem 503 e a TV nao mostra
-# o codigo. PAREAR_BASES = prefixos (separados por virgula) da pagina de
+# o codigo. PAREAR_BASES = rotas EXATAS (separadas por virgula) da pagina de
 # autorizacao do login da TV, o mesmo valor de TV_LOGIN_WEB_BASE_URL do app.
 # PAREAR_PAGINA (opcional) = endereco curto que a TV mostra para quem ajuda;
 # sem ela, <este worker>/c.

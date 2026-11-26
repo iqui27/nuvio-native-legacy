@@ -41,13 +41,17 @@ int parear_ler_resposta(int status, const char *corpo, char *codigo, size_t nCod
                         char *pagina, size_t nPagina, int *validade) {
   char c[16], p[200];
   const char *fim;
+  double d;
   int v;
   if (status != 200 || !corpo || !codigo || !pagina || nCodigo <= PAREAR_DIGITOS || !nPagina) return 0;
   fim = corpo + strlen(corpo);
   if (!js_texto(corpo, fim, "codigo", c, sizeof c) || !parear_codigo_valido(c)) return 0;
   if (!js_texto(corpo, fim, "pagina", p, sizeof p) || !httpOk(p) || strlen(p) >= nPagina) return 0;
-  v = (int)js_num(corpo, fim, "validade", 0.0);
-  if (v < 1 || v > 3600) return 0;
+  // Faixa conferida NO double, antes do cast: NaN, infinito ou 1e300 virariam
+  // comportamento indefinido em (int). So inteiro de 1 a 3600 segundos passa.
+  d = js_num(corpo, fim, "validade", 0.0);
+  if (!(d >= 1.0 && d <= 3600.0) || d != (double)(int)d) return 0;
+  v = (int)d;
   snprintf(codigo, nCodigo, "%s", c);
   snprintf(pagina, nPagina, "%s", p);
   if (validade) *validade = v;

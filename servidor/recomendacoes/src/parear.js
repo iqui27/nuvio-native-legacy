@@ -11,8 +11,13 @@
 // a TV entra continua sendo a pagina de login da conta.
 //
 // RISCOS E FREIOS
-//   - redirecionamento aberto: so entra endereco que comeca por um prefixo de
-//     PAREAR_BASES (lista separada por virgula). Sem a variavel: 503.
+//   - redirecionamento aberto: so entra o endereco CANONICO de uma rota de
+//     PAREAR_BASES (lista separada por virgula): mesma origem inteira, mesmo
+//     caminho exato e so `?code=<32 hex>`. Sem a variavel: 503.
+//   - codigo de UMA vez: o primeiro /v1/parear/abrir que acerta apaga a linha
+//     no mesmo comando (DELETE ... RETURNING); um segundo pedido, mesmo
+//     simultaneo, recebe 404.
+//   - corpo: lido com teto de bytes ANTES de JSON e de gastar cota; acima, 413.
 //   - adivinhar codigo: 10 tentativas por IP a cada 10 minutos, e o codigo
 //     vale 10 minutos. Acertar um codigo alheio so leva a pagina de
 //     autorizacao de uma TV alheia — poria a conta DE QUEM ADIVINHOU naquela
@@ -23,25 +28,40 @@
 //     mesmo codigo enquanto valer.
 export const PAREAR_VALIDADE = 600;
 const URL_MAX = 400;
+const CRIAR_CORPO_MAX = 2000;
+const ABRIR_CORPO_MAX = 200;
+// O login da TV manda `?code=` com 32 hexadecimais (src/qr.h). Nada alem disso.
+const CODIGO_CONTA = /^[0-9a-fA-F]{32}$/;
 
 const bases = (env) => String(env.PAREAR_BASES || "").split(",").map((s) => s.trim()).filter(Boolean);
 
-// Puro: o endereco pode ser guardado? https (http so em localhost, para teste),
-// sem credencial embutida, e comecando por um dos prefixos permitidos.
+// Uma entrada de PAREAR_BASES vira { origin, pathname }, ou null se nao for
+// uma rota limpa (https, ou http so em localhost; sem credencial, query ou #).
+function baseCanonica(b) {
+  let u;
+  try { u = new URL(b); } catch { return null; }
+  if (u.username || u.password || u.search || u.hash) return null;
+  const local = u.hostname === "localhost" || u.hostname === "127.0.0.1";
+  if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) return null;
+  return { origin: u.origin, pathname: u.pathname };
+}
+
+// Puro: o endereco pode ser guardado? Tem de ser a forma canonica (o que
+// new URL() devolve, sem truque de codificacao), com a ORIGEM inteira e o
+// CAMINHO exatamente iguais aos de uma base permitida — nada de prefixo — e
+// so `?code=<32 hex>` na query, sem #.
 export function enderecoAceito(endereco, permitidos) {
   if (typeof endereco !== "string" || !endereco || endereco.length > URL_MAX) return false;
   if (/[\s<>"'\\]/.test(endereco)) return false;
   let u;
   try { u = new URL(endereco); } catch { return false; }
-  if (u.username || u.password) return false;
-  const local = u.hostname === "localhost" || u.hostname === "127.0.0.1";
-  if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) return false;
-  return permitidos.some((b) => {
-    if (!endereco.startsWith(b)) return false;
-    // O prefixo tem de acabar numa fronteira: "https://a.com" nao libera
-    // "https://a.com.golpe.net".
-    const resto = endereco.slice(b.length);
-    return resto === "" || /[/?#]$/.test(b) || /^[/?#]/.test(resto);
+  if (u.href !== endereco || u.username || u.password || u.hash) return false;
+  const chaves = [...u.searchParams.keys()];
+  if (chaves.length !== 1 || chaves[0] !== "code" || !CODIGO_CONTA.test(u.searchParams.get("code"))) return false;
+  if (u.search !== "?code=" + u.searchParams.get("code")) return false;
+  return (permitidos || []).some((b) => {
+    const c = baseCanonica(b);
+    return !!c && c.origin === u.origin && c.pathname === u.pathname;
   });
 }
 
@@ -55,9 +75,16 @@ export function codigoDe(aleatorio = (n) => crypto.getRandomValues(new Uint32Arr
 
 const soDigitos = (s) => String(s ?? "").replace(/\D/g, "");
 
+// Corpo JSON com teto de bytes, lido ANTES de qualquer cota. null = 413.
+async function lerCorpo(req, h, max) {
+  const cru = await h.corpoLimitado(req, max);
+  if (cru == null) return { r: h.erro("corpo grande", 413) };
+  try { return { corpo: JSON.parse(cru || "{}") }; } catch { return { r: h.erro("json invalido", 400) }; }
+}
+
 async function rotaCriar(req, env, h, limitar, ip, origem) {
-  let corpo;
-  try { corpo = JSON.parse((await req.text()).slice(0, 2000) || "{}"); } catch { return h.erro("json invalido", 400); }
+  const { corpo, r: falha } = await lerCorpo(req, h, CRIAR_CORPO_MAX);
+  if (falha) return falha;
   const endereco = corpo?.url;
   if (!enderecoAceito(endereco, bases(env))) return h.erro("endereco recusado", 400);
   const t = h.agora();
@@ -81,14 +108,17 @@ async function rotaCriar(req, env, h, limitar, ip, origem) {
 }
 
 async function rotaAbrir(req, env, h, limitar, ip) {
-  let corpo;
-  try { corpo = JSON.parse((await req.text()).slice(0, 200) || "{}"); } catch { return h.erro("json invalido", 400); }
+  const { corpo, r: falha } = await lerCorpo(req, h, ABRIR_CORPO_MAX);
+  if (falha) return falha;
   const t = h.agora();
   if (!(await limitar(env, `parear-abrir:${ip}`, 10, 600, t))) return h.erro("limite", 429);
   const codigo = soDigitos(corpo?.codigo);
   if (codigo.length !== 6) return h.erro("codigo invalido", 400);
-  const f = await env.DB.prepare("SELECT url FROM parear WHERE codigo = ? AND expira > ?").bind(codigo, t).first();
-  // O prefixo e conferido de novo: a lista pode ter encolhido desde a gravacao.
+  // USO UNICO e atomico: o mesmo comando confere e apaga. Dois pedidos ao
+  // mesmo tempo nao conseguem os dois a linha; o segundo cai no 404.
+  const f = await env.DB.prepare("DELETE FROM parear WHERE codigo = ? AND expira > ? RETURNING url")
+    .bind(codigo, t).first();
+  // A base e conferida de novo: a lista pode ter encolhido desde a gravacao.
   if (!f || !enderecoAceito(f.url, bases(env))) return h.erro("codigo desconhecido", 404);
   return h.json({ ok: 1, url: f.url });
 }
@@ -98,15 +128,19 @@ export async function rotaParear(rota, req, env, url, h, limitar) {
   if (rota === "/c" || rota === "/c/") return req.method === "GET" ? paginaParear() : null;
   if (!rota.startsWith("/v1/parear") || req.method !== "POST") return null;
   if (rota !== "/v1/parear" && rota !== "/v1/parear/abrir") return null;
-  if (!bases(env).length) return h.erro("parear desligado", 503);
+  if (!bases(env).length) { const r = h.erro("parear desligado", 503); r.headers.set("cache-control", "no-store"); return r; }
   const ip = req.headers.get("cf-connecting-ip") || "0.0.0.0";
+  let r;
   try {
-    return rota === "/v1/parear" ? await rotaCriar(req, env, h, limitar, ip, url.origin)
-                                 : await rotaAbrir(req, env, h, limitar, ip);
+    r = rota === "/v1/parear" ? await rotaCriar(req, env, h, limitar, ip, url.origin)
+                              : await rotaAbrir(req, env, h, limitar, ip);
   } catch {
     // Migracao 021 ainda nao aplicada: a TV esconde o codigo, como no 503 acima.
-    return h.erro("parear indisponivel", 503);
+    r = h.erro("parear indisponivel", 503);
   }
+  // Codigo e endereco de autorizacao nunca vao para cache nenhum.
+  r.headers.set("cache-control", "no-store");
+  return r;
 }
 
 export const limpezaParear = (env, t) => [env.DB.prepare("DELETE FROM parear WHERE expira < ?").bind(t)];

@@ -1052,7 +1052,7 @@ export default {
     // CODIGO DE 6 DIGITOS DO LOGIN DA TV (2.1): sem sessao, porque a TV ainda
     // nao tem conta. Regras, freios e a pagina /c em parear.js.
     if (rota === "/c" || rota === "/c/" || rota.startsWith("/v1/parear")) {
-      const r = await rotaParear(rota, req, env, url, { json, erro, agora }, limitar);
+      const r = await rotaParear(rota, req, env, url, { json, erro, agora, corpoLimitado }, limitar);
       if (r) return r;
     }
 
