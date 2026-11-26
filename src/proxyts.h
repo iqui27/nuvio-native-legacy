@@ -48,4 +48,21 @@ int  proxyts_redirecionou(void);
 // e nao arquivo progressivo (.mp4/.mkv). Puro, testavel em qualquer alvo.
 int  proxyts_candidata(const char *url, int mp4);
 
+// TIMESHIFT LOCAL (timeshift_regras.h, timeshift_disco.h). So existe quando a
+// fonte e HLS e a ingestao e do proxy: TS continuo segue por 302, sem gravar.
+// `dir` = pasta gravavel onde a PROXIMA ingestao tambem grava; "" ou NULL = nao
+// grava (o padrao). Os arquivos sao apagados ao parar o fluxo.
+void proxyts_definir_timeshift(const char *dir);
+// Pausa: a ingestao segue sem leitor por ate `segundos` (0 = volta ao normal,
+// 3 s sem leitor encerram).
+void proxyts_timeshift_segurar(int segundos);
+// Sair do canal: encerra a sessao que gravava e apaga a gravacao.
+void proxyts_timeshift_encerrar(void);
+// Segundos que da para voltar agora no canal em curso; 0 = sem gravacao.
+int  proxyts_timeshift_janela_s(void);
+// URL da MESMA sessao, `atrasS` segundos atras (0 = ao vivo, do segmento mais
+// novo). O player reabre
+// com ela; a ingestao nao para. 0 = sem gravacao em curso.
+int  proxyts_timeshift_url(int atrasS, char *saida, size_t n);
+
 #endif

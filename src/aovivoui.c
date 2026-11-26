@@ -72,6 +72,7 @@ static const char *icone(int b) {
     case AV_B_RECARREGAR: return "pl_rotate-ccw";
     case AV_B_FONTE: return "pl_layers";
     case AV_B_AOVIVO: return "pl_skip-forward";
+    case AV_B_VOLTAR30: return "pl_rotate-ccw";
     case AV_B_ASPECTO: return "pl_ratio";
     case AV_B_ULTIMO: return "pl_chevron-left";
     default: return NULL;
@@ -91,6 +92,7 @@ const char *aovivo_rotulo(int b) {
     case AV_B_RECARREGAR: return "Recarregar";
     case AV_B_FONTE: return "Fonte";
     case AV_B_AOVIVO: return "Voltar ao vivo";
+    case AV_B_VOLTAR30: return "Voltar 30 s";
     case AV_B_ASPECTO: return "Proporção";
     case AV_B_ULTIMO: return "Último canal";
     default: return "";

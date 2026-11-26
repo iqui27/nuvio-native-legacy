@@ -287,6 +287,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_LIVETV_FORMATO: return "aj_stethoscope";
     case AJ_LIVETV_MODO: return "aj_stethoscope";
     case AJ_LIVETV_PROXY: return "aj_stethoscope";
+    case AJ_TIMESHIFT_LOCAL: return "aj_layers";
     case AJ_LIVETV_SUGERIR: case AJ_LIVETV_AGRUPAR: return "aj_layers";
     case AJ_REMEMBER_PROFILE: case AJ_PERFIL_ATIVO: return "aj_user-round";
     case AJ_SYNC: return "aj_cloud";

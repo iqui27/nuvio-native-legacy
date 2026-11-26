@@ -911,6 +911,10 @@ typedef enum {
   // completo = como era antes; Texto simples = sem libass para o ASS do
   // autor. LOCAL, append-only.
   AJ_LEG_ASS_PESO,
+  // Timeshift local da TV ao vivo (timeshift_regras.h): o canal que passa pelo
+  // proxy de TS tambem e gravado no pendrive, para pausar e voltar. LOCAL,
+  // desligado (grava no disco da pessoa), append-only.
+  AJ_TIMESHIFT_LOCAL,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2186,6 +2190,7 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Chave do Gemini"),                                   // valor em gemini.txt
   ACAO("Kit de Home"),   // homekitapp.c: o kit mora em kit-home-p<N>.json
   ESC("Legenda ASS com estilo", V_ASS_PESO, 3),              // local: legendaAssPesoLocal (fora do .tpk)
+  ESC("Pausar e voltar a TV ao vivo", V_LIGA, 2),            // local: timeshiftLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2590,6 +2595,7 @@ static const char *CHAVE[] = {
   "-geminiChave",
   "-kitHome",   // nunca vai para a conta: o kit e deste perfil nesta TV
   "legendaAssPesoLocal",
+  "timeshiftLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -4407,6 +4413,7 @@ int   ajustes_livetv_formato(void)    { return valor[AJ_LIVETV_FORMATO]; }
 int   ajustes_livetv_modo(void)       { return valor[AJ_LIVETV_MODO]; }
 int   ajustes_livetv_proxy(void)      { return lig(AJ_LIVETV_PROXY); }
 int   ajustes_livetv_sugerir(void)    { return lig(AJ_LIVETV_SUGERIR); }
+int   ajustes_timeshift_local(void)   { return lig(AJ_TIMESHIFT_LOCAL); }
 int   ajustes_guia_previa_grande(void) { return valor[AJ_GUIA_PREVIA_GRANDE] == 0; }
 void  ajustes_definir_guia_previa_grande(int l) { valor[AJ_GUIA_PREVIA_GRANDE] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 int ajustes_guia_previa_destacar(void) { return valor[AJ_GUIA_PREVIA_DESTACAR] == 0; }
@@ -7016,7 +7023,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_URL_LISTA: case AJ_URL_M3U_ADD: case AJ_URL_XMLTV_ADD: case AJ_URL_REM: /* por perfil, em ltv-urls-p<N>.txt */
     case AJ_LIVETV_RES: case AJ_LIVETV_FORMATO: case AJ_LIVETV_ESPERA:
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY: /* rede e provedor desta casa: o web nao tem */
-    case AJ_LIVETV_SUGERIR: case AJ_LIVETV_AGRUPAR:
+    case AJ_LIVETV_SUGERIR: case AJ_LIVETV_AGRUPAR: case AJ_TIMESHIFT_LOCAL:
     case AJ_GUIA_PREVIA_DESTACAR: case AJ_GUIA_PREVIA_SOM: case AJ_GUIA_DIAS:
     case AJ_GUIA_PREVIA_GRANDE: /* tamanho do preview do guia: so este port tem */
     case AJ_HOME_LAYOUT:    /* a Dinamica nao tem par na conta (selected_layout) */
@@ -7164,7 +7171,7 @@ static int soNaTv(int op) {
     case AJ_DESCANSO_ESTILO: case AJ_DESCANSO_FONTE:
     case AJ_CACHE_SEEK: case AJ_TRAILER_ZOOM_TPK: case AJ_LEG_SYNC_AUDIO:
     case AJ_LIVETV_RES: case AJ_LIVETV_FORMATO: case AJ_LIVETV_ESPERA:
-    case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY:
+    case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY: case AJ_TIMESHIFT_LOCAL:
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
     case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST: case AJ_HDR10P_STRIP:
@@ -8014,6 +8021,7 @@ static const char *rotuloNovo(int op) {
     case AJ_MDB_LIGADO: return "Notas do MDBList";
     case AJ_STALKER_PORTAL: return "Portal com MAC (Stalker)";
     case AJ_LIVETV_PROXY: return "Repassar o canal pelo app (proxy)";
+    case AJ_TIMESHIFT_LOCAL: return "Pausar e voltar a TV ao vivo";
     case AJ_LIVETV_MODO: return "Modo do player dos canais";
     case AJ_ESPACO: return "Imagens guardadas na memória";
     case AJ_NOTAS_HOME: return "Nota do IMDb nos cartazes";
@@ -8987,6 +8995,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_LIVETV_FORMATO: return "Automático usa o formato que a conta Xtream declara e lembra o que tocou. HLS ou TS pede esse formato primeiro, mesmo quando a conta só declara o outro.";
     case AJ_LIVETV_ESPERA: return "Quanto tempo o canal tem para mostrar a imagem antes de o app passar para a próxima fonte ou mostrar o erro. Automática espera 15 s no Xtream e 25 s nos addons.";
     case AJ_LIVETV_PROXY: return "Nos canais Xtream que chegam como HLS, o app junta os segmentos num fluxo TS contínuo e entrega à TV, que toca TS contínuo e não toca o HLS desses canais. Canal que já é TS contínuo vai direto. Desligado, a TV recebe o HLS do provedor.";
+    case AJ_TIMESHIFT_LOCAL: return "Experimental. Com um pendrive ligado, o canal que passa pelo proxy do app também é gravado nele enquanto você assiste: dá para pausar, voltar 30 segundos e retornar ao vivo. Usa até 4 GB do pendrive e apaga tudo ao trocar de canal.";
     case AJ_LIVETV_SUGERIR: return "Os canais que a lista não separa em categorias são agrupados por sugestão do Jev, que recebe só o nome do canal. As categorias que a lista já traz não mudam.";
     case AJ_LIVETV_MODO: return "Teste para TVs em que o canal chega mas não aparece. A é o modo de sempre; B não escolhe a faixa de vídeo antes de o canal abrir; C também manda o pedido no formato de transmissão ao vivo. O diagnóstico da Live TV testa os três.";
     case AJ_LIVETV_DIAG: return "Mede a rede até o provedor, lê a conta Xtream e testa vários canais: se tocam, em que formato, com que resolução e em quanto tempo. No fim sugere ajustes da Live TV e pode aplicá-los.";
@@ -9549,6 +9558,7 @@ static const char *beneficioProprio(int op) {
     case AJ_FALHA_PROVEDORES: return "Se o vídeo não abrir, tenta os outros provedores Debrid, na ordem.";
     case AJ_FALHA_ADDONS: return "Se o vídeo não abrir, tenta os outros add-ons, na ordem escolhida.";
     case AJ_XTREAM_SERVIDOR: return "O endereço e a porta que o provedor mandou.";
+    case AJ_TIMESHIFT_LOCAL: return "O canal é gravado no pendrive para pausar e voltar.";
     case AJ_LIVETV_SUGERIR: return "Canais sem categoria ganham uma sugestão de grupo pelo nome.";
     case AJ_LIVETV_ESPERA: return "Quanto tempo o canal tem para mostrar imagem antes de tentar outra fonte.";
     case AJ_HERO_CATALOGOS: return "De onde vêm os títulos do destaque no alto da Home.";
