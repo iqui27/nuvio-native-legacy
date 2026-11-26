@@ -204,7 +204,7 @@ static int gs_arrow(SDL_Keycode k,int repeat){
   if(focus>=1100&&focus<=1105&&k==SDLK_DOWN){gv_zone=0;nav_spatial(k);return 1;}
   if(gv_overlay()){
     int first=!strcmp(screen,"esportes-ajustes")?2030:2040;
-    int n=first==2030?5:gs_selected.nParticipantes+1;
+    int n=first==2030?6:gs_selected.nParticipantes+1;
     if(focus>=first&&focus<first+n){
       if(k==SDLK_UP&&focus>first)focus--;
       if(k==SDLK_DOWN&&focus<first+n-1)focus++;
@@ -396,7 +396,7 @@ static void gv_sports_screen(void){
   int n=per==3?gs_n:!strcmp(screen,"esportes-noticias")?esportes_noticias_n():gs_count;
   if(per==3&&gs_page*per>=n)gs_page=n?(n-1)/per:0;
   if(!strcmp(screen,"esportes-ajustes")){
-    gv_dim(0,.30f);float x=gv_sheet_base(480,180,1120,790);
+    gv_dim(0,.30f);float x=gv_sheet_base(480,150,1120,880);
     gv_label(TXT_TITULO2,i18n("Ajustes de esportes"),x,260,900,0);
     gv_opt(2030,"aj_eye",i18n("Esportes neste perfil"),i18n("Ligar ou desligar"),x,340,1056,80);
     gv_opt(2031,"aj_rows-3",i18n("Ligas visíveis"),i18n("Ligar ou desligar"),x,432,1056,80);
@@ -404,7 +404,8 @@ static void gv_sports_screen(void){
     gv_opt(2032,"aj_image",i18n("Qualidade da imagem"),i18n(q==1?"Baixa":q==2?"Alta":"Automático"),x,524,1056,80);
     gv_opt(2033,"aj_star",i18n("Times favoritos"),i18n("Escolher times"),x,616,1056,80);
     gv_opt(2034,"aj_arrow-up-down",i18n("Atualizar"),NULL,x,708,1056,80);
-    gv_label(TXT_ILHA_SUB,i18n("Fundos ilustrativos do esporte. ESPN fornece apenas informações; os canais vêm das suas contas IPTV."),x,838,1056,1);return;
+    gv_opt(2035,"aj_tv",i18n("Jogo no canal certo"),i18n(espcasar_ligado()?"Ligado":"Desligado"),x,800,1056,80);
+    gv_label(TXT_ILHA_SUB,i18n("Fundos ilustrativos do esporte. ESPN fornece apenas informações; os canais vêm das suas contas IPTV."),x,930,1056,1);return;
   }
   if(!strcmp(screen,"esportes-onde-assistir")){
     gv_dim(0,.42f);float x=gv_sheet_base(520,180,1080,700);
@@ -535,6 +536,7 @@ static int gs_activate(void){
     else if(focus==2031)gs_open("esportes-visibilidade");
     else if(focus==2032&&!esportes_fundo_definir_qualidade((esportes_fundo_qualidade()+1)%3))glem_aviso_curto(i18n("Não foi possível salvar"));
     else if(focus==2033)gs_open("esportes-favoritos");
+    else if(focus==2035&&!espcasar_definir(!espcasar_ligado()))glem_aviso_curto(i18n("Não foi possível salvar"));
     else if(focus==2034){esportes_catalogo_iniciar(gs_sport,1);esportes_pedir_favoritos(1);esportes_noticias_pedir(1);gs_back();}
     return 1;
   }

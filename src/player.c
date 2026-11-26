@@ -189,6 +189,7 @@ extern __attribute__((weak)) int farolacao_fonte_executar(int acao, int persisti
 #include "cacheboost.h"
 #include "directcache.h"
 #include "audioinfo.h"
+#include "selotoca.h"
 #include "playinfo.h"
 #include "central.h"
 #include "legendasui.h"   /* F04: second subtitle band */
@@ -4727,8 +4728,8 @@ static void avMontarOsd(AoVivoOsd *o) {
     // medida: o que o pipeline confirma).
     { int fm = marca_resolucao(o->res);
       if (fm >= 0) o->marcas[o->nMarcas++] = fm;
-      if (video_tem_dolby_vision()) o->marcas[o->nMarcas++] = FMT_DV;
-      else if (!strcasecmp(video_hdr(), "HDR10")) o->marcas[o->nMarcas++] = FMT_HDR10;
+      { int hd = selotoca_hdr(video_hdr(), video_tem_dolby_vision(), -1);
+        if (hd >= 0) o->marcas[o->nMarcas++] = hd; }
       if (video_tem_atmos()) o->marcas[o->nMarcas++] = FMT_ATMOS;
       if (marcaDtsAtual() >= 0 && o->nMarcas < (int)(sizeof o->marcas / sizeof o->marcas[0]))
         o->marcas[o->nMarcas++] = marcaDtsAtual(); }
@@ -8367,28 +8368,17 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
   char txtPac[160] = "";
   if (larg) *larg = 0.0f;
   if (estilo == PLR_FMT_OFF) return 0.0f;
-  // A classe sai da LARGURA primeiro: filme 2.39:1 em 1080p chega como
-  // 1920x800. A faixa do 1440p (2560) fica SEM selo: ausente e mais honesto
-  // que errado.
-  { int w = video_largura(), h = video_altura();
-    if (w >= 3200 || h >= 1800)       selos[nSelos++] = FMT_4K;
-    else if (w >= 2400)               { /* 1440p: sem selo */ }
-    else if (w >= 1800 || h >= 1000)  selos[nSelos++] = FMT_1080;
-    else if (w >= 1200 || h >= 700)   selos[nSelos++] = FMT_720;
-    else if (w > 0)                   selos[nSelos++] = FMT_SD; }
-  // "Dolby Vision" so quando o PIPELINE devolveu DolbyVision no videoInfo
-  // (MEDIDO: um MKV anunciado como DV volta HDR10 nesta TV).
-  if (video_tem_dolby_vision())                  selos[nSelos++] = FMT_DV;
-  else if (!strcasecmp(video_hdr(), "HDR10"))    selos[nSelos++] = FMT_HDR10;
+  // Resolucao e HDR pela regra de selotoca.h (o que o pipeline MEDIU; onde a
+  // plataforma nao mede HDR, o selo e o da FONTE e nunca Dolby Vision).
+  { int r = selotoca_resolucao(video_largura(), video_altura()), mf = -1, hd;
 #if defined(__EMSCRIPTEN__) || defined(NV_TPK)
-  else {
-    // AVPlay nao confirma HDR ativo: o selo e o da FONTE, nunca Dolby Vision
-    // (TV Samsung nao tem DV; badges_fonte_hdr so conhece HDR10+/HDR10/HDR).
+    // AVPlay nao confirma HDR ativo: a regra recebe o selo da FONTE.
     const Stream *fonte = stream_item(stream_atual());
-    int hdr = fonte ? badges_fonte_hdr_marca(fonte->badges) : -1;
-    if (hdr >= 0) selos[nSelos++] = (FormatoMarca)hdr;
-  }
+    if (fonte) mf = badges_fonte_hdr_marca(fonte->badges);
 #endif
+    hd = selotoca_hdr(video_hdr(), video_tem_dolby_vision(), mf);
+    if (r >= 0) selos[nSelos++] = (FormatoMarca)r;
+    if (hd >= 0) selos[nSelos++] = (FormatoMarca)hd; }
   if (video_tem_atmos())        selos[nSelos++] = FMT_ATMOS;
   if (marcaDtsAtual() >= 0)     selos[nSelos++] = (FormatoMarca)marcaDtsAtual();
   const char *rotAudio = ehCanal() ? "" : rotuloAudioOsd();
