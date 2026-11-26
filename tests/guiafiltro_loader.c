@@ -45,6 +45,7 @@ static void channel(int fl, const char *cat, const char *id, const char *nome) {
 }
 int g5ui_active(void) { return 0; }
 int g5ui_changed(void) { return 0; }
+int g5ui_pediu_minha_noite(void) { return 0; }
 void g5ui_update(void) {}
 void desc_remontar_fileiras(void) {}
 void desc_repetir(void) {}

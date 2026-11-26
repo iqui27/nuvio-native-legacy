@@ -129,6 +129,7 @@ int ajustes_animacoes_reduzidas_usuario(void);
 int ajustes_esmaecer(void);
 int ajustes_brilho_player(void);
 int ajustes_tunneling(void); // Android-only tunneled playback; default off.
+int ajustes_abrir_tocando(void); // "Abrir tocando" (minhanoite.h); default off.
 int ajustes_barras_pretas(void); // Android-only black letterbox bars; default off.
 int ajustes_afr(void);       // #641 Android-only display refresh-rate match; default off.
 int ajustes_hdr_interface(void); // Experimental Android HDR output; default off.

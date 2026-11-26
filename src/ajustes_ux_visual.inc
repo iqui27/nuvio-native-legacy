@@ -212,6 +212,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_GUIA_PREVIA_DESTACAR: return "aj_picture-in-picture";
     case AJ_GUIA_PREVIA_SOM: return "aj_volume-2";
     case AJ_GUIA_DIAS: return "aj_calendar-days";
+    case AJ_ABRIR_TOCANDO: return "aj_tv-minimal-play";
     case AJ_FONTE_OCULTAR_DV: case AJ_FONTE_OCULTAR_AUDIO: case AJ_FONTE_OCULTAR_VIDEO: return "aj_eye-off";
     case AJ_DET_TOPO: return "aj_panel-top";
     case AJ_DET_ELENCO_VISTO: return "aj_users";
