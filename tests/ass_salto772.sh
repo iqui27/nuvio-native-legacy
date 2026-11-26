@@ -27,7 +27,7 @@ if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libass; then
     read -ra platform <<< "$(pkg-config --cflags --libs sdl2 gl)"
   fi
   "${CC:-cc}" -DNV_ASS_LIBASS -DNV_TEST_PLAINASS_LINKED -include tests/ass_pisca_gl.h -Isrc \
-    tests/ass_salto772.c src/relogio.c src/assrender.c src/assperf.c src/assfios.c src/plainass.c tests/ass_render_stub.c \
+    tests/ass_salto772.c src/relogio.c src/assrender.c src/assperf.c src/asspeso.c src/assfios.c src/plainass.c tests/ass_render_stub.c \
     -o "$D/test" -O1 -g -Wall -lm "${flags[@]}" \
     $(pkg-config --cflags --libs libass fribidi) "${platform[@]}" -pthread \
     -Wno-deprecated-declarations -Wno-macro-redefined

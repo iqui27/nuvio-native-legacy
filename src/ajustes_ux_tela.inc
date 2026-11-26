@@ -104,6 +104,9 @@ static const Item TELA[] = {
     ROT("Idiomas"),
       OPC(AJ_IDIOMA), OPC(AJ_AUD_LINGUA), OPC(AJ_AUD_ORIGINAL), OPC(AJ_AUD_LINGUA2), OPC(AJ_LEG_LINGUA), OPC(AJ_LEG_FORCADA),
       OPC(AJ_LEG_EVITAR_SDH), OPC(AJ_LEG_TEMPORARIA),
+#if AJ_ASS_PESO_AQUI   /* webOS e .wgt: ver ajustes.c */
+      OPCA(AJ_LEG_ASS_PESO),
+#endif
       OPC(AJ_LEG_MOSTRAR), OPC(AJ_LEG_SYNC_AUTO), OPCA(AJ_TMDB_IDIOMA),
 #ifdef NV_ANDROID
       // Sincronia pelo audio (F06): so o player do Android entrega o PCM. Na LG e

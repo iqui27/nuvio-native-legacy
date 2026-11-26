@@ -23,6 +23,9 @@ void assrender_definir_texto_estilo(const PlainAssStyle *style);
  * apagar o quadro em tela. Com geracao diferente ou sem faixa, e carregar. */
 int  assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao);
 void assrender_limpar(void);
+/* So limpa se a faixa ainda for da geracao `g` (1 = limpou). Para avisos
+ * tardios (troca de motor, Texto simples): nao apaga a faixa seguinte. */
+int  assrender_limpar_geracao(unsigned g);
 void assrender_limpar_fontes(void);
 /* Private, validated subtitle font. NULL restores the bundled fallback. */
 /* Admission and local preference commit are serialized with a rare selector
@@ -83,6 +86,15 @@ void assrender_posicao_legenda(double posSeg);
 /* 1 quando libass aceitou o documento atual. Sem a biblioteca compilada, o
  * retorno e 0 e legenda.c continua sendo o fallback SRT/VTT/ASS reduzido. */
 int  assrender_ativo(void);
+/* Ajuste "Legenda ASS com estilo" (asspeso.h), so fora do .tpk (la o assperf
+ * responde e estas chamadas nao fazem nada): ASSPESO_AUTO reduz a resolucao
+ * do render enquanto a cena pesa demais para a TV, ASSPESO_COMPLETO nunca
+ * reduz, ASSPESO_SIMPLES tira o ASS do autor do libass (a legenda sai como
+ * texto do app, so o dialogo). Vale na hora, sem reabrir a faixa. */
+void assrender_definir_peso(int modo);
+int  assrender_peso_modo(void);       // ASSPESO_* em uso (.tpk: sempre ASSPESO_AUTO)
+/* Por quanto o render esta dividido agora (1 = 1:1). Diagnostico e teste. */
+int  assrender_peso_divisor(void);
 /* Teste/diagnostico: renderiza o instante no fio de quem chama, sem GL.
  * Devolve o numero de imagens, ou -1 sem faixa/sem libass. */
 int  assrender_quadro_cpu(double posSeg);
