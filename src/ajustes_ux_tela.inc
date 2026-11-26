@@ -287,6 +287,7 @@ static const Item TELA[] = {
     ROT("Servidor Nuvio"), OPC(AJ_NUVIO_BACKEND_URL),
     ROT("Notificações"), OPC(AJ_ENQUETES),
     ROT("Conquistas"), OPC(AJ_CONQ_LIGADO), OPC(AJ_CONQ_AVISO), OPC(AJ_CONQ_DICAS),
+    ROT("Sessão"), OPC(AJ_SESSAO_SALA),
 
   SEC("Esta TV", "Resolução, imagens, efeitos e diagnóstico", "aj_monitor-cog"),
 OPC(AJ_RESOLUCAO), OPC(AJ_GPU_EFEITOS), OPC(AJ_AMPLIAR_UI), OPC(AJ_AMPLIACAO_ALGO), OPC(AJ_AMPLIACAO_NITIDEZ), OPC(AJ_HDR_INTERFACE), OPC(AJ_QUALIDADE_IMG),

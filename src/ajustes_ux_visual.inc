@@ -344,6 +344,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_FAROL_LLM_SO_ESTA_TV: return "aj_shield";
     case AJ_DICASCONTROLE: return "aj_circle-dot";
     case AJ_NOVIDADES20: return "aj_sparkles";
+    case AJ_SESSAO_SALA: return "aj_smartphone";
     case AJ_APOIAR: return "aj_heart";
     case AJ_VERSAO_I: return "aj_info";
     case AJ_ATUALIZAR: return "aj_download";

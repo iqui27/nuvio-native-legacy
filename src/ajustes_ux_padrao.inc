@@ -420,3 +420,4 @@
   0, /* parear celular: acao */
   0, /* night mode: Off */
   0, /* marcarCenaLocal: Ligado */
+  0, // Sessao pelo celular: acao, sem valor

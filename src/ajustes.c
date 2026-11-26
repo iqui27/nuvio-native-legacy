@@ -927,6 +927,8 @@ typedef enum {
   AJ_MODO_NOITE,
   // Marcar cena (pesquisa 4.7): tecla no player guarda o instante. LOCAL, ligado.
   AJ_MARCAR_CENA,
+  // Sessao: a sala decide pelo celular (salaui.h). Acao, append-only.
+  AJ_SESSAO_SALA,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2208,6 +2210,7 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Parear celular"),                                    // pecatv_parear
   ESC("Modo noite", V_MODO_NOITE, 3),                  // local: nightModeLocal
   ESC("Marcar cena no player", V_LIGA, 2),                   // local: marcarCenaLocal
+  ACAO("Sessão pelo celular"),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2617,6 +2620,7 @@ static const char *CHAVE[] = {
   "-pecaParear",
   "nightModeLocal",
   "marcarCenaLocal",
+  "-",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3068,6 +3072,8 @@ static int pediuPlugins;
 int ajustes_pediu_plugins(void) { int v = pediuPlugins; pediuPlugins = 0; return v; }
 static int pediuDicasControle;
 int ajustes_pediu_dicascontrole(void) { int v = pediuDicasControle; pediuDicasControle = 0; return v; }
+static int pediuSessaoSala;
+int ajustes_pediu_sessao_sala(void) { int v = pediuSessaoSala; pediuSessaoSala = 0; return v; }
 static int pediuNovidades20;
 int ajustes_pediu_novidades20(void) { int v = pediuNovidades20; pediuNovidades20 = 0; return v; }
 static int pediuDiagnostico;
@@ -3790,6 +3796,12 @@ static int ajOpcaoDisponivel(int op) {
                    op == AJ_TRAKT || op == AJ_SIMKL || op == AJ_DISCORD || op == AJ_SAIR)) return 0;
   if (op == AJ_AMPLIAR_UI)
     return painel4k() && !telefoneui_ativo();
+  // Sessao: needs the LAN phone server (none on the .wgt, as in celular.c),
+  // and is one room, not a per-profile value.
+#if defined(__EMSCRIPTEN__) || defined(_WIN32)
+  if (op == AJ_SESSAO_SALA) return 0;
+#endif
+  if (op == AJ_SESSAO_SALA) return !edPerfil;
   if (op == AJ_ARTE_TOM) return valor[AJ_TEMA] == AJ_TEMA_DINAMICA;
   // Only the selected account's fields are editable. Adding another account
   // never overwrites the credentials of the first one.
@@ -9359,6 +9371,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_FAROL_ZERAR: return FT_AJ_FAROL_ZERAR_DESC;
     case AJ_FAROL_LLM_SO_ESTA_TV: return FT_AJ_FAROL_LLM_DESC;
     case AJ_DICASCONTROLE: return "Dicas do controle";
+    case AJ_SESSAO_SALA: return "A TV mostra um código. Cada pessoa entra pelo celular, sem instalar nada, e diz sim ou não aos mesmos títulos. A TV abre o primeiro em que todos disseram sim.";
     case AJ_NOVIDADES20: return "O tour do que mudou na 2.0, capítulo por capítulo, com o que vale neste aparelho. Abre do começo.";
     case AJ_APOIAR: return "Se o Nuvio te ajuda e você quiser apoiar quem faz o app, aponte a câmera do celular para um dos códigos. É opcional: nada muda no app.";
     case AJ_LOG_REDE: return "Mostra o registro desta TV numa página da sua rede: abra o endereço abaixo no celular ou no computador, na mesma rede. Sem senhas nem chaves; endereços vão cortados no host. Desligue quando terminar.";
@@ -11372,6 +11385,7 @@ static void eventoTela(const SDL_Event *e) {
       return;
     }
     if (focoOp == AJ_DICASCONTROLE) { pediuDicasControle = 1; return; }
+    if (focoOp == AJ_SESSAO_SALA) { pediuSessaoSala = 1; return; }
     if (focoOp == AJ_NOVIDADES20) { pediuNovidades20 = 1; return; }
     if (focoOp == AJ_APOIAR) { apoioAbrir(); return; }
     if (focoOp == AJ_ADDONS) { pediuAddons = 1; return; }
@@ -12467,7 +12481,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: case AJ_SYNC: case AJ_SAIR:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_ADDONS_PRINCIPAL: case AJ_PROVEDORES_ESCOPO: case AJ_ENQUETES:
     case AJ_AMIGOS_PERFIS:
-    case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS:
+    case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS: case AJ_SESSAO_SALA:
       return AJPV_CONTA;
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL: case AJ_DIARIO_NUVEM:
       return AJPV_RASTREIO;

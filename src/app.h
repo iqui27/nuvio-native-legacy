@@ -55,6 +55,8 @@ int  app_no_login(void);
 
 // Porta de teste: abre o titulo (imdb) como se viesse de uma recomendacao.
 void app_abrir_titulo(const char *imdb);
+// Porta de teste "sessao:abrir" (main.c): a Sessao pelo celular (salaui.h).
+void app_abrir_sessao_sala(void);
 #ifdef NV_DESKTOP_UI
 void app_desktop_preview(const char *screen);
 #endif

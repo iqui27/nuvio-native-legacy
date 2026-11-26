@@ -15,6 +15,7 @@
 #include "arranque.h"
 #include "celbotao.h"
 #include "pecatv.h"
+#include "salaui.h"
 #include "central.h"
 #include "estatvivoui.h"
 #include "playinfo.h"
@@ -253,6 +254,8 @@ static char abrirTeste[64];
 void app_abrir_titulo(const char *imdb) {
   snprintf(abrirTeste, sizeof abrirTeste, "%s", imdb ? imdb : "");
 }
+
+void app_abrir_sessao_sala(void) { salaui_abrir(); }
 
 static int aguardandoFonte;
 // ESCOLHA AUTOMATICA COM A LISTA AINDA ENCHENDO (#221). A busca publica cada
@@ -5167,6 +5170,7 @@ void app_evento(const SDL_Event *e) {
   }
   if (e->type == SDL_QUIT) { retomamorna_cancelar(); sair = 1; return; }
   if (dicascontrole_ocupado()) { dicascontrole_evento(e); return; }
+  if (salaui_evento(e)) return;
   if (rewatchui_aberta()) { rewatchui_evento(e); return; }
   if (farolgostoui_aberto()) { farolgostoui_evento(e); return; }
   if (farolcompara_aberto()) { farolcompara_evento(e); return; }
@@ -6854,6 +6858,10 @@ void app_atualizar(float dt, Uint32 agora) {
   // comeco; ao fechar, Ajustes continua onde estava.
   if (tela == TELA_AJUSTES && ajustes_pediu_novidades20()) novidades20_abrir(0);
   if (tela == TELA_AJUSTES && ajustes_pediu_dicascontrole()) dicascontrole_abrir();
+  if (tela == TELA_AJUSTES && ajustes_pediu_sessao_sala()) salaui_abrir();
+  // Sessao (salaui.h): o titulo em que a sala fechou abre pelo mesmo caminho
+  // de uma recomendacao.
+  { char tt[64]; if (salaui_pediu_titulo(tt, sizeof tt)) app_abrir_titulo(tt); }
   if (tela == TELA_AJUSTES && ajustes_pediu_novidades()) {
     trocarTela(TELA_HOME);
     menu_definir_destino(MENU_INICIO);
@@ -8670,6 +8678,7 @@ void app_atualizar(float dt, Uint32 agora) {
   dicascontrole_home_livre(app_home_recebe_teclas(), dt);
 #endif
   dicascontrole_atualizar(dt, agora);
+  salaui_atualizar(dt);
   telemetria_atualizar(dt, agora);
   recintro_atualizar(dt, agora);
   atualizacao_atualizar(dt, agora);
@@ -9372,6 +9381,7 @@ void app_desenhar(Uint32 agora) {
     CAMADA_SE(dicascontrole_ocupado());
     dicascontrole_desenhar(agora);
   }
+  salaui_desenhar();
 }
 
 int app_quer_sair(void) { return sair; }
