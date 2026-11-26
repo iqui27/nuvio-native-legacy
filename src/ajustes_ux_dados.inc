@@ -258,6 +258,7 @@ static const char *uxSinonimos(int op) {
     case AJ_CW_MINIMO: return "minimo continuar assistindo porcentagem percentual entrar fileira retomada progresso quanto assistir comecou piso minimum percent continue watching threshold row";
     case AJ_FONTE_PREPARAR: return "preparar fonte ao abrir titulo antecipar resolver antecipado play instantaneo inicio rapido debrid painel arquivo prepare source ahead instant start";
     case AJ_COLECAO_EXIBICAO: return "colecao colecoes exibicao padrao automatico grade linha tempo ranking saga decadas mural vitrine global collection collections default view automatic grid timeline showcase";
+    case AJ_VAITOCAR: return "compatibilidade vai tocar nesta tv registro anonimo codec hdr modelo privacidade compartilhar compatibility will it play anonymous share privacy";
     case AJ_LOG_REDE: return "registro rede local pagina log ip navegador local network log page browser seek";
     case AJ_DIAGNOSTICS_QR: return "baixar registro qr cartao diagnostico endereco download log qr card diagnostics address";
     case AJ_LINK_REUSAR: case AJ_LINK_PRAZO: return "reusar ultimo link sem busca retomar validade cache horas reuse last link cache duration";

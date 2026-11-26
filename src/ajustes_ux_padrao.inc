@@ -409,3 +409,4 @@
   0, /* farolZerar: acao (#51) */
   0, /* farolLlmSoEstaTv: 0 = Ligado ("So nesta TV", padrao seguro, #51) */
   0, /* direct account-profile friends action */
+  1, /* vaiTocarLocal: Desligado ate o consentimento (4.2) */

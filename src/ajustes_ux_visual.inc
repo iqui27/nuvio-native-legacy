@@ -344,7 +344,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_VER_REGISTRO: return "aj_scroll-text";
     case AJ_ASS_MOTOR: return "aj_captions";
     case AJ_ENVIAR_LOG: return "aj_send";
-    case AJ_ENVIO_AUTO: case AJ_LOG_REDE: return "aj_scroll-text";
+    case AJ_ENVIO_AUTO: case AJ_VAITOCAR: case AJ_LOG_REDE: return "aj_scroll-text";
     case AJ_GPU_EFEITOS: return "aj_zap";
     default: return "aj_settings-2";
   }
