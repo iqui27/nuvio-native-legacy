@@ -169,7 +169,10 @@ static int ehAss(const VideoFaixa *f) {
 // #421: texto embutido usa o mesmo overlay das externas. Android ja recebe
 // os cues do Media3; la so ASS continua pelo colhedor.
 #ifdef NV_ANDROID
-#define FX_TEXTO_OVERLAY 0
+// TorBox burn-in (tbqueima.h): TorBox's stream has no subtitle tracks, so the
+// file's text tracks come to the app while burned.
+#include "tbqueima.h"
+#define FX_TEXTO_OVERLAY (tbq_ativo())
 #else
 #define FX_TEXTO_OVERLAY 1
 #endif
@@ -525,7 +528,7 @@ void faixas_abrir(void) { faixas_abrir_em(0); }
 // com as duas colunas lado a lado (comparar o par escolhido e o motivo dele
 // existir); o que muda e onde o foco comeca.
 void faixas_abrir_em(int col) {
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
   video_tpk_tba_soltar();   // a value changed without OK last time is not kept
 #endif
   int n;
@@ -611,7 +614,7 @@ static int linhaDaLeg(int i) {
 }
 
 // Original audio with TorBox burn-in (tbburn.h): rows under the audio tracks.
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
 static int nTba(void) { return video_tpk_tba_linhas(); }
 #else
 static int nTba(void) { return 0; }
@@ -1185,7 +1188,7 @@ static void lembrarManual(int i) {
 }
 
 static void aplicar(void) {
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
   if (coluna == 0 && foco[0] >= video_n_audio()) { video_tpk_tba_ok(foco[0] - video_n_audio()); return; }
 #endif
   if (coluna == 0) {
@@ -1281,7 +1284,7 @@ static void legendaAutomatica(Uint32 agora) {
   for (i = 0; i < nEmb; i++) {
     const VideoFaixa *f = video_legenda(i);
     emb[i] = f ? f->idioma : "";
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
     // Burned in (tbburn.h): every burnable ASS track is out of Main's pick.
     if (video_tpk_leg_oculta(i)) emb[i] = "zxx";
 #endif
@@ -1320,7 +1323,7 @@ static void legendaAutomatica(Uint32 agora) {
   if (origem == LEGMEM_DE_TITULO && mt->tipo) {
     r = legendaExata(mt, nEmb, nAdd);
     if (r < 0 && !(mt->tipo == 'e' ? embFechado : addFechado)) return;
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
     /* Burned in (owner 23/11/2026, LOG 2: Kaguya and Married Couple): the
      * exact track of this title skipped the burned-in mask below, so Nuvio
      * drew an embedded ASS track over TorBox's burned picture. While burned
@@ -1367,7 +1370,7 @@ static void legendaAutomatica(Uint32 agora) {
     // A PESSOA DESLIGOU A MAO (neste titulo, ou por ultimo): nenhuma, mesmo
     // que o arquivo marque uma faixa como padrao.
     if (!strcasecmp(pref, "none") && (origem == LEGMEM_DE_TITULO || origem == LEGMEM_DE_ULTIMA)) {
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
       /* Log 13 (23/11/2026): "none" was saved because burn-in carries the
        * signs. Burn-in is wanted but not on (the file is not in TorBox, it
        * failed): Nuvio draws the track it would burn (Signs & Songs / forced).
@@ -1541,7 +1544,7 @@ void faixas_evento(const SDL_Event *e) {
   // Na de audio nao ha para onde ir — antes elas pulavam para a coluna de
   // legenda, que e justamente o que fazia os dois botoes do player parecerem o
   // mesmo botao.
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
   // Original audio row (tbburn.h): Left/Right change the value shown,
   // OK applies it (aplicar).
   if (!modo && coluna == 0 && foco[0] >= video_n_audio() && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
@@ -1596,7 +1599,7 @@ void faixas_atualizar(float dt, Uint32 agora) {
   NV_PASSO("faixas: legendasui_atualizar");
   if (aberta && modo && coluna == 1) legendasui_atualizar(dt);
   NV_PASSO("faixas: queimada/velocidade");
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
   // Burned in stopped (TorBox failed: toast; or Burn in Off): the ASS tracks
   // are back in Main's list, so with Main off the automatic pick runs again
   // (e.g. Signs & Songs drawn by Nuvio).
@@ -1888,7 +1891,7 @@ static void linhaLista(int col, int i, float x, float y, float w, float a) {
   GfxRect lr = { x, y, w, IL_LN_H };
   nome[0] = sub[0] = 0;
   if (!col && i >= video_n_audio()) {
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
     video_tpk_tba_rotulo(i - video_n_audio(), nome, sizeof nome, sub, sizeof sub);
 #endif
     icone = "pl_audio-lines";

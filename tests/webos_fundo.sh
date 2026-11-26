@@ -43,6 +43,10 @@ static Uint32 seekEm, seekEnvEm, seekRetryEm, bufferandoDesde, mkvRetryEm;
 static NvReconexao recon;
 static NvDvSonda mkvRetry;
 static void soLog(void) {}
+/* TorBox burn-in (tbqueima.h): never burned here. */
+static int tbq_ativo(void) { return 0; }
+static int tbq_audio_atual(void) { return 0; }
+static void tbq_fundo(double *a) { (void)a; }
 static int volume = 100, paradas, cargas, cargaAud = -9, cargaLeg = -9, pausas, cargaFalha;
 static char cargaLegUrl[1024];
 static void chamar(const char *m, const char *b, void (*cb)(void)) {

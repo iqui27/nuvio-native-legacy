@@ -95,11 +95,17 @@ void video_sondar_mkv_agora(void) {}
 int video_velocidade_bloqueada(void) { return 0; }
 int video_velocidade_atual(void) { return VEL_NORMAL; }
 int video_velocidade_suportada(void) { return 1; }
+#ifdef NV_ANDROID
+// TorBox burn-in (tbqueima.h): burned, the file's text tracks come to the app.
+static int tbqAtivoT;
+int tbq_ativo(void) { return tbqAtivoT; }
+#endif
 
 int main(void) {
   strcpy(faixa.codec, "S_TEXT/UTF8");
 #ifdef NV_ANDROID
   assert(!vaiOverlay(&faixa)); // Media3 ja fornece o texto.
+  tbqAtivoT = 1; assert(vaiOverlay(&faixa)); tbqAtivoT = 0;   // TorBox's stream has no text tracks
 #else
   assert(vaiOverlay(&faixa));
   overlayAssumir(2, 7);

@@ -92,8 +92,14 @@ void tbburn_cancelar(void);
 // pick or file asks again.
 int  tbburn_recusado(void);
 
-#ifdef NV_TPK
-// video_tpk.c. _queimada: the burned menu entry (-1 none). _voltou, once:
+// The players that burn in: the .tpk (video_tpk.c), LG and Android
+// (tbqueima.c, owner 26/11/2026). The UI glue below follows this macro.
+#if defined(NV_TPK) || ((defined(NV_WEBOS) || defined(NV_ANDROID) || defined(NV_TBQ_TEST)) && !defined(__EMSCRIPTEN__))
+#define NV_TB_QUEIMA 1
+#endif
+
+#ifdef NV_TB_QUEIMA
+// video_tpk.c (tbqueima.c on LG/Android). _queimada: the burned menu entry (-1 none). _voltou, once:
 // 1 = burn-in gave up on this source (toast), 2 = Burn in turned Off; either
 // way the ASS tracks are back in Main's list (the caller re-picks Main).
 int  video_tpk_queimada(void);
@@ -144,8 +150,8 @@ void tbburn_lembrar(const TbFaixa *f);
 // (`m`); `pref`: the subtitle language from Settings ("" none). Pure.
 int  tbburn_escolher_auto(const TbFaixa *f, int n, int mem, const TbFaixa *m, const char *pref);
 
-#ifdef NV_TPK
-// video_tpk.c. The Burn in list (legendasui.c): `i` = a subtitle menu index of
+#ifdef NV_TB_QUEIMA
+// video_tpk.c (tbqueima.c on LG/Android). The Burn in list (legendasui.c): `i` = a subtitle menu index of
 // a burnable track, -1 = Off. _ligar: On = the automatic choice, Off = -1.
 void video_tpk_queimar_faixa(int i);
 void video_tpk_queimar_ligar(int ligar);

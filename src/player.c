@@ -467,6 +467,8 @@ static double posLegenda(void) {
    * pouco atras da nossa camada enquanto TOCA; pausada, nao. So tocando, com
    * leituras carimbadas, e nunca logo depois de um seek ainda sem leitura. */
   if (relLeg.carimbo && relLeg.tocando && !video_pos_incerta()) v -= legimagem_ms() / 1000.0;
+#endif
+#ifdef NV_TB_QUEIMA
   /* TORBOX BURN-IN (tbrelogio.h, owner 15/11): on TorBox's burned stream the
    * player's clock runs behind the picture by the segment it landed in. */
   v += tbr_correcao();
@@ -481,7 +483,7 @@ static float duracaoSeg = PLR_DUR_PADRAO;
  * where the PICTURE is. Differs from posSeg only on TorBox's burned stream. */
 static double posGravar(void) {
   double p = posSeg;
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
   if (comVideo) {
     p += tbr_correcao();
     if (p > duracaoSeg) p = duracaoSeg;
@@ -4693,7 +4695,7 @@ void player_evento(const SDL_Event *e) {
       { double fim;if(trechoPulavel(&fim)){
           { int tp=0;if(intro_botao_visivel(NULL,&tp)&&tp==INTRO_CREDITOS)player_aprender_creditos(); }
           pularTrecho(puloDestino(fim));if(comVideo)buscarUsuario(posSeg);return; } }
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
       // "Burn-in ready: press OK to switch" (owner 19/11/2026, a re-added
       // TorBox file): while that notice is up, OK switches instead of pausing.
       if (!e->key.repeat && video_tpk_queimar_tardio_ok()) { toastAte = 0; return; }   // the notice goes

@@ -17,6 +17,7 @@
 #include "horafmt.h"
 #include "ajustes_ux.h"
 #include "trailerfonte.h"   // NV_TRAILER_CONTINUA_DETALHE, nas ajudas do trailer
+#include "tbburn.h"       // NV_TB_QUEIMA: which players burn in (TorBox rows)
 #include "dados.h"
 #include "androidcache.h"
 #include "extplayer.h"
@@ -6926,9 +6927,14 @@ static int foraDestaPlataforma(int op) {
 #ifndef NV_ANDROID
   if (op == AJ_MINIATURA_RES || op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_LEG_SYNC_AUDIO_MOVEL || op == AJ_TUNNELING || op == AJ_QUADROS_TAXA) return 1;
 #endif
-#ifndef NV_TPK
-  // TorBox burn-in plays TorBox's HLS on the Samsung .tpk player only (tbburn.h).
+#ifndef NV_TB_QUEIMA
+  // TorBox burn-in plays TorBox's HLS on the native players only (tbburn.h).
   if (op == AJ_TB_PLANO || op == AJ_LEG_QUEIMAR || op == AJ_TB_AUDIO) return 1;
+#endif
+#ifndef NV_TPK
+  // Original audio with burn-in (Passthrough) exists on the .tpk only; LG and
+  // Android play TorBox's own audio (owner 26/11/2026).
+  if (op == AJ_TB_AUDIO) return 1;
 #endif
 #if defined(NV_ANDROID) && !defined(NV_P2P_MOTOR)
   if (op == AJ_P2P_LIMITE || op == AJ_P2P_DESTINO) return 1;

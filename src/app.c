@@ -3132,7 +3132,7 @@ static void vigiarAberturaManual(void) {
   if (fonteProvouTocar() || (!video_falhou() && video_pronto() && video_pos() > 0.25)) {
     fonteManualDesde = 0; return;
   }
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
   /* TorBox burn-in opening (log 21, owner 24/11/2026, Married Couple): its own
    * deadline falls back to the original. The watchdog fired at 25 s, burn-in
    * fell back at 30 s, the original played and "the source didn't respond"

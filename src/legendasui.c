@@ -158,7 +158,7 @@ static void capturar(void) {
   int nE = nEmbVivo(), nA = 0, i;
   for (i = 0; i < nE; i++) {
     emb[i] = video_legenda(i);
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
     // Burned in (tbburn.h): every burnable ASS track is out of Main/Second.
     if (video_tpk_leg_oculta(i)) emb[i] = NULL;
 #endif
@@ -460,35 +460,35 @@ static int bloqueadoNaSegunda(const char *idioma) {
 // Shown only with plan Pro, a key and a burnable track in a file that is on
 // TorBox (or not looked up yet).
 static int video_tpk_queimada_ou(void) {
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
   return video_tpk_queimada();
 #else
   return -1;
 #endif
 }
 static int queimarVisivel(void) {
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
   return tbburn_linha_visivel() || video_tpk_queimada() >= 0;
 #else
   return 0;
 #endif
 }
 static int queimarLigado(void) {
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
   return video_tpk_queimada() >= 0;
 #else
   return 0;
 #endif
 }
 static void queimarLigar(int on) {
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
   if (on != queimarLigado()) video_tpk_queimar_ligar(on);
 #else
   (void)on;
 #endif
 }
 static void queimarFaixa(int i) {
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
   if (video_tpk_queimada() != i) video_tpk_queimar_faixa(i);
 #else
   (void)i;
@@ -511,7 +511,7 @@ static void montarLinhas(void) {
   if (ver && verQ) {
     // The Burn in list: On | Off, then the file's burnable tracks.
     linhaFixa(LR_QSEG, 0, "q|seg");
-#ifdef NV_TPK
+#ifdef NV_TB_QUEIMA
     for (i = 0; i < nEmbVivo(); i++)
       if (video_tpk_leg_queimavel(i)) { char k[24]; snprintf(k, sizeof k, "q|%d", i); linhaQueimarFaixa(i, k); }
 #endif
