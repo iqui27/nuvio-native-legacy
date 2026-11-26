@@ -965,11 +965,11 @@ static int avTsPasta(char *out, size_t n) {
   return 0;
 #else
   const char *e = getenv("NUVIO_TIMESHIFT_DIR");
-  P2pmUsbInfo usb;
+  char vol[700];
   if (e && e[0]) return snprintf(out, n, "%s", e) < (int)n;
-  p2pmotor_usb_info(&usb);
-  if (usb.estado != 1 || !usb.gravavel || !usb.caminho[0]) return 0;
-  return snprintf(out, n, "%s/nuvio-timeshift", usb.caminho) < (int)n;
+  // O pendrive vem da sonda do cache USB, mas sem exigir o P2P ligado (#820).
+  if (!p2pmotor_usb_volume(vol, sizeof vol)) return 0;
+  return snprintf(out, n, "%s/nuvio-timeshift", vol) < (int)n;
 #endif
 }
 // Antes de cada abertura: diz ao proxy onde gravar ("" = nao grava).
