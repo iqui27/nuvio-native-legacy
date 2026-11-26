@@ -594,6 +594,11 @@ GLuint seekr_quadro(double posSeg, double *cueSeg) {
   return t;
 }
 
+// No chapter pictures from the Seekr API (one sheet per title, no chapter
+// starts): the chapter row shows plain tiles with the names.
+void seekr_capitulos(const double *iniSeg, int n, double durSeg) { (void)iniSeg; (void)n; (void)durSeg; }
+int seekr_capitulo_quadros(const int *idx, int n, GLuint *texs) { (void)idx; for (int i = 0; i < n; i++) texs[i] = 0; return 0; }
+
 int seekr_validar(const char *c) {
   char cab[160]; const char *cabs[2] = { cab, NULL };
   int st = 0, r;

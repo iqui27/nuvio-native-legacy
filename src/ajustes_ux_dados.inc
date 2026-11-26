@@ -244,6 +244,8 @@ static const char *uxSinonimos(int op) {
     case AJ_CW_PROXIMO: return "proximo episodio continuar assistindo a seguir next up fileira retomada esconder series so em andamento continue watching";
     case AJ_LAYOUT_AJUSTES: return "layout arranjo lista painel grade linhas uma embaixo da outra antigo anterior visual ajustes configuracoes list rows settings classic";
     case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: return "pular abertura resumo intro recap anteriormente automatico sozinho creditos skip auto";
+    case AJ_CAPITULOS: return "capitulos capitulo marcas barra pular chapters chapter skip mkv";
+    case AJ_ANIMESKIP_ID: return "anime skip animeskip id client chave anime abertura encerramento";
     case AJ_PULAR_CREDITOS: return "pular creditos automatico sozinho final encerramento skip credits auto ending";
     case AJ_EXT_AUDIO: return "audio from another source version dub dubbing lektor polish other file dzwiek z innego zrodla innej wersji sciezka";
     case AJ_EXT_AUDIO_CACHE: return "audio another version cache debrid uncached hide dimmed dzwiek wersja";

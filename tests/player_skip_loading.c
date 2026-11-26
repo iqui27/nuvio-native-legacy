@@ -4,7 +4,7 @@
 #include <stdio.h>
 static int comVideo = 1, esperandoFonte, erroFonte, saindo, retomadaAplicada;
 static int pronto, playing, buffering, iniciando, switching;
-static int visivel, skipFoco, duracaoReal = 1, epE, renderVisivel;
+static int visivel, skipFoco, capFoco, duracaoReal = 1, epE, renderVisivel;
 static float posSeg, duracaoSeg = 5694;
 static double markerStart, markerEnd = 90;
 static int cachedVisible, firstFrame, dv, skipLiberado;
@@ -63,6 +63,13 @@ int main(void) {
     buffering = 100; check(1); buffering = 0; playing = 1;
     erroFonte = 1; check(0); erroFonte = 0;
     saindo = 1; check(0); saindo = 0;
+    // Chapter row open: it owns OK and the arrows, so no skip button behind it.
+    if (firstFrame) {
+      capFoco = 1; skipFoco = 1; renderVisivel = 0;
+      desenharAcoesEpisodioCorpo();
+      assert(skipFoco == 0 && renderVisivel == 0);
+      capFoco = 0;
+    }
   }
   // Direct source switch: stale retomadaAplicada, new pipeline not playing yet.
   skipLiberado = 0; playing = 0; check(0);

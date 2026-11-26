@@ -177,7 +177,7 @@ void tpk45_tv(void) {
          ver, modelo, build, lerKb("/proc/meminfo", "MemTotal") / 1024, livreMb(), sysconf(_SC_NPROCESSORS_ONLN),
          carregador(), dts_remux_available() ? "linked" : "missing", tpk45_marca());
   printf("[tpk45] profiles: normal ring 16 queue cap 128 MiB | light 8 / 96 | minimum 8 / 64 | auto: free >= %d MB normal, "
-         ">= %d MB light, else minimum | low-memory line under %d MB free | no seek-bar thumbnails on Tizen 4/5\n",
+         ">= %d MB light, else minimum | low-memory line under %d MB free | seek-bar thumbnails on (slow-TV limit, [miniatura])\n",
          AUTO_NORMAL_MB, AUTO_LEVE_MB, APERTO_MB);
   fflush(stdout);
 }

@@ -93,4 +93,14 @@ void seekr_definir_ajuste_ms(long ms);
 // BLOQUEIA: confere a chave em /v1/keys/validate. 1 valida, 0 recusada,
 // -1 sem resposta. Chamar fora do fio de desenho.
 int  seekr_validar(const char *chave);
+
+// CHAPTER ROW (player.c, chapter mode). The file's chapter starts, sorted, and
+// the title's length: where pictures are made on the device (miniatura.c) the
+// chapter starts are made right after the scrub point, ahead of everything
+// else. n < 2 clears. Draw thread.
+void seekr_capitulos(const double *iniSeg, int n, double durSeg);
+// One texture per chapter index in idx[] (n <= 16), 0 where its picture is not
+// made yet (the row draws a plain tile). Returns 0 when nothing is open. The
+// Seekr API builds (.wgt, desktop) have no chapter pictures: always 0 there.
+int  seekr_capitulo_quadros(const int *idx, int n, GLuint *texs);
 #endif

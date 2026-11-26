@@ -390,3 +390,5 @@
   0, /* Show intro skip button: On */
   0, /* Show recap skip button: On */
   0, /* Show outro / credits skip button: On */
+  1, /* chapters in the player: Movies (V_CAP_TIPOS bits: 1 movies, 2 shows, 4 anime; owner 25/11) */
+  0, /* Anime-Skip Client ID: action, value lives in animeskip.txt */

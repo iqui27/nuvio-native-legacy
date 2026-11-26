@@ -98,7 +98,7 @@ fi
 # DTS/TrueHD -> Dolby Digital 5.1 (docs/features/dts/README.md): FFmpeg 7.1.5
 # estatico, LGPL, com os componentes do tools/build-dts-ffmpeg.sh (alvo tpk). Entra na
 # libnuvio.so dos hosts 6+ e, desde 11/2026, na do NuvioTpk40 (Tizen 4/5: as TVs de 2018-2020
-# tambem nao tocam DTS; as miniaturas feitas na TV ficam DESLIGADAS no 4/5, miniatura.c). O FFmpeg 7.1.5 nao
+# tambem nao tocam DTS; as miniaturas feitas na TV tambem, com o limite de TV lenta, miniatura.c). O FFmpeg 7.1.5 nao
 # tem _Thread_local; o que o carregador ELF do 4/5 recusa e conferido no passo 1b/3.
 # O tarball e baixado e conferido AQUI (o container nao tem curl) e
 # compilado uma vez no nuvio-tpk-sdk; o carimbo e o hash do script: mudou o script, recompila.
@@ -233,7 +233,7 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
   done
 
   echo "[1b/3] libnuvio-tpk40.so (Tizen 4/5: -DNV_TPK40, sem TLS, com DT_HASH)"
-  # FFmpeg tambem na .so do 4/5 (conversao DTS/TrueHD; as miniaturas nao rodam la), a menos de
+  # FFmpeg tambem na .so do 4/5 (conversao DTS/TrueHD e miniaturas feitas na TV), a menos de
   # NV_TPK40_SEM_FFMPEG=1. O carregador ELF do Program40.cs so aplica quatro tipos de
   # relocacao e recusa TLS: as conferencias abaixo barram a build antes de a TV recusar.
   DTS40_CFLAGS="$DTS_CFLAGS"; DTS40_LIBS="$DTS_LIBS"

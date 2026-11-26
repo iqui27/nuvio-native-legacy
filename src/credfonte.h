@@ -16,11 +16,12 @@
 #define NV_CREDFONTE_H
 
 enum { CRED_FONTE_NENHUMA = 0, CRED_FONTE_CAPITULO, CRED_FONTE_INTRODB,
-       CRED_FONTE_VIZINHO, CRED_FONTE_APRENDIDO, CRED_FONTE_ANISKIP };
+       CRED_FONTE_VIZINHO, CRED_FONTE_APRENDIDO, CRED_FONTE_ANISKIP, CRED_FONTE_ULTIMO };
 
 typedef struct {
   double dur;                   // duracao REAL deste episodio, em s
-  double capitulo;              // inicio do capitulo de creditos (0 = nao ha)
+  double capitulo;              // capitulo que SE CHAMA creditos (0 = nao ha)
+  double capituloUltimo;        // "ultimo capitulo depois de 75%" (0 = nao vale); abaixo das fontes
   double introdb;               // inicio do marcador do TheIntroDB deste episodio (0 = nao ha)
   double aniskip;               // idem, vindo do AniSkip (mesma prioridade do introdb)
   double vizInicio, vizDur;     // marcador do vizinho e a duracao dele (0 = nao ha / desconhecida)

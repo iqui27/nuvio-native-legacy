@@ -415,6 +415,11 @@ static NvSeekRetry seekRetry;
 static NvDvSonda mkvRetry;
 static Uint32 mkvRetryEm;
 static unsigned mkvFioSessao;   // sessao em que o fio lerMkv atual nasceu
+// Capitulos (capmkv): geracao do titulo quando o fio lerMkv nasceu, e se este
+// titulo pode ter capitulos (canal ao vivo nao, como no .tpk). Escritos no fio
+// principal antes do pthread_create, lidos so pelo fio que nasce dele.
+static unsigned mkvFioCapGer;
+static int      mkvFioCapVale;
 static unsigned mkvRetrySessao;
 static char   mkvRetryUrl[NV_MEDIA_URL_MAX];   // do tamanho de urlAtual: o strcmp nao pode falhar por corte
 static Uint32 seekRetryEm;   // != 0: reenviar seekAlvo quando o relogio passar disto
@@ -2404,7 +2409,8 @@ double video_creditos(void) {
   dur = video_duracao();
   // O ultimo capitulo so vale como creditos se comecar no ultimo quarto: em
   // disco com um capitulo a cada cinco minutos, o ultimo e uma cena qualquer.
-  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75)
+  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75 &&
+      dur - creditosUltimo >= CAPMKV_ULTIMO_FOLGA_S)   // toco no fim nao e creditos
     return creditosUltimo;
   return 0.0;
 }
@@ -2567,13 +2573,19 @@ static void *lerMkv(void *arg) {
   if (n < 1) n = mkv_faixas_e_caps(url, fx, MKV_MAX_FAIXAS, caps, MKV_MAX_CAPS, &nCaps);
   // O proprio trecho de 320 KB pode ter lido o SeekHead sem chegar no Tracks.
   if (n < 1) n = mkv_tracks_alem(url, fx, MKV_MAX_FAIXAS, NULL);
-  if (nCaps > 0) {
-    creditosNomeado = mkv_creditos_nomeados(caps, nCaps);
-    creditosUltimo  = mkv_creditos_ultimo(caps, nCaps);
-    printf("[mkv] %d capitulos; creditos nomeados em %.0fs, ultimo \"%s\" em %.0fs\n",
-           nCaps, creditosNomeado, caps[nCaps - 1].nome, creditosUltimo);
+  // Canal ao vivo: nada de capitulos (o .tpk nem le). Titulo trocado enquanto
+  // o fio lia: capmkv_aplicar_ger recusa, e os creditos locais tambem ficam de
+  // fora — sem isto uma sonda atrasada de A marcava os capitulos em B.
+  if (nCaps > 0 && mkvFioCapVale) {
+    if (capmkv_aplicar_ger(caps, nCaps, mkvFioCapGer)) {   // -> barra, fileira e modulo de intro
+      creditosNomeado = mkv_creditos_nomeados(caps, nCaps);
+      creditosUltimo  = mkv_creditos_ultimo(caps, nCaps);
+      printf("[mkv] %d capitulos; creditos nomeados em %.0fs, ultimo \"%s\" em %.0fs\n",
+             nCaps, creditosNomeado, caps[nCaps - 1].nome, creditosUltimo);
+    } else {
+      printf("[mkv] capitulos de um video anterior descartados\n");
+    }
     fflush(stdout);
-    capmkv_aplicar(caps, nCaps);   // abertura/creditos/previa do arquivo -> modulo de intro
   }
   if (n < 1) {
     // Sem isto o unico sinal era uma linha de stdout, que na TV nao chega a
@@ -2969,6 +2981,9 @@ int video_tocar(const char *url) {
   // capitulos herdaria os creditos do filme de antes — e o painel subiria numa
   // hora sem relacao nenhuma com o que esta tocando.
   creditosNomeado = creditosUltimo = 0.0;
+  // O mesmo para a lista de capitulos (barra/fileira/intro): um arquivo sem
+  // capitulos depois de um com nao herda as marcas do anterior.
+  capmkv_zerar();
   snprintf(urlAtual, sizeof urlAtual, "%s", url ? url : "");
   int r = tocarInterno(url, 1);   // brings LS2 up before the edidType question
   edidPedir();
@@ -3884,6 +3899,7 @@ void video_parar(void) {
 #endif
   nv_recon_zerar(&recon);
   reconErroPend = 0;
+  capmkv_zerar();   // fio de capitulos em voo nao alimenta o proximo titulo (como no .tpk)
   pararSessao();
 }
 
@@ -5465,6 +5481,8 @@ void video_sondar_mkv_agora(void) {
   printf("[mkv] sonda do cabecalho disparada (buffer %.0f s a frente)\n", bufferSeg - posSeg);
   fflush(stdout);
   mkvFioSessao = __atomic_load_n(&sessao, __ATOMIC_ACQUIRE);
+  mkvFioCapGer = capmkv_geracao();   // depois do capmkv_zerar de video_tocar
+  mkvFioCapVale = reconPermitida;    // player.c: !ehCanal()
   pthread_mutex_lock(&audioMkvLock);unsigned audioEpoch=audioMkvEpoch;pthread_mutex_unlock(&audioMkvLock);
   if (pthread_create(&fioMkv, NULL, lerMkv, (void *)(uintptr_t)audioEpoch) != 0) fioMkvVivo = 0;
   else pthread_detach(fioMkv);
