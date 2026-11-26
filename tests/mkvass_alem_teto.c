@@ -254,6 +254,7 @@ int  assrender_adicionar_fonte(const char *nome, const void *dados, size_t taman
 void assrender_geracao(unsigned g) { (void)g; }
 void assrender_preaquecer(void) {}
 int  assrender_ativo(void) { return 0; }
+int  assrender_peso_modo(void) { return 0; }   // ASSPESO_AUTO (legenda.c: Texto simples fora do .tpk)
 const char *assrender_diagnostico(void) { return "duble"; }
 
 // Quantas vezes cada evento aparece no documento atual.

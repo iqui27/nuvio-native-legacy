@@ -1,6 +1,7 @@
 #include "legenda.h"
 #include "assrender.h"
 #include "assperf.h"
+#include "asspeso.h"
 #include "rede.h"
 #include "idioma.h"
 #include <pthread.h>
@@ -37,11 +38,14 @@ static void corpoGuardar(const char *corpo, int ass) {
  * motor NOVO: com o motor antigo (chave dos Ajustes) ela nao se aplica — o
  * painel antigo nao oferece religar, e o letreiro posicionado sumia no texto
  * simples sem caminho de volta. */
+/* Fora do .tpk o mesmo caminho atende o "Texto simples" do ajuste "Legenda
+ * ASS com estilo" (asspeso.h): o player entrega o valor ao assrender, e a
+ * troca chega aqui pelo aviso de motor (motorTrocou). */
 static int libassDesligado(void) {
 #ifdef NV_TPK
   return ass_novo_ligado() && !assperf_get(AP_LIBASS);
 #else
-  return 0;
+  return assrender_peso_modo() == ASSPESO_SIMPLES;
 #endif
 }
 /* Aviso registrado no assperf (assperf_motor_aviso): dispara no fim de

@@ -23,7 +23,7 @@ else
   read -ra platform <<< "$(pkg-config --cflags --libs sdl2 gl)"
 fi
 "${CC:-cc}" -DNV_ASS_LIBASS -DNV_TEST_PLAINASS_LINKED -include tests/ass_pisca_gl.h -Isrc -Itests \
-  tests/ass_posicao772.c src/assrender.c src/assperf.c src/assfios.c src/plainass.c src/relogio.c \
+  tests/ass_posicao772.c src/assrender.c src/assperf.c src/asspeso.c src/assfios.c src/plainass.c src/relogio.c \
   src/autosync.c src/legenda.c tests/ass_render_stub.c \
   -o "$D/test" -O1 -g -Wall -lm "${flags[@]}" \
   $(pkg-config --cflags --libs libass fribidi) "${platform[@]}" -pthread \

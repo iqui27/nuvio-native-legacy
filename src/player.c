@@ -6809,6 +6809,7 @@ static void desenharLegendaPrincipal(float *topoPilha){
   double posLeg = legsync_posicao(posBruta);
   assrender_aplicar_invalidacao();
   assrender_definir_cor(0, 0, 0, 0);
+  assrender_definir_peso(ajustes_legenda_ass_peso());   // fora do .tpk (asspeso.h); no .tpk nao faz nada
   if (overlay && assrender_ativo()) {
     PlrRect area = areaVideoLegenda();
     {

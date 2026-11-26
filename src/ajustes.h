@@ -657,6 +657,7 @@ int ajustes_leg2_posicao(void); // -1 keeps the existing Top/Stacked placement
 int ajustes_leg2_atraso(void);
 int ajustes_leg2_definir_atraso(int ms);
 int   ajustes_legenda_forcada_auto(void);    // #287: 1 = audio in the subtitle language -> only the forced track (local, default on)
+int   ajustes_legenda_ass_peso(void);        // ASSPESO_* (asspeso.h): 0 Automatico, 1 Sempre completo, 2 Texto simples (local, fora do .tpk)
 int   ajustes_legenda_evitar_sdh(void);      // #743: 1 = auto-pick skips SDH/CC tracks (local, default off)
 int   ajustes_ass_motor(void);               // .tpk: 1 = motor novo de ASS (padrao), 0 = motor antigo
 int   ajustes_legenda_sync_auto(void);       // local, ligada por padrão

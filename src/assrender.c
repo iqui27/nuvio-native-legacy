@@ -121,6 +121,7 @@ char *assrender_marcar_tailandes(const char *txt) {
 #include "bidi.h"
 #include "assperf.h"
 #include "assfios.h"
+#include "asspeso.h"
 #if !defined(__EMSCRIPTEN__)
 #include <sys/resource.h>
 #include <sys/syscall.h>
@@ -252,6 +253,19 @@ static size_t assBytesQuadro;
  * nem reenviado a GPU. */
 static unsigned assProduzidoEpoch, assProduzidoGeracao;
 static int assProduziu;
+/* PESO EM TV FRACA FORA DO .tpk (asspeso.h, ajuste "Legenda ASS com estilo").
+ * So onde o motor do assperf NAO existe na build (webOS, .wgt, Android): la a
+ * resolucao do render e o "libass desligado" ja sao do assperf (AP_ESCALA,
+ * AP_LIBASS) e este ajuste fica escondido. No Automatico o render perde
+ * resolucao enquanto a cena pesa — o mesmo `resol` / frame.esc do assperf,
+ * so que dividido por asspeso_divisor. Sob assFilaTrava (o modo e atomico). */
+#define ASS_PESO_LIGA (!ASS_NOVO)
+#if ASS_PESO_LIGA
+static AssPeso assPeso;
+static int assPesoModo = ASSPESO_AUTO;
+static unsigned assPesoGeracao;
+static int assProduzidoDiv = 1;
+#endif
 /* Textura: serial do quadro cujas imagens estao nas texturas e a cor usada.
  * Reenviar tudo a cada quadro (o que se fazia) custa a conversao RGBA de
  * todos os glifos 60 vezes por segundo. */
@@ -868,6 +882,9 @@ static void *ass_worker_loop(void *unused) {
     double ms, esc, resol;
     float ox, oy;
     int lw, lh, vw, vh, plainValid, k;
+#if ASS_PESO_LIGA
+    int div, pesoModo, estouro = 0;
+#endif
     PlainAssStyle plain;
     struct timespec a, b, c0;
     ASS_Image *images = NULL;
@@ -908,6 +925,17 @@ static void *ass_worker_loop(void *unused) {
     /* assperf: resolucao do render. O quadro sai `resol` do tamanho do alvo e
      * o desenho amplia (esc = k x resol pixels por unidade). 1 = como antes. */
     resol = assperf_escala_quadro();   // Auto: 75 % while heavy (assperf.c)
+#if ASS_PESO_LIGA
+    /* Fora do .tpk (asspeso): com a cena pesada demais para a TV, 1/div da
+     * resolucao, no mesmo `resol` (o desenho amplia por frame.esc). O
+     * documento de texto simples (SRT/VTT em RTL) e leve: sempre 1:1. */
+    if (generation != assPesoGeracao) { asspeso_zerar(&assPeso); assPesoGeracao = generation; }
+    pesoModo = __atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE) ? ASSPESO_COMPLETO
+             : __atomic_load_n(&assPesoModo, __ATOMIC_ACQUIRE);
+    if (pesoModo != ASSPESO_AUTO) asspeso_amostra(&assPeso, pesoModo, 0.0, 0, 0);
+    div = asspeso_divisor(&assPeso);
+    resol /= (double)div;
+#endif
     lw = (int)lround((double)lw * k * resol); lh = (int)lround((double)lh * k * resol);   /* libass renderiza em pixels do alvo, nao em unidades de layout */
     if (lw < 16) lw = 16;
     if (lh < 16) lh = 16;
@@ -990,12 +1018,18 @@ static void *ass_worker_loop(void *unused) {
       pthread_mutex_lock(&assFilaTrava);
       igual = !changed && assProduziu && assProduzidoEpoch == epoch &&
               assProduzidoGeracao == generation && epoch == assEpoch;
+#if ASS_PESO_LIGA
+      igual = igual && assProduzidoDiv == div;
+#endif
       pthread_mutex_unlock(&assFilaTrava);
       if (!igual) {
         /* Sempre hashear: a chave dos Ajustes pode virar o motor com quadros
          * ja na fila — sem chave o cache novo (ass_tc) trataria bitmaps
          * distintos como o mesmo. */
         pronto = ass_frame_copiar(images, &frame, 1);
+#if ASS_PESO_LIGA
+        estouro = !pronto && images;   // passou do teto de copia: nao sai na tela
+#endif
         frame.ms = t; frame.inicioMax = -1;
         frame.ox = ox; frame.oy = oy; frame.k = k;
         frame.esc = (float)((double)k * resol);
@@ -1021,7 +1055,20 @@ static void *ass_worker_loop(void *unused) {
       assMed.renders++; assMed.renderSomaUs += us;
       if (us > assMed.renderMaxUs) assMed.renderMaxUs = us;
       if (igual) assMed.iguais++;
-      assUltimoRenderUs = us; }
+      assUltimoRenderUs = us;
+#if ASS_PESO_LIGA
+      /* Quadro igual ao publicado sai do cache do libass: nao mede a cena. Se
+       * contasse, a placa parada "ficava leve" e o render subia so para
+       * estourar de novo. */
+      if (!igual && generation == assPesoGeracao && div == asspeso_divisor(&assPeso) &&
+          asspeso_amostra(&assPeso, pesoModo, us / 1000.0, pronto ? frame.bytes : 0, estouro)) {
+        printf("[ass] peso: render em 1/%d (ultimo quadro %.1f ms, %zu KiB%s)\n",
+               asspeso_divisor(&assPeso), us / 1000.0, (pronto ? frame.bytes : 0) / 1024,
+               estouro ? ", passou do teto de copia" : "");
+        assTemUltimoPedido = 0;   /* o quadro em tela fica; o proximo pedido ja sai no tamanho novo */
+      }
+#endif
+    }
     /* SEM o antigo "fabs(assPedidoMs - ms) <= 50": com o relogio interpolado o
      * pedido anda 16 ms por quadro, e um render de mais de 50 ms na C9 jogava
      * fora TODO quadro — a legenda nunca aparecia. Um quadro de 30 ms atras e
@@ -1033,6 +1080,9 @@ static void *ass_worker_loop(void *unused) {
       assBytesQuadro = frame.bytes;
       ass_fila_publicar_locked(&frame);
       assProduziu = 1; assProduzidoEpoch = epoch; assProduzidoGeracao = generation;
+#if ASS_PESO_LIGA
+      assProduzidoDiv = div;
+#endif
     }
     if (validoDe != LLONG_MAX && !assWorkerParar && epoch == assEpoch &&
         generation == __atomic_load_n(&assGeracao, __ATOMIC_ACQUIRE) && (pronto || igual)) {
@@ -2414,7 +2464,53 @@ int assrender_ativo(void) {
   int ativo = __atomic_load_n(&assTrackAtivo, __ATOMIC_ACQUIRE) &&
               __atomic_load_n(&assTrackGeracao, __ATOMIC_ACQUIRE) == geracao &&
               __atomic_load_n(&assWorkerCriado, __ATOMIC_ACQUIRE);
+#if ASS_PESO_LIGA
+  /* "Texto simples" (fora do .tpk): o ASS do autor sai pelo desenho de texto
+   * do app (legenda.c) ja neste quadro; legenda.c tambem tira a faixa do
+   * libass (assperf_motor_trocar). O documento de texto simples (SRT/VTT em
+   * RTL) nao e do autor e continua no libass. */
+  if (ativo && asspeso_sem_estilo(__atomic_load_n(&assPesoModo, __ATOMIC_ACQUIRE)) &&
+      !__atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE)) return 0;
+#endif
   return ativo;
+}
+
+void assrender_definir_peso(int modo) {
+#if ASS_PESO_LIGA
+  int antes;
+  if (modo != ASSPESO_COMPLETO && modo != ASSPESO_SIMPLES) modo = ASSPESO_AUTO;
+  if (__atomic_load_n(&assPesoModo, __ATOMIC_ACQUIRE) == modo) return;
+  pthread_mutex_lock(&assFilaTrava);
+  antes = __atomic_exchange_n(&assPesoModo, modo, __ATOMIC_ACQ_REL);
+  assTemUltimoPedido = 0;   /* o proximo desenhar pede um render no modo novo */
+  pthread_mutex_unlock(&assFilaTrava);
+  /* Entrou ou saiu do Texto simples: legenda.c redecide a faixa aberta (so o
+   * dialogo como texto, ou o documento de volta ao libass) sem reabri-la —
+   * o mesmo aviso da troca de motor, ja fora das travas. */
+  if (asspeso_sem_estilo(antes) != asspeso_sem_estilo(modo)) assperf_motor_trocar();
+#else
+  (void)modo;   /* .tpk: o assperf responde (AP_ESCALA, AP_LIBASS) */
+#endif
+}
+
+int assrender_peso_modo(void) {
+#if ASS_PESO_LIGA
+  return __atomic_load_n(&assPesoModo, __ATOMIC_ACQUIRE);
+#else
+  return ASSPESO_AUTO;
+#endif
+}
+
+int assrender_peso_divisor(void) {
+#if ASS_PESO_LIGA
+  int d;
+  pthread_mutex_lock(&assFilaTrava);
+  d = asspeso_divisor(&assPeso);
+  pthread_mutex_unlock(&assFilaTrava);
+  return d;
+#else
+  return 1;
+#endif
 }
 
 const char *assrender_diagnostico(void) {
@@ -2507,6 +2603,9 @@ void assrender_pixels_por_unidade(float f) { (void)f; }
 void assrender_posicao_video(double posSeg) { (void)posSeg; }
 void assrender_posicao_legenda(double posSeg) { (void)posSeg; }
 int assrender_ativo(void) { return 0; }
+void assrender_definir_peso(int modo) { (void)modo; }
+int assrender_peso_modo(void) { return 0; }
+int assrender_peso_divisor(void) { return 1; }
 #ifdef NV_TPK
 int assrender_borda_quer(void) { return 0; }
 #endif

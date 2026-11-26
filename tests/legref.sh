@@ -14,12 +14,12 @@ elif [ "${SANITIZE:-0}" = thread ]; then flags+=(-fsanitize=thread -fno-omit-fra
 cc -Isrc -c -Wall -Wextra -Werror src/legref.c -o "$D/legref.o"
 if nm -u "$D/legref.o" | grep -E '_(mkvass_|legenda_carregar|legenda_definir|legenda_atualizar|legenda_desligar|assrender_|video_)'; then
   echo "legref.c chama estado do overlay principal"; exit 1; fi
-cc "${flags[@]}" -Isrc -O1 -g -Wall -Wextra src/legref.c src/legenda.c src/assrender.c src/assperf.c src/assfios.c tests/legref.c \
+cc "${flags[@]}" -Isrc -O1 -g -Wall -Wextra src/legref.c src/legenda.c src/assrender.c src/assperf.c src/asspeso.c src/assfios.c tests/legref.c \
   -pthread -lm -o "$D/t"
 "$D/t" "$FX"
 # HTTP REAL (rede.c + libcurl) contra servidor Range local: completo, redirect
 # para outra origem, e servidor que ignora Range (recusa sem baixar o arquivo).
-cc -Isrc -I/opt/homebrew/include -O1 -g src/legref.c src/legenda.c src/assrender.c src/assperf.c src/assfios.c src/rede.c src/redeurl.c \
+cc -Isrc -I/opt/homebrew/include -O1 -g src/legref.c src/legenda.c src/assrender.c src/assperf.c src/asspeso.c src/assfios.c src/rede.c src/redeurl.c \
   src/dados.c tests/legref_http.c -pthread -lm -lz -Wno-deprecated-declarations -o "$D/http"
 P=$((20000 + RANDOM % 20000))
 python3 tests/legref_rangesrv.py "$FX" $P & S1=$!

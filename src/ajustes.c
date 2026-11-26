@@ -887,6 +887,12 @@ typedef enum {
   AJ_FAROL_ZERAR,
   AJ_FAROL_LLM_SO_ESTA_TV,
   AJ_AMIGOS_PERFIS, // Account-profile friends action; append-only.
+  // Legenda ASS com estilo em TV fraca, FORA do .tpk (asspeso.h; no .tpk o
+  // assperf ja responde por resolucao e libass, entao fica escondido).
+  // Automatico = o libass perde resolucao enquanto a cena pesa; Sempre
+  // completo = como era antes; Texto simples = sem libass para o ASS do
+  // autor. LOCAL, append-only.
+  AJ_LEG_ASS_PESO,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -943,6 +949,7 @@ static const char *V_EXT_CACHE[] = { "Mostrar apagadas", "Ocultar" };
 static const char *V_EXT_PASSO[] = { "10 ms", "50 ms", "100 ms" };
 static const char *V_EXT_MODO[] = { "Arquivo inteiro", "Só áudio" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+static const char *V_ASS_PESO[]  = { "Automático", "Sempre completo", "Texto simples" };   // = ASSPESO_*
 static const char *V_FAROL_AVISOS[] = { "Só quando eu abrir", "Ligado" };
 static const char *V_SOURCE_BADGE_POSITION[] = { "No topo", "Embaixo" };
 static const char *V_GUIA_INICIO[] = { "Ao destacar", "Ao selecionar" };
@@ -2146,6 +2153,7 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO(FT_GOSTO_ZERAR),                                      // acao: Zerar o gosto (#51)
   ESC(FT_GOSTO_LLM_SO_ESTA_TV, V_LIGA, 2),                   // local/farolconsent: So nesta TV (#51)
   ACAO("Perfis desta conta"),
+  ESC("Legenda ASS com estilo", V_ASS_PESO, 3),              // local: legendaAssPesoLocal (fora do .tpk)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2543,6 +2551,7 @@ static const char *CHAVE[] = {
   "-farolZerar",
   "-farolLlmSoEstaTv",
   "-amigosPerfis",
+  "legendaAssPesoLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3759,6 +3768,7 @@ int ajustes_legenda_sync_audio(void) { return 0; }   // escondida fora do Androi
 #endif
 int ajustes_legenda_forcada_auto(void) { return lig(AJ_LEG_FORCADA); }   // #287, padrao Ligado
 int ajustes_legenda_evitar_sdh(void) { return lig(AJ_LEG_EVITAR_SDH); }   // #743, padrao Desligado
+int ajustes_legenda_ass_peso(void) { int v = valor[AJ_LEG_ASS_PESO]; return v < 0 || v > 2 ? 0 : v; }   // ASSPESO_*
 // Motor novo de legendas ASS do .tpk (assperf.h): 1 = ligado (padrao), 0 = o
 // motor de antes de 23/10. Lido pelo ass_novo_ligado via ass_novo_registrar.
 // A thread de render NAO le valor[]: ela recebe este ESPELHO, publicado com
@@ -7022,6 +7032,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LEG_SYNC_AUDIO: /* PCM e passthrough sao desta TV; o web nao tem */
     case AJ_LEG_FORCADA:    /* #287: o web nao tem esta escolha */
     case AJ_LEG_EVITAR_SDH: /* #743: idem */
+    case AJ_LEG_ASS_PESO:   /* o peso do libass e desta TV */
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA: /* estilo da legenda e desta TV */
     case AJ_LEG_CONTORNO_COR: /* #475: idem */
     case AJ_CACHE_SEEK:     /* F07: o disco e o player sao desta TV */
@@ -7694,6 +7705,9 @@ static int foraDestaPlataforma(int op) {
 #if !defined(NV_TPK) && !defined(NV_ASS_NOVO) && !defined(AJUSTES_TESTE)
   if (op == AJ_ASS_MOTOR) return 1;   // so o .tpk tem o motor novo de ASS
 #endif
+#if defined(NV_TPK) || defined(NV_ASS_NOVO)
+  if (op == AJ_LEG_ASS_PESO) return 1;   // .tpk: o assperf ja tem resolucao e libass (Estilo da faixa ASS)
+#endif
 #if defined(NV_TPK) || defined(NV_ANDROID) || !defined(NV_DV7_CONVERSION)
   if (op == AJ_DV7) return 1;
   if (op == AJ_DV7_MAPPING) return 1;
@@ -7920,6 +7934,7 @@ static const char *rotuloNovo(int op) {
     case AJ_CACHE_SEEK: return "Guardar o trecho baixado no disco";
     case AJ_LEG_FORCADA: return "Legenda forçada automática";
     case AJ_LEG_EVITAR_SDH: return "Evitar legendas SDH";
+    case AJ_LEG_ASS_PESO: return "Legenda ASS com estilo";
     case AJ_TMDB_IDIOMA: return "Idioma dos dados do título";
     case AJ_HERO_FUNDO: return "Imagem de fundo do destaque";
     case AJ_GRAD_CLASSICO: return "Realce antigo no cartaz em foco";
@@ -8775,6 +8790,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_LEG_SYNC_AUTO: return "Ajusta a legenda automaticamente. Desligue para manter a escolhida. Vale só nesta TV.";
     case AJ_LEG_SYNC_AUDIO: return "Compara as falas do áudio com a legenda externa para acertar o atraso. Só onde o player entrega o áudio decodificado e sem passthrough; vale só nesta TV.";
     case AJ_LEG_FORCADA: return "Quando o áudio já está no idioma da legenda, liga só a legenda forçada desse idioma (falas em outra língua e placas), ou nenhuma se o arquivo não tiver. Desligado, liga a legenda completa como antes.";
+    case AJ_LEG_ASS_PESO: return "Legendas ASS trazem posição, cores, fontes e efeitos do autor, comuns em anime. Automático mantém o estilo e baixa só a nitidez enquanto uma cena pesa demais para a TV. Sempre completo nunca baixa a nitidez. Texto simples mostra só o texto, com o estilo que você escolheu nos Ajustes.";
     case AJ_LEG_EVITAR_SDH: return "A escolha automática passa a ignorar legendas para surdos (SDH/CC), que trazem descrições como [porta batendo] e o nome de quem fala. A escolha manual continua mostrando todas; vale só nesta TV.";
     case AJ_LEG_MOSTRAR: return valor[op] ? "Todas as legendas, com detalhes" : "Recomendadas";
     case AJ_LEG_LINGUA2: return "Segunda legenda, mostrada no alto da tela junto com a principal. Só arquivos SRT/VTT dos addons. \"Da conta\" segue o que está no seu perfil.";
@@ -9487,6 +9503,7 @@ static const char *beneficioProprio(int op) {
     case AJ_SAIDA_PLAYER: return "O filme pode ficar na ilha do relógio para você voltar depois.";
     case AJ_LEG_FORCADA: return "Placas e falas em outra língua aparecem; o resto, não.";
     case AJ_LEG_EVITAR_SDH: return "Legendas sem descrições de som são preferidas nas escolhas automáticas.";
+    case AJ_LEG_ASS_PESO: return "Como as legendas ASS de anime são desenhadas quando a cena pesa para a TV.";
     case AJ_BUSCA_CINEMETA: return "A busca também consulta o Cinemeta se o catálogo do Nuvio falhar.";
     case AJ_HOME_LAYOUT: return "Como a Home se organiza: Moderna, Padrão ou Dinâmica.";
     case AJ_MENU_TOPO: return "Onde fica o menu: na esquerda ou no alto da tela.";
@@ -12226,6 +12243,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_DV_MKV:
     case AJ_LEG_FORCADA:
     case AJ_LEG_EVITAR_SDH:
+    case AJ_LEG_ASS_PESO:
     case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO:
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: case AJ_FONTE_MANUAL:
     case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC:
