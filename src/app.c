@@ -4418,7 +4418,7 @@ static int mnMontar(MnFonte *f) {
     memset(&e, 0, sizeof e);
     snprintf(e.id, sizeof e.id, "%s", c->imdb);
     snprintf(e.tipo, sizeof e.tipo, "%s", c->tipo);
-    snprintf(e.titulo, sizeof e.titulo, "%s", c->titulo);
+    snprintf(e.titulo, sizeof e.titulo, "%.*s", (int)(sizeof e.titulo - 1), c->titulo);
     if (c->progresso > 0 && c->progresso < lim) {
       e.origem = MN_CONTINUAR;
       if (serie) { e.temporada = c->temporada; e.episodio = c->episodio; }
