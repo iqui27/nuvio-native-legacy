@@ -34,9 +34,16 @@ on:
       libass:
         description: "Build with libass (ASS subtitles like the .tpk): 1 or 0"
         default: "1"
+  # release.yml. With the release key (NUVIO_ANDROID_KEYSTORE_B64) tools/android.sh
+  # also signs the full APK and the two one-ABI lite APKs.
+  workflow_call:
+    inputs:
+      libass:
+        type: string
+        default: "1"
 
 concurrency:
-  group: build-apk-${{ github.ref }}
+  group: build-apk-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -49,7 +56,7 @@ jobs:
     env:
       # No P2P engine on CI (it lives on the owner's disk, not in the repo).
       NUVIO_P2P_MOTOR: none
-      NUVIO_LIBASS: ${{ github.event.inputs.libass || '1' }}
+      NUVIO_LIBASS: ${{ inputs.libass || '1' }}
       NUVIO_ANDROID_CACHE: ${{ github.workspace }}/.cache/nuvio-android
       NDK_VERSION: 27.2.12479018
       RUSTUP_HOME: /home/runner/.rustup

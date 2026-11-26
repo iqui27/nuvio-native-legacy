@@ -22,9 +22,15 @@ on:
       pacotes:
         description: "Packages to build (space separated)"
         default: "NuvioTpk60 NuvioTpk65 NuvioTpk"
+  # release.yml: all four packages plus the two update .so files.
+  workflow_call:
+    inputs:
+      pacotes:
+        type: string
+        default: "NuvioTpk60 NuvioTpk65 NuvioTpk"
 
 concurrency:
-  group: build-tpk-${{ github.ref }}
+  group: build-tpk-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -35,7 +41,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
-      NV_TPK_PACOTES: ${{ github.event.inputs.pacotes || 'NuvioTpk60 NuvioTpk65 NuvioTpk' }}
+      NV_TPK_PACOTES: ${{ inputs.pacotes || 'NuvioTpk60 NuvioTpk65 NuvioTpk' }}
       # No P2P engine on CI (it lives on the owner's disk, not in the repo).
       NUVIO_P2P_MOTOR: none
       DOTNET_ROOT: ${{ github.workspace }}/.dotnet
@@ -157,7 +163,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: NuvioTpk
-          path: build/tpk/*.tpk
+          # The libnuvio-<v>-tpk*-arm.so files are the in-app update's download.
+          path: |
+            build/tpk/*.tpk
+            build/tpk/libnuvio-*-arm.so
           if-no-files-found: error
 
       # The .tpk libass has an ARMv7 NEON bitmap engine and a threaded blur
