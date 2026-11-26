@@ -381,6 +381,9 @@ int  video_registro_negado(void) { return 0; }
 int video_luna(const char *uri, const char *carga, void (*cb)(const char *, void *), void *ctx) {
   (void)uri; (void)carga; (void)cb; (void)ctx; return 0;
 }
+int video_luna_app(const char *uri, const char *carga, void (*cb)(const char *, void *), void *ctx) {
+  (void)uri; (void)carga; (void)cb; (void)ctx; return 0;
+}
 int  video_tocar(const char *u) { snprintf(urlAtual, sizeof urlAtual, "%s", u ? u : ""); return SIM.aceita; }
 void video_bombear(void) {}
 void video_parar(void) {}
@@ -1976,6 +1979,7 @@ static void *rodarLaco(void *u) { (void)u; loopRodar(laco); return NULL; }
 // com o MESMO timestamp o cancela. Sem filme tocando respondemos ack:true para
 // nao segurar o screensaver normal da TV.
 static int protetorLigado, protetorPendente;
+static int protetorAppRecusado;
 static unsigned protetorGeracao;
 static LsRegEstado protetorReg;
 // O ACK e publicado pelos setters e eventos, mesmo sem desenho (#205/#428).
@@ -2006,6 +2010,78 @@ static void ack_publicar(void) {
   pthread_mutex_unlock(&mutex);
 }
 
+// HANDLE DO APP (libhelpers). O `bus` deste arquivo e com.webos.media.client.*
+// e o hub so o deixa falar com o uMS. Medido na 43UQ70 (webOS 22, 25/11/2026):
+// tvpower, applicationManager e surfacemanager respondem "Not permitted to
+// send to ..." por ele, e o screensaver da TV subia no meio do filme (~3-5 min
+// sem tecla) tomando o foco e quebrando a legenda desenhada pelo app. O
+// libhelpers da LG (o mesmo que a SDL usa no arranque, "[HLunaServiceBridge]")
+// tem handles registrados com o ID do app; pelo publico (pub=1) o
+// registerScreenSaverRequest respondeu subscribed:true, o pedido "Active"
+// chegou e o ack:false segurou o screensaver. Layout do contexto: o do
+// SDL-webOS/Kodi (24 bytes no ARM).
+typedef struct NvHCtx {
+  int (*cb)(void *sh, void *msg, struct NvHCtx *ctx);
+  void *u;
+  void *reservado;
+  int multiple;
+  int pub;
+  unsigned long token;
+} NvHCtx;
+typedef struct { void (*cb)(const char *, void *); void *ctx; } NvAppPedido;
+static int (*hCall)(const char *, const char *, NvHCtx *);
+static const char *(*hMsg)(void *);
+static void helperIniciar(void) {
+  void *lib = dlopen("libhelpers.so.2", RTLD_NOW);
+  if (lib) {
+    *(void **)(&hCall) = dlsym(lib, "HLunaServiceCall");
+    *(void **)(&hMsg) = dlsym(lib, "HLunaServiceMessage");
+  }
+  if (!hCall || !hMsg) {
+    hCall = NULL;
+    printf("[video] libhelpers indisponivel: luna pelo handle do app desligada\n");
+    fflush(stdout);
+  }
+}
+static int helperPronto(void) {
+  static pthread_once_t once = PTHREAD_ONCE_INIT;
+  pthread_once(&once, helperIniciar);
+  return hCall != NULL;
+}
+static int appResposta(void *sh, void *msg, NvHCtx *c) {
+  NvAppPedido *p;
+  if (!c) return 1;
+  p = c->u;
+  (void)sh;
+  if (p && p->cb) p->cb(hMsg(msg), p->ctx);
+  return 1;
+}
+static int lunaApp(const char *uri, const char *carga,
+                   void (*cb)(const char *, void *), void *ctx, int multiple) {
+  NvHCtx *c;
+  NvAppPedido *p;
+  int r;
+  if (!helperPronto()) return 0;
+  c = calloc(1, sizeof *c);
+  p = calloc(1, sizeof *p);
+  if (!c || !p) { free(c); free(p); return 0; }
+  p->cb = cb; p->ctx = ctx;
+  c->cb = appResposta; c->u = p; c->pub = 1; c->multiple = multiple;
+  r = hCall(uri, carga, c);
+  if (r != 0) {
+    printf("[video] luna (app) %s falhou: %d\n", uri, r);
+    fflush(stdout);
+    free(c); free(p);
+    return 0;
+  }
+  // Contexto vivo de proposito: o libhelpers guarda o ponteiro ate a resposta
+  // (e para sempre na assinatura). Chamadas raras; o vazamento e de bytes.
+  return 1;
+}
+int video_luna_app(const char *uri, const char *carga, void (*cb)(const char *, void *), void *ctx) {
+  return lunaApp(uri, carga, cb, ctx, 0);
+}
+
 static int respostaProtetorOk(const char *p) {
   char retorno[16] = "";
   return p && js_bruto(p, NULL, "returnValue", retorno, sizeof retorno) &&
@@ -2020,14 +2096,12 @@ static void protetorMarcarFalha(unsigned g, int codigo) {
   __atomic_store_n(&protetorPendente, 0, __ATOMIC_RELEASE);
 }
 
-static int aoRegistroScreensaver(LSHandle *h, LSMessage *m, void *u) {
-  const char *p = lsPayload(m);
-  unsigned g = (unsigned)(uintptr_t)u;
-  (void)h;
-  if (g != __atomic_load_n(&protetorGeracao, __ATOMIC_ACQUIRE)) return 1;
-  if (!ligado || !bus || __atomic_load_n(&encerrando, __ATOMIC_ACQUIRE)) {
+static void registroScreensaver(const char *p, unsigned g, int peloApp) {
+  if (g != __atomic_load_n(&protetorGeracao, __ATOMIC_ACQUIRE) ||
+      !__atomic_load_n(&protetorPendente, __ATOMIC_ACQUIRE)) return;
+  if (!ligado || (!peloApp && !bus) || __atomic_load_n(&encerrando, __ATOMIC_ACQUIRE)) {
     __atomic_store_n(&protetorPendente, 0, __ATOMIC_RELEASE);
-    return 1;
+    return;
   }
   if (respostaProtetorOk(p)) {
     lsreg_deu_certo(&protetorReg);
@@ -2038,26 +2112,27 @@ static int aoRegistroScreensaver(LSHandle *h, LSMessage *m, void *u) {
   } else {
     printf("[video] screensaver assinatura recusada: %.120s\n", p ? p : "(nulo)");
     fflush(stdout);
+    if (peloApp) {
+      __atomic_store_n(&protetorAppRecusado, 1, __ATOMIC_RELEASE);
+      lsreg_deu_certo(&protetorReg);
+    }
     protetorMarcarFalha(g, js_num(p, NULL, "errorCode", LSR_UNKNOWN_ERROR));
   }
-  return 1;
 }
 
-static int aoPedidoScreensaver(LSHandle *h, LSMessage *m, void *u) {
-  const char *p = lsPayload(m);
+static void pedidoScreensaver(const char *p, int peloApp) {
   char estado[24], ts[64], b[192];
   int e, segurar, midiaSegura;
-  (void)h; (void)u;
-  if (__atomic_load_n(&encerrando, __ATOMIC_ACQUIRE) || !ligado || !bus || !p ||
-      !js_texto_raiz(p, "state", estado, sizeof estado) || strcmp(estado, "Active")) return 1;
+  if (__atomic_load_n(&encerrando, __ATOMIC_ACQUIRE) || !ligado || (!peloApp && !bus) || !p ||
+      !js_texto_raiz(p, "state", estado, sizeof estado) || strcmp(estado, "Active")) return;
   // Preserva o token recebido, inclusive quando string, sem arredondar numeros
   // grandes ou responder com timestamp truncado.
-  if (!js_bruto(p, NULL, "timestamp", ts, sizeof ts)) return 1;
+  if (!js_bruto(p, NULL, "timestamp", ts, sizeof ts)) return;
   if (ts[0] != '"') {
     char *fim;
-    if (!isdigit((unsigned char)ts[0]) && ts[0] != '-') return 1;
+    if (!isdigit((unsigned char)ts[0]) && ts[0] != '-') return;
     strtod(ts, &fim);
-    if (*fim) return 1;
+    if (*fim) return;
   }
   e = __atomic_load_n(&ackEstado, __ATOMIC_ACQUIRE);
   midiaSegura = video_segura_screensaver(!!(e & ACK_MIDIA), !!(e & ACK_TOCANDO),
@@ -2072,18 +2147,46 @@ static int aoPedidoScreensaver(LSHandle *h, LSMessage *m, void *u) {
          ts, !!(e & ACK_MIDIA), !!(e & ACK_TOCANDO), !!(e & ACK_PAUSA),
          !!(e & ACK_FIM), !!(e & ACK_ERRO));
   fflush(stdout);
-  lsChamar("luna://com.webos.service.tvpower/power/responseScreenSaverRequest",
-           b, NULL, NULL, "responseScreenSaverRequest", NULL);
+  if (peloApp)
+    lunaApp("luna://com.webos.service.tvpower/power/responseScreenSaverRequest",
+            b, NULL, NULL, 0);
+  else
+    lsChamar("luna://com.webos.service.tvpower/power/responseScreenSaverRequest",
+             b, NULL, NULL, "responseScreenSaverRequest", NULL);
+}
+
+static int aoPedidoScreensaver(LSHandle *h, LSMessage *m, void *u) {
+  (void)h; (void)u;
+  pedidoScreensaver(lsPayload(m), 0);
   return 1;
 }
 
 static int aoHubScreensaver(LSHandle *h, LSMessage *m, void *u) {
   const char *p = lsPayload(m);
+  unsigned g = (unsigned)(uintptr_t)u;
   char estado[24], timestamp[64];
+  if (g != __atomic_load_n(&protetorGeracao, __ATOMIC_ACQUIRE)) return 1;
   if (p && js_texto_raiz(p, "state", estado, sizeof estado) &&
       js_bruto(p, NULL, "timestamp", timestamp, sizeof timestamp))
     return aoPedidoScreensaver(h, m, u);
-  return aoRegistroScreensaver(h, m, u);
+  registroScreensaver(p, g, 0);
+  return 1;
+}
+
+static void aoHubScreensaverApp(const char *p, void *u) {
+  unsigned g = (unsigned)(uintptr_t)u;
+  char estado[24], timestamp[64];
+  if (g != __atomic_load_n(&protetorGeracao, __ATOMIC_ACQUIRE)) return;
+  if (p && js_texto_raiz(p, "state", estado, sizeof estado) &&
+      js_bruto(p, NULL, "timestamp", timestamp, sizeof timestamp)) {
+    pedidoScreensaver(p, 1);
+    return;
+  }
+  if (p && strstr(p, "\"subscribed\"")) {
+    printf("[video] screensaver: registro pelo handle do app -> %.160s\n", p);
+    fflush(stdout);
+  }
+  registroScreensaver(p, g, 1);
 }
 
 // LSCall so enfileira; a assinatura vale quando o hub confirma. Falhas imediatas
@@ -2094,17 +2197,19 @@ static void protegerScreensaver(void) {
   int codigo = 0;
   if (__atomic_load_n(&protetorLigado, __ATOMIC_ACQUIRE) ||
       __atomic_load_n(&protetorPendente, __ATOMIC_ACQUIRE)) return;
-  if (!bus || !ligado || __atomic_load_n(&encerrando, __ATOMIC_ACQUIRE)) return;
+  if (!ligado || __atomic_load_n(&encerrando, __ATOMIC_ACQUIRE)) return;
   if (!lsreg_pode_tentar(&protetorReg, SDL_GetTicks(), 1)) return;
   esmaecer_protetor_publicador(ack_publicar);
   g = __atomic_add_fetch(&protetorGeracao, 1, __ATOMIC_ACQ_REL);
   __atomic_store_n(&protetorPendente, 1, __ATOMIC_RELEASE);
-  if (lsChamar("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
-               "{\"subscribe\":true,\"clientName\":\"" NV_APP_ID "\"}",
-               aoHubScreensaver, (void *)(uintptr_t)g,
-               "registerScreenSaverRequest", &codigo)) {
-    return;
-  }
+  if (!__atomic_load_n(&protetorAppRecusado, __ATOMIC_ACQUIRE) &&
+      lunaApp("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
+              "{\"subscribe\":true,\"clientName\":\"" NV_APP_ID "\"}",
+              aoHubScreensaverApp, (void *)(uintptr_t)g, 1)) return;
+  if (bus && lsChamar("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
+                      "{\"subscribe\":true,\"clientName\":\"" NV_APP_ID "\"}",
+                      aoHubScreensaver, (void *)(uintptr_t)g,
+                      "registerScreenSaverRequest", &codigo)) return;
   protetorMarcarFalha(g, codigo);
 }
 
@@ -2305,6 +2410,7 @@ static int iniciar(int automatico) {
   // Laco proprio: o LS2 exige um GMainLoop girando, e girar isso no laco de
   // desenho custaria quadros. As respostas chegam neste fio e so mexem em
   // variaveis simples, lidas pelo desenho sem trava.
+  __atomic_store_n(&protetorAppRecusado, 0, __ATOMIC_RELEASE);
   __atomic_store_n(&encerrando, 0, __ATOMIC_RELEASE);   // reinicio pos-encerrar
   if (pthread_create(&fio, NULL, rodarLaco, NULL) != 0) {
     // Sem o fio do laco nenhuma resposta chega. Desfaz o registro para nao
@@ -4871,6 +4977,7 @@ void video_encerrar(void) {
   }
   __atomic_store_n(&protetorLigado, 0, __ATOMIC_RELEASE);
   __atomic_store_n(&protetorPendente, 0, __ATOMIC_RELEASE);
+  __atomic_store_n(&protetorAppRecusado, 0, __ATOMIC_RELEASE);
   lsreg_deu_certo(&protetorReg);
   ligado = 0;
   ack_publicar();

@@ -1,4 +1,6 @@
 #include "horafmt.h"
+#include "esportes_canal.h"
+#include "esportes_casar.h"
 #define ESPEVENTO_IMPLEMENTED 1
 /* Event details share guide navigation, playback and profile reminders.
  * espseguir owns following; it may register these two callbacks on startup. */
@@ -7,14 +9,24 @@ static int (*gs_follow_state)(const EspEvento *);
 void g5ui_sports_follow(void (*action)(const EspEvento *),int (*state)(const EspEvento *)){
   gs_follow_action=action;gs_follow_state=state;
 }
-typedef struct {char id[128],name[200],base[512],logo[512];int confirmed;} GSWatch;
+typedef struct {char id[128],name[200],base[512],logo[512];int confirmed,score;} GSWatch;
 static GSWatch gs_watch[8];static int gs_watch_n,gs_watch_cursor;
 static unsigned gs_watch_revision,gs_watch_epg,gs_event_revision;
 static char gs_kickoff[100],gs_venue[300],gs_reminder_id[128];
 static void gs_watch_add(const char *id,const char *name,const char *base,const char *logo,int confirmed){
   for(int j=0;j<gs_watch_n;j++)if(!strcmp(gs_watch[j].id,id)){gs_watch[j].confirmed|=confirmed;return;}
-  if(gs_watch_n>=8)return;
-  GSWatch *c=&gs_watch[gs_watch_n++];memset(c,0,sizeof *c);
+  /* Matched order (esportes_canal.h): the channel that airs the game comes
+   * first and a better late arrival displaces the weakest of the eight. */
+  int score=espcasar_ligado()?esportes_canal_nota(&gs_selected,name,confirmed):0,at=gs_watch_n;
+  if(score){
+    for(at=0;at<gs_watch_n&&gs_watch[at].score>=score;at++){}
+    if(at>=8)return;
+    if(gs_watch_n>=8)gs_watch_n=7;
+    memmove(gs_watch+at+1,gs_watch+at,(size_t)(gs_watch_n-at)*sizeof *gs_watch);
+    if(focus>=2080+at&&focus<2080+gs_watch_n)focus++;
+  }else if(gs_watch_n>=8)return;
+  gs_watch_n++;
+  GSWatch *c=&gs_watch[at];memset(c,0,sizeof *c);c->score=score;
   snprintf(c->id,sizeof c->id,"%s",id);snprintf(c->name,sizeof c->name,"%s",name);
   snprintf(c->base,sizeof c->base,"%s",base);c->confirmed=confirmed;
   snprintf(c->logo,sizeof c->logo,"%s",logo?logo:"");
