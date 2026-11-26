@@ -60,6 +60,7 @@ int debrid_fora_de_cache(void) { return 0; }
 const char *debrid_sem_plano_frase(int m) { (void)m; return ""; }
 void player_toast_ex(const char *s, Uint32 ms, const char *i, int t) { (void)s; (void)ms; (void)i; (void)t; }
 void player_erro_fonte(void) { }
+void player_desistir_fonte(void) { }
 void player_erro_fonte_motivo(const char *s, const char *d) { (void)s; (void)d; }
 int addons_motivo_vazio(char *s, unsigned n) { snprintf(s, n, "vazio"); return 1; }
 int ajustes_livetv_proxy(void) { return 0; }

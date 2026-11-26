@@ -242,7 +242,7 @@
   1, /* also in Continue watching (2.0.2): Desligado (V_LIGA: 1 = Desligado) = one title, one place */
   0, /* continue on the profile picker (#303): Ligado (V_LIGA: 0 = Ligado) = as before */
 #ifdef NV_TPK
-  1, /* DTS/TrueHD on the Samsung .tpk: 5.1 (Dolby Digital) (0 = off, 2 = stereo AAC) */
+  1, /* DTS/TrueHD on the Samsung .tpk: 5.1 (Dolby Digital) (0 = off, 2 = stereo, Dolby Digital 2.0) */
 #else
   0, /* DTS converted to: Estereo (AAC) = the proven path */
 #endif
@@ -353,3 +353,40 @@
   0, /* gradient smoothing: Automatic */
   0, /* hero logo and information size: Normal */
   0, /* folder hero details: On (V_LIGA 0) */
+  0, /* fixed DV audio experiment: Off (v12) */
+  1, /* buffer data in player: Off (V_LIGA) */
+  1, /* RAM overlay: Off */
+  1, /* green-button RAM shortcut: Off */
+  1, /* BD REMUX MP4 test: Off (V_LIGA), device-local opt-in */
+  1, /* preserve P7 mapping experiment: Off (V_LIGA), device-local opt-in */
+  0, /* ordinary native buffering: Standard / one sequential connection */
+  0, /* DTS/TrueHD/DV7: Standard (1), Tizen method (owner, 06/11/2026) */
+  1, /* Audio from another source: Off by default (owner, 07/11); webOS converter, .tpk donor server */
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  1, /* Versions not in cache: Hide (owner 25/11, beta: they mostly fail to load) */
+#else
+  0, /* Versions not in cache: Show dimmed */
+#endif
+  1, /* Audio sync step: 50 ms */
+  0, /* Warn about large files: On */
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  1, /* Download of the audio file: Audio only (owner 25/11; MKV is still read whole) */
+#else
+  0, /* Download of the audio file: Whole file */
+#endif
+  0, /* Remember for the next episodes: On */
+  1, /* Follow through the whole movie (another cut): Off */
+  1, /* Sync adjusted message: Off (owner, 16/11 and 25/11) */
+  0, /* Match automatically at start: On */
+  0, /* Hide duplicates: On */
+  1, /* Sort like the addons: Off (V_LIGA) */
+  0, /* Other version buffer: 8 MB */
+  1, /* DTS via HLS: Off */
+  1, /* Dolby Vision P7 via HLS: Off */
+  1, /* Experimental HLS mode: Off (V_LIGA) */
+  1, /* HLS MPEG-TS segments (test): Off (V_LIGA) */
+  1, /* Update notifications: Off by default (Matis94 cc737eea0), device-local */
+  1, /* Remember last profile: Off (V_LIGA), device-wide opt-in */
+  0, /* Show intro skip button: On */
+  0, /* Show recap skip button: On */
+  0, /* Show outro / credits skip button: On */

@@ -1,7 +1,10 @@
 /* DTS / TrueHD -> Dolby Digital remux for the Samsung .tpk
  * (docs/features/dts/README.md). Video packets are copied untouched; ONE
- * DTS/TrueHD/MLP track is decoded and re-encoded as AC3 (5.1 640 kb/s, or 2.0
- * 192 kb/s for stereo sources) or, with the "Stereo" setting, AAC 2.0. Output
+ * DTS/TrueHD/MLP track is decoded and re-encoded as AC3: 5.1 640 kb/s, or 2.0
+ * 384 kb/s for stereo sources and with the "Stereo" setting (192 kb/s until
+ * 11/2026; at 192 the encoder merges left and right above ~12.5 kHz). (Stereo was AAC
+ * 2.0 until 11/2026: FFmpeg's AAC encoder cost ~10x the AC3 one and a 2020 TV
+ * could not keep up; the S95C log showed the same ratio.) Output
  * goes to a writer callback: MPEG-TS segments for HLS, or one progressive
  * MPEG-TS / Matroska / fragmented MP4 stream.
  *
@@ -11,6 +14,7 @@
 #define NV_DTS_REMUX_H
 #include <stddef.h>
 #include <stdint.h>
+#include "dts_media.h"
 
 typedef struct DtsRemux DtsRemux;        /* probed source: track, index, segments */
 typedef struct DtsRemuxGen DtsRemuxGen;  /* one generator: own reader, codecs, muxer */
@@ -18,12 +22,13 @@ typedef struct DtsRemuxGen DtsRemuxGen;  /* one generator: own reader, codecs, m
 typedef struct {
   double duration_s;
   int width, height;
-  char video_codec[16], audio_codec[16];
+  char video_codec[16], audio_codec[16], hls_codec[48];
   char hdr[48];                /* PQ, HLG, SDR or "not in the container" (container flags) */
   int audio_ordinal, stream_index; /* k-th audio track of the file (0-based), FFmpeg index */
   int in_channels, in_rate;    /* from the container header */
   int out_channels, out_bitrate;
   char out_codec[8];           /* "ac3" or "aac" */
+  char audio_language[16], audio_title[64]; /* metadata of the selected input track */
   char decoder_path[40];       /* "DTS core only", "TrueHD 5.1 presentation", ... */
   int n_keyframes, n_segments;
   int index_complete;          /* the keyframe index reaches the end (HLS needs it): no
@@ -33,7 +38,7 @@ typedef struct {
   int mp4;                     /* source container is MP4/MOV */
   double fps;                  /* container frame rate, 0 = unknown (HLS master playlist) */
   int dv_profile;              /* Dolby Vision configuration in the container: profile, -1 = none */
-  int dv_el, dv_compat;        /* enhancement layer present; base-layer compatibility id */
+  int dv_el, dv_compat, dv_level;        /* enhancement layer present; base-layer compatibility id */
 } DtsRemuxInfo;
 
 typedef struct {
@@ -47,9 +52,34 @@ typedef struct {
 /* Writes n bytes; returns n, or < 0 to stop the run (client gone). */
 typedef int (*DtsRemuxWrite)(void *opaque, const unsigned char *data, int n);
 
+/* audio_ordinal for a VIDEO-ONLY source (audio from another source, owner
+ * 15/11): the file's video copied as always, no audio stream in the output,
+ * whatever audio the file has (none at all is fine too). The audio comes as
+ * HLS renditions from src/dts/doador_tpk.c. */
+#define DTS_REMUX_NO_AUDIO (-2)
+/* Every output packet's timestamp = its source time + this (the fixed
+ * timeline below): what another server's audio is stamped against. */
+#define DTS_REMUX_TS_OFFSET_S 10
+
+/* A TAP on the video-only reader (the automatic match, doador_tpk.c): the
+ * packets of the file's audio stream `stream` (container index) that the
+ * reader downloads anyway go to fn as they are read, in the reader's thread
+ * (fn decodes and returns quickly). fn NULL / stream -1 = off. Set and cleared
+ * under a lock the reader also takes, so after it returns fn is not called.
+ * Clearing (fn NULL) with op set clears only the tap that op set. */
+struct AVPacket; struct AVStream;
+typedef void (*DtsRemuxTap)(void *op, const struct AVPacket *pkt, const struct AVStream *st);
+void dts_remux_set_tap(DtsRemuxTap fn, void *op, int stream);
+/* The same with a second audio stream of the file (owner 18/11: the donor
+ * compared with two of the file's tracks); stream2 -1 = none. */
+void dts_remux_set_tap2(DtsRemuxTap fn, void *op, int stream, int stream2);
+
 int dts_remux_available(void);
 /* Shared packet budget across generators: 192 MiB, 128 MiB on older TVs. */
 void dts_remux_set_queue_budget_mib(int mib);
+/* Read-only, for log lines: bytes queued now across generators, and the budget. */
+size_t dts_remux_queued_bytes(void);
+int dts_remux_queue_budget_mib(void);
 /* Device offset, snapshotted by each new source. Positive delays audio only. */
 void dts_remux_set_audio_offset_ms(int ms);
 
@@ -57,19 +87,53 @@ void dts_remux_set_audio_offset_ms(int ms);
  * Cues lazily). audio_ordinal: which audio track to convert, counted among the
  * file's audio tracks in container order from 0 (FFmpeg does not expose the
  * Matroska TrackNumber; its streams follow the TrackEntry order), or -1 for the
- * first DTS/TrueHD/MLP track. stereo_aac: 1 = AAC 2.0 (Settings
- * "Stereo (AAC)"), 0 = AC3. seg_target_s: HLS segments group keyframes to at
+ * first DTS/TrueHD/MLP track. stereo: 1 = AC3 2.0 (Settings
+ * "Stereo"), 0 = AC3 at the source's width (5.1 at most). seg_target_s: HLS segments group keyframes to at
  * least this length. *cancel (may be NULL) aborts the network waits. NULL on
  * failure with the reason in err (no URL in it). */
-DtsRemux *dts_remux_open(const char *url, const char *headers, int audio_ordinal, int stereo_aac,
+DtsRemux *dts_remux_open(const char *url, const char *headers, int audio_ordinal, int stereo,
                          double seg_target_s, volatile int *cancel, char *err, size_t errn);
 /* The same in two steps, so another thread can stop a probe that waits on the
  * network: dts_remux_new() returns an empty source that dts_remux_cancel()
  * already accepts (*cancel, may be NULL, is also read as in dts_remux_open); dts_remux_probe() fills it (0) or fails (-1, reason in err,
  * "Cancelled" after a cancel). Either way the caller closes it. */
 DtsRemux *dts_remux_new(volatile int *cancel);
-int dts_remux_probe(DtsRemux *, const char *url, const char *headers, int audio_ordinal, int stereo_aac,
+int dts_remux_probe(DtsRemux *, const char *url, const char *headers, int audio_ordinal, int stereo,
                     double seg_target_s, char *err, size_t errn);
+/* Matroska video end verified against packets at the physical EOF. */
+typedef struct {
+  int64_t size_bytes, last_keyframe;
+  int keyframes, time_base_num, time_base_den;
+  double declared_end, track_end, verified_end;
+} DtsHlsVideoEnd;
+typedef struct {
+  int dv7, allow_dts, preserve_mapping;
+  int buffer_mib, external_buffer_mib;
+  const char *external_url, *external_headers, *external_langs;
+  const DtsTrack *external_hint;
+  int external_stream, external_only, external_offset_ms, external_speed_ppm;
+  double resume_s;
+  DtsHlsVideoEnd video_end;
+  int ts;                      /* MPEG-TS segments (as on Tizen) instead of fMP4 */
+} DtsWebosHls;
+#ifdef NV_WEBOS_HLS_TEST
+#include "dts_engine.h"
+typedef struct {
+  DtsTrack track;
+  int ordinal;                 /* position among all source audio tracks */
+} DtsHlsAudioTrack;
+/* The session copies its strings and optional track hint before starting. */
+void dts_remux_set_webos(DtsRemux *, const DtsWebosHls *);
+/* Excludes unverified or changed sources. The result contains no reader. */
+void dts_remux_webos_video_end(const DtsRemux *, DtsHlsVideoEnd *);
+/* List convertible tracks from the active audio source. selected is a row index. */
+int dts_remux_webos_audio_tracks(const DtsRemux *, DtsHlsAudioTrack *, int max, int *selected);
+/* Snapshot both source rings. The caller keeps the generator alive. */
+void dts_remux_gen_buffer_info(const DtsRemuxGen *, DtsBufferInfo *);
+/* Use another listed track of the same file from the next segment on. The
+ * AC-3 output keeps its layout, so the init segment stays valid. 1 = accepted. */
+int dts_remux_webos_select_audio(DtsRemux *, int ordinal);
+#endif
 const DtsRemuxInfo *dts_remux_info(const DtsRemux *);
 double dts_remux_segment_start(const DtsRemux *, int seg);    /* seconds; segment 0 = 0 */
 double dts_remux_segment_duration(const DtsRemux *, int seg);

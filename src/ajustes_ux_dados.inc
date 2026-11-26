@@ -25,11 +25,17 @@ static int uxValorAtual(int op) {
   if(ajIptvGerenciador(op))return ajIptvQuantos(ajIptvTipo(op))?ajIptvAtualTipo(ajIptvTipo(op)):1;
   if (ajLegendaPrincipal(op)) return ajLegendaValor(op);
   if (ajFalhaBackend(op)) return ajFalhaValor(op);
+#ifndef NV_MINIATURAS
   if (op == AJ_SEEKR_LIGADO && !seekrChave[0]) return 1;
+#endif
   return op == AJ_FIL_LIMITE ? fil_limite_gravado() : valor[op];
 }
 
 static int uxDiferente(int op) {
+  if(op==AJ_BUFFER && uxBufferConexoesDisponivel() &&
+     (valor[AJ_BUFFER_NATIVE_CONNECTIONS]!=valorPadrao[AJ_BUFFER_NATIVE_CONNECTIONS] ||
+      valor[AJ_BUFFER_CONVERSION_CONNECTIONS]!=valorPadrao[AJ_BUFFER_CONVERSION_CONNECTIONS]))return 1;
+  if(op==AJ_BUFFER && uxBufferDadosDisponivel() && (valor[AJ_BUFFER_DADOS]!=valorPadrao[AJ_BUFFER_DADOS] || valor[AJ_RAM_OVERLAY]!=valorPadrao[AJ_RAM_OVERLAY] || valor[AJ_RAM_VERDE]!=valorPadrao[AJ_RAM_VERDE]))return 1;
   return uxTemPadrao(op) && uxValorAtual(op) != uxValorPadrao(op);
 }
 
@@ -239,10 +245,27 @@ static const char *uxSinonimos(int op) {
     case AJ_LAYOUT_AJUSTES: return "layout arranjo lista painel grade linhas uma embaixo da outra antigo anterior visual ajustes configuracoes list rows settings classic";
     case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: return "pular abertura resumo intro recap anteriormente automatico sozinho creditos skip auto";
     case AJ_PULAR_CREDITOS: return "pular creditos automatico sozinho final encerramento skip credits auto ending";
+    case AJ_EXT_AUDIO: return "audio from another source version dub dubbing lektor polish other file dzwiek z innego zrodla innej wersji sciezka";
+    case AJ_EXT_AUDIO_CACHE: return "audio another version cache debrid uncached hide dimmed dzwiek wersja";
+    case AJ_EXT_AUDIO_PASSO: return "audio sync step offset delay ms synchronizacja przesuniecie dzwiek";
+    case AJ_EXT_AUDIO_GRANDE: return "audio another version large file warning size gb duzy plik ostrzezenie";
+    case AJ_EXT_AUDIO_MODO: return "audio another version download whole file audio only tylko dzwiek caly plik transfer";
+    case AJ_EXT_AUDIO_SERIE: return "audio another version series next episodes remember pamietaj serial odcinki";
+    case AJ_EXT_AUDIO_SEGUIR: return "audio another version cut extended theatrical follow track whole film sledzenie montaz kinowa";
+    case AJ_EXT_AUDIO_BUFOR: return "audio another source other version buffer memory ram mb bufor drugiej wersji pamiec";
+    case AJ_EXT_AUDIO_ORDEM: return "audio another source sort like the addons order versions sortuj tak jak dodatki kolejnosc";
+    case AJ_EXT_AUDIO_COPIAS: return "audio another source duplicates copies hide same file duplikaty kopie ukryj";
+    case AJ_EXT_AUDIO_AUTO: return "audio another version match automatically start auto sync dopasuj automatycznie start";
+    case AJ_EXT_AUDIO_AVISO: return "audio another version sync adjusted message notice toast komunikat synchronizacja poprawiona";
+    case AJ_SHOW_SKIP_INTRO: return "show hide skip intro button opening pokaz ukryj przycisk intro";
+    case AJ_SHOW_SKIP_RECAP: return "show hide skip recap button summary poprzednio przypomnienie";
+    case AJ_SHOW_SKIP_CREDITS: return "show hide skip outro credits button ending napisy koncowe przycisk";
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "proximo episodio automatico autoplay creditos contagem netflix sozinho next episode auto play countdown";
     case AJ_CW_MINIMO: return "minimo continuar assistindo porcentagem percentual entrar fileira retomada progresso quanto assistir comecou piso minimum percent continue watching threshold row";
     case AJ_FONTE_PREPARAR: return "preparar fonte ao abrir titulo antecipar resolver antecipado play instantaneo inicio rapido debrid painel arquivo prepare source ahead instant start";
     case AJ_COLECAO_EXIBICAO: return "colecao colecoes exibicao padrao automatico grade linha tempo ranking saga decadas mural vitrine global collection collections default view automatic grid timeline showcase";
+    case AJ_REMEMBER_PROFILE: return "remember last profile startup auto enter lembrar ultimo perfil zapamietaj ostatni profil";
+    case AJ_UPDATE_NOTIFICATIONS: return "update notifications new version release aviso atualizacao powiadomienia aktualizacja wersja";
     case AJ_LOG_REDE: return "registro rede local pagina log ip navegador local network log page browser seek";
     case AJ_LINK_REUSAR: case AJ_LINK_PRAZO: return "reusar ultimo link sem busca retomar validade cache horas reuse last link cache duration";
     case AJ_FONTE_GRUPO: case AJ_FONTE_GRUPO_SESSOES: return "grupo bingegroup binge proximo episodio mesma fonte lembrar fonte escolhida lancamento release sessoes reusar prefer binge group remember picked source same release next episode reuse sessions";
@@ -268,7 +291,7 @@ static const char *uxSinonimos(int op) {
     case AJ_ESTAT_LADO: return "estatisticas ao vivo stats nerds lado direita esquerda direito esquerdo posicao painel live statistics side left right position";
     case AJ_PLAYER_ANIME: return "player anime externo igual vlc mx outro app video kitsu mal";
     case AJ_PLAYER_EXTERNO: return "player externo interno perguntar vlc mx outro app video external ask";
-    case AJ_BUFFER: return "buffer tamanho memoria 64 128 256 mb travando carregando rede instavel stats nerds";
+    case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: case AJ_BUFFER: return "buffer tamanho memoria 64 128 256 mb travando carregando rede instavel stats nerds http connections parallel native dts truehd dv7";
     case AJ_CACHE_SEEK: return "cache seek buffer disco armazenamento voltar avancar travando carregando";
     case AJ_TMDB_IDIOMA: return "idioma metadados titulo sinopse traducao tmdb";
     case AJ_HERO_GENERO: return "genero destaque hero logo titulo categoria esconder mostrar card genre";
@@ -324,7 +347,7 @@ static const char *uxCaminhoAntigo(int op) {
     case AJ_JF_LIGADO: case AJ_JF_SERVIDOR: case AJ_JF_ENTRAR: case AJ_JF_SAIR:
     case AJ_EM_SERVIDOR: case AJ_EM_ENTRAR: case AJ_EM_SAIR:
     case AJ_PX_ENTRAR: case AJ_PX_SERVIDOR: case AJ_PX_SAIR:
-    case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
+    case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: case AJ_SYNC: case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
     case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_SALVOS_DEST: case AJ_CW_FONTE: case AJ_CW_PROXIMO: case AJ_ENQUETES:
     case AJ_HIST_CONTA: case AJ_SOCIAL:
       return "Contas e serviços";
@@ -497,3 +520,4 @@ int ajustes_buscar(const char *consulta, AjusteBuscaResultado *resultados, int c
   }
   return total;
 }
+

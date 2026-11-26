@@ -159,7 +159,23 @@ int ajustes_pular_resumo(void);
 int ajustes_proximo_auto(void);
 int ajustes_proximo_contagem(void);
 // Pula os creditos sozinho, so com inicio e fim reais do marcador (desligado de fabrica).
+int   ajustes_audio_externo(void);                     // audio from another source (webOS converter, .tpk donor server), default off
+int   ajustes_audio_externo_ocultar_fora_cache(void); // 1 = hide versions not in the debrid cache
+int   ajustes_audio_externo_passo(void);              // sync step in ms: 10, 50 (default) or 100
+int   ajustes_audio_externo_avisar_grande(void);      // warn when the audio file is over 20 GB
+int   ajustes_audio_externo_so_audio(void);           // 1 = fetch only the audio where the file allows it
+int   ajustes_audio_externo_serie(void);              // remember the version for the next episodes
+int   ajustes_audio_externo_seguir(void);             // another cut: follow it through the whole film
+int   ajustes_audio_externo_aviso(void);              // show "sync adjusted by itself" (default off)
+int   ajustes_audio_externo_ocultar_copias(void);    // "From another source": one row per file (default on)
+int   ajustes_audio_externo_ordem_addon(void);       // "Sort like the addons" (default off: sorted for audio)
+int   ajustes_audio_externo_bufor_mib(void);         // "Other version buffer": 8 (default), 16 or 32 MiB
+int   ajustes_audio_externo_auto(void);               // match automatically when the other version starts (default on)
 int ajustes_pular_creditos(void);
+// Manual skip-button visibility, independent of automatic skipping; default ON.
+int ajustes_show_skip_intro(void);
+int ajustes_show_skip_recap(void);
+int ajustes_show_skip_credits(void);
 // Medidor de desempenho na ilha do relogio (desempenho.h): Desempenho desta TV,
 // local. 0 = desligado, 1 = Minimo, 2 = Menor, 3 = Grande (DS_* de desempenho.h).
 int ajustes_medidor_desempenho(void);
@@ -210,6 +226,8 @@ int ajustes_fonte_grupo_sessoes(void);
 // Reusar o ultimo link (fontevolta.h): 1 = ligado; e a validade em segundos.
 int ajustes_link_reusar(void);
 int ajustes_log_rede(void);   // pagina de registro na rede local (logrede.h)
+int ajustes_update_notifications(void); // automatic update card/notices; off by default
+int ajustes_lembrar_perfil(void); // remember last unlocked profile on this TV; default OFF
 unsigned ajustes_link_prazo_s(void);
 int ajustes_fonte_escopo(void);
 int ajustes_fonte_regex_modo(void);
@@ -610,6 +628,11 @@ int   ajustes_p2p_usb(void);                    // #205: 1 = cache P2P em pendri
 int   ajustes_player_externo(int anime);     // #501/#205: 0 Interno, 1 Externo, 2 Perguntar, 3 app (pacote em ajustes_player_pacote); anime: -1 = Igual ao Player
 const char *ajustes_player_pacote(int anime); // #205: pacote do app escolhido ("" = nenhum)
 int   ajustes_buffer_preset(void);           // #338: 0 Automatico, 1 = 64, 2 = 128, 3 = 256 MiB
+int   ajustes_buffer_dados(void);            // Text diagnostics only; buffered progress remains visible.
+int   ajustes_ram_overlay(void);
+int   ajustes_ram_verde(void);
+int   ajustes_mp4_bd_test(void);
+int   ajustes_ram_overlay_alternar(void); // Saves immediately, retains old state on failure.
 int   ajustes_cache_seek_mb(void);           // F07: seek cache limit in MB for the next video (0 = off / not on this TV)
 #ifdef AJUSTES_TESTE
 void  ajustes_teste_escala(int percentual); // fixture only; does not persist
@@ -664,6 +687,7 @@ int   ajustes_cw_proximo(void);   // 1 = 'a seguir' entra em Continuar assistind
 int   ajustes_cw_mostrar_nao_exibidos(void);  // showUnairedNextUp
 // continueWatchingSortMode: 0 default, 1 streaming_style, 2 split_upcoming
 int   ajustes_cw_ordem(void);
+int   ajustes_dts_desligado(void);       // DTS conversion off (LG 2, .tpk 0)
 int   ajustes_dts_ac3(void);             // 1 = DTS convertido em AC3 5.1 (LG, e padrao no .tpk); 0 = AAC estereo (.tpk: ou desligado)
 int   ajustes_dts_tpk_modo(void);        // .tpk: DTSTPK_HLS, ou DTSTPK_DESLIGADO com a conversao desligada
 int   ajustes_ps_continuar(void);        // #303: 0 = sem o cartao "continuar" na escolha de perfil
@@ -672,6 +696,11 @@ int   ajustes_amigos_estilo(void); // 0 Feed, 1 Live, 2 Stories, 3 Presence, 4 P
 int   ajustes_social(void);              // 1 = friends/social features on (per profile, default on)
 int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)
 int   ajustes_dv7(void);
+int   ajustes_webos_hls(void);
+int   ajustes_webos_hls_ts(void);   // HLS test: this TV starts HLS in MPEG-TS (learned)
+void  ajustes_webos_hls_ts_lembrar(int ts);   // the player found which format starts
+int   ajustes_dv7_mapping(void); // device-local P7 mapping test, default off
+int   ajustes_dv_audio_fixo(void);       // experiment: 0 v12, 1 AAC stereo, 2 AC3 5.1
 int   ajustes_cw_retido_tambem(void);   // 1 = o titulo da ilha/Retomar tambem fica em Continuar assistindo
 // Percentual (70-98, padrao 90) a partir do qual o episodio conta como
 // assistido: sai do Continuar assistindo e o card passa ao proximo. Local.
@@ -867,5 +896,10 @@ void ajustes_perfil_padrao(void);
 #ifdef NV_SHOT_HOOKS
 int ajustes_shot_valor(const char *chave, int v);   // capturas: opcao pela chave
 #endif
+
+/* Separate, device-local HTTP concurrency for the next playback session. */
+int ajustes_buffer_native_connections(void);
+int ajustes_buffer_conversion_connections(void);
+int ajustes_buffer_conversion_stream(void);
 
 #endif

@@ -192,6 +192,17 @@ int  partes_sessao_de(const char *alvo);
 const PartesLista *partes_sessao_lista(void);
 int  partes_sessao_indice(void);
 void partes_sessao_ir(int k);
+// A BARRA DO FILME INTEIRO (sessao de partes de `alvo`): onde a parte que toca
+// comeca no filme (*off) e o filme todo (*tot), em segundos — a duracao real
+// das partes que ja tocaram, as outras pelo tamanho. 0 quando a sequencia nao
+// confere (numeracao com buraco, soma longe do catalogo): a barra e a da parte.
+int  partes_barra(const char *alvo, double dur, double catDur, double *off, double *tot);
+// As fronteiras entre as partes, em fracao do filme (n <= max).
+int  partes_barra_limites(double dur, float *fr, int max);
+// Um segundo do filme inteiro -> a parte e o ponto dentro dela.
+int  partes_barra_achar(double v, double dur, int *k, double *pos);
+// A duracao real da parte `k`, assim que o player sabe.
+void partes_duracao_real(int k, double dur);
 // Posicao do filme inteiro (ver partes_conta_virtual) quando ha sessao para
 // `alvo`. *ultima = esta e a ultima parte.
 int  partes_virtual(const char *alvo, double pos, double dur, double catDur,

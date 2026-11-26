@@ -66,10 +66,12 @@ void player_definir_fonte(const char *url) { (void)url; aberturas++; }
 void player_definir_tentativa(int n, int t) { tentativaN = n; tentativaT = t; }
 void player_toast(const char *txt, unsigned ms) { (void)txt; (void)ms; }
 void player_erro_fonte(void) {}
+void player_desistir_fonte(void) {}
 void player_erro_fonte_motivo(const char *titulo, const char *subtitulo) { (void)titulo; (void)subtitulo; }
 void player_fechar_mini(void) { mini = 0; }
 int video_falhou(void) { return falhou; }
 int video_reconectando(void) { return reconectando; }
+unsigned video_abertura_geracao(void) { return 0; }
 int video_pronto(void) { return pronto; }
 int video_fonte_tocou(void) { return tocou; }
 int video_dv_ativo(void) { return dv; }

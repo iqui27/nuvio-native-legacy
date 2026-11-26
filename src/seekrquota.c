@@ -1,3 +1,8 @@
+// The Samsung .tpk, LG and Android make their thumbnails on the device
+// (miniatura.c serves the same seekr_* calls there, miniplat.h); the Seekr API
+// is not built into them.
+#include "miniplat.h"
+#ifndef NV_MINIATURAS
 #include "seekrquota.h"
 #include "dados.h"
 #include <pthread.h>
@@ -172,3 +177,6 @@ int seekrquota_reservar(long long utc) {
   pthread_mutex_unlock(&quotaTrava);
   return resultado;
 }
+#else
+typedef int seekrquota_fora_do_tpk;   // ISO C: a translation unit must not be empty
+#endif

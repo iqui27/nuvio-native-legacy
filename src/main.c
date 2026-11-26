@@ -86,10 +86,12 @@
 #include "traktauth.h"
 #include "simklauth.h"
 #include "app.h"
+#include "audioext.h"
 #include "registro.h"
 #include "desempenho.h"
 #include "atualizacao.h"
 #include "avisos.h"
+#include "passo.h"
 #include "seguro.h"
 #include "video.h"
 #include "addons.h"
@@ -269,7 +271,8 @@ static void remapCanal(SDL_Event *e) {
   if ((e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) &&
       (e->key.keysym.sym == SDLK_F7 || e->key.keysym.sym == SDLK_F8)) {
     int sobe = e->key.keysym.sym == SDLK_F7;
-    if (app_zap_ativo()) {
+    // Audio from another source playing (audioext.h): CH+/CH- move its sync.
+    if (app_zap_ativo() || audioext_tocando()) {
       e->key.keysym.scancode = (SDL_Scancode)(sobe ? NV_SCANCODE_CH_UP : NV_SCANCODE_CH_DOWN);
       e->key.keysym.sym = sobe ? SDLK_PAGEUP : SDLK_PAGEDOWN;
     } else {
@@ -700,6 +703,44 @@ static const char *pedidoVideo(void) {
 static _Atomic long pedVidTam;      // tamanho visto pelo fio (<=0: nada)
 static _Atomic long pedVidMtime;    // st_mtime visto pelo fio
 static _Atomic int pedVidFioOk;     // 1 = o fio esta de pe
+// passo.h: the watcher. Every 50 ms it reads the frame count; a count that
+// has not moved for 300 ms while the main thread is in a step other than the
+// input wait is a stall: the step goes to the log, again if it changes (up to
+// 4 lines per stall), and the total once frames move again.
+static void *passoFio(void *x) {
+  unsigned ult = 0, desde = 0, linhas = 0;
+  const char *dito = NULL;
+  struct timespec t;
+  int parado = 0;
+  (void)x;
+  for (;;) {
+    unsigned q = __atomic_load_n(&nv_passo_quadros, __ATOMIC_RELAXED), agora;
+    const char *p = __atomic_load_n(&nv_passo_atual, __ATOMIC_RELAXED);
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    agora = (unsigned)(t.tv_sec * 1000u + t.tv_nsec / 1000000);
+    if (q != ult) {
+      if (parado) {
+        printf("[parado] main thread back after %u ms; last step \"%s\"\n", agora - desde, dito ? dito : "?");
+        fflush(stdout);
+      }
+      ult = q; desde = agora; parado = 0; linhas = 0; dito = NULL;
+    } else if (agora - desde >= 300u && p && strcmp(p, "eventos") && p != dito && linhas < 4) {
+      printf("[parado] main thread %u+ ms in \"%s\" (frame %u)\n", agora - desde, p, q);
+      fflush(stdout);
+      parado = 1; dito = p; linhas++;
+    }
+    usleep(50000);
+  }
+  return NULL;
+}
+void passo_iniciar(void) {
+  static int feito;
+  pthread_t t;
+  if (feito) return;
+  feito = 1;
+  if (pthread_create(&t, NULL, passoFio, NULL) == 0) pthread_detach(t);
+}
+
 static void *pedVidFio(void *x) {
   (void)x;
   for (;;) {
@@ -1794,6 +1835,9 @@ int main(int argc, char **argv) {
   // verdade. Esticado 4x, nenhuma borda de texel aparece.
   gfx_borrao_iniciar(480, 270);
   NV_ETAPA("primeiro quadro");
+#ifdef NV_TPK
+  passo_iniciar();   // passo.h: names the step of a main-thread stall
+#endif
 
   Uint32 ultRelato = SDL_GetTicks();
   double txtMsQuadro = 0, piorTxtMs = 0;
@@ -1878,7 +1922,10 @@ int main(int argc, char **argv) {
 #endif
     // Enquanto o detalhe existe ele fica com o teclado inteiro: a home
     // continua desenhada por baixo, mas nao deve reagir ao D-pad.
+    passo_quadro();
+    NV_PASSO("eventos");
     while (SDL_PollEvent(&e)) {
+      NV_PASSO("evento (tecla/janela)");
 #if defined(NV_ANDROID) && defined(NV_TOUCH_UI)
       if (android_toque_cancelado(&e)) {
         ponteiro_cancelar_toque();
@@ -1998,7 +2045,8 @@ int main(int argc, char **argv) {
 #endif
       // CH+ segurado x tocado (central.h). Com canal na tela (zap) ele segue
       // direto, sem atraso.
-      if (teclaCh(&e) && central_tecla(&e, !app_zap_ativo() && app_central_pode())) continue;
+      // Audio from another source playing: CH+ moves its sync, straight too.
+      if (teclaCh(&e) && central_tecla(&e, !app_zap_ativo() && !audioext_tocando() && app_central_pode())) continue;
       remapCanal(&e);
       // TECLA DESCONHECIDA, UMA LINHA CADA, UMA VEZ SO.
       //
@@ -2176,11 +2224,14 @@ int main(int argc, char **argv) {
     Uint64 t0 = NV_T0();
     tex_upl_n = 0; tex_upl_bytes = 0;
     gputempo_quadro_inicio();   // the GPU clock brackets uploads + draw
+    NV_PASSO("tex_bombear");
     tex_bombear(3);
     fBomb = NV_DT(t0);
     fUplN = tex_upl_n; fUplB = tex_upl_bytes;
     t0 = NV_T0();
+    NV_PASSO("app");
     app_atualizar(dt, agora);
+    NV_PASSO("depois do app");
     // COR VIVA: UMA vez por quadro, antes do desenho. Consome o pedido que o
     // desenho do quadro anterior fez (corviva_definir) e anda a transicao; o
     // desenho deste quadro so le o resultado (ajustes_acento, NV_COR_FUNDO_*).
@@ -2266,6 +2317,7 @@ int main(int argc, char **argv) {
     t0 = NV_T0();
     txt_novo_quadro();
     ponteiro_quadro(agora);
+    NV_PASSO("desenho");
     app_desenhar(agora);
     if (perftv_enabled) snprintf(perfScreen, sizeof perfScreen, "%s", perfTvScreen());
     // A abertura (#213) cobre os primeiros quadros, com a home montando por baixo.
@@ -2306,6 +2358,7 @@ int main(int argc, char **argv) {
       playerUiPrevious = playerUi;
     }
     if (!nvPrimeiroQuadroFeito) arranque_etapa("primeiro SwapWindow");
+    NV_PASSO("swap");
     SDL_GL_SwapWindow(win);
 #ifndef __EMSCRIPTEN__
     { unsigned wait = player_frame_wait(playerUi, SDL_GetTicks() - frameStarted);

@@ -56,6 +56,7 @@ typedef struct Stream {
   // Legendas anexadas pelo addon tambem contam, sem afirmar que sao embutidas.
   char audioIdiomas[512];
   char legendaIdiomas[512];
+  char audioRotulos[512]; // language hints for the source picker when audio is undeclared
   // Metadados canonicos para as exclusoes compartilhadas. Independentes dos
   // badges importados e do tamanho exato exigido pelo StreamFit.
   FonteFiltroDados filtro;
@@ -415,6 +416,17 @@ int  stream_cabe_no_teto(const Stream *s);
 //         P2P experimental (p2p.h) tambem nao; o motivo esta em p2p_ultimo_erro()
 #define STREAM_P2P_FALHOU 3
 unsigned stream_lista_geracao(void);
+// A link the debrid service did not have ready (audio of another source):
+// marked not cached in the list. 1 when the list had it.
+int stream_marcar_fora_cache_url(const char *url);
+// Settings > Addons of "From another source": the series memory's pick skips
+// the add-ons it says no to (faixas.c sets it).
+void stream_audioext_filtro_addon(int (*fn)(const char *chave));
+// 1 when a source of the current list came from this add-on (Stream.addonChave).
+int stream_lista_tem_addon(const char *chave);
+// Bumps on any change of a source's state (cache, order): the audio pages
+// rebuild on it.
+unsigned stream_revisao(void);
 // Quantos torrents SEM url (so infoHash) ha na lista: os que so o P2P ou o
 // debrid tocam. Serve ao cartao "nenhuma fonte serve" dizer que ha P2P.
 int  stream_qtd_torrents(void);
@@ -446,6 +458,20 @@ int  stream_canal_proxima(int atual);
 // lista em que outras responderam, prazo curto.
 int  stream_canal_prazo_longo(int idx);
 
+// AUDIO FROM ANOTHER VERSION (audioextlista.h): this source as a candidate
+// (declared languages, audio codec, channels, cache, size; `atual` stays 0),
+// and its release label ("WEB-DL 1080p", "" unknown).
+struct AudioExtEntradaS;
+void stream_audioext_entrada(const Stream *s, struct AudioExtEntradaS *e);
+void stream_audioext_versao(const Stream *s, char *out, unsigned tam);
+// The cut named in a version ("Extended", "Director's Cut", "IMAX"...), or NULL.
+const char *stream_edicao(const Stream *s);
+// 1 when two versions are likely different cuts (no name = theatrical).
+int stream_outro_corte(const Stream *a, const Stream *b);
+// 1 when the add-on declares this audio language for the version.
+int stream_audio_tem(const Stream *s, const char *idioma);
+// 1 when the list on hand belongs to the title/episode last asked for.
+int stream_lista_do_alvo_atual(void);
 // --- folha de fontes (a lista que sobe por cima do player/detalhe) ---
 void stream_folha_abrir(void);
 // Root feeds an actual movie/episode metadata runtime or measured media

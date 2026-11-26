@@ -209,6 +209,14 @@ static char alvoBase[NV_ADDON_URL_MAX];
 static char fioBase[NV_ADDON_URL_MAX];
 static int fioVivo;
 static _Atomic int fioTerminou;
+// THE RUNNING SEARCH IS STOPPED, NOT WAITED FOR (logs 10/11, 18/11/2026). A
+// new target used to queue behind the old worker until its slowest add-on
+// answered: "NMR | ALL" took 10-17 s on a MyAnimeList id, the old list was
+// already dropped (#413), and the sheet showed "0 of 0" all that time. Set
+// when a pending target is queued; the worker's downloads read it mid-transfer
+// (curl's progress callback) and the worker stops. Cleared at each new search.
+static volatile int fioAbortar;
+static int cancelarBusca(void *u);
 static Stream *resultado;
 static int nResultado;
 static Uint32 resultadoQuando;
@@ -2508,6 +2516,7 @@ typedef struct {
   unsigned versao;
   uint64_t sessao;
   int congelada;             // immutable provider capabilities captured on the UI thread
+  volatile int *abortar;      // main search only: stops a download mid-transfer (fioAbortar)
   pthread_mutex_t trava;
   struct ArmFontes *arm;      // ids do mesmo titulo em outros sites (streamIdsExtras)
 } Consulta;
@@ -2685,8 +2694,10 @@ static int prazoDoAddon(const Consulta *c, int i) {
 // array "streams" — resposta valida de quem nao serve esse endpoint, e nao
 // uma falha; 0 = veio o array (vazio conta). 4xx/sem corpo: *semRecurso = -1.
 static char *baixarStream(const char *nome, const char *url, int segundos,
-                          int *semRecurso) {
+                          int *semRecurso, volatile int *abortar) {
   int status = 0;
+  RedeControle ctl = { 0, abortar };
+  RedeMedida med;
   (void)nome;
   if (semRecurso) *semRecurso = -1;
   char host[256];
@@ -2696,7 +2707,15 @@ static char *baixarStream(const char *nome, const char *url, int segundos,
   const char *at = memchr(h, '@', len);
   if (at) { len -= (size_t)(at + 1 - h); h = at + 1; }
   snprintf(host, sizeof host, "%.*s", (int)len, h);
-  char *corpo = rede_baixar_st(url, segundos, NULL, &status);
+  char *corpo;
+  if (abortar && *abortar) return NULL;
+  memset(&med, 0, sizeof med);
+  corpo = abortar ? rede_baixar_medido_controle(url, segundos, NULL, &ctl, &med) : rede_baixar_st(url, segundos, NULL, &status);
+  if (abortar) status = med.status;
+  if (abortar && med.cancelado) {
+    printf("[addons] stream host=%s stopped: the search moved to another target\n", host);
+    free(corpo); return NULL;
+  }
   printf("[addons] stream host=%s HTTP %d\n", host, status);
   if (status >= 400) {
     free(corpo); return NULL;
@@ -2752,7 +2771,7 @@ static void *fioIdsExtras(void *u) {
     if (!nv_addon_id(idX, sizeof idX, x->extra[x->xi]) || !idX[0]) continue;
     cx = nv_addon_pedido_coube(x->a->nome, nv_addon_url(url, sizeof url, x->a->base, "/stream/%s/%s.json",
                                  x->c->tipo, idX), sizeof url)
-         ? baixarStream(x->a->nome, url, restanteS, NULL) : NULL;
+         ? baixarStream(x->a->nome, url, restanteS, NULL, x->c->abortar) : NULL;
     if (!cx) continue;
     if (x->c->congelada && !arrayDeFontesCompleto(cx)) { free(cx); continue; }
     x->respondeu = 1;
@@ -2859,7 +2878,7 @@ static void *fioFontes(void *u) {
     int semRecurso = -1, semRecursoAlt = -1;
     corpo = nv_addon_pedido_coube(origem->nome, nv_addon_url(url, sizeof url, origem->base, "/stream/%s/%s.json",
                                     t1, idUrl), sizeof url) && idUrl[0]
-            ? baixarStream(origem->nome, url, prazoS, &semRecurso) : NULL;
+            ? baixarStream(origem->nome, url, prazoS, &semRecurso, c->abortar) : NULL;
     if (consultaCancelada(c)) {
       if (exVivo) pthread_join(exFio, NULL);
       if (exUsar) free(ex.l);
@@ -2905,7 +2924,7 @@ static void *fioFontes(void *u) {
       char *alt;
       alt = nv_addon_pedido_coube(origem->nome, nv_addon_url(url, sizeof url, origem->base, "/stream/%s/%s.json",
                                     t2, idUrl), sizeof url) && idUrl[0]
-            ? baixarStream(origem->nome, url, restanteS, &semRecursoAlt) : NULL;
+            ? baixarStream(origem->nome, url, restanteS, &semRecursoAlt, c->abortar) : NULL;
       if (consultaCancelada(c)) {
         if (exVivo) pthread_join(exFio, NULL);
         if (exUsar) free(ex.l);
@@ -3239,6 +3258,7 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
   }
   c.id = id; c.tipo = tipo;
   c.cancelado = cancelado; c.ctx = ctx;
+  c.abortar = cancelado == cancelarBusca ? &fioAbortar : NULL;
   c.progresso = progresso;
   // Filme/serie: os ids do mesmo titulo em outros sites, sob demanda (armids.h).
   struct ArmFontes arm;
@@ -3643,8 +3663,8 @@ static void *fioExtraCapturado(void *u) {
   }
   return NULL;
 }
-int addons_consulta_consultar(const AddonsConsulta *snapshot, const char *id, const char *tipo,
-                              int fios, int (*cancelado)(void *), void *ctx, void *saida) {
+static int consultaCapturadaFazer(const AddonsConsulta *snapshot, const char *id, const char *tipo,
+                                  int fios, int (*cancelado)(void *), void *ctx, void *saida, int parcial) {
   Stream **out = saida;
   if (!out) return -1;
   *out = NULL;
@@ -3676,15 +3696,18 @@ int addons_consulta_consultar(const AddonsConsulta *snapshot, const char *id, co
   if (snapshot->n && !vivos) fioConsultaCapturada(&c);
   for (int i = 0; i < vivos; i++) pthread_join(f[i], NULL);
   for (int i = 0; i < snapshot->nExtras; i++) if (extraVivo[i]) pthread_join(fe[i], NULL);
-  int total = 0, incompleta = cancelaConsultaCapturada(&c);
+  int total = 0, incompleta = cancelaConsultaCapturada(&c), faltou = 0;
   for (int i = 0; i < snapshot->n; i++) {
-    if (!c.baldes[i].respondeu) incompleta = 1;
+    if (!c.baldes[i].respondeu) faltou = 1;
     if (c.baldes[i].n > 0) total += c.baldes[i].n;
   }
   for (int i = 0; i < snapshot->nExtras; i++) {
-    if (atomic_load(&extras[i].incompleta)) incompleta = 1;
+    if (atomic_load(&extras[i].incompleta)) faltou = 1;
     if (extras[i].n > 0) total += extras[i].n;
   }
+  // Partial: what the add-ons that answered sent is enough (one add-on down
+  // must not hide the others); nothing at all with one missing is a failure.
+  if (faltou && (!parcial || !total)) incompleta = 1;
   Stream *resultado = !incompleta && total ? malloc((size_t)total * sizeof *resultado) : NULL;
   if (total && !resultado) incompleta = 1;
   int n = 0;
@@ -3707,6 +3730,14 @@ int addons_consulta_consultar(const AddonsConsulta *snapshot, const char *id, co
   pthread_mutex_destroy(&c.arm.trava);
   if (incompleta) { free(resultado); return -1; }
   *out = resultado; return n;
+}
+int addons_consulta_consultar(const AddonsConsulta *snapshot, const char *id, const char *tipo,
+                              int fios, int (*cancelado)(void *), void *ctx, void *saida) {
+  return consultaCapturadaFazer(snapshot, id, tipo, fios, cancelado, ctx, saida, 0);
+}
+int addons_consulta_consultar_parcial(const AddonsConsulta *snapshot, const char *id, const char *tipo,
+                                      int fios, int (*cancelado)(void *), void *ctx, void *saida) {
+  return consultaCapturadaFazer(snapshot, id, tipo, fios, cancelado, ctx, saida, 1);
 }
 
 // Contagens da LISTA (nao da consulta), para "nao ha a quem perguntar".
@@ -3790,7 +3821,7 @@ typedef struct {
 } PedidoBusca;
 static int cancelarBusca(void *u) {
   PedidoBusca *p = u;
-  return !nv_perfil_sessao_atual(p->escopo.sessao) || p->escopo.addons != addons_versao();
+  return fioAbortar || !nv_perfil_sessao_atual(p->escopo.sessao) || p->escopo.addons != addons_versao();
 }
 static void *buscar(void *u) {
   Stream *achados = NULL;
@@ -3825,6 +3856,7 @@ static void dispararBusca(void) {
   fontecache_ceder();
   estado = ADD_BUSCANDO;
   fioVivo = 1; atomic_store(&fioTerminou, 0);
+  fioAbortar = 0;
   progLimpar();
   progLigado = alvoVod();
   progPublicou = 0; progExtraPublicou = 0;
@@ -3865,6 +3897,8 @@ static void buscarPedido(const char *imdb, const char *tipo, int forcar) {
       snprintf(pendTipo, sizeof pendTipo, "%s", tipo ? tipo : "movie");
       pendRenovar = forcar;
       pendBase[0] = 0;
+      if (!fioAbortar) printf("[addons] the running search stops: the target moved to %s\n", imdb);
+      fioAbortar = 1;
       stream_invalidar("pending personal-server target");
       return;
     }
@@ -3907,6 +3941,8 @@ static void buscarPedido(const char *imdb, const char *tipo, int forcar) {
       snprintf(pendBase, sizeof pendBase, "%s", alvoBase);
       // The running search is now obsolete; its partial list must not feed
       // Play while the new target waits for this worker to finish (#413).
+      if (!fioAbortar) printf("[addons] the running search stops: the target moved to %s\n", id);
+      fioAbortar = 1;
       stream_invalidar("pending source target");
     } else if (progLigado && !pendId[0] && !stream_lista_do_alvo(id))
       // O MESMO alvo, com a busca dele no ar, e a lista da tela nao e mais

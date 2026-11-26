@@ -10,7 +10,7 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/addons.c) continue;; esac
   sources+=("$source")
 done
-cc -O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+cc -O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 $(sdl2-config --cflags 2>/dev/null) \
   -Wno-deprecated-declarations -Wno-macro-redefined \
   "${sources[@]}" tests/addons_alvo_pendente.c -o "$work/test" \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL

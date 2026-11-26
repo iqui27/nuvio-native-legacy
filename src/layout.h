@@ -113,6 +113,7 @@ int layout_modo_mobile(void);
 // Scancode do BACK no SDL da LG (SDL_SCANCODE_WEBOS_BACK). Nao esta no
 // SDL_scancode.h padrao, por isso vem como numero.
 #define NV_SCANCODE_BACK 482
+#define NV_SCANCODE_GREEN 487 // SDL_webOS.h: SDL_WEBOS_SCANCODE_GREEN
 #define NV_SCANCODE_BLUE 489 // SDL_webOS.h: SDL_WEBOS_SCANCODE_BLUE
 // AMARELA: abre o Spotlight (spotlight.h) fora do Guia, que a usa para alternar
 // a vista. 488 MEDIDO no D1: "[tecla] scancode=488" em 34 envios de log webOS.

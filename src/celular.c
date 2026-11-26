@@ -75,6 +75,15 @@ static int privado(in_addr_t a) {
   unsigned long h = ntohl(a);
   return (h >> 24) == 10 || (h >> 20) == 0xAC1 || (h >> 16) == 0xC0A8;
 }
+// 100.64.0.0/10, the carrier-grade NAT range (tester's C3, 11/11/2026: the
+// TV's only address was 100.80.x.x, from a provider handing that range to
+// home networks; VPNs such as Tailscale use it too). Not reachable from the
+// internet; only taken when the TV has no private address, and the page
+// still needs the secret in the QR code.
+static int cgnat(in_addr_t a) {
+  unsigned long h = ntohl(a);
+  return (h >> 22) == (0x64400000UL >> 22);
+}
 
 // A ROTA PADRAO DIZ QUAL INTERFACE A TV USA: connect() num socket UDP so
 // escolhe a rota, nao manda pacote nenhum (192.0.2.1 e TEST-NET, ninguem
@@ -97,15 +106,20 @@ static int ipLan(char *dst, size_t n) {
     close(s);
   }
   if (!achou && !getifaddrs(&lista)) {
+    in_addr_t reserva = 0;   /* first CGNAT address: used only with no private one */
     for (i = lista; i; i = i->ifa_next) {
+      in_addr_t a;
       if (!i->ifa_addr || i->ifa_addr->sa_family != AF_INET) continue;
       if (!(i->ifa_flags & IFF_UP) || (i->ifa_flags & IFF_LOOPBACK)) continue;
-      if (privado(((struct sockaddr_in *)i->ifa_addr)->sin_addr.s_addr)) {
-        achou = ((struct sockaddr_in *)i->ifa_addr)->sin_addr.s_addr;
-        break;
-      }
+      a = ((struct sockaddr_in *)i->ifa_addr)->sin_addr.s_addr;
+      if (privado(a)) { achou = a; break; }
+      if (!reserva && cgnat(a)) reserva = a;
     }
     freeifaddrs(lista);
+    if (!achou && reserva) {
+      achou = reserva;
+      puts("[celular] no private address: using the carrier-grade NAT one (100.64.0.0/10)");
+    }
   }
   if (achou) {
     struct in_addr a; a.s_addr = achou;

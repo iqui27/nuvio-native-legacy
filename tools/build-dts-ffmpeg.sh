@@ -2,15 +2,25 @@
 export TMPDIR="${TMPDIR:-/tmp}"
 TMPDIR="${TMPDIR%/}"
 # Minimal static LGPL FFmpeg: DTS decode, stereo AAC and AC3 5.1 encode (no GPL/nonfree). No FFmpeg
-# network/TLS protocols or software video decoders enter the TV executable.
+# network/TLS protocols enter the TV executable. Software video decoders only on the .tpk (below).
 #
 # NUVIO_DTS_TARGET picks the build:
-#   webos (default) cross build with the LG SDK (tools/Dockerfile); output unchanged.
+#   webos (default) cross build with the LG SDK (tools/Dockerfile).
+#                   NUVIO_WEBOS_HLS=1 adds the experimental loopback muxers.
 #   tpk             Samsung .tpk (tools/tpk.sh). ARM32 build inside the selected SDK
 #                   container, from the source tree tpk.sh already downloaded and checked on the
 #                   host (NUVIO_DTS_SRC; the container has no curl). Adds what the Samsung loopback
 #                   converter needs: TrueHD/MLP
-#                   decoders, mpegts/matroska/mp4 muxers, mlp/ac3 parsers, truehd_core.
+#                   decoders, mpegts/matroska/mp4 muxers, mlp/ac3 parsers, truehd_core; and for the
+#                   seek-bar thumbnails made on the TV (src/miniatura*.c): h264/hevc decoders
+#                   (keyframes only, decoded one at a time), the mjpeg encoder (320x180 tiles) and
+#                   the mpegts demuxer (.m2ts / .ts remuxes). The webOS target gets the same
+#                   thumbnail components.
+#                   Audio from another source (src/dts/doador_tpk.c) adds the decoders
+#                   of the audio a donor carries (AC3, E-AC3, AAC, Opus, FLAC, Vorbis,
+#                   MP3/MP2) and their parsers: the automatic match decodes both
+#                   versions to compare them, a PAL version is converted at its
+#                   speed, FLAC can be converted.
 set -eu
 VERSION=7.1.5
 SHA256=de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f
@@ -18,23 +28,36 @@ PREFIX=${NUVIO_DTS_ROOT:-/opt/nuvio-dts}
 BUILD=${NUVIO_DTS_BUILD:-${TMPDIR:-/tmp}/nuvio-dts-build}
 TARGET=${NUVIO_DTS_TARGET:-webos}
 DECODERS=dca,dvdsub,pgssub,ass,ssa,subrip,movtext,webvtt
+ENCODERS=aac,ac3
 MUXERS=
+DEMUXERS=matroska,mov
 PARSERS=dca,h264,hevc,aac
 BSFS=h264_mp4toannexb,hevc_mp4toannexb,dca_core
-ZLIB=
+# zlib on every target: Matroska subtitle tracks are usually stored
+# zlib-compressed (mkvmerge's default for PGS/VobSub). Without it they arrive
+# still compressed, the PGS decoder skips every segment and converted playback
+# (Dolby Vision, DTS) showed no picture subtitles at all (tester's log 15/11).
+# webOS already links the SDK's libz (tools/arm.sh, epg.c), the .tpk its
+# static libz.a (tools/tpk.sh).
+ZLIB=--enable-zlib
 mkdir -p "$BUILD" "$PREFIX"
 if [ "$TARGET" = tpk ]; then
   SRC=${NUVIO_DTS_SRC:?tools/tpk.sh passes the extracted ffmpeg-$VERSION source}
   CC=${CC:-gcc}
-  DECODERS=$DECODERS,truehd,mlp
+  DECODERS=$DECODERS,truehd,mlp,ac3,eac3,aac,opus,flac,vorbis,mp3float,mp2float,h264,hevc
+  # PCM (Matroska A_PCM/INT, MP4 lpcm/sowt/twos): the donor server serves a
+  # file's PCM track as lossless FLAC in fMP4 (owner 17/11; PCM has no normal
+  # HLS carrier) and the audio match can read it.
+  DECODERS=$DECODERS,pcm_s16le,pcm_s24le,pcm_s32le,pcm_s16be,pcm_s24be,pcm_s32be
+  # eac3: the donor server pads a copied E-AC3 rendition with E-AC3 silence
+  # where the donor's audio has not started yet (owner 18/11: an empty first
+  # segment kept the TV player from starting).
+  ENCODERS=$ENCODERS,flac,eac3,mjpeg
   MUXERS=mpegts,matroska,mp4
-  PARSERS=$PARSERS,mlp,ac3
+  # mpegts demuxer: thumbnails for Blu-ray remuxes kept as .m2ts / .ts (miniatura_motor.c).
+  DEMUXERS=$DEMUXERS,mpegts
+  PARSERS=$PARSERS,mlp,ac3,opus,flac,vorbis,mpegaudio
   BSFS=$BSFS,truehd_core
-  # zlib: Matroska tracks stored zlib-compressed (ContentCompression) and MP4
-  # with a compressed header (cmov) arrive raw without it ("Unsupported encoding
-  # type"). The .tpk already links the SDK's static libz.a (tools/tpk.sh, also
-  # used by epg.c), so this adds no new dependency on the TV.
-  ZLIB=--enable-zlib
   # Out of tree: the source stays clean in the host cache.
   mkdir -p "$BUILD/obj"
   cd "$BUILD/obj"
@@ -44,6 +67,29 @@ if [ "$TARGET" = tpk ]; then
       --cross-prefix=arm-linux-gnueabi-
   fi
 else
+  # LG webOS: seek-bar thumbnails made on the TV (src/miniatura*.c), like the
+  # .tpk: h264/hevc decoders (keyframes only), the mjpeg encoder (320x180
+  # tiles) and the mpegts demuxer (.m2ts / .ts remuxes).
+  DECODERS=$DECODERS,h264,hevc
+  ENCODERS=$ENCODERS,mjpeg
+  DEMUXERS=$DEMUXERS,mpegts
+  if [ "${NUVIO_WEBOS_HLS:-0}" = 1 ]; then
+    MUXERS=mpegts,mp4
+    PARSERS=$PARSERS,ac3
+    DECODERS=$DECODERS,ac3,eac3,aac
+  fi
+  if [ "${NUVIO_DV_TRUEHD:-1}" = 1 ]; then
+    # Support high-definition Dolby audio and transcoding donor audio on webOS.
+    # A reduced SDK can opt out with NUVIO_DV_TRUEHD=0.
+    DECODERS=$DECODERS,truehd,ac3,eac3
+    PARSERS=$PARSERS,mlp,ac3
+    # Audio from another version (external audio test): the dub of a WEB-DL
+    # is often AAC at 44.1 kHz, Opus, FLAC, Vorbis or MP3, converted like DTS.
+    DECODERS=$DECODERS,aac,opus,flac,mlp,vorbis,mp3
+    PARSERS=$PARSERS,opus,flac,vorbis,mpegaudio
+    # Small AVI and TS releases also carry dubs and voice-overs (owner, 07/11).
+    DEMUXERS=$DEMUXERS,avi
+  fi
   CC=${CC:-arm-webos-linux-gnueabi-gcc}
   archive="$BUILD/ffmpeg-$VERSION.tar.xz"
   [ -f "$archive" ] || curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz" -o "$archive"
@@ -60,15 +106,14 @@ else
   fi
 fi
 # --enable-muxer must come AFTER --disable-everything and --enable-zlib after
-# --disable-autodetect (configure applies them in order). Unquoted on purpose:
-# both empty for webOS, so its configure line is unchanged.
+# --disable-autodetect (configure applies them in order). MUXERS is optional.
 "$SRC/configure" "$@" --prefix="$PREFIX" --disable-everything ${MUXERS:+--enable-muxer=$MUXERS} \
   --disable-autodetect $ZLIB --disable-shared --enable-static --enable-pic \
   --disable-programs --disable-doc --disable-debug --disable-network \
   --disable-avdevice --disable-avfilter --disable-swscale --disable-postproc \
   --enable-avcodec --enable-avformat --enable-avutil --enable-swresample \
-  --enable-decoder="$DECODERS" --enable-encoder=aac,ac3 \
-  --enable-demuxer=matroska,mov --enable-parser="$PARSERS" \
+  --enable-decoder="$DECODERS" --enable-encoder="$ENCODERS" \
+  --enable-demuxer="$DEMUXERS" --enable-parser="$PARSERS" \
   --enable-bsf="$BSFS" \
   --extra-cflags="${CFLAGS:--O2}"
 make -j"${NUVIO_DTS_JOBS:-2}"

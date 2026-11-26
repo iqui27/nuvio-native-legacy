@@ -48,6 +48,24 @@ void fontevolta_guardar(const char *alvo, const char *conta, int perfil,
 int  fontevolta_pegar(const char *alvo, const char *conta, int perfil,
                       Uint32 agora, Stream *saida);
 
+// O AUDIO DE OUTRA FONTE ("Audio from another source") que tocava com a fonte
+// guardada: o Retomar do Continuar assistindo volta com ele e com a mesma
+// sincronia (offset, velocidade, faixa). Fica na mesma entrada e vai com ela
+// para o disco no modo ligado; a URL dele, como a do video, nunca vai ao log.
+typedef struct {
+  int tem;
+  char url[NV_MEDIA_URL_MAX], cabecalhos[512], nome[192], idioma[8];
+  int faixa, offsetMs, velocidadePpm;
+} FontevoltaAudio;
+// Poe (a->tem) ou tira (NULL ou !a->tem) o audio da entrada deste alvo/conta/
+// perfil, so se ela guarda o video `urlVideo`. fontevolta_guardar comeca sem
+// audio. 1 = a entrada mudou.
+int  fontevolta_guardar_audio(const char *alvo, const char *conta, int perfil,
+                              const char *urlVideo, const FontevoltaAudio *a);
+// O audio guardado da entrada deste alvo/conta/perfil (chamar depois de um
+// fontevolta_pegar que deu 1). 0 = sem audio de outra fonte.
+int  fontevolta_audio(const char *alvo, const char *conta, int perfil, FontevoltaAudio *out);
+
 // 1 when the saved URL may start before the source sheet. escolherManual is
 // "Escolher a fonte ao reproduzir": the sheet picks, so a live URL from the
 // last session must not start underneath it. Failover applies after a saved

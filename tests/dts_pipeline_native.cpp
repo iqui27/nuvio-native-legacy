@@ -12,10 +12,11 @@ static void *context;
 static const unsigned char *retained;
 static std::atomic<bool> complete{false}, loaded{false};
 static int play_calls, pause_calls;
-static bool playing;
+static bool playing, seeking;
+static int seek_calls;
 StarfishMediaAPIs::StarfishMediaAPIs(const char *uid) {
  // UID names a native media instance. Supplying app ID here aliases instances.
- assert(uid==nullptr); retained=nullptr; complete=false; loaded=false;play_calls=pause_calls=0;playing=false;
+ assert(uid==nullptr); retained=nullptr; complete=false; loaded=false;play_calls=pause_calls=0;playing=false;seeking=false;seek_calls=0;
 }
 StarfishMediaAPIs::~StarfishMediaAPIs() { if (retained) assert(retained[0]==3); callback=nullptr; }
 bool StarfishMediaAPIs::Load(const char *j,void (*cb)(int,long long,const char *,void *),void *ctx) {
@@ -44,7 +45,7 @@ bool StarfishMediaAPIs::Load(const char *j,void (*cb)(int,long long,const char *
  assert(js_bruto(contents,nullptr,"codec",codec,sizeof codec));
  assert(js_texto_raiz(codec,"video",text,sizeof text) && !strcmp(text,"H265"));
  assert(js_texto_raiz(codec,"audio",text,sizeof text) && !strcmp(text,"AAC"));
- assert(strstr(j,"\"format\":\"raw\"")); assert(strstr(j,"\"frequency\":48"));
+ assert(strstr(j,"\"format\":\"RAW\"")); assert(strstr(j,"\"frequency\":48"));
  assert(strstr(j,"\"channels\":2"));
  if(strstr(j,"DolbyHdrInfo")) {
   assert(strstr(j,"\"profileId\":8"));assert(strstr(j,"\"trackType\":\"single\""));
@@ -67,6 +68,16 @@ extern "C" void dts_fixture_complete_load() {
 std::string StarfishMediaAPIs::Feed(const char *j) {
  void *address=nullptr; size_t size=0; long long pts=0; int kind=0;
  assert(sscanf(j,"{\"bufferAddr\":\"%p\",\"bufferSize\":%zu,\"pts\":%lld,\"esData\":%d}",&address,&size,&pts,&kind)==4);
+ if(getenv("DTS_SEI_PACKET")) {
+  const unsigned char expected[]={0,0,1,40,1,0xaa,0xbb,128,0,0,0,1,124,1,0x44,128};
+  assert(pts==3000000000LL && (kind==1 || kind==2));
+  if(kind==1) {assert(size==sizeof expected && !memcmp(address,expected,size));}
+  else {assert(size==4 && static_cast<unsigned char *>(address)[0]==2);}
+  static int refused=0;
+  if(kind==1 && getenv("DTS_SEI_REFUSE") && !refused++)return "BufferFull";
+  if(!complete)dts_fixture_complete_load();
+  callback(0,pts,reinterpret_cast<const char *>(uintptr_t(1)),context);return "Ok";
+ }
  assert(size==4 && pts==3000000000LL && (kind==1 || kind==2));
  auto *data=static_cast<unsigned char *>(address);
  if(data[0]==1) return "BufferFull";
@@ -76,9 +87,27 @@ std::string StarfishMediaAPIs::Feed(const char *j) {
  if(!complete && !getenv("DTS_DEFER_COMPLETION")) dts_fixture_complete_load();
  callback(0,pts,reinterpret_cast<const char *>(uintptr_t(1)),context); return "Ok";
 }
-bool StarfishMediaAPIs::Play() { assert(complete);play_calls++;playing=true; callback(0x1a,0,"",context); return true; }
-bool StarfishMediaAPIs::Pause() { pause_calls++;playing=false;callback(0x1b,0,"",context); return true; }
-bool StarfishMediaAPIs::flush(const char *j) { assert(strstr(j,"\"ptsToDecode\":5000000000")); playing=false;return true; }
+bool StarfishMediaAPIs::Play() { assert(complete && !seeking);play_calls++;playing=true; callback(0x1a,0,"",context); return true; }
+bool StarfishMediaAPIs::Pause() { assert(!seeking);pause_calls++;playing=false;callback(0x1b,0,"",context); return true; }
+bool StarfishMediaAPIs::flush(const char *) { assert(!"Raw flush must not be used for a native seek");return false; }
+extern "C" int dts_fixture_seek_calls() { return seek_calls; }
+extern "C" void dts_fixture_complete_seek() {
+ if(!seeking) return;
+ seeking=false;
+ // SEEKDONE text is not needed. Treat its slot as opaque too.
+ callback(PF_EVENT_TYPE_STR_STATE_UPDATE__SEEKDONE,0,reinterpret_cast<const char *>(uintptr_t(1)),context);
+}
+#ifndef DTS_NO_SEEK
+bool StarfishMediaAPIs::Seek(const char *value) {
+ assert(!strcmp(value,"5000"));seek_calls++;
+ if(getenv("DTS_REFUSE_SEEK")) return false;
+ seeking=true;playing=false;
+ // A late clock from the previous segment must not escape the adapter.
+ callback(0,1697863000000LL,reinterpret_cast<const char *>(uintptr_t(1)),context);
+ if(!getenv("DTS_DEFER_SEEK")) dts_fixture_complete_seek();
+ return true;
+}
+#endif
 bool StarfishMediaAPIs::pushEOS() { assert(playing);callback(0x1c,0,"",context); return true; }
 bool StarfishMediaAPIs::Unload() { if(retained) assert(retained[0]==3); return true; }
 const char *StarfishMediaAPIs::getMediaID() {

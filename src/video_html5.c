@@ -1176,6 +1176,7 @@ void video_encerrar(void) {
 void video_escala_definir(int sw, int sh) { (void)sw; (void)sh; }
 void video_definir_reconexao(int sim) { (void)sim; }
 int  video_reconectando(void) { return 0; }
+unsigned video_abertura_geracao(void) { return 0; }
 int  video_conflito_recurso(void) { return 0; }
 int  video_decoder_anunciou(void) { return 1; }
 const char *video_erro_texto(void) { return ""; }

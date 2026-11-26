@@ -30,6 +30,31 @@ int main(void) {
   dados_iniciar(dir); assert(!strcmp(dados_dir(), dir)); snprintf(dirAjustes, sizeof dirAjustes, "%s", dir);
   ajustes_iniciar(); assert(gravar());
 
+  // Legacy secondary opacity keeps 100/75/50/25%; fine values and inheritance
+  // survive reload, and the new key wins in either file order.
+  {
+    char path[700];snprintf(path,sizeof path,"%s/ajustes.txt",dir);
+    const int legacyPct[]={0,100,75,50,25};
+    VideoLegendaEstilo primary={120,0,0,3,1,0,0,0,0,-1},secondary;
+    for(int old=0;old<=4;old++) {
+      FILE *f=fopen(path,"w");assert(f);fprintf(f,"legenda2OpacidadeLocal %d\n",old);fclose(f);
+      ajustes_dir(dir);ajustes_iniciar();ajustes_leg2_estilo(&primary,&secondary);
+      assert(leg_opacidade_pct(secondary.opacidade)==(old?legacyPct[old]:100));
+    }
+    for(int order=0;order<2;order++) {
+      FILE *f=fopen(path,"w");assert(f);
+      const char *fine="legenda2OpacidadeFinaLocal 8\n",*old="legenda2OpacidadeLocal 4\n";
+      fprintf(f,"%s%s",order?fine:old,order?old:fine);fclose(f);
+      ajustes_dir(dir);ajustes_iniciar();ajustes_leg2_estilo(&primary,&secondary);
+      assert(leg_opacidade_pct(secondary.opacidade)==65);
+      assert(gravar());ajustes_dir(dir);ajustes_iniciar();ajustes_leg2_estilo(&primary,&secondary);
+      assert(leg_opacidade_pct(secondary.opacidade)==65);
+    }
+    valor[AJ_LEG2_OPACIDADE]=0;primary.opacidade=leg_opacidade_modo(35);
+    ajustes_leg2_estilo(&primary,&secondary);assert(leg_opacidade_pct(secondary.opacidade)==35);
+    assert(remove(path)==0);ajustes_iniciar();assert(gravar());
+  }
+
   // Seekr: sem chave avisa sem gravar; chave propria permite ligar e recarregar.
   {
     assert(!ajustes_seekr_habilitado());

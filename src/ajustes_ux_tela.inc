@@ -25,10 +25,18 @@ static const Item TELA[] = {
       OPC(AJ_LINK_REUSAR), OPC(AJ_LINK_PRAZO),
     ROT("Durante e depois"),
       OPC(AJ_PAUSA_OVERLAY), OPC(AJ_PAUSA_COMENTARIOS), OPC(AJ_PAUSA_NOTAS), OPC(AJ_PAUSA_ELENCO), OPC(AJ_TELA_ABERTURA), OPC(AJ_ABERTURA_ADDON), OPC(AJ_ABERTURA_FUNDO), OPC(AJ_ABERTURA_ESTILO), OPC(AJ_ESTAT_TAMANHO), OPC(AJ_ESTAT_LADO), OPC(AJ_PLR_CLASSIF), OPC(AJ_PULAR_ABERTURA), OPC(AJ_PULAR_RESUMO),
-      OPC(AJ_PULAR_CREDITOS), OPC(AJ_PROXIMO_AUTO), OPC(AJ_PROXIMO_CONTAGEM), OPC(AJ_REACAO_CREDITOS), OPC(AJ_CW_CONCLUIDO), OPC(AJ_CW_MINIMO),
+      OPC(AJ_PULAR_CREDITOS), OPC(AJ_SHOW_SKIP_INTRO), OPC(AJ_SHOW_SKIP_RECAP), OPC(AJ_SHOW_SKIP_CREDITS),
+      OPC(AJ_PROXIMO_AUTO), OPC(AJ_PROXIMO_CONTAGEM), OPC(AJ_REACAO_CREDITOS), OPC(AJ_CW_CONCLUIDO), OPC(AJ_CW_MINIMO),
       OPC(AJ_PLR_FORMATO), OPC(AJ_PLR_FORMATO_POS), OPC(AJ_PLR_CODEC), OPC(AJ_SAIDA_PLAYER), OPC(AJ_PROPORCAO_PADRAO), OPC(AJ_BRILHO_PLAYER), OPC(AJ_HDR_UI),
+#ifndef NV_TPK40
+    // Tizen 4-5.5 (NuvioTpk40): no seek-bar thumbnails (miniatura.c, tester logs 11/2026).
     ROT("Miniatura ao avançar"),
-      OPC(AJ_SEEKR_LIGADO), OPC(AJ_SEEKR_CHAVE), OPC(AJ_SEEKR_TESTAR), OPC(AJ_SEEKR_FITA),
+      OPC(AJ_SEEKR_LIGADO),
+#ifndef NV_MINIATURAS
+      OPC(AJ_SEEKR_CHAVE), OPC(AJ_SEEKR_TESTAR),   // .tpk: thumbnails made on the TV, no key
+#endif
+      OPC(AJ_SEEKR_FITA),
+#endif
     MAIS(),
     ROT("Escolha da fonte"),
       // #310: o "Auto-play streams" do oficial (fonteregra.h).
@@ -44,6 +52,9 @@ static const Item TELA[] = {
       OPC(AJ_SELOS_PACOTE), OPC(AJ_SELOS_PACOTE_ADD), OPC(AJ_SELOS_PACOTE_REM),
     ROT("Som e vídeo desta TV"),
       OPC(AJ_DTS_AC3),
+#if defined(NV_WEBOS) && defined(NV_WEBOS_HLS_TEST)
+      OPC(AJ_WEBOS_HLS_MODE),
+#endif
 #ifdef NV_ANDROID
       OPC(AJ_TUNNELING),
 #endif
@@ -51,11 +62,29 @@ static const Item TELA[] = {
       OPC(AJ_DV_MKV),
 #ifdef NV_DV7_CONVERSION
       OPC(AJ_DV7),
+#if defined(NV_DV7_MAPPING_TEST) && defined(NV_WEBOS)
+      OPC(AJ_DV7_MAPPING),
 #endif
 #endif
-      OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO), OPC(AJ_SEEKR_AJUSTE),
+#if defined(NV_MP4_BD_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
+      OPC(AJ_MP4_BD_TEST),
+#endif
+#if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
+      OPC(AJ_DV_AUDIO_FIXO),
+#endif
+#endif
+#if defined(NV_TPK) || (!defined(NV_ANDROID) && !defined(__EMSCRIPTEN__))
+      // Audio from another source (owner, 07/11): one row, its options in its
+      // sheet (eaAbrir). webOS: right under the Dolby Vision audio output;
+      // .tpk: right under the DTS output.
+      OPC(AJ_EXT_AUDIO),
+#endif
+      OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO),
+#ifndef NV_MINIATURAS
+      OPC(AJ_SEEKR_AJUSTE),   // .tpk: frames come from the file itself, never out of sync
+#endif
 #if defined(NV_ANDROID) || (!defined(NV_TPK) && !defined(__EMSCRIPTEN__))
-      OPC(AJ_BUFFER),   // webOS: DTS/Dolby Vision conversion read-ahead
+      OPC(AJ_BUFFER),   // webOS: native and conversion RAM read-ahead
 #endif
 #ifdef NV_ANDROID
       OPC(AJ_PLAYER_EXTERNO),
@@ -245,7 +274,7 @@ static const Item TELA[] = {
   // ---- CONTA E SISTEMA -----------------------------------------------------------
   SEC("Conta e serviços", "Perfil, sincronização, Trakt, Simkl e avisos", "aj_user-round"),
     ROT("Perfil"),
-      OPC(AJ_PERFIL_ATIVO), OPC(AJ_SYNC),
+      OPC(AJ_PERFIL_ATIVO), OPC(AJ_REMEMBER_PROFILE), OPC(AJ_SYNC),
       OPC(AJ_PERFIL_PESQ), OPC(AJ_PERFIL_EDITAR), OPC(AJ_PERFIL_INFANTIL), OPC(AJ_SAIR),
     ROT("Trakt e Simkl"),
       OPC(AJ_TRAKT), OPC(AJ_SIMKL), OPC(AJ_SALVOS_DEST), OPC(AJ_CW_FONTE), OPC(AJ_CW_PROXIMO), OPC(AJ_HIST_CONTA), OPC(AJ_SOCIAL), OPC(AJ_DISCORD),
@@ -265,7 +294,7 @@ OPC(AJ_RESOLUCAO), OPC(AJ_GPU_EFEITOS), OPC(AJ_AMPLIAR_UI), OPC(AJ_AMPLIACAO_ALG
     OPC(AJ_NOVIDADES20), OPC(AJ_DICASCONTROLE),
     OPC(AJ_APOIAR),
     OPC(AJ_AVISO_LEGAL),
-    ROTS("App", ""), OPC(AJ_VERSAO_I), OPC(AJ_ATUALIZAR),
+    ROTS("App", ""), OPC(AJ_VERSAO_I), OPC(AJ_ATUALIZAR), OPC(AJ_UPDATE_NOTIFICATIONS),
     ROTS("Registro", "para quem faz o app"),
       OPC(AJ_VER_REGISTRO), OPC(AJ_ENVIAR_LOG), OPC(AJ_ENVIO_AUTO), OPC(AJ_LOG_REDE),
 #ifdef NV_ANDROID

@@ -45,6 +45,12 @@ typedef struct {
 static const char *guiaTxt(const GuiaEnt *g) {
   if (g->alvo == AJ_P2P_LIGADO && p2pmotor_disponivel())
     return "Toca torrents sem link. Sem servidor na rede, o próprio aparelho baixa e compartilha enquanto toca, com teto de disco, e apaga tudo ao fechar o player. O automático nunca escolhe P2P.";
+#ifdef NV_MINIATURAS
+  // .tpk: no Seekr key any more, the TV makes the thumbnails (miniatura.c).
+  // Same text as the setting's help (already in every language table).
+  if (g->alvo == AJ_SEEKR_LIGADO)
+    return "A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.";
+#endif
   return g->txt;
 }
 

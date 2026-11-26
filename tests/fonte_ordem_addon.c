@@ -65,6 +65,12 @@ static void conferir(const int *esperada, int qtd) {
 int main(void) {
   assert(stream_texto_fora_de_cache("Not cached"));
   assert(!stream_texto_fora_de_cache("cached WEB-DL Download"));
+  // AIOStreams' "not cached" hourglass (owner's log 13/11), with and without
+  // the emoji selector; the cached marks are not.
+  assert(stream_texto_fora_de_cache("[TB\xe2\x8c\x9b] Torrentio Unknown"));
+  assert(stream_texto_fora_de_cache("[TB\xe2\x8c\x9b\xef\xb8\x8f] Comet|Goldy"));
+  assert(!stream_texto_fora_de_cache("[TB+] Torrentio 1080p"));
+  assert(!stream_texto_fora_de_cache("[TB\xe2\x9a\xa1\xef\xb8\x8f] Comet"));
   const char *json = "{\"streams\":["
     "{\"url\":\"https://video.invalid/720.mp4\",\"name\":\"720p\",\"videoSize\":104857600},"
     "{\"url\":\"https://video.invalid/4k-small.mp4\",\"name\":\"2160p\",\"videoSize\":209715200},"

@@ -36,6 +36,13 @@
 #include "proxyts.h"
 #include "dts/dts_hls_tpk.h"
 #include "dts/dts_remux.h"
+#include "dts/doador_tpk.h"
+#include "audioext.h"
+#include "doadorleg.h"
+#include "dados.h"
+#include "memlog.h"
+#include "passo.h"
+#include "tpk45.h"
 #include "cdnlink.h"
 #include "debrid.h"
 #include "mkvfix.h"
@@ -241,6 +248,70 @@ static volatile int naoSupPend;   // NotSupportedAudioCodec veio do host (outro 
 static Uint32 resgateAte;
 int video_faixa_dts(const VideoFaixa *f);
 static int convIniciar(int track, double pos, const char *motivo);
+static int doadorPossivel(void);
+static int doadorFonteServe(void);
+static int doadorIniciar(double pos, const char *motivo);
+// AUDIO FROM ANOTHER SOURCE (audioext.h, doador_tpk.h): the converter in
+// video-only mode is the picture, the donor server serves the master with the
+// file's and the donor's audio as renditions. The cv machinery plays it like
+// any converted stream (HLS, seeks by the player); `dv` holds what differs.
+static struct {
+  int ativo;             // the player plays the donor server's master
+  int nTv;               // audio tracks the TV listed (= renditions when they match 1:1)
+  int menuFeito, avisos; // the menu from the renditions; the donor's failure already said
+  unsigned gerVista;     // audioext_offset_geracao applied
+  Uint32 mudouEm;        // last CH+/CH- press not applied yet (0 none)
+  int chave[MAX_FAIXAS]; // menu entry -> rendition key (DOA_DOADOR(k) or the file's ordinal)
+  DoaRendicao r[MAX_FAIXAS];   // the renditions behind the menu entries
+  int nR;
+  int difFeita;          // audioext_diferenca said for this session
+  int autoFeito;         // the sync started for this session (subtitle match, then audio)
+  // THE SYNC (owner 17/11): the subtitle match first (doadorleg.c, quick),
+  // then the audio match refines inside +-1 s over ~40 s (doa_dopasuj_fino).
+  // No subtitle pair: the whole audio match (doa_dopasuj) as before.
+  int legEstado;         // 0 not started, 1 running, 2 applied, 3 not possible
+  Uint32 finoEm;         // when the refine starts (0 none pending)
+  int finoFeito;
+  // THE EDIT MAP (owner 18/11, replaces the re-match after every seek): the
+  // subtitles scanned once per donor, each stretch where the releases differ
+  // with its own offset, applied by the donor server per segment (no seek,
+  // no reopen). mapaPode: the subtitle answer is in force in the server (the
+  // map is anchored to it); mapaFeito: the map came (or its absence).
+  int mapaPode, mapaFeito, mapaN;
+  Uint32 trechoProx;     // the next look for a stretch to refine
+  int semSeek;           // the offset change pending is an audio refine's: no seek in place (owner 18/11)
+  // The offset and speed the player's audio was last asked for with (a seek
+  // in place). A change under DOA_SEM_SEEK_MS at the same speed goes into the
+  // next segments only (owner 18/11, log 14: applying 5 ms by hand cost a
+  // seek in place, a 7.7 s segment and 8.4 s without playback).
+  int seekMs, seekPpm;
+  // NO AUDIO ASKED (owner 17/11, 4K remux: the TV took video segments and
+  // never one audio segment): one retry with the master's form 1, then the
+  // audio that played before the pick.
+  int variante, semAudioFeito;
+  // When the audio server served its first master (doa_pronto): the start
+  // checks count from here (owner's log 5: a 17.5 s open made the 15 s check
+  // fire with only the master asked for).
+  Uint32 prontoEm;
+  char conv[256];        // the converter's URL (kept when only the donor changes)
+} dv;
+// The converter's track before the donor took over (a DTS file's converted
+// audio): where a failed donor goes back to. -1 = the TV player's own audio.
+static int doadorTrackAntes = -1;
+// The audio menu's picks (audioext_escolher / _original / _escolher_faixa, a
+// backup copy, the placeholder retry): each bumps audioext_pedido_geracao.
+static unsigned extPedidoVisto;
+static int extReabrirPend;
+// Every close of the converter also closes the donor server's session.
+static void convFechar(void) {
+  dts_tpk_fechar();
+  if (dv.ativo) {
+    doadorleg_cancelar();
+    doa_fechar();
+    dv.ativo = 0;
+    audioext_tocando_definir(0); audioext_carregando_definir(0);
+  }
+}
 static void convDesistir(const char *motivo);
 static void convVoltar(void);
 static int convPossivel(void);
@@ -337,7 +408,7 @@ void nv_tpk_video_faixas_fim(int selAudio, int selLeg) {
   fflush(stdout);
   // Convertido: a lista que vale e a do arquivo (sondaMkv a monta); a do player
   // e so a faixa AC3 que ele recebe.
-  if (cv.ativo) { reconFaixasPend = 0; return; }
+  if (cv.ativo) { if (dv.ativo) dv.nTv = nAudio; reconFaixasPend = 0; return; }
   // Recarregar de reconexao: as faixas que a pessoa tinha, e nao a preferencia.
   // Sem audio ainda (o host rele em 2 s, #165), o audio fica para a releitura.
   if (reconFaixasPend) {
@@ -403,7 +474,11 @@ static struct {
   // quando o cabecalho ja mostrou ASS/SSA; senao, uma reabertura cedo.
   int esperando; Uint32 esperaDesde;
   int reabriuLeg;
+  Uint32 ligouEm;        // ultima reabertura pelo servidor local (mfLigar)
 } mf;
+// A reconexao em curso comecou com a sonda do mkvfix no ar (ou logo depois de
+// reabrir pelo servidor local): nao e rede, e o arquivo sendo preparado.
+static int reconPreparo;
 static char mfEspUrl[sizeof urlAtual], mfEspCab[sizeof cabecalhos];
 static int mfEsperarAntes(const char *url, const char *cab);
 static atomic_int mfRecusas;   // EV_BUSCA_FALHOU (fio do host)
@@ -480,6 +555,14 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
     default: break;
   }
   if (tipo != EV_BUFFER) { printf("[video] tpk evento %d (%d, %d)\n", tipo, a, b); fflush(stdout); }
+  // While another source's audio starts (until it plays), the TV player's
+  // buffering too, in 25 % steps (owner's log 6: 4K donors that never asked
+  // for audio; what the player did meanwhile).
+  else if (dv.ativo && doa_pedidos_audio() == 0) {
+    static int ultimo = -1;
+    int passo = (a < 0 ? 0 : a > 100 ? 100 : a) / 25;
+    if (passo != ultimo) { ultimo = passo; printf("[doador] TV player buffering %d%% (no audio segment asked yet)\n", a); fflush(stdout); }
+  }
 }
 
 static void legendaLimpar(int bloquear) {
@@ -533,14 +616,29 @@ static void legendaVigiarSilencio(Uint32 agora) {
   fflush(stdout);
 }
 
+// The audio menu's track list for another version (hold OK): the donor
+// server reads the version's header (blocking; audioext runs it in a thread).
+static int extSondaFaixas(const char *url, const char *cab, AudioExtFaixa *out, int max) {
+  DoaSonda t[AUDIOEXT_FAIXAS_MAX];
+  int n = doa_sondar(url, cab, t, max < AUDIOEXT_FAIXAS_MAX ? max : AUDIOEXT_FAIXAS_MAX), i;
+  for (i = 0; i < n; i++) {
+    memset(&out[i], 0, sizeof out[i]);
+    out[i].stream = t[i].si; out[i].canais = t[i].canais;
+    snprintf(out[i].codec, sizeof out[i].codec, "%s", t[i].codec);
+    snprintf(out[i].idioma, sizeof out[i].idioma, "%s", t[i].lingua);
+    snprintf(out[i].titulo, sizeof out[i].titulo, "%s", t[i].titulo);
+  }
+  return n;
+}
 int  video_iniciar(void) {
   if (!travaLeg) travaLeg = SDL_CreateMutex();
+  if (doa_disponivel()) audioext_definir_sonda(extSondaFaixas);
   // #269: legenda de texto simples do MKV pelo overlay (ver faixas.c).
   mkvass_aceitar_texto(1);
   mkvass_aceitar_imagem(1);
   return hAbrir != NULL;
 }
-int  video_iniciar_auto(void) { return hAbrir != NULL; }
+int  video_iniciar_auto(void) { if (doa_disponivel()) audioext_definir_sonda(extSondaFaixas); return hAbrir != NULL; }
 int  video_registro_negado(void) { return 0; }
 
 // LINK DO CDN (cdnlink.h). O player recebe o endereco final no CDN em vez do
@@ -684,7 +782,7 @@ static volatile int cartaoSemCover = 0;
 static void mfLigar(double alvo, const char *porque) {
   printf("[mkvfix] %s at %.1f s: reopening through the local fix\n", porque, alvo);
   fflush(stdout);
-  mf.ativo = 1; mf.pend = 0;
+  mf.ativo = 1; mf.pend = 0; mf.ligouEm = SDL_GetTicks() | 1u;
   reconAudio = audioAtual; reconLeg = legAtual; reconFaixasPend = 1;
   reconBuscarMs = alvo > 1.0 ? (int)(alvo * 1000.0) : -1;
   cv.reabrindo = 1; cv.posMantida = alvo; cv.reabriuEm = SDL_GetTicks(); cv.reabTocandoEm = 0;
@@ -708,6 +806,7 @@ static void mfSondar(void) {
 // centenas de ms) e o player ja nasce no servidor local; sem resposta em
 // MF_ESPERA_MS, abre o link como sempre e a reabertura cedo cobre depois.
 #define MF_ESPERA_MS 4000u
+#define MF_SEGURA_MS 3000u   // um seek espera a sonda no maximo isto (a sonda leva 0,2-0,4 s)
 static int mkvTemAss(void) {
   for (int i = 0; i < mkvN; i++)
     if (mkvFx[i].tipo == 17 && (!strcmp(mkvFx[i].codec, "S_TEXT/ASS") || !strcmp(mkvFx[i].codec, "S_TEXT/SSA") ||
@@ -765,11 +864,40 @@ static void mfBombear(void) {
   if (pronto && !mf.sondou) mfSondar();
   if (!mf.sondou) return;
   e = mkvfix_estado();
-  if (e == MKVFIX_SONDANDO) return;
+  // SEEK SEGURADO (video_buscar): a TV nao recebe o seek enquanto a sonda
+  // corre — num arquivo de indice escondido ela falha e vira "conexao caiu"
+  // (log da TV, 23/10: o seek do Retomar saia ~300 ms antes do fim da sonda).
+  // Sonda sem resposta em MF_SEGURA_MS: o seek vai cru, como antes.
+  if (e == MKVFIX_SONDANDO) {
+    if (mf.pend && SDL_GetTicks() - mf.pendEm >= MF_SEGURA_MS) {
+      mf.pend = 0;
+      printf("[mkvfix] no answer from the check in %u ms: seek to %.1f s goes to the TV as is\n",
+             MF_SEGURA_MS, mf.pendAlvo);
+      fflush(stdout);
+      if (ativo && !parado && hBuscar) hBuscar((int)(mf.pendAlvo * 1000.0));
+    }
+    return;
+  }
   if (mf.pend) {
+    Uint32 esperou = SDL_GetTicks() - mf.pendEm;
     mf.pend = 0;
-    if (e == MKVFIX_PRECISA && !mf.ativo && !cv.ativo && ativo && !parado && SDL_GetTicks() - mf.pendEm < 20000u)
+    if (e == MKVFIX_PRECISA && !mf.ativo && !cv.ativo && ativo && !parado && esperou < 20000u) {
+      printf("[mkvfix] seek to %.1f s held %u ms for the check\n", mf.pendAlvo, (unsigned)esperou);
       mfLigar(mf.pendAlvo, "seek asked during the check (the TV can't seek this file as served)");
+    } else if (mkvfix_ocultas() > 0 && !mf.ativo && !mf.reabriuLeg && !cv.ativo && ativo && !parado && pronto) {
+      // A reabertura que esconde as legendas vem logo abaixo e usaria a
+      // posicao de AGORA (o seek recem-mandado ainda nao chegou: 0 s). Log da
+      // TV, 23/10: o Retomar em 459 s voltava ao inicio. Reabre ja no alvo.
+      mf.reabriuLeg = 1;
+      printf("[mkvfix] seek to %.1f s held %u ms for the check\n", mf.pendAlvo, (unsigned)esperou);
+      mfLigar(mf.pendAlvo, "subtitle tracks hidden from the TV player (it hangs on some ASS drawings)");
+      return;
+    } else if (ativo && !parado && hBuscar) {
+      printf("[mkvfix] seek to %.1f s held %u ms for the check: the TV seeks it directly\n",
+             mf.pendAlvo, (unsigned)esperou);
+      fflush(stdout);
+      hBuscar((int)(mf.pendAlvo * 1000.0));
+    }
   }
   // Cabecalho sem ASS conhecido antes de abrir: a sonda de depois do pronto
   // achou legenda a esconder. Reabre cedo, uma vez, no ponto atual.
@@ -864,7 +992,7 @@ static int videoConvertivel(void);
 int video_tocar(const char *u) {
   cdn.arquivo = 0;
   parado = 0; resgateAte = 0;
-  if (cv.ativo || cv.sondando) dts_tpk_fechar();
+  if (cv.ativo || cv.sondando) convFechar();
   memset(&cv, 0, sizeof cv); cv.buscarMs = -1; naoSupPend = 0;
   // As listas do titulo anterior nao passam para o convertido (que as mantem
   // em abrirSessao); no caminho de sempre abrirSessao ja as zerava.
@@ -885,6 +1013,15 @@ int video_tocar(const char *u) {
   nv_recon_zerar(&recon);
   reconIniciou = 0; reconErroPend = 0; reconLinhaRede = 0;
   reconAudio = reconLeg = -1; reconFaixasPend = 0; reconBuscarMs = -1;
+  // Audio from another source marked for this title: the picture of this one
+  // through the converter (video only), the audio from the donor server.
+  memset(&dv, 0, sizeof dv);
+  doadorTrackAntes = -1;
+  doadorleg_cancelar();
+  audioext_tocando_definir(0); audioext_carregando_definir(0);
+  audioext_inicio_reproducao(urlAtual);
+  extPedidoVisto = audioext_pedido_geracao(); extReabrirPend = 0;
+  if (doadorPossivel() && doadorIniciar(0.0, "a donor is marked for this title")) return 1;
   // CABECALHO JA LIDO (pre-busca do mkvass, sem rede): um MKV so com DTS/TrueHD
   // ja abre convertido, sem o original mudo antes.
   // Lido sempre que a pre-busca trouxe o cabecalho: as legendas ASS decidem
@@ -911,9 +1048,12 @@ int video_tocar(const char *u) {
 
 void video_definir_reconexao(int sim) { reconProxima = sim ? 1 : 0; }
 int  video_recarregar(void) { return 0; }
+unsigned video_abertura_geracao(void) { return 0; }
 int  video_reconectando(void) {
   return nv_recon_ativa(&recon) && (recon.pendente || !pronto) ? recon.tentativa : 0;
 }
+int  video_tpk_reconexao_preparo(void) { return video_reconectando() && reconPreparo; }
+unsigned video_tpk_seek_segurado_ms(void) { return mf.pend ? (SDL_GetTicks() - mf.pendEm) | 1u : 0u; }
 
 typedef struct { char url[sizeof urlAtual]; unsigned geracao; } PedidoMkv;
 
@@ -1027,9 +1167,10 @@ static const MkvFaixa *mkvTrack(int numero) {
   return NULL;
 }
 
-// "Dolby Digital 5.1" / "2.0" / "AAC 2.0": o que sai para a TV.
+// "Dolby Digital 5.1" / "2.0": o que sai para a TV. "Estereo" tambem e Dolby
+// Digital (AC3 2.0) desde 11/2026; antes era AAC 2.0 (dts_remux.h).
 static const char *saidaRotulo(int canais) {
-  if (!ajustes_dts_ac3()) return "AAC 2.0";
+  if (!ajustes_dts_ac3()) return "Dolby Digital 2.0";
   return canais == 1 ? "Dolby Digital 1.0" : canais == 2 ? "Dolby Digital 2.0" : "Dolby Digital 5.1";
 }
 
@@ -1087,11 +1228,15 @@ static int listaDoArquivo(VideoFaixa *a, int *na, VideoFaixa *l, int *nl) {
 // Convertendo: o menu mostra o arquivo inteiro (a do player e so a AC3). A
 // legenda escolhida segue a mesma faixa do arquivo (pelo ordinal do mkvass),
 // venha a lista anterior do player ou desta mesma funcao.
+static int montarListaDoador(VideoFaixa *a, int *sel);
 static void montarListaConvertida(void) {
   static VideoFaixa a[MAX_FAIXAS], l[MAX_FAIXAS];
   int na, nl, i, sel = 0, ordLeg = legAtual >= 0 && legAtual < nLeg ? faixaLeg[legAtual].ordinalMkv : -1;
   listaDoArquivo(a, &na, l, &nl);
   for (i = 0; i < na; i++) if (a[i].stream_id == cv.track) sel = i;
+  // Audio from another source: the menu is the master's renditions, in its
+  // order (the TV's own list, so a choice switches in place).
+  if (dv.ativo) { int nd = montarListaDoador(a, &sel); if (nd > 0) na = nd; }
   memcpy(faixaAudio, a, sizeof faixaAudio); memcpy(faixaLeg, l, sizeof faixaLeg);
   audioAtual = sel; nAudio = na; nLeg = nl;
   if (legAtual >= nLeg) legAtual = -1;
@@ -1166,6 +1311,44 @@ static int convAbrirSessao(int ordinal, int modo, double pos, char *url, size_t 
 
 static int modoProg(int modo) { return modo == DTSTPK_PROG_TS; }
 
+// O video do arquivo (codec do MKV, "?" sem cabecalho): a recusa do HLS e
+// lembrada por ele.
+static const char *codecVideoMkv(void) {
+  for (int i = 0; i < mkvN; i++) if (mkvFx[i].tipo == 1) return mkvFx[i].codec;
+  return "?";
+}
+// Codecs de video cujo HLS o player recusou nesta execucao (Tizen 4/5, entrega
+// Auto). POR CODEC desde o log 1 do testador (11/2026): uma recusa de HEVC
+// mandava todo H.264 seguinte para o TS continuo (1o quadro 21.8 s, cada seek
+// um fluxo novo), e H.264 tocava bem em HLS.
+#define HLS_RECUSAS 4
+static char hlsRecusou[HLS_RECUSAS][32];
+static int hlsRecusadoNeste(void) {
+  const char *c = codecVideoMkv();
+  for (int i = 0; i < HLS_RECUSAS; i++) if (hlsRecusou[i][0] && !strcmp(hlsRecusou[i], c)) return 1;
+  return 0;
+}
+static void hlsMarcarRecusa(void) {
+  const char *c = codecVideoMkv();
+  if (hlsRecusadoNeste()) return;
+  for (int i = 0; i < HLS_RECUSAS; i++)
+    if (!hlsRecusou[i][0]) { snprintf(hlsRecusou[i], sizeof hlsRecusou[i], "%s", c); return; }
+  memmove(hlsRecusou[0], hlsRecusou[1], sizeof hlsRecusou[0] * (HLS_RECUSAS - 1));   // cheio: sai o mais velho
+  snprintf(hlsRecusou[HLS_RECUSAS - 1], sizeof hlsRecusou[0], "%s", c);
+}
+// Modo em que uma conversao NOVA abre. Nos hosts 6+ e o do ajuste (HLS). No
+// Tizen 4/5 (tpk45.h, entrega Auto): HLS ate o player recusar o HLS para este
+// codec de video nesta execucao do app.
+static int modoDeAbrir(void) {
+  int m = ajustes_dts_tpk_modo();
+  if (m == DTSTPK_DESLIGADO || !tpk45_ativo()) return m;
+  switch (tpk45_entrega()) {
+    case TPK45_ENTREGA_CONTINUO: return DTSTPK_PROG_TS;
+    case TPK45_ENTREGA_HLS: return DTSTPK_HLS;
+    default: return hlsRecusadoNeste() ? DTSTPK_PROG_TS : DTSTPK_HLS;
+  }
+}
+
 // Outro player no meio de uma fonte que ja tocou: o app ve um seek ate o
 // convertido mostrar quadro de novo (convBombear solta).
 static void convReabrir(double alvo, const char *porque) {
@@ -1200,9 +1383,500 @@ static void convTrocar(int track, int modo, double pos, const char *url) {
   abrirSessao();
 }
 
+// Menu entries from the donor server's renditions: "Polish · E-AC3 5.1 · <the
+// other source>". numero = the TV's track index (the master's order).
+static int montarListaDoador(VideoFaixa *a, int *sel) {
+  DoaRendicao r[MAX_FAIXAS];
+  int n = doa_rendicoes(r, MAX_FAIXAS), i, atual = doa_audio();
+  for (i = 0; i < n; i++) {
+    VideoFaixa *f = &a[i];
+    char cod[24], c[8];
+    memset(f, 0, sizeof *f);
+    f->numero = i; f->ordinalMkv = -1; f->stream_index = -1; f->stream_id = -1;
+    snprintf(f->idioma, sizeof f->idioma, "%s", r[i].lingua);
+    snprintf(f->codec, sizeof f->codec, "%s", r[i].codec);
+    f->canais = r[i].canais;
+    snprintf(cod, sizeof cod, "%s", !strcmp(r[i].codec, "eac3") ? "E-AC3" : !strcmp(r[i].codec, "ac3") ? "AC3" :
+             !strcmp(r[i].codec, "aac") ? "AAC" : !strcmp(r[i].codec, "flac") ? "FLAC" : !strcmp(r[i].codec, "opus") ? "Opus" : r[i].codec);
+    snprintf(c, sizeof c, "%s", r[i].canais == 6 ? "5.1" : r[i].canais == 8 ? "7.1" : r[i].canais == 2 ? "2.0" : r[i].canais == 1 ? "1.0" : "");
+    snprintf(f->rotulo, sizeof f->rotulo, "%s · %s%s%s%s%.40s", r[i].lingua[0] ? i18n(ling_nome(r[i].lingua)) : (r[i].nome[0] ? r[i].nome : i18n("Áudio")),
+             cod, c[0] ? " " : "", c, r[i].fonte ? " · " : "", r[i].fonte ? audioext_nome() : "");
+    dv.chave[i] = r[i].chave; dv.r[i] = r[i];
+    if (r[i].chave == atual) *sel = i;
+  }
+  dv.nR = n;
+  if (n > 0) {
+    printf("[doador] menu: %d rendition(s) (the TV listed %d%s); playing %s\n", n, dv.nTv,
+           dv.nTv == n ? ", a choice switches in place" : dv.nTv ? ", NOT 1:1: a choice reopens" : "", a[*sel].rotulo);
+    fflush(stdout);
+  }
+  return n;
+}
+
+// A donor is marked for this title (BLUE in the source list) and this is
+// another source of it: its picture, the donor's audio.
+static int doadorPossivel(void) {
+  if (!reconPermitida || emTrailer || parado || !urlAtual[0] || !audioext_pedido(urlAtual)) return 0;
+  return doadorFonteServe();
+}
+static int doadorFonteServe(void) {
+  if (strncmp(urlAtual, "http://", 7) && strncmp(urlAtual, "https://", 8)) return 0;
+  if (strstr(urlAtual, ".m3u8") || proxyts_e_url(urlAtual) || dts_tpk_e_url(urlAtual)) return 0;
+  return doa_disponivel() && dts_tpk_disponivel();
+}
+static int convAbrirSessao(int ordinal, int modo, double pos, char *url, size_t n);
+static void convTrocar(int track, int modo, double pos, const char *url);
+// The donor's opening options from the pick: its track picked by hand, the
+// series memory's track, the languages (the one picked for this title, the
+// one remembered by hand, the account's first and second audio languages).
+static void doadorOpcoes(DoaAbrir *o, AudioExtFaixa *h, char *langs, size_t nl) {
+  const AudioLembrada *lem = audioesc_tem_lembrada() ? audioesc_lembrada() : NULL;
+  snprintf(langs, nl, "%s,%s,%s,%s", audioext_idioma(), lem && lem->idioma[0] ? lem->idioma : "", ling_audio(), ling_audio2());
+  o->doador = audioext_url(); o->doador_cab = audioext_cabecalhos(); o->doador_nome = audioext_nome();
+  o->doador_lingua = langs; o->doador_padrao = 1; o->doador_ms = audioext_offset_ms();
+  o->doador_faixa = audioext_faixa() >= 0 ? audioext_faixa() + 1 : 0;
+  o->doador_ppm = audioext_velocidade();
+  o->seguir = ajustes_audio_externo_seguir();
+  if (audioext_faixa_dica(h)) {
+    o->dica_lingua = h->idioma; o->dica_codec = h->codec; o->dica_titulo = h->titulo; o->dica_canais = h->canais;
+  }
+}
+// Opens the donor server's session on `conv` (the converter in video-only
+// mode, already open) and switches the player to it at `pos`.
+// ONLY THE CHOSEN TRACK GOES TO THE TV (owner 18/11, after the 4K test row:
+// "Only the chosen one" started where "All" and "At most 6" did not). The
+// master carries the picture and the one audio track playing; the file's own
+// tracks come back through video_escolher_audio_arquivo (a reopen in place).
+#define DOA_REND_LIMITE 1
+static VideoFaixa arqSnap[MAX_FAIXAS];
+static int arqSnapN;
+static int doadorSessaoV(const char *conv, double pos, const char *motivo, int variante) {
+  char url[256], langs[64];
+  AudioExtFaixa h;
+  DoaAbrir o;
+  memset(&o, 0, sizeof o); memset(&h, 0, sizeof h);
+  // The file's own track to offer first among its renditions: the one that
+  // played before (subtitle-rewrite 9c62d57: the session's track is the one
+  // asked for, never a blind 0).
+  o.video = conv; o.orig = urlAtual; o.cab = cabecalhos;
+  o.audio = doadorTrackAntes >= 0 ? ordinalAudio(doadorTrackAntes) : 0;
+  if (o.audio < 0) o.audio = 0;
+  o.variante = variante;
+  o.rend_limite = DOA_REND_LIMITE;
+  doadorOpcoes(&o, &h, langs, sizeof langs);
+  doa_definir_casa(ling_casa);
+  doadorleg_cancelar();
+  // The file's own tracks as the menu had them (a non-MKV file has no header
+  // list): the language page keeps offering them while the donor plays.
+  if (!dv.ativo) { memcpy(arqSnap, faixaAudio, sizeof arqSnap); arqSnapN = nAudio; }
+  if (!doa_abrir(&o, url, sizeof url)) return 0;
+  memset(&dv, 0, sizeof dv);
+  snprintf(dv.conv, sizeof dv.conv, "%s", conv);
+  dv.ativo = 1; dv.gerVista = audioext_offset_geracao(); dv.variante = variante;
+  dv.seekMs = audioext_offset_ms(); dv.seekPpm = audioext_velocidade();
+  audioext_tocando_definir(0);
+  audioext_carregando_definir(1);
+  printf("[doador] this source's picture with the audio of \"%.80s\" (offset %+d ms, track %d%s, languages %s) from %.1f s; why: %s\n",
+         audioext_nome(), audioext_offset_ms(), audioext_faixa(), o.dica_lingua ? ", series hint" : "", langs, pos, motivo);
+  fflush(stdout);
+  convTrocar(0, DTSTPK_HLS, pos, url);
+  return 1;
+}
+static int doadorSessao(const char *conv, double pos, const char *motivo) { return doadorSessaoV(conv, pos, motivo, 0); }
+// The donor could not play (it did not open, the TV never asked for its
+// audio, the player did not prepare): the audio that played before the pick,
+// at the same place. A DTS file's converted track converts again (owner's log
+// 17/11: the old way reopened the raw file and the TV, refusing DTS, played a
+// FLAC commentary). Another copy of the same version comes first when there is
+// one (audioext_falhou queues it).
+static void doadorDesistir(const char *motivo);
+// Before the first frame: one retry with the master's form 1 (subtitle-rewrite
+// keeps one retry in the same mode before burn-in turns off), then give up.
+static void doadorSemComecar(const char *motivo) {
+  double p = cv.seekPend ? cv.seekAlvo : cv.inicio;
+  char conv[256];
+  if (!dv.variante && dv.conv[0]) {
+    printf("[doador] did not start: %s; retrying once at %.1f s with the master's form 1 (CODECS, BANDWIDTH capped)\n", motivo, p);
+    fflush(stdout);
+    snprintf(conv, sizeof conv, "%s", dv.conv);
+    if (doadorSessaoV(conv, p, "retry: the first form did not start", 1)) return;
+  }
+  printf("[doador] did not start after the retry: %s\n", motivo);
+  fflush(stdout);
+  doadorDesistir(i18n("the TV player did not start its audio"));
+}
+static void doadorDesistir(const char *motivo) {
+  double p = cv.jaTocou ? video_pos() : cv.seekPend ? cv.seekAlvo : cv.inicio;
+  int track = doadorTrackAntes;
+  printf("[doador] gave up at %.1f s: %s; %s\n", p, motivo,
+         track >= 0 ? "the file's converted track again (DTS/TrueHD -> AC3)" : "the file's own audio through the TV player");
+  fflush(stdout);
+  // A copy of the same version, or the placeholder's retry, is queued by
+  // audioext_falhou: the menu's generation reopens it once this plays.
+  audioext_falhou(motivo);
+  convFechar();
+  cv.ativo = 0; cv.prog = 0; cv.deslocOk = 1;
+  if (track >= 0 && !parado && convIniciar(track, p, "back to the file's own audio (the other source did not play)")) return;
+  cv.buscarMs = p > 1.0 ? (int)(p * 1000.0) : -1;
+  convReabrir(p, i18n("volta ao audio da TV"));
+  abrirSessao();
+}
+static int doadorIniciar(double pos, const char *motivo) {
+  char conv[256];
+  if (!convAbrirSessao(DTS_REMUX_NO_AUDIO, DTSTPK_HLS, pos, conv, sizeof conv)) {
+    audioext_falhou(i18n("the converter is not available"));
+    return 0;
+  }
+  if (!doadorSessao(conv, pos, motivo)) {
+    dts_tpk_fechar(); cv.desistiu = 1;
+    audioext_falhou(i18n("the audio server did not start"));
+    return 0;
+  }
+  return 1;
+}
+// PRE-OPEN, THEN SWITCH (owner 18/11, log 13: each pick reopened the player
+// at once and it waited for the donor, 3.6-13.1 s without a picture; a cold
+// debrid node took 10.0 s and the 10 s deadline dropped the pick). The picked
+// version's header is read first in a thread (doa_preabrir: warms the debrid
+// node, DNS and TLS) while the audio in force keeps playing; the player
+// switches only once it answered. No answer in DOA_PREABRIR_PRAZO_MS: the
+// usual failure (a backup copy, the placeholder's retry, or the file's own
+// audio), and nothing playing was touched.
+#define DOA_PREABRIR_PRAZO_MS 25000
+typedef struct { char *url, *cab; atomic_int estado, refs; char motivo[192]; } PreJob;
+static PreJob *preJob;
+static unsigned preGer;
+static void preJobSoltar(PreJob *j) {
+  if (!j || atomic_fetch_sub(&j->refs, 1) != 1) return;
+  free(j->url); free(j->cab); free(j);
+}
+static void *preFio(void *u) {
+  PreJob *j = u;
+  char m[192];
+  int r = doa_preabrir(j->url, j->cab, DOA_PREABRIR_PRAZO_MS, m, sizeof m);
+  snprintf(j->motivo, sizeof j->motivo, "%s", m);
+  atomic_store(&j->estado, r == 1 ? 1 : r == -3 ? -3 : -1);
+  preJobSoltar(j);
+  return NULL;
+}
+static void preAbandonar(const char *porque) {
+  if (!preJob) return;
+  printf("[doador] pre-open dropped: %s\n", porque);
+  fflush(stdout);
+  preJobSoltar(preJob);   // the thread frees it when it ends
+  preJob = NULL;
+}
+// 1: switch now; 0: still opening (try again next tick); -1: it did not open
+// (already handed to audioext_falhou).
+static int prePronto(double p) {
+  unsigned g = audioext_pedido_geracao();
+  const char *u = audioext_url();
+  int e;
+  if (preJob && (preGer != g || strcmp(preJob->url, u ? u : ""))) preAbandonar("another pick");
+  if (!preJob) {
+    PreJob *j = calloc(1, sizeof *j);
+    pthread_t t;
+    if (!j || !(j->url = strdup(u ? u : "")) || !(j->cab = strdup(audioext_cabecalhos() ? audioext_cabecalhos() : ""))) {
+      if (j) { free(j->url); free(j); }
+      return 1;   // no memory for the thread: the old way
+    }
+    atomic_init(&j->estado, 0); atomic_init(&j->refs, 2);
+    if (pthread_create(&t, NULL, preFio, j) != 0) { free(j->url); free(j->cab); free(j); return 1; }
+    pthread_detach(t);
+    preJob = j; preGer = g;
+    audioext_carregando_definir(1);
+    printf("[doador] pick at %.1f s: \"%.80s\" opens in the background first; the audio in force keeps playing (up to %d s)\n",
+           p, audioext_nome(), DOA_PREABRIR_PRAZO_MS / 1000);
+    fflush(stdout);
+    return 0;
+  }
+  e = atomic_load(&preJob->estado);
+  if (!e) return 0;
+  if (e == 1) { preJobSoltar(preJob); preJob = NULL; return 1; }
+  { char t[240];
+    if (e == -3) snprintf(t, sizeof t, "%s", preJob->motivo);   // the placeholder: audioext retries it
+    else snprintf(t, sizeof t, i18n("the other source did not open (%s): this source's own audio"), preJob->motivo);
+    preJobSoltar(preJob); preJob = NULL;
+    printf("[doador] the pick did not open (%s): nothing playing was touched\n", t);
+    fflush(stdout);
+    audioext_carregando_definir(0);
+    audioext_falhou(t);
+    // A donor was playing and the mark is gone (no backup copy): the file's
+    // own audio, as the message says.
+    if (dv.ativo && !audioext_pedido(urlAtual)) extReabrirPend = 1;
+  }
+  return -1;
+}
+// A pick in the audio menu (another version, another track of it, a backup
+// copy, the placeholder's retry, or this file's own audio again): applied
+// where the picture is. Another donor while one plays: only the donor
+// server's session is new, the converter (the picture) stays open.
+static void extReabrir(void) {
+  int quer;
+  double p;
+  if (!urlAtual[0] || parado || emTrailer || terminou) { extReabrirPend = 0; preAbandonar("playback ended"); return; }
+  if (!dv.ativo && !pronto) return;   // the TV player is still loading this source
+  if (cv.reabrindo) return;           // a reopen in flight: next tick
+  extReabrirPend = 0;
+  quer = audioext_pedido(urlAtual) && reconPermitida && doadorFonteServe();
+  p = video_pos();
+  if (!quer) preAbandonar("this file's own audio picked");
+  if (quer) {
+    int g = prePronto(p);
+    if (!g) { extReabrirPend = 1; return; }
+    if (g < 0) return;
+  }
+  if (dv.ativo && quer) {
+    char conv[256];
+    snprintf(conv, sizeof conv, "%s", dv.conv);
+    printf("[doador] another pick at %.1f s: new donor session, the converter stays\n", p);
+    fflush(stdout);
+    if (doadorSessao(conv, p, "picked in the audio menu")) return;
+    audioext_falhou(i18n("the audio server did not start"));
+    convDesistir("the audio server did not start");
+    return;
+  }
+  if (dv.ativo) {
+    // This file's own audio: the TV player again (a DTS file converts as
+    // before, the converter's own logic decides).
+    printf("[doador] back to this file's own audio at %.1f s\n", p);
+    fflush(stdout);
+    convFechar();
+    cv.ativo = 0; cv.prog = 0; cv.deslocOk = 1;
+    cv.buscarMs = p > 1.0 ? (int)(p * 1000.0) : -1;
+    convReabrir(p, i18n("volta ao audio da TV"));
+    abrirSessao();
+    return;
+  }
+  if (!quer) return;
+  if (cv.ativo || cv.sondando) {
+    // The file's DTS was being converted: the donor session replaces it (the
+    // file's own tracks are offered there too).
+    printf("[doador] the DTS conversion gives way to the donor at %.1f s (track %d kept for a fallback)\n", p, cv.track);
+    fflush(stdout);
+    doadorTrackAntes = cv.ativo ? cv.track : -1;
+    convFechar();
+    cv.ativo = cv.sondando = 0;
+  }
+  doadorIniciar(p, "picked in the audio menu");
+}
+static void convDesistir(const char *motivo);
+#define DOA_SEM_SEEK_MS 40   /* about one AC3 frame; = AUDIOEXT_AUTO_MIN_MS */
+// WHICH AUDIO THE MATCH COMPARES (owner 18/11, doa_match_definir): the
+// title's original language (TMDB; an anime id without it: Japanese), the
+// file track picked in Audio sync > Scan again for this show, and one file
+// track only on Tizen 4-5.5 or with little memory left (under 200 MB).
+#define DOA_MATCH_LEVE_MB 200
+// Tizen 4-5.5, or under DOA_MATCH_LEVE_MB free: the lighter match (one file
+// track) and no refine per stretch of the edit map (owner 18/11: the extra
+// comparison must not load older TVs).
+static int doadorLeve(void) {
+#ifdef NV_TPK40
+  return 1;
+#else
+  long mb = memlog_livre_mb();
+  return mb >= 0 && mb < DOA_MATCH_LEVE_MB;
+#endif
+}
+static void doadorMatchOpcoes(void) {
+  static int ioFeito;
+  char l[16], c[24];
+  int ch = 0, leve = doadorLeve();
+  const char *orig = ling_original(), *alvo = audioext_alvo_atual();
+  if (!ioFeito) { ioFeito = 1; audioext_match_io(dados_ler, dados_gravar_leve); }
+  if ((!orig || !orig[0]) && alvo && (!strncmp(alvo, "kitsu:", 6) || !strncmp(alvo, "mal:", 4))) orig = "ja";
+  audioext_match_faixa(l, sizeof l, c, sizeof c, &ch);
+  printf("[doador] match settings: original language %s, %s%s%s, %s\n", orig && orig[0] ? orig : "unknown",
+         l[0] ? "match against the file's " : "Auto", l, l[0] ? (c[0] ? " track (picked for this show)" : " track") : "",
+         leve ? "one file track (older TV or low memory)" : "two file tracks allowed");
+  fflush(stdout);
+  doa_match_definir(orig ? orig : "", l, c, ch, leve);
+}
+// Each tick while the donor plays: the menu, "it plays" for the player screen,
+// the donor's failure, and CH+/CH- (applied 700 ms after the last press).
+static void doadorBombear(void) {
+  Uint32 agora = SDL_GetTicks();
+  char m[160];
+  if (!dv.ativo) return;
+  NV_PASSO("video: doadorBombear");
+  if (doa_falhou(m, sizeof m)) {
+    char t[220];
+    snprintf(t, sizeof t, i18n("the file did not open for the audio server (%s)"), m);
+    doadorDesistir(t);
+    return;
+  }
+  if (!dv.avisos && doa_estado(m, sizeof m) < 0) {
+    char t[220];
+    dv.avisos = 1;
+    snprintf(t, sizeof t, i18n("the other source did not open (%s): this source's own audio"), m);
+    printf("[doador] the donor did not open (%s): %s\n", m,
+           audioext_motivo_placeholder(m) ? "the debrid's placeholder clip, tried again" : "a backup copy, or this file's own audio");
+    fflush(stdout);
+    audioext_carregando_definir(0);
+    audioext_falhou(t);
+  }
+  if (!dv.menuFeito && faixasLidas && doa_pronto()) { dv.menuFeito = 1; montarListaConvertida(); }
+  // The spike's numbers every 10 s: connections to the files' hosts, reader
+  // memory, which source holds a connection, the last reconnection.
+  { static Uint32 logEm;
+    if ((int)(agora - logEm) >= 10000) { logEm = agora; doa_log(); } }
+  // The playhead for the edit map, once a second (the server says when it
+  // enters another stretch: event 5 below).
+  { static Uint32 posEm;
+    if (dv.mapaN >= 2 && pronto && (int)(agora - posEm) >= 1000) { posEm = agora; doa_posicao(video_pos()); } }
+  if (cv.jaTocou && !audioext_tocando() && doa_audio() >= DOA_DOADOR(0)) {
+    int corte = 0, vel = 0, ppm = 0;
+    audioext_tocando_definir(1); audioext_carregando_definir(0);
+    // Another cut or another speed: said once, when it plays.
+    if (!dv.difFeita && doa_diferenca(&corte, &vel, &ppm)) {
+      dv.difFeita = 1;
+      audioext_diferenca(corte, vel);
+      if (ppm && !audioext_velocidade()) audioext_velocidade_auto(ppm);
+    }
+    // THE SYNC (owner 17/11): always by itself when the other version's
+    // audio starts. First level: the subtitles (quick, from the indexes).
+    if (!dv.autoFeito) {
+      dv.autoFeito = 1; dv.legEstado = 1;
+      doadorleg_iniciar(video_pos());
+    }
+  }
+  if (dv.legEstado == 1) {
+    double k = 1, d = 0, conf = 0;
+    char mt[160];
+    int r = doadorleg_resultado(&k, &d, &conf, mt, sizeof mt);
+    if (r > 0) {
+      dv.legEstado = 2;
+      doa_aplicar_legendas(k, d, conf);   // comes back as a match result (como 6): applied below
+    } else if (r < 0) {
+      dv.legEstado = 3;
+      printf("[doador] subtitle match not possible (%s): the audio match does it all (~40 s)\n", mt);
+      fflush(stdout);
+      if (!doa_dopasuj_ativo()) { doadorMatchOpcoes(); doa_dopasuj(1); }
+    }
+  }
+  // THE EDIT MAP (owner 18/11): built on the subtitle worker right after the
+  // answer; handed to the server once that answer is in force there.
+  if (dv.legEstado == 2 && dv.mapaPode && !dv.mapaFeito) {
+    DoaMapa mp;
+    char mt[160];
+    int r = doadorleg_mapa_resultado(&mp, mt, sizeof mt);
+    if (r > 0) {
+      dv.mapaFeito = 1; dv.mapaN = mp.n;
+      if (mp.n >= 2) doa_mapa_definir(&mp, video_pos());
+      else printf("[doador] edit map: one stretch, the donor lines up in one piece: nothing more after this scan\n");
+      fflush(stdout);
+    } else if (r < 0) {
+      dv.mapaFeito = 1;
+      printf("[doador] no edit map (%s): the playhead's offset for the whole file\n", mt);
+      fflush(stdout);
+    }
+  }
+  // Second level: the audio refine, once the subtitle offset is in force
+  // (applied 700 ms after the result + the seek in place).
+  if (dv.finoEm && (int)(agora - dv.finoEm) >= 0 && !dv.finoFeito && audioext_tocando() && doa_audio() >= DOA_DOADOR(0) &&
+      !doa_dopasuj_ativo() && pronto && tocando) {
+    dv.finoFeito = 1; dv.finoEm = 0;
+    printf("[doador] audio refine starts (+-1 s around %+d ms)\n", audioext_offset_ms());
+    fflush(stdout);
+    doadorMatchOpcoes();
+    doa_dopasuj_fino();
+  }
+  // The automatic match's outcome, and the follow's corrections (already
+  // applied by the server: the live apply below must not seek for them).
+  { DoaDopasuj r;
+    int au = 0, mr = doa_dopasuj_resultado(&r, &au), ms = 0, ev;
+    if (mr) {
+      AudioExtDopasuj a;
+      int c;
+      memset(&a, 0, sizeof a);
+      a.ms = r.ms; a.ppm = r.ppm; a.como = r.como; a.dica_ms = r.dica_ms; a.pesado = r.pesado; a.nkand = r.ncand; a.automatico = au;
+      for (c = 0; c < r.ncand && c < 3; c++) { a.kand_ms[c] = r.cand_ms[c]; a.kand_pct[c] = r.cand_pct[c]; }
+      printf("[doador] match result %d: offset %d ms speed %d ppm how %d%s hint %d ms heavy %d%s\n", mr, r.ms, r.ppm, r.como,
+             r.como == 6 ? " (subtitles)" : r.como == 7 ? " (audio refine)" : "", r.dica_ms, r.pesado, au ? " (by itself)" : "");
+      fflush(stdout);
+      { unsigned g0 = audioext_offset_geracao();
+        audioext_dopasuj_resultado(mr > 0, &a);
+        // An audio refine's result goes into the next segments only, no seek
+        // in place (owner 18/11).
+        if (mr > 0 && r.como == 7 && audioext_offset_geracao() != g0) dv.semSeek = 1;
+        // The subtitle answer: the edit map may come once it is in force in
+        // the server (now, when it changed nothing).
+        if (mr > 0 && r.como == 6 && audioext_offset_geracao() == g0) dv.mapaPode = 1; }
+      // The subtitles placed it: the audio refines from there.
+      if (mr > 0 && r.como == 6 && !dv.finoFeito) dv.finoEm = (agora + 3000u) ? agora + 3000u : 1u;
+    }
+    { int lento = 0;
+      if (doa_doador_saude(&lento) && !extReabrirPend) {
+        printf("[doador] the other version does not respond: back to this file's own audio\n"); fflush(stdout);
+        audioext_lento_marcar(3);
+        audioext_sem_resposta();
+      } else if (lento) audioext_lento_marcar(2);
+    }
+    if ((ev = doa_seguir_evento(&ms)) != 0) {
+      audioext_seguir_evento(ev, ms);
+      // 4 the follow moved it, 5 the playhead entered another stretch of the
+      // edit map: the server applied it already (no doa_desloc, no seek).
+      if (ev == 4 || ev == 5) { dv.gerVista = audioext_offset_geracao(); dv.mudouEm = 0; dv.seekMs = audioext_offset_ms(); }
+    } }
+  // Each stretch's own audio refine, once, the first time playback is in it
+  // with ~45 s of it ahead (the capture is ~40 s), after the first refine.
+  // Not on Tizen 4-5.5 nor under 200 MB free (owner 18/11).
+  // (After the first refine's result is taken and in force: no change pending.)
+  if (dv.mapaN >= 2 && dv.finoFeito && !dv.finoEm && !dv.mudouEm && !dv.semSeek && !doa_dopasuj_ativo() && pronto && tocando &&
+      audioext_tocando() && doa_audio() >= DOA_DOADOR(0) && (int)(agora - dv.trechoProx) >= 0) {
+    double p = video_pos(), ini = 0, fim = 0;
+    int ref = 0, t = doa_mapa_trecho(p, &ini, &fim, &ref);
+    dv.trechoProx = agora + 2000u;
+    if (t >= 0 && ref == 0 && p - ini >= 2.0 && fim - p >= 45.0) {
+      if (doadorLeve()) {
+        static int dito;
+        if (!dito) { dito = 1; printf("[doador] stretch refines skipped: Tizen 4-5.5 or under %d MB free (the first refine's shift only)\n", DOA_MATCH_LEVE_MB); }
+      } else {
+        printf("[doador] stretch %d (%.0f-%.0f s): its own audio refine starts at %.1f s\n", t + 1, ini < 0 ? 0.0 : ini, fim, p);
+        fflush(stdout);
+        doadorMatchOpcoes();
+        doa_dopasuj_fino_trecho(t);
+      }
+    }
+  }
+  // Playing the file's own track (the donor's failed, or picked in the TV's
+  // menu): not loading any more.
+  if (cv.jaTocou && audioext_carregando() && doa_audio() >= 0 && doa_audio() < DOA_DOADOR(0) && doa_estado(NULL, 0) != 0)
+    audioext_carregando_definir(0);
+  { unsigned g = audioext_offset_geracao();
+    if (g != dv.gerVista) { dv.gerVista = g; dv.mudouEm = agora ? agora : 1; } }
+  if (dv.mudouEm && (int)(agora - dv.mudouEm) >= 700 && pronto) {
+    double p = video_pos();
+    int ms = audioext_offset_ms();
+    dv.mudouEm = 0;
+    doa_desloc(ms);
+    if (dv.legEstado == 2 && !dv.mapaPode) dv.mapaPode = 1;   // the subtitle answer is in force: the map may come
+    if (dv.semSeek && audioext_velocidade() == dv.seekPpm) {
+      dv.semSeek = 0;
+      printf("[doador] offset %+d ms (%+d ms, the audio refine's): the next segments carry it, no seek\n", ms, ms - dv.seekMs);
+      dv.seekMs = ms;
+      fflush(stdout);
+      return;
+    }
+    dv.semSeek = 0;
+    if (audioext_velocidade() == dv.seekPpm && abs(ms - dv.seekMs) < DOA_SEM_SEEK_MS) {
+      printf("[doador] offset %+d ms (%+d ms from the one the player asked with): under %d ms, the next segments carry it, no seek\n",
+             ms, ms - dv.seekMs, DOA_SEM_SEEK_MS);
+      fflush(stdout);
+      return;
+    }
+    dv.seekMs = ms; dv.seekPpm = audioext_velocidade();
+    // The player holds segments with the old offset: a seek where it is makes
+    // it drop them and ask again (spike: the TV test says whether it does).
+    printf("[doador] offset %+d ms: seek in place at %.1f s so the player asks for the audio again\n", audioext_offset_ms(), p);
+    fflush(stdout);
+    video_buscar(p);
+  }
+}
+
 static int convIniciar(int track, double pos, const char *motivo) {
   char url[256];
-  int modo = ajustes_dts_tpk_modo();
+  int modo = modoDeAbrir();
   const MkvFaixa *m = mkvTrack(track);
   // Parado (Voltar, cartao de erro): a lista de faixas do arquivo que parou
   // nao reabre nada; so video_tocar comeca outra fonte.
@@ -1211,6 +1885,9 @@ static int convIniciar(int track, double pos, const char *motivo) {
   printf("[dts-tpk] convertendo a faixa %d do MKV (audio %d; %s %d canais%s%s) a partir de %.1f s, modo %s, saida %s; motivo: %s\n",
          track, ordinalAudio(track), m ? m->codec : "?", m ? m->canais : 0, m && m->idioma[0] ? ", " : "", m ? m->idioma : "", pos,
          nomeModo(modo), saidaRotulo(m ? m->canais : 6), motivo);
+  if (tpk45_ativo())
+    printf("[dts-tpk] 4/5: video of the file %s; opening as %s (%s%s)\n", codecVideoMkv(), nomeModo(modo), tpk45_marca(),
+           hlsRecusadoNeste() ? "; the player refused HLS for this video codec earlier in this run" : "");
   fflush(stdout);
   convTrocar(track, modo, pos, url);
   return 1;
@@ -1219,14 +1896,15 @@ static int convIniciar(int track, double pos, const char *motivo) {
 // HLS precisa do indice de quadros-chave inteiro (a playlist sai dele). MKV sem
 // Cues nao tem: o mesmo audio sai pelo TS continuo, que busca por tempo. Uma vez
 // por fonte; o 404/503 da playlist que o player ja pediu nao conta contra ele.
-static void convRefazerProg(void) {
+// `porque` NULL: o motivo e o erro do conversor (sem indice). Senao, o do player.
+static void convRefazerProgPor(const char *porque) {
   char url[256];
   double pos = cv.inicio;
   int track = cv.track;
   printf("[dts-tpk] HLS nao serve para esta fonte (%s): refazendo no modo %s a partir de %.1f s\n",
-         dts_tpk_erro(), nomeModo(DTSTPK_PROG_TS), pos);
+         porque ? porque : dts_tpk_erro(), nomeModo(DTSTPK_PROG_TS), pos);
   fflush(stdout);
-  dts_tpk_fechar();
+  convFechar();
   cv.refezProg = 1;
   if (!convAbrirSessao(track > 0 ? ordinalAudio(track) : -1, DTSTPK_PROG_TS, pos, url, sizeof url)) {
     cv.ativo = 0; cv.prog = 0; cv.deslocOk = 1;
@@ -1236,6 +1914,28 @@ static void convRefazerProg(void) {
   }
   reconErroPend = 0;
   convTrocar(track, DTSTPK_PROG_TS, pos, url);
+}
+static void convRefazerProg(void) { convRefazerProgPor(NULL); }
+
+// Tizen 4/5, entrega Auto: o player recusou o HLS antes de tocar (erro no
+// Prepare, ou nao preparou). Uma vez por fonte, o mesmo audio sai pelo TS
+// continuo, e as proximas conversoes desta execucao ja abrem nele.
+// So com a sessao do conversor PRONTA (playlist servida): enquanto ele ainda le
+// a fonte, a demora ou o erro nao dizem nada sobre o player aceitar HLS.
+static int hlsPodeRecuar(void) {
+  return tpk45_ativo() && tpk45_entrega() == TPK45_ENTREGA_AUTO && cv.modo == DTSTPK_HLS && !cv.prog && !cv.refezProg &&
+         dts_tpk_estado() == DTSTPK_PRONTO;
+}
+static int hlsRecuar(const char *porque) {
+  if (!hlsPodeRecuar()) return 0;
+  hlsMarcarRecusa();
+  printf("[dts-tpk] 4/5: the player did not take the HLS stream (%s; video of the file %s; picture %dx%d; what it asked the "
+         "server is in the session summary below): one retry as continuous TS, and the next conversions of this run with "
+         "this video codec open in it\n",
+         porque, codecVideoMkv(), largura, altura);
+  fflush(stdout);
+  convRefazerProgPor(porque);
+  return 1;
 }
 
 // SEM CABECALHO DE FAIXAS (MP4): quem sabe se ha
@@ -1267,7 +1967,7 @@ static void convDesistir(const char *motivo) {
   double pos = cv.jaTocou ? video_pos() : cv.seekPend ? cv.seekAlvo : cv.inicio;
   printf("[dts-tpk] desisti da conversao: %s; voltando a fonte original (sem som) em %.1f s\n", motivo, pos);
   fflush(stdout);
-  dts_tpk_fechar();
+  convFechar();
   cv.ativo = 0; cv.desistiu = 1; cv.prog = 0; cv.deslocOk = 1;
   cv.buscarMs = pos > 1.0 ? (int)(pos * 1000.0) : -1;
   convReabrir(pos, i18n("volta ao original"));
@@ -1280,7 +1980,7 @@ static void convVoltar(void) {
   double pos = video_pos();
   printf("[dts-tpk] voltando ao audio da TV (%s) em %.1f s\n", cv.rotuloVolta, pos);
   fflush(stdout);
-  dts_tpk_fechar();
+  convFechar();
   cv.ativo = 0; cv.prog = 0; cv.deslocOk = 1; cv.voltar = 1;
   cv.buscarMs = pos > 1.0 ? (int)(pos * 1000.0) : -1;
   convReabrir(pos, i18n("volta ao audio da TV"));
@@ -1368,7 +2068,7 @@ static void sondaMkv(double pos) {
   }
   if (cv.ativo) {
     // Convertido: a lista e a do arquivo, montada quando o player responde.
-    if (faixasNovas && mkvN > 0 && faixasLidas) { faixasNovas = 0; montarListaConvertida(); }
+    if (faixasNovas && (mkvN > 0 || dv.ativo) && faixasLidas) { faixasNovas = 0; montarListaConvertida(); }
     return;
   }
   if (faixasNovas && mkvN > 0 && (nAudio || nLeg || faixasmkv_tem_imagem(mkvFx, mkvN))) {
@@ -1443,6 +2143,11 @@ static void escolhasPendentes(void) {
       printf("[dts-tpk] primeiro quadro do convertido %u ms depois de abrir (modo %s, %s)\n",
              (unsigned)(agora - cv.abriuEm), nomeModo(cv.modo),
              !strncmp(cv.url, "http://127.0.0.1:", 17) ? "127.0.0.1" : "IP da rede");
+    // Tizen 4/5: o tamanho que o player informa. 0x0 com som e posicao andando
+    // = o player tomou o fluxo sem o video (o caso "HEVC dentro de HLS").
+    if (cv.ativo && !cv.tocou && tpk45_ativo())
+      printf("[dts-tpk] 4/5: converted stream playing as %s; the player reports a %dx%d picture, video of the file %s (%s)\n",
+             nomeModo(cv.modo), largura, altura, codecVideoMkv(), tpk45_marca());
     if (cv.ativo) cv.tocou = cv.jaTocou = 1;
     fflush(stdout);
   }
@@ -1523,7 +2228,7 @@ static void convBombear(void) {
     naoSupPend = 0;
     if (semCabecalho()) {
       cv.naoSup = 1;
-      convSondar(ajustes_dts_tpk_modo(), "a TV acusou NotSupportedAudioCodec");
+      convSondar(modoDeAbrir(), "a TV acusou NotSupportedAudioCodec");
       if (!cv.sondando) audioNaoSup = 1;
     } else {
       int t = convPossivel() ? trilhaParaConverter(0) : 0;
@@ -1532,7 +2237,7 @@ static void convBombear(void) {
         // A sonda do cabecalho nao trouxe faixa nenhuma (host em pausa para
         // leitura lateral, rede): o conversor le o arquivo ele mesmo e decide.
         cv.naoSup = 1;
-        convSondar(ajustes_dts_tpk_modo(), "cabecalho do MKV nao lido; a TV acusou NotSupportedAudioCodec");
+        convSondar(modoDeAbrir(), "cabecalho do MKV nao lido; a TV acusou NotSupportedAudioCodec");
         if (cv.sondando) return;
       }
       printf("[dts-tpk] rescue: nothing converted (track to convert %d, header tracks %d, converter %s)\n",
@@ -1542,22 +2247,22 @@ static void convBombear(void) {
     }
   }
   if (!cv.ativo && !cv.sondando && semCabecalho() && pronto && faixasLidas && !faixasDaTv() && convPossivel())
-    convSondar(ajustes_dts_tpk_modo(), i18n("a TV nao listou audio"));
+    convSondar(modoDeAbrir(), i18n("a TV nao listou audio"));
   if (cv.sondando) {
     int e = dts_tpk_estado(), nTv = faixasDaTv();
     if (nTv > 0) {
       printf("[dts-tpk] a TV listou %d faixa(s) de audio: sem conversao\n", nTv);
       fflush(stdout);
-      dts_tpk_fechar(); cv.sondando = 0; cv.desistiu = 1;
+      convFechar(); cv.sondando = 0; cv.desistiu = 1;
     } else if (e == DTSTPK_FALHOU && dts_tpk_sem_indice() && !cv.refezProg) {
       // MP4 fragmentado sem indice inteiro: a sonda de novo, no TS continuo.
       int modo = DTSTPK_PROG_TS;
-      dts_tpk_fechar(); cv.sondando = 0; cv.refezProg = 1;
+      convFechar(); cv.sondando = 0; cv.refezProg = 1;
       convSondar(modo, i18n("sem indice de quadros-chave para o HLS"));
     } else if (e == DTSTPK_FALHOU) {
       printf("[dts-tpk] o conversor nao converte esta fonte (%s): fica o original\n", dts_tpk_erro());
       fflush(stdout);
-      dts_tpk_fechar(); cv.sondando = 0; cv.desistiu = 1;
+      convFechar(); cv.sondando = 0; cv.desistiu = 1;
       if (cv.naoSup) audioNaoSup = 1;
     } else if (e == DTSTPK_PRONTO && ((pronto && faixasLidas && (int)(agora - faixasEm) >= 2500) || (cv.naoSup && resgateAte))) {
       // 2,5 s depois da lista: a releitura do audio do host (#165) ja veio.
@@ -1582,20 +2287,61 @@ static void convBombear(void) {
     return;
   }
   if (!cv.jaTocou) {
-    if (dts_tpk_estado() == DTSTPK_FALHOU && dts_tpk_sem_indice() && !cv.prog && !cv.refezProg) { convRefazerProg(); return; }
-    if (dts_tpk_estado() == DTSTPK_FALHOU) { char m[200]; snprintf(m, sizeof m, i18n("a fonte nao abriu no conversor (%s)"), dts_tpk_erro()); convDesistir(m); return; }
+    if (dts_tpk_estado() == DTSTPK_FALHOU && dts_tpk_sem_indice() && !cv.prog && !cv.refezProg && !dv.ativo) { convRefazerProg(); return; }
+    if (dts_tpk_estado() == DTSTPK_FALHOU) {
+      char m[200]; snprintf(m, sizeof m, i18n("a fonte nao abriu no conversor (%s)"), dts_tpk_erro());
+      if (dv.ativo) doadorDesistir(m); else convDesistir(m);
+      return;
+    }
     if (reconErroPend) {
       char m[64];
       snprintf(m, sizeof m, i18n("o player recusou o fluxo convertido (erro 0x%08x)"), (unsigned)reconErroCod);
       reconErroPend = 0;
-      convDesistir(m);
+      if (dv.ativo) doadorSemComecar(m);
+      else { if (hlsRecuar(m)) return; convDesistir(m); }
       return;
     }
+    // AUDIO FROM ANOTHER SOURCE (owner 17/11, Fight Club 4K remux with every
+    // donor): the TV takes the video segments and never asks for one audio
+    // segment, then sits for 45 s. After 15 s without one: said with what it
+    // did ask for, one retry with the master's form 1 (CODECS, BANDWIDTH
+    // capped), then the audio that played before the pick.
+    if (dv.ativo && !dv.prontoEm && doa_pronto()) {
+      dv.prontoEm = agora ? agora : 1;
+      printf("[doador] audio server ready %d ms after the open: the start checks count from now\n", (int)(agora - cv.abriuEm));
+      fflush(stdout);
+    }
+    if (dv.ativo && !pronto && !dv.semAudioFeito && dv.prontoEm && (int)(agora - dv.prontoEm) > 15000 && doa_pedidos_audio() == 0) {
+      char m[160];
+      dv.semAudioFeito = 1;
+      snprintf(m, sizeof m, "the TV player asked for no audio segment in 15 s (%d request(s) to the audio server, master form %d)",
+               doa_pedidos(), dv.variante);
+      doadorSemComecar(m);
+      return;
+    }
+    // The retry (form 1) waits 15 s, not 30 (owner 18/11, log 2: 60 s of a
+    // black picture before the file's own audio came back).
+    if (dv.ativo && !pronto && (int)(agora - (dv.prontoEm ? dv.prontoEm : cv.abriuEm)) > (dv.variante ? 15000 : 30000)) {
+      char m[160];
+      snprintf(m, sizeof m, "the TV player did not prepare in %d s (%d audio request(s), master form %d)", dv.variante ? 15 : 30,
+               doa_pedidos_audio(), dv.variante);
+      doadorSemComecar(m);
+      return;
+    }
+    // Tizen 4/5, entrega Auto: 25 s com a playlist PRONTA e o player sem
+    // preparar ja valem a troca para o TS continuo (os 45 s de baixo ficam para
+    // ele e para os hosts 6+). O relogio parte de quando o conversor ficou
+    // pronto nesta abertura, nao de quando abriu: fonte lenta nao e recusa.
+    { static Uint32 prontaEm, daAbertura;
+      if (daAbertura != cv.abriuEm) { daAbertura = cv.abriuEm; prontaEm = 0; }
+      if (!prontaEm && dts_tpk_estado() == DTSTPK_PRONTO) prontaEm = agora ? agora : 1u;
+      if (!pronto && prontaEm && (int)(agora - prontaEm) > 25000 &&
+          hlsRecuar("the playlist was ready for 25 s and the player did not prepare")) return; }
     // Com sinal: `agora` e lido no topo, e um convertido aberto neste mesmo
     // quadro (sonda, NotSupportedAudioCodec) tem abriuEm DEPOIS dele — sem
     // sinal a conta dava 4 bilhoes e desistia na hora (S95C, 16/10: "nao
     // preparou em 45 s" com 0 pedidos ao servidor).
-    if (!pronto && (int)(agora - cv.abriuEm) > 45000) { convDesistir(i18n("o player nao preparou em 45 s")); return; }
+    if (!pronto && (int)(agora - (dv.ativo && dv.prontoEm ? dv.prontoEm : cv.abriuEm)) > 45000) { convDesistir(i18n("o player nao preparou em 45 s")); return; }
   }
   // Troca no meio do filme (HLS): o player abriu do zero, e o seek vai depois
   // do Start, como no recarregar da reconexao.
@@ -1667,7 +2413,14 @@ static void reabrindoVigiar(void) {
   cv.reabrindo = 0;
 }
 
+// Tizen 4/5 (tpk45.h): a linha de memoria de 10 s enquanto ha video.
+static void tpk45Vigiar(void) {
+  if (!tpk45_ativo() || !ativo) return;
+  tpk45_tick(cv.ativo, cv.ativo ? nomeModo(cv.modo) : NULL);
+}
+
 void video_bombear(void) {
+  NV_PASSO("video_bombear");
   // EOS wins over late polling errors and pending network retries.
   if (terminou) {
     nv_recon_zerar(&recon);
@@ -1678,6 +2431,27 @@ void video_bombear(void) {
   cdnBombear();
   mfBombear();
   convBombear();
+  { unsigned g = audioext_pedido_geracao();
+    if (g != extPedidoVisto) { extPedidoVisto = g; extReabrirPend = 1; } }
+  if (extReabrirPend) extReabrir();
+  // "Scan again" (Audio sync, owner 18/11): the whole sync once more from
+  // where the picture is, subtitles first, then the audio refine scored with
+  // them (doa_dopasuj_fino); no subtitle pair, the whole audio match.
+  if (audioext_dopasuj_pedido_consumir()) {
+    if (dv.ativo && doa_audio() >= DOA_DOADOR(0)) {
+      printf("[doador] scan again at %.1f s: subtitles first, then the audio (offset now %+d ms)\n", video_pos(), audioext_offset_ms());
+      fflush(stdout);
+      doadorleg_cancelar();
+      dv.autoFeito = 1; dv.legEstado = 1; dv.finoFeito = 0; dv.finoEm = 0;
+      // The edit map from scratch (owner 18/11), then the refines again.
+      dv.mapaPode = dv.mapaFeito = dv.mapaN = 0;
+      doa_mapa_definir(NULL, 0);
+      doadorleg_iniciar(video_pos());
+    } else audioext_dopasuj_resultado(0, NULL);
+  }
+  if (!dv.ativo && audioext_dopasuj_ativo()) audioext_dopasuj_resultado(0, NULL);
+  doadorBombear();
+  tpk45Vigiar();
   reabrindoVigiar();
   escolhasPendentes();
   legendaVigiarSilencio(SDL_GetTicks());
@@ -1772,11 +2546,22 @@ void video_bombear(void) {
     if (reconPermitida && urlAtual[0] && (reconIniciou || recon.tentativa) &&
         nv_recon_erro(&recon, rede, SDL_GetTicks(), alvoMs >= 0 ? alvoMs / 1000.0 : pos)) {
       if (alvoMs >= 0) recon.alvo = alvoMs / 1000.0;
-      if (!antes) { reconAudio = audioAtual; reconLeg = legAtual; }
+      if (!antes) {
+        reconAudio = audioAtual; reconLeg = legAtual;
+        // A sonda do mkvfix no ar, um seek segurado por ela, ou a reabertura
+        // pelo servidor local ha pouco: e o arquivo sendo preparado, nao rede.
+        reconPreparo = mf.pend || (mf.sondou && mkvfix_estado() == MKVFIX_SONDANDO) ||
+                       (mf.ligouEm && SDL_GetTicks() - mf.ligouEm < 8000u);
+      }
       if (recon.tentativa != antes) {
-        printf("[video] conexao caiu (0x%x): tentativa %d/%d, espera %us\n",
-               (unsigned)reconErroCod, recon.tentativa, NV_RECON_MAX,
-               nv_recon_espera_ms(recon.tentativa) / 1000u);
+        if (reconPreparo)
+          printf("[video] seek failed during the mkvfix check (0x%x): retry %d/%d in %us\n",
+                 (unsigned)reconErroCod, recon.tentativa, NV_RECON_MAX,
+                 nv_recon_espera_ms(recon.tentativa) / 1000u);
+        else
+          printf("[video] conexao caiu (0x%x): tentativa %d/%d, espera %us\n",
+                 (unsigned)reconErroCod, recon.tentativa, NV_RECON_MAX,
+                 nv_recon_espera_ms(recon.tentativa) / 1000u);
         fflush(stdout);
       }
       bufferando = 0;
@@ -1812,7 +2597,7 @@ void video_parar(void) {
   parado = 1; resgateAte = 0;
   cdn.pend = 0; cdn.usado = 0; cdn.arquivo = 0;
   atomic_fetch_add(&cdnGer, 1);
-  if (cv.ativo || cv.sondando) dts_tpk_fechar();
+  if (cv.ativo || cv.sondando) convFechar();
   memset(&cv, 0, sizeof cv); cv.buscarMs = -1; naoSupPend = 0;
   emTrailer = emCartao = 0;
   cartaoSemCover = 0;
@@ -1882,7 +2667,13 @@ void video_buscar(double s) {
     if (mf.sondou) {
       int e = mkvfix_estado();
       if (e == MKVFIX_PRECISA) { mfLigar(s, "seek (the TV can't seek this file as served)"); terminou = 0; return; }
-      if (e == MKVFIX_SONDANDO) { mf.pend = 1; mf.pendAlvo = s; mf.pendEm = SDL_GetTicks(); }
+      if (e == MKVFIX_SONDANDO) {
+        // Segura ate a sonda responder (mfBombear); o seek mais novo vence.
+        if (!mf.pend) mf.pendEm = SDL_GetTicks();
+        mf.pend = 1; mf.pendAlvo = s;
+        terminou = 0;
+        return;
+      }
     }
   }
   if (hBuscar) hBuscar((int)(s * 1000.0));
@@ -2253,6 +3044,51 @@ int  video_audio_atual(void) { return audioAtual; }
 int  video_legenda_atual(void) { return legAtual; }
 void video_escolher_audio(int i) {
   if (i < 0 || i >= nAudio) return;
+  // Audio from another source: a rendition of the donor server's master. The
+  // server's track first (the segments it makes next); the TV switches in
+  // place when its list is the master's, else the stream reopens where it is.
+  if (dv.ativo && faixaAudio[i].stream_id < 0 && faixaAudio[i].numero == i) {
+    if (i == audioAtual) return;
+    doa_definir_audio(dv.chave[i]);
+    if (i < dv.nR && dv.r[i].fonte == 1) {
+      // The donor's track picked by hand: this title's, and the series'.
+      AudioExtFaixa f;
+      memset(&f, 0, sizeof f);
+      f.stream = dv.r[i].si; f.canais = dv.r[i].canais;
+      snprintf(f.codec, sizeof f.codec, "%s", dv.r[i].codecFonte);
+      snprintf(f.idioma, sizeof f.idioma, "%s", dv.r[i].lingua);
+      snprintf(f.titulo, sizeof f.titulo, "%.63s", dv.r[i].nome);
+      audioext_definir_faixa(f.stream);
+      audioext_lembrar_faixa_serie(&f);
+    }
+    // From an MPEG-TS rendition to an fMP4 one (FLAC, Opus) or back: burn-in
+    // never switched between them in place (it starts on FLAC), and a donor's
+    // FLAC picked while AAC played had no sound (owner 17/11). Reopened at the
+    // same place instead, like a list that is not the master's.
+    { int mp4Novo = i < dv.nR && (!strcmp(dv.r[i].codec, "flac") || !strcmp(dv.r[i].codec, "opus"));
+      int mp4Era = audioAtual >= 0 && audioAtual < dv.nR && (!strcmp(dv.r[audioAtual].codec, "flac") || !strcmp(dv.r[audioAtual].codec, "opus"));
+      int troca = mp4Novo != mp4Era;
+      printf("[doador] audio: %s (key %d, %s)%s\n", faixaAudio[i].rotulo, dv.chave[i], i < dv.nR ? dv.r[i].codec : "?",
+             troca ? ": MPEG-TS <-> fMP4, reopening where it is" :
+             dv.nTv == nAudio ? ": the TV switches in place" : ": the TV's list is not the master's, reopening");
+      fflush(stdout);
+      if (troca && pronto && dv.nTv == nAudio) {
+        double p = video_pos();
+        audioAtual = i;
+        cv.buscarMs = p > 1.0 ? (int)(p * 1000.0) : -1;
+        convReabrir(p, "audio from another source: MPEG-TS <-> fMP4 track change");
+        abrirSessao();
+        return;
+      } }
+    if (dv.nTv != nAudio && pronto) {
+      double p = video_pos();
+      audioAtual = i;
+      cv.buscarMs = p > 1.0 ? (int)(p * 1000.0) : -1;
+      convReabrir(p, "audio from another source: track change");
+      abrirSessao();
+      return;
+    }
+  }
   // Faixa DTS/TrueHD do arquivo (a TV nao a lista): converte essa.
   if (faixaAudio[i].numero < 0 && faixaAudio[i].stream_id > 0) {
     const MkvFaixa *m = mkvTrack(faixaAudio[i].stream_id);
@@ -2274,6 +3110,67 @@ void video_escolher_audio(int i) {
   // The tick, not the frame - audio was measured working that way.
   if (!audioComecou) { audioPend = i; return; }
   if (hEscolher) hEscolher(0, faixaAudio[i].numero);
+}
+// THE FILE'S OWN AUDIO TRACKS for the language page (owner 18/11): whatever
+// plays, from the MKV header (DTS/TrueHD included: they convert), else the
+// player's list (or, while a donor plays, the list from before it).
+int video_audio_arquivo(VideoFaixa *out, int max) {
+  static VideoFaixa a[MAX_FAIXAS], l[MAX_FAIXAS];
+  int na = 0, nl = 0, i;
+  if (!out || max <= 0) return 0;
+  if (mkvN > 0) listaDoArquivo(a, &na, l, &nl);
+  else if (!dv.ativo) { na = nAudio; memcpy(a, faixaAudio, sizeof a); }
+  else { na = arqSnapN; memcpy(a, arqSnap, sizeof a); }
+  for (i = 0; i < na && i < max; i++) out[i] = a[i];
+  return i;
+}
+// Which of them plays: -1 while another source's audio plays.
+int video_audio_arquivo_atual(void) {
+  static VideoFaixa a[MAX_FAIXAS];
+  int n, i, id;
+  if (dv.ativo || audioAtual < 0 || audioAtual >= nAudio) return -1;
+  if (mkvN <= 0) return audioAtual;
+  n = video_audio_arquivo(a, MAX_FAIXAS);
+  id = cv.ativo ? cv.track : faixaAudio[audioAtual].stream_id;
+  for (i = 0; i < n; i++) if (id > 0 && a[i].stream_id == id) return i;
+  for (i = 0; i < n; i++) if (!strcmp(a[i].rotulo, faixaAudio[audioAtual].rotulo)) return i;
+  return -1;
+}
+// Picks track `i` of video_audio_arquivo. While another source's audio plays
+// its session closes (its connection goes back to the debrid) and the file's
+// own audio comes back where the picture is: a DTS/TrueHD track converts
+// again, any other plays through the TV player.
+void video_escolher_audio_arquivo(int i) {
+  static VideoFaixa a[MAX_FAIXAS];
+  int n = video_audio_arquivo(a, MAX_FAIXAS), k;
+  double p;
+  const MkvFaixa *m;
+  if (i < 0 || i >= n) return;
+  if (!dv.ativo) {
+    for (k = 0; k < nAudio; k++)
+      if ((a[i].stream_id > 0 && faixaAudio[k].stream_id == a[i].stream_id) || !strcmp(faixaAudio[k].rotulo, a[i].rotulo)) {
+        video_escolher_audio(k);
+        return;
+      }
+    m = a[i].stream_id > 0 ? mkvTrack(a[i].stream_id) : NULL;
+    if (m && faixaRecusada(m) && convPossivel()) convIniciar(a[i].stream_id, video_pos(), "faixa escolhida no menu");
+    return;
+  }
+  p = cv.jaTocou ? video_pos() : cv.seekPend ? cv.seekAlvo : cv.inicio;
+  printf("[doador] back to this file's own audio at %.1f s: %s (picked on the language page; the other source's session closes)\n",
+         p, a[i].rotulo);
+  fflush(stdout);
+  audioext_limpar();
+  extPedidoVisto = audioext_pedido_geracao(); extReabrirPend = 0;
+  convFechar();
+  cv.ativo = 0; cv.prog = 0; cv.deslocOk = 1;
+  m = a[i].stream_id > 0 ? mkvTrack(a[i].stream_id) : NULL;
+  if (m && faixaRecusada(m) && !parado && convIniciar(a[i].stream_id, p, "back to the file's own audio (picked in the menu)")) return;
+  snprintf(cv.rotuloVolta, sizeof cv.rotuloVolta, "%s", a[i].rotulo);
+  cv.voltar = 1;
+  cv.buscarMs = p > 1.0 ? (int)(p * 1000.0) : -1;
+  convReabrir(p, i18n("volta ao audio da TV"));
+  abrirSessao();
 }
 void video_escolher_legenda(int i) {
   if (i >= nLeg) return;

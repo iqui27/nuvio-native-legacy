@@ -13,8 +13,9 @@
 # memfd ou por um carregador de ELF proprio (tizen-tpk/NuvioTpk40/Program40.cs),
 # que nao monta TLS de compilador e resolve simbolos por DT_HASH. Por isso essa
 # .so e compilada a parte, sem _Thread_local (src/rede.c) e com
-# --hash-style=both, e o script FALHA se ela sair com PT_TLS, relocacao de TLS
-# ou sem DT_HASH (#137, #180). A .so dos hosts Tizen 6+ e a de sempre.
+# --hash-style=both, e o script FALHA se ela sair com PT_TLS, relocacao de TLS,
+# relocacao de um tipo que o carregador nao aplica, ou sem DT_HASH (#137, #180).
+# A .so dos hosts Tizen 6+ e a de sempre.
 #
 # NIVEL DE GPU FORCADO (canario de comparacao, src/gpunivel.h):
 #
@@ -95,11 +96,14 @@ if [ ! -f "$CACHE/prefix/lib/libSDL2.a" ] || [ ! -f "$CACHE/prefix/lib/libSDL2_t
 fi
 
 # DTS/TrueHD -> Dolby Digital 5.1 (docs/features/dts/README.md): FFmpeg 7.1.5
-# estatico, LGPL, com os componentes do tools/build-dts-ffmpeg.sh (alvo tpk). Entra SO na
-# libnuvio.so dos hosts 6+; o NuvioTpk40 continua sem (la a .so nao pode ter TLS e o alvo da
-# conversao e o NuvioTpk). O tarball e baixado e conferido AQUI (o container nao tem curl) e
+# estatico, LGPL, com os componentes do tools/build-dts-ffmpeg.sh (alvo tpk). Entra na
+# libnuvio.so dos hosts 6+ e, desde 11/2026, na do NuvioTpk40 (Tizen 4/5: as TVs de 2018-2020
+# tambem nao tocam DTS; as miniaturas feitas na TV ficam DESLIGADAS no 4/5, miniatura.c). O FFmpeg 7.1.5 nao
+# tem _Thread_local; o que o carregador ELF do 4/5 recusa e conferido no passo 1b/3.
+# O tarball e baixado e conferido AQUI (o container nao tem curl) e
 # compilado uma vez no nuvio-tpk-sdk; o carimbo e o hash do script: mudou o script, recompila.
 # NV_TPK_SEM_DTS=1 gera sem a conversao (o app fica como o master: DTS/TrueHD mudos).
+# NV_TPK40_SEM_FFMPEG=1 deixa so a .so do 4/5 sem FFmpeg (como era ate 11/2026).
 sha256_de() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 DTS_PREFIX="$CACHE/prefix-dts"
 DTS_VOL=""
@@ -132,6 +136,9 @@ if [ "${NV_TPK_SEM_DTS:-}" != 1 ]; then
   fi
   DTS_VOL="-v $DTS_PREFIX:/dts"
 fi
+# A .so do 4/5 leva FFmpeg? (o aviso LGPL do pacote e as conferencias do 3/3 seguem isto)
+FF40=""
+[ -n "$DTS_VOL" ] && [ "${NV_TPK40_SEM_FFMPEG:-}" != 1 ] && FF40=1
 
 echo "[1/3] libnuvio.so (ARMv7 softfp, glibc <= 2.28)"
 ENVF=$(mktemp "${TMPDIR:-/tmp}/nuvio-tpk-env.XXXXXXXX"); trap 'rm -f "$ENVF"' EXIT
@@ -150,6 +157,7 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
   -e NUVIO_SDK_ID="$(ctr_image_inspect "$TPK_IMAGE"):$CACHE:$NV_P2P_DIR" \
   -e NUVIO_P2P_MOTOR="${NV_P2P_DIR:+1}" \
   -e NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-}" -e NV_TPK_SEM_ASS="${NV_TPK_SEM_ASS:-}" \
+  -e NV_TPK40_SEM_FFMPEG="${NV_TPK40_SEM_FFMPEG:-}" \
   -v "$RAIZ":/work -v "$CACHE/prefix":/deps -w /work "$TPK_IMAGE" sh -c '
   set -e
   # ASS pelo libass (#ass-tpk): o mesmo backend do webOS (src/assrender.c). NV_TPK_SEM_ASS=1
@@ -167,8 +175,13 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
            NV_REC_URL NV_DISCORD_CLIENT_ID NV_VERSAO; do
     eval "v=\${$k:-}"
     # No arquivo de resposta o gcc tira aspas e barras como o shell: a aspa
-    # da string C tem de ir escapada (-DX=\"valor\").
-    v=$(printf "%s" "$v" | sed "s/[\\\\\"]/\\\\&/g")
+    # da string C tem de ir escapada (-DX=\"valor\"). Espaco tambem: no arquivo
+    # de resposta um espaco cru separa argumentos (uma chave colada com espaco
+    # virava "arquivo inexistente" e o make saia com 2). (Sem aspa simples aqui:
+    # este trecho vive dentro do sh -c '...'.)
+    # Nenhuma chave tem espaco nas pontas: um colado no segredo LOCAL_PROPERTIES
+    # e tirado aqui (e o que sobrar no meio vai escapado).
+    v=$(printf "%s" "$v" | sed "s/^[[:space:]]*//;s/[[:space:]]*\$//" | sed "s/[\\\\\" ]/\\\\&/g")
     printf "%s\n" "-D$k=\\\"$v\\\""
   done > /tmp/flags
   # p2pmotor_motor.c usa dladdr (Dl_info), que o glibc so declara com _GNU_SOURCE, e o
@@ -178,15 +191,16 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
   [ "${NUVIO_P2P_MOTOR:-}" = "1" ] && P2P_CFLAGS="-DNV_P2P_MOTOR -DNV_P2P_MOTOR_DLOPEN -I/p2p/include"
   FLAGS="$CFLAGS -DNV_TPK $ASS_CFLAGS -include src/tpk.h -fvisibility=hidden -Wno-unused-result $NUVIO_EXTRA_CFLAGS"
   # DTS/TrueHD -> AC3: o FFmpeg montado em /dts (bloco [deps] acima; ausente com
-  # NV_TPK_SEM_DTS=1). -DNV_DTS_FFMPEG vale SO para a .so dos hosts 6+; o 1b/3 recompila
-  # sem ele todo .c que o cita. Por isso NV_DTS_FFMPEG so pode aparecer em .c, nunca em .h.
+  # NV_TPK_SEM_DTS=1). -DNV_DTS_FFMPEG vale para as duas .so; com NV_TPK40_SEM_FFMPEG=1 o
+  # 1b/3 recompila sem ele todo .c que o cita. Por isso NV_DTS_FFMPEG so pode aparecer em .c,
+  # nunca em .h (um objeto comum reaproveitado levaria o FFmpeg para a .so sem ele).
   DTS_CFLAGS=""; DTS_LIBS=""
   if [ -f /dts/include/libavcodec/avcodec.h ]; then
     DTS_CFLAGS="-DNV_DTS_FFMPEG -I/dts/include"
     DTS_LIBS="-L/dts/lib -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
   fi
   if grep -l NV_DTS_FFMPEG src/*.h src/dts/*.h >/dev/null 2>&1; then
-    echo "NV_DTS_FFMPEG num .h: o NuvioTpk40 herdaria o FFmpeg (use so em .c)" >&2; exit 1; fi
+    echo "NV_DTS_FFMPEG num .h: um objeto comum levaria o FFmpeg para uma .so sem ele (use so em .c)" >&2; exit 1; fi
   KEY=$( { cat /tmp/flags; sha256sum tools/tpk.sh tools/native-objects.mk; printf "%s" "$NUVIO_SDK_ID|$FLAGS|$P2P_CFLAGS|$DTS_CFLAGS"; } | sha256sum | cut -d" " -f1)
   O="build/tpk/objects/$KEY/common"; O40="build/tpk/objects/$KEY/tpk40"
   SOURCES=$(ls src/*.c src/dts/*.c | grep -v "src/video_tizen.c")
@@ -219,25 +233,32 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
   done
 
   echo "[1b/3] libnuvio-tpk40.so (Tizen 4/5: -DNV_TPK40, sem TLS, com DT_HASH)"
+  # FFmpeg tambem na .so do 4/5 (conversao DTS/TrueHD; as miniaturas nao rodam la), a menos de
+  # NV_TPK40_SEM_FFMPEG=1. O carregador ELF do Program40.cs so aplica quatro tipos de
+  # relocacao e recusa TLS: as conferencias abaixo barram a build antes de a TV recusar.
+  DTS40_CFLAGS="$DTS_CFLAGS"; DTS40_LIBS="$DTS_LIBS"
+  if [ "${NV_TPK40_SEM_FFMPEG:-}" = 1 ]; then DTS40_CFLAGS=""; DTS40_LIBS=""; fi
   # So as unidades que citam NV_TPK40 sao recompiladas; as demais sao os MESMOS
   # objetos da .so de cima. O link ganha --hash-style=both para o carregador
   # de ELF do Program40.cs achar o DT_HASH (o padrao do gcc daqui e so GNU_HASH).
   # p2pmotor_motor.c entra sempre aqui: o 4/5 NUNCA leva o motor (a UEP barra
   # .so de arquivo), entao ele e recompilado SEM -DNV_P2P_MOTOR (sem P2P_CFLAGS).
-  # Quem cita NV_DTS_FFMPEG tambem: aqui sai sem ele (stub), e a .so do 4/5 nao leva FFmpeg.
+  # Quem cita NV_DTS_FFMPEG tambem: com NV_TPK40_SEM_FFMPEG=1 sai sem ele (stub).
   # Sources using rede_teto expand to rede_teto_ptr() under NV_TPK40 to avoid TLS.
   SOURCES40=$({ grep -lE "NV_TPK40|NV_DTS_FFMPEG|rede_teto" src/*.c src/dts/*.c; echo src/p2pmotor_motor.c; } | sort -u | grep -v "src/video_tizen.c")
   make -s -f tools/native-objects.mk -j "$NUVIO_BUILD_JOBS" CC=gcc OBJDIR="$O40" SOURCES="$SOURCES40" \
-    NATIVE_FLAGS="$FLAGS -DNV_TPK40 @/tmp/flags -I/deps/include -I/deps/include/SDL2"
+    NATIVE_FLAGS="$FLAGS -DNV_TPK40 $DTS40_CFLAGS @/tmp/flags -I/deps/include -I/deps/include/SDL2"
   OBJ40=""
   for f in $ORDER; do
     if printf "%s\n" "$SOURCES40" | grep -qxF "$f"; then OBJ40="$OBJ40 $O40/${f%.c}.o"; else OBJ40="$OBJ40 $O/${f%.c}.o"; fi
   done
   gcc -shared -o /work/build/tpk/libnuvio-tpk40.so $OBJ40 -Wl,--no-undefined \
     -Wl,-soname,libnuvio.so -Wl,--exclude-libs,ALL -Wl,--hash-style=both \
-    -L/deps/lib -lSDL2_ttf -lSDL2_image -lwebpdemux -lwebp -lsharpyuv -lSDL2 $ASS_LIBS /usr/lib/arm-linux-gnueabi/libz.a \
+    -L/deps/lib -lSDL2_ttf -lSDL2_image -lwebpdemux -lwebp -lsharpyuv -lSDL2 $ASS_LIBS $DTS40_LIBS /usr/lib/arm-linux-gnueabi/libz.a \
     -lGLESv2 -ldl -lpthread -lm -lrt
   echo "  $(ls -la /work/build/tpk/libnuvio-tpk40.so | awk "{print \$5}") bytes"
+  if [ -n "$DTS40_LIBS" ]; then echo "  4/5: FFmpeg ligado (conversao DTS/TrueHD)"
+  else echo "  4/5: SEM FFmpeg (NV_TPK40_SEM_FFMPEG=1 ou NV_TPK_SEM_DTS=1): sem conversao"; fi
   # CONFERENCIA que o carregador de ELF do host exige (ele recusa o contrario):
   L40=/work/build/tpk/libnuvio-tpk40.so
   if readelf -lW "$L40" | grep -qE "^\s*TLS\s"; then
@@ -250,6 +271,55 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
     echo "libnuvio-tpk40.so sem DT_HASH (o link ignorou --hash-style=both?)" >&2; exit 1; fi
   echo "  sem PT_TLS, sem R_ARM_TLS_*, sem __tls_get_addr, com DT_HASH: ok"
   readelf -rW "$L40" | grep -oE "R_ARM_[A-Z0-9_]+" | sort | uniq -c | sed "s/^/  reloc /"
+  # O carregador ELF (Program40.cs, ContaRelocs) aplica SO estes tipos e recusa a lib inteira
+  # por qualquer outro: numa TV em que o memfd falha, o app nem abriria.
+  RUIM=$(readelf -rW "$L40" | grep -oE "R_ARM_[A-Z0-9_]+" | sort -u | grep -vxE "R_ARM_(NONE|ABS32|GLOB_DAT|JUMP_SLOT|RELATIVE)" || true)
+  if [ -n "$RUIM" ]; then
+    echo "libnuvio-tpk40.so tem relocacao que o carregador ELF do 4/5 nao aplica: $(echo $RUIM)" >&2
+    echo "(se veio do FFmpeg: NV_TPK40_SEM_FFMPEG=1 gera o 4/5 sem ele)" >&2; exit 1; fi
+  echo "  relocacoes: so os tipos que o carregador ELF aplica: ok"
+  if readelf -dW "$L40" | grep -qE "\(TEXTREL\)"; then echo "  aviso: libnuvio-tpk40.so tem DT_TEXTREL"; else echo "  sem DT_TEXTREL"; fi
+  # O QUE O FFMPEG PEDE A MAIS DA LIBC DA TV. A libc do Tizen 4/5 e anterior a 2.27 (nao tem
+  # memfd_create: Program40.cs chama a syscall), a daqui e a 2.28, e o carregador ELF resolve
+  # simbolo por NOME: funcao que so existe em libc nova nao se resolve la e o app nao abre.
+  # Para comparar, a mesma lib e ligada SEM o FFmpeg (como foi para as TVs ate 11/2026), so
+  # para ler o que ela importa. O que o FFmpeg soma e listado, e a build FALHA se algo for de
+  # GLIBC_2.25 em diante. Excecao: as cinco de matematica que a 2.27 so reversionou (o nome
+  # existe desde sempre, e o carregador ELF nao olha versao).
+  if [ -n "$DTS40_LIBS" ]; then
+    O40S=/tmp/o40s
+    SEMFF=$(grep -lE "NV_DTS_FFMPEG" src/*.c src/dts/*.c | sort -u)
+    make -s -f tools/native-objects.mk -j "$NUVIO_BUILD_JOBS" CC=gcc OBJDIR="$O40S" SOURCES="$SEMFF" \
+      NATIVE_FLAGS="$FLAGS -DNV_TPK40 @/tmp/flags -I/deps/include -I/deps/include/SDL2"
+    OBJS=""
+    for f in $ORDER; do
+      if printf "%s\n" "$SEMFF" | grep -qxF "$f"; then OBJS="$OBJS $O40S/${f%.c}.o"
+      elif printf "%s\n" "$SOURCES40" | grep -qxF "$f"; then OBJS="$OBJS $O40/${f%.c}.o"
+      else OBJS="$OBJS $O/${f%.c}.o"; fi
+    done
+    gcc -shared -o /tmp/libnuvio-tpk40-semff.so $OBJS -Wl,--no-undefined \
+      -Wl,-soname,libnuvio.so -Wl,--exclude-libs,ALL -Wl,--hash-style=both \
+      -L/deps/lib -lSDL2_ttf -lSDL2_image -lwebpdemux -lwebp -lsharpyuv -lSDL2 $ASS_LIBS /usr/lib/arm-linux-gnueabi/libz.a \
+      -lGLESv2 -ldl -lpthread -lm -lrt
+    readelf --dyn-syms -W /tmp/libnuvio-tpk40-semff.so | awk "\$7 == \"UND\" && \$8 != \"\" {print \$8}" | sort -u > /tmp/imp-sem
+    readelf --dyn-syms -W "$L40" | awk "\$7 == \"UND\" && \$8 != \"\" {print \$8}" | sort -u > /tmp/imp-com
+    NOVOS=$(comm -13 /tmp/imp-sem /tmp/imp-com)
+    echo "  sem FFmpeg a lib do 4/5 teria $(ls -la /tmp/libnuvio-tpk40-semff.so | awk "{print \$5}") bytes e $(grep -c . /tmp/imp-sem) importacoes; libc mais nova pedida: $(grep -oE "GLIBC_[0-9.]+" /tmp/imp-sem | sort -uV | tail -1)"
+    echo "  com FFmpeg: $(grep -c . /tmp/imp-com) importacoes; libc mais nova pedida: $(grep -oE "GLIBC_[0-9.]+" /tmp/imp-com | sort -uV | tail -1)"
+    echo "  o FFmpeg soma $(printf "%s\n" "$NOVOS" | grep -c . || true) importacao(oes):"
+    printf "%s\n" "$NOVOS" | grep . | sed "s/^/    + /" || true
+    RUINS=""
+    for s in $NOVOS; do
+      case "$s" in *@GLIBC_*) ;; *) continue ;; esac
+      n=${s%%@*}; v=${s##*@GLIBC_}
+      case "$n" in powf|expf|logf|exp2f|log2f) echo "    aviso: $s (so reversionada; o nome existe na libc antiga)"; continue ;; esac
+      if [ "$(printf "%s\n%s\n" "$v" 2.24 | sort -V | tail -1)" != 2.24 ]; then RUINS="$RUINS $s"; fi
+    done
+    if [ -n "$RUINS" ]; then
+      echo "o FFmpeg faz a libnuvio-tpk40.so pedir funcao de libc mais nova que a das TVs Tizen 4/5:$RUINS" >&2
+      echo "(NV_TPK40_SEM_FFMPEG=1 gera o 4/5 sem ele)" >&2; exit 1; fi
+    echo "  o FFmpeg nao pede funcao de libc mais nova que a das TVs 4/5: ok"
+  fi
   objdump -T "$L40" | grep -E " nv_tpk" | awk "{print \"  exporta \" \$NF}"
   # Todo [DllImport("libnuvio.so")] do host tem de estar EXPORTADO (-fvisibility=hidden
   # esconde o que nao leva visibility("default"): EntryPointNotFoundException em
@@ -284,8 +354,9 @@ for p in $PACOTES; do
   cp -R deploy/app/fonts "$H/res/fonts"
   # Avisos de licenca de terceiros (libtorrent, Boost, OpenSSL, nuvio-engine).
   cp -R deploy/app/licencas "$H/res/licencas"
-  # FFmpeg do DTS -> AC3 (LGPL): texto da licenca e a procedencia exata, so nos 6+.
-  if [ -n "$DTS_VOL" ] && [ "$p" != NuvioTpk40 ]; then
+  # FFmpeg do DTS -> AC3 (LGPL): texto da licenca e a procedencia exata, em todo pacote
+  # cuja .so o leva (o 4/5 tambem, a menos de NV_TPK40_SEM_FFMPEG=1).
+  if [ -n "$DTS_VOL" ] && { [ "$p" != NuvioTpk40 ] || [ -n "$FF40" ]; }; then
     mkdir -p "$H/res/licencas/dts"
     cp "$DTS_PREFIX/COPYING.LGPLv2.1" "$DTS_PREFIX/SOURCE.txt" "$H/res/licencas/dts/"
   fi
@@ -323,9 +394,13 @@ for T in "$SAIDA"/*.tpk; do
     grep -qE " res/art/marcas/$f$" <<<"$L" || { echo "$T sem res/art/marcas/$f" >&2; exit 1; }
   done
   grep -qE " res/licencas/p2p-avisos.txt$" <<<"$L" || { echo "$T sem res/licencas/p2p-avisos.txt" >&2; exit 1; }
-  # Com FFmpeg ligado, todo 6+ leva o aviso LGPL dele; o 4/5, nunca.
+  # Com FFmpeg ligado, todo pacote cuja .so o leva tem o aviso LGPL dele; sem ele, nao.
   case "$T" in
-    *-NuvioTpk40.tpk) ! grep -qE " res/licencas/dts/" <<<"$L" || { echo "$T leva o aviso do FFmpeg (o 4/5 nao tem FFmpeg)" >&2; exit 1; } ;;
+    *-NuvioTpk40.tpk) if [ -n "$FF40" ]; then
+         grep -qE " res/licencas/dts/COPYING.LGPLv2.1$" <<<"$L" || { echo "$T sem res/licencas/dts/COPYING.LGPLv2.1 (FFmpeg ligado no 4/5)" >&2; exit 1; }
+       else
+         ! grep -qE " res/licencas/dts/" <<<"$L" || { echo "$T leva o aviso do FFmpeg (este 4/5 saiu sem FFmpeg)" >&2; exit 1; }
+       fi ;;
     *) if [ -n "$DTS_VOL" ]; then
          grep -qE " res/licencas/dts/COPYING.LGPLv2.1$" <<<"$L" || { echo "$T sem res/licencas/dts/COPYING.LGPLv2.1 (FFmpeg ligado)" >&2; exit 1; }
        fi ;;
@@ -366,6 +441,6 @@ cp "$SAIDA/libnuvio.so" "$SAIDA/libnuvio-$VER-tpk-arm.so"
 echo "  $SAIDA/libnuvio-$VER-tpk-arm.so (anexo de auto-atualizacao; suba na release)"
 # O 4/5 roda a lib SEM TLS (libnuvio-tpk40.so): anexo proprio, que so o host
 # 4/5 procura (atualizacao.c com NV_TPK40). Baixar a comum ali quebraria o
-# carregador ELF, que recusa PT_TLS.
+# carregador ELF, que recusa PT_TLS. Com o FFmpeg ela cresce alguns MB.
 cp "$SAIDA/libnuvio-tpk40.so" "$SAIDA/libnuvio-$VER-tpk40-arm.so"
 echo "  $SAIDA/libnuvio-$VER-tpk40-arm.so (anexo de auto-atualizacao do 4/5)"

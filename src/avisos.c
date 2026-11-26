@@ -241,6 +241,7 @@ static void vistosGravar(void) {
 // se e NOVO (para o toast).
 static int por(const char *id, int tipo, const char *titulo, const char *texto, const char *alvo) {
   int i;
+  if (tipo == AV_UPDATE && !ajustes_update_notifications()) return 0;
   // DISPENSADO NAO VOLTA (avisodisp.h): nem na lista, nem na ilha, nem depois
   // de reiniciar. A chave e o evento; um evento novo tem outra chave.
   if (avisodisp_tem(id)) return 0;
@@ -1280,6 +1281,7 @@ static const char *icone(int tipo) {
 // esta na pilula. Quem executa o botao e avisos_ilha_acao.
 static RecItem recDaIlha;              // a recomendacao que o modal mostra
 static void anunciarItem(const Aviso *it) {
+  if (it->tipo == AV_UPDATE && !ajustes_update_notifications()) return;
   char chave[96], txt[240], f1[200], f2[200];
   IlhaAvisoEx e;
   static IlhaModal m;

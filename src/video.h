@@ -16,6 +16,7 @@
 // TV tocando o mesmo arquivo: e o que comprovadamente funciona.
 #ifndef NV_VIDEO_H
 #define NV_VIDEO_H
+#include "legopacidade.h"
 
 // Registra no barramento e sobe o laco de eventos. 1 se deu certo.
 // Falhar aqui nao e fatal: o app segue sem video.
@@ -39,11 +40,15 @@ int  video_tocar(const char *url);
 // MediaItem antes de prepare; o ack e da geracao desta abertura. Estado:
 // 0 aguardando, 1 aceito, -1 abertura normal (seek tardio como fallback).
 int  video_tocar_posicao(const char *url, double segundos);
-// Como a de cima, mais o percentual (0..100) para quando nao ha segundos
-// exatos (retomada da conta: Trakt/Simkl so dao percentual). O Kotlin aplica
-// sobre a duracao do container ANTES do primeiro quadro; mesmo ack/estado.
+#endif
+#if defined(NV_ANDROID) || defined(NV_NATIVE_SEEK_TEST)
+// Initial seconds, or an account percentage resolved with container duration.
+// Android applies it in Media3; the webOS experiment applies it to the first
+// DTS Load. State: 0 preparing, 1 applied, -1 use the ordinary native seek.
 int  video_tocar_retomada(const char *url, double segundos, double pct);
 int  video_retomada_inicial_estado(void);
+#endif
+#ifdef NV_ANDROID
 // Fonte preparada na pagina do titulo: player pausado, sem imagem, audio ou
 // eventos da sessao de reproducao. Token identifica o dono; zero cancela todos.
 int  video_precarregar(const char *url, const char *cabecalhos, double segundos,
@@ -116,6 +121,10 @@ double video_duracao(void);  // 0 enquanto desconhecida
 // baixado para descobrir o idioma das faixas — ver mkv.h. Vale so para MKV com
 // capitulos; quem chama precisa de um plano B.
 double video_creditos(void);
+#ifdef NV_HTTP_BUFFER_DIAG
+#include <stddef.h>
+void video_buffer_test_text(char *, size_t);
+#endif
 double video_buffer_fim(void); // ate onde o buffer cobre (s); 0 se desconhecido
 // Ha quanto tempo (ms) o pipeline esta parado esperando dados, do par de
 // eventos bufferingStart/bufferingEnd do uMS; 0 quando NAO esta bufferizando.
@@ -181,6 +190,9 @@ int  video_modo_live_consumir(void);
 // Numero da tentativa (1..3) enquanto uma queda esta em curso, esperando ou
 // recarregando; 0 fora disso. Enquanto nao e 0, video_falhou fica em 0.
 int    video_reconectando(void);
+// Changes when the same open starts again in another way (webOS HLS: the
+// other segment format): the app's opening deadlines count again from it.
+unsigned video_abertura_geracao(void);
 #ifdef NV_TPK
 // Seek sent and not yet confirmed by the TV (video_tpk.c), and a counter of
 // seeks the TV refused (EV_BUSCA_FALHOU). Used by player.c to hold the bar on
@@ -236,7 +248,8 @@ enum {
   VIDEO_DV_NAO_FALHOU,    // o caminho nao abriu
   VIDEO_DV_NAO_PESSOA,    // a pessoa escolheu HDR10
   VIDEO_DV_NAO_CONTENTOR, // o arquivo nao e Matroska (MP4/TS sem extensao na URL)
-  VIDEO_DV_NAO_NATIVE     // selected profile stays on the native player
+  VIDEO_DV_NAO_NATIVE,    // selected profile stays on the native player
+  VIDEO_DV_NAO_RPU        // P8.1 whose DV frames the probe did not reach: the TV player plays it its own way
 };
 typedef struct {
   int sessao;          // muda a cada video_tocar (fonte nova)
@@ -251,6 +264,7 @@ typedef struct {
   int tocando;         // `playing` no caminho
   int recusa;          // VIDEO_DV_NAO_*: o DV desta fonte nao vai acontecer
   int falhou;          // a fonte falhou de vez (video_falhou)
+  int mp4Inicial;      // MP4 recovery opening only; never a same-source seek/audio change
 } VideoDvFase;
 void video_dv_fase(VideoDvFase *f);
 // 1 quando a PROXIMA abertura de `url` vai tentar Dolby Vision em MKV: a fonte
@@ -275,7 +289,16 @@ void video_dv_segurar(int segurar);
 int  video_iniciando(void);
 // 1 once the current source has played on webOS (kept across reloads of it).
 int video_fonte_tocou(void);
+#ifdef NV_NATIVE_SEEK_TEST
+// The packet player has already played with its video plane bound on this source.
+// Later seeks/reloads must not restore the initial loading artwork/card.
+int video_dts_imagem_exibida(void);
+#endif
+#ifdef NV_DV_TRUEHD_TEST
+int video_truehd_convertido(void); // Selected TrueHD audio has a prepared AAC/AC3 output.
+#endif
 const char *video_dts_saida(void);  // actual local conversion output, empty for native playback
+int video_tv_dts(void);             // the TV declares DTS (webOS tv.model.edidType); 0 elsewhere/unknown
 int    video_audio_nao_suportado(void);  // uMS errorCode 200: video segue sem som
 int    video_seek_desistiu(void);  // webOS: seek recusado 3x; segue tocando de onde esta
 int    video_terminou(void); // 1 depois do fim de fluxo (endOfStream) da fonte atual
@@ -284,6 +307,11 @@ int    video_terminou(void); // 1 depois do fim de fluxo (endOfStream) da fonte 
 int    video_conflito_recurso(void);
 #ifdef NV_TPK
 void   video_tpk_log_host(const char *linha);   // tpk.c repassa cada linha do host
+// A reconexao em curso e do arquivo sendo preparado pelo mkvfix (seek durante
+// a sonda, reabertura pelo servidor local), nao queda de rede: outro aviso.
+int    video_tpk_reconexao_preparo(void);
+// Ha quanto tempo (ms) um seek espera a sonda do mkvfix; 0 = nenhum segurado.
+unsigned video_tpk_seek_segurado_ms(void);
 int    video_tpk_codec_recusado(const char *codecId);  // #313: DTS/TrueHD/MLP, que a Samsung nao toca
 // Zoom/recorte do plano de video (ROI), experimental (#241): liga/desliga em
 // execucao; o padrao e NV_TPK_ZOOM_ROI (0). Loga "[trailer] tpk zoom ROI: ...".
@@ -344,7 +372,7 @@ void video_simular_estatisticas(const VideoStats *s);   // capturas; NULL zera
 #define NV_FAIXA_MAX 64
 
 typedef struct {
-  char rotulo[48];   // "Ingles · Atmos 5.1" ou "Legenda 3"
+  char rotulo[112];  // "Ingles · Atmos 5.1" ou "Legenda 3"; 112: the full file track title (the menu cuts by width)
   char idioma[8];    // "en"; vazio quando o arquivo nao etiqueta
   int  numero;       // indice que o selectTrack espera
   int  ordinalMkv;   // ordinal da legenda (AVPlay; no .tpk, o do arquivo, faixasmkv.c); -1 se nao informado
@@ -368,7 +396,7 @@ typedef struct {
 
 // Identity used by candidates and manual audio memory, separate from selectTrack.
 static inline int video_audio_numero_memoria(const VideoFaixa *f) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // MKV TrackNumber occupies a separate namespace from native player indices.
   if (f->numero < 0 && f->stream_id > 0) return 0x40000000 | f->stream_id;
 #endif
@@ -442,7 +470,7 @@ typedef struct {
   int posicao;    // 0..7  -> position -3..4 no uMS
   int borda;      // 0 nenhuma, 1 contorno, 2 sombra
   int atrasoMs;   // negativo adianta
-  int opacidade;  // 0..3 = texto 100/75/50/25%
+  int opacidade;  // stable ID: legopacidade.h; 20 levels from 5% to 100%
   int familia;    // TxtFamilia; aplicada ao overlay externo (OpenSubtitles)
   int negrito;    // 1 = peso negrito no overlay (so o que o app desenha)
   int corBorda;   // -1 unset (legacy outline); 0 Black, 1 White, 2 Yellow, 3 Green, 4 Blue, 5 Red
