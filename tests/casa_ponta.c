@@ -17,6 +17,7 @@
 #include "rede.h"
 #include <arpa/inet.h>
 #include <assert.h>
+#include <sys/select.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -31,12 +32,15 @@ static int ligado = 1;
 static char endereco[200];
 int ajustes_p2p_ligado(void) { return ligado; }
 const char *ajustes_p2p_url(void) { return endereco; }
+int ajustes_p2p_prazo_metadados_s(void) { return 30; }   // 2.1: prazo configuravel
 void debrid_episodio(int *t, int *e) { idbase_episodio("tt1:1:2", t, e); }
 uint64_t badges_detectar(const char *m) { (void)m; return 0; }
 uint64_t badges_bit(const char *id) { (void)id; return 0; }
 const char *dados_dir(void) { return nvt(""); }
 int rede_pedir(const RedePedido *p, RedeResposta *r) { (void)p; r->erro = REDE_INDISPONIVEL; return 0; }
 void rede_resposta_limpar(RedeResposta *r) { (void)r; }
+// 2.1 (#775): o p2p.c instala a vigia de cancelamento em volta dos pedidos.
+RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) { (void)parar; (void)usuario; return (RedePararEstado){ .instalado = 1 }; }
 
 // ------------------------------------------------------------ http minimo
 static double agora(void) {
@@ -267,6 +271,37 @@ int main(void) {
   r = http("GET", outra, NULL, NULL, NULL, &st, NULL); assert(r && st == 404); free(r);
   pthread_mutex_lock(&mt); assert(motorPedidos == antes); pthread_mutex_unlock(&mt);
   assert(mResolucoes == 1);
+
+  // 5b) Conexao lenta (um byte a cada 2 s) e solta pelo prazo TOTAL de leitura,
+  // nao fica segurando uma das conexoes do ajudante por horas.
+  {
+    int s = socket(AF_INET, SOCK_STREAM, 0), fechou = 0;
+    struct sockaddr_in a;
+    const char *ped = "GET /";
+    double ini = agora();
+    memset(&a, 0, sizeof a);
+    a.sin_family = AF_INET; a.sin_port = htons((uint16_t)casa_porta());
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(s >= 0 && !connect(s, (struct sockaddr *)&a, sizeof a));
+    for (int i = 0; ped[i] && !fechou; i++) {
+      char lixo;
+      if (send(s, ped + i, 1, MSG_NOSIGNAL) != 1) { fechou = 1; break; }
+      for (int k = 0; k < 20 && !fechou; k++) {   // 2 s em passos de 100 ms
+        struct timeval tv = { 0, 100000 };
+        fd_set f; FD_ZERO(&f); FD_SET(s, &f);
+        if (select(s + 1, &f, NULL, NULL, &tv) > 0 && recv(s, &lixo, 1, 0) <= 0) fechou = 1;
+      }
+    }
+    if (!fechou) {   // o pedido nunca termina: espera o ajudante desistir
+      struct timeval tv = { 12, 0 };
+      char lixo;
+      setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+      fechou = recv(s, &lixo, 1, 0) <= 0;
+    }
+    close(s);
+    fprintf(stderr, "conexao lenta: solta=%d em %.1f s\n", fechou, agora() - ini);
+    assert(fechou && agora() - ini < 12.0);
+  }
 
   // 6) Erros do motor chegam ao cliente com o nome certo.
   mErro = P2P_ERR_SEM_PEERS;

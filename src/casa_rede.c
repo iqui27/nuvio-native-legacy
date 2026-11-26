@@ -36,6 +36,7 @@ void casa_teste(int portaUdp, const char *sonda) { (void)portaUdp; (void)sonda; 
 #define CASA_MAX 8
 #define CASA_CAB_MAX 8192
 #define CASA_CORPO_MAX 8192
+#define CASA_LEITURA_S 8   // prazo total para chegar o pedido inteiro
 
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  cond = PTHREAD_COND_INITIALIZER;
@@ -323,14 +324,29 @@ static void criar(int c, const CasaPedido *p, const char *corpo) {
   else responder(c, 500, "Error", "{}");
 }
 
+// Recv so ate `ate` (ms monotonicos): o prazo do socket vira o que ainda resta.
+static int prazoAte(int c, long long ate) {
+  long long resta = ate - agoraMs();
+  struct timeval tv;
+  if (resta <= 0) return 0;
+  tv.tv_sec = (time_t)(resta / 1000); tv.tv_usec = (suseconds_t)((resta % 1000) * 1000);
+  setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+  return 1;
+}
+
 static void *conexao(void *u) {
   int c = (int)(intptr_t)u, n = 0, corpoTem = 0, cl = 0;
   char *cab = malloc(CASA_CAB_MAX + CASA_CORPO_MAX + 1), *fim = NULL;
   char metodo[8] = "", alvo[256] = "", v[128], range[96] = "";
   CasaPedido p;
+  // Prazo TOTAL para ler o pedido (CASA_LEITURA_S), nao so por recv: um vizinho
+  // que pinga um byte a cada 29 s seguraria uma das CASA_CONEXOES por horas.
+  long long ate = agoraMs() + CASA_LEITURA_S * 1000LL;
   if (!cab) goto sai;
   while (n < CASA_CAB_MAX) {
-    ssize_t r = recv(c, cab + n, (size_t)(CASA_CAB_MAX - n), 0);
+    ssize_t r;
+    if (!prazoAte(c, ate)) goto sai;
+    r = recv(c, cab + n, (size_t)(CASA_CAB_MAX - n), 0);
     if (r <= 0) goto sai;
     n += (int)r; cab[n] = 0;
     if ((fim = strstr(cab, "\r\n\r\n"))) break;
@@ -350,11 +366,14 @@ static void *conexao(void *u) {
     if (cabecalho(cab, "Content-Length", v, sizeof v)) cl = atoi(v);
     if (cl < 0 || cl > CASA_CORPO_MAX) { responder(c, 413, "Too Large", "{}"); goto sai; }
     while (corpoTem < cl) {
-      ssize_t r = recv(c, corpo + corpoTem, (size_t)(cl - corpoTem), 0);
+      ssize_t r;
+      if (!prazoAte(c, ate)) goto sai;
+      r = recv(c, corpo + corpoTem, (size_t)(cl - corpoTem), 0);
       if (r <= 0) goto sai;
       corpoTem += (int)r;
     }
     corpo[cl] = 0;
+    prazos(c, 30);   // pedido lido: o create espera o motor com o prazo de sempre
     criar(c, &p, corpo);
   } else {
     char url[512] = "";
@@ -362,6 +381,7 @@ static void *conexao(void *u) {
     if (sesAtiva && !strcmp(sesHash, p.hash)) { snprintf(url, sizeof url, "%s", sesUrl); repasses++; sesUltimo = agoraS(); }
     pthread_mutex_unlock(&trava);
     if (!url[0]) { responder(c, 404, "Not Found", "{}"); goto sai; }
+    prazos(c, 30);   // o repasse do video usa o prazo de sempre
     if (cabecalho(cab, "Range", v, sizeof v) && strlen(v) < sizeof range && !strncmp(v, "bytes=", 6) &&
         strspn(v + 6, "0123456789-") == strlen(v + 6))
       memcpy(range, v, strlen(v) + 1);
