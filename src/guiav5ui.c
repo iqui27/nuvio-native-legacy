@@ -1777,7 +1777,11 @@ int g5ui_draw(void){
 #endif
   return 1;
 }
+/* Minha noite (minhanoite.h): the personal channel chip; guia.c relays it. */
+static int minha_noite_pedida;
+int g5ui_pediu_minha_noite(void){int p=minha_noite_pedida;minha_noite_pedida=0;return p;}
 static void activate(int id){
+  if(id==1107){minha_noite_pedida=1;return;}
   if(id==1106){g5ui_open("multiview-2");return;}
   if(id>=1100&&id<=1105){   /* guide top bar: Grade, Cartoes, Esportes, Filmes e series, Buscar, Opcoes */
     int n=id-1100;nav=-1;
@@ -2579,6 +2583,7 @@ static void gv_topbar(void){
   gv_button(1104,i18n("Buscar"),"aj_search",GV_X,GV_CHIP_Y,160,0,0);
   gv_button(1105,i18n("Opções"),"aj_sliders-horizontal",GV_X+172,GV_CHIP_Y,170,0,0);
   gv_button(1106,i18n("Multiview"),"aj_layout-dashboard",GV_X+354,GV_CHIP_Y,190,0,0);
+  gv_button(1107,i18n("Minha noite"),"aj_tv-minimal-play",GV_X+556,GV_CHIP_Y,230,0,0);
   time_t now=time(NULL);struct tm tm;localtime_r(&now,&tm);char clock[16];strftime(clock,sizeof clock,"%H:%M",&tm);
   gv_label(TXT_ILHA_NOME,clock,1826,GV_TOP_Y+12,90,0);
 }
@@ -3749,9 +3754,9 @@ static int gv_activate(void){
     else g5ui_open("fontes-gerenciar");
     return 1;
   }
-  int topo=gv_sports()&&((focus>=1100&&focus<1107)||(focus>=1200&&focus<1206)||(focus>=1302&&focus<1305)||(focus>=1320&&focus<1320+gv_cats));
+  int topo=gv_sports()&&((focus>=1100&&focus<1108)||(focus>=1200&&focus<1206)||(focus>=1302&&focus<1305)||(focus>=1320&&focus<1320+gv_cats));
   if(topo){
-    if(focus<1107)gv_zone=5;else if(focus<1206){gv_zone=4;gv_chipi=focus-1200;}
+    if(focus<1108)gv_zone=5;else if(focus<1206){gv_zone=4;gv_chipi=focus-1200;}
     else{gv_zone=3;gv_sb=focus<1305?focus-1300:focus-1314;}
   }
   if(gv_sports()&&!topo)return gs_activate();
@@ -3764,6 +3769,7 @@ static int gv_activate(void){
     else if(id==4)gv_go("busca");
     else if(id==5)g5ui_open("fontes-gerenciar");
     else if(id==6)g5ui_open("multiview-2");
+    else if(id==7)minha_noite_pedida=1;
     return 1;}
   if(gv_zone==4){
     int source=gv_source_index(gv_chipi);GuiaFonteSaude f;
@@ -3877,7 +3883,7 @@ static void gv_ajustes_move(SDL_Keycode k){
 }
 static void gv_point_focus(int id){
   if(gv_overlay()||gv_sports())return;
-  if(id>=1100&&id<=1106)gv_zone=5;
+  if(id>=1100&&id<=1107)gv_zone=5;
   else if(id>=1200&&id<1300&&gv_chip_tem(id-1200)){gv_zone=4;gv_chipi=id-1200;}
   else if(id==1314)gv_zone=2;
   else if(id>=1400&&id<1406){gv_zone=1;gv_pin=id-1400;}
@@ -3916,8 +3922,8 @@ static int gv_event(SDL_Keycode k,int repeat){
   if(gv_lista()){
     if(gv_sports()&&gv_arrow(k)&&gs_arrow(k,repeat))return 1;
     if(gv_zone==5&&k==SDLK_DOWN&&gv_return_focus>=1700){gv_zone=gv_return_zone;focus=gv_return_focus;return 1;}
-    if(focus>=1100&&focus<=1106){
-      if(k==SDLK_LEFT||k==SDLK_RIGHT){int next=focus+(k==SDLK_LEFT?-1:1);if(next<1100)gv_side_enter();else if(next<=1106)focus=next;return 1;}
+    if(focus>=1100&&focus<=1107){
+      if(k==SDLK_LEFT||k==SDLK_RIGHT){int next=focus+(k==SDLK_LEFT?-1:1);if(next<1100)gv_side_enter();else if(next<=1107)focus=next;return 1;}
       if(ok&&!repeat){activate(focus);return 1;}
     }
     if(k==SDLK_UP&&focus>=1200&&gv_total_n){gv_return_focus=focus;gv_return_zone=gv_zone;gv_zone=5;focus=1100+(gv_sports()?2:0);return 1;}
@@ -3999,7 +4005,7 @@ static int gv_event(SDL_Keycode k,int repeat){
     else if(gv_zone==6&&gv_card%5<4&&gv_card+1<gv_match){gv_card++;gv_lin=gv_card;gv_janela();}
     else if(gv_zone==1&&gv_pin<gv_npins-1)gv_pin++;
     else if(gv_zone==2)gv_hbt=2;
-    else if(gv_zone==5&&focus<(focus<1104?1103:1106))focus++;
+    else if(gv_zone==5&&focus<(focus<1104?1103:1107))focus++;
     else if(gv_zone==4){
       if(gv_chipi==0)gv_chipi=gv_chip_tem(2)?2:3;
       else if(gv_chipi==2||gv_chipi>=6){int next=gv_chipi==2?6:gv_chipi+1;gv_chipi=gv_chip_tem(next)?next:3;}

@@ -215,7 +215,7 @@ static float gPreviewLargura(void) {
 }
 // CATEGORIAS e o primeiro chip: a porta VISIVEL do painel de categorias,
 // que antes so abria segurando a seta (ninguem descobre gesto que nao se ve).
-enum { G_TOPO_BUSCAR = 0, G_TOPO_CATEGORIAS, G_TOPO_CARTOES, G_TOPO_LISTA, G_TOPO_OPCOES, G_TOPO_ADDONS, G_TOPO_FILTROS, G_TOPO_DIAG,
+enum { G_TOPO_BUSCAR = 0, G_TOPO_CATEGORIAS, G_TOPO_MINHA, G_TOPO_CARTOES, G_TOPO_LISTA, G_TOPO_OPCOES, G_TOPO_ADDONS, G_TOPO_FILTROS, G_TOPO_DIAG,
        G_TOPO_LIMPAR, G_TOPO_PREVIEW, G_TOPO_N };
 #define G_TOPO_PRIMARIOS (G_TOPO_OPCOES + 1)
 
@@ -3691,6 +3691,44 @@ int guia_zap_ver(const char *idAtual, int dir, CatItem *saida) {
   return zapAlvo(idAtual, dir, saida, 0);
 }
 
+// MINHA NOITE NA ORDEM DE ZAPPING (minhanoite.h): o canal pessoal fica entre o
+// ultimo e o primeiro canal da vista. Estas duas dizem a app.c quando o CH+/-
+// passaria da ponta e qual e o canal da ponta — a mesma vista de zapAlvo.
+int guia_zap_da_volta(const char *idAtual, int dir) {
+  int i, alvo = -1, n = nZapL;
+  idAtual = guia_canal_grupo_id(idAtual);
+  if (!dir || estado != G_PRONTO || nCanais < 1) return 0;
+  for (i = 0; i < n; i++)
+    if (!strcmp(canais[zapL[i]].id, idAtual ? idAtual : "")) { alvo = i; break; }
+  if (alvo < 0 || n < 1) {
+    n = nCanais; alvo = -1;
+    for (i = 0; i < nCanais; i++)
+      if (!strcmp(canais[i].id, idAtual ? idAtual : "")) { alvo = i; break; }
+    if (alvo < 0) return 0;
+  }
+  return alvo + dir < 0 || alvo + dir >= n;
+}
+// dir > 0 entrega o primeiro canal da vista; dir < 0, o ultimo.
+int guia_zap_ponta(int dir, CatItem *saida) {
+  int n = nZapL > 0 ? nZapL : nCanais, inteira = nZapL < 1, passo = dir < 0 ? -1 : 1, i, k;
+  if (!saida || estado != G_PRONTO || nCanais < 1) return 0;
+  for (i = 0, k = passo > 0 ? 0 : n - 1; i < n; i++, k += passo) {
+    int idx = inteira ? k : zapL[k];
+    if (!varianteVisivel(idx) || !gLiberado(&canais[idx])) continue;
+    canalParaItem(&canais[idx], saida);
+    snprintf(pedidoBase, sizeof pedidoBase, "%s", canais[idx].base);
+    snprintf(pedidoTipo, sizeof pedidoTipo, "%s", canais[idx].tipo);
+    return 1;
+  }
+  return 0;
+}
+static int pedMinhaNoite;
+int guia_pediu_minha_noite(void) {
+  int p = pedMinhaNoite | g5ui_pediu_minha_noite();
+  pedMinhaNoite = 0;
+  return p;
+}
+
 
 // CANAL DE LISTA M3U (M9): o id e "m3u:<chave da fonte>:<hash>" e a URL, o
 // User-Agent e o Referer ficam no canal (arena), nunca no log. 1 = achou.
@@ -4524,6 +4562,7 @@ static int fontesEvento(SDL_Keycode k, Uint32 agora) {
 static void topoAcionar(int item) {
   if (item == G_TOPO_BUSCAR) buscaAbrir();
   else if (item == G_TOPO_CATEGORIAS) catAbrir(2, 0);
+  else if (item == G_TOPO_MINHA) pedMinhaNoite = 1;
   else if (item == G_TOPO_OPCOES) { opcoesAberto = 1; opcoesFoco = G_TOPO_ADDONS; }
   else if (item == G_TOPO_ADDONS) painelAbrir();
   else if (item == G_TOPO_FILTROS) filtrosAbrir();
@@ -6620,6 +6659,8 @@ static void ponteiroAddon(int i, int b) {
 static void gTopoRotulos(const char **rot) {
   rot[G_TOPO_BUSCAR] = i18n("Buscar");
   rot[G_TOPO_CATEGORIAS] = i18n("Categorias");
+  // O canal pessoal (minhanoite.h): OK sintoniza; app.c monta e toca.
+  rot[G_TOPO_MINHA] = i18n("Minha noite");
   rot[G_TOPO_CARTOES] = i18n("Cartões");
   rot[G_TOPO_LISTA]   = i18n("Lista");
   rot[G_TOPO_OPCOES]  = i18n("Opções");

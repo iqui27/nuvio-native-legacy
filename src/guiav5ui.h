@@ -15,6 +15,7 @@ int g5ui_event(const SDL_Event *e);
 void g5ui_update(void);
 int g5ui_draw(void);
 int g5ui_changed(void);
+int g5ui_pediu_minha_noite(void);   /* "Minha noite" chip (consumes) */
 int g5ui_play(CatItem *item, char *url, size_t cap);
 int g5ui_channel_allowed(const char *id, const char *name, const char *group, const char *source);
 int g5ui_check_channel(const CatItem *item);

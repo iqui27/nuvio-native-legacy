@@ -411,3 +411,4 @@
   0, /* direct account-profile friends action */
   0, // pausaAmbienteLocal: Ligado (V_LIGA 0)
   0, /* legendaTemporariaLocal: Ligado */
+  1, /* abrirTocandoLocal: Desligado (opt-in) */

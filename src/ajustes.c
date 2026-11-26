@@ -893,6 +893,9 @@ typedef enum {
   // Legenda temporaria (legtemp.h): sem legenda ligada, ela aparece sozinha ao
   // mutar e ao voltar alguns segundos. LOCAL, ligado, append-only.
   AJ_LEG_TEMPORARIA,
+  // "Abrir tocando" (Ligou, tocou — minhanoite.h): ligado, o app abre na Minha
+  // noite em vez da Home. Decisao do dono: opcional. LOCAL, desligado, append-only.
+  AJ_ABRIR_TOCANDO,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2154,6 +2157,7 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Perfis desta conta"),
   ESC("Tela ambiente ao pausar", V_LIGA, 2),                 // local: pausaAmbienteLocal
   ESC("Legenda ao silenciar ou voltar", V_LIGA, 2),          // local: legendaTemporariaLocal
+  ESC("Abrir tocando", V_LIGA, 2),                           // local: abrirTocandoLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2553,6 +2557,7 @@ static const char *CHAVE[] = {
   "-amigosPerfis",
   "pausaAmbienteLocal",
   "legendaTemporariaLocal",
+  "abrirTocandoLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3769,6 +3774,7 @@ int ajustes_legenda_sync_audio(void) { return lig(AJ_LEG_SYNC_AUDIO); }
 int ajustes_legenda_sync_audio(void) { return 0; }   // escondida fora do Android
 #endif
 int ajustes_legenda_forcada_auto(void) { return lig(AJ_LEG_FORCADA); }   // #287, padrao Ligado
+int ajustes_abrir_tocando(void) { return lig(AJ_ABRIR_TOCANDO); }   // padrao Desligado
 int ajustes_legenda_evitar_sdh(void) { return lig(AJ_LEG_EVITAR_SDH); }   // #743, padrao Desligado
 int ajustes_legenda_temporaria(void) { return lig(AJ_LEG_TEMPORARIA); }   // legtemp.h, padrao Ligado
 // Motor novo de legendas ASS do .tpk (assperf.h): 1 = ligado (padrao), 0 = o
@@ -7035,6 +7041,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LEG_FORCADA:    /* #287: o web nao tem esta escolha */
     case AJ_LEG_EVITAR_SDH: /* #743: idem */
     case AJ_LEG_TEMPORARIA: /* idem */
+    case AJ_ABRIR_TOCANDO:  /* como esta TV abre e escolha desta TV */
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA: /* estilo da legenda e desta TV */
     case AJ_LEG_CONTORNO_COR: /* #475: idem */
     case AJ_CACHE_SEEK:     /* F07: o disco e o player sao desta TV */
@@ -7935,6 +7942,7 @@ static const char *rotuloNovo(int op) {
     case AJ_LEG_FORCADA: return "Legenda forçada automática";
     case AJ_LEG_EVITAR_SDH: return "Evitar legendas SDH";
     case AJ_LEG_TEMPORARIA: return "Legenda ao silenciar ou voltar";
+    case AJ_ABRIR_TOCANDO: return "Abrir tocando";
     case AJ_TMDB_IDIOMA: return "Idioma dos dados do título";
     case AJ_HERO_FUNDO: return "Imagem de fundo do destaque";
     case AJ_GRAD_CLASSICO: return "Realce antigo no cartaz em foco";
@@ -8791,6 +8799,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_LEG_SYNC_AUTO: return "Ajusta a legenda automaticamente. Desligue para manter a escolhida. Vale só nesta TV.";
     case AJ_LEG_SYNC_AUDIO: return "Compara as falas do áudio com a legenda externa para acertar o atraso. Só onde o player entrega o áudio decodificado e sem passthrough; vale só nesta TV.";
     case AJ_LEG_FORCADA: return "Quando o áudio já está no idioma da legenda, liga só a legenda forçada desse idioma (falas em outra língua e placas), ou nenhuma se o arquivo não tiver. Desligado, liga a legenda completa como antes.";
+    case AJ_ABRIR_TOCANDO: return "Ligado, o app abre já tocando a Minha noite: um canal montado nesta TV com o que você está assistindo e a sua lista. Voltar leva à tela inicial. Nada é marcado como assistido até você apertar OK e escolher. Vale só nesta TV.";
     case AJ_LEG_EVITAR_SDH: return "A escolha automática passa a ignorar legendas para surdos (SDH/CC), que trazem descrições como [porta batendo] e o nome de quem fala. A escolha manual continua mostrando todas; vale só nesta TV.";
     case AJ_LEG_TEMPORARIA: return "Sem legenda ligada, ela aparece sozinha quando você volta alguns segundos ou silencia o som, e some quando a cena passa do ponto em que você estava ou o som volta. Não muda a legenda que você escolheu. O silenciar só vale onde o aparelho informa; vale só nesta TV.";
     case AJ_LEG_MOSTRAR: return valor[op] ? "Todas as legendas, com detalhes" : "Recomendadas";
@@ -9505,6 +9514,7 @@ static const char *beneficioProprio(int op) {
     case AJ_ESTAT_LADO: return "Direita ou Esquerda: o lado do player onde as estatísticas ao vivo ficam.";
     case AJ_SAIDA_PLAYER: return "O filme pode ficar na ilha do relógio para você voltar depois.";
     case AJ_LEG_FORCADA: return "Placas e falas em outra língua aparecem; o resto, não.";
+    case AJ_ABRIR_TOCANDO: return "O app abre tocando a Minha noite; Voltar leva à tela inicial.";
     case AJ_LEG_EVITAR_SDH: return "Legendas sem descrições de som são preferidas nas escolhas automáticas.";
     case AJ_LEG_TEMPORARIA: return "A legenda aparece sozinha quando você volta alguns segundos ou silencia o som.";
     case AJ_BUSCA_CINEMETA: return "A busca também consulta o Cinemeta se o catálogo do Nuvio falhar.";

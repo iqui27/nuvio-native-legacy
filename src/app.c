@@ -85,6 +85,8 @@ extern __attribute__((weak)) void farol_registrar_resultado(int acao, int ok);
 #include "arteescolha.h"
 #include "vertudo.h"
 #include "guia.h"
+#include "minhanoite.h"
+#include "plrui.h"
 #include "livetvdiag.h"
 #include "proxyts.h"
 #include "webosver.h"
@@ -2873,13 +2875,21 @@ static int escolhaDoNext(const char *base, char *prov, unsigned tam) {
 // Continue Watching rebuild), so the index taken before it can slide or the
 // title can leave (#697). Copy before closing, reopen from the copy.
 static CatItem reabrirCopia;
+// Minha noite (minhanoite.h): a marca da sessao no ar, lida ANTES de fechar. So
+// uma sessao aberta a entrega; um titulo aberto do zero nao herda nada.
+static int reabrirMn, reabrirPassiva;
 static void reabrirGuardar(int titulo) {
   const CatItem *c = cat_item(titulo);
+  int mesmo = player_indice() == titulo;   // outro titulo nao herda a marca
+  reabrirMn = mesmo && player_minha_noite(); reabrirPassiva = mesmo && player_passivo();
   if (c) reabrirCopia = *c; else memset(&reabrirCopia, 0, sizeof reabrirCopia);
 }
 static int reabrirTitulo(int titulo) {
   int i = cat_indice_reabrir(titulo, &reabrirCopia);
-  if (i >= 0) player_abrir(i, NULL);
+  int mn = reabrirMn, passiva = reabrirPassiva;
+  // Reabrir a mesma sessao nao e um gesto; a marca vale para UMA reabertura.
+  reabrirMn = reabrirPassiva = 0;
+  if (i >= 0) { player_abrir(i, NULL); if (mn) player_passivo_repor(mn, passiva); }
   return i;
 }
 static void abrirProximoEpisodio(int t, int e, int apontar) {
@@ -4326,6 +4336,283 @@ static void tocarCanal(const CatItem *it) {
   marco("guia: buscando fontes do canal");
 }
 
+// ---- MINHA NOITE (minhanoite.h) — "Ligou, tocou", pesquisa de mercado 4.1 ----
+//
+// O canal pessoal mora na ordem de zapping do guia, entre o ultimo e o
+// primeiro canal de IPTV. A grade e a regra pura de minhanoite.c; aqui fica so
+// a cola: juntar o que a pessoa tem em andamento, sintonizar pelo MESMO
+// caminho de reproducao da pagina do titulo (fontes, legendas, trava, perfil
+// infantil) e avisar o player que a sessao e passiva.
+static int    mnArmado;            // a proxima abertura do player e do canal
+static Uint32 mnArmadoEm;
+static double mnFracao;
+static char   mnTitulo[96];
+static int    mnOferta, mnOfertaFoco;   // a folha do OK: 0 = ver do inicio, 1 = daqui
+static Uint32 mnSintonizouEm;
+static int    mnZapPedido;         // CH+/- apertado com a Minha noite no ar
+static int    mnNoAr;              // quadro anterior: o player era da Minha noite
+static int    mnAbriu;             // "Abrir tocando" ja teve a sua chance
+static Uint32 mnAbrirDesde, mnAbrirUlt;
+// TEMPO DE ZAP: do pedido ate a primeira imagem. Sai no log para medir o que
+// a pesquisa pede ("zap rapido") antes de prometer qualquer numero.
+static Uint32 zapT0;
+static char   zapDe[80], zapPara[80];
+
+// Conta e perfil escolhidos (ou o preview de interface, que nao tem conta).
+static int mnAppPronto(void) {
+  return uiPreview || (login_concluido() && perfilsel_concluido());
+}
+
+static void zapMarcar(const char *de, const char *para) {
+  zapT0 = SDL_GetTicks();
+  if (!zapT0) zapT0 = 1;
+  snprintf(zapDe, sizeof zapDe, "%s", de && de[0] ? de : "-");
+  snprintf(zapPara, sizeof zapPara, "%s", para && para[0] ? para : "-");
+  printf("[zap] pedido: %s -> %s\n", zapDe, zapPara);
+  fflush(stdout);
+}
+static void zapMedir(void) {
+  Uint32 d;
+  if (!zapT0) return;
+  d = SDL_GetTicks() - zapT0;
+  if (player_aberto() && video_pronto() && !player_carregando()) {
+    printf("[zap] %s -> %s: imagem em %u ms\n", zapDe, zapPara, (unsigned)d);
+    zapT0 = 0;
+  } else if (d > 45000 || (!player_aberto() && !mnArmado && d > 3000)) {
+    printf("[zap] %s -> %s: sem imagem depois de %u ms\n", zapDe, zapPara, (unsigned)d);
+    zapT0 = 0;
+  } else return;
+  fflush(stdout);
+}
+
+static long mnFuso(void) {
+  time_t t = time(NULL);
+  struct tm l = *localtime(&t), g = *gmtime(&t);
+  int dias = l.tm_year != g.tm_year ? (l.tm_year > g.tm_year ? 1 : -1)
+           : l.tm_yday != g.tm_yday ? (l.tm_yday > g.tm_yday ? 1 : -1) : 0;
+  return dias * 86400L + (l.tm_hour - g.tm_hour) * 3600L + (l.tm_min - g.tm_min) * 60L;
+}
+
+// Continuar assistindo, series em andamento e a lista, do catalogo que ja
+// esta na memoria: nenhuma viagem de rede. Devolve quantos titulos entraram.
+static int mnMontar(MnFonte *f) {
+  int lim = ajustes_cw_concluido(), n = cat_n(), i;
+  mn_fonte_limpar(f);
+  for (i = 0; i < n; i++) {
+    const CatItem *c = cat_item(i);
+    MnEntrada e;
+    int serie;
+    if (!c || !c->imdb[0] || jfid_e(c->imdb)) continue;
+    serie = !strcmp(c->tipo, "series");
+    if (!serie && strcmp(c->tipo, "movie")) continue;
+    if (perfil_infantil_ativo() && !perfil_regra_classif(c->classificacao)) continue;
+    memset(&e, 0, sizeof e);
+    snprintf(e.id, sizeof e.id, "%s", c->imdb);
+    snprintf(e.tipo, sizeof e.tipo, "%s", c->tipo);
+    snprintf(e.titulo, sizeof e.titulo, "%s", c->titulo);
+    if (c->progresso > 0 && c->progresso < lim) {
+      e.origem = MN_CONTINUAR;
+      if (serie) { e.temporada = c->temporada; e.episodio = c->episodio; }
+    } else if (serie && c->episodio > 0 && c->progresso >= lim) {
+      // Episodio terminado: entra o SEGUINTE, e so quando a lista de episodios
+      // ja e a definitiva (a mesma regra do Continuar assistindo direto).
+      int k = cat_indice_titulo(c->imdb, i);
+      ProxSugestao px;
+      if (k < 0 || !cat_episodios_finais(k, c->imdb) ||
+          !prox_seguinte(c, cat_episodio(k, 0), cat_n_episodios(k), lim,
+                         (long long)time(NULL) * 1000LL, &px)) continue;
+      e.origem = MN_SERIE; e.temporada = px.temporada; e.episodio = px.episodio;
+    } else if (c->naLista && c->progresso < lim) {
+      e.origem = MN_LISTA;
+      if (serie) { e.temporada = 1; e.episodio = 1; }
+    } else continue;
+    mn_fonte_juntar(f, &e);
+  }
+  return f->n;
+}
+
+// Sintoniza a Minha noite. `de` e o canal de onde veio o zap (log). 1 = pediu.
+static int tocarMinhaNoite(const char *de) {
+  MnFonte f;
+  MnPrograma p;
+  const MnEntrada *e;
+  int k;
+  if (!mnMontar(&f) || !mn_programa(&f, time(NULL), mnFuso(), &p)) {
+    glem_aviso_curto(i18n("Minha noite está vazia: comece um título ou salve algo na sua lista."));
+    printf("[minhanoite] vazia: nada em andamento nem na lista (pedido de %s)\n", de ? de : "-");
+    fflush(stdout);
+    return 0;
+  }
+  e = &f.e[p.indice];
+  k = cat_indice_por_imdb_tipo(e->id, e->tipo);
+  if (k < 0 || !perfilPermiteReproduzir(k)) return 0;
+  zapMarcar(de, MN_ID);
+  if (player_aberto() || player_retido() || player_mini_ativo()) player_encerrar();
+  if (detail_aberto()) detail_fechar();
+  abrirPorIndice(k);
+  if (!detail_aberto()) { zapT0 = 0; return 0; }
+  cwEspera = 0; cwRewatch = -1;
+  cwTocarT = e->temporada; cwTocarE = e->episodio;
+  mnArmado = 1; mnArmadoEm = SDL_GetTicks(); mnFracao = p.fracao;
+  snprintf(mnTitulo, sizeof mnTitulo, "%s", e->titulo);
+  detail_pedir_reproduzir();
+  printf("[minhanoite] no ar: %s T%dE%d origem=%d bloco=%ld..%ld entrada=%.0f%% (%d titulos na grade)\n",
+         e->id, e->temporada, e->episodio, e->origem, (long)p.ini, (long)p.fim,
+         p.fracao * 100.0, f.n);
+  fflush(stdout);
+  return 1;
+}
+
+void app_minha_noite(int oferta) {
+  if (!mnAppPronto()) return;
+  // "minhanoite:oferta": abre a folha do OK com a sessao no ar, mesmo quando
+  // outra camada do player esta com o teclado (no Linux o video e de mentira e
+  // a sessao para na tela de fonte).
+  if (oferta) { if (player_minha_noite() && player_passivo()) { mnOferta = 1; mnOfertaFoco = 0; } return; }
+  if (aguardandoFonte != 2) tocarMinhaNoite("porta");
+}
+
+// O player acabou de abrir pelo caminho da pagina do titulo: se foi a Minha
+// noite que pediu, a sessao nasce passiva e entra no meio do programa.
+static void mnAoAbrirPlayer(void) {
+  if (!mnArmado) return;
+  mnArmado = 0;
+  if (SDL_GetTicks() - mnArmadoEm > 5000) return;   // pedido velho: outra abertura
+  player_passivo_abrir(mnFracao);
+  mnOferta = 0; mnOfertaFoco = 0; mnSintonizouEm = SDL_GetTicks();
+}
+
+static int mnTeclaCanal(const SDL_Event *e) {
+  int sc;
+  if (e->type != SDL_KEYDOWN || !player_aberto() || !player_minha_noite()) return 0;
+  sc = e->key.keysym.scancode;
+  return sc == NV_SCANCODE_CH_UP || sc == NV_SCANCODE_CH_DOWN ||
+         e->key.keysym.sym == SDLK_PAGEUP || e->key.keysym.sym == SDLK_PAGEDOWN;
+}
+
+// As teclas da Minha noite, antes do player. 1 = consumiu.
+static int mnEvento(const SDL_Event *e) {
+  SDL_Keycode k;
+  int sc, ok, voltar;
+  if (e->type != SDL_KEYDOWN || !player_minha_noite()) return 0;
+  k = e->key.keysym.sym; sc = e->key.keysym.scancode;
+  if (sc == NV_SCANCODE_CH_UP || k == SDLK_PAGEUP)     { if (!e->key.repeat) mnZapPedido = 1;  return 1; }
+  if (sc == NV_SCANCODE_CH_DOWN || k == SDLK_PAGEDOWN) { if (!e->key.repeat) mnZapPedido = -1; return 1; }
+  if (!player_passivo()) return 0;
+  ok = k == SDLK_RETURN || k == SDLK_KP_ENTER;
+  voltar = k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE || sc == NV_SCANCODE_BACK;
+  if (!mnOferta) {
+    // O OK oferece; nao decide nada sozinho.
+    if (ok && !e->key.repeat) { mnOferta = 1; mnOfertaFoco = 0; return 1; }
+    return 0;
+  }
+  if (k == SDLK_LEFT || k == SDLK_RIGHT) { mnOfertaFoco = k == SDLK_RIGHT; return 1; }
+  if (ok && !e->key.repeat) {
+    int gesto = mnOfertaFoco ? MN_GESTO_DAQUI : MN_GESTO_DO_INICIO;
+    if (mn_conta(1, gesto)) player_passivo_assumir(gesto == MN_GESTO_DO_INICIO);
+    mnOferta = 0;
+    return 1;
+  }
+  if (voltar) { mnOferta = 0; return 1; }
+  return 1;   // a folha e modal
+}
+
+// Por cima do player: o aviso de sintonia e a folha do OK.
+static void mnDesenhar(Uint32 agora) {
+  float a = 1.0f;
+  if (!player_visivel() || !player_minha_noite() || !player_passivo()) return;
+  if (mnOferta) {
+    const char *rot[2];
+    float w = 760.0f, h = 212.0f, x = (NV_TELA_W - w) * 0.5f, y = NV_TELA_H - h - 96.0f, bw, bx;
+    GfxRect painel = { x, y, w, h };
+    TxtLinha t1, t2;
+    int i;
+    rot[0] = i18n("Assistir do início"); rot[1] = i18n("Assistir daqui");
+    gfx_vidro_ou_solido(painel, 28.0f / h, GFX_VIDRO_DENS_MODAL, a, .071f, .075f, .086f, .98f);
+    t1 = txt_linha(TXT_CAPTION, i18n("Minha noite"), 148, 200, 255, 255);
+    txt_desenhar_alpha(t1, x + 32.0f, y + 24.0f, a);
+    t2 = txt_linha_corta_bruta(TXT_HEADLINE, mnTitulo, 242, 243, 247, 255, w - 64.0f);
+    txt_desenhar_alpha(t2, x + 32.0f, y + 24.0f + t1.h + 6.0f, a);
+    bw = (w - 64.0f - 16.0f) * 0.5f; bx = x + 32.0f;
+    for (i = 0; i < 2; i++) {
+      GfxRect b = { bx + i * (bw + 16.0f), y + h - 56.0f - 24.0f, bw, 56.0f };
+      int foco = i == mnOfertaFoco;
+      TxtLinha t;
+      if (foco) plrui_pilula_foco(b, a); else plrui_botao_repouso(b, a);
+      t = txt_linha_corta_bruta(TXT_PG_ROTULO, rot[i], foco ? 16 : 232, foco ? 17 : 234,
+                                foco ? 20 : 240, 255, bw - 32.0f);
+      txt_desenhar_alpha(t, b.x + (b.w - t.w) * 0.5f, b.y + (b.h - t.h) * 0.5f, a);
+    }
+    return;
+  }
+  // AVISO DE SINTONIA: 8 s dizendo que canal e este e o que o OK faz.
+  if (agora - mnSintonizouEm < 8000) {
+    char linha[200];
+    TxtLinha t;
+    GfxRect r;
+    Uint32 d = agora - mnSintonizouEm;
+    a = d > 7400 ? (8000 - d) / 600.0f : 1.0f;
+    snprintf(linha, sizeof linha, "%s  \xc2\xb7  %s  \xc2\xb7  OK: %s", i18n("Minha noite"), mnTitulo,
+             i18n("Assistir do início"));
+    t = txt_linha_corta_bruta(TXT_PG_ROTULO, linha, 242, 243, 247, 255, NV_TELA_W - 2.0f * 96.0f - 48.0f);
+    r = (GfxRect){ 96.0f, 64.0f, t.w + 48.0f, 56.0f };
+    gfx_vidro_ou_solido(r, 0.5f, GFX_VIDRO_DENS, a, .071f, .075f, .086f, .92f);
+    txt_desenhar_alpha(t, r.x + 24.0f, r.y + (r.h - t.h) * 0.5f, a);
+  }
+}
+
+// Uma vez por quadro: zap a partir da Minha noite, o chip do guia, a volta
+// para a Home e o "Abrir tocando".
+static void mnAtualizar(Uint32 agora) {
+  int noAr = player_aberto() && player_minha_noite();
+  zapMedir();
+  if (mnArmado && SDL_GetTicks() - mnArmadoEm > 5000) mnArmado = 0;
+  if (tela == TELA_GUIA && guia_pediu_minha_noite() && aguardandoFonte != 2) tocarMinhaNoite("guia");
+  if (mnZapPedido) {
+    int dir = mnZapPedido;
+    CatItem it;
+    mnZapPedido = 0;
+    if (noAr && mn_zap(1, 1, 0) == MN_ZAP_PONTA) {
+      if (guia_zap_ponta(dir, &it)) {
+        zapMarcar(MN_ID, it.imdb);
+        if (detail_aberto()) detail_fechar();
+        tocarCanal(&it);
+        noAr = 0; mnNoAr = 0;
+      } else {
+        // Sem lista carregada (ou sem IPTV): a primeira tecla carrega, como no
+        // zapping de canal.
+        guia_carregar();
+      }
+    }
+  }
+  // VOLTAR LEVA A TELA DE ONDE VEIO: a pagina do titulo so serviu de caminho.
+  // A marca passiva NAO e mexida aqui: o player ainda vai gravar a saida
+  // (player_encerrar, mais abaixo no quadro) e e ela que segura esse registro.
+  // Quem a zera e o proximo player_abrir.
+  if (mnNoAr && !noAr && !player_aberto() && !mnArmado && detail_aberto()) detail_fechar();
+  mnNoAr = noAr;
+  if (!noAr) mnOferta = 0;
+  // ABRIR TOCANDO (Ajustes, desligado de fabrica): uma chance por abertura do
+  // app, so com a Home parada e antes de a pessoa tocar no controle.
+  if (!mnAbriu) {
+    if (!ajustes_abrir_tocando()) { if (mnAppPronto()) mnAbriu = 1; }
+    else if (tela == TELA_HOME && mnAppPronto() && !player_aberto() &&
+             !player_mini_ativo() && !detail_aberto() && cat_n() > 0) {
+      if (!mnAbrirDesde) mnAbrirDesde = agora ? agora : 1;
+      if (agora - mnAbrirUlt >= 1000) {
+        MnFonte f;
+        mnAbrirUlt = agora;
+        if (mnMontar(&f) > 0) { mnAbriu = 1; tocarMinhaNoite("abertura"); }
+        else if (agora - mnAbrirDesde > 15000) {
+          mnAbriu = 1;
+          printf("[minhanoite] abrir tocando: nada em andamento nem na lista; fica a Home\n");
+          fflush(stdout);
+        }
+      }
+    }
+  }
+}
+
 // O CANAL NO AR VAI PARA O GUIA, sem recarregar (25/09/2026). O mesmo fluxo
 // muda so de retangulo: da tela cheia (ou do PiP de canto) para o preview
 // 800x450, com a janela andando em degraus (player_minimizar_para_guia). O
@@ -5085,6 +5372,9 @@ static int relogioPedidoPagina(void) {
 }
 
 void app_evento(const SDL_Event *e) {
+  // Quem ja pegou o controle nao quer que o app troque de tela sozinho: a
+  // primeira tecla na Home cancela o "Abrir tocando" desta abertura.
+  if (e->type == SDL_KEYDOWN && !mnAbriu && mnAppPronto()) mnAbriu = 1;
 #ifdef NV_DESKTOP_UI
   if (e->type == SDL_KEYDOWN && (e->key.keysym.mod & (KMOD_GUI | KMOD_CTRL)) && !teclado_aberto() && !player_aberto()) {
     if (e->key.keysym.sym == SDLK_b) { if (!e->key.repeat) menu_desktop_alternar(); return; }
@@ -5148,6 +5438,9 @@ void app_evento(const SDL_Event *e) {
     if (k == SDLK_F12 && player_aberto()) { estatvivo_abrir(); return; }
   }
   if (e->type == SDL_QUIT) { retomamorna_cancelar(); sair = 1; return; }
+  // Minha noite: a folha do OK e modal enquanto esta aberta, e o CH+/- sai do
+  // canal mesmo com a tela de fonte por cima (canal que nao abre tambem zapeia).
+  if ((mnOferta || mnTeclaCanal(e)) && mnEvento(e)) return;
   if (dicascontrole_ocupado()) { dicascontrole_evento(e); return; }
   if (rewatchui_aberta()) { rewatchui_evento(e); return; }
   if (farolgostoui_aberto()) { farolgostoui_evento(e); return; }
@@ -5579,6 +5872,7 @@ void app_evento(const SDL_Event *e) {
     saiuPorCima = (e->key.keysym.sym == SDLK_UP);
   }
   if (spotAtalho(e) && spotPode()) { spotAbrir(e->key.keysym.sym == SPOT_TECLA_VOZ); return; }
+  if (player_visivel() && mnEvento(e)) return;
   if (player_visivel()) { player_evento(e); return; }
   if (srvsetup_aberto()) { srvsetup_evento(e); return; }
   // A BARRA LATERAL POR CIMA DA PAGINA DO TITULO (dono, 03/10: "pode abrir por
@@ -7403,6 +7697,7 @@ void app_atualizar(float dt, Uint32 agora) {
       }
       if (cwRewatch >= 0) { player_rewatch(cwRewatch); cwRewatch=-1; }
       if (doInicio) player_do_inicio();
+      mnAoAbrirPlayer();
       // O episodio so fica definitivo DEPOIS de abrir o player. Refaça sempre
       // o pedido de legenda nesse ponto; a busca de prefetch pode ter comecado
       // no episodio anteriormente focado e o worker agora troca para o pedido
@@ -8329,9 +8624,16 @@ void app_atualizar(float dt, Uint32 agora) {
     if (dir && player_aberto() && aguardandoFonte != 2) {
       const char *id = player_id_canal();
       CatItem it;
-      if (id[0] && guia_zap(id, dir, &it)) tocarCanal(&it);
+      // Na ponta da lista entra a Minha noite (minhanoite.h), se tiver grade.
+      if (id[0] && guia_zap_da_volta(id, dir)) {
+        MnFonte mf;
+        if (mn_zap(0, mnMontar(&mf) > 0, 1) == MN_ZAP_MINHA && tocarMinhaNoite(id)) dir = 0;
+      }
+      if (!dir) { /* foi para a Minha noite */ }
+      else if (id[0] && guia_zap(id, dir, &it)) { zapMarcar(id, it.imdb); tocarCanal(&it); }
       else guia_carregar();
     } }
+  mnAtualizar(agora);
 
   // ULTIMO CANAL: "0" ou o botao do OSD na Live TV.
   if (player_pediu_ultimo() && player_aberto() && aguardandoFonte != 2) {
@@ -8877,6 +9179,7 @@ static void desenharTelas(Uint32 agora) {
   if (player_visivel()) gfx_hdr_ui = player_ui_hdr();
   CAMADA_SE(player_visivel());
   if (!juntosui_cobre_tela()) player_desenhar(agora);
+  mnDesenhar(agora);
   // O overlay do guia vai POR CIMA do player — o video continua atras do fundo
   // a 94%, que e o que diz "a TV nao parou" enquanto se troca de canal.
   if (guia_overlay_aberta()) { ponteiro_camada(); guia_desenhar(agora); }
@@ -9350,6 +9653,8 @@ void app_desenhar(Uint32 agora) {
 int app_quer_sair(void) { return sair; }
 int app_zap_ativo(void) {
   if (tela == TELA_GUIA) return 1;
+  // Minha noite (minhanoite.h) e canal na ordem de zapping, com video de VOD.
+  if (player_aberto() && player_minha_noite()) return 1;
   return (tela == TELA_PLAYER || player_mini_ativo()) && player_id_canal()[0];
 }
 int app_central_pode(void) {
