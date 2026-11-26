@@ -419,3 +419,4 @@
   0, /* pecaComoFalaLocal: Ligado (nada acontece ate parear o celular) */
   0, /* parear celular: acao */
   0, /* night mode: Off */
+  0, /* marcarCenaLocal: Ligado */

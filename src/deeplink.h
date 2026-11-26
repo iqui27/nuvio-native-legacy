@@ -17,7 +17,8 @@ typedef struct {
   long tmdb;            // > 0 se o link trouxe id do TMDB
   int serie;            // 1 = series, 0 = movie
   int temporada, episodio;  // so em DL_TOCAR; 0 = nao pedido
-  char consulta[96];    // so em DL_BUSCA (UTF-8, sem controles)
+  char consulta[96];
+  int temInicio, inicioSeg;  // ?t=<segundos> em play: abrir naquele instante    // so em DL_BUSCA (UTF-8, sem controles)
 } DeepLink;
 
 // 1 = URL valida e `out` preenchido; 0 = lixo (out zerado). Nunca escreve

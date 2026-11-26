@@ -24,6 +24,7 @@
 #include "travarede.h"
 #include "travaui.h"
 #include "teclavoltar.h"
+#include "cenas.h"
 #include "deeplink.h"
 #include "android.h"
 #include "telefoneui.h"
@@ -1232,11 +1233,18 @@ static int abrirFarolPedido(const FarolAchaPedido *p) {
 }
 
 // Consume the panel request through the same title route as other screens.
+// Titulo aberto pelo painel ou pelo aviso: se um amigo mandou uma cena dele,
+// o Play abre naquele instante (cenas.h), como pelo cartao.
+static void armarCenaRecebida(const char *imdb) {
+  int t, e, seg, dur;
+  if (recomenda_cena_de(imdb, &t, &e, &seg, &dur)) cenas_armar(imdb, t, e, seg, dur);
+}
 static void abrirTituloDoPainel(void) {
   if (player_aberto()) return;
   const char *alvo = spainel_pediu_abrir();
   if (!alvo || !alvo[0]) return;
   tituloDoPainel = 1;
+  armarCenaRecebida(alvo);
   int k = cat_indice_por_imdb(alvo);
   if (detail_aberto()) detail_fechar_seco();
   if (k >= 0) abrirPorIndice(k); else desc_pedir_titulo(alvo);
@@ -4513,6 +4521,10 @@ int app_iniciar(const char *dirArte) {
   const char *preview = getenv("NUVIO_UI_PREVIEW");
   uiPreview = preview && !strcmp(preview, "1");
 #endif
+#ifdef NV_LINUX_DESKTOP
+  // Linux has no OS link handler yet: NUVIO_DEEPLINK=<url> posts one at startup.
+  if (getenv("NUVIO_DEEPLINK")) deeplink_postar(getenv("NUVIO_DEEPLINK"));
+#endif
   // Antes de tudo que mexe na conta: o login e o sync criam os arquivos que o
   // Começar olha para saber se esta instalacao ja vem de uso anterior.
   comecar_marcar_dados();
@@ -4726,6 +4738,8 @@ static void deeplinkAbrir(const DeepLink *d) {
     if (ci && ci->tmdb == d->tmdb && !strcmp(ci->tipo, d->serie ? "series" : "movie")) k = i;
   }
   cwTocarT = cwTocarE = 0; cwEspera = 0;
+  if (d->tipo == DL_TOCAR && d->temInicio && d->imdb[0])   // ?t=: marcar cena
+    cenas_armar(d->imdb, d->episodio > 0 ? d->temporada : 0, d->episodio, d->inicioSeg, 0);
   if (k >= 0) {
     if (abrirPorIndice(k) && d->tipo == DL_TOCAR) {
       if (d->episodio > 0) { cwTocarT = d->temporada; cwTocarE = d->episodio; }
@@ -6739,7 +6753,9 @@ void app_atualizar(float dt, Uint32 agora) {
   abrirTituloDoPainel();
   if (!detail_aberto() && !player_aberto()) {
     const char *alvo = recomenda_pediu_abrir();   // mesmo contrato, outra origem
-    if (!alvo) alvo = avisos_pediu_abrir();
+    { char cImdb[24]; int ct, ce, cs, cd;   // cartao de cena marcada: o Play abre naquele instante
+      if (alvo && recomenda_pediu_cena(cImdb, sizeof cImdb, &ct, &ce, &cs, &cd)) cenas_armar(cImdb, ct, ce, cs, cd); }
+    if (!alvo && (alvo = avisos_pediu_abrir()) != NULL) armarCenaRecebida(alvo);
     { static char afImdb[24];
       if (!alvo && amigosfil_pediu_titulo(afImdb, sizeof afImdb)) alvo = afImdb; }
     if (!alvo && tela == TELA_AGENDA) alvo = agendaui_pediu_abrir();
@@ -7408,7 +7424,8 @@ void app_atualizar(float dt, Uint32 agora) {
         cwTocarT = cwTocarE = 0;
       }
       if (cwRewatch >= 0) { player_rewatch(cwRewatch); cwRewatch=-1; }
-      if (doInicio) player_do_inicio();
+      if (doInicio) { player_do_inicio(); cenas_armar(NULL, 0, 0, 0, 0); }
+      else cenas_aplicar_ao_abrir();
       // O episodio so fica definitivo DEPOIS de abrir o player. Refaça sempre
       // o pedido de legenda nesse ponto; a busca de prefetch pode ter comecado
       // no episodio anteriormente focado e o worker agora troca para o pedido
@@ -8208,6 +8225,8 @@ void app_atualizar(float dt, Uint32 agora) {
       farolacao_rede_reabrir_fim(reabriu);
     } }
   juntosAbrirEFonte(agora);
+  if (player_pediu_marcar_cena()) cenas_tecla();
+  cenas_atualizar();
   if (aguardandoFonte != 2 && (player_pediu_fontes() || juntosui_pediu_fontes())) {
     char base[24];
     stream_folha_contexto(player_linha_episodio());

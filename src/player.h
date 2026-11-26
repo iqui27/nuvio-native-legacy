@@ -63,6 +63,7 @@ int player_pediu_fontes(void);
 // FAROL (#21): acao do botao primario do cartao de erro delegada ao app
 // (debrid, enviar registro, tentar de novo). Devolve FAROL_A_* ou 0 e zera.
 int player_pediu_farol_acao(void);
+int player_pediu_marcar_cena(void);   // tecla de marcar cena (cenas.h); zera ao ler
 // Troca pelo caminho VOD existente: 1 = OK no aviso, 2 = salto automatico.
 int player_pediu_proxima_fonte(void);
 // A explicacao da espera na ilha do player (inicio.h, #202): texto ja traduzido

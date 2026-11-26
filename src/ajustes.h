@@ -986,6 +986,7 @@ int ajustes_show_skip_intro(void);
 int ajustes_show_skip_recap(void);
 int ajustes_show_skip_credits(void);
 int ajustes_show_skip_cena(void);
+int ajustes_marcar_cena(void);   // tecla de marcar cena no player; padrao ligado
 
 // FAROL (#26): diferenca de ajustes por lista branca (farolajustes.h). Para
 // cada ajuste da lista cujo valor difere do padrao de fabrica desta TV, cb

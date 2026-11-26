@@ -1045,6 +1045,8 @@ int player_indice(void) { return idxAtual(); }
 const char *player_linha_episodio(void) { return linhaEp; }
 int  player_pediu_guia(void) { int v = pedGuia; pedGuia = 0; return v; }
 int  player_pediu_guia_cheio(void) { int v = pedGuiaCheio; pedGuiaCheio = 0; return v; }
+static int pedMarcarCena;
+int  player_pediu_marcar_cena(void) { int v = pedMarcarCena; pedMarcarCena = 0; return v; }
 int  player_pediu_zap(void)  { int v = pedZap;  pedZap  = 0; return v; }
 int  player_pediu_recarregar(void) { int v = pedRecarregar; pedRecarregar = 0; return v; }
 int  player_pediu_ultimo(void) { int v = pedUltimo; pedUltimo = 0; return v; }
@@ -5565,6 +5567,12 @@ void player_evento(const SDL_Event *e) {
   // No filme continua a proporcao.
   if ((k == SDLK_0 || k == SDLK_KP_0) && ehCanal()) { pedUltimo = 1; return; }
   if (k == SDLK_0 || k == SDLK_KP_0) { player_aspecto_ciclar(); return; }
+  // MARCAR CENA (cenas.h): amarela no controle (F5 no Android e na Samsung), M no teclado. So em filme/episodio.
+  if (!ehCanal() && (k == SDLK_m || k == SDLK_F5 || e->key.keysym.scancode == NV_SCANCODE_YELLOW) &&
+      !(e->key.keysym.mod & (KMOD_GUI | KMOD_CTRL | KMOD_ALT)) && ajustes_marcar_cena()) {
+    if (!e->key.repeat && !erroFonte && !player_carregando()) pedMarcarCena = 1;
+    return;
+  }
 
   // CANAL AO VIVO: OSD proprio (aovivo.h) e teclas proprias. BAIXO e o botao
   // AZUL abrem o overlay do guia em qualquer estado — e la que mora "o que esta

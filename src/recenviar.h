@@ -30,6 +30,8 @@ int  recenviar_abrir(const CatItem *ci);
 // filme primeiro.
 int  recenviar_abrir_amigos(void);
 int  recenviar_abrir_perfis(void);
+// Marcar cena: pula "O que dizer?" e envia `texto` (marcacena_texto) como texto livre.
+int  recenviar_abrir_cena(const CatItem *ci, const char *texto);
 
 int  recenviar_aberto(void);
 void recenviar_evento(const SDL_Event *e);
