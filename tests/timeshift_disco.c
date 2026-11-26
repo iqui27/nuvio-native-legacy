@@ -32,7 +32,7 @@ static int arquivos(const char *dir) {
 }
 int main(int argc, char **argv) {
   const char *dir = argc > 1 ? argv[1] : "/tmp/nuvio-timeshift-disco";
-  unsigned char *b = malloc(BLOCO), *r = malloc(BLOCO);
+  unsigned char b[BLOCO], r[BLOCO];
   TsDisco *d;
   TsLeitor l = { -1, 0 };
   uint64_t pos = 0, lido;

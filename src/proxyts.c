@@ -674,7 +674,7 @@ static void pxServirDisco(PxConexao *c) {
 
 static void *pxAtender(void *u) {
   PxConexao *c = u;
-  char req[4096], cab[512], cabs[512];
+  char req[4096], cabs[512];
   ssize_t r, tot = 0;
   unsigned s = 0;
   const char *q;
@@ -769,8 +769,10 @@ static void *pxAtender(void *u) {
              c->sessao, ts ? "ja e TS continuo" : "nao e playlist", st, n);
       atomic_store(&sessaoRedirecionada, c->sessao);
       fflush(stdout);
-      snprintf(cab, sizeof cab, "HTTP/1.1 302 Found\r\nLocation: %s\r\nContent-Length: 0\r\n"
-               "Connection: close\r\n\r\n", c->fonte);
+      static const char redirFmt[] = "HTTP/1.1 302 Found\r\nLocation: %s\r\nContent-Length: 0\r\n"
+                                     "Connection: close\r\n\r\n";
+      char cab[sizeof c->fonte + sizeof redirFmt];
+      snprintf(cab, sizeof cab, redirFmt, c->fonte);
       pxEnviar(c->s, cab, strlen(cab));
     }
   }

@@ -6,7 +6,8 @@
 typedef struct { long tmdb; const char *tipo; } CatItem;
 static CatItem items[] = {{603, "channel"}, {603, "series"}, {603, "movie"}};
 static int count, opened, played, requested, detail;
-static int cwTocarT, cwTocarE, cwEspera;
+static int cwTocarT, cwTocarE, cwEspera, cwRewatch, cwEsperaDesde;
+static CatItem cwEsperaItem;
 enum { TELA_BUSCA, MENU_BUSCAR, TELA_LOGIN, TELA_ESCOLHA_PERFIL };
 static int tela, busy;
 static int active, aguardandoFonte, fonteEscolhida, autoEsperaN;
@@ -14,6 +15,7 @@ static int fontePendenteTipo, torrentPendente, stalkerRenovando;
 static unsigned sourceGeneration, torrentSessao;
 static int preparation, sourcePolicy, cancelled;
 static void preparoInvalidar(void) { preparation = 0; }
+static void farolPendCancelar(void) {}
 static unsigned novaGeracaoFonte(void) { return ++sourceGeneration; }
 static void fa_nova_rodada(void) {}
 static void limparFontePendente(void) { fontePendenteTipo = 0; }
@@ -38,7 +40,7 @@ static void busca_definir_consulta(const char *s) { (void)s; }
 static int cat_indice_por_imdb(const char *s) { (void)s; return -1; }
 static int cat_n(void) { return count; }
 static const CatItem *cat_item(int i) { return &items[i]; }
-static void abrirPorIndice(int i) { opened = i; detail = 1; }
+static int abrirPorIndice(int i) { opened = i; detail = 1; return 1; }
 static void detail_pedir_reproduzir(void) { played++; }
 static int imdbPedido;
 static void desc_pedir_titulo(const char *s) { (void)s; imdbPedido++; }
