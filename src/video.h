@@ -129,6 +129,14 @@ double video_duracao(void);  // 0 enquanto desconhecida
 // baixado para descobrir o idioma das faixas — ver mkv.h. Vale so para MKV com
 // capitulos; quem chama precisa de um plano B.
 double video_creditos(void);
+// As duas metades de video_creditos, para quem ordena fontes (player/posplay):
+// o capitulo que SE CHAMA creditos (conclusivo, acima dos provedores) e o
+// "ultimo capitulo depois de 75% com folga" (palpite, abaixo deles). Cada
+// backend responde pelo proprio estado — .wgt/HTML5 pelos valores locais,
+// .tpk/Android pelo capmkv — para um titulo nao herdar marcador do anterior.
+// A implementacao fraca em capmkv.c cobre alvos sem versao propria.
+double video_creditos_nomeado(void);
+double video_creditos_ultimo(double dur);
 double video_buffer_fim(void); // ate onde o buffer cobre (s); 0 se desconhecido
 // "Dados do buffer" row (Ajustes): measured fill/capacity, byte range, time
 // ahead and session HTTP limit, already translated; unknown parts say so.
@@ -272,7 +280,8 @@ enum {
   VIDEO_DV_NAO_FALHOU,    // o caminho nao abriu
   VIDEO_DV_NAO_PESSOA,    // a pessoa escolheu HDR10
   VIDEO_DV_NAO_CONTENTOR, // o arquivo nao e Matroska (MP4/TS sem extensao na URL)
-  VIDEO_DV_NAO_NATIVE     // selected profile stays on the native player
+  VIDEO_DV_NAO_NATIVE,    // selected profile stays on the native player
+  VIDEO_DV_NAO_RPU        // P8.1 whose DV frames the probe did not reach: the TV player plays it its own way
 };
 typedef struct {
   int sessao;          // muda a cada video_tocar (fonte nova)
@@ -311,6 +320,9 @@ void video_dv_segurar(int segurar);
 int  video_iniciando(void);
 // 1 once the current source has played on webOS (kept across reloads of it).
 int video_fonte_tocou(void);
+#ifdef NV_DV_TRUEHD_TEST
+int video_truehd_convertido(void); // Selected TrueHD audio has a prepared AAC/AC3 output.
+#endif
 const char *video_dts_saida(void);  // actual local conversion output, empty for native playback
 int    video_audio_nao_suportado(void);  // uMS errorCode 200: video segue sem som
 int    video_seek_desistiu(void);  // webOS: seek recusado 3x; segue tocando de onde esta

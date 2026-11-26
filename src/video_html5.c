@@ -69,6 +69,7 @@
 #include "marco.h"
 #include "mkv.h"
 #include "nv_ticks.h"
+#include "capmkv.h"
 #include <SDL2/SDL.h>
 #include <emscripten.h>
 #if defined(__EMSCRIPTEN_PTHREADS__)
@@ -911,7 +912,18 @@ double video_creditos(void) {
   double dur;
   if (creditosNomeado > 1.0) return creditosNomeado;
   dur = video_duracao();
-  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75)
+  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75 &&
+      dur - creditosUltimo >= CAPMKV_ULTIMO_FOLGA_S)   // toco no fim nao e creditos
+    return creditosUltimo;
+  return 0.0;
+}
+
+double video_creditos_nomeado(void) {
+  return creditosNomeado > 1.0 ? creditosNomeado : 0.0;
+}
+double video_creditos_ultimo(double dur) {
+  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75 &&
+      dur - creditosUltimo >= CAPMKV_ULTIMO_FOLGA_S)   // toco no fim nao e creditos
     return creditosUltimo;
   return 0.0;
 }
@@ -1026,7 +1038,10 @@ static void *lerMkv(void *arg) {
   (void)arg;
   snprintf(url, sizeof url, "%s", urlAtual);
   n = mkv_faixas_e_caps(url, fx, MKV_MAX_FAIXAS, caps, MKV_MAX_CAPS, &nCaps);
-  if (nCaps > 0) {
+  // A fonte pode ter trocado enquanto o fio lia: os capitulos e os idiomas do
+  // arquivo anterior nao valem para o que esta tocando agora (mesma checagem
+  // por strcmp do video_tizen.c e da LG).
+  if (nCaps > 0 && !strcmp(url, urlAtual)) {
     creditosNomeado = mkv_creditos_nomeados(caps, nCaps);
     creditosUltimo  = nCaps > 1 ? caps[nCaps - 1].inicio : 0.0;
     printf("[mkv] %d capitulos; creditos nomeados em %.0fs, ultimo em %.0fs\n",
@@ -1034,7 +1049,7 @@ static void *lerMkv(void *arg) {
     fflush(stdout);
   }
   if (n < 1) marco("mkv: nenhuma faixa lida (nao e MKV, ou Range falhou)");
-  else aplicarIdiomasDoMkv(fx, n);
+  else if (!strcmp(url, urlAtual)) aplicarIdiomasDoMkv(fx, n);
   fioMkvVivo = 0;
   return NULL;
 }

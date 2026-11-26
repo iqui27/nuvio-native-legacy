@@ -38,10 +38,11 @@ fi
 BSFS=h264_mp4toannexb,hevc_mp4toannexb,dca_core
 # Donor AAC from MPEG-TS arrives ADTS-framed; the TV is told raw AAC.
 if [ "$TARGET" = webos ]; then BSFS=$BSFS,aac_adtstoasc; fi
-# zlib: Matroska tracks stored zlib-compressed (ContentCompression) and MP4
-# with a compressed header (cmov) arrive raw without it ("Unsupported encoding
-# type"). Common on remux PGS tracks. Every native target already links libz
-# (webOS: tools/arm.sh -lz; .tpk: the SDK's static libz.a via tools/tpk.sh).
+# zlib handles Matroska ContentCompression (mkvmerge's default for PGS/VobSub)
+# and compressed MP4 headers (cmov). Without it the PGS decoder skips the
+# compressed segments during converted playback (Dolby Vision, DTS).
+# webOS already links libz via tools/arm.sh (-lz), and .tpk links the SDK's
+# static libz.a via tools/tpk.sh.
 ZLIB=--enable-zlib
 mkdir -p "$BUILD" "$PREFIX"
 if [ "$TARGET" = tpk ]; then

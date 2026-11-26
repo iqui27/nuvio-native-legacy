@@ -100,4 +100,57 @@ static inline int nv_dvaudio_decidir(int nTv, int nMkv, int atual, const char (*
   return nv_dvaudio_escolher(nMkv, atual, codec, idioma, rotulo, casa);
 }
 
+typedef struct {
+  const char *codec, *idioma;
+  int canais;
+} NvDvAudioTrack;
+
+static inline int nv_dvaudio_par(const NvDvAudioTrack *a, const NvDvAudioTrack *b,
+                                int (*casa)(const char *, const char *),
+                                const char *(*familia)(const char *)) {
+  const char *ac = familia(a->codec), *bc = familia(b->codec);
+  if (!strncmp(ac, "DTS", 3)) ac = "DTS";
+  if (!strncmp(bc, "DTS", 3)) bc = "DTS";
+  return (!a->idioma[0] || !b->idioma[0] || !strcmp(a->idioma, "und") ||
+          !strcmp(b->idioma, "und") || casa(a->idioma, b->idioma)) &&
+         (!ac[0] || !bc[0] || !strcmp(ac, bc)) &&
+         (a->canais <= 0 || b->canais <= 0 || a->canais == b->canais);
+}
+
+// sourceInfo may omit unsupported tracks. Match the WHOLE ordered list: remuxes
+// often contain repeated language/codec/channel tuples. Earliest and latest
+// complete subsequence embeddings must agree for the selected row. Ambiguous or
+// reordered lists still need a unique individual match; never guess the first.
+static inline int nv_dvaudio_lista(int nTv, int nMkv, int atual,
+                                  const NvDvAudioTrack *tv, const NvDvAudioTrack *mkv,
+                                  int (*casa)(const char *, const char *),
+                                  const char *(*familia)(const char *)) {
+  int first = -1, last = -1, j = 0, complete = 1;
+  if (atual < 0 || nMkv <= 0) return -1;
+  if (nTv <= 0) return atual < nMkv ? atual : -1;
+  if (atual >= nTv) return -1;
+  for (int i = 0; i < nTv; i++) {
+    while (j < nMkv && !nv_dvaudio_par(&tv[i], &mkv[j], casa, familia)) j++;
+    if (j == nMkv) { complete = 0; break; }
+    if (i == atual) first = j;
+    j++;
+  }
+  if (complete) {
+    j = nMkv - 1;
+    for (int i = nTv - 1; i >= 0; i--) {
+      while (j >= 0 && !nv_dvaudio_par(&tv[i], &mkv[j], casa, familia)) j--;
+      if (j < 0) { complete = 0; break; }
+      if (i == atual) last = j;
+      j--;
+    }
+    if (complete && first == last) return first;
+  }
+  int found = -1;
+  for (int i = 0; i < nMkv; i++) if (nv_dvaudio_par(&tv[atual], &mkv[i], casa, familia)) {
+    if (found >= 0) return -1;
+    found = i;
+  }
+  return found;
+}
+
 #endif

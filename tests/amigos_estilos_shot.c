@@ -25,6 +25,15 @@ int celular_estado(void) { return phoneOpen ? CEL_ESPERANDO : CEL_PARADO; }
 const char *celular_url(void) { return phoneOpen ? "http://192.0.2.1/fixture" : ""; }
 int celular_pegar(char *d, size_t n) { (void)d; (void)n; return 0; }
 int celular_porta(void) { return 0; }
+int celular_abrir_digitar(const char *t) { (void)t; return 0; }
+int celular_abrir_relatorio(const char *s) { (void)s; return 0; }
+void celular_relatorio_fixo(const char *t, int p) { (void)t; (void)p; }
+int celular_gerar_token(char *d, size_t n) { (void)d; (void)n; return 0; }
+int celular_abrir_link(const char *t, const char *u) { (void)t; (void)u; return 0; }
+int celular_abrir_sessao(const char *t, const char *h) { (void)t; (void)h; return 0; }
+void celular_status(const char *s) { (void)s; }
+int celular_conectado(void) { return 0; }
+const char *celular_motivo(void) { return ""; }
 #include "addons.h"
 #define NV_REC_URL "http://127.0.0.1:8799"
 // A CONTA TRAKT E O LOGIN DO SIMKL NA TV, so para as linhas de "Contas
@@ -297,6 +306,10 @@ static void irFileira(void) {
   abort();
 }
 
+#ifdef NV_AMIGOS_TOUCH_AUDIT
+#include "amigosfil_toque.inc"
+#endif
+
 int main(int argc, char **argv) {
   const char *saida = argc > 1 ? argv[1] : nvt("/nv-abas/s");
   static CatItem itens[40];
@@ -315,8 +328,14 @@ int main(int argc, char **argv) {
   }
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+#ifdef NV_LINUX_DESKTOP
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_ES);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,0);
+#else
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
+#endif
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   janela = SDL_CreateWindow("Nuvio: abas", 0, 0, 1920, 1080,
                             SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
@@ -376,6 +395,9 @@ int main(int argc, char **argv) {
   contato(nContatos++, "nuvio:pedro", "Pedro", "deploy/app/art/elenco/00_0.jpg", "nuvio");
   contato(nContatos++, "nuvio:marina", "Marina", "", "nuvio");
   contato(nContatos++, "trakt:vlern", "vlern", "", "trakt");
+#ifdef NV_AMIGOS_TOUCH_AUDIT
+  return amigosToqueAuditar();
+#endif
   socialvis_demo(4);
   desenho = D_HOME;
 #ifdef NV_AMIGOSFIL_TESTE

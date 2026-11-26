@@ -15,7 +15,7 @@ if [ "$(uname -s)" = Darwin ]; then
   DTS_LIBS=$(pkg-config --libs libavformat libavcodec libswresample libavutil)
 else
   DTS_CFLAGS="-I$PREFIX/include"
-  DTS_LIBS="-L$PREFIX/lib -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
+  DTS_LIBS="-L$PREFIX/lib -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lz"
 fi
 # shellcheck disable=SC2086
 ${CC:-cc} $SAN -std=gnu11 -Wall -Wextra -Werror -DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY $DTS_CFLAGS \

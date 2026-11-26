@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 prefix=${NUVIO_DTS_ROOT:-/opt/homebrew}
-libs=(-lavformat -lavcodec -lswresample -lavutil)
+libs=(-lavformat -lavcodec -lswresample -lavutil -lz)
 if [[ $(uname -s) != Darwin ]];then libs=(-Wl,--start-group "${libs[@]}" -Wl,--end-group -ldl);fi
 export PATH="/Users/hrocha/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$PATH"
 dir=${NV_MP4_FIXTURE_DIR:-$(mktemp -d)}

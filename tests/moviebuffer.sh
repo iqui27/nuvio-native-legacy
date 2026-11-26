@@ -16,7 +16,7 @@ cc -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation $host_flags \
   -DNV_DTS_FFMPEG -Isrc -I"$prefix/include" \
   src/moviebuffer.c src/dts/dts_engine.c src/rede.c src/redeurl.c tests/moviebuffer_daemon.c \
   -o "$tmp/proxy" -L"$prefix/lib" $group_start \
-  -lavformat -lavcodec -lswresample -lavutil $group_end -lm -lpthread -ldl
+  -lavformat -lavcodec -lswresample -lavutil $group_end -lz -lm -lpthread -ldl
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
   -keyout "$tmp/key.pem" -out "$tmp/cert.pem" \
   -subj /CN=localhost -addext subjectAltName=DNS:localhost >/dev/null 2>&1

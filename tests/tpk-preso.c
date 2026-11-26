@@ -23,6 +23,8 @@ void mkvass_aceitar_texto(int s) { (void)s; }
 void mkvass_aceitar_imagem(int s) { (void)s; }
 int mkvass_cabecalho(const char *u,unsigned char **b,long *n) { (void)u;(void)b;(void)n;return 0; }
 int mkv_faixas(const char *u,MkvFaixa *f,int n) { (void)u;(void)f;(void)n;return 0; }
+int mkv_faixas_geracao(const char *u,MkvFaixa *f,int n,const _Atomic unsigned *g,unsigned e) { (void)u;(void)f;(void)n;(void)g;(void)e;return 0; }
+void mkv_geracao_avancar(_Atomic unsigned *g) { if (g) ++*g; }
 void rede_lateral(int s) { (void)s; }
 void capmkv_iniciar(const char *s) { (void)s; }
 void capmkv_zerar(void) {}

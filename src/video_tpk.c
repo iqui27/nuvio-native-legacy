@@ -319,7 +319,9 @@ static volatile int mkvN, mkvEstado, faixasNovas;
 // #269: a folha pediu a sonda ja (video_sondar_mkv_agora); `mkvNaoMkv`: a
 // sonda pela rede voltou sem TrackEntry nenhuma (nao e MKV).
 static volatile int mkvSondarJa, mkvNaoMkv;
-static unsigned mkvGeracao;
+// Atomica: lida solta pelo fioMkv e pelo spawn, e so avanca por
+// mkv_geracao_avancar — sob a mesma dtsLock da reserva/publicacao da sonda.
+static atomic_uint mkvGeracao;
 static int legOcultas(void);
 static void legendasDoArquivo(void);
 static int mkvSondaUrl(char *out, size_t n);
@@ -1287,7 +1289,7 @@ int video_tocar(const char *u) {
   reconPermitida = reconProxima; reconProxima = 0;
   if (reconPermitida) capmkv_iniciar(urlAtual);
   else capmkv_zerar();
-  mkvGeracao++; mkvN = 0; faixasNovas = 0; mkvOlhou = 0; mkvSondarJa = 0; mkvNaoMkv = !reconPermitida;
+  mkv_geracao_avancar(&mkvGeracao); mkvN = 0; faixasNovas = 0; mkvOlhou = 0; mkvSondarJa = 0; mkvNaoMkv = !reconPermitida;
   // Um fio da fonte anterior ainda na rede ve a geracao mudada e descarta.
   mkvEstado = urlAtual[0] && reconPermitida ? 1 : 0;
   pausaPedida = 0; reconPausa = -1;
@@ -1348,7 +1350,10 @@ static void *fioMkv(void *arg) {
   // #385: a sonda e leitura LATERAL ao video. Host que acabou de recusar
   // conexao (pre-busca da legenda, capitulos) nao recebe outra daqui.
   rede_lateral(1);
-  n = fx ? mkv_faixas(p->url, fx, MKV_MAX_FAIXAS) : 0;
+  // A geracao viaja ate a publicacao DTS: se este fio ja e de um titulo
+  // anterior quando a sonda comeca ou termina, o resultado e descartado em
+  // mkv.c sob dtsLock — nao basta conferir aqui, depois da escrita.
+  n = fx ? mkv_faixas_geracao(p->url, fx, MKV_MAX_FAIXAS, &mkvGeracao, p->geracao) : 0;
   if (p->geracao == mkvGeracao) {
     printf("[mkv] sonda pela rede: %d faixa(s)\n", n);
     if (n > 0) guardarMkv(fx, n);
@@ -2855,6 +2860,8 @@ double video_pos_amostra(Uint64 *t) {
 }
 // Capitulos do MKV lidos por um fio lateral (capmkv.c, 203-capitulos).
 double video_creditos(void) { return capmkv_creditos(video_duracao()); }
+double video_creditos_nomeado(void) { return capmkv_creditos_nomeado(); }
+double video_creditos_ultimo(double dur) { return capmkv_creditos_ultimo(dur); }
 double video_buffer_fim(void) { return 0; }
 // SAMSUNG (.tpk): o host so repassa a PORCENTAGEM do buffering (evento 7);
 // nada de bytes, segundos, conexoes ou quadros. O host e o do link pedido.

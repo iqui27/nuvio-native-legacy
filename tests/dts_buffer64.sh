@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 if [[ $(uname -s) == Darwin ]]; then
-  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil"
+  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil -lz"
 else
-  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
+  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lz"
 fi
 cd "$(dirname "$0")/.."
 prefix=${NUVIO_DTS_ROOT:-/tmp/nuvio-dts-host}

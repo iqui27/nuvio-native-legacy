@@ -202,6 +202,9 @@ static unsigned assValidoEpoch, assValidoGeracao;
 static double assUltimoPedidoMs;
 static unsigned assUltimoPedidoGeracao;
 static int assTemUltimoPedido;
+static double assPosVideoAnt = -1.0;   /* posicao do video, sob assFilaTrava */
+static double assPosLegBruta = -1.0;   /* antes do mapa AutoSync, sob assFilaTrava */
+static int assSaltoPendente;           /* sob assFilaTrava */
 /* QUADRO A QUADRO (dono 26/10, letreiros que seguem o dedo dela aos 19:00).
  * O worker renderizava so o ULTIMO pedido: com um render de mais de um quadro
  * de video (42 ms a 24 fps) o pedido ja tinha andado e o quadro do meio nunca
@@ -2148,10 +2151,42 @@ static long long ass_grade_desde(long long ms) {
 static long long assUltimoAgora = LLONG_MIN;
 static int assParadoN;                // chamadas seguidas com o mesmo `agora`
 
+static void ass_salto_locked(void) {
+  ass_fila_limpar_locked();
+  ass_frame_liberar(&assAtual); assAtualValido = 0;
+  ++assEpoch;
+  ++assSerial;
+  assSaltoPendente = 1;
+}
+
+void assrender_posicao_video(double posSeg) {
+  int salto;
+  pthread_mutex_lock(&assFilaTrava);
+  salto = assPosVideoAnt >= 0.0 && fabs(posSeg - assPosVideoAnt) > 1.5;
+  assPosVideoAnt = posSeg;
+  if (salto) {
+    assPedidoPendente = 0;
+    assTemUltimoPedido = 0;
+    ass_salto_locked();
+  }
+  pthread_mutex_unlock(&assFilaTrava);
+  if (salto) {
+    pthread_mutex_lock(&assTrava);
+    plainTimingValid = 0;
+    pthread_mutex_unlock(&assTrava);
+  }
+}
+
+void assrender_posicao_legenda(double posSeg) {
+  pthread_mutex_lock(&assFilaTrava);
+  assPosLegBruta = posSeg;
+  pthread_mutex_unlock(&assFilaTrava);
+}
+
 int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
                        float x, float y, float w, float h) {
   unsigned generation;
-  int i, n = 0, reset, corChave, reenviar, segurar, saltou = 0, quadroNovo = 0;
+  int i, n = 0, reset, corChave, reenviar, segurar, parado, saltou = 0, quadroNovo = 0;
   int corAtiva, cr, cg, cb, adiante = 0;
   long long agora, pedido;
   AssCpuFrame novo;
@@ -2205,11 +2240,11 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
   if (assTemUltimoPedido && assUltimoPedidoGeracao == generation &&
       fabs((double)pedido - (ass_novo_ligado() && assUltimoVistoGeracao == generation
                              ? assUltimoVistoMs : assUltimoPedidoMs)) > 1500.0) {
-    ass_fila_limpar_locked();
-    ass_frame_liberar(&assAtual); assAtualValido = 0;
-    ++assEpoch;
-    ++assSerial;
+    ass_salto_locked();
+  }
+  if (assSaltoPendente) {
     saltou = 1;
+    assSaltoPendente = 0;
   }
   /* Seek para tras alem da poda: as falas de la voltam pelo mkvass. */
   { long long lim = __atomic_load_n(&assPodaLimite, __ATOMIC_ACQUIRE);
@@ -2222,10 +2257,12 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
    * quadro "devido" nunca chegaria. */
   /* assperf "Render only on changes": o ultimo render ainda vale para este
    * instante (nada comeca, acaba ou anima ate la) — o worker nao e chamado. */
+  parado = assPosVideoAnt >= 0.0 &&
+           fabs((assPosLegBruta >= 0.0 ? assPosLegBruta : posSeg) - assPosVideoAnt) > 1.5;
   { int vale = ass_novo_ligado() && assTemUltimoPedido && assUltimoPedidoGeracao == generation &&
                assValidoEpoch == assEpoch && assValidoGeracao == generation &&
                pedido >= assValidoDe && pedido < assValidoAte;
-  if (!vale && (!assTemUltimoPedido || assUltimoPedidoGeracao != generation ||
+  if (!parado && !vale && (!assTemUltimoPedido || assUltimoPedidoGeracao != generation ||
        fabs((double)pedido - assUltimoPedidoMs) >= 5.0) &&
       (!segurar || (assFilaN < ASS_FILA_MAX && ass_fila_bytes_locked() < ASS_FILA_BYTES))) {
     if (!assTemUltimoPedido || assUltimoPedidoGeracao != generation) assPedidoForcado = 1;
@@ -2251,7 +2288,7 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
       if (assFila[i].generation != generation || assFila[i].epoch != assEpoch) {
         ass_fila_tirar_locked(i, NULL); i--; continue;
       }
-      if (!segurar || assFila[i].ms <= agora + 8) {
+      if (!parado && (!segurar || assFila[i].ms <= agora + 8)) {
         devido = i;
       }
     }
@@ -2467,6 +2504,8 @@ void assrender_definir_layout(float x, float y, float w, float h,
   (void)x; (void)y; (void)w; (void)h; (void)videoW; (void)videoH; (void)escalaFonte;
 }
 void assrender_pixels_por_unidade(float f) { (void)f; }
+void assrender_posicao_video(double posSeg) { (void)posSeg; }
+void assrender_posicao_legenda(double posSeg) { (void)posSeg; }
 int assrender_ativo(void) { return 0; }
 #ifdef NV_TPK
 int assrender_borda_quer(void) { return 0; }

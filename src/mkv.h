@@ -63,6 +63,13 @@ typedef struct {
   long long blocoIni, blocoFim; // quadro de video cortado pelo trecho: [ini, fim) absolutos, -1 sem
 } MkvDiag;
 const MkvDiag *mkv_diag(void);
+// DTS kind (mkv_dts.h NV_DTS_KIND_*) of an audio track of the last probe, by
+// TrackNumber, from its first frames in the probed bytes; 0 = not known.
+int mkv_dts_kind(int numero);
+// DTS tracks still unknown after a short probe (the prefetched head): ONE
+// Range of the 320 KB the network probe reads, only to look at their first
+// frames. Returns 1 when it read. fx/nf: the final track list.
+int mkv_dts_alem(const char *url, const MkvFaixa *fx, int nf);
 // Varre so os dados de UM quadro HEVC (com prefixo de tamanho de `nalTam`
 // bytes): 1 = tem NAL 62, 0 = nao tem, -1 = quadro malformado. Puro.
 int mkv_quadro_tem_rpu(const unsigned char *p, long n, int nalTam, int *rpuTipo, int *rpuPerfil);
@@ -86,6 +93,24 @@ typedef struct {
 // quando nao deu (nao e MKV, servidor sem Range, cabecalho maior que o trecho).
 // BLOQUEIA: chamar de um fio proprio.
 int mkv_faixas(const char *url, MkvFaixa *saida, int max);
+
+// Mesma leitura para um fio que pode sobreviver ao titulo que a pediu (o
+// fioMkv do TPK): `*geracao` e a geracao viva do chamador e `esperada` a que o
+// fio viu ao nascer. A geracao e relida sob a mesma trava da publicacao DTS ao
+// reservar a sequencia da sonda e ao publicar o resultado — um fio da geracao
+// anterior nao inicia a leitura nem sobrescreve a classificacao da sonda ativa.
+// O contador e atomico (as leituras soltas do chamador ficam sem corrida) e so
+// avanca por mkv_geracao_avancar, sob a MESMA trava: comparacao e atribuicao
+// da publicacao sao atomicas em relacao a troca de titulo.
+int mkv_faixas_geracao(const char *url, MkvFaixa *saida, int max,
+                       const _Atomic unsigned *geracao, unsigned esperada);
+
+// Avanca a geracao viva do chamador sob a mesma trava da reserva e da
+// publicacao (dtsLock, em mkv.c): a virada de titulo nao pode entrar entre a
+// conferencia da geracao e a escrita do resultado — um worker que publica
+// antes lineariza antes da virada (e a sonda do titulo novo o sobrescreve);
+// um que chega depois ja ve a geracao nova e e recusado.
+void mkv_geracao_avancar(_Atomic unsigned *geracao);
 
 // Mesma leitura, UMA viagem so, devolvendo tambem os capitulos. `caps` pode ser
 // NULL. O numero de capitulos sai por `nCaps`.

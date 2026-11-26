@@ -13,7 +13,7 @@ if [[ ${1:-} == --baseline ]]; then
 fi
 if [[ ${SANITIZE:-0} == 1 ]]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc "${flags[@]}" "${engine_flags[@]}" -I"$prefix/include" tests/c1_transport.c src/rede.c src/redeurl.c \
-  -o "$task_tmp/test" -L"$prefix/lib" -lavformat -lavcodec -lswresample -lavutil -lm -lpthread -ldl
+  -o "$task_tmp/test" -L"$prefix/lib" -lavformat -lavcodec -lswresample -lavutil -lz -lm -lpthread -ldl
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=64x64:rate=25:duration=2' \
   -f lavfi -i 'sine=frequency=440:duration=2' -c:v libx264 -bf 0 -g 25 \
   -c:a dca -strict -2 -b:a 768000 "$task_tmp/input.mkv"
