@@ -55,6 +55,8 @@ int  app_no_login(void);
 
 // Porta de teste: abre o titulo (imdb) como se viesse de uma recomendacao.
 void app_abrir_titulo(const char *imdb);
+// Porta de teste: sintoniza a Minha noite (minhanoite.h) de qualquer tela.
+void app_minha_noite(int oferta);   // oferta=1: so abre a folha do OK
 #ifdef NV_DESKTOP_UI
 void app_desktop_preview(const char *screen);
 #endif

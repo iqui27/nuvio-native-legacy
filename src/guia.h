@@ -64,6 +64,10 @@ void guia_abrir_sessao(void);
 int  guia_zap(const char *idAtual, int dir, CatItem *saida);
 // Igual, mas so ESPIA o alvo (banner do zapping): nao mexe na origem do pedido.
 int  guia_zap_ver(const char *idAtual, int dir, CatItem *saida);
+// Minha noite (minhanoite.h): o canal pessoal entra entre as pontas da ordem.
+int  guia_zap_da_volta(const char *idAtual, int dir);  // 1 = este CH+/- passa da ponta
+int  guia_zap_ponta(int dir, CatItem *saida);          // primeiro (dir>0) ou ultimo canal
+int  guia_pediu_minha_noite(void);                     // OK no chip "Minha noite" (consome)
 // Digitar numero na Live TV (M7): o canal que o numero leva; `aplicar` 0 so espia.
 // `fonte` recebe o nome da fonte quando o numero existe em mais de uma.
 // Canal de lista M3U por URL (M9): o app toca a URL guardada com o User-Agent e o

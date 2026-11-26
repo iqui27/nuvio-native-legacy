@@ -311,6 +311,7 @@ static const char *uxSinonimos(int op) {
     case AJ_LEG_FORCADA: return "legenda forcada forcadas forced letreiros placas audio idioma automatica subtitle so os letreiros quando o audio ja e no seu idioma";
     case AJ_LEG_TEMPORARIA: return "legenda temporaria sozinha automatica mudo mutar silenciar sem som voltar segundos o que ele disse rewind mute subtitle";
     case AJ_LEG_ASS_PESO: return "legenda ass ssa anime estilo libass styled subtitles karaoke placas efeitos travando lenta pesada texto simples nitidez";
+    case AJ_ABRIR_TOCANDO: return "abrir tocando ligou tocou minha noite canal pessoal autoplay iniciar reproduzindo tv linear zapping";
     case AJ_LEG_EVITAR_SDH: return "sdh cc surdos surdo hearing impaired descricao som legenda sem descricoes evitar nao escolher";
     case AJ_LEG_SYNC_AUTO: case AJ_LEG_SYNC_AUDIO: return "sincronia sincronizar legenda audio fala falas atraso automatico sync subtitle speech";
     case AJ_AVANCADAS: return "avancado avancada avancados avancadas tecnico tecnica opcoes ocultas mostrar esconder advanced";
