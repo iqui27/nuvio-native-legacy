@@ -8,11 +8,14 @@ from pathlib import Path
 import sys
 source = Path('src/video.c').read_text()
 builder = source.split('static void montarCarga(', 1)[1].split('\nstatic int tocarInterno(', 1)[0]
+# The load modes montarCarga reads (the Trailerio ones live next to modoLoad).
+modos = next(l for l in source.splitlines() if l.startswith('enum { VIDEO_TRAILERIO_HLS'))
 Path(sys.argv[1], 'builder.c').write_text('''#include <stdio.h>
 #include <string.h>
 #include <assert.h>
 #include "app_id.h"
 #include "cacheboost.h"
+''' + modos + '''
 static void montarCarga(''' + builder + r'''
 int main(void) {
   char automatic[8192], actual[8192], expected[8192];
