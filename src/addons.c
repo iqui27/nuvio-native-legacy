@@ -1029,6 +1029,19 @@ int addons_pendente_antes(int idx) {
   return r;
 }
 
+int addons_pendente_antes_f(int idx, int (*f)(const char *nome, int plugin, void *u), void *u) {
+  int i, r = 0;
+  if (!f) return addons_pendente_antes(idx);
+  if (!addons_busca_parcial()) return 0;
+  pthread_mutex_lock(&progTrava);
+  for (i = 0; i < idx && i < nAddon && i < ADD_MAX; i++)
+    if (progEstado[i] == 1 && !naoSegura(chaveEstatisticaAddon(i)) && f(addon[i].nome, 0, u) >= 0) { r = 1; break; }
+  for (i = 0; !r && i < idx - ADD_MAX && i < ADD_EXTRA_MAX; i++)
+    if (progEstadoEx[i] == 1 && !naoSegura(chaveEstatisticaPlugin(progNomeEx[i])) && f(progNomeEx[i], 1, u) >= 0) r = 1;
+  pthread_mutex_unlock(&progTrava);
+  return r;
+}
+
 int addons_pendente_nome(const char *nome) {
   int i, r = 0;
   if (!nome || !*nome || !addons_busca_parcial()) return 0;

@@ -201,6 +201,8 @@ typedef struct {
 void addons_inicio_info(AddonsInicioInfo *o);
 // Algum addon de indice menor que `idx` (ordem de instalacao) ainda falta?
 int  addons_pendente_antes(int idx);
+// The same, counting only pending ones with f(nome, plugin, u) >= 0.
+int  addons_pendente_antes_f(int idx, int (*f)(const char *nome, int plugin, void *u), void *u);
 // O addon com este nome (Stream.provedor) ainda falta?
 int  addons_pendente_nome(const char *nome);
 // O menor grupo de auto-play (fonteregra.h, #202) que um pendente pode trazer;

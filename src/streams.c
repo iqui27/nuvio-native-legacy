@@ -1721,22 +1721,26 @@ int stream_grupo_regra(int i) { return grupoDe(i); }
 // como o oficial faz quando o auto-play nao acha nada.
 static volatile int regraBloqueou;
 int stream_regra_bloqueou(void) { return regraBloqueou; }
+// Only ALLOWED add-ons/plugins hold the pick (owner 26/11): one that only
+// enters as "use others if none" (FR_GRUPO_OUTROS) never makes it wait.
 static int pendenteGrupoCb(const char *nome, int plugin, void *u) {
-  return fonteregra_grupo_pendente((const FonteRegraCfg *)u, nome, plugin);
+  int g = fonteregra_grupo_pendente((const FonteRegraCfg *)u, nome, plugin);
+  return g >= FR_GRUPO_OUTROS ? -1 : g;
 }
 // A posicao, na ordem dos add-ons, do melhor add-on que ainda nao respondeu
 // (FR_ORDEM_SEM = fora da ordem; quem nunca toca por regra nao conta).
 static int pendenteRankCb(const char *nome, int plugin, void *u) {
-  if (fonteregra_grupo_pendente((const FonteRegraCfg *)u, nome, plugin) < 0) return -1;
+  if (pendenteGrupoCb(nome, plugin, u) < 0) return -1;
   return fonteregra_ordem_rank(nome);
 }
 int  stream_cabe_no_teto(const Stream *s) { return s ? cabeNoTeto(s) : 1; }
 // O add-on `nome` pode dar fonte ao automatico ("Fontes do auto-play")? Para
 // app.c so esperar pela fonte lembrada quando ela poderia ser escolhida.
+// Only ALLOWED add-ons count: a "use others" one never holds the pick.
 int  stream_addon_no_escopo(const char *nome) {
   FonteRegraCfg rc = regraCfg();
   if (!nome || !nome[0]) return 0;
-  return fonteregra_grupo_pendente(&rc, nome, 0) >= 0 || fonteregra_grupo_pendente(&rc, nome, 1) >= 0;
+  return pendenteGrupoCb(nome, 0, &rc) >= 0 || pendenteGrupoCb(nome, 1, &rc) >= 0;
 }
 
 // Endereco de aviso e nao de conteudo. Estes dois foram MEDIDOS no aparelho:
@@ -3101,7 +3105,7 @@ static int boaParaJa(const Stream *s) {
   return s->altura >= (teto ? teto : 2160);
 }
 
-static int pendenteAntesCb(int addon, void *u) { (void)u; return addons_pendente_antes(addon); }
+static int pendenteAntesCb(int addon, void *u) { return addons_pendente_antes_f(addon, pendenteGrupoCb, u); }
 
 int stream_primeira_boa(int tentativas) {
   return stream_primeira_boa_sessao(tentativas, nv_perfil_sessao_ler());
@@ -3130,7 +3134,9 @@ int stream_auto_pode_decidir(int preferida, int prefPendente, int prazoPassou, i
   }
   for (q = 0; q < total; q++) {
     int i = ORD(q);
-    if (i == preferida) posPref = q;
+    // Same scope check as the real pick: an out-of-scope remembered source is
+    // never put first there, so it must not end the wait here either.
+    if (i == preferida && fonteregra_no_escopo(&rc, ehPlugin(&lista[i]))) posPref = q;
     pts[q] = pontos(&lista[i]);
     acima[q] = (unsigned char)acimaDoTetoAuto(&lista[i]);
     excl[q] = (unsigned char)foraDoAuto(i);
@@ -3146,7 +3152,7 @@ int stream_auto_pode_decidir(int preferida, int prefPendente, int prazoPassou, i
   p.prefPendente = !ordemDoAddon() && prefPendente;
   p.prazoPassou = prazoPassou;
   p.pontos = pts; p.acimaTeto = acima; p.excluida = excl; p.boa = boa;
-  p.addon = ad; p.pendenteAntes = pendenteAntesCb;
+  p.addon = ad; p.pendenteAntes = pendenteAntesCb; p.u = &rc;
   p.grupo = grp; p.instantaneo = instantaneo;
   p.pendenteGrupoMin = addons_pendente_grupo_min(pendenteGrupoCb, &rc);
   // SO OS ADD-ONS QUE O AUTOMATICO PODE USAR seguram a decisao (dono, 16/10):
