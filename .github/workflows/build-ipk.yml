@@ -8,8 +8,9 @@ name: Build IPK
 # qemu) on the image's libass. The .ipk is uploaded as one artifact.
 #
 # Runs by hand (Actions tab -> Build IPK -> Run workflow) and on pushes to the
-# LG subtitle-engine branches. No P2P engine on CI (it lives on the owner's
-# disk). A new push to the same branch cancels the build still running.
+# LG subtitle-engine branches. The P2P engine comes from build-p2p-engine.yml
+# (part arm, cached) and is linked in; the package check fails without it.
+# A new push to the same branch cancels the build still running.
 
 on:
   push:
@@ -33,16 +34,29 @@ permissions:
   contents: read
 
 jobs:
+  engine:
+    uses: ./.github/workflows/build-p2p-engine.yml
+    with:
+      part: arm
+      artifact: p2p-engine-arm
+
   build:
+    needs: engine
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 150
     env:
-      NUVIO_P2P_MOTOR: none
+      NUVIO_P2P_MOTOR: /home/runner/p2p-motor
       NUVIO_RELEASE_OUT: ${{ github.workspace }}/build/ipk
       RUSTUP_HOME: /home/runner/.rustup
       CARGO_HOME: /home/runner/.cargo
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download the P2P engine
+        uses: actions/download-artifact@v4
+        with:
+          name: p2p-engine-arm
+          path: /home/runner/p2p-motor/arm
 
       - uses: docker/setup-buildx-action@v3
 

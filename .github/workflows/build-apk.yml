@@ -28,6 +28,7 @@ on:
       - "rust/**"
       - "deploy/app/**"
       - "tools/tpk/libass-hybrid/**"
+      - "tools/p2p-motor/**"
       - ".github/workflows/build-apk.yml"
   workflow_dispatch:
     inputs:
@@ -35,7 +36,7 @@ on:
         description: "Build with libass (ASS subtitles like the .tpk): 1 or 0"
         default: "1"
   # release.yml. With the release key (NUVIO_ANDROID_KEYSTORE_B64) tools/android.sh
-  # also signs the full APK and the two one-ABI lite APKs.
+  # also signs the full APK (no lite APKs since 2.0.9).
   workflow_call:
     inputs:
       libass:
@@ -54,8 +55,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
-      # No P2P engine on CI (it lives on the owner's disk, not in the repo).
-      NUVIO_P2P_MOTOR: none
+      # P2P engine: NuvioTV's ready-made libnuvio_engine.so (fetch step below).
+      NUVIO_P2P_MOTOR: /home/runner/p2p-motor
       NUVIO_LIBASS: ${{ inputs.libass || '1' }}
       NUVIO_ANDROID_CACHE: ${{ github.workspace }}/.cache/nuvio-android
       NDK_VERSION: 27.2.12479018
@@ -145,6 +146,11 @@ jobs:
           else
             echo "no signing secrets: debug APK only"
           fi
+
+      # nuvio-engine 0.1.7 exactly as NuvioTV ships it (sha256-pinned AAR);
+      # tools/android.sh fails if either ABI's engine is missing from the APK.
+      - name: Fetch the P2P engine (NuvioTV)
+        run: bash tools/p2p-motor/fetch-android.sh /home/runner/p2p-motor/android
 
       - name: Build the APK
         run: |
