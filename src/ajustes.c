@@ -914,6 +914,7 @@ typedef enum {
   // "Abrir tocando" (Ligou, tocou — minhanoite.h): ligado, o app abre na Minha
   // noite em vez da Home. Decisao do dono: opcional. LOCAL, desligado, append-only.
   AJ_ABRIR_TOCANDO,
+  AJ_LOGIN_CODIGO, // 2.1: 6-digit helper code on the sign-in screen. LOCAL, append-only; on by default.
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2190,6 +2191,7 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Kit de Home"),   // homekitapp.c: o kit mora em kit-home-p<N>.json
   ESC("Legenda ASS com estilo", V_ASS_PESO, 3),              // local: legendaAssPesoLocal (fora do .tpk)
   ESC("Abrir tocando", V_LIGA, 2),                           // local: abrirTocandoLocal
+  ESC("Código de ajuda no login", V_LIGA, 2),             // local: loginHelpCodeLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2595,6 +2597,7 @@ static const char *CHAVE[] = {
   "-kitHome",   // nunca vai para a conta: o kit e deste perfil nesta TV
   "legendaAssPesoLocal",
   "abrirTocandoLocal",
+  "loginHelpCodeLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -4295,6 +4298,7 @@ int ajustes_hero_notas(void)   { return lig(AJ_HERO_NOTAS); }
 int ajustes_hero_ano(void)     { return lig(AJ_HERO_ANO); }
 int ajustes_hero_duracao(void) { return lig(AJ_HERO_DURACAO); }
 int ajustes_hero_pasta_detalhes(void) { return lig(AJ_HERO_PASTA_DETALHES); }
+int ajustes_login_codigo(void) { return lig(AJ_LOGIN_CODIGO); }
 int ajustes_hero_cheio(void)          { return lig(AJ_HERO_CHEIO); }
 int ajustes_hero_sinopse_grande(void) { return valor[AJ_HERO_SINOPSE_TAM] == 1 || ajustes_hero_tamanho() > 0; }
 float ajustes_hero_escala_logo(void) { static const float e[3] = { 1.0f, 1.25f, 1.5f }; return e[ajustes_hero_tamanho()]; }
@@ -6996,6 +7000,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_HERO_FUNDO:
     case AJ_HERO_SINOPSE_TAM:
     case AJ_HERO_TAMANHO: case AJ_HERO_PASTA_DETALHES:
+    case AJ_LOGIN_CODIGO:
     case AJ_HERO_ARTE_DIF:
     case AJ_HERO_GENERO:
     case AJ_HERO_SINOPSE: case AJ_HERO_NOTAS: case AJ_HERO_ANO: case AJ_HERO_DURACAO: /* o web nao tem */
@@ -9325,6 +9330,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_LOG_REDE: return "Mostra o registro desta TV numa página da sua rede: abra o endereço abaixo no celular ou no computador, na mesma rede. Sem senhas nem chaves; endereços vão cortados no host. Desligue quando terminar.";
     case AJ_DIAGNOSTICS_QR: return "Ativa o cartão de baixar o registro no painel do registro (Azul/F10). Desligado por padrão. O registro normal continua ativo. A cópia temporária só é criada ao abrir.";
     case AJ_ENVIAR_LOG: return "Manda os últimos 200 KB do registro desta sessão (sem senhas nem chaves) para quem faz o app. Use quando algo estiver errado agora.";
+    case AJ_LOGIN_CODIGO: return "Na tela de entrar, mostra 6 números ao lado do QR. Quem vai configurar esta TV de longe digita os números no endereço indicado e entra com a conta que vai ficar nesta TV. Desligado, a tela mostra só o QR.";
     case AJ_ENVIO_AUTO: return "Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.";
     case AJ_DIAGNOSTICO: return "Testa manifestos, fontes e artes dos addons, mede os tempos e aplica um perfil seguro de Qualidade ou Desempenho. O teste não marca títulos como assistidos.";
     case AJ_MENU_EXPLORAR: case AJ_MENU_GUIA: case AJ_MENU_AGENDA: case AJ_MENU_PERFIL: case AJ_MENU_ESPORTES:
@@ -12422,7 +12428,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_ESMAECER: case AJ_BRILHO_PLAYER: case AJ_HDR_UI: case AJ_MANTER_VIDEO:
     case AJ_DESCANSO_ESTILO: case AJ_DESCANSO_FONTE:
       return AJPV_INTERFACE;
-    case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: case AJ_SYNC: case AJ_SAIR:
+    case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: case AJ_SYNC: case AJ_SAIR: case AJ_LOGIN_CODIGO:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_ADDONS_PRINCIPAL: case AJ_PROVEDORES_ESCOPO: case AJ_ENQUETES:
     case AJ_AMIGOS_PERFIS:
     case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS:

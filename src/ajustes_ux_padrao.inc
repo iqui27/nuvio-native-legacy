@@ -416,3 +416,4 @@
   0, /* Kit de Home: acao; o kit mora em kit-home-p<N>.json */
   0, /* legendaAssPesoLocal: Automatico (ASSPESO_AUTO, fora do .tpk) */
   1, /* abrirTocandoLocal: Desligado (opt-in) */
+  0, /* sign-in helper code: On (V_LIGA 0) */

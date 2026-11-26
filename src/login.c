@@ -14,7 +14,9 @@
 #include "idioma.h"
 #include "botoes.h"
 #include "plrui.h"
+#include "parearrede.h"
 #include <SDL2/SDL_image.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,7 +73,22 @@ static int qrTemRetry(void) {
   SesEstado st = sessao_estado();
   return st == SES_ERRO || st == SES_DESLOGADO;
 }
-static int qrN(void) { return nuvem_pronta() ? (qrTemRetry() ? 2 : 1) : 0; }
+// CODIGO DE 6 DIGITOS: a coluna a direita do QR so existe em paisagem e com
+// espaco (em retrato a propria pessoa ja digita).
+#define LG_AJUDA_X ((NV_TELA_W + LG_QR_LADO) * 0.5f + 16.0f + 72.0f)
+static int codigoAjudaCabe(void) {
+  return NV_TELA_H <= NV_TELA_W && NV_TELA_W - NV_MARGEM_X - LG_AJUDA_X >= 360.0f;
+}
+// 0 = ocioso, 1 = aguardando codigo novo, 2 = falhou ou esgotou o tempo.
+static int renovando;
+static Uint32 renovandoDesde;
+// O botao "Novo codigo" (indice 1 na tela do QR, a direita): com o codigo na
+// tela, ou logo depois de pedir um novo.
+static int qrTemNovo(void) {
+  if (sessao_estado() != SES_AGUARDANDO || !codigoAjudaCabe() || !parear_rede_pagina()[0]) return 0;
+  return parear_rede_codigo()[0] || renovando;
+}
+static int qrN(void) { return nuvem_pronta() ? (qrTemRetry() || qrTemNovo() ? 2 : 1) : 0; }
 // Indice do botao "e-mail" na tela do QR.
 static int qrEmail(void) { return qrTemRetry() ? 1 : 0; }
 
@@ -193,6 +210,8 @@ void login_iniciar(void) {
   // Pedir o codigo JA, sem esperar o OK: a pessoa que acabou de instalar o app
   // nao tem nada para decidir nesta tela, e um botao "entrar" antes do codigo
   // so acrescenta um toque e uns segundos de espera depois dele.
+  parear_rede_esquecer();
+  renovando = 0;
   if (!sessao_logada()) sessao_login_comecar();
 }
 
@@ -217,6 +236,19 @@ void login_evento(const SDL_Event *e) {
     else if (ok) okEmail();
     return;
   }
+  // "Novo codigo" mora na coluna da direita, ACIMA da pilula do e-mail:
+  // direita/cima vao para ele, esquerda/baixo voltam.
+  if (qrTemNovo()) {
+    if ((k == SDLK_RIGHT || k == SDLK_UP) && focoQr == 0) { focoQr = 1; return; }
+    if ((k == SDLK_LEFT || k == SDLK_DOWN) && focoQr == 1) { focoQr = 0; return; }
+    if (ok && focoQr == 1) {
+      if (parear_rede_renovar()) {
+        renovando = 1;
+        renovandoDesde = SDL_GetTicks();
+      }
+      return;
+    }
+  }
   if (k == SDLK_UP && focoQr > 0) focoQr--;
   else if (k == SDLK_DOWN && focoQr + 1 < qrN()) focoQr++;
   else if (ok && qrN()) {
@@ -233,6 +265,15 @@ void login_evento(const SDL_Event *e) {
 void login_atualizar(float dt, Uint32 agora) {
   int i, r;
   sessao_passo((unsigned)agora);
+  // O codigo de 6 digitos so existe enquanto o QR esta na tela; fora disso o
+  // passo recebe "" e esquece o que tinha.
+  parear_rede_passo(sessao_estado() == SES_AGUARDANDO ? sessao_url_login() : "",
+                    ajustes_login_codigo());
+  if (parear_rede_codigo()[0] || sessao_estado() != SES_AGUARDANDO)
+    renovando = 0;
+  else if (renovando == 1 &&
+           (parear_rede_falhou() || (int32_t)(agora - renovandoDesde) > 20000))
+    renovando = 2;
   animBotao = anim_mola(animBotao, 1.0f, dt, NV_MOLA_FOCO);
   pulso += dt;
   teclado_atualizar(dt, agora);
@@ -353,6 +394,47 @@ static void desenharEmail(float y, Uint32 agora) {
   }
 }
 
+// CODIGO DE 6 DIGITOS (parear.h), a direita do QR: para quem vai configurar
+// esta TV de longe. A pessoa na frente da TV so precisa DITAR seis numeros.
+// A coluna fica disponivel durante a renovacao. Em retrato (celular/tablet)
+// nao ha lado direito, e ali a propria pessoa ja digita.
+static void desenharCodigoAjuda(float yQr) {
+  const char *cod = parear_rede_codigo(), *pag = parear_rede_pagina();
+  float x = LG_AJUDA_X;
+  float larg = NV_TELA_W - NV_MARGEM_X - x, y = yQr + 40.0f, w;
+  TxtLinha l;
+  if (sessao_estado() != SES_AGUARDANDO || !codigoAjudaCabe() || !pag[0] ||
+      (!cod[0] && !renovando)) return;
+  if (larg > 520.0f) larg = 520.0f;
+  y += txt_bloco_corta(TXT_HEADLINE, i18n("Alguém vai configurar esta TV de longe?"),
+                       243, 242, 239, x, y, larg, 52.0f, 1.0f, 2) + 20.0f;
+  y += txt_bloco_corta(TXT_BODY, i18n("Diga estes números para a pessoa:"),
+                       163, 161, 156, x, y, larg, 44.0f, 1.0f, 2) + 14.0f;
+  if (cod[0]) {
+    // Os numeros nao sao texto traduzivel; TITULO1 e o maior tamanho da tela.
+    l = txt_linha(TXT_TITULO1, cod, 255, 255, 255, 255);
+    txt_desenhar_alpha(l, x, y, 1.0f);
+  } else if (renovando == 2) {
+    l = txt_linha(TXT_TITULO1, "--- ---", 163, 161, 156, 255);
+    txt_desenhar_alpha(l, x, y, 1.0f);
+  } else {
+    // A renovacao esta em andamento; os numeros ficam ocultos ate a resposta.
+    l = txt_linha_corta(TXT_HEADLINE, i18n("Gerando um código novo…"), 163, 161, 156, 255, larg);
+    txt_desenhar_alpha(l, x, y + 12.0f, 0.55f + 0.35f * (0.5f + 0.5f * sinf(pulso * 3.14159f)));
+    l.h = 60.0f;
+  }
+  y += l.h + 26.0f;
+  y += txt_bloco_corta(TXT_BODY, i18n("Ela digita os números neste endereço e entra com a conta que vai ficar nesta TV:"),
+                       163, 161, 156, x, y, larg, 44.0f, 1.0f, 3) + 10.0f;
+  l = txt_linha_corta(TXT_HEADLINE, pag, 243, 242, 239, 255, larg);
+  txt_desenhar_alpha(l, x, y, 1.0f);
+  y += l.h + 28.0f;
+  // NOVO CODIGO: quem ditou errado, ou desconfia que o codigo vazou, troca na
+  // hora. O antigo morre no servidor; nao precisa esperar o vencimento.
+  w = larg < LG_PILL_W ? larg : LG_PILL_W;
+  pilula(x + w * 0.5f, y, w, "Novo código", animFocoQr[1], 1.0f, ptFocoQr, 1);
+}
+
 void login_desenhar(Uint32 agora) {
   SesEstado st = sessao_estado();
   float y;
@@ -417,6 +499,7 @@ void login_desenhar(Uint32 agora) {
         linhaCentrada(TXT_HEADLINE, "não consegui desenhar o código",
                       236, 108, 108, y + 100.0f, 1.0f);
       }
+      desenharCodigoAjuda(y);
       y += LG_QR_LADO + 42.0f;
 
       // O endereco em texto e a saida de emergencia de quem nao tem camera —
