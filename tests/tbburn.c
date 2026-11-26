@@ -62,6 +62,9 @@ int debrid_tb_adicionar(const char *h) {
 /* Owner 24/11/2026 (logs 19-20): a stuck item is removed before the re-add. */
 static int apagou, apagouItem, apagarDa = 1;
 int debrid_tb_apagar(int item) { apagou++; apagouItem = item; return apagarDa; }
+/* Only a cached hash is ever removed (tbabrir.c's rule): 1 = cached. */
+static int emCache = 1;
+int debrid_tb_em_cache(const char *h) { (void)h; return emCache; }
 /* The cached-first lookup with the item's hash: item 500, hash "ab..". */
 static int hashAchaItem = 500;
 int partes_achar_exato_hash(const char *u, const char *h, const char *a, uint64_t b, int *i, int *f, int *un, char *c, unsigned n, char hi[41]) {
@@ -472,6 +475,14 @@ int main(void) {
     apagou = 0;
     CHECA(fimPedido() == TBB_FALHOU && viuEsperando && adicoes == 2 && apagou == 1 && apagouItem == 900 &&
           frescoN == 1 && criacoes == 3);
+    // s1) The same, but TorBox no longer reports the hash cached: the added
+    //     item is never removed from the account (and not added again).
+    frescoItem = 0; frescoAPartir = 0; frescoN = criacoes = adicoes = 0; adicionarDa = 900; pronto900 = 0; sumido900 = 1;
+    emCache = 0; apagou = 0;
+    tbburn_fonte("https://s/12u", "", "B.S01E14.mkv", 2014);
+    tbburn_pedir("https://s/12u", 1, 1);
+    CHECA(fimPedido() == TBB_FALHOU && apagou == 0 && adicoes == 1);
+    emCache = 1;
     // s2) TBB_ESPERANDO comes after the look 3.5 s after the add (item 500's
     //     createstream + 1 look); TorBox ready by the look 7 s into the
     //     original's playback -> PRONTO, not before that moment.

@@ -807,6 +807,18 @@ static int removerAdicionar(Pedido *p, int item, const char *h) {
     fflush(stdout);
     return 0;
   }
+  // Never take out of the account a file TorBox no longer has cached: the
+  // re-add (cached only) would be refused and the item lost (as tbabrir.c).
+  if (item > 0) {
+    int c = debrid_tb_em_cache(h);
+    if (!pedidoVivo(p)) return -1;
+    if (c != 1) {
+      printf("[tbburn] remove and add: hash %.8s... %s on TorBox: the item stays in your TorBox\n", h,
+             c == 0 ? "not cached" : "cache check had no answer");
+      fflush(stdout);
+      return 0;
+    }
+  }
   pthread_mutex_lock(&trava); snprintf(apagadoUrl, sizeof apagadoUrl, "%s", p->url); pthread_mutex_unlock(&trava);
   ok = item > 0 ? debrid_tb_apagar(item) : 0;
   if (!pedidoVivo(p)) return -1;
@@ -1002,8 +1014,15 @@ static int readicionar(Pedido *p, int itemVelho, int arqVelho, const char *hashV
       printf("[tbburn] re-add: item %d is stuck, but this file was already removed and re-added in this playback: "
              "not removing again\n", itemVelho);
       fflush(stdout);
+    } else if (debrid_tb_em_cache(h) != 1) {
+      // Same rule as removerAdicionar: an uncached file is never removed.
+      if (!pedidoVivo(p)) return -1;
+      printf("[tbburn] re-add: item %d is stuck, but TorBox does not report hash %.8s... cached: not removing it\n",
+             itemVelho, h);
+      fflush(stdout);
     } else {
       int ok;
+      if (!pedidoVivo(p)) return -1;
       printf("[tbburn] re-add: TorBox sent no video for item %d (still in your TorBox): removing it from your TorBox "
              "first, then adding it again by its hash\n", itemVelho);
       fflush(stdout);
