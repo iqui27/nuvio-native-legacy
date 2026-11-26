@@ -2,7 +2,7 @@
 // compatibilidade. A regra do que pode sair e vtreg.h; aqui so se junta o que
 // o player ja sabe e se manda, fora do fio de quadro, para
 // NV_REC_URL/v1/vaitocar. Nada sai com o ajuste "Compartilhar compatibilidade"
-// desligado (o padrao, ate a pessoa aceitar no cartao), em perfil infantil ou
+// desligado (o padrao, ate a pessoa aceitar na tela de consentimento do Farol), em perfil infantil ou
 // sem NV_REC_URL no pacote. Nao le resposta: o veredito por fonte fica para
 // depois de haver dados.
 #ifndef VTREGENVIO_H

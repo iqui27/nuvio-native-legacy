@@ -157,7 +157,6 @@ extern __attribute__((weak)) void farol_registrar_resultado(int acao, int ok);
 #include "addonguia.h"
 #include "apoio.h"
 #include "telemetria.h"
-#include "vtregcartao.h"
 #include "vtregenvio.h"
 #include "avisos.h"
 #include "ilha.h"
@@ -5498,7 +5497,6 @@ void app_evento(const SDL_Event *e) {
   }
   if (novidades1312_aberto()) { novidades1312_evento(e); return; }
   if (telemetria_aberto()) { telemetria_evento(e); return; }
-  if (vtregcartao_aberto()) { vtregcartao_evento(e); return; }
   // O explicador do Social e da mesma familia, e come esquerda/direita:
   // deixar a tecla vazar para a home moveria o foco dela debaixo do cartao.
   if (recintro_aberto()) { recintro_evento(e); return; }
@@ -5842,7 +5840,7 @@ static const char *homeTrailerBloqueio(void) {
   if (menu_aberto() || ctx_aberto()) return "menu";
   if (vertudo_aberta()) return "see-all";
   if (avisos_aberto() || avisos_cartao_aberto()) return "notices";
-  if (sintro_aberto() || pipintro_aberto() || recintro_aberto() || telemetria_aberto() || vtregcartao_aberto()) return "intro";
+  if (sintro_aberto() || pipintro_aberto() || recintro_aberto() || telemetria_aberto()) return "intro";
   if (comecar_aberto()) return "comecar";
   if (conquistas_aberto()) return "achievements";
   if (novidades_aberto() || novidades11_aberto() || novidades12_aberto() ||
@@ -6537,17 +6535,8 @@ void app_atualizar(float dt, Uint32 agora) {
     // anuncio de recurso que nao esta no pacote e pior que silencio.
     if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
         !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() && !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() && !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() && !novidades142_aberto() && !novidades148_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !telemetria_aberto() && !pipintro_aberto() && !atualizacao_aberta() &&
-        !recomenda_aberta() && !vtregcartao_aberto())
+        !recomenda_aberta())
       recintro_primeira_vez();
-    // Vai tocar nesta TV (4.2): o consentimento do registro anonimo, depois de
-    // todos os outros cartoes de arranque e nunca em perfil infantil.
-    if (!registro_aberto() && !sintro_aberto() && !novidades_aberto() &&
-        !novidades11_aberto() && !novidades12_aberto() && !novidades13_aberto() &&
-        !novidades131_aberto() && !novidades132_aberto() && !novidades133_aberto() &&
-        !novidades134_aberto() && !novidades139_aberto() && !novidades1312_aberto() && !novidades142_aberto() && !novidades148_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !telemetria_aberto() && !pipintro_aberto() &&
-        !novidades20_aberto() && !novidades1312_aberto() && !novcartao_aberto() && !telemetria_aberto() && !recintro_aberto() &&
-        !recomenda_aberta() && !atualizacao_aberta() && !perfil_infantil_ativo())
-      vtregcartao_primeira_vez();
     // LEMBRETE VENCIDO: o unico aviso que esta TV consegue dar. Ultimo da fila
     // pela mesma razao de todos os outros — dois cartoes juntos seria um por
     // cima do outro —, e sem consulta de rede nenhuma: o que ele mostra ja
@@ -8668,7 +8657,6 @@ void app_atualizar(float dt, Uint32 agora) {
 #endif
   dicascontrole_atualizar(dt, agora);
   telemetria_atualizar(dt, agora);
-  vtregcartao_atualizar(dt, agora);
   recintro_atualizar(dt, agora);
   atualizacao_atualizar(dt, agora);
   agendaviso_atualizar(dt, agora);
@@ -8953,7 +8941,7 @@ static int relogioCamadaAberta(void) {
       novidades13_aberto() || novidades131_aberto() || novidades132_aberto() ||
       novidades133_aberto() || novidades134_aberto() || novidades139_aberto() ||
       novidades1312_aberto() || novidades142_aberto() || novidades148_aberto() ||
-      novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || novidades202_aberto() || novcartao_aberto() || resolver_aberto() || telemetria_aberto() || vtregcartao_aberto() || recintro_aberto() ||
+      novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || novidades202_aberto() || novcartao_aberto() || resolver_aberto() || telemetria_aberto() || recintro_aberto() ||
       atualizacao_aberta() || agendaviso_aberto() || avisos_cartao_aberto() ||
       glem_cartao_aberto() || recenviar_aberto() || pessoas_aberto() ||
       recomenda_aberta() || pipintro_aberto() || diagnostico_intro_aberto() || travaui_aberta();
@@ -9000,7 +8988,7 @@ static int relogioCabe(void) {
       novidades13_aberto() || novidades131_aberto() || novidades132_aberto() ||
       novidades133_aberto() || novidades134_aberto() || novidades139_aberto() ||
       novidades1312_aberto() || novidades142_aberto() || novidades148_aberto() ||
-      novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || telemetria_aberto() || vtregcartao_aberto() || recintro_aberto() ||
+      novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || telemetria_aberto() || recintro_aberto() ||
       atualizacao_aberta() || agendaviso_aberto() || avisos_cartao_aberto() ||
       glem_cartao_aberto() || recenviar_aberto() || travaui_aberta() || pessoas_aberto() ||
       recomenda_aberta() || pipintro_aberto() || diagnostico_intro_aberto())
@@ -9226,8 +9214,6 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novcartao_desenhar(agora);      // so o esmaecer de saida
   CAMADA_SE(telemetria_aberto());
   if (!registro_aberto()) telemetria_desenhar(agora);
-  CAMADA_SE(vtregcartao_aberto());
-  if (!registro_aberto()) vtregcartao_desenhar(agora);
   CAMADA_SE(recintro_aberto());
   if (!registro_aberto()) recintro_desenhar(agora);
   CAMADA_SE(atualizacao_aberta());

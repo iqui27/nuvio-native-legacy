@@ -888,7 +888,8 @@ typedef enum {
   AJ_FAROL_LLM_SO_ESTA_TV,
   AJ_AMIGOS_PERFIS, // Account-profile friends action; append-only.
   // Vai tocar nesta TV (4.2): registro anonimo de compatibilidade. LOCAL,
-  // desligado ate a pessoa aceitar no cartao (vtregcartao.c). Append-only.
+  // desligado ate a pessoa aceitar na tela de consentimento do Farol
+  // (farolconsentui.c, linha "Compartilhar compatibilidade"). Append-only.
   AJ_VAITOCAR,
   AJ_N
 } OpcaoId;

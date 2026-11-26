@@ -18,7 +18,7 @@ próxima"; tirar o aviso é decisão de produto e ficou como está.
 |---|---|
 | Regra pura: vocabulário fechado, filtro de modelo/firmware, faixas, JSON | `src/vtreg.{h,c}`, `tests/vtreg.c` |
 | Coleta e envio fora do fio de quadro | `src/vtregenvio.{h,c}`, `tests/vtregenvio.c` |
-| Cartão de consentimento (uma vez; foco inicial em "Agora não") | `src/vtregcartao.{h,c}` |
+| Consentimento unificado no Farol (linha "Compartilhar compatibilidade" na tela "Vai junto / Nunca vai", issue 53; nenhum cartão próprio no arranque) | `src/farolconsentui.{h,c}` |
 | Ajuste "Compartilhar compatibilidade" (Sobre e ajuda; local; padrão desligado) | `AJ_VAITOCAR`, chave `vaiTocarLocal` |
 | Tabela de contagem e rota `POST /v1/vaitocar` | `servidor/recomendacoes/migracao-022-vaitocar.sql`, `src/vtreg.js`, `teste-vaitocar.mjs` |
 
