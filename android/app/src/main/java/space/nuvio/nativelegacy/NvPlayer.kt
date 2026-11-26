@@ -101,7 +101,7 @@ object NvPlayer {
     private const val RETRY_DECODER_MS = 5000L
 
     private val principal = Handler(Looper.getMainLooper())
-    private var activity: Activity? = null
+    @Volatile private var activity: Activity? = null
     // isLowRamDevice/memoryClass medidos no criarPlayer (true = pouca RAM;
     // false tambem antes de medir). CargaPlayer le sem Context.
     @Volatile internal var poucaRamAparelho = false

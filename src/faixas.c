@@ -2526,7 +2526,7 @@ int faixas_legenda_temporaria(int ligar, const char *idiomaApp) {
   if (!player_aberto() || player_id_canal()[0]) return -1;
   // Video ainda abrindo (ex.: comecou ja mudo) ou a automatica do comeco nao fechou: espera.
   if (!player_com_video()) return 0;
-  if (legTempDona || legendaAtiva() >= 0 || video_legenda_atual() >= 0) return -1;
+  if (legTempDona || legendaAtiva() >= 0 || video_legenda_atual() >= 0 || legOverlayEsperando >= 0) return -1;
   if (legAuto) return 0;
   ci = cat_item(player_indice());
   evitaSdh = ajustes_legenda_evitar_sdh();

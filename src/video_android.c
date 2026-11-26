@@ -1334,7 +1334,7 @@ int video_mudo(void) {
   int r;
   if (!env || !mMudo) return -1;
   r = (*env)->CallStaticIntMethod(env, gCls, mMudo);
-  fimChamada(env);
+  if ((*env)->ExceptionCheck(env)) { fimChamada(env); return -1; }
   return r;
 }
 void video_buscar(double s) {

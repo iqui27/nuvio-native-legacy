@@ -5,7 +5,7 @@
 #include <assert.h>
 
 static VideoFaixa emb[4];
-static int nEmb, ativa = -1, canal, trocas, semVideo, evitaSdh;
+static int nEmb, ativa = -1, canal, trocas, semVideo, evitaSdh, sondaPendente;
 int ajustes_legenda_evitar_sdh(void) { return evitaSdh; }
 static const char *ultima = "";
 static CatItem titulo;
@@ -15,12 +15,18 @@ Uint32 SDL_GetTicks(void) { return 1000; }
 const char *i18n(const char *s) { return s; }
 int addons_n_legendas(void) { return 0; }
 const Legenda *addons_legenda(int i) { (void)i; return NULL; }
+int addons_legendas_copiar(Legenda *v, int max, unsigned *geracao, int *prontas) {
+  (void)v; (void)max; (void)geracao; (void)prontas; return 0;
+}
 const CatItem *cat_item(int i) { (void)i; return &titulo; }
 int faixasmkv_overlay(const char *c, int t) { (void)c; (void)t; return 0; }
 void legenda_desligar(void) {}
+void legenda_pre_reiniciar(void) {}
 const char *legenda_idioma(const char *i, const char *a) { (void)a; return i; }
 void legendasui_id_addon(const Legenda *l, char out[24]) { (void)l; out[0] = 0; }
+void legendasui_reiniciar(void) {}
 const LegMem *legmem_do_titulo(const char *t) { (void)t; return NULL; }
+void legmem_guardar(const LegMem *e) { (void)e; assert(0 && "subtitle preference changed"); }
 void legmem_id_titulo(const char *id, char *dst, unsigned tam) { snprintf(dst, tam, "%s", id); }
 const char *legmem_ultima(void) { return ultima; }
 const char *legmem_preferencia(const char *aj, const LegMem *m, const char *ult, int *origem) {
@@ -28,6 +34,7 @@ const char *legmem_preferencia(const char *aj, const LegMem *m, const char *ult,
   return aj && aj[0] ? aj : ult;
 }
 uint64_t legsync_hash_url(const char *u) { (void)u; return 0; }
+void legsync_definir_trocador(LegSyncTrocador t) { (void)t; }
 void legsync_primaria_externa(const char *u, const char *i, const char *o) { (void)u; (void)i; (void)o; }
 void legsync_primaria_outra(int e) { (void)e; }
 void mkvass_iniciar_ordinal(const char *u, int o) { (void)u; (void)o; }
@@ -43,9 +50,10 @@ int video_n_legenda(void) { return nEmb; }
 const VideoFaixa *video_legenda(int i) { return i >= 0 && i < nEmb ? &emb[i] : NULL; }
 int video_legenda_atual(void) { return ativa; }
 int video_legenda_ordinal_mkv(int i) { (void)i; return -1; }
-int video_mkv_sondado(void) { return 1; }
+int video_mkv_sondado(void) { return !sondaPendente; }
 void video_sondar_mkv_agora(void) {}
-const char *video_url_atual(void) { return ""; }
+const char *video_url_atual(void) { return sondaPendente ? "https://example.invalid/video.mkv" : ""; }
+void video_velocidade(int centesimos) { (void)centesimos; }
 int xtream_url_limitada(const char *u) { (void)u; return 0; }
 
 static void faixa(int i, const char *idioma, int tipo) {
@@ -95,6 +103,15 @@ int main(void) {
   assert(faixas_legenda_temporaria(0, "") == -1 && ativa == 0 && trocas == 0);
   escolherLegenda(-1);
 
+  sondaPendente = 1;
+  escolherLegenda(2);
+  assert(legOverlayEsperando == 2 && ativa == -1);
+  trocas = 0;
+  assert(faixas_legenda_temporaria(1, "en") == -1);
+  assert(legOverlayEsperando == 2 && ativa == -1 && trocas == 0 && !legTempDona);
+  sondaPendente = 0;
+  escolherLegenda(-1);
+
   // Nenhum idioma serve (app em japones, audio em ingles so com forcada): cai
   // no idioma do audio; sem faixa completa nele, nada.
   assert(faixas_legenda_temporaria(1, "ja") == 1 && ativa == 0);    // audio eng
@@ -124,7 +141,9 @@ int main(void) {
   faixa(0, "eng", LING_LEG_COMUM);
   legAuto = 0;
   assert(faixas_legenda_temporaria(1, "en") == 1 && legTempDona);
-  legTempDona = 0; ativa = -1;
+  faixas_reiniciar();
+  assert(!legTempDona);
+  assert(faixas_legenda_temporaria(0, "") == -1);
 
   puts("legtemp_faixas: ok");
   return 0;

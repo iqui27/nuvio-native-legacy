@@ -21,8 +21,19 @@ static void rajada(void) {
   assert(legtemp_busca(&t, 103, 95) == LEGTEMP_LIGAR);
 }
 
+static void gestoConfirmado(void) {
+  LegTemp t;
+  legtemp_zerar(&t);
+  assert(legtemp_busca(&t, 100, 100 - LEGTEMP_VOLTA_MAX - 1) == LEGTEMP_NADA);
+  assert(legtemp_busca(&t, 100, 100) == LEGTEMP_NADA && !t.motivos);
+  assert(legtemp_busca(&t, 100, 90) == LEGTEMP_LIGAR && t.motivos == LEGTEMP_VOLTA);
+  assert(legtemp_busca(&t, 90, 99) == LEGTEMP_NADA && t.motivos == LEGTEMP_VOLTA);
+  assert(legtemp_busca(&t, 99, 100) == LEGTEMP_DESLIGAR && !t.motivos);
+}
+
 int main(void) {
   rajada();
+  gestoConfirmado();
   LegTemp t;
   const char *o[3];
 
