@@ -7326,7 +7326,11 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
       vistoep_estado(serie->imdb, ep->temporada, ep->episodio) == 1;
     int current = serie && ep && serie->temporada == ep->temporada &&
       serie->episodio == ep->episodio;
-    int progress = current && !watched ? serie->progresso : 0;
+    int progress = 0;
+    if (!watched && ep) {
+      progress = current && serie ? serie->progresso
+                                  : extras_ep_progresso(ep->temporada, ep->episodio);
+    }
     int tint = 204 + (int)(39.0f * anim_clamp(f, 0, 1));   // 80% em repouso, cheio em foco
     char title[240], line[96] = "";
     if (progress > 0 && progress < 100) {
