@@ -191,6 +191,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_CW_MINIMO: return "aj_circle-play";
     case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "aj_circle-play";
     case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR: return "pl_audio-lines";
+    case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS: return "aj_circle-play";
     case AJ_SAIDA_PLAYER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: return "aj_circle-play";
     case AJ_SEEKR_LIGADO: return "aj_film";
     case AJ_SEEKR_CHAVE: return "aj_film";
@@ -260,7 +261,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_LIVETV_MODO: return "aj_stethoscope";
     case AJ_LIVETV_PROXY: return "aj_stethoscope";
     case AJ_LIVETV_SUGERIR: return "aj_layers";
-    case AJ_PERFIL_ATIVO: return "aj_user-round";
+    case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: return "aj_user-round";
     case AJ_SYNC: return "aj_cloud";
     case AJ_ADDONS: return "aj_user-round";
     case AJ_PLUGINS: return "aj_puzzle";
@@ -312,6 +313,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_VERSAO_I: return "aj_info";
     case AJ_ATUALIZAR: return "aj_download";
     case AJ_AVISO_LEGAL: return "aj_file-text";
+    case AJ_UPDATE_NOTIFICATIONS: return "aj_bell";
     case AJ_VER_REGISTRO: return "aj_scroll-text";
     case AJ_ENVIAR_LOG: return "aj_send";
     case AJ_ENVIO_AUTO: case AJ_LOG_REDE: return "aj_scroll-text";
@@ -733,3 +735,4 @@ static float ajVisualCena(int sec, int op, float x, float y, float w) {
 #undef TXT
   return h;
 }
+

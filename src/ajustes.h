@@ -172,6 +172,10 @@ int   ajustes_audio_externo_ordem_addon(void);       // "Sort like the addons" (
 int   ajustes_audio_externo_bufor_mib(void);         // "Other version buffer": 8 (default), 16 or 32 MiB
 int   ajustes_audio_externo_auto(void);               // match automatically when the other version starts (default on)
 int ajustes_pular_creditos(void);
+// Manual skip-button visibility, independent of automatic skipping; default ON.
+int ajustes_show_skip_intro(void);
+int ajustes_show_skip_recap(void);
+int ajustes_show_skip_credits(void);
 // Medidor de desempenho na ilha do relogio (desempenho.h): Desempenho desta TV,
 // local. 0 = desligado, 1 = Minimo, 2 = Menor, 3 = Grande (DS_* de desempenho.h).
 int ajustes_medidor_desempenho(void);
@@ -222,6 +226,8 @@ int ajustes_fonte_grupo_sessoes(void);
 // Reusar o ultimo link (fontevolta.h): 1 = ligado; e a validade em segundos.
 int ajustes_link_reusar(void);
 int ajustes_log_rede(void);   // pagina de registro na rede local (logrede.h)
+int ajustes_update_notifications(void); // automatic update card/notices; off by default
+int ajustes_lembrar_perfil(void); // remember last unlocked profile on this TV; default OFF
 unsigned ajustes_link_prazo_s(void);
 int ajustes_fonte_escopo(void);
 int ajustes_fonte_regex_modo(void);

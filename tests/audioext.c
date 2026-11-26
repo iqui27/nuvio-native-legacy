@@ -523,5 +523,20 @@ int main(void) {
     assert(!audioext_match_faixa(l, sizeof l, c, sizeof c, &ch));
     audioext_alvo(""); }
   puts("audioext: marks, menu requests, offsets, series memory and matching, Scan again per show passed");
+  // Resume from Continue Watching with the saved source: the same version,
+  // track and sync, and the safety net of an older start does not drop it.
+  { unsigned g0 = audioext_pedido_geracao();
+    audioext_alvo("tt77:2:3");
+    audioext_retomar("https://d/dub.mkv", "Referer: x", "TB Store PL", "pl", 2, -1500, 42708);
+    assert(audioext_pedido("https://d/video.mkv") && !strcmp(audioext_url(), "https://d/dub.mkv"));
+    assert(!strcmp(audioext_cabecalhos(), "Referer: x") && !strcmp(audioext_idioma(), "pl"));
+    assert(audioext_faixa() == 2 && audioext_offset_ms() == -1500 && audioext_velocidade() == 42708);
+    assert(audioext_offset_lembrado() && audioext_pedido_geracao() != g0);
+    audioext_inicio_reproducao("https://d/video.mkv");
+    assert(audioext_pedido("https://d/video.mkv"));
+    audioext_alvo("tt77:2:4");   // another episode forgets it, as any mark
+    assert(!audioext_tem_marca());
+    audioext_limpar(); }
+  puts("audioext: marks, menu requests, offsets, series memory and matching passed");
   return 0;
 }

@@ -119,6 +119,9 @@ int player_regra_concluiu(double posSeg, double durSeg, double cred);
 // contra a duracao falsa de 129 s de um trailer tambem nao.
 int player_regra_visto(double base, double tocado, double pos, int fim, int *chegou);
 void player_erro_fonte(void);
+// Play opened the source sheet and Back closed it with no pick: leave the
+// player (Android: the source error card, as before).
+void player_desistir_fonte(void);
 // O mesmo cartao, com a causa no lugar das frases genericas (issue #112):
 // `titulo` substitui "Nao foi possivel abrir a fonte" e `dica` a linha de
 // baixo. Os dois ja traduzidos; "" ou NULL mantem a frase generica.

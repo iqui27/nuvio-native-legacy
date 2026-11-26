@@ -257,10 +257,15 @@ static const char *uxSinonimos(int op) {
     case AJ_EXT_AUDIO_COPIAS: return "audio another source duplicates copies hide same file duplikaty kopie ukryj";
     case AJ_EXT_AUDIO_AUTO: return "audio another version match automatically start auto sync dopasuj automatycznie start";
     case AJ_EXT_AUDIO_AVISO: return "audio another version sync adjusted message notice toast komunikat synchronizacja poprawiona";
+    case AJ_SHOW_SKIP_INTRO: return "show hide skip intro button opening pokaz ukryj przycisk intro";
+    case AJ_SHOW_SKIP_RECAP: return "show hide skip recap button summary poprzednio przypomnienie";
+    case AJ_SHOW_SKIP_CREDITS: return "show hide skip outro credits button ending napisy koncowe przycisk";
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "proximo episodio automatico autoplay creditos contagem netflix sozinho next episode auto play countdown";
     case AJ_CW_MINIMO: return "minimo continuar assistindo porcentagem percentual entrar fileira retomada progresso quanto assistir comecou piso minimum percent continue watching threshold row";
     case AJ_FONTE_PREPARAR: return "preparar fonte ao abrir titulo antecipar resolver antecipado play instantaneo inicio rapido debrid painel arquivo prepare source ahead instant start";
     case AJ_COLECAO_EXIBICAO: return "colecao colecoes exibicao padrao automatico grade linha tempo ranking saga decadas mural vitrine global collection collections default view automatic grid timeline showcase";
+    case AJ_REMEMBER_PROFILE: return "remember last profile startup auto enter lembrar ultimo perfil zapamietaj ostatni profil";
+    case AJ_UPDATE_NOTIFICATIONS: return "update notifications new version release aviso atualizacao powiadomienia aktualizacja wersja";
     case AJ_LOG_REDE: return "registro rede local pagina log ip navegador local network log page browser seek";
     case AJ_LINK_REUSAR: case AJ_LINK_PRAZO: return "reusar ultimo link sem busca retomar validade cache horas reuse last link cache duration";
     case AJ_FONTE_GRUPO: case AJ_FONTE_GRUPO_SESSOES: return "grupo bingegroup binge proximo episodio mesma fonte lembrar fonte escolhida lancamento release sessoes reusar prefer binge group remember picked source same release next episode reuse sessions";
@@ -342,7 +347,7 @@ static const char *uxCaminhoAntigo(int op) {
     case AJ_JF_LIGADO: case AJ_JF_SERVIDOR: case AJ_JF_ENTRAR: case AJ_JF_SAIR:
     case AJ_EM_SERVIDOR: case AJ_EM_ENTRAR: case AJ_EM_SAIR:
     case AJ_PX_ENTRAR: case AJ_PX_SERVIDOR: case AJ_PX_SAIR:
-    case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
+    case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: case AJ_SYNC: case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
     case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_SALVOS_DEST: case AJ_CW_FONTE: case AJ_CW_PROXIMO: case AJ_ENQUETES:
     case AJ_HIST_CONTA: case AJ_SOCIAL:
       return "Contas e serviços";
@@ -515,3 +520,4 @@ int ajustes_buscar(const char *consulta, AjusteBuscaResultado *resultados, int c
   }
   return total;
 }
+

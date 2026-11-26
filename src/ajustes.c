@@ -753,6 +753,11 @@ typedef enum {
   AJ_WEBOS_HLS_DV7,
   AJ_WEBOS_HLS_MODE,
   AJ_WEBOS_HLS_TS,     // HLS test: this TV starts HLS in MPEG-TS, learned by the player (device-local, no row)
+  AJ_UPDATE_NOTIFICATIONS, // device-local; automatic update notices, off by default
+  AJ_REMEMBER_PROFILE, // device-wide startup preference; off by default
+  AJ_SHOW_SKIP_INTRO, // button visibility only; profile-local, default ON
+  AJ_SHOW_SKIP_RECAP,
+  AJ_SHOW_SKIP_CREDITS, // outro and credits share the same marker type
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1057,10 +1062,14 @@ static const char *V_LEG_COR[] = { "Branco", "Amarelo", "Verde", "Azul", "Vermel
 static const char *V_LEG_COR_BORDA[] = { "Preto", "Branco", "Amarelo", "Verde", "Azul", "Vermelho" };
 static const char *V_LEG_FUNDO[] = { "Nenhum", "Escuro 25%", "Escuro 50%", "Escuro 75%", "Escuro 100%" };
 static const char *V_LEG_BORDA[] = { "Nenhuma", "Contorno", "Sombra" };
-static const char *V_LEG_OPAC[] = { "100%", "75%", "50%", "25%" };
+static const char *V_LEG_OPAC[] = { LEG_OPAC_ROTULOS };
 static const char *V_LEG_POS[] = { "1", "2", "3", "4", "5", "6", "7", "8" };
 static const char *V_LEG2_FONTE[] = { "Igual à principal", "Inter", "LG Display", "Droid Sans", "Montserrat", "Roboto", "Atkinson Hyperlegible Next", "JetBrains Sans" };
-static const char *V_LEG2_OPAC[] = { "Igual à principal", "100%", "75%", "50%", "25%" };
+static const char *V_LEG2_OPAC[] = { "Igual à principal", LEG_OPAC_ROTULOS };
+_Static_assert(sizeof V_LEG_OPAC / sizeof *V_LEG_OPAC == LEG_OPAC_N,
+               "Primary opacity labels match the fine-grained scale");
+_Static_assert(sizeof V_LEG2_OPAC / sizeof *V_LEG2_OPAC == LEG_OPAC_N + 1,
+               "Secondary opacity retains the inheritance choice");
 static const char *V_LEG2_COR_BORDA[] = { "Igual à principal", "Preto", "Branco", "Amarelo", "Verde", "Azul", "Vermelho" };
 static const char *V_LEG2_NEGRITO[] = { "Igual à principal", "Ligado", "Desligado" };
 static const char *V_LEG2_POSICAO[] = { "Automático", "1", "2", "3", "4", "5", "6", "7", "8" };
@@ -1815,7 +1824,7 @@ static const Opcao OPCOES[AJ_N] = {
   NUM("Tamanho", TXT_LEG_PCT_MIN, TXT_LEG_PCT_MAX, 10, "%"),
   ESC("Fonte da legenda", V_FONTE_UI, TXT_FAMILIA_N),
   ESC("Cor", V_LEG_COR, VIDEO_LEG_NCORES),
-  ESC("Opacidade", V_LEG_OPAC, 4),
+  ESC("Opacidade", V_LEG_OPAC, LEG_OPAC_N),
   ESC("Fundo", V_LEG_FUNDO, 5),
   ESC("Posição", V_LEG_POS, 8),
   ESC("Borda", V_LEG_BORDA, 3),
@@ -1824,7 +1833,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Cor da borda", V_LEG_COR_BORDA, VIDEO_LEG_NCORES),
   ACAO("Restaurar padrão"),
   ESC("Fonte da legenda", V_LEG2_FONTE, TXT_FAMILIA_N + 1),
-  ESC("Opacidade", V_LEG2_OPAC, 5),
+  ESC("Opacidade", V_LEG2_OPAC, LEG_OPAC_N + 1),
   ESC("Posição", V_LEG2_POSICAO, 9),
   NUM("Atraso", -LEG_ATRASO_MANUAL_MAX, LEG_ATRASO_MANUAL_MAX, 100, " ms"),
   ESC("Negrito", V_LEG2_NEGRITO, 3),
@@ -1924,6 +1933,11 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Dolby Vision P7 via HLS (experimental)", V_LIGA, 2),
   ESC("HLS (experimental)", V_LIGA, 2),
   ESC("HLS: MPEG-TS (Experimental)", V_LIGA, 2),
+  ESC("Update notifications", V_LIGA, 2),
+  ESC("Remember last profile", V_LIGA, 2),
+  ESC("Show intro skip button", V_LIGA, 2),
+  ESC("Show recap skip button", V_LIGA, 2),
+  ESC("Show outro / credits skip button", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2207,7 +2221,7 @@ static const char *CHAVE[] = {
   "-legenda1Tamanho", "-legenda1Fonte", "-legenda1Cor", "-legenda1Opacidade",
   "-legenda1Fundo", "-legenda1Posicao", "-legenda1Borda", "-legenda1Atraso",
   "-legenda1Negrito", "-legenda1CorBorda", "-legenda1Restaurar",
-  "legenda2FonteLocal", "legenda2OpacidadeLocal", "legenda2PosicaoLocal", "legenda2AtrasoLocal",
+  "legenda2FonteLocal", "legenda2OpacidadeFinaLocal", "legenda2PosicaoLocal", "legenda2AtrasoLocal",
   "legenda2NegritoLocal", "legenda2CorBordaLocal", "-legenda2Restaurar",
   "colecaoExibicaoPadraoLocal",
   "playerExternoLocal",
@@ -2281,6 +2295,11 @@ static const char *CHAVE[] = {
   "webosHlsDv7Local",
   "webosHlsModeLocal",
   "webosHlsTsLocal",
+  "updateNotificationsLocal",
+  "rememberLastProfileLocal",
+  "showSkipIntroButtonLocal",
+  "showSkipRecapButtonLocal",
+  "showSkipCreditsButtonLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2626,7 +2645,7 @@ static int ajLegendaValor(int op) {
     case AJ_LEG1_TAMANHO: return e->tamanho;
     case AJ_LEG1_FONTE: return ajFonteAtual(op);
     case AJ_LEG1_COR: return e->cor;
-    case AJ_LEG1_OPACIDADE: return e->opacidade;
+    case AJ_LEG1_OPACIDADE: return leg_opacidade_indice(e->opacidade);
     case AJ_LEG1_FUNDO: return e->fundo;
     case AJ_LEG1_POSICAO: return e->posicao;
     case AJ_LEG1_BORDA: return e->borda;
@@ -2646,7 +2665,7 @@ static int ajLegendaDefinir(int op, int v) {
     case AJ_LEG1_TAMANHO: e.tamanho = v; break;
     case AJ_LEG1_FONTE: e.familia = v; break;
     case AJ_LEG1_COR: if (e.cor != v) tocou = PLR_LEG_COR; e.cor = v; break;
-    case AJ_LEG1_OPACIDADE: e.opacidade = v; break;
+    case AJ_LEG1_OPACIDADE: e.opacidade = leg_opacidade_do_indice(v); break;
     case AJ_LEG1_FUNDO: e.fundo = v; break;
     case AJ_LEG1_POSICAO: e.posicao = v; break;
     case AJ_LEG1_BORDA: e.borda = v; break;
@@ -3022,6 +3041,9 @@ int ajustes_audio_externo_ocultar_copias(void) { return lig(AJ_EXT_AUDIO_COPIAS)
 int ajustes_audio_externo_ordem_addon(void) { return lig(AJ_EXT_AUDIO_ORDEM); }
 int ajustes_audio_externo_bufor_mib(void) { int v = valor[AJ_EXT_AUDIO_BUFOR]; return v == 1 ? 16 : v == 2 ? 32 : 8; }
 int ajustes_pular_creditos(void)      { return lig(AJ_PULAR_CREDITOS); }
+int ajustes_show_skip_intro(void)     { return lig(AJ_SHOW_SKIP_INTRO); }
+int ajustes_show_skip_recap(void)     { return lig(AJ_SHOW_SKIP_RECAP); }
+int ajustes_show_skip_credits(void)   { return lig(AJ_SHOW_SKIP_CREDITS); }
 int ajustes_medidor_desempenho(void)  { return valor[AJ_MEDIDOR]; }
 int ajustes_fonte_manual(void)        { return lig(AJ_FONTE_MANUAL); }
 int ajustes_fonte_primeira(void)      { return ajustes_fonte_prioridade() == 3 || valor[AJ_FONTE_AUTO] == 1; }
@@ -3073,6 +3095,8 @@ int ajustes_fonte_grupo(void) { return ajustes_fonte_prioridade() != 3 && lig(AJ
 int ajustes_fonte_grupo_sessoes(void) { return lig(AJ_FONTE_GRUPO_SESSOES); }
 int ajustes_link_reusar(void) { return lig(AJ_LINK_REUSAR); }
 int ajustes_log_rede(void) { return lig(AJ_LOG_REDE); }
+int ajustes_update_notifications(void) { return lig(AJ_UPDATE_NOTIFICATIONS); }
+int ajustes_lembrar_perfil(void) { return lig(AJ_REMEMBER_PROFILE); }
 unsigned ajustes_link_prazo_s(void) {
   int v = valor[AJ_LINK_PRAZO], n = (int)(sizeof LINK_PRAZO_H / sizeof *LINK_PRAZO_H);
   if (v < 0 || v >= n) v = 5;
@@ -3514,7 +3538,8 @@ void ajustes_leg2_estilo(const VideoLegendaEstilo *principal, VideoLegendaEstilo
   if (f >= 0) out->fundo = f;
   if (b >= 0) out->borda = b;
   if (valor[AJ_LEG2_FONTE] > 0) out->familia = valor[AJ_LEG2_FONTE] - 1;
-  if (valor[AJ_LEG2_OPACIDADE] > 0) out->opacidade = valor[AJ_LEG2_OPACIDADE] - 1;
+  if (valor[AJ_LEG2_OPACIDADE] > 0)
+    out->opacidade = leg_opacidade_do_indice(valor[AJ_LEG2_OPACIDADE] - 1);
   if (valor[AJ_LEG2_NEGRITO] > 0) out->negrito = valor[AJ_LEG2_NEGRITO] == 1;
   if (valor[AJ_LEG2_COR_BORDA] > 0) out->corBorda = valor[AJ_LEG2_COR_BORDA] - 1;
   if (ajustes_leg2_posicao() >= 0) out->posicao = ajustes_leg2_posicao();
@@ -4999,6 +5024,7 @@ void ajustes_dir(const char *dir) {
     int sinopseAntiga = -1, sinopseQuatro = -1, viuSinopse = 0;
     int dtsSaidaAntiga = -1, dtsModoAntigo = -1, viuDtsTpk = 0, viuHlsMode = 0;
     int leg2TamanhoAntigo = -1, viuLeg2Escala = 0;
+    int leg2OpacidadeAntiga = -1, viuLeg2Opacidade = 0;
   while (fgets(linha, sizeof linha, f)) {
     char chave[64]; int v, i, inicio = 0;
     if (sscanf(linha, "%63s%n", chave, &inicio) != 1) continue;
@@ -5084,6 +5110,10 @@ void ajustes_dir(const char *dir) {
       if (v >= 0 && v <= 20) leg2TamanhoAntigo = v;
       continue;
     }
+    if (!strcmp(chave, "legenda2OpacidadeLocal")) {
+      if (v >= 0 && v <= 4) leg2OpacidadeAntiga = v;
+      continue;
+    }
     // Outline is aesthetic: migrate its removed Automatic value to On.
     if (!strcmp(chave, "vidroContornoLocal") && v == 2) v = 0;
     for (i = 0; i < AJ_N; i++) {
@@ -5105,6 +5135,7 @@ void ajustes_dir(const char *dir) {
       if (i == AJ_DTS_AC3) viuDtsTpk = 1;
       if (i == AJ_WEBOS_HLS_MODE) viuHlsMode = 1;
       if (i == AJ_LEG2_TAMANHO && v >= 0 && v < 27) viuLeg2Escala = 1;
+      if (i == AJ_LEG2_OPACIDADE && v >= 0 && v <= LEG_OPAC_N) viuLeg2Opacidade = 1;
       break;
     }
   }
@@ -5123,6 +5154,9 @@ void ajustes_dir(const char *dir) {
     if (sinopseQuatro >= 0) valor[AJ_HERO_SINOPSE_TAM] = sinopseQuatro > 0;
     else if (sinopseAntiga >= 0) valor[AJ_HERO_SINOPSE_TAM] = sinopseAntiga > 0;
   }
+  // New sorted choices win over the legacy four-level key regardless of order.
+  if (!viuLeg2Opacidade && leg2OpacidadeAntiga >= 0)
+    valor[AJ_LEG2_OPACIDADE] = leg_opacidade_secundaria_migrar(leg2OpacidadeAntiga);
   if (!viuLeg2Escala && leg2TamanhoAntigo >= 0) {
     static const int pct[] = {0,60,80,100,120,140,160,170,180,190,200,210,220,230,240,250,260,270,280,290,300};
     int p = pct[leg2TamanhoAntigo];
@@ -6176,6 +6210,8 @@ static int somenteDesteAparelho(int op) {
     case AJ_TEX_MB:         /* teto de memoria de imagem: depende da RAM */
     case AJ_QUALIDADE_IMG:  /* resolucao da arte decodificada: idem */
     case AJ_ENVIO_AUTO:     /* consentimento de envio de registro deste aparelho */
+    case AJ_REMEMBER_PROFILE: /* startup choice belongs to this TV */
+    case AJ_UPDATE_NOTIFICATIONS: /* automatic notices on this TV */
     case AJ_LOG_REDE:       /* pagina de registro na rede desta casa */
     case AJ_ANIM:           /* animacoes reduzidas: acessibilidade nesta TV */
     case AJ_IDIOMA:         /* idioma da interface deste aparelho */
@@ -6321,6 +6357,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_OCULTAR_FILMES_VISTOS: /* por perfil desta TV; fora do blob da conta */
     case AJ_BIB_HOME:       /* #507: idem */
     case AJ_REACAO_CREDITOS: /* o web nao tem a pergunta */
+    case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS:
     case AJ_PAUSA_COMENTARIOS: /* o web nao tem os comentarios do Trakt no painel de pausa */
     case AJ_PAUSA_NOTAS: /* nem as notas */
     case AJ_PAUSA_ELENCO: /* nem o elenco */
@@ -6360,6 +6397,7 @@ static int soNaTv(int op) {
     case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR:
     case AJ_WEBOS_HLS_DTS: case AJ_WEBOS_HLS_DV7: case AJ_WEBOS_HLS_MODE: case AJ_WEBOS_HLS_TS:
+    case AJ_UPDATE_NOTIFICATIONS: case AJ_REMEMBER_PROFILE:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
@@ -7969,6 +8007,9 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_EXT_AUDIO_SEGUIR: return "Another cut only (theatrical audio, extended picture): in scenes the other version lacks, this file's own audio plays until shared scenes return. Uses some CPU.";
     case AJ_EXT_AUDIO_SERIE: return "When you pick audio from another version in a series, the next episodes use the same version (same release in their source list), the same track (e.g. one of two English) and the same sync, as soon as it appears there.";
     case AJ_PULAR_ABERTURA: return "Pula a abertura sozinho quando o episódio tem o trecho marcado, e avisa na tela. Sem marcador, nada é pulado. O botão Pular abertura continua valendo.";
+    case AJ_SHOW_SKIP_INTRO: return "Show the manual Skip intro button when an intro marker is available. Turning this off hides the button, including while player controls are open. Automatic intro skipping is controlled separately.";
+    case AJ_SHOW_SKIP_RECAP: return "Show the manual Skip recap button when a recap marker is available. Turning this off hides only this button. Automatic recap skipping is controlled separately.";
+    case AJ_SHOW_SKIP_CREDITS: return "Show the manual Skip outro / credits button when a credits marker is available. Outro and credits use the same marker type. Automatic credits skipping and next-episode playback are controlled separately.";
     case AJ_PULAR_RESUMO: return "Pula o resumo do episódio anterior sozinho quando o episódio tem o trecho marcado, e avisa na tela. Sem marcador, nada é pulado.";
     case AJ_PULAR_CREDITOS: return "Pula os créditos sozinho, e avisa na tela, só quando o marcador diz onde eles começam e onde acabam. Sem marcador completo, e nos créditos que vão até o fim do episódio, nada é pulado: quem cuida é o próximo episódio.";
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: {
@@ -8338,6 +8379,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_CACHE_SEEK: return "Com retomada rápida, guarda só o último título por até 3 horas. Trocar de perfil ou pouco espaço apagam o trecho.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
     case AJ_RESOLUCAO: return "Resolução controla a nitidez; efeitos controlam a velocidade. Automática nunca baixa para 720p. Reinicie após mudar a resolução; o vídeo não muda.";
+    case AJ_REMEMBER_PROFILE: return "Open the last selected profile when starting the app. Off by default, on this TV only. Protected profiles still require their PIN. You can always switch profiles from the menu.";
     case AJ_PERFIL_ATIVO: return "Perfil em uso nesta TV. Trocar de perfil é feito na tela de perfis, ao abrir o app.";
     case AJ_SYNC: return "Estado da última troca de dados com a sua conta: addons, progresso, coleções e preferências.";
     case AJ_ADDONS: return "Abre a lista de addons da sua conta, para ligar e desligar cada um nesta TV.";
@@ -8364,6 +8406,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_DICASCONTROLE: return "Dicas do controle";
     case AJ_NOVIDADES20: return "O tour do que mudou na 2.0, capítulo por capítulo, com o que vale neste aparelho. Abre do começo.";
     case AJ_APOIAR: return "Se o Nuvio te ajuda e você quiser apoiar quem faz o app, aponte a câmera do celular para um dos códigos. É opcional: nada muda no app.";
+    case AJ_UPDATE_NOTIFICATIONS: return "Show automatic notifications and the update panel when a new version is available. Turn off to hide them. You can still check for updates manually here.";
     case AJ_LOG_REDE: return "Mostra o registro desta TV numa página da sua rede: abra o endereço abaixo no celular ou no computador, na mesma rede. Sem senhas nem chaves; endereços vão cortados no host. Desligue quando terminar.";
     case AJ_ENVIAR_LOG: return "Manda os últimos 200 KB do registro desta sessão (sem senhas nem chaves) para quem faz o app. Use quando algo estiver errado agora.";
     case AJ_ENVIO_AUTO: return "Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.";
@@ -11122,6 +11165,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_SELOS_PACOTE:
     case AJ_REACAO_CREDITOS: case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_CONTAGEM:
     case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR:
+    case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS:
     case AJ_FONTE_PRAZO: case AJ_TAM_MAX: case AJ_TAM_MIN: case AJ_PROPORCAO_PADRAO: case AJ_DTS_AC3:
     case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:
@@ -11171,13 +11215,13 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_ESMAECER: case AJ_BRILHO_PLAYER: case AJ_HDR_UI: case AJ_MANTER_VIDEO:
     case AJ_DESCANSO_ESTILO: case AJ_DESCANSO_FONTE:
       return AJPV_INTERFACE;
-    case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_SAIR:
+    case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: case AJ_SYNC: case AJ_SAIR:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_ADDONS_PRINCIPAL: case AJ_PROVEDORES_ESCOPO: case AJ_ENQUETES:
       return AJPV_CONTA;
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL:
       return AJPV_RASTREIO;
     case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
-    case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE:
+    case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE: case AJ_UPDATE_NOTIFICATIONS:
 #ifdef NV_ANDROID
     case AJ_BAIXAR_REGISTRO:
 #endif

@@ -83,6 +83,12 @@ void audioext_definir_memoria_arquivo(char *(*ler)(const char *), int (*gravar)(
 void audioext_memoria_dono(const char *conta, int perfil);
 void audioext_memoria_descarregar(void);
 int audioext_memoria_series(void);   // rows in the table (all owners)
+// RESUME FROM CONTINUE WATCHING (fontevolta.h): the saved source played with
+// another version's audio; mark it again for the current target with the same
+// sync (offset, speed, track), as if picked in the menu, before the source
+// opens. A fresh start: the safety net of the last start does not apply.
+void audioext_retomar(const char *url, const char *cabecalhos, const char *nome, const char *idioma,
+                      int faixa, int offsetMs, int velocidadePpm);
 // The marked version is another episode's (the releases number the episodes
 // differently): kept out of the series memory. 0 = this episode's.
 void audioext_episodio_outro(int episodio);

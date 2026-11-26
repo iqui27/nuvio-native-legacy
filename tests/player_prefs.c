@@ -47,8 +47,9 @@ int main(int argc, char **argv) {
     e->cor = 3;          // azul (VIDEO_LEG_CORES: white,yellow,green,blue,...)
     e->borda = 2;         // sombra
     e->tamanho = 150;
+    e->opacidade = leg_opacidade_modo(65);
     player_leg_estilo_mudou();   // GRAVA — e o que estava indo para a pasta errada
-    printf("[teste] gravado: cor=%d borda=%d tamanho=%d\n", e->cor, e->borda, e->tamanho);
+    printf("[teste] gravado: cor=%d borda=%d tamanho=%d opacidade=%d%%\n", e->cor, e->borda, e->tamanho, leg_opacidade_pct(e->opacidade));
     return 0;
   }
 
@@ -58,11 +59,11 @@ int main(int argc, char **argv) {
     player_abrir(0, NULL);
     VideoLegendaEstilo *e = player_leg_estilo();
     FILE *fd;
-    printf("[teste] lido: cor=%d borda=%d tamanho=%d\n", e->cor, e->borda, e->tamanho);
-    if (e->cor != 3 || e->borda != 2 || e->tamanho != 150) {
+    printf("[teste] lido: cor=%d borda=%d tamanho=%d opacidade=%d%%\n", e->cor, e->borda, e->tamanho, leg_opacidade_pct(e->opacidade));
+    if (e->cor != 3 || e->borda != 2 || e->tamanho != 150 || leg_opacidade_pct(e->opacidade) != 65) {
       fprintf(stderr, "FALHOU: ajuste nao sobreviveu ao processo novo "
-                       "(cor=%d borda=%d tamanho=%d, esperava 3/2/150)\n",
-              e->cor, e->borda, e->tamanho);
+                       "(cor=%d borda=%d tamanho=%d opacidade=%d%%, esperava 3/2/150/65%%)\n",
+              e->cor, e->borda, e->tamanho, leg_opacidade_pct(e->opacidade));
       return 1;
     }
     fd = fopen(caminhoDados, "r");
@@ -89,11 +90,12 @@ int main(int argc, char **argv) {
     if (!strcmp(argv[1], "migrar")) {
       FILE *fw = fopen(caminhoDados, "w");
       assert(fw);
-      fprintf(fw, "aspecto 0\nleg_atraso 1500\n");
+      fprintf(fw, "aspecto 0\nleg_atraso 1500\nleg_opacidade 1\n");
       fclose(fw);
     }
     player_abrir(0, NULL);
     int a = player_leg_estilo()->atrasoMs;
+    assert(leg_opacidade_pct(player_leg_estilo()->opacidade)==75);
     printf("[teste] %s: leg_atraso=%d\n", argv[1], a);
     if (a != -1500) { fprintf(stderr, "FALHOU: esperava -1500, veio %d\n", a); return 1; }
     return 0;

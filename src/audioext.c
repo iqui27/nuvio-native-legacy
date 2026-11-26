@@ -794,6 +794,27 @@ void audioext_serie_esquecer(void) {
   serMarcarSujo();
   printf("[ext-audio] series memory: %s forgotten\n", sr); fflush(stdout);
 }
+void audioext_retomar(const char *url, const char *cabecalhos, const char *nome, const char *idioma,
+                      int faixa, int offset, int velocidade) {
+  if (!url || !*url || !alvoAtual[0]) return;
+  resN = resProx = 0; tentativas = tentativa = 0; retryEm = 0; preparandoAviso = 0;
+  snprintf(urlPrim, sizeof urlPrim, "%s", url);
+  snprintf(cabPrim, sizeof cabPrim, "%s", cabecalhos ? cabecalhos : "");
+  snprintf(urlMarca, sizeof urlMarca, "%s", url);
+  snprintf(cabMarca, sizeof cabMarca, "%s", cabecalhos ? cabecalhos : "");
+  snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
+  snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
+  snprintf(idiomaMarca, sizeof idiomaMarca, "%s", idioma ? idioma : "");
+  offsetMs = offset > AUDIOEXT_OFFSET_MAX ? AUDIOEXT_OFFSET_MAX : offset < -AUDIOEXT_OFFSET_MAX ? -AUDIOEXT_OFFSET_MAX : offset;
+  offsetGeracao++; offsetSuave = 0; posAtual = -1; velocidadePpm = velocidade; kandN = 0;
+  faixaMarca = faixa >= 0 ? faixa : -1; epOutro = 0; dicaAtiva = 0;
+  offsetLembrado = 1;   // a start match that is not sure keeps it, as from the series memory
+  pendente = 0; voltouPadrao = 0;
+  pedidoGeracao++;
+  printf("[ext-audio] resumed with the saved source: %.80s lang=%s track=%d offset %d ms (target %s)\n",
+         nomeMarca, idiomaMarca, faixaMarca, offsetMs, alvoMarca);
+  fflush(stdout);
+}
 void audioext_episodio_outro(int episodio) {
   if (!urlMarca[0]) return;
   epOutro = episodio > 0 ? episodio : 0;

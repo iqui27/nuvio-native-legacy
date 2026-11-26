@@ -67,11 +67,21 @@ int main(void) {
   assert(estilo.atrasoMs == -LEGUI_ATRASO_MAX);
   assert(tecla(SDLK_RETURN, 0) && ctl == -1);                         // OK closes too
 
-  // Opacidade: four stops; right = more opaque.
+  // Opacity: twenty stops, right = 5% more opaque; preserve old stored IDs.
   irPara(3); estilo.opacidade = 3;
   tecla(SDLK_RETURN, 0); assert(ctl == 3);
-  tecla(SDLK_RIGHT, 0); assert(estilo.opacidade == 2);
-  tecla(SDLK_LEFT, 0); tecla(SDLK_LEFT, 0); tecla(SDLK_LEFT, 0); assert(estilo.opacidade == 3);
+  tecla(SDLK_RIGHT, 0); assert(leg_opacidade_pct(estilo.opacidade) == 30);
+  tecla(SDLK_LEFT, 0); assert(estilo.opacidade == 3);
+  for(int i=0;i<40;i++)tecla(SDLK_LEFT,0);
+  assert(leg_opacidade_pct(estilo.opacidade)==5);
+  for(int i=0;i<40;i++)tecla(SDLK_RIGHT,0);
+  assert(estilo.opacidade==0);
+  estDeFrac(3,0);assert(leg_opacidade_pct(estilo.opacidade)==5);
+  estDeFrac(3,1);assert(leg_opacidade_pct(estilo.opacidade)==100);
+  estDeFrac(3,.5f);assert(leg_opacidade_pct(estilo.opacidade)==55);
+  assert(leg_opacidade_byte(0)==255 && leg_opacidade_byte(1)==191);
+  assert(leg_opacidade_byte(2)==128 && leg_opacidade_byte(3)==64);
+  estGravar(3,65);assert(leg_opacidade_byte(estilo.opacidade)==166);
   ctl = -1;
 
   // Posicao: eight levels, slider + miniature.

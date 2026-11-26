@@ -385,3 +385,8 @@
   1, /* Dolby Vision P7 via HLS: Off */
   1, /* Experimental HLS mode: Off (V_LIGA) */
   1, /* HLS MPEG-TS segments (test): Off (V_LIGA) */
+  1, /* Update notifications: Off by default (Matis94 cc737eea0), device-local */
+  1, /* Remember last profile: Off (V_LIGA), device-wide opt-in */
+  0, /* Show intro skip button: On */
+  0, /* Show recap skip button: On */
+  0, /* Show outro / credits skip button: On */

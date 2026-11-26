@@ -172,6 +172,7 @@ enum {
   AJC_N
 };
 static int ajCenaSecao(int op) {
+  if (op == AJ_SHOW_SKIP_INTRO || op == AJ_SHOW_SKIP_RECAP || op == AJ_SHOW_SKIP_CREDITS) return AJC_REP_DURANTE;
   if (ajLegendaPrincipal(op) || op == AJ_LEG1_RESTAURAR) return AJC_IDI_FAIXAS;
   if (ajLegendaSecundaria(op)) return AJC_IDI_LEGENDA2;
   switch (op) {
@@ -250,7 +251,7 @@ static int ajCenaSecao(int op) {
       return AJC_TV_PROBLEMAS;
     case AJ_LIVETV_SUGERIR:
       return AJC_TV_PROVEDOR;
-    case AJ_PERFIL_ATIVO: case AJ_SYNC:
+    case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: case AJ_SYNC:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
       return AJC_CON_PERFIS;
     case AJ_ADDONS: case AJ_PLUGINS: case AJ_ADDONS_PRINCIPAL: return AJC_FON_ADDONS;
@@ -266,7 +267,7 @@ static int ajCenaSecao(int op) {
 case AJ_AMPLIAR_UI: case AJ_AMPLIACAO_ALGO: case AJ_AMPLIACAO_NITIDEZ: case AJ_HDR_INTERFACE: case AJ_RESOLUCAO: case AJ_QUALIDADE_IMG: case AJ_GPU_EFEITOS: case AJ_NAV_RAPIDA: return AJC_DES_TELA;
     case AJ_MEDIDOR: case AJ_DIAGNOSTICO: case AJ_VELOCIDADE: return AJC_DES_DIAG;
     case AJ_GUIA: return AJC_SOB_GUIA;
-    case AJ_VERSAO_I: case AJ_ATUALIZAR: return AJC_SOB_APP;
+    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: return AJC_SOB_APP;
     default: return -1;
   }
 }
@@ -1388,3 +1389,4 @@ static float ajFontesResumo(int A, float x, float y, float w) {
 #undef CICON
 #undef CIMG
 #undef ON
+

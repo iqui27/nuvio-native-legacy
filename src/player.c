@@ -463,7 +463,15 @@ static double posLegenda(void) {
 }
 // Creditos tambem sao pulaveis — e o "Skip Outro" do web.
 static int skipDisponivel(void), skipLiberado;
-static int trechoPulavel(double *fim) { int tipo; return skipDisponivel() && intro_botao_visivel(fim, &tipo); }
+static int skipBotaoPermitido(int tipo) {
+  return tipo == INTRO_ABERTURA ? ajustes_show_skip_intro() :
+         tipo == INTRO_RESUMO ? ajustes_show_skip_recap() :
+         tipo == INTRO_CREDITOS ? ajustes_show_skip_credits() : 0;
+}
+static int trechoPulavel(double *fim) {
+  int tipo;
+  return skipDisponivel() && intro_botao_visivel(fim, &tipo) && skipBotaoPermitido(tipo);
+}
 static float duracaoSeg = PLR_DUR_PADRAO;
 // O fim ZERO do TheIntroDB quer dizer "ate o fim da midia" (intro.c): mirar
 // fim+0.25 ai seria um salto para o COMECO do arquivo — o alvo resolve o nulo.
@@ -1072,6 +1080,22 @@ void player_erro_fonte(void) {
   erroTitulo[0] = erroDica[0] = 0;   // erro sem motivo nao herda o do anterior
   erroCausaDoPlayer();
 }
+// THE SOURCE SHEET OPENED BY PLAY, CLOSED WITHOUT A PICK: the player closes
+// like Back while loading, and the title page comes back with its Play
+// button. It used to show the source error card, so a second Back was needed
+// for nothing that had failed. Android keeps the card (#409).
+// NO EXIT FADE: nothing played, and with esperandoFonte off the black of the
+// opening gives way to the title's backdrop, which then faded out over the
+// page (the blink the owner saw, 23/11). The page is already underneath.
+void player_desistir_fonte(void) {
+#ifdef NV_ANDROID
+  player_erro_fonte();
+#else
+  esperandoFonte = 0;
+  saindo = 1; pediuSair = 1;
+  entrada = 0.0f;
+#endif
+}
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
   player_erro_fonte();
   snprintf(erroTitulo, sizeof erroTitulo, "%s", titulo ? titulo : "");
@@ -1424,7 +1448,7 @@ static void prefsLer(void) {
     else if (!strcmp(chave, "leg_atraso_sinal") && v == 1) sinalNovo = 1;
     else if (!strcmp(chave, "leg_cor_borda") && v >= -1 && v < VIDEO_LEG_NCORES) legEstilo.corBorda = v;
     else if (!strcmp(chave, "leg_cor_borda_explicita") && v == 1) bordaExplicita = 1;
-    else if (!strcmp(chave, "leg_opacidade") && v >= 0 && v <= 3) legEstilo.opacidade = v;
+    else if (!strcmp(chave, "leg_opacidade") && v >= 0 && v < LEG_OPAC_N) legEstilo.opacidade = v;
     else if (!strcmp(chave, "leg_familia") && v >= 0 && v < TXT_FAMILIA_N) legEstilo.familia = v;
     else if (!strcmp(chave, "leg_negrito") && (v == 0 || v == 1)) legEstilo.negrito = v;
     else if (!strcmp(chave, "leg_tocado")  && v >= 0) legTocado = v;
@@ -1483,7 +1507,7 @@ static int estiloPreparar(const VideoLegendaEstilo *estilo, int tocou) {
       estilo->corBorda < -1 || estilo->corBorda >= VIDEO_LEG_NCORES ||
       estilo->familia < 0 || estilo->familia >= TXT_FAMILIA_N ||
       estilo->fundo < 0 || estilo->fundo > 4 || estilo->posicao < 0 || estilo->posicao > 7 ||
-      estilo->borda < 0 || estilo->borda > 2 || estilo->opacidade < 0 || estilo->opacidade > 3 ||
+      estilo->borda < 0 || estilo->borda > 2 || estilo->opacidade < 0 || estilo->opacidade >= LEG_OPAC_N ||
       estilo->negrito < 0 || estilo->negrito > 1 ||
       estilo->atrasoMs < -LEG_ATRASO_MANUAL_MAX || estilo->atrasoMs > LEG_ATRASO_MANUAL_MAX) return 0;
   player_leg_estilo_carregar();
@@ -2699,9 +2723,40 @@ static void lembrarProximoDoConcluido(void) {
 }
 // Test hook for tests/app_next_manual.c: the episode playing now just finished.
 void player_teste_concluiu(void) { lembrarProximoDoConcluido(); }
+// A FONTE QUE ESTA TOCANDO, copiada quando a imagem fica pronta (ver
+// fonteTocandoCopiar). Ao sair do player a pagina do titulo pode pedir fontes
+// de novo ANTES de fecharSessao: a lista trocada por baixo deixava
+// stream_item(stream_atual()) sem a fonte, e nada era guardado para o Retomar
+// do Continuar assistindo (log do dono 23/11, S.W.A.T. T7E8: "addons: consulta
+// inicio" logo antes do encerramento, nenhum "[voltafonte] guardada").
+static Stream fonteTocando;
+static Uint32 fonteTocandoObtida;   // SDL_GetTicks() de quando o link saiu do addon
+static void fonteTocandoCopiar(void) {
+  const Stream *s = stream_item(stream_atual());
+  const char *url = video_url_atual();
+  if (!s || !url[0] || strcmp(s->url, url) || !strcmp(fonteTocando.url, url)) return;
+  fonteTocando = *s;
+  fonteTocandoObtida = SDL_GetTicks() - stream_idade_ms();
+}
+// O audio de outra fonte que toca agora vai junto com a fonte guardada (ou sai
+// dela, quando voltou ao audio do proprio arquivo). 1 = a entrada mudou.
+static int lembrarAudio(const char *alvo, const char *url) {
+  static FontevoltaAudio a;
+  memset(&a, 0, sizeof a);
+  if (audioext_tocando() && audioext_pedido(url)) {
+    a.tem = 1;
+    snprintf(a.url, sizeof a.url, "%s", audioext_url());
+    snprintf(a.cabecalhos, sizeof a.cabecalhos, "%s", audioext_cabecalhos());
+    snprintf(a.nome, sizeof a.nome, "%s", audioext_nome());
+    snprintf(a.idioma, sizeof a.idioma, "%s", audioext_idioma());
+    a.faixa = audioext_faixa(); a.offsetMs = audioext_offset_ms(); a.velocidadePpm = audioext_velocidade();
+  }
+  return fontevolta_guardar_audio(alvo, sessao_usuario(), perfis_ativo(), url, &a);
+}
 static void lembrarFonte(void) {
   const Stream *s = stream_item(stream_atual());
   const char *url = video_url_atual();
+  Uint32 idade = stream_idade_ms();
   double cred;
   char alvo[64];
   if (ehCanal() || !comVideo) return;
@@ -2709,17 +2764,32 @@ static void lembrarFonte(void) {
   if (erroFonte || video_falhou()) {
     fontevolta_esquecer_alvo(alvo, sessao_usuario(), perfis_ativo(), "sessao falhou"); return;
   }
-  if (!video_pronto() || duracaoSeg < 120.0f) return;
+  if (!video_pronto() || duracaoSeg < 120.0f) {
+    printf("[voltafonte] nao guardada: %s\n", video_pronto() ? "duracao curta" : "video nao ficou pronto");
+    fflush(stdout); return;
+  }
   cred = credEfetivo();
   if (concluiuAgora(cred)) {
     fontevolta_esquecer_alvo(alvo, sessao_usuario(), perfis_ativo(), "titulo concluido");
     lembrarProximoDoConcluido();
     return;
   }
-  // A lista pode ter sido trocada por baixo (a busca de fundo do Retomar que
-  // abriu pela fonte guardada): quem toca e a entrada que ja existe.
-  if (!s || strcmp(s->url, url)) return;
-  fontevolta_guardar(alvo, sessao_usuario(), perfis_ativo(), s, stream_idade_ms(), SDL_GetTicks());
+  // A lista pode ter sido trocada por baixo (a busca da pagina do titulo ao
+  // sair, a busca de fundo do Retomar): vale a copia da fonte que tocou.
+  if ((!s || strcmp(s->url, url)) && url[0] && !strcmp(fonteTocando.url, url)) {
+    s = &fonteTocando; idade = SDL_GetTicks() - fonteTocandoObtida;
+  }
+  // Aberta pela fonte guardada (sem indice na lista): a entrada ja existe, e
+  // so o audio de outra fonte (a sincronia pode ter mudado) e atualizado.
+  if (!s || strcmp(s->url, url)) {
+    if (!lembrarAudio(alvo, url)) {
+      printf("[voltafonte] nao guardada: a fonte que toca nao esta na lista nem na copia\n");
+      fflush(stdout);
+    }
+    return;
+  }
+  fontevolta_guardar(alvo, sessao_usuario(), perfis_ativo(), s, idade, SDL_GetTicks());
+  lembrarAudio(alvo, url);
 }
 
 static void fecharSessao(int manter, int trocaFonte) {
@@ -5000,6 +5070,8 @@ void player_atualizar(float dt, Uint32 agora) {
     memQuadroPendente = 0;
     memlog_evento("primeiro-quadro");
   }
+  // A fonte que toca, para lembrarFonte (barato: so copia quando a URL muda).
+  if (comVideo && video_pronto() && !ehCanal()) fonteTocandoCopiar();
   if (!inicioImagem && comVideo && video_pronto()) {
     inicioImagem = agora; acordar();
     if (medirAbertura && !ehCanal()) {
@@ -5470,6 +5542,13 @@ void player_atualizar(float dt, Uint32 agora) {
   }
   // Com o painel no ar os controles nao somem: eles sao a saida do dono.
   if (posplay_visivel()) ultimoInput = agora;
+  // Uma folha por cima (audio, legendas, fontes, episodios) e a pessoa no
+  // controle: as teclas dela nao passam por aqui. Sem isto, fechar a folha
+  // depois de mais de PLR_ESCONDE_MS (entrar em "De outra fonte" ou "Todas as
+  // legendas") fazia a barra comecar a entrar e sumir no mesmo instante — o
+  // player "piscava" (video do dono, 24/11). Agora ela fica o prazo inteiro,
+  // como ao fechar logo.
+  if (faixas_aberta() || stream_folha_aberta() || episodios_aberto()) ultimoInput = agora;
 
   // Pausado, os controles ficam. Sumir com eles deixaria o usuario diante de um
   // quadro parado sem nenhuma pista de que foi ele quem pausou.
@@ -5974,8 +6053,7 @@ static void desenharLegendaPrincipal(float *topoPilha){
   // Gate collector output, preserving native callback rendering below.
   int overlay = faixas_legenda_overlay();
   PlrRect bitmapArea = areaVideoLegenda();
-  float bitmapAlpha = (legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:
-                      legEstilo.opacidade==1?.75f:1.f) * entrada;
+  float bitmapAlpha = leg_opacidade_alpha(legEstilo.opacidade) * entrada;
   if (overlay && video_dts_legenda_desenhar(posLegenda(), legEstilo.atrasoMs,
         bitmapArea.x, bitmapArea.y, bitmapArea.w, bitmapArea.h, bitmapAlpha)) {
     imgsub_gl_limpar();
@@ -6028,8 +6106,7 @@ static void desenharLegendaPrincipal(float *topoPilha){
        * still follows the video rectangle and the author's styling. */
       if (assrender_texto_simples()) area = (PlrRect){0, 0, NV_TELA_W, NV_TELA_H};
     }
-    float alpha = (legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:
-                   legEstilo.opacidade==1?.75f:1.f) * entrada;
+    float alpha = leg_opacidade_alpha(legEstilo.opacidade) * entrada;
     assrender_pixels_por_unidade(gfx_px_por_unidade());
     assrender_definir_layout(area.x, area.y, area.w, area.h,
                              assrender_texto_simples() ? 1920 : video_largura(),
@@ -6064,7 +6141,7 @@ static void desenharLegendaPrincipal(float *topoPilha){
   if (n <= 0) return;
   int pct=legEstilo.tamanho;if(pct<TXT_LEG_PCT_MIN)pct=TXT_LEG_PCT_MIN;if(pct>TXT_LEG_PCT_MAX)pct=TXT_LEG_PCT_MAX;pct=(pct/10)*10;
   TxtEstilo est=(TxtEstilo)(TXT_LEG_50+(pct-50)/10);corLegenda(legEstilo.cor,&r,&g,&b);
-  float alpha=(legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:legEstilo.opacidade==1?.75f:1.f)*entrada;
+  float alpha=leg_opacidade_alpha(legEstilo.opacidade)*entrada;
   // A pilha "normal" (sem \pos e sem \an, ou \an 2): empilha de baixo para
   // cima a partir da base da folha, como o SRT sempre fez.
   // Com a barra de estilo no topo a base e a da reproducao sem controles: a
@@ -6185,7 +6262,7 @@ static int skipDisponivel(void) {
                    !video_bufferando_ms();
   return skipLiberado && fontePrincipal();
 }
-static void ponteiroSkip(int a, int b) { (void)a; (void)b; if (!skipDisponivel()) return; skipFoco = 1; barraFoco = 1; acordar(); }
+static void ponteiroSkip(int a, int b) { (void)a; (void)b; if (!trechoPulavel(NULL)) return; skipFoco = 1; barraFoco = 1; acordar(); }
 
 static void desenharAcoesEpisodioCorpo(void);
 // O botao de pular e OSD: camada ampliada (escala.h), na tela virtual.
@@ -6198,7 +6275,8 @@ static void desenharAcoesEpisodioCorpo(void){
   const CatEp *prox=player_proximo_episodio();double fim;int tipo=0;
   if (!skipDisponivel()) { skipFoco = 0; return; }
   intro_definir_duracao(duracaoReal ? (double)duracaoSeg : 0.0, epE <= 0);
-  int trecho=intro_botao(posSeg,monoSeg(),visivel,skipFoco&&visivel,&fim,&tipo);
+  int trecho=intro_botao_config(posSeg,monoSeg(),visivel,skipFoco&&visivel,&fim,&tipo,
+    ajustes_show_skip_intro(),ajustes_show_skip_recap(),ajustes_show_skip_credits());
   // A CAIXA DE "Próximo episódio" QUE FICAVA AQUI FOI APAGADA. Era um retangulo
   // de posicao fixa em {420,720} que caia por cima da barra de tempo, sem foco
   // e sem parecer clicavel — o dono fotografou. O proximo episodio agora e um
