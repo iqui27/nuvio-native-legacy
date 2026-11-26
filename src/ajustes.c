@@ -887,6 +887,12 @@ typedef enum {
   AJ_FAROL_ZERAR,
   AJ_FAROL_LLM_SO_ESTA_TV,
   AJ_AMIGOS_PERFIS, // Account-profile friends action; append-only.
+  // Tela ambiente ao pausar (ambiente.h, NuvioTV#4142): a arte do titulo por
+  // baixo do painel de pausa. LOCAL, ligado de fabrica, append-only.
+  AJ_PAUSA_AMBIENTE,
+  // Legenda temporaria (legtemp.h): sem legenda ligada, ela aparece sozinha ao
+  // mutar e ao voltar alguns segundos. LOCAL, ligado, append-only.
+  AJ_LEG_TEMPORARIA,
   // Vai tocar nesta TV (4.2): registro anonimo de compatibilidade. LOCAL,
   // desligado ate a pessoa aceitar na tela de consentimento do Farol
   // (farolconsentui.c, linha "Compartilhar compatibilidade"). Append-only.
@@ -2150,6 +2156,8 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO(FT_GOSTO_ZERAR),                                      // acao: Zerar o gosto (#51)
   ESC(FT_GOSTO_LLM_SO_ESTA_TV, V_LIGA, 2),                   // local/farolconsent: So nesta TV (#51)
   ACAO("Perfis desta conta"),
+  ESC("Tela ambiente ao pausar", V_LIGA, 2),                 // local: pausaAmbienteLocal
+  ESC("Legenda ao silenciar ou voltar", V_LIGA, 2),          // local: legendaTemporariaLocal
   ESC("Compartilhar compatibilidade", V_LIGA, 2),            // local: vaiTocarLocal (4.2)
 };
 
@@ -2548,6 +2556,8 @@ static const char *CHAVE[] = {
   "-farolZerar",
   "-farolLlmSoEstaTv",
   "-amigosPerfis",
+  "pausaAmbienteLocal",
+  "legendaTemporariaLocal",
   "vaiTocarLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
@@ -3381,6 +3391,7 @@ int ajustes_pausa_overlay(void)       { return lig(AJ_PAUSA_OVERLAY); }
 int ajustes_pausa_comentarios(void)   { return lig(AJ_PAUSA_COMENTARIOS); }
 int ajustes_pausa_notas(void)         { return lig(AJ_PAUSA_NOTAS); }
 int ajustes_pausa_elenco(void)        { return lig(AJ_PAUSA_ELENCO); }
+int ajustes_pausa_ambiente(void)      { return lig(AJ_PAUSA_AMBIENTE); }
 int ajustes_reacao_creditos(void)     { return lig(AJ_REACAO_CREDITOS); }
 int ajustes_plr_codec(void)           { return lig(AJ_PLR_CODEC); }
 int ajustes_plr_formato_pos(void)     { int v = valor[AJ_PLR_FORMATO_POS]; return v >= 0 && v < PLR_POS_N ? v : PLR_POS_CANTO; }
@@ -3765,6 +3776,7 @@ int ajustes_legenda_sync_audio(void) { return 0; }   // escondida fora do Androi
 #endif
 int ajustes_legenda_forcada_auto(void) { return lig(AJ_LEG_FORCADA); }   // #287, padrao Ligado
 int ajustes_legenda_evitar_sdh(void) { return lig(AJ_LEG_EVITAR_SDH); }   // #743, padrao Desligado
+int ajustes_legenda_temporaria(void) { return lig(AJ_LEG_TEMPORARIA); }   // legtemp.h, padrao Ligado
 // Motor novo de legendas ASS do .tpk (assperf.h): 1 = ligado (padrao), 0 = o
 // motor de antes de 23/10. Lido pelo ass_novo_ligado via ass_novo_registrar.
 // A thread de render NAO le valor[]: ela recebe este ESPELHO, publicado com
@@ -7031,6 +7043,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LEG_SYNC_AUDIO: /* PCM e passthrough sao desta TV; o web nao tem */
     case AJ_LEG_FORCADA:    /* #287: o web nao tem esta escolha */
     case AJ_LEG_EVITAR_SDH: /* #743: idem */
+    case AJ_LEG_TEMPORARIA: /* idem */
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA: /* estilo da legenda e desta TV */
     case AJ_LEG_CONTORNO_COR: /* #475: idem */
     case AJ_CACHE_SEEK:     /* F07: o disco e o player sao desta TV */
@@ -7055,6 +7068,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_PAUSA_COMENTARIOS: /* o web nao tem os comentarios do Trakt no painel de pausa */
     case AJ_PAUSA_NOTAS: /* nem as notas */
     case AJ_PAUSA_ELENCO: /* nem o elenco */
+    case AJ_PAUSA_AMBIENTE: /* nem a tela ambiente */
     case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_CONTAGEM: /* idem: local desta TV */
     case AJ_CAPITULOS: /* idem */
     case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC: /* o web nao tem a fileira de formato */
@@ -7929,6 +7943,7 @@ static const char *rotuloNovo(int op) {
     case AJ_CACHE_SEEK: return "Guardar o trecho baixado no disco";
     case AJ_LEG_FORCADA: return "Legenda forçada automática";
     case AJ_LEG_EVITAR_SDH: return "Evitar legendas SDH";
+    case AJ_LEG_TEMPORARIA: return "Legenda ao silenciar ou voltar";
     case AJ_TMDB_IDIOMA: return "Idioma dos dados do título";
     case AJ_HERO_FUNDO: return "Imagem de fundo do destaque";
     case AJ_GRAD_CLASSICO: return "Realce antigo no cartaz em foco";
@@ -8452,6 +8467,7 @@ static int inativa(int op) {
     case AJ_PAUSA_COMENTARIOS: return !lig(AJ_PAUSA_OVERLAY);
     case AJ_PAUSA_NOTAS: return !lig(AJ_PAUSA_OVERLAY);
     case AJ_PAUSA_ELENCO: return !lig(AJ_PAUSA_OVERLAY);
+    case AJ_PAUSA_AMBIENTE: return !lig(AJ_PAUSA_OVERLAY);
     // A posicao da fileira de formato so vale com a fileira ligada.
     case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC: return valor[AJ_PLR_FORMATO] == PLR_FMT_OFF;
     // Tela de descanso: o estilo depende de haver descanso; os titulos, de ele
@@ -8785,6 +8801,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_LEG_SYNC_AUDIO: return "Compara as falas do áudio com a legenda externa para acertar o atraso. Só onde o player entrega o áudio decodificado e sem passthrough; vale só nesta TV.";
     case AJ_LEG_FORCADA: return "Quando o áudio já está no idioma da legenda, liga só a legenda forçada desse idioma (falas em outra língua e placas), ou nenhuma se o arquivo não tiver. Desligado, liga a legenda completa como antes.";
     case AJ_LEG_EVITAR_SDH: return "A escolha automática passa a ignorar legendas para surdos (SDH/CC), que trazem descrições como [porta batendo] e o nome de quem fala. A escolha manual continua mostrando todas; vale só nesta TV.";
+    case AJ_LEG_TEMPORARIA: return "Sem legenda ligada, ela aparece sozinha quando você volta alguns segundos ou silencia o som, e some quando a cena passa do ponto em que você estava ou o som volta. Não muda a legenda que você escolheu. O silenciar só vale onde o aparelho informa; vale só nesta TV.";
     case AJ_LEG_MOSTRAR: return valor[op] ? "Todas as legendas, com detalhes" : "Recomendadas";
     case AJ_LEG_LINGUA2: return "Segunda legenda, mostrada no alto da tela junto com a principal. Só arquivos SRT/VTT dos addons. \"Da conta\" segue o que está no seu perfil.";
     case AJ_LEG2_POS: return "No topo, a segunda legenda fica no alto da tela. Junto da principal, ela fica logo acima da principal, no pé da tela.";
@@ -8811,6 +8828,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_REACAO_CREDITOS: return "Nos créditos de um filme, ou no fim de uma temporada, um cartão pequeno pergunta o que você achou. Some sozinho em 8 s. Com o Trakt ligado, a resposta vira nota lá.";
     case AJ_PAUSA_COMENTARIOS: return "Com o painel ao pausar ligado, comentários públicos do Trakt sobre o que você está vendo passam em rodízio. Não precisa de conta; sem comentários ou sem rede, nada aparece.";
     case AJ_PAUSA_NOTAS: return "Com o painel ao pausar ligado, mostra as notas do título (IMDb, Rotten Tomatoes, Metacritic, TMDB e outras) embaixo do ano e da duração. Num episódio, só as notas do próprio episódio. Fonte sem nota não aparece.";
+    case AJ_PAUSA_AMBIENTE: return "Com o painel ao pausar ligado, depois de alguns segundos a arte do título toma a tela inteira no lugar do quadro parado do filme, por baixo da ficha. Desligado, o quadro pausado continua à vista.";
     case AJ_PAUSA_ELENCO: return "Com o painel ao pausar ligado, mostra o elenco (foto, nome e papel) embaixo da sinopse. Desligado, o painel fica só com a ficha, as notas e o comentário.";
     case AJ_STALKER_PORTAL: return "Os canais do portal entram no Guia de TV, junto com os dos addons. Endereço sem http:// e sem barra no fim: meu-portal.exemplo.tv:8080";
     case AJ_STALKER_MAC: return "O MAC que o provedor cadastrou para você. É credencial: vale como senha, e só aparece nesta tela mascarado.";
@@ -9440,6 +9458,7 @@ static const char *beneficioProprio(int op) {
   switch (op) {
     case AJ_PAUSA_COMENTARIOS: return "Comentários públicos do Trakt no painel ao pausar.";
     case AJ_PAUSA_NOTAS: return "Notas do título no painel ao pausar.";
+    case AJ_PAUSA_AMBIENTE: return "A arte do título em tela cheia quando a pausa é longa.";
     case AJ_PLR_FORMATO_POS: return "Posição da fileira de formato no player.";
     case AJ_PLR_CODEC: return "Codec do áudio ao lado do idioma e dos canais.";
     case AJ_HERO_TAMANHO: return "Tamanho da logo e das informações do destaque.";
@@ -9498,6 +9517,7 @@ static const char *beneficioProprio(int op) {
     case AJ_SAIDA_PLAYER: return "O filme pode ficar na ilha do relógio para você voltar depois.";
     case AJ_LEG_FORCADA: return "Placas e falas em outra língua aparecem; o resto, não.";
     case AJ_LEG_EVITAR_SDH: return "Legendas sem descrições de som são preferidas nas escolhas automáticas.";
+    case AJ_LEG_TEMPORARIA: return "A legenda aparece sozinha quando você volta alguns segundos ou silencia o som.";
     case AJ_BUSCA_CINEMETA: return "A busca também consulta o Cinemeta se o catálogo do Nuvio falhar.";
     case AJ_HOME_LAYOUT: return "Como a Home se organiza: Moderna, Padrão ou Dinâmica.";
     case AJ_MENU_TOPO: return "Onde fica o menu: na esquerda ou no alto da tela.";
@@ -12237,7 +12257,8 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_DV_MKV:
     case AJ_LEG_FORCADA:
     case AJ_LEG_EVITAR_SDH:
-    case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO:
+    case AJ_LEG_TEMPORARIA:
+    case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO: case AJ_PAUSA_AMBIENTE:
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: case AJ_FONTE_MANUAL:
     case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC:
     case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_SELOS_CORES: case AJ_SOURCE_BADGE_POSITION: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR:

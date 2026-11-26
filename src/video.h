@@ -75,6 +75,11 @@ void video_pausar(int pausado);
 // Volume do pipeline, 0..100 (uMS setVolume). Existe para o trailer mudo no
 // fundo da pagina de titulo (trailer.h); a reproducao normal nao mexe nisto.
 void video_volume(int pct);
+#ifdef NV_ANDROID
+// Mudo do APARELHO (nao o video_volume acima): 1 mudo, 0 com som, -1 nao se
+// sabe. So o Android responde hoje; alimenta a legenda temporaria (legtemp.h).
+int video_mudo(void);
+#endif
 void video_buscar(double segundos);
 
 // Retangulo do plano de video, em coordenadas de tela 1920x1080. Fica preso a
@@ -630,6 +635,9 @@ void video_simular(const VideoSimulacao *s);
 // One-reply webOS LS2 request; callback runs on the GLib thread.
 #if !defined(NV_TPK) && !defined(NV_ANDROID)
 int video_luna(const char *uri, const char *payload, void (*callback)(const char *, void *), void *context);
+// Mesma chamada pelo handle do APP (libhelpers, pub=1): o de video_luna e o do
+// player (com.webos.media.client.*), que so fala com o uMS. 0 = nao saiu.
+int video_luna_app(const char *uri, const char *payload, void (*callback)(const char *, void *), void *context);
 #endif
 
 // MULTIVIEW — decodificadores EXTRA (alem da sessao principal). Slots sem

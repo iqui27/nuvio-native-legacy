@@ -1,4 +1,5 @@
 #include "notasui.h"
+#include "notasmedia.h"
 #include "ajustes.h"
 #include "detail.h"
 #include "badges.h"
@@ -666,12 +667,16 @@ float notasui_fontes_desenhar(const NotasSecao *s, float x, float y, float a,
 #define MAPA_PAD     34.0f
 #define MAPA_ROT_W   60.0f
 #define MAPA_GAP      6.0f
+#define MAPA_MED_W   64.0f   // coluna da media da temporada (notasmedia.h)
+#define MAPA_MED_MAX 64      // temporadas com media guardada
+#define MAPA_MED_EPS 512     // episodios de uma temporada que entram na media
 
 void notasui_mapa_card(const NotasSecao *s, GfxRect c, int selT, int selI, float aa) {
   int t, i, nt = 0, maxEps = 0;
   int melhorT = -1, melhorI = -1, piorT = -1, piorI = -1, melhor = 0, pior = 1000;
   float px = c.x + MAPA_PAD, pw = c.w - MAPA_PAD * 2.0f, py = c.y + 30.0f;
   float gx, gw, gy, gh, cw, ch;
+  int medias[MAPA_MED_MAX], nMed = 0, temMedia = 0, medMelhor = -1, medPior = -1;
   TxtLinha lt;
   if (c.y >= NV_TELA_H || c.y + c.h <= 0.0f) return;
   painel(c, CARD_RAIO, aa);
@@ -687,6 +692,16 @@ void notasui_mapa_card(const NotasSecao *s, GfxRect c, int selT, int selI, float
       int n = s->nEps(t);
       if (n > EX_EP_MAX) n = EX_EP_MAX;
       if (n > maxEps) maxEps = n;
+      // A media e da temporada INTEIRA: a grade corta em EX_EP_MAX colunas,
+      // mas a conta nao pode perder os episodios que nao couberam nela.
+      { int ns[MAPA_MED_EPS], nTodos = s->nEps(t);
+        if (nTodos > MAPA_MED_EPS) nTodos = MAPA_MED_EPS;
+        for (i = 0; i < nTodos; i++) ns[i] = s->epNota(t, i);
+        if (t < MAPA_MED_MAX) {
+          medias[t] = nm_media(ns, nTodos, NULL);
+          if (medias[t] > 0) temMedia = 1;
+          nMed = t + 1;
+        } }
       for (i = 0; i < n; i++) {
         int d = s->epNota(t, i);
         if (d <= 0) continue;
@@ -697,6 +712,10 @@ void notasui_mapa_card(const NotasSecao *s, GfxRect c, int selT, int selI, float
   }
   // Espaco da grade: do fim do subtitulo ate a legenda e a frase do pe.
   gx = px + MAPA_ROT_W; gw = pw - MAPA_ROT_W;
+  // Media da temporada (#1689): uma coluna no fim de cada linha, so quando ha
+  // media para mostrar; sem ela a grade fica com a largura de antes.
+  nm_extremos(medias, nMed, &medMelhor, &medPior);
+  if (temMedia) gw -= MAPA_MED_W;
   gy = py; gh = c.y + c.h - 30.0f - 100.0f - gy;
   if (nt > 0 && maxEps > 0) {
     int ntD = nt;
@@ -744,6 +763,19 @@ void notasui_mapa_card(const NotasSecao *s, GfxRect c, int selT, int selI, float
           if (t == selT && i == selI)
             gfx_anel_fora(q, rr, 2.0f, 2.0f, 1, 1, 1, 0.85f * aa);
         }
+        // Media no fim da linha, na cor da rampa; a melhor e a pior temporada
+        // em branco cheio, as outras recuadas. Linha fina demais nao leva numero.
+        if (rotTodos && t < nMed && medias[t] > 0) {
+          char v[8];
+          TxtLinha l;
+          float cr, cg, cb;
+          int forte = t == medMelhor || t == medPior;
+          snprintf(v, sizeof v, virgula() ? "%d,%d" : "%d.%d", medias[t] / 10, medias[t] % 10);
+          notasui_cor_rampa(medias[t], &cr, &cg, &cb);
+          l = txt_linha(forte ? TXT_G20M : TXT_ILHA_NUM, v, (int)(cr * 255.0f), (int)(cg * 255.0f), (int)(cb * 255.0f), 255);
+          txt_desenhar_alpha(l, gx + gw + MAPA_MED_W - (float)l.w, ry + (ch - (float)l.h) * 0.5f,
+                             forte ? aa : 0.78f * aa);
+        }
       }
       gy += (ch + gap) * (float)ntD - gap; }
   }
@@ -763,7 +795,7 @@ void notasui_mapa_card(const NotasSecao *s, GfxRect c, int selT, int selI, float
     txt_desenhar_alpha(l1, lx + 160.0f + 10.0f, ly, aa); }
   // Melhor e pior, no pe do cartao.
   if (melhorT >= 0) {
-    char b1[64], b2[64], b[140];
+    char b1[64], b2[64], b[220];
     snprintf(b1, sizeof b1, i18n("Melhor: T%dE%d  ·  %.1f"), s->tempNum(melhorT),
              s->epNum(melhorT, melhorI), melhor / 10.0f); idioma_decimal_texto(b1, ajustes_idioma());
     if (piorT >= 0 && (piorT != melhorT || piorI != melhorI)) {
@@ -771,6 +803,13 @@ void notasui_mapa_card(const NotasSecao *s, GfxRect c, int selT, int selI, float
                s->epNum(piorT, piorI), pior / 10.0f); idioma_decimal_texto(b2, ajustes_idioma());
       snprintf(b, sizeof b, "%s.   %s.", b1, b2);
     } else snprintf(b, sizeof b, "%s.", b1);
+    if (medMelhor >= 0) {
+      char b3[64];
+      size_t k = strlen(b);
+      snprintf(b3, sizeof b3, i18n("Melhor temporada T%d · %.1f"), s->tempNum(medMelhor),
+               medias[medMelhor] / 10.0f); idioma_decimal_texto(b3, ajustes_idioma());
+      snprintf(b + k, sizeof b - k, "   %s.", b3);
+    }
     txt_bloco_corta(TXT_ILHA_SUB, b, 180, 184, 192, px, c.y + c.h - 30.0f - 52.0f,
                     pw, 26.0f, aa, 2);
   }

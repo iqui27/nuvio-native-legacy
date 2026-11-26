@@ -145,6 +145,7 @@ extern __attribute__((weak)) int farolacao_fonte_executar(int acao, int persisti
 #include "idiomacod.h"
 #include "proximo.h"
 #include "creditosauto.h"
+#include "legtemp.h"
 #include "credfonte.h"
 #include "credaprende.h"
 #include "seekr.h"
@@ -189,6 +190,7 @@ extern __attribute__((weak)) int farolacao_fonte_executar(int acao, int persisti
 #include "cacheboost.h"
 #include "directcache.h"
 #include "audioinfo.h"
+#include "selotoca.h"
 #include "playinfo.h"
 #include "central.h"
 #include "legendasui.h"   /* F04: second subtitle band */
@@ -466,6 +468,11 @@ static Uint32 pgDesde, pgQuadro;
 // AS DUAS VARIAVEIS DE MIDIA. Todo o resto do arquivo le so daqui — quando o
 // video real entrar, sao elas que passam a ser preenchidas pelo decodificador.
 static int   comVideo = 0;
+// Legenda temporaria (legtemp.h; a logica esta junto de recuarAutomatico).
+static LegTemp legTemp;
+static int legTempPendente;      // LIGAR ainda nao aplicado (a automatica do comeco nao fechou)
+static Uint32 legTempMudoEm;     // proxima consulta do mudo ao aparelho
+static void legTempZerar(void);
 #ifdef NV_SHOT_HOOKS
 static int   shotSemFuro, shotBusca;
 static int   shotEpgOk, shotNumero, shotAtras, shotFav;   // shotFav: 1 = botao, 2 = nos favoritos
@@ -2284,6 +2291,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
 #endif
   retomamorna_cancelar();
   creditosauto_zerar(&creditosAuto);
+  legTempZerar();
   memset(&scrobbleAlvo, 0, sizeof scrobbleAlvo); scrobbleAlvoPronto = 0;
   scrobbleTvdbCapturado = 0;
   quadroCapturado = 0;
@@ -2648,6 +2656,7 @@ static void tocarFonteInterno(const char *url) {
   directcache_encerrar();
   farolTentativaIniciar();
   if (!travaFonte(url)) return;
+  legTempZerar();
   farolFonteRegistrar(url, video_cabecalhos()[0] != 0);
   marco("abrir: url ao pipeline");
   farolRearmar();
@@ -2902,6 +2911,7 @@ int player_recarregar_vod(void) {
 
 void player_voltar_a_esperar(void) {
   if (!aberto) return;
+  legTempZerar();
   fonteAcaoInvalidar();
   legenda_pre_descartar(i18n("fonte descartada"));
   // A fonte foi descartada: a tela do DV sai e o cartao de sempre conta a
@@ -3233,6 +3243,7 @@ static void fecharSessao(int manter, int trocaFonte) {
   // every frame; queda.h).
   queda_conferir("Back");
 #endif
+  if (!manter || trocaFonte) legTempZerar();
   directcache_encerrar();
   juntos_ao_voltar();
   saiuVisto = 0;
@@ -4727,8 +4738,8 @@ static void avMontarOsd(AoVivoOsd *o) {
     // medida: o que o pipeline confirma).
     { int fm = marca_resolucao(o->res);
       if (fm >= 0) o->marcas[o->nMarcas++] = fm;
-      if (video_tem_dolby_vision()) o->marcas[o->nMarcas++] = FMT_DV;
-      else if (!strcasecmp(video_hdr(), "HDR10")) o->marcas[o->nMarcas++] = FMT_HDR10;
+      { int hd = selotoca_hdr(video_hdr(), video_tem_dolby_vision(), -1);
+        if (hd >= 0) o->marcas[o->nMarcas++] = hd; }
       if (video_tem_atmos()) o->marcas[o->nMarcas++] = FMT_ATMOS;
       if (marcaDtsAtual() >= 0 && o->nMarcas < (int)(sizeof o->marcas / sizeof o->marcas[0]))
         o->marcas[o->nMarcas++] = marcaDtsAtual(); }
@@ -4782,6 +4793,41 @@ static void avTecla(SDL_Keycode k) {
 //    mexia no pipeline com o video correndo. Agora o video PAUSA ao comecar o
 //    avanco e volta a tocar sozinho ao terminar, se estava tocando — e o
 //    pipeline recebe UMA posicao, no fim, em vez de uma por toque.
+// LEGENDA TEMPORARIA (legtemp.h): sem legenda ligada, ela aparece sozinha ao
+// mutar e ao voltar alguns segundos, e some quando o motivo acaba. A regra e
+// de legtemp.c; quem liga, escolhe a faixa e desliga e faixas.c.
+static void legTempAplicar(int acao) {
+  if (acao == LEGTEMP_LIGAR) legTempPendente = 1;
+  else if (acao == LEGTEMP_DESLIGAR) { legTempPendente = 0; faixas_legenda_temporaria(0, ""); }
+}
+static void legTempZerar(void) {
+  legTempAplicar(LEGTEMP_DESLIGAR);
+  legtemp_zerar(&legTemp);
+  legTempPendente = 0;
+  legTempMudoEm = 0;
+}
+static void legTempBusca(double de, double para) {
+  if (de != para && ajustes_legenda_temporaria() && comVideo && !ehCanal())
+    legTempAplicar(legtemp_busca(&legTemp, de, para));
+}
+static void legTempQuadro(Uint32 agora) {
+  if (!ajustes_legenda_temporaria() || !comVideo || ehCanal()) {
+    if (legTemp.motivos || legTemp.longa || legTempPendente) legTempZerar();
+    return;
+  }
+#ifdef NV_ANDROID
+  if ((Sint32)(agora - legTempMudoEm) >= 0) {
+    legTempMudoEm = agora + 500u;
+    legTempAplicar(legtemp_mudo(&legTemp, video_mudo()));
+  }
+#else
+  (void)agora; (void)legTempMudoEm;
+#endif
+  if (!scrubbing && video_pronto()) legTempAplicar(legtemp_quadro(&legTemp, video_pos()));
+  if (!scrubbing && legTempPendente && faixas_legenda_temporaria(1, idioma_iso(ajustes_idioma())) != 0)
+    legTempPendente = 0;
+}
+
 static void recuarAutomatico(double de, double para) {
   if (!isfinite(de) || !isfinite(para) || para >= de) return;
   intro_auto_recuar(de, para);
@@ -4945,7 +4991,11 @@ static void terminarSalto(void) {
   seekr_ocioso();   // solta a folha decodificada (~22 MB), fica o JPEG
   // Com a sala aberta o seek e da sala: o motor busca aqui e o play volta pelo
   // relogio comum (play agendado), nao pelo estado de antes do avanco.
-  if (comVideo && juntos_ao_buscar(posSeg)) { retomandoSalto = 0; return; }
+  if (comVideo && juntos_ao_buscar(posSeg)) {
+    legTempBusca(scrubInicio, posSeg);
+    retomandoSalto = 0;
+    return;
+  }
 #ifdef NV_TPK
   seekgesto_zerar(&gesto);   // the memory lives until the commit
 #endif
@@ -4953,6 +5003,7 @@ static void terminarSalto(void) {
     if (scrubTocava) { video_pausar(0); tocando = 1; }
   } else if (comVideo) {
     posSeg = anim_clamp(posSeg, 0.0f, duracaoSeg);
+    legTempBusca(scrubInicio, posSeg);
     if (posSeg >= scrubInicio) creditosauto_buscar(&creditosAuto, posSeg);
     buscarUsuario(posSeg);
     if (scrubTocava) { video_pausar(0); tocando = 1; }
@@ -5000,6 +5051,7 @@ static int ativarBotao(int i, int repetiu) {
       posplay_busca_usuario();
       recuarAutomatico(de, 0.0);
       scrubbing = scrubToque = scrubTocava = 0; scrubInicio = 0.0;
+      legTempBusca(de, 0.0);
       if (retomar) retomandoSalto = 1;
       pausao_fechar(); seekr_ocioso();
       posSeg = posVis = posVisV = 0.0f; posVisSolto = 0;
@@ -6140,6 +6192,7 @@ void player_atualizar(float dt, Uint32 agora) {
     desc_episodios_pendente(); }
 
   if (comVideo) creditosauto_fonte(&creditosAuto, video_url_atual());
+  legTempQuadro(SDL_GetTicks());
   // PULAR SOZINHO (#329/#331): abertura/resumo/creditos com marcador e ajuste ligado. Uma vez por
   // trecho (voltar de proposito para dentro dele nao pula de novo), so tocando de verdade.
   if (!ehCanal() && comVideo && tocando && video_ativo() && video_pronto() && !partesAtiva() &&
@@ -6992,6 +7045,7 @@ static void ponteiroBuscar(int a, int b) {
   posSeg = anim_clamp(posSeg, 0.0f, duracaoSeg);
   recuarAutomatico(de, posSeg);
   if (comVideo) {
+    legTempBusca(de, posSeg);
     if (posSeg >= de) creditosauto_buscar(&creditosAuto, posSeg);
     buscarUsuario(posSeg);
   }
@@ -8367,28 +8421,17 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
   char txtPac[160] = "";
   if (larg) *larg = 0.0f;
   if (estilo == PLR_FMT_OFF) return 0.0f;
-  // A classe sai da LARGURA primeiro: filme 2.39:1 em 1080p chega como
-  // 1920x800. A faixa do 1440p (2560) fica SEM selo: ausente e mais honesto
-  // que errado.
-  { int w = video_largura(), h = video_altura();
-    if (w >= 3200 || h >= 1800)       selos[nSelos++] = FMT_4K;
-    else if (w >= 2400)               { /* 1440p: sem selo */ }
-    else if (w >= 1800 || h >= 1000)  selos[nSelos++] = FMT_1080;
-    else if (w >= 1200 || h >= 700)   selos[nSelos++] = FMT_720;
-    else if (w > 0)                   selos[nSelos++] = FMT_SD; }
-  // "Dolby Vision" so quando o PIPELINE devolveu DolbyVision no videoInfo
-  // (MEDIDO: um MKV anunciado como DV volta HDR10 nesta TV).
-  if (video_tem_dolby_vision())                  selos[nSelos++] = FMT_DV;
-  else if (!strcasecmp(video_hdr(), "HDR10"))    selos[nSelos++] = FMT_HDR10;
+  // Resolucao e HDR pela regra de selotoca.h (o que o pipeline MEDIU; onde a
+  // plataforma nao mede HDR, o selo e o da FONTE e nunca Dolby Vision).
+  { int r = selotoca_resolucao(video_largura(), video_altura()), mf = -1, hd;
 #if defined(__EMSCRIPTEN__) || defined(NV_TPK)
-  else {
-    // AVPlay nao confirma HDR ativo: o selo e o da FONTE, nunca Dolby Vision
-    // (TV Samsung nao tem DV; badges_fonte_hdr so conhece HDR10+/HDR10/HDR).
+    // AVPlay nao confirma HDR ativo: a regra recebe o selo da FONTE.
     const Stream *fonte = stream_item(stream_atual());
-    int hdr = fonte ? badges_fonte_hdr_marca(fonte->badges) : -1;
-    if (hdr >= 0) selos[nSelos++] = (FormatoMarca)hdr;
-  }
+    if (fonte) mf = badges_fonte_hdr_marca(fonte->badges);
 #endif
+    hd = selotoca_hdr(video_hdr(), video_tem_dolby_vision(), mf);
+    if (r >= 0) selos[nSelos++] = (FormatoMarca)r;
+    if (hd >= 0) selos[nSelos++] = (FormatoMarca)hd; }
   if (video_tem_atmos())        selos[nSelos++] = FMT_ATMOS;
   if (marcaDtsAtual() >= 0)     selos[nSelos++] = (FormatoMarca)marcaDtsAtual();
   const char *rotAudio = ehCanal() ? "" : rotuloAudioOsd();
@@ -8505,11 +8548,15 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
 // fileira de capitulos no lugar do titulo, ESQUERDA/DIREITA e OK.
 // OK num capitulo (tecla, clique ou dedo): busca o comeco dele e fecha a fileira.
 static void capituloPular(const MkvCap *c, int i) {
-  double de = posSeg, alvo = c[i].inicio;
+  double alvo = c[i].inicio;
   if (scrubbing) terminarSalto();
+  double de = posSeg;
   posSeg = (float)alvo;
   recuarAutomatico(de, alvo);
-  if (comVideo) buscarUsuario(alvo);
+  if (comVideo) {
+    legTempBusca(de, alvo);
+    buscarUsuario(alvo);
+  }
   printf("[seg] capitulo %d \"%s\" em %.1fs\n", i, c[i].nome, alvo); fflush(stdout);
   capFoco = 0;
 }

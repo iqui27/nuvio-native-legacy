@@ -159,6 +159,9 @@ int ajustes_pausa_comentarios(void);
 int ajustes_pausa_notas(void);
 // Elenco (fotos, nomes, papeis) no painel de pausa. Desligado de fabrica.
 int ajustes_pausa_elenco(void);
+// Tela ambiente (ambiente.h): a arte do titulo em tela cheia por baixo do
+// painel de pausa, numa pausa longa. Ligado de fabrica.
+int ajustes_pausa_ambiente(void);
 int ajustes_classif_player(void);   // 1 = mostra a classificacao/guia parental no player (padrao)
 // "O que achou?" nos creditos (reacao.h). Ligado de fabrica.
 int ajustes_reacao_creditos(void);
@@ -660,6 +663,7 @@ int ajustes_leg2_posicao(void); // -1 keeps the existing Top/Stacked placement
 int ajustes_leg2_atraso(void);
 int ajustes_leg2_definir_atraso(int ms);
 int   ajustes_legenda_forcada_auto(void);    // #287: 1 = audio in the subtitle language -> only the forced track (local, default on)
+int   ajustes_legenda_temporaria(void);      // legtemp.h: 1 = subtitles turn on by themselves on mute / short rewind (local, default on)
 int   ajustes_legenda_evitar_sdh(void);      // #743: 1 = auto-pick skips SDH/CC tracks (local, default off)
 int   ajustes_ass_motor(void);               // .tpk: 1 = motor novo de ASS (padrao), 0 = motor antigo
 int   ajustes_legenda_sync_auto(void);       // local, ligada por padrão

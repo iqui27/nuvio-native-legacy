@@ -116,6 +116,7 @@ extern __attribute__((weak)) void farol_registrar_resultado(int acao, int ok);
 #include "agendaui.h"
 #include "esportesui.h"
 #include "esportes.h"
+#include "esportes_casar.h"
 #include "agenda.h"
 #include "agendaviso.h"
 #include "perfil.h"
@@ -8669,6 +8670,8 @@ void app_atualizar(float dt, Uint32 agora) {
     { static Uint32 sportsRemindersAt;
       if(!sportsRemindersAt || agora-sportsRemindersAt>=1000u){sportsRemindersAt=agora?agora:1;esportes_abrir_sessao();esportes_pedir_favoritos(0);esportes_passo();esportes_seguir_lembretes();}
     }
+    glem_canal_do_jogo(espcasar_canal);
+    espcasar_passo(time(NULL));
     glem_passo(dt, agora);
     // "Assistir" no cartao: o canal em tela cheia, de onde a pessoa estiver.
     if (aguardandoFonte != 2 && glem_pediu_assistir(lid, sizeof lid, lnome, sizeof lnome,

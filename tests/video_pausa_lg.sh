@@ -5,8 +5,17 @@ dir=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-pausa-lg.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 export NUVIO_DADOS="$dir/dados"
 mkdir -p "$NUVIO_DADOS"
-flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
-  -Wno-deprecated-declarations -Wno-macro-redefined)
+flags=(-O1 -g -Isrc -Wno-deprecated-declarations -Wno-macro-redefined)
+if [ "$(uname -s)" = Darwin ]; then
+  flags+=(-I/opt/homebrew/include -I/opt/homebrew/include/SDL2)
+  libs=(-L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL)
+else
+  read -r -a sdl_flags <<< "$(pkg-config --cflags sdl2 SDL2_image SDL2_ttf)"
+  read -r -a sdl_libs <<< "$(pkg-config --libs sdl2 SDL2_image SDL2_ttf)"
+  flags+=(-DNV_LINUX_DESKTOP "${sdl_flags[@]}")
+  libs=("${sdl_libs[@]}" -lz -lGLESv2 -ldl -pthread -lm)
+  if [ "${SANITIZE:-0}" = 1 ]; then libs+=(-no-pie); fi
+fi
 if [ "${NV_JUNTOS_TEST:-0}" = 1 ]; then flags+=(-DNV_JUNTOS_TEST); fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 sources=()
@@ -14,8 +23,7 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/video.c) continue;; esac
   sources+=("$source")
 done
-cc -DAJUSTES_TESTE "${flags[@]}" "${sources[@]}" tests/video_pausa_lg.c -o "$dir/test" \
-  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
+"${CC:-cc}" -DAJUSTES_TESTE "${flags[@]}" "${sources[@]}" tests/video_pausa_lg.c -o "$dir/test" "${libs[@]}"
 # Mesmo ajuste do loader sdl2-compat/ASan usado em descanso_wake.sh.
 [ ! -e /opt/homebrew/lib/libSDL3.dylib ] || ln -s /opt/homebrew/lib/libSDL3.dylib "$dir/libSDL3.dylib"
 "$dir/test"

@@ -13,6 +13,7 @@
 #ifndef NV_GUIALEMBRETE_H
 #define NV_GUIALEMBRETE_H
 #include <SDL2/SDL.h>
+#include "lembrete.h"
 
 #define GLEM_CARTAO_MS 15000u
 #define GLEM_CURTO_MS   4500u
@@ -25,6 +26,10 @@ int  glem_cartao_aberto(void);
 // Aviso curto de uma linha (marcar/cancelar lembrete no guia usa este).
 void glem_aviso_curto(const char *texto);
 // "Assistir" no cartao: o app consome e toca o canal (id em `id`).
+// Lembrete de JOGO (esportes): quem sabe em que canal ele passa. Devolvendo 1
+// e o canal, o aviso curto vira o cartao com Assistir. NULL = como sempre foi.
+void glem_canal_do_jogo(int (*acha)(const Lembrete *l, char *id, size_t nId, char *nome,
+                                    size_t nNome, char *base, size_t nBase));
 int  glem_pediu_assistir(char *id, size_t tam, char *nome, size_t tamNome,
                          char *base, size_t tamBase);
 // Para a captura (tests/guia_shot): monta o cartao como se o lembrete venceu.
