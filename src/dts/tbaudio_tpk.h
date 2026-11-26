@@ -39,6 +39,15 @@ int  tba_disponivel(void);
 int  tba_abrir(const char *tb_m3u8, const char *orig, const char *cab, int audio_ordinal,
                int modo, char *out, size_t n);
 void tba_fechar(void);
+/* TorBox's burned video only, for the donor server's master (doador_tpk.h,
+ * DoaAbrir.tb_video, owner 26/11/2026): TorBox's segments with its audio
+ * removed (fMP4: TorBox's own playlist), no audio tracks, the original file
+ * is not read (no connection of its own). Writes the media playlist's URL. */
+int  tba_abrir_video(const char *tb_m3u8, const char *orig, char *out, size_t n);
+int  tba_so_video(void);
+/* Once ready: TorBox's first video PTS (s, 0 unknown), its total length,
+ * bandwidth and resolution ("" none). 1 ready, 0 preparing, -1 failed. */
+int  tba_linha(double *inicio, double *dur, long *banda, char *res, size_t nres);
 int  tba_ativo(void);
 int  tba_modo(void);
 /* The session failed to prepare (TorBox playlist, original file): 1 with the

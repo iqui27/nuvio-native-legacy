@@ -66,6 +66,13 @@ typedef struct {
   /* At most this many audio renditions in the master (the starting track
    * always among them); 0 = all. The 4K test row (owner 17/11). */
   int rend_limite;
+  /* TORBOX BURN-IN (owner 26/11/2026): `video` is TorBox's burned video
+   * (tbaudio_tpk.h, tba_abrir_video), not the converter's. The audio goes
+   * onto TorBox's timeline (its first video PTS) instead of the converter's,
+   * the master takes TorBox's bandwidth and resolution, and the audio match
+   * is off (it reads the file's audio from the converter, which is closed);
+   * the subtitle match and the edit map work as before. */
+  int tb_video;
 } DoaAbrir;
 /* New session (replaces any previous one): writes the URL the TV player opens.
  * The sources are read in a thread; the player's requests wait for it. 0 =

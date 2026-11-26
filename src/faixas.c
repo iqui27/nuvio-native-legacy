@@ -761,7 +761,7 @@ static int linhaDaLeg(int i) {
 // 24 for the preference's languages, 6 for the others. No "From another
 // source", no "This file's own audio", no "Match automatically": the sync is
 // automatic (subtitles, then audio). Elsewhere the sheet is the track list.
-enum { FXA_FAIXA = 0, FXA_SINC, FXA_IDIOMA, FXA_TODOS };
+enum { FXA_FAIXA = 0, FXA_SINC, FXA_IDIOMA, FXA_TODOS, FXA_TBA };   // FXA_TBA: Original audio with burn-in (tbburn.h)
 // THE FILE'S OWN AUDIO TRACKS on the language rows and pages (owner 18/11):
 // read from the file whatever plays. Only the chosen track goes to the TV
 // while another source's audio plays (video_tpk.c DOA_REND_LIMITE), so the
@@ -863,13 +863,14 @@ static unsigned extGeracao, extRevisao, extAddonsVer;
 #endif
 static int extListaN = -1;
 // Original audio with TorBox burn-in (tbburn.h): rows under the audio tracks
-// (.tpk only; tbqueima.c answers 0 elsewhere). While the burned stream plays
-// (or is starting) the audio sheet is the plain track list: the donor's
-// language pages do not apply to TorBox's stream. Otherwise the donor pages
-// win and the rows stay in Settings; tbaVis() = the rows are in the sheet.
+// (.tpk only; tbqueima.c answers 0 elsewhere). With the donor pages on, the
+// row is the last row of the language list (FXA_TBA); with them off, under
+// the tracks (tbaVis). It goes away while another source's audio is in use.
+// On LG/Android the burned stream plays TorBox's own audio: the donor's pages
+// hide while it plays or starts (the .tpk keeps them, owner 26/11/2026).
 #ifdef NV_TB_QUEIMA
 static int nTba(void) { return video_tpk_tba_linhas(); }
-static int queimando(void) { return video_tpk_queimada() >= 0; }
+static int queimando(void) { return video_tpk_queimada() >= 0 && !video_tpk_doador_na_queima(); }
 #else
 static int nTba(void) { return 0; }
 static int queimando(void) { return 0; }
@@ -1074,7 +1075,7 @@ static void auMontar(void) {
   int nA = arqTotal(), atual = arqAtual(), todas = 0;
   const char *p1 = ling_audio(), *p2 = ling_audio2();
   uint64_t h = (uint64_t)nA * 1000003u ^ (uint64_t)(atual + 7) * 7919u ^ (uint64_t)extAllN * 104729u ^ (uint64_t)extVersaoLista * 15485863u ^
-               (uint64_t)(auTodos + 2) * 31u ^ (uint64_t)(audioext_tocando() + 3) * 131u;
+               (uint64_t)(auTodos + 2) * 31u ^ (uint64_t)(audioext_tocando() + 3) * 131u ^ (uint64_t)(nTba() + 5) * 524287u;
   for (const char *c = p1; *c; c++) h = h * 33u + (unsigned char)*c;
   for (const char *c = p2; *c; c++) h = h * 37u + (unsigned char)*c;
   for (int i = 0; i < nA; i++) { const VideoFaixa *f = arqFaixa(i); for (const char *c = f ? f->idioma : ""; *c; c++) h = h * 31u + (unsigned char)*c; }
@@ -1125,6 +1126,7 @@ static int tipoLinha(int i, int *k) {
   }
   if (audioext_tocando()) { auL[auLN].tipo = FXA_SINC; auL[auLN++].g = -1; }
   if (todas) { auL[auLN].tipo = FXA_TODOS; auL[auLN++].g = -1; }
+  if (nTba()) { auL[auLN].tipo = FXA_TBA; auL[auLN++].g = -1; }   // Original audio: Passthrough | TorBox audio
 }
 // The row of language group `g` (-1 none).
 static int auLinhaDoGrupo(int g) {
@@ -1145,6 +1147,14 @@ static int tipoLinha(int i, int *k) {
   return auL[i].tipo;
 #else
   return FXA_ENTRADA;
+#endif
+}
+// Row `i` of the audio list is the Original audio row on the language list.
+static int linhaTba(int i) {
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  return extMenu() && tipoLinha(i, NULL) == FXA_TBA;
+#else
+  (void)i; return 0;
 #endif
 }
 static const Stream *extFonteIdx(int indice) {
@@ -1869,6 +1879,7 @@ static void aplicarFaixaArquivo(int i) {
 static void aplicar(void) {
 #ifdef NV_TB_QUEIMA
   if (coluna == 0 && tbaVis() && foco[0] >= video_n_audio()) { video_tpk_tba_ok(foco[0] - video_n_audio()); return; }
+  if (coluna == 0 && linhaTba(foco[0])) { video_tpk_tba_ok(0); return; }
 #endif
   if (coluna == 0 && tipoLinha(foco[0], NULL) != FXA_FAIXA) return;   // the language rows open their page (faixas_evento)
 #else
@@ -2433,6 +2444,10 @@ void faixas_evento(const SDL_Event *e) {
   // OK applies it (aplicar).
   if (!modo && coluna == 0 && tbaVis() && foco[0] >= video_n_audio() && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
     video_tpk_tba_passo(foco[0] - video_n_audio(), k == SDLK_RIGHT ? 1 : -1);
+    return;
+  }
+  if (!modo && coluna == 0 && linhaTba(foco[0]) && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
+    video_tpk_tba_passo(0, k == SDLK_RIGHT ? 1 : -1);
     return;
   }
 #endif
@@ -3078,7 +3093,7 @@ static void linhaLista(int col, int i, float x, float y, float w, float a) {
   int ativo;
   GfxRect lr = { x, y, w, IL_LN_H };
   nome[0] = sub[0] = 0;
-  if (!col && tbaVis() && i >= video_n_audio()) {
+  if (!col && ((tbaVis() && i >= video_n_audio()) || linhaTba(i))) {
 #ifdef NV_TB_QUEIMA
     video_tpk_tba_rotulo(i - video_n_audio(), nome, sizeof nome, sub, sizeof sub);
 #endif

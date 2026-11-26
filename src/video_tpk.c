@@ -434,6 +434,11 @@ static struct {
   // fire with only the master asked for).
   Uint32 prontoEm;
   char conv[256];        // the converter's URL (kept when only the donor changes)
+  // TORBOX BURN-IN (owner 26/11/2026): the picture is TorBox's burned stream
+  // (tbaudio_tpk.h tba_abrir_video), not the converter's. Its lifecycle is the
+  // burned stream's (tb): reopens go through tbUrlPlayer + tbReabrir, and the
+  // audio match is off (the subtitle match and the offset work).
+  int tb;
 } dv;
 // The converter's track before the donor took over (a DTS file's converted
 // audio): where a failed donor goes back to. -1 = the TV player's own audio.
@@ -452,6 +457,27 @@ static void convFechar(void) {
     audioext_tocando_definir(0); audioext_carregando_definir(0);
   }
 }
+// Audio from another source on TorBox's burned picture (dv.tb): its session
+// closes with the burned stream's. The pick stays: `reaplicar` = the next
+// picture (the original after burn-in) applies it (extReabrir).
+static void tbDoaFechar(int reaplicar) {
+  if (!dv.ativo || !dv.tb) return;
+  doadorleg_cancelar();
+  doa_fechar();
+  dv.ativo = 0; dv.tb = 0;
+  audioext_tocando_definir(0); audioext_carregando_definir(0);
+  if (reaplicar) extReabrirPend = 1;
+  printf("[doador] the other source's audio on TorBox's burned picture closed%s\n", reaplicar ? ": applied again on the next picture" : "");
+  fflush(stdout);
+}
+// "It played" for the donor's checks: the converter's flag, or the burned player prepared.
+static int dvJaTocou(void) { return dv.tb ? pronto : cv.jaTocou; }
+// The file's time for the donor's sync (subtitle match, edit map): on the
+// burned picture the player's clock is TorBox's playlist time, behind the
+// real picture by tbr_correcao (TorBox's EXTINF are not the real segment
+// lengths, tbrelogio.h). The audio itself goes by the real PTS (doador_tpk.c).
+double video_pos(void);
+static double dvPos(void) { return video_pos() + (dv.tb ? tbr_correcao() : 0.0); }
 static void convDesistir(const char *motivo);
 static void convVoltar(void);
 static int convPossivel(void);
@@ -570,7 +596,10 @@ void nv_tpk_video_faixas_fim(int selAudio, int selLeg) {
   // TorBox's burned stream: its own list (one audio, no subtitles) is not the
   // menu; the file's tracks stay, with the burned one chosen.
   if (tb.ativo && mkvN > 0) {
-    if (tb.tba) {
+    if (dv.ativo && dv.tb) {
+      dv.nTv = nNovasA;
+      printf("[doador] the TV player lists %d audio track(s) for the other source's master on the burned picture\n", nNovasA);
+    } else if (tb.tba) {
       tb.hostA = nNovasA;
       atomic_store(&tbAudioDiagPrep, 1);
       printf("[tbaudio] the TV player lists %d audio track(s) for Nuvio's stream (renditions offered: %d)%s\n", nNovasA,
@@ -1228,6 +1257,7 @@ static void tbDesligar(const char *porque, int desistir) {
   if (alvo < 0) alvo = 0;
   tbr_encerrar();
   tb.ativo = 0;
+  tbDoaFechar(1);   // another source's audio: the original applies it (on the converter's picture)
   if (tb.tba) {
     Uint32 t0 = SDL_GetTicks();
     NV_PASSO("tbDesligar: tba_fechar");
@@ -1518,9 +1548,15 @@ static void tbcBombear(void) {
 
 // TorBox's video without its audio + the original file's audio (only with the
 // converter in this build); TorBox audio = TorBox's URL as it is.
+static int tbDoaQuer(void);
+static int tbDoaAbrir(const char *m, int aud);
 static void tbUrlPlayer(const char *m) {
   char loc[256];
-  int modo = ajustes_tb_audio_modo(), aud, sess = tb.tba ? tba_audio() : -1;
+  int modo = ajustes_tb_audio_modo(), aud, sess;
+  // Another source's audio on the burned picture before: its session closes
+  // and the menu is the file's tracks again (the track below comes from it).
+  if (dv.ativo && dv.tb) { tbDoaFechar(0); if (mkvN > 0) montarListaQueimada(); }
+  sess = tb.tba ? tba_audio() : -1;
   // The audio track: the session's (a retry keeps what was playing), else the
   // player's list, else what TorBox was asked for. The list is empty right
   // after a reopen (mkvfix, 16/11: English was asked for, Japanese served).
@@ -1531,14 +1567,22 @@ static void tbUrlPlayer(const char *m) {
   tb.hostA = -1;
   // The DTS/TrueHD converter (cv) gives way: its seek watch and its reader
   // stayed on under burn-in (log 14/11). tbDesligar brings it back.
-  if (cv.ativo || cv.sondando) {
-    printf("[tbburn] the DTS/TrueHD converter stops: TorBox's stream takes over\n");
-    dts_tpk_fechar();
+  if (cv.ativo || cv.sondando || dv.ativo) {
+    printf("[tbburn] the %s stops: TorBox's stream takes over\n", dv.ativo ? "other source's audio on the converter's picture" : "DTS/TrueHD converter");
+    convFechar();   // the donor's session on the converter closes with it (the pick stays: below)
     memset(&cv, 0, sizeof cv); cv.buscarMs = -1;
   }
   tba_sockets_vigiar(m, urlAtual, NULL, NULL);
   tbLentoFim("a new burned stream");
   tb.esperaDesde = SDL_GetTicks();
+  // Audio from another source picked (owner 26/11/2026): TorBox's burned
+  // video with the donor server's audio (its renditions carry this file's
+  // tracks too), whatever the Original audio setting says.
+  if (tbDoaQuer() && tbDoaAbrir(m, aud)) {
+    tb.tba = 1;
+    fflush(stdout);
+    return;
+  }
   if (modo != TBA_TORBOX && tba_disponivel() &&
       tba_abrir(m, urlAtual, cabecalhos, aud, modo, loc, sizeof loc)) {
     tb.tba = 1;
@@ -1572,9 +1616,12 @@ static void tbBombear(void) {
   // !faixasNovas: only after the header's codecs are on the player's tracks
   // (faixasmkv_aplicar). Deciding on the bare player list found no ASS track,
   // and the file never burned by itself (log_11, owner 14/11).
+  // Another source's audio playing (owner 26/11/2026) no longer holds it:
+  // the burned stream takes the donor over (tbUrlPlayer). A build without
+  // the servers still waits.
   if (!tb.decidido && !tb.ativo && !tb.pend && !tb.desistiu && ativo && pronto && faixasLidas && !faixasNovas && mkvN > 0 &&
       mkvTemAss() && ajustes_leg_queimar() && tbburn_pode() && reconPermitida && !emTrailer &&
-      !dv.ativo /* another source's audio plays: burn-in waits until it stops */) {
+      (!dv.ativo || (doa_disponivel() && tba_disponivel()))) {
     const char *porque = "";
     int k = tbAutoFaixa(1, &porque);
     tb.decidido = 1;
@@ -1929,6 +1976,7 @@ int video_tocar(const char *u) {
   if (cv.ativo || cv.sondando) convFechar();
   memset(&cv, 0, sizeof cv); cv.buscarMs = -1; naoSupPend = 0;
   if (tb.pend || tb.registrando) tbburn_cancelar();   // a re-add still waiting stops asking too
+  tbDoaFechar(0);
   if (tb.tba) tba_fechar();
   tbr_encerrar();
   if (tb.origMarcado) tbburn_original_parou();
@@ -2216,6 +2264,12 @@ static void montarListaQueimada(void) {
   for (i = 0; i < nl; i++) if (l[i].ordinalMkv == tb.sub) tb.leg = i;
   printf("[tbburn] menu: %d audio and %d subtitle(s) from the file; burned subtitle %d, audio %d\n", na, nl, tb.leg, audioAtual);
   fflush(stdout);
+  // Another source's audio on the burned picture: the audio menu is the
+  // donor master's renditions (the TV's own list), as on the converter.
+  if (dv.ativo && dv.tb && doa_pronto()) {
+    int sel = 0, nd = montarListaDoador(a, &sel);
+    if (nd > 0) { memcpy(faixaAudio, a, (size_t)nd * sizeof *a); nAudio = nd; audioAtual = sel; }
+  }
 }
 
 // Original tocando: as faixas DTS/TrueHD do arquivo entram no FIM da lista do
@@ -2438,6 +2492,65 @@ static int doadorSessaoV(const char *conv, double pos, const char *motivo, int v
   return 1;
 }
 static int doadorSessao(const char *conv, double pos, const char *motivo) { return doadorSessaoV(conv, pos, motivo, 0); }
+// AUDIO FROM ANOTHER SOURCE WITH TORBOX BURN-IN (owner 26/11/2026): the same
+// connections as Passthrough (TorBox's segments + one audio connection).
+// tbDoaGerFalhou: the pick that gave up on the burned picture (not retried).
+static unsigned tbDoaGerFalhou = ~0u;
+static int tbDoaQuer(void) {
+  return urlAtual[0] && !emTrailer && audioext_pedido(urlAtual) && reconPermitida && doadorFonteServe() &&
+         doa_disponivel() && tba_disponivel() && audioext_pedido_geracao() != tbDoaGerFalhou;
+}
+// Opens TorBox's video-only session and the donor server's over it: tb.url
+// = the donor's master. 0 = could not (Passthrough or TorBox's audio then).
+static int tbDoaAbrir(const char *m, int aud) {
+  char v[256], url[256], langs[64];
+  AudioExtFaixa h;
+  DoaAbrir o;
+  if (!tba_abrir_video(m, urlAtual, v, sizeof v)) { printf("[doador] burn-in: TorBox's video-only session did not open\n"); return 0; }
+  memset(&o, 0, sizeof o); memset(&h, 0, sizeof h);
+  o.video = v; o.orig = urlAtual; o.cab = cabecalhos;
+  o.audio = aud >= 0 ? aud : 0;
+  o.tb_video = 1;
+  o.rend_limite = DOA_REND_LIMITE;
+  doadorOpcoes(&o, &h, langs, sizeof langs);
+  doa_definir_casa(ling_casa);
+  doadorleg_cancelar();
+  if (!dv.ativo) { memcpy(arqSnap, faixaAudio, sizeof arqSnap); arqSnapN = nAudio; }
+  if (!doa_abrir(&o, url, sizeof url)) {
+    printf("[doador] burn-in: the audio server did not start: Passthrough instead\n");
+    tba_fechar();
+    return 0;
+  }
+  memset(&dv, 0, sizeof dv);
+  dv.ativo = 1; dv.tb = 1; dv.gerVista = audioext_offset_geracao();
+  dv.seekMs = audioext_offset_ms(); dv.seekPpm = audioext_velocidade();
+  dv.prontoEm = 0;
+  audioext_tocando_definir(0);
+  audioext_carregando_definir(1);
+  extPedidoVisto = audioext_pedido_geracao();
+  snprintf(tb.url, sizeof tb.url, "%s", url);
+  printf("[doador] burn-in: TorBox's burned picture with the audio of \"%.80s\" (offset %+d ms, track %d%s, languages %s, file audio %d)\n",
+         audioext_nome(), audioext_offset_ms(), audioext_faixa(), o.dica_lingua ? ", series hint" : "", langs, o.audio);
+  return 1;
+}
+// The donor gave up on the burned picture: the burned stream with this file's
+// audio (Passthrough or TorBox's, as set), where it is. A backup copy queued
+// by audioext_falhou is a new pick: it opens instead.
+static void tbDoaDesistir(const char *motivo) {
+  double p = video_pos();
+  char m[sizeof tb.urlTb];
+  printf("[doador] gave up on TorBox's burned picture at %.1f s: %s\n", p, motivo);
+  fflush(stdout);
+  tbDoaGerFalhou = audioext_pedido_geracao();
+  audioext_falhou(motivo);
+  tbDoaFechar(0);
+  if (mkvN > 0) montarListaQueimada();
+  if (!tb.ativo || !tb.urlTb[0]) return;
+  snprintf(m, sizeof m, "%s", tb.urlTb);
+  tbUrlPlayer(m);
+  extPedidoVisto = audioext_pedido_geracao(); extReabrirPend = 0;
+  tbReabrir(p);
+}
 // The donor could not play (it did not open, the TV never asked for its
 // audio, the player did not prepare): the audio that played before the pick,
 // at the same place. A DTS file's converted track converts again (owner's log
@@ -2450,6 +2563,7 @@ static void doadorDesistir(const char *motivo);
 static void doadorSemComecar(const char *motivo) {
   double p = cv.seekPend ? cv.seekAlvo : cv.inicio;
   char conv[256];
+  if (dv.tb) { tbDoaDesistir(motivo); return; }
   if (!dv.variante && dv.conv[0]) {
     printf("[doador] did not start: %s; retrying once at %.1f s with the master's form 1 (CODECS, BANDWIDTH capped)\n", motivo, p);
     fflush(stdout);
@@ -2460,9 +2574,11 @@ static void doadorSemComecar(const char *motivo) {
   fflush(stdout);
   doadorDesistir(i18n("the TV player did not start its audio"));
 }
+static void tbDoaDesistir(const char *motivo);
 static void doadorDesistir(const char *motivo) {
   double p = cv.jaTocou ? video_pos() : cv.seekPend ? cv.seekAlvo : cv.inicio;
   int track = doadorTrackAntes;
+  if (dv.tb) { tbDoaDesistir(motivo); return; }
   printf("[doador] gave up at %.1f s: %s; %s\n", p, motivo,
          track >= 0 ? "the file's converted track again (DTS/TrueHD -> AC3)" : "the file's own audio through the TV player");
   fflush(stdout);
@@ -2572,7 +2688,31 @@ static void extReabrir(void) {
   if (!urlAtual[0] || parado || emTrailer || terminou) { extReabrirPend = 0; preAbandonar("playback ended"); return; }
   if (!dv.ativo && !pronto) return;   // the TV player is still loading this source
   if (cv.reabrindo) return;           // a reopen in flight: next tick
-  if (tb.ativo || tb.pend) return;    // TorBox's burned stream plays: applied after it stops
+  if (tb.pend) return;                // TorBox is asked for a burned stream: applied once it plays
+  // TorBox's burned stream plays (owner 26/11/2026): the pick goes onto it
+  // (tbUrlPlayer: the donor server over TorBox's video, or the file's audio
+  // again), reopened where it is. A build without the servers: after it stops.
+  if (tb.ativo) {
+    if (!doa_disponivel() || !tba_disponivel() || !tb.urlTb[0]) return;
+    extReabrirPend = 0;
+    quer = tbDoaQuer();
+    p = video_pos();
+    if (!quer) preAbandonar("this file's own audio picked");
+    if (quer) {
+      int g = prePronto(p);
+      if (!g) { extReabrirPend = 1; return; }
+      if (g < 0) return;
+    }
+    if (!quer && !(dv.ativo && dv.tb)) return;   // nothing on the burned picture to change
+    { char m[sizeof tb.urlTb];
+      snprintf(m, sizeof m, "%s", tb.urlTb);
+      printf("[doador] burn-in: %s at %.1f s: the burned stream reopens where it is\n",
+             quer ? (dv.ativo ? "another pick" : "audio from another source picked") : "back to this file's own audio", p);
+      fflush(stdout);
+      tbUrlPlayer(m); }
+    tbReabrir(p);
+    return;
+  }
   extReabrirPend = 0;
   quer = audioext_pedido(urlAtual) && reconPermitida && doadorFonteServe();
   p = video_pos();
@@ -2671,7 +2811,7 @@ static void doadorBombear(void) {
     audioext_carregando_definir(0);
     audioext_falhou(t);
   }
-  if (!dv.menuFeito && faixasLidas && doa_pronto()) { dv.menuFeito = 1; montarListaConvertida(); }
+  if (!dv.menuFeito && faixasLidas && doa_pronto()) { dv.menuFeito = 1; if (dv.tb) montarListaQueimada(); else montarListaConvertida(); }
   // The spike's numbers every 10 s: connections to the files' hosts, reader
   // memory, which source holds a connection, the last reconnection.
   { static Uint32 logEm;
@@ -2679,8 +2819,8 @@ static void doadorBombear(void) {
   // The playhead for the edit map, once a second (the server says when it
   // enters another stretch: event 5 below).
   { static Uint32 posEm;
-    if (dv.mapaN >= 2 && pronto && (int)(agora - posEm) >= 1000) { posEm = agora; doa_posicao(video_pos()); } }
-  if (cv.jaTocou && !audioext_tocando() && doa_audio() >= DOA_DOADOR(0)) {
+    if (dv.mapaN >= 2 && pronto && (int)(agora - posEm) >= 1000) { posEm = agora; doa_posicao(dvPos()); } }
+  if (dvJaTocou() && !audioext_tocando() && doa_audio() >= DOA_DOADOR(0)) {
     int corte = 0, vel = 0, ppm = 0;
     audioext_tocando_definir(1); audioext_carregando_definir(0);
     // Another cut or another speed: said once, when it plays.
@@ -2693,7 +2833,7 @@ static void doadorBombear(void) {
     // audio starts. First level: the subtitles (quick, from the indexes).
     if (!dv.autoFeito) {
       dv.autoFeito = 1; dv.legEstado = 1;
-      doadorleg_iniciar(video_pos());
+      doadorleg_iniciar(dvPos());
     }
   }
   if (dv.legEstado == 1) {
@@ -2705,9 +2845,10 @@ static void doadorBombear(void) {
       doa_aplicar_legendas(k, d, conf);   // comes back as a match result (como 6): applied below
     } else if (r < 0) {
       dv.legEstado = 3;
-      printf("[doador] subtitle match not possible (%s): the audio match does it all (~40 s)\n", mt);
+      printf("[doador] subtitle match not possible (%s): %s\n", mt,
+             dv.tb ? "no audio match on TorBox's burned picture, the offset stays as set" : "the audio match does it all (~40 s)");
       fflush(stdout);
-      if (!doa_dopasuj_ativo()) { doadorMatchOpcoes(); doa_dopasuj(1); }
+      if (!dv.tb && !doa_dopasuj_ativo()) { doadorMatchOpcoes(); doa_dopasuj(1); }
     }
   }
   // THE EDIT MAP (owner 18/11): built on the subtitle worker right after the
@@ -2718,7 +2859,7 @@ static void doadorBombear(void) {
     int r = doadorleg_mapa_resultado(&mp, mt, sizeof mt);
     if (r > 0) {
       dv.mapaFeito = 1; dv.mapaN = mp.n;
-      if (mp.n >= 2) doa_mapa_definir(&mp, video_pos());
+      if (mp.n >= 2) doa_mapa_definir(&mp, dvPos());
       else printf("[doador] edit map: one stretch, the donor lines up in one piece: nothing more after this scan\n");
       fflush(stdout);
     } else if (r < 0) {
@@ -2759,7 +2900,7 @@ static void doadorBombear(void) {
         // the server (now, when it changed nothing).
         if (mr > 0 && r.como == 6 && audioext_offset_geracao() == g0) dv.mapaPode = 1; }
       // The subtitles placed it: the audio refines from there.
-      if (mr > 0 && r.como == 6 && !dv.finoFeito) dv.finoEm = (agora + 3000u) ? agora + 3000u : 1u;
+      if (mr > 0 && r.como == 6 && !dv.finoFeito && !dv.tb) dv.finoEm = (agora + 3000u) ? agora + 3000u : 1u;   // no refine on the burned picture
     }
     { int lento = 0;
       if (doa_doador_saude(&lento) && !extReabrirPend) {
@@ -2778,7 +2919,7 @@ static void doadorBombear(void) {
   // with ~45 s of it ahead (the capture is ~40 s), after the first refine.
   // Not on Tizen 4-5.5 nor under 200 MB free (owner 18/11).
   // (After the first refine's result is taken and in force: no change pending.)
-  if (dv.mapaN >= 2 && dv.finoFeito && !dv.finoEm && !dv.mudouEm && !dv.semSeek && !doa_dopasuj_ativo() && pronto && tocando &&
+  if (!dv.tb && dv.mapaN >= 2 && dv.finoFeito && !dv.finoEm && !dv.mudouEm && !dv.semSeek && !doa_dopasuj_ativo() && pronto && tocando &&
       audioext_tocando() && doa_audio() >= DOA_DOADOR(0) && (int)(agora - dv.trechoProx) >= 0) {
     double p = video_pos(), ini = 0, fim = 0;
     int ref = 0, t = doa_mapa_trecho(p, &ini, &fim, &ref);
@@ -2797,7 +2938,7 @@ static void doadorBombear(void) {
   }
   // Playing the file's own track (the donor's failed, or picked in the TV's
   // menu): not loading any more.
-  if (cv.jaTocou && audioext_carregando() && doa_audio() >= 0 && doa_audio() < DOA_DOADOR(0) && doa_estado(NULL, 0) != 0)
+  if (dvJaTocou() && audioext_carregando() && doa_audio() >= 0 && doa_audio() < DOA_DOADOR(0) && doa_estado(NULL, 0) != 0)
     audioext_carregando_definir(0);
   { unsigned g = audioext_offset_geracao();
     if (g != dv.gerVista) { dv.gerVista = g; dv.mudouEm = agora ? agora : 1; } }
@@ -3606,6 +3747,7 @@ static void retTbOriginal(const char *porque) {
   if (retAlvo < 0) retAlvo = 0;
   tbr_encerrar();
   tb.ativo = 0; tb.desistiu = 1; tb.voltar = 1;   // toast; the ASS tracks are back in Main
+  tbDoaFechar(1);
   if (tb.tba) { tba_fechar(); tb.tba = 0; }
   retTb = 0;
   printf("[fundo] %s: back to the original file at %.3f s (player clock %+.0f ms to the burned picture); "
@@ -3793,7 +3935,7 @@ void video_bombear(void) {
       // The edit map from scratch (owner 18/11), then the refines again.
       dv.mapaPode = dv.mapaFeito = dv.mapaN = 0;
       doa_mapa_definir(NULL, 0);
-      doadorleg_iniciar(video_pos());
+      doadorleg_iniciar(dvPos());
     } else audioext_dopasuj_resultado(0, NULL);
   }
   if (!dv.ativo && audioext_dopasuj_ativo()) audioext_dopasuj_resultado(0, NULL);
@@ -3910,7 +4052,15 @@ void video_bombear(void) {
     nv_recon_zerar(&recon);
     // B (owner 14/11): Nuvio's stream gets one more try in the same mode at
     // the same position (at most once a minute) before burn-in turns off.
-    if (tb.tba && tb.urlTb[0] && (!tb.retentouEm || SDL_GetTicks() - tb.retentouEm > 60000u)) {
+    // Another source's audio on it (owner 26/11/2026): the first try drops
+    // the donor (the burned stream with this file's audio, the same retry).
+    if (dv.ativo && dv.tb && tb.urlTb[0] && (!tb.retentouEm || SDL_GetTicks() - tb.retentouEm > 60000u)) {
+      char md[160] = "";
+      tb.retentouEm = SDL_GetTicks();
+      printf("[doador] player error on the other source's master over the burned picture%s%s: without it\n", doa_falhou(md, sizeof md) ? ": " : "", md);
+      fflush(stdout);
+      tbDoaDesistir(i18n("the TV player did not start its audio"));
+    } else if (tb.tba && tb.urlTb[0] && (!tb.retentouEm || SDL_GetTicks() - tb.retentouEm > 60000u)) {
       char m[sizeof tb.urlTb];
       double pos = video_pos();
       tb.retentouEm = SDL_GetTicks();
@@ -4010,6 +4160,7 @@ void video_parar(void) {
   if (cv.ativo || cv.sondando) convFechar();
   memset(&cv, 0, sizeof cv); cv.buscarMs = -1; naoSupPend = 0;
   if (tb.pend || tb.registrando) tbburn_cancelar();   // a re-add still waiting stops asking too
+  tbDoaFechar(0);
   if (tb.tba) tba_fechar();
   tbr_encerrar();
   if (tb.origMarcado) tbburn_original_parou();
@@ -4586,7 +4737,7 @@ void video_escolher_audio(int i) {
   // Original audio with burn-in: only Nuvio's generator changes, TorBox is not
   // asked again. The player switches renditions itself when it lists them
   // all; otherwise the stream reopens at the same position (logged why).
-  if (tb.ativo && tb.tba && !tb.pend) {
+  if (tb.ativo && tb.tba && !tb.pend && !(dv.ativo && dv.tb)) {
     int ord, r;
     if (i == audioAtual) return;
     audioAtual = i; ord = tbIdxAudio(); r = tba_rendicao_de(ord);
@@ -4616,8 +4767,9 @@ void video_escolher_audio(int i) {
     tbReabrir(video_pos());
     return;
   }
-  // TorBox burn-in: another audio = another burned stream from TorBox.
-  if (tb.ativo || tb.pend) {
+  // TorBox burn-in: another audio = another burned stream from TorBox (not
+  // while another source's audio plays on it: its renditions, below).
+  if ((tb.ativo || tb.pend) && !(dv.ativo && dv.tb)) {
     int aud;
     if (i == audioAtual) return;
     audioAtual = i; aud = tbIdxAudio();
@@ -4659,6 +4811,7 @@ void video_escolher_audio(int i) {
       if (troca && pronto && dv.nTv == nAudio) {
         double p = video_pos();
         audioAtual = i;
+        if (dv.tb) { tbReabrir(p); return; }   // the burned picture: the same master, reopened where it is
         cv.buscarMs = p > 1.0 ? (int)(p * 1000.0) : -1;
         convReabrir(p, "audio from another source: MPEG-TS <-> fMP4 track change");
         abrirSessao();
@@ -4667,6 +4820,7 @@ void video_escolher_audio(int i) {
     if (dv.nTv != nAudio && pronto) {
       double p = video_pos();
       audioAtual = i;
+      if (dv.tb) { tbReabrir(p); return; }
       cv.buscarMs = p > 1.0 ? (int)(p * 1000.0) : -1;
       convReabrir(p, "audio from another source: track change");
       abrirSessao();
@@ -4738,6 +4892,25 @@ void video_escolher_audio_arquivo(int i) {
       }
     m = a[i].stream_id > 0 ? mkvTrack(a[i].stream_id) : NULL;
     if (m && faixaRecusada(m) && convPossivel()) convIniciar(a[i].stream_id, video_pos(), "faixa escolhida no menu");
+    return;
+  }
+  // On TorBox's burned picture: the burned stream with this file's audio
+  // (Passthrough serves the track picked; TorBox's audio mode keeps TorBox's).
+  if (dv.tb) {
+    char mt[sizeof tb.urlTb];
+    p = video_pos();
+    printf("[doador] back to this file's own audio at %.1f s on the burned picture: %s (picked on the language page)\n", p, a[i].rotulo);
+    fflush(stdout);
+    audioext_limpar();
+    extPedidoVisto = audioext_pedido_geracao(); extReabrirPend = 0;
+    tbDoaFechar(0);
+    if (mkvN > 0) montarListaQueimada();
+    for (k = 0; k < nAudio; k++)
+      if ((a[i].stream_id > 0 && faixaAudio[k].stream_id == a[i].stream_id) || !strcmp(faixaAudio[k].rotulo, a[i].rotulo)) { audioAtual = k; break; }
+    if (!tb.ativo || !tb.urlTb[0]) return;
+    snprintf(mt, sizeof mt, "%s", tb.urlTb);
+    tbUrlPlayer(mt);
+    tbReabrir(p);
     return;
   }
   p = cv.jaTocou ? video_pos() : cv.seekPend ? cv.seekAlvo : cv.inicio;
@@ -4845,8 +5018,14 @@ void video_encerrar(void) { video_parar(); }
 static int tbaPend = -1;   // value shown, -1 = the current one
 int video_tpk_tba_linhas(void) {
   if (!ativo || emTrailer || !tba_disponivel() || !(tb.ativo || tb.pend || tbburn_linha_visivel())) return 0;
+  // Audio from another source in use (owner 26/11/2026): its server carries
+  // the sound, so the Original audio row goes away.
+  if (dv.ativo || tbDoaQuer()) return 0;
   return 1;
 }
+// The audio sheet's other-source pages stay during burn-in when this build
+// has both servers (owner 26/11/2026).
+int video_tpk_doador_na_queima(void) { return doa_disponivel() && tba_disponivel(); }
 void video_tpk_tba_rotulo(int k, char *nome, unsigned long nn, char *sub, unsigned long ns) {
   int atual = ajustes_tb_audio_modo(), v = tbaPend >= 0 ? tbaPend : atual;
   const char *val = i18n(TBA_ROTULO[v]);

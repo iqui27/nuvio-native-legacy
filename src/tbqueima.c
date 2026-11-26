@@ -517,6 +517,8 @@ int video_tpk_queimar_tardio_ok(void) {
 }
 // No Passthrough here (owner 26/11/2026): the Original audio row never shows.
 int  video_tpk_tba_linhas(void) { return 0; }
+// LG/Android burn-in plays TorBox's own audio: no other source on it.
+int  video_tpk_doador_na_queima(void) { return 0; }
 void video_tpk_tba_rotulo(int k, char *nome, unsigned long nn, char *sub, unsigned long ns) {
   (void)k; if (nome && nn) nome[0] = 0; if (sub && ns) sub[0] = 0;
 }

@@ -531,6 +531,9 @@ int  tba_n_rendicoes(void) { return 0; }
 int  tba_rendicao_de(int o) { (void)o; return -1; }
 void tba_definir_audio(int o) { (void)o; }
 int  tba_audio(void) { return -1; }
+int  tba_abrir_video(const char *t, const char *o, char *out, size_t n) { (void)t; (void)o; if (out && n) out[0] = 0; return 0; }
+int  tba_so_video(void) { return 0; }
+int  tba_linha(double *i, double *d, long *b, char *r, size_t n) { (void)i; (void)d; (void)b; (void)r; (void)n; return 0; }
 void tba_log(void) {}
 void tba_marcar_busca(void) {}
 #else
@@ -587,6 +590,7 @@ typedef struct Sessao {
   pthread_mutex_t m;                   // state below
   pthread_cond_t c;
   int pronto, falhou, modo, audio;   // audio: index in fx[]
+  int soVideo;                         // tba_abrir_video: TorBox's video only (the donor server's picture), no file read
   double abertoEm;                     // tba_abrir (agoraMs): log 15's "first segment through Nuvio" line
   atomic_int vidPrimeiro;              // video segments served so far (the first is logged)
   int opusLog;                         // Opus packet lines logged (first segments only)
@@ -917,8 +921,8 @@ static void *preparar(void *u) {
   Sessao *s = u;
   double t0 = agoraMs();
   int ord = s->audio;
-  if (prepTorbox(s) && !s->cancel && prepOriginal(s, ord) && !s->cancel) {
-    s->ultimo = tba_pl_ultimo(&s->pl, s->durArq);
+  if (prepTorbox(s) && !s->cancel && (s->soVideo || prepOriginal(s, ord)) && !s->cancel) {
+    s->ultimo = tba_pl_ultimo(&s->pl, s->durArq);   // video only: durArq 0, TorBox's last length as is
     s->dur = s->ini[s->pl.nseg] - s->pl.seg[s->pl.nseg - 1].dur + s->ultimo;
     if (s->ultimo != s->pl.seg[s->pl.nseg - 1].dur)
       printf("[tbaudio] last segment %.3f s -> %.3f s: total %.3f s = the file's length (TorBox said %.3f s)\n",
@@ -935,8 +939,12 @@ static void *preparar(void *u) {
     pthread_mutex_lock(&s->m);
     if (!s->falhou && s->espelho) {
       s->pronto = 1;
-      printf("[tbaudio] ready in %.0f ms: %s, audio %d\n", agoraMs() - t0, modoNome(s->modo),
-             s->fx[s->audio].ord);
+      if (s->soVideo)
+        printf("[tbaudio] ready in %.0f ms: TorBox's video only (%s, %.3f s, first PTS %.3f s%s) for the other source's audio\n",
+               agoraMs() - t0, s->tbMp4 ? "fMP4, not stripped" : "its audio removed", s->dur, s->tbOff, s->tbOffOk ? "" : " UNKNOWN");
+      else
+        printf("[tbaudio] ready in %.0f ms: %s, audio %d\n", agoraMs() - t0, modoNome(s->modo),
+               s->fx[s->audio].ord);
     } else if (!s->falhou) { s->falhou = 1; snprintf(s->motivo, sizeof s->motivo, "out of memory"); }
     pthread_cond_broadcast(&s->c);
     pthread_mutex_unlock(&s->m);
@@ -1566,6 +1574,15 @@ static int atender(int so, const char *metodo, const char *caminho, int manter) 
     printf("[tbaudio] %s served (%zu bytes)%s\n", nome, t.n, nome[0] == 'v' ? ": TorBox's video through Nuvio, its audio removed" : "");
     fflush(stdout);
     free(t.b);
+  } else if (!strcmp(nome, "vid.m3u8")) {
+    // The donor server's picture (tba_abrir_video): TorBox's video without its
+    // audio (vs.m3u8), or TorBox's own playlist when its segments are fMP4.
+    Txt t = { 0 };
+    if (s->tbMp4) ok = responder(so, 200, "application/vnd.apple.mpegurl", s->espelho, strlen(s->espelho), manter, head, s);
+    else { plMidia(s, &t, "v_", ".ts"); ok = t.b && responder(so, 200, "application/vnd.apple.mpegurl", t.b, t.n, manter, head, s); }
+    printf("[tbaudio] vid.m3u8 served to the other source's master: %s\n", s->tbMp4 ? "TorBox's playlist (fMP4)" : "TorBox's video, its audio removed");
+    fflush(stdout);
+    free(t.b);
   } else if (!strcmp(nome, "v.m3u8")) {
     ok = responder(so, 200, "application/vnd.apple.mpegurl", s->espelho, strlen(s->espelho), manter, head, s);
     printf("[tbaudio] v.m3u8 served: TorBox's playlist, URIs absolute (the TV fetches TorBox's video itself)\n");
@@ -1684,8 +1701,8 @@ static int subirServidor(void) {
 // ---- API ----------------------------------------------------------------------------
 int tba_disponivel(void) { return avcodec_find_encoder(AV_CODEC_ID_AC3) != NULL; }
 
-int tba_abrir(const char *tbUrl, const char *orig, const char *cab, int ordinal, int modo,
-              char *out, size_t n) {
+static int abrirTba(const char *tbUrl, const char *orig, const char *cab, int ordinal, int modo,
+                    char *out, size_t n, int soVideo) {
   Sessao *s;
   pthread_t t;
   if (out && n) out[0] = 0;
@@ -1701,7 +1718,7 @@ int tba_abrir(const char *tbUrl, const char *orig, const char *cab, int ordinal,
   pthread_mutex_init(&s->m, NULL); pthread_cond_init(&s->c, NULL); pthread_mutex_init(&s->gm, NULL);
   pthread_mutex_init(&s->vm, NULL);
   atomic_store(&s->espChave, -1L);
-  s->modo = modo;
+  s->modo = modo; s->soVideo = soVideo;
   s->audio = ordinal; s->gFaixa = -1; s->gSeg = -1; s->proxPts = AV_NOPTS_VALUE;
   s->ac3Fim = -1; s->ac3Bsid = s->ac3Acmod = s->ac3Taxa = -1;
   s->tbrGer = tbr_geracao();
@@ -1719,6 +1736,43 @@ int tba_abrir(const char *tbUrl, const char *orig, const char *cab, int ordinal,
          modoNome(s->modo), ordinal, porta);
   fflush(stdout);
   return 1;
+}
+// TorBox's burned video only, for the donor server (doador_tpk.h, tb_video):
+// the same video path as Passthrough, no audio tracks, the file is not read
+// (`orig` only names its host for the socket count). Writes the media
+// playlist's URL (vid.m3u8).
+int tba_abrir_video(const char *tbUrl, const char *orig, char *out, size_t n) {
+  char m[256];
+  size_t l;
+  if (out && n) out[0] = 0;
+  if (!abrirTba(tbUrl, orig, "", -1, TBA_PASSTHROUGH, m, sizeof m, 1)) return 0;
+  l = strlen(m);
+  if (l < 11 || strcmp(m + l - 11, "master.m3u8")) return 0;
+  snprintf(out, n, "%.*svid.m3u8", (int)(l - 11), m);
+  printf("[tbaudio] video-only session for the other source's audio (no file audio, no file connection)\n");
+  fflush(stdout);
+  return 1;
+}
+int tba_so_video(void) { Sessao *s = pegar(); int v = s && s->soVideo; soltar(s); return v; }
+int tba_linha(double *inicio, double *dur, long *banda, char *res, size_t nres) {
+  Sessao *s = pegar();
+  int v = 0;
+  if (s) {
+    pthread_mutex_lock(&s->m);
+    v = s->pronto && !s->falhou;
+    if (v) {
+      if (inicio) *inicio = s->tbOffOk ? s->tbOff : 0;
+      if (dur) *dur = s->dur;
+      if (banda) *banda = s->banda;
+      if (res && nres) snprintf(res, nres, "%s", s->resolucao);
+    } else if (s->falhou) v = -1;
+    pthread_mutex_unlock(&s->m);
+  }
+  soltar(s);
+  return v;
+}
+int tba_abrir(const char *tbUrl, const char *orig, const char *cab, int ordinal, int modo, char *out, size_t n) {
+  return abrirTba(tbUrl, orig, cab, ordinal, modo, out, n, 0);
 }
 void tba_fechar(void) {
   Sessao *s;

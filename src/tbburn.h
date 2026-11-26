@@ -169,6 +169,9 @@ void video_tpk_tba_ok(int k);
 void video_tpk_tba_passo(int k, int dir);
 // The sheet opened or closed without OK: back to the current values.
 void video_tpk_tba_soltar(void);
+// 1 = the audio sheet's other-source pages stay while burned (the .tpk with
+// both servers, owner 26/11/2026); 0 = hidden while burned (LG, Android).
+int  video_tpk_doador_na_queima(void);
 #endif
 
 // ---- pure (tests) ----------------------------------------------------------

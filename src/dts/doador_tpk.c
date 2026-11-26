@@ -187,6 +187,7 @@ int  doa_faixas_arquivo(DoaRendicao *out, int max) { (void)out; (void)max; retur
 #include "dts_engine.h"
 #include "dts_remux.h"
 #include "dts_match.inc"
+#include "tbaudio_tpk.h"
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <errno.h>
@@ -449,7 +450,10 @@ typedef struct Sessao {
   int doadorMs;                        // the donor's offset the app set (ms, positive = later)
   int doadorFeito;                     // its preparation ended (the watchdog stops); under m
   int doadorVencido;                   // the watchdog cancelled its reader
-  double dur;                          // the playlist's length: the file's container end
+  double dur;                          // the playlist's length: the file's container end (TorBox's total with tbVideo)
+  int tbVideo;                         // DoaAbrir.tb_video: the picture is TorBox's burned stream
+  double tbIni;                        // TorBox's first video PTS (tba_linha)
+  char tbRes[24];                      // TorBox's RESOLUTION ("" none)
   double *aIni; int naSeg;             // audio segments (AUD_SEG_S)
   long banda; int largura, altura; long fps1000; char faixaVideo[8];   // the master's STREAM-INF
   char vCodecs[40];                    // the video's RFC 6381 name (the master's form 1), "" unknown
@@ -865,8 +869,11 @@ static void fonteSoltar(Sessao *s, int k, const char *porque) {
 
 // The converter's playlist starts at the file's time 0, and every packet it
 // writes is its source time + DTS_REMUX_TS_OFFSET_S: the audio goes there too.
-static double tl0(const Sessao *s) { (void)s; return 0.0; }
-static double ptsDesloc(const Sessao *s) { (void)s; return (double)DTS_REMUX_TS_OFFSET_S; }
+// TorBox's burned picture (tbVideo): its playlist starts at the file's video
+// start, and the file's time t is TorBox's t - v0 + its first video PTS (as
+// Passthrough maps it, tbaudio_tpk.c).
+static double tl0(const Sessao *s) { return s->tbVideo ? s->fo[0].v0 : 0.0; }
+static double ptsDesloc(const Sessao *s) { return s->tbVideo ? s->tbIni - s->fo[0].v0 : (double)DTS_REMUX_TS_OFFSET_S; }
 // S2: the files' final hosts (behind the add-ons' redirects): Nuvio's
 // connections there (the converter's included) and the TV player's (none: it
 // only talks to 127.0.0.1).
@@ -1058,6 +1065,24 @@ static void *preparar(void *u) {
     videoInfo(s);
     // The converter's playlist runs from 0 to the container's end (dts_remux).
     s->dur = s->fo[0].fim;
+    // TorBox's burned picture: its playlist's length, timeline and STREAM-INF
+    // (tba_linha, prepared in parallel; up to 20 s).
+    if (s->tbVideo) {
+      double tbDur = 0, w0 = agoraMs();
+      long banda = 0;
+      int r = 0;
+      while (!s->cancel && (r = tba_linha(&s->tbIni, &tbDur, &banda, s->tbRes, sizeof s->tbRes)) == 0 && agoraMs() - w0 < 20000.0)
+        usleep(50000);
+      if (r <= 0) { falhar(s, r < 0 ? "TorBox's video did not prepare" : "TorBox's video: no answer in 20 s"); soltar(s); return NULL; }
+      // The audio ends with the file (TorBox rounds its last segment up to 5 s).
+      if (tbDur > 0) s->dur = tbDur;
+      if (s->fo[0].fim - s->fo[0].v0 > 1.0 && s->dur > s->fo[0].fim - s->fo[0].v0) s->dur = s->fo[0].fim - s->fo[0].v0;
+      s->banda = banda > 0 ? banda : 10500000L;
+      printf("[doador] picture: TorBox's burned stream, %.3f s (file %.3f s from %.3f s), first PTS %.3f s: audio shifted %+.3f s, "
+             "bandwidth %ld, resolution %s; waited %.0f ms\n", s->dur, s->fo[0].fim, s->fo[0].v0, s->tbIni, ptsDesloc(s),
+             s->banda, s->tbRes[0] ? s->tbRes : "?", agoraMs() - w0);
+      fflush(stdout);
+    }
     s->naSeg = (int)floor(s->dur / AUD_SEG_S);   // a tail under 0.5 s joins the last segment
     if (s->dur - s->naSeg * AUD_SEG_S > 0.5) s->naSeg++;
     if (s->naSeg < 1) s->naSeg = 1;
@@ -1559,6 +1584,13 @@ static void matchIniciarT(Sessao *s, int automatico, int seguir, int fino, int t
   pthread_t t;
   const Faixa *d;
   int siA, siD = -1;
+  if (s->tbVideo) {
+    // The file's side comes from the converter's reads (tapArquivo): closed
+    // while TorBox's burned stream plays.
+    if (!seguir) { printf("[doador] audio match off on TorBox's burned picture (the subtitle match and offset stay)\n"); fflush(stdout); }
+    matchNaoComecou(s, seguir, trecho);
+    return;
+  }
   pthread_mutex_lock(&s->m);
   // A stretch's own refine waits while a result is not taken by the app yet.
   if (trecho >= 0 && s->mNovo) { pthread_mutex_unlock(&s->m); return; }
@@ -2299,6 +2331,13 @@ static void plMaster(Sessao *s, Txt *t) {
   // Form 1 (the retry after a 4K file never asked for audio, owner 17/11):
   // CODECS with the video and every audio codec of the group, BANDWIDTH at
   // most 60 Mbit/s. Form 0 is what played on the S95C (1080p).
+  if (s->tbVideo) {
+    // TorBox's picture: the STREAM-INF Passthrough plays with (tbaudio_tpk.c).
+    tx(t, "#EXT-X-STREAM-INF:BANDWIDTH=%ld,AUDIO=\"aud\"", s->banda + 1500000L);
+    if (s->tbRes[0]) tx(t, ",RESOLUTION=%s", s->tbRes);
+    tx(t, "\n%s\n", s->video);
+    return;
+  }
   if (s->variante == 1) {
     char cod[256];
     size_t u = (size_t)snprintf(cod, sizeof cod, "%s", s->vCodecs);
@@ -2555,6 +2594,7 @@ int doa_abrir(const DoaAbrir *o, char *out, size_t n) {
   s->audio = o->audio; s->gFaixa = -1; s->gSeg = -1; s->gFonte = -1; s->proxPts = AV_NOPTS_VALUE; s->dExtra = -1;
   s->abertoMs = agoraMs();
   s->variante = o->variante;
+  s->tbVideo = o->tb_video ? 1 : 0;
   s->rendLimite = o->rend_limite > 0 ? o->rend_limite : 0;
   s->umaConexao = !o->duas_conexoes;
   s->nfo = doador ? 2 : 1;
@@ -2588,7 +2628,8 @@ int doa_abrir(const DoaAbrir *o, char *out, size_t n) {
   if (pthread_create(&t, NULL, preparar, s) != 0) { atomic_fetch_sub(&s->refs, 1); falhar(s, "no thread"); }
   else pthread_detach(t);
   snprintf(out, n, "http://127.0.0.1:%d/%s/master.m3u8", porta, s->tok);
-  printf("[doador] session open: the converter's video, file audio %d, FLAC %s%s%s%s; %s; the player opens http://127.0.0.1:%d/<token>/master.m3u8\n",
+  printf("[doador] session open: %s, file audio %d, FLAC %s%s%s%s; %s; the player opens http://127.0.0.1:%d/<token>/master.m3u8\n",
+         s->tbVideo ? "TorBox's burned video" : "the converter's video",
          o->audio, s->flacConv ? "converted" : "as is", doador ? ", donor \"" : ", no donor", doador ? s->fo[1].nome : "",
          doador ? "\"" : "", s->umaConexao ? "one audio connection" : "a connection per audio source", porta);
   if (doador) printf("[doador] donor: offset %+d ms, starts on %s%s%s\n", o->doador_ms, s->doadorPadrao ? "its track" : "the file's track",
