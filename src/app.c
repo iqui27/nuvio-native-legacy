@@ -4173,9 +4173,15 @@ static void perfilAbrirSessao(int antes) {
   perfilSessaoAplicada = sessao;
 }
 
-static void fonteEmFoco(const Stream *s) { tbabrir_procurar_cedo(s, "source focused 1 s"); }
+// The early TorBox lookup (tbabrir.h), then the hook that was there before:
+// the burn-in lookup (tbburn.h) that tpk.c / tbqueima.c installed earlier.
+static void (*focoAnterior)(const Stream *s);
+static void fonteEmFoco(const Stream *s) {
+  tbabrir_procurar_cedo(s, "source focused 1 s");
+  if (focoAnterior) focoAnterior(s);
+}
 int app_iniciar(const char *dirArte) {
-  stream_foco_demorado = fonteEmFoco;   // the early TorBox lookup (tbabrir.h)
+  if (stream_foco_demorado != fonteEmFoco) { focoAnterior = stream_foco_demorado; stream_foco_demorado = fonteEmFoco; }
   // #415: MemAvailable abaixo do piso -> despeja texturas, mkvass, texto,
   // libass e heap; sem isto o aviso so rodava malloc_trim.
   memlog_quando_aviso(aliviarMemoria);
