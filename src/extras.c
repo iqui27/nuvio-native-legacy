@@ -1811,6 +1811,7 @@ static void zerarPublicado(void) {
   agTemp = agEp = 0;
   memset(vistos, 0, sizeof vistos);
   progressoPronto = proximoT = proximoE = 0;
+  nEpProg = 0;
   epsExibidos = epsVistos = epsBase = 0;
   memset(notas, 0, sizeof notas);
 }
