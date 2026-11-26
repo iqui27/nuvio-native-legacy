@@ -3793,17 +3793,40 @@ typedef struct {
   char *pecas; size_t nPecas;
   char *vis; size_t nVis;
   float kw0, kw; int kFonte, kMin, linT, linD;
+  int pronto;     // nl/titulo read; pecas may have been let go since
+  int linhasOk;   // linT/linD of the last wrap (kw0/kw/kFonte/kMin) kept without the pieces
+  unsigned uso;   // last use, for the bounded piece cache
 } TextoAddon;
 static TextoAddon *textoAddon;
-static int textoAddonN, textoAddonCap;
+static int textoAddonCap;
+// At most TEXTO_ADDON_CACHE sources keep their pieces (pecas/vis); the others
+// keep only nl, the title and the line counts of their last wrap, so a
+// 2000-source list does not hold 2000 parsed cards. Idea from Matis94's
+// rich formatter cards (ccae01dff: bounded LRU, lazy parsing per index).
+#define TEXTO_ADDON_CACHE 64
+static int textoAddonCom[TEXTO_ADDON_CACHE], textoAddonComN;
+static unsigned textoAddonRelogio;
 static float addonLargura = 0.0f;   // tr - tx do ultimo desenho; 0 = ainda nao desenhou
 static void textoAddonSoltar(TextoAddon *t) {
   free(t->pecas); free(t->vis);
   t->pecas = t->vis = NULL; t->nPecas = t->nVis = 0;
 }
 static void textoAddonLimpar(void) {
-  for (int i = 0; i < textoAddonN; i++) textoAddonSoltar(&textoAddon[i]);
-  free(textoAddon); textoAddon = NULL; textoAddonN = textoAddonCap = 0;
+  for (int i = 0; i < textoAddonCap; i++) textoAddonSoltar(&textoAddon[i]);
+  free(textoAddon); textoAddon = NULL; textoAddonCap = 0; textoAddonComN = 0;
+}
+// `i` now holds pieces: past the cap, the least recently used other source
+// lets go of its pieces (its nl, title and line counts stay).
+static void textoAddonGuardar(int i) {
+  int v = -1;
+  for (int k = 0; k < textoAddonComN; k++) if (textoAddonCom[k] == i) return;
+  if (textoAddonComN < TEXTO_ADDON_CACHE) { textoAddonCom[textoAddonComN++] = i; return; }
+  for (int k = 0; k < textoAddonComN; k++)
+    if (v < 0 || textoAddon[textoAddonCom[k]].uso < textoAddon[textoAddonCom[v]].uso) v = k;
+  { TextoAddon *o = &textoAddon[textoAddonCom[v]];
+    o->linhasOk = o->vis != NULL;
+    textoAddonSoltar(o); }
+  textoAddonCom[v] = i;
 }
 static void textoAddonMontar(const Stream *s, TextoAddon *t) {
   // Bandeira e lista de idiomas crescem o texto (bloco S..M..E leva os dois
@@ -3848,13 +3871,34 @@ static const TextoAddon *textoAddonDa(int i) {
       textoAddonMontar(&lista[i], &reserva);
       return &reserva;
     }
+    memset(t + textoAddonCap, 0, (size_t)(n - textoAddonCap) * sizeof *t);
     textoAddon = t; textoAddonCap = n;
   }
-  while (textoAddonN <= i) {
-    textoAddonMontar(&lista[textoAddonN], &textoAddon[textoAddonN]);
-    textoAddonN++;
-  }
-  return &textoAddon[i];
+  // Only the source asked for is read (not every index before it).
+  { TextoAddon *t = &textoAddon[i];
+    if (!t->pronto || !t->pecas) {
+      textoAddonMontar(&lista[i], t);
+      t->pronto = 1;
+      if (t->pecas) textoAddonGuardar(i);
+    }
+    t->uso = ++textoAddonRelogio;
+    return t; }
+}
+// Description line count without bringing the pieces back.
+static int textoAddonNl(int i) {
+  if (i >= 0 && i < textoAddonCap && textoAddon[i].pronto) return textoAddon[i].nl;
+  return textoAddonDa(i)->nl;
+}
+// Line counts only (row heights): a source whose pieces were let go answers
+// from its last wrap when the width, font and icon style are the same.
+static int textoAddonLinhasGuardadas(int i, float w0, float L, int fonte, int minimal, int *linT, int *linD) {
+  const TextoAddon *t;
+  if (i < 0 || i >= textoAddonCap) return 0;
+  t = &textoAddon[i];
+  if (!t->pronto || t->pecas || !t->linhasOk) return 0;
+  if (t->kw0 != w0 || t->kw != L || t->kFonte != fonte || t->kMin != minimal) return 0;
+  *linT = t->linT; *linD = t->linD;
+  return 1;
 }
 
 // Pula uma peca e devolve o inicio da seguinte.
@@ -3973,6 +4017,7 @@ static int addonDepois(const char *p, size_t q, size_t fim, int estilo, int mini
   }
   return 0;
 }
+static void addonLarguras(const Stream *s, float *Lp, float *w0p);
 static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
   float L = addonLargura > 0 ? addonLargura
           : FOLHA_W - FOLHA_PAD_E - FOLHA_PAD_D - 2 * FOLHA_TXT;
@@ -4078,7 +4123,19 @@ static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
 #undef ADDON_NOVA_LINHA
 }
 // Quantos trechos de nome e de descricao a linha `i` tem na largura atual.
+static void addonLarguras(const Stream *s, float *Lp, float *w0p) {
+  // The same widths addonQuebrar uses (keep the two in step).
+  float L = addonLargura > 0 ? addonLargura
+          : FOLHA_W - FOLHA_PAD_E - FOLHA_PAD_D - 2 * FOLHA_TXT;
+  float wNome2 = L - (cacheConfirmado(s) ? 30.0f : 0.0f);
+  float w0 = addonSelosEmbaixo() ? L - addonColuna(s) - (cacheConfirmado(s) ? 30.0f : 0.0f) : wNome2;
+  if (w0 < 120.0f) w0 = 120.0f;
+  *Lp = L; *w0p = w0;
+}
 static void addonLinhas(int i, int *linT, int *linD) {
+  { float L, w0;
+    addonLarguras(&lista[i], &L, &w0);
+    if (textoAddonLinhasGuardadas(i, w0, L, (int)txt_fonte_interface(), ajustes_fonte_icones_minimalista(), linT, linD)) return; }
   const TextoAddon *c = textoAddonDa(i);
   TextoAddon *t = (TextoAddon *)c;
   addonQuebrar(i, &lista[i], t);
@@ -4099,10 +4156,20 @@ static float addonLinhasDesc(int linD, float abr) {
 // trecho que a linha em foco desenha (#479: foco nao rasteriza texto novo).
 // `maxw2`: largura das linhas do nome depois da 1a (a coluna do addon so
 // divide a 1a; ver addonQuebrar). Na descricao, igual a `maxw`.
+// Text already snaps to the drawable pixel grid (text.c); icons, flags and
+// badges did not, so while scrolling they slid by a fraction of a pixel
+// against the text (shimmer). Drawing only: heights, scrolling and hit tests
+// stay float. From Matis94 d28b426bd.
+static float addonPixel(float v) {
+  float px = gfx_px_por_unidade() * gfx_escala();
+  return px > 0 ? roundf(v * px) / px : v;
+}
 static void addonDesenhar(int i, int secao, float tx, float y, float maxw, float maxw2,
                           int sel, int apagada, float abr, float anim) {
-  const TextoAddon *t = textoAddonDa(i);
+  TextoAddon *t = (TextoAddon *)textoAddonDa(i);
   int minimal = ajustes_fonte_icones_minimalista();
+  // The height came from the kept line counts: wrap again now that it shows.
+  if (!t->vis) addonQuebrar(i, &lista[i], t);
   int nVis = 0, base = 255, c = 0, pula = 1, logica = -1;
   float x = tx, ly = y, ak = anim, lim = maxw;
   if (!t->vis) return;
@@ -4144,13 +4211,13 @@ static void addonDesenhar(int i, int secao, float tx, float y, float maxw, float
       float iy = ly + (secao == 0 ? 9 : 3);   // na altura do texto
       if (!nome) { q = addonPula(t->vis, q); continue; }
       // Emoji em cores fora do foco: um degrau mais apagado, como o texto.
-      if (cor) gfx_icone_cor((GfxRect){x, iy, 22, 22}, nome, ak * (sel ? 1.0f : .8f));
-      else gfx_icone_fmt((GfxRect){x, iy, 22, 22}, nome, c / 255.0f, c / 255.0f, c / 255.0f, ak);
+      if (cor) gfx_icone_cor((GfxRect){addonPixel(x), addonPixel(iy), 22, 22}, nome, ak * (sel ? 1.0f : .8f));
+      else gfx_icone_fmt((GfxRect){addonPixel(x), addonPixel(iy), 22, 22}, nome, c / 255.0f, c / 255.0f, c / 255.0f, ak);
       x += ADDON_ICONE_W;
     } else if (*pc == 'B') {
       char nome[32];
       snprintf(nome, sizeof nome, "formatador/fl_%s", pc + 1);
-      gfx_icone_cor((GfxRect){x, ly + (secao == 0 ? 9 : 3), 22, 22}, nome, ak * (sel ? 1.0f : .8f));
+      gfx_icone_cor((GfxRect){addonPixel(x), addonPixel(ly + (secao == 0 ? 9 : 3)), 22, 22}, nome, ak * (sel ? 1.0f : .8f));
       x += ADDON_BANDEIRA_W;
     } else if (*pc == 'T') {
       float resto = lim - (x - tx);
@@ -4699,7 +4766,7 @@ static float alturaLinha(int i, int automatica, float abertura) {
     // ja e nome + 2 linhas. Medir as ~300 fontes de uma lista longa ao abrir a
     // folha custaria a abertura inteira na TV; a quebra das linhas a mostra
     // acontece no desenho (addonLinhas tem cache por largura).
-    int linT = 1, linD = textoAddonDa(i)->nl;
+    int linT = 1, linD = textoAddonNl(i);
     if (abertura > .001f || linD < FOLHA_ADDON_FECHADA) addonLinhas(i, &linT, &linD);
     // A fileira de selos tem lugar fixo em toda linha (em cima ou embaixo):
     // o pacote chega depois, no fio, e a linha nao muda de altura com ele.
@@ -6736,6 +6803,8 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     // texto) e QUEBRAM: a linha em foco mostra tudo (addonDesenhar).
     if(ajustes_fonte_texto_addon()) {
       int apagada=s->naoVideo || (!canalFolha && stream_vod_falhou_ha(i) >= 0);
+      // One pixel-grid origin for the whole card (text, icons, flags, badges).
+      cy=addonPixel(cy);
       int selosEmbaixo=addonSelosEmbaixo();
       // Em cima: na altura da coluna da direita, na largura que ela deixa.
       if(!selosEmbaixo) { addonSelos(s,tx,cy+(FOLHA_ADDON_SELOS-FOLHA_SELO_H)*.5f,txtW,sel,anim); cy+=FOLHA_ADDON_SELOS; }

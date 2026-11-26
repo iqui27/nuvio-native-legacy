@@ -38,7 +38,7 @@ enum {TXT_CALLOUT,TXT_PG_FIM};
 #define FOLHA_ADDON_LD 28.0f
 #define FOLHA_ADDON_TD 40.0f
 #define ADDON_ICONE_W 30.0f
-#define ADDON_BANDEIRA_W 36.0f
+#define ADDON_BANDEIRA_W 30.0f
 #define ADDON_GAP 18.0f
 static float FOLHA_TOPO=249.25f,folhaBase=972.75f,scale=1;
 static int fontHeight=29,calls,lookups,visibleCount,minimal;
@@ -63,6 +63,9 @@ static TxtLinha txt_linha_corta(int style,const char *t,int r,int g,int b,int a,
  return (TxtLinha){(int)fminf(max,(float)strlen(t)*7),style==TXT_CALLOUT?fontHeight+8:fontHeight};
 }
 static void txt_desenhar_tom(TxtLinha l,float x,float y,float r,float g,float b,float a){record((GfxRect){x,y,(float)l.w,(float)l.h},r,g,b,a,0,"");}
+static int lista[1];
+static void addonQuebrar(int i,const void *s,TextoAddon *t){(void)i;(void)s;(void)t;}
+static float addonPixel(float v){return v;}
 @PULA@
 @FAST@
 @OLD@
