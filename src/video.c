@@ -1979,6 +1979,7 @@ static void *rodarLaco(void *u) { (void)u; loopRodar(laco); return NULL; }
 // com o MESMO timestamp o cancela. Sem filme tocando respondemos ack:true para
 // nao segurar o screensaver normal da TV.
 static int protetorLigado, protetorPendente;
+static int protetorAppRecusado;
 static unsigned protetorGeracao;
 static LsRegEstado protetorReg;
 // O ACK e publicado pelos setters e eventos, mesmo sem desenho (#205/#428).
@@ -2048,7 +2049,9 @@ static int helperPronto(void) {
   return hCall != NULL;
 }
 static int appResposta(void *sh, void *msg, NvHCtx *c) {
-  NvAppPedido *p = c->u;
+  NvAppPedido *p;
+  if (!c) return 1;
+  p = c->u;
   (void)sh;
   if (p && p->cb) p->cb(hMsg(msg), p->ctx);
   return 1;
@@ -2094,7 +2097,8 @@ static void protetorMarcarFalha(unsigned g, int codigo) {
 }
 
 static void registroScreensaver(const char *p, unsigned g, int peloApp) {
-  if (g != __atomic_load_n(&protetorGeracao, __ATOMIC_ACQUIRE)) return;
+  if (g != __atomic_load_n(&protetorGeracao, __ATOMIC_ACQUIRE) ||
+      !__atomic_load_n(&protetorPendente, __ATOMIC_ACQUIRE)) return;
   if (!ligado || (!peloApp && !bus) || __atomic_load_n(&encerrando, __ATOMIC_ACQUIRE)) {
     __atomic_store_n(&protetorPendente, 0, __ATOMIC_RELEASE);
     return;
@@ -2108,6 +2112,10 @@ static void registroScreensaver(const char *p, unsigned g, int peloApp) {
   } else {
     printf("[video] screensaver assinatura recusada: %.120s\n", p ? p : "(nulo)");
     fflush(stdout);
+    if (peloApp) {
+      __atomic_store_n(&protetorAppRecusado, 1, __ATOMIC_RELEASE);
+      lsreg_deu_certo(&protetorReg);
+    }
     protetorMarcarFalha(g, js_num(p, NULL, "errorCode", LSR_UNKNOWN_ERROR));
   }
 }
@@ -2194,7 +2202,8 @@ static void protegerScreensaver(void) {
   esmaecer_protetor_publicador(ack_publicar);
   g = __atomic_add_fetch(&protetorGeracao, 1, __ATOMIC_ACQ_REL);
   __atomic_store_n(&protetorPendente, 1, __ATOMIC_RELEASE);
-  if (lunaApp("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
+  if (!__atomic_load_n(&protetorAppRecusado, __ATOMIC_ACQUIRE) &&
+      lunaApp("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
               "{\"subscribe\":true,\"clientName\":\"" NV_APP_ID "\"}",
               aoHubScreensaverApp, (void *)(uintptr_t)g, 1)) return;
   if (bus && lsChamar("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
@@ -2401,6 +2410,7 @@ static int iniciar(int automatico) {
   // Laco proprio: o LS2 exige um GMainLoop girando, e girar isso no laco de
   // desenho custaria quadros. As respostas chegam neste fio e so mexem em
   // variaveis simples, lidas pelo desenho sem trava.
+  __atomic_store_n(&protetorAppRecusado, 0, __ATOMIC_RELEASE);
   __atomic_store_n(&encerrando, 0, __ATOMIC_RELEASE);   // reinicio pos-encerrar
   if (pthread_create(&fio, NULL, rodarLaco, NULL) != 0) {
     // Sem o fio do laco nenhuma resposta chega. Desfaz o registro para nao
@@ -4967,6 +4977,7 @@ void video_encerrar(void) {
   }
   __atomic_store_n(&protetorLigado, 0, __ATOMIC_RELEASE);
   __atomic_store_n(&protetorPendente, 0, __ATOMIC_RELEASE);
+  __atomic_store_n(&protetorAppRecusado, 0, __ATOMIC_RELEASE);
   lsreg_deu_certo(&protetorReg);
   ligado = 0;
   ack_publicar();

@@ -8,7 +8,12 @@ set -eu
 cd "$(dirname "$0")/.."
 binary=$(mktemp "${TMPDIR:-/tmp}/nuvio-lsregistro.XXXXXX")
 trap 'rm -f "$binary"' EXIT
-cc -O1 -g -Wall -Wextra -Isrc src/lsregistro.c tests/lsregistro.c -o "$binary"
+flags=()
+if [ "${SANITIZE:-0}" = 1 ]; then
+  flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  if [ "$(uname -s)" = Linux ]; then flags+=(-no-pie); fi
+fi
+cc -O1 -g -Wall -Wextra "${flags[@]}" -Isrc src/lsregistro.c tests/lsregistro.c -o "$binary"
 "$binary"
 
 # #706: subscribe only after the LS2 loop starts, then retry from the pump.
