@@ -2668,7 +2668,7 @@ typedef struct {
 #define ROT(t)        { IT_ROT, -1, t, NULL, NULL }
 // Rotulo com a nota a direita no lugar da contagem ("para quem faz o app").
 #define ROTS(t, s)    { IT_ROT, -1, t, s, NULL }
-#define OPC(o)        { IT_OPC, o, NULL, NULL, NULL }
+#define OPC(o, ...)   { IT_OPC, o, NULL, NULL, NULL, __VA_ARGS__ }
 #define OPCA(o)       { IT_OPC, o, NULL, NULL, NULL, 1 }
 #define MAIS()        { IT_MAIS, -1, "Mais opções", NULL, "aj_sliders-horizontal" }
 

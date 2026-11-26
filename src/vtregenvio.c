@@ -100,7 +100,10 @@ void vtregenvio_aparelho(const char **plataforma, const char **modelo, const cha
 #if !defined(NV_ANDROID) && !defined(NV_WEBOS) && !defined(NV_TPK) && !defined(__EMSCRIPTEN__) && !defined(_WIN32)
   if (!lido) {
     struct utsname u;
-    if (uname(&u) == 0) { snprintf(mod, sizeof mod, "%s", u.machine); snprintf(fw, sizeof fw, "%s", u.release); }
+    if (uname(&u) == 0) {
+      snprintf(mod, sizeof mod, "%.*s", (int)sizeof mod - 1, u.machine);
+      snprintf(fw, sizeof fw, "%.*s", (int)sizeof fw - 1, u.release);
+    }
   }
 #endif
   lido = 1;
