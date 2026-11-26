@@ -1181,6 +1181,9 @@ static void contas(void) {
       assert(!strcmp(msg, contaModo == 0 ? "premium" : contaModo == 1 ? "vencida" : contaModo == 5 ? "conta sem premium"
                              : contaModo == 2 ? "chave recusada" : "sem resposta válida"));
       assert((strlen(data) == 10) == (contaModo == 0));
+      // TorBox plan code from user/me: fixtures active/expired are 1, free 0.
+      if (q == DEBRID_TB)
+        assert(debrid_tb_plano() == (contaModo <= 1 ? 1 : contaModo == 5 ? 0 : -2));
       debrid_testar_conta(q, msg, sizeof msg, data, sizeof data);
       debrid_nova_busca();
       assert(contaPedidos[q] == 1); // cache inclusive erro e nova busca

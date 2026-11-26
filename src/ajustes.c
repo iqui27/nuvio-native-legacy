@@ -851,7 +851,6 @@ static const char *V_LIGA[]      = { "Ligado", "Desligado" };
 static const char *V_CAP_TIPOS[]  = { "Desligado", "Filmes", "Séries", "Filmes e séries", "Anime",
                                       "Filmes e anime", "Séries e anime", "Todos" };
 // Plano do TorBox (tbburn.h): so o Pro converte video, o que a legenda queimada precisa.
-static const char *V_TB_PLANO[]  = { "Standard", "Pro" };
 static const char *V_TB_AUDIO[]  = { "Passthrough", "Áudio do TorBox" };
 static const char *V_QUADROS_TAXA[] = { "Sempre", "Só sem interrupção", "Desligado" };
 static const char *V_LIGA_AUTO[] = { "Ligado", "Desligado", "Automático" };
@@ -1994,7 +1993,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Estilo dos ícones", V_FONTE_ICONES, 2),   // local: fonteIconesLocal
   ESC("Posição dos selos", V_SOURCE_BADGE_POSITION, 2),   // local: sourceBadgePositionLocal
   ESC("Sincronia por áudio em rede móvel", V_LIGA, 2),   // local: legendaSyncAudioMovelLocal (Android)
-  ESC("Plano do TorBox", V_TB_PLANO, 2),                 // local: torboxPlanoLocal
+  LER("Plano do TorBox"),                                // read from TorBox (debrid_tb_plano)
   ESC("Queimar ASS pelo TorBox", V_LIGA, 2),             // local: legendaQueimarLocal
   ESC("Áudio original com a queima", V_TB_AUDIO, 2),     // local: torboxAudioModoLocal
   ESC("Igualar taxa de quadros", V_QUADROS_TAXA, 3),   // local: frameRateMatchLocal (Android)
@@ -2366,7 +2365,7 @@ static const char *CHAVE[] = {
   "fonteIconesLocal",
   "sourceBadgePositionLocal",
   "legendaSyncAudioMovelLocal",
-  "torboxPlanoLocal",
+  "-torboxPlanoLocal",   /* owner 26/11/2026: detected from TorBox, no longer saved */
   "legendaQueimarLocal",
   "torboxAudioModoLocal",   /* was torboxAudioLocal (4 values, 13-14/11): new key, everyone starts on Passthrough */
   "frameRateMatchLocal",
@@ -3430,7 +3429,7 @@ int ajustes_legenda_sync_auto(void) { return lig(AJ_LEG_SYNC_AUTO); }
 static const char *rotuloOpcao(int op);
 static int passoAdiante(int op, int dir);
 static int definirValorDireto(int op, int novo);
-int ajustes_tb_pro(void) { return valor[AJ_TB_PLANO] == 1; }
+int ajustes_tb_pro(void) { return debrid_tb_plano() == 2; }
 static void riscoNotar(int op, int antes);
 int ajustes_tb_audio_modo(void) { return valor[AJ_TB_AUDIO] >= 0 && valor[AJ_TB_AUDIO] < 2 ? valor[AJ_TB_AUDIO] : 0; }
 void ajustes_definir_tb_audio_modo(int modo) {
@@ -7627,6 +7626,13 @@ static const char *textoLeitura(int op) {
     return r;
   }
   if(op==AJ_IPTV_NOME)return ajIptvNome(iptv_conta_indice());
+  if (op == AJ_TB_PLANO) {
+    static const char *const NOMES[] = { "Free", "Essential", "Pro", "Standard" };
+    int p = debrid_tb_plano();
+    if (debrid_tb_disponivel() == 0) return "No TorBox key";
+    if (p >= 0 && p < 4) return NOMES[p];
+    return p == -1 ? "Checking..." : p == -2 ? "Couldn't check" : "Unknown plan";
+  }
   static char buf[64];
   // MASCARADO, sempre. Esta tela e fotografada e colada em issue — foi assim
   // que chegou o relato do painel de Tracking. O portal sai sem esquema e o MAC
@@ -7901,8 +7907,8 @@ static int inativa(int op) {
     // Comentarios do Trakt no painel de pausa: a linha fica apagada sem o painel.
     case AJ_PAUSA_COMENTARIOS: return !lig(AJ_PAUSA_OVERLAY);
     // TorBox burn-in: only with plan Pro and a TorBox key on this TV.
-    case AJ_LEG_QUEIMAR: return valor[AJ_TB_PLANO] != 1 || debrid_tb_disponivel() == 0;
-    case AJ_TB_AUDIO: return valor[AJ_TB_PLANO] != 1 || debrid_tb_disponivel() == 0 || !lig(AJ_LEG_QUEIMAR);
+    case AJ_LEG_QUEIMAR: return !ajustes_tb_pro() || debrid_tb_disponivel() == 0;
+    case AJ_TB_AUDIO: return !ajustes_tb_pro() || debrid_tb_disponivel() == 0 || !lig(AJ_LEG_QUEIMAR);
     case AJ_PAUSA_NOTAS: return !lig(AJ_PAUSA_OVERLAY);
     case AJ_PAUSA_ELENCO: return !lig(AJ_PAUSA_OVERLAY);
     // A posicao da fileira de formato so vale com a fileira ligada.
@@ -8197,7 +8203,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_LEG_SYNC_AUTO: return "Ajusta a legenda automaticamente. Desligue para manter a escolhida. Vale só nesta TV.";
     case AJ_LEG_SYNC_AUDIO: return "Quando a legenda incorporada não serve para sincronizar, acerta a legenda externa pelas falas do áudio. Vale só nesta TV.";
     case AJ_LEG_SYNC_AUDIO_MOVEL: return "Para a sincronia por áudio: lê alguns trechos do filme à frente também em rede móvel (até 150 MB). Desligado, só no Wi-Fi ou cabo. Vale só nesta TV.";
-    case AJ_TB_PLANO: return "O seu plano no TorBox. Só o Pro converte o vídeo, que é o que a legenda queimada precisa. Vale só nesta TV.";
+    case AJ_TB_PLANO: return "Read from your TorBox account when the key is entered. Only Pro converts the video, which burned-in subtitles need.";
     case AJ_TB_AUDIO: return inativa(op) ? "Precisa de Queimar ASS pelo TorBox ligado, do TorBox Pro e da chave do TorBox." : "Com a legenda queimada, de onde vem o som. Passthrough: o áudio original do arquivo, pelo Nuvio, com a imagem do TorBox. Áudio do TorBox: o áudio convertido pelo TorBox. Vale só nesta TV.";
     case AJ_LEG_QUEIMAR: return inativa(op) ? "Precisa do TorBox Pro e da chave do TorBox." : "Legendas ASS do arquivo, em fontes do TorBox, tocam como um vídeo do TorBox com a legenda dentro da imagem. Imagem com menos qualidade; tamanho, opacidade e atraso não valem nela. Vale só nesta TV.";
     case AJ_LEG_FORCADA: return "Quando o áudio já está no idioma da legenda, liga só a legenda forçada desse idioma (falas em outra língua e placas), ou nenhuma se o arquivo não tiver. Desligado, liga a legenda completa como antes.";

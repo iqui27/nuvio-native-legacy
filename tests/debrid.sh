@@ -10,6 +10,6 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 task_dir="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-debrid.XXXXXX")"
 trap 'rm -rf "$task_dir"' EXIT
 export NUVIO_DEBRID_TEST_LOG="$task_dir/saida.txt"
-cc ${flags[@]+"${flags[@]}"} -Dtime=debrid_test_time -pthread -O1 -g -Wall -Wextra -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wno-deprecated-declarations \
+cc ${flags[@]+"${flags[@]}"} -Dtime=debrid_test_time -DDEBRID_TB_PLANO_SEM_FIO -pthread -O1 -g -Wall -Wextra -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wno-deprecated-declarations \
   src/debrid.c src/stream_parse.c src/cachemarca.c src/dobra.c src/fontefiltro.c src/linguas.c src/js.c src/redeurl.c tests/debrid.c -o "$task_dir/teste"
 "$task_dir/teste"

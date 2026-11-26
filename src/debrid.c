@@ -87,6 +87,31 @@ static pthread_mutex_t contaMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t consultaMutex = PTHREAD_MUTEX_INITIALIZER;
 static time_t contaConsultada[SN], contaAte[SN];
 static int contaEstado[SN]; // 0 desconhecida, 1 premium, 2 sem plano, 3 chave recusada
+// TorBox plan from user/me (owner 26/11/2026: detected, no manual pick):
+// 0 Free, 1 Essential, 2 Pro, 3 Standard; -1 not checked yet, -2 the check
+// failed or the key was refused. Reset when the effective key changes.
+static _Atomic int tbPlano = -1;
+int debrid_tb_plano(void) { return atomic_load(&tbPlano); }
+// DEBRID_TB_PLANO_SEM_FIO: tests/debrid.c scripts every account reply, so it
+// reads the plan through debrid_testar_conta itself.
+#if !defined(__EMSCRIPTEN__) && !defined(DEBRID_TB_PLANO_SEM_FIO)
+#define TB_PLANO_FIO 1
+static void *tbPlanoFio(void *u) {
+  (void)u;
+  debrid_testar_conta(STB, NULL, 0, NULL, 0);
+  return NULL;
+}
+// A new TorBox key (typed on this TV or brought by the Nuvio account) reads
+// the plan once, off the caller's thread.
+static void tbPlanoConsultar(void) {
+  pthread_t t;
+  pthread_attr_t a;
+  pthread_attr_init(&a);
+  pthread_attr_setdetachstate(&a, PTHREAD_CREATE_DETACHED);
+  if (pthread_create(&t, &a, tbPlanoFio, NULL)) atomic_store(&tbPlano, -2);
+  pthread_attr_destroy(&a);
+}
+#endif
 
 const char *debrid_servico_nome(int q) { return q >= 0 && q < SN ? nomeServ[q] : ""; }
 const char *debrid_servico_id(int q) { return q >= 0 && q < SN ? idServ[q] : ""; }
@@ -200,6 +225,12 @@ static void efetiva(int q) {
     atomic_store(&recusado[q], 0);
     atomic_store(&semPlano[q], 0); atomic_store(&avisado[q], 0);
     contaConsultada[q] = contaAte[q] = 0; contaEstado[q] = 0;
+    if (q == STB) {
+      atomic_store(&tbPlano, -1);
+#ifdef TB_PLANO_FIO
+      if (k[0]) tbPlanoConsultar();
+#endif
+    }
   }
   snprintf(chave[q], sizeof chave[q], "%s", k);
   pthread_mutex_unlock(&contaMutex);
@@ -1558,7 +1589,7 @@ int debrid_testar_conta(int q, char *msg, unsigned n, char *data, unsigned nd) {
   if (!contaConsultada[q] || agora - contaConsultada[q] >= 300) {
     char *r, b[64] = "", status[32] = "", k[200], auth[260];
     const char *cab[] = { auth, "Content-Type: application/x-www-form-urlencoded", NULL };
-    int st = 0;
+    int st = 0, plano = -2;
     snprintf(k, sizeof k, "%s", chave[q]);
     snprintf(auth, sizeof auth, "Authorization: Bearer %s", k);
     pthread_mutex_unlock(&contaMutex);
@@ -1582,7 +1613,8 @@ int debrid_testar_conta(int q, char *msg, unsigned n, char *data, unsigned nd) {
         if (ate >= 0) e = ate > agora ? 1 : 2;
       } else if (q == STB && js_bruto(r, NULL, "success", status, sizeof status)
                  && !strcmp(status, "true") && js_num(r, NULL, "plan", -1) >= 0) {
-        if (js_num(r, NULL, "plan", -1) == 0) e = 2;
+        plano = (int)js_num(r, NULL, "plan", -1);
+        if (plano == 0) e = 2;
         else if (js_texto(r, NULL, "premium_expires_at", b, sizeof b)) {
           ate = (time_t)(js_ms_iso(b) / 1000);
           if (ate) e = ate > agora ? 1 : 2;
@@ -1599,6 +1631,11 @@ int debrid_testar_conta(int q, char *msg, unsigned n, char *data, unsigned nd) {
       return 0;
     }
     contaConsultada[q] = agora; contaAte[q] = ate; contaEstado[q] = e;
+    if (q == STB) {
+      // A failed check keeps a plan already read (a network blip is not a downgrade).
+      if (plano >= 0 || e == 3 || atomic_load(&tbPlano) < 0) atomic_store(&tbPlano, plano);
+      printf("[debrid] TorBox plan: %d\n", plano); fflush(stdout);
+    }
     if (e) {
       atomic_store(&semPlano[q], e == 1 ? 0 : e == 3 ? 2 : 1);
       if (e == 1) atomic_store(&avisado[q], 0);

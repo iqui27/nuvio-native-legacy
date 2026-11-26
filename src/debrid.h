@@ -189,6 +189,9 @@ const char *debrid_sem_plano_nome(int mascara);
 // Changes only with account session or effective TorBox key, never a search.
 unsigned debrid_tb_geracao(void);
 int   debrid_tb_disponivel(void);
+// The TorBox plan read from user/me when the key arrives (no network here):
+// 0 Free, 1 Essential, 2 Pro, 3 Standard, -1 not checked yet, -2 check failed.
+int   debrid_tb_plano(void);
 // Uma pagina de DEBRID_TB_PAGINA itens (o teto do TorBox): conta com mais
 // itens que isso precisa de mais paginas (`pagina` 0, 1, ...).
 #define DEBRID_TB_PAGINA 1000
