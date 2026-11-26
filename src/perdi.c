@@ -189,3 +189,52 @@ PerdiResultado perdi_resposta(int http, const char *corpo, char *dst, size_t tam
     return PERDI_BLOQUEADO;
   return PERDI_ERRO;
 }
+
+void perdi_hist_zerar(PerdiHist *h) {
+  if (!h) return;
+  free(h->v);
+  memset(h, 0, sizeof *h);
+}
+
+int perdi_hist_anotar(PerdiHist *h, double posSeg, const char *texto) {
+  int i, j;
+  if (!h) return 0;
+  if (!texto || !texto[0]) { h->ultimo[0] = 0; return 0; }
+  if (!(posSeg >= 0) || posSeg > 1e7) return 0;            // NaN e relogio invalido
+  if (!strncmp(texto, h->ultimo, sizeof h->ultimo - 1)) return 0;   // a mesma fala ainda na tela
+  snprintf(h->ultimo, sizeof h->ultimo, "%s", texto);
+  // Posicao em ordem de tempo (quase sempre o fim; antes so depois de voltar).
+  for (i = h->n; i > 0 && h->v[i - 1].inicio > posSeg; i--) {}
+  for (j = i - 1; j >= 0 && posSeg - h->v[j].inicio < 2.0; j--)
+    if (!strncmp(h->v[j].texto, texto, sizeof h->v[j].texto - 1)) return 0;
+  for (j = i; j < h->n && h->v[j].inicio - posSeg < 2.0; j++)
+    if (!strncmp(h->v[j].texto, texto, sizeof h->v[j].texto - 1)) return 0;
+  if (h->n >= PERDI_HIST_MAX) {                             // cai o quarto mais antigo
+    int fora = PERDI_HIST_MAX / 4;
+    memmove(h->v, h->v + fora, (size_t)(h->n - fora) * sizeof *h->v);
+    h->n -= fora; i -= fora;
+    if (i < 0) return 0;                                    // mais velha que tudo o que ficou
+  }
+  if (h->n >= h->cap) {
+    int cap = h->cap ? h->cap * 2 : 64;
+    LegendaCue *nv;
+    if (cap > PERDI_HIST_MAX) cap = PERDI_HIST_MAX;
+    nv = realloc(h->v, (size_t)cap * sizeof *nv);
+    if (!nv) return 0;
+    h->v = nv; h->cap = cap;
+  }
+  memmove(h->v + i + 1, h->v + i, (size_t)(h->n - i) * sizeof *h->v);
+  memset(&h->v[i], 0, sizeof h->v[i]);
+  h->v[i].inicio = posSeg; h->v[i].fim = posSeg + 2.0;
+  h->v[i].cor = -1; h->v[i].posX = h->v[i].posY = -1.f;
+  snprintf(h->v[i].texto, sizeof h->v[i].texto, "%s", texto);
+  h->n++;
+  return 1;
+}
+
+PerdiModo perdi_modo(int falasDoc, int embutida, int falasHist) {
+  if (falasDoc >= 0) return falasDoc >= PERDI_FALAS_MIN ? PERDI_MODO_PEDIR_DOC : PERDI_MODO_POUCO;
+  if (falasHist >= PERDI_FALAS_MIN) return PERDI_MODO_PEDIR_HIST;
+  if (falasHist > 0) return PERDI_MODO_EMBUTIDA_POUCO;
+  return embutida ? PERDI_MODO_EMBUTIDA_SEM_TEXTO : PERDI_MODO_SEM_LEGENDA;
+}

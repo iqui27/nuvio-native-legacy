@@ -1,6 +1,7 @@
 // "O que eu perdi?": corte sem spoiler, pedido do Gemini e leitura da resposta.
 #include "perdi.h"
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -80,6 +81,56 @@ int main(void) {
     assert(perdi_resposta(200, "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"aaaaaaaaaaaaaaaaaaaaaaaa\"},{\"text\":\"bbbb\"},{\"text\":\"cccc\"},{\"text\":\"dddd\"}]}}]}", pq, sizeof pq) == PERDI_OK);
     assert(strlen(pq) < sizeof pq);
   }
+
+  // LEGENDA EMBUTIDA (Android/Media3): sem documento, as falas exibidas viram
+  // o historico; o corte sem spoiler continua valendo sobre ele.
+  {
+    PerdiHist h;
+    memset(&h, 0, sizeof h);
+    assert(perdi_hist_anotar(&h, 10.0, "Bom dia, Ana.") == 1);
+    assert(perdi_hist_anotar(&h, 10.2, "Bom dia, Ana.") == 0);   // ainda na tela
+    assert(perdi_hist_anotar(&h, 11.0, "") == 0);                // tela vazia
+    assert(perdi_hist_anotar(&h, 11.5, "Bom dia, Ana.") == 0);   // repetida a < 2 s
+    assert(perdi_hist_anotar(&h, 30.0, "Cadê o Rui?") == 1);
+    assert(perdi_hist_anotar(&h, 95.0, "Ele saiu ontem.") == 1);
+    assert(perdi_hist_anotar(&h, 100.5, "O ASSASSINO É O MORDOMO") == 1);
+    assert(perdi_hist_anotar(&h, NAN, "x") == 0 && perdi_hist_anotar(&h, -1.0, "x") == 0);
+    // Voltou no video: a fala entra na ordem de tempo; rever nao duplica.
+    assert(perdi_hist_anotar(&h, 20.0, "Onde ele está?") == 1);
+    assert(perdi_hist_anotar(&h, 30.5, "Cadê o Rui?") == 0);
+    assert(h.n == 5);
+    for (int i = 1; i < h.n; i++) assert(h.v[i - 1].inicio <= h.v[i].inicio);
+    // Voltou para 96 s: o MORDOMO (100,5 s) ja anotado NAO entra no pedido.
+    t = perdi_trecho(h.v, h.n, 96.0, 0, PERDI_TRECHO_MAX, &falas);
+    assert(t && falas == 4 && strstr(t, "Ele saiu ontem.") && !strstr(t, "MORDOMO"));
+    free(t);
+    perdi_hist_zerar(&h);
+    assert(!h.v && !h.n && !h.cap);
+    // Teto: cai o comeco, a ordem fica.
+    char linha[32];
+    for (int i = 0; i < PERDI_HIST_MAX + 10; i++) {
+      snprintf(linha, sizeof linha, "fala %d", i);
+      assert(perdi_hist_anotar(&h, 3.0 * i, linha) == 1);
+    }
+    assert(h.n <= PERDI_HIST_MAX && !strcmp(h.v[h.n - 1].texto, "fala 3009"));
+    for (int i = 1; i < h.n; i++) assert(h.v[i - 1].inicio < h.v[i].inicio);
+    perdi_hist_zerar(&h);
+  }
+
+  // Qual cartao: com a embutida ligada e sem documento, NUNCA o "ative uma
+  // legenda" (a regressao do Android: a pessoa ja tinha ligado a legenda).
+  assert(perdi_modo(10, 0, 0) == PERDI_MODO_PEDIR_DOC);
+  assert(perdi_modo(10, 1, 50) == PERDI_MODO_PEDIR_DOC);       // documento manda
+  assert(perdi_modo(2, 0, 0) == PERDI_MODO_POUCO);
+  assert(perdi_modo(0, 1, 0) == PERDI_MODO_POUCO);
+  assert(perdi_modo(-1, 0, 0) == PERDI_MODO_SEM_LEGENDA);
+  assert(perdi_modo(-1, 1, 0) == PERDI_MODO_EMBUTIDA_SEM_TEXTO);
+  assert(perdi_modo(-1, 1, 2) == PERDI_MODO_EMBUTIDA_POUCO);
+  assert(perdi_modo(-1, 1, PERDI_FALAS_MIN) == PERDI_MODO_PEDIR_HIST);
+  assert(perdi_modo(-1, 0, PERDI_FALAS_MIN) == PERDI_MODO_PEDIR_HIST);   // desligou depois: o ja visto vale
+  for (int e = 0; e <= 1; e++)
+    for (int f = 0; f < 8; f++)
+      if (e || f) assert(perdi_modo(-1, e, f) != PERDI_MODO_SEM_LEGENDA);
   puts("perdi ok");
   return 0;
 }

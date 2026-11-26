@@ -4058,16 +4058,44 @@ static void corpoNeste(GfxRect r, float a, void *u) {
 // O QUE EU PERDI? (pesquisa 4.3): cartao da ilha com o resumo ate o minuto
 // atual, feito pelo Gemini a partir da legenda ativa (perdi.h). So o texto que
 // JA passou sai do aparelho; a chave e a do usuario (Ajustes).
-enum { PERDI_UI_SEM_LEGENDA = 1, PERDI_UI_POUCO, PERDI_UI_PEDIDO };
 static int perdiAberto, perdiModo, perdiT, perdiE;
 static unsigned perdiId;
 static const void *perdiItem;
 static char perdiAte[32], perdiTexto[PERDI_RESUMO_MAX];
+// LEGENDA EMBUTIDA (Android/Media3 SRT/VTT, AVPlay, .tpk): o player nativo so
+// entrega a fala em vigor e legenda_documento_ativo() fica vazio. Cada quadro
+// anota a fala nativa no historico (perdi.h) com o MESMO relogio do perdiAbrir;
+// o historico vale para o titulo, o episodio e a faixa em que foi colhido.
+static PerdiHist perdiHist;
+static const void *perdiHistItem;
+static int perdiHistT, perdiHistE, perdiHistFaixa = -2;
+static void perdiColher(void) {
+  char fala[sizeof perdiHist.ultimo];
+  const void *c = item();
+  int faixa = video_legenda_atual();
+  if (!aberto || saindo || ehCanal() || !ajustes_perdi()) {
+    if (perdiHist.cap) perdi_hist_zerar(&perdiHist);
+    perdiHistFaixa = -2;
+    return;
+  }
+  if (c != perdiHistItem || epT != perdiHistT || epE != perdiHistE || faixa != perdiHistFaixa) {
+    perdi_hist_zerar(&perdiHist);
+    perdiHistItem = c; perdiHistT = epT; perdiHistE = epE; perdiHistFaixa = faixa;
+  }
+  if (!player_texto_legenda_nativa(fala, sizeof fala)) fala[0] = 0;
+  perdi_hist_anotar(&perdiHist, legsync_posicao(posLegenda()), fala);
+}
 static const char *perdiMensagem(int *pronto) {
   PerdiResultado res = PERDI_ERRO;
   *pronto = 0;
-  if (perdiModo == PERDI_UI_SEM_LEGENDA) return i18n("Ative uma legenda de texto para usar O que eu perdi?");
-  if (perdiModo == PERDI_UI_POUCO) return i18n("Ainda há pouca fala para resumir.");
+  if (perdiModo == PERDI_MODO_SEM_LEGENDA) return i18n("Ative uma legenda de texto para usar O que eu perdi?");
+  if (perdiModo == PERDI_MODO_POUCO) return i18n("Ainda há pouca fala para resumir.");
+  // Embutida ligada, sem documento: dizer o que de fato acontece, nunca o
+  // "ative uma legenda" (a pessoa ja ativou).
+  if (perdiModo == PERDI_MODO_EMBUTIDA_SEM_TEXTO)
+    return i18n("Esta legenda embutida ainda não entregou falas ao app. Se for de imagem (PGS), escolha uma legenda de texto.");
+  if (perdiModo == PERDI_MODO_EMBUTIDA_POUCO)
+    return i18n("Com legenda embutida, o resumo usa só as falas exibidas desde que você começou a assistir. Ainda há pouca fala.");
   switch (perdifio_estado(perdiId, &res, perdiTexto, sizeof perdiTexto)) {
     case PERDIFIO_CARREGANDO: return i18n("Resumindo até aqui…");
     case PERDIFIO_NADA: return i18n("Não foi possível resumir agora.");
@@ -4112,19 +4140,30 @@ static void perdiAbrir(void) {
   LegendaDocumento *doc = legenda_documento_ativo(legenda_geracao(), &info);
   // O MESMO relogio do desenho da legenda: o que esta na tela e o limite.
   double pos = legsync_posicao(posLegenda());
-  int atraso = legsync_offset_ms(legEstilo.atrasoMs), n = 0, falas = 0;
+  int atraso = legsync_offset_ms(legEstilo.atrasoMs), n = 0, falasDoc = -1, falasHist = 0;
   const LegendaCue *v = doc ? legenda_documento_dados(doc, &n) : NULL;
-  char *trecho = v ? perdi_trecho(v, n, pos, atraso, PERDI_TRECHO_MAX, &falas) : NULL, *corpo = NULL, ep[32] = "";
+  char *trecho = NULL, *corpo = NULL, ep[32] = "";
   long s = posSeg > 0 ? (long)posSeg : 0;
+  if (v && n > 0) {
+    falasDoc = 0;
+    trecho = perdi_trecho(v, n, pos, atraso, PERDI_TRECHO_MAX, &falasDoc);
+  } else {
+    // Sem documento: a embutida que o player nativo desenha (Android/Media3).
+    // O historico ja esta no relogio da tela (o atraso foi aplicado antes de
+    // a fala chegar), entao atraso 0.
+    perdiColher();
+    if (perdiHist.n > 0) trecho = perdi_trecho(perdiHist.v, perdiHist.n, pos, 0, PERDI_TRECHO_MAX, &falasHist);
+  }
   perdifio_cancelar();
   perdiAberto = 1; perdiId = 0; perdiTexto[0] = 0;
   perdiItem = c; perdiT = epT; perdiE = epE;
   snprintf(perdiAte, sizeof perdiAte, "%ld:%02ld:%02ld", s / 3600, (s / 60) % 60, s % 60);
   if (!ehCanal() && epT >= 0 && epE > 0) snprintf(ep, sizeof ep, "S%02dE%02d", epT, epE);
-  if (!v || n <= 0) perdiModo = PERDI_UI_SEM_LEGENDA;
-  else if (!trecho || falas < PERDI_FALAS_MIN) perdiModo = PERDI_UI_POUCO;
-  else {
-    perdiModo = PERDI_UI_PEDIDO;
+  perdiModo = perdi_modo(falasDoc, video_legenda_atual() >= 0, falasHist);
+  printf("[perdi] modo %d: documento %d fala(s), embutida %d, historico %d/%d fala(s)\n",
+         perdiModo, falasDoc, video_legenda_atual() >= 0, falasHist, perdiHist.n);
+  fflush(stdout);
+  if (trecho && (perdiModo == PERDI_MODO_PEDIR_DOC || perdiModo == PERDI_MODO_PEDIR_HIST)) {
     corpo = perdi_pedido(c ? c->titulo : "", ep, posSeg, idioma_iso(ajustes_idioma()), trecho);
     perdiId = perdifio_pedir(ajustes_perdi_chave(), corpo);
   }
@@ -8103,6 +8142,7 @@ void player_desenhar(Uint32 agora) {
     pd.w = 640.0f; pd.h = 36.0f + 34.0f * NESTE_MAX; pd.corpo = corpoNeste;
     plrilha_pedir(&pd);
   }
+  perdiColher();
   if (perdiAberto && (item() != perdiItem || epT != perdiT || epE != perdiE || !aberto || saindo)) perdiFechar();
   if (perdiAberto) {
     PlrIlhaPedido pd;

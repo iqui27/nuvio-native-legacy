@@ -56,4 +56,39 @@ char *perdi_pedido(const char *titulo, const char *episodio, double posSeg,
 // Le a resposta. PERDI_OK poe o resumo limpo (sem markdown) em dst.
 PerdiResultado perdi_resposta(int http, const char *corpo, char *dst, size_t tam);
 
+// LEGENDA EMBUTIDA SEM DOCUMENTO (Android/Media3 com SRT/VTT do arquivo, AVPlay
+// e o host do .tpk): o player nativo so entrega a fala EM VIGOR
+// (video_legenda_nativa), nunca o arquivo, e legenda_documento_ativo() fica
+// vazio. O historico guarda as falas que JA apareceram na tela nesta sessao,
+// com o instante em que apareceram, e vira a fonte do resumo. Continua sem
+// spoiler: so entra o que ja foi mostrado. Nao e thread-safe: um dono so.
+#define PERDI_HIST_MAX 3000
+typedef struct {
+  LegendaCue *v;
+  int n, cap;
+  char ultimo[sizeof(((LegendaCue *)0)->texto)];
+} PerdiHist;
+// Anota a fala `texto` visivel em `posSeg`. "" (ou NULL) diz que a tela ficou
+// sem fala: a mesma frase depois disso conta de novo. A mesma fala ja anotada
+// a menos de 2 s nao entra outra vez (voltar e rever nao duplica). Mantem a
+// ordem de tempo mesmo depois de voltar no video. Cheio, cai o comeco.
+// Devolve 1 quando entrou.
+int  perdi_hist_anotar(PerdiHist *h, double posSeg, const char *texto);
+void perdi_hist_zerar(PerdiHist *h);   // libera e volta ao vazio
+
+// Qual cartao abrir. `falasDoc` e o que perdi_trecho contou no documento da
+// legenda (-1 = nao ha documento); `embutida` = 1 quando a faixa ligada e uma
+// embutida do arquivo; `falasHist` e o que perdi_trecho contou no historico.
+// Sem documento e com embutida ligada NUNCA diz "ative uma legenda": a pessoa
+// ja ativou (o aviso enganoso da 1a versao no Android).
+typedef enum {
+  PERDI_MODO_PEDIR_DOC = 0,       // pede com o documento
+  PERDI_MODO_PEDIR_HIST,          // pede com o historico das falas exibidas
+  PERDI_MODO_SEM_LEGENDA,         // nenhuma legenda ligada
+  PERDI_MODO_POUCO,               // documento com pouca fala ate aqui
+  PERDI_MODO_EMBUTIDA_SEM_TEXTO,  // embutida ligada, nenhuma fala chegou ao app
+  PERDI_MODO_EMBUTIDA_POUCO       // embutida: poucas falas exibidas nesta sessao
+} PerdiModo;
+PerdiModo perdi_modo(int falasDoc, int embutida, int falasHist);
+
 #endif
