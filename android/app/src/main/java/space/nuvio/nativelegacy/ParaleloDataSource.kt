@@ -274,6 +274,10 @@ class ParaleloDataSource(
             resta -= passo
         }
         conferirCancelamento()
+        // The native pause can grow to 60 s, or be extended by another reader.
+        // Exhausting this attempt's wait budget must not open a socket early.
+        if (MediaHttpBudget.pausaMs(u) > 0)
+            throw IOException("source host is still paused after a refused connection")
     }
 
     private fun conectar1(u: URL, ini: Long, ultimo: Long): HttpURLConnection {
