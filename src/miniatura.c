@@ -141,11 +141,13 @@ static int larguraCpu(void) {
 // only. A title whose hardware decoder was created during the opening load (miniatura_preaquecer, player.c) goes to
 // it; every other title stays on this file's CPU route, unchanged. hwTitulo/hwUrl are touched by the render thread only.
 #include "miniatura_android.h"
+static void desligarCpu(void);
 static int hwTitulo;
 static char hwUrl[NV_MEDIA_URL_MAX];
 static long hwPosMs = -1; static Uint32 hwPosTick;
 #define HW_DECIDIR_MS 15000u      // longest wait for a pre-warm still opening the file before the CPU route
 static void hwSoltar(void) {
+  miniatura_preaquecer_cancelar();
   if (!hwTitulo) return;
   miniatura_provedor()->desligar();
   hwTitulo = 0; hwUrl[0] = 0; hwPosMs = -1;
@@ -745,7 +747,7 @@ void seekr_pedir(const char *imdb, int t, int e, long durMs) {
     }
     decidindo[0] = 0;
     if (a > 0) {
-      seekr_desligar();                                     // a CPU job of an earlier title ends
+      desligarCpu();                                      // keep the prewarm for hardware adoption
       hwTitulo = 1; snprintf(hwUrl, sizeof hwUrl, "%s", url);
       printf("[miniatura] title on the hardware engine (decoder created while opening)\n"); fflush(stdout);
     } else {
@@ -809,10 +811,15 @@ void seekr_pedir(const char *imdb, int t, int e, long durMs) {
   }
 }
 
+static void desligarCpu(void);
 void seekr_desligar(void) {
 #ifdef NV_ANDROID
   hwSoltar();
 #endif
+  desligarCpu();
+}
+
+static void desligarCpu(void) {
   // The worker keeps its own reference: it saves the set to Drive and frees it.
   pthread_mutex_lock(&mu);
   if (job) { job->parar = 1; soltarJob(job); job = NULL; }

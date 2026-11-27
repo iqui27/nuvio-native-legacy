@@ -14,6 +14,7 @@ int miniatura_status_agora(void) { return 0; }
 int miniatura_direto(void) { return 0; }
 void miniatura_preaquecer(const char *url, const char *cabecalhos) { (void)url; (void)cabecalhos; }
 int miniatura_hw_aceita(const char *url) { (void)url; return 0; }
+void miniatura_preaquecer_cancelar(void) {}
 #else
 #include "dados.h"
 #include "ajustes.h"
@@ -1330,18 +1331,31 @@ static pthread_mutex_t muPre = PTHREAD_MUTEX_INITIALIZER;
 static char preUrl[4096];
 static long long preH;
 static int preDec, preRodando;
-typedef struct { char url[4096], cab[512]; } PreArgs;
+static unsigned preGeracao;
+typedef struct { char url[4096], cab[512]; unsigned geracao; } PreArgs;
+void miniatura_preaquecer_cancelar(void) {
+  pthread_mutex_lock(&muPre);
+  ++preGeracao;
+  long long h = preH;
+  preH = 0; preDec = 0; preUrl[0] = 0;
+  // Keep preRodando until the detached worker exits: do not overlap opens.
+  pthread_mutex_unlock(&muPre);
+  if (h) mFechar(h);
+}
 static void *preTrabalho(void *u) {
   PreArgs *a = u;
   Uint32 t0 = SDL_GetTicks();
   long long h = mAbrirDireto(a->url, a->cab);
   int dec = 0;
-  if (h && !video_pronto() && !video_tocando() && !video_falhou()) dec = mPrepararDecoder(h);
+  pthread_mutex_lock(&muPre);
+  int valido = a->geracao == preGeracao;
+  pthread_mutex_unlock(&muPre);
+  if (h && valido && !video_pronto() && !video_tocando() && !video_falhou()) dec = mPrepararDecoder(h);
   printf("[miniatura] pre-warm: file %s, hardware decoder %s (%u ms, playback %s)\n", h ? "open" : "not usable",
          dec ? "created" : "not created", SDL_GetTicks() - t0, video_tocando() ? "running" : "not started yet");
   fflush(stdout);
   pthread_mutex_lock(&muPre);
-  if (!strcmp(preUrl, a->url) && !preH) { preH = h; preDec = dec; h = 0; }
+  if (a->geracao == preGeracao && !strcmp(preUrl, a->url) && !preH) { preH = h; preDec = dec; h = 0; }
   preRodando = 0;
   pthread_mutex_unlock(&muPre);
   if (h) mFechar(h);
@@ -1366,7 +1380,7 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
   if (!a) return;
   snprintf(a->url, sizeof a->url, "%s", url);
   snprintf(a->cab, sizeof a->cab, "%s", cabecalhos ? cabecalhos : "");
-  pthread_mutex_lock(&muPre); preRodando = 1; pthread_mutex_unlock(&muPre);
+  pthread_mutex_lock(&muPre); a->geracao = preGeracao; preRodando = 1; pthread_mutex_unlock(&muPre);
   pthread_t t; pthread_attr_t at;
   pthread_attr_init(&at); pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
   if (pthread_create(&t, &at, preTrabalho, a)) { free(a); pthread_mutex_lock(&muPre); preRodando = 0; pthread_mutex_unlock(&muPre); }

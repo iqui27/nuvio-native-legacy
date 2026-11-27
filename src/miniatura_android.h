@@ -66,4 +66,6 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos);
 // 1 = this engine takes the title at url (hardware decoder created during the opening load), -1 = its pre-warm is
 // still running (ask again), 0 = not this engine (the title stays on miniatura.c's CPU route).
 int miniatura_hw_aceita(const char *url);
+// Cancel an unadopted prewarm; late workers close their own handle.
+void miniatura_preaquecer_cancelar(void);
 #endif
