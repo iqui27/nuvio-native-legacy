@@ -24,6 +24,7 @@ int main(void) {
   assert(!player_skip_present(1, 1, 1, 7u, 7u)); /* subtitle, OSD, toast */
   assert(!player_skip_present(1, 0, 1, 7u, 8u)); /* hole moved (zoom, aspect) */
   assert(!player_skip_present(0, 0, 1, 7u, 7u)); /* player closed */
+  assert(!player_skip_present(1, 0, 1, 0u, 0u)); /* rounded or no hole */
   return 0;
 }
 C

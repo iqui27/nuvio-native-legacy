@@ -82,6 +82,22 @@ class TaxaQuadrosTest {
         assertEquals(25f, med.fps(), 0.0001f)
     }
 
+    // Every other frame dropped: 83.4 ms gaps, 11.988 fps is no standard rate.
+    @Test fun halfRateIsUnknown() {
+        val med = TaxaQuadros.Medidor()
+        (0 until 48).forEach { med.quadro(it * 2 * 1001000L / 24) }
+        assertEquals(-1f, med.fps(), 0f)
+    }
+
+    // A seek back mid-sample: only the frames after it count.
+    @Test fun seekStartsTheSampleOver() {
+        val med = TaxaQuadros.Medidor()
+        (0 until 30).forEach { med.quadro(10_000_000L + it * 40000L) }
+        (0 until 48).forEach { med.quadro(it * 1001000L / 24) }
+        assertTrue(med.cheio)
+        assertEquals(24000f / 1001f, med.fps(), 0.0001f)
+    }
+
     @Test fun tooFewFramesIsUnknown() {
         val med = TaxaQuadros.Medidor()
         (0 until 10).forEach { med.quadro(it * 40000L) }

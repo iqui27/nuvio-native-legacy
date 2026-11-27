@@ -65,7 +65,16 @@ internal object TaxaQuadros {
         @Volatile private var feito = false
         val cheio get() = feito
 
-        @Synchronized fun quadro(ptsUs: Long) { if (n < amostras) pts[n++] = ptsUs; if (n >= amostras) feito = true }
+        private var ult = 0L
+
+        // A jump of more than SALTO_US (seek, discontinuity) starts the sample
+        // over: two ranges sorted together give short, random gaps.
+        @Synchronized fun quadro(ptsUs: Long) {
+            if (n > 0 && abs(ptsUs - ult) > SALTO_US) n = 0
+            ult = ptsUs
+            if (n < amostras) pts[n++] = ptsUs
+            if (n >= amostras) feito = true
+        }
 
         @Synchronized fun fps(): Float {
             if (n < amostras / 2) return -1f
@@ -75,7 +84,12 @@ internal object TaxaQuadros {
             val mediana = gaps[gaps.size / 2]
             val perto = gaps.filter { it * 2 >= mediana && it * 2 <= mediana * 3 }
             val media = perto.sum().toFloat() / perto.size
-            return padronizar(1_000_000f / media)
+            // Only a standard rate: half of it (every other frame dropped at
+            // start) would pick a 60 Hz mode for 23.976.
+            val fps = padronizar(1_000_000f / media)
+            return if (PADRAO.any { it == fps }) fps else -1f
         }
+
+        private companion object { const val SALTO_US = 500_000L }
     }
 }

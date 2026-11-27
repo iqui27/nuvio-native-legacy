@@ -19,10 +19,12 @@ static inline int player_source_ui_unpaced(int ui, int sources, int loading, int
  * the UI kept presenting the same transparent 4K hole ~38 times a second. A
  * bare frame identical to the last one presented (same hole) is not swapped:
  * the compositor keeps showing it, and the GPU and memory bandwidth go to the
- * video decoder. The first bare frame after any overlay is still presented. */
+ * video decoder. The first bare frame after any overlay is still presented.
+ * Only a square gfx_furo hole has a signature: a frame with a rounded or no
+ * hole (hole == 0) is always presented. */
 static inline int player_skip_present(int open, int ui, int lastBare,
                                       unsigned hole, unsigned lastHole) {
-  return open && !ui && lastBare && hole == lastHole;
+  return open && !ui && lastBare && hole && hole == lastHole;
 }
 
 /* Native swaps can follow the video plane's clock. With UI visible, use an

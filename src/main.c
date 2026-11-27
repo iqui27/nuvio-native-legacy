@@ -2415,6 +2415,7 @@ int main(int argc, char **argv) {
 #ifdef NV_ANDROID
     if (player_skip_present(player_aberto(), playerUi, ultimoNu, gfx_furo_assin, ultimoFuro)) {
       quadrosPulados++;
+      swapInt.ult = 0.0;   // the next swap after a skipped run is not an interval
       SDL_Delay(16);
     } else
 #endif
