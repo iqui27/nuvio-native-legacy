@@ -200,12 +200,7 @@ endif()
 # Motor P2P embutido (src/p2pmotor.h): nuvio-engine + libtorrent + OpenSSL,
 # estaticos e ja compilados por tools/p2p-motor/build-android.sh. C++ dentro de
 # um nucleo C: liga com o driver C++ e o libc++ estatico do ANDROID_STL.
-# Ou a libnuvio_engine.so pronta do NuvioTV (tools/p2p-motor/fetch-android.sh):
-# aberta por dlopen (NV_P2P_MOTOR_DLOPEN), sem NEEDED; o gradle a poe no APK.
-if(NUVIO_P2P_MOTOR AND EXISTS "${NUVIO_P2P_MOTOR}/lib/${ANDROID_ABI}/libnuvio_engine.so")
-  target_compile_definitions(main PRIVATE NV_P2P_MOTOR NV_P2P_MOTOR_DLOPEN)
-  target_include_directories(main PRIVATE "${NUVIO_P2P_MOTOR}/include")
-elseif(NUVIO_P2P_MOTOR)
+if(NUVIO_P2P_MOTOR)
   set(P2P_LIB "${NUVIO_P2P_MOTOR}/lib/${ANDROID_ABI}")
   if(NOT EXISTS "${P2P_LIB}/libnuvio_engine.a")
     message(FATAL_ERROR "motor P2P ausente em ${P2P_LIB} (rode tools/p2p-motor/build-android.sh)")

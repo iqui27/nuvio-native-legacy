@@ -14,11 +14,6 @@ PAGE_SIZE = 16384
 MACHINES = {'arm64-v8a': 183, 'x86_64': 62}
 PT_LOAD = 1
 PT_GNU_RELRO = 0x6474E552
-# Prebuilt third-party libraries we cannot relink. Their LOAD segments must
-# still be 16 KB aligned (what lets a 16 KB kernel map them); only a RELRO end
-# inside a page is tolerated (the last partial RELRO page stays writable).
-# libnuvio_engine.so: NuvioTV's nuvio-engine 0.1.7 (NDK r29), fetch-android.sh.
-RELRO_TOLERATED = {'libnuvio_engine.so'}
 
 
 def check_elf(data, abi):
@@ -71,11 +66,7 @@ def check_apk(path, output=sys.stdout):
                     raise ValueError('duplicate library path')
                 seen.add(item.filename)
                 count, minimum, errors = check_elf(apk.read(item), parts[1])
-                relro = [e for e in errors if e.startswith('GNU_RELRO')]
-                if errors and len(relro) == len(errors) and parts[2] in RELRO_TOLERATED:
-                    print(f'ALIGNED {item.filename}: {count} LOAD segments, min alignment={minimum} '
-                          f'(prebuilt, tolerated: {"; ".join(relro)})', file=output)
-                elif errors:
+                if errors:
                     failures += 1
                     print(f'UNALIGNED {item.filename}: {"; ".join(errors)}', file=output)
                 else:

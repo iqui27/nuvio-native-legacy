@@ -1,8 +1,8 @@
 // MOTOR P2P EMBUTIDO: o proprio aparelho baixa o torrent (#171, F10).
 //
-// E o nuvio-engine (github.com/NuvioMedia/nuvio-engine, GPL-3.0, v0.1.7 =
-// API 3, o mesmo do NuvioTV; limita sozinho o disco do stream tocando):
-// libtorrent 2.0.12 por baixo, agendamento de pecas pela
+// E o nuvio-engine (github.com/NuvioMedia/nuvio-engine, GPL-3.0, commit
+// 02938d7 = 0.1.3, mais tools/p2p-motor/janela-334.patch = API 4, janela de
+// streaming): libtorrent 2.0.12 por baixo, agendamento de pecas pela
 // posicao que o player pede e um servidor HTTP com Range em 127.0.0.1 (porta
 // livre). O player (Media3 no Android, uMS na LG, Tizen.Multimedia no .tpk)
 // toca a URL local como qualquer link direto.
@@ -51,7 +51,7 @@
 #endif
 #ifndef P2PM_DURO_MAX_MB   // teto DURO absoluto da pasta; nunca > 1/2 do livre ao subir
 #ifdef NV_ANDROID
-#define P2PM_DURO_MAX_MB 208 // 176 MiB streaming window (nuvio-engine 0.1.7 minimum) plus 32 MiB headroom
+#define P2PM_DURO_MAX_MB 192 // 160 MiB streaming window plus 32 MiB headroom
 #else
 #define P2PM_DURO_MAX_MB 1536
 #endif
@@ -59,8 +59,8 @@
 #define P2PM_LIVRE_MIN_MB 256   // menos livre que isto ao subir: recusa
 #define P2PM_RESERVA_MB   512   // limite FIXO (Ajustes): deixa ao menos isto livre na TV (#334)
 #define P2PM_LIVRE_PISO_MB 128  // vigia: o livre caiu abaixo disto (outro app): para
-#ifndef P2PM_JANELA_MIN_MB      // #334: menor janela do motor 0.1.7 (32 tocando + 64 read-ahead + 64 atras + 2x8 bordas)
-#define P2PM_JANELA_MIN_MB 176
+#ifndef P2PM_JANELA_MIN_MB      // #334: menor janela que toca um 4K (read-ahead + cabeca/cauda)
+#define P2PM_JANELA_MIN_MB 160
 #endif
 #define P2PM_JANELA_FOLGA_MB 32 // #334: janela = teto duro menos isto (resume, pecas de borda)
 #define P2PM_RAM_MB       16    // cache em memoria do motor
@@ -184,7 +184,7 @@ typedef struct {
 typedef struct {
   const char *dados, *cache;
   uint64_t ram, disco, upload_bps;
-  uint64_t janela;           // #334: vai em disk_cache_capacity_bytes (0 = limite mole)
+  uint64_t janela;           // #334: streaming_window_bytes (0 = arquivo inteiro)
 } P2pmConfig;
 typedef struct {
   uint64_t ram_usada, disco_motor, baixando_bps;

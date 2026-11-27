@@ -37,33 +37,19 @@ permissions:
   contents: read
 
 jobs:
-  # libnuvio_engine.so for the 6+ packages (NuvioTpk40 never carries it).
-  engine:
-    uses: ./.github/workflows/build-p2p-engine.yml
-    with:
-      part: tpk
-      artifact: p2p-engine-tpk
-
   build:
-    needs: engine
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
       NV_TPK_PACOTES: ${{ inputs.pacotes || 'NuvioTpk60 NuvioTpk65 NuvioTpk' }}
-      # P2P engine from the engine job; tools/tpk.sh checks every 6+ package carries it.
-      NUVIO_P2P_MOTOR: /home/runner/p2p-motor
+      # No P2P engine on CI (it lives on the owner's disk, not in the repo).
+      NUVIO_P2P_MOTOR: none
       DOTNET_ROOT: ${{ github.workspace }}/.dotnet
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       NUVIO_TPK_CACHE: ${{ github.workspace }}/.cache/nuvio-tpk
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download the P2P engine
-        uses: actions/download-artifact@v4
-        with:
-          name: p2p-engine-tpk
-          path: /home/runner/p2p-motor/tpk
 
       # Audio from another source: the app state, the version list, the
       # add-on filter and the automatic match's pure part (seconds, no FFmpeg).

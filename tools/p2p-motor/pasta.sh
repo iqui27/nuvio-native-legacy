@@ -6,7 +6,6 @@
 #
 # A RAIZ tem uma subpasta por plataforma, cada uma montada pelo seu build-*.sh:
 #   <raiz>/android/{lib/<abi>/*.a, include/}      tools/p2p-motor/build-android.sh
-#   <raiz>/android/{lib/<abi>/libnuvio_engine.so, include/}  fetch-android.sh (a .so do NuvioTV)
 #   <raiz>/arm/{build-arm/..., nuvio-engine/include/}   build-arm.sh (LG webOS)
 #   <raiz>/tpk/{libnuvio_engine.so, include/}     build-tpk.sh (Tizen 6+)
 #   <raiz>/licenses/                              avisos que o motor exige
@@ -39,8 +38,6 @@ nv_p2p_resolver() {  # $1 = android | arm | tpk
   local d="$NV_P2P_RAIZ/$1" f falta=""
   case "$1" in
     android) for f in arm64-v8a armeabi-v7a; do
-               # .so pronta do NuvioTV (fetch-android.sh) ou estatico (build-android.sh)
-               [ -s "$d/lib/$f/libnuvio_engine.so" ] && continue
                for l in libnuvio_engine.a libtorrent-rasterbar.a libssl.a libcrypto.a; do
                  [ -s "$d/lib/$f/$l" ] || falta="$falta lib/$f/$l"; done; done
              [ -s "$d/include/nuvio_engine/nuvio_engine.h" ] || falta="$falta include/nuvio_engine/nuvio_engine.h" ;;
@@ -52,21 +49,25 @@ nv_p2p_resolver() {  # $1 = android | arm | tpk
   esac
   if [ -n "$falta" ]; then
     echo "motor P2P: $d incompleta, faltando:$falta" >&2
-    echo "  rode tools/p2p-motor/build-$1.sh (Android: ou fetch-android.sh), ou NUVIO_P2P_MOTOR=none para compilar SEM motor de proposito" >&2
+    echo "  rode tools/p2p-motor/build-$1.sh, ou NUVIO_P2P_MOTOR=none para compilar SEM motor de proposito" >&2
     exit 2
   fi
   NV_P2P_DIR="$d"
   echo "  motor P2P: LIGADO ($d)" >&2
 }
 
-# Fonte do motor: nuvio-engine v0.1.7 (o mesmo que o NuvioTV embarca no Android),
-# sem patch nosso: o limite de disco do stream tocando (#334) veio para o motor
-# no 0.1.6/0.1.7. Idempotente: volta o clone ao commit fixado.
-NV_P2P_COMMIT=371c9fa4f57cd8f025f3fec69d609fb44fee41c6
+# Fonte do motor: o commit fixado do nuvio-engine + tools/p2p-motor/janela-334.patch
+# (#334, janela de streaming, API 4; vive aqui ate subir para o nuvio-engine).
+# Idempotente: patch ja aplicado = nada; outro estado = volta ao commit e aplica.
+# So mexe em src/ include/ tests/ cmake/ do clone (o build pode estar dentro dele).
+NV_P2P_COMMIT=02938d7
 nv_p2p_fonte() {  # $1 = clone do nuvio-engine
-  git -C "$1" fetch -q origin "$NV_P2P_COMMIT" 2>/dev/null || git -C "$1" fetch -q origin
+  local p
+  p="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/janela-334.patch"
   git -C "$1" checkout -q "$NV_P2P_COMMIT"
+  if git -C "$1" apply -R --check "$p" 2>/dev/null; then return 0; fi
   git -C "$1" reset -q --hard "$NV_P2P_COMMIT"
   git -C "$1" clean -fdq -- src include tests cmake
-  echo "  motor P2P: nuvio-engine ${NV_P2P_COMMIT:0:7} (v0.1.7)" >&2
+  git -C "$1" apply "$p"
+  echo "  motor P2P: $NV_P2P_COMMIT + janela-334.patch" >&2
 }

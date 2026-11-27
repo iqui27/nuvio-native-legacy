@@ -1,13 +1,11 @@
-// Fronteira com o nuvio-engine real (API C, NUVIO_ENGINE_API_VERSION 3: o 0.1.7,
-// o mesmo do NuvioTV). Desde o 0.1.6 o motor limita o stream TOCANDO ao
-// disk_cache_capacity_bytes (apaga pecas atras/longe da posicao), o que a
-// janela do #334 fazia pelo nosso patch; por isso a janela vai nesse campo.
+// Fronteira com o nuvio-engine real (API C, NUVIO_ENGINE_API_VERSION 4: o 0.1.3
+// mais tools/p2p-motor/janela-334.patch, janela de streaming do #334).
 // So compila o motor com -DNV_P2P_MOTOR e as bibliotecas ligadas
 // (tools/p2p-motor/). Sem isso, p2pmotor_ops_reais() devolve NULL e o resto do
 // app ve "sem motor neste pacote".
 //
-// LG: o motor e ESTATICO dentro do binario. .tpk (Tizen 6+) e Android (a .so
-// pronta do NuvioTV, em lib/<abi>/ ao lado da libmain.so): -DNV_P2P_MOTOR_DLOPEN. A libnuvio_engine.so vai no pacote ao lado da
+// Android e LG: o motor e ESTATICO dentro do binario. .tpk (Tizen 6+):
+// -DNV_P2P_MOTOR_DLOPEN. A libnuvio_engine.so vai no pacote ao lado da
 // libnuvio.so e e aberta por dlopen NA PRIMEIRA PERGUNTA (nao no arranque).
 // Ligar direto (NEEDED) quebraria a auto-atualizacao do .tpk: uma
 // libnuvio.so nova encenada em data/ num pacote antigo, sem a .so do motor,
@@ -82,10 +80,6 @@ static void carregar(void) {
     snprintf(pasta, sizeof pasta, "%s/../../lib", getenv("NUVIO_TPK_ARTE"));
     h = abrir(pasta);
   }
-#ifdef NV_ANDROID
-  // 3) Android: pelo nome, na pasta de libs nativas do app
-  if (!h) h = dlopen("libnuvio_engine.so", RTLD_NOW | RTLD_LOCAL);
-#endif
   if (!h) { erroCarga = "libnuvio_engine.so missing from the package"; printf("[p2p-motor] %s\n", erroCarga); return; }
 #define PEGA(c) if (!(*(void **)&F.c = dlsym(h, "nuvio_engine_" #c))) { erroCarga = "libnuvio_engine.so lacks " #c; printf("[p2p-motor] %s\n", erroCarga); return; }
   PEGA(api_version) PEGA(version_string) PEGA(protocol_backend_version) PEGA(status_message)
@@ -148,12 +142,11 @@ static int criar(const P2pmConfig *c, void **m) {
   k.data_directory = c->dados;
   k.cache_directory = c->cache;
   k.memory_cache_capacity_bytes = c->ram;
-  // #334: com janela, o motor segura o arquivo tocando nela; sem janela
-  // (arquivo cabe no teto), o limite mole de sempre.
-  k.disk_cache_capacity_bytes = c->janela ? c->janela : c->disco;
+  k.disk_cache_capacity_bytes = c->disco;
   k.upload_mode = NUVIO_ENGINE_UPLOAD_LIMITED;
   k.upload_limit_bytes_per_second = c->upload_bps;
   k.torrent_profile = NUVIO_ENGINE_TORRENT_PROFILE_BALANCED;
+  k.streaming_window_bytes = c->janela;   // #334; 0 = arquivo inteiro, como antes
   st = nuvio_engine_create(&k, &e);
   if (st != NUVIO_ENGINE_STATUS_OK || !e) {
     printf("[p2p-motor] create: %s\n", nuvio_engine_status_message(st));
@@ -239,10 +232,9 @@ static int stats(void *m, P2pmStats *s) {
   s->baixando_bps = st.download_rate_bytes_per_second;
   s->baixado = st.total_payload_download_bytes;
   s->pares = st.connected_peers;
-  // O 0.1.7 nao conta pecas apagadas/rebaixadas: ficam 0 no log.
-  s->janela_apagado = 0;
-  s->janela_rebaixadas = 0;
-  s->janela_sem_suporte = 0;
+  s->janela_apagado = st.window_freed_bytes;
+  s->janela_rebaixadas = st.window_refetched_pieces;
+  s->janela_sem_suporte = st.window_unsupported != 0;
   return 0;
 }
 
