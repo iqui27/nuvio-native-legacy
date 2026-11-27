@@ -91,9 +91,8 @@ android {
     buildTypes {
         debug {
             // Nunca substituir a instalacao de producao durante diagnosticos.
-            // Test build (27/11/2026): installs next to the 2.0.9 strictdebug app instead of over it.
-            applicationIdSuffix = ".conncap"
-            versionNameSuffix = "-conncap"
+            applicationIdSuffix = ".strictdebug"
+            versionNameSuffix = "-strictdebug"
         }
         release {
             isMinifyEnabled = false
