@@ -459,8 +459,13 @@ int trailer_abrir_trailerio(const char *id, const char *tipo, GfxRect r, int som
   // This title's trailer is already playing in the background (autoplay):
   // go full screen and keep playing, as trailer_abrir does for the same source,
   // instead of closing it and looking it up again from the start.
+  // Only in Automatic: the Trailerio setting plays Trailerio. With IMDb first
+  // in full screen (.tpk, with sound) a muted Apple TV background trailer is
+  // not kept: that variant has no audio there, and IMDb opens instead.
   if (aberto && !cheia) {
-    const char *a = trailerapple_url(id), *m = trailerimdb_url(id, NULL);
+    const char *a = automatico ? trailerapple_url(id) : NULL;
+    const char *m = automatico ? trailerimdb_url(id, NULL) : NULL;
+    if (som && trailerfonte_imdb_primeiro_cheia() && m && *m) a = NULL;
     int mesmo = tioEstado != TIO_INATIVO ? !strcmp(tioId, id)
               : fonteAtual[0] && ((a && !strcmp(fonteAtual, a)) || (m && !strcmp(fonteAtual, m)));
     if (mesmo) {

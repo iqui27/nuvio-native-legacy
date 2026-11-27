@@ -308,5 +308,26 @@ int main(void) {
     trailer_atualizar(++ticks);
     assert(appleOpens == a0 + 2 && imdbOpens == i0 + 1);
     assert(trailer_evento(&back) && !trailer_aberto());
+
+    // A muted Apple TV background trailer: with IMDb first and sound, the
+    // Trailer button opens IMDb instead of keeping the silent Apple stream.
+    trailer_abrir(apple, tela, 0, 0);
+    assert(appleOpens == a0 + 3 && trailer_aberto() && !trailer_cheia());
+    assert(trailer_abrir_trailerio(id, "movie", tela, 1, 1));
+    trailer_atualizar(++ticks);
+    assert(imdbOpens == i0 + 2 && appleOpens == a0 + 3 && trailer_cheia());
+    assert(trailer_evento(&back) && !trailer_aberto());
+    // Apple TV first (webOS, Android): the same trailer keeps playing.
+    trailerfonte_definir_imdb_primeiro_cheia(0);
+    trailer_abrir(apple, tela, 0, 0);
+    assert(trailer_abrir_trailerio(id, "movie", tela, 1, 1));
+    trailer_atualizar(++ticks);
+    assert(appleOpens == a0 + 4 && imdbOpens == i0 + 2 && trailer_cheia() && trailer_com_som());
+    assert(trailer_evento(&back) && !trailer_aberto());
+    // The Trailerio setting never keeps an Apple TV or IMDb trailer.
+    trailer_abrir(apple, tela, 0, 0);
+    assert(trailer_abrir_trailerio(id, "movie", tela, 1, 0));
+    assert(request && !active && appleOpens == a0 + 5);
+    assert(trailer_evento(&back) && !trailer_aberto() && !request);
   }
 }
