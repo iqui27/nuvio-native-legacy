@@ -858,7 +858,7 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeStats(JNIEnv
   statsValido = 1;
   sinal = redeFit.sinal;
   redeMinMs = minMs; redeMaxMs = alvoMs; redeMaxMb = alvoMb;
-  if (redefit_segundo(&redeFit, bytes, carregando, redeKbps, &mbps)) {
+  if (redefit_segundo(&redeFit, bytes, carregando, redeKbps, (int)bufferMs, &mbps)) {
     redeMbps = mbps;
     /* English, numbers only: never URL, host or token. */
     printf("[rede] mbps=%.1f loading_s=%d/%d buffer_ms=%d declared_kbps=%d min_ms=%d max_ms=%d max_mb=%d sample_allocated_bytes=%d sample_peak_bytes=%d rebuffers=%d short=%d\n",

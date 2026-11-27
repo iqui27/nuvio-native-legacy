@@ -36,8 +36,8 @@ from pathlib import Path
 s = Path('src/main.c').read_text()
 assert 'player_ui_frame(player_aberto(), gfx_n_rect, gfx_n_outros)' in s
 assert 'nv_ceder_quadro(playerUi)' in s
-assert 'SDL_GL_SetSwapInterval(playerUi ? 0 : 1)' in s
-assert 'player_frame_wait(playerUi,' in s
+assert 'SDL_GL_SetSwapInterval(playerClockUi ? 0 : 1)' in s
+assert 'player_frame_wait(playerClockUi,' in s
 assert 'if (quadros > 20 || dtms > 1000.0)' not in s
 h = Path('src/tpk.h').read_text()
 assert '#define SDL_GL_SetSwapInterval(i)          tpk_gl_intervalo(i)' in h
