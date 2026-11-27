@@ -787,6 +787,10 @@ typedef enum {
   // Match frame rate (Android): switch the display to the video's refresh rate.
   // 0 Always (default), 1 Only if seamless (Media3's own vote), 2 Off. LOCAL, append-only.
   AJ_QUADROS_TAXA,
+  // Seek-bar thumbnails made on this device (Android, 27/11/2026): picture size (0 Automatic, 1 High 576 px,
+  // 2 Medium 480, 3 Low 320) and decoder (0 CPU, the default; 1 GPU = the hardware engine, miniatura_hw.c).
+  // LOCAL, append-only.
+  AJ_MINI_QUALIDADE, AJ_MINI_DECODER,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -853,6 +857,8 @@ static const char *V_CAP_TIPOS[]  = { "Desligado", "Filmes", "Séries", "Filmes 
 // Plano do TorBox (tbburn.h): so o Pro converte video, o que a legenda queimada precisa.
 static const char *V_TB_AUDIO[]  = { "Passthrough", "Áudio do TorBox" };
 static const char *V_QUADROS_TAXA[] = { "Sempre", "Só sem interrupção", "Desligado" };
+static const char *V_MINI_QUALIDADE[] = { "Automática", "Alta", "Média", "Baixa" };
+static const char *V_MINI_DECODER[] = { "CPU", "GPU" };
 static const char *V_LIGA_AUTO[] = { "Ligado", "Desligado", "Automático" };
 // Estilo da fileira de formato do player; o indice e o PLR_FMT_* de ajustes.h
 // e o gravado em "plrFormatoLocal".
@@ -1997,6 +2003,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Queimar ASS pelo TorBox", V_LIGA, 2),             // local: legendaQueimarLocal
   ESC("Áudio original com a queima", V_TB_AUDIO, 2),     // local: torboxAudioModoLocal
   ESC("Igualar taxa de quadros", V_QUADROS_TAXA, 3),   // local: frameRateMatchLocal (Android)
+  ESC("Qualidade das miniaturas", V_MINI_QUALIDADE, 4),   // local: miniaturaQualidadeLocal (Android)
+  ESC("Decodificador das miniaturas", V_MINI_DECODER, 2), // local: miniaturaDecoderLocal (Android)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2369,6 +2377,7 @@ static const char *CHAVE[] = {
   "legendaQueimarLocal",
   "torboxAudioModoLocal",   /* was torboxAudioLocal (4 values, 13-14/11): new key, everyone starts on Passthrough */
   "frameRateMatchLocal",
+  "miniaturaQualidadeLocal", "miniaturaDecoderLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3148,6 +3157,22 @@ int ajustes_tunneling(void) {
   return 0;
 #endif
 }
+// Thumbnails made on this TV (Android): 0 Automatic, 1 High, 2 Medium, 3 Low; and 1 = the GPU (hardware) engine.
+int ajustes_miniatura_qualidade(void) {
+#ifdef NV_ANDROID
+  int v = valor[AJ_MINI_QUALIDADE];
+  return v < 0 || v > 3 ? 0 : v;
+#else
+  return 0;
+#endif
+}
+int ajustes_miniatura_gpu(void) {
+#ifdef NV_ANDROID
+  return valor[AJ_MINI_DECODER] == 1;
+#else
+  return 0;
+#endif
+}
 int ajustes_quadros_taxa(void) {
 #ifdef NV_ANDROID
   int v = valor[AJ_QUADROS_TAXA];
@@ -3416,6 +3441,7 @@ static int ajOpcaoDisponivel(int op) {
   if (op == AJ_HDR_INTERFACE) return 0;
 #ifndef NV_ANDROID
   if (op == AJ_FONTE_PRECARREGAR || op == AJ_TUNNELING || op == AJ_QUADROS_TAXA) return 0;
+  if (op == AJ_MINI_QUALIDADE || op == AJ_MINI_DECODER) return 0;
 #endif
 #ifndef NV_TOUCH_UI
   if (op == AJ_INTERFACE_MODO) return 0;
@@ -6522,6 +6548,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LEG_MOSTRAR:
     case AJ_TUNNELING:     /* Hardware playback capabilities belong to this device. */
     case AJ_QUADROS_TAXA:  /* the display modes belong to this panel */
+    case AJ_MINI_QUALIDADE: case AJ_MINI_DECODER: /* thumbnails made on this device */
     case AJ_HDR_INTERFACE: /* HDR output belongs to this panel. */
     case AJ_HDR_UI:         /* o painel e desta TV */
     case AJ_LEG_SYNC_AUTO: /* escolha local desta TV */
@@ -6605,6 +6632,7 @@ static int soNaTv(int op) {
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_QUADROS_TAXA: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
+    case AJ_MINI_QUALIDADE: case AJ_MINI_DECODER:
     case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_VIDRO_QUALIDADE:
     case AJ_DET_SO_CINEMETA: case AJ_BUSCA_CINEMETA:
     case AJ_FONTE_MANUAL: case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_PRAZO:
@@ -7223,6 +7251,7 @@ static int foraDestaPlataforma(int op) {
 #endif
 #ifndef NV_ANDROID
   if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_LEG_SYNC_AUDIO_MOVEL || op == AJ_TUNNELING || op == AJ_QUADROS_TAXA) return 1;
+  if (op == AJ_MINI_QUALIDADE || op == AJ_MINI_DECODER) return 1;
 #endif
 #ifndef NV_TB_QUEIMA
   // TorBox burn-in plays TorBox's HLS on the native players only (tbburn.h).
@@ -7923,7 +7952,7 @@ static int inativa(int op) {
       return !ajustes_cw_ligado();
     case AJ_CW_BLUR_PROX: return !ajustes_cw_ligado() || !ajustes_cw_thumb_episodio();
     case AJ_EXPANDIR_ATRASO: return !ajustes_expandir_poster();
-    case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE: return !lig(AJ_SEEKR_LIGADO);
+    case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE: case AJ_MINI_QUALIDADE: case AJ_MINI_DECODER: return !lig(AJ_SEEKR_LIGADO);
     case AJ_FONTE_GRUPO_SESSOES: return !lig(AJ_FONTE_GRUPO);
     case AJ_LINK_PRAZO: return !lig(AJ_LINK_REUSAR);
     case AJ_FONTE_ICONES: return valor[AJ_FONTE_TEXTO] != 1;
@@ -8562,6 +8591,8 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_ESPACO_FILEIRAS: return "O espaço vertical entre uma fileira da Home e a seguinte. Com menos cabem mais fileiras na tela, com mais a Home fica mais arejada.";
     case AJ_ESPACO_TITULOS: return "O espaço horizontal entre os cartazes de uma fileira da Home.";
     case AJ_QUADROS_TAXA: return "Troca a frequência da tela para a do vídeo (24, 25, 50 ou 60 Hz), sem trancos no movimento. Sempre: a tela pode apagar 1 ou 2 segundos ao trocar. Só sem interrupção: só troca quando a TV não apaga. Vale a partir do próximo vídeo.";
+    case AJ_MINI_QUALIDADE: return "Tamanho das miniaturas feitas nesta TV. Automática escolhe pela memória e pela velocidade da TV. Vale a partir do próximo título.";
+    case AJ_MINI_DECODER: return "CPU: o processador decodifica, sem disputar o vídeo. GPU: o decodificador de vídeo, bem mais rápido; se ele não ficar pronto enquanto o título abre, o título usa a CPU. Vale a partir do próximo título.";
     case AJ_TUNNELING: return "Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.";
     case AJ_HDR_INTERFACE: return "HDR experimental para os menus. Branco limitado a 203 nits. Reinicie o app após mudar. Sem suporte, usa SDR.";
     case AJ_AMPLIAR_UI: return "Só vale com a resolução em 1080p ou 720p: o app amplia a interface para a tela (usa mais GPU). Na Automática e na 4K quem amplia é a TV. Reinicie o app depois de mudar.";

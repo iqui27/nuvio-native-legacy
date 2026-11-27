@@ -65,6 +65,7 @@ struct MiniMotor {
   unsigned char cabeca[16];         // first bytes of the file (logged when it can't be opened)
   int ncabeca;
   MiniConfig cfg;
+  int outW, outH;                   // output picture (MINI_W x MINI_H unless MiniConfig.largura says otherwise)
   int pedidos;                      // range requests made by the demuxer path
   // Prefetch: bytes of the NEXT frame's keyframe fetched by a helper thread
   // while this frame decodes (nothing reads the source then).
@@ -84,6 +85,14 @@ void mini_motor_config(MiniMotor *m, const MiniConfig *c) {
   if (m->cfg.lerBlocos > BLOCOS - 1) m->cfg.lerBlocos = BLOCOS - 1;
   if (m->cfg.tsBlocos < 1) m->cfg.tsBlocos = 1;
   if (m->cfg.tsBlocos > BLOCOS - 1) m->cfg.tsBlocos = BLOCOS - 1;
+  {
+    int w = m->cfg.largura == 480 || m->cfg.largura == 576 ? m->cfg.largura : MINI_W;
+    int h = w == MINI_W ? MINI_H : w * 9 / 16;
+    if (w != m->outW || h != m->outH) {           // a new size: the encoder reopens at it on the next frame
+      m->outW = w; m->outH = h;
+      avcodec_free_context(&m->jc);
+    }
+  }
 }
 
 static unsigned agoraMs(void) {
@@ -334,6 +343,7 @@ MiniMotor *mini_motor_abrir(MiniLer ler, void *usuario, int64_t tamanho, char *e
   if (!m) { erroDe(erro, nerro, "memory"); return NULL; }
   m->ler = ler; m->usuario = usuario; m->tamanho = tamanho; m->vs = -1;
   mini_motor_config_padrao(&m->cfg);
+  m->outW = MINI_W; m->outH = MINI_H;
   m->proxPos = -1;
   av_log_set_level(AV_LOG_QUIET);
   buf = av_malloc(65536);
@@ -600,7 +610,7 @@ static int abrirJpeg(MiniMotor *m) {
   if (!c) return -1;
   m->jc = avcodec_alloc_context3(c);
   if (!m->jc) return -1;
-  m->jc->width = MINI_W; m->jc->height = MINI_H;
+  m->jc->width = m->outW; m->jc->height = m->outH;
   m->jc->pix_fmt = AV_PIX_FMT_YUVJ420P;
   m->jc->color_range = AVCOL_RANGE_JPEG;
   m->jc->time_base = (AVRational){1, 25};
@@ -654,7 +664,7 @@ static float media(const AVFrame *f, int p, int prof, int x0, int x1, int y0, in
   return n ? (float)acc / (float)n : 0.0f;
 }
 
-// Shrinks the decoded frame into m->saida (yuvj420p 320x180, letter/pillarboxed).
+// Shrinks the decoded frame into m->saida (yuvj420p m->outW x m->outH, 320x180 by default, letter/pillarboxed).
 static int reduzir(MiniMotor *m) {
   AVFrame *f = m->quadro, *o = m->saida;
   const AVPixFmtDescriptor *d = av_pix_fmt_desc_get((enum AVPixelFormat)f->format);
@@ -674,20 +684,21 @@ static int reduzir(MiniMotor *m) {
   // Display aspect: sample aspect ratio from the frame, else the stream.
   AVRational sar = f->sample_aspect_ratio.num ? f->sample_aspect_ratio : m->st->sample_aspect_ratio;
   double dw = f->width * (sar.num > 0 && sar.den > 0 ? (double)sar.num / sar.den : 1.0);
-  double s = fmin(MINI_W / dw, (double)MINI_H / f->height);
+  const int OW = m->outW, OH = m->outH;
+  double s = fmin(OW / dw, (double)OH / f->height);
   int sw = (int)lround(dw * s), sh = (int)lround(f->height * s);
-  sw = sw < 2 ? 2 : sw > MINI_W ? MINI_W : sw & ~1;
-  sh = sh < 2 ? 2 : sh > MINI_H ? MINI_H : sh & ~1;
-  int ox = ((MINI_W - sw) / 2) & ~1, oy = ((MINI_H - sh) / 2) & ~1;
+  sw = sw < 2 ? 2 : sw > OW ? OW : sw & ~1;
+  sh = sh < 2 ? 2 : sh > OH ? OH : sh & ~1;
+  int ox = ((OW - sw) / 2) & ~1, oy = ((OH - sh) / 2) & ~1;
 
   av_frame_unref(o);
-  o->format = AV_PIX_FMT_YUVJ420P; o->width = MINI_W; o->height = MINI_H;
+  o->format = AV_PIX_FMT_YUVJ420P; o->width = OW; o->height = OH;
   o->color_range = AVCOL_RANGE_JPEG;
   if (av_frame_get_buffer(o, 32) < 0) return -1;
-  for (int y = 0; y < MINI_H; y++) memset(o->data[0] + (size_t)y * (size_t)o->linesize[0], 0, MINI_W);
-  for (int y = 0; y < MINI_H / 2; y++) {
-    memset(o->data[1] + (size_t)y * (size_t)o->linesize[1], 128, MINI_W / 2);
-    memset(o->data[2] + (size_t)y * (size_t)o->linesize[2], 128, MINI_W / 2);
+  for (int y = 0; y < OH; y++) memset(o->data[0] + (size_t)y * (size_t)o->linesize[0], 0, OW);
+  for (int y = 0; y < OH / 2; y++) {
+    memset(o->data[1] + (size_t)y * (size_t)o->linesize[1], 128, OW / 2);
+    memset(o->data[2] + (size_t)y * (size_t)o->linesize[2], 128, OW / 2);
   }
   // Per 2x2 output block: four luma samples, one chroma pair.
   for (int by = 0; by < sh; by += 2) {

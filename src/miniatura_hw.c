@@ -329,32 +329,6 @@ void mini_dovi_gpu_close(void) {
   (*env)->CallStaticVoidMethod(env,cls,jDolbyGpuClose);
   if((*env)->ExceptionCheck(env))(*env)->ExceptionClear(env);
 }
-static long long mAbrir(const char *url, const char *cab, int manter) {
-  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
-  jstring u = (*env)->NewStringUTF(env, url), c = (*env)->NewStringUTF(env, cab ? cab : "");
-  jlong h = (*env)->CallStaticLongMethod(env, cls, jAbrir, u, c, manter ? JNI_TRUE : JNI_FALSE);
-  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); h = 0; }
-  (*env)->DeleteLocalRef(env, u); (*env)->DeleteLocalRef(env, c);
-  return h;
-}
-// A copy being tried for the first time: an unanswered open fails at once, so the hunt moves on (the next copy costs less
-// than a second try at a server that did not answer). The engine's opens keep their retry.
-static long long mAbrirCandidata(const char *url, const char *cab) {
-  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
-  jstring u = (*env)->NewStringUTF(env, url), c = (*env)->NewStringUTF(env, cab ? cab : "");
-  jlong h = (*env)->CallStaticLongMethod(env, cls, jAbrirCandidata, u, c);
-  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); h = 0; }
-  (*env)->DeleteLocalRef(env, u); (*env)->DeleteLocalRef(env, c);
-  return h;
-}
-// [duration ms, width, height, hdr, bytes read, codec usable (H.264/HEVC/DV)]
-static void mInfo(long long h, long long out[6]) {
-  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
-  memset(out, 0, 6 * sizeof *out);
-  jlongArray a = (jlongArray)(*env)->CallStaticObjectMethod(env, cls, jInfo, (jlong)h);
-  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return; }
-  if (a) { (*env)->GetLongArrayRegion(env, a, 0, 6, (jlong *)out); (*env)->DeleteLocalRef(env, a); }
-}
 // Unpacks MiniaturaMotor's reply: pts (ms), signature (unit-norm, mean-removed; 0 when flat), JPEG (malloc'd).
 static int desempacotar(JNIEnv *env, jbyteArray a, long *pts, float sig[SIG_N], int *temSig, unsigned char **jpg, int *nJpg);
 static long mSlotKeyframe(long long h, long targetMs) {
@@ -376,22 +350,6 @@ static int resolverSondas(long long h, long *times, int count) {
     if (!duplicate) times[out++] = key;
   }
   return out;
-}
-// One keyframe (closest or at/before tMs).
-static int mQuadro(long long h, long tMs, int closest, int querJpeg, long *pts, float sig[SIG_N], int *temSig,
-                   unsigned char **jpg, int *nJpg) {
-  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
-  jbyteArray a = (jbyteArray)(*env)->CallStaticObjectMethod(env, cls, jQuadro, (jlong)h, (jlong)tMs,
-                                                            closest ? JNI_TRUE : JNI_FALSE, querJpeg ? JNI_TRUE : JNI_FALSE);
-  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); a = NULL; }
-  return desempacotar(env, a, pts, sig, temSig, jpg, nJpg);
-}
-// The frame AT tMs (decoded forward from the keyframe), signature only: the fine pass of the check.
-static int mExato(long long h, long tMs, long *pts, float sig[SIG_N], int *temSig, unsigned char **jpg, int *nJpg) {
-  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
-  jbyteArray a = (jbyteArray)(*env)->CallStaticObjectMethod(env, cls, jExato, (jlong)h, (jlong)tMs, jpg ? JNI_TRUE : JNI_FALSE);
-  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); a = NULL; }
-  return desempacotar(env, a, pts, sig, temSig, jpg, nJpg);
 }
 static int desempacotar(JNIEnv *env, jbyteArray a, long *pts, float sig[SIG_N], int *temSig, unsigned char **jpg, int *nJpg) {
   if (!a) return 0;
@@ -427,17 +385,6 @@ static void mFechar(long long h) {
   JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
   if (h) (*env)->CallStaticVoidMethod(env, cls, jFechar, (jlong)h);
   if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
-}
-static void mSemFila(long long h) {
-  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
-  if (h) (*env)->CallStaticVoidMethod(env, cls, jSemFila, (jlong)h);
-  if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
-}
-static long long mLidos(long long h) {
-  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
-  jlong r = h ? (*env)->CallStaticLongMethod(env, cls, jLidos, (jlong)h) : 0;
-  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); r = 0; }
-  return r;
 }
 
 static int mFalhaRede(long long h) {
@@ -531,19 +478,6 @@ static void mContadores(long long out[NCONT]) {
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return; }
   if (a) { (*env)->GetLongArrayRegion(env, a, 0, NCONT, (jlong *)out); (*env)->DeleteLocalRef(env, a); }
 }
-// The copy's link after the add-on's redirect, so further sessions do not make the add-on mint another debrid link.
-static void mAlvo(long long h, const char *reserva, char *out, size_t n) {
-  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
-  snprintf(out, n, "%s", reserva);
-  jstring sj = (jstring)(*env)->CallStaticObjectMethod(env, cls, jAlvo, (jlong)h);
-  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return; }
-  if (sj) {
-    const char *c = (*env)->GetStringUTFChars(env, sj, NULL);
-    if (c && c[0]) snprintf(out, n, "%s", c);
-    if (c) (*env)->ReleaseStringUTFChars(env, sj, c);
-    (*env)->DeleteLocalRef(env, sj);
-  }
-}
 // The engine's read diagnostics since the last reset (zerar = reset after reading), into out.
 static void mDiag(int zerar, char *out, size_t n) {
   JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
@@ -574,12 +508,6 @@ static long long mAbrirDireto(const char *url, const char *cab) {
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); h = 0; }
   (*env)->DeleteLocalRef(env, u); (*env)->DeleteLocalRef(env, c);
   return h;
-}
-static long mKeyframe(long long h, long tMs) {
-  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
-  jlong r = (*env)->CallStaticLongMethod(env, cls, jKeyframe, (jlong)h, (jlong)tMs);
-  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); r = -1; }
-  return (long)r;
 }
 static int desempacotar(JNIEnv *env, jbyteArray a, long *pts, float sig[SIG_N], int *temSig, unsigned char **jpg, int *nJpg);
 static int mQuadroDireto(long long h, long tMs, long *pts, unsigned char **jpg, int *nJpg) {
@@ -668,12 +596,17 @@ static int bitsDebug(void) {
   // bounded mixed probes, two payload exchanges, shared transport, lookahead and measured memory/NAL fixes.
   // + 1048576: copy-first off (test build 27/11): with no CPU route here a copy needs its own decoder, which is only
   // created while the film opens or is paused; the pre-warmed 4K decoder on the playing file is used instead.
-  return 260096 | 1048576;
+  return 260096;
 }
 
+// Settings > Thumbnail quality for the GPU route: High 576, Medium 480, Low 320; Automatic = 0, MiniaturaPerfil.kt
+// picks by RAM (320 up to 2 GB, 576 above 2.5 GB, 480 between).
+static int larguraGpu(void) {
+  switch (ajustes_miniatura_qualidade()) { case 1: return 576; case 2: return 480; case 3: return 320; default: return 0; }
+}
 static void mConfigurar(int bits) {
   JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
-  (*env)->CallStaticVoidMethod(env, cls, jConfig, (jint)bits, (jint)0);
+  (*env)->CallStaticVoidMethod(env, cls, jConfig, (jint)bits, (jint)larguraGpu());
   if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 }
 static void mPipelineState(int state, int begin) {
@@ -700,14 +633,6 @@ static long long mRitmo(void) {
   return r;
 }
 
-static long rssKB(void) {                        // this process's resident memory, for the decoder-closure log
-  long total = 0, rss = 0;
-  FILE *f = fopen("/proc/self/statm", "r");
-  if (!f) return -1024;
-  int n = fscanf(f, "%ld %ld", &total, &rss);
-  fclose(f);
-  return n == 2 ? rss * 4 : -1024;               // 4 KB pages
-}
 static long memDisponivelKB(void) {
   FILE *f = fopen("/proc/meminfo", "r");
   char l[128]; long v = -1;
@@ -781,13 +706,6 @@ static void dormirGate(const Job *j, int ms) {
   dormir(j, ms);
   mPipelineState(3, 0);
 }
-static void esperarPlayer(Job *j) {
-  int avisou = 0;
-  while (!parou(j) && (bufferando || video_reconectando() || video_falhou() || folgaBaixa(j))) {
-    if (!avisou) { printf("[miniatura] waiting: the player is buffering/reconnecting\n"); fflush(stdout); avisou = 1; }
-    dormirGate(j, 1000);
-  }
-}
 // A failed frame: when a READ failed (the engine says so), back off 5 s, 10 s, 20 s and end the job on the 4th in a
 // row (the link is refusing us). A frame that only would not DECODE is skipped at once; 3 of those in a row end it
 // (22/10: a copy whose frames all threw made decoders in a burst next to the player, whose own decoder then failed).
@@ -813,171 +731,9 @@ static int falhou(const Job *j, int ok, long long h) {
   return 0;
 }
 
-// ---- choosing the smaller copy (OpenSeek altsource.py, on the list the app already has) ----
-static const char *EDICOES[] = { "extended", "directors", "director", "theatrical", "unrated", "imax", "remastered",
-                                 "final cut", "special edition", "uncut", "redux", "open matte", "3d", "bd3d", "sbs", "hsbs" };
-#define N_EDICOES (int)(sizeof EDICOES / sizeof *EDICOES)
-static unsigned edicoes(const Stream *s) {
-  char t[1200]; size_t k = 0;
-  const char *fontes[] = { s->arquivo, s->rotulo, s->descricao };
-  for (int f = 0; f < 3; f++)
-    for (const char *p = fontes[f]; *p && k < sizeof t - 2; p++)
-      t[k++] = (*p == '.' || *p == '_' || *p == '-' || *p == '\n') ? ' ' : (char)tolower((unsigned char)*p);
-  t[k] = 0;
-  unsigned m = 0;
-  for (int i = 0; i < N_EDICOES; i++) {
-    size_t n = strlen(EDICOES[i]);
-    for (const char *p = t; (p = strstr(p, EDICOES[i])); p += n) {
-      int ini = p == t || !isalnum((unsigned char)p[-1]), fim = !isalnum((unsigned char)p[n]);
-      if (ini && fim) { m |= 1u << i; break; }
-    }
-  }
-  return m;
-}
-static unsigned long long tamanho(const Stream *s) {
-  return s->tamanhoBytes ? s->tamanhoBytes : (unsigned long long)s->tamanhoMB << 20;
-}
-// Size first: the cheapest copy that can be the same video, with guards (same edition words, cached, no samples,
-// a resolution below the playing file's, or the same one at <= half its size, the 1080p 0.80 rule, bitrate floors).
-// Up to TENTATIVAS, smallest first; unknown sizes last. `motivos` gets the counts behind the choice.
-static int escolherCopias(const Stream *play, Copia *out, long durMs, char *motivos, size_t nmot) {
-  enum { R_CACHE, R_RES, R_EDICAO, R_AMOSTRA, R_REPETIDA, R_BITRATE, R_1080, R_PESADA, R_N };
-  static const char *NOMES[R_N] = { "not-cached", "resolution", "edition", "sample", "duplicate", "bitrate", "1080-rule", "heavy" };
-  int rej[R_N] = {0}, nv = 0, cap = stream_n() > 0 ? stream_n() : 1;
-  int *v = malloc(sizeof(int) * (size_t)cap), *esp = malloc(sizeof(int) * (size_t)cap), ne = 0;
-  unsigned edA = edicoes(play);
-  unsigned long long tamA = tamanho(play);
-  if (!v || !esp) { free(v); free(esp); return 0; }
-  for (int i = 0; i < stream_n(); i++) {
-    const Stream *c = stream_item(i);
-    if (!c || i == stream_atual() || c->naoVideo || !c->url[0] || !strcmp(c->url, play->url)) continue;
-    // Never start a download for thumbnails: a link known not cached, or a debrid RESOLVE link not declared cached
-    // (opening it can make the service fetch the torrent). A plain file link (PenguPlay/R2, any direct HTTP host)
-    // has no cache state and is read like the playing one (06/11/2026: all 70 PenguPlay copies were "not-cached").
-    int resolve = strstr(c->url, "/resolve/") || strstr(c->url, "/playback/") || strstr(c->url, "streaming_provider") ||
-                  strstr(c->url, "/debrid/") || !c->url[0];
-    if (c->foraCache || (resolve && !(c->emCache || c->cacheNativo))) { rej[R_CACHE]++; continue; }
-    unsigned long long tc = tamanho(c);
-    int resOk = c->altura >= 480 && c->altura <= 1080 &&
-                (play->altura <= 0 || c->altura < play->altura ||
-                 (c->altura == play->altura && tc && tamA && tc <= (unsigned long long)(tamA * RAZAO_MESMA_RES)));
-    if (!resOk) { rej[R_RES]++; continue; }
-    if (edicoes(c) != edA) { rej[R_EDICAO]++; continue; }
-    // Sample clips (22/10: the two "copies" of a 21.6 min episode were 30 s samples): by name, or under 50 MB.
-    // A bigger sample is still caught by the runtime check, from the header alone (~1 s, ~0.4 MB).
-    if (strcasestr(c->arquivo, "sample") || strcasestr(c->rotulo, "sample") || (tc && tc < (50ULL << 20))) { rej[R_AMOSTRA]++; continue; }
-    if (tc && durMs > 60000) {
-      double mbps = tc * 8.0 / (durMs / 1000.0) / 1e6;
-      double piso = c->altura >= 1080 ? PISO_MBPS_1080 : c->altura >= 720 ? PISO_MBPS_720 : PISO_MBPS_SD;
-      if (mbps < piso) { rej[R_BITRATE]++; continue; }
-    }
-    // The same file from another add-on: checking it twice is pure waste, but its other link may be alive when this one
-    // is dead, so it is kept as a mirror (tried only if the first would not open). The very same link is dropped.
-    int repetida = 0, mesmoLink = 0;
-    for (int k = 0; k < nv && !mesmoLink; k++) {
-      const Stream *o = stream_item(v[k]);
-      if ((tc && tc == tamanho(o)) || (c->arquivo[0] && !strcmp(c->arquivo, o->arquivo))) repetida = 1;
-      if (!strcmp(c->url, o->url)) mesmoLink = 1;
-    }
-    for (int k = 0; k < ne && !mesmoLink; k++) mesmoLink = !strcmp(c->url, stream_item(esp[k])->url);
-    if (mesmoLink) { rej[R_REPETIDA]++; continue; }
-    if (repetida) { rej[R_REPETIDA]++; esp[ne++] = i; continue; }
-    v[nv++] = i;
-  }
-  unsigned long long min720 = 0;
-  for (int k = 0; k < nv; k++) {
-    const Stream *c = stream_item(v[k]);
-    if (c->altura == 720 && tamanho(c) && (!min720 || tamanho(c) < min720)) min720 = tamanho(c);
-  }
-  // 1080p copies the 0.80 rule sets aside are BACKUPS, tried after every smaller copy (06/11/2026: Dune on PenguPlay,
-  // six 720p copies dead or not seekable while twelve 1080p copies were never tried). A heavy copy (over PESADA_MBPS,
-  // a disc remux) stays out: its keyframes cost nearly what the 4K file's do.
-  int m = 0, nr = 0, *reserva = malloc(sizeof(int) * (size_t)cap);
-  if (!reserva) { free(v); return 0; }
-  for (int k = 0; k < nv; k++) {
-    const Stream *c = stream_item(v[k]);
-    unsigned long long tc = tamanho(c);
-    if (c->altura >= 1080 && tc && durMs > 60000 && tc * 8.0 / (durMs / 1000.0) / 1e6 > PESADA_MBPS) { rej[R_PESADA]++; continue; }
-    if (c->altura >= 1080 && min720 && (!tc || tc > (unsigned long long)(min720 * RAZAO_1080))) { rej[R_1080]++; reserva[nr++] = v[k]; continue; }
-    v[m++] = v[k];
-  }
-  nv = m;
-  for (int lista = 0; lista < 2; lista++) {   // smallest first, unknown sizes last (insertion sort: lists are short)
-    int *w = lista ? reserva : v, nw = lista ? nr : nv;
-    for (int x = 1; x < nw; x++) {
-      int y = x, cur = w[x];
-      unsigned long long tcur = tamanho(stream_item(cur));
-      while (y > 0) {
-        unsigned long long tp = tamanho(stream_item(w[y - 1]));
-        if (!(tcur && (!tp || tcur < tp))) break;
-        w[y] = w[y - 1]; y--;
-      }
-      w[y] = cur;
-    }
-  }
-  // The order: smallest first with a 1080p backup after every third (07/11/2026: dead 720p links used up the list before
-  // any 1080p was tried), then mirrors at the end, which cost nothing unless their original would not open.
-  int principais = nv, n = 0, ib = 0, im = 0, usados = 0;
-  int *ord = malloc(sizeof(int) * (size_t)(principais + nr + ne + 1));
-  if (!ord) { free(reserva); free(v); free(esp); return 0; }
-  int no = 0;
-  for (int k = 0; k < principais; k++) {
-    ord[no++] = v[k];
-    if ((k + 1) % 3 == 0 && ib < nr) ord[no++] = reserva[ib++];
-  }
-  while (ib < nr) ord[no++] = reserva[ib++];
-  int semEspelhos = no;
-  // Mirrors keep up to 3 of the 12 slots when there are enough others to fill the rest.
-  int cortar = semEspelhos < TENTATIVAS - (ne < 3 ? ne : 3) ? semEspelhos : TENTATIVAS - (ne < 3 ? ne : 3);
-  for (int k = 0; k < cortar; k++, n++) {
-    const Stream *c = stream_item(ord[k]);
-    snprintf(out[n].url, sizeof out[n].url, "%s", c->url);
-    snprintf(out[n].cab, sizeof out[n].cab, "%s", c->cabecalhos);
-    out[n].altura = c->altura;
-    out[n].tamanho = tamanho(c);
-    snprintf(out[n].nome, sizeof out[n].nome, "%s", c->arquivo[0] ? c->arquivo : c->rotulo);
-    snprintf(out[n].fonte, sizeof out[n].fonte, "%s", c->addonChave[0] ? c->addonChave : "?");
-    out[n].espelho = 0;
-  }
-  for (im = 0; im < ne && n < TENTATIVAS; im++, n++, usados++) {
-    const Stream *c = stream_item(esp[im]);
-    snprintf(out[n].url, sizeof out[n].url, "%s", c->url);
-    snprintf(out[n].cab, sizeof out[n].cab, "%s", c->cabecalhos);
-    out[n].altura = c->altura;
-    out[n].tamanho = tamanho(c);
-    snprintf(out[n].nome, sizeof out[n].nome, "%s", c->arquivo[0] ? c->arquivo : c->rotulo);
-    snprintf(out[n].fonte, sizeof out[n].fonte, "%s", c->addonChave[0] ? c->addonChave : "?");
-    out[n].espelho = 1;
-  }
-  nv = semEspelhos + ne;
-  free(ord); free(reserva); free(esp);
-  size_t o = (size_t)snprintf(motivos, nmot, "eligible %d (trying %d: %d 1080p backups, %d mirrors), rejected:", nv, n, nr, usados);
-  for (int r = 0; r < R_N && o < nmot; r++) if (rej[r] && r != R_1080) o += (size_t)snprintf(motivos + o, nmot - o, " %s %d", NOMES[r], rej[r]);
-  free(v);
-  return n;
-}
 
 // ---- the timeline check (OpenSeek timeline.verify_alignment) ----
 typedef struct { double pa, pb; } Par;
-
-static int cmpDouble(const void *x, const void *y) { double a = *(const double *)x, b = *(const double *)y; return (a > b) - (a < b); }
-static double mediana(double *v, int n) { qsort(v, (size_t)n, sizeof *v, cmpDouble); return n % 2 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2; }
-
-// Best (a, b) over the speed hypotheses (same speed; the duration ratio when it could be a real speed change).
-static int hipotese(const Par *m, int n, double razao, double *a, double *b) {
-  double slopes[2] = { 1.0, razao }, melhorRms = 1e300, *bs = malloc(sizeof(double) * (size_t)(n ? n : 1));
-  int ns = fabs(razao - 1.0) >= 0.01 ? 2 : 1;
-  if (n < 2 || !bs) { free(bs); return 0; }
-  for (int h = 0; h < ns; h++) {
-    for (int i = 0; i < n; i++) bs[i] = m[i].pb - slopes[h] * m[i].pa;
-    double med = mediana(bs, n), rms = 0;
-    for (int i = 0; i < n; i++) rms += (m[i].pb - slopes[h] * m[i].pa - med) * (m[i].pb - slopes[h] * m[i].pa - med);
-    rms = sqrt(rms / n);
-    if (rms < melhorRms) { melhorRms = rms; *a = slopes[h]; *b = med; }
-  }
-  free(bs);
-  return 1;
-}
 
 
 // Room for the player before each 4K read: at least 8 s buffered ahead (when the player reports it).
@@ -999,58 +755,6 @@ static void esperarFolga(Job *j) {
 // coarse prediction, the similarity peak by a parabola; keyframe spacing no longer limits the offset. Copy only.
 #define REFINAR 8
 #define MIN_REFINADOS 5
-static int refinar(Job *j, long long hB, const Ancora *anc, const Par *in, int ni, double a, double b, long durA,
-                   double *b2, double *erro, int *nref, double minCorr) {
-  static const long DES[5] = { -2000, -1000, 0, 1000, 2000 };
-  Par ord[N_ANCORAS], ref[REFINAR];
-  int n = 0;
-  float sb[SIG_N];
-  memcpy(ord, in, sizeof(Par) * (size_t)ni);
-  for (int x = 0; x < ni; x++) for (int y = x + 1; y < ni; y++) if (ord[y].pa < ord[x].pa) { Par t = ord[x]; ord[x] = ord[y]; ord[y] = t; }
-  int passo = ni / REFINAR > 0 ? ni / REFINAR : 1;
-  for (int q = 0; q < ni && n < REFINAR && !parou(j); q += passo) {
-    const float *sa = NULL;
-    for (int k = 0; k < N_ANCORAS; k++) if (anc[k].estado == 1 && anc[k].ok && anc[k].pA == (long)ord[q].pa) sa = anc[k].sig;
-    if (!sa) continue;
-    double cs[5], ps[5]; int nc = 0;
-    for (int d = 0; d < 5; d++) {
-      long t = (long)(a * ord[q].pa + b) + DES[d], p; int ok;
-      if (t < 0) t = 0;
-      esperarPlayer(j);
-      int lido = mExato(hB, t, &p, sb, &ok, NULL, NULL);
-      if (falhou(j, lido, hB)) return 0;
-      if (!lido || !ok) continue;
-      double c = 0;
-      for (int k = 0; k < SIG_N; k++) c += sa[k] * sb[k];
-      cs[nc] = c; ps[nc] = p; nc++;
-    }
-    if (nc < 3) continue;
-    int m = 0;
-    for (int k = 1; k < nc; k++) if (cs[k] > cs[m]) m = k;
-    if (cs[m] < minCorr) continue;
-    double t = ps[m];
-    if (m > 0 && m < nc - 1 && ps[m + 1] > ps[m - 1]) {                 // parabola through the peak and its neighbours
-      double den = cs[m - 1] - 2 * cs[m] + cs[m + 1];
-      if (den < -1e-9) {
-        double s = 0.5 * (cs[m - 1] - cs[m + 1]) / den;
-        if (s > 1) s = 1;
-        if (s < -1) s = -1;
-        t = ps[m] + s * (fabs(ps[m + 1] - ps[m]) + fabs(ps[m] - ps[m - 1])) / 2;
-      }
-    }
-    ref[n].pa = ord[q].pa; ref[n].pb = t; n++;
-  }
-  *nref = n;
-  if (n < MIN_REFINADOS) return 0;
-  double soma = 0, sp = 0, sp2 = 0, s2 = 0;
-  for (int k = 0; k < n; k++) { soma += ref[k].pb - a * ref[k].pa; sp += ref[k].pa; sp2 += ref[k].pa * ref[k].pa; }
-  *b2 = soma / n;
-  for (int k = 0; k < n; k++) { double r = ref[k].pb - (a * ref[k].pa + *b2); s2 += r * r; }
-  double sigma = sqrt(s2 / n), spread = sqrt(fmax(0, sp2 / n - (sp / n) * (sp / n)));
-  if (spread <= 0) spread = 1;
-  *erro = 3 * sigma / sqrt(n) + 2.0 * (sigma / (sqrt(n) * spread)) * durA / 2 + 500.0;
-  return 1;
-}
 
 // ---- the check from the SCREEN: frames the player already shows, no 4K read ----
 // For a copy whose runtime matches the playing file (within 2.5 s: the same cut), the frames on screen are the
@@ -1069,381 +773,10 @@ static int refinar(Job *j, long long hB, const Ancora *anc, const Par *in, int n
                                     // (22/10: a Bond film's only same-codec copy was 12 s off: logo/intro variants)
 #define OTIMISTA_DUR_MS 4000L       // the optimistic start only for (nearly) the same length
 
-static int mTela(long *pts, float sig[SIG_N], int *temSig) {
-  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
-  jbyteArray a = (jbyteArray)(*env)->CallStaticObjectMethod(env, cls, jTela);
-  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); a = NULL; }
-  return desempacotar(env, a, pts, sig, temSig, NULL, NULL);
-}
-
-// One exact copy frame against the screen capture. -1 = the network failed; a frame that did not come only skips the sample.
-static int amostraExata(Job *j, long long hB, const float *sa, long alvo, double *cs, double *ps, int *nc, int max) {
-  long p; int ok;
-  float sb[SIG_N];
-  if (alvo < 0) alvo = 0;
-  esperarPlayer(j);
-  int lido = mExato(hB, alvo, &p, sb, &ok, NULL, NULL);
-  // A check frame that did not come (a slow forward decode) only skips this probe; a READ failure still backs
-  // off, and a refused connection still ends the title (23/10: three exact-frame time-outs ended a good copy).
-  if (!lido && mFalhaRede(hB) && falhou(j, lido, hB)) return -1;
-  if (lido) falhou(j, lido, hB);
-  if (!lido || !ok) return 0;
-  double c = 0;
-  for (int k = 0; k < SIG_N; k++) c += sa[k] * sb[k];
-  *nc = mini_pico_inserir(cs, ps, *nc, max, c, p);
-  return 0;
-}
-
-// Similarity peak of the copy's exact frames at centro + DES[i], ascending. 1 = a bracketed peak (*t = interpolated copy
-// time), 0 = no match, 2 = ambiguous (still shot, or the best sample stayed on the edge), -1 = network failure.
-// An edge is followed one sample further on the same capture; it is never a vote by itself.
-static int picoExato(Job *j, long long hB, const float *sa, double centro, const long *des, int nd, double minCorr,
-                     double *t, double *rMelhor) {
-  double cs[8], ps[8]; int nc = 0, m = 0;
-  long baixo = (long)(centro + des[0]), alto = (long)(centro + des[nd - 1]);
-  for (int d = 0; d < nd && !parou(j); d++)
-    if (amostraExata(j, hB, sa, (long)(centro + des[d]), cs, ps, &nc, 8) < 0) return -1;
-  int st = mini_pico_avaliar(cs, nc, minCorr, &m);
-  if ((st == MINI_PICO_BORDA_ANTES || st == MINI_PICO_BORDA_DEPOIS) && !parou(j)) {
-    long alvo = st == MINI_PICO_BORDA_ANTES ? baixo - 1000 : alto + 1000;
-    if (alvo >= 0 && amostraExata(j, hB, sa, alvo, cs, ps, &nc, 8) < 0) return -1;
-    st = mini_pico_avaliar(cs, nc, minCorr, &m);
-    if (st == MINI_PICO_BORDA_ANTES || st == MINI_PICO_BORDA_DEPOIS) st = MINI_PICO_AMBIGUO;
-  }
-  if (nc > 0) *rMelhor = cs[m];
-  char linha[160];
-  size_t o = 0;
-  linha[0] = 0;
-  for (int k = 0; k < nc && o < sizeof linha - 24; k++) o += (size_t)snprintf(linha + o, sizeof linha - o, " %.2fs=%.2f", ps[k] / 1000, cs[k]);
-  printf("[miniatura] screen check samples around %.2fs:%s (%s)\n", centro / 1000, linha,
-         st == MINI_PICO_OK ? "peak" : st == MINI_PICO_FRACO ? "weak" : "ambiguous");
-  fflush(stdout);
-  if (st == MINI_PICO_OK) { *t = mini_pico_tempo(cs, ps, m); return 1; }
-  return st == MINI_PICO_FRACO ? 0 : 2;
-}
-
-// MINI_TELA_*: accepted (mapa filled), rejected (shown to be wrong), no screen frames (the caller falls back to the 4K
-// anchors), or inconclusive (left, timed out, network, too little evidence: says nothing about the copy).
-static int conferirTela(Job *j, long long hB, long durB, Mapa *mapa) {
-  static const long LARGO[] = { -2000, -1000, 0, 1000, 2000 }, ESTREITO[] = { -1000, 0, 1000 };
-  Par m[TELA_PROVAS];
-  double offs[TELA_PROVAS];
-  int nm = 0, consenso = 0, telas = 0, falhasTela = 0, provas = 0, largasVazias = 0, semVoto = 2;   // the first anchor is wide
-  long ultimo = -1000000;
-  double b = 0, lo = 0, hi = 0;
-  float sa[SIG_N], sb[SIG_N];
-  Uint32 ini = SDL_GetTicks(), pausado = 0;
-  // the deadline counts playing time only (16/11/2026, Quest: paused for screenshots, a good copy ran out of time)
-  while (consenso < TELA_ANCORAS && !parou(j) && provas < TELA_PROVAS &&
-         SDL_GetTicks() - ini - pausado < (consenso >= 2 ? TELA_PRAZO_BOM_MS : TELA_PRAZO_MS) &&
-         !(largasVazias >= MINI_LARGAS_REJEITA && consenso < 2)) {
-    esperarPlayer(j);
-    if (scrubbing) { dormir(j, 500); continue; }
-    if (!video_tocando()) { dormir(j, 500); pausado += 500; continue; }   // paused: no screen to read, no time lost
-    long pA; int ok;
-    if (!mTela(&pA, sa, &ok)) { if (++falhasTela >= 10 && !telas) return MINI_TELA_SEM_QUADROS; dormir(j, 1000); continue; }
-    telas++;
-    if (!ok || labs(pA - ultimo) < TELA_ESPACO_MS || pA < 5000) { dormir(j, 1000); continue; }   // flat, too close
-    ultimo = pA; provas++;
-    double t = 0, r = -2;
-    int achou, largo = semVoto >= 2;
-    if (largo) {
-      // the copy's KEYFRAMES +-30 s around the same time (an intro, logo or title sequence of another
-      // length shifts what follows; 22/10 a Bond copy 12 s shorter was -4.8 s at the opening and further off later,
-      // so a check started mid-film missed it at +-8 s), fetched in ONE multi-range batch, then the exact frames.
-      // Also after two anchors without a vote: the narrow window may be following a wrong start.
-      double melhor = -2, pMelhor = pA;
-      long ultimoKf = -1, ts[31];
-      int nt = 0;
-      for (long d = -30000; d <= 30000; d += 2000) if (pA + d >= 0 && pA + d < durB) ts[nt++] = pA + d;
-      if (nt > 1) mPreparar(hB, ts, nt);
-      for (int i = 0; i < nt && !parou(j); i++) {
-        long alvo = ts[i], p; int okB;
-        esperarPlayer(j);
-        int lido = mQuadro(hB, alvo, 1, 0, &p, sb, &okB, NULL, NULL);
-        if (falhou(j, lido, hB)) return MINI_TELA_INCONCLUSIVA;
-        if (!lido || !okB || p == ultimoKf) continue;
-        ultimoKf = p;
-        double c = 0;
-        for (int k = 0; k < SIG_N; k++) c += sa[k] * sb[k];
-        if (c > melhor) { melhor = c; pMelhor = p; }
-      }
-      if (parou(j)) break;
-      if (melhor < TELA_MIN_CORR - 0.15) {
-        printf("[miniatura] screen check at %lds: no similar copy frame nearby (best r=%.2f)\n", pA / 1000, melhor); fflush(stdout);
-        largasVazias++; semVoto++;
-        continue;
-      }
-      achou = picoExato(j, hB, sa, pMelhor, LARGO, 5, TELA_MIN_CORR, &t, &r);
-    } else {
-      achou = picoExato(j, hB, sa, pA + b, ESTREITO, 3, TELA_MIN_CORR, &t, &r);
-    }
-    if (achou < 0) return MINI_TELA_INCONCLUSIVA;
-    printf("[miniatura] screen check at %lds: r=%.2f %s (offset %+.2fs) [%s]\n", pA / 1000, r,
-           achou == 1 ? "match" : achou == 2 ? "ambiguous" : "no", achou == 1 ? (t - pA) / 1000.0 : 0.0, largo ? "wide" : "narrow");
-    fflush(stdout);
-    if (achou != 1) {
-      if (largo && achou == 0) largasVazias++;
-      semVoto++;
-      continue;
-    }
-    semVoto = 0;
-    m[nm].pa = pA; m[nm].pb = t; offs[nm] = t - pA; nm++;
-    if (j->dEsperaVoto && !j->dVotoPronto) {   // the engine starts now, at this vote's offset; accept relabels by the difference
-      pthread_mutex_lock(&mu);
-      j->dB = t - pA; j->dVotoPronto = 1;
-      pthread_mutex_unlock(&mu);
-      printf("[miniatura] screen check: first matching vote %+.2fs after %.1f s: thumbnails start at that offset\n",
-             (t - pA) / 1000.0, (SDL_GetTicks() - ini) / 1000.0);
-      fflush(stdout);
-    }
-    consenso = mini_votos_consenso(offs, nm, TELA_ACORDO_MS, &lo, &hi);
-    double grupo[TELA_PROVAS];
-    int ng = 0;
-    for (int k = 0; k < nm; k++) if (offs[k] >= lo && offs[k] <= hi) grupo[ng++] = offs[k];
-    b = mediana(grupo, ng);
-    if (largo && (t - pA < lo || t - pA > hi)) b = t - pA;   // a fresh wide vote outside the group gets its own look
-  }
-  if (consenso < 4) {
-    int res = mini_tela_sem_consenso(parou(j), telas, nm, consenso, largasVazias);
-    printf("[miniatura] screen check: %s (%d of %d votes agree over %d anchors, %d empty wide searches, %.1f s)\n",
-           res == MINI_TELA_REJEITADA ? "rejected" : res == MINI_TELA_SEM_QUADROS ? "no screen frames" : "inconclusive",
-           consenso, nm, provas, largasVazias, (SDL_GetTicks() - ini) / 1000.0);
-    fflush(stdout);
-    return res;
-  }
-  // only the agreeing group counts; the one anchor farthest from its median is dropped when 5+ agreed (a static scene can peak wrong)
-  int ng = 0;
-  for (int k = 0; k < nm; k++) if (offs[k] >= lo && offs[k] <= hi) { m[ng] = m[k]; offs[ng] = offs[k]; ng++; }
-  nm = ng;
-  double grupo[TELA_PROVAS];
-  memcpy(grupo, offs, (size_t)nm * sizeof offs[0]);
-  b = mediana(grupo, nm);
-  if (nm >= 5) {
-    int pior = 0;
-    for (int k = 1; k < nm; k++) if (fabs(m[k].pb - m[k].pa - b) > fabs(m[pior].pb - m[pior].pa - b)) pior = k;
-    m[pior] = m[--nm];
-    for (int k = 0; k < nm; k++) grupo[k] = m[k].pb - m[k].pa;
-    b = mediana(grupo, nm);
-  }
-  double s2 = 0, aMin = 1e18, aMax = -1e18, oMin = 1e18, oMax = -1e18;
-  for (int k = 0; k < nm; k++) {
-    double o = m[k].pb - m[k].pa;
-    s2 += (o - b) * (o - b);
-    if (o < oMin) oMin = o;
-    if (o > oMax) oMax = o;
-    if (m[k].pa < aMin) aMin = m[k].pa;
-    if (m[k].pa > aMax) aMax = m[k].pa;
-  }
-  if (aMax - aMin < 10000) {
-    printf("[miniatura] screen check: inconclusive (%d votes over only %.0fs of playback)\n", nm, (aMax - aMin) / 1000);
-    fflush(stdout);
-    return MINI_TELA_INCONCLUSIVA;
-  }
-  double erro = 3 * sqrt(s2 / nm) / sqrt(nm) + 500.0;
-  mapa->a = 1.0; mapa->b = b; mapa->erro = erro; mapa->inliers = nm;
-  j->ultimoBom = (long)aMax;           // the latest playback time this copy was seen to match
-  printf("[miniatura] screen check: ACCEPTED t_copy = t_play %+.2fs (%d anchors over %.0fs, +-%.1fs, spread %.2fs, %d probes) in %.1f s, no 4K read\n",
-         b / 1000, nm, (aMax - aMin) / 1000, erro / 1000, (oMax - oMin) / 1000, provas, (SDL_GetTicks() - ini) / 1000.0);
-  fflush(stdout);
-  return MINI_TELA_ACEITA;
-}
-
 // One re-check: the frame on screen against the copy's exact frames at the mapped time (-1, 0, +1 s). 1 = matches,
 // 0 = does not (best r < RECHECK_MIN), -1 = no usable screen frame or copy frame (paused, flat scene, read failure).
 #define RECHECK_MS 180000u
 #define RECHECK_MIN 0.45
-static int reconferir(Job *j, long long h, Mapa m, long *pA) {
-  float sa[SIG_N], sb[SIG_N];
-  int ok, vistos = 0;
-  long p;
-  if (!h || !mTela(pA, sa, &ok) || !ok || *pA < 5000) return -1;
-  double melhor = -2;
-  for (long d = -1000; d <= 1000 && !parou(j); d += 1000) {
-    long alvo = (long)(m.a * *pA + m.b) + d;
-    int okB;
-    if (alvo < 0 || !mExato(h, alvo, &p, sb, &okB, NULL, NULL) || !okB) continue;
-    vistos++;
-    double c = 0;
-    for (int k = 0; k < SIG_N; k++) c += sa[k] * sb[k];
-    if (c > melhor) melhor = c;
-  }
-  if (!vistos) return -1;
-  return melhor >= RECHECK_MIN ? 1 : 0;
-}
-
-// After the copy stopped matching (an opening, a scene or credits of another length): find its NEW offset. Two screen
-// frames, each searched over the copy's keyframes +-30 s around the old prediction (fetched in ONE multi-range batch),
-// then exact frames around the best; accepted when the two offsets agree within 2 s. 1 = found (*novoB).
-// Measured 22/10 (Bond, 164 min): the offset was -4.8 s for the opening, then the copy diverged.
-static int reancorar(Job *j, long long h, Mapa m, double *novoB) {
-  static const long LARGO[] = { -2000, -1000, 0, 1000, 2000 };
-  double offs[2];
-  int n = 0, provas = 0;
-  long ultimo = -1000000;
-  float sa[SIG_N], sb[SIG_N];
-  Uint32 ini = SDL_GetTicks();
-  while (n < 2 && provas < 6 && !parou(j) && SDL_GetTicks() - ini < 120000u) {
-    esperarPlayer(j);
-    if (scrubbing) { dormir(j, 500); continue; }
-    long pA; int ok;
-    if (!mTela(&pA, sa, &ok) || !ok || labs(pA - ultimo) < 3000) { dormir(j, 1000); continue; }
-    ultimo = pA; provas++;
-    double centro = m.a * pA + m.b, melhor = -2, pMelhor = 0;
-    long ts[31]; int nt = 0;
-    for (long d = -30000; d <= 30000; d += 2000) if ((long)centro + d >= 0) ts[nt++] = (long)centro + d;
-    if (nt > 1) mPreparar(h, ts, nt);                      // the whole window in one request
-    long ultimoKf = -1;
-    for (int i = 0; i < nt && !parou(j); i++) {
-      long p; int okB;
-      if (!mQuadro(h, ts[i], 1, 0, &p, sb, &okB, NULL, NULL) || !okB || p == ultimoKf) continue;
-      ultimoKf = p;
-      double c = 0;
-      for (int k = 0; k < SIG_N; k++) c += sa[k] * sb[k];
-      if (c > melhor) { melhor = c; pMelhor = p; }
-    }
-    double t = 0, r = -2;
-    int achou = melhor >= TELA_MIN_CORR && picoExato(j, h, sa, pMelhor, LARGO, 5, TELA_MIN_CORR, &t, &r) == 1;
-    printf("[miniatura] re-anchor probe at %lds: best r=%.2f %s\n", pA / 1000, achou ? r : melhor,
-           achou ? "match" : "no");
-    fflush(stdout);
-    if (achou) {
-      char extra[48] = "";
-      offs[n++] = t - pA;
-      if (n == 2) snprintf(extra, sizeof extra, " / %+.2fs", offs[1] / 1000);
-      printf("[miniatura] re-anchor offset %+.2fs%s\n", offs[0] / 1000, extra); fflush(stdout);
-    }
-  }
-  if (n < 2 || fabs(offs[0] - offs[1]) > 2000) return 0;
-  *novoB = (offs[0] + offs[1]) / 2;
-  return 1;
-}
-
-static int conferir(Job *j, long long hA, long long hB, long durA, long durB, Ancora *anc, Mapa *mapa, int hdr) {
-  double minCorr = hdr ? 0.50 : MIN_CORR;
-  double razao = (double)durB / (double)durA;
-  Par matches[N_ANCORAS];
-  int nm = 0, chamadasB = 0;
-  float sb[SIG_N];
-  if (fabs(razao - 1.0) > MAX_RAZAO_ERRO) { printf("[miniatura] check: runtime differs %.1f%%\n", (razao - 1) * 100); return 0; }
-  for (int v = 0; v < N_ANCORAS && !parou(j); v++) {
-    int i = (v * 7) % N_ANCORAS;
-    Ancora *an = &anc[i];
-    if (an->estado == 0) {
-      double frac = (i + 0.2 + 0.6 * fmod(i * 0.6180339887, 1.0)) / N_ANCORAS;
-      long tA = (long)(durA * frac);
-      tA = (tA + GRADE_MS / 2) / GRADE_MS * GRADE_MS;
-      unsigned char *jpg = NULL; int nj = 0;
-      esperarPlayer(j);
-      esperarFolga(j);
-      int lido = mQuadro(hA, tA, 1, 1, &an->pA, an->sig, &an->ok, &jpg, &nj);
-      if (falhou(j, lido, hA)) { mSoltar(hA); return 0; }
-      mSoltar(hA);                                           // the 4K decoder goes back to the player between anchors
-      an->estado = lido ? 1 : -1;
-      if (lido) {                                            // the anchor is also a finished tile when it lands on its slot
-        int k = (int)((an->pA + GRADE_MS / 2) / GRADE_MS);
-        pthread_mutex_lock(&mu);
-        if (jpg && k >= 0 && k < j->n && labs(an->pA - k * GRADE_MS) <= TOL_MS && !j->tiles[k].jpg) {
-          j->tiles[k].jpg = jpg; j->tiles[k].n = nj; j->tiles[k].pts = an->pA; j->tiles[k].revision++; j->tentado[k] = 1;
-          j->feitos++; estado = M_PRONTO; jpg = NULL;
-        }
-        pthread_mutex_unlock(&mu);
-      }
-      free(jpg);
-      dormir(j, 400);                                        // spread the 4K reads out
-    }
-    if (an->estado != 1 || !an->ok) continue;                // failed, or a flat frame: no information
-    long pA = an->pA;
-    const float *sa = an->sig;
-    double a, b, centro;
-    long janela, passo;
-    if (hipotese(matches, nm, razao, &a, &b)) { centro = a * pA + b; janela = JANELA_ESTREITA_MS; passo = PASSO_ESTREITO_MS; }
-    else { centro = razao * pA; janela = JANELA_LARGA_MS; passo = PASSO_LARGO_MS; }
-    double melhor = -2, pMelhor = 0;
-    double cs[64], ps[64]; int nc = 0;
-    for (long t = (long)centro - janela; t <= (long)centro + janela && nc < 64 && !parou(j); t += passo) {
-      long tb = t < 0 ? 0 : t >= durB ? durB - 1 : t, pB; int okB;
-      esperarPlayer(j);
-      int lidoB = mQuadro(hB, tb, 1, 0, &pB, sb, &okB, NULL, NULL);
-      if (falhou(j, lidoB, hB)) return 0;
-      if (!lidoB) continue;
-      chamadasB++;
-      if (!okB) continue;
-      int visto = 0;
-      for (int k = 0; k < nc; k++) if (ps[k] == pB) visto = 1;
-      if (visto) continue;
-      double c = 0;
-      for (int k = 0; k < SIG_N; k++) c += sa[k] * sb[k];
-      cs[nc] = c; ps[nc] = pB; nc++;
-      if (c > melhor) { melhor = c; pMelhor = pB; }
-    }
-    double segundo = -1;
-    for (int k = 0; k < nc; k++) if (fabs(ps[k] - pMelhor) > TOMADA_MS && cs[k] > segundo) segundo = cs[k];
-    int casou = nc && melhor >= minCorr && melhor - segundo >= MIN_MARGEM;
-    if (casou) { matches[nm].pa = pA; matches[nm].pb = pMelhor; nm++; }
-    printf("[miniatura] check anchor %d/%d at %lds: best r=%.2f next r=%.2f %s (offset %+.1fs)\n", v + 1, N_ANCORAS,
-           pA / 1000, melhor, segundo, casou ? "match" : "no", nc ? (pMelhor - pA) / 1000.0 : 0.0);
-    fflush(stdout);
-    // Enough already: from 12 anchors on, 8+ agreeing on one mapping with 2+ in every quarter is what the full 20
-    // would have to show anyway (the fine pass still checks the timing). Saves ~8 4K reads and ~25 s.
-    if (v + 1 >= 12 && nm >= MIN_INLIERS) {
-      double a0, b0;
-      int q[4] = {0}, ok = 0;
-      if (hipotese(matches, nm, razao, &a0, &b0))
-        for (int k = 0; k < nm; k++)
-          if (fabs(matches[k].pb - (a0 * matches[k].pa + b0)) <= MAX_RESIDUO_MS) {
-            int qq = (int)(matches[k].pa * 4 / durA);
-            if (qq >= 0 && qq < 4) q[qq]++;
-            ok++;
-          }
-      if (ok >= MIN_INLIERS && q[0] >= MIN_POR_QUARTO && q[1] >= MIN_POR_QUARTO && q[2] >= MIN_POR_QUARTO && q[3] >= MIN_POR_QUARTO) {
-        printf("[miniatura] check: clear after %d anchors (%d agree)\n", v + 1, ok); fflush(stdout);
-        break;
-      }
-    }
-  }
-  double a, b;
-  if (!hipotese(matches, nm, razao, &a, &b)) { printf("[miniatura] check: no visual match (%d)\n", nm); return 0; }
-  Par in[N_ANCORAS]; int ni = 0;
-  for (int k = 0; k < nm; k++) if (fabs(matches[k].pb - (a * matches[k].pa + b)) <= MAX_RESIDUO_MS) in[ni++] = matches[k];
-  int quartos[4] = {0};
-  for (int k = 0; k < ni; k++) { int q = (int)(in[k].pa * 4 / durA); if (q >= 0 && q < 4) quartos[q]++; }
-  if (ni < MIN_INLIERS || quartos[0] < MIN_POR_QUARTO || quartos[1] < MIN_POR_QUARTO || quartos[2] < MIN_POR_QUARTO ||
-      quartos[3] < MIN_POR_QUARTO) {
-    printf("[miniatura] check: rejected (%d anchors agree, quarters %d/%d/%d/%d)\n", ni, quartos[0], quartos[1], quartos[2], quartos[3]);
-    return 0;
-  }
-  hipotese(in, ni, razao, &a, &b);
-  double res = 0;
-  for (int k = 0; k < ni; k++) { double r = fabs(in[k].pb - (a * in[k].pa + b)); if (r > res) res = r; }
-  if (res > MAX_RESIDUO_MS || fabs(a - 1.0) > MAX_RAZAO_ERRO) { printf("[miniatura] check: rejected (residual %.0f ms)\n", res); return 0; }
-  // the fine pass, under each plausible speed (same speed; the duration ratio when that could be a real speed change)
-  double slopes[2] = { a, fabs(razao - 1.0) >= 0.01 ? (a == 1.0 ? razao : 1.0) : a };
-  int ns = slopes[1] != slopes[0] ? 2 : 1;
-  double melhorErro = 1e300, melhorA = a, melhorB = b;
-  int melhorN = 0;
-  for (int h = 0; h < ns && !parou(j); h++) {
-    double bh = b, b2, erro; int nref = 0;
-    if (h == 1) {                                            // offset for the other slope: median over the inliers
-      double bs[N_ANCORAS];
-      for (int k = 0; k < ni; k++) bs[k] = in[k].pb - slopes[1] * in[k].pa;
-      bh = mediana(bs, ni);
-    }
-    if (refinar(j, hB, anc, in, ni, slopes[h], bh, durA, &b2, &erro, &nref, minCorr) && fabs(b2 - bh) <= MAX_RESIDUO_MS && erro < melhorErro) {
-      melhorErro = erro; melhorA = slopes[h]; melhorB = b2; melhorN = nref;
-    }
-    printf("[miniatura] fine pass (speed %.4f): %d anchors refined%s\n", slopes[h], nref,
-           nref >= MIN_REFINADOS ? "" : " (too few)");
-    fflush(stdout);
-  }
-  if (melhorN < MIN_REFINADOS) { printf("[miniatura] check: fine pass failed\n"); fflush(stdout); return 0; }
-  if (melhorErro > MAX_ERRO_MS) { printf("[miniatura] check: mapping uncertain (%.0f ms after the fine pass)\n", melhorErro); return 0; }
-  mapa->a = melhorA; mapa->b = melhorB; mapa->erro = melhorErro; mapa->inliers = ni;
-  printf("[miniatura] check: ACCEPTED t_copy = %.5f x t_play %+.2fs (%d anchors, fine %d, +-%.1fs, %d copy reads)\n", melhorA,
-         melhorB / 1000, ni, melhorN, melhorErro / 1000, chamadasB);
-  fflush(stdout);
-  return 1;
-}
 
 // ---- the set on this device's storage: a rewatch or a resume shows it at once and reads nothing ----
 // <data>/miniaturas/<fnv64 of the file identity>.nvm : "NVM3" (older NVM1/NVM2 sets are ignored: squeezed 320x180, or saved before the re-check existed), n, dur, complete, then (k, pts, len, jpeg)...
@@ -1632,127 +965,15 @@ static void salvar0(Job *j, int completo) {
   }
 }
 
-// ---- which slot next ----
-static int livre(const Job *j, int k) { return k >= 0 && k < j->n && !j->tentado[k]; }
-static int proximo(const Job *j) {
-  int n = j->n, ph = (int)(playheadMs / GRADE_MS), sc = (int)((posMs + GRADE_MS / 2) / GRADE_MS);
-  if (scrubbing) for (int d = 0; d <= 1; d++) { if (livre(j, sc + d)) return sc + d; if (livre(j, sc - d)) return sc - d; }
-  for (int d = 0; d <= 6; d++) { if (livre(j, ph + d)) return ph + d; if (livre(j, ph - d)) return ph - d; }
-  for (int k = 0; k < n; k += 30) if (livre(j, k)) return k;
-  int fatia = (int)(n * 0.05) + 1;
-  for (int d = 0; d <= fatia; d++) { if (livre(j, ph + d)) return ph + d; if (livre(j, ph - d)) return ph - d; }
-  for (int k = 0; k < n; k += 6) if (livre(j, k)) return k;
-  for (int k = 0; k < n; k++) if (livre(j, k)) return k;
-  return -1;
-}
-
-// A slot the keyframe pass left empty (the copy's keyframes too far apart), nearest to the playhead first.
-static int coberto(const Job *j, int k) {
-  for (int d = -1; d <= 1; d++) {
-    int v = k + d;
-    if (v >= 0 && v < j->n && j->tiles[v].jpg && labs(j->tiles[v].pts - k * GRADE_MS) <= TOL_COPIA_MS) return 1;
-  }
-  return 0;
-}
 // Only real gaps (nothing made within 8 s): measured 22/10, exact-frame fills of covered slots were the last
 // ~50 s of a 3 h film. And only while they are worth it: not at all once 90 % of the slots have their own
 // thumbnail, and never more than 10 s (measured 22/10 on 102 min: ~20 fills cost 65 s and 80 MB, ~3 s and
 // 4 MB each, for spots the bar already covered with a neighbour). Called with `mu` held.
 #define LACUNA_COBERTURA 0.90
 #define LACUNA_PRAZO_MS 10000u
-static int lacunaPermitida(const Job *j) {
-  if (j->feitos >= (int)(j->n * LACUNA_COBERTURA)) return 0;
-  return !j->lacunaDesde || SDL_GetTicks() - j->lacunaDesde < LACUNA_PRAZO_MS;
-}
-static int proximaLacuna(const Job *j) {
-  int ph = (int)(playheadMs / GRADE_MS), melhor = -1;
-  for (int k = 0; k < j->n; k++)
-    if (j->tentado[k] == 1 && !j->tiles[k].jpg && !coberto(j, k) && (melhor < 0 || abs(k - ph) < abs(melhor - ph))) melhor = k;
-  return melhor;
-}
 
 // One lane of thumbnail making (see trabalhar). Slots are claimed under the lock, so two lanes never make the same one.
 typedef struct { Job *j; long long h; int usaB; int id; int feitos; unsigned long somaMs; long long lido; volatile int acabou; } Faixa;
-static Mapa mapaAtual(Job *j) { pthread_mutex_lock(&mu); Mapa m = j->mapa; pthread_mutex_unlock(&mu); return m; }
-static void *faixa(void *u) {
-  Faixa *f = u;
-  Job *j = f->j;
-  long long lido0 = mLidos(f->h);
-  falhasSeguidas = 0; decodSeguidas = 0;
-  // Batches: claim LOTE slots, fetch their keyframes with ONE multi-range request, then decode them from memory.
-  int fila[LOTE], nfila = 0, ifila = 0, lote = f->usaB ? LOTE : 0, lotes = 0, trazidos = 0;
-  while (!parou(j)) {
-    if (bufferando || video_reconectando() || video_falhou() || folgaBaixa(j)) { mSoltar(f->h); esperarPlayer(j); continue; }
-    long disp = memDisponivelKB();
-    if (disp >= 0 && (j->memMin < 0 || disp < j->memMin)) j->memMin = disp;
-    if (disp >= 0 && disp < PISO_KB) { mSoltar(f->h); dormir(j, 1500); continue; }
-    if (heapApertado(j)) { dormir(j, 1500); continue; }
-    int k = -1, exato = 0;
-    if (ifila < nfila) k = fila[ifila++];
-    else {
-      pthread_mutex_lock(&mu);
-      nfila = ifila = 0;
-      if (lote > 0) lote = mLote(f->h);   // sized to ~4 MB of this copy's keyframe windows
-      for (int quer = lote > 0 ? lote : 1; nfila < quer; ) {
-        int q = proximo(j);
-        if (q < 0) break;
-        j->tentado[q] = 1; fila[nfila++] = q;
-      }
-      if (!nfila && f->usaB && lacunaPermitida(j) && (k = proximaLacuna(j)) >= 0) {   // second pass: the exact frame
-        if (!j->lacunaDesde) j->lacunaDesde = SDL_GetTicks();
-        j->tentado[k] = 2; exato = 1;
-      }
-      pthread_mutex_unlock(&mu);
-      if (nfila > 1 && lote > 0) {
-        long ts[LOTE];
-        Mapa mp = mapaAtual(j);
-        for (int i = 0; i < nfila; i++) { ts[i] = (long)(mp.a * fila[i] * GRADE_MS + mp.b); if (ts[i] < 0) ts[i] = 0; }
-        int r = mPreparar(f->h, ts, nfila);
-        if (r == -2) { printf("[miniatura] stopping: the source refused/stalled a connection (protecting playback)\n"); fflush(stdout); break; }
-        if (r < 0) { lote = 0; printf("[miniatura] lane %d: multi-range batches not possible for this copy, one at a time\n", f->id); fflush(stdout); }
-        else { lotes++; trazidos += r; }
-      }
-      if (nfila) k = fila[ifila++];
-    }
-    if (k < 0) break;
-    long alvo = k * GRADE_MS, p; int okS;
-    float sig[SIG_N]; unsigned char *jpg = NULL; int nj = 0;
-    Uint32 s = SDL_GetTicks();
-    Mapa mp = mapaAtual(j);
-    long tB = f->usaB ? (long)(mp.a * alvo + mp.b) : alvo;
-    if (tB < 0) tB = 0;
-    int ok = exato ? mExato(f->h, tB, &p, sig, &okS, &jpg, &nj) : mQuadro(f->h, tB, 1, 1, &p, sig, &okS, &jpg, &nj);
-    if (falhou(j, ok, f->h)) break;
-    if (ok && f->usaB) p = (long)((p - mp.b) / mp.a);                 // back on the playing file's timeline
-    long tol = f->usaB && !exato ? TOL_COPIA_MS : TOL_MS;
-    if (ok && jpg && labs(p - alvo) <= tol) {
-      int dest = (int)((p + GRADE_MS / 2) / GRADE_MS);
-      pthread_mutex_lock(&mu);
-      if (dest < 0 || dest >= j->n || (j->tiles[dest].jpg && dest != k)) dest = k;
-      if (!j->tiles[dest].jpg) {
-        j->tiles[dest].jpg = jpg; j->tiles[dest].n = nj; j->tiles[dest].pts = p; j->tiles[dest].revision++; j->tiles[dest].prov = (unsigned char)j->otimista;
-        jpg = NULL; j->feitos++;
-        if (!j->primeiro) j->primeiro = SDL_GetTicks();
-      }
-      j->tentado[dest] = 1;
-      if (job == j) estado = M_PRONTO;
-      pthread_mutex_unlock(&mu);
-    }
-    free(jpg);
-    f->feitos++; f->somaMs += SDL_GetTicks() - s;
-    f->lido = mLidos(f->h) - lido0;
-    if (f->id == 1 && f->feitos % 100 == 0 && !j->otimista) salvar(j, 0);   // never save unverified (optimistic) thumbnails
-    if (f->id == 1 && f->feitos % 30 == 0) {
-      printf("[miniatura] %d/%d tiles from %s, lane avg %lu ms, lane read %.1f MB, pace %lld/s, %d batches (%d keyframes), free %ld MB\n",
-             j->feitos, j->n, origem, f->somaMs / (unsigned long)f->feitos, f->lido / 1048576.0, mRitmo(), lotes, trazidos, disp / 1024);
-      fflush(stdout);
-    }
-    if (!f->usaB) usleep(20000);
-  }
-  f->lido = mLidos(f->h) - lido0;
-  f->acabou = 1;
-  return NULL;
-}
 
 static void resumo(Job *j, Uint32 t0) {
   if (j->resumido) return;
@@ -1788,19 +1009,6 @@ static void resumo(Job *j, Uint32 t0) {
   }
   mPipelineSummary(j, t0);
   fflush(stdout);
-}
-
-// The lanes finished (or were stopped): save, raise the "generated" notice when complete, log, summary.
-static void fecharLote(Job *j, Uint32 t0, Faixa *f1, Faixa *f2, int faixas) {
-  pthread_mutex_lock(&mu);
-  int completo = proximo(j) < 0 && (!lacunaPermitida(j) || proximaLacuna(j) < 0) && !parou(j);
-  pthread_mutex_unlock(&mu);
-  salvar(j, completo);
-  if (completo) avisoPronto = j->g;
-  printf("[miniatura] done: %d/%d tiles from %s in %.0f s (%d lane%s), read %.1f MB, pace now %lld/s\n", j->feitos, j->n,
-         origem, (SDL_GetTicks() - t0) / 1000.0, faixas, faixas == 1 ? "" : "s", (f1->lido + f2->lido) / 1048576.0, mRitmo());
-  fflush(stdout);
-  resumo(j, t0);
 }
 
 // ---- DIRECT MODE: thumbnails from the PLAYING file (4K, experimental) ----
@@ -2615,300 +1823,9 @@ static int trabalharDireto(Job *j, long long *hA) {
   return 1;
 }
 
-// Copy-first: the first copy (smallest first, escolherCopias) whose header is usable and whose runtime is within
-// TELA_DUR_IGUAL_MS passes the screen check (what the player shows against the copy's exact frames: no 4K decode).
-// 1 = j->dCopia/dA/dB/dUrl set to it. The check's own session is closed; the engine opens the RESOLVED link (alvo), so
-// no second debrid link is minted.
-// The screen check on its own thread while the engine already makes thumbnails at offset 0. Accepted: every tile is
-// relabelled to the measured offset (exact: a tile's copy time is its play time + the old offset). Rejected: the
-// engine stops and trabalhar() discards the copy's tiles.
-typedef struct { Job *j; long long hB; long durB; } CheckCopia;
-static void fonteAnotar(const char *chave, int aceita);
-static void *checarCopia(void *u) {
-  CheckCopia *c = u;
-  Job *j = c->j;
-  Uint32 c0 = SDL_GetTicks();
-  Mapa m = {1.0, 0.0, 0.0, 0};
-  mSemFila(c->hB);                     // the engine runs alongside: its batches must not starve the check
-  int r = conferirTela(j, c->hB, c->durB, &m);
-  mFechar(c->hB);
-  pthread_mutex_lock(&mu);
-  if (r == 1) {
-    double antigo = j->dB;
-    int n = 0;
-    for (int k = 0; k < j->n; k++) {
-      Tile *t = &j->tiles[k];
-      // only this pass's tiles: a saved set's are already at their true time (16/11/2026, Quest, Fight Club: the
-      // whole saved set of 835 was moved by +1.95 s, and that wrong set would have been saved again)
-      if (!t->jpg || t->salvo) continue;
-      t->pts = (long)(t->pts + antigo - m.b); t->revision++; t->salvo = 0; n++;
-    }
-    j->dB = m.b; j->offset = m.b; j->appendPronto = 0;
-    diretoRebuildCoverage(j);
-    j->dCheck = 2;
-    printf("[miniatura] copy-first: check ACCEPTED in %.1f s while generating: %d thumbnails relabelled by %+.2fs\n",
-           (SDL_GetTicks() - c0) / 1000.0, n, -(m.b - antigo) / 1000);
-  } else {
-    j->dCheck = 3;
-    printf("[miniatura] copy-first: check %s after %.1f s: the copy's thumbnails are discarded\n",
-           r == MINI_TELA_REJEITADA ? "REJECTED" : r == MINI_TELA_SEM_QUADROS ? "found no screen frames" : "INCONCLUSIVE",
-           (SDL_GetTicks() - c0) / 1000.0);
-  }
-  size_t o = strlen(j->motivos);
-  snprintf(j->motivos + o, sizeof j->motivos - o, " | check:%s", r == MINI_TELA_ACEITA ? "ACCEPTED" : r == MINI_TELA_REJEITADA ? "rejected" : r == MINI_TELA_SEM_QUADROS ? "no-screen" : "inconclusive");
-  pthread_mutex_unlock(&mu);
-  fflush(stdout);
-  if (mini_tela_anota(r)) fonteAnotar(j->dFonte, r == MINI_TELA_ACEITA);   // only a real verdict counts against an add-on
-  free(c);
-  return NULL;
-}
-// Everything the direct engine made, gone (a copy the check rejected): the playing file starts from nothing.
-// A discarded copy's tiles go; a SAVED set's stay, with its file (16/11/2026, Quest, Fight Club: an inconclusive
-// check deleted 835 good saved thumbnails and their file). Saved = loaded from disk: a copy pass never saves while
-// its check runs, so it has none.
-static void limparDireto(Job *j) {
-  int mantidos = 0;
-  pthread_mutex_lock(&mu);
-  for (int k = 0; k < j->n; k++) {
-    if (j->tiles[k].jpg && j->tiles[k].salvo) { mantidos++; continue; }
-    free(j->tiles[k].jpg); j->tiles[k].jpg = NULL; j->tiles[k].n = 0; j->tiles[k].pts = 0;
-    j->tiles[k].prov = 0; j->tiles[k].salvo = 0; j->tiles[k].revision++;
-    j->tentado[k] = 0; j->slotKey[k] = -1; j->framePts[k] = -1;
-  }
-  j->feitos = mantidos; j->primeiro = 0; j->cob60 = j->cob30 = 0; j->appendPronto = 0;
-  mini_coverage_init(&j->coverage, j->n, j->dur, j->slotFrame, j->slotState);
-  if (mantidos) diretoRebuildCoverage(j);
-  pthread_mutex_unlock(&mu);
-  if (mantidos) { printf("[miniatura] direct: kept %d saved images\n", mantidos); fflush(stdout); }
-  else if (j->arq[0]) remove(j->arq);
-}
-
-// ---- copy sources that keep failing (06/11/2026) ----
-// PenguPlay's smaller copies were dead (410/502), not seekable (HTTP 200 to a range) or another cut on every title
-// tried, costing ~30 s before the playing file's own pass started. Per source (the add-on), the copies tried since
-// the last accepted one are kept for FONTE_DIAS. On a FAST device (CPU route measured <= RAPIDO_MS per 4K thumbnail:
-// the playing file is quick anyway) a source at FONTE_TENTATIVAS is skipped. On a slow one every copy is still tried:
-// a copy saves it ten minutes or more.
-#define FONTE_TENTATIVAS 6
-#define FONTE_DIAS 3
-#define RAPIDO_MS 800
-#define FONTE_MAX 64
-static pthread_mutex_t muFontes = PTHREAD_MUTEX_INITIALIZER;
-typedef struct { char chave[FONTEFALHA_CHAVE]; int tentativas; long quando; } FonteCopia;
-static int fontesLer(FonteCopia *f, char *caminho, size_t n) {
-  char dir[512];
-  caminho[0] = 0;
-  if (!dados_caminho(dir, sizeof dir, "miniaturas")) return 0;
-  snprintf(caminho, n, "%s/copias-fontes.txt", dir);
-  FILE *a = fopen(caminho, "r");
-  if (!a) return 0;
-  int k = 0;
-  long agora = (long)time(NULL);
-  char linha[160];
-  while (k < FONTE_MAX && fgets(linha, sizeof linha, a)) {
-    char *t1 = strchr(linha, '\t'), *t2 = t1 ? strchr(t1 + 1, '\t') : NULL;
-    if (!t2) continue;
-    *t1 = 0;
-    snprintf(f[k].chave, sizeof f[k].chave, "%s", linha);
-    f[k].tentativas = atoi(t1 + 1); f[k].quando = atol(t2 + 1);
-    if (agora - f[k].quando <= FONTE_DIAS * 86400L) k++;    // older than FONTE_DIAS: forgotten, tried again
-  }
-  fclose(a);
-  return k;
-}
-static int fonteTentativas(const char *chave) {
-  FonteCopia f[FONTE_MAX]; char c[600];
-  pthread_mutex_lock(&muFontes);
-  int n = fontesLer(f, c, sizeof c), r = 0;
-  for (int k = 0; k < n; k++) if (!strcmp(f[k].chave, chave)) r = f[k].tentativas;
-  pthread_mutex_unlock(&muFontes);
-  return r;
-}
-static void fonteAnotar(const char *chave, int aceita) {
-  if (!chave || !chave[0] || strpbrk(chave, "\t\n")) return;
-  FonteCopia f[FONTE_MAX + 1]; char c[600];
-  pthread_mutex_lock(&muFontes);
-  int n = fontesLer(f, c, sizeof c), achou = -1;
-  for (int k = 0; k < n; k++) if (!strcmp(f[k].chave, chave)) achou = k;
-  if (achou < 0 && n < FONTE_MAX) { achou = n++; snprintf(f[achou].chave, sizeof f[achou].chave, "%s", chave); f[achou].tentativas = 0; }
-  if (achou >= 0) { f[achou].tentativas = aceita ? 0 : f[achou].tentativas + 1; f[achou].quando = (long)time(NULL); }
-  if (c[0]) {
-    FILE *a = fopen(c, "w");
-    if (a) { for (int k = 0; k < n; k++) if (f[k].tentativas) fprintf(a, "%s\t%d\t%ld\n", f[k].chave, f[k].tentativas, f[k].quando); fclose(a); }
-  }
-  pthread_mutex_unlock(&muFontes);
-}
-static int aparelhoRapido(void) {
-#ifdef NV_MINI_FFMPEG
-  PerfilCpu pf;
-  perfilLer(&pf);
-  return pf.n[1] >= CPU_AMOSTRAS && pf.ms[1] <= RAPIDO_MS;
-#else
-  return 0;   // sem a rota de CPU nao ha medicao deste aparelho
-#endif
-}
-
-// How long failed opens may hold up the first thumbnail: on a fast device the 4K file is quick anyway; a slow one gains
-// minutes from any working copy. Rejected copies: a fast device goes straight to the 4K file (a check takes 30-160 s),
-// a slow one tries the next, up to HUNT_REJEITADAS.
-#define HUNT_RAPIDO_MS 30000L
-#define HUNT_LENTO_MS 90000L
-#define HUNT_REJEITADAS 2
-static int mesmaCopia(const Copia *a, const Copia *b) {
-  return (a->tamanho && a->tamanho == b->tamanho) || (a->nome[0] && !strcmp(a->nome, b->nome));
-}
-static int escolherCopiaRapida(Job *j) {
-  int rapido = aparelhoRapido();
-  long limite = rapido ? HUNT_RAPIDO_MS : HUNT_LENTO_MS;
-  printf("[miniatura] copy-first: playing %dp %.1f min, %d smaller cop%s (%s); %s device\n", j->alturaA, j->dur / 60000.0, j->nCopias,
-         j->nCopias == 1 ? "y" : "ies", j->motivos, rapido ? "fast (failing sources skipped)" : "slow (every copy tried)");
-  fflush(stdout);
-  esperarPlayer(j);
-  // What EARLIER titles taught, read once: this title's own attempts only count from the next one (06/11/2026: read
-  // per copy, six dead 720p copies made the same title skip its six 1080p backups untried). A test run (the cold
-  // marker) tries everything.
-  int anteriores[TENTATIVAS];
-  for (int c = 0; c < j->nCopias; c++) anteriores[c] = j->auditarRede ? 0 : fonteTentativas(j->copias[c].fonte);
-  for (int c = j->huntProx; c < j->nCopias && !parou(j); c++) {
-    size_t o = strlen(j->motivos);
-    j->huntProx = c + 1;
-    if (j->huntMs >= limite) {
-      printf("[miniatura] copy-first: stopped after %ld s of failed opens (limit %ld s)\n", j->huntMs / 1000, limite / 1000);
-      fflush(stdout);
-      snprintf(j->motivos + o, sizeof j->motivos - o, " | hunt-limit");
-      break;
-    }
-    if (j->copias[c].espelho) {               // only worth trying if the same file would not open elsewhere
-      int vale = 0;
-      for (int k = 0; k < c && !vale; k++) vale = j->huntSemAbrir[k] && mesmaCopia(&j->copias[k], &j->copias[c]);
-      if (!vale) continue;
-      printf("[miniatura] copy-first: copy %d is a mirror of one that would not open\n", c + 1); fflush(stdout);
-    }
-    int falhas = anteriores[c];
-    if (rapido && falhas >= FONTE_TENTATIVAS) {
-      printf("[miniatura] copy-first: copy %d (%dp) skipped: %d copies from its source tried in the last %d days, none usable\n",
-             c + 1, j->copias[c].altura, falhas, FONTE_DIAS);
-      fflush(stdout);
-      snprintf(j->motivos + o, sizeof j->motivos - o, " | c%d:source-skipped", c + 1);
-      continue;
-    }
-    Uint32 c0 = SDL_GetTicks();
-    long long hB = mAbrirCandidata(j->copias[c].url, j->copias[c].cab);
-    if (!hB) {
-      long perdeu = (long)(SDL_GetTicks() - c0);
-      j->huntMs += perdeu;
-      j->huntSemAbrir[c] = 1;
-      printf("[miniatura] copy-first: copy %d (%dp) would not open (%.1f s, %ld s lost so far)\n", c + 1, j->copias[c].altura, perdeu / 1000.0, j->huntMs / 1000); fflush(stdout);
-      snprintf(j->motivos + o, sizeof j->motivos - o, " | c%d:no-open", c + 1);
-      // A copy that will not open counts against its add-on only while the playing file itself streams normally:
-      // when the network or the debrid service is failing (17/11/2026, Quest: TorBox had blocked the IP) every copy
-      // fails to open and the add-on was wrongly skipped for 3 days.
-      if (!video_falhou() && video_bufferando_ms() <= 0) fonteAnotar(j->copias[c].fonte, 0);
-      continue;
-    }
-    long long ib[6];
-    char alvo[4096];
-    mInfo(hB, ib);
-    mAlvo(hB, j->copias[c].url, alvo, sizeof alvo);
-    printf("[miniatura] copy-first: checking copy %d: %lldx%lld %.1f min, %.0f MB\n", c + 1, ib[1], ib[2], ib[0] / 60000.0,
-           j->copias[c].tamanho / 1048576.0);
-    fflush(stdout);
-    const char *por = NULL;
-    int anotar = 1;
-    Mapa mapa = {1.0, 0.0, 0.0, 0};
-    if (!ib[5]) por = "codec";
-    else if (ib[0] <= 0) por = "no-duration";
-    else if (labs((long)ib[0] - j->dur) > TELA_DUR_IGUAL_MS) { por = "runtime"; anotar = 0; }   // another cut, not a dead copy
-    else if (labs((long)ib[0] - j->dur) <= OTIMISTA_DUR_MS) {
-      // (nearly) the same length: start NOW at offset 0, the check runs alongside (06/11/2026: the blocking check left
-      // the bar empty for the first 46 s on TorBox Dune)
-      CheckCopia *cc = malloc(sizeof *cc);
-      if (cc) {
-        cc->j = j; cc->hB = hB; cc->durB = (long)ib[0];
-        j->dCheck = 1;
-        j->dCheckRodando = pthread_create(&j->dCheckT, NULL, checarCopia, cc) == 0;
-        if (!j->dCheckRodando) { free(cc); j->dCheck = 0; }
-      }
-      if (j->dCheckRodando) {
-        j->dEsperaVoto = 0; j->dVotoPronto = 0;
-        snprintf(j->dFonte, sizeof j->dFonte, "%s", j->copias[c].fonte);   // the check thread notes the verdict
-        j->dCopia = 1; j->dA = 1.0; j->dB = 0.0; j->dAltura = j->copias[c].altura;
-        snprintf(j->dUrl, sizeof j->dUrl, "%s", alvo[0] ? alvo : j->copias[c].url);
-        snprintf(j->dCab, sizeof j->dCab, "%s", j->copias[c].cab);
-        snprintf(j->escolhida, sizeof j->escolhida, "%dp %.0f MB %s (copy-first, optimistic)", j->copias[c].altura,
-                 j->copias[c].tamanho / 1048576.0, j->copias[c].nome);
-        printf("[miniatura] copy-first: copy %d same length (%+.1f s): thumbnails start now, screen check alongside (%.1f s in)\n",
-               c + 1, (ib[0] - j->dur) / 1000.0, (SDL_GetTicks() - c0) / 1000.0);
-        fflush(stdout);
-        return 1;
-      }
-      int tela = conferirTela(j, hB, (long)ib[0], &mapa);
-      anotar = mini_tela_anota(tela);
-      if (tela != MINI_TELA_ACEITA) por = tela == MINI_TELA_REJEITADA ? "screen-rejected" : tela == MINI_TELA_SEM_QUADROS ? "no-screen-frames" : "screen-inconclusive";
-    } else {
-      // Another length (4-30 s): the check runs on its own thread and the engine waits only for its FIRST matching
-      // vote, then starts at that measured offset. The check's accept relabels by the difference (checarCopia).
-      CheckCopia *cc = malloc(sizeof *cc);
-      j->dEsperaVoto = 1; j->dVotoPronto = 0; j->dB = 0.0;
-      if (cc) {
-        cc->j = j; cc->hB = hB; cc->durB = (long)ib[0];
-        j->dCheck = 1;
-        j->dCheckRodando = pthread_create(&j->dCheckT, NULL, checarCopia, cc) == 0;
-        if (!j->dCheckRodando) { free(cc); j->dCheck = 0; }
-      }
-      if (j->dCheckRodando) {
-        snprintf(j->dFonte, sizeof j->dFonte, "%s", j->copias[c].fonte);   // the check thread notes the verdict
-        while (j->dCheck == 1 && !j->dVotoPronto && !parou(j)) dormir(j, 100);
-        j->dEsperaVoto = 0;
-        if (!j->dVotoPronto) {                    // no vote: the check ended (rejected, inconclusive, no frames) or we left
-          pthread_join(j->dCheckT, NULL);         // it noted the verdict and closed the copy
-          j->dCheckRodando = 0; j->dCheck = 0;
-          if (parou(j)) return 0;
-          snprintf(j->motivos + o, sizeof j->motivos - o, " | c%d:screen-no-vote", c + 1);
-          printf("[miniatura] copy-first: copy %d gave no matching vote in %.1f s\n", c + 1, (SDL_GetTicks() - c0) / 1000.0);
-          fflush(stdout);
-          continue;
-        }
-        pthread_mutex_lock(&mu);
-        j->dCopia = 1; j->dA = 1.0; j->dAltura = j->copias[c].altura;   // dB: the first vote's offset
-        pthread_mutex_unlock(&mu);
-        snprintf(j->dUrl, sizeof j->dUrl, "%s", alvo[0] ? alvo : j->copias[c].url);
-        snprintf(j->dCab, sizeof j->dCab, "%s", j->copias[c].cab);
-        snprintf(j->escolhida, sizeof j->escolhida, "%dp %.0f MB %s (copy-first, first vote %+.2fs)", j->copias[c].altura,
-                 j->copias[c].tamanho / 1048576.0, j->copias[c].nome, j->dB / 1000);
-        printf("[miniatura] copy-first: copy %d (%+.1f s long): thumbnails start at the first vote (%.1f s in), check alongside\n",
-               c + 1, (ib[0] - j->dur) / 1000.0, (SDL_GetTicks() - c0) / 1000.0);
-        fflush(stdout);
-        return 1;
-      }
-      j->dEsperaVoto = 0;
-      int tela = conferirTela(j, hB, (long)ib[0], &mapa);
-      anotar = mini_tela_anota(tela);
-      if (tela != MINI_TELA_ACEITA) por = tela == MINI_TELA_REJEITADA ? "screen-rejected" : tela == MINI_TELA_SEM_QUADROS ? "no-screen-frames" : "screen-inconclusive";
-    }
-    mFechar(hB);
-    printf("[miniatura] copy-first: copy %d %s in %.1f s\n", c + 1, por ? por : "ACCEPTED", (SDL_GetTicks() - c0) / 1000.0);
-    fflush(stdout);
-    snprintf(j->motivos + o, sizeof j->motivos - o, " | c%d:%s", c + 1, por ? por : "ACCEPTED");
-    if (anotar) fonteAnotar(j->copias[c].fonte, !por);
-    if (por) continue;
-    j->dCopia = 1; j->dA = mapa.a; j->dB = mapa.b; j->dAltura = j->copias[c].altura;
-    snprintf(j->dUrl, sizeof j->dUrl, "%s", alvo[0] ? alvo : j->copias[c].url);
-    snprintf(j->dCab, sizeof j->dCab, "%s", j->copias[c].cab);
-    j->offset = mapa.b;
-    snprintf(j->escolhida, sizeof j->escolhida, "%dp %.0f MB %s (copy-first, screen %+.2fs)", j->copias[c].altura,
-             j->copias[c].tamanho / 1048576.0, j->copias[c].nome, mapa.b / 1000);
-    return 1;
-  }
-  printf("[miniatura] copy-first: no copy passed: direct mode on the playing file\n"); fflush(stdout);
-  return 0;
-}
-
 static void *trabalhar(void *u) {
   Job *j = u;
-  long long hA = 0, hB = 0, info[6];
-  Mapa mapa = {1.0, 0.0, 0.0, 0};
-  int usaB = 0, copiaUsada = 0;
+  long long hA = 0, hB = 0;
   Uint32 t0 = SDL_GetTicks();
   falhasSeguidas = 0; decodSeguidas = 0;
   mContadores(j->cont0);
@@ -2930,305 +1847,18 @@ static void *trabalhar(void *u) {
   // decoders for HEVC copies (HDMI underruns, ~1.5/s). The copies remain the fallback when the playing file cannot be
   // used directly (Dolby Vision profile 5, a codec other than H.264/HEVC). The 22/10 failure next to a 1080p remux
   // (player decoder 4003) came from a burst of short-lived decoders; direct mode keeps ONE, created at a pause/scrub.
-  int diretoOk = !(bits & 8), diretoTentado = 0;
-  // COPY-FIRST (06/11/2026, after reading Nuvio Arc): a 4K title's thumbnails from a smaller copy in the source list
-  // once the screen check confirms it, made by the SAME fast direct engine (lanes, multi-range, look-ahead, map) at
-  // copy time = a x play time + b. A 1080p keyframe is ~5x fewer bytes and decodes on the CPU in ~1/4 of the time.
-  // No copy, or none passing: direct mode on the playing file as before. Bit 1048576 turns copy-first off.
-  if (j->alturaA > 1080 && (j->nCopias == 0 || (bits & 1048576))) {
-    printf("[miniatura] copy-first: not used (%s; %s)\n", (bits & 1048576) ? "off by debug bit" : "no smaller copy", j->motivos);
-    fflush(stdout);
-  }
-  if (diretoOk && !(bits & 1048576) && j->alturaA > 1080 && j->nCopias > 0 && !parou(j)) {
-    pthread_mutex_lock(&mu); j->direto = 1; pthread_mutex_unlock(&mu);
-    snprintf(j->arq, sizeof j->arq, "%s", j->arqDireto);
-    if (carregarInformado(j)) { avisoPronto = j->g; goto fim; }   // a complete saved set: no network at all
-    pthread_mutex_lock(&mu); j->direto = 0; pthread_mutex_unlock(&mu);
-    // The 4K pre-warm (file open + hardware decoder made during the opening load) is kept until a copy is CHOSEN:
-    // when every copy fails, direct mode adopts it as before. 06/11/2026 (2.0.21): closed up front, an R2 title whose
-    // four PenguPlay copies were dead or ignored Range fell back to the CPU route, 458 s instead of ~190 s.
-    // A copy accepted before any thumbnail: the 4K session goes now. One still being checked (the optimistic start)
-    // keeps it until the check decides (07/11/2026, Avengers: the copy failed the check AFTER the session was
-    // closed, and the playing file's pass ran on the CPU at ~2-3 thumbnails a second).
-    long long preGuardado = 0;
-    int decGuardado = 0;
-    while (escolherCopiaRapida(j)) {
-      if (!preGuardado) {
-        if (j->dCheck == 1) preGuardado = adotarPre(j, &decGuardado);
-        else { int d = 0; long long pre = adotarPre(j, &d); if (pre) mFechar(pre); }
-      }
-      if (preGuardado) { printf("[miniatura] copy-first: 4K session kept until the check decides (decoder %s)\n", decGuardado ? "ready" : "not created"); fflush(stdout); }
-      diretoTentado = 1;
-      int r = trabalharDireto(j, &hA);
-      if (r && j->dCheck == 3 && !parou(j)) {      // optimistic copy rejected: its tiles go, the playing file starts
-        if (hA) { mFechar(hA); hA = 0; }
-        limparDireto(j);
-        j->dCopia = 0; j->dCheck = 0;
-        pthread_mutex_lock(&mu); j->direto = 0; pthread_mutex_unlock(&mu);
-        j->huntRejeitadas++;
-        if (!aparelhoRapido() && j->huntRejeitadas < HUNT_REJEITADAS && j->huntProx < j->nCopias) {
-          printf("[miniatura] copy-first: slow device: trying the next copy after a rejection\n"); fflush(stdout);
-          continue;                                // keeps the 4K session for a later fallback
-        }
-        hA = preGuardado; preGuardado = 0;         // the kept 4K session, hardware decoder included
-        printf("[miniatura] copy-first: rejected copy discarded: direct mode on the playing file%s\n",
-               hA ? " with the kept 4K session" : ""); fflush(stdout);
-        trabalharDireto(j, &hA);
-        goto fim;
-      }
-      if (preGuardado && r) { mFechar(preGuardado); preGuardado = 0; }   // the copy stays: the 4K session goes
-      if (r) goto fim;
-      printf("[miniatura] copy-first: the copy would not open in the direct engine: direct mode on the playing file\n");
-      fflush(stdout);
-      if (hA) { mFechar(hA); hA = 0; }
-      hA = preGuardado; preGuardado = 0;
-      j->dCopia = 0;
-      pthread_mutex_lock(&mu); j->direto = 0; pthread_mutex_unlock(&mu);
-      diretoTentado = 0;
-      break;
-    }
-    diretoTentado = 0;                             // no copy in the end (rejections included): the playing file's turn
-    if (preGuardado && !hA) { hA = preGuardado; preGuardado = 0; }   // a kept session: direct mode adopts it
-  }
-  if (diretoOk && !diretoTentado) {
-    diretoTentado = 1;                           // no esperarPlayer: the decoder goes in during the opening load
-    if (trabalharDireto(j, &hA)) goto fim;
-    if (hA) { mFechar(hA); hA = 0; }
-  }
+  int diretoOk = !(bits & 8);
+  // DIRECT MODE ON THE PLAYING FILE ONLY (27/11/2026). Copy-first and the copy route are gone: a copy needs its own
+  // hardware decoder, which this engine creates only while the film opens or is paused; it opens connections to
+  // more debrid nodes; and the screen check could accept the wrong file (06/11). On the playing file the hardware
+  // decode of a full 4K set is ~4 s. A file this engine cannot use goes back to miniatura.c's CPU route.
+  if (diretoOk && trabalharDireto(j, &hA)) goto fim;
+  if (hA) { mFechar(hA); hA = 0; }
   evRebuffer = evErro = 0;
   if (j->arq[0]) limparCache(j->arq);           // other titles' sets older than 2 h go now
   if (carregarInformado(j)) { avisoPronto = j->g; goto fim; }                    // a complete saved set: no network at all
-  if (j->nCopias == 0 && diretoOk && !diretoTentado) {
-    printf("[miniatura] no smaller copy in the list: direct mode\n"); fflush(stdout);
-    esperarPlayer(j);
-    trabalharDireto(j, &hA);
-    goto fim;
-  }
-  if (j->nCopias == 0) {                        // nothing smaller to make them from: the playing file is not opened
-    printf("[miniatura] playing source unavailable for thumbnails; no compatible fallback\n"); fflush(stdout);
-    pthread_mutex_lock(&mu); if (job == j) { estado = M_FALHOU; motivoSem = 1; } pthread_mutex_unlock(&mu);
-    goto fim;
-  }
-  esperarPlayer(j);
-  memset(info, 0, sizeof info);
-  // The playing file is NOT opened here: the screen check needs only what the player shows. It is opened only for
-  // the 4K-anchor check (a copy whose runtime differs, or no screen frames) or to make thumbnails from a <= 1080p file.
-  printf("[miniatura] playing %dp %.1f min; %d smaller cop%s in the list\n", j->alturaA, j->dur / 60000.0, j->nCopias,
-         j->nCopias == 1 ? "y" : "ies");
-  fflush(stdout);
-  Faixa f1, f2;
-  memset(&f1, 0, sizeof f1); memset(&f2, 0, sizeof f2);
-  pthread_t t1, t2;
-  int roda1 = 0, roda2 = 0;
-  char alvoB[4096];
-  for (int c = 0; c < j->nCopias && !usaB && !parou(j); c++) {
-    hB = mAbrirCandidata(j->copias[c].url, j->copias[c].cab);
-    if (!hB) {
-      printf("[miniatura] copy %d (%dp) would not open\n", c + 1, j->copias[c].altura);
-      snprintf(j->motivos + strlen(j->motivos), sizeof j->motivos - strlen(j->motivos), " | c%d:no-open", c + 1);
-      continue;
-    }
-    long long ib[6];
-    mInfo(hB, ib);
-    mAlvo(hB, j->copias[c].url, alvoB, sizeof alvoB);
-    printf("[miniatura] checking copy %d: %lldx%lld %.1f min\n", c + 1, ib[1], ib[2], ib[0] / 60000.0); fflush(stdout);
-    if (!ib[5]) {                       // not H.264/HEVC: rejected from the header, before any decoder exists
-      printf("[miniatura] copy %d: codec not usable for thumbnails (only H.264/HEVC)\n", c + 1); fflush(stdout);
-      snprintf(j->motivos + strlen(j->motivos), sizeof j->motivos - strlen(j->motivos), " | c%d:codec", c + 1);
-      mFechar(hB); hB = 0;
-      continue;
-    }
-    int igual = ib[0] > 0 && labs((long)ib[0] - j->dur) <= TELA_DUR_IGUAL_MS;
-    if (igual && !roda1 && labs((long)ib[0] - j->dur) <= OTIMISTA_DUR_MS) {
-      // OPTIMISTIC START: same length within 2.5 s, so one lane starts at offset 0 while the screen check runs; the
-      // check then relabels (offset <= 3 s) or discards (larger, or rejected) what it made.
-      pthread_mutex_lock(&mu);
-      j->mapa.a = 1.0; j->mapa.b = 0.0; j->otimista = 1;
-      pthread_mutex_unlock(&mu);
-      snprintf(origem, sizeof origem, "%dp copy", j->copias[c].altura);
-      f1.j = j; f1.usaB = 1; f1.id = 1; f1.feitos = 0; f1.somaMs = 0; f1.lido = 0;
-      f1.h = mAbrir(alvoB, j->copias[c].cab, 1);
-      if (f1.h) roda1 = pthread_create(&t1, NULL, faixa, &f1) == 0;
-      if (!roda1) { mFechar(f1.h); f1.h = 0; }
-      else { printf("[miniatura] optimistic start: thumbnails from copy %d at offset 0 while the check runs\n", c + 1); fflush(stdout); }
-    }
-    Uint32 c0 = SDL_GetTicks();
-    long long lA0 = mLidos(hA);
-    int aceita = 0, tela = -1;
-    const char *metodo = "none";
-    if (igual) { tela = conferirTela(j, hB, (long)ib[0], &mapa); metodo = "screen"; }
-    if (tela == 1) aceita = 1;
-    else if (tela == -1 && ib[0] > 0 && j->alturaA > 1080 && !parou(j)) {   // never decode a <= 1080p playing file
-      // ROUTER (MAX_RAZAO_ERRO, 10 %): runtime differs (maybe another cut: anchors across the whole film), or the
-      // screen gave no frames; beyond 10 % the 4K-anchor check refuses at once
-      printf("[miniatura] %s: checking with the playing file's own frames\n", igual ? "no screen frames" : "runtime differs");
-      fflush(stdout);
-      metodo = "4k-anchors";
-      if (!hA) { hA = mAbrir(j->urlA, j->cabA, 0); if (hA) { mInfo(hA, info); lA0 = mLidos(hA); } }
-      if (hA) aceita = conferir(j, hA, hB, j->dur, (long)ib[0], j->anc, &mapa, info[3] != 0);
-    }
-    long long lidosB = mLidos(hB);
-    size_t o = strlen(j->motivos);
-    if (aceita) {
-      usaB = 1;
-      copiaUsada = c;
-      snprintf(origem, sizeof origem, "%dp copy", j->copias[c].altura);
-      pthread_mutex_lock(&mu);
-      if (j->otimista) {
-        if (mapa.a == 1.0 && fabs(mapa.b) <= OFFSET_MANTER_MS) {
-          int n = 0;
-          for (int k = 0; k < j->n; k++) if (j->tiles[k].jpg && j->tiles[k].prov) { j->tiles[k].pts -= (long)mapa.b; j->tiles[k].prov = 0; n++; }
-          printf("[miniatura] optimistic thumbnails kept: %d relabelled by %+.2fs\n", n, -mapa.b / 1000);
-        } else {
-          for (int k = 0; k < j->n; k++)
-            if (!j->tiles[k].jpg || j->tiles[k].prov) {
-              if (j->tiles[k].jpg) { free(j->tiles[k].jpg); j->tiles[k].jpg = NULL; j->feitos--; }
-              j->tentado[k] = 0;
-            }
-          j->refeito = 1;
-          printf("[miniatura] offset %+.2fs is over %.0fs: optimistic thumbnails redone\n", mapa.b / 1000, OFFSET_MANTER_MS / 1000);
-        }
-        j->otimista = 0;
-      }
-      j->mapa = mapa;
-      j->offset = mapa.b;
-      pthread_mutex_unlock(&mu);
-      fflush(stdout);
-      snprintf(j->escolhida, sizeof j->escolhida, "%dp %.0f MB %s (via %s)", j->copias[c].altura, j->copias[c].tamanho / 1048576.0,
-               j->copias[c].nome, metodo);
-      snprintf(j->motivos + o, sizeof j->motivos - o, " | c%d:ACCEPTED", c + 1);
-    } else {
-      if (roda1) {                       // the optimistic lane was making a wrong copy's thumbnails: stop, discard
-        j->pararFaixas = 1;
-        pthread_join(t1, NULL);
-        roda1 = 0;
-        j->pararFaixas = 0;
-        mFechar(f1.h); f1.h = 0;
-        pthread_mutex_lock(&mu);
-        for (int k = 0; k < j->n; k++)
-          if (!j->tiles[k].jpg || j->tiles[k].prov) {
-            if (j->tiles[k].jpg) { free(j->tiles[k].jpg); j->tiles[k].jpg = NULL; j->feitos--; }
-            j->tentado[k] = 0;
-          }
-        j->otimista = 0;
-        pthread_mutex_unlock(&mu);
-      }
-      mFechar(hB); hB = 0;
-      snprintf(j->motivos + o, sizeof j->motivos - o, " | c%d:%s", c + 1,
-               ib[0] <= 0 ? "no-duration" : !igual && j->alturaA <= 1080 ? "runtime" : tela == MINI_TELA_REJEITADA ? "screen-rejected" : tela == MINI_TELA_INCONCLUSIVA ? "screen-inconclusive" : "rejected");
-    }
-    printf("[miniatura] check took %.1f s, read play %.1f MB + copy %.1f MB\n", (SDL_GetTicks() - c0) / 1000.0,
-           (mLidos(hA) - lA0) / 1048576.0, lidosB / 1048576.0);
-    fflush(stdout);
-  }
-  // Never thumbnails from the PLAYING file, at any resolution: decoding the very video the player decodes is what
-  // preceded the player's own decoder failing (4003) and the source switches (22/10, a 1080p remux episode).
-  if (!usaB && diretoOk && !diretoTentado && !parou(j)) {
-    printf("[miniatura] no copy passed the check: direct mode\n"); fflush(stdout);
-    if (hA) { mFechar(hA); hA = 0; }             // the check's session (no batches, CPU decoder): a fresh direct one
-    trabalharDireto(j, &hA);
-    goto fim;
-  }
-  if (!usaB) {
-    printf("[miniatura] no copy passed the check: stopping (thumbnails are never made from the playing file)\n");
-    fflush(stdout);
-    pthread_mutex_lock(&mu); if (job == j && !j->feitos) { estado = M_FALHOU; motivoSem = 1; } pthread_mutex_unlock(&mu);
-    goto fim;
-  }
-  {
-    // Two lanes on the copy, each with its own reader and decoder (both on the copy's resolved link: no new debrid
-    // link minted), sharing ONE request in flight (MiniaturaMotor): one decodes while the other's batch is on the wire.
-    mAlvo(hB, j->copias[copiaUsada].url, alvoB, sizeof alvoB);
-    // hB stays open for the re-check while watching (below)
-    if (!roda1 && !parou(j)) {
-      f1.j = j; f1.usaB = 1; f1.id = 1; f1.feitos = 0; f1.somaMs = 0; f1.lido = 0;
-      f1.h = mAbrir(alvoB, j->copias[copiaUsada].cab, 1);
-      if (f1.h) roda1 = pthread_create(&t1, NULL, faixa, &f1) == 0;
-      if (!roda1) { mFechar(f1.h); f1.h = 0; }
-    }
-    if (!parou(j)) {
-      f2.j = j; f2.usaB = 1; f2.id = 2;
-      f2.h = mAbrir(alvoB, j->copias[copiaUsada].cab, 1);
-      if (f2.h) roda2 = pthread_create(&t2, NULL, faixa, &f2) == 0;
-      if (!roda2) { mFechar(f2.h); f2.h = 0; }
-    }
-    // RE-CHECK WHILE WATCHING: the screen check only saw the first minute. Every 3 min of playback one frame on screen
-    // is compared with the copy at the mapped time (a single exact frame, no 4K read). Two misses in a row (the second
-    // 20 s after the first) mean the copy stopped matching (a scene cut or added in a same-length copy): the lanes
-    // stop and every thumbnail after the last good check is dropped.
-    int juntou = 0, falhasR = 0;
-    long bomAte = j->ultimoBom;        // was 0: a drop then removed EVERY thumbnail (22/10, Bond: 931 of 931)
-    Uint32 proxR = SDL_GetTicks() + RECHECK_MS;
-    while (!j->parar) {
-      if (!juntou && (!roda1 || f1.acabou) && (!roda2 || f2.acabou)) {
-        if (roda1) pthread_join(t1, NULL);
-        if (roda2) pthread_join(t2, NULL);
-        juntou = 1;
-        fecharLote(j, t0, &f1, &f2, roda1 + roda2);
-      }
-      if (!scrubbing && !bufferando && SDL_GetTicks() >= proxR) {
-        long pA = 0;
-        int r = reconferir(j, hB, mapaAtual(j), &pA);
-        if (r == 1) { falhasR = 0; bomAte = pA; proxR = SDL_GetTicks() + RECHECK_MS; j->nRecheck++; }
-        else if (r == 0) {
-          j->nRecheck++; j->falhasRecheck++;
-          printf("[miniatura] re-check at %lds: copy did not match (%d in a row)\n", pA / 1000, falhasR + 1); fflush(stdout);
-          if (++falhasR >= 2) {
-            // The lanes stop (nothing may be made with the old offset meanwhile), then: a NEW offset found -> every
-            // thumbnail after the last confirmed match is redone with it (a piecewise map, segment by segment as
-            // re-checks find them); none -> those thumbnails are dropped and the title stops.
-            j->pararFaixas = 1;
-            if (!juntou) {
-              if (roda1) pthread_join(t1, NULL);
-              if (roda2) pthread_join(t2, NULL);
-              juntou = 1;
-            }
-            j->pararFaixas = 0;
-            double nb = 0;
-            int novo = reancorar(j, hB, mapaAtual(j), &nb);
-            pthread_mutex_lock(&mu);
-            int tirados = 0;
-            double antigo = j->mapa.b;
-            for (int k = 0; k < j->n; k++)
-              if ((long)k * GRADE_MS > bomAte) {
-                if (j->tiles[k].jpg) { free(j->tiles[k].jpg); j->tiles[k].jpg = NULL; j->feitos--; tirados++; }
-                j->tentado[k] = 0;
-              }
-            if (novo) { j->mapa.b = nb; j->offset = nb; j->reancoras++; }
-            pthread_mutex_unlock(&mu);
-            if (novo && !parou(j)) {
-              printf("[miniatura] re-anchored after %lds: offset %+.2fs -> %+.2fs, %d thumbnails after it redone\n", bomAte / 1000,
-                     antigo / 1000, nb / 1000, tirados);
-              fflush(stdout);
-              falhasR = 0;
-              bomAte = pA;
-              f1.acabou = f2.acabou = 0;
-              roda1 = f1.h && pthread_create(&t1, NULL, faixa, &f1) == 0;
-              roda2 = f2.h && pthread_create(&t2, NULL, faixa, &f2) == 0;
-              juntou = 0;
-              j->resumido = 0;           // a new SUMMARY when the redo finishes
-              proxR = SDL_GetTicks() + RECHECK_MS;
-              continue;
-            }
-            j->caiuEm = pA;
-            printf("[miniatura] the copy stopped matching after %lds and no new offset was found: %d thumbnails after it dropped\n",
-                   bomAte / 1000, tirados);
-            fflush(stdout);
-            salvar(j, 0);
-            break;
-          }
-          proxR = SDL_GetTicks() + 20000;
-        } else proxR = SDL_GetTicks() + 10000;   // nothing on screen yet (paused): try again soon
-      }
-      dormir(j, 1000);
-    }
-    if (!juntou) {                       // the title was closed while the lanes ran
-      if (roda1) pthread_join(t1, NULL);
-      if (roda2) pthread_join(t2, NULL);
-      fecharLote(j, t0, &f1, &f2, roda1 + roda2);
-    }
-    mFechar(f1.h); mFechar(f2.h);
-  }
+  printf("[miniatura] playing file not usable by the hardware engine: back to the CPU route\n"); fflush(stdout);
+  pthread_mutex_lock(&mu); if (job == j) { estado = M_FALHOU; motivoSem = 1; } pthread_mutex_unlock(&mu);
 fim:
   if (j->dCheckRodando) { pthread_join(j->dCheckT, NULL); j->dCheckRodando = 0; }   // never outlives the job
   (*timelineEnv)->CallStaticVoidMethod(timelineEnv, cls, jPipelineStop);
@@ -3446,7 +2076,7 @@ static void pPedir(const SeekrFonte *f) {
   for (int k = 0; k < j->n; k++) { j->framePts[k] = -1; j->slotKey[k] = -1; }
   snprintf(j->urlA, sizeof j->urlA, "%s", f->url);
   j->auditarRede = (bitsDebug() & 256) != 0;
-  j->larguraSaida = 0;   // 0 = automatic (MiniaturaMotor picks 320/480 by device)
+  j->larguraSaida = larguraGpu();   // 0 = automatic (MiniaturaPerfil.kt picks by RAM)
   char cacheMode[64];
   snprintf(cacheMode, sizeof cacheMode, "thumb-w%d", j->larguraSaida);
   chaveArquivo(f, j->arq, sizeof j->arq, cacheMode);
@@ -3455,7 +2085,8 @@ static void pPedir(const SeekrFonte *f) {
   snprintf(j->cabA, sizeof j->cabA, "%s", f->cabecalhos ? f->cabecalhos : "");
   const Stream *st = stream_fonte_reproducao(f->url, f->cabecalhos);
   j->alturaA = st ? st->altura : 0;
-  j->nCopias = st ? escolherCopias(st, j->copias, f->durMs, j->motivos, sizeof j->motivos) : 0;
+  j->nCopias = 0;   // copies are no longer used (direct mode only)
+  (void)st;
   if (f->imdb && strchr(f->imdb, ':')) snprintf(j->titulo, sizeof j->titulo, "%s", f->imdb);
   else snprintf(j->titulo, sizeof j->titulo, "%s%s%d:%d", f->imdb ? f->imdb : "", f->t ? " " : "", f->t, f->e);
   pthread_mutex_lock(&mu);

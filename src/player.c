@@ -5604,7 +5604,7 @@ void player_atualizar(float dt, Uint32 agora) {
     // HARDWARE THUMBNAILS (test build 27/11/2026): while the title OPENS (before its audio), miniatura_hw.c opens
     // the file and creates the thumbnail decoder; seekr_pedir then hands the title to it (miniatura.c). Cheap per
     // frame: it returns at once for the same link.
-    if (!video_pronto() && !ehCanal() && ajustes_seekr_ligado())
+    if (!video_pronto() && !ehCanal() && ajustes_seekr_ligado() && ajustes_miniatura_gpu())
       miniatura_preaquecer(video_url_atual(), video_cabecalhos());
 #endif
     // MINIATURAS DO SEEKR: so com a duracao REAL (o servico escolhe a versao

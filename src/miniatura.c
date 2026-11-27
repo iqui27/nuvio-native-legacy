@@ -120,6 +120,22 @@ static Uint32 batida;            // last seekr_pedir: the player still shows thi
 
 static long alvoScrub = -1; static Uint32 alvoTick;
 #ifdef NV_ANDROID
+#include "ajustes.h"
+// THUMBNAIL QUALITY (Android, 27/11/2026): Settings > Thumbnail quality. Automatic = Low (320 px) on a TV with up to
+// 2 GB of RAM, Medium (480) otherwise; High = 576 (the largest seek preview drawn: 384x216 at the 150 % interface
+// size). The CPU route pays for size in the shrink step (measured 08/11: ~23 ms a tile at 320 wide, ~70 at 640;
+// 27/11: a 480 set took 28 % longer than a 320 one), so Automatic never picks High here.
+static long memTotalMB(void);
+static int larguraCpu(void) {
+  switch (ajustes_miniatura_qualidade()) {
+    case 1: return 576;
+    case 2: return 480;
+    case 3: return 320;
+    default: { long mb = memTotalMB(); return mb > 0 && mb <= 2048 ? 320 : 480; }
+  }
+}
+#endif
+#ifdef NV_ANDROID
 // HARDWARE ENGINE HAND-OFF (test build 27/11/2026). miniatura_hw.c is obadevyh's on-device engine (hardware decoder
 // + GPU, batched keyframe reads, copy-first), dropped by the 2.0.9 merge and brought back for its hardware path
 // only. A title whose hardware decoder was created during the opening load (miniatura_preaquecer, player.c) goes to
@@ -256,6 +272,10 @@ static int cacheDir(char *out, size_t n) {
 static int cacheNome(const char *fp, char *out, size_t n) {
   char d[600];
   if (!fp[0] || !cacheDir(d, sizeof d)) return 0;
+#ifdef NV_ANDROID
+  { int w = larguraCpu();                         // sets of another size never mix: 320 keeps the old name
+    if (w != 320) { snprintf(out, n, "%s/%.32s-w%d.nvmt", d, fp, w); return 1; } }
+#endif
   snprintf(out, n, "%s/%.32s.nvmt", d, fp);
   return 1;
 }
@@ -499,6 +519,10 @@ static void *trabalhar(void *u) {
 
   m = mini_motor_abrir(lerFonte, l, l->total, erro, sizeof erro);
   if (!m) { printf("[miniatura] not made for this file: %s\n", erro); goto semPrevia; }
+#ifdef NV_ANDROID
+  { MiniConfig cfg; mini_motor_config_padrao(&cfg); cfg.largura = larguraCpu(); mini_motor_config(m, &cfg);
+    printf("[miniatura] CPU route, %dx%d thumbnails\n", cfg.largura, cfg.largura * 9 / 16); fflush(stdout); }
+#endif
   {
     const MiniInfo *i = mini_motor_info(m);
     const char *porque = "";
@@ -703,7 +727,12 @@ void seekr_pedir(const char *imdb, int t, int e, long durMs) {
   if (!url || !*url) return;
 #ifdef NV_ANDROID
   if (hwTitulo && strcmp(hwUrl, url)) hwSoltar();          // another title: the hardware engine lets go
-  if (!hwTitulo && miniatura_provedor() && strcmp(urlAtual, url)) {
+  if (hwTitulo && miniatura_provedor()->estado() == SEEKR_SEM_PREVIA) {
+    // The playing file was not usable there (codec, Dolby Vision profile, open failed): this file's CPU route.
+    printf("[miniatura] hardware engine gave up on this title: CPU route\n"); fflush(stdout);
+    hwSoltar();
+  }
+  if (!hwTitulo && ajustes_miniatura_gpu() && miniatura_provedor() && strcmp(urlAtual, url)) {
     // The pre-warm decides: still running -> wait for the next heartbeat (at most HW_DECIDIR_MS); ended without a
     // decoder (playback had started) -> this file's CPU route at once, never a title idle until a pause.
     static char decidindo[NV_MEDIA_URL_MAX];

@@ -34,6 +34,9 @@ static const Item TELA[] = {
       OPC(AJ_SEEKR_CHAVE), OPC(AJ_SEEKR_TESTAR),   // .tpk: thumbnails made on the TV, no key
 #endif
       OPC(AJ_SEEKR_FITA),
+#ifdef NV_ANDROID
+      OPC(AJ_MINI_QUALIDADE), OPC(AJ_MINI_DECODER),   // thumbnails made on this device
+#endif
     MAIS(),
     ROT("Escolha da fonte"),
       // #310: o "Auto-play streams" do oficial (fonteregra.h).

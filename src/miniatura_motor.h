@@ -57,6 +57,7 @@ typedef struct {
   int lerBlocos;        // 256 KiB blocks per range request, 1..7 (default 4 = 1 MiB)
   int prefetch;         // 1 = fetch the next keyframe (mini_motor_proximo) during a decode
   int tsBlocos;         // MPEG-TS: blocks per request while reading forward (default 7)
+  int largura;          // output width: 320 (0 = default), 480 or 576; 16:9, height = width * 9 / 16
 } MiniConfig;
 
 // Opens the container. `tamanho` = total file size. NULL on failure, with a
