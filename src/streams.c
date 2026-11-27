@@ -2339,7 +2339,8 @@ int stream_resolver_escolhida(int i, unsigned geracao, char *url, unsigned nu,
 static void faixaPontos(const Stream *s, char *dst, size_t tam) {
   static const char *const hdrNome[] = { "SDR", "HDR", "HDR10", "HDR10+", "DV" };
   snprintf(dst, tam, "%dp %s%s%s%s%s", s->altura, hdrNome[nivelHdr(s)], s->mp4 ? " mp4" : "",
-           s->foraCache ? " uncached" : " cache-unconfirmed", ehPlugin(s) ? " plugin" : " addon",
+           cacheConfirmado(s) ? " cached" : s->foraCache ? " uncached" : " cache-unconfirmed",
+           ehPlugin(s) ? " plugin" : " addon",
            !cabeNaAltura(s) ? " over-cap" : foraDaFaixaTamanho(s) == 1 ? " over-size"
            : foraDaFaixaTamanho(s) == 2 ? " under-size" : "");
 }
@@ -3025,8 +3026,11 @@ static void *loteFio(void *u) {
     cacheLoteConferir(f->sessao, LOTE_MAX, 0);
   } while (atomic_load(&loteDeNovo));
   debrid_contexto_sair();
-  atomic_store(&loteRodando, 0);
   free(f);
+  atomic_store(&loteRodando, 0);
+  // A kick that arrived after the last pass looked at loteDeNovo only raised
+  // the flag (loteRodando was still set): run it now instead of losing it.
+  if (atomic_exchange(&loteDeNovo, 0)) loteDisparar();
   return NULL;
 }
 static void loteDisparar(void) {
