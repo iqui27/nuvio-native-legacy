@@ -321,7 +321,7 @@ static void desenharAviso(float a, const char *msg) {
 #define PT_CARTAZ_W 220.0f
 #define PT_CARTAZ_H 330.0f
 static void desenharTitulos(float a) {
-  const float w = 60.0f + PT_COL_W * PECA_N, h = 720.0f;
+  const float w = 60.0f + PT_COL_W * PECA_N, h = 760.0f;
   GfxRect r = { (NV_TELA_W - w) * 0.5f, (NV_TELA_H - h) * 0.5f - (1.0f - a) * 10.0f, w, h };
   float y, x0, ar, ag, ab;
   painel(r, a);

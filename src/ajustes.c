@@ -3823,7 +3823,12 @@ static int ajOpcaoDisponivel(int op) {
 #if defined(__EMSCRIPTEN__) || defined(_WIN32)
   if (op == AJ_SESSAO_SALA || op == AJ_CASA_USAR || op == AJ_CASA_AJUDAR) return 0;
 #endif
+#if defined(__EMSCRIPTEN__) || defined(NV_ANDROID) || defined(_WIN32)
+  if (op == AJ_TIMESHIFT_LOCAL) return 0;
+#endif
   if (op == AJ_SESSAO_SALA) return !edPerfil;
+  if ((op == AJ_PECA || op == AJ_PECA_PAREAR) && !pecatv_disponivel()) return 0;
+  if (op == AJ_PECA_PAREAR && valor[AJ_PECA] != 0) return 0;
   if (op == AJ_ARTE_TOM) return valor[AJ_TEMA] == AJ_TEMA_DINAMICA;
   // Only the selected account's fields are editable. Adding another account
   // never overwrites the credentials of the first one.
@@ -7894,6 +7899,9 @@ static int foraDestaPlataforma(int op) {
 #if defined(__EMSCRIPTEN__) || defined(_WIN32)
   if (op == AJ_CASA_USAR || op == AJ_CASA_AJUDAR) return 1;
 #endif
+#if defined(__EMSCRIPTEN__) || defined(NV_ANDROID) || defined(_WIN32)
+  if (op == AJ_TIMESHIFT_LOCAL) return 1;
+#endif
   return 0;
 }
 int ajustes_teclado_na_tela(void) {
@@ -8649,6 +8657,8 @@ static int inativa(int op) {
     case AJ_SOURCE_BADGE_POSITION: return !ajustes_fonte_texto_addon();
     case AJ_SELOS_PACOTE_REM: return selospacote_ativo() < 0 || !selospacote_da_tv(selospacote_ativo());
     case AJ_URL_REM: return valor[AJ_URL_LISTA] < 1;
+    case AJ_TIMESHIFT_LOCAL: return !ajustes_livetv_proxy();
+    case AJ_PECA_PAREAR: return !ajustes_peca();
     // Sem o relogio nao ha ilha para onde minimizar: sai para a pagina, como antes.
     case AJ_SAIDA_PLAYER: return !lig(AJ_RELOGIO);
     // So existe sessao para manter quando a saida vai para a ilha.

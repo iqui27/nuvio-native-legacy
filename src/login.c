@@ -248,6 +248,7 @@ void login_evento(const SDL_Event *e) {
       }
       return;
     }
+    if (k == SDLK_UP || k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_RIGHT) return;
   }
   if (k == SDLK_UP && focoQr > 0) focoQr--;
   else if (k == SDLK_DOWN && focoQr + 1 < qrN()) focoQr++;
