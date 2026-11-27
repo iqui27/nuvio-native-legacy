@@ -38,6 +38,8 @@
 #include "marco.h"
 #include "streams.h"
 #include "video.h"
+#include "trailer.h"
+#include "player.h"
 #include "mediaurl.h"
 #include "ajustes.h"
 #include "xtream.h"
@@ -995,8 +997,11 @@ JNIEXPORT jboolean JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeTunnelin
 }
 
 // Match frame rate: 0 Always (window display mode), 1 Only if seamless, 2 Off.
+// Never for a trailer (owner 27/11/2026): the display switch (a black screen of 1-2 s on many TVs) is for a movie or
+// an episode. A trailer is open and this player session has not opened a video of its own (player_tem_video).
 JNIEXPORT jint JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeFrameRateMatch(JNIEnv *env, jclass cls) {
   (void)env; (void)cls;
+  if (trailer_aberto() && !player_tem_video()) return 2;
   return ajustes_quadros_taxa();
 }
 

@@ -2184,8 +2184,22 @@ object NvPlayer {
     // No frame rate in the format (MKV): our header probe usually has it before
     // the first frame; else the first frames' timestamps (not when tunneled:
     // Media3 reports no frames then). Runs from the tick and the first frame.
+    // Asked again right before deciding: a trailer marks itself open only after it asks this player to play, so the
+    // mode read when the player opened can still say "Always" for one. Off (a trailer, or the setting) also stops
+    // Media3's own seamless vote. Never a display switch for a trailer (owner 27/11/2026).
+    private fun reconferirModoTaxa() {
+        val m = try { nativeFrameRateMatch() } catch (_: UnsatisfiedLinkError) { return }
+        if (m == modoTaxa) return
+        modoTaxa = m
+        if (m == TaxaQuadros.DESLIGADO) {
+            player?.setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
+            logQuadro("[quadro] taxa de quadros: desligada para esta reproducao (trailer ou ajuste)")
+        }
+    }
+
     private fun taxaPendente(minha: Int) {
         if (!atual(minha) || taxaDecidida || player == null) return
+        reconferirModoTaxa()
         if (modoTaxa != TaxaQuadros.SEMPRE) { decidirTaxa(minha, -1f); return }
         val c = try { nativeFpsContentor(quadroVisto) } catch (_: UnsatisfiedLinkError) { -1f }
         if (TaxaQuadros.fpsValido(c)) { decidirTaxa(minha, c, "mkv"); return }
@@ -2208,6 +2222,7 @@ object NvPlayer {
     private fun decidirTaxa(minha: Int, bruto: Float, fonte: String = "formato") {
         if (!atual(minha) || taxaDecidida) return
         if (android.os.Build.VERSION.SDK_INT < 23) { taxaDecidida = true; return }
+        reconferirModoTaxa()
         if (modoTaxa != TaxaQuadros.SEMPRE) {
             taxaDecidida = true
             if (taxaPedida != 0 && pedirModo(0, "ajuste ${modoTaxa}")) segurarTaxa(-1)
