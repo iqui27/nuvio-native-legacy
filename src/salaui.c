@@ -58,7 +58,7 @@ static void cartaDe(const CatItem *it, const char *tipo, int infantil) {
   // So https, e curto e sem parametros: endereco de cartaz com chave embutida
   // (PostersPlus, ate 2 KB) nao vai para o celular de um visitante.
   if (!strncmp(it->poster, "https://", 8) && strlen(it->poster) < sizeof c->poster && !strchr(it->poster, '?'))
-    snprintf(c->poster, sizeof c->poster, "%s", it->poster);
+    snprintf(c->poster, sizeof c->poster, "%.*s", (int)(sizeof c->poster - 1), it->poster);
   // Cartaz local ou com chave: o endereco publico do mesmo id (metahub, o do
   // Cinemeta), que nao diz nada sobre a conta.
   else snprintf(c->poster, sizeof c->poster, "https://images.metahub.space/poster/medium/%.20s/img", it->imdb);
