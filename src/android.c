@@ -688,8 +688,6 @@ Java_space_nuvio_nativelegacy_NuvioActivity_nativeRecUrl(JNIEnv *env, jobject ac
   return (*env)->NewStringUTF(env, NV_REC_URL);
 }
 
-#endif
-
 // SHARED CONNECTION PAUSE (27/11/2026): MediaHttpBudget (Kotlin) reads and feeds rede.c's #385 table, so the
 // player, the hardware thumbnails and the C side readers leave a debrid node that refused a connection alone
 // together. The URL is only parsed for its host here; it is never logged.
@@ -715,3 +713,5 @@ Java_space_nuvio_nativelegacy_MediaHttpBudget_calmaAtendeuNativa(JNIEnv *env, jc
   (void)cls;
   if (s) { rede_calma_atendeu(s); (*env)->ReleaseStringUTFChars(env, u, s); }
 }
+
+#endif // NV_ANDROID
