@@ -125,6 +125,9 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "credfonte.h"
 #include "credaprende.h"
 #include "seekr.h"
+#ifdef NV_ANDROID
+#include "miniatura_android.h"
+#endif
 #include "visto.h"     /* fim de episodio/filme para Simkl e conta */
 #include "vistoep.h"   /* o check de "assistido" na lista de episodios (issue #100) */
 #include "pausao.h"
@@ -5597,6 +5600,13 @@ void player_atualizar(float dt, Uint32 agora) {
       if (durFonteForaCache) return;
     }
     durFonteContagem(agora);
+#ifdef NV_ANDROID
+    // HARDWARE THUMBNAILS (test build 27/11/2026): while the title OPENS (before its audio), miniatura_hw.c opens
+    // the file and creates the thumbnail decoder; seekr_pedir then hands the title to it (miniatura.c). Cheap per
+    // frame: it returns at once for the same link.
+    if (!video_pronto() && !ehCanal() && ajustes_seekr_ligado())
+      miniatura_preaquecer(video_url_atual(), video_cabecalhos());
+#endif
     // MINIATURAS DO SEEKR: so com a duracao REAL (o servico escolhe a versao
     // da folha por ela) e uma vez por titulo — seekr_pedir ignora o repetido.
     if (d > 60.0 && video_pronto() && !ehCanal() && ajustes_seekr_ligado()) {

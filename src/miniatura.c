@@ -119,6 +119,30 @@ static long durAtual;
 static Uint32 batida;            // last seekr_pedir: the player still shows this title
 
 static long alvoScrub = -1; static Uint32 alvoTick;
+#ifdef NV_ANDROID
+// HARDWARE ENGINE HAND-OFF (test build 27/11/2026). miniatura_hw.c is obadevyh's on-device engine (hardware decoder
+// + GPU, batched keyframe reads, copy-first), dropped by the 2.0.9 merge and brought back for its hardware path
+// only. A title whose hardware decoder was created during the opening load (miniatura_preaquecer, player.c) goes to
+// it; every other title stays on this file's CPU route, unchanged. hwTitulo/hwUrl are touched by the render thread only.
+#include "miniatura_android.h"
+static int hwTitulo;
+static char hwUrl[NV_MEDIA_URL_MAX];
+static long hwPosMs = -1; static Uint32 hwPosTick;
+static void hwSoltar(void) {
+  if (!hwTitulo) return;
+  miniatura_provedor()->desligar();
+  hwTitulo = 0; hwUrl[0] = 0; hwPosMs = -1;
+}
+static void hwPedir(const char *imdb, int t, int e, long durMs, const char *url) {
+  const Stream *st = stream_item(stream_atual());
+  long ph = (long)(video_pos() * 1000.0);
+  int scrub = hwPosMs >= 0 && SDL_GetTicks() - hwPosTick < 1500;
+  SeekrFonte f = { imdb ? imdb : "", t, e, durMs, url, video_cabecalhos() ? video_cabecalhos() : "",
+                   st ? st->tamanhoBytes : 0, st ? st->videoHash : "", st ? st->arquivo : "",
+                   scrub ? hwPosMs : ph, ph, scrub };
+  miniatura_provedor()->pedir(&f);
+}
+#endif
 // CHAPTER STARTS (seekr_capitulos): made right after the scrub point, before
 // everything else, so the chapter row has its pictures within the first ~50 s
 // of playback. capFim[i] is where chapter i ends (the next start, or the end).
@@ -675,6 +699,15 @@ void seekr_pedir(const char *imdb, int t, int e, long durMs) {
   // Tizen 4-5.5 (NuvioTpk40) makes thumbnails too since 25/11 (owner): those
   // TVs are the ones the slow-TV limit (top of the file) is for.
   if (!url || !*url) return;
+#ifdef NV_ANDROID
+  if (hwTitulo && strcmp(hwUrl, url)) hwSoltar();          // another title: the hardware engine lets go
+  if (!hwTitulo && miniatura_provedor() && miniatura_hw_aceita(url)) {
+    seekr_desligar();                                       // a CPU job of an earlier title ends
+    hwTitulo = 1; snprintf(hwUrl, sizeof hwUrl, "%s", url);
+    printf("[miniatura] title on the hardware engine (decoder created while opening)\n"); fflush(stdout);
+  }
+  if (hwTitulo) { hwPedir(imdb, t, e, durMs, url); return; }
+#endif
   pthread_mutex_lock(&mu);
   batida = SDL_GetTicks();
   // Same title still on screen: only the heartbeat.
@@ -731,6 +764,9 @@ void seekr_pedir(const char *imdb, int t, int e, long durMs) {
 }
 
 void seekr_desligar(void) {
+#ifdef NV_ANDROID
+  hwSoltar();
+#endif
   // The worker keeps its own reference: it saves the set to Drive and frees it.
   pthread_mutex_lock(&mu);
   if (job) { job->parar = 1; soltarJob(job); job = NULL; }
@@ -741,16 +777,29 @@ void seekr_desligar(void) {
 }
 
 // ------------------------------------------------------------------ seekr.h surface
-int seekr_estado(void) { int r; pthread_mutex_lock(&mu); r = estado; pthread_mutex_unlock(&mu); return r; }
+int seekr_estado(void) {
+  int r;
+#ifdef NV_ANDROID
+  if (hwTitulo) return miniatura_provedor()->estado();
+#endif
+  pthread_mutex_lock(&mu); r = estado; pthread_mutex_unlock(&mu); return r;
+}
 int seekr_tem_chave(void) { return 1; }          // nothing to configure: made on this TV
 void seekr_definir_chave(const char *c) { (void)c; }
 void seekr_chave_propria(int p) { (void)p; }
 int seekr_validar(const char *c) { (void)c; return 1; }
 void seekr_tentar_novamente(void) {}
 void seekr_definir_ajuste_ms(long ms) { (void)ms; }   // frames of this very file: no sync offset
-void seekr_ocioso(void) {}
+void seekr_ocioso(void) {
+#ifdef NV_ANDROID
+  if (hwTitulo) miniatura_provedor()->ocioso();
+#endif
+}
 void seekr_uso(SeekrUso *u) { if (u) memset(u, 0, sizeof *u); }
 const char *seekr_estado_rotulo(int est) {
+#ifdef NV_ANDROID
+  if (hwTitulo) return miniatura_provedor()->rotulo(est);
+#endif
   switch (est) {
     case SEEKR_BUSCANDO: return "Buscando miniaturas";
     case SEEKR_PRONTO: return "Miniaturas disponíveis";
@@ -771,7 +820,12 @@ typedef struct { GLuint tex; int slot; unsigned g; Uint32 uso; } Slot;
 static Slot slots[SLOTS];
 static Uint32 relogioUso;
 static int quadroVelho;
-int seekr_quadro_velho(void) { return quadroVelho; }
+int seekr_quadro_velho(void) {
+#ifdef NV_ANDROID
+  if (hwTitulo) return miniatura_provedor()->quadro_velho();
+#endif
+  return quadroVelho;
+}
 
 static int slotTex(int k, unsigned g) {
   for (int i = 0; i < SLOTS; i++) if (slots[i].tex && slots[i].slot == k && slots[i].g == g) return i;
@@ -831,6 +885,12 @@ static int vizinho(const Job *j, int k, int raio) {
 }
 
 int seekr_quadros(double posSeg, int n, GLuint *texs, double *cueSeg) {
+#ifdef NV_ANDROID
+  if (hwTitulo) {
+    hwPosMs = (long)(posSeg * 1000.0); hwPosTick = SDL_GetTicks();   // the scrub point, sent with the next pedir
+    return miniatura_provedor()->quadros(posSeg, n, texs, cueSeg);
+  }
+#endif
   int quer[3], nq = 0, i, achou = 0, atualK = -1, antes = -1, depois = -1, longe = 0;
   unsigned g = 0;
   if (n < 1) return 0;
@@ -902,6 +962,21 @@ void seekr_capitulos(const double *iniSeg, int n, double durSeg) {
 // asked first first, so the row is filled within a few frames of opening and
 // a slide never waits (the caller asks for one card past each edge).
 int seekr_capitulo_quadros(const int *idx, int n, GLuint *texs) {
+#ifdef NV_ANDROID
+  if (hwTitulo) {
+    int i, any = 0;
+    if (n > 16) n = 16;
+    for (i = 0; i < n; i++) {
+      long ms = -1;
+      texs[i] = 0;
+      pthread_mutex_lock(&mu);
+      if (idx[i] >= 0 && idx[i] < nCap) ms = capIni[idx[i]] + CAP_DENTRO_MS;
+      pthread_mutex_unlock(&mu);
+      if (ms >= 0 && miniatura_provedor()->quadros(ms / 1000.0, 1, &texs[i], NULL) && texs[i]) any = 1;
+    }
+    return any;
+  }
+#endif
   int kk[16], pro[16], np = 0, i, subidos = 0;
   unsigned g;
   if (n > 16) n = 16;
