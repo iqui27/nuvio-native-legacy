@@ -127,6 +127,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "seekr.h"
 #ifdef NV_ANDROID
 #include "miniatura_android.h"
+#include "rede.h"
 #endif
 #include "visto.h"     /* fim de episodio/filme para Simkl e conta */
 #include "vistoep.h"   /* o check de "assistido" na lista de episodios (issue #100) */
@@ -5604,8 +5605,15 @@ void player_atualizar(float dt, Uint32 agora) {
     // HARDWARE THUMBNAILS (test build 27/11/2026): while the title OPENS (before its audio), miniatura_hw.c opens
     // the file and creates the thumbnail decoder; seekr_pedir then hands the title to it (miniatura.c). Cheap per
     // frame: it returns at once for the same link.
-    if (!video_pronto() && !ehCanal() && ajustes_seekr_ligado() && ajustes_miniatura_gpu())
-      miniatura_preaquecer(video_url_atual(), video_cabecalhos());
+    // THE PLAYER FIRST (owner 27/11/2026, the .tpk rule): the pre-warm is a side read, so it waits until the player
+    // has its first bytes (or its first frame, for a source that does not count bytes) and never starts on a host
+    // in its refusal pause (rede.c #385). Missing the opening only sends the title to the CPU route.
+    if (!video_pronto() && !ehCanal() && ajustes_seekr_ligado() && ajustes_miniatura_gpu()) {
+      VideoStats vs;
+      video_estatisticas(&vs);
+      if ((vs.bytes > 0 || video_quadro_visto()) && !rede_calma_falta(video_url_atual()))
+        miniatura_preaquecer(video_url_atual(), video_cabecalhos());
+    }
 #endif
     // MINIATURAS DO SEEKR: so com a duracao REAL (o servico escolhe a versao
     // da folha por ela) e uma vez por titulo — seekr_pedir ignora o repetido.

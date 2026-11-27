@@ -37,8 +37,9 @@ internal object MediaHttpBudget {
     private val debridPlayer = Semaphore(DEBRID_PLAYER, true)
 
     // SHARED REFUSAL PAUSE (27/11/2026): rede.c's #385 table, now fed and read from here too. A debrid node that
-    // refused the player is left alone by the player's retries (they wait it out), the hardware thumbnails and the C
-    // side readers together, instead of each reconnecting on its own (12:39: six refused connects in 2 s).
+    // refused a connection is left alone by the hardware thumbnails and the C side readers together, instead of each
+    // reconnecting on its own (12:39: six refused connects in 2 s). As on the .tpk the player never waits on it; a
+    // refusal the player gets opens it, so the side readers leave that node to the player.
     @JvmStatic private external fun calmaFaltaNativa(url: String): Long
     @JvmStatic private external fun calmaRecusouNativa(url: String, erro: Int): Long
     @JvmStatic private external fun calmaAtendeuNativa(url: String)

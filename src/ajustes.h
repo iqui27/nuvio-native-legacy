@@ -122,7 +122,7 @@ int ajustes_esmaecer(void);
 int ajustes_brilho_player(void);
 int ajustes_tunneling(void); // Android-only tunneled playback; default off.
 int ajustes_quadros_taxa(void); // Android match frame rate: 0 Always, 1 Only if seamless, 2 Off.
-// Thumbnails made on this device (Android): 0 Automatic, 1 High (640 px), 2 Medium (480), 3 Low (320);
+// Thumbnails made on this device (Android): 0 Automatic, 1 High (576 px), 2 Medium (480), 3 Low (320);
 // 1 = the GPU decoder (hardware engine, miniatura_hw.c), 0 = the CPU route (default).
 int ajustes_miniatura_qualidade(void);
 int ajustes_miniatura_gpu(void);

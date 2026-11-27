@@ -142,7 +142,6 @@ class ParaleloDataSource(
         private const val ADIANTE = 3         // pedacos em voo por conexao
         private const val TENTATIVAS = 3
         private val ESPERA_TENTATIVA_MS = longArrayOf(250L, 750L)
-        const val PAUSA_MAX_MS = 10_000L      // longest wait for a refused debrid node's pause per connect attempt
         // 502/503/504 do resolvedor do addon costuma passar: no PenguPlay
         // (05/11/2026) 7 de 20 links com 502 abriram na segunda tentativa,
         // um por vez. Espera mais que o backoff de conexao: o 5xx veio rapido.
@@ -258,31 +257,11 @@ class ParaleloDataSource(
         conferirCancelamento()
     }
 
-    // A debrid node that just refused a connection (ours, a thumbnail's or a side reader's: one table, rede.c #385)
-    // gets no new one from the player until its pause ends, at most PAUSA_MAX_MS per attempt. Before (12:39): six
-    // refused connects in 2 s to nexus-272, then three reconnects, each refused within milliseconds.
-    private fun esperarPausa(u: URL) {
-        val pausa = MediaHttpBudget.pausaMs(u)
-        if (pausa <= 0) return
-        var resta = minOf(pausa, PAUSA_MAX_MS)
-        Log.i(TAG, "${u.host} em pausa (recusou conexao): esperando $resta ms antes de conectar")
-        while (resta > 0) {
-            conferirCancelamento()
-            val passo = minOf(resta, 200L)
-            try { dormir(passo) }
-            catch (e: InterruptedException) { Thread.currentThread().interrupt(); throw cancelado(e) }
-            resta -= passo
-        }
-        conferirCancelamento()
-        // The native pause can grow to 60 s, or be extended by another reader.
-        // Exhausting this attempt's wait budget must not open a socket early.
-        if (MediaHttpBudget.pausaMs(u) > 0)
-            throw IOException("source host is still paused after a refused connection")
-    }
-
+    // The refusal pause (rede.c #385) is for the side readers only, as on the .tpk: the player never waits on it.
+    // A connection the player gets refused still opens it (conectar: MediaHttpBudget.recusou), so the subtitle
+    // prefetch and the thumbnails leave that debrid node to the player.
     private fun conectar1(u: URL, ini: Long, ultimo: Long): HttpURLConnection {
         conferirCancelamento()
-        esperarPausa(u)
         val c = MediaHttpBudget.open(u, "player", novaConexao, ::conferirCancelamento)
         ativas.add(c)
         if (fechado) { desconectar(c); throw cancelado() }

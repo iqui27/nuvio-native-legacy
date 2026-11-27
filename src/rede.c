@@ -3435,12 +3435,19 @@ static void *dtsRangeHeaders(const char *raw, int public_only) {
 /* `final` (8192 bytes, optional) receives the address that answered 206 when
  * at least one redirect was followed, "" otherwise; `cross` says whether that
  * address is on another origin (credential headers were NOT sent to it). */
-/* DEBRID CONNECTION GATE (27/11/2026, Shield, TorBox nexus-272). With the
- * player's 4 connections, the 3 mkvass pool threads and the thumbnail thread
- * each kept their own socket to the same TorBox server: 7 open at once, and
- * the server stopped answering this IP. Range reads from C to a host that
- * limits connections per user go one at a time and close their socket after,
- * so C never holds more than 1 (the player keeps 3 for these hosts). */
+/* DEBRID CONNECTION GATE (27/11/2026, Shield, TorBox nexus-272). ANDROID ONLY,
+ * SIDE READS ONLY (rede_lateral). With the player's 4 connections, the 3 mkvass
+ * pool threads and the thumbnail thread each kept their own socket to the same
+ * TorBox server: 7 open at once, and the server stopped answering this IP. On
+ * Android the player keeps 3 for these hosts (MediaHttpBudget.kt) and the side
+ * readers share 1 here: one Range at a time, socket closed after. Never on
+ * Samsung or LG (their converter reads the whole file with 4 workers and the
+ * TV's player is outside this budget) and never for a reader that is not
+ * lateral (the DTS converter feeds the player). A waiter sees its cancel token
+ * every 50 ms and gives up at its own deadline: Stop and seek never wait on it.
+ * An add-on host learned to redirect to a debrid CDN counts as that CDN, so a
+ * side read through the add-on link is in the gate too. */
+#ifdef NV_ANDROID
 static int hostLimitaPorUsuario(const char *url) {
   static const char *const fim[] = { "tb-cdn.st", "torbox.app", "real-debrid.com", "rdeb.io",
     "alldebrid.com", "debrid.it", "premiumize.me", "debrid-link.com", "debrid-link.fr",
@@ -3456,17 +3463,63 @@ static int hostLimitaPorUsuario(const char *url) {
   }
   return 0;
 }
+#define DEBRID_VIA_N 8
+static char debridVia[DEBRID_VIA_N][96];
+static int debridViaProx;
+static pthread_mutex_t debridViaTrava = PTHREAD_MUTEX_INITIALIZER;
+static int viaDebrid(const char *url) {
+  char h[96];
+  int i, achou = 0;
+  if (!url) return 0;
+  hostDaUrl(url, h, sizeof h);
+  if (!h[0]) return 0;
+  pthread_mutex_lock(&debridViaTrava);
+  for (i = 0; i < DEBRID_VIA_N && !achou; i++) achou = debridVia[i][0] && !strcasecmp(debridVia[i], h);
+  pthread_mutex_unlock(&debridViaTrava);
+  return achou;
+}
+// `pedido` answered from `final`: an add-on host that sends to a debrid CDN is remembered as one.
+static void aprenderVia(const char *pedido, const char *final) {
+  char h[96];
+  int i;
+  if (!pedido || !final || !final[0] || !hostLimitaPorUsuario(final) || hostLimitaPorUsuario(pedido)) return;
+  hostDaUrl(pedido, h, sizeof h);
+  if (!h[0]) return;
+  pthread_mutex_lock(&debridViaTrava);
+  for (i = 0; i < DEBRID_VIA_N; i++) if (debridVia[i][0] && !strcasecmp(debridVia[i], h)) break;
+  if (i == DEBRID_VIA_N) {
+    snprintf(debridVia[debridViaProx], sizeof debridVia[0], "%s", h);
+    debridViaProx = (debridViaProx + 1) % DEBRID_VIA_N;
+  }
+  pthread_mutex_unlock(&debridViaTrava);
+}
 static pthread_mutex_t debridTrava = PTHREAD_MUTEX_INITIALIZER;
-static int debridEntrar(const char *url) {
-  if (!hostLimitaPorUsuario(url)) return 0;
-  pthread_mutex_lock(&debridTrava);
+static unsigned long redeAgoraMs(void);
+// 1 = holds the gate, 0 = not needed, -1 = cancelled while waiting, -2 = `prazoMs` passed while waiting.
+static int debridEntrar(const char *url, volatile int *cancel, unsigned long prazoMs) {
+  unsigned long t0;
+  if (!redeLateral || !url || (!hostLimitaPorUsuario(url) && !viaDebrid(url))) return 0;
+  t0 = redeAgoraMs();
+  while (pthread_mutex_trylock(&debridTrava)) {
+    struct timespec d = { 0, 50L * 1000000L };
+    if ((cancel && __atomic_load_n(cancel, __ATOMIC_RELAXED)) || (redeCancelLocal && *redeCancelLocal)) return -1;
+    if (redeAgoraMs() - t0 >= prazoMs) return -2;
+    nanosleep(&d, NULL);
+  }
   return 1;
 }
 static void debridSair(int dentro) {
-  if (!dentro) return;
+  if (dentro != 1) return;
   rede_fio_fechar();
   pthread_mutex_unlock(&debridTrava);
 }
+#else
+static void aprenderVia(const char *pedido, const char *final) { (void)pedido; (void)final; }
+static int debridEntrar(const char *url, volatile int *cancel, unsigned long prazoMs) {
+  (void)url; (void)cancel; (void)prazoMs; return 0;
+}
+static void debridSair(int dentro) { (void)dentro; }
+#endif
 
 static unsigned long calmaFalta(const char *url, int *erro, int *avisar);
 static unsigned long calmaAbrir(const char *url, int erro);
@@ -3478,7 +3531,8 @@ static char *trecho64RelatoBruto(const char *url, const char *headers,
                               int64_t start, int64_t end, long *size,
                               int64_t *total, int *status,
                               volatile int *cancelled, char *final, int *cross,
-                              volatile int *urgent,unsigned idle_ms,int *stalled,int *retry_after) {
+                              volatile int *urgent,unsigned idle_ms,int *stalled,int *retry_after,
+                              int *dentro) {
   char current[8192], range[64], origin[128];
   int hop, public_only = 0, downgraded = 0;
   if(retry_after) *retry_after=-1;
@@ -3501,6 +3555,9 @@ static char *trecho64RelatoBruto(const char *url, const char *headers,
     long http = 0;
     char redirected[8192] = "", *next = NULL;
     if (cancelled && __atomic_load_n(cancelled, __ATOMIC_RELAXED)) return NULL;
+    // Android side read: the debrid gate for this hop's host (the add-on's, when it is known to send to a debrid
+    // CDN, or the CDN's after the redirect). Held until the call returns.
+    if (!*dentro) { int d = debridEntrar(current, cancelled, 20000UL); if (d < 0) return NULL; *dentro = d; }
     memset(&r, 0, sizeof r);
     r.requested = start; r.limit = end - start + 1; r.total = -1; r.cancel = cancelled;
     r.urgent=urgent; r.idle_ms=idle_ms; r.stalled=stalled; r.progress_ms=pedidoAgoraMs();
@@ -3574,6 +3631,7 @@ static char *trecho64RelatoBruto(const char *url, const char *headers,
           fflush(stdout);
         }
       }
+      aprenderVia(current, redirected);
       snprintf(current, sizeof current, "%s", redirected);
       continue;
     }
@@ -3605,9 +3663,9 @@ char *rede_baixar_trecho64_relato(const char *url, const char *headers,
                               int64_t *total, int *status,
                               volatile int *cancelled, char *final, int *cross,
                               volatile int *urgent,unsigned idle_ms,int *stalled,int *retry_after) {
-  int dentro = debridEntrar(url);
+  int dentro = 0;
   char *b = trecho64RelatoBruto(url, headers, start, end, size, total, status, cancelled, final, cross,
-                                urgent, idle_ms, stalled, retry_after);
+                                urgent, idle_ms, stalled, retry_after, &dentro);
   debridSair(dentro);
   return b;
 }
@@ -3972,9 +4030,10 @@ static void calmaSoltar(const char *url) {
   pthread_mutex_unlock(&calmaTrava);
 }
 
-// THE SAME PAUSE FOR EVERY READER (27/11/2026). The Android player (Kotlin) reports the connections it gets
-// refused and checks the pause before connecting again; hardware thumbnails check it before opening. One table:
-// a TorBox node that refused the player is left alone by the thumbnails and the subtitle prefetch too.
+// ONE PAUSE FOR EVERY SIDE READER (27/11/2026). The Android player (Kotlin) reports the connections it gets
+// refused, but never waits on the pause (the .tpk rule: side readers yield, the player does not); the hardware
+// thumbnails check it before opening. One table: a TorBox node that refused the player is left alone by the
+// thumbnails and the subtitle prefetch too.
 unsigned long rede_calma_falta(const char *url) { int e = 0, a = 0; return url ? calmaFalta(url, &e, &a) : 0; }
 unsigned long rede_calma_recusou(const char *url, int erro) {
   char h[96]; unsigned long p;
@@ -4026,18 +4085,30 @@ static void corteAprender(const char *url, long veio) {
 
 static char *trechoStBruto(const char *url, int segundos, long long ini, long long fim,
                             long *tam, int *status, int *erro,
-                            char *final, unsigned tamFinal);
+                            char *final, unsigned tamFinal, int *dentro);
 char *rede_baixar_trecho_st(const char *url, int segundos, long long ini, long long fim,
                             long *tam, int *status, int *erro,
                             char *final, unsigned tamFinal) {
-  int dentro = debridEntrar(url);
-  char *b = trechoStBruto(url, segundos, ini, fim, tam, status, erro, final, tamFinal);
+  int dentro = 0;
+  char *b = trechoStBruto(url, segundos, ini, fim, tam, status, erro, final, tamFinal, &dentro);
   debridSair(dentro);
   return b;
 }
+// The Android debrid gate (top of the Range readers) for `u` within what is left of `prazo`: 0 = go on,
+// else the curl code to fail with (42 cancelled while waiting, 28 the deadline passed while waiting).
+static int stPortao(const char *u, unsigned long t0, unsigned long prazo, int *dentro) {
+  unsigned long gasto = redeAgoraMs() - t0;
+  int d;
+  if (*dentro) return 0;
+  d = debridEntrar(u, NULL, gasto < prazo ? prazo - gasto : 0);
+  if (d == -1) return 42;
+  if (d == -2) return 28;
+  *dentro = d;
+  return 0;
+}
 static char *trechoStBruto(const char *url, int segundos, long long ini, long long fim,
                             long *tam, int *status, int *erro,
-                            char *final, unsigned tamFinal) {
+                            char *final, unsigned tamFinal, int *dentro) {
   unsigned long t0 = redeAgoraMs(),
                 prazo = (unsigned long)(segundos > 0 ? segundos : 30) * 1000UL;
   long pedido = (long)(fim - ini + 1), veio = 0;
@@ -4068,6 +4139,7 @@ static char *trechoStBruto(const char *url, int segundos, long long ini, long lo
       return NULL;
     }
   }
+  if (url && (e = stPortao(url, t0, prazo, dentro)) != 0) { if (erro) *erro = e; return NULL; }
   if (!url || pedido <= 0) return trechoUmaVez(url, segundos, ini, fim, tam, status, erro, final, tamFinal);
   snprintf(atual, sizeof atual, "%s", url);
   for (;;) {
@@ -4081,8 +4153,10 @@ static char *trechoStBruto(const char *url, int segundos, long long ini, long lo
       if (gasto + 1000UL > prazo) { e = e ? e : 28; goto falhou; }
       seg = (int)((prazo - gasto + 999UL) / 1000UL);
     }
+    if ((e = stPortao(atual, t0, prazo, dentro)) != 0) goto falhou;
     r = trechoUmaVez(atual, seg, a, b, &n, &st, &e, fin, sizeof fin);
     pedacos++;
+    aprenderVia(atual, fin);
     if (pedacos == 1 && final && tamFinal) snprintf(final, tamFinal, "%s", fin);
     // Pedaco seguinte que falhou sem trazer NADA, depressa (nao e o prazo): o
     // servidor recusou o resto. A diferenca para "rede lenta" e o que decide o
