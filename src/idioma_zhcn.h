@@ -5538,6 +5538,7 @@
   T("Não deu para enviar o registro (%s). OK tenta de novo.", "无法发送日志（%s）。按OK重试。"),
   T("Não deu para enviar o voto. Tente de novo.", "无法发送投票，请重试。"),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "无法读取文件。以 HDR10 播放。"),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "无法继续播放视频。播放将从上次停下的位置继续"),
   T("Não deu para sincronizar", "无法同步"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "无法同步账户。我会自动重试。"),
   T("Não deu para sincronizar — usando %s", "无法同步 — 正在使用%s"),
