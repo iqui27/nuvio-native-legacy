@@ -2164,14 +2164,21 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
   if (pthread_create(&t, &at, preTrabalho, a)) { free(a); pthread_mutex_lock(&muPre); preRodando = 0; pthread_mutex_unlock(&muPre); }
   pthread_attr_destroy(&at);
 }
-// 1 when this engine should take the title at `url`: its pre-warm opened the file and created the hardware decoder
-// during the opening load (or is still doing so). Otherwise miniatura.c keeps its CPU route for the title.
+// The engine's answer for the title at `url`: 1 = take it (the pre-warm created the hardware decoder during the
+// opening load), -1 = the pre-warm is still running (ask again on the next heartbeat), 0 = not this engine: no
+// pre-warm for this link, or it ended without a decoder (playback had started: 14:24 TorBox Spider-Man, the open
+// took 8.7 s). For 0 the pre-warmed session is closed here, so its extractor does not sit next to the CPU route.
 int miniatura_hw_aceita(const char *url) {
   int r;
+  long long fechar = 0;
   if (!url) return 0;
   pthread_mutex_lock(&muPre);
-  r = !strcmp(preUrl, url) && (preRodando || (preH && preDec));
+  if (strcmp(preUrl, url)) r = 0;
+  else if (preRodando) r = -1;
+  else if (preH && preDec) r = 1;
+  else { r = 0; fechar = preH; preH = 0; }
   pthread_mutex_unlock(&muPre);
+  if (fechar) mFechar(fechar);
   return r;
 }
 // The pre-warmed session for this link (waits up to 5 s for one still being made); *dec = its decoder exists.

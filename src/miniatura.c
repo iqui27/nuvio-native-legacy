@@ -128,6 +128,7 @@ static long alvoScrub = -1; static Uint32 alvoTick;
 static int hwTitulo;
 static char hwUrl[NV_MEDIA_URL_MAX];
 static long hwPosMs = -1; static Uint32 hwPosTick;
+#define HW_DECIDIR_MS 15000u      // longest wait for a pre-warm still opening the file before the CPU route
 static void hwSoltar(void) {
   if (!hwTitulo) return;
   miniatura_provedor()->desligar();
@@ -469,6 +470,7 @@ static void *trabalhar(void *u) {
   Uint32 reabriuEm = 0;            // last time the player was reconnecting / reopening
   long decLogKB = 0;               // decoder size last logged
   if (!l) goto fim;
+  rede_lateral(1);   // #385: thumbnails are a side read; a host that refused a connection is left alone
   l->j = j;
   snprintf(l->url, sizeof l->url, "%s", w->url);
   snprintf(l->cab, sizeof l->cab, "%s", w->cab);
@@ -701,10 +703,25 @@ void seekr_pedir(const char *imdb, int t, int e, long durMs) {
   if (!url || !*url) return;
 #ifdef NV_ANDROID
   if (hwTitulo && strcmp(hwUrl, url)) hwSoltar();          // another title: the hardware engine lets go
-  if (!hwTitulo && miniatura_provedor() && miniatura_hw_aceita(url)) {
-    seekr_desligar();                                       // a CPU job of an earlier title ends
-    hwTitulo = 1; snprintf(hwUrl, sizeof hwUrl, "%s", url);
-    printf("[miniatura] title on the hardware engine (decoder created while opening)\n"); fflush(stdout);
+  if (!hwTitulo && miniatura_provedor() && strcmp(urlAtual, url)) {
+    // The pre-warm decides: still running -> wait for the next heartbeat (at most HW_DECIDIR_MS); ended without a
+    // decoder (playback had started) -> this file's CPU route at once, never a title idle until a pause.
+    static char decidindo[NV_MEDIA_URL_MAX];
+    static Uint32 decidindoDesde;
+    int a = miniatura_hw_aceita(url);
+    if (a < 0) {
+      if (strcmp(decidindo, url)) { snprintf(decidindo, sizeof decidindo, "%s", url); decidindoDesde = SDL_GetTicks(); }
+      if (SDL_GetTicks() - decidindoDesde < HW_DECIDIR_MS) return;
+      a = 0;
+    }
+    decidindo[0] = 0;
+    if (a > 0) {
+      seekr_desligar();                                     // a CPU job of an earlier title ends
+      hwTitulo = 1; snprintf(hwUrl, sizeof hwUrl, "%s", url);
+      printf("[miniatura] title on the hardware engine (decoder created while opening)\n"); fflush(stdout);
+    } else {
+      printf("[miniatura] no hardware decoder from the opening load: CPU route for this title\n"); fflush(stdout);
+    }
   }
   if (hwTitulo) { hwPedir(imdb, t, e, durMs, url); return; }
 #endif
