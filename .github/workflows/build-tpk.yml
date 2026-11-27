@@ -22,15 +22,9 @@ on:
       pacotes:
         description: "Packages to build (space separated)"
         default: "NuvioTpk60 NuvioTpk65 NuvioTpk"
-  # release.yml: all four packages plus the two update .so files.
-  workflow_call:
-    inputs:
-      pacotes:
-        type: string
-        default: "NuvioTpk60 NuvioTpk65 NuvioTpk"
 
 concurrency:
-  group: build-tpk-${{ github.workflow }}-${{ github.ref }}
+  group: build-tpk-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -41,7 +35,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
-      NV_TPK_PACOTES: ${{ inputs.pacotes || 'NuvioTpk60 NuvioTpk65 NuvioTpk' }}
+      NV_TPK_PACOTES: ${{ github.event.inputs.pacotes || 'NuvioTpk60 NuvioTpk65 NuvioTpk' }}
       # No P2P engine on CI (it lives on the owner's disk, not in the repo).
       NUVIO_P2P_MOTOR: none
       DOTNET_ROOT: ${{ github.workspace }}/.dotnet
@@ -68,16 +62,12 @@ jobs:
 
       # Optional: keys that tools/env.sh reads from local.properties
       # (NUVIO_SUPABASE_URL, TRAKT_CLIENT_ID, TMDB_API_KEY, ...). Repository secret LOCAL_PROPERTIES = the file contents.
-      # A Release run (release.yml) refuses to build without them.
       - name: Write local.properties (if secret set)
         env:
           LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES || secrets.NUVIO_LOCAL_PROPERTIES }}
-          RELEASE_RUN: ${{ github.workflow == 'Release' }}
         run: |
           if [ -n "$LOCAL_PROPERTIES" ]; then
             printf '%s\n' "$LOCAL_PROPERTIES" > local.properties
-          elif [ "$RELEASE_RUN" = true ]; then
-            echo "::error::no LOCAL_PROPERTIES secret: a release build needs the server keys"; exit 1
           else
             echo "No LOCAL_PROPERTIES secret: building without API keys"
           fi
@@ -167,10 +157,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: NuvioTpk
-          # The libnuvio-<v>-tpk*-arm.so files are the in-app update's download.
-          path: |
-            build/tpk/*.tpk
-            build/tpk/libnuvio-*-arm.so
+          path: build/tpk/*.tpk
           if-no-files-found: error
 
       # The .tpk libass has an ARMv7 NEON bitmap engine and a threaded blur

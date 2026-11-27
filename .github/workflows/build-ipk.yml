@@ -18,15 +18,9 @@ on:
       - "docs/**"
       - "**/*.md"
   workflow_dispatch:
-  # release.yml: also the -highcache variant (texture cache fixed at 300 MB).
-  workflow_call:
-    inputs:
-      highcache:
-        type: boolean
-        default: false
 
 concurrency:
-  group: build-ipk-${{ github.workflow }}-${{ github.ref }}
+  group: build-ipk-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -83,14 +77,11 @@ jobs:
       - name: Server keys
         env:
           PROPS: ${{ secrets.LOCAL_PROPERTIES || secrets.NUVIO_LOCAL_PROPERTIES }}
-          RELEASE_RUN: ${{ github.workflow == 'Release' }}
         run: |
           if [ -n "$PROPS" ]; then
             printf '%s\n' "$PROPS" > local.properties
             echo "local.properties from the secret ($(grep -c '=' local.properties) keys)"
             grep -q '^NUVIO_SUPABASE_URL=.' local.properties || echo "::warning::the secret has no NUVIO_SUPABASE_URL: login stays off"
-          elif [ "$RELEASE_RUN" = true ]; then
-            echo "::error::no LOCAL_PROPERTIES secret: a release build needs the server keys"; exit 1
           else
             echo "::warning::no LOCAL_PROPERTIES secret: the .ipk has no server keys (test build only)"
           fi
@@ -102,12 +93,6 @@ jobs:
         run: |
           set -o pipefail
           bash tools/arm.sh --ipk --build 2>&1 | tee build.log
-
-      - name: Build the high-cache IPK
-        if: inputs.highcache
-        run: |
-          set -o pipefail
-          bash tools/arm.sh --high-cache --ipk --build 2>&1 | tee build.log
 
       - name: Show build error summary
         if: failure()
