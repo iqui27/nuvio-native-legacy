@@ -30,6 +30,11 @@ internal object MediaHttpBudget {
     // 45+ min (the PC on the same network timed out too, while servers we used with <= 5 still answered).
     private val PER_USER_LIMIT = Regex("""(^|\.)(tb-cdn\.st|torbox\.app|real-debrid\.com|rdeb\.io|alldebrid\.com|debrid\.it|premiumize\.me|debrid-link\.(com|fr)|offcloud\.com|easydebrid\.com)$""")
     internal fun limitsPerUser(host: String) = PER_USER_LIMIT.containsMatchIn(host.lowercase())
+    // ONE SLOT FOR C (27/11/2026, Shield, TorBox nexus-272): the C readers (thumbnails, mkvass, DTS) open their own
+    // sockets outside this budget; with the player's 4 the TV had 7 open to one TorBox server and it stopped
+    // answering. On these hosts the player keeps 3 and rede.c lets C hold at most 1 (debridEntrar): 4 in all.
+    const val DEBRID_PLAYER = 3
+    private val debridPlayer = Semaphore(DEBRID_PLAYER, true)
     // REQUEST RATE ON DEBRID SERVERS (17/11/2026, Quest 3, TorBox): every TorBox server that saw >= ~250 requests in
     // a minute from this IP (250-334) stopped answering it for ~1 h; the ones below (241, 142) never did. Thumbnail
     // requests to a debrid host take a slot at least THUMB_GAP_MS apart, per host, before the permit: at most
@@ -69,7 +74,7 @@ internal object MediaHttpBudget {
         borrowed.decrementAndGet(); return false
     }
     private data class Lease(val host: String, val owner: String, val onRelease: ()->Unit, val sem: Semaphore,
-                             val isBorrowed: Boolean = false)
+                             val isBorrowed: Boolean = false, val debrid: Boolean = false)
     private val leases = ConcurrentHashMap<HttpURLConnection, Lease>()
     private val current = AtomicInteger()
     private val peak = AtomicInteger()
@@ -88,8 +93,18 @@ internal object MediaHttpBudget {
         val own = owner.startsWith("thumbnail") && url.host.lowercase() in extraHosts
         var sem = if (own) extra else permits
         var isBorrowed = false
+        // Player and hardware-thumbnail reads share the 3 debrid slots; C keeps its 1 (rede.c).
+        val debrid = limitsPerUser(url.host)
+        var debridHeld = false
+        var mainHeld = false
         try {
             ritmoDebrid(url.host, owner, checkCancelled)
+            while (debrid && !debridHeld) {
+                checkCancelled()
+                if (debridPlayer.tryAcquire(100, TimeUnit.MILLISECONDS)) debridHeld = true
+                else if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(45))
+                    throw IOException("media HTTP budget wait exceeded 45 seconds")
+            }
             while (true) {
                 checkCancelled()
                 if (own) {
@@ -100,11 +115,15 @@ internal object MediaHttpBudget {
                 if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(45))
                     throw IOException("media HTTP budget wait exceeded 45 seconds")
             }
+            mainHeld = true
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             throw InterruptedIOException("media HTTP budget wait cancelled")
         }
-        finally { timelinePermit?.close() }
+        finally {
+            timelinePermit?.close()
+            if (debridHeld && !mainHeld) debridPlayer.release()
+        }
         val waited = System.nanoTime() - start
         waitMs.addAndGet(waited / 1_000_000)
         threadWait.set(threadWait.get() + waited)
@@ -114,15 +133,19 @@ internal object MediaHttpBudget {
             connection = factory(url)
             checkCancelled()
             val host = url.host.lowercase()
-            check(leases.putIfAbsent(connection, Lease(host, owner, onRelease, sem, isBorrowed)) == null) { "HTTP connection already owns a lease" }
+            check(leases.putIfAbsent(connection, Lease(host, owner, onRelease, sem, isBorrowed, debridHeld)) == null) { "HTTP connection already owns a lease" }
             val n = current.incrementAndGet()
             peak.accumulateAndGet(n, ::maxOf)
             opens.incrementAndGet()
             byHost.compute(host) { _, value -> (value ?: AtomicInteger()).also { it.incrementAndGet() } }
-            Log.i("nuvio-http-budget", "[http-budget] owner=$owner host=$host active=$n cap=${if (own) "$LIMIT+$EXTRA" else "$LIMIT"}${if (isBorrowed) " borrowed=${borrowed.get()}" else ""} waitMs=${waited / 1_000_000}")
+            Log.i("nuvio-http-budget", "[http-budget] owner=$owner host=$host active=$n cap=${if (own) "$LIMIT+$EXTRA" else if (debridHeld) "$DEBRID_PLAYER+C1" else "$LIMIT"}${if (isBorrowed) " borrowed=${borrowed.get()}" else ""} waitMs=${waited / 1_000_000}")
             return connection
         } catch (e: Throwable) {
-            try { connection?.disconnect() } finally { sem.release(); if (isBorrowed) borrowed.decrementAndGet(); onRelease() }
+            try { connection?.disconnect() } finally {
+                sem.release(); if (isBorrowed) borrowed.decrementAndGet()
+                if (debridHeld) debridPlayer.release()
+                onRelease()
+            }
             throw e
         }
     }
@@ -136,6 +159,7 @@ internal object MediaHttpBudget {
                 byHost.computeIfPresent(lease.host) { _, value -> if (value.decrementAndGet() == 0) null else value }
                 current.decrementAndGet()
                 lease.sem.release()
+                if (lease.debrid) debridPlayer.release()
                 if (lease.isBorrowed) borrowed.decrementAndGet()
                 lease.onRelease()
             }

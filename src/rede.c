@@ -3435,7 +3435,40 @@ static void *dtsRangeHeaders(const char *raw, int public_only) {
 /* `final` (8192 bytes, optional) receives the address that answered 206 when
  * at least one redirect was followed, "" otherwise; `cross` says whether that
  * address is on another origin (credential headers were NOT sent to it). */
-char *rede_baixar_trecho64_relato(const char *url, const char *headers,
+/* DEBRID CONNECTION GATE (27/11/2026, Shield, TorBox nexus-272). With the
+ * player's 4 connections, the 3 mkvass pool threads and the thumbnail thread
+ * each kept their own socket to the same TorBox server: 7 open at once, and
+ * the server stopped answering this IP. Range reads from C to a host that
+ * limits connections per user go one at a time and close their socket after,
+ * so C never holds more than 1 (the player keeps 3 for these hosts). */
+static int hostLimitaPorUsuario(const char *url) {
+  static const char *const fim[] = { "tb-cdn.st", "torbox.app", "real-debrid.com", "rdeb.io",
+    "alldebrid.com", "debrid.it", "premiumize.me", "debrid-link.com", "debrid-link.fr",
+    "offcloud.com", "easydebrid.com" };
+  char h[96];
+  size_t i, nh;
+  if (!url) return 0;
+  hostDaUrl(url, h, sizeof h);
+  nh = strlen(h);
+  for (i = 0; i < sizeof fim / sizeof *fim; i++) {
+    size_t nf = strlen(fim[i]);
+    if (nh >= nf && !strcasecmp(h + nh - nf, fim[i]) && (nh == nf || h[nh - nf - 1] == '.')) return 1;
+  }
+  return 0;
+}
+static pthread_mutex_t debridTrava = PTHREAD_MUTEX_INITIALIZER;
+static int debridEntrar(const char *url) {
+  if (!hostLimitaPorUsuario(url)) return 0;
+  pthread_mutex_lock(&debridTrava);
+  return 1;
+}
+static void debridSair(int dentro) {
+  if (!dentro) return;
+  rede_fio_fechar();
+  pthread_mutex_unlock(&debridTrava);
+}
+
+static char *trecho64RelatoBruto(const char *url, const char *headers,
                               int64_t start, int64_t end, long *size,
                               int64_t *total, int *status,
                               volatile int *cancelled, char *final, int *cross,
@@ -3541,6 +3574,17 @@ char *rede_baixar_trecho64_relato(const char *url, const char *headers,
     return NULL;
   }
   return NULL;
+}
+char *rede_baixar_trecho64_relato(const char *url, const char *headers,
+                              int64_t start, int64_t end, long *size,
+                              int64_t *total, int *status,
+                              volatile int *cancelled, char *final, int *cross,
+                              volatile int *urgent,unsigned idle_ms,int *stalled,int *retry_after) {
+  int dentro = debridEntrar(url);
+  char *b = trecho64RelatoBruto(url, headers, start, end, size, total, status, cancelled, final, cross,
+                                urgent, idle_ms, stalled, retry_after);
+  debridSair(dentro);
+  return b;
 }
 char *rede_baixar_trecho64_vigiado(const char *url,const char *headers,
     int64_t start,int64_t end,long *size,int64_t *total,int *status,
@@ -3940,7 +3984,18 @@ static void corteAprender(const char *url, long veio) {
   }
 }
 
+static char *trechoStBruto(const char *url, int segundos, long long ini, long long fim,
+                            long *tam, int *status, int *erro,
+                            char *final, unsigned tamFinal);
 char *rede_baixar_trecho_st(const char *url, int segundos, long long ini, long long fim,
+                            long *tam, int *status, int *erro,
+                            char *final, unsigned tamFinal) {
+  int dentro = debridEntrar(url);
+  char *b = trechoStBruto(url, segundos, ini, fim, tam, status, erro, final, tamFinal);
+  debridSair(dentro);
+  return b;
+}
+static char *trechoStBruto(const char *url, int segundos, long long ini, long long fim,
                             long *tam, int *status, int *erro,
                             char *final, unsigned tamFinal) {
   unsigned long t0 = redeAgoraMs(),
