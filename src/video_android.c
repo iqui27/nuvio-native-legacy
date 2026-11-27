@@ -1266,6 +1266,14 @@ void cacheboost_backend_ganho(int pct) {
   kInt(mGanho, pct);
 }
 int video_tocar(const char *u) { return video_tocar_posicao(u, 0.0); }
+// Trailerio: MP4 or HLS. NvPlayer.itemMidia picks HLS from the ".m3u8" that
+// trailerio.c requires at the end of an HLS path; MP4 goes progressive.
+int video_tocar_trailerio(const char *url, int hls) {
+  video_definir_cabecalhos(NULL);
+  video_definir_dv(0);
+  video_definir_mp4(!hls);
+  return video_tocar(url);
+}
 
 void video_definir_reconexao(int sim) { reconProxima = sim ? 1 : 0; }
 int video_recarregar(void) {

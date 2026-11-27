@@ -1071,7 +1071,7 @@ static const char *V_QUALTRAIL[] = { "Máxima", "1080p", "720p", "480p" };
 static const char *V_ASPTRAIL[]  = { "Zoom cinema", "Zoom leve", "Zoom ultra", "Original" };
 // Preserve the local order. Slot 3 is platform-specific.
 static const char *V_TRAILFONTE[] = { "Automático", "Apple TV", "IMDb",
-#ifdef NV_WEBOS
+#ifdef NV_TRAILERIO
   "Trailerio",
 #else
   "YouTube",
@@ -4056,7 +4056,7 @@ const char *ajustes_trailer_audio(void) {
 }
 int ajustes_trailer_fonte(void) {
   int v = valor[AJ_TRAILER_FONTE];
-#ifdef NV_WEBOS
+#ifdef NV_TRAILERIO
   if (v == 3) return TRF_TRAILERIO;
 #endif
   return (v >= 0 && v < nValores(AJ_TRAILER_FONTE)) ? v : TRF_AUTO;
@@ -8435,12 +8435,12 @@ static const char *ajudaOpcaoBase(int op) {
       // .tpk: a Apple toca sem audio (trailerapple.c, varianteMidia), entao o
       // botao Trailer em Automatico prefere o IMDb (trailerfonte_ordem_cheia).
 #if NV_TRAILER_CONTINUA_DETALHE
-      return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV e, sem ela, o IMDb; no destaque e no botão de trailer o IMDb vem primeiro, porque o da Apple toca sem som nesta TV. Uma fonte escolhida é a única tentada. O YouTube não toca nesta TV.";
+      return "Where the trailer on the title page and in the hero comes from. Automatic tries Apple TV, then IMDb; in the hero and on the Trailer button IMDb comes first, because Apple TV trailers play without sound on this TV, and the Trailer button tries Trailerio last. A chosen source is the only one tried.";
 #else
-      return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV e, sem ela, o IMDb; no botão de trailer, que toca com som, o IMDb vem primeiro, porque o da Apple toca sem som nesta TV. Uma fonte escolhida é a única tentada. O YouTube não toca nesta TV.";
+      return "Where the trailer on the title page and in the hero comes from. Automatic tries Apple TV, then IMDb; the Trailer button, which plays with sound, tries IMDb first, because Apple TV trailers play without sound on this TV, and Trailerio last. A chosen source is the only one tried.";
 #endif
 #else
-#ifdef NV_WEBOS
+#ifdef NV_TRAILERIO
       return "Where the trailer on the title page and in the hero comes from. Automatic tries Apple TV, then IMDb, then Trailerio; a chosen source is the only one tried.";
 #else
       return "De onde vem o trailer da tela do título e do destaque. Automático tenta a Apple TV e, sem ela, o IMDb; uma fonte escolhida é a única tentada. O YouTube não toca nesta TV.";
@@ -10931,7 +10931,7 @@ static int nValores(int op) {
   if (op == AJ_PLAYER_EXTERNO) return 3 + ppN();
   if (op == AJ_PLAYER_ANIME) return 4 + ppN();
   if (op == AJ_URL_LISTA) return 1 + urlN;
-#if !defined(__EMSCRIPTEN__) && !defined(NV_WEBOS)
+#if !defined(__EMSCRIPTEN__) && !defined(NV_TRAILERIO)
   // "YouTube" (o 4o valor) so toca no .wgt da Samsung (trailerfonte.c, existe).
   // Aqui ele era escolhivel e deixava a TV sem trailer nenhum: sem trailer no
   // destaque e sem botao Trailer na pagina (#204, log da 1.6.5: "detalhe: sem

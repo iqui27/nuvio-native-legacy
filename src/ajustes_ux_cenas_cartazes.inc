@@ -504,7 +504,7 @@ static int ajcNovaCartazes(int sec, int op) {
     }
     case AJ_TRAILER_FONTE: {   // de onde o trailer vem: a fonte atual no acento
       static const char *F[4] = { NULL, "Apple TV", "IMDb",
-#ifdef NV_WEBOS
+#ifdef NV_TRAILERIO
         "Trailerio"
 #else
         "YouTube"

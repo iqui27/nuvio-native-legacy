@@ -1,6 +1,7 @@
 #include "ajustes.h"
 #include "plrui.h"
 #include "trailer.h"
+#include "trailerfonte.h"
 #include "trailerio.h"
 #include "video.h"
 #include <assert.h>
@@ -29,7 +30,9 @@ float gfx_escala_entrar(void) { float anterior = drawScale; drawScale = uiScale;
 void gfx_escala_sair(float anterior) { drawScale = anterior; }
 void gfx_veu_css(GfxRect r, int edge, float curve, float end, float alpha) {
   (void)r; (void)edge; (void)curve; (void)end; (void)alpha;
+#ifdef NV_WEBOS
   assert(0 && "No full-screen dimming over webOS trailers");
+#endif
 }
 void gfx_icone(GfxRect r, const char *name, float red, float green, float blue, float a) {
   (void)r; (void)name; (void)red; (void)green; (void)blue; (void)a;
@@ -80,6 +83,16 @@ void video_janela(int x, int y, int w, int h) {
 void video_janela_fonte(int sx, int sy, int sw, int sh, int x, int y, int w, int h) {
   (void)sx; (void)sy; (void)sw; (void)sh; (void)x; (void)y; (void)w; (void)h;
 }
+#ifdef NV_ANDROID
+int video_janela_pronta(void) { return 1; }
+#endif
+#ifdef NV_TPK
+static int tpkTrailer;
+int video_recorte_fonte_trailer(void) { return 0; }
+int video_tpk_cartao_cover(void) { return 0; }
+void video_tpk_cartao_marcar(int sim) { (void)sim; }
+void video_tpk_trailer_marcar(int sim) { tpkTrailer = sim; }
+#endif
 int video_tocar_trailerio(const char *url, int ehHls) {
   assert(!strcmp(url, ehHls ? hls : mp4));
   opens++;
@@ -97,7 +110,12 @@ int video_tocar(const char *url) {
 void video_definir_cabecalhos(const char *headers) { assert(!headers); }
 void video_definir_dv(int dv) { assert(!dv); }
 void video_definir_mp4(int ehMp4) { mp4Mode = ehMp4; }
-void video_parar(void) { stops++; active = playing = failed = ended = 0; }
+void video_parar(void) {
+  stops++; active = playing = failed = ended = 0;
+#ifdef NV_TPK
+  tpkTrailer = 0;
+#endif
+}
 const char *trailerapple_url(const char *imdbId) { assert(!strcmp(imdbId, id)); return appleUrl; }
 const char *trailerimdb_url(const char *imdbId, const char **name) {
   assert(!strcmp(imdbId, id) && !name);
@@ -136,23 +154,30 @@ int main(void) {
   SDL_Event left = { .key = { .type = SDL_KEYDOWN, .keysym.sym = SDLK_LEFT } };
   SDL_Event right = { .key = { .type = SDL_KEYDOWN, .keysym.sym = SDLK_RIGHT } };
   SDL_Event ok = { .key = { .type = SDL_KEYDOWN, .keysym.sym = SDLK_RETURN } };
-  assert(trailer_abrir_webos(id, "movie", tela, 1, 0));
+  // The flow below is the Apple TV -> IMDb -> Trailerio order; the .tpk's
+  // IMDb-first full-screen order is checked at the end.
+  trailerfonte_definir_imdb_primeiro_cheia(0);
+  assert(trailer_abrir_trailerio(id, "movie", tela, 1, 0));
   trailer_atualizar(++ticks);
   assert(trailer_cheia() && !trailer_mostra_video() && !opens);
   assert(trailer_evento(&right) && seeks == 0);
   assert(trailer_evento(&back));
   assert(!trailer_aberto() && cancels == 1 && !stops);
 
-  assert(trailer_abrir_webos(id, "movie", tela, 1, 0));
+  assert(trailer_abrir_trailerio(id, "movie", tela, 1, 0));
   result = 1;
   trailer_atualizar(++ticks);
   assert(opens == 1 && active && !trailer_mostra_video());
   failed = 1;
   trailer_atualizar(++ticks);
   assert(opens == 2 && trailer_cheia() && !trailer_mostra_video());
+  position = 1.0;   // .tpk: the hole opens once the position moves
   playing = 1;
   trailer_atualizar(++ticks);
   assert(trailer_mostra_video());
+#ifdef NV_TPK
+  assert(tpkTrailer);
+#endif
   assert(trailer_evento(&right) && seeks == 0); // No known duration yet.
   position = 4.0;
   duration = 26.0;
@@ -160,15 +185,24 @@ int main(void) {
   assert(trailer_evento(&left) && seeks == 1 && position == 0.0);
   assert(trailer_evento(&right) && seeks == 2 && position == 5.0 && playing);
   trailer_osd_desenhar("Test", 1.0f);
-  assert(bars == 1 && barX == 64.0f && barY == 960.0f && barW == 1792.0f && buttons == 0);
+  assert(bars == 1 && buttons == 0);
+#ifdef NV_WEBOS
+  assert(barX == 64.0f && barY == 960.0f && barW == 1792.0f);
+#endif
   assert(trailer_evento(&ok) && trailer_pausado() && !playing);
   trailer_osd_desenhar("Test", 1.0f);
-  assert(bars == 2 && barY == 902.0f && buttons == 1 && pauseButton.x == barX && pauseButton.y == 940.0f);
+  assert(bars == 2 && buttons == 1 && pauseButton.x == barX);
+#ifdef NV_WEBOS
+  assert(barY == 902.0f && pauseButton.y == 940.0f);
   uiScale = 1.25f;
   drawScale = 1.10f;
   trailer_osd_desenhar("Test", 1.0f);
   assert(bars == 3 && barScale == uiScale && drawScale == 1.10f);
   assert(barY == 686.0f && barW == 1408.0f && pauseButton.y == 724.0f);
+#else
+  trailer_osd_desenhar("Test", 1.0f);
+  assert(bars == 3);
+#endif
   assert(trailer_evento(&right) && seeks == 3 && position == 10.0 && !playing);
   position = 23.0;
   assert(trailer_evento(&right) && seeks == 4 && position == duration);
@@ -178,16 +212,19 @@ int main(void) {
   assert(trailer_evento(&ok) && !trailer_pausado() && playing);
   ticks += 3002;
   trailer_osd_desenhar("Test", 1.0f);
-  assert(bars == 3 && buttons == 2 && drawScale == 1.10f);
+  assert(bars == 3 && buttons == 2);
+#ifdef NV_WEBOS
+  assert(drawScale == 1.10f);
+#endif
   assert(trailer_evento(&back));
   assert(!trailer_aberto() && !active && stops == 1);
 
-  assert(trailer_abrir_webos(id, "movie", tela, 1, 0));
+  assert(trailer_abrir_trailerio(id, "movie", tela, 1, 0));
   result = -1;
   trailer_atualizar(++ticks);
   assert(!trailer_aberto() && trailer_falhou() && opens == 2);
 
-  assert(trailer_abrir_webos(id, "movie", tela, 1, 0));
+  assert(trailer_abrir_trailerio(id, "movie", tela, 1, 0));
   result = 1;
   trailer_atualizar(++ticks);
   ticks += 8000;
@@ -197,14 +234,14 @@ int main(void) {
   trailer_atualizar(ticks);
   assert(!trailer_aberto() && trailer_falhou() && opens == 4 && stops == 2);
 
-  assert(trailer_abrir_webos(id, "movie", tela, 1, 1));
+  assert(trailer_abrir_trailerio(id, "movie", tela, 1, 1));
   imdbUrl = imdb;
   trailer_atualizar(++ticks);
   assert(trailer_cheia() && !request && !appleOpens && !imdbOpens);
   assert(trailer_evento(&back));
   assert(!trailer_aberto() && !request);
 
-  assert(trailer_abrir_webos(id, "movie", tela, 1, 1));
+  assert(trailer_abrir_trailerio(id, "movie", tela, 1, 1));
   appleUrl = apple;
   trailer_atualizar(++ticks);
   assert(appleOpens == 1 && !imdbOpens && !request);
@@ -226,23 +263,50 @@ int main(void) {
 
   appleUrl = NULL;
   appleDone = imdbDone = 1;
-  assert(trailer_abrir_webos(id, "movie", tela, 1, 1));
+  assert(trailer_abrir_trailerio(id, "movie", tela, 1, 1));
   trailer_atualizar(++ticks);
   assert(!request && active && appleOpens == 1 && imdbOpens == 2);
   assert(trailer_evento(&back));
 
   imdbUrl = NULL;
-  assert(trailer_abrir_webos(id, "movie", tela, 1, 1));
+  assert(trailer_abrir_trailerio(id, "movie", tela, 1, 1));
   trailer_atualizar(++ticks);
   assert(request && !active && appleOpens == 1 && imdbOpens == 2);
   assert(trailer_evento(&back));
 
   appleUrl = apple;
-  assert(trailer_abrir_webos(id, "movie", tela, 1, 1));
+  assert(trailer_abrir_trailerio(id, "movie", tela, 1, 1));
   trailer_atualizar(++ticks);
   playing = 1;
   trailer_atualizar(++ticks);
   ended = 1;
   trailer_atualizar(++ticks);
   assert(!trailer_aberto() && !request && !trailer_falhou());
+
+  // Full-screen order with IMDb first (the .tpk default, trailerfonte.c):
+  // IMDb, then Apple TV, then Trailerio. Without sound Apple TV stays first.
+  trailerfonte_definir_imdb_primeiro_cheia(1);
+  appleUrl = apple;
+  imdbUrl = imdb;
+  {
+    const int a0 = appleOpens, i0 = imdbOpens, o0 = opens;
+    assert(trailer_abrir_trailerio(id, "movie", tela, 1, 1));
+    trailer_atualizar(++ticks);
+    assert(imdbOpens == i0 + 1 && appleOpens == a0 && mp4Mode && !request);
+    failed = 1;
+    trailer_atualizar(++ticks);
+    assert(appleOpens == a0 + 1 && imdbOpens == i0 + 1 && !mp4Mode && !request);
+    failed = 1;
+    trailer_atualizar(++ticks);
+    assert(request && !active);
+    result = 1;
+    trailer_atualizar(++ticks);
+    assert(opens == o0 + 1 && !request);
+    assert(trailer_evento(&back) && !trailer_aberto());
+
+    assert(trailer_abrir_trailerio(id, "movie", tela, 0, 1));
+    trailer_atualizar(++ticks);
+    assert(appleOpens == a0 + 2 && imdbOpens == i0 + 1);
+    assert(trailer_evento(&back) && !trailer_aberto());
+  }
 }

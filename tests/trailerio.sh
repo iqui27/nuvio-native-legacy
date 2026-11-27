@@ -9,9 +9,13 @@ if [[ ${SANITIZE:-0} == 1 ]]; then
   flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer)
 fi
 if [[ ${1:-} == --native ]]; then
-  "${CC:-cc}" "${flags[@]}" tests/trailerio_native.c src/trailer.c src/trailerfonte.c \
-    -Wl,--gc-sections -o "$scratch/native"
-  "$scratch/native"
+  # Same flow on every native target: webOS, Android and the .tpk.
+  for target in NV_WEBOS NV_ANDROID NV_TPK; do
+    "${CC:-cc}" "${flags[@]/-DNV_WEBOS/-D$target}" tests/trailerio_native.c src/trailer.c src/trailerfonte.c \
+      -Wl,--gc-sections -o "$scratch/native"
+    "$scratch/native"
+    echo "Trailerio native flow passed ($target)."
+  done
   exit
 fi
 "${CC:-cc}" "${flags[@]}" tests/trailerio.c src/trailerio.c src/js.c \

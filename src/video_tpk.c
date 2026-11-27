@@ -4655,6 +4655,21 @@ void video_definir_dv(int dv) { (void)dv; }
 void video_definir_cabecalhos(const char *c) { snprintf(cabecalhos, sizeof cabecalhos, "%s", c ? c : ""); }
 const char *video_cabecalhos(void) { return cabecalhos; }
 void video_definir_mp4(int m) { fonteMp4 = m != 0; }
+// Trailerio on the .tpk: MP4 only. The Samsung media server hangs on HLS
+// masters with separate audio ("[DEADLOCK] ... 90 second", trailerapple.c,
+// varianteMidia), and a Trailerio playlist may be one. 0 for HLS makes
+// trailer.c try the next source.
+int video_tocar_trailerio(const char *url, int hls) {
+  if (hls) {
+    printf("[trailer] tpk: Trailerio HLS skipped, next source (%.80s)\n", url ? url : "");
+    fflush(stdout);
+    return 0;
+  }
+  video_definir_cabecalhos(NULL);
+  video_definir_dv(0);
+  video_definir_mp4(1);
+  return video_tocar(url);
+}
 int  video_tocando(void) { return tocando; }
 int  video_pronto(void) { return pronto || cv.reabrindo; }
 int  video_ativo(void) { return ativo; }

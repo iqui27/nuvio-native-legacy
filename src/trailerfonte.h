@@ -10,7 +10,8 @@
 //   1 Apple TV, 2 IMDb, 3 YouTube  SO aquela. Sem ela para o titulo (ou sem
 //                 ela nesta TV), sem trailer — com uma linha de log dizendo
 //                 por que, para "o trailer sumiu" nao virar adivinhacao.
-// LG: slot 3 is Trailerio (manual playback on the title page).
+// LG, Android and native .tpk: slot 3 is Trailerio (manual playback on the
+// title page, NV_TRAILERIO below).
 //
 // A escolha mora aqui, e nao duplicada em detail.c e home.c, porque sao dois
 // consumidores (pagina de titulo e destaque) x dois alvos, e a mesma regra
@@ -22,6 +23,12 @@
 // Valores do ajuste = indice gravado em ajustes.txt ("trailerFonteLocal N").
 // NAO reordenar: o arquivo guarda o numero.
 enum { TRF_AUTO = 0, TRF_APPLE = 1, TRF_IMDB = 2, TRF_YOUTUBE = 3, TRF_TRAILERIO = 4 };
+
+// Trailerio (trailerio.c) plays on the native video planes: webOS, Android and
+// the native .tpk. The .wgt (Emscripten) keeps YouTube in slot 3.
+#if !defined(__EMSCRIPTEN__) && (defined(NV_WEBOS) || defined(NV_ANDROID) || defined(NV_TPK))
+#define NV_TRAILERIO 1
+#endif
 
 // O que cada fonte tem para o titulo agora. `*_respondeu` = a busca terminou
 // (com ou sem trailer); enquanto 0, a fonte ainda pode chegar. YouTube nao tem
