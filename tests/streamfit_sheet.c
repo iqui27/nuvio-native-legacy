@@ -38,6 +38,14 @@ Uint32 SDL_GetTicks(void) { return (Uint32)fakeNow; }
 float gfx_escala_ui(void) { return 1; }
 const char *i18n(const char *s) { return s; }
 int debrid_ativo(void) { return 0; }
+// list cache check (streams.c cacheLoteConferir): no service answers here
+int debrid_servico_disponivel(int q) { (void)q; return 0; }
+void debrid_contexto_capturar(DebridContexto *c) { (void)c; }
+void debrid_contexto_entrar(const DebridContexto *c) { (void)c; }
+void debrid_contexto_sair(void) {}
+int debrid_cache_lote(int q, const char (*h)[48], int n, signed char *r, unsigned t) {
+  (void)q; (void)h; (void)t; for (int i = 0; i < n; i++) r[i] = -1; return -1;
+}
 int p2p_ativo(void) { return 0; }
 int selospacote_ativo(void) { return -1; }
 unsigned selospacote_versao(void) { return 1; }

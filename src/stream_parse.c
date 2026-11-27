@@ -5,6 +5,7 @@
 #include "cachemarca.h"
 #include <ctype.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -987,18 +988,22 @@ static int boolEm(const char *obj, const char *chave) {
 //   behaviorHints.cached                              StreamNZB e outros
 // *deServico = 1 when the answer is streamData's service flag: it describes
 // this very link, so false = the debrid does not have it (Matis94 55fdc0ab3).
-static int cacheDeclarado(const char *p, const char *fim, int *deServico) {
+// *origem (diagnostic only): 1 streamData, 2 clientResolve, 3 behaviorHints.
+static int cacheDeclarado(const char *p, const char *fim, int *deServico, int *origem) {
   const char *sd = objetoRaiz(p, fim, "streamData");
   if (deServico) *deServico = 0;
+  if (origem) *origem = 0;
   if (sd) {
     const char *sv = objetoRaiz(sd, js_fim(sd), "service");
     int c = boolEm(sv, "cached");
-    if (boolEm(sd, "library") > 0) return 1;
-    if (c) { if (deServico) *deServico = 1; return c; }
+    if (boolEm(sd, "library") > 0) { if (origem) *origem = 1; return 1; }
+    if (c) { if (deServico) *deServico = 1; if (origem) *origem = 1; return c; }
   }
   int c = boolEm(objetoRaiz(p, fim, "clientResolve"), "isCached");
-  if (c) return c;
-  return boolEm(objetoRaiz(p, fim, "behaviorHints"), "cached");
+  if (c) { if (origem) *origem = 2; return c; }
+  c = boolEm(objetoRaiz(p, fim, "behaviorHints"), "cached");
+  if (c && origem) *origem = 3;
+  return c;
 }
 
 // "sources": ["tracker:udp://...", "dht:<hash>"] de um stream de torrent, uma
@@ -1135,6 +1140,10 @@ static int lerSemeadores(const char *t, int *qtd) {
 int stream_extrair(const char *json, const char *provedor, Stream **saida) {
   const char *p, *fim;
   int n = 0, cap = 0;
+  // Link-less torrents and who said "not cached" (LG log 27/11/2026): one
+  // line per response, counts only. [0] none, 1 streamData, 2 clientResolve,
+  // 3 behaviorHints, 4 name/description text.
+  int semLink = 0, comCR = 0, emCacheDito = 0, foraDe[5] = {0};
   Stream *v = NULL;
   *saida = NULL;
   if (!json) return 0;
@@ -1224,7 +1233,7 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
         fhd = fhdNoNome(nomeFonte);
       textoRaizLinhas(p, fim, "description", s.descricao, sizeof s.descricao);
       textoRaizLinhas(p, fim, "title", titulo, sizeof titulo);
-      int cacheSD = 0, cache = cacheDeclarado(p, fim, &cacheSD);
+      int cacheSD = 0, origemCache = 0, cache = cacheDeclarado(p, fim, &cacheSD, &origemCache);
       s.cacheNegado = cache < 0;
       metadadosFaixas(p, fim, &s);
       metadadosFiltro(p, fim, nomeFonte, s.descricao, titulo, &s);
@@ -1311,6 +1320,12 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
           // (com a negativa declarada, qualquer "fora" no texto confirma).
           s.foraCache = (s.infoHash[0] && !s.url[0]) || cacheSD || textoRes < 0 || cachemarca_fora(s.descricao);
         } else { s.emCache = textoRes > 0; s.foraCache = textoRes < 0; }
+        if (s.infoHash[0] && !s.url[0]) {
+          semLink++;
+          if (objetoRaiz(p, fim, "clientResolve")) comCR++;
+          if (s.emCache) emCacheDito++;
+          if (s.foraCache) foraDe[cache < 0 && origemCache ? origemCache : 4]++;
+        }
       }
       if (s.infoHash[0]) s.temSemeadores = lerSemeadores(texto, &s.semeadores);
       s.tamanhoBytes = bytesExatos(p, fim);
@@ -1337,6 +1352,13 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
     }
     p = js_prox(fim);
   }
+  // Capped per run: background availability probes parse many responses.
+  static _Atomic int linhasSemLink;
+  if (semLink && atomic_fetch_add(&linhasSemLink, 1) < 40)
+    printf("[fonte] %s: %d of %d link-less (clientResolve %d); addon says cached %d, not cached %d "
+           "(streamData %d, clientResolve %d, behaviorHints %d, text %d)\n",
+           provedor ? provedor : "?", semLink, n, comCR, emCacheDito,
+           foraDe[1] + foraDe[2] + foraDe[3] + foraDe[4], foraDe[1], foraDe[2], foraDe[3], foraDe[4]);
   *saida = v;
   return n;
 }

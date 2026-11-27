@@ -205,6 +205,11 @@ int   debrid_tb_apagar(int item);
 // BLOCKS. 1 = the hash is cached on TorBox (checkcached), 0 = not, -1 = no
 // answer or no key (tbabrir.c, before deleting a stuck item).
 int   debrid_tb_em_cache(const char *hash);
+// BLOCKS, search-bound. Cache check of a source list on one service
+// (DEBRID_TB or DEBRID_PM; the others have no such call and return -1):
+// res[i] = 1 cached, 0 the service says not cached, -1 no answer (alias reply,
+// failure, time cap `tetoMs` between chunks). Returns hashes answered.
+int   debrid_cache_lote(int servico, const char (*hashes)[48], int n, signed char *res, unsigned tetoMs);
 
 
 // ACCOUNT ITEMS ON ALLDEBRID AND REAL-DEBRID (tbabrir.c, owner 25/11/2026):

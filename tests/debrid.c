@@ -46,6 +46,7 @@ static char  urlRequestdl[900];                // a URL com o token na query
 static char  corpoCacheCheckPM[600], corpoDirectdlPM[600];
 static int   bateuTB[4];        // checkcached, createtorrent, mylist, requestdl
 static int   bateuPM[2];        // cache/check, directdl
+static int   loteTB, lotePM;    // list cache checks
 static int   bateuRDUnrestrict, rdListas, adListas;
 static char  corpoUnrestrictRD[2000];
 static int   pedidosServico[DEBRID_N];
@@ -243,6 +244,10 @@ char *rede_postar_st(const char *url, int s, const char *const *cab,
   // --- Premiumize
   if (strstr(url, "premiumize.me")) {
     assert(strstr(ct, "x-www-form-urlencoded"));
+    if (strstr(url, "cache/check") && strstr(corpo, "items%5B%5D=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1&items%5B%5D=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2&items%5B%5D=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3")) {
+      lotePM++; *st = 200;
+      return dup2s("{\"status\":\"success\",\"response\":[false, true,false],\"filename\":[null,\"y\",null]}");
+    }
     if (strstr(url, "cache/check")) {
       bateuPM[0]++; *st = 200;
       snprintf(corpoCacheCheckPM, sizeof corpoCacheCheckPM, "%s", corpo);
@@ -305,6 +310,16 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
       "\"links\":[\"https://real-debrid.com/d/LINK1\"]}");
   }
   if (strstr(url, "api.torbox.app")) {
+    // The list check (debrid_cache_lote): comma-separated hashes, one call.
+    if (strstr(url, "torrents/checkcached") && strstr(url, "hash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3")) {
+      loteTB++;
+      return dup2s("{\"success\":true,\"data\":[{\"name\":\"x\",\"hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1\"},"
+                   "{\"name\":\"y\",\"hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3\"}]}");
+    }
+    if (strstr(url, "torrents/checkcached") && strstr(url, "hash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1,bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2")) {
+      loteTB++;   // alias: TorBox answers with a canonical hash we did not send
+      return dup2s("{\"success\":true,\"data\":[{\"name\":\"x\",\"hash\":\"ccccccccccccccccccccccccccccccccccccccc9\"}]}");
+    }
     if (strstr(url, "torrents/checkcached")) {
       bateuTB[0]++;
       // hash SEMPRE em minusculas: o teste manda "DEADBEEF" e a API compara texto
@@ -387,6 +402,32 @@ static void semChaves(void) {
   debrid_definir_chave("offcloud", "k");     // servico que ninguem resolve aqui
   assert(!debrid_ativo());
   OK("sem chave nao resolve, e servico desconhecido continua ignorado");
+}
+
+// THE LIST CACHE CHECK (owner 27/11/2026): one call per chunk, answers by
+// hash; an alias answer leaves the misses unknown, never "not cached".
+static void cacheLote(void) {
+  char hs[3][48] = { "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3" }, hb[2][48] = { "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2" };
+  signed char res[3];
+  DebridContexto c;
+  debrid_esquecer();
+  assert(debrid_cache_lote(DEBRID_TB, (const char (*)[48])hs, 3, res, 1000) == -1);   // no key
+  debrid_definir_chave("torbox", K_TB);
+  debrid_definir_chave("premiumize", K_PM);
+  assert(debrid_cache_lote(DEBRID_TB, (const char (*)[48])hs, 3, res, 1000) == 0);    // no search context
+  debrid_contexto_capturar(&c);
+  debrid_contexto_entrar(&c);
+  assert(debrid_cache_lote(DEBRID_TB, (const char (*)[48])hs, 3, res, 1000) == 3);
+  assert(res[0] == 1 && res[1] == 0 && res[2] == 1 && loteTB == 1);
+  assert(debrid_cache_lote(DEBRID_TB, (const char (*)[48])hb, 2, res, 1000) == 2);
+  assert(res[0] == -1 && res[1] == -1 && loteTB == 2);
+  assert(debrid_cache_lote(DEBRID_PM, (const char (*)[48])hs, 3, res, 1000) == 3);
+  assert(res[0] == 0 && res[1] == 1 && res[2] == 0 && lotePM == 1);
+  assert(debrid_cache_lote(DEBRID_RD, (const char (*)[48])hs, 3, res, 1000) == -1);
+  assert(res[0] == -1 && res[1] == -1 && res[2] == -1);
+  debrid_contexto_sair();
+  debrid_esquecer();
+  OK("list cache check: TorBox by hash (alias = unknown), Premiumize in order, RD/AD not asked");
 }
 
 static void realDebrid(void) {
@@ -1378,6 +1419,7 @@ int main(void) {
   assert(dup2(f, 1) >= 0);
 
   semChaves();
+  cacheLote();
   comoNuvioTV();
   especiais();
   realDebrid();

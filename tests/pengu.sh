@@ -34,6 +34,15 @@ cat >"$dir/pengu206.c" <<C
 #include <string.h>
 int p2p_ativo(void) { return 0; }
 int debrid_ativo(void) { return 0; }
+#include "debrid.h"
+// list cache check (streams.c cacheLoteConferir): no service answers here
+int debrid_servico_disponivel(int q) { (void)q; return 0; }
+void debrid_contexto_capturar(DebridContexto *c) { (void)c; }
+void debrid_contexto_entrar(const DebridContexto *c) { (void)c; }
+void debrid_contexto_sair(void) {}
+int debrid_cache_lote(int q, const char (*h)[48], int n, signed char *r, unsigned t) {
+  (void)q; (void)h; (void)t; for (int i = 0; i < n; i++) r[i] = -1; return -1;
+}
 C
 cat "$dir/old-565.c" >>"$dir/pengu206.c"
 cat >>"$dir/pengu206.c" <<'C'
