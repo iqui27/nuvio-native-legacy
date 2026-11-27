@@ -31,7 +31,7 @@ typedef struct {
 } AudioCand;
 
 // De onde veio a escolha (para o log).
-enum { AUDIOESC_NADA = 0, AUDIOESC_LEMBRADA, AUDIOESC_PREF1, AUDIOESC_PREF2, AUDIOESC_ORIGINAL };
+enum { AUDIOESC_NADA = 0, AUDIOESC_LEMBRADA, AUDIOESC_PREF1, AUDIOESC_PREF2, AUDIOESC_ORIGINAL, AUDIOESC_ESTEREO };
 const char *audioesc_origem_nome(int origem);
 
 // 1 quando o codec/rotulo e DTS (qualquer variante) ou TrueHD/MLP.
@@ -87,4 +87,14 @@ int audioesc_escolher_com(const AudioCand *c, int n, const AudioLembrada *lembra
                           const char *pref1, const char *pref2, const char *original, int *origem);
 int audioesc_escolher_binge(const AudioCand *c, int n, const AudioLembrada *lembrada, const char *binge,
                             const char *pref1, const char *pref2, const char *original, int *origem);
+
+// MODO NOITE onde o app nao toca no PCM (LG/Samsung, modonoite.h): depois da
+// ordem, troca a escolhida pela faixa ESTEREO (1 ou 2 canais) do MESMO idioma,
+// se houver uma que o alvo toca sem converter e que nao e comentario nem
+// audiodescricao. Nunca contra a faixa escolhida a mao (AUDIOESC_LEMBRADA) e
+// nunca quando a ordem nao decidiu (`escolhida` < 0): sem idioma certo, trocar
+// seria chute. Devolve `escolhida` quando nada muda. Puro.
+int audioesc_estereo(const AudioCand *c, int n, int escolhida, int origem);
+// Liga/desliga a regra acima dentro de audioesc_escolher (modonoite_armar).
+void audioesc_preferir_estereo(int ligado);
 #endif

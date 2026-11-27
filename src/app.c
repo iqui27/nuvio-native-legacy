@@ -14,6 +14,8 @@
 #include "mediaurl.h"
 #include "arranque.h"
 #include "celbotao.h"
+#include "pecatv.h"
+#include "salaui.h"
 #include "central.h"
 #include "estatvivoui.h"
 #include "playinfo.h"
@@ -23,6 +25,7 @@
 #include "travarede.h"
 #include "travaui.h"
 #include "teclavoltar.h"
+#include "cenas.h"
 #include "deeplink.h"
 #include "android.h"
 #include "telefoneui.h"
@@ -254,6 +257,8 @@ static char abrirTeste[64];
 void app_abrir_titulo(const char *imdb) {
   snprintf(abrirTeste, sizeof abrirTeste, "%s", imdb ? imdb : "");
 }
+
+void app_abrir_sessao_sala(void) { salaui_abrir(); }
 
 static int aguardandoFonte;
 // ESCOLHA AUTOMATICA COM A LISTA AINDA ENCHENDO (#221). A busca publica cada
@@ -1025,6 +1030,7 @@ static int armarPoliticaFonteAberta(int indice, int manual, const char *url) {
 #include "extras.h"
 #include "perfilinfantil.h"
 #include "perfilregras.h"
+#include "casa_app.h"
 #include <stdio.h>
 
 static Tela tela = TELA_HOME;
@@ -1234,11 +1240,18 @@ static int abrirFarolPedido(const FarolAchaPedido *p) {
 }
 
 // Consume the panel request through the same title route as other screens.
+// Titulo aberto pelo painel ou pelo aviso: se um amigo mandou uma cena dele,
+// o Play abre naquele instante (cenas.h), como pelo cartao.
+static void armarCenaRecebida(const char *imdb) {
+  int t, e, seg, dur;
+  if (recomenda_cena_de(imdb, &t, &e, &seg, &dur)) cenas_armar(imdb, t, e, seg, dur);
+}
 static void abrirTituloDoPainel(void) {
   if (player_aberto()) return;
   const char *alvo = spainel_pediu_abrir();
   if (!alvo || !alvo[0]) return;
   tituloDoPainel = 1;
+  armarCenaRecebida(alvo);
   int k = cat_indice_por_imdb(alvo);
   if (detail_aberto()) detail_fechar_seco();
   if (k >= 0) abrirPorIndice(k); else desc_pedir_titulo(alvo);
@@ -4823,6 +4836,10 @@ int app_iniciar(const char *dirArte) {
   const char *preview = getenv("NUVIO_UI_PREVIEW");
   uiPreview = preview && !strcmp(preview, "1");
 #endif
+#ifdef NV_LINUX_DESKTOP
+  // Linux has no OS link handler yet: NUVIO_DEEPLINK=<url> posts one at startup.
+  if (getenv("NUVIO_DEEPLINK")) deeplink_postar(getenv("NUVIO_DEEPLINK"));
+#endif
   // Antes de tudo que mexe na conta: o login e o sync criam os arquivos que o
   // Começar olha para saber se esta instalacao ja vem de uso anterior.
   comecar_marcar_dados();
@@ -5036,6 +5053,8 @@ static void deeplinkAbrir(const DeepLink *d) {
     if (ci && ci->tmdb == d->tmdb && !strcmp(ci->tipo, d->serie ? "series" : "movie")) k = i;
   }
   cwTocarT = cwTocarE = 0; cwEspera = 0;
+  if (d->tipo == DL_TOCAR && d->temInicio && d->imdb[0])   // ?t=: marcar cena
+    cenas_armar(d->imdb, d->episodio > 0 ? d->temporada : 0, d->episodio, d->inicioSeg, 0);
   if (k >= 0) {
     if (abrirPorIndice(k) && d->tipo == DL_TOCAR) {
       if (d->episodio > 0) { cwTocarT = d->temporada; cwTocarE = d->episodio; }
@@ -5469,6 +5488,7 @@ void app_evento(const SDL_Event *e) {
   // canal mesmo com a tela de fonte por cima (canal que nao abre tambem zapeia).
   if ((mnOferta || mnTeclaCanal(e)) && mnEvento(e)) return;
   if (dicascontrole_ocupado()) { dicascontrole_evento(e); return; }
+  if (salaui_evento(e)) return;
   if (rewatchui_aberta()) { rewatchui_evento(e); return; }
   if (farolgostoui_aberto()) { farolgostoui_evento(e); return; }
   if (farolcompara_aberto()) { farolcompara_evento(e); return; }
@@ -5533,6 +5553,7 @@ void app_evento(const SDL_Event *e) {
   if (glem_evento(e)) return;
   // O CARTAO DO CELULAR (celbotao.h), aberto de qualquer campo de texto: come
   // o teclado todo ate fechar.
+  if (pecatv_evento(e)) return;
   if (celb_evento(e)) return;
   if (aioui_aberto()) { aioui_evento(e); return; }
   // O AVISO DAS CONQUISTAS (depois dos creditos) nao toma o foco: so o Voltar e
@@ -6449,6 +6470,7 @@ void app_atualizar(float dt, Uint32 agora) {
   perfis_lembrar_ultimo_configurar(ajustes_lembrar_perfil());
   // Pagina de registro na rede local (logrede.h): Ajustes > Sobre e ajuda > Registro.
   logrede_configurar(ajustes_log_rede(), registro_arquivo());
+  casa_app_quadro();
   fontevolta_configurar(ajustes_link_reusar(), ajustes_link_prazo_s());
   // Pausa entre quadros medida uma vez, antes de qualquer tela perguntar se o
   // OK segurado venceu (segurar.h, #387).
@@ -6465,6 +6487,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // OK segurado em "Buscar" (menu.c) abre por aqui, no quadro em que cruza.
   spot_atualizar(dt, agora);
   celb_atualizar(dt);
+  pecatv_atualizar(dt, !player_aberto() && tela != TELA_LOGIN && !novidades20_aberto() && !comecar_aberto());
   if (menu_pediu_spotlight() && spotPode()) spotAbrir(0);
   if (spot_aberto() && !spotPode()) spot_fechar();
   cancelarFonteSeSaiu();
@@ -7054,7 +7077,9 @@ void app_atualizar(float dt, Uint32 agora) {
   abrirTituloDoPainel();
   if (!detail_aberto() && !player_aberto()) {
     const char *alvo = recomenda_pediu_abrir();   // mesmo contrato, outra origem
-    if (!alvo) alvo = avisos_pediu_abrir();
+    { char cImdb[24]; int ct, ce, cs, cd;   // cartao de cena marcada: o Play abre naquele instante
+      if (alvo && recomenda_pediu_cena(cImdb, sizeof cImdb, &ct, &ce, &cs, &cd)) cenas_armar(cImdb, ct, ce, cs, cd); }
+    if (!alvo && (alvo = avisos_pediu_abrir()) != NULL) armarCenaRecebida(alvo);
     { static char afImdb[24];
       if (!alvo && amigosfil_pediu_titulo(afImdb, sizeof afImdb)) alvo = afImdb; }
     if (!alvo && tela == TELA_AGENDA) alvo = agendaui_pediu_abrir();
@@ -7153,6 +7178,10 @@ void app_atualizar(float dt, Uint32 agora) {
   // comeco; ao fechar, Ajustes continua onde estava.
   if (tela == TELA_AJUSTES && ajustes_pediu_novidades20()) novidades20_abrir(0);
   if (tela == TELA_AJUSTES && ajustes_pediu_dicascontrole()) dicascontrole_abrir();
+  if (tela == TELA_AJUSTES && ajustes_pediu_sessao_sala()) salaui_abrir();
+  // Sessao (salaui.h): o titulo em que a sala fechou abre pelo mesmo caminho
+  // de uma recomendacao.
+  { char tt[64]; if (salaui_pediu_titulo(tt, sizeof tt)) app_abrir_titulo(tt); }
   if (tela == TELA_AJUSTES && ajustes_pediu_novidades()) {
     trocarTela(TELA_HOME);
     menu_definir_destino(MENU_INICIO);
@@ -7725,7 +7754,8 @@ void app_atualizar(float dt, Uint32 agora) {
         cwTocarT = cwTocarE = 0;
       }
       if (cwRewatch >= 0) { player_rewatch(cwRewatch); cwRewatch=-1; }
-      if (doInicio) player_do_inicio();
+      if (doInicio) { player_do_inicio(); cenas_armar(NULL, 0, 0, 0, 0); }
+      else if (!abrindoPassivo) cenas_aplicar_ao_abrir();
       mnAoAbrirPlayer(abrindoPassivo);
       // O episodio so fica definitivo DEPOIS de abrir o player. Refaça sempre
       // o pedido de legenda nesse ponto; a busca de prefetch pode ter comecado
@@ -8526,6 +8556,8 @@ void app_atualizar(float dt, Uint32 agora) {
       farolacao_rede_reabrir_fim(reabriu);
     } }
   juntosAbrirEFonte(agora);
+  if (player_pediu_marcar_cena()) cenas_tecla();
+  cenas_atualizar();
   if (aguardandoFonte != 2 && (player_pediu_fontes() || juntosui_pediu_fontes())) {
     char base[24];
     stream_folha_contexto(player_linha_episodio());
@@ -8976,6 +9008,7 @@ void app_atualizar(float dt, Uint32 agora) {
   dicascontrole_home_livre(app_home_recebe_teclas(), dt);
 #endif
   dicascontrole_atualizar(dt, agora);
+  salaui_atualizar(dt);
   telemetria_atualizar(dt, agora);
   recintro_atualizar(dt, agora);
   atualizacao_atualizar(dt, agora);
@@ -9342,7 +9375,7 @@ static int miniToquePermitido(void) {
 void app_desenhar(Uint32 agora) {
   if (aioui_opaco() && !registro_aberto() && !player_aberto()) {
     // Opaque dashboard: avoid rendering Settings, title and sources underneath.
-    gfx_sem_recorte(); ponteiro_camada(); aioui_desenhar(agora); celb_desenhar();
+    gfx_sem_recorte(); ponteiro_camada(); aioui_desenhar(agora); celb_desenhar(); pecatv_desenhar();
     return;
   }
   // O COMECAR da 2.1 e tela inteira e opaco, como o guia da 2.0.
@@ -9651,6 +9684,7 @@ void app_desenhar(Uint32 agora) {
 #endif
     if (aioui_aberto()) { ponteiro_camada(); aioui_desenhar(agora); }
     celb_desenhar();
+    pecatv_desenhar();
   }
   CAMADA_SE(diagnostico_intro_aberto());
   if (!registro_aberto()) diagnostico_intro_desenhar(agora);
@@ -9678,6 +9712,7 @@ void app_desenhar(Uint32 agora) {
     CAMADA_SE(dicascontrole_ocupado());
     dicascontrole_desenhar(agora);
   }
+  salaui_desenhar();
 }
 
 int app_quer_sair(void) { return sair; }

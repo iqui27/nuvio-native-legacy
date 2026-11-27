@@ -294,7 +294,10 @@ int main(int argc, char **argv) {
   { char nome[700]; const int offsets[] = { 60000, -60000, 15000, 60001 };
     for (int j = 0; j < 4; j++) {
       snprintf(nome, sizeof nome, "%s/player.txt", getenv("NUVIO_DADOS"));
-      FILE *f = fopen(nome, "w"); assert(f); fprintf(f, "leg_atraso %d\n", offsets[j]); fclose(f);
+      FILE *f = fopen(nome, "w"); assert(f);
+      /* leg_atraso_sinal 1: arquivo no formato atual. Sem o marcador o player
+       * aplica a migracao de sinal antiga e o valor lido sai negado. */
+      fprintf(f, "leg_atraso %d\nleg_atraso_sinal 1\n", offsets[j]); fclose(f);
       player_leg_estilo()->atrasoMs = 0;
       player_abrir(0, NULL);
       assert(player_leg_estilo()->atrasoMs == (j == 3 ? 0 : offsets[j]));

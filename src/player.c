@@ -170,6 +170,8 @@ extern __attribute__((weak)) int farolacao_fonte_executar(int acao, int persisti
 #include "ajustes.h"
 #include "esmaecer.h"
 #include "proxyts.h"
+#include "timeshift_regras.h"
+#include "p2pmotor.h"
 #include "xtream.h"
 #include "perfis.h"
 #include "sessao.h"
@@ -191,6 +193,7 @@ extern __attribute__((weak)) int farolacao_fonte_executar(int acao, int persisti
 #include "perdifio.h"
 #include "cacheboost.h"
 #include "directcache.h"
+#include "modonoite.h"
 #include "audioinfo.h"
 #include "selotoca.h"
 #include "playinfo.h"
@@ -954,6 +957,36 @@ static int avErroFoco;   // o botao em foco no modal do erro do canal
 // o relogio desde ela (`avPausaDesde`).
 static double avLat0 = -1.0, avAtraso;
 static Uint32 avPausaDesde;
+// TIMESHIFT LOCAL (timeshift_regras.h): o canal que passa pelo proxy de TS e
+// gravado no pendrive, e o player REABRE a mesma sessao N segundos atras
+// (proxyts_timeshift_url). `avTsAtrasoS` e o atraso da conexao aberta agora.
+static int avTsAtrasoS;
+// A pessoa pausou ou voltou nesta sessao: se a gravacao falhar, o player
+// reabre o ao vivo em vez de ficar parado (avRelogioAoVivo).
+static int avTsUsado;
+// A pasta da gravacao: NUVIO_TIMESHIFT_DIR (teste no PC) ou o pendrive que o
+// cache USB ja achou (p2pmotor). 0 = sem disco gravavel.
+static int avTsPasta(char *out, size_t n) {
+#if defined(__EMSCRIPTEN__) || defined(NV_ANDROID) || defined(_WIN32)
+  (void)out; (void)n;
+  return 0;
+#else
+  const char *e = getenv("NUVIO_TIMESHIFT_DIR");
+  char vol[700];
+  if (e && e[0]) return snprintf(out, n, "%s", e) < (int)n;
+  // O pendrive vem da sonda do cache USB, mas sem exigir o P2P ligado (#820).
+  if (!p2pmotor_usb_volume(vol, sizeof vol)) return 0;
+  return snprintf(out, n, "%s/nuvio-timeshift", vol) < (int)n;
+#endif
+}
+// Antes de cada abertura: diz ao proxy onde gravar ("" = nao grava).
+static void avTsArmar(int canal) {
+  char d[700] = "";
+  avTsAtrasoS = 0; avTsUsado = 0;
+  proxyts_timeshift_segurar(0);
+  if (!canal || !ajustes_timeshift_local() || !avTsPasta(d, sizeof d)) d[0] = 0;
+  proxyts_definir_timeshift(d);
+}
 // Indice EPG do canal no ar, resolvido uma vez por abertura (-2 = sem grade).
 static int epgIdx = -1;
 static unsigned epgIdxRev;
@@ -1018,6 +1051,8 @@ int player_indice(void) { return idxAtual(); }
 const char *player_linha_episodio(void) { return linhaEp; }
 int  player_pediu_guia(void) { int v = pedGuia; pedGuia = 0; return v; }
 int  player_pediu_guia_cheio(void) { int v = pedGuiaCheio; pedGuiaCheio = 0; return v; }
+static int pedMarcarCena;
+int  player_pediu_marcar_cena(void) { int v = pedMarcarCena; pedMarcarCena = 0; return v; }
 int  player_pediu_zap(void)  { int v = pedZap;  pedZap  = 0; return v; }
 int  player_pediu_recarregar(void) { int v = pedRecarregar; pedRecarregar = 0; return v; }
 int  player_pediu_ultimo(void) { int v = pedUltimo; pedUltimo = 0; return v; }
@@ -1832,7 +1867,7 @@ static const char *prefsArquivo(void) {
 // ajustes.txt, que espelha as chaves de layout do app web. Padrao: tamanho 2
 // (o do aparelho), branco, sem fundo, posicao central, contorno.
 // -1 preserves the legacy outline preference until a border colour is chosen.
-static VideoLegendaEstilo legEstilo = { 120, 0, 0, 3, 1, 0, 0, TXT_FAMILIA_INTER, 0, -1 };
+static VideoLegendaEstilo legEstilo = { 120, 0, 0, 3, 1, 0, 0, TXT_FAMILIA_INTER, 0, -1, VIDEO_LEG_ESPACO_PADRAO, VIDEO_LEG_FUNDO_OPAC_PADRAO };
 // Ver player_leg_estilo_tocou, em player.h: o que a pessoa mexeu vence o que o
 // arquivo ASS pede. Persistido junto com o resto — a preferencia nao pode
 // valer so ate desligar a TV.
@@ -1843,7 +1878,7 @@ static void prefsLer(void) {
   prefsLidas = 1;
   legEstilo.corBorda = -1;
   FILE *f = fopen(prefsArquivo(), "r");
-  char chave[64]; int v, sinalNovo = 0, temAtraso = 0, bordaExplicita = 0;
+  char chave[64]; int v, sinalNovo = 0, temAtraso = 0, bordaExplicita = 0, temFundoOpac = 0;
   if (!f) return;
   while (fscanf(f, "%63s %d", chave, &v) == 2) {
     // Valor de outra versao (ou arquivo editado a mao) cai no padrao em vez de
@@ -1864,11 +1899,17 @@ static void prefsLer(void) {
     else if (!strcmp(chave, "leg_cor_borda") && v >= -1 && v < VIDEO_LEG_NCORES) legEstilo.corBorda = v;
     else if (!strcmp(chave, "leg_cor_borda_explicita") && v == 1) bordaExplicita = 1;
     else if (!strcmp(chave, "leg_opacidade") && v >= 0 && v < LEG_OPAC_N) legEstilo.opacidade = v;
+    else if (!strcmp(chave, "leg_espaco") && v >= VIDEO_LEG_ESPACO_MIN && v <= VIDEO_LEG_ESPACO_MAX) legEstilo.espacamento = v;
+    else if (!strcmp(chave, "leg_fundo_opac") && v >= 0 && v <= 100) { legEstilo.fundoOpacidade = v; temFundoOpac = 1; }
     else if (!strcmp(chave, "leg_familia") && v >= 0 && v < TXT_FAMILIA_N) legEstilo.familia = v;
     else if (!strcmp(chave, "leg_negrito") && (v == 0 || v == 1)) legEstilo.negrito = v;
     else if (!strcmp(chave, "leg_tocado")  && v >= 0) legTocado = v;
   }
   fclose(f);
+  // Arquivo de antes da opacidade do fundo: o nivel 1..4 era a escuridao
+  // (16% por nivel). Mantem a mesma aparencia em vez de saltar para 75%.
+  if (!temFundoOpac && legEstilo.fundo >= 1 && legEstilo.fundo <= 4)
+    legEstilo.fundoOpacidade = legEstilo.fundo * 16;
   // Older players wrote default Black even when no border colour was chosen.
   if (!bordaExplicita && legEstilo.corBorda == 0 && !(legTocado & PLR_LEG_COR_BORDA))
     legEstilo.corBorda = -1;
@@ -1893,6 +1934,8 @@ static int prefsGravar(void) {
   fprintf(f, "leg_atraso %d\n",  legEstilo.atrasoMs);
   fprintf(f, "leg_atraso_sinal 1\n");
   fprintf(f, "leg_opacidade %d\n", legEstilo.opacidade);
+  fprintf(f, "leg_espaco %d\n", video_leg_espaco(&legEstilo));
+  fprintf(f, "leg_fundo_opac %d\n", video_leg_fundo_opacidade(&legEstilo));
   fprintf(f, "leg_familia %d\n", legEstilo.familia);
   fprintf(f, "leg_negrito %d\n", legEstilo.negrito);
   fprintf(f, "leg_tocado %d\n", legTocado);
@@ -1919,7 +1962,7 @@ void player_leg_estilo_mudou(void) {
   if (prefsGravar()) sync_proteger_ajustes_locais();
 }
 const VideoLegendaEstilo *player_leg_estilo_padrao(void) {
-  static const VideoLegendaEstilo padrao = {120, 0, 0, 3, 1, 0, 0, TXT_FAMILIA_INTER, 0, 0};
+  static const VideoLegendaEstilo padrao = {120, 0, 0, 3, 1, 0, 0, TXT_FAMILIA_INTER, 0, 0, VIDEO_LEG_ESPACO_PADRAO, VIDEO_LEG_FUNDO_OPAC_PADRAO };
   return &padrao;
 }
 static int estiloPreparar(const VideoLegendaEstilo *estilo, int tocou) {
@@ -1929,6 +1972,8 @@ static int estiloPreparar(const VideoLegendaEstilo *estilo, int tocou) {
       estilo->familia < 0 || estilo->familia >= TXT_FAMILIA_N ||
       estilo->fundo < 0 || estilo->fundo > 4 || estilo->posicao < 0 || estilo->posicao > 7 ||
       estilo->borda < 0 || estilo->borda > 2 || estilo->opacidade < 0 || estilo->opacidade >= LEG_OPAC_N ||
+      estilo->espacamento < VIDEO_LEG_ESPACO_MIN || estilo->espacamento > VIDEO_LEG_ESPACO_MAX ||
+      estilo->fundoOpacidade < 0 || estilo->fundoOpacidade > 100 ||
       estilo->negrito < 0 || estilo->negrito > 1 ||
       estilo->atrasoMs < -LEG_ATRASO_MANUAL_MAX || estilo->atrasoMs > LEG_ATRASO_MANUAL_MAX) return 0;
   player_leg_estilo_carregar();
@@ -2471,6 +2516,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   // F07: seek cache for this open (live channels never; the backend also
   // refuses HLS/DASH). Arms only the next video_tocar: trailers stay uncached.
   cacheboost_backend_cache(ehCanal() ? 0 : ajustes_cache_seek_mb());
+  modonoite_armar(ajustes_modo_noite());   // 2.1: night mode for this open (modonoite.h)
   epT = itemFixo.temporada; epE = itemFixo.episodio;
   armarTituloGuardado();
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));
@@ -2483,6 +2529,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
     if (url && *url && !bloqueado) {
       farolFonteRegistrar(url, video_cabecalhos()[0] != 0);
       const char *u = directcache_preparar(url, video_cabecalhos(), dc, sizeof dc);
+      avTsArmar(ehCanal());
       comVideo = video_tocar(proxyts_resolver(u, px, sizeof px));
     } else comVideo = 0; }
   zerarAssistido();
@@ -2721,10 +2768,12 @@ static void tocarFonteInterno(const char *url) {
   mkv_capitulos_idioma(idioma_iso(ajustes_idioma()));
   video_definir_modo_live(ehCanal() ? modoCanal(url) : 0);
   cacheboost_backend_cache(ehCanal() ? 0 : ajustes_cache_seek_mb());   // F07, ver player_abrir
+  modonoite_armar(ajustes_modo_noite());
   armarTituloGuardado();
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));
   { char px[96], dc[NV_MEDIA_URL_MAX];
     const char *playUrl = url && *url ? directcache_preparar(url, video_cabecalhos(), dc, sizeof dc) : url;
+    avTsArmar(ehCanal());
 #ifdef NV_ANDROID
     // app.c define episodio e "do inicio" antes de entregar a fonte. O
     // instante viaja junto da URL, nunca numa variavel pendente do Kotlin.
@@ -3595,6 +3644,7 @@ static void fecharSessao(int manter, int trocaFonte) {
       player_precarregar_cancelar(0);
 #endif
     if (comVideo && !manter) video_parar();
+    if (!manter) proxyts_timeshift_encerrar();
     tv = SDL_GetTicks();
     pausao_fechar();
     reacao_fechar();
@@ -3985,6 +4035,7 @@ void player_fechar_mini(void) {
   // comVideo pode ja ser 0 (zap em transito: a fonte nova nao chegou) e o
   // stream velho continuaria no ar — parar e seguro mesmo sem pipeline ativo.
   video_parar();
+  proxyts_timeshift_encerrar();
   player_encerrar();
 }
 
@@ -4775,6 +4826,9 @@ static float fracCanal(void) {
 }
 
 static int avPodePausar(void);
+static int avTsLocal(void);
+static int avAtrasoS(Uint32 agora);
+static void avTsAbrir(int atrasS);
 static void alternarTocando(void) {
   // Canal sem janela de tempo nao pausa (ver avPodePausar): a tecla fisica de
   // Pause tambem cai aqui, e congelar um ao vivo so desincroniza o som.
@@ -4783,6 +4837,12 @@ static void alternarTocando(void) {
   // video e o motor (juntos.c), pelo relogio comum; aqui so sai o pedido.
   if (!ehCanal() && juntos_ao_alternar(tocando)) { retomandoSalto = 0; return; }
   retomandoSalto = 0;
+  // Timeshift local: retomar e reabrir a gravacao no ponto em que a pausa caiu.
+  if (ehCanal() && avTsLocal()) {
+    if (!tocando) { avTsAbrir(avAtrasoS(SDL_GetTicks())); return; }
+    proxyts_timeshift_segurar(TSR_PAUSA_MAX_S);   // a gravacao segue com o player parado
+    avTsUsado = 1;
+  }
   tocando = !tocando;
   pausaPessoa = !tocando;
   if (comVideo) video_pausar(!tocando);
@@ -4792,21 +4852,55 @@ static void alternarTocando(void) {
 // PAUSAR: so quando o fluxo tem janela de tempo (duracao > 0, o DVR do provedor).
 // Um ao vivo puro nao pausa de verdade: o botao apertado deixaria a imagem
 // congelada e a transmissao seguindo sem ele. Sem janela, o OK so acorda o OSD.
-static int avPodePausar(void) { return comVideo && video_duracao() > 0.5; }
+// ...ou a janela LOCAL: o canal esta sendo gravado no pendrive (timeshift).
+static int avTsLocal(void) {
+  return canalSessao && comVideo && video_duracao() <= 0.5 && ajustes_timeshift_local() &&
+         proxyts_e_url(video_url_atual()) && proxyts_timeshift_janela_s() > 0;
+}
+static int avPodePausar(void) { return comVideo && (video_duracao() > 0.5 || avTsLocal()); }
+// Reabre a mesma sessao do proxy `atrasS` segundos atras (0 = ao vivo). O
+// ponto real e o comeco do segmento gravado que cobre o pedido.
+static void avTsAbrir(int atrasS) {
+  char u[96];
+  int jan = proxyts_timeshift_janela_s();
+  if (atrasS > jan) atrasS = jan;
+  if (atrasS < 0) atrasS = 0;
+  if (!proxyts_timeshift_url(atrasS, u, sizeof u)) return;
+  proxyts_timeshift_segurar(20);   // ate a conexao nova chegar
+  // O modo do load e de uma abertura so (video_modo_live_consumir): repete o do canal.
+  video_definir_modo_live(guia_modo_do_canal(player_id_canal(), ajustes_livetv_modo()));
+  comVideo = video_tocar(u);
+  tocando = 1; pausaPessoa = 0;
+  avTsAtrasoS = atrasS; avAtraso = atrasS; avPausaDesde = 0;
+  avTsUsado = atrasS > 0;
+  botaoAV = 0;
+}
 
 // Segundos atras do ao vivo agora (0 no ao vivo ou sem janela).
 static int avAtrasoS(Uint32 agora) {
   double t = avAtraso;
   if (!avPodePausar()) return 0;
   if (!tocando && avPausaDesde) t += (double)(agora - avPausaDesde) / 1000.0;
-  if (t > video_duracao()) t = video_duracao();   // nao volta alem da janela
+  { double jan = avTsLocal() ? (double)proxyts_timeshift_janela_s() : video_duracao();
+    if (t > jan) t = jan; }   // nao volta alem da janela
   return t > 0.0 ? (int)(t + 0.5) : 0;
 }
 // Por quadro (player_atualizar), com ou sem OSD na tela: a pausa conta mesmo
 // com os controles recolhidos.
 static void avRelogioAoVivo(Uint32 agora) {
   double d;
+  // A gravacao falhou (pendrive cheio, arrancado) com o canal pausado ou
+  // atrasado: sem ela nao ha de onde retomar, entao volta para o ao vivo.
+  if (ehCanal() && avTsUsado && proxyts_e_url(video_url_atual()) && proxyts_timeshift_janela_s() <= 0) {
+    avTsUsado = 0;
+    avTsAbrir(0);
+  }
   if (!ehCanal() || !avPodePausar()) { avLat0 = -1.0; avAtraso = 0.0; avPausaDesde = 0; return; }
+  if (avTsLocal()) {   // o atraso e o da conexao aberta; pausado, soma o relogio
+    avLat0 = -1.0; avAtraso = avTsAtrasoS;
+    if (tocando) avPausaDesde = 0; else if (!avPausaDesde) avPausaDesde = agora ? agora : 1;
+    return;
+  }
   d = video_duracao() - video_pos();
   if (d < 0.0) d = 0.0;
   if (tocando) {
@@ -4820,6 +4914,7 @@ static void avRelogioAoVivo(Uint32 agora) {
 // "Voltar ao vivo": a borda da janela menos a folga medida, e tocando.
 static void avVoltarAoVivo(void) {
   double alvo = video_duracao() - (avLat0 > 0.0 ? avLat0 : 0.0);
+  if (avTsLocal()) { avTsAbrir(0); return; }
   if (!avPodePausar()) return;
   video_buscar(alvo > 0.0 ? alvo : 0.0);
   if (!tocando) { tocando = 1; video_pausar(0); }
@@ -4835,6 +4930,8 @@ static int avBotoes(int *ids) {
   int n = 0;
   if (avPodePausar()) ids[n++] = AV_B_PAUSA;
   if (avAtrasoS(SDL_GetTicks()) >= AV_ATRASO_BOTAO_S) ids[n++] = AV_B_AOVIVO;
+  if (avTsLocal() && tsr_voltar(avAtrasoS(SDL_GetTicks()), proxyts_timeshift_janela_s()) >
+      avAtrasoS(SDL_GetTicks())) ids[n++] = AV_B_VOLTAR30;
   ids[n++] = AV_B_GUIA;
   ids[n++] = AV_B_ANT;
   ids[n++] = AV_B_PROX;
@@ -4860,6 +4957,7 @@ static void avAtivar(int b) {
   switch (b) {
     case AV_B_PAUSA: alternarTocando(); break;
     case AV_B_AOVIVO: avVoltarAoVivo(); break;
+    case AV_B_VOLTAR30: avTsAbrir(tsr_voltar(avAtrasoS(SDL_GetTicks()), proxyts_timeshift_janela_s())); break;
     // O GUIA COMPLETO com o canal no preview (dono, 01/10: "nao ta subindo o
     // guia da TV"): o botao abria a FAIXA de zapping, a mesma do BAIXO; quem
     // aperta "Guia" espera a grade inteira por cima, com o canal tocando no
@@ -4918,7 +5016,7 @@ static void avMontarOsd(AoVivoOsd *o) {
   if (shotEpgOk && shotAtras) { o->atrasoS = shotAtras; o->pausado = 0; }
 #endif
   o->pausaS = (o->pausado && avPausaDesde) ? (int)((SDL_GetTicks() - avPausaDesde) / 1000u) : 0;
-  o->janelaS = avPodePausar() ? (int)video_duracao() : 0;
+  o->janelaS = avTsLocal() ? proxyts_timeshift_janela_s() : avPodePausar() ? (int)video_duracao() : 0;
   o->bufferando = comVideo && video_bufferando_ms() > 1500u;
   // RESOLUCAO pela ALTURA medida, e so onde a marca nao afirma mais do que se
   // mediu (a mesma regra dos selos do filme): 1440p nao e 1080p nem 4K, e fica
@@ -5528,6 +5626,12 @@ void player_evento(const SDL_Event *e) {
   // No filme continua a proporcao.
   if ((k == SDLK_0 || k == SDLK_KP_0) && ehCanal()) { pedUltimo = 1; return; }
   if (k == SDLK_0 || k == SDLK_KP_0) { player_aspecto_ciclar(); return; }
+  // MARCAR CENA (cenas.h): amarela no controle (F5 no Android e na Samsung), M no teclado. So em filme/episodio.
+  if (!ehCanal() && (k == SDLK_m || k == SDLK_F5 || e->key.keysym.scancode == NV_SCANCODE_YELLOW) &&
+      !(e->key.keysym.mod & (KMOD_GUI | KMOD_CTRL | KMOD_ALT)) && ajustes_marcar_cena()) {
+    if (!e->key.repeat && !erroFonte && !player_carregando()) pedMarcarCena = 1;
+    return;
+  }
 
   // CANAL AO VIVO: OSD proprio (aovivo.h) e teclas proprias. BAIXO e o botao
   // AZUL abrem o overlay do guia em qualquer estado — e la que mora "o que esta
@@ -6836,6 +6940,7 @@ static void blocoLinha(LegBloco *bl, TxtEstilo est, const char *linha, int r, in
                        TxtFamilia fam, int enf) {
   const VideoLegendaEstilo legEstilo=*player_leg_estilo_efetivo();
   char visual[768];
+  int vao = video_leg_espaco(&legEstilo);
   if (bl->n >= PLR_LEG_LINHAS) return;
   // Arabic/Hebrew: shape + visual order of the ALREADY WRAPPED line (bidi.c).
   // Latin text comes back byte-identical.
@@ -6844,7 +6949,7 @@ static void blocoLinha(LegBloco *bl, TxtEstilo est, const char *linha, int r, in
   { unsigned cor = ajustes_leg_borda_rgb(legEstilo.corBorda);
     bl->borda[bl->n] = legEstilo.borda ? txt_linha_corta_enfase(est, linha, (cor >> 16) & 255, (cor >> 8) & 255, cor & 255, 255, PLR_LEG_LARG, fam, enf) : (TxtLinha){0}; }
   if (bl->cor[bl->n].w > bl->w) bl->w = bl->cor[bl->n].w;
-  bl->h += bl->cor[bl->n].h + (bl->n ? 5 : 0);
+  bl->h += bl->cor[bl->n].h + (bl->n ? (float)vao : 0);
   bl->n++;
 }
 
@@ -6881,17 +6986,39 @@ static void montarBloco(const LegendaCue *c, TxtEstilo est, int r, int g, int b,
   }
 }
 
-static void desenharBloco(const LegBloco *bl, float x0, float y, float alpha, int alinha) {
-  const VideoLegendaEstilo legEstilo=*player_leg_estilo_efetivo();
+static GfxRect caixaFundoBloco(const LegBloco *bl, float x0, float y, int alinha) {
   int i;
+  float bx0 = x0, bx1 = x0, xs[PLR_LEG_LINHAS];
+  for (i = 0; i < bl->n; i++) {
+    const TxtLinha *l = &bl->cor[i];
+    xs[i] = alinha == 0 ? x0 : alinha == 1 ? x0 - l->w * .5f : x0 - l->w;
+    if (i == 0 || xs[i] < bx0) bx0 = xs[i];
+    if (i == 0 || xs[i] + l->w > bx1) bx1 = xs[i] + l->w;
+  }
+  return (GfxRect){ bx0 - 18.0f, y - 6.0f, bx1 - bx0 + 36.0f, bl->h + 12.0f };
+}
+
+static void desenharBloco(const LegBloco *bl, float x0, float y, float alpha, float bgAlpha, int alinha) {
+  const VideoLegendaEstilo legEstilo=*player_leg_estilo_efetivo();
+  int i, vao = video_leg_espaco(&legEstilo);
+  float xs[PLR_LEG_LINHAS], topo = y;
+  // Caixa de fundo UNICA para o bloco inteiro. Antes cada linha desenhava a
+  // sua (altura + 12, passo + 5): as duas se sobrepunham 7 px e a faixa de
+  // encontro ficava mais escura que o resto — o defeito que o dono fotografou
+  // nas legendas de duas linhas. Uma caixa so nao tem emenda.
+  for (i = 0; i < bl->n; i++) {
+    const TxtLinha *l = &bl->cor[i];
+    xs[i] = alinha == 0 ? x0 : alinha == 1 ? x0 - l->w * .5f : x0 - l->w;
+  }
+  if (legEstilo.fundo && bgAlpha > 0.0f)
+    gfx_cor(caixaFundoBloco(bl, x0, topo, alinha), .16f, 0, 0, 0, bgAlpha);
   for (i = 0; i < bl->n; i++) {
     TxtLinha l = bl->cor[i];
     // alinha: 0 esquerda (x0 e a borda esquerda), 1 centro (x0 e o centro),
     // 2 direita (x0 e a borda direita).
-    float x = alinha == 0 ? x0 : alinha == 1 ? x0 - l.w * .5f : x0 - l.w;
-    if (legEstilo.fundo) { float fa = legEstilo.fundo * .16f * alpha; gfx_cor((GfxRect){x-18,y-6,l.w+36,l.h+12},.16f,0,0,0,fa); }
+    float x = xs[i];
     txt_desenhar_borda(bl->borda[i], x, y, legEstilo.borda, alpha);
-    txt_desenhar_alpha(l, x, y, alpha); y += l.h + 5;
+    txt_desenhar_alpha(l, x, y, alpha); y += l.h + (float)vao;
   }
 }
 
@@ -7107,7 +7234,8 @@ static void desenharLegendaPrincipal(float *topoPilha){
       snprintf(style.font, sizeof style.font, "%s", families[fam]);
       corLegenda(legEstilo.cor, &r, &g, &b);
       style.rgb = (r << 16) | (g << 8) | b;
-      style.background = legEstilo.fundo >= 0 && legEstilo.fundo <= 4 ? legEstilo.fundo : 0;
+      style.background = legEstilo.fundo >= 0 && legEstilo.fundo <= 4 ? (legEstilo.fundo ? 1 : 0) : 0;
+      style.bgOpacity = video_leg_fundo_opacidade(&legEstilo);
       style.border = legEstilo.borda; style.bold = legEstilo.negrito;
       style.outlineRgb = (int)ajustes_leg_borda_rgb(legEstilo.corBorda);
       style.overrides = ajustes_legenda_estilo_ligado()?legTocado:0;
@@ -7157,12 +7285,13 @@ static void desenharLegendaPrincipal(float *topoPilha){
     cues[0].ordem = 0;
     n = 1;
   }
-  // PREVIA DA BARRA DE ESTILO (faixas.c): sem fala neste instante, uma linha
-  // de exemplo com o estilo da pessoa, para tamanho, cor e posicao terem o que
-  // mostrar. So quando e o app que desenha (no ASS o lugar e do arquivo).
+  // PREVIA DA BARRA DE ESTILO (faixas.c): sem fala neste instante, DUAS
+  // linhas de exemplo com o estilo da pessoa, para tamanho, cor, posicao,
+  // espacamento e fundo terem o que mostrar ao vivo.
   if (n <= 0 && faixas_estilo_topo()) {
     memset(&cues[0], 0, sizeof cues[0]);
-    snprintf(cues[0].texto, sizeof cues[0].texto, "%s", i18n("Assim a legenda vai aparecer"));
+    snprintf(cues[0].texto, sizeof cues[0].texto, "%s\n%s",
+             i18n("Assim a legenda vai aparecer"), i18n("Assim a legenda vai aparecer"));
     cues[0].cor = -1; cues[0].posX = cues[0].posY = -1.f;
     n = 1;
   }
@@ -7170,6 +7299,10 @@ static void desenharLegendaPrincipal(float *topoPilha){
   int pct=legEstilo.tamanho;if(pct<TXT_LEG_PCT_MIN)pct=TXT_LEG_PCT_MIN;if(pct>TXT_LEG_PCT_MAX)pct=TXT_LEG_PCT_MAX;pct=(pct/10)*10;
   TxtEstilo est=(TxtEstilo)(TXT_LEG_50+(pct-50)/10);corLegenda(legEstilo.cor,&r,&g,&b);
   float alpha=leg_opacidade_alpha(legEstilo.opacidade)*entrada;
+  // A opacidade do FUNDO e independente da do texto: o pedido do dono e fundo
+  // preto a 75% com a letra a 100%. O fade do player (entrada) vale para os
+  // dois, mas a escolha de opacidade de um nao mexe no outro.
+  float bgAlpha = (float)video_leg_fundo_opacidade(&legEstilo) / 100.0f * entrada;
   // A pilha "normal" (sem \pos e sem \an, ou \an 2): empilha de baixo para
   // cima a partir da base da folha, como o SRT sempre fez.
   // Com a barra de estilo no topo a base e a da reproducao sem controles: a
@@ -7194,14 +7327,14 @@ static void desenharLegendaPrincipal(float *topoPilha){
       float x = c->posX * NV_TELA_W / c->resX, y = c->posY * NV_TELA_H / c->resY;
       float yTopo = fila == 0 ? y - bl.h : fila == 1 ? y - bl.h * .5f : y;
       if (yTopo < 0) yTopo = 0; if (yTopo + bl.h > NV_TELA_H) yTopo = NV_TELA_H - bl.h;
-      desenharBloco(&bl, x, yTopo, alpha, alinha);
+      desenharBloco(&bl, x, yTopo, alpha, bgAlpha, alinha);
       continue;
     }
     { float margem = 60.f;
       float x = alinha == 0 ? margem : alinha == 1 ? NV_TELA_W * .5f : NV_TELA_W - margem;
-      if (fila == 2)      { desenharBloco(&bl, x, baseTopo, alpha, alinha); baseTopo += bl.h + 10.f; }
-      else if (fila == 1) { desenharBloco(&bl, x, baseMeio - bl.h * .5f, alpha, alinha); baseMeio += bl.h + 10.f; }
-      else                { base -= bl.h; desenharBloco(&bl, x, base, alpha, alinha); *topoPilha = base; base -= 10.f; } }
+      if (fila == 2)      { desenharBloco(&bl, x, baseTopo, alpha, bgAlpha, alinha); baseTopo += bl.h + 10.f; }
+      else if (fila == 1) { desenharBloco(&bl, x, baseMeio - bl.h * .5f, alpha, bgAlpha, alinha); baseMeio += bl.h + 10.f; }
+      else                { base -= bl.h; desenharBloco(&bl, x, base, alpha, bgAlpha, alinha); *topoPilha = base; base -= 10.f; } }
   }
 }
 

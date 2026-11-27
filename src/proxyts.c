@@ -22,6 +22,11 @@ int  proxyts_disponivel(void) { return 0; }
 int  proxyts_url(const char *f, char *s, size_t n) { (void)f; (void)s; (void)n; return 0; }
 void proxyts_parar(void) {}
 int  proxyts_e_url(const char *u) { (void)u; return 0; }
+void proxyts_definir_timeshift(const char *d) { (void)d; }
+void proxyts_timeshift_encerrar(void) {}
+void proxyts_timeshift_segurar(int s) { (void)s; }
+int  proxyts_timeshift_janela_s(void) { return 0; }
+int  proxyts_timeshift_url(int a, char *s, size_t n) { (void)a; (void)s; (void)n; return 0; }
 const char *proxyts_resolver(const char *url, char *buf, size_t n) {
   (void)buf; (void)n;
   return url && !strncmp(url, PROXYTS_PREFIXO, 8) ? url + 8 : url;
@@ -202,6 +207,18 @@ static int pxEnviar(int s, const void *b, size_t n) {
   return 1;
 }
 
+#include "timeshift_disco.h"
+// TIMESHIFT LOCAL: a pasta onde a proxima ingestao HLS tambem grava ("" = nao
+// grava). Protegida pela trava global.
+static char tsDir[700];
+// Ate quando a ingestao segue SEM leitor (pausa do player), em time().
+static _Atomic long tsSegurarAte;
+static int64_t pxAgoraMs(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (int64_t)t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
+
 typedef struct PxFluxo PxFluxo;
 typedef struct PxConexao {
   int s; unsigned sessao; char fonte[NV_MEDIA_URL_MAX]; volatile int cancelar;
@@ -209,6 +226,7 @@ typedef struct PxConexao {
   struct PxConexao *proxima;
   uint64_t pos;
   int proteger;                    // cursor entregue, protegido por fluxo->trava
+  int atrasS;                      // > 0: leitor do timeshift, serve do disco (&atras=N); -1: &atras=0, a ponta
 } PxConexao;
 
 // O uMS faz mais de um GET durante o mesmo load (sonda e leitura). Uma
@@ -230,14 +248,28 @@ struct PxFluxo {
   time_t semLeitorDesde;
   char lista[4096];
   char cabs[512];                   // os do addon, para playlist e segmentos
+  TsDisco *disco;                   // timeshift local; NULL = so o buffer em memoria
   PxConexao produtor;
 };
 static PxFluxo *fluxoAtual;
 static uint64_t pxCursorInicio(const PxFluxo *f);
 
+// "Voltar ao vivo" (&atras=0): o segmento mais novo do buffer, nao o mais
+// antigo (que pode estar 16 MiB atras).
+static uint64_t pxCursorRecente(const PxFluxo *f) {
+  uint64_t ini = f->inicio;
+  unsigned n = f->nSegmentos < 64 ? f->nSegmentos : 64, achou = 0;
+  for (unsigned i = 0; i < n; i++)
+    if (f->segmentos[i] >= f->inicio && f->segmentos[i] < f->fim && (!achou || f->segmentos[i] > ini)) {
+      ini = f->segmentos[i]; achou = 1;
+    }
+  return achou ? ini : pxCursorInicio(f);
+}
+
 static void pxFluxoDestruir(PxFluxo *f) {
   pthread_cond_destroy(&f->chegou);
   pthread_mutex_destroy(&f->trava);
+  tsd_fechar(f->disco);
   free(f->buffer); free(f);
 }
 
@@ -266,7 +298,10 @@ static int pxViva(const PxConexao *c) {
   if (c->s < 0 && c->fluxo) {
     int ocioso;
     pthread_mutex_lock(&c->fluxo->trava);
-    ocioso = c->fluxo->semLeitorDesde && time(NULL) - c->fluxo->semLeitorDesde >= 3;
+    // Com timeshift a ingestao sobrevive a pausa (o player para de ler e a
+    // conexao dele cai) enquanto o player pedir (proxyts_timeshift_segurar).
+    ocioso = c->fluxo->semLeitorDesde && time(NULL) - c->fluxo->semLeitorDesde >=
+             3 && !(c->fluxo->disco && !c->fluxo->disco->erro && (long)time(NULL) < atomic_load(&tsSegurarAte));
     pthread_mutex_unlock(&c->fluxo->trava);
     if (ocioso) return 0;
   }
@@ -371,7 +406,7 @@ static void pxHls(PxConexao *c, const char *urlLista, const char *cabs) {
   PxTabelas tab;
   char base[NV_MEDIA_URL_MAX];
   long ultimo = -1, segs = 0, bytes = 0;
-  int falhas = 0;
+  int falhas = 0, avisouDisco = 0;
   time_t desdeNovo = time(NULL), t0 = time(NULL);
   memset(&tab, 0, sizeof tab);
   if (!lp) return;
@@ -433,6 +468,22 @@ static void pxHls(PxConexao *c, const char *urlLista, const char *cabs) {
       c->fluxo->tabelas = tab;
       pthread_mutex_unlock(&c->fluxo->trava);
       pxInicioSegmento(c->fluxo);
+      // TIMESHIFT: o mesmo que vai para o buffer vai para o disco, com PAT/PMT
+      // na frente de cada segmento (um leitor pode comecar em qualquer um).
+      if (c->fluxo->disco) {
+        int64_t ag = pxAgoraMs();
+        int tabs = tab.temPat && tab.temPmt;
+        if (tabs) {
+          tsd_gravar(c->fluxo->disco, tab.pat, 188, 1, ag);
+          tsd_gravar(c->fluxo->disco, tab.pmt, 188, 0, ag);
+        }
+        if (!tsd_gravar(c->fluxo->disco, b + ini, (size_t)((n - ini) / 188 * 188), !tabs, ag) &&
+            c->fluxo->disco->erro && !avisouDisco) {
+          avisouDisco = 1;
+          printf("[proxy-ts] timeshift: gravacao desligada (%s)\n", strerror(c->fluxo->disco->erro));
+          fflush(stdout);
+        }
+      }
       if (pxPid(b + ini) != 0 && tab.temPat && tab.temPmt) {
         if (!pxEntregar(c, tab.pat, 188) || !pxEntregar(c, tab.pmt, 188)) { free(b); goto fim; }
       }
@@ -499,6 +550,13 @@ static PxFluxo *pxFluxoPegar(PxConexao *c, const char *lista, const char *cabs) 
     f->produtor.s = -1; f->produtor.sessao = c->sessao; f->produtor.fluxo = f;
     snprintf(f->lista, sizeof f->lista, "%s", lista);
     snprintf(f->cabs, sizeof f->cabs, "%s", cabs ? cabs : "");
+    if (tsDir[0]) {
+      f->disco = tsd_abrir(tsDir, 0);
+      if (f->disco) printf("[proxy-ts] timeshift: gravando ate %llu MB no disco\n",
+                           (unsigned long long)(f->disco->ix.teto >> 20));
+      else printf("[proxy-ts] timeshift: pasta sem escrita ou sem espaco; so ao vivo\n");
+      fflush(stdout);
+    }
     fluxoAtual = f;
     if (pthread_create(&t, NULL, pxProduzir, f) != 0) {
       fluxoAtual = NULL; pxFluxoDestruir(f); pthread_mutex_unlock(&trava); return NULL;
@@ -509,7 +567,8 @@ static PxFluxo *pxFluxoPegar(PxConexao *c, const char *lista, const char *cabs) 
     f->refs++;
     pthread_mutex_lock(&f->trava);
     f->leitores++; f->semLeitorDesde = 0;
-    c->pos = pxCursorInicio(f); c->proteger = 1;
+    c->pos = c->atrasS < 0 ? pxCursorRecente(f) : pxCursorInicio(f);
+    c->proteger = c->atrasS <= 0;   // leitor do disco nao segura o produtor
     c->proxima = f->clientes; f->clientes = c;
     pthread_mutex_unlock(&f->trava);
   }
@@ -578,9 +637,44 @@ static void pxServirFluxo(PxConexao *c) {
   free(b);
 }
 
+// LEITOR ATRASADO (?atras=N): tudo vem do disco, do comeco do segmento que
+// cobre "N segundos atras" ate alcancar a ponta, e ai segue a gravacao. O
+// player consome em tempo real, entao o atraso se mantem sozinho.
+static void pxServirDisco(PxConexao *c) {
+  const char cab[] = "HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\n"
+    "Cache-Control: no-cache\r\nConnection: close\r\n\r\n";
+  PxFluxo *f = c->fluxo;
+  TsDisco *d = f->disco;
+  TsLeitor l = { -1, 0 };
+  unsigned char *b = malloc(PX_BLOCO);
+  uint64_t pos = tsd_pos_atras(d, (int64_t)c->atrasS * 1000, pxAgoraMs());
+  if (!b || !pxEnviar(c->s, cab, sizeof cab - 1)) { free(b); return; }
+  while (pxViva(c)) {
+    int pulou = 0, fim;
+    long n = tsd_ler(d, &l, &pos, b, PX_BLOCO, &pulou);
+    if (n < 0) break;
+    if (n > 0) { if (!pxEnviar(c->s, b, (size_t)n)) break; continue; }
+    // Na ponta: espera o produtor, e nota o player que fechou.
+    pthread_mutex_lock(&f->trava);
+    fim = f->encerrado;
+    if (!fim) {
+      struct timespec ts;
+      clock_gettime(CLOCK_REALTIME, &ts); ts.tv_sec++;
+      pthread_cond_timedwait(&f->chegou, &f->trava, &ts);
+    }
+    pthread_mutex_unlock(&f->trava);
+    if (fim || d->erro) break;
+    { unsigned char byte;
+      ssize_t r = recv(c->s, &byte, 1, MSG_PEEK | MSG_DONTWAIT);
+      if (r == 0 || (r < 0 && errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK)) break; }
+  }
+  tsd_leitor_fechar(&l);
+  free(b);
+}
+
 static void *pxAtender(void *u) {
   PxConexao *c = u;
-  char req[4096], cab[512], cabs[512];
+  char req[4096], cabs[512];
   ssize_t r, tot = 0;
   unsigned s = 0;
   const char *q;
@@ -594,6 +688,11 @@ static void *pxAtender(void *u) {
   req[tot > 0 ? tot : 0] = 0;
   q = strstr(req, "?s=");
   if (q) s = (unsigned)strtoul(q + 3, NULL, 10);
+  { const char *fimLinha = strpbrk(req, "\r\n"), *a = strstr(req, "&atras=");
+    if (a && (!fimLinha || a < fimLinha)) {
+      long v = strtol(a + 7, NULL, 10);
+      c->atrasS = v > 0 ? (v > 86400 ? 86400 : (int)v) : -1;   // 0 explicito = a ponta
+    } }
   pthread_mutex_lock(&trava);
   if (s && s == atomic_load(&sessaoAtual)) snprintf(c->fonte, sizeof c->fonte, "%s", fonteAtual);
   else c->fonte[0] = 0;
@@ -622,6 +721,10 @@ static void *pxAtender(void *u) {
   // Uma conexao da mesma sessao usa a ingestao que ja esta em andamento.
   c->fluxo = pxFluxoPegar(c, NULL, NULL);
   if (c->fluxo) {
+    if (c->atrasS > 0 && c->fluxo->disco && tsd_janela_ms(c->fluxo->disco, pxAgoraMs()) > 0) {
+      printf("[proxy-ts] sessao %u: GET do timeshift, %d s atras\n", c->sessao, c->atrasS);
+      fflush(stdout); pxServirDisco(c); goto sair;
+    }
     printf("[proxy-ts] sessao %u: GET compartilha a ingestao HLS\n", c->sessao);
     fflush(stdout); pxServirFluxo(c); goto sair;
   }
@@ -666,8 +769,10 @@ static void *pxAtender(void *u) {
              c->sessao, ts ? "ja e TS continuo" : "nao e playlist", st, n);
       atomic_store(&sessaoRedirecionada, c->sessao);
       fflush(stdout);
-      snprintf(cab, sizeof cab, "HTTP/1.1 302 Found\r\nLocation: %s\r\nContent-Length: 0\r\n"
-               "Connection: close\r\n\r\n", c->fonte);
+      static const char redirFmt[] = "HTTP/1.1 302 Found\r\nLocation: %s\r\nContent-Length: 0\r\n"
+                                     "Connection: close\r\n\r\n";
+      char cab[sizeof c->fonte + sizeof redirFmt];
+      snprintf(cab, sizeof cab, redirFmt, c->fonte);
       pxEnviar(c->s, cab, strlen(cab));
     }
   }
@@ -771,6 +876,48 @@ void proxyts_parar(void) {
   fonteAtual[0] = 0;
   cabsAtual[0] = 0;
   pthread_mutex_unlock(&trava);
+}
+
+void proxyts_definir_timeshift(const char *dir) {
+  pthread_mutex_lock(&trava);
+  snprintf(tsDir, sizeof tsDir, "%s", dir ? dir : "");
+  pthread_mutex_unlock(&trava);
+}
+
+// Sair do canal: a sessao que gravava termina ja, para o pendrive ficar limpo
+// (sem isto o fluxo, e os arquivos, esperam a proxima fonte).
+void proxyts_timeshift_encerrar(void) {
+  int gravava;
+  atomic_store(&tsSegurarAte, 0);
+  pthread_mutex_lock(&trava);
+  gravava = fluxoAtual && fluxoAtual->disco;
+  pthread_mutex_unlock(&trava);
+  if (gravava) proxyts_parar();
+}
+
+void proxyts_timeshift_segurar(int segundos) {
+  atomic_store(&tsSegurarAte, segundos > 0 ? (long)time(NULL) + segundos : 0);
+}
+
+int proxyts_timeshift_janela_s(void) {
+  int64_t j = 0;
+  pthread_mutex_lock(&trava);
+  if (fluxoAtual && fluxoAtual->disco) j = tsd_janela_ms(fluxoAtual->disco, pxAgoraMs());
+  pthread_mutex_unlock(&trava);
+  return (int)(j / 1000);
+}
+
+int proxyts_timeshift_url(int atrasS, char *saida, size_t n) {
+  unsigned s = atomic_load(&sessaoAtual);
+  int temFluxo;
+  if (!saida || n < 56) return 0;
+  pthread_mutex_lock(&trava);
+  // Ao vivo (0) nao depende do disco: e a saida quando a gravacao falha.
+  temFluxo = fluxoAtual && fonteAtual[0] && (atrasS <= 0 || (fluxoAtual->disco && !fluxoAtual->disco->erro));
+  pthread_mutex_unlock(&trava);
+  if (!temFluxo) return 0;
+  snprintf(saida, n, "http://127.0.0.1:%d/live.ts?s=%u&atras=%d", porta, s, atrasS > 0 ? atrasS : 0);
+  return 1;
 }
 
 int proxyts_e_url(const char *url) {

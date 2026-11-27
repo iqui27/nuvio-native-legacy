@@ -5,6 +5,7 @@
 #include "ajustes.h"
 #include "assperf.h"   // ass_novo_registrar: a chave do motor ASS mora aqui
 #include "assrender.h" // assrender_aplicar_invalidacao na troca do motor
+#include "pecatv.h"
 #ifdef NV_IOS
 #include "ios.h"
 #endif
@@ -919,6 +920,27 @@ typedef enum {
   // desligado ate a pessoa aceitar na tela de consentimento do Farol
   // (farolconsentui.c, linha "Compartilhar compatibilidade"). Append-only.
   AJ_VAITOCAR,
+  // Timeshift local da TV ao vivo (timeshift_regras.h): o canal que passa pelo
+  // proxy de TS tambem e gravado no pendrive, para pausar e voltar. LOCAL,
+  // desligado (grava no disco da pessoa), append-only.
+  AJ_TIMESHIFT_LOCAL,
+  // "Peca como fala" (pesquisa 4.5): o celular pareado pede em texto livre e a
+  // TV mostra tres titulos (pecatv.h). AJ_PECA liga/desliga (LOCAL, V_LIGA,
+  // padrao Ligado: nada acontece ate parear). AJ_PECA_PAREAR e acao: abre o
+  // cartao do QR. Append-only.
+  AJ_PECA,
+  AJ_PECA_PAREAR,
+  // 2.1: night mode / dialogue clarity (modonoite.h). LOCAL (the audio path is
+  // this TV's), append-only, default Desligado.
+  AJ_MODO_NOITE,
+  // Marcar cena (pesquisa 4.7): tecla no player guarda o instante. LOCAL, ligado.
+  AJ_MARCAR_CENA,
+  // Sessao: a sala decide pelo celular (salaui.h). Acao, append-only.
+  AJ_SESSAO_SALA,
+  // Nuvio Casa (casa.h), LOCAIS, append-only. USAR: a TV sem motor procura um
+  // ajudante na rede (ligado de fabrica; so age com o P2P ligado e sem endereco).
+  // AJUDAR: este aparelho abre uma porta na rede local (DESLIGADO de fabrica).
+  AJ_CASA_USAR, AJ_CASA_AJUDAR,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -1085,6 +1107,7 @@ static const char *V_HTTP_CONEXOES[] = { "1", "2", "3", "4" };
 static const char *V_ESTAT_TAMANHO[] = { "Lembrar o último", "Completo", "Compacto", "Mínimo" };
 // 0 = Direita (como as outras laterais do player), 1 = Esquerda.
 static const char *V_ESTAT_LADO[] = { "Direita", "Esquerda" };
+static const char *V_MODO_NOITE[] = { "Desligado", "Leve", "Forte" };   // modonoite.h: MN_DESLIGADO, MN_SUAVE, MN_FORTE
 static const char *V_CACHE_SEEK[] = { "Desligado", "256 MB", "512 MB", "1 GB" };
 // #334: indice gravado em p2pLimiteLocal; ajustes_p2p_limite_mb devolve os MB.
 static const char *V_P2P_LIMITE[] = { "Automático", "2 GB", "4 GB", "8 GB", "16 GB" };
@@ -2197,6 +2220,14 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Abrir tocando", V_LIGA, 2),                           // local: abrirTocandoLocal
   ESC("Código de ajuda no login", V_LIGA, 2),             // local: loginHelpCodeLocal
   ESC("Compartilhar compatibilidade", V_LIGA, 2),            // local: vaiTocarLocal (4.2)
+  ESC("Pausar e voltar a TV ao vivo", V_LIGA, 2),            // local: timeshiftLocal
+  ESC("Peça como fala", V_LIGA, 2),                          // local: pecaComoFalaLocal
+  ACAO("Parear celular"),                                    // pecatv_parear
+  ESC("Modo noite", V_MODO_NOITE, 3),                  // local: nightModeLocal
+  ESC("Marcar cena no player", V_LIGA, 2),                   // local: marcarCenaLocal
+  ACAO("Sessão pelo celular"),
+  ESC("Usar um ajudante Nuvio da rede", V_LIGA, 2),    // local: casaUsarLocal
+  ESC("Ajudar outras TVs da rede", V_LIGA, 2),         // local: casaAjudarLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2604,6 +2635,14 @@ static const char *CHAVE[] = {
   "abrirTocandoLocal",
   "loginHelpCodeLocal",
   "vaiTocarLocal",
+  "timeshiftLocal",
+  "pecaComoFalaLocal",
+  "-pecaParear",
+  "nightModeLocal",
+  "marcarCenaLocal",
+  "-",
+  "casaUsarLocal",
+  "casaAjudarLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3055,6 +3094,8 @@ static int pediuPlugins;
 int ajustes_pediu_plugins(void) { int v = pediuPlugins; pediuPlugins = 0; return v; }
 static int pediuDicasControle;
 int ajustes_pediu_dicascontrole(void) { int v = pediuDicasControle; pediuDicasControle = 0; return v; }
+static int pediuSessaoSala;
+int ajustes_pediu_sessao_sala(void) { int v = pediuSessaoSala; pediuSessaoSala = 0; return v; }
 static int pediuNovidades20;
 int ajustes_pediu_novidades20(void) { int v = pediuNovidades20; pediuNovidades20 = 0; return v; }
 static int pediuDiagnostico;
@@ -3450,6 +3491,7 @@ int ajustes_show_skip_intro(void)     { return lig(AJ_SHOW_SKIP_INTRO); }
 int ajustes_show_skip_recap(void)     { return lig(AJ_SHOW_SKIP_RECAP); }
 int ajustes_show_skip_credits(void)   { return lig(AJ_SHOW_SKIP_CREDITS); }
 int ajustes_show_skip_cena(void)      { return lig(AJ_SHOW_SKIP_CENA); }
+int ajustes_marcar_cena(void)         { return lig(AJ_MARCAR_CENA); }
 int ajustes_update_notifications(void) { return lig(AJ_UPDATE_NOTIFICATIONS); }
 int ajustes_lembrar_perfil(void)      { return lig(AJ_REMEMBER_PROFILE); }
 int ajustes_capitulos(void)           { return lig(AJ_CAPITULOS); }
@@ -3776,6 +3818,12 @@ static int ajOpcaoDisponivel(int op) {
                    op == AJ_TRAKT || op == AJ_SIMKL || op == AJ_DISCORD || op == AJ_SAIR)) return 0;
   if (op == AJ_AMPLIAR_UI)
     return painel4k() && !telefoneui_ativo();
+  // Sessao: needs the LAN phone server (none on the .wgt, as in celular.c),
+  // and is one room, not a per-profile value.
+#if defined(__EMSCRIPTEN__) || defined(_WIN32)
+  if (op == AJ_SESSAO_SALA || op == AJ_CASA_USAR || op == AJ_CASA_AJUDAR) return 0;
+#endif
+  if (op == AJ_SESSAO_SALA) return !edPerfil;
   if (op == AJ_ARTE_TOM) return valor[AJ_TEMA] == AJ_TEMA_DINAMICA;
   // Only the selected account's fields are editable. Adding another account
   // never overwrites the credentials of the first one.
@@ -3813,6 +3861,7 @@ static void ajPenFeaturesApply(void) {
 int ajustes_audio_offset_ms(void) { return audsync_offset_ms(valor[AJ_AUDIO_OFFSET]); }
 int ajustes_legenda_sync_auto(void) { return lig(AJ_LEG_SYNC_AUTO); }
 int ajustes_teclado_android(void) { int v = valor[AJ_TECLADO_ANDROID]; return v < 0 || v > 2 ? 0 : v; }   // 0 auto, 1 do app, 2 do Android
+int ajustes_peca(void) { return valor[AJ_PECA] == 0; }
 int ajustes_mic_busca(void) { return valor[AJ_MIC_BUSCA]; }   // 0 auto, 1 ligado, 2 desligado
 int ajustes_trailer_zoom_tpk(void) { return lig(AJ_TRAILER_ZOOM_TPK); }   // 1 = Ligado
 #ifdef NV_ANDROID
@@ -3975,6 +4024,7 @@ int ajustes_ram_overlay_alternar(void) {
   valor[AJ_RAM_OVERLAY] = antes; return 0;
 }
 int ajustes_fonte_idioma_audio(void) { return valor[AJ_FONTE_IDIOMA_AUDIO] == 0; }
+int ajustes_modo_noite(void) { int v = valor[AJ_MODO_NOITE]; return v > 0 && v < 3 ? v : 0; }
 int ajustes_cache_seek_mb(void) {
   static const int MB[] = { 0, 256, 512, 1024 };
   int v = valor[AJ_CACHE_SEEK];
@@ -4082,6 +4132,8 @@ void ajustes_definir_vidro(int ligado) { int a = valor[AJ_VIDRO]; valor[AJ_VIDRO
 // escondido la (ajustes_ux_tela.inc), inclusive o do servidor Stremio
 // (decisao do dono, a8e7685d). Nem um "p2p" ligado de ajustes.txt antigo vale.
 int ajustes_p2p_ligado(void) { return 0; }
+int ajustes_casa_usar(void) { return 0; }
+int ajustes_casa_ajudar(void) { return 0; }
 unsigned ajustes_p2p_limite_mb(void) { return 0; }
 int ajustes_p2p_usb(void) { return 0; }
 int ajustes_p2p_prazo_metadados_s(void) { return 30; }
@@ -4091,6 +4143,8 @@ int ajustes_det_fonte_antecipada(void) { return 0; }
 int ajustes_direct_cache_usb(void) { return 0; }
 #else
 int ajustes_p2p_ligado(void) { return lig(AJ_P2P_LIGADO) && !SEGURO; }
+int ajustes_casa_usar(void) { return lig(AJ_CASA_USAR) && !SEGURO; }
+int ajustes_casa_ajudar(void) { return lig(AJ_CASA_AJUDAR) && !SEGURO; }
 unsigned ajustes_p2p_limite_mb(void) {
   int v = valor[AJ_P2P_LIMITE];
   return v >= 0 && v < (int)(sizeof P2P_LIMITE_MB / sizeof *P2P_LIMITE_MB) ? P2P_LIMITE_MB[v] : 0;
@@ -4423,6 +4477,7 @@ int   ajustes_livetv_formato(void)    { return valor[AJ_LIVETV_FORMATO]; }
 int   ajustes_livetv_modo(void)       { return valor[AJ_LIVETV_MODO]; }
 int   ajustes_livetv_proxy(void)      { return lig(AJ_LIVETV_PROXY); }
 int   ajustes_livetv_sugerir(void)    { return lig(AJ_LIVETV_SUGERIR); }
+int   ajustes_timeshift_local(void)   { return lig(AJ_TIMESHIFT_LOCAL); }
 int   ajustes_guia_previa_grande(void) { return valor[AJ_GUIA_PREVIA_GRANDE] == 0; }
 void  ajustes_definir_guia_previa_grande(int l) { valor[AJ_GUIA_PREVIA_GRANDE] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 int ajustes_guia_previa_destacar(void) { return valor[AJ_GUIA_PREVIA_DESTACAR] == 0; }
@@ -5008,6 +5063,9 @@ static const char *geminiMascarada(void) {
 }
 int ajustes_perdi(void) { return valor[AJ_PERDI] == 0 && geminiChave[0] != 0; }
 const char *ajustes_perdi_chave(void) { return geminiChave; }
+// Outra tela gravou gemini.txt (a pagina do "Peca como fala" no celular):
+// relê para o "O que eu perdi?" usar a mesma chave sem reabrir o app.
+void ajustes_gemini_recarregar(void) { geminiCarregar(); }
 
 // Somente a chave propria em seekr.txt, local e mascarada. Remover a chave
 // desliga o uso efetivo; os limites sao os do plano da pessoa no Seekr.
@@ -7036,7 +7094,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_URL_LISTA: case AJ_URL_M3U_ADD: case AJ_URL_XMLTV_ADD: case AJ_URL_REM: /* por perfil, em ltv-urls-p<N>.txt */
     case AJ_LIVETV_RES: case AJ_LIVETV_FORMATO: case AJ_LIVETV_ESPERA:
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY: /* rede e provedor desta casa: o web nao tem */
-    case AJ_LIVETV_SUGERIR: case AJ_LIVETV_AGRUPAR:
+    case AJ_LIVETV_SUGERIR: case AJ_LIVETV_AGRUPAR: case AJ_TIMESHIFT_LOCAL:
     case AJ_GUIA_PREVIA_DESTACAR: case AJ_GUIA_PREVIA_SOM: case AJ_GUIA_DIAS:
     case AJ_GUIA_PREVIA_GRANDE: /* tamanho do preview do guia: so este port tem */
     case AJ_HOME_LAYOUT:    /* a Dinamica nao tem par na conta (selected_layout) */
@@ -7045,6 +7103,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_PERFIL_INFANTIL: /* marca por perfil em perfilinfantil.c; a conta nao tem a coluna */
     case AJ_AMIGOS_PERFIS:
     case AJ_P2P_LIGADO:     /* o servidor P2P e um aparelho da rede desta casa */
+    case AJ_CASA_USAR: case AJ_CASA_AJUDAR: /* quem ajuda quem e desta rede e deste aparelho */
     case AJ_P2P_LIMITE:     /* #334: o disco e desta TV */
     case AJ_P2P_DESTINO:    /* #205: pendrive USB desta TV */
     case AJ_JF_LIGADO:
@@ -7117,6 +7176,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_TITULO_FIL:    /* local row title presentation */
     case AJ_MURAL_TITULOS: /* #521: idem */
     case AJ_MIC_BUSCA:     /* o microfone e o controle sao desta TV */
+    case AJ_PECA:          /* a porta na rede local e desta TV */
     case AJ_TECLADO_ANDROID: /* o web nao tem; o teclado e deste aparelho */
     case AJ_LEG_SYNC_AUDIO: /* PCM e passthrough sao desta TV; o web nao tem */
     case AJ_LEG_FORCADA:    /* #287: o web nao tem esta escolha */
@@ -7124,9 +7184,11 @@ static int somenteDesteAparelho(int op) {
     case AJ_LEG_TEMPORARIA: /* idem */
     case AJ_LEG_ASS_PESO:   /* o peso do libass e desta TV */
     case AJ_ABRIR_TOCANDO:  /* como esta TV abre e escolha desta TV */
+    case AJ_MARCAR_CENA:    /* marcar cena: tecla deste aparelho */
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA: /* estilo da legenda e desta TV */
     case AJ_LEG_CONTORNO_COR: /* #475: idem */
     case AJ_CACHE_SEEK:     /* F07: o disco e o player sao desta TV */
+    case AJ_MODO_NOITE:     /* 2.1: o caminho do audio e desta TV */
     case AJ_BUFFER:         /* #338: o buffer e do player desta TV */
     case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: /* idem: rede desta TV */
     case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_BUFFER_RAM_REDUZ: /* telemetria e controle sao desta TV */
@@ -7183,9 +7245,9 @@ static int soNaTv(int op) {
     case AJ_FIL_LIMITE: case AJ_FIL_ORDEM:
     case AJ_ESMAECER: case AJ_BRILHO_PLAYER: case AJ_PROPORCAO_PADRAO: case AJ_MANTER_VIDEO:
     case AJ_DESCANSO_ESTILO: case AJ_DESCANSO_FONTE:
-    case AJ_CACHE_SEEK: case AJ_TRAILER_ZOOM_TPK: case AJ_LEG_SYNC_AUDIO:
+    case AJ_CACHE_SEEK: case AJ_TRAILER_ZOOM_TPK: case AJ_LEG_SYNC_AUDIO: case AJ_MODO_NOITE:
     case AJ_LIVETV_RES: case AJ_LIVETV_FORMATO: case AJ_LIVETV_ESPERA:
-    case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY:
+    case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY: case AJ_TIMESHIFT_LOCAL:
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
     case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST: case AJ_HDR10P_STRIP:
@@ -7193,7 +7255,7 @@ static int soNaTv(int op) {
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_BUFFER_RAM_REDUZ:
-    case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
+    case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID: case AJ_PECA:
     case AJ_TUNNELING: case AJ_BARRAS_PRETAS: case AJ_ASS_MOTOR: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO: case AJ_AFR:
     case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_VIDRO_QUALIDADE:
     case AJ_DET_SO_CINEMETA: case AJ_BUSCA_CINEMETA:
@@ -7787,6 +7849,8 @@ static int foraDestaPlataforma(int op) {
 #if !(defined(NV_TPK) || defined(__EMSCRIPTEN__)) || defined(NV_TPK40)
   if (op == AJ_MIC_BUSCA) return 1;
 #endif
+  if ((op == AJ_PECA || op == AJ_PECA_PAREAR) && !pecatv_disponivel()) return 1;
+  if (op == AJ_PECA_PAREAR && valor[AJ_PECA] != 0) return 1;
 #ifndef NV_TECLADO_SIS
   if (op == AJ_TECLADO_ANDROID) return 1;
 #endif
@@ -7826,6 +7890,9 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_P2P_LIGADO || op == AJ_P2P_URL || op == AJ_P2P_TESTAR || op == AJ_P2P_LIMITE || op == AJ_P2P_DESTINO) return 1;
   // Sem rede_pedir com pino no WASM: nada de OpenSeek (SR-3/SR-4).
   if (op == AJ_PREVIA_PROVEDOR || (op >= AJ_OPENSEEK_SERVIDOR && op <= AJ_OPENSEEK_ULT)) return 1;
+#endif
+#if defined(__EMSCRIPTEN__) || defined(_WIN32)
+  if (op == AJ_CASA_USAR || op == AJ_CASA_AJUDAR) return 1;
 #endif
   return 0;
 }
@@ -8036,6 +8103,7 @@ static const char *rotuloNovo(int op) {
     case AJ_MDB_LIGADO: return "Notas do MDBList";
     case AJ_STALKER_PORTAL: return "Portal com MAC (Stalker)";
     case AJ_LIVETV_PROXY: return "Repassar o canal pelo app (proxy)";
+    case AJ_TIMESHIFT_LOCAL: return "Pausar e voltar a TV ao vivo";
     case AJ_LIVETV_MODO: return "Modo do player dos canais";
     case AJ_ESPACO: return "Imagens guardadas na memória";
     case AJ_NOTAS_HOME: return "Nota do IMDb nos cartazes";
@@ -8592,6 +8660,9 @@ static int inativa(int op) {
     case AJ_CACHE_SEEK:  return !cacheSeekExiste();
     // #334: so o motor embutido usa o limite; com servidor na rede quem guarda e ele.
     case AJ_P2P_LIMITE:  return !p2pmotor_disponivel() || p2pEndereco[0];
+    // Nuvio Casa: procurar so faz sentido sem motor e sem endereco; ajudar, com motor.
+    case AJ_CASA_USAR:   return !lig(AJ_P2P_LIGADO) || p2pmotor_disponivel() || p2pEndereco[0];
+    case AJ_CASA_AJUDAR: return !lig(AJ_P2P_LIGADO) || !p2pmotor_disponivel();
     // #205: sem pendrive gravavel a linha fica cinza (a sonda e cacheada ~2 s
     // e nao cria nem apaga pasta no volume).
     case AJ_P2P_DESTINO: return !p2pmotor_disponivel() || p2pEndereco[0] || !p2pmotor_usb_presente();
@@ -8810,6 +8881,8 @@ static const char *ajudaOpcaoTv(int op) {
     if (op == AJ_RAIL_BLUR) return "Ative a barra lateral moderna para usar o desfoque.";
     if (op == AJ_HERO_CATALOGOS) return "Ative Mostrar destaque para exibir os catálogos no topo da Home.";
     if (op == AJ_HERO_CHEIO) return "Só vale no layout Moderna. No Padrão o destaque é um banner, e na Dinâmica ele ocupa a largura toda e sobe junto com a rolagem.";
+    if (op == AJ_CASA_USAR) return "Vale só com o P2P ligado, numa TV sem motor P2P e sem endereço de servidor.";
+    if (op == AJ_CASA_AJUDAR) return "Vale só com o P2P ligado e com o motor P2P desta TV.";
     // #205: uma frase por causa, na mesma ordem de inativa().
     if (op == AJ_P2P_LIMITE || op == AJ_P2P_DESTINO) {
       if (!p2pmotor_disponivel()) return "O motor P2P embutido não está disponível nesta TV.";
@@ -9010,6 +9083,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_LIVETV_FORMATO: return "Automático usa o formato que a conta Xtream declara e lembra o que tocou. HLS ou TS pede esse formato primeiro, mesmo quando a conta só declara o outro.";
     case AJ_LIVETV_ESPERA: return "Quanto tempo o canal tem para mostrar a imagem antes de o app passar para a próxima fonte ou mostrar o erro. Automática espera 15 s no Xtream e 25 s nos addons.";
     case AJ_LIVETV_PROXY: return "Nos canais Xtream que chegam como HLS, o app junta os segmentos num fluxo TS contínuo e entrega à TV, que toca TS contínuo e não toca o HLS desses canais. Canal que já é TS contínuo vai direto. Desligado, a TV recebe o HLS do provedor.";
+    case AJ_TIMESHIFT_LOCAL: return "Experimental. Com um pendrive ligado, o canal que passa pelo proxy do app também é gravado nele enquanto você assiste: dá para pausar, voltar 30 segundos e retornar ao vivo. Usa até 4 GB do pendrive e apaga tudo ao trocar de canal.";
     case AJ_LIVETV_SUGERIR: return "Os canais que a lista não separa em categorias são agrupados por sugestão do Jev, que recebe só o nome do canal. As categorias que a lista já traz não mudam.";
     case AJ_LIVETV_MODO: return "Teste para TVs em que o canal chega mas não aparece. A é o modo de sempre; B não escolhe a faixa de vídeo antes de o canal abrir; C também manda o pedido no formato de transmissão ao vivo. O diagnóstico da Live TV testa os três.";
     case AJ_LIVETV_DIAG: return "Mede a rede até o provedor, lê a conta Xtream e testa vários canais: se tocam, em que formato, com que resolução e em quanto tempo. No fim sugere ajustes da Live TV e pode aplicá-los.";
@@ -9046,6 +9120,8 @@ static const char *ajudaOpcaoTv(int op) {
 #else
     case AJ_TECLADO_ANDROID: return "Automático: o teclado do Android abre sozinho em e-mail, senha e busca. Do app: a grade do Nuvio; o teclado do Android só pelo botão Teclado da TV. Do Android: abre direto em todo campo; Voltar mostra a grade. Vale só neste aparelho.";
 #endif
+    case AJ_PECA: return "Peça pelo celular algo para assistir e veja três títulos na TV. O pedido e os nomes do que você já viu e salvou vão ao Google Gemini com a sua chave. A TV só atende na rede local depois de parear.";
+    case AJ_PECA_PAREAR: return "Aponte a câmera do celular e diga o que quer assistir. Mesma rede Wi-Fi. O endereço não muda: salve a página.";
     case AJ_MIC_BUSCA: return "Mostra nas buscas um microfone ao lado de Digitar pelo celular: ele abre o teclado da Samsung para você falar pelo microfone do controle. Automático esconde o botão se a TV disser que não tem microfone; Ligado mostra sempre; Desligado esconde.";
     case AJ_HERO: return "O bloco grande no topo da Home, com a arte e o nome de um título em destaque.";
     case AJ_HERO_CATALOGOS: return "De onde vêm os títulos do destaque: os primeiros do catálogo, um sorteio, ou uma fileira da Home. OK troca.";
@@ -9163,11 +9239,17 @@ static const char *ajudaOpcaoTv(int op) {
       // e COMPARTILHAR), o teto de disco e o risco legal.
       if (p2pmotor_disponivel())
         return "Experimental. Deixa escolher, na lista de fontes, torrents que o addon manda sem link (P2P). Sem endereço de servidor, a própria TV baixa o torrent e compartilha pedaços com outras pessoas enquanto toca, guardando o que baixa no armazenamento (nunca mais que metade do espaço livre) e apagando tudo ao fechar o player. O automático nunca escolhe P2P. Baixar ou compartilhar conteúdo sem autorização pode ser ilegal no seu país: a responsabilidade é sua.";
+      // Com a ajuda da casa valendo, "sem servidor, deixe desligado" manda o
+      // usuario desligar justamente o que faz a TV procurar um ajudante.
+      if (ajustes_casa_usar())
+        return "Experimental. Deixa escolher, na lista de fontes, torrents que o addon manda sem link (P2P). Esta TV não baixa nada: toca por um servidor de streaming do Stremio na sua rede (PC, NAS ou Docker) ou, sem endereço de servidor, por outro aparelho com Nuvio que esteja ajudando. O automático nunca escolhe P2P. Sem nenhum dos dois na rede, deixe desligado.";
       return "Experimental. Deixa escolher, na lista de fontes, torrents que o addon manda sem link (P2P), tocando-os por um servidor de streaming do Stremio que você roda na sua rede (PC, NAS ou Docker). A TV não baixa nada. O automático nunca escolhe P2P. Sem servidor na rede, deixe desligado.";
     case AJ_P2P_URL:
       if (p2pmotor_disponivel())
         return "Opcional. Vazio, a TV baixa sozinha. Com o IP e a porta de um servidor de streaming do Stremio na sua rede (por exemplo 192.168.1.5:11470), quem baixa é ele e a TV só toca.";
       return "IP e porta do servidor de streaming do Stremio na sua rede, por exemplo 192.168.1.5:11470. Em Docker: docker run -p 11470:11470 stremio/server.";
+    case AJ_CASA_USAR: return "Experimental. Uma TV que não baixa torrents sozinha procura na rede local outro aparelho com Nuvio que esteja ajudando e toca o torrent por ele. Vale com o P2P ligado e sem endereço de servidor.";
+    case AJ_CASA_AJUDAR: return "Experimental. Este aparelho baixa torrents a pedido de outras TVs com Nuvio na mesma rede e entrega o vídeo a elas. Abre uma porta na rede local: qualquer aparelho da sua rede pode pedir. Um pedido por vez, só com o app aberto.";
     case AJ_JF_LIGADO: return "Experimental. Mostra na Home os filmes e séries do seu servidor Jellyfin/Emby/Plex e toca por ele. O token fica só nesta TV e neste perfil; a senha nunca é guardada.";
     case AJ_EM_SERVIDOR: return "IP e porta do servidor, como 192.168.1.5:8096, ou o endereço com https://";
     case AJ_EM_ENTRAR: return "Pede usuário e senha do Emby. A senha só vai ao servidor e nunca é guardada; fica só um token nesta TV e neste perfil.";
@@ -9299,6 +9381,11 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_RAM_VERDE: return "O botão verde do controle liga e desliga a memória na tela do player. Desligado, o botão não faz nada no player.";
     case AJ_BUFFER_RAM_REDUZ: return "Quando a TV fica com pouca memória, o tamanho do buffer escolhido é reduzido automaticamente (256 vira 128, depois 64) para o app não ser fechado. Desligado, o app tenta o tamanho escolhido e a proteção mínima da TV continua valendo.";
     case AJ_FONTE_IDIOMA_AUDIO: return "Na escolha automática, fontes com o seu Idioma do áudio ou áudio duplo passam na frente na mesma resolução. Não é filtro: sem elas, a melhor das outras toca.";
+#ifdef NV_ANDROID
+    case AJ_MODO_NOITE: return "Sobe as vozes e segura os sons altos. Não age com som em passthrough. Vale a partir do próximo vídeo.";
+#else
+    case AJ_MODO_NOITE: return "Nesta TV o app não altera o som: só prefere a faixa estéreo do mesmo idioma. Vale a partir do próximo vídeo.";
+#endif
     case AJ_CACHE_SEEK: return "Com retomada rápida, guarda só o último título por até 3 horas. Trocar de perfil ou pouco espaço apagam o trecho.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
     case AJ_RESOLUCAO: return "Resolução controla a nitidez; efeitos controlam a velocidade. Automática nunca baixa para 720p. Reinicie após mudar a resolução; o vídeo não muda.";
@@ -9334,6 +9421,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_FAROL_ZERAR: return FT_AJ_FAROL_ZERAR_DESC;
     case AJ_FAROL_LLM_SO_ESTA_TV: return FT_AJ_FAROL_LLM_DESC;
     case AJ_DICASCONTROLE: return "Dicas do controle";
+    case AJ_SESSAO_SALA: return "A TV mostra um código. Cada pessoa entra pelo celular, sem instalar nada, e diz sim ou não aos mesmos títulos. A TV abre o primeiro em que todos disseram sim.";
     case AJ_NOVIDADES20: return "O tour do que mudou na 2.0, capítulo por capítulo, com o que vale neste aparelho. Abre do começo.";
     case AJ_APOIAR: return "Se o Nuvio te ajuda e você quiser apoiar quem faz o app, aponte a câmera do celular para um dos códigos. É opcional: nada muda no app.";
     case AJ_LOG_REDE: return "Mostra o registro desta TV numa página da sua rede: abra o endereço abaixo no celular ou no computador, na mesma rede. Sem senhas nem chaves; endereços vão cortados no host. Desligue quando terminar.";
@@ -9565,6 +9653,7 @@ static const char *beneficioProprio(int op) {
     case AJ_PULAR_RESUMO: return "Pula o resumo do episódio anterior quando ele está marcado.";
     case AJ_SHOW_SKIP_INTRO: return "Mostra o botão Pular abertura quando há um trecho marcado. Desligado esconde só o botão, inclusive com os controles abertos; o pulo automático é outra opção.";
     case AJ_SHOW_SKIP_RECAP: return "Mostra o botão Pular resumo quando há um trecho marcado. Desligado esconde só este botão; o pulo automático do resumo é outra opção.";
+    case AJ_MARCAR_CENA: return "No filme ou episódio, a tecla amarela do controle (ou M no teclado) guarda o instante. Apertar de novo envia a cena a um amigo, que abre o título naquele ponto.";
     case AJ_SHOW_SKIP_CENA: return "Mostra o botão Pular cena em trechos pós-créditos marcados no arquivo ou nas fontes de capítulos — conteúdo explícito ou cenas longas. Desligado, só abertura, resumo e créditos.";
     case AJ_SHOW_SKIP_CREDITS: return "Mostra o botão Pular créditos quando há um trecho marcado. Desligado esconde só o botão; o pulo automático e o episódio seguinte são outras opções.";
     case AJ_REMEMBER_PROFILE: return "Abre direto no último perfil usado ao ligar o app, se ele ainda existir e não tiver PIN. Desligado, a escolha de perfil aparece a cada sessão. Vale só nesta TV; perfis protegidos continuam pedindo PIN.";
@@ -9574,6 +9663,7 @@ static const char *beneficioProprio(int op) {
     case AJ_FALHA_PROVEDORES: return "Se o vídeo não abrir, tenta os outros provedores Debrid, na ordem.";
     case AJ_FALHA_ADDONS: return "Se o vídeo não abrir, tenta os outros add-ons, na ordem escolhida.";
     case AJ_XTREAM_SERVIDOR: return "O endereço e a porta que o provedor mandou.";
+    case AJ_TIMESHIFT_LOCAL: return "O canal é gravado no pendrive para pausar e voltar.";
     case AJ_LIVETV_SUGERIR: return "Canais sem categoria ganham uma sugestão de grupo pelo nome.";
     case AJ_LIVETV_ESPERA: return "Quanto tempo o canal tem para mostrar imagem antes de tentar outra fonte.";
     case AJ_HERO_CATALOGOS: return "De onde vêm os títulos do destaque no alto da Home.";
@@ -9641,6 +9731,7 @@ static const char *beneficioProprio(int op) {
     case AJ_FONTE_REGEX: return "Sobe ou exige fontes cujo nome casa com um padrão.";
     case AJ_DTS_AC3: return "Para TVs que não tocam DTS: o som é convertido na hora.";
     case AJ_CACHE_SEEK: return "Guarda o que já baixou para voltar no filme sem esperar.";
+    case AJ_MODO_NOITE: return "Diálogo mais claro e explosões mais baixas.";
     case AJ_MIC_BUSCA: return "Busque falando, pelo microfone do controle.";
 #ifdef NV_ANDROID
     case AJ_TECLADO_ANDROID: return "Escolha entre o teclado do app e o do Android.";
@@ -11348,6 +11439,7 @@ static void eventoTela(const SDL_Event *e) {
       return;
     }
     if (focoOp == AJ_DICASCONTROLE) { pediuDicasControle = 1; return; }
+    if (focoOp == AJ_SESSAO_SALA) { pediuSessaoSala = 1; return; }
     if (focoOp == AJ_NOVIDADES20) { pediuNovidades20 = 1; return; }
     if (focoOp == AJ_APOIAR) { apoioAbrir(); return; }
     if (focoOp == AJ_ADDONS) { pediuAddons = 1; return; }
@@ -11450,6 +11542,7 @@ static void eventoTela(const SDL_Event *e) {
                         64, ST_ALFA_PORTAL, openseek_endereco()[0] ? openseek_endereco() + 8 : NULL);
       return;
     }
+    if (focoOp == AJ_PECA_PAREAR) { pecatv_parear(); return; }
     if (focoOp == AJ_OPENSEEK_PAREAR) {
       if (!openseek_endereco()[0]) { uxNotificar(previaPedirCredencial()); return; }
       if (openseek_status(NULL, 0) == OSU_PAREANDO) return;
@@ -12372,7 +12465,7 @@ static AjPreview familiaPreviaOpcao(int op) {
   switch (op) {
     case AJ_LEG_CONTORNO_COR:
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
-    case AJ_QUALIDADE: case AJ_DV: case AJ_ATMOS: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_ESTAT_TAMANHO: case AJ_ESTAT_LADO:
+    case AJ_QUALIDADE: case AJ_DV: case AJ_ATMOS: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_CACHE_SEEK: case AJ_MODO_NOITE: case AJ_BUFFER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_ESTAT_TAMANHO: case AJ_ESTAT_LADO:
     case AJ_DV_MKV:
     case AJ_LEG_FORCADA:
     case AJ_LEG_EVITAR_SDH:
@@ -12403,7 +12496,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_HERO_LISTA:
     case AJ_ADDON_FUNDO: case AJ_ADDON_LOGO:
     case AJ_FIL_ORDEM: case AJ_RAIL: case AJ_RAIL_MODERNA: case AJ_MENU_TOPO: case AJ_ABAS_ESTILO:
-    case AJ_RAIL_BLUR: case AJ_MIC_BUSCA: case AJ_HERO: case AJ_HERO_CATALOGOS: case AJ_HERO_GENERO:
+    case AJ_RAIL_BLUR: case AJ_MIC_BUSCA: case AJ_PECA: case AJ_PECA_PAREAR: case AJ_HERO: case AJ_HERO_CATALOGOS: case AJ_HERO_GENERO:
     case AJ_HERO_SINOPSE: case AJ_HERO_NOTAS: case AJ_HERO_ANO: case AJ_HERO_DURACAO:
     case AJ_PS_FUNDO: case AJ_PS_CONTINUAR: case AJ_PS_TAMANHO: case AJ_DESCOBRIR: case AJ_ROTULOS:
     case AJ_NOME_ADDON: case AJ_SUFIXO_TIPO: case AJ_OCULTAR_NLANC: case AJ_MURAL_TITULOS:
@@ -12442,7 +12535,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: case AJ_SYNC: case AJ_SAIR: case AJ_LOGIN_CODIGO:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_ADDONS_PRINCIPAL: case AJ_PROVEDORES_ESCOPO: case AJ_ENQUETES:
     case AJ_AMIGOS_PERFIS:
-    case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS:
+    case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS: case AJ_SESSAO_SALA:
       return AJPV_CONTA;
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL: case AJ_DIARIO_NUVEM:
       return AJPV_RASTREIO;

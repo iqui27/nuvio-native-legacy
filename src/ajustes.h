@@ -37,6 +37,7 @@ int  ajustes_quer_sair(void);
 // 1 quando a linha "Addons" foi acionada. Lido e zerado na chamada.
 int  ajustes_pediu_addons(void);
 int  ajustes_pediu_dicascontrole(void); // Settings > About and help
+int  ajustes_pediu_sessao_sala(void);   // Settings > Account and services > Session (salaui.h)
 int  ajustes_pediu_novidades20(void);   // OK em Sobre e ajuda › Novidades 2.0: o app.c abre o guia
 int  ajustes_pediu_plugins(void);   // OK em Plugins (F09): o app.c abre a tela   // 1 quando o Back deve fechar a tela
 int  ajustes_pediu_diagnostico(void);
@@ -260,6 +261,8 @@ int ajustes_direct_cache_usb(void);
 
 // Idioma da interface: um IDIOMA_* de idiomacod.h (pt, en, ro, uk, ru, fr, de, es). Valor
 // gravado fora do intervalo (arquivo editado a mao) cai em portugues.
+// "Peça como fala" (pecatv.h): 1 = ligado (local, padrao Ligado).
+int ajustes_peca(void);
 int ajustes_idioma(void);
 // 1 so quando e ingles. Os textos montados com "%d.%d" e o formato de data
 // americano usam isto; romeno, ucraniano, russo, frances, alemao e espanhol usam virgula decimal e data
@@ -310,6 +313,9 @@ void ajustes_definir_vidro(int ligado);
 void ajustes_definir_servidores(int ligado);
 int  ajustes_jellyfin_ligado(void);   // F11: personal servers on AND strict HTTP here
 int  ajustes_p2p_ligado(void);
+// Nuvio Casa (casa.h): procurar um ajudante na rede / ser o ajudante.
+int  ajustes_casa_usar(void);
+int  ajustes_casa_ajudar(void);
 void ajustes_definir_p2p_ligado(int ligado);
 int ajustes_debrid_celular(const char *servico, const char *chave);
 // Endereco ja normalizado ("http://192.168.1.5:11470"); "" quando nao ha.
@@ -367,6 +373,7 @@ int   ajustes_pediu_livetv_diag(void);
 int   ajustes_livetv_modo(void);
 int   ajustes_livetv_proxy(void);
 int   ajustes_livetv_sugerir(void);   // Jev sugere categoria so para canal sem categoria (livecat.h)
+int   ajustes_timeshift_local(void);  // timeshift local da TV ao vivo no pendrive (timeshift_regras.h); padrao desligado
 // Guia TV v5: previa grande no heroi (800x450, como hoje) ou o cartao pequeno
 // do mock (560x315). Por perfil; padrao desligado.
 int   ajustes_guia_previa_grande(void);
@@ -452,6 +459,8 @@ void  ajustes_ui_neutro(GfxRect r, float raioPx, float vidA);
 void  ajustes_ui_foco_linha(GfxRect r, float raioPx);
 // Shared Settings switch; `on` is animated progress, 0..1.
 float ajustes_ui_interruptor(float xDir, float yc, float on, float a);
+// Cursor de texto dos campos: `x` = borda entre os caracteres, `cy` = meio da linha.
+void  ajustes_ui_cursor(float x, float cy, float h, Uint32 agora, float a);
 float ajustes_ui_antes_depois(const char *rot, int a, int b, const char *unid, int max,
                               float x, float y, float w, int compacto, float cr, float cg, float cb);
 void  ajustes_ui_grafico_memoria(float x, float y, float w, float h);
@@ -670,6 +679,7 @@ int   ajustes_legenda_temporaria(void);      // legtemp.h: 1 = subtitles turn on
 int   ajustes_perdi(void);
 // A chave pessoal do Gemini ("" sem chave). Credencial: nunca registrar.
 const char *ajustes_perdi_chave(void);
+void ajustes_gemini_recarregar(void);   // gemini.txt mudou por outra tela (pecatv)
 int   ajustes_legenda_ass_peso(void);        // ASSPESO_* (asspeso.h): 0 Automatico, 1 Sempre completo, 2 Texto simples (local, fora do .tpk)
 int   ajustes_legenda_evitar_sdh(void);      // #743: 1 = auto-pick skips SDH/CC tracks (local, default off)
 int   ajustes_ass_motor(void);               // .tpk: 1 = motor novo de ASS (padrao), 0 = motor antigo
@@ -702,6 +712,7 @@ int ajustes_ram_verde(void);
 int ajustes_buffer_ram_reduz(void);
 int ajustes_ram_overlay_alternar(void);
 int   ajustes_buffer_preset(void);           // #338: 0 Automatico, 1 = 64, 2 = 128, 3 = 256 MiB
+int   ajustes_modo_noite(void);              // 2.1: modonoite.h level (0 off, 1 Leve, 2 Forte) for the next video
 int   ajustes_cache_seek_mb(void);           // F07: seek cache limit in MB for the next video (0 = off / not on this TV)
 #ifdef AJUSTES_TESTE
 void  ajustes_teste_escala(int percentual); // fixture only; does not persist
@@ -986,6 +997,7 @@ int ajustes_show_skip_intro(void);
 int ajustes_show_skip_recap(void);
 int ajustes_show_skip_credits(void);
 int ajustes_show_skip_cena(void);
+int ajustes_marcar_cena(void);   // tecla de marcar cena no player; padrao ligado
 
 // FAROL (#26): diferenca de ajustes por lista branca (farolajustes.h). Para
 // cada ajuste da lista cujo valor difere do padrao de fabrica desta TV, cb

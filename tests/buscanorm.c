@@ -64,6 +64,31 @@ int main(void) {
     n = busca_apagar_ultimo(s, n); n = busca_apagar_ultimo(s, n);
     assert(n == 0 && s[0] == 0); }
   puts("ok  contagem por caractere e apagar tira um caractere inteiro");
+  // Cursor do teclado do app: inserir e apagar no meio, por caractere.
+  { char s[8] = "ab\xc8\x99";   /* "abș", 4 bytes */
+    int c = -1;
+    size_t n = strlen(s);
+    assert(busca_byte_cursor(s, -1) == 4 && busca_byte_cursor(s, 2) == 2 && busca_byte_cursor(s, 9) == 4);
+    assert(busca_cursor_mover(s, &c, 1) == 0 && c == -1);   /* Direita no fim: passa adiante */
+    assert(busca_cursor_mover(s, &c, -1) && c == 2);
+    assert(busca_cursor_mover(s, &c, -1) && c == 1);
+    n = busca_inserir(s, n, sizeof s, &c, "X");
+    assert(!strcmp(s, "aXb\xc8\x99") && c == 2 && n == 5);
+    n = busca_inserir(s, n, sizeof s, &c, "\xc8\x99YZ");   /* nao cabe inteiro: nada muda */
+    assert(n == 5 && c == 2);
+    n = busca_apagar_antes(s, n, &c);
+    assert(!strcmp(s, "ab\xc8\x99") && c == 1 && n == 4);
+    n = busca_apagar_antes(s, n, &c);
+    assert(!strcmp(s, "b\xc8\x99") && c == 0 && n == 3);
+    assert(busca_apagar_antes(s, n, &c) == 3 && c == 0);     /* no comeco: nada */
+    assert(busca_cursor_mover(s, &c, -1) == 0 && c == 0);    /* Esquerda no comeco */
+    assert(busca_cursor_mover(s, &c, 1) && c == 1);
+    assert(busca_cursor_mover(s, &c, 1) && c == -1);         /* chegou ao fim */
+    c = -1; n = busca_apagar_antes(s, n, &c);
+    assert(!strcmp(s, "b") && c == -1 && n == 1);
+    n = busca_inserir(s, n, sizeof s, &c, "c");
+    assert(!strcmp(s, "bc") && c == -1); }
+  puts("ok  cursor: inserir/apagar no meio por caractere, pontas e fim");
   puts("buscanorm: tudo ok");
   return 0;
 }

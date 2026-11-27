@@ -6,7 +6,8 @@
 typedef struct { long tmdb; const char *tipo; } CatItem;
 static CatItem items[] = {{603, "channel"}, {603, "series"}, {603, "movie"}};
 static int count, opened, played, requested, detail;
-static int cwTocarT, cwTocarE, cwEspera;
+static int cwTocarT, cwTocarE, cwEspera, cwRewatch, cwEsperaDesde;
+static CatItem cwEsperaItem;
 enum { TELA_BUSCA, MENU_BUSCAR, TELA_LOGIN, TELA_ESCOLHA_PERFIL };
 static int tela, busy;
 static int active, aguardandoFonte, fonteEscolhida, autoEsperaN;
@@ -14,11 +15,17 @@ static int fontePendenteTipo, torrentPendente, stalkerRenovando;
 static unsigned sourceGeneration, torrentSessao;
 static int preparation, sourcePolicy, cancelled;
 static void preparoInvalidar(void) { preparation = 0; }
+static void farolPendCancelar(void) {}
 static unsigned novaGeracaoFonte(void) { return ++sourceGeneration; }
 static void fa_nova_rodada(void) {}
 static void limparFontePendente(void) { fontePendenteTipo = 0; }
 static void limparFonteVOD(void) { sourcePolicy = 0; }
 static void p2pmotor_cancelar(void) { cancelled++; }
+static void p2p_cancelar(void) {}
+static int cenaSeg = -1, cenaEp;
+static void cenas_armar(const char *id, int t, int e, int seg, int dur) {
+  (void)id; (void)t; (void)dur; cenaSeg = seg; cenaEp = e;
+}
 static int desc_titulo_buscando(void) { return busy; }
 static int player_aberto(void) { return active; }
 static int player_retido(void) { return 0; }
@@ -33,9 +40,10 @@ static void busca_definir_consulta(const char *s) { (void)s; }
 static int cat_indice_por_imdb(const char *s) { (void)s; return -1; }
 static int cat_n(void) { return count; }
 static const CatItem *cat_item(int i) { return &items[i]; }
-static void abrirPorIndice(int i) { opened = i; detail = 1; }
+static int abrirPorIndice(int i) { opened = i; detail = 1; return 1; }
 static void detail_pedir_reproduzir(void) { played++; }
-static void desc_pedir_titulo(const char *s) { (void)s; assert(0); }
+static int imdbPedido;
+static void desc_pedir_titulo(const char *s) { (void)s; imdbPedido++; }
 static void desc_pedir_titulo_tmdb(long id, const char *type) {
   assert(id == 603 || id == 604);
   if (busy) return;
@@ -83,6 +91,11 @@ int main(int argc, char **argv) {
   assert(!preparation && !sourcePolicy && !fontePendenteTipo);
   assert(sourceGeneration == 1 && torrentSessao == 1);
   assert(torrentPendente == -1 && cancelled == 1);
+  assert(cenaSeg == -1); // No ?t=: nothing armed, the title resumes as before.
+  // ?t= arms the scene seek before the title is even found locally.
+  assert(deeplink_parse("nuvio-legacy://play/series/tt12637874/1/3?t=754", &replacement));
+  deeplinkAbrir(&replacement);
+  assert(cenaSeg == 754 && cenaEp == 3 && imdbPedido == 1);
 
   const char *urls[] = {"nuvio-legacy://play/movie/603",
                         "nuvio-legacy://play/series/603"};
@@ -99,7 +112,7 @@ int main(int argc, char **argv) {
     count = 2; opened = -1; played = requested = detail = busy = 0;
     deeplinkAbrir(&d);
     assert(opened == -1 && played == 0);
-    assert(requested == (series ? 1 : 2));
+    assert(requested == (series ? 1 : 2) && imdbPedido == 1);
     items[1].tipo = "series";
   }
   return 0;

@@ -14,6 +14,7 @@ int  celular_gerar_token(char *d, size_t n) { if (d && n) d[0] = 0; return 0; }
 int  celular_abrir_link(const char *t,const char *d) { (void)t;(void)d;return 0; }
 int celular_abrir_pagina(const char *t,const char *h,const char *e){(void)t;(void)h;(void)e;return 0;}
 int  celular_abrir_sessao(const char *t,const char *h){(void)t;(void)h;return 0;}
+void celular_sessao_opcoes(int v,int i){(void)v;(void)i;}
 void celular_status(const char *s){(void)s;}
 void celular_fechar(void) {}
 int  celular_estado(void) { return CEL_PARADO; }
@@ -79,6 +80,9 @@ static const char *proximaPagina, *proximaEnviado;
 static atomic_int sessao, conectado;
 static int proximaSessao;
 static char statusTxt[16384];
+/* Next session only (celular_sessao_opcoes): its own lifetime, and whether the
+ * page may load https images (posters). Both reset when the server closes. */
+static int proximaValidade, proximaImagens, imagens;
 
 int celular_disponivel(void) { return 1; }
 int celular_estado(void) { return estado; }
@@ -376,9 +380,9 @@ static void responder(int c, int cod, const char *corpo) {
     "HTTP/1.1 %d %s\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %zu\r\n"
     "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: same-origin\r\n"
     "X-Frame-Options: DENY\r\n"
-    "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; "
+    "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; %s"
     "script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'\r\n"
-    "%sConnection: close\r\n\r\n", cod, txt, n,
+    "%sConnection: close\r\n\r\n", cod, txt, n, imagens ? "img-src https:; " : "",
     cod == 405 ? (relatorio ? "Allow: GET, HEAD\r\n" : "Allow: GET, HEAD, POST\r\n") : "");
   enviarTudo(c, cab, (size_t)k);
   if (n) enviarTudo(c, corpo, n);
@@ -642,6 +646,7 @@ void celular_fechar(void) {
   statusTxt[0] = 0;
   pthread_mutex_unlock(&trava);
   sessao = 0;
+  imagens = 0;
   atomic_store(&conectado, 0);
   memset(token, 0, sizeof token);
   url[0] = 0;
@@ -662,6 +667,11 @@ int celular_abrir_sessao(const char *titulo,const char *html) {
   int ok=celular_abrir_pagina(titulo,html,"ok");
   proximaSessao=0;
   return ok;
+}
+
+void celular_sessao_opcoes(int validade_s, int imgs) {
+  proximaValidade = validade_s > 0 ? validade_s : 0;
+  proximaImagens = imgs != 0;
 }
 
 void celular_status(const char *s) {
@@ -735,6 +745,11 @@ falhou:
   expira = time(NULL) + (snapshot ? CEL_VALIDADE_RELATORIO_S : CEL_VALIDADE_S);
   estado = CEL_ESPERANDO;
   sessao = snapshot ? 0 : proximaSessao;
+  if (sessao) {
+    if (proximaValidade) expira = time(NULL) + proximaValidade;
+    imagens = proximaImagens;
+  }
+  proximaValidade = proximaImagens = 0;
   if (pthread_create(&fio, NULL, servir, NULL)) { snprintf(motivoFalha, sizeof motivoFalha, "no thread"); celular_fechar(); return 0; }
   fioVivo = 1;
   // Sem IP nem token no log: so que subiu.

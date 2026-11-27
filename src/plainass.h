@@ -9,6 +9,7 @@ typedef struct {
   int size, rgb, background, border, bold, marginV;
   int outlineRgb;   // 0xRRGGBB; zero preserves the existing black edge
   int overrides;    // Authored ASS: only explicitly changed fields.
+  int bgOpacity;    // background box opacity, 0..100 (independent of text)
 } PlainAssStyle;
 
 #define PLAIN_ASS_COLOR   1

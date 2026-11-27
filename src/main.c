@@ -605,6 +605,7 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     // pelo mesmo caminho do chip do guia.
     if (!strcmp(linha, "minhanoite")) { app_minha_noite(0); continue; }
     if (dp && !strcmp(linha, "minhanoite:oferta")) { app_minha_noite(1); continue; }
+    if (!strcmp(linha, "sessao:abrir")) { app_abrir_sessao_sala(); continue; }
     // "ime:abrir", "ime:voz", "ime:fechar": teclado do sistema direto
     // (entrada_texto.h), para medir na TV sem depender da tela que o liga.
     if (dp && !strncmp(linha, "ime:", 4)) {

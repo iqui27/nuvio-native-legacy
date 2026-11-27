@@ -1,0 +1,67 @@
+// A PAGINA QUE O CELULAR ABRE NA SESSAO (salaui.c monta: PAG_A + baralho e
+// textos em JSON + PAG_B). Fica num cabecalho proprio para ser lida inteira.
+#ifndef NV_SALAPAGINA_H
+#define NV_SALAPAGINA_H
+// Uma pagina so, sem nada de fora alem dos cartazes (https). Todo texto que
+// vem do catalogo ou do visitante entra por textContent, nunca por innerHTML.
+static const char PAG_A[] =
+  "<!doctype html><html><meta charset=utf-8>"
+  "<meta name=viewport content='width=device-width,initial-scale=1,user-scalable=no'>"
+  "<title>Nuvio</title><style>"
+  "*{box-sizing:border-box}html,body{height:100%;margin:0}"
+  "body{background:#0d1016;color:#f1f2f4;font:17px system-ui,sans-serif;display:flex;flex-direction:column;"
+  "align-items:center;justify-content:center;padding:20px;overflow:hidden;touch-action:none}"
+  "h1{font-size:22px;margin:0 0 14px}p{color:#aab3c2;text-align:center;margin:10px 0}"
+  "input{font:inherit;width:100%;padding:14px;border-radius:14px;border:1px solid #39424f;background:#171c25;color:inherit}"
+  "button{font:inherit;font-weight:600;padding:14px 22px;border-radius:999px;border:0;background:#f1f2f4;color:#0d1016}"
+  "#c{width:min(78vw,46vh);aspect-ratio:2/3;border-radius:22px;background:#1b212c center/cover no-repeat;"
+  "display:flex;align-items:flex-end;box-shadow:0 18px 50px #0009;will-change:transform}"
+  "#c div{width:100%;padding:60px 16px 16px;border-radius:0 0 22px 22px;background:linear-gradient(#0000,#000d)}"
+  "#c b{display:block;font-size:20px}#c small{color:#c5ccd8}"
+  ".r{display:flex;gap:16px;margin-top:22px;width:min(78vw,46vh)}.r button{flex:1}"
+  "#n{background:#2a303b;color:#f1f2f4}.h{display:none!important}form{width:min(86vw,360px);display:grid;gap:12px}"
+  "</style><h1 id=t></h1>"
+  "<form id=f><input id=e maxlength=20 autocomplete=off><button id=b></button></form>"
+  "<div id=c class=h><div><b id=ct></b><small id=cm></small></div></div>"
+  "<div id=r class='r h'><button id=n></button><button id=s></button></div>"
+  "<p id=m></p><p id=g></p><script>const D=";
+static const char PAG_B[] =
+  ";const $=i=>document.getElementById(i),P=location.pathname,K='nvs'+P;"
+  "let k=sessionStorage.getItem(K),ent=!!k,i=0,venc=-1,fila=[],ocup=0,falhas=0,fase=0,pedi=0;"
+  "if(!k){const a=new Uint8Array(6);crypto.getRandomValues(a);k=[...a].map(x=>x.toString(16).padStart(2,'0')).join('')}"
+  "$('t').textContent=T.t;$('e').placeholder=T.nome;$('b').textContent=T.entrar;$('n').textContent=T.nao;$('s').textContent=T.sim;"
+  "try{$('e').value=localStorage.getItem('nvnome')||''}catch(x){}"
+  "function manda(m){fila.push(m);roda()}"
+  "function roda(){if(ocup||!fila.length)return;ocup=1;"
+  "fetch(P,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'t='+encodeURIComponent(fila[0])})"
+  ".then(r=>{ocup=0;if(r.status==409)setTimeout(roda,250);else{fila.shift();roda()}})"
+  ".catch(()=>{ocup=0;setTimeout(roda,1000)})}"
+  "function vota(v){if(fase!=1||i>=D.length)return;manda('v:'+k+':'+i+':'+v);i++;"
+  "try{sessionStorage.setItem(K+'i',i)}catch(x){}tela()}"
+  "function carta(){const c=D[i];$('ct').textContent=c.t;$('cm').textContent=c.m;"
+  "$('c').style.backgroundImage=c.p?'url(\"'+c.p+'\")':'none';$('c').style.transform=''}"
+  "function mostra(id,on){$(id).classList.toggle('h',!on)}"
+  "function tela(){const vot=ent&&fase==1&&i<D.length;mostra('f',!ent&&fase<2);mostra('c',vot||(fase==2&&ent&&venc>=0));mostra('r',vot);"
+  "let m='';if(fase==9)m=T.fim;else if(fase>=2)m=T.tv;else if(!ent)m='';else if(fase==0)m=T.esp;"
+  "else if(i>=D.length)m=T.outros;else m=T.de.replace('%d',i+1).replace('%d',D.length);"
+  "$('m').textContent=m;if(vot)carta()}"
+  "$('f').onsubmit=e=>{e.preventDefault();const n=$('e').value.trim();try{localStorage.setItem('nvnome',n)}catch(x){}"
+  "manda('j:'+k+':'+n);pedi=1;$('b').disabled=true;"
+  // Sala cheia ou pedido perdido: sem confirmacao em 6 s, o botao volta.
+  "setTimeout(()=>{if(!ent){pedi=0;$('b').disabled=false}},6000)};"
+  "$('n').onclick=()=>vota(0);$('s').onclick=()=>vota(1);"
+  "let x0=null;const c=$('c');"
+  "c.ontouchstart=e=>{x0=e.touches[0].clientX};"
+  "c.ontouchmove=e=>{if(x0==null)return;const d=e.touches[0].clientX-x0;c.style.transform='translateX('+d+'px) rotate('+d/18+'deg)'};"
+  "c.ontouchend=e=>{if(x0==null)return;const d=e.changedTouches[0].clientX-x0;x0=null;c.style.transform='';if(Math.abs(d)>70)vota(d>0?1:0)};"
+  "function pega(){fetch(P+'/s',{cache:'no-store'}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{falhas=0;"
+  "const eu=j.g.some(p=>p.i==k.slice(0,4));"
+  "if(eu&&!ent){ent=1;try{sessionStorage.setItem(K,k)}catch(x){}}"
+  "if(ent&&!eu&&!pedi){ent=0;i=0}"
+  "if(ent&&!i){i=+sessionStorage.getItem(K+'i')||0}"
+  "fase=j.f>=2?2:j.f;venc=j.f==2?j.v:-1;$('g').textContent=j.g.map(p=>p.n).join(' \\u00b7 ');"
+  "if(j.f==2&&j.v>=0&&ent){i=j.v;carta()}tela()})"
+  ".catch(()=>{if(++falhas>4){fase=9;tela()}})}"
+  "setInterval(pega,1000);pega();tela()</script></html>";
+
+#endif
