@@ -476,11 +476,23 @@ int stream_filtro_bloqueou(void) {
 // automatico os escolhe, contra 6/14/9% das fontes com resolucao).
 // Por que a fonte sai do automatico (0 = fica), na ordem em que o teste corre.
 enum { MOT_FICA, MOT_EXCLUIDA, MOT_FILTRO, MOT_FORA_CACHE, MOT_INFORMATIVA, MOT_DECODER, MOT_MORTA, MOT_N };
+// OUT OF CACHE FOR AUTO-PLAY. A link-less torrent the ADDON alone called not
+// cached stays in: with a debrid key it goes to the cache-only resolve, which
+// asks the service and never starts a download (LG log 27/11/2026: AIO marked
+// all 198 not cached and auto-play said "no source works"; NuvioTVSmart asks
+// TorBox instead). Only the debrid's own "no" (foraDebrid) keeps it out. A
+// direct link the addon calls not cached stays out: opening it starts the
+// download.
+static int foraCacheNoAuto(const Stream *s) {
+  if (!s->foraCache) return 0;
+  if (s->url[0] || !s->infoHash[0] || s->foraDebrid) return 1;
+  return !debrid_ativo();
+}
 static int motivoForaDoAuto(int i, const FonteFiltroConfig *filtro) {
   if (automaticaExcluida(i)) return MOT_EXCLUIDA;
   if (i < 0 || i >= n) return MOT_FICA;
   if (!canalFolha && (filtro ? !fontefiltro_permite(filtro, &lista[i].filtro) : !stream_filtro_permite(&lista[i]))) return MOT_FILTRO;
-  if (!lista[i].filtro.naoVod && lista[i].foraCache) return MOT_FORA_CACHE;
+  if (!lista[i].filtro.naoVod && foraCacheNoAuto(&lista[i])) return MOT_FORA_CACHE;
   if (ehInformativa(&lista[i])) return MOT_INFORMATIVA;
   if (excedeDecoder(&lista[i])) return MOT_DECODER;
   if (fontesmortas_idade(&lista[i]) >= 0) return MOT_MORTA;
@@ -923,6 +935,7 @@ static float *linhaY, focoFixoY;
 // conferencia paralela roda fora do fio da UI.
 static _Atomic int foraCacheFoco = -1;
 static void atualizarProvedores(void);
+static void loteDisparar(void);
 static int aberta, foco, grupo;
 static float rolagem, velRol;
 
@@ -996,6 +1009,8 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   selosAgendar(total - k, k);
   free(nova);
   printf("[fonte] +%d de %s (lista com %d)\n", k, l[0].provedor, n);
+  // The source sheet is open: the new torrents get their cache answer too.
+  if (aberta && !canalFolha) loteDisparar();
   fflush(stdout);
   if (aberta) atualizarProvedores();
   // A linha em foco muda de lugar quando entra fonte acima dela (os grupos tem
@@ -1755,7 +1770,7 @@ static int enderecoDeAviso(const char *u) {
 }
 
 int stream_fonte_disponivel(const Stream *s) {
-  return s && (s->url[0] || s->infoHash[0]) && fonteOferecida(s) && !ehInformativa(s) && !s->foraCache &&
+  return s && (s->url[0] || s->infoHash[0]) && fonteOferecida(s) && !ehInformativa(s) && !foraCacheNoAuto(s) &&
     !enderecoDeAviso(s->url);
 }
 int stream_filme_consultar(const AddonsConsulta *consulta, const char *id,
@@ -1946,7 +1961,7 @@ static int verificarUma(int i, Conferencia *c) {
     pthread_mutex_unlock(&verTrava);
     return 0;
   }
-  if (!fontefiltro_permite(&c->filtro, &lista[i].filtro) || (!lista[i].filtro.naoVod && lista[i].foraCache) || excedeDecoder(&lista[i]) || fontesmortas_idade(&lista[i]) >= 0) {
+  if (!fontefiltro_permite(&c->filtro, &lista[i].filtro) || (!lista[i].filtro.naoVod && foraCacheNoAuto(&lista[i])) || excedeDecoder(&lista[i]) || fontesmortas_idade(&lista[i]) >= 0) {
     pthread_mutex_unlock(&verTrava); return 0;
   }
   snprintf(url, sizeof url, "%s", lista[i].url);
@@ -1974,6 +1989,7 @@ static int verificarUma(int i, Conferencia *c) {
       pthread_mutex_lock(&verTrava);
       if (nv_perfil_sessao_atual(c->sessao) && listaGeracao == c->geracao && i < n && fora) {
         lista[i].foraCache = 1;
+        lista[i].foraDebrid = 1;
         atomic_fetch_add(&folhaRevisao, 1);
         lista[i].cacheNativo = 0;
         // #205: se for a carta em foco na folha, ela muda de lugar no proximo
@@ -2203,6 +2219,7 @@ int stream_marcar_fora_cache_url(const char *url) {
     lista[i].cacheNativo = 0;
     lista[i].cacheNegado = 1;
     lista[i].foraCache = 1;
+    lista[i].foraDebrid = 1;
     achou = 1;
   }
   pthread_mutex_unlock(&verTrava);
@@ -2303,6 +2320,7 @@ int stream_resolver_escolhida(int i, unsigned geracao, char *url, unsigned nu,
       lista[i].cacheNativo = 0;
       lista[i].cacheNegado = 1;
       lista[i].foraCache = 1;
+      lista[i].foraDebrid = 1;
       atomic_fetch_add(&folhaRevisao, 1);
       atomic_store(&foraCacheFoco, i);
     }
@@ -2912,6 +2930,117 @@ int stream_falha_aplicar(int indice, unsigned geracao, int servico, const char *
                                    nv_perfil_sessao_ler());
 }
 
+// DEBRID CACHE OF THE LIST (owner 27/11/2026, LG log: AIO marked all 198
+// link-less torrents not cached). The link-less torrents of the list are asked
+// to TorBox and Premiumize in a batch, like NuvioTVSmart: cached ones turn
+// "In cache" and move up (auto-play starts from them), and a hash every active
+// service said no to is out (foraDebrid). Real-Debrid/AllDebrid cannot be asked
+// in a batch: with one of them active a "no" stays unknown, and the cache-only
+// resolve of auto-play answers for them. Runs before the auto-play pick (job
+// thread) and on a thread of its own while the source sheet is open. Each hash
+// is asked once per list, at most `max` per run. BLOCKS; needs a debrid
+// context on the thread.
+#define LOTE_MAX 200
+static _Atomic int loteRodando, loteDeNovo, loteFoco;
+static void cacheLoteConferir(uint64_t sessao, int max, int soAuto) {
+  int ativos = 0, servs[2], ns = 0, m = 0, sim = 0, nao = 0;
+  unsigned ger, t0 = SDL_GetTicks();
+  char (*hs)[48];
+  int *idx;
+  signed char *res;
+  unsigned char *ok, *naoDe;
+  for (int q = 0; q < DEBRID_N; q++) if (debrid_servico_disponivel(q)) ativos |= 1 << q;
+  if (ativos & (1 << DEBRID_TB)) servs[ns++] = DEBRID_TB;
+  if (ativos & (1 << DEBRID_PM)) servs[ns++] = DEBRID_PM;
+  if (!ns) return;
+  if (max > LOTE_MAX) max = LOTE_MAX;
+  hs = malloc(sizeof *hs * LOTE_MAX); idx = malloc(sizeof *idx * LOTE_MAX);
+  res = malloc(LOTE_MAX); ok = calloc(LOTE_MAX, 1); naoDe = calloc(LOTE_MAX, 1);
+  if (!hs || !idx || !res || !ok || !naoDe) goto fim;
+  pthread_mutex_lock(&verTrava);
+  if (!nv_perfil_sessao_atual(sessao)) { pthread_mutex_unlock(&verTrava); goto fim; }
+  ger = listaGeracao;
+  for (int k = 0; k < n && m < max; k++) {
+    int i = ORD(k);
+    Stream *s = &lista[i];
+    // Links (AIO proxying the debrid) and hashes the addon already calls
+    // cached are never asked: no call, no wait, for a setup that works.
+    if (s->url[0] || strlen(s->infoHash) < 32 || s->emCache || s->cacheConsultado || s->cacheNativo ||
+        s->foraDebrid) continue;
+    // For the pick, only what auto-play may play: allowed add-ons (owner
+    // 27/11; "use others" ones still get the cache-only resolve), the
+    // filters, nothing excluded or dead.
+    if (soAuto) {
+      int g = grupoDe(i);
+      if (g < 0 || g >= FR_GRUPO_OUTROS || motivoForaDoAuto(i, NULL) != MOT_FICA) continue;
+    }
+    s->cacheConsultado = 1;
+    snprintf(hs[m], sizeof hs[m], "%s", s->infoHash);
+    idx[m++] = i;
+  }
+  pthread_mutex_unlock(&verTrava);
+  if (!m) goto fim;
+  for (int a = 0; a < ns; a++) {
+    if (debrid_cache_lote(servs[a], (const char (*)[48])hs, m, res, 2500) <= 0) continue;
+    for (int j = 0; j < m; j++) {
+      if (res[j] == 1) ok[j] = 1;
+      else if (res[j] == 0) naoDe[j] |= (unsigned char)(1 << servs[a]);
+    }
+  }
+  pthread_mutex_lock(&verTrava);
+  if (nv_perfil_sessao_atual(sessao) && listaGeracao == ger) {
+    for (int j = 0; j < m; j++) {
+      int i = idx[j];
+      Stream *s;
+      if (i >= n || strcmp(lista[i].infoHash, hs[j])) continue;
+      s = &lista[i];
+      if (ok[j]) {
+        cacheConfirmar(s);
+        s->foraCache = 0;
+        sim++;
+      } else if (naoDe[j] && (int)naoDe[j] == ativos) {
+        s->emCache = 0; s->cacheNativo = 0; s->cacheNegado = 1;
+        s->foraCache = 1; s->foraDebrid = 1;
+        nao++;
+      }
+    }
+    atomic_fetch_add(&folhaRevisao, 1);
+    atomic_store(&loteFoco, 1);
+  }
+  pthread_mutex_unlock(&verTrava);
+  printf("[debrid] list cache check (%s%s%s): %d hash(es), %d cached, %d not cached, %d unknown (%u ms)\n",
+         ativos & (1 << DEBRID_TB) ? "TorBox" : "", ns > 1 ? "+" : "",
+         ativos & (1 << DEBRID_PM) ? "Premiumize" : "", m, sim, nao, m - sim - nao,
+         (unsigned)(SDL_GetTicks() - t0));
+  fflush(stdout);
+fim:
+  free(hs); free(idx); free(res); free(ok); free(naoDe);
+}
+typedef struct { DebridContexto d; uint64_t sessao; } LoteFio;
+static void *loteFio(void *u) {
+  LoteFio *f = u;
+  debrid_contexto_entrar(&f->d);
+  do {
+    atomic_store(&loteDeNovo, 0);
+    cacheLoteConferir(f->sessao, LOTE_MAX, 0);
+  } while (atomic_load(&loteDeNovo));
+  debrid_contexto_sair();
+  atomic_store(&loteRodando, 0);
+  free(f);
+  return NULL;
+}
+static void loteDisparar(void) {
+  pthread_t t;
+  LoteFio *f;
+  if (atomic_exchange(&loteRodando, 1)) { atomic_store(&loteDeNovo, 1); return; }
+  f = malloc(sizeof *f);
+  if (!f) { atomic_store(&loteRodando, 0); return; }
+  debrid_contexto_capturar(&f->d);
+  f->sessao = nv_perfil_sessao_ler();
+  if (pthread_create(&t, NULL, loteFio, f) == 0) pthread_detach(t);
+  else { free(f); atomic_store(&loteRodando, 0); }
+}
+
 int stream_primeira_boa_sessao(int tentativas, uint64_t sessao) {
   int fila[VER_MAX], nf, q, tocadas = 0, escolhida, total, pref, livres = 0, kk;
   int motivos[MOT_N] = {0};
@@ -2924,6 +3053,10 @@ int stream_primeira_boa_sessao(int tentativas, uint64_t sessao) {
   fontefalha_filtro(&c.filtro);
   Uint32 tVerif = 0;
   tentativas = fonteauto_tentativas(modo, tentativas);
+  // Cached torrents first: ask TorBox/Premiumize about the link-less ones.
+  // The first 80 auto-play may play, in list order (two calls): that is what
+  // the pick reaches; the open sheet asks about the rest.
+  cacheLoteConferir(sessao, 80, 1);
   pthread_mutex_lock(&verTrava);
   if (!nv_perfil_sessao_atual(sessao)) { pthread_mutex_unlock(&verTrava); return -1; }
   total = n;
@@ -5664,6 +5797,8 @@ void stream_folha_abrir(void) {
   recarregarFonteContexto = canalFolha ? 0 : player_recarregar_contexto();
   // Segurar OK numa fonte le a lista da conta TorBox: ela ja sai agora.
   if (!canalFolha) partes_aquecer();
+  // In cache / Not cached from the debrid itself for the link-less torrents.
+  if (!canalFolha) loteDisparar();
   folhaGeometria();
   atualizarProvedores();
   ondever_apps_atualizar();
@@ -6592,6 +6727,12 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   // foco pelo indice ANTES do montar, com o Y da linha como ela esta agora —
   // depois do montar o focoFixo e reposto na linha nova (o mesmo padrao de
   // stream_lista_acrescentar).
+  // The list cache check moved rows: the focused card stays where it is.
+  if (atomic_exchange(&loteFoco, 0) && aberta && grupo == 1 && foco >= 0 && foco < nOrdem &&
+      filtrado(foco) >= 0) {
+    focoFixo = filtrado(foco);
+    focoFixoY = linhaTopo(foco);
+  }
   { int fl = atomic_exchange(&foraCacheFoco, -1);
     if (fl >= 0 && aberta && grupo == 1 && filtrado(foco) == fl) {
       focoFixo = fl;

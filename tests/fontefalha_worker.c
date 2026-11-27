@@ -107,6 +107,9 @@ int ajustes_fonte_tocar_conferindo(void) { return 0; }
 void debrid_contexto_capturar(DebridContexto *c) { memset(c, 0, sizeof *c); }
 void debrid_contexto_entrar(const DebridContexto *c) { (void)c; }
 void debrid_contexto_sair(void) {}
+int debrid_cache_lote(int q, const char (*h)[48], int n, signed char *r, unsigned t) {
+  (void)q; (void)h; (void)t; for (int i = 0; i < n; i++) r[i] = -1; return -1;
+}
 static int memoriaNextConsultas;
 int fontepref_escolher_lista_next(const char *id, const Stream *s, int n,
                                   int (*pode)(int,int,void *), void *ctx) {

@@ -1965,6 +1965,102 @@ int debrid_tb_em_cache(const char *hash) {
   return v;
 }
 
+// DEBRID CACHE FOR A WHOLE SOURCE LIST (owner 27/11/2026, LG log: "AIO | TB
+// Instant" sent 198 link-less torrents marked not cached, and the app trusted
+// the addon). One call per LOTE hashes, like NuvioTVSmart's
+// localDebridAvailabilityService: TorBox GET torrents/checkcached (format=list)
+// and Premiumize POST cache/check (items[] = bare hashes, answers in order).
+// Real-Debrid and AllDebrid have no such call (-1). res[i]: 1 cached, 0 the
+// service says no, -1 no answer. TorBox may answer an alternative hash with
+// its canonical one: a chunk with an answer we did not ask for leaves its
+// misses at -1 (never a false "not cached"). Stops at the first failed call or
+// after `tetoMs`. Returns the hashes answered, -1 without a usable key.
+// BLOCKS; search-bound.
+#define LOTE 40
+static unsigned msAgora(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (unsigned)(t.tv_sec * 1000u + (unsigned)(t.tv_nsec / 1000000));
+}
+static int loteTB(const char (*hashes)[48], int a, int b, signed char *res) {
+  char url[200 + 49 * LOTE], auth[260], h[80], ok_[16];
+  const char *cab[2], *el;
+  char *r;
+  int st = 0, alias = 0, u;
+  u = snprintf(url, sizeof url, TB "/torrents/checkcached?format=list&hash=");
+  for (int k = a; k < b; k++) {
+    hashMin(h, sizeof h, hashes[k]);
+    u += snprintf(url + u, sizeof url - (size_t)u, "%s%s", k > a ? "," : "", h);
+  }
+  snprintf(auth, sizeof auth, "Authorization: Bearer %s", chaveDoFio(STB));
+  cab[0] = auth; cab[1] = NULL;
+  r = rede_baixar_st(url, 8, cab, &st);
+  if (!ok2xx(r, st) || (js_bruto(r, NULL, "success", ok_, sizeof ok_) && strncmp(ok_, "true", 4))) {
+    falha(STB, "checkcached (list)", st, r); free(r); return 0;
+  }
+  for (int k = a; k < b; k++) res[k] = 0;
+  for (el = js_array(r, NULL, "data"); el && *el == '{'; ) {
+    const char *fe = js_fim(el);
+    char hh[80] = "";
+    int achou = 0;
+    if (!fe) break;
+    js_texto_raiz_em(el, fe, "hash", hh, sizeof hh);
+    minusc(hh);
+    for (int k = a; k < b; k++) {
+      hashMin(h, sizeof h, hashes[k]);
+      if (hh[0] && !strcmp(hh, h)) { res[k] = 1; achou = 1; }
+    }
+    if (!achou) alias = 1;
+    el = js_prox(fe);
+  }
+  if (alias) for (int k = a; k < b; k++) if (res[k] == 0) res[k] = -1;
+  free(r);
+  return 1;
+}
+static int lotePM(const char (*hashes)[48], int a, int b, signed char *res) {
+  char corpo[64 + 64 * LOTE], h[80], status[32] = "";
+  const char *q;
+  char *r;
+  int st = 0, u = 0, k = a;
+  for (int i = a; i < b; i++) {
+    hashMin(h, sizeof h, hashes[i]);
+    u += snprintf(corpo + u, sizeof corpo - (size_t)u, "%sitems%%5B%%5D=%s", i > a ? "&" : "", h);
+  }
+  r = post_form(PM, "cache/check", SPM, corpo, &st);
+  if (!ok2xx(r, st) || !js_texto(r, NULL, "status", status, sizeof status) || strcmp(status, "success")) {
+    falha(SPM, "cache/check (list)", st, r); free(r); return 0;
+  }
+  q = strstr(r, "\"response\"");
+  q = q ? strchr(q, '[') : NULL;
+  // Booleans in request order; a short or odd array leaves the rest at -1.
+  for (q = q ? q + 1 : NULL; q && *q && *q != ']' && k < b; q++) {
+    if (!strncmp(q, "true", 4)) { res[k++] = 1; q += 3; }
+    else if (!strncmp(q, "false", 5)) { res[k++] = 0; q += 4; }
+    else if (*q != ',' && *q != ' ' && *q != '\n' && *q != '\r' && *q != '\t') break;
+  }
+  free(r);
+  return 1;
+}
+int debrid_cache_lote(int servico, const char (*hashes)[48], int n, signed char *res, unsigned tetoMs) {
+  unsigned ini = msAgora();
+  int feitos = 0;
+  if (!hashes || !res || n <= 0) return 0;
+  for (int i = 0; i < n; i++) res[i] = -1;
+  if ((servico != STB && servico != SPM) || !debrid_servico_disponivel(servico)) return -1;
+  for (int a = 0; a < n; a += LOTE) {
+    int b = a + LOTE < n ? a + LOTE : n;
+    if (a > 0 && msAgora() - ini > tetoMs) break;
+    if (!contextoVale()) break;
+    if (!(servico == STB ? loteTB(hashes, a, b, res) : lotePM(hashes, a, b, res))) break;
+    feitos += b - a;
+  }
+  if (!contextoVale()) {
+    for (int i = 0; i < n; i++) res[i] = -1;
+    return 0;
+  }
+  return feitos;
+}
+
 // DELETE a torrent from the account (owner 24/11/2026, log 19/20, Fate PMR):
 // an item TorBox kept listing but whose stream never sent a segment started
 // working only after the owner removed it on the dashboard and Nuvio re-added

@@ -129,6 +129,13 @@ typedef struct Stream {
   // Uma resposta nativa pronta e mais recente que a negativa antiga do addon.
   // So atualiza a exibicao; nao limpa foraCache nem muda as tentativas.
   int  cacheNativo;
+  // THE DEBRID ITSELF SAID NO (TorBox list check, the cache-only resolve, or
+  // "downloading"). Only this keeps a link-less torrent out of auto-play: the
+  // addon's word alone (foraCache) sends it to the cache-only resolve, as
+  // NuvioTVSmart does (LG log 27/11/2026, AIO marked all 198 not cached).
+  int  foraDebrid;
+  // The TorBox list check already asked about this hash (never asks twice).
+  int  cacheConsultado;
   // A SONDA VIU A URL RESPONDER PAGINA (HTML/JSON/texto) e nao video (2.0.2,
   // naovideo.h): linha de aviso do addon. A folha a mostra apagada ("Nao e
   // video") e o automatico a pula. Marcada na verificacao, nunca no parser.
