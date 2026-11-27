@@ -226,24 +226,41 @@ static float texto(TxtEstilo est, const char *s, int tom, float x, float y, floa
   return txt_bloco_corta(est, s, tom, tom, tom, x, y, w, lead, a, linhas);
 }
 
-static void pessoas(float x, float y, float w, float a) {
+static float pessoas(float x, float y, float w, float a) {
   float ar, ag, ab;
-  int p;
+  if (!sala.nGente) {
+    texto(TXT_BODY, i18n("Ninguém entrou ainda."), 170, x, y, w, 36, a, 2);
+    return 44.0f;
+  }
+  const int cols = sala.nGente > 4 ? 2 : 1;
+  const int rows = (sala.nGente + cols - 1) / cols;
+  const int mostraVotos = sala.fase != SALA_ENTRANDO && sala.nCartas > 0;
+  const float gap = 18.0f, cwCell = (w - (cols - 1) * gap) / cols;
+  const float pad = cols == 2 ? 16.0f : 24.0f;
+  const float bw = cwCell * 0.26f, votosW = cols == 2 ? cwCell * 0.22f : 120.0f;
+  const float nomeW = cols == 1 ? w * 0.5f
+    : cwCell - 2.0f * pad - (mostraVotos ? bw + votosW + 20.0f : 0.0f);
   ajustes_acento(&ar, &ag, &ab);
-  if (!sala.nGente) { texto(TXT_BODY, i18n("Ninguém entrou ainda."), 170, x, y, w, 36, a, 2); return; }
-  for (p = 0; p < sala.nGente; p++) {
-    float ly = y + p * 74.0f;
-    gfx_cor((GfxRect){ x, ly, w, 62 }, 0.3f, 1, 1, 1, 0.07f * a);
-    txt_bloco_bruto(TXT_BODY, sala.g[p].nome, 243, 242, 239, x + 24, ly + 13, w * 0.5f, 36, a, 1);
-    if (sala.fase != SALA_ENTRANDO && sala.nCartas > 0) {
+  for (int p = 0; p < sala.nGente; p++) {
+    float lx = x + (p % cols) * (cwCell + gap), ly = y + (p / cols) * 74.0f;
+    gfx_cor((GfxRect){ lx, ly, cwCell, 62 }, 0.3f, 1, 1, 1, 0.07f * a);
+    if (cols == 2) {
+      TxtLinha nome = txt_linha_corta_bruta(TXT_BODY, sala.g[p].nome, 243, 242, 239, 255, nomeW);
+      txt_desenhar_alpha(nome, lx + pad, ly + 13, a);
+    } else {
+      txt_bloco_bruto(TXT_BODY, sala.g[p].nome, 243, 242, 239, lx + pad, ly + 13, nomeW, 36, a, 1);
+    }
+    if (mostraVotos) {
       char t[48];
-      float f = (float)sala_votos(&sala, p) / (float)sala.nCartas, bw = w * 0.26f;
-      snprintf(t, sizeof t, i18n("%d de %d"), sala_votos(&sala, p), sala.nCartas);
-      texto(TXT_CAPTION2, t, 190, x + w - bw - 24 - 130, ly + 19, 120, 26, a, 1);
-      gfx_cor((GfxRect){ x + w - bw - 24, ly + 26, bw, 10 }, 0.5f, 1, 1, 1, 0.16f * a);
-      if (f > 0) gfx_cor((GfxRect){ x + w - bw - 24, ly + 26, bw * f, 10 }, 0.5f, ar, ag, ab, a);
+      int votos = sala_votos(&sala, p);
+      float f = (float)votos / (float)sala.nCartas, bx = lx + cwCell - bw - pad;
+      snprintf(t, sizeof t, i18n("%d de %d"), votos, sala.nCartas);
+      texto(TXT_CAPTION2, t, 190, bx - votosW - 10.0f, ly + 19, votosW, 26, a, 1);
+      gfx_cor((GfxRect){ bx, ly + 26, bw, 10 }, 0.5f, 1, 1, 1, 0.16f * a);
+      if (f > 0) gfx_cor((GfxRect){ bx, ly + 26, bw * f, 10 }, 0.5f, ar, ag, ab, a);
     }
   }
+  return rows * 74.0f;
 }
 
 void salaui_desenhar(void) {
@@ -302,8 +319,7 @@ void salaui_desenhar(void) {
     texto(TXT_CAPTION2, i18n("Celular e TV na mesma rede Wi-Fi."), 150, mx, y + lado + 62, lado, 28, a, 2);
     texto(TXT_CAPTION2, u + 7, 150, mx, y + lado + 96, lado + 60, 28, a, 1);
     ty += texto(TXT_BODY, i18n(linha), 215, cx, ty, cw, 38, a, 5) + 26;
-    pessoas(cx, ty, cw, a);
-    ty += (sala.nGente ? sala.nGente * 74.0f : 44.0f) + 22;
+    ty += pessoas(cx, ty, cw, a) + 22;
     if (sala.nGente)
       texto(TXT_BODY, i18n(sala.fase == SALA_ENTRANDO ? "Aperte OK quando todos tiverem entrado."
                                                       : "Aperte OK para decidir com os votos de agora."),
