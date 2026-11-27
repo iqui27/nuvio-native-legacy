@@ -1,5 +1,6 @@
 // Ponte do nucleo com o Android. Ver android.h.
 #ifdef NV_ANDROID
+#include "rede.h"
 #include "android.h"
 #include "queda.h"
 #include <SDL2/SDL.h>
@@ -689,3 +690,28 @@ Java_space_nuvio_nativelegacy_NuvioActivity_nativeRecUrl(JNIEnv *env, jobject ac
 
 #endif
 
+// SHARED CONNECTION PAUSE (27/11/2026): MediaHttpBudget (Kotlin) reads and feeds rede.c's #385 table, so the
+// player, the hardware thumbnails and the C side readers leave a debrid node that refused a connection alone
+// together. The URL is only parsed for its host here; it is never logged.
+JNIEXPORT jlong JNICALL
+Java_space_nuvio_nativelegacy_MediaHttpBudget_calmaFaltaNativa(JNIEnv *env, jclass cls, jstring u) {
+  const char *s = u ? (*env)->GetStringUTFChars(env, u, NULL) : NULL;
+  unsigned long r = s ? rede_calma_falta(s) : 0;
+  (void)cls;
+  if (s) (*env)->ReleaseStringUTFChars(env, u, s);
+  return (jlong)r;
+}
+JNIEXPORT jlong JNICALL
+Java_space_nuvio_nativelegacy_MediaHttpBudget_calmaRecusouNativa(JNIEnv *env, jclass cls, jstring u, jint erro) {
+  const char *s = u ? (*env)->GetStringUTFChars(env, u, NULL) : NULL;
+  unsigned long r = s ? rede_calma_recusou(s, (int)erro) : 0;
+  (void)cls;
+  if (s) (*env)->ReleaseStringUTFChars(env, u, s);
+  return (jlong)r;
+}
+JNIEXPORT void JNICALL
+Java_space_nuvio_nativelegacy_MediaHttpBudget_calmaAtendeuNativa(JNIEnv *env, jclass cls, jstring u) {
+  const char *s = u ? (*env)->GetStringUTFChars(env, u, NULL) : NULL;
+  (void)cls;
+  if (s) { rede_calma_atendeu(s); (*env)->ReleaseStringUTFChars(env, u, s); }
+}

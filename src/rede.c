@@ -3468,6 +3468,12 @@ static void debridSair(int dentro) {
   pthread_mutex_unlock(&debridTrava);
 }
 
+static unsigned long calmaFalta(const char *url, int *erro, int *avisar);
+static unsigned long calmaAbrir(const char *url, int erro);
+static void calmaSoltar(const char *url);
+static int conexaoRecusada(int e);
+static void corteHostDe(const char *u, char *h, size_t n);
+
 static char *trecho64RelatoBruto(const char *url, const char *headers,
                               int64_t start, int64_t end, long *size,
                               int64_t *total, int *status,
@@ -3498,6 +3504,18 @@ static char *trecho64RelatoBruto(const char *url, const char *headers,
     memset(&r, 0, sizeof r);
     r.requested = start; r.limit = end - start + 1; r.total = -1; r.cancel = cancelled;
     r.urgent=urgent; r.idle_ms=idle_ms; r.stalled=stalled; r.progress_ms=pedidoAgoraMs();
+    // #385 on this path too (27/11/2026): thumbnails (miniatura.c) and the other side readers come through here,
+    // and never checked the pause of a host that refused a connection. Side reads skip a paused host.
+    if (redeLateral) {
+      int e0 = 0, avisar = 0;
+      unsigned long falta = calmaFalta(current, &e0, &avisar);
+      if (falta) {
+        if (avisar) { char h[96]; corteHostDe(current, h, sizeof h);
+          printf("[rede] %s em pausa (recusou conexao, curl %d): Range lateral sem conexao por mais %lu ms\n", h, e0, falta);
+          fflush(stdout); }
+        return NULL;
+      }
+    }
     c = pegarHandle(current);
     if (!c) return NULL;
     opcoesComuns(c, 15000);
@@ -3530,6 +3548,13 @@ static char *trecho64RelatoBruto(const char *url, const char *headers,
     if (retry_after) *retry_after = r.retry_seen ? r.retry_seconds : -1;
     if (list && slist_free) slist_free(list);
     soltarHandleR(c, result, current);
+    if (redeLateral && conexaoRecusada(result)) {
+      char h[96]; unsigned long pa = calmaAbrir(current, result);
+      if (strcmp(current, url)) calmaAbrir(url, result);
+      corteHostDe(current, h, sizeof h);
+      printf("[rede] %s recusou conexao (curl %d, Range lateral): sem conexao nova a este host por %lu ms\n", h, result, pa);
+      fflush(stdout);
+    } else if (redeLateral && !result && http >= 200 && http < 300) calmaSoltar(current);
     if (!result && http >= 300 && http < 400 && redirected[0]) {
       char host[128];
       free(r.body.p);
@@ -3946,6 +3971,21 @@ static void calmaSoltar(const char *url) {
     if (calmaHost[i].h[0] && !strcmp(calmaHost[i].h, h)) calmaHost[i].h[0] = 0;
   pthread_mutex_unlock(&calmaTrava);
 }
+
+// THE SAME PAUSE FOR EVERY READER (27/11/2026). The Android player (Kotlin) reports the connections it gets
+// refused and checks the pause before connecting again; hardware thumbnails check it before opening. One table:
+// a TorBox node that refused the player is left alone by the thumbnails and the subtitle prefetch too.
+unsigned long rede_calma_falta(const char *url) { int e = 0, a = 0; return url ? calmaFalta(url, &e, &a) : 0; }
+unsigned long rede_calma_recusou(const char *url, int erro) {
+  char h[96]; unsigned long p;
+  if (!url) return 0;
+  p = calmaAbrir(url, erro);
+  corteHostDe(url, h, sizeof h);
+  printf("[rede] %s recusou conexao do player (curl %d): pausa de %lu ms para todos os leitores\n", h, erro, p);
+  fflush(stdout);
+  return p;
+}
+void rede_calma_atendeu(const char *url) { if (url) calmaSoltar(url); }
 
 long rede_corte_host(const char *url) {
   char h[96];

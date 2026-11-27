@@ -35,6 +35,37 @@ internal object MediaHttpBudget {
     // answering. On these hosts the player keeps 3 and rede.c lets C hold at most 1 (debridEntrar): 4 in all.
     const val DEBRID_PLAYER = 3
     private val debridPlayer = Semaphore(DEBRID_PLAYER, true)
+
+    // SHARED REFUSAL PAUSE (27/11/2026): rede.c's #385 table, now fed and read from here too. A debrid node that
+    // refused the player is left alone by the player's retries (they wait it out), the hardware thumbnails and the C
+    // side readers together, instead of each reconnecting on its own (12:39: six refused connects in 2 s).
+    @JvmStatic private external fun calmaFaltaNativa(url: String): Long
+    @JvmStatic private external fun calmaRecusouNativa(url: String, erro: Int): Long
+    @JvmStatic private external fun calmaAtendeuNativa(url: String)
+    @Volatile private var nativo = true
+    private val emPausa: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    /** ms left in the pause of url's host after a refused connection (0 = free; never for other hosts). */
+    fun pausaMs(url: URL): Long {
+        if (!nativo || !limitsPerUser(url.host)) return 0
+        return try { calmaFaltaNativa(url.toString()) } catch (e: UnsatisfiedLinkError) { nativo = false; 0 }
+    }
+    /** A connection to url failed: refusals (name, refused/no route, TLS handshake) open or double the pause. */
+    fun recusou(url: URL, e: Throwable) {
+        if (!nativo || !limitsPerUser(url.host)) return
+        val codigo = when (e) {
+            is java.net.UnknownHostException -> 6
+            is java.net.ConnectException, is java.net.NoRouteToHostException -> 7
+            is javax.net.ssl.SSLHandshakeException -> 35
+            else -> return
+        }
+        try { calmaRecusouNativa(url.toString(), codigo); emPausa.add(url.host.lowercase()) }
+        catch (e2: UnsatisfiedLinkError) { nativo = false }
+    }
+    /** url's host answered: its pause (and the doubling) ends. Native call only while a pause was opened here. */
+    fun atendeu(url: URL) {
+        if (!nativo || !emPausa.remove(url.host.lowercase())) return
+        try { calmaAtendeuNativa(url.toString()) } catch (e: UnsatisfiedLinkError) { nativo = false }
+    }
     // REQUEST RATE ON DEBRID SERVERS (17/11/2026, Quest 3, TorBox): every TorBox server that saw >= ~250 requests in
     // a minute from this IP (250-334) stopped answering it for ~1 h; the ones below (241, 142) never did. Thumbnail
     // requests to a debrid host take a slot at least THUMB_GAP_MS apart, per host, before the permit: at most
@@ -97,6 +128,10 @@ internal object MediaHttpBudget {
         val debrid = limitsPerUser(url.host)
         var debridHeld = false
         var mainHeld = false
+        if (owner.startsWith("thumbnail")) {
+            val pausa = pausaMs(url)
+            if (pausa > 0) throw IOException("thumbnail source host paused after a refused connection (${pausa} ms left)")
+        }
         try {
             ritmoDebrid(url.host, owner, checkCancelled)
             while (debrid && !debridHeld) {
