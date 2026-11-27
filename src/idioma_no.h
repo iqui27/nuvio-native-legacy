@@ -5538,6 +5538,7 @@
   T("Não deu para enviar o registro (%s). OK tenta de novo.", "Kunne ikke sende loggen (%s). OK prøver igjen."),
   T("Não deu para enviar o voto. Tente de novo.", "Stemmen kunne ikke sendes. Prøv igjen."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "Kunne ikke lese filen. Spiller av i HDR10."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "Videoen kunne ikke gjenopptas. Spill av fortsetter der du slapp"),
   T("Não deu para sincronizar", "Kunne ikke synkronisere"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Kunne ikke synkronisere kontoen. Jeg prøver igjen selv."),
   T("Não deu para sincronizar — usando %s", "Kunne ikke synkronisere — bruker %s"),

@@ -5538,6 +5538,7 @@
   T("Não deu para enviar o registro (%s). OK tenta de novo.", "Nie udało się wysłać dziennika (%s). OK ponawia próbę."),
   T("Não deu para enviar o voto. Tente de novo.", "Nie udało się wysłać głosu. Spróbuj ponownie."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "Nie udało się odczytać pliku. Odtwarzanie w HDR10."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "Nie udało się wznowić filmu. Odtwórz wznowi od miejsca, w którym skończyłeś"),
   T("Não deu para sincronizar", "Nie udało się zsynchronizować"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Nie udało się zsynchronizować konta. Spróbuję ponownie."),
   T("Não deu para sincronizar — usando %s", "Nie udało się zsynchronizować — użyto %s"),

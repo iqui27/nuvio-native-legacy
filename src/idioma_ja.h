@@ -5538,6 +5538,7 @@
   T("Não deu para enviar o registro (%s). OK tenta de novo.", "ログを送信できませんでした（%s）。OKで再試行します。"),
   T("Não deu para enviar o voto. Tente de novo.", "投票を送信できませんでした。もう一度お試しください。"),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "ファイルを読み込めませんでした。HDR10 で再生します。"),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "動画を再開できませんでした。再生すると中断した位置から続きます"),
   T("Não deu para sincronizar", "同期できませんでした"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "アカウントを同期できませんでした。自動で再試行します。"),
   T("Não deu para sincronizar — usando %s", "同期できませんでした — %sを使用中"),

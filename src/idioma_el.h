@@ -5538,6 +5538,7 @@
   T("Não deu para enviar o registro (%s). OK tenta de novo.", "Δεν ήταν δυνατή η αποστολή του αρχείου καταγραφής (%s). Το OK δοκιμάζει ξανά."),
   T("Não deu para enviar o voto. Tente de novo.", "Δεν ήταν δυνατή η αποστολή της ψήφου. Δοκιμάστε ξανά."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "Δεν ήταν δυνατή η ανάγνωση του αρχείου. Αναπαραγωγή σε HDR10."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "Δεν ήταν δυνατή η συνέχιση του βίντεο. Η αναπαραγωγή συνεχίζει από εκεί που σταμάτησες"),
   T("Não deu para sincronizar", "Δεν ήταν δυνατός ο συγχρονισμός"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Ο συγχρονισμός απέτυχε. Θα ξαναδοκιμάσω μόνος."),
   T("Não deu para sincronizar — usando %s", "Δεν ήταν δυνατός ο συγχρονισμός — χρήση: %s"),
