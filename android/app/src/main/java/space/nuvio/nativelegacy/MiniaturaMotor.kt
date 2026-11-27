@@ -2612,7 +2612,7 @@ object MiniaturaMotor {
         out.write(1)
         out.write(sig)
         if (jpeg) {
-            val outputW = when (val chosen = perfilLargura) { 320, 480, 640 -> chosen; else -> TW }
+            val outputW = when (val chosen = perfilLargura) { 320, 480, 576 -> chosen; else -> TW }
             val outputH = outputW * 9 / 16
             s.uArr = copia(pu.buffer, s.uArr); s.vArr = copia(pv.buffer, s.vArr)
             val ua8 = s.uArr; val va8 = s.vArr

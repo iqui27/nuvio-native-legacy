@@ -257,6 +257,9 @@ class ParaleloDataSource(
         conferirCancelamento()
     }
 
+    // The refusal pause (rede.c #385) is for the side readers only, as on the .tpk: the player never waits on it.
+    // A connection the player gets refused still opens it (conectar: MediaHttpBudget.recusou), so the subtitle
+    // prefetch and the thumbnails leave that debrid node to the player.
     private fun conectar1(u: URL, ini: Long, ultimo: Long): HttpURLConnection {
         conferirCancelamento()
         val c = MediaHttpBudget.open(u, "player", novaConexao, ::conferirCancelamento)
@@ -282,9 +285,11 @@ class ParaleloDataSource(
             val t0 = android.os.SystemClock.elapsedRealtime()
             val c = conectar1(u, ini, ultimo)
             val code = try { c.responseCode } catch (e: IOException) {
+                if (!foiCancelado(e)) MediaHttpBudget.recusou(u, e)
                 desconectar(c)
                 throw e
             }
+            MediaHttpBudget.atendeu(u)
             if (fechado) { desconectar(c); throw cancelado() }
             Estat.primeiroByteMs = (android.os.SystemClock.elapsedRealtime() - t0).toInt()
             if (code in 300..399 && code != 304) {

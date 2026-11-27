@@ -918,6 +918,7 @@ static int ajcNovaReproducao(int sec, int op) {
     case AJ_CW_CONCLUIDO: rPercentual(); return 1;
     case AJ_MANTER_VIDEO: rManter(op); return 1;
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_CHAVE: case AJ_SEEKR_TESTAR: case AJ_SEEKR_AJUSTE:
+    case AJ_MINI_QUALIDADE: case AJ_MINI_DECODER:
       rSeekr(op); return 1;
 #ifndef __EMSCRIPTEN__
     case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR: case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: rP2p(op); return 1;

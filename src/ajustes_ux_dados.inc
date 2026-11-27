@@ -335,6 +335,8 @@ static const char *uxSinonimos(int op) {
       return "lento lenta lentidao travando trava falha erro desempenho diagnostico rede internet";
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE:
       return "seekr miniatura barra tempo previa avanco retrocesso";
+    case AJ_MINI_QUALIDADE: case AJ_MINI_DECODER:
+      return "miniatura barra tempo qualidade resolucao decodificador cpu gpu hardware";
     default: return "";
   }
 }

@@ -122,6 +122,10 @@ int ajustes_esmaecer(void);
 int ajustes_brilho_player(void);
 int ajustes_tunneling(void); // Android-only tunneled playback; default off.
 int ajustes_quadros_taxa(void); // Android match frame rate: 0 Always, 1 Only if seamless, 2 Off.
+// Thumbnails made on this device (Android): 0 Automatic, 1 High (576 px), 2 Medium (480), 3 Low (320);
+// 1 = the GPU decoder (hardware engine, miniatura_hw.c), 0 = the CPU route (default).
+int ajustes_miniatura_qualidade(void);
+int ajustes_miniatura_gpu(void);
 int ajustes_hdr_interface(void); // Experimental Android HDR output; default off.
 int ajustes_hdr_ui(void);   // #205: 1 = Automatico (padrao), 0 = Desligado
 // #202: -1 = ultimo modo usado (padrao); 0..7 = PlrAspecto aplicado ao abrir o video.

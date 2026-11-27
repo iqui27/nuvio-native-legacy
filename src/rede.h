@@ -243,6 +243,12 @@ char *rede_baixar_trecho_st(const char *url, int segundos, long long ini, long l
 // tambem o candidato a derrubar conexao a mais: o mkvass passa a uma so.
 long rede_corte_host(const char *url);
 
+// Pause of a host that refused a connection (#385), kept for the side readers (the player never waits on it): ms
+// left (0 = free), open/double it after a refusal (curl-style code: 6 name, 7 refused, 35 TLS), end it after an answer.
+unsigned long rede_calma_falta(const char *url);
+unsigned long rede_calma_recusou(const char *url, int erro);
+void rede_calma_atendeu(const char *url);
+
 // 1 quando o ULTIMO rede_baixar_trecho_st DESTE FIO falhou porque um pedaco
 // seguinte (o resto, depois de um corte ou de um pedaco do teto) voltou com
 // zero bytes e sem estourar o prazo: o servidor recusou continuar (#92, v1.4.7:

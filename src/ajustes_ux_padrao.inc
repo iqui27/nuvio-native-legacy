@@ -399,4 +399,6 @@
   0, /* burn embedded ASS in with TorBox: On (V_LIGA 0); only acts with plan Pro */
   0, /* original audio with burn-in: Passthrough (V_TB_AUDIO 0) */
   0, // frameRateMatchLocal: Always (V_QUADROS_TAXA 0)
+  0, // miniaturaQualidadeLocal: Automatic (V_MINI_QUALIDADE 0)
+  0, // miniaturaDecoderLocal: CPU (V_MINI_DECODER 0)
 
