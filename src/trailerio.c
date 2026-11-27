@@ -1,10 +1,12 @@
-#ifdef NV_WEBOS
+#include "trailerfonte.h"
+#ifdef NV_TRAILERIO
 #include "trailerio.h"
 #include "js.h"
 #include "rede.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct {
   RedeJob *job;
