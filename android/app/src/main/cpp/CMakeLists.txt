@@ -10,7 +10,9 @@ set(NUVIO_RAIZ "" CACHE PATH "raiz do repositorio")
 set(NUVIO_SDL_SRC "$ENV{HOME}/.cache/nuvio-android/src" CACHE PATH "fontes do SDL")
 set(NUVIO_ENV_CMAKE "" CACHE FILEPATH "chaves -D geradas por tools/android.sh (fora do git)")
 set(NUVIO_P2P_MOTOR "" CACHE PATH "motor P2P de tools/p2p-motor/build-android.sh (vazio = sem motor)")
+set(NUVIO_MINI_FFMPEG "" CACHE PATH "pasta <abi>/{include,lib} de tools/android/ffmpeg-miniaturas.sh (vazio = sem a rota de CPU das miniaturas)")
 set(NUVIO_RUST_MKVCORE "" CACHE PATH "pasta <abi>/libmkvcore.a de tools/rust-mkvcore.sh --android (vazio = nucleo C)")
+set(NUVIO_LIBASS "" CACHE PATH "pasta <abi>/libass/{lib,include} de tools/android/libass.sh (vazio = sem libass)")
 
 set(SDL_DIR   "${NUVIO_SDL_SRC}/SDL2-2.30.9")
 set(IMG_DIR   "${NUVIO_SDL_SRC}/SDL2_image-2.8.2")
@@ -129,10 +131,16 @@ target_compile_options(main PRIVATE -O2 -Wno-unused-result)
 # Chaves (-D) do tools/env.sh. Sem o arquivo, ou com chave vazia, o build sai
 # com strings vazias, como o tools/build-local.sh.
 set(NV_KEYS NV_SUPABASE_URL NV_SUPABASE_ANON_KEY NV_TV_LOGIN_BASE NV_TRAKT_CLIENT_ID
-    NV_TRAKT_CLIENT_SECRET NV_SIMKL_CLIENT_ID NV_SIMKL_APP NV_TMDB_API_KEY NV_SEEKR_API_KEY NV_REC_URL NV_DISCORD_CLIENT_ID NV_VERSAO)
+    NV_TRAKT_CLIENT_SECRET NV_SIMKL_CLIENT_ID NV_SIMKL_APP NV_TMDB_API_KEY NV_SEEKR_API_KEY NV_REC_URL NV_DISCORD_CLIENT_ID
+    NV_VERSAO)
 if(NUVIO_ENV_CMAKE AND EXISTS "${NUVIO_ENV_CMAKE}")
   include("${NUVIO_ENV_CMAKE}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${NUVIO_ENV_CMAKE}")
+endif()
+# A versao embutida (NV_VERSAO: o que o atualizador compara com a release) e SEMPRE a do appinfo.json, nunca a de um nuvio-env.cmake velho:
+# senao o app se acharia na versao anterior e ofereceria a si mesmo como atualizacao.
+if(NV_VERSAO_APP)
+  set(NV_VERSAO "${NV_VERSAO_APP}")
 endif()
 foreach(k ${NV_KEYS})
   # \" literal: o gerador de build escapa o resto.
@@ -145,6 +153,23 @@ target_link_libraries(main PRIVATE SDL2::SDL2 SDL2_image SDL2_ttf webpdemux webp
 # com o ~1 MB do bionic. O nucleo tem vetores grandes na pilha dos fios.
 target_link_options(main PRIVATE "-Wl,--wrap=pthread_create" "-Wl,--wrap=fclose" "-Wl,--wrap=rename")
 
+# Seek-bar thumbnails made on the device (src/miniatura*.c): a thumbnail-only
+# static FFmpeg per ABI, built by tools/android/ffmpeg-miniaturas.sh. Without
+# the folder the app builds as before and the seek bar has no thumbnails.
+# --exclude-libs keeps its symbols private to libmain (Media3's FFmpeg audio
+# decoder is a separate .so with its own copy).
+# Gradle passes the default cache folder whenever it exists, so an ABI missing
+# from it (a cache built for one ABI) builds that ABI without thumbnails.
+set(MINI_FF "${NUVIO_MINI_FFMPEG}/${ANDROID_ABI}")
+if(NUVIO_MINI_FFMPEG AND NOT EXISTS "${MINI_FF}/lib/libavcodec.a")
+  message(WARNING "thumbnail FFmpeg missing in ${MINI_FF} (run tools/android/ffmpeg-miniaturas.sh): ${ANDROID_ABI} without seek thumbnails")
+elseif(NUVIO_MINI_FFMPEG)
+  target_compile_definitions(main PRIVATE NV_MINI_FFMPEG)
+  target_include_directories(main PRIVATE "${MINI_FF}/include")
+  target_link_libraries(main PRIVATE "${MINI_FF}/lib/libavformat.a" "${MINI_FF}/lib/libavcodec.a" "${MINI_FF}/lib/libavutil.a")
+  target_link_options(main PRIVATE "-Wl,--exclude-libs,libavformat.a:libavcodec.a:libavutil.a")
+endif()
+
 # Nucleo EBML/NAL do mkv.c em Rust (piloto, docs/plans/rust-mapa.md): so com a
 # pasta informada; vazio = o caminho C de sempre.
 if(NUVIO_RUST_MKVCORE)
@@ -156,10 +181,31 @@ if(NUVIO_RUST_MKVCORE)
   target_link_libraries(main PRIVATE "${RUST_MKV_LIB}")
 endif()
 
+# libass hybrid (tools/android/libass.sh): the .tpk's subtitle engine
+# (NV_ASS_LIBASS + NV_ASS_NOVO). libass and HarfBuzz were compiled against
+# SDL2_ttf's vendored FreeType headers and take their FT_* symbols from that
+# same target here: one FreeType in libmain.so. Empty = text cues only.
+if(NUVIO_LIBASS)
+  set(ASS_PREFIX "${NUVIO_LIBASS}/${ANDROID_ABI}/libass")
+  if(NOT EXISTS "${ASS_PREFIX}/lib/libass.a")
+    message(FATAL_ERROR "libass ausente em ${ASS_PREFIX} (rode tools/android/libass.sh)")
+  endif()
+  target_compile_definitions(main PRIVATE NV_ASS_LIBASS NV_ASS_NOVO)
+  target_include_directories(main PRIVATE "${ASS_PREFIX}/include")
+  target_link_libraries(main PRIVATE "${ASS_PREFIX}/lib/libass.a" "${ASS_PREFIX}/lib/libharfbuzz.a"
+    "${ASS_PREFIX}/lib/libfribidi.a" freetype)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ASS_PREFIX}/.stamp")
+endif()
+
 # Motor P2P embutido (src/p2pmotor.h): nuvio-engine + libtorrent + OpenSSL,
 # estaticos e ja compilados por tools/p2p-motor/build-android.sh. C++ dentro de
 # um nucleo C: liga com o driver C++ e o libc++ estatico do ANDROID_STL.
-if(NUVIO_P2P_MOTOR)
+# Ou a libnuvio_engine.so pronta do NuvioTV (tools/p2p-motor/fetch-android.sh):
+# aberta por dlopen (NV_P2P_MOTOR_DLOPEN), sem NEEDED; o gradle a poe no APK.
+if(NUVIO_P2P_MOTOR AND EXISTS "${NUVIO_P2P_MOTOR}/lib/${ANDROID_ABI}/libnuvio_engine.so")
+  target_compile_definitions(main PRIVATE NV_P2P_MOTOR NV_P2P_MOTOR_DLOPEN)
+  target_include_directories(main PRIVATE "${NUVIO_P2P_MOTOR}/include")
+elseif(NUVIO_P2P_MOTOR)
   set(P2P_LIB "${NUVIO_P2P_MOTOR}/lib/${ANDROID_ABI}")
   if(NOT EXISTS "${P2P_LIB}/libnuvio_engine.a")
     message(FATAL_ERROR "motor P2P ausente em ${P2P_LIB} (rode tools/p2p-motor/build-android.sh)")

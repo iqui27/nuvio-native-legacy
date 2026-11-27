@@ -32,18 +32,31 @@ def uint(tag, value):
 
 header = elem('1a45dfa3', uint('4286', 1) + uint('42f7', 1) + uint('42f2', 4)
               + uint('42f3', 8) + elem('4282', b'matroska') + uint('4287', 4) + uint('4285', 2))
-info = elem('1549a966', uint('2ad7b1', 1000000) + elem('4489', struct.pack('>d', 832.0)))
+indexed = '--indexed' in sys.argv[2:]
+duration = max(float(packet['pts_time']) + float(packet.get('duration_time', 0))
+               for packet in source['packets']) * 1000 if indexed else 832.0
+info = elem('1549a966', uint('2ad7b1', 1000000) + elem('4489', struct.pack('>d', duration)))
 hvcc = unhex(source['streams'][0]['extradata'])
 mapping = elem('41e4', uint('41f0', 1) + uint('41e7', int.from_bytes(b'dvcC', 'big'))
                + elem('41ed', bytes([1, 0, 7 << 1, (6 << 3) | 7, 6 << 4]) + bytes(19)))
 video = elem('ae', uint('d7', 1) + uint('73c5', 1) + uint('83', 1)
              + elem('86', b'V_MPEGH/ISO/HEVC') + elem('63a2', hvcc) + uint('23e383', 40000000)
              + elem('e0', uint('b0', 64) + uint('ba', 64)) + mapping)
-audio = elem('ae', uint('d7', 2) + uint('73c5', 2) + uint('83', 2) + elem('86', b'A_EAC3')
-             + elem('e1', elem('b5', struct.pack('>d', 48000.0)) + uint('9f', 2)))
-tracks = elem('1654ae6b', video + audio)
-for kind in ['mel', 'fel']:
-    rpu = (root / (kind+'-input.nal')).read_bytes()
+audios = b''
+for index, stream in enumerate(source['streams'][1:], 2):
+    codec = {'dts': b'A_DTS', 'truehd': b'A_TRUEHD', 'eac3': b'A_EAC3', 'ac3': b'A_AC3'}[stream['codec_name']]
+    audios += elem('ae', uint('d7', index) + uint('73c5', index) + uint('83', 2)
+                   + elem('86', codec)
+                   + elem('e1', elem('b5', struct.pack('>d', 48000.0)) + uint('9f', stream['channels'])))
+tracks = elem('1654ae6b', video + audios)
+for kind in ['mel', 'fel', 'p8']:
+    rpu = (root / ('mel-output.nal' if kind == 'p8' else kind+'-input.nal')).read_bytes()
+    mapped_video = video
+    if kind == 'p8':
+        p8mapping = elem('41e4', uint('41f0', 1) + uint('41e7', int.from_bytes(b'dvcC', 'big'))
+                         + elem('41ed', bytes([1, 0, 8 << 1, (6 << 3) | 5, 1 << 4]) + bytes(19)))
+        mapped_video = video.replace(mapping, p8mapping)
+    kind_tracks = elem('1654ae6b', mapped_video + audios)
     for corrupt in [False, True]:
         blocks = b''
         for packet in source['packets']:
@@ -54,10 +67,13 @@ for kind in ['mel', 'fel']:
                 if corrupt:
                     nal[-2] ^= 0x5a
                 el = bytes([0x7e, 1, 0xab, 0xcd])
-                data += len(el).to_bytes(4, 'big') + el + len(nal).to_bytes(4, 'big') + nal
+                if kind != 'p8':
+                    data += len(el).to_bytes(4, 'big') + el
+                data += len(nal).to_bytes(4, 'big') + nal
             ms = round(float(packet['pts_time'])*1000)
-            block = bytes([0x81+index]) + struct.pack('>h', ms) + bytes([0x80]) + data
+            flag = 0x80 if not indexed or 'K' in packet['flags'] else 0
+            block = bytes([0x81+index]) + struct.pack('>h', ms) + bytes([flag]) + data
             blocks += elem('a3', block)
         cluster = elem('1f43b675', uint('e7', 0) + blocks)
         (root / (kind + ('-bad' if corrupt else '') + '.mkv')).write_bytes(
-            header + elem('18538067', info + tracks + cluster))
+            header + elem('18538067', info + kind_tracks + cluster))

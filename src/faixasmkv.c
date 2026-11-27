@@ -4,6 +4,7 @@
 #include "linguas.h"
 #include "audioinfo.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define SEP "  \xc2\xb7  "
@@ -75,7 +76,7 @@ static int audioCompativel(const VideoFaixa *f, const MkvFaixa *m) {
 // fica com o rotulo da TV. Devolve quantas casaram.
 static int casarAudioPorAtributo(int nF, const VideoFaixa *f, const MkvFaixa *fx, const int *cand, int nc,
                                  int *mapa) {
-  int k, k2, j, achou = 0, perdeu[64] = {0};
+  int k, k2, j, achou = 0, perdeu[MKV_MAX_FAIXAS] = {0};
   for (k = 0; k < nF; k++) {
     int m = 0, s = 0, rank = 0;
     for (j = 0; j < nc; j++) m += audioCompativel(&f[k], &fx[cand[j]]);
@@ -145,11 +146,11 @@ static int linhaDoPlayer(const VideoFaixa *f) { return !f || f->numero >= 0; }
 // denuncie, e "Letreiros" na faixa de dialogo e pior que o codigo do player.)
 // `mapa[k]` recebe o indice em `fx` da faixa k do player (-1 = nenhum).
 static int casarTipo(int nF, const VideoFaixa *f, const MkvFaixa *fx, int n, int tipo, int *mapa) {
-  int cand[64], nc = 0, j, k, pulouImagem = 0, nJog = 0;
+  int cand[MKV_MAX_FAIXAS], nc = 0, j, k, pulouImagem = 0, nJog = 0;
   for (k = 0; k < nF; k++) mapa[k] = -1;
   if (nF < 1) return 0;
   for (k = 0; k < nF; k++) nJog += linhaDoPlayer(&f[k]);
-  for (j = 0; j < n && nc < 64; j++) if (fx[j].tipo == tipo) cand[nc++] = j;
+  for (j = 0; j < n && nc < MKV_MAX_FAIXAS; j++) if (fx[j].tipo == tipo) cand[nc++] = j;
   if (nc != nJog && tipo == MKV_LEG) {
     int m = 0;
     for (j = 0; j < nc; j++) if (!legendaImagem(&fx[cand[j]])) cand[m++] = cand[j];
@@ -160,11 +161,14 @@ static int casarTipo(int nF, const VideoFaixa *f, const MkvFaixa *fx, int n, int
   // atributo; as sem par seguro ficam com o rotulo da TV.
   if (nc > nJog && tipo == MKV_AUDIO) return casarAudioPorAtributo(nF, f, fx, cand, nc, mapa) ? 3 : 0;
   if (nc != nJog && tipo == MKV_LEG) {
-    VideoFaixa jog[64];
-    int mapJ[64], p = 0, r;
-    for (k = 0; k < nF && p < 64; k++) if (linhaDoPlayer(&f[k])) jog[p++] = f[k];
+    // No heap: NV_FAIXA_MAX linhas de VideoFaixa passam de 40 KB.
+    VideoFaixa *jog = malloc((size_t)NV_FAIXA_MAX * sizeof *jog);
+    int mapJ[NV_FAIXA_MAX], p = 0, r;
+    if (!jog) return 0;
+    for (k = 0; k < nF && p < NV_FAIXA_MAX; k++) if (linhaDoPlayer(&f[k])) jog[p++] = f[k];
     r = faixasmkv_legendas_por_idioma(jog, p, fx, n, mapJ);
     for (k = 0, p = 0; k < nF; k++) if (linhaDoPlayer(&f[k])) mapa[k] = mapJ[p++];
+    free(jog);
     return r ? 3 : 0;
   }
   if (nc != nJog) return 0;
@@ -233,10 +237,10 @@ static int aplicarUma(VideoFaixa *f, const MkvFaixa *m, int ordinal) {
 
 int faixasmkv_aplicar(VideoFaixa *aud, int nAud, VideoFaixa *leg, int nLeg,
                       const MkvFaixa *fx, int n) {
-  int mapa[64], k, mudou = 0, comoA, comoL;
+  int mapa[NV_FAIXA_MAX], k, mudou = 0, comoA, comoL;
   if (!fx || n < 1) return 0;
-  if (nAud > 64) nAud = 64;
-  if (nLeg > 64) nLeg = 64;
+  if (nAud > NV_FAIXA_MAX) nAud = NV_FAIXA_MAX;
+  if (nLeg > NV_FAIXA_MAX) nLeg = NV_FAIXA_MAX;
   comoA = casarTipo(nAud, aud, fx, n, MKV_AUDIO, mapa);
   for (k = 0; k < nAud; k++) if (mapa[k] >= 0) mudou += aplicarUma(&aud[k], &fx[mapa[k]], k + 1);
   comoL = casarTipo(nLeg, leg, fx, n, MKV_LEG, mapa);
@@ -250,11 +254,18 @@ int faixasmkv_aplicar(VideoFaixa *aud, int nAud, VideoFaixa *leg, int nLeg,
     int nA = 0, nL = 0, nJog = 0, j;
     for (j = 0; j < n; j++) { if (fx[j].tipo == MKV_AUDIO) nA++; else if (fx[j].tipo == MKV_LEG) nL++; }
     for (j = 0; leg && j < nLeg; j++) nJog += linhaDoPlayer(&leg[j]);
-    printf("[mkv] contagem: arquivo %d audio / %d legenda, player %d / %d; casamento audio=%s legenda=%s\n",
-           nA, nL, nAud, nJog,
-           !nAud ? "-" : comoA == 1 ? "ordinal" : comoA == 3 ? "by language/codec/channels" : "none, labels kept",
-           !nLeg ? "-" : comoL == 1 ? "ordinal" : comoL == 2 ? "without image subs" : comoL == 3 ? "unique language" : "none, labels kept");
-    fflush(stdout);
+    // Only when it changes (owner 18/11, log 13: printed every frame while the
+    // Audio menu was open, 1763 of 3789 lines).
+    { static int visto[6] = { -1, -1, -1, -1, -1, -1 };
+      int agora[6] = { nA, nL, nAud, nJog, comoA, comoL };
+      if (memcmp(visto, agora, sizeof agora)) {
+        memcpy(visto, agora, sizeof agora);
+        printf("[mkv] contagem: arquivo %d audio / %d legenda, player %d / %d; casamento audio=%s legenda=%s\n",
+               nA, nL, nAud, nJog,
+               !nAud ? "-" : comoA == 1 ? "ordinal" : comoA == 3 ? "by language/codec/channels" : "none, labels kept",
+               !nLeg ? "-" : comoL == 1 ? "ordinal" : comoL == 2 ? "without image subs" : comoL == 3 ? "unique language" : "none, labels kept");
+        fflush(stdout);
+      } }
   }
   return mudou;
 }
@@ -278,7 +289,10 @@ static int acrescentarOverlay(VideoFaixa *leg, int nLeg, int max, const MkvFaixa
     if (k < nLeg) continue;
     memset(&leg[nLeg], 0, sizeof leg[nLeg]);
     // Unique negative identities keep recovered text tracks distinct in the selector.
-    leg[nLeg].numero = texto ? -2 - (ord - 1) : -1;
+    // Image (PGS) tracks need them too: the selector keys every row by this
+    // number, and a shared -1 pinned the focus (and the pick) to the first PGS
+    // row. They take their own range so they never meet the text tracks'.
+    leg[nLeg].numero = texto ? -2 - (ord - 1) : FAIXASMKV_IMAGEM_NUMERO(ord - 1);
     leg[nLeg].stream_index = -1;
     snprintf(leg[nLeg].codec, sizeof leg[nLeg].codec, "%s", fx[j].codec);
     leg[nLeg].ordinalMkv = ord - 1;

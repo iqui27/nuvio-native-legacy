@@ -42,4 +42,10 @@ size_t nv_limpar_texto(const char *in, char *out, size_t tam, int flags);
 // inside a word (WEB-DL) is left alone. In place; returns the new length.
 size_t nv_aparar_separadores(char *s);
 
+// Bandeira -> o codigo de idioma que nv_limpar_texto escreve no lugar dela
+// ("GB" -> "EN", "BR" -> "PT"; pais fora da tabela: o proprio pais). Para o
+// estilo Minimalista dos icones (formatador.c), que mostra o codigo e nao a
+// bandeira. `pais` pode ser "GB-ENG": vale o "GB".
+const char *nv_bandeira_idioma(const char *pais, char buf[4]);
+
 #endif

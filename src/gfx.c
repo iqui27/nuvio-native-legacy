@@ -3,6 +3,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include "gfx_smartphone_png.h"
+#include <unistd.h>   /* access: gfx_icone_existe */
 #include "layout.h"
 #include <stdio.h>
 #include <string.h>
@@ -680,6 +681,13 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "      rgb = h.rgb * a + rgb * (1.0-a); g.a = a + g.a * (1.0-a);\n"
   "    }\n"
   "    gl_FragColor = vec4(rgb / max(g.a, 0.00001) * (1.0-uFoco), g.a); return;\n"
+  "  }\n"
+  // Positive uPar.y enables sub-rect UV scaling (uPar = active/bucket scale,
+  // uRaio = half-texel inset) for bucketed RGBA subtitle textures.
+  "  if (uPar.y > 0.0) {\n"
+  "    vec2 uv = min(vUv * uPar, max(uPar - vec2(uRaio), vec2(0.0)));\n"
+  "    g = texture2D(uTex, uv);\n"
+  "    gl_FragColor = vec4(g.rgb * (1.0 - uFoco), g.a * uCor.a); return;\n"
   "  }\n"
   // uPar.x liga o tint RGB do texto em cache; logos mantem a cor original.
   "  vec3 tint = uPar.x > 0.5 ? uCor.rgb : vec3(1.0);\n"
@@ -1928,6 +1936,7 @@ void gfx_tex_esquecer(GLuint tex) {
 }
 
 int    gfx_n_rect = 0, gfx_n_prog = 0, gfx_n_bind = 0, gfx_n_outros = 0;
+unsigned gfx_furo_assin = 0;
 double gfx_ms_rect = 0.0, gfx_ms_outros = 0.0;
 // PREENCHIMENTO SUBMETIDO no quadro, em telas cheias (1920x1080 = 1,0).
 // Nesta Mali o custo e de fragmento, nao de chamada: a nota no topo deste
@@ -2294,6 +2303,7 @@ static void vidroAplicar(Programa *P, GfxRect r);
 void gfx_novo_quadro(void) {
   gfx_quadro_n++;
   gfx_n_rect = gfx_n_prog = gfx_n_bind = gfx_n_outros = 0;
+  gfx_furo_assin = 0;
   gfx_ms_rect = gfx_ms_outros = 0.0;
   gfx_fill = 0.0; gfx_fill_vis = 0.0; gfx_n_cheio = 0; gfx_n_cheio_mistura = 0;
   gfx_fill_gpu_ult = gfx_fill_gpu; gfx_fill_gpu_mist_ult = gfx_fill_gpu_mist;
@@ -4526,6 +4536,8 @@ void gfx_furo(GfxRect r) {
   y0 = (int)floorf((NV_TELA_H - (r.y + r.h)) * ey + 0.5f);
   y1 = (int)floorf((NV_TELA_H - r.y) * ey + 0.5f);
   if (x1 <= x0 || y1 <= y0) return;
+  gfx_furo_assin = gfx_furo_assin * 31u + (unsigned)x0 * 7919u + (unsigned)y0 * 104729u +
+                   (unsigned)x1 * 1299709u + (unsigned)y1 * 15485863u + 1u;
   GFX_OUTRO_INI();
   glEnable(GL_SCISSOR_TEST);
   glScissor(x0, y0, x1 - x0, y1 - y0);
@@ -4783,6 +4795,40 @@ void gfx_icone(GfxRect r, const char *nome, float cr, float cg, float cb, float 
   if (!t) return;
   gfx_tex_aspect_atual = 0.0f;   // o arquivo ja e quadrado
   gfx_rect(r, t, GFX_MARCA, 0, 0, 0, 0.0f, cr, cg, cb, ca);
+}
+
+// Icone de traco do formatador (simbolo sy_ ou Lucide do Minimalista), na
+// tinta do texto: o mesmo desenho de gfx_icone, pedido como icone do pacote
+// (tex_obter_icone: sem esperar atras de cartazes na fila do tex_cache).
+void gfx_icone_fmt(GfxRect r, const char *nome, float cr, float cg, float cb, float ca) {
+  char cam[600];
+  GLuint t;
+  if (!nome || !nome[0] || ca <= 0.0f || r.w <= 0.0f || r.h <= 0.0f || !dirIcones[0]) return;
+  snprintf(cam, sizeof cam, "%s/%s.png", dirIcones, nome);
+  t = tex_obter_icone(cam, r.w);
+  if (!t) return;
+  gfx_tex_aspect_atual = 0.0f;
+  gfx_rect(r, t, GFX_MARCA, 0, 0, 0, 0.0f, cr, cg, cb, ca);
+}
+
+int gfx_icone_existe(const char *nome) {
+  char cam[600];
+  if (!nome || !nome[0] || !dirIcones[0]) return 0;
+  snprintf(cam, sizeof cam, "%s/%s.png", dirIcones, nome);
+  return access(cam, R_OK) == 0;
+}
+
+void gfx_icone_cor(GfxRect r, const char *nome, float ca) {
+  char cam[600];
+  GLuint t;
+  if (!nome || !nome[0] || ca <= 0.0f || r.w <= 0.0f || r.h <= 0.0f || !dirIcones[0]) return;
+  snprintf(cam, sizeof cam, "%s/%s.png", dirIcones, nome);
+  t = tex_obter_icone(cam, r.w);   // so o formatador desenha icones em cores
+  if (!t) return;
+  gfx_tex_aspect_atual = 0.0f;
+  // GFX_TEXTO preserva o RGB da textura (ver GFX_MARCA em gfx.h): e o caminho
+  // da logo de titulo clara, a mesma imagem colorida sem tinta.
+  gfx_rect(r, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1.0f, 1.0f, 1.0f, ca);
 }
 
 void gfx_recorte(float x, float y, float w, float h) {
@@ -5193,6 +5239,31 @@ void gfx_mini_esvanecer(GfxRect r, float alfa) {
   glBlendFuncSeparate(GL_ZERO, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
   gfx_veu_css(r, 0, 1.0f, 1.0f, alfa);
   glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+}
+int gfx_grupo_comecar(GfxGrupo *g, GfxRect r, float alpha) {
+  float esc = gfx_px_por_unidade();
+  int px0, py0, pw, ph;
+  g->ativo = 0;
+  if (alpha >= 0.999f || alpha <= 0.0f || miniAtiva || snapAtivo || esc <= 0.0f ||
+      r.w <= 0.0f || r.h <= 0.0f) return 0;
+  px0 = (int)floorf(r.x * esc); py0 = (int)floorf(r.y * esc);
+  pw = (int)ceilf((r.x + r.w) * esc) - px0; ph = (int)ceilf((r.y + r.h) * esc) - py0;
+  /* Sizes in steps, so a new caption rarely reallocates the target. */
+  pw = (pw + 255) & ~255; ph = (ph + 63) & ~63;
+  if (pw > 4096 || ph > 4096 || !gfx_mini_alvo(&g->m, pw, ph)) return 0;
+  g->x0 = (float)px0 / esc; g->y0 = (float)py0 / esc; g->esc = esc;
+  gfx_mini_comecar(&g->m, g->x0, g->y0, esc);
+  if (!miniAtiva) return 0;
+  g->grupoAnt = gfx_opacidade_grupo; gfx_opacidade_grupo = 1.0f;
+  g->ativo = 1;
+  return 1;
+}
+void gfx_grupo_terminar(GfxGrupo *g, float alpha) {
+  if (!g->ativo) return;
+  g->ativo = 0;
+  gfx_mini_terminar();
+  gfx_opacidade_grupo = g->grupoAnt;
+  gfx_mini_desenhar(&g->m, (GfxRect){ g->x0, g->y0, (float)g->m.w / g->esc, (float)g->m.h / g->esc }, 0.0f, alpha);
 }
 void gfx_mini_liberar(GfxMini *m) {
   if (m->fbo) glDeleteFramebuffers(1, &m->fbo);

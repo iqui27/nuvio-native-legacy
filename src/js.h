@@ -101,5 +101,7 @@ int js_texto_raiz(const char *corpo, const char *chave, char *dst, size_t tam);
 // significa "ate o fim da string".
 int js_texto_raiz_em(const char *ini, const char *fim, const char *chave,
                      char *dst, size_t tam);
+// Pointer to the start of a member value at the object's root.
+const char *js_valor_raiz_em(const char *ini, const char *fim, const char *chave);
 
 #endif

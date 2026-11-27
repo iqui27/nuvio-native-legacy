@@ -241,6 +241,7 @@ static void vistosGravar(void) {
 // se e NOVO (para o toast).
 static int por(const char *id, int tipo, const char *titulo, const char *texto, const char *alvo) {
   int i;
+  if (tipo == AV_UPDATE && !ajustes_update_notifications()) return 0;
   // DISPENSADO NAO VOLTA (avisodisp.h): nem na lista, nem na ilha, nem depois
   // de reiniciar. A chave e o evento; um evento novo tem outra chave.
   if (avisodisp_tem(id)) return 0;
@@ -790,8 +791,14 @@ int avisos_enviar_arranque(const char *relato, const char *tv, int segundos) {
 }
 #endif
 
+#ifdef NV_TPK
+static char quedaAnterior[712];   // os registros de falha da sessao anterior (queda.h)
+#endif
 void avisos_iniciar(void) {
   char *m;
+#ifdef NV_TPK
+  long caiuS = -1;   // o "t=" do ultimo sinal de vida da sessao que caiu
+#endif
 #ifdef NV_WEBOS
   tvWebos();
   // Antes de tudo: o relato da queda anterior entra no log desta sessao (e
@@ -801,6 +808,25 @@ void avisos_iniciar(void) {
 #ifdef NV_WEBOS
       arranque_espelhar_queda();   // o relato continua tambem em /tmp (#317)
 #endif
+    } }
+#elif defined(NV_TPK)
+  /* .tpk (owner 27-28/10): every fault is recorded, CHAINED to CoreCLR's
+   * handler (the process is .NET's; queda.h, modo registro), tagged .NET or
+   * native, with the session time. The last session's records move aside
+   * here and are printed below, once the mark says whether it crashed. */
+  { char qd[700];
+    if (dados_caminho(qd, sizeof qd, "queda.txt") && strlen(qd) + 9 < sizeof quedaAnterior) {
+      char ult[720], antUlt[720];
+      snprintf(quedaAnterior, sizeof quedaAnterior, "%s.ant", qd);
+      snprintf(ult, sizeof ult, "%s.ult", qd);
+      snprintf(antUlt, sizeof antUlt, "%s.ult", quedaAnterior);
+      remove(quedaAnterior); remove(antUlt);
+      rename(qd, quedaAnterior); rename(ult, antUlt);
+      queda_armar_registro(qd, SDL_GetTicks());
+      /* One line per start: the reporter is on, and which build this is (the
+       * compile time tells two CI builds of the same version apart). */
+      printf("[queda] crash reporter armed (build %s %s)\n", __DATE__, __TIME__);
+      fflush(stdout);
     } }
 #endif
   vistosLer();
@@ -839,6 +865,9 @@ void avisos_iniciar(void) {
     free(m);
     printf("[avisos] a sessao anterior (%s, %s) nao se despediu: marca presente; %s\n",
            v, crashQuando, sinal[0] ? sinal : "no last signal (old mark)");
+#ifdef NV_TPK
+    { const char *t = strstr(sinal, " t="); if (t) caiuS = strtol(t + 3, NULL, 10); }
+#endif
     fflush(stdout);
 #ifdef __EMSCRIPTEN__
     lerLogAnterior();
@@ -855,6 +884,12 @@ void avisos_iniciar(void) {
       (void)por(id, AV_CRASH, tit, txt, NULL);
       pthread_mutex_unlock(&trava); }
   }
+#ifdef NV_TPK
+  /* Os registros de falha da sessao anterior, agora que se sabe se ela caiu:
+   * a ultima falha de uma sessao que caiu e a fatal (a hora dela contra o t=
+   * do ultimo sinal de vida acima). */
+  if (quedaAnterior[0]) queda_relatar_sessao(quedaAnterior, crashDetectado, caiuS, stdout);
+#endif
   marcaGravar();
   canalProximo = SDL_GetTicks() + 8000;   // depois da home, nao junto com ela
   // DEMONSTRACAO: NUVIO_AVISOS_DEMO=1 poe um item de cada tipo na lista, para
@@ -1280,6 +1315,7 @@ static const char *icone(int tipo) {
 // esta na pilula. Quem executa o botao e avisos_ilha_acao.
 static RecItem recDaIlha;              // a recomendacao que o modal mostra
 static void anunciarItem(const Aviso *it) {
+  if (it->tipo == AV_UPDATE && !ajustes_update_notifications()) return;
   char chave[96], txt[240], f1[200], f2[200];
   IlhaAvisoEx e;
   static IlhaModal m;

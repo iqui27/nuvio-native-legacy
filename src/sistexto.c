@@ -59,13 +59,32 @@ int st_teclado_do_app(void) { return !st_abre_sozinho() && st_teclado_modo() == 
 int st_ime_disponivel(void) {
 #ifdef NV_ANDROID
   return 1;
+#elif defined(NV_TPK)
+  // .tpk de release: o host (Voz.cs) so abre o teclado da Samsung para digitar
+  // quando o ajuste Teclado esta em "Do sistema". Em Automatico e "Do app" fica
+  // a grade do app, como sempre foi. O canario (Texto.cs) segue por TS_TECLADO.
+  return !st_teclado_do_app() &&
+         (teste() || (texto_sistema_disponivel() & TS_TECLADO) != 0 ||
+          (st_teclado_modo() == 2 && texto_sistema_teclado_pelo_host()));
 #else
   return !st_teclado_do_app() && (teste() || (texto_sistema_disponivel() & TS_TECLADO) != 0);
+#endif
+}
+// .tpk com "Teclado: Do sistema" valido: a grade do app some das buscas e o
+// microfone do app tambem (o teclado da Samsung tem o dele). Se o teclado nao
+// subir nesta sessao, st_ime_disponivel() cai para 0 e a grade volta.
+int st_teclado_so_sistema(void) {
+#ifdef NV_TPK
+  return st_teclado_modo() == 2 && st_ime_disponivel();
+#else
+  return 0;
 #endif
 }
 int st_voz_disponivel(void) {
 #ifdef NV_ANDROID
   return 1;
+#elif defined(NV_TPK)
+  return !st_teclado_so_sistema() && (teste() || (texto_sistema_disponivel() & TS_VOZ) != 0);
 #else
   return teste() || (texto_sistema_disponivel() & TS_VOZ) != 0;
 #endif
@@ -95,8 +114,45 @@ static int proximo(char *dst, size_t n);
 // fechar) nao pode cair no campo novo.
 static void descartar(void) { char ev[ST_EVENTO_MAX]; int k = 0; while (k++ < 64 && proximo(ev, sizeof ev)) {} }
 
+// CURSOR DO CAMPO (so o .tpk): o host diz onde a pessoa pos o cursor (Esquerda/
+// Direita ou digitando), em caracteres. -1 = no fim, ou nao e este dono.
+int st_cursor_chars(int d) {
+#ifdef NV_TPK
+  if (d != dono || estado != ST_DIGITANDO || micTeclado || !texto_sistema_aberto()) return -1;
+  return texto_sistema_cursor();
+#else
+  (void)d;
+  return -1;
+#endif
+}
+// O trecho de `texto` ANTES do cursor, para medir onde desenha-lo. 0 = cursor no
+// fim (ou desconhecido): quem desenha usa o fim do texto, como sempre.
+int st_cursor_prefixo(int d, const char *texto, char *dst, size_t n) {
+  int c = st_cursor_chars(d), k = 0;
+  const unsigned char *p = (const unsigned char *)texto;
+  size_t b = 0;
+  if (n) dst[0] = 0;
+  if (!texto || !n || c < 0) return 0;
+  while (p[b] && k < c) {
+    b++;
+    while ((p[b] & 0xC0) == 0x80) b++;
+    k++;
+  }
+  if (!p[b] || b >= n) return 0;
+  memcpy(dst, texto, b);
+  dst[b] = 0;
+  return 1;
+}
+
 static int proximoTipo;
 void st_ime_tipo(int tipo) { proximoTipo = tipo; }
+int st_ime_senha_ok(void) {
+#ifdef NV_TPK
+  return !pelaPlataforma() || texto_sistema_senha_segura();
+#else
+  return 1;
+#endif
+}
 
 int st_ime_abrir(int d, const char *inicial, int max) {
   int ok = 0, tipo = proximoTipo;
@@ -111,8 +167,10 @@ int st_ime_abrir(int d, const char *inicial, int max) {
   // O tipo vai nos bits altos do max: a assinatura JNI fica a mesma.
   ok = android_st_teclado(inicial ? inicial : "", (max & 0xFFFF) | (tipo << 16));
 #else
-  (void)max; (void)tipo;
-  if (pelaPlataforma()) { texto_sistema_abrir(inicial ? inicial : "", 0); ok = texto_sistema_aberto(); }
+  (void)max;
+  // O tipo segue ao host do .tpk (senha = teclado da Samsung em modo senha).
+  if (pelaPlataforma()) { texto_sistema_tipo(tipo); texto_sistema_abrir(inicial ? inicial : "", 0); ok = texto_sistema_aberto(); }
+
   else ok = 1;
 #endif
   estado = ok ? ST_DIGITANDO : ST_PARADO;

@@ -28,6 +28,7 @@
 #define NV_TRAILER_H
 #include <SDL2/SDL.h>
 #include "gfx.h"
+#include "trailerfonte.h"   // NV_TRAILERIO
 
 int  trailer_suportado(void);
 // Abre (ou reposiciona) o trailer `fonte` no retangulo `r` (coordenadas da
@@ -35,6 +36,12 @@ int  trailer_suportado(void);
 // `cheia` marca o modo de tela
 // cheia com teclado proprio.
 void trailer_abrir(const char *fonte, GfxRect r, int som, int cheia);
+#ifdef NV_TRAILERIO
+// Title page Trailer button through Trailerio (webOS, Android, native .tpk).
+// `automatico` 1 (Automatic source): the platform's full-screen order of Apple
+// TV and IMDb first, Trailerio last. 0: Trailerio only.
+int trailer_abrir_trailerio(const char *id, const char *tipo, GfxRect r, int som, int automatico);
+#endif
 void trailer_rect(GfxRect r);
 // O proximo trailer_abrir (e os trailer_rect dele) toca DENTRO DE UM CARTAZ da
 // home (modo "No card"). So muda algo no .tpk: la o recorte de fonte vira um

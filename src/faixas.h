@@ -20,6 +20,9 @@ void faixas_reiniciar_preparada(void);
 #endif
 
 void faixas_abrir(void);
+// The main subtitle chosen again (TorBox burn-in switched On/Off in the
+// Subtitles menu): it burns in, or goes back to Nuvio's renderer.
+void faixas_legenda_reaplicar(void);
 // Abre com o foco JA na coluna pedida: 0 = audio, 1 = legenda. O player tem um
 // icone para cada, e abrir sempre no audio fazia os dois parecerem o mesmo
 // botao.
@@ -58,5 +61,8 @@ void faixas_escolher_embutida(int i);
 void faixas_escolher_externa(const Legenda *copia);
 // The ASS/collector state label of embedded track `i` (NULL = nothing to say).
 const char *faixas_legenda_marca(int i);
+// Notes the playing file's own audio language (audioext_idioma_principal),
+// not while another version plays.
+void faixas_idioma_principal_atualizar(void);
 
 #endif

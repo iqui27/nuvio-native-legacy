@@ -1,0 +1,217 @@
+name: Build APK
+
+# Builds the Android TV / Google TV APK the same way `bash tools/android.sh`
+# does on a computer, runs the Android unit tests, and uploads the APK as one
+# downloadable artifact.
+#
+# Runs by hand (Actions tab -> Build APK -> Run workflow, once this file is on
+# master) and on pushes to master or claude/** branches that touch app code.
+# A new push to the same branch cancels the build still running for it.
+#
+# Without signing secrets the APK is the debug build (signed with a throwaway
+# debug key): install it on a TV that has no other Nuvio APK, or uninstall the
+# old one first. With the four NUVIO_KEYSTORE_* secrets the signed release
+# APK is built too. Without the LOCAL_PROPERTIES secret (the contents of
+# local.properties) the build has no server keys, like the TPK workflow.
+# libass (the .tpk's hybrid subtitle engine) is on by default; Run workflow
+# can turn it off. No P2P engine on CI.
+
+on:
+  push:
+    branches: [master, "claude/**"]
+    paths:
+      - "src/**"
+      - "android/**"
+      - "tools/android.sh"
+      - "tools/android/**"
+      - "tools/rust-mkvcore.sh"
+      - "rust/**"
+      - "deploy/app/**"
+      - "tools/tpk/libass-hybrid/**"
+      - "tools/p2p-motor/**"
+      - ".github/workflows/build-apk.yml"
+  workflow_dispatch:
+    inputs:
+      libass:
+        description: "Build with libass (ASS subtitles like the .tpk): 1 or 0"
+        default: "1"
+  # release.yml. With the release key (NUVIO_ANDROID_KEYSTORE_B64) tools/android.sh
+  # also signs the full APK (no lite APKs since 2.0.9).
+  workflow_call:
+    inputs:
+      libass:
+        type: string
+        default: "1"
+
+concurrency:
+  group: build-apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      # P2P engine: NuvioTV's ready-made libnuvio_engine.so (fetch step below).
+      NUVIO_P2P_MOTOR: /home/runner/p2p-motor
+      NUVIO_LIBASS: ${{ inputs.libass || '1' }}
+      NUVIO_ANDROID_CACHE: ${{ github.workspace }}/.cache/nuvio-android
+      NDK_VERSION: 27.2.12479018
+      RUSTUP_HOME: /home/runner/.rustup
+      CARGO_HOME: /home/runner/.cargo
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Gradle distribution + dependency cache (the wrapper download and Maven
+      # fetches are where CI gets rate-limited).
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Install Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+            "ndk;$NDK_VERSION" "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" >/dev/null
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      # tools/tizen-art.sh converts the art from webp to png with ffmpeg on
+      # Linux; tools/android/libass.sh runs autoreconf.
+      - name: Install host tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg autoconf automake libtool pkg-config
+
+      - name: Add the Rust Android targets
+        run: rustup target add aarch64-linux-android armv7-linux-androideabi
+
+      # curl/mbedTLS, libjpeg-turbo, libwebp, the Media3 FFmpeg AAR and the
+      # thumbnail FFmpeg take a long time to build; reuse them. restore + save
+      # are split so the cache is saved even when a later step fails.
+      - name: Restore native dependencies cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.NUVIO_ANDROID_CACHE }}
+          key: apk-deps-${{ env.NDK_VERSION }}-${{ hashFiles('tools/android/deps.sh', 'tools/android/ffmpeg-android.sh', 'tools/android/ffmpeg-miniaturas.sh', 'tools/android/libass.sh', 'tools/tpk/libass-hybrid/hybrid.patch', 'tools/tpk/libass-hybrid/cflags') }}
+          restore-keys: |
+            apk-deps-${{ env.NDK_VERSION }}-
+
+      - name: Build native dependencies
+        run: |
+          set -o pipefail
+          bash tools/android/deps.sh 2>&1 | tail -n 40
+          # CPU route of the on-device seek thumbnails (src/miniatura_motor.c);
+          # Gradle picks this folder up by itself.
+          bash tools/android/ffmpeg-miniaturas.sh "$NUVIO_ANDROID_CACHE/mini-ffmpeg" 2>&1 | tail -n 40
+
+      - name: Server keys (optional)
+        env:
+          PROPS: ${{ secrets.LOCAL_PROPERTIES || secrets.NUVIO_LOCAL_PROPERTIES }}
+          RELEASE_RUN: ${{ github.workflow == 'Release' }}
+        run: |
+          if [ -n "$PROPS" ]; then
+            printf '%s\n' "$PROPS" > local.properties
+            echo "local.properties from the secret ($(grep -c '=' local.properties) keys)"
+            grep -q '^NUVIO_SUPABASE_URL=.' local.properties || echo "::warning::the secret has no NUVIO_SUPABASE_URL: login stays off"
+          elif [ "$RELEASE_RUN" = true ]; then
+            echo "::error::no LOCAL_PROPERTIES secret: a release build needs the server keys"; exit 1
+          else
+            echo "::warning::no LOCAL_PROPERTIES secret: the APK has no server keys (test build only)"
+          fi
+
+      - name: Release signing key (optional)
+        env:
+          KS_B64: ${{ secrets.NUVIO_ANDROID_KEYSTORE_B64 || secrets.NUVIO_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.NUVIO_KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.NUVIO_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.NUVIO_KEY_PASS }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            {
+              echo "NUVIO_KEYSTORE=$RUNNER_TEMP/release.jks"
+              echo "NUVIO_KEYSTORE_PASS=$KS_PASS"
+              echo "NUVIO_KEY_ALIAS=$KEY_ALIAS"
+              echo "NUVIO_KEY_PASS=$KEY_PASS"
+            } >> "$GITHUB_ENV"
+          else
+            echo "no signing secrets: debug APK only"
+          fi
+
+      # nuvio-engine 0.1.7 exactly as NuvioTV ships it (sha256-pinned AAR);
+      # tools/android.sh fails if either ABI's engine is missing from the APK.
+      - name: Fetch the P2P engine (NuvioTV)
+        run: bash tools/p2p-motor/fetch-android.sh /home/runner/p2p-motor/android
+
+      - name: Build the APK
+        run: |
+          set -o pipefail
+          bash tools/android.sh 2>&1 | tee build.log
+
+      # After the build: tools/android.sh also fills the cache (SDL sources, Media3 FFmpeg AAR).
+      - name: Save native dependencies cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.NUVIO_ANDROID_CACHE }}
+          key: apk-deps-${{ env.NDK_VERSION }}-${{ hashFiles('tools/android/deps.sh', 'tools/android/ffmpeg-android.sh', 'tools/android/ffmpeg-miniaturas.sh', 'tools/android/libass.sh', 'tools/tpk/libass-hybrid/hybrid.patch', 'tools/tpk/libass-hybrid/cflags') }}
+
+      # Proof the subtitle engine is inside both libmain.so of every APK.
+      - name: Check libass in libmain.so
+        if: env.NUVIO_LIBASS == '1'
+        run: |
+          for apk in build/android/Nuvio-*.apk; do
+            # The lite APKs carry one ABI each (tools/android.sh).
+            case "$apk" in
+              *-lite-armv7*) abis="armeabi-v7a" ;;
+              *-lite-arm64*) abis="arm64-v8a" ;;
+              *) abis="arm64-v8a armeabi-v7a" ;;
+            esac
+            for abi in $abis; do
+              n=$(unzip -p "$apk" "lib/$abi/libmain.so" | strings | grep -c 'mpvNova-libass' || true)
+              echo "$(basename "$apk") $abi: libass hybrid marks=$n"
+              [ "$n" -ge 1 ] || { echo "libmain.so ($abi) without the libass hybrid" >&2; exit 1; }
+            done
+          done
+
+      - name: Android unit tests
+        run: |
+          set -o pipefail
+          android/gradlew -p android --console=plain \
+            -Pnuvio.sdlSrc="$NUVIO_ANDROID_CACHE/src" -Pnuvio.estagio="$PWD/build/android" \
+            -Pnuvio.ffmpegAar="$PWD/build/android/media3-ffmpeg-16kb.aar" \
+            testDebugUnitTest 2>&1 | tee test.log
+
+      - name: Show error summary
+        if: failure()
+        run: |
+          {
+            echo '### Build or tests failed - last 60 lines'
+            echo '```'
+            if [ -f test.log ]; then tail -n 60 test.log; elif [ -f build.log ]; then tail -n 60 build.log; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: android/app/build/reports/tests/
+          if-no-files-found: ignore
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NuvioApk
+          path: build/android/Nuvio-*.apk
+          if-no-files-found: error

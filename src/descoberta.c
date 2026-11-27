@@ -3010,7 +3010,7 @@ static void *fioCatalogo(void *u) {
 // isso duas vezes em BSS. Os dois so rodam sob contTrava, um de cada vez.
 static ProgRegistro contRegs[PROG_MAX];
 
-static int continuarLocal(CatItem *saida, int max) {
+static int continuarLocalLer(CatItem *saida, int max, int enriquecer) {
   ProgRegistro *regs = contRegs;
   int k, i, n = 0;
   k = prog_ler(regs, PROG_MAX);
@@ -3059,7 +3059,7 @@ static int continuarLocal(CatItem *saida, int max) {
   // isso era perda de registro (#158), sobretudo kitsu/tmdb e providers
   // offline. Enriquece uma copia e reaplica por identidade; uma falha deixa
   // os metadados conhecidos (ou a reserva da UI), sem inventar arte.
-  if (n > 0) {
+  if (n > 0 && enriquecer) {
     CatItem *enfeitadas = malloc(sizeof *enfeitadas * (size_t)n);
     if (enfeitadas) {
       int ni, j;
@@ -3087,6 +3087,10 @@ static int continuarLocal(CatItem *saida, int max) {
   }
   if (n) printf("[desc] continuar assistindo local: %d\n", n);
   return n;
+}
+
+static int continuarLocal(CatItem *saida, int max) {
+  return continuarLocalLer(saida, max, 1);
 }
 
 // --- "CONTINUAR ASSISTINDO": AS DUAS FONTES, UNIDAS ---------------------------
@@ -3157,6 +3161,24 @@ static long long instanteDaConta(const CatItem *c) {
   prog_chave(chave, sizeof chave, id, temp, ep);
   if (!prog_por_chave(chave, &r)) return 0;
   return r.lastWatchedMs;
+}
+
+// Instante de ORDEM de um item da fileira. O "a seguir" de uma serie em dia
+// carregava o instante do episodio anterior: com um episodio novo no ar ele
+// voltava para a posicao de quando a pessoa o viu (meses atras, no fim da
+// fileira). Ja exibido e depois da ultima vez vista, vale a estreia: o
+// episodio novo entra na frente, como num servico de streaming. O mesmo
+// instante decide se um oculto ou tirado volta (prog_oculto_vence): um
+// episodio que estreou depois de a pessoa ocultar a serie a traz de volta.
+// Futuros ficam com o instante de antes; a Ordenacao cuida deles.
+static long long instanteOrdem(const CatItem *c) {
+  long long ms = instanteDaConta(c), estreia;
+  if (c->progresso != 0 || c->temporada <= 0 || c->episodio <= 0 || strcmp(c->tipo, "series"))
+    return ms;
+  estreia = cwo_estreia(c->imdb);
+  if (estreia == CWO_SEM_DATA || estreia <= ms || estreia > (long long)time(NULL) * 1000LL)
+    return ms;
+  return estreia;
 }
 
 // 1 quando os dois itens sao a MESMA OBRA. O teste e o de continuarLocal:
@@ -3574,7 +3596,7 @@ static int montarContinuar(CatItem *saida, int max) {
   for (i = 0; i < nL && nJ < (int)(sizeof juntos / sizeof *juntos); i++) {
     if (pularLocal[i]) continue;
     juntos[nJ].item = &daConta[i];
-    juntos[nJ].ms   = instanteDaConta(&daConta[i]);
+    juntos[nJ].ms   = instanteOrdem(&daConta[i]);
     juntos[nJ].ord  = i;
     nJ++;
   }
@@ -3584,7 +3606,7 @@ static int montarContinuar(CatItem *saida, int max) {
       if (!pularLocal[j] && mesmaObra(remotos[i], &daConta[j])) { repetido = 1; break; }
     if (repetido) { repetidos++; continue; }
     juntos[nJ].item = remotos[i];
-    juntos[nJ].ms   = instanteDaConta(remotos[i]);
+    juntos[nJ].ms   = instanteOrdem(remotos[i]);
     // Ordem BASE alta: SO decide quando os dois instantes sao desconhecidos ou
     // iguais. Com o paused_at lido em trakt.c e simkl.c isso ficou raro.
     // Nesse resto de casos a conta vem antes, cada fonte na ordem que deu.
@@ -3610,7 +3632,8 @@ static int montarContinuar(CatItem *saida, int max) {
   // OCULTO PELA PESSOA, EM DISCO (#203): o "Tirar de Continuar assistindo" num
   // item "A seguir". Vale para as tres fontes e sobrevive ao reinicio; a obra
   // VOLTA SOZINHA quando ha episodio novo (instante mais novo que o carimbo, ou
-  // registro local mais novo). Esta leitura so altera o espelho local; nao
+  // registro local mais novo). O instante do "a seguir" ja exibido e a estreia
+  // (instanteOrdem): sem ela a serie em dia so voltava se a pessoa visse algo. Esta leitura so altera o espelho local; nao
   // escreve no Trakt.
   { int w = 0, ocultos = 0;
     for (i = 0; i < nJ; i++) {
@@ -3807,6 +3830,31 @@ static void *fioContinuar(void *u) {
   if (!descSessaoVincular(sessao)) goto fim;
   pthread_mutex_lock(&contTrava);
   if (!descSessaoAtual()) { pthread_mutex_unlock(&contTrava); goto fim; }
+  // No tracker requests or metadata enrichment before this provisional row.
+  int fonte = ajustes_cw_fonte();
+  if (fonte == AJ_CWF_AMBAS || fonte == AJ_CWF_CONTA ||
+      (fonte == AJ_CWF_TRAKT && !trakt_ativo())) {
+    int locais = continuarLocalLer(lote, CONT_MAX, 0), w = 0;
+    for (int i = 0; i < locais; i++) {
+      CatItem *c = &lote[i];
+      if (prog_removido_vence(c->imdb, c->retomadoMs) ||
+          prog_oculto_vence(c->imdb, c->retomadoMs)) continue;
+      if (!c->titulo[0]) snprintf(c->titulo, sizeof c->titulo, "%s",
+          i18n(!strcmp(c->tipo, "series") ? "Programa de TV" : "Filme"));
+      lote[w++] = *c;
+    }
+    if (w && nv_perfil_sessao_travar(sessao)) {
+      pthread_mutex_lock(&cwPubTrava);
+      CatItem existente;
+      if (cat_copiar_fileira("continue_watching", &existente, 1, NULL) == 0) {
+        cat_trocar_continuar(lote, w);
+        cwGerNaTela = __atomic_add_fetch(&cwGer, 1u, __ATOMIC_RELAXED);
+        printf("[desc] local Continue Watching published before network: %d\n", w);
+      }
+      pthread_mutex_unlock(&cwPubTrava);
+      nv_perfil_sessao_destravar();
+    }
+  }
   n = montarContinuar(lote, CONT_MAX);
   minhaGer = __atomic_load_n(&cwGer, __ATOMIC_RELAXED);
   pthread_mutex_unlock(&contTrava);
@@ -7286,6 +7334,38 @@ int desc_nome_episodio_generico(const char *nome, int episodio) {
   return achou && palavras <= 1;
 }
 
+// Presentation only: cloud metadata can use a release filename as the episode
+// name. Neither the video ID nor the provider's season/episode pair is changed.
+static int nomeEpisodioArquivo(const char *nome) {
+  static const char *ext[] = {".mkv", ".mp4", ".m4v", ".avi", ".webm", ".mov", ".wmv", ".ts", ".m2ts"};
+  char baixo[1024];
+  size_t n = strlen(nome);
+  while(n && (unsigned char)nome[n-1] <= ' ') n--;
+  for(unsigned i=0;i<sizeof ext/sizeof *ext;i++) {
+    size_t k=strlen(ext[i]);
+    if(n>k && !strncasecmp(nome+n-k,ext[i],k))return 1;
+  }
+  // Also catch truncated/extensionless release names. Require both an episode
+  // token and technical tags separated like a filename, not just "1080p".
+  if(n>=sizeof baixo)n=sizeof baixo-1;
+  for(size_t i=0;i<n;i++)baixo[i]=nome[i]>='A'&&nome[i]<='Z'?nome[i]+('a'-'A'):nome[i];
+  baixo[n]=0;
+  if(!strchr(baixo,'.') && !strchr(baixo,'_'))return 0;
+  for(const char *p=baixo;*p;p++)if(*p=='s' && p[1]>='0' && p[1]<='9') {
+    const char *q=p+1;
+    while(*q>='0' && *q<='9')q++;
+    if(*q=='e' && q[1]>='0' && q[1]<='9' &&
+       (strstr(baixo,"1080p") || strstr(baixo,"2160p") || strstr(baixo,"720p") ||
+        strstr(baixo,"h265") || strstr(baixo,"h264") || strstr(baixo,"x265") || strstr(baixo,"x264")))return 1;
+  }
+  return 0;
+}
+static int nomeEpisodioReserva(const char *nome,int episodio) {
+  char reserva[64];
+  snprintf(reserva,sizeof reserva,i18n("Episódio %d"),episodio);
+  return nomeEpisodioArquivo(nome) || !strcmp(nome,reserva);
+}
+
 int desc_tmdb_notas_temporada(const char *json, CatEp *eps, int n,
                               int temporada) {
   return desc_tmdb_notas_temporada_ex(json, eps, n, temporada, DESC_EPT_SINOPSE);
@@ -7329,10 +7409,11 @@ int desc_tmdb_notas_temporada_ex(const char *json, CatEp *eps, int n,
           // traducao o TMDB devolve "Episodio 3", pior que o titulo original —
           // por isso o generico nao entra (desc_nome_episodio_generico), e o
           // nome que ja estava fica.
-          if ((textos & DESC_EPT_NOME) &&
+          if (((textos & DESC_EPT_NOME) || nomeEpisodioReserva(eps[i].nome,num)) &&
               js_texto(p, f, "name", nome, sizeof nome) && nome[0] &&
+              !nomeEpisodioArquivo(nome) &&
               !desc_nome_episodio_generico(nome, num) &&
-              strcmp(nome, eps[i].nome) && (!soVazio || !eps[i].nome[0])) {
+              strcmp(nome, eps[i].nome) && (!soVazio || !eps[i].nome[0] || nomeEpisodioReserva(eps[i].nome,num))) {
             snprintf(eps[i].nome, sizeof eps[i].nome, "%s", nome);
             mudou = 1;
           }
@@ -7511,6 +7592,22 @@ static int metaArquivosCompativeis(const char *arquivos, const char *catalogo) {
     if (k && pares[0].v && pares[0].v[epSetCasa(&pares[0], k)]) contidos++;
   }
   if ((unsigned long long)contidos * 10 < (unsigned long long)pares[1].n * 9) ok = 0;
+  // A file list may add episodes only where the catalogue can still grow: its
+  // last regular season (episodes not listed yet) and seasons after it. An
+  // older season the catalogue lists gets no extra episodes: releases numbered
+  // another way are not new episodes (Lupin from MediaFusion, 06/11/2026:
+  // 21/15/14 "episodes" in seasons 1-3 against the catalogue's 5/5/7).
+  if (ok && pares[0].v && pares[1].v && temps[1].v) {
+    int ultima = 0;
+    for (j = 0; j < temps[1].cap; j++)
+      if (temps[1].v[j] && (int)(temps[1].v[j] >> 32) - 1 > ultima)
+        ultima = (int)(temps[1].v[j] >> 32) - 1;
+    for (j = 0; ok && j < pares[0].cap; j++) {
+      unsigned long long k = pares[0].v[j];
+      int t = k ? (int)(k >> 32) - 1 : 0;
+      if (t > 0 && t < ultima && !pares[1].v[epSetCasa(&pares[1], k)]) ok = 0;
+    }
+  }
   for (i = 0; i < 2; i++) { free(pares[i].v); free(temps[i].v); }
   return ok;                             // sem memoria, conserva o catalogo
 }
@@ -7554,12 +7651,21 @@ static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
         if (rating<=0) rating=js_num(p,f,"rating",0.0);
         if (rating > 0.0 && rating <= 10.0)
           e->notaImdb = (int)(rating * 10.0 + 0.5); }
-      js_texto(p, f, "name", e->nome, sizeof e->nome);
+      char nome[1024] = "";
+      js_texto_raiz_em(p, f, "name", nome, sizeof nome);
       // O id do video (cat_id_stream): e ele que se manda aos addons de fonte
       // quando o titulo nao e do IMDb. Addon que usa "title" no lugar de "name"
       // (o Kitsu) tambem tem o nome lido.
       js_texto_raiz_em(p, f, "id", e->vid, sizeof e->vid);
-      if (!e->nome[0]) js_texto(p, f, "title", e->nome, sizeof e->nome);
+      if (!nome[0]) js_texto_raiz_em(p, f, "title", nome, sizeof nome);
+      if(nomeEpisodioArquivo(nome)) {
+        char alternativo[1024] = "";
+        js_texto_raiz_em(p,f,"title",alternativo,sizeof alternativo);
+        if(alternativo[0] && !nomeEpisodioArquivo(alternativo))
+          snprintf(nome,sizeof nome,"%s",alternativo);
+        else snprintf(nome,sizeof nome,i18n("Episódio %d"),ne);
+      }
+      snprintf(e->nome,sizeof e->nome,"%s",nome);
       js_texto(p, f, "overview", e->sinopse, sizeof e->sinopse);
       if (!e->sinopse[0]) js_texto(p, f, "description", e->sinopse, sizeof e->sinopse);
       js_texto(p, f, "thumbnail", e->thumb, sizeof e->thumb);
@@ -7626,11 +7732,15 @@ void desc_mesclar_episodios(CatEp *base, int nb, const CatEp *outro, int no, int
              : base[i].episodio > outro[j].episodio ? 1 : 0);
     if (c < 0) { i++; continue; }
     if (c > 0) { j++; continue; }
+    // A filename/our temporary label is missing display metadata, even when
+    // the addon is preferred. A temporary donor must not overwrite a title.
+    int semNome=!base[i].nome[0] || nomeEpisodioReserva(base[i].nome,base[i].episodio);
+    if(outro[j].nome[0] && (semNome || !nomeEpisodioReserva(outro[j].nome,outro[j].episodio)) &&
+       (modo==DESC_MESCLA_TEXTO || semNome))
+      snprintf(base[i].nome,sizeof base[i].nome,"%s",outro[j].nome);
     if (modo == DESC_MESCLA_TEXTO) {
-      if (outro[j].nome[0])    snprintf(base[i].nome, sizeof base[i].nome, "%s", outro[j].nome);
       if (outro[j].sinopse[0]) snprintf(base[i].sinopse, sizeof base[i].sinopse, "%s", outro[j].sinopse);
     } else {
-      if (!base[i].nome[0])    snprintf(base[i].nome, sizeof base[i].nome, "%s", outro[j].nome);
       if (!base[i].sinopse[0]) snprintf(base[i].sinopse, sizeof base[i].sinopse, "%s", outro[j].sinopse);
     }
     // O que o addon nao traz (still, duracao, data) vem da outra lista nos
@@ -7729,6 +7839,9 @@ static void temporadasDosEps(const CatEp *eps, int n, TempsPub *tp) {
   }
 }
 
+// Merge mode for a base that is a source addon's file list: the other list's
+// text (DESC_MESCLA_TEXTO) and only its art.
+#define DESC_MESCLA_ARQUIVOS 3
 static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
                                        const char *titulo, const char *sobre,
                                        int modo, TempsPub *tp, int cedo,
@@ -7738,6 +7851,13 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
   if (!eps) return 0;
   n = parsearEpisodios(corpo, eps, VIDEOS_MAX);
   if (tp && n) temporadasDosEps(eps, n, tp);
+  if (modo == DESC_MESCLA_ARQUIVOS) {
+    // A source addon's file list carries no episode art (MediaFusion sends the
+    // poster as every thumbnail): the other list's still, or the series
+    // backdrop when there is none (detail.c).
+    for (int i = 0; i < n; i++) eps[i].thumb[0] = 0;
+    modo = DESC_MESCLA_TEXTO;
+  }
   if (sobre && n) {
     CatEp *o = malloc(sizeof(CatEp) * VIDEOS_MAX);
     if (o) {
@@ -7809,10 +7929,13 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
         memcpy(tp->t, atual.temporadas, sizeof tp->t);
       }
     }
-    if (cedo && tp) {
+    // Publish season tabs with every selected list, before optional metadata.
+    if (tp) {
       CatItem edit;
       if (cat_copiar_item(alvoItem, &edit)) {
-        edit.epsParciais = 1;
+        // Season tabs are ready before addon selection necessarily is.
+        // Keep pending identities provisional until the selected list is final.
+        edit.epsParciais = provisorio;
         edit.nTemporadas = tp->n;
         memcpy(edit.temporadas, tp->t, sizeof(int) * (size_t)tp->n);
         descCatAtualizar(cat_atualizar_item, alvoItem, &edit);
@@ -7917,14 +8040,14 @@ static int episodiosDoAddon(int alvoItem, const char *serie, const char *titulo,
            titulo, melhorNome, melhor, nCine);
     fflush(stdout);
     publicarEpisodiosSubstituir(melhorCorpo, alvoItem, titulo, corpoCine,
-                                DESC_MESCLA_TEXTO, tp);
+                                DESC_MESCLA_ARQUIVOS, tp);
     arte_reserva_episodios(serie, melhorCorpo);
   } else if (melhor > nCine || (aplicar && melhor >= nCine)) {
     printf("[desc] %s: %s tem %d episodios contra %d do Cinemeta; usando a lista do addon\n",
            titulo, melhorNome, melhor, nCine);
     fflush(stdout);
     publicarEpisodiosSubstituir(melhorCorpo, alvoItem, titulo,
-                                aplicar ? corpoCine : NULL,
+                                corpoCine,
                                 DESC_MESCLA_VAZIOS, tp);
     arte_reserva_episodios(serie, melhorCorpo);
     usouTexto = aplicar;
@@ -8503,7 +8626,7 @@ static int episodiosDoCatalogo(int alvoItem, const char *titulo, const char *ser
     if (i != fonte && nEp[i] > 0 && mf->cine[i]) outro = i;
   // Uma lista real menor do addon conserva os pares do Cinemeta e aplica
   // o texto localizado, como episodiosDoAddon.
-  int modo = arq[fonte] ? DESC_MESCLA_TEXTO : DESC_MESCLA_VAZIOS;
+  int modo = arq[fonte] ? DESC_MESCLA_ARQUIVOS : DESC_MESCLA_VAZIOS;
   if (outro >= 0 && !arq[fonte] && nEp[outro] > nEp[fonte]) {
     int addon = fonte; fonte = outro; outro = addon;
     modo = DESC_MESCLA_TEXTO;
@@ -9688,7 +9811,8 @@ void desc_episodios(int indiceItem, int temporada) {
   // Uma lista antecipada continua visivel, mas precisa retomar a mescla.
   CatItem atual;
   if (!cat_copiar_item(indiceItem, &atual)) return;
-  if (cat_n_episodios(indiceItem) > 0 && !atual.epsParciais) return;
+  // A cached list without its season tabs is incomplete too.
+  if (cat_n_episodios(indiceItem) > 0 && !atual.epsParciais && atual.nTemporadas > 0) return;
   EpPedido *p = calloc(1, sizeof *p);
   if (!p) return;
   p->item = indiceItem;
@@ -9742,7 +9866,7 @@ int desc_episodios_precarregar(int indiceItem) {
   if (!ci || !ci->imdb[0]) return 0;
   if (!(!strcmp(ci->tipo, "series") || strcmp(ci->tipo, "movie") ||
         ci->nElenco == 0 || descElencoPrecisaPessoas(ci))) return 0;
-  if (cat_n_episodios(indiceItem) > 0 && !ci->epsParciais) return 0;
+  if (cat_n_episodios(indiceItem) > 0 && !ci->epsParciais && ci->nTemporadas > 0) return 0;
   if (fioEpVivo || pendItem >= 0) return -1;
   desc_episodios(indiceItem, 0);
   return fioEpVivo ? 1 : 0;

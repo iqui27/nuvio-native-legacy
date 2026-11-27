@@ -209,7 +209,7 @@
   2, /* Settings size: 100%, independent of global UI zoom */
   1, /* hide corner logo during trailer: Desligado (V_LIGA: 1 = Desligado) */
   0, /* second subtitle language: Da conta (F04) */
-  1, /* subtitle sync by audio: Desligado (V_LIGA: 1 = Desligado) (F06) */
+  0, /* subtitle sync by audio (Android fallback, Reshaped): Ligado (V_LIGA 0) since 06/11; old Desligado migrates once */
   0, /* seek cache on disk: Desligado (F07; free disk is unknown until the player opens) */
   1, /* experimental trailer zoom, .tpk only: Desligado (V_LIGA: 1 = Desligado) (#241) */
   0, /* plugins: action (state lives in plugins.c, F09) */
@@ -242,7 +242,7 @@
   1, /* also in Continue watching (2.0.2): Desligado (V_LIGA: 1 = Desligado) = one title, one place */
   0, /* continue on the profile picker (#303): Ligado (V_LIGA: 0 = Ligado) = as before */
 #ifdef NV_TPK
-  1, /* DTS/TrueHD on the Samsung .tpk: 5.1 (Dolby Digital) (0 = off, 2 = stereo AAC) */
+  1, /* DTS/TrueHD on the Samsung .tpk: 5.1 (Dolby Digital) (0 = off, 2 = stereo, Dolby Digital 2.0) */
 #else
   0, /* DTS converted to: Estereo (AAC) = the proven path */
 #endif
@@ -302,7 +302,7 @@
   0, /* Baixar registro: acao local, sem preferencia gravada */
 #endif
   0, 0, 0, /* shared exclusions parent, max-size view, release-group editor */
-  120, 0, 0, 0, 0, 3, 1, 0, 1, 0, 0, /* primary style views; player.txt is authoritative */
+  120, TXT_FAMILIA_JAKARTA, 0, 100, 0, 3, 1, 0, 1, 0, 0, /* primary style views; player.txt is authoritative */
   0, 0, 0, 0, 0, 0, 0, /* secondary appearance inherits primary, manual delay0 */
   0, /* collection default view (#362): Automatic, existing layout */
   0, /* external player (#501): Internal */
@@ -353,3 +353,52 @@
   0, /* gradient smoothing: Automatic */
   0, /* hero logo and information size: Normal */
   0, /* folder hero details: On (V_LIGA 0) */
+  0, /* fixed DV audio experiment: Off (v12) */
+  1, /* buffer data in player: Off (V_LIGA) */
+  1, /* RAM overlay: Off */
+  1, /* green-button RAM shortcut: Off */
+  1, /* BD REMUX MP4 test: Off (V_LIGA), device-local opt-in */
+  1, /* preserve P7 mapping experiment: Off (V_LIGA), device-local opt-in */
+  0, /* ordinary native buffering: Standard / one sequential connection */
+  0, /* DTS/TrueHD/DV7: Standard (1), Tizen method (owner, 06/11/2026) */
+  1, /* Audio from another source: Off by default (owner, 07/11); webOS converter, .tpk donor server */
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  1, /* Versions not in cache: Hide (owner 25/11, beta: they mostly fail to load) */
+#else
+  0, /* Versions not in cache: Show dimmed */
+#endif
+  1, /* Audio sync step: 50 ms */
+  0, /* Warn about large files: On */
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  1, /* Download of the audio file: Audio only (owner 25/11; MKV is still read whole) */
+#else
+  0, /* Download of the audio file: Whole file */
+#endif
+  0, /* Remember for the next episodes: On */
+  1, /* Follow through the whole movie (another cut): Off */
+  1, /* Sync adjusted message: Off (owner, 16/11 and 25/11) */
+  0, /* Match automatically at start: On */
+  0, /* Hide duplicates: On */
+  1, /* Sort like the addons: Off (V_LIGA) */
+  0, /* Other version buffer: 8 MB */
+  1, /* DTS via HLS: Off */
+  1, /* Dolby Vision P7 via HLS: Off */
+  1, /* Experimental HLS mode: Off (V_LIGA) */
+  1, /* HLS MPEG-TS segments (test): Off (V_LIGA) */
+  1, /* Update notifications: Off by default (Matis94 cc737eea0), device-local */
+  1, /* Remember last profile: Off (V_LIGA), device-wide opt-in */
+  0, /* Show intro skip button: On */
+  0, /* Show recap skip button: On */
+  0, /* Show outro / credits skip button: On */
+  1, /* chapters in the player: Movies (V_CAP_TIPOS bits: 1 movies, 2 shows, 4 anime; owner 25/11) */
+  0, /* Anime-Skip Client ID: action, value lives in animeskip.txt */
+  0, /* formatter icons (From addon): Standard */
+  0, /* From addon badge position: Top */
+  1, /* audio sync samples the film on mobile data too: Off (V_LIGA 1) */
+  0, /* TorBox plan: Standard (V_TB_PLANO 0) */
+  0, /* burn embedded ASS in with TorBox: On (V_LIGA 0); only acts with plan Pro */
+  0, /* original audio with burn-in: Passthrough (V_TB_AUDIO 0) */
+  0, // frameRateMatchLocal: Always (V_QUADROS_TAXA 0)
+  0, // miniaturaQualidadeLocal: Automatic (V_MINI_QUALIDADE 0)
+  0, // miniaturaDecoderLocal: CPU (V_MINI_DECODER 0)
+

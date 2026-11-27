@@ -415,6 +415,14 @@ Settings icons: [Lucide](https://lucide.dev), ISC license. The unmodified SVGs
 and the license text are in `deploy/app/art/icones/lucide/`; the `aj_*.png` next
 to them are rasterized by `tools/icones-lucide.sh`.
 
+Formatter icons in the source list ("Source text: From the addon"), made by
+`tools/icones-formatador.py` into `deploy/app/art/icones/formatador/`, with each
+license text next to them:
+[Twemoji](https://github.com/jdecked/twemoji) graphics © Twitter, Inc and other
+contributors, [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) (Standard
+style, country flags included); [Noto Sans Symbols / Symbols 2 / Math](https://fonts.google.com/noto)
+glyphs, SIL Open Font License 1.1. The Minimalistic style uses Lucide, as above.
+
 DTS-enabled builds use libraries from the [FFmpeg project](https://ffmpeg.org/)
 under **LGPL 2.1 or later**. `tools/build-dts-ffmpeg.sh` records the exact release
 source URL and checksum; `tools/arm.sh` includes its license and provenance in
@@ -422,6 +430,14 @@ source URL and checksum; `tools/arm.sh` includes its license and provenance in
 [DTS distribution notes](docs/features/dts/README.md#dependency-provenance-and-distribution)
 describe the corresponding source and static relinking materials needed with
 binary releases.
+
+The audio subtitle sync on Android (`android/app/src/main/java/space/nuvio/nativelegacy/audiosync/`)
+is ported from [NuvioTV-Reshaped](https://github.com/DavidVamaiotu/NuvioTV-Reshaped)
+(branch `audio-sync-fallback-stable`, GPL-3.0), without its speech recognition. It runs the
+[Silero VAD](https://github.com/snakers4/silero-vad) model, **MIT license**,
+Copyright (c) 2020-present Silero Team; the weights are in
+`android/app/src/main/res/raw/silero_vad_v5_16k.bin` and the license text ships in
+`deploy/app/licencas/silero-vad-LICENSE.txt`.
 
 "Nuvio", the logo and the wordmark belong to the original authors. The GPL covers
 the code, **not** the name or the branding. They appear here only to say which

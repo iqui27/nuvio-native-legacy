@@ -69,7 +69,11 @@ int main(void) {
   assert(prog_gravar_local("ttStarted", 0, 0, 1, 300, -1));
   assert(prog_gravar_local("ttDone", 0, 0, 270, 300, -1));
   assert(prog_gravar_local("ttShort", 0, 0, 10, 30, -1));
-  int n = continuarLocal(lote, 12); verificar(lote, n); assert(enriquecidos == 4);
+  enriquecidos = -1;
+  int n = continuarLocalLer(lote, 12, 0);
+  assert(n == 5 && enriquecidos == -1); // no remote metadata calls
+  assert(porId(lote,n,"tt101:1:3")->progresso == 40);
+  n = continuarLocal(lote, 12); verificar(lote, n); assert(enriquecidos == 4);
   assert(!strcmp(porId(lote, n, "tt101:1:3")->sinopse, "Metadados novos"));
   falhaMeta = 1; n = continuarLocal(lote, 12); verificar(lote, n); assert(enriquecidos == 0);
   // Removing a collection's catalog row must not remove local CW: snapshot

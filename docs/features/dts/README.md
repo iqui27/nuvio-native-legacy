@@ -67,13 +67,14 @@ For TV reports include model, firmware, revision, selected track and output;
 check native DTS, conversion, seeks, track changes and A/V sync using the
 [DTS Debug app](../../../tools/dts-pipeline/DEBUG.md).
 
-## Samsung .tpk (Tizen 6+)
+## Samsung .tpk (Tizen 6+, and Tizen 4-5.5 in test)
 
 The Samsung build converts with its own path: the TV's `Tizen.Multimedia.Player`
 reads the converted stream from a local HTTP server inside the app
 (`src/dts/dts_hls_tpk.c`; converter `src/dts/dts_remux.c`). Video is copied byte
 for byte; DTS decodes the core, TrueHD its 5.1 presentation, output AC3 5.1 at
-640 kb/s (stereo sources 2.0), or AAC 2.0 with the Stereo setting. Settings has
+640 kb/s (stereo sources 2.0), or Dolby Digital 2.0 384 kb/s with the Stereo setting
+(AAC 2.0 until 11/2026; its encoder cost ~10x the AC3 one, too much for a 2020 TV). Settings has
 one row on the .tpk: Off / 5.1 / Stereo (`dtsTpkLocal`).
 
 Delivery is HLS VOD on 127.0.0.1 with a random token: the playlist comes from the
@@ -89,6 +90,26 @@ are converted. Each playback logs a `[dts-tpk] mem:` line (app RSS peak, lowest
 MemAvailable, reader rings).
 
 Host test of the server with a .tpk FFmpeg build: `tests/dts_tpk_servidor.sh`.
+
+### Tizen 4-5.5 (NuvioTpk40, TVs of 2018-2020): not yet run on such a TV
+
+`tools/tpk.sh` links the same FFmpeg into `libnuvio-tpk40.so` (skip with
+`NV_TPK40_SEM_FFMPEG=1`) and fails the build if the library has thread-local
+storage or a relocation type the 4/5 ELF loader does not apply. The converter
+then answers on Tizen 4 and up. What differs from 6+ (`src/tpk45.c`, active only
+in that library):
+
+- Ring and queue cap come from the memory free when the conversion opens
+  (normal 16 / 128 MiB, light 8 / 96, minimum 8 / 64).
+- Delivery Auto opens HLS and, if the player refuses it before the first frame
+  (error, or 25 s with the playlist ready), retries once as continuous TS and
+  keeps that for files with the same video codec for the rest of that run.
+  First tester log (2020 TV, Tizen 5.5): H.264 plays in HLS; one HEVC 10-bit file
+  was refused in HLS and in TS.
+- No seek-bar thumbnails on Tizen 4-5.5 (too slow on these TVs: ~1 s per 1080p
+  tile in the first tester log).
+- Profile and delivery stay on Auto; `[tpk45]` / `[dts-tpk] 4/5:` log lines say
+  which values each conversion ran with.
 
 ## Dependency provenance and distribution
 

@@ -2,6 +2,13 @@
 #include "adapter.h"
 extern "C" {
 #include "js.h"
+#ifdef NV_HEVC_SEI_TEST
+#include "../hevc_sei.h"
+#endif
+#include "../dts_picture_diag.h"
+#ifdef NV_DTS_PICTURE_DIAG
+#include "../dts_video_diag.h"
+#endif
 }
 #include <starfish-media-pipeline/StarfishMediaAPIs.h>
 #include <dlfcn.h>
@@ -24,7 +31,7 @@ struct Native {
   bool (*load)(SF *, const char *, Callback, void *) = nullptr;
   std::string (*feed)(SF *, const char *) = nullptr;
   bool (*play)(SF *) = nullptr, (*pause)(SF *) = nullptr,
-       (*flush)(SF *, const char *) = nullptr, (*eos)(SF *) = nullptr,
+       (*seek)(SF *, const char *) = nullptr, (*eos)(SF *) = nullptr,
        (*unload)(SF *) = nullptr, (*foreground)(SF *) = nullptr;
   const char *(*id)(SF *) = nullptr;
   bool (*volume)(SF *,const char *) = nullptr;
@@ -52,13 +59,13 @@ struct Native {
 #else
     const char *feed_symbol = "_ZN17StarfishMediaAPIs4FeedEPKc";
 #endif
+    seek = reinterpret_cast<decltype(seek)>(dlsym(lib,"_ZN17StarfishMediaAPIs4SeekEPKc")); /* Optional: reload remains available. */
     volume = reinterpret_cast<decltype(volume)>(dlsym(lib,"_ZN17StarfishMediaAPIs9setVolumeEPKc")); /* Optional. */
     return symbol(ctor,"_ZN17StarfishMediaAPIsC1EPKc") &&
       symbol(dtor,"_ZN17StarfishMediaAPIsD1Ev") &&
       symbol(load,"_ZN17StarfishMediaAPIs4LoadEPKcPFvixS1_PvES2_") &&
       symbol(feed,feed_symbol) && symbol(play,"_ZN17StarfishMediaAPIs4PlayEv") &&
       symbol(pause,"_ZN17StarfishMediaAPIs5PauseEv") &&
-      symbol(flush,"_ZN17StarfishMediaAPIs5flushEPKc") &&
       symbol(eos,"_ZN17StarfishMediaAPIs7pushEOSEv") &&
       symbol(unload,"_ZN17StarfishMediaAPIs6UnloadEv") &&
       symbol(id,"_ZN17StarfishMediaAPIs10getMediaIDEv") &&
@@ -79,6 +86,7 @@ struct Pipeline {
   std::string app, window, media, error;
   std::mutex media_lock;
   void (*event)(void *, const char *) = nullptr; void *user = nullptr;
+  std::atomic<bool> seeking{false};
   std::atomic<bool> completed{false}, alive{true}, callback_seen{false};
   /* Accepted controls belong to the worker. Native state callbacks never
    * clear these guards: a late/duplicate callback must not reissue controls. */
@@ -87,6 +95,13 @@ struct Pipeline {
   bool backpressure_reported = false;
   uint64_t refused_feeds = 0;
   unsigned play_count = 0, pause_count = 0;
+#ifdef NV_DTS_PICTURE_DIAG
+  unsigned picture_epoch=1, picture_count=0, picture_logged=0;
+  std::string picture_codec;
+#endif
+#ifdef NV_HEVC_SEI_TEST
+  bool hevc_sei=false, sei_logged=false, sei_removed=false, sei_invalid=false, sei_dropped=false;
+#endif
   std::vector<unsigned char> pending;
   ~Pipeline() {
     alive = false;
@@ -120,7 +135,11 @@ static void callback(int type, int64_t value, const char *str, void *ctx) {
     char detail[48]; snprintf(detail,sizeof detail,"type=%d",type);
     stage(p,"native-callback",detail);
   }
-  if (type != PF_EVENT_TYPE_STR_VIDEO_INFO && type != PF_EVENT_TYPE_FRAMEREADY && type != PF_EVENT_TYPE_INT_ERROR &&
+  /* Seek is asynchronous. Old-segment frame clocks cannot acknowledge the
+   * new position; wait for the native SEEKDONE before publishing them. */
+  if (type == PF_EVENT_TYPE_FRAMEREADY && p->seeking) return;
+  if (type == PF_EVENT_TYPE_STR_STATE_UPDATE__SEEKDONE && !p->seeking.exchange(false)) return;
+  if (type != PF_EVENT_TYPE_STR_STATE_UPDATE__SEEKDONE && type != PF_EVENT_TYPE_STR_VIDEO_INFO && type != PF_EVENT_TYPE_FRAMEREADY && type != PF_EVENT_TYPE_INT_ERROR &&
       type != PF_EVENT_TYPE_STR_ERROR && type != PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED &&
       type != PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING && type != PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED &&
       type != PF_EVENT_TYPE_STR_STATE_UPDATE__ENDOFSTREAM && type != 0x2c && type != 0x2d && type != 0x2e)
@@ -134,9 +153,16 @@ static void callback(int type, int64_t value, const char *str, void *ctx) {
   const char *video_json = type == PF_EVENT_TYPE_STR_VIDEO_INFO ? str : nullptr;
   if (str && strnlen(str,129) > 128) str = "native detail exceeds event budget";
   if (type == PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED) p->completed = true;
+#ifdef NV_HTTP_BUFFER_DIAG
+  if(type==PF_EVENT_TYPE_INT_ERROR || type==PF_EVENT_TYPE_STR_ERROR) {
+    char detail[64];snprintf(detail,sizeof detail,"type=%d code=%lld",type,(long long)value);
+    stage(p,"native-error",detail);
+  }
+#endif
   if (p->event) {
     const char *name = nullptr;
     switch (type) {
+      case PF_EVENT_TYPE_STR_STATE_UPDATE__SEEKDONE: name = "seekDone"; break;
       case PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED: name = "loadCompleted"; break;
       case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING: name = "playing"; break;
       case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED: name = "paused"; break;
@@ -202,7 +228,11 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
    * and E-AC-3 (passed through). Names and the ac3PlusInfo block are the ones
    * libpf-1.0.so parses on webOS 4.10; on the LG C9 E-AC-3 5.1 was heard and
    * a passed-through AC-3 5.1 track played with codec "AC3" + ac3PlusInfo. */
-  const char *pass = !strcmp(m->audio_codec,"eac3") ? "AC3 PLUS" : ac3 ? "AC3" : nullptr;
+  /* DTS (untouched) only from the Dolby Vision path with DTS off on a TV that
+   * declares DTS (tv.model.edidType). Experimental: nobody had sent "DTS"
+   * here before; a refusal ends the session and the TV player takes over. */
+  const bool dts = !strcmp(m->audio_codec,"dts");
+  const char *pass = !strcmp(m->audio_codec,"eac3") ? "AC3 PLUS" : ac3 ? "AC3" : dts ? "DTS" : nullptr;
   const bool audio_ok = pass ? (m->channels > 0 && m->channels <= 8 && m->sample_rate > 0)
     : (!strcmp(m->audio_codec,"aac") && m->channels == 2 && m->sample_rate == 48000);
   if (p->loaded || !v || !valid_target(target) || m->width <= 0 || m->height <= 0 || !audio_ok ||
@@ -210,6 +240,9 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
       strcmp(m->hdr,"HDR10") && strcmp(m->hdr,"HLG") && !(dv && !strcmp(m->hdr,"DolbyVision")))) {
     p->error = "unsupported codec, HDR/Dolby Vision metadata, target or repeated load"; return 0;
   }
+#ifdef NV_HEVC_SEI_TEST
+  p->hevc_sei=!strcmp(m->video_codec,"hevc") || !strcmp(m->video_codec,"h265");
+#endif
   std::ostringstream j;
   j << "{\"args\":[{\"mediaTransportType\":\"BUFFERSTREAM\",\"option\":{\"appId\":" << quote(p->app.c_str());
   if (!p->window.empty()) j << ",\"windowId\":" << quote(p->window.c_str());
@@ -222,7 +255,9 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
     << target_ns(target) << ",\"videoWidth\":" << m->width << ",\"videoHeight\":" << m->height;
   if (m->fps_num > 0 && m->fps_den > 0) j << ",\"videoFpsValue\":" << m->fps_num << ",\"videoFpsScale\":" << m->fps_den;
   j << "}";
-  if (pass) j << ",\"ac3PlusInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
+  if (dts) j << ",\"dtsInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
+    << m->sample_rate / 1000.0 << "}";
+  else if (pass) j << ",\"ac3PlusInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
     << m->sample_rate / 1000.0 << "}";
   else j << ",\"aacInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
     << m->sample_rate / 1000.0 << ",\"profile\":2,\"format\":\"raw\"}";
@@ -233,6 +268,17 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
   if (!p->n.foreground(p->sf)) stage(p,"native-foreground-refused","continuing to Load");
   { char d[96]; snprintf(d,sizeof d,"dv=%d profile=%d audio=%s ch=%d",int(dv),m->dovi_profile,
       pass ? pass : "AAC",m->channels); stage(p,"native-load-requested",d); }
+#ifdef NV_DTS_PICTURE_DIAG
+  p->picture_codec=m->video_codec;
+#endif
+#ifdef NV_HTTP_BUFFER_DIAG
+  { char detail[160];snprintf(detail,sizeof detail,
+      "size=%dx%d fps=%d/%d colour=%d/%d/%d dv=%d compat=%d rpu=%d el=%d bl=%d",
+      m->width,m->height,m->fps_num,m->fps_den,m->color_primaries,m->color_transfer,m->color_matrix,
+      m->dovi_profile,m->dovi_bl_compatibility_id,m->dovi_rpu_present,m->dovi_el_present,m->dovi_bl_present);
+    stage(p,"native-video-config",detail);
+  }
+#endif
   if (!p->n.load(p->sf,j.str().c_str(),callback,p)) {
     p->error = "Starfish Load refused"; return 0;
   }
@@ -244,7 +290,7 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
 static int play(void *ctx) {
   auto *p = static_cast<Pipeline *>(ctx); p->want_play = true;
   if (!p->loaded || p->poisoned) return 0;
-  if (!p->completed) return 1; /* Intent is applied on worker feed/eos after preroll. */
+  if (!p->completed || p->seeking) return 1; /* Intent is applied on worker feed/eos after preroll. */
   /* Some firmware completes Load synchronously before accepting any packets.
    * Both configured streams need their first packet before initial Play.
    * Once started, pause/resume controls keep their normal immediate ordering. */
@@ -264,10 +310,50 @@ static int feed(void *ctx,const DtsFrame *f) {
   }
   try { p->pending.assign(f->data,f->data+f->size); }
   catch (...) { p->error = "packet copy allocation failed"; return -1; }
+#ifdef NV_DTS_PICTURE_DIAG
+  const bool inspect=f->kind==DTS_VIDEO && nv_video_picture_sample(p->picture_count+1) &&
+    p->picture_logged!=p->picture_count+1;
+  const int copy_ok=inspect ? !memcmp(f->data,p->pending.data(),f->size) : -1;
+#endif
+#ifdef NV_HEVC_SEI_TEST
+  if(f->kind==DTS_VIDEO && p->hevc_sei) {
+    NvHevcSeiReport report;size_t retained=p->pending.size();
+    int changed=nv_hevc_sei_filter(p->pending.data(),p->pending.size(),&retained,&report);
+    if(changed<0){p->poisoned=true;p->error="HEVC metadata filter validation failed";return -1;}
+    bool invalid=report.malformed || report.oversized;
+    if(!p->sei_logged || (changed && !p->sei_removed) || (invalid && !p->sei_invalid)) {
+      char detail[160];snprintf(detail,sizeof detail,
+        "found=%u removed=%u malformed=%u oversize=%u before=%zu after=%zu prefix=%u suffix=%u",
+        report.removed,changed?report.removed:0,report.malformed,report.oversized,
+        f->size,retained,report.prefix,report.suffix);
+      stage(p,"hevc-sei",detail);p->sei_logged=true;
+    }
+    p->sei_removed|=changed!=0;p->sei_invalid|=invalid;
+    p->pending.resize(retained);
+    if(p->pending.empty()) {
+      if(!p->sei_dropped){stage(p,"hevc-sei-drop","metadata-only packet; waiting for picture");p->sei_dropped=true;}
+#ifdef NV_DTS_PICTURE_DIAG
+      if(f->kind==DTS_VIDEO && p->picture_count<120)p->picture_count++;
+#endif
+      // Removing standalone dynamic metadata must not pretend a picture was
+      // fed or start the decoder before its first genuine audio/video packets.
+      return 1;
+    }
+  }
+#endif
   char j[256];
   snprintf(j,sizeof j,"{\"bufferAddr\":\"%p\",\"bufferSize\":%zu,\"pts\":%lld,\"esData\":%d}",
     p->pending.data(),p->pending.size(),static_cast<long long>(f->pts_ns),f->kind);
   const std::string result = p->n.feed(p->sf,j);
+#ifdef NV_DTS_PICTURE_DIAG
+  const bool accepted=result.find("Pending")==std::string::npos && result.find("Ok")!=std::string::npos;
+  if(inspect) {
+    DtsFrame copy=*f;copy.data=p->pending.data();copy.size=p->pending.size();
+    nv_video_picture_log("native-copy",p->picture_epoch,p->picture_count+1,&copy,p->picture_codec.c_str(),accepted?1:0,copy_ok);
+    p->picture_logged=p->picture_count+1;
+  }
+  if(f->kind==DTS_VIDEO && accepted && p->picture_count<120)p->picture_count++;
+#endif
   if (result.find("Pending") == std::string::npos && result.find("BufferFull") != std::string::npos) {
     p->pending.clear();
     ++p->refused_feeds;
@@ -310,7 +396,7 @@ static int feed(void *ctx,const DtsFrame *f) {
 static int pause(void *ctx) {
   auto *p = static_cast<Pipeline *>(ctx); p->want_play = false;
   if (!p->loaded || p->poisoned) return 0;
-  if (!p->completed) return 1;
+  if (!p->completed || p->seeking) return 1;
   if (p->pause_issued) return 1;
   if (!p->n.pause(p->sf)) { p->error = "Starfish Pause refused"; return 0; }
   p->play_issued = false; p->pause_issued = true;
@@ -321,15 +407,33 @@ static int pause(void *ctx) {
 static int flush(void *ctx,double target) {
   auto *p = static_cast<Pipeline *>(ctx);
   if (!p->loaded || p->poisoned || !valid_target(target)) return 0;
-  std::string j = "{\"ptsToDecode\":" + std::to_string(target_ns(target)) + "}";
-  if (!p->n.flush(p->sf,j.c_str())) { p->error = "Starfish flush refused"; return 0; }
-  /* Flush stops/pauses the firmware decoders even if their prior Play or
-   * Pause was accepted. Those controls must be issued again for this seek.
-   * A flush does not promise a second LOADCOMPLETED notification. */
-  p->play_issued = p->pause_issued = false;
+  /* The ABI table retains its historic name "flush". A raw flush with
+   * ptsToDecode does not reset the BUFFERSTREAM segment on the C5. Use the
+   * public native Seek protocol instead: decimal MILLISECONDS, not JSON/ns.
+   * See the pinned webOS Chromium reference in tools/dts-pipeline/README.md.
+   * No access to SDK private padding/player/pipeline layouts is required. */
+  if (!p->n.seek) {
+    p->error = "Starfish Seek unavailable";
+    stage(p,"native-seek-unavailable"); return 0;
+  }
+  const auto ms = static_cast<int64_t>(target * 1000.0);
+  const std::string payload = std::to_string(ms);
+  p->seeking = true; // Set before the call: SEEKDONE may be synchronous.
+  if (!p->n.seek(p->sf,payload.c_str())) {
+    p->seeking = false; p->error = "Starfish Seek refused";
+    stage(p,"native-seek-refused"); return 0;
+  }
+  p->error.clear();
+  p->play_issued = p->pause_issued = p->started = false;
   p->audio_fed = p->video_fed = false;
   p->refused_feeds = 0;
-  stage(p,"native-flush-accepted");
+#ifdef NV_DTS_PICTURE_DIAG
+  p->picture_epoch++;p->picture_count=p->picture_logged=0;
+#endif
+#ifdef NV_HEVC_SEI_TEST
+  p->sei_logged=p->sei_removed=p->sei_invalid=p->sei_dropped=false;
+#endif
+  stage(p,"native-seek-accepted",payload.c_str());
   return 1;
 }
 static int eos(void *ctx) {

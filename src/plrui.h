@@ -66,11 +66,18 @@ float plrui_dicas_video(const char *const *teclas, const char *const *rotulos, i
 // desliza entre os chips (sel) e esmaece ao entrar/sair do segmentado (ed).
 float plrui_seg(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
                 float x, float y, float a);
+// The same, stretched to `largura` when narrower (chips widened evenly, text
+// centered); wider than that it draws as plrui_seg.
+float plrui_seg_largura(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
+                        float x, float y, float a, float largura);
 
 // A BARRA DE PROGRESSO, a mesma em todo lugar (OSD, pausa, ao vivo, trailer):
 // trilho branco 20% com cantos redondos, o buffer a 30%, o andado no acento.
 // `foco` engorda 6 -> 10 e poe a cabeca branca. `caps` sao os cortes da
 // abertura/creditos (fracoes), `nCaps` quantos.
+// Riscos finos de capitulo sobre o trilho (feat/mkv-chapter-segments): mais
+// discretos que as marcas de abertura/creditos de plrui_barra.
+void plrui_barra_capitulos(float x, float y, float w, int foco, const float *ticks, int n, float a);
 void plrui_barra(float x, float y, float w, float frac, float buf, int foco,
                  const float *caps, int nCaps, float a);
 

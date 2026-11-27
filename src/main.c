@@ -1,6 +1,7 @@
 // Bootstrap: janela, contexto GL, loop e telemetria. Toda a UI vive nos modulos.
 #include "app_id.h"
 #include "arranque.h"
+#include "assrender.h"   // assrender_fios_ambiente (webOS, new subtitle engine)
 #include "swapint.h"
 #include "quadroc.h"
 #include "streams.h"
@@ -73,6 +74,7 @@
 #include "androidcache.h"
 #include "negcache.h"
 #include "p2pmotor.h"
+#include "telalag.h"   // every target: off the .tpk the calls are no-ops (telalag.c)
 #include <pthread.h>
 #include <stdatomic.h>
 #include <time.h>
@@ -86,10 +88,13 @@
 #include "traktauth.h"
 #include "simklauth.h"
 #include "app.h"
+#include "audioext.h"
 #include "registro.h"
 #include "desempenho.h"
 #include "atualizacao.h"
 #include "avisos.h"
+#include "queda.h"
+#include "passo.h"
 #include "seguro.h"
 #include "video.h"
 #include "addons.h"
@@ -269,7 +274,8 @@ static void remapCanal(SDL_Event *e) {
   if ((e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) &&
       (e->key.keysym.sym == SDLK_F7 || e->key.keysym.sym == SDLK_F8)) {
     int sobe = e->key.keysym.sym == SDLK_F7;
-    if (app_zap_ativo()) {
+    // Audio from another source playing (audioext.h): CH+/CH- move its sync.
+    if (app_zap_ativo() || audioext_tocando()) {
       e->key.keysym.scancode = (SDL_Scancode)(sobe ? NV_SCANCODE_CH_UP : NV_SCANCODE_CH_DOWN);
       e->key.keysym.sym = sobe ? SDLK_PAGEUP : SDLK_PAGEDOWN;
     } else {
@@ -700,6 +706,44 @@ static const char *pedidoVideo(void) {
 static _Atomic long pedVidTam;      // tamanho visto pelo fio (<=0: nada)
 static _Atomic long pedVidMtime;    // st_mtime visto pelo fio
 static _Atomic int pedVidFioOk;     // 1 = o fio esta de pe
+// passo.h: the watcher. Every 50 ms it reads the frame count; a count that
+// has not moved for 300 ms while the main thread is in a step other than the
+// input wait is a stall: the step goes to the log, again if it changes (up to
+// 4 lines per stall), and the total once frames move again.
+static void *passoFio(void *x) {
+  unsigned ult = 0, desde = 0, linhas = 0;
+  const char *dito = NULL;
+  struct timespec t;
+  int parado = 0;
+  (void)x;
+  for (;;) {
+    unsigned q = __atomic_load_n(&nv_passo_quadros, __ATOMIC_RELAXED), agora;
+    const char *p = __atomic_load_n(&nv_passo_atual, __ATOMIC_RELAXED);
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    agora = (unsigned)(t.tv_sec * 1000u + t.tv_nsec / 1000000);
+    if (q != ult) {
+      if (parado) {
+        printf("[parado] main thread back after %u ms; last step \"%s\"\n", agora - desde, dito ? dito : "?");
+        fflush(stdout);
+      }
+      ult = q; desde = agora; parado = 0; linhas = 0; dito = NULL;
+    } else if (agora - desde >= 300u && p && strcmp(p, "eventos") && p != dito && linhas < 4) {
+      printf("[parado] main thread %u+ ms in \"%s\" (frame %u)\n", agora - desde, p, q);
+      fflush(stdout);
+      parado = 1; dito = p; linhas++;
+    }
+    usleep(50000);
+  }
+  return NULL;
+}
+void passo_iniciar(void) {
+  static int feito;
+  pthread_t t;
+  if (feito) return;
+  feito = 1;
+  if (pthread_create(&t, NULL, passoFio, NULL) == 0) pthread_detach(t);
+}
+
 static void *pedVidFio(void *x) {
   (void)x;
   for (;;) {
@@ -1033,6 +1077,9 @@ int main(int argc, char **argv) {
   // lancamento (URL autenticada, tokens) naquele payload — iriam direto ao
   // registro da sessao. O sinal de ciclo chega pelo allowlist ja logado em
   // [ciclo] (nome/estado do evento de janela/app), sem payload nenhum.
+  // New subtitle engine (LG port, 25/11/2026): libass's event threads follow
+  // the CPUs this process may use. Set before any thread starts (assrender.h).
+  assrender_fios_ambiente();
 #endif
 
 #ifdef __EMSCRIPTEN__
@@ -1794,6 +1841,9 @@ int main(int argc, char **argv) {
   // verdade. Esticado 4x, nenhuma borda de texel aparece.
   gfx_borrao_iniciar(480, 270);
   NV_ETAPA("primeiro quadro");
+#ifdef NV_TPK
+  passo_iniciar();   // passo.h: names the step of a main-thread stall
+#endif
 
   Uint32 ultRelato = SDL_GetTicks();
   double txtMsQuadro = 0, piorTxtMs = 0;
@@ -1811,6 +1861,14 @@ int main(int argc, char **argv) {
   int    txtNQuadro = 0, piorTxtN = 0;
   int quadros = 0, janks = 0; double pior = 0;
   int playerUiPrevious = 0;
+  int quadrosPulados = 0;   // player_skip_present (Android)
+#ifdef NV_ANDROID
+  int ultimoNu = 0;
+  unsigned ultimoFuro = 0;
+#endif
+#ifndef NV_SEM_WEBOS
+  int sourceLoadingVsyncFailed = 0;
+#endif
   SwapInt swapInt = {0};   // intervalo real entre swaps (swapint.h)
 
   // TELEMETRIA POR FASE. O quadro pior custava 22ms num alvo de 20ms e nao
@@ -1878,7 +1936,10 @@ int main(int argc, char **argv) {
 #endif
     // Enquanto o detalhe existe ele fica com o teclado inteiro: a home
     // continua desenhada por baixo, mas nao deve reagir ao D-pad.
+    passo_quadro();
+    NV_PASSO("eventos");
     while (SDL_PollEvent(&e)) {
+      NV_PASSO("evento (tecla/janela)");
 #if defined(NV_ANDROID) && defined(NV_TOUCH_UI)
       if (android_toque_cancelado(&e)) {
         ponteiro_cancelar_toque();
@@ -1920,6 +1981,16 @@ int main(int argc, char **argv) {
           ponteiro_evento(&e, app_evento);
           quadroc_suspendeu(&quadroRel);   // suspendeu: o relogio para de valer
         }
+#ifdef NV_WEBOS
+        // SAIDA E VOLTA DO APP (player.c / video.c): so a janela escondida ou
+        // minimizada solta o video; foco perdido (barra da Home, menu da TV
+        // por cima) nao. Qualquer sinal de volta reabre.
+        if (e.window.event == SDL_WINDOWEVENT_HIDDEN) player_webos_janela(1, "window hidden");
+        else if (e.window.event == SDL_WINDOWEVENT_MINIMIZED) player_webos_janela(1, "window minimized");
+        else if (e.window.event == SDL_WINDOWEVENT_SHOWN) player_webos_janela(0, "window shown");
+        else if (e.window.event == SDL_WINDOWEVENT_RESTORED) player_webos_janela(0, "window restored");
+        else if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) player_webos_janela(0, "focus gained");
+#endif
 #ifdef NV_TOUCH_UI
         if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
             e.window.event == SDL_WINDOWEVENT_RESIZED) {
@@ -1972,6 +2043,14 @@ int main(int argc, char **argv) {
       }
       player_ciclo_evento(e.type);
       if (e.type == SDL_APP_DIDENTERFOREGROUND) { atualizacao_retomou(); quadroc_suspendeu(&quadroRel); }
+#ifdef NV_WEBOS
+      if (e.type == SDL_APP_WILLENTERBACKGROUND || e.type == SDL_APP_DIDENTERBACKGROUND)
+        player_webos_janela(1, "app to background");
+      else if (e.type == SDL_APP_DIDENTERFOREGROUND) player_webos_janela(0, "app to foreground");
+      // Reserva: o relaunch do webOS nem sempre vira evento de janela
+      // (atualizacao.c). Uma tecla com o video solto e o app de volta.
+      else if (e.type == SDL_KEYDOWN && !e.key.repeat) player_webos_janela(0, "key pressed");
+#endif
       // PONTEIRO (Magic Remote, issue #99): mouse, rodinha e os avisos 484/485
       // de cursor do webOS ficam la; o que ele traduz em tecla chega a
       // app_evento como se viesse do D-pad.
@@ -1998,7 +2077,8 @@ int main(int argc, char **argv) {
 #endif
       // CH+ segurado x tocado (central.h). Com canal na tela (zap) ele segue
       // direto, sem atraso.
-      if (teclaCh(&e) && central_tecla(&e, !app_zap_ativo() && app_central_pode())) continue;
+      // Audio from another source playing: CH+ moves its sync, straight too.
+      if (teclaCh(&e) && central_tecla(&e, !app_zap_ativo() && !audioext_tocando() && app_central_pode())) continue;
       remapCanal(&e);
       // TECLA DESCONHECIDA, UMA LINHA CADA, UMA VEZ SO.
       //
@@ -2176,11 +2256,18 @@ int main(int argc, char **argv) {
     Uint64 t0 = NV_T0();
     tex_upl_n = 0; tex_upl_bytes = 0;
     gputempo_quadro_inicio();   // the GPU clock brackets uploads + draw
+    telalag_quadro_inicio();    // .tpk: the GPU queue limit (Auto at 75 %)
+#ifdef NV_TPK
+    queda_vigiar();             // .tpk: our SIGSEGV handler stays on top (one syscall; queda.h)
+#endif
+    NV_PASSO("tex_bombear");
     tex_bombear(3);
     fBomb = NV_DT(t0);
     fUplN = tex_upl_n; fUplB = tex_upl_bytes;
     t0 = NV_T0();
+    NV_PASSO("app");
     app_atualizar(dt, agora);
+    NV_PASSO("depois do app");
     // COR VIVA: UMA vez por quadro, antes do desenho. Consome o pedido que o
     // desenho do quadro anterior fez (corviva_definir) e anda a transicao; o
     // desenho deste quadro so le o resultado (ajustes_acento, NV_COR_FUNDO_*).
@@ -2266,6 +2353,7 @@ int main(int argc, char **argv) {
     t0 = NV_T0();
     txt_novo_quadro();
     ponteiro_quadro(agora);
+    NV_PASSO("desenho");
     app_desenhar(agora);
     if (perftv_enabled) snprintf(perfScreen, sizeof perfScreen, "%s", perfTvScreen());
     // A abertura (#213) cobre os primeiros quadros, com a home montando por baixo.
@@ -2297,23 +2385,54 @@ int main(int argc, char **argv) {
     capturaSeSolicitado();
     fAux = NV_DT(t0);
     gputempo_quadro_fim();
+    telalag_quadro_fim();
     t0 = NV_T0();
     int playerUi = player_ui_frame(player_aberto(), gfx_n_rect, gfx_n_outros);
-    if (playerUi != playerUiPrevious) {
-#if !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
-      SDL_GL_SetSwapInterval(playerUi ? 0 : 1);
+    int playerClockUi = playerUi;
+#ifndef NV_SEM_WEBOS
+    playerClockUi = player_source_ui_unpaced(playerUi, stream_folha_aberta(), player_carregando(),
+                                            player_tem_video() || player_retido());
+    if (playerClockUi == playerUi) sourceLoadingVsyncFailed = 0;
+    else if (sourceLoadingVsyncFailed) playerClockUi = playerUi;
 #endif
-      playerUiPrevious = playerUi;
+    if (playerClockUi != playerUiPrevious) {
+#if !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+      if (SDL_GL_SetSwapInterval(playerClockUi ? 0 : 1) != 0) {
+#ifndef NV_SEM_WEBOS
+        // Retry only on the next sheet/loading session; retain the old limiter.
+        if (playerClockUi != playerUi) {
+          sourceLoadingVsyncFailed = 1;
+          playerClockUi = playerUi;
+          SDL_GL_SetSwapInterval(0);
+        }
+#endif
+      }
+#endif
+      playerUiPrevious = playerClockUi;
     }
     if (!nvPrimeiroQuadroFeito) arranque_etapa("primeiro SwapWindow");
+    NV_PASSO("swap");
+#ifdef NV_ANDROID
+    if (player_skip_present(player_aberto(), playerUi, ultimoNu, gfx_furo_assin, ultimoFuro)) {
+      quadrosPulados++;
+      swapInt.ult = 0.0;   // the next swap after a skipped run is not an interval
+      SDL_Delay(16);
+    } else
+#endif
+    {
     SDL_GL_SwapWindow(win);
 #ifndef __EMSCRIPTEN__
-    { unsigned wait = player_frame_wait(playerUi, SDL_GetTicks() - frameStarted);
+    { unsigned wait = player_frame_wait(playerClockUi, SDL_GetTicks() - frameStarted);
       if (wait) SDL_Delay(wait); }
 #else
     (void)frameStarted;
 #endif
     swapint_marca(&swapInt, (double)SDL_GetPerformanceCounter() * 1000.0 / perFreq);
+#ifdef NV_ANDROID
+    ultimoNu = player_aberto() && !playerUi;
+    ultimoFuro = gfx_furo_assin;
+#endif
+    }
 #ifdef NV_ANDROID
     android_quadro();   // todo quadro apresentado, de qualquer tela (vigia #266)
 #endif
@@ -2394,8 +2513,10 @@ int main(int argc, char **argv) {
           setlocale(LC_NUMERIC, "C");
         } }
       { double sMed, sPior; int sN = swapint_colher(&swapInt, &sMed, &sPior);
-        if (sN > 0) printf("[swap] periodo=%.2fms med=%.2fms pior=%.1fms n=%d limite-jank=%.1fms\n",
-                           swapint_periodo(&swapInt), sMed, sPior, sN, swapint_limite_jank(&swapInt)); }
+        if (sN > 0) printf("[swap] periodo=%.2fms med=%.2fms pior=%.1fms n=%d limite-jank=%.1fms pulados=%d\n",
+                           swapint_periodo(&swapInt), sMed, sPior, sN, swapint_limite_jank(&swapInt), quadrosPulados);
+        else if (quadrosPulados) printf("[swap] n=0 pulados=%d (video sem nada por cima)\n", quadrosPulados);
+        quadrosPulados = 0; }
       printf("FPS=%.1f pior=%.1fms janks=%d | pior-quadro: texto %.1fms em %d linhas"
              " | gpu-cache=%d %.1fMB tela=%d/%.1fMB fila-tex=%d tex-despejos=%d(q=%d) disco-direto=%d neg-arte=%d"
              " | despejos=%d | cache-arte=%ld/%ldB hit=%ld miss=%ld grav=%ld err=%ld essenciais=%ld/%ld"

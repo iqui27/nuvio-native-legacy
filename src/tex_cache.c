@@ -109,7 +109,8 @@ typedef struct {
   // Ja foi pedido abaixo de NV_TEX_MIP_LARG, isto e, desenhado como CARD. A
   // promocao a heroi refaz a textura a 1280/1920; sem piramide, o card que
   // divide o arquivo com o heroi trocava de cara ao foco (o "pisca nas artes"
-  // da C9, tests/pisca3_shot.sh arte-promo).
+  // da C9, tests/pisca3_shot.sh arte-promo). 2 = icone do pacote, sem
+  // piramide (temPiramide).
   int card;
   // A piramide da textura ATUAL, decidida no envio: a devolucao dos bytes usa
   // ela, e nao uma decisao refeita depois que `card` mudou.
@@ -232,6 +233,11 @@ typedef struct {
   // tex_arquivo ja pediu este GIF DE NOVO uma vez porque o arquivo sumiu do
   // disco (poda). Uma vez por item: e a guarda contra laco de download.
   int rebaixouGif;
+  // ICONE DO PACOTE (tex_obter_icone): emoji, simbolo ou bandeira do
+  // formatador, PNG local de 72-128 px desenhado a ~22 px. Ver a nota em
+  // tex_obter_icone: fura o teto de itens em voo, a fila de decode e o teto de
+  // 3 envios por quadro, porque custa microssegundos e nao toca a rede.
+  unsigned char icone;
 } Item;
 
 // Teto pelo qual o fio de rede (e discoDireto) escolhe a VARIANTE: o maior
@@ -445,6 +451,9 @@ static long bytesTexturaMip(int w, int h, int comPiramide) {
 // Mesma decisao que o envio toma, para a conta e a cobranca nao divergirem.
 #define NV_TEX_MIP_LARG 1024
 static int temPiramide(int w, int h, int card) {
+  // card 2 = icone do pacote (tex_obter_icone): ja decodificado no tamanho de
+  // desenho (32-128 px), a piramide so custaria o envio.
+  if (card == 2) return 0;
   if (w >= NV_TEX_MIP_LARG && !card) return 0;
 #ifdef __EMSCRIPTEN__
   { int lp = (w > 0) && ((w & (w - 1)) == 0);
@@ -493,7 +502,12 @@ static int tirarFila(int *f, int *ini, int fim) {
   // NIVEL 2 = LOGO DE TITULO, 1 = tela cheia, 0 = o resto. O primeiro de maior
   // nivel vence; empate fica na ordem de chegada.
   while (p != fim) {
-    int prioridade = quente(&itens[f[p]]) * 3 + itens[f[p]].urgente;
+    // ICONE DO PACOTE QUENTE (6) na frente de tudo: 1-3 ms de PNG contra
+    // 80-500 ms de um JPEG de cartaz ou fundo. Esperando na ordem de chegada,
+    // atras dos cartazes quentes do detalhe, os icones da folha de fontes
+    // levavam segundos para aparecer com dois fios de decode.
+    int prioridade = itens[f[p]].icone ? quente(&itens[f[p]]) * 4 + 2
+                                       : quente(&itens[f[p]]) * 3 + itens[f[p]].urgente;
     if (prioridade > nivel) { achou = p; nivel = prioridade; }
     p = (p + 1) % MAX_FILA;
   }
@@ -766,7 +780,7 @@ static int acharIndice(const char *caminho, unsigned long h) {
 static int emVoo(void) {
   int n = 0;
   for (int i = 0; i < nMax; i++)
-    if (itens[i].estado == PENDENTE || itens[i].estado == DECODIFICADO) n++;
+    if ((itens[i].estado == PENDENTE || itens[i].estado == DECODIFICADO) && !itens[i].icone) n++;
   return n;
 }
 
@@ -794,8 +808,13 @@ static int residente(const Item *it) {
          distancia(it) <= cachePerfil().fileiras;
 }
 static int despejar(int forcar);
-static int slotLivre(void) {
-  if (emVoo() >= (ptv_plataforma() == PTV_ANDROID && nMax / 3 > 8 ? 8 : nMax / 3)) return -1;   // pede de novo no proximo quadro
+static int slotLivre(int icone) {
+  // O teto de itens em voo existe para a REDE nao atropelar o decode (nota de
+  // emVoo). Um icone do pacote nao baixa nada: esperar por ele aqui era o que
+  // deixava a folha de fontes sem icones enquanto cartazes e fotos do elenco
+  // do detalhe ainda baixavam (no Android, 8 em voo: os icones entravam de 8
+  // em 8, um lote por decode + envio).
+  if (!icone && emVoo() >= (ptv_plataforma() == PTV_ANDROID && nMax / 3 > 8 ? 8 : nMax / 3)) return -1;   // pede de novo no proximo quadro
   for (int i = 0; i < nMax; i++) if (itens[i].estado == VAZIO) return i;
   // Slot que ja desistiu vale mais como vaga que um PRONTO em uso: reaproveita
   // antes de despejar arte que esta na tela.
@@ -3722,6 +3741,7 @@ static int pedidoPalco;
 // Pedido de ARQUIVO em curso (tex_arquivo): o teto da variante a baixar. Ver
 // Item.limiteArquivo.
 static int pedidoArquivo;
+static int pedidoIcone;
 // CAMINHO QUE NAO E TEXTO NAO VIRA PEDIDO. Guarda, nao conserto: o caso que a
 // trouxe (lixo binario como caminho, "[tex] decode falhou (Couldn't open
 // ���̑C)") era um ponteiro para bloco do catalogo ja liberado, consertado em
@@ -3918,6 +3938,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
     itens[i].ultimoPedido = SDL_GetTicks();
     itens[i].uso = ++relogio;
     if (pedidoArquivo > itens[i].limiteArquivo) itens[i].limiteArquivo = pedidoArquivo;
+    if (pedidoIcone && itens[i].localDireto) itens[i].icone = 1;
     if (itens[i].localDireto && itens[i].estado == PENDENTE && !itens[i].naFilaDec)
       (void)enfileirarDecodeSemEspera(i);
     // Marca mesmo quem JA esta na fila: a arte do hero costuma ter sido pedida
@@ -3944,7 +3965,8 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
     // ele, refaz — senao o hero herda para sempre a versao pequena que o card
     // pediu primeiro, e o borrao volta sem explicacao aparente.
     if (pedidoPalco || limite > itens[i].limite) itens[i].limite = limite;
-    if (limite < NV_TEX_MIP_LARG && !pedidoArquivo) itens[i].card = 1;
+    if (limite < NV_TEX_MIP_LARG && !pedidoArquivo)
+      itens[i].card = pedidoIcone && itens[i].card != 1 && itens[i].icone ? 2 : 1;
     // PROMOCAO PELO TETO REALMENTE USADO, e nao pelo pedido.
     //
     // `w < limite` NAO basta: um poster da Cinemeta tem 250px de origem, e
@@ -4016,7 +4038,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
     // A larger Current/Detail cache entry must finish resizing before Stage uses it.
     if (pedidoPalco && itens[i].w > limite) saida = 0;
   } else {
-    int novo = slotLivre();
+    int novo = slotLivre(pedidoIcone && caminhoLocal(caminho));
     if (novo >= 0) {
       // Slot novo nao herda bytes de ninguem (ver desistir): o que estiver
       // em `bruto` e de outro caminho e o decode o preferiria ao arquivo.
@@ -4025,6 +4047,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
       itens[novo].hash = h;
       itens[novo].limite = limite;
       itens[novo].card = limite < NV_TEX_MIP_LARG && !pedidoArquivo;
+      if (pedidoIcone && caminhoLocal(caminho)) itens[novo].card = 2;
       itens[novo].limiteTamanho = 0;
       itens[novo].limiteArquivo = pedidoArquivo;
       itens[novo].estado = PENDENTE;
@@ -4034,6 +4057,7 @@ static GLuint tex_obter_limite(const char *caminho, int limite, int urgente,
       itens[novo].urgente = urgente;
       itens[novo].passageiro = passageiro || pedidoFora == 3 ? 1 : 0;
       itens[novo].localDireto = caminhoLocal(caminho);
+      itens[novo].icone = pedidoIcone && itens[novo].localDireto;
       if (itens[novo].localDireto) {
         // Fila cheia nao transforma caminho local em espera de rede nem trava
         // a UI; o estado PENDENTE sera reenfileirado no proximo pedido.
@@ -4206,6 +4230,30 @@ GLuint tex_obter_logo_larg_qualquer(const char *caminho, float largLayout) {
   pedidoLogo = 1;
   t = tex_obter_larg_qualquer(caminho, largLayout);
   pedidoLogo = 0;
+  return t;
+}
+
+// ICONE DO PACOTE (emoji, simbolos e bandeiras do formatador, Do addon).
+//
+// POR QUE OS ICONES DEMORAVAM (lido no caminho de tex_obter_larg, 11/2026):
+// nao era falta de cache, era fila. O icone e um PNG local de 1-3 ms, mas
+// esperava como um cartaz de 300 ms em tres lugares:
+// 1. slotLivre: com nMax/3 itens em voo (8 no Android) nenhum pedido novo
+//    ganhava slot, e cartazes/fotos do detalhe que ainda BAIXAVAM contavam.
+// 2. A fila de decode: ordem de chegada entre os quentes, atras dos JPEGs.
+// 3. O envio: 3 por quadro para o app todo (main.c, tex_bombear(3)).
+// Aqui o icone fura os tres (ver Item.icone) e e decodificado no tamanho de
+// desenho (minimo 32, maximo 128 px), nao no piso de 128 da arte de card. O
+// cache e o mesmo, com o mesmo orcamento e o mesmo despejo.
+GLuint tex_obter_icone(const char *caminho, float largLayout) {
+  int cap = (int)(largLayout * gfx_escala() * escalaBuf + 0.5f);
+  GLuint t;
+  cap = ((cap + 15) / 16) * 16;
+  if (cap < 32) cap = 32;
+  if (cap > 128) cap = 128;
+  pedidoIcone = 1;
+  t = tex_obter_limite(caminho, cap, 0, 0);
+  pedidoIcone = 0;
   return t;
 }
 
@@ -4608,13 +4656,17 @@ static int publicarEnvio(int alvo, GLuint t, SDL_Surface *sup, Uint32 uploadEm,
 
 // Custos iniciais conservadores da pesquisa plx (ms); o pior observado neste
 // contexto GL, incluindo mip e warm-up, so aumenta durante a sessao.
-static double uplPiorMs[3] = { 2.5, 1.0, 6.0 }; // cartaz, logo, residencia SOLO
+static double uplPiorMs[4] = { 2.5, 1.0, 6.0, 0.5 }; // cartaz, logo, residencia SOLO, icone do pacote
 static void medirEnvio(int classe, Uint64 inicio) {
   double ms = (SDL_GetPerformanceCounter() - inicio) * 1000.0 /
               SDL_GetPerformanceFrequency();
   if (ms > uplPiorMs[classe]) uplPiorMs[classe] = ms;
 }
 
+// Teto de icones do pacote por quadro, alem dos max_por_quadro de arte. O
+// orcamento de tempo (NV_TEX_UPLOAD_BUDGET_MS) continua mandando: 24 envios de
+// 48x48 sao ~220 KB, menos que um cartaz.
+#define NV_TEX_ICONES_QUADRO 24
 static void uplAbortar(void) {
   if (uplTex) glDeleteTextures(1, &uplTex);
   uplTex = 0; uplIdx = -1; uplSup = NULL; uplY = 0; uplNiveis = 0;
@@ -4627,7 +4679,7 @@ int tex_bombear(int max_por_quadro) {
   }
   if (SDL_ThreadID() != uploadThread || !uploadContext ||
       SDL_GL_GetCurrentContext() != uploadContext) return 0;
-  int subiu = 0, trabalhou = 0, porClasse[3] = {0};
+  int subiu = 0, trabalhou = 0, porClasse[4] = {0}, icones = 0;
   unsigned char blocked[MAX_ITENS_ABS] = {0};
   // UMA LINHA POR SESSAO com o caminho da piramide e a GPU: e o que separa,
   // num log de usuario, "lixo com mip=gpu" de "lixo com mip=cpu".
@@ -4647,7 +4699,9 @@ int tex_bombear(int max_por_quadro) {
         (double)(SDL_GetPerformanceCounter() - inicio) * 1000.0 / freq >=
             NV_TEX_UPLOAD_BUDGET_MS)
       break;
-    if (subiu >= max_por_quadro) break;
+    // Icones do pacote nao entram em `subiu` (ver o passo 2): o teto de
+    // max_por_quadro vale so para a arte de verdade, e o passo 2 deixa de
+    // escolher arte quando ele bate.
 
     // 1. Ha um envio em faixas em curso: a proxima faixa.
     if (uplIdx >= 0) {
@@ -4700,24 +4754,36 @@ int tex_bombear(int max_por_quadro) {
     // 2. O proximo decodificado: LOGO (2) e TELA CHEIA (1) antes do resto,
     //    empate na ordem dos slots (a de sempre). Um cartaz que chega antes
     //    nao segura o heroi, que e o que a pessoa esta olhando.
-    SDL_Surface *sup = NULL; int alvo = -1, nivel = -1, classe = 0;
+    SDL_Surface *sup = NULL; int alvo = -1, nivel = -1, classe = 0, ehIcone = 0;
     Uint32 filaEm = 0, filaWait = 0;
     char uploadPath[512] = "";
     // Defer queued work if a network/decode worker holds the cache lock.
     if (SDL_TryLockMutex(mtx) != 0) break;
-    for (int i = 0; i < nMax; i++)
-      if (!blocked[i] && itens[i].estado == DECODIFICADO && itens[i].sup && itens[i].urgente > nivel) {
-        alvo = i; nivel = itens[i].urgente;
-        if (nivel >= 2) break;
-      }
+    // ICONE DO PACOTE PRIMEIRO (nivel 3): uma textura de 48-128 px sobe em
+    // microssegundos. Na fila comum ele contava como cartaz no teto de 3 envios
+    // por quadro (tex_bombear(3) no main.c) e uma folha com 40 icones levava
+    // 14 quadros so de envio, depois de esperar os cartazes da frente.
+    for (int i = 0; i < nMax; i++) {
+      int nv;
+      if (blocked[i] || itens[i].estado != DECODIFICADO || !itens[i].sup) continue;
+      if (subiu >= max_por_quadro && !itens[i].icone) continue;
+      nv = itens[i].icone && icones < NV_TEX_ICONES_QUADRO ? 3 : itens[i].urgente;
+      if (itens[i].icone && nv < 3) continue;   // teto de icones deste quadro
+      if (nv > nivel) { alvo = i; nivel = nv; if (nivel >= 3) break; }
+    }
     if (alvo >= 0) {
       SDL_Surface *s = itens[alvo].sup;
-      classe = (long)s->w * s->h * 4 > 1024L * 1024 ? 2 : nivel == 2 ? 1 : 0;
+      ehIcone = nivel == 3;
+      // Classe 3 = icone: sem a conta do pior caso, que guarda o MAIOR envio
+      // da sessao (o primeiro, com o aquecimento do driver, chega a 150 ms) e
+      // deixaria um icone por quadro para sempre. O teto de tempo do topo do
+      // laco continua valendo: o estouro maximo e um icone de 48 px.
+      classe = ehIcone ? 3 : (long)s->w * s->h * 4 > 1024L * 1024 ? 2 : nivel == 2 ? 1 : 0;
       double gasto = (SDL_GetPerformanceCounter() - inicio) * 1000.0 / freq;
       // Um passo caro pode exceder o teto SOLO (8 ms), mas nunca trava a fila.
       // Depois do primeiro passo, so admite o proximo se seu pior caso cabe.
-      if (porClasse[classe] >= 3 ||
-          (trabalhou && (classe == 2 || gasto + uplPiorMs[classe] > NV_TEX_UPLOAD_BUDGET_MS))) {
+      if ((!ehIcone && porClasse[classe] >= 3) ||
+          (trabalhou && !ehIcone && (classe == 2 || gasto + uplPiorMs[classe] > NV_TEX_UPLOAD_BUDGET_MS))) {
         SDL_UnlockMutex(mtx);
         break;
       }
@@ -4775,9 +4841,10 @@ int tex_bombear(int max_por_quadro) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, sup->w, sup->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, sup->pixels);
     if (sup->userdata) tex_upl_bytes += subirNiveis(sup);
     trabalhou = 1;
-    subiu += publicarEnvio(alvo, t, sup, uploadEm, SDL_GetTicks() - uploadEm, filaWait, uploadPath);
+    { int pub = publicarEnvio(alvo, t, sup, uploadEm, SDL_GetTicks() - uploadEm, filaWait, uploadPath);
+      if (ehIcone) icones += pub; else subiu += pub; }
     medirEnvio(classe, passoEm);
-    porClasse[classe]++;
+    if (!ehIcone) porClasse[classe]++;
     if (classe == 2) break;
   }
   return subiu;

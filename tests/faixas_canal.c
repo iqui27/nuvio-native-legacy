@@ -25,6 +25,14 @@ void player_leg_estilo_mudou(void) {}
 void player_leg_estilo_tocou(int m) { (void)m; }
 int assrender_ativo(void) { return 0; }
 int assrender_texto_simples(void) { return 0; }
+// The second-subtitle and option rows of the sheet (not exercised here).
+int ajustes_leg2_op(int campo) { (void)campo; return 0; }
+int ajustes_op_indice(int op) { (void)op; return 0; }
+int ajustes_op_definir(int op, int v) { (void)op; (void)v; return 0; }
+int ajustes_op_n(int op) { (void)op; return 1; }
+Leg2Estado legenda2_estado(void) { return (Leg2Estado)0; }
+int legenda2_offset_manual(void) { return 0; }
+void legenda2_definir_offset_manual(int ms) { (void)ms; }
 int main(void) {
   // #439: every 10% step is selectable up to 300%, no wrap (the slider clamps).
   estilo.tamanho = 250;

@@ -24,6 +24,8 @@ corpo = re.sub(r"^\s*#[^\n]*", "", corpo, flags=re.M)  # #ifdef NV_ANDROID slots
 opcoes = [n.strip() for n in corpo.split(",") if n.strip() and n.strip() != "AJ_N"]
 # Retired from the screen on purpose; the enum slot stays (positional valor[]/CHAVE[]).
 RETIRADAS = {
+    "AJ_BUFFER_DADOS", "AJ_RAM_OVERLAY", "AJ_RAM_VERDE",  # nested overlay controls
+    "AJ_BUFFER_NATIVE_CONNECTIONS", "AJ_BUFFER_CONVERSION_CONNECTIONS",  # Buffer size children
     "AJ_RELOGIO_POS",  # 1.8: clock island is always top-right (inativa() == 1)
     "AJ_DESCOBRIR",    # 2.0.3: the web Discover screen does not exist on the TV (inativa() == 1)
     "AJ_AVANCADAS",    # 2.0.3: lives in the "Avancadas" pill at the top of the index
@@ -46,6 +48,17 @@ RETIRADAS = {
     # in "Ordem dos provedores", size/groups in "Filtros de fontes".
     "AJ_FALHA_RD_LIMITE", "AJ_FALHA_TB_LIMITE", "AJ_FALHA_PM_LIMITE", "AJ_FALHA_AD_LIMITE",
     "AJ_FILTRO_TAM_MAX", "AJ_FILTRO_GRUPOS",
+    # Audio from another source: one row (AJ_EXT_AUDIO), its options inside
+    # the sheet (uxOpcaoNaTela in ajustes_ux_desenho.inc), like Buffer.
+    "AJ_EXT_AUDIO_CACHE", "AJ_EXT_AUDIO_PASSO", "AJ_EXT_AUDIO_GRANDE",
+    "AJ_EXT_AUDIO_MODO", "AJ_EXT_AUDIO_SERIE", "AJ_EXT_AUDIO_SEGUIR",
+    "AJ_EXT_AUDIO_AVISO", "AJ_EXT_AUDIO_AUTO", "AJ_EXT_AUDIO_COPIAS",
+    "AJ_EXT_AUDIO_ORDEM", "AJ_EXT_AUDIO_BUFOR",
+    # webOS HLS: the old DTS/DV7 switches folded into AJ_WEBOS_HLS_MODE (slots
+    # kept for the saved valor[]); AJ_WEBOS_HLS_TS is learned by the player.
+    "AJ_WEBOS_HLS_DTS", "AJ_WEBOS_HLS_DV7", "AJ_WEBOS_HLS_TS",
+    # TorBox plan: read from TorBox; the "Test TorBox key" result names it.
+    "AJ_TB_PLANO",
 }
 opcoes = [op for op in opcoes if op not in RETIRADAS]
 

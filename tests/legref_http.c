@@ -5,6 +5,7 @@
 #include <stdlib.h>
 static const char *cabs(void) { return getenv("CABS"); }
 int main(int c, char **v) {
+  if (getenv("LEGREF_INDICE")) legref_modo_indice(1);   // modo so indice: Cues em fluxo
   LegRef *r = legref_criar(NULL, NULL);
   legref_fonte_cabecalhos(cabs);
   LegRefOrcamento o = { 12LL << 20, 6000, 50 };

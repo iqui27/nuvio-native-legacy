@@ -2,9 +2,11 @@
 # Build do Nuvio para Android TV/Mobile (SDL2 + GLES2, nucleo C em libmain.so).
 #
 #   NUVIO_APK_LITE=1 tools/android.sh --release-only -> signed APK without the P2P motor
+#   NUVIO_APK_LITE_TAMBEM=1 (com chave) -> tambem os dois lite assinados (padrao: so o completo)
 #   tools/android.sh --debug-only -> debug only, never read release signing keys
 #   tools/android.sh            -> APK debug em build/android/Nuvio-<v>-android-debug.apk
 #   NUVIO_RUST_MKVCORE=0 tools/android.sh -> nucleo mkv em C (padrao: Rust, ligado em 14/10/2026)
+#   NUVIO_LIBASS=0 tools/android.sh -> sem libass (padrao: libass hybrid, legendas ASS como no .tpk)
 #   NUVIO_P2P_MOTOR=<raiz> tools/android.sh -> motor P2P (padrao: pasta achada por tools/p2p-motor/pasta.sh; =none desliga)
 #   NUVIO_KEYSTORE=... NUVIO_KEYSTORE_PASS=... NUVIO_KEY_ALIAS=... NUVIO_KEY_PASS=... tools/android.sh
 #                               -> tambem o release assinado, Nuvio-<v>-android.apk
@@ -94,7 +96,13 @@ echo "[4/5] gradle"
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/27.2.12479018}"
 FFMPEG_AAR="$EST/media3-ffmpeg-16kb.aar"
 bash tools/android/ffmpeg-android.sh "$FFMPEG_AAR" arm64-v8a armeabi-v7a
-GR=(android/gradlew -p android --console=plain -Pnuvio.sdlSrc="$CACHE/src" -Pnuvio.estagio="$EST" -Pnuvio.ffmpegAar="$FFMPEG_AAR")
+# Seek-bar thumbnails made on the device: thumbnail-only FFmpeg (src/miniatura*.c).
+MINI_FF="$CACHE/mini-ffmpeg"
+bash tools/android/ffmpeg-miniaturas.sh "$MINI_FF" arm64-v8a armeabi-v7a
+# LGPL: its license text and source pin travel with the APK.
+mkdir -p "$EST/assets/licencas/ffmpeg-miniaturas"
+cp "$MINI_FF/arm64-v8a/COPYING.LGPLv2.1" "$MINI_FF/arm64-v8a/SOURCE.txt" "$EST/assets/licencas/ffmpeg-miniaturas/"
+GR=(android/gradlew -p android --console=plain -Pnuvio.sdlSrc="$CACHE/src" -Pnuvio.estagio="$EST" -Pnuvio.ffmpegAar="$FFMPEG_AAR" -Pnuvio.miniFfmpeg="$MINI_FF")
 [ "${NUVIO_ANDROID_OFFLINE:-0}" != 1 ] || GR+=(--offline)
 # Motor P2P embutido: pasta achada por tools/p2p-motor/pasta.sh (NUVIO_P2P_MOTOR,
 # ou a pasta padrao); configurada e incompleta = erro, nunca pacote sem motor calado.
@@ -112,6 +120,12 @@ if [ "${NUVIO_RUST_MKVCORE:-1}" = 1 ]; then
   NV_RUST_MKV_DIR="$EST/rust-mkvcore"
   tools/rust-mkvcore.sh --android "$NV_RUST_MKV_DIR" >&2
   GR+=(-Pnuvio.rustMkvcore="$NV_RUST_MKV_DIR")
+fi
+# libass hybrid (o mesmo motor de legendas ASS do .tpk), ligado por padrao
+# (dono 25/11/2026); NUVIO_LIBASS=0 volta aos cues de texto do Media3 so.
+if [ "${NUVIO_LIBASS:-1}" = 1 ]; then
+  bash tools/android/libass.sh arm64-v8a armeabi-v7a >&2
+  GR+=(-Pnuvio.libass="$CACHE/prefix")
 fi
 TAREFAS=()
 [ "$RELEASE_ONLY" = 1 ] || TAREFAS=(assembleDebug)
@@ -148,12 +162,15 @@ if [ "$DEBUG_ONLY" = 0 ] && [ -n "${NUVIO_KEYSTORE:-}" ]; then
   if [ "$LITE" != 1 ]; then
     cp "$APP_BUILD/outputs/apk/release/app-release.apk" "$SAIDA/Nuvio-$VER-android.apk"
     APKS+=("$SAIDA/Nuvio-$VER-android.apk")
-    "${GR[@]}" -Pnuvio.apkLite=1 assembleRelease
+    # Lite (sem motor P2P) so a pedido: o dono nao publica lite desde a 2.0.9.
+    [ "${NUVIO_APK_LITE_TAMBEM:-0}" = 1 ] && "${GR[@]}" -Pnuvio.apkLite=1 assembleRelease
   fi
-  for pair in armeabi-v7a:armv7 arm64-v8a:arm64; do
-    cp "android/app/build-lite/outputs/apk/release/app-${pair%:*}-release.apk" "$SAIDA/Nuvio-$VER-android-lite-${pair#*:}.apk"
-    APKS+=("$SAIDA/Nuvio-$VER-android-lite-${pair#*:}.apk")
-  done
+  if [ "$LITE" = 1 ] || [ "${NUVIO_APK_LITE_TAMBEM:-0}" = 1 ]; then
+    for pair in armeabi-v7a:armv7 arm64-v8a:arm64; do
+      cp "android/app/build-lite/outputs/apk/release/app-${pair%:*}-release.apk" "$SAIDA/Nuvio-$VER-android-lite-${pair#*:}.apk"
+      APKS+=("$SAIDA/Nuvio-$VER-android-lite-${pair#*:}.apk")
+    done
+  fi
 else
   echo "  release fora: sem NUVIO_KEYSTORE"
 fi
@@ -180,12 +197,14 @@ for a in "${APKS[@]}"; do
       m=$(unzip -p "$a" "lib/$abi/libmain.so" | strings | grep -c 'Nuvio Engine/' || true)
       [ "$m" = 0 ] || { echo "android.sh: $a contains the P2P motor" >&2; exit 1; }
     done
-  elif [ -n "$NV_P2P_DIR" ]; then   # motor pedido: o simbolo da API C tem de estar nas DUAS libmain.so
+  elif [ -n "$NV_P2P_DIR" ]; then   # motor pedido: a marca tem de estar nas DUAS ABIs
     for abi in arm64-v8a armeabi-v7a; do
-      m=$(unzip -p "$a" "lib/$abi/libmain.so" | strings | grep -c 'Nuvio Engine/' || true)
-      [ "$m" -ge 1 ] || { echo "android.sh: $a lib/$abi/libmain.so SEM o motor P2P (marca "Nuvio Engine/")" >&2; exit 1; }
+      alvo="lib/$abi/libmain.so"   # estatico (build-android.sh) ou a .so do NuvioTV (fetch-android.sh, dlopen)
+      [ -s "$NV_P2P_DIR/lib/$abi/libnuvio_engine.so" ] && alvo="lib/$abi/libnuvio_engine.so"
+      m=$(unzip -p "$a" "$alvo" | strings | grep -c 'Nuvio Engine/' || true)
+      [ "$m" -ge 1 ] || { echo "android.sh: $a $alvo SEM o motor P2P (marca "Nuvio Engine/")" >&2; exit 1; }
     done
-    echo "  motor P2P dentro das duas libmain.so"
+    echo "  motor P2P nas duas ABIs"
   fi
   n=$(printf '%s\n' "$L" | grep -c -E "$SEGREDO" || true)
   [ "$n" = "0" ] || { echo "android.sh: $a leva $n arquivo(s) de pessoa:" >&2; printf '%s\n' "$L" | grep -E "$SEGREDO" >&2; exit 1; }

@@ -49,6 +49,7 @@ typedef struct {
   int temporada, episodio;
   uint64_t sessao;
   unsigned busca;
+  int conta;   // 1 = account call (tbabrir.c): a new search does not void it, a new session does
 } DebridContexto;
 void debrid_contexto_capturar(DebridContexto *contexto);
 void debrid_contexto_entrar(const DebridContexto *contexto);
@@ -85,6 +86,17 @@ int  debrid_testar_conta(int servico, char *msg, unsigned n, char *data, unsigne
 // Episodio alvo da proxima resolucao (0,0 = filme). Serve para escolher o
 // arquivo certo dentro de um torrent de temporada inteira.
 void debrid_definir_episodio(int temporada, int episodio);
+
+// O QUE O ADDON DISSE DE CADA TORRENT, para resolver como o NuvioTV
+// (DirectDebridResolver.kt / DebridMagnetBuilder.kt / DebridFileSelection.kt):
+//   arquivo  behaviorHints.filename / clientResolve.filename ("" = nao disse):
+//            escolhe o arquivo do pacote por nome antes do SxxEyy e do indice,
+//            e vai no magnet como &dn=
+//   fontes   "sources" (uma por linha, "tracker:..."/"dht:..."), incluindo os
+//            &tr= de um magnet: vao no magnet como &tr= (dht: fica de fora)
+// Chave: hash + fileIdx (um pacote de temporada tem o mesmo hash para cada
+// episodio). Guardado ao montar a lista de fontes; o resolvedor so le.
+void debrid_dica_fonte(const char *infoHash, int fileIdx, const char *arquivo, const char *fontes);
 // O mesmo par, de volta: o P2P (p2p.c) escolhe o arquivo do episodio com ele.
 void debrid_episodio(int *temporada, int *episodio);
 
@@ -177,6 +189,9 @@ const char *debrid_sem_plano_nome(int mascara);
 // Changes only with account session or effective TorBox key, never a search.
 unsigned debrid_tb_geracao(void);
 int   debrid_tb_disponivel(void);
+// The TorBox plan read from user/me when the key arrives (no network here):
+// 0 Free, 1 Essential, 2 Pro, 3 Standard, -1 not checked yet, -2 check failed.
+int   debrid_tb_plano(void);
 // Uma pagina de DEBRID_TB_PAGINA itens (o teto do TorBox): conta com mais
 // itens que isso precisa de mais paginas (`pagina` 0, 1, ...).
 #define DEBRID_TB_PAGINA 1000
@@ -184,5 +199,52 @@ char *debrid_tb_mylist(int usenet, int id, int pagina, int fresco, int *st);
 int   debrid_tb_link(int usenet, int id, int arquivo, char *url, unsigned n);
 int   debrid_tb_adicionar(const char *hash);
 int   debrid_tb_airlock(int usenet, int item, int ligar, char *detalhe, unsigned n);
+// BLOCKS. Deletes torrent `item` from the account (controltorrent delete): only
+// before re-adding the same hash (tbabrir.c, a stuck item). 1 = done.
+int   debrid_tb_apagar(int item);
+// BLOCKS. 1 = the hash is cached on TorBox (checkcached), 0 = not, -1 = no
+// answer or no key (tbabrir.c, before deleting a stuck item).
+int   debrid_tb_em_cache(const char *hash);
+// BLOCKS, search-bound. Cache check of a source list on one service
+// (DEBRID_TB or DEBRID_PM; the others have no such call and return -1):
+// res[i] = 1 cached, 0 the service says not cached, -1 no answer (alias reply,
+// failure, time cap `tetoMs` between chunks). Returns hashes answered.
+int   debrid_cache_lote(int servico, const char (*hashes)[48], int n, signed char *res, unsigned tetoMs);
+
+
+// ACCOUNT ITEMS ON ALLDEBRID AND REAL-DEBRID (tbabrir.c, owner 25/11/2026):
+// the early lookup and the recovery of a file that never shows a picture.
+// Like the TorBox calls above they do not depend on the running search: the
+// effective key is copied at the call; a logout or a new session voids it.
+// `servico` is DEBRID_AD or DEBRID_RD. Nothing here goes to the log with a URL.
+//   debrid_conta_disponivel: 1 = a key that can use the API, 0 = none,
+//                            -1 = the account has no plan for the API.
+//   debrid_conta_geracao:    changes with the service's effective key.
+//   debrid_conta_achar:      BLOCKS. The hash's item in the account (AD
+//                            magnet/status, RD torrents list). 1 = `id`
+//                            filled, *pronto = ready/downloaded; 0 = not in
+//                            the account; -1 = no answer.
+//   debrid_conta_link:       BLOCKS. A fresh playable link of the playing file
+//                            in item `id` (by file name, then size, then the
+//                            add-on's index / episode). AD: magnet/files +
+//                            link/unlock; RD: torrents/info + unrestrict/link.
+//   debrid_ad_enviar:        BLOCKS. AD magnet/upload of the bare hash. 1 = AD
+//                            says ready (cached; `id` = its magnet), 0 = not
+//                            ready (`id` filled: the magnet AD made or kept),
+//                            -1 = refused / no answer.
+//   debrid_ad_apagar:        BLOCKS. AD magnet/delete. 1 = done.
+int      debrid_conta_disponivel(int servico);
+unsigned debrid_conta_geracao(int servico);
+int      debrid_conta_achar(int servico, const char *hash, char *id, unsigned n, int *pronto);
+int      debrid_conta_link(int servico, const char *id, const char *arquivo, uint64_t bytes, int fileIdx,
+                           char *url, unsigned n);
+int      debrid_ad_enviar(const char *hash, char *id, unsigned n);
+int      debrid_ad_apagar(const char *id);
+// TorBox burn-in (tbburn.h). BLOCKS. GET api.torbox.app/v1/api/<rota> with the
+// key as Bearer; body (free) or NULL, *st gets the HTTP status. Never logged.
+char *debrid_tb_api_get(const char *rota, int prazo, int *st);
+// Replaces every copy of the TorBox key in `texto` (in place) with "***", so a
+// response or a playlist URL (?token=<key>) can be logged.
+void  debrid_tb_redigir(char *texto);
 
 #endif

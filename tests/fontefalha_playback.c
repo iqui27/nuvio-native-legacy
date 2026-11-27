@@ -66,10 +66,12 @@ void player_definir_fonte(const char *url) { (void)url; aberturas++; }
 void player_definir_tentativa(int n, int t) { tentativaN = n; tentativaT = t; }
 void player_toast(const char *txt, unsigned ms) { (void)txt; (void)ms; }
 void player_erro_fonte(void) {}
+void player_desistir_fonte(void) {}
 void player_erro_fonte_motivo(const char *titulo, const char *subtitulo) { (void)titulo; (void)subtitulo; }
 void player_fechar_mini(void) { mini = 0; }
 int video_falhou(void) { return falhou; }
 int video_reconectando(void) { return reconectando; }
+unsigned video_abertura_geracao(void) { return 0; }
 int video_pronto(void) { return pronto; }
 int video_fonte_tocou(void) { return tocou; }
 int video_dv_ativo(void) { return dv; }
@@ -155,6 +157,7 @@ const char *sessao_usuario(void) { return ""; }
 void debrid_contexto_capturar(DebridContexto *c) { if (c) memset(c, 0, sizeof *c); }
 void debrid_contexto_entrar(const DebridContexto *c) { (void)c; }
 void debrid_contexto_sair(void) {}
+void debrid_dica_fonte(const char *h, int i, const char *a, const char *f) { (void)h; (void)i; (void)a; (void)f; }
 unsigned fonteregra_versao(void) { return 0; }
 int detail_aberto(void) { return 0; }
 int detail_indice(void) { return 0; }

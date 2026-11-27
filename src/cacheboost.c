@@ -161,3 +161,17 @@ static volatile int bufferMb;
 void cacheboost_backend_buffer(int mb) { bufferMb = mb; }
 int cacheboost_backend_buffer_mb(void) { return bufferMb; }
 #endif
+
+#ifdef NV_HTTP_BUFFER_DIAG
+void cacheboost_buffer_texto(char *dst, size_t n, long long used, long long capacity, int opcao) {
+  if (!dst || !n) return;
+  if (capacity <= 0) { snprintf(dst, n, "Buffer: system"); return; }
+  int pedido = opcao >= 1 && opcao <= 3 ? 32 << opcao : 0;
+  double total = capacity / 1048576.0;
+  if (used < 0) used = 0;
+  if (pedido && fabs(total - pedido) >= 0.5)
+    snprintf(dst, n, "Buffer: %.1f / %.0f MiB total (%d MiB selected)", used / 1048576.0, total, pedido);
+  else
+    snprintf(dst, n, "Buffer: %.1f / %.0f MiB total", used / 1048576.0, total);
+}
+#endif

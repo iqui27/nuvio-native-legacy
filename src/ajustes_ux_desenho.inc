@@ -23,7 +23,10 @@ static const char *uxResumo(int op) {
   return ajudaOpcao(op);
 }
 static int uxOpcaoNaTela(int op) {
+  if (uxBufferConexao(op)) return AJ_BUFFER;
   if (op == AJ_FILTRO_TAM_MAX || op == AJ_FILTRO_GRUPOS) return AJ_FILTROS_FONTES;
+  if (op == AJ_EXT_AUDIO_CACHE || op == AJ_EXT_AUDIO_PASSO || op == AJ_EXT_AUDIO_GRANDE ||
+      op == AJ_EXT_AUDIO_MODO || op == AJ_EXT_AUDIO_SERIE || op == AJ_EXT_AUDIO_SEGUIR || op == AJ_EXT_AUDIO_AVISO || op == AJ_EXT_AUDIO_AUTO || op == AJ_EXT_AUDIO_COPIAS || op == AJ_EXT_AUDIO_ORDEM || op == AJ_EXT_AUDIO_BUFOR) return AJ_EXT_AUDIO;
   return op >= AJ_FALHA_RD_LIMITE && op <= AJ_FALHA_AD_LIMITE
     ? AJ_FALHA_PROVEDOR_ORDEM : op;
 }
@@ -445,6 +448,10 @@ static int ajTipo(int op) {
 static const char *ajRotSeg(int op, int i) {
   static char b[3][96];
   char *p;
+  if (op == AJ_DV_AUDIO_FIXO) {
+    static const char *const nomes[] = { "Original", "AAC 2.0", "DD 5.1" };
+    return nomes[i];
+  }
   snprintf(b[i % 3], sizeof b[0], "%s", i18n(OPCOES[op].valores[i]));
   p = strstr(b[i % 3], " (");
   if (p && p != b[i % 3] && op != AJ_AMPLIAR_UI) *p = 0;
@@ -461,8 +468,15 @@ static int ajSegmentada(int op) {
   if (n < 2 || n > 3 || !OPCOES[op].valores) return 0;
   // O segmentado so fica na linha se o nome da opcao cabe ao lado dele;
   // senao a escolha abre no editor.
-  { float w = aj2SegLargura(op, n);
-    if (w + (float)txt_largura(TXT_V2_ROT, rotuloOpcao(op)) + 60.0f + 20.0f > aj2ListaWRef() - 44.0f) return 0;
+  { float w = aj2SegLargura(op, n), regua = w;
+    /* DTS output (LG) keeps the in-row choice it had with two values after Off
+     * was appended: with the artwork column the segmented control is drawn
+     * over the artwork, not beside the row label, so the label check uses the
+     * original two values. */
+#ifndef NV_TPK
+    if (op == AJ_DTS_AC3 && n == 3 && aj2TemInsp() && !ajRetrato()) regua = aj2SegLargura(op, 2);
+#endif
+    if (regua + (float)txt_largura(TXT_V2_ROT, rotuloOpcao(op)) + 60.0f + 20.0f > aj2ListaWRef() - 44.0f) return 0;
     return w < 560.0f; }
 }
 // O editor desta opcao acontece NA LINHA (segmentado, interruptor, cor, fundo),
@@ -687,8 +701,8 @@ static float ajBeneficioH(int op) {
 #define AJ_AJUDA_META 40.0f
 static float ajAjudaLinhaW(void) { float w = aj2ListaR().w - 36.0f - 44.0f - 80.0f; return w > 1260.0f ? 1260.0f : w; }
 static float ajAjudaLinhaTxtH(int op) {
-  float h = txt_bloco(TXT_V3_BEN, uxResumo(op), 0, 0, 0, 0, -4000, ajAjudaLinhaW(), AJ2_LN_BEN, 0, 4);
-  return h < 1.0f ? 0.0f : h > 4 * AJ2_LN_BEN ? 4 * AJ2_LN_BEN : h;
+  int maxL = op == AJ_WEBOS_HLS_MODE ? 0 : 4;
+  return txt_bloco(TXT_V3_BEN, uxResumo(op), 0, 0, 0, 0, -4000, ajAjudaLinhaW(), AJ2_LN_BEN, 0, maxL);
 }
 static float ajAjudaLinhaH(int op) {
   return ajAjudaLinhaTxtH(op) + (uxTemPadrao(op) && op != AJ_TEMA ? 10.0f + AJ_AJUDA_META : 0.0f);
@@ -697,7 +711,8 @@ static int ajCusto(int op);
 static const char *ajCustoTexto(int c);
 static void ajAjudaLinhaDesenhar(int op, float x, float y, float a) {
   float h = ajAjudaLinhaTxtH(op);
-  txt_bloco(TXT_V3_BEN, uxResumo(op), 243, 242, 239, x, y, ajAjudaLinhaW(), AJ2_LN_BEN, 0.70f * a, 4);
+  int maxL = op == AJ_WEBOS_HLS_MODE ? 0 : 4;
+  txt_bloco(TXT_V3_BEN, uxResumo(op), 243, 242, 239, x, y, ajAjudaLinhaW(), AJ2_LN_BEN, 0.70f * a, maxL);
   if (uxTemPadrao(op) && op != AJ_TEMA) {
     char padrao[160];
     float yc = y + h + 10.0f + AJ_AJUDA_META * 0.5f, ar, ag, ab, xx = x;
@@ -790,7 +805,7 @@ static int ajCusto(int op) {
     case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR: case AJ_TRAILER_QUAL: case AJ_DET_TRAILER_AUTO:
       return 2;
     case AJ_SEEKR_LIGADO: return 2 | 4;
-    case AJ_P2P_LIGADO: case AJ_FANART_CHAVE: case AJ_SEEKR_CHAVE: case AJ_MDB_CHAVE: case AJ_POSTER_CHAVE:
+    case AJ_P2P_LIGADO: case AJ_FANART_CHAVE: case AJ_SEEKR_CHAVE: case AJ_MDB_CHAVE: case AJ_POSTER_CHAVE: case AJ_ANIMESKIP_ID:
     case AJ_DEBRID_RD: case AJ_DEBRID_TB: case AJ_DEBRID_PM: case AJ_DEBRID_AD:
       return 4;
     default: return 0;
@@ -815,10 +830,11 @@ static float ajCustoIcones(int op, float xDir, float yc, float a) {
 // "AVANCADO", que ganha do escopo ("ESTA TV" / "ESTE PERFIL", mockup v3 tela
 // 03). Acoes e leituras nao tem escopo para mostrar.
 static const char *ajSelo(int op) {
+  if (op == AJ_WEBOS_HLS_MODE || op == AJ_WEBOS_HLS_TS) return NULL;
 #if !defined(NV_TPK) && !defined(NV_ANDROID)
   if (op == AJ_DV_MKV) return "Só LG";
 #endif
-  if (op == AJ_LEG_SYNC_AUDIO) return "Android";
+  if (op == AJ_LEG_SYNC_AUDIO || op == AJ_LEG_SYNC_AUDIO_MOVEL) return "Android";
   if (uxAvancada(op)) return "Avançado";
   if (!uxTemPadrao(op)) return NULL;
   return escopoDe(op) == ESC_TV ? "Esta TV" : "Este perfil";

@@ -112,6 +112,8 @@ void intro_definir_capitulos(const IntroTrecho *v, int n) {
   chamadas++; nGravado = n;
   if (n > 0) memcpy(gravado, v, (size_t)n * sizeof *v);
 }
+void intro_definir_capitulos_palpite(const IntroTrecho *v, int n) { (void)v; (void)n; }
+void intro_definir_capitulos_marcas(const double *v, int n) { (void)v; (void)n; }
 
 static int falhas;
 
@@ -189,7 +191,24 @@ int main(void) {
     capmkv_aplicar(sn, 3);
     ok(capmkv_creditos(0) == 0.0, "ultimo capitulo sem duracao: nao vale");
     ok(capmkv_creditos(1400) > 1299 && capmkv_creditos(1400) < 1301, "ultimo capitulo no ultimo quarto vale");
-    ok(capmkv_creditos(2400) == 0.0, "ultimo capitulo antes dos 75% nao vale"); }
+    ok(capmkv_creditos(2400) == 0.0, "ultimo capitulo antes dos 75% nao vale");
+    // Toco no fim (log da C9 04/11: Ch07 em 1420 de 1421 s): nao e creditos.
+    ok(capmkv_creditos(1305) == 0.0 && capmkv_creditos_ultimo(1305) == 0.0,
+       "ultimo capitulo a menos de 10 s do fim: nao vale");
+    ok(capmkv_creditos_nomeado() == 0.0 && capmkv_creditos_ultimo(1400) > 1299,
+       "nomeado e ultimo separados (o player ordena as fontes)");
+    ok(capmkv_creditos_ultimo_episodio(1400) > 1299, "episodio: ultimo capitulo a 100 s do fim vale"); }
+  // Farscape T1E9 (log do dono 25/11): seis capitulos sem nome, atos de 8-14
+  // min; o ultimo deixa 246 s. No episodio e um ato; num filme continua valendo.
+  { MkvCap fs[6] = { {0, "Chapter 01"}, {341.0, "Chapter 02"}, {1164.5, "Chapter 03"},
+                     {1678.7, "Chapter 04"}, {2242.2, "Chapter 05"}, {2764.2, "Chapter 06"} };
+    capmkv_aplicar(fs, 6);
+    ok(capmkv_creditos_ultimo(3010) > 2764 && capmkv_creditos_ultimo(3010) < 2765,
+       "Farscape: o palpite geral ainda acha o ultimo capitulo");
+    ok(capmkv_creditos_ultimo_episodio(3010) == 0.0, "Farscape episodio: ultimo ato a 246 s do fim nao e creditos");
+    ok(capmkv_creditos_ultimo_episodio(2764.2 + CAPMKV_ULTIMO_EPISODIO_MAX_S) > 2764,
+       "episodio: ultimo capitulo exatamente no limite vale");
+    ok(capmkv_creditos(3010) > 2764, "capmkv_creditos (filme/.tpk) inalterado"); }
   (void)filme; (void)semNome;
 
   puts("capmkv: fio lateral e cache por URL");
@@ -225,6 +244,25 @@ int main(void) {
   capmkv_teste_antes_de_publicar = NULL;
   ok(capmkv_creditos(1400) == 0.0, "B sem creditos vindos de A");
   ok(nGravado == 0, "B sem trechos de intro vindos de A");
+
+  // LG (video.c lerMkv): o fio da sonda le os capitulos por conta propria e
+  // publica com a geracao guardada ao dispara-lo. Abrir B no meio invalida A.
+  puts("capmkv: LG - sonda de A atrasada nao publica capitulos em B");
+  { MkvCap lg[3] = { { 90, "Opening" }, { 180, "Part A" }, { 1260, "Ending" } }, out[MKV_MAX_CAPS];
+    unsigned gA, gB;
+    capmkv_zerar(); gA = capmkv_geracao();               // abriu A, disparou a sonda
+    capmkv_zerar(); gB = capmkv_geracao();               // abriu B antes de a sonda de A voltar
+    chamadas = 0; nGravado = 0;
+    ok(gA != gB, "cada abertura muda a geracao");
+    ok(capmkv_aplicar_ger(lg, 3, gA) == 0, "sonda de A com geracao velha: recusada");
+    ok(capmkv_lista(out, MKV_MAX_CAPS) == 0, "B sem lista de capitulos vinda de A");
+    ok(capmkv_creditos(1400) == 0.0 && chamadas == 0, "B sem creditos nem trechos vindos de A");
+    ok(capmkv_aplicar_ger(lg, 3, gB) == 1, "sonda do proprio B publica");
+    ok(capmkv_lista(out, MKV_MAX_CAPS) == 3 && perto(out[2].inicio, 1260), "B com os seus capitulos");
+    ok(nGravado == 2, "B entrega abertura e creditos ao modulo de intro");
+    capmkv_zerar();                                      // C sem capitulos depois de B
+    ok(capmkv_lista(out, MKV_MAX_CAPS) == 0 && capmkv_creditos(1400) == 0.0, "C sem capitulos: nada de B fica");
+    ok(capmkv_aplicar_ger(lg, 3, gB) == 0, "sonda de B atrasada depois de C: recusada"); }
 
   printf("%s\n", falhas ? "FALHOU" : "capmkv: ok");
   return falhas ? 1 : 0;

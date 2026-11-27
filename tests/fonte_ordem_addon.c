@@ -32,6 +32,15 @@ int vazao_url_aviso(const char *url) { (void)url; return 0; }
 int ajustes_fonte_ordem_addon(void) { return modo; }
 int ajustes_fonte_texto_addon(void) { return 0; }
 int debrid_ativo(void) { return 1; }
+// list cache check (streams.c cacheLoteConferir): no service answers here
+int debrid_servico_disponivel(int q) { (void)q; return 0; }
+void debrid_contexto_capturar(DebridContexto *c) { (void)c; }
+void debrid_contexto_entrar(const DebridContexto *c) { (void)c; }
+void debrid_contexto_sair(void) {}
+int debrid_cache_lote(int q, const char (*h)[48], int n, signed char *r, unsigned t) {
+  (void)q; (void)h; (void)t; for (int i = 0; i < n; i++) r[i] = -1; return -1;
+}
+void debrid_dica_fonte(const char *h, int i, const char *a, const char *f) { (void)h; (void)i; (void)a; (void)f; }
 int p2p_ativo(void) { return 0; }
 const char *ajustes_p2p_url(void) { return ""; }
 float gfx_escala_ui(void) { return 1; }
@@ -65,6 +74,12 @@ static void conferir(const int *esperada, int qtd) {
 int main(void) {
   assert(stream_texto_fora_de_cache("Not cached"));
   assert(!stream_texto_fora_de_cache("cached WEB-DL Download"));
+  // AIOStreams' "not cached" hourglass (owner's log 13/11), with and without
+  // the emoji selector; the cached marks are not.
+  assert(stream_texto_fora_de_cache("[TB\xe2\x8c\x9b] Torrentio Unknown"));
+  assert(stream_texto_fora_de_cache("[TB\xe2\x8c\x9b\xef\xb8\x8f] Comet|Goldy"));
+  assert(!stream_texto_fora_de_cache("[TB+] Torrentio 1080p"));
+  assert(!stream_texto_fora_de_cache("[TB\xe2\x9a\xa1\xef\xb8\x8f] Comet"));
   const char *json = "{\"streams\":["
     "{\"url\":\"https://video.invalid/720.mp4\",\"name\":\"720p\",\"videoSize\":104857600},"
     "{\"url\":\"https://video.invalid/4k-small.mp4\",\"name\":\"2160p\",\"videoSize\":209715200},"

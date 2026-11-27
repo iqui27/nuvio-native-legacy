@@ -7,6 +7,19 @@
 #include "extras.h"
 #include "linguas.h"
 #include "video.h"      // trailer_osd_desenhar reads video_pos/duracao on every target
+#ifdef NV_WEBOS
+#include "escala.h"
+#endif
+#ifdef NV_TRAILERIO
+#include "trailerio.h"
+#include "trailerapple.h"
+#include "trailerimdb.h"
+#include "salto.h"
+// Trailer seek step: trailers last 1-3 minutes, so left/right moves 5 s here.
+// The player's own step (SALTO_SEG) stays 10 s.
+#define TRAILER_SALTO_SEG 5.0
+#include <math.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +40,22 @@ static int    dono;       // TRAILER_DONO_* (trailer.h)
 static int    noCartao;   // trailer_no_cartao: quadro inteiro encaixado no .tpk
 static char   donoImdb[32];
 static int    falso;      // trailer_teste_falso: 0 off, 1 open without image, 2 playing
+#ifdef NV_TRAILERIO
+enum { TIO_INATIVO, TIO_PRIMARIOS, TIO_CONSULTANDO, TIO_ABRINDO, TIO_TOCANDO };
+static int tioEstado, tioFonte, tioProximoProvedor;
+static char tioId[32], tioTipo[8];
+static Uint32 tioOsdAte;
+static TrailerioLista *tioLista;
+// Full-screen order of the two primaries, as trailerfonte_ordem_cheia: on the
+// .tpk the Trailer button (with sound) tries IMDb before Apple TV, whose
+// variant there is video only. Trailerio is always last.
+static int tioImdbPrimeiro;
+static int tioDepois(int provedor) {
+  const int primeiro = tioImdbPrimeiro ? TRF_IMDB : TRF_APPLE;
+  if (provedor == primeiro) return tioImdbPrimeiro ? TRF_APPLE : TRF_IMDB;
+  return TRF_TRAILERIO;
+}
+#endif
 
 void trailer_teste_falso(int tocando) { falso = tocando < 0 ? 0 : 1 + (tocando != 0); }
 
@@ -412,10 +441,118 @@ static GfxRect naTela(GfxRect r) {
 
 static int bloqueadoMusica;
 void trailer_bloquear_musica(int sim) { bloqueadoMusica = sim; }
+#ifndef __EMSCRIPTEN__
+static void nativoResetar(void) {
+  tocouFonte = 0;
+  volumePendente = 1; recortePendente = 1; pausado = 0; reaplicarAte = 0;
+  tocandoDesde = 0; quadroInteiroEnviado = 0;
+#ifdef NV_TPK
+  recorteEnviadoEm = 0; mostraLogado = 0; imagemVista = 0; tocandoVisto = 0;
+  volumeTocandoEnviado = 0;
+#endif
+}
+#endif
+
+#ifdef NV_TRAILERIO
+int trailer_abrir_trailerio(const char *id, const char *tipo, GfxRect r, int som, int automatico) {
+  if (bloqueadoMusica || !trailerio_id(id, tipo) || !trailer_suportado()) return 0;
+  // This title's trailer is already playing in the background (autoplay):
+  // go full screen and keep playing, as trailer_abrir does for the same source,
+  // instead of closing it and looking it up again from the start.
+  // Only in Automatic: the Trailerio setting plays Trailerio. With IMDb first
+  // in full screen (.tpk, with sound) a muted Apple TV background trailer is
+  // not kept: that variant has no audio there, and IMDb opens instead.
+  if (aberto && !cheia) {
+    const char *a = automatico ? trailerapple_url(id) : NULL;
+    const char *m = automatico ? trailerimdb_url(id, NULL) : NULL;
+    if (som && trailerfonte_imdb_primeiro_cheia() && m && *m) a = NULL;
+    int mesmo = tioEstado != TIO_INATIVO ? !strcmp(tioId, id)
+              : fonteAtual[0] && ((a && !strcmp(fonteAtual, a)) || (m && !strcmp(fonteAtual, m)));
+    if (mesmo) {
+      if (comSom != som) volumePendente = 1;
+      rect = naTela(r); cheia = 1; comSom = som;
+      video_janela((int)rect.x, (int)rect.y, (int)rect.w, (int)rect.h);
+      recortePendente = 1;
+      nativoAplicar();
+      return 1;
+    }
+  }
+  if (aberto) trailer_fechar();
+  if (!automatico && !trailerio_iniciar(id, tipo)) return 0;
+  snprintf(tioId, sizeof tioId, "%s", id);
+  snprintf(tioTipo, sizeof tioTipo, "%s", tipo);
+  tioEstado = automatico ? TIO_PRIMARIOS : TIO_CONSULTANDO;
+  tioImdbPrimeiro = som && trailerfonte_imdb_primeiro_cheia();
+  tioProximoProvedor = automatico ? (tioImdbPrimeiro ? TRF_IMDB : TRF_APPLE) : 0;
+  tioFonte = 0;
+  falhouUltima = pausado = 0;
+  abertoEm = SDL_GetTicks();
+  geracao++;
+  rect = naTela(r);
+  aberto = cheia = 1;
+  comSom = som;
+  return 1;
+}
+
+static void tioFonteAberta(void) {
+  tioEstado = TIO_ABRINDO;
+#ifdef NV_TPK
+  video_tpk_trailer_marcar(1);   // as trailer_abrir: no reconnect, ROI or audio donor
+#endif
+  nativoResetar();
+  abertoEm = SDL_GetTicks();
+  video_janela((int)rect.x, (int)rect.y, (int)rect.w, (int)rect.h);
+}
+
+static void tioConsultarPrimarios(void) {
+  while (tioProximoProvedor == TRF_APPLE || tioProximoProvedor == TRF_IMDB) {
+    const int apple = tioProximoProvedor == TRF_APPLE;
+    const int respondeu = apple ? trailerapple_respondeu(tioId) : trailerimdb_respondeu(tioId);
+    const char *url = apple ? trailerapple_url(tioId) : trailerimdb_url(tioId, NULL);
+    if ((!url || !*url) && !respondeu) return;
+    tioProximoProvedor = tioDepois(tioProximoProvedor);
+    if (url && *url) {
+      video_definir_cabecalhos(NULL);
+      video_definir_dv(0);
+      video_definir_mp4(!apple);
+      if (video_tocar(url)) {
+        tioFonteAberta();
+        return;
+      }
+      video_parar();
+      video_definir_mp4(0);
+    }
+  }
+  tioProximoProvedor = 0;
+  if (trailerio_iniciar(tioId, tioTipo)) {
+    tioEstado = TIO_CONSULTANDO;
+  } else {
+    falhouUltima = 1;
+    trailer_fechar();
+  }
+}
+
+static void trailerioProximaFonte(void) {
+  while (tioLista && tioFonte < tioLista->n) {
+    const TrailerioFonte *fonte = &tioLista->fontes[tioFonte++];
+    tioEstado = TIO_ABRINDO;
+    if (video_tocar_trailerio(fonte->url, fonte->hls)) {
+      tioFonteAberta();
+      return;
+    }
+  }
+  falhouUltima = 1;
+  trailer_fechar();
+}
+#endif
+
 void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
   int nova;
   if (bloqueadoMusica) return;
   if (!trailer_suportado() || !fonte || !fonte[0]) return;
+#ifdef NV_TRAILERIO
+  if (tioEstado != TIO_INATIVO) trailer_fechar();
+#endif
   r = naTela(r);
   // SAMSUNG E SEMPRE MUDO, tambem em tela cheia (dono, 22/09/2026: "trailer
   // fica mudo"). A trava fica AQUI, no unico caminho ate o elemento, e nao so
@@ -450,13 +587,7 @@ void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
 #ifdef NV_TPK
     video_tpk_trailer_marcar(1);
 #endif
-    tocouFonte = 0;
-    volumePendente = 1; recortePendente = 1; pausado = 0; reaplicarAte = 0;
-    tocandoDesde = 0; quadroInteiroEnviado = 0;
-#ifdef NV_TPK
-    recorteEnviadoEm = 0; mostraLogado = 0; imagemVista = 0; tocandoVisto = 0;
-    volumeTocandoEnviado = 0;
-#endif
+    nativoResetar();
   } else if (comSom != som) volumePendente = 1;
   video_janela((int)r.x, (int)r.y, (int)r.w, (int)r.h);
   if (!nova) recortePendente = 1;
@@ -484,6 +615,9 @@ void trailer_rect(GfxRect r) {
 #ifdef __EMSCRIPTEN__
   trailer_js_abrir(fonteAtual, r.x, r.y, r.w, r.h, comSom, ajustes_trailer_zoom(), NV_REC_URL);
 #else
+#ifdef NV_TRAILERIO
+  if (tioEstado == TIO_PRIMARIOS || tioEstado == TIO_CONSULTANDO) return;
+#endif
   video_janela((int)r.x, (int)r.y, (int)r.w, (int)r.h);
   recortePendente = 1;
   nativoAplicar();
@@ -498,7 +632,23 @@ void trailer_fechar(void) {
 #ifdef __EMSCRIPTEN__
   trailer_js_fechar();
 #else
+#ifdef NV_TRAILERIO
+  if (tioEstado == TIO_CONSULTANDO) {
+    trailerio_cancelar();
+  } else if (tioEstado != TIO_PRIMARIOS) {
+    video_parar();
+    if (tioEstado != TIO_INATIVO) video_definir_mp4(0);
+  }
+  if (tioEstado != TIO_INATIVO) {
+    free(tioLista);
+    tioLista = NULL;
+    tioEstado = TIO_INATIVO;
+    tioProximoProvedor = 0;
+    tioOsdAte = 0;
+  }
+#else
   video_parar();
+#endif
 #endif
   aberto = 0; cheia = 0; fonteAtual[0] = 0;
 #ifndef __EMSCRIPTEN__
@@ -548,6 +698,9 @@ int trailer_tocando(void) {
 #endif
 }
 int trailer_mostra_video(void) {
+#ifdef NV_TRAILERIO
+  if (tioEstado != TIO_INATIVO && tioEstado != TIO_TOCANDO) return 0;
+#endif
 #ifdef NV_ANDROID
   if (noCartao && !video_janela_pronta()) return 0;
 #endif
@@ -607,10 +760,26 @@ int trailer_evento(const SDL_Event *e) {
   k = e->key.keysym.sym;
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE || k == SDLK_DELETE ||
       e->key.keysym.scancode == NV_SCANCODE_BACK) { trailer_fechar(); return 1; }
+#ifdef NV_TRAILERIO
+  if (tioEstado == TIO_TOCANDO && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
+    const double dur = video_duracao(), pos = video_pos();
+    if (!e->key.repeat && isfinite(dur) && dur > 0.0 && isfinite(pos)) {
+      double alvo = pos + (k == SDLK_RIGHT ? TRAILER_SALTO_SEG : -TRAILER_SALTO_SEG);
+      if (alvo < 0.0) alvo = 0.0;
+      if (alvo > dur) alvo = dur;
+      if (alvo != pos) video_buscar(alvo);
+      tioOsdAte = (SDL_GetTicks() + 3000u) | 1u;
+    }
+    return 1;
+  }
+#endif
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
 #ifdef __EMSCRIPTEN__
     trailer_js_cmd(trailer_js_pausado() ? "playVideo" : "pauseVideo");
 #else
+#ifdef NV_TRAILERIO
+    if (tioEstado != TIO_INATIVO && tioEstado != TIO_TOCANDO) return 1;
+#endif
     pausado = !pausado;
     video_pausar(pausado);
 #endif
@@ -643,13 +812,47 @@ void trailer_atualizar(Uint32 agora) {
     trailer_fechar();
   } else if (aberto && trailer_js_estado() == 0) trailer_fechar();
 #else
+#ifdef NV_TRAILERIO
+  if (tioEstado == TIO_PRIMARIOS) {
+    tioConsultarPrimarios();
+    if (tioEstado != TIO_ABRINDO) return;
+  }
+  if (tioEstado == TIO_CONSULTANDO) {
+    if (!trailerio_resultado(&tioLista)) return;
+    trailerioProximaFonte();
+  }
+#endif
   if (!aberto) return;
   video_bombear();
   nativoAplicar();
+  const int terminou = video_terminou();
+  const int falhou = video_falhou();
+  const int conflito = video_conflito_recurso();
+#ifdef NV_TRAILERIO
+  if (tioEstado >= TIO_ABRINDO && !conflito) {
+    if (tioProximoProvedor && (falhou || (tioEstado == TIO_ABRINDO && terminou))) {
+      video_parar();
+      video_definir_mp4(0);
+      tioOsdAte = 0;
+      tioEstado = TIO_PRIMARIOS;
+      tioConsultarPrimarios();
+      return;
+    }
+    if (tioEstado == TIO_ABRINDO && video_tocando()) {
+      tioEstado = TIO_TOCANDO;
+      free(tioLista);
+      tioLista = NULL;
+    } else if (tioEstado == TIO_ABRINDO && !tioProximoProvedor &&
+               (falhou || terminou || (Sint32)(agora - abertoEm) >= 8000)) {
+      trailerioProximaFonte();
+      return;
+    }
+  }
+#endif
   // Acabou ou a fonte falhou: fecha e a pagina volta a arte.
   // conflito: outro app (YouTube) tomou o plano de video — fecha, fica a arte.
-  if (video_terminou() || video_falhou() || video_conflito_recurso()) {
-    falhouUltima = video_falhou() || video_conflito_recurso() ? 1 : 0;
+  if (terminou || falhou || conflito) {
+    falhouUltima = falhou || conflito;
     trailer_fechar();
   }
 #endif
@@ -658,10 +861,8 @@ void trailer_atualizar(Uint32 agora) {
 int trailer_falhou(void) { return falhouUltima; }
 
 // O OSD DO TRAILER EM TELA CHEIA (Glass UI, mockup de 03/10, proposta
-// aprovada): so com o trailer PAUSADO — o trailer e o proprio heroi. A pilula
-// da ilha diz o que e ("Trailer · titulo"), a barra fina do player embaixo e
-// o tempo; o unico botao e Continuar (o que o OK faz). Quem desenha a tela
-// cheia (detail.c) chama isto por cima do furo.
+// aprovada): a barra fina mostra tempo e buffer. Pausar mostra Continuar.
+// No fluxo webOS, buscar tambem mostra a barra durante alguns segundos.
 int trailer_pausado(void) {
 #ifdef __EMSCRIPTEN__
   return aberto && cheia && trailer_js_pausado();
@@ -680,14 +881,39 @@ int trailer_medidor_esconde(void) {
   return trailer_aberto() && trailer_tocando() && !trailer_pausado();
 }
 void trailer_osd_desenhar(const char *titulo, float a) {
+  const int emPausa = trailer_pausado();
+  int mostrar = emPausa;
+#ifdef NV_TRAILERIO
+  if (tioOsdAte && (Sint32)(SDL_GetTicks() - tioOsdAte) >= 0) tioOsdAte = 0;
+  mostrar |= tioEstado == TIO_TOCANDO && tioOsdAte != 0;
+#endif
+  if (!mostrar || a < 0.01f) return;
   double pos = video_pos(), dur = video_duracao();
-  if (!trailer_pausado() || a < 0.01f) return;
+#ifdef NV_WEBOS
+  ESCALA_INI();
+  const float margem = NV_PLAYER_OSD_MARGIN, largura = NV_VTELA_W;
+  const float yBarra = NV_VTELA_H - (emPausa ? NV_PLAYER_OSD_BAR_BOTTOM : NV_PLAYER_OSD_SEEK_BOTTOM);
+  const float yBotao = yBarra + NV_PLAYER_OSD_ROW_GAP;
+  const float yTitulo = yBarra - NV_PLAYER_OSD_TITLE_GAP - 56.0f;
+  const float yTempo = yBotao + NV_PLAYER_OSD_BUTTON_SIZE * 0.5f;
+#else
+  const float margem = 96.0f, largura = NV_TELA_W;
+  const float yBarra = 1000.0f, yBotao = 896.0f, yTitulo = 48.0f;
   gfx_veu_css((GfxRect){ 0, 0, NV_TELA_W, 260.0f }, 1, 1.38f, 1.0f, 0.52f * a);
   gfx_veu_css((GfxRect){ 0, NV_TELA_H - 300.0f, NV_TELA_W, 300.0f }, 0, 1.0f, 1.0f, 0.60f * a);
-  { TxtLinha l1 = txt_linha(TXT_ILHA_NOME, "Trailer", 243, 242, 239, 255);
-    TxtLinha l2 = txt_linha_corta(TXT_ILHA_CORPO, titulo ? titulo : "", 243, 242, 239, 179, 900.0f);
+#endif
+  if (emPausa) {
+    TxtLinha l1 = txt_linha(TXT_ILHA_NOME, "Trailer", 243, 242, 239, 255);
+    float tituloMax = 900.0f;
+#ifdef NV_WEBOS
+    const float disponivel = largura - 2.0f * margem - l1.w - (24.0f + 24.0f + 12.0f + 25.0f + 24.0f);
+    if (disponivel < tituloMax) tituloMax = disponivel > 0.0f ? disponivel : 0.0f;
+#endif
+    TxtLinha l2 = tituloMax > 0.0f
+      ? txt_linha_corta(TXT_ILHA_CORPO, titulo ? titulo : "", 243, 242, 239, 179, tituloMax)
+      : (TxtLinha){0};
     float w = 24.0f + 24.0f + 12.0f + (float)l1.w + (l2.w ? 12.0f + 1.0f + 12.0f + (float)l2.w : 0.0f) + 24.0f;
-    GfxRect p = { 96.0f, 48.0f, w, 56.0f };
+    GfxRect p = { margem, yTitulo, w, 56.0f };
     float x = p.x + 24.0f, yc = p.y + 28.0f;
     plrui_material(p, 28.0f, 0, a);
     gfx_icone((GfxRect){ x, yc - 12.0f, 24.0f, 24.0f }, "pl_clapperboard", 1, 1, 1, a);
@@ -697,23 +923,38 @@ void trailer_osd_desenhar(const char *titulo, float a) {
     if (l2.w) { plrui_sep(x, yc, a); txt_desenhar_alpha(l2, x + 13.0f, yc - (float)l2.h * 0.5f, a); } }
   if (dur > 1.0) {
     char t1[24], d[24], t2[32];
-    plrui_barra(96.0f, 1000.0f, NV_TELA_W - 192.0f, (float)(pos / dur),
+    plrui_barra(margem, yBarra, largura - 2.0f * margem, (float)(pos / dur),
                 (float)(video_buffer_fim() / dur), 0, NULL, 0, a);
     plrui_tempo(t1, sizeof t1, pos); plrui_tempo(d, sizeof d, dur);
-    snprintf(t2, sizeof t2, "/ %s", d);
-    { TxtLinha l2 = txt_linha(TXT_ILHA_NOME, t2, 243, 242, 239, 128);
-      TxtLinha l1 = txt_linha(TXT_ILHA_NOME, t1, 243, 242, 239, 235);
-      float xr = NV_TELA_W - 96.0f - l2.w;
-      txt_desenhar_alpha(l2, xr, 916.0f, a);
-      txt_desenhar_alpha(l1, xr - 8.0f - l1.w, 916.0f, a); }
+    snprintf(t2, sizeof t2, emPausa ? "/ %s" : "%s", d);
+    TxtLinha l2 = txt_linha(TXT_ILHA_NOME, t2, 243, 242, 239, 128);
+    TxtLinha l1 = txt_linha(TXT_ILHA_NOME, t1, 243, 242, 239, 235);
+    const float xr = largura - margem - l2.w;
+    if (emPausa) {
+#ifdef NV_WEBOS
+      const float y = yTempo - (float)l1.h * 0.5f;
+#else
+      const float y = 916.0f;
+#endif
+      txt_desenhar_alpha(l2, xr, y, a);
+      txt_desenhar_alpha(l1, xr - 8.0f - l1.w, y, a);
+    } else {
+      const float y = yBarra + NV_PLAYER_OSD_SEEK_TIME_GAP;
+      txt_desenhar_alpha(l1, margem, y, a);
+      txt_desenhar_alpha(l2, xr, y, a);
+    }
   }
-  { TxtLinha l = txt_linha(TXT_G21B, "Continuar", 0, 0, 0, 255);
-    GfxRect b = { 96.0f, 896.0f, 22.0f + 28.0f + 12.0f + (float)l.w + 28.0f, 68.0f };
+  if (emPausa) {
+    TxtLinha l = txt_linha(TXT_G21B, "Continuar", 0, 0, 0, 255);
+    GfxRect b = { margem, yBotao, 22.0f + 28.0f + 12.0f + (float)l.w + 28.0f, NV_PLAYER_OSD_BUTTON_SIZE };
     float k = plrui_tinta() / 255.0f;
     plrui_pilula_foco(b, a);
     gfx_icone((GfxRect){ b.x + 22.0f, b.y + 20.0f, 28.0f, 28.0f }, "pl_play-f", k, k, k, a);
     l = txt_linha(TXT_G21B, "Continuar", plrui_tinta(), plrui_tinta(), plrui_tinta(), 255);
-    txt_desenhar_alpha(l, b.x + 22.0f + 28.0f + 12.0f, b.y + (68.0f - (float)l.h) * 0.5f, a); }
+    txt_desenhar_alpha(l, b.x + 22.0f + 28.0f + 12.0f, b.y + (b.h - (float)l.h) * 0.5f, a); }
+#ifdef NV_WEBOS
+  ESCALA_FIM();
+#endif
 }
 #ifdef NV_SHOT_HOOKS
 void trailer_shot_pausado(int sim) { aberto = cheia = sim; pausado = sim; }

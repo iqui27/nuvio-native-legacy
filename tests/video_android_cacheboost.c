@@ -18,7 +18,7 @@ void capmkv_iniciar(const char *u) { (void)u; }
 void capmkv_zerar(void) {}
 double capmkv_creditos(double d) { (void)d; return 0.0; }
 #include "../src/cacheboost.c"
-#include "../src/audsync.c"   // F06 nativeAudioEstado feeds the boost state too
+#include "video_android_reserva_stub.h"
 #include "../src/velocidade.c" // #202 speed
 #include <assert.h>
 #include <stdarg.h>

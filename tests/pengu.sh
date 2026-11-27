@@ -11,7 +11,7 @@ cc "${flags[@]}" -DPENGU_ADDONS tests/pengu.c src/js.c src/watchstate.c -lpthrea
 "$dir/manifest"
 
 # Includes streams.c; everything outside the offer filter is dead-stripped.
-srcs=(tests/pengu.c src/stream_parse.c src/streams.c src/fontesmortas.c src/js.c src/badges.c src/streamfit.c src/naovideo.c)
+srcs=(tests/pengu.c src/stream_parse.c src/cachemarca.c src/dobra.c src/streams.c src/fontesmortas.c src/js.c src/badges.c src/streamfit.c src/naovideo.c)
 cc "${flags[@]}" "${srcs[@]}" -o "$dir/streams"
 "$dir/streams"
 
@@ -34,6 +34,15 @@ cat >"$dir/pengu206.c" <<C
 #include <string.h>
 int p2p_ativo(void) { return 0; }
 int debrid_ativo(void) { return 0; }
+#include "debrid.h"
+// list cache check (streams.c cacheLoteConferir): no service answers here
+int debrid_servico_disponivel(int q) { (void)q; return 0; }
+void debrid_contexto_capturar(DebridContexto *c) { (void)c; }
+void debrid_contexto_entrar(const DebridContexto *c) { (void)c; }
+void debrid_contexto_sair(void) {}
+int debrid_cache_lote(int q, const char (*h)[48], int n, signed char *r, unsigned t) {
+  (void)q; (void)h; (void)t; for (int i = 0; i < n; i++) r[i] = -1; return -1;
+}
 C
 cat "$dir/old-565.c" >>"$dir/pengu206.c"
 cat >>"$dir/pengu206.c" <<'C'
@@ -71,7 +80,7 @@ int main(void) {
   return hidden == 27 ? 1 : 0;
 }
 C
-cc "${flags[@]}" "$dir/pengu206.c" src/stream_parse.c src/fontesmortas.c src/js.c src/badges.c src/streamfit.c src/naovideo.c src/fontefiltro.c src/linguas.c -o "$dir/pengu206"
+cc "${flags[@]}" "$dir/pengu206.c" src/stream_parse.c src/cachemarca.c src/dobra.c src/fontesmortas.c src/js.c src/badges.c src/streamfit.c src/naovideo.c src/fontefiltro.c src/linguas.c -o "$dir/pengu206"
 if "$dir/pengu206"; then
   echo "FAIL: copied v2.0.6 predicate now passes" >&2
   exit 1

@@ -586,7 +586,7 @@ void trailerapple_pedir(const char *imdb, const char *titulo, const char *meta, 
   e->emVoo = 1; e->respondeu = 0;
   destrancar();
   p = calloc(1, sizeof *p);
-  if (!p) return;
+  if (!p) { trancar(); e->emVoo = 0; destrancar(); return; }
   snprintf(p->imdb, sizeof p->imdb, "%s", imdb);
   snprintf(p->titulo, sizeof p->titulo, "%s", titulo);
   snprintf(p->meta, sizeof p->meta, "%s", meta ? meta : "");
@@ -624,7 +624,7 @@ int trailerapple_respondeu(const char *imdb) {
   if (!imdb || !imdb[0]) return 1;
   trancar();
   e = achar(imdb);
-  r = !e || e->respondeu;
+  r = !e || !e->emVoo || e->respondeu;
   destrancar();
   return r;
 }

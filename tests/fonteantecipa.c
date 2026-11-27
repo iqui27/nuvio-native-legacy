@@ -171,6 +171,16 @@ int main(void) {
     CONFERE(!fa_preparada_vale(&p, &a) && !fa_preparada_vale(NULL, &a), "sem fonte nao serve");
   }
 
+  // Log 13: the check timed out on a source that already works.
+  CONFERE(fa_manter_sem_resposta(28, 0, 1, 0), "sem resposta a tempo, aberta no player: fica");
+  CONFERE(fa_manter_sem_resposta(28, 0, 0, 1), "sem resposta a tempo, link ja resolvido no CDN: fica");
+  CONFERE(!fa_manter_sem_resposta(28, 0, 0, 0), "sem resposta a tempo e nada aberto nem resolvido: sai");
+  CONFERE(!fa_manter_sem_resposta(0, 404, 1, 1), "HTTP 404 sai mesmo aberta");
+  CONFERE(!fa_manter_sem_resposta(0, 503, 1, 1), "HTTP 503 sai mesmo aberta");
+  CONFERE(!fa_manter_sem_resposta(6, 0, 1, 1), "DNS (curl 6) sai mesmo aberta");
+  CONFERE(!fa_manter_sem_resposta(7, 0, 1, 1), "conexao recusada (curl 7) sai mesmo aberta");
+  CONFERE(!fa_manter_sem_resposta(28, 500, 1, 1), "tempo estourado depois de um HTTP 500 sai");
+
   if (falhas) { printf("fonteantecipa: %d falha(s)\n", falhas); return 1; }
   printf("fonteantecipa: ok\n");
   return 0;

@@ -92,6 +92,11 @@ int addons_consulta_atual(const AddonsConsulta *consulta);
 // Uma consulta cancelada/incompleta devolve -1 e deixa *saida NULL.
 int addons_consulta_consultar(const AddonsConsulta *consulta, const char *id, const char *tipo,
                               int fios, int (*cancelado)(void *), void *ctx, void *saida /* Stream ** */);
+// The same, keeping what the add-ons that answered sent when another one did
+// not (-1 only cancelled, or nothing at all with one missing). For lists that
+// are only browsed (another episode's versions, audioextep.h).
+int addons_consulta_consultar_parcial(const AddonsConsulta *consulta, const char *id, const char *tipo,
+                                      int fios, int (*cancelado)(void *), void *ctx, void *saida /* Stream ** */);
 // Serial installed add-on availability probe; no plugins, retries, cache, or list publication.
 int addons_consulta_filme(const AddonsConsulta *consulta, const char *id,
                           int (*cancelado)(void *), void *ctx);
@@ -196,6 +201,8 @@ typedef struct {
 void addons_inicio_info(AddonsInicioInfo *o);
 // Algum addon de indice menor que `idx` (ordem de instalacao) ainda falta?
 int  addons_pendente_antes(int idx);
+// The same, counting only pending ones with f(nome, plugin, u) >= 0.
+int  addons_pendente_antes_f(int idx, int (*f)(const char *nome, int plugin, void *u), void *u);
 // O addon com este nome (Stream.provedor) ainda falta?
 int  addons_pendente_nome(const char *nome);
 // O menor grupo de auto-play (fonteregra.h, #202) que um pendente pode trazer;
@@ -221,14 +228,15 @@ int addons_parcial_abas(AddonAba *out, int max);
 
 // --- legendas externas dos addons -------------------------------------------
 // Addon de legenda responde em /subtitles/<tipo>/<id>.json com
-// {"subtitles":[{lang,url,subtitleFileName,...}]}. Sao dezenas por titulo, a
-// maioria em idiomas que nao interessam — por isso a lista e FILTRADA por
-// idioma antes de chegar na tela: 70 linhas para rolar seria pior que nenhuma.
-// 36 = 12 por idioma com tres grupos (principal, secundario, ingles); com um
-// grupo so ("Todas"/sem preferencia) sao 36 de uma vez (#268). Cada Legenda tem
-// ~1,3 KB: copias de LEG_MAX NAO vao para a pilha (fio de 128 KB na LG/Tizen),
+// {"subtitles":[{lang,url,subtitleFileName,...}]}. Sao dezenas por titulo e
+// em VARIOS idiomas (06/11: quem configura o SubSense em sueco recebia zero:
+// a lista so guardava principal, secundario e ingles). Agora todo idioma fica
+// e a tela agrupa por idioma (legendasui.c). Teto POR IDIOMA (addons.c):
+// 12 nos idiomas da preferencia (principal, secundario, ingles), 6 em cada
+// outro. LEG_MAX e so o teto de seguranca da lista inteira. Cada Legenda tem
+// ~1,5 KB: copias de LEG_MAX NAO vao para a pilha (fio de 128 KB na LG/Tizen),
 // usam malloc (faixas.c, legendasui.c, addons.c).
-#define LEG_MAX 36
+#define LEG_MAX 256
 
 typedef struct {
   char rotulo[64];   // "Portugues (BR)  ·  Silo.S01E05.WEB"
@@ -285,6 +293,10 @@ const Legenda *addons_legenda(int i);
 // (optional) the same answer as addons_legendas_prontas(), from the same lock.
 // Returns how many entries were copied.
 int  addons_legendas_copiar(Legenda *dst, int max, unsigned *geracao, int *prontas);
+// Moves on every change of the subtitle list (and only then), so a caller
+// that redraws every frame can skip addons_legendas_copiar when it has not
+// moved.
+unsigned addons_legendas_versao(void);
 #ifdef NV_SHOT_HOOKS
 void addons_shot_legendas(const Legenda *v, int n);
 #endif

@@ -418,6 +418,16 @@ void gfx_recorte(float x, float y, float w, float h);
 // Carga preguiçosa, uma textura de 128x128; gfx_encerrar devolve a textura.
 void gfx_icones_dir(const char *dirArte);
 void gfx_icone(GfxRect r, const char *nome, float cr, float cg, float cb, float ca);
+// O mesmo arquivo de icones/, mas com as CORES DO PNG (emoji em cores, bandeira):
+// o RGB passa inteiro, `ca` so esmaece. Sem o PNG (arte antiga do .tpk) nao desenha.
+// O retangulo manda no aspecto: a bandeira 4:3 vai num retangulo 4:3.
+void gfx_icone_cor(GfxRect r, const char *nome, float ca);
+// Icone de traco do formatador (simbolo sy_ ou Lucide do Minimalista) na tinta
+// do texto, como icone do pacote (tex_obter_icone, o mesmo de gfx_icone_cor).
+void gfx_icone_fmt(GfxRect r, const char *nome, float cr, float cg, float cb, float ca);
+// 1 se icones/<nome>.png existe no pacote (bandeira sem PNG volta ao codigo de
+// idioma). Consulta o disco: chamar ao montar o texto, nunca por quadro.
+int gfx_icone_existe(const char *nome);
 void gfx_sem_recorte(void);
 
 int  gfx_snap_iniciar(int w, int h);
@@ -479,6 +489,16 @@ void gfx_mini_desenhar(const GfxMini *m, GfxRect r, float raioPx, float a);
 void gfx_mini_liberar(GfxMini *m);
 // Dentro da miniatura: a base de `r` some ate `alfa` (o .gv.fade do mockup).
 void gfx_mini_esvanecer(GfxRect r, float alfa);   // drawable real, para restaurar viewport
+// GROUP OPACITY (subtitles, owner 14/11/2026): CSS `opacity` on a group.
+// What is drawn between comecar and terminar (layout units, inside `caixa`)
+// is composed at full opacity in an offscreen target, and terminar draws the
+// finished picture ONCE with `alpha`: a border or shadow under the letters
+// never shows through them. comecar returns 1 when it composes (draw at
+// alpha 1) and 0 when it doesn't (alpha ~1, already inside a miniature, or
+// no FBO: draw at `alpha` as before); always pair it with terminar.
+typedef struct { GfxMini m; float x0, y0, esc, grupoAnt; int ativo; } GfxGrupo;
+int  gfx_grupo_comecar(GfxGrupo *g, GfxRect caixa, float alpha);
+void gfx_grupo_terminar(GfxGrupo *g, float alpha);
 // TAMANHO DA INTERFACE (Ajustes > Aparencia). As camadas que nao sao a home
 // nem o detalhe (Ajustes, player, folhas, ilhas, menus, modais) desenham numa
 // TELA VIRTUAL de 1920/s x 1080/s, e o gfx amplia tudo por s na hora de
@@ -543,6 +563,7 @@ extern int    gfx_n_rect;   // chamadas de gfx_rect
 extern int    gfx_n_prog;   // trocas de programa GL (glUseProgram)
 extern int    gfx_n_bind;   // trocas de textura (glBindTexture)
 extern double gfx_ms_rect;  // ms de CPU dentro de gfx_rect
+extern unsigned gfx_furo_assin;  // holes drawn this frame (player_skip_present)
 extern int    gfx_n_outros;  // chamadas de recorte/FBO/desfoque
 extern double gfx_ms_outros; // ms de CPU nesses pontos de GL
 extern double gfx_fill;      // area submetida no quadro, em telas cheias

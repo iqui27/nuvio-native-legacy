@@ -7,7 +7,8 @@ static int ajustePortavel(int op) {
   if (!CHAVE[op] || CHAVE[op][0] == '-') return 0;
   switch (op) {
     // Experimental DV7 conversion stays on this TV, outside account sync.
-    case AJ_DV7: return 0;
+    case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: return 0;
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR: case AJ_UPDATE_NOTIFICATIONS: case AJ_REMEMBER_PROFILE: return 0;
     case AJ_AMPLIAR_UI: case AJ_RESOLUCAO: case AJ_TEX_MB: case AJ_QUALIDADE_IMG:
     case AJ_GPU_EFEITOS: case AJ_ITENS_FILEIRA:
     case AJ_TAMANHO_UI: case AJ_TAMANHO_AJUSTES: case AJ_ESCALA_TEXTO:
@@ -16,7 +17,7 @@ static int ajustePortavel(int op) {
     case AJ_PROPORCAO_PADRAO: case AJ_LOGO_TRAILER:
     case AJ_DV: case AJ_ATMOS:
     case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_TRAILER_ZOOM_TPK:
-    case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_LEG_SYNC_AUDIO:
+    case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_LEG_SYNC_AUDIO: case AJ_LEG_SYNC_AUDIO_MOVEL:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_MANTER_VIDEO:
     case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME:
     case AJ_P2P_LIGADO: case AJ_P2P_LIMITE: case AJ_P2P_DESTINO:

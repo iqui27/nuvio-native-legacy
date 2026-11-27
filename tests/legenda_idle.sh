@@ -8,6 +8,6 @@ if [ "${SANITIZE:-0}" = 1 ]; then
   flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
 fi
 cc ${flags[@]+"${flags[@]}"} -DESMAECER_SEM_GFX -Isrc -O1 -g -Wall -Wextra \
-  tests/legenda_idle.c src/legenda.c src/assrender.c src/esmaecer.c \
+  tests/legenda_idle.c src/legenda.c src/asssinais.c src/assrender.c src/esmaecer.c \
   -pthread -lm -o "$work/test"
 "$work/test"

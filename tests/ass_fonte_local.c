@@ -23,6 +23,8 @@ static void *checkedMalloc(size_t n) {
 int perftv_enabled, perftv_uploads;
 float gfx_tex_aspect_atual;
 void gfx_tex_esquecer(GLuint t) { (void)t; abort(); }
+int  gfx_grupo_comecar(GfxGrupo *g, GfxRect caixa, float alpha) { (void)g; (void)caixa; (void)alpha; return 0; }
+void gfx_grupo_terminar(GfxGrupo *g, float alpha) { (void)g; (void)alpha; }
 void gfx_rect(GfxRect r, GLuint t, GfxModo m, float f, float px, float py,
               float radius, float cr, float cg, float cb, float ca) {
   (void)r;(void)t;(void)m;(void)f;(void)px;(void)py;(void)radius;

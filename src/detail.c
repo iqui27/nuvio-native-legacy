@@ -45,6 +45,9 @@ static TituloTempo detalheTempo;
 #include "trailerimdb.h"
 #include "trailerapple.h"
 #include "trailerfonte.h"
+#ifdef NV_TRAILERIO
+#include "trailerio.h"
+#endif
 #include "player.h"
 #include "agenda.h"
 #include "agendaui.h"
@@ -1247,7 +1250,11 @@ static const NotasSecao *notasDados(void) {
   int i;
   for (i = 0; i < EX_NFONTES; i++) s.cru[i] = extras_nota(i);
   if (!s.cru[EX_IMDB] && ajustes_mdblist_fonte(EX_IMDB)) s.cru[EX_IMDB] = notaDe(idx);
-  s.notaPessoal = reacao_nota(cat_item(idx)->imdb);
+  // cat_item pode dar NULL: a refacao do "Continuar assistindo" publica n = 0
+  // por um instante, de outro fio, logo depois de sair do player (era a queda
+  // na tela de episodios, 27/10).
+  { const CatItem *ci = cat_item(idx);
+    s.notaPessoal = ci ? reacao_nota(ci->imdb) : 0; }
   s.nTemp = ehSerie() ? extras_n_temporadas() : 0;
   s.tempNum = extras_temporada_numero;
   s.nEps = extras_n_eps;
@@ -2604,6 +2611,11 @@ static int temArte(void) {
 static int temTrailer(void) {
   const CatItem *ci = cat_item(idx);
   if (!ci || (strcmp(ci->tipo, "movie") && strcmp(ci->tipo, "series"))) return 0;
+#ifdef NV_TRAILERIO
+  const int ajuste = trailerfonte_ajuste();
+  if ((ajuste == TRF_AUTO || ajuste == TRF_TRAILERIO) &&
+      trailerio_id(ci->imdb, ci->tipo)) return 1;
+#endif
   if (trailer_suportado() && trailerFonte(0, NULL, 1)) return 1;
   return extras_n_trailers() > 0;
 }
@@ -2690,6 +2702,19 @@ static int acaoEm(int n) {
 // "Assistir trailer" da linha de acoes passam por aqui). Voltar fecha o trailer
 // (trailer_evento) e a pagina continua com o mesmo foco.
 static void tocarTrailerCheio(int k) {
+#ifdef NV_TRAILERIO
+  const int ajuste = trailerfonte_ajuste();
+  if (ajuste == TRF_AUTO || ajuste == TRF_TRAILERIO) {
+    const CatItem *ci = cat_item(idx);
+    if (ci && trailerio_id(ci->imdb, ci->tipo)) {
+      GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+      if (trailer_abrir_trailerio(ci->imdb, ci->tipo, tela, ajustes_trailer_som(), ajuste == TRF_AUTO)) {
+        trailerTentado = 1;
+        return;
+      }
+    }
+  }
+#endif
   int qual = 0;
   const char *u = trailer_suportado() ? trailerFonte(k, &qual, 1) : NULL;
   if (u) {
@@ -5270,7 +5295,8 @@ static void heroWeb(float a, float desloc) {
       }
     }
     { char mine[96], value[24];
-      int n = reacao_nota(cat_item(idx)->imdb);
+      const CatItem *ciNota = cat_item(idx);   // NULL durante a troca do catalogo
+      int n = ciNota ? reacao_nota(ciNota->imdb) : 0;
       if (n) { snprintf(value, sizeof value, "%d.%d", n / 2, n % 2 * 5); plrui_decimal(value); }
       else snprintf(value, sizeof value, "—");
       snprintf(mine, sizeof mine, "%s  %s", i18n("Sua nota"), value);
@@ -8241,7 +8267,7 @@ int detail_pediu_fontes_ep(int *t, int *e) {
   int tt = pedFontesT, te = pedFontesE;
   pedFontesT = pedFontesE = 0;
   if (t) *t = tt; if (e) *e = te;
-  return tt > 0 && te > 0;
+  return tt >= 0 && te > 0;
 }
 int detail_pediu_explorar(void)   { int v = pedExplorar;   pedExplorar = 0;   return v; }
 // "Reproduzir desde o inicio" ainda cai no mesmo caminho do primario: o

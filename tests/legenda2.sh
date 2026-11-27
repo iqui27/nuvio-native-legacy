@@ -11,6 +11,6 @@ if [ "${SANITIZE:-0}" = 1 ]; then
 elif [ "${SANITIZE:-0}" = thread ]; then
   flags+=(-fsanitize=thread -fno-omit-frame-pointer)
 fi
-cc ${flags[@]+"${flags[@]}"} -Isrc -O1 -g -Wall -Wextra src/legenda2.c src/legenda.c src/assrender.c \
+cc ${flags[@]+"${flags[@]}"} -Isrc -O1 -g -Wall -Wextra src/legenda2.c src/legenda.c src/asssinais.c src/assrender.c \
   tests/legenda2.c -pthread -lm -o "$work/test"
 "$work/test"

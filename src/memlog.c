@@ -27,6 +27,20 @@ static long lerKB(const char *path, const char *campo) {
 }
 #endif
 
+#ifdef NV_HTTP_BUFFER_DIAG
+void memlog_ler(MemlogInfo *info) {
+  if (!info) return;
+  *info = (MemlogInfo){ -1, -1, -1, -1 };
+#if defined(__linux__) && !defined(__EMSCRIPTEN__)
+  info->rss_kib = lerKB("/proc/self/status", "VmRSS:");
+  info->peak_kib = lerKB("/proc/self/status", "VmHWM:");
+  info->available_kib = lerKB("/proc/meminfo", "MemAvailable:");
+  info->total_kib = lerKB("/proc/meminfo", "MemTotal:");
+#endif
+}
+
+#endif
+
 void memlog_amostra(char *sufixo, size_t tamanho) {
   if (!tamanho) return;
   sufixo[0] = 0;
@@ -71,6 +85,15 @@ int memlog_android_fraco(void) {
 long memlog_livre_mb(void) {
 #if defined(__linux__) && !defined(__EMSCRIPTEN__)
   long kb = lerKB("/proc/meminfo", "MemAvailable:");
+  return kb >= 0 ? kb / 1024 : -1;
+#else
+  return -1;
+#endif
+}
+
+long memlog_total_mb(void) {
+#if defined(__linux__) && !defined(__EMSCRIPTEN__)
+  long kb = lerKB("/proc/meminfo", "MemTotal:");
   return kb >= 0 ? kb / 1024 : -1;
 #else
   return -1;

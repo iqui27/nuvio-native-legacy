@@ -113,6 +113,7 @@ int layout_modo_mobile(void);
 // Scancode do BACK no SDL da LG (SDL_SCANCODE_WEBOS_BACK). Nao esta no
 // SDL_scancode.h padrao, por isso vem como numero.
 #define NV_SCANCODE_BACK 482
+#define NV_SCANCODE_GREEN 487 // SDL_webOS.h: SDL_WEBOS_SCANCODE_GREEN
 #define NV_SCANCODE_BLUE 489 // SDL_webOS.h: SDL_WEBOS_SCANCODE_BLUE
 // AMARELA: abre o Spotlight (spotlight.h) fora do Guia, que a usa para alternar
 // a vista. 488 MEDIDO no D1: "[tecla] scancode=488" em 34 envios de log webOS.
@@ -706,6 +707,15 @@ int layout_modo_mobile(void);
 #define NV_ILHA_H          NV_CHROME_H
 #define NV_ILHA_H_ABERTA   64.0f
 #define NV_ILHA_MARGEM_D   NV_CHROME_EDGE   // da borda direita, quando ancorada a direita
+
+// Player controls in virtual screen coordinates, shared with full-screen trailers.
+#define NV_PLAYER_OSD_MARGIN NV_ILHA_MARGEM_D
+#define NV_PLAYER_OSD_BAR_BOTTOM 178.0f
+#define NV_PLAYER_OSD_SEEK_BOTTOM 120.0f
+#define NV_PLAYER_OSD_ROW_GAP 38.0f
+#define NV_PLAYER_OSD_BUTTON_SIZE 68.0f
+#define NV_PLAYER_OSD_TITLE_GAP 36.0f
+#define NV_PLAYER_OSD_SEEK_TIME_GAP 32.0f
 #define NV_ILHA_REP_W     190.0f   // pilula em repouso (12 h AM/PM e a mais larga) + respiro
 #define NV_ILHA_TEXTO_MAX 760.0f   // frase do aviso: mais que isto, reticencias
 

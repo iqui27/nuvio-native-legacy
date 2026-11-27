@@ -50,15 +50,18 @@ def method(marker):
         elif s[end] == '}': depth -= 1
         end += 1
     return s[a:end]
+def expr(marker):  # expression-bodied member: up to its ';'
+    a = s.index(marker); return s[a:s.index(';', a) + 1]
 (w/'Lifecycle.cs').write_text('''using System;
 using System.Threading;
 using Tizen.NUI;
 using NuiWindow = Tizen.NUI.Window;
+using NuiTimer = Tizen.NUI.Timer;
 namespace NuvioTpk {
 class TestVideo { public void PausarPeloSistema() {} public void Encerrar() { NuiWindow.Instance.Hide(); } }
 class Program : NUIApplication {
 Voz voz; TestVideo video = new TestVideo(); GLView glView; GLWindow gl;
-bool pausado, jaPausou, principalVisivel = true, glVisivel = true, soltou;
+bool pausado, jaPausou, principalVisivel = true, glVisivel = true, soltou, primeiraTecla;
 bool erroNaTela, saindo, fim; int chamadas, trocados, subidas;
 long ultimaChamadaMs, paradoDesdeMs = -1, inicioDesenhoMs;
 object telaParado; TestClock relogio = new TestClock();
@@ -75,7 +78,7 @@ public Program(Voz v) { voz = v; }
 void Janela(string s) {} void Etapa(string s) {} string Contagem() => "";
 void nv_tpk_ciclo(int memoria) {}
 public void Pause() { OnPause(); } public void Resume() { OnResume(); } public void Close() { SoltaTudo("test"); }
-'''+ '\n'.join(method(x) for x in ['protected override void OnPause()', 'protected override void OnResume()', 'void SoltaTudo(string porque)', 'bool DesenhoPronto()', 'void Vigia()', 'int Quadro()'])+'\n}}')
+'''+ expr('bool RecuperaPausaInicial()') + '\n' + '\n'.join(method(x) for x in ['protected override void OnPause()', 'protected override void OnResume()', 'void SoltaTudo(string porque)', 'bool DesenhoPronto()', 'void Vigia()', 'int Quadro()'])+'\n}}')
 (w/'host.rsp').write_text('\n'.join('"'+str(p)+'"' for p in [root/'tests/tpk_voz_host.cs', root/'tizen-tpk/Voz.cs', w/'Lifecycle.cs']))
 (w/'host.runtimeconfig.json').write_text('{"runtimeOptions":{"tfm":"net8.0","framework":{"name":"Microsoft.NETCore.App","version":"8.0.0"}}}')
 for api in [8, 9, 11]:
@@ -88,20 +91,30 @@ canary = json.loads(subprocess.check_output([sys.argv[3], 'msbuild', str(root/'t
 PY
 cat > "$work/native.c" <<'C'
 #include <string.h>
-static void (*start)(void), (*stop)(void);
-static int count, result;
+static void (*start)(void), (*stop)(void), (*open_text)(const char *), (*open_typed)(const char *, int);
+static int count, result, cursor = -9;
 static char value[256];
 void nv_tpk_voz_registrar(void (*a)(void), void (*b)(void), int mic) { start=a;stop=b; }
+void nv_tpk_voz_registrar_texto(void (*a)(const char *)) { open_text=a; }
+#ifndef OLD_LIB
+void nv_tpk_voz_registrar_texto_tipo(void (*a)(const char *, int)) { open_typed=a; }
+#endif
 void nv_tpk_texto_valor(const char *s) { strncpy(value,s,255);value[255]=0; }
+void nv_tpk_texto_cursor(int p) { cursor=p; }
 void nv_tpk_texto_fim(int r) { count++;result=r; }
 void host_start(void) { start(); }
 void host_stop(void) { stop(); }
-void host_reset(void) { count=0;result=-1;value[0]=0; }
+void host_open_text(const char *s, int type) { if (open_typed) open_typed(s,type); else open_text(s); }
+int host_typed(void) { return open_typed != 0; }
+int host_untyped(void) { return open_text != 0; }
+void host_reset(void) { count=0;result=-1;value[0]=0;cursor=-9; }
 int host_count(void) { return count; }
 int host_result(void) { return result; }
+int host_cursor(void) { return cursor; }
 const char *host_value(void) { return value; }
 C
 cc -shared -fPIC "$work/native.c" -o "$work/libnuvio.so"
+mkdir "$work/old" && cc -shared -fPIC -DOLD_LIB "$work/native.c" -o "$work/old/libnuvio.so"
 cc "$work/startup-clear.c" -pthread -o "$work/startup-clear"
 "$work/startup-clear"
 cc -DNV_TPK40 "$work/startup-clear.c" -pthread -o "$work/startup-clear40"
@@ -110,6 +123,8 @@ echo "PASS: API8 black clear is not an app frame; API4 keeps startup callbacks"
 csc=$(cat "$work/csc-path")
 "$dotnet_bin" "$csc" -nologo -langversion:8 -target:exe -define:NV_API11 -nowarn:0649 -out:"$work/host.dll" @"$work/framework.rsp" @"$work/host.rsp"
 "$dotnet_bin" "$work/host.dll" "$work/libnuvio.so"
+# A libnuvio.so that predates the typed opener (auto-update keeps old libs running).
+"$dotnet_bin" "$work/host.dll" "$work/old/libnuvio.so" old
 for api in 8 9 11; do
   "$dotnet_bin" "$csc" -nologo -langversion:8 -target:library -define:NV_API$api -out:"$work/host-api$api.dll" @"$work/framework.rsp" @"$work/api$api.rsp" @"$work/production.rsp"
   echo "PASS: full release host compile against cached Tizen API$api"

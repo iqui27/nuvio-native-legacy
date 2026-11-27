@@ -26,6 +26,15 @@ int main(void) {
     assert(!strcmp(cred_fonte_nome(CRED_FONTE_INTRODB), "introdb")); }
   e.capitulo = 1380; s = cred_escolher(&e, &f);
   assert(f == CRED_FONTE_CAPITULO && s == 1380);
+  // "Ultimo capitulo" (capitulos sem nome) fica ABAIXO das fontes: log da C9 de
+  // 04/11, o ED casado em 1320 perdia para o toco em 1420 (cartao com 1 s).
+  { CredEntrada u; memset(&u, 0, sizeof u); u.dur = 1421; u.introdb = 1320; u.capituloUltimo = 1400;
+    s = cred_escolher(&u, &f);
+    assert(f == CRED_FONTE_INTRODB && s == 1320);
+    u.introdb = 0; u.aniskip = 1322; s = cred_escolher(&u, &f);
+    assert(f == CRED_FONTE_ANISKIP && s == 1322);
+    u.aniskip = 0; u.vizInicio = 1300; s = cred_escolher(&u, &f);
+    assert(f == CRED_FONTE_ULTIMO && s == 1400 && !strcmp(cred_fonte_nome(f), "mkv-last-chapter")); }
   // derivado fora da metade final nao vale
   memset(&e, 0, sizeof e); e.dur = 1500; e.aprendidoResto = 1000;
   assert(cred_escolher(&e, &f) == 0.0);

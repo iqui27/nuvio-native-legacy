@@ -17,7 +17,7 @@ if [ "${SANITIZE:-0}" = 1 ]; then
   if [ "$(uname -s)" = Linux ]; then flags+=(-fno-pie -no-pie); fi
 fi
 # shellcheck disable=SC2046
-"${CC:-cc}" "${flags[@]}" $(pkg-config --cflags sdl2 SDL2_ttf) tests/legfontes.c src/assrender.c \
+"${CC:-cc}" "${flags[@]}" $(pkg-config --cflags sdl2 SDL2_ttf) tests/legfontes.c src/assrender.c src/asssinais.c \
   -o "$work/test" $(pkg-config --libs sdl2 SDL2_ttf)
 ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}" "$work/test" "$font"
 python3 tests/font_fixture.py "$work/fixture.otf"

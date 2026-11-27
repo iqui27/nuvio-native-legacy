@@ -247,6 +247,36 @@ static int natural(const char *a, const char *b) {
 }
 
 typedef struct { ParteArq a; char caminho[512]; } ArqTmp;
+// Dois nomes iguais menos UM numero curto (1-2 digitos): "Filme.Part.4.mkv"
+// e "Filme.Part.1.mkv", "Filme CD2" e "Filme CD1". Numero longo diferente
+// (1080p/720p, um ano) nao conta: e outra copia, nao outra parte.
+static int moldeIgual(const char *x, const char *y) {
+  int difs = 0;
+  while (*x || *y) {
+    if (isdigit((unsigned char)*x) && isdigit((unsigned char)*y)) {
+      const char *x0 = x, *y0 = y;
+      while (isdigit((unsigned char)*x)) x++;
+      while (isdigit((unsigned char)*y)) y++;
+      if (x - x0 != y - y0 || strncmp(x0, y0, (size_t)(x - x0))) {
+        if (x - x0 > 2 || y - y0 > 2) return 0;
+        difs++;
+      }
+      continue;
+    }
+    if (tolower((unsigned char)*x) != tolower((unsigned char)*y)) return 0;
+    x++; y++;
+  }
+  return difs == 1;
+}
+// O arquivo `i` (pequeno) tem o molde de um arquivo GRANDE da lista, que e
+// parte: e a ultima parte curta, nao um extra.
+static int mesmoMoldeDeParte(const ArqTmp *t, int n, int i, uint64_t maior) {
+  for (int j = 0; j < n; j++) {
+    if (j == i || t[j].a.tipo != PARTE_EP || t[j].a.bytes * 5 < maior) continue;
+    if (moldeIgual(t[i].a.nome, t[j].a.nome)) return 1;
+  }
+  return 0;
+}
 // Episodios, depois especiais, depois extras; dentro de cada um a ordem
 // natural do caminho — e a temporada primeiro quando TODO episodio diz a sua.
 static int ordemPorTemporada;   // sob tmpTrava
@@ -334,7 +364,11 @@ int partes_ler_item(const char *item, const char *fim, int usenet, PartesLista *
     for (int i = 0; i < n; i++) {
       ParteArq *a = &tmp[i].a;
       if (a->tipo == PARTE_EXTRA && maior > 0 && a->bytes * 2 >= maior) a->tipo = PARTE_EP;
-      if (a->tipo == PARTE_EP && maior > 0 && a->bytes > 0 && a->bytes * 5 < maior) a->tipo = PARTE_EXTRA;
+      // ...salvo a ULTIMA PARTE CURTA de verdade: o mesmo nome das partes
+      // grandes com so o numero trocado ("Filme Part 4" de 10 min ao lado de
+      // partes de 60 min) continua parte (pedido do dono, 23/10).
+      if (a->tipo == PARTE_EP && maior > 0 && a->bytes > 0 && a->bytes * 5 < maior &&
+          !mesmoMoldeDeParte(tmp, n, i, maior)) a->tipo = PARTE_EXTRA;
       eps += a->tipo == PARTE_EP;
     }
     // Tudo "especial" (um filme cujo nome diz Movie): sao as partes.
@@ -538,7 +572,9 @@ int partes_achar_t(const char *corpo, int usenet, char hashes[][41], int nHashes
   // 2) o nome do arquivo da fonte num arquivo de algum item. Nome com aspa,
   //    barra ou fora do ASCII pode vir escapado no JSON: ai vale a varredura
   //    item a item, a lenta.
-  if (!achou && nHashes == 0 && b[0]) {
+  // Owner 18/11 (log 10): a 40-hex string in the link that is not this file's
+  // hash (hashesConfiaveis 0) no longer blocks the exact name/size matches.
+  if (!achou && (nHashes == 0 || !hashesConfiaveis) && b[0]) {
     int simples = 1;
     for (const unsigned char *c = (const unsigned char *)b; *c; c++)
       if (*c >= 0x80 || *c == '"' || *c == '\\') simples = 0;
@@ -563,7 +599,7 @@ int partes_achar_t(const char *corpo, int usenet, char hashes[][41], int nHashes
   }
   // 4) TAMANHO EXATO do arquivo (videoSize do addon) num video de algum item:
   //    num arquivo de varios GB, o mesmo numero de bytes e o mesmo arquivo.
-  if (!achou && nHashes == 0 && bytes > 1024ULL * 1024 * 50) {
+  if (!achou && (nHashes == 0 || !hashesConfiaveis) && bytes > 1024ULL * 1024 * 50) {
     char num[32];
     snprintf(num, sizeof num, "%llu", (unsigned long long)bytes);
     for (const char *p = strstr(corpo, num); p && !achou; p = strstr(p + 1, num)) {
@@ -924,8 +960,11 @@ static void publicar(const PedidoLista *pd, const PartesLista *l) {
 // Uma leitura de rede por vez: quem chega durante uma leitura espera e usa o
 // que ela trouxe.
 #define LISTA_VALIDADE_MS 120000u
-typedef struct { char *corpo; int st; unsigned em, conta; int fresco, renovar; } ListaCache;
+typedef struct { char *corpo; int st; unsigned em, conta, ger; int fresco, renovar; } ListaCache;
 static ListaCache lcache[2];
+// Burn-in after an add (owner 24/11/2026, log 24): a list asked for before
+// the last partes_listas_renovar is never used again (its generation).
+static unsigned lcGer;
 static pthread_mutex_t lcTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t lcRede = PTHREAD_MUTEX_INITIALIZER;
 
@@ -940,6 +979,7 @@ static unsigned msAgora(void) {
 static char *copiaCache(ListaCache *c, int fresco, int *st) {
   if (c->conta != debrid_tb_geracao() || !c->corpo || msAgora() - c->em >= LISTA_VALIDADE_MS || (fresco && (!c->fresco || msAgora() - c->em >= LISTA_FRESCA_MS)))
     return NULL;
+  if (c->ger != lcGer) return NULL;   // asked for before the last add
   if (st) *st = c->st;
   return strdup(c->corpo);
 }
@@ -948,12 +988,14 @@ static char *copiaCache(ListaCache *c, int fresco, int *st) {
 // rede e saem quando a busca acaba.
 static char *listaConta(int usenet, int pagina, int fresco, int *st, int *origem) {
   char *r;
+  unsigned ger;
   int s = 0;
   unsigned t0 = msAgora();
   if (origem) *origem = 1;
   pthread_mutex_lock(&lcRede);
   pthread_mutex_lock(&lcTrava);
   if (pagina == 0 && lcache[usenet].renovar) fresco = 1;
+  ger = lcGer;   // the generation this request starts in
   r = pagina == 0 ? copiaCache(&lcache[usenet], fresco, st) : NULL;
   pthread_mutex_unlock(&lcTrava);
   if (r) { pthread_mutex_unlock(&lcRede); return r; }
@@ -971,13 +1013,18 @@ static char *listaConta(int usenet, int pagina, int fresco, int *st, int *origem
     if (c) {
       free(lcache[usenet].corpo);
       lcache[usenet].corpo = c; lcache[usenet].st = s;
-      lcache[usenet].em = msAgora(); lcache[usenet].fresco = fresco;
+      lcache[usenet].em = msAgora(); lcache[usenet].ger = ger; lcache[usenet].fresco = fresco;
       lcache[usenet].conta = conta; lcache[usenet].renovar = 0;
     }
     pthread_mutex_unlock(&lcTrava);
   }
   pthread_mutex_unlock(&lcRede);
   return r;
+}
+void partes_listas_renovar(void) {
+  pthread_mutex_lock(&lcTrava);
+  lcGer++;
+  pthread_mutex_unlock(&lcTrava);
 }
 static void listaEsquecer(void) {
   pthread_mutex_lock(&lcTrava);
@@ -1570,6 +1617,11 @@ int partes_airlock_estado(int *ligado, char *detalhe, unsigned n) {
 static char sesAlvo[64];
 static PartesLista sesLista;
 static int sesK = -1;
+// Duracao REAL de cada parte que ja tocou nesta sessao (0 = so a estimativa
+// pelo tamanho). A barra do filme inteiro usa (partes_barra).
+#define SES_DUR_MAX 64
+static double sesDur[SES_DUR_MAX];
+static int sesBarraAvisou;
 
 void partes_sessao_iniciar(const char *alvo, const PartesLista *l, int k) {
   if (!alvo || !*alvo || !l || k < 0 || k >= l->n || l->arq[k].extra || partes_principais(l) < 2) {
@@ -1579,6 +1631,7 @@ void partes_sessao_iniciar(const char *alvo, const PartesLista *l, int k) {
   snprintf(sesAlvo, sizeof sesAlvo, "%s", alvo);
   if (!partes_lista_copiar(&sesLista, l)) { partes_sessao_parar("allocation failed"); return; }
   sesK = k;
+  memset(sesDur, 0, sizeof sesDur); sesBarraAvisou = 0;
   printf("[partes] parts session on: part %d of %d\n", partes_numero(l, k), partes_principais(l));
   fflush(stdout);
 }
@@ -1596,6 +1649,108 @@ int partes_sessao_de(const char *alvo) {
 const PartesLista *partes_sessao_lista(void) { return sesAlvo[0] ? &sesLista : NULL; }
 int partes_sessao_indice(void) { return sesAlvo[0] ? sesK : -1; }
 void partes_sessao_ir(int k) { if (sesAlvo[0] && k >= 0 && k < sesLista.n) sesK = k; }
+
+// O NUMERO DA PARTE no nome: "Part 2", "pt.2", "CD2", "Disc 2", "Disk-2".
+// -1 = o nome nao diz.
+static int numeroDaParte(const char *nome) {
+  static const char *w[] = { "part", "pt", "cd", "disc", "disk", NULL };
+  for (const char *p = nome; p && *p; p++) {
+    if (p > nome && isalpha((unsigned char)p[-1])) continue;
+    for (int i = 0; w[i]; i++) {
+      size_t L = strlen(w[i]);
+      const char *q;
+      if (strncasecmp(p, w[i], L)) continue;
+      q = p + L;
+      while (*q == ' ' || *q == '.' || *q == '_' || *q == '-') q++;
+      if (isdigit((unsigned char)*q)) return atoi(q);
+    }
+  }
+  return -1;
+}
+// A barra do filme inteiro e honesta? Numeracao com buraco (1, 2, 4) = falta
+// uma parte; a soma estimada longe da duracao do catalogo (mais de 30%) =
+// algo a mais ou a menos na sequencia. Sem certeza, a barra fica a da parte.
+static int barraConfere(double tot, double catDur, const char **porque) {
+  int ant = -1;
+  for (int i = 0; i < sesLista.n; i++) {
+    int nm;
+    if (sesLista.arq[i].extra) continue;
+    nm = numeroDaParte(sesLista.arq[i].nome);
+    if (nm < 0) continue;
+    if (ant >= 0 && nm != ant + 1) { *porque = "the part numbers have a gap"; return 0; }
+    ant = nm;
+  }
+  if (catDur > 600.0 && fabs(tot - catDur) > catDur * 0.30) { *porque = "the parts don't add up to the catalog runtime"; return 0; }
+  return 1;
+}
+void partes_duracao_real(int k, double dur) {
+  if (sesAlvo[0] && k >= 0 && k < SES_DUR_MAX && k < sesLista.n && dur > 1.0) sesDur[k] = dur;
+}
+// Duracao (real ou estimada) da parte `i`: a real quando ja tocou; senao o
+// tamanho dela na proporcao segundos/byte da parte que toca.
+static double durParte(int i, double durAtual) {
+  double bAt = (double)sesLista.arq[sesK].bytes;
+  if (i < SES_DUR_MAX && sesDur[i] > 1.0) return sesDur[i];
+  if (i == sesK) return durAtual;
+  if (!(bAt > 0) || !sesLista.arq[i].bytes) return 0;
+  return durAtual * (double)sesLista.arq[i].bytes / bAt;
+}
+int partes_barra(const char *alvo, double dur, double catDur, double *off, double *tot) {
+  double antes = 0, soma = 0;
+  const char *porque = NULL;
+  if (!partes_sessao_de(alvo) || !(dur > 1.0) || sesLista.n > SES_DUR_MAX ||
+      sesLista.arq[sesK].extra) return 0;
+  for (int i = 0; i < sesLista.n; i++) {
+    double di;
+    if (sesLista.arq[i].extra) continue;
+    di = durParte(i, dur);
+    if (!(di > 1.0)) { porque = "a part has no size"; break; }
+    if (i < sesK) antes += di;
+    soma += di;
+  }
+  if (!porque && !barraConfere(soma, catDur, &porque)) { /* porque definido */ }
+  if (porque) {
+    if (!sesBarraAvisou) {
+      sesBarraAvisou = 1;
+      printf("[partes] whole-movie bar off: %s (estimate %.0f min, catalog %.0f min); one bar per part\n",
+             porque, soma / 60.0, catDur / 60.0);
+      fflush(stdout);
+    }
+    return 0;
+  }
+  *off = antes; *tot = soma;
+  return 1;
+}
+int partes_barra_limites(double dur, float *fr, int max) {
+  double soma = 0, acc = 0;
+  int n = 0, ultima = -1;
+  if (!sesAlvo[0] || sesK < 0) return 0;
+  for (int i = 0; i < sesLista.n; i++) if (!sesLista.arq[i].extra) { soma += durParte(i, dur); ultima = i; }
+  if (!(soma > 0)) return 0;
+  for (int i = 0; i < sesLista.n && n < max; i++) {
+    if (sesLista.arq[i].extra) continue;
+    acc += durParte(i, dur);
+    if (i != ultima) fr[n++] = (float)(acc / soma);
+  }
+  return n;
+}
+int partes_barra_achar(double v, double dur, int *k, double *pos) {
+  double acc = 0;
+  int ultima = -1;
+  if (!sesAlvo[0] || sesK < 0) return 0;
+  for (int i = 0; i < sesLista.n; i++) {
+    double di;
+    if (sesLista.arq[i].extra) continue;
+    di = durParte(i, dur);
+    ultima = i;
+    if (v < acc + di) { *k = i; *pos = v - acc > 0 ? v - acc : 0; return 1; }
+    acc += di;
+  }
+  if (ultima < 0) return 0;
+  *k = ultima; *pos = durParte(ultima, dur) - 5.0;
+  if (*pos < 0) *pos = 0;
+  return 1;
+}
 
 int partes_virtual(const char *alvo, double pos, double dur, double catDur,
                    double *vpos, double *vdur, int *ultima) {
@@ -1723,4 +1878,100 @@ void partes_ponto_zerar(void) {
   pthread_mutex_lock(&pontoTrava);
   nPontos = 0; pontosLidos = 0;
   pthread_mutex_unlock(&pontoTrava);
+}
+
+static int acharExato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                      int *item, int *arquivoId, int *usenet, char *como, unsigned n, int soFresco,
+                      char *hashItem, int *semArquivo);
+int partes_achar_exato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                       int *item, int *arquivoId, int *usenet, char *como, unsigned n, char *hashItem) {
+  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, 0, hashItem, NULL);
+}
+int partes_achar_exato_fresco(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                              int *item, int *arquivoId, int *usenet, char *como, unsigned n) {
+  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, 1, NULL, NULL);
+}
+int partes_achar_exato_hash(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                            int *item, int *arquivoId, int *usenet, char *como, unsigned n, char hashItem[41]) {
+  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, 0, hashItem, NULL);
+}
+int partes_achar_exato_x(const char *url, const char *hash, const char *arquivo, uint64_t bytes, int soFresco,
+                         int *item, int *arquivoId, int *usenet, char *como, unsigned n, char *hashItem,
+                         int *semArquivo) {
+  return acharExato(url, hash, arquivo, bytes, item, arquivoId, usenet, como, n, soFresco ? 1 : 0, hashItem, semArquivo);
+}
+static int acharExato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                      int *item, int *arquivoId, int *usenet, char *como, unsigned n, int soFresco,
+                      char *hashItem, int *semArquivo) {
+  char hashes[10][41];
+  int nh = 0, confiavel = 0, pg, achou = 0, tipo = 0, itensT[2] = { 0, 0 }, paginasT[2] = { 0, 0 };
+  int viuNome = 0, viuTamanho = 0;   // a miss: was the name / the size anywhere in the lists?
+  char tamTxt[32] = "";
+  PartesLista l;
+  const char *nome = arquivo ? strrchr(arquivo, '/') : NULL;
+  nome = nome ? nome + 1 : arquivo ? arquivo : "";
+  if (item) *item = 0;
+  if (arquivoId) *arquivoId = -1;
+  if (usenet) *usenet = 0;
+  if (como && n) como[0] = 0;
+  if (hashItem) hashItem[0] = 0;
+  if (semArquivo) *semArquivo = 0;
+  if (hash && strlen(hash) == 40) {
+    for (int i = 0; i < 40; i++) hashes[0][i] = (char)tolower((unsigned char)hash[i]);
+    hashes[0][40] = 0;
+    nh = 1; confiavel = 1;
+  }
+  if (url) nh += partes_hashes_texto(url, hashes + nh, 9 - nh);
+  if (!nh && !nome[0] && !bytes) return 0;
+  if (bytes) snprintf(tamTxt, sizeof tamTxt, "%llu", (unsigned long long)bytes);
+  memset(&l, 0, sizeof l);
+  // Burn-in (owner 14/11): a miss on the cached account list fetched E07 of a
+  // pack that was there; a second pass asks TorBox for fresh lists. Each pass
+  // reads the torrents, then the usenet downloads (owner 18/11, log 10: a
+  // usenet download has no info hash and is never in the torrent list).
+  for (int fresco = soFresco; fresco < 2 && !achou; fresco++) {
+    for (tipo = 0; tipo < 2 && !achou; tipo++) {
+      itensT[tipo] = paginasT[tipo] = 0;
+      for (pg = 0; pg < 10 && !achou; pg++) {
+        int st = 0, m = 0, itens = 0;
+        char *r = listaConta(tipo, pg, fresco, &st, &m);
+        if (!r) break;
+        partes_lista_limpar(&l);
+        memset(&l, 0, sizeof l);
+        { int hit = partes_achar_n(r, tipo, hashes, nh, confiavel, nome, bytes, &l, &itens);
+          achou = hit && l.atual >= 0 && l.atual < l.n && strcmp(l.como, "best match");
+          // The torrent of the hash is listed, but the playing file is not in
+          // it (burn-in, owner 24/11/2026: the link's hash was another torrent).
+          if (hit && !achou && semArquivo && !*semArquivo && !tipo && l.item > 0 &&
+              (!strcmp(l.como, "hash") || !strcmp(l.como, "link hash"))) *semArquivo = l.item; }
+        if (!achou) {
+          if (nome[0] && strstr(r, nome)) viuNome = 1;
+          if (tamTxt[0] && strstr(r, tamTxt)) viuTamanho = 1;
+        }
+        free(r);
+        itensT[tipo] += itens; paginasT[tipo]++;
+        if (!achou && itens < DEBRID_TB_PAGINA) break;
+      }
+    }
+    if (!achou) {
+      printf("[partes] exact match not in the %s TorBox lists (%d torrent(s) in %d page(s), %d usenet download(s) in %d page(s))%s\n",
+             fresco ? "fresh" : "cached", itensT[0], paginasT[0], itensT[1], paginasT[1],
+             fresco ? "" : ": asking for fresh ones");
+      if (fresco)   // what to look at in the next log (owner 18/11, log 10)
+        printf("[partes] miss details: %d hash(es) from the add-on/link (%s); file name in the lists: %s; size %s in the lists: %s\n",
+               nh, confiavel ? "the add-on's: name/size not tried" : nh ? "link only, not trusted" : "none",
+               !nome[0] ? "no name" : viuNome ? "yes" : "no", tamTxt[0] ? tamTxt : "-",
+               !tamTxt[0] ? "-" : viuTamanho ? "yes" : "no");
+      fflush(stdout);
+    }
+  }
+  if (achou) {
+    if (item) *item = l.item;
+    if (arquivoId) *arquivoId = l.arq[l.atual].id;
+    if (usenet) *usenet = l.usenet;
+    if (como && n) snprintf(como, n, "%s%s", l.como, l.usenet ? ", usenet" : "");
+    if (hashItem && !l.usenet) snprintf(hashItem, 41, "%s", l.hash);
+  }
+  partes_lista_limpar(&l);
+  return achou;
 }

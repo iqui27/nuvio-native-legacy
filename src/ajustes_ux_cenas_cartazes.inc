@@ -503,7 +503,13 @@ static int ajcNovaCartazes(int sec, int op) {
       return 1;
     }
     case AJ_TRAILER_FONTE: {   // de onde o trailer vem: a fonte atual no acento
-      static const char *F[4] = { NULL, "Apple TV", "IMDb", "YouTube" };
+      static const char *F[4] = { NULL, "Apple TV", "IMDb",
+#ifdef NV_TRAILERIO
+        "Trailerio"
+#else
+        "YouTube"
+#endif
+      };
       int v = (int)(ajcValor(op) + 0.5f);
       float f = ajc_fase(2.0f);
       if (v < 0) v = 0;

@@ -138,6 +138,14 @@ static int faixaExata(const AudioCand *c, int n, const AudioLembrada *m, const c
     if (!c[i].pode || c[i].numero != m->numero) continue;
     if (m->idioma[0] && c[i].idioma && c[i].idioma[0] &&
         (!ling_casa(c[i].idioma, m->idioma) || !ling_casa(m->idioma, c[i].idioma))) return -1;
+    // A release group does not guarantee an identical track layout in every
+    // episode. Never accept a Polish 5.1 row as the remembered Polish stereo
+    // row just because its old ordinal now points there. Unknown metadata
+    // remains compatible; known contradictions fall back to the full match.
+    if (m->codec[0] && c[i].codec && c[i].codec[0] &&
+        audioinfo_codec(m->codec)[0] && audioinfo_codec(c[i].codec)[0] &&
+        !mesmoCodec(c[i].codec, m->codec)) return -1;
+    if (m->canais > 0 && c[i].canais > 0 && c[i].canais != m->canais) return -1;
     return i;
   }
   return -1;

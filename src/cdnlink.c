@@ -148,6 +148,24 @@ int cdnlink_recente(const char *orig, const char *cabecalhos, unsigned maxMs, ch
   return ok && nv_perfil_sessao_atual(sessao);
 }
 
+int cdnlink_resolvido(const char *orig, char *host, unsigned hostTam) {
+  int i, ok = 0;
+  unsigned agora;
+  uint64_t sessao = nv_perfil_sessao_ler();
+  if (host && hostTam) host[0] = 0;
+  if (!orig || !*orig) return 0;
+  agora = relogio();
+  pthread_mutex_lock(&trava);
+  for (i = 0; i < CDN_MAX && !ok; i++) {
+    if (!cache[i].usado || cache[i].sessao != sessao || strcmp(cache[i].orig, orig)) continue;
+    if (agora - cache[i].em > CDNLINK_VALIDADE_MS) continue;
+    ok = 1;
+    if (host && hostTam) cdnlink_host(cache[i].final, host, hostTam);
+  }
+  pthread_mutex_unlock(&trava);
+  return ok && nv_perfil_sessao_atual(sessao);
+}
+
 int cdnlink_resolver(const char *orig, const char *cabecalhos, int segundos,
                      char *dst, unsigned tam, unsigned *ms) {
   const char *vetor[8];

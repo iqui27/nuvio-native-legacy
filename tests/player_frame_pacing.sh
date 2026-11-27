@@ -18,6 +18,13 @@ int main(void) {
   assert(player_frame_wait(1, 10) == 6);
   assert(player_frame_wait(1, 16) == 0);
   assert(player_frame_wait(1, 200) == 0);
+  /* Same bare hole twice: the second is not presented; anything else is. */
+  assert(player_skip_present(1, 0, 1, 7u, 7u));
+  assert(!player_skip_present(1, 0, 0, 7u, 7u)); /* first bare frame after UI */
+  assert(!player_skip_present(1, 1, 1, 7u, 7u)); /* subtitle, OSD, toast */
+  assert(!player_skip_present(1, 0, 1, 7u, 8u)); /* hole moved (zoom, aspect) */
+  assert(!player_skip_present(0, 0, 1, 7u, 7u)); /* player closed */
+  assert(!player_skip_present(1, 0, 1, 0u, 0u)); /* rounded or no hole */
   return 0;
 }
 C
@@ -30,8 +37,8 @@ from pathlib import Path
 s = Path('src/main.c').read_text()
 assert 'player_ui_frame(player_aberto(), gfx_n_rect, gfx_n_outros)' in s
 assert 'nv_ceder_quadro(playerUi)' in s
-assert 'SDL_GL_SetSwapInterval(playerUi ? 0 : 1)' in s
-assert 'player_frame_wait(playerUi,' in s
+assert 'SDL_GL_SetSwapInterval(playerClockUi ? 0 : 1)' in s
+assert 'player_frame_wait(playerClockUi,' in s
 assert 'if (quadros > 20 || dtms > 1000.0)' not in s
 h = Path('src/tpk.h').read_text()
 assert '#define SDL_GL_SetSwapInterval(i)          tpk_gl_intervalo(i)' in h

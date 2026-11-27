@@ -1,3 +1,5 @@
+> **Superado em 06/11 (dono):** a sincronia por áudio em C (`audsync.c`, `audvad.c`, `silero.c`) foi apagada. No Samsung .tpk ela saiu inteira; no Android a reserva por áudio agora é a do NuvioTV-Reshaped, em Kotlin (`android/.../audiosync/`, `ReservaAudio.kt`; ver `src/legsync.h`). Este documento fica como histórico.
+
 # Sync de legenda por áudio (F06): capacidade por backend, implementação e modelo opcional
 
 04/10/2026, branch `f06-audio-sync` (base `50afbae3`). Este documento separa o que foi **provado no código** do que **precisa de TV**. Nada aqui foi medido em aparelho.

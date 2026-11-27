@@ -85,6 +85,34 @@ int main(void) {
        "remembered without bingeGroup, source without one: no exact track, the first Japanese");
   }
 
+  // The reported SDR layout: Polish AC3 5.1, Polish AC3 stereo, English AC3.
+  // A shared group must not make a changed ordinal override channel identity.
+  { AudioCand p[] = {
+      {"pl", "AC3", "Polish AC3 5.1", 6, 0, 1, 0},
+      {"pl", "A_AC3", "Polish AC3 2.0", 2, 0, 1, 1},
+      {"en", "AC3", "English AC3 5.1", 6, 0, 1, 2},
+    };
+    memset(&m, 0, sizeof m);
+    snprintf(m.idioma, sizeof m.idioma, "pl");
+    snprintf(m.codec, sizeof m.codec, "AC3");
+    snprintf(m.rotulo, sizeof m.rotulo, "Polish AC3 2.0");
+    snprintf(m.binge, sizeof m.binge, "same-release");
+    m.canais = 2; m.numero = 1;
+    ok(audioesc_escolher_binge(p, 3, &m, "same-release", "en", "", "", &o) == 1,
+       "next SDR episode retains the manually chosen Polish stereo track");
+    m.numero = 0;
+    ok(audioesc_escolher_binge(p, 3, &m, "same-release", "en", "", "", &o) == 1,
+       "changed ordinal cannot replace remembered stereo with Polish 5.1");
+    ok(audioesc_escolher_com(p, 3, &m, "en", "", "", &o) == 1,
+       "no source group: codec and channels still identify Polish stereo");
+    p[0].canais = 2; p[0].codec = "AAC";
+    ok(audioesc_escolher_binge(p, 3, &m, "same-release", "en", "", "", &o) == 1,
+       "changed ordinal with wrong codec falls back to the remembered AC3");
+    p[0].codec = ""; p[0].canais = 0;
+    ok(audioesc_escolher_binge(p, 3, &m, "same-release", "en", "", "", &o) == 0,
+       "missing TV metadata does not invalidate an otherwise exact track");
+  }
+
   // Detector.
   ok(audioesc_dts_truehd("A_DTS/LOSSLESS", "") && audioesc_dts_truehd("truehd", "") &&
      audioesc_dts_truehd("A_MLP", "") && audioesc_dts_truehd("", "Inglês · DTS 5.1") &&

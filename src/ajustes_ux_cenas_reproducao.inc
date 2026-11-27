@@ -490,6 +490,48 @@ static void rTexto(void) {   // Do Nuvio / Do addon / Logo do titulo
   }
 }
 
+// ICONES DO "DO ADDON": as duas linhas de uma fonte como o AIOStreams manda,
+// em cima no Padrao (emoji em cores, os desenhos de verdade) e embaixo no
+// Minimalista (Lucide na cor do texto). Bandeira so no Padrao (o Minimalista mostra o codigo do idioma).
+static void rIcones(void) {
+  static const char *const PAD[3] = { "formatador/tw_1f4fa", "formatador/tw_1f3a7", "formatador/tw_1f4ac" };
+  static const char *const MIN[3] = { "aj_tv", "aj_headphones", "aj_message-square" };
+  int v = rInt(AJ_FONTE_ICONES, 1), i, j;
+  for (i = 0; i < 2; i++) {
+    float y = 60 + i * 130, al = i == v ? 1.0f : 0.3f;
+    ajc_neutro(40, y, 560, 100, 14, al);
+    for (j = 0; j < 3; j++) {
+      float x = 70 + j * 170;
+      if (i == 0) gfx_icone_cor(ajc_r(x, y + 22, 24, 24), PAD[j], al * C.a);
+      else ajc_icone(MIN[j], x + 12, y + 34, 24, 0.75f * al);
+      ajc_barra(x + 34, y + 30, 90, al * 0.6f);
+    }
+    // Bandeira so no Padrao; o Minimalista escreve o codigo do idioma ("EN"),
+    // aqui uma barra curta, como o texto das outras linhas.
+    if (i == 0) gfx_icone_cor(ajc_r(70, y + 58, 24, 24), "formatador/fl_GB", al * C.a);
+    else ajc_barra(70, y + 68, 28, al * 0.6f);
+    ajc_barra(108, y + 68, 200, al * 0.45f);
+    if (i == v) ajc_foco(40, y, 560, 100, 14, 0.6f + 0.4f * ajc_onda(2.2f));
+  }
+}
+
+// POSICAO DOS SELOS NO "DO ADDON": a mesma fonte duas vezes, a fileira de
+// selos acima do nome (Em cima) e abaixo da descricao (Embaixo). A coluna do
+// addon (barra curta a direita) fica sempre no alto da linha.
+static void rSelosPosicao(void) {
+  int v = rInt(AJ_SOURCE_BADGE_POSITION, 1), i;
+  for (i = 0; i < 2; i++) {
+    float y = 60 + i * 130, al = i == v ? 1.0f : 0.3f;
+    float ys = i == 0 ? y + 12 : y + 66, yt = i == 0 ? y + 48 : y + 16;
+    ajc_neutro(40, y, 560, 100, 14, al);
+    ajcSelo("4K", 66, ys, 12, 0, al); ajcSelo("HDR", 108, ys, 12, 0, al); ajcSelo("DV", 164, ys, 12, 0, al);
+    ajc_barra(66, yt, 260, al * 0.8f);
+    ajc_barra(66, yt + 22, 200, al * 0.45f);
+    ajc_barra(500, y + 16, 70, al * 0.45f);
+    if (i == v) ajc_foco(40, y, 560, 100, 14, 0.6f + 0.4f * ajc_onda(2.2f));
+  }
+}
+
 // --- selos -----------------------------------------------------------------------------
 static void rSelosCores(int op) {
   static const char *T[6] = { "4K", "HDR", "DV", "ATMOS", "x265", "RD" };
@@ -549,20 +591,26 @@ static void rPacoteRem(void) {   // um pacote sai e os outros fecham o espaco
 
 // --- som e video desta TV ---------------------------------------------------------------
 static void rDts(void) {   // DTS -> estereo (2 caixas) ou 5.1 (6 caixas); .tpk desligado: so a TV
+#ifdef NV_ANDROID
+  int s51 = valor[AJ_DTS_AC3] == 0, i;   // Android: 0 = Original (todos os canais), 1 = Estereo
+#else
   int s51 = valor[AJ_DTS_AC3] == 1, i;
+#endif
   float o = ajc_onda(1.2f);
   ajcSelo("DTS", 90, 26, 16, 0, 1);
-#ifdef NV_TPK
-  if (valor[AJ_DTS_AC3] == 0) {   // Desligado: o DTS chega a TV como no master, sem som
+  if (ajustes_dts_desligado()) {   // Off: no DTS/TrueHD conversion; the source reaches the TV player as is
     ajc_tv(250, 110, 140, 78, 1);
     ajc_ret(256, 116, 128, 66, 6, 0.06f, 0.06f, 0.08f, 1);
     ajc_icone("aj_volume-2", 305, 262, 30, 0.35f);
     ajc_icone("aj_x", 340, 262, 22, 0.6f);
     return;
   }
-#endif
   ajc_icone("aj_chevron-right", 190, 43, 24, 0.7f);
+#ifdef NV_ANDROID
+  ajcSelo(s51 ? "5.1" : "2.0", 232, 26, 16, 1, 1);
+#else
   ajcSelo(s51 ? "5.1" : "AAC", 232, 26, 16, 1, 1);
+#endif
   ajc_tv(250, 110, 140, 78, 1);
   ajc_ret(256, 116, 128, 66, 6, 0.06f, 0.06f, 0.08f, 1);
   for (i = 0; i < (s51 ? 6 : 2); i++) {
@@ -856,6 +904,8 @@ static int ajcNovaReproducao(int sec, int op) {
       rMemoria(op); return 1;
     case AJ_FONTE_ORDEM_ADDON: rOrdemFontes(); return 1;
     case AJ_FONTE_TEXTO: rTexto(); return 1;
+    case AJ_FONTE_ICONES: rIcones(); return 1;
+    case AJ_SOURCE_BADGE_POSITION: rSelosPosicao(); return 1;
     case AJ_SELOS_CORES: rSelosCores(op); return 1;
     case AJ_SELOS_PACOTE: rPacote(); return 1;
     case AJ_SELOS_PACOTE_ADD: rPacoteAdd(); return 1;
@@ -868,6 +918,7 @@ static int ajcNovaReproducao(int sec, int op) {
     case AJ_CW_CONCLUIDO: rPercentual(); return 1;
     case AJ_MANTER_VIDEO: rManter(op); return 1;
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_CHAVE: case AJ_SEEKR_TESTAR: case AJ_SEEKR_AJUSTE:
+    case AJ_MINI_QUALIDADE: case AJ_MINI_DECODER:
       rSeekr(op); return 1;
 #ifndef __EMSCRIPTEN__
     case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR: case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: rP2p(op); return 1;

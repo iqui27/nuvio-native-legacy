@@ -84,6 +84,9 @@ static atomic_int ativo = ATOMIC_VAR_INIT(1);
 // perfil certo.
 static int escolhido;      // 1 depois que o usuario decidiu NESTA sessao
 static int gravado;        // 1 quando perfil.txt existia no arranque
+static int lembrarUltimo;  // opt-in startup policy, supplied by device Settings
+
+void perfis_lembrar_ultimo_configurar(int ligado) { lembrarUltimo = ligado != 0; }
 
 // Existing isolated fixtures omit sessao.c. A complete app always captures
 // both fields locally, without refreshing or doing HTTP on the UI thread.
@@ -535,11 +538,16 @@ void perfis_manter_ativo(void) { escolhido = 1; }
 
 int perfis_sem_escolha(void) {
   if (n <= 0) return 1;
-  if (n == 1) return !lista[0].temPin;
+  if (n == 1) return !lista[0].temPin &&
+      !(lembrarUltimo && gravado && !perfis_item_ativo());
   return 0;
 }
 
 int perfis_precisa_escolher(void) {
+  // Keep the session unconfirmed: a later server list that removes/locks the
+  // saved profile must still reopen the chooser. Explicit Switch profile uses
+  // perfis_sem_escolha(), so this opt-in cannot close that screen underneath it.
+  if (!escolhido && lembrarUltimo && gravado && perfis_pode_dispensar()) return 0;
   return !escolhido && !perfis_sem_escolha();
 }
 

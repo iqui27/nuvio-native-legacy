@@ -1,0 +1,1729 @@
+diff --git a/checkasm/checkasm.c b/checkasm/checkasm.c
+index c42f8f5..d16b077 100644
+--- a/checkasm/checkasm.c
++++ b/checkasm/checkasm.c
+@@ -74,6 +74,10 @@ static const struct {
+     { "SSE2",               "sse2",      ASS_CPU_FLAG_X86_SSE2 },
+     { "SSSE3",              "ssse3",     ASS_CPU_FLAG_X86_SSSE3 },
+     { "AVX2",               "avx2",      ASS_CPU_FLAG_X86_AVX2 },
++#elif ASS_NV_NEON32
++    /* Nuvio: checks whichever armv7 engine ass_bitmap_engine_init picks
++     * (neon32 by default, mpvNova's with ASS_NV_ARMV7=nova). */
++    { "NEON (armv7)",       "neon32",    ASS_CPU_FLAG_ARM_NEON },
+ #elif ARCH_AARCH64 || (defined(__arm__) && defined(__ARM_NEON))
+     { "NEON",               "neon",      ASS_CPU_FLAG_ARM_NEON },
+ #endif
+diff --git a/libass/arm/neon32.c b/libass/arm/neon32.c
+new file mode 100644
+index 0000000..e656db7
+--- /dev/null
++++ b/libass/arm/neon32.c
+@@ -0,0 +1,773 @@
++/*
++ * Copyright (C) 2026 libass contributors
++ *
++ * This file is part of libass.
++ *
++ * Permission to use, copy, modify, and distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++/*
++ * Bitmap engine for 32-bit ARM with NEON (ARMv7-A, softfp or hardfp).
++ *
++ * libass ships SIMD only for x86 and aarch64; on armv7 it falls back to the
++ * plain C engine. This is a port of the aarch64 engine (the aarch64 .S files) to NEON
++ * intrinsics, with the C engine's arithmetic kept exactly (int16 wraparound,
++ * rounding, saturation), so every function is bit-identical to its C
++ * counterpart. Alignment is 16 (stripes of 8 int16), tiles 16 or 32, the same
++ * layout the C engine uses, so nothing else in libass changes.
++ *
++ * This file is #included from ass_bitmap_engine.c, so no build-system change
++ * is needed. Checked against the C engine by checkasm (armv7 entry added).
++ */
++
++#include <arm_neon.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include "ass_rasterizer.h"
++
++static inline int16x8_t nv32_index16(void)
++{
++    static const int16_t idx[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
++    return vld1q_s16(idx);
++}
++
++
++/* ------------------------------------------------------------------------ */
++/* Rasterizer                                                                */
++
++#define TILE_SIZE 16
++#include "neon32_rasterizer.h"
++#undef TILE_SIZE
++
++#define TILE_SIZE 32
++#include "neon32_rasterizer.h"
++#undef TILE_SIZE
++
++
++/* ------------------------------------------------------------------------ */
++/* Blend functions (c/c_blend_bitmaps.c). The tail of each row is done in   */
++/* plain C, so nothing past `width` is read or written.                     */
++
++static void ass_add_bitmaps_neon32(uint8_t *restrict dst, ptrdiff_t dst_stride,
++                                   const uint8_t *restrict src, ptrdiff_t src_stride,
++                                   size_t width, size_t height)
++{
++    for (size_t y = 0; y < height; y++) {
++        size_t x = 0;
++        for (; x + 16 <= width; x += 16)
++            vst1q_u8(dst + x, vqaddq_u8(vld1q_u8(dst + x), vld1q_u8(src + x)));
++        if (x + 8 <= width) {
++            vst1_u8(dst + x, vqadd_u8(vld1_u8(dst + x), vld1_u8(src + x)));
++            x += 8;
++        }
++        for (; x < width; x++) {
++            unsigned out = dst[x] + src[x];
++            dst[x] = FFMIN(out, 255);
++        }
++        dst += dst_stride;
++        src += src_stride;
++    }
++}
++
++static void ass_imul_bitmaps_neon32(uint8_t *restrict dst, ptrdiff_t dst_stride,
++                                    const uint8_t *restrict src, ptrdiff_t src_stride,
++                                    size_t width, size_t height)
++{
++    const uint16x8_t k255 = vdupq_n_u16(255);
++    for (size_t y = 0; y < height; y++) {
++        size_t x = 0;
++        for (; x + 8 <= width; x += 8) {
++            uint16x8_t t = vmlal_u8(k255, vld1_u8(dst + x), vmvn_u8(vld1_u8(src + x)));
++            vst1_u8(dst + x, vshrn_n_u16(t, 8));
++        }
++        for (; x < width; x++)
++            dst[x] = (dst[x] * (255 - src[x]) + 255) >> 8;
++        dst += dst_stride;
++        src += src_stride;
++    }
++}
++
++static void ass_mul_bitmaps_neon32(uint8_t *restrict dst, ptrdiff_t dst_stride,
++                                   const uint8_t *restrict src1, ptrdiff_t src1_stride,
++                                   const uint8_t *restrict src2, ptrdiff_t src2_stride,
++                                   size_t width, size_t height)
++{
++    const uint16x8_t k255 = vdupq_n_u16(255);
++    for (size_t y = 0; y < height; y++) {
++        size_t x = 0;
++        for (; x + 8 <= width; x += 8) {
++            uint16x8_t t = vmlal_u8(k255, vld1_u8(src1 + x), vld1_u8(src2 + x));
++            vst1_u8(dst + x, vshrn_n_u16(t, 8));
++        }
++        for (; x < width; x++)
++            dst[x] = (src1[x] * src2[x] + 255) >> 8;
++        dst  += dst_stride;
++        src1 += src1_stride;
++        src2 += src2_stride;
++    }
++}
++
++
++/* ------------------------------------------------------------------------ */
++/* \be box blur (c/c_be_blur.c)                                             */
++/*                                                                          */
++/* h[x] = b[x-1] + 2 b[x] + b[x+1] per row (b outside the row = 0), then    */
++/* out[y] = (h[y-1] + 2 h[y] + h[y+1]) >> 4 with the same in-place, one-row */
++/* -late order and the same tmp layout as the C code.                       */
++
++void ass_be_blur_c(uint8_t *restrict buf, ptrdiff_t stride,
++                   size_t width, size_t height, uint16_t *restrict tmp);
++
++static inline uint16x8_t nv32_be_hsum(const uint8_t *lb)
++{
++    // lb points at b[x - 1]
++    uint16x8_t s = vaddl_u8(vld1_u8(lb), vld1_u8(lb + 2));
++    return vaddq_u16(s, vshll_n_u8(vld1_u8(lb + 1), 1));
++}
++
++static inline void nv32_be_store(uint8_t *dst, size_t x, size_t width, uint8x8_t v)
++{
++    if (x + 8 <= width) {
++        vst1_u8(dst + x, v);
++    } else {
++        uint8_t t[8];
++        vst1_u8(t, v);
++        memcpy(dst + x, t, width - x);
++    }
++}
++
++static void ass_be_blur_neon32(uint8_t *restrict buf, ptrdiff_t stride,
++                               size_t width, size_t height, uint16_t *restrict tmp)
++{
++    if (stride > 8192) {
++        ass_be_blur_c(buf, stride, width, height, tmp);
++        return;
++    }
++
++    uint16_t *col_pix_buf = tmp;           // h of the previous row
++    uint16_t *col_sum_buf = tmp + stride;  // h[y-2] + h[y-1] (or h[0])
++    size_t w8 = (width + 7) & ~(size_t) 7; // <= stride
++
++    // zero-padded copy of the current row: lb[0] = b[-1], lb[1 + x] = b[x]
++    uint8_t lb[stride + 16];
++    memset(lb, 0, sizeof(lb));
++
++    memcpy(lb + 1, buf, width);
++    for (size_t x = 0; x < w8; x += 8) {
++        uint16x8_t h = nv32_be_hsum(lb + x);
++        vst1q_u16(col_pix_buf + x, h);
++        vst1q_u16(col_sum_buf + x, h);
++    }
++
++    for (size_t y = 1; y < height; y++) {
++        uint8_t *dst = buf;
++        buf += stride;
++        memcpy(lb + 1, buf, width);
++        for (size_t x = 0; x < w8; x += 8) {
++            uint16x8_t h = nv32_be_hsum(lb + x);
++            uint16x8_t col_pix = vld1q_u16(col_pix_buf + x);
++            uint16x8_t col_sum = vaddq_u16(col_pix, h);
++            uint16x8_t out = vaddq_u16(vld1q_u16(col_sum_buf + x), col_sum);
++            vst1q_u16(col_pix_buf + x, h);
++            vst1q_u16(col_sum_buf + x, col_sum);
++            nv32_be_store(dst, x, width, vshrn_n_u16(out, 4));
++        }
++    }
++
++    for (size_t x = 0; x < w8; x += 8) {
++        uint16x8_t out = vaddq_u16(vld1q_u16(col_sum_buf + x), vld1q_u16(col_pix_buf + x));
++        nv32_be_store(buf, x, width, vshrn_n_u16(out, 4));
++    }
++}
++
++
++/* ------------------------------------------------------------------------ */
++/* Gaussian blur stripe pipeline (c/blur_template.h, ALIGNMENT 16)          */
++/* One stripe line is 8 int16 = one Q register.                             */
++/*                                                                          */
++/* Every filter is written for a RANGE of output stripes (or rows for      */
++/* unpack): each output stripe depends only on the read-only source, so    */
++/* ranges can run on different cores and the result is byte-for-byte the   */
++/* same as one pass (nv32_par below). Arithmetic is the C engine's.         */
++
++#define N32_STRIPE 8
++#define N32_MASK   7
++
++static const int16_t nv32_zero_line[8] __attribute__((aligned(16)));
++
++static inline const int16_t *nv32_get_line(const int16_t *ptr, size_t offs, size_t size)
++{
++    return offs < size ? ptr + offs : nv32_zero_line;
++}
++
++static inline int16x8_t nv32_line(const int16_t *ptr, size_t offs, size_t size)
++{
++    return vld1q_s16(nv32_get_line(ptr, offs, size));
++}
++
++/* ---- small worker pool --------------------------------------------------- */
++
++#include <pthread.h>
++
++#define NV32_MAX_THREADS 4
++
++typedef void Nv32Part(const void *job, size_t from, size_t to);
++
++static struct {
++    pthread_mutex_t lock, call;     // call: one dispatcher at a time
++    pthread_cond_t go, done;
++    int started, wanted;            // helper threads alive / wanted in total (incl. caller)
++    unsigned gen;
++    int pending;
++    Nv32Part *fn;
++    const void *job;
++    size_t n, parts;
++} nv32_pool = {
++    PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER,
++    PTHREAD_COND_INITIALIZER, PTHREAD_COND_INITIALIZER,
++    0, 1, 0, 0, NULL, NULL, 0, 0
++};
++
++static void nv32_run_part(Nv32Part *fn, const void *job, size_t n, size_t parts, size_t k)
++{
++    size_t from = n * k / parts, to = n * (k + 1) / parts;
++    if (to > from)
++        fn(job, from, to);
++}
++
++static void *nv32_helper(void *arg)
++{
++    size_t k = (size_t) (uintptr_t) arg;   // part index 1..
++    unsigned seen = 0;
++    pthread_mutex_lock(&nv32_pool.lock);
++    for (;;) {
++        while (nv32_pool.gen == seen)
++            pthread_cond_wait(&nv32_pool.go, &nv32_pool.lock);
++        seen = nv32_pool.gen;
++        Nv32Part *fn = nv32_pool.fn;
++        const void *job = nv32_pool.job;
++        size_t n = nv32_pool.n, parts = nv32_pool.parts;
++        int mine = k < parts;
++        pthread_mutex_unlock(&nv32_pool.lock);
++        if (mine)
++            nv32_run_part(fn, job, n, parts, k);
++        pthread_mutex_lock(&nv32_pool.lock);
++        if (mine && --nv32_pool.pending == 0)
++            pthread_cond_signal(&nv32_pool.done);
++    }
++    return NULL;
++}
++
++int ass_nv32_set_threads(int n)
++{
++    if (n < 1) n = 1;
++    if (n > NV32_MAX_THREADS) n = NV32_MAX_THREADS;
++    pthread_mutex_lock(&nv32_pool.call);
++    pthread_mutex_lock(&nv32_pool.lock);
++    while (nv32_pool.started + 1 < n) {
++        pthread_t t;
++        pthread_attr_t at;
++        pthread_attr_init(&at);
++        pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
++        int ok = pthread_create(&t, &at, nv32_helper,
++                                (void *) (uintptr_t) (nv32_pool.started + 1)) == 0;
++        pthread_attr_destroy(&at);
++        if (!ok)
++            break;
++        nv32_pool.started++;
++    }
++    if (n > nv32_pool.started + 1)
++        n = nv32_pool.started + 1;
++    nv32_pool.wanted = n;
++    pthread_mutex_unlock(&nv32_pool.lock);
++    pthread_mutex_unlock(&nv32_pool.call);
++    return n;
++}
++
++int ass_nv32_get_threads(void)
++{
++    return __atomic_load_n(&nv32_pool.wanted, __ATOMIC_RELAXED);
++}
++
++static size_t nv32_par_min = 65536;
++
++/* Runs fn over [0, n) split in parts. `work` is the number of int16 lanes
++ * touched; small jobs stay on the calling thread (waking helpers costs more). */
++static void nv32_par(Nv32Part *fn, const void *job, size_t n, size_t work)
++{
++    int threads = __atomic_load_n(&nv32_pool.wanted, __ATOMIC_RELAXED);
++    size_t parts = (size_t) threads;
++    if (parts > n)
++        parts = n;
++    if (parts <= 1 || work < nv32_par_min || pthread_mutex_trylock(&nv32_pool.call)) {
++        fn(job, 0, n);
++        return;
++    }
++    pthread_mutex_lock(&nv32_pool.lock);
++    nv32_pool.fn = fn;
++    nv32_pool.job = job;
++    nv32_pool.n = n;
++    nv32_pool.parts = parts;
++    nv32_pool.pending = (int) parts - 1;
++    nv32_pool.gen++;
++    pthread_cond_broadcast(&nv32_pool.go);
++    pthread_mutex_unlock(&nv32_pool.lock);
++
++    nv32_run_part(fn, job, n, parts, 0);
++
++    pthread_mutex_lock(&nv32_pool.lock);
++    while (nv32_pool.pending > 0)
++        pthread_cond_wait(&nv32_pool.done, &nv32_pool.lock);
++    pthread_mutex_unlock(&nv32_pool.lock);
++    pthread_mutex_unlock(&nv32_pool.call);
++}
++
++typedef struct {
++    int16_t *dst;
++    const int16_t *src;
++    size_t w, h;
++    const int16_t *param;
++} Nv32Job;
++
++#define N32_STRIPES(w) (((w) + N32_MASK) / N32_STRIPE)
++
++/* ---- unpack / pack -------------------------------------------------------- */
++
++typedef struct {
++    int16_t *dst;
++    const uint8_t *src;
++    ptrdiff_t stride;
++    size_t width, height;
++} Nv32Unpack;
++
++static void nv32_unpack_rows(const void *jv, size_t y0, size_t y1)
++{
++    const Nv32Unpack *j = jv;
++    int16_t *dst = j->dst + y0 * N32_STRIPE;
++    const uint8_t *src = j->src + y0 * j->stride;
++    for (size_t y = y0; y < y1; y++) {
++        int16_t *ptr = dst;
++        for (size_t x = 0; x < j->width; x += N32_STRIPE) {
++            uint8x8_t s = vld1_u8(src + x);
++            uint8x8x2_t z = vzip_u8(s, s);  // s * 257 in each 16-bit lane
++            uint16x8_t v = vreinterpretq_u16_u8(vcombine_u8(z.val[0], z.val[1]));
++            vst1q_s16(ptr, vreinterpretq_s16_u16(vrshrq_n_u16(v, 2)));
++            ptr += N32_STRIPE * j->height;
++        }
++        dst += N32_STRIPE;
++        src += j->stride;
++    }
++}
++
++static void ass_stripe_unpack16_neon32(int16_t *restrict dst, const uint8_t *restrict src,
++                                       ptrdiff_t src_stride, size_t width, size_t height)
++{
++    Nv32Unpack j = { dst, src, src_stride, width, height };
++    nv32_par(nv32_unpack_rows, &j, height, N32_STRIPES(width) * N32_STRIPE * height);
++}
++
++typedef struct {
++    uint8_t *dst;
++    ptrdiff_t stride;
++    const int16_t *src;
++    size_t width, height;
++} Nv32Pack;
++
++static void nv32_pack_stripes(const void *jv, size_t s0, size_t s1)
++{
++    static const int16_t dither[16] = {
++         8, 40,  8, 40,  8, 40,  8, 40,
++        56, 24, 56, 24, 56, 24, 56, 24,
++    };
++    const Nv32Pack *j = jv;
++    const int16x8_t d0 = vld1q_s16(dither), d1 = vld1q_s16(dither + 8);
++    const int16_t *src = j->src + s0 * N32_STRIPE * j->height;
++    uint8_t *dst = j->dst + s0 * N32_STRIPE;
++    for (size_t s = s0; s < s1; s++) {
++        uint8_t *ptr = dst;
++        for (size_t y = 0; y < j->height; y++) {
++            int16x8_t v = vld1q_s16(src);
++            int16x8_t t = vaddq_s16(vsubq_s16(v, vshrq_n_s16(v, 8)), (y & 1) ? d1 : d0);
++            vst1_u8(ptr, vmovn_u16(vshrq_n_u16(vreinterpretq_u16_s16(t), 6)));
++            ptr += j->stride;
++            src += N32_STRIPE;
++        }
++        dst += N32_STRIPE;
++    }
++}
++
++static void ass_stripe_pack16_neon32(uint8_t *restrict dst, ptrdiff_t dst_stride,
++                                     const int16_t *restrict src, size_t width, size_t height)
++{
++    Nv32Pack j = { dst, dst_stride, src, width, height };
++    size_t n = N32_STRIPES(width);
++    nv32_par(nv32_pack_stripes, &j, n, n * N32_STRIPE * height);
++    dst += n * N32_STRIPE;
++    size_t left = dst_stride - n * N32_STRIPE;
++    for (size_t y = 0; y < height; y++) {
++        memset(dst, 0, left);
++        dst += dst_stride;
++    }
++}
++
++/* ---- shrink / expand ------------------------------------------------------ */
++
++// shrink_func of c_blur.c on unsigned lanes (values are in 0..0x4000)
++static inline uint16x8_t nv32_shrink(uint16x8_t p1p, uint16x8_t p1n,
++                                     uint16x8_t z0p, uint16x8_t z0n,
++                                     uint16x8_t n1p, uint16x8_t n1n)
++{
++    uint16x8_t t0 = vaddq_u16(p1p, n1n);
++    uint16x8_t t1 = vaddq_u16(p1n, n1p);
++    uint16x8_t t2 = vaddq_u16(z0p, z0n);
++    uint16x8_t r = vhaddq_u16(t0, t1);
++    r = vhaddq_u16(r, t2);
++    r = vhaddq_u16(r, t1);
++    r = vhaddq_u16(r, t2);
++    return vrshrq_n_u16(r, 1);
++}
++
++static void nv32_shrink_horz_r(const void *jv, size_t s0, size_t s1)
++{
++    const Nv32Job *j = jv;
++    size_t size = N32_STRIPES(j->w) * N32_STRIPE * j->h;
++    size_t step = N32_STRIPE * j->h;
++    size_t offs = 2 * s0 * step;
++    int16_t *dst = j->dst + s0 * step;
++    for (size_t s = s0; s < s1; s++) {
++        for (size_t y = 0; y < j->h; y++) {
++            uint16x8_t a = vreinterpretq_u16_s16(nv32_line(j->src, offs - step, size));
++            uint16x8_t b = vreinterpretq_u16_s16(nv32_line(j->src, offs, size));
++            uint16x8_t c = vreinterpretq_u16_s16(nv32_line(j->src, offs + step, size));
++            uint16x8x2_t bc = vuzpq_u16(b, c);  // ptr[2k], ptr[2k + 1]
++            uint16x8x2_t aa = vuzpq_u16(a, a);  // lanes 6, 7: ptr[-4], ptr[-2] / ptr[-3], ptr[-1]
++            uint16x8_t r = nv32_shrink(vextq_u16(aa.val[0], bc.val[0], 6),
++                                       vextq_u16(aa.val[1], bc.val[1], 6),
++                                       vextq_u16(aa.val[0], bc.val[0], 7),
++                                       vextq_u16(aa.val[1], bc.val[1], 7),
++                                       bc.val[0], bc.val[1]);
++            vst1q_s16(dst, vreinterpretq_s16_u16(r));
++            dst  += N32_STRIPE;
++            offs += N32_STRIPE;
++        }
++        offs += step;
++    }
++}
++
++static void ass_shrink_horz16_neon32(int16_t *restrict dst, const int16_t *restrict src,
++                                     size_t src_width, size_t src_height)
++{
++    Nv32Job j = { dst, src, src_width, src_height, NULL };
++    size_t n = N32_STRIPES((src_width + 5) >> 1);
++    nv32_par(nv32_shrink_horz_r, &j, n, n * N32_STRIPE * src_height * 3);
++}
++
++static void nv32_shrink_vert_r(const void *jv, size_t s0, size_t s1)
++{
++    const Nv32Job *j = jv;
++    size_t dst_height = (j->h + 5) >> 1;
++    size_t step = N32_STRIPE * j->h;
++    const int16_t *src = j->src + s0 * step;
++    int16_t *dst = j->dst + s0 * N32_STRIPE * dst_height;
++    for (size_t s = s0; s < s1; s++) {
++        size_t offs = 0;
++        for (size_t y = 0; y < dst_height; y++) {
++#define L(o) vreinterpretq_u16_s16(nv32_line(src, offs + (o), step))
++            uint16x8_t r = nv32_shrink(L(-4 * N32_STRIPE), L(-3 * N32_STRIPE),
++                                       L(-2 * N32_STRIPE), L(-1 * N32_STRIPE),
++                                       L(0), L(1 * N32_STRIPE));
++#undef L
++            vst1q_s16(dst, vreinterpretq_s16_u16(r));
++            dst  += 1 * N32_STRIPE;
++            offs += 2 * N32_STRIPE;
++        }
++        src += step;
++    }
++}
++
++static void ass_shrink_vert16_neon32(int16_t *restrict dst, const int16_t *restrict src,
++                                     size_t src_width, size_t src_height)
++{
++    Nv32Job j = { dst, src, src_width, src_height, NULL };
++    size_t n = N32_STRIPES(src_width);
++    nv32_par(nv32_shrink_vert_r, &j, n, n * N32_STRIPE * src_height * 3);
++}
++
++// expand_func of c_blur.c: returns rp in *rp and rn in *rn
++static inline void nv32_expand(uint16x8_t *rp, uint16x8_t *rn,
++                               uint16x8_t p1, uint16x8_t z0, uint16x8_t n1)
++{
++    uint16x8_t r = vhaddq_u16(vhaddq_u16(p1, n1), z0);
++    *rp = vrhaddq_u16(vhaddq_u16(r, p1), z0);
++    *rn = vrhaddq_u16(vhaddq_u16(r, n1), z0);
++}
++
++/* Iteration i of the C loop "for (x = 8; x < dst_width; x += 16)" reads source
++ * stripe i (and i - 1) and writes destination stripes 2i and 2i + 1. */
++static void nv32_expand_horz_r(const void *jv, size_t i0, size_t i1)
++{
++    const Nv32Job *j = jv;
++    size_t size = N32_STRIPES(j->w) * N32_STRIPE * j->h;
++    size_t step = N32_STRIPE * j->h;
++    size_t offs = i0 * step;
++    int16_t *dst = j->dst + 2 * i0 * step;
++    for (size_t i = i0; i < i1; i++) {
++        for (size_t y = 0; y < j->h; y++) {
++            uint16x8_t a = vreinterpretq_u16_s16(nv32_line(j->src, offs - step, size));
++            uint16x8_t b = vreinterpretq_u16_s16(nv32_line(j->src, offs, size));
++            uint16x8_t rp, rn;
++            nv32_expand(&rp, &rn, vextq_u16(a, b, 6), vextq_u16(a, b, 7), b);
++            uint16x8x2_t z = vzipq_u16(rp, rn);
++            vst1q_s16(dst, vreinterpretq_s16_u16(z.val[0]));
++            vst1q_s16(dst + step, vreinterpretq_s16_u16(z.val[1]));
++            dst  += N32_STRIPE;
++            offs += N32_STRIPE;
++        }
++        dst += step;
++    }
++}
++
++static void ass_expand_horz16_neon32(int16_t *restrict dst, const int16_t *restrict src,
++                                     size_t src_width, size_t src_height)
++{
++    size_t dst_width = 2 * src_width + 4;
++    size_t size = N32_STRIPES(src_width) * N32_STRIPE * src_height;
++    size_t step = N32_STRIPE * src_height;
++    size_t iters = dst_width > N32_STRIPE ? (dst_width - N32_STRIPE + 2 * N32_STRIPE - 1) / (2 * N32_STRIPE) : 0;
++    Nv32Job j = { dst, src, src_width, src_height, NULL };
++    nv32_par(nv32_expand_horz_r, &j, iters, iters * 2 * step);
++    if ((dst_width - 1) & N32_STRIPE)
++        return;
++
++    size_t offs = iters * step;
++    dst += 2 * iters * step;
++    for (size_t y = 0; y < src_height; y++) {
++        uint16x8_t a = vreinterpretq_u16_s16(nv32_line(src, offs - step, size));
++        uint16x8_t b = vreinterpretq_u16_s16(nv32_line(src, offs, size));
++        uint16x8_t rp, rn;
++        nv32_expand(&rp, &rn, vextq_u16(a, b, 6), vextq_u16(a, b, 7), b);
++        uint16x8x2_t z = vzipq_u16(rp, rn);
++        vst1q_s16(dst, vreinterpretq_s16_u16(z.val[0]));
++        dst  += N32_STRIPE;
++        offs += N32_STRIPE;
++    }
++}
++
++static void nv32_expand_vert_r(const void *jv, size_t s0, size_t s1)
++{
++    const Nv32Job *j = jv;
++    size_t dst_height = 2 * j->h + 4;
++    size_t step = N32_STRIPE * j->h;
++    const int16_t *src = j->src + s0 * step;
++    int16_t *dst = j->dst + s0 * N32_STRIPE * dst_height;
++    for (size_t s = s0; s < s1; s++) {
++        size_t offs = 0;
++        for (size_t y = 0; y < dst_height; y += 2) {
++            uint16x8_t p1 = vreinterpretq_u16_s16(nv32_line(src, offs - 2 * N32_STRIPE, step));
++            uint16x8_t z0 = vreinterpretq_u16_s16(nv32_line(src, offs - 1 * N32_STRIPE, step));
++            uint16x8_t n1 = vreinterpretq_u16_s16(nv32_line(src, offs, step));
++            uint16x8_t rp, rn;
++            nv32_expand(&rp, &rn, p1, z0, n1);
++            vst1q_s16(dst, vreinterpretq_s16_u16(rp));
++            vst1q_s16(dst + N32_STRIPE, vreinterpretq_s16_u16(rn));
++            dst  += 2 * N32_STRIPE;
++            offs += 1 * N32_STRIPE;
++        }
++        src += step;
++    }
++}
++
++static void ass_expand_vert16_neon32(int16_t *restrict dst, const int16_t *restrict src,
++                                     size_t src_width, size_t src_height)
++{
++    Nv32Job j = { dst, src, src_width, src_height, NULL };
++    size_t n = N32_STRIPES(src_width);
++    nv32_par(nv32_expand_vert_r, &j, n, n * N32_STRIPE * (2 * src_height + 4) * 2);
++}
++
++/*
++ * Main parametric filters. blur_horz needs ptr[k - 2n .. k] across up to
++ * three stripe lines l0 = ptr[-16..-9], l1 = ptr[-8..-1], l2 = ptr[0..7];
++ * N32_WIN(s) is ptr[k + s] for the 8 lanes k, built with vext (constant s).
++ */
++#define N32_WIN(s) \
++    ((s) == 0 ? l2 : (s) == -8 ? l1 : (s) == -16 ? l0 : \
++     (s) < -8 ? vextq_s16(l0, l1, ((s) + 16) & 7) : vextq_s16(l1, l2, ((s) + 8) & 7))
++
++#define N32_TAP(n, i) \
++    { \
++        int16x8_t d1 = vsubq_s16(N32_WIN(-(n) - (i)), center); \
++        int16x8_t d2 = vsubq_s16(N32_WIN(-(n) + (i)), center); \
++        int16_t p = param[(i) - 1]; \
++        acc_lo = vmlal_n_s16(acc_lo, vget_low_s16(d1), p); \
++        acc_hi = vmlal_n_s16(acc_hi, vget_high_s16(d1), p); \
++        acc_lo = vmlal_n_s16(acc_lo, vget_low_s16(d2), p); \
++        acc_hi = vmlal_n_s16(acc_hi, vget_high_s16(d2), p); \
++    }
++
++#define N32_TAPS4(n) N32_TAP(n, 4) N32_TAP(n, 3) N32_TAP(n, 2) N32_TAP(n, 1)
++#define N32_TAPS5(n) N32_TAP(n, 5) N32_TAPS4(n)
++#define N32_TAPS6(n) N32_TAP(n, 6) N32_TAPS5(n)
++#define N32_TAPS7(n) N32_TAP(n, 7) N32_TAPS6(n)
++#define N32_TAPS8(n) N32_TAP(n, 8) N32_TAPS7(n)
++
++#define N32_BLUR_HORZ(n) \
++static void nv32_blur##n##_horz_r(const void *jv, size_t s0, size_t s1) \
++{ \
++    const Nv32Job *j = jv; \
++    const int16_t *restrict src = j->src, *restrict param = j->param; \
++    size_t size = N32_STRIPES(j->w) * N32_STRIPE * j->h; \
++    size_t step = N32_STRIPE * j->h; \
++    size_t offs = s0 * step; \
++    int16_t *dst = j->dst + s0 * step; \
++    for (size_t s = s0; s < s1; s++) { \
++        for (size_t y = 0; y < j->h; y++) { \
++            int16x8_t l0 = (n) > 4 ? nv32_line(src, offs - 2 * step, size) : vdupq_n_s16(0); \
++            int16x8_t l1 = nv32_line(src, offs - step, size); \
++            int16x8_t l2 = nv32_line(src, offs, size); \
++            (void) l0; \
++            int16x8_t center = N32_WIN(-(n)); \
++            int32x4_t acc_lo = vdupq_n_s32(0x8000), acc_hi = vdupq_n_s32(0x8000); \
++            N32_TAPS##n(n) \
++            int16x8_t r = vcombine_s16(vshrn_n_s32(acc_lo, 16), vshrn_n_s32(acc_hi, 16)); \
++            vst1q_s16(dst, vaddq_s16(center, r)); \
++            dst  += N32_STRIPE; \
++            offs += N32_STRIPE; \
++        } \
++    } \
++} \
++\
++static void ass_blur##n##_horz16_neon32(int16_t *restrict dst, const int16_t *restrict src, \
++                                        size_t src_width, size_t src_height, \
++                                        const int16_t *restrict param) \
++{ \
++    Nv32Job j = { dst, src, src_width, src_height, param }; \
++    size_t ns = N32_STRIPES(src_width + 2 * (n)); \
++    nv32_par(nv32_blur##n##_horz_r, &j, ns, ns * N32_STRIPE * src_height * (n)); \
++}
++
++N32_BLUR_HORZ(4)
++N32_BLUR_HORZ(5)
++N32_BLUR_HORZ(6)
++N32_BLUR_HORZ(7)
++N32_BLUR_HORZ(8)
++
++static inline void nv32_blur_vert_r(const Nv32Job *j, size_t s0, size_t s1, const int n)
++{
++    size_t dst_height = j->h + 2 * n;
++    size_t step = N32_STRIPE * j->h;
++    const int16_t *src = j->src + s0 * step;
++    int16_t *dst = j->dst + s0 * N32_STRIPE * dst_height;
++    const int16_t *param = j->param;
++
++    for (size_t s = s0; s < s1; s++) {
++        size_t offs = 0;
++        for (size_t y = 0; y < dst_height; y++) {
++            int32x4_t acc_lo = vdupq_n_s32(0x8000), acc_hi = vdupq_n_s32(0x8000);
++            int16x8_t center = nv32_line(src, offs - n * N32_STRIPE, step);
++            for (int i = n; i > 0; i--) {
++                int16x8_t d1 = vsubq_s16(nv32_line(src, offs - (n + i) * N32_STRIPE, step), center);
++                int16x8_t d2 = vsubq_s16(nv32_line(src, offs - (n - i) * N32_STRIPE, step), center);
++                int16_t p = param[i - 1];
++                acc_lo = vmlal_n_s16(acc_lo, vget_low_s16(d1), p);
++                acc_hi = vmlal_n_s16(acc_hi, vget_high_s16(d1), p);
++                acc_lo = vmlal_n_s16(acc_lo, vget_low_s16(d2), p);
++                acc_hi = vmlal_n_s16(acc_hi, vget_high_s16(d2), p);
++            }
++            int16x8_t r = vcombine_s16(vshrn_n_s32(acc_lo, 16), vshrn_n_s32(acc_hi, 16));
++            vst1q_s16(dst, vaddq_s16(center, r));
++            dst  += N32_STRIPE;
++            offs += N32_STRIPE;
++        }
++        src += step;
++    }
++}
++
++#define N32_BLUR_VERT(n) \
++static void nv32_blur##n##_vert_r(const void *jv, size_t s0, size_t s1) \
++{ \
++    nv32_blur_vert_r(jv, s0, s1, n); \
++} \
++\
++static void ass_blur##n##_vert16_neon32(int16_t *restrict dst, const int16_t *restrict src, \
++                                        size_t src_width, size_t src_height, \
++                                        const int16_t *restrict param) \
++{ \
++    Nv32Job j = { dst, src, src_width, src_height, param }; \
++    size_t ns = N32_STRIPES(src_width); \
++    nv32_par(nv32_blur##n##_vert_r, &j, ns, ns * N32_STRIPE * (src_height + 2 * (n)) * (n)); \
++}
++
++N32_BLUR_VERT(4)
++N32_BLUR_VERT(5)
++N32_BLUR_VERT(6)
++N32_BLUR_VERT(7)
++N32_BLUR_VERT(8)
++
++#undef N32_WIN
++#undef N32_TAP
++#undef N32_BLUR_HORZ
++#undef N32_BLUR_VERT
++
++
++/* ------------------------------------------------------------------------ */
++
++static void ass_bitmap_engine_neon32(BitmapEngine *engine, unsigned mask)
++{
++    /* Test hook (CI checkasm/verify only): force the threaded paths. */
++    static int env_done;
++    if (!env_done) {
++        const char *t = getenv("ASS_NV_THREADS"), *m = getenv("ASS_NV_PAR_MIN");
++        env_done = 1;
++        if (m) nv32_par_min = (size_t) strtoul(m, NULL, 10);
++        if (t) ass_nv32_set_threads(atoi(t));
++    }
++
++    if (mask & ASS_FLAG_LARGE_TILES) {
++        engine->tile_order     = 5;
++        engine->fill_solid     = ass_fill_solid_tile32_neon32;
++        engine->fill_halfplane = ass_fill_halfplane_tile32_neon32;
++        engine->fill_generic   = ass_fill_generic_tile32_neon32;
++        engine->merge          = ass_merge_tile32_neon32;
++    } else {
++        engine->tile_order     = 4;
++        engine->fill_solid     = ass_fill_solid_tile16_neon32;
++        engine->fill_halfplane = ass_fill_halfplane_tile16_neon32;
++        engine->fill_generic   = ass_fill_generic_tile16_neon32;
++        engine->merge          = ass_merge_tile16_neon32;
++    }
++
++    engine->add_bitmaps  = ass_add_bitmaps_neon32;
++    engine->imul_bitmaps = ass_imul_bitmaps_neon32;
++    engine->mul_bitmaps  = ass_mul_bitmaps_neon32;
++    engine->be_blur      = ass_be_blur_neon32;
++
++    engine->align_order   = 4;
++    engine->stripe_unpack = ass_stripe_unpack16_neon32;
++    engine->stripe_pack   = ass_stripe_pack16_neon32;
++    engine->shrink_horz   = ass_shrink_horz16_neon32;
++    engine->shrink_vert   = ass_shrink_vert16_neon32;
++    engine->expand_horz   = ass_expand_horz16_neon32;
++    engine->expand_vert   = ass_expand_vert16_neon32;
++    engine->blur_horz[0]  = ass_blur4_horz16_neon32;
++    engine->blur_horz[1]  = ass_blur5_horz16_neon32;
++    engine->blur_horz[2]  = ass_blur6_horz16_neon32;
++    engine->blur_horz[3]  = ass_blur7_horz16_neon32;
++    engine->blur_horz[4]  = ass_blur8_horz16_neon32;
++    engine->blur_vert[0]  = ass_blur4_vert16_neon32;
++    engine->blur_vert[1]  = ass_blur5_vert16_neon32;
++    engine->blur_vert[2]  = ass_blur6_vert16_neon32;
++    engine->blur_vert[3]  = ass_blur7_vert16_neon32;
++    engine->blur_vert[4]  = ass_blur8_vert16_neon32;
++}
+diff --git a/libass/arm/neon32_rasterizer.h b/libass/arm/neon32_rasterizer.h
+new file mode 100644
+index 0000000..fb245ee
+--- /dev/null
++++ b/libass/arm/neon32_rasterizer.h
+@@ -0,0 +1,242 @@
++/*
++ * Copyright (C) 2026 libass contributors
++ *
++ * This file is part of libass.
++ *
++ * Permission to use, copy, modify, and distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++/*
++ * ARMv7 NEON rasterizer, included twice from neon32.c (TILE_SIZE 16 and 32).
++ * Every operation mirrors c/rasterizer_template.h with the same int16
++ * truncation, so the output is bit-identical to the C engine.
++ */
++
++#if   TILE_SIZE == 16
++#define N32S(name)  name ## 16_neon32
++#define TILE_ORDER  4
++#elif TILE_SIZE == 32
++#define N32S(name)  name ## 32_neon32
++#define TILE_ORDER  5
++#else
++#error Unsupported tile size
++#endif
++
++#define NV            (TILE_SIZE / 8)
++#define FULL_VALUE    (1 << (14 - TILE_ORDER))
++#define RESCALE_AB(ab, scale) \
++    (((ab) * (int64_t) (scale) + ((int64_t) 1 << (45 + TILE_ORDER))) >> (46 + TILE_ORDER))
++#define RESCALE_C(c, scale) \
++    (((int32_t) ((c) >> (7 + TILE_ORDER)) * (int64_t) (scale) + ((int64_t) 1 << 44)) >> 45)
++
++
++static void N32S(ass_fill_solid_tile)(uint8_t *buf, ptrdiff_t stride, int set)
++{
++    uint8x16_t v = vdupq_n_u8(set ? 255 : 0);
++    for (int y = 0; y < TILE_SIZE; y++) {
++        for (int j = 0; j < TILE_SIZE / 16; j++)
++            vst1q_u8(buf + 16 * j, v);
++        buf += stride;
++    }
++}
++
++
++static void N32S(ass_fill_halfplane_tile)(uint8_t *buf, ptrdiff_t stride,
++                                          int32_t a, int32_t b, int64_t c, int32_t scale)
++{
++    int16_t aa = RESCALE_AB(a, scale), bb = RESCALE_AB(b, scale);
++    int16_t cc = RESCALE_C(c, scale) + FULL_VALUE / 2 - ((aa + bb) >> 1);
++
++    int16_t abs_a = aa < 0 ? -aa : aa;
++    int16_t abs_b = bb < 0 ? -bb : bb;
++    int16_t delta = (FFMIN(abs_a, abs_b) + 2) >> 2;
++
++    // va1[x] = aa * x - delta, va2[x] = aa * x + delta (int16 wrap, as in C)
++    int16x8_t va1[NV], va2[NV];
++    const int16x8_t vdelta = vdupq_n_s16(delta);
++    for (int j = 0; j < NV; j++) {
++        int16x8_t x = vaddq_s16(nv32_index16(), vdupq_n_s16(8 * j));
++        int16x8_t ax = vmulq_n_s16(x, aa);
++        va1[j] = vsubq_s16(ax, vdelta);
++        va2[j] = vaddq_s16(ax, vdelta);
++    }
++
++    const int16x8_t zero = vdupq_n_s16(0), full = vdupq_n_s16(FULL_VALUE);
++    for (int y = 0; y < TILE_SIZE; y++) {
++        int16x8_t vc = vdupq_n_s16(cc);
++        for (int j = 0; j < NV; j += 2) {
++            int16x8_t c1 = vsubq_s16(vc, va1[j]);
++            int16x8_t c2 = vsubq_s16(vc, va2[j]);
++            c1 = vminq_s16(vmaxq_s16(c1, zero), full);
++            c2 = vminq_s16(vmaxq_s16(c2, zero), full);
++            int16x8_t r0 = vshrq_n_s16(vaddq_s16(c1, c2), 7 - TILE_ORDER);
++            c1 = vsubq_s16(vc, va1[j + 1]);
++            c2 = vsubq_s16(vc, va2[j + 1]);
++            c1 = vminq_s16(vmaxq_s16(c1, zero), full);
++            c2 = vminq_s16(vmaxq_s16(c2, zero), full);
++            int16x8_t r1 = vshrq_n_s16(vaddq_s16(c1, c2), 7 - TILE_ORDER);
++            vst1q_u8(buf + 8 * j, vcombine_u8(vqmovun_s16(r0), vqmovun_s16(r1)));
++        }
++        buf += stride;
++        cc -= bb;
++    }
++}
++
++
++// Render top/bottom line of the trapezoid with antialiasing (same as C)
++static inline void N32S(update_border_line)(int16x8_t res[NV],
++                                            int16_t abs_a, const int16x8_t va[NV],
++                                            int16_t b, int16_t abs_b,
++                                            int16_t c, int up, int dn)
++{
++    int16_t size = dn - up;
++    int16_t w = FULL_VALUE + (size << (8 - TILE_ORDER)) - abs_a;
++    w = FFMIN(w, FULL_VALUE) << (2 * TILE_ORDER - 5);
++
++    int16_t dc_b = abs_b * (int32_t) size >> 6;
++    int16_t dc = (FFMIN(abs_a, dc_b) + 2) >> 2;
++
++    int16_t base = (int32_t) b * (int16_t) (up + dn) >> 7;
++    int16_t offs1 = size - ((base + dc) * (int32_t) w >> 16);
++    int16_t offs2 = size - ((base - dc) * (int32_t) w >> 16);
++
++    size <<= 1;
++    const int16x8_t vo1 = vdupq_n_s16(offs1), vo2 = vdupq_n_s16(offs2);
++    const int16x8_t zero = vdupq_n_s16(0), vsize = vdupq_n_s16(size);
++    const int16x4_t vcc = vdup_n_s16(c);
++    for (int j = 0; j < NV; j++) {
++        // cw = (c - va[x]) * w >> 16, with c - va[x] in 32 bits as in C
++        int32x4_t lo = vmulq_n_s32(vsubl_s16(vcc, vget_low_s16(va[j])), w);
++        int32x4_t hi = vmulq_n_s32(vsubl_s16(vcc, vget_high_s16(va[j])), w);
++        int16x8_t cw = vcombine_s16(vmovn_s32(vshrq_n_s32(lo, 16)),
++                                    vmovn_s32(vshrq_n_s32(hi, 16)));
++        int16x8_t c1 = vaddq_s16(cw, vo1);
++        int16x8_t c2 = vaddq_s16(cw, vo2);
++        c1 = vminq_s16(vmaxq_s16(c1, zero), vsize);
++        c2 = vminq_s16(vmaxq_s16(c2, zero), vsize);
++        res[j] = vaddq_s16(res[j], vaddq_s16(c1, c2));
++    }
++}
++
++static void N32S(ass_fill_generic_tile)(uint8_t *restrict buf, ptrdiff_t stride,
++                                        const struct segment *restrict line, size_t n_lines,
++                                        int winding)
++{
++    int16x8_t res[TILE_SIZE][NV];
++    for (int y = 0; y < TILE_SIZE; y++)
++        for (int j = 0; j < NV; j++)
++            res[y][j] = vdupq_n_s16(0);
++    int16_t delta[TILE_SIZE + 2] = {0};
++
++    const int16x8_t zero = vdupq_n_s16(0), full = vdupq_n_s16(FULL_VALUE);
++    const struct segment *end = line + n_lines;
++    for (; line != end; ++line) {
++        int16_t up_delta = line->flags & SEGFLAG_DN ? 4 : 0;
++        int16_t dn_delta = up_delta;
++        if (!line->x_min && (line->flags & SEGFLAG_EXACT_LEFT)) dn_delta ^= 4;
++        if (line->flags & SEGFLAG_UL_DR) {
++            int16_t tmp = up_delta;
++            up_delta = dn_delta;
++            dn_delta = tmp;
++        }
++
++        int up = line->y_min >> 6, dn = line->y_max >> 6;
++        int16_t up_pos = line->y_min & 63;
++        int16_t up_delta1 = up_delta * up_pos;
++        int16_t dn_pos = line->y_max & 63;
++        int16_t dn_delta1 = dn_delta * dn_pos;
++        delta[up + 1] -= up_delta1;
++        delta[up] -= (up_delta << 6) - up_delta1;
++        delta[dn + 1] += dn_delta1;
++        delta[dn] += (dn_delta << 6) - dn_delta1;
++        if (line->y_min == line->y_max)
++            continue;
++
++        int16_t a = RESCALE_AB(line->a, line->scale);
++        int16_t b = RESCALE_AB(line->b, line->scale);
++        int16_t c = RESCALE_C(line->c, line->scale) - (a >> 1) - b * up;
++
++        int16x8_t va[NV];
++        for (int j = 0; j < NV; j++)
++            va[j] = vmulq_n_s16(vaddq_s16(nv32_index16(), vdupq_n_s16(8 * j)), a);
++        int16_t abs_a = a < 0 ? -a : a;
++        int16_t abs_b = b < 0 ? -b : b;
++        int16_t dc = (FFMIN(abs_a, abs_b) + 2) >> 2;
++        int16_t base = FULL_VALUE / 2 - (b >> 1);
++        int16_t dc1 = base + dc;
++        int16_t dc2 = base - dc;
++
++        if (up_pos) {
++            if (dn == up) {
++                N32S(update_border_line)(res[up], abs_a, va, b, abs_b, c, up_pos, dn_pos);
++                continue;
++            }
++            N32S(update_border_line)(res[up], abs_a, va, b, abs_b, c, up_pos, 64);
++            up++;
++            c -= b;
++        }
++        // c1 = c - va[x] + dc1, c2 = c - va[x] + dc2 (int16 wrap, as in C)
++        int16x8_t vb1[NV], vb2[NV];
++        for (int j = 0; j < NV; j++) {
++            vb1[j] = vsubq_s16(vdupq_n_s16(dc1), va[j]);
++            vb2[j] = vsubq_s16(vdupq_n_s16(dc2), va[j]);
++        }
++        for (int y = up; y < dn; y++) {
++            int16x8_t vc = vdupq_n_s16(c);
++            for (int j = 0; j < NV; j++) {
++                int16x8_t c1 = vaddq_s16(vc, vb1[j]);
++                int16x8_t c2 = vaddq_s16(vc, vb2[j]);
++                c1 = vminq_s16(vmaxq_s16(c1, zero), full);
++                c2 = vminq_s16(vmaxq_s16(c2, zero), full);
++                res[y][j] = vsraq_n_s16(res[y][j], vaddq_s16(c1, c2), 7 - TILE_ORDER);
++            }
++            c -= b;
++        }
++        if (dn_pos)
++            N32S(update_border_line)(res[dn], abs_a, va, b, abs_b, c, 0, dn_pos);
++    }
++
++    int16_t cur = 256 * (int8_t) winding;
++    for (int y = 0; y < TILE_SIZE; y++) {
++        cur += delta[y];
++        int16x8_t vcur = vdupq_n_s16(cur);
++        for (int j = 0; j < NV; j += 2) {
++            // |res + cur| (int16 wrap) clamped to 0..255; |-32768| stays
++            // negative and saturates to 0, exactly like the C code
++            int16x8_t v0 = vabsq_s16(vaddq_s16(res[y][j], vcur));
++            int16x8_t v1 = vabsq_s16(vaddq_s16(res[y][j + 1], vcur));
++            vst1q_u8(buf + 8 * j, vcombine_u8(vqmovun_s16(v0), vqmovun_s16(v1)));
++        }
++        buf += stride;
++    }
++}
++
++
++static void N32S(ass_merge_tile)(uint8_t *restrict buf, ptrdiff_t stride,
++                                 const uint8_t *restrict tile)
++{
++    for (int y = 0; y < TILE_SIZE; y++) {
++        for (int j = 0; j < TILE_SIZE / 16; j++)
++            vst1q_u8(buf + 16 * j, vmaxq_u8(vld1q_u8(buf + 16 * j), vld1q_u8(tile + 16 * j)));
++        buf += stride;
++        tile += TILE_SIZE;
++    }
++}
++
++
++#undef N32S
++#undef TILE_ORDER
++#undef NV
++#undef FULL_VALUE
++#undef RESCALE_AB
++#undef RESCALE_C
+diff --git a/libass/ass.h b/libass/ass.h
+index 851ca7c..4a5b4c6 100644
+--- a/libass/ass.h
++++ b/libass/ass.h
+@@ -848,6 +848,71 @@ void *ass_malloc(size_t size);
+  */
+ void ass_free(void *ptr);
+ 
++/*
++ * Nuvio TPK additions (tools/tpk/libass-nv). Not upstream API.
++ */
++#define ASS_NV_API 1
++/* libass-hybrid-test: this libass is Laskco/mpvNova-libass b620927 (event
++ * threads, clip culling with the moving-clip guard) + the libass-nv patches. */
++#define ASS_NV_HYBRID "mpvNova-libass b620927 + libass-nv"
++/* The armv7 NEON engine in use: 1 = Nuvio's neon32, 2 = mpvNova's, 0 = not armv7. */
++int ass_nv_armv7_engine(void);
++
++/**
++ * \brief Select the bitmap engine: 1 = SIMD (NEON on armv7, the default
++ * there), 0 = plain C. Only the CI check (verify.c) compares the two.
++ * Empties the renderer caches. Returns the engine now in use.
++ */
++int ass_nv_set_engine(ASS_Renderer *priv, int simd);
++int ass_nv_get_engine(ASS_Renderer *priv);
++int ass_nv_simd_available(void);
++
++/**
++ * \brief Threads for the NEON blur stripe pipeline (process wide, 1..4,
++ * default 1). Big blurs are split by stripe across helper threads; the
++ * output is identical. Returns the number now in use.
++ */
++int ass_nv_set_threads(int n);
++int ass_nv_get_threads(void);
++
++/**
++ * \brief Opacity of dialogue lines, 0..255 (255 = as authored, the default).
++ * Multiplies the alpha of events WITHOUT \pos, \move, \clip, \iclip, \org,
++ * \pbo or a drawing; signs and typesetting keep the author's alpha.
++ */
++void ass_nv_set_dialogue_alpha(ASS_Renderer *priv, int alpha);
++
++/*
++ * Split render (Nuvio "Custom auto", 0004). Two renderers on ONE track draw
++ * the same frame at two resolutions: the sharp pass at the text resolution,
++ * the soft pass at the blur resolution, and the app merges the two image
++ * lists by ass_nv_image_key. Every event is laid out in both passes, so
++ * positions and collisions match; only the parts drawn differ.
++ *   sharp: text fills, unblurred outlines and shadows, BorderStyle 4 boxes;
++ *   soft:  blurred outlines and shadows (the fill of that text stays sharp),
++ *          blurred fills, and drawings (\p).
++ * "Blurred" = \be >= 1 or \blur >= ASS_NV_SPLIT_BLUR.
++ * pass: 0 = everything (the default, as before), 1 = sharp parts, 2 = soft parts.
++ * slot: 0 or 1, one per renderer sharing the track (each keeps its own
++ * collision memory on the events; the default 0 is what libass always did).
++ */
++#define ASS_NV_SPLIT 1
++#define ASS_NV_SPLIT_BLUR 1.0
++void ass_nv_set_split(ASS_Renderer *priv, int pass, int slot);
++
++/*
++ * Stacking key of an image of the last ass_render_frame (any pass): layer,
++ * ReadOrder, part (shadow < outline < fill) and the run index. Sorting the
++ * images of the two passes by it (stable) gives libass's own order.
++ */
++unsigned long long ass_nv_image_key(const ASS_Image *img);
++
++/*
++ * 1 = dialogue lines are not drawn (the app draws them as its own text);
++ * signs and songs (libass's rule or ASS_Event.nv_sign) still are.
++ */
++void ass_nv_set_skip_dialogue(ASS_Renderer *priv, int skip);
++
+ #undef ASS_DEPRECATED
+ #undef ASS_DEPRECATED_ENUM
+ 
+diff --git a/libass/ass_bitmap_engine.c b/libass/ass_bitmap_engine.c
+index 0ad8f81..41e7b1e 100644
+--- a/libass/ass_bitmap_engine.c
++++ b/libass/ass_bitmap_engine.c
+@@ -20,10 +20,16 @@
+ #include "ass_compat.h"
+ 
+ #include <stdbool.h>
++#include <stdlib.h>
++#include <string.h>
+ 
+ #include "ass_bitmap_engine.h"
+ #include "x86/cpuid.h"
+ 
++#if ASS_NV_NEON32
++#include "arm/neon32.c"
++#endif
++
+ 
+ #define RASTERIZER_PROTOTYPES(tile_size, suffix) \
+     FillSolidTileFunc     ass_fill_solid_tile     ## tile_size ## _ ## suffix; \
+@@ -160,6 +166,21 @@ unsigned ass_get_cpu_flags(unsigned mask)
+     return flags & mask;
+ }
+ 
++#ifndef ASS_NV_ARMV7_NOVA
++#define ASS_NV_ARMV7_NOVA 0
++#endif
++int ass_nv_armv7_engine(void)
++{
++#if ASS_NV_NEON32
++    const char *pick = getenv("ASS_NV_ARMV7");
++    if (pick && !strcmp(pick, "nova")) return 2;
++    if (pick && !strcmp(pick, "nv")) return 1;
++    return ASS_NV_ARMV7_NOVA ? 2 : 1;
++#else
++    return 0;
++#endif
++}
++
+ BitmapEngine ass_bitmap_engine_init(unsigned mask)
+ {
+     ALL_PROTOTYPES(16, c)
+@@ -196,6 +217,20 @@ BitmapEngine ass_bitmap_engine_init(unsigned mask)
+ #endif
+ #endif
+ 
++    /* ARMv7 NEON: two bit-exact engines. Nuvio's neon32 (libass-nv
++     * 0001/0002, blur stripes over helper threads) or mpvNova's intrinsics.
++     * Default: mpvNova's when built with -DASS_NV_ARMV7_NOVA=1 (faster on a
++     * real ARM core in tools/tpk/libass-hybrid/bench, 25/11/2026), else
++     * ours; ASS_NV_ARMV7=nova|nv overrides it. */
++#if ASS_NV_NEON32
++    if (ass_get_cpu_flags(mask) & ASS_CPU_FLAG_ARM_NEON) {
++        if (ass_nv_armv7_engine() == 1) {
++            ass_bitmap_engine_neon32(&engine, mask);
++            return engine;
++        }
++    }
++#endif
++
+ #if !ARCH_AARCH64 && defined(__arm__) && defined(__ARM_NEON)
+     if (ass_get_cpu_flags(mask) & ASS_CPU_FLAG_ARM_NEON) {
+         ALL_PROTOTYPES(16, neon)
+diff --git a/libass/ass_bitmap_engine.h b/libass/ass_bitmap_engine.h
+index 6a71267..99d23ed 100644
+--- a/libass/ass_bitmap_engine.h
++++ b/libass/ass_bitmap_engine.h
+@@ -31,6 +31,16 @@
+  *   must be aligned to the engine alignment
+  */
+ 
++/*
++ * 32-bit ARM with NEON: arm/neon32.c, an intrinsics port of the aarch64
++ * engine (bit-identical to the C engine). Independent of CONFIG_ASM.
++ */
++#if !ARCH_X86 && !ARCH_AARCH64 && defined(__ARM_NEON) && !defined(__aarch64__)
++#define ASS_NV_NEON32 1
++#else
++#define ASS_NV_NEON32 0
++#endif
++
+ struct segment;
+ typedef void FillSolidTileFunc(uint8_t *buf, ptrdiff_t stride, int set);
+ typedef void FillHalfplaneTileFunc(uint8_t *buf, ptrdiff_t stride,
+@@ -95,6 +105,8 @@ enum {
+     ASS_CPU_FLAG_X86_AVX2      = 0x0004,
+ #elif ARCH_AARCH64 || (defined(__arm__) && defined(__ARM_NEON))
+     ASS_CPU_FLAG_ARM_NEON      = 0x0001,
++#elif ASS_NV_NEON32
++    ASS_CPU_FLAG_ARM_NEON      = 0x0001,
+ #endif
+     ASS_CPU_FLAG_ALL           = 0x0FFF,
+     ASS_FLAG_LARGE_TILES       = 0x1000,
+diff --git a/libass/ass_render.c b/libass/ass_render.c
+index 938cfb3..9944d6b 100644
+--- a/libass/ass_render.c
++++ b/libass/ass_render.c
+@@ -165,6 +165,10 @@ ASS_Renderer *ass_renderer_init(ASS_Library *library)
+     priv->ftlibrary = ft;
+     const char *edges = getenv("LIBASS_EXPERIMENTAL_EDGES");
+     priv->experimental_edges = edges ? (!strcmp(edges, "2") ? 2 : (!strcmp(edges, "1") ? 1 : 0)) : 0;
++    {
++        const char *crop = getenv("ASS_NV_CLIP_CROP");
++        priv->nv_clip_crop_always = crop && !strcmp(crop, "always");
++    }
+     if (priv->experimental_edges)
+         ass_msg(library, MSGL_INFO, "Experimental ASS edge processing enabled (level %d)",
+                 priv->experimental_edges);
+@@ -280,6 +284,7 @@ static ASS_Image *my_draw_bitmap(unsigned char *bitmap, int bitmap_w,
+     ass_cache_inc_ref(source);
+     img->buffer = source ? NULL : bitmap;
+     img->ref_count = 0;
++    img->nv_key = 0;
+ 
+     return &img->result;
+ }
+@@ -1013,6 +1018,18 @@ static void blend_vector_clip(RenderContext *state, ASS_Image *head)
+  * \brief Convert TextInfo struct to ASS_Image list
+  * Splits glyphs in halves when needed (for \kf karaoke).
+  */
++/* Nuvio 0004: the stacking key on the images render_glyph just added. */
++static ASS_Image **nv_key_images(RenderContext *state, ASS_Image **from,
++                                 ASS_Image **tail, unsigned part, unsigned i)
++{
++    unsigned long long key = state->nv_event_key |
++        ((unsigned long long) (part & 3) << 14) | (i < 0x3FFF ? i : 0x3FFF);
++    *tail = NULL;
++    for (ASS_Image **p = from; *p; p = &(*p)->next)
++        ((ASS_ImagePriv *) *p)->nv_key = key;
++    return tail;
++}
++
+ static ASS_Image *render_text(RenderContext *state)
+ {
+     ASS_Image *head;
+@@ -1022,33 +1039,38 @@ static ASS_Image *render_text(RenderContext *state)
+ 
+     for (unsigned i = 0; i < n_bitmaps; i++) {
+         CombinedBitmapInfo *info = &bitmaps[i];
+-        if (!info->bm_s || state->border_style == 4)
++        if (!info->bm_s || state->border_style == 4 || !(info->nv_parts & 4))
+             continue;
+ 
++        ASS_Image **from = tail;
+         tail =
+             render_glyph(state, info->bm_s, info->x, info->y, info->c[3], 0,
+                          1000000, tail, IMAGE_TYPE_SHADOW, info->image);
++        tail = nv_key_images(state, from, tail, 0, i);
+     }
+ 
+     for (unsigned i = 0; i < n_bitmaps; i++) {
+         CombinedBitmapInfo *info = &bitmaps[i];
+-        if (!info->bm_o)
++        if (!info->bm_o || !(info->nv_parts & 2))
+             continue;
+ 
+         if ((info->effect_type == EF_KARAOKE_KO)
+                 && (info->effect_timing <= 0)) {
+             // do nothing
+         } else {
++            ASS_Image **from = tail;
+             tail =
+                 render_glyph(state, info->bm_o, info->x, info->y, info->c[2],
+                              0, 1000000, tail, IMAGE_TYPE_OUTLINE, info->image);
++            tail = nv_key_images(state, from, tail, 1, i);
+         }
+     }
+ 
+     for (unsigned i = 0; i < n_bitmaps; i++) {
+         CombinedBitmapInfo *info = &bitmaps[i];
+-        if (!info->bm)
++        if (!info->bm || !(info->nv_parts & 1))
+             continue;
++        ASS_Image **from = tail;
+ 
+         if ((info->effect_type == EF_KARAOKE)
+                 || (info->effect_type == EF_KARAOKE_KO)) {
+@@ -1071,6 +1093,7 @@ static ASS_Image *render_text(RenderContext *state)
+             tail =
+                 render_glyph(state, info->bm, info->x, info->y, info->c[0],
+                              0, 1000000, tail, IMAGE_TYPE_CHARACTER, info->image);
++        tail = nv_key_images(state, from, tail, 2, i);
+     }
+ 
+     *tail = 0;
+@@ -1123,7 +1146,7 @@ static ASS_Style *handle_selective_style_overrides(RenderContext *state,
+     *new = *rstyle;
+ 
+     state->apply_font_scale =
+-        !explicit || !(requested & ASS_OVERRIDE_BIT_SELECTIVE_FONT_SCALE);
++        !state->nv_sign || !(requested & ASS_OVERRIDE_BIT_SELECTIVE_FONT_SCALE);
+ 
+     // On positioned events, do not apply most overrides.
+     if (explicit)
+@@ -1342,6 +1365,15 @@ init_render_context(RenderContext *state, ASS_Event *event)
+     ass_apply_transition_effects(state);
+     state->explicit = state->evt_type != EVENT_NORMAL ||
+                       ass_event_has_hard_overrides(event->Text);
++    /* Nuvio 0004: a sign for the app's dialogue settings (opacity, size,
++     * skip): app says sign (> 0), else libass's rule unless app says dialogue (-1). */
++    state->nv_sign = event->nv_sign > 0 || (state->explicit && event->nv_sign != -1);
++    {
++        long long layer = (long long) event->Layer + 32768;
++        layer = layer < 0 ? 0 : layer > 0xFFFF ? 0xFFFF : layer;
++        state->nv_event_key = ((unsigned long long) layer << 48) |
++                              ((unsigned long long) ((unsigned) event->ReadOrder ^ 0x80000000u) << 16);
++    }
+ 
+     ass_reset_render_context(state, NULL);
+     state->alignment = state->style->Alignment;
+@@ -1578,6 +1610,37 @@ static void calc_transform_matrix(RenderContext *state,
+  */
+ static double restore_blur(int qblur);
+ 
++/* Nuvio hybrid: mpvNova crops a glyph or drawing to its vector clip and puts
++ * the crop window in the bitmap key. With a clip that moves from frame to
++ * frame over the same outline (wipes and reveals, frame-by-frame clipped
++ * signs) every frame then misses the bitmap and composite caches and redoes
++ * the rasterizer and the blur: on a blurred full-screen drawing under a
++ * moving clip that was 3x slower than stock libass. This remembers, per
++ * renderer, the last crop window of each outline+transform; once it changes,
++ * that outline is drawn uncropped (stock libass: cached once, clipped
++ * afterwards by blend_vector_clip), which gives the same bytes. */
++static bool nv_clip_moving(ASS_Renderer *r, const BitmapHashKey *k,
++                           int64_t x0, int64_t y0, int64_t x1, int64_t y1)
++{
++    uint64_t h = 1469598103934665603ULL;
++    const uint64_t v[8] = {
++        (uint64_t) (uintptr_t) k->outline,
++        (uint64_t) (uint32_t) k->offset.x   << 32 | (uint32_t) k->offset.y,
++        (uint64_t) (uint32_t) k->matrix_x.x << 32 | (uint32_t) k->matrix_x.y,
++        (uint64_t) (uint32_t) k->matrix_y.x << 32 | (uint32_t) k->matrix_y.y,
++        (uint64_t) (uint32_t) k->matrix_z.x << 32 | (uint32_t) k->matrix_z.y,
++        0, 0, 0 };
++    for (int i = 0; i < 5; i++) { h ^= v[i]; h *= 1099511628211ULL; h ^= h >> 29; }
++    NvClipMemo *m = &r->nv_clip_memo[(h ^ (h >> 32)) % NV_CLIP_MEMO];
++    if (m->h != h) {
++        m->h = h; m->x0 = x0; m->y0 = y0; m->x1 = x1; m->y1 = y1; m->moving = 0;
++        return false;
++    }
++    if (!m->moving && (m->x0 != x0 || m->y0 != y0 || m->x1 != x1 || m->y1 != y1))
++        m->moving = 1;
++    return m->moving;
++}
++
+ static void set_bitmap_clip(RenderContext *state, GlyphInfo *info,
+                             ASS_Vector pos, BitmapHashKey *key,
+                             const FilterDesc *filter)
+@@ -1636,6 +1699,9 @@ static void set_bitmap_clip(RenderContext *state, GlyphInfo *info,
+     int64_t y1 = (int64_t) ceil(cmax_y) - pos.y + pad_y;
+     if (x0 < INT32_MIN || y0 < INT32_MIN || x1 > INT32_MAX || y1 > INT32_MAX)
+         return;
++    if (!state->renderer->nv_clip_crop_always &&
++        nv_clip_moving(state->renderer, key, x0, y0, x1, y1))
++        return;
+     key->clip_min = (ASS_Vector) {x0, y0};
+     key->clip_max = (ASS_Vector) {x1, y1};
+     key->clip_align = FFMAX(align_x, align_y);
+@@ -2862,6 +2928,24 @@ static void render_and_combine_glyphs(RenderContext *state,
+                 flags |= FILTER_FILL_IN_BORDER;
+ 
+             if (new_run) {
++                /* Nuvio 0004: which parts of this run each split pass draws
++                 * (see ass_nv_set_split). soft = parts that go to the blur
++                 * resolution. A blurred border/shadow around text: only
++                 * those go soft, the fill stays sharp. */
++                unsigned nv_soft;
++                {
++                    bool blurred = info->be >= 1 || info->blur >= ASS_NV_SPLIT_BLUR;
++                    if (info->drawing_text.str)
++                        nv_soft = 7;
++                    else if (!blurred)
++                        nv_soft = 0;
++                    else if ((flags & FILTER_NONZERO_BORDER) &&
++                             !(flags & FILTER_BORDER_STYLE_3))
++                        nv_soft = 6;
++                    else
++                        nv_soft = 7;
++                }
++
+                 if (nb_bitmaps >= text_info->max_bitmaps) {
+                     size_t new_size = 2 * text_info->max_bitmaps;
+                     if (!ASS_REALLOC_ARRAY(text_info->combined_bitmaps, new_size))
+@@ -2880,6 +2964,10 @@ static void render_and_combine_glyphs(RenderContext *state,
+                 current_info->effect_timing = info->effect_timing;
+                 current_info->leftmost_x = OUTLINE_MAX;
+ 
++                current_info->nv_parts =
++                    render_priv->nv_split_pass == 1 ? (7u & ~nv_soft) :
++                    render_priv->nv_split_pass == 2 ? nv_soft : 7u;
++
+                 FilterDesc *filter = &current_info->filter;
+                 filter->flags = flags;
+                 filter->be = info->be;
+@@ -2914,8 +3002,17 @@ static void render_and_combine_glyphs(RenderContext *state,
+             ASS_Vector pos, pos_o;
+             info->pos.x = double_to_d6(device_x + d6_to_double(info->pos.x) * render_priv->par_scale_x);
+             info->pos.y = double_to_d6(device_y) + info->pos.y;
++            /* Nuvio 0004: the other split pass draws this run; or, in the
++             * sharp pass of blurred-border text, the fill alone: no border
++             * bitmaps (flags 0 here), the same filter, so the composite's
++             * fill is byte for byte the full render's (libass blurs only
++             * the border when there is one; \be pads the fill the same). */
++            if (!current_info->nv_parts)
++                continue;
+             get_bitmap_glyph(state, info, &current_info->leftmost_x, &pos, &pos_o,
+-                             &offset, !current_info->bitmap_count, flags, &current_info->filter);
++                             &offset, !current_info->bitmap_count,
++                             current_info->nv_parts == 1 ? 0 : flags,
++                             &current_info->filter);
+ 
+             if (!info->bm && !info->bm_o)
+                 continue;
+@@ -3215,6 +3312,7 @@ static void add_background(RenderContext *state, EventImages *event_images)
+     ASS_Image *img = my_draw_bitmap(nbuffer, w, h, w, left, top,
+                                     clr, NULL);
+     if (img) {
++        ((ASS_ImagePriv *) img)->nv_key = state->nv_event_key;   // Nuvio 0004: below its text
+         img->next = event_images->imgs;
+         event_images->imgs = img;
+     }
+@@ -3265,6 +3363,12 @@ ass_render_event(RenderContext *state, ASS_Event *event,
+     init_render_context(state, event);
+     FLE_START;
+ 
++    /* Nuvio 0004: dialogue drawn by the app. */
++    if (render_priv->nv_skip_dialogue && !state->nv_sign) {
++        free_render_context(state);
++        return false;
++    }
++
+     if (!parse_events(state, event))
+         return false;
+ 
+@@ -3467,10 +3571,23 @@ ass_render_event(RenderContext *state, ASS_Event *event,
+     event_images->event = event;
+     event_images->imgs = render_text(state);
+ 
+-    if (state->border_style == 4)
++    /* Nuvio 0004: the BorderStyle 4 box is a hard rectangle: sharp pass. */
++    if (state->border_style == 4 && render_priv->nv_split_pass != 2) {
+         add_background(state, event_images);
++    }
+     FLE_PHASE(4);
+ 
++    /* Nuvio: the app's subtitle opacity for dialogue only. Lines with \pos,
++     * \move, \clip, \org or a drawing (the signs and typesetting) keep the
++     * author's alpha. */
++    if (render_priv->nv_dialogue_fade && !state->nv_sign) {
++        unsigned keep = 255u - (unsigned) render_priv->nv_dialogue_fade;
++        for (ASS_Image *im = event_images->imgs; im; im = im->next) {
++            unsigned a = im->color & 0xFF;   // 0 = opaque, 255 = transparent
++            im->color = (im->color & ~0xFFu) | (255u - (255u - a) * keep / 255u);
++        }
++    }
++
+     ass_shaper_cleanup(state->shaper, text_info);
+     free_render_context(state);
+     FLE_PHASE(5);
+@@ -4450,17 +4567,21 @@ static int cmp_event_layer(const void *p1, const void *p2)
+ static ASS_RenderPriv *get_render_priv(ASS_Renderer *render_priv,
+                                        ASS_Event *event)
+ {
++    /* Nuvio 0004: two slots, one per renderer of a split render, so the two
++     * renderers sharing the track don't reset each other's collision memory
++     * on every frame (render_id differs). Slot 0 is the old single one. */
+     if (!event->render_priv) {
+-        event->render_priv = calloc(1, sizeof(ASS_RenderPriv));
++        event->render_priv = calloc(2, sizeof(ASS_RenderPriv));
+         if (!event->render_priv)
+             return NULL;
+     }
+-    if (render_priv->render_id != event->render_priv->render_id) {
+-        memset(event->render_priv, 0, sizeof(ASS_RenderPriv));
+-        event->render_priv->render_id = render_priv->render_id;
++    ASS_RenderPriv *slot = event->render_priv + (render_priv->nv_slot ? 1 : 0);
++    if (render_priv->render_id != slot->render_id) {
++        memset(slot, 0, sizeof(ASS_RenderPriv));
++        slot->render_id = render_priv->render_id;
+     }
+ 
+-    return event->render_priv;
++    return slot;
+ }
+ 
+ static int overlap(Rect *s1, Rect *s2)
+diff --git a/libass/ass_render.h b/libass/ass_render.h
+index 86f8fd1..ad8f68a 100644
+--- a/libass/ass_render.h
++++ b/libass/ass_render.h
+@@ -54,6 +54,7 @@ typedef struct {
+     CompositeHashValue *source;
+     unsigned char *buffer;
+     size_t ref_count;
++    unsigned long long nv_key;      // ass_nv_image_key (0004)
+ } ASS_ImagePriv;
+ 
+ typedef struct {
+@@ -116,6 +117,7 @@ typedef struct {
+     int x, y;
+     Bitmap *bm, *bm_o, *bm_s;   // glyphs, outline, shadow bitmaps
+     CompositeHashValue *image;
++    unsigned nv_parts;          // 0004: parts this pass draws: 1 fill, 2 outline, 4 shadow
+ } CombinedBitmapInfo;
+ 
+ typedef struct {
+@@ -286,6 +288,8 @@ struct render_context {
+     int apply_font_scale;
+     // whether this is assumed to be explicitly positioned
+     int explicit;
++    int nv_sign;                // 0004: explicit, or the app marked the event a sign/song
++    unsigned long long nv_event_key;   // 0004: layer + ReadOrder part of ass_nv_image_key
+ 
+     double screen_scale_x;
+     double screen_scale_y;
+@@ -309,6 +313,13 @@ typedef struct {
+     size_t composite_max_size;
+ } CacheStore;
+ 
++#define NV_CLIP_MEMO 128
++typedef struct {
++    uint64_t h;
++    int64_t x0, y0, x1, y1;
++    int moving;
++} NvClipMemo;
++
+ struct ass_renderer {
+     ASS_Library *library;
+     FT_Library ftlibrary;
+@@ -360,6 +371,14 @@ struct ass_renderer {
+     BlurMethodCacheEntry blur_methods[8];
+     unsigned blur_method_next;
+     uint64_t last_event_render_ns;
++
++    int nv_dialogue_fade;           // ass_nv_set_dialogue_alpha: 0 = as authored, 255 = invisible
++    int nv_split_pass;              // ass_nv_set_split: 0 all, 1 sharp, 2 soft
++    int nv_slot;                    // ass_nv_set_split: collision memory slot (0/1)
++    int nv_skip_dialogue;           // ass_nv_set_skip_dialogue
++    // hybrid: last vector-clip crop window per outline (nv_clip_moving)
++    NvClipMemo nv_clip_memo[NV_CLIP_MEMO];
++    int nv_clip_crop_always;        // ASS_NV_CLIP_CROP=always: mpvNova's rule
+ };
+ 
+ typedef struct render_priv {
+diff --git a/libass/ass_render_api.c b/libass/ass_render_api.c
+index b351122..74f9c9c 100644
+--- a/libass/ass_render_api.c
++++ b/libass/ass_render_api.c
+@@ -25,6 +25,7 @@
+ 
+ #include "ass_render.h"
+ #include "ass_utils.h"
++#include "ass_priv.h"
+ 
+ static void ass_reconfigure(ASS_Renderer *priv)
+ {
+@@ -266,6 +267,80 @@ bool ass_clone_render_settings(ASS_Renderer *dst, const ASS_Renderer *src,
+     dst->settings.line_spacing = src->settings.line_spacing;
+     dst->settings.shaper = src->settings.shaper;
+     dst->settings.use_margins = src->settings.use_margins;
++    /* Nuvio (libass-nv 0003/0004 on the event workers): the workers are
++     * renderers of their own, so the app's per-renderer choices go with
++     * every job: bitmap engine, dialogue opacity, split pass, dialogue skip.
++     * (Collision memory stays on the owner: fix_collisions runs there.) */
++    if (dst->engine.add_bitmaps != src->engine.add_bitmaps) {
++        dst->engine = src->engine;
++        ass_reconfigure(dst);
++    }
++    dst->nv_dialogue_fade = src->nv_dialogue_fade;
++    dst->nv_split_pass = src->nv_split_pass;
++    dst->nv_slot = src->nv_slot;
++    dst->nv_skip_dialogue = src->nv_skip_dialogue;
+     return true;
+ }
+ #endif
++
++
++/* ---- Nuvio TPK additions (tools/tpk/libass-nv) ---- */
++
++void ass_nv_set_dialogue_alpha(ASS_Renderer *priv, int alpha)
++{
++    alpha = alpha < 0 ? 0 : alpha > 255 ? 255 : alpha;
++    priv->nv_dialogue_fade = 255 - alpha;
++}
++
++void ass_nv_set_split(ASS_Renderer *priv, int pass, int slot)
++{
++    pass = pass < 0 || pass > 2 ? 0 : pass;
++    priv->nv_split_pass = pass;
++    priv->nv_slot = slot ? 1 : 0;
++}
++
++unsigned long long ass_nv_image_key(const ASS_Image *img)
++{
++    return img ? ((const ASS_ImagePriv *) img)->nv_key : 0;
++}
++
++void ass_nv_set_skip_dialogue(ASS_Renderer *priv, int skip)
++{
++    priv->nv_skip_dialogue = skip ? 1 : 0;
++}
++
++int ass_nv_simd_available(void)
++{
++    return ass_get_cpu_flags(ASS_CPU_FLAG_ALL) != ASS_CPU_FLAG_NONE;
++}
++
++BitmapBlendFunc ass_add_bitmaps_c;
++
++int ass_nv_get_engine(ASS_Renderer *priv)
++{
++    return priv->engine.add_bitmaps != ass_add_bitmaps_c;
++}
++
++int ass_nv_set_engine(ASS_Renderer *priv, int simd)
++{
++    unsigned flags = simd ? ASS_CPU_FLAG_ALL : ASS_CPU_FLAG_NONE;
++#if CONFIG_LARGE_TILES
++    flags |= ASS_FLAG_LARGE_TILES;
++#endif
++    BitmapEngine engine = ass_bitmap_engine_init(flags);
++    if (engine.add_bitmaps != priv->engine.add_bitmaps) {
++        priv->engine = engine;
++        ass_reconfigure(priv);
++    }
++    return ass_nv_get_engine(priv);
++}
++
++#if ASS_NV_NEON32
++int ass_nv32_set_threads(int n);
++int ass_nv32_get_threads(void);
++int ass_nv_set_threads(int n) { return ass_nv32_set_threads(n); }
++int ass_nv_get_threads(void) { return ass_nv32_get_threads(); }
++#else
++int ass_nv_set_threads(int n) { (void) n; return 1; }
++int ass_nv_get_threads(void) { return 1; }
++#endif
+diff --git a/libass/ass_types.h b/libass/ass_types.h
+index 4d9e0ec..ee254be 100644
+--- a/libass/ass_types.h
++++ b/libass/ass_types.h
+@@ -152,6 +152,13 @@ typedef struct ass_event {
+     char *Text;
+ 
+     ASS_RenderPriv *render_priv;
++
++    /* Nuvio TPK (tools/tpk/libass-nv, 0004): > 0 = the app knows this line
++     * is a sign or song (it is in the file's "Signs & Songs" track): no dialogue
++     * opacity, size or skipping, whatever its tags. -1 = the app knows it is
++     * dialogue (that track was read there and lacks it), whatever its tags.
++     * Other values (app bookkeeping) = libass's rule (\pos, \move, drawing...). */
++    int nv_sign;
+ } ASS_Event;
+ 
+ /**
+diff --git a/libass/ass_utils.c b/libass/ass_utils.c
+index 7b09f5b..cabd780 100644
+--- a/libass/ass_utils.c
++++ b/libass/ass_utils.c
+@@ -115,11 +115,29 @@ void *ass_try_realloc_array(void *ptr, size_t nmemb, size_t size)
+ }
+ 
+ #ifdef ASS_EVENT_THREADS
+-#ifdef _MSC_VER
+-static __declspec(thread) ASS_MsgBuffer *worker_msg_buffer;
+-#else
+-static __thread ASS_MsgBuffer *worker_msg_buffer;
+-#endif
++/* Nuvio hybrid: a pthread key instead of __thread. The Tizen 4/5 .tpk library
++ * (libnuvio-tpk40.so) is loaded by our own ELF loader, which refuses PT_TLS
++ * and TLS relocations (tools/tpk.sh checks it); one libass.a serves both. */
++#include <pthread.h>
++static pthread_key_t worker_msg_key;
++static pthread_once_t worker_msg_once = PTHREAD_ONCE_INIT;
++static int worker_msg_key_ok;
++static void worker_msg_key_init(void)
++{
++    worker_msg_key_ok = pthread_key_create(&worker_msg_key, NULL) == 0;
++}
++static ASS_MsgBuffer *worker_msg_get(void)
++{
++    pthread_once(&worker_msg_once, worker_msg_key_init);
++    return worker_msg_key_ok ? pthread_getspecific(worker_msg_key) : NULL;
++}
++static void worker_msg_set(ASS_MsgBuffer *b)
++{
++    pthread_once(&worker_msg_once, worker_msg_key_init);
++    if (worker_msg_key_ok)
++        pthread_setspecific(worker_msg_key, b);
++}
++#define worker_msg_buffer (worker_msg_get())
+ 
+ void ass_msg_buffer_begin(ASS_MsgBuffer *buffer, ASS_Library *library)
+ {
+@@ -127,13 +145,13 @@ void ass_msg_buffer_begin(ASS_MsgBuffer *buffer, ASS_Library *library)
+            !buffer->truncated && buffer != worker_msg_buffer);
+     buffer->library = library;
+     buffer->previous = worker_msg_buffer;
+-    worker_msg_buffer = buffer;
++    worker_msg_set(buffer);
+ }
+ 
+ void ass_msg_buffer_end(ASS_MsgBuffer *buffer)
+ {
+     assert(worker_msg_buffer == buffer);
+-    worker_msg_buffer = buffer->previous;
++    worker_msg_set(buffer->previous);
+     buffer->previous = NULL;
+ }
+ 

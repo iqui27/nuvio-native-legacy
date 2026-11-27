@@ -151,7 +151,9 @@ namespace NuvioTpk
 
         Window janelaVideo, janelaErro, janelaAviso;
         Video video;
-        bool rodando, fim, primeiroQuadro, teclasReservadas;
+        bool rodando, primeiroQuadro, teclasReservadas;
+        // volatile: the subtitle clock thread (Video.IniciaRelogio) reads it too.
+        volatile bool fim;
 
         protected override void OnCreate()
         {
@@ -191,6 +193,10 @@ namespace NuvioTpk
                 return;
             }
             carregado:;
+            // .NET errors into the app log, as on the Tizen 6+ host (NetLog.cs). Only
+            // after the load: LigaSimbolos pointed NetLog at nv_tpk_log_net by
+            // function pointer, the one route that works with both loaders here.
+            try { NetLog.Registrar(); } catch (Exception e) { Etapa("note netlog " + e.GetType().Name); }
 
             try
             {
@@ -252,6 +258,12 @@ namespace NuvioTpk
                           "log: " + Path.Combine(dados, "nuvio.log"));
                 return false;
             });
+            // Subtitle clock, as on the Tizen 6+ host (Program.cs): the TV position
+            // every 40 ms on its own thread instead of every 250 ms from the timer
+            // above (which then stands down, Video.Tique). The libass engine times
+            // its frames from these readings. One query in flight, only while
+            // Playing, so it is idle otherwise.
+            video.IniciaRelogio(() => fim);
         }
 
         // Fio principal, contexto GL corrente. true = a TVGLApplication troca
@@ -260,6 +272,7 @@ namespace NuvioTpk
         {
             // Nunca false enquanto o app vive: a TVGLApplication para de chamar.
             if (fim) return false;
+            ultimoUpdateTs = System.Diagnostics.Stopwatch.GetTimestamp();   // reserva da volta (OnAppControlReceived)
             if (!rodando) return true;
             // Aqui a TVGLApplication ja criou a janela GL. Uma tentativa por
             // backend, nunca por quadro; TOPMOST acompanha o foco da janela.
@@ -285,9 +298,67 @@ namespace NuvioTpk
 
         protected override void OnPause()
         {
+            // #resume: o C sabe onde o player estava antes do ciclo e do Parar.
+            emFundo = true; voltaPendente = false;
+            Etapa("note pause");
+            video?.AvisarFundo();
             NvLib.Ciclo?.Invoke(0);
             video?.PausarPeloSistema();
             base.OnPause();
+        }
+
+        // #resume: volta a tela (Home e reabrir, sono e relancamento). O C so
+        // reabre se o OnPause parou um filme/episodio; o resto e no-op.
+        //
+        // S5 (pre-PR 09/11): o 6+ so reabre com uma janela VISIVEL (Voltar em
+        // Program.cs). Aqui nao ha o VisibilityChanged da NUI, mas a
+        // TVGLApplication e appcore EFL: o OnResume vem quando a janela fica
+        // visivel. Entao o OnResume reabre na hora; um AppControl que chega com
+        // o app ainda no fundo (relancamento do Shard, lista de apps) ESPERA o
+        // OnResume. Reserva para firmware que nao manda OnResume: 3 s depois do
+        // AppControl, se a TVGLApplication voltou a pedir quadros (OnUpdate),
+        // reabre assim mesmo — no pior caso e o que acontecia antes.
+        const double VOLTA_RESERVA_S = 3.0;
+        bool emFundo, voltaPendente;
+        long ultimoUpdateTs, voltaPendenteTs;
+
+        protected override void OnResume()
+        {
+            base.OnResume();
+            emFundo = false;
+            Etapa("note resume" + (voltaPendente ? " (appcontrol was waiting)" : ""));
+            voltaPendente = false;
+            video?.Voltou("resume");
+        }
+
+        protected override void OnAppControlReceived(Tizen.Applications.AppControlReceivedEventArgs e)
+        {
+            base.OnAppControlReceived(e);
+            if (video == null) return;
+            if (!emFundo) { video.Voltou("appcontrol"); return; }
+            Etapa("note appcontrol while in the background: resume waits for OnResume");
+            if (voltaPendente) return;
+            voltaPendente = true;
+            long desde = voltaPendenteTs = System.Diagnostics.Stopwatch.GetTimestamp();
+            int tentativas = 0;
+            EcoreMainloop.AddTimer(VOLTA_RESERVA_S, () =>
+            {
+                if (!voltaPendente || voltaPendenteTs != desde) return false;
+                // So quadros pedidos DEPOIS do AppControl contam (um OnUpdate
+                // antigo nao prova nada); ate 20 tentativas (1 min), depois so
+                // o OnResume.
+                long agora = System.Diagnostics.Stopwatch.GetTimestamp(), ult = ultimoUpdateTs;
+                long msUpdate = ult <= desde ? -1 : (agora - ult) * 1000 / System.Diagnostics.Stopwatch.Frequency;
+                if (msUpdate < 0 || msUpdate > 1000)
+                {
+                    if (tentativas == 0) Etapa("note appcontrol fallback: no OnResume and no new frames yet, still waiting");
+                    return ++tentativas < 20;
+                }
+                Etapa("note appcontrol fallback: no OnResume after " + (tentativas + 1) * VOLTA_RESERVA_S + " s but frames are drawn, resuming");
+                voltaPendente = false; emFundo = false;
+                video?.Voltou("appcontrol fallback");
+                return false;
+            });
         }
 
         protected override void OnLowMemory(Tizen.Applications.LowMemoryEventArgs e)
@@ -753,6 +824,7 @@ namespace NuvioTpk
             // obrigatorio, pois o DllImport-por-soname nao resolveria.
             NvVid.Ligar(resolve);
             Apps.Ligar(resolve);
+            NetLog.Ligar(resolve);
             return NvLib.Pronto;
         }
 

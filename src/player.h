@@ -63,10 +63,24 @@ int  player_pediu_ajustes_fonte(void);
 // Ha quantos ms o player abriu (o Play); 0 fechado. Para o log do inicio (#202).
 Uint32 player_aberto_ha_ms(void);
 int player_pediu_proximo(int *temporada, int *episodio);
+// Filme em partes: -1 = Parte anterior, +1 = Proxima parte (botoes do OSD); 0 = nada.
+int player_pediu_parte(void);
+// A fonte que toca foi escolhida pela pessoa (ou e a lembrada): sem o aviso de duracao.
+void player_definir_fonte_escolhida(int sim);
+// Barra do filme inteiro: o avanco caiu em outra parte (o indice na lista e o ponto nela).
+int player_pediu_salto_parte(int *k, double *pos);
+// Busca pedida pelo app (o ponto escolhido numa parte recem-aberta).
+void player_buscar_para(double s);
+// O fim do arquivo que toca e do app (a fileira de arquivos da fonte): sem pos-reproducao.
+void player_fim_proprio(int sim);
 int player_transporte_pedido_pendente(void);
 // Libera somente uma troca ja consumida que o roteador cancelou; preserva a fila.
 void player_episodio_pedido_liberar(void);
 const CatEp *player_proximo_episodio(void);
+// 1 se `alvo` e o episodio seguinte ao que acabou de terminar neste perfil
+// (o Reproduzir da pagina logo depois do fim vale como o Next). Consome.
+int player_proximo_do_concluido(const char *alvo);
+void player_teste_concluiu(void);   // tests/app_next_manual.c
 // A REGRA DO CARTAO DE PROXIMO EPISODIO, isolada do estado do player para
 // poder ser exercitada por teste. `cred` e o segundo em que os creditos
 // comecam (0 quando nenhuma das duas fontes tem marcador). Devolve 1 quando o
@@ -105,6 +119,9 @@ int player_regra_concluiu(double posSeg, double durSeg, double cred);
 // contra a duracao falsa de 129 s de um trailer tambem nao.
 int player_regra_visto(double base, double tocado, double pos, int fim, int *chegou);
 void player_erro_fonte(void);
+// Play opened the source sheet and Back closed it with no pick: leave the
+// player (Android: the source error card, as before).
+void player_desistir_fonte(void);
 // O mesmo cartao, com a causa no lugar das frases genericas (issue #112):
 // `titulo` substitui "Nao foi possivel abrir a fonte" e `dica` a linha de
 // baixo. Os dois ja traduzidos; "" ou NULL mantem a frase generica.
@@ -115,6 +132,7 @@ void player_toast(const char *texto, unsigned ms);
 // O mesmo aviso com o icone (art/icones) e, `ambar` = 1, a cor de aviso: a
 // pilula da ilha abre com ele (plrilha.h). player_toast e o informativo.
 void player_toast_ex(const char *texto, unsigned ms, const char *icone, int ambar);
+void player_toast_apagar_se(const char *texto);
 void player_limpar_erro_fonte(void);   // fonte "morta" que voltou a entregar
 // A tentativa do automatico de fontes ("Fonte 2 de 3" na ilha ao abrir):
 // `n` = qual (1 = a primeira), `max` = o teto. 0, 0 = nenhuma.
@@ -177,6 +195,10 @@ void player_definir_retomada_fonte(double segundos);
 // fechar e abrir.
 void player_voltar_a_esperar(void);
 
+// An app-drawn text subtitle (main or second) is on screen or about to be
+// (tpkborda.c: the premultiplied layer). Marked by whoever draws one.
+void player_legenda_app_marcar(void);
+int  player_legenda_app_quer(void);
 int  player_aberto(void);   // 1 enquanto a tela existe, inclusive durante o fade de saida
 // Pedidos que so existem com um CANAL no ar (tipo "channel"/"tv"):
 // Live OK without controls, DOWN or BLUE requested the mini guide.
@@ -221,6 +243,16 @@ int  player_retido(void);
 int  player_retido_so_voo(void);
 int  player_retomar_retido(const char *imdb, int temporada, int episodio);
 void player_validar_retido(Uint32 agora);
+#ifdef NV_TPK
+// Saida/volta do app no .tpk: a cada quadro, tela aberta e avisos da reabertura.
+void player_tpk_fundo_passo(void);
+#endif
+#ifdef NV_WEBOS
+// Saida/volta do app na LG: main.c avisa (saiu=1 escondido, 0 de volta) e
+// app.c chama o passo a cada quadro.
+void player_webos_janela(int saiu, const char *porque);
+void player_webos_fundo_passo(void);
+#endif
 void player_descartar_retido(void);
 void player_ciclo_evento(Uint32 tipo);
 

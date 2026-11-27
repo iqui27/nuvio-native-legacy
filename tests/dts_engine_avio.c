@@ -44,11 +44,14 @@ static void check_prefetch(DtsEngine *e) {
   uint64_t blocked=e->metrics.range_blocked_ns;
   check_bytes(e,9*RANGE_BYTES-65536);
   assert(e->metrics.range_blocked_ns-blocked<UINT64_C(200000000));
-  assert(seek_range(e,40*RANGE_BYTES+17,SEEK_SET)==40*RANGE_BYTES+17);
+  /* Consuming nine MiB refills the queue: a fixed 40 MiB target can already
+   * be cached. Test replacement only for a real miss beyond its frontier. */
+  int64_t seek_target=e->range_next+4*e->range_bytes+17;
+  assert(seek_range(e,seek_target,SEEK_SET)==seek_target);
   check_bytes(e,65536);
   pthread_mutex_lock(&e->range_lock);
   for(int i=0;i<RANGE_SLOTS;i++)
-    assert(!e->ranges[i].state || e->ranges[i].start>=40*RANGE_BYTES+17);
+    assert(!e->ranges[i].state || e->ranges[i].start>=seek_target);
   pthread_mutex_unlock(&e->range_lock);
   dts_engine_cancel(e);
   assert(read_range(e,(uint8_t[1]){0},1)==AVERROR_EXIT);

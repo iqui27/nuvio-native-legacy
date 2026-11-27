@@ -50,6 +50,14 @@ int fa_acao(int abertaIdx, int pubIdx, int estado, int playerFalhou);
 // A escolha final saiu: 1 = o player ja toca essa mesma fonte (nao reabre nem
 // recomeca a contagem); 0 = a aberta antes (se houver) tem de ser desfeita.
 int fa_ja_tocando(int abertaIdx, int escolhida);
+// THE CHECK TIMED OUT ON A SOURCE THAT ALREADY WORKS (log 13, 23/11/2026):
+// the PMR file was playing (burned stream open, its link resolved to the CDN
+// in 1 s) when the check's own request to the add-on got no answer in 10 s
+// (curl 28, HTTP 0), and the source was dropped. 1 = keep it: no answer in
+// time (no HTTP status at all), and the player already has this candidate open
+// or its link already resolved to a CDN in this session. Real failures (an
+// HTTP status, DNS, refused, TLS) still drop it.
+int fa_manter_sem_resposta(int curl, int http, int abertaNoPlayer, int linkResolvido);
 
 // FONTE PREPARADA AO ABRIR O TITULO (opcional): quando a escolha feita na pagina
 // do titulo ainda serve a um Play. Sem estado nem rede: o fio principal passa o

@@ -167,6 +167,39 @@ void partes_cancelar(void);
 // para o segurar responder da memoria (nada sem chave do TorBox).
 void partes_aquecer(void);
 
+// TorBox burn-in (tbburn.c). BLOCKS (call from a worker). Finds the source's
+// file in the TorBox account by an EXACT match only: hash (add-on or link),
+// file name, or exact size, over the cached account list (up to 10 pages).
+// Never "best match", never the title, never adds anything to the account.
+// The torrents first, then the usenet downloads (owner 18/11, log 10: add-on
+// sources with no info hash were usenet downloads, never in the torrent list);
+// the cached lists first, then fresh ones.
+// 1 = found: *item, *arquivoId (TorBox file_id), *usenet and `como` set;
+// hashItem (NULL = not wanted): the found torrent's info hash, "" for none
+// (owner 22/11/2026: burn-in keeps it for a later re-add).
+int  partes_achar_exato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                        int *item, int *arquivoId, int *usenet, char *como, unsigned n, char *hashItem);
+// The same, fresh lists only (owner 19/11, log 12: TorBox's own cached list
+// still had an item that createstream answered ITEM_NOT_FOUND for).
+int  partes_achar_exato_fresco(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                               int *item, int *arquivoId, int *usenet, char *como, unsigned n);
+// All of the above in one (burn-in, owner 24/11/2026): soFresco = fresh lists
+// only. *semArquivo (NULL = not wanted): the item id when the torrent of the
+// hash is listed but the playing file is not in it (0 otherwise).
+int  partes_achar_exato_x(const char *url, const char *hash, const char *arquivo, uint64_t bytes, int soFresco,
+                          int *item, int *arquivoId, int *usenet, char *como, unsigned n, char *hashItem,
+                          int *semArquivo);
+// Burn-in after adding a torrent (owner 24/11/2026, log 24): every list asked
+// for before this call is dropped from the memory; the next lookup asks
+// TorBox again (a 10 s "fresh" copy from before the add can't have it).
+void partes_listas_renovar(void);
+// The same as partes_achar_exato (cached lists first), also giving the found
+// torrent's info hash (lower case; "" for usenet or none). Burn-in (owner
+// 19/11): TorBox's list still showed an item createstream calls gone; its
+// hash re-adds it to the account (debrid_tb_adicionar, cached only).
+int  partes_achar_exato_hash(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                             int *item, int *arquivoId, int *usenet, char *como, unsigned n, char hashItem[41]);
+
 // ---- link de um arquivo (fio proprio) -------------------------------------
 // Pede o link do CDN de um arquivo. Com `comLista`, le tambem o item (para o
 // Retomar, que so tem os ids guardados) e confere que o arquivo ainda existe.
@@ -192,6 +225,17 @@ int  partes_sessao_de(const char *alvo);
 const PartesLista *partes_sessao_lista(void);
 int  partes_sessao_indice(void);
 void partes_sessao_ir(int k);
+// A BARRA DO FILME INTEIRO (sessao de partes de `alvo`): onde a parte que toca
+// comeca no filme (*off) e o filme todo (*tot), em segundos — a duracao real
+// das partes que ja tocaram, as outras pelo tamanho. 0 quando a sequencia nao
+// confere (numeracao com buraco, soma longe do catalogo): a barra e a da parte.
+int  partes_barra(const char *alvo, double dur, double catDur, double *off, double *tot);
+// As fronteiras entre as partes, em fracao do filme (n <= max).
+int  partes_barra_limites(double dur, float *fr, int max);
+// Um segundo do filme inteiro -> a parte e o ponto dentro dela.
+int  partes_barra_achar(double v, double dur, int *k, double *pos);
+// A duracao real da parte `k`, assim que o player sabe.
+void partes_duracao_real(int k, double dur);
 // Posicao do filme inteiro (ver partes_conta_virtual) quando ha sessao para
 // `alvo`. *ultima = esta e a ultima parte.
 int  partes_virtual(const char *alvo, double pos, double dur, double catDur,

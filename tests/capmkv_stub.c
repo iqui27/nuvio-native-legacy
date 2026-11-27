@@ -5,7 +5,9 @@
 #include "../src/mkvass.h"
 #include "../src/rede.h"
 void intro_definir_capitulos(const IntroTrecho *v, int n) { (void)v; (void)n; }
-int mkvass_cabecalho(const char *url, unsigned char **buf, long *n) { (void)url; (void)buf; (void)n; return 0; }
+void intro_definir_capitulos_palpite(const IntroTrecho *v, int n) { (void)v; (void)n; }
+void intro_definir_capitulos_marcas(const double *v, int n) { (void)v; (void)n; }
+__attribute__((weak)) int mkvass_cabecalho(const char *url, unsigned char **buf, long *n) { (void)url; (void)buf; (void)n; return 0; }
 char *rede_baixar_trecho_st(const char *url, int segundos, long long ini, long long fim,
                             long *tam, int *status, int *erro, char *final, unsigned tamFinal) {
   (void)url; (void)segundos; (void)ini; (void)fim; (void)final; (void)tamFinal;

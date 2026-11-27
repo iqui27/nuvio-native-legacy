@@ -26,10 +26,13 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <locale.h>
+#include "assrender.h"
 #include "video.h"
+#include "logrede.h"   // nv_tpk_log_net: logrede_limpar
 #include "player.h"
 #include "cdnlink.h"
 #include "streams.h"
+#include "tbburn.h"
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
@@ -178,6 +181,15 @@ static void *fioApp(void *arg) {
   pthread_mutex_unlock(&trava);
   return NULL;
 }
+// A source focused 1 s in the source list (streams.h): the early TorBox
+// lookup for burn-in. tbburn_procurar_cedo checks the plan, the setting and
+// the file kind; an MP4 source never has an embedded ASS track.
+static void tpkFonteEmFoco(const Stream *s) {
+  if (!s || s->mp4) return;
+  tbburn_procurar_cedo(s->url, s->hashTorrent[0] ? s->hashTorrent : s->infoHash, s->arquivo, s->tamanhoBytes,
+                       "source focused 1 s");
+}
+
 
 // Chamada uma vez pelo host, antes do primeiro quadro. Os caminhos vem do
 // Tizen.Applications (res/ e data/ do pacote): no .tpk nao ha HOME util nem
@@ -212,10 +224,15 @@ int nv_tpk_iniciar(const char *arte, const char *dados, int w, int h) {
   // verificacao das fontes guarda o que ja resolveu.
   { static const CdnlinkGanchos g = { cdnlink_origem_ok, cdnlink_recente, cdnlink_resolver, cdnlink_validade_ms };
     video_tpk_cdn_ganchos(&g);
-    stream_cdn_lembrar = cdnlink_lembrar; }
+    stream_cdn_lembrar = cdnlink_lembrar;
+    stream_cdn_resolvido = cdnlink_resolvido; }
+  // TorBox burn-in (tbburn.h, owner 18/11): a source focused 1 s in the list is
+  // looked up in the TorBox account early.
+  stream_foco_demorado = tpkFonteEmFoco;
   setenv("NUVIO_LOG", log, 1);
   setenv("HOME", dados, 1);
   setenv("SDL_VIDEODRIVER", "dummy", 1);
+  assrender_fios_ambiente();   // libass event threads = usable CPUs (1-core 4/5 sandbox)
   nv_tpk40_etapa("ok native-environment");
   pthread_attr_init(&at);
   // O main() e o laco usam pilha como um processo normal (buffers de 4-8 KB
@@ -240,6 +257,22 @@ void nv_tpk_log(const char *linha) {
   printf("[host] %s\n", linha ? linha : "");
   tpkdesp_linha(linha);
   video_tpk_log_host(linha);
+  fflush(stdout);
+}
+
+// Linha de erro do .NET (tizen-tpk/NetLog.cs) com o tempo de sessao, a mesma
+// base dos registros de falha do queda.c ("t=" = SDL_GetTicks). A mensagem de
+// uma excecao pode trazer URL com token, chave, senha ou cookie (a de rede
+// traz a URL inteira): passa por logrede_limpar, as mesmas regras da pagina
+// de log, ANTES de chegar ao log. Linha longa e cortada (o buffer e fixo e a
+// limpeza so encurta).
+__attribute__((visibility("default")))
+void nv_tpk_log_net(const char *linha) {
+  char b[1024];
+  Uint32 t = SDL_GetTicks();
+  snprintf(b, sizeof b, "%s", linha ? linha : "");
+  logrede_limpar(b);
+  printf("[net t=%u.%03us] %s\n", (unsigned)(t / 1000), (unsigned)(t % 1000), b);
   fflush(stdout);
 }
 

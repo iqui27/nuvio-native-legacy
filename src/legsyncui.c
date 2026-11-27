@@ -17,7 +17,6 @@ const char *legsync_acao_rotulo(int a) {
     case LEGSYNC_ACAO_DESFAZER: return i18n("Desfazer");
     case LEGSYNC_ACAO_OUTRA:    return i18n("Outra refer\xc3\xaancia");
     case LEGSYNC_ACAO_PARAR:    return i18n("Parar");
-    case LEGSYNC_ACAO_AUDIO:    return i18n("Por \xc3\xa1udio");
   }
   return "";
 }
@@ -31,55 +30,26 @@ static void segundos(int ms, char *dst, unsigned tam) {
   plrui_decimal(dst);
 }
 
-// F06: por que "Por audio" nao aparece entre as acoes (o ajuste esta ligado).
-static const char *motivoAudioTexto(LegSyncMotivo m) {
-  switch (m) {
-    case LEGSYNC_M_AUD_PLATAFORMA:  return i18n("Por \xc3\xa1udio: indispon\xc3\xadvel nesta plataforma");
-    case LEGSYNC_M_AUD_PASSTHROUGH: return i18n("Por \xc3\xa1udio: indispon\xc3\xadvel com passthrough ligado");
-    case LEGSYNC_M_AUD_SEM_AUDIO:   return i18n("Por \xc3\xa1udio: sem \xc3\xa1udio decodificado");
-    case LEGSYNC_M_AUD_SEM_FALA:    return i18n("Por \xc3\xa1udio: sem falas claras; nada foi alterado");
-    default: return NULL;
-  }
-}
-
 static void textoBase(const LegSyncVisao *v, char *dst, unsigned tam);
 
 void legsync_texto(const LegSyncVisao *v, char *dst, unsigned tam) {
-  const char *a;
   if (!dst || !tam) return;
   textoBase(v, dst, tam);
-  // O motivo do audio entra junto do estado, uma vez, quando ele ja nao e o
-  // proprio estado (passthrough/plataforma da escuta pedida).
-  a = motivoAudioTexto(v->motivoAudio);
-  // Em repouso (pronta/desfeita) o motivo do audio SUBSTITUI o estado: as
-  // acoes da embutida continuam visiveis entre < >, e o motivo cabe na linha.
-  if (a && (v->fase == LEGSYNC_PRONTA || v->fase == LEGSYNC_DESFEITA)) { snprintf(dst, tam, "%s", a); return; }
-  if (a && !motivoAudioTexto(v->motivo) && v->fase != LEGSYNC_DEPOIS) {
-    size_t n = strlen(dst);
-    if (n) snprintf(dst + n, tam > n ? tam - n : 0, " \xc2\xb7 %s", a);
-    else snprintf(dst, tam, "%s", a);
-  }
 }
 
 static void textoBase(const LegSyncVisao *v, char *dst, unsigned tam) {
   char s[32];
-  const char *a;
   dst[0] = 0;
   switch (v->fase) {
     case LEGSYNC_DEPOIS:     snprintf(dst, tam, "%s", i18n("Segundo idioma: dispon\xc3\xadvel depois")); return;
     case LEGSYNC_AGUARDANDO: snprintf(dst, tam, "%s", i18n("Aguardando a legenda baixar")); return;
     case LEGSYNC_PRONTA:
-      if (!(v->acoes & LEGSYNC_ACAO_RAPIDA) && (v->acoes & LEGSYNC_ACAO_AUDIO)) {
-        snprintf(dst, tam, "%s", i18n("Pronta: compara com as falas do \xc3\xa1udio")); return;
-      }
       snprintf(dst, tam, "%s", i18n("Pronta: compara com a legenda incorporada do arquivo")); return;
     case LEGSYNC_LENDO:      snprintf(dst, tam, i18n("Lendo a legenda incorporada\xe2\x80\xa6 %d%%"), v->progresso); return;
     case LEGSYNC_ANALISANDO: snprintf(dst, tam, "%s", i18n("Analisando\xe2\x80\xa6")); return;
     case LEGSYNC_ACEITA:     segundos(-v->offsetAutoMs, s, sizeof s);   // user sign: + = later
                              snprintf(dst, tam, i18n("Sincronizada: %s"), s); return;
-    case LEGSYNC_OUVINDO:    snprintf(dst, tam, i18n("Ouvindo as falas\xe2\x80\xa6 %d%%"), v->progresso); return;
     case LEGSYNC_RECUSADA:
-      if ((a = motivoAudioTexto(v->motivo)) != NULL) { snprintf(dst, tam, "%s", a); return; }
       if (v->motivo == LEGSYNC_M_REGION_DISAGREEMENT) {
         snprintf(dst, tam, "%s", i18n("N\xc3\xa3o deu para sincronizar: tempos n\xc3\xa3o batem em todo o filme")); return;
       }
@@ -88,7 +58,6 @@ static void textoBase(const LegSyncVisao *v, char *dst, unsigned tam) {
     case LEGSYNC_DESFEITA:   snprintf(dst, tam, "%s", i18n("Corre\xc3\xa7\xc3\xa3o desfeita; o atraso manual continua")); return;
     case LEGSYNC_INDISPONIVEL: break;
   }
-  if ((a = motivoAudioTexto(v->motivo)) != NULL) { snprintf(dst, tam, "%s", a); return; }
   switch (v->motivo) {
     case LEGSYNC_M_EMBUTIDA:   snprintf(dst, tam, "%s", i18n("A legenda incorporada j\xc3\xa1 acompanha o v\xc3\xad" "deo")); break;
     case LEGSYNC_M_PLATAFORMA: snprintf(dst, tam, "%s", i18n("Indispon\xc3\xadvel nesta plataforma")); break;
@@ -135,7 +104,7 @@ void legsync_texto_simples(const LegSyncVisao *v, char *dst, unsigned tam) {
   }
   switch (v->fase) {
     case LEGSYNC_AGUARDANDO: case LEGSYNC_PRONTA: case LEGSYNC_LENDO: case LEGSYNC_ANALISANDO:
-    case LEGSYNC_OUVINDO: case LEGSYNC_PAUSADA:
+    case LEGSYNC_PAUSADA:
       snprintf(dst, tam, "%s", i18n("Sincronizando\xe2\x80\xa6")); return;
     case LEGSYNC_RECUSADA:
       snprintf(dst, tam, "%s", i18n("N\xc3\xa3o deu para sincronizar")); return;
@@ -222,11 +191,27 @@ static int acoesAgora(int slot, int *lista, int max) {
   if (slot != 0 || max < 1) return 0;
   v = legsync_visao(0);
   if (v.autoDesligado) {
-    static const int a[] = { LEGSYNC_ACAO_RAPIDA, LEGSYNC_ACAO_COMPLETA, LEGSYNC_ACAO_AUDIO,
+    // Sem "Por audio" (06/11, dono): o audio so entra como reserva automatica
+    // (Android), nunca como botao.
+    static const int a[] = { LEGSYNC_ACAO_RAPIDA, LEGSYNC_ACAO_COMPLETA,
                             LEGSYNC_ACAO_DESFAZER, LEGSYNC_ACAO_OUTRA, LEGSYNC_ACAO_PARAR };
     for (unsigned i = 0; i < sizeof a / sizeof *a && n < max; i++)
       if (v.acoes & a[i]) lista[n++] = a[i];
-  } else if (v.acoes & LEGSYNC_ACAO_DESFAZER) lista[n++] = LEGSYNC_ACAO_DESFAZER;
+  }
+  // Com a automatica ligada, o menu so mostra o que MUDA o resultado (era so
+  // do .tpk; todas as plataformas desde 06/11). Nada enquanto ela trabalha;
+  // depois que ela parou sem sincronizar:
+  //   Completa  - a engine recusou a embutida (4x o tempo de analise);
+  //   Outra referencia - so se o arquivo tem outra faixa que tambem serve.
+  // Uma acao que nao tem como dar certo nao aparece.
+  else if (v.autoFase != 1 && v.manualFase != 1 && v.fase != LEGSYNC_ACEITA &&
+           v.fase != LEGSYNC_LENDO && v.fase != LEGSYNC_ANALISANDO) {
+    if (v.fase == LEGSYNC_RECUSADA && !v.audio && !v.jaCompleta && (v.acoes & LEGSYNC_ACAO_COMPLETA) && n < max)
+      lista[n++] = LEGSYNC_ACAO_COMPLETA;
+    if ((v.acoes & LEGSYNC_ACAO_OUTRA) && v.outrasRef > 0 && n < max) lista[n++] = LEGSYNC_ACAO_OUTRA;
+    if ((v.acoes & LEGSYNC_ACAO_DESFAZER) && n < max) lista[n++] = LEGSYNC_ACAO_DESFAZER;
+  }
+  else if (v.acoes & LEGSYNC_ACAO_DESFAZER) lista[n++] = LEGSYNC_ACAO_DESFAZER;
   return n;
 }
 

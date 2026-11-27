@@ -18,7 +18,10 @@
 #ifndef NV_MKV_H
 #define NV_MKV_H
 
-#define MKV_MAX_FAIXAS 64
+// 64 ate 17/11: o remux de Fight Club 4K do dono tem 145 faixas (137
+// legendas) e a legenda sueca de texto era a 93 — nunca entrava no menu.
+// So o que o arquivo tem e preenchido: o resto dos vetores nao e tocado.
+#define MKV_MAX_FAIXAS 192
 
 typedef struct {
   int  numero;        // TrackNumber (NAO e o `trackNum` da LG: ver mkv_casar_legendas)
@@ -41,6 +44,15 @@ typedef struct {
   long cpN;
   int  hvccNal62, bamN, nalTam, entradaInteira;
   unsigned long bamTipo;
+  // Video (25/10, subtitle correction per frame rate): DefaultDuration (ns per
+  // frame, 0 = not in the file) and Colour > TransferCharacteristics (16 PQ,
+  // 18 HLG; 0 = not stated).
+  unsigned long long quadroNs;
+  int  transferencia;
+  // Colour > MatrixCoefficients (1 BT.709, 5/6 BT.601, 9 BT.2020; 0 = not in
+  // the file, as 2 = unspecified) and Colour > Range (1 TV, 2 PC; 0 = not
+  // stated): the colour matrix of ASS subtitles (assrender.c, 16/11/2026).
+  int  matriz, faixaCor;
 } MkvFaixa;
 
 // O que a ultima sonda (mkv_faixas_e_caps / mkv_faixas_do_trecho) viu. Estado
@@ -58,6 +70,13 @@ typedef struct {
   long long blocoIni, blocoFim; // quadro de video cortado pelo trecho: [ini, fim) absolutos, -1 sem
 } MkvDiag;
 const MkvDiag *mkv_diag(void);
+// DTS kind (mkv_dts.h NV_DTS_KIND_*) of an audio track of the last probe, by
+// TrackNumber, from its first frames in the probed bytes; 0 = not known.
+int mkv_dts_kind(int numero);
+// DTS tracks still unknown after a short probe (the prefetched head): ONE
+// Range of the 320 KB the network probe reads, only to look at their first
+// frames. Returns 1 when it read. fx/nf: the final track list.
+int mkv_dts_alem(const char *url, const MkvFaixa *fx, int nf);
 // Varre so os dados de UM quadro HEVC (com prefixo de tamanho de `nalTam`
 // bytes): 1 = tem NAL 62, 0 = nao tem, -1 = quadro malformado. Puro.
 int mkv_quadro_tem_rpu(const unsigned char *p, long n, int nalTam, int *rpuTipo, int *rpuPerfil);
@@ -105,6 +124,8 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
 #define MKV_CONT_OUTRO 5   // binario que nao e nenhum dos acima: tambem nao e Matroska
 int mkv_contentor(const unsigned char *p, long n);   // puro
 int mkv_ultimo_contentor(void);
+// Segment > Info > Duration (seconds) of the last header read; 0 = not in it.
+double mkv_ultima_duracao(void);
 // 1 quando o contentor lido encerra a pergunta "e MKV?" sem nova tentativa.
 int mkv_contentor_definitivo(int contentor);
 const char *mkv_contentor_nome(int contentor);
@@ -150,6 +171,46 @@ int mkv_intro_nomeada(const MkvCap *caps, int n, double *ini, double *fim);
 // Inicio do ULTIMO capitulo quando ele e previa do proximo episodio ("Preview",
 // "Next Episode"); 0 caso contrario. Nao e credito: marca ate onde os creditos vao.
 double mkv_previa_nomeada(const MkvCap *caps, int n);
+
+// SEGMENTOS PELOS NOMES DOS CAPITULOS (feat/mkv-chapter-segments).
+//
+// Regras do NuvioTV (ChapterSkipIntervals.kt): o titulo tem de SER o rotulo,
+// com numero opcional — "OP", "OP 2", "Opening", "Opening Credits", "ED",
+// "Ending Theme", "End Credits", "Recap", "Previously on ..." — e nao "The
+// Opening Scene". "Intro" so vira abertura sem capitulo OP. "Post-/Mid-/After-
+// credits" e cena depois dos creditos: marcada, NUNCA pulada.
+// Por cima, os nomes que o master ja aceitava (abertura, creditos, encerramento,
+// outro, end title, preview, yokoku, avance, previa...): valem so para o tipo
+// em que nenhum capitulo casou pela regra estrita.
+// O segmento vai do inicio do capitulo ao inicio do seguinte (o ultimo, ate
+// `dur`; dur 0 = desconhecida -> fim 0, "ate o fim"). Abertura/resumo fora de
+// 5..240 s sao descartados; creditos so abaixo de 5 s (a janela de intro.c
+// mede o resto: creditos de filme passam de 4 min).
+// Os numeros dos tipos sao os de intro.h (INTRO_ABERTURA...INTRO_POS_CREDITOS).
+enum { MKV_SEG_NENHUM = 0, MKV_SEG_ABERTURA = 1, MKV_SEG_RESUMO = 2,
+       MKV_SEG_CREDITOS = 3, MKV_SEG_PREVIA = 4, MKV_SEG_POSCRED = 5 };
+typedef struct {
+  double inicio, fim;   // segundos; fim 0 = ate o fim da midia
+  int tipo;             // MKV_SEG_*
+  int estrito;          // 1 = regra do NuvioTV, 0 = nome extra do master
+  int cap;              // indice do capitulo de origem
+} MkvSeg;
+#define MKV_SEG_MIN_S  5.0
+#define MKV_SEG_MAX_S  240.0
+// Tipo de UM titulo (`forca`: 3 estrito, 2 "Intro" estrito, 1 nome extra, 0 nada).
+int mkv_classificar_nome(const char *nome, int *forca);
+// No maximo um segmento por tipo, na ordem do tempo. Devolve quantos.
+int mkv_segmentos(const MkvCap *caps, int n, double dur, MkvSeg *out, int max);
+// Idioma do app ("sv", "pt", "en"...; ISO 639-1) para escolher o NOME do
+// capitulo quando o arquivo traz o mesmo capitulo em varios idiomas: o do app,
+// senao ingles, senao o primeiro. Chamar antes de abrir o video (player.c).
+// Os capitulos escondidos/desligados ficam de fora, vale a edicao padrao e a
+// lista sai em ordem de inicio (como o NuvioTV).
+void mkv_capitulos_idioma(const char *iso);
+// Palpite por DURACAO quando nenhum capitulo tem nome util (so anime decide
+// usar, intro.c): abertura = capitulo de 75-105 s entre os 3 primeiros,
+// encerramento = um de 75-105 s entre os 3 ultimos (depois da abertura).
+int mkv_segmentos_palpite(const MkvCap *caps, int n, MkvSeg *out, int max);
 
 // CASA as legendas que a TV lista com as TrackEntry de legenda do arquivo (#92).
 //

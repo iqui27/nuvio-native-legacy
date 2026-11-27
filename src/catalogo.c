@@ -462,7 +462,8 @@ int cat_visto(const CatItem *c) {
 // fallback para itens que ainda nao entraram no vetor.
 const char *cat_tipo_por_imdb(const char *imdb) {
   int i = cat_indice_por_imdb(imdb);
-  if (i >= 0 && cat_item(i)) return cat_item(i)->tipo;
+  const CatItem *it = i >= 0 ? cat_item(i) : NULL;   // um so: a troca pode zerar n entre duas chamadas
+  if (it) return it->tipo;
   return (imdb && strchr(imdb, ':')) ? "series" : "movie";
 }
 
@@ -1558,10 +1559,22 @@ static void aplicarUmEm(CatItem *v, int i, double posSeg, double durSeg, int tem
 // roda antes da publicacao (e da poda), entao a mesma regra entra aqui.
 // A Next Up seed shares the watched episode's timestamp, but points ahead.
 // Replaying that episode's progress must not turn the seed back into it.
-static int aSeguirAdiante(const CatItem *item, int t, int e, long long ms) {
-  return !strcmp(item->tipo, "series") && item->progresso == 0 &&
-         item->retomadoMs > 0 && item->retomadoMs >= ms && e > 0 &&
-         (item->temporada > t || (item->temporada == t && item->episodio > e));
+//
+// A FINISHED earlier episode never pulls the seed back, whatever the clocks
+// say. Trakt's watched_at comes to the minute and the local record is written
+// when the player closes, so the record is often seconds NEWER than the seed
+// (02:12:52 against 02:12:00, Dexter S2E4 on the C5). The card then went back
+// to the finished episode, and with the next one not aired yet
+// continuar_desenhar had nothing to swap it for: S2E4 at 100% instead of S2E5
+// with its air date. A partial record still needs the timestamp.
+extern int ajustes_cw_concluido(void) __attribute__((weak));
+static int aSeguirAdiante(const CatItem *item, int t, int e, long long ms, int pct) {
+  int concluido = ajustes_cw_concluido ? ajustes_cw_concluido() : 90;
+  if (strcmp(item->tipo, "series") || item->progresso != 0 || e <= 0 ||
+      !(item->temporada > t || (item->temporada == t && item->episodio > e)))
+    return 0;
+  if (pct >= concluido) return 1;
+  return item->retomadoMs > 0 && item->retomadoMs >= ms;
 }
 static void espalharEm(CatItem *v, int m) {
   int i, j, k, nf = 0, *fontes;
@@ -1576,7 +1589,8 @@ static void espalharEm(CatItem *v, int m) {
     for (k = 0; k < nf; k++) {
       i = fontes[k];
       if (!mesmaCopiaEm(v, i, j)) continue;
-      if (aSeguirAdiante(&v[j], v[i].temporada, v[i].episodio, v[i].retomadoMs)) continue;
+      if (aSeguirAdiante(&v[j], v[i].temporada, v[i].episodio, v[i].retomadoMs,
+                         v[i].progresso)) continue;
       if (v[j].progresso > 0 && v[i].retomadoMs <= v[j].retomadoMs) continue;
       if (melhor < 0 || v[i].retomadoMs > v[melhor].retomadoMs) melhor = i;
     }
@@ -1621,7 +1635,10 @@ static int aplicarProgressoEm(CatItem *v, int m, const ProgRegistro *regs, int k
     for (j = 0; j < m; j++) {
       if (tocado[j] || !v[j].imdb[0] || !mesmoTitulo(v[j].imdb, regs[i].contentId)) continue;
       if (maisNova || aSeguirAdiante(&v[j], regs[i].temporada, regs[i].episodio,
-                                   regs[i].lastWatchedMs)) { tocado[j] = 1; continue; }
+                                   regs[i].lastWatchedMs,
+                                   regs[i].durSeg > 1.0 ? (int)(100.0 * regs[i].posSeg / regs[i].durSeg) : 0)) {
+        tocado[j] = 1; continue;
+      }
       // O ITEM QUE JA E MAIS NOVO QUE O DISCO NAO VOLTA NO TEMPO. O item do
       // Trakt (pausado ou "a seguir", issue #66) traz o instante em
       // retomadoMs; um registro local mais velho — o S1E1 a 3% de 8/9 quando
@@ -1970,6 +1987,21 @@ int cat_episodio_tvdb_qualquer(int indice, const char *id, int t, int e) {
   pthread_mutex_unlock(&epTrava);
   pthread_mutex_unlock(&pubTrava);
   return tvdb;
+}
+
+int cat_episodio_existe(int indice, const char *id, int t, int e) {
+  int ok = 0;
+  catTravar();
+  pthread_mutex_lock(&epTrava);
+  if (episodioFaixaValidaEx(indice, id, 0)) {
+    const CatEp *v = eps + epIni[indice];
+    int q = epQtd[indice];
+    for (int i = 0; i < q; i++)
+      if (v[i].temporada == t && v[i].episodio == e) { ok = 1; break; }
+  }
+  pthread_mutex_unlock(&epTrava);
+  pthread_mutex_unlock(&pubTrava);
+  return ok;
 }
 
 int cat_episodio_existe_final(int indice, const char *id, int t, int e) {

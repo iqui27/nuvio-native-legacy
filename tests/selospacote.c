@@ -53,7 +53,70 @@ static void casa(const char *campos[], int nc, const char *esperado[], int ne) {
   for (int i = 0; i < ne; i++) assert(!strcmp(selospacote_filtro(ids[i])->nome, esperado[i]));
 }
 
-int main(void) {
+static void styleCompatibility(void) {
+  perfil = 20;
+  const char *pack = "{\"filters\":["
+    "{\"name\":\"Black logo\",\"pattern\":\"filled\",\"imageURL\":\"https://fixture.invalid/black.webp\",\"tagStyle\":\"FiLLeD\",\"tagColor\":\"#FFFFD500\",\"borderColor\":\"#80010203\"},"
+    "{\"name\":\"Outline\",\"pattern\":\"bordered\",\"imageURL\":\"https://fixture.invalid/white.png\",\"tagStyle\":\"bordered\",\"tagColor\":\"#FFFFFF\",\"borderColor\":\"#FFFFD500\"},"
+    "{\"name\":\"GIF\",\"pattern\":\"gif\",\"imageURL\":\"https://fixture.invalid/REMUX.gif\",\"tagStyle\":\"filled\",\"tagColor\":\"#00000000\",\"borderColor\":\"#00000000\"},"
+    "{\"name\":\"Percent\",\"pattern\":\"percent\",\"tagStyle\":\"filled\",\"tagColor\":\"rgba(100%, 0%, 50%, 25%)\",\"textColor\":\"rgba(255,128,0,0.5)\",\"borderColor\":\"rgb(300,0,0)\"},"
+    "{\"name\":\"Invalid\",\"pattern\":\"invalid\",\"tagColor\":\"rgba(1,2,3)\",\"textColor\":\"rgb(1,2,3,4)\",\"borderColor\":\"rgb(1 2 3)\"}]}";
+  assert(selospacote_adicionar(pack,"https://fixture.invalid/styles.json")==SELOS_OK);
+  assert(selospacote_n_filtros(0)==5);
+  for(int reload=0;reload<2;reload++) {
+    if(reload)selospacote_recarregar();
+    const SeloFiltro *f=selospacote_filtro(0);
+    assert(f->preenchido&&f->tag[0]==1&&f->tag[1]>.83f&&f->tag[2]==0);
+    assert(f->temBorda&&f->borda[3]>.50f&&f->borda[3]<.51f);
+    f=selospacote_filtro(1);assert(!f->preenchido&&f->temTag&&f->temBorda);
+    f=selospacote_filtro(2);assert(f->preenchido&&f->temTag&&f->tag[3]==0&&f->borda[3]==0);
+    assert(!strcmp(f->imagem,"https://fixture.invalid/REMUX.gif"));
+    f=selospacote_filtro(3);assert(f->tag[0]==1&&f->tag[1]==0&&f->tag[2]==.5f&&f->tag[3]==.25f);
+    assert(f->texto[0]==1&&f->texto[3]==.5f&&f->borda[0]==1);
+    f=selospacote_filtro(4);assert(!f->temTag&&!f->temTexto&&!f->temBorda&&!f->preenchido);
+  }
+  assert(selospacote_remover(0));
+  puts("PASS: imported filled/outline/transparent chips, GIF URL, RGB percentages, ARGB and disk reload");
+}
+static void largeBadgePack(void) {
+  perfil = 21;
+  char *pattern=malloc(REGEXJS_BADGE_MAX+1);assert(pattern);
+  size_t used=(size_t)sprintf(pattern,"^(?:");
+  for(int i=0;i<8000;i++)used+=(size_t)sprintf(pattern+used,"%sRelease%05d",i?"|":"",i);
+  used+=(size_t)sprintf(pattern+used,")$");assert(used<REGEXJS_BADGE_MAX);
+  RegexJs *re=regexjs_compilar_badge(pattern,NULL,0);assert(re);
+  size_t perRule=regexjs_memoria(re);regexjs_liberar(re);
+  int expected=(int)(16u*1024*1024/perRule);assert(expected>0&&expected<12);
+  size_t capacity=12*(used+128)+32;
+  char *json=malloc(capacity);assert(json);size_t pos=(size_t)sprintf(json,"{\"filters\":[");
+  for(int i=0;i<12;i++)pos+=(size_t)snprintf(json+pos,capacity-pos,
+      "%s{\"name\":\"Large %d\",\"pattern\":\"%s\"}",i?",":"",i,pattern);
+  snprintf(json+pos,capacity-pos,"]}");free(pattern);
+  assert(selospacote_adicionar(json,"https://fixture.invalid/large.json")==SELOS_OK);free(json);
+  assert(selospacote_n_filtros(0)==expected);
+  selospacote_recarregar();assert(selospacote_n_filtros(0)==expected);
+  unsigned short ids[SELOS_MAX_CASADOS];const char *fields[]={"Release07999"};
+  assert(selospacote_casar(fields,1,ids,SELOS_MAX_CASADOS)==expected);
+  assert(selospacote_remover(0));
+  puts("PASS: long imported rules survive disk reload with a 16 MiB compiled-pack ceiling");
+}
+// Optional local inspection of real user-supplied packs. CI is offline and
+// uses the deterministic fixtures above; no network is needed by this test.
+static void externalPack(const char *path) {
+  FILE *file=fopen(path,"rb");assert(file);assert(!fseek(file,0,SEEK_END));
+  long length=ftell(file);assert(length>0&&length<4*1024*1024);rewind(file);
+  char *json=malloc((size_t)length+1);assert(json);
+  assert(fread(json,1,(size_t)length,file)==(size_t)length);fclose(file);json[length]=0;
+  assert(selospacote_adicionar(json,path)==SELOS_OK);free(json);
+  int count=selospacote_n_filtros(0);assert(count>0&&count<=SELOS_MAX_FILTROS);
+  int filled=0,images=0;
+  for(int i=0;i<count;i++) {const SeloFiltro *f=selospacote_filtro((unsigned short)i);assert(f&&f->nome[0]);filled+=f->preenchido;images+=!!f->imagem[0];}
+  printf("PASS: %s: %d compiled filters, %d filled, %d images\n",path,count,filled,images);
+  assert(selospacote_remover(0));
+}
+int main(int argc,char **argv) {
+  if(argc>1) {for(int i=1;i<argc;i++)externalPack(argv[i]);return 0;}
+
   char e[96];
   // ---- as 3 formas de JSON ----
   assert(selospacote_n() == 0 && selospacote_ativo() == -1);
@@ -207,6 +270,8 @@ int main(void) {
     r = regexjs_compilar_web("^b$", e, sizeof e);
     assert(r && !regexjs_testar(r, "a\nb\nc", 5)); regexjs_liberar(r);
   }
+  styleCompatibility();
+  largeBadgePack();
   printf("selospacote: ok\n");
   return 0;
 }

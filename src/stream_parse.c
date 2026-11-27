@@ -2,8 +2,10 @@
 #include "mediaurl.h"
 #include "badges.h"
 #include "js.h"
+#include "cachemarca.h"
 #include <ctype.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -131,6 +133,7 @@ static int campoFiltro(const char *v, const char *fim, char *dst, unsigned tam) 
   return 1;
 }
 
+static void audioRotulosTexto(const char *texto, char *dst, unsigned tam);
 static void camposFiltro(const char *const *objetos, int n, const char *fim,
                           const char *const *nomes, char *dst, unsigned tam) {
   dst[0] = 0;
@@ -219,12 +222,22 @@ static void metadadosFiltro(const char *obj, const char *fim, const char *nome,
     snprintf(campos[FONTEFILTRO_LINGUAS], sizeof campos[FONTEFILTRO_LINGUAS], "%s", s->audioIdiomas);
   static const char *const grupoChaves[] = {"group", "releaseGroup", "release_group", NULL};
   camposFiltro(objetos, 6, fim, grupoChaves, grupo, sizeof grupo);
-  if (!textoRaiz(obj, fim, "filename", nomeCompleto, sizeof nomeCompleto) &&
-      !(bh && textoRaiz(bh, js_fim(bh), "filename", nomeCompleto, sizeof nomeCompleto)) &&
-      !(cr && textoRaiz(cr, js_fim(cr), "filename", nomeCompleto, sizeof nomeCompleto)) &&
-      !(raw && textoRaiz(raw, js_fim(raw), "filename", nomeCompleto, sizeof nomeCompleto)) && raw)
+  s->arquivoReal = textoRaiz(obj, fim, "filename", nomeCompleto, sizeof nomeCompleto) ||
+      (bh && textoRaiz(bh, js_fim(bh), "filename", nomeCompleto, sizeof nomeCompleto)) ||
+      (cr && textoRaiz(cr, js_fim(cr), "filename", nomeCompleto, sizeof nomeCompleto)) ||
+      (raw && textoRaiz(raw, js_fim(raw), "filename", nomeCompleto, sizeof nomeCompleto));
+  if (!s->arquivoReal && raw)
     textoRaiz(raw, js_fim(raw), "torrentName", nomeCompleto, sizeof nomeCompleto);
+  if (strlen(nomeCompleto) >= sizeof s->arquivo) s->arquivoReal = 0;   // cortado nao casa
   snprintf(s->arquivo, sizeof s->arquivo, "%.*s", (int)sizeof s->arquivo - 1, nomeCompleto);
+  if(!s->audioIdiomas[0]) {
+    // Parse whole bounded fields once, before display truncation or provider
+    // fallback. Never inspect URL paths, headers or another stream's object.
+    if(strlen(nome)<1023)audioRotulosTexto(nome,s->audioRotulos,sizeof s->audioRotulos);
+    if(strlen(descricao)<2047)audioRotulosTexto(descricao,s->audioRotulos,sizeof s->audioRotulos);
+    if(strlen(titulo)<2047)audioRotulosTexto(titulo,s->audioRotulos,sizeof s->audioRotulos);
+    if(strlen(nomeCompleto)<sizeof nomeCompleto-1)audioRotulosTexto(nomeCompleto,s->audioRotulos,sizeof s->audioRotulos);
+  }
   // Mantem title e description mesmo quando ambos existem; nao usa URL,
   // cabecalhos ou nome do provedor como evidencia de formato/idioma/grupo.
   snprintf(texto, sizeof texto, "%s\n%s\n%s", nome, descricao, titulo);
@@ -780,6 +793,8 @@ static void metadadosFaixas(const char *obj, const char *fim, Stream *s) {
   faixasCampoTexto(obj, fim, "title", s);
 }
 
+#include "stream_audio_rotulos.inc"
+
 // Decimal integers only, parsed without double rounding. Numeric strings
 // are accepted for compatibility, but fractions/exponents/overflow are
 // unavailable for fit. Legacy display size remains separate below.
@@ -949,44 +964,46 @@ static void lerProxyHeaders(const char *bh, const char *fim, char *dst, unsigned
   }
 }
 
-// "FORA DE CACHE" DITO PELO ADDON. As marcas sao as que os addons mandam de
-// verdade: "⏳" e o que o AIOStreams poe no nome de toda fonte nao cacheada
-// (registros 1136, 2191, 2501: "⏳ UHD", "⏳ FHD"; a cacheada vem com "⚡"), o
-// Torrentio escreve "[TB download]" / "[RD download]" (a cacheada e "[TB+]"),
-// e outros usam "⬇" ou a palavra "uncached". "download]" e nao "download"
-// solto: "WEB-DL"/"Download" aparecem em titulo de fonte cacheada.
-int stream_texto_fora_de_cache(const char *t) {
-  if (!t) return 0;
-  return strstr(t, "\xe2\x8f\xb3") != NULL          // U+23F3 ⏳
-      || strstr(t, "\xe2\xac\x87") != NULL          // U+2B07 ⬇
-      || contem(t, " download]") || contem(t, "uncached") || contem(t, "not cached");
-}
-
-// As marcas positivas que os addons usam (AIOStreams/Torrentio). Nao ler
-// arquivo, URL ou o nome configurado do addon: nao descrevem disponibilidade.
-static int textoEmCache(const char *t) {
-  return t && (strstr(t, "\xe2\x9a\xa1") || contem(t, "[TB+]") || contem(t, "[RD+]") ||
-               contem(t, "[PM+]") || contem(t, "[AD+]"));
-}
-static int marcaEmCache(const char *p, const char *fim) {
-  static const char *const campos[] = {"name", "description", "title"};
-  char texto[2048];
-  for (unsigned i = 0; i < sizeof campos / sizeof *campos; i++)
-    if (js_texto_raiz_em(p, fim, campos[i], texto, sizeof texto) && textoEmCache(texto)) return 1;
-  return 0;
-}
+// "FORA DE CACHE" DITO PELO ADDON: as regras de cachemarca.h (as marcas do
+// claude/formatter-cached-markers.md). Mantido pelo nome antigo porque o
+// teste e o resto do app ja o chamam.
+int stream_texto_fora_de_cache(const char *t) { return cachemarca_fora(t); }
 
 // Booleano da PROPRIA fonte, nao de cabecalhos nem da fonte seguinte.
 // 0 = ausente/invalido; -1 = false; 1 = true. Strings e numeros nao contam.
-static int cacheDeclarado(const char *p, const char *fim) {
-  const char *cr = objetoRaiz(p, fim, "clientResolve");
-  if (!cr) return 0;
-  const char *f = js_fim(cr), *v = valorRaiz(cr, f, "isCached");
+static int boolEm(const char *obj, const char *chave) {
+  if (!obj) return 0;
+  const char *f = js_fim(obj), *v = valorRaiz(obj, f, chave);
   if (!v) return 0;
   unsigned n = *v == 't' ? 4 : 5;
   if (f - v < n || memcmp(v, n == 4 ? "true" : "false", n)) return 0;
   const char *apos = faixasEspacos(v + n, f);
   return apos < f && (*apos == ',' || *apos == '}') ? (n == 4 ? 1 : -1) : 0;
+}
+// O ESTADO EXATO, quando o addon manda (vence qualquer texto):
+//   streamData.service.cached / streamData.library  AIOStreams, so para quem
+//       pede com User-Agent "AIO..." (addons.c manda esse cabecalho a ele);
+//       biblioteca = ja esta na conta, toca na hora.
+//   clientResolve.isCached                            AIOStreams/Nuvio
+//   behaviorHints.cached                              StreamNZB e outros
+// *deServico = 1 when the answer is streamData's service flag: it describes
+// this very link, so false = the debrid does not have it (Matis94 55fdc0ab3).
+// *origem (diagnostic only): 1 streamData, 2 clientResolve, 3 behaviorHints.
+static int cacheDeclarado(const char *p, const char *fim, int *deServico, int *origem) {
+  const char *sd = objetoRaiz(p, fim, "streamData");
+  if (deServico) *deServico = 0;
+  if (origem) *origem = 0;
+  if (sd) {
+    const char *sv = objetoRaiz(sd, js_fim(sd), "service");
+    int c = boolEm(sv, "cached");
+    if (boolEm(sd, "library") > 0) { if (origem) *origem = 1; return 1; }
+    if (c) { if (deServico) *deServico = 1; if (origem) *origem = 1; return c; }
+  }
+  int c = boolEm(objetoRaiz(p, fim, "clientResolve"), "isCached");
+  if (c) { if (origem) *origem = 2; return c; }
+  c = boolEm(objetoRaiz(p, fim, "behaviorHints"), "cached");
+  if (c && origem) *origem = 3;
+  return c;
 }
 
 // "sources": ["tracker:udp://...", "dht:<hash>"] de um stream de torrent, uma
@@ -1027,6 +1044,78 @@ static void lerFontesP2P(const char *ini, const char *fim, char *dst, unsigned t
   }
 }
 
+// TORRENT POR MAGNET OU "torrent:", como o NuvioTV (Stream.kt:
+// getEffectiveInfoHash / getEffectiveFileIdx / torrentMagnetUri): o hash sai
+// do xt=urn:btih: (40 hex, ou 32 em base32 -> hex) ou de torrent://<hash>/<idx>,
+// e os &tr= do magnet entram em `fontes` como "tracker:..." (o resolvedor do
+// debrid os poe de volta no magnet que manda ao servico).
+static int hexDe(int c) { return isdigit(c) ? c - '0' : (tolower(c) >= 'a' && tolower(c) <= 'f') ? tolower(c) - 'a' + 10 : -1; }
+static void urlDec(const char *ini, size_t n, char *dst, size_t tam) {
+  size_t k = 0;
+  for (size_t i = 0; i < n && k + 1 < tam; i++) {
+    if (ini[i] == '%' && i + 2 < n && hexDe((unsigned char)ini[i+1]) >= 0 && hexDe((unsigned char)ini[i+2]) >= 0) {
+      dst[k++] = (char)(hexDe((unsigned char)ini[i+1]) * 16 + hexDe((unsigned char)ini[i+2])); i += 2;
+    } else dst[k++] = ini[i] == '+' ? ' ' : ini[i];
+  }
+  dst[k] = 0;
+}
+static int hashCanonico(const char *h, size_t n, char *dst, size_t tam) {
+  size_t i;
+  if (n == 40 && tam > 40) {
+    for (i = 0; i < 40; i++) { if (hexDe((unsigned char)h[i]) < 0) return 0; dst[i] = (char)tolower((unsigned char)h[i]); }
+    dst[40] = 0; return 1;
+  }
+  if (n == 32 && tam > 40) {   // base32 (RFC 4648) -> 20 bytes -> 40 hex
+    unsigned char b[20] = {0};
+    unsigned long long acc = 0; int bits = 0, o = 0;
+    for (i = 0; i < 32; i++) {
+      int c = toupper((unsigned char)h[i]), v = c >= 'A' && c <= 'Z' ? c - 'A' : c >= '2' && c <= '7' ? c - '2' + 26 : -1;
+      if (v < 0) return 0;
+      acc = acc << 5 | (unsigned)v; bits += 5;
+      if (bits >= 8) { b[o++] = (unsigned char)(acc >> (bits - 8)); bits -= 8; }
+    }
+    for (i = 0; i < 20; i++) snprintf(dst + i * 2, 3, "%02x", b[i]);
+    return 1;
+  }
+  return 0;
+}
+static void fontesPor(char *dst, size_t tam, const char *ent) {
+  size_t u = strlen(dst), L = strlen(ent);
+  for (const char *p = dst; *p; ) {   // sem repetir
+    const char *f = strchr(p, '\n');
+    size_t n = f ? (size_t)(f - p) : strlen(p);
+    if (n == L && !memcmp(p, ent, L)) return;
+    if (!f) break;
+    p = f + 1;
+  }
+  if (u + L + 2 > tam) return;
+  if (u) dst[u++] = '\n';
+  memcpy(dst + u, ent, L + 1);
+}
+static void lerTorrentUrl(const char *u, Stream *s) {
+  if (!u || !*u) return;
+  if (!strncasecmp(u, "magnet:", 7)) {
+    const char *x = NULL;
+    for (const char *q = u; *q && !x; q++) if (!strncasecmp(q, "xt=urn:btih:", 12)) x = q;
+    if (x && !s->infoHash[0]) {
+      x += 12;
+      hashCanonico(x, strcspn(x, "&?"), s->infoHash, sizeof s->infoHash);
+    }
+    for (const char *p = u; (p = strstr(p, "tr=")); p += 3) {
+      if (p[-1] != '&' && p[-1] != '?') continue;
+      char tr[300], ent[320];
+      urlDec(p + 3, strcspn(p + 3, "&"), tr, sizeof tr);
+      if (tr[0]) { snprintf(ent, sizeof ent, "tracker:%s", tr); fontesPor(s->fontes, sizeof s->fontes, ent); }
+    }
+  } else if (!strncasecmp(u, "torrent:", 8)) {
+    const char *h = u + 8;
+    while (*h == '/') h++;
+    size_t n = strcspn(h, "/?");
+    if (!s->infoHash[0]) hashCanonico(h, n, s->infoHash, sizeof s->infoHash);
+    if (h[n] == '/' && s->fileIdx < 0 && isdigit((unsigned char)h[n + 1])) s->fileIdx = atoi(h + n + 1);
+  }
+}
+
 // SEMEADORES no texto do addon. Nao ha campo para isso no protocolo: cada
 // addon escreve do seu jeito, sempre marcador + numero. Torrentio e
 // MediaFusion usam "👤 12", Comet/Jackettio "👥 12", outros "Seeders: 12".
@@ -1051,6 +1140,10 @@ static int lerSemeadores(const char *t, int *qtd) {
 int stream_extrair(const char *json, const char *provedor, Stream **saida) {
   const char *p, *fim;
   int n = 0, cap = 0;
+  // Link-less torrents and who said "not cached" (LG log 27/11/2026): one
+  // line per response, counts only. [0] none, 1 streamData, 2 clientResolve,
+  // 3 behaviorHints, 4 name/description text.
+  int semLink = 0, comCR = 0, emCacheDito = 0, foraDe[5] = {0};
   Stream *v = NULL;
   *saida = NULL;
   if (!json) return 0;
@@ -1067,7 +1160,9 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       char *url = malloc(tam);
       if (!url) { p = js_prox(fim); continue; }
       js_texto_raiz_em(p, fim, "url", url, tam);
-      int ok = !strncmp(url, "http", 4) && nv_media_url_guardar(url, s.url, sizeof s.url);
+      int torrent = !strncasecmp(url, "magnet:", 7) || !strncasecmp(url, "torrent:", 8);
+      int ok = torrent || (!strncmp(url, "http", 4) && nv_media_url_guardar(url, s.url, sizeof s.url));
+      if (torrent) { s.fileIdx = -1; lerTorrentUrl(url, &s); s.url[0] = 0; }
       free(url);
       if (!ok) { p = js_prox(fim); continue; }
     }
@@ -1076,18 +1171,50 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       s.notWebReady = hint && fim - hint >= 4 && !memcmp(hint, "true", 4) &&
         (hint + 4 == fim || hint[4] == ',' || hint[4] == '}' || isspace((unsigned char)hint[4]));
     }
-    s.fileIdx = -1;
+    if (s.infoHash[0] == 0) s.fileIdx = -1;   // o magnet longo acima ja pode ter lido
     // Torrent puro: sem url, com infoHash (no topo ou dentro de clientResolve,
-    // como o AIOStreams manda). A url nasce depois, no debrid.
+    // como o AIOStreams manda), ou com o torrent num magnet/"torrent:" em url,
+    // externalUrl ou clientResolve.magnetUri (como o NuvioTV le). A url nasce
+    // depois, no debrid.
     if (!s.url[0] || strncmp(s.url, "http", 4)) {
       const char *cr = objetoRaiz(p, fim, "clientResolve");
+      char hashTopo[sizeof s.infoHash] = "", cru[4096];
+      Stream t = {0};
+      t.fileIdx = -1;
+      // Ordem do NuvioTV: infoHash, clientResolve.infoHash, url, externalUrl.
+      if (!js_texto(p, fim, "infoHash", hashTopo, sizeof hashTopo) && cr)
+        js_texto(cr, fim, "infoHash", hashTopo, sizeof hashTopo);
+      snprintf(t.infoHash, sizeof t.infoHash, "%s", hashTopo[0] ? hashTopo : s.infoHash);
+      lerTorrentUrl(s.url, &t);
+      cru[0] = 0; js_texto_raiz_em(p, fim, "externalUrl", cru, sizeof cru); lerTorrentUrl(cru, &t);
+      cru[0] = 0; if (cr) js_texto_raiz_em(cr, js_fim(cr), "magnetUri", cru, sizeof cru); lerTorrentUrl(cru, &t);
       s.url[0] = 0;
-      if (!js_texto(p, fim, "infoHash", s.infoHash, sizeof s.infoHash) && cr)
-        js_texto(cr, fim, "infoHash", s.infoHash, sizeof s.infoHash);
+      snprintf(s.infoHash, sizeof s.infoHash, "%s", t.infoHash);
       double indice = js_num(p, fim, "fileIdx", -1);
       if (isfinite(indice) && indice >= 0 && indice <= INT_MAX)
         s.fileIdx = (int)indice;
-      if (s.infoHash[0]) lerFontesP2P(p, fim, s.fontes, sizeof s.fontes);
+      else if (s.fileIdx < 0) s.fileIdx = t.fileIdx;
+      if (s.infoHash[0]) {
+        char trackers[sizeof s.fontes];
+        snprintf(trackers, sizeof trackers, "%s", s.fontes);   // os do magnet longo, se houve
+        lerFontesP2P(p, fim, s.fontes, sizeof s.fontes);
+        for (const char *q = t.fontes; *q; ) {                 // + os &tr= dos magnets
+          const char *f = strchr(q, '\n');
+          char ent[320];
+          snprintf(ent, sizeof ent, "%.*s", (int)(f ? (size_t)(f - q) : strlen(q)), q);
+          fontesPor(s.fontes, sizeof s.fontes, ent);
+          if (!f) break;
+          q = f + 1;
+        }
+        for (const char *q = trackers; *q; ) {
+          const char *f = strchr(q, '\n');
+          char ent[320];
+          snprintf(ent, sizeof ent, "%.*s", (int)(f ? (size_t)(f - q) : strlen(q)), q);
+          fontesPor(s.fontes, sizeof s.fontes, ent);
+          if (!f) break;
+          q = f + 1;
+        }
+      }
     } else {
       // Fonte com link: o hash, quando o addon manda, so serve para achar o
       // torrent na conta TorBox (partes.h). Nao vira infoHash.
@@ -1106,8 +1233,7 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
         fhd = fhdNoNome(nomeFonte);
       textoRaizLinhas(p, fim, "description", s.descricao, sizeof s.descricao);
       textoRaizLinhas(p, fim, "title", titulo, sizeof titulo);
-      int cache = cacheDeclarado(p, fim);
-      s.emCache = cache > 0 || (cache == 0 && marcaEmCache(p, fim));
+      int cacheSD = 0, origemCache = 0, cache = cacheDeclarado(p, fim, &cacheSD, &origemCache);
       s.cacheNegado = cache < 0;
       metadadosFaixas(p, fim, &s);
       metadadosFiltro(p, fim, nomeFonte, s.descricao, titulo, &s);
@@ -1170,18 +1296,37 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       // nomes que os addons mandam (ao contrario de "dv", que precisa do
       // cuidado de token() com DVDRip — o mesmo cuidado ja se aplica aqui).
       s.av1 = token(texto, "av1") || contem(texto, "av01");
-      s.foraCache = stream_texto_fora_de_cache(texto);
-      // Cached by the add-on's own mark (clientResolve.isCached:true or "⚡" in
-      // the name): only the full source name can veto it. A mark found only in the
-      // description/title never overrides a negative status there. A "⏳" age, "download]" or "uncached" deep
-      // in the description/filename (AIOStreams + TorBox) marked every cached
-      // stream "not cached", and the verified auto pick dropped all of them.
-      if (s.foraCache && strlen(nomeFonte) < sizeof nomeFonte - 1 &&
-          (cache > 0 || (cache == 0 && textoEmCache(nomeFonte))) &&
-          !stream_texto_fora_de_cache(nomeFonte)) s.foraCache = 0;
-      // AIOStreams: clientResolve.isCached e explicito; ausente nao e false.
-      if (s.infoHash[0] && !s.url[0] && cache < 0) s.foraCache = 1;
-      if (s.foraCache) s.emCache = 0;
+      // CACHE (cachemarca.h). O estado declarado vence; sem ele, o texto: nome
+      // inteiro (lido sem teto: a marca pode estar depois dos 1024 bytes de
+      // nomeFonte) e descricao+titulo, nunca o nome do arquivo.
+      { int textoRes = 0;
+        if (strlen(nomeFonte) < sizeof nomeFonte - 1) {   // o normal: o nome coube
+          textoRes = cachemarca_fonte(nomeFonte[0] ? nomeFonte : NULL, s.descricao, provedor, NULL);
+        } else {
+          size_t tn = (size_t)(fim - p) + 1;
+          char *nomeTodo = malloc(tn);
+          if (nomeTodo) {
+            nomeTodo[0] = 0;
+            textoRaizLinhas(p, fim, "name", nomeTodo, tn);
+            textoRes = cachemarca_fonte(nomeTodo[0] ? nomeTodo : NULL, s.descricao, provedor, NULL);
+            free(nomeTodo);
+          }
+        }
+        if (cache > 0) { s.emCache = 1; s.foraCache = 0; }
+        else if (cache < 0) {
+          // A negativa declarada e visual quando ha URL direta (pode tocar);
+          // so o torrent sem URL fica fora de vez — ou o texto tambem diz.
+          s.emCache = 0;
+          // (com a negativa declarada, qualquer "fora" no texto confirma).
+          s.foraCache = (s.infoHash[0] && !s.url[0]) || cacheSD || textoRes < 0 || cachemarca_fora(s.descricao);
+        } else { s.emCache = textoRes > 0; s.foraCache = textoRes < 0; }
+        if (s.infoHash[0] && !s.url[0]) {
+          semLink++;
+          if (objetoRaiz(p, fim, "clientResolve")) comCR++;
+          if (s.emCache) emCacheDito++;
+          if (s.foraCache) foraDe[cache < 0 && origemCache ? origemCache : 4]++;
+        }
+      }
       if (s.infoHash[0]) s.temSemeadores = lerSemeadores(texto, &s.semeadores);
       s.tamanhoBytes = bytesExatos(p, fim);
       double bytes = js_num(p, fim, "videoSize", 0);
@@ -1207,6 +1352,13 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
     }
     p = js_prox(fim);
   }
+  // Capped per run: background availability probes parse many responses.
+  static _Atomic int linhasSemLink;
+  if (semLink && atomic_fetch_add(&linhasSemLink, 1) < 40)
+    printf("[fonte] %s: %d of %d link-less (clientResolve %d); addon says cached %d, not cached %d "
+           "(streamData %d, clientResolve %d, behaviorHints %d, text %d)\n",
+           provedor ? provedor : "?", semLink, n, comCR, emCacheDito,
+           foraDe[1] + foraDe[2] + foraDe[3] + foraDe[4], foraDe[1], foraDe[2], foraDe[3], foraDe[4]);
   *saida = v;
   return n;
 }

@@ -121,6 +121,11 @@ int ajustes_animacoes_reduzidas_usuario(void);
 int ajustes_esmaecer(void);
 int ajustes_brilho_player(void);
 int ajustes_tunneling(void); // Android-only tunneled playback; default off.
+int ajustes_quadros_taxa(void); // Android match frame rate: 0 Always, 1 Only if seamless, 2 Off.
+// Thumbnails made on this device (Android): 0 Automatic, 1 High (576 px), 2 Medium (480), 3 Low (320);
+// 1 = the GPU decoder (hardware engine, miniatura_hw.c), 0 = the CPU route (default).
+int ajustes_miniatura_qualidade(void);
+int ajustes_miniatura_gpu(void);
 int ajustes_hdr_interface(void); // Experimental Android HDR output; default off.
 int ajustes_hdr_ui(void);   // #205: 1 = Automatico (padrao), 0 = Desligado
 // #202: -1 = ultimo modo usado (padrao); 0..7 = PlrAspecto aplicado ao abrir o video.
@@ -159,7 +164,25 @@ int ajustes_pular_resumo(void);
 int ajustes_proximo_auto(void);
 int ajustes_proximo_contagem(void);
 // Pula os creditos sozinho, so com inicio e fim reais do marcador (desligado de fabrica).
+int   ajustes_audio_externo(void);                     // audio from another source (webOS converter, .tpk donor server), default off
+int   ajustes_audio_externo_ocultar_fora_cache(void); // 1 = hide versions not in the debrid cache
+int   ajustes_audio_externo_passo(void);              // sync step in ms: 10, 50 (default) or 100
+int   ajustes_audio_externo_avisar_grande(void);      // warn when the audio file is over 20 GB
+int   ajustes_audio_externo_so_audio(void);           // 1 = fetch only the audio where the file allows it
+int   ajustes_audio_externo_serie(void);              // remember the version for the next episodes
+int   ajustes_audio_externo_seguir(void);             // another cut: follow it through the whole film
+int   ajustes_audio_externo_aviso(void);              // show "sync adjusted by itself" (default off)
+int   ajustes_audio_externo_ocultar_copias(void);    // "From another source": one row per file (default on)
+int   ajustes_audio_externo_ordem_addon(void);       // "Sort like the addons" (default off: sorted for audio)
+int   ajustes_audio_externo_bufor_mib(void);         // "Other version buffer": 8 (default), 16 or 32 MiB
+int   ajustes_audio_externo_auto(void);               // match automatically when the other version starts (default on)
 int ajustes_pular_creditos(void);
+// Manual skip-button visibility, independent of automatic skipping; default ON.
+int ajustes_show_skip_intro(void);
+int ajustes_show_skip_recap(void);
+int ajustes_show_skip_credits(void);
+// feat/mkv-chapter-segments: marcas de capitulo, nome e fileira do CIMA no player.
+int ajustes_capitulos(void);
 // Medidor de desempenho na ilha do relogio (desempenho.h): Desempenho desta TV,
 // local. 0 = desligado, 1 = Minimo, 2 = Menor, 3 = Grande (DS_* de desempenho.h).
 int ajustes_medidor_desempenho(void);
@@ -186,6 +209,10 @@ int ajustes_fonte_primeira(void);
 int ajustes_fonte_ordem_addon(void);
 // 1 = a folha de Fontes mostra o nome e a descricao do addon como vieram.
 int ajustes_fonte_texto_addon(void);
+// Icones do texto "Do addon": 1 = Minimalista (Lucide na cor do texto), 0 = Padrao
+// (Twemoji em cores e os simbolos monocromaticos como glifo). Bandeiras so no
+// Padrao; o Minimalista mostra o codigo do idioma.
+int ajustes_fonte_icones_minimalista(void);
 int ajustes_fonte_texto_logo(void);
 // "Outra fonte se falhar": quantas OUTRAS fontes o automatico tenta quando a
 // escolhida nao abre (0..3; 0 = nenhuma). Nao vale para escolha manual nem
@@ -210,6 +237,8 @@ int ajustes_fonte_grupo_sessoes(void);
 // Reusar o ultimo link (fontevolta.h): 1 = ligado; e a validade em segundos.
 int ajustes_link_reusar(void);
 int ajustes_log_rede(void);   // pagina de registro na rede local (logrede.h)
+int ajustes_update_notifications(void); // automatic update card/notices; off by default
+int ajustes_lembrar_perfil(void); // remember last unlocked profile on this TV; default OFF
 unsigned ajustes_link_prazo_s(void);
 int ajustes_fonte_escopo(void);
 int ajustes_fonte_regex_modo(void);
@@ -402,6 +431,8 @@ float ajustes_ui_botao(const char *rot, const char *icone, float x, float y, int
 float ajustes_ui_dicas(const char *const *teclas, const char *const *rotulos, int n, float x, float y, int desenha);
 void  ajustes_ui_neutro(GfxRect r, float raioPx, float vidA);
 void  ajustes_ui_foco_linha(GfxRect r, float raioPx);
+// Cursor de texto dos campos: `x` = borda entre os caracteres, `cy` = meio da linha.
+void  ajustes_ui_cursor(float x, float cy, float h, Uint32 agora, float a);
 float ajustes_ui_antes_depois(const char *rot, int a, int b, const char *unid, int max,
                               float x, float y, float w, int compacto, float cr, float cg, float cb);
 void  ajustes_ui_grafico_memoria(float x, float y, float w, float h);
@@ -499,6 +530,7 @@ int   ajustes_logo_addon(void);
 int   ajustes_col_arte_conta(void);
 // Selos da folha de fontes em peca colorida por tipo (#198). Padrao ligado.
 int   ajustes_selos_coloridos(void);
+int   ajustes_selos_embaixo(void); // From addon rows: badge row at the bottom (default Top)
 int   ajustes_trailer_som(void);         // UM ajuste de som para todo trailer que toca sozinho (Samsung .wgt sempre mudo)
 Uint32 ajustes_trailer_hero_espera_ms(void); // repouso no titulo antes do trailer do destaque
 int   ajustes_trailer_qualidade(void); // teto em linhas (1080/720/480); 0 = a maior
@@ -591,6 +623,7 @@ int   ajustes_leg2_fundo(void);
 int   ajustes_leg2_borda(void);
 void  ajustes_leg_contorno_rgb(int *r, int *g, int *b);   // #475: cor do contorno/sombra da legenda (0..255)
 unsigned ajustes_leg_borda_rgb(int corBorda);   // corBorda >= 0: explicit colour; -1: legacy #475 colour
+unsigned ajustes_leg_borda_cor(int corBorda, int borda);   // as above; Outline (1) unset = Stremio #222222
 // Independent secondary overrides; absent fields inherit the main style.
 int ajustes_leg2_fonte_principal(void);
 void ajustes_leg2_estilo(const VideoLegendaEstilo *principal, VideoLegendaEstilo *out);
@@ -600,7 +633,29 @@ int ajustes_leg2_definir_atraso(int ms);
 int   ajustes_legenda_forcada_auto(void);    // #287: 1 = audio in the subtitle language -> only the forced track (local, default on)
 int   ajustes_legenda_sync_auto(void);       // local, ligada por padrão
 int   ajustes_audio_offset_ms(void);        // Converted audio presentation, -500..500 ms; default 0.
-int   ajustes_legenda_sync_audio(void);      // 1 = offer "Por audio" in subtitle AutoSync (F06; local, default off)
+int   ajustes_legenda_sync_audio(void);      // 1 = audio fallback of subtitle sync (Android, Reshaped; local, default on)
+int   ajustes_legenda_sync_audio_movel(void); // 1 = it may sample the film on mobile data (local, default off)
+// TorBox burn-in (tbburn.h). _tb_pro: "TorBox plan" is Pro. _leg_queimar: burn
+// embedded ASS in with TorBox is On AND the plan is Pro (.tpk only; else 0).
+int   ajustes_tb_pro(void);
+int   ajustes_leg_queimar(void);
+// Original audio with TorBox burn-in (dts/tbaudio_tpk.h): TBA_PASSTHROUGH (0,
+// default) or TBA_TORBOX (TorBox's own transcoded audio).
+int   ajustes_tb_audio_modo(void);
+void  ajustes_definir_tb_audio_modo(int modo);
+// The second subtitle's style fields, for the player's Style column (Main /
+// Second). _leg2_op gives the setting behind a field (-1 none); _op_* read and
+// step any setting like Left/Right in Settings (saved, applied live).
+enum { AJ2_TAMANHO, AJ2_FONTE, AJ2_COR, AJ2_OPACIDADE, AJ2_FUNDO, AJ2_POSICAO, AJ2_LUGAR,
+       AJ2_BORDA, AJ2_COR_BORDA, AJ2_NEGRITO, AJ2_N };
+int         ajustes_leg2_op(int campo);
+const char *ajustes_op_rotulo(int op);
+const char *ajustes_op_texto(int op);
+int         ajustes_op_passo(int op, int dir);
+int         ajustes_op_indice(int op);          // the stored value (index of the choice)
+int         ajustes_op_definir(int op, int v);  // saved and applied like Settings
+int         ajustes_op_n(int op);               // how many choices
+void        ajustes_leg2_restaurar(void);
 int   ajustes_trailer_zoom_tpk(void);        // #241: 1 = experimental trailer zoom on the native .tpk (local, default off)
 int   ajustes_teclado_na_tela(void);         // times the Teclado option is on the Ajustes list (0 = hidden here)
 int   ajustes_teclado_android(void);          // Android keyboard: 0 automatic, 1 app grid, 2 system IME (local)
@@ -610,6 +665,11 @@ int   ajustes_p2p_usb(void);                    // #205: 1 = cache P2P em pendri
 int   ajustes_player_externo(int anime);     // #501/#205: 0 Interno, 1 Externo, 2 Perguntar, 3 app (pacote em ajustes_player_pacote); anime: -1 = Igual ao Player
 const char *ajustes_player_pacote(int anime); // #205: pacote do app escolhido ("" = nenhum)
 int   ajustes_buffer_preset(void);           // #338: 0 Automatico, 1 = 64, 2 = 128, 3 = 256 MiB
+int   ajustes_buffer_dados(void);            // Text diagnostics only; buffered progress remains visible.
+int   ajustes_ram_overlay(void);
+int   ajustes_ram_verde(void);
+int   ajustes_mp4_bd_test(void);
+int   ajustes_ram_overlay_alternar(void); // Saves immediately, retains old state on failure.
 int   ajustes_cache_seek_mb(void);           // F07: seek cache limit in MB for the next video (0 = off / not on this TV)
 #ifdef AJUSTES_TESTE
 void  ajustes_teste_escala(int percentual); // fixture only; does not persist
@@ -664,6 +724,7 @@ int   ajustes_cw_proximo(void);   // 1 = 'a seguir' entra em Continuar assistind
 int   ajustes_cw_mostrar_nao_exibidos(void);  // showUnairedNextUp
 // continueWatchingSortMode: 0 default, 1 streaming_style, 2 split_upcoming
 int   ajustes_cw_ordem(void);
+int   ajustes_dts_desligado(void);       // DTS conversion off (LG 2, .tpk 0)
 int   ajustes_dts_ac3(void);             // 1 = DTS convertido em AC3 5.1 (LG, e padrao no .tpk); 0 = AAC estereo (.tpk: ou desligado)
 int   ajustes_dts_tpk_modo(void);        // .tpk: DTSTPK_HLS, ou DTSTPK_DESLIGADO com a conversao desligada
 int   ajustes_ps_continuar(void);        // #303: 0 = sem o cartao "continuar" na escolha de perfil
@@ -672,6 +733,11 @@ int   ajustes_amigos_estilo(void); // 0 Feed, 1 Live, 2 Stories, 3 Presence, 4 P
 int   ajustes_social(void);              // 1 = friends/social features on (per profile, default on)
 int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)
 int   ajustes_dv7(void);
+int   ajustes_webos_hls(void);
+int   ajustes_webos_hls_ts(void);   // HLS test: this TV starts HLS in MPEG-TS (learned)
+void  ajustes_webos_hls_ts_lembrar(int ts);   // the player found which format starts
+int   ajustes_dv7_mapping(void); // device-local P7 mapping test, default off
+int   ajustes_dv_audio_fixo(void);       // experiment: 0 v12, 1 AAC stereo, 2 AC3 5.1
 int   ajustes_cw_retido_tambem(void);   // 1 = o titulo da ilha/Retomar tambem fica em Continuar assistindo
 // Percentual (70-98, padrao 90) a partir do qual o episodio conta como
 // assistido: sai do Continuar assistindo e o card passa ao proximo. Local.
@@ -868,4 +934,10 @@ void ajustes_perfil_padrao(void);
 int ajustes_shot_valor(const char *chave, int v);   // capturas: opcao pela chave
 #endif
 
+/* Separate, device-local HTTP concurrency for the next playback session. */
+int ajustes_buffer_native_connections(void);
+int ajustes_buffer_conversion_connections(void);
+int ajustes_buffer_conversion_stream(void);
+
+int ajustes_android_estereo(void); /* Android stereo PCM downmix */
 #endif

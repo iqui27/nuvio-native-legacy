@@ -90,25 +90,25 @@ static void vindoDa203(void) {
   dados_gravar("novidades-20-guia.txt", "1\n");
   dados_gravar("novidades-203.txt", "1\n");
   quadroHome(1, 0, 0);
-  assert(novcartao_aberto() && !existe("novidades-208.txt"));
+  assert(novcartao_aberto() && !existe("novidades-209.txt"));
   tecla(SDLK_ESCAPE);
-  assert(existe("novidades-203.txt") && existe("novidades-208.txt"));
+  assert(existe("novidades-203.txt") && existe("novidades-209.txt"));
   novaSessao();
   quadroHome(1, 0, 0);
   assert(!novcartao_aberto());
   puts("PASS: vindo da 2.0.3: marca independente, abre uma vez");
 }
 
-// The 2.0.4 marker must not hide the 2.0.8 card.
+// The 2.0.4 marker must not hide the 2.0.9 card.
 static void vindoDa204(void) {
   limpar();
   dados_gravar("novidades-20-guia.txt", "1\n");
   dados_gravar("novidades-203.txt", "1\n");
   dados_gravar("novidades-204.txt", "1\n");
   quadroHome(1, 0, 0);
-  assert(novcartao_aberto() && !existe("novidades-208.txt"));
+  assert(novcartao_aberto() && !existe("novidades-209.txt"));
   tecla(SDLK_ESCAPE);
-  assert(existe("novidades-204.txt") && existe("novidades-208.txt"));
+  assert(existe("novidades-204.txt") && existe("novidades-209.txt"));
   novaSessao();
   quadroHome(1, 0, 0);
   assert(!novcartao_aberto());
@@ -199,20 +199,20 @@ static void plataformas(void) {
   int lg, tpk, wgt, and;
   novcartao_teste_plataforma(NOV_LG);
   lg = novcartao_itens_visiveis();
-  assert(novcartao_cenas() == 4);   // Four illustrated highlights on every platform.
+  assert(novcartao_cenas() == 4);   // Four illustrated highlights on each released platform.
   novcartao_teste_plataforma(NOV_TPK);
   tpk = novcartao_itens_visiveis();
   assert(novcartao_cenas() == 4);
-  novcartao_teste_plataforma(NOV_WGT);
+  novcartao_teste_plataforma(NOV_WGT);   // No .wgt in 2.0.9: only the shared highlight.
   wgt = novcartao_itens_visiveis();
-  assert(novcartao_cenas() == 4);
+  assert(novcartao_cenas() == 1);
   novcartao_teste_plataforma(NOV_ANDROID);
   and = novcartao_itens_visiveis();
   assert(novcartao_cenas() == 4);
-  assert(lg == 29 && tpk == 31 && wgt == 28 && and == 32);
+  assert(lg == 26 && tpk == 25 && wgt == 20 && and == 25);
   assert(novcartao_paginas() >= 3 && novcartao_paginas() <= 24);  // itens e apoio
   novcartao_teste_plataforma(NOV_OUTRAS);
-  assert(novcartao_itens_visiveis() == 35);
+  assert(novcartao_itens_visiveis() == 30);
   assert(novcartao_paginas() >= 2);
   novcartao_teste_plataforma(0);
   printf("PASS: itens por plataforma: LG %d, .tpk %d, .wgt %d, Android %d\n", lg, tpk, wgt, and);
@@ -241,7 +241,7 @@ static void espacamento(void) {
   assert(txt_iniciar("deploy/app", 1)); // so TTF; sem janela ou contexto GL
   novcartao_teste_plataforma(NOV_OUTRAS);
   novcartao_abrir();
-  assert(novcartao_cenas() == 4);
+  assert(novcartao_cenas() == 5);   // Desktop sees every platform's scenes.
   float primeiraAltura = novcartao_teste_altura_item(0);
   assert(primeiraAltura >= 64);
   assert(txt_rasterizadas == 0);
@@ -288,8 +288,8 @@ int main(int argc, char **argv) {
     else espacamento();
     return 0;
   }
-  assert(!strcmp(novcartao_versao(), "2.0.8"));
-  assert(!strcmp(novcartao_arquivo(), "novidades-208.txt"));
+  assert(!strcmp(novcartao_versao(), "2.0.9"));
+  assert(!strcmp(novcartao_arquivo(), "novidades-209.txt"));
   instalacaoNova();
   vindoDa202();
   vindoDa203();

@@ -36,6 +36,16 @@ int player_leg_fonte_local_definir(int indice) { if (indice < 0 || indice >= leg
 static int ass;
 int assrender_ativo(void) { return ass; }
 int assrender_texto_simples(void) { return 0; }
+// "Edit: Main / Second" (owner 12/11): no second subtitle here, so the tab
+// edits the main one, as before the switch existed.
+Leg2Estado legenda2_estado(void) { return LEG2_NENHUMA; }
+int  legenda2_offset_manual(void) { return 0; }
+void legenda2_definir_offset_manual(int ms) { (void)ms; }
+int  ajustes_leg2_op(int campo) { (void)campo; return -1; }
+int  ajustes_op_indice(int op) { (void)op; return 0; }
+int  ajustes_op_definir(int op, int v) { (void)op; (void)v; return 0; }
+int  ajustes_op_n(int op) { (void)op; return 0; }
+void ajustes_leg2_restaurar(void) {}
 
 static int tecla(SDL_Keycode k, int rep) { return estiloTecla(k, rep); }
 static void irPara(int item) { foco[FX_COL_ESTILO] = item; ctl = -1; }
@@ -67,11 +77,11 @@ int main(void) {
   assert(estilo.atrasoMs == -LEGUI_ATRASO_MAX);
   assert(tecla(SDLK_RETURN, 0) && ctl == -1);                         // OK closes too
 
-  // Opacidade: four stops; right = more opaque.
-  irPara(3); estilo.opacidade = 3;
+  // Opacity: 10..100 % in steps of 10 (owner 14/11/2026); right = more opaque.
+  irPara(3); estilo.opacidade = 30;
   tecla(SDLK_RETURN, 0); assert(ctl == 3);
-  tecla(SDLK_RIGHT, 0); assert(estilo.opacidade == 2);
-  tecla(SDLK_LEFT, 0); tecla(SDLK_LEFT, 0); tecla(SDLK_LEFT, 0); assert(estilo.opacidade == 3);
+  tecla(SDLK_RIGHT, 0); assert(estilo.opacidade == 40);
+  tecla(SDLK_LEFT, 0); tecla(SDLK_LEFT, 0); tecla(SDLK_LEFT, 0); tecla(SDLK_LEFT, 0); assert(estilo.opacidade == 10);
   ctl = -1;
 
   // Posicao: eight levels, slider + miniature.

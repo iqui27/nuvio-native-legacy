@@ -10,13 +10,13 @@ cd "$(dirname "$0")/.."
 D=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-ascorpus.XXXXXX)
 trap 'rm -rf "$D"' EXIT
 R=${RODADAS:-8}
-cc -Isrc -O2 -Wall -Wextra src/autosync.c src/legenda.c src/assrender.c tests/autosync_corpus.c \
+cc -Isrc -O2 -Wall -Wextra src/autosync.c src/legenda.c src/asssinais.c src/assrender.c tests/autosync_corpus.c \
   -pthread -lm -o "$D/novo"
 if [ "${ANTES:-0}" = 1 ]; then
   mkdir -p "$D/v200"
   git show v2.0.0:src/autosync.c > "$D/v200/autosync.c"
   git show v2.0.0:src/autosync.h > "$D/v200/autosync.h"
-  cc -I"$D/v200" -Isrc -O2 -DAS_ANTIGO "$D/v200/autosync.c" src/legenda.c src/assrender.c \
+  cc -I"$D/v200" -Isrc -O2 -DAS_ANTIGO "$D/v200/autosync.c" src/legenda.c src/asssinais.c src/assrender.c \
     tests/autosync_corpus.c -pthread -lm -o "$D/antigo"
   echo "== BEFORE (v2.0.0 engine) =="
   "$D/antigo" "$R" ${VERBOSO:+v}

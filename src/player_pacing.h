@@ -8,6 +8,25 @@ static inline int player_ui_frame(int open, int rects, int others) {
   return open && (rects > 1 || others > (rects == 1 ? 1 : 0));
 }
 
+/* webOS source-selection test: before a source starts, let the sheet use the
+ * same VSync clock as title details. A requested/retained video keeps the
+ * established unpaced player policy, including startup, seeking and overlays. */
+static inline int player_source_ui_unpaced(int ui, int sources, int loading, int video) {
+  return ui && !(sources && loading && !video);
+}
+
+/* Android (Homatics Box R 4K Plus, 27/11/2026): with nothing over the video,
+ * the UI kept presenting the same transparent 4K hole ~38 times a second. A
+ * bare frame identical to the last one presented (same hole) is not swapped:
+ * the compositor keeps showing it, and the GPU and memory bandwidth go to the
+ * video decoder. The first bare frame after any overlay is still presented.
+ * Only a square gfx_furo hole has a signature: a frame with a rounded or no
+ * hole (hole == 0) is always presented. */
+static inline int player_skip_present(int open, int ui, int lastBare,
+                                      unsigned hole, unsigned lastHole) {
+  return open && !ui && lastBare && hole && hole == lastHole;
+}
+
 /* Native swaps can follow the video plane's clock. With UI visible, use an
  * unpaced swap and bound the full iteration to 60 Hz, including swap time. */
 static inline unsigned player_frame_wait(int ui, unsigned elapsed) {

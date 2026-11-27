@@ -220,9 +220,9 @@ static GfxRect segPilulaRect(const float *w, int n, float sel, float x, float y)
                   anim_mistura(w[lo], w[hi], t), SEG_IH };
     return r; }
 }
-float plrui_seg(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
-                float x, float y, float a) {
-  float w[8], tot = SEG_PAD * 2.0f, xx;
+static float segDesenhar(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
+                         float x, float y, float a, float alvo) {
+  float w[8], cw[8], tot = SEG_PAD * 2.0f, xx;
   TxtLinha t[8], c[8];
   int i, vid = ajustes_vidro(), tinta = plrui_tinta();
   // `sel` e `ed` podem ser FRACIONARIOS: quem chama anima (mola) e a pilula
@@ -245,6 +245,15 @@ float plrui_seg(const char *const *rotulos, const int *contagem, int n, float se
       w[i] += 9.0f + (float)c[i].w;
     }
     tot += w[i] + (i ? SEG_VAO : 0.0f);
+  }
+  for (i = 0; i < n; i++) cw[i] = w[i] - 40.0f;   /* the text and number alone */
+  /* A target width: the room left goes to the chips evenly, their text kept
+   * centered (owner 17/11: the language bar scrolled right left an empty strip
+   * though more languages followed). */
+  if (alvo > tot && n > 0) {
+    float extra = (alvo - tot) / (float)n;
+    for (i = 0; i < n; i++) w[i] += extra;
+    tot = alvo;
   }
   if (x < 0.0f) return tot;
   { GfxRect tr = { x, y, tot, SEG_IH + SEG_PAD * 2.0f };
@@ -271,13 +280,21 @@ float plrui_seg(const char *const *rotulos, const int *contagem, int n, float se
     plrui_pilula_foco(segPilulaRect(w, n, pos, x, y), a * fEd);
   xx = x + SEG_PAD;
   for (i = 0; i < n; i++) {
-    float yb = y + SEG_PAD + (SEG_IH - (float)t[i].h) * 0.5f;
-    txt_desenhar_alpha(t[i], xx + 20.0f, yb, a);
-    if (c[i].w) txt_desenhar_alpha(c[i], xx + 20.0f + (float)t[i].w + 9.0f,
+    float yb = y + SEG_PAD + (SEG_IH - (float)t[i].h) * 0.5f, tx = xx + (w[i] - cw[i]) * 0.5f;
+    txt_desenhar_alpha(t[i], tx, yb, a);
+    if (c[i].w) txt_desenhar_alpha(c[i], tx + (float)t[i].w + 9.0f,
                                    yb + (float)t[i].h - (float)c[i].h - 1.0f, a);
     xx += w[i] + SEG_VAO;
   }
   return tot;
+}
+float plrui_seg(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
+                float x, float y, float a) {
+  return segDesenhar(rotulos, contagem, n, sel, ed, x, y, a, 0.0f);
+}
+float plrui_seg_largura(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
+                        float x, float y, float a, float largura) {
+  return segDesenhar(rotulos, contagem, n, sel, ed, x, y, a, largura);
 }
 
 void plrui_barra(float x, float y, float w, float frac, float buf, int foco,
@@ -307,6 +324,15 @@ void plrui_barra(float x, float y, float w, float frac, float buf, int foco,
              0, 0, 0, 0.5f * a);
     gfx_cor((GfxRect){ cx - 13.0f, cy - 13.0f, 26.0f, 26.0f }, 0.5f, 1, 1, 1, a);
   }
+}
+
+void plrui_barra_capitulos(float x, float y, float w, int foco, const float *ticks, int n, float a) {
+  float h = foco ? 10.0f : 6.0f, yy = foco ? y - 2.0f : y;
+  int i;
+  if (a <= 0.002f) return;
+  for (i = 0; i < n; i++)
+    if (ticks[i] > 0.0f && ticks[i] < 1.0f)
+      gfx_cor((GfxRect){ x + w * ticks[i] - 1.0f, yy, 2.0f, h }, 0.0f, 0.06f, 0.06f, 0.07f, 0.85f * a);
 }
 
 void plrui_trilho(GfxRect r, float frac, float cr, float cg, float cb, float a) {

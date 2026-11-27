@@ -1,4 +1,8 @@
 #include "streams.h"
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#include "mkvfix.h"
+#else
+#endif
 #include "mediaurl.h"
 #include "plrui.h"
 #include "ondever.h"
@@ -16,6 +20,7 @@
 #include "tex_cache.h"
 #include "catalogo.h"
 #include "limpa.h"
+#include "formatador.h"
 #include "vazao.h"
 #include <ctype.h>
 #include <arpa/inet.h>
@@ -51,6 +56,13 @@
 #include "ponteiro.h"
 #include "rolagemtoque.h"
 #include "player.h"
+#include "audioext.h"
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#include "dts/doador_tpk.h"
+#else
+#endif
+#include "audioextlista.h"
+#include "faixas.h"
 #include "plrilha.h"
 #include "partes.h"
 #include "ctxlista.h"
@@ -122,7 +134,9 @@ static Stream *lista;
 static int n = 0;
 // Workers publish source mutations; UI caches consume this revision.
 static _Atomic unsigned folhaRevisao;
+static _Atomic unsigned audioFiltroRevisao;
 static void folhaDados(void);
+static void audioFiltroDescartar(void);
 static float linhaTopo(int row);
 static int cacheConfirmado(const Stream *s) {
   return s->emCache && !s->cacheNegado && (!s->foraCache || s->cacheNativo) && !s->urlP2P && !s->naoVideo;
@@ -352,13 +366,34 @@ static int fitLinhas(int i) {
 }
 void stream_definir_alvo(const char *id) {
   snprintf(alvoPedido, sizeof alvoPedido, "%s", id ? id : "");
+  audioext_alvo(alvoPedido);
 }
 int stream_lista_do_alvo(const char *id) {
   if (!id || !*id || !alvoLista[0] || n < 1) return 0;
   return !strcmp(alvoLista, id);
 }
-void stream_definir_atual(int i) { atual = i >= 0 && i < n ? i : -1; }
+// The list on hand is the one asked for the title/episode on screen.
+int stream_lista_do_alvo_atual(void) { return alvoPedido[0] && stream_lista_do_alvo(alvoPedido); }
+static Stream contextoGuardado;
+void stream_contexto_guardado(const Stream *s) {
+  if (s) contextoGuardado = *s;
+  else memset(&contextoGuardado, 0, sizeof contextoGuardado);
+}
+void stream_definir_atual(int i) {
+  atual = i >= 0 && i < n ? i : -1;
+  // An explicit normal selection must not inherit an older saved source.
+  if (atual >= 0) stream_contexto_guardado(NULL);
+}
 int stream_atual(void) { return atual; }
+const Stream *stream_fonte_reproducao(const char *url, const char *cabecalhos) {
+  const Stream *selected = stream_item(atual);
+  const char *enabled = getenv("NUVIO_SAVED_SOURCE_CONTEXT");
+  if (selected) return selected; // normal selection is unchanged
+  if (enabled && !strcmp(enabled, "0")) return NULL;
+  if (!url || !url[0] || !contextoGuardado.url[0] || strcmp(url, contextoGuardado.url)) return NULL;
+  if (strcmp(cabecalhos ? cabecalhos : "", contextoGuardado.cabecalhos)) return NULL;
+  return &contextoGuardado;
+}
 
 // A FONTE QUE A PESSOA JA TINHA ESCOLHIDO neste titulo, quando ela existe
 // nesta lista. Quem a encontra e fontepref.c (a regra de igualdade mora la);
@@ -441,11 +476,23 @@ int stream_filtro_bloqueou(void) {
 // automatico os escolhe, contra 6/14/9% das fontes com resolucao).
 // Por que a fonte sai do automatico (0 = fica), na ordem em que o teste corre.
 enum { MOT_FICA, MOT_EXCLUIDA, MOT_FILTRO, MOT_FORA_CACHE, MOT_INFORMATIVA, MOT_DECODER, MOT_MORTA, MOT_N };
+// OUT OF CACHE FOR AUTO-PLAY. A link-less torrent the ADDON alone called not
+// cached stays in: with a debrid key it goes to the cache-only resolve, which
+// asks the service and never starts a download (LG log 27/11/2026: AIO marked
+// all 198 not cached and auto-play said "no source works"; NuvioTVSmart asks
+// TorBox instead). Only the debrid's own "no" (foraDebrid) keeps it out. A
+// direct link the addon calls not cached stays out: opening it starts the
+// download.
+static int foraCacheNoAuto(const Stream *s) {
+  if (!s->foraCache) return 0;
+  if (s->url[0] || !s->infoHash[0] || s->foraDebrid) return 1;
+  return !debrid_ativo();
+}
 static int motivoForaDoAuto(int i, const FonteFiltroConfig *filtro) {
   if (automaticaExcluida(i)) return MOT_EXCLUIDA;
   if (i < 0 || i >= n) return MOT_FICA;
   if (!canalFolha && (filtro ? !fontefiltro_permite(filtro, &lista[i].filtro) : !stream_filtro_permite(&lista[i]))) return MOT_FILTRO;
-  if (!lista[i].filtro.naoVod && lista[i].foraCache) return MOT_FORA_CACHE;
+  if (!lista[i].filtro.naoVod && foraCacheNoAuto(&lista[i])) return MOT_FORA_CACHE;
   if (ehInformativa(&lista[i])) return MOT_INFORMATIVA;
   if (excedeDecoder(&lista[i])) return MOT_DECODER;
   if (fontesmortas_idade(&lista[i]) >= 0) return MOT_MORTA;
@@ -461,6 +508,19 @@ void stream_vod_falhou(int indice) {
 void stream_vod_tocou(int indice) {
   atomic_fetch_add(&folhaRevisao, 1);
   if (indice >= 0 && indice < n) fontesmortas_limpar(&lista[indice]);
+}
+/* A source the open deadline called dead that then played (owner 24/11/2026,
+ * .tpk): it goes back to the automatic pick. */
+void stream_automatico_readmitir(int indice) {
+  int i;
+  pthread_mutex_lock(&autoExclTrava);
+  for (i = 0; i < nAutomaticasExcluidas; i++)
+    if (automaticasExcluidas[i] == indice) {
+      automaticasExcluidas[i] = automaticasExcluidas[--nAutomaticasExcluidas];
+      atomic_fetch_add(&folhaRevisao, 1);
+      break;
+    }
+  pthread_mutex_unlock(&autoExclTrava);
 }
 int stream_automatico_excluir(int indice) {
   int resultado = 0;
@@ -676,6 +736,7 @@ void stream_preparar_dica_p2p(const Stream *l, int qtd) {
   for (int i = 0; i < qtd; i++) {
     if (l[i].url[0] || !l[i].infoHash[0]) continue;
     atomic_store(&motorP2pParaDica, p2pmotor_disponivel());
+#if defined(NV_TPK) || defined(NV_WEBOS)
     return;
   }
 }
@@ -688,9 +749,111 @@ void stream_definir_lista(const Stream *l, int qtd) {
   stream_definir_lista_idade(l, qtd, 0);
 }
 
+// SERIES MEMORY OF THE AUDIO FROM ANOTHER VERSION (audioext.h): the list of a
+// later episode arrives (whole or add-on by add-on); the remembered version
+// is looked for in it. Same binge group and language first; without a group,
+// the same add-on, language, resolution and audio codec.
+static int (*filtroAddonAudioext)(const char *chave);
+void stream_audioext_filtro_addon(int (*fn)(const char *chave)) { filtroAddonAudioext = fn; }
+static void audioextSerie(void) {
+  AudioExtIdent id;
+#if defined(NV_TPK) || defined(NV_WEBOS)   /* the donor server (dts/doador_tpk.h; doador_webos.c on LG) */
+  if (!doa_disponivel() || !ajustes_audio_externo() || !alvoLista[0] || strcmp(alvoLista, alvoPedido)) return;
+  if (!audioext_serie_procura(alvoPedido, &id)) return;
+  int achou = -1, nivel = 0;
+  for (int i = 0; i < n; i++) {
+    AudioExtEntrada e;
+    int lingua = 0, k;
+    stream_audioext_entrada(&lista[i], &e);
+    if (!e.temUrl || e.hls || e.naoVideo) continue;
+    if (filtroAddonAudioext && !filtroAddonAudioext(lista[i].addonChave)) continue;
+    for (int j = 0; j < e.nIdiomas; j++) if (ling_casa(e.idiomas[j], id.idioma)) lingua = 1;
+    // A version picked without a declared language ("Unknown"): the same kind.
+    if (!id.idioma[0]) lingua = e.nIdiomas == 0;
+    if (!lingua) continue;
+    if (id.grupo[0] && !strcmp(lista[i].bingeGroup, id.grupo)) k = 3;
+    else if (!strcmp(lista[i].provedor, id.addon) && lista[i].altura == id.altura && e.codec == id.codec) k = 2;
+    else continue;
+    if (e.cache > 0) k += 4;   // the cached copy of the same release wins
+    if (k > nivel) { nivel = k; achou = i; }
+  }
+  if (achou >= 0) audioext_serie_achou(lista[achou].url, lista[achou].cabecalhos, lista[achou].rotulo);
+#else
+  (void)id;
+#endif
+#else
+    return;
+  }
+}
+
+Uint32 stream_idade_ms(void) {
+  return temRecebidaEm ? SDL_GetTicks() - recebidaEm : 0xFFFFFFFFu;
+}
+
+void stream_definir_lista(const Stream *l, int qtd) {
+  stream_definir_lista_idade(l, qtd, 0);
+}
+
+// SERIES MEMORY OF THE AUDIO FROM ANOTHER VERSION (audioext.h): the list of a
+// later episode arrives (whole or add-on by add-on); the remembered version
+// is looked for in it. Same binge group and language first; without a group,
+// the same add-on and version name (an aggregator such as AIOStreams sends
+// many releases with no group: owner's log 16/11, "ST Store" in one episode,
+// "MF|Midnight" in the next, both 1080p from the same add-on); then the same
+// add-on, language, resolution and audio codec.
+static int (*filtroAddonAudioext)(const char *chave);
+static int nomeIgual(const Stream *s, const char *nome) {
+  char v[96];
+  audioext_nome_versao(s->rotulo, v, sizeof v);
+  return v[0] && !strcmp(v, nome);
+}
+void stream_audioext_filtro_addon(int (*fn)(const char *chave)) { filtroAddonAudioext = fn; }
+static void audioextSerie(void) {
+  AudioExtIdent id;
+#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+  if (!ajustes_audio_externo() || !alvoLista[0] || strcmp(alvoLista, alvoPedido)) return;
+  if (!audioext_serie_procura(alvoPedido, &id)) return;
+  int achou = -1, nivel = 0, como = 0;
+  for (int i = 0; i < n; i++) {
+    AudioExtEntrada e;
+    int lingua = 0, k;
+    stream_audioext_entrada(&lista[i], &e);
+    if (!e.temUrl || e.hls || e.naoVideo) continue;
+    if (filtroAddonAudioext && !filtroAddonAudioext(lista[i].addonChave)) continue;
+    for (int j = 0; j < e.nIdiomas; j++) if (ling_casa(e.idiomas[j], id.idioma)) lingua = 1;
+    // A version picked without a declared language ("Unknown"): the same kind.
+    if (!id.idioma[0]) lingua = e.nIdiomas == 0;
+    if (!lingua) continue;
+    if (id.grupo[0] && !strcmp(lista[i].bingeGroup, id.grupo)) k = 3;
+    else if (!strcmp(lista[i].provedor, id.addon) && id.nome[0] && nomeIgual(&lista[i], id.nome)) k = 2;
+    else if (!strcmp(lista[i].provedor, id.addon) && lista[i].altura == id.altura && e.codec == id.codec) k = 1;
+    else continue;
+    if (e.cache > 0) k += 4;   // the cached copy of the same release wins
+    if (k > nivel) { nivel = k; achou = i; como = k > 4 ? k - 4 : k; }
+  }
+  if (achou >= 0) {
+    printf("[ext-audio] series memory: found by %s\n", como == 3 ? "the same release group" : como == 2 ? "the same version name" : "the same add-on, resolution and codec");
+    audioext_serie_achou(lista[achou].url, lista[achou].cabecalhos, lista[achou].rotulo);
+  }
+#else
+  (void)id;
+#endif
+#endif
+}
+
 static int selosPacoteDa(Stream *s);
 static void selosAgendar(int ini, int qtd);
+static void selosVistaLimpar(void);
+static void selosAquecerPasso(void);
+static void selosAquecerVizinhos(void);
 static void textoAddonLimpar(void);
+// O que o addon disse do torrent (nome do arquivo, trackers) vai para o
+// resolvedor do debrid, que monta o magnet e escolhe o arquivo como o NuvioTV.
+static void dicasDebrid(const Stream *v, int qtd) {
+  for (int i = 0; i < qtd; i++)
+    if (v[i].infoHash[0])
+      debrid_dica_fonte(v[i].infoHash, v[i].fileIdx, v[i].arquivoReal ? v[i].arquivo : "", v[i].fontes);
+}
 void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   int i, k = 0;
   Stream *nova = l && qtd > 0 ? malloc(sizeof(Stream) * (size_t)qtd) : NULL;
@@ -709,9 +872,11 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
     // "ligue o P2P", nunca fingir que o addon nao mandou nada.
     if (!fonteOferecida(&l[i])) contarDescartada(&l[i]);
   for (i = 0; i < k && nova; i++) { nova[i].selosPacoteVer = 0; filtroCompletar(&nova[i]); filtroEscopo(&nova[i]); }   // os selos saem do fio de fundo (selosAgendar)
+  if (nova) dicasDebrid(nova, k);
   pthread_mutex_lock(&verTrava);
   free(lista); lista = nova; n = nova ? k : 0; atual = -1;
   textoAddonLimpar();
+  selosVistaLimpar();
   fitN = 0; // raw identities have been replaced; preserve an open snapshot
   free(chave); free(exib); chave = NULL; exib = NULL;
   if (n > 0) {
@@ -741,12 +906,21 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   // resposta chega. O carimbo vem de quem pediu, em app.c, e e ele que permite
   // a qualquer consumidor perguntar "esta lista e do episodio que eu quero?".
   snprintf(alvoLista, sizeof alvoLista, "%s", alvoPedido);
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#else
+  audioextSerie();
+#endif
+  if (!n) audioFiltroDescartar();
 }
 
 void stream_invalidar(const char *porque) {
   if (n > 0) {
     printf("[fonte] %d fontes de %s descartadas: %s\n", n,
            alvoLista[0] ? alvoLista : "(sem alvo)", porque ? porque : "");
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  audioextSerie();
+#else
+#endif
     fflush(stdout);
   }
   stream_definir_lista(NULL, 0);
@@ -761,8 +935,31 @@ static float *linhaY, focoFixoY;
 // conferencia paralela roda fora do fio da UI.
 static _Atomic int foraCacheFoco = -1;
 static void atualizarProvedores(void);
+static void loteDisparar(void);
 static int aberta, foco, grupo;
 static float rolagem, velRol;
+
+// Existing addon keys are sorted. A normal response contributes one sorted
+// run, so merge it backwards instead of shifting the old list for every row.
+// Equal keys keep the old rows first, exactly like the former stable insert.
+static void ordemAcrescentar(int antes, int qtd) {
+  if (qtd <= 65536) {
+    int old = antes - 1, next = qtd - 1, out = antes + qtd - 1;
+    while (next >= 0) {
+      int i = antes + next;
+      if (old >= 0 && chave[exib[old]] > chave[i]) exib[out--] = exib[old--];
+      else { exib[out--] = i; next--; }
+    }
+    return;
+  }
+  // The legacy 16-bit row key wraps for exceptionally large responses.
+  // Retain the original behavior rather than assuming that run is sorted.
+  for (int k = 0; k < qtd; k++) {
+    int i = antes + k, pos = i;
+    while (pos > 0 && chave[exib[pos - 1]] > chave[i]) { exib[pos] = exib[pos - 1]; pos--; }
+    exib[pos] = i;
+  }
+}
 
 void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   int i, k = 0, focoIdx = -1, linhaAntes = -1, total;
@@ -801,15 +998,10 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
     return;
   }
   memcpy(lista + n, nova, sizeof(Stream) * (size_t)k);
+  dicasDebrid(nova, k);
   for (i = 0; i < k; i++)
     chave[n + i] = ((unsigned)(ordemAddon < 0 ? 0 : ordemAddon) << 16) | (unsigned)(i & 0xFFFF);
-  // Insercao ordenada das novas em `exib`: as de antes ja estao em ordem, e
-  // uma nova entra depois de toda chave menor OU IGUAL (estavel).
-  for (i = 0; i < k; i++) {
-    int idx = n + i, pos = n + i;
-    while (pos > 0 && chave[exib[pos - 1]] > chave[idx]) { exib[pos] = exib[pos - 1]; pos--; }
-    exib[pos] = idx;
-  }
+  ordemAcrescentar(n, k);
   n = total;
   atomic_fetch_add(&folhaRevisao, 1);
   if (!temRecebidaEm) { recebidaEm = SDL_GetTicks(); temRecebidaEm = 1; }
@@ -817,11 +1009,17 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   selosAgendar(total - k, k);
   free(nova);
   printf("[fonte] +%d de %s (lista com %d)\n", k, l[0].provedor, n);
+  // The source sheet is open: the new torrents get their cache answer too.
+  if (aberta && !canalFolha) loteDisparar();
   fflush(stdout);
   if (aberta) atualizarProvedores();
   // A linha em foco muda de lugar quando entra fonte acima dela (os grupos tem
   // altura variavel): guardada aqui e reposta no proximo montar().
   if (focoIdx >= 0) { focoFixo = focoIdx; focoFixoY = linhaAntes < nOrdem ? linhaTopo(linhaAntes) : 0; }
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#else
+  audioextSerie();
+#endif
 }
 
 int stream_ordem_addon(int i) {
@@ -836,6 +1034,15 @@ const Stream *stream_item(int i) {
   return i >= 0 && i < n ? &lista[i] : NULL;
 }
 
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#else
+int stream_lista_tem_addon(const char *k) {
+  if (!k || !*k) return 0;
+  for (int i = 0; i < n; i++) if (!strcmp(lista[i].addonChave, k)) return 1;
+  return 0;
+}
+
+#endif
 // Pontuacao da regra do dono, do mais forte para o mais fraco:
 //   MP4 4K Dolby Vision  >  4K Dolby Vision (qualquer container)
 //   >  4K  >  Dolby Vision  >  resolucao  >  ordem de chegada
@@ -857,6 +1064,10 @@ static int alturaMax(void) {
   if (!q || !q[0]) return 0;
   if (!strcmp(q, "4K"))    return 2160;
   if (!strcmp(q, "1080p")) return 1080;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  audioextSerie();
+#else
+#endif
   if (!strcmp(q, "720p"))  return 720;
   return 0;                                  // "Automatica"
 }
@@ -869,8 +1080,22 @@ static int cabeNaAltura(const Stream *s) {
   return !teto || !s->altura || s->altura <= teto;
 }
 
+#if defined(NV_TPK) || defined(NV_WEBOS)
+// 1 when the list on hand has a source from add-on `k` (audioextaddons.c).
+int stream_lista_tem_addon(const char *k) {
+  if (!k || !*k) return 0;
+  for (int i = 0; i < n; i++) if (!strcmp(lista[i].addonChave, k)) return 1;
+  return 0;
+}
+
+#else
+#endif
 #ifdef NV_VIDAA
 // TABELA DE REGRAS DA VIDAA (Hisense) -----------------------------------------
+#if defined(NV_TPK) || defined(NV_WEBOS)
+
+#else
+#endif
 //
 // Fonte: medicoes de TERCEIROS contra o navegador dela (NoobyGains /
 // stremio-vidaa-tv), NAO VERIFICADAS neste aparelho — trocar os pesos aqui
@@ -1511,22 +1736,26 @@ int stream_grupo_regra(int i) { return grupoDe(i); }
 // como o oficial faz quando o auto-play nao acha nada.
 static volatile int regraBloqueou;
 int stream_regra_bloqueou(void) { return regraBloqueou; }
+// Only ALLOWED add-ons/plugins hold the pick (owner 26/11): one that only
+// enters as "use others if none" (FR_GRUPO_OUTROS) never makes it wait.
 static int pendenteGrupoCb(const char *nome, int plugin, void *u) {
-  return fonteregra_grupo_pendente((const FonteRegraCfg *)u, nome, plugin);
+  int g = fonteregra_grupo_pendente((const FonteRegraCfg *)u, nome, plugin);
+  return g >= FR_GRUPO_OUTROS ? -1 : g;
 }
 // A posicao, na ordem dos add-ons, do melhor add-on que ainda nao respondeu
 // (FR_ORDEM_SEM = fora da ordem; quem nunca toca por regra nao conta).
 static int pendenteRankCb(const char *nome, int plugin, void *u) {
-  if (fonteregra_grupo_pendente((const FonteRegraCfg *)u, nome, plugin) < 0) return -1;
+  if (pendenteGrupoCb(nome, plugin, u) < 0) return -1;
   return fonteregra_ordem_rank(nome);
 }
 int  stream_cabe_no_teto(const Stream *s) { return s ? cabeNoTeto(s) : 1; }
 // O add-on `nome` pode dar fonte ao automatico ("Fontes do auto-play")? Para
 // app.c so esperar pela fonte lembrada quando ela poderia ser escolhida.
+// Only ALLOWED add-ons count: a "use others" one never holds the pick.
 int  stream_addon_no_escopo(const char *nome) {
   FonteRegraCfg rc = regraCfg();
   if (!nome || !nome[0]) return 0;
-  return fonteregra_grupo_pendente(&rc, nome, 0) >= 0 || fonteregra_grupo_pendente(&rc, nome, 1) >= 0;
+  return pendenteGrupoCb(nome, 0, &rc) >= 0 || pendenteGrupoCb(nome, 1, &rc) >= 0;
 }
 
 // Endereco de aviso e nao de conteudo. Estes dois foram MEDIDOS no aparelho:
@@ -1541,7 +1770,7 @@ static int enderecoDeAviso(const char *u) {
 }
 
 int stream_fonte_disponivel(const Stream *s) {
-  return s && (s->url[0] || s->infoHash[0]) && fonteOferecida(s) && !ehInformativa(s) && !s->foraCache &&
+  return s && (s->url[0] || s->infoHash[0]) && fonteOferecida(s) && !ehInformativa(s) && !foraCacheNoAuto(s) &&
     !enderecoDeAviso(s->url);
 }
 int stream_filme_consultar(const AddonsConsulta *consulta, const char *id,
@@ -1676,10 +1905,12 @@ static void soltarConf(void *u) {
 __attribute__((unused))
 #endif
 static int resolverUrl(const char *url, const char *cabecalhos, int segundos,
-                        char *fim, unsigned tam, char *mime, unsigned mimeTam, long *corpo) {
+                        char *fim, unsigned tam, char *mime, unsigned mimeTam, long *corpo,
+                        int *httpFim) {
   const char *vetor[8];
   char copia[512];
   int nc = 0, http = 0;
+  if (httpFim) *httpFim = 0;
 #ifdef __EMSCRIPTEN__
   int restrito = 0;
 #endif
@@ -1698,6 +1929,7 @@ static int resolverUrl(const char *url, const char *cabecalhos, int segundos,
   // O tipo e o tamanho do corpo vem da MESMA sonda: nenhum pedido a mais.
   if (rede_url_final_tipo(url, segundos, nc ? vetor : NULL, fim, tam, &http,
                           mime, mimeTam, corpo)) return 1;
+  if (httpFim) *httpFim = http;
 #ifdef __EMSCRIPTEN__
   // XHR nao manda estes cabecalhos; AVPlay manda. A recusa nao prova que a
   // fonte morreu (mesmo contrato de playlistVazia). 5xx nao entram aqui.
@@ -1711,6 +1943,8 @@ static int resolverUrl(const char *url, const char *cabecalhos, int segundos,
 }
 
 void (*stream_cdn_lembrar)(const char *orig, const char *final, const char *cabecalhos, uint64_t sessao);
+int (*stream_cdn_resolvido)(const char *orig, char *host, unsigned hostTam);
+void (*stream_foco_demorado)(const Stream *s);
 
 static int verificarUma(int i, Conferencia *c) {
   char fim[NV_MEDIA_URL_MAX], url[NV_MEDIA_URL_MAX], cab[512], mime[96], addon[sizeof lista->provedor];
@@ -1727,7 +1961,7 @@ static int verificarUma(int i, Conferencia *c) {
     pthread_mutex_unlock(&verTrava);
     return 0;
   }
-  if (!fontefiltro_permite(&c->filtro, &lista[i].filtro) || (!lista[i].filtro.naoVod && lista[i].foraCache) || excedeDecoder(&lista[i]) || fontesmortas_idade(&lista[i]) >= 0) {
+  if (!fontefiltro_permite(&c->filtro, &lista[i].filtro) || (!lista[i].filtro.naoVod && foraCacheNoAuto(&lista[i])) || excedeDecoder(&lista[i]) || fontesmortas_idade(&lista[i]) >= 0) {
     pthread_mutex_unlock(&verTrava); return 0;
   }
   snprintf(url, sizeof url, "%s", lista[i].url);
@@ -1755,6 +1989,7 @@ static int verificarUma(int i, Conferencia *c) {
       pthread_mutex_lock(&verTrava);
       if (nv_perfil_sessao_atual(c->sessao) && listaGeracao == c->geracao && i < n && fora) {
         lista[i].foraCache = 1;
+        lista[i].foraDebrid = 1;
         atomic_fetch_add(&folhaRevisao, 1);
         lista[i].cacheNativo = 0;
         // #205: se for a carta em foco na folha, ela muda de lugar no proximo
@@ -1775,12 +2010,29 @@ static int verificarUma(int i, Conferencia *c) {
 #ifdef NV_VIDAA
     int r = rede_url_final_vidaa(url, 10, fim, sizeof fim);
 #else
-    int r = resolverUrl(url, cab, 10, fim, sizeof fim, mime, sizeof mime, &corpo);
+    int httpFim = 0;
+    int r = resolverUrl(url, cab, 10, fim, sizeof fim, mime, sizeof mime, &corpo, &httpFim);
+    int curlFim = r ? 0 : rede_url_final_curl();
 #endif
     if (r < 0) {
       printf("[fonte] %d sem confirmacao (bloqueio de rede na vidaa); presumindo viva\n", i);
       ok = 1;
     } else if (!r) {
+#ifndef NV_VIDAA
+      /* Log 13 (23/11/2026): the check's own request got no answer in time,
+       * but this source already works: the player has it open (tocar enquanto
+       * confere) or its link resolved to a CDN in this session. Keep it. */
+      char cdnHost[256] = "";
+      int resolvido = stream_cdn_resolvido && stream_cdn_resolvido(url, cdnHost, sizeof cdnHost);
+      if (fa_manter_sem_resposta(curlFim, httpFim, i == c->antecipada, resolvido)) {
+        if (resolvido)
+          printf("[fonte] %d check timed out but the link already resolved (CDN %s): kept\n", i, cdnHost);
+        else
+          printf("[fonte] %d check timed out but the player has it open: kept\n", i);
+        fflush(stdout);
+        ok = 1;
+      } else
+#endif
       printf("[fonte] %d nao resolveu\n", i);
     } else if (naovideo_mime(mime, fim, corpo)) {
       // Linha de aviso do addon (doacao, Discord, "indisponivel"): a URL leva a
@@ -1816,7 +2068,7 @@ int stream_url_serve(const char *url, const char *cabecalhos) {
   char fim[NV_MEDIA_URL_MAX], mime[96];
   long corpo = -1;
   if (!url || !*url) return 0;
-  if (!resolverUrl(url, cabecalhos, 5, fim, sizeof fim, mime, sizeof mime, &corpo)) return 0;
+  if (!resolverUrl(url, cabecalhos, 5, fim, sizeof fim, mime, sizeof mime, &corpo, NULL)) return 0;
   if (naovideo_mime(mime, fim, corpo)) return 0;
   if (enderecoDeAviso(fim)) return 0;
   if (playlistVazia(fim, cabecalhos)) return 0;
@@ -1953,6 +2205,44 @@ static int dicaTorrents(char *texto, size_t tam) {
   return 1;
 }
 
+// "From another source" found this link not ready on the debrid service (its
+// placeholder clip, even after the tries): the same as a debrid "still
+// downloading" answer here: not cached from now on, in this list and in the
+// audio pages. 1 when a source of the list had it.
+int stream_marcar_fora_cache_url(const char *url) {
+  int achou = 0;
+  if (!url || !*url) return 0;
+  pthread_mutex_lock(&verTrava);
+  for (int i = 0; i < n; i++) {
+    if (strcmp(lista[i].url, url)) continue;
+    lista[i].emCache = 0;
+    lista[i].cacheNativo = 0;
+    lista[i].cacheNegado = 1;
+    lista[i].foraCache = 1;
+    lista[i].foraDebrid = 1;
+    achou = 1;
+  }
+  pthread_mutex_unlock(&verTrava);
+  if (achou) {
+    atomic_fetch_add(&folhaRevisao, 1);
+#if defined(NV_TPK) || defined(NV_WEBOS)
+    // The host only: a debrid or AIOStreams path carries the download token
+    // or the add-on's config (owner 25/11, beta: no tokens in the log).
+    { const char *h = strstr(url, "://");
+      const char *f;
+      h = h ? h + 3 : url;
+      f = strchr(h, '/');
+      int nh = f ? (int)(f - h) : (int)strlen(h);
+      printf("[fonte] marked not cached by the audio of another source: %.*s/…\n", nh > 80 ? 80 : nh, h); }
+#else
+    printf("[fonte] marked not cached by the audio of another source: %.80s\n", url);
+#endif
+    fflush(stdout);
+  }
+  return achou;
+}
+unsigned stream_revisao(void) { return atomic_load(&folhaRevisao); }
+
 unsigned stream_lista_geracao(void) {
   unsigned g;
   pthread_mutex_lock(&verTrava);
@@ -2030,6 +2320,7 @@ int stream_resolver_escolhida(int i, unsigned geracao, char *url, unsigned nu,
       lista[i].cacheNativo = 0;
       lista[i].cacheNegado = 1;
       lista[i].foraCache = 1;
+      lista[i].foraDebrid = 1;
       atomic_fetch_add(&folhaRevisao, 1);
       atomic_store(&foraCacheFoco, i);
     }
@@ -2048,7 +2339,8 @@ int stream_resolver_escolhida(int i, unsigned geracao, char *url, unsigned nu,
 static void faixaPontos(const Stream *s, char *dst, size_t tam) {
   static const char *const hdrNome[] = { "SDR", "HDR", "HDR10", "HDR10+", "DV" };
   snprintf(dst, tam, "%dp %s%s%s%s%s", s->altura, hdrNome[nivelHdr(s)], s->mp4 ? " mp4" : "",
-           s->foraCache ? " uncached" : " cache-unconfirmed", ehPlugin(s) ? " plugin" : " addon",
+           cacheConfirmado(s) ? " cached" : s->foraCache ? " uncached" : " cache-unconfirmed",
+           ehPlugin(s) ? " plugin" : " addon",
            !cabeNaAltura(s) ? " over-cap" : foraDaFaixaTamanho(s) == 1 ? " over-size"
            : foraDaFaixaTamanho(s) == 2 ? " under-size" : "");
 }
@@ -2257,7 +2549,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
     } else if (s->infoHash[0]) {
       ok = debrid_resolver_cache(s->infoHash, s->fileIdx, resolvida, sizeof resolvida, &fora);
     } else if (s->url[0] && resolverUrl(s->url, s->cabecalhos, 10, fim, sizeof fim,
-                                      mime, sizeof mime, &corpo) &&
+                                      mime, sizeof mime, &corpo, NULL) &&
                !naovideo_mime(mime, fim, corpo) && !enderecoDeAviso(fim) &&
                !playlistVazia(fim, s->cabecalhos)) {
       snprintf(resolvida, sizeof resolvida, "%s", fim); ok = 1;
@@ -2323,7 +2615,8 @@ int stream_vod_renovada_aplicar(int indice, unsigned geracao, const Stream *font
   if (!fonte || !fonte->url[0] || !nv_perfil_sessao_travar(sessao)) return 0;
   pthread_mutex_lock(&verTrava);
   int ok = geracao == listaGeracao && indice >= 0 && indice < n;
-  if (ok) { lista[indice] = *fonte; atomic_fetch_add(&folhaRevisao, 1); }
+  if (ok) { lista[indice] = *fonte; atomic_fetch_add(&folhaRevisao, 1);
+    atomic_fetch_add(&audioFiltroRevisao, 1); }
   pthread_mutex_unlock(&verTrava);
   nv_perfil_sessao_destravar();
   return ok;
@@ -2556,7 +2849,7 @@ int stream_preparo_resolver(StreamPreparo *p, int (*cancelado)(void *), void *ct
       ok = debrid_resolver_servico_cache(r.servico, s->infoHash, s->fileIdx, url, sizeof url, &fora);
       if (!debrid_servico_disponivel(r.servico)) fontefalha_provedor_recusado(p->politica, r.servico);
     } else if (s->infoHash[0]) ok = debrid_resolver_cache(s->infoHash, s->fileIdx, url, sizeof url, &fora);
-    else if (s->url[0] && resolverUrl(s->url, s->cabecalhos, 10, fim, sizeof fim, mime, sizeof mime, &corpo) &&
+    else if (s->url[0] && resolverUrl(s->url, s->cabecalhos, 10, fim, sizeof fim, mime, sizeof mime, &corpo, NULL) &&
              !naovideo_mime(mime, fim, corpo) && !enderecoDeAviso(fim) && !playlistVazia(fim, s->cabecalhos)) {
       snprintf(url, sizeof url, "%s", fim); ok = 1;
     }
@@ -2590,7 +2883,7 @@ int stream_preparo_renovar(StreamPreparo *p, int indice, int (*cancelado)(void *
     ok = servico >= 0
        ? debrid_resolver_servico_cache(servico, s->infoHash, s->fileIdx, url, sizeof url, &fora)
        : debrid_resolver_cache(s->infoHash, s->fileIdx, url, sizeof url, &fora);
-  } else if (s->url[0] && resolverUrl(s->url, s->cabecalhos, 10, fim, sizeof fim, mime, sizeof mime, &corpo) &&
+  } else if (s->url[0] && resolverUrl(s->url, s->cabecalhos, 10, fim, sizeof fim, mime, sizeof mime, &corpo, NULL) &&
              !naovideo_mime(mime, fim, corpo) && !enderecoDeAviso(fim) && !playlistVazia(fim, s->cabecalhos)) {
     snprintf(url, sizeof url, "%s", fim); ok = 1;
   }
@@ -2638,6 +2931,120 @@ int stream_falha_aplicar(int indice, unsigned geracao, int servico, const char *
                                    nv_perfil_sessao_ler());
 }
 
+// DEBRID CACHE OF THE LIST (owner 27/11/2026, LG log: AIO marked all 198
+// link-less torrents not cached). The link-less torrents of the list are asked
+// to TorBox and Premiumize in a batch, like NuvioTVSmart: cached ones turn
+// "In cache" and move up (auto-play starts from them), and a hash every active
+// service said no to is out (foraDebrid). Real-Debrid/AllDebrid cannot be asked
+// in a batch: with one of them active a "no" stays unknown, and the cache-only
+// resolve of auto-play answers for them. Runs before the auto-play pick (job
+// thread) and on a thread of its own while the source sheet is open. Each hash
+// is asked once per list, at most `max` per run. BLOCKS; needs a debrid
+// context on the thread.
+#define LOTE_MAX 200
+static _Atomic int loteRodando, loteDeNovo, loteFoco;
+static void cacheLoteConferir(uint64_t sessao, int max, int soAuto) {
+  int ativos = 0, servs[2], ns = 0, m = 0, sim = 0, nao = 0;
+  unsigned ger, t0 = SDL_GetTicks();
+  char (*hs)[48];
+  int *idx;
+  signed char *res;
+  unsigned char *ok, *naoDe;
+  for (int q = 0; q < DEBRID_N; q++) if (debrid_servico_disponivel(q)) ativos |= 1 << q;
+  if (ativos & (1 << DEBRID_TB)) servs[ns++] = DEBRID_TB;
+  if (ativos & (1 << DEBRID_PM)) servs[ns++] = DEBRID_PM;
+  if (!ns) return;
+  if (max > LOTE_MAX) max = LOTE_MAX;
+  hs = malloc(sizeof *hs * LOTE_MAX); idx = malloc(sizeof *idx * LOTE_MAX);
+  res = malloc(LOTE_MAX); ok = calloc(LOTE_MAX, 1); naoDe = calloc(LOTE_MAX, 1);
+  if (!hs || !idx || !res || !ok || !naoDe) goto fim;
+  pthread_mutex_lock(&verTrava);
+  if (!nv_perfil_sessao_atual(sessao)) { pthread_mutex_unlock(&verTrava); goto fim; }
+  ger = listaGeracao;
+  for (int k = 0; k < n && m < max; k++) {
+    int i = ORD(k);
+    Stream *s = &lista[i];
+    // Links (AIO proxying the debrid) and hashes the addon already calls
+    // cached are never asked: no call, no wait, for a setup that works.
+    if (s->url[0] || strlen(s->infoHash) < 32 || s->emCache || s->cacheConsultado || s->cacheNativo ||
+        s->foraDebrid) continue;
+    // For the pick, only what auto-play may play: allowed add-ons (owner
+    // 27/11; "use others" ones still get the cache-only resolve), the
+    // filters, nothing excluded or dead.
+    if (soAuto) {
+      int g = grupoDe(i);
+      if (g < 0 || g >= FR_GRUPO_OUTROS || motivoForaDoAuto(i, NULL) != MOT_FICA) continue;
+    }
+    s->cacheConsultado = 1;
+    snprintf(hs[m], sizeof hs[m], "%s", s->infoHash);
+    idx[m++] = i;
+  }
+  pthread_mutex_unlock(&verTrava);
+  if (!m) goto fim;
+  for (int a = 0; a < ns; a++) {
+    if (debrid_cache_lote(servs[a], (const char (*)[48])hs, m, res, 2500) <= 0) continue;
+    for (int j = 0; j < m; j++) {
+      if (res[j] == 1) ok[j] = 1;
+      else if (res[j] == 0) naoDe[j] |= (unsigned char)(1 << servs[a]);
+    }
+  }
+  pthread_mutex_lock(&verTrava);
+  if (nv_perfil_sessao_atual(sessao) && listaGeracao == ger) {
+    for (int j = 0; j < m; j++) {
+      int i = idx[j];
+      Stream *s;
+      if (i >= n || strcmp(lista[i].infoHash, hs[j])) continue;
+      s = &lista[i];
+      if (ok[j]) {
+        cacheConfirmar(s);
+        s->foraCache = 0;
+        sim++;
+      } else if (naoDe[j] && (int)naoDe[j] == ativos) {
+        s->emCache = 0; s->cacheNativo = 0; s->cacheNegado = 1;
+        s->foraCache = 1; s->foraDebrid = 1;
+        nao++;
+      }
+    }
+    atomic_fetch_add(&folhaRevisao, 1);
+    atomic_store(&loteFoco, 1);
+  }
+  pthread_mutex_unlock(&verTrava);
+  printf("[debrid] list cache check (%s%s%s): %d hash(es), %d cached, %d not cached, %d unknown (%u ms)\n",
+         ativos & (1 << DEBRID_TB) ? "TorBox" : "", ns > 1 ? "+" : "",
+         ativos & (1 << DEBRID_PM) ? "Premiumize" : "", m, sim, nao, m - sim - nao,
+         (unsigned)(SDL_GetTicks() - t0));
+  fflush(stdout);
+fim:
+  free(hs); free(idx); free(res); free(ok); free(naoDe);
+}
+typedef struct { DebridContexto d; uint64_t sessao; } LoteFio;
+static void *loteFio(void *u) {
+  LoteFio *f = u;
+  debrid_contexto_entrar(&f->d);
+  do {
+    atomic_store(&loteDeNovo, 0);
+    cacheLoteConferir(f->sessao, LOTE_MAX, 0);
+  } while (atomic_load(&loteDeNovo));
+  debrid_contexto_sair();
+  free(f);
+  atomic_store(&loteRodando, 0);
+  // A kick that arrived after the last pass looked at loteDeNovo only raised
+  // the flag (loteRodando was still set): run it now instead of losing it.
+  if (atomic_exchange(&loteDeNovo, 0)) loteDisparar();
+  return NULL;
+}
+static void loteDisparar(void) {
+  pthread_t t;
+  LoteFio *f;
+  if (atomic_exchange(&loteRodando, 1)) { atomic_store(&loteDeNovo, 1); return; }
+  f = malloc(sizeof *f);
+  if (!f) { atomic_store(&loteRodando, 0); return; }
+  debrid_contexto_capturar(&f->d);
+  f->sessao = nv_perfil_sessao_ler();
+  if (pthread_create(&t, NULL, loteFio, f) == 0) pthread_detach(t);
+  else { free(f); atomic_store(&loteRodando, 0); }
+}
+
 int stream_primeira_boa_sessao(int tentativas, uint64_t sessao) {
   int fila[VER_MAX], nf, q, tocadas = 0, escolhida, total, pref, livres = 0, kk;
   int motivos[MOT_N] = {0};
@@ -2650,6 +3057,10 @@ int stream_primeira_boa_sessao(int tentativas, uint64_t sessao) {
   fontefalha_filtro(&c.filtro);
   Uint32 tVerif = 0;
   tentativas = fonteauto_tentativas(modo, tentativas);
+  // Cached torrents first: ask TorBox/Premiumize about the link-less ones.
+  // The first 80 auto-play may play, in list order (two calls): that is what
+  // the pick reaches; the open sheet asks about the rest.
+  cacheLoteConferir(sessao, 80, 1);
   pthread_mutex_lock(&verTrava);
   if (!nv_perfil_sessao_atual(sessao)) { pthread_mutex_unlock(&verTrava); return -1; }
   total = n;
@@ -2831,7 +3242,7 @@ static int boaParaJa(const Stream *s) {
   return s->altura >= (teto ? teto : 2160);
 }
 
-static int pendenteAntesCb(int addon, void *u) { (void)u; return addons_pendente_antes(addon); }
+static int pendenteAntesCb(int addon, void *u) { return addons_pendente_antes_f(addon, pendenteGrupoCb, u); }
 
 int stream_primeira_boa(int tentativas) {
   return stream_primeira_boa_sessao(tentativas, nv_perfil_sessao_ler());
@@ -2860,7 +3271,9 @@ int stream_auto_pode_decidir(int preferida, int prefPendente, int prazoPassou, i
   }
   for (q = 0; q < total; q++) {
     int i = ORD(q);
-    if (i == preferida) posPref = q;
+    // Same scope check as the real pick: an out-of-scope remembered source is
+    // never put first there, so it must not end the wait here either.
+    if (i == preferida && fonteregra_no_escopo(&rc, ehPlugin(&lista[i]))) posPref = q;
     pts[q] = pontos(&lista[i]);
     acima[q] = (unsigned char)acimaDoTetoAuto(&lista[i]);
     excl[q] = (unsigned char)foraDoAuto(i);
@@ -2876,7 +3289,7 @@ int stream_auto_pode_decidir(int preferida, int prefPendente, int prazoPassou, i
   p.prefPendente = !ordemDoAddon() && prefPendente;
   p.prazoPassou = prazoPassou;
   p.pontos = pts; p.acimaTeto = acima; p.excluida = excl; p.boa = boa;
-  p.addon = ad; p.pendenteAntes = pendenteAntesCb;
+  p.addon = ad; p.pendenteAntes = pendenteAntesCb; p.u = &rc;
   p.grupo = grp; p.instantaneo = instantaneo;
   p.pendenteGrupoMin = addons_pendente_grupo_min(pendenteGrupoCb, &rc);
   // SO OS ADD-ONS QUE O AUTOMATICO PODE USAR seguram a decisao (dono, 16/10):
@@ -3639,17 +4052,36 @@ static int linhaAnt = -1, focoVisto = -1;
 
 // MODO "DO ADDON" (Ajustes > Texto das fontes; dono, 02/10: "tem que ter a
 // opcao de receber pronto o texto que alguns addons mandam"). O titulo e o
-// `name` do addon numa linha so, e embaixo a `description` linha a linha, como
-// veio — o AIOStreams do dono manda "11.1 GB | 30.1 Mbps |", o grupo, os
-// idiomas e o arquivo, cada um numa linha. Glifo que a Inter nao tem (o ⚡ e o
-// ⚑ do formatador) cai fora em text.c, sem virar quadrado.
-#define FOLHA_ADDON_LINHAS 5
-// Fora do foco a linha mostra so as 2 primeiras linhas do addon; a linha em
-// foco abre (mola abreFoco) e mostra todas, ate FOLHA_ADDON_LINHAS. Com 5
-// linhas em todas as fontes a lista caberia em 3 telas; assim ela continua
-// densa e a que se esta lendo abre inteira.
+// `name` do addon, e embaixo a `description` linha a linha, como veio — o
+// AIOStreams do dono manda "11.1 GB | 30.1 Mbps |", o grupo, os idiomas e o
+// arquivo, cada um numa linha.
+//
+// TUDO A MOSTRA NA LINHA EM FOCO (dono, 17/11: "remove row limitation so all
+// info can be seen"). Antes: 5 linhas de descricao, 6 pecas por linha, 96 bytes
+// por peca e cada linha cortada na borda. Agora a linha em foco abre o nome e
+// a descricao inteiros, e a linha comprida QUEBRA em vez de ser cortada; fora
+// do foco ficam o primeiro trecho do nome e as 2 primeiras linhas, como antes.
+// O limite que sobra e o do parser (Stream.rotulo / Stream.descricao).
+//
+// ICONES (formatador.h): os emojis e simbolos dos formatadores viram icone em
+// qualquer lugar do nome e da descricao, no estilo dos Ajustes (Padrao:
+// Twemoji em cores e o glifo dos simbolos; Minimalista: Lucide na cor do
+// texto). Bandeiras viram a bandeira. Emoji fora da lista some, como antes.
 #define FOLHA_ADDON_FECHADA 2
 #define FOLHA_ADDON_LD     28.0f
+#define FOLHA_ADDON_TD     40.0f    // altura de cada trecho do nome
+#define FOLHA_ADDON_SELOS  30.0f    // fileira de selos (Ajustes: Badge position): selo 24 + 3/3
+// THE BADGE ROW ONLY WITH AN IMPORTED PACK (owner 25/11/2026): with "Do Nuvio"
+// the From addon rows carry no badge row at all (the add-on's own text already
+// says the resolution and HDR) and lay out as before the row existed. The
+// height follows the pack CHOICE, never its matching, so a pack that matches
+// late still never moves the list.
+static float addonSelosAlt(void) { return selospacote_ativo() >= 0 ? FOLHA_ADDON_SELOS : 0.0f; }
+// No row = the name's first line stops short of the addon column, as "Bottom".
+static int addonSelosEmbaixo(void) { return selospacote_ativo() < 0 || ajustes_selos_embaixo(); }
+#define ADDON_ICONE_W      30.0f    // 22 de icone + 8
+#define ADDON_BANDEIRA_W   30.0f    // 22 de bandeira (Twemoji, quadrada) + 8
+#define ADDON_GAP          18.0f    // depois de cada texto
 static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   size_t k = 0;
   while (n && (*ini == ' ' || *ini == '\t')) { ini++; n--; }
@@ -3660,77 +4092,47 @@ static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   }
   d[k] = 0;
 }
-// Emoji do formatador -> icone Lucide (aj_<nome>.png). A TV nao tem emoji
-// colorido; o que nao esta aqui sai limpo em nv_limpar_texto (sem quadrado).
-// Um emoji pode vir com o seletor de variacao U+FE0F (EF B8 8F) colado.
-static const struct { const char *emoji, *icone; } EMOJI_ICONE[] = {
-  { "\xF0\x9F\x92\xBE", "aj_hard-drive" },   // 💾
-  { "\xF0\x9F\x91\xA4", "aj_users" },        // 👤
-  { "\xF0\x9F\x8E\x9E", "aj_film" },         // 🎞
-  { "\xF0\x9F\x94\x8A", "aj_volume-2" },     // 🔊
-  { "\xF0\x9F\x8C\x90", "aj_globe" },        // 🌐
-  { "\xE2\x9A\x99",     "aj_settings-2" },  // ⚙
-  { "\xE2\x9A\xA1",     "aj_zap" },         // ⚡
-  { "\xF0\x9F\x93\xA6", "aj_package" },      // 📦
-  { "\xF0\x9F\x8F\xB7", "aj_tag" },          // 🏷
-  { "\xE2\x8F\xB1",     "aj_clock" },       // ⏱
-};
-#define ADDON_PECAS 6
-typedef struct { int n; const char *ic[ADDON_PECAS]; char tx[ADDON_PECAS][96]; } LinhaAddon;
-static const char *emojiIcone(const char *p, size_t *len) {
-  for (size_t k = 0; k < sizeof EMOJI_ICONE / sizeof EMOJI_ICONE[0]; k++) {
-    size_t n = strlen(EMOJI_ICONE[k].emoji);
-    if (strncmp(p, EMOJI_ICONE[k].emoji, n)) continue;
-    if (!strncmp(p + n, "\xEF\xB8\x8F", 3)) n += 3;
-    *len = n;
-    return EMOJI_ICONE[k].icone;
+static void legendaProvedor(const Stream *s, char *buf, size_t tam);
+// ARTE QUE NAO VEIO. A atualizacao pelo app do .tpk troca so a libnuvio.so e a
+// arte fica a da instalacao: sem os PNGs novos, cada icone ocupava o seu lugar
+// e nao desenhava nada (buracos no meio do texto). Bandeira sem PNG volta ao
+// codigo do idioma; icone sem PNG usa o do outro estilo, ou some como antes
+// desta mudanca. Na .apk e no .ipk a arte vem sempre inteira e isto so confirma.
+// O disco e consultado uma vez por nome (a arte nao muda com o app aberto).
+static int bandeiraExiste(const char *cc) {
+  static struct { char cc[8]; signed char tem; } visto[400];
+  static int nVisto;
+  char nome[32];
+  for (int i = 0; i < nVisto; i++)
+    if (!strcmp(visto[i].cc, cc)) return visto[i].tem;
+  snprintf(nome, sizeof nome, "formatador/fl_%s", cc);
+  int tem = gfx_icone_existe(nome);
+  if (nVisto < (int)(sizeof visto / sizeof *visto) && strlen(cc) < sizeof visto[0].cc) {
+    snprintf(visto[nVisto].cc, sizeof visto[nVisto].cc, "%s", cc);
+    visto[nVisto++].tem = (signed char)tem;
   }
+  return tem;
+}
+#define ADDON_ICONES_MAX 512
+static const char *addonIcone(int idx, int minimal, int *cor) {
+  static signed char tem[2][ADDON_ICONES_MAX];   // 0 = nao visto, 1 = existe, -1 = falta
+  if (idx < 0 || idx >= ADDON_ICONES_MAX) { if (cor) *cor = 0; return NULL; }
+  for (int vez = 0; vez < 2; vez++) {
+    int m = vez ? !minimal : minimal;
+    const char *nome = formatador_icone_nome(idx, m, cor);
+    if (!nome || !nome[0]) continue;
+    if (!tem[m][idx]) tem[m][idx] = gfx_icone_existe(nome) ? 1 : -1;
+    if (tem[m][idx] > 0) return nome;
+  }
+  if (cor) *cor = 0;
   return NULL;
 }
-// Uma linha crua do addon vira pecas "[icone] texto". O texto de cada peca
-// passa pelo limpador do #144 (versalete, subscrito, glifo que a fonte nao
-// tem) antes de ir para a tela, como o resto da folha.
-static void pecasAddon(const char *ini, size_t n, LinhaAddon *L) {
-  char cru[1024];
-  const char *p, *ate;
-  size_t len;
-  L->n = 0;
-  linhaLimpa(cru, sizeof cru, ini, n);
-  p = cru;
-  ate = cru + strlen(cru);
-  while (p < ate && L->n < ADDON_PECAS) {
-    const char *ic = NULL, *q = p;
-    char seg[512];
-    size_t k;
-    // O icone (se a peca abre com um) e o texto ate o proximo emoji conhecido.
-    if (!(ic = emojiIcone(p, &len))) len = 0;
-    q = p + len;
-    for (k = 0; q + k < ate; k++) { size_t l2; if (emojiIcone(q + k, &l2)) break; }
-    snprintf(seg, sizeof seg, "%.*s", (int)(k < sizeof seg - 1 ? k : sizeof seg - 1), q);
-    nv_limpar_texto(seg, L->tx[L->n], sizeof L->tx[0], NV_LIMPA_UMA_LINHA);
-    nv_aparar_separadores(L->tx[L->n]);   // "31.4 GB | 43.2 Mbps |" -> sem o | solto
-    if (ic || L->tx[L->n][0]) L->ic[L->n++] = ic;
-    p = q + k;
-  }
-}
-static int linhasAddon(const Stream *s, LinhaAddon *out, int max) {
-  const char *p = s->descricao;
-  int nl = 0;
-  while (*p && nl < max) {
-    const char *f = strchr(p, '\n');
-    size_t n = f ? (size_t)(f - p) : strlen(p);
-    pecasAddon(p, n, &out[nl]);
-    if (out[nl].n) nl++;
-    if (!f) break;
-    p = f + 1;
-  }
-  return nl;
-}
-static void tituloAddon(const Stream *s, char *buf, size_t tam) {
-  char t[sizeof s->rotulo], lim[sizeof s->rotulo];
+// O nome numa linha so (espacos e quebras viram um espaco). O ⚡ do comeco sai
+// quando o app ja desenha o proprio raio de "em cache" (#499).
+static const char *nomeAddon(const Stream *s, char *t, size_t tam) {
   size_t k = 0;
   int esp = 0;
-  for (const char *p = s->rotulo; *p && k + 1 < sizeof t; p++) {
+  for (const char *p = s->rotulo; *p && k + 1 < tam; p++) {
     unsigned char c = (unsigned char)*p;
     if (c < 33) { esp = k > 0; continue; }
     if (esp) { t[k++] = ' '; esp = 0; }
@@ -3743,7 +4145,12 @@ static void tituloAddon(const Stream *s, char *buf, size_t tam) {
     if (!strncmp(nome, "\xEF\xB8\x8F", 3)) nome += 3;
     while (*nome == ' ') nome++;
   }
-  nv_limpar_texto(nome, lim, sizeof lim, NV_LIMPA_UMA_LINHA);
+  return nome;
+}
+// So o texto do nome, sem icones (teste #499 e log).
+static void tituloAddon(const Stream *s, char *buf, size_t tam) {
+  char t[sizeof s->rotulo], lim[sizeof s->rotulo];
+  nv_limpar_texto(nomeAddon(s, t, sizeof t), lim, sizeof lim, NV_LIMPA_UMA_LINHA);
   snprintf(buf, tam, "%s", lim[0] ? lim : s->provedor);
 }
 
@@ -3751,34 +4158,457 @@ static void tituloAddon(const Stream *s, char *buf, size_t tam) {
 // O texto cru nao muda com foco/altura; cada indice e limpo uma vez. Acrescentar
 // preserva as cartas prontas, trocar a lista libera tudo. Texturas continuam
 // no cache de text.c (nao guardar GLuint que o LRU pode despejar).
+//
+// `pecas`: as linhas LOGICAS (0 = nome, 1.. = descricao), cada uma uma fila de
+// pecas de formatador_pecas, separadas por '\n'. `vis`: as linhas VISUAIS
+// (depois da quebra), cada uma aberta por "Vddd" (ddd = a linha logica) e
+// seguida das mesmas pecas; recalculada so quando a largura ou a fonte muda.
+// A quebra so MEDE (txt_largura): desenhar a linha em foco reusa os mesmos
+// trechos ja rasterizados fora do foco.
 typedef struct {
-  char titulo[96];
+  char titulo[sizeof ((Stream *)0)->rotulo];
   int nl;
-  LinhaAddon linhas[FOLHA_ADDON_LINHAS];
+  char *pecas; size_t nPecas;
+  char *vis; size_t nVis;
+  float kw0, kw; int kFonte, kMin, linT, linD;
+  int pronto;     // nl/titulo read; pecas may have been let go since
+  int linhasOk;   // linT/linD of the last wrap (kw0/kw/kFonte/kMin) kept without the pieces
+  unsigned uso;   // last use, for the bounded piece cache
 } TextoAddon;
 static TextoAddon *textoAddon;
-static int textoAddonN, textoAddonCap;
+static int textoAddonCap;
+// At most TEXTO_ADDON_CACHE sources keep their pieces (pecas/vis); the others
+// keep only nl, the title and the line counts of their last wrap, so a
+// 2000-source list does not hold 2000 parsed cards. Idea from Matis94's
+// rich formatter cards (ccae01dff: bounded LRU, lazy parsing per index).
+#define TEXTO_ADDON_CACHE 64
+static int textoAddonCom[TEXTO_ADDON_CACHE], textoAddonComN;
+static unsigned textoAddonRelogio;
+static float addonLargura = 0.0f;   // tr - tx do ultimo desenho; 0 = ainda nao desenhou
+static void textoAddonSoltar(TextoAddon *t) {
+  free(t->pecas); free(t->vis);
+  t->pecas = t->vis = NULL; t->nPecas = t->nVis = 0;
+}
 static void textoAddonLimpar(void) {
-  free(textoAddon); textoAddon = NULL; textoAddonN = textoAddonCap = 0;
+  for (int i = 0; i < textoAddonCap; i++) textoAddonSoltar(&textoAddon[i]);
+  free(textoAddon); textoAddon = NULL; textoAddonCap = 0; textoAddonComN = 0;
+}
+// `i` now holds pieces: past the cap, the least recently used other source
+// lets go of its pieces (its nl, title and line counts stay).
+static void textoAddonGuardar(int i) {
+  int v = -1;
+  for (int k = 0; k < textoAddonComN; k++) if (textoAddonCom[k] == i) return;
+  if (textoAddonComN < TEXTO_ADDON_CACHE) { textoAddonCom[textoAddonComN++] = i; return; }
+  for (int k = 0; k < textoAddonComN; k++)
+    if (v < 0 || textoAddon[textoAddonCom[k]].uso < textoAddon[textoAddonCom[v]].uso) v = k;
+  { TextoAddon *o = &textoAddon[textoAddonCom[v]];
+    o->linhasOk = o->vis != NULL;
+    textoAddonSoltar(o); }
+  textoAddonCom[v] = i;
+}
+static void textoAddonMontar(const Stream *s, TextoAddon *t) {
+  // Bandeira e lista de idiomas crescem o texto (bloco S..M..E leva os dois
+  // estilos: ate ~2x). Monta com folga de 3x e devolve o que sobrou: com
+  // R + 2D o nome cheio de bandeiras perdia o fim quando a descricao era curta.
+  size_t cap = 3 * (strlen(s->rotulo) + strlen(s->descricao)) + 64, k = 0;
+  char *o = malloc(cap + 1);
+  char nm[sizeof s->rotulo];
+  memset(t, 0, sizeof *t);
+  tituloAddon(s, t->titulo, sizeof t->titulo);
+  if (!o) return;
+  o[0] = 0;
+  { const char *nome = nomeAddon(s, nm, sizeof nm);
+    size_t k0 = k;
+    formatador_pecas(nome, strlen(nome), o, cap, &k, bandeiraExiste);
+    if (k == k0) {   // so enfeite, ou vazio: o nome do addon
+      size_t l = strlen(s->provedor);
+      if (k + l + 3 <= cap) { o[k++] = 'T'; memcpy(o + k, s->provedor, l + 1); k += l + 1; }
+    } }
+  for (const char *p = s->descricao; *p; ) {
+    const char *f = strchr(p, '\n');
+    size_t n = f ? (size_t)(f - p) : strlen(p), k0;
+    char cru[2048];
+    linhaLimpa(cru, sizeof cru, p, n);
+    if (k + 2 > cap) break;
+    o[k++] = '\n'; k0 = k;
+    if (formatador_pecas(cru, strlen(cru), o, cap, &k, bandeiraExiste) > 0) t->nl++;
+    else k = k0 - 1;   // linha so de enfeite: nao conta
+    if (!f) break;
+    p = f + 1;
+  }
+  o[k] = 0;
+  { char *justo = realloc(o, k + 1); if (justo) o = justo; }
+  t->pecas = o; t->nPecas = k;
 }
 static const TextoAddon *textoAddonDa(int i) {
   static TextoAddon reserva;
   if (textoAddonCap < n) {
     TextoAddon *t = realloc(textoAddon, (size_t)n * sizeof *t);
     if (!t) {
-      reserva.nl = linhasAddon(&lista[i], reserva.linhas, FOLHA_ADDON_LINHAS);
-      tituloAddon(&lista[i], reserva.titulo, sizeof reserva.titulo);
+      textoAddonSoltar(&reserva);
+      textoAddonMontar(&lista[i], &reserva);
       return &reserva;
     }
+    memset(t + textoAddonCap, 0, (size_t)(n - textoAddonCap) * sizeof *t);
     textoAddon = t; textoAddonCap = n;
   }
-  while (textoAddonN <= i) {
-    TextoAddon *t = &textoAddon[textoAddonN];
-    t->nl = linhasAddon(&lista[textoAddonN], t->linhas, FOLHA_ADDON_LINHAS);
-    tituloAddon(&lista[textoAddonN], t->titulo, sizeof t->titulo);
-    textoAddonN++;
+  // Only the source asked for is read (not every index before it).
+  { TextoAddon *t = &textoAddon[i];
+    if (!t->pronto || !t->pecas) {
+      textoAddonMontar(&lista[i], t);
+      t->pronto = 1;
+      if (t->pecas) textoAddonGuardar(i);
+    }
+    t->uso = ++textoAddonRelogio;
+    return t; }
+}
+// Description line count without bringing the pieces back.
+static int textoAddonNl(int i) {
+  if (i >= 0 && i < textoAddonCap && textoAddon[i].pronto) return textoAddon[i].nl;
+  return textoAddonDa(i)->nl;
+}
+// Line counts only (row heights): a source whose pieces were let go answers
+// from its last wrap when the width, font and icon style are the same.
+static int textoAddonLinhasGuardadas(int i, float w0, float L, int fonte, int minimal, int *linT, int *linD) {
+  const TextoAddon *t;
+  if (i < 0 || i >= textoAddonCap) return 0;
+  t = &textoAddon[i];
+  if (!t->pronto || t->pecas || !t->linhasOk) return 0;
+  if (t->kw0 != w0 || t->kw != L || t->kFonte != fonte || t->kMin != minimal) return 0;
+  *linT = t->linT; *linD = t->linD;
+  return 1;
+}
+
+// Pula uma peca e devolve o inicio da seguinte.
+static size_t addonPula(const char *o, size_t i) {
+  if (o[i] == 'S' || o[i] == 'M' || o[i] == 'E') return i + 1;   // bloco de estilo
+  return o[i] == 'I' ? i + 4 : i + 1 + strlen(o + i + 1) + 1;
+}
+// O primeiro icone e o primeiro texto de uma linha logica (teste #479).
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))   // so o teste #479 chama
+#endif
+static int addonPrimeiraPeca(const TextoAddon *t, int linha, int *icone, const char **texto) {
+  size_t i = 0;
+  int l = 0;
+  *icone = -1; *texto = NULL;
+  if (!t->pecas) return 0;
+  while (i < t->nPecas && l < linha) { if (t->pecas[i] == '\n') { l++; i++; } else i = addonPula(t->pecas, i); }
+  if (l != linha) return 0;
+  for (; i < t->nPecas && t->pecas[i] != '\n'; i = addonPula(t->pecas, i)) {
+    if (t->pecas[i] == 'I' && *icone < 0 && !*texto) *icone = atoi((char[4]){ t->pecas[i+1], t->pecas[i+2], t->pecas[i+3], 0 });
+    if (t->pecas[i] == 'T' && !*texto) *texto = t->pecas + i + 1;
   }
-  return &textoAddon[i];
+  return 1;
+}
+
+// QUEBRA. O maior comeco de `s` que cabe em `w`, de preferencia depois de um
+// espaco ou de . - _ / | (nome de arquivo nao tem espaco). Ao menos um
+// caractere, para nunca travar numa coluna estreita demais.
+// `meio` = 1 quando o corte cai DENTRO de uma palavra (nenhuma quebra no que
+// cabe). No meio da linha (`inicio` 0) qualquer quebra serve; no comeco dela
+// so a dos ultimos 2/3, para a linha nao ficar quase vazia.
+static int addonQuebraEm(char c) { return c == ' ' || c == '.' || c == '-' || c == '_' || c == '/' || c == '|'; }
+static size_t addonCorte(TxtEstilo est, const char *s, float w, int inicio, int *meio) {
+  size_t n = strlen(s), lo = 0, hi = n, melhor;
+  char tmp[2048];
+  if (n >= sizeof tmp) n = hi = sizeof tmp - 1;
+  while (lo < hi) {   // busca binaria em fronteira de codepoint
+    size_t m = (lo + hi + 1) / 2;
+    while (m > lo && ((unsigned char)s[m] & 0xC0) == 0x80) m--;
+    if (m == lo) { size_t q = lo + 1; while (q < hi && ((unsigned char)s[q] & 0xC0) == 0x80) q++; m = q; }
+    memcpy(tmp, s, m); tmp[m] = 0;
+    if (txt_largura(est, tmp) <= w) { if (m == lo) break; lo = m; } else hi = m - 1;
+    if (hi < lo) hi = lo;
+  }
+  *meio = 0;
+  if (!lo) {
+    lo = 1; while (lo < n && ((unsigned char)s[lo] & 0xC0) == 0x80) lo++;
+    *meio = lo < n && s[lo] != ' ' && !addonQuebraEm(s[lo - 1]);
+    return lo;
+  }
+  if (lo >= n) return n;
+  melhor = lo;
+  *meio = s[lo] != ' ';
+  for (size_t j = lo; j > (inicio ? lo / 3 : 0); j--)
+    if (addonQuebraEm(s[j - 1])) { melhor = j; *meio = 0; break; }
+  return melhor;
+}
+static int addonPoe(char **v, size_t *k, size_t *cap, const char *src, size_t n) {
+  if (*k + n + 2 > *cap) {
+    size_t nc = (*cap + n + 2) * 2;
+    char *x = realloc(*v, nc);
+    if (!x) return 0;
+    *v = x; *cap = nc;
+  }
+  memcpy(*v + *k, src, n); *k += n; (*v)[*k] = 0;
+  return 1;
+}
+// Larguras: o nome divide a linha com a coluna do addon (direita) e o raio de
+// cache; a descricao usa a largura toda. As mesmas contas do desenho.
+static float addonColuna(const Stream *s) {
+  char pv[160];
+  float w;
+  legendaProvedor(s, pv, sizeof pv);
+  w = (float)txt_largura(TXT_PG_FIM, pv);
+  return (w > 340.0f ? 340.0f : w) + 28.0f;
+}
+// Largura da 1a palavra de `r`: ate o 1o espaco, ou ate (e com) o 1o ponto em
+// que addonCorte quebraria. Palavra maior que o buffer e cortada no comeco de
+// um caractere, para nao medir meio UTF-8 (CJK sem espaco passa de 255 bytes);
+// a essa altura ela ja e mais larga que qualquer linha.
+static float addonPalavra(TxtEstilo est, const char *r) {
+  char pal[256];
+  size_t n = 0;
+  while (r[n] && n + 1 < sizeof pal && r[n] != ' ') {
+    pal[n] = r[n];
+    if (addonQuebraEm(r[n++])) break;
+  }
+  while (n > 0 && ((unsigned char)r[n] & 0xC0) == 0x80) n--;
+  pal[n] = 0;
+  return (float)txt_largura(est, pal);
+}
+// O que vem depois do icone/bandeira em `q`, ate o fim da linha logica:
+// `run` = largura dos icones e bandeiras colados a ele (★★★★☆, 🔊 🇬🇧);
+// `pal` = a 1a palavra do texto que vem depois (ate o 1o ponto em que
+// addonCorte quebraria), `tudo` = esse texto inteiro. Devolve 1 quando ha
+// texto depois da sequencia, 0 quando ela termina a linha logica.
+typedef struct { float run, pal, tudo; } AddonDepois;
+static int addonDepois(const char *p, size_t q, size_t fim, int estilo, int minimal,
+                       TxtEstilo est, AddonDepois *d) {
+  d->run = d->pal = d->tudo = 0;
+  for (q = addonPula(p, q); q < fim; q = addonPula(p, q)) {
+    const char *pc = p + q;
+    if (*pc == 'S') { estilo = 1; continue; }
+    if (*pc == 'M') { estilo = 2; continue; }
+    if (*pc == 'E') { estilo = 0; continue; }
+    if ((estilo == 1 && minimal) || (estilo == 2 && !minimal)) continue;
+    if (*pc == 'I') {
+      if (addonIcone(atoi((char[4]){ pc[1], pc[2], pc[3], 0 }), minimal, NULL)) d->run += ADDON_ICONE_W;
+      continue;
+    }
+    if (*pc == 'B') { d->run += ADDON_BANDEIRA_W; continue; }
+    if (*pc != 'T') return 0;
+    d->pal = addonPalavra(est, pc + 1);
+    d->tudo = (float)txt_largura(est, pc + 1);
+    return 1;
+  }
+  return 0;
+}
+static void addonLarguras(const Stream *s, float *Lp, float *w0p);
+static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
+  float L = addonLargura > 0 ? addonLargura
+          : FOLHA_W - FOLHA_PAD_E - FOLHA_PAD_D - 2 * FOLHA_TXT;
+  // So a 1a linha do nome divide espaco com a coluna do addon (uma linha de
+  // altura); da 2a em diante o nome usa a largura toda, menos o raio de cache.
+  // Com os selos em cima, quem fica ao lado da coluna e a fileira de selos:
+  // o nome inteiro usa a largura toda. (kw0 guarda w0: trocar o ajuste refaz
+  // a quebra.)
+  float wNome2 = L - (cacheConfirmado(s) ? 30.0f : 0.0f);
+  float w0 = addonSelosEmbaixo() ? L - addonColuna(s) - (cacheConfirmado(s) ? 30.0f : 0.0f) : wNome2;
+  int fonte = (int)txt_fonte_interface();
+  // O estilo muda a largura (bandeira no Padrao, "EN" no Minimalista): as
+  // pecas de um estilo so entram na quebra dele (blocos S..M..E).
+  int minimal = ajustes_fonte_icones_minimalista(), estilo = 0;
+  char *v = NULL;
+  size_t k = 0, cap = 0, j = 0;
+  int logica = 0, linT = 0, linD = 0;
+  (void)i;
+  if (w0 < 120.0f) w0 = 120.0f;
+  if (t->vis && t->kw0 == w0 && t->kw == L && t->kFonte == fonte && t->kMin == minimal) return;
+  if (!t->pecas) return;
+  while (j <= t->nPecas) {
+    // Uma linha logica: [j, fim)
+    size_t fim = j;
+    TxtEstilo est = logica ? TXT_PG_FIM : TXT_CALLOUT;
+    float w = logica ? L : w0, x = 0;
+    int temTexto = 0;   // a linha visual ja tem texto (ou so icones/bandeiras)
+#define ADDON_NOVA_LINHA() do { addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; \
+                                else { linT++; w = wNome2; } x = 0; temTexto = 0; } while (0)
+    char cab[8];
+    while (fim < t->nPecas && t->pecas[fim] != '\n') fim = addonPula(t->pecas, fim);
+    snprintf(cab, sizeof cab, "V%03d", logica > 999 ? 999 : logica);
+    if (!addonPoe(&v, &k, &cap, cab, 4)) break;
+    if (logica) linD++; else linT++;
+    for (size_t q = j; q < fim; q = addonPula(t->pecas, q)) {
+      const char *pc = t->pecas + q;
+      if (*pc == 'S') { estilo = 1; continue; }
+      if (*pc == 'M') { estilo = 2; continue; }
+      if (*pc == 'E') { estilo = 0; continue; }
+      if ((estilo == 1 && minimal) || (estilo == 2 && !minimal)) continue;
+      if (*pc == 'I' && !addonIcone(atoi((char[4]){ pc[1], pc[2], pc[3], 0 }), minimal, NULL))
+        continue;   // sem PNG em nenhum estilo: nem lugar ocupa (ver addonIcone)
+      if (*pc == 'I' || *pc == 'B') {
+        float lw = *pc == 'I' ? ADDON_ICONE_W : ADDON_BANDEIRA_W;
+        // O icone vai junto com o que ele rotula: a sequencia de icones e
+        // bandeiras colados a ele e a 1a palavra do texto seguinte. Se essa
+        // unidade nao cabe no resto da linha (no texto: a palavra nao cabe, ou
+        // sobram menos de 80 px, quando ele quebraria de qualquer jeito), o
+        // icone ja comeca a linha de baixo em vez de ficar sozinho no fim
+        // desta. So quando a unidade cabe na linha de baixo: uma fileira de
+        // bandeiras mais larga que a linha (muitos idiomas) so corre e enche
+        // cada linha — senao cada bandeira desceria sozinha, uma por linha.
+        // Palavra mais larga que a linha toda nao conta: ela vai cortada ao
+        // lado do icone (ver `temTexto` abaixo).
+        AddonDepois d;
+        int texto = addonDepois(t->pecas, q, fim, estilo, minimal, est, &d);
+        float xt = x + lw + d.run;   // onde o texto comecaria
+        float wBaixo = logica ? L : wNome2;
+        float unidade = lw + d.run + (!texto ? -8.0f : d.pal <= wBaixo ? d.pal : 0.0f);
+        // E so com texto antes na linha: numa linha so de icones eles sao a
+        // mesma fileira, e descer partiria a fileira em vez de junta-la.
+        int sozinho = temTexto && unidade <= wBaixo &&
+                      (texto ? xt + d.tudo > w && (xt + d.pal > w || w - xt < 80.0f)
+                             : d.run > 0 && xt - 8 > w);
+        if (x > 0 && (x + lw - 8 > w || sozinho)) { ADDON_NOVA_LINHA(); }
+        addonPoe(&v, &k, &cap, pc, *pc == 'I' ? 4 : strlen(pc) + 1);
+        x += lw;
+        continue;
+      }
+      const char *r = pc + 1;
+      while (*r) {
+        float lw = (float)txt_largura(est, r);
+        if (x + lw <= w) { addonPoe(&v, &k, &cap, "T", 1); addonPoe(&v, &k, &cap, r, strlen(r) + 1); x += lw + ADDON_GAP; temTexto = 1; break; }
+        int meio = 0;
+        size_t c = x > 0 && w - x < 80.0f ? 0 : addonCorte(est, r, w - x, x <= 0, &meio);
+        // Pouco espaco sobrando, ou a palavra nao cabe inteira no resto da
+        // linha ("TAMTAR|O", "TrueH|D"): ela comeca na linha de baixo. Cortar
+        // dentro da palavra so quando ela sozinha passa da linha toda — e
+        // entao ja aqui se a linha so tem icones: ela seria cortada na linha
+        // de baixo de todo jeito, e os icones ficariam sozinhos nesta.
+        if (x > 0 && !temTexto && (!c || meio) && addonPalavra(est, r) > (logica ? L : wNome2)) {
+          c = addonCorte(est, r, w - x, 0, &meio);
+          meio = 0;
+        }
+        if (x > 0 && (!c || meio)) {
+          ADDON_NOVA_LINHA(); continue;
+        }
+        size_t ce = c;
+        while (ce > 0 && r[ce - 1] == ' ') ce--;
+        if (ce) { addonPoe(&v, &k, &cap, "T", 1); addonPoe(&v, &k, &cap, r, ce); addonPoe(&v, &k, &cap, "", 1); temTexto = 1; }
+        ADDON_NOVA_LINHA();
+        r += c;
+        while (*r == ' ') r++;
+      }
+    }
+    if (fim >= t->nPecas) break;
+    j = fim + 1; logica++;
+  }
+  free(t->vis);
+  t->vis = v; t->nVis = k;
+  t->kw0 = w0; t->kw = L; t->kFonte = fonte; t->kMin = minimal;
+  t->linT = linT ? linT : 1; t->linD = linD;
+#undef ADDON_NOVA_LINHA
+}
+// Quantos trechos de nome e de descricao a linha `i` tem na largura atual.
+static void addonLarguras(const Stream *s, float *Lp, float *w0p) {
+  // The same widths addonQuebrar uses (keep the two in step).
+  float L = addonLargura > 0 ? addonLargura
+          : FOLHA_W - FOLHA_PAD_E - FOLHA_PAD_D - 2 * FOLHA_TXT;
+  float wNome2 = L - (cacheConfirmado(s) ? 30.0f : 0.0f);
+  float w0 = addonSelosEmbaixo() ? L - addonColuna(s) - (cacheConfirmado(s) ? 30.0f : 0.0f) : wNome2;
+  if (w0 < 120.0f) w0 = 120.0f;
+  *Lp = L; *w0p = w0;
+}
+static void addonLinhas(int i, int *linT, int *linD) {
+  { float L, w0;
+    addonLarguras(&lista[i], &L, &w0);
+    if (textoAddonLinhasGuardadas(i, w0, L, (int)txt_fonte_interface(), ajustes_fonte_icones_minimalista(), linT, linD)) return; }
+  const TextoAddon *c = textoAddonDa(i);
+  TextoAddon *t = (TextoAddon *)c;
+  addonQuebrar(i, &lista[i], t);
+  *linT = t->vis ? t->linT : 1;
+  *linD = t->vis ? t->linD : t->nl;
+}
+// Altura do nome (secao 0) com `abr` (0..1) abrindo o 2o trecho em diante.
+static float addonAlturaNome(int linT, float abr) {
+  return FOLHA_ADDON_TD + (linT > 1 ? (linT - 1) * FOLHA_ADDON_TD * abr : 0.0f);
+}
+// Linhas de descricao a mostra: as 2 primeiras sempre, o resto com `abr`.
+static float addonLinhasDesc(int linD, float abr) {
+  return linD > FOLHA_ADDON_FECHADA ? FOLHA_ADDON_FECHADA + (linD - FOLHA_ADDON_FECHADA) * abr : (float)linD;
+}
+// Desenha uma secao (0 = nome, 1 = descricao) a partir de `y`. `abr` (0..1)
+// abre o que passa do fechado: o 2o trecho do nome em diante e a descricao
+// depois da 2a linha. Fora do foco o nome mostra o 1o trecho sem "…": o mesmo
+// trecho que a linha em foco desenha (#479: foco nao rasteriza texto novo).
+// `maxw2`: largura das linhas do nome depois da 1a (a coluna do addon so
+// divide a 1a; ver addonQuebrar). Na descricao, igual a `maxw`.
+// Text already snaps to the drawable pixel grid (text.c); icons, flags and
+// badges did not, so while scrolling they slid by a fraction of a pixel
+// against the text (shimmer). Drawing only: heights, scrolling and hit tests
+// stay float. From Matis94 d28b426bd.
+static float addonPixel(float v) {
+  float px = gfx_px_por_unidade() * gfx_escala();
+  return px > 0 ? roundf(v * px) / px : v;
+}
+static void addonDesenhar(int i, int secao, float tx, float y, float maxw, float maxw2,
+                          int sel, int apagada, float abr, float anim) {
+  TextoAddon *t = (TextoAddon *)textoAddonDa(i);
+  int minimal = ajustes_fonte_icones_minimalista();
+  // The height came from the kept line counts: wrap again now that it shows.
+  if (!t->vis) addonQuebrar(i, &lista[i], t);
+  int nVis = 0, base = 255, c = 0, pula = 1, logica = -1;
+  float x = tx, ly = y, ak = anim, lim = maxw;
+  if (!t->vis) return;
+  for (size_t q = 0; q < t->nVis; ) {
+    const char *pc = t->vis + q;
+    if (*pc == 'V') {
+      logica = atoi((char[4]){ pc[1], pc[2], pc[3], 0 });
+      q += 4;
+      if ((logica == 0) != (secao == 0)) { pula = 1; continue; }
+      if (secao == 0) {
+        ly = y + nVis * FOLHA_ADDON_TD;
+        lim = nVis ? maxw2 : maxw;
+        base = 255;
+        c = apagada ? (sel ? 150 : 105) : (sel ? 255 : 205);
+        ak = nVis >= 1 ? anim * abr : anim;
+        pula = nVis >= 1 && abr < .02f;
+      } else {
+        ly = y + nVis * FOLHA_ADDON_LD;
+        // A primeira linha do addon costuma ser a de numeros (tamanho, taxa):
+        // um degrau mais clara. As outras no cinza da especificacao.
+        base = logica == 1 ? 215 : 170;
+        c = logica == 1 ? (sel ? 215 : 180) : (sel ? 170 : 130);
+        ak = nVis >= FOLHA_ADDON_FECHADA ? anim * abr : anim;
+        pula = nVis >= FOLHA_ADDON_FECHADA && abr < .02f;
+      }
+      // Lines outside the list clip are never seen: skip their text lookups
+      // and draws. The margin keeps partly visible text/icons, also at large
+      // UI scales; lines only go down, so the first one below ends the row.
+      if (ly > folhaBase) return;
+      if (ly + fmaxf(64.0f, 64.0f * gfx_escala_ui()) < FOLHA_TOPO - 8.0f) pula = 1;
+      nVis++;
+      x = tx;
+      continue;
+    }
+    if (pula) { q = addonPula(t->vis, q); continue; }
+    if (*pc == 'I') {
+      int cor = 0, idx = atoi((char[4]){ pc[1], pc[2], pc[3], 0 });
+      const char *nome = addonIcone(idx, minimal, &cor);
+      float iy = ly + (secao == 0 ? 9 : 3);   // na altura do texto
+      if (!nome) { q = addonPula(t->vis, q); continue; }
+      // Emoji em cores fora do foco: um degrau mais apagado, como o texto.
+      if (cor) gfx_icone_cor((GfxRect){addonPixel(x), addonPixel(iy), 22, 22}, nome, ak * (sel ? 1.0f : .8f));
+      else gfx_icone_fmt((GfxRect){addonPixel(x), addonPixel(iy), 22, 22}, nome, c / 255.0f, c / 255.0f, c / 255.0f, ak);
+      x += ADDON_ICONE_W;
+    } else if (*pc == 'B') {
+      char nome[32];
+      snprintf(nome, sizeof nome, "formatador/fl_%s", pc + 1);
+      gfx_icone_cor((GfxRect){addonPixel(x), addonPixel(ly + (secao == 0 ? 9 : 3)), 22, 22}, nome, ak * (sel ? 1.0f : .8f));
+      x += ADDON_BANDEIRA_W;
+    } else if (*pc == 'T') {
+      float resto = lim - (x - tx);
+      if (resto > 20) {
+        TxtLinha lp = secao == 0 ? txt_linha_corta(TXT_CALLOUT, pc + 1, 255, 255, 253, 255, resto)
+                                 : txt_linha_corta(TXT_PG_FIM, pc + 1, base, base, base, 255, resto);
+        if (secao == 0) txt_desenhar_tom(lp, x, ly, c / 255.0f, c / 255.0f, (c - 2) / 253.0f, ak);
+        else txt_desenhar_tom(lp, x, ly, (float)c / base, (float)c / base, (float)c / base, ak);
+        x += lp.w + ADDON_GAP;
+      }
+    }
+    q = addonPula(t->vis, q);
+  }
 }
 
 // O mesmo indicador nas duas apresentacoes, sem depender de emoji na fonte
@@ -3977,6 +4807,285 @@ static float desenharFaixas(const Stream *s, float x, float y, float w, int sel,
   }
   return altura;
 }
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#else
+static int audioDeclaradoEm(const Stream *s, const char *pref) {
+  const char *p = s->audioIdiomas;
+  const char *fim = p + strnlen(p, sizeof s->audioIdiomas);
+  // A mesma lista que aparece em "Audio:" governa o chip. Legendas nunca
+  // entram nesta leitura, e audio declarado prevalece sobre o nome do arquivo.
+  while (p < fim) {
+    const char *f = memchr(p, ',', (size_t)(fim - p)), *ate = f ? f : fim;
+    char raw[sizeof s->audioIdiomas + 1], codigo[32];
+    while (p < ate && isspace((unsigned char)*p)) p++;
+    while (ate > p && isspace((unsigned char)ate[-1])) ate--;
+    size_t len = (size_t)(ate - p);
+    memcpy(raw, p, len); raw[len] = 0;
+    // Parser hints normally already contain short ISO codes. Do not search
+    // every translated language name before accepting those same tags.
+    const char *cod = len <= 3 && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo) ? codigo : NULL;
+    if (!cod) cod = faixaIdiomaDoNome(raw);
+    if (!cod && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo)) cod = codigo;
+    if (cod && ling_casa(cod, pref)) return 1;
+    p = f ? f + 1 : fim;
+  }
+  return 0;
+}
+#endif
+// AUDIO FROM ANOTHER VERSION (audioextlista.h): what the add-on declared for
+// this source, as the candidate list reads it. Languages come from the
+// declared audio list, or from the label hints when none was declared.
+static int filtroTem(const Stream *s, int cat, const char *nome) {
+  for (int i = 0; i < fontefiltro_opcoes_n(cat); i++)
+    if (!strcmp(fontefiltro_opcao(cat, i), nome)) return (s->filtro.valores[cat] & fontefiltro_bit(cat, i)) != 0;
+  return 0;
+}
+#if defined(NV_TPK) || defined(NV_WEBOS)
+// LANGUAGES FROM THE LABELS (owner 17/11: "181 versions in 2 languages" for
+// Fight Club, the add-ons' declared lists alone). Flags (regional indicator
+// pairs) in the source's name/description, skipping what is about subtitles:
+// a line that names subtitles, and on any line what follows a subtitle mark
+// (💬 📝 🔤 or the word) until an audio/language mark (🗣 🎧 🔊 🎙 🌐 🌎 🌍).
+static const struct { char pais[3], idioma[4]; } AEXT_BAND[] = {
+  { "GB", "en" }, { "US", "en" }, { "AU", "en" }, { "CA", "en" }, { "IE", "en" }, { "NZ", "en" },
+  { "BR", "pt" }, { "PT", "pt" }, { "ES", "es" }, { "MX", "es" }, { "AR", "es" }, { "CO", "es" }, { "CL", "es" },
+  { "FR", "fr" }, { "BE", "fr" }, { "DE", "de" }, { "AT", "de" }, { "CH", "de" }, { "IT", "it" }, { "NL", "nl" },
+  { "RU", "ru" }, { "UA", "uk" }, { "PL", "pl" }, { "TR", "tr" }, { "JP", "ja" }, { "KR", "ko" }, { "CN", "zh" },
+  { "TW", "zh" }, { "HK", "zh" }, { "IN", "hi" }, { "SA", "ar" }, { "AE", "ar" }, { "EG", "ar" }, { "SE", "sv" },
+  { "NO", "no" }, { "DK", "da" }, { "FI", "fi" }, { "GR", "el" }, { "CZ", "cs" }, { "SK", "sk" }, { "HU", "hu" },
+  { "RO", "ro" }, { "IL", "he" }, { "TH", "th" }, { "VN", "vi" }, { "ID", "id" }, { "MY", "ms" }, { "BG", "bg" },
+  { "HR", "hr" }, { "RS", "sr" }, { "SI", "sl" }, { "BA", "bs" }, { "EE", "et" }, { "LV", "lv" }, { "LT", "lt" },
+  { "IS", "is" }, { "IR", "fa" }, { "PK", "ur" }, { "BD", "bn" }, { "PH", "tl" }, { "LK", "si" }, { "GE", "ka" },
+  { "AM", "hy" }, { "AZ", "az" }, { "KZ", "kk" }, { "AL", "sq" }, { "MK", "mk" },
+};
+static void aextJuntar(AudioExtEntrada *e, const char *cod) {
+  for (int j = 0; j < e->nIdiomas; j++) if (!strcasecmp(e->idiomas[j], cod) || ling_casa(e->idiomas[j], cod) || ling_casa(cod, e->idiomas[j])) return;
+  if (e->nIdiomas < AUDIOEXT_IDIOMAS) snprintf(e->idiomas[e->nIdiomas++], sizeof e->idiomas[0], "%.7s", cod);
+}
+static void aextBandeiras(const char *t, AudioExtEntrada *e) {
+  const unsigned char *p = (const unsigned char *)t;
+  int leg = 0;
+  if (!t) return;
+  while (*p) {
+    if (*p == '\n') { leg = 0; p++; continue; }
+    // A whole line about subtitles.
+    if ((p == (const unsigned char *)t || p[-1] == '\n')) {
+      const char *fim = strchr((const char *)p, '\n');
+      size_t n = fim ? (size_t)(fim - (const char *)p) : strlen((const char *)p);
+      char l[512];
+      snprintf(l, sizeof l, "%.*s", (int)(n < sizeof l ? n : sizeof l - 1), (const char *)p);
+      for (char *c = l; *c; c++) *c = (char)tolower((unsigned char)*c);
+      if (strstr(l, "subtit") || strstr(l, "subs") || strstr(l, "legend") || strstr(l, "napisy")) leg = 1;
+    }
+    if (p[0] == 0xF0 && p[1] == 0x9F) {
+      // 💬 F0 9F 92 AC, 📝 F0 9F 93 9D, 🔤 F0 9F 94 A4: subtitles from here.
+      if ((p[2] == 0x92 && p[3] == 0xAC) || (p[2] == 0x93 && p[3] == 0x9D) || (p[2] == 0x94 && p[3] == 0xA4)) { leg = 1; p += 4; continue; }
+      // 🗣 F0 9F 97 A3, 🎧 F0 9F 8E A7, 🔊 F0 9F 94 8A, 🎙 F0 9F 8E 99, 🌐 F0 9F 8C 90, 🌎 F0 9F 8C 8E, 🌍 F0 9F 8C 8D: audio again.
+      if ((p[2] == 0x97 && p[3] == 0xA3) || (p[2] == 0x8E && (p[3] == 0xA7 || p[3] == 0x99)) || (p[2] == 0x94 && p[3] == 0x8A) ||
+          (p[2] == 0x8C && (p[3] == 0x90 || p[3] == 0x8E || p[3] == 0x8D))) { leg = 0; p += 4; continue; }
+      // A flag: two regional indicators (F0 9F 87 A6..BF each).
+      if (p[2] == 0x87 && p[3] >= 0xA6 && p[3] <= 0xBF && p[4] == 0xF0 && p[5] == 0x9F && p[6] == 0x87 && p[7] >= 0xA6 && p[7] <= 0xBF) {
+        if (!leg) {
+          char a = (char)('A' + (p[3] - 0xA6)), b = (char)('A' + (p[7] - 0xA6));
+          for (size_t i = 0; i < sizeof AEXT_BAND / sizeof *AEXT_BAND; i++)
+            if (AEXT_BAND[i].pais[0] == a && AEXT_BAND[i].pais[1] == b) { aextJuntar(e, AEXT_BAND[i].idioma); break; }
+        }
+        p += 8; continue;
+      }
+    }
+    p++;
+#else
+/* The release group BenTheMen ("-BEN.THE.MEN", "BenTheMen"): add-ons read its
+ * "BEN" as Bengali (owner 17/11, Dexter: Resurrection, two such versions
+ * under "BEN" with English tracks only). True when a name or the
+ * description carries it, separators and case ignored. */
+static int grupoBenTheMen(const Stream *s) {
+  const char *campos[] = { s->arquivo, s->descricao, s->rotulo };
+  for (size_t k = 0; k < sizeof campos / sizeof *campos; k++) {
+    char t[2048];
+    size_t n = 0;
+    for (const char *q = campos[k]; *q && n + 1 < sizeof t; q++)
+      if (isalnum((unsigned char)*q)) t[n++] = (char)tolower((unsigned char)*q);
+    t[n] = 0;
+    if (strstr(t, "benthemen")) return 1;
+#endif
+  }
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#else
+  return 0;
+#endif
+}
+void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
+  const char *lista, *p, *fim;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#else
+  int semBengali;
+#endif
+  size_t limite;
+  memset(e, 0, sizeof *e);
+  if (!s) return;
+  e->temUrl = s->url[0] != 0 && !s->notWebReady;
+  e->hls = s->tsContinuo || strstr(s->url, ".m3u8") != NULL;
+  // The converter opens MKV, WebM, MP4, AVI and TS: a file name that says WMV,
+  // FLV, MPG or VOB is left out instead of failing after the choice.
+  { static const char *const fora[] = { ".wmv", ".flv", ".mpg", ".vob" };
+    const char *nome = s->arquivo[0] ? s->arquivo : s->url;
+    size_t ln = strlen(nome);
+    for (size_t k = 0; k < sizeof fora / sizeof *fora; k++) {
+      size_t le = strlen(fora[k]);
+      if (ln > le && !strcasecmp(nome + ln - le, fora[k])) e->hls = 1;
+    } }
+  e->naoVideo = s->naoVideo;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  // The declared list first; the labels' hints are added below.
+  lista = s->audioIdiomas;
+  limite = sizeof s->audioIdiomas;
+#else
+  semBengali = grupoBenTheMen(s);
+  lista = s->audioIdiomas[0] ? s->audioIdiomas : s->audioRotulos;
+  limite = s->audioIdiomas[0] ? sizeof s->audioIdiomas : sizeof s->audioRotulos;
+#endif
+  p = lista; fim = p + strnlen(p, limite);
+  while (p < fim && e->nIdiomas < AUDIOEXT_IDIOMAS) {
+    const char *f = memchr(p, ',', (size_t)(fim - p)), *ate = f ? f : fim;
+    char raw[513], codigo[32];
+    const char *cod;
+    while (p < ate && isspace((unsigned char)*p)) p++;
+    while (ate > p && isspace((unsigned char)ate[-1])) ate--;
+    size_t len = (size_t)(ate - p);
+    if (len >= sizeof raw) len = sizeof raw - 1;
+    memcpy(raw, p, len); raw[len] = 0;
+    cod = len <= 3 && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo) ? codigo : NULL;
+    if (!cod) cod = faixaIdiomaDoNome(raw);
+    if (!cod && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo)) cod = codigo;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#else
+    if (cod && semBengali && (!strcasecmp(cod, "ben") || !strcasecmp(cod, "bn"))) cod = NULL;
+#endif
+    if (cod && faixaIdiomaInformado(raw, len) && strcasecmp(cod, "mul")) {
+      int dup = 0;
+      for (int j = 0; j < e->nIdiomas; j++) if (!strcasecmp(e->idiomas[j], cod)) dup = 1;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+      if (!dup) snprintf(e->idiomas[e->nIdiomas++], sizeof e->idiomas[0], "%.7s", cod);
+#else
+      if (!dup) snprintf(e->idiomas[e->nIdiomas++], sizeof e->idiomas[0], "%s", cod);
+#endif
+    }
+    p = f ? f + 1 : fim;
+  }
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  // The labels' languages too: the source list's language filter (names,
+  // codes, flags it already reads) and every flag outside the subtitles.
+  { static const struct { const char *opc, *cod; } LF[] = {
+      { "Inglês", "en" }, { "Hindi", "hi" }, { "Italiano", "it" }, { "Espanhol", "es" }, { "Francês", "fr" },
+      { "Alemão", "de" }, { "Português", "pt" }, { "Polonês", "pl" }, { "Tcheco", "cs" }, { "Latino", "es" },
+      { "Japonês", "ja" }, { "Coreano", "ko" }, { "Chinês", "zh" } };
+    for (size_t i = 0; i < sizeof LF / sizeof *LF; i++) if (filtroTem(s, FONTEFILTRO_LINGUAS, LF[i].opc)) aextJuntar(e, LF[i].cod);
+    aextBandeiras(s->rotulo, e);
+    aextBandeiras(s->descricao, e); }
+  // Its audio can be read on its own (MP4/MOV: the sample tables point at
+  // the audio, no picture bytes): first in its language (owner 17/11).
+  { const char *nome = s->arquivo[0] ? s->arquivo : s->url;
+    size_t ln = strcspn(nome, "?#");
+    static const char *const mp4[] = { ".mp4", ".m4v", ".mov" };
+    e->soAudio = s->mp4 != 0;
+    for (size_t k = 0; k < sizeof mp4 / sizeof *mp4; k++) {
+      size_t le = strlen(mp4[k]);
+      if (ln > le && !strncasecmp(nome + ln - le, mp4[k], le)) e->soAudio = 1;
+    } }
+  e->atmos = s->dolbyAtmos || filtroTem(s, FONTEFILTRO_AUDIO, "Atmos");
+  // Subtitles it declares (the add-on's parsed file or its own list): the
+  // sync matches by them first, so such versions go first (audioextlista.c).
+  e->legendas = s->legendaIdiomas[0] != 0;
+#else
+#endif
+  // Several audio tags (a Polish DD and an English DTS-HD): the one the TV
+  // takes as it is decides; DTS/TrueHD only when nothing else was declared.
+  if (filtroTem(s, FONTEFILTRO_AUDIO, "DD+")) e->codec = AEXT_DDP;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "DD")) e->codec = AEXT_DD;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "AAC")) e->codec = AEXT_AAC;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "FLAC")) e->codec = AEXT_FLAC;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "OPUS")) e->codec = AEXT_OPUS;
+#else
+#endif
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "TrueHD")) e->codec = AEXT_TRUEHD;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "DTS:X") || filtroTem(s, FONTEFILTRO_AUDIO, "DTS-HD MA") ||
+           filtroTem(s, FONTEFILTRO_AUDIO, "DTS-HD") || filtroTem(s, FONTEFILTRO_AUDIO, "DTS-ES") ||
+           filtroTem(s, FONTEFILTRO_AUDIO, "DTS")) e->codec = AEXT_DTS;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#else
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "OPUS") || filtroTem(s, FONTEFILTRO_AUDIO, "FLAC")) e->codec = AEXT_OUTRO;
+#endif
+  else e->codec = AEXT_DESCONHECIDO;
+  e->canais = filtroTem(s, FONTEFILTRO_CANAIS, "7.1") ? 8 : filtroTem(s, FONTEFILTRO_CANAIS, "6.1") ? 7 :
+              filtroTem(s, FONTEFILTRO_CANAIS, "5.1") ? 6 : filtroTem(s, FONTEFILTRO_CANAIS, "2.0") ? 2 : 0;
+  e->cache = s->emCache || s->cacheNativo ? 1 : (s->foraCache || s->cacheNegado) ? -1 : 0;
+  e->bytes = s->tamanhoBytes ? s->tamanhoBytes : s->tamanhoMB > 0 ? (uint64_t)s->tamanhoMB * 1000000u : 0;
+  e->ordemAddon = s->addonOrdem;
+  // The file itself, for the copies of one release reached through several
+  // add-ons: the OpenSubtitles hash, or the torrent and the file in it.
+  { const char *h = s->infoHash[0] ? s->infoHash : s->hashTorrent;
+    if (s->videoHash[0]) snprintf(e->ident, sizeof e->ident, "v:%.24s", s->videoHash);
+    else if (h[0] && s->fileIdx >= 0) {
+      snprintf(e->ident, sizeof e->ident, "t:%.48s:%d", h, s->fileIdx);
+      for (char *c = e->ident; *c; c++) *c = (char)tolower((unsigned char)*c);
+    } }
+}
+// The release label of this source for the audio menu ("WEB-DL 1080p").
+// THE CUT OF A VERSION, from its name (owner, 07/11: an Extended picture
+// with Theatrical audio cannot be matched). Words joined by space, dot,
+// underscore or dash ("Directors.Cut").
+static int temFrase(const Stream *s, const char *a, const char *b) {
+  static const char sep[] = " ._-";
+  char f[48];
+  if (!b) return temNoTexto(s, a);
+  for (int i = 0; sep[i]; i++) {
+    snprintf(f, sizeof f, "%s%c%s", a, sep[i], b);
+    if (temNoTexto(s, f)) return 1;
+  }
+  return 0;
+}
+static const struct { const char *a, *b, *nome; int corte; } EDICOES[] = {
+  { "extended", NULL, "Extended", 1 }, { "theatrical", NULL, "Theatrical", 1 },
+  { "director's", "cut", "Director's Cut", 1 }, { "directors", "cut", "Director's Cut", 1 },
+  { "director", "cut", "Director's Cut", 1 }, { "final", "cut", "Final Cut", 1 },
+  { "ultimate", "cut", "Ultimate Cut", 1 }, { "unrated", NULL, "Unrated", 1 }, { "uncut", NULL, "Uncut", 1 },
+  { "imax", NULL, "IMAX", 0 }, { "remastered", NULL, "Remastered", 0 },
+};
+static int edicaoDe(const Stream *s) {
+  if (!s) return -1;
+  for (int i = 0; i < (int)(sizeof EDICOES / sizeof *EDICOES); i++)
+    if (temFrase(s, EDICOES[i].a, EDICOES[i].b)) return i;
+  return -1;
+}
+const char *stream_edicao(const Stream *s) { int i = edicaoDe(s); return i >= 0 ? EDICOES[i].nome : NULL; }
+// 1 when the two are likely different cuts: a cut name on one side that the
+// other does not share (no name at all reads as the theatrical cut).
+int stream_outro_corte(const Stream *a, const Stream *b) {
+  int ea = edicaoDe(a), eb = edicaoDe(b);
+  if (!a || !b) return 0;
+  const char *na = ea >= 0 && EDICOES[ea].corte ? EDICOES[ea].nome : "Theatrical";
+  const char *nb = eb >= 0 && EDICOES[eb].corte ? EDICOES[eb].nome : "Theatrical";
+  return strcmp(na, nb) != 0;
+}
+void stream_audioext_versao(const Stream *s, char *out, unsigned tam) {
+  const char *q = "";
+  if (!out || !tam) return;
+  out[0] = 0;
+  if (!s) return;
+  for (int i = 0; i + 1 < fontefiltro_opcoes_n(FONTEFILTRO_QUALIDADE); i++)
+    if (s->filtro.valores[FONTEFILTRO_QUALIDADE] & fontefiltro_bit(FONTEFILTRO_QUALIDADE, i)) {
+      q = fontefiltro_opcao(FONTEFILTRO_QUALIDADE, i); break;
+    }
+  if (q[0] && s->altura > 0) snprintf(out, tam, "%s %dp", q, s->altura);
+  else if (q[0]) snprintf(out, tam, "%s", q);
+  else if (s->altura > 0) snprintf(out, tam, "%dp", s->altura);
+  { const char *ed = stream_edicao(s);
+    size_t n = strlen(out);
+    if (ed && n + 4 < tam) snprintf(out + n, tam - n, "%s%s", n ? " \xc2\xb7 " : "", ed); }
+}
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static int audioDeclaradoEm(const Stream *s, const char *pref) {
   const char *p = s->audioIdiomas;
   const char *fim = p + strnlen(p, sizeof s->audioIdiomas);
@@ -3996,6 +5105,11 @@ static int audioDeclaradoEm(const Stream *s, const char *pref) {
   }
   return 0;
 }
+#else
+#endif
+int stream_audio_tem(const Stream *s, const char *idioma) {
+  return s && idioma && idioma[0] && audioDeclaradoEm(s, idioma);
+}
 // O IDIOMA nao tem logo no pacote de selos, entao vai como texto no fim da
 // fileira. Os rotulos antigos continuam onde o addon nao informa audio;
 // quando informa, nenhum deles contradiz a lista declarada.
@@ -4010,12 +5124,67 @@ static const char *idiomaDa(const Stream *s) {
   if (temNoTexto(s, "legendado") || temNoTexto(s, "leg")) return "Legendado";
   return NULL;
 }
+static int temAudioPreferidoSemCache(const Stream *s, const char *pref) {
+  // An explicit "All" (or an unresolved "Original") is not a guessed
+  // language. Declared audio wins; release-label hints (audioRotulos: flags
+  // and language codes outside subtitle sections) are the fallback only when
+  // the add-on declares no audio (upstream PR #611, via Matis94 277737242).
+  if (!pref[0]) return 1;
+  if (s->audioIdiomas[0]) return audioDeclaradoEm(s, pref);
+  for (const char *p = s->audioRotulos, *fim = p + strnlen(p, sizeof s->audioRotulos); p < fim; ) {
+    const char *f = memchr(p, ',', (size_t)(fim - p)), *ate = f ? f : fim;
+    char raw[sizeof s->audioRotulos], codigo[32];
+    while (p < ate && isspace((unsigned char)*p)) p++;
+    while (ate > p && isspace((unsigned char)ate[-1])) ate--;
+    memcpy(raw, p, (size_t)(ate - p)); raw[ate - p] = 0;
+    const char *cod = faixaIdiomaDoNome(raw);
+    if (!cod && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo)) cod = codigo;
+    if (cod && ling_casa(cod, pref)) return 1;
+    p = f ? f + 1 : fim;
+  }
+  return 0;
+}
+// Raw indices survive addon appends. Audio comes from the parser; a renewed
+// source invalidates this cache through audioFiltroRevisao. One byte per source:
+// 0=unknown, 1=no match, 2=match. Never cache external/temporary Stream values.
+static struct {
+  unsigned char *match;
+  int cap, total;
+  unsigned generation, revision;
+  char language[96];
+} audioFiltroCache;
+static void audioFiltroDescartar(void) {
+  free(audioFiltroCache.match);
+  memset(&audioFiltroCache, 0, sizeof audioFiltroCache);
+}
 static int temAudioPreferido(const Stream *s) {
   const char *pref = idiomaFiltroAudio();
-  // An explicit "All" (or an unresolved "Original") is not a guessed
-  // language. Otherwise require declared audio metadata, never subtitles,
-  // filenames or generic "dub/dual" labels whose language is unknown.
-  return !pref[0] || audioDeclaradoEm(s, pref);
+  if (!aberta || !lista || !n || strlen(pref) >= sizeof audioFiltroCache.language)
+    return temAudioPreferidoSemCache(s, pref);
+  // Integer range checks also support a temporary Stream from outside lista.
+  uintptr_t offset = (uintptr_t)s - (uintptr_t)lista;
+  if ((uintptr_t)s < (uintptr_t)lista || offset / sizeof *s >= (size_t)n || offset % sizeof *s)
+    return temAudioPreferidoSemCache(s, pref);
+  if (audioFiltroCache.cap < n) {
+    unsigned char *next = realloc(audioFiltroCache.match, (size_t)n);
+    if (!next) return temAudioPreferidoSemCache(s, pref);
+    audioFiltroCache.match = next; audioFiltroCache.cap = n;
+  }
+  unsigned revision = atomic_load(&audioFiltroRevisao);
+  if (audioFiltroCache.generation != listaGeracao || audioFiltroCache.revision != revision ||
+      strcmp(audioFiltroCache.language, pref) ||
+      audioFiltroCache.total > n) {
+    audioFiltroCache.total = 0; audioFiltroCache.generation = listaGeracao;
+    audioFiltroCache.revision = revision;
+    snprintf(audioFiltroCache.language, sizeof audioFiltroCache.language, "%s", pref);
+  }
+  if (audioFiltroCache.total < n) {
+    memset(audioFiltroCache.match + audioFiltroCache.total, 0, (size_t)(n - audioFiltroCache.total));
+    audioFiltroCache.total = n;
+  }
+  unsigned char *match = &audioFiltroCache.match[offset / sizeof *s];
+  if (!*match) *match = (unsigned char)(1 + temAudioPreferidoSemCache(s, pref));
+  return *match == 2;
 }
 static const char *ajudaFiltroAudio(void) {
   static char ajuda[512];
@@ -4082,76 +5251,114 @@ static void selosCalcular(Stream *s) {
 }
 // FORA DA THREAD PRINCIPAL. Sao centenas de regex por fonte: feito aqui dentro,
 // na chegada de cada addon, a pagina do titulo parava ~2 s por resposta (TCL,
-// 05/10/2026: "[quadro] upd=1667.5" com 20 fontes, 2052 com 46). O fio leva uma
-// COPIA do trecho da lista e devolve so os tres campos, sob verTrava e so se a
-// lista ainda e a mesma (listaGeracao; acrescentar nao muda indice). Ate
-// chegar, selosPacoteDa devolve 0 e a fileira usa a deteccao embutida.
-typedef struct { unsigned ger; int ini, k; Stream v[]; } SelosLote;
+// 05/10/2026: "[quadro] upd=1667.5" com 20 fontes, 2052 com 46).
+// Copy one row at a time on the worker, under verTrava: copying every Stream
+// on the UI thread paused arrivals and duplicated large URL/header payloads.
+// Appends keep raw indices; replacement/pack changes cancel the old job.
+// One heap scratch row keeps memory and worker stack use independent of k.
+// Pending rows reserve space and only display the selected pack when ready.
+typedef struct { unsigned ger, ver; int ini, k; Stream v[1]; } SelosLote;
 static unsigned selosPedVer, selosPedGer;
 static void *selosFio(void *u) {
   SelosLote *L = u;
   int i;
-  for (i = 0; i < L->k; i++) selosCalcular(&L->v[i]);
-  pthread_mutex_lock(&verTrava);
-  if (L->ger == listaGeracao)
-    for (i = 0; i < L->k && L->ini + i < n; i++) {
+  for (i = 0; i < L->k; i++) {
+    pthread_mutex_lock(&verTrava);
+    int atual = L->ger == listaGeracao && L->ver == selospacote_versao() && L->ini + i < n;
+    if (atual) L->v[0] = lista[L->ini + i];
+    pthread_mutex_unlock(&verTrava);
+    if (!atual) break;
+    selosCalcular(&L->v[0]);
+    // Publish each completed row: visible cards must not wait for a whole
+    // large addon response. An older pack worker cannot overwrite new results.
+    pthread_mutex_lock(&verTrava);
+    atual = L->ger == listaGeracao && L->ver == selospacote_versao() && L->ini + i < n;
+    if (atual && L->v[0].selosPacoteVer == L->ver) {
       Stream *d = &lista[L->ini + i];
-      memcpy(d->selosPacote, L->v[i].selosPacote, sizeof d->selosPacote);
-      d->nSelosPacote = L->v[i].nSelosPacote;
-      d->selosPacoteVer = L->v[i].selosPacoteVer;
+      memcpy(d->selosPacote, L->v[0].selosPacote, sizeof d->selosPacote);
+      d->nSelosPacote = L->v[0].nSelosPacote;
+      d->selosPacoteVer = L->v[0].selosPacoteVer;
     }
-  pthread_mutex_unlock(&verTrava);
+    pthread_mutex_unlock(&verTrava);
+    if (!atual) break;
+  }
   free(L);
   return NULL;
+}
+// If no background job can start, complete an empty result rather than leave
+// every card pending forever. Never substitute a different per-card style.
+static void selosSemTrabalho(int ini, int qtd, unsigned ger, unsigned ver) {
+  pthread_mutex_lock(&verTrava);
+  if (ger == listaGeracao && ver == selospacote_versao())
+    for (int i = ini; i < ini + qtd && i < n; i++)
+      if (lista[i].selosPacoteVer != ver) {
+        lista[i].nSelosPacote = 0;
+        lista[i].selosPacoteVer = ver;
+      }
+  pthread_mutex_unlock(&verTrava);
 }
 static void selosAgendar(int ini, int qtd) {
   SelosLote *L;
   pthread_t fio;
   pthread_attr_t at;
   selosPedVer = selospacote_versao(); selosPedGer = listaGeracao;
-  if (qtd <= 0 || ini < 0 || ini + qtd > n) return;
+  if (qtd <= 0 || ini < 0 || ini > n || qtd > n - ini) return;
   selospacote_colorido(ajustes_selos_coloridos());
   if (selospacote_ativo() < 0 && !selospacote_embutidos_ok()) return;
   selosPedVer = selospacote_versao();
-  L = malloc(sizeof *L + sizeof(Stream) * (size_t)qtd);
-  if (!L) return;
-  L->ger = listaGeracao; L->ini = ini; L->k = qtd;
-  memcpy(L->v, lista + ini, sizeof(Stream) * (size_t)qtd);
+  L = malloc(sizeof *L);
+  if (!L) { selosSemTrabalho(ini, qtd, listaGeracao, selosPedVer); return; }
+  L->ger = listaGeracao; L->ver = selosPedVer; L->ini = ini; L->k = qtd;
   pthread_attr_init(&at);
   pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
-  if (pthread_create(&fio, &at, selosFio, L)) free(L);
+  if (pthread_create(&fio, &at, selosFio, L)) {
+    selosSemTrabalho(ini, qtd, L->ger, selosPedVer);
+    free(L);
+  }
   pthread_attr_destroy(&at);
 }
-static int selosPacoteDa(Stream *s) {
+// ready distinguishes a pending calculation from a completed empty match.
+// Neither state substitutes unrelated badge artwork for the selected pack.
+static int selosPacoteEstado(Stream *s, int *ready) {
   unsigned ver;
   int nSelos = 0, daLista;
   // O modo colorido vale para a lista inteira: ligar/desligar nos Ajustes
   // sobe a versao do pacote e a lista e recalculada (no fio) na proxima olhada.
   selospacote_colorido(ajustes_selos_coloridos());
+  if (ready) *ready = 1;
   if (selospacote_ativo() < 0 && !selospacote_embutidos_ok()) return 0;
+  if (ready) *ready = 0;
   ver = selospacote_versao();
   // verTrava: episode changed frees lista on the UI thread while this sheet
   // still draws. The pointer check and the walk have to see the same block.
   pthread_mutex_lock(&verTrava);
   daLista = s >= lista && s < lista + n;
-  if (daLista && s->selosPacoteVer == ver) nSelos = s->nSelosPacote;
+  if (daLista && s->selosPacoteVer == ver) {
+    nSelos = s->nSelosPacote;
+    if (ready) *ready = 1;
+  }
   else if (daLista && (selosPedVer != ver || selosPedGer != listaGeracao)) {
     pthread_mutex_unlock(&verTrava);
     selosAgendar(0, n);
     return 0;
   } else if (!daLista) {
-    int j;
+    int j, found = 0;
     for (j = 0; j < n; j++)
-      if (lista[j].selosPacoteVer == ver && !strcmp(lista[j].url, s->url) && !strcmp(lista[j].rotulo, s->rotulo)) {
+      if (!strcmp(lista[j].url, s->url) && !strcmp(lista[j].rotulo, s->rotulo)) {
+        found = 1;
+        if (lista[j].selosPacoteVer != ver) continue;
         memcpy(s->selosPacote, lista[j].selosPacote, sizeof s->selosPacote);
         s->nSelosPacote = lista[j].nSelosPacote; s->selosPacoteVer = ver;
         nSelos = s->nSelosPacote;
+        if (ready) *ready = 1;
         break;
       }
+    if (!found && ready) *ready = 1;
   }
   pthread_mutex_unlock(&verTrava);
   return nSelos;
 }
+static int selosPacoteDa(Stream *s) { return selosPacoteEstado(s, NULL); }
 
 // Quantos selos do pacote a FILEIRA desenha: com os pacotes embutidos a
 // resolucao e o grupo da folha e nao entra nela (como em logosDa), e uma fonte
@@ -4221,6 +5428,11 @@ static int temMarca(int i, int automatica) {
   (void)automatica;
   // StreamFit (F03): a measured-heavy source carries its reason on the mark line.
   return i >= 0 && (i == atual || i == preferida || (i == melhorFolha && nFiltrados() > 1) ||
+#if defined(NV_TPK) || defined(NV_WEBOS)
+                    audioext_marcada(lista[i].url) ||
+#else
+                    audioext_marcada_nome(lista[i].url, lista[i].rotulo) ||
+#endif
                     fitPesada(i) || lista[i].foraCache || (!canalFolha && stream_vod_falhou_ha(i) >= 0));
 }
 // Altura de uma linha: base, marca, e o nome do arquivo que abre por mola na
@@ -4228,10 +5440,20 @@ static int temMarca(int i, int automatica) {
 static float alturaLinha(int i, int automatica, float abertura) {
   float h = FOLHA_LINHA_H + (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
   if (ajustes_fonte_texto_addon()) {
-    int nl = textoAddonDa(i)->nl;
-    float vis = nl > FOLHA_ADDON_FECHADA ? FOLHA_ADDON_FECHADA + (nl - FOLHA_ADDON_FECHADA) * abertura : (float)nl;
-    h = 20 + 40 + vis * FOLHA_ADDON_LD + 18 + (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
+    // So mede (quebra) o que precisa: fechada, com 2+ linhas logicas, a altura
+    // ja e nome + 2 linhas. Medir as ~300 fontes de uma lista longa ao abrir a
+    // folha custaria a abertura inteira na TV; a quebra das linhas a mostra
+    // acontece no desenho (addonLinhas tem cache por largura).
+    int linT = 1, linD = textoAddonNl(i);
+    if (abertura > .001f || linD < FOLHA_ADDON_FECHADA) addonLinhas(i, &linT, &linD);
+    // A fileira de selos tem lugar fixo em toda linha (em cima ou embaixo):
+    // o pacote chega depois, no fio, e a linha nao muda de altura com ele.
+    h = 20 + addonSelosAlt() + addonAlturaNome(linT, abertura) + addonLinhasDesc(linD, abertura) * FOLHA_ADDON_LD + 18 +
+        (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
     if (h < 96) h = 96;
+    // Sem as linhas "Audio:" / "Legendas:" do app: o formatador ja escreve os
+    // idiomas do jeito dele (dono, 17/11).
+    return h;
   } else {
     // The connection line opens with the focused row even without a file name.
     float extra = (arquivoDa(&lista[i])[0] ? FOLHA_ARQ_H : 0) + FOLHA_FIT_H * fitLinhas(i);
@@ -4250,6 +5472,22 @@ static void porLinha(int i, float *y, int automatica) {
 }
 // Tamanho para ordenar: desconhecido (0) vai para o fim do grupo.
 static long tamanhoOrdem(int i) { return lista[i].tamanhoMB > 0 ? lista[i].tamanhoMB : -1; }
+
+// Stable descending merge sort, reusing the StreamFit scratch array. Ties
+// retain addon order, unknown sizes remain last, and source indices never move.
+static void ordenarTamanho(int *ids, int *tmp, int count) {
+  if (count < 2) return;
+  int mid = count / 2;
+  ordenarTamanho(ids, tmp, mid);
+  ordenarTamanho(ids + mid, tmp + mid, count - mid);
+  if (tamanhoOrdem(ids[mid - 1]) >= tamanhoOrdem(ids[mid])) return;
+  int left = 0, right = mid, out = 0;
+  while (left < mid && right < count)
+    tmp[out++] = tamanhoOrdem(ids[left]) >= tamanhoOrdem(ids[right]) ? ids[left++] : ids[right++];
+  while (left < mid) tmp[out++] = ids[left++];
+  while (right < count) tmp[out++] = ids[right++];
+  memcpy(ids, tmp, (size_t)count * sizeof *ids);
+}
 
 // POR QUALIDADE (dono, 02/10): a fonte "Melhor para esta TV" e a PRIMEIRA linha,
 // sozinha e sem cabecalho — o selo dela ja diz o que ela e —, e cada grupo
@@ -4343,12 +5581,7 @@ static void montarBase(int automatica) {
       i = ORD(k);
       if (i != m && !lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g) grupoTmp[nt++] = i;
     }
-    // Insercao estavel: em tamanho igual vale a ordem do addon.
-    for (k = 1; k < nt; k++) {
-      int v = grupoTmp[k], j = k - 1;
-      while (j >= 0 && tamanhoOrdem(grupoTmp[j]) < tamanhoOrdem(v)) { grupoTmp[j + 1] = grupoTmp[j]; j--; }
-      grupoTmp[j + 1] = v;
-    }
+    ordenarTamanho(grupoTmp, grupoFitTmp, nt);
     // Preserve the approved quality groups and descending-size base order.
     // Only measured-heavy sources move back within their own group.
     streamfit_particionar(grupoTmp, nt, fitClasses, fitN, grupoFitTmp);
@@ -4378,7 +5611,8 @@ static void folhaDados(void) {
     char audio[96], qualidade[32];
     FonteFalhaConfig falhas;
     int decoder[8];
-  } anterior;
+  } anterior, anteriorAuto;
+  static int autoValid;
   if (busy) return;
   struct FolhaChave key = {0};
   key.revisao = atomic_load(&folhaRevisao);
@@ -4416,7 +5650,17 @@ static void folhaDados(void) {
   }
   folhaBloqueada = stream_filtro_bloqueou();
   folhaVisiveis = filtrosVisiveisCalcular();
-  folhaAuto = automaticoDaFolhaModoCalcular();
+  // Tabs/chips only decide what the sheet displays. The automatic candidate
+  // still comes from the complete list, so keep it across those UI changes.
+  // All source, exclusion, decoder, rule and preference revisions remain in
+  // this key; playback selection itself continues to use the live rules.
+  struct FolhaChave autoKey = key;
+  autoKey.abas = 0;
+  for (int i = 2; i <= 5; i++) autoKey.valores[i] = 0;
+  if (!autoValid || memcmp(&autoKey, &anteriorAuto, sizeof autoKey)) {
+    folhaAuto = automaticoDaFolhaModoCalcular();
+    anteriorAuto = autoKey; autoValid = 1;
+  }
   key.valores[2] = filtro; // Provider arrivals can move the selected tab.
   anterior = key; valid = 1; folhaDadosVersao++;
   busy = 0;
@@ -4539,6 +5783,7 @@ static void desenharAudioBars(float x, float y, float alt, float alfa, Uint32 ag
 }
 
 void stream_folha_abrir(void) {
+  selosVistaLimpar();
   // A busca nova pode estar na fila enquanto a lista ainda e do episodio
   // anterior. A folha fica vazia ate chegarem fontes do alvo pedido (#513).
   if (alvoPedido[0] && n > 0 && !stream_lista_do_alvo(alvoPedido))
@@ -4556,6 +5801,8 @@ void stream_folha_abrir(void) {
   recarregarFonteContexto = canalFolha ? 0 : player_recarregar_contexto();
   // Segurar OK numa fonte le a lista da conta TorBox: ela ja sai agora.
   if (!canalFolha) partes_aquecer();
+  // In cache / Not cached from the debrid itself for the link-less torrents.
+  if (!canalFolha) loteDisparar();
   folhaGeometria();
   atualizarProvedores();
   ondever_apps_atualizar();
@@ -4915,6 +6162,336 @@ int stream_partes_escolheu(int *fonte, PartesLista *l, int *k) {
   ptEscolhaFonte = -1;
   return 1;
 }
+// HOLD OK ON A SOURCE = a small source menu (test build, webOS only, and only
+// with "Audio from another version" on): "Use as audio" (what the BLUE key
+// does) and, where TorBox lists the files, "Files of this version". With the
+// setting off, or on a source the converter cannot read, the hold opens the
+// files list exactly as before.
+enum { FM_AUDIO = 0, FM_FAIXAS, FM_ARQUIVOS };
+static int fmAberto, fmN, fmFoco, fmAcoes[3], fmMarcada;   // labels frozen at open (they fade out unchanged)
+static int fmIndice = -1;   // the source the menu is for
+// "Choose audio track…": the version's header is read on a thread
+// (audioext_sondar); its tracks become the menu's rows.
+static int fmModoFaixas, fmSondaN = -2;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+static unsigned fmSondaGer;
+static AudioExtFaixa fmFaixas[AUDIOEXT_FAIXAS_MAX];
+static char fmRotFaixa[AUDIOEXT_FAIXAS_MAX][120];
+static float fmAnim;
+static char fmUrl[NV_MEDIA_URL_MAX];   // the source by its link: the list can grow while the menu is open
+
+static int fonteAceitaAudio(int i) {
+#if defined(NV_TPK) || defined(NV_WEBOS)   /* the donor server (dts/doador_tpk.h; doador_webos.c on LG) */
+  AudioExtEntrada e;
+  if (!doa_disponivel() || !ajustes_audio_externo() || canalFolha || i < 0 || i >= n) return 0;
+  // Playing a file the donor server cannot open (not MKV/MP4): no audio rows.
+#ifdef NV_TPK   /* LG: the converter also opens AVI and MPEG-TS pictures */
+  if (player_aberto() && !mkvfix_conteiner_doador_ok(mkvfix_conteiner())) return 0;
+#endif
+  stream_audioext_entrada(&lista[i], &e);
+  return e.temUrl && !e.hls && !e.naoVideo;
+#else
+  (void)i;
+  return 0;
+#endif
+#else
+static unsigned fmSondaGer;
+static AudioExtFaixa fmFaixas[AUDIOEXT_FAIXAS_MAX];
+static char fmRotFaixa[AUDIOEXT_FAIXAS_MAX][120];
+static float fmAnim;
+static char fmUrl[NV_MEDIA_URL_MAX];   // the source by its link: the list can grow while the menu is open
+
+static int fonteAceitaAudio(int i) {
+#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+  AudioExtEntrada e;
+  if (!ajustes_audio_externo() || canalFolha || i < 0 || i >= n) return 0;
+  stream_audioext_entrada(&lista[i], &e);
+  return e.temUrl && !e.hls && !e.naoVideo;
+#else
+  (void)i;
+  return 0;
+#endif
+#endif
+}
+static int fonteSegurarAceita(int i) { return linhaAceitaPartes(i) || fonteAceitaAudio(i); }
+#if defined(NV_TPK) || defined(NV_WEBOS)
+// The source the player is showing right now: its own audio is already what
+// plays, so it is never offered "as audio" (owner's log 8, 17/11: a pick in the
+// then invisible menu marked the playing source as its own audio source).
+static int fonteTocando(int i) {
+  const char *v;
+  if (!player_aberto() || i < 0 || i >= n) return 0;
+  if (atual == i) return 1;
+  v = video_url_atual();
+  return v && *v && !strcmp(v, lista[i].url);
+}
+#else
+#endif
+
+// Mark (or unmark) source `i` as the audio source. While a video of this title
+// plays, the choice applies at once (same as picking it in the audio menu) and
+// the sheet closes back to the picture; otherwise it waits for the next source
+// played for this title.
+static void fonteMarcarAudio(int i) {
+  const Stream *s;
+  if (i < 0 || i >= n) return;
+  s = &lista[i];
+  if (!fonteAceitaAudio(i)) {
+    if (player_aberto()) player_toast(i18n("This source can't be used as audio."), 2600);
+    return;
+  }
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  if (fonteTocando(i) && !audioext_marcada(s->url)) {
+    printf("[ext-audio] hold menu: source #%d is the one playing, not marked as audio\n", i); fflush(stdout);
+    player_toast(i18n("This source is already playing."), 2600);
+    return;
+  }
+  if (audioext_marcada(s->url)) {
+#else
+  if (audioext_marcada_nome(s->url, s->rotulo)) {
+#endif
+    if (player_aberto() && audioext_tocando()) {
+      audioext_original();
+      player_toast(i18n("Back to this file's own audio…"), 2500);
+      aberta = 0;
+    } else {
+      audioext_alternar(s->url, s->cabecalhos, s->rotulo);
+      if (player_aberto()) player_toast(i18n("Audio source cleared."), 2600);
+    }
+    return;
+  }
+  audioext_alternar(s->url, s->cabecalhos, s->rotulo);
+  { AudioExtEntrada e;
+    AudioExtIdent id;
+    stream_audioext_entrada(s, &e);
+    memset(&id, 0, sizeof id);
+    snprintf(id.grupo, sizeof id.grupo, "%s", s->bingeGroup);
+    snprintf(id.addon, sizeof id.addon, "%s", s->provedor);
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#else
+    audioext_nome_versao(s->rotulo, id.nome, sizeof id.nome);
+#endif
+    if (e.nIdiomas > 0) snprintf(id.idioma, sizeof id.idioma, "%s", e.idiomas[0]);
+    id.altura = s->altura; id.codec = e.codec;
+    audioext_lembrar_serie(&id); }
+  if (player_aberto() && audioext_pedido(video_url_atual())) {
+    audioext_escolher(s->url, s->cabecalhos, s->rotulo, "");
+    player_toast(i18n("Loading the audio of the other version…"), 2500);
+    aberta = 0;
+  } else if (player_aberto())
+    player_toast(i18n("Audio source set. Play another source of this title."), 2600);
+}
+
+static void fonteMenuAbrir(int i) {
+  fmAberto = 1; fmFoco = 0; fmN = 0; fmAnim = 0;
+  snprintf(fmUrl, sizeof fmUrl, "%s", lista[i].url);
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  fmMarcada = audioext_marcada(lista[i].url);
+#else
+  fmMarcada = audioext_marcada_nome(lista[i].url, lista[i].rotulo);
+#endif
+  fmIndice = i;
+  faixas_idioma_principal_atualizar();
+  fmModoFaixas = 0; fmSondaN = -2;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  // Owner 17/11: "Files in source" on top, the audio rows under it. The
+  // source already playing gets no audio rows (only "Stop using as audio"
+  // if it somehow carries the mark).
+#else
+  fmAcoes[fmN++] = FM_AUDIO;
+  if (audioext_sonda_disponivel()) fmAcoes[fmN++] = FM_FAIXAS;
+#endif
+  if (linhaAceitaPartes(i)) fmAcoes[fmN++] = FM_ARQUIVOS;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  { int tocando = fonteTocando(i);
+    if (!tocando || fmMarcada) fmAcoes[fmN++] = FM_AUDIO;
+    if (!tocando && audioext_sonda_disponivel()) fmAcoes[fmN++] = FM_FAIXAS;
+    printf("[ext-audio] hold OK on source #%d (%s)%s: source menu, %d option%s (files %s)\n", i,
+           lista[i].provedor[0] ? lista[i].provedor : "-", tocando ? " [playing]" : "", fmN, fmN == 1 ? "" : "s",
+           linhaAceitaPartes(i) ? "first" : "not offered"); }
+#else
+  printf("[ext-audio] hold OK on source #%d (%s): source menu, %d option%s\n", i,
+         lista[i].provedor[0] ? lista[i].provedor : "-", fmN, fmN == 1 ? "" : "s");
+#endif
+  fflush(stdout);
+}
+// The hold crossed its threshold on source `i`.
+static void fonteSegurou(int i) {
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  // The source playing has no audio rows: straight to its files (as before).
+  int audio = fonteAceitaAudio(i) && (!fonteTocando(i) || audioext_marcada(lista[i].url));
+  if (audio) fonteMenuAbrir(i);
+#else
+  if (fonteAceitaAudio(i)) fonteMenuAbrir(i);
+#endif
+  else if (linhaAceitaPartes(i)) partesAbrirPainel(i);
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  printf("[ext-audio] hold OK on source #%d: %s\n", i, audio ? "source menu" : linhaAceitaPartes(i) ? "files in source" : "nothing to open");
+  fflush(stdout);
+#else
+#endif
+}
+static int fonteMenuIndice(void) {
+  for (int i = 0; i < n; i++) if (!strcmp(lista[i].url, fmUrl)) return i;
+  return -1;
+}
+static const char *fmCodecTexto(const char *c) {
+  static const char *const m[][2] = { {"eac3","E-AC-3"}, {"ac3","AC-3"}, {"aac","AAC"}, {"dts","DTS"},
+    {"truehd","TrueHD"}, {"opus","Opus"}, {"flac","FLAC"}, {"vorbis","Vorbis"}, {"mp3","MP3"} };
+  for (size_t k = 0; k < sizeof m / sizeof *m; k++) if (!strcmp(c, m[k][0])) return m[k][1];
+  return c;
+}
+// "Polski · E-AC-3 5.1 · Dubbing": the language, the codec and channels, and
+// the file's track name when it says more than the release.
+static void fmMontarFaixas(void) {
+  for (int k = 0; k < fmSondaN && k < AUDIOEXT_FAIXAS_MAX; k++) {
+    const AudioExtFaixa *f = &fmFaixas[k];
+    const char *lg = f->idioma[0] ? i18n(ling_nome(f->idioma)) : i18n("Faixa");
+#if defined(NV_TPK) || defined(NV_WEBOS)
+    char ch[16] = "";
+#else
+    char ch[8] = "";
+#endif
+    if (f->canais == 8) snprintf(ch, sizeof ch, " 7.1");
+    else if (f->canais == 6) snprintf(ch, sizeof ch, " 5.1");
+    else if (f->canais > 0) snprintf(ch, sizeof ch, " %d.0", f->canais);
+    if (f->titulo[0] && strlen(f->titulo) < 40)
+      snprintf(fmRotFaixa[k], sizeof fmRotFaixa[k], "%s \xc2\xb7 %s%s \xc2\xb7 %s", lg, fmCodecTexto(f->codec), ch, f->titulo);
+    else snprintf(fmRotFaixa[k], sizeof fmRotFaixa[k], "%s \xc2\xb7 %s%s", lg, fmCodecTexto(f->codec), ch);
+    // This file's language: "Match automatically" compares this track.
+    { const char *ip = audioext_idioma_principal();
+      size_t u = strlen(fmRotFaixa[k]);
+      if (ip[0] && f->idioma[0] && ling_casa(f->idioma, ip) && u + 4 < sizeof fmRotFaixa[k])
+        snprintf(fmRotFaixa[k] + u, sizeof fmRotFaixa[k] - u, " \xc2\xb7 %s", i18n("used for sync")); }
+  }
+}
+static int fmLinhas(void) {
+  if (!fmModoFaixas) return fmN;
+  return fmSondaN > 0 ? fmSondaN : 1;   /* "Reading…" or "Could not read" */
+}
+// The version with one of its tracks: marked like "Use as audio", the track
+// set on the mark; while this title plays it switches now.
+static void fonteMarcarFaixa(int i, const AudioExtFaixa *f) {
+  const Stream *s = &lista[i];
+  if (!fonteAceitaAudio(i)) return;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  if (fonteTocando(i)) {
+    printf("[ext-audio] hold menu: source #%d is the one playing, track not marked\n", i); fflush(stdout);
+    player_toast(i18n("This source is already playing."), 2600);
+    return;
+  }
+  if (!audioext_marcada(s->url)) audioext_alternar(s->url, s->cabecalhos, s->rotulo);
+#else
+  if (!audioext_marcada_nome(s->url, s->rotulo)) audioext_alternar(s->url, s->cabecalhos, s->rotulo);
+#endif
+  { AudioExtEntrada e;
+    AudioExtIdent id;
+    stream_audioext_entrada(s, &e);
+    memset(&id, 0, sizeof id);
+    snprintf(id.grupo, sizeof id.grupo, "%s", s->bingeGroup);
+    snprintf(id.addon, sizeof id.addon, "%s", s->provedor);
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#else
+    audioext_nome_versao(s->rotulo, id.nome, sizeof id.nome);
+#endif
+    snprintf(id.idioma, sizeof id.idioma, "%.7s", f->idioma);
+    id.altura = s->altura; id.codec = e.codec;
+    audioext_lembrar_serie(&id);
+    audioext_lembrar_faixa_serie(f); }   // and this very track, for the next episodes
+  if (player_aberto() && audioext_pedido(video_url_atual())) {
+    audioext_escolher(s->url, s->cabecalhos, s->rotulo, "");
+    audioext_definir_faixa(f->stream);
+    player_toast(i18n("Loading the audio of the other version…"), 2500);
+    aberta = 0;
+  } else {
+    audioext_definir_faixa(f->stream);
+    if (player_aberto()) player_toast(i18n("Audio source set. Play another source of this title."), 2600);
+  }
+}
+static void fonteMenuEscolher(void) {
+  int i = fonteMenuIndice();
+  if (fmModoFaixas) {
+    if (fmSondaN > 0 && fmFoco >= 0 && fmFoco < fmSondaN && i >= 0) { fmAberto = 0; fonteMarcarFaixa(i, &fmFaixas[fmFoco]); }
+    else if (fmSondaN == -1) fmAberto = 0;
+    return;
+  }
+  int acao = fmFoco >= 0 && fmFoco < fmN ? fmAcoes[fmFoco] : -1;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  printf("[ext-audio] hold menu: row %d (%s) on source #%d\n", fmFoco,
+         acao == FM_ARQUIVOS ? "files" : acao == FM_FAIXAS ? "choose track" : acao == FM_AUDIO ? (fmMarcada ? "stop as audio" : "use as audio") : "-", i);
+  fflush(stdout);
+#else
+#endif
+  if (acao == FM_FAIXAS && i >= 0) {
+    fmModoFaixas = 1; fmFoco = 0; fmSondaN = -2;
+    fmSondaGer = audioext_sondar(lista[i].url, lista[i].cabecalhos);
+    return;
+  }
+  fmAberto = 0;
+  if (i < 0) return;
+  if (acao == FM_AUDIO) fonteMarcarAudio(i);
+  else if (acao == FM_ARQUIVOS && linhaAceitaPartes(i)) partesAbrirPainel(i);
+}
+static const char *fonteMenuRotulo(int r, const char **icone) {
+  if (fmModoFaixas) {
+    *icone = "pl_audio-lines";
+    if (fmSondaN == -2) return "Reading the audio tracks…";
+    if (fmSondaN <= 0) { *icone = "aj_triangle-alert"; return fmSondaN == 0 ? "No audio track this TV can play" : "Could not read the audio tracks"; }
+    return fmRotFaixa[r];
+  }
+  if (fmAcoes[r] == FM_FAIXAS) { *icone = "aj_list-video"; return "Choose audio track…"; }
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  if (fmAcoes[r] == FM_ARQUIVOS) { *icone = "aj_folders"; return "Files in source"; }
+#else
+  if (fmAcoes[r] == FM_ARQUIVOS) { *icone = "aj_folders"; return "Files of this version"; }
+#endif
+  if (fmMarcada) { *icone = "pl_eye-off"; return "Stop using as audio"; }
+  *icone = "pl_audio-lines";
+  // Another cut than the source playing: said before it is picked.
+  { const Stream *v = fmIndice >= 0 && fmIndice < n ? &lista[fmIndice] : NULL;
+    const Stream *at = atual >= 0 && atual < n ? &lista[atual] : NULL;
+    static char rot[160];
+    if (v && at && v != at && stream_outro_corte(v, at)) {
+      const char *ed = stream_edicao(v);
+      char c[96];
+      snprintf(c, sizeof c, i18n("%s: another cut"), ed ? ed : i18n("Theatrical"));
+      snprintf(rot, sizeof rot, "%s \xc2\xb7 %s", i18n("Use as audio"), c);
+      *icone = "aj_triangle-alert";
+      return rot;
+    } }
+  return "Use as audio";
+}
+static int fonteMenuEvento(const SDL_Event *e) {
+  SDL_Keycode k;
+  if (!fmAberto) return 0;
+  if (e->type != SDL_KEYDOWN) return 1;   // the KEYUP of the hold that opened it, too
+  k = e->key.keysym.sym;
+  if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE) {
+    if (fmModoFaixas) { fmModoFaixas = 0; fmFoco = 0; return 1; }   /* back to the actions */
+    fmAberto = 0; return 1;
+  }
+  // The held OK that opened the menu keeps repeating: not a choice.
+  if (e->key.repeat && (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE)) return 1;
+  if (k == SDLK_UP && fmFoco > 0) fmFoco--;
+  else if (k == SDLK_DOWN && fmFoco < fmLinhas() - 1) fmFoco++;
+  else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) fonteMenuEscolher();
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#if defined(NV_TPK) || defined(NV_WEBOS)   /* the donor server (dts/doador_tpk.h; doador_webos.c on LG) */
+  else if (!fmModoFaixas && ((int)e->key.keysym.scancode == NV_SCANCODE_BLUE || k == SDLK_F4)) {
+    for (int r = 0; r < fmN; r++) if (fmAcoes[r] == FM_AUDIO) { fmFoco = r; fonteMenuEscolher(); break; }
+  }
+#endif
+#else
+#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+  else if (!fmModoFaixas && ((int)e->key.keysym.scancode == NV_SCANCODE_BLUE || k == SDLK_F4)) { fmFoco = 0; fonteMenuEscolher(); }
+#endif
+#endif
+  return 1;
+}
+static void ponteiroFonteMenu(int r, int b) { (void)b; if (fmAberto) fmFoco = r; }
+static void ponteiroFonteMenuEscolher(int r, int b) { (void)b; if (fmAberto) { fmFoco = r; fonteMenuEscolher(); } }
+static void ponteiroFonteMenuFora(int a, int b) { (void)a; (void)b; fmAberto = 0; }
+
 // O toque curto (ou o OK de sempre) numa linha da lista: a mesma acao de antes.
 static void okNaLinha(void) {
   int i = filtrado(foco);
@@ -4939,11 +6516,12 @@ void stream_folha_evento(const SDL_Event *e) {
   }
   if(aberta && detalheEvento(e)) return;
   if(aberta && partesEvento(e)) return;
+  if(aberta && fonteMenuEvento(e)) return;
   // SEGURAR OK NUMA FONTE (so onde partes_disponivel): o OK arma no KEYDOWN e
   // so age no KEYUP. Linha que nao aceita (canal, "Onde ver", cabecalho) segue
   // o caminho de antes, com o OK no KEYDOWN.
   if (aberta && grupo == 1 && (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP)) {
-    switch (ctxhold_evento(&folhaHold, e, linhaAceitaPartes(filtrado(foco)))) {
+    switch (ctxhold_evento(&folhaHold, e, fonteSegurarAceita(filtrado(foco)))) {
       case CTXH_CONSUMIDO:
         // OK afundou numa fonte: a busca comeca ja, na lista da memoria, para a
         // modal abrir pronta se o dedo segurar.
@@ -4953,7 +6531,7 @@ void stream_folha_evento(const SDL_Event *e) {
         }
         return;
       case CTXH_TOQUE: okNaLinha(); return;
-      case CTXH_LONGO: { int i = filtrado(foco); if (linhaAceitaPartes(i)) partesAbrirPainel(i); } return;
+      case CTXH_LONGO: fonteSegurou(filtrado(foco)); return;
       default: break;
     }
   }
@@ -4963,9 +6541,35 @@ void stream_folha_evento(const SDL_Event *e) {
   if(!aberta || e->type!=SDL_KEYDOWN) return;
   SDL_Keycode k=e->key.keysym.sym;
   if (recarregarFonteConfirmacao && k != recarregarFonteConfirmacao)
+#if defined(NV_TPK) || defined(NV_WEBOS)
     recarregarFonteConfirmacao = 0;
   if(k==SDLK_ESCAPE || k==SDLK_AC_BACK || k==SDLK_BACKSPACE || k==SDLK_DELETE) {aberta=0;return;}
   if(k==SDLK_r) {recarregar=1;return;}
+  // Test build: BLUE (or F4) = "Use as audio" of the hold-OK menu on the
+  // source in focus (fonteMarcarAudio). Only the webOS converter plays it.
+#if defined(NV_TPK) || defined(NV_WEBOS)   /* the donor server (dts/doador_tpk.h; doador_webos.c on LG) */
+  if(grupo==1 && !canalFolha && !e->key.repeat && doa_disponivel() && ajustes_audio_externo() &&
+     ((int)e->key.keysym.scancode==NV_SCANCODE_BLUE || k==SDLK_F4)) {
+    int i=filtrado(foco);
+    if(i>=0) fonteMarcarAudio(i);
+    return;
+  }
+#endif
+#else
+    recarregarFonteConfirmacao = 0;
+  if(k==SDLK_ESCAPE || k==SDLK_AC_BACK || k==SDLK_BACKSPACE || k==SDLK_DELETE) {aberta=0;return;}
+  if(k==SDLK_r) {recarregar=1;return;}
+  // Test build: BLUE (or F4) = "Use as audio" of the hold-OK menu on the
+  // source in focus (fonteMarcarAudio). Only the webOS converter plays it.
+#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+  if(grupo==1 && !canalFolha && !e->key.repeat && ajustes_audio_externo() &&
+     ((int)e->key.keysym.scancode==NV_SCANCODE_BLUE || k==SDLK_F4)) {
+    int i=filtrado(foco);
+    if(i>=0) fonteMarcarAudio(i);
+    return;
+  }
+#endif
+#endif
   montar(automaticaDaFolha());
   int nf=nOrdem;
   if(grupo==1 && stream_detalhe_tecla_abre(e)) {
@@ -5028,13 +6632,40 @@ void stream_folha_evento(const SDL_Event *e) {
     else okNaLinha();
   }
 }
+// A SOURCE FOCUSED 1 s (owner 18/11, subtitle-rewrite): the app's hook runs
+// once for that row (the early TorBox lookup, tbabrir.h). The row is followed
+// by its source (URL + file name), not by its index: the list grows and
+// reorders while add-ons answer.
+#define FOCO_DEMORADO_MS 1000u
+static void focoDemorado(Uint32 agora) {
+  static char chave[640];
+  static int feito;
+  static Uint32 desde;
+  char k[640] = "";
+  int i = aberta && grupo == 1 && !detAberto && !ptAberto ? filtrado(foco) : -1;
+  const Stream *s = i >= 0 ? stream_item(i) : NULL;
+  if (s) snprintf(k, sizeof k, "%.511s|%.120s", s->url[0] ? s->url : s->infoHash, s->arquivo);
+  if (strcmp(k, chave)) { snprintf(chave, sizeof chave, "%s", k); desde = agora; feito = 0; return; }
+  if (!s || feito || agora - desde < FOCO_DEMORADO_MS || !stream_foco_demorado) return;
+  feito = 1;
+  stream_foco_demorado(s);
+}
 void stream_folha_atualizar(float dt, Uint32 agora) {
+  focoDemorado(agora);
+  if (!aberta && anim <= .001f) selosVistaLimpar();
+  selosAquecerPasso();
   int nf;
+  focoDemorado(agora);
   medirCabecalho();
   if (aberta || anim > 0.001f) folhaGeometria();
   anim=anim_mola(anim,aberta?1:0,dt,NV_MOLA_TELA);
-  if(!aberta) { detAberto=0; if (ptAberto) partes_cancelar(); ptAberto=0; ctxhold_cancelar(&folhaHold); }
+  if(!aberta) { detAberto=0; if (ptAberto) partes_cancelar(); ptAberto=0; fmAberto=0; ctxhold_cancelar(&folhaHold); }
   ptAnim=anim_mola(ptAnim,ptAberto?1:0,dt,NV_MOLA_TELA);
+  fmAnim=anim_mola(fmAnim,fmAberto?1:0,dt,NV_MOLA_TELA);
+  if (fmAberto && fmModoFaixas && fmSondaN == -2) {
+    int nf = audioext_sonda_resultado(fmSondaGer, fmFaixas, AUDIOEXT_FAIXAS_MAX);
+    if (nf != -2) { fmSondaN = nf; fmFoco = 0; fmMontarFaixas(); }
+  }
   if (ptAberto) {
     int e = partes_resultado(NULL);
     if (e != ptL.estado) {
@@ -5079,9 +6710,8 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
       ptRol = fabsf(d) < .5f ? ptRolAlvo : ptRol + d * (dt * 16 > 1 ? 1 : dt * 16); }
   }
   // O dedo ainda segura OK numa fonte: no limiar abre a lista de arquivos.
-  if (aberta && !ptAberto && grupo == 1 && ctxhold_passo(&folhaHold, agora, 1)) {
-    int i = filtrado(foco);
-    if (linhaAceitaPartes(i)) partesAbrirPainel(i);
+  if (aberta && !ptAberto && !fmAberto && grupo == 1 && ctxhold_passo(&folhaHold, agora, 1)) {
+    fonteSegurou(filtrado(foco));
     ctxhold_cancelar(&folhaHold);
   }
   detAnim=anim_mola(detAnim,detAberto?1:0,dt,NV_MOLA_TELA);
@@ -5101,6 +6731,12 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   // foco pelo indice ANTES do montar, com o Y da linha como ela esta agora —
   // depois do montar o focoFixo e reposto na linha nova (o mesmo padrao de
   // stream_lista_acrescentar).
+  // The list cache check moved rows: the focused card stays where it is.
+  if (atomic_exchange(&loteFoco, 0) && aberta && grupo == 1 && foco >= 0 && foco < nOrdem &&
+      filtrado(foco) >= 0) {
+    focoFixo = filtrado(foco);
+    focoFixoY = linhaTopo(foco);
+  }
   { int fl = atomic_exchange(&foraCacheFoco, -1);
     if (fl >= 0 && aberta && grupo == 1 && filtrado(foco) == fl) {
       focoFixo = fl;
@@ -5205,6 +6841,18 @@ static void desenharOnde(GfxRect r, float tx, float tr, const OndeVer *o, int se
 
 // Texto em maiusculas espacadas da linha de marca e dos cabecalhos de grupo.
 // i18n antes da caixa alta: a tabela de idioma guarda a frase normal.
+// Imported chips follow Android/Smart TV: only filled has a background,
+// border is independent, and image pixels are never tinted. Builtins keep
+// their established presentation. The tiny metadata cache owns no textures.
+static float selosAspectos[SELOS_MAX_FILTROS];
+static unsigned selosAspectosVer;
+static void selosFundoImportado(const SeloFiltro *f, GfxRect p, float a) {
+  float raio = 6.0f / p.h;
+  if (f->preenchido && f->temTag && f->tag[3] > .001f)
+    gfx_cor(p, raio, f->tag[0], f->tag[1], f->tag[2], f->tag[3] * a);
+  if (f->temBorda && f->borda[3] > .001f)
+    gfx_anel(p, raio, 1.5f, f->borda[0], f->borda[1], f->borda[2], f->borda[3] * a);
+}
 // A FILEIRA DO PACOTE DE SELOS (selospacote.h): cada filtro que casou, na ordem
 // do pacote. A imagem sai COMO O PACOTE A FEZ (textura normal, sem tinta e sem
 // a marca clara — o pacote e colorido), na altura `h` e com a proporcao dela;
@@ -5216,16 +6864,24 @@ static float selosDesenhar(const unsigned short *ids, int n, float x, float y, f
   const float gap = 8.0f, padX = 9.0f, imgMaxW = 220.0f;
   float x0 = x;
   int k, colorido = ajustes_selos_coloridos();
+  unsigned ver = selospacote_versao();
+  if (selosAspectosVer != ver) {
+    memset(selosAspectos, 0, sizeof selosAspectos); selosAspectosVer = ver;
+  }
   for (k = 0; k < n; k++) {
     const SeloFiltro *f = selospacote_filtro(ids[k]);
     float w, r, g, b, al;
-    int pronta = 0;
+    float reserva = 0;
     if (!f) continue;
     // A resolucao e o grupo da folha (e o titulo da fonte): fora da fileira.
     if (semResolucao && f->resolucao) continue;
     if (f->imagem[0]) {
-      GLuint t = tex_obter_larg(f->imagem, 128);
+      GLuint t = tex_obter_larg_qualquer(f->imagem, 128);
       float asp = t ? tex_aspecto(f->imagem) : 0.0f;
+      if (f->arte == SELO_ARTE_PACOTE && ids[k] < SELOS_MAX_FILTROS) {
+        if (asp > .01f) selosAspectos[ids[k]] = asp;
+        else asp = selosAspectos[ids[k]];
+      }
       if (t && asp > 0.01f && f->arte != SELO_ARTE_PACOTE) {
         // PACOTES EMBUTIDOS (selospacote.h). Padrao: a arte e branca e a forma
         // mora no alfa, entao tinge no cinza da linha como os logos de sempre.
@@ -5261,22 +6917,25 @@ static float selosDesenhar(const unsigned short *ids, int n, float x, float y, f
         }
         continue;
       }
-      if (t && asp > 0.01f) {
+      if (asp > 0.01f) {
+        const float pad = 3.0f;
         float ih = h;
         w = ih * asp;
-        if (w > imgMaxW) { w = imgMaxW; ih = w / asp; }
-        if (x + w > x0 + maxW) break;
-        if (!medir) {
-          gfx_tex_aspect_atual = 0.0f;
-          gfx_rect((GfxRect){x, y + (h - ih) * .5f, w, ih}, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1, 1, 1, a);
+        if (w > imgMaxW - pad * 2) { w = imgMaxW - pad * 2; ih = w / asp; }
+        reserva = w + pad * 2;
+        if (x + reserva > x0 + maxW) break;
+        if (t) {
+          if (!medir) {
+            selosFundoImportado(f, (GfxRect){x, y - 3, reserva, h + 6}, a);
+            gfx_tex_aspect_atual = 0.0f;
+            gfx_rect((GfxRect){x + pad, y + (h - ih) * .5f, w, ih}, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1, 1, 1, a);
+          }
+          x += reserva + gap;
+          continue;
         }
-        x += w + gap;
-        continue;
-      }
-      // Ainda baixando: guarda o lugar (a fileira nao pula quando chega) e nao
-      // desenha. Se falhou, mostra o nome.
-      pronta = tex_falhou(f->imagem);
-      if (!pronta) {
+        // Evicted image: keep its measured slot and a readable label while
+        // the existing asynchronous cache restores it; never blank the row.
+      } else if (!tex_falhou(f->imagem)) {
         w = h * 2.0f;
         if (x + w > x0 + maxW) break;
         x += w + gap;
@@ -5287,24 +6946,114 @@ static float selosDesenhar(const unsigned short *ids, int n, float x, float y, f
     { int tr = f->temTexto ? (int)(f->texto[0] * 255.0f + .5f) : 235,
           tg = f->temTexto ? (int)(f->texto[1] * 255.0f + .5f) : 235,
           tb = f->temTexto ? (int)(f->texto[2] * 255.0f + .5f) : 238;
-      TxtLinha l = txt_linha_corta(TXT_MINI, f->nome, tr, tg, tb, 255, 200.0f);
+      float pad = reserva > 0 ? 3.0f : padX;
+      TxtLinha l = txt_linha_corta(TXT_MINI, f->nome, tr, tg, tb, 255,
+                                    reserva > 0 ? fmaxf(1, reserva - pad * 2) : 200.0f);
       float ph = h + 6.0f, raio = 6.0f / ph;
       GfxRect p;
-      w = (float)l.w + padX * 2.0f;
+      w = reserva > 0 ? reserva : (float)l.w + pad * 2.0f;
       if (x + w > x0 + maxW) break;
       if (!medir) {
         p = (GfxRect){x, y - 3.0f, w, ph};
-        if (f->temTag) { r = f->tag[0]; g = f->tag[1]; b = f->tag[2]; al = f->tag[3]; }
-        else { r = .10f; g = .11f; b = .13f; al = .88f; }
-        if (al > 0.01f) gfx_cor(p, raio, r, g, b, al * a);
-        if (f->temBorda && f->borda[3] > 0.01f)
-          gfx_anel(p, raio, 1.5f, f->borda[0], f->borda[1], f->borda[2], f->borda[3] * a);
-        else if (!f->temTag) gfx_anel(p, raio, 1.5f, .35f, .36f, .40f, .60f * a);
-        txt_desenhar_alpha(l, x + padX, y + (h - (float)l.h) * .5f, a);
+        if (f->arte == SELO_ARTE_PACOTE) selosFundoImportado(f, p, a);
+        else {
+          if (f->temTag) { r = f->tag[0]; g = f->tag[1]; b = f->tag[2]; al = f->tag[3]; }
+          else { r = .10f; g = .11f; b = .13f; al = .88f; }
+          if (al > 0.01f) gfx_cor(p, raio, r, g, b, al * a);
+          if (f->temBorda && f->borda[3] > 0.01f)
+            gfx_anel(p, raio, 1.5f, f->borda[0], f->borda[1], f->borda[2], f->borda[3] * a);
+          else if (!f->temTag) gfx_anel(p, raio, 1.5f, .35f, .36f, .40f, .60f * a);
+        }
+        txt_desenhar_alpha(l, x + (w - l.w) * .5f, y + (h - (float)l.h) * .5f,
+                           a * (f->temTexto ? f->texto[3] : 1));
       }
       x += w + gap; }
   }
   return x > x0 ? x - x0 - gap : 0.0f;
+}
+// Warm only the bounded badge set of a visible card. Show the final row when
+// its images are ready, so late texture widths cannot shuffle existing icons.
+// A failed image is terminal and keeps the existing text-label fallback.
+static int selosImagensProntas(const Stream *s, int semResolucao) {
+  int ready = 1;
+  for (int k = 0; k < (int)s->nSelosPacote; k++) {
+    const SeloFiltro *f = selospacote_filtro(s->selosPacote[k]);
+    if (!f || (semResolucao && f->resolucao && f->arte != SELO_ARTE_PACOTE)) continue;
+    if (f->imagem[0] && !tex_obter_larg_qualquer(f->imagem, 128) && !tex_falhou(f->imagem)) ready = 0;
+  }
+  return ready;
+}
+// Cache completed readiness only. A pending pack must never become a legacy
+// style decision: that permanently mixed two visual styles on the same page.
+enum { SELOS_VISTA_PENDENTE = 0, SELOS_VISTA_LEGADO = 1,
+       SELOS_VISTA_PACOTE = 2, SELOS_VISTA_VAZIO = 3, SELOS_VISTA_AQUECIDO = 4 };
+static unsigned char *selosVista;
+static int selosVistaCap, selosVistaSemMemoria;
+static unsigned selosVistaVer;
+static void selosVistaLimpar(void) {
+  free(selosVista); selosVista = NULL; selosVistaCap = 0;
+  selosVistaVer = 0; selosVistaSemMemoria = 0;
+}
+static int selosVistaDa(Stream *s, int semResolucao) {
+  selospacote_colorido(ajustes_selos_coloridos());
+  unsigned ver = selospacote_versao();
+  if (ver != selosVistaVer) { selosVistaLimpar(); selosVistaVer = ver; }
+  // Legacy artwork is allowed only when no selected/bundled pack is available,
+  // consistently for the page, never because one particular card is slower.
+  if (selospacote_ativo() < 0 && !selospacote_embutidos_ok()) return SELOS_VISTA_LEGADO;
+  // Drawing callers use the live source list; other consumers retain the
+  // original selosPacoteDa API and do not allocate this presentation cache.
+  if (s < lista || s >= lista + n) return SELOS_VISTA_PENDENTE;
+  int index = (int)(s - lista);
+  if (index >= selosVistaCap && !selosVistaSemMemoria) {
+    int cap = n > selosVistaCap * 2 ? n : selosVistaCap * 2;
+    unsigned char *next = realloc(selosVista, (size_t)cap);
+    if (!next) selosVistaSemMemoria = 1;
+    else {
+      memset(next + selosVistaCap, 0, (size_t)(cap - selosVistaCap));
+      selosVista = next; selosVistaCap = cap;
+    }
+  }
+  unsigned char uncached = 0;
+  unsigned char *view = index < selosVistaCap ? &selosVista[index] : &uncached;
+  if (*view & SELOS_VISTA_AQUECIDO) return *view & 3;
+  int ready = 0, count = selosPacoteEstado(s, &ready);
+  if (!ready) return SELOS_VISTA_PENDENTE;
+  if (count > 0 && !selosImagensProntas(s, semResolucao)) return SELOS_VISTA_PENDENTE;
+  *view = (count > 0 ? SELOS_VISTA_PACOTE : SELOS_VISTA_VAZIO) | SELOS_VISTA_AQUECIDO;
+  return *view & 3;
+}
+// Prepare a small prefix while the source sheet is still closed. Regex results
+// are read, never calculated here. Texture requests remain asynchronous and
+// inside the existing cache budget; no scan of all 1000+ sources on each frame.
+static void selosAquecerPasso(void) {
+  static unsigned ger, ver;
+  static int next;
+  if (aberta || anim > .001f || n <= 0) return;
+  selospacote_colorido(ajustes_selos_coloridos());
+  unsigned current = selospacote_versao();
+  if (ger != listaGeracao || ver != current) { ger = listaGeracao; ver = current; next = 0; }
+  int limit = n < 8 ? n : 8;
+  for (int budget = 0; budget < 2 && next < limit; budget++) {
+    int ready = 0, count = selosPacoteEstado(&lista[next], &ready);
+    if (!ready || (count > 0 && !selosImagensProntas(&lista[next], 0))) return;
+    next++;
+  }
+}
+// Only the two immediate offscreen neighbours; no full-list matching,
+// preload or extra texture ownership. This also rewarms evicted custom art
+// before a card scrolls into view.
+static void selosAquecerVizinhos(void) {
+  if (!aberta || nOrdem <= 0) return;
+  int rows[2] = { primeiraVisivel(rolagem) - 1,
+                 primeiraVisivel(rolagem + areaLista()) + 1 };
+  for (int k = 0; k < 2; k++) {
+    int row = rows[k], ready = 0;
+    if (row < 0 || row >= nOrdem) continue;
+    Stream *s = &lista[ordem[row]];
+    int count = selosPacoteEstado(s, &ready);
+    if (ready && count > 0) (void)selosImagensProntas(s, 0);
+  }
 }
 static float desenharSelosPacote(const Stream *s, float x, float y, float maxW, float h, float a,
                                  float tom, int semResolucao) {
@@ -5315,7 +7064,7 @@ int stream_selos_ha(const Stream *s) { return s && selosPacoteDa((Stream *)s) > 
 float stream_selos_fileira(const Stream *s, float x, float y, float maxW, float h, float tom, float a) {
   if (!s || !selosPacoteDa((Stream *)s)) return 0.0f;
   return desenharSelosPacote(s, x, y, maxW, h,
-                             ajustes_selos_coloridos() ? a * 0.9f : a, tom, 0);
+                             ajustes_selos_coloridos() && selospacote_ativo() < 0 ? a * 0.9f : a, tom, 0);
 }
 
 // SELOS DO QUE ESTA TOCANDO (OSD do player): o pacote ativo casado com um
@@ -5337,7 +7086,7 @@ float stream_selos_medidos(const char *texto, float x, float y, float maxW, floa
     n = ult[0] ? selospacote_casar(campos, 1, ids, SELOS_MAX_CASADOS) : 0;
   }
   if (!n) return 0.0f;
-  return selosDesenhar(ids, n, x, y, maxW, h, ajustes_selos_coloridos() ? a * 0.9f : a, tom, 0, medir);
+  return selosDesenhar(ids, n, x, y, maxW, h, ajustes_selos_coloridos() && selospacote_ativo() < 0 ? a * 0.9f : a, tom, 0, medir);
 }
 
 static float caixaAlta(const char *s, int r, int g, int b, float x, float y, float a) {
@@ -5556,6 +7305,50 @@ static void ptTamanho(uint64_t bytes, int sel, float ix, float iw, float ry, flo
   txt_desenhar_alpha(lu, ix + iw - lu.w, ry + 14 + (lg.h - lu.h) - 3, a);
   txt_desenhar_alpha(lg, ix + iw - lu.w - 6 - lg.w, ry + 14, a);
 }
+// The hold-OK source menu: a dropdown under the source row (above it when
+// there is no room), right-aligned in the list, over a light veil.
+static void desenhaFonteMenu(float x, float w, float direita, int ptr) {
+  float a = fmAnim, lh = 64.0f, vao = 6.0f, pad = 14.0f, mw = 0.0f, mh, mx, my;
+  float ry = FOLHA_TOPO + linhaTopo(foco) - rolagem, rh = linhaAltura(foco);
+  if (a < .01f || fmN <= 0) return;
+  int nl = fmLinhas();
+  for (int r = 0; r < nl; r++) {
+    const char *ic, *rot = fonteMenuRotulo(r, &ic);
+    TxtLinha tl = txt_linha(TXT_PAINEL_ITEM, rot, 250, 250, 248, 255);
+    if (tl.w > mw) mw = tl.w;
+  }
+  mw += pad * 2 + 24.0f + 26.0f + 18.0f + 24.0f;
+  if (mw < 440.0f) mw = 440.0f;
+  if (mw > 1100.0f) mw = 1100.0f;
+  mh = pad * 2 + nl * lh + (nl - 1) * vao;
+  mx = direita - mw - 24.0f;
+  my = ry + rh + 6.0f;
+  if (my + mh > NV_TELA_H - 24.0f) my = ry - 6.0f - mh;
+  if (my < 24.0f) my = 24.0f;
+  my += (1.0f - a) * -10.0f;
+  gfx_cor((GfxRect){x, 0, w, NV_TELA_H}, 0, 0, 0, 0, .35f * a);
+  // Opaque base: the rows of the list must not show through the glass.
+  gfx_cor((GfxRect){mx, my, mw, mh}, FOLHA_RAIO_IL * .6f / mh, .071f, .075f, .086f, a);
+  ajustes_ui_ilha_a((GfxRect){mx, my, mw, mh}, FOLHA_RAIO_IL * .6f, 1, a);
+  if (ptr) {
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroFonteMenuFora, 0, 0);
+    ponteiro_alvo(mx, my, mw, mh, NULL, NULL, 0, 0);
+  }
+  for (int r = 0; r < nl; r++) {
+    const char *ic, *rot = fonteMenuRotulo(r, &ic);
+    GfxRect rr = {mx + pad, my + pad + r * (lh + vao), mw - pad * 2, lh};
+    int sel = r == fmFoco;
+    if (sel && !gfx_foco_placa(rr, FOLHA_RAIO / rr.h, 1, a)) {
+      if (ajustes_vidro()) gfx_cor(rr, FOLHA_RAIO / rr.h, 1, 1, 1, .12f * a);
+      else gfx_cor(rr, FOLHA_RAIO / rr.h, .17f, .176f, .204f, a);
+    }
+    if (ptr) ponteiro_alvo(rr.x, rr.y, rr.w, rr.h, ponteiroFonteMenu, ponteiroFonteMenuEscolher, r, 0);
+    gfx_icone((GfxRect){rr.x + 24.0f, rr.y + (lh - 26.0f) * .5f, 26, 26}, ic, sel ? .98f : .86f, sel ? .98f : .86f, sel ? .97f : .85f, a);
+    { TxtLinha tl = txt_linha_corta(TXT_PAINEL_ITEM, rot, sel ? 250 : 220, sel ? 250 : 220, sel ? 248 : 218, 255,
+                                    rr.w - 24.0f - 26.0f - 18.0f - 24.0f);
+      txt_desenhar_alpha(tl, rr.x + 24.0f + 26.0f + 18.0f, rr.y + (lh - tl.h) * .5f, a); }
+  }
+}
 static void desenhaPartes(float x, float w, int ptr, Uint32 agora) {
   float a = ptAnim;
   const char *msg;
@@ -5754,12 +7547,30 @@ static float trocaEase(Uint32 agora) {
   if(ajustes_animacoes_reduzidas()||t>=1.0f) return 1.0f;
   t=1.0f-t; return 1.0f-t*t*t;
 }
+// SELOS NO MODO "DO ADDON" (as linhas do 2.0.8.x): a fileira inteira do
+// pacote escolhido, ou os logos do app quando nao ha pacote, com a resolucao
+// (o grupo da folha nao aparece no texto do addon). Mesma regra das linhas
+// "Do Nuvio" (selosVistaDa): ate o pacote ficar pronto a fileira fica vazia,
+// sem trocar de estilo no meio da pagina; sem pacote, os logos do app.
+static void addonSelos(const Stream *s, float x, float y, float w, int sel, float anim) {
+  int vista=selosVistaDa((Stream *)s,0);
+  if(vista==SELOS_VISTA_PACOTE)
+    desenharSelosPacote(s,x,y,w,FOLHA_SELO_H,anim*(sel || selospacote_ativo()>=0?1:.85f),sel?1:.85f,0);
+  else if(vista==SELOS_VISTA_LEGADO) {
+    uint64_t mask=logosDa(s,0) | (s->badges & (badges_bit("r-4k")|badges_bit("r-1080")|badges_bit("r-720")|badges_bit("r-sd")));
+    float usado=ajustes_selos_coloridos() ? badges_desenhar_selos(mask,x,y,w,FOLHA_SELO_H,anim) :
+      badges_desenhar_tom(mask,x,y,w,FOLHA_SELO_H,.85f,.85f,.85f,anim);
+    if(!s->dolbyVision && badges_fonte_hdr_marca(s->badges)<0 && usado+64<w)
+      marca_formato(FMT_SDR,x+usado+(usado?12:0),y,FOLHA_SELO_H,.7f,.7f,.7f,anim);
+  }
+}
 static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   float ar, ag, ab;
   int ai, nf, automatica, melhor;
   float lx=x+FOLHA_PAD_E, rw=w-FOLHA_PAD_E-FOLHA_PAD_D;
   float tx=lx+FOLHA_TXT, tr=lx+rw-FOLHA_TXT;
   const float oy=folhaOY;
+  addonLargura=tr-tx;   // a quebra do texto do addon mede nesta largura (alturaLinha)
   GfxRect ilhaR={x,0,w,NV_TELA_H};
   ajustes_acento(&ar,&ag,&ab);
   ai=(int)(ar*255.0f+.5f);
@@ -5819,10 +7630,11 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     if (n > 0 && addons_ocupado() && rw-360-cw > 80) {
       if (cw > 0) gfx_cor((GfxRect){tx+cw-13.5f,oy+74+ch*.5f-2.5f,5,5},.5f,.5f,.5f,.49f,anim);
       txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,"Buscando mais fontes…",ai,(int)(ag*255),(int)(ab*255),255,rw-360-cw),tx+cw,oy+72,anim);
-    } else if (grupo == 1 && linhaAceitaPartes(filtrado(foco)) && rw-360-cw > 80) {
+    } else if (grupo == 1 && fonteSegurarAceita(filtrado(foco)) && rw-360-cw > 80) {
       // O GESTO NAO SE ADIVINHA: a dica fica no lugar do "Buscando mais fontes".
+      const char *dica = fonteAceitaAudio(filtrado(foco)) ? "Hold OK: source options" : "Segure OK: todos os arquivos";
       if (cw > 0) gfx_cor((GfxRect){tx+cw-13.5f,oy+74+ch*.5f-2.5f,5,5},.5f,.5f,.5f,.49f,anim);
-      txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,"Segure OK: todos os arquivos",130,130,128,255,rw-360-cw),tx+cw,oy+72,anim);
+      txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,dica,130,130,128,255,rw-360-cw),tx+cw,oy+72,anim);
     } }
   medirCabecalho();
   txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_TITULO,"Fontes",243,242,239,255,titMaxCab),tx,oy+94,anim);
@@ -5925,6 +7737,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   automatica = automaticaDaFolha();
   melhor = melhorFolha = automaticoDaFolhaModo();
   montar(automatica);
+  selosAquecerVizinhos();
   nf=nOrdem;
   { float cy = FOLHA_TOPO - (rolagem > 1.0f ? 0.0f : 8.0f);   // scrolled: no sliver of a cut row above the first card
 #ifdef NV_SHOT_HOOKS
@@ -6067,6 +7880,14 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
         mx += caixaAlta(dica,135,130,125,mx,cy,anim)+18;
       }
       if(s->foraCache && !cacheConfirmado(s)) mx += caixaAlta("Fora do cache",185,179,171,mx,cy,anim)+18;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+      if(audioext_marcada(s->url)){
+#else
+      if(audioext_marcada_nome(s->url, s->rotulo)){
+#endif
+        gfx_cor((GfxRect){mx,cy+5,7,7},.5f,.45f,.62f,.95f,anim);
+        mx+=16+caixaAlta("Audio source",150,180,240,mx+16,cy,anim)+18;
+      }
       if(fitPesada(i)){
         gfx_cor((GfxRect){mx,cy+5,7,7},.5f,.80f,.70f,.52f,anim);
         caixaAlta("Acima da conexão",204,178,132,mx+16,cy,anim);
@@ -6079,14 +7900,38 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     // O SELO "MELHOR PARA ESTA TV" vai ao lado do titulo, so na fonte de maior
     // pontuacao (stream_automatico: MP4/DV que a LG toca primeiro). E a unica
     // forma cheia da lista inteira, e por isso o olho vai nela.
+    // NO MODO DO ADDON o nome e a descricao vem em pecas (icones, bandeiras,
+    // texto) e QUEBRAM: a linha em foco mostra tudo (addonDesenhar).
+    if(ajustes_fonte_texto_addon()) {
+      int apagada=s->naoVideo || (!canalFolha && stream_vod_falhou_ha(i) >= 0);
+      // One pixel-grid origin for the whole card (text, icons, flags, badges).
+      cy=addonPixel(cy);
+      int selosEmbaixo=addonSelosEmbaixo();
+      // Em cima: na altura da coluna da direita, na largura que ela deixa.
+      if(!selosEmbaixo) { addonSelos(s,tx,cy+(FOLHA_ADDON_SELOS-FOLHA_SELO_H)*.5f,txtW,sel,anim); cy+=FOLHA_ADDON_SELOS; }
+      float cacheW=desenharCache(s,tx,cy,anim*(sel?1.0f:.8f));
+      // abertura da linha: a mesma mola da altura (alturaLinha)
+      float abr = grupo==1 && row==foco ? abreFoco : row==linhaAnt ? abreAnt : 0.0f;
+      int linT, linD;
+      tira=0;
+      addonLinhas(i,&linT,&linD);
+      // A mesma largura da quebra (addonQuebrar): em cima, a coluna fica ao
+      // lado dos selos e a 1a linha do nome vai ate a borda.
+      addonDesenhar(i,0,tx+cacheW,cy,(selosEmbaixo?txtW:tr-tx)-cacheW,(tr-tx)-cacheW,sel,apagada,abr,anim);
+      cy+=addonAlturaNome(linT,abr);   // sem desenharFaixas: ver alturaLinha
+      addonDesenhar(i,1,tx,cy,tr-tx,tr-tx,sel,apagada,abr,anim);
+      // Embaixo: depois da descricao a mostra (a mesma mola da altura).
+      if(selosEmbaixo && addonSelosAlt()>0)
+        addonSelos(s,tx,cy+addonLinhasDesc(linD,abr)*FOLHA_ADDON_LD+(FOLHA_ADDON_SELOS-FOLHA_SELO_H)*.5f,tr-tx,sel,anim);
+      continue;
+    }
     { char nome[96];
       int c=(s->naoVideo || (!canalFolha && stream_vod_falhou_ha(i) >= 0))?(sel?150:105):(sel?255:205);   // apagada: aviso ou fonte falhada
       char ep[64]="";
       float cacheW=desenharCache(s,tx,cy,anim*(sel?1.0f:.8f));
       float nx=tx+cacheW, nw=txtW-cacheW;
       tira=0;
-      if(ajustes_fonte_texto_addon()) snprintf(nome,sizeof nome,"%s",textoAddonDa(i)->titulo);
-      else tituloConteudo(s,nome,sizeof nome,ep,sizeof ep);
+      tituloConteudo(s,nome,sizeof nome,ep,sizeof ep);
       { TxtLinha l=txt_linha_corta(TXT_CALLOUT,nome,255,255,253,255,nw);
         // LOGO DO TITULO no lugar do nome (ajuste em teste): a mesma logo do
         // hero/detalhe, encostada a esquerda numa caixa da altura do nome.
@@ -6113,36 +7958,6 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
           // Na linha de base do nome, nao no meio da altura dele.
           if(l.w+14+le.w<=nw) txt_desenhar_tom(le,nx+l.w+14,cy+l.h-le.h-3,ce/175.0f,ce/175.0f,ce/175.0f,anim); } } }
     cy+=40;
-    if(ajustes_fonte_texto_addon()) {
-      cy+=desenharFaixas(s,tx,cy,tr-tx,sel,anim);
-      const TextoAddon *t=textoAddonDa(i);
-      const LinhaAddon *ls=t->linhas;
-      int nl=t->nl;
-      // abertura da linha: a mesma mola da altura (alturaLinha)
-      float abr = grupo==1 && row==foco ? abreFoco : row==linhaAnt ? abreAnt : 0.0f;
-      for(int k=0;k<nl;k++){
-        float ak = anim;
-        if(k>=FOLHA_ADDON_FECHADA){ if(abr<.02f) break; ak = anim*abr; }
-        // A primeira linha do addon costuma ser a de numeros (tamanho, taxa):
-        // um degrau mais clara. As outras no cinza da especificacao.
-        int c = k==0 ? (sel?215:180) : (sel?170:130);
-        float px=tx, maxw=k==0?txtW:tr-tx, ly=cy+k*FOLHA_ADDON_LD;
-        for(int pc=0;pc<ls[k].n && maxw-(px-tx)>30;pc++){
-          if(ls[k].ic[pc]){
-            // O icone na altura do texto, na mesma tinta; so vale se couber.
-            gfx_icone((GfxRect){px,ly+3,22,22},ls[k].ic[pc],c/255.0f,c/255.0f,c/255.0f,ak);
-            px+=22+8;
-          }
-          if(ls[k].tx[pc][0] && maxw-(px-tx)>30){
-            int base=k==0?215:170;
-            TxtLinha lp=txt_linha_corta(TXT_PG_FIM,ls[k].tx[pc],base,base,base,255,maxw-(px-tx));
-            txt_desenhar_tom(lp,px,ly,(float)c/base,(float)c/base,(float)c/base,ak);
-            px+=lp.w+18;
-          }
-        }
-      }
-      continue;
-    }
     // FILEIRA DE LOGOS: o pacote branco que o app ja embarca (deploy/app/art/
     // badges, o mesmo "Ghost" do Xperience), tingido no cinza da linha. MP4
     // no acento no fim:
@@ -6176,18 +7991,19 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       // SELOS COLORIDOS (Ajustes, #198): o dono manteve a opcao (03/10). Ligada,
       // cada selo na peca da cor do seu grupo; desligada (o padrao do Glass
       // UI), todos na mesma tinta branca.
-      if(selosPacoteVisiveis((Stream *)s)) {
+      int selosView = selosVistaDa((Stream *)s, 1);
+      if(selosView == SELOS_VISTA_PACOTE && selosPacoteVisiveis((Stream *)s)) {
         lw=desenharSelosPacote(s,tx0,cy,txtW0-mpW,FOLHA_SELO_H,
-                               ajustes_selos_coloridos()?anim*(sel?1.0f:.85f):anim,t,1);
+                               ajustes_selos_coloridos() && selospacote_ativo()<0?anim*(sel?1.0f:.85f):anim,t,1);
         // O Crave (servico canadense) nao esta em nenhum dos dois pacotes
         // embutidos: sai pela arte antiga para nao ser perdido.
         if(selospacote_ativo()<0 && (logos&badges_bit("p-crave"))) {
           float cw=badges_desenhar_tom(badges_bit("p-crave"),tx0+(lw>0?lw+16:0),cy,txtW0-mpW-lw-16,FOLHA_SELO_H,t,t,t,anim);
           if(cw>0) lw+=(lw>0?16:0)+cw; }
-      } else if(logos) lw=ajustes_selos_coloridos()
+      } else if(selosView == SELOS_VISTA_LEGADO && logos) lw=ajustes_selos_coloridos()
         ? badges_desenhar_selos(logos,tx0,cy,txtW0-mpW,FOLHA_SELO_H,anim*(sel?1.0f:.85f))
         : badges_desenhar_tom(logos,tx0,cy,txtW0-mpW,FOLHA_SELO_H,t,t,t,anim);
-      else if(!ehMp4){ char d[sizeof s->descricao];
+      else if(selosView == SELOS_VISTA_LEGADO && !ehMp4){ char d[sizeof s->descricao];
         snprintf(d,sizeof d,"%s",s->descricao);
         for(char *p=d;*p;p++)if((unsigned char)*p<32)*p=' ';
         int c=sel?180:130;
@@ -6271,6 +8087,13 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     // Com servicos de streaming na lista, a frase vem DEPOIS deles.
     txt_bloco(TXT_PG_FIM,s,196,199,204,tx,FOLHA_TOPO+20,rw-52,28,anim,3);
   }
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  // The hold-OK source menu over the list. It sat inside the empty-list block
+  // above, so with sources listed it was open (taking every key) but never
+  // drawn: "shows nothing, frozen, Back exits" (owner's log 8, 17/11).
+  if (fmAnim > .01f) desenhaFonteMenu(x,w,lx+rw,ptr && fmAberto);
+#else
+#endif
   anim=animLista; lx-=dxLista; tx-=dxLista; tr-=dxLista;
   // Na ilha, de volta ao recorte dela (plrilha corta a forma inteira).
   if (ilha) gfx_recorte(ilhaR.x,ilhaR.y,ilhaR.w,ilhaR.h);
@@ -6283,6 +8106,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     desenhaPartes(x,w,ptr && ptAberto,agora);
     if (ilha) gfx_recorte(ilhaR.x,ilhaR.y,ilhaR.w,ilhaR.h);
   }
+#if defined(NV_TPK) || defined(NV_WEBOS)
+#else
+  if (fmAnim > .01f) desenhaFonteMenu(x,w,lx+rw,ptr && fmAberto);
+#endif
 }
 
 // A MEDIDA DE REDE DA FONTE QUE ESTA ABRINDO (o player expande o cartao de

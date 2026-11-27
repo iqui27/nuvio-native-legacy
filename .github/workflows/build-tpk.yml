@@ -22,22 +22,36 @@ on:
       pacotes:
         description: "Packages to build (space separated)"
         default: "NuvioTpk60 NuvioTpk65 NuvioTpk"
+  # release.yml: all four packages plus the two update .so files.
+  workflow_call:
+    inputs:
+      pacotes:
+        type: string
+        default: "NuvioTpk60 NuvioTpk65 NuvioTpk"
 
 concurrency:
-  group: build-tpk-${{ github.ref }}
+  group: build-tpk-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  # libnuvio_engine.so for the 6+ packages (NuvioTpk40 never carries it).
+  engine:
+    uses: ./.github/workflows/build-p2p-engine.yml
+    with:
+      part: tpk
+      artifact: p2p-engine-tpk
+
   build:
+    needs: engine
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
-      NV_TPK_PACOTES: ${{ github.event.inputs.pacotes || 'NuvioTpk60 NuvioTpk65 NuvioTpk' }}
-      # No P2P engine on CI (it lives on the owner's disk, not in the repo).
-      NUVIO_P2P_MOTOR: none
+      NV_TPK_PACOTES: ${{ inputs.pacotes || 'NuvioTpk60 NuvioTpk65 NuvioTpk' }}
+      # P2P engine from the engine job; tools/tpk.sh checks every 6+ package carries it.
+      NUVIO_P2P_MOTOR: /home/runner/p2p-motor
       DOTNET_ROOT: ${{ github.workspace }}/.dotnet
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       NUVIO_TPK_CACHE: ${{ github.workspace }}/.cache/nuvio-tpk
@@ -45,11 +59,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Download the P2P engine
+        uses: actions/download-artifact@v4
+        with:
+          name: p2p-engine-tpk
+          path: /home/runner/p2p-motor/tpk
+
+      # Audio from another source: the app state, the version list, the
+      # add-on filter and the automatic match's pure part (seconds, no FFmpeg).
+      - name: Unit tests (audio from another source)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libsdl2-dev >/dev/null
+          bash tests/audioext.sh
+          bash tests/doadorleg.sh
+          bash tests/mkvass_ordem.sh
+
       # tools/tpk.sh compiles libnuvio.so inside a linux/arm/v5 container.
       - name: Enable ARM emulation for Docker
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm
+
+      # Optional: keys that tools/env.sh reads from local.properties
+      # (NUVIO_SUPABASE_URL, TRAKT_CLIENT_ID, TMDB_API_KEY, ...). Repository secret LOCAL_PROPERTIES = the file contents.
+      # A Release run (release.yml) refuses to build without them.
+      - name: Write local.properties (if secret set)
+        env:
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES || secrets.NUVIO_LOCAL_PROPERTIES }}
+          RELEASE_RUN: ${{ github.workflow == 'Release' }}
+        run: |
+          if [ -n "$LOCAL_PROPERTIES" ]; then
+            printf '%s\n' "$LOCAL_PROPERTIES" > local.properties
+          elif [ "$RELEASE_RUN" = true ]; then
+            echo "::error::no LOCAL_PROPERTIES secret: a release build needs the server keys"; exit 1
+          else
+            echo "No LOCAL_PROPERTIES secret: building without API keys"
+          fi
 
       # Static SDL2/libass/etc. take a long time to build; reuse them.
       # restore + save are split so the cache is saved even when a later step
@@ -58,7 +103,11 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.NUVIO_TPK_CACHE }}
-          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh') }}
+          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh', 'tools/tpk/libass-nv/patches/*', 'tools/tpk/libass-nv/cflags', 'tools/tpk/libass-hybrid/hybrid.patch', 'tools/tpk/libass-hybrid/cflags') }}
+          # Only the libass patches changed: the rest still comes back, and
+          # tools/tpk.sh rebuilds just libass (its stamp is the patches' hash).
+          restore-keys: |
+            tpk-deps-
 
       # The static FFmpeg for DTS/TrueHD -> AC3 (tools/build-dts-ffmpeg.sh, built
       # by tools/tpk.sh into $NUVIO_TPK_CACHE/prefix-dts) takes long under ARM
@@ -81,8 +130,9 @@ jobs:
           dotnet workload list
 
       # tools/tizen-art.sh converts the art from webp to png and needs ffmpeg.
+      # libass-hybrid-test: autoreconf for the mpvNova-libass git tree.
       - name: Install ffmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg autoconf automake libtool
 
       # Same workaround used on the owner's computer: the arm/v5 platform name
       # is not accepted by the emulation, plain linux/arm is.
@@ -100,7 +150,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.NUVIO_TPK_CACHE }}
-          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh') }}
+          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh', 'tools/tpk/libass-nv/patches/*', 'tools/tpk/libass-nv/cflags', 'tools/tpk/libass-hybrid/hybrid.patch', 'tools/tpk/libass-hybrid/cflags') }}
 
       # Only a finished FFmpeg build (tpk.sh writes .carimbo last) is cached.
       - name: Check FFmpeg (DTS) build
@@ -131,5 +181,37 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: NuvioTpk
-          path: build/tpk/*.tpk
+          # The libnuvio-<v>-tpk*-arm.so files are the in-app update's download.
+          path: |
+            build/tpk/*.tpk
+            build/tpk/libnuvio-*-arm.so
           if-no-files-found: error
+
+      # The .tpk libass has an ARMv7 NEON bitmap engine and a threaded blur
+      # (tools/tpk/libass-nv). In the same linux/arm build image under qemu,
+      # libass's checkasm compares every NEON function with the C engine, and
+      # verify.c renders the sample scripts with the C engine and with NEON at
+      # 1 and 4 blur threads and compares every image byte for byte (plus the
+      # dialogue opacity: alpha only). Any difference fails the run; it comes
+      # after the upload so a .tpk is still there to look at.
+      - name: Verify libass NEON engine and blur threads (qemu-arm)
+        run: |
+          set -o pipefail
+          ok=1
+          docker run --rm --platform linux/arm -v "$NUVIO_TPK_CACHE:/w" -v "$PWD:/work" -w /work \
+            nuvio-tpk-sdk sh tools/tpk/libass-nv/verify.sh 2>&1 | tee verify-libass.log || ok=0
+          # libass-hybrid-test: the same checks on mpvNova's armv7 engine.
+          docker run --rm --platform linux/arm -e ASS_NV_ARMV7=nova -v "$NUVIO_TPK_CACHE:/w" -v "$PWD:/work" -w /work \
+            nuvio-tpk-sdk sh tools/tpk/libass-nv/verify.sh 2>&1 | sed 's/^/[nova engine] /' | tee -a verify-libass.log || ok=0
+          {
+            echo '### libass NEON engine + blur threads (qemu-arm)'
+            echo '```'
+            grep -E '^\[verify\]|identical|differ|RESULT|frames' verify-libass.log | tail -n 30
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ok" = 1 ]; then
+            echo "::notice title=libass NEON::$(grep -E 'RESULT|total C' verify-libass.log | tr '\n' ' ')"
+          else
+            tail -n 25 verify-libass.log | sed 's/^/::error title=libass verify::/'
+            exit 1
+          fi

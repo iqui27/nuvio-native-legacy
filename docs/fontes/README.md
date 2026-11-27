@@ -33,6 +33,21 @@ Total dos nove arquivos adicionais: 2.940.808 bytes.
 
 Os pipelines existentes incluem a pasta `deploy/app/fonts` no pacote nativo e no preload WebAssembly. As licenças devem acompanhar os arquivos de fonte. A inclusão dos arquivos no repositório não comprova instalação nem comportamento na TV.
 
+## Plus Jakarta Sans (legendas, padrão desde 14/11/2026)
+
+The default subtitle font, chosen by the owner to match Stremio: stremio-web sets `font-family: 'PlusJakartaSans', …` on the whole app (`src/App/styles.less`), so Stremio's Tizen app draws subtitles in Plus Jakarta Sans Regular. Only people who never picked a subtitle font get it (`player.c` prefsLer); it is also offered as an interface font (the two lists share the family IDs).
+
+- Source: [tokotype/PlusJakartaSans](https://github.com/tokotype/PlusJakartaSans/tree/18d1cd2f7ea10481919d2f05c1f7064b7307fc26) — commit `18d1cd2f7ea10481919d2f05c1f7064b7307fc26`, static files `fonts/ttf/`, version 2.071. Regular (400), Medium (500), Bold (700), as published; nothing generated here.
+- Licence: SIL OFL 1.1, `deploy/app/fonts/PlusJakartaSans-OFL.txt`.
+- Coverage: Latin, Vietnamese, Greek; no Cyrillic, Arabic or CJK (the text fallbacks and libass's per-glyph fallback take those).
+- libass sizes a face by its win ascent + descent (1.652 em here, Inter 1.21): at the same ASS FontSize its letters are smaller than Inter's. This only matters on the libass plain-text path (Arabic captions); `player.c` passes the em ratio (`emMil`) for the Outline shadow.
+
+| Arquivo | Bytes | SHA-256 |
+|---|---:|---|
+| `PlusJakartaSans-Regular.ttf` | 128972 | `bd6276d4060e3b1ebc45047469e0bb86b08f301ba681cdf1ceb6245ea10478d2` |
+| `PlusJakartaSans-Medium.ttf` | 129180 | `c77bab757d7402ec6d9341d5f7ddaafb2474e17026792697ba4624c7dc89caf7` |
+| `PlusJakartaSans-Bold.ttf` | 128988 | `5f5342ef76862b5b5365d1dff1a667629dfa484e388dd602552f647219c3870f` |
+
 ## Fonte CJK embarcada (japonês e chinês)
 
 A Inter não tem kana nem hanzi. `text.c` manda a linha para uma fonte de reserva quando falta qualquer caractere nela; na LG e no Mac a reserva vem do sistema, e no WASM da Samsung não existe fonte de sistema nenhuma. Por isso o pacote leva `DroidSansFallback-Subset.ttf`.

@@ -94,7 +94,10 @@ void perfis_carregar_ativo(void);
 //                           e numa TV ela custa um clique a cada abertura.
 //   - um perfil COM PIN  -> 1. A trava existe justamente para o aparelho nao
 //                           abrir o perfil sozinho; pular aqui seria desliga-la.
-//   - dois ou mais       -> 1, UMA VEZ POR SESSAO. Numa TV de sala quem liga o
+//   - dois ou mais       -> 1 por padrao, UMA VEZ POR SESSAO. A opcao local
+//                           Remember last profile pode manter um perfil salvo,
+//                           ainda existente e sem PIN, sem confirmar a sessao.
+//                           Numa TV de sala quem liga o
 //                           aparelho hoje nao e necessariamente quem o desligou
 //                           ontem, e herdar a escolha de ontem em silencio e
 //                           exatamente o que faz o app gravar o progresso no
@@ -104,6 +107,9 @@ void perfis_carregar_ativo(void);
 // — ou de dispensar com o Voltar — ela devolve 0 pelo resto da execucao, entao
 // voltar para a home nunca reabre a pergunta.
 int  perfis_precisa_escolher(void);
+// Device-local opt-in: reuse an existing unlocked saved profile at startup.
+// Never confirms a PIN or suppresses an explicit Switch profile request.
+void perfis_lembrar_ultimo_configurar(int ligado);
 
 // A MESMA condicao, SEM a bandeira de sessao: 1 quando a lista de agora nao
 // oferece escolha nenhuma (zero perfis, ou um so e destravado).

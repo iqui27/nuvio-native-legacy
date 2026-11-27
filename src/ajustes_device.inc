@@ -7,7 +7,8 @@
 // filename; neither JSON property names nor a remote path reach filesystem APIs.
 static int ajusteAparelho(int op) {
   switch (op) {
-    case AJ_DV7: return 0;
+    case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: return 0;
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR: case AJ_UPDATE_NOTIFICATIONS: case AJ_REMEMBER_PROFILE: case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS: return 0;
     case AJ_VIDRO: case AJ_VIDRO_CONTORNO: case AJ_FUNDO:
     case AJ_VIDRO_OPAC: case AJ_VIDRO_FOSCO: case AJ_RAIL_BLUR:
     case AJ_PROVEDORES_ESCOPO: case AJ_AUDIO_OFFSET:
@@ -315,7 +316,7 @@ static int ajustesDeviceAplicar(const char *json) {
   // Reload only when something changed; unchanged snapshots need no side effects.
   if (!changed) return 0;
   player_dir(dados_dir()); player_leg_estilo_carregar();
-  ppCarregar(); fanartCarregar(); seekrCarregar(); p2pCarregar(); pstCarregar();
+  ppCarregar(); fanartCarregar(); animeskipCarregar(); seekrCarregar(); p2pCarregar(); pstCarregar();
   ajustes_provedores_abrir_sessao();
   fil_recarregar(); fonteregra_carregar(); fontefalha_config_ler();
   ltv_pref_carregar(perfis_ativo()); ltv_urls_carregar(perfis_ativo());
@@ -334,3 +335,4 @@ static int ajustesDeviceAplicar(const char *json) {
   if (changed) gravar();
   return changed;
 }
+

@@ -91,6 +91,52 @@ int  mkvfix_montar(const uint32_t *id, const int64_t *pos, int n, unsigned char 
 #define MKVFIX_TIPO_ESCONDIDA 0x20
 #define MKVFIX_OCULTAS 16
 int  mkvfix_legendas_texto(const unsigned char *b, long n, int64_t *off, int max);
+// The same, also giving each one's TrackNumber in `num` (0 = the entry has
+// none). Used by the Void mode below.
+int  mkvfix_legendas_texto_num(const unsigned char *b, long n, int64_t *off, uint64_t *num, int max);
+
+// HOW THE TV IS KEPT OFF THE ASS TRACKS (Tizen 4-6 playback damage, 16/11/2026).
+// 2.0.8 changes each text subtitle's TrackType to "control" (HIDDEN). Its
+// blocks stay in the Clusters, under a track the TV no longer has. Tizen 4-6
+// players show blocky damage in the video in ASS-heavy scenes since then
+// (2.0.7, which hid nothing, is clean); the S95C (Tizen 9) is fine.
+// VOID keeps the TrackEntry as it is and turns every block of those tracks
+// into an EBML Void element of the same size (its one-byte ID A0/A3 -> EC):
+// every Matroska reader skips Void, so the TV gets no ASS data and no block of
+// an unknown track. Void fixed it on a Tizen 6 TV (17/11/2026).
+enum { MKVFIX_ASS_ESCONDER = 1, MKVFIX_ASS_ANULAR = 2 };
+// Mode for the next probe (video_tpk.c picks it by the Tizen version).
+void mkvfix_modo_ass(int modo);
+int  mkvfix_modo_ass_atual(void);
+
+// The Void walker: follows the Clusters in the bytes going to the TV and
+// rewrites the ID of every SimpleBlock / BlockGroup of the given tracks to
+// Void. It only rewrites inside a Cluster it is sure of (walked from the file
+// start, or found by its ID + size + Timestamp child after a Range that starts
+// mid-file); anything it can't follow passes untouched. Bytes of a block
+// header still being read are held back (at most MKVFIX_VOID_HB) so the ID
+// byte is changed before it is sent.
+#define MKVFIX_VOID_HB 64
+typedef struct {
+  int st, ret;
+  int64_t pos;                 // absolute position of the next input byte
+  int64_t clFim;               // end of the current Cluster
+  int64_t segFim;              // end of the Segment (-1 unknown)
+  int64_t ate;                 // SKIP: end of what is skipped
+  uint32_t win;                // SCAN window
+  unsigned char cv[24]; int cvN;   // header being verified (already sent)
+  unsigned char hb[MKVFIX_VOID_HB]; int hbN;   // child header held back
+  uint64_t faixa[MKVFIX_OCULTAS]; int nf;
+  long anulados, indecisos, perdas, sincronias;   // counters (read by the caller)
+  int64_t bytesAnulados;
+} MkvfixVoid;
+void mkvfix_void_iniciar(MkvfixVoid *v, const uint64_t *faixas, int n, int64_t pos);
+// Consumes `n` bytes at v->pos; writes what can go out to `out` (room for
+// n + MKVFIX_VOID_HB). Returns the bytes written.
+long mkvfix_void_passar(MkvfixVoid *v, const unsigned char *in, long n, unsigned char *out);
+// End of the response: the held bytes, unchanged. Returns the bytes written.
+long mkvfix_void_fim(MkvfixVoid *v, unsigned char *out);
+
 // Posicao absoluta do Tracks a partir do inicio do arquivo ja lido (pelo
 // SeekHead ou pelos elementos do topo dentro de `n`); -1 se nao achou.
 int64_t mkvfix_tracks_pos(const unsigned char *b, long n, const MkvfixCab *c);
@@ -123,9 +169,43 @@ int  mkvfix_relay(void);
 // Selected-file refresh identity is copied before the probe thread starts.
 void mkvfix_sondar_arquivo(const char *url, const char *cabecalhos, int usenet, int item, int file);
 int  mkvfix_estado(void);
+// WHAT THE PLAYING FILE IS, from its first bytes (the probe above reads them
+// anyway). "Audio from another source" opens MKV and MP4 only (its FFmpeg has
+// the matroska and mov demuxers): anything else hides it (owner 17/11).
+enum { MKVFIX_CONT_DESCONHECIDO = 0, MKVFIX_CONT_MKV, MKVFIX_CONT_MP4, MKVFIX_CONT_TS, MKVFIX_CONT_M2TS,
+       MKVFIX_CONT_AVI, MKVFIX_CONT_OUTRO };
+int  mkvfix_conteiner(void);   // of the current probe; 0 while unknown
+static inline int mkvfix_conteiner_de(const unsigned char *b, long n) {
+  static const char *const caixas[] = { "ftyp", "moov", "mdat", "free", "wide", "skip", "styp" };
+  if (n >= 4 && b[0] == 0x1A && b[1] == 0x45 && b[2] == 0xDF && b[3] == 0xA3) return MKVFIX_CONT_MKV;
+  if (n >= 8) for (unsigned i = 0; i < sizeof caixas / sizeof *caixas; i++) if (!memcmp(b + 4, caixas[i], 4)) return MKVFIX_CONT_MP4;
+  if (n >= 189 && b[0] == 0x47 && b[188] == 0x47) return MKVFIX_CONT_TS;
+  if (n >= 197 && b[4] == 0x47 && b[196] == 0x47) return MKVFIX_CONT_M2TS;
+  if (n >= 12 && !memcmp(b, "RIFF", 4) && !memcmp(b + 8, "AVI ", 4)) return MKVFIX_CONT_AVI;
+  return n > 0 ? MKVFIX_CONT_OUTRO : MKVFIX_CONT_DESCONHECIDO;
+}
+static inline const char *mkvfix_conteiner_nome(int k) {
+  switch (k) {
+    case MKVFIX_CONT_MKV: return "Matroska"; case MKVFIX_CONT_MP4: return "MP4";
+    case MKVFIX_CONT_TS: return "MPEG-TS"; case MKVFIX_CONT_M2TS: return "M2TS (Blu-ray TS)";
+    case MKVFIX_CONT_AVI: return "AVI"; case MKVFIX_CONT_OUTRO: return "unknown format";
+    default: return "not read yet";
+  }
+}
+// 1 unless the file is known to be something the donor server cannot open.
+static inline int mkvfix_conteiner_doador_ok(int k) { return k == MKVFIX_CONT_DESCONHECIDO || k == MKVFIX_CONT_MKV || k == MKVFIX_CONT_MP4; }
 // Legendas de texto que a sessao atual esconde da TV (0 = nenhuma ou sondando).
 // > 0: o arquivo deve tocar pelo servidor (mkvfix_url) desde a abertura.
 int  mkvfix_ocultas(void);
+// Relay measurements since the last call (the "[mkvfix] 10s" log line): bytes
+// sent to the TV, ms blocked sending (the TV not reading), ms waiting on the
+// CDN, blocks voided, Void walker resyncs / lost / undecided, connections open.
+typedef struct {
+  long long bytes, envioMs, cdnMs, bytesAnulados;
+  long anulados, sincronias, perdas, indecisos;
+  int conexoes;
+} MkvfixMedidas;
+void mkvfix_medidas(MkvfixMedidas *m);
 // O endereco local do arquivo consertado (sobe o servidor na primeira vez).
 // 0 se a sessao atual nao e MKVFIX_PRECISA nem esconde legendas, ou o servidor
 // nao subiu.
@@ -133,5 +213,29 @@ int  mkvfix_url(char *out, size_t n);
 int  mkvfix_e_url(const char *url);
 // Fim do video: cancela a sessao e as conexoes (o servidor fica de pe).
 void mkvfix_parar(void);
+
+// ADIANTAR NA SAIDA DO APP (Home/sono, 09/11). Com a sessao suspensa no ponto,
+// baixa ~8 MiB em volta do byte estimado do ponto para a memoria (um pedido, ate 4 MiB/s, no
+// maximo 10 s), e o seek da reabertura recebe esse comeco daqui e o resto do
+// CDN na mesma resposta. Nao toca o player nem o decodificador da TV.
+// mkvfix_cues_posicao: no elemento Cues (b,n), o CueClusterPosition (relativo
+// ao Segment) do maior CuePoint <= alvoMs da faixa com mais pontos; -1 sem
+// nenhum. *cueMs = o tempo dele; *maxMs = o maior CueTime (confere a escala).
+int64_t mkvfix_cues_posicao(const unsigned char *b, long n, int64_t alvoMs, int64_t *cueMs, int64_t *maxMs);
+// Como a de cima, e o primeiro CuePoint DEPOIS do alvo (tempo, posicao; -1).
+int64_t mkvfix_cues_ponto(const unsigned char *b, long n, int64_t alvoMs, int64_t *cueMs, int64_t *maxMs,
+                          int64_t *proxMs, int64_t *proxPos);
+// Onde a janela comeca (relativo ao Segment): a estimativa do byte do alvo
+// entre os dois CuePoint (ou pela taxa media), menos `antes`, nunca antes do cue.
+int64_t mkvfix_janela_ini(int64_t cueMs, int64_t cuePos, int64_t proxMs, int64_t proxPos,
+                          int64_t alvoMs, double bytesPorMs, int64_t antes);
+// Nao espera: pode ser chamada do fio do host no OnPause. Um pedido novo
+// substitui o anterior.
+void mkvfix_adiantar(double alvoSeg, double durSeg);
+void mkvfix_adiantar_pressa(void);            // a tela voltou: termina sem o freio
+void mkvfix_adiantar_soltar(const char *porque);
+// Pouca memoria: solta o adiantado E os pedidos curtos guardados (o indice;
+// ate 12 MiB que senao ficam ate o app fechar). A proxima abertura pede ao CDN.
+void mkvfix_memoria_soltar(const char *porque);
 
 #endif

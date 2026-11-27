@@ -94,6 +94,9 @@ typedef struct {
 unsigned rede_pedido_capacidades(void);
 int rede_pedir(const RedePedido *pedido, RedeResposta *resposta);
 void rede_resposta_limpar(RedeResposta *resposta);
+/* Closes this thread's cached connections (its curl handle): a thread that
+ * reads a little and then idles (legref) holds no socket open afterwards. */
+void rede_fio_fechar(void);
 
 /* Grupo vive fora do request: avancar ao trocar conta/perfil/titulo invalida
  * todos os jobs anteriores. Jobs retidos impedem UAF; nenhuma geracao volta
@@ -126,11 +129,21 @@ char *rede_baixar_trecho64_final(const char *url, const char *headers,
                               int64_t *total, int *status,
                               volatile int *cancelled, char *final, int *cross);
 /* Optional guard for an actively awaited range. Atomic urgent flag is owned
- * by the caller for this synchronous call. Last retry can omit this guard. */
+ * by the caller for this synchronous call: 1 = idle guard, 2 = idle plus a
+ * five-second awaited-range budget (DV TV experiment); 3 lets a confirmed gap
+ * use three seconds below 75% completion. Only awaited ranges
+ * get the budget; last retry can omit both guards. */
 char *rede_baixar_trecho64_vigiado(const char *url,const char *headers,
     int64_t start,int64_t end,long *size,int64_t *total,int *status,
     volatile int *cancelled,char *final,int *cross,volatile int *urgent,
     unsigned idle_ms,int *stalled);
+/* Same reader, with request-owned Retry-After metadata. -1 = absent, 0 =
+ * zero/past/invalid, positive = parsed seconds. Reset at every response hop;
+ * a redirect's Retry-After must never become the final response's delay. */
+char *rede_baixar_trecho64_relato(const char *url,const char *headers,
+    int64_t start,int64_t end,long *size,int64_t *total,int *status,
+    volatile int *cancelled,char *final,int *cross,volatile int *urgent,
+    unsigned idle_ms,int *stalled,int *retry_after);
 /* One streaming read "bytes=start-" for the Samsung converter: the body goes to
  * sink(opaque, data, n) as it arrives (return 0 to stop; it may block). Same
  * redirect and header rules as rede_baixar_trecho64_final. No limit on the
@@ -230,6 +243,12 @@ char *rede_baixar_trecho_st(const char *url, int segundos, long long ini, long l
 // tambem o candidato a derrubar conexao a mais: o mkvass passa a uma so.
 long rede_corte_host(const char *url);
 
+// Pause of a host that refused a connection (#385), kept for the side readers (the player never waits on it): ms
+// left (0 = free), open/double it after a refusal (curl-style code: 6 name, 7 refused, 35 TLS), end it after an answer.
+unsigned long rede_calma_falta(const char *url);
+unsigned long rede_calma_recusou(const char *url, int erro);
+void rede_calma_atendeu(const char *url);
+
 // 1 quando o ULTIMO rede_baixar_trecho_st DESTE FIO falhou porque um pedaco
 // seguinte (o resto, depois de um corte ou de um pedaco do teto) voltou com
 // zero bytes e sem estourar o prazo: o servidor recusou continuar (#92, v1.4.7:
@@ -246,6 +265,9 @@ int rede_resto_recusado(void);
 // conexao. O primeiro Range lateral que da certo solta a pausa. Vale para o
 // fio inteiro: chamar no comeco de um fio proprio.
 void rede_lateral(int sim);
+// Nuvio's own requests in flight to TorBox hosts now; *pico (may be NULL)
+// gets the most since the last call (tbburn logs). The TV player is not counted.
+int rede_torbox_em_voo(int *pico);
 
 // Teto de bytes da transferencia corrente (0 = sem teto). E interno ao modulo;
 // esta exposto so porque rede_baixar_trecho o usa. Nao mexer de fora.
@@ -287,6 +309,10 @@ int rede_url_final_cab(const char *url, int segundos, const char *const *cabecal
 int rede_url_final_tipo(const char *url, int segundos, const char *const *cabecalhos,
                         char *dst, unsigned tam, int *status,
                         char *mime, unsigned mimeTam, long *corpo);
+// The libcurl code of THIS thread's last rede_url_final_tipo (28 = timed out,
+// the watchdog included; 0 = transport ok). Browser builds: always 0. Lets the
+// source check tell "no answer in time" from a real failure (log 13).
+int rede_url_final_curl(void);
 
 #ifdef NV_VIDAA
 // VARIANTE PARA A VIDAA. rede_url_final so devolve 0/1, e na VIDAA um 0 pode

@@ -75,6 +75,10 @@ int fa_ja_tocando(int abertaIdx, int escolhida) {
   return abertaIdx >= 0 && escolhida == abertaIdx;
 }
 
+int fa_manter_sem_resposta(int curl, int http, int abertaNoPlayer, int linkResolvido) {
+  return curl == 28 && http == 0 && (abertaNoPlayer || linkResolvido);
+}
+
 int fa_preparada_vale(const FaPreparada *p, const FaAgora *a) {
   return fa_preparada_vale_buffer(p, a, 0, 0);
 }
