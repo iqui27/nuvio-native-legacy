@@ -38,4 +38,44 @@ internal object TaxaQuadros {
         return iguais.filter { it.hz <= 61f }.maxByOrNull { it.hz }
             ?: iguais.minByOrNull { it.hz }
     }
+
+    // Standard video rates. A container stores 23.976 as 41708333 ns per frame
+    // (23.97602) or rounds it (23.98); measured timestamps jitter more. Snap to
+    // the nearest one within 0.4 %, so matching can stay tight enough to tell
+    // 23.976 from 24 (0.1 % apart).
+    private val PADRAO = floatArrayOf(
+        24000f / 1001f, 24f, 25f, 30000f / 1001f, 30f, 48000f / 1001f, 48f,
+        50f, 60000f / 1001f, 60f, 100f, 120000f / 1001f, 120f)
+
+    fun padronizar(fps: Float): Float {
+        if (!fpsValido(fps)) return fps
+        val perto = PADRAO.minByOrNull { abs(it - fps) } ?: return fps
+        return if (abs(perto - fps) <= 0.004f * perto) perto else fps
+    }
+
+    // Frame rate from presentation timestamps, for a source whose container
+    // states none (Media3's MKV reader never fills Format.frameRate). Frames
+    // arrive in decode order, so sort first; the median gap ignores the odd
+    // dropped or repeated frame, and the mean of the gaps near it undoes the
+    // 1 ms rounding of MKV timestamps (41/42 ms for 23.976). Written on the
+    // playback thread, read on the main one.
+    class Medidor(private val amostras: Int = 48) {
+        private val pts = LongArray(amostras)
+        private var n = 0
+        @Volatile private var feito = false
+        val cheio get() = feito
+
+        @Synchronized fun quadro(ptsUs: Long) { if (n < amostras) pts[n++] = ptsUs; if (n >= amostras) feito = true }
+
+        @Synchronized fun fps(): Float {
+            if (n < amostras / 2) return -1f
+            val o = pts.copyOf(n).sorted()
+            val gaps = (1 until o.size).map { o[it] - o[it - 1] }.filter { it > 0 }.sorted()
+            if (gaps.size < amostras / 4) return -1f
+            val mediana = gaps[gaps.size / 2]
+            val perto = gaps.filter { it * 2 >= mediana && it * 2 <= mediana * 3 }
+            val media = perto.sum().toFloat() / perto.size
+            return padronizar(1_000_000f / media)
+        }
+    }
 }

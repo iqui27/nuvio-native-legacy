@@ -563,6 +563,7 @@ extern int    gfx_n_rect;   // chamadas de gfx_rect
 extern int    gfx_n_prog;   // trocas de programa GL (glUseProgram)
 extern int    gfx_n_bind;   // trocas de textura (glBindTexture)
 extern double gfx_ms_rect;  // ms de CPU dentro de gfx_rect
+extern unsigned gfx_furo_assin;  // holes drawn this frame (player_skip_present)
 extern int    gfx_n_outros;  // chamadas de recorte/FBO/desfoque
 extern double gfx_ms_outros; // ms de CPU nesses pontos de GL
 extern double gfx_fill;      // area submetida no quadro, em telas cheias

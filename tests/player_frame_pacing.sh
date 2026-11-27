@@ -18,6 +18,12 @@ int main(void) {
   assert(player_frame_wait(1, 10) == 6);
   assert(player_frame_wait(1, 16) == 0);
   assert(player_frame_wait(1, 200) == 0);
+  /* Same bare hole twice: the second is not presented; anything else is. */
+  assert(player_skip_present(1, 0, 1, 7u, 7u));
+  assert(!player_skip_present(1, 0, 0, 7u, 7u)); /* first bare frame after UI */
+  assert(!player_skip_present(1, 1, 1, 7u, 7u)); /* subtitle, OSD, toast */
+  assert(!player_skip_present(1, 0, 1, 7u, 8u)); /* hole moved (zoom, aspect) */
+  assert(!player_skip_present(0, 0, 1, 7u, 7u)); /* player closed */
   return 0;
 }
 C

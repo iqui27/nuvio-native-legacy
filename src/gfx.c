@@ -1936,6 +1936,7 @@ void gfx_tex_esquecer(GLuint tex) {
 }
 
 int    gfx_n_rect = 0, gfx_n_prog = 0, gfx_n_bind = 0, gfx_n_outros = 0;
+unsigned gfx_furo_assin = 0;
 double gfx_ms_rect = 0.0, gfx_ms_outros = 0.0;
 // PREENCHIMENTO SUBMETIDO no quadro, em telas cheias (1920x1080 = 1,0).
 // Nesta Mali o custo e de fragmento, nao de chamada: a nota no topo deste
@@ -2302,6 +2303,7 @@ static void vidroAplicar(Programa *P, GfxRect r);
 void gfx_novo_quadro(void) {
   gfx_quadro_n++;
   gfx_n_rect = gfx_n_prog = gfx_n_bind = gfx_n_outros = 0;
+  gfx_furo_assin = 0;
   gfx_ms_rect = gfx_ms_outros = 0.0;
   gfx_fill = 0.0; gfx_fill_vis = 0.0; gfx_n_cheio = 0; gfx_n_cheio_mistura = 0;
   gfx_fill_gpu_ult = gfx_fill_gpu; gfx_fill_gpu_mist_ult = gfx_fill_gpu_mist;
@@ -4534,6 +4536,8 @@ void gfx_furo(GfxRect r) {
   y0 = (int)floorf((NV_TELA_H - (r.y + r.h)) * ey + 0.5f);
   y1 = (int)floorf((NV_TELA_H - r.y) * ey + 0.5f);
   if (x1 <= x0 || y1 <= y0) return;
+  gfx_furo_assin = gfx_furo_assin * 31u + (unsigned)x0 * 7919u + (unsigned)y0 * 104729u +
+                   (unsigned)x1 * 1299709u + (unsigned)y1 * 15485863u + 1u;
   GFX_OUTRO_INI();
   glEnable(GL_SCISSOR_TEST);
   glScissor(x0, y0, x1 - x0, y1 - y0);

@@ -1861,6 +1861,11 @@ int main(int argc, char **argv) {
   int    txtNQuadro = 0, piorTxtN = 0;
   int quadros = 0, janks = 0; double pior = 0;
   int playerUiPrevious = 0;
+  int quadrosPulados = 0;   // player_skip_present (Android)
+#ifdef NV_ANDROID
+  int ultimoNu = 0;
+  unsigned ultimoFuro = 0;
+#endif
 #ifndef NV_SEM_WEBOS
   int sourceLoadingVsyncFailed = 0;
 #endif
@@ -2407,6 +2412,13 @@ int main(int argc, char **argv) {
     }
     if (!nvPrimeiroQuadroFeito) arranque_etapa("primeiro SwapWindow");
     NV_PASSO("swap");
+#ifdef NV_ANDROID
+    if (player_skip_present(player_aberto(), playerUi, ultimoNu, gfx_furo_assin, ultimoFuro)) {
+      quadrosPulados++;
+      SDL_Delay(16);
+    } else
+#endif
+    {
     SDL_GL_SwapWindow(win);
 #ifndef __EMSCRIPTEN__
     { unsigned wait = player_frame_wait(playerClockUi, SDL_GetTicks() - frameStarted);
@@ -2415,6 +2427,11 @@ int main(int argc, char **argv) {
     (void)frameStarted;
 #endif
     swapint_marca(&swapInt, (double)SDL_GetPerformanceCounter() * 1000.0 / perFreq);
+#ifdef NV_ANDROID
+    ultimoNu = player_aberto() && !playerUi;
+    ultimoFuro = gfx_furo_assin;
+#endif
+    }
 #ifdef NV_ANDROID
     android_quadro();   // todo quadro apresentado, de qualquer tela (vigia #266)
 #endif
@@ -2495,8 +2512,10 @@ int main(int argc, char **argv) {
           setlocale(LC_NUMERIC, "C");
         } }
       { double sMed, sPior; int sN = swapint_colher(&swapInt, &sMed, &sPior);
-        if (sN > 0) printf("[swap] periodo=%.2fms med=%.2fms pior=%.1fms n=%d limite-jank=%.1fms\n",
-                           swapint_periodo(&swapInt), sMed, sPior, sN, swapint_limite_jank(&swapInt)); }
+        if (sN > 0) printf("[swap] periodo=%.2fms med=%.2fms pior=%.1fms n=%d limite-jank=%.1fms pulados=%d\n",
+                           swapint_periodo(&swapInt), sMed, sPior, sN, swapint_limite_jank(&swapInt), quadrosPulados);
+        else if (quadrosPulados) printf("[swap] n=0 pulados=%d (video sem nada por cima)\n", quadrosPulados);
+        quadrosPulados = 0; }
       printf("FPS=%.1f pior=%.1fms janks=%d | pior-quadro: texto %.1fms em %d linhas"
              " | gpu-cache=%d %.1fMB tela=%d/%.1fMB fila-tex=%d tex-despejos=%d(q=%d) disco-direto=%d neg-arte=%d"
              " | despejos=%d | cache-arte=%ld/%ldB hit=%ld miss=%ld grav=%ld err=%ld essenciais=%ld/%ld"

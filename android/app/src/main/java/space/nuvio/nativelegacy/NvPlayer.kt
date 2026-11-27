@@ -178,6 +178,9 @@ object NvPlayer {
     @JvmStatic external fun nativeLimitedStatus(): Int
     @JvmStatic external fun nativeTunneling(): Boolean
     @JvmStatic external fun nativeFrameRateMatch(): Int
+    // Video fps from our MKV header probe (DefaultDuration): >0 fps, 0 still
+    // probing, -1 none. pedirJa starts the network probe now instead of at 5 s.
+    @JvmStatic external fun nativeFpsContentor(pedirJa: Boolean): Float
     @JvmStatic external fun nativeStereoDownmix(): Boolean
     @JvmStatic external fun nativeEvento(tipo: Int, a: Int, b: Int)
     // flags (#287): 1 = forcada (SELECTION_FLAG_FORCED), 2 = SDH
@@ -1580,6 +1583,9 @@ object NvPlayer {
             player = p
             modoTaxa = try { nativeFrameRateMatch() } catch (_: UnsatisfiedLinkError) { TaxaQuadros.SEMPRE }
             taxaDecidida = false
+            taxaPrazo = 0L
+            tunelado = false
+            medidorTaxa = TaxaQuadros.Medidor()
             if (modoTaxa == TaxaQuadros.DESLIGADO)
                 p.setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
             thumbnailSourceOpen = true
@@ -1606,7 +1612,9 @@ object NvPlayer {
             ouvinteAtual = ouv; analiticoAtual = ana
             p.addListener(ouv)
             p.addAnalyticsListener(ana)
+            val medTaxa = medidorTaxa
             p.setVideoFrameMetadataListener { ptsUs, _, _, _ ->
+                if (medTaxa != null && !medTaxa.cheio) medTaxa.quadro(ptsUs)
                 val audit = seekAudit.get()
                 if (audit != null && audit.session == minha) {
                     val elapsed = SystemClock.elapsedRealtime() - audit.sinceMs
@@ -1852,6 +1860,7 @@ object NvPlayer {
             thumbnailHeadroomSample = ThumbnailHeadroom.Snapshot(thumbnailHealthAtMs, thumbnailSourceEpoch,
                 thumbnailState, thumbnailPlaying, thumbnailPlayWhenReady, thumbnailBufferMs,
                 thumbnailAllocatedBytes, thumbnailTargetBytes, thumbnailBufferStable)
+            if (!taxaDecidida) taxaPendente(minha)
             if (++statsTiques >= 4) { statsTiques = 0; relatarStats(p) }
             if (cacheMidia != null && cacheEstado == CacheSessao.ATIVO && ++cacheTiques >= CACHE_RELATO_TIQUES) {
                 cacheTiques = 0
@@ -2137,6 +2146,12 @@ object NvPlayer {
     private var modoTaxa = TaxaQuadros.SEMPRE
     private var taxaDecidida = false
     private var taxaPedida = 0          // preferredDisplayModeId this app set; 0 = system default
+    // Media3 never fills Format.frameRate for MKV: wait this long after the
+    // first frame for the MKV probe or the measured rate before giving up.
+    private const val TAXA_PRAZO_MS = 8000L
+    private var taxaPrazo = 0L
+    @Volatile private var tunelado = false
+    @Volatile private var medidorTaxa: TaxaQuadros.Medidor? = null
     @Volatile private var segurandoTaxa = false
     private var taxaAlvo = 0
     private var ouvinteTela: android.hardware.display.DisplayManager.DisplayListener? = null
@@ -2156,12 +2171,41 @@ object NvPlayer {
             lp.preferredDisplayModeId = id
             w.attributes = lp
             taxaPedida = id
-            Log.i(TAG, "[quadro] modo pedido=$id ($motivo)")
+            logQuadro("[quadro] modo pedido=$id ($motivo)")
             true
-        } catch (e: Exception) { Log.w(TAG, "[quadro] modo $id recusado: $e"); false }
+        } catch (e: Exception) { logQuadro("[quadro] modo $id recusado: $e"); false }
     }
 
-    private fun decidirTaxa(minha: Int, fps: Float) {
+    private fun logQuadro(linha: String) {
+        Log.i(TAG, linha)
+        try { nativeAudioSyncLog(linha) } catch (_: UnsatisfiedLinkError) { }
+    }
+
+    // No frame rate in the format (MKV): our header probe usually has it before
+    // the first frame; else the first frames' timestamps (not when tunneled:
+    // Media3 reports no frames then). Runs from the tick and the first frame.
+    private fun taxaPendente(minha: Int) {
+        if (!atual(minha) || taxaDecidida || player == null) return
+        if (modoTaxa != TaxaQuadros.SEMPRE) { decidirTaxa(minha, -1f); return }
+        val c = try { nativeFpsContentor(quadroVisto) } catch (_: UnsatisfiedLinkError) { -1f }
+        if (TaxaQuadros.fpsValido(c)) { decidirTaxa(minha, c, "mkv"); return }
+        val med = medidorTaxa?.fps() ?: -1f
+        if (TaxaQuadros.fpsValido(med)) { decidirTaxa(minha, med, "medido"); return }
+        if (!quadroVisto) return
+        val agora = SystemClock.elapsedRealtime()
+        if (taxaPrazo == 0L) {
+            taxaPrazo = agora + TAXA_PRAZO_MS
+            logQuadro("[quadro] fps desconhecido no 1o quadro (mkv=$c tunel=$tunelado): espera ate ${TAXA_PRAZO_MS} ms")
+            return
+        }
+        val podeVir = c == 0f || (!tunelado && medidorTaxa?.cheio != true)
+        if (podeVir && agora < taxaPrazo) return
+        taxaDecidida = true
+        logQuadro("[quadro] fps desconhecido (mkv=$c medido=$med tunel=$tunelado): modo do sistema")
+        if (taxaPedida != 0 && pedirModo(0, "fps desconhecido")) segurarTaxa(-1)
+    }
+
+    private fun decidirTaxa(minha: Int, bruto: Float, fonte: String = "formato") {
         if (!atual(minha) || taxaDecidida) return
         if (android.os.Build.VERSION.SDK_INT < 23) { taxaDecidida = true; return }
         if (modoTaxa != TaxaQuadros.SEMPRE) {
@@ -2169,7 +2213,8 @@ object NvPlayer {
             if (taxaPedida != 0 && pedirModo(0, "ajuste ${modoTaxa}")) segurarTaxa(-1)
             return
         }
-        if (!TaxaQuadros.fpsValido(fps)) return   // tracks may not know yet; the first frame tries again
+        if (!TaxaQuadros.fpsValido(bruto)) return   // tracks may not know yet; the first frame tries again
+        val fps = TaxaQuadros.padronizar(bruto)
         taxaDecidida = true
         val d = tela() ?: return
         try {
@@ -2177,13 +2222,14 @@ object NvPlayer {
             val atual = TaxaQuadros.Modo(m.modeId, m.physicalWidth, m.physicalHeight, m.refreshRate)
             val modos = d.supportedModes.map { TaxaQuadros.Modo(it.modeId, it.physicalWidth, it.physicalHeight, it.refreshRate) }
             val alvo = TaxaQuadros.escolher(modos, atual, fps)
-            Log.i(TAG, "[quadro] video=${fps}fps tela=${m.modeId}@${m.refreshRate} alvo=${alvo?.let { "${it.id}@${it.hz}" } ?: "nenhum"}")
+            val lista = d.supportedModes.joinToString(",") { "${it.modeId}:${it.physicalWidth}x${it.physicalHeight}@${it.refreshRate}" }
+            logQuadro("[quadro] video=${bruto}fps->$fps fonte=$fonte quadro=${if (quadroVisto) "visto" else "antes"} tela=${m.modeId}@${m.refreshRate} alvo=${alvo?.let { "${it.id}@${it.hz}" } ?: "nenhum"} modos=[$lista]")
             if (alvo == null) {                 // already fits, or the panel has nothing better
                 if (taxaPedida != 0 && !TaxaQuadros.casa(atual.hz, fps) && pedirModo(0, "sem modo para ${fps}fps")) segurarTaxa(-1)
                 return
             }
             if (pedirModo(alvo.id, "video ${fps}fps")) segurarTaxa(alvo.id)
-        } catch (e: Exception) { Log.w(TAG, "[quadro] decidir: $e") }
+        } catch (e: Exception) { logQuadro("[quadro] decidir: $e") }
     }
 
     // alvo < 0: back to the system default, whose id the app does not know.
@@ -2199,6 +2245,7 @@ object NvPlayer {
                 override fun onDisplayAdded(id: Int) {}
                 override fun onDisplayRemoved(id: Int) {}
                 override fun onDisplayChanged(id: Int) {
+                    tela()?.mode?.let { logQuadro("[quadro] tela mudou: ${it.modeId} ${it.physicalWidth}x${it.physicalHeight}@${it.refreshRate} em ${SystemClock.elapsedRealtime() - abriuEm} ms") }
                     if (segurandoTaxa && (taxaAlvo < 0 || tela()?.mode?.modeId == taxaAlvo)) {
                         principal.removeCallbacks(soltarTaxaRun)
                         principal.postDelayed(soltarTaxaRun, SEGURAR_TAXA_FOLGA_MS)
@@ -2220,7 +2267,7 @@ object NvPlayer {
         if (!segurandoTaxa) return
         segurandoTaxa = false
         if (retomar) {
-            Log.i(TAG, "[quadro] tela=${tela()?.mode?.modeId} alvo=$taxaAlvo: retoma")
+            logQuadro("[quadro] tela=${tela()?.mode?.modeId}@${tela()?.mode?.refreshRate} alvo=$taxaAlvo: retoma em ${SystemClock.elapsedRealtime() - abriuEm} ms")
             player?.playWhenReady = !pausaPedida
         }
     }
@@ -2233,7 +2280,7 @@ object NvPlayer {
             val fps = player?.videoFormat?.frameRate ?: -1f
             val d = activity?.windowManager?.defaultDisplay ?: return
             val modos = d.supportedModes.joinToString(",") { "${it.modeId}:${it.physicalWidth}x${it.physicalHeight}@${it.refreshRate}" }
-            Log.i(TAG, "[quadro] video=${fps}fps tela=${d.mode.modeId}@${d.refreshRate} modos=[$modos]")
+            logQuadro("[quadro] 1o quadro: formato=${fps}fps tela=${d.mode.modeId}@${d.refreshRate} modos=[$modos]")
             val a = player?.audioFormat
             Log.i(TAG, "[audio] ${a?.sampleMimeType} ${a?.channelCount}ch ${a?.sampleRate}Hz atraso=${atrasoMs}ms")
         } catch (e: Exception) { Log.w(TAG, "logTaxaDeQuadros: $e") }
@@ -2388,10 +2435,7 @@ object NvPlayer {
             ev(EV_PRIMEIRO_QUADRO)
             quadroVisto = true
             decidirTaxa(minha, player?.videoFormat?.frameRate ?: Format.NO_VALUE.toFloat())
-            if (!taxaDecidida) {   // no frame rate anywhere: leave the previous video's mode
-                taxaDecidida = true
-                if (taxaPedida != 0 && pedirModo(0, "fps desconhecido")) segurarTaxa(-1)
-            }
+            if (!taxaDecidida) taxaPendente(minha)
             logTaxaDeQuadros()
             hdrNaSuperficie()
             avaliarEstavel()
@@ -2539,6 +2583,7 @@ object NvPlayer {
         }
 
         override fun onAudioTrackInitialized(eventTime: AnalyticsListener.EventTime, audioTrackConfig: AudioSink.AudioTrackConfig) {
+            if (atual(minha)) tunelado = audioTrackConfig.tunneling
             relatarAudio(minha, "AudioTrack encoding=${audioTrackConfig.encoding} hz=${audioTrackConfig.sampleRate} canaisMask=${audioTrackConfig.channelConfig} offload=${audioTrackConfig.offload} tunneling=${audioTrackConfig.tunneling}")
         }
 

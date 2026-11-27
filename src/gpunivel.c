@@ -221,6 +221,13 @@ int gpun_upscale_suportado(void) {
 #endif
   const char *gpu = (const char *)glGetString(GL_RENDERER);
   if (!gpu || strstr(gpu, "Mali-4")) return 0;
+#ifdef NV_ANDROID
+  // Homatics Box R 4K Plus (Mali-G31, 27/11/2026): drawing the 720p UI into a
+  // 3840x2160 surface every frame held the menus at ~25 fps (swap 36 ms, draw
+  // 2 ms). The box's own scaler upscales a 1080p/720p surface for free, as it
+  // does for every other app, so this GPU tier keeps the TV's scaler.
+  if (strstr(gpu, "Mali-G31") || strstr(gpu, "Mali-G51")) return 0;
+#endif
 #if !defined(__APPLE__) || defined(NV_GLES_NO_MAC)
   GLint range[2], precision = 0;
   glGetShaderPrecisionFormat(GL_FRAGMENT_SHADER, GL_HIGH_FLOAT, range, &precision);

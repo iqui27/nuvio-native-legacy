@@ -468,7 +468,7 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncTro
 }
 
 JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncLog(JNIEnv *env, jclass cls, jstring texto) {
-  char t[512];
+  char t[2048];   // [quadro] lines carry the panel's whole mode list
   (void)cls;
   deJString(env, texto, t, sizeof t);
   printf("%s\n", t);
@@ -1715,9 +1715,35 @@ int  video_mkv_sondado(void) {
   return 1;
 }
 void video_sondar_mkv_agora(void) { if (mkvEstado == 1) mkvSondarJa = 1; }
+// Match frame rate (NvPlayer.taxaPendente): Media3 never fills Format.frameRate
+// for MKV, so the player asks for the video track's DefaultDuration that this
+// probe read. >0 fps; 0 still probing; -1 none (not MKV, or no DefaultDuration).
+// pedirJa (first frame seen): start the network probe now instead of at 5 s.
+JNIEXPORT jfloat JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeFpsContentor(JNIEnv *env, jclass cls, jboolean pedirJa) {
+  double fps = 0;
+  int i, video = 0;
+  (void)env; (void)cls;
+  if (!urlAtual[0] || mkvNaoMkv) return -1.0f;
+  pthread_mutex_lock(&travaFaixasMkv);
+  for (i = 0; i < mkvN; i++)
+    if (mkvFx[i].tipo == 1) {
+      video = 1;
+      if (mkvFx[i].quadroNs > 0) fps = 1e9 / (double)mkvFx[i].quadroNs;
+      break;
+    }
+  pthread_mutex_unlock(&travaFaixasMkv);
+  if (fps > 1.0) return (jfloat)fps;
+  if (video || mkvEstado == 0 || mkvEstado == 3) return -1.0f;
+  if (pedirJa && mkvEstado == 1) mkvSondarJa = 1;
+  return 0.0f;
+}
 #else
 // "Nao ha sonda": sem libass (NV_ASS_LIBASS) a sonda de MKV nao serve a nada.
 int  video_mkv_sondado(void) { return 2; }
+JNIEXPORT jfloat JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeFpsContentor(JNIEnv *env, jclass cls, jboolean pedirJa) {
+  (void)env; (void)cls; (void)pedirJa;
+  return -1.0f;
+}
 void video_sondar_mkv_agora(void) {}
 #endif
 // Ver video.h (relogio da legenda). Incerteza: a chamada JNI e sincrona.

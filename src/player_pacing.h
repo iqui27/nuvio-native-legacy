@@ -15,6 +15,16 @@ static inline int player_source_ui_unpaced(int ui, int sources, int loading, int
   return ui && !(sources && loading && !video);
 }
 
+/* Android (Homatics Box R 4K Plus, 27/11/2026): with nothing over the video,
+ * the UI kept presenting the same transparent 4K hole ~38 times a second. A
+ * bare frame identical to the last one presented (same hole) is not swapped:
+ * the compositor keeps showing it, and the GPU and memory bandwidth go to the
+ * video decoder. The first bare frame after any overlay is still presented. */
+static inline int player_skip_present(int open, int ui, int lastBare,
+                                      unsigned hole, unsigned lastHole) {
+  return open && !ui && lastBare && hole == lastHole;
+}
+
 /* Native swaps can follow the video plane's clock. With UI visible, use an
  * unpaced swap and bound the full iteration to 60 Hz, including swap time. */
 static inline unsigned player_frame_wait(int ui, unsigned elapsed) {

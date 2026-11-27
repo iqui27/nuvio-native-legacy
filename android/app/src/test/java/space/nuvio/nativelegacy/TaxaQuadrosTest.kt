@@ -51,4 +51,41 @@ class TaxaQuadrosTest {
         assertFalse(TaxaQuadros.casa(24f, 23.976f))
         assertFalse(TaxaQuadros.casa(60f, 59.94f))
     }
+
+    // MKV DefaultDuration 41708333 ns -> 23.97602; rounded containers -> 23.98.
+    @Test fun snapsContainerRatesToStandard() {
+        assertEquals(24000f / 1001f, TaxaQuadros.padronizar(1e9f / 41708333f), 0.0001f)
+        assertEquals(24000f / 1001f, TaxaQuadros.padronizar(23.98f), 0.0001f)
+        assertEquals(24f, TaxaQuadros.padronizar(24.0001f), 0.0001f)
+        assertEquals(25f, TaxaQuadros.padronizar(1e9f / 40000000f), 0.0001f)
+        assertEquals(60000f / 1001f, TaxaQuadros.padronizar(59.94f), 0.0001f)
+        assertEquals(17f, TaxaQuadros.padronizar(17f), 0.0001f)   // not near a standard rate
+    }
+
+    @Test fun snappedMkvRatePicksTheMatchingMode() =
+        assertEquals(8, TaxaQuadros.escolher(box, em60, TaxaQuadros.padronizar(1e9f / 41708333f))?.id)
+
+    // MKV timestamps are whole milliseconds: 23.976 arrives as 41/42 ms gaps,
+    // and B-frames arrive out of order.
+    @Test fun measuresFromMillisecondTimestamps() {
+        val med = TaxaQuadros.Medidor()
+        val pts = (0 until 48).map { (it * 1001000L / 24 / 1000) * 1000 }
+        val ordem = pts.chunked(4).flatMap { listOf(it[0]) + it.drop(1).reversed() }
+        ordem.forEach { med.quadro(it) }
+        assertTrue(med.cheio)
+        assertEquals(24000f / 1001f, med.fps(), 0.0001f)
+    }
+
+    @Test fun measures25AndIgnoresADroppedFrame() {
+        val med = TaxaQuadros.Medidor()
+        (0 until 49).filter { it != 10 }.forEach { med.quadro(it * 40000L) }
+        assertEquals(25f, med.fps(), 0.0001f)
+    }
+
+    @Test fun tooFewFramesIsUnknown() {
+        val med = TaxaQuadros.Medidor()
+        (0 until 10).forEach { med.quadro(it * 40000L) }
+        assertFalse(med.cheio)
+        assertEquals(-1f, med.fps(), 0f)
+    }
 }
