@@ -1,6 +1,6 @@
 // Tizen 4-5.5 .tpk (NuvioTpk40, TVs de 2018-2020): memoria da conversao
-// DTS/TrueHD. (As miniaturas feitas na TV nao rodam no 4/5: miniatura.c, logs
-// de 11/2026.)
+// DTS/TrueHD. (As miniaturas feitas na TV rodam no 4/5 desde 25/11, com o
+// limite de TV lenta: miniatura.c.)
 //
 // Estas TVs tem menos RAM que a S95C onde tudo foi medido (registro 8825: 1108
 // MB no total), e ninguem mediu quanto sobra livre nelas. Por isso:

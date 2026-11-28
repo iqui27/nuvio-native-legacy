@@ -3356,9 +3356,21 @@ static void parteZerar(void) {
   parteUrl[0] = 0; parteProx = -1; parteProxFase = 0; parteProxUrl[0] = 0;
   partes_link_cancelar();
   partes_arquivo_limpar();
+  player_fim_proprio(0);   // a special's own ending must not outlive its session
 }
 // Entrega o link ao player: sempre sem o ponto do catalogo (ele e o do FILME
 // inteiro, partes_virtual), com o ponto DENTRO do arquivo quando ha.
+// A switch asked early ("Start now", or the credits countdown) whose link did
+// not come: the part still plays, so keep it and try again at the real end.
+// Returns 1 when that is the case (the caller does not fail the session).
+static int parteNoFim(double d, double pos);
+static int parteForcarSegue(double d, double pos) {
+  if (!parteForcar || parteNoFim(d, pos)) return 0;
+  parteForcar = 0;
+  printf("[partes] next part: no link yet, the current part keeps playing\n");
+  fflush(stdout);
+  return 1;
+}
 static void parteTocar(const char *url, double pos) {
   player_do_inicio();
   if (pos > 1.0) player_definir_retomada_fonte(pos);
@@ -3830,13 +3842,14 @@ static void vigiarPartes(void) {
       parteContagemFeita = 0; partescartao_fechar();
     }
     // O LINK DA SEGUINTE sai logo que a parte toca (os botoes e a contagem nao
-    // esperam rede); pronto ha mais de 20 min, sai de novo 60 s antes do fim
-    // (o link do TorBox vence).
+    // esperam rede); pronto ha mais de 20 min, sai de novo (o link do TorBox
+    // vence): the Next part button and the credits countdown use it before
+    // the last minute too.
     if (parteProxFase == 0 && parteFase == PF_TOCANDO && video_pronto() && pos > 3.0) {
       partes_link_pedir(sl->usenet, sl->item, sl->arq[prox].id, 0);
       parteProxFase = 1; parteProxDesde = SDL_GetTicks();
     }
-    if (parteProxFase == 2 && d > 120 && pos > d - 60 && SDL_GetTicks() - parteProxProntoEm > 20u * 60000u) {
+    if (parteProxFase == 2 && SDL_GetTicks() - parteProxProntoEm > 20u * 60000u) {
       partes_link_pedir(sl->usenet, sl->item, sl->arq[prox].id, 0);
       parteProxFase = 1; parteProxDesde = SDL_GetTicks();
     }
@@ -3844,7 +3857,7 @@ static void vigiarPartes(void) {
       r = partes_link_estado(parteProxUrl, sizeof parteProxUrl, NULL);
       if (r == 1) { parteProxFase = 2; parteProxProntoEm = SDL_GetTicks(); }
       else if (r == -1 || r == -2) {
-        if (parteProxFase == 4) { parteFalhou("no link for the next part"); return; }
+        if (parteProxFase == 4 && !parteForcarSegue(d, pos)) { parteFalhou("no link for the next part"); return; }
         parteProxFase = 3;
       }
     }
@@ -3894,7 +3907,7 @@ static void vigiarPartes(void) {
     if (parteProxFase == 1 || parteProxFase == 4) {
       if (SDL_GetTicks() - parteProxDesde > 30000u) {
         parteProxFase = 0;
-        parteFalhou("no link for the next part");
+        if (!parteForcarSegue(d, pos)) parteFalhou("no link for the next part");
       }
       return;
     }

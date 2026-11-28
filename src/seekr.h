@@ -117,6 +117,7 @@ typedef struct {
   unsigned bufferandoMs;    // video_bufferando_ms()
   int dts;                  // video_dts_estado()
   int larguraMiniatura;     // ajustes_miniatura_largura()
+  double bufferFimSeg;      // video_buffer_fim() (2.0.9: miniatura espera buffer curto)
 } SeekrFonte;
 typedef struct {
   int  (*tem_chave)(void);
@@ -129,10 +130,22 @@ typedef struct {
   int  (*quadros)(double posSeg, int n, GLuint *texs, double *cueSeg);
   int  (*quadro_velho)(void);
   void (*ocioso)(void);
+  // Fileira de capitulos (2.0.9): opcionais, NULL = sem fotos de capitulo.
+  void (*capitulos)(const double *iniSeg, int n, double durSeg);
+  int  (*capitulo_quadros)(const int *idx, int n, GLuint *texs);
 } SeekrProvedor;
 // NULL volta ao Seekr. Trocar de provedor desliga o anterior.
 void seekr_usar_provedor(const SeekrProvedor *p);
 int  seekr_provedor_alternativo(void);
 int  seekr_provedor_e(const SeekrProvedor *p);   // 1 when p is the active alternative provider
 void seekr_pedir_fonte(const SeekrFonte *f);
+// CHAPTER ROW (player.c, chapter mode). The file's chapter starts, sorted, and
+// the title's length: where pictures are made on the device (miniatura.c) the
+// chapter starts are made right after the scrub point, ahead of everything
+// else. n < 2 clears. Draw thread.
+void seekr_capitulos(const double *iniSeg, int n, double durSeg);
+// One texture per chapter index in idx[] (n <= 16), 0 where its picture is not
+// made yet (the row draws a plain tile). Returns 0 when nothing is open. The
+// Seekr API builds (.wgt, desktop) have no chapter pictures: always 0 there.
+int  seekr_capitulo_quadros(const int *idx, int n, GLuint *texs);
 #endif

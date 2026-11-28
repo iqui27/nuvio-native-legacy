@@ -36,7 +36,11 @@ publish = function(tizen[tizen.index("// Le o cabecalho do Matroska"):],
 pubblock = re.search(r"if \(nCaps > 0.*?\n  \}", publish, re.S)[0]
 html_publish = function(html5[html5.index("static void *lerMkv(void *arg) {"):],
                         "static void *lerMkv(void *arg) {")
-assert "capmkv_" not in html_publish
+# 2.0.9: o .wgt tambem publica no capmkv (fileira de capitulos), mas so pela
+# geracao da sonda: uma troca de fonte no meio da leitura nao suja a nova.
+assert re.findall(r"capmkv_\w+", html_publish) == ["capmkv_aplicar_ger"]
+assert "capmkv_aplicar_ger(caps, nCaps, mkvGer)" in html_publish
+assert "mkvGer = capmkv_geracao();" in html5
 section = function(posplay, "void posplay_atualizar(float")
 selection = re.search(r"double creditosSeg = .*?(?=  anim =)", section, re.S)[0]
 film_half = re.search(r"#define PP_FILME_METADE[^\n]*", posplay)[0]

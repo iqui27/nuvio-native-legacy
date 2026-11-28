@@ -647,6 +647,7 @@ static int       fioMkvVivo, mkvPendente;
 // Definida bem abaixo (junto de aplicarIdiomasDoMkv); video_sondar_mkv_agora
 // a usa antes dela existir no arquivo.
 static void *lerMkv(void *arg);
+static unsigned mkvGer;   // capmkv playback the chapter read belongs to
 #endif
 
 static VideoLegendaEstilo estilo = { 120, 0, 0, 3, 1, 0, 0, 0 };
@@ -717,6 +718,7 @@ int video_tocar(const char *url) {
   if (!temVideo) return 0;
 
   creditosNomeado = creditosUltimo = 0.0;
+  capmkv_zerar();   // the bar, the chapter row and intro read chapters from capmkv
   snprintf(urlAtual, sizeof urlAtual, "%s", url);
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; faixasLidas = 0;
   posSeg = posAmostra = durSeg = bufFimSeg = 0; bufMs = 0; vidW = vidH = 0; houveErro = 0; fim = 0;
@@ -795,6 +797,7 @@ void video_bombear(void) {
 
 void video_parar(void) {
   seekEm = 0;
+  capmkv_zerar();
 #if defined(__EMSCRIPTEN_PTHREADS__)
   mkvPendente = 0;
 #endif
@@ -949,6 +952,7 @@ void video_sondar_mkv_agora(void) {
   if (!mkvPendente || fioMkvVivo || !urlAtual[0]) return;
   mkvPendente = 0;
   fioMkvVivo = 1;
+  mkvGer = capmkv_geracao();
   if (pthread_create(&fioMkv, NULL, lerMkv, NULL) != 0) fioMkvVivo = 0;
   else pthread_detach(fioMkv);
 #endif
@@ -1047,6 +1051,7 @@ static void *lerMkv(void *arg) {
     printf("[mkv] %d capitulos; creditos nomeados em %.0fs, ultimo em %.0fs\n",
            nCaps, creditosNomeado, creditosUltimo);
     fflush(stdout);
+    capmkv_aplicar_ger(caps, nCaps, mkvGer);   // -> bar, chapter row and intro (as video.c)
   }
   if (n < 1) marco("mkv: nenhuma faixa lida (nao e MKV, ou Range falhou)");
   else if (!strcmp(url, urlAtual)) aplicarIdiomasDoMkv(fx, n);

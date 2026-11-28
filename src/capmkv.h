@@ -42,6 +42,13 @@ double capmkv_creditos_ultimo(double dur);
 // marcador do anterior por caminho nenhum. Fraca em capmkv.c.
 double video_creditos_nomeado(void);
 double video_creditos_ultimo(double dur);
+// O mesmo palpite num EPISODIO (dono, 25/11; Farscape T1E9: seis capitulos sem
+// nome, um a cada 8-14 min, o ultimo em 2764 de 3010 s): creditos de serie
+// cabem em ~2,5 min. Um ultimo capitulo que deixa mais que isso e o ultimo ATO
+// (intervalo comercial), nao os creditos — e o cartao subia 4 min antes do fim.
+// Filme fica com capmkv_creditos_ultimo: creditos longos sao normais.
+#define CAPMKV_ULTIMO_EPISODIO_MAX_S 150.0
+double capmkv_creditos_ultimo_episodio(double dur);
 // Entrega capitulos ja lidos (LG/.wgt): guarda para capmkv_creditos e alimenta
 // o modulo de intro (abertura/creditos/previa).
 void capmkv_aplicar(const MkvCap *caps, int n);

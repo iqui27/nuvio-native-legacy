@@ -198,7 +198,19 @@ int main(void) {
     ok(capmkv_creditos_ultimo(1310) > 1299 && capmkv_creditos_ultimo(1309) == 0.0,
        "folga de 10 s e inclusiva");
     ok(capmkv_creditos_nomeado() == 0.0 && capmkv_creditos_ultimo(1400) > 1299,
-       "nomeado e ultimo separados (o player ordena as fontes)"); }
+       "nomeado e ultimo separados (o player ordena as fontes)");
+    ok(capmkv_creditos_ultimo_episodio(1400) > 1299, "episodio: ultimo capitulo a 100 s do fim vale"); }
+  // Farscape T1E9 (log do dono 25/11): seis capitulos sem nome, atos de 8-14
+  // min; o ultimo deixa 246 s. No episodio e um ato; num filme continua valendo.
+  { MkvCap fs[6] = { {0, "Chapter 01"}, {341.0, "Chapter 02"}, {1164.5, "Chapter 03"},
+                     {1678.7, "Chapter 04"}, {2242.2, "Chapter 05"}, {2764.2, "Chapter 06"} };
+    capmkv_aplicar(fs, 6);
+    ok(capmkv_creditos_ultimo(3010) > 2764 && capmkv_creditos_ultimo(3010) < 2765,
+       "Farscape: o palpite geral ainda acha o ultimo capitulo");
+    ok(capmkv_creditos_ultimo_episodio(3010) == 0.0, "Farscape episodio: ultimo ato a 246 s do fim nao e creditos");
+    ok(capmkv_creditos_ultimo_episodio(2764.2 + CAPMKV_ULTIMO_EPISODIO_MAX_S) > 2764,
+       "episodio: ultimo capitulo exatamente no limite vale");
+    ok(capmkv_creditos(3010) > 2764, "capmkv_creditos (filme/.tpk) inalterado"); }
   (void)filme; (void)semNome;
 
   puts("capmkv: fio lateral e cache por URL");

@@ -266,7 +266,7 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
   done
 
   echo "[1b/3] libnuvio-tpk40.so (Tizen 4/5: -DNV_TPK40, sem TLS, com DT_HASH)"
-  # FFmpeg tambem na .so do 4/5 (conversao DTS/TrueHD; as miniaturas nao rodam la), a menos de
+  # FFmpeg tambem na .so do 4/5 (conversao DTS/TrueHD e miniaturas feitas na TV), a menos de
   # NV_TPK40_SEM_FFMPEG=1. O carregador ELF do Program40.cs so aplica quatro tipos de
   # relocacao e recusa TLS: as conferencias abaixo barram a build antes de a TV recusar.
   DTS40_CFLAGS="$DTS_CFLAGS"; DTS40_LIBS="$DTS_LIBS"

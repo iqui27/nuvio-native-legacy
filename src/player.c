@@ -442,12 +442,30 @@ static int skipFoco = 0;
 // a fileira que o CIMA abre a partir da barra (depois do botao de pular, se
 // houver). `capSel` e o capitulo em foco; `capAnim` a mola da fileira.
 static int capFoco, capSel;
+// The chapter row (desenharFileiraCap): capPos slides after capSel like the
+// episode row; capHeldCap is the chapter whose card still holds the frame you
+// were scrubbing (-1: let go for good), capHeldT the time of that frame.
+static float capPos, capPosV, capAnimV, capHeld;
+static int capHeldCap = -1;
+static double capHeldT = -1.0;
 // Rolagem da fileira de capitulos (px a partir do primeiro chip). Persistente:
 // so anda o necessario para o chip em foco caber — com o ponteiro do Magic
 // Remote/dedo, passar por um chip visivel nao pode fazer a fileira pular.
 static float capRol;
 static void capituloPular(const MkvCap *c, int i);
+static void ponteiroCapFocar(int i, int b);
+static void ponteiroCapitulo(int i, int inteiro);
 static float capAnim;
+// The chapter row's centre x (v6.1, owner 25/11): it leans a little toward the
+// knob and is held so the row reaches both bar margins at the first and last
+// chapters. While the row is closed it rests where the scrub strip is, so UP
+// slides the row out of the strip instead of from the screen centre.
+static float capCx = -1.0f, capCxV;
+#define CAP_SEGUE 0.35f               // share of the way from the centre to the knob
+// Chapter starts last sent to the thumbnail maker (seekr_capitulos); reset when
+// the player closes, since seekr_desligar forgets them.
+static int capEnviadosN = -1;
+static double capEnviadosSoma = -1.0;
 static int trechoPulavel(double *fim);
 
 // UMA COR DE ACENTO SO NO PLAYER (Glass UI): ajustes_acento(), a mesma das
@@ -3328,8 +3346,22 @@ static double credEfetivo(void) {
   CredEntrada e; int f; double s;
   memset(&e, 0, sizeof e);
   e.dur = duracaoSeg;
+  // Lidos do BACKEND (video.h, 2.1): um titulo nunca herda o marcador do anterior.
   e.capitulo = video_creditos_nomeado();
-  e.capituloUltimo = video_creditos_ultimo(duracaoSeg);
+  // Episodio (2.0.9): o ultimo capitulo sem nome so conta se couber em creditos
+  // de serie (capmkv.h); o ultimo ato de um arquivo com capitulos a cada 10 min
+  // nao e creditos. O log diz uma vez quando um foi recusado por isso.
+  if (epE > 0) {
+    static long recusadoEm = -1;
+    double u = video_creditos_ultimo(duracaoSeg);
+    e.capituloUltimo = u > 1.0 && (double)duracaoSeg - u <= CAPMKV_ULTIMO_EPISODIO_MAX_S ? u : 0.0;
+    if (u > 1.0 && e.capituloUltimo <= 1.0 && video_pronto() && (long)u != recusadoEm) {
+      recusadoEm = (long)u;
+      printf("[credits] mkv-last-chapter at %.0fs of %.0fs leaves %.0fs: an act, not the credits (episode limit %.0fs)\n",
+             u, (double)duracaoSeg, (double)duracaoSeg - u, CAPMKV_ULTIMO_EPISODIO_MAX_S);
+      fflush(stdout);
+    }
+  } else e.capituloUltimo = video_creditos_ultimo(duracaoSeg);
   { double ic = intro_creditos_seg();
     if (intro_creditos_aniskip()) e.aniskip = ic; else e.introdb = ic; }
   if (c && c->imdb[0] && epT >= 0 && epE > 0) {
@@ -3747,6 +3779,7 @@ static void fecharSessao(int manter, int trocaFonte) {
     episodios_fechar();
     if (!manter) { intro_desligar(); introIdx=introT=introE=-1; }
     seekr_desligar();
+    capEnviadosN = -1; capEnviadosSoma = -1.0;   // seekr_desligar dropped the list: send it again on reopen
     // Antes do legenda_desligar: o fio do mkvass ainda entregaria um lote ao
     // overlay depois do desligamento, e o proximo titulo abriria com a legenda
     // do anterior. mkvass_parar grava o sidecar parcial com o que ja veio.
@@ -4930,9 +4963,20 @@ static void esconderControles(void) { barraFoco = 0; capFoco = 0; visivel = 0; u
 // Os capitulos do arquivo como o Nuvio TV os mostra (PlayerChapters.normalize):
 // em ordem, um por inicio, e so com dois ou mais — "Chapter 1" sozinho no 0 nao
 // tem para onde pular. Com o ajuste desligado, nenhum.
+// The setting is a set of kinds (owner 25/11): movies 1, shows 2, anime 4.
+// Anime is anime whether it is a show or a film (artehero_eh_anime).
+static int capitulosLigadosAqui(void) {
+  const CatItem *it = item();
+  int tipos = ajustes_capitulos(), bit;
+  if (!tipos) return 0;
+  if (it && artehero_eh_anime(it)) bit = 4;
+  else if ((it && !strcmp(it->tipo, "series")) || epE > 0) bit = 2;
+  else bit = 1;
+  return (tipos & bit) != 0;
+}
 static int capitulosDoArquivo(MkvCap *c, int max) {
   int n, i, j, k = 0;
-  if (!ajustes_capitulos() || ehCanal() || max <= 0) return 0;
+  if (!capitulosLigadosAqui() || ehCanal() || max <= 0) return 0;
   n = capmkv_lista(c, max);
   for (i = 1; i < n; i++)
     for (j = i; j > 0 && c[j].inicio < c[j - 1].inicio; j--) { MkvCap t = c[j]; c[j] = c[j - 1]; c[j - 1] = t; }
@@ -4962,7 +5006,11 @@ static int abrirCapitulos(void) {
   if (n < 2) return 0;
   capSel = capituloEm(c, n, posSeg);
   if (capSel < 0) capSel = 0;
-  capRol = 0.0f;   // abre como antes: do comeco, e o chip em foco rola para dentro
+  capRol = 0.0f;
+  // The row opens on the chapter you are at (or scrubbing in), without a
+  // slide; its centre card holds the frame you were looking at.
+  capPos = (float)capSel; capPosV = 0.0f;
+  capHeldCap = capSel; capHeldT = posSeg; capHeld = 1.0f;
   capFoco = 1; skipFoco = 0; barraFoco = 1;
   return 1;
 }
@@ -5713,7 +5761,7 @@ void player_evento(const SDL_Event *e) {
     // Back dismisses exactly one layer. Loading/buffering keeps its exit path.
     if (pausao_visivel()) { pausao_fechar(); acordar(); return; }
     if (!erroFonte && !player_carregando() && !video_bufferando_ms()) {
-      if (capFoco) { capFoco = 0; return; }
+      if (capFoco) { capFoco = 0; if (scrubbing) scrubUltimo = SDL_GetTicks(); return; }
       if (skipFoco) { skipFoco = 0; return; }
       if (visivel || anim > 0.004f) {
         if (scrubbing) terminarSalto();
@@ -5914,7 +5962,7 @@ void player_evento(const SDL_Event *e) {
   // OK no meio de um avanco CONFIRMA o avanco, em vez de alternar play/pausa.
   // Quem aperta o centro com a barra correndo quer parar ali, e alternar o
   // estado deixaria o filme pausado no ponto novo — meio comando executado.
-  if (scrubbing && (barraFoco || skipFoco || botao != PLR_REINICIAR) &&
+  if (scrubbing && !capFoco && (barraFoco || skipFoco || botao != PLR_REINICIAR) &&
       (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE)) {
     terminarSalto();
     acordar();
@@ -5931,7 +5979,8 @@ void player_evento(const SDL_Event *e) {
     if (capSel >= n) capSel = n - 1;
     if (k == SDLK_LEFT) { if (capSel > 0) capSel--; }
     else if (k == SDLK_RIGHT) { if (capSel < n - 1) capSel++; }
-    else if (k == SDLK_DOWN) capFoco = 0;
+    else if (k == SDLK_DOWN) { capFoco = 0; if (scrubbing) scrubUltimo = SDL_GetTicks(); }
+    // OK confirms: the seek to the chapter's start happens only here.
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) capituloPular(c, capSel);
     acordar();
     return;
@@ -5975,6 +6024,7 @@ void player_evento(const SDL_Event *e) {
   if (k == SDLK_UP) {
     if (!barraFoco && transporteMoverLinha(-1)) { acordar(); return; }
     if (!barraFoco) barraFoco = 1;
+    else if (scrubbing && abrirCapitulos()) {}   // scrubbing: UP is the chapter row (owner, 25/11)
     else if (trechoPulavel(NULL)) skipFoco = 1;
     else if (abrirCapitulos()) {}              // D10: sem botao de pular, a fileira de capitulos
     else { esconderControles(); return; }   // #305: CIMA no topo tira a interface da frente
@@ -6441,7 +6491,7 @@ void player_atualizar(float dt, Uint32 agora) {
     scrubbing = 1; posVisSolto = 1; scrubUltimo = agora;
   }
 #endif
-  if (scrubbing && agora - scrubUltimo > salto_fim_ms(ajustes_seekr_ligado())) terminarSalto();
+  if (scrubbing && !capFoco && agora - scrubUltimo > salto_fim_ms(ajustes_seekr_ligado())) terminarSalto();
 
   medirAssistido();
     { static Uint32 vodPosEm; static double vodPos; static int vodLogado;
@@ -6533,7 +6583,7 @@ void player_atualizar(float dt, Uint32 agora) {
                          st ? st->arquivo : "", (long)(posSeg * 1000.0f),
                          (long)(video_pos() * 1000.0), scrubbing,
                          video_pronto(), video_tocando(), video_bufferando_ms(),
-                         video_dts_estado(), ajustes_miniatura_largura() };
+                         video_dts_estado(), ajustes_miniatura_largura(), video_buffer_fim() };
         if (cs) openseekAltPasso(cs->imdb, serie ? epT : 0, serie ? epE : 0, (long)(d * 1000.0), posSeg);
         { double bf2 = video_buffer_fim(); long bm = bf2 > 0.5 ? (long)((bf2 - (double)posSeg) * 1000.0) : -1;
           if (bm < 0 && bf2 > 0.5) bm = 0;
@@ -6553,10 +6603,20 @@ void player_atualizar(float dt, Uint32 agora) {
                        0, "", "", (long)(posSeg * 1000.0f),
                        (long)(video_pos() * 1000.0), scrubbing,
                        video_pronto(), video_tocando(), video_bufferando_ms(),
-                       video_dts_estado(), ajustes_miniatura_largura() };
+                       video_dts_estado(), ajustes_miniatura_largura(), video_buffer_fim() };
       miniatura_tv_fonte_estado(&f);
     }
 #endif
+    // CHAPTER STARTS to the thumbnail maker (seekr_capitulos): it makes them
+    // right after the scrub point, so the chapter row has its pictures within
+    // the first ~50 s. Sent again only when the list changes (capmkv fills it
+    // from another thread as the file's head is read).
+    if (d > 60.0 && !ehCanal() && ajustes_seekr_ligado()) {
+      MkvCap cc[MKV_MAX_CAPS]; double ini[MKV_MAX_CAPS], soma = d;
+      int nc = capitulosDoArquivo(cc, MKV_MAX_CAPS), i;
+      for (i = 0; i < nc; i++) { ini[i] = cc[i].inicio; soma += cc[i].inicio * (i + 1); }
+      if (nc != capEnviadosN || soma != capEnviadosSoma) { capEnviadosN = nc; capEnviadosSoma = soma; seekr_capitulos(ini, nc, d); }
+    }
     // Retomada so com o pipeline ASSENTADO: pronto + tocando (ou 2,5 s depois
     // de pronto, para quem abre pausado). Seek logo no loadCompleted e o que o
     // uMS recusa com "seek Failure" (#246).
@@ -7067,25 +7127,77 @@ static void seekrStatus(float bx, float bw, float frac, float yBarra, float a, i
   }
 }
 
+// SEEK STRIP AND CHAPTER ROW (owner's sketch, 25/11; mockups v3-v5).
+// Nothing behind the cards (no panel) and no spinner: a picture not made yet
+// is a plain dark tile. The geometry is shared by the strip and the row so the
+// two read as one object:
+//   - the centre card 384x216 where the main thumbnail always was;
+//   - scrubbing: the two cards beside it are 304x171 and show the moments
+//     around the seek point (the strip of every build);
+//   - chapter mode (UP): those two cards fade into the previous and next
+//     chapter, two more slide in from the sides (280x158), the row lifts
+//     16 px and bends ever so slightly (2 / 9 / 20 px lower outwards);
+//     LEFT/RIGHT slide the whole row one place, like the episode row
+//     (anim_mola2, NV_MOLA2_SCROLL); the centre card keeps the frame you were
+//     scrubbing until you leave its chapter, then shows the chapter's own.
+#define CAP_MW 384.0f
+#define CAP_MH 216.0f
+#define CAP_W1 304.0f              // beside the centre: the strip's cards and chapters +-1
+#define CAP_W2 280.0f              // chapters +-2 and beyond
+#define CAP_VAO 14.0f
+#define CAP_LINHA 52.0f
+#define CAP_SUBIDA 16.0f
+
+static float capLarg(float ad) {
+  return ad <= 1.0f ? anim_mistura(CAP_MW, CAP_W1, ad) : ad <= 2.0f ? anim_mistura(CAP_W1, CAP_W2, ad - 1.0f) : CAP_W2;
+}
+static float capX(float cx, float d) {
+  float ad = fabsf(d), sg = d < 0.0f ? -1.0f : 1.0f;
+  float p1 = CAP_MW * 0.5f + CAP_VAO + CAP_W1 * 0.5f, p2 = p1 + CAP_W1 * 0.5f + CAP_VAO + CAP_W2 * 0.5f;
+  if (ad <= 1.0f) return cx + sg * ad * p1;
+  if (ad <= 2.0f) return cx + sg * anim_mistura(p1, p2, ad - 1.0f);
+  return cx + sg * (p2 + (ad - 2.0f) * (CAP_W2 + CAP_VAO));
+}
+static float capCurva(float d) { float ad = fminf(fabsf(d), 3.0f); return ad * ad * 2.2f; }
+
+// One card: the picture, or a plain tile while it is not made.
+static void capCartao(GfxRect q, GLuint tex, float a) {
+  if (a <= 0.003f) return;
+  if (tex) {
+    gfx_tex_aspect_atual = 16.0f / 9.0f;
+    gfx_rect(q, tex, GFX_CARD, 0, 0, 0, 17.0f / q.h, 0, 0, 0, a);
+    gfx_tex_aspect_atual = 0.0f;
+  } else gfx_cor(q, 17.0f / q.h, 0.145f, 0.149f, 0.172f, a);
+}
+
+// The scrub frame the strip shows at `t` (centre card), for the strip and for
+// the held frame of the chapter row.
+static GLuint capQuadroEm(double t, double *cue) {
+  GLuint tx = 0;
+  if (!ajustes_seekr_habilitado() || !seekr_tem_chave()) return 0;
+  { int est = seekr_estado(); if (est != SEEKR_PRONTO && est != SEEKR_BUSCANDO) return 0; }
+  seekr_quadros(t, 1, &tx, cue);
+  return tx;
+}
+
 static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a) {
   GLuint t[3] = { 0, 0, 0 };
   double cue[3] = { -1, -1, -1 };
   int fita, n, k, est;
-  // Netflix-sized (owner, 22/10: "the preview is tiny"): 576x324, ~30 % of the 1080p canvas; was 384x216.
-  const float w = 576.0f, h = 324.0f, ws = 384.0f, hs = 216.0f, vao = 14.0f, linha = 56.0f;
-  float x, y, tot, xs[3];
-  Uint32 agora = SDL_GetTicks();
+  float cx, top, sa = 1.0f - capAnim;
+  (void)bw;
 #ifdef NV_ANDROID
+  Uint32 agora = SDL_GetTicks();
   if (scrubbing) seekPreviewAudit.shown = 0;
 #endif
-  if (ehCanal() || !(scrubbing || posVisSolto) || a < 0.05f || !ajustes_seekr_habilitado()) return;
+  if (ehCanal() || !(scrubbing || posVisSolto) || a < 0.05f || sa <= 0.01f || !ajustes_seekr_habilitado()) return;
   // Barra do filme inteiro sobre OUTRA parte: as miniaturas sao do arquivo
   // aberto; ali, so o tempo.
   { float pv0 = posVisSolto ? posVis : posSeg;
     if (pv0 < 0.0f || pv0 > duracaoSeg) return; }
   est = seekr_tem_chave() ? seekr_estado() : SEEKR_DESLIGADO;
   if (est != SEEKR_PRONTO && est != SEEKR_BUSCANDO) {
-    seekrStatus(bx, bw, frac, yBarra, a, est);
+    seekrStatus(bx, bw, frac, yBarra, a * sa, est);
     return;
   }
   seekr_definir_ajuste_ms((long)ajustes_seekr_ajuste_s() * 1000L);
@@ -7109,41 +7221,27 @@ static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a
   // A sincronia ja entra no tempo do quadro; sem cue ainda (a folha chegando),
   // a posicao com o mesmo ajuste.
   if (cue[n == 1 ? 0 : 1] < 0.0) cue[n == 1 ? 0 : 1] = pv + ajustes_seekr_ajuste_s(); }
-  tot = fita ? 20.0f + ws * 2.0f + w + vao * 2.0f : w + 20.0f;
-  x = bx + bw * frac - tot * 0.5f;
-  if (x < PLR_MARGEM) x = PLR_MARGEM;
-  if (x + tot > bx + bw) x = bx + bw - tot;
-  y = yBarra - 24.0f - (10.0f + h + linha);
-  plrui_material((GfxRect){ x, y, tot, 10.0f + h + linha }, 26.0f, 0, a);
+  // The strip follows the knob like before, kept inside the screen; in chapter
+  // mode it glides to where the row is (capCx, desenharFileiraCap).
+  { float tot = fita ? CAP_W1 * 2.0f + CAP_MW + CAP_VAO * 2.0f : CAP_MW;
+    float xk = bx + bw * frac, lo = PLR_MARGEM + tot * 0.5f, hi = bx + bw - tot * 0.5f;
+    cx = anim_mistura(anim_clamp(xk, lo, hi), capCx >= 0.0f ? capCx : NV_VTELA_W * 0.5f, capAnim); }
+  top = yBarra - 24.0f - CAP_LINHA - CAP_MH - CAP_SUBIDA * capAnim;
   { OpenSeekCompartInfo ci;   // fonte emprestada de outra versao: sempre dizer que e aproximada
-    if (openseek_compart_info(&ci)) {
+    if (openseek_compart_info(&ci) && sa > 0.01f) {
       TxtLinha lb = txt_linha(TXT_G18M, ci.rotulo, 243, 242, 239, 200);
-      txt_desenhar_alpha(lb, x + (tot - (float)lb.w) * 0.5f, y - (float)lb.h - 6.0f, a);
+      txt_desenhar_alpha(lb, cx - (float)lb.w * 0.5f, top - (float)lb.h - 6.0f, a * sa);
     } }
-  if (fita) { xs[0] = x + 10.0f; xs[1] = xs[0] + ws + vao; xs[2] = xs[1] + w + vao; }
-  else xs[0] = x + 10.0f;
   for (k = 0; k < n; k++) {
     int atual = (n == 1 || k == 1);
-    float qw = atual ? w : ws, qh = atual ? h : hs;
-    float qx = xs[k], qy = y + 10.0f + (h - qh) * 0.5f, ca = atual ? 1.0f : 0.6f;
-    GfxRect q = { qx, qy, qw, qh };
+    float qw = atual ? CAP_MW : CAP_W1, qh = qw * 9.0f / 16.0f;
+    float qx = atual ? cx - qw * 0.5f : capX(cx, k == 0 ? -1.0f : 1.0f) - qw * 0.5f;
+    float qy = top + (CAP_MH - qh) * 0.5f, ca = atual ? 1.0f : 0.6f;
     char rot[32];
     if (cue[k] < 0.0) continue;
-    if (t[k]) {
-      gfx_tex_aspect_atual = 16.0f / 9.0f;
-      gfx_rect(q, t[k], GFX_CARD, 0, 0, 0, 17.0f / qh, 0, 0, 0, a * ca);
-      gfx_tex_aspect_atual = 0.0f;
-      // A atual ainda chegando (seekr da a ultima usada no lugar): o anel por
-      // cima, para nao parecer que o quadro e deste ponto.
-      if (atual && seekr_quadro_velho()) {
-        gfx_cor(q, 17.0f / qh, 1, 1, 1, 0.05f * a);
-        plrui_anel(qx + qw * 0.5f, qy + qh * 0.5f, 44.0f, 1, agora, a);
-      }
-    } else {
-      if (ajustes_vidro()) gfx_cor(q, 17.0f / qh, 1, 1, 1, 0.05f * a);
-      else gfx_cor(q, 17.0f / qh, 0.125f, 0.129f, 0.149f, a);
-      if (atual) plrui_anel(qx + qw * 0.5f, qy + qh * 0.5f, 44.0f, 1, agora, a);
-    }
+    // In chapter mode the centre is the row's (it holds this same frame).
+    if (atual && capAnim > 0.01f) continue;
+    capCartao((GfxRect){ qx, qy, qw, qh }, t[k], a * ca * sa * (atual && t[k] && seekr_quadro_velho() ? 0.7f : 1.0f));
     plrui_tempo(rot, sizeof rot, cue[k]);
 #ifdef NV_ANDROID
     if (atual && seekPreviewAudit.shown && seekPreviewAudit.direct &&
@@ -7153,7 +7251,7 @@ static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a
       snprintf(rot, sizeof rot, "%s", approximate);
     }
 #endif
-    { float yc = y + 10.0f + h + linha * 0.5f;
+    { float yc = top + CAP_MH + CAP_LINHA * 0.5f;
       if (atual) {
         TxtLinha lt = txt_linha(TXT_G26B, rot, 243, 242, 239, 255), lr = { 0 };
         float tw = (float)lt.w;
@@ -7164,11 +7262,103 @@ static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a
           lr = txt_linha(TXT_G18M, r, 243, 242, 239, 128);
           tw += 10.0f + (float)lr.w;
         }
-        txt_desenhar_alpha(lt, qx + (qw - tw) * 0.5f, yc - (float)lt.h * 0.5f, a);
-        if (lr.w) txt_desenhar_alpha(lr, qx + (qw - tw) * 0.5f + lt.w + 10.0f, yc - (float)lr.h * 0.5f + 2.0f, a);
+        txt_desenhar_alpha(lt, qx + (qw - tw) * 0.5f, yc - (float)lt.h * 0.5f, a * sa);
+        if (lr.w) txt_desenhar_alpha(lr, qx + (qw - tw) * 0.5f + lt.w + 10.0f, yc - (float)lr.h * 0.5f + 2.0f, a * sa);
       } else {
         TxtLinha lt = txt_linha(TXT_G20B, rot, 243, 242, 239, 140);
-        txt_desenhar_alpha(lt, qx + (qw - (float)lt.w) * 0.5f, yc - (float)lt.h * 0.5f, a);
+        txt_desenhar_alpha(lt, qx + (qw - (float)lt.w) * 0.5f, yc - (float)lt.h * 0.5f, a * sa);
+      } }
+  }
+}
+
+// THE CHAPTER ROW. Drawn while capAnim > 0 (UP on the bar, scrubbing or not).
+static void desenharFileiraCap(Uint32 agora, float bx, float bw, float frac, float yBarra, float a) {
+  static Uint32 capT;
+  MkvCap c[MKV_MAX_CAPS];
+  float dt = capT ? (float)(agora - capT) / 1000.0f : 0.0f;
+  int n = duracaoSeg > 1.0f ? capitulosDoArquivo(c, MKV_MAX_CAPS) : 0, i, idx[13], ni = 0, base;
+  GLuint tex[13] = { 0 };
+  char buf[32];
+  float cx, top, up, pont;
+  capT = agora;
+  if (dt > 0.1f) dt = 0.1f;
+  // Another file with fewer chapters while the row is open: the focus comes
+  // back inside the new list and the row jumps there instead of sliding.
+  if (n >= 2 && capSel >= n) capSel = n - 1;
+  if (n >= 2 && (capPos < -0.5f || capPos > (float)n - 0.5f)) { capPos = (float)capSel; capPosV = 0.0f; }
+  capPos = anim_mola2(&capPosV, capPos, (float)capSel, dt, NV_MOLA2_SCROLL);
+  // The held frame: kept while the focus is still on its chapter; once you
+  // leave it, it is let go for good and that chapter shows its own picture.
+  if (capHeldCap >= 0 && capSel != capHeldCap) capHeldCap = -1;
+  capHeld = anim_mola(capHeld, capFoco && capHeldCap >= 0 ? 1.0f : 0.0f, dt, 14.0f);
+  // Closed: the row rests on the scrub strip's spot (the same clamp as
+  // seekrMiniatura's 3-card strip), so it opens out of it.
+  if (capAnim <= 0.005f || n < 2) {
+    float tot = CAP_W1 * 2.0f + CAP_MW + CAP_VAO * 2.0f;
+    capCx = anim_clamp(bx + bw * frac, PLR_MARGEM + tot * 0.5f, bx + bw - tot * 0.5f); capCxV = 0.0f;
+  } else {
+    // Open: lean toward the focused chapter's start on the bar, then hold the
+    // row so it reaches both margins (no empty side at the first or last
+    // chapter); a row narrower than the bar stays inside it.
+    float s = (float)capSel, r = (float)(n - 1 - capSel);
+    float xk = bx + bw * anim_clamp((float)(c[capSel].inicio / duracaoSeg), 0.0f, 1.0f);
+    float alvo = NV_VTELA_W * 0.5f + CAP_SEGUE * (xk - NV_VTELA_W * 0.5f);
+    float cMax = bx - capX(0.0f, -s) + capLarg(s) * 0.5f;            // first card's left edge on the margin
+    float cMin = bx + bw - capX(0.0f, r) - capLarg(r) * 0.5f;        // last card's right edge on the margin
+    alvo = anim_clamp(alvo, fminf(cMin, cMax), fmaxf(cMin, cMax));
+    if (capCx < 0.0f) capCx = alvo;
+    capCx = anim_mola2(&capCxV, capCx, alvo, dt, NV_MOLA2_SCROLL);
+  }
+  if (n < 2 || capAnim <= 0.005f || a <= 0.01f) return;
+  cx = capCx;
+  up = capAnim;
+  top = yBarra - 24.0f - CAP_LINHA - CAP_MH - CAP_SUBIDA * up;
+  // Pictures: the cards on screen and one past each edge (a slide never
+  // shows a card that is still uploading). At most two uploads per frame.
+  base = (int)floorf(capPos);
+  // (Up to six each side: at the first or last chapter the row fills the bar.)
+  { int ord[13] = { 0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6 };   // nearest first
+    for (i = 0; i < 13; i++) { int j = base + ord[i]; if (j >= 0 && j < n) idx[ni++] = j; } }
+  if (!seekr_capitulo_quadros(idx, ni, tex)) memset(tex, 0, sizeof tex);
+  pont = ponteiroNoPlayer() && a > 0.3f && capFoco && up > 0.9f;
+  for (i = 0; i < n; i++) {
+    float d = (float)i - capPos, ad = fabsf(d), w, h, x, y, ca, na;
+    GLuint t = 0;
+    int k;
+    w = capLarg(ad); h = w * 9.0f / 16.0f;
+    x = capX(cx, d) + (ad > 1.5f ? (d < 0 ? -1.0f : 1.0f) * (1.0f - up) * 30.0f : 0.0f);
+    if (x + w * 0.5f <= 0.0f || x - w * 0.5f >= NV_VTELA_W) continue;   // off screen
+    for (k = 0; k < ni; k++) if (idx[k] == i) t = tex[k];
+    y = top + CAP_MH * 0.5f + capCurva(d) * up;
+    // Opacity: centre 1, beside it .8, then .5 (as approved); the rest stay
+    // at .45 (owner 25/11: no empty space), fading only where a card leaves
+    // the screen.
+    ca = ad < 1.0f ? anim_mistura(1.0f, 0.8f, ad) : ad < 2.0f ? anim_mistura(0.8f, 0.5f, ad - 1.0f)
+       : ad < 3.0f ? anim_mistura(0.5f, 0.45f, ad - 2.0f) : 0.45f;
+    na = ad < 1.0f ? anim_mistura(1.0f, 0.75f, ad) : ad < 2.0f ? anim_mistura(0.75f, 0.45f, ad - 1.0f)
+       : ad < 3.0f ? anim_mistura(0.45f, 0.4f, ad - 2.0f) : 0.4f;
+    { float dentro = (fminf(x + w * 0.5f, NV_VTELA_W) - fmaxf(x - w * 0.5f, 0.0f)) / w;   // share on screen
+      ca *= anim_clamp(dentro, 0.0f, 1.0f); na *= anim_clamp(dentro * 1.5f - 0.5f, 0.0f, 1.0f); }
+    { GfxRect q = { x - w * 0.5f, y - h * 0.5f, w, h };
+      capCartao(q, t, a * ca * up);
+      // The frame you were scrubbing, over the centre card until let go.
+      if (i == capHeldCap && capHeld > 0.01f) {
+        GLuint ht = capQuadroEm(capHeldT, NULL);
+        if (ht) capCartao(q, ht, a * ca * up * capHeld);
+      }
+      if (pont && ad < 2.5f) ponteiro_alvo(q.x, q.y, q.w, q.h, ponteiroCapFocar, ponteiroCapitulo, i, 1); }
+    { int foco = ad < 0.5f;
+      char nm[160];
+      if (foco) snprintf(nm, sizeof nm, "%d \xc2\xb7 %s", i + 1, capituloNome(c, i, buf, sizeof buf));
+      else snprintf(nm, sizeof nm, "%s", capituloNome(c, i, buf, sizeof buf));
+      TxtLinha l = txt_linha_corta(foco ? TXT_G26B : TXT_G20B, nm, 243, 242, 239, 255, w + 40.0f);
+      float ly = y + h * 0.5f + 10.0f;
+      txt_desenhar_alpha(l, x - (float)l.w * 0.5f, ly, a * na * up);
+      if (foco) {
+        char hr[24];
+        plrui_tempo(hr, sizeof hr, c[i].inicio);
+        TxtLinha lh = txt_linha(TXT_G18M, hr, 243, 242, 239, 150);
+        txt_desenhar_alpha(lh, x - (float)lh.w * 0.5f, ly + (float)l.h + 2.0f, a * up * (1.0f - ad * 2.0f));
       } }
   }
 }
@@ -9222,14 +9412,19 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
 // fileira de capitulos no lugar do titulo, ESQUERDA/DIREITA e OK.
 // OK num capitulo (tecla, clique ou dedo): busca o comeco dele e fecha a fileira.
 static void capituloPular(const MkvCap *c, int i) {
-  double alvo = c[i].inicio;
-  if (scrubbing) terminarSalto();
-  double de = posSeg;
+  double de = posSeg, alvo = c[i].inicio;
   posSeg = (float)alvo;
-  recuarAutomatico(de, alvo);
-  if (comVideo) {
-    legTempBusca(de, alvo);
-    buscarUsuario(alvo);
+  if (scrubbing) {
+    // The scrub ends AT the chapter: terminarSalto makes the only seek (two in
+    // a row are what webOS refuses with "seek Failure", #246).
+    if (!scrubToque) recuarAutomatico(scrubInicio, alvo);
+    terminarSalto();
+  } else {
+    recuarAutomatico(de, alvo);
+    if (comVideo) {
+      legTempBusca(de, alvo);
+      buscarUsuario(alvo);
+    }
   }
   printf("[seg] capitulo %d \"%s\" em %.1fs\n", i, c[i].nome, alvo); fflush(stdout);
   capFoco = 0;
@@ -9273,7 +9468,7 @@ static void desenharCapitulos(Uint32 agora, float bx, float bw, float yBarra, fl
   // fio): o indice nunca passa do fim — w[capSel] abaixo seria lixo.
   if (capSel >= n) capSel = n > 0 ? n - 1 : 0;
   if (capSel < 0) capSel = 0;
-  capAnim = anim_mola(capAnim, capFoco ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
+  capAnim = anim_mola2(&capAnimV, capAnim, capFoco ? 1.0f : 0.0f, dt, 14.0f);   // ~300 ms, no overshoot
   if (n < 2 || a <= 0.002f) return;
   pont = ponteiroNoPlayer() && a > 0.3f;
   for (i = 0; i < n; i++)
@@ -9295,53 +9490,6 @@ static void desenharCapitulos(Uint32 agora, float bx, float bw, float yBarra, fl
       if (y1 > yBarra - 4.0f) y1 = yBarra - 4.0f;
       if (y1 > y0)
         ponteiro_alvo(lx - f, y0, (float)l.w + f * 2.0f, y1 - y0, NULL, ponteiroAbrirCapitulos, 0, 0);
-    }
-  }
-  if (capAnim > 0.01f) {
-    // Chips: nome + inicio (m:ss / h:mm:ss). A fileira rola para o foco caber.
-    const float H = 56.0f, VAO = 12.0f, PAD = 22.0f, y = yBarra - 36.0f - H + (1.0f - capAnim) * 12.0f;
-    float w[MKV_MAX_CAPS], x0 = 0.0f, total = 0.0f, xi;
-    TxtLinha nome[MKV_MAX_CAPS], hora[MKV_MAX_CAPS];
-    for (i = 0; i < n; i++) {
-      int s = (int)c[i].inicio;
-      char h[16];
-      if (s >= 3600) snprintf(h, sizeof h, "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60);
-      else snprintf(h, sizeof h, "%d:%02d", s / 60, s % 60);
-      int f = i == capSel;
-      int tinta = f ? plrui_tinta() : 243;
-      nome[i] = txt_linha_corta(TXT_G21B, capituloNome(c, i, buf, sizeof buf), tinta, tinta, tinta, 255, 360.0f);
-      hora[i] = txt_linha(TXT_CAPTION2, h, tinta, tinta, tinta, f ? 220 : 150);
-      w[i] = PAD + (float)nome[i].w + 10.0f + (float)hora[i].w + PAD;
-    }
-    for (i = 0; i < capSel && i < n; i++) x0 += w[i] + VAO;
-    for (i = 0; i < n; i++) total += w[i] + (i ? VAO : 0.0f);
-    // Rolagem: o chip em foco fica dentro da largura da barra, andando so o
-    // necessario (capRol persiste entre quadros).
-    if (x0 + w[capSel] - capRol > bw) capRol = x0 + w[capSel] - bw;
-    if (x0 < capRol) capRol = x0;
-    if (capRol > total - bw) capRol = total - bw;
-    if (capRol < 0.0f) capRol = 0.0f;
-    xi = bx - capRol;
-    for (i = 0; i < n; i++) {
-      GfxRect r = { xi, y, w[i], H };
-      float aa = ac * capAnim;
-      if (xi + w[i] >= bx - 1.0f && xi <= bx + bw + 1.0f) {
-        if (i == capSel) plrui_pilula_foco(r, aa);
-        else if (ajustes_vidro()) gfx_vidro_chip(r, 0.5f, 0.55f, aa);
-        else gfx_cor(r, 0.5f, 1, 1, 1, 0.16f * aa);
-        txt_desenhar_alpha(nome[i], xi + PAD, y + (H - (float)nome[i].h) * 0.5f, aa);
-        txt_desenhar_alpha(hora[i], xi + PAD + (float)nome[i].w + 10.0f,
-                           y + (H - (float)hora[i].h) * 0.5f + 1.0f, aa);
-        if (pont && capFoco && capAnim > 0.9f) {
-          // Alvo recortado a largura da barra; so o chip inteiro foca por cima
-          // (o cortado rolaria a fileira por baixo do cursor).
-          float x1 = xi < bx ? bx : xi, x2 = xi + w[i] > bx + bw ? bx + bw : xi + w[i];
-          int inteiro = xi >= bx - 1.0f && xi + w[i] <= bx + bw + 1.0f;
-          if (x2 > x1) ponteiro_alvo(x1, y, x2 - x1, H, inteiro ? ponteiroCapFocar : NULL,
-                                     ponteiroCapitulo, i, inteiro);
-        }
-      }
-      xi += w[i] + VAO;
     }
   }
 }
@@ -9373,6 +9521,19 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
              ? fracCanal()
              : filme ? anim_clamp((float)((bOff + posVis) / bTot), 0.0f, 1.0f)
              : (duracaoSeg > 0.0f ? anim_clamp(posVis / duracaoSeg, 0.0f, 1.0f) : 0.0f);
+
+  // Chapter row open: the knob previews the focused chapter's start, gliding
+  // with the row; the seek itself waits for OK (capituloPular).
+  if (capAnim > 0.005f && !filme && !ehCanal() && duracaoSeg > 1.0f) {
+    MkvCap cc[MKV_MAX_CAPS];
+    int nc = capitulosDoArquivo(cc, MKV_MAX_CAPS);
+    if (nc >= 2) {
+      float p = anim_clamp(capPos, 0.0f, (float)(nc - 1));
+      int i0 = (int)floorf(p), i1 = i0 + 1 < nc ? i0 + 1 : i0;
+      double t = cc[i0].inicio + (cc[i1].inicio - cc[i0].inicio) * (p - (float)i0);
+      frac = anim_mistura(frac, anim_clamp((float)(t / duracaoSeg), 0.0f, 1.0f), capAnim);
+    }
+  }
 
   // --- barra de progresso: a MESMA de todo o player (plrui_barra) -----------
   barraPtrX = bx; barraPtrW = bw;
@@ -9479,6 +9640,7 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
   ac = acSemTitulo;
   // Depois do titulo: a miniatura fica POR CIMA dele enquanto a pessoa procura.
   seekrMiniatura(bx, bw, frac, yBarra, a);
+  desenharFileiraCap(agora, bx, bw, frac, yBarra, a);
 
   // --- fileira de BOTOES ---------------------------------------------------
   // Discos de 68 no material da ilha; o focado vira PILULA cheia no acento com

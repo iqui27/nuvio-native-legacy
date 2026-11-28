@@ -272,6 +272,10 @@ int segfontes_simkl(const char *fonte, const char *id, int t, int e, SegIds *out
       r = simklEpCache(o.simkl, t, e, &ep);
     }
     if (r > 0) o.ep = ep;
+    // No map entry past the first TVDB season: the TVDB number is not this
+    // entry's episode (One Piece S2E5 is about 66), so no AniSkip/Anime-Skip
+    // ids rather than the timings of another episode.
+    else if (t > 1) { o.mal = 0; o.anilist = 0; }
   }
   printf("[seg] Simkl %s=%s T%dE%d: simkl=%ld anime=%d mal=%ld anilist=%ld ep=%d\n",
          fonte, id, t, e, o.simkl, o.anime, o.mal, o.anilist, o.ep);
@@ -281,6 +285,10 @@ int segfontes_simkl(const char *fonte, const char *id, int t, int e, SegIds *out
 }
 
 // ---------------------------------------------------------------- Anime-Skip
+// A retryable failure: not 404 (no data), and not 400/401/403 (a wrong or
+// expired Client ID does not get better in 30 s; retrying it only repeated the
+// whole marker pipeline on every anime episode).
+static int animeskipFalha(int st) { return st != 404 && st != 400 && st != 401 && st != 403; }
 int segfontes_animeskip_shows(const char *json, char ids[][48], int max) {
   const char *p = json ? js_array(json, NULL, "findShowsByExternalId") : NULL;
   int n = 0;
@@ -380,7 +388,7 @@ int segfontes_animeskip(long anilist, int ep, const char *clientId,
     postar(ANIMESKIP_URL, corpo, clientId, &j, &st);
     if (st < 200 || st > 299 || !j) {
       free(j);
-      if (falha && st != 404) *falha = 1;
+      if (falha && animeskipFalha(st)) *falha = 1;
       printf("[seg] Anime-Skip anilist %ld: HTTP %d\n", anilist, st); fflush(stdout);
       return 0;
     }
@@ -400,7 +408,7 @@ int segfontes_animeskip(long anilist, int ep, const char *clientId,
              shows[i]);
     postar(ANIMESKIP_URL, corpo, clientId, &j, &st);
     if (st >= 200 && st <= 299 && j) n = segfontes_animeskip_ep(j, ep, out, max);
-    else if (falha && st != 404) *falha = 1;
+    else if (falha && animeskipFalha(st)) *falha = 1;
     free(j); j = NULL;
   }
   printf("[seg] Anime-Skip anilist %ld ep %d: %d shows, %d trechos\n", anilist, ep, ns, n);

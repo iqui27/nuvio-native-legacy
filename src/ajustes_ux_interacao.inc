@@ -130,6 +130,7 @@ static void uxAbrirEditor(int op) {
   if (op < 0 || op >= AJ_N || !ajOpcaoDisponivel(op) || soLeitura(op)) return;
   // Audio from another source: its sheet with every option of it.
   if (op == AJ_EXT_AUDIO) { eaAbrir(); return; }
+  if (op == AJ_CAPITULOS) { capFolhaAbrir(); return; }   // check sheet, not a value list
   uxCancelar();
   if(op==AJ_GUIA_CATEGORIAS) {
     guia_preparar_busca();int n=guia_categorias(NULL,0);

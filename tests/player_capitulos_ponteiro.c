@@ -43,9 +43,8 @@ int main(void) {
     { 1260, "Extra - Studio Commentary" }, { 1320, "Extra - Behind the Scenes" },
   };
   MkvCap c[MKV_MAX_CAPS];
-  int n, i, cortado = -1;
+  int n, i;
   Uint32 t = 1000;
-  float rol;
   Alvos a;
 
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
@@ -89,65 +88,50 @@ int main(void) {
   puts("capitulos/ponteiro: tocar no nome abre a fileira");
   ponteiroAbrirCapitulos(0, 0);
   ok(capFoco == 1 && capSel == 1, "abriu no capitulo que toca (Opening em 100 s)");
+  ok(capHeldCap == 1 && capPos == 1.0f, "o centro segura o quadro de agora, sem deslizar ao abrir");
   quadros(&t, 60);   // a mola chega
   a = alvos();
   ok(a.nome == 0, "aberta: o nome deixa de ser alvo");
-  ok(a.n >= 3, "chips visiveis sao alvos");
-  ok(a.cortados >= 1, "a fileira passa da barra: ha chip cortado na borda");
+  ok(a.n >= 3 && a.n <= 5, "cartoes visiveis (o centro e ate dois de cada lado) sao alvos");
+  ok(a.chip[1] && a.chip[1]->w > 380.0f, "o cartao do centro tem 384 px");
+  ok(a.chip[2] && a.chip[2]->w > 300.0f && a.chip[2]->w < 308.0f, "ao lado do centro: 304 px");
+  ok(a.chip[3] && a.chip[3]->w > 276.0f && a.chip[3]->w < 284.0f, "o de fora: 280 px");
   for (i = 0; i < n; i++)
-    if (a.chip[i]) {
-      ok(a.chip[i]->x >= PLR_MARGEM - 0.5f && a.chip[i]->x + a.chip[i]->w <= NV_VTELA_W - PLR_MARGEM + 0.5f,
-         "alvo do chip dentro da largura da barra");
-      ok((a.chip[i]->focar != NULL) == (a.chip[i]->b != 0), "so chip inteiro foca por cima");
-      if (!a.chip[i]->b && cortado < 0 && i > capSel) cortado = i;
-    }
-  assert(cortado > 0);
+    if (a.chip[i]) ok(a.chip[i]->focar != NULL && a.chip[i]->b == 1, "passar por cima foca, clicar busca");
 
-  puts("capitulos/ponteiro: chip cortado so rola, nao busca");
-  a.chip[cortado]->ativar(cortado, 0);
-  ok(posSeg == 100.0f && capFoco == 1 && capSel == cortado, "toque no cortado: seleciona, sem busca");
+  puts("capitulos/ponteiro: passar por cima foca e a fileira desliza");
+  a.chip[2]->focar(2, 1);
+  ok(capSel == 2 && posSeg == 100.0f && capFoco == 1, "foco no 2, sem busca");
   quadros(&t, 2);
+  ok(capPos > 1.0f && capPos < 2.0f, "capPos a caminho do 2 (desliza)");
+  quadros(&t, 60);
+  ok(capPos > 1.99f, "assentou no 2");
+  ok(capHeldCap == -1, "saiu do capitulo: o quadro segurado e solto");
+
+  puts("capitulos/ponteiro: clicar num cartao busca o comeco e fecha");
   a = alvos();
-  ok(a.chip[cortado] && a.chip[cortado]->b == 1, "e no quadro seguinte ele esta inteiro");
-  rol = capRol;
-  ok(rol > 0.0f, "a fileira rolou");
+  assert(a.chip[3]);
+  a.chip[3]->ativar(3, 1);
+  ok(posSeg == (float)c[3].inicio && capFoco == 0, "busca o capitulo e fecha a fileira");
 
-  puts("capitulos/ponteiro: passar por um chip visivel nao faz a fileira pular");
-  for (i = cortado - 1; i >= 0 && !(a.chip[i] && a.chip[i]->b); i--) {}
-  if (i >= 0) {
-    for (; i - 1 >= 0 && a.chip[i - 1] && a.chip[i - 1]->b; i--) {}   // o mais a esquerda inteiro
-    a.chip[i]->focar(i, 1);
-    quadros(&t, 2);
-    ok(capSel == i && capRol == rol, "foco anda para a esquerda, rolagem fica");
-  } else ok(0, "achar um chip inteiro a esquerda");
-
-  puts("capitulos/ponteiro: tocar num chip inteiro busca o comeco e fecha");
-  a = alvos();
-  for (i = 0; i < n && !(a.chip[i] && a.chip[i]->b); i++) {}
-  assert(i < n);
-  a.chip[i]->ativar(i, 1);
-  ok(posSeg == (float)c[i].inicio && capFoco == 0, "busca o capitulo e fecha a fileira");
-
-  puts("capitulos/teclas: OK continua buscando (mesmo caminho)");
+  puts("capitulos/teclas: OK busca (mesmo caminho), so no OK");
   ponteiroAbrirCapitulos(0, 0);
-  capSel = 6;
-  { SDL_Event e; memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RETURN;
-    player_evento(&e); }
+  { SDL_Event e; memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN;
+    for (i = 0; i < 3; i++) { e.key.keysym.sym = SDLK_RIGHT; player_evento(&e); }
+    ok(posSeg == (float)c[3].inicio && capSel == 6, "DIREITA so move o foco, nao busca");
+    e.key.keysym.sym = SDLK_RETURN; player_evento(&e); }
   ok(posSeg == 1050.0f && capFoco == 0, "OK no Ending: 1050 s");
 
-  puts("capitulos/teclas: rolagem para a DIREITA igual a de antes");
-  ponteiroAbrirCapitulos(0, 0);
-  for (i = 0; i < 6; i++) {
-    SDL_Event e; memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RIGHT;
-    player_evento(&e); quadros(&t, 1);
-  }
-  { float fimBarra = NV_VTELA_W - PLR_MARGEM;
-    a = alvos();
-    ok(capSel == n - 1 && a.chip[capSel] && a.chip[capSel]->b == 1, "o chip em foco esta inteiro");
-    // Antes: com rolagem, o chip em foco encostava na borda direita da barra.
-    ok(capRol > 0.0f && a.chip[capSel] &&
-       a.chip[capSel]->x + a.chip[capSel]->w > fimBarra - 1.0f, "rolou e o foco encosta na borda direita, como antes"); }
-  { SDL_Event e; memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_DOWN; player_evento(&e); }
+  puts("capitulos/teclas: CIMA durante a busca abre a fileira; OK confirma o capitulo");
+  { SDL_Event e; memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN;
+    barraFoco = 1; posSeg = 500.0f;
+    e.key.keysym.sym = SDLK_RIGHT; player_evento(&e);
+    ok(scrubbing == 1, "buscando");
+    e.key.keysym.sym = SDLK_UP; player_evento(&e);
+    ok(capFoco == 1 && scrubbing == 1, "CIMA abre a fileira e a busca fica de pe");
+    e.key.keysym.sym = SDLK_RIGHT; player_evento(&e);
+    e.key.keysym.sym = SDLK_RETURN; player_evento(&e);
+    ok(capFoco == 0 && scrubbing == 0 && posSeg == (float)c[capSel].inicio, "OK: busca o comeco do capitulo"); }
 
   puts("capitulos/ponteiro: arquivo sem capitulos depois de um com");
   capmkv_zerar();
@@ -161,12 +145,12 @@ int main(void) {
     quadros(&t, 2);
     ponteiroAbrirCapitulos(0, 0);
     capSel = n - 1;
-    quadros(&t, 60);   // a mola chega: chips viram alvos
+    quadros(&t, 60);   // a mola chega: cartoes viram alvos
     capmkv_zerar(); capmkv_aplicar(tres, 3);   // outro arquivo, 3 capitulos
     quadros(&t, 2);
     a = alvos();
     ok(capSel >= 0 && capSel < 3, "o indice volta para dentro da lista nova");
-    ok(a.n > 0 && a.n <= 3, "so chips da lista nova sao alvos"); }
+    ok(a.n > 0 && a.n <= 3, "so cartoes da lista nova sao alvos"); }
 
   SDL_Quit();
   printf("%s\n", falhas ? "FALHOU" : "player_capitulos_ponteiro: ok");

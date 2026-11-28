@@ -97,6 +97,9 @@ char *rede_baixar_trecho64_final(const char *url, const char *headers,
   if (cross) *cross = 0;
   return b;
 }
+// 2.0.9: the set kept on the TV (dados_dir) and the player's buffer gate.
+const char *dados_dir(void) { return NULL; }   // no data folder: nothing kept between plays
+__attribute__((weak)) double video_buffer_fim(void) { return 0.0; }
 int video_pronto(void) { return fakePronto; }
 int video_tocando(void) { return fakeTocando; }
 unsigned video_bufferando_ms(void) { return __atomic_load_n(&fakeBufferando, __ATOMIC_RELAXED); }
@@ -224,13 +227,13 @@ int main(void) {
   // ---- B. the adaptive grid --------------------------------------------------
   {
     MiniInfo i = fakeInfo; const char *pq = NULL;
-    CHECK(gradeDe(&i, 60L * 60000, 1024, &pq) == 1, "1080p 60 min -> grade 5 s");
-    CHECK(gradeDe(&i, 90L * 60000, 1024, &pq) == 1, "1080p 90 min -> grade 5 s");
+    CHECK(gradeDe(&i, 60L * 60000, 1024, &pq) == DEZ, "1080p 60 min -> grade 10 s (2.0.9: 10 s para todo arquivo)");
+    CHECK(gradeDe(&i, 90L * 60000, 1024, &pq) == DEZ, "1080p 90 min -> grade 10 s");
     CHECK(gradeDe(&i, 91L * 60000, 8192, &pq) == DEZ, "1080p 91 min -> grade 10 s (%s)", pq);
     i.largura = 2048; i.altura = 1080;
-    CHECK(gradeDe(&i, 80L * 60000, 1024, &pq) == 1, "2048 colunas ainda conta como <=1080p");
+    CHECK(gradeDe(&i, 80L * 60000, 1024, &pq) == DEZ, "2048 colunas -> grade 10 s");
     i.largura = 3840; i.altura = 2160;
-    CHECK(gradeDe(&i, 30L * 60000, 2048, &pq) == 1, "4K <70 min com 2 GB -> grade 5 s");
+    CHECK(gradeDe(&i, 30L * 60000, 2048, &pq) == DEZ, "4K <70 min com 2 GB -> grade 10 s");
     CHECK(gradeDe(&i, 30L * 60000, 2047, &pq) == DEZ, "4K <70 min com <2 GB -> grade 10 s");
     CHECK(gradeDe(&i, 30L * 60000, -1, &pq) == DEZ, "4K com RAM desconhecida -> grade 10 s (%s)", pq);
     CHECK(gradeDe(&i, 70L * 60000, 8192, &pq) == DEZ, "4K >=70 min -> grade 10 s");
@@ -264,11 +267,11 @@ int main(void) {
     marcarFeito(j, 40);
     CHECK(proximo(j, 50 * BASE_MS, &classe) == 42 && classe == 1, "janela do scrub para a frente primeiro");
     for (int s = 34; s <= 46; s += 2) if (!j->tiles[s].jpg) marcarFeito(j, s);
-    CHECK(proximo(j, 50 * BASE_MS, &classe) == 50 && classe == 2, "depois +-1 min do playhead");
+    CHECK(proximo(j, 50 * BASE_MS, &classe) == 50 && classe == 3, "depois +-1 min do playhead (etapa 2 = capitulos)");
     marcarFeito(j, 50);
     for (int s = 48; s <= 62; s += 2) if (!j->tiles[s].jpg) marcarFeito(j, s);
     k = proximo(j, 50 * BASE_MS, &classe);
-    CHECK((k == 0 || k == 60) && classe == 3, "depois um a cada 5 min (k=%d)", k);
+    CHECK((k == 0 || k == 60) && classe == 4, "depois um a cada 5 min (k=%d)", k);
     if (!j->tiles[0].jpg) marcarFeito(j, 0);
     int visto[101] = {0};
     int total = j->feitos, sobra = 0;
@@ -295,7 +298,7 @@ int main(void) {
     CHECK(proximo(j, 50 * BASE_MS, &classe) == 40 && classe == 1, "5 s: scrub primeiro");
     for (int s = 34; s <= 46; s++) marcarFeito(j, s);
     int k = proximo(j, 50 * BASE_MS, &classe);
-    CHECK(k == 50 && classe == 2, "5 s: depois o playhead a cada 10 s (k=%d etapa %d)", k, classe);
+    CHECK(k == 50 && classe == 3, "5 s: depois o playhead a cada 10 s (k=%d etapa %d)", k, classe);
     soltarJob(j); soltarJob(j);
   }
 

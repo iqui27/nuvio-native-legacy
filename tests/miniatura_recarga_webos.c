@@ -109,6 +109,8 @@ char *rede_baixar_trecho64_final(const char *url, const char *headers,
 
 // The simulated video backend: the driver state changes independently of what
 // the player publishes — exactly what the webOS load revision does.
+// 2.0.9: the set kept on the TV (dados_dir) and the player's buffer gate.
+const char *dados_dir(void) { return NULL; }   // no data folder: nothing kept between plays
 int video_pronto(void) { registrarChamada(); return __atomic_load_n(&fakePronto, __ATOMIC_ACQUIRE); }
 int video_tocando(void) { registrarChamada(); return __atomic_load_n(&fakeTocando, __ATOMIC_ACQUIRE); }
 unsigned video_bufferando_ms(void) { registrarChamada(); return __atomic_load_n(&fakeBufferando, __ATOMIC_ACQUIRE); }
@@ -254,7 +256,7 @@ int main(void) {
   batidaPlayer(120.0, 0.0f, 0);
   for (int i = 0; i < 600 && !jGet(j, 0); i++) usleep(5000);
   if (!jGet(j, 0)) __atomic_store_n(&j->parar, 1, __ATOMIC_RELEASE);
-  CHECK(jGet(j, 0) && jGet(j, 2) == 24, "retomada: a grade termina (feitos=%d)", jGet(j, 2));
+  CHECK(jGet(j, 0) && jGet(j, 2) == 12, "retomada: a grade de 10 s (2.0.9) termina (feitos=%d)", jGet(j, 2));
   PROVEDOR.desligar();
   for (int i = 0; i < 600 && jGet(j, 1); i++) usleep(5000);
   pthread_mutex_lock(&mu); soltarJob(j); pthread_mutex_unlock(&mu);
