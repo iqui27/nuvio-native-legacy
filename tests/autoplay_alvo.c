@@ -82,6 +82,10 @@ char *rede_baixar_medido(const char *url, int seconds, const char *const *header
   *m = (RedeMedida){ .status = st };
   return r;
 }
+char *rede_baixar_medido_controle(const char *url, int seconds, const char *const *headers,
+                                  const RedeControle *c, RedeMedida *m) {
+  (void)c; return rede_baixar_medido(url, seconds, headers, m);
+}
 int servidores_tem(const char *id, const char *tipo) { (void)id; (void)tipo; return 0; }
 void servidores_rotular(Stream *l, int n) { (void)l; (void)n; }
 void addonstats_aio_complete(const char *key, const char *type, const char *json, int http, int transport, unsigned long ms, int retryAfter) {

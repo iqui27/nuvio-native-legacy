@@ -6,7 +6,8 @@ TMPDIR="${TMPDIR%/}"
 #   bash tests/episodiosdup.sh
 set -eu
 cd "$(dirname "$0")/.."
-flags=()
+flags=(-ffunction-sections -fdata-sections)
+case "$(uname -s)" in Darwin) flags+=(-Wl,-dead_strip);; *) flags+=(-Wl,--gc-sections);; esac
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 # episodiosdup.c inclui descoberta.c inteiro (buscarEps e deMeta sao static),
 # com o mesmo conjunto de link de tests/cateps.sh.

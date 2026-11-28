@@ -674,6 +674,9 @@ int           cat_episodios_finais(int indiceItem, const char *id);
 int           cat_episodio_tvdb(int indiceItem, const char *id, int t, int e);
 int           cat_episodio_tvdb_qualquer(int indiceItem, const char *id, int t, int e);
 int           cat_episodio_existe_final(int indiceItem, const char *id, int t, int e);
+// The same, also on a list published before the extras (epsParciais): enough
+// to resume an episode the Continue Watching card already named.
+int           cat_episodio_existe(int indiceItem, const char *id, int t, int e);
 int           cat_episodio_por_tvdb(int indiceItem, const char *id, int tvdb,
                                     int *t, int *e);
 

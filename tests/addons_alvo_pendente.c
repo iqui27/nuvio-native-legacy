@@ -24,6 +24,9 @@ int main(void) {
   stream_definir_alvo("tt90000414");
   addons_buscar("tt90000414", "movie");
   assert(!strcmp(pendId, "tt90000414"));
+  // The old worker is told to stop now, not waited for (logs 10/11).
+  assert(fioAbortar);
+  { PedidoBusca pb; memset(&pb, 0, sizeof pb); addons_capturar_escopo(&pb.escopo); assert(cancelarBusca(&pb)); }
   assert(stream_n() == 0 && stream_atual() == -1);
   assert(!stream_lista_do_alvo("tt90000413"));
   // Further old responses and repeated Play cannot restore Film A.
@@ -41,7 +44,7 @@ int main(void) {
   stream_definir_alvo("jf:fixture:item");
   addons_buscar("jf:fixture:item", "movie");
   assert(stream_n() == 0);
-  progLimpar(); stream_definir_lista(NULL, 0); fioVivo = 0;
+  progLimpar(); stream_definir_lista(NULL, 0); fioVivo = 0; fioAbortar = 0;
   SDL_Quit();
   puts("PASS: pending title retires old sources; same-title recovery keeps them");
   return 0;

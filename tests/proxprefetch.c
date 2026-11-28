@@ -40,6 +40,10 @@ char *rede_baixar_medido(const char *url, int seconds, const char *const *header
   *m = (RedeMedida){ .status = r ? 200 : 0 };
   return r;
 }
+char *rede_baixar_medido_controle(const char *url, int seconds, const char *const *headers,
+                                  const RedeControle *c, RedeMedida *m) {
+  (void)c; return rede_baixar_medido(url, seconds, headers, m);
+}
 const CatItem *cat_item(int i) { (void)i; return &titulo; }
 int cat_indice_vivo(int i, const char *id) { (void)id; return i; }
 int cat_n_episodios(int i) { (void)i; return 2; }

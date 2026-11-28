@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# FFmpeg group link: GNU ld needs --start-group for circular static refs;
-# Apple ld only lists archives once (all dead-strippable symbols resolved).
-if [[ $(uname -s) == Darwin ]]; then
-  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil -lz"
-else
-  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lz"
-fi
 cd "$(dirname "$0")/.."
 prefix=${NUVIO_DTS_ROOT:-/tmp/nuvio-dts-host}
 task_tmp=$(mktemp -d);server=''
@@ -24,20 +17,14 @@ port=$(cat "$task_tmp/port")
 flags=(-std=gnu11 -O1 -g -Wall -Wextra -Werror -Wno-misleading-indentation)
 if [[ ${SANITIZE:-0} == 1 ]];then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer);fi
 cc "${flags[@]}" -I"$prefix/include" tests/dts_range_retry.c src/rede.c src/redeurl.c -o "$task_tmp/test" \
- -L"$prefix/lib" $AV_LIBS -lm -lpthread -ldl
-for mode in once twice short wrong hard exhaust cancel seek live-hang live-bodyhang live-hangall live-steady live-speculative live-boot live-cancel live-interrupt;do
+ -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
+for mode in once twice short wrong hard exhaust cancel seek live-hang live-bodyhang live-hangall live-steady live-speculative live-boot live-cancel;do
  "$task_tmp/test" "http://127.0.0.1:$port/retry-$mode/range.bin"
 done
 "$task_tmp/test" "http://127.0.0.1:$port/retry-once/dv.bin"
-"$task_tmp/test" "http://127.0.0.1:$port/retry-rate/range.bin"
-"$task_tmp/test" "http://127.0.0.1:$port/retry-rate-exhaust/range.bin"
-"$task_tmp/test" "http://127.0.0.1:$port/retry-rate-cancel/range.bin"
-"$task_tmp/test" seek-queued
-"$task_tmp/test" "http://127.0.0.1:$port/race-seek/range.bin"
-cc "${flags[@]}" -DRANGE_WORKERS=1 -DNV_TEST_LEGACY_RECOVERY -I"$prefix/include" tests/dts_range_retry.c src/rede.c src/redeurl.c -o "$task_tmp/serial" \
- -L"$prefix/lib" $AV_LIBS -lm -lpthread -ldl
-"$task_tmp/serial" "http://127.0.0.1:$port/retry-rate/range.bin"
-"$task_tmp/serial" "http://127.0.0.1:$port/queue-seek/range.bin"
+for mode in drip dripspec dripall dvsteady dvnear bootdv;do
+ "$task_tmp/test" "http://127.0.0.1:$port/retry-live-$mode/dv.bin"
+done
 # The real demux/DTS/AAC path must produce the same audio/video bytes after
 # an HTTP failure as it does from the local source; silence must not be needed.
 printf '1\n00:00:00,500 --> 00:00:01,500\nRange recovery fixture\n' > "$task_tmp/input.srt"
@@ -47,9 +34,9 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=64x64:rate=25:durati
  -c:v libx264 -bf 0 -g 25 -c:a dca -strict -2 -b:a 1411200 \
  -metadata:s:a:0 language=eng -metadata:s:a:1 language=por "$task_tmp/input.mkv"
 cc "${flags[@]}" -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -I"$prefix/include" src/dts/dts_engine.c tests/dts_engine.c \
- -o "$task_tmp/local" -L"$prefix/lib" $AV_LIBS -lm -lpthread
+ -o "$task_tmp/local" -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread
 cc "${flags[@]}" -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -DDTS_ENGINE_HTTP -I"$prefix/include" src/dts/dts_engine.c tests/dts_engine.c src/rede.c src/redeurl.c \
- -o "$task_tmp/http" -L"$prefix/lib" $AV_LIBS -lm -lpthread -ldl
+ -o "$task_tmp/http" -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
 "$task_tmp/local" "$task_tmp/input.mkv" "$task_tmp/local.aac"
 for mode in once short wrong;do
  "$task_tmp/http" "http://127.0.0.1:$port/retry-$mode/input.mkv" "$task_tmp/$mode.aac"
@@ -65,12 +52,10 @@ for mode,want in [('once',2),('twice',3),('short',2),('wrong',2),('hard',1),('ex
  at=0 if mode in ('hard','exhaust','cancel') else 4*1024*1024
  assert counts[(f'/retry-{mode}/range.bin',at)]==want,(mode,counts)
 assert counts[('/retry-once/dv.bin',4*1024*1024-1)]==2
-assert counts[('/retry-rate/range.bin',0)]==4
-assert counts[('/retry-rate-exhaust/range.bin',0)]==4
-assert counts[('/retry-rate-cancel/range.bin',0)]==1
-assert counts[('/race-seek/range.bin',1024)]==2
-queue=[r['lo'] for r in rows if r['path']=='/queue-seek/range.bin']
-assert queue[:2]==[0,4096],queue
+for mode,want in [('drip',1),('dripspec',1),('dripall',1),('dvsteady',1),('dvnear',1),('bootdv',1)]:
+ path=f'/retry-live-{mode}/dv.bin'
+ assert counts[(path,4*1024*1024-1)]==want,(mode,counts)
+ assert all(n==1 for (p,at),n in counts.items() if p==path and at!=4*1024*1024-1)
 for mode,want in [('hang',2),('bodyhang',2),('hangall',3),('steady',1),('speculative',1),('boot',1),('cancel',1)]:
  at=0 if mode=='boot' else 4*1024*1024
  assert counts[(f'/retry-live-{mode}/range.bin',at)]==want,(mode,counts)

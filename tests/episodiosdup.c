@@ -4,7 +4,6 @@
 //
 //   bash tests/episodiosdup.sh
 int ajustes_social(void) { return 1; }
-int ajustes_fonte_biblioteca(void) { return 0; }
 int ajustes_nota_episodio(int fonte) { (void)fonte; return 0; }
 int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
@@ -175,8 +174,9 @@ void addons_manifesto_lido_base(int i, const char *b, const char *d,
 int         ajustes_idioma_ingles(void) { return 0; }
 int ajustes_idioma(void) { return 0; }
 int ajustes_cw_minimo(void) { return 1; }
-int   ajustes_cw_concluido(void)         { return 90; }  // factory "watched" threshold
 int ajustes_cw_proximo(void) { return 1; }
+int ajustes_fonte_biblioteca(void) { return 0; }
+int   ajustes_cw_concluido(void)         { return 90; }  // factory "watched" threshold
 int trakt_e_a_seguir(const char *id) { (void)id; return 0; }
 int trakt_cw_concluiu(const char *id, long long ms) { (void)id; (void)ms; return 0; }
 int prog_oculto_vence(const char *id, long long ms) { (void)id; (void)ms; return 0; }
@@ -184,11 +184,16 @@ int prog_oculto_soltar(const char *id, long long ms) { (void)id; (void)ms; retur
 unsigned recomenda_geracao(void)         { return 0; }   // social generation: no social layer here
 int   ajustes_cw_ordem(void)               { return 0; }   // Padrao (issue #127)
 int   ajustes_cw_mostrar_nao_exibidos(void) { return 1; }
-const char *i18n(const char *s)         { return s; }
+static int fakePolish;
+const char *i18n(const char *s)         {
+  return fakePolish && !strcmp(s,"Episódio %d") ? "Odcinek %d" : s;
+}
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
 static const char *fakeDados = "";
 const char *dados_dir(void)             { return fakeDados; }
 char *dados_caminho(char *dst, unsigned tam, const char *nome) {
+  // Isolate fake metadata responses from the upstream persistent disk cache.
+  if (!fakeDados[0]) return NULL;
   snprintf(dst, tam, "%s/%s", fakeDados, nome); return dst;
 }
 void addons_catalogo_chave(const char *id, const char *base, const char *tipo,
@@ -473,6 +478,60 @@ static void abrir(void) {
   buscarEps(NULL);
 }
 
+static void cloudEpisodeNames(void) {
+  CatEp cloud[4],cine[4],original[4];
+  fakePolish=1;
+  assert(cat_nome_episodio_arquivo("Lupin.S04E01.1080p.WEB.H265.mkv"));
+  assert(cat_nome_episodio_arquivo("[Cloud] Lupin.S04E01.2160p.WEB.H265"));
+  assert(cat_nome_episodio_arquivo("Folder/Long release.MKV  "));
+  assert(!cat_nome_episodio_arquivo("1080p"));
+  assert(!cat_nome_episodio_arquivo("Chapter 1: The Web"));
+  assert(!cat_nome_episodio_arquivo("Mr. Robot"));
+  const char *files="{\"videos\":["
+    "{\"id\":\"cloud:source:1\",\"season\":4,\"episode\":1,\"name\":\"Lupin.S04E01.FRENCH.1080p.WEB.H265-SUPPLY.mkv\"},"
+    "{\"id\":\"cloud:source:2\",\"season\":4,\"episode\":2,\"name\":\"[Cloud] Lupin.S04E02.1080p.H265.mkv\"},"
+    "{\"id\":\"cloud:source:3\",\"season\":4,\"episode\":3,\"name\":\"Episode 1080p\"},"
+    "{\"id\":\"cloud:source:4\",\"season\":4,\"episode\":4,\"name\":\"Lupin.S04E04.mkv\",\"title\":\"Real episode title\"}]}";
+  assert(parsearEpisodios(files,cloud,4)==4);
+  assert(!strcmp(cloud[0].nome,"Odcinek 1") && !strcmp(cloud[1].nome,"Odcinek 2"));
+  assert(!strcmp(cloud[2].nome,"Episode 1080p") && !strcmp(cloud[3].nome,"Real episode title"));
+  memcpy(original,cloud,sizeof cloud);
+  assert(parsearEpisodios("{\"videos\":[{\"id\":\"canonical:1\",\"season\":4,\"episode\":1,\"name\":\"Canonical episode title\"}]}",cine,4)==1);
+  desc_mesclar_episodios(cloud,4,cine,1,DESC_MESCLA_VAZIOS);
+  assert(!strcmp(cloud[0].nome,"Canonical episode title"));
+  assert(!strcmp(cloud[1].nome,"Odcinek 2")); // Missing season/episode stays visible.
+  desc_mesclar_episodios(cloud,4,original,4,DESC_MESCLA_TEXTO);
+  assert(!strcmp(cloud[0].nome,"Canonical episode title")); // File donor cannot replace real title.
+  const char *tmdb="{\"episodes\":[{\"episode_number\":1,\"name\":\"Other title\"},"
+    "{\"episode_number\":2,\"name\":\"TMDB episode title\"}]}";
+  assert(desc_tmdb_notas_temporada_ex(tmdb,cloud,4,4,DESC_EPT_SO_VAZIO)==1);
+  assert(!strcmp(cloud[0].nome,"Canonical episode title"));
+  assert(!strcmp(cloud[1].nome,"TMDB episode title"));
+  for(int i=0;i<4;i++) {
+    assert(cloud[i].temporada==original[i].temporada && cloud[i].episodio==original[i].episodio);
+    assert(!strcmp(cloud[i].vid,original[i].vid));
+  }
+  // Full fetch/publication: a small cloud list (not the large-file-list
+  // heuristic) adds season 4 while Cinemeta supplies one canonical name.
+  char cloudMeta[4096];
+  snprintf(cloudMeta,sizeof cloudMeta,"{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\",\"name\":\"Lupin\",%s}",files+1);
+  cineSerie="{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\",\"name\":\"Lupin\",\"videos\":["
+    "{\"id\":\"canonical:1\",\"season\":4,\"episode\":1,\"name\":\"Canonical episode title\"}]}}";
+  nFake=nRotas=0;addonMeta=1;addonTipo="/series/";addonResp=cloudMeta;
+  const char *previousLanguage=fakeIdioma;fakeIdioma="en-US";
+  limparCacheMeta();catalogoCom("tt13293588","series","Lupin");abrir();
+  assert(cat_n_episodios(0)==4 && cat_item(0)->nTemporadas==1 && cat_item(0)->temporadas[0]==4);
+  assert(!strcmp(cat_episodio(0,0)->nome,"Canonical episode title"));
+  assert(!strcmp(cat_episodio(0,1)->nome,"Odcinek 2"));
+  for(int i=0;i<4;i++) {
+    const CatEp *published=cat_episodio(0,i);
+    assert(published->temporada==4 && published->episodio==i+1 && !strcmp(published->vid,original[i].vid));
+  }
+  addonMeta=0;addonResp=cineSerie=NULL;fakeIdioma=previousLanguage;limparCacheMeta();
+  fakePolish=0;
+  puts("ok  cloud filenames become localized episode labels, canonical names recover them, source IDs and season pairs stay unchanged");
+}
+
 int main(void) {
   if (getenv("NV_TEST_787_RESPONSE")) {
     EtapaBloqueada t = { .trava = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER, .resposta = 1 };
@@ -751,6 +810,7 @@ int main(void) {
       assert(!memcmp(reference, actual, (size_t)count * sizeof *actual));
     }
   }
+  cloudEpisodeNames();
   const char *js =
     "{\"videos\":["
     "{\"id\":\"a:1\",\"season\":1,\"episode\":1,\"name\":\"Izuku Midoriya: Origin\"},"
@@ -1409,6 +1469,101 @@ int main(void) {
       }
       puts("ok  catalogo primeiro: lista de arquivos que ficou nao trava a traducao do TMDB");
     }
+    // LUPIN FROM MEDIAFUSION (06/11/2026): the catalogue has 5/5/7/8; the
+    // source addon's file list numbers the same releases as 21/15/14/8 with
+    // the poster as every thumbnail. Extra episodes in seasons the catalogue
+    // lists before its last one are not new episodes: the catalogue stays,
+    // with its stills. (Any id the fake Cinemeta answers: tt21975436.)
+    {
+      static const int cineT[4] = { 5, 5, 7, 8 }, arqT[4] = { 21, 15, 14, 8 };
+      size_t lc = 1u << 20, kk;
+      char *lcine = malloc(lc), *larq = malloc(lc);
+      int t, e, v, n0 = 0, via;
+      assert(lcine && larq);
+      kk = (size_t)snprintf(lcine, lc, "{\"meta\":{\"id\":\"tt21975436\",\"type\":\"series\","
+                            "\"name\":\"Lupin\",\"description\":\"S.\",\"videos\":[");
+      for (t = 1; t <= 4; t++)
+        for (e = 1; e <= cineT[t - 1]; e++)
+          kk += (size_t)snprintf(lcine + kk, lc - kk,
+                                 "%s{\"id\":\"tt21975436:%d:%d\",\"season\":%d,\"episode\":%d,"
+                                 "\"name\":\"L%dE%d\",\"thumbnail\":\"https://still.test/%d/%d.jpg\"}",
+                                 n0++ ? "," : "", t, e, t, e, t, e, t, e);
+      snprintf(lcine + kk, lc - kk, "]}}");
+      n0 = 0;
+      kk = (size_t)snprintf(larq, lc, "{\"meta\":{\"id\":\"tt21975436\",\"type\":\"series\","
+                            "\"name\":\"Lupin\",\"videos\":[");
+      for (v = 0; v < 4; v++)
+        for (t = 1; t <= 4; t++)
+          for (e = 1; e <= arqT[t - 1]; e++)
+            kk += (size_t)snprintf(larq + kk, lc - kk,
+                                   "%s{\"id\":\"mf%d_%d_%d\",\"season\":%d,\"episode\":%d,"
+                                   "\"name\":\"Lupin.S%02dE%02d.v%d.mkv\","
+                                   "\"thumbnail\":\"https://poster.test/lupin.jpg\"}",
+                                   n0++ ? "," : "", v, t, e, t, e, t, e, v);
+      snprintf(larq + kk, lc - kk, "]}}");
+      assert(kk < lc - 8);
+      assert(desc_meta_n_episodios(lcine) == 25 && desc_meta_n_episodios(larq) == 58);
+      for (via = 0; via < 2; via++) {
+        nFake = 0; nRotas = 0; addonMeta = 1; addonTipo = "/series/";
+        fakeMetaExterno = 0; fakeSoCinemeta = 0; fakeIdioma = "en-US";
+        cineSerie = lcine; addonResp = larq;
+        if (via) {
+          addonMeta = 0; addonResp = NULL; nFake = 1;
+          fake[0] = (FakeAddon){ "MediaFusion", "https://mf.test/SEGREDO", "org.mf", "tt", 0 };
+          rota("mf.test/SEGREDO/meta/series/tt21975436.json", larq);
+        }
+        limparCacheMeta();
+        if (via) catalogoDe("tt21975436", "series", "Lupin", "org.mf");
+        else catalogoCom("tt21975436", "series", "Lupin");
+        abrir();
+        printf("Lupin catalogo-primeiro=%d: %d episodios, %d temporadas\n",
+               via, cat_n_episodios(0), cat_item(0)->nTemporadas);
+        assert(cat_n_episodios(0) == 25 && cat_item(0)->nTemporadas == 4);
+        assert(!strcmp(cat_episodio(0, 0)->vid, "tt21975436:1:1"));
+        assert(cat_episodio(0, 17)->temporada == 4 && cat_episodio(0, 17)->episodio == 1);
+        assert(!strcmp(cat_episodio(0, 17)->thumb, "https://still.test/4/1.jpg"));
+        for (e = 0; e < 25; e++) assert(!strstr(cat_episodio(0, e)->thumb, "poster.test"));
+      }
+      free(lcine); free(larq);
+      puts("ok  lista de arquivos nao infla temporadas que o catalogo ja lista (Lupin)");
+    }
+    // A FILE LIST THAT STAYS (more episodes in the last season) still gives no
+    // art: shared episodes take the catalogue's still, the extra ones none.
+    {
+      static char sc[4096];
+      size_t lc = 1u << 20, kk;
+      char *sa = malloc(lc);
+      assert(sa);
+      kk = (size_t)snprintf(sc, sizeof sc, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                            "\"name\":\"Serie\",\"description\":\"S.\",\"videos\":[");
+      for (ep = 1; ep <= 12; ep++)
+        kk += (size_t)snprintf(sc + kk, sizeof sc - kk,
+                               "%s{\"id\":\"tt13293588:1:%d\",\"season\":1,\"episode\":%d,"
+                               "\"name\":\"C%d\",\"thumbnail\":\"https://still.test/%d.jpg\"}",
+                               ep > 1 ? "," : "", ep, ep, ep, ep);
+      snprintf(sc + kk, sizeof sc - kk, "]}}");
+      kk = (size_t)snprintf(sa, lc, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                            "\"name\":\"Serie\",\"videos\":[");
+      for (i = 0; i < 80; i++)
+        kk += (size_t)snprintf(sa + kk, lc - kk,
+                               "%s{\"id\":\"v%d\",\"season\":1,\"episode\":%d,"
+                               "\"name\":\"Serie.S01E%02d.v%d.mkv\","
+                               "\"thumbnail\":\"https://poster.test/p.jpg\"}", i ? "," : "",
+                               i, i % 20 + 1, i % 20 + 1, i / 20);
+      snprintf(sa + kk, lc - kk, "]}}");
+      nFake = 0; nRotas = 0; addonMeta = 1; addonTipo = "/series/";
+      fakeMetaExterno = 0; fakeSoCinemeta = 0; fakeIdioma = "en-US";
+      cineSerie = sc; addonResp = sa;
+      limparCacheMeta();
+      catalogoCom("tt13293588", "series", "Serie");
+      abrir();
+      assert(cat_n_episodios(0) == 20);
+      assert(!strcmp(cat_episodio(0, 0)->thumb, "https://still.test/1.jpg"));
+      assert(!strcmp(cat_episodio(0, 11)->thumb, "https://still.test/12.jpg"));
+      assert(!cat_episodio(0, 19)->thumb[0]);
+      free(sa);
+      puts("ok  lista de arquivos que fica nao da miniatura aos episodios");
+    }
     // CONJUNTO CHEIO sem poder crescer: 1023 pares entram (sobra a casa vazia
     // que encerra a sondagem), repetido segue repetido, e o 1024o nunca e
     // guardado — responde "novo" toda vez, sem travar a procura.
@@ -1493,6 +1648,33 @@ int main(void) {
     addonMeta = 0; cineSerie = NULL; addonResp = NULL;
     limparCacheMeta();
     free(cine); free(arq); free(maior);
+  }
+  // Complete primary metadata must publish season tabs with its episode cards,
+  // before any optional addon text/artwork request can block or be cancelled.
+  {
+    const char *body = "{\"videos\":["
+      "{\"id\":\"tt0944947:1:1\",\"season\":1,\"episode\":1,\"name\":\"Winter Is Coming\"},"
+      "{\"id\":\"tt0944947:8:6\",\"season\":8,\"episode\":6,\"name\":\"The Iron Throne\"},"
+      "{\"id\":\"tt0944947:0:1\",\"season\":0,\"episode\":1,\"name\":\"Special\"}]}";
+    TempsPub tp = {0};
+    catalogoCom("tt0944947", "series", "Game of Thrones");
+    snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt0944947");
+    // #614 must publish tabs without finalizing #576's pending addon choice.
+    assert(publicarEpisodiosPendentes(body, 0, "Game of Thrones", &tp) == 3);
+    assert(cat_item(0)->epsParciais && cat_item(0)->nTemporadas == 3);
+    assert(!cat_episodios_finais(0, "tt0944947"));
+    assert(publicarEpisodios("{\"videos\":[]}", 0, "Game of Thrones", NULL, 0, &tp) == 0);
+    assert(cat_item(0)->epsParciais && cat_n_episodios(0) == 3);
+    assert(cat_item(0)->nTemporadas == 3);
+    assert(publicarEpisodios(body, 0, "Game of Thrones", NULL, 0, &tp) == 3);
+    const CatItem *item = cat_item(0);
+    assert(cat_n_episodios(0) == 3 && !item->epsParciais);
+    assert(cat_episodios_finais(0, "tt0944947"));
+    assert(item->nTemporadas == 3);
+    assert(item->temporadas[0] == 1 && item->temporadas[1] == 8 && item->temporadas[2] == 0);
+    // An empty follow-up must preserve the usable cards and their matching tabs.
+    assert(publicarEpisodios("{\"videos\":[]}", 0, "Game of Thrones", NULL, 0, &tp) == 0);
+    assert(cat_n_episodios(0) == 3 && cat_item(0)->nTemporadas == 3);
   }
   puts("episodiosdup: ok");
   return 0;

@@ -59,8 +59,11 @@ static const Item TELA[] = {
     MAIS(),
     ROT("Som e vídeo desta TV"),
       OPC(AJ_DTS_AC3), OPC(AJ_MODO_NOITE, 0),
-#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+#if defined(NV_TPK) || (!defined(NV_ANDROID) && !defined(__EMSCRIPTEN__))
+      // Audio from another source (2.0.9): one row, its options in its sheet
+      // (eaAbrir); the children rows are hidden (foraDestaPlataforma).
       OPC(AJ_EXT_AUDIO), OPC(AJ_EXT_AUDIO_CACHE), OPC(AJ_EXT_AUDIO_PASSO), OPC(AJ_EXT_AUDIO_GRANDE), OPC(AJ_EXT_AUDIO_MODO), OPC(AJ_EXT_AUDIO_SERIE), OPC(AJ_EXT_AUDIO_SEGUIR), OPC(AJ_EXT_AUDIO_AVISO), OPC(AJ_EXT_AUDIO_AUTO),
+      OPC(AJ_EXT_AUDIO_COPIAS), OPC(AJ_EXT_AUDIO_ORDEM), OPC(AJ_EXT_AUDIO_BUFOR),
 #endif
 #if defined(NV_TPK) || defined(NV_WEBOS)
       OPC(AJ_HDR10P_STRIP),
@@ -79,7 +82,6 @@ static const Item TELA[] = {
       OPC(AJ_MP4_BD_TEST),
 #endif
 #endif
-      OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO), OPC(AJ_SEEKR_AJUSTE),
 #if defined(NV_ANDROID) || (!defined(NV_TPK) && !defined(__EMSCRIPTEN__))
       OPC(AJ_BUFFER),   // webOS: DTS/Dolby Vision conversion read-ahead
 #endif

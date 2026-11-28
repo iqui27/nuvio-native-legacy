@@ -394,6 +394,7 @@ void mkvfix_arquivo_atualizar(const char *u, int usenet, int item, int file) {
   (void)u; (void)usenet; (void)item; (void)file;
 }
 int  mkvfix_estado(void) { return MKVFIX_NADA; }
+int  mkvfix_conteiner(void) { return MKVFIX_CONT_DESCONHECIDO; }
 int  mkvfix_ocultas(void) { return 0; }
 int  mkvfix_url(char *out, size_t n) { (void)out; (void)n; return 0; }
 int  mkvfix_e_url(const char *u) { (void)u; return 0; }
@@ -446,6 +447,7 @@ typedef struct {
   int64_t oculta[MKVFIX_OCULTAS];  // byte (absoluto) do valor do TrackType de cada legenda escondida
   int nOculta;                     // publicado antes do estado final
   atomic_int estado;
+  atomic_int conteiner;   // MKVFIX_CONT_*: what the start of the file is
   volatile int cancelar;
   atomic_int refs;
   atomic_uint pedidos;
@@ -591,7 +593,18 @@ static void *fioSonda(void *u) {
     char x[96]; snprintf(x, sizeof x, "header not readable (HTTP %d, %ld bytes)", st, n);
     definirEstado(s, MKVFIX_FALHOU, x); goto fim;
   }
-  if (!mkvfix_ler_inicio(b, n, &c)) { if (s->relay) s->total = total; definirEstado(s, MKVFIX_NORMAL, "not a Matroska file: nothing to do"); goto fim; }
+  if (!mkvfix_ler_inicio(b, n, &c)) {
+    // What it is, for "audio from another source" (its server opens MKV and
+    // MP4 only: owner's log 6, a Fight Club REMUX that was neither).
+    int k = mkvfix_conteiner_de(b, n);
+    char hx[64]; size_t u = 0;
+    for (int i = 0; i < 16 && i < n && u + 4 < sizeof hx; i++) u += (size_t)snprintf(hx + u, sizeof hx - u, "%02x", b[i]);
+    atomic_store(&s->conteiner, k);
+    printf("[mkvfix] container: %s (first bytes %s)\n", mkvfix_conteiner_nome(k), hx);
+    fflush(stdout);
+    if (s->relay) s->total = total; definirEstado(s, MKVFIX_NORMAL, "not a Matroska file: nothing to do"); goto fim;
+  }
+  atomic_store(&s->conteiner, MKVFIX_CONT_MKV);
   s->segIni = c.segIni;
   // Daqui em diante o indice (abaixo) e as legendas (sondaLegendas) sao
   // independentes: o estado so e publicado no fim, com as duas respostas.
@@ -722,6 +735,13 @@ void mkvfix_arquivo_atualizar(const char *url, int usenet, int item, int file) {
   pthread_mutex_unlock(&G);
 }
 
+int mkvfix_conteiner(void) {
+  int e;
+  pthread_mutex_lock(&G);
+  e = atual ? atomic_load(&atual->conteiner) : MKVFIX_CONT_DESCONHECIDO;
+  pthread_mutex_unlock(&G);
+  return e;
+}
 int mkvfix_estado(void) {
   int e;
   pthread_mutex_lock(&G);

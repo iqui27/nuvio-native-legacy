@@ -119,8 +119,9 @@ enum {
   LEGENDA_DOC_JANELA = 1u << 3, /* COMPLETO somente entre janelaInicio/Fim */
   /* Timing-only reference whose cue ENDS are partly estimated (an index point
    * without CueDuration: end = next start, capped). Starts are exact. The
-   * engine then matches on starts only. Set only by legref's index mode
-   * (.tpk 6+); no other document carries it. */
+   * engine then matches on starts only. Set by legref's index mode (.tpk 6+)
+   * and by the donor's subtitle match (doadorleg.c); no other document
+   * carries it. */
   LEGENDA_DOC_FIM_ESTIMADO = 1u << 4
 };
 typedef struct {

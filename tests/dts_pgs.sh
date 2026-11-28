@@ -14,7 +14,7 @@ cc "${flags[@]}" -DNV_DTS_REAL_SUBTITLES -D__real_clock_gettime=clock_gettime \
 cc "${flags[@]}" -DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -DDTS_PLAYBACK_TEST_HOOKS \
   -Dclock_gettime=__wrap_clock_gettime -c src/dts/dts_playback.c -o "$tmp/playback.o"
 cc "${flags[@]}" -DNV_DTS_FFMPEG "$tmp/fixture.o" "$tmp/playback.o" \
-  src/dts/dts_subtitles.c src/js.c src/linguas.c "${libs[@]}" -o "$tmp/playback"
+  src/dts/dts_subtitles.c src/js.c src/linguas.c src/audioinfo.c "${libs[@]}" -o "$tmp/playback"
 printf 'Real PGS fixture libavcodec major: '
 awk '/^#define LIBAVCODEC_VERSION_MAJOR / { print $3 }' "$prefix/include/libavcodec/version_major.h"
 # Run both even when one fails, so decoder and playback red evidence is visible.

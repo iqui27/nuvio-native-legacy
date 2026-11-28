@@ -163,6 +163,12 @@ char *rede_baixar_trecho64_vigiado_retry(const char *url,const char *headers,
     int64_t start,int64_t end,long *size,int64_t *total,int *status,
     volatile int *cancelled,char *final,int *cross,volatile int *urgent,
     unsigned idle_ms,int *stalled,void (*retry)(void *,int),void *retry_arg);
+/* Same reader, with the 429 answer's Retry-After. -1 = absent, 0 =
+ * zero/past/invalid, positive = parsed seconds. */
+char *rede_baixar_trecho64_relato(const char *url,const char *headers,
+    int64_t start,int64_t end,long *size,int64_t *total,int *status,
+    volatile int *cancelled,char *final,int *cross,volatile int *urgent,
+    unsigned idle_ms,int *stalled,int *retry_after);
 /* One streaming read "bytes=start-" for the Samsung converter: the body goes to
  * sink(opaque, data, n) as it arrives (return 0 to stop; it may block). Same
  * redirect and header rules as rede_baixar_trecho64_final. No limit on the

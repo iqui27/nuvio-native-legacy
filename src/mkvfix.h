@@ -127,6 +127,31 @@ void mkvfix_sondar_relay_tls(const char *url, const char *cabecalhos, const char
                               int usenet, int item, int file);
 void mkvfix_arquivo_atualizar(const char *url, int usenet, int item, int file);
 int  mkvfix_estado(void);
+// WHAT THE PLAYING FILE IS, from its first bytes (the probe above reads them
+// anyway). "Audio from another source" opens MKV and MP4 only (its FFmpeg has
+// the matroska and mov demuxers): anything else hides it (owner 17/11).
+enum { MKVFIX_CONT_DESCONHECIDO = 0, MKVFIX_CONT_MKV, MKVFIX_CONT_MP4, MKVFIX_CONT_TS, MKVFIX_CONT_M2TS,
+       MKVFIX_CONT_AVI, MKVFIX_CONT_OUTRO };
+int  mkvfix_conteiner(void);   // of the current probe; 0 while unknown
+static inline int mkvfix_conteiner_de(const unsigned char *b, long n) {
+  static const char *const caixas[] = { "ftyp", "moov", "mdat", "free", "wide", "skip", "styp" };
+  if (n >= 4 && b[0] == 0x1A && b[1] == 0x45 && b[2] == 0xDF && b[3] == 0xA3) return MKVFIX_CONT_MKV;
+  if (n >= 8) for (unsigned i = 0; i < sizeof caixas / sizeof *caixas; i++) if (!memcmp(b + 4, caixas[i], 4)) return MKVFIX_CONT_MP4;
+  if (n >= 189 && b[0] == 0x47 && b[188] == 0x47) return MKVFIX_CONT_TS;
+  if (n >= 197 && b[4] == 0x47 && b[196] == 0x47) return MKVFIX_CONT_M2TS;
+  if (n >= 12 && !memcmp(b, "RIFF", 4) && !memcmp(b + 8, "AVI ", 4)) return MKVFIX_CONT_AVI;
+  return n > 0 ? MKVFIX_CONT_OUTRO : MKVFIX_CONT_DESCONHECIDO;
+}
+static inline const char *mkvfix_conteiner_nome(int k) {
+  switch (k) {
+    case MKVFIX_CONT_MKV: return "Matroska"; case MKVFIX_CONT_MP4: return "MP4";
+    case MKVFIX_CONT_TS: return "MPEG-TS"; case MKVFIX_CONT_M2TS: return "M2TS (Blu-ray TS)";
+    case MKVFIX_CONT_AVI: return "AVI"; case MKVFIX_CONT_OUTRO: return "unknown format";
+    default: return "not read yet";
+  }
+}
+// 1 unless the file is known to be something the donor server cannot open.
+static inline int mkvfix_conteiner_doador_ok(int k) { return k == MKVFIX_CONT_DESCONHECIDO || k == MKVFIX_CONT_MKV || k == MKVFIX_CONT_MP4; }
 // Legendas de texto que a sessao atual esconde da TV (0 = nenhuma ou sondando).
 // > 0: o arquivo deve tocar pelo servidor (mkvfix_url) desde a abertura.
 int  mkvfix_ocultas(void);

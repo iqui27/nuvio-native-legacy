@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 DIR=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-mkv-dts-alem.XXXXXX")
 trap 'rm -rf "$DIR"' EXIT
-sed -n '/^static void \*fioMkv(void \*arg) {$/,/^}$/p' src/video_tpk.c > "$DIR/worker.c"
+sed -n '/^static void \*fioMkv(void \*arg) {$/,/^}$/p' src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c > "$DIR/worker.c"
 grep -q 'mkv_faixas' "$DIR/worker.c"
 for name in old active; do
   ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=64x64:rate=25:duration=0.8' \

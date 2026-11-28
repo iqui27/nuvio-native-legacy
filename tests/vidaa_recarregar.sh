@@ -8,7 +8,7 @@
 # indisponibilidade e mostra o toast "Indisponivel agora", em vez de reabrir o
 # <video> sem estado de carregamento. Recarregar de verdade (novo elemento,
 # loadedmetadata, reaplicar seek e pausa) fica fora deste contrato — e o
-# mesmo contrato do stub de src/video_tpk.c.
+# mesmo contrato do stub de src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-vidaa-recarrega.XXXXXX")
@@ -33,7 +33,7 @@ grep -q '#ifndef __EMSCRIPTEN__' src/video.c
 # O chamador trata 0 como indisponibilidade (toast), nao como falha muda, e o
 # contrato e o mesmo do stub do TPK.
 sed -n '/static void recarregarFonteVOD/,/^}/p' src/app.c | grep -q 'Indispon'
-grep -q 'video_recarregar' src/video_tpk.c
+grep -q 'video_recarregar' src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c
 
 # O corpo compilado devolve 0: extrai a funcao (uma linha) do fonte real e
 # linka num probe.

@@ -67,6 +67,8 @@ void audioext_lembrar_faixa_serie(const AudioExtFaixa *f) { (void)f; }
 void audioext_reconexao_marcar(void) { }
 void audioext_seguir_evento(int t,int ms) { (void)t;(void)ms; }
 void audioext_sonda_cancelar(void) { }
+void doaw_fontes_abertas(void *m, void *d, int hls) { (void)m; (void)d; (void)hls; }
+void dts_engine_set_external_open_hook(void (*fn)(void *, void *, int)) { (void)fn; }
 int dts_engine_probe_audio_cancelled(const char *u,const char *h,DtsTrack *o,int m,const int *c) {
   (void)u;(void)h;(void)o;(void)m;(void)c; assert(0); return -1;
 }

@@ -316,6 +316,10 @@ int fontepref_escolher_lista(const char *id, const Stream *fontes, int n,
 // fontepref_escolher_lista. `forte` em semPerda = casou pelo bingeGroup: so
 // precisa poder tocar (a regra de evidencia nao vale).
 void fontepref_tocando(const char *id, const Stream *s);
+// Continuar assistindo sem link guardado: deixa a fonte do ultimo episodio
+// deste titulo pronta para o casamento do Next. 1 = ja era a que tocou neste
+// processo; 2 = veio da escolha da pessoa para o titulo; 0 = nada a seguir.
+int  fontepref_tocando_semear(const char *id);
 int  fontepref_tocando_de(const char *id, char *provedor, unsigned tamProv, char *binge, unsigned tamBinge);
 int  fontepref_binge_tocando(const char *id);
 int  fontepref_escolher_lista_next(const char *id, const Stream *fontes, int total,

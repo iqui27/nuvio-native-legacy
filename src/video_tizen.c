@@ -1290,6 +1290,7 @@ static void lerFaixas(void) {
 // Le o cabecalho do Matroska pela rede para descobrir onde comecam os creditos.
 // O modulo mkv.c usa src/rede.c, que no alvo Tizen ja e XHR — nada aqui e
 // especifico do webOS.
+static unsigned mkvGer;   // capmkv playback the chapter read belongs to
 static void *lerMkv(void *arg) {
   MkvFaixa fx[MKV_MAX_FAIXAS];
   MkvCap   caps[MKV_MAX_CAPS];
@@ -1516,6 +1517,7 @@ void video_parar(void) {
   reconFaixasPend = 0; reconBuscar = -1.0;
   recarregarPausa = -1; pausaPedida = 0;
   seekEm = 0; mkvPendente = 0;
+  capmkv_zerar();
   roiResetTentativas = 0;
   if (temAvplay) AV0("parar");
   ativo = tocando = pronto = terminou = 0;

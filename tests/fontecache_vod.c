@@ -61,6 +61,10 @@ char *rede_baixar_medido(const char *url, int seconds, const char *const *header
   *m = (RedeMedida){ .status = st };
   return r;
 }
+char *rede_baixar_medido_controle(const char *url, int seconds, const char *const *headers,
+                                  const RedeControle *c, RedeMedida *m) {
+  (void)c; return rede_baixar_medido(url, seconds, headers, m);
+}
 #endif
 void aio_resultados(AioSnapshot *s, const char *json) { (void)s; (void)json; }
 #ifndef FONTECACHE_VOD_SEM_PEDIR

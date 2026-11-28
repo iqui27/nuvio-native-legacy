@@ -250,11 +250,18 @@ int faixasmkv_aplicar(VideoFaixa *aud, int nAud, VideoFaixa *leg, int nLeg,
     int nA = 0, nL = 0, nJog = 0, j;
     for (j = 0; j < n; j++) { if (fx[j].tipo == MKV_AUDIO) nA++; else if (fx[j].tipo == MKV_LEG) nL++; }
     for (j = 0; leg && j < nLeg; j++) nJog += linhaDoPlayer(&leg[j]);
-    printf("[mkv] contagem: arquivo %d audio / %d legenda, player %d / %d; casamento audio=%s legenda=%s\n",
-           nA, nL, nAud, nJog,
-           !nAud ? "-" : comoA == 1 ? "ordinal" : comoA == 3 ? "by language/codec/channels" : "none, labels kept",
-           !nLeg ? "-" : comoL == 1 ? "ordinal" : comoL == 2 ? "without image subs" : comoL == 3 ? "unique language" : "none, labels kept");
-    fflush(stdout);
+    // Only when it changes (owner 18/11, log 13: printed every frame while the
+    // Audio menu was open, 1763 of 3789 lines).
+    { static int visto[6] = { -1, -1, -1, -1, -1, -1 };
+      int agora[6] = { nA, nL, nAud, nJog, comoA, comoL };
+      if (memcmp(visto, agora, sizeof agora)) {
+        memcpy(visto, agora, sizeof agora);
+        printf("[mkv] contagem: arquivo %d audio / %d legenda, player %d / %d; casamento audio=%s legenda=%s\n",
+               nA, nL, nAud, nJog,
+               !nAud ? "-" : comoA == 1 ? "ordinal" : comoA == 3 ? "by language/codec/channels" : "none, labels kept",
+               !nLeg ? "-" : comoL == 1 ? "ordinal" : comoL == 2 ? "without image subs" : comoL == 3 ? "unique language" : "none, labels kept");
+        fflush(stdout);
+      } }
   }
   return mudou;
 }

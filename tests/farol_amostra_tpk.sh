@@ -1,6 +1,6 @@
 #!/bin/bash
 # Farol — amostra nativa TPK/TPK40 (issue 7, CORRECAO-FAROL7D). Duas provas:
-#  (a) estatica: video_pos_amostra() de src/video_tpk.c so aceita posicao lida
+#  (a) estatica: video_pos_amostra() de src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c so aceita posicao lida
 #      do firmware depois da abertura corrente — o host publica o marcador por
 #      nv_tpk_video_registrar_pos_lida (posLidoMs, so escrito na leitura real
 #      do GetPlayPosition e zerado ao abrir e a cada seek) — e exclui a
@@ -10,7 +10,7 @@
 #      alvo, por CAS); o calculo
 #      do deslocamento do progressivo tambem le o marcador, nao o cache;
 #  (b) harness: posReal/video_pos/video_duracao/video_pos_amostra extraidos de
-#      src/video_tpk.c (o getter REAL, nao stub) rodam com a guarda do
+#      src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c (o getter REAL, nao stub) rodam com a guarda do
 #      memQuadroPendente extraida de src/player.c os casos da sonda da r3 —
 #      ack com o alvo antes da leitura, posMantida, posConhecida, base de
 #      fluxo e posReconLeg nao emitem FE_PRONTO; a leitura real emite. Roda em
@@ -25,7 +25,7 @@ falha() { echo "farol_amostra_tpk: FALHA - $1" >&2; falhou=1; }
 python3 - <<'PYEOF' || falhou=1
 import re, sys
 ruim = 0
-tpk = open("src/video_tpk.c", encoding="utf-8").read()
+tpk = open("src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c", encoding="utf-8").read()
 cs = open("tizen-tpk/Video.cs", encoding="utf-8").read()
 
 # A lib exporta o registrador do marcador (visibility default, como os irmaos).
@@ -117,7 +117,7 @@ def hit(rx, s):
 def func(s, sig):
     return hit(r'^' + re.escape(sig) + r' \{.*?^\}', s)
 
-tpk = open("src/video_tpk.c", encoding="utf-8").read()
+tpk = open("src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c", encoding="utf-8").read()
 p = open("src/player.c", encoding="utf-8").read()
 guarda = hit(r'^  if \(memQuadroPendente && comVideo.*?^  \}', p)
 

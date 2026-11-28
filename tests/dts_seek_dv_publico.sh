@@ -19,7 +19,12 @@ case "${SANITIZE:-0}" in
   1) flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer) ;;
 esac
 rc=0
-for mode in dv-public dv-live remux serial; do
+# 2.0.9 engine (lote 1 of #866): a seek outside the DV live path only moves
+# the position; read_range replaces the queue when bytes are really needed
+# (dts_engine.c seek_range), so the old serial/remux cancel-at-seek controls
+# no longer apply. The F92 regression itself (DV public seek keeps the queue)
+# is still checked.
+for mode in dv-public dv-live; do
   python3 - "$DIR" <<'PY'
 from pathlib import Path
 import sys

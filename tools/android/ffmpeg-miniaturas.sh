@@ -29,8 +29,10 @@ NDK="${ANDROID_NDK_HOME:-$SDK/ndk/27.2.12479018}"
 TC="$NDK/toolchains/llvm/prebuilt/$HOST"
 [ -f "$NDK/source.properties" ] && [ -x "$TC/bin/clang" ] || { echo "ffmpeg-miniaturas.sh: NDK missing ($NDK)" >&2; exit 1; }
 # Same pinned release as the Samsung/LG FFmpeg.
-VERSION=$(sed -n 's/^VERSION=//p' tools/build-dts-ffmpeg.sh | head -1 | tr -d '')
-SHA256=$(sed -n 's/^SHA256=//p' tools/build-dts-ffmpeg.sh | head -1 | tr -d '')
+VERSION=$(sed -n 's/^VERSION=//p' tools/build-dts-ffmpeg.sh | head -1 | tr -d '
+')
+SHA256=$(sed -n 's/^SHA256=//p' tools/build-dts-ffmpeg.sh | head -1 | tr -d '
+')
 CACHE="${NUVIO_ANDROID_CACHE:-$HOME/.cache/nuvio-android}"
 RECEITA=$( { cksum < "${BASH_SOURCE[0]}"; cksum < "$NDK/source.properties"; printf '%s' "$VERSION"; } | cksum | awk '{print $1}')
 JOBS="${NUVIO_ANDROID_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}"

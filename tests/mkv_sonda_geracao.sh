@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # F92: um worker TPK de geracao anterior nao pode sobrescrever a classificacao
 # DTS da sonda ativa (ver tests/mkv_sonda_geracao.c). O corpo real de fioMkv e
-# extraido de src/video_tpk.c — no pai ele chama mkv_faixas e rebaixa a sonda
+# extraido de src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c — no pai ele chama mkv_faixas e rebaixa a sonda
 # ativa; na ponta ele chama mkv_faixas_geracao e o resultado e descartado sob
 # dtsLock.
 #   SANITIZE=thread bash tests/mkv_sonda_geracao.sh   (padrao)
@@ -11,7 +11,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 DIR=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-mkv-sonda-ger.XXXXXX")
 trap 'rm -rf "$DIR"' EXIT
-sed -n '/^static void \*fioMkv(void \*arg) {$/,/^}$/p' src/video_tpk.c > "$DIR/worker.c"
+sed -n '/^static void \*fioMkv(void \*arg) {$/,/^}$/p' src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c > "$DIR/worker.c"
 grep -q 'mkv_faixas' "$DIR/worker.c"
 for name in old active; do
   ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=64x64:rate=25:duration=0.8' \

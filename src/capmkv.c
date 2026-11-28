@@ -83,7 +83,9 @@ int capmkv_trechos(const MkvCap *caps, int n, IntroTrecho *out, int max) {
   for (i = 0; i < ns && k < max; i++) {
     // A previa final nao e credito: so marca onde o cartao do proximo pode subir.
     double fim = seg[i].tipo == MKV_SEG_PREVIA ? 0.0 : seg[i].fim;
-    out[k++] = (IntroTrecho){ seg[i].inicio, fim, seg[i].tipo, 0 };
+    // `arquivo` only for the NuvioTV rule names (OP/ED/Credits...): a loose
+    // name ("Ending the War", "Credit Card") keeps the position checks.
+    out[k++] = (IntroTrecho){ seg[i].inicio, fim, seg[i].tipo, 0, seg[i].estrito };
   }
   return k;
 }
@@ -185,6 +187,10 @@ __attribute__((weak)) double video_creditos_nomeado(void) {
 __attribute__((weak)) double video_creditos_ultimo(double dur) {
   (void)dur;
   return 0.0;
+}
+double capmkv_creditos_ultimo_episodio(double dur) {
+  double b = capmkv_creditos_ultimo(dur);
+  return b > 1.0 && dur - b <= CAPMKV_ULTIMO_EPISODIO_MAX_S ? b : 0.0;
 }
 
 // Uma leitura: cabecalho da pre-busca (sem rede) ou 320 KB; Chapters fora da
