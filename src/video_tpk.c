@@ -66,7 +66,10 @@ static FnPos    hPos;
 typedef void (*FnEscolher)(int tipo, int idx);
 static FnEscolher hEscolher;
 
-#define MAX_FAIXAS 32
+// O mesmo teto das outras plataformas (video.h, #92). Com 32, um remux com 42
+// legendas perdia as 10 ultimas do menu (o persa entre elas) e a lista da TV
+// tambem era cortada em nv_tpk_video_faixa.
+#define MAX_FAIXAS NV_FAIXA_MAX
 static VideoFaixa faixaAudio[MAX_FAIXAS], faixaLeg[MAX_FAIXAS];
 static volatile int nAudio, nLeg, audioAtual, legAtual = -1;
 static SDL_mutex *travaLeg;
