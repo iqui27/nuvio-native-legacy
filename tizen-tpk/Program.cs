@@ -459,6 +459,36 @@ namespace NuvioTpk
             NuiWindow.Instance.Add(glView);
             Etapa("note glview created size=" + W + "x" + H + " format=RGBA8888 mode=Continuous" + Contagem());
             Janela("glview criado " + W + "x" + H + " RGBA8888 Continuous, na janela principal");
+            PrincipalOpacaNoCompositor("glview");
+        }
+
+        // CANARIO (API11): o mesmo passo (2) do canario 7 do 6.0/6.5, que la
+        // resolveu a barra do Smart Hub e a tela da TV atras do filme (#203).
+        // Com GLView nao ha GLWindow: a principal e dona do video e do desenho,
+        // mas nasce Transparent, entao o compositor desenha a tela inicial da
+        // Samsung por cima do plano de video em todo pixel de alfa 0 (filme com
+        // som e o menu do Nuvio, mas a home da TV no lugar da imagem). Aqui a
+        // superficie continua RGBA (o furo precisa do alfa) e so o compositor
+        // passa a tratar a principal como opaca. Reaplicado a cada Display
+        // novo (cada filme), caso o DALi tenha mexido no alfa. PROVADO na S90C
+        // (Tizen 9, 15/11/2026): sem isto, home da TV no lugar do filme; com
+        // isto, o video aparece. Nao desligar no API11.
+        const bool API11_PRINCIPAL_ALPHA_OFF = API11_GLVIEW;
+        int alphaOffLogs;
+
+        void PrincipalOpacaNoCompositor(string porque)
+        {
+            if (!API11_PRINCIPAL_ALPHA_OFF) return;
+            bool loga = alphaOffLogs++ < 4;
+            try
+            {
+                IntPtr w = ecore_wl2_window_find((uint)NuiWindow.Instance.GetNativeId());
+                if (w == IntPtr.Zero) { if (loga) Janela("principal alpha_set(false) (" + porque + "): janela wl2 nao achada"); return; }
+                byte antes = ecore_wl2_window_alpha_get(w);
+                if (antes != 0) ecore_wl2_window_alpha_set(w, 0);
+                if (loga) Janela("principal alpha_set(false) (" + porque + "): alpha " + antes + " -> " + ecore_wl2_window_alpha_get(w));
+            }
+            catch (Exception e) { if (loga) Janela("principal alpha_set falhou (" + porque + ") " + e.GetType().Name + ": " + e.Message); }
         }
 #endif
 
@@ -536,6 +566,9 @@ namespace NuvioTpk
         // EcoreDisplaySetter(janela do gl). Qualquer falha: o de sempre.
         Display DisplayDoVideo()
         {
+#if NV_API11
+            PrincipalOpacaNoCompositor("display");
+#endif
             var d = new Display(NuiWindow.Instance);
             if (glEcore == IntPtr.Zero) return d;
             try
