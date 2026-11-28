@@ -77,6 +77,39 @@ int main(void) {
   }
   puts("ok sobrevive ao arranque, campos intactos");
 
+  // O audio de outra fonte vai junto, sobrevive ao arranque e sai quando a
+  // sessao seguinte tocou o audio do proprio arquivo.
+  { static FontevoltaAudio au, lido;
+    memset(&au, 0, sizeof au);
+    au.tem = 1;
+    snprintf(au.url, sizeof au.url, "https://debrid.invalido/dub\\pl?k=2");
+    snprintf(au.cabecalhos, sizeof au.cabecalhos, "Referer: https://b.invalido/\nX: a\tb");
+    snprintf(au.nome, sizeof au.nome, "TB ST Store 1080p");
+    snprintf(au.idioma, sizeof au.idioma, "pl");
+    au.faixa = 2; au.offsetMs = -1250; au.velocidadePpm = 42708;
+    assert(!fontevolta_audio("tt9:1:1", "conta-a", 1, &lido));
+    assert(!fontevolta_guardar_audio("tt9:1:1", "conta-a", 1, b.url, &au));   // outro video: nada
+    assert(fontevolta_guardar_audio("tt9:1:1", "conta-a", 1, a.url, &au));
+    { int linhas = 0; const char *c; for (c = disco; *c; c++) linhas += *c == '\n';
+      assert(linhas == 3); }
+    arranqueFrio();
+    assert(fontevolta_pegar("tt9:1:1", "conta-a", 1, t0, &g) && !strcmp(g.url, a.url));
+    assert(fontevolta_audio("tt9:1:1", "conta-a", 1, &lido) && lido.tem);
+    assert(!strcmp(lido.url, au.url) && !strcmp(lido.cabecalhos, au.cabecalhos) && !strcmp(lido.nome, au.nome));
+    assert(!strcmp(lido.idioma, "pl") && lido.faixa == 2 && lido.offsetMs == -1250 && lido.velocidadePpm == 42708);
+    assert(!fontevolta_audio("tt9:1:2", "conta-a", 1, &lido));
+    // Guardar de novo o video comeca sem audio; o audio do proprio arquivo tira.
+    fontevolta_guardar("tt9:1:1", "conta-a", 1, &a, 2000, t0);
+    assert(!fontevolta_audio("tt9:1:1", "conta-a", 1, &lido));
+    assert(fontevolta_guardar_audio("tt9:1:1", "conta-a", 1, a.url, &au));
+    memset(&lido, 0, sizeof lido);
+    assert(fontevolta_guardar_audio("tt9:1:1", "conta-a", 1, a.url, &lido));
+    arranqueFrio();
+    assert(!fontevolta_audio("tt9:1:1", "conta-a", 1, &lido));
+    assert(fontevolta_pegar("tt9:1:1", "conta-a", 1, t0, &g) && g.altura == 2160);
+  }
+  puts("ok audio de outra fonte junto com a fonte guardada");
+
   // Legacy entries cannot recover structured metadata; force fresh lookup.
   strstr(disco, "v2")[1] = '1';
   arranqueFrio();

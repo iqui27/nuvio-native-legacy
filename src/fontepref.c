@@ -1251,6 +1251,31 @@ void fontepref_tocando(const char *id, const Stream *s) {
   pthread_mutex_unlock(&travaTocando);
 }
 
+// CONTINUAR ASSISTINDO SEM LINK GUARDADO (dono, 25/11): o card do proximo
+// episodio (ou um link que venceu) segue a fonte do ultimo episodio como o
+// Next. Na RAM ela ainda esta se o episodio anterior tocou neste processo; se
+// nao (app reaberto), entra a escolha da PESSOA para o titulo — a mesma que a
+// folha mostraria como "Sua escolha anterior", com as mesmas regras (Reusar,
+// entre sessoes, validade).
+int fontepref_tocando_semear(const char *id) {
+  char base[24];
+  const FontePref *p;
+  int ja;
+  if (!id) return 0;
+  fontepref_id_base(id, base, sizeof base);
+  if (!base[0]) return 0;
+  pthread_mutex_lock(&travaTocando);
+  ja = (tocandoPref.bingeGroup[0] || tocandoPref.lancamento[0]) && !strcmp(base, tocandoPref.id);
+  pthread_mutex_unlock(&travaTocando);
+  if (ja) return 1;
+  p = fontepref_do_titulo(base);
+  if (!p || (!p->bingeGroup[0] && !p->lancamento[0])) return 0;
+  pthread_mutex_lock(&travaTocando);
+  tocandoPref = *p;
+  pthread_mutex_unlock(&travaTocando);
+  return 2;
+}
+
 int fontepref_tocando_de(const char *id, char *provedor, unsigned tamProv, char *binge, unsigned tamBinge) {
   char base[24];
   int ok;

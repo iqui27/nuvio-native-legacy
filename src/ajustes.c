@@ -11,6 +11,8 @@
 #endif
 #include "segfontes.h"
 #include "perdi.h"
+#include "dts/doador_tpk.h"
+#include "audioextaddons.h"
 #include "legfontes.h"
 #include "logrede.h"
 #include "jsw.h"
@@ -941,6 +943,9 @@ typedef enum {
   // ajudante na rede (ligado de fabrica; so age com o P2P ligado e sem endereco).
   // AJUDAR: este aparelho abre uma porta na rede local (DESLIGADO de fabrica).
   AJ_CASA_USAR, AJ_CASA_AJUDAR,
+  // "From another source" (2.0.9, #866): copies of one file shown once, sort
+  // like the addons, and the other version's ring. LOCAL, append-only.
+  AJ_EXT_AUDIO_COPIAS, AJ_EXT_AUDIO_ORDEM, AJ_EXT_AUDIO_BUFOR,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -994,6 +999,7 @@ _Static_assert(sizeof V_FUNDO_DIN_COR / sizeof *V_FUNDO_DIN_COR == sizeof FUNDO_
                "V_FUNDO_DIN_COR: um nome por linha de FUNDO_DIN_TEMA");
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_EXT_CACHE[] = { "Mostrar apagadas", "Ocultar" };
+static const char *V_EXT_AUDIO_BUFOR[] = { "8 MB", "16 MB", "32 MB" };   // the engine's 8-32 MiB ring (2.0.9)
 static const char *V_EXT_PASSO[] = { "10 ms", "50 ms", "100 ms" };
 static const char *V_EXT_MODO[] = { "Arquivo inteiro", "Só áudio" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
@@ -1054,7 +1060,7 @@ static const char *V_BRILHO_PLAYER[] = { "100%", "80%", "65%", "50%" };
 // migram na leitura (ver dtsTpkMigrar).
 static const char *V_DV_AUDIO[] = { "Original", "Estéreo (AAC)", "5.1 (Dolby Digital)" };
 #ifdef NV_TPK
-static const char *V_DTS_SAIDA[] = { "Desligado", "5.1 (Dolby Digital)", "Estéreo (AAC)" };
+static const char *V_DTS_SAIDA[] = { "Desligado", "5.1 (Dolby Digital)", "Estéreo (Dolby Digital)" };
 #define N_DTS_SAIDA 3
 #else
 // 3 = Desligado (Matis94 cba4365a0), appended so stored 0..2 keep meaning.
@@ -2228,6 +2234,9 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Sessão pelo celular"),
   ESC("Usar um ajudante Nuvio da rede", V_LIGA, 2),    // local: casaUsarLocal
   ESC("Ajudar outras TVs da rede", V_LIGA, 2),         // local: casaAjudarLocal
+  ESC("Hide duplicates", V_LIGA, 2),                        // local: externalAudioHideCopiesLocal (2.0.9)
+  ESC("Sort like the addons", V_LIGA, 2),                   // local: externalAudioSortAddonsLocal (2.0.9)
+  ESC("Other version buffer", V_EXT_AUDIO_BUFOR, 3),        // local: externalAudioBufferLocal (2.0.9)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2643,6 +2652,9 @@ static const char *CHAVE[] = {
   "-",
   "casaUsarLocal",
   "casaAjudarLocal",
+  "externalAudioHideCopiesLocal",
+  "externalAudioSortAddonsLocal",   // new key in 2.0.9: the old one held an index of another list
+  "externalAudioBufferLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -4655,6 +4667,9 @@ int ajustes_audio_externo_serie(void) { return lig(AJ_EXT_AUDIO_SERIE); }
 int ajustes_audio_externo_seguir(void) { return lig(AJ_EXT_AUDIO_SEGUIR); }
 int ajustes_audio_externo_aviso(void) { return lig(AJ_EXT_AUDIO_AVISO); }
 int ajustes_audio_externo_auto(void) { return lig(AJ_EXT_AUDIO_AUTO); }
+int ajustes_audio_externo_ocultar_copias(void) { return lig(AJ_EXT_AUDIO_COPIAS); }
+int ajustes_audio_externo_ordem_addon(void) { return lig(AJ_EXT_AUDIO_ORDEM); }
+int ajustes_audio_externo_bufor_mib(void) { int v = valor[AJ_EXT_AUDIO_BUFOR]; return v == 1 ? 16 : v == 2 ? 32 : 8; }
 int ajustes_hdr10p_strip(void) { return lig(AJ_HDR10P_STRIP); }
 int ajustes_hist_conta(void)          { return lig(AJ_HIST_CONTA); }
 int ajustes_social(void)              { return lig(AJ_SOCIAL); }
@@ -5886,6 +5901,10 @@ void ajustes_dir(const char *dir) {
       if (v >= 0 && v <= 20) leg2TamanhoAntigo = v;
       continue;
     }
+    if (!strcmp(chave, "legenda2OpacidadeLocal")) {
+      if (v >= 0 && v <= 4) leg2OpacidadeAntiga = v;
+      continue;
+    }
     // Outline is aesthetic: migrate its removed Automatic value to On.
     if (!strcmp(chave, "vidroContornoLocal") && v == 2) v = 0;
     if (!strcmp(chave, "legenda2OpacidadeLocal")) {
@@ -5921,6 +5940,7 @@ void ajustes_dir(const char *dir) {
     if (sinopseQuatro >= 0) valor[AJ_HERO_SINOPSE_TAM] = sinopseQuatro > 0;
     else if (sinopseAntiga >= 0) valor[AJ_HERO_SINOPSE_TAM] = sinopseAntiga > 0;
   }
+  // New sorted choices win over the legacy four-level key regardless of order.
   if (!viuLeg2Opacidade && leg2OpacidadeAntiga >= 0)
     valor[AJ_LEG2_OPACIDADE] = leg_opacidade_secundaria_migrar(leg2OpacidadeAntiga);
   if (!viuLeg2Escala && leg2TamanhoAntigo >= 0) {
@@ -7138,7 +7158,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
     case AJ_DV7:
     case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST:
-    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO:
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR:
     case AJ_HDR10P_STRIP:   /* o caminho de conversao e desta TV */
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
@@ -7212,6 +7232,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_OCULTAR_FILMES_VISTOS: /* por perfil desta TV; fora do blob da conta */
     case AJ_BIB_HOME:       /* #507: idem */
     case AJ_REACAO_CREDITOS: /* o web nao tem a pergunta */
+    case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS:
     case AJ_PAUSA_COMENTARIOS: /* o web nao tem os comentarios do Trakt no painel de pausa */
     case AJ_PAUSA_NOTAS: /* nem as notas */
     case AJ_PAUSA_ELENCO: /* nem o elenco */
@@ -7256,7 +7277,7 @@ static int soNaTv(int op) {
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
     case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST: case AJ_HDR10P_STRIP:
-    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO:
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_BUFFER_RAM_REDUZ:
@@ -7824,6 +7845,14 @@ static void focarOpcao(int op);
 // D1: "Posicao do relogio" 238 pessoas, "Sincronia por audio" 157, "Zoom do
 // trailer" 86, P2P no .wgt 6), escondendo o aviso que importa.
 static int foraDestaPlataforma(int op) {
+  // Children of the "Audio from another version" sheet (owner, 07/11: one row,
+  // its options inside, like Buffer). 2.0.9 (#866).
+  if (op == AJ_EXT_AUDIO_CACHE || op == AJ_EXT_AUDIO_PASSO || op == AJ_EXT_AUDIO_GRANDE ||
+      op == AJ_EXT_AUDIO_MODO || op == AJ_EXT_AUDIO_SERIE || op == AJ_EXT_AUDIO_SEGUIR || op == AJ_EXT_AUDIO_AVISO || op == AJ_EXT_AUDIO_AUTO || op == AJ_EXT_AUDIO_COPIAS || op == AJ_EXT_AUDIO_ORDEM || op == AJ_EXT_AUDIO_BUFOR) return 1;
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  // Only the .tpk and LG built with FFmpeg play it (dts/doador_tpk.h; doador_webos.c on LG).
+  if ((op == AJ_EXT_AUDIO || op == AJ_EXT_AUDIO_CACHE || op == AJ_EXT_AUDIO_PASSO || op == AJ_EXT_AUDIO_GRANDE || op == AJ_EXT_AUDIO_MODO || op == AJ_EXT_AUDIO_SERIE || op == AJ_EXT_AUDIO_SEGUIR || op == AJ_EXT_AUDIO_AVISO || op == AJ_EXT_AUDIO_AUTO || op == AJ_EXT_AUDIO_COPIAS || op == AJ_EXT_AUDIO_ORDEM || op == AJ_EXT_AUDIO_BUFOR) && !doa_disponivel()) return 1;
+#endif
   // Os limites dos provedores sao editados dentro da folha de ordem.
   if (op >= AJ_FALHA_RD_LIMITE && op <= AJ_FALHA_AD_LIMITE) return 1;
   // Only the shared parent appears in the category; these editors are its children.
@@ -7848,6 +7877,10 @@ static int foraDestaPlataforma(int op) {
 #endif
 #ifndef NV_TPK
   if (op == AJ_TRAILER_ZOOM_TPK || op == AJ_AUDIO_OFFSET) return 1;
+#endif
+#ifdef NV_TPK40
+  // Tizen 4-5.5: no seek-bar thumbnails, so none of their rows (ajustes_ux_tela.inc).
+  if (op == AJ_SEEKR_LIGADO || op == AJ_SEEKR_CHAVE || op == AJ_SEEKR_FITA) return 1;
 #endif
   // Botao de microfone das buscas: so onde ha o teclado da Samsung por tras
   // (.tpk de release e .wgt; o NuvioTpk40 do Tizen 4/5 nao tem o host dele).
@@ -7875,7 +7908,7 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_MP4_BD_TEST) return 1;
 #endif
 #if defined(NV_TPK) || defined(NV_ANDROID) || defined(__EMSCRIPTEN__)
-  if (op >= AJ_EXT_AUDIO && op <= AJ_EXT_AUDIO_AUTO) return 1;
+  if ((op >= AJ_EXT_AUDIO && op <= AJ_EXT_AUDIO_AUTO) || op == AJ_EXT_AUDIO_COPIAS || op == AJ_EXT_AUDIO_ORDEM || op == AJ_EXT_AUDIO_BUFOR) return 1;
 #endif
   // Legacy depth keys remain positional, but only switch/intensity are shown.
   if (op == AJ_PROF_BORDA || (op >= AJ_PROF_COBERTURA && op <= AJ_PROF_TRAILERS)) return 1;
@@ -8608,10 +8641,12 @@ static const char *textoLeitura(int op) {
 // ela continua no lugar, apagada e sem setas: a dependencia fica visivel em vez
 // de a linha sumir.
 static int inativa(int op) {
-  if (op > AJ_EXT_AUDIO && op <= AJ_EXT_AUDIO_AUTO) return !ajustes_audio_externo();
+  if ((op > AJ_EXT_AUDIO && op <= AJ_EXT_AUDIO_AUTO) || op == AJ_EXT_AUDIO_COPIAS || op == AJ_EXT_AUDIO_ORDEM || op == AJ_EXT_AUDIO_BUFOR) return !ajustes_audio_externo();
   if (ajustes_fonte_prioridade() == 3 &&
       (op == AJ_FONTE_AUTO || op == AJ_FONTE_GRUPO || op == AJ_FONTE_GRUPO_SESSOES || op == AJ_LINK_REUSAR || op == AJ_LINK_PRAZO)) return 1;
   switch (op) {
+    case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE:
+    case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR: return !ajustes_audio_externo();
     case AJ_AMPLIAR_UI: return !gpun_upscale_suportado() || !ampliarUiVale();
     case AJ_AMPLIACAO_ALGO: case AJ_AMPLIACAO_NITIDEZ:
       return !ampliarUiVale() || !ajustes_ampliar_app() || !gpun_ampliacao_ativa();
@@ -9348,7 +9383,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_AMPLIACAO_NITIDEZ: return "Reforço de contorno do SGSR nítido e do FSR 1. 0 desliga.";
     case AJ_TAM_MIN: return "Na escolha automática, fontes menores que este tamanho ficam para o fim da fila. Se for maior que o tamanho máximo, o mínimo é ignorado. Só vale para arquivos com tamanho conhecido; se só houver fontes fora da faixa, a melhor delas ainda toca.";
 #ifdef NV_TPK
-    case AJ_DTS_AC3: return "Esta TV não toca DTS nem TrueHD: o app converte o som na hora. 5.1 (Dolby Digital) mantém o surround para barra de som e receiver; 7.1, Atmos e DTS:X viram 5.1, sem os objetos. Estéreo (AAC) serve qualquer TV. Desligado: esses vídeos tocam sem som, como antes. Vale a partir do próximo vídeo.";
+    case AJ_DTS_AC3: return "Esta TV não toca DTS nem TrueHD: o app converte o som na hora. 5.1 (Dolby Digital) mantém o surround para barra de som e receiver; 7.1, Atmos e DTS:X viram 5.1, sem os objetos. Estéreo (Dolby Digital) serve qualquer TV. Desligado: esses vídeos tocam sem som, como antes. Vale a partir do próximo vídeo.";
 #else
     case AJ_DTS_AC3: return "Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC; vale a partir do próximo vídeo.";
 #endif
@@ -9399,6 +9434,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_CACHE_SEEK: return "Com retomada rápida, guarda só o último título por até 3 horas. Trocar de perfil ou pouco espaço apagam o trecho.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
     case AJ_RESOLUCAO: return "Resolução controla a nitidez; efeitos controlam a velocidade. Automática nunca baixa para 720p. Reinicie após mudar a resolução; o vídeo não muda.";
+    case AJ_REMEMBER_PROFILE: return "Open the last selected profile when starting the app. Off by default, on this TV only. Protected profiles still require their PIN. You can always switch profiles from the menu.";
     case AJ_PERFIL_ATIVO: return "Perfil em uso nesta TV. Trocar de perfil é feito na tela de perfis, ao abrir o app.";
     case AJ_SYNC: return "Estado da última troca de dados com a sua conta: addons, progresso, coleções e preferências.";
     case AJ_ADDONS: return "Abre a lista de addons da sua conta, para ligar e desligar cada um nesta TV.";
@@ -10695,6 +10731,61 @@ static void ffVoltar(void) {
   if (ffCategoria >= 0) ffCategoria = -1;
   else { frAberta = 0; ffFechando = 1; }
 }
+// THE "AUDIO FROM ANOTHER VERSION" SHEET (frAberta 9, owner 07/11): its
+// options in one place, opened from its row like Buffer. UP/DOWN pick,
+// LEFT/RIGHT or OK change and save at once, Back closes.
+// EA_ADDONS: the "Addons" row (audioextaddons.h), a list of its own (eaSub)
+// with the add-ons whose versions the audio pages list, per profile.
+#define EA_ADDONS (-1)
+#if defined(NV_TPK) || defined(NV_WEBOS)
+// AJ_EXT_AUDIO_AUTO is no longer a row on the .tpk (owner 17/11): the sync is
+// always automatic (the subtitle match, then the audio refine). Its slot stays.
+static const int EA_OPS[] = { AJ_EXT_AUDIO, AJ_EXT_AUDIO_SEGUIR, AJ_EXT_AUDIO_AVISO, AJ_EXT_AUDIO_SERIE, AJ_EXT_AUDIO_MODO,
+#else
+static const int EA_OPS[] = { AJ_EXT_AUDIO, AJ_EXT_AUDIO_AUTO, AJ_EXT_AUDIO_SEGUIR, AJ_EXT_AUDIO_AVISO, AJ_EXT_AUDIO_SERIE, AJ_EXT_AUDIO_MODO,
+#endif
+                              AJ_EXT_AUDIO_CACHE, AJ_EXT_AUDIO_COPIAS, AJ_EXT_AUDIO_ORDEM, EA_ADDONS, AJ_EXT_AUDIO_PASSO, AJ_EXT_AUDIO_BUFOR, AJ_EXT_AUDIO_GRANDE };
+#define EA_N ((int)(sizeof EA_OPS / sizeof *EA_OPS))
+static int eaFoco, eaSub, eaAddFoco, eaAddN;
+static AudioExtAddon eaAdd[AUDIOEXT_ADDONS_MAX];
+static void eaAbrir(void) { uxCancelar(); faRetornarFolha = 0; frAberta = 9; eaFoco = 0; eaSub = 0; }
+static void eaAddonsAbrir(void) {
+  eaAddN = audioext_addons_lista(eaAdd, AUDIOEXT_ADDONS_MAX);
+  eaSub = 1; eaAddFoco = 0;
+}
+static void eaAddonAlternar(void) {
+  if (eaAddFoco < 0 || eaAddFoco >= eaAddN) return;
+  audioext_addon_definir(eaAdd[eaAddFoco].chave, !audioext_addon_ligado(eaAdd[eaAddFoco].chave));
+}
+// "All" or "2 of 4": the value of the "Addons" row.
+static void eaAddonsValor(char *dst, size_t n) {
+  int on = 0, tot = 0;
+  audioext_addons_resumo(&on, &tot);
+  if (on >= tot) snprintf(dst, n, "%s", i18n("All"));
+  else snprintf(dst, n, i18n("%d of %d"), on, tot);
+}
+static void eaMudar(int d) {
+  if (EA_OPS[eaFoco] == EA_ADDONS) { eaAddonsAbrir(); return; }
+  int op = EA_OPS[eaFoco], n = nValores(op), old = valor[op];
+  if (n < 2) return;
+  valor[op] = (old + d + n) % n;
+  if (!gravar()) { valor[op] = old; uxNotificar("Não foi possível salvar. O valor anterior foi mantido."); return; }
+  printf("[ajustes] %s -> %s\n", rotuloOpcao(op), textoValor(op)); fflush(stdout);
+}
+static void eaEvento(SDL_Keycode k) {
+  if (eaSub) {
+    if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE) { eaSub = 0; return; }
+    if (k == SDLK_UP && eaAddFoco > 0) eaAddFoco--;
+    if (k == SDLK_DOWN && eaAddFoco + 1 < eaAddN) eaAddFoco++;
+    if (k == SDLK_RIGHT || k == SDLK_LEFT || k == SDLK_RETURN || k == SDLK_KP_ENTER) eaAddonAlternar();
+    return;
+  }
+  if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE) { frAberta = 0; return; }
+  if (k == SDLK_UP && eaFoco > 0) eaFoco--;
+  if (k == SDLK_DOWN && eaFoco + 1 < EA_N) eaFoco++;
+  if (k == SDLK_RIGHT || k == SDLK_RETURN || k == SDLK_KP_ENTER) eaMudar(1);
+  if (k == SDLK_LEFT) eaMudar(-1);
+}
 static void ffEvento(SDL_Keycode k) {
   int *foco = ffCategoria >= 0 ? &ffValorFoco : &ffFoco;
   int n = ffCategoria >= 0 ? ffOpcoesN() : FF_LINHAS;
@@ -11324,7 +11415,34 @@ void ajustes_evento(const SDL_Event *e) {
   AJ_ESCALA_FIM();
 }
 
+// AUDIO FROM ANOTHER SOURCE: OK switches it, a held OK opens its options
+// (owner 25/11, beta: "clicking it should just turn it on, not show that long
+// list"). The KEYDOWN arms, the KEYUP before NV_HOLD_MS is the switch, the
+// hold crossing it (ajustes_atualizar) opens the sheet and its KEYUP is eaten.
+static void eaAbrir(void);
+static int eaHoldArmado, eaHoldComer;
+static Uint32 eaHoldDesde;
+static void eaHoldAlternar(void) {
+  int novo = lig(AJ_EXT_AUDIO) ? 1 : 0;   // V_LIGA: 0 = On, 1 = Off
+  if (!definirValorDireto(AJ_EXT_AUDIO, novo)) { uxNotificar("Não foi possível salvar. O valor anterior foi mantido."); return; }
+  printf("[ajustes] %s -> %s (OK; hold OK for its options)\n", rotuloOpcao(AJ_EXT_AUDIO), textoValor(AJ_EXT_AUDIO));
+  fflush(stdout);
+}
+static void eaHoldPasso(Uint32 agora) {
+  if (!eaHoldArmado || (Uint32)(agora - eaHoldDesde) < NV_HOLD_MS) return;
+  eaHoldArmado = 0; eaHoldComer = 1;
+  if (focoOp == AJ_EXT_AUDIO) eaAbrir();
+}
 static void eventoTela(const SDL_Event *e) {
+  if (e->type == SDL_KEYUP && (e->key.keysym.sym == SDLK_RETURN || e->key.keysym.sym == SDLK_KP_ENTER) &&
+      (eaHoldArmado || eaHoldComer)) {
+    if (eaHoldArmado && focoOp == AJ_EXT_AUDIO) eaHoldAlternar();
+    eaHoldArmado = eaHoldComer = 0;
+    return;
+  }
+  if (e->type == SDL_KEYDOWN && (eaHoldArmado || eaHoldComer) &&
+      (e->key.keysym.sym == SDLK_RETURN || e->key.keysym.sym == SDLK_KP_ENTER)) return;   // the held OK's repeats
+  if (e->type == SDL_KEYDOWN) eaHoldArmado = eaHoldComer = 0;   // any other key cancels
   // A MODAL DE DIGITACAO VEM ANTES DE TUDO, como em biblioteca.c e recenviar.c:
   // enquanto ela esta em pe, nenhuma tecla pertence a lista de opcoes atras.
   // Sem esta linha, o D-pad moveria o foco da lista por baixo da modal.
@@ -11382,6 +11500,10 @@ static void eventoTela(const SDL_Event *e) {
       // "Mais opcoes": abre (ou fecha) no lugar; o foco fica na linha e o
       // Baixo entra nas avancadas.
       if (TELA[focoItem].tipo == IT_MAIS) maisAberto[secAtual] = !maisAberto[secAtual];
+      return;
+    }
+    if (focoOp == AJ_EXT_AUDIO && ajOpcaoDisponivel(AJ_EXT_AUDIO) && !soLeitura(AJ_EXT_AUDIO)) {
+      eaHoldArmado = 1; eaHoldComer = 0; eaHoldDesde = SDL_GetTicks();
       return;
     }
     if (OPCOES[focoOp].tipo != OP_ACAO) { uxAbrirEditor(focoOp); return; }
@@ -11726,6 +11848,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   tourAtualizar(dt);
   ffAtualizar(dt);
   if (uxAviso[0] && SDL_TICKS_PASSED(agora, uxAvisoAte)) uxAviso[0] = 0;
+  eaHoldPasso(agora);
   montarTela();
   valor[AJ_PERFIL_PESQ] = recomenda_pesquisavel() ? 0 : 1;   // V_LIGA: 0 = Ligado
   valor[AJ_PERFIL_INFANTIL] = perfil_infantil_ativo() ? 0 : 1;
@@ -12292,10 +12415,12 @@ static void desenhaGrupo(int item, float y, float f, float dx, float aPag) {
 static GLuint texQrVin;
 static char   qrVinDe[256];
 
-static void qrVinTex(const char *texto) {
+// Gera (ou mantem) o QR de `texto` na textura *tex; `de` guarda o texto atual.
+// Cada uso tem a sua (vinculo, log na rede): um nao apaga o do outro.
+static void qrTexDe(GLuint *tex, char *de, size_t nde, const char *texto) {
   Qr q; int lado, x, y; unsigned char *px;
   if (!texto || !texto[0]) return;
-  if (!strcmp(qrVinDe, texto) && texQrVin) return;
+  if (!strcmp(de, texto) && *tex) return;
   if (!qr_gerar(&q, texto)) return;
   lado = q.lado + 8;                    // 4 modulos de silencio por lado
   px = (unsigned char *)malloc((size_t)lado * lado * 3);
@@ -12307,8 +12432,8 @@ static void qrVinTex(const char *texto) {
         size_t i = ((size_t)(y + 4) * lado + (x + 4)) * 3;
         px[i] = px[i + 1] = px[i + 2] = 0;
       }
-  if (!texQrVin) glGenTextures(1, &texQrVin);
-  glBindTexture(GL_TEXTURE_2D, texQrVin);
+  if (!*tex) glGenTextures(1, tex);
+  glBindTexture(GL_TEXTURE_2D, *tex);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, lado, lado, 0, GL_RGB,
                GL_UNSIGNED_BYTE, px);
@@ -12317,8 +12442,13 @@ static void qrVinTex(const char *texto) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   free(px);
-  snprintf(qrVinDe, sizeof qrVinDe, "%s", texto);
+  snprintf(de, nde, "%s", texto);
 }
+static void qrVinTex(const char *texto) { qrTexDe(&texQrVin, qrVinDe, sizeof qrVinDe, texto); }
+
+// O QR da pagina "Log na rede local" (ajustes_ux_previa.inc ajPreviaLogRede).
+static GLuint texQrLog;
+static char   qrLogDe[256];
 
 static void desenhaVinculo(const char *servico, const char *codigo,
                            const char *endereco, const char *falha, int esperando);

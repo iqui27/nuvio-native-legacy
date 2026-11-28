@@ -4885,6 +4885,20 @@ char *rede_baixar_trecho64_vigiado_retry(const char *url,const char *headers,
   return range64(url,headers,start,end,size,total,status,cancelled,final,cross,
                  urgent,idle_ms,stalled,retry,retry_arg,0);
 }
+/* The 2.0.9 converter's reader (dts_engine.c range_fetch): the same request,
+ * with the 429 answer's Retry-After handed back. -1 = absent, 0 = zero or
+ * malformed, positive = seconds. Only the last hop's value counts. */
+static void retryGuardar(void *u, int seconds) { *(int *)u = seconds; }
+char *rede_baixar_trecho64_relato(const char *url,const char *headers,
+    int64_t start,int64_t end,long *size,int64_t *total,int *status,
+    volatile int *cancelled,char *final,int *cross,volatile int *urgent,
+    unsigned idle_ms,int *stalled,int *retry_after) {
+  int ra = -1;
+  char *r = rede_baixar_trecho64_vigiado_retry(url,headers,start,end,size,total,status,
+      cancelled,final,cross,urgent,idle_ms,stalled,retryGuardar,&ra);
+  if (retry_after) *retry_after = status && *status == 429 ? ra : -1;
+  return r;
+}
 char *rede_baixar_trecho64_tls(const char *url,const char *headers,
     int64_t start,int64_t end,long *size,int64_t *total,int *status,
     volatile int *cancelled,char *final,int *cross) {
@@ -4929,6 +4943,7 @@ typedef struct {
   int64_t got;
   uint64_t lastByteMs;
   long stallMs;
+  int64_t *total;     /* the caller's, written as soon as the headers say it */
 } DtsFluxo;
 static uint64_t fluxoAgoraMs(void) {
   struct timespec t;
@@ -4948,6 +4963,9 @@ static size_t dtsFluxoBody(void *data, size_t size, size_t count, void *user) {
     if (f->r.status == 206 && f->r.valid && f->r.start == f->r.requested) f->accepted = 1;
     else if (f->r.status == 200 && f->r.requested == 0) f->accepted = 1;
     else { f->r.overflow = 1; return 0; }
+    /* The size, before the body ends: a long streaming request (the DTS
+     * reader) would otherwise leave it unknown for the whole film. */
+    if (f->total && f->r.total >= 0) __atomic_store_n(f->total, f->r.total, __ATOMIC_RELAXED);
   }
   if (!f->sink(f->opaque, data, n)) { f->stopped = 1; return 0; }
   f->got += (int64_t)n;
@@ -4990,6 +5008,7 @@ static int fluxo64(const char *url, const char *headers, int64_t start,
     memset(&f, 0, sizeof f);
     f.r.requested = start; f.r.total = -1; f.r.cancel = cancelled;
     f.sink = sink; f.opaque = opaque; f.stallMs = stall_ms; f.lastByteMs = fluxoAgoraMs();
+    f.total = total;
     c = pegarHandle(current);
     if (!c) return -1;
     opcoesComuns(c, 15000);                 /* connect deadline from here...      */
@@ -5125,6 +5144,10 @@ char *rede_baixar_trecho64_vigiado_retry(const char *u,const char *h,int64_t s,i
  long *n,int64_t *t,int *st,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled,
  void (*retry)(void *,int),void *arg) {
  (void)retry;(void)arg;return rede_baixar_trecho64_vigiado(u,h,s,e,n,t,st,c,f,x,urgent,idle,stalled);
+}
+char *rede_baixar_trecho64_relato(const char *u,const char *h,int64_t s,int64_t e,
+ long *n,int64_t *t,int *st,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled,int *retry_after) {
+ if(retry_after)*retry_after=-1;return rede_baixar_trecho64_vigiado(u,h,s,e,n,t,st,c,f,x,urgent,idle,stalled);
 }
 char *rede_baixar_trecho64_cab(const char *u, const char *h, int64_t s, int64_t e, long *n, int64_t *t, int *st, volatile int *c) {
   (void)u; (void)h; (void)s; (void)e; (void)c;

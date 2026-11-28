@@ -242,7 +242,7 @@
   1, /* also in Continue watching (2.0.2): Desligado (V_LIGA: 1 = Desligado) = one title, one place */
   0, /* continue on the profile picker (#303): Ligado (V_LIGA: 0 = Ligado) = as before */
 #ifdef NV_TPK
-  1, /* DTS/TrueHD on the Samsung .tpk: 5.1 (Dolby Digital) (0 = off, 2 = stereo AAC) */
+  1, /* DTS/TrueHD on the Samsung .tpk: 5.1 (Dolby Digital) (0 = off, 2 = stereo, Dolby Digital 2.0) */
 #else
   1, /* DTS converted to: Estereo (AAC) = the proven path (0 = Original, 2 = 5.1) */
 #endif
@@ -390,7 +390,14 @@
   1, // dv7PreserveMappingLocal: Desligado (V_LIGA 1), experimental
   0, // dvAudioFixoLocal: Original
   1, // dvMp4BdTestLocal: Off (V_LIGA 1)
-  1, 0, 1, 0, 0, 0, 1, 0, 0, /* External audio: opt-in; 50 ms; follow off. */
+  /* External audio (2.0.9 defaults, owner 25/11): opt-in; not-in-cache hidden
+   * and audio-only download on the .tpk and LG; 50 ms; follow off; the
+   * "sync adjusted" message off; match at start on. */
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  1, 1, 1, 0, 1, 0, 1, 1, 0,
+#else
+  1, 0, 1, 0, 0, 0, 1, 1, 0,
+#endif
   0, // nativeBufferConnectionsLocal: 1, one sequential request
   0, // conversionBufferConnectionsLocal: 1, Standard continuous request (R14)
   1, 1, 1, // bufferDataLocal/ramOverlayLocal/ramGreenLocal: Desligado
@@ -426,3 +433,6 @@
   0, // Sessao pelo celular: acao, sem valor
   0, /* Nuvio Casa, use a helper: On */
   1, /* Nuvio Casa, help other TVs: Off */
+  0, /* From another source: hide duplicates: On (2.0.9) */
+  1, /* From another source: sort like the addons: Off (V_LIGA) (2.0.9) */
+  0, /* From another source: other version buffer: 8 MB (2.0.9) */

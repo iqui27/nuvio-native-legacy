@@ -93,7 +93,7 @@ test "$(grep -c 'farolprod_erro(' src/video_android.c)" -ge 4
 test "$(grep -c 'farolprod_recon(' src/video_android.c)" -ge 1
 test "$(grep -c 'farolprod_erro(' src/video_tizen.c)" -ge 2
 test "$(grep -c 'farolprod_recon(' src/video_tizen.c)" -ge 3
-test "$(grep -c 'farolprod_erro(' src/video_tpk.c)" -ge 4
-test "$(grep -c 'farolprod_recon(' src/video_tpk.c)" -ge 1
+test "$(grep -c 'farolprod_erro(' src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c)" -ge 4
+test "$(grep -c 'farolprod_recon(' src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c)" -ge 1
 
 echo "farol_produtores_tv: tudo ok"

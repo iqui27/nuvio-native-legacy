@@ -3,7 +3,12 @@
  * Local files stand in for both HTTP transports: ranges for the main source,
  * the single streaming read for the second one. */
 #include "../src/dts/dts_engine.h"
+#ifndef EXT_STALL_S
+#define EXT_STALL_S 8
+#endif
 #include <assert.h>
+#include <pthread.h>
+#include <time.h>
 #include <libavformat/avformat.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +18,19 @@
 
 static const char *HEADERS = "X-Fixture: yes";
 static unsigned streams_opened;
+static int64_t hang_at;          /* >0: the stream of hang_url stops sending there */
+static char hang_url[4096];
+/* trickle_left connections of trickle_url that reach trickle_at go on at
+ * about 20 KB/s (owner's logs 14/11: TorBox CDN connections at 15-25 KB/s
+ * while a fresh one got MB/s); trickle_hits counts them. */
+static int64_t trickle_at;
+static int trickle_left, trickle_hits;
+static char trickle_url[4096];
+/* "addon:<file>" stands for an add-on link that redirects to <file> (the CDN):
+ * addon_hits counts the trips through it; cdn_dead fails the next direct
+ * request (an expired or gone server address). */
+static unsigned addon_hits;
+static int cdn_dead;
 
 char *rede_range_headers(const char *raw, int public_only) {
   (void)public_only; return strdup(raw ? raw : "");
@@ -26,15 +44,45 @@ int rede_fluxo64(const char *url, const char *headers, int64_t start,
   if (final) final[0] = 0;
   if (cross) *cross = 0;
   *bytes = 0; *status = 0;
+  if (!strncmp(url, "addon:", 6)) {
+    __atomic_add_fetch(&addon_hits, 1, __ATOMIC_RELAXED);
+    url += 6;
+    if (final) snprintf(final, 8192, "%s", url);
+  } else if (__atomic_exchange_n(&cdn_dead, 0, __ATOMIC_RELAXED)) { *status = 410; return -1; }
   FILE *f = fopen(url, "rb");
   if (!f) return -1;
   __atomic_add_fetch(&streams_opened, 1, __ATOMIC_RELAXED);
   fseeko(f, 0, SEEK_END); *total = ftello(f); fseeko(f, start, SEEK_SET);
   *status = 206;
   char buf[65536];
+  int64_t at = start;
+  int slow = -1;   /* not decided until this connection reaches trickle_at */
   for (;;) {
     if (__atomic_load_n(cancel, __ATOMIC_RELAXED)) { fclose(f); return -1; }
-    size_t n = fread(buf, 1, sizeof buf, f);
+    if (slow < 0 && trickle_at > 0 && at >= trickle_at && !strcmp(url, trickle_url)) {
+      slow = __atomic_sub_fetch(&trickle_left, 1, __ATOMIC_RELAXED) >= 0;
+      if (slow) __atomic_add_fetch(&trickle_hits, 1, __ATOMIC_RELAXED);
+    }
+    if (slow == 1) {
+      size_t n = fread(buf, 1, 1024, f);
+      if (!n) break;
+      at += (int64_t)n;
+      if (!sink(opaque, buf, n)) { fclose(f); return 1; }
+      *bytes += (int64_t)n;
+      usleep(50000);
+      continue;
+    }
+    /* A connection that goes quiet past hang_at (owner's log 14/11): open,
+     * no bytes, until dropped. */
+    int64_t h = __atomic_load_n(&hang_at, __ATOMIC_RELAXED);
+    if (h > 0 && !strcmp(url, hang_url) && at >= h) {
+      while (!__atomic_load_n(cancel, __ATOMIC_RELAXED) && __atomic_load_n(&hang_at, __ATOMIC_RELAXED) > 0) usleep(10000);
+      continue;
+    }
+    size_t want = sizeof buf;
+    if (h > 0 && !strcmp(url, hang_url) && at < h && (int64_t)want > h - at) want = (size_t)(h - at);
+    size_t n = fread(buf, 1, want, f);
+    at += (int64_t)n;
     if (!n) break;
     if (!sink(opaque, buf, n)) { fclose(f); return 1; }
     *bytes += (int64_t)n;
@@ -78,12 +126,6 @@ char *rede_baixar_trecho64_relato(const char *u, const char *h, int64_t s, int64
   return rede_baixar_trecho64_final(u, h, s, e, n, t, status, c, f, x);
 }
 
-char *rede_baixar_trecho64_vigiado_retry(const char *u,const char *h,int64_t s,int64_t e,long *n,
-    int64_t *t,int *status,volatile int *c,char *f,int *x,volatile int *urgent,
-    unsigned idle,int *stalled,void (*retry)(void *,int),void *arg) {
-  (void)retry; (void)arg;
-  return rede_baixar_trecho64_vigiado(u,h,s,e,n,t,status,c,f,x,urgent,idle,stalled);
-}
 /* The app passes ling_casa; here "pl" also matches "pol". */
 static int lang_match(const char *code, const char *pref) {
   if (!strcasecmp(code, pref)) return 1;
@@ -172,10 +214,23 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
   return r;
 }
 
+/* Asks for a change (dts_engine_external_wake) once the worker waits for
+ * the other version, as a track change or seek from the player would. */
+typedef struct { DtsEngine *e; double waited; } Wake;
+static void *wake_when_waiting(void *arg) {
+  Wake *w = arg;
+  struct timespec t0, t1; clock_gettime(CLOCK_MONOTONIC, &t0);
+  for (;;) {
+    usleep(300000);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    if (dts_engine_external_wake(w->e)) break;
+    assert(t1.tv_sec - t0.tv_sec < 120);
+  }
+  w->waited = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
+  return NULL;
+}
 int main(int argc, char **argv) {
-  assert(argc == 37);
-  const char *mixed = argv[34];
-  const char *aac_ts = argv[35], *aac_ts_raw = argv[36];
+  assert(argc == 38);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
@@ -184,6 +239,8 @@ int main(int argc, char **argv) {
   const char *follow_ext = argv[21], *follow_th = argv[22], *lang_main = argv[23], *lang_pl = argv[24];
   const char *dub_ru = argv[25], *dub_pl = argv[26], *follow_ext_ru = argv[27], *follow_th_pl = argv[28];
   const char *shift_main = argv[29], *shift_dub = argv[30], *gap_main = argv[31], *gap_dub = argv[32], *two_en = argv[33];
+  const char *step_main = argv[34], *step_dub = argv[35];
+  const char *stereo_main = argv[36], *und_dub = argv[37];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -275,36 +332,29 @@ int main(int argc, char **argv) {
     dts_engine_destroy(e);
   }
   dts_engine_set_ac3(0);
-  // Off refuses DTS in the real probe, language pick and forced-track paths.
-  // Non-DTS donors still pass on ordinary and DV sessions; Off never changes
-  // the main source's ordinary/native route (owned by Batch B).
-  dts_engine_set_external_dts_off(1);
-  { DtsTrack t[8];
-    assert(dts_engine_probe_audio(dts_only, HEADERS, t, 8) == 0);
-    assert(dts_engine_probe_audio(other, HEADERS, t, 8) == 2); }
-  for (int forced = 0; forced < 2; forced++) {
-    e = dts_engine_create();
-    dts_engine_external_audio(e, dts_only, HEADERS, "", 0);
-    if (forced) dts_engine_external_track(e, 1);
-    assert(dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0);
-    assert(strstr(dts_engine_error(e), forced ? "selected track" : "no audio track"));
-    dts_engine_destroy(e);
-  }
+  /* DTS conversion off in Settings: the DTS donor is refused. */
+  dts_engine_set_dts_off(1);
   e = dts_engine_create();
-  dts_engine_external_audio(e, mixed, HEADERS, "pl", 0);
-  dts_engine_external_track(e, 2); // DTS, while stream 1 is playable AC-3
+  dts_engine_external_audio(e, dts_only, HEADERS, "", 0);
   assert(dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0);
-  assert(strstr(dts_engine_error(e), "selected track"));
+  assert(strstr(dts_engine_error(e), "External audio: no audio track"));
   dts_engine_destroy(e);
-  for (int dv = 0; dv < 2; dv++) {
-    e = dts_engine_create();
-    dts_engine_dv(e, dv);
-    dts_engine_external_audio(e, other, HEADERS, "pl", 0);
-    assert(dts_engine_open(e, main_file, HEADERS, -1, 0, 0) == 0);
-    assert(!strcmp(dts_engine_info(e)->audio_codec, "ac3"));
-    dts_engine_destroy(e);
-  }
-  dts_engine_set_external_dts_off(0);
+  /* DTS conversion off on a TV that declares DTS (dts_off 2): the DTS donor
+   * goes to the TV as it is, no decoder or encoder; seek still applies. */
+  dts_engine_set_dts_off(2);
+  e = dts_engine_create();
+  dts_engine_external_audio(e, dts_only, HEADERS, "", 0);
+  if (dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
+  assert(!strcmp(dts_engine_info(e)->audio_codec, "dts"));
+  assert(dts_engine_info(e)->channels == 2 && dts_engine_info(e)->sample_rate == 48000);
+  r = play(e, 250000000LL, 0);
+  assert(r.video == 100 && r.audio > 100 && r.last_audio > 3800000000LL);
+  assert(dts_engine_seek(e, 2.0) == 0);
+  r = play(e, 250000000LL, 0);
+  assert(r.first_audio >= 1950000000LL && r.first_audio < 2100000000LL);
+  printf("DTS donor with DTS off, the TV decodes DTS: passed through, %d audio packets\n", r.audio);
+  dts_engine_destroy(e);
+  dts_engine_set_dts_off(0);
   checkBytes = 1;
 
   /* 7. A much shorter other file (a debrid "not cached" clip) is refused. */
@@ -313,6 +363,18 @@ int main(int argc, char **argv) {
   assert(dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0);
   assert(strstr(dts_engine_error(e), "not cached"));
   dts_engine_destroy(e);
+  /* 7b. The same short clip with an audio track for an 11-minute picture (owner's
+   * log 13/11: TorBox's 30 s clip, even for a version marked cached): said
+   * as the debrid placeholder, the case the player tries again. The header
+   * read of the hold-OK track list says it too (-3), a real file its tracks. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, short_clip, HEADERS, "", 0);
+  assert(dts_engine_open(e, film, HEADERS, -1, 0, 0) < 0);
+  assert(strstr(dts_engine_error(e), "(placeholder clip)"));
+  dts_engine_destroy(e);
+  { DtsTrack tk[8];
+    assert(dts_engine_probe_audio(short_clip, HEADERS, tk, 8) == -3);
+    assert(dts_engine_probe_audio(film, HEADERS, tk, 8) >= 1); }
 
   /* 8. Audio only: an MP4 donor fetches its audio chunks, not its video. */
   {
@@ -362,33 +424,6 @@ int main(int argc, char **argv) {
     dts_engine_destroy(e);
     checkBytes = 1;
   } else printf("AAC decoder not in this FFmpeg build: 44.1 kHz case skipped\n");
-
-  /* 9b. Stereo 48 kHz AAC-LC in MPEG-TS passes through, but the demuxer
-   * hands out ADTS frames and the TV is told raw AAC (adapter aacInfo
-   * format "raw"): every packet fed must be the raw frame, byte for byte
-   * what FFmpeg's MP4 muxer stores, also after a seek and up to the end. */
-  load_refs(aac_ts_raw, "pol");
-  e = dts_engine_create();
-  dts_engine_external_audio(e, aac_ts, HEADERS, "pl", 0);
-  if (dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
-  assert(!strcmp(dts_engine_info(e)->audio_codec, "aac") && dts_engine_info(e)->channels == 2 &&
-         dts_engine_info(e)->sample_rate == 48000);
-  r = play(e, 0, 60);
-  assert(r.audio > 10);
-  assert(dts_engine_seek(e, 2.0) == 0);
-  r = play(e, 0, 0);
-  assert(r.audio > 50 && r.last_audio > 3800000000LL);
-  printf("AAC TS donor passed through raw: %d packets after seek\n", r.audio);
-  dts_engine_destroy(e);
-  /* The raw frames themselves (MP4, with their config) pass unchanged. */
-  e = dts_engine_create();
-  dts_engine_external_audio(e, aac_ts_raw, HEADERS, "pl", 0);
-  if (dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
-  assert(!strcmp(dts_engine_info(e)->audio_codec, "aac") && dts_engine_info(e)->channels == 2);
-  r = play(e, 0, 0);
-  assert(r.audio > 150 && r.last_audio > 3800000000LL);
-  dts_engine_destroy(e);
-  load_refs(other, "pol");
 
   /* 10. Turning it off restores the main file's own track selection. */
   e = dts_engine_create();
@@ -502,6 +537,147 @@ int main(int argc, char **argv) {
     fprintf(stderr, "match at start: result %d offset %d ms automatic %d\n", res, off, autom);
     assert(got == 0 && res == 1 && autom && off > -740 && off < -660); }
   dts_engine_destroy(e);
+  /* The other version goes quiet mid-file (owner's log 14/11: the converter,
+   * picture included, waited on it until a track change, which waited too).
+   * A request stops that wait at once; the reader reconnects at the same
+   * place EXT_STALL_TRIES times, then gives up and the picture plays on. */
+  /* A Torrentio link (owner, 14/11): three redirects before the CDN at every
+   * open. The probe's or the first reader's final address serves the next
+   * engines of that version; a dead one goes back through the add-on; a slow
+   * reopen forgets it. */
+  checkBytes = 0;
+  { char via[4200]; DtsTrack tr[4];
+    snprintf(via, sizeof via, "addon:%s", long_idx);
+    unsigned h0 = addon_hits;
+    (void)tr;   /* the probe opens the same way; the fixtures are under its 2 min */
+    e = dts_engine_create();
+    dts_engine_external_audio(e, via, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    r = play(e, 0, 5);
+    assert(r.audio > 0 && addon_hits == h0 + 1);   /* the first open pays the redirects */
+    dts_engine_destroy(e);
+    e = dts_engine_create();
+    dts_engine_external_audio(e, via, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    r = play(e, 0, 5);
+    assert(r.audio > 0 && addon_hits == h0 + 1);   /* straight to the server */
+    dts_engine_destroy(e);
+    cdn_dead = 1;
+    e = dts_engine_create();
+    dts_engine_external_audio(e, via, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    r = play(e, 0, 5);
+    assert(r.audio > 0 && addon_hits == h0 + 2 && !cdn_dead);   /* gone: the add-on again */
+    dts_engine_destroy(e);
+    dts_engine_forget_final(via, HEADERS);
+    e = dts_engine_create();
+    dts_engine_external_audio(e, via, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    r = play(e, 0, 5);
+    assert(r.audio > 0 && addon_hits == h0 + 3);   /* forgotten: through the add-on */
+    dts_engine_destroy(e);
+    /* A short clip behind the add-on (the debrid placeholder, owner's log
+     * 14/11): its address is not kept, every retry asks the add-on again. */
+    snprintf(via, sizeof via, "addon:%s", short_clip);
+    h0 = addon_hits;
+    for (int t = 0; t < 2; t++) {
+      e = dts_engine_create();
+      dts_engine_external_audio(e, via, HEADERS, "pl", 0);
+      assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) < 0);
+      dts_engine_destroy(e);
+    }
+    assert(addon_hits == h0 + 2);
+    fprintf(stderr, "remembered server address: first open pays the redirects, the next goes straight, a dead one, a forgotten one and a placeholder go through the add-on\n");
+  }
+  { DtsFrame f; int got, video, audio, opened;
+    snprintf(hang_url, sizeof hang_url, "%s", long_idx);
+    /* Woken: the read stops at once, the picture goes on without the other
+     * audio, the seek after the request reads it again. */
+    e = dts_engine_create();
+    dts_engine_external_audio(e, long_idx, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    int64_t total = 0; dts_engine_external_bytes(e, &total); assert(total > 16 * 1024 * 1024);
+    __atomic_store_n(&hang_at, total / 2, __ATOMIC_RELAXED);
+    pthread_t waker; Wake w = { e, 0 };
+    assert(pthread_create(&waker, NULL, wake_when_waiting, &w) == 0);
+    video = audio = 0;
+    while ((got = dts_engine_next(e, &f)) == 1 && !dts_engine_external_woken(e)) {}
+    pthread_join(waker, NULL);
+    assert(got == 1 && dts_engine_external_woken(e) && !dts_engine_external_failed(e));
+    double waited = w.waited;
+    for (int i = 0; i < 50 && (got = dts_engine_next(e, &f)) == 1; i++) {
+      video += f.kind == DTS_VIDEO; audio += f.kind == DTS_AUDIO;
+    }
+    assert(got == 1 && video == 50 && audio == 0);   /* the picture moves on alone */
+    __atomic_store_n(&hang_at, 0, __ATOMIC_RELAXED);
+    assert(dts_engine_seek(e, 40.0) == 0 && !dts_engine_external_woken(e));
+    r = play(e, 0, 60);
+    assert(r.audio > 5 && r.first_audio >= 39900000000LL / 1000);
+    fprintf(stderr, "quiet other version: woken after %.1f s waiting, %d video packets alone, audio back after the seek\n",
+            waited, video);
+    dts_engine_destroy(e);
+    /* Nobody asks: reconnections at the same place, then it gives up; the
+     * picture plays to the end, the failure reported for the app. */
+    e = dts_engine_create();
+    dts_engine_external_audio(e, long_idx, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    __atomic_store_n(&hang_at, total / 2, __ATOMIC_RELAXED);
+    opened = (int)__atomic_load_n(&streams_opened, __ATOMIC_RELAXED);
+    struct timespec t0, t1; clock_gettime(CLOCK_MONOTONIC, &t0);
+    video = audio = 0;
+    while ((got = dts_engine_next(e, &f)) == 1) { video += f.kind == DTS_VIDEO; audio += f.kind == DTS_AUDIO; }
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    double took = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
+    int reconnected = (int)__atomic_load_n(&streams_opened, __ATOMIC_RELAXED) - opened;
+    fprintf(stderr, "quiet other version, nobody asks: %d reconnections, gave up in %.1f s, %d video %d audio\n",
+            reconnected, took, video, audio);
+    assert(got == 0 && dts_engine_external_failed(e) && video == 1500 && audio > 0);
+    assert(reconnected >= 3 && took >= 3 * EXT_STALL_S && took < 6 * EXT_STALL_S);
+    __atomic_store_n(&hang_at, 0, __ATOMIC_RELAXED);
+    dts_engine_destroy(e);
+  }
+  /* A trickling connection (owner's logs 14/11): the speed guard reconnects
+   * at the same place, the second time with a fresh link; the third
+   * connection is a good one and everything plays to the end. The other
+   * version first, then the picture source of a conversion. */
+  { Run tr; struct timespec t0, t1; double took;
+    snprintf(trickle_url, sizeof trickle_url, "%s", long_idx);
+    e = dts_engine_create();
+    dts_engine_external_audio(e, long_idx, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    int64_t total = 0; dts_engine_external_bytes(e, &total);
+    trickle_hits = 0; trickle_left = 2; __atomic_store_n(&trickle_at, total / 2, __ATOMIC_RELAXED);
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    tr = play(e, 0, 0);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    took = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
+    fprintf(stderr, "trickling other version: %d slow connections, %.1f s, %d video %d audio, last audio %.1f s\n",
+            trickle_hits, took, tr.video, tr.audio, tr.last_audio / 1e9);
+    assert(trickle_hits == 2 && !dts_engine_external_failed(e) && tr.video == 1500);
+    assert(tr.last_audio > tr.max_video - 2000000000LL && took < 6.0 * SG_WINDOW_MS / 1000);
+    dts_engine_destroy(e);
+    __atomic_store_n(&trickle_at, 0, __ATOMIC_RELAXED);
+    dts_engine_set_conversion_stream(1);
+    dts_engine_set_ahead_mib(8);
+    e = dts_engine_create();
+    dts_engine_external_audio(e, main60, HEADERS, "", 0);
+    trickle_hits = 0; trickle_left = 2;
+    { FILE *lf = fopen(long_idx, "rb"); assert(lf); fseeko(lf, 0, SEEK_END); total = ftello(lf); fclose(lf); }
+    __atomic_store_n(&trickle_at, total / 2, __ATOMIC_RELAXED);
+    assert(dts_engine_open(e, long_idx, HEADERS, -1, 0, 0) == 0);
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    tr = play(e, 0, 0);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    took = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
+    fprintf(stderr, "trickling picture source: %d slow connections, %.1f s, %d video, last video %.1f s\n",
+            trickle_hits, took, tr.video, tr.max_video / 1e9);
+    assert(trickle_hits == 2 && tr.video > 0 && took < 6.0 * SG_WINDOW_MS / 1000);
+    dts_engine_destroy(e);
+    __atomic_store_n(&trickle_at, 0, __ATOMIC_RELAXED);
+    dts_engine_set_ahead_mib(0);
+    dts_engine_set_conversion_stream(0);
+  }
+  checkBytes = 1;
   /* AVI and MPEG-TS (owner's log 07/11: a 4.3 GB AVI picture source; small
    * AVI/TS versions with other audio). The picture from an H.264 AVI, the
    * audio from an AVI (MP3) and a TS (AC-3) version; seek in both. */
@@ -560,6 +736,30 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 200 && !(res = dts_engine_external_match_poll(e, &mi)); i++) usleep(50000);
     fprintf(stderr, "same language: result %d offset %d ms how %d score %d\n", res, mi.offset_ms, mi.how, mi.score);
     assert(res == 1 && mi.how == 1 && mi.offset_ms > -3240 && mi.offset_ms < -3160 && mi.score >= 60); }
+  dts_engine_destroy(e);
+  /* This film's lightest English track is another mix (noise): its 5.1
+   * English, captured with it, is the one that finds the 3.2 s. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, pair_dub, HEADERS, "pl", 0);
+  assert(dts_engine_open(e, stereo_main, HEADERS, -1, 0, 0) == 0);
+  { DtsMatchInfo mi; int res = 0;
+    assert(dts_engine_external_match_arm(e) == 0);
+    r = play(e, 0, 0);
+    for (int i = 0; i < 200 && !(res = dts_engine_external_match_poll(e, &mi)); i++) usleep(50000);
+    fprintf(stderr, "same language, another track: result %d offset %d ms how %d score %d\n", res, mi.offset_ms, mi.how, mi.score);
+    assert(res == 1 && mi.offset_ms > -3240 && mi.offset_ms < -3160 && mi.score >= 40); }
+  dts_engine_destroy(e);
+  /* The same with the other version's track untagged: no shared language,
+   * no other language here, the other English track is tried all the same. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, und_dub, HEADERS, "pl", 0);
+  assert(dts_engine_open(e, stereo_main, HEADERS, -1, 0, 0) == 0);
+  { DtsMatchInfo mi; int res = 0;
+    assert(dts_engine_external_match_arm(e) == 0);
+    r = play(e, 0, 0);
+    for (int i = 0; i < 200 && !(res = dts_engine_external_match_poll(e, &mi)); i++) usleep(50000);
+    fprintf(stderr, "untagged, another track: result %d offset %d ms how %d score %d\n", res, mi.offset_ms, mi.how, mi.score);
+    assert(res == 1 && mi.offset_ms > -3240 && mi.offset_ms < -3160 && mi.score >= 40); }
   dts_engine_destroy(e);
   /* Following another cut: the extended picture has 25 s at 60 s the
    * theatrical audio lacks. The first match starts by itself; in those 25 s
@@ -622,40 +822,15 @@ int main(int argc, char **argv) {
   e = dts_engine_create();
   dts_engine_external_follow(e, 1);
   dts_engine_external_audio(e, dub_pl, HEADERS, "pl", 0);
-  // Probe indices and languages must identify the same track as playback.
-  { DtsTrack t[4];
-    assert(dts_engine_probe_audio(dub_ru, HEADERS, t, 4) == 1);
-    assert(t[0].stream_index == 1 && !strcmp(t[0].codec, "ac3") && !strcmp(t[0].language, "rus"));
-    assert(dts_engine_probe_audio(dub_pl, HEADERS, t, 4) == 1);
-    assert(t[0].stream_index == 1 && !strcmp(t[0].codec, "vorbis") && !strcmp(t[0].language, "pol"));
-    dts_engine_external_track(e, t[0].stream_index); }
   assert(dts_engine_open(e, dub_ru, HEADERS, -1, 0, 0) == 0);
-  { const DtsMediaInfo *in = dts_engine_info(e); int donor = 0;
-    assert(in->audio_stream == DTS_ENGINE_EXTERNAL_STREAM && !strcmp(in->audio_codec, "aac"));
-    for (int i = 0; i < in->n_tracks; i++) {
-      const DtsTrack *t = &in->tracks[i];
-      if (t->kind == DTS_AUDIO && t->stream_index == DTS_ENGINE_EXTERNAL_STREAM) {
-        assert(!strcmp(t->language, "pol") && !strcmp(t->codec, "vorbis")); donor++;
-      }
-    }
-    assert(donor == 1); }
-  { DtsFrame f; int got, switches = 0, state, ms, found = 0, shifts = 0; DtsMatchInfo mi;
-    int64_t last = 0;
+  { DtsFrame f; int got, switches = 0, state, ms, found = 0; DtsMatchInfo mi;
     while ((got = dts_engine_next(e, &f)) == 1) {
       int k = dts_engine_external_follow_poll(e, &state, &ms);
       if (k == 1 || k == 2) switches++;
-      if (k == 4) shifts++;
-      if (dts_engine_external_match_poll(e, &mi) == 1) {
-        found = 1; assert(abs(mi.offset_ms) < 60);
-      }
-      if (found) assert(state == 1); // remains on the donor through dialogue
-      if (f.kind == DTS_AUDIO) {
-        assert(f.stream_index == DTS_ENGINE_EXTERNAL_STREAM && f.pts_ns >= last);
-        last = f.pts_ns;
-      }
+      if (dts_engine_external_match_poll(e, &mi) == 1) found = 1;
     }
-    fprintf(stderr, "follow, two dubs: found %d, switches %d, shifts %d\n", found, switches, shifts);
-    assert(got == 0 && found && switches == 0 && shifts == 0 && last > 118e9); }
+    fprintf(stderr, "follow, two dubs: found %d, switches %d\n", found, switches);
+    assert(got == 0 && found && switches == 0); }
   dts_engine_destroy(e);
   /* The match at start cut short by a jump (owner's log 11/11, S9E16: the
    * automatic intro skip): no failure; it starts again from there and finds. */
@@ -705,8 +880,9 @@ int main(int argc, char **argv) {
     fprintf(stderr, "follow, small shift: %d shift(s), first %d ms at %.1f s, own audio %d\n", shifts, shift_ms, shift_at / 1e9, fills);
     assert(got == 0 && fills == 0 && shifts >= 1 && shift_ms < -550 && shift_ms > -650 && shift_at > 70e9 && shift_at < 90e9); }
   dts_engine_destroy(e);
-  /* The second look, same frame rate, a gap 0.5 s longer at 200 s: an
-   * offset move (how 1, no speed), never a speed change (how 5). */
+  /* A gap 0.5 s longer at 200 s, same frame rate: no second look any more
+   * (owner 26/11, CPU; the subtitles' edit map places each stretch in the
+   * app): the one find, no speed change. */
   e = dts_engine_create();
   dts_engine_external_audio(e, gap_dub, HEADERS, "en", 0);
   assert(dts_engine_open(e, gap_main, HEADERS, -1, 0, 0) == 0);
@@ -719,8 +895,61 @@ int main(int argc, char **argv) {
         if (results >= 2) { moved = 1; moved_ms = mi.offset_ms; }
       }
     }
-    fprintf(stderr, "second look, same frame rate: %d result(s), speed %d, moved to %d ms\n", results, speed, moved_ms);
-    assert(got == 0 && !speed && moved && moved_ms < -450 && moved_ms > -550); }
+    fprintf(stderr, "no second look, same frame rate: %d result(s), speed %d, moved %d\n", results, speed, moved);
+    assert(got == 0 && results == 1 && !speed && !moved); (void)moved_ms; }
+  dts_engine_destroy(e);
+  /* LG like the .tpk (owner 26/11): the EDIT MAP from the subtitles gives
+   * the stretch after the 0.5 s longer gap at 200 s its own offset, applied
+   * live when the picture being read gets there (event 5); then the AUDIO
+   * REFINE (+-1 s, how 7) confirms the offset in force there. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, gap_dub, HEADERS, "en", 0);
+  assert(dts_engine_open(e, gap_main, HEADERS, -1, 0, 0) == 0);
+  { DtsFrame f; int got, base = 99999, mapped = 0, map_ms = 0, fine = 0, fine_ms = 0, fine_how = 0, state, ms; int64_t last = INT64_MIN, map_at = 0;
+    DtsMatchInfo mi;
+    assert(dts_engine_external_match_arm(e) == 0);
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      if (f.kind == DTS_VIDEO) last = f.pts_ns;
+      int r = dts_engine_external_match_poll(e, &mi), k = dts_engine_external_follow_poll(e, &state, &ms);
+      if (r == 1 && base == 99999) {
+        int64_t ini[2] = { 0, 200000000000LL }; int mm[2];
+        base = mi.offset_ms; mm[0] = base; mm[1] = base - 500;
+        assert(dts_engine_external_shift(e, base) == 0);
+        dts_engine_external_map(e, 2, ini, mm);
+      } else if (r == 1 && fine == 1) { fine = 2; fine_ms = mi.offset_ms; fine_how = mi.how; }
+      else if (r == -1 && fine == 1) fine = 3;
+      if (k == 5 && !mapped) { mapped = 1; map_ms = ms; map_at = last; }
+      if (mapped && !fine && last > 240000000000LL) { fine = 1; assert(dts_engine_external_match_fine(e) == 0); }
+    }
+    fprintf(stderr, "edit map: first find %d ms, stretch 2 at %.1f s with %d ms, refine %d: %d ms how %d\n", base, map_at / 1e9,
+            map_ms, fine, fine_ms, fine_how);
+    assert(got == 0 && base != 99999 && mapped && map_ms == base - 500 && map_at >= 200e9 && map_at < 202e9);
+    assert(fine == 2 && fine_how == 7 && abs(fine_ms - map_ms) <= 60); }
+  dts_engine_destroy(e);
+  /* Versions whose gaps differ at each break (owner's log 16/11, Chicago
+   * Fire), the lengths 1 s apart: the sync is no longer checked through the
+   * film nor followed in small shifts by itself (owner 26/11: the edit map
+   * from the subtitles does it in the app). One find, no later move. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, step_dub, HEADERS, "en", 0);
+  assert(dts_engine_open(e, step_main, HEADERS, -1, 0, 0) == 0);
+  { DtsFrame f; int got, first = 0, nm = 0, moves[8] = { 0 }, state, ms; int64_t at[8] = { 0 }, last = INT64_MIN; DtsMatchInfo mi;
+    assert(dts_engine_external_match_arm(e) == 0);
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      if (f.kind == DTS_VIDEO) last = f.pts_ns;
+      int r = dts_engine_external_match_poll(e, &mi), k = dts_engine_external_follow_poll(e, &state, &ms);
+      assert(k != 1);   /* never this file's own audio */
+      if (r == 1 && !mi.later) { first++; assert(dts_engine_external_shift(e, mi.offset_ms) == 0); }
+      int found = r == 1 && mi.later ? mi.offset_ms : k == 4 ? ms : 0;
+      if (r == 1 && mi.later) {
+        assert(dts_engine_external_shift_quiet(e, mi.offset_ms) == 0);
+        assert(dts_engine_external_shift_quiet(e, mi.offset_ms) == 0);   /* asked again: goes on */
+      }
+      if (found && (nm == 0 || abs(found - moves[nm - 1]) >= 40) && nm < 8) { at[nm] = last; moves[nm++] = found; }
+    }
+    fprintf(stderr, "versions whose gaps differ: first find %d, moves %d (%d ms at %.0f s, %d ms at %.0f s)\n",
+            first, nm, moves[0], at[0] / 1e9, moves[1], at[1] / 1e9);
+    assert(got == 0 && first == 1 && nm == 0); }
   dts_engine_destroy(e);
   /* A real missing scene between two languages: found later (the slower
    * check), and the other version still resumes 25 s on. */
@@ -740,6 +969,7 @@ int main(int argc, char **argv) {
   dts_engine_destroy(e);
   /* Prefetch ahead of a jump (an intro skip) on the one-connection stream
    * reader: the jump lands on the fetched bytes and plays on from there. */
+  dts_engine_set_conversion_stream(1);
   dts_engine_set_ahead_mib(8);   /* a small ring: the jump lands past it, as on the TV */
   e = dts_engine_create();
   dts_engine_external_audio(e, main60, HEADERS, "", 0);
@@ -762,6 +992,7 @@ int main(int argc, char **argv) {
   assert(r.video > 10);
   dts_engine_destroy(e);
   dts_engine_set_ahead_mib(0);
+  dts_engine_set_conversion_stream(0);
   /* Interrupted: the session closes while the reader works. */
   e = dts_engine_create();
   dts_engine_external_audio(e, cut_dub, HEADERS, "pl", 0);
@@ -769,11 +1000,17 @@ int main(int argc, char **argv) {
   assert(dts_engine_external_match_arm(e) == 0);
   r = play(e, 0, 0);
   dts_engine_destroy(e);
-  /* A PAL version (25 fps, sped up 25/23.976): found at the frame rates'
-   * ratio, then played at that speed (decoded, stretched, re-encoded). */
+  /* A PAL version (25 fps, sped up 25/23.976): the frame rates and the
+   * lengths agree, so it plays at that speed from the first open (owner's
+   * log 14/11) and the match finds the same speed; played again at the
+   * speed the match gave (decoded, stretched, re-encoded). */
   e = dts_engine_create();
   dts_engine_external_audio(e, pal_dub, HEADERS, "pl", 0);
   assert(dts_engine_open(e, cut_main, HEADERS, -1, 0, 0) == 0);
+  assert(!strcmp(dts_engine_info(e)->audio_codec, "aac"));
+  { int cut, sp, ppm; dts_engine_external_mismatch(e, &cut, &sp, &ppm);
+    fprintf(stderr, "PAL version opened: cut %d s, speed warning %d, %d ppm\n", cut, sp, ppm);
+    assert(abs(cut) <= 2 && !sp && abs(ppm - 42708) < 30); }
   { DtsMatchInfo mi; int res = 0;
     assert(dts_engine_external_match_arm(e) == 0);
     r = play(e, 0, 0);

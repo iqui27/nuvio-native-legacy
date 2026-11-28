@@ -8,7 +8,7 @@ set -eu
 cd "$(dirname "$0")/.."
 python3 - <<'PY'
 import re,sys
-s=open('src/video_tpk.c').read()
+s=open('src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c').read()
 m=re.search(r'static int abrirSessao\(void\) \{(.*?)\n\}\n',s,re.S)
 if not m or 'mkvass_aceitar_texto(1)' not in m.group(1):
     print('FALHA: abrirSessao() nao liga mkvass_aceitar_texto(1)'); sys.exit(1)

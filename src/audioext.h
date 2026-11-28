@@ -1,4 +1,6 @@
 #ifndef NV_AUDIOEXT_H
+#include <stddef.h>
+#include <stdint.h>
 #define NV_AUDIOEXT_H
 // AUDIO FROM ANOTHER VERSION OF THE TITLE (test build, external-audio-test).
 //
@@ -23,13 +25,42 @@ void audioext_limpar(void);
 // the language it was listed under, tried first in that file). The webOS
 // player reopens the converter at the current position (audioext_pedido_geracao).
 void audioext_escolher(const char *url, const char *cabecalhos, const char *nome, const char *idioma);
+// Other copies of the same file (other add-ons), best first, set right after
+// audioext_escolher: when the chosen link fails the next one is tried before
+// the session falls back to the file's own audio. A new choice drops them.
+void audioext_reserva(const char *url, const char *cabecalhos);
+// The debrid service's placeholder clip (a short warning video instead of the
+// file: not cached, or not ready yet). The converter's failure text carries
+// "(placeholder clip)". A version said to be cached is tried again after
+// AUDIOEXT_ESPERA_MS, `n` times (set right after audioext_escolher; 0 for the
+// others); meanwhile audioext_preparando() is 1 and the player says
+// "preparing" once per try (audioext_preparando_consumir). Links still not
+// ready after that come out of audioext_negada_consumir, to be marked not
+// cached in the source list.
+#define AUDIOEXT_TENTATIVAS 3
+#define AUDIOEXT_ESPERA_MS 5000
+#define AUDIOEXT_SONDA_PLACEHOLDER (-3)   /* audioext_sonda_resultado: the placeholder clip */
+void audioext_tentativas(int n);
+int audioext_motivo_placeholder(const char *motivo);
+int audioext_preparando(void);
+int audioext_preparando_consumir(int *tentativa, int *total);
+int audioext_negada_consumir(char *url, size_t n);
+// Tests: the clock in ms (NULL: the monotonic one).
+void audioext_definir_relogio(uint64_t (*fn)(void));
 // SERIES MEMORY (Settings > Remember for the next episodes): what identifies
 // the chosen version across episodes. The add-on's binge group when it sends
-// one ("the same release"), else add-on + language + resolution + codec.
+// one ("the same release"), else the same add-on and version name (nome:
+// the source row's name, simplified by audioext_nome_versao), else add-on +
+// language + resolution + codec.
 typedef struct {
-  char grupo[128], addon[96], idioma[8];
+  char grupo[128], addon[96], idioma[8], nome[96];
   int altura, codec;
 } AudioExtIdent;
+// A source row's name as the series memory compares it across episodes:
+// lowercase letters and digits, one space between words; emoji (cache marks
+// change between episodes), brackets and episode tags (S10E12, E12, 10x12)
+// left out. "🇵🇱 ☁️ [TB⚡️] ST Store 1080p" -> "tb st store 1080p".
+void audioext_nome_versao(const char *rotulo, char *dst, size_t n);
 // Called with the identity right after audioext_escolher, in a series
 // episode ("tt123:1:2"): the next episodes look for that version.
 void audioext_lembrar_serie(const AudioExtIdent *id);
@@ -40,11 +71,41 @@ int audioext_serie_procura(const char *alvo, AudioExtIdent *id);
 // the remembered sync, as if chosen in the menu.
 void audioext_serie_achou(const char *url, const char *cabecalhos, const char *nome);
 void audioext_serie_esquecer(void);
+// SAVED SERIES MEMORY: one row per series, account and profile, at most
+// AUDIOEXT_SERIE_MAX (the one used longest ago leaves first), no time limit.
+// The app gives the file functions (dados.h) once and the owner every frame;
+// changes reach the disk AUDIOEXT_SERIE_GRAVAR_MS after the last one (from
+// audioext_preferencias), or at once with audioext_memoria_descarregar.
+#define AUDIOEXT_SERIE_MAX 50
+#define AUDIOEXT_SERIE_GRAVAR_MS 1500
+void audioext_definir_memoria_arquivo(char *(*ler)(const char *), int (*gravar)(const char *, const char *),
+                                      int (*apagar)(const char *));
+void audioext_memoria_dono(const char *conta, int perfil);
+// "session:profile": a change forgets the mark, the track read and the series memory in RAM.
+void audioext_perfil(const char *chave);
+void audioext_memoria_descarregar(void);
+int audioext_memoria_series(void);   // rows in the table (all owners)
+// RESUME FROM CONTINUE WATCHING (fontevolta.h): the saved source played with
+// another version's audio; mark it again for the current target with the same
+// sync (offset, speed, track), as if picked in the menu, before the source
+// opens. A fresh start: the safety net of the last start does not apply.
+void audioext_retomar(const char *url, const char *cabecalhos, const char *nome, const char *idioma,
+                      int faixa, int offsetMs, int velocidadePpm);
+// The marked version is another episode's (the releases number the episodes
+// differently): kept out of the series memory. 0 = this episode's.
+void audioext_episodio_outro(int episodio);
+int audioext_episodio_outro_atual(void);
+// The episode on screen: 1 for an IMDb series episode ("tt123:1:2").
+int audioext_alvo_episodio(char *base, unsigned tam, int *temporada, int *episodio);
 // Preferences the UI copies here every frame (the player has no settings).
 void audioext_preferencias(int soAudio, int serie);
 int audioext_so_audio(void);
 // From the audio menu: back to this file's own audio, reopened the same way.
 void audioext_original(void);
+// The chosen version stopped answering while it played (the converter gave
+// up after its reconnections): this file's own audio again, the same way, but
+// the series memory stays (a CDN hiccup is not a bad pick).
+void audioext_sem_resposta(void);
 unsigned audioext_pedido_geracao(void);
 // From the audio menu while the other version plays: its audio stream
 // `stream` (demux index in that file) instead of the language pick; the webOS
@@ -54,7 +115,7 @@ int audioext_faixa(void);
 // The same choice before playing (hold-OK menu): no reopen, nothing pending.
 void audioext_definir_faixa(int stream);
 // TRACKS OF A VERSION for the hold-OK menu. The platform registers a blocking
-// header reader (webOS: the converter's); audioext_sondar runs it on ONE bounded worker
+// header reader (webOS: the converter's); audioext_sondar runs it on a thread
 // and returns the request's generation; audioext_sonda_resultado says -2 still
 // reading, -1 failed, else the count copied to `out`.
 #define AUDIOEXT_FAIXAS_MAX 16
@@ -69,25 +130,25 @@ int audioext_faixa_dica(AudioExtFaixa *out);   // 1: this episode has one
 // automatic match at start that fails keeps it without a message).
 int audioext_offset_lembrado(void);
 void audioext_definir_sonda(int (*fn)(const char *url, const char *cab, AudioExtFaixa *out, int max));
-// The token belongs to the request, survives the read, and is atomic-loaded by the reader.
+// The same reader with a cancel token (*cancel != 0: stop and return -1).
 void audioext_definir_sonda_segura(int (*fn)(const char *, const char *, AudioExtFaixa *, int, const int *));
 int audioext_sonda_disponivel(void);
-// Interrupts the platform's read in flight (webOS: dts_engine_probe_cancel).
+// Interrupts the platform's read in flight (called when a request goes stale).
 void audioext_definir_sonda_cancelar(void (*fn)(void));
-// Drops any request in flight or waiting: its result is never published.
-// Called on another title, another profile, stop and disable.
+// Drops the request in flight and the waiting one; no result is published.
 void audioext_sonda_cancelar(void);
-// 1 while the single probe worker is alive (tests; at most one thread).
+// A read is still running on the worker.
 int audioext_sonda_ocupada(void);
 unsigned audioext_sondar(const char *url, const char *cab);
 int audioext_sonda_resultado(unsigned ger, AudioExtFaixa *out, int max);
 int audioext_tem_marca(void);
-// The active account/profile ("owner:index"). A change forgets the mark, the
-// series memory and cancels any track read (profile isolation).
-void audioext_perfil(const char *chave);
 const char *audioext_idioma(void);
 // The source with this URL is the marked one (for the sheet's label).
 int audioext_marcada(const char *url);
+// The marked file on this very row: two add-ons can list one file under two
+// names (owner 17/11, Torrentio and BestTorrents), and only the row picked
+// shows the mark. Where the file itself matters, audioext_marcada.
+int audioext_marcada_nome(const char *url, const char *nome);
 // 1 when a mark exists for the current target and it is not the video itself.
 int audioext_pedido(const char *urlVideo);
 const char *audioext_url(void);
@@ -98,11 +159,23 @@ int audioext_offset_ms(void);
 // Adds `ms` / sets it, bounded to +-60 min (an extended cut against the
 // theatrical one); returns the new offset.
 #define AUDIOEXT_OFFSET_MAX 3600000
+// An automatic match that moves the offset by less than this keeps the
+// current one: nobody notices it, and applying it means a new connection to
+// the other file (owner's log 14/11: a 1 ms correction landed on a slow one).
+#define AUDIOEXT_AUTO_MIN_MS 40
 #define AUDIOEXT_DICA_MAX 600000   /* the lengths' hint: within 10 min only */
 int audioext_offset_somar(int ms);
 int audioext_offset_definir(int ms);
 // Bumped by every offset change; the webOS player applies the latest one.
 unsigned audioext_offset_geracao(void);
+// 1 when the last offset change came from a check made while playing: the
+// converter makes it at a quiet moment of the other version's audio.
+int audioext_offset_suave(void);
+// The playback position (s), so the series memory keeps the offset of the
+// start of an episode: one found later (versions whose gaps differ) would put
+// the next episode's start off.
+void audioext_posicao(double segundos);
+#define AUDIOEXT_SERIE_INICIO_S 600
 // The webOS player says whether the session on screen plays the external
 // audio (the player screen uses it for CH+/CH-), and why it could not.
 void audioext_tocando_definir(int sim);
@@ -121,13 +194,19 @@ int audioext_dopasuj_ativo(void);
 // 2 length hint, 3 +-60 s, 4 +-5 min, 5 speed, measured later on its own),
 // dica_ms the offset the lengths suggest and pesado the wide search skipped
 // for its download (not found).
-typedef struct { int ms, ppm, como, dica_ms, pesado, nkand, kand_ms[3], kand_pct[3], automatico; } AudioExtDopasuj;
+// pozniej: found by a check made while playing (the sync checked all through,
+// DtsMatchInfo.later): applied at a quiet moment, said nothing, and it does not
+// become the series memory's offset.
+typedef struct { int ms, ppm, como, dica_ms, pesado, nkand, kand_ms[3], kand_pct[3], automatico, pozniej; } AudioExtDopasuj;
 void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r);
+/* Changes with every match result applied (the sync editor follows it). */
+unsigned audioext_auto_geracao(void);
 // Once, for a toast: 1 found, -1 not trusted, 0 nothing.
 int audioext_dopasuj_aviso_consumir(AudioExtDopasuj *out);
 // The other version's speed from a match (ppm; 0 the same): the webOS player
 // opens that version at it.
 int audioext_velocidade(void);
+void audioext_velocidade_auto(int ppm);   // the speed the converter took from the frame rates
 // The offset the two lengths suggest (another cut), 0 when they are close or
 // beyond the sync's reach (10 min).
 int audioext_dica_ms(void);
@@ -145,6 +224,11 @@ double audioext_salto_previsto_consumir(void);
 // The converter reconnected a slow source instead of giving up (once, for a toast).
 void audioext_reconexao_marcar(void);
 int audioext_reconexao_consumir(void);
+// The other version cannot keep up with the picture: 1 reopened once by
+// itself, 2 still too slow after that, 3 it stopped answering (back to this
+// file's own audio). Once each, for a toast.
+void audioext_lento_marcar(int etapa);
+int audioext_lento_consumir(void);
 // Following another cut (Settings): an event of the webOS converter. tipo 1
 // this file's own audio (a scene the other lacks), 2 the other resumed at
 // `ms` (the offset is taken), 3 lost it. Once, for a toast.
@@ -173,4 +257,13 @@ int audioext_voltou_padrao_consumir(void);
 // is a different cut: the player says once that the sync may drift.
 void audioext_diferenca(int corteSeg, int velocidade);
 int audioext_diferenca_consumir(int *corteSeg, int *velocidade);
+// "SCAN AGAIN" (owner 18/11): the file track the donor is matched against,
+// picked in Audio sync > Scan again and kept per show (the target without its
+// season/episode: "tt123", "kitsu:47192"); lingua "" = Auto (forgets it).
+// The platform passes its data store (dados_ler / dados_gravar_leve).
+void audioext_match_io(char *(*ler)(const char *), int (*gravar)(const char *, const char *));
+void audioext_match_definir(const char *lingua, const char *codec, int canais);
+int  audioext_match_faixa(char *lingua, size_t nl, char *codec, size_t nc, int *canais);   // 1 picked for this show
+int  audioext_serie_chave(const char *alvo, char *o, size_t n);
+const char *audioext_alvo_atual(void);
 #endif

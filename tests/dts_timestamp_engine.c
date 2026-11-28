@@ -92,10 +92,11 @@ static void encode(int rate,int format,int channels,int codec,int gap) {
 }
 int main(void) {
  av_log_set_level(AV_LOG_ERROR);
+ /* webOS (2.0.9, owner's log 07/11): one hole up to 2 s, 2 s per 30 s. */
  boundary(0,0);boundary(4800,0);boundary(-4800,0);boundary(4801,0);boundary(24000,0);
- boundary(24001,1);boundary(-4801,1);boundary(263800*48,1);
+ boundary(96000,0);boundary(96001,1);boundary(-4801,1);boundary(263800*48,1);
  observed(275317LL*48,13205488,9728);observed(405739LL*48,19463696,11776);
- budget(4801,4);budget(24000,2);
+ budget(4801,4);budget(24000,4);budget(48000,2);
  for(int rate=0;rate<3;rate++) for(int fmt=0;fmt<3;fmt++) {
   int rates[]={44100,48000,96000},formats[]={AV_SAMPLE_FMT_FLTP,AV_SAMPLE_FMT_FLT,AV_SAMPLE_FMT_S16};
   encode(rates[rate],formats[fmt],2,AV_CODEC_ID_AAC,9728);

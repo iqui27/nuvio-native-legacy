@@ -69,6 +69,10 @@ float plrui_dicas_video(const char *const *teclas, const char *const *rotulos, i
 // desliza entre os chips (sel) e esmaece ao entrar/sair do segmentado (ed).
 float plrui_seg(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
                 float x, float y, float a);
+// The same, stretched to `largura` when narrower (chips widened evenly, text
+// centered); wider than that it draws as plrui_seg.
+float plrui_seg_largura(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
+                        float x, float y, float a, float largura);
 // plrui_seg with the chosen item apart from the focus pill (`escolhido`, -1 =
 // same as `sel`) and `leve` = rimless track for the 2.1 mock surfaces.
 float plrui_seg_ex(const char *const *rotulos, const int *contagem, int n, int escolhido,

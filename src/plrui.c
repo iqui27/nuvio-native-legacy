@@ -243,7 +243,7 @@ float plrui_seg(const char *const *rotulos, const int *contagem, int n, float se
   return plrui_seg_ex(rotulos, contagem, n, -1, sel, ed, x, y, a, 0);
 }
 static float segTexto(const char *const *rotulos, const char *const *contagem, int n, int escolhido,
-                      float sel, float ed, float x, float y, float a, int leve);
+                      float sel, float ed, float x, float y, float a, int leve, float alvo);
 float plrui_seg_ex(const char *const *rotulos, const int *contagem, int n, int escolhido,
                    float sel, float ed, float x, float y, float a, int leve) {
   char b[8][16];
@@ -253,15 +253,26 @@ float plrui_seg_ex(const char *const *rotulos, const int *contagem, int n, int e
     c[i] = contagem && contagem[i] >= 0 ? b[i] : NULL;
     if (c[i]) snprintf(b[i], sizeof b[i], "%d", contagem[i]);
   }
-  return segTexto(rotulos, c, n, escolhido, sel, ed, x, y, a, leve);
+  return segTexto(rotulos, c, n, escolhido, sel, ed, x, y, a, leve, 0.0f);
+}
+float plrui_seg_largura(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
+                        float x, float y, float a, float largura) {
+  char b[8][16];
+  const char *c[8];
+  if (n > 8) n = 8;
+  for (int i = 0; i < n; i++) {
+    c[i] = contagem && contagem[i] >= 0 ? b[i] : NULL;
+    if (c[i]) snprintf(b[i], sizeof b[i], "%d", contagem[i]);
+  }
+  return segTexto(rotulos, c, n, -1, sel, ed, x, y, a, 0, largura);
 }
 float plrui_seg_txt(const char *const *rotulos, const char *const *contagem, int n, float sel,
                     float ed, float x, float y, float a) {
-  return segTexto(rotulos, contagem, n, -1, sel, ed, x, y, a, 0);
+  return segTexto(rotulos, contagem, n, -1, sel, ed, x, y, a, 0, 0.0f);
 }
 static float segTexto(const char *const *rotulos, const char *const *contagem, int n, int escolhido,
-                      float sel, float ed, float x, float y, float a, int leve) {
-  float w[8], tot = SEG_PAD * 2.0f, xx;
+                      float sel, float ed, float x, float y, float a, int leve, float alvo) {
+  float w[8], cw[8], tot = SEG_PAD * 2.0f, xx;
   float pad = leve ? 22.0f : 20.0f, gap = leve ? 10.0f : 9.0f;
   float ih = leve ? 48.0f : SEG_IH;
   TxtLinha t[8], c[8];
@@ -290,6 +301,15 @@ static float segTexto(const char *const *rotulos, const char *const *contagem, i
       w[i] += gap + (float)c[i].w;
     }
     tot += w[i] + (i ? SEG_VAO : 0.0f);
+  }
+  for (i = 0; i < n; i++) cw[i] = w[i] - pad * 2.0f;   /* the text and number alone */
+  /* A target width: the room left goes to the chips evenly, their text kept
+   * centered (owner 17/11: the language bar scrolled right left an empty strip
+   * though more languages followed). */
+  if (alvo > tot && n > 0) {
+    float extra = (alvo - tot) / (float)n;
+    for (i = 0; i < n; i++) w[i] += extra;
+    tot = alvo;
   }
   if (x < 0.0f) return tot;
   { GfxRect tr = { x, y, tot, ih + SEG_PAD * 2.0f };
@@ -324,9 +344,9 @@ static float segTexto(const char *const *rotulos, const char *const *contagem, i
   }
   xx = x + SEG_PAD;
   for (i = 0; i < n; i++) {
-    float yb = y + SEG_PAD + (ih - (float)t[i].h) * 0.5f;
-    txt_desenhar_alpha(t[i], xx + pad, yb, a * ta[i]);
-    if (c[i].w) txt_desenhar_alpha(c[i], xx + pad + (float)t[i].w + gap,
+    float yb = y + SEG_PAD + (ih - (float)t[i].h) * 0.5f, tx = xx + (w[i] - cw[i]) * 0.5f;
+    txt_desenhar_alpha(t[i], tx, yb, a * ta[i]);
+    if (c[i].w) txt_desenhar_alpha(c[i], tx + (float)t[i].w + gap,
                                    yb + (float)t[i].h - (float)c[i].h - 1.0f,
                                    a * (i == selI && fEd > 0.5f ? 150 : 89) / 255.0f);
     xx += w[i] + SEG_VAO;

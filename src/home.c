@@ -5148,10 +5148,12 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
     // O FUTURO DIZ QUANDO (issue #127): "ESTREIA 21 OUT", nao o "A SEGUIR" do
     // episodio que ja pode tocar. Mesma decisao e mesma data do card
     // (continuar.c), para os dois nao discordarem.
+    // Futuro tambem na Ordenacao padrao, que nao separa futuros: estreia
+    // conhecida ainda por vir.
     char quando[32];
-    if (cwo_e_futuro(ci->imdb) &&
-        cwo_data_curta(cwo_estreia(ci->imdb), (long long)time(NULL) * 1000LL,
-                       ajustes_idioma(), 1, quando, sizeof quando))
+    long long agoraMs = (long long)time(NULL) * 1000LL, estreia = cwo_estreia(ci->imdb);
+    if ((cwo_e_futuro(ci->imdb) || (estreia != CWO_SEM_DATA && estreia > agoraMs)) &&
+        cwo_data_curta(estreia, agoraMs, ajustes_idioma(), 1, quando, sizeof quando))
       snprintf(destaque, sizeof destaque, i18n("ESTREIA %s"), quando);
     else snprintf(destaque, sizeof destaque, "%s", i18n("A SEGUIR"));
   }

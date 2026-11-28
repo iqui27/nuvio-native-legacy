@@ -40,7 +40,7 @@ case "${SANITIZE:-0}" in
 esac
 "${CC:-cc}" "${flags[@]}" -Isrc -I"$work" -I/opt/homebrew/include $(sdl2-config --cflags) \
   tests/partes_contagem_seek_tpk.c src/partescartao.c tests/mkvfix_mp4_stub.c \
-  src/video_tpk.c src/video_modo.c src/vazao.c src/velocidade.c src/faixasmkv.c src/audioinfo.c \
+  src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c src/video_modo.c src/vazao.c src/velocidade.c src/faixasmkv.c src/audioinfo.c \
   src/audioescolha.c src/mkv.c src/capmkv.c tests/dts_tpk_stub.c -lpthread -lm \
   -Wl,--gc-sections $(sdl2-config --libs) -o "$work/test"
 "$work/test"

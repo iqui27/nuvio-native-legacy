@@ -154,3 +154,27 @@ int main(void) {
 #endif
   puts("faixas_texto: escolha, handoff sem toast e toast so apos falha ok");
 }
+/* Audio from another source (lote 1, 2.0.9 engine): faixas.c now reads the
+ * external-audio state, the other-episode list and the hold helper. */
+int audioext_addon_ligado(const char *chave) { (void)chave; return 1; }
+int audioext_carregando(void) { return 0; }
+const char *audioext_idioma_principal(void) { return ""; }
+int audioext_sonda_disponivel(void) { return 0; }
+int audioext_sonda_resultado(unsigned ger, AudioExtFaixa *out, int max) { (void)ger; (void)out; (void)max; return -1; }
+unsigned audioext_sondar(const char *url, const char *cab) { (void)url; (void)cab; return 0; }
+const Stream *audioextep_item(int i) { (void)i; return NULL; }
+int audioextep_n(void) { return 0; }
+void audioextep_pedir(const char *alvo) { (void)alvo; }
+int ctxhold_passo(CtxHold *h, Uint32 agora, int feedback) { (void)h; (void)agora; (void)feedback; return 0; }
+void ctxhold_cancelar(CtxHold *h) { (void)h; }
+const char *ling_nome(const char *codigo) { return codigo; }
+int ling_tem_nome(const char *codigo) { (void)codigo; return 0; }
+void stream_audioext_filtro_addon(int (*fn)(const char *chave)) { (void)fn; }
+int stream_marcar_fora_cache_url(const char *url) { (void)url; return 0; }
+#if defined(NV_TPK) || defined(NV_WEBOS)
+int video_audio_arquivo(VideoFaixa *out, int max) { (void)out; (void)max; return 0; }
+int video_audio_arquivo_atual(void) { return -1; }
+void video_escolher_audio_arquivo(int i) { (void)i; }
+#endif
+__attribute__((weak)) int doa_disponivel(void) { return 0; }
+__attribute__((weak)) int mkvfix_conteiner(void) { return 0; }

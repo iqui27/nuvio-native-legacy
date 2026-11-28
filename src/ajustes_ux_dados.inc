@@ -257,6 +257,18 @@ static const char *uxSinonimos(int op) {
     case AJ_SHOW_SKIP_CREDITS: return "mostrar esconder botao pular creditos encerramento fim show hide skip outro credits button ending";
     case AJ_REMEMBER_PROFILE: return "lembrar ultimo perfil abrir direto inicio entrar automatico remember last profile startup auto enter";
     case AJ_UPDATE_NOTIFICATIONS: return "atualizacao aviso avisos notificacao versao nova procurar update notice notification version";
+    case AJ_EXT_AUDIO: return "audio from another source version dub dubbing lektor polish other file dzwiek z innego zrodla innej wersji sciezka";
+    case AJ_EXT_AUDIO_CACHE: return "audio another version cache debrid uncached hide dimmed dzwiek wersja";
+    case AJ_EXT_AUDIO_PASSO: return "audio sync step offset delay ms synchronizacja przesuniecie dzwiek";
+    case AJ_EXT_AUDIO_GRANDE: return "audio another version large file warning size gb duzy plik ostrzezenie";
+    case AJ_EXT_AUDIO_MODO: return "audio another version download whole file audio only tylko dzwiek caly plik transfer";
+    case AJ_EXT_AUDIO_SERIE: return "audio another version series next episodes remember pamietaj serial odcinki";
+    case AJ_EXT_AUDIO_SEGUIR: return "audio another version cut extended theatrical follow track whole film sledzenie montaz kinowa";
+    case AJ_EXT_AUDIO_BUFOR: return "audio another source other version buffer memory ram mb bufor drugiej wersji pamiec";
+    case AJ_EXT_AUDIO_ORDEM: return "audio another source sort like the addons order versions sortuj tak jak dodatki kolejnosc";
+    case AJ_EXT_AUDIO_COPIAS: return "audio another source duplicates copies hide same file duplikaty kopie ukryj";
+    case AJ_EXT_AUDIO_AUTO: return "audio another version match automatically start auto sync dopasuj automatycznie start";
+    case AJ_EXT_AUDIO_AVISO: return "audio another version sync adjusted message notice toast komunikat synchronizacja poprawiona";
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "proximo episodio automatico autoplay creditos contagem netflix sozinho next episode auto play countdown";
     case AJ_CW_MINIMO: return "minimo continuar assistindo porcentagem percentual entrar fileira retomada progresso quanto assistir comecou piso minimum percent continue watching threshold row";
     case AJ_FONTE_PREPARAR: return "preparar fonte ao abrir titulo antecipar resolver antecipado play instantaneo inicio rapido debrid painel arquivo prepare source ahead instant start";
@@ -551,3 +563,4 @@ int ajustes_buscar(const char *consulta, AjusteBuscaResultado *resultados, int c
   }
   return total;
 }
+

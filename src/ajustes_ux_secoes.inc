@@ -172,6 +172,7 @@ enum {
   AJC_N
 };
 static int ajCenaSecao(int op) {
+  if (op == AJ_SHOW_SKIP_INTRO || op == AJ_SHOW_SKIP_RECAP || op == AJ_SHOW_SKIP_CREDITS) return AJC_REP_DURANTE;
   if (ajLegendaPrincipal(op) || op == AJ_LEG1_RESTAURAR) return AJC_IDI_FAIXAS;
   if (ajLegendaSecundaria(op)) return AJC_IDI_LEGENDA2;
   switch (op) {
@@ -1415,3 +1416,4 @@ static float ajFontesResumo(int A, float x, float y, float w) {
 #undef CICON
 #undef CIMG
 #undef ON
+

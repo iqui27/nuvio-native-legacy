@@ -35,6 +35,9 @@
 #include "dts/dts_audio_codec.h"
 #include "dts_tv.h"
 #include "dts/dts_engine.h"
+#include "dts/doador_tpk.h"
+#include "dts/doador_webos.h"
+#include "doadorleg.h"
 #include "dts/dv7.h"
 #include "video_mp4_test.h"
 #include "ajustes.h"
@@ -793,6 +796,8 @@ int nv_dts_edid_test_webos_major = -1;
 #endif
 static int edidDts;
 static unsigned edidPedidoMs;
+// The TV declares DTS (tv.model.edidType): the external-audio menu asks.
+int video_tv_dts(void) { return __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) == 1; }
 static unsigned edidEsperaMs = 2000;
 static int edidResposta(LSHandle *h, LSMessage *m, void *u);
 /* Process-lifetime context. Never rewritten: the helper may keep this
@@ -2310,8 +2315,8 @@ static int extSondaFaixas(const char *url, const char *cab, AudioExtFaixa *out, 
   }
   return n;
 }
-int video_iniciar(void)      { mkvass_aceitar_imagem(1); if (dts_playback_enabled()) audioext_definir_sonda_segura(extSondaFaixas); return iniciar(0); }
-int video_iniciar_auto(void) { mkvass_aceitar_imagem(1); if (dts_playback_enabled()) audioext_definir_sonda_segura(extSondaFaixas); return iniciar(1); }
+int video_iniciar(void)      { mkvass_aceitar_imagem(1); dts_engine_set_external_open_hook(doaw_fontes_abertas); if (dts_playback_enabled()) audioext_definir_sonda_segura(extSondaFaixas); return iniciar(0); }
+int video_iniciar_auto(void) { mkvass_aceitar_imagem(1); dts_engine_set_external_open_hook(doaw_fontes_abertas); if (dts_playback_enabled()) audioext_definir_sonda_segura(extSondaFaixas); return iniciar(1); }
 int video_registro_negado(void) { return regNegado; }
 
 static int iniciar(int automatico) {
@@ -3325,6 +3330,171 @@ static void audioMkvOmitidas(void) {
     if (mudou) aplicarOrdemAudioMkv();
   }
 }
+
+// AUDIO FROM ANOTHER SOURCE, THE .TPK's WAY ON LG (owner 26/11): the same
+// audio menu (faixas.c), and the same sync by itself when another version
+// starts: its subtitles first (doadorleg.c, over the indexes the converter
+// read: doador_webos.c), then the audio refine within +-1 s (converter only),
+// and the edit map when the two releases differ by stretches. No subtitle
+// pair: the whole audio match. "Scan again" runs it all once more.
+static int extOutraTocando(void) {
+#ifdef NV_WEBOS_HLS_TEST
+  if (hlsAtivo() && hls.external) return 1;
+#endif
+  return dtsSessao && extAtivo;
+}
+static int extConversor(void) { return dtsSessao && extAtivo; }
+static struct {
+  unsigned gerVista;
+  char url[NV_MEDIA_URL_MAX], video[NV_MEDIA_URL_MAX];   // the pair the sync last ran for
+  int legEstado;              // 0 idle, 1 subtitles running, 2 placed by them, 3 not by them
+  int mapaFeito, finoFeito, autoMatch;
+  Uint32 finoEm;
+} dl;
+static void dlMatch(int fino) {
+  char l[16], c[24];
+  int ch = 0, si = -1;
+  if (!extConversor()) return;
+  if (audioext_match_faixa(l, sizeof l, c, sizeof c, &ch)) si = doaw_faixa_si(l, c, ch);
+  dts_playback_external_match_track(dtsSessao, si);
+  dl.autoMatch = 1;
+  if (fino) dts_playback_external_match_fine(dtsSessao);
+  else dts_playback_external_match(dtsSessao);
+}
+static void dlIniciar(const char *porque) {
+  printf("[doador] LG sync at %.1f s (%s): subtitles first, then the audio (offset now %+d ms)\n", posSeg, porque, audioext_offset_ms());
+  fflush(stdout);
+  doadorleg_cancelar();
+  dl.legEstado = 1; dl.mapaFeito = dl.finoFeito = 0; dl.finoEm = 0;
+  if (extConversor()) dts_playback_external_map(dtsSessao, 0, NULL, NULL);
+  snprintf(dl.url, sizeof dl.url, "%s", audioext_url());
+  snprintf(dl.video, sizeof dl.video, "%s", urlAtual);
+  doadorleg_iniciar(posSeg);
+}
+static void dlBombear(void) {
+  Uint32 agora = SDL_GetTicks();
+  if (!extOutraTocando()) {
+    if (dl.legEstado == 1) doadorleg_cancelar();
+    dl.legEstado = 0; dl.finoEm = 0;
+    if (!audioext_url()[0]) dl.url[0] = 0;   // back to this file's own audio: a new pick syncs again
+    return;
+  }
+  // Both files opened again (a pick, a swap, a reopen at another offset or
+  // speed): the indexes are fresh; the sync runs by itself for a new pair only.
+  { unsigned g = doaw_geracao();
+    if (g != dl.gerVista && audioext_tocando()) {
+      dl.gerVista = g;
+      if (strcmp(dl.url, audioext_url()) || strcmp(dl.video, urlAtual)) dlIniciar("the other version started");
+    } }
+  if (dl.legEstado == 1) {
+    double k = 1, d = 0, conf = 0;
+    char mt[160];
+    int r = doadorleg_resultado(&k, &d, &conf, mt, sizeof mt), ms = 0;
+    if (r > 0 && doaw_ms(k, d, &ms)) {
+      AudioExtDopasuj a;
+      memset(&a, 0, sizeof a);
+      a.ms = ms; a.ppm = fabs(k - 1.0) > 0.0002 ? (int)lround((k - 1.0) * 1e6) : 0; a.como = 6; a.automatico = 1;
+      printf("[doador] subtitle match: file = %.6f x donor %+.3f s -> offset %+d ms, speed %+d ppm (was %+d ms, confidence %.2f)\n",
+             k, d, a.ms, a.ppm, audioext_offset_ms(), conf);
+      fflush(stdout);
+      dl.legEstado = 2;
+      audioext_dopasuj_resultado(1, &a);
+      if (extConversor()) dl.finoEm = (agora + 3000u) ? agora + 3000u : 1u;   // once the offset is in force
+    } else if (r) {
+      dl.legEstado = 3;
+      printf("[doador] subtitle match not possible (%s)%s\n", r > 0 ? "no file opened" : mt,
+             extConversor() ? ": the audio match does it all (~40 s)" : ": the HLS path has no audio match");
+      fflush(stdout);
+      if (extConversor()) dlMatch(0);
+      else if (audioext_dopasuj_ativo()) audioext_dopasuj_resultado(0, NULL);
+    }
+  }
+  // THE EDIT MAP: built right after the subtitle answer; handed to the
+  // converter once that answer is in force there (no offset change pending).
+  if (dl.legEstado == 2 && !dl.mapaFeito && extGenAplicada == audioext_offset_geracao()) {
+    DoaMapa mp;
+    char mt[160];
+    int r = doadorleg_mapa_resultado(&mp, mt, sizeof mt);
+    if (r > 0) {
+      dl.mapaFeito = 1;
+      if (mp.n >= 2 && extConversor()) {
+        double ini[DOA_MAPA_MAX];
+        int ms[DOA_MAPA_MAX], i, i0 = 0, ok = 1;
+        for (i = 0; i < mp.n && i < DOA_MAPA_MAX; i++) {
+          ini[i] = i ? mp.t[i].ini : 0;
+          if (!doaw_ms(mp.k, mp.t[i].desloc, &ms[i])) ok = 0;
+          if (i && posSeg >= mp.t[i].ini) i0 = i;
+        }
+        // The offset in force is the subtitle answer or what moved it since
+        // (a change by hand): the whole map follows it.
+        if (ok) {
+          int dd = audioext_offset_ms() - ms[i0];
+          for (i = 0; i < mp.n; i++) ms[i] += dd;
+          dts_playback_external_map(dtsSessao, mp.n, ini, ms);
+        }
+      } else if (mp.n >= 2) printf("[doador] edit map of %d stretches: not on the HLS path, one offset\n", mp.n);
+      else printf("[doador] edit map: one stretch, the donor lines up in one piece\n");
+      fflush(stdout);
+    } else if (r < 0) {
+      dl.mapaFeito = 1;
+      printf("[doador] no edit map (%s): one offset for the whole file\n", mt);
+      fflush(stdout);
+    }
+  }
+  // The audio refine, once the subtitle offset is in force.
+  if (dl.finoEm && (int)(agora - dl.finoEm) >= 0 && extGenAplicada == audioext_offset_geracao() && !dl.finoFeito &&
+      audioext_tocando() && pronto && tocando) {
+    dl.finoFeito = 1; dl.finoEm = 0;
+    printf("[doador] audio refine starts (+-1 s around %+d ms)\n", audioext_offset_ms());
+    fflush(stdout);
+    dlMatch(1);
+  }
+}
+
+// THE FILE'S OWN AUDIO TRACKS for the audio menu's language rows (faixas.c):
+// while another version plays the player lists that one's tracks, so the
+// file's own are the ones seen before it started.
+static VideoFaixa arqProprias[NV_FAIXA_MAX];
+static int nArqProprias, arqPedida = -1;
+static char arqPropriasUrl[NV_MEDIA_URL_MAX];
+static void arqPropriasBombear(void) {
+  if (!extOutraTocando() && !audioext_carregando()) {
+    if (nAudio > 0 || strcmp(arqPropriasUrl, urlAtual)) {
+      nArqProprias = nAudio < NV_FAIXA_MAX ? nAudio : NV_FAIXA_MAX;
+      memcpy(arqProprias, faixaAudio, sizeof *arqProprias * (size_t)nArqProprias);
+      snprintf(arqPropriasUrl, sizeof arqPropriasUrl, "%s", urlAtual);
+    }
+  }
+  // Picked on a language page while the other version played: once this
+  // file's own audio is back, that track.
+  if (arqPedida >= 0 && !extOutraTocando() && !extReabrirPend && pronto) {
+    const VideoFaixa *q = arqPedida < nArqProprias ? &arqProprias[arqPedida] : NULL;
+    int k, row = -1;
+    for (k = 0; q && k < nAudio && row < 0; k++)
+      if (!strcmp(faixaAudio[k].idioma, q->idioma) && !strcmp(faixaAudio[k].codec, q->codec) && faixaAudio[k].canais == q->canais &&
+          !strcmp(faixaAudio[k].nome, q->nome)) row = k;
+    arqPedida = -1;
+    if (row >= 0 && row != audioAtual) video_escolher_audio(row);
+  }
+}
+int video_audio_arquivo(VideoFaixa *out, int max) {
+  int n = 0;
+  if (!extOutraTocando()) {
+    for (; n < nAudio && n < max; n++) out[n] = faixaAudio[n];
+    return n;
+  }
+  if (strcmp(arqPropriasUrl, urlAtual)) return 0;
+  for (; n < nArqProprias && n < max; n++) out[n] = arqProprias[n];
+  return n;
+}
+int video_audio_arquivo_atual(void) { return extOutraTocando() || audioext_carregando() ? -1 : audioAtual; }
+void video_escolher_audio_arquivo(int i) {
+  if (!extOutraTocando() && !audioext_carregando()) { video_escolher_audio(i); return; }
+  if (i < 0 || i >= nArqProprias) return;
+  printf("[doador] back to this file's own audio at %.1f s (picked on the language page)\n", posSeg); fflush(stdout);
+  arqPedida = i;
+  audioext_original();
+}
 void video_bombear(void) {
   ack_publicar();
   // Saida e volta do app: a volta anotada reabre aqui; nada mais roda com a
@@ -3343,7 +3513,7 @@ void video_bombear(void) {
   // "Match automatically": the request goes to the converter; its result sets
   // the offset (applied live below).
   if (audioext_dopasuj_pedido_consumir()) {
-    if (dtsSessao && extAtivo) dts_playback_external_match(dtsSessao);
+    if (extOutraTocando()) dlIniciar("Scan again");
     else audioext_dopasuj_resultado(0, NULL);
   }
   // Polled all along: a second look (another speed) reports on its own.
@@ -3357,14 +3527,19 @@ void video_bombear(void) {
     DtsMatchInfo mi;
     int mr = dts_playback_external_match_result(dtsSessao, &mi);
     if (mr) {
-      AudioExtDopasuj r = { mi.offset_ms, mi.ratio_ppm, mi.how, mi.hint_ms, mi.too_heavy, mi.ncand, { 0 }, { 0 }, mi.automatic };
+      // A check made while playing says nothing (automatico) and waits for a quiet moment (pozniej).
+      AudioExtDopasuj r = { mi.offset_ms, mi.ratio_ppm, mi.how, mi.hint_ms, mi.too_heavy, mi.ncand, { 0 }, { 0 },
+                            mi.automatic || mi.later || dl.autoMatch, mi.later };
+      dl.autoMatch = 0;
       for (int c = 0; c < mi.ncand && c < 3; c++) { r.kand_ms[c] = mi.cand_ms[c]; r.kand_pct[c] = mi.cand_score[c]; }
       printf("[ext-audio] match result %d: offset %d ms speed %d ppm how %d hint %d ms heavy %d\n",
              mr, mi.offset_ms, mi.ratio_ppm, mi.how, mi.hint_ms, mi.too_heavy);
       fflush(stdout);
       audioext_dopasuj_resultado(mr > 0, &r);
     }
-  } else if (audioext_dopasuj_ativo()) audioext_dopasuj_resultado(0, NULL);
+  } else if (audioext_dopasuj_ativo() && !extOutraTocando()) audioext_dopasuj_resultado(0, NULL);
+  dlBombear();
+  arqPropriasBombear();
   if (dtsSessao && extAtivo) {
     unsigned g = audioext_offset_geracao();
     if (g != extGenVista) { extGenVista = g; extGenEm = SDL_GetTicks(); }
@@ -4193,7 +4368,9 @@ static int iniciarDts(int stream) {
       if (audioext_faixa_dica(&h)) dts_playback_next_external_hint(h.stream, h.idioma, h.codec, h.canais, h.titulo); }
     dts_playback_next_external_speed(audioext_velocidade());
     dts_playback_next_external_follow(ajustes_audio_externo_seguir());
-    dts_playback_next_external_automatch(ajustes_audio_externo_auto());
+    // The sync runs by itself from the app (dlBombear: subtitles, then the
+    // audio refine), as on the .tpk: not the converter's own match at start.
+    dts_playback_next_external_automatch(0);
     extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
     audioext_carregando_definir(1);
     printf("[ext-audio] start: picture from this source, audio from \"%.60s\" offsetMs=%d dv=%d langs=%s\n",
@@ -4281,7 +4458,7 @@ static void bombearDts(void) {
     if (extAtivo && st.follow_events != events && st.follow_kind) {
       printf("[ext-audio] follow event %d offset %d ms\n", st.follow_kind, st.follow_offset_ms); fflush(stdout);
       audioext_seguir_evento(st.follow_kind, st.follow_offset_ms);
-      if (st.follow_kind == 2 || st.follow_kind == 4) extGenAplicada = extGenVista = audioext_offset_geracao();
+      if (st.follow_kind == 2 || st.follow_kind == 4 || st.follow_kind == 5) extGenAplicada = extGenVista = audioext_offset_geracao();
     }
     events = st.follow_events; }
   // A slow source reconnected (another version's audio kept): said once.
@@ -5302,4 +5479,7 @@ int video_legenda_nativa(char *d, int t) {
 #endif
 
 #endif  /* !__EMSCRIPTEN__ */
+#if defined(__EMSCRIPTEN__) || ((defined(__APPLE__) || defined(_WIN32) || defined(NV_LINUX_DESKTOP)) && !defined(NV_DTS_EDID_PENDING_TEST)) || defined(NV_TPK) || defined(NV_ANDROID)
+int video_tv_dts(void) { return 0; }   // only the webOS branch asks the TV about DTS
+#endif
 #endif  /* !NV_DESKTOP_MPV */

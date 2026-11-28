@@ -329,6 +329,7 @@ int video_fonte_tocou(void);
 int video_truehd_convertido(void); // Selected TrueHD audio has a prepared AAC/AC3 output.
 #endif
 const char *video_dts_saida(void);  // actual local conversion output, empty for native playback
+int video_tv_dts(void);             // the TV declares DTS (webOS tv.model.edidType); 0 elsewhere/unknown
 int    video_audio_nao_suportado(void);  // uMS errorCode 200: video segue sem som
 int    video_seek_desistiu(void);  // webOS: seek recusado 3x; segue tocando de onde esta
 int    video_terminou(void); // 1 depois do fim de fluxo (endOfStream) da fonte atual

@@ -790,13 +790,38 @@ static float ajPreviaFonte(int op, float x, float y, float w) {
   return h;
 }
 
+// "Log na rede local" ligado: o QR da pagina e o endereco, para o celular abrir
+// direto. Mesma altura (300) do pacote de registro, que volta quando desliga
+// ou quando a TV nao achou o proprio IP (o endereco teria "<TV IP>").
+static int ajPreviaLogRede(float x, float y, float w) {
+  const char *u = logrede_url(), *p;
+  float t = 248, ix = x + 26, tx = ix + t + 28, tw = x + w - 26 - tx, ty;
+  if (!u[0] || strchr(u, '<')) return 0;
+  qrTexDe(&texQrLog, qrLogDe, sizeof qrLogDe, u);
+  if (!texQrLog) return 0;
+  ajNeutro((GfxRect){ x, y, w, 300 }, 22, 0.04f, 0.106f, 0.110f, 0.129f, 1);
+  { GfxRect tile = { ix, y + 26, t, t };
+    gfx_cor(tile, 20.0f / t, 1, 1, 1, 1);
+    gfx_tex_aspect_atual = 0.0f;
+    gfx_rect((GfxRect){ tile.x + 10, tile.y + 10, t - 20, t - 20 }, texQrLog, GFX_SNAP, 0, 0, 0, 0, 0, 0, 0, 1); }
+  p = strstr(u, "://");
+  { TxtLinha a = ajTxtC(TXT_AJ_TEXTO, "Aponte a câmera do celular, ou abra:", tw);
+    TxtLinha e = ajTxtC(TXT_AJ_NOME, p ? p + 3 : u, tw);
+    ty = y + 150 - (a.h + 10 + e.h) * 0.5f;
+    txt_desenhar_alpha(a, tx, ty, 0.6f);
+    txt_desenhar(e, tx, ty + a.h + 10); }
+  return 1;
+}
+
 // As previas em cartao (altura propria): ficam no meio do quadro 16:9, sobre a
 // arte da categoria escurecida, para a coluna ter sempre o mesmo quadro.
 static float ajPreviaCarta(int op, float x, float y, float w) {
   switch (op) {
     case AJ_ICONE_APP: return ajPreviaIconeApp(x, y, w);
     case AJ_TRAKT: case AJ_SIMKL: return ajPreviaServico(op, x, y, w);
-    case AJ_ENVIAR_LOG: case AJ_VER_REGISTRO: case AJ_ENVIO_AUTO: case AJ_LOG_REDE:
+    case AJ_LOG_REDE: if (ajPreviaLogRede(x, y, w)) return 300;
+      registro_pacote(x, y, w, 300, 9, i18n("últimos 200 KB"), 1); return 300;
+    case AJ_ENVIAR_LOG: case AJ_VER_REGISTRO: case AJ_ENVIO_AUTO:
       registro_pacote(x, y, w, 300, 9, i18n("últimos 200 KB"), 1); return 300;
     case AJ_CW_LIGADO: case AJ_CW_OK: case AJ_CW_ESTILO: case AJ_CW_THUMB: case AJ_CW_BLUR_PROX:
     case AJ_CW_ORDEM: case AJ_CW_NAO_EXIBIDOS: case AJ_CW_FURTHEST: case AJ_CW_CONCLUIDO: case AJ_CW_MINIMO: case AJ_CW_RETIDO_TAMBEM:

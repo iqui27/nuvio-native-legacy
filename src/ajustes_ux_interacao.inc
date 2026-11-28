@@ -128,6 +128,8 @@ static void uxAplicar(void);
 #endif
 static void uxAbrirEditor(int op) {
   if (op < 0 || op >= AJ_N || !ajOpcaoDisponivel(op) || soLeitura(op)) return;
+  // Audio from another source: its sheet with every option of it.
+  if (op == AJ_EXT_AUDIO) { eaAbrir(); return; }
   uxCancelar();
   if(op==AJ_GUIA_CATEGORIAS) {
     guia_preparar_busca();int n=guia_categorias(NULL,0);
@@ -309,6 +311,8 @@ static int uxAlternarDireto(int op) {
   int antes, novo;
   if (ajFalhaBackend(op)) ajFalhaEspelhar();
   if (!ehInterruptor(op) || soLeitura(op) || inativa(op)) return 0;
+  // Audio from another source: OK opens its sheet (the on/off is its first row).
+  if (op == AJ_EXT_AUDIO) return 0;
   uxCancelar();
   antes = uxValorAtual(op);
   novo = antes == 0 ? 1 : 0;

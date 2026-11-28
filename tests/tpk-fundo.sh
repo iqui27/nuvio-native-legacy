@@ -9,5 +9,5 @@
 set -eu
 cd "$(dirname "$0")/.."
 SDL="-I/opt/homebrew/include $(sdl2-config --cflags) $(sdl2-config --libs)"
-cc -O1 -g -Wall -DNV_TPK -DRET_PRAZO_MS=1500u -DRET_PAUSA_MS=800u -DRET_BUSCA_MS=800u -Isrc tests/tpk-fundo.c src/video_tpk.c src/mkvfix.c -DNV_MKVFIX_SEM_REDE src/vazao.c src/velocidade.c src/faixasmkv.c src/audioinfo.c src/audioescolha.c src/mkv.c src/capmkv.c tests/capmkv_stub.c tests/dts_tpk_stub.c src/farolerro.c src/farolanel.c src/fontesonda.c -lpthread $SDL -o "${TMPDIR:-/tmp}/nuvio-tpk-fundo"
+cc -O1 -g -Wall -DNV_TPK -DRET_PRAZO_MS=1500u -DRET_PAUSA_MS=800u -DRET_BUSCA_MS=800u -Isrc tests/tpk-fundo.c src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c src/mkvfix.c -DNV_MKVFIX_SEM_REDE src/vazao.c src/velocidade.c src/faixasmkv.c src/audioinfo.c src/audioescolha.c src/mkv.c src/capmkv.c tests/capmkv_stub.c tests/dts_tpk_stub.c src/farolerro.c src/farolanel.c src/fontesonda.c -lpthread $SDL -o "${TMPDIR:-/tmp}/nuvio-tpk-fundo"
 "${TMPDIR:-/tmp}/nuvio-tpk-fundo"

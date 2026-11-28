@@ -24,7 +24,7 @@ rc=0
 for flag in '' '-DNV_TPK40'; do
   # NV_MKVFIX_SEM_REDE: a sonda do mkvfix roda em fio real e acabaria em tempo
   # nao deterministico, segurando mf.pend (busca_em_voo) fora do cenario.
-  ${CC:-cc} -O1 -g -Wall -DNV_TPK $flag -DNV_TEST_DIRECT_CDN -DNV_TEST_TPK_ACK -DNV_MKVFIX_SEM_REDE -Isrc ${flags[@]+"${flags[@]}"} tests/tpk728_ack.c src/video_tpk.c src/mkvfix.c src/vazao.c src/velocidade.c src/faixasmkv.c src/audioinfo.c src/audioescolha.c src/mkv.c src/capmkv.c \
+  ${CC:-cc} -O1 -g -Wall -DNV_TPK $flag -DNV_TEST_DIRECT_CDN -DNV_TEST_TPK_ACK -DNV_MKVFIX_SEM_REDE -Isrc ${flags[@]+"${flags[@]}"} tests/tpk728_ack.c src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c src/mkvfix.c src/vazao.c src/velocidade.c src/faixasmkv.c src/audioinfo.c src/audioescolha.c src/mkv.c src/capmkv.c \
     src/farolerro.c src/farolanel.c src/fontesonda.c -lpthread $SDL -o "${TMPDIR:-/tmp}/nuvio-tpk728-ack"
   "${TMPDIR:-/tmp}/nuvio-tpk728-ack"                 || rc=1  # ack de alvo velho descartado
   "${TMPDIR:-/tmp}/nuvio-tpk728-ack" prazo           || rc=1  # ack na janela do -2 das legendas
@@ -37,7 +37,7 @@ for flag in '' '-DNV_TPK40'; do
   "${TMPDIR:-/tmp}/nuvio-tpk728-ack" mesmo-depois    || rc=1  # seek novo ao mesmo alvo apos a trava
   "${TMPDIR:-/tmp}/nuvio-tpk728-ack" prazo-depois    || rc=1  # -2 do prazo apos a trava do ack
   "${TMPDIR:-/tmp}/nuvio-tpk728-ack" falha-isolada   || rc=1  # falha corrente aposenta a reabertura pausada
-  ${CC:-cc} -O1 -g -Wall -DNV_TPK $flag -Isrc ${flags[@]+"${flags[@]}"} tests/tpk728_dts_borda.c src/video_tpk.c src/mkvfix.c -DNV_MKVFIX_SEM_REDE src/vazao.c src/velocidade.c src/faixasmkv.c src/audioinfo.c src/audioescolha.c src/mkv.c src/capmkv.c \
+  ${CC:-cc} -O1 -g -Wall -DNV_TPK $flag -Isrc ${flags[@]+"${flags[@]}"} tests/tpk728_dts_borda.c src/video_tpk.c src/tpk45.c src/dts/doador_tpk.c tests/doador_tpk_stub.c src/audioext.c src/mkvfix.c -DNV_MKVFIX_SEM_REDE src/vazao.c src/velocidade.c src/faixasmkv.c src/audioinfo.c src/audioescolha.c src/mkv.c src/capmkv.c \
     src/farolerro.c src/farolanel.c src/fontesonda.c -lpthread $SDL -o "${TMPDIR:-/tmp}/nuvio-tpk728-dts-borda"
   "${TMPDIR:-/tmp}/nuvio-tpk728-dts-borda"       || rc=1  # borda inclusiva: 2,5 s libera
   "${TMPDIR:-/tmp}/nuvio-tpk728-dts-borda" fora  || rc=1  # 2,6 s coberto, 2,4 s liberado

@@ -102,6 +102,10 @@ char *rede_baixar_medido(const char *url, int seconds, const char *const *header
   return r;
 }
 #endif
+char *rede_baixar_medido_controle(const char *url, int seconds, const char *const *headers,
+                                  const RedeControle *c, RedeMedida *m) {
+  (void)c; return rede_baixar_medido(url, seconds, headers, m);
+}
 char *rede_baixar(const char *url, int s) {
   const char *r;
   if (strstr(url, "/manifest.json") && !strstr(url, "legenda.test"))

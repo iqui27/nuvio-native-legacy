@@ -45,6 +45,7 @@ int servidores_continuar(CatItem *out, int max) {
   if (!srvTeste || max < 1) return 0;
   out[0] = srvCw; return 1;
 }
+#undef NV_TEST_SERVIDORES_APENAS
 
 // --- DUBLES: so fazem descoberta.c linkar (o conjunto de tests/cateps.c) -----
 int         ajustes_idioma_ingles(void) { return 0; }
@@ -52,6 +53,9 @@ int ajustes_idioma(void) { return 0; }
 const char *i18n(const char *s)         { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
 const char *dados_dir(void)             { return ""; }
+char *dados_caminho(char *dst, unsigned tam, const char *nome) {
+  if(tam)snprintf(dst,tam,"/nonexistent-nuvio-fixture/%s",nome);return dst;
+}
 const char *sessao_usuario(void)        { return ""; }
 int         perfis_ativo(void)          { return 1; }
 // A conta nao esta ligada nesta fixture: sessao fixa 0 (tests/stub_perfisessao.h).

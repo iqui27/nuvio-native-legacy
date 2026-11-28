@@ -1503,6 +1503,22 @@ int player_ultimo_titulo(CatItem *out, int *temporada, int *episodio) {
   if (episodio) *episodio = epE;
   return 1;
 }
+// THE SOURCE SHEET OPENED BY PLAY, CLOSED WITHOUT A PICK: the player closes
+// like Back while loading, and the title page comes back with its Play
+// button. It used to show the source error card, so a second Back was needed
+// for nothing that had failed. Android keeps the card (#409).
+// NO EXIT FADE: nothing played, and with esperandoFonte off the black of the
+// opening gives way to the title's backdrop, which then faded out over the
+// page (the blink the owner saw, 23/11). The page is already underneath.
+void player_desistir_fonte(void) {
+#ifdef NV_ANDROID
+  player_erro_fonte();
+#else
+  esperandoFonte = 0;
+  saindo = 1; pediuSair = 1;
+  entrada = 0.0f;
+#endif
+}
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
   player_erro_fonte();
   erroFarolAcao = FAROL_A_NENHUMA;
@@ -3336,9 +3352,59 @@ static double credEfetivo(void) {
 // passou por aqui. So a sessao que TOCOU guarda: pronto, sem erro, duracao de
 // titulo (o clipe de aviso de 30 s do debrid nao conta) e sem ter terminado.
 // Falhou ou terminou: apaga, para o Retomar nao reabrir o que nao serve.
+// O EPISODIO SEGUINTE AO QUE ACABOU DE TERMINAR (dono, 25/11): o Reproduzir
+// da pagina do serial, logo depois do fim, vale como o Next (app.c). So na
+// RAM e do perfil que assistiu; consumido pelo primeiro Reproduzir.
+static char proximoConcluido[64];
+static int proximoConcluidoPerfil = -1;
+int player_proximo_do_concluido(const char *alvo) {
+  int ok = alvo && alvo[0] && proximoConcluido[0] && proximoConcluidoPerfil == perfis_ativo() &&
+           !strcmp(alvo, proximoConcluido);
+  proximoConcluido[0] = 0;
+  return ok;
+}
+static void lembrarProximoDoConcluido(void) {
+  const CatEp *px = epE > 0 ? player_proximo_episodio() : NULL;
+  proximoConcluido[0] = 0;
+  if (px && cat_id_stream(idxAtual(), px->temporada, px->episodio, proximoConcluido, sizeof proximoConcluido))
+    proximoConcluidoPerfil = perfis_ativo();
+}
+// Test hook for tests/app_next_manual.c: the episode playing now just finished.
+void player_teste_concluiu(void) { lembrarProximoDoConcluido(); }
+// A FONTE QUE ESTA TOCANDO, copiada quando a imagem fica pronta (ver
+// fonteTocandoCopiar). Ao sair do player a pagina do titulo pode pedir fontes
+// de novo ANTES de fecharSessao: a lista trocada por baixo deixava
+// stream_item(stream_atual()) sem a fonte, e nada era guardado para o Retomar
+// do Continuar assistindo (log do dono 23/11, S.W.A.T. T7E8: "addons: consulta
+// inicio" logo antes do encerramento, nenhum "[voltafonte] guardada").
+static Stream fonteTocando;
+static Uint32 fonteTocandoObtida;   // SDL_GetTicks() de quando o link saiu do addon
+static void fonteTocandoCopiar(void) {
+  const Stream *s = stream_item(stream_atual());
+  const char *url = video_url_atual();
+  if (!s || !url[0] || strcmp(s->url, url) || !strcmp(fonteTocando.url, url)) return;
+  fonteTocando = *s;
+  fonteTocandoObtida = SDL_GetTicks() - stream_idade_ms();
+}
+// O audio de outra fonte que toca agora vai junto com a fonte guardada (ou sai
+// dela, quando voltou ao audio do proprio arquivo). 1 = a entrada mudou.
+static int lembrarAudio(const char *alvo, const char *url) {
+  static FontevoltaAudio a;
+  memset(&a, 0, sizeof a);
+  if (audioext_tocando() && audioext_pedido(url)) {
+    a.tem = 1;
+    snprintf(a.url, sizeof a.url, "%s", audioext_url());
+    snprintf(a.cabecalhos, sizeof a.cabecalhos, "%s", audioext_cabecalhos());
+    snprintf(a.nome, sizeof a.nome, "%s", audioext_nome());
+    snprintf(a.idioma, sizeof a.idioma, "%s", audioext_idioma());
+    a.faixa = audioext_faixa(); a.offsetMs = audioext_offset_ms(); a.velocidadePpm = audioext_velocidade();
+  }
+  return fontevolta_guardar_audio(alvo, sessao_usuario(), perfis_ativo(), url, &a);
+}
 static void lembrarFonte(void) {
   const Stream *s = stream_item(stream_atual());
   const char *url = video_url_atual();
+  Uint32 idade = stream_idade_ms();
   double cred;
   char alvo[64];
   if (ehCanal() || !comVideo) return;
@@ -3346,15 +3412,30 @@ static void lembrarFonte(void) {
   if (erroFonte || video_falhou()) {
     fontevolta_esquecer_alvo(alvo, sessao_usuario(), perfis_ativo(), "sessao falhou"); return;
   }
-  if (!video_pronto() || duracaoSeg < 120.0f) return;
+  if (!video_pronto() || duracaoSeg < 120.0f) {
+    printf("[voltafonte] nao guardada: %s\n", video_pronto() ? "duracao curta" : "video nao ficou pronto");
+    fflush(stdout); return;
+  }
   cred = credEfetivo();
   if (concluiuAgora(cred)) {
     fontevolta_esquecer_alvo(alvo, sessao_usuario(), perfis_ativo(), "titulo concluido"); return;
   }
-  // A lista pode ter sido trocada por baixo (a busca de fundo do Retomar que
-  // abriu pela fonte guardada): quem toca e a entrada que ja existe.
-  if (!s || strcmp(s->url, url)) return;
-  fontevolta_guardar(alvo, sessao_usuario(), perfis_ativo(), s, stream_idade_ms(), SDL_GetTicks());
+  // A lista pode ter sido trocada por baixo (a busca da pagina do titulo ao
+  // sair, a busca de fundo do Retomar): vale a copia da fonte que tocou.
+  if ((!s || strcmp(s->url, url)) && url[0] && !strcmp(fonteTocando.url, url)) {
+    s = &fonteTocando; idade = SDL_GetTicks() - fonteTocandoObtida;
+  }
+  // Aberta pela fonte guardada (sem indice na lista): a entrada ja existe, e
+  // so o audio de outra fonte (a sincronia pode ter mudado) e atualizado.
+  if (!s || strcmp(s->url, url)) {
+    if (!lembrarAudio(alvo, url)) {
+      printf("[voltafonte] nao guardada: a fonte que toca nao esta na lista nem na copia\n");
+      fflush(stdout);
+    }
+    return;
+  }
+  fontevolta_guardar(alvo, sessao_usuario(), perfis_ativo(), s, idade, SDL_GetTicks());
+  lembrarAudio(alvo, url);
 }
 
 static void fecharSessao(int manter, int trocaFonte) {
@@ -5488,8 +5569,8 @@ static int ativarBotao(int i, int repetiu) {
     }
     case PLR_PLAY: alternarTocando(); break;
     case PLR_ASPECTO: player_aspecto_ciclar(); break;
-    case PLR_CC: pedFaixas = 2; break;
-    case PLR_AUDIO: pedFaixas = 1; break;
+    case PLR_CC: pedFaixas = 2; printf("[player] OK on Subtitles: the subtitle sheet\n"); fflush(stdout); break;
+    case PLR_AUDIO: pedFaixas = 1; printf("[player] OK on Audio: the audio sheet\n"); fflush(stdout); break;
     case PLR_OPTIONS: central_abrir(); break;
     case PLR_FONTES: pedFontes = 1; break;
     case PLR_NESTE: nesteAberto = 1; nesteT = epT; nesteE = epE; break;
@@ -5575,6 +5656,21 @@ void player_evento(const SDL_Event *e) {
     if (r) { if (r == 2) acordar(); return; } }
   if (!aberto || saindo || e->type != SDL_KEYDOWN) return;
   SDL_Keycode k = e->key.keysym.sym;
+  // LEFT/RIGHT PRESSED WHILE THE APP WAS FROZEN, on the button row (owner
+  // 25/11: "tapping Audio sometimes opens Subtitles, and the other way round").
+  // During a main-thread stall (the [parado] lines, up to 1.4 s when another
+  // source's audio comes up) the row does not move, so a second press looks
+  // needed; both arrive at once afterwards and OK lands one button past the
+  // one on screen. A move older than 450 ms is dropped: OK then acts on the
+  // button the person saw focused. The host stamps the key when it is pressed
+  // (SDL_PushEvent from the .NET thread).
+  if (visivel && !barraFoco && !skipFoco && (k == SDLK_LEFT || k == SDLK_RIGHT) && e->key.timestamp &&
+      (Sint32)(SDL_GetTicks() - e->key.timestamp) > 450) {
+    printf("[player] %s pressed %u ms ago (the app was busy): dropped, focus stays on button %d\n",
+           k == SDLK_LEFT ? "LEFT" : "RIGHT", (unsigned)(SDL_GetTicks() - e->key.timestamp), botao);
+    fflush(stdout);
+    return;
+  }
   if (e->key.repeat && confirmacaoTransporteRetida &&
       (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE)) return;
 
@@ -5666,6 +5762,14 @@ void player_evento(const SDL_Event *e) {
     }
   }
 
+#if defined(NV_TPK) || defined(NV_WEBOS)
+  // AUDIO FROM ANOTHER SOURCE: no CH+/CH- sync any more (owner 17/11). The
+  // sync is automatic (subtitles, then audio) and the audio menu's Audio sync
+  // row sets it by hand.
+#else
+  // TEST BUILD, AUDIO FROM ANOTHER SOURCE (audioext.h): while it plays, CH+/CH-
+  // (PgUp/PgDn) move that audio later/earlier (faster while held). The
+  // converter applies the latest offset shortly after the last press (video.c), live.
   if (!ehCanal() && audioext_tocando()) {
     int sc = (int)e->key.keysym.scancode;
     int d = 0;
@@ -5678,6 +5782,8 @@ void player_evento(const SDL_Event *e) {
       return;
     }
   }
+#endif
+
   // PAINEL DE PAUSA: com ele de pe, a tecla e DELE. Vem antes de tudo o que
   // sobra (inclusive da tecla de proporcao) porque e o que o web faz — la o
   // ramo `if (this.pauseOverlayVisible)` engole o evento inteiro
@@ -6017,25 +6123,109 @@ void player_atualizar(float dt, Uint32 agora) {
   audioext_preferencias(ajustes_audio_externo_so_audio(), ajustes_audio_externo_serie());
   { // What the other version's audio did, once each (after Matis94's player notices).
     static int extVisto;
-    char t[224], v[48];
-    AudioExtDopasuj dm = { 0 };
-    int a, ms;
-    if (audioext_falha_consumir(NULL, 0) | audioext_voltou_padrao_consumir())
-      player_toast_ex(i18n("Áudio de outra versão indisponível. Tocando o áudio original."), 5000, "aj_triangle-alert", 1);
-    a = audioext_dopasuj_aviso_consumir(&dm);
-    audioext_formatar_offset(dm.ms, v, sizeof v, "%c%u.%03u s", "%c%u min %u.%03u s");
-    if (a > 0 && (!dm.automatico || dm.ppm)) { snprintf(t, sizeof t, i18n("Sincronizado automaticamente: %s"), v); player_toast(t, 4000); }
-    else if (a < 0 && !(dm.automatico && audioext_offset_lembrado()))
-      player_toast_ex(i18n("Não foi possível sincronizar automaticamente. Use CH+/CH-."), 5000, "aj_triangle-alert", 1);
-    a = audioext_seguir_aviso_consumir(&ms);
-    audioext_formatar_offset(ms, v, sizeof v, "%c%u.%03u s", "%c%u min %u.%03u s");
-    if (a == 1) player_toast(i18n("Cena ausente na outra versão: áudio original."), 4000);
-    else if (a == 2 || (a == 4 && ajustes_audio_externo_aviso())) { snprintf(t, sizeof t, i18n("Sincronização ajustada: %s"), v); player_toast(t, 3500); }
-    else if (a == 3) player_toast_ex(i18n("Não foi possível sincronizar automaticamente. Use CH+/CH-."), 6000, "aj_triangle-alert", 1);
-    if (audioext_reconexao_consumir()) player_toast(i18n("Conexão caiu, reconectando…"), 3500);
-    if (audioext_tocando() && !extVisto) { snprintf(t, sizeof t, i18n("Áudio de: %s · CH+/CH- sincroniza"), audioext_nome()); player_toast(t, 4000); }
+    char falha[160], t[384];
+    // Settings > Audio from another version turned off: no mark survives.
+    if (!ajustes_audio_externo() && audioext_tem_marca()) audioext_limpar();
+    audioext_memoria_dono(sessao_usuario(), perfis_ativo());
+    audioext_preferencias(ajustes_audio_externo_so_audio(), ajustes_audio_externo_serie());
+    if (audioext_falha_consumir(falha, sizeof falha)) {
+      // The debrid's placeholder clip: not a failure of the app, the version
+      // is just not ready (not cached) on the debrid service.
+      if (audioext_motivo_placeholder(falha))
+        player_toast_ex(i18n("This version is not ready on the debrid service yet (not cached)."), 6000, "aj_triangle-alert", 1);
+      else {
+        snprintf(t, sizeof t, i18n("Audio from the other version failed: %s"), falha);
+        player_toast(t, 5000);
+      }
+    }
+    { int tt, tot;
+      if (audioext_preparando_consumir(&tt, &tot)) {
+        snprintf(t, sizeof t, i18n("The debrid service is preparing this version… (try %d of %d)"), tt, tot);
+        player_toast(t, 4500);
+      } }
+    { char u[NV_MEDIA_URL_MAX];
+      while (audioext_negada_consumir(u, sizeof u)) stream_marcar_fora_cache_url(u); }
+    { AudioExtDopasuj d;
+      int a = audioext_dopasuj_aviso_consumir(&d);
+      char v[48];
+      audioext_formatar_offset(a > 0 ? d.ms : d.dica_ms, v, sizeof v, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
+      if (a > 0 && d.ppm) {
+        unsigned p = d.ppm < 0 ? (unsigned)-d.ppm : (unsigned)d.ppm;
+        char pc[24];
+        snprintf(pc, sizeof pc, i18n("%c%u.%03u%%"), d.ppm < 0 ? '-' : '+', p / 10000, p / 10 % 1000);
+        snprintf(t, sizeof t, i18n("The other version plays at another speed (%s): corrected. Sync: %s"), pc, v);
+        player_toast(t, 6000);
+      } else if (a > 0 && !d.automatico) { snprintf(t, sizeof t, i18n("Matched automatically: %s"), v); player_toast(t, 4000); }
+      /* a > 0 && automatico: the match at start (Settings) set it quietly; only a failure is said (owner, 08/11). */
+      /* ...unless the offset is the series memory's (owner, 11/11): kept, nothing to say. */
+      /* The audio refine (como 7) after the subtitles placed it: not sure = the subtitles' offset stays, quietly. */
+      else if (a < 0 && d.como == 7) { printf("[ext-audio] audio refine not sure: the subtitles' offset stays\n"); fflush(stdout); }
+      else if (a < 0 && d.automatico && audioext_offset_lembrado()) {
+        printf("[ext-audio] automatic match not sure: the series memory's offset stays\n"); fflush(stdout); }
+      /* A series episode whose lengths differ and nothing matched (owner's log
+       * 21/11, Farscape): most likely another episode, numbered differently
+       * by the two releases. The episode row of From another source lists
+       * another episode's versions. */
+      else if (a < 0 && d.dica_ms && audioext_alvo_episodio(NULL, 0, NULL, NULL)) {
+        int s = d.dica_ms < 0 ? -d.dica_ms / 1000 : d.dica_ms / 1000;
+        snprintf(t, sizeof t, i18n(d.dica_ms < 0
+          ? "Could not match: this version is %d s longer. It may be another episode (the releases number them differently): pick the episode in the audio menu, From another source."
+          : "Could not match: this version is %d s shorter. It may be another episode (the releases number them differently): pick the episode in the audio menu, From another source."), s);
+        player_toast_ex(t, 9000, "aj_triangle-alert", 1);
+      }
+      else if (a < 0 && (d.nkand || d.dica_ms))
+        player_toast_ex(i18n("Could not match for sure: try the candidates in Audio sync (audio menu, OK on Audio sync)."), 7000, "aj_triangle-alert", 1);
+      else if (a < 0 && d.pesado)
+        player_toast_ex(i18n("Could not match automatically: a wider search would download too much of the other version. Set the sync by hand in the audio menu."), 7000, "aj_triangle-alert", 1);
+#if defined(NV_TPK) || defined(NV_WEBOS)
+      else if (a < 0) player_toast_ex(i18n("Could not sync this version by itself: set it in the audio menu (Audio sync)."), 5000, "aj_triangle-alert", 1); }
+#else
+      else if (a < 0) player_toast_ex(i18n("Could not match automatically: use the manual sync (CH+/CH-)."), 5000, "aj_triangle-alert", 1); }
+#endif
+    { int ms, a = audioext_seguir_aviso_consumir(&ms);
+      char v[48];
+      audioext_formatar_offset(ms, v, sizeof v, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
+      if (a == 1) player_toast(i18n("A scene the other version does not have: this file's own audio plays."), 4000);
+      else if (a == 2) { snprintf(t, sizeof t, i18n("The other version's audio is back (%s)."), v); player_toast(t, 3500); }
+#if defined(NV_TPK) || defined(NV_WEBOS)
+      else if (a == 3) player_toast_ex(i18n("Lost the other version's sync: set it in the audio menu (Audio sync)."), 6000, "aj_triangle-alert", 1);
+#else
+      else if (a == 3) player_toast_ex(i18n("Lost the other version: use Match automatically in the audio menu."), 6000, "aj_triangle-alert", 1);
+#endif
+      else if (a == 4 && ajustes_audio_externo_aviso()) {   // Settings: the message can be hidden (the fix still happens)
+        snprintf(t, sizeof t, i18n("Audio sync adjusted by itself (%s)."), v); player_toast(t, 3000); } }
+    if (audioext_reconexao_consumir())
+      player_toast(i18n("The source slowed down: reconnecting…"), 3500);
+    { int l = audioext_lento_consumir();
+      if (l == 1) player_toast(i18n("The other version downloads slowly: opening it again…"), 3500);
+#if defined(NV_TPK) || defined(NV_WEBOS)
+      else if (l == 2) player_toast_ex(i18n("This version downloads too slowly. Pick another one in the audio menu."), 7000, "aj_triangle-alert", 1);
+#else
+      else if (l == 2) player_toast_ex(i18n("This version downloads too slowly. Pick another one in the audio menu (From another source)."), 7000, "aj_triangle-alert", 1);
+#endif
+      else if (l == 3) player_toast_ex(i18n("This version doesn't respond. Pick another one in the audio menu."), 7000, "aj_triangle-alert", 1); }
+    if (audioext_voltou_padrao_consumir())
+      player_toast(i18n("The other version's audio did not start last time. Playing this file's own audio."), 5000);
+    if (audioext_tocando() && !extVisto) {
+#if defined(NV_TPK) || defined(NV_WEBOS)
+      snprintf(t, sizeof t, i18n("Audio from: %s"), audioext_nome());
+#else
+      snprintf(t, sizeof t, i18n("Audio from: %s · CH+/CH- to sync"), audioext_nome());
+#endif
+      player_toast(t, 4000);
+    }
     { int corte, vel;
-      if (audioext_diferenca_consumir(&corte, &vel)) player_toast_ex(i18n("Outro corte: a sincronização pode variar."), 6000, "aj_triangle-alert", 1); }
+      if (audioext_diferenca_consumir(&corte, &vel)) {
+#if defined(NV_TPK) || defined(NV_WEBOS)
+        if (vel) snprintf(t, sizeof t, "%s", i18n("This version plays at another speed: the sync corrects it."));
+#else
+        if (vel) snprintf(t, sizeof t, "%s", i18n("This version plays at another speed: Match automatically (audio menu) corrects it."));
+#endif
+        else snprintf(t, sizeof t, i18n(corte > 0 ? "This version is %d s longer (another cut): the sync may drift."
+                                                  : "This version is %d s shorter (another cut): the sync may drift."),
+                      corte > 0 ? corte : -corte);
+        player_toast_ex(t, 6000, "aj_triangle-alert", 1);
+      } }
     extVisto = audioext_tocando(); }
   if (comVideo && audioext_tocando()) {
     static unsigned prefGer;
@@ -6169,6 +6359,8 @@ void player_atualizar(float dt, Uint32 agora) {
       fflush(stdout);
     }
   }
+  // A fonte que toca, para lembrarFonte (barato: so copia quando a URL muda).
+  if (comVideo && video_pronto() && !ehCanal()) fonteTocandoCopiar();
   if (!inicioImagem && comVideo && video_pronto()) {
     inicioImagem = agora; acordar();
     if (medirAbertura && !ehCanal()) {
@@ -6699,6 +6891,13 @@ void player_atualizar(float dt, Uint32 agora) {
   }
   // Com o painel no ar os controles nao somem: eles sao a saida do dono.
   if (posplay_visivel()) ultimoInput = agora;
+  // Uma folha por cima (audio, legendas, fontes, episodios) e a pessoa no
+  // controle: as teclas dela nao passam por aqui. Sem isto, fechar a folha
+  // depois de mais de PLR_ESCONDE_MS (entrar em "De outra fonte" ou "Todas as
+  // legendas") fazia a barra comecar a entrar e sumir no mesmo instante — o
+  // player "piscava" (video do dono, 24/11). Agora ela fica o prazo inteiro,
+  // como ao fechar logo.
+  if (faixas_aberta() || stream_folha_aberta() || episodios_aberto()) ultimoInput = agora;
 
   // Pausado, os controles ficam. Sumir com eles deixaria o usuario diante de um
   // quadro parado sem nenhuma pista de que foi ele quem pausou.

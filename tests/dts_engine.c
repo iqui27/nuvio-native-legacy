@@ -42,6 +42,11 @@ char *rede_baixar_trecho64_vigiado_retry(const char *u,const char *h,int64_t s,i
  void (*retry)(void *,int),void *arg) {
  (void)retry;(void)arg;return rede_baixar_trecho64_vigiado(u,h,s,e,n,t,status,c,f,x,urgent,idle,stalled);
 }
+char *rede_baixar_trecho64_relato(const char *u,const char *h,int64_t s,int64_t e,long *n,
+ int64_t *t,int *status,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled,int *retry_after) {
+ (void)urgent;(void)idle;if(stalled)*stalled=0;if(retry_after)*retry_after=-1;
+ return rede_baixar_trecho64_final(u,h,s,e,n,t,status,c,f,x);
+}
 char *rede_baixar_trecho64_final(const char *url,const char *headers,int64_t start,int64_t end,long *size,int64_t *total,int *status,volatile int *cancelled,char *final,int *cross) {
   if(final) final[0]=0;
   if(cross) *cross=0;
